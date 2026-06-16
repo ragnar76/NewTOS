@@ -15,11 +15,23 @@
   1 GiB unless the firmware-supplied DTB reports more).
 - A micro-SD card (any size; we only use a small FAT32 boot partition).
 - A **3.3 V** USB-to-TTL serial adapter (e.g. CP2102 / FT232 / CH340).
-  **Do not** use a 5 V adapter — the Pi's GPIO is 3.3 V and 5 V will
-  damage it.
-- A host terminal program at **115200 baud, 8N1, no flow control**
-  (`screen /dev/tty.usbserial-XXXX 115200`, `minicom`, `picocom -b
-  115200`, or PuTTY).
+  **Do not** drive the Pi's RX with 5 V signalling — the GPIO is 3.3 V
+  and 5 V will damage it. If the adapter is level-selectable
+  (e.g. a "3.3 / 5 V" cable), select **3.3 V**.
+  - **In use here:** Waveshare USB-TO-TTL (D), **FT232RNL**, USB-A,
+    SH1.0 3-pin (TXD / RXD / GND), 3.3 / 5 V selectable — use the
+    **3.3 V** setting. FTDI wire convention: black = GND, yellow = the
+    adapter's RXD, orange = the adapter's TXD (verify against the
+    cable's own labels).
+- A host terminal at **115200 baud, 8N1, no flow control**.
+  - **macOS** (FT232R works with the built-in driver — no install on
+    recent macOS):
+    ```sh
+    ls /dev/tty.usbserial-*                  # find the device
+    screen /dev/tty.usbserial-XXXX 115200    # exit: Ctrl-A then K
+    ```
+  - Alternatives: `minicom`, `picocom -b 115200 /dev/tty.usbserial-XXXX`,
+    or PuTTY.
 
 ## 2. Wiring (USB-TTL ↔ Pi 4 GPIO header)
 
@@ -104,4 +116,4 @@ what appeared, any fault).
 
 | Date | Pi model / RAM | Firmware | Result | Notes |
 |------|----------------|----------|--------|-------|
-| _pending — awaiting USB-TTL adapter_ | | | | |
+| _pending — Waveshare FT232RNL USB-TTL (D) ordered 2026-06-16; awaiting delivery_ | | | | |
