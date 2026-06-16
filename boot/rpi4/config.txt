@@ -1,0 +1,34 @@
+# NewTOS / PiRusTOS — Raspberry Pi 4 (BCM2711) firmware boot config.
+#
+# Copy this file, `kernel8.img`, and the Pi firmware files onto a
+# FAT32 boot partition. See docs/HW-TEST-LOG.md for the full SD-card
+# layout and the USB-TTL wiring.
+
+# Boot a 64-bit (AArch64) bare-metal kernel image.
+arm_64bit=1
+kernel=kernel8.img
+
+# ── Serial console (PL011 UART0 on GPIO 14/15) ──────────────────────
+# Enable the primary UART (PL011 / UART0). On the Pi 4 this routes to
+# GPIO 14 (TXD) / 15 (RXD) — the header pins the kernel's bcm2711
+# driver configures as ALT0.
+enable_uart=1
+
+# CRITICAL: pin the UART reference clock to 48 MHz. The kernel uses a
+# fixed baud divisor (IBRD=26, FBRD=3 → 115200 baud) that assumes a
+# 48 MHz UART clock. Without this the firmware lets the UART clock
+# track the (variable) core frequency and the baud rate drifts —
+# you get garbage or nothing on the serial line. This single line is
+# the classic Pi 4 bare-metal serial gotcha.
+init_uart_clock=48000000
+
+# Keep the CPU clock from idling the core down in a way that could
+# still perturb peripheral clocks during early bring-up.
+force_turbo=0
+
+# The firmware passes a device-tree-blob pointer in x0; the kernel
+# parses it for the physical memory map (falling back to a compiled-in
+# 1 GiB if absent). If DTB parsing ever misbehaves on real hardware,
+# uncomment the next line to boot with no DTB (x0 = 0, compiled-in
+# memory size):
+#device_tree=

@@ -187,6 +187,19 @@ const TCR_VALUE: u64 = 16                       // T0SZ
 /// (data cache), `I` (instruction cache).
 const SCTLR_BITS: u64 = (1 << 0) | (1 << 2) | (1 << 12);
 
+/// Physical address of the PL011 UART0 **data register** (`UART_DR`,
+/// offset 0), used for the pre-MMU boot heartbeat. The console driver
+/// reconfigures the UART later; the heartbeat relies on the device
+/// being usable at reset — on QEMU `virt` the PL011 always is, and on
+/// the Pi 4 `enable_uart=1` in `config.txt` leaves UART0 enabled and
+/// muxed to GPIO 14/15. A `str` to a not-yet-ready UART is a harmless
+/// Device write, so this never faults.
+#[cfg(feature = "board-qemu-virt")]
+const BOOT_UART_DR: u64 = 0x0900_0000;
+/// See [`BOOT_UART_DR`] — BCM2711 PL011 UART0 base (low-peripheral mode).
+#[cfg(feature = "board-rpi4")]
+const BOOT_UART_DR: u64 = 0xFE20_1000;
+
 /// AArch64 boot entry. Linked into `.text.boot` so the linker script
 /// places it at the start of the `.text` section, which (after the
 /// VA/LMA split, Phase 05 D1) lives at LMA = `KERNEL_PHYS`.
@@ -214,6 +227,22 @@ pub unsafe extern "C" fn _start() -> ! {
 
         // ───── primary-core setup (still pre-MMU) ────────────────
         "mov    x19, x0",                  // preserve DTB phys ptr
+
+        // ───── pre-MMU boot heartbeat ────────────────────────────
+        // Emit "RB\r\n" straight to the PL011 data register before any
+        // MMU / stack / BSS work, so the very first sign of life is
+        // visible on a real serial console even if a later boot stage
+        // faults silently. Primary core only (we already parked the
+        // secondaries above). x20/x21 are free here.
+        "ldr    x20, ={boot_uart_dr}",
+        "mov    w21, #0x52",               // 'R'
+        "str    w21, [x20]",
+        "mov    w21, #0x42",               // 'B'
+        "str    w21, [x20]",
+        "mov    w21, #0x0d",               // CR
+        "str    w21, [x20]",
+        "mov    w21, #0x0a",               // LF
+        "str    w21, [x20]",
 
         // SP := __boot_core_stack_end_exclusive (low-half = LMA).
         // The boot stack symbol is linked at low-half by the linker
@@ -292,6 +321,7 @@ pub unsafe extern "C" fn _start() -> ! {
         mair_value      = const MAIR_VALUE,
         tcr_value       = const TCR_VALUE,
         sctlr_bits      = const SCTLR_BITS,
+        boot_uart_dr    = const BOOT_UART_DR,
         kernel_main     = sym crate::kernel_main,
     )
 }
