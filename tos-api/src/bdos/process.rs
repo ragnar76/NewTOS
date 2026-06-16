@@ -125,6 +125,11 @@ pub struct Process {
     /// `0` until Phase 06 D8 builds the tables for this process.
     pub l0_pa: AtomicU64,
 
+    /// User VA of the program's entry point (the ELF `e_entry`). The
+    /// loader records it so `Pexec(PE_GO)` can launch a slot that was
+    /// loaded earlier by `Pexec(PE_LOAD)` without re-parsing the image.
+    pub entry_va: AtomicU64,
+
     /// Index of the parent's slot in [`PROCESS_TABLE`], or
     /// [`NO_PARENT`] for the boot-loaded root process. Used by
     /// `Pterm` to return control to the parent's resume PC.
@@ -254,6 +259,7 @@ impl Process {
             basepage_kva: AtomicPtr::new(ptr::null_mut()),
             basepage_pa: AtomicU64::new(0),
             l0_pa: AtomicU64::new(0),
+            entry_va: AtomicU64::new(0),
             parent_slot: AtomicU32::new(NO_PARENT),
             parent_frame: ParentFrame::zeroed(),
             parent_l0_pa: AtomicU64::new(0),
@@ -363,6 +369,7 @@ pub fn free_slot(idx: usize) {
     p.basepage_kva.store(ptr::null_mut(), Ordering::Release);
     p.basepage_pa.store(0, Ordering::Release);
     p.l0_pa.store(0, Ordering::Release);
+    p.entry_va.store(0, Ordering::Release);
     p.parent_slot.store(NO_PARENT, Ordering::Release);
     p.parent_frame.clear();
     p.parent_l0_pa.store(0, Ordering::Release);

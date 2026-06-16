@@ -500,6 +500,7 @@ fn handle_pexec(frame: &mut ExceptionFrame) {
                 }
                 PexecError::NotFound => tos_types::error::EFILNF,
                 PexecError::NoSlot => tos_types::error::ENSMEM,
+                PexecError::BadHandle => tos_types::error::EIMBA,
                 PexecError::LoadFailed(_) => tos_types::error::EPLFMT,
             };
             frame.gpr[0] = err as i64 as u64;
@@ -507,6 +508,22 @@ fn handle_pexec(frame: &mut ExceptionFrame) {
         }
     };
 
+    // `PE_LOAD` (D4): the program is loaded but **not** launched. The
+    // parent keeps running; it receives the opaque PD handle (the
+    // child's `basepage_pa`) as the `Pexec` return value and hands it
+    // back later to `PE_GO`. No TTBR0 switch, no frame redirect — just
+    // return to the parent. The slot stays `Loaded` until `PE_GO`
+    // launches it (or the parent frees it).
+    if !child.launch {
+        crate::kprintln!(
+            "[pexec] PE_LOAD: slot={} handle=0x{:x} (not launched)",
+            child.slot, child.handle,
+        );
+        frame.gpr[0] = child.handle;
+        return;
+    }
+
+    // Launch path (PE_LOADGO / PE_GO): redirect EL0 to the child.
     // Snapshot the parent's full trap frame into the child slot's
     // `parent_frame`. Pterm's full-frame restore (when SPSR.M=EL0t)
     // brings the parent back to exactly this state, with `gpr[0]`

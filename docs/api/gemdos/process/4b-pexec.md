@@ -283,3 +283,22 @@ PHASE-06 implementation notes:
 3. **`set_owner`.** Currently iterates the MD list to find the
    matching MD by start address. NewTOS will likely keep the same
    approach for ABI fidelity.
+
+PHASE-06 D4/D5 status (2026-06-16):
+- `PE_LOADGO` (0), `PE_LOAD` (3), `PE_GO` (4) implemented and verified
+  in QEMU. `PE_BASEPAGE` (5) / `PE_GOTHENFREE` (6) /
+  `PE_BASEPAGEFLAGS` (7) return `EINVFN` for now.
+- **PD-handle ABI deviation (interim).** EmuTOS's PD is a real shared,
+  dereferenceable pointer; under NewTOS's per-process-TTBR0 model every
+  TPA maps at user VA 0, so a VA-0 PD is neither unique nor
+  parent-dereferenceable, and a 64-bit kernel VA does not fit the
+  `LONG` return. `PE_LOAD` therefore returns an **opaque slot handle**
+  (the child's `basepage_pa`, slot-unique and `LONG`-representable);
+  the parent passes it back verbatim in `PE_GO`'s `tail`. The parent
+  does **not** dereference it. The faithful dereferenceable PD requires
+  the single shared address space (ADR-010), which is correct for real
+  hardware but blocked on QEMU cortex-a72 TCG (see QUIRK-001 +
+  ADR-010 in `docs/MEMORY.md`); revisit on RPi4 / Phase 09.
+- Ownership (`owner = (flag==PE_LOADGO) ? p : run`) is currently
+  expressed through slot lifetime only — there is no BDOS-pool MD
+  backing the static-arena TPA yet (Phase 09).

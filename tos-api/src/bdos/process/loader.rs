@@ -92,8 +92,9 @@ pub struct LoadedImage {
 }
 
 /// Base of the user-space VA window — the only address `map_page`
-/// will accept for D3 (single-page mapping).
-const USER_VA_BASE: u64 = 0x0;
+/// will accept for D3 (single-page mapping). Also the basepage VA
+/// (every process's TPA starts here in the per-slot model).
+pub const USER_VA_BASE: u64 = 0x0;
 
 /// Number of bytes at the start of the user page reserved for the
 /// [`BasePage`]. ELF `PT_LOAD` segments must place themselves at or
@@ -197,6 +198,7 @@ pub unsafe fn load_to_slot(
     proc_slot.basepage_kva.store(basepage_kva, Ordering::Release);
     proc_slot.basepage_pa.store(user_page_pa, Ordering::Release);
     proc_slot.l0_pa.store(l0_pa, Ordering::Release);
+    proc_slot.entry_va.store(img.entry_va, Ordering::Release);
 
     Ok(LoadedImage {
         slot,

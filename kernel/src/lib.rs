@@ -38,6 +38,7 @@ pub mod selftest_d3;
 pub mod selftest_d6;
 pub mod selftest_ec4;
 pub mod selftest_pexec;
+pub mod selftest_pexec_d4d5;
 pub mod sync;
 
 // ---------------------------------------------------------------------------
@@ -231,6 +232,7 @@ extern "C" fn kernel_main_rust(dtb_phys: usize) -> ! {
     selftest_d3::run_d3_elf_loader_test();
     selftest_d6::run_d6_pterm_test();
     selftest_pexec::run_pexec_test();
+    selftest_pexec_d4d5::run_pexec_loadgo_split_test();
     selftest::run_phase02_self_test();
 
     // Phase 03 D6 verification (uncomment to provoke a hardware stack

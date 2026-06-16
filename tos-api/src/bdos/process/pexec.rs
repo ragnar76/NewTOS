@@ -52,9 +52,10 @@ pub const PE_BASEPAGEFLAGS: u16 = 7;
 
 // ─── Result + error types ───────────────────────────────────────────
 
-/// Metadata the kernel SVC handler needs after a successful
-/// `PE_LOADGO` setup. The handler uses these to redirect the trap
-/// frame to the child and switch `TTBR0_EL1`.
+/// Metadata the kernel SVC handler needs after a `Pexec` dispatch.
+/// For a launch mode (`PE_LOADGO` / `PE_GO`) the handler redirects the
+/// trap frame to the child and switches `TTBR0_EL1`; for `PE_LOAD` it
+/// returns [`Self::handle`] to the parent without launching.
 #[derive(Copy, Clone, Debug)]
 pub struct LoadedChild {
     /// Slot index in [`PROCESS_TABLE`] holding the child.
@@ -66,6 +67,16 @@ pub struct LoadedChild {
     /// User VA of the child's [`tos_types::BasePage`] — passed to
     /// the child entry in `x0` per NewTOS's AArch64 process ABI.
     pub basepage_va: u64,
+    /// **Opaque PD handle** the parent receives from `PE_LOAD` and
+    /// hands back to `PE_GO` (in `tail`). It is the child's
+    /// `basepage_pa` — slot-unique and `LONG`-representable (a DRAM
+    /// phys in the low 2 GiB). Per ADR-010 the parent treats it as
+    /// opaque; a dereferenceable PD waits for the shared-address-space
+    /// model on real hardware (see QUIRK-001 / ADR-010).
+    pub handle: u64,
+    /// `true` for `PE_LOADGO` / `PE_GO` (kernel launches the child);
+    /// `false` for `PE_LOAD` (kernel returns `handle` to the parent).
+    pub launch: bool,
 }
 
 /// Why `Pexec` failed.
@@ -75,7 +86,7 @@ pub enum PexecError {
     /// [`PE_LOAD`] / etc. constants. Mapped to `EINVFN` (-32).
     UnknownMode,
     /// `mode` is documented but not yet implemented in this phase.
-    /// Mapped to `EINVFN` until D4 / D5 land.
+    /// Mapped to `EINVFN`.
     UnsupportedMode,
     /// `path` did not match any registered program.
     /// Mapped to `EFILNF` (-33).
@@ -83,6 +94,9 @@ pub enum PexecError {
     /// [`allocate_slot`] returned `None` — process table is full.
     /// Mapped to `ENSMEM` (-39).
     NoSlot,
+    /// `PE_GO`'s `tail` handle did not resolve to any loaded slot.
+    /// Mapped to `EIMBA` (-40, "invalid memory block address").
+    BadHandle,
     /// The ELF blob was malformed or did not fit a single user
     /// page (Phase 06 D3 limit). Mapped to `EPLFMT` (-66) for
     /// most parser errors and `ENSMEM` for size-related ones.
@@ -108,24 +122,41 @@ pub enum PexecError {
 pub unsafe fn dispatch(
     mode: u16,
     path_bytes: &[u8],
-    _tail: u64,
+    tail: u64,
     _env: u64,
 ) -> Result<LoadedChild, PexecError> {
     match mode {
-        PE_LOADGO => unsafe { load_go(path_bytes) },
-        PE_LOAD | PE_GO | PE_BASEPAGE | PE_GOTHENFREE | PE_BASEPAGEFLAGS => {
+        // PE_LOADGO (D3): load + launch. PE_LOAD (D4): load only,
+        // basepage owned by the parent, returned as a handle.
+        PE_LOADGO => unsafe { load(path_bytes, true) },
+        PE_LOAD => unsafe { load(path_bytes, false) },
+        // PE_GO (D5): launch an already-loaded slot identified by the
+        // `tail` handle (the basepage_pa a prior PE_LOAD returned).
+        PE_GO => go(tail),
+        PE_BASEPAGE | PE_GOTHENFREE | PE_BASEPAGEFLAGS => {
             Err(PexecError::UnsupportedMode)
         }
         _ => Err(PexecError::UnknownMode),
     }
 }
 
-/// `Pexec(PE_LOADGO, path, …)` — load and launch.
+/// Load `path`'s program into a fresh slot. `launch` selects
+/// `PE_LOADGO` (true: the kernel transfers control to the child) vs
+/// `PE_LOAD` (false: the kernel returns the `handle` to the parent and
+/// leaves the slot in [`State::Loaded`]).
+///
+/// EmuTOS ownership (`bdos/proc.c:305`, `owner = (flag==PE_LOADGO) ?
+/// p : run`): under the static-arena model there is no BDOS-pool MD to
+/// re-own yet, so ownership is expressed purely through the slot's
+/// lifetime — a `PE_LOAD` slot persists until `PE_GO` launches it (and
+/// the child eventually `Pterm`s) or the parent frees it. The
+/// `parent_slot` link is set at **launch** time (here for `PE_LOADGO`,
+/// in [`go`] for `PE_GO`) so `Pterm` returns to whoever launched it.
 ///
 /// # Safety
 ///
 /// Caller's BDOS-lock contract; see [`dispatch`].
-pub unsafe fn load_go(path_bytes: &[u8]) -> Result<LoadedChild, PexecError> {
+pub unsafe fn load(path_bytes: &[u8], launch: bool) -> Result<LoadedChild, PexecError> {
     let blob = registry::lookup(path_bytes).ok_or(PexecError::NotFound)?;
     let slot_idx = allocate_slot().ok_or(PexecError::NoSlot)?;
 
@@ -146,7 +177,51 @@ pub unsafe fn load_go(path_bytes: &[u8]) -> Result<LoadedChild, PexecError> {
         entry_va: loaded.entry_va,
         l0_pa: loaded.l0_pa,
         basepage_va: loaded.basepage_va,
+        handle: PROCESS_TABLE[loaded.slot].basepage_pa.load(Ordering::Acquire),
+        launch,
     })
+}
+
+/// Backwards-compatible alias for [`load`]`(path, true)` (PE_LOADGO).
+///
+/// # Safety
+///
+/// See [`load`].
+pub unsafe fn load_go(path_bytes: &[u8]) -> Result<LoadedChild, PexecError> {
+    unsafe { load(path_bytes, true) }
+}
+
+/// `Pexec(PE_GO, 0, tail, 0)` — launch an already-loaded program. The
+/// `tail` is the opaque PD handle a prior `PE_LOAD` returned (the
+/// child's `basepage_pa`). Resolve it to a slot and hand the kernel a
+/// launch-mode [`LoadedChild`]; ownership is unchanged (`proc.c:535`).
+pub fn go(handle: u64) -> Result<LoadedChild, PexecError> {
+    let slot_idx = resolve_handle(handle).ok_or(PexecError::BadHandle)?;
+    let slot = &PROCESS_TABLE[slot_idx];
+    Ok(LoadedChild {
+        slot: slot_idx,
+        entry_va: slot.entry_va.load(Ordering::Acquire),
+        l0_pa: slot.l0_pa.load(Ordering::Acquire),
+        basepage_va: super::loader::USER_VA_BASE,
+        handle,
+        launch: true,
+    })
+}
+
+/// Find the loaded slot whose `basepage_pa` equals `handle`. Only
+/// non-`Free` slots match.
+fn resolve_handle(handle: u64) -> Option<usize> {
+    if handle == 0 {
+        return None;
+    }
+    for (i, p) in PROCESS_TABLE.iter().enumerate() {
+        if p.read_state() != super::State::Free
+            && p.basepage_pa.load(Ordering::Acquire) == handle
+        {
+            return Some(i);
+        }
+    }
+    None
 }
 
 /// Convenience accessor for the child slot's [`BasePage`] VA on the
