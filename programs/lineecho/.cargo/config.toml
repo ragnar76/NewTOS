@@ -1,0 +1,13 @@
+# Build for the bare-metal AArch64 target with our user-program linker
+# script. `-no-pie` / static keeps it ET_EXEC at fixed VAs (the loader
+# resolves absolute addresses, no relocation support yet).
+[build]
+target = "aarch64-unknown-none-softfloat"
+
+[target.aarch64-unknown-none-softfloat]
+rustflags = [
+  "-C", "link-arg=-Tlineecho.ld",
+  "-C", "link-arg=--no-pie",
+  "-C", "relocation-model=static",
+  "-C", "link-arg=-no-pie",
+]

@@ -30,6 +30,7 @@ pub mod arch;
 pub mod bios;
 pub mod console;
 pub mod drivers;
+pub mod generated;
 pub mod hal;
 pub mod host_env;
 pub mod panic;
@@ -38,6 +39,7 @@ pub mod selftest_d3;
 pub mod selftest_d6;
 pub mod selftest_d7;
 pub mod selftest_ec4;
+pub mod selftest_lineecho;
 pub mod selftest_pexec;
 pub mod selftest_pexec_d4d5;
 pub mod sync;
@@ -235,6 +237,7 @@ extern "C" fn kernel_main_rust(dtb_phys: usize) -> ! {
     selftest_d7::run_d7_ptermres_test();
     selftest_pexec::run_pexec_test();
     selftest_pexec_d4d5::run_pexec_loadgo_split_test();
+    selftest_lineecho::run_lineecho_demo();
     selftest::run_cconin_demo();
     selftest::run_phase02_self_test();
 

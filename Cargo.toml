@@ -6,6 +6,10 @@ members = [
     "tos-types",
     "tools/xtask",
 ]
+# `programs/` are standalone no_std AArch64 user programs with their own
+# workspace + linker scripts; built by `cargo xtask build-programs`, not
+# part of the host/kernel workspace build.
+exclude = ["programs"]
 default-members = ["kernel"]
 
 [workspace.package]
