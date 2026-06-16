@@ -1,0 +1,18 @@
+# Cargo configuration. Note: build target is forced per-package on `kernel`
+# via `package.forced-target` (cargo unstable feature `per-package-target`),
+# so workspace tools (xtask, tos-types unit tests) build for the host while
+# the kernel always builds for `aarch64-unknown-none-softfloat`.
+
+[target.aarch64-unknown-none-softfloat]
+rustflags = [
+    # Reserve x18 for future per-CPU pointer use (TOS is single-core but we
+    # follow AAPCS64 platform-register conventions).
+    "-C", "force-frame-pointers=yes",
+]
+
+[alias]
+xtask = "run --package xtask --"
+
+[unstable]
+# Enables `cargo-features = ["per-package-target"]` in kernel/Cargo.toml.
+# Required while per-package-target is not yet on stable.

@@ -1,0 +1,30 @@
+[workspace]
+resolver = "2"
+members = [
+    "kernel",
+    "tos-api",
+    "tos-types",
+    "tools/xtask",
+]
+default-members = ["kernel"]
+
+[workspace.package]
+edition = "2021"
+license = "MIT OR Apache-2.0"
+authors = ["NewTOS / PiRusTOS contributors"]
+repository = "https://github.com/PiRusTOS/PiRusTOS"
+rust-version = "1.80"
+
+[profile.dev]
+panic = "abort"
+opt-level = 1
+debug = true
+overflow-checks = true
+
+[profile.release]
+panic = "abort"
+opt-level = 3
+debug = true
+lto = "thin"
+codegen-units = 1
+overflow-checks = false

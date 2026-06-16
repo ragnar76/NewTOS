@@ -1,0 +1,27 @@
+# Build artifacts
+/target
+**/*.rs.bk
+Cargo.lock.bak
+
+# Build output
+/build
+*.img
+*.elf
+*.bin
+
+# Editor/OS
+.DS_Store
+.idea/
+.vscode/
+*.swp
+*~
+
+# Local overrides (not committed)
+.cargo/config.local.toml
+
+# External reference material (acquired per contributor; copyright)
+# `references/README.md` is the only file in this tree that is committed.
+# EmuTOS upstream checkout lives at references/emutos/ (separate git repo,
+# never modified by NewTOS). All gitignored except this README.
+/references/*
+!/references/README.md

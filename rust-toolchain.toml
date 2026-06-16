@@ -1,0 +1,7 @@
+[toolchain]
+# Pinned nightly required for naked_functions and AArch64 inline asm features.
+# See docs/STATUS.md for rationale and update policy.
+channel = "nightly-2026-04-15"
+components = ["rust-src", "rustfmt", "clippy", "llvm-tools-preview"]
+targets = ["aarch64-unknown-none-softfloat"]
+profile = "minimal"

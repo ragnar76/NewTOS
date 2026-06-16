@@ -1,0 +1,274 @@
+# CLAUDE.md – NewTOS (TOS-API-compatible OS for AArch64)
+
+<!-- This file is read automatically by Claude Code at the project root.
+     It applies to all sub-crates unless overridden by a more specific CLAUDE.md. -->
+
+## Project
+
+**NewTOS** is a clean-room reimplementation of the Atari TOS API
+(GEMDOS / BIOS / XBIOS / AES / VDI) as a native bare-metal OS for AArch64
+(Raspberry Pi 4).
+
+Goals:
+- Native ARM64 OS, no emulation in the kernel core.
+- Bit-exact TOS API compatibility (trap numbers, parameter ABI, error codes).
+- Source-level portability for C programs written against TOS headers.
+- Optional m68k userland emulator (later phase) for original Atari binaries.
+
+Non-goals:
+- Hardware-level Atari emulation (no Shifter, MFP, YM2149 in the kernel).
+- Linux compatibility, POSIX compliance, or any non-TOS API.
+- x86 or x86_64 support — AArch64 only.
+
+**Primary specification source:** EmuTOS source code, analyzed and extracted
+into our own spec format during Phase 00. EmuTOS is the most accurate,
+testable, complete reference for what TOS actually does. The extracted spec
+lives in `docs/api/` and is what later phases implement against.
+
+**Secondary references** (used to cross-check the EmuTOS extraction):
+Atari Compendium, Atari Profibuch, TOS Release Notes, Atari ST Internals.
+
+Companion documents (read in this order at session start):
+- `docs/SOURCE-ANALYSIS-PROTOCOL.md` — **mandatory protocol** for extracting
+  the TOS API spec from EmuTOS source
+- `docs/MEMORY.md` — project memory: ADRs with rationale, learned quirks,
+  rejected alternatives, hard-won bug solutions
+- `docs/REQUIREMENTS.md` — functional and non-functional requirements
+- `docs/ARCHITECTURE.md` — layer diagram, module boundaries, ABI rules
+- `docs/STATUS.md` — current implementation state, open issues
+- `docs/api/` — **the extracted TOS API specification** (produced in Phase 00)
+- `phases/` — phase-by-phase implementation guidelines (PHASE-00 first,
+  then PHASE-01 … PHASE-12)
+
+---
+
+## CRITICAL RULES — read before every task
+
+### 1. EmuTOS source is the TOS specification.
+
+**The TOS API specification used by NewTOS is extracted from the EmuTOS
+source code, function by function, in Phase 00.** This extraction lives
+in `docs/api/` and is the authoritative reference for every later phase.
+
+For any TOS API work:
+
+- During **Phase 00**: read EmuTOS source, produce spec entries per
+  `docs/SOURCE-ANALYSIS-PROTOCOL.md`. No implementation code.
+- During **later phases**: implement against the extracted spec in
+  `docs/api/`. Do not re-read EmuTOS unless the spec entry is incomplete
+  or incorrect — and if it is, fix the spec first, then implement.
+
+Compendium and Profibuch are **cross-references**, not primary sources.
+EmuTOS code is what TOS actually does; documentation is approximate.
+
+For hardware (RPi4 / AArch64), the BCM2711 datasheet and ARM ARM are
+primary; see `SOURCE-ANALYSIS-PROTOCOL.md` Track B.
+
+Writing code or specs from memory of "what TOS does" or "how ARM works"
+is forbidden. The TOS API has a working reference implementation
+(EmuTOS); the BCM2711 has a datasheet. There is no excuse to guess.
+
+### 2. No stubs, ever.
+
+A "stub" is a function that returns a hardcoded value, ignores its arguments,
+or contains `todo!()` / `unimplemented!()` to make the build pass.
+
+**Forbidden:**
+```rust
+pub fn fopen(_path: *const u8, _mode: u16) -> i32 {
+    0  // stub – fix later
+}
+```
+
+**Required when a function cannot be implemented yet:**
+1. Stop work on the current task.
+2. Document the missing dependency in `docs/STATUS.md` under "Blocked".
+3. Ask the user whether to proceed with a different task or implement the dependency first.
+
+`todo!()` is acceptable **only** in test scaffolding that is gated behind
+`#[cfg(test)]` and never reachable in a release build.
+
+### 3. STOP on uncertainty.
+
+If you are unsure about:
+- The TOS API semantics of a syscall
+- The m68k ABI mapping for a parameter
+- Whether existing code already implements something
+- Which architectural layer a piece of code belongs in
+- A hardware register address or bit layout for the BCM2711
+
+→ **STOP and ask.** Do not guess. Do not invent values. Do not "make it look reasonable".
+
+The TOS API is finite, fully documented, and bit-exact. There is no need to guess.
+
+### 4. Debug depth limit.
+
+When debugging a failure, you have **three attempts** to fix it. After the third
+unsuccessful attempt:
+
+1. Stop modifying code.
+2. Write a brief diagnosis: what you tried, what you observed, what you suspect.
+3. Hand the diagnosis to the user.
+
+Do not enter loops of "let me try one more thing". Do not start refactoring
+unrelated code. Do not delete failing tests.
+
+### 5. Spec before code.
+
+For any TOS API function, the specification in `docs/api/<group>.md` must exist
+**before** implementation begins. The spec is produced via the source analysis
+protocol (Rule 1), not from memory.
+
+If the spec is missing:
+
+1. Stop.
+2. Read EmuTOS source for that function.
+3. Read Compendium / Profibuch entries.
+4. Draft the spec entry.
+5. Get spec approval from the user.
+6. Then implement.
+
+### 6. No invented hardware.
+
+Hardware register addresses, bit layouts, peripheral behavior, and BCM2711
+quirks are sourced **only** from the hierarchy defined in
+`docs/SOURCE-ANALYSIS-PROTOCOL.md` Track B.
+
+Citing "I think this is how it works on ARM" is not acceptable.
+Linux source code is a cross-reference, not an authority.
+
+---
+
+## Language & Communication
+
+- Respond in **German** for design discussions, explanations, and decisions.
+- Code, identifiers, comments, commit messages, doc-comments: **English**.
+- File names and paths: **English**, lowercase, hyphenated.
+- Be direct. No filler. No "great question!". No re-explaining what was just said.
+
+---
+
+## Tech Stack (non-negotiable)
+
+- **Rust nightly** — required for `#![no_std]` + AArch64 inline asm + `naked_function`.
+  Pinned in `rust-toolchain.toml`. Do not suggest stable until naked functions stabilize.
+- **`#![no_std]`** — kernel and userland runtime. No `std`.
+- **`alloc`** — yes, but only after the kernel allocator is up.
+- **Cargo workspace** — one workspace, sub-crates per architectural layer.
+- **`cortex-a` crate** — AArch64 register/instruction abstractions.
+- **`tock-registers`** — MMIO register definitions.
+- **`spin`** or hand-rolled — no `parking_lot`, no `std::sync` primitives.
+- **QEMU `aarch64-virt`** as primary test target. Real RPi4 as secondary.
+- **GDB** for debugging via QEMU's gdbstub.
+
+Do **not** suggest:
+- C, C++, or any language that is not Rust or AArch64 assembly
+- Linux kernel APIs, POSIX, libc
+- `std`, `tokio`, `async-std`, or any heap-using crate before allocator is up
+- Bootloaders other than the RPi firmware's `kernel8.img` mechanism (stage 1)
+- `crossbeam`, `parking_lot`, `lazy_static` — use `OnceCell` or `spin`
+- x86 or x86_64 build targets
+- `bindgen` to wrap EmuTOS C code — we are doing a clean reimplementation
+
+---
+
+## Source Tree Conventions
+
+```
+newtos/
+├── CLAUDE.md                    # this file
+├── docs/
+│   ├── REQUIREMENTS.md
+│   ├── ARCHITECTURE.md
+│   ├── STATUS.md
+│   └── api/                     # TOS API spec, one file per group
+│       ├── gemdos.md
+│       ├── bios.md
+│       ├── xbios.md
+│       └── _template.md
+├── phases/                      # implementation guidelines per phase
+│   ├── PHASE-01-boot-uart.md
+│   ├── PHASE-02-gemdos-console.md
+│   └── ...
+├── kernel/                      # crate: bare-metal kernel core
+│   ├── CLAUDE.md                # kernel-specific overrides
+│   ├── src/
+│   │   ├── arch/aarch64/        # boot, exceptions, MMU, IRQ
+│   │   ├── hal/                 # trait definitions for hardware
+│   │   ├── drivers/bcm2711/     # RPi4-specific HAL impls
+│   │   ├── mm/                  # memory manager
+│   │   └── sched/               # process / scheduler
+├── tos-api/                     # crate: TOS syscall layer
+│   ├── CLAUDE.md
+│   ├── src/
+│   │   ├── gemdos/
+│   │   ├── bios/
+│   │   ├── xbios/
+│   │   └── trap.rs              # trap dispatcher
+├── tos-types/                   # crate: shared types (DTA, BPB, MD, …)
+└── tools/                       # host-side tools (image builder, etc.)
+```
+
+Each sub-crate may have its own `CLAUDE.md` that overrides or extends the
+rules here.
+
+---
+
+## Naming Conventions
+
+- **TOS API functions**: lowercase Rust name matching Compendium spelling.
+  `Fopen` → `pub fn fopen(...)`. Trap dispatch table maps function-IDs to these.
+- **TOS error codes**: `pub const E_OK: i32 = 0; pub const EFILNF: i32 = -33;` etc.
+  Defined in `tos-types::error`. Match Compendium values exactly.
+- **Hardware registers**: `BCM2711_<PERIPHERAL>_<REGISTER>` in `kernel::drivers::bcm2711`.
+- **Trap numbers**: named constants, not magic numbers.
+  `TRAP_GEMDOS = 1; TRAP_BIOS = 13; TRAP_XBIOS = 14;`
+
+---
+
+## Before Suggesting Code
+
+1. **Have you completed the source analysis per `SOURCE-ANALYSIS-PROTOCOL.md`?**
+   No → STOP and do that first. Yes → continue.
+2. Read the **current phase document** in `phases/PHASE-XX-*.md`. Out-of-phase
+   work requires explicit user approval.
+3. Read the **TOS API spec** for the function in `docs/api/`. If missing → see Rule 5.
+4. Check `docs/MEMORY.md` for related ADRs and learned-the-hard-way knowledge.
+5. Check `docs/STATUS.md` for related work in progress and open issues.
+6. Reference any spec section, ADR, or phase deliverable ID in commit messages
+   (e.g., `feat(gemdos): implement Cconin per docs/api/gemdos.md#0x01`).
+
+---
+
+## Commit Discipline
+
+- Conventional Commits: `feat:`, `fix:`, `refactor:`, `docs:`, `test:`, `chore:`.
+- Scope is the crate or subsystem: `feat(gemdos): ...`, `fix(mmu): ...`.
+- Subject line ≤ 72 chars, imperative mood, English.
+- Body explains **why**, not **what**. The diff shows the what.
+- Reference phase deliverable IDs: `Closes PHASE-02-D3`.
+- Never commit broken builds. Never commit failing tests without `#[ignore]` + reason.
+
+---
+
+## Testing
+
+- Unit tests in-crate, `#[cfg(test)]`, runnable on host where logic permits.
+- Integration tests in QEMU `aarch64-virt`, scripted via `cargo xtask qemu-test`.
+- Hardware tests on RPi4 are manual, documented in `docs/HW-TEST-LOG.md`.
+- Every TOS API function gets at least one test that verifies the documented
+  return value for documented input, and one that verifies the documented
+  error code for documented error input.
+
+---
+
+## What to do when you don't know
+
+In order:
+
+1. Re-read `docs/SOURCE-ANALYSIS-PROTOCOL.md`. Did you follow it?
+2. Read the phase document.
+3. Read the relevant `docs/api/*.md` entry.
+4. Consult the primary sources per Track A or Track B.
+5. Consult the secondary sources.
+6. **Ask the user.** Do not guess. Do not synthesize from "what seems reasonable".

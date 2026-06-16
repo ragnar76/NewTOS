@@ -1,0 +1,28 @@
+cargo-features = ["per-package-target"]
+
+[package]
+name = "kernel"
+version = "0.1.0"
+edition.workspace = true
+license.workspace = true
+authors.workspace = true
+description = "NewTOS kernel: bare-metal AArch64 core (boot, HAL, drivers)"
+forced-target = "aarch64-unknown-none-softfloat"
+
+[lib]
+name = "kernel"
+path = "src/lib.rs"
+
+[[bin]]
+name = "kernel"
+path = "src/main.rs"
+
+[features]
+default = []
+# Mutually exclusive board selection; exactly one must be enabled.
+board-rpi4 = []
+board-qemu-virt = []
+
+[dependencies]
+tos-types = { path = "../tos-types" }
+tos-api   = { path = "../tos-api" }
