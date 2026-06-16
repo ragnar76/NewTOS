@@ -46,6 +46,7 @@ const fn build_table() -> [Option<GemdosFn>; MAX_FN + 1] {
     t[0x07] = Some(console::crawcin);
     t[0x08] = Some(console::cnecin);
     t[0x09] = Some(console::cconws);
+    t[0x0A] = Some(console::cconrs);
     t[0x0B] = Some(console::cconis);
     t[0x10] = Some(console::cconos);
     t[0x11] = Some(console::cprnos);

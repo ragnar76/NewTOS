@@ -176,6 +176,117 @@ pub fn cnecin(_: &TrapArgs) -> Long {
 }
 
 // ---------------------------------------------------------------------------
+// 0x0A Cconrs — read an edited line into a caller buffer.
+// EmuTOS: bdos/console.c:519 `xconrs(char *p)` → `cgets()`.
+// Spec: docs/api/gemdos/console/0a-cconrs.md
+// ---------------------------------------------------------------------------
+
+/// Read one byte from a **user** pointer via an unprivileged load
+/// (`ldtrb`), so the access is permission-checked as EL0 — `Cconrs`'s
+/// `p` is a user pointer (same contract as [`cconws`]).
+///
+/// # Safety
+///
+/// `p` must be a readable user address.
+#[inline]
+unsafe fn read_user_byte(p: *const u8) -> u8 {
+    let b: u8;
+    // SAFETY: caller guarantees `p` readable; unprivileged byte load.
+    unsafe {
+        core::arch::asm!(
+            "ldtrb {b:w}, [{p}]",
+            p = in(reg) p,
+            b = out(reg) b,
+            options(nostack, preserves_flags, readonly),
+        );
+    }
+    b
+}
+
+/// Write one byte to a **user** pointer via an unprivileged store
+/// (`sttrb`).
+///
+/// # Safety
+///
+/// `p` must be a writable user address.
+#[inline]
+unsafe fn write_user_byte(p: *mut u8, b: u8) {
+    // SAFETY: caller guarantees `p` writable; unprivileged byte store.
+    unsafe {
+        core::arch::asm!(
+            "sttrb {b:w}, [{p}]",
+            p = in(reg) p,
+            b = in(reg) b,
+            options(nostack, preserves_flags),
+        );
+    }
+}
+
+/// `Cconrs(p)` — read an edited line into the caller's record.
+///
+/// `p[0]` (IN) = max length, `p[1]` (OUT) = actual length, `p[2..]` =
+/// buffer. Blocking, with a small line editor: CR/LF finishes (echo
+/// CR), BS/DEL erases one char, Ctrl-X erases the line, Ctrl-C
+/// terminates (`Pterm(-32)`), other bytes are stored + echoed. The
+/// buffer is **not** NUL-terminated — callers use `p[1]` as the
+/// length (TOS contract). Returns `0` (`xconrs` is `void`).
+///
+/// Editing keys Ctrl-U (restart) / Ctrl-R (redisplay) and the
+/// `cookdout` `^X` control-echo / tab-expansion of the full EmuTOS
+/// `cgets` are not modelled yet (serial console, no column tracking).
+pub fn cconrs(args: &TrapArgs) -> Long {
+    let h = host_or_eundev!();
+    let p = args.arg_ptr(0) as *mut u8;
+    if p.is_null() {
+        return 0;
+    }
+    // SAFETY: `p` is the caller-supplied user record pointer; bytes are
+    // accessed through unprivileged load/stores bounded by `max`.
+    let max = unsafe { read_user_byte(p) } as usize;
+    let mut len: usize = 0;
+    while len < max {
+        let b = h.console_read_byte_blocking();
+        match b {
+            0x0D | 0x0A => {
+                h.console_write_byte(0x0D); // echo CR only (no LF)
+                break;
+            }
+            CTRL_C => {
+                crate::bdos::process::request_terminate(CTRLC_RC);
+                return 0;
+            }
+            0x08 | 0x7F => {
+                if len > 0 {
+                    len -= 1;
+                    h.console_write_byte(0x08);
+                    h.console_write_byte(b' ');
+                    h.console_write_byte(0x08);
+                }
+            }
+            0x18 => {
+                // Ctrl-X — erase the whole line.
+                while len > 0 {
+                    len -= 1;
+                    h.console_write_byte(0x08);
+                    h.console_write_byte(b' ');
+                    h.console_write_byte(0x08);
+                }
+            }
+            _ => {
+                // SAFETY: `len < max`, so `p + 2 + len` is within the
+                // caller's buffer.
+                unsafe { write_user_byte(p.add(2 + len), b) };
+                len += 1;
+                h.console_write_byte(b); // echo
+            }
+        }
+    }
+    // SAFETY: `p + 1` is the record's length byte.
+    unsafe { write_user_byte(p.add(1), len as u8) };
+    0
+}
+
+// ---------------------------------------------------------------------------
 // 0x09 Cconws — write a NUL-terminated string.
 // EmuTOS: bdos/console.c:96  `xconws(char *s)`.
 // Returns the number of bytes written (LONG).
