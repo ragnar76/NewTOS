@@ -137,16 +137,35 @@ A first attempt to install the shared user TTBR0 at boot (Stage 1)
   install path wedges QEMU (QUIRK-001-adjacent) — the install must be
   `msr`+`isb` only.
 
-**Stage 0 (prerequisite):** make the kernel access **all** DRAM via
-**high-half** VAs (`pa + VA_OFFSET`, served by TTBR1, EL1-only) and
-never via raw `pa`. DRAM is aliased in both regimes — TTBR1 high-half
-(EL1-only) for the kernel, TTBR0 low-half identity (EL0) for users —
-and the kernel always uses the high-half alias (including when it
-touches a user TPA / basepage, which sidesteps the QEMU PAN-like
-enforcement on EL0 pages). Audit + convert: kernel heap
-(`bios/machine/heap.rs`), BDOS pools, and any loader/pexec code that
-dereferences a pool/`frame.pa()` address. Only then can Stage 1
-install the user TTBR0 without breaking kernel memory access.
+**Stage 0 (prerequisite) — DONE (commit `55b4390`).** Audit found the
+kernel heap was the *only* low-half-deref site (frames manage PAs as
+values, BDOS pools keep MDs in a static high-half arena and treat
+`m_start` as values, the ELF loader writes via the static high-half
+arena). One-line fix: `heap::init` addresses its arena through
+`pa + VA_OFFSET`. Boot stays green.
+
+**Stage 1 — BLOCKED on QEMU (attempted 2026-06-16, reverted).**
+With Stage 0 in place, installing the shared user table in `TTBR0` at
+boot still breaks the boot — but now the failure is a **hard hang on
+the first kernel Normal-memory store after the install** (verified: the
+heap header write to high-half `0xffff000041000000` hangs, no
+exception). Diagnosis: under ADR-010 a DRAM physical page is **aliased
+with mismatched permission attributes** — TTBR1 high-half (EL1 Normal)
+*and* TTBR0 low-half (EL0 Normal + PXN). Real ARMv8 permits this
+(memory *type* + shareability match; AP/PXN differ), but QEMU 11.0.0's
+cortex-a72 TCG wedges on a store to such a doubly-mapped PA — the same
+class of TCG fragility as QUIRK-001 (TTBR0 swap) and the ASID attempt.
+`tlbi vmalle1` on the install path wedges even earlier.
+
+**Conclusion:** ADR-010 is correct for **real hardware** but cannot be
+developed or validated on this QEMU model — three independent TCG walls
+(TTBR0 swap = QUIRK-001, ASID-tagged TTBR0, and now kernel/user DRAM
+aliasing) all block it. Options: (a) develop/validate ADR-010 on real
+RPi4 hardware; (b) keep the working per-process-TTBR0 + barrier model
+for QEMU and implement `Pexec` `PE_LOAD`/`PE_GO` with an opaque
+slot-handle (the parent does not dereference the PD — acceptable until
+a real FS-backed loader + dereferenceable PD land in Phase 09). The
+Stage-0 heap improvement is kept regardless.
 
 ### References
 
