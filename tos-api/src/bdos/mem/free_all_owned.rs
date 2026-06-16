@@ -27,10 +27,10 @@
 
 use core::ffi::c_void;
 
-use tos_types::MD;
+use tos_types::{MD, MPB};
 
 use super::init::{is_initialised, pmd, pmdalt};
-use super::mdpool::StaticMdSupply;
+use super::mdpool::{xmfremd_global, StaticMdSupply};
 use super::pool::freeit;
 
 /// Walk both BDOS pools' allocated lists and free every MD whose
@@ -95,6 +95,80 @@ unsafe fn sweep_pool(mp: *mut tos_types::MPB, owner: *mut c_void) -> usize {
             count += 1;
         }
         p = next;
+    }
+    count
+}
+
+/// Walk both BDOS pools' allocated lists and **reserve** every MD
+/// whose `m_own == owner`: unlink it from `mp_mal` and free the MD
+/// struct, but **do not** return its memory to `mp_mfl`. The region
+/// becomes "owner-less but allocated" — resident — which is the
+/// technical heart of `Ptermres` (terminate-and-stay-resident).
+/// Returns the number of MDs reserved across both pools.
+///
+/// Port of EmuTOS `reserve_blocks` (`bdos/proc.c:75`), applied to
+/// both pools the way [`free_all_owned`] sweeps them.
+///
+/// **Model note:** EmuTOS first shrinks the basepage MD to `blkln`
+/// via `xsetblk`, then reserves. NewTOS's TPA is a static arena page
+/// (not a BDOS MD) until pool-backed TPAs land, so `blkln`-sizing is
+/// a no-op here — the whole TPA is always resident, and this call
+/// reserves the process's `Malloc`-ed pool blocks.
+///
+/// # Safety
+///
+/// Same contract as [`free_all_owned`]: caller holds the BDOS giant
+/// lock.
+pub unsafe fn reserve_all_owned(owner: *mut c_void) -> usize {
+    if !is_initialised() || owner.is_null() {
+        return 0;
+    }
+    // SAFETY: caller holds the BDOS giant lock; both pools initialised.
+    let mut count = 0usize;
+    unsafe {
+        count += reserve_pool(pmd(), owner);
+        count += reserve_pool(pmdalt(), owner);
+    }
+    count
+}
+
+/// Walk one pool's `mp_mal`, unlinking + freeing the MD struct (but
+/// not the memory) for every MD with the matching owner. Returns the
+/// count reserved from this pool.
+///
+/// # Safety
+///
+/// `mp` must point at a well-formed MPB; caller holds the BDOS lock.
+unsafe fn reserve_pool(mp: *mut MPB, owner: *mut c_void) -> usize {
+    let mut count = 0usize;
+    // `q` is the address of the link that points at the current MD,
+    // so we can splice the MD out in place (the EmuTOS `**q` idiom).
+    // SAFETY: caller contract — `mp` is a valid MPB.
+    let mut q: *mut *mut MD = unsafe { &raw mut (*mp).mp_mal };
+    loop {
+        // SAFETY: `q` points at a valid `mp_mal` link slot.
+        let m = unsafe { *q };
+        if m.is_null() {
+            break;
+        }
+        // SAFETY: `m` is on `mp_mal`.
+        let next = unsafe { (*m).m_link };
+        let m_own = unsafe { (*m).m_own };
+        if m_own == owner {
+            // Unlink from the allocated list and free the MD struct;
+            // the memory it described is intentionally left out of
+            // both lists (resident / orphaned).
+            // SAFETY: `m` is a valid allocated MD; `q` is its link.
+            unsafe {
+                *q = next;
+                xmfremd_global(m);
+            }
+            count += 1;
+            // `q` already points at the (now spliced-in) `next` link.
+        } else {
+            // SAFETY: advance the cursor to this MD's link slot.
+            q = unsafe { &raw mut (*m).m_link };
+        }
     }
     count
 }

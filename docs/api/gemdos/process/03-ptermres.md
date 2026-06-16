@@ -190,3 +190,21 @@ requires the memory allocator to support MDs that live outside any
 list yet whose memory is not on the free list. NewTOS's allocator
 must accommodate this, or replace it with an explicit "system-owned"
 sentinel ownership.
+
+PHASE-06 D7 status (2026-06-16): **implemented and verified.**
+`reserve_all_owned` (`tos-api/src/bdos/mem/free_all_owned.rs`) ports
+`reserve_blocks`: it walks each pool's `mp_mal` with the `**q` splice
+idiom, unlinks every MD owned by the dying process and frees the MD
+struct via `xmfremd_global` — **without** returning the memory to
+`mp_mfl`. The block is thus left out of both lists (resident /
+orphaned), exactly the EmuTOS effect. `pterm::terminate_resident`
+shares its body with `terminate` via a `reserve` flag, so the
+exit-code / parent-resume path is identical. The kernel handler routes
+GEMDOS `0x31` with `rc` from `x1` and `blkln` from `x0`.
+- **`blkln` is a no-op** under the current static-arena TPA model (the
+  basepage TPA is not a BDOS MD, so `xsetblk` has nothing to shrink);
+  what `Ptermres` reserves is the process's `Malloc`-ed pool blocks.
+  Precise keep-resident sizing returns once TPAs are pool-allocated
+  (ADR-010 / Phase 09).
+- **Env block:** edge case 5 (auto-reserve of `p_env`) does not apply
+  yet — `p_env` is unset in the current basepage.

@@ -236,13 +236,13 @@ pub extern "C" fn rust_sync_handler(frame: &mut ExceptionFrame) {
         }
     };
 
-    // GEMDOS Pterm (0x4C) / Pterm0 (0x00) and Pexec (0x4B) need the
-    // trap frame mutated rather than just an `x0` return — the
-    // dispatcher table can't express that, so we special-case them
-    // here.
+    // GEMDOS Pterm (0x4C) / Pterm0 (0x00) / Ptermres (0x31) and Pexec
+    // (0x4B) need the trap frame mutated rather than just an `x0`
+    // return — the dispatcher table can't express that, so we
+    // special-case them here.
     if matches!(class, TrapClass::Gemdos) {
         let func = frame.gpr[8] as u16;
-        if func == 0x4C || func == 0x00 {
+        if func == 0x4C || func == 0x00 || func == 0x31 {
             handle_pterm(frame, func);
             return;
         }
@@ -291,22 +291,26 @@ pub extern "C" fn rust_sync_handler(frame: &mut ExceptionFrame) {
 fn handle_pterm(frame: &mut ExceptionFrame, func: u16) {
     use core::sync::atomic::Ordering;
 
-    // Capture the user's exit code BEFORE `terminate` runs — for
-    // `Pterm` (0x4C) it lives in the user's `x0` (= `frame.gpr[0]`);
-    // for `Pterm0` (0x00) it is fixed at `0`.
-    let rc: i32 = if func == 0x00 {
-        0
-    } else {
-        frame.gpr[0] as i32
+    // Capture the user's exit code BEFORE termination runs. ABI per
+    // function:
+    //   * `Pterm0`   (0x00): rc fixed at 0, no args.
+    //   * `Pterm`    (0x4C): rc in `x0` (= `frame.gpr[0]`).
+    //   * `Ptermres` (0x31): `Ptermres(blkln, rc)` — `blkln` in `x0`,
+    //     `rc` in `x1`. `blkln` (keep-resident size) is a no-op under
+    //     the static-arena TPA model (see `pterm::terminate_resident`).
+    let rc: i32 = match func {
+        0x00 => 0,
+        0x31 => frame.gpr[1] as i32,
+        _ => frame.gpr[0] as i32,
     };
 
     // SAFETY: trap-context single-CPU contract; the BDOS giant lock
     // is held implicitly while we execute the handler.
     let result = unsafe {
-        if func == 0x00 {
-            tos_api::bdos::process::pterm::terminate_zero()
-        } else {
-            tos_api::bdos::process::pterm::terminate(rc)
+        match func {
+            0x00 => tos_api::bdos::process::pterm::terminate_zero(),
+            0x31 => tos_api::bdos::process::pterm::terminate_resident(rc),
+            _ => tos_api::bdos::process::pterm::terminate(rc),
         }
     };
 

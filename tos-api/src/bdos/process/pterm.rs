@@ -37,7 +37,7 @@ use core::sync::atomic::Ordering;
 
 use tos_types::BasePage;
 
-use crate::bdos::mem::free_all_owned::free_all_owned;
+use crate::bdos::mem::free_all_owned::{free_all_owned, reserve_all_owned};
 
 use super::{free_slot, set_current, slot_for, RUN};
 
@@ -109,6 +109,37 @@ pub enum PtermError {
 /// this is invoked from the synchronous SVC handler with the SVC's
 /// trap frame still on the kernel stack.
 pub unsafe fn terminate(_rc: i32) -> Result<PtermResume, PtermError> {
+    // SAFETY: forwarded — same BDOS-lock / trap-context contract.
+    unsafe { terminate_inner(false) }
+}
+
+/// `Ptermres` (GEMDOS 0x31) — terminate but leave the process's
+/// `Malloc`-ed pool blocks **resident** (the TSR trick). Spec:
+/// [`docs/api/gemdos/process/03-ptermres.md`]. EmuTOS `xtermres`
+/// (`bdos/proc.c:624`) reserves the owned MDs, then chains `xterm`.
+///
+/// `blkln` (the keep-resident byte count) is accepted by the caller
+/// but has no effect under the static-arena TPA model — the whole
+/// TPA is resident regardless; what this reserves is the process's
+/// BDOS-pool allocations (see [`reserve_all_owned`]). The exit-code /
+/// parent-resume path is identical to [`terminate`].
+///
+/// # Safety
+///
+/// Same as [`terminate`].
+pub unsafe fn terminate_resident(_rc: i32) -> Result<PtermResume, PtermError> {
+    // SAFETY: forwarded.
+    unsafe { terminate_inner(true) }
+}
+
+/// Shared body of [`terminate`] / [`terminate_resident`]. `reserve`
+/// selects whether the dying process's owned pool blocks are freed
+/// (`false`, `Pterm`) or kept resident (`true`, `Ptermres`).
+///
+/// # Safety
+///
+/// See [`terminate`].
+unsafe fn terminate_inner(reserve: bool) -> Result<PtermResume, PtermError> {
     let bp = RUN.load(Ordering::Acquire);
     if bp.is_null() {
         return Err(PtermError::NoRunningProcess);
@@ -121,10 +152,17 @@ pub unsafe fn terminate(_rc: i32) -> Result<PtermResume, PtermError> {
     }
     let parent_l0_pa = slot.parent_l0_pa.load(Ordering::Acquire);
 
-    // Sweep both BDOS pools for blocks owned by this process.
+    // Sweep both BDOS pools for blocks owned by this process: free
+    // them (`Pterm`) or reserve them as resident (`Ptermres`).
     // SAFETY: caller holds the BDOS giant lock; `bp` is a valid
     // BasePage pointer (slot lookup just confirmed it).
-    let freed = unsafe { free_all_owned(bp as *mut c_void) };
+    let freed = unsafe {
+        if reserve {
+            reserve_all_owned(bp as *mut c_void)
+        } else {
+            free_all_owned(bp as *mut c_void)
+        }
+    };
 
     // EmuTOS `xterm` (bdos/proc.c:609): `run = run->p_parent`. On
     // child termination the **parent** becomes the running process

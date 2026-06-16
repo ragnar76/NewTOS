@@ -36,6 +36,7 @@ pub mod panic;
 pub mod selftest;
 pub mod selftest_d3;
 pub mod selftest_d6;
+pub mod selftest_d7;
 pub mod selftest_ec4;
 pub mod selftest_pexec;
 pub mod selftest_pexec_d4d5;
@@ -231,6 +232,7 @@ extern "C" fn kernel_main_rust(dtb_phys: usize) -> ! {
     selftest_ec4::run_ec4_pseudo_process_test();
     selftest_d3::run_d3_elf_loader_test();
     selftest_d6::run_d6_pterm_test();
+    selftest_d7::run_d7_ptermres_test();
     selftest_pexec::run_pexec_test();
     selftest_pexec_d4d5::run_pexec_loadgo_split_test();
     selftest::run_phase02_self_test();
