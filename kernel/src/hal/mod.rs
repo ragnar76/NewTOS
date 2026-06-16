@@ -4,4 +4,5 @@
 //! Concrete drivers in `crate::drivers::*` implement these traits for a
 //! specific board.
 
+pub mod framebuffer;
 pub mod uart;

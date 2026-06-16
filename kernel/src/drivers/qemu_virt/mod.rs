@@ -4,3 +4,4 @@
 //! (see QEMU source `hw/arm/virt.c`, `VIRT_UART` entry).
 
 pub mod pl011;
+pub mod ramfb;

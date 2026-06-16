@@ -212,6 +212,11 @@ extern "C" fn kernel_main_rust(dtb_phys: usize) -> ! {
     smoke_test_heap();
     print_heap_stats("after smoke");
 
+    // Bring up the framebuffer (if any) and draw a boot test pattern.
+    // Done before the BDOS pools claim the remaining frames so the
+    // framebuffer's contiguous run is reserved up front.
+    init_framebuffer_demo();
+
     // Bring up the BDOS memory pools (Phase 04 D6). The two MPBs
     // are seeded with whatever frames remain free in each pool
     // after the kernel heap reservation. From this point on the
@@ -269,6 +274,38 @@ fn print_range(label: &str, r: &bios::machine::layout::PhysRange) {
         "[mm]   {:<6}: 0x{:016x}..0x{:016x} ({} bytes)",
         label, r.start, r.end, r.len(),
     );
+}
+
+/// Bring up the board framebuffer (if present) and draw a boot test
+/// pattern: three colour bars (red / green / blue) with a white box.
+#[cfg(feature = "board-qemu-virt")]
+fn init_framebuffer_demo() {
+    use crate::hal::framebuffer::{rgb, Framebuffer};
+    // SAFETY: boot CPU, single-threaded, frame allocator is up.
+    let up = unsafe { drivers::qemu_virt::ramfb::init() };
+    if !up {
+        kprintln!("[fb] ramfb unavailable (pass `-device ramfb`) — no graphics");
+        return;
+    }
+    let fb = &drivers::qemu_virt::ramfb::FRAMEBUFFER;
+    let (w, h) = (fb.width(), fb.height());
+    let third = h / 3;
+    fb.clear(rgb(30, 30, 60));
+    fb.fill_rect(0, 0, w, third, rgb(210, 50, 50)); // red
+    fb.fill_rect(0, third, w, third, rgb(50, 200, 70)); // green
+    fb.fill_rect(0, 2 * third, w, h - 2 * third, rgb(60, 90, 230)); // blue
+    fb.fill_rect(w / 4, third + third / 4, w / 2, third / 2, rgb(240, 240, 240)); // white box
+    kprintln!(
+        "[fb] ramfb up: {}x{} — boot test pattern drawn (run `cargo xtask run --window` to see it)",
+        w, h,
+    );
+}
+
+/// RPi4 framebuffer comes from the VideoCore mailbox — HW bring-up
+/// lands with the real-hardware testing (see docs/HW-TEST-LOG.md).
+#[cfg(feature = "board-rpi4")]
+fn init_framebuffer_demo() {
+    kprintln!("[fb] rpi4 mailbox framebuffer: deferred to HW bring-up");
 }
 
 /// Dump per-pool frame counts.

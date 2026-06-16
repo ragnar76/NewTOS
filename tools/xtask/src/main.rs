@@ -290,7 +290,9 @@ fn host_triple() -> Result<String, String> {
 }
 
 fn cmd_run(args: &[String]) -> Result<(), String> {
-    let (board, release) = parse_board_and_profile(args)?;
+    let window = args.iter().any(|a| a == "--window");
+    let filtered: Vec<String> = args.iter().filter(|a| *a != "--window").cloned().collect();
+    let (board, release) = parse_board_and_profile(&filtered)?;
     if let Some(b) = board {
         if b != Board::QemuVirt {
             return Err("run: only `--board qemu-virt` is supported (or omit --board)".into());
@@ -331,13 +333,30 @@ fn cmd_run(args: &[String]) -> Result<(), String> {
         "-M", "virt,gic-version=2",
         "-cpu", "cortex-a72",
         "-m", "272M",
-        "-display", "none",
+        // `ramfb` gives the otherwise-display-less virt machine a simple
+        // linear framebuffer (configured by the kernel via fw_cfg). It
+        // is inert under `-display none` but its surface can still be
+        // captured with a QMP `screendump`; pass `-display cocoa`
+        // (macOS) to watch it live.
+        "-device", "ramfb",
+    ]);
+    if window {
+        // Native macOS window so the framebuffer is visible. Serial
+        // still goes to this terminal.
+        c.args(["-display", "cocoa"]);
+    } else {
+        c.args(["-display", "none"]);
+    }
+    c.args([
         "-serial", "stdio",
         "-no-reboot",
         "-kernel",
     ])
     .arg(&img);
-    println!("xtask: launching QEMU (Ctrl-C to quit)");
+    println!(
+        "xtask: launching QEMU{} (Ctrl-C to quit)",
+        if window { " with display window" } else { "" },
+    );
     run(c)
 }
 
