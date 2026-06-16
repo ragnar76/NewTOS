@@ -32,14 +32,20 @@
 
 ## Batch 1 — workstation lifecycle + clear (D2)
 
-- [ ] `v_opnvwk` (100) — open virtual workstation; the 45 `INTOUT`
-      device-capability values + 6 `PTSOUT` extents. `vdi_control.c`.
-- [ ] `v_opnwk` (1) — open physical (screen) workstation. Same INTOUT
-      layout as `v_opnvwk`. `vdi_control.c`.
-- [ ] `v_clsvwk` (101) / `v_clswk` (2) — close.
-- [ ] `v_clrwk` (3) — clear the workstation surface.
-- [ ] `vq_extnd` (102) — extended inquiry (more capabilities).
-- [ ] **`Vwk` structure spec** → `docs/api/structures/` (attribute area).
+- [x] `v_opnvwk` (100) — [`workstation/100-v_opnvwk.md`](workstation/100-v_opnvwk.md):
+      handle alloc + `init_wk` (11 `work_in`) + 45 `INTOUT` (`DEV_TAB`)
+      + 12 `PTSOUT` (`SIZ_TAB`). Full work_in/work_out tables.
+- [x] `v_opnwk` (1) — [`workstation/01-v_opnwk.md`](workstation/01-v_opnwk.md):
+      physical screen ws; `work_in[0] = rez + 2`; shares `init_wk`.
+- [x] `v_clsvwk` (101) / `v_clswk` (2) —
+      [`workstation/101-v_clsvwk.md`](workstation/101-v_clsvwk.md).
+- [x] `v_clrwk` (3) —
+      [`workstation/03-v_clrwk.md`](workstation/03-v_clrwk.md). `v_updwk` (4) = no-op.
+- [ ] `vq_extnd` (102) — extended inquiry (`INQ_TAB`, 45 more values;
+      template captured in `vdi_control.c:INQ_TAB_rom`). `vdi_control.c`.
+- [ ] **`Vwk` structure spec** → `docs/api/structures/` (field offsets
+      of the attribute area; attributes already enumerated in
+      `100-v_opnvwk.md` / `init_wk`).
 
 ## Batch 2 — attribute setters (D3)
 
