@@ -322,11 +322,17 @@ static HEAP: SpinMutex<Heap> = SpinMutex::new(Heap::new());
 pub fn init() {
     let frame = frames::alloc_frames_contig(Pool::Ttram, HEAP_FRAMES)
         .expect("heap: failed to reserve initial arena from TT-RAM");
-    let start = frame.pa() as usize;
+    // ADR-010: address the arena through its **high-half** VA
+    // (`pa + VA_OFFSET`, served by the kernel TTBR1 mapping, EL1-only),
+    // never the raw physical / low-half identity address. TTBR0 is the
+    // shared user address space; the kernel must not depend on it for
+    // its own data. All heap pointers derive from `start`, so this one
+    // conversion keeps the whole heap in the high half.
+    let start = (frame.pa() + crate::arch::aarch64::mmu::VA_OFFSET) as usize;
     let size = HEAP_BYTES as usize;
     // SAFETY: we own this region exclusively (just allocated above);
-    // it is identity-mapped writable Normal memory by the MMU
-    // (Phase 03 D2/D3, DRAM mapping).
+    // the high-half alias is writable Normal memory mapped EL1-only by
+    // the Stage-2 kernel tables (Phase 05, DRAM mapping).
     unsafe { HEAP.lock().install(start, size) };
 }
 
