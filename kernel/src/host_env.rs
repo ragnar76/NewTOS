@@ -74,6 +74,25 @@ impl Host for KernelHost {
         }
         byte
     }
+
+    fn monotonic_seconds(&self) -> u64 {
+        // ARM generic timer: physical count / frequency (Hz) = seconds
+        // since the counter started (boot). Both are EL0-readable
+        // system registers (ARM ARM D17.6 "Generic Timer").
+        let cnt: u64;
+        let frq: u64;
+        // SAFETY: read-only system-register reads, always permitted.
+        unsafe {
+            core::arch::asm!(
+                "mrs {cnt}, cntpct_el0",
+                "mrs {frq}, cntfrq_el0",
+                cnt = out(reg) cnt,
+                frq = out(reg) frq,
+                options(nomem, nostack, preserves_flags),
+            );
+        }
+        cnt.checked_div(frq).unwrap_or(0)
+    }
 }
 
 /// Static reference handed to `tos_api::host::install_host`.

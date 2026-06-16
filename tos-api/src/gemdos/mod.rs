@@ -21,6 +21,8 @@ use tos_types::Long;
 
 pub mod console;
 pub mod memory;
+pub mod time;
+pub mod version;
 
 /// Highest GEMDOS function ID dispatched by NewTOS. Matches EmuTOS
 /// `MAX_FNCALL` (= `bdos/bdosmain.c`).
@@ -62,6 +64,13 @@ const fn build_table() -> [Option<GemdosFn>; MAX_FN + 1] {
     t[0x48] = Some(memory::malloc);
     t[0x49] = Some(memory::mfree);
     t[0x4A] = Some(memory::mshrink);
+
+    // --- Time / version (PHASE-07 D2 + D5) ------------------------
+    t[0x2A] = Some(time::tgetdate);
+    t[0x2B] = Some(time::tsetdate);
+    t[0x2C] = Some(time::tgettime);
+    t[0x2D] = Some(time::tsettime);
+    t[0x30] = Some(version::sversion);
     t
 }
 

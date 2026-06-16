@@ -52,6 +52,15 @@ pub trait Host: Sync {
             core::hint::spin_loop();
         }
     }
+
+    /// Whole seconds elapsed since boot, from a monotonic hardware
+    /// counter. The GEMDOS time functions add this to a settable base
+    /// epoch to produce the wall clock. The kernel host reads the ARM
+    /// generic timer (`CNTPCT_EL0 / CNTFRQ_EL0`); the default `0` makes
+    /// the clock stand still (acceptable fallback for a hostless test).
+    fn monotonic_seconds(&self) -> u64 {
+        0
+    }
 }
 
 // `&'static dyn Host` is `Sync + 'static`; we store it as a raw
