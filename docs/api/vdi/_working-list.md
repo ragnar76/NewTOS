@@ -41,11 +41,15 @@
       [`workstation/101-v_clsvwk.md`](workstation/101-v_clsvwk.md).
 - [x] `v_clrwk` (3) —
       [`workstation/03-v_clrwk.md`](workstation/03-v_clrwk.md). `v_updwk` (4) = no-op.
-- [ ] `vq_extnd` (102) — extended inquiry (`INQ_TAB`, 45 more values;
-      template captured in `vdi_control.c:INQ_TAB_rom`). `vdi_control.c`.
-- [ ] **`Vwk` structure spec** → `docs/api/structures/` (field offsets
-      of the attribute area; attributes already enumerated in
-      `100-v_opnvwk.md` / `init_wk`).
+- [x] `vq_extnd` (102) —
+      [`workstation/102-vq_extnd.md`](workstation/102-vq_extnd.md):
+      mode 0 = standard tables, mode 1 = `INQ_TAB` (45) + live clip rect.
+- [x] **`Vwk` structure spec** →
+      [`../structures/vwk.md`](../structures/vwk.md): the attribute area
+      grouped (line/marker/fill/text/mode/clip), with the ADR-011
+      per-device `device` link noted.
+
+**Batch 1 complete.** Workstation lifecycle (D2) done.
 
 ## Batch 2 — attribute setters (D3)
 

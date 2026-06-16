@@ -126,6 +126,14 @@ no free handle (all 16 in use) or `Mxalloc` out of memory.
 - The `Vwk` is a real heap allocation (`Malloc`/`Mxalloc` already work,
   Phase 04/06). Keep the 16-handle cap and the `CUR_WORK`/chain model
   for Line-A compatibility.
+- **Per-device / multi-screen (ADR-011).** The *physical* workstation
+  is a **per-device struct** (own `Framebuffer` + geometry + palette)
+  in a screen-device registry — not EmuTOS's global `phys_work` /
+  Line-A screen vars. Each `Vwk` links to its physical device; the
+  primitives draw into that device's framebuffer. `v_opnwk(device_id)`
+  selects the screen. This keeps the API bit-exact while leaving the
+  door open for the Pi 4's two HDMI outputs. (AES-level multi-monitor
+  is out of scope — see ADR-011.)
 - `DEV_TAB`/`SIZ_TAB` are filled from the **framebuffer** geometry
   (`hal::framebuffer` width/height) and the bring-up palette
   (8-bit/palette first; `CONF_WITH_VDI_16BIT` truecolor is out of

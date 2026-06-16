@@ -173,6 +173,77 @@ Stage-0 heap improvement is kept regardless.
 - QUIRK-001 (this file); STATUS Recent-Decisions 2026-05-03/04 (superseded)
 - ARM ARM D8 (TTBR0/TTBR1 translation regimes), D5 (PAN)
 
+## ADR-011: Per-device VDI physical workstation (multi-screen-ready)
+
+**Date:** 2026-06-16
+**Status:** Accepted
+**Phase:** PHASE-00b (VDI spec) / PHASE-12 (VDI impl) — design intent
+locked during spec extraction, before any VDI code exists.
+
+### Context
+
+EmuTOS implements the VDI screen device with **global** state: a single
+`phys_work` physical workstation plus Line-A globals that describe *the*
+one screen — `v_bas_ad` (screen base), `DEV_TAB`/`xres`/`yres`
+(geometry), the palette. Every virtual workstation (`v_opnvwk`) shares
+that one screen. The VDI *API*, however, was designed for **multiple
+devices**: `v_opnwk(device_id)` opens one physical workstation per
+device, `contrl[6]` (the handle) selects it, and `v_opnvwk` opens a
+virtual workstation *on* a physical device. The single-screen limit is
+purely an implementation choice in EmuTOS, not in the API.
+
+Raspberry Pi 4 has **two HDMI outputs**; QEMU can expose multiple
+framebuffer devices (ramfb / virtio-gpu). NewTOS already models the
+framebuffer as a per-instance HAL type (`hal::framebuffer::Framebuffer`
+is a trait; `RamFb` is a struct — multiple instances are natural).
+
+### Decision
+
+NewTOS implements the VDI **physical workstation as a per-device
+struct**, not global Line-A state. Each physical (screen) workstation
+owns its own `Framebuffer` instance, geometry/`DEV_TAB`, and palette,
+held in a small **screen-device registry** instead of a single
+`phys_work` global. Each virtual workstation (`Vwk`) carries a **link
+to its physical device** (which screen it draws on); the Line-A
+primitives draw into *that device's* framebuffer rather than a global
+`v_bas_ad`. `v_opnwk(device_id)` selects the screen device.
+
+### Rationale
+
+- **API stays bit-exact.** The VDI handle model already supports
+  multiple physical devices, so no compatibility is sacrificed — only
+  EmuTOS's *global screen state* is replaced with *per-device state*.
+- **Cheapest now.** Baking the per-device shape into the Phase-12
+  design from the start avoids a disruptive globals→per-device refactor
+  later. Recording it during spec extraction costs nothing.
+- **Real hardware wants it.** The Pi 4's two HDMI ports make multi-
+  screen physically reachable, and NewTOS's own software could use it.
+
+### Consequences
+
+- Positive: multi-screen at the VDI level is reachable without an API
+  break; the framebuffer HAL already fits (per-instance).
+- Negative / scope limit: **AES/desktop** multi-monitor (windows
+  spanning screens) is a *much* larger, separate undertaking — classic
+  GEM is single-screen. ADR-011 covers the **VDI device layer only**.
+- Neutral: classic single-screen TOS programs are unaffected (they use
+  one workstation on the default screen device); they neither benefit
+  from nor break under the per-device model.
+
+### Alternatives considered
+
+- **Mirror EmuTOS's globals** (single `phys_work` + global Line-A
+  vars): simplest, but hardcodes single-screen and would force a
+  globals→per-device refactor to ever add a second display. Rejected —
+  the per-device shape is nearly free now and expensive later.
+
+### References
+
+- `docs/api/vdi/_dispatcher.md`, `docs/api/vdi/workstation/100-v_opnvwk.md`
+- EmuTOS `vdi/vdi_control.c` (`phys_work`, `vwk_ptr[]`, `CUR_WORK`),
+  `vdi/lineavars.S` (`v_bas_ad`, `DEV_TAB`)
+- `kernel/src/hal/framebuffer.rs` (per-instance framebuffer)
+
 ---
 
 > Anticipated further ADRs:
