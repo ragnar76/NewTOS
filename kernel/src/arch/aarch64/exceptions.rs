@@ -274,6 +274,16 @@ pub extern "C" fn rust_sync_handler(frame: &mut ExceptionFrame) {
         TrapClass::Bios | TrapClass::Xbios => tos_types::error::EINVFN,
     };
 
+    // A blocking console input function (Cconin / Cnecin / Cconrs) may
+    // have seen a Ctrl-C and recorded a deferred `Pterm(-32)`. A leaf
+    // GEMDOS function returns a value in `x0` and cannot redirect the
+    // trap frame; consume the request here and terminate the process
+    // exactly like an explicit `Pterm`, discarding `result`.
+    if let Some(rc) = tos_api::bdos::process::take_pending_terminate() {
+        terminate_and_redirect(frame, rc);
+        return;
+    }
+
     // Sign-extend `i32` into `x0` so callers reading `i64` see the
     // correct negative value for error codes.
     frame.gpr[0] = result as i64 as u64;
@@ -289,8 +299,6 @@ pub extern "C" fn rust_sync_handler(frame: &mut ExceptionFrame) {
 /// EmuTOS ABI, so this is purely a debugging affordance for
 /// the D6 selftest.
 fn handle_pterm(frame: &mut ExceptionFrame, func: u16) {
-    use core::sync::atomic::Ordering;
-
     // Capture the user's exit code BEFORE termination runs. ABI per
     // function:
     //   * `Pterm0`   (0x00): rc fixed at 0, no args.
@@ -313,6 +321,34 @@ fn handle_pterm(frame: &mut ExceptionFrame, func: u16) {
             _ => tos_api::bdos::process::pterm::terminate(rc),
         }
     };
+
+    finish_terminate(frame, rc, result);
+}
+
+/// Terminate the running process with exit code `rc` (cleanup via the
+/// normal [`pterm::terminate`]) and redirect the frame to the parent —
+/// used by the Ctrl-C self-terminate from blocking console input,
+/// which records its request via `request_terminate` rather than a
+/// `Pterm` SVC.
+fn terminate_and_redirect(frame: &mut ExceptionFrame, rc: i32) {
+    // SAFETY: trap context, single-CPU, BDOS lock held implicitly.
+    let result = unsafe { tos_api::bdos::process::pterm::terminate(rc) };
+    finish_terminate(frame, rc, result);
+}
+
+/// Common tail of every process-termination path (`Pterm` / `Pterm0` /
+/// `Ptermres`, and the Ctrl-C self-terminate): copy the parent's frame
+/// snapshot back over the trap frame, restore the parent's `TTBR0`,
+/// release the slot, and let the post-handler `eret` resume the parent.
+fn finish_terminate(
+    frame: &mut ExceptionFrame,
+    rc: i32,
+    result: Result<
+        tos_api::bdos::process::pterm::PtermResume,
+        tos_api::bdos::process::pterm::PtermError,
+    >,
+) {
+    use core::sync::atomic::Ordering;
 
     let resume = match result {
         Ok(r) => r,

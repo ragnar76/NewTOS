@@ -235,6 +235,7 @@ extern "C" fn kernel_main_rust(dtb_phys: usize) -> ! {
     selftest_d7::run_d7_ptermres_test();
     selftest_pexec::run_pexec_test();
     selftest_pexec_d4d5::run_pexec_loadgo_split_test();
+    selftest::run_cconin_demo();
     selftest::run_phase02_self_test();
 
     // Phase 03 D6 verification (uncomment to provoke a hardware stack

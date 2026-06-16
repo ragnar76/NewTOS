@@ -37,7 +37,7 @@
 //! "implicit single-CPU" lock with an explicit per-CPU SpinMutex).
 
 use core::ptr;
-use core::sync::atomic::{AtomicPtr, AtomicU32, AtomicU64, AtomicU8, Ordering};
+use core::sync::atomic::{AtomicI32, AtomicPtr, AtomicU32, AtomicU64, AtomicU8, Ordering};
 
 use tos_types::BasePage;
 
@@ -315,6 +315,38 @@ pub fn current() -> *mut BasePage {
 #[inline]
 pub fn set_current(bp: *mut BasePage) {
     RUN.store(bp, Ordering::Release);
+}
+
+// ─── Deferred terminate (Ctrl-C from blocking console input) ────────
+
+/// Sentinel meaning "no terminate pending". `i32::MIN` is never a
+/// valid TOS exit code (rc is a WORD), so it cannot collide.
+const NO_PENDING_TERMINATE: i32 = i32::MIN;
+
+/// Exit code of a pending self-terminate request, or
+/// [`NO_PENDING_TERMINATE`].
+static PENDING_TERMINATE: AtomicI32 = AtomicI32::new(NO_PENDING_TERMINATE);
+
+/// Request that the **current** process self-terminate with exit code
+/// `rc` once the current SVC returns. The blocking console input
+/// functions use this for Ctrl-C (`rc = -32`, EmuTOS `terminate()`):
+/// a leaf GEMDOS function returns a value in `x0` and cannot redirect
+/// the trap frame to the parent, so it records the request here and
+/// the kernel SVC handler performs the Pterm-style redirect via
+/// [`take_pending_terminate`].
+pub fn request_terminate(rc: i32) {
+    PENDING_TERMINATE.store(rc, Ordering::Release);
+}
+
+/// Consume a pending self-terminate request set by
+/// [`request_terminate`], returning its exit code if one is pending.
+pub fn take_pending_terminate() -> Option<i32> {
+    let rc = PENDING_TERMINATE.swap(NO_PENDING_TERMINATE, Ordering::AcqRel);
+    if rc == NO_PENDING_TERMINATE {
+        None
+    } else {
+        Some(rc)
+    }
 }
 
 /// The "queued for next eret" basepage, or `null`.

@@ -27,9 +27,6 @@ pub trait Host: Sync {
 
     /// Non-blocking read from the console input device. Returns
     /// `Some(byte)` if a character is available, `None` otherwise.
-    /// Phase 02 leaf functions only ever call this through
-    /// [`Host::console_has_input`]; full blocking input is wired in
-    /// the input-side phase.
     fn console_try_read(&self) -> Option<u8> {
         None
     }
@@ -37,6 +34,23 @@ pub trait Host: Sync {
     /// Returns `true` if the console has at least one byte ready.
     fn console_has_input(&self) -> bool {
         false
+    }
+
+    /// **Blocking** read of one byte from the console input device —
+    /// waits until input is available. Used by the blocking GEMDOS
+    /// input functions (`Cconin`, `Cnecin`, `Crawcin`, `Cconrs`).
+    ///
+    /// The default busy-polls [`Host::console_try_read`]; the kernel
+    /// host overrides it to enable IRQs and `wfi` while it waits (the
+    /// PL011 RX interrupt fills the ringbuffer, which is otherwise
+    /// masked inside the synchronous SVC handler).
+    fn console_read_byte_blocking(&self) -> u8 {
+        loop {
+            if let Some(b) = self.console_try_read() {
+                return b;
+            }
+            core::hint::spin_loop();
+        }
     }
 }
 

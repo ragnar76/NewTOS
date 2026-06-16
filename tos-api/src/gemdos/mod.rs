@@ -36,20 +36,24 @@ const TABLE: [Option<GemdosFn>; MAX_FN + 1] = build_table();
 
 const fn build_table() -> [Option<GemdosFn>; MAX_FN + 1] {
     let mut t: [Option<GemdosFn>; MAX_FN + 1] = [None; MAX_FN + 1];
-    // --- Console group, output side (PHASE-02 D3) -----------------
+    // --- Console group (PHASE-02 D3; input side unblocked PHASE-06) -
+    t[0x01] = Some(console::cconin);
     t[0x02] = Some(console::cconout);
     t[0x03] = Some(console::cauxin);
     t[0x04] = Some(console::cauxout);
     t[0x05] = Some(console::cprnout);
     t[0x06] = Some(console::crawio);
+    t[0x07] = Some(console::crawcin);
+    t[0x08] = Some(console::cnecin);
     t[0x09] = Some(console::cconws);
     t[0x0B] = Some(console::cconis);
     t[0x10] = Some(console::cconos);
     t[0x11] = Some(console::cprnos);
     t[0x12] = Some(console::cauxis);
     t[0x13] = Some(console::cauxos);
-    // 0x01 Cconin, 0x07 Crawcin, 0x08 Cnecin, 0x0A Cconrs blocked
-    // on Phase 06 (process management — Ctrl-C → Pterm(-32)).
+    // 0x0A Cconrs (line editor) — wired separately; Ctrl-C in the
+    // blocking input functions records a deferred terminate consumed
+    // by the kernel SVC handler.
 
     // --- Memory group (PHASE-04 D7..D11) --------------------------
     t[0x14] = Some(memory::maddalt);

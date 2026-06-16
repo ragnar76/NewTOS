@@ -31,6 +31,49 @@ impl Host for KernelHost {
     fn console_has_input(&self) -> bool {
         crate::console::rx_has_input()
     }
+
+    fn console_read_byte_blocking(&self) -> u8 {
+        // This runs inside the synchronous SVC handler, where the CPU
+        // took the exception with IRQs masked — so the PL011 RX IRQ
+        // that fills the ringbuffer can never fire and a plain spin
+        // would deadlock. Save DAIF, unmask IRQ (`daifclr #2` clears
+        // the `I` bit), `wfi` until a byte lands in the ringbuffer,
+        // then restore the original mask.
+        let daif: u64;
+        // SAFETY: reading DAIF and clearing the IRQ mask are permitted
+        // at EL1; we restore DAIF before returning.
+        unsafe {
+            core::arch::asm!(
+                "mrs {0}, daif",
+                out(reg) daif,
+                options(nomem, nostack, preserves_flags),
+            );
+            core::arch::asm!(
+                "msr daifclr, #2",
+                options(nomem, nostack, preserves_flags),
+            );
+        }
+
+        let byte = loop {
+            if let Some(b) = crate::console::rx_pop() {
+                break b;
+            }
+            // SAFETY: wait for the next interrupt (the RX IRQ wakes us).
+            unsafe {
+                core::arch::asm!("wfi", options(nomem, nostack, preserves_flags));
+            }
+        };
+
+        // SAFETY: restore the caller's original DAIF mask state.
+        unsafe {
+            core::arch::asm!(
+                "msr daif, {0}",
+                in(reg) daif,
+                options(nomem, nostack, preserves_flags),
+            );
+        }
+        byte
+    }
 }
 
 /// Static reference handed to `tos_api::host::install_host`.
