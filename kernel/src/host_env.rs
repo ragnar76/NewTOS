@@ -103,7 +103,40 @@ impl Host for KernelHost {
             None
         }
     }
+
+    #[cfg(feature = "board-rpi4")]
+    fn block(&self) -> Option<&dyn tos_api::bios::block::BlockDev> {
+        use crate::hal::block::BlockDevice;
+        if crate::drivers::bcm2711::emmc::SDCARD.block_count() > 0 {
+            Some(&KERNEL_BLOCK)
+        } else {
+            None
+        }
+    }
 }
+
+/// Adapter exposing the EMMC2 SD card as a TOS-API [`BlockDev`].
+#[cfg(feature = "board-rpi4")]
+struct KernelBlock;
+
+#[cfg(feature = "board-rpi4")]
+impl tos_api::bios::block::BlockDev for KernelBlock {
+    fn block_count(&self) -> u64 {
+        use crate::hal::block::BlockDevice;
+        crate::drivers::bcm2711::emmc::SDCARD.block_count()
+    }
+    fn read_blocks(&self, lba: u64, buf: &mut [u8]) -> bool {
+        use crate::hal::block::BlockDevice;
+        crate::drivers::bcm2711::emmc::SDCARD.read_blocks(lba, buf).is_ok()
+    }
+    fn write_blocks(&self, lba: u64, buf: &[u8]) -> bool {
+        use crate::hal::block::BlockDevice;
+        crate::drivers::bcm2711::emmc::SDCARD.write_blocks(lba, buf).is_ok()
+    }
+}
+
+#[cfg(feature = "board-rpi4")]
+static KERNEL_BLOCK: KernelBlock = KernelBlock;
 
 /// Static reference handed to `tos_api::host::install_host`.
 static KERNEL_HOST: KernelHost = KernelHost;

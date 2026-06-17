@@ -70,4 +70,36 @@ pub fn run() {
             Err(e) => kprintln!("[emmc] write test @ sector {} FAILED: {:?}", scratch, e),
         }
     }
+
+    // ── BIOS Rwabs over the real trap path (svc #13) ──
+    let mut rbuf = [0u8; 512];
+    let rc = rwabs(0, rbuf.as_mut_ptr() as u64, 1, 0, 0, 0); // read 1 sector @0, drive 0
+    let sig = u16::from_le_bytes([rbuf[510], rbuf[511]]);
+    kprintln!(
+        "[emmc] Rwabs(read, sec 0, drive 0) -> {} ; sig=0x{:04x} {}",
+        rc,
+        sig,
+        if rc == 0 && sig == 0xAA55 { "OK" } else { "FAIL" },
+    );
+}
+
+/// BIOS `Rwabs` via `svc #13` (function id 4 in x8).
+#[inline(always)]
+fn rwabs(r_w: u64, adr: u64, numb: u64, first: u64, drive: u64, lfirst: u64) -> i64 {
+    let r: i64;
+    // SAFETY: svc #13, BIOS Rwabs ABI (func 4); kernel buffer in `adr`.
+    unsafe {
+        core::arch::asm!(
+            "svc #13",
+            in("x8") 4u64,
+            inout("x0") r_w => r,
+            in("x1") adr,
+            in("x2") numb,
+            in("x3") first,
+            in("x4") drive,
+            in("x5") lfirst,
+            options(nostack),
+        );
+    }
+    r
 }

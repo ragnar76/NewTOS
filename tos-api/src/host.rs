@@ -71,6 +71,13 @@ pub trait Host: Sync {
     fn raster(&self) -> Option<&dyn crate::vdi::backend::RasterBackend> {
         None
     }
+
+    /// The block device backing BIOS `Rwabs` (the SD card), or `None` if
+    /// the board has no storage. Same swappable-boundary pattern as
+    /// [`Host::raster`].
+    fn block(&self) -> Option<&dyn crate::bios::block::BlockDev> {
+        None
+    }
 }
 
 // `&'static dyn Host` is `Sync + 'static`; we store it as a raw

@@ -277,9 +277,10 @@ pub extern "C" fn rust_sync_handler(frame: &mut ExceptionFrame) {
             unsafe { tos_api::vdi::dispatch(args.regs[0]) };
             0
         }
-        // PHASE-07 will land BIOS/XBIOS dispatchers; until then any
-        // SVC #13/#14 returns EINVFN so the trap path is observable.
-        TrapClass::Bios | TrapClass::Xbios => tos_types::error::EINVFN,
+        // BIOS (Trap 13): block-device + console functions.
+        TrapClass::Bios => tos_api::bios::dispatch(&args),
+        // XBIOS dispatcher lands later.
+        TrapClass::Xbios => tos_types::error::EINVFN,
     };
 
     // A blocking console input function (Cconin / Cnecin / Cconrs) may

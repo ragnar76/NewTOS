@@ -15,6 +15,7 @@
 #![warn(missing_docs)]
 
 pub mod bdos;
+pub mod bios;
 pub mod gemdos;
 pub mod host;
 pub mod trap;
