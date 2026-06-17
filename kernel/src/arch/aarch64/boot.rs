@@ -161,8 +161,11 @@ static mut __BOOT_L0: BootPageTable = BootPageTable([0; 512]);
 // selftest after the reinstall barrier).
 
 /// `MAIR_EL1`. AttrIdx 0 = Normal WBWA Inner+Outer (`0xFF`); AttrIdx 1
-/// = Device-nGnRnE (`0x00`, implicit at bits 8..15).
-const MAIR_VALUE: u64 = 0xFF;
+/// = Device-nGnRnE (`0x00`, implicit at bits 8..15); AttrIdx 2 = Normal
+/// Non-Cacheable Inner+Outer (`0x44`, bits 16..23) — used for the
+/// VideoCore framebuffer so the display DMA sees writes without cache
+/// cleaning (see `mmu::remap_normal_nc`). ARM ARM D19.2.124.
+const MAIR_VALUE: u64 = (0x44 << 16) | 0xFF;
 
 /// `TCR_EL1`. Both halves enabled, 48-bit VA in each (`T0SZ = T1SZ =
 /// 16`), 4-KiB granule, Inner Shareable Normal cacheable for the

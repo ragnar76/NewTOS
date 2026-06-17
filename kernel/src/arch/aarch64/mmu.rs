@@ -73,6 +73,10 @@ const BLOCK_L2: u64 = 0 << 1;
 /// Descriptor[4:2]: AttrIndx — index into MAIR_EL1.
 const ATTRIDX_NORMAL: u64 = 0 << 2;
 const ATTRIDX_DEVICE: u64 = 1 << 2;
+/// AttrIdx 2 = Normal Non-Cacheable (MAIR `0x44`, see `boot::MAIR_VALUE`).
+const ATTRIDX_NC: u64 = 2 << 2;
+/// Mask over the AttrIndx field (descriptor[4:2]).
+const ATTRIDX_MASK: u64 = 0b111 << 2;
 /// Descriptor[7:6]: AP[2:1] = 00 → R/W at EL1, no EL0 access.
 const AP_RW_EL1: u64 = 0b00 << 6;
 /// Descriptor[9:8]: SH — shareability for Normal memory.
@@ -218,6 +222,81 @@ pub const VA_OFFSET: u64 = 0xFFFF_0000_0000_0000;
 #[inline(always)]
 pub const fn va_to_pa(va: u64) -> u64 {
     va.wrapping_sub(VA_OFFSET)
+}
+
+/// Remap the 2-MiB high-half blocks covering `[va, va + len)` from
+/// Normal Cacheable to **Normal Non-Cacheable** (AttrIdx 2).
+///
+/// Used for the VideoCore framebuffer: the display controller is a
+/// separate DMA master that reads DRAM *beyond* the ARM caches, so a
+/// cached FB would leave drawn pixels stranded in dirty cache lines.
+/// Mapping the FB Non-Cacheable removes the coherency problem entirely
+/// (no per-frame `dc cvac` needed).
+///
+/// Whole 2-MiB blocks are converted — the VC-allocated FB region is
+/// dedicated, so catching a little neighbouring RAM is harmless. Only
+/// blocks that are currently **valid Normal** are touched (Device and
+/// unmapped/guard blocks are skipped). Each block uses break-before-make
+/// (invalidate → TLB flush → rewrite) per ARM ARM K11.5, so no stale
+/// cacheable translation can coexist with the new attribute.
+///
+/// `va` is a high-half kernel VA (VA = `VA_OFFSET` + PA), matching the
+/// Stage-2 identity-offset mapping.
+///
+/// # Safety
+///
+/// Boot CPU, single-threaded, after [`reinstall`] has installed the
+/// Stage-2 tables. The target blocks must not contain currently-
+/// executing code or the active stack (a VC-allocated framebuffer never
+/// does).
+#[allow(clippy::deref_addrof)]
+pub unsafe fn remap_normal_nc(va: u64, len: u64) {
+    if len == 0 {
+        return;
+    }
+    let pa_first = va_to_pa(va) & !(L2_BLOCK_SIZE - 1);
+    let pa_last = va_to_pa(va + len - 1) & !(L2_BLOCK_SIZE - 1);
+    let nc_attrs = VALID | BLOCK_L2 | AF | AP_RW_EL1 | ATTRIDX_NC | SH_NON | PXN | UXN;
+
+    // SAFETY: single-CPU boot path; exclusive access to the static tables.
+    let l2 = unsafe { &mut *(&raw mut L2) };
+
+    let mut pa = pa_first;
+    loop {
+        let i = (pa / L1_BLOCK_SIZE) as usize;
+        let j = ((pa % L1_BLOCK_SIZE) / L2_BLOCK_SIZE) as usize;
+        if i < NUM_L2 {
+            let slot = &mut l2[i].0[j];
+            let old = *slot;
+            // Only convert valid, currently-Normal blocks.
+            if old & VALID != 0 && (old & ATTRIDX_MASK) == ATTRIDX_NORMAL {
+                // Break-before-make for this block (ARM ARM K11.5).
+                *slot = 0;
+                // SAFETY: publish the break, drop stale TLB, then make.
+                unsafe {
+                    core::arch::asm!(
+                        "dsb ishst",
+                        "tlbi vmalle1",
+                        "dsb ish",
+                        options(nostack, preserves_flags),
+                    );
+                }
+                *slot = pa | nc_attrs;
+                // SAFETY: publish the new descriptor before any access.
+                unsafe {
+                    core::arch::asm!(
+                        "dsb ishst",
+                        "isb",
+                        options(nostack, preserves_flags),
+                    );
+                }
+            }
+        }
+        if pa == pa_last {
+            break;
+        }
+        pa += L2_BLOCK_SIZE;
+    }
 }
 
 /// Install the Stage-2 high-half tables into `TTBR1_EL1` and flush
