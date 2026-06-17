@@ -301,11 +301,33 @@ fn init_framebuffer_demo() {
     );
 }
 
-/// RPi4 framebuffer comes from the VideoCore mailbox — HW bring-up
-/// lands with the real-hardware testing (see docs/HW-TEST-LOG.md).
+/// RPi4 framebuffer comes from the VideoCore mailbox property interface
+/// (see docs/hardware/mailbox-framebuffer.md). First test vehicle is
+/// QEMU `raspi4b`; the same code runs on real hardware, where the
+/// drawn pattern is the first life sign (no serial).
 #[cfg(feature = "board-rpi4")]
 fn init_framebuffer_demo() {
-    kprintln!("[fb] rpi4 mailbox framebuffer: deferred to HW bring-up");
+    use crate::hal::framebuffer::{rgb, Framebuffer};
+    // SAFETY: boot CPU, single-threaded, MMU + heap are up.
+    let up = unsafe { drivers::bcm2711::framebuffer::init() };
+    if !up {
+        kprintln!("[fb] VideoCore mailbox framebuffer unavailable — no graphics");
+        return;
+    }
+    let fb = &drivers::bcm2711::framebuffer::FRAMEBUFFER;
+    let (w, h) = (fb.width(), fb.height());
+    let third = h / 3;
+    fb.clear(rgb(30, 30, 60));
+    fb.fill_rect(0, 0, w, third, rgb(210, 50, 50)); // red
+    fb.fill_rect(0, third, w, third, rgb(50, 200, 70)); // green
+    fb.fill_rect(0, 2 * third, w, h - 2 * third, rgb(60, 90, 230)); // blue
+    fb.fill_rect(w / 4, third + third / 4, w / 2, third / 2, rgb(240, 240, 240)); // white box
+    kprintln!(
+        "[fb] VideoCore fb up: {}x{} stride {}px — boot test pattern drawn",
+        w,
+        h,
+        fb.stride_px(),
+    );
 }
 
 /// Dump per-pool frame counts.
