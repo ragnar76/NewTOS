@@ -4,8 +4,11 @@
 > a physical Raspberry Pi 4 (BCM2711) over a serial console. Closes
 > PHASE-01 **EC2** once the boot banner appears on real hardware.
 >
-> Everything so far has only been verified in QEMU (`virt`,
-> `cortex-a72`). This document is the checklist for the first metal boot.
+> **First metal boot succeeded 2026-06-17** (graphics path: VideoCore
+> framebuffer test pattern on HDMI; serial console not yet wired). The
+> boot/MMU/heap path and the BCM2711 mailbox framebuffer run on real
+> silicon. Serial-console verification (boot banner + self-tests over
+> PL011) still pending the USB-TTL adapter — see §7.
 
 ---
 
@@ -116,4 +119,5 @@ what appeared, any fault).
 
 | Date | Pi model / RAM | Firmware | Result | Notes |
 |------|----------------|----------|--------|-------|
-| _pending — Waveshare FT232RNL USB-TTL (D) ordered 2026-06-16; awaiting delivery_ | | | | |
+| 2026-06-17 | RPi 4 Model B | `start4.elf`/`fixup4.dat` (card, 2026-04-17) | ✅ **First metal boot — VideoCore framebuffer test pattern visible on HDMI** (red / green+white-box / blue, 640×480 on a 1080p screen) | **Graphics path only** (no serial yet). Confirms on real silicon: EL2→EL1 drop (firmware enters at EL2), mailbox property-interface FB allocation against real VideoCore firmware, **Non-Cacheable FB mapping** (without it the display DMA would not see the cached pixels — the exact failure QEMU's TCG cannot reproduce), BGR pixel order, and the whole MMU/heap boot path. SD card written from this repo (`kernel8.img` + `init_uart_clock=48000000` added to an existing RPi4 `config.txt`). |
+| _pending_ | | | _serial console_ | Boot banner + self-tests over PL011 once the Waveshare FT232RNL USB-TTL (D) adapter is wired (ordered 2026-06-16). Heartbeat will read `RB2` (EL2 entry digit). |
