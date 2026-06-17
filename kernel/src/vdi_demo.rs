@@ -15,7 +15,7 @@ const SOLID: i16 = 1;
 /// addresses and issues `svc #2`.
 struct Vdi {
     contrl: [i16; 12],
-    intin: [i16; 16],
+    intin: [i16; 64],
     ptsin: [i16; 32],
     intout: [i16; 45],
     ptsout: [i16; 12],
@@ -26,7 +26,7 @@ impl Vdi {
     fn new() -> Self {
         Self {
             contrl: [0; 12],
-            intin: [0; 16],
+            intin: [0; 64],
             ptsin: [0; 32],
             intout: [0; 45],
             ptsout: [0; 12],
@@ -127,6 +127,37 @@ impl Vdi {
         self.ptsin[..4].copy_from_slice(&[x0, y0, x1, y1]);
         self.call();
     }
+
+    fn set_text_color(&mut self, color: i16) {
+        self.set1(22, color); // vst_color
+    }
+
+    /// vst_alignment (39): horizontal (0..2), vertical (0..5).
+    fn set_text_align(&mut self, h: i16, v: i16) {
+        self.contrl.fill(0);
+        self.contrl[0] = 39;
+        self.contrl[3] = 2;
+        self.contrl[6] = self.handle;
+        self.intin[0] = h;
+        self.intin[1] = v;
+        self.call();
+    }
+
+    /// v_gtext (8): draw an ASCII string with its top-left near (x, y)
+    /// (with top alignment). The byte values are the character codes.
+    fn gtext(&mut self, x: i16, y: i16, text: &[u8]) {
+        let n = text.len().min(self.intin.len());
+        self.contrl.fill(0);
+        self.contrl[0] = 8; // v_gtext
+        self.contrl[3] = n as i16;
+        self.contrl[6] = self.handle;
+        self.ptsin[0] = x;
+        self.ptsin[1] = y;
+        for (i, &b) in text.iter().take(n).enumerate() {
+            self.intin[i] = b as i16;
+        }
+        self.call();
+    }
 }
 
 /// Draw the VDI demo as the final on-screen image.
@@ -204,6 +235,17 @@ pub fn run() {
         outline(&mut v, x, hy, x + hatch_w - 1, hy + p_h - 1);
     }
 
+    // ── text (D5): title + the system-font character set, in the empty
+    //    area below the swatches, drawn with the 8×16 ST system font. ──
+    v.set_text_align(0, 5); // left, top
+    let ty = hy + p_h + 24;
+    v.set_text_color(BLACK);
+    v.gtext(MARGIN, ty, b"NewTOS VDI - Phase 12 D5: 8x16 ST system font");
+    v.set_text_color(4); // blue
+    v.gtext(MARGIN, ty + 24, b"ABCDEFGHIJKLMNOPQRSTUVWXYZ abcdefghijklmnopqrstuvwxyz");
+    v.set_text_color(2); // red
+    v.gtext(MARGIN, ty + 42, b"0123456789  !\"#$%&'()*+,-./:;<=>?@[\\]^_{|}~");
+
     // ── outer screen border ──
     v.set_line(BLACK);
     v.line(0, 0, w - 1, 0);
@@ -212,7 +254,7 @@ pub fn run() {
     v.line(0, h - 1, 0, 0);
 
     v.close();
-    kprintln!("[vdi-demo] palette + patterns + hatches drawn through the VDI ({}x{})", w, h);
+    kprintln!("[vdi-demo] palette + patterns + hatches + text drawn through the VDI ({}x{})", w, h);
 }
 
 /// Draw a black rectangle outline (four `v_pline` segments).

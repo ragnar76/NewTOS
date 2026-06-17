@@ -55,6 +55,12 @@ pub trait RasterBackend: Sync {
     /// pattern in [`PatternFill`], expanded into colour. Clipped to the
     /// visible area.
     fn fill_pattern(&self, x: i16, y: i16, w: i16, h: i16, fill: PatternFill);
+
+    /// Blit an 8-wide × 16-tall monochrome glyph with its top-left at
+    /// `(x, y)` in colour `fg`. Bit 7 (`0x80`) of each byte is the
+    /// leftmost pixel; only set bits are drawn (transparent). Clipped to
+    /// the visible area.
+    fn draw_glyph(&self, x: i16, y: i16, glyph: &[u8; 16], fg: Pel);
 }
 
 /// A monochrome fill source: a pattern expanded into a foreground /

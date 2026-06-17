@@ -25,6 +25,27 @@ pub fn vsf_color(pb: &Vdipb, vwk: &mut Vwk, ncol: u16) {
     pb.set_contrl(4, 1);
 }
 
+/// Opcode 22 — `vst_color`: set the text colour.
+pub fn vst_color(pb: &Vdipb, vwk: &mut Vwk, ncol: u16) {
+    let c = validate_color_index(pb.intin(0), ncol);
+    vwk.text_color = c;
+    pb.set_intout(0, c as i16);
+    pb.set_contrl(4, 1);
+}
+
+/// Opcode 39 — `vst_alignment`: set the text alignment.
+/// `INTIN[0]` = horizontal (0 left, 1 centre, 2 right), `INTIN[1]` =
+/// vertical (0 baseline … 5 top). Out-of-range clamps to 0.
+pub fn vst_alignment(pb: &Vdipb, vwk: &mut Vwk) {
+    let h = pb.intin(0);
+    let v = pb.intin(1);
+    vwk.h_align = if (0..=2).contains(&h) { h } else { 0 };
+    vwk.v_align = if (0..=5).contains(&v) { v } else { 0 };
+    pb.set_intout(0, vwk.h_align);
+    pb.set_intout(1, vwk.v_align);
+    pb.set_contrl(4, 2);
+}
+
 /// Opcode 23 — `vsf_interior`: set the fill interior style
 /// (0 = hollow, 1 = solid, 2 = pattern, 3 = hatch, 4 = user).
 pub fn vsf_interior(pb: &Vdipb, vwk: &mut Vwk) {

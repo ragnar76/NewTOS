@@ -182,6 +182,35 @@ impl RasterBackend for VdiScreen {
         }
         Self::clean(fb, x0 as u32, y0 as u32, x1 as u32, y1 as u32);
     }
+
+    fn draw_glyph(&self, x: i16, y: i16, glyph: &[u8; 16], fg: Pel) {
+        let fb = active_fb();
+        let scr_w = fb.width() as i32;
+        let scr_h = fb.height() as i32;
+        let fg_rgb = Self::pel_to_rgb(fg);
+        for (row, &bits) in glyph.iter().enumerate() {
+            let yy = y as i32 + row as i32;
+            if yy < 0 || yy >= scr_h {
+                continue;
+            }
+            for col in 0..8i32 {
+                if bits & (0x80u8 >> col) != 0 {
+                    let xx = x as i32 + col;
+                    if xx >= 0 && xx < scr_w {
+                        fb.put_pixel(xx as u32, yy as u32, fg_rgb);
+                    }
+                }
+            }
+        }
+        // Clean the 8×16 cell (clamped to the screen) to PoC.
+        let x0 = (x as i32).max(0);
+        let y0 = (y as i32).max(0);
+        let x1 = ((x as i32) + 7).min(scr_w - 1);
+        let y1 = ((y as i32) + 15).min(scr_h - 1);
+        if x0 <= x1 && y0 <= y1 {
+            Self::clean(fb, x0 as u32, y0 as u32, x1 as u32, y1 as u32);
+        }
+    }
 }
 
 /// The installed screen backend, handed to `tos-api` via the host.
