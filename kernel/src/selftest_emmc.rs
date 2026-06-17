@@ -188,6 +188,31 @@ fn fat_test(drive: u16, letter: char) {
         "[emmc] cluster[0] first bytes: \"{}\"",
         core::str::from_utf8(&first[..32]).unwrap_or("?"),
     );
+
+    // ── directory traversal (D5 foundation): list root dir + lookup ──
+    use tos_api::bdos::fs::dir;
+    let mut count = 0u32;
+    for e in dir::RootDir::new(&vol) {
+        kprintln!(
+            "[emmc]   entry: \"{}\" attr=0x{:02x} cl={} size={}",
+            core::str::from_utf8(&e.name).unwrap_or("?"),
+            e.attrib,
+            e.cluster,
+            e.size,
+        );
+        count += 1;
+    }
+    let hit = dir::fcb_name("hello.txt")
+        .and_then(|n| dir::find_in_root(&vol, &n))
+        .map(|e| e.cluster);
+    kprintln!(
+        "[emmc] root entries={}; find(\"hello.txt\") -> {}",
+        count,
+        match hit {
+            Some(c) => c,
+            None => 0,
+        },
+    );
 }
 
 /// Read one partition-relative sector via `Rwabs` (read).

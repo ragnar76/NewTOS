@@ -67,6 +67,11 @@ impl Volume {
         })
     }
 
+    /// Absolute start LBA of this volume's partition.
+    pub fn start_lba(&self) -> u32 {
+        self.start_lba
+    }
+
     /// Partition-relative first sector of the root directory: it sits
     /// directly before the data area (`datrec - rdlen`).
     pub fn root_sector(&self) -> u32 {
