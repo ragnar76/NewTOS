@@ -108,13 +108,29 @@ state; only `vq_color`/`vqt_width` have a `-1` out-of-range marker.
 
 ## Batch 5 — raster + mouse + input (D6)
 
-- [ ] raster: `vro_cpyfm` (109), `vrt_cpyfm` (121), `vr_trnfm` (110).
-- [ ] mouse: `v_show_c` (122), `v_hide_c` (123), `vsc_form` (111),
-      `vq_mouse` (124), `vex_butv/motv/curv/wheelv` (125–127, 134).
-- [ ] input: `v_locator` (28), `v_choice` (30), `v_string` (31),
-      `vsin_mode` (33), `vqin_mode` (115).
-- [ ] `v_escape` (5) sub-functions (`vdi_esc.c`).
-- [ ] timer: `vex_timv` (118).
+- [x] raster — [`raster/_raster.md`](raster/_raster.md): `vro_cpyfm`
+      (109), `vrt_cpyfm` (121), `vr_trnfm` (110) + MFDB struct +
+      BitBlt logic ops.
+- [x] mouse + vectors — [`input/_mouse.md`](input/_mouse.md):
+      `v_show_c` (122), `v_hide_c` (123), `vsc_form` (111),
+      `vq_mouse` (124), `vex_butv/motv/curv/wheelv` (125–127, 134),
+      `vex_timv` (118).
+- [x] input — [`input/_input.md`](input/_input.md): `v_locator` (28),
+      `v_choice` (30), `v_string` (31), `vsin_mode` (33). (`vqin_mode`
+      115 done in Batch 4; no `v_valuator` in EmuTOS.)
+- [x] `v_escape` (5) sub-functions (0–19) —
+      [`_escape.md`](_escape.md): alpha/VT52 cursor + inquiries.
+
+**Batch 5 complete.** Raster/mouse/input/escape (D6) done. Raster =
+real BitBlt (all 16 ops). Mouse/input bind to the not-yet-existing
+QEMU input subsystem → REQUEST-mode blocks on the real event queue,
+no canned values.
+
+---
+
+**PHASE-00b VDI spec extraction COMPLETE** — D1 (dispatcher) +
+D2–D6 (all ~70 opcodes). Per-function semantics extracted from EmuTOS
+`1a7484ab`; ready for Phase-12 implementation against `docs/api/vdi/`.
 
 ## Build-config scope (TBD-ADR, matches the Phase-00 profile)
 
