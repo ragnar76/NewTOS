@@ -46,6 +46,8 @@ pub mod selftest_pexec_d4d5;
 pub mod selftest_vdi;
 pub mod sync;
 pub mod initinfo;
+#[cfg(feature = "board-rpi4")]
+pub mod selftest_emmc;
 pub mod vdi_backend;
 pub mod vdi_client;
 pub mod vdi_demo;
@@ -248,6 +250,11 @@ extern "C" fn kernel_main_rust(dtb_phys: usize) -> ! {
     selftest_vdi::run_phase12_vdi_test();
     initinfo::run();
     let _ = vdi_demo::run; // primitive showcase, available but not shown at boot
+
+    // Phase 08: microSD read test (before the process self-tests, which
+    // can wedge QEMU's TCG — QUIRK-001). board-rpi4 / QEMU raspi4b only.
+    #[cfg(feature = "board-rpi4")]
+    selftest_emmc::run();
 
     selftest::run_phase04_self_test();
     selftest_ec4::run_ec4_pseudo_process_test();
