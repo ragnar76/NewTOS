@@ -53,17 +53,24 @@
 
 ## Batch 2 — attribute setters (D3)
 
-- [ ] line: `vsl_type` (15), `vsl_width` (16), `vsl_color` (17),
-      `vsl_ends` (108), `vsl_udsty` (113).
-- [ ] marker: `vsm_type` (18), `vsm_height` (19), `vsm_color` (20).
-- [ ] fill: `vsf_interior` (23), `vsf_style` (24), `vsf_color` (25),
+- [x] line + marker — [`attributes/_line-marker.md`](attributes/_line-marker.md):
+      `vsl_type` (15), `vsl_width` (16), `vsl_color` (17),
+      `vsl_ends` (108), `vsl_udsty` (113); `vsm_type` (18),
+      `vsm_height` (19), `vsm_color` (20).
+- [x] fill — [`attributes/_fill.md`](attributes/_fill.md):
+      `vsf_interior` (23), `vsf_style` (24), `vsf_color` (25),
       `vsf_perimeter` (104), `vsf_udpat` (112).
-- [ ] text: `vst_height` (12), `vst_point` (107), `vst_rotation` (13),
+- [x] text — [`attributes/_text.md`](attributes/_text.md):
+      `vst_height` (12), `vst_point` (107), `vst_rotation` (13),
       `vst_font` (21), `vst_color` (22), `vst_effects` (106),
       `vst_alignment` (39).
-- [ ] `vswr_mode` (32) — writing/raster mode.
-- [ ] `vs_clip` (129) — clipping rectangle.
-- [ ] colour: `vs_color` (14).
+- [x] mode / clip / colour —
+      [`attributes/_mode-clip-color.md`](attributes/_mode-clip-color.md):
+      `vswr_mode` (32), `vs_clip` (129), `vs_color` (14).
+
+**Batch 2 complete.** Attribute setters (D3) done. Common shape:
+validate (clamp to range, else default) → store in `Vwk` → echo the
+accepted value; none can fail.
 
 ## Batch 3 — output primitives (D4)
 
