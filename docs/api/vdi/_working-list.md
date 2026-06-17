@@ -74,9 +74,19 @@ accepted value; none can fail.
 
 ## Batch 3 — output primitives (D4)
 
-- [ ] `v_pline` (6), `v_pmarker` (7), `v_gtext` (8), `v_fillarea` (9),
-      `v_contourfill` (103), `vr_recfl` (114), `v_gdp` (11) +
-      sub-functions (bar/arc/pieslice/circle/ellipse/rndrect/justext).
+- [x] lines + markers — [`output/_lines-markers.md`](output/_lines-markers.md):
+      `v_pline` (6), `v_pmarker` (7).
+- [x] text — [`output/_text.md`](output/_text.md): `v_gtext` (8)
+      (`output_text` blit path; justified variant = GDP 10).
+- [x] fill — [`output/_fill.md`](output/_fill.md): `v_fillarea` (9),
+      `vr_recfl` (114), `v_contourfill` (103).
+- [x] GDP — [`output/_gdp.md`](output/_gdp.md): `v_gdp` (11) sub-ops
+      1–10 (bar/arc/pieslice/circle/ellipse/ellarc/ellpie/rbox/rfbox/
+      justified-text); `CONTRL[5]` selects.
+
+**Batch 3 complete.** Output primitives (D4) done. All reduce to the
+line/fill/text framebuffer ops; `v_gdp` adds geometry only. Bezier
+(`CONTRL[5]==13`) deferred per build-config scope.
 
 ## Batch 4 — inquiry (D5)
 
