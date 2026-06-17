@@ -90,11 +90,21 @@ line/fill/text framebuffer ops; `v_gdp` adds geometry only. Bezier
 
 ## Batch 4 — inquiry (D5)
 
-- [ ] `vq_color` (26), `vq_extnd` (102, with B1), `v_get_pixel` (105),
+- [x] attribute inquiries — [`inquiry/_attributes.md`](inquiry/_attributes.md):
       `vql_attributes` (35), `vqm_attributes` (36), `vqf_attributes`
-      (37), `vqt_attributes` (38), `vqt_extent` (116), `vqt_width`
-      (117), `vqt_name` (130), `vqt_fontinfo` (131), `vqin_mode` (115),
+      (37), `vqt_attributes` (38). (Note the `vqm` 0-based quirk.)
+- [x] text metrics — [`inquiry/_text.md`](inquiry/_text.md):
+      `vqt_extent` (116), `vqt_width` (117), `vqt_name` (130),
+      `vqt_fontinfo` (131).
+- [x] colour / pixel / input mode —
+      [`inquiry/_color-pixel-input.md`](inquiry/_color-pixel-input.md):
+      `vq_color` (26), `v_get_pixel` (105), `vqin_mode` (115),
       `vq_key_s` (128).
+- `vq_extnd` (102) already done in
+      [Batch 1](workstation/102-vq_extnd.md).
+
+**Batch 4 complete.** Inquiry (D5) done — all read-only `Vwk`/device
+state; only `vq_color`/`vqt_width` have a `-1` out-of-range marker.
 
 ## Batch 5 — raster + mouse + input (D6)
 
