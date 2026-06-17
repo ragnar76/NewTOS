@@ -366,6 +366,12 @@ impl BlockDevice for Emmc {
 /// Boot CPU, single-threaded; the VideoCore firmware has finished using
 /// the card.
 pub unsafe fn init() -> bool {
+    // Idempotent: once a card is up, re-initialising would needlessly
+    // re-run the SD power-up sequence. Callers may invoke this from both
+    // boot bring-up and the self-test.
+    if SDCARD.ready.load(Ordering::Acquire) {
+        return true;
+    }
     for &candidate in &[EMMC2_BASE, EMMC_BASE] {
         BASE_ADDR.store(candidate, Ordering::Relaxed);
         // Skip a base with no SDHCI controller behind it.

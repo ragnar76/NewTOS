@@ -245,6 +245,16 @@ extern "C" fn kernel_main_rust(dtb_phys: usize) -> ! {
     // below (which on QEMU's TCG can wedge on a TTBR0 switch — QUIRK-001,
     // a QEMU-only artifact; real hardware completes them).
     selftest_vdi::run_phase12_vdi_test();
+
+    // Bring up the microSD card and mount its partitions before the boot
+    // screen, so the drive map is populated when initinfo renders it.
+    // board-rpi4 / QEMU raspi4b only (no block device on aarch64-virt).
+    #[cfg(feature = "board-rpi4")]
+    // SAFETY: boot CPU; VideoCore firmware has released the card.
+    if unsafe { drivers::bcm2711::emmc::init() } {
+        tos_api::bios::mount();
+    }
+
     initinfo::run();
 
     // Phase 08: microSD read test (before the process self-tests, which

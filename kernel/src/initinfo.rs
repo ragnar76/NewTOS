@@ -26,6 +26,26 @@ fn machine_name() -> &'static str {
     }
 }
 
+/// Build a list of mounted drive letters (e.g. `"C: D:"`) from the BIOS
+/// drive bitmap, as filled by `Drvmap` / the partition mount.
+fn drives_str() -> alloc::string::String {
+    let bits = tos_api::bios::drive::drvbits();
+    if bits == 0 {
+        return alloc::string::String::from("none");
+    }
+    let mut s = alloc::string::String::new();
+    for d in 0..16u32 {
+        if bits & (1 << d) != 0 {
+            if !s.is_empty() {
+                s.push(' ');
+            }
+            s.push((b'A' + d as u8) as char);
+            s.push(':');
+        }
+    }
+    s
+}
+
 /// Format a byte count as a human-readable size string.
 fn size_str(bytes: u64) -> alloc::string::String {
     if bytes >= 1 << 20 {
@@ -83,7 +103,7 @@ pub fn run() {
     y += 24;
     pair(&mut v, cx, y, b"TT-RAM", size_str(tt.total_bytes()).as_bytes());
     y += 24;
-    pair(&mut v, cx, y, b"GEMDOS", b"0x2000");
+    pair(&mut v, cx, y, b"GEMDOS", drives_str().as_bytes());
 
     // separator before the messages
     y += 26;
