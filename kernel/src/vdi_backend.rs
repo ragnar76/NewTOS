@@ -11,7 +11,7 @@
 //! fixed 16-entry GEM palette into the truecolor framebuffer. VDI
 //! convention: index 0 = white (background), 1 = black (foreground).
 
-use tos_api::vdi::backend::{Pel, RasterBackend};
+use tos_api::vdi::backend::{ClipRect, Pel, RasterBackend};
 
 use crate::hal::framebuffer::{rgb, Framebuffer};
 
@@ -85,6 +85,41 @@ impl RasterBackend for VdiScreen {
             return;
         }
         active_fb().fill_rect(x0, y0, w, h, Self::pel_to_rgb(pel));
+    }
+
+    fn draw_line(&self, x0: i16, y0: i16, x1: i16, y1: i16, pel: Pel, clip: ClipRect) {
+        let fb = active_fb();
+        let color = Self::pel_to_rgb(pel);
+        // Bresenham; plot only pixels inside the inclusive clip rect (and
+        // the framebuffer, which `put_pixel` enforces too).
+        let (mut x, mut y) = (x0 as i32, y0 as i32);
+        let (xe, ye) = (x1 as i32, y1 as i32);
+        let dx = (xe - x).abs();
+        let dy = -(ye - y).abs();
+        let sx = if x < xe { 1 } else { -1 };
+        let sy = if y < ye { 1 } else { -1 };
+        let mut err = dx + dy;
+        loop {
+            if x >= clip.xmn as i32
+                && x <= clip.xmx as i32
+                && y >= clip.ymn as i32
+                && y <= clip.ymx as i32
+            {
+                fb.put_pixel(x as u32, y as u32, color);
+            }
+            if x == xe && y == ye {
+                break;
+            }
+            let e2 = 2 * err;
+            if e2 >= dy {
+                err += dy;
+                x += sx;
+            }
+            if e2 <= dx {
+                err += dx;
+                y += sy;
+            }
+        }
     }
 }
 

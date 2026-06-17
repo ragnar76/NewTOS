@@ -20,6 +20,8 @@
 //! drawing call.
 
 pub mod backend;
+mod attributes;
+mod primitives;
 mod vwk;
 mod workstation;
 
@@ -36,10 +38,6 @@ use crate::host;
 pub(crate) struct Vdipb {
     contrl: *mut i16,
     intin: *mut i16,
-    /// Input coordinate array. Part of the VDIPB contract; read by the
-    /// output primitives (D3+, `v_pline`/`v_fillarea`/…), not by the
-    /// workstation-lifecycle milestone.
-    #[allow(dead_code)]
     ptsin: *mut i16,
     intout: *mut i16,
     ptsout: *mut i16,
@@ -81,7 +79,6 @@ impl Vdipb {
         unsafe { self.intin.add(i).read() }
     }
     #[inline]
-    #[allow(dead_code)] // consumed by the output primitives (D3+)
     pub fn ptsin(&self, i: usize) -> i16 {
         // SAFETY: callers index within `contrl[1]*2` input coordinates.
         unsafe { self.ptsin.add(i).read() }
@@ -139,8 +136,24 @@ pub unsafe fn dispatch(vdipb_ptr: u64) {
         }
         3 if open_handle(&pb).is_some() => workstation::v_clrwk(backend),
 
+        // ── attribute setters + output primitives (need the vwk) ──
+        6 | 17 | 23 | 25 | 114 => {
+            // SAFETY: single trap path.
+            if let Some(vwk) = unsafe { vwk::resolve(pb.contrl(C_HANDLE)) } {
+                let ncol = backend.num_colors();
+                match opcode {
+                    17 => attributes::vsl_color(&pb, vwk, ncol),
+                    25 => attributes::vsf_color(&pb, vwk, ncol),
+                    23 => attributes::vsf_interior(&pb, vwk),
+                    6 => primitives::v_pline(&pb, vwk, backend),
+                    114 => primitives::vr_recfl(&pb, vwk, backend),
+                    _ => unreachable!(),
+                }
+            }
+        }
+
         // ── genuine VDI no-ops + not-yet-implemented opcodes ──
-        // (output/attribute/inquiry/raster opcodes land in later
+        // (remaining output/inquiry/raster opcodes land in later
         // milestones; an unrouted opcode is a no-op by VDI semantics.)
         _ => {}
     }

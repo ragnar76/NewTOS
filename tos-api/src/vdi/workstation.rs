@@ -73,12 +73,12 @@ fn init_wk(vwk: &mut Vwk, pb: &Vdipb, backend: &dyn RasterBackend) {
 
     vwk.xfm_mode = pb.intin(10); // 0 = NDC, 2 = RC (screen is RC)
 
-    // Non-work_in defaults: clip off → full screen.
+    // Non-work_in defaults: clip off → full screen (inclusive bounds).
     vwk.clip = false;
     vwk.xmn_clip = 0;
     vwk.ymn_clip = 0;
-    vwk.xmx_clip = xres;
-    vwk.ymx_clip = yres;
+    vwk.xmx_clip = xres - 1;
+    vwk.ymx_clip = yres - 1;
 
     // ── outputs: DEV_TAB → INTOUT (45), SIZ_TAB → PTSOUT (12) ──
     let mut dev = DEV_TAB_ROM;

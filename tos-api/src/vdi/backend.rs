@@ -44,4 +44,25 @@ pub trait RasterBackend: Sync {
     /// origin top-left) with palette colour `pel`. Implementations clip
     /// to the visible area; negative / oversized rectangles are clamped.
     fn fill_rect(&self, x: i16, y: i16, w: i16, h: i16, pel: Pel);
+
+    /// Draw a one-pixel-wide line from `(x0, y0)` to `(x1, y1)` in
+    /// palette colour `pel`, clipped to `[xmn, ymn]..=[xmx, ymx]`
+    /// (inclusive device coordinates — the caller passes the workstation
+    /// clip rectangle). Endpoints are inclusive.
+    fn draw_line(&self, x0: i16, y0: i16, x1: i16, y1: i16, pel: Pel, clip: ClipRect);
+}
+
+/// Inclusive clipping rectangle in device coordinates, as carried by the
+/// workstation. Passed to line drawing so the backend clips without
+/// reaching back into the `Vwk`.
+#[derive(Clone, Copy)]
+pub struct ClipRect {
+    /// Left edge (inclusive).
+    pub xmn: i16,
+    /// Top edge (inclusive).
+    pub ymn: i16,
+    /// Right edge (inclusive).
+    pub xmx: i16,
+    /// Bottom edge (inclusive).
+    pub ymx: i16,
 }

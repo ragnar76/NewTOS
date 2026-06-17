@@ -46,6 +46,7 @@ pub mod selftest_pexec_d4d5;
 pub mod selftest_vdi;
 pub mod sync;
 pub mod vdi_backend;
+pub mod vdi_demo;
 
 // ---------------------------------------------------------------------------
 // kprintf! / kprintln! (Phase 03 D7) — formatter macros into the boot
@@ -214,10 +215,10 @@ extern "C" fn kernel_main_rust(dtb_phys: usize) -> ! {
     smoke_test_heap();
     print_heap_stats("after smoke");
 
-    // Bring up the framebuffer (if any) and draw a boot test pattern.
-    // Done before the BDOS pools claim the remaining frames so the
-    // framebuffer's contiguous run is reserved up front.
-    init_framebuffer_demo();
+    // Bring up the framebuffer (if any). Done before the BDOS pools
+    // claim the remaining frames so the framebuffer's contiguous run is
+    // reserved up front. The screen is drawn later via the VDI.
+    init_framebuffer();
 
     // Bring up the BDOS memory pools (Phase 04 D6). The two MPBs
     // are seeded with whatever frames remain free in each pool
@@ -238,6 +239,13 @@ extern "C" fn kernel_main_rust(dtb_phys: usize) -> ! {
     console::CONSOLE.enable_rx_interrupt();
     drivers::gic::enable_irqs();
 
+    // Draw the screen through the VDI first, so graphics appear promptly
+    // and the image is independent of the process-level dev self-tests
+    // below (which on QEMU's TCG can wedge on a TTBR0 switch — QUIRK-001,
+    // a QEMU-only artifact; real hardware completes them).
+    selftest_vdi::run_phase12_vdi_test();
+    vdi_demo::run();
+
     selftest::run_phase04_self_test();
     selftest_ec4::run_ec4_pseudo_process_test();
     selftest_d3::run_d3_elf_loader_test();
@@ -246,7 +254,6 @@ extern "C" fn kernel_main_rust(dtb_phys: usize) -> ! {
     selftest_pexec::run_pexec_test();
     selftest_pexec_d4d5::run_pexec_loadgo_split_test();
     selftest_time::run_phase07_time_test();
-    selftest_vdi::run_phase12_vdi_test();
     selftest_lineecho::run_lineecho_demo();
     selftest::run_cconin_demo();
     selftest::run_phase02_self_test();
@@ -279,11 +286,13 @@ fn print_range(label: &str, r: &bios::machine::layout::PhysRange) {
     );
 }
 
-/// Bring up the board framebuffer (if present) and draw a boot test
-/// pattern: three colour bars (red / green / blue) with a white box.
+/// Bring up the board framebuffer (if present). The screen content is
+/// drawn later through the VDI (`vdi_demo`), not here — this just gets a
+/// linear buffer published so [`hal::framebuffer`] / the VDI backend can
+/// use it.
 #[cfg(feature = "board-qemu-virt")]
-fn init_framebuffer_demo() {
-    use crate::hal::framebuffer::{rgb, Framebuffer};
+fn init_framebuffer() {
+    use crate::hal::framebuffer::Framebuffer;
     // SAFETY: boot CPU, single-threaded, frame allocator is up.
     let up = unsafe { drivers::qemu_virt::ramfb::init() };
     if !up {
@@ -291,26 +300,15 @@ fn init_framebuffer_demo() {
         return;
     }
     let fb = &drivers::qemu_virt::ramfb::FRAMEBUFFER;
-    let (w, h) = (fb.width(), fb.height());
-    let third = h / 3;
-    fb.clear(rgb(30, 30, 60));
-    fb.fill_rect(0, 0, w, third, rgb(210, 50, 50)); // red
-    fb.fill_rect(0, third, w, third, rgb(50, 200, 70)); // green
-    fb.fill_rect(0, 2 * third, w, h - 2 * third, rgb(60, 90, 230)); // blue
-    fb.fill_rect(w / 4, third + third / 4, w / 2, third / 2, rgb(240, 240, 240)); // white box
-    kprintln!(
-        "[fb] ramfb up: {}x{} — boot test pattern drawn (run `cargo xtask run --window` to see it)",
-        w, h,
-    );
+    kprintln!("[fb] ramfb up: {}x{}", fb.width(), fb.height());
 }
 
-/// RPi4 framebuffer comes from the VideoCore mailbox property interface
-/// (see docs/hardware/mailbox-framebuffer.md). First test vehicle is
-/// QEMU `raspi4b`; the same code runs on real hardware, where the
-/// drawn pattern is the first life sign (no serial).
+/// RPi4 framebuffer from the VideoCore mailbox property interface (see
+/// docs/hardware/mailbox-framebuffer.md). On real hardware the later VDI
+/// drawing is the first life sign (no serial).
 #[cfg(feature = "board-rpi4")]
-fn init_framebuffer_demo() {
-    use crate::hal::framebuffer::{rgb, Framebuffer};
+fn init_framebuffer() {
+    use crate::hal::framebuffer::Framebuffer;
     // SAFETY: boot CPU, single-threaded, MMU + heap are up.
     let up = unsafe { drivers::bcm2711::framebuffer::init() };
     if !up {
@@ -318,17 +316,10 @@ fn init_framebuffer_demo() {
         return;
     }
     let fb = &drivers::bcm2711::framebuffer::FRAMEBUFFER;
-    let (w, h) = (fb.width(), fb.height());
-    let third = h / 3;
-    fb.clear(rgb(30, 30, 60));
-    fb.fill_rect(0, 0, w, third, rgb(210, 50, 50)); // red
-    fb.fill_rect(0, third, w, third, rgb(50, 200, 70)); // green
-    fb.fill_rect(0, 2 * third, w, h - 2 * third, rgb(60, 90, 230)); // blue
-    fb.fill_rect(w / 4, third + third / 4, w / 2, third / 2, rgb(240, 240, 240)); // white box
     kprintln!(
-        "[fb] VideoCore fb up: {}x{} stride {}px — boot test pattern drawn",
-        w,
-        h,
+        "[fb] VideoCore fb up: {}x{} stride {}px",
+        fb.width(),
+        fb.height(),
         fb.stride_px(),
     );
 }
