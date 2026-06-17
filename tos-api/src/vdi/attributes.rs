@@ -33,3 +33,40 @@ pub fn vsf_interior(pb: &Vdipb, vwk: &mut Vwk) {
     pb.set_intout(0, vwk.fill_style);
     pb.set_contrl(4, 1);
 }
+
+const FIS_PATTERN: i16 = 2;
+const MAX_FILL_PATTERN: i16 = 24;
+const MAX_FILL_HATCH: i16 = 12;
+
+/// Opcode 24 — `vsf_style`: set the pattern/hatch index (1-based in the
+/// API), validated against the current interior style's range. Stored
+/// 0-based in `fill_index`.
+pub fn vsf_style(pb: &Vdipb, vwk: &mut Vwk) {
+    let mut fi = pb.intin(0);
+    let max = if vwk.fill_style == FIS_PATTERN {
+        MAX_FILL_PATTERN
+    } else {
+        MAX_FILL_HATCH
+    };
+    if !(1..=max).contains(&fi) {
+        fi = 1; // default
+    }
+    vwk.fill_index = fi - 1;
+    pb.set_intout(0, fi);
+    pb.set_contrl(4, 1);
+}
+
+/// Opcode 112 — `vsf_udpat`: set the user-defined fill pattern from
+/// `INTIN` (`CONTRL[3]` words). A 16-word count is a single-plane
+/// pattern; a multiple of 16 is multi-plane (we store plane 0). Invalid
+/// counts are ignored.
+pub fn vsf_udpat(pb: &Vdipb, vwk: &mut Vwk) {
+    let count = pb.contrl(3);
+    if count < 16 || count % 16 != 0 {
+        return;
+    }
+    for i in 0..16 {
+        vwk.ud_patrn[i] = pb.intin(i) as u16;
+    }
+    vwk.multifill = count != 16;
+}

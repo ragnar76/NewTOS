@@ -50,6 +50,30 @@ pub trait RasterBackend: Sync {
     /// (inclusive device coordinates — the caller passes the workstation
     /// clip rectangle). Endpoints are inclusive.
     fn draw_line(&self, x0: i16, y0: i16, x1: i16, y1: i16, pel: Pel, clip: ClipRect);
+
+    /// Fill the rectangle `[x, x+w) × [y, y+h)` with the monochrome
+    /// pattern in [`PatternFill`], expanded into colour. Clipped to the
+    /// visible area.
+    fn fill_pattern(&self, x: i16, y: i16, w: i16, h: i16, fill: PatternFill);
+}
+
+/// A monochrome fill source: a pattern expanded into a foreground /
+/// background colour. The `pattern` is a run of 16-bit rows whose length
+/// is a power of two; scanline `yy` uses row `pattern[yy & (len-1)]`,
+/// pixel `xx` uses bit `0x8000 >> (xx & 0xF)` (patterns are
+/// screen-aligned to absolute device coordinates). A set bit writes
+/// `fg`; a clear bit writes `bg` when `opaque`, else leaves the pixel
+/// unchanged.
+#[derive(Clone, Copy)]
+pub struct PatternFill<'a> {
+    /// Colour for set bits.
+    pub fg: Pel,
+    /// Colour for clear bits (used only when `opaque`).
+    pub bg: Pel,
+    /// The pattern rows (length a power of two).
+    pub pattern: &'a [u16],
+    /// Write `bg` on clear bits (replace) vs. leave them (transparent).
+    pub opaque: bool,
 }
 
 /// Inclusive clipping rectangle in device coordinates, as carried by the

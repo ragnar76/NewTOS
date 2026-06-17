@@ -11,7 +11,7 @@
 //! fixed 16-entry GEM palette into the truecolor framebuffer. VDI
 //! convention: index 0 = white (background), 1 = black (foreground).
 
-use tos_api::vdi::backend::{ClipRect, Pel, RasterBackend};
+use tos_api::vdi::backend::{ClipRect, PatternFill, Pel, RasterBackend};
 
 use crate::hal::framebuffer::{rgb, Framebuffer};
 
@@ -149,6 +149,38 @@ impl RasterBackend for VdiScreen {
         let ylo = (y0.min(y1) as i32).clamp(0, hmax) as u32;
         let yhi = (y0.max(y1) as i32).clamp(0, hmax) as u32;
         Self::clean(fb, xlo, ylo, xhi, yhi);
+    }
+
+    fn fill_pattern(&self, x: i16, y: i16, w: i16, h: i16, fill: PatternFill) {
+        if fill.pattern.is_empty() {
+            return;
+        }
+        let fb = active_fb();
+        let scr_w = fb.width() as i32;
+        let scr_h = fb.height() as i32;
+        // Inclusive device rectangle, clamped to the visible area.
+        let x0 = (x as i32).max(0);
+        let y0 = (y as i32).max(0);
+        let x1 = ((x as i32) + (w as i32) - 1).min(scr_w - 1);
+        let y1 = ((y as i32) + (h as i32) - 1).min(scr_h - 1);
+        if x0 > x1 || y0 > y1 {
+            return;
+        }
+        let pmask = fill.pattern.len() - 1; // pattern len is a power of two
+        let fg_rgb = Self::pel_to_rgb(fill.fg);
+        let bg_rgb = Self::pel_to_rgb(fill.bg);
+        for yy in y0..=y1 {
+            // Pattern rows are screen-aligned to the absolute y coordinate.
+            let row = fill.pattern[(yy as usize) & pmask];
+            for xx in x0..=x1 {
+                if row & (0x8000u16 >> (xx & 0xF)) != 0 {
+                    fb.put_pixel(xx as u32, yy as u32, fg_rgb);
+                } else if fill.opaque {
+                    fb.put_pixel(xx as u32, yy as u32, bg_rgb);
+                }
+            }
+        }
+        Self::clean(fb, x0 as u32, y0 as u32, x1 as u32, y1 as u32);
     }
 }
 

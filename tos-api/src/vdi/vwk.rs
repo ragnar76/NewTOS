@@ -72,6 +72,9 @@ pub struct Vwk {
     pub fill_color: Pel,
     pub fill_per: bool,
     pub multifill: bool,
+    /// User-defined fill pattern (16 rows), used when `fill_style` is
+    /// `FIS_USER`; set by `vsf_udpat`.
+    pub ud_patrn: [u16; 16],
 
     // Text attributes.
     pub text_color: Pel,
@@ -110,6 +113,7 @@ impl Vwk {
         fill_color: DEF_PEN,
         fill_per: true,
         multifill: false,
+        ud_patrn: [0; 16],
         text_color: DEF_PEN,
         style: 0,
         h_align: 0,

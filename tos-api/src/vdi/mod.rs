@@ -21,6 +21,7 @@
 
 pub mod backend;
 mod attributes;
+mod fill_patterns;
 mod primitives;
 mod vwk;
 mod workstation;
@@ -137,7 +138,7 @@ pub unsafe fn dispatch(vdipb_ptr: u64) {
         3 if open_handle(&pb).is_some() => workstation::v_clrwk(backend),
 
         // ── attribute setters + output primitives (need the vwk) ──
-        6 | 17 | 23 | 25 | 114 => {
+        6 | 17 | 23 | 24 | 25 | 112 | 114 => {
             // SAFETY: single trap path.
             if let Some(vwk) = unsafe { vwk::resolve(pb.contrl(C_HANDLE)) } {
                 let ncol = backend.num_colors();
@@ -145,6 +146,8 @@ pub unsafe fn dispatch(vdipb_ptr: u64) {
                     17 => attributes::vsl_color(&pb, vwk, ncol),
                     25 => attributes::vsf_color(&pb, vwk, ncol),
                     23 => attributes::vsf_interior(&pb, vwk),
+                    24 => attributes::vsf_style(&pb, vwk),
+                    112 => attributes::vsf_udpat(&pb, vwk),
                     6 => primitives::v_pline(&pb, vwk, backend),
                     114 => primitives::vr_recfl(&pb, vwk, backend),
                     _ => unreachable!(),

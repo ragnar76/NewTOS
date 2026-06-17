@@ -75,19 +75,30 @@ impl Vdi {
         self.call();
     }
 
+    /// Set an attribute opcode taking a single `INTIN[0]` value.
+    fn set1(&mut self, opcode: i16, value: i16) {
+        self.contrl.fill(0);
+        self.contrl[0] = opcode;
+        self.contrl[3] = 1;
+        self.contrl[6] = self.handle;
+        self.intin[0] = value;
+        self.call();
+    }
+
+    fn set_fill_color(&mut self, color: i16) {
+        self.set1(25, color); // vsf_color
+    }
+    fn set_fill_style(&mut self, style: i16) {
+        self.set1(23, style); // vsf_interior
+    }
+    fn set_fill_index(&mut self, index: i16) {
+        self.set1(24, index); // vsf_style
+    }
+
+    /// Solid fill in `color`.
     fn set_fill(&mut self, color: i16) {
-        self.contrl.fill(0);
-        self.contrl[0] = 25; // vsf_color
-        self.contrl[3] = 1;
-        self.contrl[6] = self.handle;
-        self.intin[0] = color;
-        self.call();
-        self.contrl.fill(0);
-        self.contrl[0] = 23; // vsf_interior
-        self.contrl[3] = 1;
-        self.contrl[6] = self.handle;
-        self.intin[0] = SOLID;
-        self.call();
+        self.set_fill_color(color);
+        self.set_fill_style(SOLID);
     }
 
     fn fill_rect(&mut self, x1: i16, y1: i16, x2: i16, y2: i16) {
@@ -164,28 +175,51 @@ pub fn run() {
         v.line(MARGIN, y, MARGIN + block_w, y);
     }
 
-    // ── a line grid in the area below the tiles ──
-    let gy0 = MARGIN + block_h + 16;
-    let gy1 = h - MARGIN;
-    let gx0 = MARGIN;
-    let gx1 = w - MARGIN;
-    let mut x = gx0;
-    while x <= gx1 {
-        v.line(x, gy0, x, gy1);
-        x += 40;
+    // ── fill-style showcase (D4): a row of the 8 dither patterns and a
+    //    row of the 6 hatch styles, each outlined so its bounds show. ──
+    const FIS_PATTERN: i16 = 2;
+    const FIS_HATCH: i16 = 3;
+    let p_h: i16 = 64;
+    let dy = MARGIN + block_h + 20;
+    let hy = dy + p_h + 12;
+
+    // dither patterns 1..=8 in blue
+    for i in 0..8i16 {
+        let x = MARGIN + i * tile_w;
+        v.set_fill_color(4); // blue
+        v.set_fill_style(FIS_PATTERN);
+        v.set_fill_index(i + 1);
+        v.fill_rect(x, dy, x + tile_w - 1, dy + p_h - 1);
+        outline(&mut v, x, dy, x + tile_w - 1, dy + p_h - 1);
     }
-    let mut y = gy0;
-    while y <= gy1 {
-        v.line(gx0, y, gx1, y);
-        y += 40;
+
+    // hatch styles 1..=6 in black
+    let hatch_w = (w - 2 * MARGIN) / 6;
+    for i in 0..6i16 {
+        let x = MARGIN + i * hatch_w;
+        v.set_fill_color(BLACK);
+        v.set_fill_style(FIS_HATCH);
+        v.set_fill_index(i + 1);
+        v.fill_rect(x, hy, x + hatch_w - 1, hy + p_h - 1);
+        outline(&mut v, x, hy, x + hatch_w - 1, hy + p_h - 1);
     }
 
     // ── outer screen border ──
+    v.set_line(BLACK);
     v.line(0, 0, w - 1, 0);
     v.line(w - 1, 0, w - 1, h - 1);
     v.line(w - 1, h - 1, 0, h - 1);
     v.line(0, h - 1, 0, 0);
 
     v.close();
-    kprintln!("[vdi-demo] palette + grid drawn through the VDI ({}x{})", w, h);
+    kprintln!("[vdi-demo] palette + patterns + hatches drawn through the VDI ({}x{})", w, h);
+}
+
+/// Draw a black rectangle outline (four `v_pline` segments).
+fn outline(v: &mut Vdi, x0: i16, y0: i16, x1: i16, y1: i16) {
+    v.set_line(BLACK);
+    v.line(x0, y0, x1, y0);
+    v.line(x1, y0, x1, y1);
+    v.line(x1, y1, x0, y1);
+    v.line(x0, y1, x0, y0);
 }
