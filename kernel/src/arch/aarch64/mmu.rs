@@ -216,6 +216,33 @@ fn build(map: &MemoryMap) {
 /// corrupt the phys-address computation below.
 pub const VA_OFFSET: u64 = 0xFFFF_0000_0000_0000;
 
+/// Clean (write back) the cache lines covering `[va, va + len)` to the
+/// point of coherency, so a separate DMA master (e.g. the display
+/// controller) sees writes the CPU made through a cacheable mapping.
+///
+/// On a Non-Cacheable mapping this is a harmless no-op (no dirty lines),
+/// so it is safe to call unconditionally as a robustness net for the
+/// framebuffer. ARM ARM B2.4 (cache maintenance). 64-byte line is the
+/// architectural minimum and always safe for a clean-by-VA loop.
+///
+/// # Safety
+/// `va`/`len` must describe a mapped, readable region.
+pub unsafe fn clean_dcache_range(va: usize, len: usize) {
+    if len == 0 {
+        return;
+    }
+    const LINE: usize = 64;
+    let mut p = va & !(LINE - 1);
+    let end = va + len;
+    while p < end {
+        // SAFETY: `dc cvac` on a mapped VA is well-defined.
+        unsafe { core::arch::asm!("dc cvac, {}", in(reg) p, options(nostack, preserves_flags)) };
+        p += LINE;
+    }
+    // SAFETY: ordering barrier; no memory effect of its own.
+    unsafe { core::arch::asm!("dsb sy", options(nostack, preserves_flags)) };
+}
+
 /// Convert a high-half kernel VA to the corresponding physical
 /// address. Valid only for symbols inside the kernel image (where
 /// VA = LMA + VA_OFFSET); do not use for arbitrary mappings.

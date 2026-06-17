@@ -57,6 +57,21 @@ impl VdiScreen {
     fn pel_to_rgb(pel: Pel) -> u32 {
         PALETTE[(pel as usize) & (NUM_COLORS as usize - 1)]
     }
+
+    /// Clean the cache lines covering the inclusive pixel rectangle
+    /// `[x0..=x1] × [y0..=y1]` to the point of coherency, so the display
+    /// controller (a separate DMA master beyond the ARM caches) sees the
+    /// pixels just written. A no-op if the framebuffer is Non-Cacheable.
+    /// We clean the contiguous address span enclosing the rectangle —
+    /// cleaning the few row-end bytes in between is harmless.
+    fn clean(fb: &dyn Framebuffer, x0: u32, y0: u32, x1: u32, y1: u32) {
+        let stride = fb.stride_px() as usize;
+        let base = fb.pixels() as usize;
+        let start = base + (y0 as usize * stride + x0 as usize) * 4;
+        let end = base + (y1 as usize * stride + x1 as usize) * 4 + 4;
+        // SAFETY: the span lies within the framebuffer's pixel store.
+        unsafe { crate::arch::aarch64::mmu::clean_dcache_range(start, end - start) };
+    }
 }
 
 impl RasterBackend for VdiScreen {
@@ -84,7 +99,13 @@ impl RasterBackend for VdiScreen {
         if w == 0 || h == 0 {
             return;
         }
-        active_fb().fill_rect(x0, y0, w, h, Self::pel_to_rgb(pel));
+        let fb = active_fb();
+        fb.fill_rect(x0, y0, w, h, Self::pel_to_rgb(pel));
+        // Clamp the cleaned rectangle to the visible area (fill_rect
+        // already clipped the draw).
+        let x1 = (x0 + w - 1).min(fb.width().saturating_sub(1));
+        let y1 = (y0 + h - 1).min(fb.height().saturating_sub(1));
+        Self::clean(fb, x0, y0, x1, y1);
     }
 
     fn draw_line(&self, x0: i16, y0: i16, x1: i16, y1: i16, pel: Pel, clip: ClipRect) {
@@ -120,6 +141,14 @@ impl RasterBackend for VdiScreen {
                 y += sy;
             }
         }
+        // Clean the line's bounding box (clamped to the screen) to PoC.
+        let wmax = fb.width().saturating_sub(1) as i32;
+        let hmax = fb.height().saturating_sub(1) as i32;
+        let xlo = (x0.min(x1) as i32).clamp(0, wmax) as u32;
+        let xhi = (x0.max(x1) as i32).clamp(0, wmax) as u32;
+        let ylo = (y0.min(y1) as i32).clamp(0, hmax) as u32;
+        let yhi = (y0.max(y1) as i32).clamp(0, hmax) as u32;
+        Self::clean(fb, xlo, ylo, xhi, yhi);
     }
 }
 
