@@ -12,5 +12,6 @@
 //! algorithmic logic and lets the BDOS layer be unit-tested on the
 //! host without an SVC path.
 
+pub mod fs;
 pub mod mem;
 pub mod process;

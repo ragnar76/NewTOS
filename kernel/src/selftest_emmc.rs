@@ -112,7 +112,87 @@ pub fn run() {
             (b'A' + (drv + 1) as u8) as char,
             if bd == 0 { "NULL (no FAT BPB)" } else { "ptr" },
         );
+
+        // ── Phase 09 D1: FAT cluster-chain reader on C: ──
+        fat_test(drv as u16, letter);
     }
+}
+
+/// Phase 09 D1: mount the FAT volume on `drive` and walk the cluster
+/// chain of the first directory entry, verifying the chain and the data.
+fn fat_test(drive: u16, letter: char) {
+    use tos_api::bdos::fs::fat::Volume;
+
+    let vol = match Volume::mount(drive) {
+        Some(v) => v,
+        None => {
+            kprintln!("[emmc] FAT mount({}:) -> not a FAT volume", letter);
+            return;
+        }
+    };
+    kprintln!(
+        "[emmc] FAT mount({}:) clsizb={} numcl={} root@{}(rel)",
+        letter,
+        vol.clsizb,
+        vol.numcl,
+        vol.root_sector(),
+    );
+
+    // Read the first root-directory sector and take the first 8.3 entry.
+    let mut sec = [0u8; 512];
+    if !read_part_sector(drive, vol.root_sector(), &mut sec) {
+        kprintln!("[emmc] FAT root read failed");
+        return;
+    }
+    if sec[0] == 0x00 || sec[0] == 0xE5 {
+        kprintln!("[emmc] FAT root dir empty");
+        return;
+    }
+    let mut name = [0u8; 11];
+    name.copy_from_slice(&sec[0..11]);
+    let start = u16::from_le_bytes([sec[0x1A], sec[0x1B]]) as u32;
+    let size = u32::from_le_bytes([sec[0x1C], sec[0x1D], sec[0x1E], sec[0x1F]]);
+    kprintln!(
+        "[emmc] dir[0]=\"{}\" cluster={} size={}",
+        core::str::from_utf8(&name).unwrap_or("?"),
+        start,
+        size,
+    );
+
+    // Walk the FAT chain and read the first cluster's content.
+    let mut cl = start;
+    let mut chain = 0u32;
+    let mut first = [0u8; 64];
+    while vol.is_data_cluster(cl) && chain < 64 {
+        if chain == 0 {
+            let mut buf = [0u8; 2048];
+            if vol.read_cluster(cl, &mut buf) {
+                first.copy_from_slice(&buf[..64]);
+            }
+        }
+        chain += 1;
+        match vol.fat_entry(cl) {
+            Some(next) if vol.is_eoc(next) => break,
+            Some(next) => cl = next,
+            None => break,
+        }
+    }
+    let want = size.div_ceil(vol.clsizb).max(1);
+    kprintln!(
+        "[emmc] chain length={} (expected {} clusters) {}",
+        chain,
+        want,
+        if chain == want { "OK" } else { "MISMATCH" },
+    );
+    kprintln!(
+        "[emmc] cluster[0] first bytes: \"{}\"",
+        core::str::from_utf8(&first[..32]).unwrap_or("?"),
+    );
+}
+
+/// Read one partition-relative sector via `Rwabs` (read).
+fn read_part_sector(drive: u16, rel: u32, buf: &mut [u8; 512]) -> bool {
+    rwabs(0, buf.as_mut_ptr() as u64, 1, rel as u64, drive as u64, 0) == 0
 }
 
 /// BIOS `Getbpb` via `svc #13` (function id 0x07) — returns a `BPB *`.

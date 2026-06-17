@@ -102,29 +102,35 @@ fn parse(sec: &[u8; 512], part_sectors: u32) -> Option<Bpb> {
     Some(Bpb { recsiz, clsiz, clsizb, rdlen, fsiz, fatrec, datrec, numcl, b_flags })
 }
 
+/// Read a drive's boot sector, parse its BPB, and cache it in the
+/// per-drive static. Returns the parsed value (`None` on failure).
+/// Shared by [`getbpb`] (the BIOS trap) and the BDOS FAT mount.
+pub fn bpb_for(drive: u16) -> Option<Bpb> {
+    if drive as usize >= 16 {
+        return None;
+    }
+    let part = drive::resolve(drive)?;
+    let blk = host::host().and_then(|h| h.block())?;
+    let mut sec = [0u8; 512];
+    if !blk.read_blocks(part.start_lba as u64, &mut sec) {
+        return None;
+    }
+    let bpb = parse(&sec, part.count)?;
+    // SAFETY: single trap path; one BPB slot per drive.
+    let table = unsafe { &mut *TABLE.0.get() };
+    table[drive as usize] = bpb;
+    Some(bpb)
+}
+
 /// `Getbpb` (0x07) — read the drive's boot sector, parse its BPB into
 /// the per-drive static, and return a pointer to it (`0` on failure).
 /// The return is a **native 64-bit pointer** (the BIOS dispatch carries
 /// `i64`).
 pub fn getbpb(drive: u16) -> i64 {
-    let part = match drive::resolve(drive) {
-        Some(p) => p,
-        None => return 0,
-    };
-    let blk = match host::host().and_then(|h| h.block()) {
-        Some(b) => b,
-        None => return 0,
-    };
-    let mut sec = [0u8; 512];
-    if !blk.read_blocks(part.start_lba as u64, &mut sec) {
+    if bpb_for(drive).is_none() {
         return 0;
     }
-    let bpb = match parse(&sec, part.count) {
-        Some(b) => b,
-        None => return 0,
-    };
-    // SAFETY: single trap path; one BPB slot per drive.
+    // SAFETY: single trap path; the slot was just written by `bpb_for`.
     let table = unsafe { &mut *TABLE.0.get() };
-    table[drive as usize] = bpb;
     &table[drive as usize] as *const Bpb as i64
 }
