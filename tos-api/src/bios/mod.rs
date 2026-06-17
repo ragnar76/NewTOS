@@ -9,8 +9,11 @@
 //! `x0..`, result in `x0`.
 
 pub mod block;
+pub mod drive;
 
-use tos_types::error::{EREADF, EUNDEV, EWRITF, E_OK};
+pub use drive::mount;
+
+use tos_types::error::{EREADF, ESECNF, EUNDEV, EWRITF, E_OK};
 use tos_types::Long;
 
 use crate::host;
@@ -45,10 +48,11 @@ fn rwabs(args: &TrapArgs) -> Long {
     let drive = args.arg_u16(4);
     let lfirst = args.arg_i32(5);
 
-    // Bring-up: a single block device on drive 0.
-    if drive != 0 {
-        return EUNDEV;
-    }
+    // Resolve the drive to its partition (start LBA + length).
+    let part = match drive::resolve(drive) {
+        Some(p) => p,
+        None => return EUNDEV,
+    };
     let blk = match host::host().and_then(|h| h.block()) {
         Some(b) => b,
         None => return EUNDEV,
@@ -61,6 +65,11 @@ fn rwabs(args: &TrapArgs) -> Long {
     } else {
         first as u16 as u64
     };
+    // Partition-relative sector → absolute LBA, with a range check.
+    if sector + numb as u64 > part.count as u64 {
+        return ESECNF;
+    }
+    let lba = part.start_lba as u64 + sector;
     let len = numb * SECTOR;
     let write = r_w & 1 != 0;
 
@@ -69,9 +78,9 @@ fn rwabs(args: &TrapArgs) -> Long {
     // process-aware BIOS path.
     let ok = unsafe {
         if write {
-            blk.write_blocks(sector, core::slice::from_raw_parts(adr as *const u8, len))
+            blk.write_blocks(lba, core::slice::from_raw_parts(adr as *const u8, len))
         } else {
-            blk.read_blocks(sector, core::slice::from_raw_parts_mut(adr as *mut u8, len))
+            blk.read_blocks(lba, core::slice::from_raw_parts_mut(adr as *mut u8, len))
         }
     };
     if ok {
@@ -89,12 +98,8 @@ fn mediach(_args: &TrapArgs) -> Long {
     0
 }
 
-/// `Drvmap` (0x0A) — bitmap of present drives. Bring-up: bit 0 = the SD
-/// card if a block device is installed.
+/// `Drvmap` (0x0A) — bitmap of present drives (bit `n` = drive `n`),
+/// built from the partition table.
 fn drvmap() -> Long {
-    if host::host().and_then(|h| h.block()).is_some() {
-        1
-    } else {
-        0
-    }
+    drive::drvbits() as Long
 }

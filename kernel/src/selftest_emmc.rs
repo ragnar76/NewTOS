@@ -71,16 +71,39 @@ pub fn run() {
         }
     }
 
-    // ── BIOS Rwabs over the real trap path (svc #13) ──
-    let mut rbuf = [0u8; 512];
-    let rc = rwabs(0, rbuf.as_mut_ptr() as u64, 1, 0, 0, 0); // read 1 sector @0, drive 0
-    let sig = u16::from_le_bytes([rbuf[510], rbuf[511]]);
-    kprintln!(
-        "[emmc] Rwabs(read, sec 0, drive 0) -> {} ; sig=0x{:04x} {}",
-        rc,
-        sig,
-        if rc == 0 && sig == 0xAA55 { "OK" } else { "FAIL" },
-    );
+    // ── partition table + BIOS Rwabs over the real trap path ──
+    let n = tos_api::bios::mount();
+    let map = drvmap();
+    kprintln!("[emmc] mounted {} partition(s); Drvmap=0x{:x}", n, map);
+
+    if map != 0 {
+        let drv = map.trailing_zeros() as u64; // first present drive
+        let letter = (b'A' + drv as u8) as char;
+        let mut rbuf = [0u8; 512];
+        // Read sector 0 of the partition (its FAT/boot sector).
+        let rc = rwabs(0, rbuf.as_mut_ptr() as u64, 1, 0, drv, 0);
+        let sig = u16::from_le_bytes([rbuf[510], rbuf[511]]);
+        kprintln!(
+            "[emmc] Rwabs(read sec 0 of {}:) -> {} ; first {:02x} {:02x}, sig=0x{:04x} {}",
+            letter,
+            rc,
+            rbuf[0],
+            rbuf[1],
+            sig,
+            if rc == 0 { "OK" } else { "FAIL" },
+        );
+    }
+}
+
+/// BIOS `Drvmap` via `svc #13` (function id 0x0A).
+#[inline(always)]
+fn drvmap() -> u32 {
+    let r: i64;
+    // SAFETY: svc #13, BIOS Drvmap (func 0x0A), no arguments.
+    unsafe {
+        core::arch::asm!("svc #13", in("x8") 0x0Au64, out("x0") r, options(nostack));
+    }
+    r as u32
 }
 
 /// BIOS `Rwabs` via `svc #13` (function id 4 in x8).
