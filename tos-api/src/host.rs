@@ -61,6 +61,16 @@ pub trait Host: Sync {
     fn monotonic_seconds(&self) -> u64 {
         0
     }
+
+    /// The VDI rasterizer backend (the screen device), or `None` if the
+    /// board has no framebuffer. This is the swappable hardware boundary
+    /// for the VDI: the bring-up host returns a software rasterizer over
+    /// the framebuffer; a later accelerated (NEON / DMA / GPU) backend
+    /// drops in here without the VDI layer changing. Default `None`
+    /// keeps hostless / display-less configurations building.
+    fn raster(&self) -> Option<&dyn crate::vdi::backend::RasterBackend> {
+        None
+    }
 }
 
 // `&'static dyn Host` is `Sync + 'static`; we store it as a raw

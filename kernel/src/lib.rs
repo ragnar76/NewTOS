@@ -43,7 +43,9 @@ pub mod selftest_lineecho;
 pub mod selftest_time;
 pub mod selftest_pexec;
 pub mod selftest_pexec_d4d5;
+pub mod selftest_vdi;
 pub mod sync;
+pub mod vdi_backend;
 
 // ---------------------------------------------------------------------------
 // kprintf! / kprintln! (Phase 03 D7) — formatter macros into the boot
@@ -244,6 +246,7 @@ extern "C" fn kernel_main_rust(dtb_phys: usize) -> ! {
     selftest_pexec::run_pexec_test();
     selftest_pexec_d4d5::run_pexec_loadgo_split_test();
     selftest_time::run_phase07_time_test();
+    selftest_vdi::run_phase12_vdi_test();
     selftest_lineecho::run_lineecho_demo();
     selftest::run_cconin_demo();
     selftest::run_phase02_self_test();

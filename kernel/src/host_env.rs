@@ -93,6 +93,16 @@ impl Host for KernelHost {
         }
         cnt.checked_div(frq).unwrap_or(0)
     }
+
+    fn raster(&self) -> Option<&dyn tos_api::vdi::backend::RasterBackend> {
+        // Hand the VDI the software framebuffer backend, but only once a
+        // framebuffer is actually up (geometry published).
+        if crate::vdi_backend::available() {
+            Some(&crate::vdi_backend::VDI_SCREEN)
+        } else {
+            None
+        }
+    }
 }
 
 /// Static reference handed to `tos_api::host::install_host`.

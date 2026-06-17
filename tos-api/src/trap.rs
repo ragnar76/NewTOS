@@ -24,6 +24,8 @@ use tos_types::Long;
 pub enum TrapClass {
     /// Trap #1 — GEMDOS.
     Gemdos = 1,
+    /// Trap #2 — VDI (parameter-block call; see [`crate::vdi`]).
+    Vdi = 2,
     /// Trap #13 — BIOS.
     Bios = 13,
     /// Trap #14 — XBIOS.
@@ -36,6 +38,7 @@ impl TrapClass {
     pub const fn from_imm(imm: u16) -> Option<Self> {
         match imm {
             1 => Some(Self::Gemdos),
+            2 => Some(Self::Vdi),
             13 => Some(Self::Bios),
             14 => Some(Self::Xbios),
             _ => None,

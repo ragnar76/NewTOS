@@ -269,6 +269,14 @@ pub extern "C" fn rust_sync_handler(frame: &mut ExceptionFrame) {
 
     let result = match class {
         TrapClass::Gemdos => tos_api::gemdos::dispatch(&args),
+        // VDI (Trap #2): a parameter-block call — `x0` holds the VDIPB
+        // pointer and there is no register return value. Run the
+        // dispatcher and leave `x0 = 0`.
+        TrapClass::Vdi => {
+            // SAFETY: `x0` is the caller-supplied VDI parameter block.
+            unsafe { tos_api::vdi::dispatch(args.regs[0]) };
+            0
+        }
         // PHASE-07 will land BIOS/XBIOS dispatchers; until then any
         // SVC #13/#14 returns EINVFN so the trap path is observable.
         TrapClass::Bios | TrapClass::Xbios => tos_types::error::EINVFN,
