@@ -55,7 +55,11 @@ Commands:
   build --board {{rpi4|qemu-virt}} [--release]
   build-programs                 — build programs/* and regenerate the
                                    embedded blobs in kernel/src/generated/
-  run [--release]
+  run [--board {{rpi4|qemu-virt}}] [--release] [--window] [--debug]
+                                   — boot in QEMU (virt by default, or
+                                     raspi4b with --board rpi4); --window
+                                     shows the framebuffer, --debug halts
+                                     at reset with a gdbstub on :1234
   test
   help
 "
@@ -291,12 +295,15 @@ fn host_triple() -> Result<String, String> {
 
 fn cmd_run(args: &[String]) -> Result<(), String> {
     let window = args.iter().any(|a| a == "--window");
-    let filtered: Vec<String> = args.iter().filter(|a| *a != "--window").cloned().collect();
+    let debug = args.iter().any(|a| a == "--debug");
+    let filtered: Vec<String> = args
+        .iter()
+        .filter(|a| *a != "--window" && *a != "--debug")
+        .cloned()
+        .collect();
     let (board, release) = parse_board_and_profile(&filtered)?;
-    if let Some(b) = board {
-        if b != Board::QemuVirt {
-            return Err("run: only `--board qemu-virt` is supported (or omit --board)".into());
-        }
+    if board == Some(Board::Rpi4) {
+        return cmd_run_rpi4(release, window, debug);
     }
     build_kernel(Board::QemuVirt, release)?;
     let elf = kernel_elf_path(release);
@@ -353,9 +360,45 @@ fn cmd_run(args: &[String]) -> Result<(), String> {
         "-kernel",
     ])
     .arg(&img);
+    if debug {
+        // Halt at reset and expose QEMU's gdbstub on tcp::1234.
+        c.args(["-S", "-s"]);
+    }
     println!(
-        "xtask: launching QEMU{} (Ctrl-C to quit)",
+        "xtask: launching QEMU{}{} (Ctrl-C to quit)",
         if window { " with display window" } else { "" },
+        if debug { " [gdbstub :1234, halted]" } else { "" },
+    );
+    run(c)
+}
+
+/// `xtask run --board rpi4`: boot the RPi4 kernel on QEMU's `raspi4b`
+/// machine (the debuggable first vehicle for the VideoCore framebuffer).
+/// `--window` shows the emulated HDMI output; `--debug` halts at reset
+/// with a gdbstub on :1234. There is no serial dependency — the kernel's
+/// PL011 is wired to serial0 (`-serial stdio`), but the framebuffer is
+/// the intended output channel on real hardware.
+fn cmd_run_rpi4(release: bool, window: bool, debug: bool) -> Result<(), String> {
+    build_kernel(Board::Rpi4, release)?;
+    produce_kernel8_img(release)?;
+    let img = workspace_root().join("kernel8.img");
+
+    let mut c = Command::new("qemu-system-aarch64");
+    c.args(["-M", "raspi4b", "-no-reboot"]);
+    if window {
+        c.args(["-display", "cocoa"]);
+    } else {
+        c.args(["-display", "none"]);
+    }
+    // serial0 on raspi4b is the PL011 (UART0) the kernel drives.
+    c.args(["-serial", "stdio", "-kernel"]).arg(&img);
+    if debug {
+        c.args(["-S", "-s"]);
+    }
+    println!(
+        "xtask: launching QEMU raspi4b{}{} (Ctrl-C to quit)",
+        if window { " with display window" } else { "" },
+        if debug { " [gdbstub :1234, halted]" } else { "" },
     );
     run(c)
 }
