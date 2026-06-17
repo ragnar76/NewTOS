@@ -4,6 +4,15 @@
 > Produced **before** the driver (CLAUDE.md Rule 6: no invented
 > hardware). Target: Raspberry Pi 4 (BCM2711), AArch64, low-peripheral
 > mode. First test vehicle: QEMU `raspi4b` (debuggable), then real HW.
+>
+> **Status: implemented + verified on QEMU `raspi4b`** (640×480×32 FB
+> allocated via the property interface; boot test pattern confirmed by
+> QMP screendump). Drivers: `kernel/src/drivers/bcm2711/mailbox.rs` +
+> `framebuffer.rs`. Run: `cargo xtask run --board rpi4 [--window]`.
+> Two findings during bring-up, both folded into the notes below:
+> (1) the firmware enters the kernel at **EL2** → boot does an EL2→EL1
+> drop; (2) our XRGB8888 store needs pixel order **BGR**, not RGB.
+> Real-HW verification still pending (no serial; FB is the life sign).
 
 ## Sources
 
@@ -150,11 +159,17 @@ processes them in order, so the geometry/depth/order are set before
 ```
 set physical  W x H
 set virtual   W x H        (= physical for a non-scrolled FB)
-set depth     32           (bpp; 32-bit ARGB/XRGB for bring-up)
-set pixel order 0x1        (RGB)
+set depth     32           (bpp; 32-bit XRGB for bring-up)
+set pixel order 0x0        (BGR — see note)
 allocate      alignment=16 -> base, size
 get pitch                  -> bytes_per_line
 ```
+
+> **Pixel order (verified on raspi4b):** our pixel store is XRGB8888
+> packed as `0xFF_RR_GG_BB`, i.e. little-endian memory bytes
+> `[B, G, R, X]` (blue lowest). The VC's **BGR** order (`0x0`) reads the
+> lowest byte as blue → matches. Selecting RGB (`0x1`) swaps red/blue
+> (a QMP screendump showed the red bar as blue). Use **BGR**.
 
 For `allocate`, pass the alignment (e.g. 16 or a page = 4096) in the
 request value; the VC returns the **bus base address** and the byte
