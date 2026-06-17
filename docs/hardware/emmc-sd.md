@@ -194,5 +194,18 @@ after single-block read works.
 - **BIOS layer (later):** `Rwabs`/`Mediach`/`Getbpb` on Trap 13 sit on
   top of `BlockDevice`; sector 0 read → FAT/MBR signature `0x55AA` at
   offset 510 is the bring-up exit check (EC1 reads via `Rwabs`).
-- The QEMU SDHCI init reportedly has a finicky voltage handshake; expect
-  to iterate `ACMD41` timing/flags against QEMU.
+- **QEMU vs HW base (verified).** QEMU `raspi4b` instantiates *two*
+  `generic-sdhci` controllers (`0xFE300000` and `0xFE340000`) and wires
+  its emulated SD card to the **legacy EMMC at `0xFE300000`** (that one
+  is clocked at 200 MHz; the emmc2 clock reads 0 Hz). Real RPi4 has the
+  microSD on **EMMC2 `0xFE340000`**. Both are standard SDHCI, so the
+  driver `init()` **probes EMMC2 first then EMMC** and uses whichever has
+  a responding card — works on QEMU and (expected) on HW with one binary.
+- **Bus power matters:** after `SRST_HC`, set `CONTROL0` Power Control
+  (`0x0F00` = SD bus power + 3.3 V) before issuing commands, or the card
+  never responds (every response-command times out with `CTO`).
+- **Bring-up status:** init + single-block read verified on QEMU
+  `raspi4b` (reads a known sector 0 back byte-exact, `0x55AA` signature).
+  Real-HW verification pending: there, the card is on EMMC2 and is the
+  live boot card — read-only sector probes are safe; the EMMC2 base
+  clock is already running from the firmware boot.
