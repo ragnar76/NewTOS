@@ -45,7 +45,9 @@ pub mod selftest_pexec;
 pub mod selftest_pexec_d4d5;
 pub mod selftest_vdi;
 pub mod sync;
+pub mod initinfo;
 pub mod vdi_backend;
+pub mod vdi_client;
 pub mod vdi_demo;
 
 // ---------------------------------------------------------------------------
@@ -244,7 +246,8 @@ extern "C" fn kernel_main_rust(dtb_phys: usize) -> ! {
     // below (which on QEMU's TCG can wedge on a TTBR0 switch — QUIRK-001,
     // a QEMU-only artifact; real hardware completes them).
     selftest_vdi::run_phase12_vdi_test();
-    vdi_demo::run();
+    initinfo::run();
+    let _ = vdi_demo::run; // primitive showcase, available but not shown at boot
 
     selftest::run_phase04_self_test();
     selftest_ec4::run_ec4_pseudo_process_test();
