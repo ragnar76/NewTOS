@@ -61,6 +61,45 @@ pub trait RasterBackend: Sync {
     /// leftmost pixel; only set bits are drawn (transparent). Clipped to
     /// the visible area.
     fn draw_glyph(&self, x: i16, y: i16, glyph: &[u8; 16], fg: Pel);
+
+    /// Blit a monochrome source ([`MonoSrc`]) into the screen rectangle
+    /// `dst`, expanding set bits to `fg` and (when `opaque`) clear bits
+    /// to `bg` (`vrt_cpyfm`). Clipped to the visible area.
+    fn blit_mono(&self, dst: Rect, src: MonoSrc, fg: Pel, bg: Pel, opaque: bool);
+
+    /// Copy a screen rectangle `src` to the screen position `(dx, dy)`
+    /// using BitBlt logic op `op` (3 = replace, 6 = XOR) — the
+    /// screen-to-screen case of `vro_cpyfm`. Clipped to the visible area.
+    fn copy_rect(&self, src: Rect, dx: i16, dy: i16, op: u8);
+}
+
+/// A rectangle in device coordinates (top-left + size).
+#[derive(Clone, Copy)]
+pub struct Rect {
+    /// Left edge.
+    pub x: i16,
+    /// Top edge.
+    pub y: i16,
+    /// Width in pixels.
+    pub w: i16,
+    /// Height in pixels.
+    pub h: i16,
+}
+
+/// A monochrome blit source (one plane). `bits` is the raster as 16-bit
+/// big-endian-packed words, `stride_words` words per row; `(x, y)` is
+/// the top-left of the sub-rectangle to read. Bit `0x8000 >> (col & 15)`
+/// of word `col/16` is the leftmost pixel.
+#[derive(Clone, Copy)]
+pub struct MonoSrc<'a> {
+    /// The source raster words.
+    pub bits: &'a [u16],
+    /// Words per raster row.
+    pub stride_words: u16,
+    /// Source sub-rectangle left.
+    pub x: i16,
+    /// Source sub-rectangle top.
+    pub y: i16,
 }
 
 /// A monochrome fill source: a pattern expanded into a foreground /

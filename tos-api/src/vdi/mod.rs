@@ -25,6 +25,7 @@ mod fill_patterns;
 mod font;
 mod font_data;
 mod primitives;
+mod raster;
 mod text;
 mod vwk;
 mod workstation;
@@ -71,6 +72,15 @@ impl Vdipb {
     pub fn contrl(&self, i: usize) -> i16 {
         // SAFETY: callers index within the CONTRL array (≥ 7 WORDs).
         unsafe { self.contrl.add(i).read() }
+    }
+
+    /// Read a native 64-bit pointer packed into four consecutive CONTRL
+    /// WORDs starting at index `i` (NewTOS native MFDB-pointer
+    /// convention; see [`crate::vdi::raster`]).
+    #[inline]
+    pub fn contrl_u64(&self, i: usize) -> u64 {
+        // SAFETY: callers ensure CONTRL has ≥ i+4 WORDs.
+        unsafe { (self.contrl.add(i) as *const u64).read_unaligned() }
     }
     #[inline]
     pub fn set_contrl(&self, i: usize, v: i16) {
@@ -141,7 +151,7 @@ pub unsafe fn dispatch(vdipb_ptr: u64) {
         3 if open_handle(&pb).is_some() => workstation::v_clrwk(backend),
 
         // ── attribute setters + output primitives (need the vwk) ──
-        6 | 8 | 17 | 22 | 23 | 24 | 25 | 39 | 112 | 114 => {
+        6 | 8 | 17 | 22 | 23 | 24 | 25 | 39 | 109 | 112 | 114 | 121 => {
             // SAFETY: single trap path.
             if let Some(vwk) = unsafe { vwk::resolve(pb.contrl(C_HANDLE)) } {
                 let ncol = backend.num_colors();
@@ -156,6 +166,8 @@ pub unsafe fn dispatch(vdipb_ptr: u64) {
                     6 => primitives::v_pline(&pb, vwk, backend),
                     8 => text::v_gtext(&pb, vwk, backend),
                     114 => primitives::vr_recfl(&pb, vwk, backend),
+                    121 => raster::vrt_cpyfm(&pb, vwk, backend, ncol),
+                    109 => raster::vro_cpyfm(&pb, backend),
                     _ => unreachable!(),
                 }
             }

@@ -11,7 +11,7 @@
 //! fixed 16-entry GEM palette into the truecolor framebuffer. VDI
 //! convention: index 0 = white (background), 1 = black (foreground).
 
-use tos_api::vdi::backend::{ClipRect, PatternFill, Pel, RasterBackend};
+use tos_api::vdi::backend::{ClipRect, MonoSrc, PatternFill, Pel, RasterBackend, Rect};
 
 use crate::hal::framebuffer::{rgb, Framebuffer};
 
@@ -71,6 +71,17 @@ impl VdiScreen {
         let end = base + (y1 as usize * stride + x1 as usize) * 4 + 4;
         // SAFETY: the span lies within the framebuffer's pixel store.
         unsafe { crate::arch::aarch64::mmu::clean_dcache_range(start, end - start) };
+    }
+
+    /// Clean the rectangle `(x, y, w, h)` clamped to the visible area.
+    fn clean_clamped(fb: &dyn Framebuffer, x: i16, y: i16, w: i16, h: i16) {
+        let x0 = (x as i32).max(0);
+        let y0 = (y as i32).max(0);
+        let x1 = ((x as i32) + (w as i32) - 1).min(fb.width() as i32 - 1);
+        let y1 = ((y as i32) + (h as i32) - 1).min(fb.height() as i32 - 1);
+        if x0 <= x1 && y0 <= y1 {
+            Self::clean(fb, x0 as u32, y0 as u32, x1 as u32, y1 as u32);
+        }
     }
 }
 
@@ -210,6 +221,76 @@ impl RasterBackend for VdiScreen {
         if x0 <= x1 && y0 <= y1 {
             Self::clean(fb, x0 as u32, y0 as u32, x1 as u32, y1 as u32);
         }
+    }
+
+    fn blit_mono(&self, dst: Rect, src: MonoSrc, fg: Pel, bg: Pel, opaque: bool) {
+        let fb = active_fb();
+        let scr_w = fb.width() as i32;
+        let scr_h = fb.height() as i32;
+        let fg_rgb = Self::pel_to_rgb(fg);
+        let bg_rgb = Self::pel_to_rgb(bg);
+        let stride = src.stride_words as usize;
+        for r in 0..dst.h as i32 {
+            let dy = dst.y as i32 + r;
+            if dy < 0 || dy >= scr_h {
+                continue;
+            }
+            let sy = src.y as i32 + r;
+            for c in 0..dst.w as i32 {
+                let dx = dst.x as i32 + c;
+                if dx < 0 || dx >= scr_w {
+                    continue;
+                }
+                let sx = src.x as i32 + c;
+                let widx = sy as usize * stride + (sx as usize) / 16;
+                let set = src
+                    .bits
+                    .get(widx)
+                    .is_some_and(|w| w & (0x8000u16 >> (sx & 15)) != 0);
+                if set {
+                    fb.put_pixel(dx as u32, dy as u32, fg_rgb);
+                } else if opaque {
+                    fb.put_pixel(dx as u32, dy as u32, bg_rgb);
+                }
+            }
+        }
+        Self::clean_clamped(fb, dst.x, dst.y, dst.w, dst.h);
+    }
+
+    fn copy_rect(&self, src: Rect, dx: i16, dy: i16, op: u8) {
+        let fb = active_fb();
+        let scr_w = fb.width() as i32;
+        let scr_h = fb.height() as i32;
+        let stride = fb.stride_px() as usize;
+        let base = fb.pixels();
+        let (w, h) = (src.w as i32, src.h as i32);
+        // Choose copy direction so overlapping moves don't corrupt.
+        let down = dy as i32 > src.y as i32;
+        let right = dx as i32 > src.x as i32;
+        for ri in 0..h {
+            let r = if down { h - 1 - ri } else { ri };
+            let sy = src.y as i32 + r;
+            let ty = dy as i32 + r;
+            if sy < 0 || sy >= scr_h || ty < 0 || ty >= scr_h {
+                continue;
+            }
+            for ci in 0..w {
+                let c = if right { w - 1 - ci } else { ci };
+                let sx = src.x as i32 + c;
+                let tx = dx as i32 + c;
+                if sx < 0 || sx >= scr_w || tx < 0 || tx >= scr_w {
+                    continue;
+                }
+                // SAFETY: indices are within the framebuffer bounds.
+                unsafe {
+                    let sp = base.add(sy as usize * stride + sx as usize).read_volatile();
+                    let dp = base.add(ty as usize * stride + tx as usize);
+                    let val = if op == 6 { sp ^ dp.read_volatile() } else { sp };
+                    dp.write_volatile(val);
+                }
+            }
+        }
+        Self::clean_clamped(fb, dx, dy, src.w, src.h);
     }
 }
 
