@@ -187,6 +187,13 @@ const TCR_VALUE: u64 = 16                       // T0SZ
 /// (data cache), `I` (instruction cache).
 const SCTLR_BITS: u64 = (1 << 0) | (1 << 2) | (1 << 12);
 
+/// `SCTLR_EL1` initial value written during the EL2→EL1 drop: the
+/// architecturally-required RES1 bits with MMU and caches **off**
+/// (`M`/`C`/`I` clear — the MMU bring-up sets them later). This is the
+/// standard ARMv8-A reset constant; without initialising SCTLR_EL1 its
+/// value is UNKNOWN on entry to EL1. ARM ARM D19.2.120.
+const SCTLR_EL1_INIT: u64 = 0x30D0_0800;
+
 /// Physical address of the PL011 UART0 **data register** (`UART_DR`,
 /// offset 0), used for the pre-MMU boot heartbeat. The console driver
 /// reconfigures the UART later; the heartbeat relies on the device
@@ -239,10 +246,47 @@ pub unsafe extern "C" fn _start() -> ! {
         "str    w21, [x20]",
         "mov    w21, #0x42",               // 'B'
         "str    w21, [x20]",
+        // Emit the current exception level as a digit ('1'/'2'/'3') so a
+        // bare-metal boot reveals whether the firmware/QEMU handed us
+        // EL1 or EL2 — the MMU bring-up below assumes EL1.
+        "mrs    x22, CurrentEL",
+        "lsr    x22, x22, #2",
+        "and    x22, x22, #3",
+        "add    w22, w22, #0x30",          // '0' + EL number
+        "str    w22, [x20]",
         "mov    w21, #0x0d",               // CR
         "str    w21, [x20]",
         "mov    w21, #0x0a",               // LF
         "str    w21, [x20]",
+
+        // ───── drop to EL1 if the firmware handed us EL2 ─────────
+        //
+        // QEMU `raspi4b` and real RPi4 firmware enter an AArch64 kernel
+        // at EL2; QEMU `virt` (no virtualization) enters at EL1. The MMU
+        // bring-up below programs the EL1 system registers, so we must be
+        // running at EL1. If already at EL1, skip the drop. EL3 is not
+        // produced by either platform, so only EL2→EL1 is handled.
+        // ARM ARM D1.11 (exception return) + the AArch64 EL2→EL1 idiom.
+        "mrs    x0, CurrentEL",
+        "lsr    x0, x0, #2",
+        "and    x0, x0, #3",
+        "cmp    x0, #1",
+        "b.eq   3f",                       // already EL1 → no drop needed
+
+        "mov    x0, #(1 << 31)",           // HCR_EL2.RW = 1 → EL1 is AArch64
+        "msr    hcr_el2, x0",
+        "mrs    x0, cnthctl_el2",
+        "orr    x0, x0, #0b11",            // EL1PCTEN|EL1PCEN: EL1 may read
+        "msr    cnthctl_el2, x0",          //   the physical counter/timer
+        "msr    cntvoff_el2, xzr",         // zero virtual-counter offset
+        "ldr    x0, ={sctlr_el1_init}",
+        "msr    sctlr_el1, x0",            // sane EL1 SCTLR (RES1 bits; MMU off)
+        "mov    x0, #0x3c5",               // SPSR_EL2: DAIF masked, mode EL1h
+        "msr    spsr_el2, x0",
+        "adr    x0, 3f",                   // EL1 continuation (PC-relative, LMA)
+        "msr    elr_el2, x0",
+        "eret",                            // → EL1, continues at label 3
+        "3:",
 
         // SP := __boot_core_stack_end_exclusive (low-half = LMA).
         // The boot stack symbol is linked at low-half by the linker
@@ -321,6 +365,7 @@ pub unsafe extern "C" fn _start() -> ! {
         mair_value      = const MAIR_VALUE,
         tcr_value       = const TCR_VALUE,
         sctlr_bits      = const SCTLR_BITS,
+        sctlr_el1_init  = const SCTLR_EL1_INIT,
         boot_uart_dr    = const BOOT_UART_DR,
         kernel_main     = sym crate::kernel_main,
     )

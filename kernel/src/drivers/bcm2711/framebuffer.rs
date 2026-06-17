@@ -23,7 +23,13 @@ use crate::hal::framebuffer::Framebuffer;
 const WIDTH: u32 = 640;
 const HEIGHT: u32 = 480;
 const DEPTH_BPP: u32 = 32;
-const PIXEL_ORDER_RGB: u32 = 1; // 0 = BGR, 1 = RGB (firmware wiki)
+/// VC pixel order. `0 = BGR, 1 = RGB` (firmware wiki). Our pixel store is
+/// XRGB8888 packed by [`hal::framebuffer::rgb`] as `0xFF_RR_GG_BB`, i.e.
+/// little-endian memory bytes `[B, G, R, X]` — blue at the lowest
+/// address. The VC's **BGR** order reads the lowest byte as blue, which
+/// matches; selecting RGB here swaps the red/blue channels (verified by
+/// QMP screendump on raspi4b). So BGR is correct for our layout.
+const PIXEL_ORDER_BGR: u32 = 0;
 
 /// Mask turning a VideoCore bus address into an ARM physical address:
 /// the top 2 bits select the cache alias (hardware ref §4).
@@ -113,7 +119,7 @@ unsafe fn build_request() {
     b[16] = 0x0004_8006;
     b[17] = 4;
     b[18] = 0;
-    b[19] = PIXEL_ORDER_RGB;
+    b[19] = PIXEL_ORDER_BGR;
 
     // allocate buffer — tag 0x00040001, value 8B (req: alignment; resp:
     // base + size).
