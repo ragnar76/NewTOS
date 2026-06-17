@@ -92,7 +92,38 @@ pub fn run() {
             sig,
             if rc == 0 { "OK" } else { "FAIL" },
         );
+
+        // ── Getbpb on the FAT partition (C:) and the bare one (D:) ──
+        let bp = getbpb(drv);
+        if bp != 0 {
+            // The BPB is nine consecutive UWORDs at the returned pointer.
+            let p = bp as *const u16;
+            let f = |i: usize| unsafe { p.add(i).read() };
+            kprintln!(
+                "[emmc] Getbpb({}:) recsiz={} clsiz={} clsizb={} rdlen={} fsiz={} fatrec={} datrec={} numcl={} flags=0x{:x}",
+                letter, f(0), f(1), f(2), f(3), f(4), f(5), f(6), f(7), f(8),
+            );
+        } else {
+            kprintln!("[emmc] Getbpb({}:) -> NULL", letter);
+        }
+        let bd = getbpb(drv + 1);
+        kprintln!(
+            "[emmc] Getbpb({}:) -> {}",
+            (b'A' + (drv + 1) as u8) as char,
+            if bd == 0 { "NULL (no FAT BPB)" } else { "ptr" },
+        );
     }
+}
+
+/// BIOS `Getbpb` via `svc #13` (function id 0x07) — returns a `BPB *`.
+#[inline(always)]
+fn getbpb(drive: u64) -> i64 {
+    let r: i64;
+    // SAFETY: svc #13, BIOS Getbpb (func 0x07), drive in x0.
+    unsafe {
+        core::arch::asm!("svc #13", in("x8") 0x07u64, inout("x0") drive => r, options(nostack));
+    }
+    r
 }
 
 /// BIOS `Drvmap` via `svc #13` (function id 0x0A).

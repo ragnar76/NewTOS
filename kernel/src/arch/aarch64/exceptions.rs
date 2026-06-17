@@ -267,8 +267,10 @@ pub extern "C" fn rust_sync_handler(frame: &mut ExceptionFrame) {
         svc_imm,
     };
 
-    let result = match class {
-        TrapClass::Gemdos => tos_api::gemdos::dispatch(&args),
+    // Result is the full 64-bit `x0` value: GEMDOS returns a sign-
+    // extended `Long`, but BIOS `Getbpb` returns a native 64-bit pointer.
+    let result: i64 = match class {
+        TrapClass::Gemdos => tos_api::gemdos::dispatch(&args) as i64,
         // VDI (Trap #2): a parameter-block call — `x0` holds the VDIPB
         // pointer and there is no register return value. Run the
         // dispatcher and leave `x0 = 0`.
@@ -280,7 +282,7 @@ pub extern "C" fn rust_sync_handler(frame: &mut ExceptionFrame) {
         // BIOS (Trap 13): block-device + console functions.
         TrapClass::Bios => tos_api::bios::dispatch(&args),
         // XBIOS dispatcher lands later.
-        TrapClass::Xbios => tos_types::error::EINVFN,
+        TrapClass::Xbios => tos_types::error::EINVFN as i64,
     };
 
     // A blocking console input function (Cconin / Cnecin / Cconrs) may
@@ -293,9 +295,9 @@ pub extern "C" fn rust_sync_handler(frame: &mut ExceptionFrame) {
         return;
     }
 
-    // Sign-extend `i32` into `x0` so callers reading `i64` see the
-    // correct negative value for error codes.
-    frame.gpr[0] = result as i64 as u64;
+    // Write the 64-bit result into `x0` (error codes are already
+    // sign-extended; `Getbpb` returns a full pointer).
+    frame.gpr[0] = result as u64;
 }
 
 /// Pterm (GEMDOS 0x4C) / Pterm0 (0x00) handler. Rewrites the trap

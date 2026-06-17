@@ -9,6 +9,7 @@
 //! `x0..`, result in `x0`.
 
 pub mod block;
+pub mod bpb;
 pub mod drive;
 
 pub use drive::mount;
@@ -23,16 +24,20 @@ const SECTOR: usize = 512;
 
 // BIOS function ids.
 const RWABS: u16 = 0x04;
+const GETBPB: u16 = 0x07;
 const MEDIACH: u16 = 0x09;
 const DRVMAP: u16 = 0x0A;
 
-/// BIOS Trap-13 dispatcher.
-pub fn dispatch(args: &TrapArgs) -> Long {
+/// BIOS Trap-13 dispatcher. Returns the full 64-bit register value:
+/// most functions return a `Long`, but `Getbpb` returns a native
+/// `BPB *` pointer, so the result is widened to `i64`.
+pub fn dispatch(args: &TrapArgs) -> i64 {
     match args.func_id() {
-        RWABS => rwabs(args),
-        MEDIACH => mediach(args),
-        DRVMAP => drvmap(),
-        _ => tos_types::error::EINVFN,
+        RWABS => rwabs(args) as i64,
+        GETBPB => bpb::getbpb(args.arg_u16(0)),
+        MEDIACH => mediach(args) as i64,
+        DRVMAP => drvmap() as i64,
+        _ => tos_types::error::EINVFN as i64,
     }
 }
 
