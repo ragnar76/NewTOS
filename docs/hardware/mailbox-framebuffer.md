@@ -11,8 +11,11 @@
 > `framebuffer.rs`. Run: `cargo xtask run --board rpi4 [--window]`.
 > Two findings during bring-up, both folded into the notes below:
 > (1) the firmware enters the kernel at **EL2** → boot does an EL2→EL1
-> drop; (2) our XRGB8888 store needs pixel order **BGR**, not RGB.
-> Real-HW verification still pending (no serial; FB is the life sign).
+> drop; (2) our XRGB8888 store needs pixel order **BGR**, not RGB. The
+> framebuffer is mapped **Normal Non-Cacheable** (MAIR AttrIdx 2,
+> `mmu::remap_normal_nc`) so the display DMA sees pixel writes on real
+> HW without per-frame cache cleaning. Real-HW verification still
+> pending (no serial; FB is the life sign).
 
 ## Sources
 
@@ -228,11 +231,17 @@ first GiB, so the masked address is directly mappable.
 - Gated behind the `board-rpi4` feature (mirrors `qemu_virt/ramfb.rs`
   under `board-qemu-virt`). Per **ADR-011**, the resulting framebuffer
   is the BCM2711 physical screen workstation's device.
-- The mailbox buffer must be in a **non-cached / DMA-coherent** region
-  (the VC writes the value buffers): allocate it in a known-uncached
-  area or do explicit clean+invalidate (`dc civac`) around the
-  transaction. Decide + document during implementation; QEMU is lax
-  here but real HW is not.
+- The mailbox buffer is in cacheable DRAM; `mailbox::call_property`
+  does an explicit clean (before) + invalidate (after) by VA to PoC
+  around the transaction so the VC sees the request and we see the
+  reply. (QEMU is lax here; real HW is not.)
+- **Framebuffer memory is mapped Normal Non-Cacheable** (`mmu::
+  remap_normal_nc`, MAIR AttrIdx 2) after allocation. The display
+  controller is a separate DMA master reading DRAM beyond the ARM
+  caches, so a Write-Back FB would strand drawn pixels in dirty cache
+  lines (invisible on real HW; QEMU's TCG has no cache and hides it).
+  NC removes the coherency problem with no per-frame `dc cvac`. The
+  2-MiB-block remap uses break-before-make (ARM ARM K11.5).
 - 32-bit depth (XRGB) for bring-up; the VDI palette screen
   (8-bit) is a later concern — note in
   [`STATUS.md`](../STATUS.md) "Blocked"/scope if VDI needs 8-bit.
