@@ -29,6 +29,9 @@ const BLKSIZECNT: usize = 0x04;
 const ARG1: usize = 0x08;
 const CMDTM: usize = 0x0C;
 const RESP0: usize = 0x10;
+const RESP1: usize = 0x14;
+const RESP2: usize = 0x18;
+const RESP3: usize = 0x1C;
 const DATA: usize = 0x20;
 const STATUS: usize = 0x24;
 const CONTROL0: usize = 0x28;
@@ -52,6 +55,7 @@ const C1_SRST_HC: u32 = 1 << 24;
 // INTERRUPT bits.
 const INT_CMD_DONE: u32 = 1 << 0;
 const INT_DATA_DONE: u32 = 1 << 1;
+const INT_WRITE_RDY: u32 = 1 << 4;
 const INT_READ_RDY: u32 = 1 << 5;
 const INT_ERROR_MASK: u32 = 0xFFFF_0000;
 
@@ -74,10 +78,12 @@ const GO_IDLE: u32 = cmd(0) | RSP_NONE;
 const SEND_IF_COND: u32 = cmd(8) | RSP_48 | CMD_CRCCHK | CMD_IXCHK;
 const ALL_SEND_CID: u32 = cmd(2) | RSP_136 | CMD_CRCCHK;
 const SEND_REL_ADDR: u32 = cmd(3) | RSP_48 | CMD_CRCCHK | CMD_IXCHK;
+const SEND_CSD: u32 = cmd(9) | RSP_136 | CMD_CRCCHK;
 const SELECT_CARD: u32 = cmd(7) | RSP_48BUSY | CMD_CRCCHK | CMD_IXCHK;
 const SET_BLOCKLEN: u32 = cmd(16) | RSP_48 | CMD_CRCCHK | CMD_IXCHK;
 const READ_SINGLE: u32 =
     cmd(17) | RSP_48 | CMD_CRCCHK | CMD_IXCHK | CMD_ISDATA | TM_DAT_CARD2HOST;
+const WRITE_SINGLE: u32 = cmd(24) | RSP_48 | CMD_CRCCHK | CMD_IXCHK | CMD_ISDATA;
 const APP_CMD: u32 = cmd(55) | RSP_48 | CMD_CRCCHK | CMD_IXCHK;
 const SD_SEND_OP_COND: u32 = cmd(41) | RSP_48; // ACMD41, R3 (no CRC/index check)
 
@@ -93,6 +99,34 @@ fn rd(off: usize) -> u32 {
 fn wr(off: usize, val: u32) {
     // SAFETY: MMIO write at a valid SD-host register address.
     unsafe { core::ptr::write_volatile((base() + off) as *mut u32, val) }
+}
+
+/// Extract CSD field `[hi:lo]` from the 4-word response. SDHCI stores a
+/// 136-bit response right-shifted by 8 bits (the CRC byte is dropped),
+/// so CSD bit `n` is at response bit `n-8`.
+fn csd_bits(r: &[u32; 4], hi: u32, lo: u32) -> u32 {
+    let mut v = 0u32;
+    for b in lo..=hi {
+        let rb = b - 8;
+        v |= ((r[(rb / 32) as usize] >> (rb % 32)) & 1) << (b - lo);
+    }
+    v
+}
+
+/// Compute the card's 512-byte block count from its CSD (v1 SDSC or
+/// v2 SDHC/SDXC).
+fn parse_capacity(r: &[u32; 4]) -> u64 {
+    if csd_bits(r, 127, 126) == 1 {
+        // v2: capacity = (C_SIZE + 1) × 512 KiB.
+        (csd_bits(r, 69, 48) as u64 + 1) * 1024
+    } else {
+        // v1: (C_SIZE+1) × 2^(C_SIZE_MULT+2) blocks × 2^READ_BL_LEN bytes.
+        let read_bl_len = csd_bits(r, 83, 80);
+        let c_size = csd_bits(r, 73, 62) as u64;
+        let c_size_mult = csd_bits(r, 49, 47);
+        let blocknr = (c_size + 1) * (1u64 << (c_size_mult + 2));
+        blocknr * (1u64 << read_bl_len) / SECTOR_SIZE as u64
+    }
 }
 
 /// The microSD device on EMMC2.
@@ -228,6 +262,13 @@ impl Emmc {
         self.command(ALL_SEND_CID, 0)?;
         let rca = self.command(SEND_REL_ADDR, 0)? >> 16;
         self.rca.store(rca, Ordering::Relaxed);
+
+        // CMD9 (SEND_CSD) is valid in stand-by state — read it before
+        // selecting the card to learn the capacity.
+        self.command(SEND_CSD, rca << 16)?;
+        let csd = [rd(RESP0), rd(RESP1), rd(RESP2), rd(RESP3)];
+        self.blocks.store(parse_capacity(&csd), Ordering::Relaxed);
+
         self.command(SELECT_CARD, rca << 16)?;
 
         if !self.sdhc.load(Ordering::Relaxed) {
@@ -265,6 +306,29 @@ impl Emmc {
         Self::wait_interrupt(INT_DATA_DONE)?;
         Ok(())
     }
+
+    /// Write one 512-byte block at `lba` from `buf` (PIO).
+    fn write_one(&self, lba: u64, buf: &[u8]) -> Result<(), BlockError> {
+        if !self.ready.load(Ordering::Acquire) {
+            return Err(BlockError::NotReady);
+        }
+        if !Self::wait_clear(STATUS, SR_DAT_INHIBIT) {
+            return Err(BlockError::Timeout);
+        }
+        let addr = if self.sdhc.load(Ordering::Relaxed) {
+            lba as u32
+        } else {
+            (lba as u32) * SECTOR_SIZE as u32
+        };
+        wr(BLKSIZECNT, (1 << 16) | SECTOR_SIZE as u32);
+        self.command(WRITE_SINGLE, addr)?;
+        Self::wait_interrupt(INT_WRITE_RDY)?;
+        for word in buf.chunks_exact(4) {
+            wr(DATA, u32::from_le_bytes([word[0], word[1], word[2], word[3]]));
+        }
+        Self::wait_interrupt(INT_DATA_DONE)?;
+        Ok(())
+    }
 }
 
 impl BlockDevice for Emmc {
@@ -278,6 +342,16 @@ impl BlockDevice for Emmc {
         }
         for (i, sector) in buf.chunks_exact_mut(SECTOR_SIZE).enumerate() {
             self.read_one(lba + i as u64, sector)?;
+        }
+        Ok(())
+    }
+
+    fn write_blocks(&self, lba: u64, buf: &[u8]) -> Result<(), BlockError> {
+        if !buf.len().is_multiple_of(SECTOR_SIZE) {
+            return Err(BlockError::Unsupported);
+        }
+        for (i, sector) in buf.chunks_exact(SECTOR_SIZE).enumerate() {
+            self.write_one(lba + i as u64, sector)?;
         }
         Ok(())
     }
