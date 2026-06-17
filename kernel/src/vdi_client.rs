@@ -1,9 +1,9 @@
 //! A tiny in-kernel VDI client: builds a VDIPB and issues `svc #2`.
 //!
-//! Used by the boot-time screens ([`crate::initinfo`], [`crate::vdi_demo`])
-//! to draw through the real VDI dispatcher exactly as a user program
-//! would. Each call rebuilds the 5-pointer parameter block from the
-//! (stack-stable) array addresses.
+//! Used by the boot-time [`crate::initinfo`] screen to draw through the
+//! real VDI dispatcher exactly as a user program would. Each call
+//! rebuilds the 5-pointer parameter block from the (stack-stable) array
+//! addresses.
 
 /// Memory Form Definition Block (native ABI: 64-bit `addr` then WORDs).
 #[repr(C)]

@@ -107,60 +107,6 @@ fn cconout(byte: u8) {
     }
 }
 
-/// `Cconis()` (GEMDOS 0x0B) — non-zero if console input is ready.
-#[inline(always)]
-fn cconis_svc() -> i32 {
-    let r: i64;
-    // SAFETY: SVC instruction; function ID is a constant, no args.
-    unsafe {
-        core::arch::asm!("svc #1", in("x8") 0x000Bu64, out("x0") r, options(nostack));
-    }
-    r as i32
-}
-
-/// `Cconin()` (GEMDOS 0x01) — blocking read of one char, with echo.
-#[inline(always)]
-fn cconin_svc() -> i32 {
-    let r: i64;
-    // SAFETY: SVC instruction; function ID is a constant, no args.
-    unsafe {
-        core::arch::asm!("svc #1", in("x8") 0x0001u64, out("x0") r, options(nostack));
-    }
-    r as i32
-}
-
-/// Interactive `Cconin` demo. Gated on `Cconis` so a no-input boot
-/// does not block forever; with piped/typed input it reads one char
-/// through the **blocking, echoing** `Cconin` (GEMDOS 0x01) and prints
-/// the returned LONG, proving the IRQ-driven blocking-input path.
-pub fn run_cconin_demo() {
-    CONSOLE.write_str(
-        "\n[cconin] type a key within ~2s (Cconin: blocking + echo)> ",
-    );
-    let mut budget: u32 = 20_000_000;
-    let ready = loop {
-        if cconis_svc() != 0 {
-            break true;
-        }
-        budget = budget.saturating_sub(1);
-        if budget == 0 {
-            break false;
-        }
-    };
-    if !ready {
-        CONSOLE.write_str("\n[cconin] no input (timeout) — skipped\n");
-        return;
-    }
-    // Input is ready, so this blocking read returns immediately and
-    // echoes the character.
-    let ch = cconin_svc();
-    crate::kprintln!(
-        "\n[cconin] Cconin returned 0x{:08x} (ascii 0x{:02x})",
-        ch, (ch as u8),
-    );
-    crate::kprintln!("[cconin] === Cconin OK ===");
-}
-
 /// Phase 03 D6 stack-overflow probe.
 ///
 /// Recursively pushes a 4 KiB frame until the stack pointer crosses

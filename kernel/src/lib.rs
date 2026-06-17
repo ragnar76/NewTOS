@@ -30,7 +30,6 @@ pub mod arch;
 pub mod bios;
 pub mod console;
 pub mod drivers;
-pub mod generated;
 pub mod hal;
 pub mod host_env;
 pub mod panic;
@@ -39,7 +38,6 @@ pub mod selftest_d3;
 pub mod selftest_d6;
 pub mod selftest_d7;
 pub mod selftest_ec4;
-pub mod selftest_lineecho;
 pub mod selftest_time;
 pub mod selftest_pexec;
 pub mod selftest_pexec_d4d5;
@@ -50,7 +48,6 @@ pub mod initinfo;
 pub mod selftest_emmc;
 pub mod vdi_backend;
 pub mod vdi_client;
-pub mod vdi_demo;
 
 // ---------------------------------------------------------------------------
 // kprintf! / kprintln! (Phase 03 D7) — formatter macros into the boot
@@ -249,7 +246,6 @@ extern "C" fn kernel_main_rust(dtb_phys: usize) -> ! {
     // a QEMU-only artifact; real hardware completes them).
     selftest_vdi::run_phase12_vdi_test();
     initinfo::run();
-    let _ = vdi_demo::run; // primitive showcase, available but not shown at boot
 
     // Phase 08: microSD read test (before the process self-tests, which
     // can wedge QEMU's TCG — QUIRK-001). board-rpi4 / QEMU raspi4b only.
@@ -264,8 +260,6 @@ extern "C" fn kernel_main_rust(dtb_phys: usize) -> ! {
     selftest_pexec::run_pexec_test();
     selftest_pexec_d4d5::run_pexec_loadgo_split_test();
     selftest_time::run_phase07_time_test();
-    selftest_lineecho::run_lineecho_demo();
-    selftest::run_cconin_demo();
     selftest::run_phase02_self_test();
 
     // Phase 03 D6 verification (uncomment to provoke a hardware stack
@@ -297,7 +291,7 @@ fn print_range(label: &str, r: &bios::machine::layout::PhysRange) {
 }
 
 /// Bring up the board framebuffer (if present). The screen content is
-/// drawn later through the VDI (`vdi_demo`), not here — this just gets a
+/// drawn later through the VDI (`initinfo`), not here — this just gets a
 /// linear buffer published so [`hal::framebuffer`] / the VDI backend can
 /// use it.
 #[cfg(feature = "board-qemu-virt")]
