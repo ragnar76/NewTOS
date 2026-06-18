@@ -62,42 +62,43 @@ impl DirEntry {
     }
 }
 
-/// Iterator over the root directory of a [`Volume`]. Yields only real
-/// 8.3 file/sub-directory entries (erased, LFN and volume-label records
-/// are skipped). Reads one sector at a time; no sector cache yet (D2).
-pub struct RootDir<'a> {
+/// Iterator over a directory of a [`Volume`]. `start_cluster == 0` is
+/// the fixed root directory; otherwise a sub-directory's cluster chain.
+/// Yields only real 8.3 file/sub-directory entries (erased, LFN and
+/// volume-label records are skipped). Reads through the sector cache.
+pub struct DirIter<'a> {
     vol: &'a Volume,
-    /// Partition-relative sector currently buffered (`None` = not loaded).
+    start_cluster: u32,
     buf: [u8; SECTOR],
-    rel_sector: u32,
     /// Index of the next entry within `buf`.
     idx: usize,
-    /// Number of root-directory sectors already consumed.
+    /// Number of directory sectors already consumed.
     sectors_done: u32,
     /// `true` once the end-of-directory marker has been seen.
     done: bool,
 }
 
-impl<'a> RootDir<'a> {
-    /// Begin a scan of `vol`'s root directory.
-    pub fn new(vol: &'a Volume) -> RootDir<'a> {
-        RootDir {
+impl<'a> DirIter<'a> {
+    /// Begin a scan of the directory whose first cluster is `start`
+    /// (0 = root directory).
+    pub fn new(vol: &'a Volume, start: u32) -> DirIter<'a> {
+        DirIter {
             vol,
+            start_cluster: start,
             buf: [0u8; SECTOR],
-            rel_sector: vol.root_sector(),
             idx: ENTRIES_PER_SECTOR, // force a load on first `next`
             sectors_done: 0,
             done: false,
         }
     }
 
-    /// Read the buffered sector through the sector cache.
-    fn load(&mut self) -> bool {
-        self.vol.read_rel_sector(self.rel_sector, &mut self.buf)
+    /// Begin a scan of `vol`'s root directory.
+    pub fn root(vol: &'a Volume) -> DirIter<'a> {
+        DirIter::new(vol, 0)
     }
 }
 
-impl Iterator for RootDir<'_> {
+impl Iterator for DirIter<'_> {
     type Item = DirEntry;
 
     fn next(&mut self) -> Option<DirEntry> {
@@ -106,17 +107,19 @@ impl Iterator for RootDir<'_> {
                 return None;
             }
             if self.idx >= ENTRIES_PER_SECTOR {
-                // Advance to the next root-directory sector.
-                if self.sectors_done >= self.vol.rdlen {
-                    self.done = true;
-                    return None;
-                }
-                if !self.load() {
+                // Advance to the next directory sector (chain-aware).
+                let rel = match self.vol.dir_nth_sector(self.start_cluster, self.sectors_done) {
+                    Some(r) => r,
+                    None => {
+                        self.done = true;
+                        return None;
+                    }
+                };
+                if !self.vol.read_rel_sector(rel, &mut self.buf) {
                     self.done = true;
                     return None;
                 }
                 self.sectors_done += 1;
-                self.rel_sector += 1;
                 self.idx = 0;
             }
             let off = self.idx * ENTRY;
@@ -172,67 +175,80 @@ pub fn fcb_name(name: &str) -> Option<[u8; 11]> {
 
 /// Find an 8.3 entry in the root directory by its FAT short name.
 pub fn find_in_root(vol: &Volume, name11: &[u8; 11]) -> Option<DirEntry> {
-    RootDir::new(vol).find(|e| &e.name == name11)
+    find_in_dir(vol, 0, name11)
 }
 
-/// Locate an existing entry's raw root-directory slot index (for
-/// in-place updates / erase). Returns the slot of the first 8.3 entry
-/// whose name matches.
-pub fn slot_of(vol: &Volume, name11: &[u8; 11]) -> Option<u32> {
-    let total = vol.rdlen * (SECTOR / ENTRY) as u32;
+/// Find an 8.3 entry in a directory (0 = root) by its FAT short name.
+pub fn find_in_dir(vol: &Volume, start: u32, name11: &[u8; 11]) -> Option<DirEntry> {
+    DirIter::new(vol, start).find(|e| &e.name == name11)
+}
+
+/// Map the partition-relative sector of directory slot `slot`.
+fn slot_sector(vol: &Volume, start: u32, slot: u32) -> Option<u32> {
+    vol.dir_nth_sector(start, slot / ENTRIES_PER_SECTOR as u32)
+}
+
+/// Locate an existing entry's raw slot index in directory `start`
+/// (0 = root), for in-place updates / erase.
+pub fn slot_of(vol: &Volume, start: u32, name11: &[u8; 11]) -> Option<u32> {
     let mut buf = [0u8; SECTOR];
     let mut loaded = u32::MAX;
-    for slot in 0..total {
-        let sec = slot / ENTRIES_PER_SECTOR as u32;
-        if sec != loaded {
-            if !vol.read_rel_sector(vol.root_sector() + sec, &mut buf) {
+    let mut slot = 0u32;
+    loop {
+        let sec_idx = slot / ENTRIES_PER_SECTOR as u32;
+        if sec_idx != loaded {
+            let rel = slot_sector(vol, start, slot)?;
+            if !vol.read_rel_sector(rel, &mut buf) {
                 return None;
             }
-            loaded = sec;
+            loaded = sec_idx;
         }
         let off = (slot as usize % ENTRIES_PER_SECTOR) * ENTRY;
         let e = &buf[off..off + ENTRY];
         match e[0] {
             END => return None,
-            ERASED => continue,
+            ERASED => {}
+            _ if e[0x0B] != FA_LFN && e[0x0B] & FA_VOL == 0 && e[0..11] == name11[..] => {
+                return Some(slot)
+            }
             _ => {}
         }
-        if e[0x0B] == FA_LFN || e[0x0B] & FA_VOL != 0 {
-            continue;
-        }
-        if e[0..11] == name11[..] {
-            return Some(slot);
-        }
+        slot += 1;
     }
-    None
 }
 
-/// Find a free root-directory slot (erased `0xE5` or end-of-directory
-/// `0x00`). `None` if the fixed root directory is full.
-pub fn find_free_slot(vol: &Volume) -> Option<u32> {
-    let total = vol.rdlen * (SECTOR / ENTRY) as u32;
+/// Find a free slot (erased `0xE5` or end-of-directory `0x00`) in
+/// directory `start` (0 = root). `None` if no free slot exists within
+/// the directory's current sectors (the caller may grow a sub-directory).
+pub fn find_free_slot(vol: &Volume, start: u32) -> Option<u32> {
     let mut buf = [0u8; SECTOR];
     let mut loaded = u32::MAX;
-    for slot in 0..total {
-        let sec = slot / ENTRIES_PER_SECTOR as u32;
-        if sec != loaded {
-            if !vol.read_rel_sector(vol.root_sector() + sec, &mut buf) {
+    let mut slot = 0u32;
+    loop {
+        let sec_idx = slot / ENTRIES_PER_SECTOR as u32;
+        if sec_idx != loaded {
+            let rel = slot_sector(vol, start, slot)?;
+            if !vol.read_rel_sector(rel, &mut buf) {
                 return None;
             }
-            loaded = sec;
+            loaded = sec_idx;
         }
         let b0 = buf[(slot as usize % ENTRIES_PER_SECTOR) * ENTRY];
         if b0 == END || b0 == ERASED {
             return Some(slot);
         }
+        slot += 1;
     }
-    None
 }
 
-/// Read the raw 32-byte directory entry at `slot` into `out`.
-pub fn read_slot(vol: &Volume, slot: u32, out: &mut [u8; ENTRY]) -> bool {
+/// Read the raw 32-byte directory entry at `slot` in directory `start`.
+pub fn read_slot(vol: &Volume, start: u32, slot: u32, out: &mut [u8; ENTRY]) -> bool {
+    let rel = match slot_sector(vol, start, slot) {
+        Some(r) => r,
+        None => return false,
+    };
     let mut buf = [0u8; SECTOR];
-    if !vol.read_rel_sector(vol.root_sector() + slot / ENTRIES_PER_SECTOR as u32, &mut buf) {
+    if !vol.read_rel_sector(rel, &mut buf) {
         return false;
     }
     let off = (slot as usize % ENTRIES_PER_SECTOR) * ENTRY;
@@ -240,17 +256,20 @@ pub fn read_slot(vol: &Volume, slot: u32, out: &mut [u8; ENTRY]) -> bool {
     true
 }
 
-/// Write a raw 32-byte directory entry at `slot` (read-modify-write of
-/// the containing sector, through the cache).
-pub fn write_slot(vol: &Volume, slot: u32, entry: &[u8; ENTRY]) -> bool {
-    let sec = vol.root_sector() + slot / ENTRIES_PER_SECTOR as u32;
+/// Write a raw 32-byte directory entry at `slot` in directory `start`
+/// (read-modify-write of the containing sector, through the cache).
+pub fn write_slot(vol: &Volume, start: u32, slot: u32, entry: &[u8; ENTRY]) -> bool {
+    let rel = match slot_sector(vol, start, slot) {
+        Some(r) => r,
+        None => return false,
+    };
     let mut buf = [0u8; SECTOR];
-    if !vol.read_rel_sector(sec, &mut buf) {
+    if !vol.read_rel_sector(rel, &mut buf) {
         return false;
     }
     let off = (slot as usize % ENTRIES_PER_SECTOR) * ENTRY;
     buf[off..off + ENTRY].copy_from_slice(entry);
-    vol.write_rel_sector(sec, &buf)
+    vol.write_rel_sector(rel, &buf)
 }
 
 /// Build a 32-byte FCB directory entry (name, attribute, time/date,

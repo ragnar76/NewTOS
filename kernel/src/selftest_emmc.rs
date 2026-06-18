@@ -190,7 +190,7 @@ fn fat_test(drive: u16, letter: char) {
 
     // ── directory traversal (D5 foundation): list root dir + lookup ──
     let mut count = 0u32;
-    for e in dir::RootDir::new(&vol) {
+    for e in dir::DirIter::root(&vol) {
         kprintln!(
             "[emmc]   entry: \"{}\" attr=0x{:02x} cl={} size={}",
             core::str::from_utf8(&e.name).unwrap_or("?"),
@@ -298,6 +298,9 @@ fn fsearch_test() {
     // ── Phase 09 D7: write side (Fcreate/Fwrite/Fdelete) ──
     fwrite_test();
 
+    // ── Subdirectories: findit path resolution ──
+    subdir_test();
+
     // ── Phase 09 D2: sector-cache effectiveness ──
     let (hits, misses) = tos_api::bdos::fs::cache::stats();
     let total = hits + misses;
@@ -324,6 +327,64 @@ fn ddrive_test() {
         "[emmc] Dfree(C:) -> {} ; free={} total={} recsiz={} clsiz={} ; free={} KiB",
         rc, free, total, recsiz, clsiz, (free as u64 * recsiz as u64 * clsiz as u64) / 1024,
     );
+}
+
+/// Subdirectory path resolution: read a file inside SUB/, enumerate the
+/// subdirectory, create a file in it, and check a bad path → EPTHNF.
+fn subdir_test() {
+    // Read a file in a subdirectory.
+    let p = b"c:/SUB/INNER.TXT\0";
+    let h = gemdos_fopen(p.as_ptr() as u64, 0);
+    let mut buf = [0u8; 64];
+    let n = if h >= 6 {
+        gemdos_fread(h as u16, buf.len() as i64, buf.as_mut_ptr() as u64)
+    } else {
+        -1
+    };
+    if h >= 6 {
+        gemdos_fclose(h as u16);
+    }
+    kprintln!(
+        "[emmc] Fopen(\"c:/SUB/INNER.TXT\")={} read={} : \"{}\"",
+        h, n, core::str::from_utf8(&buf[..n.clamp(0, 40) as usize]).unwrap_or("?"),
+    );
+
+    // Enumerate the subdirectory (att=0 excludes "." / ".." subdirs).
+    let mut dta = [0u8; 44];
+    gemdos_fsetdta(dta.as_mut_ptr() as u64);
+    let pat = b"c:/SUB/*.*\0";
+    let mut rc = gemdos_fsfirst(pat.as_ptr() as u64, 0);
+    let mut count = 0;
+    while rc == 0 {
+        kprintln!("[emmc]   SUB entry: \"{}\"", dta_name(&dta));
+        count += 1;
+        rc = gemdos_fsnext();
+    }
+    kprintln!("[emmc] Fsfirst(\"c:/SUB/*.*\")={} entries (expect 1: INNER.TXT)", count);
+
+    // Create a file inside the subdirectory, then read it back.
+    let np = b"c:/SUB/CREATED.TXT\0";
+    let hc = gemdos_fcreate(np.as_ptr() as u64, 0);
+    if hc >= 6 {
+        gemdos_fwrite(hc as u16, 11, c"in subdir!\n".as_ptr() as u64);
+        gemdos_fclose(hc as u16);
+        let hr = gemdos_fopen(np.as_ptr() as u64, 0);
+        let mut b2 = [0u8; 16];
+        let r2 = gemdos_fread(hr as u16, 11, b2.as_mut_ptr() as u64);
+        gemdos_fclose(hr as u16);
+        kprintln!(
+            "[emmc] Fcreate(\"c:/SUB/CREATED.TXT\")={} ; read back {} : \"{}\"",
+            hc, r2, core::str::from_utf8(&b2[..r2.max(0) as usize]).unwrap_or("?"),
+        );
+        gemdos_fdelete(np.as_ptr() as u64);
+    } else {
+        kprintln!("[emmc] Fcreate in subdir FAILED -> {}", hc);
+    }
+
+    // Bad path component → EPTHNF (-34).
+    let bad = b"c:/NOPE/x.txt\0";
+    let hb = gemdos_fopen(bad.as_ptr() as u64, 0);
+    kprintln!("[emmc] Fopen(\"c:/NOPE/x.txt\") -> {} (expect -34 EPTHNF)", hb);
 }
 
 /// Phase 09 D7 / EC3: create a file, write data spanning two clusters,

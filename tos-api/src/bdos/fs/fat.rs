@@ -87,6 +87,48 @@ impl Volume {
         self.datrec - self.rdlen
     }
 
+    /// Map the `n`-th sector of a directory to a partition-relative
+    /// sector. `start_cluster == 0` denotes the fixed root directory;
+    /// otherwise the sub-directory's cluster chain is followed. `None`
+    /// once the directory's sectors are exhausted.
+    pub fn dir_nth_sector(&self, start_cluster: u32, n: u32) -> Option<u32> {
+        if start_cluster == 0 {
+            // Fixed root directory.
+            if n < self.rdlen {
+                Some(self.root_sector() + n)
+            } else {
+                None
+            }
+        } else {
+            // Sub-directory: walk the cluster chain to the n-th sector.
+            let cl_index = n / self.clsiz;
+            let sec_in_cl = n % self.clsiz;
+            let mut cl = start_cluster;
+            for _ in 0..cl_index {
+                match self.fat_entry(cl) {
+                    Some(x) if !self.is_eoc(x) && self.is_data_cluster(x) => cl = x,
+                    _ => return None,
+                }
+            }
+            if !self.is_data_cluster(cl) {
+                return None;
+            }
+            Some(self.cluster_sector(cl) + sec_in_cl)
+        }
+    }
+
+    /// Number of clusters per directory cluster (used by the directory
+    /// grow path); the root directory does not grow.
+    pub fn dir_max_sectors(&self, start_cluster: u32) -> u32 {
+        if start_cluster == 0 {
+            self.rdlen
+        } else {
+            // Sub-directories grow on demand; report a generous bound for
+            // a full scan (chain walking stops at end-of-chain anyway).
+            self.numcl * self.clsiz
+        }
+    }
+
     /// Read one partition-relative sector into `buf`. Public entry for the
     /// directory search, which walks the fixed root area sector by sector.
     pub fn read_rel_sector(&self, rel_sector: u32, buf: &mut [u8; SECTOR]) -> bool {

@@ -11,6 +11,7 @@ pub mod drive;
 pub mod fat;
 pub mod file;
 pub mod find;
+pub mod path;
 
 /// Read a NUL-terminated path string (max 128 bytes) from a raw pointer.
 ///

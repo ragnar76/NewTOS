@@ -6,16 +6,17 @@
 //! `docs/api/gemdos/dta/{1a-fsetdta,2f-fgetdta}.md`,
 //! `docs/api/structures/dta.md`.
 //!
-//! Root-directory only for this deliverable (sub-directory walking lands
-//! with `Dsetpath`). The 21-byte DTA reserved area carries our own resume
-//! state — its internal layout is explicitly **not** part of the ABI
-//! contract, so we are free to define it:
+//! Searches resolve through sub-directories (`findit`). The 21-byte DTA
+//! reserved area carries our own resume state — its internal layout is
+//! explicitly **not** part of the ABI contract, so we are free to define
+//! it:
 //!
 //! ```text
 //!  [0..4]  next raw directory slot to resume at (u32 LE); !0 = exhausted
-//!  [4..6]  drive number (u16 LE)
-//!  [6]     effective attribute mask
-//!  [7..18] 11-byte FAT search pattern ('?' = wildcard)
+//!  [4..8]  parent directory first cluster (u32 LE; 0 = root)
+//!  [8]     drive number
+//!  [9]     effective attribute mask
+//!  [10..21] 11-byte FAT search pattern ('?' = wildcard)
 //! ```
 //!
 //! The current-DTA pointer is a global for now (single foreground
@@ -134,37 +135,26 @@ fn attr_ok(att: u8, entry_attr: u8) -> bool {
     entry_attr & restricted & !att == 0
 }
 
-/// Whether a path's final component contains `*` or `?`.
-fn has_wildcard(name: &str) -> bool {
-    name.bytes().any(|c| c == b'*' || c == b'?')
-}
-
-/// Split a path into `(drive, final-component)`.
-fn split_path(path: &str) -> (u16, &str) {
-    let mut s = path;
-    let mut drive = super::drive::current_drive();
-    let b = s.as_bytes();
-    if b.len() >= 2 && b[1] == b':' {
-        drive = (b[0].to_ascii_uppercase().wrapping_sub(b'A')) as u16;
-        s = &s[2..];
-    }
-    let comp = s.rsplit(['/', '\\']).next().unwrap_or(s);
-    (drive, comp)
-}
-
-/// Scan the root directory from raw slot `start`, returning the next
-/// entry matching `pattern`/`att` together with the slot index to resume
-/// at. `None` once the end-of-directory marker or the root area is hit.
-fn scan(vol: &Volume, start: u32, pattern: &[u8; 11], att: u8) -> Option<(DirEntry, u32)> {
-    let total_slots = vol.rdlen * SLOTS_PER_SECTOR;
+/// Scan directory `dir` (first cluster; 0 = root) from raw slot `start`,
+/// returning the next entry matching `pattern`/`att` together with the
+/// slot index to resume at. `None` at the end-of-directory marker or once
+/// the directory's sectors are exhausted.
+fn scan(
+    vol: &Volume,
+    dir: u32,
+    start: u32,
+    pattern: &[u8; 11],
+    att: u8,
+) -> Option<(DirEntry, u32)> {
     let mut slot = start;
     let mut sbuf = [0u8; 512];
     let mut loaded = u32::MAX;
 
-    while slot < total_slots {
+    loop {
         let sec = slot / SLOTS_PER_SECTOR;
         if sec != loaded {
-            if !vol.read_rel_sector(vol.root_sector() + sec, &mut sbuf) {
+            let rel = vol.dir_nth_sector(dir, sec)?;
+            if !vol.read_rel_sector(rel, &mut sbuf) {
                 return None;
             }
             loaded = sec;
@@ -186,7 +176,6 @@ fn scan(vol: &Volume, start: u32, pattern: &[u8; 11], att: u8) -> Option<(DirEnt
             return Some((entry, slot));
         }
     }
-    None
 }
 
 /// Write the user-visible portion of the DTA from a found entry
@@ -233,13 +222,14 @@ unsafe fn makbuf(dta: u64, e: &DirEntry) {
 ///
 /// # Safety
 /// `dta` must point to a writable 44-byte DTA buffer.
-unsafe fn put_state(dta: u64, next_slot: u32, drive: u16, att: u8, pattern: &[u8; 11]) {
+unsafe fn put_state(dta: u64, next_slot: u32, dir: u32, drive: u8, att: u8, pattern: &[u8; 11]) {
     let p = dta as *mut u8;
     unsafe {
         p.copy_from(next_slot.to_le_bytes().as_ptr(), 4);
-        p.add(4).copy_from(drive.to_le_bytes().as_ptr(), 2);
-        *p.add(6) = att;
-        p.add(7).copy_from(pattern.as_ptr(), 11);
+        p.add(4).copy_from(dir.to_le_bytes().as_ptr(), 4);
+        *p.add(8) = drive;
+        *p.add(9) = att;
+        p.add(10).copy_from(pattern.as_ptr(), 11);
     }
 }
 
@@ -248,15 +238,16 @@ unsafe fn put_state(dta: u64, next_slot: u32, drive: u16, att: u8, pattern: &[u8
 /// # Safety
 /// `dta` must point to a readable 44-byte DTA buffer previously written
 /// by [`put_state`].
-unsafe fn get_state(dta: u64) -> (u32, u16, u8, [u8; 11]) {
+unsafe fn get_state(dta: u64) -> (u32, u32, u8, u8, [u8; 11]) {
     let p = dta as *const u8;
     unsafe {
         let next = u32::from_le_bytes([*p, *p.add(1), *p.add(2), *p.add(3)]);
-        let drive = u16::from_le_bytes([*p.add(4), *p.add(5)]);
-        let att = *p.add(6);
+        let dir = u32::from_le_bytes([*p.add(4), *p.add(5), *p.add(6), *p.add(7)]);
+        let drive = *p.add(8);
+        let att = *p.add(9);
         let mut pat = [0u8; 11];
-        core::ptr::copy_nonoverlapping(p.add(7), pat.as_mut_ptr(), 11);
-        (next, drive, att, pat)
+        core::ptr::copy_nonoverlapping(p.add(10), pat.as_mut_ptr(), 11);
+        (next, dir, drive, att, pat)
     }
 }
 
@@ -271,7 +262,6 @@ pub fn fsfirst(args: &TrapArgs) -> Long {
         Some(p) => p,
         None => return EPTHNF,
     };
-    let wild = has_wildcard(path);
     let att = args.arg_u16(1) as u8;
     let eff_att = if att == FA_VOL {
         att
@@ -279,26 +269,25 @@ pub fn fsfirst(args: &TrapArgs) -> Long {
         att | FA_ARCHIVE | FA_RO
     };
 
-    let (drive, comp) = split_path(path);
-    let vol = match Volume::mount(drive) {
-        Some(v) => v,
-        None => return EPTHNF,
+    // Resolve the parent directory; the final component is the (possibly
+    // wildcarded) search pattern.
+    let (vol, parent, comp) = match super::path::resolve_parent(path) {
+        Ok(x) => x,
+        Err(e) => return e,
     };
+    let drive = super::path::split_drive(path).0 as u8;
     let pattern = fcb_pattern(comp);
 
-    // Mark uninitialised, then search from slot 0.
+    // Mark uninitialised, then search from slot 0 of the parent directory.
     // SAFETY: `dta` is the caller's 44-byte DTA buffer.
-    unsafe { put_state(dta, EXHAUSTED, drive, eff_att, &pattern) };
-    match scan(&vol, 0, &pattern, eff_att) {
+    unsafe { put_state(dta, EXHAUSTED, parent, drive, eff_att, &pattern) };
+    match scan(&vol, parent, 0, &pattern, eff_att) {
         Some((entry, next)) => {
             // SAFETY: as above.
             unsafe {
-                put_state(dta, next, drive, eff_att, &pattern);
+                put_state(dta, next, parent, drive, eff_att, &pattern);
                 makbuf(dta, &entry);
             }
-            // Wildcard searches always report success when a match is
-            // found; an exact name returns E_OK too.
-            let _ = wild;
             E_OK
         }
         None => EFILNF,
@@ -312,26 +301,26 @@ pub fn fsnext(_args: &TrapArgs) -> Long {
         return ENMFIL;
     }
     // SAFETY: `dta` is the caller's 44-byte DTA buffer.
-    let (next, drive, att, pattern) = unsafe { get_state(dta) };
+    let (next, parent, drive, att, pattern) = unsafe { get_state(dta) };
     if next == EXHAUSTED {
         return ENMFIL;
     }
-    let vol = match Volume::mount(drive) {
+    let vol = match Volume::mount(drive as u16) {
         Some(v) => v,
         None => return ENMFIL,
     };
-    match scan(&vol, next, &pattern, att) {
+    match scan(&vol, parent, next, &pattern, att) {
         Some((entry, after)) => {
             // SAFETY: as above.
             unsafe {
-                put_state(dta, after, drive, att, &pattern);
+                put_state(dta, after, parent, drive, att, &pattern);
                 makbuf(dta, &entry);
             }
             E_OK
         }
         None => {
             // SAFETY: as above — mark exhausted.
-            unsafe { put_state(dta, EXHAUSTED, drive, att, &pattern) };
+            unsafe { put_state(dta, EXHAUSTED, parent, drive, att, &pattern) };
             ENMFIL
         }
     }

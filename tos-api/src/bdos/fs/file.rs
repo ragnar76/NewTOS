@@ -14,10 +14,9 @@ use core::cell::UnsafeCell;
 
 use super::dir;
 use super::fat::Volume;
+use super::path;
 use crate::trap::TrapArgs;
-use tos_types::error::{
-    EACCDN, EDRIVE, EFILNF, EIHNDL, EINVFN, ENHNDL, EPTHNF, ERANGE, E_OK,
-};
+use tos_types::error::{EACCDN, EFILNF, EIHNDL, EINVFN, ENHNDL, EPTHNF, ERANGE, E_OK};
 use tos_types::Long;
 
 const SECTOR: usize = 512;
@@ -35,8 +34,10 @@ struct Ofd {
     /// Drive the file lives on (recorded for future open-file tracking).
     #[allow(dead_code)]
     drive: u16,
-    /// Raw root-directory slot of this file's FCB (for size/cluster
+    /// First cluster of the directory holding this file's FCB
+    /// (0 = root), and the raw slot within it (for size/cluster
     /// write-back on close).
+    dir_start: u32,
     dir_slot: u32,
     /// First cluster of the file (0 ⇒ empty file, no clusters yet).
     start_cluster: u32,
@@ -71,29 +72,6 @@ fn ofd_of(handle: u16) -> Option<&'static mut Ofd> {
     table().get_mut(slot)?.as_mut()
 }
 
-/// Parse a path into `(drive, 8.3-name)`. Accepts an optional `X:` drive
-/// prefix and `/` or `\` separators; resolves the final path component as
-/// the file name in the volume root.
-fn parse_path(path: &str) -> Option<(u16, [u8; 11])> {
-    let mut s = path;
-    let mut drive = super::drive::current_drive();
-    let b = s.as_bytes();
-    if b.len() >= 2 && b[1] == b':' {
-        let c = b[0].to_ascii_uppercase();
-        if !c.is_ascii_uppercase() {
-            return None;
-        }
-        drive = (c - b'A') as u16;
-        s = &s[2..];
-    }
-    // Last path component (root-directory lookup only for now).
-    let comp = s.rsplit(['/', '\\']).next().unwrap_or(s);
-    if comp.is_empty() {
-        return None;
-    }
-    Some((drive, dir::fcb_name(comp)?))
-}
-
 /// `Fopen` (0x3D) — open an existing file for reading/writing.
 pub fn fopen(args: &TrapArgs) -> Long {
     // SAFETY: caller-supplied path pointer (kernel pointer at EL1).
@@ -103,15 +81,12 @@ pub fn fopen(args: &TrapArgs) -> Long {
     };
     let mode = (args.arg_u16(1) & 0x77) as u8;
 
-    let (drive, name11) = match parse_path(path) {
-        Some(x) => x,
-        None => return EPTHNF,
+    let (vol, parent, name11) = match path::findit(path) {
+        Ok(x) => x,
+        Err(e) => return e,
     };
-    let vol = match Volume::mount(drive) {
-        Some(v) => v,
-        None => return EDRIVE,
-    };
-    let entry = match dir::find_in_root(&vol, &name11) {
+    let drive = super::path::split_drive(path).0;
+    let entry = match dir::find_in_dir(&vol, parent, &name11) {
         Some(e) => e,
         None => return EFILNF,
     };
@@ -119,7 +94,7 @@ pub fn fopen(args: &TrapArgs) -> Long {
     if entry.attrib & FA_RO != 0 && (mode & 0x07) != 0 {
         return EACCDN;
     }
-    let dir_slot = match dir::slot_of(&vol, &name11) {
+    let dir_slot = match dir::slot_of(&vol, parent, &name11) {
         Some(s) => s,
         None => return EFILNF,
     };
@@ -131,6 +106,7 @@ pub fn fopen(args: &TrapArgs) -> Long {
     table()[slot] = Some(Ofd {
         vol,
         drive,
+        dir_start: parent,
         dir_slot,
         start_cluster: entry.cluster,
         file_len: entry.size,
@@ -142,7 +118,7 @@ pub fn fopen(args: &TrapArgs) -> Long {
 }
 
 /// `Fcreate` (0x3C) — create (or truncate) a file and open it for
-/// writing. Root-directory only.
+/// writing.
 pub fn fcreate(args: &TrapArgs) -> Long {
     // SAFETY: caller-supplied path pointer (kernel pointer at EL1).
     let path = match unsafe { super::cstr(args.arg_u64(0)) } {
@@ -152,35 +128,32 @@ pub fn fcreate(args: &TrapArgs) -> Long {
     // Mask off the sub-directory bit — Fcreate cannot make folders.
     let attr = (args.arg_u16(1) as u8) & !0x10;
 
-    let (drive, name11) = match parse_path(path) {
-        Some(x) => x,
-        None => return EPTHNF,
+    let (vol, parent, name11) = match path::findit(path) {
+        Ok(x) => x,
+        Err(e) => return e,
     };
-    let vol = match Volume::mount(drive) {
-        Some(v) => v,
-        None => return EDRIVE,
-    };
+    let drive = path::split_drive(path).0;
     if !vol.is_writable() {
         return EACCDN;
     }
 
     // If the file already exists, delete it first (unless RO / folder).
-    if let Some(existing) = dir::find_in_root(&vol, &name11) {
+    if let Some(existing) = dir::find_in_dir(&vol, parent, &name11) {
         if existing.attrib & (FA_RO | 0x10) != 0 {
             return EACCDN;
         }
-        if let Some(s) = dir::slot_of(&vol, &name11) {
-            erase_entry(&vol, s, existing.cluster);
+        if let Some(s) = dir::slot_of(&vol, parent, &name11) {
+            erase_entry(&vol, parent, s, existing.cluster);
         }
     }
 
-    let dir_slot = match dir::find_free_slot(&vol) {
+    let dir_slot = match dir::find_free_slot(&vol, parent) {
         Some(s) => s,
-        None => return EACCDN, // fixed root directory full
+        None => return EACCDN, // directory full (root is fixed-size)
     };
     let (time, date) = crate::gemdos::time::dos_now();
     let fcb = dir::build_fcb(&name11, attr, 0, 0, time, date);
-    if !dir::write_slot(&vol, dir_slot, &fcb) {
+    if !dir::write_slot(&vol, parent, dir_slot, &fcb) {
         return EACCDN;
     }
     super::cache::flush();
@@ -192,6 +165,7 @@ pub fn fcreate(args: &TrapArgs) -> Long {
     table()[slot] = Some(Ofd {
         vol,
         drive,
+        dir_start: parent,
         dir_slot,
         start_cluster: 0,
         file_len: 0,
@@ -374,24 +348,25 @@ fn resolve_cluster(ofd: &mut Ofd, index: u32) -> Option<u32> {
 }
 
 /// Free a file's cluster chain and mark its directory entry erased.
-fn erase_entry(vol: &Volume, slot: u32, start_cluster: u32) {
+/// `start` is the directory holding the entry (0 = root).
+fn erase_entry(vol: &Volume, start: u32, slot: u32, start_cluster: u32) {
     if vol.is_data_cluster(start_cluster) {
         vol.free_chain(start_cluster);
     }
     let mut e = [0u8; 32];
-    if dir::read_slot(vol, slot, &mut e) {
+    if dir::read_slot(vol, start, slot, &mut e) {
         e[0] = 0xE5; // erased marker
-        dir::write_slot(vol, slot, &e);
+        dir::write_slot(vol, start, slot, &e);
     }
 }
 
 /// Flush an open file's directory entry (size + start cluster).
 fn flush_ofd(ofd: &Ofd) {
     let mut e = [0u8; 32];
-    if dir::read_slot(&ofd.vol, ofd.dir_slot, &mut e) {
+    if dir::read_slot(&ofd.vol, ofd.dir_start, ofd.dir_slot, &mut e) {
         e[0x1A..0x1C].copy_from_slice(&((ofd.start_cluster & 0xFFFF) as u16).to_le_bytes());
         e[0x1C..0x20].copy_from_slice(&ofd.file_len.to_le_bytes());
-        dir::write_slot(&ofd.vol, ofd.dir_slot, &e);
+        dir::write_slot(&ofd.vol, ofd.dir_start, ofd.dir_slot, &e);
     }
 }
 
@@ -402,15 +377,11 @@ pub fn fdelete(args: &TrapArgs) -> Long {
         Some(p) => p,
         None => return EFILNF,
     };
-    let (drive, name11) = match parse_path(path) {
-        Some(x) => x,
-        None => return EPTHNF,
+    let (vol, parent, name11) = match path::findit(path) {
+        Ok(x) => x,
+        Err(e) => return e,
     };
-    let vol = match Volume::mount(drive) {
-        Some(v) => v,
-        None => return EDRIVE,
-    };
-    let entry = match dir::find_in_root(&vol, &name11) {
+    let entry = match dir::find_in_dir(&vol, parent, &name11) {
         Some(e) => e,
         None => return EFILNF,
     };
@@ -418,11 +389,11 @@ pub fn fdelete(args: &TrapArgs) -> Long {
     if entry.attrib & (FA_RO | 0x10) != 0 {
         return EACCDN;
     }
-    let slot = match dir::slot_of(&vol, &name11) {
+    let slot = match dir::slot_of(&vol, parent, &name11) {
         Some(s) => s,
         None => return EFILNF,
     };
-    erase_entry(&vol, slot, entry.cluster);
+    erase_entry(&vol, parent, slot, entry.cluster);
     super::cache::flush();
     E_OK
 }
