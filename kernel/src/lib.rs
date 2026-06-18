@@ -41,6 +41,7 @@ pub mod selftest_ec4;
 pub mod selftest_time;
 pub mod selftest_pexec;
 pub mod selftest_pexec_d4d5;
+pub mod bench;
 pub mod fbcon;
 pub mod ikbd;
 pub mod shell;

@@ -178,12 +178,6 @@ pub extern "C" fn rust_sync_handler(frame: &mut ExceptionFrame) {
     }
 
     let svc_imm = (esr_iss(frame.esr) & 0xFFFF) as u16;
-    if frame.spsr & 0xF == 0 && svc_imm == 1 {
-        crate::kprintln!(
-            "[svc] func=0x{:x} elr=0x{:x}",
-            frame.gpr[8] as u16, frame.elr,
-        );
-    }
 
     // Phase 05 EC4 sentinel — redirect a from-EL0 `svc #0xEC4` back
     // to the EL1 resume PC captured by `selftest_ec4`. The redirect
@@ -448,7 +442,6 @@ fn finish_terminate(
     unsafe {
         crate::arch::aarch64::user_entry::restore_boot_ttbr0();
         if resume.parent_l0_pa != 0 {
-            crate::kprintln!("[pterm] resume parent (rc={})", rc);
             tos_api::bdos::process::mmu::install_ttbr0(resume.parent_l0_pa);
         }
     }
@@ -464,6 +457,23 @@ fn finish_terminate(
 /// `buf.len()`; a missing NUL simply truncates. A genuinely bad
 /// pointer faults as an EL0 access — the caller's bug, just as a
 /// ported program passing a wild `path` to `Pexec` would fault.
+/// Read a NUL-terminated string from a **kernel** pointer (ordinary
+/// loads). Used when an EL1 caller passes `Pexec` a kernel-VA path.
+fn read_kernel_cstr(va: u64, buf: &mut [u8]) -> usize {
+    let p = va as *const u8;
+    let mut n = 0;
+    while n < buf.len() {
+        // SAFETY: bounded by buf.len(); provenance is the caller's path.
+        let b = unsafe { p.add(n).read_volatile() };
+        if b == 0 {
+            break;
+        }
+        buf[n] = b;
+        n += 1;
+    }
+    n
+}
+
 fn read_user_cstr(user_va: u64, buf: &mut [u8]) -> usize {
     let mut p = user_va;
     let mut n = 0;
@@ -503,10 +513,6 @@ fn handle_pexec(frame: &mut ExceptionFrame) {
     let path_user_va = frame.gpr[1];
     let tail = frame.gpr[2];
     let env = frame.gpr[3];
-    crate::kprintln!(
-        "[pexec] entered: mode={} path_va=0x{:x}",
-        mode, path_user_va,
-    );
 
     // Read the NUL-terminated `path` string from the parent's user
     // space. The parent's TTBR0 is still active (we switch to the
@@ -520,12 +526,16 @@ fn handle_pexec(frame: &mut ExceptionFrame) {
     // pointer faults as the caller's bug (Phase 09 adds the TPA
     // bounds check).
     let mut path_buf = [0u8; 128];
-    let path_len = read_user_cstr(path_user_va, &mut path_buf);
+    // A user (EL0) caller passes a user-VA `path` read with unprivileged
+    // loads; a kernel (EL1) caller — e.g. the built-in shell — passes a
+    // kernel pointer that must be read with ordinary loads (an `ldtrb`
+    // would fault as EL0 on a kernel page).
+    let path_len = if frame.spsr & 0xF == 0 {
+        read_user_cstr(path_user_va, &mut path_buf)
+    } else {
+        read_kernel_cstr(path_user_va, &mut path_buf)
+    };
     let path_bytes = &path_buf[..path_len];
-    crate::kprintln!(
-        "[pexec] path read from user VA 0x{:x}: {} byte(s)",
-        path_user_va, path_len,
-    );
 
     // SAFETY: trap context, BDOS giant lock implicit, single-CPU.
     let result = unsafe {
@@ -533,16 +543,9 @@ fn handle_pexec(frame: &mut ExceptionFrame) {
             mode, path_bytes, tail, env,
         )
     };
-    crate::kprintln!("[pexec] dispatch returned");
 
     let child = match result {
-        Ok(c) => {
-            crate::kprintln!(
-                "[pexec] child loaded: slot={} entry=0x{:x} l0_pa=0x{:x}",
-                c.slot, c.entry_va, c.l0_pa,
-            );
-            c
-        }
+        Ok(c) => c,
         Err(e) => {
             use tos_api::bdos::process::pexec::PexecError;
             let err = match e {
@@ -566,10 +569,6 @@ fn handle_pexec(frame: &mut ExceptionFrame) {
     // return to the parent. The slot stays `Loaded` until `PE_GO`
     // launches it (or the parent frees it).
     if !child.launch {
-        crate::kprintln!(
-            "[pexec] PE_LOAD: slot={} handle=0x{:x} (not launched)",
-            child.slot, child.handle,
-        );
         frame.gpr[0] = child.handle;
         return;
     }
@@ -588,7 +587,6 @@ fn handle_pexec(frame: &mut ExceptionFrame) {
     pf.elr().store(frame.elr, Ordering::Release);
     pf.spsr().store(frame.spsr, Ordering::Release);
     pf.sp_el0().store(frame.sp_el0, Ordering::Release);
-    crate::kprintln!("[pexec] snapshotted parent frame");
 
     // Stamp the child slot's `parent_l0_pa` with the parent's
     // current `TTBR0_EL1`. Pterm's TTBR0 restore lands here on
@@ -605,7 +603,6 @@ fn handle_pexec(frame: &mut ExceptionFrame) {
     tos_api::bdos::process::PROCESS_TABLE[child.slot]
         .parent_l0_pa
         .store(parent_ttbr0, Ordering::Release);
-    crate::kprintln!("[pexec] parent_l0_pa stored: 0x{:x}", parent_ttbr0);
 
     // Record the kernel-side parent linkage (EmuTOS `proc_go`,
     // bdos/proc.c:541 — `p->p_parent = run`). `RUN` still points at
@@ -619,16 +616,11 @@ fn handle_pexec(frame: &mut ExceptionFrame) {
             tos_api::bdos::process::PROCESS_TABLE[child.slot]
                 .parent_slot
                 .store(parent_slot_idx as u32, Ordering::Release);
-            crate::kprintln!(
-                "[pexec] parent_slot wired: child={} parent={}",
-                child.slot, parent_slot_idx,
-            );
         }
         None => {
             // No parent slot (boot-launched parent). Leave the
             // child's `parent_slot` at `NO_PARENT`; Pterm then clears
             // `RUN` to null on the child's exit.
-            crate::kprintln!("[pexec] parent_slot: none (boot parent)");
         }
     }
 
@@ -660,15 +652,19 @@ fn handle_pexec(frame: &mut ExceptionFrame) {
     //
     // SAFETY: trap context, single-CPU; no kernel code holds a
     // low-half VA reference across this point.
-    crate::kprintln!("[pexec] flushing TLB via boot restore");
+    // QUIRK-001 (QEMU cortex-a72 TCG only): the model wedges unless
+    // enough work (specifically UART-MMIO-bearing prints) sits between
+    // the TLBI in `restore_boot_ttbr0` and the `eret` to EL0 below. The
+    // two prints below are kept deliberately to bracket the TTBR0 switch
+    // and avoid the wedge; real hardware is unaffected.
     unsafe {
         crate::arch::aarch64::user_entry::restore_boot_ttbr0();
     }
-    crate::kprintln!("[pexec] installing child ttbr0 0x{:x}", child.l0_pa);
+    crate::kprintln!("[exec] preparing program (slot {})", child.slot);
     unsafe {
         tos_api::bdos::process::mmu::install_ttbr0(child.l0_pa);
     }
-    crate::kprintln!("[pexec] ttbr0 switched");
+    crate::kprintln!("[exec] launching");
 
     // Rewrite the current frame so EXC_BODY's `eret` lands at the
     // child entry in EL0, on the child's user stack. The child

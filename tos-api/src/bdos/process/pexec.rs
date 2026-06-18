@@ -27,6 +27,7 @@
 //! (kernel-private). This module returns the metadata the handler
 //! needs to perform that work.
 
+use core::cell::UnsafeCell;
 use core::sync::atomic::Ordering;
 
 use tos_types::BasePage;
@@ -157,7 +158,22 @@ pub unsafe fn dispatch(
 ///
 /// Caller's BDOS-lock contract; see [`dispatch`].
 pub unsafe fn load(path_bytes: &[u8], launch: bool) -> Result<LoadedChild, PexecError> {
-    let blob = registry::lookup(path_bytes).ok_or(PexecError::NotFound)?;
+    // Resolve the program bytes: an embedded registry entry first (test
+    // programs), otherwise read the file off the FAT16 file system into
+    // the static load buffer.
+    let blob: &[u8] = match registry::lookup(path_bytes) {
+        Some(b) => b,
+        None => {
+            let end = path_bytes.iter().position(|&c| c == 0).unwrap_or(path_bytes.len());
+            let path =
+                core::str::from_utf8(&path_bytes[..end]).map_err(|_| PexecError::NotFound)?;
+            // SAFETY: single BDOS-locked trap path; the buffer is not
+            // aliased while the returned borrow is live.
+            let buf = unsafe { &mut *LOAD_BUF.0.get() };
+            let n = crate::bdos::fs::read_file(path, buf).ok_or(PexecError::NotFound)?;
+            &buf[..n]
+        }
+    };
     let slot_idx = allocate_slot().ok_or(PexecError::NoSlot)?;
 
     // SAFETY: slot is freshly claimed; loader populates the slot's
@@ -231,3 +247,11 @@ fn resolve_handle(handle: u64) -> Option<usize> {
 pub fn child_basepage_kva(slot: usize) -> *mut BasePage {
     PROCESS_TABLE[slot].basepage_kva.load(Ordering::Acquire)
 }
+
+/// Static scratch buffer for a program read off the file system. The
+/// single-page loader caps the loaded image at ~4 KiB; the ELF file
+/// (headers + segment) fits comfortably in 8 KiB.
+struct LoadBuf(UnsafeCell<[u8; 8192]>);
+// SAFETY: accessed only from the single-CPU, BDOS-locked trap path.
+unsafe impl Sync for LoadBuf {}
+static LOAD_BUF: LoadBuf = LoadBuf(UnsafeCell::new([0u8; 8192]));

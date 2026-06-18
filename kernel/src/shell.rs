@@ -75,6 +75,8 @@ fn execute(line: &mut [u8; LINE_MAX], n: usize) {
         b"cd" => cmd_cd(line, arg_start, n),
         b"dir" | b"ls" => cmd_dir(line, arg_start, n),
         b"type" | b"cat" => cmd_type(line, arg_start, n),
+        b"run" => cmd_run(line, arg_start, n),
+        b"bench" => crate::bench::run(),
         b"init" => cmd_init(),
         _ => {
             puts(b"Unknown command: ");
@@ -93,8 +95,30 @@ fn cmd_help() {
     puts(b"  cd <path>       change directory\r\n");
     puts(b"  dir [pattern]   list directory\r\n");
     puts(b"  type <file>     show a file\r\n");
+    puts(b"  run <file>      load and run a program (.PRG)\r\n");
+    puts(b"  bench           memory read/write/copy benchmark\r\n");
     puts(b"  init            create base dirs on C: (ACC/AUTO/GEMSYS)\r\n");
     puts(b"  X:              change drive (e.g. d:)\r\n");
+}
+
+/// Load and run a program from the file system via Pexec (PE_LOADGO).
+/// Control returns here when the program calls Pterm.
+fn cmd_run(line: &mut [u8; LINE_MAX], start: usize, n: usize) {
+    if start >= n {
+        puts(b"Usage: run <file>\r\n");
+        return;
+    }
+    line[n] = 0; // NUL-terminate the path argument
+    let rc = pexec(0, line[start..].as_ptr() as u64);
+    // A negative result is a Pexec error (file not found, no slot, bad
+    // format); otherwise the program ran and returned.
+    if rc < 0 {
+        puts(b"Cannot run program (error ");
+        put_u32((-rc) as u32);
+        puts(b").\r\n");
+    } else {
+        puts(b"[program exited]\r\n");
+    }
 }
 
 /// Create the standard Atari base directories on the boot volume (C:).
@@ -286,6 +310,25 @@ fn dcreate(p: u64) -> i64 {
     let r: i64;
     // SAFETY: svc #1, Dcreate (0x39); kernel path pointer.
     unsafe { core::arch::asm!("svc #1", in("x8") 0x39u64, inout("x0") p => r, options(nostack)); }
+    r
+}
+/// GEMDOS `Pexec` (0x4B): x0=mode, x1=path, x2=tail, x3=env. Returns the
+/// child's exit code (PE_LOADGO) when it terminates.
+fn pexec(mode: u16, path: u64) -> i64 {
+    let r: i64;
+    // SAFETY: svc #1, Pexec ABI; `path` is a kernel string (handled by
+    // handle_pexec's EL1 path read).
+    unsafe {
+        core::arch::asm!(
+            "svc #1",
+            in("x8") 0x4Bu64,
+            inout("x0") mode as u64 => r,
+            in("x1") path,
+            in("x2") 0u64,
+            in("x3") 0u64,
+            options(nostack),
+        );
+    }
     r
 }
 fn dgetpath(buf: u64, drv: u16) -> i64 {
