@@ -246,12 +246,6 @@ extern "C" fn kernel_main_rust(dtb_phys: usize) -> ! {
     console::CONSOLE.enable_rx_interrupt();
     drivers::gic::enable_irqs();
 
-    // Draw the screen through the VDI first, so graphics appear promptly
-    // and the image is independent of the process-level dev self-tests
-    // below (which on QEMU's TCG can wedge on a TTBR0 switch — QUIRK-001,
-    // a QEMU-only artifact; real hardware completes them).
-    selftest_vdi::run_phase12_vdi_test();
-
     // Bring up the microSD card and mount its partitions before the boot
     // screen, so the drive map is populated when initinfo renders it.
     // board-rpi4 / QEMU raspi4b only (no block device on aarch64-virt).
@@ -271,25 +265,9 @@ extern "C" fn kernel_main_rust(dtb_phys: usize) -> ! {
 
     initinfo::run();
 
-    // Phase 10: XBIOS screen group over the real svc #14 path.
-    selftest_xbios::run();
-
-    // Phase 08: microSD read test (before the process self-tests, which
-    // can wedge QEMU's TCG — QUIRK-001). board-rpi4 / QEMU raspi4b only.
-    #[cfg(feature = "board-rpi4")]
-    selftest_emmc::run();
-
-    selftest::run_phase04_self_test();
-    selftest_ec4::run_ec4_pseudo_process_test();
-    selftest_d3::run_d3_elf_loader_test();
-    selftest_d6::run_d6_pterm_test();
-    selftest_d7::run_d7_ptermres_test();
-    selftest_pexec::run_pexec_test();
-    selftest_pexec_d4d5::run_pexec_loadgo_split_test();
-    selftest_time::run_phase07_time_test();
-    // (selftest_ikbd::run() is a manual decoder check — it drains the
-    // shared console ring, so it is not run in the normal boot where that
-    // ring carries real keyboard/serial input.)
+    // Development self-tests are no longer invoked during the normal
+    // boot — the system goes straight to the console. They remain in the
+    // `selftest*` modules and can be re-enabled here when debugging.
 
     // Keep the initinfo boot screen visible for a few seconds before the
     // console takes over (EmuTOS shows its boot screen the same way).
