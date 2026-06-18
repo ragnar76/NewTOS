@@ -7,3 +7,4 @@
 
 pub mod dir;
 pub mod fat;
+pub mod file;

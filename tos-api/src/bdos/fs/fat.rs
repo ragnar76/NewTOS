@@ -136,6 +136,21 @@ impl Volume {
         self.datrec + (cluster - 2) * self.clsiz
     }
 
+    /// Read one 512-byte sector (`sec_in_cluster` within `cluster`) into
+    /// `buf`. Used by the read-side file API to copy a byte range without
+    /// buffering a whole (possibly large) cluster on the stack.
+    pub fn read_cluster_sector(
+        &self,
+        cluster: u32,
+        sec_in_cluster: u32,
+        buf: &mut [u8; SECTOR],
+    ) -> bool {
+        if !self.is_data_cluster(cluster) || sec_in_cluster >= self.clsiz {
+            return false;
+        }
+        self.read_rel(self.cluster_sector(cluster) + sec_in_cluster, buf)
+    }
+
     /// Read all `clsizb` bytes of `cluster` into `buf` (which must be at
     /// least `clsizb` long). `false` on an invalid cluster or read error.
     pub fn read_cluster(&self, cluster: u32, buf: &mut [u8]) -> bool {

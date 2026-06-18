@@ -189,6 +189,9 @@ fn fat_test(drive: u16, letter: char) {
         core::str::from_utf8(&first[..32]).unwrap_or("?"),
     );
 
+    // FAT type + next-cluster sanity (genuine FAT16: fat_entry(2) == 3).
+    kprintln!("[emmc] fat_entry(2) -> {:?} (expect Some(3))", vol.fat_entry(2));
+
     // ── directory traversal (D5 foundation): list root dir + lookup ──
     use tos_api::bdos::fs::dir;
     let mut count = 0u32;
@@ -208,11 +211,95 @@ fn fat_test(drive: u16, letter: char) {
     kprintln!(
         "[emmc] root entries={}; find(\"hello.txt\") -> {}",
         count,
-        match hit {
-            Some(c) => c,
-            None => 0,
-        },
+        hit.unwrap_or_default(),
     );
+
+    // ── Phase 09 D4: GEMDOS Fopen/Fread/Fseek/Fclose (EC1) ──
+    gemdos_file_test();
+}
+
+/// Phase 09 D4 / EC1: open `c:/hello.txt` through GEMDOS, read it across
+/// a cluster boundary, seek, and close — all over the real `svc #1` path.
+fn gemdos_file_test() {
+    let path = b"c:/hello.txt\0";
+    let h = gemdos_fopen(path.as_ptr() as u64, 0);
+    kprintln!("[emmc] Fopen(\"c:/hello.txt\") -> {}", h);
+    if h < 6 {
+        kprintln!("[emmc] Fopen FAILED");
+        return;
+    }
+    let handle = h as u16;
+
+    // Read 64 bytes from the start.
+    let mut buf = [0u8; 64];
+    let n = gemdos_fread(handle, buf.len() as i64, buf.as_mut_ptr() as u64);
+    kprintln!(
+        "[emmc] Fread(64) -> {} : \"{}\"",
+        n,
+        core::str::from_utf8(&buf[..32]).unwrap_or("?"),
+    );
+
+    // Seek to size-via-END, then back to an offset spanning cluster 2->3
+    // (cluster boundary is at clsizb = 512 bytes).
+    let size = gemdos_fseek(0, handle, 2);
+    kprintln!("[emmc] Fseek(0,END) -> size={} (expect 1000)", size);
+    let pos = gemdos_fseek(508, handle, 0); // 4 bytes before cluster boundary
+    let mut b2 = [0u8; 32];
+    let n2 = gemdos_fread(handle, b2.len() as i64, b2.as_mut_ptr() as u64);
+    kprintln!(
+        "[emmc] Fseek(508,SET)->{} ; Fread(32) -> {} across cluster 2->3: \"{}\"",
+        pos,
+        n2,
+        core::str::from_utf8(&b2[..n2.max(0) as usize]).unwrap_or("?"),
+    );
+
+    // Read at EOF returns 0.
+    gemdos_fseek(0, handle, 2);
+    let eof = gemdos_fread(handle, 16, buf.as_mut_ptr() as u64);
+    kprintln!("[emmc] Fread at EOF -> {} (expect 0)", eof);
+
+    let rc = gemdos_fclose(handle);
+    kprintln!("[emmc] Fclose -> {} {}", rc, if rc == 0 { "OK" } else { "FAIL" });
+}
+
+/// GEMDOS `Fopen` (0x3D) via `svc #1`: x0=name, x1=mode.
+fn gemdos_fopen(name: u64, mode: u64) -> i64 {
+    let r: i64;
+    // SAFETY: svc #1, GEMDOS Fopen ABI; `name` is a kernel string pointer.
+    unsafe {
+        core::arch::asm!("svc #1", in("x8") 0x3Du64, inout("x0") name => r, in("x1") mode, options(nostack));
+    }
+    r
+}
+
+/// GEMDOS `Fread` (0x3F) via `svc #1`: x0=handle, x1=len, x2=buf.
+fn gemdos_fread(handle: u16, len: i64, buf: u64) -> i64 {
+    let r: i64;
+    // SAFETY: svc #1, GEMDOS Fread ABI; `buf` is a kernel buffer.
+    unsafe {
+        core::arch::asm!("svc #1", in("x8") 0x3Fu64, inout("x0") handle as u64 => r, in("x1") len, in("x2") buf, options(nostack));
+    }
+    r
+}
+
+/// GEMDOS `Fseek` (0x42) via `svc #1`: x0=offset, x1=handle, x2=flag.
+fn gemdos_fseek(offset: i64, handle: u16, flag: u16) -> i64 {
+    let r: i64;
+    // SAFETY: svc #1, GEMDOS Fseek ABI.
+    unsafe {
+        core::arch::asm!("svc #1", in("x8") 0x42u64, inout("x0") offset => r, in("x1") handle as u64, in("x2") flag as u64, options(nostack));
+    }
+    r
+}
+
+/// GEMDOS `Fclose` (0x3E) via `svc #1`: x0=handle.
+fn gemdos_fclose(handle: u16) -> i64 {
+    let r: i64;
+    // SAFETY: svc #1, GEMDOS Fclose ABI.
+    unsafe {
+        core::arch::asm!("svc #1", in("x8") 0x3Eu64, inout("x0") handle as u64 => r, options(nostack));
+    }
+    r
 }
 
 /// Read one partition-relative sector via `Rwabs` (read).

@@ -71,6 +71,12 @@ const fn build_table() -> [Option<GemdosFn>; MAX_FN + 1] {
     t[0x2C] = Some(time::tgettime);
     t[0x2D] = Some(time::tsettime);
     t[0x30] = Some(version::sversion);
+
+    // --- File group, read side (PHASE-09 D4) ----------------------
+    t[0x3D] = Some(crate::bdos::fs::file::fopen);
+    t[0x3E] = Some(crate::bdos::fs::file::fclose);
+    t[0x3F] = Some(crate::bdos::fs::file::fread);
+    t[0x42] = Some(crate::bdos::fs::file::fseek);
     t
 }
 
