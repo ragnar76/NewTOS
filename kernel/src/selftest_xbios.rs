@@ -39,6 +39,53 @@ pub fn run() {
         "[xbios] Setcolor(3,0x700) old={} ; query=0x{:x} (expect 0x700)",
         old, got,
     );
+
+    // Phase 11: Random / Vsync / Kbdvbase / Tickcal.
+    let r1 = random();
+    let r2 = random();
+    kprintln!(
+        "[xbios] Random -> 0x{:06x}, 0x{:06x} ({}; both 24-bit)",
+        r1, r2,
+        if r1 != r2 && r1 >> 24 == 0 && r2 >> 24 == 0 { "OK" } else { "FAIL" },
+    );
+    let kb = kbdvbase();
+    kprintln!("[xbios] Kbdvbase -> 0x{:x} ({})", kb, if kb != 0 { "OK" } else { "FAIL" });
+    let tc = tickcal();
+    kprintln!("[xbios] Tickcal -> {} (expect 20)", tc);
+    // Vsync should block ~1 frame each and return (not hang).
+    vsync();
+    vsync();
+    kprintln!("[xbios] Vsync x2 returned (did not hang) OK");
+}
+
+/// XBIOS `Random` (0x11): no args.
+fn random() -> i64 {
+    let r: i64;
+    // SAFETY: svc #14, XBIOS Random ABI.
+    unsafe { core::arch::asm!("svc #14", in("x8") 0x11u64, out("x0") r, options(nostack)); }
+    r
+}
+
+/// XBIOS `Kbdvbase` (0x22): no args.
+fn kbdvbase() -> i64 {
+    let r: i64;
+    // SAFETY: svc #14, XBIOS Kbdvbase ABI.
+    unsafe { core::arch::asm!("svc #14", in("x8") 0x22u64, out("x0") r, options(nostack)); }
+    r
+}
+
+/// XBIOS `Vsync` (0x25): no args.
+fn vsync() {
+    // SAFETY: svc #14, XBIOS Vsync ABI.
+    unsafe { core::arch::asm!("svc #14", in("x8") 0x25u64, lateout("x0") _, options(nostack)); }
+}
+
+/// BIOS `Tickcal` (0x06) via svc #13: no args.
+fn tickcal() -> i64 {
+    let r: i64;
+    // SAFETY: svc #13, BIOS Tickcal ABI.
+    unsafe { core::arch::asm!("svc #13", in("x8") 0x06u64, out("x0") r, options(nostack)); }
+    r
 }
 
 /// XBIOS `Physbase` (0x02): no args.

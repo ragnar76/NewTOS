@@ -62,6 +62,14 @@ pub trait Host: Sync {
         0
     }
 
+    /// A monotonic **frame counter** at ~60 Hz, derived from the hardware
+    /// timer (`CNTPCT * 60 / CNTFRQ`). Backs XBIOS `Vsync` (spin until it
+    /// ticks) and seeds `Random`. The default `0` makes `Vsync` a no-op
+    /// (acceptable for a hostless test).
+    fn frame_clock(&self) -> u64 {
+        0
+    }
+
     /// The VDI rasterizer backend (the screen device), or `None` if the
     /// board has no framebuffer. This is the swappable hardware boundary
     /// for the VDI: the bring-up host returns a software rasterizer over

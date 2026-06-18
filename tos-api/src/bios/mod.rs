@@ -24,9 +24,13 @@ const SECTOR: usize = 512;
 
 // BIOS function ids.
 const RWABS: u16 = 0x04;
+const TICKCAL: u16 = 0x06;
 const GETBPB: u16 = 0x07;
 const MEDIACH: u16 = 0x09;
 const DRVMAP: u16 = 0x0A;
+
+/// System-timer period in milliseconds (50 Hz → 20 ms), per EmuTOS.
+const TICKCAL_MS: Long = 20;
 
 /// BIOS Trap-13 dispatcher. Returns the full 64-bit register value:
 /// most functions return a `Long`, but `Getbpb` returns a native
@@ -34,6 +38,7 @@ const DRVMAP: u16 = 0x0A;
 pub fn dispatch(args: &TrapArgs) -> i64 {
     match args.func_id() {
         RWABS => rwabs(args) as i64,
+        TICKCAL => TICKCAL_MS as i64,
         GETBPB => bpb::getbpb(args.arg_u16(0)),
         MEDIACH => mediach(args) as i64,
         DRVMAP => drvmap() as i64,

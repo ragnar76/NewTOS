@@ -108,6 +108,23 @@ impl Host for KernelHost {
         cnt.checked_div(frq).unwrap_or(0)
     }
 
+    fn frame_clock(&self) -> u64 {
+        // CNTPCT * 60 / CNTFRQ = the current ~60 Hz frame number.
+        let cnt: u64;
+        let frq: u64;
+        // SAFETY: read-only system-register reads, always permitted.
+        unsafe {
+            core::arch::asm!(
+                "mrs {cnt}, cntpct_el0",
+                "mrs {frq}, cntfrq_el0",
+                cnt = out(reg) cnt,
+                frq = out(reg) frq,
+                options(nomem, nostack, preserves_flags),
+            );
+        }
+        cnt.checked_mul(60).unwrap_or(cnt).checked_div(frq).unwrap_or(0)
+    }
+
     fn raster(&self) -> Option<&dyn tos_api::vdi::backend::RasterBackend> {
         // Hand the VDI the software framebuffer backend, but only once a
         // framebuffer is actually up (geometry published).
