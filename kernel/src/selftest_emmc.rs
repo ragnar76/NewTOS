@@ -260,6 +260,77 @@ fn gemdos_file_test() {
 
     let rc = gemdos_fclose(handle);
     kprintln!("[emmc] Fclose -> {} {}", rc, if rc == 0 { "OK" } else { "FAIL" });
+
+    // ── Phase 09 D5: Fsfirst/Fsnext enumeration (EC2) ──
+    fsearch_test();
+}
+
+/// Phase 09 D5 / EC2: enumerate the root directory via Fsetdta +
+/// Fsfirst/Fsnext, both with a `*.TXT` filter and a `*.*` wildcard.
+fn fsearch_test() {
+    let mut dta = [0u8; 44];
+    gemdos_fsetdta(dta.as_mut_ptr() as u64);
+
+    let pat = b"c:/*.txt\0";
+    let mut rc = gemdos_fsfirst(pat.as_ptr() as u64, 0);
+    kprintln!("[emmc] Fsfirst(\"c:/*.txt\") -> {}", rc);
+    let mut found = 0;
+    while rc == 0 {
+        let size = u32::from_le_bytes([dta[26], dta[27], dta[28], dta[29]]);
+        kprintln!("[emmc]   match: \"{}\" attr=0x{:02x} size={}", dta_name(&dta), dta[21], size);
+        found += 1;
+        rc = gemdos_fsnext();
+    }
+    kprintln!("[emmc] *.txt matches={} ; final rc={} (expect -49 ENMFIL)", found, rc);
+
+    // Wildcard over everything (volume label excluded by att=0).
+    let all = b"c:/*.*\0";
+    let mut rc2 = gemdos_fsfirst(all.as_ptr() as u64, 0);
+    let mut n2 = 0;
+    while rc2 == 0 {
+        n2 += 1;
+        rc2 = gemdos_fsnext();
+    }
+    kprintln!("[emmc] *.* matches={} (expect 3, label excluded)", n2);
+
+    // Volume-label-exclusive search (att = FA_VOL = 0x08).
+    let rc3 = gemdos_fsfirst(all.as_ptr() as u64, 0x08);
+    kprintln!("[emmc] Fsfirst(\"c:/*.*\", FA_VOL) -> {} name=\"{}\"", rc3, dta_name(&dta));
+}
+
+/// Extract the NUL-terminated `d_fname` (offset 30) from a 44-byte DTA.
+fn dta_name(d: &[u8; 44]) -> &str {
+    let s = &d[30..44];
+    let end = s.iter().position(|&c| c == 0).unwrap_or(s.len());
+    core::str::from_utf8(&s[..end]).unwrap_or("?")
+}
+
+/// GEMDOS `Fsetdta` (0x1A): x0=addr.
+fn gemdos_fsetdta(addr: u64) {
+    // SAFETY: svc #1, GEMDOS Fsetdta ABI.
+    unsafe {
+        core::arch::asm!("svc #1", in("x8") 0x1Au64, in("x0") addr, lateout("x0") _, options(nostack));
+    }
+}
+
+/// GEMDOS `Fsfirst` (0x4E): x0=name, x1=att.
+fn gemdos_fsfirst(name: u64, att: u16) -> i64 {
+    let r: i64;
+    // SAFETY: svc #1, GEMDOS Fsfirst ABI; `name` is a kernel string.
+    unsafe {
+        core::arch::asm!("svc #1", in("x8") 0x4Eu64, inout("x0") name => r, in("x1") att as u64, options(nostack));
+    }
+    r
+}
+
+/// GEMDOS `Fsnext` (0x4F): no args.
+fn gemdos_fsnext() -> i64 {
+    let r: i64;
+    // SAFETY: svc #1, GEMDOS Fsnext ABI.
+    unsafe {
+        core::arch::asm!("svc #1", in("x8") 0x4Fu64, out("x0") r, options(nostack));
+    }
+    r
 }
 
 /// GEMDOS `Fopen` (0x3D) via `svc #1`: x0=name, x1=mode.

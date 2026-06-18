@@ -48,7 +48,8 @@ pub struct DirEntry {
 }
 
 impl DirEntry {
-    fn parse(b: &[u8]) -> DirEntry {
+    /// Parse a 32-byte on-disk directory entry (FCB layout).
+    pub fn parse(b: &[u8]) -> DirEntry {
         let mut name = [0u8; 11];
         name.copy_from_slice(&b[0..11]);
         DirEntry {

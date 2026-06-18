@@ -66,24 +66,6 @@ fn ofd_of(handle: u16) -> Option<&'static mut Ofd> {
     table().get_mut(slot)?.as_mut()
 }
 
-/// Read a NUL-terminated path string (max 128 bytes) from a raw pointer.
-///
-/// # Safety
-/// `ptr` must point to a readable NUL-terminated string. EL1 self-tests
-/// pass kernel pointers; the EL0 user-pointer path lands with the
-/// process-aware file layer.
-unsafe fn cstr<'a>(ptr: u64) -> Option<&'a str> {
-    if ptr == 0 {
-        return None;
-    }
-    let p = ptr as *const u8;
-    let mut len = 0usize;
-    while len < 128 && unsafe { *p.add(len) } != 0 {
-        len += 1;
-    }
-    core::str::from_utf8(unsafe { core::slice::from_raw_parts(p, len) }).ok()
-}
-
 /// Parse a path into `(drive, 8.3-name)`. Accepts an optional `X:` drive
 /// prefix and `/` or `\` separators; resolves the final path component as
 /// the file name in the volume root.
@@ -110,7 +92,7 @@ fn parse_path(path: &str) -> Option<(u16, [u8; 11])> {
 /// `Fopen` (0x3D) — open an existing file for reading/writing.
 pub fn fopen(args: &TrapArgs) -> Long {
     // SAFETY: caller-supplied path pointer (kernel pointer at EL1).
-    let path = match unsafe { cstr(args.arg_u64(0)) } {
+    let path = match unsafe { super::cstr(args.arg_u64(0)) } {
         Some(p) => p,
         None => return EFILNF,
     };

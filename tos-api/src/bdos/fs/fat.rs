@@ -78,6 +78,12 @@ impl Volume {
         self.datrec - self.rdlen
     }
 
+    /// Read one partition-relative sector into `buf`. Public entry for the
+    /// directory search, which walks the fixed root area sector by sector.
+    pub fn read_rel_sector(&self, rel_sector: u32, buf: &mut [u8; SECTOR]) -> bool {
+        self.read_rel(rel_sector, buf)
+    }
+
     /// Read one partition-relative sector into `buf` (must be 512 bytes).
     fn read_rel(&self, rel_sector: u32, buf: &mut [u8; SECTOR]) -> bool {
         match host::host().and_then(|h| h.block()) {
