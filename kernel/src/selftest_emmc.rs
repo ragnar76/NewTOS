@@ -385,6 +385,44 @@ fn subdir_test() {
     let bad = b"c:/NOPE/x.txt\0";
     let hb = gemdos_fopen(bad.as_ptr() as u64, 0);
     kprintln!("[emmc] Fopen(\"c:/NOPE/x.txt\") -> {} (expect -34 EPTHNF)", hb);
+
+    // ── Dcreate / Ddelete ──
+    let dir = b"c:/MYDIR\0";
+    let c = gemdos_dcreate(dir.as_ptr() as u64);
+    // Create a file inside the new directory, then read it back.
+    let f = b"c:/MYDIR/FILE.TXT\0";
+    let hf = gemdos_fcreate(f.as_ptr() as u64, 0);
+    if hf >= 6 {
+        gemdos_fwrite(hf as u16, 7, c"nested\n".as_ptr() as u64);
+        gemdos_fclose(hf as u16);
+    }
+    // Ddelete on a non-empty directory must fail (EACCDN -36).
+    let de_full = gemdos_ddelete(dir.as_ptr() as u64);
+    // Remove the file, then the now-empty directory should delete.
+    gemdos_fdelete(f.as_ptr() as u64);
+    let de_empty = gemdos_ddelete(dir.as_ptr() as u64);
+    let reopen = gemdos_dcreate(dir.as_ptr() as u64); // can re-create → was freed
+    gemdos_ddelete(dir.as_ptr() as u64); // clean up
+    kprintln!(
+        "[emmc] Dcreate(MYDIR)={} ; file={} ; Ddelete(non-empty)={} (exp -36) ; Ddelete(empty)={} ; re-Dcreate={}",
+        c, hf, de_full, de_empty, reopen,
+    );
+}
+
+/// GEMDOS `Dcreate` (0x39): x0=path.
+fn gemdos_dcreate(path: u64) -> i64 {
+    let r: i64;
+    // SAFETY: svc #1, GEMDOS Dcreate ABI; `path` is a kernel string.
+    unsafe { core::arch::asm!("svc #1", in("x8") 0x39u64, inout("x0") path => r, options(nostack)); }
+    r
+}
+
+/// GEMDOS `Ddelete` (0x3A): x0=path.
+fn gemdos_ddelete(path: u64) -> i64 {
+    let r: i64;
+    // SAFETY: svc #1, GEMDOS Ddelete ABI; `path` is a kernel string.
+    unsafe { core::arch::asm!("svc #1", in("x8") 0x3Au64, inout("x0") path => r, options(nostack)); }
+    r
 }
 
 /// Phase 09 D7 / EC3: create a file, write data spanning two clusters,

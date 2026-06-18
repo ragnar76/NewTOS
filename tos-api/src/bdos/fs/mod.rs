@@ -7,6 +7,7 @@
 
 pub mod cache;
 pub mod dir;
+pub mod dirops;
 pub mod drive;
 pub mod fat;
 pub mod file;
