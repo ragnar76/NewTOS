@@ -287,7 +287,9 @@ extern "C" fn kernel_main_rust(dtb_phys: usize) -> ! {
     selftest_pexec::run_pexec_test();
     selftest_pexec_d4d5::run_pexec_loadgo_split_test();
     selftest_time::run_phase07_time_test();
-    selftest_ikbd::run();
+    // (selftest_ikbd::run() is a manual decoder check — it drains the
+    // shared console ring, so it is not run in the normal boot where that
+    // ring carries real keyboard/serial input.)
 
     // Keep the initinfo boot screen visible for a few seconds before the
     // console takes over (EmuTOS shows its boot screen the same way).

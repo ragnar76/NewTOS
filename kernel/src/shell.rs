@@ -75,6 +75,7 @@ fn execute(line: &mut [u8; LINE_MAX], n: usize) {
         b"cd" => cmd_cd(line, arg_start, n),
         b"dir" | b"ls" => cmd_dir(line, arg_start, n),
         b"type" | b"cat" => cmd_type(line, arg_start, n),
+        b"init" => cmd_init(),
         _ => {
             puts(b"Unknown command: ");
             puts(cmd);
@@ -92,7 +93,28 @@ fn cmd_help() {
     puts(b"  cd <path>       change directory\r\n");
     puts(b"  dir [pattern]   list directory\r\n");
     puts(b"  type <file>     show a file\r\n");
+    puts(b"  init            create base dirs on C: (ACC/AUTO/GEMSYS)\r\n");
     puts(b"  X:              change drive (e.g. d:)\r\n");
+}
+
+/// Create the standard Atari base directories on the boot volume (C:).
+fn cmd_init() {
+    puts(b"Creating base directories on boot volume C:\r\n");
+    mkdir(c"C:\\ACC".as_ptr() as u64, b"ACC");
+    mkdir(c"C:\\AUTO".as_ptr() as u64, b"AUTO");
+    mkdir(c"C:\\GEMSYS".as_ptr() as u64, b"GEMSYS");
+    puts(b"Done.\r\n");
+}
+
+/// Dcreate one directory and report the outcome.
+fn mkdir(path: u64, name: &[u8]) {
+    puts(b"  ");
+    puts(name);
+    match dcreate(path) {
+        0 => puts(b" - created\r\n"),
+        -36 => puts(b" - already exists\r\n"), // EACCDN (name in use)
+        _ => puts(b" - FAILED\r\n"),
+    }
 }
 
 fn cmd_pwd() {
@@ -258,6 +280,12 @@ fn dsetpath(p: u64) -> i64 {
     let r: i64;
     // SAFETY: svc #1, Dsetpath (0x3B); kernel path pointer.
     unsafe { core::arch::asm!("svc #1", in("x8") 0x3Bu64, inout("x0") p => r, options(nostack)); }
+    r
+}
+fn dcreate(p: u64) -> i64 {
+    let r: i64;
+    // SAFETY: svc #1, Dcreate (0x39); kernel path pointer.
+    unsafe { core::arch::asm!("svc #1", in("x8") 0x39u64, inout("x0") p => r, options(nostack)); }
     r
 }
 fn dgetpath(buf: u64, drv: u16) -> i64 {

@@ -75,10 +75,18 @@ pub unsafe fn init() {
 
 /// Drain any pending RX bytes from UART2 into the IKBD decoder. Cheap to
 /// call in the console input-wait loop.
+///
+/// The drain is bounded to the PL011 FIFO depth (32) so that a platform
+/// which does not implement UART2 (its `FR` reads 0, leaving `RXFE`
+/// permanently clear — e.g. QEMU `raspi4b`) cannot spin forever; unread
+/// bytes are simply picked up on the next call.
 pub fn poll() {
     // SAFETY: well-defined PL011 register reads on the configured UART.
     unsafe {
-        while reg(UART_FR).read_volatile() & FR_RXFE == 0 {
+        for _ in 0..32 {
+            if reg(UART_FR).read_volatile() & FR_RXFE != 0 {
+                break;
+            }
             let b = reg(UART_DR).read_volatile() as u8;
             ikbd::feed(b);
         }
