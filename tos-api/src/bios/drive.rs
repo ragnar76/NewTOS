@@ -38,8 +38,21 @@ fn is_extended(kind: u8) -> bool {
     matches!(kind, 0x05 | 0x0F | 0x85)
 }
 
+/// Read 16-byte MBR/EBR partition entry `i` from a sector buffer:
+/// `(kind, start_lba, count)`. `start_lba` is relative to the table's
+/// own base (caller adds the appropriate offset).
+fn entry(sec: &[u8; 512], i: usize) -> (u8, u32, u32) {
+    let e = 0x1BE + i * 16;
+    let kind = sec[e + 4];
+    let start = u32::from_le_bytes([sec[e + 8], sec[e + 9], sec[e + 10], sec[e + 11]]);
+    let count = u32::from_le_bytes([sec[e + 12], sec[e + 13], sec[e + 14], sec[e + 15]]);
+    (kind, start, count)
+}
+
 /// Parse the MBR on the installed block device and (re)build the drive
-/// table. Returns the number of drives mounted. A device with no MBR
+/// table. Returns the number of drives mounted. Primary partitions map to
+/// `C:`+ in MBR order; an extended partition's logical chain (EBRs) is
+/// then walked, appending each logical volume. A device with no MBR
 /// partitions (a "super-floppy" FAT image) is mounted whole as `C:`.
 pub fn mount() -> usize {
     let blk = match host::host().and_then(|h| h.block()) {
@@ -59,23 +72,56 @@ pub fn mount() -> usize {
     let mut mounted = 0;
 
     if sec0[510] == 0x55 && sec0[511] == 0xAA {
-        // Four primary partition entries at offset 0x1BE, 16 bytes each.
-        let mut any = false;
+        // Primary entries first (in MBR order), remembering the extended
+        // partition's start for the logical-chain walk afterwards.
+        let mut ext_base = 0u32;
         for i in 0..4 {
-            let e = 0x1BE + i * 16;
-            let kind = sec0[e + 4];
-            let start = u32::from_le_bytes([sec0[e + 8], sec0[e + 9], sec0[e + 10], sec0[e + 11]]);
-            let count = u32::from_le_bytes([sec0[e + 12], sec0[e + 13], sec0[e + 14], sec0[e + 15]]);
-            if kind != 0 && count != 0 && !is_extended(kind) {
-                any = true;
-                if drive < MAX_DRIVES {
-                    table[drive] = Some(Partition { start_lba: start, count, kind });
+            let (kind, start, count) = entry(&sec0, i);
+            if kind == 0 || count == 0 {
+                continue;
+            }
+            if is_extended(kind) {
+                ext_base = start;
+            } else if drive < MAX_DRIVES {
+                table[drive] = Some(Partition { start_lba: start, count, kind });
+                drive += 1;
+                mounted += 1;
+            }
+        }
+
+        // Walk the extended partition's EBR chain. Each EBR's first entry
+        // is a logical volume (start relative to that EBR); the second
+        // points to the next EBR (start relative to `ext_base`).
+        if ext_base != 0 {
+            let mut ebr = ext_base;
+            // Bounded by MAX_DRIVES iterations to defend against a loop.
+            for _ in 0..MAX_DRIVES {
+                let mut buf = [0u8; 512];
+                if !blk.read_blocks(ebr as u64, &mut buf)
+                    || buf[510] != 0x55
+                    || buf[511] != 0xAA
+                {
+                    break;
+                }
+                let (lk, ls, lc) = entry(&buf, 0);
+                if lk != 0 && lc != 0 && drive < MAX_DRIVES {
+                    table[drive] = Some(Partition {
+                        start_lba: ebr + ls,
+                        count: lc,
+                        kind: lk,
+                    });
                     drive += 1;
                     mounted += 1;
                 }
+                let (_nk, ns, nc) = entry(&buf, 1);
+                if ns == 0 || nc == 0 {
+                    break;
+                }
+                ebr = ext_base + ns;
             }
         }
-        if any {
+
+        if mounted > 0 {
             return mounted;
         }
     }
