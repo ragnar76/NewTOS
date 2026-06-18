@@ -261,6 +261,14 @@ extern "C" fn kernel_main_rust(dtb_phys: usize) -> ! {
         tos_api::bios::mount();
     }
 
+    // Bring up the second UART for a native Atari IKBD keyboard (no-op
+    // without a keyboard wired; harmless to configure). board-rpi4 only.
+    #[cfg(feature = "board-rpi4")]
+    // SAFETY: boot CPU; peripherals up.
+    unsafe {
+        drivers::bcm2711::ikbd_uart::init();
+    }
+
     initinfo::run();
 
     // Phase 10: XBIOS screen group over the real svc #14 path.

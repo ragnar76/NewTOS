@@ -57,9 +57,21 @@ impl Host for KernelHost {
         }
 
         let byte = loop {
+            // Drain a native Atari IKBD keyboard (second UART, no IRQ
+            // wired) into the same ring. board-rpi4 only.
+            #[cfg(feature = "board-rpi4")]
+            crate::drivers::bcm2711::ikbd_uart::poll();
+
             if let Some(b) = crate::console::rx_pop() {
                 break b;
             }
+            // On board-rpi4 the IKBD UART is polled, so spin lightly
+            // rather than sleeping (only the UART0 RX IRQ would wake a
+            // `wfi`, never the polled keyboard). On other boards `wfi`
+            // sleeps until the RX IRQ.
+            #[cfg(feature = "board-rpi4")]
+            core::hint::spin_loop();
+            #[cfg(not(feature = "board-rpi4"))]
             // SAFETY: wait for the next interrupt (the RX IRQ wakes us).
             unsafe {
                 core::arch::asm!("wfi", options(nomem, nostack, preserves_flags));
