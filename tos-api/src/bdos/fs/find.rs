@@ -44,7 +44,6 @@ const END: u8 = 0x00;
 const SLOTS_PER_SECTOR: u32 = 16;
 /// Sentinel for "DTA not initialised / search exhausted".
 const EXHAUSTED: u32 = u32::MAX;
-const DEFAULT_DRIVE: u16 = 2;
 
 /// Global current-DTA pointer (`p_xdta` stand-in).
 static CUR_DTA: AtomicU64 = AtomicU64::new(0);
@@ -143,7 +142,7 @@ fn has_wildcard(name: &str) -> bool {
 /// Split a path into `(drive, final-component)`.
 fn split_path(path: &str) -> (u16, &str) {
     let mut s = path;
-    let mut drive = DEFAULT_DRIVE;
+    let mut drive = super::drive::current_drive();
     let b = s.as_bytes();
     if b.len() >= 2 && b[1] == b':' {
         drive = (b[0].to_ascii_uppercase().wrapping_sub(b'A')) as u16;

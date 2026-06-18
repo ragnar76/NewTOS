@@ -25,9 +25,6 @@ const SECTOR: usize = 512;
 const NUMSTD: u16 = 6;
 /// Open-file table size (EmuTOS `OPNFILES`).
 const OPEN_FILES: usize = 16;
-/// Default drive when a path carries no `X:` prefix — `C:` for now (the
-/// current-drive state is `Dgetdrv`/`Dsetdrv`, a later deliverable).
-const DEFAULT_DRIVE: u16 = 2;
 /// `FA_RO` read-only attribute bit.
 const FA_RO: u8 = 0x01;
 
@@ -71,7 +68,7 @@ fn ofd_of(handle: u16) -> Option<&'static mut Ofd> {
 /// the file name in the volume root.
 fn parse_path(path: &str) -> Option<(u16, [u8; 11])> {
     let mut s = path;
-    let mut drive = DEFAULT_DRIVE;
+    let mut drive = super::drive::current_drive();
     let b = s.as_bytes();
     if b.len() >= 2 && b[1] == b':' {
         let c = b[0].to_ascii_uppercase();

@@ -83,6 +83,11 @@ const fn build_table() -> [Option<GemdosFn>; MAX_FN + 1] {
     t[0x2F] = Some(crate::bdos::fs::find::fgetdta);
     t[0x4E] = Some(crate::bdos::fs::find::fsfirst);
     t[0x4F] = Some(crate::bdos::fs::find::fsnext);
+
+    // --- Drive group (PHASE-09 D6) --------------------------------
+    t[0x0E] = Some(crate::bdos::fs::drive::dsetdrv);
+    t[0x19] = Some(crate::bdos::fs::drive::dgetdrv);
+    t[0x36] = Some(crate::bdos::fs::drive::dfree);
     t
 }
 

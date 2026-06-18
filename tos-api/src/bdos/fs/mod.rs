@@ -6,6 +6,7 @@
 //! (D2), path parser (D3) and the GEMDOS file/dir calls follow.
 
 pub mod dir;
+pub mod drive;
 pub mod fat;
 pub mod file;
 pub mod find;

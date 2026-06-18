@@ -296,6 +296,51 @@ fn fsearch_test() {
     // Volume-label-exclusive search (att = FA_VOL = 0x08).
     let rc3 = gemdos_fsfirst(all.as_ptr() as u64, 0x08);
     kprintln!("[emmc] Fsfirst(\"c:/*.*\", FA_VOL) -> {} name=\"{}\"", rc3, dta_name(&dta));
+
+    // ── Phase 09 D6: Dgetdrv / Dsetdrv / Dfree ──
+    ddrive_test();
+}
+
+/// Phase 09 D6: current-drive state and free-space query.
+fn ddrive_test() {
+    kprintln!("[emmc] Dgetdrv -> {} (default C:)", gemdos_dgetdrv());
+    let map = gemdos_dsetdrv(2); // select C:
+    kprintln!("[emmc] Dsetdrv(C:) -> drvmap=0x{:x} ; Dgetdrv -> {}", map, gemdos_dgetdrv());
+
+    let mut info = [0u8; 16];
+    let rc = gemdos_dfree(info.as_mut_ptr() as u64, 3); // drv 3 = C: (1-based)
+    let free = u32::from_le_bytes([info[0], info[1], info[2], info[3]]);
+    let total = u32::from_le_bytes([info[4], info[5], info[6], info[7]]);
+    let recsiz = u32::from_le_bytes([info[8], info[9], info[10], info[11]]);
+    let clsiz = u32::from_le_bytes([info[12], info[13], info[14], info[15]]);
+    kprintln!(
+        "[emmc] Dfree(C:) -> {} ; free={} total={} recsiz={} clsiz={} ; free={} KiB",
+        rc, free, total, recsiz, clsiz, (free as u64 * recsiz as u64 * clsiz as u64) / 1024,
+    );
+}
+
+/// GEMDOS `Dgetdrv` (0x19): no args.
+fn gemdos_dgetdrv() -> i64 {
+    let r: i64;
+    // SAFETY: svc #1, GEMDOS Dgetdrv ABI.
+    unsafe { core::arch::asm!("svc #1", in("x8") 0x19u64, out("x0") r, options(nostack)); }
+    r
+}
+
+/// GEMDOS `Dsetdrv` (0x0E): x0=drive.
+fn gemdos_dsetdrv(drv: u16) -> i64 {
+    let r: i64;
+    // SAFETY: svc #1, GEMDOS Dsetdrv ABI.
+    unsafe { core::arch::asm!("svc #1", in("x8") 0x0Eu64, inout("x0") drv as u64 => r, options(nostack)); }
+    r
+}
+
+/// GEMDOS `Dfree` (0x36): x0=buf, x1=drv.
+fn gemdos_dfree(buf: u64, drv: u16) -> i64 {
+    let r: i64;
+    // SAFETY: svc #1, GEMDOS Dfree ABI; `buf` is a 16-byte kernel buffer.
+    unsafe { core::arch::asm!("svc #1", in("x8") 0x36u64, inout("x0") buf => r, in("x1") drv as u64, options(nostack)); }
+    r
 }
 
 /// Extract the NUL-terminated `d_fname` (offset 30) from a 44-byte DTA.

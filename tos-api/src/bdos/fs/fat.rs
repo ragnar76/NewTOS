@@ -157,6 +157,44 @@ impl Volume {
         self.read_rel(self.cluster_sector(cluster) + sec_in_cluster, buf)
     }
 
+    /// Count free (zero) clusters in the FAT, over the data-cluster range
+    /// `2..numcl+2`. FAT16 scans the FAT sectors directly (EmuTOS
+    /// `countfree16`); FAT12 falls back to per-entry decoding.
+    pub fn count_free_clusters(&self) -> u32 {
+        let last = self.numcl + 2;
+        let mut free = 0u32;
+        if self.fat16 {
+            let eps = self.recsiz / 2; // 16-bit entries per sector
+            let nsec = (last * 2).div_ceil(self.recsiz);
+            let mut sbuf = [0u8; SECTOR];
+            for s in 0..nsec {
+                if !self.read_rel(self.fatrec + s, &mut sbuf) {
+                    break;
+                }
+                for i in 0..eps {
+                    let cl = s * eps + i;
+                    if cl < 2 {
+                        continue;
+                    }
+                    if cl >= last {
+                        return free;
+                    }
+                    let b = (i * 2) as usize;
+                    if u16::from_le_bytes([sbuf[b], sbuf[b + 1]]) == 0 {
+                        free += 1;
+                    }
+                }
+            }
+        } else {
+            for c in 2..last {
+                if matches!(self.fat_entry(c), Some(0)) {
+                    free += 1;
+                }
+            }
+        }
+        free
+    }
+
     /// Read all `clsizb` bytes of `cluster` into `buf` (which must be at
     /// least `clsizb` long). `false` on an invalid cluster or read error.
     pub fn read_cluster(&self, cluster: u32, buf: &mut [u8]) -> bool {
