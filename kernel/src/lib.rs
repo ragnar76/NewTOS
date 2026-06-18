@@ -42,6 +42,7 @@ pub mod selftest_time;
 pub mod selftest_pexec;
 pub mod selftest_pexec_d4d5;
 pub mod fbcon;
+pub mod shell;
 pub mod selftest_vdi;
 pub mod selftest_fbcon;
 pub mod selftest_xbios;
@@ -279,20 +280,14 @@ extern "C" fn kernel_main_rust(dtb_phys: usize) -> ! {
 
     // Keep the initinfo boot screen visible for a few seconds before the
     // console takes over (EmuTOS shows its boot screen the same way).
+    // (The Phase-02 RX-echo test is retired now that the shell owns
+    // console input.)
     arch::aarch64::delay_ms(4000);
 
-    // Phase 10 D5: activate the framebuffer console and render a banner
-    // through GEMDOS Cconout — the on-screen console (EC1). Runs before
-    // the interactive RX-echo test, which blocks waiting for input.
-    selftest_fbcon::run();
-
-    selftest::run_phase02_self_test();
-
-    // Phase 03 D6 verification (uncomment to provoke a hardware stack
-    // overflow into the guard page; halts after the diagnostic).
-    // selftest::trigger_stack_overflow();
-
-    arch::aarch64::halt();
+    // Hand off to the interactive NewTOS console (never returns). Input
+    // comes from the UART (a serial terminal); output renders on the
+    // framebuffer console (HDMI).
+    shell::run();
 }
 
 /// Pretty-print the physical memory map on the boot console.
