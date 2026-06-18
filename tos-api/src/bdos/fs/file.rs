@@ -16,7 +16,9 @@ use super::dir;
 use super::fat::Volume;
 use super::path;
 use crate::trap::TrapArgs;
-use tos_types::error::{EACCDN, EFILNF, EIHNDL, EINVFN, ENHNDL, EPTHNF, ERANGE, E_OK};
+use tos_types::error::{
+    EACCDN, EFILNF, EIHNDL, EINVFN, ENHNDL, ENSAME, EPTHNF, ERANGE, E_OK,
+};
 use tos_types::Long;
 
 const SECTOR: usize = 512;
@@ -395,6 +397,148 @@ pub fn fdelete(args: &TrapArgs) -> Long {
     };
     erase_entry(&vol, parent, slot, entry.cluster);
     super::cache::flush();
+    E_OK
+}
+
+/// `Fattrib` (0x43) — get or set a file's attribute byte.
+/// `wrt = 0` returns the current attributes; `wrt = 1` sets `mod`
+/// (FA_VOL / FA_SUBDIR are rejected) and returns it.
+pub fn fattrib(args: &TrapArgs) -> Long {
+    // SAFETY: caller-supplied path pointer (kernel pointer at EL1).
+    let pathstr = match unsafe { super::cstr(args.arg_u64(0)) } {
+        Some(p) => p,
+        None => return EPTHNF,
+    };
+    let wrt = args.arg_u16(1);
+    let mode = args.arg_u16(2) as u8;
+
+    let (vol, parent, name11) = match path::findit(pathstr) {
+        Ok(x) => x,
+        Err(e) => return e,
+    };
+    let entry = match dir::find_in_dir(&vol, parent, &name11) {
+        Some(e) => e,
+        None => return EFILNF,
+    };
+    if wrt == 0 {
+        return entry.attrib as i8 as Long; // sign-extended UBYTE
+    }
+    // Set: FA_VOL (0x08) and FA_SUBDIR (0x10) are not settable here.
+    if mode & 0x18 != 0 {
+        return EACCDN;
+    }
+    let slot = match dir::slot_of(&vol, parent, &name11) {
+        Some(s) => s,
+        None => return EFILNF,
+    };
+    let mut e = [0u8; 32];
+    if !dir::read_slot(&vol, parent, slot, &mut e) {
+        return EACCDN;
+    }
+    e[0x0B] = mode;
+    if !dir::write_slot(&vol, parent, slot, &e) {
+        return EACCDN;
+    }
+    super::cache::flush();
+    mode as Long
+}
+
+/// `Frename` (0x56) — rename/move a file. `x0` = `n` (unused historical
+/// word), `x1` = source path, `x2` = destination path.
+pub fn frename(args: &TrapArgs) -> Long {
+    // SAFETY: caller-supplied path pointers (kernel pointers at EL1).
+    let src = match unsafe { super::cstr(args.arg_u64(1)) } {
+        Some(p) => p,
+        None => return EPTHNF,
+    };
+    let dst = match unsafe { super::cstr(args.arg_u64(2)) } {
+        Some(p) => p,
+        None => return EPTHNF,
+    };
+
+    let (vol1, parent1, name1) = match path::findit(src) {
+        Ok(x) => x,
+        Err(e) => return e,
+    };
+    let (_vol2, parent2, name2) = match path::findit(dst) {
+        Ok(x) => x,
+        Err(e) => return e,
+    };
+    // Cross-device renames are not supported.
+    if path::split_drive(src).0 != path::split_drive(dst).0 {
+        return ENSAME;
+    }
+    // Destination must not already exist.
+    if dir::find_in_dir(&vol1, parent2, &name2).is_some() {
+        return EACCDN;
+    }
+    // Source must exist and not be read-only.
+    let entry = match dir::find_in_dir(&vol1, parent1, &name1) {
+        Some(e) => e,
+        None => return EFILNF,
+    };
+    if entry.attrib & FA_RO != 0 {
+        return EACCDN;
+    }
+    let src_slot = match dir::slot_of(&vol1, parent1, &name1) {
+        Some(s) => s,
+        None => return EFILNF,
+    };
+    // Copy the FCB into a free slot of the destination directory with the
+    // new name, then erase the source entry.
+    let mut fcb = [0u8; 32];
+    if !dir::read_slot(&vol1, parent1, src_slot, &mut fcb) {
+        return EACCDN;
+    }
+    fcb[0..11].copy_from_slice(&name2);
+    let dst_slot = match dir::find_free_slot(&vol1, parent2) {
+        Some(s) => s,
+        None => return EACCDN, // destination directory full
+    };
+    if !dir::write_slot(&vol1, parent2, dst_slot, &fcb) {
+        return EACCDN;
+    }
+    let mut old = [0u8; 32];
+    if dir::read_slot(&vol1, parent1, src_slot, &mut old) {
+        old[0] = 0xE5;
+        dir::write_slot(&vol1, parent1, src_slot, &old);
+    }
+    super::cache::flush();
+    E_OK
+}
+
+/// `Fdatime` (0x57) — get or set an open file's time/date stamp.
+/// `x0` = `DOSTIME*` (time WORD then date WORD), `x1` = handle,
+/// `x2` = `wrt` (0 = get, 1 = set). Values are native byte order.
+pub fn fdatime(args: &TrapArgs) -> Long {
+    let buf = args.arg_u64(0);
+    let handle = args.arg_u16(1);
+    let wrt = args.arg_u16(2);
+
+    let ofd = match ofd_of(handle) {
+        Some(o) => o,
+        None => return EIHNDL,
+    };
+    let mut e = [0u8; 32];
+    if !dir::read_slot(&ofd.vol, ofd.dir_start, ofd.dir_slot, &mut e) {
+        return EIHNDL;
+    }
+    let p = buf as *mut u8;
+    if wrt == 0 {
+        // Get: copy the entry's time (0x16) + date (0x18) to the buffer.
+        // SAFETY: `buf` is the caller's 4-byte DOSTIME buffer.
+        unsafe {
+            core::ptr::copy_nonoverlapping(e.as_ptr().add(0x16), p, 4);
+        }
+    } else {
+        // Set: copy time/date from the buffer into the entry.
+        // SAFETY: as above.
+        unsafe {
+            core::ptr::copy_nonoverlapping(p as *const u8, e.as_mut_ptr().add(0x16), 4);
+        }
+        dir::write_slot(&ofd.vol, ofd.dir_start, ofd.dir_slot, &e);
+        super::cache::flush();
+    }
     E_OK
 }
 

@@ -301,6 +301,9 @@ fn fsearch_test() {
     // ── Subdirectories: findit path resolution ──
     subdir_test();
 
+    // ── Fattrib / Frename / Fdatime ──
+    fmeta_test();
+
     // ── Phase 09 D2: sector-cache effectiveness ──
     let (hits, misses) = tos_api::bdos::fs::cache::stats();
     let total = hits + misses;
@@ -432,6 +435,81 @@ fn subdir_test() {
     let mut pbuf2 = [0u8; 64];
     gemdos_dgetpath(pbuf2.as_mut_ptr() as u64, 3);
     kprintln!("[emmc] Dsetpath(..) -> Dgetpath=\"{}\" (expect root \"\")", cstr_of(&pbuf2));
+}
+
+/// Fattrib / Frename / Fdatime over a freshly created file.
+fn fmeta_test() {
+    let f = c"c:/META.TXT";
+    let hc = gemdos_fcreate(f.as_ptr() as u64, 0);
+    if hc >= 6 {
+        gemdos_fwrite(hc as u16, 5, c"meta\n".as_ptr() as u64);
+        gemdos_fclose(hc as u16);
+    }
+
+    // Fattrib: get (0 — created with attr 0), set read-only (0x21), get.
+    let g0 = gemdos_fattrib(f.as_ptr() as u64, 0, 0);
+    let s1 = gemdos_fattrib(f.as_ptr() as u64, 1, 0x21);
+    let g1 = gemdos_fattrib(f.as_ptr() as u64, 0, 0);
+    // Reject FA_SUBDIR via Fattrib → EACCDN.
+    let bad = gemdos_fattrib(f.as_ptr() as u64, 1, 0x10);
+    kprintln!(
+        "[emmc] Fattrib get={:#x} set(0x21)={:#x} get={:#x} ; set(SUBDIR)={} (exp -36)",
+        g0, s1, g1, bad,
+    );
+    // Clear read-only again so we can rename/delete it.
+    gemdos_fattrib(f.as_ptr() as u64, 1, 0x00);
+
+    // Fdatime: set a known stamp on the open file, close, reopen, get.
+    let h = gemdos_fopen(f.as_ptr() as u64, 0);
+    let stamp: [u16; 2] = [0x6000, 0x5AA1]; // time=12:00:02, date=2025-05-01
+    gemdos_fdatime(stamp.as_ptr() as u64, h as u16, 1);
+    gemdos_fclose(h as u16);
+    let h2 = gemdos_fopen(f.as_ptr() as u64, 0);
+    let mut got = [0u16; 2];
+    gemdos_fdatime(got.as_mut_ptr() as u64, h2 as u16, 0);
+    gemdos_fclose(h2 as u16);
+    kprintln!(
+        "[emmc] Fdatime set=[{:#06x},{:#06x}] get=[{:#06x},{:#06x}] match={}",
+        stamp[0], stamp[1], got[0], got[1], got == stamp,
+    );
+
+    // Frename META.TXT → RENAMED.TXT, verify old gone / new present.
+    let nf = c"c:/RENAMED.TXT";
+    let rn = gemdos_frename(f.as_ptr() as u64, nf.as_ptr() as u64);
+    let old_open = gemdos_fopen(f.as_ptr() as u64, 0);
+    let new_open = gemdos_fopen(nf.as_ptr() as u64, 0);
+    if new_open >= 6 {
+        gemdos_fclose(new_open as u16);
+    }
+    kprintln!(
+        "[emmc] Frename={} ; old open={} (exp -33) ; new open={} (exp >=6)",
+        rn, old_open, new_open,
+    );
+    gemdos_fdelete(nf.as_ptr() as u64); // clean up
+}
+
+/// GEMDOS `Fattrib` (0x43): x0=path, x1=wrt, x2=mod.
+fn gemdos_fattrib(path: u64, wrt: u16, mode: u16) -> i64 {
+    let r: i64;
+    // SAFETY: svc #1, GEMDOS Fattrib ABI; `path` is a kernel string.
+    unsafe { core::arch::asm!("svc #1", in("x8") 0x43u64, inout("x0") path => r, in("x1") wrt as u64, in("x2") mode as u64, options(nostack)); }
+    r
+}
+
+/// GEMDOS `Frename` (0x56): x0=n(unused), x1=src, x2=dst.
+fn gemdos_frename(src: u64, dst: u64) -> i64 {
+    let r: i64;
+    // SAFETY: svc #1, GEMDOS Frename ABI; src/dst are kernel strings.
+    unsafe { core::arch::asm!("svc #1", in("x8") 0x56u64, inout("x0") 0u64 => r, in("x1") src, in("x2") dst, options(nostack)); }
+    r
+}
+
+/// GEMDOS `Fdatime` (0x57): x0=buf, x1=handle, x2=wrt.
+fn gemdos_fdatime(buf: u64, handle: u16, wrt: u16) -> i64 {
+    let r: i64;
+    // SAFETY: svc #1, GEMDOS Fdatime ABI; `buf` is a 4-byte kernel buffer.
+    unsafe { core::arch::asm!("svc #1", in("x8") 0x57u64, inout("x0") buf => r, in("x1") handle as u64, in("x2") wrt as u64, options(nostack)); }
+    r
 }
 
 /// Read a NUL-terminated string from a byte buffer.
