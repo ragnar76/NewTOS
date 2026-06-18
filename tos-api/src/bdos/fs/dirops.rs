@@ -4,11 +4,12 @@
 //! Spec: `docs/api/gemdos/directory/{39-dcreate,3a-ddelete}.md`.
 
 use super::dir;
+use super::drive::current_drive;
 use super::fat::Volume;
 use super::path;
 use crate::gemdos::time::dos_now;
 use crate::trap::TrapArgs;
-use tos_types::error::{EACCDN, EPTHNF, E_OK};
+use tos_types::error::{EACCDN, EDRIVE, EPTHNF, E_OK};
 use tos_types::Long;
 
 const FA_SUBDIR: u8 = 0x10;
@@ -123,5 +124,108 @@ pub fn ddelete(args: &TrapArgs) -> Long {
         dir::write_slot(&vol, parent, slot, &e);
     }
     super::cache::flush();
+    E_OK
+}
+
+/// `Dsetpath` (0x3B) — set the current directory for the path's drive.
+/// Resolves `.`/`..` and stores the canonical absolute path (no drive
+/// letter). The target must be an existing directory.
+pub fn dsetpath(args: &TrapArgs) -> Long {
+    // SAFETY: caller-supplied path pointer (kernel pointer at EL1).
+    let p = match unsafe { super::cstr(args.arg_u64(0)) } {
+        Some(p) => p,
+        None => return EPTHNF,
+    };
+    if p.bytes().any(|c| c == b'*' || c == b'?') {
+        return EPTHNF;
+    }
+    let (drive, rest) = path::split_drive(p);
+    let vol = match Volume::mount(drive) {
+        Some(v) => v,
+        None => return EDRIVE,
+    };
+
+    // Build the component stack: seed from the current directory unless
+    // the path is absolute, then apply the path resolving "." / "..".
+    let mut comps: [&str; 32] = [""; 32];
+    let mut depth = 0usize;
+    let absolute = matches!(rest.as_bytes().first(), Some(b'/') | Some(b'\\'));
+    if !absolute {
+        for c in path::curdir_str(drive).split(['/', '\\']).filter(|c| !c.is_empty()) {
+            if depth >= comps.len() {
+                return EPTHNF;
+            }
+            comps[depth] = c;
+            depth += 1;
+        }
+    }
+    let body = if absolute { &rest[1..] } else { rest };
+    for c in body.split(['/', '\\']).filter(|c| !c.is_empty()) {
+        match c {
+            "." => {}
+            ".." => depth = depth.saturating_sub(1),
+            _ => {
+                if depth >= comps.len() {
+                    return EPTHNF;
+                }
+                comps[depth] = c;
+                depth += 1;
+            }
+        }
+    }
+
+    // Validate: descend from root; every component must be a directory.
+    let mut start = 0u32;
+    for c in &comps[..depth] {
+        let name = match dir::fcb_name(c) {
+            Some(n) => n,
+            None => return EPTHNF,
+        };
+        match dir::find_in_dir(&vol, start, &name) {
+            Some(e) if e.attrib & FA_SUBDIR != 0 => start = e.cluster,
+            _ => return EPTHNF,
+        }
+    }
+
+    // Build the canonical "\A\B" string (uppercased).
+    let mut buf = [0u8; 64];
+    let mut len = 0;
+    for c in &comps[..depth] {
+        if len + 1 + c.len() >= buf.len() {
+            return EPTHNF;
+        }
+        buf[len] = b'\\';
+        len += 1;
+        for &b in c.as_bytes() {
+            buf[len] = b.to_ascii_uppercase();
+            len += 1;
+        }
+    }
+    let s = core::str::from_utf8(&buf[..len]).unwrap_or("");
+    if !path::set_curdir(drive, s) {
+        return EPTHNF;
+    }
+    E_OK
+}
+
+/// `Dgetpath` (0x47) — write the current directory of `drv` (0 = current,
+/// 1 = A:, …) into `buf` as an absolute path without the drive letter.
+pub fn dgetpath(args: &TrapArgs) -> Long {
+    let buf = args.arg_u64(0);
+    let drv = args.arg_u16(1);
+    let drive = if drv == 0 { current_drive() } else { drv - 1 };
+
+    // SAFETY: `buf` is the caller's path buffer (>= LEN_ZPATH bytes).
+    let dst = buf as *mut u8;
+    if Volume::mount(drive).is_none() {
+        unsafe { *dst = 0 };
+        return EDRIVE;
+    }
+    let s = path::curdir_str(drive);
+    // SAFETY: write the path bytes plus a NUL terminator.
+    unsafe {
+        core::ptr::copy_nonoverlapping(s.as_ptr(), dst, s.len());
+        *dst.add(s.len()) = 0;
+    }
     E_OK
 }

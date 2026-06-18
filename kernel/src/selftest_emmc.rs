@@ -407,6 +407,53 @@ fn subdir_test() {
         "[emmc] Dcreate(MYDIR)={} ; file={} ; Ddelete(non-empty)={} (exp -36) ; Ddelete(empty)={} ; re-Dcreate={}",
         c, hf, de_full, de_empty, reopen,
     );
+
+    // ── Dsetpath / Dgetpath + current-dir-relative paths ──
+    let mut pbuf = [0u8; 64];
+    let set = gemdos_dsetpath(c"c:/SUB".as_ptr() as u64);
+    gemdos_dgetpath(pbuf.as_mut_ptr() as u64, 3); // drv 3 = C:
+    let cur = cstr_of(&pbuf);
+    // Relative open: "INNER.TXT" should resolve inside the current dir.
+    let hrel = gemdos_fopen(c"INNER.TXT".as_ptr() as u64, 0);
+    let mut rb = [0u8; 32];
+    let rn = if hrel >= 6 {
+        let n = gemdos_fread(hrel as u16, 20, rb.as_mut_ptr() as u64);
+        gemdos_fclose(hrel as u16);
+        n
+    } else {
+        -1
+    };
+    kprintln!(
+        "[emmc] Dsetpath(c:/SUB)={} Dgetpath=\"{}\" ; rel Fopen(INNER.TXT)={} read={}",
+        set, cur, hrel, rn,
+    );
+    // ".." back to root, then reset to root.
+    gemdos_dsetpath(c"..".as_ptr() as u64);
+    let mut pbuf2 = [0u8; 64];
+    gemdos_dgetpath(pbuf2.as_mut_ptr() as u64, 3);
+    kprintln!("[emmc] Dsetpath(..) -> Dgetpath=\"{}\" (expect root \"\")", cstr_of(&pbuf2));
+}
+
+/// Read a NUL-terminated string from a byte buffer.
+fn cstr_of(b: &[u8]) -> &str {
+    let end = b.iter().position(|&c| c == 0).unwrap_or(b.len());
+    core::str::from_utf8(&b[..end]).unwrap_or("?")
+}
+
+/// GEMDOS `Dsetpath` (0x3B): x0=path.
+fn gemdos_dsetpath(path: u64) -> i64 {
+    let r: i64;
+    // SAFETY: svc #1, GEMDOS Dsetpath ABI; `path` is a kernel string.
+    unsafe { core::arch::asm!("svc #1", in("x8") 0x3Bu64, inout("x0") path => r, options(nostack)); }
+    r
+}
+
+/// GEMDOS `Dgetpath` (0x47): x0=buf, x1=drv.
+fn gemdos_dgetpath(buf: u64, drv: u16) -> i64 {
+    let r: i64;
+    // SAFETY: svc #1, GEMDOS Dgetpath ABI; `buf` is a kernel buffer.
+    unsafe { core::arch::asm!("svc #1", in("x8") 0x47u64, inout("x0") buf => r, in("x1") drv as u64, options(nostack)); }
+    r
 }
 
 /// GEMDOS `Dcreate` (0x39): x0=path.

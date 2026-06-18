@@ -94,9 +94,11 @@ const fn build_table() -> [Option<GemdosFn>; MAX_FN + 1] {
     t[0x19] = Some(crate::bdos::fs::drive::dgetdrv);
     t[0x36] = Some(crate::bdos::fs::drive::dfree);
 
-    // --- Directory create/remove (PHASE-09 sub-directories) -------
+    // --- Directory create/remove + current path (sub-directories) -
     t[0x39] = Some(crate::bdos::fs::dirops::dcreate);
     t[0x3A] = Some(crate::bdos::fs::dirops::ddelete);
+    t[0x3B] = Some(crate::bdos::fs::dirops::dsetpath);
+    t[0x47] = Some(crate::bdos::fs::dirops::dgetpath);
     t
 }
 
