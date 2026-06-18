@@ -5,6 +5,7 @@
 //! and the file handles build on. Read-only in D1; the sector cache
 //! (D2), path parser (D3) and the GEMDOS file/dir calls follow.
 
+pub mod cache;
 pub mod dir;
 pub mod drive;
 pub mod fat;

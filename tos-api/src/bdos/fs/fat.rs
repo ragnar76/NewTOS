@@ -14,7 +14,6 @@
 
 use crate::bios::bpb::{self, Bpb};
 use crate::bios::drive;
-use crate::host;
 
 const SECTOR: usize = 512;
 const B_16: u16 = 0x01;
@@ -84,12 +83,10 @@ impl Volume {
         self.read_rel(rel_sector, buf)
     }
 
-    /// Read one partition-relative sector into `buf` (must be 512 bytes).
+    /// Read one partition-relative sector into `buf` (must be 512 bytes),
+    /// through the sector cache.
     fn read_rel(&self, rel_sector: u32, buf: &mut [u8; SECTOR]) -> bool {
-        match host::host().and_then(|h| h.block()) {
-            Some(b) => b.read_blocks((self.start_lba + rel_sector) as u64, buf),
-            None => false,
-        }
+        super::cache::read((self.start_lba + rel_sector) as u64, buf)
     }
 
     /// `true` if `cluster` is a valid data cluster (2..numcl+2).
@@ -196,15 +193,21 @@ impl Volume {
     }
 
     /// Read all `clsizb` bytes of `cluster` into `buf` (which must be at
-    /// least `clsizb` long). `false` on an invalid cluster or read error.
+    /// least `clsizb` long), sector by sector through the cache. `false`
+    /// on an invalid cluster or read error.
     pub fn read_cluster(&self, cluster: u32, buf: &mut [u8]) -> bool {
         if !self.is_data_cluster(cluster) || buf.len() < self.clsizb as usize {
             return false;
         }
-        let lba = (self.start_lba + self.cluster_sector(cluster)) as u64;
-        match host::host().and_then(|h| h.block()) {
-            Some(b) => b.read_blocks(lba, &mut buf[..self.clsizb as usize]),
-            None => false,
+        let first = self.cluster_sector(cluster);
+        let mut s = [0u8; SECTOR];
+        for i in 0..self.clsiz {
+            if !self.read_rel(first + i, &mut s) {
+                return false;
+            }
+            let off = (i as usize) * SECTOR;
+            buf[off..off + SECTOR].copy_from_slice(&s);
         }
+        true
     }
 }

@@ -138,23 +138,19 @@ fn fat_test(drive: u16, letter: char) {
         vol.root_sector(),
     );
 
-    // Read the first root-directory sector and take the first 8.3 entry.
-    let mut sec = [0u8; 512];
-    if !read_part_sector(drive, vol.root_sector(), &mut sec) {
-        kprintln!("[emmc] FAT root read failed");
-        return;
-    }
-    if sec[0] == 0x00 || sec[0] == 0xE5 {
-        kprintln!("[emmc] FAT root dir empty");
-        return;
-    }
-    let mut name = [0u8; 11];
-    name.copy_from_slice(&sec[0..11]);
-    let start = u16::from_le_bytes([sec[0x1A], sec[0x1B]]) as u32;
-    let size = u32::from_le_bytes([sec[0x1C], sec[0x1D], sec[0x1E], sec[0x1F]]);
+    // Look up HELLO.TXT for the chain walk (the first raw root entry is
+    // the volume label, cluster 0).
+    use tos_api::bdos::fs::dir;
+    let entry = match dir::fcb_name("hello.txt").and_then(|n| dir::find_in_root(&vol, &n)) {
+        Some(e) => e,
+        None => {
+            kprintln!("[emmc] HELLO.TXT not found");
+            return;
+        }
+    };
+    let (start, size) = (entry.cluster, entry.size);
     kprintln!(
-        "[emmc] dir[0]=\"{}\" cluster={} size={}",
-        core::str::from_utf8(&name).unwrap_or("?"),
+        "[emmc] HELLO.TXT cluster={} size={}",
         start,
         size,
     );
@@ -193,7 +189,6 @@ fn fat_test(drive: u16, letter: char) {
     kprintln!("[emmc] fat_entry(2) -> {:?} (expect Some(3))", vol.fat_entry(2));
 
     // ── directory traversal (D5 foundation): list root dir + lookup ──
-    use tos_api::bdos::fs::dir;
     let mut count = 0u32;
     for e in dir::RootDir::new(&vol) {
         kprintln!(
@@ -299,6 +294,15 @@ fn fsearch_test() {
 
     // ── Phase 09 D6: Dgetdrv / Dsetdrv / Dfree ──
     ddrive_test();
+
+    // ── Phase 09 D2: sector-cache effectiveness ──
+    let (hits, misses) = tos_api::bdos::fs::cache::stats();
+    let total = hits + misses;
+    let pct = (hits * 100).checked_div(total).unwrap_or(0);
+    kprintln!(
+        "[emmc] sector cache: {} hits / {} misses ({}% hit rate)",
+        hits, misses, pct,
+    );
 }
 
 /// Phase 09 D6: current-drive state and free-space query.
@@ -416,11 +420,6 @@ fn gemdos_fclose(handle: u16) -> i64 {
         core::arch::asm!("svc #1", in("x8") 0x3Eu64, inout("x0") handle as u64 => r, options(nostack));
     }
     r
-}
-
-/// Read one partition-relative sector via `Rwabs` (read).
-fn read_part_sector(drive: u16, rel: u32, buf: &mut [u8; 512]) -> bool {
-    rwabs(0, buf.as_mut_ptr() as u64, 1, rel as u64, drive as u64, 0) == 0
 }
 
 /// BIOS `Getbpb` via `svc #13` (function id 0x07) — returns a `BPB *`.
