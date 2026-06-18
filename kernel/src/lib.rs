@@ -277,9 +277,13 @@ extern "C" fn kernel_main_rust(dtb_phys: usize) -> ! {
     selftest_pexec_d4d5::run_pexec_loadgo_split_test();
     selftest_time::run_phase07_time_test();
 
+    // Keep the initinfo boot screen visible for a few seconds before the
+    // console takes over (EmuTOS shows its boot screen the same way).
+    arch::aarch64::delay_ms(4000);
+
     // Phase 10 D5: activate the framebuffer console and render a banner
-    // through GEMDOS Cconws — the on-screen console (EC1). Runs before the
-    // interactive RX-echo test, which blocks waiting for console input.
+    // through GEMDOS Cconout — the on-screen console (EC1). Runs before
+    // the interactive RX-echo test, which blocks waiting for input.
     selftest_fbcon::run();
 
     selftest::run_phase02_self_test();

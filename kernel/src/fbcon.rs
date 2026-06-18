@@ -19,9 +19,10 @@ use crate::vdi_backend::{self, VDI_SCREEN};
 
 const CELL_W: i16 = 8;
 const CELL_H: i16 = 16;
-/// VDI palette indices (see `vdi_backend::PALETTE`): white text on black.
-const FG: u8 = 0;
-const BG: u8 = 1;
+/// VDI palette indices (see `vdi_backend::PALETTE`): black text on a
+/// white background, matching the Atari TOS desktop.
+const FG: u8 = 1;
+const BG: u8 = 0;
 
 static ACTIVE: AtomicBool = AtomicBool::new(false);
 static COL: AtomicI16 = AtomicI16::new(0);

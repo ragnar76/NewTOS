@@ -17,3 +17,32 @@ pub fn halt() -> ! {
         unsafe { core::arch::asm!("wfe", options(nomem, nostack, preserves_flags)) };
     }
 }
+
+/// Busy-wait `ms` milliseconds using the ARM generic timer
+/// (`CNTPCT_EL0` / `CNTFRQ_EL0`). Coarse but adequate for boot-screen
+/// pacing.
+pub fn delay_ms(ms: u64) {
+    // SAFETY: read-only system-register reads, always permitted at EL1.
+    let (start, frq): (u64, u64);
+    unsafe {
+        core::arch::asm!(
+            "mrs {s}, cntpct_el0",
+            "mrs {f}, cntfrq_el0",
+            s = out(reg) start,
+            f = out(reg) frq,
+            options(nomem, nostack),
+        );
+    }
+    let target = start + frq / 1000 * ms;
+    loop {
+        let now: u64;
+        // SAFETY: as above.
+        unsafe {
+            core::arch::asm!("mrs {n}, cntpct_el0", n = out(reg) now, options(nomem, nostack));
+        }
+        if now >= target {
+            break;
+        }
+        core::hint::spin_loop();
+    }
+}
