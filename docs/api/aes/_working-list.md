@@ -5,8 +5,21 @@
 > `docs/api/aes/<manager>/<opcode>-<name>.md`, produced by reading the
 > EmuTOS source per `docs/SOURCE-ANALYSIS-PROTOCOL.md`.
 >
-> Batch 0 (call convention + dispatcher) is done:
-> [`_dispatcher.md`](./_dispatcher.md).
+> **STATUS: extraction COMPLETE.** All 11 managers (~80 functions)
+> specified across Batches 0–7. One spec file per manager (efficiency
+> adaptation vs. one-file-per-function), each cross-checked against the
+> EmuTOS library source listed below.
+>
+> | Batch | File | Managers |
+> |------:|------|----------|
+> | 0 | [`_dispatcher.md`](./_dispatcher.md) | trap/AESPB/opcode map |
+> | 1 | [`application.md`](./application.md) | Application (10–19) |
+> | 2 | [`event.md`](./event.md) | Event (20–26) |
+> | 3 | [`object-form.md`](./object-form.md) | Object (40–48) + Form (50–56) |
+> | 4 | [`window-graphics.md`](./window-graphics.md) | Window (100–109) + Graphics (70–79) |
+> | 5 | [`menu.md`](./menu.md) | Menu (30–39) |
+> | 6 | [`resource-fileselector.md`](./resource-fileselector.md) | Resource (110–114) + File selector (90–91) |
+> | 7 | [`scrap-shell.md`](./scrap-shell.md) | Scrap (80–82) + Shell (120–127) |
 
 ## EmuTOS source file per manager
 
