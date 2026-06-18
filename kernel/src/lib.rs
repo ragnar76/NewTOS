@@ -42,7 +42,9 @@ pub mod selftest_time;
 pub mod selftest_pexec;
 pub mod selftest_pexec_d4d5;
 pub mod fbcon;
+pub mod ikbd;
 pub mod shell;
+pub mod selftest_ikbd;
 pub mod selftest_vdi;
 pub mod selftest_fbcon;
 pub mod selftest_xbios;
@@ -277,6 +279,7 @@ extern "C" fn kernel_main_rust(dtb_phys: usize) -> ! {
     selftest_pexec::run_pexec_test();
     selftest_pexec_d4d5::run_pexec_loadgo_split_test();
     selftest_time::run_phase07_time_test();
+    selftest_ikbd::run();
 
     // Keep the initinfo boot screen visible for a few seconds before the
     // console takes over (EmuTOS shows its boot screen the same way).

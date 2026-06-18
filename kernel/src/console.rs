@@ -95,6 +95,13 @@ pub fn pl011_rx_drain() {
     CONSOLE.clear_rx_interrupt();
 }
 
+/// Push a byte into the RX ringbuffer from a non-UART input source (the
+/// IKBD keyboard decoder). The byte is then read by `Cnecin`/`Cconin`
+/// exactly like a UART byte.
+pub fn push_rx(byte: u8) {
+    RX_RING.push(byte);
+}
+
 /// Pop one byte from the RX ringbuffer, if any.
 pub fn rx_pop() -> Option<u8> {
     RX_RING.pop()
