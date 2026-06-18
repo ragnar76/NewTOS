@@ -16,11 +16,13 @@ pub struct KernelHost;
 impl Host for KernelHost {
     fn console_write_byte(&self, byte: u8) {
         CONSOLE.write_byte(byte);
+        crate::fbcon::write_byte(byte);
     }
 
     fn console_write_bytes(&self, s: &[u8]) {
         for &b in s {
             CONSOLE.write_byte(b);
+            crate::fbcon::write_byte(b);
         }
     }
 

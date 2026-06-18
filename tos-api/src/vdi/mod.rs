@@ -22,7 +22,7 @@
 pub mod backend;
 mod attributes;
 mod fill_patterns;
-mod font;
+pub mod font;
 mod font_data;
 mod primitives;
 mod raster;
