@@ -11,7 +11,6 @@
 //! fixed root area) lands with `Dsetpath`.
 
 use super::fat::Volume;
-use crate::host;
 
 const SECTOR: usize = 512;
 const ENTRY: usize = 32;
@@ -92,12 +91,9 @@ impl<'a> RootDir<'a> {
         }
     }
 
-    /// Read the buffered sector from the block device.
+    /// Read the buffered sector through the sector cache.
     fn load(&mut self) -> bool {
-        match host::host().and_then(|h| h.block()) {
-            Some(b) => b.read_blocks((self.vol.start_lba() + self.rel_sector) as u64, &mut self.buf),
-            None => false,
-        }
+        self.vol.read_rel_sector(self.rel_sector, &mut self.buf)
     }
 }
 
@@ -177,4 +173,95 @@ pub fn fcb_name(name: &str) -> Option<[u8; 11]> {
 /// Find an 8.3 entry in the root directory by its FAT short name.
 pub fn find_in_root(vol: &Volume, name11: &[u8; 11]) -> Option<DirEntry> {
     RootDir::new(vol).find(|e| &e.name == name11)
+}
+
+/// Locate an existing entry's raw root-directory slot index (for
+/// in-place updates / erase). Returns the slot of the first 8.3 entry
+/// whose name matches.
+pub fn slot_of(vol: &Volume, name11: &[u8; 11]) -> Option<u32> {
+    let total = vol.rdlen * (SECTOR / ENTRY) as u32;
+    let mut buf = [0u8; SECTOR];
+    let mut loaded = u32::MAX;
+    for slot in 0..total {
+        let sec = slot / ENTRIES_PER_SECTOR as u32;
+        if sec != loaded {
+            if !vol.read_rel_sector(vol.root_sector() + sec, &mut buf) {
+                return None;
+            }
+            loaded = sec;
+        }
+        let off = (slot as usize % ENTRIES_PER_SECTOR) * ENTRY;
+        let e = &buf[off..off + ENTRY];
+        match e[0] {
+            END => return None,
+            ERASED => continue,
+            _ => {}
+        }
+        if e[0x0B] == FA_LFN || e[0x0B] & FA_VOL != 0 {
+            continue;
+        }
+        if e[0..11] == name11[..] {
+            return Some(slot);
+        }
+    }
+    None
+}
+
+/// Find a free root-directory slot (erased `0xE5` or end-of-directory
+/// `0x00`). `None` if the fixed root directory is full.
+pub fn find_free_slot(vol: &Volume) -> Option<u32> {
+    let total = vol.rdlen * (SECTOR / ENTRY) as u32;
+    let mut buf = [0u8; SECTOR];
+    let mut loaded = u32::MAX;
+    for slot in 0..total {
+        let sec = slot / ENTRIES_PER_SECTOR as u32;
+        if sec != loaded {
+            if !vol.read_rel_sector(vol.root_sector() + sec, &mut buf) {
+                return None;
+            }
+            loaded = sec;
+        }
+        let b0 = buf[(slot as usize % ENTRIES_PER_SECTOR) * ENTRY];
+        if b0 == END || b0 == ERASED {
+            return Some(slot);
+        }
+    }
+    None
+}
+
+/// Read the raw 32-byte directory entry at `slot` into `out`.
+pub fn read_slot(vol: &Volume, slot: u32, out: &mut [u8; ENTRY]) -> bool {
+    let mut buf = [0u8; SECTOR];
+    if !vol.read_rel_sector(vol.root_sector() + slot / ENTRIES_PER_SECTOR as u32, &mut buf) {
+        return false;
+    }
+    let off = (slot as usize % ENTRIES_PER_SECTOR) * ENTRY;
+    out.copy_from_slice(&buf[off..off + ENTRY]);
+    true
+}
+
+/// Write a raw 32-byte directory entry at `slot` (read-modify-write of
+/// the containing sector, through the cache).
+pub fn write_slot(vol: &Volume, slot: u32, entry: &[u8; ENTRY]) -> bool {
+    let sec = vol.root_sector() + slot / ENTRIES_PER_SECTOR as u32;
+    let mut buf = [0u8; SECTOR];
+    if !vol.read_rel_sector(sec, &mut buf) {
+        return false;
+    }
+    let off = (slot as usize % ENTRIES_PER_SECTOR) * ENTRY;
+    buf[off..off + ENTRY].copy_from_slice(entry);
+    vol.write_rel_sector(sec, &buf)
+}
+
+/// Build a 32-byte FCB directory entry (name, attribute, time/date,
+/// start cluster, size).
+pub fn build_fcb(name11: &[u8; 11], attr: u8, cluster: u32, size: u32, time: u16, date: u16) -> [u8; ENTRY] {
+    let mut e = [0u8; ENTRY];
+    e[0..11].copy_from_slice(name11);
+    e[0x0B] = attr;
+    e[0x16..0x18].copy_from_slice(&time.to_le_bytes());
+    e[0x18..0x1A].copy_from_slice(&date.to_le_bytes());
+    e[0x1A..0x1C].copy_from_slice(&((cluster & 0xFFFF) as u16).to_le_bytes());
+    e[0x1C..0x20].copy_from_slice(&size.to_le_bytes());
+    e
 }

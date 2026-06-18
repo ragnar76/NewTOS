@@ -125,6 +125,13 @@ fn pack_time(dt: &Dt) -> u16 {
     ((dt.hour as u16) << 11) | ((dt.min as u16) << 5) | ((dt.sec as u16) / 2)
 }
 
+/// Current wall-clock time/date as GEMDOS-packed WORDs `(time, date)`.
+/// Used by the file system to time-stamp new directory entries.
+pub fn dos_now() -> (u16, u16) {
+    let dt = decompose(now_secs());
+    (pack_time(&dt), pack_date(&dt))
+}
+
 /// `Tgetdate` (0x2A) — packed current date (zero-extended LONG).
 pub fn tgetdate(_: &TrapArgs) -> Long {
     pack_date(&decompose(now_secs())) as Long

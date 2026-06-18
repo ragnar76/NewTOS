@@ -295,6 +295,9 @@ fn fsearch_test() {
     // ── Phase 09 D6: Dgetdrv / Dsetdrv / Dfree ──
     ddrive_test();
 
+    // ── Phase 09 D7: write side (Fcreate/Fwrite/Fdelete) ──
+    fwrite_test();
+
     // ── Phase 09 D2: sector-cache effectiveness ──
     let (hits, misses) = tos_api::bdos::fs::cache::stats();
     let total = hits + misses;
@@ -321,6 +324,78 @@ fn ddrive_test() {
         "[emmc] Dfree(C:) -> {} ; free={} total={} recsiz={} clsiz={} ; free={} KiB",
         rc, free, total, recsiz, clsiz, (free as u64 * recsiz as u64 * clsiz as u64) / 1024,
     );
+}
+
+/// Phase 09 D7 / EC3: create a file, write data spanning two clusters,
+/// close, re-open and read it back, then delete it.
+fn fwrite_test() {
+    let path = b"c:/WRITE.TXT\0";
+    // Build a 1500-byte payload (> 2 clusters of 512 bytes) so cluster
+    // allocation *and* chain linking are exercised. Each byte encodes its
+    // index so a corrupted cluster boundary is detectable.
+    let mut payload = [0u8; 1500];
+    for (i, b) in payload.iter_mut().enumerate() {
+        *b = b'!' + (i % 90) as u8; // printable, period 90
+    }
+
+    let h = gemdos_fcreate(path.as_ptr() as u64, 0);
+    kprintln!("[emmc] Fcreate(\"c:/WRITE.TXT\") -> {}", h);
+    if h < 6 {
+        kprintln!("[emmc] Fcreate FAILED");
+        return;
+    }
+    let n = gemdos_fwrite(h as u16, payload.len() as i64, payload.as_ptr() as u64);
+    let rc = gemdos_fclose(h as u16);
+    kprintln!("[emmc] Fwrite({}) -> {} ; Fclose -> {}", payload.len(), n, rc);
+
+    // Re-open, check size, and read back the whole file.
+    let h2 = gemdos_fopen(path.as_ptr() as u64, 0);
+    let size = gemdos_fseek(0, h2 as u16, 2);
+    gemdos_fseek(0, h2 as u16, 0);
+    let mut back = [0u8; 1500];
+    let r = gemdos_fread(h2 as u16, back.len() as i64, back.as_mut_ptr() as u64);
+    let ok = r == payload.len() as i64 && back == payload;
+    kprintln!(
+        "[emmc] re-read size={} -> {} bytes, match={} (spans {} clusters)",
+        size, r, ok, (payload.len() as u32).div_ceil(512),
+    );
+    gemdos_fclose(h2 as u16);
+
+    // Fdelete on a throwaway file (leave WRITE.TXT for host verification).
+    let dp = b"c:/DELME.TXT\0";
+    let hd = gemdos_fcreate(dp.as_ptr() as u64, 0);
+    gemdos_fwrite(hd as u16, 4, c"bye\n".as_ptr() as u64);
+    gemdos_fclose(hd as u16);
+    let d = gemdos_fdelete(dp.as_ptr() as u64);
+    let h3 = gemdos_fopen(dp.as_ptr() as u64, 0);
+    kprintln!(
+        "[emmc] Fdelete(DELME.TXT) -> {} ; re-open -> {} (expect -33 EFILNF)",
+        d, h3,
+    );
+}
+
+/// GEMDOS `Fcreate` (0x3C): x0=name, x1=attr.
+fn gemdos_fcreate(name: u64, attr: u16) -> i64 {
+    let r: i64;
+    // SAFETY: svc #1, GEMDOS Fcreate ABI; `name` is a kernel string.
+    unsafe { core::arch::asm!("svc #1", in("x8") 0x3Cu64, inout("x0") name => r, in("x1") attr as u64, options(nostack)); }
+    r
+}
+
+/// GEMDOS `Fwrite` (0x40): x0=handle, x1=len, x2=buf.
+fn gemdos_fwrite(handle: u16, len: i64, buf: u64) -> i64 {
+    let r: i64;
+    // SAFETY: svc #1, GEMDOS Fwrite ABI; `buf` is a kernel buffer.
+    unsafe { core::arch::asm!("svc #1", in("x8") 0x40u64, inout("x0") handle as u64 => r, in("x1") len, in("x2") buf, options(nostack)); }
+    r
+}
+
+/// GEMDOS `Fdelete` (0x41): x0=name.
+fn gemdos_fdelete(name: u64) -> i64 {
+    let r: i64;
+    // SAFETY: svc #1, GEMDOS Fdelete ABI; `name` is a kernel string.
+    unsafe { core::arch::asm!("svc #1", in("x8") 0x41u64, inout("x0") name => r, options(nostack)); }
+    r
 }
 
 /// GEMDOS `Dgetdrv` (0x19): no args.

@@ -78,6 +78,11 @@ const fn build_table() -> [Option<GemdosFn>; MAX_FN + 1] {
     t[0x3F] = Some(crate::bdos::fs::file::fread);
     t[0x42] = Some(crate::bdos::fs::file::fseek);
 
+    // --- File group, write side (PHASE-09 D7) ---------------------
+    t[0x3C] = Some(crate::bdos::fs::file::fcreate);
+    t[0x40] = Some(crate::bdos::fs::file::fwrite);
+    t[0x41] = Some(crate::bdos::fs::file::fdelete);
+
     // --- DTA + directory search (PHASE-09 D5) ---------------------
     t[0x1A] = Some(crate::bdos::fs::find::fsetdta);
     t[0x2F] = Some(crate::bdos::fs::find::fgetdta);

@@ -38,6 +38,12 @@ pub struct Volume {
     pub rdlen: u32,
     /// Partition-relative first sector of the last FAT (read source).
     fatrec: u32,
+    /// Partition-relative first sector of the first FAT.
+    fat1: u32,
+    /// Number of FAT copies (updated together on write).
+    num_fats: u32,
+    /// FAT size in sectors (one copy).
+    fsiz: u32,
     /// Partition-relative first data sector (cluster 2).
     datrec: u32,
     /// Number of data clusters.
@@ -52,7 +58,8 @@ impl Volume {
     /// boot record.
     pub fn mount(drive: u16) -> Option<Volume> {
         let part = drive::resolve(drive)?;
-        let bpb: Bpb = bpb::bpb_for(drive)?;
+        let geo = bpb::geometry(drive)?;
+        let bpb: Bpb = geo.bpb;
         Some(Volume {
             start_lba: part.start_lba,
             recsiz: bpb.recsiz as u32,
@@ -60,6 +67,9 @@ impl Volume {
             clsizb: bpb.clsizb as u32,
             rdlen: bpb.rdlen as u32,
             fatrec: bpb.fatrec as u32,
+            fat1: geo.reserved as u32,
+            num_fats: geo.num_fats as u32,
+            fsiz: bpb.fsiz as u32,
             datrec: bpb.datrec as u32,
             numcl: bpb.numcl as u32,
             fat16: bpb.b_flags & B_16 != 0,
@@ -83,10 +93,119 @@ impl Volume {
         self.read_rel(rel_sector, buf)
     }
 
+    /// Write one partition-relative sector from `buf` through the cache.
+    /// Public entry for the directory write helpers.
+    pub fn write_rel_sector(&self, rel_sector: u32, buf: &[u8; SECTOR]) -> bool {
+        self.write_rel(rel_sector, buf)
+    }
+
     /// Read one partition-relative sector into `buf` (must be 512 bytes),
     /// through the sector cache.
     fn read_rel(&self, rel_sector: u32, buf: &mut [u8; SECTOR]) -> bool {
         super::cache::read((self.start_lba + rel_sector) as u64, buf)
+    }
+
+    /// Write one partition-relative sector from `buf` through the cache.
+    fn write_rel(&self, rel_sector: u32, buf: &[u8; SECTOR]) -> bool {
+        super::cache::write((self.start_lba + rel_sector) as u64, buf)
+    }
+
+    /// `true` if FAT writes are supported on this volume (FAT16 only for
+    /// now; FAT12 packed-entry writes land with floppy support).
+    pub fn is_writable(&self) -> bool {
+        self.fat16
+    }
+
+    /// FAT16 end-of-chain marker written for a newly allocated cluster.
+    pub const EOC: u32 = 0xFFFF;
+
+    /// Write a FAT16 entry in **every** FAT copy. Returns `false` on a
+    /// non-FAT16 volume or a read/write error.
+    pub fn set_fat_entry(&self, cluster: u32, value: u32) -> bool {
+        if !self.fat16 {
+            return false;
+        }
+        let off = cluster * 2;
+        let sec_in_fat = off / self.recsiz;
+        let within = (off % self.recsiz) as usize;
+        let mut buf = [0u8; SECTOR];
+        for f in 0..self.num_fats {
+            let sec = self.fat1 + f * self.fsiz + sec_in_fat;
+            if !self.read_rel(sec, &mut buf) {
+                return false;
+            }
+            buf[within..within + 2].copy_from_slice(&(value as u16).to_le_bytes());
+            if !self.write_rel(sec, &buf) {
+                return false;
+            }
+        }
+        true
+    }
+
+    /// Allocate the first free cluster: mark it end-of-chain and return
+    /// its number. `None` if the volume is full or not writable.
+    pub fn alloc_cluster(&self) -> Option<u32> {
+        if !self.fat16 {
+            return None;
+        }
+        let last = self.numcl + 2;
+        let eps = self.recsiz / 2;
+        let nsec = (last * 2).div_ceil(self.recsiz);
+        let mut buf = [0u8; SECTOR];
+        for s in 0..nsec {
+            if !self.read_rel(self.fatrec + s, &mut buf) {
+                return None;
+            }
+            for i in 0..eps {
+                let cl = s * eps + i;
+                if cl < 2 {
+                    continue;
+                }
+                if cl >= last {
+                    return None;
+                }
+                let b = (i * 2) as usize;
+                if u16::from_le_bytes([buf[b], buf[b + 1]]) == 0 && self.set_fat_entry(cl, Self::EOC)
+                {
+                    return Some(cl);
+                }
+            }
+        }
+        None
+    }
+
+    /// Free a whole cluster chain starting at `start` (sets each entry to
+    /// the free marker `0`).
+    pub fn free_chain(&self, start: u32) -> bool {
+        let mut cl = start;
+        while self.is_data_cluster(cl) {
+            let next = match self.fat_entry(cl) {
+                Some(n) => n,
+                None => return false,
+            };
+            if !self.set_fat_entry(cl, 0) {
+                return false;
+            }
+            if self.is_eoc(next) || !self.is_data_cluster(next) {
+                break;
+            }
+            cl = next;
+        }
+        true
+    }
+
+    /// Write one data sector (`sec_in_cluster` within `cluster`) from
+    /// `buf` through the cache.
+    pub fn write_cluster_sector(
+        &self,
+        cluster: u32,
+        sec_in_cluster: u32,
+        buf: &[u8; SECTOR],
+    ) -> bool {
+        if !self.is_data_cluster(cluster) || sec_in_cluster >= self.clsiz {
+            return false;
+        }
+        self.write_rel(self.cluster_sector(cluster) + sec_in_cluster, buf)
     }
 
     /// `true` if `cluster` is a valid data cluster (2..numcl+2).

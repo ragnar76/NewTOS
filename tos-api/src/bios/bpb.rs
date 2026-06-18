@@ -102,6 +102,37 @@ fn parse(sec: &[u8; 512], part_sectors: u32) -> Option<Bpb> {
     Some(Bpb { recsiz, clsiz, clsizb, rdlen, fsiz, fatrec, datrec, numcl, b_flags })
 }
 
+/// Extended FAT geometry: the 18-byte ABI [`Bpb`] plus the raw
+/// `reserved` sector count and `num_fats`, which the write side needs to
+/// address the first FAT and update every FAT copy.
+pub struct Geometry {
+    /// The ABI BPB.
+    pub bpb: Bpb,
+    /// Reserved sectors before the first FAT (partition-relative).
+    pub reserved: u16,
+    /// Number of FAT copies.
+    pub num_fats: u8,
+}
+
+/// Read and parse a drive's boot sector into full geometry.
+pub fn geometry(drive: u16) -> Option<Geometry> {
+    if drive as usize >= 16 {
+        return None;
+    }
+    let part = drive::resolve(drive)?;
+    let blk = host::host().and_then(|h| h.block())?;
+    let mut sec = [0u8; 512];
+    if !blk.read_blocks(part.start_lba as u64, &mut sec) {
+        return None;
+    }
+    let bpb = parse(&sec, part.count)?;
+    Some(Geometry {
+        bpb,
+        reserved: u16::from_le_bytes([sec[0x0E], sec[0x0F]]),
+        num_fats: sec[0x10],
+    })
+}
+
 /// Read a drive's boot sector, parse its BPB, and cache it in the
 /// per-drive static. Returns the parsed value (`None` on failure).
 /// Shared by [`getbpb`] (the BIOS trap) and the BDOS FAT mount.
