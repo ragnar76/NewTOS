@@ -78,6 +78,27 @@ pub trait Host: Sync {
     fn block(&self) -> Option<&dyn crate::bios::block::BlockDev> {
         None
     }
+
+    /// The current hardware framebuffer (base address + geometry), or
+    /// `None` if no display is up. Backs the XBIOS screen group
+    /// (`Physbase` / `Logbase` / `Getrez`). Same swappable boundary as
+    /// [`Host::raster`].
+    fn screen(&self) -> Option<ScreenInfo> {
+        None
+    }
+}
+
+/// The hardware framebuffer as the XBIOS screen calls see it.
+#[derive(Clone, Copy)]
+pub struct ScreenInfo {
+    /// CPU-visible base address of the framebuffer (the drawing target).
+    pub base: u64,
+    /// Visible width in pixels.
+    pub width: u16,
+    /// Visible height in pixels.
+    pub height: u16,
+    /// Bits per pixel (32 for our XRGB8888 framebuffer).
+    pub bpp: u16,
 }
 
 // `&'static dyn Host` is `Sync + 'static`; we store it as a raw

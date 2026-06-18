@@ -281,8 +281,8 @@ pub extern "C" fn rust_sync_handler(frame: &mut ExceptionFrame) {
         }
         // BIOS (Trap 13): block-device + console functions.
         TrapClass::Bios => tos_api::bios::dispatch(&args),
-        // XBIOS dispatcher lands later.
-        TrapClass::Xbios => tos_types::error::EINVFN as i64,
+        // XBIOS (Trap 14): screen group (Physbase/Logbase/Getrez/...).
+        TrapClass::Xbios => tos_api::xbios::dispatch(&args),
     };
 
     // A blocking console input function (Cconin / Cnecin / Cconrs) may

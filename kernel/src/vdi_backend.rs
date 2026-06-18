@@ -307,3 +307,8 @@ pub fn available() -> bool {
 pub fn dims() -> (u16, u16) {
     (active_fb().width() as u16, active_fb().height() as u16)
 }
+
+/// CPU-visible framebuffer base address (for the XBIOS screen group).
+pub fn base_addr() -> u64 {
+    active_fb().pixels() as u64
+}

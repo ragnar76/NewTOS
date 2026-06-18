@@ -104,6 +104,19 @@ impl Host for KernelHost {
         }
     }
 
+    fn screen(&self) -> Option<tos_api::host::ScreenInfo> {
+        if !crate::vdi_backend::available() {
+            return None;
+        }
+        let (width, height) = crate::vdi_backend::dims();
+        Some(tos_api::host::ScreenInfo {
+            base: crate::vdi_backend::base_addr(),
+            width,
+            height,
+            bpp: 32,
+        })
+    }
+
     #[cfg(feature = "board-rpi4")]
     fn block(&self) -> Option<&dyn tos_api::bios::block::BlockDev> {
         use crate::hal::block::BlockDevice;

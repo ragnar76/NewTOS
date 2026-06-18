@@ -42,6 +42,7 @@ pub mod selftest_time;
 pub mod selftest_pexec;
 pub mod selftest_pexec_d4d5;
 pub mod selftest_vdi;
+pub mod selftest_xbios;
 pub mod sync;
 pub mod initinfo;
 #[cfg(feature = "board-rpi4")]
@@ -256,6 +257,9 @@ extern "C" fn kernel_main_rust(dtb_phys: usize) -> ! {
     }
 
     initinfo::run();
+
+    // Phase 10: XBIOS screen group over the real svc #14 path.
+    selftest_xbios::run();
 
     // Phase 08: microSD read test (before the process self-tests, which
     // can wedge QEMU's TCG — QUIRK-001). board-rpi4 / QEMU raspi4b only.

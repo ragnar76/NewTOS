@@ -20,6 +20,7 @@ pub mod gemdos;
 pub mod host;
 pub mod trap;
 pub mod vdi;
+pub mod xbios;
 
 pub use host::Host;
 pub use trap::{TrapArgs, TrapClass};
