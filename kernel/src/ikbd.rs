@@ -86,6 +86,25 @@ fn decode_key(raw: u8) {
     }
 }
 
+/// The current keyboard shift-state bitmask, in BIOS `Kbshift` /
+/// VDI `vq_key_s` encoding (`MODE_*` bits, `include/biosdefs.h`):
+/// `0x01` right-shift, `0x02` left-shift, `0x04` ctrl, `0x08` alt,
+/// `0x10` caps-lock. The decoder tracks a single shift flag (it does not
+/// distinguish left/right), so a held shift reports the left-shift bit.
+pub fn shift_state() -> u8 {
+    let mut m = 0u8;
+    if SHIFT.load(Ordering::Relaxed) {
+        m |= 0x02; // MODE_LSHIFT
+    }
+    if CTRL.load(Ordering::Relaxed) {
+        m |= 0x04; // MODE_CTRL
+    }
+    if CAPS.load(Ordering::Relaxed) {
+        m |= 0x10; // MODE_CAPS
+    }
+    m
+}
+
 /// Translate a key scancode to ASCII given the current modifier state.
 fn to_ascii(code: u8) -> Option<u8> {
     let (normal, shifted) = *TABLE.get(code as usize)?;

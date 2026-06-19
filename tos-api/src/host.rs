@@ -94,6 +94,15 @@ pub trait Host: Sync {
     fn screen(&self) -> Option<ScreenInfo> {
         None
     }
+
+    /// The current keyboard shift-state bitmask (`MODE_*` bits: `0x01`
+    /// right-shift, `0x02` left-shift, `0x04` ctrl, `0x08` alt, `0x10`
+    /// caps), as BIOS `Kbshift` and VDI `vq_key_s` report it. The kernel
+    /// host reads the IKBD decoder's modifier state; the default `0`
+    /// (no modifiers) suits a hostless / keyboard-less configuration.
+    fn keyboard_shift_state(&self) -> u8 {
+        0
+    }
 }
 
 /// The hardware framebuffer as the XBIOS screen calls see it.

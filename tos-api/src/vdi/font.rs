@@ -42,8 +42,14 @@ pub const LIGHTEN: u8 = 0x55;
 pub const SKEW: u16 = 0x5555;
 /// Left offset of the glyph within the cell (`left_offset`).
 pub const LEFT_OFFSET: i16 = 1;
+/// Right offset of the glyph within the cell (`right_offset`).
+pub const RIGHT_OFFSET: i16 = 7;
+/// Distance from the baseline to the cell bottom (`bottom`).
+pub const BOTTOM: i16 = 2;
 /// Name string (`name`), reported by `vqt_name`.
 pub const NAME: &[u8] = b"8x16 system font";
+/// `vqt_name` font-name field length in WORDs (GEM `Fonthead.name`).
+pub const NAME_LEN: usize = 32;
 
 /// The 16-row bitmap for character `c` (low 8 bits select the glyph).
 #[inline]

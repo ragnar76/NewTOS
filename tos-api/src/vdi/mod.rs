@@ -26,6 +26,8 @@ mod fill_patterns;
 pub mod font;
 mod font_data;
 mod gdp;
+mod input;
+mod inquiry;
 mod primitives;
 mod raster;
 mod text;
@@ -155,7 +157,8 @@ pub unsafe fn dispatch(vdipb_ptr: u64) {
 
         // ── attribute setters + output primitives (need the vwk) ──
         6 | 7 | 8 | 9 | 11 | 12 | 13 | 14 | 15 | 16 | 17 | 18 | 19 | 20 | 21 | 22 | 23 | 24 | 25
-        | 32 | 39 | 103 | 104 | 106 | 107 | 108 | 109 | 112 | 113 | 114 | 121 | 129 => {
+        | 26 | 32 | 33 | 35 | 36 | 37 | 38 | 39 | 103 | 104 | 105 | 106 | 107 | 108 | 109 | 112
+        | 113 | 114 | 115 | 116 | 117 | 121 | 128 | 129 | 130 | 131 => {
             // SAFETY: single trap path.
             if let Some(vwk) = unsafe { vwk::resolve(pb.contrl(C_HANDLE)) } {
                 let ncol = backend.num_colors();
@@ -189,6 +192,20 @@ pub unsafe fn dispatch(vdipb_ptr: u64) {
                     9 => primitives::v_fillarea(&pb, vwk, backend),
                     11 => gdp::v_gdp(&pb, vwk, backend),
                     103 => contour::v_contourfill(&pb, vwk, backend),
+                    // ── inquiry (read-only) ──
+                    26 => inquiry::vq_color(&pb, ncol, backend),
+                    35 => inquiry::vql_attributes(&pb, vwk),
+                    36 => inquiry::vqm_attributes(&pb, vwk),
+                    37 => inquiry::vqf_attributes(&pb, vwk),
+                    38 => inquiry::vqt_attributes(&pb, vwk),
+                    105 => inquiry::v_get_pixel(&pb, backend),
+                    33 => input::vsin_mode(&pb),
+                    115 => input::vqin_mode(&pb),
+                    116 => inquiry::vqt_extent(&pb, vwk),
+                    117 => inquiry::vqt_width(&pb, vwk),
+                    128 => inquiry::vq_key_s(&pb),
+                    130 => inquiry::vqt_name(&pb),
+                    131 => inquiry::vqt_fontinfo(&pb, vwk),
                     114 => primitives::vr_recfl(&pb, vwk, backend),
                     121 => raster::vrt_cpyfm(&pb, vwk, backend, ncol),
                     109 => raster::vro_cpyfm(&pb, vwk, backend),
