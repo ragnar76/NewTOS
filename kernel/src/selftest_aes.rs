@@ -204,6 +204,48 @@ pub fn run_phase13_event_test() {
     check(intout[0] == 1, "evnt_mesag returns 1");
     check(rx[0] == 0x4242 && rx[5] == 7, "evnt_mesag copies the message");
 
+    // ── evnt_dclick (26): get default (3), set to 1, get back ──
+    control = [0; 8];
+    control[0] = 26;
+    control[1] = 2;
+    intin[0] = 0;
+    intin[1] = 0; // setit = 0 → get
+    intout[0] = 0;
+    aes(pb);
+    check(intout[0] == 3, "evnt_dclick default index = 3");
+    control[0] = 26;
+    intin[0] = 1;
+    intin[1] = 1; // setit = 1 → set to 1
+    intout[0] = 0;
+    aes(pb);
+    check(intout[0] == 1, "evnt_dclick set returns new index");
+
+    // ── evnt_button (21): no buttons down, wait for state 0 (immediate) ──
+    control = [0; 8];
+    control[0] = 21;
+    control[1] = 3;
+    intin[0] = 1; // clicks
+    intin[1] = 1; // mask = left
+    intin[2] = 0; // want left up
+    intout[0] = 99;
+    intout[3] = 99;
+    aes(pb);
+    check(intout[0] == 1, "evnt_button returns the click count");
+    check(intout[3] == 0, "evnt_button reports no buttons down");
+
+    // ── evnt_mouse (22): leave an off-screen rect (already outside) ──
+    control = [0; 8];
+    control[0] = 22;
+    control[1] = 5;
+    intin[0] = 1; // flags = 1 (leave)
+    intin[1] = 1000;
+    intin[2] = 1000;
+    intin[3] = 10;
+    intin[4] = 10;
+    intout[0] = 0;
+    aes(pb);
+    check(intout[0] == 1, "evnt_mouse returns 1");
+
     // Deregister.
     control = [0; 8];
     control[0] = 19; // appl_exit
