@@ -20,6 +20,31 @@ pub const ASCENT: i16 = 11;
 /// Descent distance below the baseline.
 pub const DESCENT: i16 = 2;
 
+// Remaining `Fonthead` metrics for `fnt_st_8x16` (EmuTOS
+// `bios/fnt_st_8x16.c`), reported by the text inquiry/attribute opcodes.
+/// Font face id (`font_id`).
+pub const FONT_ID: i16 = 1;
+/// Nominal point size (`point`).
+pub const POINT: i16 = 10;
+/// First character code present (`first_ade`).
+pub const FIRST_ADE: i16 = 0;
+/// Last character code present (`last_ade`).
+pub const LAST_ADE: i16 = 255;
+/// Maximum glyph width in pixels (`max_char_width`).
+pub const MAX_CHAR_WIDTH: i16 = 7;
+/// Bold (thicken) horizontal overstrike in pixels (`thicken`).
+pub const THICKEN: i16 = 1;
+/// Underline thickness in pixels (`ul_size`).
+pub const UL_SIZE: i16 = 1;
+/// Lighten (greying) AND-mask applied per glyph row (`lighten`).
+pub const LIGHTEN: u8 = 0x55;
+/// Skew (italic) shift mask, one bit per scanline (`skew`).
+pub const SKEW: u16 = 0x5555;
+/// Left offset of the glyph within the cell (`left_offset`).
+pub const LEFT_OFFSET: i16 = 1;
+/// Name string (`name`), reported by `vqt_name`.
+pub const NAME: &[u8] = b"8x16 system font";
+
 /// The 16-row bitmap for character `c` (low 8 bits select the glyph).
 #[inline]
 pub fn glyph(c: u16) -> &'static [u8; 16] {

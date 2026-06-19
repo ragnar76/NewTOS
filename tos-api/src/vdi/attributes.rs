@@ -7,8 +7,21 @@
 //! opcodes that consume them.
 
 use super::backend::RasterBackend;
+use super::font;
 use super::vwk::{validate_color_index, Vwk};
 use super::Vdipb;
+
+// Line / marker / text attribute bounds (EmuTOS `vdi_defs.h`).
+const MAX_LINE_STYLE: i16 = 7;
+const MAX_LINE_WIDTH: i16 = 40; // SIZ_TAB[6]
+const MIN_END_STYLE: i16 = 0; // squared
+const MAX_END_STYLE: i16 = 2; // round
+const MIN_MARK_STYLE: i16 = 1;
+const MAX_MARK_STYLE: i16 = 6;
+const DEF_MKWD: i16 = 15; // SIZ_TAB[8] base marker width
+const DEF_MKHT: i16 = 11; // SIZ_TAB[9] base marker height
+const MAX_MKHT: i16 = 88; // SIZ_TAB[11]
+const EFFECTS_MASK: i16 = 0x1F; // INQ_TAB[2] supported text effects
 
 /// Writing-mode bounds (1-based API), EmuTOS `vdi_control.c`.
 const MIN_WRT_MODE: i16 = 1;
@@ -57,6 +70,148 @@ pub fn vs_clip(pb: &Vdipb, vwk: &mut Vwk, backend: &dyn RasterBackend) {
         vwk.xmx_clip = xres;
         vwk.ymx_clip = yres;
     }
+}
+
+/// Opcode 15 — `vsl_type`: set the line style (1..MAX, else solid).
+/// Stored 0-based in `line_index`.
+pub fn vsl_type(pb: &Vdipb, vwk: &mut Vwk) {
+    let v = pb.intin(0);
+    vwk.line_index = if (1..=MAX_LINE_STYLE).contains(&v) { v - 1 } else { 0 };
+    pb.set_intout(0, vwk.line_index + 1);
+    pb.set_contrl(4, 1);
+}
+
+/// Opcode 16 — `vsl_width`: set the line width from `PTSIN[0]`. Clamped
+/// to `[1, MAX_LINE_WIDTH]` and forced **odd** (the line algorithm
+/// centres on a pixel). Echoes the width in `PTSOUT[0]`.
+pub fn vsl_width(pb: &Vdipb, vwk: &mut Vwk) {
+    let mut w = pb.ptsin(0).clamp(1, MAX_LINE_WIDTH);
+    if w % 2 == 0 {
+        w -= 1; // force odd
+    }
+    vwk.line_width = w;
+    pb.set_ptsout(0, w);
+    pb.set_ptsout(1, 0);
+    pb.set_contrl(2, 1);
+}
+
+/// Opcode 108 — `vsl_ends`: set the line end styles (begin = `INTIN[0]`,
+/// end = `INTIN[1]`; 0 squared / 1 arrow / 2 round, else squared).
+pub fn vsl_ends(pb: &Vdipb, vwk: &mut Vwk) {
+    let validate = |v: i16| if (MIN_END_STYLE..=MAX_END_STYLE).contains(&v) { v } else { MIN_END_STYLE };
+    vwk.line_beg = validate(pb.intin(0));
+    vwk.line_end = validate(pb.intin(1));
+    pb.set_intout(0, vwk.line_beg);
+    pb.set_intout(1, vwk.line_end);
+    pb.set_contrl(4, 2);
+}
+
+/// Opcode 113 — `vsl_udsty`: set the 16-bit user-defined line-style mask
+/// (no validation). No output.
+pub fn vsl_udsty(pb: &Vdipb, vwk: &mut Vwk) {
+    vwk.ud_ls = pb.intin(0) as u16;
+}
+
+/// Opcode 18 — `vsm_type`: set the marker type (1..6, else asterisk).
+/// Stored 0-based in `mark_index`.
+pub fn vsm_type(pb: &Vdipb, vwk: &mut Vwk) {
+    let v = pb.intin(0);
+    vwk.mark_index = if (MIN_MARK_STYLE..=MAX_MARK_STYLE).contains(&v) { v - 1 } else { 2 };
+    pb.set_intout(0, vwk.mark_index + 1);
+    pb.set_contrl(4, 1);
+}
+
+/// Opcode 19 — `vsm_height`: set the marker height from `PTSIN[1]`.
+/// Clamped to `[DEF_MKHT, MAX_MKHT]`; derives an integer `mark_scale` of
+/// the base marker. Echoes the actual marker width/height in `PTSOUT`.
+pub fn vsm_height(pb: &Vdipb, vwk: &mut Vwk) {
+    let h = pb.ptsin(1).clamp(DEF_MKHT, MAX_MKHT);
+    vwk.mark_height = h;
+    let scale = (h + DEF_MKHT / 2) / DEF_MKHT;
+    vwk.mark_scale = scale;
+    pb.set_ptsout(0, scale * DEF_MKWD);
+    pb.set_ptsout(1, scale * DEF_MKHT);
+    pb.set_contrl(2, 1);
+}
+
+/// Opcode 20 — `vsm_color`: set the marker colour.
+pub fn vsm_color(pb: &Vdipb, vwk: &mut Vwk, ncol: u16) {
+    let c = validate_color_index(pb.intin(0), ncol);
+    vwk.mark_color = c;
+    pb.set_intout(0, c as i16);
+    pb.set_contrl(4, 1);
+}
+
+/// Opcode 106 — `vst_effects`: set the text effect bits, masked to the
+/// supported set (`0x1F`: bold/light/italic/underline/outline).
+pub fn vst_effects(pb: &Vdipb, vwk: &mut Vwk) {
+    vwk.style = pb.intin(0) & EFFECTS_MASK;
+    pb.set_intout(0, vwk.style);
+    pb.set_contrl(4, 1);
+}
+
+/// Opcode 13 — `vst_rotation`: set the text baseline angle in 1/10°.
+/// On a raster screen it snaps to the nearest right angle (`chup` ∈
+/// {0,900,1800,2700}).
+pub fn vst_rotation(pb: &Vdipb, vwk: &mut Vwk) {
+    let mut angle = pb.intin(0) % 3600;
+    if angle < 0 {
+        angle += 3600;
+    }
+    vwk.chup = ((angle + 450) / 900) * 900 % 3600;
+    pb.set_intout(0, vwk.chup);
+    pb.set_contrl(4, 1);
+}
+
+/// Opcode 21 — `vst_font`: select a text face. Only the system font
+/// (face 1) exists, so every request resolves to it.
+pub fn vst_font(pb: &Vdipb, _vwk: &mut Vwk) {
+    pb.set_intout(0, font::FONT_ID);
+    pb.set_contrl(4, 1);
+}
+
+/// Fill `PTSOUT[0..3]` with the actual character/cell metrics of the
+/// single system font (EmuTOS `setup_width_height`).
+fn report_font_size(pb: &Vdipb) {
+    pb.set_ptsout(0, font::MAX_CHAR_WIDTH); // char width  (7)
+    pb.set_ptsout(1, font::TOP); // char height (top = 13)
+    pb.set_ptsout(2, font::CELL_W); // cell width  (8)
+    pb.set_ptsout(3, font::CELL_H); // cell height (16)
+    pb.set_contrl(2, 2);
+}
+
+/// Opcode 12 — `vst_height`: request a text height in device units.
+/// Only the one fixed bitmap face exists (no scaling), so the actual
+/// 8×16 metrics are reported regardless of the request.
+pub fn vst_height(pb: &Vdipb, _vwk: &mut Vwk) {
+    report_font_size(pb);
+}
+
+/// Opcode 107 — `vst_point`: request a text height in points. Reports
+/// the single available point size (10) and its metrics.
+pub fn vst_point(pb: &Vdipb, _vwk: &mut Vwk) {
+    report_font_size(pb);
+    pb.set_intout(0, font::POINT);
+    pb.set_contrl(4, 1);
+}
+
+/// Opcode 104 — `vsf_perimeter`: enable/disable the fill-area outline.
+pub fn vsf_perimeter(pb: &Vdipb, vwk: &mut Vwk) {
+    vwk.fill_per = pb.intin(0) != 0;
+    pb.set_intout(0, if vwk.fill_per { 1 } else { 0 });
+    pb.set_contrl(4, 1);
+}
+
+/// Opcode 14 — `vs_color`: set a palette entry. `INTIN[0]` = colour
+/// index, `INTIN[1..3]` = R/G/B in the VDI 0..=1000 range (clamped).
+/// Out-of-range indices are ignored. No output.
+pub fn vs_color(pb: &Vdipb, ncol: u16, backend: &dyn RasterBackend) {
+    let idx = pb.intin(0);
+    if idx < 0 || idx as u16 >= ncol {
+        return;
+    }
+    let clamp = |v: i16| v.clamp(0, 1000) as u16;
+    backend.set_color(idx as u16, clamp(pb.intin(1)), clamp(pb.intin(2)), clamp(pb.intin(3)));
 }
 
 /// Opcode 17 — `vsl_color`: set the polyline colour.

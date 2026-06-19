@@ -40,6 +40,16 @@ pub trait RasterBackend: Sync {
     /// 16 colours regardless of the truecolor framebuffer underneath.
     fn num_colors(&self) -> u16;
 
+    /// Set palette entry `index` to the requested RGB, each component in
+    /// the VDI's 0..=1000 range (`vs_color`). The backend remembers the
+    /// request (for [`query_color`](Self::query_color)) and programs the
+    /// device CLUT. Out-of-range indices are ignored.
+    fn set_color(&self, index: u16, r: u16, g: u16, b: u16);
+
+    /// Read back the last requested RGB (0..=1000) of palette entry
+    /// `index` (`vq_color` "requested" mode). Out-of-range → `(0,0,0)`.
+    fn query_color(&self, index: u16) -> (u16, u16, u16);
+
     /// Fill the rectangle `[x, x+w) × [y, y+h)` (device coordinates,
     /// origin top-left) with palette colour `pel`. The draw is clipped to
     /// `clip` ∩ the visible area; negative / oversized rectangles are

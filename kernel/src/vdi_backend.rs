@@ -11,6 +11,8 @@
 //! fixed 16-entry GEM palette into the truecolor framebuffer. VDI
 //! convention: index 0 = white (background), 1 = black (foreground).
 
+use core::sync::atomic::{AtomicU32, Ordering};
+
 use tos_api::vdi::backend::{ClipRect, MonoSrc, PatternFill, Pel, RasterBackend, Rect};
 
 use crate::hal::framebuffer::{rgb, Framebuffer};
@@ -18,26 +20,65 @@ use crate::hal::framebuffer::{rgb, Framebuffer};
 /// Number of bring-up palette entries (advertised as `DEV_TAB[13]`).
 const NUM_COLORS: u16 = 16;
 
-/// The standard GEM 16-colour palette (PEL → packed XRGB). Index 0 is
-/// white and 1 is black, matching VDI's background/foreground default.
-const PALETTE: [u32; NUM_COLORS as usize] = [
-    rgb(255, 255, 255), // 0  white (background)
-    rgb(0, 0, 0),       // 1  black (foreground)
-    rgb(255, 0, 0),     // 2  red
-    rgb(0, 255, 0),     // 3  green
-    rgb(0, 0, 255),     // 4  blue
-    rgb(0, 255, 255),   // 5  cyan
-    rgb(255, 255, 0),   // 6  yellow
-    rgb(255, 0, 255),   // 7  magenta
-    rgb(192, 192, 192), // 8  light grey
-    rgb(128, 128, 128), // 9  dark grey
-    rgb(128, 0, 0),     // 10 dark red
-    rgb(0, 128, 0),     // 11 dark green
-    rgb(0, 0, 128),     // 12 dark blue
-    rgb(0, 128, 128),   // 13 dark cyan
-    rgb(128, 128, 0),   // 14 dark yellow
-    rgb(128, 0, 128),   // 15 dark magenta
+/// The standard GEM 16-colour palette as 8-bit `(r, g, b)` triples.
+/// Index 0 is white and 1 is black, matching VDI's background/foreground
+/// default. `vs_color` overwrites entries at runtime (see [`PALETTE`]).
+const DEFAULT_PALETTE: [(u8, u8, u8); NUM_COLORS as usize] = [
+    (255, 255, 255), // 0  white (background)
+    (0, 0, 0),       // 1  black (foreground)
+    (255, 0, 0),     // 2  red
+    (0, 255, 0),     // 3  green
+    (0, 0, 255),     // 4  blue
+    (0, 255, 255),   // 5  cyan
+    (255, 255, 0),   // 6  yellow
+    (255, 0, 255),   // 7  magenta
+    (192, 192, 192), // 8  light grey
+    (128, 128, 128), // 9  dark grey
+    (128, 0, 0),     // 10 dark red
+    (0, 128, 0),     // 11 dark green
+    (0, 0, 128),     // 12 dark blue
+    (0, 128, 128),   // 13 dark cyan
+    (128, 128, 0),   // 14 dark yellow
+    (128, 0, 128),   // 15 dark magenta
 ];
+
+/// The live palette: PEL → packed XRGB, mutated by `vs_color`. Lazily
+/// initialised from [`DEFAULT_PALETTE`] on first read (entry 0 carrying
+/// the init sentinel in its high byte). Accessed only from the single
+/// trap path, but `AtomicU32` keeps it `Sync` without `unsafe`.
+static PALETTE: [AtomicU32; NUM_COLORS as usize] =
+    [const { AtomicU32::new(PAL_UNINIT) }; NUM_COLORS as usize];
+
+/// The requested RGB (0..=1000) per entry, packed `r<<20 | g<<10 | b`,
+/// returned by `vq_color`. Lazily initialised alongside [`PALETTE`].
+static REQ_COL: [AtomicU32; NUM_COLORS as usize] =
+    [const { AtomicU32::new(0) }; NUM_COLORS as usize];
+
+/// Sentinel marking an uninitialised [`PALETTE`] slot (alpha byte set,
+/// which a real XRGB colour never carries).
+const PAL_UNINIT: u32 = 0xFF00_0000;
+
+/// Scale an 8-bit channel (0..=255) to the VDI 0..=1000 range.
+const fn to_vdi(c: u8) -> u16 {
+    ((c as u32 * 1000 + 127) / 255) as u16
+}
+
+/// Scale a VDI channel (0..=1000) to 8-bit (0..=255).
+fn to_rgb8(c: u16) -> u8 {
+    ((c.min(1000) as u32 * 255 + 500) / 1000) as u8
+}
+
+/// Initialise the palette from the GEM defaults on first use.
+fn ensure_palette_init() {
+    if PALETTE[0].load(Ordering::Relaxed) != PAL_UNINIT {
+        return;
+    }
+    for (i, &(r, g, b)) in DEFAULT_PALETTE.iter().enumerate() {
+        PALETTE[i].store(rgb(r, g, b), Ordering::Relaxed);
+        let req = (to_vdi(r) as u32) << 20 | (to_vdi(g) as u32) << 10 | to_vdi(b) as u32;
+        REQ_COL[i].store(req, Ordering::Relaxed);
+    }
+}
 
 /// Resolve the active board framebuffer (exactly one per board).
 #[cfg(feature = "board-qemu-virt")]
@@ -55,7 +96,8 @@ pub struct VdiScreen;
 impl VdiScreen {
     #[inline]
     fn pel_to_rgb(pel: Pel) -> u32 {
-        PALETTE[(pel as usize) & (NUM_COLORS as usize - 1)]
+        ensure_palette_init();
+        PALETTE[(pel as usize) & (NUM_COLORS as usize - 1)].load(Ordering::Relaxed)
     }
 
     /// Clean the cache lines covering the inclusive pixel rectangle
@@ -86,6 +128,26 @@ impl RasterBackend for VdiScreen {
 
     fn num_colors(&self) -> u16 {
         NUM_COLORS
+    }
+
+    fn set_color(&self, index: u16, r: u16, g: u16, b: u16) {
+        if index >= NUM_COLORS {
+            return;
+        }
+        ensure_palette_init();
+        let (r, g, b) = (r.min(1000), g.min(1000), b.min(1000));
+        let req = (r as u32) << 20 | (g as u32) << 10 | b as u32;
+        REQ_COL[index as usize].store(req, Ordering::Relaxed);
+        PALETTE[index as usize].store(rgb(to_rgb8(r), to_rgb8(g), to_rgb8(b)), Ordering::Relaxed);
+    }
+
+    fn query_color(&self, index: u16) -> (u16, u16, u16) {
+        if index >= NUM_COLORS {
+            return (0, 0, 0);
+        }
+        ensure_palette_init();
+        let req = REQ_COL[index as usize].load(Ordering::Relaxed);
+        (((req >> 20) & 0x3FF) as u16, ((req >> 10) & 0x3FF) as u16, (req & 0x3FF) as u16)
     }
 
     fn fill_rect(&self, x: i16, y: i16, w: i16, h: i16, pel: Pel, clip: ClipRect) {

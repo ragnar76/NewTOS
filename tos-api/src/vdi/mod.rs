@@ -151,18 +151,33 @@ pub unsafe fn dispatch(vdipb_ptr: u64) {
         3 if open_handle(&pb).is_some() => workstation::v_clrwk(backend),
 
         // ── attribute setters + output primitives (need the vwk) ──
-        6 | 8 | 17 | 22 | 23 | 24 | 25 | 32 | 39 | 109 | 112 | 114 | 121 | 129 => {
+        6 | 8 | 12 | 13 | 14 | 15 | 16 | 17 | 18 | 19 | 20 | 21 | 22 | 23 | 24 | 25 | 32 | 39
+        | 104 | 106 | 107 | 108 | 109 | 112 | 113 | 114 | 121 | 129 => {
             // SAFETY: single trap path.
             if let Some(vwk) = unsafe { vwk::resolve(pb.contrl(C_HANDLE)) } {
                 let ncol = backend.num_colors();
                 match opcode {
+                    14 => attributes::vs_color(&pb, ncol, backend),
+                    15 => attributes::vsl_type(&pb, vwk),
+                    16 => attributes::vsl_width(&pb, vwk),
                     17 => attributes::vsl_color(&pb, vwk, ncol),
+                    108 => attributes::vsl_ends(&pb, vwk),
+                    113 => attributes::vsl_udsty(&pb, vwk),
+                    18 => attributes::vsm_type(&pb, vwk),
+                    19 => attributes::vsm_height(&pb, vwk),
+                    20 => attributes::vsm_color(&pb, vwk, ncol),
                     25 => attributes::vsf_color(&pb, vwk, ncol),
                     22 => attributes::vst_color(&pb, vwk, ncol),
                     23 => attributes::vsf_interior(&pb, vwk),
                     24 => attributes::vsf_style(&pb, vwk),
+                    104 => attributes::vsf_perimeter(&pb, vwk),
                     32 => attributes::vswr_mode(&pb, vwk),
                     39 => attributes::vst_alignment(&pb, vwk),
+                    106 => attributes::vst_effects(&pb, vwk),
+                    13 => attributes::vst_rotation(&pb, vwk),
+                    21 => attributes::vst_font(&pb, vwk),
+                    12 => attributes::vst_height(&pb, vwk),
+                    107 => attributes::vst_point(&pb, vwk),
                     112 => attributes::vsf_udpat(&pb, vwk),
                     129 => attributes::vs_clip(&pb, vwk, backend),
                     6 => primitives::v_pline(&pb, vwk, backend),
