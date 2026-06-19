@@ -95,6 +95,17 @@ pub fn pl011_rx_drain() {
     CONSOLE.clear_rx_interrupt();
 }
 
+/// Poll the PL011 RX FIFO directly into the ringbuffer, without going
+/// through the IRQ path. Used by the blocking console read on boards
+/// where the UART0 RX interrupt is not (yet) delivered through the GIC.
+/// Mirrors [`pl011_rx_drain`] but does not touch the interrupt-clear
+/// register, so it is safe to call from ordinary (non-IRQ) context.
+pub fn pl011_rx_poll() {
+    while let Some(b) = CONSOLE.read_byte() {
+        RX_RING.push(b);
+    }
+}
+
 /// Push a byte into the RX ringbuffer from a non-UART input source (the
 /// IKBD keyboard decoder). The byte is then read by `Cnecin`/`Cconin`
 /// exactly like a UART byte.

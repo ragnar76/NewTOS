@@ -35,7 +35,15 @@
   Tastendruck → IRQ → Ringpuffer → `Crawio(0xFF)` → Echo via
   `Cconout` → `[selftest] RX-IRQ OK`.
 - D6 Integrationstests in QEMU: pending (manueller Smoke-Test passed).
-- D7 Real-Hardware EC: pending HW.
+- D7 Real-Hardware EC: teilweise (2026-06-19). Konsole + Tastatureingabe
+  auf echtem RPi4 verifiziert. **Aber**: die PL011-RX-IRQ (INTID 153)
+  wird vom GIC-400 auf echter HW *nicht* ans Core zugestellt (in QEMU
+  schon). Aktueller **Workaround**: direkter UART0-RX-Poll im
+  Blocking-Read (`host_env.rs`, `console::pl011_rx_poll`), board-rpi4.
+  → OFFEN: den IRQ-Pfad richtig fixen (vermutlich GIC-400
+  Group/Security oder fehlende `armstub=`-Zeile in config.txt;
+  datenblattgestützt angehen, nicht aus dem Gedächtnis). Der Poll ist
+  bis dahin der bewusste Workaround und muss noch angepasst werden.
 - **Smoke-Test** (2026-05-03, QEMU 11.0.0, `aarch64-virt,gic-version=2`,
   cortex-a72): SVC #1 / x8=0x09 dispatcht durch Vector-Table → Rust
   Sync-Handler → `gemdos::dispatch` → `cconws` und gibt

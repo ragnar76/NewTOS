@@ -62,6 +62,14 @@ impl Host for KernelHost {
             #[cfg(feature = "board-rpi4")]
             crate::drivers::bcm2711::ikbd_uart::poll();
 
+            // Also poll the UART0 console RX FIFO directly. The PL011 RX
+            // IRQ path is verified only in QEMU; on real GIC-400 silicon
+            // it is not yet confirmed to be delivered, which would leave
+            // the cable console with no input. Polling here mirrors the
+            // IKBD poll above and feeds the same ring.
+            #[cfg(feature = "board-rpi4")]
+            crate::console::pl011_rx_poll();
+
             if let Some(b) = crate::console::rx_pop() {
                 break b;
             }
