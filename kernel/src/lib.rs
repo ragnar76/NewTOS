@@ -268,7 +268,9 @@ extern "C" fn kernel_main_rust(dtb_phys: usize) -> ! {
 
     // Development self-tests are no longer invoked during the normal
     // boot — the system goes straight to the console. They remain in the
-    // `selftest*` modules and can be re-enabled here when debugging.
+    // `selftest*` modules and can be re-enabled here when debugging
+    // (e.g. `selftest_vdi::run_phase12_vdi_demo()` draws the Phase-12
+    // drawing-surface demo verified by QMP screendump).
 
     // Keep the initinfo boot screen visible for a few seconds before the
     // console takes over (EmuTOS shows its boot screen the same way).
