@@ -111,3 +111,65 @@ pub fn run_phase13_aes_test() {
         kprintln!("[aes] === AES Application-Manager FAILED ({}) ===", fails);
     }
 }
+
+/// Read the host's millisecond clock (for timing the event waits).
+fn millis() -> u64 {
+    tos_api::host::host().map(|h| h.monotonic_millis()).unwrap_or(0)
+}
+
+/// Phase 13 D3 Event-Manager self-test, through the GEM trap path.
+#[allow(unused_assignments)]
+pub fn run_phase13_event_test() {
+    let mut control = [0i16; 8];
+    let mut global = [0i16; 32];
+    let mut intin = [0i16; 16];
+    let mut intout = [0i16; 16];
+    let mut addrin = [0i64; 4];
+    let mut addrout = [0i64; 4];
+    let block: [u64; 6] = [
+        control.as_mut_ptr() as u64,
+        global.as_mut_ptr() as u64,
+        intin.as_mut_ptr() as u64,
+        intout.as_mut_ptr() as u64,
+        addrin.as_mut_ptr() as u64,
+        addrout.as_mut_ptr() as u64,
+    ];
+    let pb = block.as_ptr() as u64;
+
+    kprintln!("[aes] === Phase 13 AES Event Manager test (D3) ===");
+    let mut fails = 0;
+    let mut check = |cond: bool, label: &str| {
+        kprintln!("[aes]   {}: {}", label, if cond { "OK" } else { "FAIL" });
+        if !cond {
+            fails += 1;
+        }
+    };
+
+    // ── evnt_timer (24): wait 50 ms, return 1 ──
+    let t0 = millis();
+    control = [0; 8];
+    control[0] = 24;
+    control[1] = 2; // two intin (lo, hi)
+    intin[0] = 50; // T_LOCOUNT
+    intin[1] = 0; // T_HICOUNT
+    aes(pb);
+    let elapsed = millis().wrapping_sub(t0);
+    check(intout[0] == 1, "evnt_timer returns 1");
+    check(elapsed >= 50, "evnt_timer waited >= 50ms");
+
+    // ── evnt_timer (24): zero count returns immediately ──
+    control = [0; 8];
+    control[0] = 24;
+    control[1] = 2;
+    intin[0] = 0;
+    intin[1] = 0;
+    intout[0] = 0;
+    aes(pb);
+    check(intout[0] == 1, "evnt_timer(0) returns 1 immediately");
+
+    if fails == 0 {
+        kprintln!("[aes] === AES Event Manager PASS ===");
+    } else {
+        kprintln!("[aes] === AES Event Manager FAILED ({}) ===", fails);
+    }
+}

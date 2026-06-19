@@ -11,6 +11,7 @@
 //! `int_out[0]` (`RET_CODE`).
 
 mod appl;
+mod event;
 mod pd;
 
 /// The AES parameter block: six pointers (four to WORD arrays, two to
@@ -111,6 +112,7 @@ pub unsafe fn dispatch(aespb_ptr: u64) {
         12 => appl::appl_write(&pb),
         13 => appl::appl_find(&pb),
         17 => appl::appl_yield(&pb),
+        24 => event::evnt_timer(&pb),
         // Remaining managers (event/object/form/window/menu/resource/
         // scrap/shell) land in later sub-phases. The AES has no invalid-
         // opcode error path (the GEM environment is trusted), so an

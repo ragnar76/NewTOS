@@ -116,6 +116,29 @@ impl Host for KernelHost {
         cnt.checked_div(frq).unwrap_or(0)
     }
 
+    fn monotonic_millis(&self) -> u64 {
+        // Same generic-timer source as monotonic_seconds, scaled to ms.
+        // Multiply before dividing to keep millisecond precision; use a
+        // u128 intermediate so the *1000 cannot overflow on a fast or
+        // long-running counter.
+        let cnt: u64;
+        let frq: u64;
+        // SAFETY: read-only system-register reads, always permitted.
+        unsafe {
+            core::arch::asm!(
+                "mrs {cnt}, cntpct_el0",
+                "mrs {frq}, cntfrq_el0",
+                cnt = out(reg) cnt,
+                frq = out(reg) frq,
+                options(nomem, nostack, preserves_flags),
+            );
+        }
+        if frq == 0 {
+            return 0;
+        }
+        ((cnt as u128 * 1000) / frq as u128) as u64
+    }
+
     fn frame_clock(&self) -> u64 {
         // CNTPCT * 60 / CNTFRQ = the current ~60 Hz frame number.
         let cnt: u64;

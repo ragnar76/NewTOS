@@ -62,6 +62,15 @@ pub trait Host: Sync {
         0
     }
 
+    /// Milliseconds elapsed since boot, from the same monotonic hardware
+    /// counter as [`Host::monotonic_seconds`] but at millisecond
+    /// resolution (`CNTPCT * 1000 / CNTFRQ`). Backs the AES event timer
+    /// (`evnt_timer` / `evnt_multi`'s `MU_TIMER`). The default `0` makes
+    /// a timed wait fire immediately (acceptable for a hostless test).
+    fn monotonic_millis(&self) -> u64 {
+        0
+    }
+
     /// A monotonic **frame counter** at ~60 Hz, derived from the hardware
     /// timer (`CNTPCT * 60 / CNTFRQ`). Backs XBIOS `Vsync` (spin until it
     /// ticks) and seeds `Random`. The default `0` makes `Vsync` a no-op
