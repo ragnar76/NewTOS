@@ -50,21 +50,70 @@ fn packet_data_len(header: u8) -> u8 {
     }
 }
 
+/// Relative-mouse packet assembly: `0` = idle, `1` = expecting `dx`,
+/// `2` = expecting `dy`.
+static MS_STEP: AtomicU8 = AtomicU8::new(0);
+/// Button bitmask (already swapped to VDI convention) from the packet
+/// header, held until the movement bytes complete the packet.
+static MS_BUTTONS: AtomicU8 = AtomicU8::new(0);
+/// First movement byte (`dx`), held until `dy` arrives.
+static MS_DX: AtomicU8 = AtomicU8::new(0);
+
 /// Feed one received IKBD byte to the decoder.
 pub fn feed(byte: u8) {
-    // Inside a multi-byte status packet → consume and ignore.
+    // Mid relative-mouse packet → collect dx, then dy, then dispatch.
+    match MS_STEP.load(Ordering::Relaxed) {
+        1 => {
+            MS_DX.store(byte, Ordering::Relaxed);
+            MS_STEP.store(2, Ordering::Relaxed);
+            return;
+        }
+        2 => {
+            MS_STEP.store(0, Ordering::Relaxed);
+            let dx = MS_DX.load(Ordering::Relaxed) as i8 as i16;
+            let dy = byte as i8 as i16;
+            mouse_event(MS_BUTTONS.load(Ordering::Relaxed), dx, dy);
+            return;
+        }
+        _ => {}
+    }
+
+    // Inside a non-mouse status packet → consume and ignore.
     let rem = PKT_REMAINING.load(Ordering::Relaxed);
     if rem > 0 {
         PKT_REMAINING.store(rem - 1, Ordering::Relaxed);
         return;
     }
-    // A packet header (>= 0xF6) starts a run of data bytes to skip.
+    // A packet header (>= 0xF6) starts a run of data bytes.
     if byte >= 0xF6 {
+        // Relative-mouse report (0xF8..0xFB): the low 2 header bits are
+        // the buttons (IKBD wire: bit 0 = right, bit 1 = left). Swap into
+        // VDI convention (bit 0 = left, bit 1 = right) and collect the two
+        // movement bytes. See docs/api/vdi/input/_mouse-packet.md.
+        if (0xF8..=0xFB).contains(&byte) {
+            let wire = byte & 0x03;
+            let gem = ((wire >> 1) & 0x01) | ((wire & 0x01) << 1);
+            MS_BUTTONS.store(gem, Ordering::Relaxed);
+            MS_STEP.store(1, Ordering::Relaxed);
+            return;
+        }
         PKT_REMAINING.store(packet_data_len(byte), Ordering::Relaxed);
         return;
     }
     // Otherwise it is a key scancode (bit 7 = break).
     decode_key(byte);
+}
+
+/// Apply a decoded relative-mouse event to the VDI mouse state. The byte
+/// decode (hardware) lives here; the cursor semantics (position
+/// accumulation + clamp, with `buttons` already in VDI convention) live
+/// in the TOS API layer.
+fn mouse_event(buttons: u8, dx: i16, dy: i16) {
+    // No screen device yet → nothing to position the cursor against.
+    if !crate::vdi_backend::available() {
+        return;
+    }
+    tos_api::vdi::feed_relative(dx, dy, buttons, &crate::vdi_backend::VDI_SCREEN);
 }
 
 fn decode_key(raw: u8) {

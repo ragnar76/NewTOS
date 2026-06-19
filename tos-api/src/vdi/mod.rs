@@ -30,6 +30,10 @@ mod gdp;
 mod input;
 mod inquiry;
 mod mouse;
+/// Input-subsystem entry point + queries: feed a relative-mouse event
+/// (the kernel's IKBD mouse decoder calls this) and read back the cursor
+/// state (used by the IKBD self-test).
+pub use mouse::{buttons as mouse_buttons, feed_relative, position as mouse_position};
 mod primitives;
 mod raster;
 mod text;

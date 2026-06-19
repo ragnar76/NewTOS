@@ -85,6 +85,25 @@ pub fn set_state(x: i16, y: i16, buttons: u8, backend: &dyn RasterBackend) {
     }
 }
 
+/// Feed a relative-mouse event from the input subsystem (the kernel's
+/// IKBD mouse-packet decoder). `dx`/`dy` are signed pixel deltas;
+/// `buttons` is already in VDI convention (bit 0 = left, bit 1 = right).
+/// Accumulates onto the current cursor position, clamps it to the
+/// screen, and updates the cursor + the `vq_mouse`/AES-event state.
+///
+/// This is the API-level half of the mouse driver: it owns the cursor
+/// semantics. The hardware packet decode lives in the kernel — see
+/// `docs/api/vdi/input/_mouse-packet.md`.
+pub fn feed_relative(dx: i16, dy: i16, buttons: u8, backend: &dyn RasterBackend) {
+    ensure_init(backend);
+    let max_x = backend.width() as i16 - 1;
+    let max_y = backend.height() as i16 - 1;
+    let (cx, cy) = position();
+    let nx = (cx + dx).clamp(0, max_x);
+    let ny = (cy + dy).clamp(0, max_y);
+    set_state(nx, ny, buttons, backend);
+}
+
 /// The current cursor position (for the locator input device).
 pub fn position() -> (i16, i16) {
     (GCURX.load(Ordering::Relaxed), GCURY.load(Ordering::Relaxed))
