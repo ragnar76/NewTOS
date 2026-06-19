@@ -21,12 +21,15 @@
 
 pub mod backend;
 mod attributes;
+mod contour;
 mod fill_patterns;
 pub mod font;
 mod font_data;
+mod gdp;
 mod primitives;
 mod raster;
 mod text;
+mod trig;
 mod vwk;
 mod workstation;
 
@@ -151,8 +154,8 @@ pub unsafe fn dispatch(vdipb_ptr: u64) {
         3 if open_handle(&pb).is_some() => workstation::v_clrwk(backend),
 
         // ── attribute setters + output primitives (need the vwk) ──
-        6 | 8 | 12 | 13 | 14 | 15 | 16 | 17 | 18 | 19 | 20 | 21 | 22 | 23 | 24 | 25 | 32 | 39
-        | 104 | 106 | 107 | 108 | 109 | 112 | 113 | 114 | 121 | 129 => {
+        6 | 7 | 8 | 9 | 11 | 12 | 13 | 14 | 15 | 16 | 17 | 18 | 19 | 20 | 21 | 22 | 23 | 24 | 25
+        | 32 | 39 | 103 | 104 | 106 | 107 | 108 | 109 | 112 | 113 | 114 | 121 | 129 => {
             // SAFETY: single trap path.
             if let Some(vwk) = unsafe { vwk::resolve(pb.contrl(C_HANDLE)) } {
                 let ncol = backend.num_colors();
@@ -181,7 +184,11 @@ pub unsafe fn dispatch(vdipb_ptr: u64) {
                     112 => attributes::vsf_udpat(&pb, vwk),
                     129 => attributes::vs_clip(&pb, vwk, backend),
                     6 => primitives::v_pline(&pb, vwk, backend),
+                    7 => primitives::v_pmarker(&pb, vwk, backend),
                     8 => text::v_gtext(&pb, vwk, backend),
+                    9 => primitives::v_fillarea(&pb, vwk, backend),
+                    11 => gdp::v_gdp(&pb, vwk, backend),
+                    103 => contour::v_contourfill(&pb, vwk, backend),
                     114 => primitives::vr_recfl(&pb, vwk, backend),
                     121 => raster::vrt_cpyfm(&pb, vwk, backend, ncol),
                     109 => raster::vro_cpyfm(&pb, vwk, backend),

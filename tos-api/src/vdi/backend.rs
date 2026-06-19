@@ -50,6 +50,11 @@ pub trait RasterBackend: Sync {
     /// `index` (`vq_color` "requested" mode). Out-of-range → `(0,0,0)`.
     fn query_color(&self, index: u16) -> (u16, u16, u16);
 
+    /// Read the palette index (PEL) at device pixel `(x, y)`, reverse-
+    /// mapping the stored colour to the nearest CLUT entry (`v_get_pixel`,
+    /// `v_contourfill`). Out-of-bounds → `0`.
+    fn read_pixel(&self, x: i16, y: i16) -> Pel;
+
     /// Fill the rectangle `[x, x+w) × [y, y+h)` (device coordinates,
     /// origin top-left) with palette colour `pel`. The draw is clipped to
     /// `clip` ∩ the visible area; negative / oversized rectangles are
@@ -59,8 +64,11 @@ pub trait RasterBackend: Sync {
     /// Draw a one-pixel-wide line from `(x0, y0)` to `(x1, y1)` in
     /// palette colour `pel`, clipped to `[xmn, ymn]..=[xmx, ymx]`
     /// (inclusive device coordinates — the caller passes the workstation
-    /// clip rectangle). Endpoints are inclusive.
-    fn draw_line(&self, x0: i16, y0: i16, x1: i16, y1: i16, pel: Pel, clip: ClipRect);
+    /// clip rectangle). Endpoints are inclusive. `mask` is the 16-bit
+    /// dash pattern (`0xFFFF` = solid), consumed one bit per plotted step
+    /// and rotated, matching the VDI `LN_MASK`.
+    #[allow(clippy::too_many_arguments)]
+    fn draw_line(&self, x0: i16, y0: i16, x1: i16, y1: i16, pel: Pel, clip: ClipRect, mask: u16);
 
     /// Fill the rectangle `[x, x+w) × [y, y+h)` with the monochrome
     /// pattern in [`PatternFill`], expanded into colour. Clipped to

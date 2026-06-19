@@ -68,6 +68,15 @@ fn to_rgb8(c: u16) -> u8 {
     ((c.min(1000) as u32 * 255 + 500) / 1000) as u8
 }
 
+/// Squared RGB distance between two packed XRGB colours (for the
+/// reverse palette lookup in `read_pixel`).
+fn rgb_dist(a: u32, b: u32) -> u32 {
+    let dr = ((a >> 16) & 0xFF) as i32 - ((b >> 16) & 0xFF) as i32;
+    let dg = ((a >> 8) & 0xFF) as i32 - ((b >> 8) & 0xFF) as i32;
+    let db = (a & 0xFF) as i32 - (b & 0xFF) as i32;
+    (dr * dr + dg * dg + db * db) as u32
+}
+
 /// Initialise the palette from the GEM defaults on first use.
 fn ensure_palette_init() {
     if PALETTE[0].load(Ordering::Relaxed) != PAL_UNINIT {
@@ -150,6 +159,31 @@ impl RasterBackend for VdiScreen {
         (((req >> 20) & 0x3FF) as u16, ((req >> 10) & 0x3FF) as u16, (req & 0x3FF) as u16)
     }
 
+    fn read_pixel(&self, x: i16, y: i16) -> Pel {
+        let fb = active_fb();
+        if x < 0 || y < 0 || x as u32 >= fb.width() || y as u32 >= fb.height() {
+            return 0;
+        }
+        ensure_palette_init();
+        // SAFETY: (x,y) is within the framebuffer bounds checked above.
+        let packed = unsafe {
+            fb.pixels()
+                .add(y as usize * fb.stride_px() as usize + x as usize)
+                .read_volatile()
+        } & 0x00FF_FFFF;
+        // Reverse-map the XRGB value to the nearest palette index.
+        let mut best = 0u8;
+        let mut best_d = u32::MAX;
+        for (i, entry) in PALETTE.iter().enumerate() {
+            let d = rgb_dist(packed, entry.load(Ordering::Relaxed) & 0x00FF_FFFF);
+            if d < best_d {
+                best_d = d;
+                best = i as u8;
+            }
+        }
+        best
+    }
+
     fn fill_rect(&self, x: i16, y: i16, w: i16, h: i16, pel: Pel, clip: ClipRect) {
         let fb = active_fb();
         // Intersect the requested rectangle, the clip rectangle and the
@@ -167,11 +201,13 @@ impl RasterBackend for VdiScreen {
         Self::clean(fb, x0 as u32, y0 as u32, x1 as u32, y1 as u32);
     }
 
-    fn draw_line(&self, x0: i16, y0: i16, x1: i16, y1: i16, pel: Pel, clip: ClipRect) {
+    #[allow(clippy::too_many_arguments)]
+    fn draw_line(&self, x0: i16, y0: i16, x1: i16, y1: i16, pel: Pel, clip: ClipRect, mask: u16) {
         let fb = active_fb();
         let color = Self::pel_to_rgb(pel);
         // Bresenham; plot only pixels inside the inclusive clip rect (and
-        // the framebuffer, which `put_pixel` enforces too).
+        // the framebuffer, which `put_pixel` enforces too). `bit` walks
+        // the 16-bit dash mask from the MSB, one step per pixel.
         let (mut x, mut y) = (x0 as i32, y0 as i32);
         let (xe, ye) = (x1 as i32, y1 as i32);
         let dx = (xe - x).abs();
@@ -179,14 +215,17 @@ impl RasterBackend for VdiScreen {
         let sx = if x < xe { 1 } else { -1 };
         let sy = if y < ye { 1 } else { -1 };
         let mut err = dx + dy;
+        let mut bit: u32 = 0x8000;
         loop {
-            if x >= clip.xmn as i32
+            if mask as u32 & bit != 0
+                && x >= clip.xmn as i32
                 && x <= clip.xmx as i32
                 && y >= clip.ymn as i32
                 && y <= clip.ymx as i32
             {
                 fb.put_pixel(x as u32, y as u32, color);
             }
+            bit = if bit == 1 { 0x8000 } else { bit >> 1 };
             if x == xe && y == ye {
                 break;
             }
