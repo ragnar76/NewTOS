@@ -6,8 +6,58 @@
 //! are here (line/fill colour + fill interior); the rest land with the
 //! opcodes that consume them.
 
+use super::backend::RasterBackend;
 use super::vwk::{validate_color_index, Vwk};
 use super::Vdipb;
+
+/// Writing-mode bounds (1-based API), EmuTOS `vdi_control.c`.
+const MIN_WRT_MODE: i16 = 1;
+const MAX_WRT_MODE: i16 = 4;
+const DEF_WRT_MODE: i16 = 1; // replace
+
+/// Opcode 32 — `vswr_mode`: set the writing/raster mode. `INTIN[0]` is
+/// 1-based (1 replace, 2 transparent, 3 XOR, 4 reverse-transparent);
+/// stored 0-based in `wrt_mode`. Out-of-range defaults to replace.
+pub fn vswr_mode(pb: &Vdipb, vwk: &mut Vwk) {
+    let mut mode = pb.intin(0);
+    if !(MIN_WRT_MODE..=MAX_WRT_MODE).contains(&mode) {
+        mode = DEF_WRT_MODE;
+    }
+    vwk.wrt_mode = mode - 1;
+    pb.set_intout(0, mode);
+    pb.set_contrl(4, 1);
+}
+
+/// Opcode 129 — `vs_clip`: set the clipping rectangle. `INTIN[0]` is the
+/// enable flag; when set, `PTSIN[0..3]` give the rectangle (corners
+/// normalised, then intersected with the screen). When clear, the clip
+/// is reset to the full device. No output.
+pub fn vs_clip(pb: &Vdipb, vwk: &mut Vwk, backend: &dyn RasterBackend) {
+    let xres = backend.width() as i16 - 1;
+    let yres = backend.height() as i16 - 1;
+    vwk.clip = pb.intin(0) != 0;
+    if vwk.clip {
+        let mut x1 = pb.ptsin(0);
+        let mut y1 = pb.ptsin(1);
+        let mut x2 = pb.ptsin(2);
+        let mut y2 = pb.ptsin(3);
+        if x1 > x2 {
+            core::mem::swap(&mut x1, &mut x2);
+        }
+        if y1 > y2 {
+            core::mem::swap(&mut y1, &mut y2);
+        }
+        vwk.xmn_clip = x1.max(0);
+        vwk.ymn_clip = y1.max(0);
+        vwk.xmx_clip = x2.min(xres);
+        vwk.ymx_clip = y2.min(yres);
+    } else {
+        vwk.xmn_clip = 0;
+        vwk.ymn_clip = 0;
+        vwk.xmx_clip = xres;
+        vwk.ymx_clip = yres;
+    }
+}
 
 /// Opcode 17 — `vsl_color`: set the polyline colour.
 pub fn vsl_color(pb: &Vdipb, vwk: &mut Vwk, ncol: u16) {

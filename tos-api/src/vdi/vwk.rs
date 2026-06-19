@@ -13,7 +13,7 @@
 
 use core::cell::UnsafeCell;
 
-use super::backend::Pel;
+use super::backend::{ClipRect, Pel};
 
 /// Total VDI handles. Handle 1 is the physical workstation; 2..=16 are
 /// virtual. Index 0 is unused (handle 0 = "no/failed handle").
@@ -94,6 +94,18 @@ pub struct Vwk {
 }
 
 impl Vwk {
+    /// The workstation's clip rectangle as an inclusive [`ClipRect`]
+    /// (always valid: `init_wk` sets it to the full screen, `vs_clip`
+    /// updates it). Every drawing primitive passes this to the backend.
+    pub fn clip_rect(&self) -> ClipRect {
+        ClipRect {
+            xmn: self.xmn_clip,
+            ymn: self.ymn_clip,
+            xmx: self.xmx_clip,
+            ymx: self.ymx_clip,
+        }
+    }
+
     /// An empty (free) slot.
     pub const EMPTY: Vwk = Vwk {
         handle: 0,

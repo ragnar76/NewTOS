@@ -151,7 +151,7 @@ pub unsafe fn dispatch(vdipb_ptr: u64) {
         3 if open_handle(&pb).is_some() => workstation::v_clrwk(backend),
 
         // ── attribute setters + output primitives (need the vwk) ──
-        6 | 8 | 17 | 22 | 23 | 24 | 25 | 39 | 109 | 112 | 114 | 121 => {
+        6 | 8 | 17 | 22 | 23 | 24 | 25 | 32 | 39 | 109 | 112 | 114 | 121 | 129 => {
             // SAFETY: single trap path.
             if let Some(vwk) = unsafe { vwk::resolve(pb.contrl(C_HANDLE)) } {
                 let ncol = backend.num_colors();
@@ -161,13 +161,15 @@ pub unsafe fn dispatch(vdipb_ptr: u64) {
                     22 => attributes::vst_color(&pb, vwk, ncol),
                     23 => attributes::vsf_interior(&pb, vwk),
                     24 => attributes::vsf_style(&pb, vwk),
+                    32 => attributes::vswr_mode(&pb, vwk),
                     39 => attributes::vst_alignment(&pb, vwk),
                     112 => attributes::vsf_udpat(&pb, vwk),
+                    129 => attributes::vs_clip(&pb, vwk, backend),
                     6 => primitives::v_pline(&pb, vwk, backend),
                     8 => text::v_gtext(&pb, vwk, backend),
                     114 => primitives::vr_recfl(&pb, vwk, backend),
                     121 => raster::vrt_cpyfm(&pb, vwk, backend, ncol),
-                    109 => raster::vro_cpyfm(&pb, backend),
+                    109 => raster::vro_cpyfm(&pb, vwk, backend),
                     _ => unreachable!(),
                 }
             }

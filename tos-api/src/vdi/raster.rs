@@ -104,20 +104,20 @@ pub fn vrt_cpyfm(pb: &Vdipb, vwk: &Vwk, backend: &dyn RasterBackend, ncol: u16) 
     let words = (src.h as usize) * (src.wdwidth as usize);
     let bits = unsafe { core::slice::from_raw_parts(src.addr as *const u16, words) };
 
-    let _ = vwk; // clip handled by the backend against the screen
     backend.blit_mono(
         Rect { x: d.x, y: d.y, w: s.w, h: s.h },
         MonoSrc { bits, stride_words: src.wdwidth as u16, x: s.x, y: s.y },
         fg,
         bg,
         opaque,
+        vwk.clip_rect(),
     );
 }
 
 /// Opcode 109 — `vro_cpyfm`: opaque copy. Bring-up handles the
 /// screen-to-screen case (both MFDBs are the screen) with the BitBlt
 /// logic op in `INTIN[0]`.
-pub fn vro_cpyfm(pb: &Vdipb, backend: &dyn RasterBackend) {
+pub fn vro_cpyfm(pb: &Vdipb, vwk: &Vwk, backend: &dyn RasterBackend) {
     // SAFETY: native MFDB-pointer convention (see module docs).
     let (src, dst) = unsafe {
         (Mfdb::from_ptr(pb.contrl_u64(7)), Mfdb::from_ptr(pb.contrl_u64(11)))
@@ -131,5 +131,5 @@ pub fn vro_cpyfm(pb: &Vdipb, backend: &dyn RasterBackend) {
     }
     let s = rect_from_ptsin(pb, 0);
     let d = rect_from_ptsin(pb, 4);
-    backend.copy_rect(s, d.x, d.y, mode as u8);
+    backend.copy_rect(s, d.x, d.y, mode as u8, vwk.clip_rect());
 }

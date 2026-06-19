@@ -42,10 +42,11 @@ pub fn v_gtext(pb: &Vdipb, vwk: &Vwk, backend: &dyn RasterBackend) {
         _ => y,                       // top of cell (5)
     };
 
+    let clip = vwk.clip_rect();
     let mut cx = start_x;
     for i in 0..count as usize {
         let code = pb.intin(i) as u16;
-        backend.draw_glyph(cx, top_y, font::glyph(code), vwk.text_color);
+        backend.draw_glyph(cx, top_y, font::glyph(code), vwk.text_color, clip);
         cx += font::CELL_W;
     }
 }

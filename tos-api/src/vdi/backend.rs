@@ -41,9 +41,10 @@ pub trait RasterBackend: Sync {
     fn num_colors(&self) -> u16;
 
     /// Fill the rectangle `[x, x+w) × [y, y+h)` (device coordinates,
-    /// origin top-left) with palette colour `pel`. Implementations clip
-    /// to the visible area; negative / oversized rectangles are clamped.
-    fn fill_rect(&self, x: i16, y: i16, w: i16, h: i16, pel: Pel);
+    /// origin top-left) with palette colour `pel`. The draw is clipped to
+    /// `clip` ∩ the visible area; negative / oversized rectangles are
+    /// clamped.
+    fn fill_rect(&self, x: i16, y: i16, w: i16, h: i16, pel: Pel, clip: ClipRect);
 
     /// Draw a one-pixel-wide line from `(x0, y0)` to `(x1, y1)` in
     /// palette colour `pel`, clipped to `[xmn, ymn]..=[xmx, ymx]`
@@ -52,25 +53,26 @@ pub trait RasterBackend: Sync {
     fn draw_line(&self, x0: i16, y0: i16, x1: i16, y1: i16, pel: Pel, clip: ClipRect);
 
     /// Fill the rectangle `[x, x+w) × [y, y+h)` with the monochrome
-    /// pattern in [`PatternFill`], expanded into colour. Clipped to the
-    /// visible area.
-    fn fill_pattern(&self, x: i16, y: i16, w: i16, h: i16, fill: PatternFill);
+    /// pattern in [`PatternFill`], expanded into colour. Clipped to
+    /// `clip` ∩ the visible area.
+    fn fill_pattern(&self, x: i16, y: i16, w: i16, h: i16, fill: PatternFill, clip: ClipRect);
 
     /// Blit an 8-wide × 16-tall monochrome glyph with its top-left at
     /// `(x, y)` in colour `fg`. Bit 7 (`0x80`) of each byte is the
     /// leftmost pixel; only set bits are drawn (transparent). Clipped to
-    /// the visible area.
-    fn draw_glyph(&self, x: i16, y: i16, glyph: &[u8; 16], fg: Pel);
+    /// `clip` ∩ the visible area.
+    fn draw_glyph(&self, x: i16, y: i16, glyph: &[u8; 16], fg: Pel, clip: ClipRect);
 
     /// Blit a monochrome source ([`MonoSrc`]) into the screen rectangle
     /// `dst`, expanding set bits to `fg` and (when `opaque`) clear bits
-    /// to `bg` (`vrt_cpyfm`). Clipped to the visible area.
-    fn blit_mono(&self, dst: Rect, src: MonoSrc, fg: Pel, bg: Pel, opaque: bool);
+    /// to `bg` (`vrt_cpyfm`). Clipped to `clip` ∩ the visible area.
+    fn blit_mono(&self, dst: Rect, src: MonoSrc, fg: Pel, bg: Pel, opaque: bool, clip: ClipRect);
 
     /// Copy a screen rectangle `src` to the screen position `(dx, dy)`
     /// using BitBlt logic op `op` (3 = replace, 6 = XOR) — the
-    /// screen-to-screen case of `vro_cpyfm`. Clipped to the visible area.
-    fn copy_rect(&self, src: Rect, dx: i16, dy: i16, op: u8);
+    /// screen-to-screen case of `vro_cpyfm`. The destination write is
+    /// clipped to `clip` ∩ the visible area.
+    fn copy_rect(&self, src: Rect, dx: i16, dy: i16, op: u8, clip: ClipRect);
 }
 
 /// A rectangle in device coordinates (top-left + size).
@@ -134,4 +136,32 @@ pub struct ClipRect {
     pub xmx: i16,
     /// Bottom edge (inclusive).
     pub ymx: i16,
+}
+
+impl ClipRect {
+    /// The clip rectangle covering the whole `w × h` device.
+    pub fn full(w: u16, h: u16) -> ClipRect {
+        ClipRect {
+            xmn: 0,
+            ymn: 0,
+            xmx: w.saturating_sub(1) as i16,
+            ymx: h.saturating_sub(1) as i16,
+        }
+    }
+
+    /// Intersect with the device bounds `w × h`, returning the inclusive
+    /// pixel rectangle `(x0, y0, x1, y1)` to draw into, or `None` if the
+    /// result is empty. The backend calls this to honour both the
+    /// workstation clip and the screen edges in one step.
+    pub fn clamp_to(&self, w: u16, h: u16) -> Option<(i32, i32, i32, i32)> {
+        let x0 = (self.xmn as i32).max(0);
+        let y0 = (self.ymn as i32).max(0);
+        let x1 = (self.xmx as i32).min(w as i32 - 1);
+        let y1 = (self.ymx as i32).min(h as i32 - 1);
+        if x0 <= x1 && y0 <= y1 {
+            Some((x0, y0, x1, y1))
+        } else {
+            None
+        }
+    }
 }

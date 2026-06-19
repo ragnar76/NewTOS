@@ -12,10 +12,17 @@
 
 use core::sync::atomic::{AtomicBool, AtomicI16, Ordering};
 
-use tos_api::vdi::backend::{RasterBackend, Rect};
+use tos_api::vdi::backend::{ClipRect, RasterBackend, Rect};
 use tos_api::vdi::font;
 
 use crate::vdi_backend::{self, VDI_SCREEN};
+
+/// The console draws to the whole screen, so every primitive uses the
+/// full-device clip rectangle.
+fn full_clip() -> ClipRect {
+    let (w, h) = vdi_backend::dims();
+    ClipRect::full(w, h)
+}
 
 const CELL_W: i16 = 8;
 const CELL_H: i16 = 16;
@@ -41,7 +48,7 @@ pub fn activate() {
         return;
     }
     let (w, h) = vdi_backend::dims();
-    VDI_SCREEN.fill_rect(0, 0, w as i16, h as i16, BG);
+    VDI_SCREEN.fill_rect(0, 0, w as i16, h as i16, BG, full_clip());
     COL.store(0, Ordering::Relaxed);
     ROW.store(0, Ordering::Relaxed);
     ACTIVE.store(true, Ordering::Relaxed);
@@ -95,8 +102,9 @@ fn newline() {
 fn put_glyph(b: u8) {
     let (col, row) = (COL.load(Ordering::Relaxed), ROW.load(Ordering::Relaxed));
     let (x, y) = (col * CELL_W, row * CELL_H);
-    VDI_SCREEN.fill_rect(x, y, CELL_W, CELL_H, BG);
-    VDI_SCREEN.draw_glyph(x, y, font::glyph(b as u16), FG);
+    let clip = full_clip();
+    VDI_SCREEN.fill_rect(x, y, CELL_W, CELL_H, BG, clip);
+    VDI_SCREEN.draw_glyph(x, y, font::glyph(b as u16), FG, clip);
     let nc = col + 1;
     if nc >= cols() {
         newline();
@@ -106,13 +114,14 @@ fn put_glyph(b: u8) {
 }
 
 fn cell_clear(col: i16, row: i16) {
-    VDI_SCREEN.fill_rect(col * CELL_W, row * CELL_H, CELL_W, CELL_H, BG);
+    VDI_SCREEN.fill_rect(col * CELL_W, row * CELL_H, CELL_W, CELL_H, BG, full_clip());
 }
 
 fn scroll() {
     let (w, h) = vdi_backend::dims();
     let (w, h) = (w as i16, h as i16);
+    let clip = full_clip();
     // Move everything below the top line up by one cell, clear the gap.
-    VDI_SCREEN.copy_rect(Rect { x: 0, y: CELL_H, w, h: h - CELL_H }, 0, 0, 0);
-    VDI_SCREEN.fill_rect(0, h - CELL_H, w, CELL_H, BG);
+    VDI_SCREEN.copy_rect(Rect { x: 0, y: CELL_H, w, h: h - CELL_H }, 0, 0, 0, clip);
+    VDI_SCREEN.fill_rect(0, h - CELL_H, w, CELL_H, BG, clip);
 }

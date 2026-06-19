@@ -73,16 +73,6 @@ impl VdiScreen {
         unsafe { crate::arch::aarch64::mmu::clean_dcache_range(start, end - start) };
     }
 
-    /// Clean the rectangle `(x, y, w, h)` clamped to the visible area.
-    fn clean_clamped(fb: &dyn Framebuffer, x: i16, y: i16, w: i16, h: i16) {
-        let x0 = (x as i32).max(0);
-        let y0 = (y as i32).max(0);
-        let x1 = ((x as i32) + (w as i32) - 1).min(fb.width() as i32 - 1);
-        let y1 = ((y as i32) + (h as i32) - 1).min(fb.height() as i32 - 1);
-        if x0 <= x1 && y0 <= y1 {
-            Self::clean(fb, x0 as u32, y0 as u32, x1 as u32, y1 as u32);
-        }
-    }
 }
 
 impl RasterBackend for VdiScreen {
@@ -98,25 +88,21 @@ impl RasterBackend for VdiScreen {
         NUM_COLORS
     }
 
-    fn fill_rect(&self, x: i16, y: i16, w: i16, h: i16, pel: Pel) {
-        // Clamp the top-left into the visible area, shrinking the extent
-        // accordingly; the framebuffer clips the far edges itself.
-        let x0 = x.max(0) as u32;
-        let y0 = y.max(0) as u32;
-        let cut_x = (x0 as i32 - x as i32) as i16; // pixels trimmed on the left
-        let cut_y = (y0 as i32 - y as i32) as i16;
-        let w = (w - cut_x).max(0) as u32;
-        let h = (h - cut_y).max(0) as u32;
-        if w == 0 || h == 0 {
-            return;
-        }
+    fn fill_rect(&self, x: i16, y: i16, w: i16, h: i16, pel: Pel, clip: ClipRect) {
         let fb = active_fb();
-        fb.fill_rect(x0, y0, w, h, Self::pel_to_rgb(pel));
-        // Clamp the cleaned rectangle to the visible area (fill_rect
-        // already clipped the draw).
-        let x1 = (x0 + w - 1).min(fb.width().saturating_sub(1));
-        let y1 = (y0 + h - 1).min(fb.height().saturating_sub(1));
-        Self::clean(fb, x0, y0, x1, y1);
+        // Intersect the requested rectangle, the clip rectangle and the
+        // screen into one inclusive device rectangle.
+        let rect = ClipRect {
+            xmn: x.max(clip.xmn),
+            ymn: y.max(clip.ymn),
+            xmx: ((x as i32 + w as i32 - 1) as i16).min(clip.xmx),
+            ymx: ((y as i32 + h as i32 - 1) as i16).min(clip.ymx),
+        };
+        let Some((x0, y0, x1, y1)) = rect.clamp_to(fb.width() as u16, fb.height() as u16) else {
+            return;
+        };
+        fb.fill_rect(x0 as u32, y0 as u32, (x1 - x0 + 1) as u32, (y1 - y0 + 1) as u32, Self::pel_to_rgb(pel));
+        Self::clean(fb, x0 as u32, y0 as u32, x1 as u32, y1 as u32);
     }
 
     fn draw_line(&self, x0: i16, y0: i16, x1: i16, y1: i16, pel: Pel, clip: ClipRect) {
@@ -162,21 +148,22 @@ impl RasterBackend for VdiScreen {
         Self::clean(fb, xlo, ylo, xhi, yhi);
     }
 
-    fn fill_pattern(&self, x: i16, y: i16, w: i16, h: i16, fill: PatternFill) {
+    fn fill_pattern(&self, x: i16, y: i16, w: i16, h: i16, fill: PatternFill, clip: ClipRect) {
         if fill.pattern.is_empty() {
             return;
         }
         let fb = active_fb();
-        let scr_w = fb.width() as i32;
-        let scr_h = fb.height() as i32;
-        // Inclusive device rectangle, clamped to the visible area.
-        let x0 = (x as i32).max(0);
-        let y0 = (y as i32).max(0);
-        let x1 = ((x as i32) + (w as i32) - 1).min(scr_w - 1);
-        let y1 = ((y as i32) + (h as i32) - 1).min(scr_h - 1);
-        if x0 > x1 || y0 > y1 {
+        // Intersect the requested rectangle, the clip rectangle and the
+        // screen into one inclusive device rectangle.
+        let rect = ClipRect {
+            xmn: x.max(clip.xmn),
+            ymn: y.max(clip.ymn),
+            xmx: ((x as i32 + w as i32 - 1) as i16).min(clip.xmx),
+            ymx: ((y as i32 + h as i32 - 1) as i16).min(clip.ymx),
+        };
+        let Some((x0, y0, x1, y1)) = rect.clamp_to(fb.width() as u16, fb.height() as u16) else {
             return;
-        }
+        };
         let pmask = fill.pattern.len() - 1; // pattern len is a power of two
         let fg_rgb = Self::pel_to_rgb(fill.fg);
         let bg_rgb = Self::pel_to_rgb(fill.bg);
@@ -194,91 +181,96 @@ impl RasterBackend for VdiScreen {
         Self::clean(fb, x0 as u32, y0 as u32, x1 as u32, y1 as u32);
     }
 
-    fn draw_glyph(&self, x: i16, y: i16, glyph: &[u8; 16], fg: Pel) {
+    fn draw_glyph(&self, x: i16, y: i16, glyph: &[u8; 16], fg: Pel, clip: ClipRect) {
         let fb = active_fb();
-        let scr_w = fb.width() as i32;
-        let scr_h = fb.height() as i32;
+        // The 8×16 cell intersected with the clip rectangle and the
+        // screen — only pixels inside this inclusive box are touched.
+        let cell = ClipRect {
+            xmn: x.max(clip.xmn),
+            ymn: y.max(clip.ymn),
+            xmx: ((x as i32 + 7) as i16).min(clip.xmx),
+            ymx: ((y as i32 + 15) as i16).min(clip.ymx),
+        };
+        let Some((x0, y0, x1, y1)) = cell.clamp_to(fb.width() as u16, fb.height() as u16) else {
+            return;
+        };
         let fg_rgb = Self::pel_to_rgb(fg);
-        for (row, &bits) in glyph.iter().enumerate() {
-            let yy = y as i32 + row as i32;
-            if yy < 0 || yy >= scr_h {
-                continue;
-            }
-            for col in 0..8i32 {
+        for yy in y0..=y1 {
+            let bits = glyph[(yy - y as i32) as usize];
+            for xx in x0..=x1 {
+                let col = xx - x as i32; // 0..=7 within the cell
                 if bits & (0x80u8 >> col) != 0 {
-                    let xx = x as i32 + col;
-                    if xx >= 0 && xx < scr_w {
-                        fb.put_pixel(xx as u32, yy as u32, fg_rgb);
-                    }
+                    fb.put_pixel(xx as u32, yy as u32, fg_rgb);
                 }
             }
         }
-        // Clean the 8×16 cell (clamped to the screen) to PoC.
-        let x0 = (x as i32).max(0);
-        let y0 = (y as i32).max(0);
-        let x1 = ((x as i32) + 7).min(scr_w - 1);
-        let y1 = ((y as i32) + 15).min(scr_h - 1);
-        if x0 <= x1 && y0 <= y1 {
-            Self::clean(fb, x0 as u32, y0 as u32, x1 as u32, y1 as u32);
-        }
+        Self::clean(fb, x0 as u32, y0 as u32, x1 as u32, y1 as u32);
     }
 
-    fn blit_mono(&self, dst: Rect, src: MonoSrc, fg: Pel, bg: Pel, opaque: bool) {
+    fn blit_mono(&self, dst: Rect, src: MonoSrc, fg: Pel, bg: Pel, opaque: bool, clip: ClipRect) {
         let fb = active_fb();
-        let scr_w = fb.width() as i32;
-        let scr_h = fb.height() as i32;
+        // Destination box ∩ clip ∩ screen.
+        let box_ = ClipRect {
+            xmn: dst.x.max(clip.xmn),
+            ymn: dst.y.max(clip.ymn),
+            xmx: ((dst.x as i32 + dst.w as i32 - 1) as i16).min(clip.xmx),
+            ymx: ((dst.y as i32 + dst.h as i32 - 1) as i16).min(clip.ymx),
+        };
+        let Some((x0, y0, x1, y1)) = box_.clamp_to(fb.width() as u16, fb.height() as u16) else {
+            return;
+        };
         let fg_rgb = Self::pel_to_rgb(fg);
         let bg_rgb = Self::pel_to_rgb(bg);
         let stride = src.stride_words as usize;
-        for r in 0..dst.h as i32 {
-            let dy = dst.y as i32 + r;
-            if dy < 0 || dy >= scr_h {
-                continue;
-            }
-            let sy = src.y as i32 + r;
-            for c in 0..dst.w as i32 {
-                let dx = dst.x as i32 + c;
-                if dx < 0 || dx >= scr_w {
-                    continue;
-                }
-                let sx = src.x as i32 + c;
+        for dyc in y0..=y1 {
+            let sy = src.y as i32 + (dyc - dst.y as i32);
+            for dxc in x0..=x1 {
+                let sx = src.x as i32 + (dxc - dst.x as i32);
                 let widx = sy as usize * stride + (sx as usize) / 16;
                 let set = src
                     .bits
                     .get(widx)
                     .is_some_and(|w| w & (0x8000u16 >> (sx & 15)) != 0);
                 if set {
-                    fb.put_pixel(dx as u32, dy as u32, fg_rgb);
+                    fb.put_pixel(dxc as u32, dyc as u32, fg_rgb);
                 } else if opaque {
-                    fb.put_pixel(dx as u32, dy as u32, bg_rgb);
+                    fb.put_pixel(dxc as u32, dyc as u32, bg_rgb);
                 }
             }
         }
-        Self::clean_clamped(fb, dst.x, dst.y, dst.w, dst.h);
+        Self::clean(fb, x0 as u32, y0 as u32, x1 as u32, y1 as u32);
     }
 
-    fn copy_rect(&self, src: Rect, dx: i16, dy: i16, op: u8) {
+    fn copy_rect(&self, src: Rect, dx: i16, dy: i16, op: u8, clip: ClipRect) {
         let fb = active_fb();
         let scr_w = fb.width() as i32;
         let scr_h = fb.height() as i32;
         let stride = fb.stride_px() as usize;
         let base = fb.pixels();
         let (w, h) = (src.w as i32, src.h as i32);
+        // The destination write is clipped; the source offset follows it.
+        let dbox = ClipRect {
+            xmn: dx.max(clip.xmn),
+            ymn: dy.max(clip.ymn),
+            xmx: ((dx as i32 + w - 1) as i16).min(clip.xmx),
+            ymx: ((dy as i32 + h - 1) as i16).min(clip.ymx),
+        };
+        let Some((tx0, ty0, tx1, ty1)) = dbox.clamp_to(scr_w as u16, scr_h as u16) else {
+            return;
+        };
         // Choose copy direction so overlapping moves don't corrupt.
         let down = dy as i32 > src.y as i32;
         let right = dx as i32 > src.x as i32;
-        for ri in 0..h {
-            let r = if down { h - 1 - ri } else { ri };
-            let sy = src.y as i32 + r;
-            let ty = dy as i32 + r;
-            if sy < 0 || sy >= scr_h || ty < 0 || ty >= scr_h {
+        for ri in 0..=(ty1 - ty0) {
+            let ty = if down { ty1 - ri } else { ty0 + ri };
+            let sy = src.y as i32 + (ty - dy as i32);
+            if sy < 0 || sy >= scr_h {
                 continue;
             }
-            for ci in 0..w {
-                let c = if right { w - 1 - ci } else { ci };
-                let sx = src.x as i32 + c;
-                let tx = dx as i32 + c;
-                if sx < 0 || sx >= scr_w || tx < 0 || tx >= scr_w {
+            for ci in 0..=(tx1 - tx0) {
+                let tx = if right { tx1 - ci } else { tx0 + ci };
+                let sx = src.x as i32 + (tx - dx as i32);
+                if sx < 0 || sx >= scr_w {
                     continue;
                 }
                 // SAFETY: indices are within the framebuffer bounds.
@@ -290,7 +282,7 @@ impl RasterBackend for VdiScreen {
                 }
             }
         }
-        Self::clean_clamped(fb, dx, dy, src.w, src.h);
+        Self::clean(fb, tx0 as u32, ty0 as u32, tx1 as u32, ty1 as u32);
     }
 }
 

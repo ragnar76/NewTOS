@@ -9,7 +9,7 @@
 //! (`vdi/vdi_control.c`), patched at runtime with the real screen
 //! geometry and colour count from the [`RasterBackend`].
 
-use super::backend::RasterBackend;
+use super::backend::{ClipRect, RasterBackend};
 use super::vwk::{self, validate_color_index, Vwk};
 use super::Vdipb;
 
@@ -130,5 +130,6 @@ pub fn v_clsvwk(handle: i16) {
 /// Opcode 3 — clear the workstation (fill the screen with the
 /// background colour, PEL 0).
 pub fn v_clrwk(backend: &dyn RasterBackend) {
-    backend.fill_rect(0, 0, backend.width() as i16, backend.height() as i16, 0);
+    let (w, h) = (backend.width(), backend.height());
+    backend.fill_rect(0, 0, w as i16, h as i16, 0, ClipRect::full(w, h));
 }
