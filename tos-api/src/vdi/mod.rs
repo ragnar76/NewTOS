@@ -28,6 +28,7 @@ mod font_data;
 mod gdp;
 mod input;
 mod inquiry;
+mod mouse;
 mod primitives;
 mod raster;
 mod text;
@@ -91,6 +92,14 @@ impl Vdipb {
     pub fn set_contrl(&self, i: usize, v: i16) {
         // SAFETY: see `contrl`.
         unsafe { self.contrl.add(i).write(v) }
+    }
+    /// Write a native 64-bit pointer into four consecutive CONTRL WORDs
+    /// (the inverse of [`contrl_u64`](Self::contrl_u64); used to return
+    /// the previous routine pointer from the `vex_*` calls).
+    #[inline]
+    pub fn set_contrl_u64(&self, i: usize, v: u64) {
+        // SAFETY: callers ensure CONTRL has ≥ i+4 WORDs.
+        unsafe { (self.contrl.add(i) as *mut u64).write_unaligned(v) }
     }
     #[inline]
     pub fn intin(&self, i: usize) -> i16 {
@@ -157,8 +166,9 @@ pub unsafe fn dispatch(vdipb_ptr: u64) {
 
         // ── attribute setters + output primitives (need the vwk) ──
         6 | 7 | 8 | 9 | 11 | 12 | 13 | 14 | 15 | 16 | 17 | 18 | 19 | 20 | 21 | 22 | 23 | 24 | 25
-        | 26 | 32 | 33 | 35 | 36 | 37 | 38 | 39 | 103 | 104 | 105 | 106 | 107 | 108 | 109 | 112
-        | 110 | 113 | 114 | 115 | 116 | 117 | 121 | 128 | 129 | 130 | 131 => {
+        | 26 | 28 | 30 | 31 | 32 | 33 | 35 | 36 | 37 | 38 | 39 | 103 | 104 | 105 | 106 | 107 | 108
+        | 109 | 110 | 111 | 112 | 113 | 114 | 115 | 116 | 117 | 118 | 121 | 122 | 123 | 124 | 125
+        | 126 | 127 | 128 | 129 | 130 | 131 | 134 => {
             // SAFETY: single trap path.
             if let Some(vwk) = unsafe { vwk::resolve(pb.contrl(C_HANDLE)) } {
                 let ncol = backend.num_colors();
@@ -201,6 +211,19 @@ pub unsafe fn dispatch(vdipb_ptr: u64) {
                     105 => inquiry::v_get_pixel(&pb, backend),
                     33 => input::vsin_mode(&pb),
                     115 => input::vqin_mode(&pb),
+                    28 => input::v_locator(&pb),
+                    30 => input::v_choice(&pb),
+                    31 => input::v_string(&pb),
+                    // ── mouse cursor + exchange vectors ──
+                    111 => mouse::vsc_form(&pb, backend),
+                    122 => mouse::v_show_c(&pb, backend),
+                    123 => mouse::v_hide_c(backend),
+                    124 => mouse::vq_mouse(&pb),
+                    118 => mouse::vex_timv(&pb),
+                    125 => mouse::vex_butv(&pb),
+                    126 => mouse::vex_motv(&pb),
+                    127 => mouse::vex_curv(&pb),
+                    134 => mouse::vex_wheelv(&pb),
                     116 => inquiry::vqt_extent(&pb, vwk),
                     117 => inquiry::vqt_width(&pb, vwk),
                     128 => inquiry::vq_key_s(&pb),
