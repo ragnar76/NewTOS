@@ -45,6 +45,7 @@ pub mod bench;
 pub mod fbcon;
 pub mod ikbd;
 pub mod shell;
+pub mod selftest_aes;
 pub mod selftest_ikbd;
 pub mod selftest_vdi;
 pub mod selftest_fbcon;
@@ -270,7 +271,8 @@ extern "C" fn kernel_main_rust(dtb_phys: usize) -> ! {
     // boot — the system goes straight to the console. They remain in the
     // `selftest*` modules and can be re-enabled here when debugging
     // (e.g. `selftest_vdi::run_phase12_vdi_demo()` draws the Phase-12
-    // drawing-surface demo verified by QMP screendump).
+    // drawing-surface demo verified by QMP screendump, or
+    // `selftest_aes::run_phase13_aes_test()` for the AES lifecycle).
 
     // Keep the initinfo boot screen visible for a few seconds before the
     // console takes over (EmuTOS shows its boot screen the same way).

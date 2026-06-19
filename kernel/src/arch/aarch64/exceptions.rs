@@ -265,12 +265,16 @@ pub extern "C" fn rust_sync_handler(frame: &mut ExceptionFrame) {
     // extended `Long`, but BIOS `Getbpb` returns a native 64-bit pointer.
     let result: i64 = match class {
         TrapClass::Gemdos => tos_api::gemdos::dispatch(&args) as i64,
-        // VDI (Trap #2): a parameter-block call — `x0` holds the VDIPB
-        // pointer and there is no register return value. Run the
-        // dispatcher and leave `x0 = 0`.
-        TrapClass::Vdi => {
-            // SAFETY: `x0` is the caller-supplied VDI parameter block.
-            unsafe { tos_api::vdi::dispatch(args.regs[0]) };
+        // GEM trap (#2): shared by the VDI and the AES. `x0` is the
+        // selector (115 = VDI, 200 = AES), `x1` the parameter block.
+        // Neither returns a value in a register, so leave `x0 = 0`.
+        TrapClass::Gem => {
+            match args.regs[0] {
+                // SAFETY: `x1` is the caller-supplied parameter block.
+                115 => unsafe { tos_api::vdi::dispatch(args.regs[1]) },
+                200 => unsafe { tos_api::aes::dispatch(args.regs[1]) },
+                _ => {} // unknown selector → no-op (GEM trap is trusted)
+            }
             0
         }
         // BIOS (Trap 13): block-device + console functions.

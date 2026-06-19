@@ -67,9 +67,15 @@ impl Vdi {
             self.ptsout.as_mut_ptr() as u64,
         ];
         let pb = block.as_ptr() as u64;
-        // SAFETY: svc #2 with a valid VDI parameter block in x0.
+        // SAFETY: GEM trap (svc #2) with selector 115 (VDI) in x0 and the
+        // parameter block in x1.
         unsafe {
-            core::arch::asm!("svc #2", inout("x0") pb => _, options(nostack));
+            core::arch::asm!(
+                "svc #2",
+                inout("x0") 115u64 => _,
+                in("x1") pb,
+                options(nostack),
+            );
         }
     }
 

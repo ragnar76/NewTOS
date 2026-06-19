@@ -8,13 +8,18 @@
 
 use crate::kprintln;
 
-/// Issue a VDI call: `svc #2` with the parameter-block pointer in `x0`.
+/// Issue a VDI call: the GEM trap (`svc #2`) with selector 115 (VDI) in
+/// `x0` and the parameter-block pointer in `x1`.
 #[inline(always)]
 fn vdi(pb_ptr: u64) {
-    // SAFETY: svc #2 with a valid VDI parameter block in x0; the VDI
-    // returns nothing in a register (x0 is clobbered by the handler).
+    // SAFETY: GEM trap; the VDI returns nothing in a register.
     unsafe {
-        core::arch::asm!("svc #2", inout("x0") pb_ptr => _, options(nostack));
+        core::arch::asm!(
+            "svc #2",
+            inout("x0") 115u64 => _,
+            in("x1") pb_ptr,
+            options(nostack),
+        );
     }
 }
 
