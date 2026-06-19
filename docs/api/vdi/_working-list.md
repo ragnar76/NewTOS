@@ -132,6 +132,35 @@ no canned values.
 D2–D6 (all ~70 opcodes). Per-function semantics extracted from EmuTOS
 `1a7484ab`; ready for Phase-12 implementation against `docs/api/vdi/`.
 
+---
+
+## Implementation status (Phase 12) — COMPLETE
+
+Every functional opcode is implemented in `tos-api/src/vdi/` and routed
+in `mod.rs`; only the genuine VDI no-ops remain unrouted (`v_updwk` 4,
+`v_cellarray` 10/27, `v_valuator` 29, `vqt_justified` 132,
+`vs_grayoverride` 133). Verified end-to-end via the `svc #2` trap path
+(QMP screendump, 8/8 pixel checks).
+
+| Area | Opcodes | Module |
+|------|---------|--------|
+| Workstation | 1,2,3,100,101,102 | `workstation.rs` |
+| Attributes | 12–25,32,39,104,106–108,112,113,129 | `attributes.rs` |
+| Palette | 14 (+ vq_color 26) | `attributes`/`inquiry` + backend |
+| Output | 6,7,8,9,11(GDP),114 | `primitives.rs`, `gdp.rs`, `text.rs` |
+| Curves | GDP 2–9 (circle/ellipse/arc/pie/rbox) | `gdp.rs` + `trig.rs` |
+| Flood fill | 103 | `contour.rs` |
+| Inquiry | 26,35–38,105,115–117,128,130,131 | `inquiry.rs` |
+| Raster | 109,110,121 | `raster.rs` |
+| Mouse/input | 28,30,31,33,111,118,122–127,134 | `mouse.rs`, `input.rs` |
+| Escape (alpha) | 5 (sub 0–19) | `escape.rs` |
+| Text effects | thicken/light/skew/underline in v_gtext | `text.rs` |
+
+**Documented bring-up limitations** (not stubs): mouse position/buttons
+are parked until the IKBD mouse driver feeds `mouse::set_state`;
+`v_hardcopy` is a no-op (no printer); a single fixed 8×16 face, so the
+font-metric calls report its real metrics; Truecolor/Bezier out of scope.
+
 ## Build-config scope (TBD-ADR, matches the Phase-00 profile)
 
 - `CONF_WITH_VDI_16BIT` (Truecolor) — **out** for bring-up (8-bit /
