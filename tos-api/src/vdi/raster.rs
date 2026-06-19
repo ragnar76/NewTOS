@@ -133,3 +133,95 @@ pub fn vro_cpyfm(pb: &Vdipb, vwk: &Vwk, backend: &dyn RasterBackend) {
     let d = rect_from_ptsin(pb, 4);
     backend.copy_rect(s, d.x, d.y, mode as u8, vwk.clip_rect());
 }
+
+/// Opcode 110 — `vr_trnfm`: transform a bitmap between **standard**
+/// (plane-sequential, machine-independent) and **device-dependent**
+/// (word-interleaved) form. The destination's `fd_stand` is forced to
+/// the opposite of the source's; works in place when the addresses
+/// coincide. Faithful port of EmuTOS `vdi_vr_trnfm` (`vdi_raster.c`).
+pub fn vr_trnfm(pb: &Vdipb) {
+    // SAFETY: native MFDB-pointer convention (see module docs).
+    let src = unsafe { Mfdb::from_ptr(pb.contrl_u64(7)) };
+    let dst_ptr = pb.contrl_u64(11);
+    if src.addr == 0 || dst_ptr == 0 {
+        return;
+    }
+    // SAFETY: dst MFDB layout matches Mfdb (addr@0, …, stand@14).
+    let dst = unsafe { Mfdb::from_ptr(dst_ptr) };
+    if dst.addr == 0 {
+        return;
+    }
+
+    let planes = src.nplanes.max(0) as usize;
+    let size = (src.h as usize) * (src.wdwidth as usize); // words per plane
+    if planes == 0 || size == 0 {
+        return;
+    }
+    let (outer, inner) = if src.stand != 0 {
+        (planes, size) // standard → device
+    } else {
+        (size, planes) // device → standard
+    };
+
+    let s = src.addr as *const u16;
+    let d = dst.addr as *mut u16;
+    let inplace = src.addr == dst.addr;
+
+    // Force the destination form opposite to the source (offset 14 = fd_stand).
+    let new_stand: i16 = if src.stand != 0 { 0 } else { 1 };
+    // SAFETY: dst MFDB is valid; fd_stand is the WORD at byte offset 14.
+    unsafe { ((dst_ptr as *mut u8).add(14) as *mut i16).write_unaligned(new_stand) };
+
+    if !inplace {
+        // Simple transpose: read the source linearly, scatter into the
+        // destination with stride `outer`.
+        // SAFETY: both buffers hold `size*planes` words (MFDB geometry).
+        unsafe {
+            let mut si = 0usize;
+            for i in 0..outer {
+                let mut wi = i;
+                for _ in 0..inner {
+                    *d.add(wi) = *s.add(si);
+                    si += 1;
+                    wi += outer;
+                }
+            }
+        }
+        return;
+    }
+
+    // In-place: mono has no standard/device difference.
+    if planes == 1 {
+        return;
+    }
+    if outer <= 1 {
+        return;
+    }
+    // Faithful port of the EmuTOS in-place rotation (no scratch buffer).
+    // SAFETY: the buffer holds `size*planes` words; all index motion stays
+    // within it, mirroring the reference algorithm 1:1.
+    unsafe {
+        let outer = (outer - 1) as isize;
+        let mut inner = inner as isize - 1;
+        let mut src = d; // src == dst buffer
+        let mut work = src;
+        while inner >= 0 {
+            let mut count: isize = 0;
+            for _ in 0..outer {
+                src = src.offset(inner + 1);
+                let temp = *src;
+                let mut dst = src;
+                work = src;
+                count += inner;
+                for _ in 0..count {
+                    work = dst;
+                    dst = dst.offset(-1);
+                    *work = *dst;
+                }
+                *dst = temp;
+            }
+            src = work;
+            inner -= 1;
+        }
+    }
+}
