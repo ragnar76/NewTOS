@@ -195,6 +195,18 @@ pub fn vst_point(pb: &Vdipb, _vwk: &mut Vwk) {
     pb.set_contrl(4, 1);
 }
 
+/// Opcode 119 — `vst_load_fonts`: load extra font faces. Only the
+/// built-in system font exists, so no additional faces are ever loaded;
+/// returns the count of newly loaded fonts (0).
+pub fn vst_load_fonts(pb: &Vdipb) {
+    pb.set_intout(0, 0);
+    pb.set_contrl(4, 1);
+}
+
+/// Opcode 120 — `vst_unload_fonts`: unload extra fonts. Nothing was ever
+/// loaded beyond the system font, so this is a no-op.
+pub fn vst_unload_fonts(_pb: &Vdipb) {}
+
 /// Opcode 104 — `vsf_perimeter`: enable/disable the fill-area outline.
 pub fn vsf_perimeter(pb: &Vdipb, vwk: &mut Vwk) {
     vwk.fill_per = pb.intin(0) != 0;

@@ -22,6 +22,7 @@
 pub mod backend;
 mod attributes;
 mod contour;
+mod escape;
 mod fill_patterns;
 pub mod font;
 mod font_data;
@@ -165,10 +166,10 @@ pub unsafe fn dispatch(vdipb_ptr: u64) {
         3 if open_handle(&pb).is_some() => workstation::v_clrwk(backend),
 
         // ── attribute setters + output primitives (need the vwk) ──
-        6 | 7 | 8 | 9 | 11 | 12 | 13 | 14 | 15 | 16 | 17 | 18 | 19 | 20 | 21 | 22 | 23 | 24 | 25
+        5 | 6 | 7 | 8 | 9 | 11 | 12 | 13 | 14 | 15 | 16 | 17 | 18 | 19 | 20 | 21 | 22 | 23 | 24 | 25
         | 26 | 28 | 30 | 31 | 32 | 33 | 35 | 36 | 37 | 38 | 39 | 103 | 104 | 105 | 106 | 107 | 108
-        | 109 | 110 | 111 | 112 | 113 | 114 | 115 | 116 | 117 | 118 | 121 | 122 | 123 | 124 | 125
-        | 126 | 127 | 128 | 129 | 130 | 131 | 134 => {
+        | 109 | 110 | 111 | 112 | 113 | 114 | 115 | 116 | 117 | 118 | 119 | 120 | 121 | 122 | 123
+        | 124 | 125 | 126 | 127 | 128 | 129 | 130 | 131 | 134 => {
             // SAFETY: single trap path.
             if let Some(vwk) = unsafe { vwk::resolve(pb.contrl(C_HANDLE)) } {
                 let ncol = backend.num_colors();
@@ -196,6 +197,9 @@ pub unsafe fn dispatch(vdipb_ptr: u64) {
                     107 => attributes::vst_point(&pb, vwk),
                     112 => attributes::vsf_udpat(&pb, vwk),
                     129 => attributes::vs_clip(&pb, vwk, backend),
+                    5 => escape::v_escape(&pb, backend),
+                    119 => attributes::vst_load_fonts(&pb),
+                    120 => attributes::vst_unload_fonts(&pb),
                     6 => primitives::v_pline(&pb, vwk, backend),
                     7 => primitives::v_pmarker(&pb, vwk, backend),
                     8 => text::v_gtext(&pb, vwk, backend),

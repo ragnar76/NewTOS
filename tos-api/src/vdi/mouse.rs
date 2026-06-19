@@ -208,6 +208,26 @@ pub fn v_hide_c(backend: &dyn RasterBackend) {
     HIDE_COUNT.store(c + 1, Ordering::Relaxed);
 }
 
+/// Show the graphics cursor at `(x, y)` (VDI `v_dspcur` escape).
+pub fn display_at(x: i16, y: i16, backend: &dyn RasterBackend) {
+    ensure_init(backend);
+    if shown() {
+        erase(backend);
+    }
+    GCURX.store(x, Ordering::Relaxed);
+    GCURY.store(y, Ordering::Relaxed);
+    HIDE_COUNT.store(0, Ordering::Relaxed);
+    draw(backend);
+}
+
+/// Remove the graphics cursor (VDI `v_rmcur` escape).
+pub fn remove(backend: &dyn RasterBackend) {
+    if shown() {
+        erase(backend);
+    }
+    HIDE_COUNT.store(1, Ordering::Relaxed);
+}
+
 /// Opcode 124 — `vq_mouse`: report the button bitmask + cursor position.
 pub fn vq_mouse(pb: &Vdipb) {
     pb.set_intout(0, MOUSE_BT.load(Ordering::Relaxed) as i16);
