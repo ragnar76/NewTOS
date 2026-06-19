@@ -40,7 +40,7 @@ struct AesGlobal {
 /// id. From a real EL0 process this is its slot-derived pid; from the
 /// kernel boot context (no process yet) it defaults to 1 — the single
 /// boot application.
-fn current_pid() -> i16 {
+pub(super) fn current_pid() -> i16 {
     let bp = crate::bdos::process::current();
     if bp.is_null() {
         return 1;

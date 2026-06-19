@@ -53,6 +53,14 @@ pub trait Host: Sync {
         }
     }
 
+    /// Advance the polled input sources once (keyboard/mouse bytes from
+    /// the UART(s)), with interrupts briefly enabled. The AES event
+    /// manager calls this while it polls for a wait condition: an
+    /// `evnt_*` runs in the synchronous SVC handler with IRQs masked, so
+    /// without this the RX sources never advance and the wait would
+    /// deadlock. Default: no-op (a hostless test has no hardware to pump).
+    fn pump_input(&self) {}
+
     /// Whole seconds elapsed since boot, from a monotonic hardware
     /// counter. The GEMDOS time functions add this to a settable base
     /// epoch to produce the wall clock. The kernel host reads the ARM

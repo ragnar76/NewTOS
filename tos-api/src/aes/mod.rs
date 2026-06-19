@@ -112,6 +112,8 @@ pub unsafe fn dispatch(aespb_ptr: u64) {
         12 => appl::appl_write(&pb),
         13 => appl::appl_find(&pb),
         17 => appl::appl_yield(&pb),
+        20 => event::evnt_keybd(&pb),
+        23 => event::evnt_mesag(&pb),
         24 => event::evnt_timer(&pb),
         // Remaining managers (event/object/form/window/menu/resource/
         // scrap/shell) land in later sub-phases. The AES has no invalid-

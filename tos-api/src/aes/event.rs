@@ -11,8 +11,73 @@
 //! kernel's blocking console read. Multitasking (`appl_yield` between
 //! several AES processes) lands later; the API surface is unchanged.
 
+use super::pd;
 use super::Aespb;
 use crate::host::host;
+
+/// `evnt_keybd` (20) — block until a key is pressed; return it in
+/// `RET_CODE` as `scancode << 8 | ascii`.
+///
+/// The console input source is the serial/IKBD byte ring, which carries
+/// ASCII only, so the scancode high byte is 0 — the same convention as
+/// the GEMDOS console input ([`docs/api/gemdos/console`]). When a real
+/// IKBD scancode path lands, the high byte fills in here.
+pub fn evnt_keybd(pb: &Aespb) {
+    let key = match host() {
+        Some(h) => loop {
+            if let Some(b) = h.console_try_read() {
+                break b as i16;
+            }
+            h.pump_input();
+        },
+        None => 0,
+    };
+    pb.set_ret(key);
+}
+
+/// `evnt_mesag` (23) — block until a 16-byte message is in the calling
+/// application's pipe, copy it to `addr_in[0]` (`ME_PBUFF`), set the
+/// `AP_MESAG` flag, and return 1.
+///
+/// Bring-up note: with a single AES application and no window/menu
+/// managers posting messages yet, the only writer is `appl_write`; the
+/// wait returns as soon as a message is pending. A lone application
+/// waiting on a message that no one will post blocks by design — it
+/// asked to wait. Multi-application posting lands with the window/menu
+/// managers (later D-deliverables).
+pub fn evnt_mesag(pb: &Aespb) {
+    let dest = pb.addrin(0);
+    let pid = super::appl::current_pid();
+    let Some(h) = host() else {
+        pb.set_ret(1);
+        return;
+    };
+    loop {
+        // SAFETY: single trap path; `by_pid` hands out the live slot.
+        let Some(src) = (unsafe { pd::by_pid(pid) }) else {
+            // No descriptor (caller never ran appl_init): nothing to
+            // wait on; report the message event and bail.
+            pb.set_ret(1);
+            return;
+        };
+        if src.msg_pending {
+            if dest != 0 {
+                // SAFETY: `ME_PBUFF` points at >= 16 bytes of storage.
+                unsafe {
+                    let p = dest as *mut i16;
+                    for i in 0..pd::MSG_WORDS {
+                        p.add(i).write(src.msg[i]);
+                    }
+                }
+            }
+            src.msg_pending = false;
+            src.flags |= pd::AP_MESAG;
+            pb.set_ret(1);
+            return;
+        }
+        h.pump_input();
+    }
+}
 
 /// `evnt_timer` (24) — block for `ms` milliseconds, then return.
 ///

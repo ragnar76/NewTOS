@@ -167,6 +167,48 @@ pub fn run_phase13_event_test() {
     aes(pb);
     check(intout[0] == 1, "evnt_timer(0) returns 1 immediately");
 
+    // Register the application (for the message pipe below).
+    control = [0; 8];
+    control[0] = 10; // appl_init
+    aes(pb);
+    let ap_id = intout[0];
+
+    // ── evnt_keybd (20): a queued key is returned (ASCII in low byte) ──
+    crate::console::push_rx(b'A');
+    control = [0; 8];
+    control[0] = 20;
+    intout[0] = 0;
+    aes(pb);
+    check(intout[0] == 0x41, "evnt_keybd returns the queued key 'A'");
+
+    // ── evnt_mesag (23): a written message is delivered ──
+    let mut msg = [0i16; 8];
+    msg[0] = 0x4242; // message type
+    msg[5] = 7;
+    addrin[0] = msg.as_ptr() as i64;
+    control = [0; 8];
+    control[0] = 12; // appl_write
+    control[1] = 2;
+    control[3] = 1;
+    intin[0] = ap_id; // target = self
+    intin[1] = 16;
+    aes(pb);
+
+    let mut rx = [0i16; 8];
+    addrin[0] = rx.as_mut_ptr() as i64;
+    control = [0; 8];
+    control[0] = 23; // evnt_mesag
+    control[3] = 1;
+    intout[0] = 0;
+    aes(pb);
+    check(intout[0] == 1, "evnt_mesag returns 1");
+    check(rx[0] == 0x4242 && rx[5] == 7, "evnt_mesag copies the message");
+
+    // Deregister.
+    control = [0; 8];
+    control[0] = 19; // appl_exit
+    aes(pb);
+
     if fails == 0 {
         kprintln!("[aes] === AES Event Manager PASS ===");
     } else {

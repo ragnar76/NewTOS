@@ -30,6 +30,45 @@ impl Host for KernelHost {
         crate::console::rx_pop()
     }
 
+    fn pump_input(&self) {
+        // Briefly unmask IRQs so the PL011 RX interrupt can fill the ring
+        // (it is masked inside the synchronous SVC handler), and poll the
+        // directly-polled sources — the IKBD keyboard+mouse on UART2 and
+        // the UART0 console RX. Mirrors the loop body of
+        // `console_read_byte_blocking`, but for a single pass so the AES
+        // event loop stays responsive to its other (timer) conditions.
+        let daif: u64;
+        // SAFETY: reading DAIF and toggling the IRQ mask are permitted at
+        // EL1; we restore the caller's DAIF before returning.
+        unsafe {
+            core::arch::asm!(
+                "mrs {0}, daif",
+                out(reg) daif,
+                options(nomem, nostack, preserves_flags),
+            );
+            core::arch::asm!(
+                "msr daifclr, #2",
+                options(nomem, nostack, preserves_flags),
+            );
+        }
+
+        #[cfg(feature = "board-rpi4")]
+        {
+            crate::drivers::bcm2711::ikbd_uart::poll();
+            crate::console::pl011_rx_poll();
+        }
+        core::hint::spin_loop();
+
+        // SAFETY: restore the caller's original DAIF mask state.
+        unsafe {
+            core::arch::asm!(
+                "msr daif, {0}",
+                in(reg) daif,
+                options(nomem, nostack, preserves_flags),
+            );
+        }
+    }
+
     fn console_has_input(&self) -> bool {
         crate::console::rx_has_input()
     }
