@@ -254,9 +254,11 @@ Phasenbeginn entschieden sein (siehe `docs/api/_phase00-completion.md`):
 - **Cookie-Jar (Phase 08 D5)** — Datenmodell-Spec
   ([`api/bios/_cookie-jar.md`](api/bios/_cookie-jar.md)) + **ADR-012
   (Accepted)**: kernel-eigener, heap-allozierter Jar; Zugriff per Funktion
-  `Getcookie(tag)->(found,value)` / `Setcookie` (Wert-Query, kein
-  `$5A0`/Supexec/User-Mapping). Offen: **Implementierungs-Spec** (Funktions-
-  ABI/Syscall-Slot + NewTOS-Cookie-Set), dann Code. Nicht mehr blockiert.
+  `Getcookie`/`Setcookie` (Wert-Query, kein `$5A0`/Supexec/User-Mapping).
+  **ABI gewählt: FreeMiNT `Ssystem` (GEMDOS 0x154)**, Modes
+  `S_GETCOOKIE`(8)/`S_SETCOOKIE`(9)/`S_DELCOOKIE`(26); Spec
+  [`api/gemdos/154-ssystem.md`](api/gemdos/154-ssystem.md). Offen: Code
+  (kernel-eigener Jar + Dispatch-Sonderfall für 0x154 + NewTOS-Cookie-Set).
 - **Kleinere funktionale Lücken** — `Kbdvbase`-Vektor-Dispatch
   (Phase 11 EC1, braucht das
   AES-Eventmodell — jetzt im Aufbau); `Pwait`-Round-Robin (Phase 06 EC4);
@@ -360,6 +362,8 @@ Phasenbeginn entschieden sein (siehe `docs/api/_phase00-completion.md`):
 | 2026-06-20 | **Cookie-Jar (Phase 08 D5) — Quellenanalyse + ADR-012-Entwurf, kein Code.** EmuTOS-Extraktion ergab: der Jar ist eine `{tag,value}[]`-Struktur (Terminator `{0,Kapazität}`), gebaut von `cookie_init`/`fill_cookie_jar`; **es gibt keinen Trap** — Anwendungen lesen die Sysvar bei `$5A0` (`_p_cookies`), im App-Kontext via `Supexec`. Auf NewTOS ist dieser Pfad **doppelt versperrt** (`$5A0` nicht gemappt wie die `$420`-Vars; `Supexec` deferred / Open-ADR). Folge: NewTOS braucht eigene Cookies (nur sinnvolle Tags `_MCH`/`_IDT`/`_FLK`/`_AKP` + NewTOS-Identitäts-Cookie; `_VDO`/`_SND`/`_FDC`/`_FPU` bedeutungslos) **und** einen nativen Zugriffsweg. Spec: [`api/bios/_cookie-jar.md`](api/bios/_cookie-jar.md). [ADR-012](MEMORY.md) (Proposed) stellt zwei Mechanismen gegenüber: (A) Trap-basierter `Getcookie`-Query (NewTOS-Extension, empfohlen — passt zur Syscall-Flughöhe), (B) `$5A0`-Sysvar-Seite mappen (max. Kompatibilität, zieht Supexec/Sysvar-Architektur nach). **Entscheidung offen.** |
 
 | 2026-06-20 | **ADR-012 (Cookie-Jar-Zugriff) — Accepted.** Entscheidung: **kernel-eigener, heap-allozierter Jar; Zugriff per Funktion, die den Inhalt zurückgibt (Wert-Query), kein Direktzugriff.** Init alloziert den Jar aus dem Kernel-Heap und hält den Pointer kernel-intern (NewTOS-Analogon zu `p_cookies`, aber nicht `$5A0`); `Getcookie(tag)->(found,value)` scannt den eigenen Jar und liefert nur den Wert (der Jar liegt im EL1-High-Half — ein Pointer wäre für EL0 ohnehin nutzlos → Wert-Rückgabe ist der erzwungene und sauberste Weg), `Setcookie(tag,value)` fügt hinzu. Keine der drei Sperren (`$5A0`, Supexec, User-Aliasing) wird berührt; Apps werden beim Portieren per Shim angepasst. Verworfen: feste Sysvar-Seite + App-Scan (bräuchte read-only User-Mapping pro Prozess + Supexec). Begründet vom User: „der Inhalt wird von einer Funktion zurückgegeben statt Direktzugriff". Nächster Schritt: Implementierungs-Spec (Funktions-ABI/Syscall-Slot, NewTOS-Cookie-Set `_MCH`/`_IDT`/`_FLK`/`_AKP` + `NTOS`-Identität), dann Code. |
+
+| 2026-06-20 | **FreeMiNT als sanktionierte Quelle + `Ssystem`-Spec (Cookie-Zugriff).** Projektrichtung (User): den Kernel mit **FreeMiNT-kompatiblen** Funktionen erweitern, um die MiNT/GEM-Software-Basis lauffähig zu machen. FreeMiNT nach `references/freemint` geklont (`f906416`, gitignored wie EmuTOS), in [`SOURCE-ANALYSIS-PROTOCOL.md`](SOURCE-ANALYSIS-PROTOCOL.md) als Track-A-Sekundärquelle (nach EmuTOS, für Funktionen die EmuTOS nicht hat) + `references/README.md` dokumentiert. Erste Anwendung: der Cookie-Zugriff (ADR-012) wird als **FreeMiNT `Ssystem`** umgesetzt — GEMDOS `0x154`, `Ssystem(mode, arg1, arg2)`, Modes `S_GETCOOKIE`(8)/`S_SETCOOKIE`(9)/`S_DELCOOKIE`(26); `get_cookie` mit Tag-Query / NULL-Slot-Kapazität / Slot-Enumeration, `set_cookie` mit byteweiser Tag-Validierung + Update-or-Append. ABI faithful extrahiert aus `sys/ssystem.c`/`sys/cookie.c`/`sys/mint/ssystem.h` → Spec [`api/gemdos/154-ssystem.md`](api/gemdos/154-ssystem.md). Kein Code bis Spec-Freigabe. |
 
 ## Notes
 

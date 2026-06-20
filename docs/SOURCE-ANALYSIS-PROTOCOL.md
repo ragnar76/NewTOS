@@ -48,6 +48,13 @@ specification documents.
 1. **EmuTOS source code** — primary, authoritative
 2. **EmuTOS internal documentation** (`doc/` directory, header comments,
    inline comments) — primary, authoritative as commentary on the code
+2b. **FreeMiNT source code** (`references/freemint/`) — **authoritative
+   for MiNT/GEMDOS extensions that EmuTOS does not implement** (e.g.
+   `Ssystem`/0x154 + cookie subfunctions, later MiNT syscalls). EmuTOS
+   stays primary for everything it covers; reach for FreeMiNT only when
+   EmuTOS lacks the function, and extract from its source the same way
+   (function numbers, subfunction codes, parameter ABI — never from
+   memory). Adopted 2026-06-20 (ADR-012) to run the MiNT software base.
 3. **Atari Compendium** — secondary, used to:
    - Cross-check function names, trap numbers, parameter ABIs
    - Resolve ambiguity when EmuTOS code is unclear

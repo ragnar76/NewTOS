@@ -307,10 +307,13 @@ never by direct memory access.**
 - **Porting.** Ported C programs are adapted at port time anyway; a tiny
   shim maps the classic `getcookie()`/`$5A0` idiom onto `Getcookie`.
 
-The exact syscall placement (a NewTOS-reserved function id that cannot
-collide with a real TOS function, e.g. a high/unused XBIOS slot, or
-adopting MiNT-style `Ssystem(S_GETCOOKIE/S_SETCOOKIE)` semantics) is
-pinned in the implementation spec, not here.
+**Syscall placement (decided 2026-06-20):** **FreeMiNT `Ssystem`** —
+GEMDOS `0x154`, `Ssystem(WORD mode, LONG arg1, LONG arg2)`, with modes
+`S_GETCOOKIE`(8) / `S_SETCOOKIE`(9) / `S_DELCOOKIE`(26). NewTOS adopts the
+MiNT ABI verbatim so the MiNT/GEM software base runs (see
+[[freemint-extension-direction]]); FreeMiNT is now a sanctioned source
+(`references/freemint` @ `f906416`). ABI + cookie semantics extracted in
+[`docs/api/gemdos/154-ssystem.md`](api/gemdos/154-ssystem.md).
 
 ### Rationale
 

@@ -64,6 +64,29 @@ what was being referenced.
 
 ---
 
+## FreeMiNT source
+
+- **Location:** `references/freemint/` (a clone of
+  https://github.com/freemint/freemint).
+- **Role:** **Secondary** Track-A source — used only for kernel
+  **extensions that EmuTOS does not implement** (e.g. `Ssystem` /
+  GEMDOS 0x154 and its cookie subfunctions, later MiNT syscalls). EmuTOS
+  remains primary for everything it covers; FreeMiNT is consulted when
+  EmuTOS lacks the function. Adopted 2026-06-20 so NewTOS can run the
+  MiNT/GEM software base (see ADR-012 and the Source-Analysis-Protocol).
+- **Read-only / not in the workspace:** same rules as EmuTOS — quoted,
+  never patched, not built by us.
+- **Versioning:** record the checkout SHA in `docs/STATUS.md` when used.
+  Current checkout: **`f906416`** (cloned 2026-06-20).
+
+Cite FreeMiNT in spec entries / doc-comments as:
+
+```
+FreeMiNT @ f906416 — sys/ssystem.c:s_system(), sys/cookie.c:get_cookie()
+```
+
+---
+
 ## Required-source checklist
 
 Source-Analysis-Protocol step 1 demands that every task verify its
