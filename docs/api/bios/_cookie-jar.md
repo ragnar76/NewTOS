@@ -105,9 +105,16 @@ The classic access path is **blocked twice** on NewTOS:
 Therefore the cookie jar cannot be implemented by mirroring EmuTOS; it
 needs (a) **NewTOS's own cookie set** (the meaningful tags + a NewTOS
 identity cookie) and (b) **a NewTOS-native access mechanism** that
-replaces "`Supexec` + `$5A0`". The access mechanism is an architectural
-choice tracked in **ADR-012** (`docs/MEMORY.md`); this spec is the
-data-model half and is access-mechanism-agnostic.
+replaces "`Supexec` + `$5A0`".
+
+**Decided (ADR-012, Accepted 2026-06-20):** the jar is **kernel-owned** —
+allocated from the kernel heap, pointer held in a kernel-internal global
+(no `$5A0`, no fixed address). Access is by **function returning content,
+not a pointer**: `Getcookie(tag) -> (found, value)` (the kernel scans its
+own jar; the jar is EL1-only memory so a pointer would be useless to EL0
+anyway), with `Setcookie(tag, value)` to add/update. No user mapping, no
+`Supexec`. This spec is the access-agnostic data model; the function ABI
++ the NewTOS cookie set are pinned in the implementation spec.
 
 ## Cross-references
 

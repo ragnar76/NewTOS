@@ -258,7 +258,7 @@ primitives draw into *that device's* framebuffer rather than a global
 ## ADR-012: Cookie-jar access mechanism on NewTOS
 
 **Date:** 2026-06-20
-**Status:** **Proposed** — decision pending. Blocks PHASE-08 D5.
+**Status:** **Accepted** (2026-06-20). Unblocks PHASE-08 D5 (spec next).
 **Phase:** PHASE-08 (cookie jar).
 
 ### Context
@@ -284,49 +284,67 @@ a **native access mechanism** replacing `Supexec` + `$5A0`.
 
 ### Decision
 
-**Open.** Two candidate mechanisms, to be chosen:
+**A kernel-owned cookie jar, read back through a function (value-query),
+never by direct memory access.**
 
-**Option A — trap-based cookie query (NewTOS extension).** A syscall such
-as `Getcookie(tag) -> (found, value)`, e.g. an XBIOS slot or a
-`Ssystem`-style GEMDOS function. The kernel owns the jar; programs query
-it by tag.
-- + No memory mapping, no `Supexec` dependency; fits the "syscall-
-  compatible OS" altitude. Self-contained, implementable now.
-- − Not bit-compatible: ported programs that read `$5A0` must be changed
-  to call the new function (a porting shim can hide this).
-- − Introduces a non-TOS syscall number — must be chosen so it never
-  collides with a real TOS function id.
+- **Storage.** An init routine allocates the jar from the **kernel heap**
+  (available since Phase 03) and stores the pointer in a **kernel-internal
+  global** (the NewTOS analogue of EmuTOS' `p_cookies`, but *not* the
+  `$5A0` sysvar). Dynamic allocation means the jar can grow, so there is
+  no fixed 20-slot cap. The jar lives in high-half (TTBR1) kernel memory;
+  its address is arbitrary and irrelevant.
+- **Access.** A function returns the **content**, not a pointer:
+  `Getcookie(tag) -> (found, value)`. The kernel scans its own jar and
+  returns only the value. Because the jar is kernel-heap memory (EL1-only,
+  not mapped at EL0), a raw pointer would be unusable to a user program
+  anyway — so value-return is the *forced* and cleanest choice. A
+  companion `Setcookie(tag, value)` adds/updates an entry (the kernel
+  owns and serialises the jar). Optional enumeration (`Getcookies(buf)`
+  copy-out) only if a real program needs to list all cookies; deferred
+  until then.
+- **No direct access.** No `$5A0`, no other fixed sysvar address, no
+  `Supexec` — none of the three NewTOS blockers is touched.
+- **Porting.** Ported C programs are adapted at port time anyway; a tiny
+  shim maps the classic `getcookie()`/`$5A0` idiom onto `Getcookie`.
 
-**Option B — map a `$5A0` sysvar page.** Establish a NewTOS sysvar region
-so `$5A0` (and later `$420` etc.) is a real, readable address holding the
-jar pointer.
-- + Maximum source compatibility: programs read `$5A0`/scan unchanged.
-- − Pulls in the whole Atari-sysvar + supervisor-access architecture
-  (couples to *ADR-Supexec* and a `$420`-vars ADR); large surface, and
-  it re-introduces low-memory aliasing concerns adjacent to ADR-010.
+The exact syscall placement (a NewTOS-reserved function id that cannot
+collide with a real TOS function, e.g. a high/unused XBIOS slot, or
+adopting MiNT-style `Ssystem(S_GETCOOKIE/S_SETCOOKIE)` semantics) is
+pinned in the implementation spec, not here.
 
-### Rationale (leaning)
+### Rationale
 
-Option A matches the project's stated altitude (TOS **API** compatibility,
-not hardware/memory-map emulation; cf. CLAUDE.md non-goals). The cookie
-jar is read by relatively few programs, and a one-line porting shim
-(`#define Getcookie(...)`) covers them. Option B is "more compatible" but
-drags in the deferred Supexec/sysvar architecture for little gain.
+The user's framing settled it: the kernel must allocate the jar, so store
+the pointer kernel-side and hand back *content* through a function instead
+of exposing the address. This matches the project's altitude (TOS **API**
+compatibility, not memory-map emulation; CLAUDE.md non-goals), needs no
+user-space mapping and no `Supexec`, and is implementable now. Apps being
+adapted during porting removes the only downside (loss of literal `$5A0`
+bit-compatibility), which a one-line shim covers.
 
 ### Consequences
 
-- The data model (`_cookie-jar.md`) is access-mechanism-agnostic and can
-  be built regardless; only the **query path** is gated on this ADR.
-- Whichever option, NewTOS defines its own cookie content: keep `_MCH`
-  (NewTOS machine id), `_IDT`, `_FLK`, `_AKP`; **drop** `_VDO`/`_SND`/
-  `_FDC`/`_FPU`; add a `NTOS`/`_NEW` identity+version cookie.
+- The data model (`_cookie-jar.md`) is access-agnostic and unchanged;
+  this ADR fixes the **access path** (value-query function) + **storage**
+  (kernel-heap, kernel-held pointer).
+- NewTOS defines its own cookie content: keep `_MCH` (NewTOS machine id),
+  `_IDT`, `_FLK`, `_AKP`; **drop** `_VDO`/`_SND`/`_FDC`/`_FPU` (Shifter/
+  PSG/floppy/m68k-FPU — meaningless); add an `NTOS`/`_NEW` identity +
+  version cookie so ported programs can detect NewTOS.
+- `Getcookie`/`Setcookie` are NewTOS extensions; the chosen function id(s)
+  must be documented as reserved.
 
 ### Alternatives considered
 
-- **Mirror EmuTOS verbatim** (`$5A0` + `Supexec` as-is): impossible —
-  both prerequisites are absent/deferred on NewTOS.
-- **Defer entirely**: viable, but the user asked to design our own cookie
-  mechanism now; recorded here rather than left implicit.
+- **Map a `$5A0` (or any fixed) sysvar page so apps read+scan it**
+  directly: rejected. The address itself is a non-issue once access is
+  mediated, but letting apps *scan* the jar requires it to be readable
+  from EL0 — a shared read-only user mapping per process (fiddly under the
+  per-process-TTBR0 interim, adjacent to ADR-010) — and still wants
+  `Supexec` for the classic idiom. Value-query needs none of that.
+- **Mirror EmuTOS verbatim** (`$5A0` + `Supexec`): impossible — both
+  prerequisites are absent/deferred on NewTOS.
+- **Defer entirely**: rejected; the mechanism is now decided.
 
 ### References
 
