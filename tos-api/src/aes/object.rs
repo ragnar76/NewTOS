@@ -147,6 +147,40 @@ pub fn objc_find(pb: &Aespb) {
     pb.set_ret(found);
 }
 
+/// Hit-test entry for internal callers (the Form Manager's modal loop):
+/// deepest visible, enabled object under `(mx, my)` within `depth` levels
+/// of `root`, or `NIL`. Mirrors `objc_find`.
+///
+/// # Safety
+/// `tree` is a valid OBJECT array.
+pub(crate) unsafe fn hit_test(
+    tree: *const Object,
+    root: i16,
+    depth: i16,
+    mx: i16,
+    my: i16,
+) -> i16 {
+    // SAFETY: caller guarantees a valid tree.
+    unsafe {
+        let (ox, oy) = abs_offset(tree, root);
+        let ob = &*tree.add(root as usize);
+        find_hit(tree, root, depth, ox - ob.ob_x, oy - ob.ob_y, mx, my)
+    }
+}
+
+/// Draw a whole tree (used by the Form Manager after building an alert).
+///
+/// # Safety
+/// `tree` is a valid OBJECT array; `backend` is the live screen.
+pub(crate) unsafe fn draw_root(tree: *const Object, depth: i16, backend: &dyn RasterBackend) {
+    let clip = ClipRect::full(backend.width(), backend.height());
+    // SAFETY: valid tree; root is index 0, its ob_x/ob_y are absolute
+    // (no parent), so the parent offset is 0.
+    unsafe {
+        draw_tree(tree, 0, depth, 0, 0, clip, backend);
+    }
+}
+
 // ── tree helpers ────────────────────────────────────────────────────
 
 /// Absolute screen origin of `obj` = sum of x/y from the root down. Walks

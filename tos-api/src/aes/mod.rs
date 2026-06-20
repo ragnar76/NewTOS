@@ -12,6 +12,7 @@
 
 mod appl;
 mod event;
+mod form;
 pub mod object;
 mod pd;
 
@@ -123,6 +124,7 @@ pub unsafe fn dispatch(aespb_ptr: u64) {
         42 => object::objc_draw(&pb),
         43 => object::objc_find(&pb),
         44 => object::objc_offset(&pb),
+        52 => form::form_alert(&pb),
         // Remaining managers (event/object/form/window/menu/resource/
         // scrap/shell) land in later sub-phases. The AES has no invalid-
         // opcode error path (the GEM environment is trusted), so an

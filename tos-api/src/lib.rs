@@ -19,6 +19,7 @@ pub mod bdos;
 pub mod bios;
 pub mod cookie;
 pub mod gemdos;
+pub mod i18n;
 pub mod host;
 pub mod trap;
 pub mod vdi;

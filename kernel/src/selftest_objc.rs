@@ -95,3 +95,35 @@ pub fn run() {
         intout[0]
     );
 }
+
+/// Batch-2 demo: a real `form_alert` (opcode 52) — parses the alert
+/// string, builds + draws the alert tree, then runs the modal loop
+/// (press a key in the serial terminal to dismiss: Enter = default,
+/// a digit = that button).
+pub fn run_form_alert() {
+    static ALERT: &[u8] = b"[2][This is a NewTOS|form_alert dialog!][OK|Cancel|Help]\0";
+
+    let mut control = [0i16; 8];
+    let mut global = [0i16; 32];
+    let mut intin = [0i16; 16];
+    let mut intout = [0i16; 16];
+    let mut addrin = [0i64; 4];
+    let mut addrout = [0i64; 4];
+    let block: [u64; 6] = [
+        control.as_mut_ptr() as u64,
+        global.as_mut_ptr() as u64,
+        intin.as_mut_ptr() as u64,
+        intout.as_mut_ptr() as u64,
+        addrin.as_mut_ptr() as u64,
+        addrout.as_mut_ptr() as u64,
+    ];
+
+    control[0] = 52; // form_alert
+    control[1] = 1; // one intin
+    control[3] = 1; // one addrin
+    intin[0] = 1; // default button = 1 (OK)
+    addrin[0] = ALERT.as_ptr() as i64;
+    aes(block.as_ptr() as u64);
+
+    kprintln!("[objc] form_alert returned button {}", intout[0]);
+}
