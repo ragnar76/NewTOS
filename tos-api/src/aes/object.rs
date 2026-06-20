@@ -247,6 +247,118 @@ pub(crate) fn change(tree: *mut Object, obj: i16, newstate: u16, redraw: bool) {
     }
 }
 
+// objc_edit kinds (`obdefs.h`).
+const ED_INIT: i16 = 1;
+const ED_CHAR: i16 = 2;
+const ED_END: i16 = 3;
+
+/// `objc_edit` (46) — edit the EDITABLE `TEDINFO` text field `obj`.
+/// `int_in[1]` = character, `int_in[2]` = cursor index, `int_in[3]` =
+/// kind (EDSTART/EDINIT/EDCHAR/EDEND). The new cursor index is returned
+/// in `OB_ODX` (`int_out[1]`).
+///
+/// Batch-6 scope: plain in-place editing of `te_ptext` (insert printable,
+/// backspace; cursor shown as a caret). The template (`te_ptmplt`) and
+/// validation (`te_pvalid`) of formatted fields land in a later batch.
+pub fn objc_edit(pb: &Aespb) {
+    let tree = pb.addrin(0) as *const Object;
+    let obj = pb.intin(0);
+    let in_char = pb.intin(1);
+    let mut idx = pb.intin(2);
+    let kind = pb.intin(3);
+    if tree.is_null() || obj < 0 {
+        pb.set_intout(1, idx);
+        pb.set_ret(0);
+        return;
+    }
+    // SAFETY: valid tree.
+    let ob = unsafe { &*tree.add(obj as usize) };
+    if ob.ob_spec == 0 {
+        pb.set_intout(1, idx);
+        pb.set_ret(0);
+        return;
+    }
+    // SAFETY: an editable field's ob_spec points at a TEDINFO.
+    let ted = unsafe { &*(ob.ob_spec as *const TedInfo) };
+    let txtlen = ted.te_txtlen.max(1);
+    let text = ted.te_ptext as *mut u8;
+
+    match kind {
+        ED_INIT => idx = cstr_len_p(text) as i16,
+        ED_CHAR => edit_char(text, txtlen, &mut idx, in_char),
+        _ => {} // EDSTART / EDEND
+    }
+
+    // Redraw the field, then the caret (unless we are ending the edit).
+    if let Some(backend) = host().and_then(|h| h.raster()) {
+        let clip = ClipRect::full(backend.width(), backend.height());
+        let (ox, oy) = abs_offset(tree, obj);
+        // SAFETY: valid tree; depth 0 redraws only this field.
+        unsafe { draw_tree(tree, obj, 0, ox - ob.ob_x, oy - ob.ob_y, clip, backend) };
+        if kind != ED_END {
+            // Caret: a 1-px black bar at the cursor cell, text height.
+            let cy = oy + (ob.ob_height - crate::vdi::font::CELL_H) / 2;
+            backend.fill_rect(ox + idx * crate::vdi::font::CELL_W, cy, 1, crate::vdi::font::CELL_H, BLACK, clip);
+        }
+    }
+
+    pb.set_intout(1, idx);
+    pb.set_ret(1);
+}
+
+/// Apply one keystroke to the in-place text buffer at the cursor.
+fn edit_char(text: *mut u8, txtlen: i16, idx: &mut i16, ch: i16) {
+    let c = (ch & 0xff) as u8;
+    let len = cstr_len_p(text) as i16;
+    match c {
+        0x08 | 0x7F => {
+            // backspace: delete the char before the cursor
+            if *idx > 0 {
+                // SAFETY: shifting within the NUL-terminated buffer.
+                unsafe {
+                    let mut i = *idx - 1;
+                    while i < len {
+                        *text.add(i as usize) = *text.add((i + 1) as usize);
+                        i += 1;
+                    }
+                }
+                *idx -= 1;
+            }
+        }
+        0x20..=0x7E => {
+            // insert a printable character at the cursor
+            if len < txtlen - 1 {
+                // SAFETY: room exists (len < txtlen-1); shift incl. the NUL.
+                unsafe {
+                    let mut i = len;
+                    while i >= *idx {
+                        *text.add((i + 1) as usize) = *text.add(i as usize);
+                        i -= 1;
+                    }
+                    *text.add(*idx as usize) = c;
+                }
+                *idx += 1;
+            }
+        }
+        _ => {}
+    }
+}
+
+/// Length of a NUL-terminated string at `p` (cap 256).
+fn cstr_len_p(p: *const u8) -> usize {
+    if p.is_null() {
+        return 0;
+    }
+    // SAFETY: GEM contract — valid NUL-terminated buffer.
+    unsafe {
+        let mut n = 0;
+        while n < 256 && *p.add(n) != 0 {
+            n += 1;
+        }
+        n
+    }
+}
+
 /// `objc_find` (43) — hit-test: index of the deepest visible, non-disabled
 /// object under `(OB_MX, OB_MY)` within `OB_DEPTH` levels of `OB_DRAWOB`,
 /// or `-1`. `addr_in[0]` = tree.

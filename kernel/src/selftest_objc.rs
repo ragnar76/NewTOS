@@ -305,3 +305,63 @@ pub fn run_form_do() {
 
     kprintln!("[objc] form_do returned object {}", intout[0]);
 }
+
+/// Batch-6 demo: an editable `G_BOXTEXT` field. Draw it, then drive
+/// `objc_edit` (EDINIT + EDCHAR) to type "NewTOS!" into it.
+pub fn run_edit() {
+    const EDITABLE: u16 = 0x0008;
+    static TITLE: &[u8] = b"objc_edit - editable TEDINFO field\0";
+    static EMPTY: &[u8] = b"\0";
+
+    let mut textbuf = [0u8; 24]; // mutable, initially empty
+    let ted = TedInfo {
+        te_ptext: textbuf.as_mut_ptr() as u64, te_ptmplt: EMPTY.as_ptr() as u64,
+        te_pvalid: EMPTY.as_ptr() as u64, te_font: 3, te_junk1: 0, te_just: 0,
+        te_color: 1 << 8, te_junk2: 0, te_thickness: 1, te_txtlen: 24, te_tmplen: 0,
+    };
+    let tree = [
+        Object { ob_next: -1, ob_head: 1, ob_tail: 2, ob_type: G_BOX, ob_flags: 0,
+                 ob_state: 0, ob_spec: 1 << 16, ob_x: 140, ob_y: 150, ob_width: 360, ob_height: 150 },
+        Object { ob_next: 2, ob_head: -1, ob_tail: -1, ob_type: G_STRING, ob_flags: 0,
+                 ob_state: 0, ob_spec: TITLE.as_ptr() as u64, ob_x: 24, ob_y: 24, ob_width: 320, ob_height: 16 },
+        Object { ob_next: 0, ob_head: -1, ob_tail: -1, ob_type: G_BOXTEXT,
+                 ob_flags: EDITABLE | 0x0020, ob_state: 0, ob_spec: &ted as *const _ as u64,
+                 ob_x: 40, ob_y: 70, ob_width: 200, ob_height: 24 },
+    ];
+
+    let mut control = [0i16; 8];
+    let mut global = [0i16; 32];
+    let mut intin = [0i16; 16];
+    let mut intout = [0i16; 16];
+    let mut addrin = [0i64; 4];
+    let mut addrout = [0i64; 4];
+    let block: [u64; 6] = [
+        control.as_mut_ptr() as u64, global.as_mut_ptr() as u64,
+        intin.as_mut_ptr() as u64, intout.as_mut_ptr() as u64,
+        addrin.as_mut_ptr() as u64, addrout.as_mut_ptr() as u64,
+    ];
+
+    // objc_draw the dialog
+    control[0] = 42; control[3] = 1;
+    addrin[0] = tree.as_ptr() as i64;
+    intin[0] = 0; intin[1] = 8; intin[2] = 0; intin[3] = 0; intin[4] = 640; intin[5] = 480;
+    aes(block.as_ptr() as u64);
+
+    // objc_edit EDINIT (field = object 2)
+    control = [0; 8]; control[0] = 46; control[3] = 1;
+    addrin[0] = tree.as_ptr() as i64;
+    intin[0] = 2; intin[1] = 0; intin[2] = 0; intin[3] = 1; // EDINIT
+    aes(block.as_ptr() as u64);
+    let mut idx = intout[1];
+
+    // type "NewTOS!" via EDCHAR
+    for &c in b"NewTOS!" {
+        control = [0; 8]; control[0] = 46; control[3] = 1;
+        addrin[0] = tree.as_ptr() as i64;
+        intin[0] = 2; intin[1] = c as i16; intin[2] = idx; intin[3] = 2; // EDCHAR
+        aes(block.as_ptr() as u64);
+        idx = intout[1];
+    }
+
+    kprintln!("[objc] objc_edit typed text, cursor idx={}", idx);
+}
