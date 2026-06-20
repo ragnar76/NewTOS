@@ -230,42 +230,31 @@ Phasenbeginn entschieden sein (siehe `docs/api/_phase00-completion.md`):
 
 ## Blocked
 
-- **EC2 (PHASE-01)**: Real-hardware verification on RPi4 still pending.
-  Requires SD card with RPi firmware + `kernel8.img`, USB-TTL adapter on
-  GPIO 14/15. Manual step.
-- **PHASE-02 (GEMDOS Console I/O)**: spec for the 15 console functions
-  is complete (Phase 00 D3 console group). Implementation can start for
-  the leaf functions (Cconout, Cauxout, Cprnout, Cauxin, Crawcin,
-  Crawio, Cconis, Cconos, Cprnos, Cauxis, Cauxos, Cconws); Cconin /
-  Cnecin / Cconrs require `Pterm(-32)` (Phase 06) for Ctrl-C handling.
-  See `docs/api/_dependency-graph.md`.
-- **Phase 05 — High-Half-Kernel-Migration** (folgt auf Phase 03/04,
-  blockiert Phase 06): Kernel von Identity (TTBR0) nach High-Half
-  (TTBR1, VA `0xFFFF_0000_xxxx_xxxx`) umziehen. Schritte:
-  (a) Linker-Skripte: VA-Basis high, LOAD-Adressen physisch.
-  (b) `boot.s` Trampolin: nach MMU-Enable per absoluter Sprung in High-Half.
-  (c) TTBR1_EL1 setzen, TCR_EL1.EPD1 = 0, T1SZ = 16.
-  (d) TTBR0_EL1 leeren (TCR_EL1.EPD0 = 1) — pro-Prozess Mappings ab Phase 06.
-  Begründung dieser Trennung siehe Recent-Decisions-Eintrag 2026-05-03.
-  Eigenes Phasendokument: `phases/PHASE-05-high-half-migration.md`.
+> Bereinigt 2026-06-20: die früheren Einträge für PHASE-02 (Konsole),
+> Phase 05 (High-Half-Migration) und Phase 03 D8 (Runtime-RAM-Detection
+> via DTB) sind **erledigt** und wurden entfernt — siehe Phase-Status-
+> Tabelle. Hier stehen nur noch tatsächlich offene Blocker.
 
-- **Phase 03 D8 — Runtime-RAM-Detection** (folgt auf Phase 03 D5,
-  vor Phase 04 abgeschlossen):
-  `kernel/src/mm/layout.rs::board::DRAM_SIZE` ist aktuell hartcodiert
-  (QEMU 272 MiB, RPi4 1 GiB). Wir bauen ein eigenes OS, kein
-  Atari-Emulator — der TT-RAM-Slot soll bis ans physische DRAM-Ende
-  reichen, egal wieviel RAM die Hardware tatsächlich hat. Aufgabe:
-  (a) Auf QEMU `virt`: DTB-Pointer aus `x0` beim Boot übernehmen,
-      `/memory@…/reg`-Property parsen, daraus `dram.end` ableiten.
-  (b) Auf RPi4: VideoCore-Mailbox `GET_ARM_MEMORY` (tag 0x00010005)
-      über die Property-Channel-Schnittstelle (BCM2711 §1.3) abfragen.
-  (c) `discover()` so umbauen, dass `dram.end` zur Laufzeit gesetzt
-      wird; ST-RAM-Slot bleibt fix bei 16 MiB ab `DRAM_START`,
-      TT-RAM-Slot = `[DRAM_START + 16 MiB, dram.end)`.
-  (d) Feature-Flag oder Build-Konstante als Fallback, falls die
-      Detektion vor `panic` fehlschlägt.
-  Bis dahin sind die Konstanten konservativ und QEMU `-m 272M` /
-  RPi4 1 GiB sind die getesteten Konfigurationen.
+- **GIC-400 PL011-RX-IRQ auf echter HW (PHASE-02 D7)** — die RX-IRQ
+  (INTID 153) wird vom GIC-400 auf echtem RPi4 *nicht* ans Core
+  zugestellt (in QEMU schon); Konsoleneingabe läuft nur über den
+  UART0-Poll-Workaround (`console::pl011_rx_poll`). Richtig fixen:
+  vermutlich GIC-400 Group/Security oder fehlende `armstub=`-Zeile in
+  `config.txt`, **datenblattgestützt** (nicht aus dem Gedächtnis).
+- **ADR-010 / dereferenzierbarer PD (PHASE-06)** — der „single shared
+  address space" (ADR-010) ist akzeptiert, aber auf QEMU blockiert (3
+  TCG-Wände); live läuft Option (b): per-process-TTBR0 + **opaker** PD.
+  Folge: `Pexec(PE_LOAD)`→PD-deref→`Mshrink`-Shell-Idiom +
+  `PE_BASEPAGE`/`GOTHENFREE`/`BASEPAGEFLAGS` fehlen → blockiert echtes
+  Source-Porting (Phase 15). Entweder ADR-010 auf realer HW
+  validieren oder eine QEMU-taugliche Alternative finden.
+- **EC2 (PHASE-01) — Real-HW-Restverifikation** — auf echtem RPi4 noch
+  ungetestet: FAT16-Datei-I/O (Phase 08/09), und die obigen zwei Punkte.
+  Boot + Konsole + Tastatur + 4-Drive-Detection sind auf HW bestätigt.
+- **Kleinere funktionale Lücken** — `Bconin`/`Bconout` + Cookie-Jar
+  (Phase 08 D2/D5); `Kbdvbase`-Vektor-Dispatch (Phase 11 EC1, braucht das
+  AES-Eventmodell — jetzt im Aufbau); `Pwait`-Round-Robin (Phase 06 EC4);
+  `Cconrs`-EL0-Zeileneditor-E2E-Test. ~13 Kernel-Clippy-Lints (Phase 03).
 
 ## Recent Decisions
 
@@ -354,7 +343,7 @@ Phasenbeginn entschieden sein (siehe `docs/api/_phase00-completion.md`):
 
 | 2026-06-18 | **Phase 10 (BIOS Screen) komplett + interaktive Konsole.** XBIOS-Trap-14-Dispatcher + Screen-Gruppe (`Physbase`/`Logbase`/`Getrez`/`Setscreen`/`Setpalette`/`Setcolor`) auf dem VideoCore-FB (`Host::screen()`/`ScreenInfo`). **D5: VT52-Framebuffer-Konsole** ([`kernel/src/fbcon.rs`](../kernel/src/fbcon.rs)) — `Host::console_write_byte` rendert GEMDOS-Konsolenausgabe per VDI-8×16-Font auf den Bildschirm (schwarze Schrift auf weiß, CR/LF/BS/TAB, Wrap, Scroll); EC1 erfüllt. **Darauf eine interaktive Konsole** ([`kernel/src/shell.rs`](../kernel/src/shell.rs)) im EmuCON-Stil: REPL über `Cnecin`/`Cconout` + FAT16 (`help`/`ver`/`cls`/`pwd`/`cd`/`dir`/`type`/Laufwerkswechsel), Prompt zeigt Drive+Pfad. **Bug-Fund:** `Cconws`/`Cconrs` lesen ihren String mit `ldtrb` (unprivileged, EL0-Rechtecheck) → Kernel-Pointer faultet auf QEMU-TCG; daher value-basierte Calls. **In QEMU raspi4b verifiziert** (gepipte serielle Eingabe): `dir` listet das FAT16-Root mit Größen/`<DIR>`, `cd SUB`→Prompt `C:\SUB>`, `type INNER.TXT` zeigt Dateiinhalt. Eingabe via UART (serielles Terminal), Ausgabe auf HDMI. |
 
-| 2026-06-19 | **Phase 12 (VDI) vollständig implementiert — alle ~70 funktionalen Opcodes.** Aufbauend auf dem D1–D6-Kern in 7 Batches gegen `docs/api/vdi/`: **(Fundament)** Clip-Rechteck durch jedes Primitiv gezogen (`fill_rect`/`fill_pattern`/`draw_glyph`/`blit_mono`/`copy_rect` nehmen jetzt `ClipRect`) + Schreibmodi + `vs_clip`/`vswr_mode`; **(Attribute)** alle Setter inkl. `vs_color` mit **mutierbarer Palette** (Backend `set_color`/`query_color`/`read_pixel`, lazy-seed-AtomicU32-CLUT + REQ_COL); echte `fnt_st_8x16`-Metriken; **(Output)** `v_pmarker` (6 Glyph-Vektortabellen), `v_fillarea` (Even-Odd-Scanline-Polygon), `v_gdp` alle Sub-Ops (Bar/Kreis/Ellipse/Arc/Pieslice/Rounded-Box via neuem Integer-Trig-Modul `trig.rs` — Bhaskara I, kein libm), `v_contourfill` (Scanline-Flood-Fill, beide `seed_type`), Wide-/Dash-Linien in `v_pline`, Text-Effekte (thicken/light/skew/underline) in `v_gtext`; **(Inquiry)** `vq[lmft]_attributes`, `vqt_extent/width/name/fontinfo`, `vq_color`, `v_get_pixel`, `vqin_mode`, `vq_key_s` (echter IKBD-Shift-State via neuem `Host::keyboard_shift_state`); **(Raster)** `vr_trnfm` (Standard↔Device-Transpose, faithful EmuTOS-Port); **(Maus/Input)** `vsc_form`+16×16-Cursor-Sprite mit Save/Restore, `v_show_c`/`v_hide_c`, `vq_mouse`, `v_locator`/`v_choice`/`v_string`, `vex_*`-Vektoren; **(Escape)** `v_escape` 19 VT52-Alpha-Sub-Ops. Nur echte VDI-No-ops (4/10/27/29/132/133) bleiben ungeroutet. **Capstone end-to-end per QMP-Screendump verifiziert**: Demo zeichnet Fills/Kreis/Dreieck/Rounded-Box/Marker/Dash-Linie/Bold-Underline-Text/geclippte Fläche/Cursor über den echten `svc #2`-Trap-Pfad → 8/8 Pixel-Checks grün (inkl. Clip-Fenster, das das gelbe Rechteck beschneidet). Beide Boards + Clippy clean. **Dokumentierte Bring-up-Grenzen statt Stubs:** Maus-Position/-Buttons geparkt bis IKBD-Maustreiber (`mouse::set_state` als Integrationspunkt bereit), `v_hardcopy` No-op (kein Drucker), ein fester 8×16-Font (Metrik-Calls melden dessen echte Werte), Truecolor/Bézier out-of-scope. **Damit ist Phase 13 (AES) entblockt** — die AES zeichnet über `graf_handle`/VDI. |
+| 2026-06-19 | **Phase 12 (VDI) vollständig implementiert — alle ~70 funktionalen Opcodes.** Aufbauend auf dem D1–D6-Kern in 7 Batches gegen `docs/api/vdi/`: **(Fundament)** Clip-Rechteck durch jedes Primitiv gezogen (`fill_rect`/`fill_pattern`/`draw_glyph`/`blit_mono`/`copy_rect` nehmen jetzt `ClipRect`) + Schreibmodi + `vs_clip`/`vswr_mode`; **(Attribute)** alle Setter inkl. `vs_color` mit **mutierbarer Palette** (Backend `set_color`/`query_color`/`read_pixel`, lazy-seed-AtomicU32-CLUT + REQ_COL); echte `fnt_st_8x16`-Metriken; **(Output)** `v_pmarker` (6 Glyph-Vektortabellen), `v_fillarea` (Even-Odd-Scanline-Polygon), `v_gdp` alle Sub-Ops (Bar/Kreis/Ellipse/Arc/Pieslice/Rounded-Box via neuem Integer-Trig-Modul `trig.rs` — Bhaskara I, kein libm), `v_contourfill` (Scanline-Flood-Fill, beide `seed_type`), Wide-/Dash-Linien in `v_pline`, Text-Effekte (thicken/light/skew/underline) in `v_gtext`; **(Inquiry)** `vq[lmft]_attributes`, `vqt_extent/width/name/fontinfo`, `vq_color`, `v_get_pixel`, `vqin_mode`, `vq_key_s` (echter IKBD-Shift-State via neuem `Host::keyboard_shift_state`); **(Raster)** `vr_trnfm` (Standard↔Device-Transpose, faithful EmuTOS-Port); **(Maus/Input)** `vsc_form`+16×16-Cursor-Sprite mit Save/Restore, `v_show_c`/`v_hide_c`, `vq_mouse`, `v_locator`/`v_choice`/`v_string`, `vex_*`-Vektoren; **(Escape)** `v_escape` 19 VT52-Alpha-Sub-Ops. Nur echte VDI-No-ops (4/10/27/29/132/133) bleiben ungeroutet. **Capstone end-to-end per QMP-Screendump verifiziert**: Demo zeichnet Fills/Kreis/Dreieck/Rounded-Box/Marker/Dash-Linie/Bold-Underline-Text/geclippte Fläche/Cursor über den echten `svc #2`-Trap-Pfad → 8/8 Pixel-Checks grün (inkl. Clip-Fenster, das das gelbe Rechteck beschneidet). Beide Boards + Clippy clean. **Dokumentierte Bring-up-Grenzen statt Stubs:** Maus-Position/-Buttons **jetzt live** über den IKBD-Maus-Adapter (`vdi::feed_relative`, Commit `5d4805e`, 2026-06-20 — vorher geparkt; `vq_mouse` liefert echte Werte), `v_hardcopy` No-op (kein Drucker), ein fester 8×16-Font (Metrik-Calls melden dessen echte Werte), Truecolor/Bézier out-of-scope. **Damit ist Phase 13 (AES) entblockt** — die AES zeichnet über `graf_handle`/VDI. |
 
 | 2026-06-20 | **IKBD-Maus-Input + Phase-13 D1–D3 (AES Application- + Event-Manager).** **Maus:** der relative-Maus-Paket-Decode (0xF8..0xFB + signed dx/dy), den der IKBD schon auf UART2 streamt und der Keyboard-Decoder bisher verwarf, treibt jetzt den VDI-Cursor — Kernel macht den Byte-Decode + Wire→VDI-Button-Swap, tos-api die Cursor-Semantik (`vdi::feed_relative`: Center-Init, Akkumulation, Clamp). `vq_mouse` (124) liefert live statt geparkt. Dünner Adapter, **keine** Line-A-/IKBD-Emulation (Spec: [`api/vdi/input/_mouse-packet.md`](api/vdi/input/_mouse-packet.md)). **AES D2:** Application Manager (`appl_*`, Message-Pipe). **AES D3:** Event Manager — `evnt_timer` (+ neue `Host::monotonic_millis`), `evnt_keybd`/`evnt_mesag` (+ `Host::pump_input`, faktorisiert aus `console_read_byte_blocking`), `evnt_button`/`evnt_mouse`/`evnt_dclick`, `evnt_multi`-Multiplexer. Bring-up = Single-App-Poll-Wait statt `ev_block`-Scheduler; dokumentierte Grenzen (ASCII-only Keys, Single-Click-Matching). Alle gegen den echten `svc #2`-Trap in QEMU verifiziert (`selftest_aes::run_phase13_event_test`). Beide Boards grün. Commits `5d4805e`..`2cc0078`. |
 
