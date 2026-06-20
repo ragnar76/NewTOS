@@ -2,14 +2,16 @@
 //!
 //! Spec: `docs/api/bios/`. Bring-up scope: the block-device functions
 //! (`Rwabs`, `Mediach`, `Drvmap`) on top of the host-supplied
-//! [`block::BlockDev`]. Console BIOS calls (`Bconin`/`Bconout`) and the
-//! cookie jar land later.
+//! [`block::BlockDev`], plus the console character calls
+//! (`Bconstat`/`Bconin`/`Bconout`/`Bcostat`, see [`chardev`]). The cookie
+//! jar lands later.
 //!
 //! Native AArch64 ABI (as for GEMDOS): function id in `x8`, arguments in
 //! `x0..`, result in `x0`.
 
 pub mod block;
 pub mod bpb;
+pub mod chardev;
 pub mod drive;
 
 pub use drive::mount;
@@ -23,7 +25,11 @@ use crate::trap::TrapArgs;
 const SECTOR: usize = 512;
 
 // BIOS function ids.
+const BCONSTAT: u16 = 0x01;
+const BCONIN: u16 = 0x02;
+const BCONOUT: u16 = 0x03;
 const RWABS: u16 = 0x04;
+const BCOSTAT: u16 = 0x08;
 const TICKCAL: u16 = 0x06;
 const GETBPB: u16 = 0x07;
 const MEDIACH: u16 = 0x09;
@@ -37,6 +43,10 @@ const TICKCAL_MS: Long = 20;
 /// `BPB *` pointer, so the result is widened to `i64`.
 pub fn dispatch(args: &TrapArgs) -> i64 {
     match args.func_id() {
+        BCONSTAT => chardev::bconstat(args) as i64,
+        BCONIN => chardev::bconin(args) as i64,
+        BCONOUT => chardev::bconout(args) as i64,
+        BCOSTAT => chardev::bcostat(args) as i64,
         RWABS => rwabs(args) as i64,
         TICKCAL => TICKCAL_MS as i64,
         GETBPB => bpb::getbpb(args.arg_u16(0)),
