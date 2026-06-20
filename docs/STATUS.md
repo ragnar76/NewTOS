@@ -5,9 +5,21 @@
 
 ## Current Phase
 
+**Phase 13 — AES** (in Arbeit, seit 2026-06-19). D1 Dispatcher + D2
+Application Manager (`appl_*`) + D3 Event Manager (`evnt_*`, alle 7
+Opcodes) implementiert und in QEMU über den echten `svc #2`-Trap
+verifiziert. Offen: D4 Window, D5 Menu, D6 Object+Form, D7 RSC,
+D8 Fileselector, D9 Scrap+Shell. Details: Phase-Status-Tabelle (Zeile 13)
++ Recent Decisions (2026-06-20).
+
+Phasen 00–12 sind abgeschlossen bzw. substanziell fertig — maßgeblich ist
+die **Phase-Status-Tabelle** weiter unten. Der folgende Phase-00/02-Block
+ist die ursprüngliche, historische Detailaufschlüsselung des
+Konsolen-Fundaments (nicht mehr „die aktuelle Phase").
+
 **Phase 00 — EmuTOS Source Analysis** (✅ abgeschlossen 2026-05-02)
 
-**Phase 02 — GEMDOS Console I/O** (in Arbeit, gestartet 2026-05-03)
+**Phase 02 — GEMDOS Console I/O** (Fundament; D1–D5 done, D6/D7 siehe unten)
 - D0 Phase-Vorbereitung: done — Specs aus Phase 00 verifiziert.
 - D1 Exception-Vector-Table + SVC-Dispatch: done —
   `kernel/src/arch/aarch64/exception_vectors.s` (16-Slot VBAR-Tabelle,
