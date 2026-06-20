@@ -210,6 +210,43 @@ pub fn objc_offset(pb: &Aespb) {
     pb.set_ret(1);
 }
 
+/// `objc_change` (47) — set `obj`'s state to `OB_NEWSTATE` (`int_in[6]`)
+/// and, if `OB_REDRAW` (`int_in[7]`) is set, redraw that object.
+/// `addr_in[0]` = tree.
+pub fn objc_change(pb: &Aespb) {
+    let tree = pb.addrin(0) as *mut Object;
+    let obj = pb.intin(0);
+    let newstate = pb.intin(6) as u16;
+    let redraw = pb.intin(7) != 0;
+    if tree.is_null() || obj < 0 {
+        pb.set_ret(0);
+        return;
+    }
+    change(tree, obj, newstate, redraw);
+    pb.set_ret(1);
+}
+
+/// Set `obj`'s state and optionally redraw just that object. Shared by
+/// `objc_change` and the Form Manager (to show a pressed button).
+pub(crate) fn change(tree: *mut Object, obj: i16, newstate: u16, redraw: bool) {
+    // SAFETY: valid tree (GEM contract); the caller owns the array.
+    unsafe {
+        (*tree.add(obj as usize)).ob_state = newstate;
+    }
+    if !redraw {
+        return;
+    }
+    if let Some(backend) = host().and_then(|h| h.raster()) {
+        let clip = ClipRect::full(backend.width(), backend.height());
+        let (ox, oy) = abs_offset(tree, obj);
+        // SAFETY: valid tree; depth 0 redraws only this object.
+        unsafe {
+            let ob = &*tree.add(obj as usize);
+            draw_tree(tree, obj, 0, ox - ob.ob_x, oy - ob.ob_y, clip, backend);
+        }
+    }
+}
+
 /// `objc_find` (43) — hit-test: index of the deepest visible, non-disabled
 /// object under `(OB_MX, OB_MY)` within `OB_DEPTH` levels of `OB_DRAWOB`,
 /// or `-1`. `addr_in[0]` = tree.

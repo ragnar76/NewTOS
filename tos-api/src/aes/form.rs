@@ -22,9 +22,12 @@ const G_BUTTON: u16 = 26;
 const G_STRING: u16 = 28;
 
 const SELECTABLE: u16 = 0x0001;
+const DEFAULT: u16 = 0x0002;
 const EXIT: u16 = 0x0004;
 const LASTOB: u16 = 0x0020;
+const TOUCHEXIT: u16 = 0x0040;
 const SELECTED: u16 = 0x0001;
+const MAX_DEPTH: i16 = 16;
 
 const CW: i16 = 8; // system font cell width
 const CH: i16 = 16; // system font cell height
@@ -264,4 +267,79 @@ fn split_copy(
         i += 1;
     }
     count
+}
+
+/// `form_do` (50) — run a modal dialog on the tree at `addr_in[0]`
+/// starting at edit object `int_in[0]`. Returns the index of the
+/// `EXIT`/`TOUCHEXIT` object that ended the dialog.
+///
+/// **Batch-5 scope:** handles button clicks (`EXIT`/`TOUCHEXIT`) and the
+/// keyboard (Enter = the `DEFAULT` button). Editable `TEDINFO` fields
+/// (`objc_edit`) and full keyboard navigation land in a later batch.
+pub fn form_do(pb: &Aespb) {
+    let tree = pb.addrin(0) as *mut Object;
+    if tree.is_null() {
+        pb.set_ret(-1);
+        return;
+    }
+    pb.set_ret(run_form(tree));
+}
+
+/// The modal loop: wait for a click on an `EXIT`/`TOUCHEXIT` object or
+/// Enter (the default button); show it pressed and return its index.
+fn run_form(tree: *mut Object) -> i16 {
+    let def = find_flag(tree, DEFAULT);
+    let Some(h) = host() else {
+        return def;
+    };
+    let mut prev = crate::vdi::mouse_buttons();
+    loop {
+        if let Some(c) = h.console_try_read() {
+            if (c == b'\r' || c == b'\n') && def >= 0 {
+                press(tree, def);
+                return def;
+            }
+        }
+        let cur = crate::vdi::mouse_buttons();
+        if cur & 0x01 != 0 && prev & 0x01 == 0 {
+            let (mx, my) = crate::vdi::mouse_position();
+            // SAFETY: valid tree (GEM contract).
+            let hit = unsafe { object::hit_test(tree as *const Object, 0, MAX_DEPTH, mx, my) };
+            if hit >= 0 {
+                // SAFETY: hit is a valid index.
+                let flags = unsafe { (*tree.add(hit as usize)).ob_flags };
+                if flags & (EXIT | TOUCHEXIT) != 0 {
+                    press(tree, hit);
+                    return hit;
+                }
+            }
+        }
+        prev = cur;
+        h.pump_input();
+    }
+}
+
+/// Show `obj` selected (pressed) and redraw it.
+fn press(tree: *mut Object, obj: i16) {
+    // SAFETY: valid index.
+    let state = unsafe { (*tree.add(obj as usize)).ob_state } | SELECTED;
+    object::change(tree, obj, state, true);
+}
+
+/// Index of the first object carrying `flag` (walking to `LASTOB`), or -1.
+fn find_flag(tree: *mut Object, flag: u16) -> i16 {
+    let mut i = 0i16;
+    // SAFETY: the flat tree array terminates at the LASTOB object.
+    unsafe {
+        loop {
+            let ob = &*tree.add(i as usize);
+            if ob.ob_flags & flag != 0 {
+                return i;
+            }
+            if ob.ob_flags & LASTOB != 0 {
+                return -1;
+            }
+            i += 1;
+        }
+    }
 }

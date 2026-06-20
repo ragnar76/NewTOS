@@ -255,3 +255,53 @@ pub fn run_tedinfo() {
     aes(block.as_ptr() as u64);
     kprintln!("[objc] TEDINFO demo rendered, ret={}", intout[0]);
 }
+
+/// Batch-5 demo: `form_do` — draw a dialog (objc_draw), then run the
+/// modal loop (click a button, or Enter for the default OK). Prints the
+/// exit object index.
+pub fn run_form_do() {
+    const DEFAULT: u16 = 0x0002;
+    static TITLE: &[u8] = b"form_do: click a button (or Enter)\0";
+    static OK: &[u8] = b"OK\0";
+    static CANCEL: &[u8] = b"Cancel\0";
+
+    let tree = [
+        Object { ob_next: -1, ob_head: 1, ob_tail: 3, ob_type: G_BOX, ob_flags: 0,
+                 ob_state: 0, ob_spec: 1 << 16, ob_x: 160, ob_y: 140, ob_width: 320, ob_height: 160 },
+        Object { ob_next: 2, ob_head: -1, ob_tail: -1, ob_type: G_STRING, ob_flags: 0,
+                 ob_state: 0, ob_spec: TITLE.as_ptr() as u64, ob_x: 24, ob_y: 24, ob_width: 280, ob_height: 16 },
+        Object { ob_next: 3, ob_head: -1, ob_tail: -1, ob_type: G_BUTTON,
+                 ob_flags: SELECTABLE | EXIT | DEFAULT, ob_state: 0,
+                 ob_spec: OK.as_ptr() as u64, ob_x: 40, ob_y: 110, ob_width: 100, ob_height: 28 },
+        Object { ob_next: 0, ob_head: -1, ob_tail: -1, ob_type: G_BUTTON,
+                 ob_flags: SELECTABLE | EXIT | LASTOB, ob_state: 0,
+                 ob_spec: CANCEL.as_ptr() as u64, ob_x: 180, ob_y: 110, ob_width: 100, ob_height: 28 },
+    ];
+
+    let mut control = [0i16; 8];
+    let mut global = [0i16; 32];
+    let mut intin = [0i16; 16];
+    let mut intout = [0i16; 16];
+    let mut addrin = [0i64; 4];
+    let mut addrout = [0i64; 4];
+    let block: [u64; 6] = [
+        control.as_mut_ptr() as u64, global.as_mut_ptr() as u64,
+        intin.as_mut_ptr() as u64, intout.as_mut_ptr() as u64,
+        addrin.as_mut_ptr() as u64, addrout.as_mut_ptr() as u64,
+    ];
+
+    // objc_draw the dialog
+    control[0] = 42; control[3] = 1;
+    addrin[0] = tree.as_ptr() as i64;
+    intin[0] = 0; intin[1] = 8; intin[2] = 0; intin[3] = 0; intin[4] = 640; intin[5] = 480;
+    aes(block.as_ptr() as u64);
+
+    // form_do — modal loop
+    control = [0; 8];
+    control[0] = 50; control[1] = 1; control[3] = 1;
+    intin[0] = 0; // start object
+    addrin[0] = tree.as_ptr() as i64;
+    aes(block.as_ptr() as u64);
+
+    kprintln!("[objc] form_do returned object {}", intout[0]);
+}
