@@ -546,9 +546,15 @@ matters later (preemption, smooth mouse via background FIFO drain).
 
 A self-built `armstub8-gic.bin` (raspberrypi/tools `armstub8.S`
 `-DGIC=1 -DBCM2711=1`, which writes `IGROUPR=0xFFFFFFFF`) was tried but
-**left IGROUPR=0 AND regressed the VideoCore framebuffer + GPU/ARM memory
-split** — incompatible with this firmware (likely spin-table/magic offset
-mismatch). Reverted.
+**left IGROUPR=0** — it did not take effect on this firmware (reason
+unconfirmed: the firmware may re-init the GIC after the stub, or the
+self-built stub's layout mismatches what the firmware expects). Reverted.
+**Correction:** a framebuffer + memory-split regression first blamed on
+the armstub was actually an unrelated mistake — copying the project's
+`config.txt` template over the card dropped `gpu_mem=256`, so the
+VideoCore framebuffer went away and the ARM saw ~977 MiB instead of
+~768 MiB. Restored `gpu_mem=256` (+ the `hdmi_*` lines) into
+`boot/rpi4/config.txt`; the armstub itself broke nothing.
 
 **When revisited** (multitasking / smooth mouse): get the GIC into
 Group 1 via secure boot code — a *matching* prebuilt GIC armstub for the
