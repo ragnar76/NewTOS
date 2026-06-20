@@ -18,7 +18,7 @@
 
 use super::Aespb;
 use crate::host::host;
-use crate::vdi::backend::{ClipRect, Pel, RasterBackend};
+use crate::vdi::backend::{ClipRect, MonoSrc, Pel, RasterBackend, Rect};
 
 // ── OBJECT model ────────────────────────────────────────────────────
 
@@ -53,10 +53,65 @@ pub struct Object {
 
 // Graphic types (`obdefs.h`).
 const G_BOX: u16 = 20;
+const G_IMAGE: u16 = 23;
 const G_IBOX: u16 = 25;
 const G_BUTTON: u16 = 26;
 const G_BOXCHAR: u16 = 27;
 const G_STRING: u16 = 28;
+const G_ICON: u16 = 31;
+
+/// `BITBLK` — a raw monochrome raster for a `G_IMAGE` object
+/// (`obdefs.h`). `bi_pdata` is a native pointer to big-endian 16-bit
+/// raster words.
+#[repr(C)]
+pub struct BitBlk {
+    /// pointer to the mono raster data (16-bit words).
+    pub bi_pdata: u64,
+    /// width of one row in bytes.
+    pub bi_wb: i16,
+    /// height in rows.
+    pub bi_hl: i16,
+    /// source x within the raster.
+    pub bi_x: i16,
+    /// source y within the raster.
+    pub bi_y: i16,
+    /// foreground colour (PEL) of set bits.
+    pub bi_color: i16,
+}
+
+/// `ICONBLK` — a monochrome icon (mask + data + optional char + text)
+/// for a `G_ICON` object (`obdefs.h`). Pointers are native 64-bit.
+#[repr(C)]
+pub struct IconBlk {
+    /// pointer to the mask raster (16-bit words).
+    pub ib_pmask: u64,
+    /// pointer to the data raster (16-bit words).
+    pub ib_pdata: u64,
+    /// pointer to the icon's text string.
+    pub ib_ptext: u64,
+    /// colour/char word: `[15:12]` fg, `[11:8]` bg, `[7:0]` character.
+    pub ib_char: i16,
+    /// character x/y.
+    pub ib_xchar: i16,
+    /// character y.
+    pub ib_ychar: i16,
+    /// icon image rect x/y/w/h (relative to the object).
+    pub ib_xicon: i16,
+    /// icon y.
+    pub ib_yicon: i16,
+    /// icon width.
+    pub ib_wicon: i16,
+    /// icon height.
+    pub ib_hicon: i16,
+    /// text rect x/y/w/h (relative to the object).
+    pub ib_xtext: i16,
+    /// text y.
+    pub ib_ytext: i16,
+    /// text width.
+    pub ib_wtext: i16,
+    /// text height.
+    pub ib_htext: i16,
+}
 
 // Flag / state bits.
 const LASTOB: u16 = 0x0020;
@@ -304,7 +359,22 @@ fn just_draw(ob: &Object, x: i16, y: i16, clip: ClipRect, backend: &dyn RasterBa
             let s = read_cstr(ob.ob_spec);
             draw_text(backend, x, y, w, h, s, TE_LEFT, BLACK, clip);
         }
-        // Other types (TEDINFO text, icons, images) land in later batches.
+        G_IMAGE => {
+            if ob.ob_spec != 0 {
+                // SAFETY: ob_spec of a G_IMAGE points at a BITBLK.
+                let bi = unsafe { &*(ob.ob_spec as *const BitBlk) };
+                blit_image(backend, bi, x, y, clip);
+            }
+        }
+        G_ICON => {
+            if ob.ob_spec != 0 {
+                // SAFETY: ob_spec of a G_ICON points at an ICONBLK.
+                let ib = unsafe { &*(ob.ob_spec as *const IconBlk) };
+                draw_icon(backend, ib, x, y, selected, clip);
+            }
+        }
+        // Remaining types (TEDINFO text, colour icons, userdef) land in
+        // later batches.
         _ => {}
     }
 
@@ -374,6 +444,111 @@ fn read_cstr(spec: u64) -> &'static [u8] {
         }
         core::slice::from_raw_parts(p, n)
     }
+}
+
+/// Blit a `G_IMAGE` BITBLK at `(x, y)`: a transparent mono blit in
+/// `bi_color` (set bits drawn, clear bits leave the background).
+fn blit_image(backend: &dyn RasterBackend, bi: &BitBlk, x: i16, y: i16, clip: ClipRect) {
+    let stride = (bi.bi_wb / 2).max(1) as u16; // bytes → 16-bit words
+    blit_plane(
+        backend,
+        bi.bi_pdata,
+        stride,
+        bi.bi_x,
+        bi.bi_y,
+        Rect { x, y, w: bi.bi_wb * 8, h: bi.bi_hl },
+        bi.bi_color as Pel,
+        clip,
+    );
+}
+
+/// Draw a `G_ICON` ICONBLK at object origin `(ox, oy)`: the mask plane in
+/// the background colour, the data plane in the foreground colour, then
+/// the character and text. SELECTED swaps fg/bg (EmuTOS `gr_gicon`).
+fn draw_icon(
+    backend: &dyn RasterBackend,
+    ib: &IconBlk,
+    ox: i16,
+    oy: i16,
+    selected: bool,
+    clip: ClipRect,
+) {
+    let chword = ib.ib_char;
+    let mut fg = ((chword >> 12) & 0x0f) as Pel;
+    let mut bg = ((chword >> 8) & 0x0f) as Pel;
+    if selected {
+        core::mem::swap(&mut fg, &mut bg);
+    }
+    let stride = (ib.ib_wicon / 16).max(1) as u16; // icon width in words
+    let rect = Rect {
+        x: ox + ib.ib_xicon,
+        y: oy + ib.ib_yicon,
+        w: ib.ib_wicon,
+        h: ib.ib_hicon,
+    };
+    blit_plane(backend, ib.ib_pmask, stride, 0, 0, rect, bg, clip);
+    blit_plane(backend, ib.ib_pdata, stride, 0, 0, rect, fg, clip);
+
+    let c = (chword & 0xff) as u8;
+    if c != 0 {
+        backend.draw_glyph(
+            ox + ib.ib_xchar,
+            oy + ib.ib_ychar,
+            crate::vdi::font::glyph(c as u16),
+            fg,
+            clip,
+        );
+    }
+    if ib.ib_ptext != 0 {
+        let s = read_cstr(ib.ib_ptext);
+        if !s.is_empty() {
+            draw_text(
+                backend,
+                ox + ib.ib_xtext,
+                oy + ib.ib_ytext,
+                ib.ib_wtext,
+                ib.ib_htext,
+                s,
+                TE_CNTR,
+                fg,
+                clip,
+            );
+        }
+    }
+}
+
+/// Transparent mono blit of one bit-plane (`addr` → big-endian 16-bit
+/// words, `stride` words per row) into `dst`, set bits drawn in `fg`.
+fn blit_plane(
+    backend: &dyn RasterBackend,
+    addr: u64,
+    stride: u16,
+    src_x: i16,
+    src_y: i16,
+    dst: Rect,
+    fg: Pel,
+    clip: ClipRect,
+) {
+    if addr == 0 || dst.w <= 0 || dst.h <= 0 {
+        return;
+    }
+    let rows = src_y.max(0) as usize + dst.h as usize;
+    let total = stride as usize * rows;
+    // SAFETY: GEM contract — `addr` points at >= `total` raster words.
+    let bits = unsafe { core::slice::from_raw_parts(addr as *const u16, total) };
+    backend.blit_mono(
+        dst,
+        MonoSrc {
+            bits,
+            stride_words: stride,
+            x: src_x,
+            y: src_y,
+        },
+        fg,
+        WHITE,
+        false,
+        clip,
+    );
 }
 
 /// Recursive hit-test for `objc_find`. Returns the deepest matching child
