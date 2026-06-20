@@ -227,6 +227,7 @@ Phasenbeginn entschieden sein (siehe `docs/api/_phase00-completion.md`):
 | ADR-BDOS-Lock | BDOS-Serialisierungsmodell auf SMP       | PHASE-05  |
 | ADR-Line-A-01 | C-ABI-Form des Line-A-Exports            | PHASE-12  |
 | ADR-Line-A-02 | Mauszeiger-Eigentümerschaft              | PHASE-08  |
+| ADR-012       | Cookie-Jar-Zugriffsmechanismus (Proposed) | PHASE-08  |
 
 ## Blocked
 
@@ -251,8 +252,13 @@ Phasenbeginn entschieden sein (siehe `docs/api/_phase00-completion.md`):
 - **EC2 (PHASE-01) — Real-HW-Restverifikation** — auf echtem RPi4 noch
   ungetestet: FAT16-Datei-I/O (Phase 08/09), und die obigen zwei Punkte.
   Boot + Konsole + Tastatur + 4-Drive-Detection sind auf HW bestätigt.
-- **Kleinere funktionale Lücken** — Cookie-Jar (Phase 08 D5, **noch keine
-  Spec in `docs/api/` — erst extrahieren**); `Kbdvbase`-Vektor-Dispatch
+- **Cookie-Jar (Phase 08 D5)** — Spec extrahiert
+  ([`api/bios/_cookie-jar.md`](api/bios/_cookie-jar.md)) + **ADR-012
+  (Proposed)**; **blockiert auf die ADR-012-Entscheidung** (Zugriffs-
+  mechanismus: Trap-Query vs. `$5A0`-Sysvar-Mapping). Der klassische
+  `$5A0`+`Supexec`-Pfad ist auf NewTOS doppelt versperrt. Kein Code bis
+  zur Entscheidung.
+- **Kleinere funktionale Lücken** — `Kbdvbase`-Vektor-Dispatch
   (Phase 11 EC1, braucht das
   AES-Eventmodell — jetzt im Aufbau); `Pwait`-Round-Robin (Phase 06 EC4);
   `Cconrs`-EL0-Zeileneditor-E2E-Test.
@@ -351,6 +357,8 @@ Phasenbeginn entschieden sein (siehe `docs/api/_phase00-completion.md`):
 | 2026-06-20 | **IKBD-Maus-Input + Phase-13 D1–D3 (AES Application- + Event-Manager).** **Maus:** der relative-Maus-Paket-Decode (0xF8..0xFB + signed dx/dy), den der IKBD schon auf UART2 streamt und der Keyboard-Decoder bisher verwarf, treibt jetzt den VDI-Cursor — Kernel macht den Byte-Decode + Wire→VDI-Button-Swap, tos-api die Cursor-Semantik (`vdi::feed_relative`: Center-Init, Akkumulation, Clamp). `vq_mouse` (124) liefert live statt geparkt. Dünner Adapter, **keine** Line-A-/IKBD-Emulation (Spec: [`api/vdi/input/_mouse-packet.md`](api/vdi/input/_mouse-packet.md)). **AES D2:** Application Manager (`appl_*`, Message-Pipe). **AES D3:** Event Manager — `evnt_timer` (+ neue `Host::monotonic_millis`), `evnt_keybd`/`evnt_mesag` (+ `Host::pump_input`, faktorisiert aus `console_read_byte_blocking`), `evnt_button`/`evnt_mouse`/`evnt_dclick`, `evnt_multi`-Multiplexer. Bring-up = Single-App-Poll-Wait statt `ev_block`-Scheduler; dokumentierte Grenzen (ASCII-only Keys, Single-Click-Matching). Alle gegen den echten `svc #2`-Trap in QEMU verifiziert (`selftest_aes::run_phase13_event_test`). Beide Boards grün. Commits `5d4805e`..`2cc0078`. |
 
 | 2026-06-20 | **Phase-08 D2 — BIOS-Konsolen-Zeichen-I/O (`Bconstat`/`Bconin`/`Bconout`/`Bcostat`, 0x01/0x02/0x03/0x08).** Neues [`tos-api bios::chardev`](../tos-api/src/bios/chardev.rs) gegen `docs/api/bios/{01,02,03,08}-*.md`. EmuTOS' Per-Handle-Vektortabelle wird im NewTOS-Profil auf das eine reale Zeichengerät — die PL011+Framebuffer-Konsole — abgebildet: Eingabe auf Handle 2 (CON) + 4 (IKBD) über den RX-Ring, Ausgabe auf 2 (CON) + 5 (raw-CON); abwesende Geräte (0 PRT, 1 AUX, 3 MIDI) folgen der `char_dummy`-Semantik (Status 0, Eingabe 0, Ausgabe verworfen) statt auf nicht vorhandener HW zu blockieren; alle vier mit Host-Boot-Gate (`CHARDEV_AVAILABLE`-Äquivalent). `Bconin(CON)` liefert `0x0000_00NN` (ASCII low, Scancode=0 — gleiche Konvention wie `Cconin`). In QEMU über den echten `svc #13`-Trap verifiziert (`selftest_bios`): Bcostat(CON)=−1/(PRT)=0, Bconstat ohne/mit Input 0/−1, Bconout(CON)=1/(PRT)=0, Bconin liefert die gequeue-te Taste. Beide Boards grün. **Offen Phase 08:** Cookie-Jar (D5) — hat noch keine `docs/api/`-Spec. |
+
+| 2026-06-20 | **Cookie-Jar (Phase 08 D5) — Quellenanalyse + ADR-012-Entwurf, kein Code.** EmuTOS-Extraktion ergab: der Jar ist eine `{tag,value}[]`-Struktur (Terminator `{0,Kapazität}`), gebaut von `cookie_init`/`fill_cookie_jar`; **es gibt keinen Trap** — Anwendungen lesen die Sysvar bei `$5A0` (`_p_cookies`), im App-Kontext via `Supexec`. Auf NewTOS ist dieser Pfad **doppelt versperrt** (`$5A0` nicht gemappt wie die `$420`-Vars; `Supexec` deferred / Open-ADR). Folge: NewTOS braucht eigene Cookies (nur sinnvolle Tags `_MCH`/`_IDT`/`_FLK`/`_AKP` + NewTOS-Identitäts-Cookie; `_VDO`/`_SND`/`_FDC`/`_FPU` bedeutungslos) **und** einen nativen Zugriffsweg. Spec: [`api/bios/_cookie-jar.md`](api/bios/_cookie-jar.md). [ADR-012](MEMORY.md) (Proposed) stellt zwei Mechanismen gegenüber: (A) Trap-basierter `Getcookie`-Query (NewTOS-Extension, empfohlen — passt zur Syscall-Flughöhe), (B) `$5A0`-Sysvar-Seite mappen (max. Kompatibilität, zieht Supexec/Sysvar-Architektur nach). **Entscheidung offen.** |
 
 ## Notes
 

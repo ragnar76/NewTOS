@@ -255,6 +255,88 @@ primitives draw into *that device's* framebuffer rather than a global
 
 ---
 
+## ADR-012: Cookie-jar access mechanism on NewTOS
+
+**Date:** 2026-06-20
+**Status:** **Proposed** — decision pending. Blocks PHASE-08 D5.
+**Phase:** PHASE-08 (cookie jar).
+
+### Context
+
+The TOS cookie jar is a feature registry: an array of `{tag, value}`
+entries (terminated by `{0, capacity}`) that programs scan to detect
+system features (`_MCH`, `_IDT`, `_FLK`, …). Full data-model extraction:
+[`docs/api/bios/_cookie-jar.md`](api/bios/_cookie-jar.md).
+
+There is **no trap** for it. Classic access is: read the system-variable
+pointer at **`$5A0`** (`_p_cookies`) and linear-scan; because `$5A0` is
+supervisor-only low memory, applications elevate via **`Supexec`**
+(XBIOS 0x26). NewTOS blocks this path **twice**:
+
+1. `$5A0` is not mapped — Atari low-memory sysvars are not given AArch64
+   addresses (same call as the `$420`/`$432` vars: direct poke is out of
+   scope, m68k-emulator-only).
+2. `Supexec` is itself deferred (Open-ADR *ADR-Supexec*).
+
+So NewTOS needs its **own** cookie set (the still-meaningful tags + a
+NewTOS identity cookie; the Shifter/PSG/FDC/FPU tags are meaningless) and
+a **native access mechanism** replacing `Supexec` + `$5A0`.
+
+### Decision
+
+**Open.** Two candidate mechanisms, to be chosen:
+
+**Option A — trap-based cookie query (NewTOS extension).** A syscall such
+as `Getcookie(tag) -> (found, value)`, e.g. an XBIOS slot or a
+`Ssystem`-style GEMDOS function. The kernel owns the jar; programs query
+it by tag.
+- + No memory mapping, no `Supexec` dependency; fits the "syscall-
+  compatible OS" altitude. Self-contained, implementable now.
+- − Not bit-compatible: ported programs that read `$5A0` must be changed
+  to call the new function (a porting shim can hide this).
+- − Introduces a non-TOS syscall number — must be chosen so it never
+  collides with a real TOS function id.
+
+**Option B — map a `$5A0` sysvar page.** Establish a NewTOS sysvar region
+so `$5A0` (and later `$420` etc.) is a real, readable address holding the
+jar pointer.
+- + Maximum source compatibility: programs read `$5A0`/scan unchanged.
+- − Pulls in the whole Atari-sysvar + supervisor-access architecture
+  (couples to *ADR-Supexec* and a `$420`-vars ADR); large surface, and
+  it re-introduces low-memory aliasing concerns adjacent to ADR-010.
+
+### Rationale (leaning)
+
+Option A matches the project's stated altitude (TOS **API** compatibility,
+not hardware/memory-map emulation; cf. CLAUDE.md non-goals). The cookie
+jar is read by relatively few programs, and a one-line porting shim
+(`#define Getcookie(...)`) covers them. Option B is "more compatible" but
+drags in the deferred Supexec/sysvar architecture for little gain.
+
+### Consequences
+
+- The data model (`_cookie-jar.md`) is access-mechanism-agnostic and can
+  be built regardless; only the **query path** is gated on this ADR.
+- Whichever option, NewTOS defines its own cookie content: keep `_MCH`
+  (NewTOS machine id), `_IDT`, `_FLK`, `_AKP`; **drop** `_VDO`/`_SND`/
+  `_FDC`/`_FPU`; add a `NTOS`/`_NEW` identity+version cookie.
+
+### Alternatives considered
+
+- **Mirror EmuTOS verbatim** (`$5A0` + `Supexec` as-is): impossible —
+  both prerequisites are absent/deferred on NewTOS.
+- **Defer entirely**: viable, but the user asked to design our own cookie
+  mechanism now; recorded here rather than left implicit.
+
+### References
+
+- `docs/api/bios/_cookie-jar.md` (data model + access extraction)
+- EmuTOS `util/cookie.c`, `bios/machine.c:665`, `cli/cmdutil.c:321`
+- Open-ADR *ADR-Supexec*; `$420`-vars decision (STATUS Recent-Decisions
+  2026-05-03); ADR-010 (low-memory aliasing on QEMU)
+
+---
+
 > Anticipated further ADRs:
 >
 > - ADR-001: License (MIT vs Apache-2.0)
