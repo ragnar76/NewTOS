@@ -39,9 +39,18 @@ ADRs are numbered globally, prefix `ADR-NNN`. They follow the
 ## ADR-010: Single shared user address space (identity-mapped DRAM pools)
 
 **Date:** 2026-06-16
-**Status:** Accepted
-**Phase:** PHASE-06 (process model) — supersedes the per-process-TTBR0
-decision recorded in STATUS Recent-Decisions 2026-05-03/05-04.
+**Status:** Accepted as the **real-hardware target — NOT YET IMPLEMENTED.**
+Stage 1 is blocked on the QEMU cortex-a72 TCG (see Implementation note /
+Conclusion below). The **live implementation is option (b)**: per-process
+`TTBR0_EL1` + opaque PD handle + the QUIRK-001 Device-write barrier — the
+model this ADR's Decision rejects "for fidelity", kept as the only
+QEMU-workable interim. Consequently the per-process-TTBR0 decision in
+STATUS Recent-Decisions 2026-05-03/04 is **still in force, not
+superseded**; `USER_VA_BASE = 0` and the per-slot `l0_pa` /
+`install_ttbr0` / `restore_boot_ttbr0` machinery are all still live
+(verified 2026-06-20). Flip this to plain "Accepted" only once the shared
+user TTBR0 is actually installed (on real RPi4 hardware).
+**Phase:** PHASE-06 (process model).
 
 ### Context
 
