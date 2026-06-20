@@ -8,6 +8,13 @@
 arm_64bit=1
 kernel=kernel8.img
 
+# NOTE: a self-built armstub8-gic.bin (-DGIC=1 -DBCM2711=1) was tried to
+# move the GIC-400 SPIs to Group 1 (so the PL011 RX IRQ reaches the NS
+# kernel), but on this firmware it left IGROUPR=0 AND broke the VideoCore
+# framebuffer + changed the GPU/ARM memory split. Reverted 2026-06-20.
+# Console input uses the UART0 poll workaround until a compatible GIC
+# init path is found. See docs/MEMORY.md QUIRK + docs/STATUS.md.
+
 # ── Serial console (PL011 UART0 on GPIO 14/15) ──────────────────────
 # Enable the primary UART (PL011 / UART0). On the Pi 4 this routes to
 # GPIO 14 (TXD) / 15 (RXD) — the header pins the kernel's bcm2711

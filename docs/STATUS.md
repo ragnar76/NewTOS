@@ -48,14 +48,17 @@ Konsolen-Fundaments (nicht mehr „die aktuelle Phase").
   `Cconout` → `[selftest] RX-IRQ OK`.
 - D6 Integrationstests in QEMU: pending (manueller Smoke-Test passed).
 - D7 Real-Hardware EC: teilweise (2026-06-19). Konsole + Tastatureingabe
-  auf echtem RPi4 verifiziert. **Aber**: die PL011-RX-IRQ (INTID 153)
-  wird vom GIC-400 auf echter HW *nicht* ans Core zugestellt (in QEMU
-  schon). Aktueller **Workaround**: direkter UART0-RX-Poll im
-  Blocking-Read (`host_env.rs`, `console::pl011_rx_poll`), board-rpi4.
-  → OFFEN: den IRQ-Pfad richtig fixen (vermutlich GIC-400
-  Group/Security oder fehlende `armstub=`-Zeile in config.txt;
-  datenblattgestützt angehen, nicht aus dem Gedächtnis). Der Poll ist
-  bis dahin der bewusste Workaround und muss noch angepasst werden.
+  auf echtem RPi4 verifiziert. Die PL011-RX-IRQ (INTID 153) wird vom
+  GIC-400 auf echter HW *nicht* ans Core zugestellt (in QEMU schon) —
+  **Ursache geklärt (QUIRK-002):** GIC-400-SPIs resetten in Group 0
+  (secure → FIQ), der NS-EL1-Kernel bekommt nur Group 1 (IRQ) und kann
+  IGROUPR von NS nicht ändern. **Lösung: UART0-RX-Poll** (`host_env.rs`,
+  `console::pl011_rx_poll` + `pump_input`) — voll funktional. **Bewusst
+  nicht weiterverfolgt:** die serielle Konsole ist reines Dev-Tooling
+  (Produktiv-Eingabe = UART2-IKBD, Ausgabe = HDMI), der IRQ bringt im
+  kooperativen Single-App-Modell kaum Mehrwert. Ein Self-Build-armstub
+  scheiterte + regredierte den Framebuffer. Revisiten bei Preemption /
+  flüssiger Maus (siehe QUIRK-002).
 - **Smoke-Test** (2026-05-03, QEMU 11.0.0, `aarch64-virt,gic-version=2`,
   cortex-a72): SVC #1 / x8=0x09 dispatcht durch Vector-Table → Rust
   Sync-Handler → `gemdos::dispatch` → `cconws` und gibt
@@ -235,12 +238,6 @@ Phasenbeginn entschieden sein (siehe `docs/api/_phase00-completion.md`):
 > via DTB) sind **erledigt** und wurden entfernt — siehe Phase-Status-
 > Tabelle. Hier stehen nur noch tatsächlich offene Blocker.
 
-- **GIC-400 PL011-RX-IRQ auf echter HW (PHASE-02 D7)** — die RX-IRQ
-  (INTID 153) wird vom GIC-400 auf echtem RPi4 *nicht* ans Core
-  zugestellt (in QEMU schon); Konsoleneingabe läuft nur über den
-  UART0-Poll-Workaround (`console::pl011_rx_poll`). Richtig fixen:
-  vermutlich GIC-400 Group/Security oder fehlende `armstub=`-Zeile in
-  `config.txt`, **datenblattgestützt** (nicht aus dem Gedächtnis).
 - **ADR-010 / dereferenzierbarer PD (PHASE-06)** — der „single shared
   address space" (ADR-010) ist akzeptiert, aber auf QEMU blockiert (3
   TCG-Wände); live läuft Option (b): per-process-TTBR0 + **opaker** PD.
@@ -358,6 +355,8 @@ Phasenbeginn entschieden sein (siehe `docs/api/_phase00-completion.md`):
 | 2026-06-20 | **FreeMiNT als sanktionierte Quelle + `Ssystem`-Spec (Cookie-Zugriff).** Projektrichtung (User): den Kernel mit **FreeMiNT-kompatiblen** Funktionen erweitern, um die MiNT/GEM-Software-Basis lauffähig zu machen. FreeMiNT nach `references/freemint` geklont (`f906416`, gitignored wie EmuTOS), in [`SOURCE-ANALYSIS-PROTOCOL.md`](SOURCE-ANALYSIS-PROTOCOL.md) als Track-A-Sekundärquelle (nach EmuTOS, für Funktionen die EmuTOS nicht hat) + `references/README.md` dokumentiert. Erste Anwendung: der Cookie-Zugriff (ADR-012) wird als **FreeMiNT `Ssystem`** umgesetzt — GEMDOS `0x154`, `Ssystem(mode, arg1, arg2)`, Modes `S_GETCOOKIE`(8)/`S_SETCOOKIE`(9)/`S_DELCOOKIE`(26); `get_cookie` mit Tag-Query / NULL-Slot-Kapazität / Slot-Enumeration, `set_cookie` mit byteweiser Tag-Validierung + Update-or-Append. ABI faithful extrahiert aus `sys/ssystem.c`/`sys/cookie.c`/`sys/mint/ssystem.h` → Spec [`api/gemdos/154-ssystem.md`](api/gemdos/154-ssystem.md). Kein Code bis Spec-Freigabe. |
 
 | 2026-06-20 | **Cookie-Jar implementiert (Phase 08 D5) — FreeMiNT `Ssystem`.** Erste FreeMiNT-kompatible Erweiterung. Neuer kernel-eigener Jar [`tos-api cookie`](../tos-api/src/cookie.rs) (fixed-size static Array statt heap-alloc, da tos-api `#![no_std]` ohne `alloc` ist — näher an FreeMiNTs fixem `dflt_jar[]`; ADR-012-Notiz entsprechend); [`gemdos::ssystem`](../tos-api/src/gemdos/ssystem.rs) mit `S_GETCOOKIE`/`S_SETCOOKIE`/`S_DELCOOKIE` (andere Modes → `EINVFN`), GEMDOS-Dispatcher fängt `0x154` vor dem Tabellen-Lookup ab. `get_cookie`-Semantik faithful: Tag→Wert, `tag==0`→Count, kleiner Tag→Slot-Tag-Enumeration; `set_cookie` byteweise Tag-Validierung; `arg2`-Pointer-Write per unprivilegiertem `sttr` (EL0-rechtegeprüft). Boot seedet das NewTOS-Set `NTOS`(Version)/`_MCH`/`_IDT`/`_AKP` (Atari-HW-Cookies `_VDO`/`_SND`/`_FDC`/`_FPU` weggelassen). **In QEMU über `svc #1`/0x154 verifiziert** (`selftest_cookie`, 12/12): Get/Set/Del, Count, Slot-Enumeration, unbekannt→ERROR, ungültiger Tag + unimpl. Mode→EINVFN. Beide Boards grün. |
+
+| 2026-06-20 | **GIC-400 RX-IRQ auf echter HW — Ursache geklärt (QUIRK-002), bewusst nicht gefixt.** Register-Dump auf echtem RPi4 zeigte: alles korrekt konfiguriert, aber `GICD_IGROUPR[153]=0` → INTID 153 in **Group 0 (secure)**. GIC-400-Security-Extensions: alle SPIs resetten in Group 0 (→ FIQ an secure), der NS-EL1-Kernel empfängt nur Group 1 (IRQ) und kann IGROUPR von NS nicht ändern; nur Secure-Boot-Code (armstub) kann das. QEMUs GICv2-Modell hat die Trennung nicht → dort funktioniert es. Ein Self-Build-`armstub8-gic.bin` (raspberrypi/tools, `setup_gic` schreibt IGROUPR=0xFFFFFFFF) wurde gebaut + getestet, ließ aber IGROUPR=0 **und** zerstörte den VideoCore-Framebuffer + GPU/ARM-Memory-Split → mit dieser Firmware inkompatibel, reverted. **Entscheidung: nicht weiterverfolgen.** Die serielle Konsole ist reines Dev-Tooling (Produktiv-I/O = UART2-IKBD + HDMI); der IRQ bringt im kooperativen Single-App-Modell kaum Mehrwert; der Poll-Workaround ist voll funktional. Revisiten erst bei Preemption / flüssiger Maus. Diagnose-Code (`gic_diag.rs`) wieder entfernt; Wissen in QUIRK-002 ([MEMORY.md](MEMORY.md)) konserviert. |
 
 ## Notes
 

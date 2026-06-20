@@ -510,6 +510,58 @@ exhibits and silently works around the same quirk.
 > - "BCM2711 GPIO pull-up/down uses `GPIO_PUP_PDN_CNTRL_REGn` at
 >   `0xFE20_00E4`, **not** the older BCM2837 `GPPUD` sequence."
 
+## QUIRK-002: GIC-400 SPIs reset to Group 0 (secure) — peripheral IRQs not delivered to the NS kernel on real RPi4
+
+### Symptom
+
+On real RPi4 silicon, the PL011 UART0 RX interrupt (INTID 153) is never
+delivered to the core, although the identical path works in QEMU. TX and
+polled RX work; only IRQ delivery fails. Diagnosed 2026-06-20 with a
+register dump (`gic_diag.rs`, since removed): `GICD_CTLR=1`, `GICC_CTLR=1`,
+`ISENABLER[153]=1`, `ITARGETSR=CPU0`, `ICFGR=level`, `PL011 IMSC` RX
+unmasked — all correct — but **`GICD_IGROUPR[153] = 0` (Group 0 /
+secure)** and `GICC_PMR` reads back `0xF0` (the non-secure view).
+
+### Cause
+
+The GIC-400 implements the GICv2 Security Extensions. **At reset every
+interrupt is in Group 0 (secure)** → signalled as **FIQ to secure**, not
+as IRQ to the Non-secure kernel. The RPi4 firmware drops the kernel to
+**Non-secure EL1**, and **Non-secure software cannot move interrupts to
+Group 1** (`GICD_IGROUPR` is RAZ/WI from NS). Only secure boot code (an
+armstub) can set Group 1. QEMU's GICv2 model has no effective security
+split, so it "just works" there. This is general — it blocks **every**
+peripheral IRQ on this firmware (PL011, a future UART2 IKBD IRQ, timer,
+…), not just the console.
+
+### Resolution
+
+**Not fixed — and deliberately not pursued.** The serial console is a
+**development-only** tool; the production system takes input from the
+UART2 IKBD keyboard/mouse (already polled) and outputs to HDMI. Console
+RX uses the **UART0 poll workaround** (`console::pl011_rx_poll` in the
+blocking read + `pump_input`), which is fully functional. The IRQ buys
+almost nothing in the current cooperative single-app model; it only
+matters later (preemption, smooth mouse via background FIFO drain).
+
+A self-built `armstub8-gic.bin` (raspberrypi/tools `armstub8.S`
+`-DGIC=1 -DBCM2711=1`, which writes `IGROUPR=0xFFFFFFFF`) was tried but
+**left IGROUPR=0 AND regressed the VideoCore framebuffer + GPU/ARM memory
+split** — incompatible with this firmware (likely spin-table/magic offset
+mismatch). Reverted.
+
+**When revisited** (multitasking / smooth mouse): get the GIC into
+Group 1 via secure boot code — a *matching* prebuilt GIC armstub for the
+installed firmware, or a firmware update, tested against the framebuffer.
+To re-diagnose, dump `IGROUPR`/`ISPENDR`/`IPRIORITYR` at the GICD
+(`0xFF841000`) and PL011 `RIS`/`MIS` (`0xFE201000`) while a key sits
+undrained in the FIFO.
+
+### Source
+
+BCM2711 ARM Peripherals §6 (GIC-400); ARM IHI 0048B §1.4 (GICv2 security,
+Group 0/1 → FIQ/IRQ); raspberrypi/tools `armstubs/armstub8.S` `setup_gic`.
+
 ### Template for new quirks
 
 ```markdown
