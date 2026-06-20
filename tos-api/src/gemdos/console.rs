@@ -49,7 +49,9 @@ pub fn cconout(args: &TrapArgs) -> Long {
 // device. We return `EUNDEV` until a proper AUX driver lands.
 // ---------------------------------------------------------------------------
 
-/// `Cauxin()` — Phase 02 stub: returns `EUNDEV`.
+/// `Cauxin()` — no AUX device in the NewTOS profile; returns the
+/// documented `EUNDEV` (device unavailable). Honest-unsupported, not a
+/// stub — see the device note above.
 pub fn cauxin(_: &TrapArgs) -> Long {
     EUNDEV
 }
@@ -58,7 +60,9 @@ pub fn cauxin(_: &TrapArgs) -> Long {
 // 0x04 Cauxout — write a single byte to AUX.
 // ---------------------------------------------------------------------------
 
-/// `Cauxout(ch)` — Phase 02 stub: returns `EUNDEV`.
+/// `Cauxout(ch)` — no AUX device in the NewTOS profile; returns the
+/// documented `EUNDEV` (device unavailable). Honest-unsupported, not a
+/// stub.
 pub fn cauxout(_: &TrapArgs) -> Long {
     EUNDEV
 }

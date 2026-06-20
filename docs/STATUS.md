@@ -254,7 +254,9 @@ Phasenbeginn entschieden sein (siehe `docs/api/_phase00-completion.md`):
 - **Kleinere funktionale Lücken** — `Bconin`/`Bconout` + Cookie-Jar
   (Phase 08 D2/D5); `Kbdvbase`-Vektor-Dispatch (Phase 11 EC1, braucht das
   AES-Eventmodell — jetzt im Aufbau); `Pwait`-Round-Robin (Phase 06 EC4);
-  `Cconrs`-EL0-Zeileneditor-E2E-Test. ~13 Kernel-Clippy-Lints (Phase 03).
+  `Cconrs`-EL0-Zeileneditor-E2E-Test.
+  (Die früher hier genannten ~13 Phase-03-Clippy-Lints sind behoben —
+  `cargo clippy` ist auf beiden Boards clean, verifiziert 2026-06-20.)
 
 ## Recent Decisions
 
