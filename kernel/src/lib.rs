@@ -47,6 +47,7 @@ pub mod ikbd;
 pub mod shell;
 pub mod selftest_aes;
 pub mod selftest_bios;
+pub mod selftest_cookie;
 pub mod selftest_ikbd;
 pub mod selftest_vdi;
 pub mod selftest_fbcon;
@@ -243,6 +244,10 @@ extern "C" fn kernel_main_rust(dtb_phys: usize) -> ! {
     // Install exception vectors and the TOS-API host before any SVC.
     arch::aarch64::exceptions::init();
     host_env::install();
+
+    // Seed the NewTOS cookie jar (system-feature registry, read via the
+    // Ssystem trap). Version 0x0000_0100 = NewTOS 0.1.0.
+    tos_api::cookie::seed_defaults(0x0000_0100);
 
     // Bring up the GIC, enable the PL011 RX interrupt, and unmask IRQs.
     drivers::gic::init();

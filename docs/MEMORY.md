@@ -290,9 +290,13 @@ never by direct memory access.**
 - **Storage.** An init routine allocates the jar from the **kernel heap**
   (available since Phase 03) and stores the pointer in a **kernel-internal
   global** (the NewTOS analogue of EmuTOS' `p_cookies`, but *not* the
-  `$5A0` sysvar). Dynamic allocation means the jar can grow, so there is
-  no fixed 20-slot cap. The jar lives in high-half (TTBR1) kernel memory;
-  its address is arbitrary and irrelevant.
+  `$5A0` sysvar). The jar lives in high-half (TTBR1) kernel memory; its
+  address is arbitrary and irrelevant.
+  *Implementation note (2026-06-20):* `tos-api` is `#![no_std]` **without
+  `alloc`**, so the jar is a **fixed-capacity static array** (32 slots,
+  `tos-api/src/cookie.rs`) rather than a heap allocation — this is also
+  closer to FreeMiNT's own fixed `dflt_jar[]`. Growing past the cap would
+  need the kernel allocator; deferred until a real need appears.
 - **Access.** A function returns the **content**, not a pointer:
   `Getcookie(tag) -> (found, value)`. The kernel scans its own jar and
   returns only the value. Because the jar is kernel-heap memory (EL1-only,

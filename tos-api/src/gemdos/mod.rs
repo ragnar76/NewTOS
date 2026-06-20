@@ -21,6 +21,7 @@ use tos_types::Long;
 
 pub mod console;
 pub mod memory;
+pub mod ssystem;
 pub mod time;
 pub mod version;
 
@@ -116,6 +117,11 @@ pub fn dispatch(args: &TrapArgs) -> Long {
         return EUNDEV;
     }
     let id = args.func_id() as usize;
+    // MiNT extensions live above MAX_FN and are special-cased before the
+    // static table lookup (FreeMiNT compatibility, ADR-012).
+    if id == ssystem::SSYSTEM {
+        return ssystem::ssystem(args);
+    }
     if id > MAX_FN {
         return EINVFN;
     }
