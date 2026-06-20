@@ -53,6 +53,8 @@ pub struct Object {
 
 // Graphic types (`obdefs.h`).
 const G_BOX: u16 = 20;
+const G_TEXT: u16 = 21;
+const G_BOXTEXT: u16 = 22;
 const G_IMAGE: u16 = 23;
 const G_IBOX: u16 = 25;
 const G_BUTTON: u16 = 26;
@@ -77,6 +79,34 @@ pub struct BitBlk {
     pub bi_y: i16,
     /// foreground colour (PEL) of set bits.
     pub bi_color: i16,
+}
+
+/// `TEDINFO` — editable/formatted text for the `G_TEXT`/`G_BOXTEXT`
+/// object types (`obdefs.h`). Pointers are native 64-bit.
+#[repr(C)]
+pub struct TedInfo {
+    /// pointer to the text string.
+    pub te_ptext: u64,
+    /// pointer to the template string.
+    pub te_ptmplt: u64,
+    /// pointer to the validation string.
+    pub te_pvalid: u64,
+    /// font id.
+    pub te_font: i16,
+    /// reserved.
+    pub te_junk1: i16,
+    /// justification (0 = left, 1 = right, 2 = centre).
+    pub te_just: i16,
+    /// colour word (`gr_crack` encoding).
+    pub te_color: i16,
+    /// reserved.
+    pub te_junk2: i16,
+    /// border thickness.
+    pub te_thickness: i16,
+    /// text length.
+    pub te_txtlen: i16,
+    /// template length.
+    pub te_tmplen: i16,
 }
 
 /// `ICONBLK` — a monochrome icon (mask + data + optional char + text)
@@ -358,6 +388,27 @@ fn just_draw(ob: &Object, x: i16, y: i16, clip: ClipRect, backend: &dyn RasterBa
         G_STRING => {
             let s = read_cstr(ob.ob_spec);
             draw_text(backend, x, y, w, h, s, TE_LEFT, BLACK, clip);
+        }
+        G_TEXT | G_BOXTEXT => {
+            if ob.ob_spec != 0 {
+                // SAFETY: ob_spec of a G_TEXT/G_BOXTEXT points at a TEDINFO.
+                let ted = unsafe { &*(ob.ob_spec as *const TedInfo) };
+                // G_BOXTEXT additionally draws a box (black-on-white look;
+                // full colour-word cracking lands in the colour batch).
+                if ob.ob_type == G_BOXTEXT {
+                    backend.fill_rect(x, y, w, h, fill, clip);
+                    let th = ted.te_thickness;
+                    if th != 0 {
+                        draw_border(backend, x, y, w, h, th.unsigned_abs() as i16, BLACK, clip);
+                    }
+                }
+                // Text colour from te_color (gr_crack: bits 8..11);
+                // inverted when SELECTED.
+                let tcol = ((ted.te_color >> 8) & 0x0f) as Pel;
+                let ink = if selected { WHITE } else { tcol };
+                let s = read_cstr(ted.te_ptext);
+                draw_text(backend, x, y, w, h, s, ted.te_just, ink, clip);
+            }
         }
         G_IMAGE => {
             if ob.ob_spec != 0 {

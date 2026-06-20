@@ -2,11 +2,13 @@
 //! through the real GEM trap (`objc_draw`, opcode 42) so it is visible in
 //! `cargo xtask run --window`.
 
-use tos_api::aes::object::{BitBlk, IconBlk, Object};
+use tos_api::aes::object::{BitBlk, IconBlk, Object, TedInfo};
 
 use crate::kprintln;
 
 const G_BOX: u16 = 20;
+const G_TEXT: u16 = 21;
+const G_BOXTEXT: u16 = 22;
 const G_IMAGE: u16 = 23;
 const G_BUTTON: u16 = 26;
 const G_STRING: u16 = 28;
@@ -201,4 +203,55 @@ pub fn run_icons() {
     aes(block.as_ptr() as u64);
 
     kprintln!("[objc] icons/images demo rendered, ret={}", intout[0]);
+}
+
+/// Batch-4 demo: TEDINFO text — a `G_TEXT` (red, centred) and a
+/// `G_BOXTEXT` (boxed left-justified), rendered via `objc_draw`.
+pub fn run_tedinfo() {
+    static T1: &[u8] = b"Red centered TEDINFO text\0";
+    static T2: &[u8] = b"Boxed G_BOXTEXT field\0";
+    static TITLE: &[u8] = b"TEDINFO (G_TEXT / G_BOXTEXT)\0";
+    static EMPTY: &[u8] = b"\0";
+
+    let ted1 = TedInfo {
+        te_ptext: T1.as_ptr() as u64, te_ptmplt: EMPTY.as_ptr() as u64,
+        te_pvalid: EMPTY.as_ptr() as u64, te_font: 3, te_junk1: 0,
+        te_just: 2, te_color: 2 << 8, te_junk2: 0, te_thickness: 0,
+        te_txtlen: 0, te_tmplen: 0, // red text, centred
+    };
+    let ted2 = TedInfo {
+        te_ptext: T2.as_ptr() as u64, te_ptmplt: EMPTY.as_ptr() as u64,
+        te_pvalid: EMPTY.as_ptr() as u64, te_font: 3, te_junk1: 0,
+        te_just: 0, te_color: 1 << 8, te_junk2: 0, te_thickness: 1,
+        te_txtlen: 0, te_tmplen: 0, // black text, left, 1px box
+    };
+
+    let tree = [
+        Object { ob_next: -1, ob_head: 1, ob_tail: 3, ob_type: G_BOX, ob_flags: 0,
+                 ob_state: 0, ob_spec: 1 << 16, ob_x: 140, ob_y: 150, ob_width: 360, ob_height: 170 },
+        Object { ob_next: 2, ob_head: -1, ob_tail: -1, ob_type: G_STRING, ob_flags: 0,
+                 ob_state: 0, ob_spec: TITLE.as_ptr() as u64, ob_x: 20, ob_y: 18, ob_width: 320, ob_height: 16 },
+        Object { ob_next: 3, ob_head: -1, ob_tail: -1, ob_type: G_TEXT, ob_flags: 0,
+                 ob_state: 0, ob_spec: &ted1 as *const _ as u64, ob_x: 20, ob_y: 60, ob_width: 320, ob_height: 16 },
+        Object { ob_next: 0, ob_head: -1, ob_tail: -1, ob_type: G_BOXTEXT, ob_flags: 0x0020,
+                 ob_state: 0, ob_spec: &ted2 as *const _ as u64, ob_x: 40, ob_y: 100, ob_width: 280, ob_height: 28 },
+    ];
+
+    let mut control = [0i16; 8];
+    let mut global = [0i16; 32];
+    let mut intin = [0i16; 16];
+    let mut intout = [0i16; 16];
+    let mut addrin = [0i64; 4];
+    let mut addrout = [0i64; 4];
+    let block: [u64; 6] = [
+        control.as_mut_ptr() as u64, global.as_mut_ptr() as u64,
+        intin.as_mut_ptr() as u64, intout.as_mut_ptr() as u64,
+        addrin.as_mut_ptr() as u64, addrout.as_mut_ptr() as u64,
+    ];
+    control[0] = 42; control[3] = 1;
+    addrin[0] = tree.as_ptr() as i64;
+    intin[0] = 0; intin[1] = 8;
+    intin[2] = 0; intin[3] = 0; intin[4] = 640; intin[5] = 480;
+    aes(block.as_ptr() as u64);
+    kprintln!("[objc] TEDINFO demo rendered, ret={}", intout[0]);
 }
