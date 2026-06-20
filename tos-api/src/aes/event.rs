@@ -17,6 +17,34 @@ use super::pd;
 use super::Aespb;
 use crate::host::host;
 
+// Event-type flags (`include/aesdefs.h`), selecting which events a wait
+// blocks on. Used by `evnt_multi`.
+const MU_KEYBD: u16 = 0x0001;
+const MU_BUTTON: u16 = 0x0002;
+const MU_M1: u16 = 0x0004;
+const MU_M2: u16 = 0x0008;
+const MU_MESAG: u16 = 0x0010;
+const MU_TIMER: u16 = 0x0020;
+const MU_TOSVALID: u16 = 0x003F;
+
+/// A mouse rectangle block (`MOBLK`): `flags` selects enter (0) vs leave
+/// (1) of the `{x, y, w, h}` rectangle.
+struct MoBlk {
+    flags: i16,
+    x: i16,
+    y: i16,
+    w: i16,
+    h: i16,
+}
+
+/// `true` when a `MOBLK`'s condition is satisfied (EmuTOS `in_mrect`:
+/// the event fires when `flags != inside`).
+fn rect_event(m: &MoBlk) -> bool {
+    let (mx, my) = crate::vdi::mouse_position();
+    let inside = mx >= m.x && mx < m.x + m.w && my >= m.y && my < m.y + m.h;
+    (m.flags != 0) != inside
+}
+
 /// Fill the shared event return slots from the current input state:
 /// `EV_MX`/`EV_MY` (mouse x/y), `EV_MB` (button bitmask), `EV_KS`
 /// (keyboard shift state) — the `ev_rets` block at `int_out[1..4]`.
@@ -66,18 +94,15 @@ pub fn evnt_button(pb: &Aespb) {
 /// MOBLK: `int_in[0]` = flags, `int_in[1..4]` = x, y, w, h. The event
 /// fires when `flags != inside` (EmuTOS `in_mrect`).
 pub fn evnt_mouse(pb: &Aespb) {
-    let flags = pb.intin(0);
-    let rx = pb.intin(1);
-    let ry = pb.intin(2);
-    let rw = pb.intin(3);
-    let rh = pb.intin(4);
+    let m = MoBlk {
+        flags: pb.intin(0),
+        x: pb.intin(1),
+        y: pb.intin(2),
+        w: pb.intin(3),
+        h: pb.intin(4),
+    };
     if let Some(h) = host() {
-        loop {
-            let (mx, my) = crate::vdi::mouse_position();
-            let inside = mx >= rx && mx < rx + rw && my >= ry && my < ry + rh;
-            if (flags != 0) != inside {
-                break;
-            }
+        while !rect_event(&m) {
             h.pump_input();
         }
     }
@@ -98,6 +123,107 @@ pub fn evnt_dclick(pb: &Aespb) {
         DCLICK_INDEX.store(rate, Ordering::Relaxed);
     }
     pb.set_ret(DCLICK_INDEX.load(Ordering::Relaxed));
+}
+
+/// `evnt_multi` (25) — the central event multiplexer. Block until **any**
+/// of the requested events (`MU_*` in `int_in[0]`) fires, then return the
+/// bitmask of those that did and report the mouse / keyboard / button
+/// state for all of them at once.
+///
+/// `int_in[0]` = flags, `int_in[1..3]` = button clicks/mask/state,
+/// `int_in[4..8]` = MOBLK 1, `int_in[9..13]` = MOBLK 2,
+/// `int_in[14..15]` = timer lo/hi ms, `addr_in[0]` = message buffer.
+/// `RET_CODE` = fired bitmask; `int_out[1..4]` = x, y, buttons, shift;
+/// `int_out[5]` = key (`EV_KRET`); `int_out[6]` = click count (`EV_BRET`).
+///
+/// Each single `evnt_*` wait is a special case of this loop. Bring-up
+/// model and limitations are the same as the single waits (single
+/// application, ASCII-only keys, single-click button matching).
+pub fn evnt_multi(pb: &Aespb) {
+    let flags = (pb.intin(0) as u16) & MU_TOSVALID;
+
+    let b_clicks = pb.intin(1);
+    let b_mask = pb.intin(2) as u8;
+    let b_state = pb.intin(3) as u8;
+    let m1 = MoBlk {
+        flags: pb.intin(4),
+        x: pb.intin(5),
+        y: pb.intin(6),
+        w: pb.intin(7),
+        h: pb.intin(8),
+    };
+    let m2 = MoBlk {
+        flags: pb.intin(9),
+        x: pb.intin(10),
+        y: pb.intin(11),
+        w: pb.intin(12),
+        h: pb.intin(13),
+    };
+    let lo = pb.intin(14) as u16 as u32;
+    let hi = pb.intin(15) as u16 as u32;
+    let ms = ((hi << 16) | lo) as u64;
+    let pbuff = pb.addrin(0);
+    let pid = super::appl::current_pid();
+
+    let mut fired = 0u16;
+    let mut key = 0i16;
+    let mut clicks = 0i16;
+
+    if let Some(h) = host() {
+        let deadline = h.monotonic_millis().saturating_add(ms);
+        loop {
+            if flags & MU_KEYBD != 0 {
+                if let Some(b) = h.console_try_read() {
+                    key = b as i16;
+                    fired |= MU_KEYBD;
+                }
+            }
+            if flags & MU_BUTTON != 0
+                && crate::vdi::mouse_buttons() & b_mask == b_state & b_mask
+            {
+                clicks = b_clicks;
+                fired |= MU_BUTTON;
+            }
+            if flags & MU_M1 != 0 && rect_event(&m1) {
+                fired |= MU_M1;
+            }
+            if flags & MU_M2 != 0 && rect_event(&m2) {
+                fired |= MU_M2;
+            }
+            if flags & MU_MESAG != 0 {
+                // SAFETY: single trap path; `by_pid` hands out the live slot.
+                if let Some(src) = unsafe { pd::by_pid(pid) } {
+                    if src.msg_pending {
+                        if pbuff != 0 {
+                            // SAFETY: `MME_PBUFF` points at >= 16 bytes.
+                            unsafe {
+                                let p = pbuff as *mut i16;
+                                for i in 0..pd::MSG_WORDS {
+                                    p.add(i).write(src.msg[i]);
+                                }
+                            }
+                        }
+                        src.msg_pending = false;
+                        src.flags |= pd::AP_MESAG;
+                        fired |= MU_MESAG;
+                    }
+                }
+            }
+            if flags & MU_TIMER != 0 && h.monotonic_millis() >= deadline {
+                fired |= MU_TIMER;
+            }
+
+            if fired != 0 {
+                break;
+            }
+            h.pump_input();
+        }
+    }
+
+    fill_rets(pb);
+    pb.set_intout(5, key); // EV_KRET
+    pb.set_intout(6, clicks); // EV_BRET
+    pb.set_ret(fired as i16);
 }
 
 /// `evnt_keybd` (20) — block until a key is pressed; return it in

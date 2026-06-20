@@ -117,6 +117,7 @@ pub unsafe fn dispatch(aespb_ptr: u64) {
         22 => event::evnt_mouse(&pb),
         23 => event::evnt_mesag(&pb),
         24 => event::evnt_timer(&pb),
+        25 => event::evnt_multi(&pb),
         26 => event::evnt_dclick(&pb),
         // Remaining managers (event/object/form/window/menu/resource/
         // scrap/shell) land in later sub-phases. The AES has no invalid-

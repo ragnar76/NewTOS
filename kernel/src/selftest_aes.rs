@@ -246,6 +246,31 @@ pub fn run_phase13_event_test() {
     aes(pb);
     check(intout[0] == 1, "evnt_mouse returns 1");
 
+    // ── evnt_multi (25): a queued key beats a long timer ──
+    crate::console::push_rx(b'B');
+    intin = [0i16; 16];
+    control = [0; 8];
+    control[0] = 25;
+    intin[0] = 0x01 | 0x20; // MU_KEYBD | MU_TIMER
+    intin[14] = 5000; // 5 s timer (should not win)
+    intout = [0; 16];
+    aes(pb);
+    check(intout[0] == 0x01, "evnt_multi reports MU_KEYBD");
+    check(intout[5] == 0x42, "evnt_multi returns key 'B' in EV_KRET");
+
+    // ── evnt_multi (25): timer fires when nothing else is pending ──
+    let t0 = millis();
+    intin = [0i16; 16];
+    control = [0; 8];
+    control[0] = 25;
+    intin[0] = 0x20; // MU_TIMER only
+    intin[14] = 30; // 30 ms
+    intout = [0; 16];
+    aes(pb);
+    let elapsed = millis().wrapping_sub(t0);
+    check(intout[0] == 0x20, "evnt_multi reports MU_TIMER");
+    check(elapsed >= 30, "evnt_multi timer waited >= 30ms");
+
     // Deregister.
     control = [0; 8];
     control[0] = 19; // appl_exit
