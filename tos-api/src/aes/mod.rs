@@ -12,6 +12,7 @@
 
 mod appl;
 mod event;
+pub mod object;
 mod pd;
 
 /// The AES parameter block: six pointers (four to WORD arrays, two to
@@ -119,6 +120,9 @@ pub unsafe fn dispatch(aespb_ptr: u64) {
         24 => event::evnt_timer(&pb),
         25 => event::evnt_multi(&pb),
         26 => event::evnt_dclick(&pb),
+        42 => object::objc_draw(&pb),
+        43 => object::objc_find(&pb),
+        44 => object::objc_offset(&pb),
         // Remaining managers (event/object/form/window/menu/resource/
         // scrap/shell) land in later sub-phases. The AES has no invalid-
         // opcode error path (the GEM environment is trusted), so an

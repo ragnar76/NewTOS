@@ -48,6 +48,7 @@ pub mod shell;
 pub mod selftest_aes;
 pub mod selftest_bios;
 pub mod selftest_cookie;
+pub mod selftest_objc;
 pub mod selftest_ikbd;
 pub mod selftest_vdi;
 pub mod selftest_fbcon;

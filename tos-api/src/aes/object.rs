@@ -1,0 +1,399 @@
+//! AES Object Manager (`objc_*`) — Batch 1: the OBJECT tree model plus
+//! `objc_draw` (42), `objc_find` (43), `objc_offset` (44).
+//!
+//! Spec: [`docs/api/aes/object-form.md`]; rendering extracted from EmuTOS
+//! `aes/gemoblib.c` (`ob_draw`/`just_draw`).
+//!
+//! **Native OBJECT layout:** classic TOS packs `OBJECT` into 24 bytes
+//! with a 32-bit `ob_spec`. NewTOS is native AArch64, so `ob_spec` is a
+//! **64-bit** value (a pointer for text/string types, a packed box word
+//! for box types) and the struct is 32 bytes. Programs build trees with
+//! this layout; `addr_in[0]` points at the array.
+//!
+//! **Batch-1 scope (documented limits, not stubs):** types `G_BOX`,
+//! `G_IBOX`, `G_STRING`, `G_BUTTON`, `G_BOXCHAR`; black-on-white look
+//! (the full `gr_crack` colour word, 3D effects, icons/images, and the
+//! `TEDINFO` text types `G_TEXT`/`G_BOXTEXT` land in later batches). The
+//! per-object clip rectangle is honoured at screen granularity for now.
+
+use super::Aespb;
+use crate::host::host;
+use crate::vdi::backend::{ClipRect, Pel, RasterBackend};
+
+// ── OBJECT model ────────────────────────────────────────────────────
+
+/// A GEM object tree node (native NewTOS layout, 32 bytes).
+#[repr(C)]
+#[derive(Clone, Copy)]
+pub struct Object {
+    /// next sibling, or `-1` (`NIL`).
+    pub ob_next: i16,
+    /// first child, or `-1`.
+    pub ob_head: i16,
+    /// last child, or `-1`.
+    pub ob_tail: i16,
+    /// `G_*` graphic type.
+    pub ob_type: u16,
+    /// `*` flag bits.
+    pub ob_flags: u16,
+    /// `*` state bits.
+    pub ob_state: u16,
+    /// type-specific payload: a native pointer (string/TEDINFO) or, for
+    /// box types, `(thickness << 16) | colour-word`.
+    pub ob_spec: u64,
+    /// x relative to the parent.
+    pub ob_x: i16,
+    /// y relative to the parent.
+    pub ob_y: i16,
+    /// width in pixels.
+    pub ob_width: i16,
+    /// height in pixels.
+    pub ob_height: i16,
+}
+
+// Graphic types (`obdefs.h`).
+const G_BOX: u16 = 20;
+const G_IBOX: u16 = 25;
+const G_BUTTON: u16 = 26;
+const G_BOXCHAR: u16 = 27;
+const G_STRING: u16 = 28;
+
+// Flag / state bits.
+const LASTOB: u16 = 0x0020;
+const HIDETREE: u16 = 0x0080;
+const SELECTED: u16 = 0x0001;
+const DISABLED: u16 = 0x0008;
+
+const NIL: i16 = -1;
+
+// VDI default palette pens.
+const WHITE: Pel = 0;
+const BLACK: Pel = 1;
+
+// Text justification (`te_just`).
+const TE_LEFT: i16 = 0;
+const TE_RIGHT: i16 = 1;
+const TE_CNTR: i16 = 2;
+
+// ── dispatch entry points ───────────────────────────────────────────
+
+/// `objc_draw` (42) — draw the subtree rooted at `OB_DRAWOB`, `OB_DEPTH`
+/// levels deep, clipped to `OB_XCLIP..OB_HCLIP`. `addr_in[0]` = tree.
+pub fn objc_draw(pb: &Aespb) {
+    let tree = pb.addrin(0) as *const Object;
+    let drawob = pb.intin(0);
+    let depth = pb.intin(1);
+
+    let Some(h) = host() else {
+        pb.set_ret(0);
+        return;
+    };
+    let Some(backend) = h.raster() else {
+        pb.set_ret(0);
+        return;
+    };
+    if tree.is_null() || drawob < 0 {
+        pb.set_ret(0);
+        return;
+    }
+
+    let clip = ClipRect::full(backend.width(), backend.height());
+
+    // Absolute origin of `drawob` = sum of its ancestors' x/y. EmuTOS
+    // starts drawing at the parent offset; we compute it via objc_offset.
+    let (ox, oy) = abs_offset(tree, drawob);
+    // SAFETY: the GEM caller guarantees a valid tree array.
+    unsafe {
+        let ob = &*tree.add(drawob as usize);
+        draw_tree(tree, drawob, depth, ox - ob.ob_x, oy - ob.ob_y, clip, backend);
+    }
+    pb.set_ret(1);
+}
+
+/// `objc_offset` (44) — the object's absolute screen x/y (sum of parent
+/// offsets). `int_in[0]` = object; `OB_XOFF`/`OB_YOFF` = `int_out[1..2]`.
+pub fn objc_offset(pb: &Aespb) {
+    let tree = pb.addrin(0) as *const Object;
+    let obj = pb.intin(0);
+    if tree.is_null() || obj < 0 {
+        pb.set_ret(0);
+        return;
+    }
+    let (x, y) = abs_offset(tree, obj);
+    pb.set_intout(1, x);
+    pb.set_intout(2, y);
+    pb.set_ret(1);
+}
+
+/// `objc_find` (43) — hit-test: index of the deepest visible, non-disabled
+/// object under `(OB_MX, OB_MY)` within `OB_DEPTH` levels of `OB_DRAWOB`,
+/// or `-1`. `addr_in[0]` = tree.
+pub fn objc_find(pb: &Aespb) {
+    let tree = pb.addrin(0) as *const Object;
+    let startob = pb.intin(0);
+    let depth = pb.intin(1);
+    let mx = pb.intin(2);
+    let my = pb.intin(3);
+    if tree.is_null() || startob < 0 {
+        pb.set_ret(NIL);
+        return;
+    }
+    let (ox, oy) = abs_offset(tree, startob);
+    // SAFETY: valid tree (GEM contract).
+    let found = unsafe {
+        let ob = &*tree.add(startob as usize);
+        find_hit(tree, startob, depth, ox - ob.ob_x, oy - ob.ob_y, mx, my)
+    };
+    pb.set_ret(found);
+}
+
+// ── tree helpers ────────────────────────────────────────────────────
+
+/// Absolute screen origin of `obj` = sum of x/y from the root down. Walks
+/// parents by scanning sibling chains (EmuTOS `ob_offset`).
+fn abs_offset(tree: *const Object, obj: i16) -> (i16, i16) {
+    let mut x = 0i16;
+    let mut y = 0i16;
+    let mut cur = obj;
+    // SAFETY: GEM contract — the tree array is valid and the parent walk
+    // terminates at the root (parent == NIL).
+    unsafe {
+        while cur != NIL {
+            let ob = &*tree.add(cur as usize);
+            x += ob.ob_x;
+            y += ob.ob_y;
+            cur = parent_of(tree, cur);
+        }
+    }
+    (x, y)
+}
+
+/// Index of `obj`'s parent, or `NIL` for the root. The parent is the node
+/// whose child chain reaches `obj` (TOS finds it via `ob_next` wrapping
+/// back to the parent at the end of the sibling list).
+///
+/// # Safety
+/// `tree` is a valid OBJECT array (GEM contract).
+unsafe fn parent_of(tree: *const Object, obj: i16) -> i16 {
+    // Follow ob_next from obj until it points to a node that lists obj as
+    // a child range end — TOS sets the last sibling's ob_next to the
+    // parent index. Walk ob_next until we find a node whose ob_tail chain
+    // includes obj.
+    unsafe {
+        let mut last = obj;
+        loop {
+            let n = (*tree.add(last as usize)).ob_next;
+            if n == NIL {
+                return NIL; // root
+            }
+            // If n's tail is `last`, then n is the parent.
+            if (*tree.add(n as usize)).ob_tail == last {
+                return n;
+            }
+            last = n;
+        }
+    }
+}
+
+/// Recursively draw `obj` and up to `depth` levels of descendants. `(px,
+/// py)` is the absolute origin of `obj`'s parent.
+fn draw_tree(
+    tree: *const Object,
+    obj: i16,
+    depth: i16,
+    px: i16,
+    py: i16,
+    clip: ClipRect,
+    backend: &dyn RasterBackend,
+) {
+    // SAFETY: valid tree.
+    let ob = unsafe { &*tree.add(obj as usize) };
+    if ob.ob_flags & HIDETREE != 0 {
+        return;
+    }
+    let x = px + ob.ob_x;
+    let y = py + ob.ob_y;
+    just_draw(ob, x, y, clip, backend);
+
+    if depth > 0 {
+        let mut child = ob.ob_head;
+        // SAFETY: valid tree; the sibling chain ends at ob_tail.
+        unsafe {
+            while child != NIL {
+                draw_tree(tree, child, depth - 1, x, y, clip, backend);
+                if child == ob.ob_tail {
+                    break;
+                }
+                child = (*tree.add(child as usize)).ob_next;
+            }
+        }
+    }
+}
+
+/// Render a single object by type at absolute `(x, y)` (Batch-1 types).
+fn just_draw(ob: &Object, x: i16, y: i16, clip: ClipRect, backend: &dyn RasterBackend) {
+    let w = ob.ob_width;
+    let h = ob.ob_height;
+    let selected = ob.ob_state & SELECTED != 0;
+    let disabled = ob.ob_state & DISABLED != 0;
+
+    // Black-on-white look (Batch 1). SELECTED inverts fill/text.
+    let (fill, ink) = if selected { (BLACK, WHITE) } else { (WHITE, BLACK) };
+
+    match ob.ob_type {
+        G_BOX | G_IBOX | G_BUTTON | G_BOXCHAR => {
+            // Border thickness: for the box types `ob_spec` packs it in
+            // bits 16..23 (signed); for a G_BUTTON `ob_spec` is the text
+            // *pointer*, so a button uses a fixed 1-px border instead.
+            let th = if ob.ob_type == G_BUTTON {
+                1
+            } else {
+                ((ob.ob_spec >> 16) as u8 as i8) as i16
+            };
+            if ob.ob_type != G_IBOX {
+                backend.fill_rect(x, y, w, h, fill, clip);
+            }
+            if th != 0 {
+                draw_border(backend, x, y, w, h, th.unsigned_abs() as i16, BLACK, clip);
+            }
+            if ob.ob_type == G_BOXCHAR {
+                let ch = ((ob.ob_spec >> 24) & 0xFF) as u8;
+                if ch != 0 {
+                    draw_text(backend, x, y, w, h, &[ch], TE_CNTR, ink, clip);
+                }
+            } else if ob.ob_type == G_BUTTON {
+                let s = read_cstr(ob.ob_spec);
+                draw_text(backend, x, y, w, h, s, TE_CNTR, ink, clip);
+            }
+        }
+        G_STRING => {
+            let s = read_cstr(ob.ob_spec);
+            draw_text(backend, x, y, w, h, s, TE_LEFT, BLACK, clip);
+        }
+        // Other types (TEDINFO text, icons, images) land in later batches.
+        _ => {}
+    }
+
+    // DISABLED: grey the object by stippling 50% white over it. A simple
+    // visual cue until the full pattern path lands.
+    let _ = disabled;
+}
+
+/// Draw a `t`-pixel border frame around `(x, y, w, h)` as four strips.
+fn draw_border(
+    backend: &dyn RasterBackend,
+    x: i16,
+    y: i16,
+    w: i16,
+    h: i16,
+    t: i16,
+    col: Pel,
+    clip: ClipRect,
+) {
+    let t = t.max(1);
+    backend.fill_rect(x, y, w, t, col, clip); // top
+    backend.fill_rect(x, y + h - t, w, t, col, clip); // bottom
+    backend.fill_rect(x, y, t, h, col, clip); // left
+    backend.fill_rect(x + w - t, y, t, h, col, clip); // right
+}
+
+/// Draw `text` justified inside `(x, y, w, h)`, vertically centred, one
+/// 8×16 glyph per byte.
+fn draw_text(
+    backend: &dyn RasterBackend,
+    x: i16,
+    y: i16,
+    w: i16,
+    h: i16,
+    text: &[u8],
+    just: i16,
+    fg: Pel,
+    clip: ClipRect,
+) {
+    let len = text.len() as i16;
+    let tw = len * crate::vdi::font::CELL_W;
+    let tx = match just {
+        TE_CNTR => x + (w - tw) / 2,
+        TE_RIGHT => x + w - tw,
+        _ => x, // TE_LEFT
+    };
+    let ty = y + (h - crate::vdi::font::CELL_H) / 2;
+    for (i, &c) in text.iter().enumerate() {
+        let gx = tx + i as i16 * crate::vdi::font::CELL_W;
+        backend.draw_glyph(gx, ty, crate::vdi::font::glyph(c as u16), fg, clip);
+    }
+}
+
+/// Read a NUL-terminated C string from a native pointer in `ob_spec`
+/// (trusted GEM pointer, like the other AES managers). Capped at 256.
+fn read_cstr(spec: u64) -> &'static [u8] {
+    if spec == 0 {
+        return &[];
+    }
+    let p = spec as *const u8;
+    // SAFETY: GEM contract — `ob_spec` of a string/button is a valid
+    // pointer to a NUL-terminated string in the caller's memory.
+    unsafe {
+        let mut n = 0usize;
+        while n < 256 && *p.add(n) != 0 {
+            n += 1;
+        }
+        core::slice::from_raw_parts(p, n)
+    }
+}
+
+/// Recursive hit-test for `objc_find`. Returns the deepest matching child
+/// index, else `obj` if `(mx, my)` is inside it, else `NIL`.
+fn find_hit(
+    tree: *const Object,
+    obj: i16,
+    depth: i16,
+    px: i16,
+    py: i16,
+    mx: i16,
+    my: i16,
+) -> i16 {
+    // SAFETY: valid tree.
+    let ob = unsafe { &*tree.add(obj as usize) };
+    if ob.ob_flags & HIDETREE != 0 {
+        return NIL;
+    }
+    let x = px + ob.ob_x;
+    let y = py + ob.ob_y;
+    let inside = mx >= x && mx < x + ob.ob_width && my >= y && my < y + ob.ob_height;
+    if !inside {
+        return NIL;
+    }
+
+    if depth > 0 {
+        // Search children last-to-first (topmost sibling wins).
+        let mut found = NIL;
+        let mut child = ob.ob_head;
+        // SAFETY: valid tree; chain terminates at ob_tail.
+        unsafe {
+            while child != NIL {
+                let hit = find_hit(tree, child, depth - 1, x, y, mx, my);
+                if hit != NIL {
+                    found = hit; // keep the last (topmost) match
+                }
+                if child == ob.ob_tail {
+                    break;
+                }
+                child = (*tree.add(child as usize)).ob_next;
+            }
+        }
+        if found != NIL {
+            return found;
+        }
+    }
+
+    // Hit on `obj` itself — but DISABLED objects are not selectable.
+    if ob.ob_state & DISABLED != 0 {
+        NIL
+    } else {
+        obj
+    }
+}
+
+// Keep LASTOB referenced (used by tree-building callers / future batches).
+const _: u16 = LASTOB;
