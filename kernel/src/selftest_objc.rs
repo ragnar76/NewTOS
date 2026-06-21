@@ -606,3 +606,29 @@ pub fn run_window() {
     kprintln!("[objc] hit (510,370)={} (510,88)={} (300,200)={}",
         probe(510, 370), probe(510, 88), probe(300, 200));
 }
+
+/// D4 Batch-3a check: graf_handle (VDI handle + font metrics) and
+/// graf_mkstate (instantaneous mouse poll), the non-interactive graf_*.
+pub fn run_graf() {
+    let mut control = [0i16; 8];
+    let mut global = [0i16; 32];
+    let mut intin = [0i16; 16];
+    let mut intout = [0i16; 16];
+    let mut addrin = [0i64; 4];
+    let mut addrout = [0i64; 4];
+    let block: [u64; 6] = [
+        control.as_mut_ptr() as u64, global.as_mut_ptr() as u64,
+        intin.as_mut_ptr() as u64, intout.as_mut_ptr() as u64,
+        addrin.as_mut_ptr() as u64, addrout.as_mut_ptr() as u64,
+    ];
+    // graf_handle (77)
+    control[0] = 77;
+    aes(block.as_ptr() as u64);
+    kprintln!("[objc] graf_handle: vdi={} wchar={} hchar={} wbox={} hbox={}",
+        intout[0], intout[1], intout[2], intout[3], intout[4]);
+    // graf_mkstate (79)
+    control = [0; 8]; control[0] = 79;
+    aes(block.as_ptr() as u64);
+    kprintln!("[objc] graf_mkstate: mx={} my={} mstate={} kstate={}",
+        intout[1], intout[2], intout[3], intout[4]);
+}

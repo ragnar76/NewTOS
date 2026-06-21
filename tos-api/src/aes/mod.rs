@@ -13,6 +13,7 @@
 mod appl;
 mod event;
 mod form;
+mod graf;
 pub mod menu;
 pub mod object;
 pub mod window;
@@ -123,6 +124,16 @@ pub unsafe fn dispatch(aespb_ptr: u64) {
         24 => event::evnt_timer(&pb),
         25 => event::evnt_multi(&pb),
         26 => event::evnt_dclick(&pb),
+        70 => graf::graf_rubberbox(&pb),
+        71 => graf::graf_dragbox(&pb),
+        72 => graf::graf_movebox(&pb),
+        73 => graf::graf_growbox(&pb),
+        74 => graf::graf_shrinkbox(&pb),
+        75 => graf::graf_watchbox(&pb),
+        76 => graf::graf_slidebox(&pb),
+        77 => graf::graf_handle(&pb),
+        78 => graf::graf_mouse(&pb),
+        79 => graf::graf_mkstate(&pb),
         30 => menu::menu_bar(&pb),
         31 => menu::menu_icheck(&pb),
         32 => menu::menu_ienable(&pb),

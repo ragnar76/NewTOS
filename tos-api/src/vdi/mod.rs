@@ -29,7 +29,7 @@ mod font_data;
 mod gdp;
 mod input;
 mod inquiry;
-mod mouse;
+pub mod mouse;
 /// Input-subsystem entry point + queries: feed a relative-mouse event
 /// (the kernel's IKBD mouse decoder calls this) and read back the cursor
 /// state (used by the IKBD self-test).
