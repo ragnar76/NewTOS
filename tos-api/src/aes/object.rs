@@ -153,11 +153,19 @@ const SELECTED: u16 = 0x0001;
 const CHECKED: u16 = 0x0004;
 const DISABLED: u16 = 0x0008;
 
+// 3D-object flags (`ob_flags`, EmuTOS `CONF_WITH_3D_OBJECTS`).
+const FL3DIND: u16 = 0x0200; // indicator (recessed)
+const FL3DBAK: u16 = 0x0400; // background panel (recessed)
+const FL3DACT: u16 = 0x0600; // activator / button (raised)
+const FL3DMASK: u16 = 0x0600;
+
 const NIL: i16 = -1;
 
 // VDI default palette pens.
 const WHITE: Pel = 0;
 const BLACK: Pel = 1;
+const GRAY_LT: Pel = 8; // EmuTOS LWHITE — the 3D object face
+const GRAY_DK: Pel = 9; // EmuTOS LBLACK — the 3D shadow edge
 
 // Text justification (`te_just`).
 const TE_LEFT: i16 = 0;
@@ -557,16 +565,26 @@ fn just_draw(ob: &Object, x: i16, y: i16, clip: ClipRect, backend: &dyn RasterBa
     let h = ob.ob_height;
     let selected = ob.ob_state & SELECTED != 0;
     let disabled = ob.ob_state & DISABLED != 0;
+    let d3 = ob.ob_flags & FL3DMASK;
 
-    // Black-on-white look (Batch 1). SELECTED inverts fill/text.
-    let (fill, ink) = if selected { (BLACK, WHITE) } else { (WHITE, BLACK) };
+    // Black-on-white look. SELECTED inverts fill/text. A 3D object keeps a
+    // grey face (the pressed state shows via the bevel, drawn after).
+    let (fill, ink) = if d3 != 0 {
+        (GRAY_LT, BLACK)
+    } else if selected {
+        (BLACK, WHITE)
+    } else {
+        (WHITE, BLACK)
+    };
 
     match ob.ob_type {
         G_BOX | G_IBOX | G_BUTTON | G_BOXCHAR => {
             // Border thickness: for the box types `ob_spec` packs it in
             // bits 16..23 (signed); for a G_BUTTON `ob_spec` is the text
             // *pointer*, so a button uses a fixed 1-px border instead.
-            let th = if ob.ob_type == G_BUTTON {
+            let th = if d3 != 0 {
+                0 // 3D objects use a bevel (drawn after), not a flat border
+            } else if ob.ob_type == G_BUTTON {
                 1
             } else {
                 ((ob.ob_spec >> 16) as u8 as i8) as i16
@@ -624,7 +642,7 @@ fn just_draw(ob: &Object, x: i16, y: i16, clip: ClipRect, backend: &dyn RasterBa
                 // merging arrives with full editable-field support).
                 if ob.ob_type == G_BOXTEXT || ob.ob_type == G_FBOXTEXT {
                     backend.fill_rect(x, y, w, h, fill, clip);
-                    let th = ted.te_thickness;
+                    let th = if d3 != 0 { 0 } else { ted.te_thickness };
                     if th != 0 {
                         draw_border(backend, x, y, w, h, th.unsigned_abs() as i16, BLACK, clip);
                     }
@@ -656,9 +674,34 @@ fn just_draw(ob: &Object, x: i16, y: i16, clip: ClipRect, backend: &dyn RasterBa
         _ => {}
     }
 
+    // 3D bevel overlay (the modern / Falcon look): a raised activator
+    // (unless pressed), a recessed indicator/background panel.
+    match d3 {
+        FL3DACT => add_3d_effect(backend, x, y, w, h, !selected, clip),
+        FL3DIND | FL3DBAK => add_3d_effect(backend, x, y, w, h, false, clip),
+        _ => {}
+    }
+
     // DISABLED: grey the object by stippling 50% white over it. A simple
     // visual cue until the full pattern path lands.
     let _ = disabled;
+}
+
+/// Draw a 2-pixel bevel around a rectangle for the 3D look: `raised` gives
+/// a white top/left highlight and a dark-grey bottom/right shadow;
+/// `!raised` (recessed) swaps them. EmuTOS `add_3d_effect`.
+fn add_3d_effect(backend: &dyn RasterBackend, x: i16, y: i16, w: i16, h: i16, raised: bool, clip: ClipRect) {
+    if w < 2 || h < 2 {
+        return;
+    }
+    let (tl, br) = if raised { (WHITE, GRAY_DK) } else { (GRAY_DK, WHITE) };
+    for i in 0..2 {
+        // top + left = highlight; bottom + right = shadow
+        backend.fill_rect(x + i, y + i, w - 2 * i, 1, tl, clip);
+        backend.fill_rect(x + i, y + i, 1, h - 2 * i, tl, clip);
+        backend.fill_rect(x + i, y + h - 1 - i, w - 2 * i, 1, br, clip);
+        backend.fill_rect(x + w - 1 - i, y + i, 1, h - 2 * i, br, clip);
+    }
 }
 
 /// Draw a `t`-pixel border frame around `(x, y, w, h)` as four strips.

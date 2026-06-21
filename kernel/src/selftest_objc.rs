@@ -922,3 +922,45 @@ pub fn run_d9() {
     if val != 0 { for i in 0..31 { let c = unsafe { *(val as *const u8).add(i) }; if c==0 {break;} ev[i]=c; } }
     kprintln!("[objc] shel_envrn PATH= -> ret {} val=\"{}\"", intout[0], s(&ev));
 }
+
+/// 3D / modern-design test: a grey background panel (FL3DBAK) with a raised
+/// 3D OK button (FL3DACT) and a pressed one, to show the bevel look.
+pub fn run_3d() {
+    const FL3DBAK: u16 = 0x0400;
+    const FL3DACT: u16 = 0x0600;
+    static TITLE: &[u8] = b"Modern (Falcon) 3D design\0";
+    static OK: &[u8] = b"OK\0";
+    static CANCEL: &[u8] = b"Cancel\0";
+    let tree = [
+        // 0: 3D background panel (grey, recessed)
+        Object { ob_next: -1, ob_head: 1, ob_tail: 3, ob_type: G_BOX, ob_flags: FL3DBAK,
+                 ob_state: 0, ob_spec: 0, ob_x: 160, ob_y: 140, ob_width: 320, ob_height: 160 },
+        // 1: title
+        Object { ob_next: 2, ob_head: -1, ob_tail: -1, ob_type: G_STRING, ob_flags: 0,
+                 ob_state: 0, ob_spec: TITLE.as_ptr() as u64, ob_x: 24, ob_y: 24, ob_width: 272, ob_height: 16 },
+        // 2: raised 3D OK button
+        Object { ob_next: 3, ob_head: -1, ob_tail: -1, ob_type: G_BUTTON,
+                 ob_flags: SELECTABLE | EXIT | FL3DACT, ob_state: 0,
+                 ob_spec: OK.as_ptr() as u64, ob_x: 40, ob_y: 108, ob_width: 100, ob_height: 30 },
+        // 3: pressed 3D button (SELECTED → recessed)
+        Object { ob_next: 0, ob_head: -1, ob_tail: -1, ob_type: G_BUTTON,
+                 ob_flags: SELECTABLE | EXIT | LASTOB | FL3DACT, ob_state: 0x0001,
+                 ob_spec: CANCEL.as_ptr() as u64, ob_x: 180, ob_y: 108, ob_width: 100, ob_height: 30 },
+    ];
+    let mut control = [0i16; 8];
+    let mut global = [0i16; 32];
+    let mut intin = [0i16; 16];
+    let mut intout = [0i16; 16];
+    let mut addrin = [0i64; 4];
+    let mut addrout = [0i64; 4];
+    let block: [u64; 6] = [
+        control.as_mut_ptr() as u64, global.as_mut_ptr() as u64,
+        intin.as_mut_ptr() as u64, intout.as_mut_ptr() as u64,
+        addrin.as_mut_ptr() as u64, addrout.as_mut_ptr() as u64,
+    ];
+    control[0] = 42; control[3] = 1;
+    addrin[0] = tree.as_ptr() as i64;
+    intin[0] = 0; intin[1] = 8; intin[2] = 0; intin[3] = 0; intin[4] = 640; intin[5] = 480;
+    aes(block.as_ptr() as u64);
+    kprintln!("[objc] 3D design test drawn");
+}
