@@ -598,4 +598,11 @@ pub fn run_window() {
     aes(block.as_ptr() as u64);
 
     kprintln!("[objc] window opened, handle {}", handle);
+
+    // D4 Batch-2 logic check: gadget hit-test at known frame points.
+    let probe = |x: i16, y: i16| tos_api::aes::window::gadget_name_at(handle, x, y);
+    kprintln!("[objc] hit (88,68)={} (510,68)={} (300,68)={}",
+        probe(88, 68), probe(510, 68), probe(300, 68));
+    kprintln!("[objc] hit (510,370)={} (510,88)={} (300,200)={}",
+        probe(510, 370), probe(510, 88), probe(300, 200));
 }

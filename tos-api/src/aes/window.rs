@@ -72,7 +72,7 @@ const MAX_WINDOWS: usize = 8;
 const NAME_CAP: usize = 80;
 
 /// A rectangle (GEM `GRECT`).
-#[derive(Clone, Copy, Default)]
+#[derive(Clone, Copy, Default, PartialEq)]
 struct Grect {
     x: i16,
     y: i16,
@@ -194,13 +194,18 @@ fn rect_outline(r: Grect, backend: &dyn RasterBackend, clip: ClipRect) {
 }
 
 /// Draw one bordered gadget cell with a centred glyph (closer/fuller/
-/// arrows/sizer).
-fn gadget(r: Grect, ch: u16, backend: &dyn RasterBackend, clip: ClipRect) {
-    backend.fill_rect(r.x, r.y, r.w, r.h, WHITE, clip);
+/// arrows/sizer). `sel` inverts it (pressed feedback).
+fn gadget_sel(r: Grect, ch: u16, sel: bool, backend: &dyn RasterBackend, clip: ClipRect) {
+    let (bg, fg) = if sel { (BLACK, WHITE) } else { (WHITE, BLACK) };
+    backend.fill_rect(r.x, r.y, r.w, r.h, bg, clip);
     rect_outline(r, backend, clip);
     let gx = r.x + (r.w - 8) / 2;
     let gy = r.y + (r.h - 16) / 2;
-    backend.draw_glyph(gx, gy, crate::vdi::font::glyph(ch), BLACK, clip);
+    backend.draw_glyph(gx, gy, crate::vdi::font::glyph(ch), fg, clip);
+}
+
+fn gadget(r: Grect, ch: u16, backend: &dyn RasterBackend, clip: ClipRect) {
+    gadget_sel(r, ch, false, backend, clip);
 }
 
 /// Draw text left-aligned within a band, one 8×16 glyph per byte.
@@ -541,5 +546,329 @@ fn screen_rect() -> Grect {
         Grect { x: 0, y: 0, w: backend.width() as i16, h: backend.height() as i16 }
     } else {
         Grect { x: 0, y: 0, w: 640, h: 480 }
+    }
+}
+
+// ── Batch 2: interactive frame + WM_* messages ──────────────────────────
+
+// WM_* message ids (aesdefs.h:229-239).
+const WM_TOPPED: i16 = 21;
+const WM_CLOSED: i16 = 22;
+const WM_FULLED: i16 = 23;
+const WM_ARROWED: i16 = 24;
+const WM_SIZED: i16 = 27;
+const WM_MOVED: i16 = 28;
+
+// WM_ARROWED actions (aesdefs.h:246-253).
+const WA_UPLINE: i16 = 2;
+const WA_DNLINE: i16 = 3;
+const WA_LFLINE: i16 = 6;
+const WA_RTLINE: i16 = 7;
+
+/// Which frame component a point falls in.
+#[derive(PartialEq, Clone, Copy)]
+enum Gadget {
+    None,
+    Closer,
+    Fuller,
+    Mover,
+    Sizer,
+    Up,
+    Dn,
+    Lf,
+    Rt,
+}
+
+/// Hit-test a point against `w`'s frame gadgets (mirrors `draw_frame`'s
+/// layout).
+fn gadget_at(w: &Window, mx: i16, my: i16) -> Gadget {
+    let b = w.curr;
+    let kind = w.kind;
+    if !inside(b, mx, my) {
+        return Gadget::None;
+    }
+    let has_title = kind & (NAME | CLOSER | FULLER) != 0;
+
+    // Title row.
+    if has_title && my < b.y + GAD {
+        if kind & CLOSER != 0 && mx < b.x + GAD {
+            return Gadget::Closer;
+        }
+        if kind & FULLER != 0 && mx >= b.x + b.w - GAD {
+            return Gadget::Fuller;
+        }
+        if kind & MOVER != 0 {
+            return Gadget::Mover;
+        }
+        return Gadget::None;
+    }
+    // Sizer corner.
+    if kind & SIZER != 0 && mx >= b.x + b.w - GAD && my >= b.y + b.h - GAD {
+        return Gadget::Sizer;
+    }
+    // Right scroll-bar arrows.
+    if kind & (VGADGETS | SIZER) != 0 && mx >= b.x + b.w - GAD {
+        let mut top = b.y + 1;
+        if has_title {
+            top += GAD - 1;
+        }
+        if kind & INFO != 0 {
+            top += GAD - 1;
+        }
+        let mut bot = b.y + b.h - 1;
+        if kind & (HGADGETS | SIZER) != 0 {
+            bot -= GAD - 1;
+        }
+        if kind & UPARROW != 0 && my < top + GAD {
+            return Gadget::Up;
+        }
+        if kind & DNARROW != 0 && my >= bot - GAD {
+            return Gadget::Dn;
+        }
+    }
+    // Bottom scroll-bar arrows.
+    if kind & (HGADGETS | SIZER) != 0 && my >= b.y + b.h - GAD {
+        let left = b.x + 1;
+        let mut right = b.x + b.w - 1;
+        if kind & (VGADGETS | SIZER) != 0 {
+            right -= GAD - 1;
+        }
+        if kind & LFARROW != 0 && mx < left + GAD {
+            return Gadget::Lf;
+        }
+        if kind & RTARROW != 0 && mx >= right - GAD {
+            return Gadget::Rt;
+        }
+    }
+    Gadget::None
+}
+
+/// The screen rectangle of a title-row gadget (closer/fuller), for the
+/// `watchbox` feedback.
+fn gad_rect(w: &Window, g: Gadget) -> Grect {
+    let b = w.curr;
+    match g {
+        Gadget::Closer => Grect { x: b.x, y: b.y, w: GAD, h: GAD },
+        Gadget::Fuller => Grect { x: b.x + b.w - GAD, y: b.y, w: GAD, h: GAD },
+        _ => Grect::default(),
+    }
+}
+
+/// Track the button over a closer/fuller gadget: invert it while the mouse
+/// is inside, restore on leave; return whether it was released inside
+/// (EmuTOS `gr_watchbox`).
+fn watchbox(r: Grect, ch: u16, backend: &dyn RasterBackend) -> bool {
+    let Some(h) = host() else { return false };
+    let clip = ClipRect::full(backend.width(), backend.height());
+    let mut was_in = true;
+    gadget_sel(r, ch, true, backend, clip);
+    loop {
+        let (mx, my) = crate::vdi::mouse_position();
+        let now_in = inside(r, mx, my);
+        if now_in != was_in {
+            gadget_sel(r, ch, now_in, backend, clip);
+            was_in = now_in;
+        }
+        if crate::vdi::mouse_buttons() & 0x01 == 0 {
+            break;
+        }
+        h.pump_input();
+    }
+    gadget_sel(r, ch, false, backend, clip); // restore normal
+    was_in
+}
+
+/// Live-drag the whole frame following the mouse until release; returns
+/// the final border rect (the frame is left drawn there). Stands in for
+/// EmuTOS `gr_dragbox` (outline drag) at our altitude.
+fn drag_move(w: &mut Window, backend: &dyn RasterBackend) -> Grect {
+    let Some(h) = host() else { return w.curr };
+    let clip = ClipRect::full(backend.width(), backend.height());
+    let (sx, sy) = crate::vdi::mouse_position();
+    let orig = w.curr;
+    let sw = backend.width() as i16;
+    let sh = backend.height() as i16;
+    let mut last = orig;
+    loop {
+        let (mx, my) = crate::vdi::mouse_position();
+        let nx = (orig.x + mx - sx).clamp(0, sw - orig.w);
+        let ny = (orig.y + my - sy).clamp(0, sh - orig.h);
+        let nr = Grect { x: nx, y: ny, w: orig.w, h: orig.h };
+        if nr != last {
+            backend.fill_rect(last.x, last.y, last.w + 1, last.h + 1, WHITE, clip);
+            w.curr = nr;
+            draw_frame(w, backend);
+            last = nr;
+        }
+        if crate::vdi::mouse_buttons() & 0x01 == 0 {
+            break;
+        }
+        h.pump_input();
+    }
+    last
+}
+
+/// Live-resize the frame (bottom-right corner follows the mouse) until
+/// release; returns the final border rect. Stands in for `gr_rubwind`.
+fn drag_size(w: &mut Window, backend: &dyn RasterBackend) -> Grect {
+    let Some(h) = host() else { return w.curr };
+    let clip = ClipRect::full(backend.width(), backend.height());
+    let orig = w.curr;
+    let min_w = 3 * GAD;
+    let min_h = 3 * GAD;
+    let sw = backend.width() as i16;
+    let sh = backend.height() as i16;
+    let mut last = orig;
+    loop {
+        let (mx, my) = crate::vdi::mouse_position();
+        let nw = (mx - orig.x + 1).clamp(min_w, sw - orig.x);
+        let nh = (my - orig.y + 1).clamp(min_h, sh - orig.y);
+        let nr = Grect { x: orig.x, y: orig.y, w: nw, h: nh };
+        if nr != last {
+            backend.fill_rect(orig.x, orig.y, last.w + 1, last.h + 1, WHITE, clip);
+            w.curr = nr;
+            draw_frame(w, backend);
+            last = nr;
+        }
+        if crate::vdi::mouse_buttons() & 0x01 == 0 {
+            break;
+        }
+        h.pump_input();
+    }
+    last
+}
+
+/// Block until the left button is released (used after edge-triggered
+/// gadgets like topped/arrowed so one press fires once).
+fn wait_release() {
+    if let Some(h) = host() {
+        while crate::vdi::mouse_buttons() & 0x01 != 0 {
+            h.pump_input();
+        }
+    }
+}
+
+/// Handle of the open window under `(mx,my)` (top-most first); 0 = desktop.
+fn find_handle(mx: i16, my: i16) -> i16 {
+    let top = get_top();
+    if let Some(w) = win(top) {
+        if w.open && inside(w.curr, mx, my) {
+            return top;
+        }
+    }
+    for (i, w) in slots().iter().enumerate() {
+        if w.in_use && w.open && inside(w.curr, mx, my) {
+            return (i + 1) as i16;
+        }
+    }
+    0
+}
+
+/// AES window-frame interception (the `evnt_multi` hook, like the Menu
+/// Manager). On a button press in a window frame, handle the gadget and
+/// write a `WM_*` message into `pbuff`; returns true if a message was
+/// produced. A click in the work area (or desktop) returns false so the
+/// app sees the raw button.
+pub fn intercept(pbuff: u64) -> bool {
+    if crate::vdi::mouse_buttons() & 0x01 == 0 {
+        return false;
+    }
+    let (mx, my) = crate::vdi::mouse_position();
+    let handle = find_handle(mx, my);
+    if handle == 0 {
+        return false;
+    }
+    let Some(backend) = host().and_then(|h| h.raster()) else {
+        return false;
+    };
+
+    let mut msg = [0i16; 8];
+    msg[1] = super::appl::current_pid();
+    msg[3] = handle;
+
+    // Click on a non-top window → ask the owner to top it.
+    if handle != get_top() {
+        msg[0] = WM_TOPPED;
+        wait_release();
+        return emit(pbuff, &msg);
+    }
+
+    let w = match win(handle) {
+        Some(w) => w,
+        None => return false,
+    };
+    match gadget_at(w, mx, my) {
+        Gadget::Closer => {
+            if !watchbox(gad_rect(w, Gadget::Closer), G_CLOSE, backend) {
+                return false;
+            }
+            msg[0] = WM_CLOSED;
+        }
+        Gadget::Fuller => {
+            if !watchbox(gad_rect(w, Gadget::Fuller), G_FULL, backend) {
+                return false;
+            }
+            msg[0] = WM_FULLED;
+        }
+        Gadget::Mover => {
+            let r = drag_move(w, backend);
+            msg[0] = WM_MOVED;
+            msg[4] = r.x;
+            msg[5] = r.y;
+            msg[6] = r.w;
+            msg[7] = r.h;
+        }
+        Gadget::Sizer => {
+            let r = drag_size(w, backend);
+            msg[0] = WM_SIZED;
+            msg[4] = r.x;
+            msg[5] = r.y;
+            msg[6] = r.w;
+            msg[7] = r.h;
+        }
+        Gadget::Up | Gadget::Dn | Gadget::Lf | Gadget::Rt => {
+            msg[0] = WM_ARROWED;
+            msg[4] = match gadget_at(w, mx, my) {
+                Gadget::Up => WA_UPLINE,
+                Gadget::Dn => WA_DNLINE,
+                Gadget::Lf => WA_LFLINE,
+                _ => WA_RTLINE,
+            };
+            wait_release();
+        }
+        Gadget::None => return false,
+    }
+    emit(pbuff, &msg)
+}
+
+fn emit(pbuff: u64, msg: &[i16; 8]) -> bool {
+    if pbuff != 0 {
+        // SAFETY: the message buffer is >= 8 WORDs (GEM contract).
+        unsafe {
+            let p = pbuff as *mut i16;
+            for (i, &v) in msg.iter().enumerate() {
+                p.add(i).write(v);
+            }
+        }
+    }
+    true
+}
+
+/// Test hook: name of the gadget under a point (for the headless logic
+/// check in the selftest).
+pub fn gadget_name_at(handle: i16, mx: i16, my: i16) -> &'static str {
+    match win(handle) {
+        Some(w) => match gadget_at(w, mx, my) {
+            Gadget::None => "none",
+            Gadget::Closer => "closer",
+            Gadget::Fuller => "fuller",
+            Gadget::Mover => "mover",
+            Gadget::Sizer => "sizer",
+            Gadget::Up => "up",
+            Gadget::Dn => "dn",
+            Gadget::Lf => "lf",
+            Gadget::Rt => "rt",
+        },
+        None => "no-window",
     }
 }

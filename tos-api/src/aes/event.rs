@@ -213,10 +213,16 @@ pub fn evnt_multi(pb: &Aespb) {
     if let Some(h) = host() {
         let deadline = h.monotonic_millis().saturating_add(ms);
         loop {
-            // AES intercepts a click in the installed menu bar before the
-            // app sees the raw button — it yields an MN_SELECTED message.
+            // AES intercepts a click in the menu bar or a window frame
+            // before the app sees the raw button — it yields an
+            // MN_SELECTED / WM_* message.
             if flags & (MU_BUTTON | MU_MESAG) != 0 {
-                fired |= menu_intercept(pbuff);
+                let m = menu_intercept(pbuff);
+                if m != 0 {
+                    fired |= m;
+                } else if super::window::intercept(pbuff) {
+                    fired |= MU_MESAG;
+                }
             }
             if flags & MU_KEYBD != 0 {
                 if let Some(b) = h.console_try_read() {
