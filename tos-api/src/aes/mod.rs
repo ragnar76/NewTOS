@@ -13,6 +13,7 @@
 mod appl;
 mod event;
 mod form;
+mod menu;
 pub mod object;
 mod pd;
 
@@ -121,6 +122,11 @@ pub unsafe fn dispatch(aespb_ptr: u64) {
         24 => event::evnt_timer(&pb),
         25 => event::evnt_multi(&pb),
         26 => event::evnt_dclick(&pb),
+        30 => menu::menu_bar(&pb),
+        31 => menu::menu_icheck(&pb),
+        32 => menu::menu_ienable(&pb),
+        33 => menu::menu_tnormal(&pb),
+        34 => menu::menu_text(&pb),
         42 => object::objc_draw(&pb),
         43 => object::objc_find(&pb),
         44 => object::objc_offset(&pb),

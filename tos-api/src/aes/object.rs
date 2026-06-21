@@ -61,6 +61,7 @@ const G_BUTTON: u16 = 26;
 const G_BOXCHAR: u16 = 27;
 const G_STRING: u16 = 28;
 const G_ICON: u16 = 31;
+const G_TITLE: u16 = 32;
 
 /// `BITBLK` — a raw monochrome raster for a `G_IMAGE` object
 /// (`obdefs.h`). `bi_pdata` is a native pointer to big-endian 16-bit
@@ -147,6 +148,7 @@ pub struct IconBlk {
 const LASTOB: u16 = 0x0020;
 const HIDETREE: u16 = 0x0080;
 const SELECTED: u16 = 0x0001;
+const CHECKED: u16 = 0x0004;
 const DISABLED: u16 = 0x0008;
 
 const NIL: i16 = -1;
@@ -405,6 +407,18 @@ pub(crate) unsafe fn hit_test(
     }
 }
 
+/// Draw the subtree rooted at `obj` (any object), `depth` levels deep, at
+/// its absolute screen position. Used by the Menu Manager to draw the bar.
+pub(crate) fn draw_obj(tree: *const Object, obj: i16, depth: i16, backend: &dyn RasterBackend) {
+    let clip = ClipRect::full(backend.width(), backend.height());
+    let (ox, oy) = abs_offset(tree, obj);
+    // SAFETY: valid tree (GEM contract).
+    unsafe {
+        let ob = &*tree.add(obj as usize);
+        draw_tree(tree, obj, depth, ox - ob.ob_x, oy - ob.ob_y, clip, backend);
+    }
+}
+
 /// Draw a whole tree (used by the Form Manager after building an alert).
 ///
 /// # Safety
@@ -538,8 +552,31 @@ fn just_draw(ob: &Object, x: i16, y: i16, clip: ClipRect, backend: &dyn RasterBa
             }
         }
         G_STRING => {
+            // Menu items / plain strings. SELECTED inverts (menu
+            // highlight); CHECKED draws a check glyph at the left.
+            if selected {
+                backend.fill_rect(x, y, w, h, BLACK, clip);
+            }
+            let cw = crate::vdi::font::CELL_W;
+            if ob.ob_state & CHECKED != 0 {
+                backend.draw_glyph(
+                    x,
+                    y + (h - crate::vdi::font::CELL_H) / 2,
+                    crate::vdi::font::glyph(0x08), // ST-font check mark
+                    ink,
+                    clip,
+                );
+            }
             let s = read_cstr(ob.ob_spec);
-            draw_text(backend, x, y, w, h, s, TE_LEFT, BLACK, clip);
+            // indent past the check column (2 cells), as GEM menu items do
+            draw_text(backend, x + 2 * cw, y, w, h, s, TE_LEFT, ink, clip);
+        }
+        G_TITLE => {
+            // A menu-bar title: text with a small left pad; SELECTED
+            // (menu dropped) inverts to a highlighted look.
+            backend.fill_rect(x, y, w, h, fill, clip);
+            let s = read_cstr(ob.ob_spec);
+            draw_text(backend, x + crate::vdi::font::CELL_W, y, w, h, s, TE_LEFT, ink, clip);
         }
         G_TEXT | G_BOXTEXT => {
             if ob.ob_spec != 0 {

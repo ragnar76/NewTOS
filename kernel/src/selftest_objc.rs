@@ -439,3 +439,54 @@ pub fn run_form_error() {
     aes(block.as_ptr() as u64);
     kprintln!("[objc] form_error returned button {}", intout[0]);
 }
+
+/// D5 Batch-1 demo: a menu bar (Desk/File/Edit) via menu_bar, with the
+/// "File" title highlighted via menu_tnormal.
+pub fn run_menu() {
+    const G_IBOX: u16 = 25;
+    const G_TITLE: u16 = 32;
+    static DESK: &[u8] = b"Desk\0";
+    static FILE: &[u8] = b"File\0";
+    static EDIT: &[u8] = b"Edit\0";
+
+    let tree = [
+        // 0: ROOT
+        Object { ob_next: -1, ob_head: 1, ob_tail: 1, ob_type: G_IBOX, ob_flags: 0,
+                 ob_state: 0, ob_spec: 0, ob_x: 0, ob_y: 0, ob_width: 640, ob_height: 19 },
+        // 1: THEBAR (white box, full width)
+        Object { ob_next: 0, ob_head: 2, ob_tail: 4, ob_type: G_BOX, ob_flags: 0,
+                 ob_state: 0, ob_spec: 0, ob_x: 0, ob_y: 0, ob_width: 640, ob_height: 19 },
+        // 2..4: titles
+        Object { ob_next: 3, ob_head: -1, ob_tail: -1, ob_type: G_TITLE, ob_flags: 0,
+                 ob_state: 0, ob_spec: DESK.as_ptr() as u64, ob_x: 0, ob_y: 0, ob_width: 56, ob_height: 19 },
+        Object { ob_next: 4, ob_head: -1, ob_tail: -1, ob_type: G_TITLE, ob_flags: 0,
+                 ob_state: 0, ob_spec: FILE.as_ptr() as u64, ob_x: 56, ob_y: 0, ob_width: 56, ob_height: 19 },
+        Object { ob_next: 1, ob_head: -1, ob_tail: -1, ob_type: G_TITLE, ob_flags: 0x0020,
+                 ob_state: 0, ob_spec: EDIT.as_ptr() as u64, ob_x: 112, ob_y: 0, ob_width: 56, ob_height: 19 },
+    ];
+
+    let mut control = [0i16; 8];
+    let mut global = [0i16; 32];
+    let mut intin = [0i16; 16];
+    let mut intout = [0i16; 16];
+    let mut addrin = [0i64; 4];
+    let mut addrout = [0i64; 4];
+    let block: [u64; 6] = [
+        control.as_mut_ptr() as u64, global.as_mut_ptr() as u64,
+        intin.as_mut_ptr() as u64, intout.as_mut_ptr() as u64,
+        addrin.as_mut_ptr() as u64, addrout.as_mut_ptr() as u64,
+    ];
+
+    // menu_bar(tree, show=1)
+    control[0] = 30; control[1] = 1; control[3] = 1;
+    intin[0] = 1; addrin[0] = tree.as_ptr() as i64;
+    aes(block.as_ptr() as u64);
+
+    // menu_tnormal(title=3 "File", normal=0 → highlight)
+    control = [0; 8]; control[0] = 33; control[1] = 2; control[3] = 1;
+    intin[0] = 3; intin[1] = 0; addrin[0] = tree.as_ptr() as i64;
+    aes(block.as_ptr() as u64);
+
+    let _ = G_IBOX;
+    kprintln!("[objc] menu bar drawn (Desk/File/Edit, File highlighted)");
+}
