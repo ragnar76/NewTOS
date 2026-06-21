@@ -57,6 +57,8 @@ const G_TEXT: u16 = 21;
 const G_BOXTEXT: u16 = 22;
 const G_IMAGE: u16 = 23;
 const G_IBOX: u16 = 25;
+const G_FTEXT: u16 = 29;
+const G_FBOXTEXT: u16 = 30;
 const G_BUTTON: u16 = 26;
 const G_BOXCHAR: u16 = 27;
 const G_STRING: u16 = 28;
@@ -612,13 +614,15 @@ fn just_draw(ob: &Object, x: i16, y: i16, clip: ClipRect, backend: &dyn RasterBa
             let s = read_cstr(ob.ob_spec);
             draw_text(backend, x + crate::vdi::font::CELL_W, y, w, h, s, TE_LEFT, ink, clip);
         }
-        G_TEXT | G_BOXTEXT => {
+        G_TEXT | G_BOXTEXT | G_FTEXT | G_FBOXTEXT => {
             if ob.ob_spec != 0 {
-                // SAFETY: ob_spec of a G_TEXT/G_BOXTEXT points at a TEDINFO.
+                // SAFETY: ob_spec of a *TEXT object points at a TEDINFO.
                 let ted = unsafe { &*(ob.ob_spec as *const TedInfo) };
-                // G_BOXTEXT additionally draws a box (black-on-white look;
-                // full colour-word cracking lands in the colour batch).
-                if ob.ob_type == G_BOXTEXT {
+                // The *BOXTEXT variants additionally draw a box (black-on-
+                // white; full colour-word cracking lands in the colour
+                // batch). F-variants show te_ptext directly (template
+                // merging arrives with full editable-field support).
+                if ob.ob_type == G_BOXTEXT || ob.ob_type == G_FBOXTEXT {
                     backend.fill_rect(x, y, w, h, fill, clip);
                     let th = ted.te_thickness;
                     if th != 0 {

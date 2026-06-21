@@ -13,6 +13,7 @@
 mod appl;
 mod event;
 mod form;
+mod fsel;
 mod graf;
 pub mod menu;
 pub mod object;
@@ -148,6 +149,8 @@ pub unsafe fn dispatch(aespb_ptr: u64) {
         50 => form::form_do(&pb),
         52 => form::form_alert(&pb),
         53 => form::form_error(&pb),
+        90 => fsel::fsel_input(&pb),
+        91 => fsel::fsel_exinput(&pb),
         100 => window::wind_create(&pb),
         101 => window::wind_open(&pb),
         102 => window::wind_close(&pb),

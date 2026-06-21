@@ -178,6 +178,59 @@ fn scan(
     }
 }
 
+/// FAT 11-byte name → `NAME.EXT\0` (EmuTOS `makbuf` formatting).
+fn name_83(fat: &[u8; 11]) -> [u8; 14] {
+    let mut out = [0u8; 14];
+    let mut k = 0;
+    for &c in &fat[0..8] {
+        if c == b' ' {
+            break;
+        }
+        out[k] = c;
+        k += 1;
+    }
+    if fat[8] != b' ' {
+        out[k] = b'.';
+        k += 1;
+        for &c in &fat[8..11] {
+            if c == b' ' {
+                break;
+            }
+            out[k] = c;
+            k += 1;
+        }
+    }
+    out
+}
+
+/// List up to `names.len()` directory entries matching `path` (which may
+/// end in a wildcard, e.g. `C:\*.*`), files **and** sub-directories. Each
+/// `names[i]` gets `NAME.EXT\0`, `attrs[i]` the attribute byte. Returns the
+/// number of entries found. Used by the AES file selector (`fsel_input`).
+pub fn list_dir(path: &str, names: &mut [[u8; 14]], attrs: &mut [u8]) -> usize {
+    let (vol, parent, comp) = match super::path::resolve_parent(path) {
+        Ok(x) => x,
+        Err(_) => return 0,
+    };
+    let pattern = fcb_pattern(comp);
+    let mut slot = 0u32;
+    let mut n = 0;
+    while n < names.len() {
+        match scan(&vol, parent, slot, &pattern, FA_SUBDIR) {
+            Some((entry, next)) => {
+                names[n] = name_83(&entry.name);
+                if n < attrs.len() {
+                    attrs[n] = entry.attrib;
+                }
+                n += 1;
+                slot = next;
+            }
+            None => break,
+        }
+    }
+    n
+}
+
 /// Write the user-visible portion of the DTA from a found entry
 /// (EmuTOS `makbuf`): attribute, time, date, size, `8.3\0` name. Values
 /// are stored in native byte order (little-endian on AArch64).

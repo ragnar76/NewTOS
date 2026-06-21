@@ -834,3 +834,30 @@ pub fn run_rsrc_gem() {
     aes(block.as_ptr() as u64);
     kprintln!("[objc] GEM.RSC tree 0 (file selector) drawn");
 }
+
+/// D8 Batch-1 demo: open the file selector on C:\*.* — loads GEM.RSC,
+/// lists the directory into the slots, draws the FSELECTR dialog (the
+/// modal loop then waits for a click; the screendump captures the drawn
+/// dialog with the file list populated).
+pub fn run_fsel() {
+    let mut path = [0u8; 96];
+    let mut sel = [0u8; 16];
+    path[..6].copy_from_slice(b"C:\\*.*");
+    let mut control = [0i16; 8];
+    let mut global = [0i16; 32];
+    let mut intin = [0i16; 16];
+    let mut intout = [0i16; 16];
+    let mut addrin = [0i64; 4];
+    let mut addrout = [0i64; 4];
+    let block: [u64; 6] = [
+        control.as_mut_ptr() as u64, global.as_mut_ptr() as u64,
+        intin.as_mut_ptr() as u64, intout.as_mut_ptr() as u64,
+        addrin.as_mut_ptr() as u64, addrout.as_mut_ptr() as u64,
+    ];
+    control[0] = 90; control[3] = 2; // fsel_input
+    addrin[0] = path.as_mut_ptr() as i64;
+    addrin[1] = sel.as_mut_ptr() as i64;
+    kprintln!("[objc] opening file selector on C:\\*.*");
+    aes(block.as_ptr() as u64); // draws, then blocks in the modal loop
+    kprintln!("[objc] fsel button={} sel ok", intout[1]);
+}

@@ -92,14 +92,40 @@ static RSC: Loaded = Loaded {
 pub unsafe fn relocate_and_register(base: *mut u8) -> bool {
     // SAFETY: caller guarantees a valid blob.
     unsafe {
+        if !relocate_blob(base) {
+            return false;
+        }
+        let h = &*(base as *const NrscHeader);
+        let objs = base.add(h.off_objects as usize) as *mut Object;
+        // Build the tree table from the tree index.
+        let tri = base.add(h.off_trindex as usize) as *const u32;
+        let n = (h.n_trees as usize).min(MAX_TREES);
+        let trees = &mut *RSC.trees.get();
+        for (t, slot) in trees.iter_mut().enumerate().take(n) {
+            let root = *tri.add(t) as usize;
+            *slot = objs.add(root);
+        }
+        *RSC.n_trees.get() = n;
+        *RSC.objects.get() = objs;
+        *RSC.n_objects.get() = h.n_objects as usize;
+    }
+    true
+}
+
+/// Relocate a native `.RSC` blob in place (offsets → pointers) **without**
+/// touching the global tree table — for a second resource (e.g. the AES's
+/// own GEM.RSC behind the file selector) that must coexist with the app's.
+///
+/// # Safety
+/// As [`relocate_and_register`].
+pub unsafe fn relocate_blob(base: *mut u8) -> bool {
+    // SAFETY: caller guarantees a valid blob.
+    unsafe {
         let h = &*(base as *const NrscHeader);
         if &h.magic != b"NRSC" {
             return false;
         }
         let objs = base.add(h.off_objects as usize) as *mut Object;
-
-        // Relocate each object's ob_spec (offset → pointer), then any
-        // sub-pointers in the structure it points at, by object type.
         let b = base as u64;
         for i in 0..h.n_objects as usize {
             let o = &mut *objs.add(i);
@@ -131,20 +157,22 @@ pub unsafe fn relocate_and_register(base: *mut u8) -> bool {
                 _ => {}
             }
         }
-
-        // Build the tree table from the tree index.
-        let tri = base.add(h.off_trindex as usize) as *const u32;
-        let n = (h.n_trees as usize).min(MAX_TREES);
-        let trees = &mut *RSC.trees.get();
-        for (t, slot) in trees.iter_mut().enumerate().take(n) {
-            let root = *tri.add(t) as usize;
-            *slot = objs.add(root);
-        }
-        *RSC.n_trees.get() = n;
-        *RSC.objects.get() = objs;
-        *RSC.n_objects.get() = h.n_objects as usize;
     }
     true
+}
+
+/// Pointer to the root object of tree `idx` in a relocated blob at `base`.
+///
+/// # Safety
+/// `base` must point at a relocated native `.RSC` blob with `idx` < n_trees.
+pub unsafe fn tree_root(base: *mut u8, idx: usize) -> *mut Object {
+    // SAFETY: caller guarantees a relocated blob.
+    unsafe {
+        let h = &*(base as *const NrscHeader);
+        let objs = base.add(h.off_objects as usize) as *mut Object;
+        let tri = base.add(h.off_trindex as usize) as *const u32;
+        objs.add(*tri.add(idx) as usize)
+    }
 }
 
 /// Add `base` to a non-zero offset field (in-place relocation).
