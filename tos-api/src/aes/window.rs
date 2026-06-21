@@ -48,6 +48,8 @@ const WF_CXYWH: i16 = 5;
 const WF_PXYWH: i16 = 6;
 const WF_FXYWH: i16 = 7;
 const WF_TOP: i16 = 10;
+const WF_FIRSTXYWH: i16 = 11;
+const WF_NEXTXYWH: i16 = 12;
 
 // ── wind_calc types ──
 const WC_BORDER: i16 = 0;
@@ -86,6 +88,8 @@ struct Window {
     in_use: bool,
     open: bool,
     kind: u16,
+    z: i16,     // stacking order (higher = nearer the top)
+    owner: i16, // owning process id (WM_* message target)
     full: Grect, // maximum extent (WF_FXYWH)
     curr: Grect, // current border rect (WF_CXYWH)
     prev: Grect, // previous border rect (WF_PXYWH)
@@ -98,6 +102,8 @@ impl Window {
         in_use: false,
         open: false,
         kind: 0,
+        z: 0,
+        owner: 0,
         full: Grect { x: 0, y: 0, w: 0, h: 0 },
         curr: Grect { x: 0, y: 0, w: 0, h: 0 },
         prev: Grect { x: 0, y: 0, w: 0, h: 0 },
@@ -110,14 +116,14 @@ impl Window {
 /// `Sync`, mirroring the cookie jar and AES process table.
 struct WinTable {
     slots: UnsafeCell<[Window; MAX_WINDOWS]>,
-    top: UnsafeCell<i16>, // handle of the top window, 0 = desktop
+    next_z: UnsafeCell<i16>, // monotonically increasing stacking counter
 }
 // SAFETY: only the single boot CPU touches the AES; no concurrent access.
 unsafe impl Sync for WinTable {}
 
 static TABLE: WinTable = WinTable {
     slots: UnsafeCell::new([Window::EMPTY; MAX_WINDOWS]),
-    top: UnsafeCell::new(0),
+    next_z: UnsafeCell::new(1),
 };
 
 #[allow(clippy::mut_from_ref)]
@@ -125,13 +131,188 @@ fn slots() -> &'static mut [Window; MAX_WINDOWS] {
     // SAFETY: single-CPU AES; exclusive logical owner.
     unsafe { &mut *TABLE.slots.get() }
 }
-fn set_top(h: i16) {
+
+/// Next stacking value (raises a window to the top of the z-order).
+fn bump_z() -> i16 {
     // SAFETY: single-CPU AES.
-    unsafe { *TABLE.top.get() = h };
+    unsafe {
+        let p = TABLE.next_z.get();
+        let z = *p;
+        *p = z + 1;
+        z
+    }
 }
+
+/// Handle of the top-most open window (highest `z`), or 0 (desktop).
 fn get_top() -> i16 {
+    let mut best = 0i16;
+    let mut best_z = i16::MIN;
+    for (i, w) in slots().iter().enumerate() {
+        if w.in_use && w.open && w.z >= best_z {
+            best_z = w.z;
+            best = (i + 1) as i16;
+        }
+    }
+    best
+}
+
+/// Raise `handle` to the top of the stack and repaint.
+fn top_window(handle: i16) {
+    if let Some(w) = win(handle) {
+        w.z = bump_z();
+    }
+    if let Some(backend) = host().and_then(|h| h.raster()) {
+        redraw_all(backend);
+    }
+}
+
+/// Repaint the desktop and every open window back-to-front (painter's
+/// algorithm — front windows overwrite the ones they cover). The simple
+/// stand-in for per-window rectangle-list clipping when redrawing frames;
+/// the rectangle list (`WF_FIRSTXYWH`) still drives what the *app* redraws.
+fn redraw_all(backend: &dyn RasterBackend) {
+    let clip = ClipRect::full(backend.width(), backend.height());
+    backend.fill_rect(0, 0, backend.width() as i16, backend.height() as i16, WHITE, clip);
+    // Selection sort by ascending z, drawing each open window once.
+    let mut drawn = [false; MAX_WINDOWS];
+    loop {
+        let mut pick = usize::MAX;
+        let mut pick_z = i16::MAX;
+        for (i, w) in slots().iter().enumerate() {
+            if w.in_use && w.open && !drawn[i] && w.z <= pick_z {
+                // pick the lowest z not yet drawn; tie-break stable
+                if pick == usize::MAX || w.z < pick_z {
+                    pick = i;
+                    pick_z = w.z;
+                }
+            }
+        }
+        if pick == usize::MAX {
+            break;
+        }
+        drawn[pick] = true;
+        draw_frame(&slots()[pick], backend);
+    }
+}
+
+// ── rectangle list (visible pieces) ──────────────────────────────────────
+
+const RCAP: usize = 16;
+const WM_REDRAW: i16 = 20;
+
+/// Iterator state for `WF_FIRSTXYWH`/`WF_NEXTXYWH` — the visible pieces of
+/// the window most recently queried. Single-CPU, like the window table.
+struct RList {
+    rects: UnsafeCell<[Grect; RCAP]>,
+    count: UnsafeCell<usize>,
+    cursor: UnsafeCell<usize>,
+}
+unsafe impl Sync for RList {}
+static RLIST: RList = RList {
+    rects: UnsafeCell::new([Grect { x: 0, y: 0, w: 0, h: 0 }; RCAP]),
+    count: UnsafeCell::new(0),
+    cursor: UnsafeCell::new(0),
+};
+
+fn put(out: &mut [Grect; RCAP], m: &mut usize, r: Grect) {
+    if r.w > 0 && r.h > 0 && *m < RCAP {
+        out[*m] = r;
+        *m += 1;
+    }
+}
+
+/// Subtract covering rect `c` from each rect in `list[0..n]`, producing the
+/// non-overlapping remainder. Returns the new count.
+fn subtract(list: &mut [Grect; RCAP], n: usize, c: Grect) -> usize {
+    let mut out = [Grect::default(); RCAP];
+    let mut m = 0usize;
+    for r in list.iter().take(n).copied() {
+        // No intersection → keep whole.
+        if c.x >= r.x + r.w || c.x + c.w <= r.x || c.y >= r.y + r.h || c.y + c.h <= r.y {
+            put(&mut out, &mut m, r);
+            continue;
+        }
+        if r.y < c.y {
+            put(&mut out, &mut m, Grect { x: r.x, y: r.y, w: r.w, h: c.y - r.y });
+        }
+        if r.y + r.h > c.y + c.h {
+            put(&mut out, &mut m, Grect { x: r.x, y: c.y + c.h, w: r.w, h: (r.y + r.h) - (c.y + c.h) });
+        }
+        let oy = r.y.max(c.y);
+        let oh = (r.y + r.h).min(c.y + c.h) - oy;
+        if r.x < c.x {
+            put(&mut out, &mut m, Grect { x: r.x, y: oy, w: c.x - r.x, h: oh });
+        }
+        if r.x + r.w > c.x + c.w {
+            put(&mut out, &mut m, Grect { x: c.x + c.w, y: oy, w: (r.x + r.w) - (c.x + c.w), h: oh });
+        }
+    }
+    *list = out;
+    m
+}
+
+/// Compute `handle`'s visible work-area pieces (work rect minus every
+/// higher-z open window) into `RLIST`, cursor reset.
+fn compute_rlist(handle: i16) {
     // SAFETY: single-CPU AES.
-    unsafe { *TABLE.top.get() }
+    let (rects, count, cursor) = unsafe {
+        (&mut *RLIST.rects.get(), &mut *RLIST.count.get(), &mut *RLIST.cursor.get())
+    };
+    *count = 0;
+    *cursor = 0;
+    let (work, myz) = match win(handle) {
+        Some(w) if w.open => (calc(WC_WORK, w.kind, w.curr), w.z),
+        _ => return,
+    };
+    let mut list = [Grect::default(); RCAP];
+    list[0] = work;
+    let mut n = 1;
+    for ow in slots().iter() {
+        if ow.in_use && ow.open && ow.z > myz {
+            n = subtract(&mut list, n, ow.curr);
+        }
+    }
+    rects[..n].copy_from_slice(&list[..n]);
+    *count = n;
+}
+
+/// Next piece from `RLIST` (empty `Grect` when exhausted).
+fn rlist_next() -> Grect {
+    // SAFETY: single-CPU AES.
+    unsafe {
+        let count = *RLIST.count.get();
+        let cursor = &mut *RLIST.cursor.get();
+        if *cursor < count {
+            let r = (*RLIST.rects.get())[*cursor];
+            *cursor += 1;
+            r
+        } else {
+            Grect::default()
+        }
+    }
+}
+
+/// Post a `WM_REDRAW` for `rect` to `handle`'s owner process.
+fn send_redraw(handle: i16, rect: Grect) {
+    let owner = match win(handle) {
+        Some(w) => w.owner,
+        None => return,
+    };
+    let mut msg = [0i16; 8];
+    msg[0] = WM_REDRAW;
+    msg[1] = super::appl::current_pid();
+    msg[3] = handle;
+    msg[4] = rect.x;
+    msg[5] = rect.y;
+    msg[6] = rect.w;
+    msg[7] = rect.h;
+    // SAFETY: by_pid hands out the live process slot on the single trap path.
+    unsafe {
+        if let Some(p) = super::pd::by_pid(owner) {
+            p.msg = msg;
+            p.msg_pending = true;
+        }
+    }
 }
 
 /// Map a window handle (1-based) to a table slot, if valid and in use.
@@ -375,7 +556,8 @@ pub fn wind_create(pb: &Aespb) {
     pb.set_ret(-1); // no free handle
 }
 
-/// `wind_open` (101) — display window `int_in[0]` at rect `int_in[1..4]`.
+/// `wind_open` (101) — display window `int_in[0]` at rect `int_in[1..4]`,
+/// on top of the stack. Owned by the calling process.
 pub fn wind_open(pb: &Aespb) {
     let handle = pb.intin(0);
     let r = Grect { x: pb.intin(1), y: pb.intin(2), w: pb.intin(3), h: pb.intin(4) };
@@ -383,10 +565,12 @@ pub fn wind_open(pb: &Aespb) {
         w.prev = w.curr;
         w.curr = r;
         w.open = true;
+        w.owner = super::appl::current_pid();
+        w.z = bump_z();
         if let Some(backend) = host().and_then(|h| h.raster()) {
-            draw_frame(w, backend);
+            redraw_all(backend);
         }
-        set_top(handle);
+        send_redraw(handle, calc(WC_WORK, w.kind, r));
         pb.set_ret(1);
     } else {
         pb.set_ret(0);
@@ -394,17 +578,13 @@ pub fn wind_open(pb: &Aespb) {
 }
 
 /// `wind_close` (102) — hide window `int_in[0]` (the handle stays valid).
+/// Repaints the desktop + remaining windows (no save/restore needed).
 pub fn wind_close(pb: &Aespb) {
     let handle = pb.intin(0);
     if let Some(w) = win(handle) {
         w.open = false;
-        // No save/restore yet: erase the frame to the desktop background.
         if let Some(backend) = host().and_then(|h| h.raster()) {
-            let clip = ClipRect::full(backend.width(), backend.height());
-            backend.fill_rect(w.curr.x, w.curr.y, w.curr.w + 2, w.curr.h + 2, WHITE, clip);
-        }
-        if get_top() == handle {
-            set_top(0);
+            redraw_all(backend);
         }
         pb.set_ret(1);
     } else {
@@ -428,6 +608,21 @@ pub fn wind_delete(pb: &Aespb) {
 pub fn wind_get(pb: &Aespb) {
     let handle = pb.intin(0);
     let field = pb.intin(1);
+
+    // Rectangle-list iteration is computed separately from the slot fields.
+    if field == WF_FIRSTXYWH || field == WF_NEXTXYWH {
+        if field == WF_FIRSTXYWH {
+            compute_rlist(handle);
+        }
+        let r = rlist_next();
+        pb.set_intout(1, r.x);
+        pb.set_intout(2, r.y);
+        pb.set_intout(3, r.w);
+        pb.set_intout(4, r.h);
+        pb.set_ret(1);
+        return;
+    }
+
     // Desktop (handle 0) reports the full screen for the rect fields.
     let r = match win(handle) {
         Some(w) => match field {
@@ -465,26 +660,50 @@ pub fn wind_set(pb: &Aespb) {
     let handle = pb.intin(0);
     let field = pb.intin(1);
     let title = pb.addrin(0) as *const u8;
-    let Some(w) = win(handle) else {
+    if win(handle).is_none() {
         pb.set_ret(0);
         return;
-    };
+    }
     match field {
-        WF_NAME => copy_cstr(&mut w.name, title),
-        WF_INFO => copy_cstr(&mut w.info, title),
-        WF_CXYWH => {
-            w.prev = w.curr;
-            w.curr = Grect { x: pb.intin(2), y: pb.intin(3), w: pb.intin(4), h: pb.intin(5) };
+        WF_NAME => {
+            if let Some(w) = win(handle) {
+                copy_cstr(&mut w.name, title);
+            }
+            redraw_open(handle);
         }
+        WF_INFO => {
+            if let Some(w) = win(handle) {
+                copy_cstr(&mut w.info, title);
+            }
+            redraw_open(handle);
+        }
+        WF_CXYWH => {
+            let r = Grect { x: pb.intin(2), y: pb.intin(3), w: pb.intin(4), h: pb.intin(5) };
+            let kind = if let Some(w) = win(handle) {
+                w.prev = w.curr;
+                w.curr = r;
+                w.kind
+            } else {
+                0
+            };
+            if let Some(backend) = host().and_then(|h| h.raster()) {
+                redraw_all(backend);
+            }
+            send_redraw(handle, calc(WC_WORK, kind, r));
+        }
+        WF_TOP => top_window(handle),
         _ => {}
     }
-    // Redraw the frame to reflect the change (name/size).
-    if w.open {
-        if let Some(backend) = host().and_then(|h| h.raster()) {
+    pb.set_ret(1);
+}
+
+/// Redraw just `handle`'s frame if it is open (for name/info changes).
+fn redraw_open(handle: i16) {
+    if let (Some(backend), Some(w)) = (host().and_then(|h| h.raster()), win(handle)) {
+        if w.open {
             draw_frame(w, backend);
         }
     }
-    pb.set_ret(1);
 }
 
 /// `wind_find` (106) — handle of the window under `(int_in[0], int_in[1])`;
@@ -533,7 +752,11 @@ pub fn wind_new(pb: &Aespb) {
     for w in slots().iter_mut() {
         *w = Window::EMPTY;
     }
-    set_top(0);
+    // SAFETY: single-CPU AES.
+    unsafe { *TABLE.next_z.get() = 1 };
+    if let Some(backend) = host().and_then(|h| h.raster()) {
+        redraw_all(backend);
+    }
     pb.set_ret(1);
 }
 
@@ -786,10 +1009,11 @@ pub fn intercept(pbuff: u64) -> bool {
     msg[1] = super::appl::current_pid();
     msg[3] = handle;
 
-    // Click on a non-top window → ask the owner to top it.
+    // Click on a non-top window → bring it to the top and tell the owner.
     if handle != get_top() {
         msg[0] = WM_TOPPED;
         wait_release();
+        top_window(handle);
         return emit(pbuff, &msg);
     }
 

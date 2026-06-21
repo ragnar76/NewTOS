@@ -632,3 +632,54 @@ pub fn run_graf() {
     kprintln!("[objc] graf_mkstate: mx={} my={} mstate={} kstate={}",
         intout[1], intout[2], intout[3], intout[4]);
 }
+
+/// D4 Batch-3b demo (toward EC1): open two overlapping windows (B on top
+/// of A), then walk A's visible rectangle list (work area minus B).
+pub fn run_two_windows() {
+    let mut control = [0i16; 8];
+    let mut global = [0i16; 32];
+    let mut intin = [0i16; 16];
+    let mut intout = [0i16; 16];
+    let mut addrin = [0i64; 4];
+    let mut addrout = [0i64; 4];
+    let block: [u64; 6] = [
+        control.as_mut_ptr() as u64, global.as_mut_ptr() as u64,
+        intin.as_mut_ptr() as u64, intout.as_mut_ptr() as u64,
+        addrin.as_mut_ptr() as u64, addrout.as_mut_ptr() as u64,
+    ];
+    static NAME_A: &[u8] = b"Window A\0";
+    static NAME_B: &[u8] = b"Window B\0";
+
+    let mut create = |x, y, w, h, name: &[u8]| -> i16 {
+        control = [0; 8]; control[0] = 100; control[1] = 5;
+        intin[0] = 0x0FFF; intin[1] = 0; intin[2] = 0; intin[3] = 640; intin[4] = 480;
+        aes(block.as_ptr() as u64);
+        let hdl = intout[0];
+        control = [0; 8]; control[0] = 105; control[1] = 2; control[3] = 1;
+        intin[0] = hdl; intin[1] = 2; addrin[0] = name.as_ptr() as i64;
+        aes(block.as_ptr() as u64);
+        control = [0; 8]; control[0] = 101; control[1] = 5;
+        intin[0] = hdl; intin[1] = x; intin[2] = y; intin[3] = w; intin[4] = h;
+        aes(block.as_ptr() as u64);
+        hdl
+    };
+
+    let ha = create(60, 50, 360, 250, NAME_A);
+    let hb = create(230, 170, 360, 250, NAME_B);
+    kprintln!("[objc] two windows: A={} B={} (B on top)", ha, hb);
+
+    // Walk A's visible rectangle list (work area minus B).
+    control = [0; 8]; control[0] = 104; control[1] = 2;
+    intin[0] = ha; intin[1] = 11; // WF_FIRSTXYWH
+    aes(block.as_ptr() as u64);
+    let mut piece = 0;
+    while intout[3] != 0 && piece < 8 {
+        kprintln!("[objc]   A piece {}: x={} y={} w={} h={}",
+            piece, intout[1], intout[2], intout[3], intout[4]);
+        piece += 1;
+        control = [0; 8]; control[0] = 104; control[1] = 2;
+        intin[0] = ha; intin[1] = 12; // WF_NEXTXYWH
+        aes(block.as_ptr() as u64);
+    }
+    kprintln!("[objc] A visible pieces: {}", piece);
+}
