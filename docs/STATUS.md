@@ -248,6 +248,15 @@ Phasenbeginn entschieden sein (siehe `docs/api/_phase00-completion.md`):
 - **EC2 (PHASE-01) — Real-HW-Restverifikation** — auf echtem RPi4 noch
   ungetestet: FAT16-Datei-I/O (Phase 08/09), und die obigen zwei Punkte.
   Boot + Konsole + Tastatur + 4-Drive-Detection sind auf HW bestätigt.
+- **Mehrbank-RAM-Erkennung (volle 4 GB nutzen)** — `dtb.rs::parse_memory`
+  liest aktuell nur die **erste** `/memory@…`-Bank (Phase-03-D8-
+  Vereinfachung). Auf echtem RPi4 ist das die niedrige ~1-GiB-Bank, davon
+  durch `gpu_mem=256` noch −256 MiB → **768 MiB TT-RAM** (`0x30000000`).
+  Die restlichen ~3 GiB liegen in höheren, *separaten* `reg`-Bänken
+  (phys ≥ `0x40000000`), die wir ignorieren. Aktuell mehr als ausreichend
+  (TT-RAM-Pool praktisch leer). **Zukunft (gewünscht):** alle `reg`-
+  Einträge parsen + **diskontinuierliches** TT-RAM unterstützen (Lücke +
+  Peripherie-Region `0xFE000000`) + Page-Tables für die hohe RAM-Region.
 - **Kleinere funktionale Lücken** — `Kbdvbase`-Vektor-Dispatch
   (Phase 11 EC1, braucht das
   AES-Eventmodell — jetzt im Aufbau); `Pwait`-Round-Robin (Phase 06 EC4);
@@ -371,6 +380,8 @@ Phasenbeginn entschieden sein (siehe `docs/api/_phase00-completion.md`):
 | 2026-06-21 | **Phase-13 D6 Batch 5 — `form_do` (50) + `objc_change` (47).** Macht **beliebige** Dialogbäume interaktiv (nicht nur `form_alert`). **`objc_change`**: setzt `ob_state` (`int_in[6]`) + zeichnet das Objekt neu wenn `int_in[7]` (geteilter `object::change`-Helfer, Single-Object-Redraw via `draw_tree` depth 0). **`form_do`** ([`aes::form`](../tos-api/src/aes/form.rs)): Modal-Loop auf dem Baum aus `addr_in[0]` — Klick auf `EXIT`/`TOUCHEXIT`-Objekt (via `object::hit_test`) oder Enter (DEFAULT-Button) → zeigt den Button gedrückt (`press`→`objc_change`) und gibt den Objekt-Index zurück. **Per QMP-Screendump auf raspi4b verifiziert**: Dialog rendert, nach Enter ist der OK-Button invertiert, `form_do` liefert Objekt 2 (OK = DEFAULT). **Batch-5-Grenzen:** `objc_edit` (Textfeld-Editing) + Tasten-Shortcuts + `form_keybd`/`form_button`/`form_dial`/`form_center` als Folge-Batch. D6 Batch 1–5 ✅. |
 
 | 2026-06-21 | **Phase-13 D6 Batch 6 — `objc_edit` (46): editierbare Textfelder.** [`aes::object`](../tos-api/src/aes/object.rs): `objc_edit(obj, char, idx, kind)` editiert ein EDITABLE-`TEDINFO`-Feld in-place — **EDINIT** (Cursor ans Textende), **EDCHAR** (Printable einfügen / Backspace löschen am Cursor, `te_ptext`-Puffer bis `te_txtlen`), **EDEND**; neuer Cursor-Index in `int_out[1]`. Feld + **Caret** (1px-Balken an der Cursor-Zelle) werden neu gezeichnet. **Per QMP-Screendump auf raspi4b verifiziert**: „NewTOS!" via EDINIT+7×EDCHAR ins Feld getippt, Caret am Ende (idx=7). **Grenzen:** Template (`te_ptmplt`) + Validierung (`te_pvalid`) formatierter Felder, Pfeiltasten/Feld-Navigation, `form_do`↔`objc_edit`-Integration (Tipp-Fokus im Dialog) als Folge-Batch. **D6 Batch 1–6 ✅** — Objekt-Rendering (alle Typen), `form_alert`/`form_do`, Icons/Images, TEDINFO, Texteingabe. |
+
+| 2026-06-21 | **Befund: nur 768 MiB TT-RAM auf einem 4-GB-RPi4 — Ursache geklärt, Mehrbank-RAM als Zukunftsaufgabe notiert.** Zwei sich addierende, *dokumentierte* Vereinfachungen: (1) `dtb.rs::parse_memory` liest nur die **erste** `/memory`-Bank (Phase-03-D8) — das ist auf RPi4 die niedrige ~1-GiB-Bank, die restlichen ~3 GiB liegen in höheren separaten Bänken (≥`0x40000000`), die wir ignorieren; (2) `gpu_mem=256` (für den Framebuffer) schneidet 256 MiB ab → 1024−256 = **768 MiB** (`0x30000000`). Passt zur Historie (vor `gpu_mem=256`: ~948 MiB). Aktuell mehr als ausreichend; volle 4-GB-Nutzung (Mehrbank-Parsing + diskontinuierliches TT-RAM + Page-Tables) ist als offener Punkt notiert (vom User für die Zukunft gewünscht). |
 
 ## Notes
 
