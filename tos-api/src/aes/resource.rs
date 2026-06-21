@@ -24,14 +24,20 @@
 //! Loading from SD (`bdos::fs::read_file`), TEDINFO/ICONBLK/BITBLK
 //! sub-pointer relocation, and `rsrc_saddr` are Batch 2.
 
-use super::object::Object;
+use super::object::{BitBlk, IconBlk, Object, TedInfo};
 use super::Aespb;
 use core::cell::UnsafeCell;
 use core::mem::size_of;
 
 // Object types whose `ob_spec` is a string pointer (needs relocation).
+const G_TEXT: u16 = 21;
+const G_BOXTEXT: u16 = 22;
+const G_IMAGE: u16 = 23;
 const G_BUTTON: u16 = 26;
 const G_STRING: u16 = 28;
+const G_FTEXT: u16 = 29;
+const G_FBOXTEXT: u16 = 30;
+const G_ICON: u16 = 31;
 const G_TITLE: u16 = 32;
 
 // rsrc_gaddr / rsrc_saddr R_* selectors.
@@ -92,11 +98,37 @@ pub unsafe fn relocate_and_register(base: *mut u8) -> bool {
         }
         let objs = base.add(h.off_objects as usize) as *mut Object;
 
-        // Relocate each object's string ob_spec (offset → pointer).
+        // Relocate each object's ob_spec (offset → pointer), then any
+        // sub-pointers in the structure it points at, by object type.
+        let b = base as u64;
         for i in 0..h.n_objects as usize {
             let o = &mut *objs.add(i);
-            if o.ob_spec != 0 && matches!(o.ob_type, G_STRING | G_BUTTON | G_TITLE) {
-                o.ob_spec += base as u64;
+            if o.ob_spec == 0 {
+                continue;
+            }
+            match o.ob_type {
+                G_STRING | G_BUTTON | G_TITLE => o.ob_spec += b,
+                G_TEXT | G_BOXTEXT | G_FTEXT | G_FBOXTEXT => {
+                    o.ob_spec += b;
+                    let t = &mut *(o.ob_spec as *mut TedInfo);
+                    reloc(&mut t.te_ptext, b);
+                    reloc(&mut t.te_ptmplt, b);
+                    reloc(&mut t.te_pvalid, b);
+                }
+                G_IMAGE => {
+                    o.ob_spec += b;
+                    let bi = &mut *(o.ob_spec as *mut BitBlk);
+                    reloc(&mut bi.bi_pdata, b);
+                }
+                G_ICON => {
+                    o.ob_spec += b;
+                    let ib = &mut *(o.ob_spec as *mut IconBlk);
+                    reloc(&mut ib.ib_pmask, b);
+                    reloc(&mut ib.ib_pdata, b);
+                    reloc(&mut ib.ib_ptext, b);
+                }
+                // G_BOX/G_IBOX/G_BOXCHAR: ob_spec is a literal word.
+                _ => {}
             }
         }
 
@@ -115,13 +147,72 @@ pub unsafe fn relocate_and_register(base: *mut u8) -> bool {
     true
 }
 
+/// Add `base` to a non-zero offset field (in-place relocation).
+#[inline]
+fn reloc(field: &mut u64, base: u64) {
+    if *field != 0 {
+        *field += base;
+    }
+}
+
+/// Capacity of the single resource buffer (one loaded `.RSC` at a time).
+const RSC_CAP: usize = 64 * 1024;
+
+struct RscBuf(UnsafeCell<[u8; RSC_CAP]>);
+// SAFETY: single boot CPU only touches the AES.
+unsafe impl Sync for RscBuf {}
+static RSC_BUF: RscBuf = RscBuf(UnsafeCell::new([0u8; RSC_CAP]));
+
 /// `rsrc_load` (110) — load `addr_in[0]` (a `.RSC` filename) from disk.
-/// Batch 1: the file path (SD read + static buffer) lands in Batch 2;
-/// for now this reports failure rather than faking success (no stub).
+/// NewTOS searches `C:\GEMSYS\RSC\<name>` first, then `C:\<name>`.
+/// Returns 1 on success, 0 on failure.
 pub fn rsrc_load(pb: &Aespb) {
-    // Batch 2 wires bdos::fs::read_file into a static buffer here, then
-    // calls relocate_and_register. Until then, honestly report "not
-    // loaded" so callers do not draw a phantom tree.
+    let fname = pb.addrin(0) as *const u8;
+    if fname.is_null() {
+        pb.set_ret(0);
+        return;
+    }
+    // Copy the bare filename (cap at 14 chars: 8.3 + NUL slack).
+    let mut name = [0u8; 16];
+    let nlen = {
+        let mut i = 0;
+        // SAFETY: trusted GEM pointer to a NUL-terminated string.
+        unsafe {
+            while i < name.len() - 1 {
+                let c = *fname.add(i);
+                if c == 0 {
+                    break;
+                }
+                name[i] = c;
+                i += 1;
+            }
+        }
+        i
+    };
+
+    // SAFETY: single-CPU AES; exclusive logical owner of the buffer.
+    let buf = unsafe { &mut *RSC_BUF.0.get() };
+    for prefix in [b"C:\\GEMSYS\\RSC\\".as_slice(), b"C:\\".as_slice()] {
+        let mut path = [0u8; 64];
+        let mut n = 0;
+        for &c in prefix.iter().chain(name[..nlen].iter()) {
+            if n < path.len() {
+                path[n] = c;
+                n += 1;
+            }
+        }
+        let Ok(path_str) = core::str::from_utf8(&path[..n]) else {
+            continue;
+        };
+        if let Some(len) = crate::bdos::fs::read_file(path_str, buf) {
+            // SAFETY: buf now holds the file bytes; relocate validates the
+            // header before touching anything.
+            if len >= size_of::<NrscHeader>() && unsafe { relocate_and_register(buf.as_mut_ptr()) } {
+                pb.set_ret(1);
+                return;
+            }
+        }
+    }
     pb.set_ret(0);
 }
 

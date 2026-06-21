@@ -765,3 +765,40 @@ pub fn run_rsrc() {
     aes(block.as_ptr() as u64);
     kprintln!("[objc] .RSC dialog drawn + freed");
 }
+
+/// D7 Batch-2 demo: load TEST.RSC from the SD card via rsrc_load (searches
+/// C:\GEMSYS\RSC\ then C:\), fetch its tree, and draw it.
+pub fn run_rsrc_file() {
+    static NAME: &[u8] = b"TEST.RSC\0";
+    let mut control = [0i16; 8];
+    let mut global = [0i16; 32];
+    let mut intin = [0i16; 16];
+    let mut intout = [0i16; 16];
+    let mut addrin = [0i64; 4];
+    let mut addrout = [0i64; 4];
+    let block: [u64; 6] = [
+        control.as_mut_ptr() as u64, global.as_mut_ptr() as u64,
+        intin.as_mut_ptr() as u64, intout.as_mut_ptr() as u64,
+        addrin.as_mut_ptr() as u64, addrout.as_mut_ptr() as u64,
+    ];
+    // rsrc_load("TEST.RSC")
+    control[0] = 110; control[3] = 1;
+    addrin[0] = NAME.as_ptr() as i64;
+    aes(block.as_ptr() as u64);
+    kprintln!("[objc] rsrc_load(TEST.RSC) -> {}", intout[0]);
+    if intout[0] == 0 {
+        kprintln!("[objc] .RSC not loaded (no SD file?)");
+        return;
+    }
+    // rsrc_gaddr(R_TREE 0)
+    control = [0; 8]; control[0] = 112; control[1] = 2;
+    intin[0] = 0; intin[1] = 0;
+    aes(block.as_ptr() as u64);
+    let tree = addrout[0];
+    // objc_draw
+    control = [0; 8]; control[0] = 42; control[3] = 1;
+    addrin[0] = tree;
+    intin[0] = 0; intin[1] = 8; intin[2] = 0; intin[3] = 0; intin[4] = 640; intin[5] = 480;
+    aes(block.as_ptr() as u64);
+    kprintln!("[objc] .RSC from SD drawn");
+}
