@@ -263,20 +263,25 @@ const ED_END: i16 = 3;
 pub fn objc_edit(pb: &Aespb) {
     let tree = pb.addrin(0) as *const Object;
     let obj = pb.intin(0);
-    let in_char = pb.intin(1);
-    let mut idx = pb.intin(2);
-    let kind = pb.intin(3);
     if tree.is_null() || obj < 0 {
-        pb.set_intout(1, idx);
+        pb.set_intout(1, pb.intin(2));
         pb.set_ret(0);
         return;
     }
+    let idx = edit_field(tree, obj, pb.intin(1), pb.intin(2), pb.intin(3));
+    pb.set_intout(1, idx);
+    pb.set_ret(1);
+}
+
+/// Edit the EDITABLE `TEDINFO` field `obj` in place and return the new
+/// cursor index. Shared by `objc_edit` (the trap) and the Form Manager's
+/// modal loop. `kind` = EDINIT (cursor to end) / EDCHAR (insert/delete at
+/// the cursor) / EDEND (finish, no caret). Redraws the field + caret.
+pub(crate) fn edit_field(tree: *const Object, obj: i16, in_char: i16, mut idx: i16, kind: i16) -> i16 {
     // SAFETY: valid tree.
     let ob = unsafe { &*tree.add(obj as usize) };
     if ob.ob_spec == 0 {
-        pb.set_intout(1, idx);
-        pb.set_ret(0);
-        return;
+        return idx;
     }
     // SAFETY: an editable field's ob_spec points at a TEDINFO.
     let ted = unsafe { &*(ob.ob_spec as *const TedInfo) };
@@ -301,9 +306,7 @@ pub fn objc_edit(pb: &Aespb) {
             backend.fill_rect(ox + idx * crate::vdi::font::CELL_W, cy, 1, crate::vdi::font::CELL_H, BLACK, clip);
         }
     }
-
-    pb.set_intout(1, idx);
-    pb.set_ret(1);
+    idx
 }
 
 /// Apply one keystroke to the in-place text buffer at the cursor.

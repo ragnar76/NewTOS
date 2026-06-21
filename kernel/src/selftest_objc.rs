@@ -365,3 +365,77 @@ pub fn run_edit() {
 
     kprintln!("[objc] objc_edit typed text, cursor idx={}", idx);
 }
+
+/// Batch-7 demo: form_do with an editable field. Draw a dialog (text
+/// field + OK), then form_do focuses the field and routes keystrokes to
+/// it; Enter activates the default OK button.
+pub fn run_form_edit() {
+    const EDITABLE: u16 = 0x0008;
+    const DEFAULT: u16 = 0x0002;
+    static TITLE: &[u8] = b"form_do + objc_edit: type, then Enter\0";
+    static OK: &[u8] = b"OK\0";
+    static EMPTY: &[u8] = b"\0";
+
+    let mut textbuf = [0u8; 24];
+    let ted = TedInfo {
+        te_ptext: textbuf.as_mut_ptr() as u64, te_ptmplt: EMPTY.as_ptr() as u64,
+        te_pvalid: EMPTY.as_ptr() as u64, te_font: 3, te_junk1: 0, te_just: 0,
+        te_color: 1 << 8, te_junk2: 0, te_thickness: 1, te_txtlen: 24, te_tmplen: 0,
+    };
+    let tree = [
+        Object { ob_next: -1, ob_head: 1, ob_tail: 3, ob_type: G_BOX, ob_flags: 0,
+                 ob_state: 0, ob_spec: 1 << 16, ob_x: 140, ob_y: 150, ob_width: 360, ob_height: 170 },
+        Object { ob_next: 2, ob_head: -1, ob_tail: -1, ob_type: G_STRING, ob_flags: 0,
+                 ob_state: 0, ob_spec: TITLE.as_ptr() as u64, ob_x: 24, ob_y: 20, ob_width: 320, ob_height: 16 },
+        Object { ob_next: 3, ob_head: -1, ob_tail: -1, ob_type: G_BOXTEXT, ob_flags: EDITABLE,
+                 ob_state: 0, ob_spec: &ted as *const _ as u64, ob_x: 40, ob_y: 56, ob_width: 200, ob_height: 24 },
+        Object { ob_next: 0, ob_head: -1, ob_tail: -1, ob_type: G_BUTTON,
+                 ob_flags: SELECTABLE | EXIT | DEFAULT | LASTOB, ob_state: 0,
+                 ob_spec: OK.as_ptr() as u64, ob_x: 130, ob_y: 110, ob_width: 100, ob_height: 28 },
+    ];
+
+    let mut control = [0i16; 8];
+    let mut global = [0i16; 32];
+    let mut intin = [0i16; 16];
+    let mut intout = [0i16; 16];
+    let mut addrin = [0i64; 4];
+    let mut addrout = [0i64; 4];
+    let block: [u64; 6] = [
+        control.as_mut_ptr() as u64, global.as_mut_ptr() as u64,
+        intin.as_mut_ptr() as u64, intout.as_mut_ptr() as u64,
+        addrin.as_mut_ptr() as u64, addrout.as_mut_ptr() as u64,
+    ];
+
+    control[0] = 42; control[3] = 1; // objc_draw
+    addrin[0] = tree.as_ptr() as i64;
+    intin[0] = 0; intin[1] = 8; intin[2] = 0; intin[3] = 0; intin[4] = 640; intin[5] = 480;
+    aes(block.as_ptr() as u64);
+
+    control = [0; 8]; control[0] = 50; control[1] = 1; control[3] = 1; // form_do
+    intin[0] = 0; addrin[0] = tree.as_ptr() as i64;
+    aes(block.as_ptr() as u64);
+
+    let n = textbuf.iter().position(|&b| b == 0).unwrap_or(0);
+    kprintln!("[objc] form_do+edit returned obj {}, field=\"{}\"",
+        intout[0], core::str::from_utf8(&textbuf[..n]).unwrap_or("?"));
+}
+
+/// Batch-7 demo: form_error — a localised DOS-error alert (errnum -33 =
+/// "File not found.").
+pub fn run_form_error() {
+    let mut control = [0i16; 8];
+    let mut global = [0i16; 32];
+    let mut intin = [0i16; 16];
+    let mut intout = [0i16; 16];
+    let mut addrin = [0i64; 4];
+    let mut addrout = [0i64; 4];
+    let block: [u64; 6] = [
+        control.as_mut_ptr() as u64, global.as_mut_ptr() as u64,
+        intin.as_mut_ptr() as u64, intout.as_mut_ptr() as u64,
+        addrin.as_mut_ptr() as u64, addrout.as_mut_ptr() as u64,
+    ];
+    control[0] = 53; control[1] = 1; // form_error
+    intin[0] = -33; // EFILNF
+    aes(block.as_ptr() as u64);
+    kprintln!("[objc] form_error returned button {}", intout[0]);
+}

@@ -128,6 +128,7 @@ pub unsafe fn dispatch(aespb_ptr: u64) {
         47 => object::objc_change(&pb),
         50 => form::form_do(&pb),
         52 => form::form_alert(&pb),
+        53 => form::form_error(&pb),
         // Remaining managers (event/object/form/window/menu/resource/
         // scrap/shell) land in later sub-phases. The AES has no invalid-
         // opcode error path (the GEM environment is trusted), so an

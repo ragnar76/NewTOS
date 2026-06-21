@@ -51,3 +51,29 @@ fn en(id: Sys) -> &'static [u8] {
         Sys::Cancel => b"Cancel",
     }
 }
+
+/// A human-readable message for a GEMDOS/BIOS error number (negative), in
+/// the active language — used by `form_error`. The first OS-text path
+/// that actually localises content.
+pub fn err_string(errnum: i16) -> &'static [u8] {
+    match current_lang() {
+        Lang::En => en_err(errnum),
+    }
+}
+
+/// English GEMDOS error messages (`tos_types::error` values).
+fn en_err(e: i16) -> &'static [u8] {
+    match e {
+        -2 => b"Drive not ready.",
+        -13 => b"Disk is write-protected.",
+        -15 => b"Unknown device.",
+        -33 => b"File not found.",
+        -34 => b"Path not found.",
+        -35 => b"No more file handles.",
+        -36 => b"Access denied.",
+        -39 => b"Insufficient memory.",
+        -46 => b"Invalid drive specified.",
+        -49 => b"No more files.",
+        _ => b"A GEMDOS error occurred.",
+    }
+}

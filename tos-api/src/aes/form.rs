@@ -24,10 +24,16 @@ const G_STRING: u16 = 28;
 const SELECTABLE: u16 = 0x0001;
 const DEFAULT: u16 = 0x0002;
 const EXIT: u16 = 0x0004;
+const EDITABLE: u16 = 0x0008;
 const LASTOB: u16 = 0x0020;
 const TOUCHEXIT: u16 = 0x0040;
 const SELECTED: u16 = 0x0001;
 const MAX_DEPTH: i16 = 16;
+
+// objc_edit kinds.
+const ED_INIT: i16 = 1;
+const ED_CHAR: i16 = 2;
+const ED_END: i16 = 3;
 
 const CW: i16 = 8; // system font cell width
 const CH: i16 = 16; // system font cell height
@@ -47,7 +53,13 @@ pub fn form_alert(pb: &Aespb) {
     }
     // SAFETY: trusted GEM pointer to a NUL-terminated alert string.
     let s = unsafe { cstr_slice(palstr) };
+    pb.set_ret(do_alert(defbut, s));
+}
 
+/// Parse an alert string, build + draw the alert, run the modal loop, and
+/// return the 1-based button pressed. Shared by `form_alert` and
+/// `form_error`.
+fn do_alert(defbut: i16, s: &[u8]) -> i16 {
     // ── parse the three [..] groups: icon, messages, buttons ──
     let mut buf = [0u8; STRBUF];
     let mut used = 0usize;
@@ -73,12 +85,10 @@ pub fn form_alert(pb: &Aespb) {
 
     // ── layout (pixels), centred on screen ──
     let Some(h) = host() else {
-        pb.set_ret(1);
-        return;
+        return 1;
     };
     let Some(backend) = h.raster() else {
-        pb.set_ret(1);
-        return;
+        return 1;
     };
     let sw = backend.width() as i16;
     let sh = backend.height() as i16;
@@ -151,7 +161,7 @@ pub fn form_alert(pb: &Aespb) {
         // SAFETY: valid tree.
         unsafe { object::draw_root(tp, 16, backend) };
     }
-    pb.set_ret(chosen);
+    chosen
 }
 
 /// Modal wait: a key (Enter = default button, '1'..='9' = that button) or
@@ -292,30 +302,95 @@ fn run_form(tree: *mut Object) -> i16 {
     let Some(h) = host() else {
         return def;
     };
+    let tp = tree as *const Object;
+
+    // Focus the first editable field (cursor to its end).
+    let mut focus = find_flag(tree, EDITABLE);
+    let mut idx = 0i16;
+    if focus >= 0 {
+        idx = object::edit_field(tp, focus, 0, 0, ED_INIT);
+    }
+
     let mut prev = crate::vdi::mouse_buttons();
     loop {
         if let Some(c) = h.console_try_read() {
-            if (c == b'\r' || c == b'\n') && def >= 0 {
-                press(tree, def);
-                return def;
+            match c {
+                b'\r' | b'\n' => {
+                    if def >= 0 {
+                        press(tree, def);
+                        return def;
+                    }
+                }
+                b'\t' if focus >= 0 => {
+                    // Tab: move to the next editable field.
+                    object::edit_field(tp, focus, 0, idx, ED_END);
+                    focus = next_editable(tree, focus);
+                    idx = object::edit_field(tp, focus, 0, 0, ED_INIT);
+                }
+                _ if focus >= 0 => {
+                    // Route the key to the focused field.
+                    idx = object::edit_field(tp, focus, c as i16, idx, ED_CHAR);
+                }
+                _ => {}
             }
         }
         let cur = crate::vdi::mouse_buttons();
         if cur & 0x01 != 0 && prev & 0x01 == 0 {
             let (mx, my) = crate::vdi::mouse_position();
             // SAFETY: valid tree (GEM contract).
-            let hit = unsafe { object::hit_test(tree as *const Object, 0, MAX_DEPTH, mx, my) };
+            let hit = unsafe { object::hit_test(tp, 0, MAX_DEPTH, mx, my) };
             if hit >= 0 {
                 // SAFETY: hit is a valid index.
                 let flags = unsafe { (*tree.add(hit as usize)).ob_flags };
                 if flags & (EXIT | TOUCHEXIT) != 0 {
                     press(tree, hit);
                     return hit;
+                } else if flags & EDITABLE != 0 && hit != focus {
+                    // Click into another editable field → refocus it.
+                    if focus >= 0 {
+                        object::edit_field(tp, focus, 0, idx, ED_END);
+                    }
+                    focus = hit;
+                    idx = object::edit_field(tp, hit, 0, 0, ED_INIT);
                 }
             }
         }
         prev = cur;
         h.pump_input();
+    }
+}
+
+/// The next `EDITABLE` field after `from` (wrapping), or `from` if none.
+fn next_editable(tree: *mut Object, from: i16) -> i16 {
+    let n = tree_len(tree);
+    if n <= 0 {
+        return from;
+    }
+    let mut i = from;
+    for _ in 0..n {
+        i = (i + 1) % n;
+        // SAFETY: i is within [0, n).
+        if unsafe { (*tree.add(i as usize)).ob_flags } & EDITABLE != 0 {
+            return i;
+        }
+    }
+    from
+}
+
+/// Number of objects in the flat tree array (up to and including LASTOB).
+fn tree_len(tree: *mut Object) -> i16 {
+    let mut i = 0i16;
+    // SAFETY: the array terminates at the LASTOB object.
+    unsafe {
+        loop {
+            if (*tree.add(i as usize)).ob_flags & LASTOB != 0 {
+                return i + 1;
+            }
+            i += 1;
+            if i > 256 {
+                return i; // safety cap
+            }
+        }
     }
 }
 
@@ -342,4 +417,30 @@ fn find_flag(tree: *mut Object, flag: u16) -> i16 {
             i += 1;
         }
     }
+}
+
+/// `form_error` (53) — a canned alert for the GEMDOS error number in
+/// `int_in[0]`. Builds `"[3]<localised message>[ OK ]"` and runs it as a
+/// modal alert; returns the button (1 = OK). First real i18n use.
+pub fn form_error(pb: &Aespb) {
+    let errnum = pb.intin(0);
+    let msg = crate::i18n::err_string(errnum);
+
+    let mut buf = [0u8; 160];
+    let mut n = 0usize;
+    for &b in b"[3][" {
+        buf[n] = b;
+        n += 1;
+    }
+    for &b in msg {
+        if n < buf.len() - 8 {
+            buf[n] = b;
+            n += 1;
+        }
+    }
+    for &b in b"][ OK ]" {
+        buf[n] = b;
+        n += 1;
+    }
+    pb.set_ret(do_alert(1, &buf[..n]));
 }
