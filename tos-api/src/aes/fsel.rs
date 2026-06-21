@@ -34,6 +34,9 @@ const FSOK: i16 = 51;
 const FSCANCEL: i16 = 52;
 
 const SELECTED: u16 = 0x0001;
+const FL3DIND: u16 = 0x0200; // indicator (drive letters)
+const FL3DBAK: u16 = 0x0400; // background panel (text fields)
+const FL3DACT: u16 = 0x0600; // activator (buttons / arrows)
 const MAX_DEPTH: i16 = 16;
 const BLACK_TEXT: i16 = 1 << 8; // te_color giving black ink (bits 8..11)
 
@@ -81,11 +84,29 @@ fn load_fselectr() -> *mut Object {
         // SAFETY: buf now holds GEM.RSC; relocate validates the header.
         if len > 0 && unsafe { resource::relocate_blob(buf.as_mut_ptr()) } {
             let root = unsafe { resource::tree_root(buf.as_mut_ptr(), 0) };
+            set_3d_flags(root);
             unsafe { *SYS.root.get() = root };
             return root;
         }
     }
     core::ptr::null_mut()
+}
+
+/// Tag the file-selector objects with their 3D flags (EmuTOS `fs_start`):
+/// buttons + arrows raised, text fields + drive letters recessed.
+fn set_3d_flags(tree: *mut Object) {
+    // SAFETY: valid FSELECTR tree.
+    unsafe {
+        for b in [FSOK, FSCANCEL, FUPAROW, FDNAROW, FSVELEV] {
+            (*tree.add(b as usize)).ob_flags |= FL3DACT;
+        }
+        for b in [FSDIRECT, FSSELECT] {
+            (*tree.add(b as usize)).ob_flags |= FL3DBAK;
+        }
+        for d in FS1STDRV..=FSLSTDRV {
+            (*tree.add(d as usize)).ob_flags |= FL3DIND;
+        }
+    }
 }
 
 /// Point object `idx`'s TEDINFO text at `ptr` (capacity `cap`), black ink,

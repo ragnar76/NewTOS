@@ -25,6 +25,8 @@ const SELECTABLE: u16 = 0x0001;
 const DEFAULT: u16 = 0x0002;
 const EXIT: u16 = 0x0004;
 const EDITABLE: u16 = 0x0008;
+const FL3DBAK: u16 = 0x0400; // 3D background panel
+const FL3DACT: u16 = 0x0600; // 3D activator (button)
 const LASTOB: u16 = 0x0020;
 const TOUCHEXIT: u16 = 0x0040;
 const SELECTED: u16 = 0x0001;
@@ -125,10 +127,10 @@ fn do_alert(defbut: i16, s: &[u8], modal: bool) -> i16 {
     }; 1 + MAX_MSG + MAX_BTN];
 
     let first_btn = 1 + nummsg;
-    // root box (absolute position)
+    // root box (absolute position) — 3D grey background panel
     tree[0] = Object {
         ob_next: -1, ob_head: 1, ob_tail: (nobj - 1) as i16, ob_type: G_BOX,
-        ob_flags: 0, ob_state: 0, ob_spec: 1 << 16, // 1-px border
+        ob_flags: FL3DBAK, ob_state: 0, ob_spec: 1 << 16,
         ob_x: box_x, ob_y: box_y, ob_width: box_w, ob_height: box_h,
     };
     // message strings
@@ -146,7 +148,7 @@ fn do_alert(defbut: i16, s: &[u8], modal: bool) -> i16 {
         tree[first_btn + j] = Object {
             ob_next: if last { 0 } else { (first_btn + j + 1) as i16 },
             ob_head: -1, ob_tail: -1, ob_type: G_BUTTON,
-            ob_flags: SELECTABLE | EXIT | if last { LASTOB } else { 0 },
+            ob_flags: SELECTABLE | EXIT | FL3DACT | if last { LASTOB } else { 0 },
             ob_state: 0, ob_spec: buf.as_ptr() as u64 + btn[j].0 as u64,
             ob_x: btn_x0 + j as i16 * (btn_w + gap), ob_y: btn_y,
             ob_width: btn_w, ob_height: btn_h,

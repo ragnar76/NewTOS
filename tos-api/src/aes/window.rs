@@ -69,6 +69,8 @@ const GAD: i16 = 19;
 
 const WHITE: Pel = 0;
 const BLACK: Pel = 1;
+const GRAY_LT: Pel = 8; // 3D face (EmuTOS LWHITE)
+const GRAY_DK: Pel = 9; // 3D shadow (EmuTOS LBLACK)
 
 const MAX_WINDOWS: usize = 8;
 const NAME_CAP: usize = 80;
@@ -377,12 +379,27 @@ fn rect_outline(r: Grect, backend: &dyn RasterBackend, clip: ClipRect) {
 /// Draw one bordered gadget cell with a centred glyph (closer/fuller/
 /// arrows/sizer). `sel` inverts it (pressed feedback).
 fn gadget_sel(r: Grect, ch: u16, sel: bool, backend: &dyn RasterBackend, clip: ClipRect) {
-    let (bg, fg) = if sel { (BLACK, WHITE) } else { (WHITE, BLACK) };
-    backend.fill_rect(r.x, r.y, r.w, r.h, bg, clip);
-    rect_outline(r, backend, clip);
+    // Modern 3D gadget: grey face + bevel (raised, recessed when pressed).
+    backend.fill_rect(r.x, r.y, r.w, r.h, GRAY_LT, clip);
+    bevel(r, !sel, backend, clip);
     let gx = r.x + (r.w - 8) / 2;
     let gy = r.y + (r.h - 16) / 2;
-    backend.draw_glyph(gx, gy, crate::vdi::font::glyph(ch), fg, clip);
+    backend.draw_glyph(gx, gy, crate::vdi::font::glyph(ch), BLACK, clip);
+}
+
+/// Draw a 2-pixel 3D bevel: `raised` = white top/left + dark-grey
+/// bottom/right; recessed swaps them.
+fn bevel(r: Grect, raised: bool, backend: &dyn RasterBackend, clip: ClipRect) {
+    if r.w < 2 || r.h < 2 {
+        return;
+    }
+    let (tl, br) = if raised { (WHITE, GRAY_DK) } else { (GRAY_DK, WHITE) };
+    for i in 0..2 {
+        backend.fill_rect(r.x + i, r.y + i, r.w - 2 * i, 1, tl, clip);
+        backend.fill_rect(r.x + i, r.y + i, 1, r.h - 2 * i, tl, clip);
+        backend.fill_rect(r.x + i, r.y + r.h - 1 - i, r.w - 2 * i, 1, br, clip);
+        backend.fill_rect(r.x + r.w - 1 - i, r.y + i, 1, r.h - 2 * i, br, clip);
+    }
 }
 
 fn gadget(r: Grect, ch: u16, backend: &dyn RasterBackend, clip: ClipRect) {
@@ -416,7 +433,7 @@ fn draw_frame(w: &Window, backend: &dyn RasterBackend) {
     // Title row (name bar + closer + fuller).
     if kind & (NAME | CLOSER | FULLER) != 0 {
         let bar = Grect { x: b.x + 1, y: top, w: b.w - 2, h: GAD - 1 };
-        backend.fill_rect(bar.x, bar.y, bar.w, bar.h, WHITE, clip);
+        backend.fill_rect(bar.x, bar.y, bar.w, bar.h, GRAY_LT, clip);
 
         let mut name_x = bar.x;
         let mut name_w = bar.w;
@@ -443,7 +460,7 @@ fn draw_frame(w: &Window, backend: &dyn RasterBackend) {
     // Info line.
     if kind & INFO != 0 {
         let band = Grect { x: b.x + 1, y: top, w: b.w - 2, h: GAD - 1 };
-        backend.fill_rect(band.x, band.y, band.w, band.h, WHITE, clip);
+        backend.fill_rect(band.x, band.y, band.w, band.h, GRAY_LT, clip);
         draw_label(band.x + 2, top, band.w - 2, &w.info, backend, clip);
         backend.fill_rect(b.x, top + GAD - 1, b.w, 1, BLACK, clip);
         top += GAD - 1;
@@ -471,7 +488,7 @@ fn draw_frame(w: &Window, backend: &dyn RasterBackend) {
         }
         if kind & VSLIDE != 0 && send > sy {
             // slider track (light) + a thumb at the top (Batch-1 default)
-            backend.fill_rect(col_x, sy, GAD, send - sy, WHITE, clip);
+            backend.fill_rect(col_x, sy, GAD, send - sy, GRAY_LT, clip);
             rect_outline(Grect { x: col_x, y: sy, w: GAD, h: send - sy }, backend, clip);
             rect_outline(Grect { x: col_x, y: sy, w: GAD, h: GAD.min(send - sy) }, backend, clip);
         }
@@ -494,7 +511,7 @@ fn draw_frame(w: &Window, backend: &dyn RasterBackend) {
             send -= GAD - 1;
         }
         if kind & HSLIDE != 0 && send > sx {
-            backend.fill_rect(sx, row_y, send - sx, GAD, WHITE, clip);
+            backend.fill_rect(sx, row_y, send - sx, GAD, GRAY_LT, clip);
             rect_outline(Grect { x: sx, y: row_y, w: send - sx, h: GAD }, backend, clip);
             rect_outline(Grect { x: sx, y: row_y, w: GAD.min(send - sx), h: GAD }, backend, clip);
         }
