@@ -18,6 +18,7 @@ mod graf;
 pub mod menu;
 pub mod object;
 pub mod resource;
+pub mod shell;
 pub mod window;
 mod pd;
 
@@ -149,6 +150,9 @@ pub unsafe fn dispatch(aespb_ptr: u64) {
         50 => form::form_do(&pb),
         52 => form::form_alert(&pb),
         53 => form::form_error(&pb),
+        80 => shell::scrp_read(&pb),
+        81 => shell::scrp_write(&pb),
+        82 => shell::scrp_clear(&pb),
         90 => fsel::fsel_input(&pb),
         91 => fsel::fsel_exinput(&pb),
         100 => window::wind_create(&pb),
@@ -166,6 +170,14 @@ pub unsafe fn dispatch(aespb_ptr: u64) {
         112 => resource::rsrc_gaddr(&pb),
         113 => resource::rsrc_saddr(&pb),
         114 => resource::rsrc_obfix(&pb),
+        120 => shell::shel_read(&pb),
+        121 => shell::shel_write(&pb),
+        122 => shell::shel_get(&pb),
+        123 => shell::shel_put(&pb),
+        124 => shell::shel_find(&pb),
+        125 => shell::shel_envrn(&pb),
+        126 => shell::shel_rdef(&pb),
+        127 => shell::shel_wdef(&pb),
         // Remaining managers (event/object/form/window/menu/resource/
         // scrap/shell) land in later sub-phases. The AES has no invalid-
         // opcode error path (the GEM environment is trusted), so an

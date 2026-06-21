@@ -861,3 +861,64 @@ pub fn run_fsel() {
     aes(block.as_ptr() as u64); // draws, then blocks in the modal loop
     kprintln!("[objc] fsel button={} sel ok", intout[1]);
 }
+
+/// D9 demo: round-trip the Scrap + Shell managers (scrp_read/write,
+/// shel_put/get, shel_find, shel_envrn).
+pub fn run_d9() {
+    let mut control = [0i16; 8];
+    let mut global = [0i16; 32];
+    let mut intin = [0i16; 16];
+    let mut intout = [0i16; 16];
+    let mut addrin = [0i64; 4];
+    let mut addrout = [0i64; 4];
+    let block: [u64; 6] = [
+        control.as_mut_ptr() as u64, global.as_mut_ptr() as u64,
+        intin.as_mut_ptr() as u64, intout.as_mut_ptr() as u64,
+        addrin.as_mut_ptr() as u64, addrout.as_mut_ptr() as u64,
+    ];
+    fn s(b: &[u8]) -> &str {
+        core::str::from_utf8(&b[..b.iter().position(|&c| c == 0).unwrap_or(b.len())]).unwrap_or("?")
+    }
+    let mut buf = [0u8; 64];
+
+    // scrp_read (default)
+    control = [0;8]; control[0]=80; control[3]=1; addrin[0]=buf.as_mut_ptr() as i64;
+    aes(block.as_ptr() as u64);
+    kprintln!("[objc] scrp_read default = \"{}\"", s(&buf));
+
+    // scrp_write then scrp_read
+    let mut p = *b"C:\\TMP\\\0\0";
+    control=[0;8]; control[0]=81; control[3]=1; addrin[0]=p.as_mut_ptr() as i64;
+    aes(block.as_ptr() as u64);
+    buf=[0;64]; control=[0;8]; control[0]=80; control[3]=1; addrin[0]=buf.as_mut_ptr() as i64;
+    aes(block.as_ptr() as u64);
+    kprintln!("[objc] scrp after write = \"{}\"", s(&buf));
+
+    // shel_put / shel_get
+    let mut data = *b"NewTOS\0";
+    control=[0;8]; control[0]=123; control[1]=1; control[3]=1; intin[0]=7; addrin[0]=data.as_mut_ptr() as i64;
+    aes(block.as_ptr() as u64);
+    buf=[0;64]; control=[0;8]; control[0]=122; control[1]=1; control[3]=1; intin[0]=7; addrin[0]=buf.as_mut_ptr() as i64;
+    aes(block.as_ptr() as u64);
+    kprintln!("[objc] shel_get = \"{}\"", s(&buf));
+
+    // shel_find existing + missing
+    let mut f1 = *b"HELLO.PRG\0\0\0\0\0\0";
+    control=[0;8]; control[0]=124; control[3]=1; addrin[0]=f1.as_mut_ptr() as i64;
+    aes(block.as_ptr() as u64);
+    kprintln!("[objc] shel_find HELLO.PRG -> {} (\"{}\")", intout[0], s(&f1));
+    let mut f2 = *b"NOPE.XXX\0";
+    control=[0;8]; control[0]=124; control[3]=1; addrin[0]=f2.as_mut_ptr() as i64;
+    aes(block.as_ptr() as u64);
+    kprintln!("[objc] shel_find NOPE.XXX -> {}", intout[0]);
+
+    // shel_envrn PATH=
+    let mut val: u64 = 0;
+    let mut needle = *b"PATH=\0";
+    control=[0;8]; control[0]=125; control[3]=2;
+    addrin[0]=&mut val as *mut u64 as i64; addrin[1]=needle.as_mut_ptr() as i64;
+    aes(block.as_ptr() as u64);
+    let mut ev = [0u8; 32];
+    if val != 0 { for i in 0..31 { let c = unsafe { *(val as *const u8).add(i) }; if c==0 {break;} ev[i]=c; } }
+    kprintln!("[objc] shel_envrn PATH= -> ret {} val=\"{}\"", intout[0], s(&ev));
+}
