@@ -311,6 +311,34 @@ fn name16(src: &[u8]) -> [u8; 16] {
     out
 }
 
+/// Draw the file selector on `C:\*.*` **without** the modal loop — for a
+/// non-interactive showcase. Returns once the populated dialog is drawn.
+pub fn preview() {
+    let tree = load_fselectr();
+    let Some(backend) = host().and_then(|h| h.raster()) else {
+        return;
+    };
+    if tree.is_null() {
+        return;
+    }
+    // SAFETY: single-CPU AES.
+    unsafe {
+        let dir = &mut *SYS.dir.get();
+        *dir = [0; 96];
+        dir[..6].copy_from_slice(b"C:\\*.*");
+        set_ted(tree, FSDIRECT, dir.as_mut_ptr(), 96);
+        set_ted(tree, FSSELECT, (*SYS.sel.get()).as_mut_ptr(), 16);
+        let names = &mut *SYS.names.get();
+        for i in 0..NM_NAMES {
+            set_ted(tree, F1NAME + i as i16, names[i].as_mut_ptr(), 16);
+        }
+    }
+    center(tree, backend);
+    relist(tree);
+    // SAFETY: valid tree; backend is the live screen.
+    unsafe { object::draw_root(tree as *const Object, MAX_DEPTH, backend) };
+}
+
 /// Centre the FSELECTR root on screen.
 fn center(tree: *mut Object, backend: &dyn RasterBackend) {
     // SAFETY: valid tree.

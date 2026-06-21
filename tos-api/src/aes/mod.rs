@@ -12,8 +12,8 @@
 
 mod appl;
 mod event;
-mod form;
-mod fsel;
+pub mod form;
+pub mod fsel;
 mod graf;
 pub mod menu;
 pub mod object;

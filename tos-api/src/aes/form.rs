@@ -53,13 +53,19 @@ pub fn form_alert(pb: &Aespb) {
     }
     // SAFETY: trusted GEM pointer to a NUL-terminated alert string.
     let s = unsafe { cstr_slice(palstr) };
-    pb.set_ret(do_alert(defbut, s));
+    pb.set_ret(do_alert(defbut, s, true));
 }
 
-/// Parse an alert string, build + draw the alert, run the modal loop, and
-/// return the 1-based button pressed. Shared by `form_alert` and
-/// `form_error`.
-fn do_alert(defbut: i16, s: &[u8]) -> i16 {
+/// Draw an alert string (`"[icon][msg][buttons]"`) without running the
+/// modal loop — for non-interactive showcases. Returns once drawn.
+pub fn draw_alert(s: &[u8]) {
+    do_alert(1, s, false);
+}
+
+/// Parse an alert string, build + draw the alert, optionally run the modal
+/// loop, and return the 1-based button pressed (the default when `modal`
+/// is false). Shared by `form_alert` / `form_error` / `draw_alert`.
+fn do_alert(defbut: i16, s: &[u8], modal: bool) -> i16 {
     // ── parse the three [..] groups: icon, messages, buttons ──
     let mut buf = [0u8; STRBUF];
     let mut used = 0usize;
@@ -152,6 +158,9 @@ fn do_alert(defbut: i16, s: &[u8]) -> i16 {
     // SAFETY: locally-built valid tree; backend is the live screen.
     unsafe { object::draw_root(tp, 16, backend) };
 
+    if !modal {
+        return defbut.max(1); // draw-only (showcase): no waiting
+    }
     let chosen = modal_loop(h, tp, first_btn as i16, numbut as i16, defbut);
 
     // Show the chosen button selected, then report it (1-based).
@@ -442,5 +451,5 @@ pub fn form_error(pb: &Aespb) {
         buf[n] = b;
         n += 1;
     }
-    pb.set_ret(do_alert(1, &buf[..n]));
+    pb.set_ret(do_alert(1, &buf[..n], true));
 }

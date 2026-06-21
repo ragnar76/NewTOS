@@ -49,6 +49,7 @@ pub mod selftest_aes;
 pub mod selftest_bios;
 pub mod selftest_cookie;
 pub mod selftest_objc;
+pub mod aes_demo;
 pub mod selftest_ikbd;
 pub mod selftest_vdi;
 pub mod selftest_fbcon;
@@ -287,10 +288,12 @@ extern "C" fn kernel_main_rust(dtb_phys: usize) -> ! {
     // console input.)
     arch::aarch64::delay_ms(4000);
 
-    // Hand off to the interactive NewTOS console (never returns). Input
-    // comes from the UART (a serial terminal); output renders on the
-    // framebuffer console (HDMI).
-    shell::run();
+    // Run the time-driven AES showcase (never returns): it cycles through
+    // the GEM managers' visual output on the HDMI framebuffer, holding
+    // each screen ~5 s — no keyboard/mouse needed, so it runs unattended
+    // on real hardware. (Swap back to `shell::run()` for the interactive
+    // serial console.)
+    aes_demo::showcase();
 }
 
 /// Pretty-print the physical memory map on the boot console.
