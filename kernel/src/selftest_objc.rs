@@ -683,3 +683,85 @@ pub fn run_two_windows() {
     }
     kprintln!("[objc] A visible pieces: {}", piece);
 }
+
+/// D7 Batch-1 demo: build a native .RSC blob (string pointers as offsets),
+/// relocate it (offset→pointer), fetch its tree via rsrc_gaddr, and draw
+/// it via objc_draw — proving the native resource format end-to-end.
+pub fn run_rsrc() {
+    use tos_api::aes::resource::NrscHeader;
+    let mut buf = [0u8; 512];
+    let base = buf.as_mut_ptr();
+
+    // String data at offset 256.
+    let copy = |buf: &mut [u8; 512], off: usize, s: &[u8]| {
+        buf[off..off + s.len()].copy_from_slice(s);
+    };
+    let s_title = 256usize;
+    let s_ok = 320usize;
+    copy(&mut buf, s_title, b"Dialog loaded from .RSC\0");
+    copy(&mut buf, s_ok, b"OK\0");
+
+    // SAFETY: building the blob in our own buffer.
+    unsafe {
+        let h = base as *mut NrscHeader;
+        (*h).magic = *b"NRSC";
+        (*h).version = 1;
+        (*h).n_trees = 1;
+        (*h).n_objects = 3;
+        (*h).off_trindex = 160;
+        (*h).off_objects = 32;
+        (*h).total_size = 512;
+        // tree index: root = object 0
+        *(base.add(160) as *mut u32) = 0;
+        // objects at offset 32
+        let objs = base.add(32) as *mut Object;
+        objs.add(0).write(Object {
+            ob_next: -1, ob_head: 1, ob_tail: 2, ob_type: G_BOX, ob_flags: 0,
+            ob_state: 0, ob_spec: 1 << 16, ob_x: 170, ob_y: 150, ob_width: 300, ob_height: 130,
+        });
+        objs.add(1).write(Object {
+            ob_next: 2, ob_head: -1, ob_tail: -1, ob_type: G_STRING, ob_flags: 0,
+            ob_state: 0, ob_spec: s_title as u64, ob_x: 24, ob_y: 28, ob_width: 250, ob_height: 16,
+        });
+        objs.add(2).write(Object {
+            ob_next: 0, ob_head: -1, ob_tail: -1, ob_type: G_BUTTON,
+            ob_flags: SELECTABLE | EXIT | LASTOB, ob_state: 0,
+            ob_spec: s_ok as u64, ob_x: 100, ob_y: 90, ob_width: 100, ob_height: 28,
+        });
+
+        if !tos_api::aes::resource::relocate_and_register(base) {
+            kprintln!("[objc] rsrc relocate FAILED");
+            return;
+        }
+    }
+
+    let mut control = [0i16; 8];
+    let mut global = [0i16; 32];
+    let mut intin = [0i16; 16];
+    let mut intout = [0i16; 16];
+    let mut addrin = [0i64; 4];
+    let mut addrout = [0i64; 4];
+    let block: [u64; 6] = [
+        control.as_mut_ptr() as u64, global.as_mut_ptr() as u64,
+        intin.as_mut_ptr() as u64, intout.as_mut_ptr() as u64,
+        addrin.as_mut_ptr() as u64, addrout.as_mut_ptr() as u64,
+    ];
+
+    // rsrc_gaddr(R_TREE=0, index=0) → addrout[0] = tree
+    control[0] = 112; control[1] = 2;
+    intin[0] = 0; intin[1] = 0;
+    aes(block.as_ptr() as u64);
+    let tree = addrout[0];
+    kprintln!("[objc] rsrc_gaddr R_TREE 0 -> {:#x} (ret {})", tree as u64, intout[0]);
+
+    // objc_draw the loaded tree
+    control = [0; 8]; control[0] = 42; control[3] = 1;
+    addrin[0] = tree;
+    intin[0] = 0; intin[1] = 8; intin[2] = 0; intin[3] = 0; intin[4] = 640; intin[5] = 480;
+    aes(block.as_ptr() as u64);
+
+    // rsrc_free
+    control = [0; 8]; control[0] = 111;
+    aes(block.as_ptr() as u64);
+    kprintln!("[objc] .RSC dialog drawn + freed");
+}

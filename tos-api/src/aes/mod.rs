@@ -16,6 +16,7 @@ mod form;
 mod graf;
 pub mod menu;
 pub mod object;
+pub mod resource;
 pub mod window;
 mod pd;
 
@@ -157,6 +158,11 @@ pub unsafe fn dispatch(aespb_ptr: u64) {
         107 => window::wind_update(&pb),
         108 => window::wind_calc(&pb),
         109 => window::wind_new(&pb),
+        110 => resource::rsrc_load(&pb),
+        111 => resource::rsrc_free(&pb),
+        112 => resource::rsrc_gaddr(&pb),
+        113 => resource::rsrc_saddr(&pb),
+        114 => resource::rsrc_obfix(&pb),
         // Remaining managers (event/object/form/window/menu/resource/
         // scrap/shell) land in later sub-phases. The AES has no invalid-
         // opcode error path (the GEM environment is trusted), so an

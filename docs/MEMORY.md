@@ -362,6 +362,57 @@ bit-compatibility), which a one-line shim covers.
 
 ---
 
+## ADR-013: Native `.RSC` resource format (not classic Atari)
+
+**Date:** 2026-06-21
+**Status:** **Accepted** (2026-06-21, user decision).
+**Phase:** PHASE-13 D7 (Resource Manager).
+
+### Context
+
+`rsrc_load` must load a `.RSC` resource (object trees, strings, TEDINFOs,
+icons) for GEM programs. A classic Atari `.RSC` is **big-endian m68k**,
+with a **24-byte 16-bit OBJECT**, 16-bit internal offsets, and char-grid
+coordinates fixed up by `rsrc_obfix`. NewTOS uses a **little-endian
+64-bit OBJECT (32 bytes, 64-bit `ob_spec`)** and pixel coordinates.
+
+### Decision
+
+NewTOS defines and loads a **native `.RSC` format**: our own 64-bit
+OBJECT layout, little-endian, internal pointers stored as **byte offsets
+from the blob base**, coordinates already in pixels. Loading is a pure
+**offset→pointer relocation** — no endianness swap, no 16→64-bit
+expansion. `rsrc_obfix` is an identity (coords are already pixels).
+
+NewTOS-native (AArch64) programs ship native `.RSC` files built by a host
+tool; this matches the clean-room, recompile-for-AArch64 model. Loading
+classic Atari `.RSC` files (full byte-swap + 24→32-byte expansion) is
+**not** done now — it would belong with the optional m68k userland
+emulator phase, if ever.
+
+### Consequences
+
+- Loader is small and fast (relocation = add base to offset fields,
+  type-aware for `ob_spec`).
+- Needs a **host tool** to author native `.RSC` (no ORCS/Interface);
+  Batch 2 deliverable.
+- Existing Atari `.RSC` files are **not** directly loadable.
+- The format header is `NrscHeader` (magic `"NRSC"`); see
+  [`tos-api/src/aes/resource.rs`].
+
+### Alternatives rejected
+
+- **Classic Atari `.RSC`**: full big-endian + 16→64-bit conversion on
+  load. More code; valuable only for unmodified Atari binaries, which are
+  out of scope until the m68k emulator.
+
+### References
+
+- `docs/api/aes/resource-fileselector.md`; EmuTOS `aes/gemrslib.c`,
+  `include/rsdefs.h`
+
+---
+
 > Anticipated further ADRs:
 >
 > - ADR-001: License (MIT vs Apache-2.0)
