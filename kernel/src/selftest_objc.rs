@@ -802,3 +802,35 @@ pub fn run_rsrc_file() {
     aes(block.as_ptr() as u64);
     kprintln!("[objc] .RSC from SD drawn");
 }
+
+/// D7 Batch-3 demo: load the converted EmuTOS GEM.RSC from SD and draw
+/// tree 0 (the FSELECTR file-selector dialog) — proving classic→native
+/// conversion + load + render.
+pub fn run_rsrc_gem() {
+    static NAME: &[u8] = b"GEM.RSC\0";
+    let mut control = [0i16; 8];
+    let mut global = [0i16; 32];
+    let mut intin = [0i16; 16];
+    let mut intout = [0i16; 16];
+    let mut addrin = [0i64; 4];
+    let mut addrout = [0i64; 4];
+    let block: [u64; 6] = [
+        control.as_mut_ptr() as u64, global.as_mut_ptr() as u64,
+        intin.as_mut_ptr() as u64, intout.as_mut_ptr() as u64,
+        addrin.as_mut_ptr() as u64, addrout.as_mut_ptr() as u64,
+    ];
+    control[0] = 110; control[3] = 1;
+    addrin[0] = NAME.as_ptr() as i64;
+    aes(block.as_ptr() as u64);
+    kprintln!("[objc] rsrc_load(GEM.RSC) -> {}", intout[0]);
+    if intout[0] == 0 { return; }
+    control = [0; 8]; control[0] = 112; control[1] = 2;
+    intin[0] = 0; intin[1] = 0; // R_TREE, tree 0 (FSELECTR)
+    aes(block.as_ptr() as u64);
+    let tree = addrout[0];
+    control = [0; 8]; control[0] = 42; control[3] = 1;
+    addrin[0] = tree;
+    intin[0] = 0; intin[1] = 16; intin[2] = 0; intin[3] = 0; intin[4] = 640; intin[5] = 480;
+    aes(block.as_ptr() as u64);
+    kprintln!("[objc] GEM.RSC tree 0 (file selector) drawn");
+}

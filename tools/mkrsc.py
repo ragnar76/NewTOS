@@ -74,7 +74,163 @@ def build_demo():
     return header + trindex + objects + strings
 
 
+# ── classic Atari .rsc → native conversion (ADR-013) ──────────────────────
+#
+# Classic structures are big-endian m68k with 16-bit offsets and char-grid
+# coordinates; we byte-swap, expand pointers to 64-bit offsets, and apply
+# obfix (char→pixel). Native struct sizes (repr(C)):
+#   Object 32, TedInfo 40, BitBlk 24, IconBlk 48.
+
+# AES system-font cell size used by obfix (gl_wchar/gl_hchar).
+WCHAR, HCHAR, SCREEN_W = 8, 16, 640
+
+# Object types that don't carry a relocatable ob_spec pointer.
+BOX_TYPES = {20, 25, 27}      # G_BOX, G_IBOX, G_BOXCHAR (literal word)
+STR_TYPES = {26, 28, 32}      # G_BUTTON, G_STRING, G_TITLE
+TED_TYPES = {21, 22, 29, 30}  # G_TEXT, G_BOXTEXT, G_FTEXT, G_FBOXTEXT
+IMG_TYPE, ICON_TYPE = 23, 31  # G_IMAGE (BITBLK), G_ICON (ICONBLK)
+
+CLS_OBJ, CLS_TED, CLS_IB, CLS_BB = 24, 28, 34, 14  # classic struct sizes
+NAT_OBJ, NAT_TED, NAT_IB, NAT_BB = 32, 40, 48, 24  # native struct sizes
+
+
+def obfix(word, axis):
+    """Classic char-grid coordinate → pixel (EmuTOS fix_chpos)."""
+    word &= 0xFFFF
+    coffset = (word >> 8) & 0xFF
+    cpos = word & 0xFF
+    if axis == 0:
+        cpos *= WCHAR
+    elif axis == 1:
+        cpos *= HCHAR
+    elif axis == 2:
+        cpos = SCREEN_W if cpos == 80 else cpos * WCHAR
+    else:
+        cpos *= HCHAR
+    cpos += (coffset - 256) if coffset > 128 else coffset
+    return cpos
+
+
+def convert(path, out):
+    d = open(path, "rb").read()
+    H = struct.unpack(">18H", d[:36])
+    (vrsn, p_obj, p_ted, p_ib, p_bb, p_frstr, p_str, p_imd, p_frimg,
+     p_tri, nobs, ntree, nted, nib, nbb, nstr, nimg, rssize) = H
+    if vrsn & 0x0004:
+        sys.exit("new-format (CICONBLK) .rsc not supported")
+
+    # Native section base offsets (counts are fixed up front).
+    off_tri = HDR_SIZE
+    off_obj = off_tri + ntree * 4
+    off_ted = off_obj + nobs * NAT_OBJ
+    off_bb = off_ted + nted * NAT_TED
+    off_ib = off_bb + nbb * NAT_BB
+    off_data = off_ib + nib * NAT_IB
+
+    data = bytearray()
+    interned = {}
+
+    def intern_str(coff):
+        if coff == 0:
+            return 0
+        if coff in interned:
+            return interned[coff]
+        end = d.index(b"\x00", coff)
+        nat = off_data + len(data)
+        data.extend(d[coff:end + 1])
+        interned[coff] = nat
+        return nat
+
+    def intern_bytes(coff, length):
+        if coff == 0 or length <= 0:
+            return 0
+        key = (coff, length)
+        if key in interned:
+            return interned[key]
+        nat = off_data + len(data)
+        data.extend(d[coff:coff + length])
+        interned[key] = nat
+        return nat
+
+    # Native struct offset of classic struct #k in a fixed array.
+    def nat_of(coff, base, csize, nbase, nsize):
+        return nbase + ((coff - base) // csize) * nsize
+
+    # TEDINFOs (remap text/template/valid string pointers).
+    teds = bytearray()
+    for i in range(nted):
+        o = p_ted + i * CLS_TED
+        (ptext, ptmpl, pvalid, font, j1, just, color, j2, thick, txtlen,
+         tmplen) = struct.unpack(">IIIhhhhhhhh", d[o:o + CLS_TED])
+        teds.extend(struct.pack(
+            "<QQQhhhhhhhh", intern_str(ptext), intern_str(ptmpl),
+            intern_str(pvalid), font, j1, just, color, j2, thick, txtlen, tmplen))
+
+    # BITBLKs (remap raster data).
+    bbs = bytearray()
+    for i in range(nbb):
+        o = p_bb + i * CLS_BB
+        pdata, wb, hl, x, y, col = struct.unpack(">Ihhhhh", d[o:o + CLS_BB])
+        bbs.extend(struct.pack(
+            "<Qhhhhh6x", intern_bytes(pdata, wb * hl), wb, hl, x, y, col))
+
+    # ICONBLKs (remap mask/data/text).
+    ibs = bytearray()
+    for i in range(nib):
+        o = p_ib + i * CLS_IB
+        f = struct.unpack(">IIIhhhhhhhhhhh", d[o:o + CLS_IB])
+        pmask, pdata, ptext = f[0], f[1], f[2]
+        wicon, hicon = f[8], f[9]
+        rb = ((wicon + 15) // 16) * 2 * hicon
+        ibs.extend(struct.pack(
+            "<QQQhhhhhhhhhhh2x", intern_bytes(pmask, rb), intern_bytes(pdata, rb),
+            intern_str(ptext), *f[3:]))
+
+    # OBJECTs (obfix coords + remap ob_spec by type).
+    objs = bytearray()
+    for i in range(nobs):
+        o = p_obj + i * CLS_OBJ
+        nxt, head, tail, typ, flags, state, spec, x, y, w, h = struct.unpack(
+            ">hhhHHHIhhhh", d[o:o + CLS_OBJ])
+        base_type = typ & 0xFF  # high byte = extended flags
+        if base_type in BOX_TYPES:
+            nspec = spec & 0xFFFFFFFF
+        elif base_type in STR_TYPES:
+            nspec = intern_str(spec)
+        elif base_type in TED_TYPES:
+            nspec = nat_of(spec, p_ted, CLS_TED, off_ted, NAT_TED)
+        elif base_type == IMG_TYPE:
+            nspec = nat_of(spec, p_bb, CLS_BB, off_bb, NAT_BB)
+        elif base_type == ICON_TYPE:
+            nspec = nat_of(spec, p_ib, CLS_IB, off_ib, NAT_IB)
+        else:
+            nspec = 0  # G_PROGDEF / G_CICON: unsupported, drawn empty
+        objs.extend(struct.pack(
+            "<hhhHHH4xQhhhh", nxt, head, tail, typ, flags, state, nspec,
+            obfix(x, 0), obfix(y, 1), obfix(w, 2), obfix(h, 3)))
+
+    # Tree index → native root OBJECT indices.
+    tri = bytearray()
+    for t in range(ntree):
+        toff = struct.unpack(">I", d[p_tri + t * 4:p_tri + t * 4 + 4])[0]
+        tri.extend(struct.pack("<I", (toff - p_obj) // CLS_OBJ))
+
+    total = off_data + len(data)
+    header = struct.pack(
+        "<4sIIIIII", b"NRSC", 1, ntree, nobs, off_tri, off_obj, total)
+    blob = header + tri + objs + teds + bbs + ibs + data
+    assert len(blob) == total, (len(blob), total)
+    open(out, "wb").write(blob)
+    print(f"converted {path} -> {out}: {ntree} trees, {nobs} objects, "
+          f"{nted} tedinfo, {nbb} bitblk, {nib} iconblk ({total} bytes)")
+
+
 def main():
+    if len(sys.argv) >= 2 and sys.argv[1] == "convert":
+        src = sys.argv[2]
+        out = sys.argv[3] if len(sys.argv) > 3 else "OUT.RSC"
+        convert(src, out)
+        return
     out = sys.argv[1] if len(sys.argv) > 1 else "TEST.RSC"
     blob = build_demo()
     with open(out, "wb") as f:
