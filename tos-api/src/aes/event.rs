@@ -45,6 +45,47 @@ fn rect_event(m: &MoBlk) -> bool {
     (m.flags != 0) != inside
 }
 
+/// Menu-bar height in pixels (matches `menu::BAR_H`).
+const MENU_BAR_H: i16 = 19;
+/// `MN_SELECTED` message id.
+const MN_SELECTED: i16 = 10;
+
+/// AES menu-bar interception: if a menu bar is installed and the left
+/// button is pressed over it, run the drop-down tracker (`menu::track`).
+/// On a selection, write an `MN_SELECTED` message into `pbuff` and return
+/// `MU_MESAG`; otherwise (no menu, not in the bar, or cancelled) return 0.
+fn menu_intercept(pbuff: u64) -> u16 {
+    let tree = super::menu::active();
+    if tree.is_null() || crate::vdi::mouse_buttons() & 0x01 == 0 {
+        return 0;
+    }
+    let (_mx, my) = crate::vdi::mouse_position();
+    if my >= MENU_BAR_H {
+        return 0;
+    }
+    let Some(backend) = host().and_then(|h| h.raster()) else {
+        return 0;
+    };
+    match super::menu::track(tree, backend) {
+        Some((title, item)) => {
+            if pbuff != 0 {
+                // SAFETY: `MME_PBUFF` points at >= MSG_WORDS WORDs.
+                unsafe {
+                    let p = pbuff as *mut i16;
+                    for i in 0..pd::MSG_WORDS {
+                        p.add(i).write(0);
+                    }
+                    p.write(MN_SELECTED); // msg[0]
+                    p.add(3).write(title); // msg[3] = menu title object
+                    p.add(4).write(item); // msg[4] = menu item object
+                }
+            }
+            MU_MESAG
+        }
+        None => 0, // cancelled — the click is consumed, no message
+    }
+}
+
 /// Fill the shared event return slots from the current input state:
 /// `EV_MX`/`EV_MY` (mouse x/y), `EV_MB` (button bitmask), `EV_KS`
 /// (keyboard shift state) — the `ev_rets` block at `int_out[1..4]`.
@@ -172,6 +213,11 @@ pub fn evnt_multi(pb: &Aespb) {
     if let Some(h) = host() {
         let deadline = h.monotonic_millis().saturating_add(ms);
         loop {
+            // AES intercepts a click in the installed menu bar before the
+            // app sees the raw button — it yields an MN_SELECTED message.
+            if flags & (MU_BUTTON | MU_MESAG) != 0 {
+                fired |= menu_intercept(pbuff);
+            }
             if flags & MU_KEYBD != 0 {
                 if let Some(b) = h.console_try_read() {
                     key = b as i16;

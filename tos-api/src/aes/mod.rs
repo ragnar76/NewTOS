@@ -13,7 +13,7 @@
 mod appl;
 mod event;
 mod form;
-mod menu;
+pub mod menu;
 pub mod object;
 mod pd;
 

@@ -490,3 +490,72 @@ pub fn run_menu() {
     let _ = G_IBOX;
     kprintln!("[objc] menu bar drawn (Desk/File/Edit, File highlighted)");
 }
+
+/// D5 Batch-2 demo: a full menu tree (Desk/File/Edit, each with a
+/// drop-down) drawn via menu_bar, with the File menu opened and "Open"
+/// highlighted — the rendering the interactive `track` shows mid-drag.
+pub fn run_menu_open() {
+    const G_IBOX: u16 = 25;
+    const G_TITLE: u16 = 32;
+    const LAST: u16 = 0x0020;
+    static DESK: &[u8] = b"Desk\0";
+    static FILE: &[u8] = b"File\0";
+    static EDIT: &[u8] = b"Edit\0";
+    static ABOUT: &[u8] = b"About NewTOS\0";
+    static INFO: &[u8] = b"Desk Info\0";
+    static NEW: &[u8] = b"New\0";
+    static OPEN: &[u8] = b"Open\0";
+    static QUIT: &[u8] = b"Quit\0";
+    static CUT: &[u8] = b"Cut\0";
+    static COPY: &[u8] = b"Copy\0";
+
+    let t = |ty, fl, spec: u64, x, y, w, h, next, head, tail| Object {
+        ob_next: next, ob_head: head, ob_tail: tail, ob_type: ty, ob_flags: fl,
+        ob_state: 0, ob_spec: spec, ob_x: x, ob_y: y, ob_width: w, ob_height: h,
+    };
+    let s = |p: &[u8], x, y, next, last| t(G_STRING, if last { LAST } else { 0 },
+        p.as_ptr() as u64, x, y, 112, 19, next, -1, -1);
+
+    let tree = [
+        /* 0 ROOT     */ t(G_IBOX, 0, 0, 0, 0, 640, 480, -1, 1, 6),
+        /* 1 THEBAR   */ t(G_BOX, 0, 0, 0, 0, 640, 19, 6, 2, 2),
+        /* 2 THEACTIVE*/ t(G_IBOX, 0, 0, 0, 0, 640, 19, 1, 3, 5),
+        /* 3 Desk     */ t(G_TITLE, 0, DESK.as_ptr() as u64, 0, 0, 56, 19, 4, -1, -1),
+        /* 4 File     */ t(G_TITLE, 0, FILE.as_ptr() as u64, 56, 0, 56, 19, 5, -1, -1),
+        /* 5 Edit     */ t(G_TITLE, 0, EDIT.as_ptr() as u64, 112, 0, 56, 19, 2, -1, -1),
+        /* 6 themenus */ t(G_IBOX, 0, 0, 0, 0, 640, 480, 0, 7, 14),
+        /* 7 Desk-box */ t(G_BOX, 0, 1 << 16, 0, 19, 112, 38, 10, 8, 9),
+        /* 8  About   */ s(ABOUT, 0, 0, 9, false),
+        /* 9  Info    */ s(INFO, 0, 19, 7, false),
+        /*10 File-box */ t(G_BOX, 0, 1 << 16, 56, 19, 112, 57, 14, 11, 13),
+        /*11  New     */ s(NEW, 0, 0, 12, false),
+        /*12  Open    */ s(OPEN, 0, 19, 13, false),
+        /*13  Quit    */ s(QUIT, 0, 38, 10, false),
+        /*14 Edit-box */ t(G_BOX, 0, 1 << 16, 112, 19, 112, 38, 6, 15, 16),
+        /*15  Cut     */ s(CUT, 0, 0, 16, false),
+        /*16  Copy    */ s(COPY, 0, 19, 14, true),
+    ];
+
+    let mut control = [0i16; 8];
+    let mut global = [0i16; 32];
+    let mut intin = [0i16; 16];
+    let mut intout = [0i16; 16];
+    let mut addrin = [0i64; 4];
+    let mut addrout = [0i64; 4];
+    let block: [u64; 6] = [
+        control.as_mut_ptr() as u64, global.as_mut_ptr() as u64,
+        intin.as_mut_ptr() as u64, intout.as_mut_ptr() as u64,
+        addrin.as_mut_ptr() as u64, addrout.as_mut_ptr() as u64,
+    ];
+    // menu_bar(tree, show=1)
+    control[0] = 30; control[1] = 1; control[3] = 1;
+    intin[0] = 1; addrin[0] = tree.as_ptr() as i64;
+    aes(block.as_ptr() as u64);
+
+    // Programmatically open File (4) and highlight "Open" (12).
+    if let Some(backend) = tos_api::host::host().and_then(|h| h.raster()) {
+        let tp = tree.as_ptr() as *mut Object;
+        let box_idx = tos_api::aes::menu::open(tp, 4, 12, backend);
+        kprintln!("[objc] File menu opened (box obj {}), 'Open' highlighted", box_idx);
+    }
+}

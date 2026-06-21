@@ -407,6 +407,40 @@ pub(crate) unsafe fn hit_test(
     }
 }
 
+/// Absolute screen rectangle `(x, y, w, h)` of `obj`.
+pub(crate) fn abs_rect(tree: *const Object, obj: i16) -> (i16, i16, i16, i16) {
+    let (x, y) = abs_offset(tree, obj);
+    // SAFETY: valid tree.
+    let ob = unsafe { &*tree.add(obj as usize) };
+    (x, y, ob.ob_width, ob.ob_height)
+}
+
+/// First child of `parent` whose absolute rectangle contains `(mx, my)`,
+/// scanning only direct children; `NIL` if none. Used for menu hit-tests.
+pub(crate) fn child_at(tree: *const Object, parent: i16, mx: i16, my: i16) -> i16 {
+    // SAFETY: valid tree; the sibling chain ends back at `parent`.
+    unsafe {
+        let mut c = (*tree.add(parent as usize)).ob_head;
+        while c != NIL && c != parent {
+            let (x, y, w, h) = abs_rect(tree, c);
+            if mx >= x && mx < x + w && my >= y && my < y + h {
+                return c;
+            }
+            c = (*tree.add(c as usize)).ob_next;
+        }
+    }
+    NIL
+}
+
+/// Set or clear one `ob_state` bit on `obj` and redraw it. Thin wrapper
+/// the Menu Manager shares for title/item highlighting.
+pub(crate) fn set_state_bit(tree: *mut Object, obj: i16, bit: u16, set: bool) {
+    // SAFETY: valid tree.
+    let st = unsafe { (*tree.add(obj as usize)).ob_state };
+    let new = if set { st | bit } else { st & !bit };
+    change(tree, obj, new, true);
+}
+
 /// Draw the subtree rooted at `obj` (any object), `depth` levels deep, at
 /// its absolute screen position. Used by the Menu Manager to draw the bar.
 pub(crate) fn draw_obj(tree: *const Object, obj: i16, depth: i16, backend: &dyn RasterBackend) {
