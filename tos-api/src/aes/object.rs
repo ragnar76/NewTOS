@@ -18,7 +18,7 @@
 
 use super::Aespb;
 use crate::host::host;
-use crate::vdi::backend::{ClipRect, MonoSrc, Pel, RasterBackend, Rect};
+use crate::vdi::backend::{ClipRect, MonoSrc, PatternFill, Pel, RasterBackend, Rect};
 
 // ── OBJECT model ────────────────────────────────────────────────────
 
@@ -150,8 +150,12 @@ pub struct IconBlk {
 const LASTOB: u16 = 0x0020;
 const HIDETREE: u16 = 0x0080;
 const SELECTED: u16 = 0x0001;
+const DEFAULT: u16 = 0x0002;
 const CHECKED: u16 = 0x0004;
 const DISABLED: u16 = 0x0008;
+
+/// 50 % dither used to grey-out DISABLED objects (EmuTOS `IP_4PATT`).
+const STIPPLE_50: [u16; 2] = [0xAAAA, 0x5555];
 
 // 3D-object flags (`ob_flags`, EmuTOS `CONF_WITH_3D_OBJECTS`).
 const FL3DIND: u16 = 0x0200; // indicator (recessed)
@@ -682,9 +686,21 @@ fn just_draw(ob: &Object, x: i16, y: i16, clip: ClipRect, backend: &dyn RasterBa
         _ => {}
     }
 
-    // DISABLED: grey the object by stippling 50% white over it. A simple
-    // visual cue until the full pattern path lands.
-    let _ = disabled;
+    // DISABLED: grey the object out with a 50 % transparent dither
+    // (EmuTOS `bb_fill(IP_4PATT)`), over the 3D-background colour for a
+    // 3D panel, else white.
+    if disabled {
+        let fg = if d3 == FL3DBAK { GRAY_LT } else { WHITE };
+        let pat = PatternFill { fg, bg: WHITE, pattern: &STIPPLE_50, opaque: false };
+        backend.fill_pattern(x, y, w, h, pat, clip);
+    }
+
+    // DEFAULT object: a thick outline a few pixels outside it (the
+    // "fat frame" around the default exit button).
+    if ob.ob_flags & DEFAULT != 0 {
+        draw_border(backend, x - 3, y - 3, w + 6, h + 6, 1, BLACK, clip);
+        draw_border(backend, x - 4, y - 4, w + 8, h + 8, 1, BLACK, clip);
+    }
 }
 
 /// Draw a 2-pixel bevel around a rectangle for the 3D look: `raised` gives

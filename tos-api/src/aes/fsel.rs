@@ -34,6 +34,7 @@ const FSOK: i16 = 51;
 const FSCANCEL: i16 = 52;
 
 const SELECTED: u16 = 0x0001;
+const DISABLED: u16 = 0x0008;
 const FL3DIND: u16 = 0x0200; // indicator (drive letters)
 const FL3DBAK: u16 = 0x0400; // background panel (text fields)
 const FL3DACT: u16 = 0x0600; // activator (buttons / arrows)
@@ -105,6 +106,26 @@ fn set_3d_flags(tree: *mut Object) {
         }
         for d in FS1STDRV..=FSLSTDRV {
             (*tree.add(d as usize)).ob_flags |= FL3DIND;
+        }
+    }
+}
+
+/// Disable drive-letter gadgets for drives that are not present, and mark
+/// the current drive `cur` (`A`..`Z`) selected — like the EmuTOS selector.
+fn set_drive_states(tree: *mut Object, cur: u8) {
+    let bits = crate::bios::drive::drvbits();
+    let cur_idx = if cur.is_ascii_uppercase() { (cur - b'A') as i16 } else { 2 };
+    // SAFETY: valid FSELECTR tree.
+    unsafe {
+        for d in FS1STDRV..=FSLSTDRV {
+            let idx = d - FS1STDRV; // 0 = A … 25 = Z
+            let o = &mut *tree.add(d as usize);
+            o.ob_state &= !(DISABLED | SELECTED);
+            if bits & (1 << idx) == 0 {
+                o.ob_state |= DISABLED;
+            } else if idx == cur_idx {
+                o.ob_state |= SELECTED;
+            }
         }
     }
 }
@@ -209,6 +230,8 @@ fn run(pb: &Aespb) {
     }
 
     // Centre *before* listing so refill draws the box at its final spot.
+    let cur = unsafe { (*SYS.dir.get())[0] };
+    set_drive_states(tree, cur);
     center(tree, backend);
     relist(tree); // read the directory, fill the slots + slider
     // SAFETY: valid tree; backend is the live screen.
@@ -354,6 +377,7 @@ pub fn preview() {
             set_ted(tree, F1NAME + i as i16, names[i].as_mut_ptr(), 16);
         }
     }
+    set_drive_states(tree, b'C');
     center(tree, backend);
     relist(tree);
     // SAFETY: valid tree; backend is the live screen.
