@@ -559,3 +559,43 @@ pub fn run_menu_open() {
         kprintln!("[objc] File menu opened (box obj {}), 'Open' highlighted", box_idx);
     }
 }
+
+/// D4 Batch-1 demo: create + open a full-frame window (title, closer,
+/// fuller, mover, info, scroll bars, sizer) via wind_create/set/open.
+pub fn run_window() {
+    let mut control = [0i16; 8];
+    let mut global = [0i16; 32];
+    let mut intin = [0i16; 16];
+    let mut intout = [0i16; 16];
+    let mut addrin = [0i64; 4];
+    let mut addrout = [0i64; 4];
+    let block: [u64; 6] = [
+        control.as_mut_ptr() as u64, global.as_mut_ptr() as u64,
+        intin.as_mut_ptr() as u64, intout.as_mut_ptr() as u64,
+        addrin.as_mut_ptr() as u64, addrout.as_mut_ptr() as u64,
+    ];
+    static NAME: &[u8] = b"NewTOS Window\0";
+    static INFO: &[u8] = b"Ready.\0";
+
+    // wind_create(kind = all gadgets, full extent = screen)
+    control[0] = 100; control[1] = 5; control[3] = 0;
+    intin[0] = 0x0FFF; intin[1] = 0; intin[2] = 0; intin[3] = 640; intin[4] = 480;
+    aes(block.as_ptr() as u64);
+    let handle = intout[0];
+
+    // wind_set(handle, WF_NAME, "NewTOS Window")
+    control = [0; 8]; control[0] = 105; control[1] = 2; control[3] = 1;
+    intin[0] = handle; intin[1] = 2; addrin[0] = NAME.as_ptr() as i64;
+    aes(block.as_ptr() as u64);
+    // wind_set(handle, WF_INFO, "Ready.")
+    control = [0; 8]; control[0] = 105; control[1] = 2; control[3] = 1;
+    intin[0] = handle; intin[1] = 3; addrin[0] = INFO.as_ptr() as i64;
+    aes(block.as_ptr() as u64);
+
+    // wind_open(handle, rect)
+    control = [0; 8]; control[0] = 101; control[1] = 5; control[3] = 0;
+    intin[0] = handle; intin[1] = 80; intin[2] = 60; intin[3] = 440; intin[4] = 320;
+    aes(block.as_ptr() as u64);
+
+    kprintln!("[objc] window opened, handle {}", handle);
+}

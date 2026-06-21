@@ -15,6 +15,7 @@ mod event;
 mod form;
 pub mod menu;
 pub mod object;
+pub mod window;
 mod pd;
 
 /// The AES parameter block: six pointers (four to WORD arrays, two to
@@ -135,6 +136,16 @@ pub unsafe fn dispatch(aespb_ptr: u64) {
         50 => form::form_do(&pb),
         52 => form::form_alert(&pb),
         53 => form::form_error(&pb),
+        100 => window::wind_create(&pb),
+        101 => window::wind_open(&pb),
+        102 => window::wind_close(&pb),
+        103 => window::wind_delete(&pb),
+        104 => window::wind_get(&pb),
+        105 => window::wind_set(&pb),
+        106 => window::wind_find(&pb),
+        107 => window::wind_update(&pb),
+        108 => window::wind_calc(&pb),
+        109 => window::wind_new(&pb),
         // Remaining managers (event/object/form/window/menu/resource/
         // scrap/shell) land in later sub-phases. The AES has no invalid-
         // opcode error path (the GEM environment is trusted), so an
