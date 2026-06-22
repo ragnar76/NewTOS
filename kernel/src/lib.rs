@@ -284,18 +284,22 @@ extern "C" fn kernel_main_rust(dtb_phys: usize) -> ! {
     // drawing-surface demo verified by QMP screendump, or
     // `selftest_aes::run_phase13_aes_test()` for the AES lifecycle).
 
-    // Keep the initinfo boot screen visible for a few seconds before the
-    // console takes over (EmuTOS shows its boot screen the same way).
-    // (The Phase-02 RX-echo test is retired now that the shell owns
-    // console input.)
-    arch::aarch64::delay_ms(4000);
+    // Keep the initinfo boot screen visible briefly before the desktop
+    // takes over (EmuTOS shows its boot screen the same way).
+    arch::aarch64::delay_ms(2000);
 
-    // Run the time-driven AES showcase (never returns): it cycles through
-    // the GEM managers' visual output on the HDMI framebuffer, holding
-    // each screen ~5 s — no keyboard/mouse needed, so it runs unattended
-    // on real hardware. (Swap back to `shell::run()` for the interactive
-    // serial console.)
-    aes_demo::showcase();
+    // Start the GEM desktop on the HDMI framebuffer (EmuTOS deskmain): it
+    // draws the menu bar, drive/trash/printer icons and the grey desktop,
+    // then dispatches AES events. Mouse interaction works once the IKBD
+    // mouse is wired (UART2); in QEMU it renders and waits. The time-driven
+    // AES `aes_demo::showcase()` and the serial `shell::run()` remain
+    // available for debugging.
+    fbcon::activate();
+    desktop::run();
+
+    // The desktop loop returns only on Shutdown.
+    kprintln!("[desk] shutdown — halting");
+    arch::aarch64::halt();
 }
 
 /// Pretty-print the physical memory map on the boot console.

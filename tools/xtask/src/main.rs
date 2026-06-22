@@ -300,14 +300,38 @@ fn host_triple() -> Result<String, String> {
 fn cmd_run(args: &[String]) -> Result<(), String> {
     let window = args.iter().any(|a| a == "--window");
     let debug = args.iter().any(|a| a == "--debug");
-    let filtered: Vec<String> = args
+    // `--sd <path>` attaches a raw SD-card image (the kernel's C: drive).
+    // Defaults to /tmp/sd.img if present, so the desktop sees its drives.
+    let sd = args
         .iter()
-        .filter(|a| *a != "--window" && *a != "--debug")
-        .cloned()
-        .collect();
+        .position(|a| a == "--sd")
+        .and_then(|i| args.get(i + 1).cloned())
+        .or_else(|| {
+            let def = std::path::Path::new("/tmp/sd.img");
+            def.exists().then(|| def.to_string_lossy().into_owned())
+        });
+    let filtered: Vec<String> = {
+        let mut out = Vec::new();
+        let mut skip = false;
+        for a in args {
+            if skip {
+                skip = false;
+                continue;
+            }
+            if a == "--window" || a == "--debug" {
+                continue;
+            }
+            if a == "--sd" {
+                skip = true;
+                continue;
+            }
+            out.push(a.clone());
+        }
+        out
+    };
     let (board, release) = parse_board_and_profile(&filtered)?;
     if board == Some(Board::Rpi4) {
-        return cmd_run_rpi4(release, window, debug);
+        return cmd_run_rpi4(release, window, debug, sd.as_deref());
     }
     build_kernel(Board::QemuVirt, release)?;
     let elf = kernel_elf_path(release);
@@ -382,7 +406,7 @@ fn cmd_run(args: &[String]) -> Result<(), String> {
 /// with a gdbstub on :1234. There is no serial dependency — the kernel's
 /// PL011 is wired to serial0 (`-serial stdio`), but the framebuffer is
 /// the intended output channel on real hardware.
-fn cmd_run_rpi4(release: bool, window: bool, debug: bool) -> Result<(), String> {
+fn cmd_run_rpi4(release: bool, window: bool, debug: bool, sd: Option<&str>) -> Result<(), String> {
     build_kernel(Board::Rpi4, release)?;
     produce_kernel8_img(release)?;
     let img = workspace_root().join("kernel8.img");
@@ -396,12 +420,21 @@ fn cmd_run_rpi4(release: bool, window: bool, debug: bool) -> Result<(), String> 
     }
     // serial0 on raspi4b is the PL011 (UART0) the kernel drives.
     c.args(["-serial", "stdio", "-kernel"]).arg(&img);
+    // Attach the SD-card image (the kernel's C: drive) so the desktop sees
+    // its drives + directories.
+    if let Some(path) = sd {
+        c.args(["-drive", &format!("file={path},if=sd,format=raw")]);
+    }
     if debug {
         c.args(["-S", "-s"]);
     }
     println!(
-        "xtask: launching QEMU raspi4b{}{} (Ctrl-C to quit)",
+        "xtask: launching QEMU raspi4b{}{}{} (Ctrl-C to quit)",
         if window { " with display window" } else { "" },
+        match sd {
+            Some(p) => format!(" [sd: {p}]"),
+            None => String::new(),
+        },
         if debug { " [gdbstub :1234, halted]" } else { "" },
     );
     run(c)

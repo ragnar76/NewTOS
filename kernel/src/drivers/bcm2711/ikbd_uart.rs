@@ -84,7 +84,12 @@ pub fn poll() {
     // SAFETY: well-defined PL011 register reads on the configured UART.
     unsafe {
         for _ in 0..32 {
-            if reg(UART_FR).read_volatile() & FR_RXFE != 0 {
+            let fr = reg(UART_FR).read_volatile();
+            // A working PL011 always has TXFE set when idle, so FR is never
+            // 0; FR == 0 means the platform does not implement UART2 (e.g.
+            // QEMU raspi4b) — bail out so we don't feed phantom 0x00 bytes
+            // into the IKBD decoder on every input-poll.
+            if fr == 0 || fr & FR_RXFE != 0 {
                 break;
             }
             let b = reg(UART_DR).read_volatile() as u8;
