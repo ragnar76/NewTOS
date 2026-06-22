@@ -236,7 +236,11 @@ fn build_menu() -> *mut Object {
         for (ti, (_name, items)) in MENUS.iter().enumerate() {
             box_idx[ti] = k;
             let bx_x = title_x(ti);
-            let iw = items.iter().map(|s| cstr_len(s) as i16).max().unwrap_or(8) * 8 + 4;
+            // Box width = widest item text + the renderer's 2-cell check
+            // column indent (object.rs draws G_STRING at x + 2*CELL_W) +
+            // a right margin, so text and separators never touch the edge.
+            let maxlen = items.iter().map(|s| cstr_len(s) as i16).max().unwrap_or(8);
+            let iw = maxlen * 8 + 2 * 8 + 6;
             let bh = items.len() as i16 * MENU_H;
             let bi = k;
             k += 1;
