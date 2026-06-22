@@ -231,6 +231,57 @@ pub fn list_dir(path: &str, names: &mut [[u8; 14]], attrs: &mut [u8]) -> usize {
     n
 }
 
+/// One directory entry with the fields the desktop needs for display and
+/// sorting (richer than [`list_dir`]'s name+attribute).
+#[derive(Clone, Copy)]
+pub struct DirInfo {
+    /// `NAME.EXT\0` display name (trim-padded).
+    pub name: [u8; 14],
+    /// `FA_*` attribute byte (bit `FA_SUBDIR` = directory).
+    pub attrib: u8,
+    /// File length in bytes.
+    pub size: u32,
+    /// Packed FAT date.
+    pub date: u16,
+    /// Packed FAT time.
+    pub time: u16,
+}
+
+impl Default for DirInfo {
+    fn default() -> Self {
+        Self { name: [0; 14], attrib: 0, size: 0, date: 0, time: 0 }
+    }
+}
+
+/// Like [`list_dir`] but also captures size and date/time per entry, for
+/// the desktop's text view and sort orders. Returns the number filled.
+pub fn list_dir_ex(path: &str, out: &mut [DirInfo]) -> usize {
+    let (vol, parent, comp) = match super::path::resolve_parent(path) {
+        Ok(x) => x,
+        Err(_) => return 0,
+    };
+    let pattern = fcb_pattern(comp);
+    let mut slot = 0u32;
+    let mut n = 0;
+    while n < out.len() {
+        match scan(&vol, parent, slot, &pattern, FA_SUBDIR) {
+            Some((entry, next)) => {
+                out[n] = DirInfo {
+                    name: name_83(&entry.name),
+                    attrib: entry.attrib,
+                    size: entry.size,
+                    date: entry.date,
+                    time: entry.time,
+                };
+                n += 1;
+                slot = next;
+            }
+            None => break,
+        }
+    }
+    n
+}
+
 /// Write the user-visible portion of the DTA from a found entry
 /// (EmuTOS `makbuf`): attribute, time, date, size, `8.3\0` name. Values
 /// are stored in native byte order (little-endian on AArch64).

@@ -443,6 +443,14 @@ fn click_once() {
     }
 }
 
+/// Verification of the View-menu sort orders: set `mode` (0=name 1=type
+/// 2=size 3=date 4=none) and open a C: window so the listing reflects it.
+pub fn preview_sort(mode: u8) {
+    draw();
+    SORT_MODE.store(mode, core::sync::atomic::Ordering::Release);
+    open_dir_window(b'C', (40, MENU_H + 24, 420, 340));
+}
+
 /// Verification of the File-menu window actions: open three cascaded
 /// windows, then "Cycle windows" to bring the bottom one to the top.
 pub fn preview_windows(cycle: bool) {
@@ -477,6 +485,16 @@ fn handle_menu_select(item: i16) -> bool {
         close_top_window();
     } else if item_has(item, b"Cycle windows") {
         cycle_windows();
+    } else if item_has(item, b"Sort by name") {
+        set_sort(0);
+    } else if item_has(item, b"Sort by type") {
+        set_sort(1);
+    } else if item_has(item, b"Sort by size") {
+        set_sort(2);
+    } else if item_has(item, b"Sort by date") {
+        set_sort(3);
+    } else if item_has(item, b"No sort") {
+        set_sort(4);
     } else {
         // Remaining items are logged until their handlers land.
         kprintln!("[desk] menu item {} selected", item);
@@ -822,7 +840,79 @@ fn open_dir_window(letter: u8, rect: (i16, i16, i16, i16)) -> i16 {
     handle
 }
 
-/// List `X:\*.*` and draw the file names into the window's `work` rect.
+/// Directory-view sort order (View menu): 0=name 1=type 2=size 3=date
+/// 4=none. The desktop applies one order to all directory windows, like
+/// the classic GEM desktop.
+static SORT_MODE: core::sync::atomic::AtomicU8 = core::sync::atomic::AtomicU8::new(0);
+
+const FA_SUBDIR: u8 = 0x10;
+
+/// Set the sort order (View menu) and repaint every open directory window.
+fn set_sort(mode: u8) {
+    SORT_MODE.store(mode, core::sync::atomic::Ordering::Release);
+    redraw_all_windows();
+}
+
+/// Repaint the listing of every open directory window.
+fn redraw_all_windows() {
+    for h in 1..8i16 {
+        redraw_win(h);
+    }
+}
+
+/// The extension bytes of a `NAME.EXT\0` name (after the dot; empty if none).
+fn name_ext(name: &[u8; 14]) -> &[u8] {
+    let end = name.iter().position(|&b| b == 0).unwrap_or(14);
+    match name[..end].iter().position(|&b| b == b'.') {
+        Some(p) => &name[p + 1..end],
+        None => &name[end..end],
+    }
+}
+
+/// Sort `ents` in place per [`SORT_MODE`] — directories first, then by the
+/// chosen key (EmuTOS `do_viewmenu` sort orders).
+fn sort_entries(ents: &mut [tos_api::bdos::fs::find::DirInfo]) {
+    use core::cmp::Ordering as O;
+    let mode = SORT_MODE.load(core::sync::atomic::Ordering::Acquire);
+    if mode == 4 {
+        return; // No sort — keep on-disk order.
+    }
+    ents.sort_unstable_by(|a, b| {
+        let (ad, bd) = (a.attrib & FA_SUBDIR != 0, b.attrib & FA_SUBDIR != 0);
+        if ad != bd {
+            return if ad { O::Less } else { O::Greater };
+        }
+        match mode {
+            1 => name_ext(&a.name).cmp(name_ext(&b.name)).then_with(|| a.name.cmp(&b.name)),
+            2 => a.size.cmp(&b.size),
+            3 => (a.date, a.time).cmp(&(b.date, b.time)),
+            _ => a.name.cmp(&b.name),
+        }
+    });
+}
+
+/// Draw `v` as a right-aligned decimal ending at `right_x`.
+fn draw_u32_right(backend: &dyn RasterBackend, right_x: i16, y: i16, mut v: u32, clip: ClipRect) {
+    let mut digits = [0u8; 10];
+    let mut k = 0;
+    if v == 0 {
+        digits[0] = b'0';
+        k = 1;
+    }
+    while v > 0 && k < digits.len() {
+        digits[k] = b'0' + (v % 10) as u8;
+        v /= 10;
+        k += 1;
+    }
+    let mut x = right_x - 8;
+    for &d in &digits[..k] {
+        backend.draw_glyph(x, y, tos_api::vdi::font::glyph(d as u16), BLACK, clip);
+        x -= 8;
+    }
+}
+
+/// List `X:\*.*`, sort it, and draw the entries (name + size / `<DIR>`)
+/// into the window's `work` rect.
 fn draw_dir_listing(_handle: i16, letter: u8, work: (i16, i16, i16, i16)) {
     let Some(backend) = tos_api::host::host().and_then(|h| h.raster()) else {
         return;
@@ -831,20 +921,30 @@ fn draw_dir_listing(_handle: i16, letter: u8, work: (i16, i16, i16, i16)) {
     let (wx, wy, ww, wh) = work;
     backend.fill_rect(wx, wy, ww, wh, WHITE, clip);
 
-    // list_dir(X:\*.*)
     let path = [letter, b':', b'\\', b'*', b'.', b'*'];
     let path_str = core::str::from_utf8(&path).unwrap_or("C:\\*.*");
-    let mut names = [[0u8; 14]; 64];
-    let mut attrs = [0u8; 64];
-    let n = tos_api::bdos::fs::find::list_dir(path_str, &mut names, &mut attrs);
+    let mut ents = [tos_api::bdos::fs::find::DirInfo::default(); 64];
+    let n = tos_api::bdos::fs::find::list_dir_ex(path_str, &mut ents);
+    sort_entries(&mut ents[..n]);
 
     let rows = (wh / 16).max(1) as usize;
-    for (i, nm) in names.iter().enumerate().take(n.min(rows)) {
-        let end = nm.iter().position(|&b| b == 0).unwrap_or(nm.len());
+    for (i, e) in ents[..n.min(rows)].iter().enumerate() {
+        let ny = wy + 4 + i as i16 * 16;
+        let end = e.name.iter().position(|&b| b == 0).unwrap_or(14);
         let mut cx = wx + 8;
-        for &c in &nm[..end] {
-            backend.draw_glyph(cx, wy + 4 + i as i16 * 16, tos_api::vdi::font::glyph(c as u16), BLACK, clip);
+        for &c in &e.name[..end] {
+            backend.draw_glyph(cx, ny, tos_api::vdi::font::glyph(c as u16), BLACK, clip);
             cx += 8;
+        }
+        // Size column (right-aligned) — "<DIR>" for sub-directories.
+        if e.attrib & FA_SUBDIR != 0 {
+            let mut x = wx + ww - 8 - 5 * 8;
+            for &c in b"<DIR>" {
+                backend.draw_glyph(x, ny, tos_api::vdi::font::glyph(c as u16), BLACK, clip);
+                x += 8;
+            }
+        } else {
+            draw_u32_right(backend, wx + ww - 8, ny, e.size, clip);
         }
     }
     kprintln!("[desk] opened {}:\\ ({} entries)", letter as char, n);
