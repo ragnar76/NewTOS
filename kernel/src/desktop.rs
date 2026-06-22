@@ -33,6 +33,7 @@ const FL3DBAK: u16 = 0x0400;
 
 const WHITE: u8 = 0;
 const BLACK: u8 = 1;
+const GREEN: u8 = 3; // VDI colour 3 — the classic GEM desktop green
 
 const MENU_H: i16 = 19;
 
@@ -155,11 +156,12 @@ fn paint_desktop_bg(backend: &dyn RasterBackend) {
     let sh = backend.height() as i16;
     let clip = ClipRect::full(backend.width(), backend.height());
 
-    // Background: a light dither (stand-in for EmuTOS' g_patcol desktop
-    // pattern+colour; the exact VDI fill for ob_spec 0x43 lands with the
-    // DROOT G_IBOX later).
-    let pat: [u16; 4] = [0x8888, 0x0000, 0x2222, 0x0000];
-    let bg = PatternFill { fg: BLACK, bg: WHITE, pattern: &pat, opaque: true };
+    // Background: the EmuTOS colour-desktop pattern — g_patcol default
+    // 0x43 = fill pattern 4, VDI colour 3 (green). A green dither on white
+    // gives the classic textured green Atari desktop (the menu bar, windows
+    // and icons stay monochrome / 3D-grey, as on real GEM).
+    let pat: [u16; 4] = [0x8888, 0x2222, 0x8888, 0x2222];
+    let bg = PatternFill { fg: GREEN, bg: WHITE, pattern: &pat, opaque: true };
     backend.fill_pattern(0, MENU_H, sw, sh - MENU_H, bg, clip);
 
     use crate::desktop_icons as ic;
