@@ -5,12 +5,28 @@
 
 ## Current Phase
 
-**Phase 13 — AES** (in Arbeit, seit 2026-06-19). D1 Dispatcher + D2
-Application Manager (`appl_*`) + D3 Event Manager (`evnt_*`, alle 7
-Opcodes) implementiert und in QEMU über den echten `svc #2`-Trap
-verifiziert. Offen: D4 Window, D5 Menu, D6 Object+Form, D7 RSC,
-D8 Fileselector, D9 Scrap+Shell. Details: Phase-Status-Tabelle (Zeile 13)
-+ Recent Decisions (2026-06-20).
+**Phase 14 — Desktop** (in Arbeit, seit 2026-06-22). Der GEM-Desktop läuft
+als Boot-Anwendung über die fertige AES: Menüleiste mit echten Dropdowns,
+grüner `g_patcol`-Hintergrund, echte EmuTOS-Icons (Laufwerke C:/D:, Trash,
+Printer), Verzeichnis-Fenster (Text-/Icon-Ansicht, Sort), Fenster-Manager,
+und der `evnt_multi`-Event-Loop. **Menü-Aktionen umgesetzt + verifiziert:**
+Gruppe A (Close/Cycle, Sort, Show as icons/text, Size to fit), Gruppe B
+(New folder, Delete + Confirm, Drag-to-Trash, Info/Rename), Gruppe-C-Start
+(data-driven `g_patcol` + NEWDESK.INF: Set background, Save desktop). Boot
+geht jetzt direkt in `desktop::run()` (statt AES-Showcase).
+**Offen:** echter Maus-Input für HW (IKBD/UART2 — Software fertig + bewiesen,
+Datenblatt-Verifikation + Hardware fehlen; QEMU hat keinen Maus-Pfad → im
+Emulator rendert der Desktop statisch); Rest Gruppe C (voller
+Set-background/Desktop-config-Picker-Dialog, Install/Read-INF/Preferences/
+Change-resolution, `#E`/`#W`-INF-Zeilen); Rest-File-Items (Search, Select
+all, Set mask, Execute EmuCON). Details: Phase-Status-Tabelle (Zeile 14) +
+Recent Decisions.
+
+**Phase 13 — AES** (✅ abgeschlossen 2026-06-21). Alle 11 Manager D1–D9
+(~80 Funktionen) implementiert + per Screendump/Serial verifiziert; modernes
+3D-(Falcon-)Design. Offener Feinschliff: `rsrc_saddr` (113), Free-Strings/
+Images, Fileselector-Pfad-Tippen, `shel_write`↔Pexec-Schleife (jetzt vom
+Desktop getrieben).
 
 Phasen 00–12 sind abgeschlossen bzw. substanziell fertig — maßgeblich ist
 die **Phase-Status-Tabelle** weiter unten. Der folgende Phase-00/02-Block
@@ -215,8 +231,8 @@ Konsolen-Fundaments (nicht mehr „die aktuelle Phase").
 | 10    | BIOS Screen                            | ✅ **D1–D5** (XBIOS-Screen-Gruppe `Physbase`/`Logbase`/`Getrez`/`Setscreen`/`Setpalette`/`Setcolor`; VT52-Framebuffer-Konsole `fbcon` — `Cconout` rendert auf HDMI, EC1) + interaktive EmuCON-Stil-Shell + IKBD-Tastatur-Decoder. In QEMU raspi4b verifiziert | 2026-06-18 | 2026-06-18 |
 | 11    | XBIOS (Trap 14)                        | ✅ **Substanziell fertig** (EC2). D1 Dispatcher, D2 `Kbdvbase`, D3 `Vsync` (CNTPCT-Frame-Takt), D4 `Random` + BIOS `Tickcal`. **D5–D8 bewusst übersprungen**: PSG/MIDI/Serial/Floppy/TT-Shifter-Stubs sind ohne die Hardware wertlos — der Dispatcher-Catch-all (`EINVFN`) liefert für alle nicht-implementierten Funktionen bereits sicheres, definiertes Verhalten (kein Crash). EC1 (Vektor-Dispatch über `Kbdvbase`) braucht das AES-/Prozess-Modell | 2026-06-18 | 2026-06-18 |
 | 12    | VDI                                    | ✅ **KOMPLETT** — **alle ~70 funktionalen Opcodes** implementiert (über das ursprüngliche D1–D6-Software-Backend hinaus): volles Clipping durch alle Primitive + Schreibmodi; alle Attribut-Setter (Linie/Marker/Text/Fill/Farbe inkl. mutierbarer Palette); Output (`v_pmarker`, `v_fillarea`-Polygon-Scanline, GDP Bar/Kreis/Ellipse/Arc/Pie/Rounded-Box via Integer-Trig, `v_contourfill`-Flood-Fill, Wide-/Dash-Linien, Text-Effekte); alle Inquiries; Raster inkl. `vr_trnfm`; Maus-Cursor-Sprite + Input-Reader + `vex_*`-Vektoren; `v_escape`-Alpha-Layer (VT52). Nur echte VDI-No-ops (4/10/27/29/132/133) bleiben ungeroutet. **Per QMP-Screendump end-to-end verifiziert (8/8 Pixel-Checks)**, beide Boards + Clippy clean. Dokumentierte Bring-up-Grenzen (keine Stubs): Maus geparkt bis IKBD-Treiber, `v_hardcopy` No-op, ein fester 8×16-Font | 2026-06-16 | 2026-06-19 |
-| 13    | AES                                    | **In Arbeit — D1–D3 + D6-Batch-1 implementiert + in QEMU verifiziert.** Spec komplett (PHASE-00b D8). **D1** Dispatcher (GEM-Trap d0=200, AESPB), **D2** Application Manager (`appl_*` + Message-Pipe), **D3** Event Manager (alle 7 `evnt_*`), **D6 Batch 1** Object Manager Rendering (`objc_draw`/`objc_find`/`objc_offset`, Box/Text/Button per Screendump verifiziert). Bring-up: Single-App-Poll-Wait statt `ev_block`-Scheduler. **Offen: D6 Rest (form_alert/form_do, Icons, TEDINFO, 3D), D4 Window, D5 Menu, D7 RSC, D8 Fileselector, D9 Scrap+Shell** ([`_working-list.md`](api/aes/_working-list.md)) | 2026-06-19 |           |
-| 14    | Desktop                                | **Batch 1** (Desktop-Screen: Hintergrund + Menüleiste + Drive-Icons) | 2026-06-22 |           |
+| 13    | AES                                    | ✅ **KOMPLETT** — alle 11 Manager **D1–D9** (~80 Funktionen). D1 Dispatcher, D2 Application (`appl_*`+Pipe), D3 Event (alle 7 `evnt_*`), D4 Window (`wind_*` 100–109 + Rect-Liste + WM_*), D5 Menu (`menu_*` 30–35 + Dropdown-Tracking), D6 Object+Form (`objc_*`, `form_alert`/`form_do`/`form_error`, Icons/Images/TEDINFO/`objc_edit`), D7 RSC (natives `.RSC` + EmuTOS-Konverter, `rsrc_load` C:\GEMSYS\RSC\→C:\), D8 Fileselector, D9 Scrap+Shell (`scrp_*`/`shel_*`). **Modernes 3D-(Falcon-)Design** (`add_3d_effect`, graue Flächen, DISABLED-Stipple, DEFAULT-Outline). **Per Screendump/Serial verifiziert.** Feinschliff offen: `rsrc_saddr` (113), Free-Strings/Images, Fileselector-Pfad-Tippen | 2026-06-19 | 2026-06-21 |
+| 14    | Desktop                                | **In Arbeit — läuft als Boot-Anwendung.** Desktop-Screen (grüner `g_patcol`-BG + Menüleiste + echte EmuTOS-Icons C:/D:/Trash/Printer), vollständige Dropdown-Menüs, Verzeichnis-Fenster (Text-/Icon-Ansicht), Fenster-Manager + `evnt_multi`-Loop. **Menü-Aktionen:** Gruppe A (Close/Cycle, Sort, icons/text, Size-to-fit), Gruppe B (New folder/Delete+Confirm/Drag-to-Trash/Info-Rename), Gruppe-C-Start (data-driven `g_patcol`+NEWDESK.INF: Set background/Save desktop). Boot = `desktop::run()`. **Per Screendump/Serial verifiziert** (raspi4b+SD). **Offen:** Maus-Input HW (IKBD/UART2 — SW fertig, Datenblatt+HW fehlen; QEMU kein Maus-Pfad → statisch), Rest Gruppe C (Picker-Dialoge/Install/Preferences/Resolution/`#E`/`#W`), Rest-File-Items (Search/Select-all/Mask/Execute-EmuCON) | 2026-06-22 |           |
 | 15    | First C Source Port                    | Not started                           |            |           |
 
 ## Open ADRs
@@ -428,6 +444,9 @@ Phasenbeginn entschieden sein (siehe `docs/api/_phase00-completion.md`):
 | 2026-06-22 | **Phase-14 — Menü-Gruppe A (Fenster/View-Aktionen).** Echte `do_filemenu`/`do_viewmenu`-Aktionen verdrahtet: **A1** Close top window/Close folder (`wind_close` + Top-Promotion via selbst-getracktem `DESK_TOP`), Cycle windows (Z-Order-Rotation). **A2** Sort by name/type/size/date/No sort — neue `find::list_dir_ex` (Name+Attr+Größe+Datum), Verzeichnisse zuerst, Größen-Spalte. **A3** Show as icons/text — Icon-Grid mit echten Folder-[2]/Doc-[7]-ICONBLKs aus icon.rsc vs. Text-Zeilen. **A4** Size to fit — Top-Fenster auf Inhaltshöhe. Alle per Screendump verifiziert. **Offen**: File-Dateiops (New folder/Delete/Rename + Drag-to-Trash = Gruppe B), Options/Config (Gruppe C), Execute EmuCON (D). Echter Maus-Input (IKBD/UART2) für HW weiterhin offen. |
 | 2026-06-22 | **Phase-14 — Trash + Printer Desktop-Fixtures.** EmuTOS-Papierkorb (`#T`, IG_TRASH, icon [3]) unten-links + Drucker (`#O`, IG_PRINT, icon [4]) unten-rechts, echte icon.rsc-Bitmaps. Drag-to-Trash-Löschen noch nicht verdrahtet (Gruppe B). |
 | 2026-06-22 | **Phase-14 — echte EmuTOS-Laufwerk-Icons.** Die prozeduralen Platzhalter-Icons (merkwürdiger „slot"-Strich) ersetzt durch die echten ICONBLK-Bitmaps aus `references/emutos/desk/icon.rsc`: 14×32×32 1bpp-Icons, davon `[0]` Hard-Disk + `[1]` Floppy als data+mask nach [`kernel/src/desktop_icons.rs`](../kernel/src/desktop_icons.rs) extrahiert. Blit: Maske=opake Silhouette→Körper weiß/Daten schwarz, sonst transparent (Desktop scheint durch); Buchstabe in der `(ib_xchar,ib_ychar)`-Zelle (`ib_char\|=a_letter`). Menü-Box-Breite zudem an den 2-Zellen-Text-Einzug angepasst (`bbd277c`). **Per Screendump verifiziert**. Schließt den Spec-Offenpunkt „echter ICONBLK aus icon.rsc". |
+| 2026-06-22 | **Phase-14 — Menü-Authentizität (User-Korrekturen).** „Eject floppy" entfernt (`794bdc5`): `EJCTITEM` ist `#if CONF_WITH_EJECT` (Default 0) → `flop_eject`→`lisa_flop_eject` = **Apple-Lisa**-Port, **keine** Atari-Funktion; Phase-00-Extrakt hatte die CONF-Gatung übersehen. Audit der restlichen CONF-Items → **Blitter + Cache entfernt** (`434013f`): `CONF_WITH_BLITTER`/`CONF_WITH_CACHE_CONTROL` = Atari STE/TT/Falcon-HW ohne AArch64-Äquivalent; **Set background + Desktop configuration behalten** (reine SW-Features, User-Entscheidung). Spec [`desktop.md`](../docs/api/desktop.md) korrigiert. **Lehre als Memory festgehalten**: bei EmuTOS-Extraktion immer `#if CONF_WITH_*` prüfen. |
+| 2026-06-22 | **Phase-14 — Desktop ist Boot-Anwendung.** Boot startet jetzt `desktop::run()` statt `aes_demo::showcase()` (`aef52f9`): zeichnet Desktop, dann `evnt_multi`-Dispatch bis Shutdown. Zwei Support-Fixes: **(1)** `ikbd_uart::poll` bricht ab wenn `FR == 0` (ein echter PL011 hat im Idle TXFE gesetzt; FR=0 ⇒ kein UART2-Device, z.B. QEMU) — sonst hätte der Dauer-`pump_input` Phantom-0x00-Bytes in den IKBD-Decoder geflutet. **(2)** `xtask run --board rpi4` hängt jetzt ein SD-Image an (`--sd <pfad>`, Default `/tmp/sd.img`) als C:-Laufwerk, sodass der Desktop seine Laufwerke sieht; `--window` zeigt das HDMI-Bild. **Per Screendump verifiziert.** ⚠️ QEMU hat keinen IKBD/UART2-Maus-Pfad → Desktop rendert statisch (klickbar erst auf HW mit IKBD-Maus oder via späterem QEMU-Maus-Adapter). |
+| 2026-06-22 | **Phase-14 Gruppe-C-Start — data-driven Desktop-Hintergrund (`g_patcol`/NEWDESK.INF).** Hintergrund-Muster+Farbe sind **keine Konstanten** (User-Korrektur), sondern dynamische Config in `newdesk.inf`. EmuTOS-`g_patcol`-Modell gebaut (`82952f2`, `4f18412`): 3 (Desktop,Fenster)-Paare für 1/2/>2 Planes, Default `#Q 41 40 43 40 43 40` (IP_4PATT + Grün); NewTOS = >2 Planes → `g_patcol[2]`. `load_inf()` parst die `#Q`-Zeile aus `C:\NEWDESK.INF` beim Boot; `paint_desktop_bg` leitet Füllmuster (IP-Pattern-Tabelle aus `vdi_fill.c` DITHER) + VDI-Farbe daraus ab. **Set background** zyklisch + Repaint; **Save desktop** schreibt `g_patcol` als `#Q` (`Fcreate`/`Fwrite`/`Fclose`). **Round-Trip verifiziert**: Set background→rot, Save, im RAM gewischt, aus NEWDESK.INF zurückgeladen→rot. **Offen Gruppe C**: voller Set-background/Desktop-config-Picker-Dialog (Muster+Farbe wählen), Install icon/app/devices, Remove icon, Preferences, Change resolution, Read .INF, `#E`/`#W`-INF-Zeilen. |
 
 ## Notes
 
