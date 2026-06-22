@@ -87,6 +87,14 @@ functions). Texts where read from `desktop.rsc`:
    (`ib_xicon`), `ib_ptext` = the drive's name string, and **the drive
    letter is OR-ed into `ib_char`** (`pic->ib_char |= pa->a_letter`).
 
+   The `ICONBLK` bitmaps live in `desk/icon.rsc` — 14 32×32 1bpp icons
+   (`[0]` hard disk, `[1]` floppy disk, then folder/trash/printer/…), each
+   a `data` + `mask` pair; the drive letter sits at the `(ib_xchar,
+   ib_ychar)` cell. NewTOS extracts the hard-disk and floppy bitmaps into
+   [`kernel/src/desktop_icons.rs`](../../kernel/src/desktop_icons.rs) and
+   blits them (mask = opaque silhouette → body white / data black;
+   transparent elsewhere). **Done in Batch 2b.**
+
 The drives themselves are generated in the built-in INF `#M` loop
 (`deskapp.c:714-728`):
 

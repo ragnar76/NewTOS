@@ -24,8 +24,6 @@ const DISABLED: u16 = 0x0008;
 
 const WHITE: u8 = 0;
 const BLACK: u8 = 1;
-const GRAY_LT: u8 = 8;
-const GRAY_DK: u8 = 9;
 
 const MENU_H: i16 = 19;
 
@@ -559,36 +557,41 @@ fn draw_menu_bar() {
     aes(block.as_ptr() as u64);
 }
 
-/// Draw a drive icon (EmuTOS `IG_HARD` for `hard`, else `IG_FLOPPY`) with
-/// the drive letter on it (`ib_char`) and the "Disk" name below
-/// (`ib_ptext`/STDISK), centred at `(cx, y)`. A faithful ICONBLK from
-/// icon.rsc is Batch 2; this is a recognizable stand-in from the same
-/// elements.
+/// Draw a drive icon using the real EmuTOS ICONBLK bitmap (hard disk for
+/// `hard`, else floppy; from `icon.rsc` via [`crate::desktop_icons`]),
+/// the drive letter OR-ed into the icon (`ib_char` cell), and the "Disk"
+/// name below (`ib_ptext`/STDISK), centred at `(cx, y)`.
 fn draw_drive_icon(backend: &dyn RasterBackend, cx: i16, y: i16, letter: u8, hard: bool, clip: ClipRect) {
-    let (bw, bh) = if hard { (44i16, 26i16) } else { (30i16, 32i16) };
-    let bx = cx - bw / 2;
-    backend.fill_rect(bx, y, bw, bh, GRAY_LT, clip);
-    bevel(backend, bx, y, bw, bh, true, clip);
-    if hard {
-        // Hard disk: a wide enclosure with a recessed bay, slot + LED.
-        backend.fill_rect(bx + 4, y + 4, bw - 8, bh - 9, WHITE, clip);
-        bevel(backend, bx + 4, y + 4, bw - 8, bh - 9, false, clip);
-        backend.fill_rect(bx + 7, y + 8, bw - 22, 2, GRAY_DK, clip); // slot
-        backend.fill_rect(bx + bw - 9, y + 8, 3, 3, BLACK, clip); // LED
-        backend.draw_glyph(bx + 8, y + 6, tos_api::vdi::font::glyph(letter as u16), BLACK, clip);
+    use crate::desktop_icons as ic;
+    let (data, mask, ch) = if hard {
+        (&ic::HARD_DATA, &ic::HARD_MASK, ic::HARD_CHAR)
     } else {
-        // Floppy: a square with the metal shutter at top + a label area.
-        backend.fill_rect(bx + 9, y + 2, 12, 6, GRAY_DK, clip); // shutter
-        backend.fill_rect(bx + 4, y + 12, bw - 8, bh - 16, WHITE, clip); // label
-        bevel(backend, bx + 4, y + 12, bw - 8, bh - 16, false, clip);
-        backend.draw_glyph(bx + (bw - 8) / 2, y + 13, tos_api::vdi::font::glyph(letter as u16), BLACK, clip);
+        (&ic::FLOPPY_DATA, &ic::FLOPPY_MASK, ic::FLOPPY_CHAR)
+    };
+    let ix = cx - 16; // 32-px icon centred on cx
+
+    // Blit the 32×32 1bpp icon: opaque where the mask is set (body white,
+    // data pixels black); transparent elsewhere (the desktop shows through).
+    for r in 0..32i16 {
+        let dw = ((data[r as usize * 2] as u32) << 16) | data[r as usize * 2 + 1] as u32;
+        let mw = ((mask[r as usize * 2] as u32) << 16) | mask[r as usize * 2 + 1] as u32;
+        for c in 0..32i16 {
+            let bit = 1u32 << (31 - c);
+            if mw & bit != 0 {
+                let px = if dw & bit != 0 { BLACK } else { WHITE };
+                backend.fill_rect(ix + c, y + r, 1, 1, px, clip);
+            }
+        }
     }
+
+    // Drive letter in the icon's char cell (EmuTOS `ib_char |= a_letter`).
+    backend.draw_glyph(ix + ch.0, y + ch.1, tos_api::vdi::font::glyph(letter as u16), BLACK, clip);
 
     // Name label ("Disk", EmuTOS STDISK) centred below the icon.
     let label = b"Disk";
     let lx = cx - (label.len() as i16 * 8) / 2;
     for (i, &c) in label.iter().enumerate() {
-        backend.draw_glyph(lx + i as i16 * 8, y + bh + 3, tos_api::vdi::font::glyph(c as u16), BLACK, clip);
+        backend.draw_glyph(lx + i as i16 * 8, y + 34, tos_api::vdi::font::glyph(c as u16), BLACK, clip);
     }
 }
 
@@ -692,15 +695,4 @@ fn draw_dir_listing(_handle: i16, letter: u8, work: (i16, i16, i16, i16)) {
         }
     }
     kprintln!("[desk] opened {}:\\ ({} entries)", letter as char, n);
-}
-
-fn bevel(backend: &dyn RasterBackend, x: i16, y: i16, w: i16, h: i16, raised: bool, clip: ClipRect) {
-    if w < 2 || h < 2 {
-        return;
-    }
-    let (tl, br) = if raised { (WHITE, GRAY_DK) } else { (GRAY_DK, WHITE) };
-    backend.fill_rect(x, y, w, 1, tl, clip);
-    backend.fill_rect(x, y, 1, h, tl, clip);
-    backend.fill_rect(x, y + h - 1, w, 1, br, clip);
-    backend.fill_rect(x + w - 1, y, 1, h, br, clip);
 }

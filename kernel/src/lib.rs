@@ -51,6 +51,7 @@ pub mod selftest_cookie;
 pub mod selftest_objc;
 pub mod aes_demo;
 pub mod desktop;
+pub mod desktop_icons;
 pub mod selftest_ikbd;
 pub mod selftest_vdi;
 pub mod selftest_fbcon;
