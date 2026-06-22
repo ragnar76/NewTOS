@@ -233,6 +233,13 @@ fn mk(ty: u16, fl: u16, spec: u64, x: i16, y: i16, w: i16, h: i16, next: i16, he
     }
 }
 
+/// Verification preview: draw the desktop and open a `C:\` directory
+/// window (the response a double-click on the C drive will trigger).
+pub fn preview_dir() {
+    draw();
+    open_dir_window(b'C');
+}
+
 /// The built menu tree root (for tests / the interactive loop).
 ///
 /// # Safety
@@ -291,6 +298,88 @@ fn draw_drive_icon(backend: &dyn RasterBackend, cx: i16, y: i16, letter: u8, har
     for (i, &c) in label.iter().enumerate() {
         backend.draw_glyph(lx + i as i16 * 8, y + bh + 3, tos_api::vdi::font::glyph(c as u16), BLACK, clip);
     }
+}
+
+/// Window border `kind` bits (aesdefs.h:519).
+const W_KIND: i16 =
+    (0x0001 | 0x0002 | 0x0008 | 0x0010 | 0x0020 | 0x0040 | 0x0080 | 0x0100) as i16;
+// NAME | CLOSER | MOVER | INFO | SIZER | UPARROW | DNARROW | VSLIDE
+
+/// Open a directory window for drive `letter` and draw its file listing —
+/// the desktop's response to opening a drive (EmuTOS `do_diropen`). Returns
+/// the window handle, or 0 on failure.
+fn open_dir_window(letter: u8) -> i16 {
+    let mut control = [0i16; 8];
+    let mut global = [0i16; 32];
+    let mut intin = [0i16; 16];
+    let mut intout = [0i16; 16];
+    let mut addrin = [0i64; 4];
+    let mut addrout = [0i64; 4];
+    let block: [u64; 6] = [
+        control.as_mut_ptr() as u64, global.as_mut_ptr() as u64,
+        intin.as_mut_ptr() as u64, intout.as_mut_ptr() as u64,
+        addrin.as_mut_ptr() as u64, addrout.as_mut_ptr() as u64,
+    ];
+
+    // wind_create(kind, full extent = whole desktop below the menu).
+    control = [0; 8]; control[0] = 100; control[1] = 5;
+    intin[0] = W_KIND; intin[1] = 0; intin[2] = MENU_H; intin[3] = 640; intin[4] = 480 - MENU_H;
+    aes(block.as_ptr() as u64);
+    let handle = intout[0];
+    if handle < 1 {
+        return 0;
+    }
+
+    // wind_set(WF_NAME, "X:\").
+    let mut name = [letter, b':', b'\\', 0, 0, 0, 0, 0];
+    control = [0; 8]; control[0] = 105; control[1] = 2; control[3] = 1;
+    intin[0] = handle; intin[1] = 2; addrin[0] = name.as_mut_ptr() as i64;
+    aes(block.as_ptr() as u64);
+
+    // wind_open(handle, rect) — a window covering the left half.
+    control = [0; 8]; control[0] = 101; control[1] = 5;
+    intin[0] = handle; intin[1] = 40; intin[2] = MENU_H + 24; intin[3] = 360; intin[4] = 300;
+    aes(block.as_ptr() as u64);
+
+    // Draw the directory listing into the work area.
+    draw_dir_listing(handle, letter, &block, &mut control, &mut intin, &mut intout);
+    handle
+}
+
+/// List `X:\*.*` and draw the file names into window `handle`'s work area.
+fn draw_dir_listing(
+    handle: i16, letter: u8, block: &[u64; 6],
+    control: &mut [i16; 8], intin: &mut [i16; 16], intout: &mut [i16; 16],
+) {
+    let Some(backend) = tos_api::host::host().and_then(|h| h.raster()) else {
+        return;
+    };
+    let clip = ClipRect::full(backend.width(), backend.height());
+
+    // wind_get(WF_WXYWH) → the work rectangle.
+    *control = [0; 8]; control[0] = 104; control[1] = 2;
+    intin[0] = handle; intin[1] = 4;
+    aes(block.as_ptr() as u64);
+    let (wx, wy, ww, wh) = (intout[1], intout[2], intout[3], intout[4]);
+    backend.fill_rect(wx, wy, ww, wh, WHITE, clip);
+
+    // list_dir(X:\*.*)
+    let path = [letter, b':', b'\\', b'*', b'.', b'*'];
+    let path_str = core::str::from_utf8(&path).unwrap_or("C:\\*.*");
+    let mut names = [[0u8; 14]; 64];
+    let mut attrs = [0u8; 64];
+    let n = tos_api::bdos::fs::find::list_dir(path_str, &mut names, &mut attrs);
+
+    let rows = (wh / 16).max(1) as usize;
+    for (i, nm) in names.iter().enumerate().take(n.min(rows)) {
+        let end = nm.iter().position(|&b| b == 0).unwrap_or(nm.len());
+        let mut cx = wx + 8;
+        for &c in &nm[..end] {
+            backend.draw_glyph(cx, wy + 4 + i as i16 * 16, tos_api::vdi::font::glyph(c as u16), BLACK, clip);
+            cx += 8;
+        }
+    }
+    kprintln!("[desk] opened {}:\\ ({} entries)", letter as char, n);
 }
 
 fn bevel(backend: &dyn RasterBackend, x: i16, y: i16, w: i16, h: i16, raised: bool, clip: ClipRect) {
