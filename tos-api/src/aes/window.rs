@@ -21,6 +21,7 @@ use super::Aespb;
 use crate::host::host;
 use crate::vdi::backend::{ClipRect, Pel, RasterBackend};
 use core::cell::UnsafeCell;
+use core::sync::atomic::{AtomicUsize, Ordering};
 
 // ── kind (border widget) bits, aesdefs.h:519-531 ──
 const NAME: u16 = 0x0001;
@@ -168,13 +169,43 @@ fn top_window(handle: i16) {
     }
 }
 
+/// Optional desktop-background painter. A GEM application that owns the
+/// desktop (e.g. the NewTOS desktop) registers a pure drawing function
+/// here; the window manager calls it to repaint the background underneath
+/// the windows (the EmuTOS DESKWH/DROOT idea). `0` = none → plain white
+/// erase, which is what the standalone AES demos want.
+///
+/// The painter runs **inside** `redraw_all`, i.e. inside the AES SVC
+/// handler, so it must draw straight through the backend and issue **no
+/// further AES trap** (no re-entrant `svc`).
+static DESK_PAINTER: AtomicUsize = AtomicUsize::new(0);
+
+/// Register the desktop-background painter (see [`DESK_PAINTER`]).
+pub fn set_desktop_painter(f: fn(&dyn RasterBackend)) {
+    DESK_PAINTER.store(f as usize, Ordering::Release);
+}
+
+/// Paint the desktop background: the registered painter if any, else a
+/// plain white erase of the whole screen.
+fn paint_background(backend: &dyn RasterBackend) {
+    let p = DESK_PAINTER.load(Ordering::Acquire);
+    if p != 0 {
+        // SAFETY: only ever set via `set_desktop_painter` from a
+        // `fn(&dyn RasterBackend)`; the value is that same pointer.
+        let f: fn(&dyn RasterBackend) = unsafe { core::mem::transmute(p) };
+        f(backend);
+    } else {
+        let clip = ClipRect::full(backend.width(), backend.height());
+        backend.fill_rect(0, 0, backend.width() as i16, backend.height() as i16, WHITE, clip);
+    }
+}
+
 /// Repaint the desktop and every open window back-to-front (painter's
 /// algorithm — front windows overwrite the ones they cover). The simple
 /// stand-in for per-window rectangle-list clipping when redrawing frames;
 /// the rectangle list (`WF_FIRSTXYWH`) still drives what the *app* redraws.
 fn redraw_all(backend: &dyn RasterBackend) {
-    let clip = ClipRect::full(backend.width(), backend.height());
-    backend.fill_rect(0, 0, backend.width() as i16, backend.height() as i16, WHITE, clip);
+    paint_background(backend);
     // Selection sort by ascending z, drawing each open window once.
     let mut drawn = [false; MAX_WINDOWS];
     loop {

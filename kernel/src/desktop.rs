@@ -47,23 +47,38 @@ pub fn draw() {
     let Some(backend) = tos_api::host::host().and_then(|h| h.raster()) else {
         return;
     };
+
+    // The desktop background (pattern + drive icons) is painted by a hook
+    // the window manager calls on every redraw_all, so it persists under
+    // windows instead of being whited out (Bug 1). Register it, then paint
+    // the first frame + the menu bar.
+    tos_api::aes::window::set_desktop_painter(paint_desktop_bg);
+    paint_desktop_bg(backend);
+    draw_menu_bar();
+
+    let bits = tos_api::bios::drive::drvbits();
+    kprintln!("[desk] desktop drawn ({} drives)", bits.count_ones());
+}
+
+/// Paint the desktop background — the pattern fill below the menu bar plus
+/// the drive icons — straight through the backend. **No AES trap**: the
+/// window manager calls this from inside `redraw_all` (the AES SVC
+/// handler), so it must not re-enter the AES. The menu bar (y < MENU_H) is
+/// deliberately left untouched: windows never cover it, so it survives.
+fn paint_desktop_bg(backend: &dyn RasterBackend) {
     let sw = backend.width() as i16;
     let sh = backend.height() as i16;
     let clip = ClipRect::full(backend.width(), backend.height());
 
-    // 1. Desktop background: a light dither below the menu bar (stand-in
-    //    for EmuTOS' g_patcol desktop pattern+colour; the exact VDI fill
-    //    pattern for ob_spec 0x43 lands with the DROOT G_IBOX in Batch 2).
+    // Background: a light dither (stand-in for EmuTOS' g_patcol desktop
+    // pattern+colour; the exact VDI fill for ob_spec 0x43 lands with the
+    // DROOT G_IBOX later).
     let pat: [u16; 4] = [0x8888, 0x0000, 0x2222, 0x0000];
     let bg = PatternFill { fg: BLACK, bg: WHITE, pattern: &pat, opaque: true };
     backend.fill_pattern(0, MENU_H, sw, sh - MENU_H, bg, clip);
 
-    // 2. Menu bar.
-    draw_menu_bar();
-
-    // 3. A drive icon per present drive, laid out in a grid from the
-    //    TOP-LEFT (EmuTOS app_blddesk / the #M loop: drive_x = idx % xcnt,
-    //    drive_y = idx / xcnt). C and up are hard disks.
+    // A drive icon per present drive, in a grid from the TOP-LEFT (EmuTOS
+    // app_blddesk / #M loop: drive_x = idx % xcnt, drive_y = idx / xcnt).
     let bits = tos_api::bios::drive::drvbits();
     let icw = 80i16;
     let ich = 64i16;
@@ -78,8 +93,6 @@ pub fn draw() {
             idx += 1;
         }
     }
-
-    kprintln!("[desk] desktop drawn ({} drives)", bits.count_ones());
 }
 
 // The desktop menu (EmuTOS desktop.rsc ADMENU). NUL-terminated; a string
