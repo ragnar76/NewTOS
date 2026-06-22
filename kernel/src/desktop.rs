@@ -365,7 +365,45 @@ pub fn preview_click() {
     tos_api::vdi::feed_relative(0, 0, 0x00, backend);
     let (mx, my) = tos_api::vdi::mouse_position();
     tos_api::vdi::feed_relative(cx - mx, cy - my, 0x01, backend);
+    click_once();
+    tos_api::vdi::feed_relative(0, 0, 0x00, backend);
+}
 
+/// Verification of the *real IKBD input path*: position the cursor and
+/// press the left button purely by feeding raw Atari IKBD relative-mouse
+/// packets to `crate::ikbd::feed` (exactly what UART2 delivers on
+/// hardware), then run one `evnt_multi` + dispatch. Proves the full chain
+/// IKBD bytes → decoder → VDI cursor → desktop event loop end-to-end,
+/// without a live mouse.
+pub fn preview_ikbd_click() {
+    draw();
+    // Relative-mouse packets: header 0xF8 (no buttons) / 0xFA (left down),
+    // then signed dx, dy. The first packet centres the cursor (init), then
+    // three moves walk it onto the C: icon (~60, 60), then a button packet.
+    let packets: [[u8; 3]; 5] = [
+        [0xF8, 0, 0],
+        [0xF8, (-100i8) as u8, (-90i8) as u8],
+        [0xF8, (-100i8) as u8, (-90i8) as u8],
+        [0xF8, (-60i8) as u8, 0],
+        [0xFA, 0, 0], // left button down, no move
+    ];
+    for pkt in packets {
+        for b in pkt {
+            crate::ikbd::feed(b);
+        }
+    }
+    kprintln!("[desk] IKBD cursor at {:?} buttons={}",
+        tos_api::vdi::mouse_position(), tos_api::vdi::mouse_buttons());
+    click_once();
+    for b in [0xF8u8, 0, 0] {
+        crate::ikbd::feed(b); // button up
+    }
+}
+
+/// One `evnt_multi(BUTTON|MESAG)` + dispatch of a desktop-surface click,
+/// without the `wait_release` debounce (which would block with no live
+/// input source). Shared by the verification previews.
+fn click_once() {
     let mut msg = [0i16; 8];
     let mut a = Aes::new();
     a.addrin[0] = msg.as_mut_ptr() as i64;
@@ -379,7 +417,6 @@ pub fn preview_click() {
             open_cascaded(letter);
         }
     }
-    tos_api::vdi::feed_relative(0, 0, 0x00, backend);
 }
 
 /// Dispatch an `MN_SELECTED` item by its menu text. Returns `true` on the
