@@ -451,6 +451,13 @@ pub fn preview_sort(mode: u8) {
     open_dir_window(b'C', (40, MENU_H + 24, 420, 340));
 }
 
+/// Verification of the "Show as icons" view: open a C: window in icon mode.
+pub fn preview_icons() {
+    draw();
+    VIEW_MODE.store(1, core::sync::atomic::Ordering::Release);
+    open_dir_window(b'C', (40, MENU_H + 24, 460, 360));
+}
+
 /// Verification of the File-menu window actions: open three cascaded
 /// windows, then "Cycle windows" to bring the bottom one to the top.
 pub fn preview_windows(cycle: bool) {
@@ -485,6 +492,10 @@ fn handle_menu_select(item: i16) -> bool {
         close_top_window();
     } else if item_has(item, b"Cycle windows") {
         cycle_windows();
+    } else if item_has(item, b"Show as icons") {
+        set_view(1);
+    } else if item_has(item, b"Show as text") {
+        set_view(0);
     } else if item_has(item, b"Sort by name") {
         set_sort(0);
     } else if item_has(item, b"Sort by type") {
@@ -911,8 +922,17 @@ fn draw_u32_right(backend: &dyn RasterBackend, right_x: i16, y: i16, mut v: u32,
     }
 }
 
-/// List `X:\*.*`, sort it, and draw the entries (name + size / `<DIR>`)
-/// into the window's `work` rect.
+/// Directory view mode (View menu): 0 = text rows, 1 = icon grid.
+static VIEW_MODE: core::sync::atomic::AtomicU8 = core::sync::atomic::AtomicU8::new(0);
+
+/// Set the view mode (View menu) and repaint every open directory window.
+fn set_view(mode: u8) {
+    VIEW_MODE.store(mode, core::sync::atomic::Ordering::Release);
+    redraw_all_windows();
+}
+
+/// List `X:\*.*`, sort it, and draw it into the window's `work` rect as
+/// either a text listing or an icon grid per [`VIEW_MODE`].
 fn draw_dir_listing(_handle: i16, letter: u8, work: (i16, i16, i16, i16)) {
     let Some(backend) = tos_api::host::host().and_then(|h| h.raster()) else {
         return;
@@ -927,8 +947,23 @@ fn draw_dir_listing(_handle: i16, letter: u8, work: (i16, i16, i16, i16)) {
     let n = tos_api::bdos::fs::find::list_dir_ex(path_str, &mut ents);
     sort_entries(&mut ents[..n]);
 
+    if VIEW_MODE.load(core::sync::atomic::Ordering::Acquire) == 1 {
+        draw_dir_icons(backend, work, &ents[..n], clip);
+    } else {
+        draw_dir_text(backend, work, &ents[..n], clip);
+    }
+    kprintln!("[desk] opened {}:\\ ({} entries)", letter as char, n);
+}
+
+/// Text view: one row per entry — name on the left, size (or `<DIR>`)
+/// right-aligned.
+fn draw_dir_text(
+    backend: &dyn RasterBackend, work: (i16, i16, i16, i16),
+    ents: &[tos_api::bdos::fs::find::DirInfo], clip: ClipRect,
+) {
+    let (wx, wy, ww, wh) = work;
     let rows = (wh / 16).max(1) as usize;
-    for (i, e) in ents[..n.min(rows)].iter().enumerate() {
+    for (i, e) in ents.iter().take(rows).enumerate() {
         let ny = wy + 4 + i as i16 * 16;
         let end = e.name.iter().position(|&b| b == 0).unwrap_or(14);
         let mut cx = wx + 8;
@@ -936,7 +971,6 @@ fn draw_dir_listing(_handle: i16, letter: u8, work: (i16, i16, i16, i16)) {
             backend.draw_glyph(cx, ny, tos_api::vdi::font::glyph(c as u16), BLACK, clip);
             cx += 8;
         }
-        // Size column (right-aligned) — "<DIR>" for sub-directories.
         if e.attrib & FA_SUBDIR != 0 {
             let mut x = wx + ww - 8 - 5 * 8;
             for &c in b"<DIR>" {
@@ -947,5 +981,40 @@ fn draw_dir_listing(_handle: i16, letter: u8, work: (i16, i16, i16, i16)) {
             draw_u32_right(backend, wx + ww - 8, ny, e.size, clip);
         }
     }
-    kprintln!("[desk] opened {}:\\ ({} entries)", letter as char, n);
+}
+
+/// Icon view: a grid of folder / document icons with the name underneath
+/// (EmuTOS "Show as icons"). Folders use the folder ICONBLK, files the
+/// generic-document one.
+fn draw_dir_icons(
+    backend: &dyn RasterBackend, work: (i16, i16, i16, i16),
+    ents: &[tos_api::bdos::fs::find::DirInfo], clip: ClipRect,
+) {
+    use crate::desktop_icons as ic;
+    let (wx, wy, ww, wh) = work;
+    let cw = 76i16;
+    let ch = 52i16;
+    let cols = (ww / cw).max(1);
+    for (i, e) in ents.iter().enumerate() {
+        let col = i as i16 % cols;
+        let row = i as i16 / cols;
+        let cx = wx + col * cw + cw / 2;
+        let cy = wy + 6 + row * ch;
+        if cy + ch > wy + wh {
+            break;
+        }
+        let (data, mask) = if e.attrib & FA_SUBDIR != 0 {
+            (&ic::FOLDER_DATA, &ic::FOLDER_MASK)
+        } else {
+            (&ic::DOC_DATA, &ic::DOC_MASK)
+        };
+        blit_icon(backend, cx - 16, cy, data, mask, clip);
+        // Centred name below, truncated to the cell width.
+        let end = e.name.iter().position(|&b| b == 0).unwrap_or(14);
+        let shown = end.min(9);
+        let lx = cx - (shown as i16 * 8) / 2;
+        for (j, &c) in e.name[..shown].iter().enumerate() {
+            backend.draw_glyph(lx + j as i16 * 8, cy + 34, tos_api::vdi::font::glyph(c as u16), BLACK, clip);
+        }
+    }
 }
