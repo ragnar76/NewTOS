@@ -40,6 +40,22 @@ fn aes(aespb: u64) {
     }
 }
 
+/// Issue a GEMDOS trap (`svc #1`): function id in `x8`, first arg in `x0`,
+/// result in `x0`. Used for the desktop's file operations (Dcreate, …).
+fn gemdos1(func: u64, a0: u64) -> i64 {
+    let r: i64;
+    // SAFETY: GEMDOS trap; `func`/`a0` are a valid function id + argument.
+    unsafe {
+        core::arch::asm!(
+            "svc #1",
+            in("x8") func,
+            inout("x0") a0 => r,
+            options(nostack),
+        );
+    }
+    r
+}
+
 // evnt_multi event classes and AES message ids (stable GEM protocol).
 const MU_KEYBD: u16 = 0x0001;
 const MU_BUTTON: u16 = 0x0002;
@@ -466,6 +482,14 @@ pub fn preview_fit() {
     size_to_fit();
 }
 
+/// Verification of "New folder": open a C: window, create a folder, and
+/// repaint so the new NEWFLDR entry shows in the listing.
+pub fn preview_newfolder() {
+    draw();
+    open_dir_window(b'C', (40, MENU_H + 24, 420, 340));
+    new_folder();
+}
+
 /// Verification of the File-menu window actions: open three cascaded
 /// windows, then "Cycle windows" to bring the bottom one to the top.
 pub fn preview_windows(cycle: bool) {
@@ -500,6 +524,8 @@ fn handle_menu_select(item: i16) -> bool {
         close_top_window();
     } else if item_has(item, b"Cycle windows") {
         cycle_windows();
+    } else if item_has(item, b"New folder") {
+        new_folder();
     } else if item_has(item, b"Show as icons") {
         set_view(1);
     } else if item_has(item, b"Show as text") {
@@ -661,6 +687,33 @@ fn close_top_window() {
     if nh >= 1 {
         wind_top(nh);
     }
+}
+
+/// File → "New folder": create `NEWFLDR[n]` in the top window's drive root
+/// via `Dcreate` (GEMDOS 0x39), then repaint the window. (A name-entry
+/// dialog is a refinement; this picks the first free default name.)
+fn new_folder() {
+    let h = DESK_TOP.load(core::sync::atomic::Ordering::Acquire);
+    let letter = match win_slot(h) {
+        Some(s) if s.drive != 0 => s.drive,
+        _ => return,
+    };
+    for n in 0..10u8 {
+        // "X:\NEWFLDR" + optional digit + NUL.
+        let mut path = [letter, b':', b'\\', b'N', b'E', b'W', b'F', b'L', b'D', b'R', 0, 0, 0];
+        let mut len = 10usize;
+        if n > 0 {
+            path[len] = b'0' + n;
+            len += 1;
+        }
+        path[len] = 0;
+        if gemdos1(0x39, path.as_ptr() as u64) == 0 {
+            kprintln!("[desk] New folder: created {}:\\NEWFLDR", letter as char);
+            redraw_win(h);
+            return;
+        }
+    }
+    kprintln!("[desk] New folder: failed (no free name / not writable)");
 }
 
 /// View → "Size to fit": resize the top window so its work area just fits
