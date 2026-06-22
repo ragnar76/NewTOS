@@ -33,7 +33,154 @@ const FL3DBAK: u16 = 0x0400;
 
 const WHITE: u8 = 0;
 const BLACK: u8 = 1;
-const GREEN: u8 = 3; // VDI colour 3 — the classic GEM desktop green
+
+// ── Desktop configuration (g_patcol / newdesk.inf) ──────────────────────
+//
+// The desktop/window background is **not** hardcoded: each is a
+// pattern+colour byte (`pattern << 4 | VDI colour`) the user sets via
+// Desktop Configuration / Set Background and which persists in
+// NEWDESK.INF's `#Q` line. EmuTOS keeps three pairs (desktop, window) for
+// 1 / 2 / >2 planes (deskapp.c:824-829); NewTOS is a >2-plane display, so
+// it uses `g_patcol[2]`. Defaults: `#Q 41 40 43 40 43 40` (IP_4PATT + green
+// desktop, IP_4PATT + white window).
+
+/// AES "inside patterns" IP_HOLLOW(0)..IP_SOLID(7) as 4-word dithers
+/// (EmuTOS `vdi/vdi_fill.c` DITHER intensities; IP_4PATT = 50 %).
+const IP_PATTERNS: [[u16; 4]; 8] = [
+    [0x0000, 0x0000, 0x0000, 0x0000], // 0 IP_HOLLOW
+    [0x0000, 0x4444, 0x0000, 0x1111], // 1 IP_1PATT
+    [0x0000, 0x5555, 0x0000, 0x5555], // 2 IP_2PATT
+    [0x8888, 0x5555, 0x2222, 0x5555], // 3 IP_3PATT
+    [0xAAAA, 0x5555, 0xAAAA, 0x5555], // 4 IP_4PATT (50 %)
+    [0xAAAA, 0xDDDD, 0xAAAA, 0x7777], // 5 IP_5PATT
+    [0xEEEE, 0xFFFF, 0xBBBB, 0xFFFF], // 6 IP_6PATT
+    [0xFFFF, 0xFFFF, 0xFFFF, 0xFFFF], // 7 IP_SOLID
+];
+
+/// `g_patcol` as 6 bytes: `[desk0, win0, desk1, win1, desk2, win2]`,
+/// pattern+colour each. Defaults are the EmuTOS `#Q` defaults; NEWDESK.INF
+/// overrides them. NewTOS uses indices 4/5 (the >2-plane pair).
+static G_PATCOL: [core::sync::atomic::AtomicU8; 6] = [
+    core::sync::atomic::AtomicU8::new(0x41), core::sync::atomic::AtomicU8::new(0x40),
+    core::sync::atomic::AtomicU8::new(0x43), core::sync::atomic::AtomicU8::new(0x40),
+    core::sync::atomic::AtomicU8::new(0x43), core::sync::atomic::AtomicU8::new(0x40),
+];
+
+/// The current desktop pattern+colour byte (`g_patcol[2].desktop`).
+fn patcol_desktop() -> u8 {
+    G_PATCOL[4].load(core::sync::atomic::Ordering::Acquire)
+}
+
+/// Hex digit for a 0..15 nibble.
+fn hex_digit(n: u8) -> u8 {
+    if n < 10 {
+        b'0' + n
+    } else {
+        b'A' + (n - 10)
+    }
+}
+
+/// Options → "Save desktop": write the current `g_patcol` to `C:\NEWDESK.INF`
+/// as a `#Q` line (EmuTOS `save_desktop`, reduced to the pattern/colour).
+fn save_inf() {
+    let mut buf = [0u8; 64];
+    let mut k = 0;
+    for &b in b"#Q " {
+        buf[k] = b;
+        k += 1;
+    }
+    for i in 0..6 {
+        let v = G_PATCOL[i].load(core::sync::atomic::Ordering::Acquire);
+        buf[k] = hex_digit(v >> 4);
+        buf[k + 1] = hex_digit(v & 0x0F);
+        buf[k + 2] = b' ';
+        k += 3;
+    }
+    buf[k - 1] = b'\r';
+    buf[k] = b'\n';
+    k += 1;
+
+    let path = b"C:\\NEWDESK.INF\0";
+    let h = gemdos3(0x3C, path.as_ptr() as u64, 0, 0); // Fcreate(path, attr=0)
+    if h < 0 {
+        kprintln!("[desk] Save desktop: Fcreate failed ({})", h);
+        return;
+    }
+    let handle = h as u64;
+    gemdos3(0x40, handle, k as u64, buf.as_ptr() as u64); // Fwrite
+    gemdos1(0x3E, handle); // Fclose
+    kprintln!("[desk] Save desktop: wrote NEWDESK.INF (#Q)");
+}
+
+/// Options → "Set background": cycle the desktop colour (a minimal picker;
+/// EmuTOS opens a pattern/colour dialog) and repaint. Persists on "Save
+/// desktop".
+fn set_background() {
+    // VDI colours to cycle through (green, blue, red, cyan, grey, black).
+    const CYCLE: [u8; 6] = [3, 4, 2, 5, 8, 1];
+    let cur = patcol_desktop();
+    let col = cur & 0x0F;
+    let next = CYCLE.iter().position(|&c| c == col).map_or(0, |i| (i + 1) % CYCLE.len());
+    let newd = (cur & 0xF0) | CYCLE[next];
+    G_PATCOL[4].store(newd, core::sync::atomic::Ordering::Release);
+    if let Some(b) = tos_api::host::host().and_then(|h| h.raster()) {
+        paint_desktop_bg(b);
+        draw_menu_bar();
+    }
+    kprintln!("[desk] Set background: desktop = {:#04x}", newd);
+}
+
+/// Hex digit value, or `None`.
+fn hex_val(c: u8) -> Option<u8> {
+    match c {
+        b'0'..=b'9' => Some(c - b'0'),
+        b'A'..=b'F' => Some(c - b'A' + 10),
+        b'a'..=b'f' => Some(c - b'a' + 10),
+        _ => None,
+    }
+}
+
+/// Load the desktop config from `C:\NEWDESK.INF` — parse the `#Q` line (six
+/// hex pattern+colour bytes) into [`G_PATCOL`]. Absent file / line → keep
+/// the built-in defaults.
+fn load_inf() {
+    let mut buf = [0u8; 4096];
+    let Some(n) = tos_api::bdos::fs::read_file("C:\\NEWDESK.INF", &mut buf) else {
+        return;
+    };
+    let data = &buf[..n];
+    // Find "#Q" at a line start.
+    let mut i = 0;
+    while i + 2 < data.len() {
+        let at_line = i == 0 || data[i - 1] == b'\n' || data[i - 1] == b'\r';
+        if at_line && data[i] == b'#' && data[i + 1] == b'Q' {
+            let mut p = i + 2;
+            let mut vals = [0u8; 6];
+            let mut vi = 0;
+            while vi < 6 && p + 1 < data.len() {
+                while p < data.len() && data[p] == b' ' {
+                    p += 1;
+                }
+                match (hex_val(data[p]), hex_val(data[p + 1])) {
+                    (Some(h), Some(l)) => {
+                        vals[vi] = (h << 4) | l;
+                        vi += 1;
+                        p += 2;
+                    }
+                    _ => break,
+                }
+            }
+            if vi == 6 {
+                for (k, v) in vals.iter().enumerate() {
+                    G_PATCOL[k].store(*v, core::sync::atomic::Ordering::Release);
+                }
+                kprintln!("[desk] NEWDESK.INF #Q loaded (desktop={:#04x})", vals[4]);
+            }
+            return;
+        }
+        i += 1;
+    }
+}
 
 const MENU_H: i16 = 19;
 
@@ -134,6 +281,10 @@ pub fn draw() {
         return;
     };
 
+    // Load the desktop configuration (g_patcol pattern/colour) from
+    // NEWDESK.INF before the first paint, so the background reflects it.
+    load_inf();
+
     // The desktop background (pattern + drive icons) is painted by a hook
     // the window manager calls on every redraw_all, so it persists under
     // windows instead of being whited out (Bug 1). Register it, then paint
@@ -156,12 +307,13 @@ fn paint_desktop_bg(backend: &dyn RasterBackend) {
     let sh = backend.height() as i16;
     let clip = ClipRect::full(backend.width(), backend.height());
 
-    // Background: the EmuTOS colour-desktop pattern — g_patcol default
-    // 0x43 = fill pattern 4, VDI colour 3 (green). A green dither on white
-    // gives the classic textured green Atari desktop (the menu bar, windows
-    // and icons stay monochrome / 3D-grey, as on real GEM).
-    let pat: [u16; 4] = [0x8888, 0x2222, 0x8888, 0x2222];
-    let bg = PatternFill { fg: GREEN, bg: WHITE, pattern: &pat, opaque: true };
+    // Background: the configured g_patcol desktop pattern+colour (default
+    // 0x43 = IP_4PATT + green; overridable via NEWDESK.INF / Set Background).
+    // The menu bar, windows, icons and 3D gadgets stay monochrome / grey,
+    // as on real GEM — the colour lives in the background.
+    let d = patcol_desktop();
+    let pat = IP_PATTERNS[(d >> 4) as usize & 7];
+    let bg = PatternFill { fg: d & 0x0F, bg: WHITE, pattern: &pat, opaque: true };
     backend.fill_pattern(0, MENU_H, sw, sh - MENU_H, bg, clip);
 
     use crate::desktop_icons as ic;
@@ -549,6 +701,20 @@ pub fn preview_confirm() {
     }
 }
 
+/// Verification of the g_patcol / NEWDESK.INF round-trip: change the
+/// desktop colour, Save desktop (writes #Q), reset in memory, then reload
+/// from the file — the desktop ends in the *saved* colour, proving the
+/// config is data-driven and persisted, not hardcoded.
+pub fn preview_cfg() {
+    draw();
+    set_background(); // green -> blue
+    set_background(); // blue -> red
+    save_inf(); // write NEWDESK.INF with the current #Q (desktop = red)
+    G_PATCOL[4].store(0x43, core::sync::atomic::Ordering::Release); // wipe to green
+    load_inf(); // read it back -> red again
+    draw();
+}
+
 /// Verification of the Info/Rename dialog: select an entry and open the
 /// rename dialog (pre-filled with its name; blocks for the screendump).
 pub fn preview_rename() {
@@ -657,6 +823,10 @@ fn handle_menu_select(item: i16) -> bool {
         set_sort(4);
     } else if item_has(item, b"Size to fit") {
         size_to_fit();
+    } else if item_has(item, b"Set background") {
+        set_background();
+    } else if item_has(item, b"Save desktop") {
+        save_inf();
     } else {
         // Remaining items are logged until their handlers land.
         kprintln!("[desk] menu item {} selected", item);
