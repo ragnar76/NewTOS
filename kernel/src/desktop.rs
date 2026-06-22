@@ -458,6 +458,14 @@ pub fn preview_icons() {
     open_dir_window(b'C', (40, MENU_H + 24, 460, 360));
 }
 
+/// Verification of "Size to fit": open a deliberately short window, then
+/// grow it to fit the listing.
+pub fn preview_fit() {
+    draw();
+    open_dir_window(b'C', (40, MENU_H + 24, 300, 120));
+    size_to_fit();
+}
+
 /// Verification of the File-menu window actions: open three cascaded
 /// windows, then "Cycle windows" to bring the bottom one to the top.
 pub fn preview_windows(cycle: bool) {
@@ -506,6 +514,8 @@ fn handle_menu_select(item: i16) -> bool {
         set_sort(3);
     } else if item_has(item, b"No sort") {
         set_sort(4);
+    } else if item_has(item, b"Size to fit") {
+        size_to_fit();
     } else {
         // Remaining items are logged until their handlers land.
         kprintln!("[desk] menu item {} selected", item);
@@ -651,6 +661,29 @@ fn close_top_window() {
     if nh >= 1 {
         wind_top(nh);
     }
+}
+
+/// View → "Size to fit": resize the top window so its work area just fits
+/// the directory listing, capped at the desktop bottom (EmuTOS `do_viewmenu`
+/// FITITEM, simplified to a vertical fit).
+fn size_to_fit() {
+    let h = DESK_TOP.load(core::sync::atomic::Ordering::Acquire);
+    if h < 1 {
+        return;
+    }
+    let (letter, (x, y, w, _)) = match win_slot(h) {
+        Some(s) if s.drive != 0 => (s.drive, s.rect),
+        _ => return,
+    };
+    // Count entries to size the work area.
+    let path = [letter, b':', b'\\', b'*', b'.', b'*'];
+    let path_str = core::str::from_utf8(&path).unwrap_or("C:\\*.*");
+    let mut ents = [tos_api::bdos::fs::find::DirInfo::default(); 64];
+    let n = tos_api::bdos::fs::find::list_dir_ex(path_str, &mut ents) as i16;
+    // Work height ≈ n rows × 16 + pad; add the frame overhead (title/info +
+    // scrollbar ≈ 56) and cap to the desktop bottom.
+    let new_h = (n * 16 + 12 + 56).clamp(120, 480 - y);
+    move_win(h, (x, y, w, new_h));
 }
 
 /// File → "Cycle windows": bring the next open window to the top (EmuTOS
