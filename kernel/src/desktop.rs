@@ -233,8 +233,6 @@ const MENUS: [(&[u8], &[&[u8]]); 4] = [
             b" Set preferences...      \0", b" Desktop configuration...\0",
             b" Change resolution...    \0", b"-------------------------\0",
             b" Read .INF file...       \0", b" Save desktop...         \0",
-            b"-------------------------\0", b" Blitter                 \0",
-            b" Cache                   \0",
         ],
     ),
 ];

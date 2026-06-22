@@ -66,8 +66,16 @@ functions). Texts where read from `desktop.rsc`:
   `FITITEM`.
 - **Options**: `IICNITEM`/`IAPPITEM`/`IDSKITEM` (Install …),
   `RICNITEM` (Remove desktop icon), `PREFITEM` (Preferences),
-  `CONFITEM` (Desktop configuration), `RESITEM` (resolution),
-  `READITEM`, `SAVEITEM` (Save desktop), `BLITITEM`, `CACHITEM`.
+  `CONFITEM` (Desktop configuration, `#if CONF_WITH_DESKTOP_CONFIG` — kept),
+  `RESITEM` (resolution), `READITEM`, `SAVEITEM` (Save desktop),
+  `BLITITEM`/`CACHITEM`. `BACKGRND` (Set background) is
+  `#if CONF_WITH_BACKGROUNDS` — kept.
+  - **`BLITITEM` (Blitter) and `CACHITEM` (Cache) are excluded:** gated by
+    `#if CONF_WITH_BLITTER` / `#if CONF_WITH_CACHE_CONTROL` — Atari STE/TT/
+    Falcon blitter-chip and 68030+ CPU-cache control, hardware with no
+    AArch64 equivalent in NewTOS. (Project-config decision, like
+    `CONF_WITH_TT_SHIFTER`; the software features Set background / Desktop
+    configuration are kept.)
 
 `men_update` (`deskmain.c:464`) enables/disables items per context
 (`menu_ienable`); e.g. `QUITITEM` is gated on `can_shutdown()` (`:582`).
