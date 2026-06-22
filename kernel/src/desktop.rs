@@ -10,17 +10,26 @@
 
 use core::cell::UnsafeCell;
 
-use tos_api::aes::object::Object;
+use tos_api::aes::object::{Object, TedInfo};
 use tos_api::vdi::backend::{ClipRect, PatternFill, RasterBackend};
 
 use crate::kprintln;
 
 const G_IBOX: u16 = 25;
 const G_BOX: u16 = 20;
+const G_BOXTEXT: u16 = 22;
+const G_BUTTON: u16 = 26;
 const G_STRING: u16 = 28;
 const G_TITLE: u16 = 32;
+// ob_flags.
+const SELECTABLE: u16 = 0x0001;
+const DEFAULT: u16 = 0x0002;
+const EXIT: u16 = 0x0004;
+const EDITABLE: u16 = 0x0008;
 const LASTOB: u16 = 0x0020;
 const DISABLED: u16 = 0x0008;
+const FL3DACT: u16 = 0x0600;
+const FL3DBAK: u16 = 0x0400;
 
 const WHITE: u8 = 0;
 const BLACK: u8 = 1;
@@ -50,6 +59,24 @@ fn gemdos1(func: u64, a0: u64) -> i64 {
             "svc #1",
             in("x8") func,
             inout("x0") a0 => r,
+            options(nostack),
+        );
+    }
+    r
+}
+
+/// Issue a 3-argument GEMDOS trap (`svc #1`): function id in `x8`, args in
+/// `x0`/`x1`/`x2`, result in `x0`. Used for Frename.
+fn gemdos3(func: u64, a0: u64, a1: u64, a2: u64) -> i64 {
+    let r: i64;
+    // SAFETY: GEMDOS trap; valid function id + argument registers.
+    unsafe {
+        core::arch::asm!(
+            "svc #1",
+            in("x8") func,
+            inout("x0") a0 => r,
+            in("x1") a1,
+            in("x2") a2,
             options(nostack),
         );
     }
@@ -522,6 +549,26 @@ pub fn preview_confirm() {
     }
 }
 
+/// Verification of the Info/Rename dialog: select an entry and open the
+/// rename dialog (pre-filled with its name; blocks for the screendump).
+pub fn preview_rename() {
+    draw();
+    let h = open_dir_window(b'C', (40, MENU_H + 24, 420, 340));
+    SEL_WIN.store(h, core::sync::atomic::Ordering::Release);
+    SEL_IDX.store(4, core::sync::atomic::Ordering::Release);
+    redraw_win(h);
+    info_rename();
+}
+
+/// Verification of the rename itself (bypassing the dialog): rename
+/// FILE15.TXT → RENAMED.TXT and repaint.
+pub fn preview_dorename() {
+    draw();
+    let h = open_dir_window(b'C', (40, MENU_H + 24, 420, 340));
+    do_rename(b'C', b"FILE15.TXT", b"RENAMED.TXT");
+    redraw_win(h);
+}
+
 /// Verification of the Trash hit-test: move the cursor onto the Trash icon
 /// and onto a blank spot, logging `trash_at` for each.
 pub fn preview_trash() {
@@ -592,6 +639,8 @@ fn handle_menu_select(item: i16) -> bool {
         new_folder();
     } else if item_has(item, b"Delete") {
         delete_selected();
+    } else if item_has(item, b"Info/Rename") {
+        info_rename();
     } else if item_has(item, b"Show as icons") {
         set_view(1);
     } else if item_has(item, b"Show as text") {
@@ -856,6 +905,81 @@ fn confirm_delete(name: &[u8; 14]) -> bool {
 fn delete_selected() {
     if let Some((h, letter, name, is_dir)) = resolve_selection() {
         if confirm_delete(&name) && do_delete(letter, &name, is_dir) {
+            SEL_WIN.store(0, core::sync::atomic::Ordering::Release);
+            redraw_win(h);
+        }
+    }
+}
+
+/// Build `X:\NAME\0` into `buf`; returns the length before the NUL.
+fn drive_path(buf: &mut [u8; 20], letter: u8, name: &[u8]) -> usize {
+    buf[0] = letter;
+    buf[1] = b':';
+    buf[2] = b'\\';
+    let end = name.iter().position(|&b| b == 0).unwrap_or(name.len());
+    buf[3..3 + end].copy_from_slice(&name[..end]);
+    buf[3 + end] = 0;
+    3 + end
+}
+
+/// Rename `X:\old` → `X:\new` via `Frename` (0x56). Returns true on success.
+fn do_rename(letter: u8, old: &[u8], new: &[u8]) -> bool {
+    let mut op = [0u8; 20];
+    let mut np = [0u8; 20];
+    drive_path(&mut op, letter, old);
+    drive_path(&mut np, letter, new);
+    let r = gemdos3(0x56, 0, op.as_ptr() as u64, np.as_ptr() as u64);
+    if r == 0 {
+        kprintln!("[desk] renamed {}:\\ entry", letter as char);
+        true
+    } else {
+        kprintln!("[desk] rename failed ({})", r);
+        false
+    }
+}
+
+/// File → "Info/Rename": show a dialog with the selected file's name in an
+/// editable field; OK renames it via `Frename` (EmuTOS `do_filemenu`
+/// SHOWITEM, reduced to the rename function).
+fn info_rename() {
+    let (h, letter, name, _is_dir) = match resolve_selection() {
+        Some(x) => x,
+        None => return,
+    };
+    let nend = name.iter().position(|&b| b == 0).unwrap_or(14);
+    let mut textbuf = [0u8; 16];
+    textbuf[..nend].copy_from_slice(&name[..nend]);
+
+    static LABEL: &[u8] = b"Rename file to:\0";
+    static OK: &[u8] = b" OK \0";
+    static CANCEL: &[u8] = b" Cancel \0";
+    static EMPTY: &[u8] = b"\0";
+    let ted = TedInfo {
+        te_ptext: textbuf.as_mut_ptr() as u64, te_ptmplt: EMPTY.as_ptr() as u64,
+        te_pvalid: EMPTY.as_ptr() as u64, te_font: 3, te_junk1: 0, te_just: 0,
+        te_color: 1 << 8, te_junk2: 0, te_thickness: 1, te_txtlen: 13, te_tmplen: 0,
+    };
+    let tree = [
+        mk(G_BOX, FL3DBAK, 1 << 16, 180, 150, 290, 150, -1, 1, 4),
+        mk(G_STRING, 0, LABEL.as_ptr() as u64, 24, 18, 240, 16, 2, -1, -1),
+        mk(G_BOXTEXT, EDITABLE | FL3DACT, &ted as *const _ as u64, 24, 46, 200, 24, 3, -1, -1),
+        mk(G_BUTTON, SELECTABLE | EXIT | DEFAULT | FL3DACT, OK.as_ptr() as u64, 28, 104, 90, 28, 4, -1, -1),
+        mk(G_BUTTON, SELECTABLE | EXIT | LASTOB | FL3DACT, CANCEL.as_ptr() as u64, 168, 104, 90, 28, 0, -1, -1),
+    ];
+
+    let mut a = Aes::new();
+    a.addrin[0] = tree.as_ptr() as i64;
+    a.intin[0] = 0; a.intin[1] = 8; a.intin[2] = 0; a.intin[3] = 0; a.intin[4] = 640; a.intin[5] = 480;
+    a.call(42, 6, 1); // objc_draw
+    a.intin[0] = 0;
+    a.addrin[0] = tree.as_ptr() as i64;
+    a.call(50, 1, 1); // form_do
+    let clicked = a.intout[0];
+    if clicked == 3 {
+        // OK: rename if the field changed and is non-empty.
+        let m = textbuf.iter().position(|&b| b == 0).unwrap_or(textbuf.len());
+        if m > 0 && textbuf[..m] != name[..nend] {
+            do_rename(letter, &name[..nend], &textbuf[..m]);
             SEL_WIN.store(0, core::sync::atomic::Ordering::Release);
             redraw_win(h);
         }
