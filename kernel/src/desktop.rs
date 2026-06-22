@@ -354,7 +354,11 @@ fn step(msg: &mut [i16; 8]) -> bool {
                 }
             }
             WM_CLOSED => close_win(msg[3]),
-            WM_TOPPED | WM_REDRAW => redraw_win(msg[3]),
+            WM_TOPPED => {
+                set_top(msg[3]);
+                redraw_win(msg[3]);
+            }
+            WM_REDRAW => redraw_win(msg[3]),
             WM_MOVED => move_win(msg[3], (msg[4], msg[5], msg[6], msg[7])),
             _ => {}
         }
@@ -439,6 +443,18 @@ fn click_once() {
     }
 }
 
+/// Verification of the File-menu window actions: open three cascaded
+/// windows, then "Cycle windows" to bring the bottom one to the top.
+pub fn preview_windows(cycle: bool) {
+    draw();
+    open_cascaded(b'C');
+    open_cascaded(b'D');
+    open_cascaded(b'C');
+    if cycle {
+        cycle_windows();
+    }
+}
+
 /// Dispatch an `MN_SELECTED` item by its menu text. Returns `true` on the
 /// Shutdown item (the loop should exit). Mirrors EmuTOS `do_*menu`.
 fn handle_menu_select(item: i16) -> bool {
@@ -457,6 +473,10 @@ fn handle_menu_select(item: i16) -> bool {
                 break;
             }
         }
+    } else if item_has(item, b"Close top window") || item_has(item, b"Close folder") {
+        close_top_window();
+    } else if item_has(item, b"Cycle windows") {
+        cycle_windows();
     } else {
         // Remaining items are logged until their handlers land.
         kprintln!("[desk] menu item {} selected", item);
@@ -518,6 +538,10 @@ fn close_win(handle: i16) {
     if let Some(s) = win_slot(handle) {
         s.drive = 0;
     }
+    // If the top window just closed, promote another open one.
+    if DESK_TOP.load(core::sync::atomic::Ordering::Acquire) == handle {
+        set_top(any_open_handle());
+    }
 }
 
 /// Handle `WM_REDRAW`/`WM_TOPPED`: repaint the directory listing from the
@@ -542,6 +566,73 @@ fn move_win(handle: i16, rect: (i16, i16, i16, i16)) {
         if s.drive != 0 {
             draw_dir_listing(handle, s.drive, work_of(rect));
         }
+    }
+}
+
+/// The desktop's notion of the top window (kept in sync with the AES on
+/// open and on `WM_TOPPED`), so the File-menu window actions have a target
+/// without the circular `wind_get(WF_TOP)` (which needs a window handle).
+static DESK_TOP: core::sync::atomic::AtomicI16 = core::sync::atomic::AtomicI16::new(0);
+
+/// Record `handle` as the top window.
+fn set_top(handle: i16) {
+    DESK_TOP.store(handle, core::sync::atomic::Ordering::Release);
+}
+
+/// First open window handle (or 0 if none), for picking a new top.
+fn any_open_handle() -> i16 {
+    for h in 1..8i16 {
+        if win_slot(h).map(|s| s.drive != 0).unwrap_or(false) {
+            return h;
+        }
+    }
+    0
+}
+
+/// The open window after `h` in round-robin handle order (or `h` itself if
+/// it is the only one; 0 if none open).
+fn next_open_after(h: i16) -> i16 {
+    for k in 1..=7i16 {
+        let cand = (h - 1 + k).rem_euclid(7) + 1; // 1..=7
+        if win_slot(cand).map(|s| s.drive != 0).unwrap_or(false) {
+            return cand;
+        }
+    }
+    0
+}
+
+/// `wind_set(handle, WF_TOP)` — bring `handle` to the top.
+fn wind_top(handle: i16) {
+    let mut a = Aes::new();
+    a.intin[0] = handle;
+    a.intin[1] = 10; // WF_TOP
+    a.call(105, 2, 0);
+}
+
+/// File → "Close top window" / "Close folder": close the top window and
+/// promote another open one to the top (EmuTOS `do_filemenu` CLSWITEM).
+fn close_top_window() {
+    let h = DESK_TOP.load(core::sync::atomic::Ordering::Acquire);
+    if h < 1 {
+        return;
+    }
+    close_win(h);
+    let nh = any_open_handle();
+    set_top(nh);
+    if nh >= 1 {
+        wind_top(nh);
+    }
+}
+
+/// File → "Cycle windows": bring the next open window to the top (EmuTOS
+/// `do_filemenu` CYCLITEM).
+fn cycle_windows() {
+    let h = DESK_TOP.load(core::sync::atomic::Ordering::Acquire);
+    let nh = next_open_after(h);
+    if nh >= 1 && nh != h {
+        wind_top(nh);
+        set_top(nh);
+        redraw_win(nh);
     }
 }
 
@@ -726,6 +817,7 @@ fn open_dir_window(letter: u8, rect: (i16, i16, i16, i16)) -> i16 {
         s.drive = letter;
         s.rect = rect;
     }
+    set_top(handle);
     draw_dir_listing(handle, letter, work_of(rect));
     handle
 }
