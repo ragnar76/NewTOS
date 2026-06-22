@@ -8,6 +8,8 @@
 //! the AES directly; mouse interaction works in QEMU (real-hardware mouse
 //! waits on the IKBD/UART2 bring-up).
 
+use core::cell::UnsafeCell;
+
 use tos_api::aes::object::Object;
 use tos_api::vdi::backend::{ClipRect, PatternFill, RasterBackend};
 
@@ -15,8 +17,10 @@ use crate::kprintln;
 
 const G_IBOX: u16 = 25;
 const G_BOX: u16 = 20;
+const G_STRING: u16 = 28;
 const G_TITLE: u16 = 32;
 const LASTOB: u16 = 0x0020;
+const DISABLED: u16 = 0x0008;
 
 const WHITE: u8 = 0;
 const BLACK: u8 = 1;
@@ -78,31 +82,168 @@ pub fn draw() {
     kprintln!("[desk] desktop drawn ({} drives)", bits.count_ones());
 }
 
-/// Build a minimal canonical menu tree (ROOT/THEBAR/THEACTIVE + titles) and
-/// install it with `menu_bar`. Drop-downs arrive in Batch 2.
-fn draw_menu_bar() {
-    // Title text matches EmuTOS desktop.rsc: surrounding spaces.
-    static DESK: &[u8] = b" Desk \0";
-    static FILE: &[u8] = b" File \0";
-    static VIEW: &[u8] = b" View \0";
-    static OPTS: &[u8] = b" Options \0";
+// The desktop menu (EmuTOS desktop.rsc ADMENU). NUL-terminated; a string
+// of dashes is a disabled separator.
+const MENUS: [(&[u8], &[&[u8]]); 4] = [
+    (b" Desk \0", &[b" Desktop info... \0", b"-----------------\0"]),
+    (
+        b" File \0",
+        &[
+            b" Open             \0", b" Info/Rename...   \0", b" Search...        \0",
+            b"------------------\0", b" New folder...    \0", b" Close folder     \0",
+            b" Close top window \0", b" Cycle windows    \0", b" Select all items \0",
+            b" Set file mask... \0", b"------------------\0", b" Delete...        \0",
+            b" Format floppy... \0", b" Eject floppy     \0", b"------------------\0",
+            b" Execute EmuCON   \0", b" Shutdown         \0",
+        ],
+    ),
+    (
+        b" View \0",
+        &[
+            b" Show as icons \0", b" Show as text  \0", b"---------------\0",
+            b" Sort by name  \0", b" Sort by type  \0", b" Sort by size  \0",
+            b" Sort by date  \0", b" No sort       \0", b"---------------\0",
+            b" Size to fit   \0",
+        ],
+    ),
+    (
+        b" Options \0",
+        &[
+            b" Set background...       \0", b" Install icon...         \0",
+            b" Install application...  \0", b" Install devices         \0",
+            b" Remove desktop icon     \0", b"-------------------------\0",
+            b" Set preferences...      \0", b" Desktop configuration...\0",
+            b" Change resolution...    \0", b"-------------------------\0",
+            b" Read .INF file...       \0", b" Save desktop...         \0",
+            b"-------------------------\0", b" Blitter                 \0",
+            b" Cache                   \0",
+        ],
+    ),
+];
 
-    let t = |ty, fl, spec: u64, x, y, w, h, next, head, tail| Object {
+const EMPTY_OBJ: Object = Object {
+    ob_next: -1, ob_head: -1, ob_tail: -1, ob_type: 0, ob_flags: 0,
+    ob_state: 0, ob_spec: 0, ob_x: 0, ob_y: 0, ob_width: 0, ob_height: 0,
+};
+
+/// The persistent menu tree (the AES keeps a pointer to it for interactive
+/// drop-down tracking). Single boot CPU only.
+struct MenuTree {
+    obj: UnsafeCell<[Object; 96]>,
+    built: UnsafeCell<bool>,
+}
+unsafe impl Sync for MenuTree {}
+static MENU: MenuTree = MenuTree {
+    obj: UnsafeCell::new([EMPTY_OBJ; 96]),
+    built: UnsafeCell::new(false),
+};
+
+/// Build the canonical ADMENU tree (ROOT / THEBAR / THEACTIVE / titles +
+/// THESCREEN box of drop-downs) into the persistent static. Returns the
+/// root pointer.
+fn build_menu() -> *mut Object {
+    // SAFETY: single-CPU AES; built once.
+    unsafe {
+        let o = &mut *MENU.obj.get();
+        if *MENU.built.get() {
+            return o.as_mut_ptr();
+        }
+
+        let nt = MENUS.len();
+        let first_title = 3usize;
+        let themenus = first_title + nt; // = 7
+        // ROOT / THEBAR / THEACTIVE
+        o[0] = mk(G_IBOX, 0, 0, 0, 0, 640, 480, -1, 1, themenus as i16);
+        o[1] = mk(G_BOX, 0, 0, 0, 0, 640, MENU_H, themenus as i16, 2, 2);
+        o[2] = mk(G_IBOX, 0, 0, 0, 0, 640, MENU_H, 1, first_title as i16, (themenus - 1) as i16);
+
+        // Titles (left to right) and, after `themenus`, one box per title.
+        let mut tx = 0i16;
+        let mut k = themenus + 1; // first box index
+        // first pass needs box indices; lay out boxes+items sequentially.
+        let mut box_idx = [0usize; 8];
+        // titles
+        for (ti, (name, _)) in MENUS.iter().enumerate() {
+            let tw = (cstr_len(name) as i16) * 8 + 4;
+            let last = ti == nt - 1;
+            o[first_title + ti] = mk(
+                G_TITLE, if last { LASTOB } else { 0 }, name.as_ptr() as u64,
+                tx, 0, tw, MENU_H,
+                if last { 2 } else { (first_title + ti + 1) as i16 }, -1, -1,
+            );
+            tx += tw;
+        }
+        // themenus box
+        let themenus_first_child = k;
+        // boxes + their items
+        for (ti, (_name, items)) in MENUS.iter().enumerate() {
+            box_idx[ti] = k;
+            let bx_x = title_x(ti);
+            let iw = items.iter().map(|s| cstr_len(s) as i16).max().unwrap_or(8) * 8 + 4;
+            let bh = items.len() as i16 * MENU_H;
+            let bi = k;
+            k += 1;
+            let first_item = k;
+            for (ii, it) in items.iter().enumerate() {
+                let is_sep = it.first() == Some(&b'-');
+                let last_item = ii == items.len() - 1;
+                let last_overall = (ti == nt - 1) && last_item;
+                let mut fl = if last_overall { LASTOB } else { 0 };
+                if is_sep {
+                    fl |= DISABLED;
+                }
+                o[k] = mk(
+                    G_STRING, fl, it.as_ptr() as u64, 0, ii as i16 * MENU_H, iw, MENU_H,
+                    if last_item { bi as i16 } else { (k + 1) as i16 }, -1, -1,
+                );
+                k += 1;
+            }
+            // the box itself
+            let next_box = if ti == nt - 1 { themenus as i16 } else { (k) as i16 };
+            o[bi] = mk(
+                G_BOX, 0, 1 << 16, bx_x, MENU_H, iw, bh, next_box, first_item as i16, (k - 1) as i16,
+            );
+        }
+        let last_box = box_idx[nt - 1];
+        o[themenus] = mk(G_IBOX, 0, 0, 0, 0, 640, 480, 0, themenus_first_child as i16, last_box as i16);
+
+        *MENU.built.get() = true;
+        o.as_mut_ptr()
+    }
+}
+
+/// X position of title `ti` (accumulated title widths).
+fn title_x(ti: usize) -> i16 {
+    let mut x = 0i16;
+    for (name, _) in MENUS.iter().take(ti) {
+        x += (cstr_len(name) as i16) * 8 + 4;
+    }
+    x
+}
+
+fn cstr_len(s: &[u8]) -> usize {
+    s.iter().position(|&b| b == 0).unwrap_or(s.len())
+}
+
+#[allow(clippy::too_many_arguments)]
+fn mk(ty: u16, fl: u16, spec: u64, x: i16, y: i16, w: i16, h: i16, next: i16, head: i16, tail: i16) -> Object {
+    Object {
         ob_next: next, ob_head: head, ob_tail: tail, ob_type: ty, ob_flags: fl,
         ob_state: 0, ob_spec: spec, ob_x: x, ob_y: y, ob_width: w, ob_height: h,
-    };
-    let title = |s: &[u8], x, w, next| t(G_TITLE, 0, s.as_ptr() as u64, x, 0, w, MENU_H, next, -1, -1);
+    }
+}
 
-    let tree = [
-        /* 0 ROOT     */ t(G_IBOX, 0, 0, 0, 0, 640, 480, -1, 1, 1),
-        /* 1 THEBAR   */ t(G_BOX, 0, 0, 0, 0, 640, MENU_H, 0, 2, 2),
-        /* 2 THEACTIVE*/ t(G_IBOX, 0, 0, 0, 0, 640, MENU_H, 1, 3, 6),
-        /* 3 Desk     */ title(DESK, 0, 56, 4),
-        /* 4 File     */ title(FILE, 56, 56, 5),
-        /* 5 View     */ title(VIEW, 112, 56, 6),
-        /* 6 Options  */ t(G_TITLE, LASTOB, OPTS.as_ptr() as u64, 168, 0, 80, MENU_H, 2, -1, -1),
-    ];
+/// The built menu tree root (for tests / the interactive loop).
+///
+/// # Safety
+/// The returned pointer aliases the persistent menu static.
+pub unsafe fn menu_tree_ptr() -> *mut Object {
+    build_menu()
+}
 
+/// Install the desktop menu bar via `menu_bar`.
+fn draw_menu_bar() {
+    let tree = build_menu();
     let mut control = [0i16; 8];
     let mut global = [0i16; 32];
     let mut intin = [0i16; 16];
@@ -115,9 +256,8 @@ fn draw_menu_bar() {
         addrin.as_mut_ptr() as u64, addrout.as_mut_ptr() as u64,
     ];
     control[0] = 30; control[1] = 1; control[3] = 1; // menu_bar
-    intin[0] = 1; addrin[0] = tree.as_ptr() as i64;
+    intin[0] = 1; addrin[0] = tree as i64;
     aes(block.as_ptr() as u64);
-    let _ = (&mut global, &mut intout, &mut addrout);
 }
 
 /// Draw a drive icon (EmuTOS `IG_HARD` for `hard`, else `IG_FLOPPY`) with
