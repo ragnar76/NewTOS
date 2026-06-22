@@ -337,30 +337,31 @@ fn open_dir_window(letter: u8) -> i16 {
     aes(block.as_ptr() as u64);
 
     // wind_open(handle, rect) — a window covering the left half.
+    let (ox, oy, ow, oh) = (40i16, MENU_H + 24, 360i16, 300i16);
     control = [0; 8]; control[0] = 101; control[1] = 5;
-    intin[0] = handle; intin[1] = 40; intin[2] = MENU_H + 24; intin[3] = 360; intin[4] = 300;
+    intin[0] = handle; intin[1] = ox; intin[2] = oy; intin[3] = ow; intin[4] = oh;
     aes(block.as_ptr() as u64);
 
-    // Draw the directory listing into the work area.
-    draw_dir_listing(handle, letter, &block, &mut control, &mut intin, &mut intout);
+    // wind_calc(WC_WORK, kind, border-rect) → the work area. `wind_calc` is
+    // a *pure* conversion — no window-table lookup — so it sidesteps the
+    // `&'static mut` aliasing flakiness that `wind_get(WF_WXYWH)` exhibited
+    // in release builds (the window table hands out aliasing `&mut`).
+    control = [0; 8]; control[0] = 108; control[1] = 6;
+    intin[0] = 1; intin[1] = W_KIND; intin[2] = ox; intin[3] = oy; intin[4] = ow; intin[5] = oh;
+    aes(block.as_ptr() as u64);
+    let work = (intout[1], intout[2], intout[3], intout[4]);
+
+    draw_dir_listing(handle, letter, work);
     handle
 }
 
-/// List `X:\*.*` and draw the file names into window `handle`'s work area.
-fn draw_dir_listing(
-    handle: i16, letter: u8, block: &[u64; 6],
-    control: &mut [i16; 8], intin: &mut [i16; 16], intout: &mut [i16; 16],
-) {
+/// List `X:\*.*` and draw the file names into the window's `work` rect.
+fn draw_dir_listing(_handle: i16, letter: u8, work: (i16, i16, i16, i16)) {
     let Some(backend) = tos_api::host::host().and_then(|h| h.raster()) else {
         return;
     };
     let clip = ClipRect::full(backend.width(), backend.height());
-
-    // wind_get(WF_WXYWH) → the work rectangle.
-    *control = [0; 8]; control[0] = 104; control[1] = 2;
-    intin[0] = handle; intin[1] = 4;
-    aes(block.as_ptr() as u64);
-    let (wx, wy, ww, wh) = (intout[1], intout[2], intout[3], intout[4]);
+    let (wx, wy, ww, wh) = work;
     backend.fill_rect(wx, wy, ww, wh, WHITE, clip);
 
     // list_dir(X:\*.*)
