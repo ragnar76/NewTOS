@@ -42,6 +42,50 @@ fn aes(aespb: u64) {
     }
 }
 
+// evnt_multi event classes and AES message ids (stable GEM protocol).
+const MU_KEYBD: u16 = 0x0001;
+const MU_BUTTON: u16 = 0x0002;
+const MU_MESAG: u16 = 0x0010;
+const MN_SELECTED: i16 = 10;
+const WM_REDRAW: i16 = 20;
+const WM_TOPPED: i16 = 21;
+const WM_CLOSED: i16 = 22;
+const WM_MOVED: i16 = 28;
+
+/// A reusable AES parameter block. `call` zeroes `control`, sets the
+/// opcode + counts, and traps; results land in `intout`/`addrout`.
+struct Aes {
+    control: [i16; 8],
+    global: [i16; 32],
+    intin: [i16; 16],
+    intout: [i16; 16],
+    addrin: [i64; 4],
+    addrout: [i64; 4],
+}
+
+impl Aes {
+    fn new() -> Self {
+        Self {
+            control: [0; 8], global: [0; 32], intin: [0; 16],
+            intout: [0; 16], addrin: [0; 4], addrout: [0; 4],
+        }
+    }
+
+    /// Trap opcode `op` with `n_int` int-ins and `n_addr` addr-ins.
+    fn call(&mut self, op: i16, n_int: i16, n_addr: i16) {
+        self.control = [0; 8];
+        self.control[0] = op;
+        self.control[1] = n_int;
+        self.control[3] = n_addr;
+        let block: [u64; 6] = [
+            self.control.as_ptr() as u64, self.global.as_ptr() as u64,
+            self.intin.as_ptr() as u64, self.intout.as_ptr() as u64,
+            self.addrin.as_ptr() as u64, self.addrout.as_ptr() as u64,
+        ];
+        aes(block.as_ptr() as u64);
+    }
+}
+
 /// Draw the full desktop screen.
 pub fn draw() {
     let Some(backend) = tos_api::host::host().and_then(|h| h.raster()) else {
@@ -247,10 +291,241 @@ fn mk(ty: u16, fl: u16, spec: u64, x: i16, y: i16, w: i16, h: i16, next: i16, he
 }
 
 /// Verification preview: draw the desktop and open a `C:\` directory
-/// window (the response a double-click on the C drive will trigger).
+/// window (the response a click on the C drive triggers).
 pub fn preview_dir() {
     draw();
-    open_dir_window(b'C');
+    open_dir_window(b'C', (40, MENU_H + 24, 360, 300));
+}
+
+/// The desktop main loop (EmuTOS `deskmain`): paint the desktop, then
+/// dispatch AES events — menu selections, drive clicks, window messages —
+/// until a *Shutdown* selection, when it returns (the caller halts).
+/// Mouse-driven; works in QEMU (real-hardware mouse waits on IKBD bring-up).
+pub fn run() {
+    draw();
+    let mut msg = [0i16; 8];
+    while step(&mut msg) {}
+}
+
+/// One iteration of the desktop loop: wait for an AES event and dispatch
+/// it. Returns `false` only on a Shutdown selection (the loop should exit).
+fn step(msg: &mut [i16; 8]) -> bool {
+    // evnt_multi(KEYBD|BUTTON|MESAG): wait for a left-button press or a
+    // menu/window message. No timer — the desktop is event-driven.
+    let mut a = Aes::new();
+    a.addrin[0] = msg.as_mut_ptr() as i64;
+    a.intin[0] = (MU_KEYBD | MU_BUTTON | MU_MESAG) as i16;
+    a.intin[1] = 1; // clicks requested
+    a.intin[2] = 1; // button mask = left
+    a.intin[3] = 1; // fire on press
+    a.call(25, 16, 1);
+    let fired = a.intout[0] as u16;
+    let (mx, my) = (a.intout[1], a.intout[2]);
+
+    if fired & MU_MESAG != 0 {
+        match msg[0] {
+            MN_SELECTED => {
+                let shutdown = handle_menu_select(msg[4]);
+                menu_tnormal(msg[3]); // un-highlight the title
+                if shutdown {
+                    return false;
+                }
+            }
+            WM_CLOSED => close_win(msg[3]),
+            WM_TOPPED | WM_REDRAW => redraw_win(msg[3]),
+            WM_MOVED => move_win(msg[3], (msg[4], msg[5], msg[6], msg[7])),
+            _ => {}
+        }
+    }
+    if fired & MU_BUTTON != 0 {
+        // A raw click the AES did not claim → desktop surface. Open the
+        // drive whose icon was hit. (Click-count isn't wired in this
+        // evnt_multi yet, so a single click opens; debounce on release.)
+        if let Some(letter) = drive_at(mx, my) {
+            open_cascaded(letter);
+        }
+        wait_release();
+    }
+    true
+}
+
+/// Verification (no real mouse in QEMU): synthesize a left-click over the
+/// C: drive icon, run one `evnt_multi`, dispatch the button, and leave the
+/// opened window on screen for a screendump. Exercises the full
+/// evnt_multi → button → drive_at → open_dir_window chain. (Skips the
+/// `wait_release` debounce, which would block with no live input source.)
+pub fn preview_click() {
+    draw();
+    let backend = &crate::vdi_backend::VDI_SCREEN;
+    let (cx, cy) = (60i16, MENU_H + 40); // over the C: icon
+    // Initialise the cursor first (feed_relative is relative to the
+    // *post-init* position), then move it to the target with the button down.
+    tos_api::vdi::feed_relative(0, 0, 0x00, backend);
+    let (mx, my) = tos_api::vdi::mouse_position();
+    tos_api::vdi::feed_relative(cx - mx, cy - my, 0x01, backend);
+
+    let mut msg = [0i16; 8];
+    let mut a = Aes::new();
+    a.addrin[0] = msg.as_mut_ptr() as i64;
+    a.intin[0] = (MU_BUTTON | MU_MESAG) as i16;
+    a.intin[1] = 1; a.intin[2] = 1; a.intin[3] = 1;
+    a.call(25, 16, 1);
+    let fired = a.intout[0] as u16;
+    if fired & MU_BUTTON != 0 {
+        if let Some(letter) = drive_at(a.intout[1], a.intout[2]) {
+            kprintln!("[desk] click → open {}:", letter as char);
+            open_cascaded(letter);
+        }
+    }
+    tos_api::vdi::feed_relative(0, 0, 0x00, backend);
+}
+
+/// Dispatch an `MN_SELECTED` item by its menu text. Returns `true` on the
+/// Shutdown item (the loop should exit). Mirrors EmuTOS `do_*menu`.
+fn handle_menu_select(item: i16) -> bool {
+    if item_has(item, b"Shutdown") {
+        kprintln!("[desk] menu: Shutdown");
+        return true;
+    }
+    if item_has(item, b"Desktop info") {
+        show_info_alert();
+    } else if item_has(item, b"Open") {
+        // Open the first present hard drive (a selection model lands later).
+        let bits = tos_api::bios::drive::drvbits();
+        for d in 2..26u32 {
+            if bits & (1 << d) != 0 {
+                open_cascaded(b'A' + d as u8);
+                break;
+            }
+        }
+    } else {
+        // Remaining items are logged until their handlers land.
+        kprintln!("[desk] menu item {} selected", item);
+    }
+    false
+}
+
+/// True if the menu item `item`'s text contains `needle`.
+fn item_has(item: i16, needle: &[u8]) -> bool {
+    if item < 0 {
+        return false;
+    }
+    // SAFETY: `item` indexes the persistent menu tree; ob_spec is a C string.
+    let spec = unsafe { (*build_menu().add(item as usize)).ob_spec };
+    if spec == 0 {
+        return false;
+    }
+    let s = spec as *const u8;
+    // Scan the (short, NUL-terminated) item text for `needle`.
+    let mut buf = [0u8; 32];
+    let mut n = 0usize;
+    while n < buf.len() {
+        // SAFETY: NUL-terminated within the resource string.
+        let c = unsafe { *s.add(n) };
+        if c == 0 {
+            break;
+        }
+        buf[n] = c;
+        n += 1;
+    }
+    buf[..n].windows(needle.len()).any(|w| w == needle)
+}
+
+/// `menu_tnormal(tree, title, 1)` — un-highlight a menu title after acting
+/// on its selection (EmuTOS `deskmain.c:1035`).
+fn menu_tnormal(title: i16) {
+    let mut a = Aes::new();
+    a.addrin[0] = build_menu() as i64;
+    a.intin[0] = title;
+    a.intin[1] = 1; // normal
+    a.call(33, 2, 1);
+}
+
+/// Open a directory window for `letter`, cascading each new window down-right.
+fn open_cascaded(letter: u8) {
+    use core::sync::atomic::{AtomicI16, Ordering};
+    static NEXT: AtomicI16 = AtomicI16::new(0);
+    let k = NEXT.fetch_add(1, Ordering::Relaxed).rem_euclid(5);
+    let off = k * 24;
+    open_dir_window(letter, (40 + off, MENU_H + 24 + off, 360, 280));
+}
+
+/// Handle `WM_CLOSED`: close the window and free its slot. `wind_close`
+/// triggers `redraw_all`, which repaints the desktop via the painter hook.
+fn close_win(handle: i16) {
+    let mut a = Aes::new();
+    a.intin[0] = handle;
+    a.call(102, 1, 0); // wind_close
+    if let Some(s) = win_slot(handle) {
+        s.drive = 0;
+    }
+}
+
+/// Handle `WM_REDRAW`/`WM_TOPPED`: repaint the directory listing from the
+/// tracked rect (avoids the flaky `wind_get(WF_WXYWH)`).
+fn redraw_win(handle: i16) {
+    if let Some(s) = win_slot(handle) {
+        if s.drive != 0 {
+            draw_dir_listing(handle, s.drive, work_of(s.rect));
+        }
+    }
+}
+
+/// Handle `WM_MOVED`: confirm the drag via `wind_set(WF_CXYWH, rect)`,
+/// update the tracked rect, and repaint the listing.
+fn move_win(handle: i16, rect: (i16, i16, i16, i16)) {
+    let mut a = Aes::new();
+    a.intin[0] = handle; a.intin[1] = 5; // WF_CXYWH
+    a.intin[2] = rect.0; a.intin[3] = rect.1; a.intin[4] = rect.2; a.intin[5] = rect.3;
+    a.call(105, 6, 0); // wind_set
+    if let Some(s) = win_slot(handle) {
+        s.rect = rect;
+        if s.drive != 0 {
+            draw_dir_listing(handle, s.drive, work_of(rect));
+        }
+    }
+}
+
+/// `form_alert` for the Desk → "Desktop info..." item.
+fn show_info_alert() {
+    let alert = b"[1][ NewTOS Desktop | TOS-compatible OS | for AArch64 ][ OK ]\0";
+    let mut a = Aes::new();
+    a.addrin[0] = alert.as_ptr() as i64;
+    a.intin[0] = 1; // default button
+    a.call(52, 1, 1); // form_alert
+}
+
+/// Hit-test the desktop drive-icon grid (same layout as `paint_desktop_bg`).
+/// Returns the drive letter whose icon contains `(mx, my)`.
+fn drive_at(mx: i16, my: i16) -> Option<u8> {
+    let backend = tos_api::host::host().and_then(|h| h.raster())?;
+    let sw = backend.width() as i16;
+    let bits = tos_api::bios::drive::drvbits();
+    let icw = 80i16;
+    let ich = 64i16;
+    let xcnt = ((sw - 20) / icw).max(1);
+    let mut idx = 0i16;
+    for d in 0..26u32 {
+        if bits & (1 << d) != 0 {
+            let cx = 20 + (idx % xcnt) * icw + icw / 2;
+            let cy = MENU_H + 18 + (idx / xcnt) * ich;
+            // Icon + label box ~ 56 wide, 56 tall, centred on cx, top at cy.
+            if (mx - cx).abs() <= 28 && my >= cy && my <= cy + 56 {
+                return Some(b'A' + d as u8);
+            }
+            idx += 1;
+        }
+    }
+    None
+}
+
+/// Spin until the left mouse button is released (debounce a raw click).
+fn wait_release() {
+    if let Some(h) = tos_api::host::host() {
+        while tos_api::vdi::mouse_buttons() & 0x01 != 0 {
+            h.pump_input();
+        }
+    }
 }
 
 /// The built menu tree root (for tests / the interactive loop).
@@ -318,53 +593,72 @@ const W_KIND: i16 =
     (0x0001 | 0x0002 | 0x0008 | 0x0010 | 0x0020 | 0x0040 | 0x0080 | 0x0100) as i16;
 // NAME | CLOSER | MOVER | INFO | SIZER | UPARROW | DNARROW | VSLIDE
 
-/// Open a directory window for drive `letter` and draw its file listing —
-/// the desktop's response to opening a drive (EmuTOS `do_diropen`). Returns
-/// the window handle, or 0 on failure.
-fn open_dir_window(letter: u8) -> i16 {
-    let mut control = [0i16; 8];
-    let mut global = [0i16; 32];
-    let mut intin = [0i16; 16];
-    let mut intout = [0i16; 16];
-    let mut addrin = [0i64; 4];
-    let mut addrout = [0i64; 4];
-    let block: [u64; 6] = [
-        control.as_mut_ptr() as u64, global.as_mut_ptr() as u64,
-        intin.as_mut_ptr() as u64, intout.as_mut_ptr() as u64,
-        addrin.as_mut_ptr() as u64, addrout.as_mut_ptr() as u64,
-    ];
+/// Window → drive + current border rect, tracked by the desktop so window
+/// messages (redraw/move) can repaint the listing without the flaky
+/// `wind_get(WF_WXYWH)` lookup. Index = window handle (1..8); `drive == 0`
+/// means the slot is free.
+#[derive(Clone, Copy)]
+struct WinInfo {
+    drive: u8,
+    rect: (i16, i16, i16, i16),
+}
+struct WinTable {
+    t: UnsafeCell<[WinInfo; 8]>,
+}
+unsafe impl Sync for WinTable {}
+static WINS: WinTable = WinTable {
+    t: UnsafeCell::new([WinInfo { drive: 0, rect: (0, 0, 0, 0) }; 8]),
+};
+
+fn win_slot(handle: i16) -> Option<&'static mut WinInfo> {
+    if handle < 1 || handle as usize >= 8 {
+        return None;
+    }
+    // SAFETY: single-CPU desktop; one borrow live at a time.
+    Some(unsafe { &mut (*WINS.t.get())[handle as usize] })
+}
+
+/// `wind_calc(WC_WORK, kind, border-rect)` → the work area. A *pure*
+/// conversion (no window-table lookup), so it sidesteps the `&'static mut`
+/// aliasing flakiness `wind_get(WF_WXYWH)` showed in release builds.
+fn work_of(rect: (i16, i16, i16, i16)) -> (i16, i16, i16, i16) {
+    let mut a = Aes::new();
+    a.intin[0] = 1; // WC_WORK
+    a.intin[1] = W_KIND;
+    a.intin[2] = rect.0; a.intin[3] = rect.1; a.intin[4] = rect.2; a.intin[5] = rect.3;
+    a.call(108, 6, 0);
+    (a.intout[1], a.intout[2], a.intout[3], a.intout[4])
+}
+
+/// Open a directory window for drive `letter` at `rect` and draw its file
+/// listing — the desktop's response to opening a drive (EmuTOS
+/// `do_diropen`). Returns the window handle, or 0 on failure.
+fn open_dir_window(letter: u8, rect: (i16, i16, i16, i16)) -> i16 {
+    let mut a = Aes::new();
 
     // wind_create(kind, full extent = whole desktop below the menu).
-    control = [0; 8]; control[0] = 100; control[1] = 5;
-    intin[0] = W_KIND; intin[1] = 0; intin[2] = MENU_H; intin[3] = 640; intin[4] = 480 - MENU_H;
-    aes(block.as_ptr() as u64);
-    let handle = intout[0];
+    a.intin[0] = W_KIND; a.intin[1] = 0; a.intin[2] = MENU_H; a.intin[3] = 640; a.intin[4] = 480 - MENU_H;
+    a.call(100, 5, 0);
+    let handle = a.intout[0];
     if handle < 1 {
         return 0;
     }
 
     // wind_set(WF_NAME, "X:\").
     let mut name = [letter, b':', b'\\', 0, 0, 0, 0, 0];
-    control = [0; 8]; control[0] = 105; control[1] = 2; control[3] = 1;
-    intin[0] = handle; intin[1] = 2; addrin[0] = name.as_mut_ptr() as i64;
-    aes(block.as_ptr() as u64);
+    a.addrin[0] = name.as_mut_ptr() as i64;
+    a.intin[0] = handle; a.intin[1] = 2;
+    a.call(105, 2, 1);
 
-    // wind_open(handle, rect) — a window covering the left half.
-    let (ox, oy, ow, oh) = (40i16, MENU_H + 24, 360i16, 300i16);
-    control = [0; 8]; control[0] = 101; control[1] = 5;
-    intin[0] = handle; intin[1] = ox; intin[2] = oy; intin[3] = ow; intin[4] = oh;
-    aes(block.as_ptr() as u64);
+    // wind_open(handle, rect).
+    a.intin[0] = handle; a.intin[1] = rect.0; a.intin[2] = rect.1; a.intin[3] = rect.2; a.intin[4] = rect.3;
+    a.call(101, 5, 0);
 
-    // wind_calc(WC_WORK, kind, border-rect) → the work area. `wind_calc` is
-    // a *pure* conversion — no window-table lookup — so it sidesteps the
-    // `&'static mut` aliasing flakiness that `wind_get(WF_WXYWH)` exhibited
-    // in release builds (the window table hands out aliasing `&mut`).
-    control = [0; 8]; control[0] = 108; control[1] = 6;
-    intin[0] = 1; intin[1] = W_KIND; intin[2] = ox; intin[3] = oy; intin[4] = ow; intin[5] = oh;
-    aes(block.as_ptr() as u64);
-    let work = (intout[1], intout[2], intout[3], intout[4]);
-
-    draw_dir_listing(handle, letter, work);
+    if let Some(s) = win_slot(handle) {
+        s.drive = letter;
+        s.rect = rect;
+    }
+    draw_dir_listing(handle, letter, work_of(rect));
     handle
 }
 
