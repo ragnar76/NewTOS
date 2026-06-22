@@ -69,7 +69,8 @@ pub fn draw() {
         if bits & (1 << d) != 0 {
             let cx = 20 + (idx % xcnt) * icw + icw / 2;
             let cy = MENU_H + 18 + (idx / xcnt) * ich;
-            draw_drive_icon(backend, cx, cy, b'A' + d as u8, clip);
+            // EmuTOS deskapp.c:721 — A/B (drive < 2) are floppies, C+ hard.
+            draw_drive_icon(backend, cx, cy, b'A' + d as u8, d > 1, clip);
             idx += 1;
         }
     }
@@ -119,24 +120,30 @@ fn draw_menu_bar() {
     let _ = (&mut global, &mut intout, &mut addrout);
 }
 
-/// Draw a hard-disk drive icon (EmuTOS `IG_HARD`: a drive enclosure with
-/// the drive letter on it) and the "Disk" name below, centred at `(cx,
-/// y)`. A faithful ICONBLK from icon.rsc is Batch 2; this is a
-/// recognizable stand-in built from the same elements (enclosure +
-/// `ib_char` letter + `ib_ptext` label).
-fn draw_drive_icon(backend: &dyn RasterBackend, cx: i16, y: i16, letter: u8, clip: ClipRect) {
-    // Enclosure: a 44×26 raised grey box (the drive unit).
-    let (bw, bh) = (44i16, 26i16);
+/// Draw a drive icon (EmuTOS `IG_HARD` for `hard`, else `IG_FLOPPY`) with
+/// the drive letter on it (`ib_char`) and the "Disk" name below
+/// (`ib_ptext`/STDISK), centred at `(cx, y)`. A faithful ICONBLK from
+/// icon.rsc is Batch 2; this is a recognizable stand-in from the same
+/// elements.
+fn draw_drive_icon(backend: &dyn RasterBackend, cx: i16, y: i16, letter: u8, hard: bool, clip: ClipRect) {
+    let (bw, bh) = if hard { (44i16, 26i16) } else { (30i16, 32i16) };
     let bx = cx - bw / 2;
     backend.fill_rect(bx, y, bw, bh, GRAY_LT, clip);
     bevel(backend, bx, y, bw, bh, true, clip);
-    // Front panel: a recessed bay, with a slot and an activity LED.
-    backend.fill_rect(bx + 4, y + 4, bw - 8, bh - 9, WHITE, clip);
-    bevel(backend, bx + 4, y + 4, bw - 8, bh - 9, false, clip);
-    backend.fill_rect(bx + 7, y + 8, bw - 22, 2, GRAY_DK, clip); // slot
-    backend.fill_rect(bx + bw - 9, y + 8, 3, 3, BLACK, clip); // LED
-    // The drive letter on the panel.
-    backend.draw_glyph(bx + 8, y + 6, tos_api::vdi::font::glyph(letter as u16), BLACK, clip);
+    if hard {
+        // Hard disk: a wide enclosure with a recessed bay, slot + LED.
+        backend.fill_rect(bx + 4, y + 4, bw - 8, bh - 9, WHITE, clip);
+        bevel(backend, bx + 4, y + 4, bw - 8, bh - 9, false, clip);
+        backend.fill_rect(bx + 7, y + 8, bw - 22, 2, GRAY_DK, clip); // slot
+        backend.fill_rect(bx + bw - 9, y + 8, 3, 3, BLACK, clip); // LED
+        backend.draw_glyph(bx + 8, y + 6, tos_api::vdi::font::glyph(letter as u16), BLACK, clip);
+    } else {
+        // Floppy: a square with the metal shutter at top + a label area.
+        backend.fill_rect(bx + 9, y + 2, 12, 6, GRAY_DK, clip); // shutter
+        backend.fill_rect(bx + 4, y + 12, bw - 8, bh - 16, WHITE, clip); // label
+        bevel(backend, bx + 4, y + 12, bw - 8, bh - 16, false, clip);
+        backend.draw_glyph(bx + (bw - 8) / 2, y + 13, tos_api::vdi::font::glyph(letter as u16), BLACK, clip);
+    }
 
     // Name label ("Disk", EmuTOS STDISK) centred below the icon.
     let label = b"Disk";
