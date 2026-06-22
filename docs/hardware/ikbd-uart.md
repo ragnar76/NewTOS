@@ -65,3 +65,41 @@ The 3-bit GPFSEL function value for ALT4 is `0b011`. GPIO 0/1 live in
 The driver currently **polls** UART2 (no GIC IRQ wired for it). At
 7812.5 baud that is cheap; an IRQ-driven path can replace it once the
 hardware is connected and the UART2 GIC SPI is confirmed.
+
+## Software status (2026-06-22)
+
+The full software path is **complete and verified in QEMU**:
+
+- `kernel/src/ikbd.rs` decodes relative-mouse packets (`0xF8..0xFB`: low 2
+  header bits = buttons, swapped to VDI convention, then signed `dx`/`dy`)
+  and feeds `tos_api::vdi::feed_relative` → the VDI cursor.
+- `kernel/src/drivers/bcm2711/ikbd_uart::init()` runs at boot and `poll()`
+  drains UART2 RX into the decoder (called from `host_env::pump_input`).
+- End-to-end proof (`desktop::preview_ikbd_click`): raw IKBD packets fed to
+  `ikbd::feed` walk the cursor onto a drive icon and press the button; the
+  desktop `evnt_multi` loop opens the directory window. So once real bytes
+  arrive on UART2, the desktop is interactive — no further software needed
+  for the basic case.
+
+## Remaining for real hardware (open — needs the datasheet + a keyboard)
+
+Per CLAUDE.md Rule 6 these must be confirmed against the **BCM2711 ARM
+Peripherals datasheet** (not currently in `references/`) before trusting
+them on hardware:
+
+1. **UART2 base `0xFE20_1400` and GPIO 0/1 ALT4 routing** — re-read from
+   the datasheet §5.3 alt-function table and §11 UART map. The values here
+   follow the known BCM2711 pattern but were not read from the datasheet in
+   this environment.
+2. **Mouse Y direction.** The IKBD defaults to "Y = 0 at bottom"; the
+   screen has Y = 0 at top, so `dy` may need inverting. EmuTOS configures
+   this with IKBD command `0x0F` (Y at bottom) / `0x10` (Y at top). The
+   decoder currently applies `dy` un-inverted — confirm the sign on real
+   hardware and, if needed, invert (or send `0x10` over TXD2).
+3. **Mouse enable.** After reset the IKBD streams relative-mouse reports by
+   default, so RXD2-only wiring should work; sending "set relative mouse"
+   (`0x08`) over TXD2 makes it deterministic but needs a proper 3.3 V→5 V
+   level shifter on the Pi→keyboard line.
+4. **RXD2 idle level.** `init()` disables the pull on GPIO 1; a floating
+   RXD2 with no keyboard attached can clock in noise. Consider a pull-up
+   (UART idle = mark/high) once the wiring is finalised.
