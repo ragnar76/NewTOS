@@ -47,21 +47,30 @@ pub fn draw() {
     let sh = backend.height() as i16;
     let clip = ClipRect::full(backend.width(), backend.height());
 
-    // 1. Desktop background: a 50 % grey dither below the menu bar.
-    let pat: [u16; 2] = [0xAAAA, 0x5555];
+    // 1. Desktop background: a light dither below the menu bar (stand-in
+    //    for EmuTOS' g_patcol desktop pattern+colour; the exact VDI fill
+    //    pattern for ob_spec 0x43 lands with the DROOT G_IBOX in Batch 2).
+    let pat: [u16; 4] = [0x8888, 0x0000, 0x2222, 0x0000];
     let bg = PatternFill { fg: BLACK, bg: WHITE, pattern: &pat, opaque: true };
     backend.fill_pattern(0, MENU_H, sw, sh - MENU_H, bg, clip);
 
     // 2. Menu bar.
     draw_menu_bar();
 
-    // 3. A drive icon per present drive.
+    // 3. A drive icon per present drive, laid out in a grid from the
+    //    TOP-LEFT (EmuTOS app_blddesk / the #M loop: drive_x = idx % xcnt,
+    //    drive_y = idx / xcnt). C and up are hard disks.
     let bits = tos_api::bios::drive::drvbits();
-    let mut iy = 48;
+    let icw = 80i16;
+    let ich = 64i16;
+    let xcnt = ((sw - 20) / icw).max(1);
+    let mut idx = 0i16;
     for d in 0..26u32 {
         if bits & (1 << d) != 0 {
-            draw_drive_icon(backend, sw - 72, iy, b'A' + d as u8, clip);
-            iy += 72;
+            let cx = 20 + (idx % xcnt) * icw + icw / 2;
+            let cy = MENU_H + 18 + (idx / xcnt) * ich;
+            draw_drive_icon(backend, cx, cy, b'A' + d as u8, clip);
+            idx += 1;
         }
     }
 
@@ -71,10 +80,11 @@ pub fn draw() {
 /// Build a minimal canonical menu tree (ROOT/THEBAR/THEACTIVE + titles) and
 /// install it with `menu_bar`. Drop-downs arrive in Batch 2.
 fn draw_menu_bar() {
-    static DESK: &[u8] = b"Desk\0";
-    static FILE: &[u8] = b"File\0";
-    static VIEW: &[u8] = b"View\0";
-    static OPTS: &[u8] = b"Options\0";
+    // Title text matches EmuTOS desktop.rsc: surrounding spaces.
+    static DESK: &[u8] = b" Desk \0";
+    static FILE: &[u8] = b" File \0";
+    static VIEW: &[u8] = b" View \0";
+    static OPTS: &[u8] = b" Options \0";
 
     let t = |ty, fl, spec: u64, x, y, w, h, next, head, tail| Object {
         ob_next: next, ob_head: head, ob_tail: tail, ob_type: ty, ob_flags: fl,
@@ -109,23 +119,27 @@ fn draw_menu_bar() {
     let _ = (&mut global, &mut intout, &mut addrout);
 }
 
-/// Draw a hard-disk drive icon (a 3D body + drive letter) with a label
-/// below it, centred at `(cx, y)`.
+/// Draw a hard-disk drive icon (EmuTOS `IG_HARD`: a drive enclosure with
+/// the drive letter on it) and the "Disk" name below, centred at `(cx,
+/// y)`. A faithful ICONBLK from icon.rsc is Batch 2; this is a
+/// recognizable stand-in built from the same elements (enclosure +
+/// `ib_char` letter + `ib_ptext` label).
 fn draw_drive_icon(backend: &dyn RasterBackend, cx: i16, y: i16, letter: u8, clip: ClipRect) {
-    // Disk body: a 40×30 raised grey box with a darker face + a bay slot.
-    let (bw, bh) = (40i16, 30i16);
+    // Enclosure: a 44×26 raised grey box (the drive unit).
+    let (bw, bh) = (44i16, 26i16);
     let bx = cx - bw / 2;
     backend.fill_rect(bx, y, bw, bh, GRAY_LT, clip);
     bevel(backend, bx, y, bw, bh, true, clip);
-    // drive bay: a recessed inner rectangle
-    backend.fill_rect(bx + 5, y + 6, bw - 10, bh - 12, WHITE, clip);
-    bevel(backend, bx + 5, y + 6, bw - 10, bh - 12, false, clip);
-    // a slot line + the drive letter
-    backend.fill_rect(bx + 8, y + 10, bw - 16, 2, GRAY_DK, clip);
-    backend.draw_glyph(cx - 4, y + 14, tos_api::vdi::font::glyph(letter as u16), BLACK, clip);
+    // Front panel: a recessed bay, with a slot and an activity LED.
+    backend.fill_rect(bx + 4, y + 4, bw - 8, bh - 9, WHITE, clip);
+    bevel(backend, bx + 4, y + 4, bw - 8, bh - 9, false, clip);
+    backend.fill_rect(bx + 7, y + 8, bw - 22, 2, GRAY_DK, clip); // slot
+    backend.fill_rect(bx + bw - 9, y + 8, 3, 3, BLACK, clip); // LED
+    // The drive letter on the panel.
+    backend.draw_glyph(bx + 8, y + 6, tos_api::vdi::font::glyph(letter as u16), BLACK, clip);
 
-    // Label "X:" centred below the icon.
-    let label = [letter, b':'];
+    // Name label ("Disk", EmuTOS STDISK) centred below the icon.
+    let label = b"Disk";
     let lx = cx - (label.len() as i16 * 8) / 2;
     for (i, &c) in label.iter().enumerate() {
         backend.draw_glyph(lx + i as i16 * 8, y + bh + 3, tos_api::vdi::font::glyph(c as u16), BLACK, clip);
