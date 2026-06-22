@@ -15,8 +15,11 @@ const G_STRING: u16 = 28;
 const G_ICON: u16 = 31;
 
 const SELECTABLE: u16 = 0x0001;
+const DEFAULT: u16 = 0x0002;
 const EXIT: u16 = 0x0004;
 const LASTOB: u16 = 0x0020;
+const FL3DBAK: u16 = 0x0400; // 3D grey panel
+const FL3DACT: u16 = 0x0600; // 3D raised button
 
 /// Issue a GEM trap (selector 200 in `x0`, AESPB in `x1`).
 fn aes(aespb: u64) {
@@ -43,7 +46,7 @@ pub fn run() {
         // 0: dialog frame (root)
         Object {
             ob_next: -1, ob_head: 1, ob_tail: 3,
-            ob_type: G_BOX, ob_flags: 0, ob_state: 0, ob_spec: box_spec,
+            ob_type: G_BOX, ob_flags: FL3DBAK, ob_state: 0, ob_spec: box_spec,
             ob_x: 160, ob_y: 130, ob_width: 320, ob_height: 160,
         },
         // 1: title string
@@ -55,14 +58,14 @@ pub fn run() {
         // 2: OK button (SELECTED → inverted look: black box, white text)
         Object {
             ob_next: 3, ob_head: -1, ob_tail: -1,
-            ob_type: G_BUTTON, ob_flags: SELECTABLE | EXIT, ob_state: 0x0001,
+            ob_type: G_BUTTON, ob_flags: SELECTABLE | EXIT | FL3DACT | DEFAULT, ob_state: 0,
             ob_spec: OK.as_ptr() as u64,
             ob_x: 40, ob_y: 110, ob_width: 100, ob_height: 28,
         },
         // 3: Cancel button (last child → ob_next = parent 0; LASTOB)
         Object {
             ob_next: 0, ob_head: -1, ob_tail: -1,
-            ob_type: G_BUTTON, ob_flags: SELECTABLE | EXIT | LASTOB, ob_state: 0,
+            ob_type: G_BUTTON, ob_flags: SELECTABLE | EXIT | LASTOB | FL3DACT, ob_state: 0,
             ob_spec: CANCEL.as_ptr() as u64,
             ob_x: 180, ob_y: 110, ob_width: 100, ob_height: 28,
         },
@@ -171,7 +174,7 @@ pub fn run_icons() {
     };
 
     let tree = [
-        Object { ob_next: -1, ob_head: 1, ob_tail: 4, ob_type: G_BOX, ob_flags: 0,
+        Object { ob_next: -1, ob_head: 1, ob_tail: 4, ob_type: G_BOX, ob_flags: FL3DBAK,
                  ob_state: 0, ob_spec: 1 << 16, ob_x: 150, ob_y: 140, ob_width: 340, ob_height: 190 },
         Object { ob_next: 2, ob_head: -1, ob_tail: -1, ob_type: G_STRING, ob_flags: 0,
                  ob_state: 0, ob_spec: TITLE.as_ptr() as u64, ob_x: 20, ob_y: 18, ob_width: 240, ob_height: 16 },
@@ -227,7 +230,7 @@ pub fn run_tedinfo() {
     };
 
     let tree = [
-        Object { ob_next: -1, ob_head: 1, ob_tail: 3, ob_type: G_BOX, ob_flags: 0,
+        Object { ob_next: -1, ob_head: 1, ob_tail: 3, ob_type: G_BOX, ob_flags: FL3DBAK,
                  ob_state: 0, ob_spec: 1 << 16, ob_x: 140, ob_y: 150, ob_width: 360, ob_height: 170 },
         Object { ob_next: 2, ob_head: -1, ob_tail: -1, ob_type: G_STRING, ob_flags: 0,
                  ob_state: 0, ob_spec: TITLE.as_ptr() as u64, ob_x: 20, ob_y: 18, ob_width: 320, ob_height: 16 },
@@ -383,7 +386,7 @@ pub fn run_form_edit() {
         te_color: 1 << 8, te_junk2: 0, te_thickness: 1, te_txtlen: 24, te_tmplen: 0,
     };
     let tree = [
-        Object { ob_next: -1, ob_head: 1, ob_tail: 3, ob_type: G_BOX, ob_flags: 0,
+        Object { ob_next: -1, ob_head: 1, ob_tail: 3, ob_type: G_BOX, ob_flags: FL3DBAK,
                  ob_state: 0, ob_spec: 1 << 16, ob_x: 140, ob_y: 150, ob_width: 360, ob_height: 170 },
         Object { ob_next: 2, ob_head: -1, ob_tail: -1, ob_type: G_STRING, ob_flags: 0,
                  ob_state: 0, ob_spec: TITLE.as_ptr() as u64, ob_x: 24, ob_y: 20, ob_width: 320, ob_height: 16 },
@@ -716,7 +719,7 @@ pub fn run_rsrc() {
         // objects at offset 32
         let objs = base.add(32) as *mut Object;
         objs.add(0).write(Object {
-            ob_next: -1, ob_head: 1, ob_tail: 2, ob_type: G_BOX, ob_flags: 0,
+            ob_next: -1, ob_head: 1, ob_tail: 2, ob_type: G_BOX, ob_flags: FL3DBAK,
             ob_state: 0, ob_spec: 1 << 16, ob_x: 170, ob_y: 150, ob_width: 300, ob_height: 130,
         });
         objs.add(1).write(Object {
@@ -725,7 +728,7 @@ pub fn run_rsrc() {
         });
         objs.add(2).write(Object {
             ob_next: 0, ob_head: -1, ob_tail: -1, ob_type: G_BUTTON,
-            ob_flags: SELECTABLE | EXIT | LASTOB, ob_state: 0,
+            ob_flags: SELECTABLE | EXIT | LASTOB | FL3DACT | DEFAULT, ob_state: 0,
             ob_spec: s_ok as u64, ob_x: 100, ob_y: 90, ob_width: 100, ob_height: 28,
         });
 
