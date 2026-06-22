@@ -380,11 +380,13 @@ fn step(msg: &mut [i16; 8]) -> bool {
         }
     }
     if fired & MU_BUTTON != 0 {
-        // A raw click the AES did not claim → desktop surface. Open the
-        // drive whose icon was hit. (Click-count isn't wired in this
-        // evnt_multi yet, so a single click opens; debounce on release.)
+        // A raw click the AES did not claim → desktop surface or a window
+        // work area. A drive icon opens it; otherwise select the entry the
+        // click lands on. (Click-count isn't wired yet; debounce on release.)
         if let Some(letter) = drive_at(mx, my) {
             open_cascaded(letter);
+        } else {
+            select_at(mx, my);
         }
         wait_release();
     }
@@ -490,6 +492,40 @@ pub fn preview_newfolder() {
     new_folder();
 }
 
+/// Verification of selection: open a C: window and select entry 4 so its
+/// row shows inverted.
+pub fn preview_select() {
+    draw();
+    let h = open_dir_window(b'C', (40, MENU_H + 24, 420, 340));
+    SEL_WIN.store(h, core::sync::atomic::Ordering::Release);
+    SEL_IDX.store(4, core::sync::atomic::Ordering::Release);
+    redraw_win(h);
+}
+
+/// Verification of the delete-confirm dialog: select an entry, then draw
+/// the confirmation alert (blocks for the screendump).
+pub fn preview_confirm() {
+    draw();
+    let h = open_dir_window(b'C', (40, MENU_H + 24, 420, 340));
+    SEL_WIN.store(h, core::sync::atomic::Ordering::Release);
+    SEL_IDX.store(4, core::sync::atomic::Ordering::Release);
+    redraw_win(h);
+    if let Some((_, _, name, _)) = resolve_selection() {
+        confirm_delete(&name);
+    }
+}
+
+/// Verification of the actual deletion (bypassing the interactive confirm):
+/// delete FILE15.TXT from C:\ and repaint so it disappears.
+pub fn preview_delete() {
+    draw();
+    let h = open_dir_window(b'C', (40, MENU_H + 24, 420, 340));
+    let mut name = [0u8; 14];
+    name[..10].copy_from_slice(b"FILE15.TXT");
+    do_delete(b'C', &name, false);
+    redraw_win(h);
+}
+
 /// Verification of the File-menu window actions: open three cascaded
 /// windows, then "Cycle windows" to bring the bottom one to the top.
 pub fn preview_windows(cycle: bool) {
@@ -526,6 +562,8 @@ fn handle_menu_select(item: i16) -> bool {
         cycle_windows();
     } else if item_has(item, b"New folder") {
         new_folder();
+    } else if item_has(item, b"Delete") {
+        delete_selected();
     } else if item_has(item, b"Show as icons") {
         set_view(1);
     } else if item_has(item, b"Show as text") {
@@ -714,6 +752,86 @@ fn new_folder() {
         }
     }
     kprintln!("[desk] New folder: failed (no free name / not writable)");
+}
+
+/// Resolve the current selection to `(window, drive, name, is_dir)` by
+/// re-listing+sorting the selected window and indexing the sorted list.
+fn resolve_selection() -> Option<(i16, u8, [u8; 14], bool)> {
+    let h = SEL_WIN.load(core::sync::atomic::Ordering::Acquire);
+    if h < 1 {
+        return None;
+    }
+    let letter = match win_slot(h) {
+        Some(s) if s.drive != 0 => s.drive,
+        _ => return None,
+    };
+    let idx = SEL_IDX.load(core::sync::atomic::Ordering::Acquire) as usize;
+    let path = [letter, b':', b'\\', b'*', b'.', b'*'];
+    let path_str = core::str::from_utf8(&path).unwrap_or("C:\\*.*");
+    let mut ents = [tos_api::bdos::fs::find::DirInfo::default(); 64];
+    let n = tos_api::bdos::fs::find::list_dir_ex(path_str, &mut ents);
+    sort_entries(&mut ents[..n]);
+    if idx >= n {
+        return None;
+    }
+    Some((h, letter, ents[idx].name, ents[idx].attrib & FA_SUBDIR != 0))
+}
+
+/// Delete `X:\NAME` via `Fdelete` (0x41, files) or `Ddelete` (0x3A, empty
+/// dirs). Returns true on success.
+fn do_delete(letter: u8, name: &[u8; 14], is_dir: bool) -> bool {
+    let mut full = [0u8; 20];
+    full[0] = letter;
+    full[1] = b':';
+    full[2] = b'\\';
+    let nend = name.iter().position(|&b| b == 0).unwrap_or(14);
+    full[3..3 + nend].copy_from_slice(&name[..nend]);
+    full[3 + nend] = 0;
+    let func = if is_dir { 0x3A } else { 0x41 };
+    let r = gemdos1(func, full.as_ptr() as u64);
+    if r == 0 {
+        kprintln!("[desk] deleted {}:\\{}", letter as char,
+            core::str::from_utf8(&name[..nend]).unwrap_or("?"));
+        true
+    } else {
+        kprintln!("[desk] delete failed ({})", r);
+        false
+    }
+}
+
+/// Confirm a deletion with `form_alert`. Default button = Cancel.
+fn confirm_delete(name: &[u8; 14]) -> bool {
+    let mut buf = [0u8; 80];
+    let mut k = 0;
+    for &b in b"[2][ Delete | " {
+        buf[k] = b;
+        k += 1;
+    }
+    let nend = name.iter().position(|&b| b == 0).unwrap_or(14);
+    for &c in &name[..nend] {
+        buf[k] = c;
+        k += 1;
+    }
+    for &b in b" ? ][ OK | Cancel ]\0" {
+        buf[k] = b;
+        k += 1;
+    }
+    let mut a = Aes::new();
+    a.addrin[0] = buf.as_ptr() as i64;
+    a.intin[0] = 2; // default = Cancel (the safe choice)
+    a.call(52, 1, 1); // form_alert
+    a.intout[0] == 1 // button 1 = OK
+}
+
+/// File → "Delete": delete the selected entry after confirmation, then
+/// clear the selection and repaint (EmuTOS `do_filemenu` DELTITEM).
+fn delete_selected() {
+    if let Some((h, letter, name, is_dir)) = resolve_selection() {
+        if confirm_delete(&name) && do_delete(letter, &name, is_dir) {
+            SEL_WIN.store(0, core::sync::atomic::Ordering::Release);
+            redraw_win(h);
+        }
+    }
 }
 
 /// View → "Size to fit": resize the top window so its work area just fits
@@ -988,8 +1106,8 @@ fn sort_entries(ents: &mut [tos_api::bdos::fs::find::DirInfo]) {
     });
 }
 
-/// Draw `v` as a right-aligned decimal ending at `right_x`.
-fn draw_u32_right(backend: &dyn RasterBackend, right_x: i16, y: i16, mut v: u32, clip: ClipRect) {
+/// Draw `v` as a right-aligned decimal ending at `right_x`, in `fg`.
+fn draw_u32_right_fg(backend: &dyn RasterBackend, right_x: i16, y: i16, mut v: u32, fg: u8, clip: ClipRect) {
     let mut digits = [0u8; 10];
     let mut k = 0;
     if v == 0 {
@@ -1003,13 +1121,55 @@ fn draw_u32_right(backend: &dyn RasterBackend, right_x: i16, y: i16, mut v: u32,
     }
     let mut x = right_x - 8;
     for &d in &digits[..k] {
-        backend.draw_glyph(x, y, tos_api::vdi::font::glyph(d as u16), BLACK, clip);
+        backend.draw_glyph(x, y, tos_api::vdi::font::glyph(d as u16), fg, clip);
         x -= 8;
     }
 }
 
+/// Draw `v` as a right-aligned black decimal ending at `right_x`.
+fn draw_u32_right(backend: &dyn RasterBackend, right_x: i16, y: i16, v: u32, clip: ClipRect) {
+    draw_u32_right_fg(backend, right_x, y, v, BLACK, clip);
+}
+
 /// Directory view mode (View menu): 0 = text rows, 1 = icon grid.
 static VIEW_MODE: core::sync::atomic::AtomicU8 = core::sync::atomic::AtomicU8::new(0);
+
+/// The currently selected entry: window handle (0 = none) and its index in
+/// the *sorted* listing. Drives Delete / Info-Rename and the highlight.
+static SEL_WIN: core::sync::atomic::AtomicI16 = core::sync::atomic::AtomicI16::new(0);
+static SEL_IDX: core::sync::atomic::AtomicI16 = core::sync::atomic::AtomicI16::new(0);
+
+/// Select the entry under `(mx, my)` if it lands in the top window's work
+/// area. Returns true if a window click was consumed.
+fn select_at(mx: i16, my: i16) -> bool {
+    let h = DESK_TOP.load(core::sync::atomic::Ordering::Acquire);
+    let rect = match win_slot(h) {
+        Some(s) if s.drive != 0 => s.rect,
+        _ => return false,
+    };
+    let (wx, wy, ww, wh) = work_of(rect);
+    if mx < wx || mx >= wx + ww || my < wy || my >= wy + wh {
+        return false;
+    }
+    let idx = if VIEW_MODE.load(core::sync::atomic::Ordering::Acquire) == 1 {
+        let cols = (ww / 76).max(1);
+        let col = ((mx - wx) / 76).clamp(0, cols - 1);
+        let row = ((my - wy - 6) / 52).max(0);
+        row * cols + col
+    } else {
+        ((my - wy - 4) / 16).max(0)
+    };
+    SEL_WIN.store(h, core::sync::atomic::Ordering::Release);
+    SEL_IDX.store(idx, core::sync::atomic::Ordering::Release);
+    redraw_win(h);
+    true
+}
+
+/// Is entry `idx` of window `handle` the selected one?
+fn is_selected(handle: i16, idx: usize) -> bool {
+    SEL_WIN.load(core::sync::atomic::Ordering::Acquire) == handle
+        && SEL_IDX.load(core::sync::atomic::Ordering::Acquire) == idx as i16
+}
 
 /// Set the view mode (View menu) and repaint every open directory window.
 fn set_view(mode: u8) {
@@ -1019,7 +1179,7 @@ fn set_view(mode: u8) {
 
 /// List `X:\*.*`, sort it, and draw it into the window's `work` rect as
 /// either a text listing or an icon grid per [`VIEW_MODE`].
-fn draw_dir_listing(_handle: i16, letter: u8, work: (i16, i16, i16, i16)) {
+fn draw_dir_listing(handle: i16, letter: u8, work: (i16, i16, i16, i16)) {
     let Some(backend) = tos_api::host::host().and_then(|h| h.raster()) else {
         return;
     };
@@ -1034,35 +1194,44 @@ fn draw_dir_listing(_handle: i16, letter: u8, work: (i16, i16, i16, i16)) {
     sort_entries(&mut ents[..n]);
 
     if VIEW_MODE.load(core::sync::atomic::Ordering::Acquire) == 1 {
-        draw_dir_icons(backend, work, &ents[..n], clip);
+        draw_dir_icons(backend, handle, work, &ents[..n], clip);
     } else {
-        draw_dir_text(backend, work, &ents[..n], clip);
+        draw_dir_text(backend, handle, work, &ents[..n], clip);
     }
     kprintln!("[desk] opened {}:\\ ({} entries)", letter as char, n);
 }
 
 /// Text view: one row per entry — name on the left, size (or `<DIR>`)
-/// right-aligned.
+/// right-aligned; the selected row is inverted.
 fn draw_dir_text(
-    backend: &dyn RasterBackend, work: (i16, i16, i16, i16),
+    backend: &dyn RasterBackend, handle: i16, work: (i16, i16, i16, i16),
     ents: &[tos_api::bdos::fs::find::DirInfo], clip: ClipRect,
 ) {
     let (wx, wy, ww, wh) = work;
     let rows = (wh / 16).max(1) as usize;
     for (i, e) in ents.iter().take(rows).enumerate() {
         let ny = wy + 4 + i as i16 * 16;
+        let sel = is_selected(handle, i);
+        let ink = if sel {
+            backend.fill_rect(wx, ny - 2, ww, 16, BLACK, clip);
+            WHITE
+        } else {
+            BLACK
+        };
         let end = e.name.iter().position(|&b| b == 0).unwrap_or(14);
         let mut cx = wx + 8;
         for &c in &e.name[..end] {
-            backend.draw_glyph(cx, ny, tos_api::vdi::font::glyph(c as u16), BLACK, clip);
+            backend.draw_glyph(cx, ny, tos_api::vdi::font::glyph(c as u16), ink, clip);
             cx += 8;
         }
         if e.attrib & FA_SUBDIR != 0 {
             let mut x = wx + ww - 8 - 5 * 8;
             for &c in b"<DIR>" {
-                backend.draw_glyph(x, ny, tos_api::vdi::font::glyph(c as u16), BLACK, clip);
+                backend.draw_glyph(x, ny, tos_api::vdi::font::glyph(c as u16), ink, clip);
                 x += 8;
             }
+        } else if sel {
+            draw_u32_right_fg(backend, wx + ww - 8, ny, e.size, WHITE, clip);
         } else {
             draw_u32_right(backend, wx + ww - 8, ny, e.size, clip);
         }
@@ -1070,10 +1239,9 @@ fn draw_dir_text(
 }
 
 /// Icon view: a grid of folder / document icons with the name underneath
-/// (EmuTOS "Show as icons"). Folders use the folder ICONBLK, files the
-/// generic-document one.
+/// (EmuTOS "Show as icons"); the selected name is inverted.
 fn draw_dir_icons(
-    backend: &dyn RasterBackend, work: (i16, i16, i16, i16),
+    backend: &dyn RasterBackend, handle: i16, work: (i16, i16, i16, i16),
     ents: &[tos_api::bdos::fs::find::DirInfo], clip: ClipRect,
 ) {
     use crate::desktop_icons as ic;
@@ -1095,12 +1263,18 @@ fn draw_dir_icons(
             (&ic::DOC_DATA, &ic::DOC_MASK)
         };
         blit_icon(backend, cx - 16, cy, data, mask, clip);
-        // Centred name below, truncated to the cell width.
+        // Centred name below, truncated to the cell width; selected inverts.
         let end = e.name.iter().position(|&b| b == 0).unwrap_or(14);
         let shown = end.min(9);
         let lx = cx - (shown as i16 * 8) / 2;
+        let ink = if is_selected(handle, i) {
+            backend.fill_rect(lx - 1, cy + 32, shown as i16 * 8 + 2, 16, BLACK, clip);
+            WHITE
+        } else {
+            BLACK
+        };
         for (j, &c) in e.name[..shown].iter().enumerate() {
-            backend.draw_glyph(lx + j as i16 * 8, cy + 34, tos_api::vdi::font::glyph(c as u16), BLACK, clip);
+            backend.draw_glyph(lx + j as i16 * 8, cy + 34, tos_api::vdi::font::glyph(c as u16), ink, clip);
         }
     }
 }
