@@ -385,10 +385,17 @@ fn step(msg: &mut [i16; 8]) -> bool {
         // click lands on. (Click-count isn't wired yet; debounce on release.)
         if let Some(letter) = drive_at(mx, my) {
             open_cascaded(letter);
+            wait_release();
+        } else if select_at(mx, my) {
+            // A file was grabbed: follow the drag; dropping it on the Trash
+            // deletes it (EmuTOS drag-to-trash).
+            let (dx, dy) = follow_drag();
+            if trash_at(dx, dy) {
+                delete_selected();
+            }
         } else {
-            select_at(mx, my);
+            wait_release();
         }
-        wait_release();
     }
     true
 }
@@ -513,6 +520,27 @@ pub fn preview_confirm() {
     if let Some((_, _, name, _)) = resolve_selection() {
         confirm_delete(&name);
     }
+}
+
+/// Verification of the Trash hit-test: move the cursor onto the Trash icon
+/// and onto a blank spot, logging `trash_at` for each.
+pub fn preview_trash() {
+    draw();
+    open_dir_window(b'C', (40, MENU_H + 24, 300, 120));
+    let backend = &crate::vdi_backend::VDI_SCREEN;
+    let ich = 64i16;
+    let ycnt = ((480 - MENU_H) / ich).max(1);
+    let cy = MENU_H + 18 + (ycnt - 1) * ich + 16; // over the trash body
+    tos_api::vdi::feed_relative(0, 0, 0, backend);
+    let to = |x: i16, y: i16| {
+        let (mx, my) = tos_api::vdi::mouse_position();
+        tos_api::vdi::feed_relative(x - mx, y - my, 0, backend);
+        tos_api::vdi::mouse_position()
+    };
+    let p = to(60, cy);
+    kprintln!("[desk] cursor {:?} trash_at = {}", p, trash_at(p.0, p.1));
+    let q = to(300, 200);
+    kprintln!("[desk] cursor {:?} trash_at = {}", q, trash_at(q.0, q.1));
 }
 
 /// Verification of the actual deletion (bypassing the interactive confirm):
@@ -909,6 +937,32 @@ fn wait_release() {
             h.pump_input();
         }
     }
+}
+
+/// Follow the mouse until the button is released; return the release
+/// position (the drop point of a drag).
+fn follow_drag() -> (i16, i16) {
+    let mut last = tos_api::vdi::mouse_position();
+    if let Some(h) = tos_api::host::host() {
+        while tos_api::vdi::mouse_buttons() & 0x01 != 0 {
+            last = tos_api::vdi::mouse_position();
+            h.pump_input();
+        }
+    }
+    last
+}
+
+/// True if `(mx, my)` is over the desktop Trash icon (bottom-left fixture,
+/// same layout as `paint_desktop_bg`).
+fn trash_at(mx: i16, my: i16) -> bool {
+    let Some(backend) = tos_api::host::host().and_then(|h| h.raster()) else {
+        return false;
+    };
+    let ich = 64i16;
+    let ycnt = ((backend.height() as i16 - MENU_H) / ich).max(1);
+    let cy_bot = MENU_H + 18 + (ycnt - 1) * ich;
+    let cx = 20 + 80 / 2; // trash centre x (icw/2)
+    (mx - cx).abs() <= 28 && my >= cy_bot && my <= cy_bot + 56
 }
 
 /// The built menu tree root (for tests / the interactive loop).
