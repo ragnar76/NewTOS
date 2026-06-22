@@ -54,8 +54,13 @@ functions). Texts where read from `desktop.rsc`:
 - **File**: `OPENITEM` (Open), `SHOWITEM` (Show Info), `SRCHITEM`,
   `NFOLITEM` (New Folder), `CLOSITEM` (Close), `CLSWITEM` (Close Window),
   `BTOPITEM`, `SLCTITEM` (Select all), `MASKITEM` (Set Mask), `DELTITEM`
-  (Delete), `FORMITEM` (Format), `EJCTITEM` (Eject), `CLIITEM`,
-  `QUITITEM` (Quit).
+  (Delete), `FORMITEM` (Format), `CLIITEM`, `QUITITEM` (Quit).
+  - **`EJCTITEM` (Eject) is excluded:** `deskmain.c:744` gates it behind
+    `#if CONF_WITH_EJECT`, whose general/Atari default is `0`
+    (`config.h:2041`); it calls `flop_eject` → `lisa_flop_eject`
+    (`bios/floppy.c:647`, `bios/lisa.c:554`) — i.e. it exists only for the
+    **Apple Lisa** EmuTOS port (auto-eject drives), not Atari hardware. The
+    Phase-00 draft listed it by mistake; the NewTOS File menu omits it.
 - **View**: `ICONITEM` (Show as Icons), `TEXTITEM` (Show as Text),
   `NAMEITEM`/`TYPEITEM`/`SIZEITEM`/`DATEITEM`/`NSRTITEM` (sort order),
   `FITITEM`.

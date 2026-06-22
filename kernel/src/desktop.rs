@@ -211,7 +211,7 @@ const MENUS: [(&[u8], &[&[u8]]); 4] = [
             b"------------------\0", b" New folder...    \0", b" Close folder     \0",
             b" Close top window \0", b" Cycle windows    \0", b" Select all items \0",
             b" Set file mask... \0", b"------------------\0", b" Delete...        \0",
-            b" Format floppy... \0", b" Eject floppy     \0", b"------------------\0",
+            b" Format floppy... \0", b"------------------\0",
             b" Execute EmuCON   \0", b" Shutdown         \0",
         ],
     ),
