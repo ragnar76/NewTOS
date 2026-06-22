@@ -244,6 +244,10 @@ pub extern "C" fn rust_sync_handler(frame: &mut ExceptionFrame) {
             handle_pexec(frame);
             return;
         }
+        if func == 0x4D {
+            handle_pwait(frame);
+            return;
+        }
     }
 
     let args = TrapArgs {
@@ -296,6 +300,86 @@ pub extern "C" fn rust_sync_handler(frame: &mut ExceptionFrame) {
     // Write the 64-bit result into `x0` (error codes are already
     // sign-extended; `Getbpb` returns a full pointer).
     frame.gpr[0] = result as u64;
+}
+
+/// `Pwait` (GEMDOS 0x4D) — cooperative yield. Snapshot the running peer's
+/// full EL0 context into its slot, then round-robin to the next runnable
+/// peer (a context switch like `Pexec`/`Pterm`, but peer→peer). With no
+/// other runnable peer it is a no-op that returns 0.
+fn handle_pwait(frame: &mut ExceptionFrame) {
+    use core::sync::atomic::Ordering;
+    use tos_api::bdos::process::{sched, MAX_PROCESSES, PROCESS_TABLE};
+
+    let cur = sched::current();
+    if cur >= MAX_PROCESSES {
+        frame.gpr[0] = 0; // not a scheduler peer → harmless no-op
+        return;
+    }
+
+    // Save the running peer's full frame so the round-robin can resume it.
+    let sf = &PROCESS_TABLE[cur].saved_frame;
+    for i in 0..30 {
+        sf.gpr(i).store(frame.gpr[i], Ordering::Release);
+    }
+    sf.lr().store(frame.lr, Ordering::Release);
+    sf.elr().store(frame.elr, Ordering::Release);
+    sf.spsr().store(frame.spsr, Ordering::Release);
+    sf.sp_el0().store(frame.sp_el0, Ordering::Release);
+    sched::mark_yielded(cur);
+
+    match sched::on_yield(cur) {
+        Some(sw) => apply_switch(frame, &sw),
+        None => frame.gpr[0] = 0, // only runnable peer → continue
+    }
+}
+
+/// Install the next peer's address space and rewrite the trap frame so the
+/// post-handler `eret` lands in it — fresh at its entry point, or resumed
+/// from its saved EL0 context. Shared by `Pwait` and scheduler-aware
+/// `Pterm`.
+fn apply_switch(frame: &mut ExceptionFrame, sw: &tos_api::bdos::process::sched::Switch) {
+    use core::sync::atomic::Ordering;
+    use tos_api::bdos::process::{sched, State, PROCESS_TABLE};
+
+    // TTBR0 switch with the QUIRK-001 bracket (QEMU cortex-a72 TCG): a
+    // TLBI (boot-restore) then UART-bearing prints then the no-TLBI
+    // install, so the `eret`-to-EL0 later does not wedge. Harmless on
+    // real hardware. See `handle_pexec` / `finish_terminate`.
+    // SAFETY: trap context, single-CPU; no kernel low-half VA held.
+    unsafe {
+        crate::arch::aarch64::user_entry::restore_boot_ttbr0();
+    }
+    crate::kprintln!("[sched] switch -> slot {}", sw.slot);
+    unsafe {
+        tos_api::bdos::process::mmu::install_ttbr0(sw.l0_pa);
+    }
+    crate::kprintln!("[sched] running");
+
+    if sw.fresh {
+        for i in 0..30 {
+            frame.gpr[i] = 0;
+        }
+        frame.gpr[0] = tos_api::bdos::process::loader::USER_VA_BASE;
+        frame.lr = 0;
+        frame.elr = sw.entry_va;
+        frame.spsr = 0; // SPSR.M = EL0t
+        frame.sp_el0 = crate::arch::aarch64::el0::USER_STACK_TOP_EXCLUSIVE;
+    } else {
+        let sf = &PROCESS_TABLE[sw.slot].saved_frame;
+        for i in 0..30 {
+            frame.gpr[i] = sf.gpr(i).load(Ordering::Acquire);
+        }
+        frame.lr = sf.lr().load(Ordering::Acquire);
+        frame.elr = sf.elr().load(Ordering::Acquire);
+        frame.spsr = sf.spsr().load(Ordering::Acquire);
+        frame.sp_el0 = sf.sp_el0().load(Ordering::Acquire);
+        frame.gpr[0] = 0; // the resumed `Pwait` returns 0
+    }
+
+    let bp = PROCESS_TABLE[sw.slot].basepage_kva.load(Ordering::Acquire);
+    tos_api::bdos::process::set_current(bp);
+    PROCESS_TABLE[sw.slot].set_state(State::Running);
+    sched::set_running(sw.slot);
 }
 
 /// Pterm (GEMDOS 0x4C) / Pterm0 (0x00) handler. Rewrites the trap

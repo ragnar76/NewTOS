@@ -37,7 +37,9 @@
 //! "implicit single-CPU" lock with an explicit per-CPU SpinMutex).
 
 use core::ptr;
-use core::sync::atomic::{AtomicI32, AtomicPtr, AtomicU32, AtomicU64, AtomicU8, Ordering};
+use core::sync::atomic::{
+    AtomicBool, AtomicI32, AtomicPtr, AtomicU32, AtomicU64, AtomicU8, Ordering,
+};
 
 use tos_types::BasePage;
 
@@ -48,6 +50,7 @@ pub mod mmu;
 pub mod pterm;
 pub mod pexec;
 pub mod registry;
+pub mod sched;
 
 // ─── Bounds + state encoding ────────────────────────────────────────
 
@@ -164,6 +167,21 @@ pub struct Process {
     /// parent's TTBR0_EL1 read at trap entry, so the child's
     /// `Pterm` brings the parent's address space back online.
     pub parent_l0_pa: AtomicU64,
+
+    // ── cooperative scheduler (Phase 06 EC4 / `sched`) ──
+    /// Full EL0 context saved when this process yields via `Pwait`
+    /// (so the round-robin can resume it exactly where it left off).
+    /// Distinct from [`Self::parent_frame`], which carries the
+    /// parent-resume linkage for `Pexec`/`Pterm`.
+    pub saved_frame: ParentFrame,
+
+    /// In the scheduler's run-set (a peer in the cooperative
+    /// round-robin). Cleared when the process terminates.
+    pub runnable: AtomicBool,
+
+    /// `saved_frame` holds a valid context (the process has run and
+    /// yielded). `false` = never entered → start fresh at `entry_va`.
+    pub has_ctx: AtomicBool,
 }
 
 // ─── Parent-frame snapshot ──────────────────────────────────────────
@@ -263,6 +281,9 @@ impl Process {
             parent_slot: AtomicU32::new(NO_PARENT),
             parent_frame: ParentFrame::zeroed(),
             parent_l0_pa: AtomicU64::new(0),
+            saved_frame: ParentFrame::zeroed(),
+            runnable: AtomicBool::new(false),
+            has_ctx: AtomicBool::new(false),
         }
     }
 
