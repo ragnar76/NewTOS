@@ -8,6 +8,13 @@ direct hardware access plus a handful of OS variables in low memory.
 This file describes those variables and the small number of tables
 XBIOS maintains in higher memory.
 
+> **Observable vs. internal** — see [`docs/COMPATIBILITY.md`](../../COMPATIBILITY.md).
+> The per-entry **NewTOS:** notes below already draw this line: the OS
+> variables (`kbdvecs`/`Kbdvbase`, the low-memory vars `0x44E`/`0x4EE`/
+> `0x502`/`0x456`, `Random`'s reproducible sequence, the IORec) are
+> **contract**; the hardware shadows and SR-locking are NewTOS's own
+> implementation.
+
 ---
 
 ## 1. `kbdvecs` (`bios/ikbd.c:64`, returned by `Kbdvbase` 0x22)

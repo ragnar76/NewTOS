@@ -4,6 +4,13 @@
 > state required by spec entries in this group. Source: EmuTOS @
 > `1a7484ab`.
 
+> **Observable vs. internal** — see [`docs/COMPATIBILITY.md`](../../COMPATIBILITY.md).
+> **Contract** (programs observe — keep value/semantics exact): the
+> character-device vector tables a program can intercept, the device-handle
+> mapping (`bconmap_root`), the VT52 console *behaviour*. **Free to
+> reimplement** (unobservable): `boot_status` flags, how the vector tables
+> are stored internally, `kprintf` routing.
+
 ## `boot_status` flags (`bios/bios.h:80-95`)
 
 ```c
