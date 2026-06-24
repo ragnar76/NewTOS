@@ -8,6 +8,17 @@ Per-function specs reference these tables by name; this file is the
 single description of their structure, lifecycle, and concurrency
 expectations.
 
+> **Observable vs. internal** — see [`docs/COMPATIBILITY.md`](../../COMPATIBILITY.md).
+> This document is mostly EmuTOS's **internal model**, captured for
+> reference — NewTOS keeps the *behaviour*, not these structures.
+> **Free to reimplement** (a program cannot observe them): the SFT internals,
+> the disk-buffer cache `bufl[]`, `drvtbl[]`/`DMD`, the memory pools
+> `pmd`/`pmdalt` layout, the concurrency mechanics. **Contract** (a program
+> *does* observe these — keep value/semantics exact): the `PD`/basepage
+> fields, the `conterm` bits, the `drvbits` drive map, the per-process DTA
+> pointer + the 44-byte DTA the program owns, the OS-header/cookie-jar
+> values. When in doubt, apply the audit rubric in COMPATIBILITY.md.
+
 ---
 
 ## 1. Process descriptor `run` (`bdos/proc.c:54`)

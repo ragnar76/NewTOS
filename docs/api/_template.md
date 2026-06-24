@@ -5,6 +5,17 @@
 > `docs/SOURCE-ANALYSIS-PROTOCOL.md`. Every claim in this document must
 > trace to a specific EmuTOS source location.
 
+> **Contract vs. reference** — see [`docs/COMPATIBILITY.md`](../COMPATIBILITY.md).
+> The **Trap interface**, **Inputs**, **Outputs**, **Error conditions** and
+> **Related data structures** sections are the **compatibility contract** —
+> they must match TOS *exactly* (IDs, ABI, return/error codes, struct
+> layouts, observable behaviour). The **EmuTOS source / Helpers / globals**
+> and **Source extraction** sections are the **behaviour reference** — they
+> cite EmuTOS internals so we understand *what* the call must do; NewTOS
+> reimplements the *how* freely. **Do not treat an EmuTOS internal** (a
+> helper like `ffit`, a private struct field, an algorithm, an internal
+> table) **as contract** just because it appears in the reference sections.
+
 ---
 
 # `<Function name>` (`<trap>` 0x<id>)
