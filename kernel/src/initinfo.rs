@@ -13,7 +13,6 @@ use crate::bios::machine::frames::{stats, Pool};
 use crate::vdi_client::Vdi;
 
 // VDI palette indices (see vdi_backend::PALETTE).
-const WHITE: i16 = 0;
 const BLACK: i16 = 1;
 const BLUE: i16 = 4;
 
@@ -55,6 +54,29 @@ fn size_str(bytes: u64) -> alloc::string::String {
     }
 }
 
+/// A block-letter "NEWTOS" logo (5 rows, 35 cols of an `#` block font),
+/// drawn centred through the VDI text — our equivalent of EmuTOS' ASCII
+/// logo, but clearly branding *this* OS.
+const LOGO: [&[u8]; 5] = [
+    b"#   # ##### #   # #####  ###   ####",
+    b"##  # #     #   #   #   #   # #    ",
+    b"# # # ####  # # #   #   #   #  ### ",
+    b"#  ## #     ## ##   #   #   #     #",
+    b"#   # ##### #   #   #    ###  #### ",
+];
+
+/// Format the GEMDOS clock as `YYYY-MM-DD HH:MM:SS` for the boot-time line.
+fn boot_time_str() -> alloc::string::String {
+    let (time, date) = tos_api::gemdos::time::dos_now();
+    let day = date & 0x1F;
+    let month = (date >> 5) & 0x0F;
+    let year = 1980u16.wrapping_add(date >> 9);
+    let sec = (time & 0x1F) * 2;
+    let min = (time >> 5) & 0x3F;
+    let hour = time >> 11;
+    format!("{year:04}-{month:02}-{day:02} {hour:02}:{min:02}:{sec:02}")
+}
+
 /// Draw the boot information screen.
 pub fn run() {
     let (sw, sh) = crate::vdi_backend::dims();
@@ -68,22 +90,31 @@ pub fn run() {
         return;
     }
     v.clear(); // white background
+    let cx = sw / 2;
 
     // ── outer frame ──
-    let (fx0, fy0, fx1, fy1) = (24, 16, sw - 25, sh - 17);
+    let (fx0, fy0, fx1, fy1) = (16, 12, sw - 17, sh - 13);
     v.set_line(BLACK);
     rect(&mut v, fx0, fy0, fx1, fy1);
 
-    // ── title bar: white text on a blue bar, centred ──
-    let cx = sw / 2;
-    v.set_fill(BLUE);
-    v.fill_rect(fx0 + 16, fy0 + 18, fx1 - 16, fy0 + 54);
-    v.set_text_align(1, 5); // centre, top
-    v.set_text_color(WHITE);
-    v.gtext(cx, fy0 + 28, b"NewTOS - clean-room TOS for AArch64");
+    // ── NewTOS logo (blue block letters, centred) ──
+    let logo_x = cx - (LOGO[0].len() as i16 * 8) / 2;
+    let mut y = fy0 + 18;
+    v.set_text_align(0, 5); // left, top
+    v.set_text_color(BLUE);
+    for row in LOGO {
+        v.gtext(logo_x, y, row);
+        y += 16;
+    }
 
-    // separator under the title
-    let mut y = fy0 + 72;
+    // ── tagline, centred ──
+    y += 10;
+    v.set_text_align(1, 5); // centre, top
+    v.set_text_color(BLACK);
+    v.gtext(cx, y, b"A clean-room reimplementation of the TOS API for AArch64");
+
+    // separator under the tagline
+    y += 24;
     v.set_line(BLACK);
     v.line(fx0 + 16, y, fx1 - 16, y);
 
@@ -92,32 +123,36 @@ pub fn run() {
     let tt = stats(Pool::Ttram);
     y += 18;
     pair(&mut v, cx, y, b"Version", b"NewTOS 0.1");
-    y += 24;
-    pair(&mut v, cx, y, b"CPU type", b"ARM Cortex-A72");
-    y += 24;
-    pair(&mut v, cx, y, b"Architecture", b"AArch64 (ARMv8-A)");
-    y += 24;
+    y += 22;
+    pair(&mut v, cx, y, b"CPU type", b"ARM Cortex-A72 (AArch64)");
+    y += 22;
     pair(&mut v, cx, y, b"Machine", machine_name().as_bytes());
-    y += 24;
+    y += 22;
     pair(&mut v, cx, y, b"ST-RAM", size_str(st.total_bytes()).as_bytes());
-    y += 24;
+    y += 22;
     pair(&mut v, cx, y, b"TT-RAM", size_str(tt.total_bytes()).as_bytes());
-    y += 24;
-    pair(&mut v, cx, y, b"GEMDOS", drives_str().as_bytes());
+    y += 22;
+    pair(&mut v, cx, y, b"GEMDOS drives", drives_str().as_bytes());
+    y += 22;
+    pair(&mut v, cx, y, b"Boot time", boot_time_str().as_bytes());
 
-    // separator before the messages
-    y += 26;
+    // separator before the footer
+    y += 24;
     v.set_line(BLACK);
     v.line(fx0 + 16, y, fx1 - 16, y);
 
-    // ── messages, centred ──
+    // ── footer: branding / attribution (this OS is NOT the original) ──
     y += 16;
     v.set_text_align(1, 5);
     v.set_text_color(BLACK);
-    v.gtext(cx, y, b"Graphics rendered through the VDI (Trap 2 / svc #2)");
-    y += 22;
+    v.gtext(cx, y, b"NewTOS is an independent project - not original Atari software.");
+    y += 18;
+    v.gtext(cx, y, b"Atari(TM), TOS and GEM are trademarks of their respective owners.");
+
+    // booting message
+    y += 24;
     v.set_text_color(BLUE);
-    v.gtext(cx, y, b"This is bare metal - no emulation in the kernel.");
+    v.gtext(cx, y, b"Booting the desktop...");
 
     v.close();
 }
