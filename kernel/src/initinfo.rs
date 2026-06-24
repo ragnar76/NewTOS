@@ -14,6 +14,7 @@ use crate::vdi_client::Vdi;
 
 // VDI palette indices (see vdi_backend::PALETTE).
 const BLACK: i16 = 1;
+const RED: i16 = 2;
 const BLUE: i16 = 4;
 
 /// Friendly machine name for the current board.
@@ -54,9 +55,10 @@ fn size_str(bytes: u64) -> alloc::string::String {
     }
 }
 
-/// A block-letter "NEWTOS" logo (5 rows, 35 cols of an `#` block font),
-/// drawn centred through the VDI text — our equivalent of EmuTOS' ASCII
-/// logo, but clearly branding *this* OS.
+/// The "NEWTOS" logo as a 5×35 cell grid. `#` = a filled (coloured) cell,
+/// space = background — rendered as coloured blocks (not text), exactly the
+/// way EmuTOS' `print_art` paints its logo from a colour grid. "NEW" is
+/// drawn blue, "TOS" red (columns < 18 vs ≥ 18).
 const LOGO: [&[u8]; 5] = [
     b"#   # ##### #   # #####  ###   ####",
     b"##  # #     #   #   #   #   # #    ",
@@ -97,18 +99,27 @@ pub fn run() {
     v.set_line(BLACK);
     rect(&mut v, fx0, fy0, fx1, fy1);
 
-    // ── NewTOS logo (blue block letters, centred) ──
-    let logo_x = cx - (LOGO[0].len() as i16 * 8) / 2;
-    let mut y = fy0 + 18;
-    v.set_text_align(0, 5); // left, top
-    v.set_text_color(BLUE);
-    for row in LOGO {
-        v.gtext(logo_x, y, row);
-        y += 16;
+    // ── NewTOS logo: a grid of coloured blocks (EmuTOS' print_art idea —
+    //    each cell is a colour, not an ASCII char). "New" blue, "TOS" red. ──
+    let (cw, chh) = (12i16, 13i16);
+    let cols = LOGO[0].len() as i16;
+    let logo_x = cx - cols * cw / 2;
+    let logo_y = fy0 + 16;
+    for (r, row) in LOGO.iter().enumerate() {
+        let ry = logo_y + r as i16 * chh;
+        for (c, &cell) in row.iter().enumerate() {
+            if cell == b'#' {
+                let col = c as i16;
+                v.set_fill(if col < 18 { BLUE } else { RED });
+                let bx = logo_x + col * cw;
+                v.fill_rect(bx, ry, bx + cw - 1, ry + chh - 1);
+            }
+        }
     }
+    let mut y = logo_y + LOGO.len() as i16 * chh;
 
     // ── tagline, centred ──
-    y += 10;
+    y += 12;
     v.set_text_align(1, 5); // centre, top
     v.set_text_color(BLACK);
     v.gtext(cx, y, b"A clean-room reimplementation of the TOS API for AArch64");
