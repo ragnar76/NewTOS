@@ -34,6 +34,9 @@ Companion documents (read in this order at session start):
 - `docs/MEMORY.md` — project memory: ADRs with rationale, learned quirks,
   rejected alternatives, hard-won bug solutions
 - `docs/REQUIREMENTS.md` — functional and non-functional requirements
+- `docs/COMPATIBILITY.md` — **the compatibility contract**: what must match
+  TOS exactly (syscalls, variables, structs, error codes) vs. what NewTOS
+  is free to implement better. The measuring stick for "port vs. reimplement"
 - `docs/ARCHITECTURE.md` — layer diagram, module boundaries, ABI rules
 - `docs/STATUS.md` — current implementation state, open issues
 - `docs/api/` — **the extracted TOS API specification** (produced in Phase 00)
