@@ -157,20 +157,6 @@ pub unsafe fn enter_el0_with_resume_capture(
     // SAFETY: caller contract — single-CPU, valid l0_pa.
     unsafe { install_ttbr0(l0_pa) };
 
-    // DIAG: read TTBR0 right after install to confirm it stuck.
-    let ttbr0_after: u64;
-    unsafe {
-        core::arch::asm!(
-            "mrs {out}, ttbr0_el1",
-            out = out(reg) ttbr0_after,
-            options(nomem, nostack, preserves_flags),
-        );
-    }
-    crate::kprintln!(
-        "[ee0/fbfix] install_ttbr0(0x{:x}) → mrs reads 0x{:x}",
-        l0_pa, ttbr0_after,
-    );
-
     let elr_ptr: *const AtomicU64 = parent_frame.elr();
     let sp_ptr: *const AtomicU64 = parent_frame.sp_el0();
 

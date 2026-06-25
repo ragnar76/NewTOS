@@ -424,6 +424,66 @@ emulator phase, if ever.
 > - ADR-005: Mxalloc mode-flag handling on uniform RAM
 > - ADR-006: VT52 emulation scope
 
+## ADR-014: All MMIO through the high-half; TTBR0 holds no low-half identity
+
+**Date:** 2026-06-25
+**Status:** Accepted
+**Phase:** PHASE-06 / PHASE-14 (cross-cutting, MMU + drivers)
+
+### Context
+
+The first EL0 program launch (AUTO folder / desktop) worked in QEMU but
+faulted on real Pi4: Instruction Abort, lower EL, **permission fault,
+level 1**, at the entry VA `0x100` (`ESR=0x8200000d`). The Stage-1 boot
+identity map covers 0..4 GiB with 1-GiB **UXN** L1 blocks and stayed live in
+`TTBR0` because the kernel reached MMIO (UART, eMMC, mailbox, GIC) through
+the low-half identity. The Cortex-A72 speculatively (re-)cached a UXN block
+for the low-half; `install_ttbr0(slot)` swaps `TTBR0` to the slot tables but
+**cannot flush the TLB** — a `tlbi` on the eret-to-EL0 path wedges QEMU
+(QUIRK-001) — so the stale UXN block shadowed the slot's L3 page and the EL0
+fetch faulted. QEMU flushes its TLB on the `TTBR0` write, masking it.
+
+Two failed fixes confirmed the constraints: a `tlbi` in the launch path
+wedged QEMU; emptying `TTBR0` while MMIO was still low-half hung the kernel
+at the first UART write.
+
+### Decision
+
+Reach **every** peripheral register through the high-half (TTBR1) Device
+mapping (`drivers::mmio_va(pa) = pa + VA_OFFSET`). With MMIO independent of
+`TTBR0`, `install_stage2_ttbr1` points `TTBR0` at an all-invalid root
+(`EMPTY_L0`) after the high-half switch: no UXN identity block remains to be
+cached, and per-process `install_ttbr0` swaps in slot tables cleanly with no
+TLBI on the eret path. The pre-MMU boot heartbeat UART stays physical.
+
+### Rationale
+
+- Eliminates the fault at the root rather than fighting QUIRK-001.
+- A kernel should not depend on a low-half identity at runtime; high-half
+  MMIO is the clean design and also lets the kernel touch MMIO while a
+  process owns `TTBR0`.
+- QEMU now exercises the **same** path as real HW (high-half MMIO + empty
+  TTBR0), so it validates the launch path instead of hiding the bug.
+
+### Consequences
+
+- Also required: freshly-loaded code needs D-cache-clean-to-PoU +
+  I-cache-invalidate (ARM ARM B2.4.4) and table writes need a `dsb` before
+  the walk (D5.10.1) — real-HW-only, no-ops under QEMU's cacheless model.
+- `remap_normal_nc` must map **invalid** blocks too: the VideoCore puts the
+  framebuffer in reserved memory above `dram.end`, which Stage-2 leaves
+  unmapped; the old "convert only valid Normal blocks" guard skipped it and
+  the desktop draw took a translation fault. (8-GiB SKUs with a framebuffer
+  above 4 GiB still need a `NUM_L2` coverage bump.)
+- **Verified end-to-end on real Pi4 (2026-06-25):** init screen → AUTO
+  program loads from SD, runs at EL0, Pterm → desktop with 4 drives, no
+  exception.
+
+### References
+
+- QUIRK-001 (this file); commits `7231e9d` (high-half MMIO + empty TTBR0),
+  `c91c9e5` (framebuffer mapping), `3f93fde` (cache/barrier maintenance).
+
 ### Template for new ADRs
 
 ```markdown
