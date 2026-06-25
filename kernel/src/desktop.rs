@@ -71,6 +71,52 @@ fn patcol_desktop() -> u8 {
     G_PATCOL[4].load(core::sync::atomic::Ordering::Acquire)
 }
 
+// ── Double-click configuration ──────────────────────────────────────────
+//
+// Like GEM: the double-click *speed* is a setting 0..4 (0 slow … 4 fast),
+// the user-adjustable maximum gap between two clicks. EmuTOS' `gl_dcrates`
+// (`aes/gemevlib.c:33`) gives the gap in milliseconds per index; it lives
+// in the `#E` INF byte's low 3 bits (`INF_E1_DCMASK`) so it persists. The
+// desktop times clicks with `Host::monotonic_millis`.
+
+/// Double-click gap in ms per speed index (EmuTOS `gl_dcrates`).
+const DCRATES: [u16; 5] = [450, 330, 275, 220, 165];
+
+/// Current double-click speed index (0..4). Default 2 (EmuTOS
+/// `INF_E1_DEFAULT`). Set via the Preferences dialog, persisted in
+/// `NEWDESK.INF`.
+static DCLICK_SPEED: core::sync::atomic::AtomicU8 = core::sync::atomic::AtomicU8::new(2);
+
+/// Time + position of the previous click, for double-click detection.
+static LAST_CLICK_MS: core::sync::atomic::AtomicU64 = core::sync::atomic::AtomicU64::new(0);
+static LAST_CLICK_X: core::sync::atomic::AtomicI16 = core::sync::atomic::AtomicI16::new(-99);
+static LAST_CLICK_Y: core::sync::atomic::AtomicI16 = core::sync::atomic::AtomicI16::new(-99);
+
+/// Register a click at `(mx, my)` and report whether it completes a
+/// double-click: within `DCRATES[speed]` ms of the previous click and
+/// within a few pixels of it.
+fn register_click(mx: i16, my: i16) -> bool {
+    use core::sync::atomic::Ordering::Relaxed;
+    let now = tos_api::host::host().map(|h| h.monotonic_millis()).unwrap_or(0);
+    let last = LAST_CLICK_MS.swap(now, Relaxed);
+    let lx = LAST_CLICK_X.swap(mx, Relaxed);
+    let ly = LAST_CLICK_Y.swap(my, Relaxed);
+    let window = DCRATES[DCLICK_SPEED.load(Relaxed) as usize & 7] as u64;
+    now.saturating_sub(last) <= window && (mx - lx).abs() <= 4 && (my - ly).abs() <= 4
+}
+
+/// Set the double-click speed (0..4), keep the AES `evnt_dclick` rate in
+/// sync, and (caller's choice) persist it.
+fn set_dclick_speed(speed: u8) {
+    let s = speed.min(4);
+    DCLICK_SPEED.store(s, core::sync::atomic::Ordering::Release);
+    // Mirror to the AES so apps that call evnt_dclick see the same rate.
+    let mut a = Aes::new();
+    a.intin[0] = s as i16;
+    a.intin[1] = 1; // set
+    a.call(26, 2, 0); // evnt_dclick
+}
+
 /// Hex digit for a 0..15 nibble.
 fn hex_digit(n: u8) -> u8 {
     if n < 10 {
@@ -100,6 +146,19 @@ fn save_inf() {
     buf[k] = b'\n';
     k += 1;
 
+    // #E settings line: E1 = double-click speed (low 3 bits) + confirm
+    // delete/copy defaults (EmuTOS INF_E1).
+    let e1 = (DCLICK_SPEED.load(core::sync::atomic::Ordering::Acquire) & 0x07) | 0x18;
+    for &b in b"#E " {
+        buf[k] = b;
+        k += 1;
+    }
+    buf[k] = hex_digit(e1 >> 4);
+    buf[k + 1] = hex_digit(e1 & 0x0F);
+    buf[k + 2] = b'\r';
+    buf[k + 3] = b'\n';
+    k += 4;
+
     let path = b"C:\\NEWDESK.INF\0";
     let h = gemdos3(0x3C, path.as_ptr() as u64, 0, 0); // Fcreate(path, attr=0)
     if h < 0 {
@@ -109,7 +168,7 @@ fn save_inf() {
     let handle = h as u64;
     gemdos3(0x40, handle, k as u64, buf.as_ptr() as u64); // Fwrite
     gemdos1(0x3E, handle); // Fclose
-    kprintln!("[desk] Save desktop: wrote NEWDESK.INF (#Q)");
+    kprintln!("[desk] Save desktop: wrote NEWDESK.INF (#Q + #E)");
 }
 
 /// Options → "Set background": cycle the desktop colour (a minimal picker;
@@ -149,34 +208,52 @@ fn load_inf() {
         return;
     };
     let data = &buf[..n];
-    // Find "#Q" at a line start.
+    // Scan all lines; parse #Q (pattern/colour) and #E (settings).
     let mut i = 0;
     while i + 2 < data.len() {
         let at_line = i == 0 || data[i - 1] == b'\n' || data[i - 1] == b'\r';
-        if at_line && data[i] == b'#' && data[i + 1] == b'Q' {
-            let mut p = i + 2;
-            let mut vals = [0u8; 6];
-            let mut vi = 0;
-            while vi < 6 && p + 1 < data.len() {
-                while p < data.len() && data[p] == b' ' {
-                    p += 1;
-                }
-                match (hex_val(data[p]), hex_val(data[p + 1])) {
-                    (Some(h), Some(l)) => {
-                        vals[vi] = (h << 4) | l;
-                        vi += 1;
-                        p += 2;
+        if at_line && data[i] == b'#' {
+            match data[i + 1] {
+                b'Q' => {
+                    let mut p = i + 2;
+                    let mut vals = [0u8; 6];
+                    let mut vi = 0;
+                    while vi < 6 && p + 1 < data.len() {
+                        while p < data.len() && data[p] == b' ' {
+                            p += 1;
+                        }
+                        match (hex_val(data[p]), hex_val(data[p + 1])) {
+                            (Some(h), Some(l)) => {
+                                vals[vi] = (h << 4) | l;
+                                vi += 1;
+                                p += 2;
+                            }
+                            _ => break,
+                        }
                     }
-                    _ => break,
+                    if vi == 6 {
+                        for (k, v) in vals.iter().enumerate() {
+                            G_PATCOL[k].store(*v, core::sync::atomic::Ordering::Release);
+                        }
+                        kprintln!("[desk] NEWDESK.INF #Q (desktop={:#04x})", vals[4]);
+                    }
                 }
-            }
-            if vi == 6 {
-                for (k, v) in vals.iter().enumerate() {
-                    G_PATCOL[k].store(*v, core::sync::atomic::Ordering::Release);
+                b'E' => {
+                    // E1's low 3 bits = double-click speed.
+                    let mut p = i + 2;
+                    while p < data.len() && data[p] == b' ' {
+                        p += 1;
+                    }
+                    if let (Some(h), Some(l)) =
+                        (hex_val(data[p]), hex_val(data[p + 1]))
+                    {
+                        let e1 = (h << 4) | l;
+                        set_dclick_speed(e1 & 0x07);
+                        kprintln!("[desk] NEWDESK.INF #E (dclick={})", e1 & 0x07);
+                    }
                 }
-                kprintln!("[desk] NEWDESK.INF #Q loaded (desktop={:#04x})", vals[4]);
+                _ => {}
             }
-            return;
         }
         i += 1;
     }
@@ -567,13 +644,22 @@ fn step(msg: &mut [i16; 8]) -> bool {
     }
     if fired & MU_BUTTON != 0 {
         // A raw click the AES did not claim → desktop surface or a window
-        // work area. A drive icon opens it; otherwise select the entry the
-        // click lands on. (Click-count isn't wired yet; debounce on release.)
+        // work area. GEM semantics: single-click selects, double-click
+        // opens (a drive → a window, a program → run it). The double-click
+        // gap is the configurable DCLICK_SPEED.
+        let dbl = register_click(mx, my);
         if let Some(letter) = drive_at(mx, my) {
-            open_cascaded(letter);
+            if dbl {
+                open_cascaded(letter);
+            }
+            wait_release();
+        } else if dbl {
+            // Double-click in a window → open/launch the entry under it.
+            select_at(mx, my);
+            open_selected();
             wait_release();
         } else if select_at(mx, my) {
-            // A file was grabbed: follow the drag; dropping it on the Trash
+            // Single click on a file: select it; dragging it onto the Trash
             // deletes it (EmuTOS drag-to-trash).
             let (dx, dy) = follow_drag();
             if trash_at(dx, dy) {
@@ -584,6 +670,23 @@ fn step(msg: &mut [i16; 8]) -> bool {
         }
     }
     true
+}
+
+/// Verification of double-click detection: two quick `register_click`s on
+/// the C: icon — the second should report a double-click and open the
+/// window; logs the single/double decision.
+pub fn preview_dclick() {
+    draw();
+    let (cx, cy) = (60i16, MENU_H + 40);
+    let first = register_click(cx, cy);
+    let second = register_click(cx, cy);
+    kprintln!("[desk] dclick: first={} second={} (speed={})",
+        first, second, DCLICK_SPEED.load(core::sync::atomic::Ordering::Relaxed));
+    if second {
+        if let Some(letter) = drive_at(cx, cy) {
+            open_cascaded(letter);
+        }
+    }
 }
 
 /// Verification (no real mouse in QEMU): synthesize a left-click over the
@@ -1147,6 +1250,16 @@ fn launch_selected(letter: u8, name: &[u8; 14]) {
     // The program owned the screen while running — repaint the desktop.
     SEL_WIN.store(0, core::sync::atomic::Ordering::Release);
     draw();
+}
+
+/// Open the selected entry (double-click): launch a program, otherwise
+/// (data files / folders → viewer / navigation) do nothing yet.
+fn open_selected() {
+    if let Some((_, letter, name, is_dir)) = resolve_selection() {
+        if !is_dir && name_is_program(&name) {
+            launch_selected(letter, &name);
+        }
+    }
 }
 
 /// Rename `X:\old` → `X:\new` via `Frename` (0x56). Returns true on success.
