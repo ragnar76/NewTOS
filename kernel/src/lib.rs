@@ -295,12 +295,16 @@ extern "C" fn kernel_main_rust(dtb_phys: usize) -> ! {
     // mouse is wired (UART2); in QEMU it renders and waits. The time-driven
     // AES `aes_demo::showcase()` and the serial `shell::run()` remain
     // available for debugging.
+    // Switch the screen to the framebuffer console first, so any boot /
+    // AUTO-program console output (Cconws) is visible on HDMI — EmuTOS shows
+    // its AUTO programs on the console before the GUI.
+    fbcon::activate();
+
     // Run the AUTO folder (\AUTO\*.PRG) before the GUI — EmuTOS' autoexec.
     // No-op until the boot drive has an \AUTO\ folder with programs; an
     // invalid/empty .PRG fails the load gracefully (no fault).
     launch::run_auto_folder();
 
-    fbcon::activate();
     desktop::run();
 
     // The desktop loop returns only on Shutdown.
