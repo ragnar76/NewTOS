@@ -55,10 +55,13 @@ desktop never learns the input came from USB.
 ## Deliverables
 
 - **D0** **Source-analysis of the FreeMiNT USB stack** per
-  `SOURCE-ANALYSIS-PROTOCOL.md` → spec in `docs/api/usb/` : the `ucdif`
-  host-controller contract, the enumeration + hub flow, the HID report
-  parser, the keyboard/mouse class behaviour, and the HID→IKBD injection
-  mapping (USB HID usage ↔ Atari scancode). Track-B: xHCI spec capture for D1.
+  `SOURCE-ANALYSIS-PROTOCOL.md` → spec in [`docs/api/usb/`](../docs/api/usb/) :
+  host-controller (`ucdif`) contract, core enumeration + `uddif` binding, hub,
+  and the HID keyboard/mouse → IKBD mapping (full HID-usage↔Atari-scancode
+  table + the relative-mouse packet). Integration point fixed: both HID
+  drivers synthesise raw IKBD bytes into the existing `ikbd::feed`. HID
+  report-descriptor parser deferred (boot protocol). Track-B xHCI capture
+  happens at D1.  ✅
 - **D1** **xHCI controller bring-up in QEMU** (`qemu-virt` + `-device
   qemu-xhci`): controller reset/init, command + event rings, port status,
   device-slot enable — on `rust-osdev/xhci`. Verify: a `-device usb-kbd`
