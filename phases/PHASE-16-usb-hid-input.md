@@ -63,9 +63,13 @@ desktop never learns the input came from USB.
   report-descriptor parser deferred (boot protocol). Track-B xHCI capture
   happens at D1.  ✅
 - **D1** **xHCI controller bring-up in QEMU** (`qemu-virt` + `-device
-  qemu-xhci`): controller reset/init, command + event rings, port status,
-  device-slot enable — on `rust-osdev/xhci`. Verify: a `-device usb-kbd`
-  enumerates to "device connected, slot assigned".
+  qemu-xhci`): PCIe ECAM enumeration (ECAM base from the DTB —
+  `dtb::parse_pcie_ecam` — + `mmu::map_device_high` for the high virt ECAM),
+  BAR assign, then the xHCI init sequence (reset → max slots → DCBAA →
+  command ring → event ring → run) on `rust-osdev/xhci`, then `PORTSC`
+  connect status. **Verified:** "xHCI up: 16 slots, 8 root ports"; ports 5/6
+  report `CCS=1` (the `usb-kbd` + `usb-mouse`). xtask runs virt with the USB
+  devices.  ✅
 - **D2** **USB core** — control transfers, descriptor reads, set-address /
   set-config; a `usb_device` model.
 - **D3** **Hub driver** — walk the (root + internal) hub, enumerate ports.
