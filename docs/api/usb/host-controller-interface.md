@@ -78,11 +78,20 @@ The xHCI driver implements `HostController` on top of `rust-osdev/xhci`
 (register/structure layer) + the xHCI spec (Track-B), with Circle as the
 behavioural reference:
 
+- **Controller discovery (the one part that differs QEMU vs Pi-4):**
+  - **QEMU `virt`**: `qemu-xhci` sits on **PCIe** (`qemu-system-aarch64
+    -device qemu-xhci -device usb-kbd -device usb-mouse`, wired in
+    `tools/xtask/src/main.rs`). NewTOS needs **minimal PCIe ECAM
+    enumeration** to find the controller + read its MMIO BAR. (PCIe is on
+    the virt machine's generic host bridge; useful groundwork regardless.)
+  - **Real Pi-4**: the firmware maps the VL805 xHCI at a **fixed MMIO
+    `0xFE9C0000`** — no PCIe enumeration — but its **firmware must be loaded
+    via the mailbox** first (D7). QEMU needs no firmware step.
+  - Abstract this as a `locate_xhci() -> mmio_base` step; **everything from
+    the register interface up is shared** between the two targets.
 - **`open`**: reset the controller; program CRCR/DCBAAP/config; allocate the
   command ring, event ring (+ ERST), and the Device Context Base Address
-  Array; enable slots; start (`USBCMD.RS`); on real Pi-4, **load VL805
-  firmware via the mailbox first** and use MMIO `0xFE9C0000` (D7). In QEMU,
-  the `qemu-xhci` device needs no firmware step.
+  Array; enable slots; start (`USBCMD.RS`).
 - **`control`/`interrupt`**: per device-slot endpoint transfer rings; enqueue
   TRBs, ring the doorbell, wait on the event ring for completion.
 - **`root_hub`**: PORTSC-based port status / reset / power; feed connect /
