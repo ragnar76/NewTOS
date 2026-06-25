@@ -317,9 +317,21 @@ pub unsafe fn remap_normal_nc(va: u64, len: u64) {
         if i < NUM_L2 {
             let slot = &mut l2[i].0[j];
             let old = *slot;
-            // Only convert valid, currently-Normal blocks.
-            if old & VALID != 0 && (old & ATTRIDX_MASK) == ATTRIDX_NORMAL {
-                // Break-before-make for this block (ARM ARM K11.5).
+            // Map this block as Normal-NC. Two cases the framebuffer hits:
+            //   * the block was Normal DRAM (framebuffer carved out of the
+            //     kernel's mapped RAM) — re-attribute it; or
+            //   * the block was *invalid* — the framebuffer sits in
+            //     VideoCore-reserved memory above `dram.end`, which Stage-2
+            //     left unmapped. Create the mapping.
+            // Never touch a Device block (MMIO), which is never the
+            // framebuffer.
+            let is_device =
+                old & VALID != 0 && (old & ATTRIDX_MASK) == ATTRIDX_DEVICE;
+            if !is_device {
+                // Break-before-make for this block (ARM ARM K11.5). For a
+                // previously-invalid block the zero-write is a harmless
+                // no-op; the TLBI drops any stale (or speculatively cached
+                // invalid) entry before the new descriptor goes live.
                 *slot = 0;
                 // SAFETY: publish the break, drop stale TLB, then make.
                 unsafe {

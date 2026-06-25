@@ -167,7 +167,7 @@ pub unsafe fn enter_el0_with_resume_capture(
         );
     }
     crate::kprintln!(
-        "[ee0/cachefix] install_ttbr0(0x{:x}) → mrs reads 0x{:x}",
+        "[ee0/fbfix] install_ttbr0(0x{:x}) → mrs reads 0x{:x}",
         l0_pa, ttbr0_after,
     );
 
