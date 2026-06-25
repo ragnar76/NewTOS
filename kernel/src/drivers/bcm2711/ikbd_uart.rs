@@ -11,15 +11,15 @@
 
 use crate::ikbd;
 
-/// GPIO peripheral base (datasheet §5.2), as in `pl011.rs`.
-const GPIO_BASE: usize = 0xFE20_0000;
+/// GPIO peripheral base (high-half MMIO VA; datasheet §5.2), as in `pl011.rs`.
+const GPIO_BASE: usize = crate::drivers::mmio_va(0xFE20_0000);
 /// `GPFSEL0` — function select for GPIO 0..9 (datasheet §5.3, offset 0).
 const GPFSEL0: usize = GPIO_BASE;
 /// Pull-up/down control for GPIO 0..15 (datasheet §5.3).
 const GPIO_PUP_PDN_CNTRL_REG0: usize = GPIO_BASE + 0xE4;
 
-/// PL011 UART2 base (datasheet §11.5; UART0 + 0x400).
-const UART2_BASE: usize = 0xFE20_1400;
+/// PL011 UART2 base (high-half MMIO VA; datasheet §11.5; UART0 + 0x400).
+const UART2_BASE: usize = crate::drivers::mmio_va(0xFE20_1400);
 
 // PL011 register offsets (datasheet §11.5).
 const UART_DR: usize = 0x00;

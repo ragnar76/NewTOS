@@ -24,7 +24,7 @@ use crate::arch::aarch64::mmu::{va_to_pa, VA_OFFSET};
 use crate::bios::machine::frames::{alloc_frames_contig, Pool, FRAME_SIZE};
 use crate::hal::framebuffer::Framebuffer;
 
-const FWCFG_BASE: usize = 0x0902_0000;
+const FWCFG_BASE: usize = crate::drivers::mmio_va(0x0902_0000);
 const FWCFG_DMA: usize = FWCFG_BASE + 0x10;
 
 // fw_cfg DMA control bits.

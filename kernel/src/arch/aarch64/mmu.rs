@@ -112,6 +112,28 @@ static mut L1: PageTable = PageTable([0; ENTRIES]);
 static mut L2: [PageTable; NUM_L2] =
     [const { PageTable([0; ENTRIES]) }; NUM_L2];
 
+/// An all-invalid L0 root for `TTBR0_EL1` whenever no process is active.
+/// After the high-half switch (`install_stage2_ttbr1`) TTBR0 points here
+/// instead of being left on the Stage-1 boot identity map. That map covers
+/// 0..4 GiB with 1-GiB **UXN** L1 blocks; leaving it live let the
+/// Cortex-A72 speculatively (re-)cache a UXN block for the low-half, so the
+/// first `Pexec`'s eret-to-EL0 instruction fetch hit a stale UXN entry and
+/// took an Instruction-Abort permission fault (level 1) on real hardware.
+/// With an all-zero root the walker finds only invalid descriptors —
+/// nothing executable to cache — and the per-process `install_ttbr0` swaps
+/// in the slot's tables cleanly. We cannot instead flush at install time: a
+/// `tlbi` on the eret-to-EL0 path wedges QEMU's cortex-a72 (QUIRK-001).
+/// This is safe only because the kernel reaches all MMIO through the
+/// high-half (see `drivers::mmio_va`), so it never needs the low-half
+/// identity. Pointing at a real zero table (not `TTBR0 = 0`, which would
+/// walk physical 0 and stall QEMU) keeps both targets happy.
+static EMPTY_L0: PageTable = PageTable([0; ENTRIES]);
+
+/// Physical address of [`EMPTY_L0`] for a `TTBR0_EL1` "no process" install.
+pub fn empty_l0_pa() -> u64 {
+    va_to_pa((&raw const EMPTY_L0) as u64)
+}
+
 // ─────────────────────────────────────────────────────────────────────
 // Table construction
 // ─────────────────────────────────────────────────────────────────────
@@ -356,41 +378,38 @@ unsafe fn install_stage2_ttbr1() {
     // `VA_OFFSET` yields its physical load address — which is what
     // `TTBR1_EL1` consumes.
     let new_l0_pa: u64 = va_to_pa((&raw const L0) as u64);
+    // Replace the Stage-1 boot identity map in TTBR0 with an all-invalid
+    // root. Its 1-GiB UXN L1 blocks could otherwise be speculatively
+    // (re-)cached for the low-half, and the first per-process eret-to-EL0
+    // fetch would hit the stale UXN entry (real-HW Instruction-Abort
+    // permission fault, level 1). A `tlbi` at install time can't fix it —
+    // it wedges QEMU before eret-to-EL0 (QUIRK-001) — so we drop the
+    // offending mapping here, in pure EL1 boot context. Safe because the
+    // kernel now reaches all MMIO through the high-half (drivers::mmio_va),
+    // so it never touches the low-half identity. See `EMPTY_L0`.
+    let empty_pa: u64 = empty_l0_pa();
 
-    // Stage-2 high-half install + TLB sync.
+    // Stage-2 high-half install + low-half drop + TLB sync. Writing TTBR0
+    // only affects low-half translation; the PC runs in the high-half
+    // (TTBR1), so this is race-free.
     unsafe {
         core::arch::asm!(
             "dsb ishst",
             "msr ttbr1_el1, {ttbr1}",
+            "msr ttbr0_el1, {ttbr0}",
             "tlbi vmalle1",
             "dsb ish",
             "isb",
             ttbr1 = in(reg) new_l0_pa,
+            ttbr0 = in(reg) empty_pa,
             options(nostack, preserves_flags),
         );
     }
-    // TTBR0_EL1 is left **unchanged** for now — it still points at
-    // the Stage-1 boot L0 (set by `boot._start`), which has 1-GiB
-    // identity blocks for 0..4 GiB. The kernel does not access
-    // low-half VAs after this point, so the stale boot mapping is
-    // harmless until Phase 06 installs the first per-process
-    // address space (which writes `TTBR0_EL1` atomically together
-    // with `TCR_EL1.EPD0` clear).
-    //
-    // Why not clear it now?
-    //   * `TTBR0_EL1 = 0` makes the walker read from phys 0, which
-    //     on QEMU `aarch64-virt` hits unmapped firmware/flash and
-    //     stalls.
-    //   * Setting `TCR_EL1.EPD0 = 1` mid-flight (without a TTBR0
-    //     re-write) makes the boot CPU silently lose its way — ARM
-    //     ARM K11.5 advises against asymmetric TCR changes while
-    //     translation is live.
-    //   * Re-pointing TTBR0 at an empty zero page would work but
-    //     adds another 4-KiB static for no observable benefit
-    //     in Phase 05.
-    //
-    // Phase 06 D8 will replace this comment with a real per-process
-    // `TTBR0` install + `EPD0` clear sequence.
+    // TTBR0_EL1 now maps nothing: low-half VAs raise a translation fault
+    // until Phase 06's per-process `install_ttbr0` swaps in a slot's
+    // tables. The kernel runs wholly in the high-half, so it never touches
+    // the low-half in between. (We point at a real zero table rather than
+    // `TTBR0 = 0`, which would walk physical 0 and stall QEMU.)
 }
 
 // ─────────────────────────────────────────────────────────────────────

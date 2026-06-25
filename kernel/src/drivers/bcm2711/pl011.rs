@@ -23,10 +23,10 @@ use crate::hal::uart::Uart;
 // MMIO base addresses (low-peripheral mode)
 // ---------------------------------------------------------------------------
 
-/// GPIO peripheral base. Datasheet §5.2.
-const GPIO_BASE: usize = 0xFE20_0000;
-/// PL011 UART0 base. Datasheet §11.5.
-const UART0_BASE: usize = 0xFE20_1000;
+/// GPIO peripheral base (high-half MMIO VA). Datasheet §5.2.
+const GPIO_BASE: usize = crate::drivers::mmio_va(0xFE20_0000);
+/// PL011 UART0 base (high-half MMIO VA). Datasheet §11.5.
+const UART0_BASE: usize = crate::drivers::mmio_va(0xFE20_1000);
 
 /// `GPFSEL1` — function select for GPIO 10..19. Datasheet §5.3.
 const GPFSEL1: usize = GPIO_BASE + 0x04;

@@ -189,10 +189,10 @@ pub extern "C" fn rust_irq_handler(_frame: &mut crate::arch::aarch64::exceptions
 mod board {
     /// QEMU `aarch64-virt` GIC distributor base. Source: QEMU
     /// `hw/arm/virt.c`, `[VIRT_GIC_DIST] = { 0x08000000, 0x10000 }`.
-    pub const GICD_BASE: usize = 0x0800_0000;
+    pub const GICD_BASE: usize = crate::drivers::mmio_va(0x0800_0000);
     /// QEMU `aarch64-virt` GIC CPU-interface base. Source: same file,
     /// `[VIRT_GIC_CPU] = { 0x08010000, 0x10000 }`.
-    pub const GICC_BASE: usize = 0x0801_0000;
+    pub const GICC_BASE: usize = crate::drivers::mmio_va(0x0801_0000);
     /// PL011 INTID on `aarch64-virt`: SPI 1 → INTID 32 + 1 = 33.
     /// Source: QEMU `hw/arm/virt.c`, `[VIRT_UART] = ... ARM_SPI(1)`.
     pub const PL011_INTID: u32 = 33;
@@ -202,9 +202,9 @@ mod board {
 mod board {
     /// BCM2711 GIC-400 distributor base (low-peripheral mode).
     /// Source: BCM2711 ARM Peripherals datasheet §6.3.
-    pub const GICD_BASE: usize = 0xFF84_1000;
+    pub const GICD_BASE: usize = crate::drivers::mmio_va(0xFF84_1000);
     /// BCM2711 GIC-400 CPU-interface base.
-    pub const GICC_BASE: usize = 0xFF84_2000;
+    pub const GICC_BASE: usize = crate::drivers::mmio_va(0xFF84_2000);
     /// PL011 (UART0) INTID on BCM2711: SPI 121 → INTID 32 + 121 = 153.
     /// Source: BCM2711 ARM Peripherals datasheet §6.3 "VC peripheral
     /// IRQs", VC_UART entry.

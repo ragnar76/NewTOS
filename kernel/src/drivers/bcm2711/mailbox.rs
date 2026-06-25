@@ -15,9 +15,9 @@
 
 use core::arch::asm;
 
-/// Mailbox register block, BCM2711 low-peripheral mode.
+/// Mailbox register block, BCM2711 low-peripheral mode (high-half MMIO VA).
 /// (`0xFE00_0000` peripheral base + `0xB880`.)
-const MBOX_BASE: usize = 0xFE00_B880;
+const MBOX_BASE: usize = crate::drivers::mmio_va(0xFE00_B880);
 
 // Register offsets from `MBOX_BASE` (firmware wiki "Mailboxes").
 // The `+ 0x00` keeps the offset column symmetric for documentation

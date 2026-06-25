@@ -14,8 +14,8 @@ use crate::hal::block::{BlockDevice, BlockError, SECTOR_SIZE};
 /// wires its emulated card to the legacy **EMMC** SDHCI (`0xFE30_0000`).
 /// Both are standard SDHCI, so one driver serves both — `init()` probes
 /// EMMC2 first (real HW), then EMMC (QEMU).
-const EMMC2_BASE: usize = 0xFE34_0000;
-const EMMC_BASE: usize = 0xFE30_0000;
+const EMMC2_BASE: usize = crate::drivers::mmio_va(0xFE34_0000);
+const EMMC_BASE: usize = crate::drivers::mmio_va(0xFE30_0000);
 
 /// The controller base the driver is currently bound to.
 static BASE_ADDR: AtomicUsize = AtomicUsize::new(EMMC2_BASE);

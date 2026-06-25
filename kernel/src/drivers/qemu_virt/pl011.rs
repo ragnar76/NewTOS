@@ -15,7 +15,7 @@
 
 use crate::hal::uart::Uart;
 
-const UART0_BASE: usize = 0x0900_0000;
+const UART0_BASE: usize = crate::drivers::mmio_va(0x0900_0000);
 
 const UART_DR:    usize = 0x00;
 const UART_FR:    usize = 0x18;
