@@ -189,6 +189,44 @@ fn set_background() {
     kprintln!("[desk] Set background: desktop = {:#04x}", newd);
 }
 
+/// Options → "Set preferences": a dialog to pick the double-click speed
+/// (1 = slow … 5 = fast). Clicking a speed sets + saves it; Cancel keeps
+/// the current. (EmuTOS' preferences dialog, reduced to this one setting.)
+fn set_preferences() {
+    const SELECTED: u16 = 0x0001;
+    static LABEL: &[u8] = b"Double-click speed (1 slow - 5 fast):\0";
+    static LBL: [&[u8]; 5] = [b" 1 \0", b" 2 \0", b" 3 \0", b" 4 \0", b" 5 \0"];
+    static CANCEL: &[u8] = b" Cancel \0";
+    let cur = (DCLICK_SPEED.load(core::sync::atomic::Ordering::Acquire) as usize).min(4);
+
+    let mut tree = [
+        mk(G_BOX, FL3DBAK, 1 << 16, 146, 150, 348, 124, -1, 1, 7),
+        mk(G_STRING, 0, LABEL.as_ptr() as u64, 24, 18, 320, 16, 2, -1, -1),
+        mk(G_BUTTON, SELECTABLE | EXIT | FL3DACT, LBL[0].as_ptr() as u64, 24, 44, 52, 28, 3, -1, -1),
+        mk(G_BUTTON, SELECTABLE | EXIT | FL3DACT, LBL[1].as_ptr() as u64, 84, 44, 52, 28, 4, -1, -1),
+        mk(G_BUTTON, SELECTABLE | EXIT | FL3DACT, LBL[2].as_ptr() as u64, 144, 44, 52, 28, 5, -1, -1),
+        mk(G_BUTTON, SELECTABLE | EXIT | FL3DACT, LBL[3].as_ptr() as u64, 204, 44, 52, 28, 6, -1, -1),
+        mk(G_BUTTON, SELECTABLE | EXIT | FL3DACT, LBL[4].as_ptr() as u64, 264, 44, 52, 28, 7, -1, -1),
+        mk(G_BUTTON, SELECTABLE | EXIT | LASTOB | FL3DACT, CANCEL.as_ptr() as u64, 130, 84, 90, 28, 0, -1, -1),
+    ];
+    tree[2 + cur].ob_state = SELECTED; // show the current speed pressed
+
+    let mut a = Aes::new();
+    a.addrin[0] = tree.as_ptr() as i64;
+    a.intin[0] = 0; a.intin[1] = 8; a.intin[2] = 0; a.intin[3] = 0; a.intin[4] = 640; a.intin[5] = 480;
+    a.call(42, 6, 1); // objc_draw
+    a.intin[0] = 0;
+    a.addrin[0] = tree.as_ptr() as i64;
+    a.call(50, 1, 1); // form_do
+    let clicked = a.intout[0];
+    if (2..=6).contains(&clicked) {
+        set_dclick_speed((clicked - 2) as u8);
+        save_inf();
+        kprintln!("[desk] preferences: double-click speed = {}", clicked - 1);
+    }
+    draw();
+}
+
 /// Hex digit value, or `None`.
 fn hex_val(c: u8) -> Option<u8> {
     match c {
@@ -672,6 +710,13 @@ fn step(msg: &mut [i16; 8]) -> bool {
     true
 }
 
+/// Verification of the Preferences dialog: draw the desktop and open the
+/// double-click-speed dialog (blocks on form_do for the screendump).
+pub fn preview_prefs() {
+    draw();
+    set_preferences();
+}
+
 /// Verification of double-click detection: two quick `register_click`s on
 /// the C: icon — the second should report a double-click and open the
 /// window; logs the single/double decision.
@@ -967,6 +1012,8 @@ fn handle_menu_select(item: i16) -> MenuAction {
         size_to_fit();
     } else if item_has(item, b"Set background") {
         set_background();
+    } else if item_has(item, b"Set preferences") {
+        set_preferences();
     } else if item_has(item, b"Save desktop") {
         save_inf();
     } else {
