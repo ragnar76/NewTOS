@@ -138,6 +138,122 @@ pub unsafe fn parse_memory(dtb_phys: usize) -> Option<DtbMemory> {
     None
 }
 
+/// PCIe host-bridge config-space (ECAM) region from the device tree.
+#[derive(Clone, Copy)]
+pub struct DtbPcie {
+    /// ECAM (configuration space) physical base address.
+    pub ecam_base: u64,
+    /// ECAM size in bytes.
+    pub ecam_size: u64,
+}
+
+/// Find the first `pci@…` / `pcie@…` node and return its ECAM region (the
+/// node's `reg`). `None` on absent/malformed DTB. Used by the USB host stack
+/// (PHASE-16) to locate the xHCI on QEMU `virt`, where the ECAM moved to a
+/// high address (`0x40_1000_0000`) that is not in our build-time MMIO map.
+///
+/// # Safety
+///
+/// `dtb_phys` must point at a readable flattened device tree (or be 0).
+pub unsafe fn parse_pcie_ecam(dtb_phys: usize) -> Option<DtbPcie> {
+    if dtb_phys == 0 {
+        return None;
+    }
+    // Unlike `parse_memory` (called early, while the boot identity map is
+    // still live in TTBR0), this runs *after* the low-half is dropped
+    // (ADR-014 / EMPTY_L0), so reach the DTB through its high-half VA.
+    let base = (dtb_phys + super::mmu::VA_OFFSET as usize) as *const u8;
+    if unsafe { read_be_u32(base, 0) } != FDT_MAGIC {
+        return None;
+    }
+    let off_dt_struct = unsafe { read_be_u32(base, 8) } as usize;
+    let off_dt_strings = unsafe { read_be_u32(base, 12) } as usize;
+    let size_dt_struct = unsafe { read_be_u32(base, 36) } as usize;
+    let strings_base = unsafe { base.add(off_dt_strings) };
+    let mut p = unsafe { base.add(off_dt_struct) };
+    let end = unsafe { p.add(size_dt_struct) };
+
+    let mut root_addr_cells: u32 = 2;
+    let mut root_size_cells: u32 = 1;
+    let mut depth: u32 = 0;
+    let mut in_pci_node = false;
+
+    while p < end {
+        let tok = unsafe { read_be_u32(p, 0) };
+        p = unsafe { p.add(4) };
+        match tok {
+            FDT_BEGIN_NODE => {
+                let name_len = unsafe { cstr_len(p) };
+                let is_pci = depth == 1 && unsafe { is_pci_name(p, name_len) };
+                p = unsafe { p.add(align_up(name_len + 1, 4)) };
+                depth += 1;
+                if is_pci {
+                    in_pci_node = true;
+                }
+            }
+            FDT_END_NODE => {
+                if in_pci_node && depth == 2 {
+                    in_pci_node = false;
+                }
+                if depth == 0 {
+                    return None;
+                }
+                depth -= 1;
+            }
+            FDT_PROP => {
+                let len = unsafe { read_be_u32(p, 0) } as usize;
+                let nameoff = unsafe { read_be_u32(p, 4) } as usize;
+                p = unsafe { p.add(8) };
+                let val = p;
+                p = unsafe { p.add(align_up(len, 4)) };
+                let prop_name_ptr = unsafe { strings_base.add(nameoff) };
+
+                if depth == 1 {
+                    if unsafe { cstr_eq(prop_name_ptr, b"#address-cells") } && len >= 4 {
+                        root_addr_cells = unsafe { read_be_u32(val, 0) };
+                    } else if unsafe { cstr_eq(prop_name_ptr, b"#size-cells") } && len >= 4 {
+                        root_size_cells = unsafe { read_be_u32(val, 0) };
+                    }
+                } else if in_pci_node
+                    && depth == 2
+                    && unsafe { cstr_eq(prop_name_ptr, b"reg") }
+                {
+                    let cell_bytes = (root_addr_cells + root_size_cells) as usize * 4;
+                    if len < cell_bytes {
+                        return None;
+                    }
+                    let ecam_base = unsafe { read_be_cells(val, root_addr_cells) };
+                    let ecam_size = unsafe {
+                        read_be_cells(val.add(root_addr_cells as usize * 4), root_size_cells)
+                    };
+                    return Some(DtbPcie { ecam_base, ecam_size });
+                }
+            }
+            FDT_NOP => {}
+            FDT_END => return None,
+            _ => return None,
+        }
+    }
+    None
+}
+
+/// True if the node name at `p` (length `len`) is `pci`/`pcie`, optionally
+/// `@…`-addressed (the FDT convention for the host bridge).
+#[inline]
+unsafe fn is_pci_name(p: *const u8, len: usize) -> bool {
+    const PCI: &[u8] = b"pci";
+    if len < PCI.len() {
+        return false;
+    }
+    for (i, &b) in PCI.iter().enumerate() {
+        if unsafe { *p.add(i) } != b {
+            return false;
+        }
+    }
+    // "pci", "pcie", "pci@…", "pcie@…" all start with "pci".
+    true
+}
+
 #[inline]
 fn align_up(v: usize, a: usize) -> usize {
     (v + a - 1) & !(a - 1)

@@ -22,6 +22,30 @@
 // concrete modules (xhci, pcie, core, hub, hid) land per PHASE-16 D1..D7.
 #![allow(dead_code)]
 
+// Controller discovery is board-specific: QEMU virt = PCIe ECAM; the real
+// Pi-4 (D7) = fixed MMIO + VL805 firmware.
+#[cfg(feature = "board-qemu-virt")]
+mod pcie;
+pub mod xhci;
+
+/// Bring up the USB host stack: find the controller (via the DTB-described
+/// PCIe ECAM), start it, report its root-hub ports. QEMU-virt for D1; the
+/// real Pi-4 path (VL805 firmware + `0xFE9C0000`) is PHASE-16 D7.
+pub fn init(dtb_phys: usize) {
+    #[cfg(feature = "board-qemu-virt")]
+    {
+        // SAFETY: boot CPU; `dtb_phys` is the firmware device tree.
+        let base = match unsafe { pcie::find_xhci(dtb_phys) } {
+            Some(b) => b,
+            None => return,
+        };
+        let mut controller = unsafe { xhci::Xhci::open(base) };
+        controller.scan_ports();
+    }
+    #[cfg(not(feature = "board-qemu-virt"))]
+    let _ = dtb_phys;
+}
+
 /// USB transfer / stack error. Mirrors the failure modes the FreeMiNT core
 /// distinguishes (timeout, stall, NAK …) plus our controller-discovery cases.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

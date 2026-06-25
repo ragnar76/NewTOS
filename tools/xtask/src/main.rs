@@ -374,6 +374,11 @@ fn cmd_run(args: &[String]) -> Result<(), String> {
         // captured with a QMP `screendump`; pass `-display cocoa`
         // (macOS) to watch it live.
         "-device", "ramfb",
+        // USB host stack (PHASE-16): an xHCI controller on the PCIe bus with
+        // a keyboard + mouse, so the desktop is interactive in the emulator.
+        "-device", "qemu-xhci",
+        "-device", "usb-kbd",
+        "-device", "usb-mouse",
     ]);
     if window {
         // Native macOS window so the framebuffer is visible. Serial

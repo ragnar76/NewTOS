@@ -268,6 +268,11 @@ extern "C" fn kernel_main_rust(dtb_phys: usize) -> ! {
         tos_api::bios::mount();
     }
 
+    // Bring up the USB host stack (keyboard/mouse) — PHASE-16. On QEMU-virt
+    // this finds the xHCI on the PCIe bus and reports its ports; on real
+    // Pi-4 it is a no-op until the VL805 firmware path (D7).
+    drivers::usb::init(dtb_phys);
+
     initinfo::run();
 
     // Development self-tests are no longer invoked during the normal

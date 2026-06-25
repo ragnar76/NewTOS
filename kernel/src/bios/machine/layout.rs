@@ -148,6 +148,11 @@ mod board {
         PhysRange::new(0x0801_0000, 0x0802_0000),
         // PL011 UART. Source: `virt.c`, `VIRT_UART`.
         PhysRange::new(0x0900_0000, 0x0900_1000),
+        // PCIe 32-bit MMIO window (xHCI BAR lands here). Source: `virt.c`,
+        // `VIRT_PCIE_MMIO` = { 0x10000000, 0x2eff0000 }. The PCIe **ECAM**
+        // is *not* here — on QEMU `virt` it is a high address (read from the
+        // DTB + mapped with `mmu::map_device_high`, PHASE-16 D1).
+        PhysRange::new(0x1000_0000, 0x3eff_0000),
     ];
 }
 

@@ -112,6 +112,11 @@ static mut L1: PageTable = PageTable([0; ENTRIES]);
 static mut L2: [PageTable; NUM_L2] =
     [const { PageTable([0; ENTRIES]) }; NUM_L2];
 
+/// One extra L2 table for a Device MMIO region **above** the build-time
+/// 4-GiB Stage-2 coverage — see [`map_device_high`]. (The QEMU `virt` high
+/// PCIe ECAM at `0x40_1000_0000`, PHASE-16.) Covers one 1-GiB L1 slot.
+static mut L2_HIGH: PageTable = PageTable([0; ENTRIES]);
+
 /// An all-invalid L0 root for `TTBR0_EL1` whenever no process is active.
 /// After the high-half switch (`install_stage2_ttbr1`) TTBR0 points here
 /// instead of being left on the Stage-1 boot identity map. That map covers
@@ -357,6 +362,62 @@ pub unsafe fn remap_normal_nc(va: u64, len: u64) {
             break;
         }
         pa += L2_BLOCK_SIZE;
+    }
+}
+
+/// Map a Device MMIO region `[pa, pa + len)` into the high-half VA
+/// (`pa + VA_OFFSET`) for MMIO **above** the build-time 4-GiB Stage-2
+/// coverage. The region must fit within a single 1-GiB L1 slot — true for
+/// the QEMU `virt` high PCIe ECAM (`0x40_1000_0000`, 256 MiB) that PHASE-16
+/// reads from the DTB. Runs after the MMU is live, so it publishes the
+/// writes and flushes the TLB (EL1 context — no eret-to-EL0, so the TLBI is
+/// safe, unlike the per-process install path / QUIRK-001).
+///
+/// # Safety
+///
+/// Single-CPU; `pa`/`len` describe a real Device region; caller maps it once.
+pub unsafe fn map_device_high(pa: u64, len: u64) {
+    if len == 0 {
+        return;
+    }
+    let dev = VALID | BLOCK_L2 | AF | AP_RW_EL1 | ATTRIDX_DEVICE | SH_NON | PXN | UXN;
+    let l1_idx = (pa >> 30) as usize; // 1 GiB per L1 entry
+    let l1_base = (l1_idx as u64) << 30;
+
+    // SAFETY: single-CPU; exclusive access to the static tables. Pick the L2
+    // table for this 1-GiB slot: an existing one if the slot is within the
+    // build-time coverage (don't repoint its L1 entry), else the dedicated
+    // high table.
+    let l2h: &mut PageTable = if l1_idx < NUM_L2 {
+        unsafe { &mut (*&raw mut L2)[l1_idx] }
+    } else {
+        let l1 = unsafe { &mut *(&raw mut L1) };
+        let l2h_pa = va_to_pa((&raw const L2_HIGH) as u64);
+        l1.0[l1_idx] = l2h_pa | VALID | TABLE;
+        unsafe { &mut *(&raw mut L2_HIGH) }
+    };
+
+    // Fill the 2-MiB Device blocks covering [pa, pa + len).
+    let first = pa & !(L2_BLOCK_SIZE - 1);
+    let last = (pa + len - 1) & !(L2_BLOCK_SIZE - 1);
+    let mut b = first;
+    while b <= last {
+        let j = ((b - l1_base) / L2_BLOCK_SIZE) as usize;
+        if j < ENTRIES {
+            l2h.0[j] = b | dev;
+        }
+        b += L2_BLOCK_SIZE;
+    }
+
+    // SAFETY: publish the table writes, drop stale TLB, synchronise.
+    unsafe {
+        core::arch::asm!(
+            "dsb ishst",
+            "tlbi vmalle1",
+            "dsb ish",
+            "isb",
+            options(nostack, preserves_flags),
+        );
     }
 }
 
