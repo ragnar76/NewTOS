@@ -57,11 +57,11 @@ Open (from the boot-flow cross-check — these were not in the original
   ✅ (console launch-target verified by screendump; full round-trip needs a
   real mouse+keyboard)
 - **D10** **AUTO folder** — `launch::run_auto_folder` runs `\AUTO\*.PRG`
-  (directory order) at boot before the desktop (EmuTOS autoexec). Loop
-  verified (scan → dispatch → launcher); end-to-end execution of an AUTO
-  program is blocked only by an FS bug — **writing a new file's *contents*
-  into a sub-directory yields an empty file** (root writes work). Tracked as
-  a Phase-09 FS issue.  ◑
+  (directory order) at boot before the desktop (EmuTOS autoexec). Verified
+  end-to-end: a `.PRG` copied into `C:\AUTO\` loads from disk, runs at EL0,
+  `Pterm`s, and boot continues. (An earlier "subdir-write FS bug" was a
+  mis-diagnosis — a stale-test-image artifact; subdirectory file writes work
+  fine, confirmed by a clean write+read-back test.)  ✅
 - **D11** Fuller `NEWDESK.INF` — `#E` (settings), `#W` (window positions),
   `#Z` (autorun), `#M`/`#T`/`#O` (icon placement).  ☐
 - **D12** Desk accessories — `\*.ACC` loading.  ☐ (later; needs the
