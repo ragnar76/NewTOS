@@ -32,5 +32,8 @@
 specified; the integration point is `ikbd::feed` (synthesise IKBD bytes — both
 HID drivers reuse the existing, verified decoder → console/AES + VDI cursor).
 
-Track-B (hardware, for D1): xHCI spec + `rust-osdev/xhci` + Circle —
-extracted into `docs/api/usb/xhci-bringup.md` when D1 starts.
+Track-B (hardware): [`xhci-bringup.md`](xhci-bringup.md) ✅ — controller
+discovery (QEMU PCIe ECAM `0x3f000000` / Pi-4 fixed `0xFE9C0000` + VL805
+firmware), the `rust-osdev/xhci` `Registers` + high-half `Mapper`, the
+xHCI-spec init sequence, and the DMA-buffer requirements. The `xhci` crate
+(v0.9.2, no_std) is added to the kernel and builds.
