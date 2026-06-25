@@ -21,3 +21,7 @@ pub mod bcm2711;
 pub mod qemu_virt;
 
 pub mod gic;
+
+/// USB host stack — keyboard + mouse input (PHASE-16). Board-independent
+/// trait + types here; the concrete xHCI controller lands per D1.
+pub mod usb;
