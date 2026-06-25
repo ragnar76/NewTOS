@@ -44,15 +44,24 @@ Open (from the boot-flow cross-check — these were not in the original
 
 - **D7** **The shell loop** — a `sh_main`-style loop dispatching a
   `MenuAction` (the kernel analogue of `sh_nextapp`: DESKTOP / CONSOLE /
-  …app). The CONSOLE case is wired (see D9); the NORMAL-app case is D8.  ◑
-- **D8** **Application launch** — double-click a `.PRG` / `shel_write` →
-  `Pexec`, return to the desktop on exit.  ☐
+  app). CONSOLE (D9) and app-launch (D8) are wired.  ✅
+- **D8** **Application launch** — File → Open on a selected
+  `.PRG`/`.APP`/`.TOS`/`.TTP` runs it via `launch::run_program` (load from
+  disk → EL0 → `Pterm` → repaint the desktop). The kernel launcher
+  (`kernel/src/launch.rs`) follows the proven `selftest_pexec` path
+  (`pexec::load` + `enter_el0_with_resume_capture`), *not* a raw `svc`
+  Pexec (which reads the path as a user pointer and faults). Verified:
+  C:\HELLO.PRG launches + returns.  ✅
 - **D9** **Execute EmuCON** — File → Execute EmuCON runs the EmuCON console
   (`shell::run_console`) full-screen and returns to the desktop on `exit`.
   ✅ (console launch-target verified by screendump; full round-trip needs a
   real mouse+keyboard)
-- **D10** **AUTO folder** — run `\AUTO\*.PRG` (directory order) at boot
-  before the desktop.  ☐
+- **D10** **AUTO folder** — `launch::run_auto_folder` runs `\AUTO\*.PRG`
+  (directory order) at boot before the desktop (EmuTOS autoexec). Loop
+  verified (scan → dispatch → launcher); end-to-end execution of an AUTO
+  program is blocked only by an FS bug — **writing a new file's *contents*
+  into a sub-directory yields an empty file** (root writes work). Tracked as
+  a Phase-09 FS issue.  ◑
 - **D11** Fuller `NEWDESK.INF` — `#E` (settings), `#W` (window positions),
   `#Z` (autorun), `#M`/`#T`/`#O` (icon placement).  ☐
 - **D12** Desk accessories — `\*.ACC` loading.  ☐ (later; needs the
