@@ -722,6 +722,15 @@ pub fn preview_cfg() {
     draw();
 }
 
+/// Verification of D8 (launch a program from the desktop): draw the desktop,
+/// then launch C:\HELLO.PRG as if "Open"-ed; on return the desktop repaints.
+pub fn preview_launch() {
+    draw();
+    let mut name = [0u8; 14];
+    name[..9].copy_from_slice(b"HELLO.PRG");
+    launch_selected(b'C', &name);
+}
+
 /// Verification of the Info/Rename dialog: select an entry and open the
 /// rename dialog (pre-filled with its name; blocks for the screendump).
 pub fn preview_rename() {
@@ -811,7 +820,15 @@ fn handle_menu_select(item: i16) -> MenuAction {
     if item_has(item, b"Desktop info") {
         show_info_alert();
     } else if item_has(item, b"Open") {
-        // Open the first present hard drive (a selection model lands later).
+        // If a program file is selected in a window, launch it; otherwise
+        // open the first present hard drive (EmuTOS do_open: file → run,
+        // folder/drive → window).
+        if let Some((_, letter, name, false)) = resolve_selection() {
+            if name_is_program(&name) {
+                launch_selected(letter, &name);
+                return MenuAction::None;
+            }
+        }
         let bits = tos_api::bios::drive::drvbits();
         for d in 2..26u32 {
             if bits & (1 << d) != 0 {
@@ -1112,6 +1129,24 @@ fn drive_path(buf: &mut [u8; 20], letter: u8, name: &[u8]) -> usize {
     buf[3..3 + end].copy_from_slice(&name[..end]);
     buf[3 + end] = 0;
     3 + end
+}
+
+/// True if `name`'s extension marks it as an executable program
+/// (`.PRG`/`.APP`/`.TOS`/`.TTP` — the Atari executable suffixes).
+fn name_is_program(name: &[u8; 14]) -> bool {
+    matches!(name_ext(name), b"PRG" | b"APP" | b"TOS" | b"TTP")
+}
+
+/// Launch the selected program `X:\NAME` (EmuTOS NORMAL_APP): run it
+/// full-screen via the kernel launcher, then repaint the desktop.
+fn launch_selected(letter: u8, name: &[u8; 14]) {
+    let mut path = [0u8; 20];
+    drive_path(&mut path, letter, name);
+    kprintln!("[desk] launch program {}", path[0] as char);
+    crate::launch::run_program(&path);
+    // The program owned the screen while running — repaint the desktop.
+    SEL_WIN.store(0, core::sync::atomic::Ordering::Release);
+    draw();
 }
 
 /// Rename `X:\old` → `X:\new` via `Frename` (0x56). Returns true on success.
