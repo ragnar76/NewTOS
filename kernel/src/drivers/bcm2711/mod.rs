@@ -6,6 +6,5 @@
 
 pub mod emmc;
 pub mod framebuffer;
-pub mod ikbd_uart;
 pub mod mailbox;
 pub mod pl011;

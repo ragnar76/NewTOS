@@ -33,10 +33,11 @@ impl Host for KernelHost {
     fn pump_input(&self) {
         // Briefly unmask IRQs so the PL011 RX interrupt can fill the ring
         // (it is masked inside the synchronous SVC handler), and poll the
-        // directly-polled sources — the IKBD keyboard+mouse on UART2 and
-        // the UART0 console RX. Mirrors the loop body of
+        // UART0 console RX directly. Mirrors the loop body of
         // `console_read_byte_blocking`, but for a single pass so the AES
         // event loop stays responsive to its other (timer) conditions.
+        // (Keyboard/mouse input will be pumped here too once the USB-HID
+        // stack lands — `usb::poll()` — see ADR-015 / PHASE-16.)
         let daif: u64;
         // SAFETY: reading DAIF and toggling the IRQ mask are permitted at
         // EL1; we restore the caller's DAIF before returning.
@@ -54,7 +55,6 @@ impl Host for KernelHost {
 
         #[cfg(feature = "board-rpi4")]
         {
-            crate::drivers::bcm2711::ikbd_uart::poll();
             crate::console::pl011_rx_poll();
         }
         core::hint::spin_loop();
@@ -96,12 +96,7 @@ impl Host for KernelHost {
         }
 
         let byte = loop {
-            // Drain a native Atari IKBD keyboard (second UART, no IRQ
-            // wired) into the same ring. board-rpi4 only.
-            #[cfg(feature = "board-rpi4")]
-            crate::drivers::bcm2711::ikbd_uart::poll();
-
-            // Also poll the UART0 console RX FIFO directly. The PL011 RX
+            // Poll the UART0 console RX FIFO directly. The PL011 RX
             // IRQ path is verified only in QEMU; on real GIC-400 silicon
             // it is not yet confirmed to be delivered, which would leave
             // the cable console with no input. Polling here mirrors the

@@ -1,16 +1,20 @@
 //! Atari ST IKBD (Intelligent Keyboard) decoder.
 //!
-//! The Atari ST keyboard has its own HD6301 controller that streams a
-//! serial protocol (7812.5 baud, 8N1) to the host: key make/break
-//! scancodes plus mouse / joystick / clock packets. A native ST keyboard
-//! can be wired to a spare Pi UART (via a 5V->3.3V divider on the
-//! keyboard's TX line), giving authentic Atari scancodes with no USB
-//! stack — see [`crate::drivers::bcm2711::ikbd_uart`].
+//! The Atari ST IKBD streams a serial protocol to the host: key make/break
+//! scancodes plus mouse / joystick / clock packets. This module is the
+//! protocol **decoder** — the byte sink the rest of the system reads
+//! keyboard/mouse input through, independent of where the bytes come from.
 //!
-//! This module is the protocol decoder: [`feed`] consumes one byte at a
-//! time, skips the multi-byte mouse/joystick/clock packets, and turns key
-//! make events into ASCII (US layout), pushing the result into the
-//! console RX ring so `Cnecin`/`Cconin`/the shell read it transparently.
+//! The byte **source** is the USB-HID stack (PHASE-16 / ADR-015): the USB
+//! keyboard/mouse class drivers translate HID reports into the exact IKBD
+//! byte stream a real keyboard would send and push it through [`feed`].
+//! (Wiring a native ST keyboard to UART2 was shelved — too much analogue
+//! glue; the `ikbd_uart` driver was removed.)
+//!
+//! [`feed`] consumes one byte at a time, assembles the multi-byte
+//! mouse/joystick/clock packets, turns key make events into ASCII (US
+//! layout) → the console RX ring (`Cnecin`/`Cconin`/the shell), and
+//! relative-mouse packets → the VDI cursor.
 //!
 //! Protocol + scancode set: Atari IKBD documentation; the scancode→ASCII
 //! tables mirror EmuTOS `bios/keyboard.c` (US layout). Country layouts
