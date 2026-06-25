@@ -61,3 +61,40 @@ pub fn run_program(path: &[u8]) -> bool {
     kprintln!("[launch] returned (program Pterm'd)");
     true
 }
+
+/// Run every `\AUTO\*.PRG` on the boot drive (C:) in directory order,
+/// before the desktop — EmuTOS' `autoexec` (`bios/bios.c:697`). Each runs
+/// to its `Pterm`, then the next. AUTO programs are typically drivers /
+/// TSRs that set something up at boot. Absent `\AUTO\` folder → no-op.
+pub fn run_auto_folder() {
+    use tos_api::bdos::fs::find::{list_dir_ex, DirInfo};
+
+    let mut ents = [DirInfo::default(); 32];
+    let n = list_dir_ex("C:\\AUTO\\*.*", &mut ents);
+    let mut ran = 0;
+    for e in &ents[..n] {
+        if e.attrib & 0x10 != 0 {
+            continue; // skip "." / ".." / sub-directories
+        }
+        let end = e.name.iter().position(|&b| b == 0).unwrap_or(14);
+        // Only *.PRG (the Atari auto-run extension).
+        if end < 4 || &e.name[end - 4..end] != b".PRG" {
+            continue;
+        }
+        // Build "C:\AUTO\<name>\0".
+        let mut path = [0u8; 40];
+        let prefix = b"C:\\AUTO\\";
+        path[..prefix.len()].copy_from_slice(prefix);
+        path[prefix.len()..prefix.len() + end].copy_from_slice(&e.name[..end]);
+        path[prefix.len() + end] = 0;
+        kprintln!(
+            "[auto] running C:\\AUTO\\{}",
+            core::str::from_utf8(&e.name[..end]).unwrap_or("?")
+        );
+        run_program(&path);
+        ran += 1;
+    }
+    if ran > 0 {
+        kprintln!("[auto] {} AUTO program(s) run", ran);
+    }
+}
