@@ -1,0 +1,98 @@
+# Phase 16 — USB-HID input (keyboard + mouse)
+
+> **Status:** planned. Depends on Phase 14 (desktop, the consumer) and the
+> Phase-03/13 BIOS/IKBD input path. See [`ADR-015`](../docs/MEMORY.md) for the
+> decision (xHCI host + FreeMiNT upper stack).
+
+## Goal
+
+Give NewTOS real keyboard + mouse input through a **USB host stack**, so the
+desktop is interactive on real Pi4 (and in QEMU). Plug a standard USB
+keyboard/mouse into the Pi-4 USB-A ports.
+
+Per [`docs/COMPATIBILITY.md`](../docs/COMPATIBILITY.md) this is a **clean
+reimplementation against an extracted reference**, not a source-port. The USB
+stack is **not** a TOS API — it is a FreeMiNT extension we adopt (see
+[[freemint-extension-direction]]). The user-observable surface to preserve is
+the **TOS keyboard/IKBD behaviour** (scancodes, the keyboard vector, the VDI
+mouse), not the USB internals.
+
+## Reference sources
+
+- **Upper stack — spec source (clean-room, like EmuTOS):**
+  `references/freemint/sys/usb/src.km` — `usb.c`/`hub.c`/`ucd.c`/`udd.c`
+  (core, hub, enumeration), `usb.h`/`usb_api.h` (the `ucdif` host-controller
+  interface + `usb_control_msg`/`usb_bulk_msg`/`usb_submit_int_msg`),
+  `udd/hid/` (`hidparse.c` report parser, `keyboard/usb_keyboard.c`,
+  `mouse/usb_mouse.c`) and the **HID → Atari-scancode → IKBD-vector**
+  injection model.
+- **Pi-4 host controller — Track B (hardware):** the **xHCI spec** (Intel),
+  `rsta2/circle` (working Pi-4 xHCI + VL805 firmware reference), the no_std
+  **`rust-osdev/xhci`** crate (register/structure layer), and the Raspberry
+  Pi firmware **VL805 mailbox** interface.
+
+## Architecture
+
+```
+  [USB device]  USB-A port → VL805 xHCI @ 0xFE9C0000 (real) / qemu-xhci (QEMU)
+      │
+  D1  xHCI host-controller driver  (the `ucdif` equivalent; rust-osdev/xhci)
+      │  control / interrupt transfers
+  D2  USB core — enumeration (descriptors, set address/config)
+  D3  hub driver  (Pi-4 ports sit behind an internal hub; QEMU has one too)
+      │
+  D4  HID keyboard class → HID usage → Atari scancode ─┐
+  D5  HID mouse class    → HID → relative IKBD packet ─┤
+      │                                                 ▼
+      └──────────────► NewTOS's existing IKBD sinks: `ikbd.rs`
+                       (scancode → console RX) + `vdi::feed_relative` (cursor)
+```
+
+Only **D1** is hardware-specific. D2–D5 mirror FreeMiNT's hardware-independent
+core/hub/HID. D4/D5 reuse the **existing** NewTOS IKBD path unchanged — the
+desktop never learns the input came from USB.
+
+## Deliverables
+
+- **D0** **Source-analysis of the FreeMiNT USB stack** per
+  `SOURCE-ANALYSIS-PROTOCOL.md` → spec in `docs/api/usb/` : the `ucdif`
+  host-controller contract, the enumeration + hub flow, the HID report
+  parser, the keyboard/mouse class behaviour, and the HID→IKBD injection
+  mapping (USB HID usage ↔ Atari scancode). Track-B: xHCI spec capture for D1.
+- **D1** **xHCI controller bring-up in QEMU** (`qemu-virt` + `-device
+  qemu-xhci`): controller reset/init, command + event rings, port status,
+  device-slot enable — on `rust-osdev/xhci`. Verify: a `-device usb-kbd`
+  enumerates to "device connected, slot assigned".
+- **D2** **USB core** — control transfers, descriptor reads, set-address /
+  set-config; a `usb_device` model.
+- **D3** **Hub driver** — walk the (root + internal) hub, enumerate ports.
+- **D4** **HID keyboard** — boot protocol, interrupt-IN polling,
+  HID-usage→Atari-scancode, inject into `ikbd.rs` (→ console RX / shell /
+  AES `evnt_keybd`). Verify in QEMU: typing in `-device usb-kbd` reaches the
+  console/desktop.
+- **D5** **HID mouse** — boot protocol, relative-motion + buttons → the same
+  packet shape `vdi::feed_relative` consumes (the existing cursor path).
+  Verify in QEMU: `-device usb-mouse` moves the desktop cursor + clicks.
+- **D6** **Interactive desktop in QEMU** — selecting, double-click, launching
+  a program, EmuCON, all driven by emulated USB kbd+mouse. The capstone the
+  desktop has been waiting for.
+- **D7** **Real Pi-4 bring-up** — load the **VL805 firmware via the mailbox**,
+  point the xHCI driver at `0xFE9C0000`, verify a real USB keyboard + mouse on
+  the USB-A ports. (8-GiB-SKU / >4 GiB DMA buffers tracked with the Phase-14
+  `NUM_L2` note.)
+
+## Architecture decision
+
+See [`ADR-015`](../docs/MEMORY.md): **xHCI** (real USB-A ports + a working
+QEMU `qemu-xhci` dev loop), upper stack clean-room from FreeMiNT, HID fed into
+the existing IKBD sinks. DWC2 (USB-C/OTG) was rejected — awkward as a product
+and no qemu-virt dev loop.
+
+## Exit criteria
+
+- **EC1** QEMU: a `-device usb-kbd` types into the console/shell.  ☐
+- **EC2** QEMU: a `-device usb-mouse` drives the desktop cursor; click +
+  double-click select/open; a program launches from the desktop.  ☐
+- **EC3** Real Pi-4: a USB keyboard + mouse on the USB-A ports drive the
+  desktop (VL805 firmware loaded, xHCI at `0xFE9C0000`).  ☐
+- **EC4** No regression to the headless/synthetic IKBD test path.  ☐

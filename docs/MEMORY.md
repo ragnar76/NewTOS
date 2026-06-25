@@ -484,6 +484,73 @@ TLBI on the eret path. The pre-MMU boot heartbeat UART stays physical.
 - QUIRK-001 (this file); commits `7231e9d` (high-half MMIO + empty TTBR0),
   `c91c9e5` (framebuffer mapping), `3f93fde` (cache/barrier maintenance).
 
+## ADR-015: USB-HID input — xHCI host on Pi4, upper stack clean-room from FreeMiNT
+
+**Date:** 2026-06-25
+**Status:** Accepted
+**Phase:** PHASE-16 (USB-HID input)
+
+### Context
+
+The desktop renders on real Pi4 but is not interactive — there is no
+keyboard/mouse. The native Atari IKBD plan (a vintage 5 V keyboard on UART2)
+proved too fiddly (voltage divider, TX level-shifter, uncertain HD6301
+hardware reset). A USB host stack is the "right" answer but is large.
+
+Two reference bodies make it tractable:
+- **FreeMiNT's USB stack** (`references/freemint/sys/usb`, a sanctioned
+  source) is a **TOS-native, modular** USB stack: a host-controller layer
+  (`struct ucdif` + `ucd_register`), a hardware-independent core + hub +
+  enumeration (`usb.c`/`hub.c`), class drivers (`udd/`), and — crucially —
+  HID keyboard/mouse drivers that **translate USB HID → Atari scancodes and
+  inject them into the IKBD vector** (`udd/hid/keyboard/usb_keyboard.c`:
+  `Setexc(0x114/4, …)`, `SEND_SCAN`). Only the `ucdif` host-controller layer
+  is hardware-specific.
+- **Circle** (C++, `rsta2/circle`) + the no_std **`rust-osdev/xhci`** crate
+  are the references for the Pi4 host controller itself.
+
+### Decision
+
+Target **xHCI** (the VL805 controller behind the four USB-A ports, MMIO
+`0xFE9C0000`), not DWC2. Build the stack as: (1) clean-room reimplement
+FreeMiNT's upper stack in Rust (core, hub, enumeration, HID keyboard/mouse,
+HID→IKBD injection) per the source-analysis protocol — exactly the EmuTOS
+methodology; (2) write one Pi4 xHCI host-controller driver (the `ucdif`
+equivalent) on top of `rust-osdev/xhci`, with Circle as the behavioural
+reference and the xHCI spec as Track-B; (3) feed HID output into NewTOS's
+**existing** IKBD sinks (`ikbd.rs` → console RX + `vdi::feed_relative`
+cursor), so the desktop is source-agnostic.
+
+### Rationale
+
+- **xHCI = the real ports.** A keyboard + mouse plug into the normal USB-A
+  ports; power stays on USB-C. DWC2 would only drive the USB-C/OTG port
+  (also the power input) and need a hub — awkward as a product.
+- **QEMU validates the whole path.** `qemu-virt` emulates `qemu-xhci` with
+  `-device usb-kbd`/`-device usb-mouse`, so the entire stack (controller +
+  core + hub + HID) is developed and tested **interactively in the emulator**
+  — the same "QEMU exercises the real path" win as ADR-014. Real Pi4 then
+  adds only the VL805 firmware-load (via the existing mailbox driver), which
+  QEMU doesn't need. DWC2 has no equivalent qemu-virt dev loop.
+- **~70 % already specified.** FreeMiNT supplies the architecture and the
+  TOS-native HID→IKBD integration; NewTOS already owns the IKBD-sink side.
+
+### Consequences
+
+- Reuses the existing IKBD decoder's output side untouched; the USB-HID
+  driver maps HID→Atari-scancode, then the existing path takes over.
+- Real-HW bring-up needs VL805 firmware bootstrap via mailbox (have the
+  driver) + xHCI at `0xFE9C0000` (a fixed MMIO the firmware maps; no full
+  PCIe enumeration required).
+- The IKBD/UART2 plan is shelved (kept only as a fallback note).
+
+### References
+
+- `references/freemint/sys/usb` (sanctioned source); `rsta2/circle`;
+  `rust-osdev/xhci`; xHCI spec; RPi firmware VL805 mailbox interface.
+  See ADR-014 (high-half MMIO — the mailbox/MMIO groundwork this builds on)
+  and [[keyboard-via-atari-ikbd]] (the shelved IKBD path).
+
 ### Template for new ADRs
 
 ```markdown
