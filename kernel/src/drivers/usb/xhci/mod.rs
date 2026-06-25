@@ -10,6 +10,7 @@
 use core::num::NonZeroUsize;
 
 use xhci::accessor::Mapper;
+use xhci::ring::trb::{command, event};
 use xhci::Registers;
 
 use crate::arch::aarch64::mmu::va_to_pa;
@@ -67,6 +68,12 @@ static mut DMA: XhciDma = XhciDma {
 pub struct Xhci {
     regs: Registers<HighHalf>,
     ports: u8,
+    /// Command-ring producer index + cycle state.
+    cmd_enq: usize,
+    cmd_cycle: bool,
+    /// Event-ring consumer index + cycle state.
+    evt_deq: usize,
+    evt_cycle: bool,
 }
 
 impl Xhci {
@@ -133,7 +140,84 @@ impl Xhci {
         }
 
         kprintln!("[usb] xHCI up: {} slots enabled, {} root ports", slots, max_ports);
-        Xhci { regs, ports: max_ports }
+        Xhci {
+            regs,
+            ports: max_ports,
+            cmd_enq: 0,
+            cmd_cycle: true,
+            evt_deq: 0,
+            evt_cycle: true,
+        }
+    }
+
+    /// Enqueue a command TRB, ring the command doorbell, and wait for its
+    /// Command Completion event. Returns the completion (slot id + code).
+    ///
+    /// D2 issues only a handful of commands, far fewer than `CMD_RING_LEN`,
+    /// so the ring does not wrap during enumeration — a Link TRB / wrap is a
+    /// later refinement.
+    fn command(&mut self, mut data: [u32; 4]) -> Option<event::CommandCompletion> {
+        // SAFETY: single-CPU; DMA is ours.
+        let dma = unsafe { &mut *(&raw mut DMA) };
+        if self.cmd_cycle {
+            data[3] |= 1;
+        } else {
+            data[3] &= !1;
+        }
+        dma.cmd_ring.0[self.cmd_enq] = Trb(data);
+        self.cmd_enq += 1;
+        if self.cmd_enq >= CMD_RING_LEN - 1 {
+            self.cmd_enq = 0;
+        }
+        // Ring doorbell 0 (the command ring).
+        self.regs.doorbell.update_volatile_at(0, |d| {
+            d.set_doorbell_target(0);
+        });
+        for _ in 0..50_000_000u64 {
+            if let Some(event::Allowed::CommandCompletion(cc)) = self.poll_event() {
+                return Some(cc);
+            }
+            core::hint::spin_loop();
+        }
+        None
+    }
+
+    /// Consume one event from the event ring if its cycle bit is current,
+    /// advancing the dequeue pointer + ERDP. `None` if no new event.
+    fn poll_event(&mut self) -> Option<event::Allowed> {
+        // SAFETY: single-CPU; DMA is ours.
+        let dma = unsafe { &mut *(&raw mut DMA) };
+        let data = dma.evt_ring.0[self.evt_deq].0;
+        if ((data[3] & 1) != 0) != self.evt_cycle {
+            return None; // not yet written by the controller
+        }
+        let ev = event::Allowed::try_from(data).ok();
+        self.evt_deq += 1;
+        if self.evt_deq >= EVT_RING_LEN {
+            self.evt_deq = 0;
+            self.evt_cycle = !self.evt_cycle;
+        }
+        let erdp = va_to_pa((&raw const dma.evt_ring.0[self.evt_deq]) as u64);
+        self.regs
+            .interrupter_register_set
+            .interrupter_mut(0)
+            .erdp
+            .update_volatile(|d| {
+                d.set_event_ring_dequeue_pointer(erdp);
+            });
+        ev
+    }
+
+    /// Enable Slot command → a device slot ID (D2 foundation test).
+    pub fn enable_slot(&mut self) -> Option<u8> {
+        let data = command::Allowed::EnableSlot(command::EnableSlot::new()).into_raw();
+        let cc = self.command(data)?;
+        kprintln!(
+            "[usb] enable_slot → slot {} (code {:?})",
+            cc.slot_id(),
+            cc.completion_code()
+        );
+        Some(cc.slot_id())
     }
 
     /// Log each root-hub port's connect status (D1 verification target).
