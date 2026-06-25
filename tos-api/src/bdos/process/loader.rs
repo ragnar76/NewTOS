@@ -175,6 +175,17 @@ pub unsafe fn load_to_slot(
     //    `page` before the slot mapping is installed.
     populate_basepage(page, &img);
 
+    // 3a. The page now holds the final program image. Make those bytes
+    //     observable to instruction fetch on real hardware (clean D-cache
+    //     to PoU + invalidate I-cache); QEMU has no caches so this is a
+    //     no-op there. Done via the kernel VA that owns the page; the
+    //     Cortex-A72 PIPT caches make by-VA maintenance hit the same PA the
+    //     program later fetches through its EL0 mapping.
+    // SAFETY: `page` is a live, mapped kernel slice for this slot.
+    unsafe {
+        mmu::sync_code_cache(page.as_ptr() as usize, page.len());
+    }
+
     // 4. Install the (single) mapping.
     let user_page_pa = arena::page_phys(slot).ok_or(LoadError::InvalidSlot)?;
     // SAFETY: slot is bounds-checked; pre-test single-CPU.

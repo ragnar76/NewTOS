@@ -285,15 +285,87 @@ pub fn l0_pa_for(slot: usize) -> u64 {
 /// (Pexec) or fall through to kernel code that does **not**
 /// touch low-half VAs.
 pub unsafe fn install_ttbr0(l0_pa: u64) {
-    // SAFETY: writing TTBR0_EL1 is permitted at EL1; ISB is the
-    // ARM ARM K11.5 mandated context-synchronization event.
+    // SAFETY: writing TTBR0_EL1 is permitted at EL1. The `dsb ish`
+    // before the install is mandatory (ARM ARM D5.10.1): the slot's
+    // page-table entries were just written through cacheable kernel
+    // memory, and a translation-table walk may only rely on them after
+    // a DSB makes the writes observable in the Inner-Shareable domain.
+    // Without it, real hardware's walker reads stale/unordered table
+    // memory and faults (QEMU's coherent walker tolerated the absence —
+    // the real-Pi4 Instruction-Abort permission fault at vaddr 0x100).
+    // ISB is the ARM ARM K11.5 context-synchronization event after the
+    // TTBR write. No TLBI here (see the function docs — it wedges QEMU
+    // before an eret-to-EL0; the TLB is flushed earlier in EL1 context).
     unsafe {
         core::arch::asm!(
+            "dsb ish",
             "msr ttbr0_el1, {ttbr0}",
             "isb",
             ttbr0 = in(reg) l0_pa,
             options(nostack, preserves_flags),
         );
+    }
+}
+
+/// Make freshly-written program bytes at `[va, va + len)` observable to
+/// instruction fetch: clean each D-cache line to the Point of Unification,
+/// then invalidate the matching I-cache lines, with the barriers ARM ARM
+/// B2.4.4 mandates for "data written to be executed". Required on real
+/// hardware after the loader copies code into a page; QEMU has no caches,
+/// so it is effectively a no-op there.
+///
+/// `va` is a currently-mapped (kernel high-half) VA aliasing the program
+/// page's physical address. The Cortex-A72 caches are PIPT, so by-VA
+/// maintenance via any alias of the same PA affects the correct physical
+/// lines — the program later fetches the same PA through its EL0 VA.
+///
+/// # Safety
+///
+/// `[va, va + len)` must be a mapped, readable range in the active EL1
+/// translation regime.
+pub unsafe fn sync_code_cache(va: usize, len: usize) {
+    if len == 0 {
+        return;
+    }
+    // D/I-cache minimum line sizes from CTR_EL0: the fields are log2 of the
+    // line size in 32-bit words, so bytes = 4 << field (ARM ARM CTR_EL0).
+    let ctr: u64;
+    // SAFETY: CTR_EL0 is read-only and readable at EL1.
+    unsafe {
+        core::arch::asm!("mrs {}, ctr_el0", out(reg) ctr,
+            options(nomem, nostack, preserves_flags));
+    }
+    let dline = 4usize << ((ctr >> 16) & 0xF); // DminLine
+    let iline = 4usize << (ctr & 0xF); // IminLine
+    let end = va + len;
+
+    // Clean the D-cache to PoU so the writes reach the point instruction
+    // fetch observes, then order before the I-cache maintenance.
+    let mut a = va & !(dline - 1);
+    while a < end {
+        // SAFETY: `a` is within the mapped range; DC CVAU is permitted at EL1.
+        unsafe {
+            core::arch::asm!("dc cvau, {}", in(reg) a, options(nostack, preserves_flags));
+        }
+        a += dline;
+    }
+    // SAFETY: barrier-only.
+    unsafe {
+        core::arch::asm!("dsb ish", options(nostack, preserves_flags));
+    }
+
+    // Invalidate the I-cache to PoU so stale lines cannot be fetched.
+    let mut a = va & !(iline - 1);
+    while a < end {
+        // SAFETY: `a` is within the mapped range; IC IVAU is permitted at EL1.
+        unsafe {
+            core::arch::asm!("ic ivau, {}", in(reg) a, options(nostack, preserves_flags));
+        }
+        a += iline;
+    }
+    // SAFETY: barrier + context synchronisation after I-cache maintenance.
+    unsafe {
+        core::arch::asm!("dsb ish", "isb", options(nostack, preserves_flags));
     }
 }
 
