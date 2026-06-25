@@ -542,10 +542,17 @@ fn step(msg: &mut [i16; 8]) -> bool {
     if fired & MU_MESAG != 0 {
         match msg[0] {
             MN_SELECTED => {
-                let shutdown = handle_menu_select(msg[4]);
+                let action = handle_menu_select(msg[4]);
                 menu_tnormal(msg[3]); // un-highlight the title
-                if shutdown {
-                    return false;
+                match action {
+                    MenuAction::Shutdown => return false,
+                    MenuAction::Console => {
+                        // The shell loop: run EmuCON full-screen, then
+                        // repaint the desktop and carry on.
+                        crate::shell::run_console();
+                        draw();
+                    }
+                    MenuAction::None => {}
                 }
             }
             WM_CLOSED => close_win(msg[3]),
@@ -779,12 +786,27 @@ pub fn preview_windows(cycle: bool) {
     }
 }
 
-/// Dispatch an `MN_SELECTED` item by its menu text. Returns `true` on the
-/// Shutdown item (the loop should exit). Mirrors EmuTOS `do_*menu`.
-fn handle_menu_select(item: i16) -> bool {
+/// What the desktop shell loop should do after a menu selection — the
+/// kernel-side analogue of EmuTOS' `sh_nextapp` (DESKTOP / CONSOLE / …).
+enum MenuAction {
+    /// Stay in the desktop.
+    None,
+    /// Leave the desktop loop (File → Shutdown).
+    Shutdown,
+    /// Run EmuCON, then return to the desktop (File → Execute EmuCON).
+    Console,
+}
+
+/// Dispatch an `MN_SELECTED` item by its menu text. Returns the shell-loop
+/// action. Mirrors EmuTOS `do_*menu`.
+fn handle_menu_select(item: i16) -> MenuAction {
     if item_has(item, b"Shutdown") {
         kprintln!("[desk] menu: Shutdown");
-        return true;
+        return MenuAction::Shutdown;
+    }
+    if item_has(item, b"Execute EmuCON") {
+        kprintln!("[desk] menu: Execute EmuCON");
+        return MenuAction::Console;
     }
     if item_has(item, b"Desktop info") {
         show_info_alert();
@@ -831,7 +853,7 @@ fn handle_menu_select(item: i16) -> bool {
         // Remaining items are logged until their handlers land.
         kprintln!("[desk] menu item {} selected", item);
     }
-    false
+    MenuAction::None
 }
 
 /// True if the menu item `item`'s text contains `needle`.

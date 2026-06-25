@@ -122,7 +122,7 @@ pub fn run() {
     y += 12;
     v.set_text_align(1, 5); // centre, top
     v.set_text_color(BLACK);
-    v.gtext(cx, y, b"A clean-room reimplementation of the TOS API for AArch64");
+    v.gtext(cx, y, b"This operating system isnt Original");
 
     // separator under the tagline
     y += 24;

@@ -10,17 +10,27 @@
 
 const LINE_MAX: usize = 128;
 
-/// Run the console REPL. Never returns.
-pub fn run() -> ! {
+/// Run the console REPL until the user types `exit`/`quit`, then return.
+/// This is the EmuCON-style console launched from the desktop ("Execute
+/// EmuCON"); on return the caller redraws the desktop.
+pub fn run_console() {
     crate::fbcon::activate();
-    puts(b"NewTOS console - type 'help' for commands.\r\n\r\n");
+    puts(b"NewTOS console (EmuCON) - 'help' for commands, 'exit' to return.\r\n\r\n");
 
     let mut line = [0u8; LINE_MAX];
     loop {
         prompt();
         let n = read_line(&mut line);
-        execute(&mut line, n);
+        if execute(&mut line, n) {
+            return;
+        }
     }
+}
+
+/// Run the console REPL as the boot shell (never returns; `exit` halts).
+pub fn run() -> ! {
+    run_console();
+    crate::arch::aarch64::halt();
 }
 
 // ── line editing ──────────────────────────────────────────────────────
@@ -52,7 +62,9 @@ fn read_line(buf: &mut [u8; LINE_MAX]) -> usize {
 
 // ── command dispatch ──────────────────────────────────────────────────
 
-fn execute(line: &mut [u8; LINE_MAX], n: usize) {
+/// Execute one command line. Returns `true` if the user asked to leave the
+/// console (`exit`/`quit`), so `run_console` can return to the desktop.
+fn execute(line: &mut [u8; LINE_MAX], n: usize) -> bool {
     // Split into the command word and the (trimmed) argument.
     let s = &line[..n];
     let cmd_end = s.iter().position(|&b| b == b' ').unwrap_or(n);
@@ -63,11 +75,12 @@ fn execute(line: &mut [u8; LINE_MAX], n: usize) {
     if cmd_end == 2 && line[1] == b':' && line[0].is_ascii_alphabetic() {
         let drv = line[0].to_ascii_uppercase() - b'A';
         dsetdrv(drv as u16);
-        return;
+        return false;
     }
 
     match cmd {
         b"" => {}
+        b"exit" | b"quit" => return true,
         b"help" => cmd_help(),
         b"ver" => puts(b"NewTOS 0.1 - clean-room TOS for AArch64\r\n"),
         b"cls" => crate::fbcon::activate(),
@@ -84,6 +97,7 @@ fn execute(line: &mut [u8; LINE_MAX], n: usize) {
             puts(b"\r\n");
         }
     }
+    false
 }
 
 fn cmd_help() {
