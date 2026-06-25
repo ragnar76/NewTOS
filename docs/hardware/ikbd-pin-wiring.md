@@ -10,12 +10,14 @@
 | Fact | Source | Trust |
 |---|---|---|
 | Physical header pin ↔ GPIO number | Raspberry Pi 40-pin standard | ✅ reliable, universal |
-| GPIO 0/1 → **UART2** TXD2/RXD2 on **ALT4** | BCM2711 GPIO alt-function table | ⚠️ this is the code's assumption (`ikbd_uart.rs`); **not yet re-read from the datasheet in `references/`** (CLAUDE.md Rule 6) |
+| GPIO0 → **TXD2** / GPIO1 → **RXD2** on **ALT4** | BCM2711 ARM Peripherals datasheet (`references/datasheets/RP-008248-DS-1-bcm2711-peripherals.pdf`), **Table 94, §5.3 "Alternative Function Assignments" (p.78)**, reconfirmed **Table 171 (p.146)** | ✅ datasheet-verified 2026-06-25 (matches `ikbd_uart.rs`) |
+| UART2 register base `0x7e20_1400` (= `0xFE20_1400` low-peripheral) | same datasheet, p.146 | ✅ datasheet-verified |
 
-If the keyboard/mouse produces no input (test 0b in the test plan), the
-GPIO→UART2/ALT4 row is the prime suspect — we then confirm it against the
-BCM2711 datasheet and adjust the driver. The physical pin numbers below are
-not in doubt.
+The GPIO0/1 → UART2/ALT4 routing the driver programs is now confirmed
+against the datasheet (Table 94 column header: `ALT0 ALT1 ALT2 ALT3 ALT4
+ALT5`; GPIO0's ALT4 = `TXD2`, GPIO1's ALT4 = `RXD2`), so it is no longer a
+suspect for "no input". The physical pin numbers below are the Raspberry Pi
+40-pin standard.
 
 ## ⚠️ Voltage — do not skip
 

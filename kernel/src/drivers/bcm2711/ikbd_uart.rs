@@ -5,9 +5,12 @@
 //! baud divisor differ. Received bytes are handed to the IKBD protocol
 //! decoder (`crate::ikbd`).
 //!
-//! **The base and GPIO values below follow the established BCM2711 UART
-//! pattern but should be cross-checked against the datasheet for your
-//! board/wiring before connecting hardware.**
+//! GPIO routing is datasheet-verified (BCM2711 ARM Peripherals,
+//! `references/datasheets/RP-008248-DS-1-bcm2711-peripherals.pdf`, Table 94
+//! §5.3 "Alternative Function Assignments", p.78, reconfirmed Table 171
+//! p.146): **GPIO0 ALT4 = TXD2, GPIO1 ALT4 = RXD2**, UART2 base
+//! `0x7e20_1400` (= `0xFE20_1400` low-peripheral mode). Header pins:
+//! GPIO0 = pin 27, GPIO1 = pin 28. See `docs/hardware/ikbd-pin-wiring.md`.
 
 use crate::ikbd;
 
