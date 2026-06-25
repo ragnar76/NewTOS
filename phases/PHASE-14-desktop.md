@@ -42,15 +42,15 @@ Done (verified by QMP screendump / serial on raspi4b):
 Open (from the boot-flow cross-check — these were not in the original
 3-deliverable plan):
 
-- **D7** **The shell loop** — a `sh_main`-style loop driven by
-  `shel_write`/`sh_nextapp` (DESKTOP / NORMAL-app / CONSOLE / autorun), so
-  the desktop can launch a program and have it return to the desktop. This
-  is the structural backbone for D8–D10.  ☐
+- **D7** **The shell loop** — a `sh_main`-style loop dispatching a
+  `MenuAction` (the kernel analogue of `sh_nextapp`: DESKTOP / CONSOLE /
+  …app). The CONSOLE case is wired (see D9); the NORMAL-app case is D8.  ◑
 - **D8** **Application launch** — double-click a `.PRG` / `shel_write` →
   `Pexec`, return to the desktop on exit.  ☐
-- **D9** **Execute EmuCON** — launch the EmuCON console (CONSOLE_APP) and
-  return to the desktop.  ☐ (a serial EmuCON-style shell already exists in
-  `kernel/src/shell.rs`; wire it as a launchable console app)
+- **D9** **Execute EmuCON** — File → Execute EmuCON runs the EmuCON console
+  (`shell::run_console`) full-screen and returns to the desktop on `exit`.
+  ✅ (console launch-target verified by screendump; full round-trip needs a
+  real mouse+keyboard)
 - **D10** **AUTO folder** — run `\AUTO\*.PRG` (directory order) at boot
   before the desktop.  ☐
 - **D11** Fuller `NEWDESK.INF` — `#E` (settings), `#W` (window positions),
@@ -69,12 +69,15 @@ runs the desktop as a **kernel module** (`kernel/src/desktop.rs`,
 `desktop::run()` hardwired at boot). That is fine for the standalone desktop
 but blocks the shell loop (D7) and thus app launch / EmuCON (D8/D9).
 
-**Decision needed before D7:** keep the desktop kernel-side but add a shell
-loop the kernel drives, **or** move the desktop to an EL0 process started
-via `Pexec` (closer to EmuTOS, ties into the Phase-06 process / Pwait
-work). To be recorded as an ADR in `docs/MEMORY.md` when chosen. (Note: the
-original plan's "D3 Boot integration: `Pexec(desktop)`" assumed the process
-model; we diverged to a kernel module — this ADR resolves that.)
+**Decision (2026-06-24):** keep the desktop **kernel-side** and drive the
+shell loop from the kernel (`MenuAction` dispatch in `desktop::step`), rather
+than making the desktop an EL0 process. Rationale: it reuses the working
+desktop + the existing `shell::run_console`, with far less risk than the
+EL0/`Pexec`/scheduler path; the EmuCON case (D9) is done this way. **D8**
+(launching an external `.PRG`) will still need the EL0 `Pexec` path — at that
+point the desktop stays kernel-side but the *launched program* is the EL0
+process (the kernel waits for its `Pterm` and repaints the desktop), so the
+process model is only needed for the child, not the desktop itself.
 
 ## Exit criteria
 
