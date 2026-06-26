@@ -57,6 +57,9 @@ impl Host for KernelHost {
         {
             crate::console::pl011_rx_poll();
         }
+        // Drain USB-HID interrupt transfers (keyboard/mouse) → ikbd::feed.
+        // No-op until a HID device is enumerated (qemu-virt for now).
+        crate::drivers::usb::poll();
         core::hint::spin_loop();
 
         // SAFETY: restore the caller's original DAIF mask state.

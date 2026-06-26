@@ -10,7 +10,7 @@
 use core::num::NonZeroUsize;
 
 use xhci::accessor::Mapper;
-use xhci::context::{self, DeviceHandler, EndpointHandler, InputHandler, SlotHandler};
+use xhci::context::{self, InputHandler};
 use xhci::ring::trb::{command, event, transfer};
 use xhci::Registers;
 
@@ -116,6 +116,32 @@ fn ep0_max_packet(speed: u8) -> u16 {
     }
 }
 
+/// Push a TRB onto a producer ring: set the producer cycle bit, and on
+/// reaching the last slot write a Link TRB back to the ring base (Toggle
+/// Cycle) so the ring is circular.
+fn ring_push(ring: &mut [Trb], enq: &mut usize, cycle: &mut bool, mut data: [u32; 4]) {
+    let len = ring.len();
+    if *cycle {
+        data[3] |= 1;
+    } else {
+        data[3] &= !1;
+    }
+    ring[*enq] = Trb(data);
+    *enq += 1;
+    if *enq == len - 1 {
+        let base = va_to_pa(ring.as_ptr() as u64);
+        let mut link = [base as u32, (base >> 32) as u32, 0, (6u32 << 10) | (1 << 1)];
+        if *cycle {
+            link[3] |= 1;
+        } else {
+            link[3] &= !1;
+        }
+        ring[len - 1] = Trb(link);
+        *enq = 0;
+        *cycle = !*cycle;
+    }
+}
+
 pub struct Xhci {
     regs: Registers<HighHalf>,
     ports: u8,
@@ -128,6 +154,9 @@ pub struct Xhci {
     /// EP0 transfer-ring producer index + cycle state (one device, D2/D3).
     ep0_enq: usize,
     ep0_cycle: bool,
+    /// Interrupt-IN transfer-ring producer index + cycle state.
+    int_enq: usize,
+    int_cycle: bool,
 }
 
 impl Xhci {
@@ -203,7 +232,38 @@ impl Xhci {
             evt_cycle: true,
             ep0_enq: 0,
             ep0_cycle: true,
+            int_enq: 0,
+            int_cycle: true,
         }
+    }
+
+    /// Queue an interrupt-IN transfer (8-byte HID boot report) on the device's
+    /// interrupt endpoint and ring its doorbell. The completion arrives later
+    /// as a Transfer Event (drained by [`Self::poll_interrupt`]).
+    pub fn queue_interrupt(&mut self, slot: u8, dci: u8) {
+        // SAFETY: single-CPU; DEV is ours.
+        let buf_pa = unsafe { va_to_pa((&raw const (*(&raw const DEV)).intbuf) as u64) };
+        let mut n = transfer::Normal::new();
+        n.set_data_buffer_pointer(buf_pa)
+            .set_trb_transfer_length(8)
+            .set_interrupt_on_completion();
+        let data = transfer::Allowed::Normal(n).into_raw();
+        // SAFETY: single-CPU; DEV is ours.
+        let ring = unsafe { &mut (*(&raw mut DEV)).int_ring.0 };
+        ring_push(ring, &mut self.int_enq, &mut self.int_cycle, data);
+        self.regs.doorbell.update_volatile_at(slot as usize, |db| {
+            db.set_doorbell_target(dci);
+        });
+    }
+
+    /// Drain one event; if it is a Transfer Event (a HID report landed),
+    /// return a copy of the 8-byte report buffer.
+    pub fn poll_interrupt(&mut self) -> Option<[u8; 8]> {
+        if let Some(event::Allowed::TransferEvent(_)) = self.poll_event() {
+            // SAFETY: single-CPU; DEV is ours.
+            return Some(unsafe { (*(&raw const DEV)).intbuf });
+        }
+        None
     }
 
     /// Enqueue a command TRB, ring the command doorbell, and wait for its
@@ -352,32 +412,11 @@ impl Xhci {
         }
     }
 
-    /// Push a TRB onto the EP0 transfer ring (producer cycle + Link-TRB wrap
-    /// so multiple control transfers can share the 16-entry ring).
-    fn ep0_push(&mut self, mut data: [u32; 4]) {
+    /// Push a TRB onto the EP0 transfer ring.
+    fn ep0_push(&mut self, data: [u32; 4]) {
         // SAFETY: single-CPU; DEV is ours.
         let ring = unsafe { &mut (*(&raw mut DEV)).ep0_ring.0 };
-        let len = ring.len();
-        if self.ep0_cycle {
-            data[3] |= 1;
-        } else {
-            data[3] &= !1;
-        }
-        ring[self.ep0_enq] = Trb(data);
-        self.ep0_enq += 1;
-        if self.ep0_enq == len - 1 {
-            // Link TRB at the last slot → ring base, Toggle Cycle (bit 1).
-            let base = va_to_pa(ring.as_ptr() as u64);
-            let mut link = [base as u32, (base >> 32) as u32, 0, (6u32 << 10) | (1 << 1)];
-            if self.ep0_cycle {
-                link[3] |= 1;
-            } else {
-                link[3] &= !1;
-            }
-            ring[len - 1] = Trb(link);
-            self.ep0_enq = 0;
-            self.ep0_cycle = !self.ep0_cycle;
-        }
+        ring_push(ring, &mut self.ep0_enq, &mut self.ep0_cycle, data);
     }
 
     /// Wait for a Transfer Event; true on Success.
@@ -617,7 +656,9 @@ impl Xhci {
 
     /// Enumerate the first connected root port up to its device descriptor
     /// (D2: reset → enable slot → address device → GET_DESCRIPTOR).
-    pub fn enumerate_first_port(&mut self) {
+    /// Returns `(slot, dci, protocol)` of the configured HID device, ready
+    /// for interrupt polling.
+    pub fn enumerate_first_port(&mut self) -> Option<(u8, u8, u8)> {
         for port in 1..=self.ports {
             let p = self
                 .regs
@@ -640,10 +681,13 @@ impl Xhci {
             if self.address_device(slot, port, speed) {
                 kprintln!("[usb] port {}: device ADDRESSED (slot {})", port, slot);
                 self.get_device_descriptor(slot);
-                self.configure_hid(slot, port, speed);
+                if let Some((dci, protocol)) = self.configure_hid(slot, port, speed) {
+                    return Some((slot, dci, protocol));
+                }
             }
-            return; // D2: just the first device
+            return None; // D2: just the first device
         }
+        None
     }
 
     /// Log each root-hub port's connect status (D1 verification target).
