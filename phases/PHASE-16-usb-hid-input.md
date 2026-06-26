@@ -78,13 +78,16 @@ desktop never learns the input came from USB.
   machinery is proven; SET_CONFIGURATION + a `usb_device` model + multi-device
   enumeration are the remaining core pieces (fold into D3/D4).  ◑
 - **D3** **Hub driver** — walk the (root + internal) hub, enumerate ports.
-- **D4** **HID keyboard** — boot protocol, interrupt-IN polling,
-  HID-usage→Atari-scancode, inject into `ikbd.rs` (→ console RX / shell /
-  AES `evnt_keybd`). Verify in QEMU: typing in `-device usb-kbd` reaches the
-  console/desktop.
-- **D5** **HID mouse** — boot protocol, relative-motion + buttons → the same
-  packet shape `vdi::feed_relative` consumes (the existing cursor path).
-  Verify in QEMU: `-device usb-mouse` moves the desktop cursor + clicks.
+- **D4** **HID keyboard** — boot protocol, interrupt-IN polling
+  (`queue_interrupt`/`poll_interrupt`, driven from `host_env::pump_input` via
+  `usb::poll`), HID-usage→Atari-scancode + make/break diff (`hid.rs`) →
+  `ikbd::feed`. **Verified in QEMU (QMP send-key):** space/b/return produce HID
+  reports that reach `keyboard_report` → `ikbd::feed` → the console RX ring.
+  The whole chain (xHCI → enumeration → interrupt → translate → IKBD →
+  console) works.  ✅
+- **D5** **HID mouse** — boot mouse report → IKBD relative-mouse packet
+  (`mouse_report` → `ikbd::feed` → `vdi::feed_relative`). Implemented;
+  Y-direction + the live cursor verified at D6 (interactive desktop).  ◑
 - **D6** **Interactive desktop in QEMU** — selecting, double-click, launching
   a program, EmuCON, all driven by emulated USB kbd+mouse. The capstone the
   desktop has been waiting for.
