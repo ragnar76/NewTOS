@@ -85,24 +85,27 @@ pub fn menu_bar(pb: &Aespb) {
 }
 
 /// Interactive drop-down tracking — the only genuinely new Menu-Manager
-/// logic. Entered while the button is held over the bar (e.g. from
-/// `evnt_multi`). Follows the mouse: the title under the cursor opens its
-/// drop-down (`menu_sub`), items highlight on hover, and on **release**
-/// the item under the cursor is the selection. Returns
-/// `Some((title, item))` or `None` (released outside any item).
+/// logic. Entered (from `evnt_multi`) as soon as the cursor is over the bar.
+/// Follows the mouse: the title under the cursor opens its drop-down
+/// (`menu_sub`), items highlight on hover, a button **press** over an item is
+/// the selection, and leaving the bar + open box closes it. Returns
+/// `Some((title, item))` or `None` (cancelled).
 ///
-/// Behaviour matches EmuTOS `mn_do` (press-drag-release); the rectangle-
-/// wait state machine is replaced by a poll loop at our event altitude.
-/// **Limit:** no save/restore under the box yet — closing a menu erases
-/// to white, which is correct on the empty desktop but needs `menu_sr`
-/// once windows can sit beneath the bar.
+/// Behaviour matches GEM's hover menus (open-on-enter, click-to-pick). The
+/// screen under each box is saved on open and restored on close (`save_under`
+/// / `restore_under` — GEM's `menu_sr`), so it works over windows too; the
+/// mouse cursor is hidden across every box/highlight draw so it neither
+/// smears nor pollutes the backing.
 pub fn track(tree: *mut Object, backend: &dyn RasterBackend) -> Option<(i16, i16)> {
     let h = host()?;
     let tp = tree as *const Object;
     let mut cur_title = NIL;
     let mut cur_box = NIL;
     let mut cur_item = NIL;
-    let mut was_down = true; // entered on a press in the bar
+    // Hover model (GEM): the menu opens as the cursor enters a title; an item
+    // is chosen on a button *press* over it; leaving the bar and the open box
+    // closes the menu with no selection.
+    let mut was_down = crate::vdi::mouse_buttons() & 0x01 != 0;
 
     loop {
         let (mx, my) = crate::vdi::mouse_position();
@@ -123,34 +126,43 @@ pub fn track(tree: *mut Object, backend: &dyn RasterBackend) -> Option<(i16, i16
         if cur_box != NIL {
             let it = object::child_at(tp, cur_box, mx, my);
             if it != cur_item {
+                // Bracket the highlight change so the visible cursor (which
+                // sits over the item) does not smear.
+                crate::vdi::cursor_hide(backend);
                 if cur_item != NIL {
                     object::set_state_bit(tree, cur_item, SELECTED, false);
                 }
                 if it != NIL {
                     object::set_state_bit(tree, it, SELECTED, true);
                 }
+                crate::vdi::cursor_show(backend);
                 cur_item = it;
             }
         }
 
-        // Release edge → select the item under the cursor, or cancel.
-        if was_down && !down {
-            if cur_item != NIL {
-                // Clear the item's highlight bit and restore the screen under
-                // the box, cursor hidden so neither smears. The title stays
-                // highlighted: the app un-highlights it via menu_tnormal
-                // after acting on MN_SELECTED.
-                crate::vdi::cursor_hide(backend);
-                object::set_state_bit(tree, cur_item, SELECTED, false);
-                erase_box_inner(tree, cur_box, backend);
-                crate::vdi::cursor_show(backend);
-                return Some((cur_title, cur_item));
-            }
+        // Press edge over an item → select it.
+        if !was_down && down && cur_item != NIL {
+            // Clear the item's highlight bit and restore the screen under the
+            // box, cursor hidden so neither smears. The title stays
+            // highlighted: the app un-highlights it via menu_tnormal after
+            // acting on MN_SELECTED.
+            crate::vdi::cursor_hide(backend);
+            object::set_state_bit(tree, cur_item, SELECTED, false);
+            erase_box_inner(tree, cur_box, backend);
+            crate::vdi::cursor_show(backend);
+            return Some((cur_title, cur_item));
+        }
+
+        // Leaving the bar *and* the open box closes the menu (no selection).
+        let in_bar = my < BAR_H;
+        let in_box = cur_box != NIL && point_in(tp, cur_box, mx, my);
+        if !in_bar && !in_box {
             if cur_title != NIL {
                 close_box(tree, cur_title, cur_box, backend);
             }
             return None;
         }
+
         was_down = down;
         h.pump_input();
     }
@@ -182,6 +194,12 @@ fn menu_sub(tree: *const Object, title: i16) -> i16 {
         }
         imenu
     }
+}
+
+/// Is device point `(mx, my)` inside object `obj`'s absolute rectangle?
+fn point_in(tree: *const Object, obj: i16, mx: i16, my: i16) -> bool {
+    let (x, y, w, h) = object::abs_rect(tree, obj);
+    mx >= x && mx < x + w && my >= y && my < y + h
 }
 
 // ── drop-down save/restore backing (GEM's "save under") ──────────────────

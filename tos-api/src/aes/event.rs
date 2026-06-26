@@ -50,15 +50,18 @@ const MENU_BAR_H: i16 = 19;
 /// `MN_SELECTED` message id.
 const MN_SELECTED: i16 = 10;
 
-/// AES menu-bar interception: if a menu bar is installed and the left
-/// button is pressed over it, run the drop-down tracker (`menu::track`).
-/// On a selection, write an `MN_SELECTED` message into `pbuff` and return
-/// `MU_MESAG`; otherwise (no menu, not in the bar, or cancelled) return 0.
+/// AES menu-bar interception: if a menu bar is installed and the cursor is
+/// over it, run the drop-down tracker (`menu::track`) — GEM hover menus, no
+/// click needed to open. On a selection, write an `MN_SELECTED` message into
+/// `pbuff` and return `MU_MESAG`; otherwise (no menu, not in the bar, or
+/// cancelled) return 0.
 fn menu_intercept(pbuff: u64) -> u16 {
     let tree = super::menu::active();
-    if tree.is_null() || crate::vdi::mouse_buttons() & 0x01 == 0 {
+    if tree.is_null() {
         return 0;
     }
+    // Hover model: the drop-down opens whenever the cursor is over the bar, no
+    // click required (the tracker selects on a button press over an item).
     let (_mx, my) = crate::vdi::mouse_position();
     if my >= MENU_BAR_H {
         return 0;
