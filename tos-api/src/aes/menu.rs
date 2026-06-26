@@ -142,6 +142,15 @@ pub fn track(tree: *mut Object, backend: &dyn RasterBackend) -> Option<(i16, i16
                 if it != NIL {
                     object::set_state_bit(tree, it, SELECTED, true);
                 }
+                // Item fills span the full box width, so a highlight/clear
+                // paints over the box's 1-px frame; redraw it so the hovered
+                // rows keep their border (top/bottom + both sides).
+                let (bx, by, bw, bh) = object::abs_rect(tp, cur_box);
+                let clip = ClipRect::full(backend.width(), backend.height());
+                backend.fill_rect(bx, by, bw, 1, BLACK, clip); // top
+                backend.fill_rect(bx, by + bh - 1, bw, 1, BLACK, clip); // bottom
+                backend.fill_rect(bx, by, 1, bh, BLACK, clip); // left
+                backend.fill_rect(bx + bw - 1, by, 1, bh, BLACK, clip); // right
                 crate::vdi::cursor_show(backend);
                 cur_item = it;
             }
