@@ -41,8 +41,8 @@ pub fn init(dtb_phys: usize) {
         };
         let mut controller = unsafe { xhci::Xhci::open(base) };
         controller.scan_ports();
-        // D2 foundation: exercise the command + event rings.
-        controller.enable_slot();
+        // D2: reset → enable slot → address device on the first connected port.
+        controller.enumerate_first_port();
     }
     #[cfg(not(feature = "board-qemu-virt"))]
     let _ = dtb_phys;

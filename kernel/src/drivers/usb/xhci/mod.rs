@@ -10,6 +10,7 @@
 use core::num::NonZeroUsize;
 
 use xhci::accessor::Mapper;
+use xhci::context::{self, DeviceHandler, EndpointHandler, InputHandler, SlotHandler};
 use xhci::ring::trb::{command, event};
 use xhci::Registers;
 
@@ -64,6 +65,35 @@ static mut DMA: XhciDma = XhciDma {
     evt_ring: Ring([Trb([0; 4]); EVT_RING_LEN]),
     erst: Erst([0; 2]),
 };
+
+// Per-device DMA (D2: one device at a time, enough to enumerate). The Input
+// and Device contexts are 32-byte contexts (CSZ=0; checked in `open`): the
+// Input is control + slot + 31 endpoint contexts (33 × 8 u32), the Device is
+// slot + 31 endpoints (32 × 8 u32). Laid out as `[u32]` so we can view the
+// region as `context::Input32Byte` (a `#[repr(C)]` struct of the same u32s).
+#[repr(C, align(64))]
+struct DevDma {
+    input: [u32; 33 * 8],
+    device: [u32; 32 * 8],
+    ep0_ring: Ring,
+    buf: [u8; 256],
+}
+
+static mut DEV: DevDma = DevDma {
+    input: [0; 33 * 8],
+    device: [0; 32 * 8],
+    ep0_ring: Ring([Trb([0; 4]); CMD_RING_LEN]),
+    buf: [0; 256],
+};
+
+/// Default EP0 max packet size for a port speed (PORTSC speed id).
+fn ep0_max_packet(speed: u8) -> u16 {
+    match speed {
+        4 => 512, // SuperSpeed
+        3 => 64,  // High
+        _ => 8,   // Full / Low
+    }
+}
 
 pub struct Xhci {
     regs: Registers<HighHalf>,
@@ -208,16 +238,121 @@ impl Xhci {
         ev
     }
 
-    /// Enable Slot command → a device slot ID (D2 foundation test).
+    /// Enable Slot command → a device slot ID.
     pub fn enable_slot(&mut self) -> Option<u8> {
         let data = command::Allowed::EnableSlot(command::EnableSlot::new()).into_raw();
         let cc = self.command(data)?;
-        kprintln!(
-            "[usb] enable_slot → slot {} (code {:?})",
-            cc.slot_id(),
-            cc.completion_code()
-        );
         Some(cc.slot_id())
+    }
+
+    /// Reset a root-hub port (1-based) and wait for it to enable.
+    fn port_reset(&mut self, port: u8) -> bool {
+        let i = (port - 1) as usize;
+        self.regs.port_register_set.update_volatile_at(i, |p| {
+            p.portsc.set_port_reset();
+        });
+        for _ in 0..20_000_000u64 {
+            let p = self.regs.port_register_set.read_volatile_at(i).portsc;
+            if !p.port_reset() && p.port_enabled_disabled() {
+                return true;
+            }
+            core::hint::spin_loop();
+        }
+        false
+    }
+
+    fn port_speed(&self, port: u8) -> u8 {
+        self.regs
+            .port_register_set
+            .read_volatile_at((port - 1) as usize)
+            .portsc
+            .port_speed()
+    }
+
+    /// Address a device on `port` (speed `speed`) to `slot`: build the Input
+    /// Context (slot + EP0), point DCBAA at the Device Context, and issue the
+    /// Address Device command. Returns true on Success.
+    fn address_device(&mut self, slot: u8, port: u8, speed: u8) -> bool {
+        // SAFETY: single-CPU; DEV/DMA are ours.
+        let dev = unsafe { &mut *(&raw mut DEV) };
+        dev.input.iter_mut().for_each(|x| *x = 0);
+        dev.device.iter_mut().for_each(|x| *x = 0);
+
+        let ep0_pa = va_to_pa((&raw const dev.ep0_ring) as u64); // 64-byte aligned
+
+        // View the zeroed input region as a 32-byte Input Context and fill it.
+        // SAFETY: `Input32Byte` is `#[repr(C)]` over the same u32s as `input`.
+        let input: &mut context::Input32Byte =
+            unsafe { &mut *(dev.input.as_mut_ptr().cast()) };
+        input.control_mut().set_add_context_flag(0); // slot
+        input.control_mut().set_add_context_flag(1); // EP0
+        {
+            let s = input.device_mut().slot_mut();
+            s.set_context_entries(1);
+            s.set_root_hub_port_number(port);
+            s.set_speed(speed);
+        }
+        {
+            let e = input.device_mut().endpoint_mut(1);
+            e.set_endpoint_type(context::EndpointType::Control);
+            e.set_max_packet_size(ep0_max_packet(speed));
+            e.set_tr_dequeue_pointer(ep0_pa);
+            e.set_dequeue_cycle_state(); // DCS = 1, matches the ring's PCS
+            e.set_error_count(3);
+        }
+
+        // DCBAA[slot] → the (controller-written) Device Context.
+        let dma = unsafe { &mut *(&raw mut DMA) };
+        dma.dcbaa.0[slot as usize] = va_to_pa((&raw const dev.device) as u64);
+
+        let input_pa = va_to_pa((&raw const dev.input) as u64);
+        let mut cmd = command::AddressDevice::new();
+        cmd.set_input_context_pointer(input_pa);
+        cmd.set_slot_id(slot);
+        let data = command::Allowed::AddressDevice(cmd).into_raw();
+        match self.command(data) {
+            Some(cc) => {
+                kprintln!(
+                    "[usb] address_device slot {} → {:?}",
+                    slot,
+                    cc.completion_code()
+                );
+                matches!(cc.completion_code(), Ok(event::CompletionCode::Success))
+            }
+            None => {
+                kprintln!("[usb] address_device: no completion");
+                false
+            }
+        }
+    }
+
+    /// Enumerate the first connected root port up to the addressed state
+    /// (D2: reset → enable slot → address device).
+    pub fn enumerate_first_port(&mut self) {
+        for port in 1..=self.ports {
+            let p = self
+                .regs
+                .port_register_set
+                .read_volatile_at((port - 1) as usize)
+                .portsc;
+            if !p.current_connect_status() {
+                continue;
+            }
+            if !self.port_reset(port) {
+                kprintln!("[usb] port {}: reset failed", port);
+                continue;
+            }
+            let speed = self.port_speed(port);
+            let Some(slot) = self.enable_slot() else {
+                kprintln!("[usb] port {}: enable slot failed", port);
+                continue;
+            };
+            kprintln!("[usb] port {}: reset ok, speed {}, slot {}", port, speed, slot);
+            if self.address_device(slot, port, speed) {
+                kprintln!("[usb] port {}: device ADDRESSED (slot {})", port, slot);
+            }
+            return; // D2: just the first device
+        }
     }
 
     /// Log each root-hub port's connect status (D1 verification target).
