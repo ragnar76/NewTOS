@@ -86,10 +86,21 @@ static mut DEV: DevDma = DevDma {
     buf: [0; 256],
 };
 
-/// Set the TRB producer cycle bit (the EP0 ring starts at cycle 1).
-fn with_cycle(mut raw: [u32; 4]) -> Trb {
-    raw[3] |= 1;
-    Trb(raw)
+/// A HID boot device's configuration, as parsed from its config descriptor.
+#[derive(Clone, Copy)]
+pub struct HidInfo {
+    /// `bConfigurationValue` for SET_CONFIGURATION.
+    pub config_value: u8,
+    /// The HID interface number.
+    pub iface: u8,
+    /// `bInterfaceProtocol`: 1 = keyboard, 2 = mouse.
+    pub protocol: u8,
+    /// Interrupt-IN endpoint address (bit 7 = IN, low 4 = number).
+    pub ep_addr: u8,
+    /// Endpoint max packet size.
+    pub ep_max: u16,
+    /// Endpoint polling interval (`bInterval`).
+    pub interval: u8,
 }
 
 /// Default EP0 max packet size for a port speed (PORTSC speed id).
@@ -110,6 +121,9 @@ pub struct Xhci {
     /// Event-ring consumer index + cycle state.
     evt_deq: usize,
     evt_cycle: bool,
+    /// EP0 transfer-ring producer index + cycle state (one device, D2/D3).
+    ep0_enq: usize,
+    ep0_cycle: bool,
 }
 
 impl Xhci {
@@ -183,6 +197,8 @@ impl Xhci {
             cmd_cycle: true,
             evt_deq: 0,
             evt_cycle: true,
+            ep0_enq: 0,
+            ep0_cycle: true,
         }
     }
 
@@ -332,58 +348,185 @@ impl Xhci {
         }
     }
 
-    /// GET_DESCRIPTOR(Device) over EP0: a control IN transfer (Setup → Data →
-    /// Status) on the slot's EP0 transfer ring. Logs the descriptor on
-    /// success. The first real device transfer — proves enumeration works.
-    pub fn get_device_descriptor(&mut self, slot: u8) -> bool {
-        const LEN: u16 = 18;
+    /// Push a TRB onto the EP0 transfer ring (producer cycle + Link-TRB wrap
+    /// so multiple control transfers can share the 16-entry ring).
+    fn ep0_push(&mut self, mut data: [u32; 4]) {
+        // SAFETY: single-CPU; DEV is ours.
+        let ring = unsafe { &mut (*(&raw mut DEV)).ep0_ring.0 };
+        let len = ring.len();
+        if self.ep0_cycle {
+            data[3] |= 1;
+        } else {
+            data[3] &= !1;
+        }
+        ring[self.ep0_enq] = Trb(data);
+        self.ep0_enq += 1;
+        if self.ep0_enq == len - 1 {
+            // Link TRB at the last slot → ring base, Toggle Cycle (bit 1).
+            let base = va_to_pa(ring.as_ptr() as u64);
+            let mut link = [base as u32, (base >> 32) as u32, 0, (6u32 << 10) | (1 << 1)];
+            if self.ep0_cycle {
+                link[3] |= 1;
+            } else {
+                link[3] &= !1;
+            }
+            ring[len - 1] = Trb(link);
+            self.ep0_enq = 0;
+            self.ep0_cycle = !self.ep0_cycle;
+        }
+    }
+
+    /// Wait for a Transfer Event; true on Success.
+    fn wait_transfer(&mut self) -> bool {
+        for _ in 0..50_000_000u64 {
+            if let Some(event::Allowed::TransferEvent(te)) = self.poll_event() {
+                return matches!(te.completion_code(), Ok(event::CompletionCode::Success));
+            }
+            core::hint::spin_loop();
+        }
+        false
+    }
+
+    /// A control transfer on EP0. `setup` = the 8-byte SETUP packet; a data
+    /// stage of `len` bytes at `buf_pa` follows when `len > 0` (direction
+    /// `dir_in`); `len == 0` = no data stage.
+    fn control(&mut self, slot: u8, setup: [u8; 8], buf_pa: u64, len: u16, dir_in: bool) -> bool {
+        let mut s = transfer::SetupStage::new();
+        s.set_request_type(setup[0])
+            .set_request(setup[1])
+            .set_value(u16::from_le_bytes([setup[2], setup[3]]))
+            .set_index(u16::from_le_bytes([setup[4], setup[5]]))
+            .set_length(len)
+            .set_transfer_type(if len == 0 {
+                transfer::TransferType::No
+            } else if dir_in {
+                transfer::TransferType::In
+            } else {
+                transfer::TransferType::Out
+            });
+        self.ep0_push(transfer::Allowed::SetupStage(s).into_raw());
+        if len > 0 {
+            let mut d = transfer::DataStage::new();
+            d.set_data_buffer_pointer(buf_pa)
+                .set_trb_transfer_length(len as u32)
+                .set_direction(if dir_in {
+                    transfer::Direction::In
+                } else {
+                    transfer::Direction::Out
+                });
+            self.ep0_push(transfer::Allowed::DataStage(d).into_raw());
+        }
+        let mut st = transfer::StatusStage::new();
+        // Status stage runs opposite the data stage. `set_direction()` is a
+        // flag = IN; the default (no call) = OUT. So set IN unless this is an
+        // IN data transfer (whose status stage is OUT).
+        if !(len > 0 && dir_in) {
+            st.set_direction();
+        }
+        st.set_interrupt_on_completion();
+        self.ep0_push(transfer::Allowed::StatusStage(st).into_raw());
+
+        self.regs.doorbell.update_volatile_at(slot as usize, |db| {
+            db.set_doorbell_target(1);
+        });
+        self.wait_transfer()
+    }
+
+    /// GET_DESCRIPTOR into `DEV.buf` (data there on success).
+    fn get_descriptor(&mut self, slot: u8, desc_type: u8, index: u8, len: u16) -> bool {
         // SAFETY: single-CPU; DEV is ours.
         let dev = unsafe { &mut *(&raw mut DEV) };
         dev.buf.iter_mut().for_each(|b| *b = 0);
         let buf_pa = va_to_pa((&raw const dev.buf) as u64);
+        let value = ((desc_type as u16) << 8) | index as u16;
+        let setup = [
+            0x80,
+            6,
+            value as u8,
+            (value >> 8) as u8,
+            0,
+            0,
+            len as u8,
+            (len >> 8) as u8,
+        ];
+        self.control(slot, setup, buf_pa, len, true)
+    }
 
-        let mut setup = transfer::SetupStage::new();
-        setup
-            .set_request_type(0x80) // device→host, standard, device
-            .set_request(6) // GET_DESCRIPTOR
-            .set_value(0x0100) // DEVICE descriptor, index 0
-            .set_index(0)
-            .set_length(LEN)
-            .set_transfer_type(transfer::TransferType::In);
-        let mut data = transfer::DataStage::new();
-        data.set_data_buffer_pointer(buf_pa)
-            .set_trb_transfer_length(LEN as u32)
-            .set_direction(transfer::Direction::In);
-        let mut status = transfer::StatusStage::new();
-        status.set_interrupt_on_completion();
-
-        dev.ep0_ring.0[0] = with_cycle(transfer::Allowed::SetupStage(setup).into_raw());
-        dev.ep0_ring.0[1] = with_cycle(transfer::Allowed::DataStage(data).into_raw());
-        dev.ep0_ring.0[2] = with_cycle(transfer::Allowed::StatusStage(status).into_raw());
-
-        // Ring the slot's doorbell, target EP0 (DCI 1).
-        self.regs.doorbell.update_volatile_at(slot as usize, |db| {
-            db.set_doorbell_target(1);
-        });
-
-        for _ in 0..50_000_000u64 {
-            if let Some(event::Allowed::TransferEvent(te)) = self.poll_event() {
-                if !matches!(te.completion_code(), Ok(event::CompletionCode::Success)) {
-                    kprintln!("[usb] get_descriptor → {:?}", te.completion_code());
-                    return false;
-                }
-                let b = &dev.buf;
-                kprintln!(
-                    "[usb] device descriptor: bLength={} type={} bcdUSB={:02x}{:02x} \
-                     class={} maxpkt0={} VID={:02x}{:02x} PID={:02x}{:02x}",
-                    b[0], b[1], b[3], b[2], b[4], b[7], b[9], b[8], b[11], b[10]
-                );
-                return true;
-            }
-            core::hint::spin_loop();
+    /// Read + log the 18-byte device descriptor.
+    pub fn get_device_descriptor(&mut self, slot: u8) -> bool {
+        if !self.get_descriptor(slot, 1, 0, 18) {
+            kprintln!("[usb] get device descriptor failed");
+            return false;
         }
-        kprintln!("[usb] get_descriptor: no transfer event");
-        false
+        // SAFETY: single-CPU; DEV is ours.
+        let b = unsafe { &(*(&raw const DEV)).buf };
+        kprintln!(
+            "[usb] device descriptor: bLength={} type={} bcdUSB={:02x}{:02x} class={} maxpkt0={} VID={:02x}{:02x} PID={:02x}{:02x}",
+            b[0], b[1], b[3], b[2], b[4], b[7], b[9], b[8], b[11], b[10]
+        );
+        true
+    }
+
+    /// Read the configuration descriptor and find the first HID boot
+    /// interrupt-IN endpoint (keyboard/mouse). `None` if not a HID boot device.
+    pub fn read_config(&mut self, slot: u8) -> Option<HidInfo> {
+        // Read the 9-byte config header first for wTotalLength.
+        if !self.get_descriptor(slot, 2, 0, 9) {
+            return None;
+        }
+        // SAFETY: single-CPU; DEV is ours.
+        let total = {
+            let b = unsafe { &(*(&raw const DEV)).buf };
+            u16::from_le_bytes([b[2], b[3]]).min(255)
+        };
+        if !self.get_descriptor(slot, 2, 0, total) {
+            return None;
+        }
+        // SAFETY: single-CPU; DEV is ours. Take the field ref, then slice.
+        let buf = unsafe { &(*(&raw const DEV)).buf };
+        let b = &buf[..total as usize];
+        let config_value = b[5];
+        let mut iface = 0u8;
+        let mut protocol = 0u8;
+        let mut i = 0usize;
+        while i + 2 <= b.len() {
+            let dlen = b[i] as usize;
+            let dtype = b[i + 1];
+            if dlen == 0 || i + dlen > b.len() {
+                break;
+            }
+            match dtype {
+                4 => {
+                    // Interface descriptor: class 3 = HID; protocol 1/2.
+                    iface = b[i + 2];
+                    protocol = b[i + 7];
+                }
+                5 => {
+                    // Endpoint descriptor: interrupt (attr&3==3) + IN (bit 7).
+                    let addr = b[i + 2];
+                    let attr = b[i + 3];
+                    if attr & 0x3 == 3 && addr & 0x80 != 0 {
+                        let ep_max = u16::from_le_bytes([b[i + 4], b[i + 5]]);
+                        let interval = b[i + 6];
+                        kprintln!(
+                            "[usb] HID iface {} protocol {} → int-IN ep {:#04x} max {} interval {}",
+                            iface, protocol, addr, ep_max, interval
+                        );
+                        return Some(HidInfo {
+                            config_value,
+                            iface,
+                            protocol,
+                            ep_addr: addr,
+                            ep_max,
+                            interval,
+                        });
+                    }
+                }
+                _ => {}
+            }
+            i += dlen;
+        }
+        None
     }
 
     /// Enumerate the first connected root port up to its device descriptor
@@ -411,6 +554,7 @@ impl Xhci {
             if self.address_device(slot, port, speed) {
                 kprintln!("[usb] port {}: device ADDRESSED (slot {})", port, slot);
                 self.get_device_descriptor(slot);
+                self.read_config(slot);
             }
             return; // D2: just the first device
         }
