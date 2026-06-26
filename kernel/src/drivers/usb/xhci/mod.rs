@@ -76,14 +76,18 @@ struct DevDma {
     input: [u32; 33 * 8],
     device: [u32; 32 * 8],
     ep0_ring: Ring,
+    int_ring: Ring,
     buf: [u8; 256],
+    intbuf: [u8; 8],
 }
 
 static mut DEV: DevDma = DevDma {
     input: [0; 33 * 8],
     device: [0; 32 * 8],
     ep0_ring: Ring([Trb([0; 4]); CMD_RING_LEN]),
+    int_ring: Ring([Trb([0; 4]); CMD_RING_LEN]),
     buf: [0; 256],
+    intbuf: [0; 8],
 };
 
 /// A HID boot device's configuration, as parsed from its config descriptor.
@@ -529,6 +533,88 @@ impl Xhci {
         None
     }
 
+    /// SET_CONFIGURATION (no-data control OUT).
+    fn set_configuration(&mut self, slot: u8, value: u8) -> bool {
+        self.control(slot, [0x00, 9, value, 0, 0, 0, 0, 0], 0, 0, false)
+    }
+
+    /// HID SET_PROTOCOL → boot protocol (class control OUT to the interface).
+    fn set_protocol_boot(&mut self, slot: u8, iface: u8) -> bool {
+        self.control(slot, [0x21, 0x0B, 0, 0, iface, 0, 0, 0], 0, 0, false)
+    }
+
+    /// Configure Endpoint: add the HID interrupt-IN endpoint to the device.
+    /// Returns its DCI (Device Context Index) on success, 0 on failure.
+    fn configure_endpoint(&mut self, slot: u8, port: u8, speed: u8, hid: &HidInfo) -> u8 {
+        // SAFETY: single-CPU; DEV is ours.
+        let dev = unsafe { &mut *(&raw mut DEV) };
+        dev.input.iter_mut().for_each(|x| *x = 0);
+        let ep_num = hid.ep_addr & 0x0F;
+        let dci = ep_num * 2 + if hid.ep_addr & 0x80 != 0 { 1 } else { 0 };
+        let int_pa = va_to_pa((&raw const dev.int_ring) as u64);
+
+        // SAFETY: `Input32Byte` is `#[repr(C)]` over the same u32s as `input`.
+        let input: &mut context::Input32Byte =
+            unsafe { &mut *(dev.input.as_mut_ptr().cast()) };
+        input.control_mut().set_add_context_flag(0); // slot
+        input.control_mut().set_add_context_flag(dci as usize); // interrupt EP
+        {
+            let s = input.device_mut().slot_mut();
+            s.set_context_entries(dci);
+            s.set_root_hub_port_number(port);
+            s.set_speed(speed);
+        }
+        {
+            let e = input.device_mut().endpoint_mut(dci as usize);
+            e.set_endpoint_type(context::EndpointType::InterruptIn);
+            e.set_max_packet_size(hid.ep_max);
+            e.set_tr_dequeue_pointer(int_pa);
+            e.set_dequeue_cycle_state();
+            e.set_error_count(3);
+        }
+
+        let input_pa = va_to_pa((&raw const dev.input) as u64);
+        let mut cmd = command::ConfigureEndpoint::new();
+        cmd.set_input_context_pointer(input_pa);
+        cmd.set_slot_id(slot);
+        let data = command::Allowed::ConfigureEndpoint(cmd).into_raw();
+        match self.command(data) {
+            Some(cc) if matches!(cc.completion_code(), Ok(event::CompletionCode::Success)) => dci,
+            Some(cc) => {
+                kprintln!("[usb] configure_endpoint → {:?}", cc.completion_code());
+                0
+            }
+            None => 0,
+        }
+    }
+
+    /// Bring a HID boot device fully online: read its config, SET_CONFIGURATION,
+    /// add its interrupt endpoint, SET_PROTOCOL(boot). Returns `(dci, protocol)`
+    /// ready for interrupt polling.
+    pub fn configure_hid(&mut self, slot: u8, port: u8, speed: u8) -> Option<(u8, u8)> {
+        let hid = self.read_config(slot)?;
+        if !self.set_configuration(slot, hid.config_value) {
+            kprintln!("[usb] set_configuration failed");
+            return None;
+        }
+        let dci = self.configure_endpoint(slot, port, speed, &hid);
+        if dci == 0 {
+            return None;
+        }
+        if !self.set_protocol_boot(slot, hid.iface) {
+            kprintln!("[usb] set_protocol(boot) failed");
+            return None;
+        }
+        kprintln!(
+            "[usb] HID configured: slot {} ep {:#04x} dci {} ({})",
+            slot,
+            hid.ep_addr,
+            dci,
+            if hid.protocol == 1 { "keyboard" } else { "mouse" }
+        );
+        Some((dci, hid.protocol))
+    }
+
     /// Enumerate the first connected root port up to its device descriptor
     /// (D2: reset → enable slot → address device → GET_DESCRIPTOR).
     pub fn enumerate_first_port(&mut self) {
@@ -554,7 +640,7 @@ impl Xhci {
             if self.address_device(slot, port, speed) {
                 kprintln!("[usb] port {}: device ADDRESSED (slot {})", port, slot);
                 self.get_device_descriptor(slot);
-                self.read_config(slot);
+                self.configure_hid(slot, port, speed);
             }
             return; // D2: just the first device
         }
