@@ -58,6 +58,27 @@ pub fn init(dtb_phys: usize) {
     let _ = dtb_phys;
 }
 
+pub use xhci::DeviceInfo;
+
+/// Snapshot the discovered USB devices into `buf` for display (the init-screen
+/// USB tree). Returns `(root_port_count, n_devices)`; `(0, 0)` if no
+/// controller enumerated. Safe to call after `init`.
+pub fn tree(buf: &mut [DeviceInfo]) -> (u8, usize) {
+    #[cfg(feature = "board-qemu-virt")]
+    {
+        // SAFETY: single-CPU; XHCI is set once at boot and read-only here.
+        if let Some(c) = unsafe { (*core::ptr::addr_of!(XHCI)).as_ref() } {
+            let n = c.n_hid().min(buf.len());
+            for (di, slot) in buf.iter_mut().enumerate().take(n) {
+                *slot = c.device_info(di);
+            }
+            return (c.root_ports(), n);
+        }
+    }
+    let _ = buf;
+    (0, 0)
+}
+
 /// Pump USB HID input: drain a completed interrupt transfer (a HID report),
 /// translate it into the IKBD byte stream (`ikbd::feed`), and re-queue the
 /// next transfer for that device. Called from `host_env::pump_input` like the

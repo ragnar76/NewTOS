@@ -147,21 +147,47 @@ pub fn run() {
     y += 22;
     pair(&mut v, cx, y, b"Boot time", boot_time_str().as_bytes());
 
-    // separator before the footer
-    y += 24;
+    // separator
+    y += 22;
     v.set_line(BLACK);
     v.line(fx0 + 16, y, fx1 - 16, y);
 
-    // ── footer: branding / attribution (this OS is NOT the original) ──
+    // ── USB device tree (devices are enumerated *before* this screen) ──
     y += 16;
+    let mut devs = [crate::drivers::usb::DeviceInfo::default(); 4];
+    let (ports, n) = crate::drivers::usb::tree(&mut devs);
+    if ports > 0 {
+        let tx = fx0 + 40;
+        v.set_text_align(0, 5); // left
+        v.set_text_color(BLACK);
+        v.gtext(tx, y, format!("USB: xHCI host controller, {ports} ports").as_bytes());
+        y += 18;
+        if n == 0 {
+            v.gtext(tx + 16, y, b"(no devices connected)");
+            y += 18;
+        }
+        for (i, d) in devs[..n].iter().enumerate() {
+            let kind = match d.protocol {
+                1 => "Keyboard",
+                2 => "Mouse",
+                _ => "HID device",
+            };
+            let lead = if i + 1 == n { "\\-" } else { "|-" };
+            let line = format!(
+                "{} Port {}: {}  {:04x}:{:04x}",
+                lead, d.port, kind, d.vid, d.pid
+            );
+            v.gtext(tx + 12, y, line.as_bytes());
+            y += 18;
+        }
+    }
+
+    // ── footer + booting ──
+    y += 10;
     v.set_text_align(1, 5);
     v.set_text_color(BLACK);
     v.gtext(cx, y, b"NewTOS is an independent project - not original Atari software.");
-    y += 18;
-    v.gtext(cx, y, b"Atari(TM), TOS and GEM are trademarks of their respective owners.");
-
-    // booting message
-    y += 24;
+    y += 22;
     v.set_text_color(BLUE);
     v.gtext(cx, y, b"Booting the desktop...");
 

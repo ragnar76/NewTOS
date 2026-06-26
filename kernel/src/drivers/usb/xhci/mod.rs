@@ -103,6 +103,10 @@ struct HidDev {
     dci: u8,
     /// 1 = keyboard, 2 = mouse, 0 = unused.
     protocol: u8,
+    /// Root-hub port (1-based) + device descriptor IDs (for the USB tree).
+    port: u8,
+    vid: u16,
+    pid: u16,
     ep0_enq: usize,
     ep0_cycle: bool,
     int_enq: usize,
@@ -115,12 +119,25 @@ impl HidDev {
             slot: 0,
             dci: 0,
             protocol: 0,
+            port: 0,
+            vid: 0,
+            pid: 0,
             ep0_enq: 0,
             ep0_cycle: true,
             int_enq: 0,
             int_cycle: true,
         }
     }
+}
+
+/// A discovered USB device, for display (the init-screen USB tree).
+#[derive(Clone, Copy, Default)]
+pub struct DeviceInfo {
+    pub port: u8,
+    /// 1 = keyboard, 2 = mouse.
+    pub protocol: u8,
+    pub vid: u16,
+    pub pid: u16,
 }
 
 /// A HID boot device's configuration, as parsed from its config descriptor.
@@ -553,7 +570,25 @@ impl Xhci {
             "[usb] device descriptor: bLength={} type={} bcdUSB={:02x}{:02x} class={} maxpkt0={} VID={:02x}{:02x} PID={:02x}{:02x}",
             b[0], b[1], b[3], b[2], b[4], b[7], b[9], b[8], b[11], b[10]
         );
+        self.hid[di].vid = u16::from_le_bytes([b[8], b[9]]);
+        self.hid[di].pid = u16::from_le_bytes([b[10], b[11]]);
         true
+    }
+
+    /// Discovered-device info for display (the init-screen USB tree).
+    pub fn device_info(&self, di: usize) -> DeviceInfo {
+        let d = &self.hid[di];
+        DeviceInfo {
+            port: d.port,
+            protocol: d.protocol,
+            vid: d.vid,
+            pid: d.pid,
+        }
+    }
+
+    /// Number of root-hub ports the controller exposes (for the tree header).
+    pub fn root_ports(&self) -> u8 {
+        self.ports
     }
 
     /// Read the configuration descriptor and find the first HID boot
@@ -731,6 +766,7 @@ impl Xhci {
             let di = self.n_hid;
             self.hid[di] = HidDev::new();
             self.hid[di].slot = slot;
+            self.hid[di].port = port;
             kprintln!("[usb] port {}: reset ok, speed {}, slot {}", port, speed, slot);
             if self.address_device(di, port, speed) {
                 self.get_device_descriptor(di);
