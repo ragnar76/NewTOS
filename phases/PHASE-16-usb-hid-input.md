@@ -70,8 +70,13 @@ desktop never learns the input came from USB.
   connect status. **Verified:** "xHCI up: 16 slots, 8 root ports"; ports 5/6
   report `CCS=1` (the `usb-kbd` + `usb-mouse`). xtask runs virt with the USB
   devices.  ✅
-- **D2** **USB core** — control transfers, descriptor reads, set-address /
-  set-config; a `usb_device` model.
+- **D2** **USB core** — control transfers + enumeration: port reset, Enable
+  Slot, Input Context build + Address Device, then GET_DESCRIPTOR(Device) over
+  EP0 (Setup/Data/Status TRBs). **Verified in QEMU:** the usb-kbd is reset,
+  addressed (slot 1), and returns its 18-byte device descriptor (VID=0627
+  PID=0001 — the emulated keyboard). The command/event/transfer ring
+  machinery is proven; SET_CONFIGURATION + a `usb_device` model + multi-device
+  enumeration are the remaining core pieces (fold into D3/D4).  ◑
 - **D3** **Hub driver** — walk the (root + internal) hub, enumerate ports.
 - **D4** **HID keyboard** — boot protocol, interrupt-IN polling,
   HID-usage→Atari-scancode, inject into `ikbd.rs` (→ console RX / shell /

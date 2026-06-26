@@ -11,7 +11,7 @@ use core::num::NonZeroUsize;
 
 use xhci::accessor::Mapper;
 use xhci::context::{self, DeviceHandler, EndpointHandler, InputHandler, SlotHandler};
-use xhci::ring::trb::{command, event};
+use xhci::ring::trb::{command, event, transfer};
 use xhci::Registers;
 
 use crate::arch::aarch64::mmu::va_to_pa;
@@ -85,6 +85,12 @@ static mut DEV: DevDma = DevDma {
     ep0_ring: Ring([Trb([0; 4]); CMD_RING_LEN]),
     buf: [0; 256],
 };
+
+/// Set the TRB producer cycle bit (the EP0 ring starts at cycle 1).
+fn with_cycle(mut raw: [u32; 4]) -> Trb {
+    raw[3] |= 1;
+    Trb(raw)
+}
 
 /// Default EP0 max packet size for a port speed (PORTSC speed id).
 fn ep0_max_packet(speed: u8) -> u16 {
@@ -326,8 +332,62 @@ impl Xhci {
         }
     }
 
-    /// Enumerate the first connected root port up to the addressed state
-    /// (D2: reset → enable slot → address device).
+    /// GET_DESCRIPTOR(Device) over EP0: a control IN transfer (Setup → Data →
+    /// Status) on the slot's EP0 transfer ring. Logs the descriptor on
+    /// success. The first real device transfer — proves enumeration works.
+    pub fn get_device_descriptor(&mut self, slot: u8) -> bool {
+        const LEN: u16 = 18;
+        // SAFETY: single-CPU; DEV is ours.
+        let dev = unsafe { &mut *(&raw mut DEV) };
+        dev.buf.iter_mut().for_each(|b| *b = 0);
+        let buf_pa = va_to_pa((&raw const dev.buf) as u64);
+
+        let mut setup = transfer::SetupStage::new();
+        setup
+            .set_request_type(0x80) // device→host, standard, device
+            .set_request(6) // GET_DESCRIPTOR
+            .set_value(0x0100) // DEVICE descriptor, index 0
+            .set_index(0)
+            .set_length(LEN)
+            .set_transfer_type(transfer::TransferType::In);
+        let mut data = transfer::DataStage::new();
+        data.set_data_buffer_pointer(buf_pa)
+            .set_trb_transfer_length(LEN as u32)
+            .set_direction(transfer::Direction::In);
+        let mut status = transfer::StatusStage::new();
+        status.set_interrupt_on_completion();
+
+        dev.ep0_ring.0[0] = with_cycle(transfer::Allowed::SetupStage(setup).into_raw());
+        dev.ep0_ring.0[1] = with_cycle(transfer::Allowed::DataStage(data).into_raw());
+        dev.ep0_ring.0[2] = with_cycle(transfer::Allowed::StatusStage(status).into_raw());
+
+        // Ring the slot's doorbell, target EP0 (DCI 1).
+        self.regs.doorbell.update_volatile_at(slot as usize, |db| {
+            db.set_doorbell_target(1);
+        });
+
+        for _ in 0..50_000_000u64 {
+            if let Some(event::Allowed::TransferEvent(te)) = self.poll_event() {
+                if !matches!(te.completion_code(), Ok(event::CompletionCode::Success)) {
+                    kprintln!("[usb] get_descriptor → {:?}", te.completion_code());
+                    return false;
+                }
+                let b = &dev.buf;
+                kprintln!(
+                    "[usb] device descriptor: bLength={} type={} bcdUSB={:02x}{:02x} \
+                     class={} maxpkt0={} VID={:02x}{:02x} PID={:02x}{:02x}",
+                    b[0], b[1], b[3], b[2], b[4], b[7], b[9], b[8], b[11], b[10]
+                );
+                return true;
+            }
+            core::hint::spin_loop();
+        }
+        kprintln!("[usb] get_descriptor: no transfer event");
+        false
+    }
+
+    /// Enumerate the first connected root port up to its device descriptor
+    /// (D2: reset → enable slot → address device → GET_DESCRIPTOR).
     pub fn enumerate_first_port(&mut self) {
         for port in 1..=self.ports {
             let p = self
@@ -350,6 +410,7 @@ impl Xhci {
             kprintln!("[usb] port {}: reset ok, speed {}, slot {}", port, speed, slot);
             if self.address_device(slot, port, speed) {
                 kprintln!("[usb] port {}: device ADDRESSED (slot {})", port, slot);
+                self.get_device_descriptor(slot);
             }
             return; // D2: just the first device
         }
