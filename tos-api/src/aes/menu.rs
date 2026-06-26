@@ -310,6 +310,11 @@ fn close_box(tree: *mut Object, title: i16, imenu: i16, backend: &dyn RasterBack
     crate::vdi::cursor_hide(backend);
     erase_box_inner(tree, imenu, backend);
     object::set_state_bit(tree, title, SELECTED, false); // redraws the title normal
+    // A G_TITLE spans the whole bar height, so the white un-highlight fill
+    // erased the bar's separator line under it — redraw it.
+    let sw = backend.width() as i16;
+    let clip = ClipRect::full(backend.width(), backend.height());
+    backend.fill_rect(0, BAR_H - 1, sw, 1, BLACK, clip);
     crate::vdi::cursor_show(backend);
 }
 
