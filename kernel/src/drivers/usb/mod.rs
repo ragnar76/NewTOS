@@ -29,23 +29,16 @@ mod pcie;
 pub mod hid;
 pub mod xhci;
 
-#[cfg(feature = "board-qemu-virt")]
-use core::sync::atomic::{AtomicU8, Ordering};
-
-// The live controller + the configured HID endpoint, kept for `poll`. Single
-// CPU, cooperative scheduling — set once at boot, driven from `pump_input`.
+// The live controller, kept for `poll`. It holds all per-device state
+// (slots, endpoints, ring producers). Single CPU, cooperative scheduling —
+// set once at boot, driven from `pump_input`.
 #[cfg(feature = "board-qemu-virt")]
 static mut XHCI: Option<xhci::Xhci> = None;
-#[cfg(feature = "board-qemu-virt")]
-static HID_SLOT: AtomicU8 = AtomicU8::new(0); // 0 = no HID device
-#[cfg(feature = "board-qemu-virt")]
-static HID_DCI: AtomicU8 = AtomicU8::new(0);
-#[cfg(feature = "board-qemu-virt")]
-static HID_PROTOCOL: AtomicU8 = AtomicU8::new(0); // 1 = keyboard, 2 = mouse
 
 /// Bring up the USB host stack: find the controller (via the DTB-described
-/// PCIe ECAM), start it, report its root-hub ports. QEMU-virt for D1; the
-/// real Pi-4 path (VL805 firmware + `0xFE9C0000`) is PHASE-16 D7.
+/// PCIe ECAM), start it, enumerate + configure the HID devices (keyboard +
+/// mouse) and keep it live for `poll`. QEMU-virt for D1–D6; the real Pi-4
+/// path (VL805 firmware + `0xFE9C0000`) is PHASE-16 D7.
 pub fn init(dtb_phys: usize) {
     #[cfg(feature = "board-qemu-virt")]
     {
@@ -56,13 +49,7 @@ pub fn init(dtb_phys: usize) {
         };
         let mut controller = unsafe { xhci::Xhci::open(base) };
         controller.scan_ports();
-        // Enumerate + configure the first HID device, then queue its first
-        // interrupt transfer and keep the controller live for `poll`.
-        if let Some((slot, dci, protocol)) = controller.enumerate_first_port() {
-            controller.queue_interrupt(slot, dci);
-            HID_SLOT.store(slot, Ordering::Release);
-            HID_DCI.store(dci, Ordering::Release);
-            HID_PROTOCOL.store(protocol, Ordering::Release);
+        if controller.enumerate_all() > 0 {
             // SAFETY: single-CPU boot; stored once.
             unsafe { XHCI = Some(controller) };
         }
@@ -71,28 +58,24 @@ pub fn init(dtb_phys: usize) {
     let _ = dtb_phys;
 }
 
-/// Pump the USB HID input: drain a completed interrupt transfer (a HID
-/// report), translate it into the IKBD byte stream (`ikbd::feed`), and queue
-/// the next transfer. Called from `host_env::pump_input` like the old IKBD
-/// poll. A no-op until a HID device is enumerated.
+/// Pump USB HID input: drain a completed interrupt transfer (a HID report),
+/// translate it into the IKBD byte stream (`ikbd::feed`), and re-queue the
+/// next transfer for that device. Called from `host_env::pump_input` like the
+/// old IKBD poll. A no-op until a HID device is enumerated.
 pub fn poll() {
     #[cfg(feature = "board-qemu-virt")]
     {
-        let slot = HID_SLOT.load(Ordering::Acquire);
-        if slot == 0 {
-            return;
-        }
         // SAFETY: single-CPU cooperative; XHCI is set once at boot.
         let Some(c) = (unsafe { (*core::ptr::addr_of_mut!(XHCI)).as_mut() }) else {
             return;
         };
-        if let Some(report) = c.poll_interrupt() {
-            if HID_PROTOCOL.load(Ordering::Relaxed) == 1 {
+        if let Some((di, report)) = c.poll_interrupt() {
+            if c.protocol(di) == 1 {
                 hid::keyboard_report(&report);
             } else {
                 hid::mouse_report(&report);
             }
-            c.queue_interrupt(slot, HID_DCI.load(Ordering::Relaxed));
+            c.queue_interrupt(di);
         }
     }
 }

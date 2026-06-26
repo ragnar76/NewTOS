@@ -108,5 +108,5 @@ pub fn mouse_report(r: &[u8; 8]) {
     let wire = ((usb & 0x01) << 1) | ((usb & 0x02) >> 1);
     ikbd::feed(0xF8 | (wire & 0x03));
     ikbd::feed(r[1]); // dx
-    ikbd::feed((-(r[2] as i8)) as u8); // dy (USB +down → IKBD +up)
+    ikbd::feed(r[2]); // dy (the IKBD decoder owns the screen-Y convention)
 }

@@ -66,11 +66,15 @@ static mut DMA: XhciDma = XhciDma {
     erst: Erst([0; 2]),
 };
 
-// Per-device DMA (D2: one device at a time, enough to enumerate). The Input
-// and Device contexts are 32-byte contexts (CSZ=0; checked in `open`): the
-// Input is control + slot + 31 endpoint contexts (33 × 8 u32), the Device is
-// slot + 31 endpoints (32 × 8 u32). Laid out as `[u32]` so we can view the
-// region as `context::Input32Byte` (a `#[repr(C)]` struct of the same u32s).
+/// How many HID devices we support concurrently (keyboard + mouse).
+pub const MAX_HID: usize = 2;
+
+// Per-device DMA. The Input and Device contexts are 32-byte contexts (CSZ=0;
+// checked in `open`): the Input is control + slot + 31 endpoint contexts
+// (33 × 8 u32), the Device is slot + 31 endpoints (32 × 8 u32). Laid out as
+// `[u32]` so we can view the region as `context::Input32Byte` (a `#[repr(C)]`
+// struct of the same u32s). One per device — the controller reads each
+// device's contexts continuously, so they cannot be shared.
 #[repr(C, align(64))]
 struct DevDma {
     input: [u32; 33 * 8],
@@ -81,7 +85,7 @@ struct DevDma {
     intbuf: [u8; 8],
 }
 
-static mut DEV: DevDma = DevDma {
+const DEV_INIT: DevDma = DevDma {
     input: [0; 33 * 8],
     device: [0; 32 * 8],
     ep0_ring: Ring([Trb([0; 4]); CMD_RING_LEN]),
@@ -89,6 +93,35 @@ static mut DEV: DevDma = DevDma {
     buf: [0; 256],
     intbuf: [0; 8],
 };
+
+static mut DEV: [DevDma; MAX_HID] = [DEV_INIT; MAX_HID];
+
+/// Per-device runtime state (slot, the interrupt endpoint, ring producers).
+#[derive(Clone, Copy)]
+struct HidDev {
+    slot: u8,
+    dci: u8,
+    /// 1 = keyboard, 2 = mouse, 0 = unused.
+    protocol: u8,
+    ep0_enq: usize,
+    ep0_cycle: bool,
+    int_enq: usize,
+    int_cycle: bool,
+}
+
+impl HidDev {
+    const fn new() -> Self {
+        Self {
+            slot: 0,
+            dci: 0,
+            protocol: 0,
+            ep0_enq: 0,
+            ep0_cycle: true,
+            int_enq: 0,
+            int_cycle: true,
+        }
+    }
+}
 
 /// A HID boot device's configuration, as parsed from its config descriptor.
 #[derive(Clone, Copy)]
@@ -151,12 +184,10 @@ pub struct Xhci {
     /// Event-ring consumer index + cycle state.
     evt_deq: usize,
     evt_cycle: bool,
-    /// EP0 transfer-ring producer index + cycle state (one device, D2/D3).
-    ep0_enq: usize,
-    ep0_cycle: bool,
-    /// Interrupt-IN transfer-ring producer index + cycle state.
-    int_enq: usize,
-    int_cycle: bool,
+    /// Per-device state (EP0/interrupt ring producers, slot, endpoint).
+    hid: [HidDev; MAX_HID],
+    /// Number of configured HID devices.
+    n_hid: usize,
 }
 
 impl Xhci {
@@ -230,38 +261,51 @@ impl Xhci {
             cmd_cycle: true,
             evt_deq: 0,
             evt_cycle: true,
-            ep0_enq: 0,
-            ep0_cycle: true,
-            int_enq: 0,
-            int_cycle: true,
+            hid: [HidDev::new(); MAX_HID],
+            n_hid: 0,
         }
     }
 
     /// Queue an interrupt-IN transfer (8-byte HID boot report) on the device's
     /// interrupt endpoint and ring its doorbell. The completion arrives later
     /// as a Transfer Event (drained by [`Self::poll_interrupt`]).
-    pub fn queue_interrupt(&mut self, slot: u8, dci: u8) {
+    pub fn queue_interrupt(&mut self, di: usize) {
+        let slot = self.hid[di].slot;
+        let dci = self.hid[di].dci;
         // SAFETY: single-CPU; DEV is ours.
-        let buf_pa = unsafe { va_to_pa((&raw const (*(&raw const DEV)).intbuf) as u64) };
+        let buf_pa = unsafe { va_to_pa((&raw const (*(&raw const DEV))[di].intbuf) as u64) };
         let mut n = transfer::Normal::new();
         n.set_data_buffer_pointer(buf_pa)
             .set_trb_transfer_length(8)
             .set_interrupt_on_completion();
         let data = transfer::Allowed::Normal(n).into_raw();
         // SAFETY: single-CPU; DEV is ours.
-        let ring = unsafe { &mut (*(&raw mut DEV)).int_ring.0 };
-        ring_push(ring, &mut self.int_enq, &mut self.int_cycle, data);
+        let ring = unsafe { &mut (*(&raw mut DEV))[di].int_ring.0 };
+        ring_push(ring, &mut self.hid[di].int_enq, &mut self.hid[di].int_cycle, data);
         self.regs.doorbell.update_volatile_at(slot as usize, |db| {
             db.set_doorbell_target(dci);
         });
     }
 
+    /// Number of configured HID devices, and a device's protocol.
+    pub fn n_hid(&self) -> usize {
+        self.n_hid
+    }
+    pub fn protocol(&self, di: usize) -> u8 {
+        self.hid[di].protocol
+    }
+
     /// Drain one event; if it is a Transfer Event (a HID report landed),
-    /// return a copy of the 8-byte report buffer.
-    pub fn poll_interrupt(&mut self) -> Option<[u8; 8]> {
-        if let Some(event::Allowed::TransferEvent(_)) = self.poll_event() {
-            // SAFETY: single-CPU; DEV is ours.
-            return Some(unsafe { (*(&raw const DEV)).intbuf });
+    /// return the device index + a copy of its 8-byte report buffer.
+    pub fn poll_interrupt(&mut self) -> Option<(usize, [u8; 8])> {
+        if let Some(event::Allowed::TransferEvent(te)) = self.poll_event() {
+            let slot = te.slot_id();
+            for di in 0..self.n_hid {
+                if self.hid[di].slot == slot {
+                    // SAFETY: single-CPU; DEV is ours.
+                    return Some((di, unsafe { (*(&raw const DEV))[di].intbuf }));
+                }
+            }
         }
         None
     }
@@ -358,9 +402,10 @@ impl Xhci {
     /// Address a device on `port` (speed `speed`) to `slot`: build the Input
     /// Context (slot + EP0), point DCBAA at the Device Context, and issue the
     /// Address Device command. Returns true on Success.
-    fn address_device(&mut self, slot: u8, port: u8, speed: u8) -> bool {
+    fn address_device(&mut self, di: usize, port: u8, speed: u8) -> bool {
+        let slot = self.hid[di].slot;
         // SAFETY: single-CPU; DEV/DMA are ours.
-        let dev = unsafe { &mut *(&raw mut DEV) };
+        let dev = unsafe { &mut (*(&raw mut DEV))[di] };
         dev.input.iter_mut().for_each(|x| *x = 0);
         dev.device.iter_mut().for_each(|x| *x = 0);
 
@@ -413,10 +458,10 @@ impl Xhci {
     }
 
     /// Push a TRB onto the EP0 transfer ring.
-    fn ep0_push(&mut self, data: [u32; 4]) {
+    fn ep0_push(&mut self, di: usize, data: [u32; 4]) {
         // SAFETY: single-CPU; DEV is ours.
-        let ring = unsafe { &mut (*(&raw mut DEV)).ep0_ring.0 };
-        ring_push(ring, &mut self.ep0_enq, &mut self.ep0_cycle, data);
+        let ring = unsafe { &mut (*(&raw mut DEV))[di].ep0_ring.0 };
+        ring_push(ring, &mut self.hid[di].ep0_enq, &mut self.hid[di].ep0_cycle, data);
     }
 
     /// Wait for a Transfer Event; true on Success.
@@ -433,7 +478,7 @@ impl Xhci {
     /// A control transfer on EP0. `setup` = the 8-byte SETUP packet; a data
     /// stage of `len` bytes at `buf_pa` follows when `len > 0` (direction
     /// `dir_in`); `len == 0` = no data stage.
-    fn control(&mut self, slot: u8, setup: [u8; 8], buf_pa: u64, len: u16, dir_in: bool) -> bool {
+    fn control(&mut self, di: usize, setup: [u8; 8], buf_pa: u64, len: u16, dir_in: bool) -> bool {
         let mut s = transfer::SetupStage::new();
         s.set_request_type(setup[0])
             .set_request(setup[1])
@@ -447,7 +492,7 @@ impl Xhci {
             } else {
                 transfer::TransferType::Out
             });
-        self.ep0_push(transfer::Allowed::SetupStage(s).into_raw());
+        self.ep0_push(di, transfer::Allowed::SetupStage(s).into_raw());
         if len > 0 {
             let mut d = transfer::DataStage::new();
             d.set_data_buffer_pointer(buf_pa)
@@ -457,7 +502,7 @@ impl Xhci {
                 } else {
                     transfer::Direction::Out
                 });
-            self.ep0_push(transfer::Allowed::DataStage(d).into_raw());
+            self.ep0_push(di, transfer::Allowed::DataStage(d).into_raw());
         }
         let mut st = transfer::StatusStage::new();
         // Status stage runs opposite the data stage. `set_direction()` is a
@@ -467,18 +512,19 @@ impl Xhci {
             st.set_direction();
         }
         st.set_interrupt_on_completion();
-        self.ep0_push(transfer::Allowed::StatusStage(st).into_raw());
+        self.ep0_push(di, transfer::Allowed::StatusStage(st).into_raw());
 
+        let slot = self.hid[di].slot;
         self.regs.doorbell.update_volatile_at(slot as usize, |db| {
             db.set_doorbell_target(1);
         });
         self.wait_transfer()
     }
 
-    /// GET_DESCRIPTOR into `DEV.buf` (data there on success).
-    fn get_descriptor(&mut self, slot: u8, desc_type: u8, index: u8, len: u16) -> bool {
+    /// GET_DESCRIPTOR into `DEV[di].buf` (data there on success).
+    fn get_descriptor(&mut self, di: usize, desc_type: u8, index: u8, len: u16) -> bool {
         // SAFETY: single-CPU; DEV is ours.
-        let dev = unsafe { &mut *(&raw mut DEV) };
+        let dev = unsafe { &mut (*(&raw mut DEV))[di] };
         dev.buf.iter_mut().for_each(|b| *b = 0);
         let buf_pa = va_to_pa((&raw const dev.buf) as u64);
         let value = ((desc_type as u16) << 8) | index as u16;
@@ -492,17 +538,17 @@ impl Xhci {
             len as u8,
             (len >> 8) as u8,
         ];
-        self.control(slot, setup, buf_pa, len, true)
+        self.control(di, setup, buf_pa, len, true)
     }
 
     /// Read + log the 18-byte device descriptor.
-    pub fn get_device_descriptor(&mut self, slot: u8) -> bool {
-        if !self.get_descriptor(slot, 1, 0, 18) {
+    pub fn get_device_descriptor(&mut self, di: usize) -> bool {
+        if !self.get_descriptor(di, 1, 0, 18) {
             kprintln!("[usb] get device descriptor failed");
             return false;
         }
         // SAFETY: single-CPU; DEV is ours.
-        let b = unsafe { &(*(&raw const DEV)).buf };
+        let b = unsafe { &(*(&raw const DEV))[di].buf };
         kprintln!(
             "[usb] device descriptor: bLength={} type={} bcdUSB={:02x}{:02x} class={} maxpkt0={} VID={:02x}{:02x} PID={:02x}{:02x}",
             b[0], b[1], b[3], b[2], b[4], b[7], b[9], b[8], b[11], b[10]
@@ -512,21 +558,21 @@ impl Xhci {
 
     /// Read the configuration descriptor and find the first HID boot
     /// interrupt-IN endpoint (keyboard/mouse). `None` if not a HID boot device.
-    pub fn read_config(&mut self, slot: u8) -> Option<HidInfo> {
+    pub fn read_config(&mut self, di: usize) -> Option<HidInfo> {
         // Read the 9-byte config header first for wTotalLength.
-        if !self.get_descriptor(slot, 2, 0, 9) {
+        if !self.get_descriptor(di, 2, 0, 9) {
             return None;
         }
         // SAFETY: single-CPU; DEV is ours.
         let total = {
-            let b = unsafe { &(*(&raw const DEV)).buf };
+            let b = unsafe { &(*(&raw const DEV))[di].buf };
             u16::from_le_bytes([b[2], b[3]]).min(255)
         };
-        if !self.get_descriptor(slot, 2, 0, total) {
+        if !self.get_descriptor(di, 2, 0, total) {
             return None;
         }
         // SAFETY: single-CPU; DEV is ours. Take the field ref, then slice.
-        let buf = unsafe { &(*(&raw const DEV)).buf };
+        let buf = unsafe { &(*(&raw const DEV))[di].buf };
         let b = &buf[..total as usize];
         let config_value = b[5];
         let mut iface = 0u8;
@@ -573,20 +619,21 @@ impl Xhci {
     }
 
     /// SET_CONFIGURATION (no-data control OUT).
-    fn set_configuration(&mut self, slot: u8, value: u8) -> bool {
-        self.control(slot, [0x00, 9, value, 0, 0, 0, 0, 0], 0, 0, false)
+    fn set_configuration(&mut self, di: usize, value: u8) -> bool {
+        self.control(di, [0x00, 9, value, 0, 0, 0, 0, 0], 0, 0, false)
     }
 
     /// HID SET_PROTOCOL → boot protocol (class control OUT to the interface).
-    fn set_protocol_boot(&mut self, slot: u8, iface: u8) -> bool {
-        self.control(slot, [0x21, 0x0B, 0, 0, iface, 0, 0, 0], 0, 0, false)
+    fn set_protocol_boot(&mut self, di: usize, iface: u8) -> bool {
+        self.control(di, [0x21, 0x0B, 0, 0, iface, 0, 0, 0], 0, 0, false)
     }
 
     /// Configure Endpoint: add the HID interrupt-IN endpoint to the device.
     /// Returns its DCI (Device Context Index) on success, 0 on failure.
-    fn configure_endpoint(&mut self, slot: u8, port: u8, speed: u8, hid: &HidInfo) -> u8 {
+    fn configure_endpoint(&mut self, di: usize, port: u8, speed: u8, hid: &HidInfo) -> u8 {
+        let slot = self.hid[di].slot;
         // SAFETY: single-CPU; DEV is ours.
-        let dev = unsafe { &mut *(&raw mut DEV) };
+        let dev = unsafe { &mut (*(&raw mut DEV))[di] };
         dev.input.iter_mut().for_each(|x| *x = 0);
         let ep_num = hid.ep_addr & 0x0F;
         let dci = ep_num * 2 + if hid.ep_addr & 0x80 != 0 { 1 } else { 0 };
@@ -630,23 +677,23 @@ impl Xhci {
     /// Bring a HID boot device fully online: read its config, SET_CONFIGURATION,
     /// add its interrupt endpoint, SET_PROTOCOL(boot). Returns `(dci, protocol)`
     /// ready for interrupt polling.
-    pub fn configure_hid(&mut self, slot: u8, port: u8, speed: u8) -> Option<(u8, u8)> {
-        let hid = self.read_config(slot)?;
-        if !self.set_configuration(slot, hid.config_value) {
+    pub fn configure_hid(&mut self, di: usize, port: u8, speed: u8) -> Option<(u8, u8)> {
+        let hid = self.read_config(di)?;
+        if !self.set_configuration(di, hid.config_value) {
             kprintln!("[usb] set_configuration failed");
             return None;
         }
-        let dci = self.configure_endpoint(slot, port, speed, &hid);
+        let dci = self.configure_endpoint(di, port, speed, &hid);
         if dci == 0 {
             return None;
         }
-        if !self.set_protocol_boot(slot, hid.iface) {
+        if !self.set_protocol_boot(di, hid.iface) {
             kprintln!("[usb] set_protocol(boot) failed");
             return None;
         }
         kprintln!(
             "[usb] HID configured: slot {} ep {:#04x} dci {} ({})",
-            slot,
+            self.hid[di].slot,
             hid.ep_addr,
             dci,
             if hid.protocol == 1 { "keyboard" } else { "mouse" }
@@ -654,12 +701,14 @@ impl Xhci {
         Some((dci, hid.protocol))
     }
 
-    /// Enumerate the first connected root port up to its device descriptor
-    /// (D2: reset → enable slot → address device → GET_DESCRIPTOR).
-    /// Returns `(slot, dci, protocol)` of the configured HID device, ready
-    /// for interrupt polling.
-    pub fn enumerate_first_port(&mut self) -> Option<(u8, u8, u8)> {
+    /// Enumerate every connected root port and configure each HID boot device
+    /// (keyboard + mouse) into a device slot. Queues the first interrupt
+    /// transfer for each. Returns the number of HID devices configured.
+    pub fn enumerate_all(&mut self) -> usize {
         for port in 1..=self.ports {
+            if self.n_hid >= MAX_HID {
+                break;
+            }
             let p = self
                 .regs
                 .port_register_set
@@ -677,17 +726,23 @@ impl Xhci {
                 kprintln!("[usb] port {}: enable slot failed", port);
                 continue;
             };
+            // Claim the next device index and record its slot for the
+            // transfer methods (which read it from self.hid[di]).
+            let di = self.n_hid;
+            self.hid[di] = HidDev::new();
+            self.hid[di].slot = slot;
             kprintln!("[usb] port {}: reset ok, speed {}, slot {}", port, speed, slot);
-            if self.address_device(slot, port, speed) {
-                kprintln!("[usb] port {}: device ADDRESSED (slot {})", port, slot);
-                self.get_device_descriptor(slot);
-                if let Some((dci, protocol)) = self.configure_hid(slot, port, speed) {
-                    return Some((slot, dci, protocol));
+            if self.address_device(di, port, speed) {
+                self.get_device_descriptor(di);
+                if let Some((dci, protocol)) = self.configure_hid(di, port, speed) {
+                    self.hid[di].dci = dci;
+                    self.hid[di].protocol = protocol;
+                    self.n_hid += 1;
+                    self.queue_interrupt(di);
                 }
             }
-            return None; // D2: just the first device
         }
-        None
+        self.n_hid
     }
 
     /// Log each root-hub port's connect status (D1 verification target).
