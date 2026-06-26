@@ -417,6 +417,19 @@ pub fn draw() {
     tos_api::vdi::cursor_show_reset(backend);
 }
 
+/// Repaint everything (desktop surface + menu bar + open windows + cursor).
+/// Used after a menu drop-down or dialog, which (until the AES gains
+/// save/restore) leave the screen dirty.
+fn redraw_screen() {
+    let Some(backend) = tos_api::host::host().and_then(|h| h.raster()) else {
+        return;
+    };
+    paint_desktop_bg(backend);
+    draw_menu_bar();
+    redraw_all_windows();
+    tos_api::vdi::cursor_show_reset(backend);
+}
+
 /// Paint the desktop background — the pattern fill below the menu bar plus
 /// the drive icons — straight through the backend. **No AES trap**: the
 /// window manager calls this from inside `redraw_all` (the AES SVC
@@ -664,6 +677,11 @@ fn step(msg: &mut [i16; 8]) -> bool {
             MN_SELECTED => {
                 let action = handle_menu_select(msg[4]);
                 menu_tnormal(msg[3]); // un-highlight the title
+                // The drop-down box and any dialog the action opened leave
+                // the screen dirty (the AES menu/form code has no
+                // save/restore yet), so repaint the desktop, windows and
+                // cursor before carrying on.
+                redraw_screen();
                 match action {
                     MenuAction::Shutdown => return false,
                     MenuAction::Console => {
