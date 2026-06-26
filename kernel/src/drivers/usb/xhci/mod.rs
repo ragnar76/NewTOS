@@ -75,7 +75,10 @@ pub const MAX_HID: usize = 2;
 // `[u32]` so we can view the region as `context::Input32Byte` (a `#[repr(C)]`
 // struct of the same u32s). One per device — the controller reads each
 // device's contexts continuously, so they cannot be shared.
-#[repr(C, align(64))]
+// Page-aligned so the whole per-device DMA region can be remapped
+// normal-non-cacheable on the real Pi-4 (PCIe DMA there is not cache-coherent;
+// see `Xhci::open`).
+#[repr(C, align(4096))]
 struct DevDma {
     input: [u32; 33 * 8],
     device: [u32; 32 * 8],
@@ -216,6 +219,23 @@ impl Xhci {
     /// `mmio_base` must be the controller's MMIO base; single-CPU boot;
     /// `DMA` is exclusively ours.
     pub unsafe fn open(mmio_base: u64) -> Self {
+        // Real Pi-4 PCIe DMA is not cache-coherent (QEMU is), so the
+        // controller-visible DMA regions (rings, DCBAA, contexts, buffers) must
+        // be normal-non-cacheable. Both `DMA` and `DEV` are page-aligned.
+        #[cfg(feature = "board-rpi4")]
+        unsafe {
+            use crate::arch::aarch64::mmu;
+            let page = |len: usize| ((len + 0xfff) & !0xfff) as u64;
+            mmu::remap_normal_nc(
+                core::ptr::addr_of!(DMA) as u64,
+                page(core::mem::size_of::<XhciDma>()),
+            );
+            mmu::remap_normal_nc(
+                core::ptr::addr_of!(DEV) as u64,
+                page(core::mem::size_of::<[DevDma; MAX_HID]>()),
+            );
+        }
+
         // SAFETY: caller contract — valid MMIO base, mapped high-half.
         let mut regs = unsafe { Registers::new(mmio_base as usize, HighHalf) };
 

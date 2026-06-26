@@ -174,6 +174,12 @@ mod board {
     /// peripherals at 0xFE00_0000) and §6 (ARM-local + GIC at
     /// 0xFF80_0000).
     pub static MMIO: &[PhysRange] = &[
+        // BCM2711 PCIe root-complex registers (brcmstb @ 0xFD50_0000, ~0x9310
+        // long). Needed for the VL805 xHCI bring-up (PHASE-16 D7,
+        // `docs/api/usb/pcie-rpi4.md`). The VL805 xHCI BAR itself is in the
+        // PCIe outbound window at 0x6_0000_0000 — mapped dynamically via
+        // `mmu::map_device_high` (a >4 GiB address), like the QEMU ECAM.
+        PhysRange::new(0xFD50_0000, 0xFD51_0000),
         // Low peripherals (GPIO, UART, AUX, etc.).
         PhysRange::new(0xFE00_0000, 0xFF00_0000),
         // ARM-local + GICv2 distributor/CPU interface.

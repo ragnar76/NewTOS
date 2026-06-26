@@ -26,13 +26,15 @@
 // Pi-4 (D7) = fixed MMIO + VL805 firmware.
 #[cfg(feature = "board-qemu-virt")]
 mod pcie;
+#[cfg(feature = "board-rpi4")]
+mod pcie_rpi4;
 pub mod hid;
 pub mod xhci;
 
 // The live controller, kept for `poll`. It holds all per-device state
 // (slots, endpoints, ring producers). Single CPU, cooperative scheduling —
 // set once at boot, driven from `pump_input`.
-#[cfg(feature = "board-qemu-virt")]
+#[cfg(any(feature = "board-qemu-virt", feature = "board-rpi4"))]
 static mut XHCI: Option<xhci::Xhci> = None;
 
 /// Bring up the USB host stack: find the controller (via the DTB-described
@@ -40,13 +42,17 @@ static mut XHCI: Option<xhci::Xhci> = None;
 /// mouse) and keep it live for `poll`. QEMU-virt for D1–D6; the real Pi-4
 /// path (VL805 firmware + `0xFE9C0000`) is PHASE-16 D7.
 pub fn init(dtb_phys: usize) {
-    #[cfg(feature = "board-qemu-virt")]
+    #[cfg(any(feature = "board-qemu-virt", feature = "board-rpi4"))]
     {
-        // SAFETY: boot CPU; `dtb_phys` is the firmware device tree.
-        let base = match unsafe { pcie::find_xhci(dtb_phys) } {
-            Some(b) => b,
-            None => return,
-        };
+        // Board-specific controller discovery; the controller, enumeration and
+        // HID code below are shared. QEMU = PCIe ECAM walk; real Pi-4 =
+        // brcmstb PCIe RC bring-up + VL805 firmware (PHASE-16 D7).
+        #[cfg(feature = "board-qemu-virt")]
+        let base = unsafe { pcie::find_xhci(dtb_phys) };
+        #[cfg(feature = "board-rpi4")]
+        let base = pcie_rpi4::find_xhci(dtb_phys);
+
+        let Some(base) = base else { return };
         let mut controller = unsafe { xhci::Xhci::open(base) };
         controller.scan_ports();
         if controller.enumerate_all() > 0 {
@@ -54,7 +60,7 @@ pub fn init(dtb_phys: usize) {
             unsafe { XHCI = Some(controller) };
         }
     }
-    #[cfg(not(feature = "board-qemu-virt"))]
+    #[cfg(not(any(feature = "board-qemu-virt", feature = "board-rpi4")))]
     let _ = dtb_phys;
 }
 
@@ -64,7 +70,7 @@ pub use xhci::DeviceInfo;
 /// USB tree). Returns `(root_port_count, n_devices)`; `(0, 0)` if no
 /// controller enumerated. Safe to call after `init`.
 pub fn tree(buf: &mut [DeviceInfo]) -> (u8, usize) {
-    #[cfg(feature = "board-qemu-virt")]
+    #[cfg(any(feature = "board-qemu-virt", feature = "board-rpi4"))]
     {
         // SAFETY: single-CPU; XHCI is set once at boot and read-only here.
         if let Some(c) = unsafe { (*core::ptr::addr_of!(XHCI)).as_ref() } {
@@ -84,7 +90,7 @@ pub fn tree(buf: &mut [DeviceInfo]) -> (u8, usize) {
 /// next transfer for that device. Called from `host_env::pump_input` like the
 /// old IKBD poll. A no-op until a HID device is enumerated.
 pub fn poll() {
-    #[cfg(feature = "board-qemu-virt")]
+    #[cfg(any(feature = "board-qemu-virt", feature = "board-rpi4"))]
     {
         // SAFETY: single-CPU cooperative; XHCI is set once at boot.
         let Some(c) = (unsafe { (*core::ptr::addr_of_mut!(XHCI)).as_mut() }) else {

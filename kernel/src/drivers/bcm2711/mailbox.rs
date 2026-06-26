@@ -147,3 +147,33 @@ pub unsafe fn call_property(buf_va: usize, buf_pa: u32, len: usize) -> bool {
         code == 0x8000_0000
     }
 }
+
+// 16-byte-aligned property buffer for the VL805 firmware reset (the mailbox
+// write OR's the channel into the low 4 bits, so the address must be aligned).
+#[repr(C, align(16))]
+struct XhciResetBuf {
+    words: [u32; 8],
+}
+static mut XHCI_RESET_BUF: XhciResetBuf = XhciResetBuf { words: [0; 8] };
+
+/// Ask the VideoCore firmware to (re)load the VIA VL805 xHCI firmware after a
+/// PCIe reset — property tag `NOTIFY_XHCI_RESET` (`0x0003_0058`). `pcie_dev` is
+/// the VL805's PCIe address `(bus<<20)|(slot<<15)|(func<<12)`. Real-Pi-4 USB-A
+/// bring-up (PHASE-16 D7, `docs/api/usb/pcie-rpi4.md`). Returns the mailbox
+/// success flag.
+pub fn notify_xhci_reset(pcie_dev: u32) -> bool {
+    // SAFETY: boot CPU, single-threaded; exclusive use of the static buffer.
+    unsafe {
+        let b = &mut (*core::ptr::addr_of_mut!(XHCI_RESET_BUF)).words;
+        b[0] = 7 * 4; // total size in bytes
+        b[1] = 0; // request code
+        b[2] = 0x0003_0058; // PROPTAG_NOTIFY_XHCI_RESET
+        b[3] = 4; // value buffer size
+        b[4] = 4; // request parameter size
+        b[5] = pcie_dev; // value: VL805 PCIe address
+        b[6] = 0; // end tag
+        let va = b.as_ptr() as usize;
+        let pa = crate::arch::aarch64::mmu::va_to_pa(va as u64) as u32;
+        call_property(va, pa, 7 * 4)
+    }
+}
