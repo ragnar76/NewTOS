@@ -86,8 +86,15 @@ desktop never learns the input came from USB.
   The whole chain (xHCI → enumeration → interrupt → translate → IKBD →
   console) works.  ✅
 - **D5** **HID mouse** — boot mouse report → IKBD relative-mouse packet
-  (`mouse_report` → `ikbd::feed` → `vdi::feed_relative`). Implemented;
-  Y-direction + the live cursor verified at D6 (interactive desktop).  ◑
+  (`mouse_report` → `ikbd::feed` → `vdi::feed_relative`). Multi-device support
+  (`MAX_HID`, per-device contexts/rings, `enumerate_all`) so keyboard **and**
+  mouse run. **Verified in QEMU (QMP input-send-event):** both devices
+  enumerate (slots 1+2); injected mouse motion + a left click flow through
+  `mouse_report` → `ikbd::feed` (position + buttons).  ✅
+- **D6** **Interactive desktop in QEMU** — both keyboard + mouse drive the
+  input system end-to-end (typing + motion + clicks reach the desktop's
+  `evnt_multi`). Remaining: draw a **visible** mouse cursor on the framebuffer
+  + Y-direction tuning, then the live select/double-click/launch screendump.  ◑
 - **D6** **Interactive desktop in QEMU** — selecting, double-click, launching
   a program, EmuCON, all driven by emulated USB kbd+mouse. The capstone the
   desktop has been waiting for.
