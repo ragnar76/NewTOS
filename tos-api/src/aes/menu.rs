@@ -16,7 +16,8 @@ use super::object::{self, Object};
 use super::Aespb;
 use crate::host::host;
 use crate::vdi::backend::{ClipRect, Pel, RasterBackend};
-use core::sync::atomic::{AtomicUsize, Ordering};
+use core::cell::UnsafeCell;
+use core::sync::atomic::{AtomicI16, AtomicU8, AtomicUsize, Ordering};
 
 /// `THESCREEN` — the menu tree root; its `ob_tail` is the box that holds
 /// all drop-down menus.
@@ -135,10 +136,14 @@ pub fn track(tree: *mut Object, backend: &dyn RasterBackend) -> Option<(i16, i16
         // Release edge → select the item under the cursor, or cancel.
         if was_down && !down {
             if cur_item != NIL {
-                erase_box(tree, cur_box, backend);
+                // Clear the item's highlight bit and restore the screen under
+                // the box, cursor hidden so neither smears. The title stays
+                // highlighted: the app un-highlights it via menu_tnormal
+                // after acting on MN_SELECTED.
+                crate::vdi::cursor_hide(backend);
                 object::set_state_bit(tree, cur_item, SELECTED, false);
-                // Leave the title highlighted: the app un-highlights it
-                // via menu_tnormal after acting on MN_SELECTED.
+                erase_box_inner(tree, cur_box, backend);
+                crate::vdi::cursor_show(backend);
                 return Some((cur_title, cur_item));
             }
             if cur_title != NIL {
@@ -179,28 +184,112 @@ fn menu_sub(tree: *const Object, title: i16) -> i16 {
     }
 }
 
-/// Highlight `title` and draw its drop-down box; returns the box index.
+// ── drop-down save/restore backing (GEM's "save under") ──────────────────
+//
+// Opening a menu box covers part of the screen; closing it must put the
+// pixels back. Like the cursor backing, snapshot the box rectangle into a
+// CPU buffer on open and blit it back on close — covers both selection and
+// cancel without a full desktop repaint, and works over windows too. The
+// snapshot is taken with the mouse cursor hidden so it is clean and the
+// cursor stays on top of the open menu.
+const MB_W: usize = 256;
+const MB_H: usize = 400;
+struct MenuBack {
+    px: UnsafeCell<[Pel; MB_W * MB_H]>,
+    x: AtomicI16,
+    y: AtomicI16,
+    w: AtomicI16,
+    h: AtomicI16,
+    valid: AtomicU8,
+}
+// SAFETY: touched only from the single-CPU AES trap / desktop event path.
+unsafe impl Sync for MenuBack {}
+static MBACK: MenuBack = MenuBack {
+    px: UnsafeCell::new([0; MB_W * MB_H]),
+    x: AtomicI16::new(0),
+    y: AtomicI16::new(0),
+    w: AtomicI16::new(0),
+    h: AtomicI16::new(0),
+    valid: AtomicU8::new(0),
+};
+
+/// Snapshot the pixels the box `(x,y,w,h)` will cover. Marks invalid if the
+/// box is larger than the backing → the caller falls back to a white erase.
+fn save_under(backend: &dyn RasterBackend, x: i16, y: i16, w: i16, h: i16) {
+    if w <= 0 || h <= 0 || w as usize > MB_W || h as usize > MB_H {
+        MBACK.valid.store(0, Ordering::Relaxed);
+        return;
+    }
+    // SAFETY: single path; bounds checked above.
+    let store = unsafe { &mut *MBACK.px.get() };
+    for row in 0..h {
+        for col in 0..w {
+            store[row as usize * MB_W + col as usize] = backend.read_pixel(x + col, y + row);
+        }
+    }
+    MBACK.x.store(x, Ordering::Relaxed);
+    MBACK.y.store(y, Ordering::Relaxed);
+    MBACK.w.store(w, Ordering::Relaxed);
+    MBACK.h.store(h, Ordering::Relaxed);
+    MBACK.valid.store(1, Ordering::Relaxed);
+}
+
+/// Blit the saved pixels back. Returns `false` if nothing was saved (box too
+/// big), so the caller can white-erase instead.
+fn restore_under(backend: &dyn RasterBackend) -> bool {
+    if MBACK.valid.swap(0, Ordering::Relaxed) == 0 {
+        return false;
+    }
+    let x = MBACK.x.load(Ordering::Relaxed);
+    let y = MBACK.y.load(Ordering::Relaxed);
+    let w = MBACK.w.load(Ordering::Relaxed);
+    let h = MBACK.h.load(Ordering::Relaxed);
+    let clip = ClipRect::full(backend.width(), backend.height());
+    // SAFETY: single path.
+    let store = unsafe { &*MBACK.px.get() };
+    for row in 0..h {
+        for col in 0..w {
+            let p = store[row as usize * MB_W + col as usize];
+            backend.fill_rect(x + col, y + row, 1, 1, p, clip);
+        }
+    }
+    true
+}
+
+/// Highlight `title` and draw its drop-down box; returns the box index. The
+/// cursor is hidden across the draw so it stays on top and the save-under
+/// snapshot is clean.
 fn open_box(tree: *mut Object, title: i16, backend: &dyn RasterBackend) -> i16 {
-    object::set_state_bit(tree, title, SELECTED, true);
+    crate::vdi::cursor_hide(backend);
+    object::set_state_bit(tree, title, SELECTED, true); // redraws the title highlighted
     let imenu = menu_sub(tree as *const Object, title);
+    let (x, y, w, h) = object::abs_rect(tree as *const Object, imenu);
+    save_under(backend, x, y, w, h);
     object::draw_obj(tree as *const Object, imenu, MAX_DEPTH, backend);
+    crate::vdi::cursor_show(backend);
     imenu
 }
 
-/// Un-highlight `title` and erase its drop-down box.
+/// Un-highlight `title`, restore the screen under its box and redraw the
+/// title normal.
 fn close_box(tree: *mut Object, title: i16, imenu: i16, backend: &dyn RasterBackend) {
-    object::set_state_bit(tree, title, SELECTED, false);
-    erase_box(tree, imenu, backend);
+    crate::vdi::cursor_hide(backend);
+    erase_box_inner(tree, imenu, backend);
+    object::set_state_bit(tree, title, SELECTED, false); // redraws the title normal
+    crate::vdi::cursor_show(backend);
 }
 
-/// Erase a drop-down box back to white (no save/restore yet — see `track`).
-fn erase_box(tree: *mut Object, imenu: i16, backend: &dyn RasterBackend) {
+/// Put the pixels saved under the box back, or white-erase if the box was too
+/// big to snapshot. Caller owns the cursor hide/show.
+fn erase_box_inner(tree: *mut Object, imenu: i16, backend: &dyn RasterBackend) {
     if imenu == NIL {
         return;
     }
-    let (x, y, w, h) = object::abs_rect(tree as *const Object, imenu);
-    let clip = ClipRect::full(backend.width(), backend.height());
-    backend.fill_rect(x, y, w, h, WHITE, clip);
+    if !restore_under(backend) {
+        let (x, y, w, h) = object::abs_rect(tree as *const Object, imenu);
+        let clip = ClipRect::full(backend.width(), backend.height());
+        backend.fill_rect(x, y, w, h, WHITE, clip);
+    }
 }
 
 /// `menu_icheck` (31) — add (`int_in[1]`=1) / remove the check mark on
