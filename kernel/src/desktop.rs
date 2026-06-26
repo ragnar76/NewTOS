@@ -675,12 +675,14 @@ fn step(msg: &mut [i16; 8]) -> bool {
     if fired & MU_MESAG != 0 {
         match msg[0] {
             MN_SELECTED => {
-                let action = handle_menu_select(msg[4]);
                 menu_tnormal(msg[3]); // un-highlight the title
-                // The drop-down box and any dialog the action opened leave
-                // the screen dirty (the AES menu/form code has no
-                // save/restore yet), so repaint the desktop, windows and
-                // cursor before carrying on.
+                // The drop-down box closed to white (the AES menu code has no
+                // background save/restore yet). Repaint the desktop *before*
+                // running the action, so a modal dialog it opens (About,
+                // Info, …) draws over a clean background instead of the white
+                // box — then repaint again after it closes.
+                redraw_screen();
+                let action = handle_menu_select(msg[4]);
                 redraw_screen();
                 match action {
                     MenuAction::Shutdown => return false,
