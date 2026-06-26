@@ -75,10 +75,7 @@ pub const MAX_HID: usize = 2;
 // `[u32]` so we can view the region as `context::Input32Byte` (a `#[repr(C)]`
 // struct of the same u32s). One per device — the controller reads each
 // device's contexts continuously, so they cannot be shared.
-// Page-aligned so the whole per-device DMA region can be remapped
-// normal-non-cacheable on the real Pi-4 (PCIe DMA there is not cache-coherent;
-// see `Xhci::open`).
-#[repr(C, align(4096))]
+#[repr(C, align(64))]
 struct DevDma {
     input: [u32; 33 * 8],
     device: [u32; 32 * 8],
@@ -195,6 +192,40 @@ fn ring_push(ring: &mut [Trb], enq: &mut usize, cycle: &mut bool, mut data: [u32
     }
 }
 
+// ── DMA cache maintenance (real Pi-4: PCIe DMA is not cache-coherent) ─────
+//
+// QEMU is coherent, so these are no-ops there. On rpi4 the controller reads/
+// writes our DMA structs straight from RAM, so the CPU must clean (write back)
+// before the controller reads and invalidate (drop stale) before reading what
+// the controller wrote. Cortex-A72 cache line = 64 bytes.
+#[inline(always)]
+fn dcache_clean(_va: u64, _len: usize) {
+    #[cfg(feature = "board-rpi4")]
+    unsafe {
+        let mut p = _va & !63;
+        let end = _va + _len as u64;
+        while p < end {
+            core::arch::asm!("dc cvac, {x}", x = in(reg) p, options(nostack, preserves_flags));
+            p += 64;
+        }
+        core::arch::asm!("dsb sy", options(nostack, preserves_flags));
+    }
+}
+#[inline(always)]
+fn dcache_inval(_va: u64, _len: usize) {
+    #[cfg(feature = "board-rpi4")]
+    unsafe {
+        core::arch::asm!("dsb sy", options(nostack, preserves_flags));
+        let mut p = _va & !63;
+        let end = _va + _len as u64;
+        while p < end {
+            core::arch::asm!("dc ivac, {x}", x = in(reg) p, options(nostack, preserves_flags));
+            p += 64;
+        }
+        core::arch::asm!("dsb sy", options(nostack, preserves_flags));
+    }
+}
+
 pub struct Xhci {
     regs: Registers<HighHalf>,
     ports: u8,
@@ -219,23 +250,6 @@ impl Xhci {
     /// `mmio_base` must be the controller's MMIO base; single-CPU boot;
     /// `DMA` is exclusively ours.
     pub unsafe fn open(mmio_base: u64) -> Self {
-        // Real Pi-4 PCIe DMA is not cache-coherent (QEMU is), so the
-        // controller-visible DMA regions (rings, DCBAA, contexts, buffers) must
-        // be normal-non-cacheable. Both `DMA` and `DEV` are page-aligned.
-        #[cfg(feature = "board-rpi4")]
-        unsafe {
-            use crate::arch::aarch64::mmu;
-            let page = |len: usize| ((len + 0xfff) & !0xfff) as u64;
-            mmu::remap_normal_nc(
-                core::ptr::addr_of!(DMA) as u64,
-                page(core::mem::size_of::<XhciDma>()),
-            );
-            mmu::remap_normal_nc(
-                core::ptr::addr_of!(DEV) as u64,
-                page(core::mem::size_of::<[DevDma; MAX_HID]>()),
-            );
-        }
-
         // SAFETY: caller contract — valid MMIO base, mapped high-half.
         let mut regs = unsafe { Registers::new(mmio_base as usize, HighHalf) };
 
@@ -283,6 +297,13 @@ impl Xhci {
         }
 
         // Run.
+        // Make the DCBAA, command ring and ERST visible to a non-coherent
+        // controller (real Pi-4) before it starts; no-op on QEMU.
+        dcache_clean(core::ptr::addr_of!(DMA) as u64, core::mem::size_of::<XhciDma>());
+        dcache_clean(
+            core::ptr::addr_of!(DEV) as u64,
+            core::mem::size_of::<[DevDma; MAX_HID]>(),
+        );
         regs.operational.usbcmd.update_volatile(|c| {
             c.set_run_stop();
         });
@@ -319,6 +340,7 @@ impl Xhci {
         // SAFETY: single-CPU; DEV is ours.
         let ring = unsafe { &mut (*(&raw mut DEV))[di].int_ring.0 };
         ring_push(ring, &mut self.hid[di].int_enq, &mut self.hid[di].int_cycle, data);
+        self.dma_clean();
         self.regs.doorbell.update_volatile_at(slot as usize, |db| {
             db.set_doorbell_target(dci);
         });
@@ -332,6 +354,18 @@ impl Xhci {
         self.hid[di].protocol
     }
 
+    /// Write back the whole DMA region (rings, DCBAA, contexts, buffers) so a
+    /// non-coherent controller (real Pi-4) reads our latest writes. Called
+    /// before every doorbell; a no-op on coherent QEMU.
+    #[inline]
+    fn dma_clean(&self) {
+        dcache_clean(core::ptr::addr_of!(DMA) as u64, core::mem::size_of::<XhciDma>());
+        dcache_clean(
+            core::ptr::addr_of!(DEV) as u64,
+            core::mem::size_of::<[DevDma; MAX_HID]>(),
+        );
+    }
+
     /// Drain one event; if it is a Transfer Event (a HID report landed),
     /// return the device index + a copy of its 8-byte report buffer.
     pub fn poll_interrupt(&mut self) -> Option<(usize, [u8; 8])> {
@@ -340,6 +374,8 @@ impl Xhci {
             for di in 0..self.n_hid {
                 if self.hid[di].slot == slot {
                     // SAFETY: single-CPU; DEV is ours.
+                    let p = unsafe { (&raw const (*(&raw const DEV))[di].intbuf) as u64 };
+                    dcache_inval(p, 8); // the controller DMA'd the HID report
                     return Some((di, unsafe { (*(&raw const DEV))[di].intbuf }));
                 }
             }
@@ -367,6 +403,7 @@ impl Xhci {
             self.cmd_enq = 0;
         }
         // Ring doorbell 0 (the command ring).
+        self.dma_clean();
         self.regs.doorbell.update_volatile_at(0, |d| {
             d.set_doorbell_target(0);
         });
@@ -384,6 +421,9 @@ impl Xhci {
     fn poll_event(&mut self) -> Option<event::Allowed> {
         // SAFETY: single-CPU; DMA is ours.
         let dma = unsafe { &mut *(&raw mut DMA) };
+        // Drop the stale cached copy of this event TRB so we see the
+        // controller's write (real Pi-4; no-op on QEMU). One cache line.
+        dcache_inval((&raw const dma.evt_ring.0[self.evt_deq]) as u64, 16);
         let data = dma.evt_ring.0[self.evt_deq].0;
         if ((data[3] & 1) != 0) != self.evt_cycle {
             return None; // not yet written by the controller
@@ -552,10 +592,19 @@ impl Xhci {
         self.ep0_push(di, transfer::Allowed::StatusStage(st).into_raw());
 
         let slot = self.hid[di].slot;
+        self.dma_clean();
         self.regs.doorbell.update_volatile_at(slot as usize, |db| {
             db.set_doorbell_target(1);
         });
-        self.wait_transfer()
+        let ok = self.wait_transfer();
+        // The controller DMA'd the IN data into our buffer — drop the stale
+        // cached copy so the caller reads it (real Pi-4; no-op on QEMU).
+        if dir_in && len > 0 {
+            // SAFETY: single-CPU; DEV is ours.
+            let dev = unsafe { &*(&raw const DEV) };
+            dcache_inval((&raw const dev[di].buf) as u64, dev[di].buf.len());
+        }
+        ok
     }
 
     /// GET_DESCRIPTOR into `DEV[di].buf` (data there on success).
