@@ -33,7 +33,10 @@ pub mod mouse;
 /// Input-subsystem entry point + queries: feed a relative-mouse event
 /// (the kernel's IKBD mouse decoder calls this) and read back the cursor
 /// state (used by the IKBD self-test).
-pub use mouse::{buttons as mouse_buttons, feed_relative, position as mouse_position};
+pub use mouse::{
+    buttons as mouse_buttons, feed_relative, hide as cursor_hide, position as mouse_position,
+    show as cursor_show, show_reset as cursor_show_reset,
+};
 mod primitives;
 mod raster;
 mod text;

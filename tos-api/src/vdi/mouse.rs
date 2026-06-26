@@ -227,6 +227,43 @@ pub fn v_hide_c(backend: &dyn RasterBackend) {
     HIDE_COUNT.store(c + 1, Ordering::Relaxed);
 }
 
+// ── Direct (non-trap) cursor control for the kernel desktop ──
+//
+// The desktop is kernel-side and repaints the framebuffer directly, so it
+// brackets each repaint with `hide` (erase the sprite) + `show` (redraw it on
+// top), and calls `show` once at start-up to take the cursor out of GEM's
+// power-up hidden state. Same machinery as `v_hide_c`/`v_show_c`, without a
+// `Vdipb`.
+
+/// Erase the cursor and increment the hide depth (kernel `v_hide_c`).
+pub fn hide(backend: &dyn RasterBackend) {
+    if shown() {
+        erase(backend);
+    }
+    HIDE_COUNT.fetch_add(1, Ordering::Relaxed);
+}
+
+/// Decrement the hide depth; draw the cursor when it becomes shown (kernel
+/// `v_show_c`). Balances a [`hide`].
+pub fn show(backend: &dyn RasterBackend) {
+    ensure_init(backend);
+    let prev = HIDE_COUNT.load(Ordering::Relaxed);
+    let new = (prev - 1).max(0);
+    HIDE_COUNT.store(new, Ordering::Relaxed);
+    if prev > 0 && new == 0 {
+        draw(backend);
+    }
+}
+
+/// Force the cursor visible (hide depth 0) and draw it — the initial unhide.
+pub fn show_reset(backend: &dyn RasterBackend) {
+    ensure_init(backend);
+    let prev = HIDE_COUNT.swap(0, Ordering::Relaxed);
+    if prev > 0 {
+        draw(backend);
+    }
+}
+
 /// Show the graphics cursor at `(x, y)` (VDI `v_dspcur` escape).
 pub fn display_at(x: i16, y: i16, backend: &dyn RasterBackend) {
     ensure_init(backend);

@@ -410,6 +410,11 @@ pub fn draw() {
 
     let bits = tos_api::bios::drive::drvbits();
     kprintln!("[desk] desktop drawn ({} drives)", bits.count_ones());
+
+    // The full repaint above erased any old cursor; draw it fresh on top
+    // (and take it out of GEM's power-up hidden state on the first paint).
+    // Mouse moves between repaints redraw it via vdi::feed_relative.
+    tos_api::vdi::cursor_show_reset(backend);
 }
 
 /// Paint the desktop background — the pattern fill below the menu bar plus
