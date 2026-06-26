@@ -130,6 +130,13 @@ pub fn track(tree: *mut Object, backend: &dyn RasterBackend) -> Option<(i16, i16
                 // sits over the item) does not smear.
                 crate::vdi::cursor_hide(backend);
                 if cur_item != NIL {
+                    // `draw_obj` only paints a G_STRING's background when it is
+                    // SELECTED, so clear the old item's black highlight to
+                    // white before redrawing it normal — otherwise the
+                    // hovered-over item stays black.
+                    let (ix, iy, iw, ih) = object::abs_rect(tp, cur_item);
+                    let clip = ClipRect::full(backend.width(), backend.height());
+                    backend.fill_rect(ix, iy, iw, ih, WHITE, clip);
                     object::set_state_bit(tree, cur_item, SELECTED, false);
                 }
                 if it != NIL {
