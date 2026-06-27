@@ -79,20 +79,24 @@ fn boot_l0_phys() -> u64 {
     v
 }
 
-/// Restore `TTBR0_EL1` to the Stage-1 boot tables installed by
-/// `boot._start`. Includes a `tlbi vmalle1` so any cached entries
-/// from the dying slot's L3 are dropped before a future per-process
-/// install.
+/// Reset `TTBR0_EL1` to the empty no-process root ([`mmu::EMPTY_L0`]) and
+/// flush the TLB (`tlbi vmalle1`), dropping any cached entries from the dying
+/// slot before a future per-process install.
+///
+/// **ADR-014:** this used to restore the Stage-1 boot identity map. After the
+/// high-half MMIO switch the kernel runs entirely through TTBR1 and never
+/// needs the low-half identity — and on real hardware the boot map's stale
+/// 1-GiB UXN blocks *shadow* a process/slot mapping (EL0 fetch permission
+/// fault) and corrupt the kernel on the `Pterm` resume of a kernel-launched
+/// program (the AUTO folder). So we install the empty L0 here, matching what
+/// `install_stage2_ttbr1` leaves in TTBR0 for the no-process state.
 ///
 /// # Safety
 ///
-/// Caller must be the boot CPU (single-CPU contract). The kernel
-/// must not be holding a low-half VA reference — between this call
-/// and the next per-process TTBR0 install, low-half VAs do not
-/// resolve through any user mapping (only the boot identity range
-/// does, and only for the boot-table-mapped phys frames).
+/// Caller must be the boot CPU (single-CPU contract). After this call,
+/// low-half VAs raise a translation fault until the next per-process install.
 pub unsafe fn restore_boot_ttbr0() {
-    let boot_l0 = boot_l0_phys();
+    let empty_l0 = crate::arch::aarch64::mmu::empty_l0_pa();
     // SAFETY: writing TTBR0_EL1 + TLBI is permitted at EL1.
     unsafe {
         core::arch::asm!(
@@ -101,7 +105,7 @@ pub unsafe fn restore_boot_ttbr0() {
             "tlbi vmalle1",
             "dsb ish",
             "isb",
-            ttbr0 = in(reg) boot_l0,
+            ttbr0 = in(reg) empty_l0,
             options(nostack, preserves_flags),
         );
     }
@@ -141,6 +145,12 @@ pub unsafe fn restore_boot_ttbr0() {
 ///   `TTBR0_EL1` while this function is in flight.
 /// * `entry_va` must lie within the slot's mapped low-half VA range
 ///   (otherwise the eret faults at the user PC).
+///
+/// `#[inline(never)]`: the EL0 excursion in the asm clobbers caller-saved
+/// registers, so the caller's code must not be inlined across it — only this
+/// function's own epilogue (which reloads callee-saved from the stack) may run
+/// after the resume.
+#[inline(never)]
 pub unsafe fn enter_el0_with_resume_capture(
     entry_va: u64,
     l0_pa: u64,
@@ -165,12 +175,29 @@ pub unsafe fn enter_el0_with_resume_capture(
     // honoured by the BDOS lock.
     unsafe {
         core::arch::asm!(
+            // Preserve the kernel's callee-saved registers + FP/LR across the
+            // EL0 excursion. The Pterm handler resumes us at label 1 via the
+            // generic trap-frame restore, which loads the *child's* EL0 GPRs —
+            // so without this, x19..x30 come back as garbage. LLVM assumes an
+            // asm block preserves callee-saved regs and won't let us list the
+            // LLVM-reserved ones (x18/x19/x29) as clobbers, so we save them on
+            // the kernel stack here; the captured SP points at them so the
+            // resume restores them. (Latent miscompile — surfaced only once
+            // unrelated code shifted the register allocation.)
+            "stp x19, x20, [sp, #-96]!",
+            "stp x21, x22, [sp, #16]",
+            "stp x23, x24, [sp, #32]",
+            "stp x25, x26, [sp, #48]",
+            "stp x27, x28, [sp, #64]",
+            "stp x29, x30, [sp, #80]",
+
             // Capture EL1 resume PC into parent_frame.elr.
             "adr   {tmp}, 1f",
             "str   {tmp}, [{resume_pc}]",
 
             // Save the current SP (= SP_EL0 since SPSel=0) via
-            // `mov xN, sp` — the only legal way while SPSel=0.
+            // `mov xN, sp` — the only legal way while SPSel=0. It now points
+            // at the saved registers, so the resume restores from there.
             "mov   {kstack}, sp",
             "str   {kstack}, [{kernel_sp}]",
 
@@ -192,15 +219,21 @@ pub unsafe fn enter_el0_with_resume_capture(
             // `parent_frame.spsr.M = EL1t` and `parent_frame.sp_el0
             // = saved kernel SP` into the trap frame, so the
             // handler-side eret lands us at EL1 with `SP_EL0 = our
-            // original kernel stack`. Active SP is SP_EL0 again.
+            // original kernel stack` — pointing at the saved registers.
             "1:",
+            "ldp x19, x20, [sp]",
+            "ldp x21, x22, [sp, #16]",
+            "ldp x23, x24, [sp, #32]",
+            "ldp x25, x26, [sp, #48]",
+            "ldp x27, x28, [sp, #64]",
+            "ldp x29, x30, [sp, #80]",
+            "add sp, sp, #96",
             entry      = in(reg) entry_va,
             sp         = in(reg) sp_el0,
             resume_pc  = in(reg) elr_ptr,
             kernel_sp  = in(reg) sp_ptr,
             kstack     = out(reg) _,
             tmp        = out(reg) _,
-            options(nostack)
         );
     }
 }
