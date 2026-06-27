@@ -312,6 +312,22 @@ impl Xhci {
         }
 
         kprintln!("[usb] xHCI up: {} slots enabled, {} root ports", slots, max_ports);
+
+        // Power on every root port (PORTSC.PP, bit 9). The real Pi-4 VL805 does
+        // not power its ports by default — a device gets no power (LEDs dark,
+        // never reports a connect) until software sets PP; QEMU powers them
+        // implicitly (HCCPARAMS.PPC tells us which, but setting PP is harmless
+        // when ports are always-powered). Then wait for power to stabilise
+        // (USB2 PWRON2PWRGOOD ≈ 20 ms) before the connect scan / enumeration.
+        let ppc = regs.capability.hccparams1.read_volatile().port_power_control();
+        for i in 0..max_ports as usize {
+            regs.port_register_set.update_volatile_at(i, |p| {
+                p.portsc.set_port_power();
+            });
+        }
+        kprintln!("[usb] root ports powered (PPC={})", ppc);
+        crate::arch::aarch64::delay_ms(20);
+
         Xhci {
             regs,
             ports: max_ports,
