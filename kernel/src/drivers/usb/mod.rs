@@ -53,6 +53,10 @@ pub fn init(dtb_phys: usize) {
         let base = pcie_rpi4::find_xhci(dtb_phys);
 
         let Some(base) = base else { return };
+        // Real Pi-4 PCIe DMA is not cache-coherent: map the dedicated DMA
+        // block Normal-NC before the controller touches it.
+        #[cfg(feature = "board-rpi4")]
+        map_dma_nc();
         let mut controller = unsafe { xhci::Xhci::open(base) };
         controller.scan_ports();
         if controller.enumerate_all() > 0 {
@@ -62,6 +66,32 @@ pub fn init(dtb_phys: usize) {
     }
     #[cfg(not(any(feature = "board-qemu-virt", feature = "board-rpi4")))]
     let _ = dtb_phys;
+}
+
+/// Remap the dedicated `.dma` linker block (a 2-MiB-aligned region holding all
+/// xHCI DMA structures) as Normal-non-cacheable, so the non-coherent Pi-4 PCIe
+/// controller and the CPU agree on memory. Its own block contains no kernel
+/// code/tables, so the break-before-make remap is safe (unlike a remap of a
+/// shared block — see ADR-014). Flushes the bss-cleared zeros to RAM first.
+#[cfg(feature = "board-rpi4")]
+fn map_dma_nc() {
+    extern "C" {
+        static __dma_start: u8;
+        static __dma_end: u8;
+    }
+    let start = core::ptr::addr_of!(__dma_start) as u64;
+    let end = core::ptr::addr_of!(__dma_end) as u64;
+    // SAFETY: boot CPU; `.dma` is a dedicated block, safe to break-before-make.
+    unsafe {
+        let mut p = start & !63;
+        core::arch::asm!("dsb sy", options(nostack, preserves_flags));
+        while p < end {
+            core::arch::asm!("dc civac, {x}", x = in(reg) p, options(nostack, preserves_flags));
+            p += 64;
+        }
+        core::arch::asm!("dsb sy", options(nostack, preserves_flags));
+        crate::arch::aarch64::mmu::remap_normal_nc(start, end - start);
+    }
 }
 
 pub use xhci::DeviceInfo;

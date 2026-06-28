@@ -237,6 +237,91 @@ pub unsafe fn parse_pcie_ecam(dtb_phys: usize) -> Option<DtbPcie> {
     None
 }
 
+/// A PCIe inbound DMA window from the host bridge's `dma-ranges`: the PCIe-bus
+/// address the controller's masters use, the CPU/system address it maps to, and
+/// the size. Real-Pi-4 D7 uses `pcie_addr` as the `RC_BAR2` inbound offset (the
+/// VL805 HSE's if it is wrong). See `docs/api/usb/pcie-rpi4.md`.
+pub struct DtbDmaRange {
+    pub pcie_addr: u64,
+    pub cpu_addr: u64,
+    pub size: u64,
+}
+
+/// Read the first `dma-ranges` entry of the `pci/pcie@…` host-bridge node (at
+/// any depth — on the Pi-4 it sits under `/scb`). The entry is the standard
+/// PCIe layout: 3 child cells (`phys.hi` flags + 64-bit PCIe address), 2 parent
+/// cells (CPU address), 2 size cells. `None` if absent/malformed.
+///
+/// # Safety
+/// `dtb_phys` must point at a readable flattened device tree (or be 0).
+pub unsafe fn parse_pcie_dma_ranges(dtb_phys: usize) -> Option<DtbDmaRange> {
+    if dtb_phys == 0 {
+        return None;
+    }
+    let base = (dtb_phys + super::mmu::VA_OFFSET as usize) as *const u8;
+    if unsafe { read_be_u32(base, 0) } != FDT_MAGIC {
+        return None;
+    }
+    let off_dt_struct = unsafe { read_be_u32(base, 8) } as usize;
+    let off_dt_strings = unsafe { read_be_u32(base, 12) } as usize;
+    let size_dt_struct = unsafe { read_be_u32(base, 36) } as usize;
+    let strings_base = unsafe { base.add(off_dt_strings) };
+    let mut p = unsafe { base.add(off_dt_struct) };
+    let end = unsafe { p.add(size_dt_struct) };
+
+    let mut depth: u32 = 0;
+    let mut pcie_depth: u32 = 0; // 0 = not inside a pcie node
+
+    while p < end {
+        let tok = unsafe { read_be_u32(p, 0) };
+        p = unsafe { p.add(4) };
+        match tok {
+            FDT_BEGIN_NODE => {
+                let name_len = unsafe { cstr_len(p) };
+                let is_pcie = unsafe { is_pci_name(p, name_len) };
+                p = unsafe { p.add(align_up(name_len + 1, 4)) };
+                depth += 1;
+                if is_pcie && pcie_depth == 0 {
+                    pcie_depth = depth;
+                }
+            }
+            FDT_END_NODE => {
+                if pcie_depth != 0 && depth == pcie_depth {
+                    pcie_depth = 0;
+                }
+                if depth == 0 {
+                    return None;
+                }
+                depth -= 1;
+            }
+            FDT_PROP => {
+                let len = unsafe { read_be_u32(p, 0) } as usize;
+                let nameoff = unsafe { read_be_u32(p, 4) } as usize;
+                p = unsafe { p.add(8) };
+                let val = p;
+                p = unsafe { p.add(align_up(len, 4)) };
+                let prop_name_ptr = unsafe { strings_base.add(nameoff) };
+                if pcie_depth != 0
+                    && depth == pcie_depth
+                    && unsafe { cstr_eq(prop_name_ptr, b"dma-ranges") }
+                    && len >= 7 * 4
+                {
+                    // cells: [0]=flags [1..3]=PCIe addr(64) [3..5]=CPU addr(64)
+                    //        [5..7]=size(64)
+                    let pcie_addr = unsafe { read_be_cells(val.add(4), 2) };
+                    let cpu_addr = unsafe { read_be_cells(val.add(12), 2) };
+                    let size = unsafe { read_be_cells(val.add(20), 2) };
+                    return Some(DtbDmaRange { pcie_addr, cpu_addr, size });
+                }
+            }
+            FDT_NOP => {}
+            FDT_END => return None,
+            _ => return None,
+        }
+    }
+    None
+}
+
 /// True if the node name at `p` (length `len`) is `pci`/`pcie`, optionally
 /// `@…`-addressed (the FDT convention for the host bridge).
 #[inline]

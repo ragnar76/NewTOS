@@ -14,9 +14,30 @@ use xhci::context::{self, InputHandler};
 use xhci::ring::trb::{command, event, transfer};
 use xhci::Registers;
 
+use core::sync::atomic::{AtomicU64, Ordering};
+
 use crate::arch::aarch64::mmu::va_to_pa;
 use crate::drivers::mmio_va;
 use crate::kprintln;
+
+/// PCIe DMA bus offset. The controller reaches system RAM through the host
+/// bridge's inbound window, whose PCIe-bus base is **not** 0 on the real Pi-4
+/// (the `dma-ranges` `pcie_addr`, e.g. `0x4_0000_0000`). So a controller-
+/// visible DMA address is the CPU physical address **plus** this offset; 0 on
+/// QEMU (identity). Set by the board's controller discovery before `open`.
+static DMA_BUS_OFFSET: AtomicU64 = AtomicU64::new(0);
+
+/// Set the PCIe DMA bus offset (the inbound-window `pcie_addr`).
+pub fn set_dma_bus_offset(off: u64) {
+    DMA_BUS_OFFSET.store(off, Ordering::Relaxed);
+}
+
+/// CPU virtual address of a DMA structure → the address the controller must
+/// issue to reach it: physical address + the PCIe bus offset.
+#[inline]
+fn dma_addr(va: u64) -> u64 {
+    va_to_pa(va) + DMA_BUS_OFFSET.load(Ordering::Relaxed)
+}
 
 /// Maps a peripheral physical address to its high-half VA — the same
 /// `drivers::mmio_va` mapping all NewTOS MMIO uses (ADR-014).
@@ -59,6 +80,7 @@ struct XhciDma {
     erst: Erst,
 }
 
+#[link_section = ".dma"]
 static mut DMA: XhciDma = XhciDma {
     dcbaa: Dcbaa([0; MAX_SLOTS + 1]),
     cmd_ring: Ring([Trb([0; 4]); CMD_RING_LEN]),
@@ -94,7 +116,24 @@ const DEV_INIT: DevDma = DevDma {
     intbuf: [0; 8],
 };
 
+#[link_section = ".dma"]
 static mut DEV: [DevDma; MAX_HID] = [DEV_INIT; MAX_HID];
+
+// Scratchpad buffers: many controllers (the real Pi-4 VL805 does; QEMU does
+// not) require software to provide N page-sized scratch buffers, advertised in
+// HCSPARAMS2. DCBAA[0] points at an array of their addresses. If we leave
+// DCBAA[0] = 0 when the controller wants scratchpads, it DMA-faults (HSE) on
+// its first command. Both the array and the buffers are page-aligned.
+const MAX_SCRATCH: usize = 64;
+const SCRATCH_PAGE: usize = 4096;
+#[repr(C, align(4096))]
+struct ScratchArray([u64; MAX_SCRATCH]);
+#[repr(C, align(4096))]
+struct ScratchBufs([[u8; SCRATCH_PAGE]; MAX_SCRATCH]);
+#[link_section = ".dma"]
+static mut SCRATCH_ARRAY: ScratchArray = ScratchArray([0; MAX_SCRATCH]);
+#[link_section = ".dma"]
+static mut SCRATCH_BUFS: ScratchBufs = ScratchBufs([[0; SCRATCH_PAGE]; MAX_SCRATCH]);
 
 /// Per-device runtime state (slot, the interrupt endpoint, ring producers).
 #[derive(Clone, Copy)]
@@ -179,7 +218,7 @@ fn ring_push(ring: &mut [Trb], enq: &mut usize, cycle: &mut bool, mut data: [u32
     ring[*enq] = Trb(data);
     *enq += 1;
     if *enq == len - 1 {
-        let base = va_to_pa(ring.as_ptr() as u64);
+        let base = dma_addr(ring.as_ptr() as u64);
         let mut link = [base as u32, (base >> 32) as u32, 0, (6u32 << 10) | (1 << 1)];
         if *cycle {
             link[3] |= 1;
@@ -235,6 +274,9 @@ pub struct Xhci {
     /// Event-ring consumer index + cycle state.
     evt_deq: usize,
     evt_cycle: bool,
+    /// MMIO VA of the ERDP register's high 32 bits, re-written explicitly each
+    /// event because the BCM2711 PCIe mangles the crate's 64-bit ERDP store.
+    erdp_hi: u64,
     /// Per-device state (EP0/interrupt ring producers, slot, endpoint).
     hid: [HidDev; MAX_HID],
     /// Number of configured HID devices.
@@ -278,23 +320,92 @@ impl Xhci {
         // SAFETY: single-CPU boot; DMA is BSS we own exclusively.
         let dma = unsafe { &mut *(&raw mut DMA) };
 
-        let dcbaa_pa = va_to_pa((&raw const dma.dcbaa) as u64);
+        let dcbaa_pa = dma_addr((&raw const dma.dcbaa) as u64);
         regs.operational.dcbaap.update_volatile(|d| d.set(dcbaa_pa));
 
-        let cmd_pa = va_to_pa((&raw const dma.cmd_ring) as u64);
-        regs.operational.crcr.update_volatile(|c| c.set_command_ring_pointer(cmd_pa));
+        let cmd_pa = dma_addr((&raw const dma.cmd_ring) as u64);
+        regs.operational.crcr.update_volatile(|c| {
+            c.set_command_ring_pointer(cmd_pa);
+            // Ring Cycle State = 1: the controller's consumer cycle state must
+            // match our producer cycle (our first command TRB has cycle = 1).
+            // The crate's pointer setter leaves RCS at 0; QEMU tolerates the
+            // mismatch, the real VL805 then never processes the command.
+            c.set_ring_cycle_state();
+        });
 
         // Event ring: ERST[0] = { segment base, segment size }.
-        let evt_pa = va_to_pa((&raw const dma.evt_ring) as u64);
+        let evt_pa = dma_addr((&raw const dma.evt_ring) as u64);
         dma.erst.0[0] = evt_pa;
         dma.erst.0[1] = EVT_RING_LEN as u64;
-        let erst_pa = va_to_pa((&raw const dma.erst) as u64);
+        let erst_pa = dma_addr((&raw const dma.erst) as u64);
         {
             let mut intr = regs.interrupter_register_set.interrupter_mut(0);
             intr.erstsz.update_volatile(|s| s.set(1));
             intr.erdp.update_volatile(|d| d.set_event_ring_dequeue_pointer(evt_pa));
             intr.erstba.update_volatile(|b| b.set(erst_pa));
         }
+
+        // The BCM2711 PCIe MMIO mishandles a single 64-bit store to the 64-bit
+        // xHCI pointer registers: the high 32 bits come back as the low value
+        // (verified by readback). So after the crate's 64-bit writes set the
+        // (correct) low halves, re-write each register's HIGH 32 bits with an
+        // explicit 32-bit store. Harmless on QEMU (addresses < 4 GiB → HI = 0).
+        // Offsets (xHCI spec): operational = cap + CAPLENGTH; runtime = cap +
+        // RTSOFF; interrupter 0 = runtime + 0x20. CRCR 0x18, DCBAAP 0x30 in the
+        // operational set; ERSTBA +0x10, ERDP +0x18 in the interrupter set.
+        let erdp_hi = unsafe {
+            let cap = mmio_va(mmio_base as usize) as u64;
+            let caplength = core::ptr::read_volatile(cap as *const u8) as u64;
+            let op = cap + caplength;
+            let rtsoff = (core::ptr::read_volatile((cap + 0x18) as *const u32) & !0x1f) as u64;
+            let intr0 = cap + rtsoff + 0x20;
+            let wr_hi = |reg_lo: u64, addr: u64| {
+                core::ptr::write_volatile((reg_lo + 4) as *mut u32, (addr >> 32) as u32);
+            };
+            wr_hi(op + 0x30, dcbaa_pa); // DCBAAP
+            wr_hi(op + 0x18, cmd_pa); // CRCR
+            wr_hi(intr0 + 0x10, erst_pa); // ERSTBA
+            wr_hi(intr0 + 0x18, evt_pa); // ERDP
+            intr0 + 0x1c // ERDP-high register VA — poll_event re-writes it per event
+        };
+
+        // Scratchpad buffers (HCSPARAMS2): the controller may require N page
+        // buffers for its own use, reached through DCBAA[0] → a scratchpad
+        // array of their addresses. The real Pi-4 VL805 needs them (else it
+        // HSE-DMA-faults on the first command); QEMU reports 0.
+        let n_scratch =
+            regs.capability.hcsparams2.read_volatile().max_scratchpad_buffers() as usize;
+        if n_scratch > 0 {
+            let n = n_scratch.min(MAX_SCRATCH);
+            // SAFETY: single-CPU boot; the scratch statics are ours.
+            let arr = unsafe { &mut *(&raw mut SCRATCH_ARRAY) };
+            for i in 0..n {
+                let buf = unsafe { (&raw const (*(&raw const SCRATCH_BUFS)).0[i]) as u64 };
+                arr.0[i] = dma_addr(buf);
+            }
+            dma.dcbaa.0[0] = dma_addr((&raw const SCRATCH_ARRAY) as u64);
+            dcache_clean(
+                core::ptr::addr_of!(SCRATCH_ARRAY) as u64,
+                core::mem::size_of::<ScratchArray>(),
+            );
+        }
+        kprintln!("[usb] scratchpad buffers needed: {}", n_scratch);
+        kprintln!(
+            "[usb] dma addrs: dcbaap={:#x} crcr={:#x} erstba={:#x} dcbaa0={:#x}",
+            dcbaa_pa,
+            cmd_pa,
+            erst_pa,
+            dma.dcbaa.0[0]
+        );
+        // Read DCBAAP back from the controller: does the 64-bit register hold
+        // the full 35-bit address (incl. the 0x4_… bus offset), or did the
+        // BCM2711 MMIO drop the high half? Also AC64 (64-bit addressing cap).
+        let cap1 = regs.capability.hccparams1.read_volatile();
+        kprintln!(
+            "[usb] reg readback: ac64={} dcbaap_hw={:#x}",
+            cap1.addressing_capability() as u8,
+            regs.operational.dcbaap.read_volatile().get()
+        );
 
         // Run.
         // Make the DCBAA, command ring and ERST visible to a non-coherent
@@ -335,6 +446,7 @@ impl Xhci {
             cmd_cycle: true,
             evt_deq: 0,
             evt_cycle: true,
+            erdp_hi,
             hid: [HidDev::new(); MAX_HID],
             n_hid: 0,
         }
@@ -347,7 +459,7 @@ impl Xhci {
         let slot = self.hid[di].slot;
         let dci = self.hid[di].dci;
         // SAFETY: single-CPU; DEV is ours.
-        let buf_pa = unsafe { va_to_pa((&raw const (*(&raw const DEV))[di].intbuf) as u64) };
+        let buf_pa = unsafe { dma_addr((&raw const (*(&raw const DEV))[di].intbuf) as u64) };
         let mut n = transfer::Normal::new();
         n.set_data_buffer_pointer(buf_pa)
             .set_trb_transfer_length(8)
@@ -423,12 +535,34 @@ impl Xhci {
         self.regs.doorbell.update_volatile_at(0, |d| {
             d.set_doorbell_target(0);
         });
-        for _ in 0..50_000_000u64 {
+        for _ in 0..200_000_000u64 {
+            // poll_event also consumes interleaved Port Status Change events
+            // (the controller queues them on the same ring); we only act on the
+            // command's completion.
             if let Some(event::Allowed::CommandCompletion(cc)) = self.poll_event() {
                 return Some(cc);
             }
             core::hint::spin_loop();
         }
+        // Timed out — dump state to localise the DMA round-trip failure. evt0
+        // tells us whether the controller wrote *any* completion event (DMA
+        // write reached RAM) or nothing (it never read our command TRB).
+        let sts = self.regs.operational.usbsts.read_volatile();
+        // SAFETY: single-CPU; DMA is ours.
+        let dma = unsafe { &*(&raw const DMA) };
+        dcache_inval((&raw const dma.evt_ring.0[0]) as u64, 64);
+        let e = dma.evt_ring.0[0].0;
+        kprintln!(
+            "[usb] cmd timeout: hch={} hse={} hce={} cnr={} evt0={:08x} {:08x} {:08x} {:08x}",
+            sts.hc_halted(),
+            sts.host_system_error(),
+            sts.host_controller_error(),
+            sts.controller_not_ready(),
+            e[0],
+            e[1],
+            e[2],
+            e[3]
+        );
         None
     }
 
@@ -450,7 +584,7 @@ impl Xhci {
             self.evt_deq = 0;
             self.evt_cycle = !self.evt_cycle;
         }
-        let erdp = va_to_pa((&raw const dma.evt_ring.0[self.evt_deq]) as u64);
+        let erdp = dma_addr((&raw const dma.evt_ring.0[self.evt_deq]) as u64);
         self.regs
             .interrupter_register_set
             .interrupter_mut(0)
@@ -458,6 +592,10 @@ impl Xhci {
             .update_volatile(|d| {
                 d.set_event_ring_dequeue_pointer(erdp);
             });
+        // The crate's 64-bit ERDP store loses its high half on the BCM2711 (see
+        // open); re-write it so the controller keeps a valid dequeue pointer and
+        // keeps delivering events. Harmless on QEMU (erdp < 4 GiB → high = 0).
+        unsafe { core::ptr::write_volatile(self.erdp_hi as *mut u32, (erdp >> 32) as u32) };
         ev
     }
 
@@ -502,7 +640,7 @@ impl Xhci {
         dev.input.iter_mut().for_each(|x| *x = 0);
         dev.device.iter_mut().for_each(|x| *x = 0);
 
-        let ep0_pa = va_to_pa((&raw const dev.ep0_ring) as u64); // 64-byte aligned
+        let ep0_pa = dma_addr((&raw const dev.ep0_ring) as u64); // 64-byte aligned
 
         // View the zeroed input region as a 32-byte Input Context and fill it.
         // SAFETY: `Input32Byte` is `#[repr(C)]` over the same u32s as `input`.
@@ -527,9 +665,9 @@ impl Xhci {
 
         // DCBAA[slot] → the (controller-written) Device Context.
         let dma = unsafe { &mut *(&raw mut DMA) };
-        dma.dcbaa.0[slot as usize] = va_to_pa((&raw const dev.device) as u64);
+        dma.dcbaa.0[slot as usize] = dma_addr((&raw const dev.device) as u64);
 
-        let input_pa = va_to_pa((&raw const dev.input) as u64);
+        let input_pa = dma_addr((&raw const dev.input) as u64);
         let mut cmd = command::AddressDevice::new();
         cmd.set_input_context_pointer(input_pa);
         cmd.set_slot_id(slot);
@@ -628,7 +766,7 @@ impl Xhci {
         // SAFETY: single-CPU; DEV is ours.
         let dev = unsafe { &mut (*(&raw mut DEV))[di] };
         dev.buf.iter_mut().for_each(|b| *b = 0);
-        let buf_pa = va_to_pa((&raw const dev.buf) as u64);
+        let buf_pa = dma_addr((&raw const dev.buf) as u64);
         let value = ((desc_type as u16) << 8) | index as u16;
         let setup = [
             0x80,
@@ -757,7 +895,7 @@ impl Xhci {
         dev.input.iter_mut().for_each(|x| *x = 0);
         let ep_num = hid.ep_addr & 0x0F;
         let dci = ep_num * 2 + if hid.ep_addr & 0x80 != 0 { 1 } else { 0 };
-        let int_pa = va_to_pa((&raw const dev.int_ring) as u64);
+        let int_pa = dma_addr((&raw const dev.int_ring) as u64);
 
         // SAFETY: `Input32Byte` is `#[repr(C)]` over the same u32s as `input`.
         let input: &mut context::Input32Byte =
@@ -779,7 +917,7 @@ impl Xhci {
             e.set_error_count(3);
         }
 
-        let input_pa = va_to_pa((&raw const dev.input) as u64);
+        let input_pa = dma_addr((&raw const dev.input) as u64);
         let mut cmd = command::ConfigureEndpoint::new();
         cmd.set_input_context_pointer(input_pa);
         cmd.set_slot_id(slot);
@@ -868,20 +1006,16 @@ impl Xhci {
 
     /// Log each root-hub port's connect status (D1 verification target).
     pub fn scan_ports(&mut self) {
-        let mut any = false;
         for i in 0..self.ports as usize {
-            let portsc = self.regs.port_register_set.read_volatile_at(i).portsc;
-            if portsc.current_connect_status() {
-                any = true;
-                kprintln!(
-                    "[usb] port {}: device connected (CCS=1, enabled={})",
-                    i + 1,
-                    portsc.port_enabled_disabled()
-                );
-            }
-        }
-        if !any {
-            kprintln!("[usb] no devices connected on any root port");
+            let p = self.regs.port_register_set.read_volatile_at(i).portsc;
+            kprintln!(
+                "[usb] port {}: ccs={} ped={} pp={} speed={}",
+                i + 1,
+                p.current_connect_status() as u8,
+                p.port_enabled_disabled() as u8,
+                p.port_power() as u8,
+                p.port_speed()
+            );
         }
     }
 }

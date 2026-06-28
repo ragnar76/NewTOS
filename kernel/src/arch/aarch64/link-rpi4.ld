@@ -63,6 +63,15 @@ SECTIONS
         __bss_start = .;
         *(.bss .bss.*)
         *(COMMON)
+        /* Dedicated 2-MiB-aligned block for controller DMA buffers, so it can
+         * be remapped Normal-NC on the non-coherent Pi-4 PCIe (PHASE-16 D7)
+         * without touching the kernel code/tables in its block. Inside .bss so
+         * the boot bss-clear zeroes it. */
+        . = ALIGN(2M);
+        __dma_start = .;
+        *(.dma .dma.*)
+        . = ALIGN(2M);
+        __dma_end = .;
         . = ALIGN(16);
         __bss_end_exclusive = .;
     } :segment_data

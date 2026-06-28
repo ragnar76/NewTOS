@@ -70,6 +70,13 @@ SECTIONS
         __bss_start = .;
         *(.bss .bss.*)
         *(COMMON)
+        /* DMA block — see link-rpi4.ld. On QEMU (coherent) it stays cached;
+         * the section just has to exist so the `.dma` statics link. */
+        . = ALIGN(2M);
+        __dma_start = .;
+        *(.dma .dma.*)
+        . = ALIGN(2M);
+        __dma_end = .;
         . = ALIGN(16);
         __bss_end_exclusive = .;
     } :segment_data

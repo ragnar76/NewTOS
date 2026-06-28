@@ -11,7 +11,7 @@
 //! RC. Spec: `docs/api/usb/pcie-rpi4.md`. **Real-HW only** (QEMU does not model
 //! the VL805).
 
-use crate::arch::aarch64::{delay_ms, mmu};
+use crate::arch::aarch64::{delay_ms, dtb, mmu};
 use crate::drivers::mmio_va;
 
 // ── addresses (RASPPI == 4) ──────────────────────────────────────────────
@@ -276,7 +276,7 @@ fn map_conf(bus: u32, slot: u32, func: u32, off: u64) -> u64 {
 
 /// The RC bring-up sequence (`pcie_setup`, RASPPI==4). Returns false on link
 /// failure.
-fn pcie_setup() -> bool {
+fn pcie_setup(rc_bar2_offset: u64, rc_bar2_size: u64) -> bool {
     bridge_sw_init(1); // reset bridge
     perst_set(1); // assert fundamental reset
     delay_ms(1); // ~100-200us
@@ -312,9 +312,8 @@ fn pcie_setup() -> bool {
         BURST_SIZE_128,
     );
 
-    // Inbound window RC_BAR2: cover low DMA region (offset 0).
-    let rc_bar2_offset: u64 = 0;
-    let rc_bar2_size = DMA_WINDOW_SIZE;
+    // Inbound window RC_BAR2: the PCIe-bus offset + size come from the DTB
+    // `dma-ranges` (a wrong offset HSE's the VL805 on its first DMA).
     let lo = (rc_bar2_offset as u32 & !RC_BAR_SIZE_MASK)
         | ((encode_ibar_size(rc_bar2_size) << RC_BAR_SIZE_SHIFT) & RC_BAR_SIZE_MASK);
     wr32(reg(PCIE_MISC_RC_BAR2_CONFIG_LO), lo);
@@ -323,6 +322,15 @@ fn pcie_setup() -> bool {
         PCIE_MISC_MISC_CTRL,
         MISC_SCB0_SIZE_MASK,
         MISC_SCB0_SIZE_SHIFT,
+        ilog2(rc_bar2_size) - 15,
+    );
+    crate::kprintln!(
+        "[pcie] RC_BAR2 readback: lo={:#x} hi={:#x} misc_ctrl={:#x} (wrote lo={:#x} hi={:#x} scb0={})",
+        rd32(reg(PCIE_MISC_RC_BAR2_CONFIG_LO)),
+        rd32(reg(PCIE_MISC_RC_BAR2_CONFIG_HI)),
+        rd32(reg(PCIE_MISC_MISC_CTRL)),
+        lo,
+        (rc_bar2_offset >> 32) as u32,
         ilog2(rc_bar2_size) - 15,
     );
 
@@ -446,11 +454,35 @@ fn enable_device() -> bool {
 /// Bring up the PCIe RC, load the VL805 firmware, enumerate the VL805 and
 /// return the CPU base its xHCI is reachable at (`0x6_0000_0000`, mapped
 /// high-half). `None` on any failure. Mirrors `xhcidevice.cpp` ordering.
-pub fn find_xhci(_dtb_phys: usize) -> Option<u64> {
+pub fn find_xhci(dtb_phys: usize) -> Option<u64> {
     // The outbound window is a >4 GiB address → high L2 device mapping.
     unsafe { mmu::map_device_high(OUT_CPU, 0x20_0000) }; // 2 MiB covers the xHCI BAR
 
-    if !pcie_setup() {
+    // Inbound DMA window (RC_BAR2): the PCIe-bus offset + size from the DTB
+    // `dma-ranges`. A wrong offset makes the VL805 HSE on its first DMA. Fall
+    // back to the identity low-1-GiB window if the DTB lacks dma-ranges.
+    let (rc_offset, rc_size) = match unsafe { dtb::parse_pcie_dma_ranges(dtb_phys) } {
+        Some(r) => {
+            crate::kprintln!(
+                "[pcie] dma-ranges: pcie={:#x} cpu={:#x} size={:#x}",
+                r.pcie_addr,
+                r.cpu_addr,
+                r.size
+            );
+            // RC_BAR2 size must be a power of two — round the DTB size up.
+            (r.pcie_addr, 1u64 << ilog2(r.size.max(1)))
+        }
+        None => {
+            crate::kprintln!("[pcie] dma-ranges absent in DTB; identity 1 GiB window");
+            (0, DMA_WINDOW_SIZE)
+        }
+    };
+
+    // The same PCIe-bus offset applies to every DMA address we hand the xHCI
+    // controller (its inbound window is based at `rc_offset`, not 0).
+    super::xhci::set_dma_bus_offset(rc_offset);
+
+    if !pcie_setup(rc_offset, rc_size) {
         return None;
     }
     if !enable_bridge() {
