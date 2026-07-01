@@ -186,3 +186,38 @@ pub fn tsettime(args: &TrapArgs) -> Long {
     BASE_SECS.store(target.wrapping_sub(monotonic()), Ordering::Release);
     E_OK
 }
+
+/// `Settime` (XBIOS 0x16) — set the whole wall clock from a packed LONG
+/// (`date << 16 | time`, the Tgetdate/Tgettime encoding). See
+/// `docs/api/xbios/16-settime.md`.
+///
+/// On the NewTOS profile no RTC backend is enabled, so — like EmuTOS's
+/// last-resort path — this only updates the cached wall clock (the same
+/// `BASE_SECS` epoch GEMDOS `Tgetdate`/`Tgettime` read); nothing persists
+/// across boots. Settime itself does no validation (spec edge case 1);
+/// NewTOS's seconds-based clock cannot represent an impossible calendar
+/// date the way EmuTOS's raw WORD cache can, so an out-of-range month/day
+/// is clamped to the nearest valid date — a documented deviation. The
+/// unvalidated hour/minute/second fields pass through unchanged (they
+/// only roll the clock forward, never panic).
+pub fn xbios_settime(packed: u32) {
+    let date_w = (packed >> 16) as u16;
+    let time_w = packed as u16;
+    let year = 1980 + (date_w >> 9) as u32;
+    let month = (((date_w >> 5) & 0x0F) as u32).clamp(1, 12);
+    let day = ((date_w & 0x1F) as u32).clamp(1, days_in_month(year, month));
+    let hour = (time_w >> 11) as u32; // hour/min/sec not validated (EmuTOS parity)
+    let min = ((time_w >> 5) & 0x3F) as u32;
+    let sec = ((time_w & 0x1F) as u32) * 2; // stored as second/2
+    let target = compose(year, month, day, hour, min, sec);
+    BASE_SECS.store(target.wrapping_sub(monotonic()), Ordering::Release);
+}
+
+/// `Gettime` (XBIOS 0x17) — the current wall clock as a packed LONG
+/// (`date << 16 | time`). See `docs/api/xbios/17-gettime.md`. With no RTC
+/// on the NewTOS profile this reads the same cached clock as GEMDOS
+/// (EmuTOS's `MAKE_ULONG(current_date, current_time)` fallback path).
+pub fn xbios_gettime() -> u32 {
+    let dt = decompose(now_secs());
+    ((pack_date(&dt) as u32) << 16) | pack_time(&dt) as u32
+}

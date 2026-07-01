@@ -23,6 +23,8 @@ const SETSCREEN: u16 = 0x05;
 const SETPALETTE: u16 = 0x06;
 const SETCOLOR: u16 = 0x07;
 const RANDOM: u16 = 0x11; // system group (Phase 11)
+const SETTIME: u16 = 0x16; // clock group — shares the GEMDOS wall clock
+const GETTIME: u16 = 0x17;
 const KBDVBASE: u16 = 0x22;
 const VSYNC: u16 = 0x25;
 
@@ -36,6 +38,14 @@ pub fn dispatch(args: &TrapArgs) -> i64 {
         SETPALETTE => screen::setpalette(args),
         SETCOLOR => screen::setcolor(args),
         RANDOM => system::random(),
+        // Clock group: Settime/Gettime read/write the same wall clock as
+        // GEMDOS Tgetdate/Tgettime (no separate RTC on NewTOS). Settime
+        // returns void → 0; Gettime returns the packed LONG (zero-extended).
+        SETTIME => {
+            crate::gemdos::time::xbios_settime(args.arg_i32(0) as u32);
+            0
+        }
+        GETTIME => crate::gemdos::time::xbios_gettime() as i64,
         KBDVBASE => system::kbdvbase(),
         VSYNC => system::vsync(),
         _ => EINVFN as i64,

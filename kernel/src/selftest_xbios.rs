@@ -56,6 +56,19 @@ pub fn run() {
     vsync();
     vsync();
     kprintln!("[xbios] Vsync x2 returned (did not hang) OK");
+
+    // Settime/Gettime clock round-trip (shares the GEMDOS wall clock). Set
+    // 2021-06-15 14:30:20 as packed date<<16 | time, read it straight back.
+    let date = (((2021 - 1980) << 9) | (6 << 5) | 15) as u32; // 0x52CF
+    let time = ((14 << 11) | (30 << 5) | (20 / 2)) as u32; // 0x73CA
+    let packed = (date << 16) | time;
+    settime(packed as i64);
+    let got = gettime() as u32;
+    kprintln!(
+        "[xbios] Settime(2021-06-15 14:30:20) -> Gettime=0x{:08x} (expect 0x{:08x}) {}",
+        got, packed,
+        if got == packed { "OK" } else { "FAIL" },
+    );
 }
 
 /// XBIOS `Random` (0x11): no args.
@@ -63,6 +76,22 @@ fn random() -> i64 {
     let r: i64;
     // SAFETY: svc #14, XBIOS Random ABI.
     unsafe { core::arch::asm!("svc #14", in("x8") 0x11u64, out("x0") r, options(nostack)); }
+    r
+}
+
+/// XBIOS `Settime` (0x16): x0=packed datetime (date<<16 | time). Void.
+fn settime(packed: i64) {
+    // SAFETY: svc #14, XBIOS Settime ABI.
+    unsafe {
+        core::arch::asm!("svc #14", in("x8") 0x16u64, in("x0") packed as u64, lateout("x0") _, options(nostack));
+    }
+}
+
+/// XBIOS `Gettime` (0x17): no args. Returns the packed datetime.
+fn gettime() -> i64 {
+    let r: i64;
+    // SAFETY: svc #14, XBIOS Gettime ABI.
+    unsafe { core::arch::asm!("svc #14", in("x8") 0x17u64, out("x0") r, options(nostack)); }
     r
 }
 
