@@ -28,3 +28,6 @@ Cargo.lock.bak
 
 # User-program build dirs (each programs/* is its own workspace)
 programs/*/target/
+
+# graphify knowledge-graph output (generated, rebuild with `graphify update .`)
+graphify-out/
