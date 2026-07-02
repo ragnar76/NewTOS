@@ -35,7 +35,6 @@ const FL3DACT: u16 = 0x0600;
 const FL3DBAK: u16 = 0x0400;
 
 const WHITE: u8 = 0;
-const BLACK: u8 = 1;
 
 // ── Desktop configuration (g_patcol / newdesk.inf) ──────────────────────
 //
@@ -1796,30 +1795,6 @@ fn sort_entries(ents: &mut [tos_api::bdos::fs::find::DirInfo]) {
     });
 }
 
-/// Draw `v` as a right-aligned decimal ending at `right_x`, in `fg`.
-fn draw_u32_right_fg(backend: &dyn RasterBackend, right_x: i16, y: i16, mut v: u32, fg: u8, clip: ClipRect) {
-    let mut digits = [0u8; 10];
-    let mut k = 0;
-    if v == 0 {
-        digits[0] = b'0';
-        k = 1;
-    }
-    while v > 0 && k < digits.len() {
-        digits[k] = b'0' + (v % 10) as u8;
-        v /= 10;
-        k += 1;
-    }
-    let mut x = right_x - 8;
-    for &d in &digits[..k] {
-        backend.draw_glyph(x, y, tos_api::vdi::font::glyph(d as u16), fg, clip);
-        x -= 8;
-    }
-}
-
-/// Draw `v` as a right-aligned black decimal ending at `right_x`.
-fn draw_u32_right(backend: &dyn RasterBackend, right_x: i16, y: i16, v: u32, clip: ClipRect) {
-    draw_u32_right_fg(backend, right_x, y, v, BLACK, clip);
-}
 
 /// Directory view mode (View menu): 0 = text rows, 1 = icon grid.
 static VIEW_MODE: core::sync::atomic::AtomicU8 = core::sync::atomic::AtomicU8::new(0);
@@ -1931,40 +1906,74 @@ fn row_metrics(icons: bool, n: usize, work: (i16, i16, i16, i16)) -> (i16, i16) 
 
 /// Text view: one row per entry — name on the left, size (or `<DIR>`)
 /// right-aligned; the selected row is inverted.
+/// Text view: build an AES object tree — one `G_STRING` child per visible
+/// row, its text a formatted "name … right-aligned size / `<DIR>`" string —
+/// and render it via `objc_draw`. Selection inverts the row (`OB_SELECTED`).
 fn draw_dir_text(
-    backend: &dyn RasterBackend, handle: i16, work: (i16, i16, i16, i16),
-    ents: &[tos_api::bdos::fs::find::DirInfo], scroll: i16, clip: ClipRect,
+    _backend: &dyn RasterBackend, handle: i16, work: (i16, i16, i16, i16),
+    ents: &[tos_api::bdos::fs::find::DirInfo], scroll: i16, _clip: ClipRect,
 ) {
     let (wx, wy, ww, wh) = work;
     let rows = (wh / 16).max(1) as usize;
     let start = scroll as usize; // first visible entry
-    for (i, e) in ents.iter().enumerate().skip(start).take(rows) {
-        let ny = wy + 4 + (i - start) as i16 * 16;
-        let sel = is_selected(handle, i);
-        let ink = if sel {
-            backend.fill_rect(wx, ny - 2, ww, 16, BLACK, clip);
-            WHITE
+    let cols = (((ww - 16) / 8).clamp(1, 79)) as usize; // chars per row
+
+    // SAFETY: single-CPU desktop; the tree buffers are used only here.
+    let obj = unsafe { &mut *DIRTREE.obj.get() };
+    let txt = unsafe { &mut *DIRTREE.txt.get() };
+
+    let mut n = 0usize;
+    for (vis, e) in ents.iter().enumerate().skip(start).take(rows) {
+        if n >= DIR_MAX {
+            break;
+        }
+        // Format the row: name on the left, size (or "<DIR>") right-aligned.
+        let mut sz = [0u8; 12];
+        let sstr: &[u8] = if e.attrib & FA_SUBDIR != 0 {
+            b"<DIR>"
         } else {
-            BLACK
+            fmt_u32(e.size, &mut sz)
         };
-        let end = e.name.iter().position(|&b| b == 0).unwrap_or(14);
-        let mut cx = wx + 8;
-        for &c in &e.name[..end] {
-            backend.draw_glyph(cx, ny, tos_api::vdi::font::glyph(c as u16), ink, clip);
-            cx += 8;
-        }
-        if e.attrib & FA_SUBDIR != 0 {
-            let mut x = wx + ww - 8 - 5 * 8;
-            for &c in b"<DIR>" {
-                backend.draw_glyph(x, ny, tos_api::vdi::font::glyph(c as u16), ink, clip);
-                x += 8;
+        let name_end = e.name.iter().position(|&b| b == 0).unwrap_or(14);
+        let name_cap = cols.saturating_sub(sstr.len() + 1).min(name_end);
+        let row = &mut txt[n];
+        *row = [b' '; 80];
+        row[..name_cap].copy_from_slice(&e.name[..name_cap]);
+        let sstart = cols.saturating_sub(sstr.len());
+        for (i, &c) in sstr.iter().enumerate() {
+            if sstart + i < 80 {
+                row[sstart + i] = c;
             }
-        } else if sel {
-            draw_u32_right_fg(backend, wx + ww - 8, ny, e.size, WHITE, clip);
-        } else {
-            draw_u32_right(backend, wx + ww - 8, ny, e.size, clip);
         }
+        row[cols.min(79)] = 0; // NUL-terminate at the row width
+
+        obj[n + 1] = Object {
+            ob_next: 0, ob_head: -1, ob_tail: -1,
+            ob_type: G_STRING, ob_flags: 0,
+            ob_state: if is_selected(handle, vis) { OB_SELECTED } else { 0 },
+            ob_spec: row.as_ptr() as u64,
+            ob_x: 8, ob_y: 4 + n as i16 * 16, ob_width: ww - 16, ob_height: 16,
+        };
+        n += 1;
     }
+    for i in 0..n {
+        obj[i + 1].ob_next = if i + 1 == n { 0 } else { (i + 2) as i16 };
+    }
+    if n > 0 {
+        obj[n].ob_flags |= LASTOB;
+    }
+    obj[0] = Object {
+        ob_next: -1, ob_head: if n > 0 { 1 } else { -1 }, ob_tail: n as i16,
+        ob_type: G_IBOX, ob_flags: 0, ob_state: 0, ob_spec: 0,
+        ob_x: wx, ob_y: wy, ob_width: ww, ob_height: wh,
+    };
+
+    let mut a = Aes::new();
+    a.addrin[0] = obj.as_ptr() as i64;
+    a.intin[0] = 0;
+    a.intin[1] = 8;
+    a.intin[2] = wx; a.intin[3] = wy; a.intin[4] = ww; a.intin[5] = wh;
+    a.call(42, 6, 1); // objc_draw
 }
 
 /// Icon cell size (width/height in pixels), shared by the icon view and
@@ -1999,13 +2008,35 @@ struct DirTree {
     obj: UnsafeCell<[Object; DIR_MAX + 1]>,
     ib: UnsafeCell<[IconBlk; DIR_MAX]>,
     nm: UnsafeCell<[[u8; 16]; DIR_MAX]>,
+    /// Per-row formatted strings for the text view (name + right-aligned
+    /// size); the `G_STRING` children point at these.
+    txt: UnsafeCell<[[u8; 80]; DIR_MAX]>,
 }
 unsafe impl Sync for DirTree {}
 static DIRTREE: DirTree = DirTree {
     obj: UnsafeCell::new([ZERO_OBJ; DIR_MAX + 1]),
     ib: UnsafeCell::new([ZERO_IB; DIR_MAX]),
     nm: UnsafeCell::new([[0; 16]; DIR_MAX]),
+    txt: UnsafeCell::new([[0; 80]; DIR_MAX]),
 };
+
+/// Format `v` as decimal digits into `buf`, returning the written slice.
+fn fmt_u32(mut v: u32, buf: &mut [u8; 12]) -> &[u8] {
+    if v == 0 {
+        buf[0] = b'0';
+        return &buf[..1];
+    }
+    let mut tmp = [0u8; 12];
+    let mut i = 12;
+    while v > 0 {
+        i -= 1;
+        tmp[i] = b'0' + (v % 10) as u8;
+        v /= 10;
+    }
+    let len = 12 - i;
+    buf[..len].copy_from_slice(&tmp[i..]);
+    &buf[..len]
+}
 
 /// Icon view: build an AES object tree (`G_IBOX` work-area container + one
 /// `G_ICON` child per visible entry) and render it via `objc_draw`, so the
