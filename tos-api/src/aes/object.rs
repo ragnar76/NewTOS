@@ -231,6 +231,188 @@ pub fn objc_offset(pb: &Aespb) {
     pb.set_ret(1);
 }
 
+/// `objc_add` (40) — link object `child` (`int_in[1]`) as the last child of
+/// `parent` (`int_in[0]`). `addr_in[0]` = tree. EmuTOS `ob_add`.
+pub fn objc_add(pb: &Aespb) {
+    let tree = pb.addrin(0) as *mut Object;
+    let parent = pb.intin(0);
+    let child = pb.intin(1);
+    if tree.is_null() || parent < 0 || child < 0 {
+        pb.set_ret(0);
+        return;
+    }
+    // SAFETY: valid tree (GEM contract).
+    unsafe { ob_add(tree, parent, child) };
+    pb.set_ret(1);
+}
+
+/// `objc_delete` (41) — unlink object `int_in[0]` from its parent's child
+/// list (the ROOT cannot be deleted). `addr_in[0]` = tree. EmuTOS `ob_delete`.
+pub fn objc_delete(pb: &Aespb) {
+    let tree = pb.addrin(0) as *mut Object;
+    let obj = pb.intin(0);
+    if tree.is_null() || obj < 0 {
+        pb.set_ret(0);
+        return;
+    }
+    // SAFETY: valid tree (GEM contract).
+    let ok = unsafe { ob_delete(tree, obj) };
+    pb.set_ret(ok);
+}
+
+/// `objc_order` (45) — move object `int_in[0]` to sibling position
+/// `int_in[1]` (0 = front/head, -1 = back/tail). `addr_in[0]` = tree.
+/// EmuTOS `ob_order`.
+pub fn objc_order(pb: &Aespb) {
+    let tree = pb.addrin(0) as *mut Object;
+    let obj = pb.intin(0);
+    let newpos = pb.intin(1);
+    if tree.is_null() || obj < 0 {
+        pb.set_ret(0);
+        return;
+    }
+    // SAFETY: valid tree (GEM contract).
+    let ok = unsafe { ob_order(tree, obj, newpos) };
+    pb.set_ret(if ok { 1 } else { 0 });
+}
+
+/// Link `child` as the last child of `parent` (EmuTOS `ob_add`).
+///
+/// # Safety
+/// `tree` is a valid OBJECT array; `parent`/`child` are valid indices.
+unsafe fn ob_add(tree: *mut Object, parent: i16, child: i16) {
+    if parent == NIL || child == NIL {
+        return;
+    }
+    // SAFETY: caller guarantees a valid tree; each field write touches one
+    // node, so no overlapping `&mut` is formed.
+    unsafe {
+        (*tree.add(child as usize)).ob_next = parent; // last sibling → parent
+        let lastkid = (*tree.add(parent as usize)).ob_tail;
+        if lastkid == NIL {
+            (*tree.add(parent as usize)).ob_head = child; // first child
+        } else {
+            (*tree.add(lastkid as usize)).ob_next = child; // append to the end
+        }
+        (*tree.add(parent as usize)).ob_tail = child;
+    }
+}
+
+/// Unlink `obj` from its parent's child list (EmuTOS `ob_delete`). Returns 1
+/// on success, 0 for the ROOT or a not-found object.
+///
+/// # Safety
+/// `tree` is a valid OBJECT array.
+unsafe fn ob_delete(tree: *mut Object, obj: i16) -> i16 {
+    if obj == 0 {
+        return 0; // can't delete the ROOT
+    }
+    // SAFETY: caller guarantees a valid tree.
+    unsafe {
+        let mut nextsib = (*tree.add(obj as usize)).ob_next;
+        let parent = parent_of(tree, obj);
+        if parent == NIL {
+            return 0;
+        }
+        if (*tree.add(parent as usize)).ob_head == obj {
+            if (*tree.add(parent as usize)).ob_tail == obj {
+                nextsib = NIL; // the only child — clear head + tail
+                (*tree.add(parent as usize)).ob_tail = NIL;
+            }
+            (*tree.add(parent as usize)).ob_head = nextsib;
+        } else {
+            let prev = get_prev(tree, parent, obj);
+            if prev == NIL {
+                return 0; // not in this chain
+            }
+            (*tree.add(prev as usize)).ob_next = nextsib;
+            if (*tree.add(parent as usize)).ob_tail == obj {
+                (*tree.add(parent as usize)).ob_tail = prev;
+            }
+        }
+    }
+    1
+}
+
+/// Move `mov_obj` to sibling position `new_pos` (0 = head, NIL = tail) among
+/// its siblings (EmuTOS `ob_order`). Defensive over the reference: a parent
+/// left empty after the delete, or a `new_pos` past the end, is handled
+/// without dereferencing NIL (which the reference would).
+///
+/// # Safety
+/// `tree` is a valid OBJECT array.
+unsafe fn ob_order(tree: *mut Object, mov_obj: i16, new_pos: i16) -> bool {
+    if mov_obj == 0 {
+        return false; // the ROOT has no siblings
+    }
+    // SAFETY: caller guarantees a valid tree.
+    unsafe {
+        let parent = parent_of(tree, mov_obj);
+        if parent == NIL {
+            return false;
+        }
+        ob_delete(tree, mov_obj);
+        let head = (*tree.add(parent as usize)).ob_head;
+        if head == NIL {
+            // parent is now empty → mov_obj becomes its sole child
+            (*tree.add(mov_obj as usize)).ob_next = parent;
+            (*tree.add(parent as usize)).ob_head = mov_obj;
+            (*tree.add(parent as usize)).ob_tail = mov_obj;
+            return true;
+        }
+        let mut chg_obj = head;
+        if new_pos == 0 {
+            (*tree.add(mov_obj as usize)).ob_next = chg_obj;
+            (*tree.add(parent as usize)).ob_head = mov_obj;
+        } else {
+            if new_pos == NIL {
+                chg_obj = (*tree.add(parent as usize)).ob_tail;
+            } else {
+                let mut ii = 1;
+                while ii < new_pos {
+                    let n = (*tree.add(chg_obj as usize)).ob_next;
+                    if n == parent || n == NIL {
+                        break; // clamp to the end of the sibling list
+                    }
+                    chg_obj = n;
+                    ii += 1;
+                }
+            }
+            let cn = (*tree.add(chg_obj as usize)).ob_next;
+            (*tree.add(mov_obj as usize)).ob_next = cn;
+            (*tree.add(chg_obj as usize)).ob_next = mov_obj;
+        }
+        if (*tree.add(mov_obj as usize)).ob_next == parent {
+            (*tree.add(parent as usize)).ob_tail = mov_obj;
+        }
+    }
+    true
+}
+
+/// Previous sibling of `obj` under `parent`, or `NIL` (EmuTOS `get_prev`).
+///
+/// # Safety
+/// `tree` is a valid OBJECT array.
+unsafe fn get_prev(tree: *const Object, parent: i16, obj: i16) -> i16 {
+    // SAFETY: caller guarantees a valid tree.
+    unsafe {
+        let mut pobj = (*tree.add(parent as usize)).ob_head;
+        if pobj == obj {
+            return NIL;
+        }
+        loop {
+            let nobj = (*tree.add(pobj as usize)).ob_next;
+            if nobj == obj {
+                return pobj;
+            }
+            if nobj == parent || nobj == NIL {
+                return NIL;
+            }
+            pobj = nobj;
+        }
+    }
+}
+
 /// `objc_change` (47) — set `obj`'s state to `OB_NEWSTATE` (`int_in[6]`)
 /// and, if `OB_REDRAW` (`int_in[7]`) is set, redraw that object.
 /// `addr_in[0]` = tree.
