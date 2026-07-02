@@ -26,7 +26,19 @@ use crate::kprintln;
 ///
 /// The desktop / boot caller repaints the screen afterwards (the program
 /// owned it while running).
+/// Set the mouse cursor to the busy hourglass (`on`) or back to the arrow,
+/// so the desktop shows the wait cursor while a program loads from disk
+/// (EmuTOS `set_mouse_to_hourglass`). No-op when there is no display.
+fn busy_cursor(on: bool) {
+    if let Some(b) = tos_api::host::host().and_then(|h| h.raster()) {
+        // 2 = HOURGLASS, 0 = ARROW (AES preset shape numbers).
+        tos_api::vdi::mouse::set_preset(if on { 2 } else { 0 }, b);
+    }
+}
+
 pub fn run_program(path: &[u8]) -> bool {
+    // Busy cursor while loading from disk (the desktop is still on screen).
+    busy_cursor(true);
     // Load from the registry or the FAT16 file system into a fresh slot.
     // SAFETY: single-CPU boot/desktop context; the BDOS is not concurrently
     // locked, and the returned `LoadedChild` borrows nothing past this call.
@@ -34,9 +46,11 @@ pub fn run_program(path: &[u8]) -> bool {
         Ok(c) => c,
         Err(e) => {
             kprintln!("[launch] load failed: {:?}", e);
+            busy_cursor(false);
             return false;
         }
     };
+    busy_cursor(false);
 
     let s = match slot(child.slot) {
         Some(s) => s,

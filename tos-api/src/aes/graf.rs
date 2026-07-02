@@ -278,7 +278,8 @@ pub fn graf_handle(pb: &Aespb) {
 }
 
 /// `graf_mouse` (78) — set the mouse cursor: `int_in[0]` = a preset shape
-/// (kept as the arrow), or `M_OFF`/`M_ON` to hide/show it.
+/// (ARROW 0 … OUTLN_CROSS 7), `USER_DEF` (255) with an `MFORM` in
+/// `addr_in[0]`, or `M_OFF`/`M_ON` to hide/show it.
 pub fn graf_mouse(pb: &Aespb) {
     let number = pb.intin(0);
     if let Some(backend) = host().and_then(|h| h.raster()) {
@@ -288,10 +289,35 @@ pub fn graf_mouse(pb: &Aespb) {
                 let (x, y) = crate::vdi::mouse_position();
                 crate::vdi::mouse::display_at(x, y, backend);
             }
-            _ => {} // preset/user shapes: single arrow cursor for now
+            USER_DEF => set_user_form(pb, backend),
+            0..=7 => crate::vdi::mouse::set_preset(number, backend),
+            _ => {} // undefined shape number: leave the cursor unchanged
         }
     }
     pb.set_ret(1);
+}
+
+/// USER_DEF cursor form number (`aesdefs.h`).
+const USER_DEF: i16 = 255;
+
+/// Install a caller-supplied `MFORM` from `addr_in[0]` (EmuTOS `gsx_mfset`):
+/// 37 native WORDs — hotspot x/y, planes, fg/bg colour, 16 mask rows, 16
+/// data rows.
+fn set_user_form(pb: &Aespb, backend: &dyn RasterBackend) {
+    let p = pb.addrin(0);
+    if p == 0 {
+        return;
+    }
+    // SAFETY: GEM contract — addr_in[0] points at a 37-WORD MFORM.
+    let w = p as *const i16;
+    let word = |i: usize| unsafe { w.add(i).read() };
+    let mut mask = [0u16; 16];
+    let mut data = [0u16; 16];
+    for i in 0..16 {
+        mask[i] = word(5 + i) as u16;
+        data[i] = word(21 + i) as u16;
+    }
+    crate::vdi::mouse::set_form(word(0), word(1), &mask, &data, backend);
 }
 
 /// `graf_mkstate` (79) — poll the instantaneous mouse position
