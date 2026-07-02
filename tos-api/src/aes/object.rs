@@ -852,11 +852,21 @@ fn draw_tree(
 
 /// Render a single object by type at absolute `(x, y)` (Batch-1 types).
 fn just_draw(ob: &Object, x: i16, y: i16, clip: ClipRect, backend: &dyn RasterBackend) {
-    let w = ob.ob_width;
-    let h = ob.ob_height;
     let selected = ob.ob_state & SELECTED != 0;
     let disabled = ob.ob_state & DISABLED != 0;
     let d3 = ob.ob_flags & FL3DMASK;
+
+    // EmuTOS `just_draw` grows a 3D object by ADJ3DSTD (2px) on every side, so
+    // its bevel sits in the margin *outside* the nominal rectangle instead of
+    // eating the object's own edge (which shrank every 3D button/panel by 4px
+    // and let the bevel overlap the border/text). Grow here, then everything
+    // below — fill, border, text, bevel, DISABLED dither, DEFAULT frame —
+    // draws against the grown rectangle.
+    let (x, y, w, h) = if d3 != 0 {
+        (x - ADJ3DSTD, y - ADJ3DSTD, ob.ob_width + 2 * ADJ3DSTD, ob.ob_height + 2 * ADJ3DSTD)
+    } else {
+        (x, y, ob.ob_width, ob.ob_height)
+    };
 
     // Black-on-white look. SELECTED inverts fill/text. A 3D object keeps a
     // grey face (the pressed state shows via the bevel, drawn after).
