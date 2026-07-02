@@ -138,6 +138,7 @@ pub unsafe fn dispatch(aespb_ptr: u64) {
         78 => graf::graf_mouse(&pb),
         79 => graf::graf_mkstate(&pb),
         30 => menu::menu_bar(&pb),
+        35 => menu::menu_register(&pb),
         31 => menu::menu_icheck(&pb),
         32 => menu::menu_ienable(&pb),
         33 => menu::menu_tnormal(&pb),

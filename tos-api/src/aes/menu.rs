@@ -382,6 +382,51 @@ pub fn menu_text(pb: &Aespb) {
     pb.set_ret(1);
 }
 
+/// Desk-accessory registry (EmuTOS `mn_register`). NewTOS records the
+/// registration — the title pointer + owning application id — and hands back
+/// a stable slot id. Wiring the accessory into the Desk menu's drop-down and
+/// posting `AC_OPEN` when it is picked is a documented follow-up (it needs
+/// the desk-menu accessory convention); the registration is real, so a
+/// caller's `menu_register` succeeds and its slot id is stable.
+const NUM_ACCS: usize = 6;
+struct Accs {
+    title: UnsafeCell<[u64; NUM_ACCS]>, // title pointer per slot (0 = free)
+    pid: UnsafeCell<[i16; NUM_ACCS]>,
+}
+// SAFETY: single boot CPU only touches the AES.
+unsafe impl Sync for Accs {}
+static ACCS: Accs = Accs {
+    title: UnsafeCell::new([0; NUM_ACCS]),
+    pid: UnsafeCell::new([0; NUM_ACCS]),
+};
+
+/// `menu_register` (35) — register a desk accessory. `int_in[0]` = the
+/// application id, `addr_in[0]` = its menu-title string. Returns the
+/// accessory's menu id (`0..NUM_ACCS`) or `-1` when the id is invalid or no
+/// slot is free (EmuTOS `mn_register`).
+pub fn menu_register(pb: &Aespb) {
+    let pid = pb.intin(0);
+    let pstr = pb.addrin(0);
+    if pid < 0 {
+        pb.set_ret(-1);
+        return;
+    }
+    // SAFETY: single-CPU AES; exclusive owner of the registry.
+    unsafe {
+        let title = &mut *ACCS.title.get();
+        let apid = &mut *ACCS.pid.get();
+        for slot in 0..NUM_ACCS {
+            if title[slot] == 0 {
+                title[slot] = pstr;
+                apid[slot] = pid;
+                pb.set_ret(slot as i16);
+                return;
+            }
+        }
+    }
+    pb.set_ret(-1); // no free accessory slot
+}
+
 /// Shared helper: set/clear one `ob_state` bit on `obj` and redraw it
 /// (EmuTOS `do_chg`).
 fn do_chg(pb: &Aespb, obj: i16, stateflag: u16, set: bool) {
