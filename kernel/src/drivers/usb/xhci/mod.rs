@@ -725,84 +725,34 @@ impl Xhci {
             e.set_average_trb_length(8);
         }
 
-        // DIAGNOSTIC: dump the raw Input Context our cast produced. Expect
-        // ctrl add-flags at [1]=0x3 (A0|A1), the slot context at [8..16]
-        // (dw0 ~0x08300000: entries=1, speed=3), EP0 at [16..24] (dw2 =
-        // tr_dequeue|DCS). If the slot values land at the wrong offset the
-        // `[u32]` → Input32Byte cast (non-repr(C) crate structs) is the bug.
-        unsafe {
-            let inp = &(*(&raw const DEV))[di].input;
-            kprintln!(
-                "[usb] addr_dev input: ctrl[1]={:08x} slot[8..12]={:08x} {:08x} {:08x} {:08x} ep0[16..20]={:08x} {:08x} {:08x} {:08x}",
-                inp[1], inp[8], inp[9], inp[10], inp[11], inp[16], inp[17], inp[18], inp[19]
-            );
-        }
-
-        // DCBAA[slot] → the (controller-written) Device Context.
+        // DCBAA[slot] → the (controller-written) Device Context. The Device
+        // Context is 64-byte aligned (see `DevDma`); a misaligned base makes the
+        // VL805 write it to the masked 64-byte address, so the slot state reads
+        // back wrong and later Configure/Evaluate Context fail.
         let dma = unsafe { &mut *(&raw mut DMA) };
         dma.dcbaa.0[slot as usize] = dma_addr((&raw const dev.device) as u64);
 
         let input_pa = dma_addr((&raw const dev.input) as u64);
-        // DIAGNOSTIC: does the Input Context Pointer point at input[0] (correct)
-        // or accidentally input[8] (would put Slot where EP0 is)?
-        unsafe {
-            kprintln!(
-                "[usb] addr_dev input_pa={:#x} &input[0]={:#x} &input[8]={:#x}",
-                input_pa,
-                dma_addr((&raw const (*(&raw const DEV))[di].input[0]) as u64),
-                dma_addr((&raw const (*(&raw const DEV))[di].input[8]) as u64),
-            );
-        }
         let mut cmd = command::AddressDevice::new();
         cmd.set_input_context_pointer(input_pa);
         cmd.set_slot_id(slot);
-        // BSR (Block Set Address Request) MUST be 0 so the controller performs
-        // SET_ADDRESS and moves the slot Default → Addressed. new() zeroes it,
-        // but clear it explicitly so a slot left in Default (EP0 works, but
-        // Configure Endpoint later fails with Context State Error) is ruled out.
+        // BSR (Block Set Address Request) = 0 so the controller performs
+        // SET_ADDRESS and moves the slot Default → Addressed.
         cmd.clear_block_set_address_request();
         let data = command::Allowed::AddressDevice(cmd).into_raw();
         match self.command(data) {
+            Some(cc) if matches!(cc.completion_code(), Ok(event::CompletionCode::Success)) => {
+                // The VL805 needs settling time after Address Device before the
+                // slot is usable for later commands — circle does MsDelay(50).
+                crate::arch::aarch64::delay_ms(50);
+                true
+            }
             Some(cc) => {
-                let ok = matches!(cc.completion_code(), Ok(event::CompletionCode::Success));
-                // Full Device Context dump (CSZ=0 → 32-byte): slot ctx dw0..7 +
-                // EP0 ctx dw0..7. If EP0 (dw8..15) holds our tr_dequeue + a
-                // 64-byte max-packet, the controller writes the DC correctly and
-                // only the slot state is off; if EP0 is garbage too, the VL805
-                // does not mirror the DC to RAM at all.
-                unsafe {
-                    dcache_inval((&raw const (*(&raw const DEV))[di].device) as u64, 64);
-                    let d = &(*(&raw const DEV))[di].device;
-                    kprintln!(
-                        "[usb] address_device slot {} → {:?}; slot[0..8]={:08x} {:08x} {:08x} {:08x} {:08x} {:08x} {:08x} {:08x}",
-                        slot, cc.completion_code(),
-                        d[0], d[1], d[2], d[3], d[4], d[5], d[6], d[7]
-                    );
-                    kprintln!(
-                        "[usb]   ep0[8..16]={:08x} {:08x} {:08x} {:08x} {:08x} {:08x} {:08x} {:08x} (expect tr_dequeue={:#x})",
-                        d[8], d[9], d[10], d[11], d[12], d[13], d[14], d[15], ep0_pa
-                    );
-                    // VERDICT (device-context 64-byte alignment test): DCBAA[slot]
-                    // must now be 64-aligned (low6==0), and the decoded slot ctx
-                    // must read Addressed (state 2) with sane speed/entries/port.
-                    let dc_pa = dma_addr((&raw const (*(&raw const DEV))[di].device) as u64);
-                    kprintln!(
-                        "[usb]   VERDICT: DCBAA[{}]={:#x} low6={:#x} 64-aligned={}; slot_state={} (2=Addressed) speed={} entries={} root_port={} usb_addr={}",
-                        slot, dc_pa, dc_pa & 0x3f, dc_pa & 0x3f == 0,
-                        (d[3] >> 27) & 0x1f, (d[0] >> 20) & 0xf, (d[0] >> 27) & 0x1f,
-                        (d[1] >> 16) & 0xff, d[3] & 0xff
-                    );
-                }
-                if ok {
-                    // The VL805 needs settling time after Address Device before
-                    // the slot is fully usable for later commands — circle does
-                    // CTimer::MsDelay(50) here.
-                    crate::arch::aarch64::delay_ms(50);
-                }
-                ok
+                kprintln!("[usb] address_device slot {} → {:?}", slot, cc.completion_code());
+                false
             }
             None => {
-                kprintln!("[usb] address_device: no completion");
+                kprintln!("[usb] address_device slot {}: no completion", slot);
                 false
             }
         }
