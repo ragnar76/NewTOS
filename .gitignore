@@ -31,3 +31,6 @@ programs/*/target/
 
 # graphify knowledge-graph output (generated, rebuild with `graphify update .`)
 graphify-out/
+
+# Local SD-card backup (RPi firmware + game ROM) — not for the public repo
+sd-card-backup-*/
