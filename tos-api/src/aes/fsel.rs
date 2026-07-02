@@ -555,8 +555,8 @@ fn modal(tree: *mut Object, backend: &dyn RasterBackend) -> i16 {
 
     loop {
         // Keyboard: route to the focused editable field.
-        if let Some(c) = h.console_try_read() {
-            match c {
+        if let Some(w) = h.console_try_read_key() {
+            match (w & 0xff) as u8 {
                 b'\r' | b'\n' => {
                     // Enter: re-list if the path was edited, else confirm.
                     if path_differs(&listed) {
@@ -572,7 +572,8 @@ fn modal(tree: *mut Object, backend: &dyn RasterBackend) -> i16 {
                     idx = object::edit_field(tp, focus, 0, 0, ED_INIT);
                 }
                 _ => {
-                    idx = object::edit_field(tp, focus, c as i16, idx, ED_CHAR);
+                    // Whole key word (scancode << 8 | ascii) → arrows move the caret.
+                    idx = object::edit_field(tp, focus, w as i16, idx, ED_CHAR);
                 }
             }
         }

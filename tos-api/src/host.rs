@@ -31,6 +31,15 @@ pub trait Host: Sync {
         None
     }
 
+    /// Non-blocking read of one whole **key word** (`scancode << 8 | ascii`)
+    /// for the AES event manager, so it can deliver scancode-only keys
+    /// (arrows, function keys). The default has no scancode source and
+    /// widens the ASCII byte (scancode 0); the kernel host overrides this
+    /// with the IKBD key ring.
+    fn console_try_read_key(&self) -> Option<u16> {
+        self.console_try_read().map(|b| b as u16)
+    }
+
     /// Returns `true` if the console has at least one byte ready.
     fn console_has_input(&self) -> bool {
         false

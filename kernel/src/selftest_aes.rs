@@ -174,7 +174,7 @@ pub fn run_phase13_event_test() {
     let ap_id = intout[0];
 
     // ── evnt_keybd (20): a queued key is returned (ASCII in low byte) ──
-    crate::console::push_rx(b'A');
+    crate::console::push_rx(b'A' as u16);
     control = [0; 8];
     control[0] = 20;
     intout[0] = 0;
@@ -247,7 +247,7 @@ pub fn run_phase13_event_test() {
     check(intout[0] == 1, "evnt_mouse returns 1");
 
     // ── evnt_multi (25): a queued key beats a long timer ──
-    crate::console::push_rx(b'B');
+    crate::console::push_rx(b'B' as u16);
     intin = [0i16; 16];
     control = [0; 8];
     control[0] = 25;

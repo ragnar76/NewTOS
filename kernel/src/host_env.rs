@@ -30,6 +30,10 @@ impl Host for KernelHost {
         crate::console::rx_pop()
     }
 
+    fn console_try_read_key(&self) -> Option<u16> {
+        crate::console::rx_pop_key()
+    }
+
     fn pump_input(&self) {
         // Briefly unmask IRQs so the PL011 RX interrupt can fill the ring
         // (it is masked inside the synchronous SVC handler), and poll the

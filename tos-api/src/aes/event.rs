@@ -180,9 +180,10 @@ pub fn evnt_dclick(pb: &Aespb) {
 /// `RET_CODE` = fired bitmask; `int_out[1..4]` = x, y, buttons, shift;
 /// `int_out[5]` = key (`EV_KRET`); `int_out[6]` = click count (`EV_BRET`).
 ///
-/// Each single `evnt_*` wait is a special case of this loop. Bring-up
-/// model and limitations are the same as the single waits (single
-/// application, ASCII-only keys, single-click button matching).
+/// Each single `evnt_*` wait is a special case of this loop. `EV_KRET`
+/// carries the full `scancode << 8 | ascii` key word (cursor / function
+/// keys included). Bring-up limits: single application, single-click
+/// button matching.
 pub fn evnt_multi(pb: &Aespb) {
     let flags = (pb.intin(0) as u16) & MU_TOSVALID;
 
@@ -228,8 +229,8 @@ pub fn evnt_multi(pb: &Aespb) {
                 }
             }
             if flags & MU_KEYBD != 0 {
-                if let Some(b) = h.console_try_read() {
-                    key = b as i16;
+                if let Some(w) = h.console_try_read_key() {
+                    key = w as i16; // scancode << 8 | ascii (EV_KRET)
                     fired |= MU_KEYBD;
                 }
             }
@@ -284,15 +285,15 @@ pub fn evnt_multi(pb: &Aespb) {
 /// `evnt_keybd` (20) — block until a key is pressed; return it in
 /// `RET_CODE` as `scancode << 8 | ascii`.
 ///
-/// The console input source is the serial/IKBD byte ring, which carries
-/// ASCII only, so the scancode high byte is 0 — the same convention as
-/// the GEMDOS console input ([`docs/api/gemdos/console`]). When a real
-/// IKBD scancode path lands, the high byte fills in here.
+/// The key word comes from the IKBD key ring (`console_try_read_key`): the
+/// low byte is the ASCII character (0 for keys with none), the high byte
+/// the Atari scancode, so cursor / function keys reach the application.
+/// The GEMDOS console path still reads the ASCII byte only.
 pub fn evnt_keybd(pb: &Aespb) {
     let key = match host() {
         Some(h) => loop {
-            if let Some(b) = h.console_try_read() {
-                break b as i16;
+            if let Some(w) = h.console_try_read_key() {
+                break w as i16; // scancode << 8 | ascii
             }
             h.pump_input();
         },

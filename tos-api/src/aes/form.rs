@@ -403,7 +403,8 @@ fn run_form(tree: *mut Object) -> i16 {
 
     let mut prev = crate::vdi::mouse_buttons();
     loop {
-        if let Some(c) = h.console_try_read() {
+        if let Some(w) = h.console_try_read_key() {
+            let c = (w & 0xff) as u8; // ascii (0 for arrow / function keys)
             match c {
                 b'\r' | b'\n' => {
                     if def >= 0 {
@@ -418,8 +419,9 @@ fn run_form(tree: *mut Object) -> i16 {
                     idx = object::edit_field(tp, focus, 0, 0, ED_INIT);
                 }
                 _ if focus >= 0 => {
-                    // Route the key to the focused field.
-                    idx = object::edit_field(tp, focus, c as i16, idx, ED_CHAR);
+                    // Route the whole key word (scancode << 8 | ascii) to the
+                    // field, so the arrow keys move the caret.
+                    idx = object::edit_field(tp, focus, w as i16, idx, ED_CHAR);
                 }
                 _ => {}
             }

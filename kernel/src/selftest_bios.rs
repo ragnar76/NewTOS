@@ -42,7 +42,7 @@ pub fn run() {
     check(bios(0x03, 0, b'X' as u64) == 0, "Bconout(PRT,'X') = 0");
 
     // Bconin (0x02): queue a byte, expect it back; Bconstat now ready.
-    console::push_rx(b'Z');
+    console::push_rx(b'Z' as u16);
     check(bios(0x01, 2, 0) == -1, "Bconstat(CON) with input = -1");
     check(bios(0x02, 2, 0) == 0x5A, "Bconin(CON) returns 'Z' = 0x5A");
 

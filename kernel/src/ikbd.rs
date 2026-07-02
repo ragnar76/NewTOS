@@ -131,9 +131,11 @@ fn decode_key(raw: u8) {
             CAPS.fetch_xor(true, Ordering::Relaxed);
         }
         _ if make => {
-            if let Some(ch) = to_ascii(code) {
-                console::push_rx(ch);
-            }
+            // Queue every make key as a word `scancode << 8 | ascii`; keys
+            // with no character (arrows, function keys) carry ascii 0 so the
+            // AES still sees the scancode (GEMDOS console readers skip them).
+            let ascii = to_ascii(code).unwrap_or(0);
+            console::push_rx((code as u16) << 8 | ascii as u16);
         }
         _ => {}
     }

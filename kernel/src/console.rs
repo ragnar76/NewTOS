@@ -29,7 +29,7 @@ const RX_CAPACITY: usize = 128;
 /// (Host calls) advances `tail`. Indices wrap modulo `usize`; the
 /// difference `head - tail` (wrapping) gives the live byte count.
 struct RxRing {
-    buf: [core::cell::UnsafeCell<u8>; RX_CAPACITY],
+    buf: [core::cell::UnsafeCell<u16>; RX_CAPACITY],
     head: AtomicUsize,
     tail: AtomicUsize,
 }
@@ -46,26 +46,26 @@ impl RxRing {
             // on a named `const Z: UnsafeCell<u8>`. The two forms are
             // semantically identical — each array slot is its own
             // freshly-evaluated cell.
-            buf: [const { core::cell::UnsafeCell::new(0u8) }; RX_CAPACITY],
+            buf: [const { core::cell::UnsafeCell::new(0u16) }; RX_CAPACITY],
             head: AtomicUsize::new(0),
             tail: AtomicUsize::new(0),
         }
     }
 
-    fn push(&self, byte: u8) {
+    fn push(&self, word: u16) {
         let head = self.head.load(Ordering::Relaxed);
         let tail = self.tail.load(Ordering::Acquire);
         if head.wrapping_sub(tail) >= RX_CAPACITY {
-            return; // overflow: drop byte; no flow control in Phase 02.
+            return; // overflow: drop key; no flow control in Phase 02.
         }
         let idx = head % RX_CAPACITY;
         // SAFETY: SPSC — only the IRQ handler writes; consumer reads
         // strictly behind `tail`, so this slot is uniquely owned here.
-        unsafe { *self.buf[idx].get() = byte };
+        unsafe { *self.buf[idx].get() = word };
         self.head.store(head.wrapping_add(1), Ordering::Release);
     }
 
-    fn pop(&self) -> Option<u8> {
+    fn pop(&self) -> Option<u16> {
         let tail = self.tail.load(Ordering::Relaxed);
         let head = self.head.load(Ordering::Acquire);
         if head == tail {
@@ -73,9 +73,9 @@ impl RxRing {
         }
         let idx = tail % RX_CAPACITY;
         // SAFETY: SPSC — slot < head, producer has finished writing.
-        let b = unsafe { *self.buf[idx].get() };
+        let w = unsafe { *self.buf[idx].get() };
         self.tail.store(tail.wrapping_add(1), Ordering::Release);
-        Some(b)
+        Some(w)
     }
 
     fn is_empty(&self) -> bool {
@@ -90,7 +90,7 @@ static RX_RING: RxRing = RxRing::new();
 /// PL011 INTID is signalled.
 pub fn pl011_rx_drain() {
     while let Some(b) = CONSOLE.read_byte() {
-        RX_RING.push(b);
+        RX_RING.push(b as u16); // serial byte → key word (scancode 0)
     }
     CONSOLE.clear_rx_interrupt();
 }
@@ -102,19 +102,33 @@ pub fn pl011_rx_drain() {
 /// register, so it is safe to call from ordinary (non-IRQ) context.
 pub fn pl011_rx_poll() {
     while let Some(b) = CONSOLE.read_byte() {
-        RX_RING.push(b);
+        RX_RING.push(b as u16); // serial byte → key word (scancode 0)
     }
 }
 
-/// Push a byte into the RX ringbuffer from a non-UART input source (the
-/// IKBD keyboard decoder). The byte is then read by `Cnecin`/`Cconin`
-/// exactly like a UART byte.
-pub fn push_rx(byte: u8) {
-    RX_RING.push(byte);
+/// Push a key **word** into the RX ringbuffer from the IKBD decoder:
+/// `scancode << 8 | ascii` (ascii 0 for keys with no character, e.g. the
+/// arrow / function keys). ASCII readers (`rx_pop`) take the low byte;
+/// the AES event manager reads the whole word via [`rx_pop_key`].
+pub fn push_rx(word: u16) {
+    RX_RING.push(word);
 }
 
-/// Pop one byte from the RX ringbuffer, if any.
+/// Pop one **ASCII** byte from the RX ringbuffer for the GEMDOS console
+/// (`Cconin`/`Bconin`) and the serial console — scancode-only keys (arrows
+/// etc., ascii 0) are skipped, exactly as when they were never queued.
 pub fn rx_pop() -> Option<u8> {
+    loop {
+        let ascii = (RX_RING.pop()? & 0xff) as u8;
+        if ascii != 0 {
+            return Some(ascii);
+        }
+    }
+}
+
+/// Pop one whole key word (`scancode << 8 | ascii`) for the AES event
+/// manager, so it can deliver scancodes (arrow / function keys) to apps.
+pub fn rx_pop_key() -> Option<u16> {
     RX_RING.pop()
 }
 
