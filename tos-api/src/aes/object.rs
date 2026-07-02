@@ -16,6 +16,8 @@
 //! `TEDINFO` text types `G_TEXT`/`G_BOXTEXT` land in later batches). The
 //! per-object clip rectangle is honoured at screen granularity for now.
 
+use core::sync::atomic::{AtomicI16, Ordering};
+
 use super::Aespb;
 use crate::host::host;
 use crate::vdi::backend::{ClipRect, MonoSrc, PatternFill, Pel, RasterBackend, Rect};
@@ -429,6 +431,94 @@ pub fn objc_change(pb: &Aespb) {
     pb.set_ret(1);
 }
 
+// ── objc_sysvar (3-D look) ──────────────────────────────────────────────
+//
+// The 3-D look system variables (EmuTOS `ob_sysvar`). Defaults match NewTOS's
+// actual rendering: a 2px bevel, grey (LWHITE = 8) faces, no text-move or
+// colour-change on press (the bevel carries the pressed state). SET stores
+// them and GET reports them; `just_draw` still renders with fixed constants,
+// so a SET is recorded/reported but does not yet re-style the draw — a
+// documented follow-up, like `menu_register`.
+static IND_TXTMOVE: AtomicI16 = AtomicI16::new(0);
+static IND_COLCHANGE: AtomicI16 = AtomicI16::new(0);
+static ACT_TXTMOVE: AtomicI16 = AtomicI16::new(0);
+static ACT_COLCHANGE: AtomicI16 = AtomicI16::new(0);
+static IND_BUTCOL: AtomicI16 = AtomicI16::new(GRAY_LT as i16);
+static ACT_BUTCOL: AtomicI16 = AtomicI16::new(GRAY_LT as i16);
+static BACKGR_COL: AtomicI16 = AtomicI16::new(GRAY_LT as i16);
+
+// objc_sysvar `which` selectors (obdefs.h).
+const LK3DIND: i16 = 1;
+const LK3DACT: i16 = 2;
+const INDBUTCOL: i16 = 3;
+const ACTBUTCOL: i16 = 4;
+const BACKGRCOL: i16 = 5;
+const AD3DVALUE: i16 = 6;
+const ADJ3DSTD: i16 = 2; // NewTOS's bevel is 2px
+
+/// `objc_sysvar` (48) — get (`int_in[0]` = 0) or set (1) a 3-D look variable
+/// `int_in[1]` from values `int_in[2..3]`. GET returns the pair in
+/// `int_out[1..2]`; `int_out[0]` = 1 (ok) / 0 (bad which or out-of-range
+/// colour). EmuTOS `ob_sysvar`.
+pub fn objc_sysvar(pb: &Aespb) {
+    let (mode, which, in1, in2) = (pb.intin(0), pb.intin(1), pb.intin(2), pb.intin(3));
+    let ncol = host()
+        .and_then(|h| h.raster())
+        .map(|r| r.num_colors() as i16)
+        .unwrap_or(16);
+    let ok = if mode != 0 {
+        // SET (-1 in either value leaves that field unchanged).
+        match which {
+            LK3DIND => {
+                if in1 != -1 {
+                    IND_TXTMOVE.store(in1, Ordering::Relaxed);
+                }
+                if in2 != -1 {
+                    IND_COLCHANGE.store(in2, Ordering::Relaxed);
+                }
+                true
+            }
+            LK3DACT => {
+                if in1 != -1 {
+                    ACT_TXTMOVE.store(in1, Ordering::Relaxed);
+                }
+                if in2 != -1 {
+                    ACT_COLCHANGE.store(in2, Ordering::Relaxed);
+                }
+                true
+            }
+            INDBUTCOL if in1 < ncol => {
+                IND_BUTCOL.store(in1, Ordering::Relaxed);
+                true
+            }
+            ACTBUTCOL if in1 < ncol => {
+                ACT_BUTCOL.store(in1, Ordering::Relaxed);
+                true
+            }
+            BACKGRCOL if in1 < ncol => {
+                BACKGR_COL.store(in1, Ordering::Relaxed);
+                true
+            }
+            _ => false, // unknown which, or colour >= ws_ncolors
+        }
+    } else {
+        // GET
+        let (o1, o2, valid) = match which {
+            LK3DIND => (IND_TXTMOVE.load(Ordering::Relaxed), IND_COLCHANGE.load(Ordering::Relaxed), true),
+            LK3DACT => (ACT_TXTMOVE.load(Ordering::Relaxed), ACT_COLCHANGE.load(Ordering::Relaxed), true),
+            INDBUTCOL => (IND_BUTCOL.load(Ordering::Relaxed), 0, true),
+            ACTBUTCOL => (ACT_BUTCOL.load(Ordering::Relaxed), 0, true),
+            BACKGRCOL => (BACKGR_COL.load(Ordering::Relaxed), 0, true),
+            AD3DVALUE => (ADJ3DSTD, ADJ3DSTD, true),
+            _ => (0, 0, false),
+        };
+        pb.set_intout(1, o1);
+        pb.set_intout(2, o2);
+        valid
+    };
+    pb.set_ret(if ok { 1 } else { 0 });
+}
+
 /// Set `obj`'s state and optionally redraw just that object. Shared by
 /// `objc_change` and the Form Manager (to show a pressed button).
 pub(crate) fn change(tree: *mut Object, obj: i16, newstate: u16, redraw: bool) {
@@ -686,6 +776,16 @@ fn abs_offset(tree: *const Object, obj: i16) -> (i16, i16) {
         }
     }
     (x, y)
+}
+
+/// `obj`'s parent index, or `NIL` for the root (EmuTOS `get_par`). Exposed
+/// for the Form Manager's radio-button sibling sweep.
+///
+/// # Safety
+/// `tree` is a valid OBJECT array (GEM contract).
+pub(crate) unsafe fn parent(tree: *const Object, obj: i16) -> i16 {
+    // SAFETY: forwarded from the caller's contract.
+    unsafe { parent_of(tree, obj) }
 }
 
 /// Index of `obj`'s parent, or `NIL` for the root. The parent is the node

@@ -189,6 +189,14 @@ pub fn graf_watchbox(pb: &Aespb) {
         pb.set_ret(0);
         return;
     }
+    pb.set_ret(if watchbox(tree, obj, instate, outstate) { 1 } else { 0 });
+}
+
+/// Track the button over object `obj`: show `instate` while the mouse is
+/// inside its rectangle, `outstate` while outside, restoring on each edge;
+/// return whether it was released inside (EmuTOS `gr_watchbox`). Shared with
+/// the Form Manager's `form_button`.
+pub(crate) fn watchbox(tree: *mut Object, obj: i16, instate: u16, outstate: u16) -> bool {
     let mut was_in = true;
     if let Some(h) = host() {
         object::change(tree, obj, instate, true);
@@ -206,7 +214,7 @@ pub fn graf_watchbox(pb: &Aespb) {
             h.pump_input();
         }
     }
-    pb.set_ret(if was_in { 1 } else { 0 });
+    was_in
 }
 
 /// `graf_slidebox` (76) — slide child `obj` within `parent` along one axis

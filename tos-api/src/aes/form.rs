@@ -519,3 +519,176 @@ pub fn form_dial(pb: &Aespb) {
     }
     pb.set_ret(1);
 }
+
+// form_keybd navigation directions (EmuTOS fm_keybd).
+const DEFLT: i16 = 0;
+const FORWARD: i16 = 1;
+const BACKWARD: i16 = 2;
+// ob_flags RBUTTON (radio button); ob_state DISABLED; NIL sentinel.
+const RBUTTON: u16 = 0x0010;
+const DISABLED: u16 = 0x0008;
+const NIL: i16 = -1;
+// Keys routed by form_keybd (NewTOS ASCII low byte + scancode high byte).
+const K_RETURN: i16 = 0x0D;
+const K_TAB: i16 = 0x09;
+const SC_UP: i16 = 0x48; // arrow-up scancode
+const SC_DOWN: i16 = 0x50; // arrow-down scancode
+
+/// Read an object's `(state, flags)` (EmuTOS `ob_fs`).
+fn ob_fs(tree: *const Object, obj: i16) -> (u16, u16) {
+    // SAFETY: valid tree (GEM contract).
+    unsafe {
+        let o = &*tree.add(obj as usize);
+        (o.ob_state, o.ob_flags)
+    }
+}
+
+/// Deselect the currently-selected radio sibling of `obj` and select `obj`
+/// (EmuTOS `fm_button` RBUTTON path).
+fn select_radio(tree: *mut Object, obj: i16) {
+    // SAFETY: valid tree (GEM contract).
+    unsafe {
+        let parent = object::parent(tree as *const Object, obj);
+        if parent < 0 {
+            return;
+        }
+        let mut t = (*tree.add(parent as usize)).ob_head;
+        while t != NIL && t != parent {
+            let tflags = (*tree.add(t as usize)).ob_flags;
+            let tstate = (*tree.add(t as usize)).ob_state;
+            if tflags & RBUTTON != 0 && (tstate & SELECTED != 0 || t == obj) {
+                let ns = if t == obj { tstate | SELECTED } else { tstate & !SELECTED };
+                object::change(tree, t, ns, true);
+            }
+            t = (*tree.add(t as usize)).ob_next;
+        }
+    }
+}
+
+/// Previous EDITABLE field before `from` (wrapping), or `from` if none.
+fn prev_editable(tree: *mut Object, from: i16) -> i16 {
+    let n = tree_len(tree);
+    if n <= 0 {
+        return from;
+    }
+    let mut i = from;
+    for _ in 0..n {
+        i = (i - 1 + n) % n;
+        // SAFETY: i is within [0, n).
+        if unsafe { (*tree.add(i as usize)).ob_flags } & EDITABLE != 0 {
+            return i;
+        }
+    }
+    from
+}
+
+/// The object a `form_keybd` direction navigates to (EmuTOS `find_obj`).
+fn find_obj(tree: *mut Object, obj: i16, direction: i16) -> i16 {
+    match direction {
+        DEFLT => {
+            let d = find_flag(tree, DEFAULT);
+            if d < 0 {
+                0
+            } else {
+                d
+            }
+        }
+        FORWARD => next_editable(tree, obj),
+        BACKWARD => prev_editable(tree, obj),
+        _ => obj,
+    }
+}
+
+/// Block until the left mouse button is released (the `ev_button` up-wait
+/// after a select).
+fn wait_up() {
+    if let Some(h) = host() {
+        while crate::vdi::mouse_buttons() & 0x01 != 0 {
+            h.pump_input();
+        }
+    }
+}
+
+/// `form_button` (56) — process a click on object `int_in[0]` (click count
+/// `int_in[1]`) in the dialog at `addr_in[0]`. `int_out[1]` = the next object
+/// (bit 15 set = double-click on a TOUCHEXIT); `int_out[0]` = continue (1) /
+/// exit (0). EmuTOS `fm_button`.
+pub fn form_button(pb: &Aespb) {
+    let tree = pb.addrin(0) as *mut Object;
+    let obj = pb.intin(0);
+    let clks = pb.intin(1);
+    if tree.is_null() || obj < 0 {
+        pb.set_intout(1, obj.max(0));
+        pb.set_ret(1);
+        return;
+    }
+    let (mut state, flags) = ob_fs(tree as *const Object, obj);
+    let mut cont = true;
+    let mut orword: u16 = 0;
+    if flags & TOUCHEXIT != 0 {
+        if clks == 2 {
+            orword = 0x8000; // double-click indicator (high bit of the object)
+        }
+        cont = false;
+    }
+    if flags & SELECTABLE != 0 && state & DISABLED == 0 {
+        if flags & RBUTTON != 0 {
+            select_radio(tree, obj);
+            state |= SELECTED;
+        } else if super::graf::watchbox(tree, obj, state ^ SELECTED, state) {
+            state ^= SELECTED;
+        }
+        if cont && flags & (SELECTABLE | EDITABLE) != 0 {
+            wait_up();
+        }
+    }
+    if state & SELECTED != 0 && flags & EXIT != 0 {
+        cont = false;
+    }
+    let newobj = if cont && flags & EDITABLE == 0 { 0 } else { obj };
+    pb.set_intout(1, ((newobj as u16) | orword) as i16);
+    pb.set_ret(if cont { 1 } else { 0 });
+}
+
+/// `form_keybd` (55) — route a key `int_in[1]` in the dialog at `addr_in[0]`
+/// (current object `int_in[0]`): RETURN → the DEFAULT button (exit),
+/// TAB/down → next field, up → previous field. `int_out[1]` = the next
+/// object, `int_out[2]` = the (possibly cleared) char; `int_out[0]` =
+/// continue (1) / exit (0). EmuTOS `fm_keybd`.
+pub fn form_keybd(pb: &Aespb) {
+    let tree = pb.addrin(0) as *mut Object;
+    let obj = pb.intin(0);
+    let thechar = pb.intin(1);
+    if tree.is_null() {
+        pb.set_intout(1, obj);
+        pb.set_intout(2, thechar);
+        pb.set_ret(1);
+        return;
+    }
+    let ascii = thechar & 0xFF;
+    let scan = (thechar >> 8) & 0xFF;
+    let direction = if ascii == K_RETURN || ascii == 0x0A {
+        DEFLT
+    } else if ascii == K_TAB || scan == SC_DOWN {
+        FORWARD
+    } else if scan == SC_UP {
+        BACKWARD
+    } else {
+        -1
+    };
+    let (mut newobj, mut newchar) = (obj, thechar);
+    if direction != -1 {
+        newchar = 0;
+        newobj = find_obj(tree, obj, direction);
+        if direction == DEFLT && newobj != 0 {
+            press(tree, newobj);
+            pb.set_intout(1, newobj);
+            pb.set_intout(2, newchar);
+            pb.set_ret(0); // the default button exits the dialog
+            return;
+        }
+    }
+    pb.set_intout(1, newobj);
+    pb.set_intout(2, newchar);
+    pb.set_ret(1);
+}
