@@ -19,7 +19,7 @@
 
 use super::Aespb;
 use crate::host::host;
-use crate::vdi::backend::{ClipRect, Pel, RasterBackend};
+use crate::vdi::backend::{ClipRect, Pel, PatternFill, RasterBackend};
 use core::cell::UnsafeCell;
 use core::sync::atomic::{AtomicUsize, Ordering};
 
@@ -72,6 +72,9 @@ const WHITE: Pel = 0;
 const BLACK: Pel = 1;
 const GRAY_LT: Pel = 8; // 3D face (EmuTOS LWHITE)
 const GRAY_DK: Pel = 9; // 3D shadow (EmuTOS LBLACK)
+
+/// 50 % dither to grey out an inactive window's name bar (EmuTOS `IP_4PATT`).
+const STIPPLE_50: [u16; 2] = [0xAAAA, 0x5555];
 
 const MAX_WINDOWS: usize = 8;
 const NAME_CAP: usize = 80;
@@ -206,6 +209,7 @@ fn paint_background(backend: &dyn RasterBackend) {
 /// the rectangle list (`WF_FIRSTXYWH`) still drives what the *app* redraws.
 fn redraw_all(backend: &dyn RasterBackend) {
     paint_background(backend);
+    let top = get_top();
     // Selection sort by ascending z, drawing each open window once.
     let mut drawn = [false; MAX_WINDOWS];
     loop {
@@ -224,7 +228,8 @@ fn redraw_all(backend: &dyn RasterBackend) {
             break;
         }
         drawn[pick] = true;
-        draw_frame(&slots()[pick], backend);
+        let istop = (pick as i16 + 1) == top;
+        draw_frame(&slots()[pick], istop, backend);
     }
 }
 
@@ -451,7 +456,7 @@ fn draw_label(x: i16, y: i16, max_w: i16, s: &[u8], backend: &dyn RasterBackend,
 }
 
 /// Draw the full window frame for `w` (border + gadgets + work area).
-fn draw_frame(w: &Window, backend: &dyn RasterBackend) {
+fn draw_frame(w: &Window, istop: bool, backend: &dyn RasterBackend) {
     let clip = ClipRect::full(backend.width(), backend.height());
     let b = w.curr;
     let kind = w.kind;
@@ -483,6 +488,19 @@ fn draw_frame(w: &Window, backend: &dyn RasterBackend) {
         let nlen = name_len(&w.name) as i16 * 8;
         let nx = name_x + ((name_w - nlen) / 2).max(2);
         draw_label(nx, top, name_w, &w.name, backend, clip);
+        // Non-topped window: grey out the name bar (EmuTOS marks W_NAME
+        // DISABLED for the inactive window, drawing a 50 % white stipple
+        // over it). Only the name bar carries the active/inactive cue.
+        if !istop {
+            backend.fill_pattern(
+                bar.x,
+                bar.y,
+                bar.w,
+                bar.h,
+                PatternFill { fg: WHITE, bg: WHITE, pattern: &STIPPLE_50, opaque: false },
+                clip,
+            );
+        }
         // separator under the title row
         backend.fill_rect(b.x, top + GAD - 1, b.w, 1, BLACK, clip);
         top += GAD - 1;
@@ -753,7 +771,7 @@ pub fn wind_set(pb: &Aespb) {
 fn redraw_open(handle: i16) {
     if let (Some(backend), Some(w)) = (host().and_then(|h| h.raster()), win(handle)) {
         if w.open {
-            draw_frame(w, backend);
+            draw_frame(w, handle == get_top(), backend);
         }
     }
 }
@@ -983,7 +1001,7 @@ fn drag_move(w: &mut Window, backend: &dyn RasterBackend) -> Grect {
         if nr != last {
             backend.fill_rect(last.x, last.y, last.w + 1, last.h + 1, WHITE, clip);
             w.curr = nr;
-            draw_frame(w, backend);
+            draw_frame(w, true, backend);
             last = nr;
         }
         if crate::vdi::mouse_buttons() & 0x01 == 0 {
@@ -1015,7 +1033,7 @@ fn drag_size(w: &mut Window, backend: &dyn RasterBackend) -> Grect {
         if nr != last {
             backend.fill_rect(orig.x, orig.y, last.w + 1, last.h + 1, WHITE, clip);
             w.curr = nr;
-            draw_frame(w, backend);
+            draw_frame(w, true, backend);
             last = nr;
         }
         if crate::vdi::mouse_buttons() & 0x01 == 0 {
