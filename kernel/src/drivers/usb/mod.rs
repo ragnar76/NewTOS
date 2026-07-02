@@ -54,9 +54,9 @@ pub fn init(dtb_phys: usize) {
 
         let Some(base) = base else { return };
         // Real Pi-4 PCIe DMA is not cache-coherent: map the dedicated DMA
-        // block Normal-NC before the controller touches it.
+        // block Device-nGnRnE before the controller touches it.
         #[cfg(feature = "board-rpi4")]
-        map_dma_nc();
+        map_dma_coherent();
         let mut controller = unsafe { xhci::Xhci::open(base) };
         controller.scan_ports();
         if controller.enumerate_all() > 0 {
@@ -69,12 +69,19 @@ pub fn init(dtb_phys: usize) {
 }
 
 /// Remap the dedicated `.dma` linker block (a 2-MiB-aligned region holding all
-/// xHCI DMA structures) as Normal-non-cacheable, so the non-coherent Pi-4 PCIe
-/// controller and the CPU agree on memory. Its own block contains no kernel
-/// code/tables, so the break-before-make remap is safe (unlike a remap of a
-/// shared block — see ADR-014). Flushes the bss-cleared zeros to RAM first.
+/// xHCI DMA structures) as **Device-nGnRnE**, so the non-coherent Pi-4 PCIe
+/// controller (VL805) and the CPU agree on memory. Normal-NC + manual cache
+/// maintenance was not enough: Normal-NC still permits CPU gathering,
+/// reordering and speculative reads, which corrupted our read-back of the
+/// controller's device-context write-back (the EP0 context surfaced at the
+/// slot offset, so Address Device "succeeded" but left the slot un-Addressed).
+/// Device-nGnRnE forbids all of that — this is exactly how circle maps its
+/// xHCI shared region. Its own block contains no kernel code/tables, so the
+/// break-before-make remap is safe (unlike a remap of a shared block — see
+/// ADR-014). Cleans+invalidates the bss-cleared zeros to RAM first, so no
+/// stale cacheable alias survives the switch to Device memory.
 #[cfg(feature = "board-rpi4")]
-fn map_dma_nc() {
+fn map_dma_coherent() {
     extern "C" {
         static __dma_start: u8;
         static __dma_end: u8;
@@ -90,7 +97,7 @@ fn map_dma_nc() {
             p += 64;
         }
         core::arch::asm!("dsb sy", options(nostack, preserves_flags));
-        crate::arch::aarch64::mmu::remap_normal_nc(start, end - start);
+        crate::arch::aarch64::mmu::remap_device_ngnrne(start, end - start);
     }
 }
 

@@ -305,12 +305,50 @@ pub const fn va_to_pa(va: u64) -> u64 {
 /// does).
 #[allow(clippy::deref_addrof)]
 pub unsafe fn remap_normal_nc(va: u64, len: u64) {
+    let attrs = VALID | BLOCK_L2 | AF | AP_RW_EL1 | ATTRIDX_NC | SH_NON | PXN | UXN;
+    // SAFETY: forwarded from the caller's contract.
+    unsafe { remap_l2_attrs(va, len, attrs) };
+}
+
+/// Remap `[va, va + len)` as **Device-nGnRnE** (strongly-ordered, uncached).
+///
+/// Used for the xHCI DMA block on the real Pi-4: the VL805 PCIe endpoint is
+/// not cache-coherent, and — unlike Normal Non-Cacheable — Device memory
+/// forbids the CPU's gathering, reordering and speculative reads. That makes
+/// the controller's device-context write-backs read back byte-exact, matching
+/// circle, which maps its entire xHCI shared region as Device-nGnRnE
+/// (`references/circle/lib/memory64.cpp`). Normal-NC + manual cache
+/// maintenance corrupted the write-back read (EP0 context appeared at the slot
+/// offset), so Address Device "succeeded" yet the slot was never internally
+/// Addressed. See `docs/STATUS.md` Phase 16.
+///
+/// # Safety
+///
+/// Same contract as [`remap_normal_nc`]: boot CPU, single-threaded, after
+/// [`reinstall`]; the target blocks hold no executing code or active stack.
+#[allow(clippy::deref_addrof)]
+pub unsafe fn remap_device_ngnrne(va: u64, len: u64) {
+    let attrs = VALID | BLOCK_L2 | AF | AP_RW_EL1 | ATTRIDX_DEVICE | SH_NON | PXN | UXN;
+    // SAFETY: forwarded from the caller's contract.
+    unsafe { remap_l2_attrs(va, len, attrs) };
+}
+
+/// Shared break-before-make remap of the 2-MiB L2 blocks covering
+/// `[va, va + len)` to the descriptor attributes `attrs`. Only blocks that are
+/// currently valid-Normal or invalid are touched; existing Device (MMIO)
+/// blocks are skipped, so this never rewrites peripheral mappings.
+///
+/// # Safety
+///
+/// Boot CPU, single-threaded, after [`reinstall`]; the target blocks hold no
+/// executing code or the active stack.
+#[allow(clippy::deref_addrof)]
+unsafe fn remap_l2_attrs(va: u64, len: u64, attrs: u64) {
     if len == 0 {
         return;
     }
     let pa_first = va_to_pa(va) & !(L2_BLOCK_SIZE - 1);
     let pa_last = va_to_pa(va + len - 1) & !(L2_BLOCK_SIZE - 1);
-    let nc_attrs = VALID | BLOCK_L2 | AF | AP_RW_EL1 | ATTRIDX_NC | SH_NON | PXN | UXN;
 
     // SAFETY: single-CPU boot path; exclusive access to the static tables.
     let l2 = unsafe { &mut *(&raw mut L2) };
@@ -322,14 +360,12 @@ pub unsafe fn remap_normal_nc(va: u64, len: u64) {
         if i < NUM_L2 {
             let slot = &mut l2[i].0[j];
             let old = *slot;
-            // Map this block as Normal-NC. Two cases the framebuffer hits:
-            //   * the block was Normal DRAM (framebuffer carved out of the
-            //     kernel's mapped RAM) — re-attribute it; or
-            //   * the block was *invalid* — the framebuffer sits in
-            //     VideoCore-reserved memory above `dram.end`, which Stage-2
-            //     left unmapped. Create the mapping.
-            // Never touch a Device block (MMIO), which is never the
-            // framebuffer.
+            // Re-attribute this block. Two cases the callers hit:
+            //   * the block was Normal DRAM (framebuffer / `.dma` carved out
+            //     of the kernel's mapped RAM) — re-attribute it; or
+            //   * the block was *invalid* — a framebuffer above `dram.end`,
+            //     which Stage-2 left unmapped. Create the mapping.
+            // Never touch a Device block (MMIO), which is never a target.
             let is_device =
                 old & VALID != 0 && (old & ATTRIDX_MASK) == ATTRIDX_DEVICE;
             if !is_device {
@@ -347,7 +383,7 @@ pub unsafe fn remap_normal_nc(va: u64, len: u64) {
                         options(nostack, preserves_flags),
                     );
                 }
-                *slot = pa | nc_attrs;
+                *slot = pa | attrs;
                 // SAFETY: publish the new descriptor before any access.
                 unsafe {
                     core::arch::asm!(

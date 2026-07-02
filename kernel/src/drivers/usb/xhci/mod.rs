@@ -89,7 +89,11 @@ static mut DMA: XhciDma = XhciDma {
 };
 
 /// How many HID devices we support concurrently (keyboard + mouse).
-pub const MAX_HID: usize = 2;
+// Max device slots we track. Counts *every* enumerated device, not just HID:
+// on the real Pi-4 the keyboard/mouse sit behind the VL805 internal USB2 hub
+// (and possibly a second hub in the keyboard), so a slot is spent on each hub
+// in the path plus each HID endpoint.
+pub const MAX_HID: usize = 8;
 
 // Per-device DMA. The Input and Device contexts are 32-byte contexts (CSZ=0;
 // checked in `open`): the Input is control + slot + 31 endpoint contexts
@@ -140,12 +144,23 @@ static mut SCRATCH_BUFS: ScratchBufs = ScratchBufs([[0; SCRATCH_PAGE]; MAX_SCRAT
 struct HidDev {
     slot: u8,
     dci: u8,
-    /// 1 = keyboard, 2 = mouse, 0 = unused.
+    /// 1 = keyboard, 2 = mouse, 9 = hub (not polled), 0 = unused.
     protocol: u8,
-    /// Root-hub port (1-based) + device descriptor IDs (for the USB tree).
+    /// Root-hub port (1-based) the device's path starts at + descriptor IDs.
     port: u8,
     vid: u16,
     pid: u16,
+    /// `bDeviceClass` from the device descriptor (9 = hub).
+    class: u8,
+    /// xHCI route string: the downstream-port path through the hub tiers
+    /// (0 for a device on a root port).
+    route: u32,
+    /// PORTSC speed id (1 full, 2 low, 3 high, 4 super).
+    speed: u8,
+    /// Transaction-Translator hub for a full/low-speed device behind a
+    /// high-speed hub: the hub's slot id + the downstream port (0 = none).
+    tt_hub_slot: u8,
+    tt_port: u8,
     ep0_enq: usize,
     ep0_cycle: bool,
     int_enq: usize,
@@ -161,6 +176,11 @@ impl HidDev {
             port: 0,
             vid: 0,
             pid: 0,
+            class: 0,
+            route: 0,
+            speed: 0,
+            tt_hub_slot: 0,
+            tt_port: 0,
             ep0_enq: 0,
             ep0_cycle: true,
             int_enq: 0,
@@ -231,39 +251,40 @@ fn ring_push(ring: &mut [Trb], enq: &mut usize, cycle: &mut bool, mut data: [u32
     }
 }
 
-// ── DMA cache maintenance (real Pi-4: PCIe DMA is not cache-coherent) ─────
+// ── DMA ordering barriers (real Pi-4: PCIe DMA is not cache-coherent) ─────
 //
-// QEMU is coherent, so these are no-ops there. On rpi4 the controller reads/
-// writes our DMA structs straight from RAM, so the CPU must clean (write back)
-// before the controller reads and invalidate (drop stale) before reading what
-// the controller wrote. Cortex-A72 cache line = 64 bytes.
+// The `.dma` block is mapped **Device-nGnRnE** (see `usb::map_dma_coherent`),
+// so the controller and the CPU already share one un-cached, strongly-ordered
+// view of RAM — no cache clean/invalidate is needed (and `dc cvac`/`dc ivac`
+// on Device memory would be meaningless). What remains is *ordering*: a full
+// barrier so our DMA-struct writes complete before we ring a doorbell, and so
+// we observe the controller's write-backs before we read them. `dsb sy` also
+// orders against any Normal memory the arguments alias. QEMU is coherent, so
+// these compile out there.
 #[inline(always)]
 fn dcache_clean(_va: u64, _len: usize) {
     #[cfg(feature = "board-rpi4")]
+    // SAFETY: a plain ordering barrier; no memory is dereferenced.
     unsafe {
-        let mut p = _va & !63;
-        let end = _va + _len as u64;
-        while p < end {
-            core::arch::asm!("dc cvac, {x}", x = in(reg) p, options(nostack, preserves_flags));
-            p += 64;
-        }
         core::arch::asm!("dsb sy", options(nostack, preserves_flags));
     }
 }
 #[inline(always)]
 fn dcache_inval(_va: u64, _len: usize) {
     #[cfg(feature = "board-rpi4")]
+    // SAFETY: a plain ordering barrier; no memory is dereferenced.
     unsafe {
-        core::arch::asm!("dsb sy", options(nostack, preserves_flags));
-        let mut p = _va & !63;
-        let end = _va + _len as u64;
-        while p < end {
-            core::arch::asm!("dc ivac, {x}", x = in(reg) p, options(nostack, preserves_flags));
-            p += 64;
-        }
         core::arch::asm!("dsb sy", options(nostack, preserves_flags));
     }
 }
+
+// The `[u32; 33*8]` DMA buffer we cast to `Input32Byte` must be exactly its
+// size, or the crate's slot/endpoint setters would land at the wrong stride
+// (e.g. a 64-byte layout writing Slot@[16]/EP0@[32] instead of [8]/[16]).
+// Verified at compile time: Input32Byte = control(32B) + slot(32B) +
+// 31×endpoint(32B) = 1056 B = 33*8 u32. If this ever fails to build, the crate
+// changed its 32-byte context stride and every `input`/`device` offset is off.
+const _: () = assert!(core::mem::size_of::<context::Input32Byte>() == 33 * 8 * 4);
 
 pub struct Xhci {
     regs: Registers<HighHalf>,
@@ -401,10 +422,17 @@ impl Xhci {
         // the full 35-bit address (incl. the 0x4_… bus offset), or did the
         // BCM2711 MMIO drop the high half? Also AC64 (64-bit addressing cap).
         let cap1 = regs.capability.hccparams1.read_volatile();
+        // Raw 32-bit read of HCCPARAMS1 (CAPBASE+0x10), bypassing the crate, so
+        // CSZ (bit 2) is verified independent of any register-read mangling.
+        let hccp1_raw =
+            unsafe { core::ptr::read_volatile((mmio_va(mmio_base as usize) + 0x10) as *const u32) };
         kprintln!(
-            "[usb] reg readback: ac64={} dcbaap_hw={:#x}",
+            "[usb] reg readback: ac64={} csz={} dcbaap_hw={:#x} | HCCPARAMS1_raw={:#010x} csz_raw={}",
             cap1.addressing_capability() as u8,
-            regs.operational.dcbaap.read_volatile().get()
+            cap1.context_size() as u8, // 1 => 64-byte contexts; we build 32-byte!
+            regs.operational.dcbaap.read_volatile().get(),
+            hccp1_raw,
+            (hccp1_raw >> 2) & 1,
         );
 
         // Run.
@@ -648,11 +676,20 @@ impl Xhci {
             unsafe { &mut *(dev.input.as_mut_ptr().cast()) };
         input.control_mut().set_add_context_flag(0); // slot
         input.control_mut().set_add_context_flag(1); // EP0
+        let (route, tt_slot, tt_port) =
+            (self.hid[di].route, self.hid[di].tt_hub_slot, self.hid[di].tt_port);
         {
             let s = input.device_mut().slot_mut();
             s.set_context_entries(1);
             s.set_root_hub_port_number(port);
             s.set_speed(speed);
+            s.set_route_string(route);
+            // A full/low-speed device behind a high-speed hub reaches the bus
+            // through that hub's Transaction Translator.
+            if tt_slot != 0 {
+                s.set_parent_hub_slot_id(tt_slot);
+                s.set_parent_port_number(tt_port);
+            }
         }
         {
             let e = input.device_mut().endpoint_mut(1);
@@ -661,6 +698,23 @@ impl Xhci {
             e.set_tr_dequeue_pointer(ep0_pa);
             e.set_dequeue_cycle_state(); // DCS = 1, matches the ring's PCS
             e.set_error_count(3);
+            // Average TRB Length must be non-zero (circle sets 8); an EP0 with
+            // ATL=0 is a malformed Endpoint Context that Address Device can
+            // "Success" while leaving the slot in a bad state for later commands.
+            e.set_average_trb_length(8);
+        }
+
+        // DIAGNOSTIC: dump the raw Input Context our cast produced. Expect
+        // ctrl add-flags at [1]=0x3 (A0|A1), the slot context at [8..16]
+        // (dw0 ~0x08300000: entries=1, speed=3), EP0 at [16..24] (dw2 =
+        // tr_dequeue|DCS). If the slot values land at the wrong offset the
+        // `[u32]` → Input32Byte cast (non-repr(C) crate structs) is the bug.
+        unsafe {
+            let inp = &(*(&raw const DEV))[di].input;
+            kprintln!(
+                "[usb] addr_dev input: ctrl[1]={:08x} slot[8..12]={:08x} {:08x} {:08x} {:08x} ep0[16..20]={:08x} {:08x} {:08x} {:08x}",
+                inp[1], inp[8], inp[9], inp[10], inp[11], inp[16], inp[17], inp[18], inp[19]
+            );
         }
 
         // DCBAA[slot] → the (controller-written) Device Context.
@@ -668,18 +722,53 @@ impl Xhci {
         dma.dcbaa.0[slot as usize] = dma_addr((&raw const dev.device) as u64);
 
         let input_pa = dma_addr((&raw const dev.input) as u64);
+        // DIAGNOSTIC: does the Input Context Pointer point at input[0] (correct)
+        // or accidentally input[8] (would put Slot where EP0 is)?
+        unsafe {
+            kprintln!(
+                "[usb] addr_dev input_pa={:#x} &input[0]={:#x} &input[8]={:#x}",
+                input_pa,
+                dma_addr((&raw const (*(&raw const DEV))[di].input[0]) as u64),
+                dma_addr((&raw const (*(&raw const DEV))[di].input[8]) as u64),
+            );
+        }
         let mut cmd = command::AddressDevice::new();
         cmd.set_input_context_pointer(input_pa);
         cmd.set_slot_id(slot);
+        // BSR (Block Set Address Request) MUST be 0 so the controller performs
+        // SET_ADDRESS and moves the slot Default → Addressed. new() zeroes it,
+        // but clear it explicitly so a slot left in Default (EP0 works, but
+        // Configure Endpoint later fails with Context State Error) is ruled out.
+        cmd.clear_block_set_address_request();
         let data = command::Allowed::AddressDevice(cmd).into_raw();
         match self.command(data) {
             Some(cc) => {
-                kprintln!(
-                    "[usb] address_device slot {} → {:?}",
-                    slot,
-                    cc.completion_code()
-                );
-                matches!(cc.completion_code(), Ok(event::CompletionCode::Success))
+                let ok = matches!(cc.completion_code(), Ok(event::CompletionCode::Success));
+                // Full Device Context dump (CSZ=0 → 32-byte): slot ctx dw0..7 +
+                // EP0 ctx dw0..7. If EP0 (dw8..15) holds our tr_dequeue + a
+                // 64-byte max-packet, the controller writes the DC correctly and
+                // only the slot state is off; if EP0 is garbage too, the VL805
+                // does not mirror the DC to RAM at all.
+                unsafe {
+                    dcache_inval((&raw const (*(&raw const DEV))[di].device) as u64, 64);
+                    let d = &(*(&raw const DEV))[di].device;
+                    kprintln!(
+                        "[usb] address_device slot {} → {:?}; slot[0..8]={:08x} {:08x} {:08x} {:08x} {:08x} {:08x} {:08x} {:08x}",
+                        slot, cc.completion_code(),
+                        d[0], d[1], d[2], d[3], d[4], d[5], d[6], d[7]
+                    );
+                    kprintln!(
+                        "[usb]   ep0[8..16]={:08x} {:08x} {:08x} {:08x} {:08x} {:08x} {:08x} {:08x} (expect tr_dequeue={:#x})",
+                        d[8], d[9], d[10], d[11], d[12], d[13], d[14], d[15], ep0_pa
+                    );
+                }
+                if ok {
+                    // The VL805 needs settling time after Address Device before
+                    // the slot is fully usable for later commands — circle does
+                    // CTimer::MsDelay(50) here.
+                    crate::arch::aarch64::delay_ms(50);
+                }
+                ok
             }
             None => {
                 kprintln!("[usb] address_device: no completion");
@@ -793,6 +882,7 @@ impl Xhci {
             "[usb] device descriptor: bLength={} type={} bcdUSB={:02x}{:02x} class={} maxpkt0={} VID={:02x}{:02x} PID={:02x}{:02x}",
             b[0], b[1], b[3], b[2], b[4], b[7], b[9], b[8], b[11], b[10]
         );
+        self.hid[di].class = b[4];
         self.hid[di].vid = u16::from_le_bytes([b[8], b[9]]);
         self.hid[di].pid = u16::from_le_bytes([b[10], b[11]]);
         true
@@ -876,6 +966,19 @@ impl Xhci {
         None
     }
 
+    /// Read the configuration descriptor and return its `bConfigurationValue`
+    /// only — the minimal bring-up a hub needs. Unlike [`read_config`] it does
+    /// not parse (or log) a HID interface/endpoint, so a hub's status-change
+    /// interrupt endpoint is not mislabelled as a HID device.
+    fn read_config_value(&mut self, di: usize) -> Option<u8> {
+        // The 9-byte config header carries bConfigurationValue at offset 5.
+        if !self.get_descriptor(di, 2, 0, 9) {
+            return None;
+        }
+        // SAFETY: single-CPU; DEV is ours.
+        Some(unsafe { (*(&raw const DEV))[di].buf[5] })
+    }
+
     /// SET_CONFIGURATION (no-data control OUT).
     fn set_configuration(&mut self, di: usize, value: u8) -> bool {
         self.control(di, [0x00, 9, value, 0, 0, 0, 0, 0], 0, 0, false)
@@ -888,11 +991,22 @@ impl Xhci {
 
     /// Configure Endpoint: add the HID interrupt-IN endpoint to the device.
     /// Returns its DCI (Device Context Index) on success, 0 on failure.
-    fn configure_endpoint(&mut self, di: usize, port: u8, speed: u8, hid: &HidInfo) -> u8 {
+    fn configure_endpoint(&mut self, di: usize, _port: u8, _speed: u8, hid: &HidInfo) -> u8 {
         let slot = self.hid[di].slot;
         // SAFETY: single-CPU; DEV is ours.
         let dev = unsafe { &mut (*(&raw mut DEV))[di] };
         dev.input.iter_mut().for_each(|x| *x = 0);
+        // Seed the Input Context from the whole live Device Context so the
+        // controller-managed slot fields (route, speed, TT, max exit latency,
+        // interrupter — set at Address Device) are preserved rather than
+        // zeroed. QEMU requires A0 (the slot context) on Configure Endpoint or
+        // it returns TRB Error; the real VL805 rejects a *rebuilt-from-scratch*
+        // slot context with Context State Error. Copying + A0 satisfies both.
+        dcache_inval((&raw const dev.device) as u64, core::mem::size_of_val(&dev.device));
+        let n = dev.device.len();
+        for k in 0..n {
+            dev.input[8 + k] = dev.device[k];
+        }
         let ep_num = hid.ep_addr & 0x0F;
         let dci = ep_num * 2 + if hid.ep_addr & 0x80 != 0 { 1 } else { 0 };
         let int_pa = dma_addr((&raw const dev.int_ring) as u64);
@@ -900,13 +1014,12 @@ impl Xhci {
         // SAFETY: `Input32Byte` is `#[repr(C)]` over the same u32s as `input`.
         let input: &mut context::Input32Byte =
             unsafe { &mut *(dev.input.as_mut_ptr().cast()) };
-        input.control_mut().set_add_context_flag(0); // slot
-        input.control_mut().set_add_context_flag(dci as usize); // interrupt EP
+        input.control_mut().set_add_context_flag(0); // A0: slot (kept from copy)
+        input.control_mut().set_add_context_flag(dci as usize); // A_dci: new EP
         {
-            let s = input.device_mut().slot_mut();
-            s.set_context_entries(dci);
-            s.set_root_hub_port_number(port);
-            s.set_speed(speed);
+            // Only extend Context Entries to cover the new endpoint; the rest of
+            // the slot context stays as the controller wrote it.
+            input.device_mut().slot_mut().set_context_entries(dci);
         }
         {
             let e = input.device_mut().endpoint_mut(dci as usize);
@@ -937,12 +1050,16 @@ impl Xhci {
     /// ready for interrupt polling.
     pub fn configure_hid(&mut self, di: usize, port: u8, speed: u8) -> Option<(u8, u8)> {
         let hid = self.read_config(di)?;
-        if !self.set_configuration(di, hid.config_value) {
-            kprintln!("[usb] set_configuration failed");
-            return None;
-        }
+        // xHCI enumeration order (spec 4.3.5): the Configure Endpoint *command*
+        // (controller side) precedes the SET_CONFIGURATION *request* (device
+        // side). QEMU tolerates the reverse; the real VL805 returns Context
+        // State Error if SET_CONFIGURATION ran first.
         let dci = self.configure_endpoint(di, port, speed, &hid);
         if dci == 0 {
+            return None;
+        }
+        if !self.set_configuration(di, hid.config_value) {
+            kprintln!("[usb] set_configuration failed");
             return None;
         }
         if !self.set_protocol_boot(di, hid.iface) {
@@ -959,9 +1076,9 @@ impl Xhci {
         Some((dci, hid.protocol))
     }
 
-    /// Enumerate every connected root port and configure each HID boot device
-    /// (keyboard + mouse) into a device slot. Queues the first interrupt
-    /// transfer for each. Returns the number of HID devices configured.
+    /// Enumerate every connected root port, recursing through any hubs, and
+    /// configure each HID boot device (keyboard + mouse) for interrupt polling.
+    /// Returns the number of device slots claimed (hubs included).
     pub fn enumerate_all(&mut self) -> usize {
         for port in 1..=self.ports {
             if self.n_hid >= MAX_HID {
@@ -980,28 +1097,230 @@ impl Xhci {
                 continue;
             }
             let speed = self.port_speed(port);
-            let Some(slot) = self.enable_slot() else {
-                kprintln!("[usb] port {}: enable slot failed", port);
-                continue;
-            };
-            // Claim the next device index and record its slot for the
-            // transfer methods (which read it from self.hid[di]).
-            let di = self.n_hid;
-            self.hid[di] = HidDev::new();
-            self.hid[di].slot = slot;
-            self.hid[di].port = port;
-            kprintln!("[usb] port {}: reset ok, speed {}, slot {}", port, speed, slot);
-            if self.address_device(di, port, speed) {
-                self.get_device_descriptor(di);
-                if let Some((dci, protocol)) = self.configure_hid(di, port, speed) {
-                    self.hid[di].dci = dci;
-                    self.hid[di].protocol = protocol;
-                    self.n_hid += 1;
-                    self.queue_interrupt(di);
-                }
-            }
+            // A device on a root port: route string 0, no parent TT.
+            self.enumerate_device(port, 0, speed, 0, 0, 0);
         }
         self.n_hid
+    }
+
+    /// Bring one device online: Enable Slot → Address Device → read its device
+    /// descriptor, then either configure it as a HID boot device or, if it is a
+    /// hub (class 9), recurse into its downstream ports. `root_port` is the
+    /// root-hub port the path starts at; `route` is the xHCI route string;
+    /// `tt_slot`/`tt_port` name the Transaction-Translator hub (0 = direct);
+    /// `depth` is the device's hub tier (0 = on a root port).
+    fn enumerate_device(
+        &mut self,
+        root_port: u8,
+        route: u32,
+        speed: u8,
+        tt_slot: u8,
+        tt_port: u8,
+        depth: u8,
+    ) {
+        if self.n_hid >= MAX_HID {
+            return;
+        }
+        let Some(slot) = self.enable_slot() else {
+            kprintln!("[usb] enable slot failed (port {} route {:#x})", root_port, route);
+            return;
+        };
+        // Claim the slot now (the device — a hub especially — persists past this
+        // call); the transfer methods read its addressing from self.hid[di].
+        let di = self.n_hid;
+        self.hid[di] = HidDev::new();
+        self.hid[di].slot = slot;
+        self.hid[di].port = root_port;
+        self.hid[di].route = route;
+        self.hid[di].speed = speed;
+        self.hid[di].tt_hub_slot = tt_slot;
+        self.hid[di].tt_port = tt_port;
+        self.n_hid += 1;
+        kprintln!(
+            "[usb] device slot {} (root port {} route {:#x} speed {})",
+            slot, root_port, route, speed
+        );
+        if !self.address_device(di, root_port, speed) {
+            return;
+        }
+        self.get_device_descriptor(di);
+        if self.hid[di].class == 9 {
+            self.hid[di].protocol = 9; // hub: tracked, never polled as HID
+            self.enumerate_hub(di, root_port, speed, depth);
+        } else if let Some((dci, protocol)) = self.configure_hid(di, root_port, speed) {
+            self.hid[di].dci = dci;
+            self.hid[di].protocol = protocol;
+            self.queue_interrupt(di);
+        }
+    }
+
+    /// Drive a hub: configure it as a hub, power its downstream ports, and
+    /// enumerate the device on each connected port (recursively).
+    fn enumerate_hub(&mut self, di: usize, root_port: u8, speed: u8, depth: u8) {
+        let Some(config_value) = self.read_config_value(di) else {
+            kprintln!("[usb] hub: read config failed");
+            return;
+        };
+        let Some(nbr) = self.hub_get_descriptor(di) else {
+            kprintln!("[usb] hub: get descriptor failed");
+            return;
+        };
+        // Configure Endpoint (mark slot as a hub) before SET_CONFIGURATION.
+        if !self.configure_hub(di, speed, nbr) {
+            return;
+        }
+        if !self.set_configuration(di, config_value) {
+            kprintln!("[usb] hub: set_configuration failed");
+            return;
+        }
+        kprintln!("[usb] hub slot {}: {} downstream ports", self.hid[di].slot, nbr);
+        // Power every port, then wait the worst-case power-good time.
+        for p in 1..=nbr {
+            self.hub_set_port_feature(di, p, 8); // PORT_POWER
+        }
+        crate::arch::aarch64::delay_ms(100);
+        let hub_slot = self.hid[di].slot;
+        let parent_route = self.hid[di].route;
+        let (parent_tt_slot, parent_tt_port) =
+            (self.hid[di].tt_hub_slot, self.hid[di].tt_port);
+        for p in 1..=nbr {
+            if self.n_hid >= MAX_HID {
+                break;
+            }
+            let st = self.hub_get_port_status(di, p);
+            let connected = st & 0x1 != 0;
+            kprintln!("[usb] hub port {}: status={:#06x} connected={}", p, st & 0xffff, connected);
+            if !connected {
+                continue;
+            }
+            self.hub_clear_port_feature(di, p, 16); // C_PORT_CONNECTION
+            self.hub_set_port_feature(di, p, 4); // PORT_RESET
+            crate::arch::aarch64::delay_ms(60); // reset + recovery
+            let st2 = self.hub_get_port_status(di, p);
+            self.hub_clear_port_feature(di, p, 20); // C_PORT_RESET
+            if st2 & 0x2 == 0 {
+                kprintln!("[usb] hub port {}: not enabled after reset (status={:#06x})", p, st2 & 0xffff);
+                continue;
+            }
+            // PORT_LOW_SPEED (bit 9) / PORT_HIGH_SPEED (bit 10); else full.
+            let dev_speed = if st2 & (1 << 9) != 0 {
+                2
+            } else if st2 & (1 << 10) != 0 {
+                3
+            } else {
+                1
+            };
+            // Append this downstream port to the route string at our tier.
+            let route = parent_route | ((p as u32 & 0xf) << (4 * depth));
+            // A full/low-speed device behind this high-speed hub uses *our* TT;
+            // otherwise inherit whatever TT (if any) we sit behind.
+            let (tt_slot, tt_port) = if dev_speed < 3 && speed == 3 {
+                (hub_slot, p)
+            } else {
+                (parent_tt_slot, parent_tt_port)
+            };
+            self.enumerate_device(root_port, route, dev_speed, tt_slot, tt_port, depth + 1);
+        }
+    }
+
+    /// Mark a hub's device slot as a Hub via an **Evaluate Context** command
+    /// with a **from-scratch** Input Slot Context (A0 only). This mirrors
+    /// circle's `CXHCIUSBDevice::EnableHubFunction`
+    /// (`references/circle/lib/usb/xhciusbdevice.cpp`), the working reference
+    /// for this exact VL805: it sets `Slot.Hub`, `Slot.NumberOfPorts` and (for
+    /// a high-speed hub) `Slot.TTT` and issues **Evaluate Context**, not
+    /// Configure Endpoint. On this controller Configure Endpoint runs a strict
+    /// Context-State precondition against the *output* device context, which the
+    /// VL805 never writes coherently (the RAM slot context reads garbage —
+    /// slot state 0 — even after a successful Address Device, the
+    /// XHCI_EP_CTX_BROKEN_DCS quirk), so it always returned Context State Error.
+    /// Evaluate Context does not run that check, so it succeeds. The VL805
+    /// applies the Hub / Number-of-Ports / TT fields on Evaluate Context even
+    /// though xHCI §4.6.7 nominally restricts it to Max Exit Latency /
+    /// Interrupter Target — circle relies on exactly this behaviour.
+    ///
+    /// The RAM device context is garbage, so — unlike circle, which memcpys it
+    /// as the input base — we rebuild the slot context from known-good values
+    /// (route 0, the hub's speed + root port, context_entries = 1 for EP0). The
+    /// controller keeps EP0 (dci 1) internally, so A0 alone (no endpoint
+    /// contexts) is enough.
+    fn configure_hub(&mut self, di: usize, speed: u8, nbr_ports: u8) -> bool {
+        let slot = self.hid[di].slot;
+        let port = self.hid[di].port;
+        // SAFETY: single-CPU; DEV is ours.
+        let dev = unsafe { &mut (*(&raw mut DEV))[di] };
+        dev.input.iter_mut().for_each(|x| *x = 0);
+        // SAFETY: `Input32Byte` is `#[repr(C)]` over the same u32s as `input`.
+        let input: &mut context::Input32Byte =
+            unsafe { &mut *(dev.input.as_mut_ptr().cast()) };
+        input.control_mut().set_add_context_flag(0); // A0: slot context
+        {
+            let s = input.device_mut().slot_mut();
+            s.set_context_entries(1);
+            s.set_root_hub_port_number(port);
+            s.set_speed(speed);
+            s.set_hub();
+            s.set_number_of_ports(nbr_ports);
+            // A high-speed hub provides the Transaction Translator. Single-TT,
+            // think time 0 (8 FS bit times) is the safe default.
+            if speed == 3 {
+                s.set_tt_think_time(0);
+            }
+        }
+        let input_pa = dma_addr((&raw const dev.input) as u64);
+        let mut cmd = command::EvaluateContext::new();
+        cmd.set_input_context_pointer(input_pa);
+        cmd.set_slot_id(slot);
+        let data = command::Allowed::EvaluateContext(cmd).into_raw();
+        match self.command(data) {
+            Some(cc) if matches!(cc.completion_code(), Ok(event::CompletionCode::Success)) => true,
+            Some(cc) => {
+                kprintln!("[usb] configure_hub → {:?}", cc.completion_code());
+                false
+            }
+            None => {
+                kprintln!("[usb] configure_hub: no completion (timeout)");
+                false
+            }
+        }
+    }
+
+    /// Hub class GET_DESCRIPTOR (type 0x29). Returns `bNbrPorts`.
+    fn hub_get_descriptor(&mut self, di: usize) -> Option<u8> {
+        // SAFETY: single-CPU; DEV is ours.
+        let buf_pa = unsafe { dma_addr((&raw const (*(&raw const DEV))[di].buf) as u64) };
+        // bmRequestType=0xA0 (in, class, device), bRequest=6, wValue=0x2900.
+        if !self.control(di, [0xA0, 6, 0x00, 0x29, 0, 0, 0, 0], buf_pa, 8, true) {
+            return None;
+        }
+        // SAFETY: single-CPU; DEV is ours. [2] = bNbrPorts.
+        Some(unsafe { (*(&raw const DEV))[di].buf[2] })
+    }
+
+    /// Hub class SET_FEATURE on a downstream port (PORT_POWER=8, PORT_RESET=4).
+    fn hub_set_port_feature(&mut self, di: usize, port: u8, feature: u8) -> bool {
+        // bmRequestType=0x23 (out, class, other), bRequest=3 (SET_FEATURE).
+        self.control(di, [0x23, 3, feature, 0, port, 0, 0, 0], 0, 0, false)
+    }
+
+    /// Hub class CLEAR_FEATURE on a downstream port (C_PORT_CONNECTION=16, …).
+    fn hub_clear_port_feature(&mut self, di: usize, port: u8, feature: u8) -> bool {
+        // bmRequestType=0x23 (out, class, other), bRequest=1 (CLEAR_FEATURE).
+        self.control(di, [0x23, 1, feature, 0, port, 0, 0, 0], 0, 0, false)
+    }
+
+    /// Hub class GET_STATUS on a downstream port. Returns
+    /// `wPortStatus | wPortChange << 16`.
+    fn hub_get_port_status(&mut self, di: usize, port: u8) -> u32 {
+        // SAFETY: single-CPU; DEV is ours.
+        let buf_pa = unsafe { dma_addr((&raw const (*(&raw const DEV))[di].buf) as u64) };
+        // bmRequestType=0xA3 (in, class, other), bRequest=0 (GET_STATUS).
+        if !self.control(di, [0xA3, 0, 0, 0, port, 0, 0, 0], buf_pa, 4, true) {
+            return 0;
+        }
+        // SAFETY: single-CPU; DEV is ours.
+        let b = unsafe { &(*(&raw const DEV))[di].buf };
+        u32::from_le_bytes([b[0], b[1], b[2], b[3]])
     }
 
     /// Log each root-hub port's connect status (D1 verification target).
