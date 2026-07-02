@@ -1300,6 +1300,20 @@ fn draw_icon(
     if ib.ib_ptext != 0 {
         let s = read_cstr(ib.ib_ptext);
         if !s.is_empty() {
+            // Label background (EmuTOS `gr_gicon`): a solid `bg`-colour
+            // rectangle behind the label so it reads against a patterned
+            // desktop, and a SELECTED icon's label shows the swapped
+            // (inverted) background. Then the label text in `fg`.
+            gr_rect(
+                backend,
+                ox + ib.ib_xtext,
+                oy + ib.ib_ytext,
+                ib.ib_wtext,
+                ib.ib_htext,
+                bg,
+                IP_SOLID,
+                clip,
+            );
             draw_text(
                 backend,
                 ox + ib.ib_xtext,

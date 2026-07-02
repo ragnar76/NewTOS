@@ -1550,10 +1550,17 @@ fn blit_icon(backend: &dyn RasterBackend, ix: i16, y: i16, data: &[u16; 64], mas
 }
 
 /// Draw a centred name label below an icon (`ib_ptext`), at `(cx, y+34)`.
+/// The label sits in a solid white rectangle (EmuTOS `gr_gicon` draws the
+/// icon text on a solid `bgcol` background) so it reads against a patterned
+/// desktop instead of black glyphs directly on the dither.
 fn draw_icon_label(backend: &dyn RasterBackend, cx: i16, y: i16, label: &[u8], clip: ClipRect) {
-    let lx = cx - (label.len() as i16 * 8) / 2;
+    use tos_api::vdi::font::{CELL_H, CELL_W};
+    let w = label.len() as i16 * CELL_W;
+    let lx = cx - w / 2;
+    let ly = y + 34;
+    backend.fill_rect(lx, ly, w, CELL_H, WHITE, clip);
     for (i, &c) in label.iter().enumerate() {
-        backend.draw_glyph(lx + i as i16 * 8, y + 34, tos_api::vdi::font::glyph(c as u16), BLACK, clip);
+        backend.draw_glyph(lx + i as i16 * CELL_W, ly, tos_api::vdi::font::glyph(c as u16), BLACK, clip);
     }
 }
 
