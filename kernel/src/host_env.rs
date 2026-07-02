@@ -107,6 +107,14 @@ impl Host for KernelHost {
             #[cfg(feature = "board-rpi4")]
             crate::console::pl011_rx_poll();
 
+            // Drain USB-HID interrupt transfers too, so a *blocking* console
+            // read (Cconin/Bconin — e.g. the EmuCON shell) sees the USB
+            // keyboard, not only the UART0 cable. `pump_input` already does this
+            // for the desktop / AES event loops; without it here the USB
+            // keyboard reaches the desktop but never a blocking console read.
+            // No-op until a HID device is enumerated.
+            crate::drivers::usb::poll();
+
             if let Some(b) = crate::console::rx_pop() {
                 break b;
             }
