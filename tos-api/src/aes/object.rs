@@ -910,6 +910,52 @@ fn gr_rect(backend: &dyn RasterBackend, x: i16, y: i16, w: i16, h: i16, icol: Pe
     }
 }
 
+/// Maximum formatted-string length (EmuTOS `obdefs.h` `MAX_LEN`).
+const MAX_LEN: usize = 81;
+
+/// Merge a raw text string into a template (EmuTOS `ob_format`): each `_`
+/// in the template consumes the next character of `raw` (blanked back to
+/// `_` once `raw` is exhausted); every other template character is copied
+/// verbatim. A leading `@` in `raw` means "empty". `just == TE_RIGHT`
+/// fills from the right end. The formatted result (always template length,
+/// capped at `out.len()`) is written into `out`; the length is returned.
+fn ob_format(just: i16, raw: &[u8], tmpl: &[u8], out: &mut [u8]) -> usize {
+    // A leading '@' marks an empty raw string (EmuTOS clears it to "").
+    let raw: &[u8] = if raw.first() == Some(&b'@') { &[] } else { raw };
+    let ptlen = tmpl.len().min(out.len());
+    let prlen = raw.len();
+
+    if just == TE_RIGHT {
+        // Walk template and raw from their right ends.
+        let mut r = prlen; // one past the next raw char to consume
+        for k in 0..ptlen {
+            let ti = ptlen - 1 - k;
+            out[ti] = if tmpl[ti] != b'_' {
+                tmpl[ti]
+            } else if r > 0 {
+                r -= 1;
+                raw[r]
+            } else {
+                b'_'
+            };
+        }
+    } else {
+        let mut r = 0usize; // next raw char to consume
+        for i in 0..ptlen {
+            out[i] = if tmpl[i] != b'_' {
+                tmpl[i]
+            } else if r < prlen {
+                let c = raw[r];
+                r += 1;
+                c
+            } else {
+                b'_'
+            };
+        }
+    }
+    ptlen
+}
+
 fn just_draw(ob: &Object, x: i16, y: i16, clip: ClipRect, backend: &dyn RasterBackend) {
     let selected = ob.ob_state & SELECTED != 0;
     let disabled = ob.ob_state & DISABLED != 0;
@@ -1026,23 +1072,52 @@ fn just_draw(ob: &Object, x: i16, y: i16, clip: ClipRect, backend: &dyn RasterBa
             if ob.ob_spec != 0 {
                 // SAFETY: ob_spec of a *TEXT object points at a TEDINFO.
                 let ted = unsafe { &*(ob.ob_spec as *const TedInfo) };
-                // The *BOXTEXT variants additionally draw a box (black-on-
-                // white; full colour-word cracking lands in the colour
-                // batch). F-variants show te_ptext directly (template
-                // merging arrives with full editable-field support).
-                if ob.ob_type == G_BOXTEXT || ob.ob_type == G_FBOXTEXT {
-                    backend.fill_rect(x, y, w, h, fill, clip);
-                    let th = if d3 != 0 { 0 } else { ted.te_thickness };
-                    if th != 0 {
-                        draw_border(backend, x, y, w, h, th.unsigned_abs() as i16, BLACK, clip);
+                // Crack the TEDINFO colour word (EmuTOS `gr_crack`): border,
+                // text, inside pattern, inside colour.
+                let (bcol, tcol, mut ipat, mut icol, _mode) = gr_crack(ted.te_color as u16);
+                let mut is_box = ob.ob_type == G_BOXTEXT || ob.ob_type == G_FBOXTEXT;
+                let mut th = if d3 != 0 { 0 } else { ted.te_thickness };
+                // 3D background (EmuTOS): a hollow-white text background takes
+                // the solid 3D background colour; a plain TEXT/FTEXT becomes a
+                // BOXTEXT/FBOXTEXT with zero border so the fill is drawn.
+                if d3 != 0 && ipat == IP_HOLLOW && icol == WHITE {
+                    ipat = IP_SOLID;
+                    icol = BACKGR_COL.load(Ordering::Relaxed) as Pel;
+                    is_box = true;
+                    th = 0;
+                }
+                // SELECTED (EmuTOS `changecol`): xor the interior + text.
+                if selected {
+                    if ipat == IP_HOLLOW {
+                        ipat = IP_SOLID;
+                        icol = BLACK;
+                    } else {
+                        icol = xor_color(icol);
                     }
                 }
-                // Text colour from te_color (gr_crack: bits 8..11);
-                // inverted when SELECTED.
-                let tcol = ((ted.te_color >> 8) & 0x0f) as Pel;
-                let ink = if selected { WHITE } else { tcol };
-                let s = read_cstr(ted.te_ptext);
-                draw_text(backend, x, y, w, h, s, ted.te_just, ink, clip);
+                let t = th.unsigned_abs() as i16;
+                if is_box {
+                    if th != 0 {
+                        draw_border(backend, x, y, w, h, t, bcol, clip);
+                    }
+                    gr_rect(backend, x + t, y + t, w - 2 * t, h - 2 * t, icol, ipat, clip);
+                }
+                // Format the string: the F-variants merge `te_ptext` into the
+                // `te_ptmplt` template (EmuTOS `ob_format`); the plain variants
+                // draw `te_ptext` directly.
+                let raw = read_cstr(ted.te_ptext);
+                let mut fmtbuf = [0u8; MAX_LEN];
+                let s: &[u8] = if ob.ob_type == G_FTEXT || ob.ob_type == G_FBOXTEXT {
+                    let tmpl = read_cstr(ted.te_ptmplt);
+                    let n = ob_format(ted.te_just, raw, tmpl, &mut fmtbuf);
+                    &fmtbuf[..n]
+                } else {
+                    raw
+                };
+                // Text colour from te_color, xor'd when SELECTED (EmuTOS).
+                let ink = if selected { xor_color(tcol) } else { tcol };
+                // Text sits inside the box, shrunk by the border thickness.
+                draw_text(backend, x + t, y + t, w - 2 * t, h - 2 * t, s, ted.te_just, ink, clip);
             }
         }
         G_IMAGE => {
