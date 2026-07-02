@@ -241,7 +241,7 @@ fn do_alert(defbut: i16, s: &[u8], modal: bool) -> i16 {
     if !modal {
         return defbut.max(1); // draw-only (showcase): no waiting
     }
-    let chosen = modal_loop(h, tp, first_btn as i16, numbut as i16, defbut);
+    let chosen = modal_loop(h, tree.as_mut_ptr(), first_btn as i16, numbut as i16, defbut);
 
     // Show the chosen button selected, then report it (1-based).
     if chosen >= 1 {
@@ -255,14 +255,17 @@ fn do_alert(defbut: i16, s: &[u8], modal: bool) -> i16 {
 }
 
 /// Modal wait: a key (Enter = default button, '1'..='9' = that button) or
-/// a left-mouse click on an `EXIT` button. Returns the 1-based button.
+/// a left-mouse click on a button. A mouse press shows the button pressed
+/// and only fires on **release inside** it (EmuTOS `gr_watchbox`); releasing
+/// outside cancels. Returns the 1-based button.
 fn modal_loop(
     h: &dyn crate::host::Host,
-    tree: *const Object,
+    tree: *mut Object,
     first_btn: i16,
     numbut: i16,
     defbut: i16,
 ) -> i16 {
+    let tp = tree as *const Object;
     let mut prev_btn = h_mouse_buttons();
     loop {
         // keyboard
@@ -283,14 +286,17 @@ fn modal_loop(
                 _ => {}
             }
         }
-        // mouse: left-button press edge → hit-test
+        // mouse: left-button press edge → hit-test, then watch the button
         let cur = h_mouse_buttons();
         if cur & 0x01 != 0 && prev_btn & 0x01 == 0 {
             let (mx, my) = crate::vdi::mouse_position();
             // SAFETY: valid tree.
-            let hit = unsafe { object::hit_test(tree, 0, 16, mx, my) };
+            let hit = unsafe { object::hit_test(tp, 0, 16, mx, my) };
             if hit >= first_btn && hit < first_btn + numbut {
-                return hit - first_btn + 1;
+                // Show it pressed while held; act only on release inside.
+                if super::graf::watchbox(tree, hit, SELECTED, 0) {
+                    return hit - first_btn + 1;
+                }
             }
         }
         prev_btn = cur;
@@ -437,20 +443,19 @@ fn run_form(tree: *mut Object) -> i16 {
                     // A disabled object ignores the click.
                 } else if flags & SELECTABLE != 0 {
                     // EmuTOS `fm_button`: a radio button selects itself and
-                    // deselects its siblings; any other SELECTABLE object
-                    // toggles. Then wait for the button release.
-                    let new_state = if flags & RBUTTON != 0 {
+                    // deselects its siblings (on press). Any other SELECTABLE
+                    // object is watched while held — it shows its toggled
+                    // state and only commits on release **inside** it, so an
+                    // EXIT button (OK/Cancel) fires on release, not on press.
+                    if flags & RBUTTON != 0 {
                         select_radio(tree, hit);
-                        state | SELECTED
+                        wait_up();
                     } else {
-                        let ns = state ^ SELECTED;
-                        object::change(tree, hit, ns, true);
-                        ns
-                    };
-                    wait_up();
-                    // A now-selected EXIT object (e.g. an OK button) leaves.
-                    if new_state & SELECTED != 0 && flags & EXIT != 0 {
-                        return hit;
+                        let inside =
+                            super::graf::watchbox(tree, hit, state ^ SELECTED, state);
+                        if inside && flags & EXIT != 0 {
+                            return hit;
+                        }
                     }
                 } else if flags & (EXIT | TOUCHEXIT) != 0 {
                     // A non-selectable exit/touchexit object leaves at once.
