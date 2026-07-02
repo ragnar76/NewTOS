@@ -433,15 +433,14 @@ pub fn objc_change(pb: &Aespb) {
 
 // ── objc_sysvar (3-D look) ──────────────────────────────────────────────
 //
-// The 3-D look system variables (EmuTOS `ob_sysvar`). Defaults match NewTOS's
-// actual rendering: a 2px bevel, grey (LWHITE = 8) faces, no text-move or
-// colour-change on press (the bevel carries the pressed state). SET stores
-// them and GET reports them; `just_draw` still renders with fixed constants,
-// so a SET is recorded/reported but does not yet re-style the draw — a
-// documented follow-up, like `menu_register`.
+// The 3-D look system variables (EmuTOS `ob_sysvar`), with EmuTOS' defaults
+// (`gemoblib.c`): activators move their text on press (`acttxtmove = 1`) but
+// keep their colour; indicators change colour when selected
+// (`indcolchange = 1`) but do not move text. `just_draw` honours these
+// (`movetext`/`changecol`); a SET restyles the next draw.
 static IND_TXTMOVE: AtomicI16 = AtomicI16::new(0);
-static IND_COLCHANGE: AtomicI16 = AtomicI16::new(0);
-static ACT_TXTMOVE: AtomicI16 = AtomicI16::new(0);
+static IND_COLCHANGE: AtomicI16 = AtomicI16::new(1);
+static ACT_TXTMOVE: AtomicI16 = AtomicI16::new(1);
 static ACT_COLCHANGE: AtomicI16 = AtomicI16::new(0);
 static IND_BUTCOL: AtomicI16 = AtomicI16::new(GRAY_LT as i16);
 static ACT_BUTCOL: AtomicI16 = AtomicI16::new(GRAY_LT as i16);
@@ -1152,6 +1151,22 @@ fn just_draw(ob: &Object, x: i16, y: i16, clip: ClipRect, backend: &dyn RasterBa
         (WHITE, BLACK)
     };
 
+    // 3D dynamics on SELECTED (EmuTOS `just_draw` movetext/changecol): an
+    // activator nudges its text on press (acttxtmove), an indicator changes
+    // colour (indcolchange). A non-3D object keeps the classic inversion
+    // (changecol = true, no move).
+    let (movetext, changecol) = match d3 {
+        FL3DACT => (
+            ACT_TXTMOVE.load(Ordering::Relaxed) != 0,
+            ACT_COLCHANGE.load(Ordering::Relaxed) != 0,
+        ),
+        FL3DIND => (
+            IND_TXTMOVE.load(Ordering::Relaxed) != 0,
+            IND_COLCHANGE.load(Ordering::Relaxed) != 0,
+        ),
+        _ => (false, true),
+    };
+
     match ob.ob_type {
         G_BOX | G_IBOX | G_BUTTON | G_BOXCHAR => {
             // Crack the colour word: box types pack it in `ob_spec`'s low 16
@@ -1181,9 +1196,11 @@ fn just_draw(ob: &Object, x: i16, y: i16, clip: ClipRect, backend: &dyn RasterBa
                     _ => BACKGR_COL.load(Ordering::Relaxed) as Pel, // FL3DBAK
                 };
             }
-            // SELECTED (EmuTOS): a hollow box goes solid black, else xor the
-            // interior colour.
-            if selected {
+            // SELECTED, but only when the object changes colour (EmuTOS
+            // `changecol`): a hollow box goes solid black, else xor the
+            // interior. A 3D activator (actcolchange = 0) keeps its face —
+            // the bevel alone shows the press.
+            if selected && changecol {
                 if ipat == IP_HOLLOW {
                     ipat = IP_SOLID;
                     icol = BLACK;
@@ -1198,16 +1215,19 @@ fn just_draw(ob: &Object, x: i16, y: i16, clip: ClipRect, backend: &dyn RasterBa
             if ob.ob_type != G_IBOX {
                 gr_rect(backend, x + t, y + t, w - 2 * t, h - 2 * t, icol, ipat, clip);
             }
-            // Text colour, xor'd when selected (EmuTOS).
-            let ink = if selected { xor_color(tcol) } else { tcol };
+            // Text colour, xor'd when selected *and* the object changes colour.
+            let ink = if selected && changecol { xor_color(tcol) } else { tcol };
+            // `movetext` (EmuTOS): an activator's label sits 1px up-left while
+            // raised and drops to the base position when pressed.
+            let (tx, ty) = if movetext && !selected { (x - 1, y - 1) } else { (x, y) };
             if ob.ob_type == G_BOXCHAR {
                 let ch = ((ob.ob_spec >> 24) & 0xFF) as u8;
                 if ch != 0 {
-                    draw_text(backend, x, y, w, h, &[ch], TE_CNTR, ink, clip);
+                    draw_text(backend, tx, ty, w, h, &[ch], TE_CNTR, ink, clip);
                 }
             } else if ob.ob_type == G_BUTTON {
                 let s = read_cstr(ob.ob_spec);
-                draw_text(backend, x, y, w, h, s, TE_CNTR, ink, clip);
+                draw_text(backend, tx, ty, w, h, s, TE_CNTR, ink, clip);
             }
         }
         G_STRING => {

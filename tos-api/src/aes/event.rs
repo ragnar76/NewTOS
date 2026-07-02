@@ -122,13 +122,50 @@ pub fn evnt_button(pb: &Aespb) {
     let clicks = pb.intin(0);
     let mask = pb.intin(1) as u8;
     let state = pb.intin(2) as u8;
+    let mut got = 0i16;
     if let Some(h) = host() {
-        while crate::vdi::mouse_buttons() & mask != state & mask {
+        let matches = |m: u8, s: u8| crate::vdi::mouse_buttons() & m == s & m;
+        // Wait for the button to reach the requested state (the first click).
+        while !matches(mask, state) {
             h.pump_input();
+        }
+        got = 1;
+        // Count further press cycles that fall inside the double-click window
+        // (EmuTOS reports the number of clicks up to the requested maximum).
+        let win = dclick_ms();
+        while got < clicks {
+            let deadline = h.monotonic_millis().saturating_add(win);
+            // The button must leave, then re-reach, the state within `win`.
+            if !wait_until(h, deadline, || !matches(mask, state))
+                || !wait_until(h, deadline, || matches(mask, state))
+            {
+                break;
+            }
+            got += 1;
         }
     }
     fill_rets(pb);
-    pb.set_ret(clicks);
+    pb.set_ret(got.max(1));
+}
+
+/// Double-click intervals per speed index 0..4 (EmuTOS `gl_dcrates`, ms).
+const DCRATES: [u64; 5] = [450, 330, 275, 220, 165];
+
+/// The current double-click window in milliseconds.
+fn dclick_ms() -> u64 {
+    DCRATES[DCLICK_INDEX.load(Ordering::Relaxed).clamp(0, 4) as usize]
+}
+
+/// Poll `cond` until it holds or the deadline passes; returns whether it
+/// became true in time.
+fn wait_until(h: &dyn crate::host::Host, deadline: u64, cond: impl Fn() -> bool) -> bool {
+    while h.monotonic_millis() < deadline {
+        if cond() {
+            return true;
+        }
+        h.pump_input();
+    }
+    cond()
 }
 
 /// `evnt_mouse` (22) — block until the mouse enters (`flags` = 0) or
