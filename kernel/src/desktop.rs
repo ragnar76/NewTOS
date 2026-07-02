@@ -515,8 +515,16 @@ fn set_desk_icon(
     };
 }
 
+/// Top-Y of the desktop Trash fixture (bottom-left), shared by the renderer
+/// and the hit-test so they never drift apart. Leaves a bottom margin for the
+/// 32×32 icon plus its label (EmuTOS keeps the trash in the bottom-left).
+fn trash_cy(sh: i16) -> i16 {
+    sh - 78
+}
+
 /// Build + draw the desktop surface icon tree (drives top-left, trash
-/// bottom-left, printer bottom-right — EmuTOS `deskapp.c`), via `objc_draw`.
+/// bottom-left — EmuTOS `deskapp.c`), via `objc_draw`. NewTOS has no printer
+/// device, so the EmuTOS Printer fixture is intentionally omitted.
 fn draw_desktop_icons(sw: i16, sh: i16) {
     use crate::desktop_icons as ic;
     // SAFETY: single-CPU desktop; the tree buffers are used only here.
@@ -545,16 +553,9 @@ fn draw_desktop_icons(sw: i16, sh: i16) {
             idx += 1;
         }
     }
-    // Fixtures: Trash bottom-left, Printer bottom-right.
-    let ycnt = ((sh - MENU_H) / ich).max(1);
-    let cy_bot = MENU_H + 18 + (ycnt - 1) * ich;
+    // Fixture: Trash bottom-left.
     if n < DESK_MAX {
-        set_desk_icon(obj, ib, nm, n, 20 + icw / 2, cy_bot, &ic::TRASH_DATA, &ic::TRASH_MASK, b"Trash", None);
-        n += 1;
-    }
-    if n < DESK_MAX {
-        let printer_cx = 20 + (xcnt - 1) * icw + icw / 2;
-        set_desk_icon(obj, ib, nm, n, printer_cx, cy_bot, &ic::PRINTER_DATA, &ic::PRINTER_MASK, b"Printer", None);
+        set_desk_icon(obj, ib, nm, n, 20 + icw / 2, trash_cy(sh), &ic::TRASH_DATA, &ic::TRASH_MASK, b"Trash", None);
         n += 1;
     }
 
@@ -1026,9 +1027,7 @@ pub fn preview_trash() {
     draw();
     open_dir_window(b'C', (40, MENU_H + 24, 300, 120));
     let backend = &crate::vdi_backend::VDI_SCREEN;
-    let ich = 64i16;
-    let ycnt = ((480 - MENU_H) / ich).max(1);
-    let cy = MENU_H + 18 + (ycnt - 1) * ich + 16; // over the trash body
+    let cy = trash_cy(480) + 16; // over the trash body
     tos_api::vdi::feed_relative(0, 0, 0, backend);
     let to = |x: i16, y: i16| {
         let (mx, my) = tos_api::vdi::mouse_position();
@@ -1634,9 +1633,7 @@ fn trash_at(mx: i16, my: i16) -> bool {
     let Some(backend) = tos_api::host::host().and_then(|h| h.raster()) else {
         return false;
     };
-    let ich = 64i16;
-    let ycnt = ((backend.height() as i16 - MENU_H) / ich).max(1);
-    let cy_bot = MENU_H + 18 + (ycnt - 1) * ich;
+    let cy_bot = trash_cy(backend.height() as i16);
     let cx = 20 + 80 / 2; // trash centre x (icw/2)
     (mx - cx).abs() <= 28 && my >= cy_bot && my <= cy_bot + 56
 }
