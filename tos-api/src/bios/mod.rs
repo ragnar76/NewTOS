@@ -13,6 +13,7 @@ pub mod block;
 pub mod bpb;
 pub mod chardev;
 pub mod drive;
+pub mod vectors;
 
 pub use drive::mount;
 
@@ -29,6 +30,7 @@ const BCONSTAT: u16 = 0x01;
 const BCONIN: u16 = 0x02;
 const BCONOUT: u16 = 0x03;
 const RWABS: u16 = 0x04;
+const SETEXC: u16 = 0x05;
 const BCOSTAT: u16 = 0x08;
 const TICKCAL: u16 = 0x06;
 const GETBPB: u16 = 0x07;
@@ -48,6 +50,7 @@ pub fn dispatch(args: &TrapArgs) -> i64 {
         BCONOUT => chardev::bconout(args) as i64,
         BCOSTAT => chardev::bcostat(args) as i64,
         RWABS => rwabs(args) as i64,
+        SETEXC => vectors::setexc(args),
         TICKCAL => TICKCAL_MS as i64,
         GETBPB => bpb::getbpb(args.arg_u16(0)),
         MEDIACH => mediach(args) as i64,
