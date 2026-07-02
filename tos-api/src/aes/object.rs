@@ -198,7 +198,12 @@ pub fn objc_draw(pb: &Aespb) {
         return;
     }
 
-    let clip = ClipRect::full(backend.width(), backend.height());
+    // Clip to OB_XCLIP/YCLIP/WCLIP/HCLIP (int_in[2..5]); the backend
+    // intersects with the screen edges. EmuTOS `objc_draw` sets exactly
+    // this VDI clip before drawing, so a partial (damaged-rectangle)
+    // redraw does not spill outside the caller's region.
+    let (cx, cy, cw, ch) = (pb.intin(2), pb.intin(3), pb.intin(4), pb.intin(5));
+    let clip = ClipRect { xmn: cx, ymn: cy, xmx: cx + cw - 1, ymx: cy + ch - 1 };
 
     // Absolute origin of `drawob` = sum of its ancestors' x/y. EmuTOS
     // starts drawing at the parent offset; we compute it via objc_offset.
