@@ -78,6 +78,8 @@ const fn build_table() -> [Option<GemdosFn>; MAX_FN + 1] {
     t[0x3E] = Some(crate::bdos::fs::file::fclose);
     t[0x3F] = Some(crate::bdos::fs::file::fread);
     t[0x42] = Some(crate::bdos::fs::file::fseek);
+    t[0x45] = Some(crate::bdos::fs::file::fdup);
+    t[0x46] = Some(crate::bdos::fs::file::fforce);
 
     // --- File group, write side (PHASE-09 D7) ---------------------
     t[0x3C] = Some(crate::bdos::fs::file::fcreate);

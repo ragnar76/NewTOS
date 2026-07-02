@@ -55,23 +55,99 @@ struct Ofd {
     dirty: bool,
 }
 
-struct FileTable(UnsafeCell<[Option<Ofd>; OPEN_FILES]>);
+/// One open-file-table entry: a real open file, or a `Fdup`'d redirect that
+/// forwards to a captured target handle/device (for saving a standard
+/// handle's mapping across `Fforce`).
+#[derive(Clone, Copy)]
+enum Slot {
+    File(Ofd),
+    Redirect(i16),
+}
+
+struct FileTable(UnsafeCell<[Option<Slot>; OPEN_FILES]>);
 // SAFETY: accessed only from the single-CPU, IRQ-off trap path.
 unsafe impl Sync for FileTable {}
 static FILES: FileTable = FileTable(UnsafeCell::new([None; OPEN_FILES]));
 
-fn table() -> &'static mut [Option<Ofd>; OPEN_FILES] {
+fn table() -> &'static mut [Option<Slot>; OPEN_FILES] {
     // SAFETY: single trap path; never concurrently borrowed.
     unsafe { &mut *FILES.0.get() }
 }
 
-/// Resolve a handle (`>= NUMSTD`) to its open-file slot.
-fn ofd_of(handle: u16) -> Option<&'static mut Ofd> {
-    if handle < NUMSTD {
-        return None;
+/// The calling process's UFT entry for standard handle `std` (0..NUMSTD):
+/// `-1`/negative = a BIOS device (NewTOS maps all to the console), `>=
+/// NUMSTD` = a redirected non-standard handle. No process → the console.
+fn uft(std: u16) -> i16 {
+    let bp = crate::bdos::process::current();
+    if bp.is_null() {
+        return -1;
     }
-    let slot = (handle - NUMSTD) as usize;
-    table().get_mut(slot)?.as_mut()
+    // SAFETY: `current()` returns a valid basepage pointer or null. The UFT
+    // entries are bytes (handles 0..NUMHANDLES, devices -1..-4 all fit).
+    unsafe { (*bp).p_uft.get(std as usize).copied().unwrap_or(-1) as i16 }
+}
+
+/// Set the calling process's UFT entry (for `Fforce`).
+fn set_uft(std: u16, val: i16) {
+    let bp = crate::bdos::process::current();
+    if bp.is_null() {
+        return;
+    }
+    // SAFETY: valid basepage pointer.
+    unsafe {
+        if let Some(e) = (*bp).p_uft.get_mut(std as usize) {
+            *e = val as i8;
+        }
+    }
+}
+
+/// The final I/O target a handle resolves to.
+enum Target {
+    /// The console (any default / device-mapped standard handle).
+    Console,
+    /// The open-file-table slot holding the file's `Ofd`.
+    File(usize),
+    /// An invalid handle.
+    None,
+}
+
+/// Resolve a handle to its I/O target, following the per-process UFT (for
+/// standard handles) and `Fdup` redirect chains (bounded against cycles).
+fn resolve(handle: u16) -> Target {
+    let mut t: i16 = if handle < NUMSTD {
+        uft(handle)
+    } else {
+        handle as i16
+    };
+    for _ in 0..8 {
+        if t < 0 {
+            return Target::Console; // a BIOS device → the console
+        }
+        if (t as u16) < NUMSTD {
+            t = uft(t as u16); // a standard-handle target → follow the UFT
+            continue;
+        }
+        let slot = (t as u16 - NUMSTD) as usize;
+        match table().get(slot).and_then(|s| *s) {
+            Some(Slot::File(_)) => return Target::File(slot),
+            Some(Slot::Redirect(inner)) => t = inner,
+            None => return Target::None,
+        }
+    }
+    Target::None
+}
+
+/// Resolve a handle to its open `Ofd` (a file), or `None` for the console /
+/// an invalid handle. Used by the file-only ops (`Fseek`, `Fdatime`, …).
+fn ofd_of(handle: u16) -> Option<&'static mut Ofd> {
+    let slot = match resolve(handle) {
+        Target::File(s) => s,
+        _ => return None,
+    };
+    match table().get_mut(slot)?.as_mut()? {
+        Slot::File(ofd) => Some(ofd),
+        Slot::Redirect(_) => None,
+    }
 }
 
 /// `Fopen` (0x3D) — open an existing file for reading/writing.
@@ -105,7 +181,7 @@ pub fn fopen(args: &TrapArgs) -> Long {
         Some(s) => s,
         None => return ENHNDL,
     };
-    table()[slot] = Some(Ofd {
+    table()[slot] = Some(Slot::File(Ofd {
         vol,
         drive,
         dir_start: parent,
@@ -115,7 +191,7 @@ pub fn fopen(args: &TrapArgs) -> Long {
         pos: 0,
         mode,
         dirty: false,
-    });
+    }));
     (slot as u16 + NUMSTD) as Long
 }
 
@@ -164,7 +240,7 @@ pub fn fcreate(args: &TrapArgs) -> Long {
         Some(s) => s,
         None => return ENHNDL,
     };
-    table()[slot] = Some(Ofd {
+    table()[slot] = Some(Slot::File(Ofd {
         vol,
         drive,
         dir_start: parent,
@@ -174,7 +250,7 @@ pub fn fcreate(args: &TrapArgs) -> Long {
         pos: 0,
         mode: 0x01, // write access
         dirty: false,
-    });
+    }));
     (slot as u16 + NUMSTD) as Long
 }
 
@@ -184,6 +260,13 @@ pub fn fread(args: &TrapArgs) -> Long {
     let len = args.arg_i32(1);
     let ubuf = args.arg_u64(2);
 
+    // Route standard handles / redirects: a console-mapped handle reads
+    // from the keyboard, a file handle reads the file (below).
+    match resolve(handle) {
+        Target::Console => return console_read(len, ubuf),
+        Target::None => return EIHNDL,
+        Target::File(_) => {}
+    }
     let ofd = match ofd_of(handle) {
         Some(o) => o,
         None => return EIHNDL,
@@ -253,6 +336,13 @@ pub fn fwrite(args: &TrapArgs) -> Long {
     let len = args.arg_i32(1);
     let ubuf = args.arg_u64(2);
 
+    // Route standard handles / redirects: a console-mapped handle writes
+    // to the console, a file handle writes the file (below).
+    match resolve(handle) {
+        Target::Console => return console_write(len, ubuf),
+        Target::None => return EIHNDL,
+        Target::File(_) => {}
+    }
     let ofd = match ofd_of(handle) {
         Some(o) => o,
         None => return EIHNDL,
@@ -580,16 +670,96 @@ pub fn fclose(args: &TrapArgs) -> Long {
     match table().get_mut(slot) {
         Some(s @ Some(_)) => {
             // Flush the directory entry (size / start cluster) if writes
-            // changed it, then write back dirty cached sectors.
-            if let Some(ofd) = s {
+            // changed it, then write back dirty cached sectors. A `Fdup`
+            // redirect entry holds no file, so it is just released.
+            if let Some(Slot::File(ofd)) = s {
                 if ofd.dirty {
                     flush_ofd(ofd);
                 }
+                super::cache::flush();
             }
-            super::cache::flush();
             *s = None;
             E_OK
         }
         _ => EIHNDL,
     }
+}
+
+/// Read `len` bytes from the console (keyboard) into `ubuf` — the target of
+/// a console-mapped `Fread`. Blocks until `len` bytes arrive.
+fn console_read(len: i32, ubuf: u64) -> Long {
+    if len <= 0 {
+        return 0;
+    }
+    let Some(h) = crate::host::host() else {
+        return 0;
+    };
+    let dst = ubuf as *mut u8;
+    for i in 0..len as usize {
+        let b = h.console_read_byte_blocking();
+        // SAFETY: the caller's buffer holds >= len bytes.
+        unsafe { *dst.add(i) = b };
+    }
+    len as Long
+}
+
+/// Write `len` bytes from `ubuf` to the console — the target of a
+/// console-mapped `Fwrite`.
+fn console_write(len: i32, ubuf: u64) -> Long {
+    if len <= 0 {
+        return 0;
+    }
+    let Some(h) = crate::host::host() else {
+        return 0;
+    };
+    let src = ubuf as *const u8;
+    for i in 0..len as usize {
+        // SAFETY: the caller's buffer holds >= len bytes.
+        let b = unsafe { *src.add(i) };
+        h.console_write_byte(b);
+    }
+    len as Long
+}
+
+/// `Fdup` (0x45) — duplicate the current mapping of standard handle `h`
+/// (0..NUMSTD) into a fresh non-standard handle, so a program can save it
+/// before redirecting with `Fforce` (EmuTOS `xdup`). Returns the new
+/// handle, `EIHNDL` for a non-standard `h`, or `ENHNDL` when the table is
+/// full.
+pub fn fdup(args: &TrapArgs) -> Long {
+    let h = args.arg_i16(0);
+    if h < 0 || h as u16 >= NUMSTD {
+        return EIHNDL; // only standard handles may be duplicated
+    }
+    let captured = uft(h as u16);
+    let slot = match table().iter().position(Option::is_none) {
+        Some(s) => s,
+        None => return ENHNDL,
+    };
+    table()[slot] = Some(Slot::Redirect(captured));
+    (slot as u16 + NUMSTD) as Long
+}
+
+/// `Fforce` (0x46) — redirect standard handle `std` (0..NUMSTD) to source
+/// handle `h` (a non-standard handle `>= NUMSTD`, or a negative BIOS
+/// device) by rewriting the process UFT (EmuTOS `xforce`). Returns `E_OK`,
+/// or `EIHNDL` for a bad `std`, a standard-handle source, or a source that
+/// references no live table entry.
+pub fn fforce(args: &TrapArgs) -> Long {
+    let std = args.arg_i16(0);
+    let h = args.arg_i16(1);
+    if std < 0 || std as u16 >= NUMSTD {
+        return EIHNDL;
+    }
+    if h >= 0 && (h as u16) < NUMSTD {
+        return EIHNDL; // cannot force to another standard handle
+    }
+    if h >= NUMSTD as i16 {
+        let slot = (h as u16 - NUMSTD) as usize;
+        if table().get(slot).and_then(|s| *s).is_none() {
+            return EIHNDL;
+        }
+    }
+    set_uft(std as u16, h);
+    E_OK
 }
