@@ -901,8 +901,29 @@ impl Xhci {
         self.control(di, setup, buf_pa, len, true)
     }
 
-    /// Read + log the 18-byte device descriptor.
+    /// Read + log the 18-byte device descriptor, correcting EP0's max packet
+    /// size first (two-phase enumeration).
     pub fn get_device_descriptor(&mut self, di: usize) -> bool {
+        // Phase 1: read the first 8 bytes to learn bMaxPacketSize0. We addressed
+        // the device with EP0 max packet 8 (the safe minimum); a full-speed
+        // device whose real EP0 is 16/32/64 would babble on a direct 18-byte
+        // read (it packs the reply into one > 8-byte packet). 8 bytes fit one
+        // packet for any EP0 >= 8, so this read always succeeds.
+        if !self.get_descriptor(di, 1, 0, 8) {
+            kprintln!("[usb] get device descriptor (first 8) failed");
+            return false;
+        }
+        // SAFETY: single-CPU; DEV is ours. [7] = bMaxPacketSize0.
+        let bmax0 = unsafe { (*(&raw const DEV))[di].buf[7] } as u16;
+        if bmax0 > ep0_max_packet(self.hid[di].speed) {
+            // The real EP0 is larger than our guess — correct it (xHCI §4.6.7
+            // lists EP0 Max Packet Size as an Evaluate Context field) so the
+            // full read below does not babble.
+            if !self.update_ep0_max_packet(di, bmax0) {
+                return false;
+            }
+        }
+        // Phase 2: read the full 18-byte descriptor with the corrected EP0.
         if !self.get_descriptor(di, 1, 0, 18) {
             kprintln!("[usb] get device descriptor failed");
             return false;
@@ -917,6 +938,43 @@ impl Xhci {
         self.hid[di].vid = u16::from_le_bytes([b[8], b[9]]);
         self.hid[di].pid = u16::from_le_bytes([b[10], b[11]]);
         true
+    }
+
+    /// Update EP0's Max Packet Size via an Evaluate Context command, after the
+    /// first 8 descriptor bytes revealed a `bMaxPacketSize0` larger than the
+    /// value we addressed with. xHCI §4.6.7 lists the default control endpoint's
+    /// Max Packet Size as an evaluable field. The input is seeded from the live
+    /// (now correctly aligned) device context so the slot + EP0 base fields are
+    /// preserved; only A1 (EP0) is flagged, so the controller re-reads just the
+    /// EP0 Max Packet Size.
+    fn update_ep0_max_packet(&mut self, di: usize, max_packet: u16) -> bool {
+        let slot = self.hid[di].slot;
+        // SAFETY: single-CPU; DEV is ours.
+        let dev = unsafe { &mut (*(&raw mut DEV))[di] };
+        dev.input.iter_mut().for_each(|x| *x = 0);
+        dcache_inval((&raw const dev.device) as u64, core::mem::size_of_val(&dev.device));
+        let n = dev.device.len();
+        for k in 0..n {
+            dev.input[8 + k] = dev.device[k];
+        }
+        // SAFETY: `Input32Byte` is `#[repr(C)]` over the same u32s as `input`.
+        let input: &mut context::Input32Byte =
+            unsafe { &mut *(dev.input.as_mut_ptr().cast()) };
+        input.control_mut().set_add_context_flag(1); // A1: EP0 (dci 1)
+        input.device_mut().endpoint_mut(1).set_max_packet_size(max_packet);
+        let input_pa = dma_addr((&raw const dev.input) as u64);
+        let mut cmd = command::EvaluateContext::new();
+        cmd.set_input_context_pointer(input_pa);
+        cmd.set_slot_id(slot);
+        let data = command::Allowed::EvaluateContext(cmd).into_raw();
+        match self.command(data) {
+            Some(cc) if matches!(cc.completion_code(), Ok(event::CompletionCode::Success)) => true,
+            Some(cc) => {
+                kprintln!("[usb] update_ep0_max_packet → {:?}", cc.completion_code());
+                false
+            }
+            None => false,
+        }
     }
 
     /// Discovered-device info for display (the init-screen USB tree).
@@ -1022,7 +1080,7 @@ impl Xhci {
 
     /// Configure Endpoint: add the HID interrupt-IN endpoint to the device.
     /// Returns its DCI (Device Context Index) on success, 0 on failure.
-    fn configure_endpoint(&mut self, di: usize, _port: u8, _speed: u8, hid: &HidInfo) -> u8 {
+    fn configure_endpoint(&mut self, di: usize, _port: u8, speed: u8, hid: &HidInfo) -> u8 {
         let slot = self.hid[di].slot;
         // SAFETY: single-CPU; DEV is ours.
         let dev = unsafe { &mut (*(&raw mut DEV))[di] };
@@ -1059,6 +1117,26 @@ impl Xhci {
             e.set_tr_dequeue_pointer(int_pa);
             e.set_dequeue_cycle_state();
             e.set_error_count(3);
+            // Interrupt-endpoint fields the VL805 validates — leaving them 0
+            // returned Parameter Error:
+            //   * Average TRB Length must be > 0 (xHCI §6.2.3.4). circle uses
+            //     the max packet size for interrupt endpoints.
+            //   * Max ESIT Payload = max packet size for a single-burst FS/LS/HS
+            //     interrupt endpoint.
+            //   * Interval must be legal for the speed (§6.2.3.6, Table 6-12):
+            //     a full/low-speed interrupt endpoint uses 3..=10 (period
+            //     2^Interval × 125 µs); Interval 0 is illegal there. High-speed
+            //     interrupt encodes bInterval (125-µs units) as bInterval − 1.
+            e.set_average_trb_length(hid.ep_max);
+            e.set_max_endpoint_service_time_interval_payload_low(hid.ep_max);
+            let interval = if speed == 3 {
+                hid.interval.saturating_sub(1).min(15)
+            } else {
+                let bi = hid.interval.max(1) as u32; // bInterval in frames (ms)
+                let log2 = 31 - bi.leading_zeros(); // floor(log2(bInterval))
+                ((3 + log2) as u8).clamp(3, 10)
+            };
+            e.set_interval(interval);
         }
 
         let input_pa = dma_addr((&raw const dev.input) as u64);
