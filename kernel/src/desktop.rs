@@ -354,7 +354,14 @@ const MN_SELECTED: i16 = 10;
 const WM_REDRAW: i16 = 20;
 const WM_TOPPED: i16 = 21;
 const WM_CLOSED: i16 = 22;
+const WM_ARROWED: i16 = 24;
 const WM_MOVED: i16 = 28;
+
+// WM_ARROWED actions (aesdefs.h): page = a screenful, line = one row.
+const WA_UPPAGE: i16 = 0;
+const WA_DNPAGE: i16 = 1;
+const WA_UPLINE: i16 = 2;
+const WA_DNLINE: i16 = 3;
 
 /// A reusable AES parameter block. `call` zeroes `control`, sets the
 /// opcode + counts, and traps; results land in `intout`/`addrout`.
@@ -705,6 +712,7 @@ fn step(msg: &mut [i16; 8]) -> bool {
                 redraw_win(msg[3]);
             }
             WM_REDRAW => redraw_win(msg[3]),
+            WM_ARROWED => arrow_win(msg[3], msg[4]),
             WM_MOVED => move_win(msg[3], (msg[4], msg[5], msg[6], msg[7])),
             _ => {}
         }
@@ -1115,10 +1123,15 @@ fn close_win(handle: i16) {
 /// Handle `WM_REDRAW`/`WM_TOPPED`: repaint the directory listing from the
 /// tracked rect (avoids the flaky `wind_get(WF_WXYWH)`).
 fn redraw_win(handle: i16) {
+    // Read the window state, drop the borrow, draw, then write back the
+    // scroll offset that `draw_dir_listing` clamped to the content.
+    let (drive, rect, scroll) = match win_slot(handle) {
+        Some(s) if s.drive != 0 => (s.drive, s.rect, s.scroll),
+        _ => return,
+    };
+    let clamped = draw_dir_listing(handle, drive, work_of(rect), scroll);
     if let Some(s) = win_slot(handle) {
-        if s.drive != 0 {
-            draw_dir_listing(handle, s.drive, work_of(s.rect));
-        }
+        s.scroll = clamped;
     }
 }
 
@@ -1131,10 +1144,37 @@ fn move_win(handle: i16, rect: (i16, i16, i16, i16)) {
     a.call(105, 6, 0); // wind_set
     if let Some(s) = win_slot(handle) {
         s.rect = rect;
-        if s.drive != 0 {
-            draw_dir_listing(handle, s.drive, work_of(rect));
-        }
     }
+    redraw_win(handle);
+}
+
+/// Handle `WM_ARROWED`: scroll the listing vertically by a line or a page.
+/// `redraw_win` clamps the offset to the content, so we only guard the
+/// lower bound here.
+fn arrow_win(handle: i16, action: i16) {
+    let step = match action {
+        WA_UPLINE | WA_DNLINE => 1,
+        WA_UPPAGE | WA_DNPAGE => {
+            // A page is the visible rows minus one (keep one row of context).
+            let rect = match win_slot(handle) {
+                Some(s) if s.drive != 0 => s.rect,
+                _ => return,
+            };
+            let (_, _, _, wh) = work_of(rect);
+            let icons = VIEW_MODE.load(core::sync::atomic::Ordering::Acquire) == 1;
+            let rows = if icons { ((wh - 6) / ICON_CH).max(1) } else { (wh / 16).max(1) };
+            (rows - 1).max(1)
+        }
+        _ => return,
+    };
+    let up = action == WA_UPLINE || action == WA_UPPAGE;
+    if let Some(s) = win_slot(handle) {
+        if s.drive == 0 {
+            return;
+        }
+        s.scroll = (s.scroll + if up { -step } else { step }).max(0);
+    }
+    redraw_win(handle);
 }
 
 /// The desktop's notion of the top window (kept in sync with the AES on
@@ -1594,13 +1634,15 @@ const W_KIND: i16 =
 struct WinInfo {
     drive: u8,
     rect: (i16, i16, i16, i16),
+    /// First visible content row (vertical scroll offset), in rows.
+    scroll: i16,
 }
 struct WinTable {
     t: UnsafeCell<[WinInfo; 8]>,
 }
 unsafe impl Sync for WinTable {}
 static WINS: WinTable = WinTable {
-    t: UnsafeCell::new([WinInfo { drive: 0, rect: (0, 0, 0, 0) }; 8]),
+    t: UnsafeCell::new([WinInfo { drive: 0, rect: (0, 0, 0, 0), scroll: 0 }; 8]),
 };
 
 fn win_slot(handle: i16) -> Option<&'static mut WinInfo> {
@@ -1650,9 +1692,10 @@ fn open_dir_window(letter: u8, rect: (i16, i16, i16, i16)) -> i16 {
     if let Some(s) = win_slot(handle) {
         s.drive = letter;
         s.rect = rect;
+        s.scroll = 0;
     }
     set_top(handle);
-    draw_dir_listing(handle, letter, work_of(rect));
+    redraw_win(handle);
     handle
 }
 
@@ -1780,9 +1823,12 @@ fn set_view(mode: u8) {
 
 /// List `X:\*.*`, sort it, and draw it into the window's `work` rect as
 /// either a text listing or an icon grid per [`VIEW_MODE`].
-fn draw_dir_listing(handle: i16, letter: u8, work: (i16, i16, i16, i16)) {
+/// Repaint window `handle`'s directory listing at vertical offset `scroll`
+/// (in content rows). Returns `scroll` clamped to `[0, max]` so a caller
+/// (e.g. `WM_ARROWED`) can nudge it and rely on the draw to bound it.
+fn draw_dir_listing(handle: i16, letter: u8, work: (i16, i16, i16, i16), scroll: i16) -> i16 {
     let Some(backend) = tos_api::host::host().and_then(|h| h.raster()) else {
-        return;
+        return scroll.max(0);
     };
     let clip = ClipRect::full(backend.width(), backend.height());
     let (wx, wy, ww, wh) = work;
@@ -1794,24 +1840,45 @@ fn draw_dir_listing(handle: i16, letter: u8, work: (i16, i16, i16, i16)) {
     let n = tos_api::bdos::fs::find::list_dir_ex(path_str, &mut ents);
     sort_entries(&mut ents[..n]);
 
-    if VIEW_MODE.load(core::sync::atomic::Ordering::Acquire) == 1 {
-        draw_dir_icons(backend, handle, work, &ents[..n], clip);
+    let icons = VIEW_MODE.load(core::sync::atomic::Ordering::Acquire) == 1;
+    // Clamp the scroll offset to the content: total rows minus the visible
+    // rows (in the same row units the view uses).
+    let scroll = scroll.max(0).min(max_scroll(icons, n, work));
+    if icons {
+        draw_dir_icons(backend, handle, work, &ents[..n], scroll, clip);
     } else {
-        draw_dir_text(backend, handle, work, &ents[..n], clip);
+        draw_dir_text(backend, handle, work, &ents[..n], scroll, clip);
     }
-    kprintln!("[desk] opened {}:\\ ({} entries)", letter as char, n);
+    scroll
+}
+
+/// Maximum vertical scroll (first-visible-row index) for `n` entries in the
+/// given work area — 0 when everything fits. Icon rows hold `cols` entries.
+fn max_scroll(icons: bool, n: usize, work: (i16, i16, i16, i16)) -> i16 {
+    let (_, _, ww, wh) = work;
+    let n = n as i16;
+    if icons {
+        let cols = (ww / ICON_CW).max(1);
+        let total_rows = (n + cols - 1) / cols;
+        let vis_rows = ((wh - 6) / ICON_CH).max(1);
+        (total_rows - vis_rows).max(0)
+    } else {
+        let vis_rows = (wh / 16).max(1);
+        (n - vis_rows).max(0)
+    }
 }
 
 /// Text view: one row per entry — name on the left, size (or `<DIR>`)
 /// right-aligned; the selected row is inverted.
 fn draw_dir_text(
     backend: &dyn RasterBackend, handle: i16, work: (i16, i16, i16, i16),
-    ents: &[tos_api::bdos::fs::find::DirInfo], clip: ClipRect,
+    ents: &[tos_api::bdos::fs::find::DirInfo], scroll: i16, clip: ClipRect,
 ) {
     let (wx, wy, ww, wh) = work;
     let rows = (wh / 16).max(1) as usize;
-    for (i, e) in ents.iter().take(rows).enumerate() {
-        let ny = wy + 4 + i as i16 * 16;
+    let start = scroll as usize; // first visible entry
+    for (i, e) in ents.iter().enumerate().skip(start).take(rows) {
+        let ny = wy + 4 + (i - start) as i16 * 16;
         let sel = is_selected(handle, i);
         let ink = if sel {
             backend.fill_rect(wx, ny - 2, ww, 16, BLACK, clip);
@@ -1839,20 +1906,27 @@ fn draw_dir_text(
     }
 }
 
+/// Icon cell size (width/height in pixels), shared by the icon view and
+/// the scroll-metrics helper so they agree on rows-per-window.
+const ICON_CW: i16 = 76;
+const ICON_CH: i16 = 52;
+
 /// Icon view: a grid of folder / document icons with the name underneath
 /// (EmuTOS "Show as icons"); the selected name is inverted.
 fn draw_dir_icons(
     backend: &dyn RasterBackend, handle: i16, work: (i16, i16, i16, i16),
-    ents: &[tos_api::bdos::fs::find::DirInfo], clip: ClipRect,
+    ents: &[tos_api::bdos::fs::find::DirInfo], scroll: i16, clip: ClipRect,
 ) {
     use crate::desktop_icons as ic;
     let (wx, wy, ww, wh) = work;
-    let cw = 76i16;
-    let ch = 52i16;
+    let cw = ICON_CW;
+    let ch = ICON_CH;
     let cols = (ww / cw).max(1);
-    for (i, e) in ents.iter().enumerate() {
-        let col = i as i16 % cols;
-        let row = i as i16 / cols;
+    let start = scroll as usize * cols as usize; // first visible entry (row-aligned)
+    for (i, e) in ents.iter().enumerate().skip(start) {
+        let rel = (i - start) as i16;
+        let col = rel % cols;
+        let row = rel / cols;
         let cx = wx + col * cw + cw / 2;
         let cy = wy + 6 + row * ch;
         if cy + ch > wy + wh {
