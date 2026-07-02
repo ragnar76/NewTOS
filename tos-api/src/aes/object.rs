@@ -570,6 +570,14 @@ pub fn objc_edit(pb: &Aespb) {
 /// cursor index. Shared by `objc_edit` (the trap) and the Form Manager's
 /// modal loop. `kind` = EDINIT (cursor to end) / EDCHAR (insert/delete at
 /// the cursor) / EDEND (finish, no caret). Redraws the field + caret.
+///
+/// Faithful to EmuTOS `ob_edit` (`gemobed.c`): the cursor index `idx` is a
+/// **raw-string** index into `te_ptext` (data only, no template literals);
+/// the on-screen caret column is `find_pos(te_ptmplt, idx)`, and each typed
+/// character is validated against the `te_pvalid` code for its position.
+/// For a plain field (no template / no validation — e.g. the desktop's
+/// rename box) `find_pos` is the identity and validation accepts anything,
+/// so this reduces to plain in-place editing.
 pub(crate) fn edit_field(tree: *const Object, obj: i16, in_char: i16, mut idx: i16, kind: i16) -> i16 {
     // SAFETY: valid tree.
     let ob = unsafe { &*tree.add(obj as usize) };
@@ -580,10 +588,11 @@ pub(crate) fn edit_field(tree: *const Object, obj: i16, in_char: i16, mut idx: i
     let ted = unsafe { &*(ob.ob_spec as *const TedInfo) };
     let txtlen = ted.te_txtlen.max(1);
     let text = ted.te_ptext as *mut u8;
+    let tmpl = read_cstr(ted.te_ptmplt);
 
     match kind {
         ED_INIT => idx = cstr_len_p(text) as i16,
-        ED_CHAR => edit_char(text, txtlen, &mut idx, in_char),
+        ED_CHAR => edit_char(ted, text, txtlen, &mut idx, in_char),
         _ => {} // EDSTART / EDEND
     }
 
@@ -594,49 +603,209 @@ pub(crate) fn edit_field(tree: *const Object, obj: i16, in_char: i16, mut idx: i
         // SAFETY: valid tree; depth 0 redraws only this field.
         unsafe { draw_tree(tree, obj, 0, ox - ob.ob_x, oy - ob.ob_y, clip, backend) };
         if kind != ED_END {
-            // Caret: a 1-px black bar at the cursor cell, text height.
+            // Caret at the template-relative column (EmuTOS `find_pos`): a
+            // 1-px black bar the height of the text.
+            let col = find_pos(tmpl, idx);
             let cy = oy + (ob.ob_height - crate::vdi::font::CELL_H) / 2;
-            backend.fill_rect(ox + idx * crate::vdi::font::CELL_W, cy, 1, crate::vdi::font::CELL_H, BLACK, clip);
+            backend.fill_rect(ox + col * crate::vdi::font::CELL_W, cy, 1, crate::vdi::font::CELL_H, BLACK, clip);
         }
     }
     idx
 }
 
-/// Apply one keystroke to the in-place text buffer at the cursor.
-fn edit_char(text: *mut u8, txtlen: i16, idx: &mut i16, ch: i16) {
+// Arrow scancodes in the key word's high byte (EmuTOS `scancode.h`).
+const SC_LEFT: u8 = 0x4B;
+const SC_RIGHT: u8 = 0x4D;
+
+/// Apply one keystroke to the raw text buffer at the cursor (EmuTOS
+/// `ob_edit` EDCHAR). Handles backspace / delete / escape / left-right
+/// arrows and validated printable insertion.
+fn edit_char(ted: &TedInfo, text: *mut u8, txtlen: i16, idx: &mut i16, ch: i16) {
+    let pvalid = read_cstr(ted.te_pvalid);
     let c = (ch & 0xff) as u8;
+    let scan = ((ch >> 8) & 0xff) as u8;
     let len = cstr_len_p(text) as i16;
-    match c {
-        0x08 | 0x7F => {
-            // backspace: delete the char before the cursor
+
+    // Cursor movement (scancode in the high byte).
+    match scan {
+        SC_LEFT => {
             if *idx > 0 {
-                // SAFETY: shifting within the NUL-terminated buffer.
-                unsafe {
-                    let mut i = *idx - 1;
-                    while i < len {
-                        *text.add(i as usize) = *text.add((i + 1) as usize);
-                        i += 1;
-                    }
-                }
                 *idx -= 1;
             }
+            return;
         }
-        0x20..=0x7E => {
-            // insert a printable character at the cursor
-            if len < txtlen - 1 {
-                // SAFETY: room exists (len < txtlen-1); shift incl. the NUL.
-                unsafe {
-                    let mut i = len;
-                    while i >= *idx {
-                        *text.add((i + 1) as usize) = *text.add(i as usize);
-                        i -= 1;
-                    }
-                    *text.add(*idx as usize) = c;
-                }
+        SC_RIGHT => {
+            if *idx < len {
+                *idx += 1;
+            }
+            return;
+        }
+        _ => {}
+    }
+
+    match c {
+        0x08 => {
+            // BACKSPACE: delete the char before the cursor.
+            if *idx > 0 {
+                *idx -= 1;
+                delete_at(text, *idx, len);
+            }
+        }
+        0x7F => {
+            // DELETE: delete the char at the cursor.
+            if *idx < len {
+                delete_at(text, *idx, len);
+            }
+        }
+        0x1B => {
+            // ESCAPE: clear the whole field.
+            *idx = 0;
+            // SAFETY: `text` is a valid buffer of at least one byte.
+            unsafe { *text = 0 };
+        }
+        0x20..=0xFF => {
+            // Printable: validate against this position's `te_pvalid` code,
+            // then insert (subject to the text length).
+            let mut ic = c;
+            if check(&mut ic, valid_code(pvalid, *idx)) && len < txtlen - 1 {
+                ins_char(text, *idx, ic, len);
                 *idx += 1;
             }
         }
         _ => {}
+    }
+}
+
+/// Delete the char at `pos` from the NUL-terminated buffer of length `len`
+/// (shift the tail down, EmuTOS `ob_delit`/`strcpy`).
+fn delete_at(text: *mut u8, pos: i16, len: i16) {
+    // SAFETY: shifting within the NUL-terminated buffer (pos < len).
+    unsafe {
+        let mut i = pos;
+        while i < len {
+            *text.add(i as usize) = *text.add((i + 1) as usize);
+            i += 1;
+        }
+    }
+}
+
+/// Insert `chr` at `pos` in the NUL-terminated buffer of length `len`
+/// (EmuTOS `ins_char`; caller has already checked `len < tot_len - 1`).
+fn ins_char(text: *mut u8, pos: i16, chr: u8, len: i16) {
+    // SAFETY: room exists; shift the tail up (incl. the NUL) then store.
+    unsafe {
+        let mut i = len;
+        while i >= pos {
+            *text.add((i + 1) as usize) = *text.add(i as usize);
+            i -= 1;
+        }
+        *text.add(pos as usize) = chr;
+    }
+}
+
+/// The `te_pvalid` validation code for raw position `idx` (EmuTOS expands
+/// the string to `te_tmplen` by repeating the last code). An empty
+/// validation string yields code 0 → "accept anything" (plain field).
+fn valid_code(pvalid: &[u8], idx: i16) -> u8 {
+    if pvalid.is_empty() {
+        return 0;
+    }
+    let i = (idx as usize).min(pvalid.len() - 1);
+    pvalid[i]
+}
+
+/// Map a raw-string index to its template column (EmuTOS `find_pos`): the
+/// index of the `idx`-th `_` in `tmpl`, advanced to the next `_`. Degrades
+/// to the identity when the template has no `_` left (plain field).
+fn find_pos(tmpl: &[u8], mut pos: i16) -> i16 {
+    let mut i = 0i16;
+    while pos > 0 {
+        if i as usize >= tmpl.len() {
+            // Template exhausted: remaining positions map 1:1 past its end.
+            return i + pos;
+        }
+        if tmpl[i as usize] == b'_' {
+            pos -= 1;
+        }
+        i += 1;
+    }
+    // Skip to the first `_` at or after `i`.
+    while (i as usize) < tmpl.len() && tmpl[i as usize] != b'_' {
+        i += 1;
+    }
+    i
+}
+
+// TEDINFO validation character sets (EmuTOS `gemobed.c`; `..` denotes an
+// inclusive range, parsed by `instr`). The derived sets drop the leading
+// members of their parent (`A` = `N` without `0..9`, etc.).
+const VALIDATE_N: &[u8] = b"0..9A..Z \x80\x8e\x8f\x90\x92\x99\x9a\x9e\xa5\xb5\xb6\xb7\xb8\xc2..\xdc";
+const VALIDATE_LN: &[u8] = b"0..9a..zA..Z \x80..\xff"; // EmuTOS VALIDATE_n
+const VALIDATE_F: &[u8] = b":?*a..zA..Z0..9_\x80..\xff";
+const VALIDATE_P: &[u8] = b".?*a..zA..Z0..9_\\:\x80..\xff";
+
+/// ASCII upcase (EmuTOS `toupper`, Roman range only).
+fn upcase(c: u8) -> u8 {
+    if c.is_ascii_lowercase() {
+        c - 32
+    } else {
+        c
+    }
+}
+
+/// Test whether `chr` is in the range/enum set `set` (EmuTOS `instr`):
+/// each `x..z` is an inclusive range, every other byte a literal member.
+fn instr(chr: u8, set: &[u8]) -> bool {
+    let mut i = 0;
+    while i < set.len() {
+        let lo = set[i];
+        i += 1;
+        // A trailing `..z` after `lo` makes it the range `lo..=z`.
+        let hi = if i + 1 < set.len() && set[i] == b'.' && set[i + 1] == b'.' {
+            i += 2;
+            let h = set.get(i).copied().unwrap_or(lo);
+            i += 1;
+            h
+        } else {
+            lo
+        };
+        if chr >= lo && chr <= hi {
+            return true;
+        }
+    }
+    false
+}
+
+/// Validate/upshift a character against a `te_pvalid` code (EmuTOS
+/// `check`). Code 0 (no validation) and `X`/`x` accept anything; `x`
+/// upshifts. Returns whether the character is allowed, upshifting
+/// `*in_char` in place when the code requests it.
+fn check(in_char: &mut u8, valchar: u8) -> bool {
+    let (set, up): (&[u8], bool) = match valchar {
+        0 => return true, // plain field: accept anything
+        b'9' => (b"0..9", false),
+        b'A' => (&VALIDATE_N[4..], true),
+        b'N' => (VALIDATE_N, true),
+        b'a' => (&VALIDATE_LN[4..], false),
+        b'n' => (VALIDATE_LN, false),
+        b'F' => (VALIDATE_F, true),
+        b'f' => (&VALIDATE_F[3..], true),
+        b'P' => (VALIDATE_P, true),
+        b'p' => (&VALIDATE_P[3..], true),
+        b'X' => return true,
+        b'x' => {
+            *in_char = upcase(*in_char);
+            return true;
+        }
+        _ => return false,
+    };
+    if instr(*in_char, set) {
+        if up {
+            *in_char = upcase(*in_char);
+        }
+        true
+    } else {
+        false
     }
 }
 
