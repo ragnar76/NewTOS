@@ -46,6 +46,8 @@ const WF_NAME: i16 = 2;
 const WF_INFO: i16 = 3;
 const WF_WXYWH: i16 = 4;
 const WF_CXYWH: i16 = 5;
+const WF_VSLIDE: i16 = 9;
+const WF_VSLSIZ: i16 = 16;
 const WF_PXYWH: i16 = 6;
 const WF_FXYWH: i16 = 7;
 const WF_TOP: i16 = 10;
@@ -101,6 +103,11 @@ struct Window {
     prev: Grect, // previous border rect (WF_PXYWH)
     name: [u8; NAME_CAP],
     info: [u8; NAME_CAP],
+    /// Vertical slider position (`WF_VSLIDE`, 0..1000 per-mille of travel)
+    /// and thumb size (`WF_VSLSIZ`, 1..1000 per-mille of the track; 1000 =
+    /// the whole track, i.e. nothing to scroll).
+    vslide: i16,
+    vslsize: i16,
 }
 
 impl Window {
@@ -115,6 +122,8 @@ impl Window {
         prev: Grect { x: 0, y: 0, w: 0, h: 0 },
         name: [0; NAME_CAP],
         info: [0; NAME_CAP],
+        vslide: 0,
+        vslsize: 1000,
     };
 }
 
@@ -519,29 +528,8 @@ fn draw_frame(w: &Window, istop: bool, backend: &dyn RasterBackend) {
     let work = calc(WC_WORK, kind, b);
     backend.fill_rect(work.x, work.y, work.w, work.h, WHITE, clip);
 
-    // Right scroll bar.
-    if kind & (VGADGETS | SIZER) != 0 {
-        let col_x = b.x + b.w - GAD;
-        let mut sy = top;
-        let mut send = b.y + b.h - 1;
-        if kind & (HGADGETS | SIZER) != 0 {
-            send -= GAD - 1;
-        }
-        if kind & UPARROW != 0 {
-            gadget(Grect { x: col_x, y: sy, w: GAD, h: GAD }, G_UP, backend, clip);
-            sy += GAD - 1;
-        }
-        if kind & DNARROW != 0 {
-            gadget(Grect { x: col_x, y: send - GAD + 1, w: GAD, h: GAD }, G_DN, backend, clip);
-            send -= GAD - 1;
-        }
-        if kind & VSLIDE != 0 && send > sy {
-            // slider track (light) + a thumb at the top (Batch-1 default)
-            backend.fill_rect(col_x, sy, GAD, send - sy, GRAY_LT, clip);
-            rect_outline(Grect { x: col_x, y: sy, w: GAD, h: send - sy }, backend, clip);
-            rect_outline(Grect { x: col_x, y: sy, w: GAD, h: GAD.min(send - sy) }, backend, clip);
-        }
-    }
+    // Right scroll bar (arrows + track + thumb).
+    draw_vslider(w, backend);
 
     // Bottom scroll bar.
     if kind & (HGADGETS | SIZER) != 0 {
@@ -574,6 +562,64 @@ fn draw_frame(w: &Window, istop: bool, backend: &dyn RasterBackend) {
             backend,
             clip,
         );
+    }
+}
+
+/// Draw the right (vertical) scroll bar — up/down arrows, the track, and a
+/// thumb positioned + sized from `w.vslide` / `w.vslsize` (both per-mille).
+/// Shared by `draw_frame` and `wind_set(WF_VSLIDE/WF_VSLSIZ)`; drawing only
+/// the slider column leaves the work area (content) untouched.
+fn draw_vslider(w: &Window, backend: &dyn RasterBackend) {
+    let b = w.curr;
+    let kind = w.kind;
+    if kind & (VGADGETS | SIZER) == 0 {
+        return;
+    }
+    let clip = ClipRect::full(backend.width(), backend.height());
+    let col_x = b.x + b.w - GAD;
+    // Track top: below the title + info bands.
+    let mut sy = b.y + 1;
+    if kind & (NAME | CLOSER | FULLER) != 0 {
+        sy += GAD - 1;
+    }
+    if kind & INFO != 0 {
+        sy += GAD - 1;
+    }
+    let mut send = b.y + b.h - 1;
+    if kind & (HGADGETS | SIZER) != 0 {
+        send -= GAD - 1;
+    }
+    if kind & UPARROW != 0 {
+        gadget(Grect { x: col_x, y: sy, w: GAD, h: GAD }, G_UP, backend, clip);
+        sy += GAD - 1;
+    }
+    if kind & DNARROW != 0 {
+        gadget(Grect { x: col_x, y: send - GAD + 1, w: GAD, h: GAD }, G_DN, backend, clip);
+        send -= GAD - 1;
+    }
+    if kind & VSLIDE != 0 && send > sy {
+        let track_h = send - sy;
+        backend.fill_rect(col_x, sy, GAD, track_h, GRAY_LT, clip);
+        rect_outline(Grect { x: col_x, y: sy, w: GAD, h: track_h }, backend, clip);
+        // Thumb: size = vslsize per-mille of the track (min one gadget cell),
+        // position = vslide per-mille of the remaining travel.
+        let size = w.vslsize.clamp(1, 1000);
+        let thumb_h = ((track_h as i32 * size as i32 / 1000) as i16).clamp(GAD.min(track_h), track_h);
+        let travel = track_h - thumb_h;
+        let pos = w.vslide.clamp(0, 1000);
+        let thumb_y = sy + (travel as i32 * pos as i32 / 1000) as i16;
+        backend.fill_rect(col_x, thumb_y, GAD, thumb_h, GRAY_LT, clip);
+        bevel(Grect { x: col_x, y: thumb_y, w: GAD, h: thumb_h }, true, backend, clip);
+    }
+}
+
+/// Redraw just window `handle`'s vertical slider (no work-area clear), for
+/// `wind_set(WF_VSLIDE/WF_VSLSIZ)`.
+fn redraw_vslider(handle: i16) {
+    if let (Some(backend), Some(w)) = (host().and_then(|h| h.raster()), win(handle)) {
+        if w.open {
+            draw_vslider(w, backend);
+        }
     }
 }
 
@@ -762,6 +808,18 @@ pub fn wind_set(pb: &Aespb) {
             send_redraw(handle, calc(WC_WORK, kind, r));
         }
         WF_TOP => top_window(handle),
+        WF_VSLIDE => {
+            if let Some(w) = win(handle) {
+                w.vslide = pb.intin(2).clamp(0, 1000);
+            }
+            redraw_vslider(handle);
+        }
+        WF_VSLSIZ => {
+            if let Some(w) = win(handle) {
+                w.vslsize = pb.intin(2).clamp(1, 1000);
+            }
+            redraw_vslider(handle);
+        }
         _ => {}
     }
     pb.set_ret(1);

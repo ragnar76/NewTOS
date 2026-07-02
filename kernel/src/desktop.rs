@@ -1129,10 +1129,22 @@ fn redraw_win(handle: i16) {
         Some(s) if s.drive != 0 => (s.drive, s.rect, s.scroll),
         _ => return,
     };
-    let clamped = draw_dir_listing(handle, drive, work_of(rect), scroll);
+    let (clamped, vslide, vslsize) = draw_dir_listing(handle, drive, work_of(rect), scroll);
     if let Some(s) = win_slot(handle) {
         s.scroll = clamped;
     }
+    // Reflect the scroll in the AES vertical slider thumb (redraws only the
+    // slider column, so the listing just drawn stays intact).
+    set_win_slider(handle, vslide, vslsize);
+}
+
+/// `wind_set(WF_VSLIDE/WF_VSLSIZ)` — update the vertical slider thumb.
+fn set_win_slider(handle: i16, vslide: i16, vslsize: i16) {
+    let mut a = Aes::new();
+    a.intin[0] = handle; a.intin[1] = 16; a.intin[2] = vslsize; // WF_VSLSIZ
+    a.call(105, 3, 0);
+    a.intin[0] = handle; a.intin[1] = 9; a.intin[2] = vslide; // WF_VSLIDE
+    a.call(105, 3, 0);
 }
 
 /// Handle `WM_MOVED`: confirm the drag via `wind_set(WF_CXYWH, rect)`,
@@ -1824,11 +1836,12 @@ fn set_view(mode: u8) {
 /// List `X:\*.*`, sort it, and draw it into the window's `work` rect as
 /// either a text listing or an icon grid per [`VIEW_MODE`].
 /// Repaint window `handle`'s directory listing at vertical offset `scroll`
-/// (in content rows). Returns `scroll` clamped to `[0, max]` so a caller
-/// (e.g. `WM_ARROWED`) can nudge it and rely on the draw to bound it.
-fn draw_dir_listing(handle: i16, letter: u8, work: (i16, i16, i16, i16), scroll: i16) -> i16 {
+/// (in content rows). Returns `(clamped_scroll, vslide, vslsize)` — the
+/// offset bounded to the content plus the AES slider position/size
+/// (per-mille), so `redraw_win` can nudge the offset and update the thumb.
+fn draw_dir_listing(handle: i16, letter: u8, work: (i16, i16, i16, i16), scroll: i16) -> (i16, i16, i16) {
     let Some(backend) = tos_api::host::host().and_then(|h| h.raster()) else {
-        return scroll.max(0);
+        return (scroll.max(0), 0, 1000);
     };
     let clip = ClipRect::full(backend.width(), backend.height());
     let (wx, wy, ww, wh) = work;
@@ -1841,30 +1854,44 @@ fn draw_dir_listing(handle: i16, letter: u8, work: (i16, i16, i16, i16), scroll:
     sort_entries(&mut ents[..n]);
 
     let icons = VIEW_MODE.load(core::sync::atomic::Ordering::Acquire) == 1;
-    // Clamp the scroll offset to the content: total rows minus the visible
-    // rows (in the same row units the view uses).
-    let scroll = scroll.max(0).min(max_scroll(icons, n, work));
+    // Total content rows and how many are visible (in the same row units the
+    // view uses); the scroll offset is clamped to their difference.
+    let (total_rows, vis_rows) = row_metrics(icons, n, work);
+    let scroll = scroll.max(0).min((total_rows - vis_rows).max(0));
     if icons {
         draw_dir_icons(backend, handle, work, &ents[..n], scroll, clip);
     } else {
         draw_dir_text(backend, handle, work, &ents[..n], scroll, clip);
     }
-    scroll
+    // AES slider (per-mille): thumb size = visible/total, position along the
+    // travel = scroll/max_scroll. Everything fits → full thumb at the top.
+    let max_scroll = (total_rows - vis_rows).max(0);
+    let vslsize = if total_rows <= vis_rows {
+        1000
+    } else {
+        (vis_rows as i32 * 1000 / total_rows as i32).clamp(1, 1000) as i16
+    };
+    let vslide = if max_scroll <= 0 {
+        0
+    } else {
+        (scroll as i32 * 1000 / max_scroll as i32).clamp(0, 1000) as i16
+    };
+    (scroll, vslide, vslsize)
 }
 
-/// Maximum vertical scroll (first-visible-row index) for `n` entries in the
-/// given work area — 0 when everything fits. Icon rows hold `cols` entries.
-fn max_scroll(icons: bool, n: usize, work: (i16, i16, i16, i16)) -> i16 {
+/// Total content rows and visible rows for `n` entries in the work area.
+/// Icon rows hold `cols` entries each; text rows hold one entry each.
+fn row_metrics(icons: bool, n: usize, work: (i16, i16, i16, i16)) -> (i16, i16) {
     let (_, _, ww, wh) = work;
     let n = n as i16;
     if icons {
         let cols = (ww / ICON_CW).max(1);
         let total_rows = (n + cols - 1) / cols;
         let vis_rows = ((wh - 6) / ICON_CH).max(1);
-        (total_rows - vis_rows).max(0)
+        (total_rows, vis_rows)
     } else {
         let vis_rows = (wh / 16).max(1);
-        (n - vis_rows).max(0)
+        (n, vis_rows)
     }
 }
 
