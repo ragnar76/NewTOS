@@ -459,42 +459,122 @@ fn paint_desktop_bg(backend: &dyn RasterBackend) {
     let bg = PatternFill { fg: d & 0x0F, bg: WHITE, pattern: &pat, opaque: true };
     backend.fill_pattern(0, MENU_H, sw, sh - MENU_H, bg, clip);
 
-    use crate::desktop_icons as ic;
+    // Draw the drive / trash / printer fixtures as an AES G_ICON tree over
+    // the pattern.
+    draw_desktop_icons(sw, sh);
+}
 
-    // A drive icon per present drive, in a grid from the TOP-LEFT (EmuTOS
-    // app_blddesk / #M loop: drive_x = idx % xcnt, drive_y = idx / xcnt).
-    let bits = tos_api::bios::drive::drvbits();
+const DESK_MAX: usize = 32;
+/// The desktop surface icons (drives + trash + printer) as an AES object
+/// tree: a `G_IBOX` container with a `G_ICON` child per fixture. Single boot
+/// CPU → hand-rolled `Sync`.
+struct DeskTree {
+    obj: UnsafeCell<[Object; DESK_MAX + 1]>,
+    ib: UnsafeCell<[IconBlk; DESK_MAX]>,
+    nm: UnsafeCell<[[u8; 8]; DESK_MAX]>,
+}
+unsafe impl Sync for DeskTree {}
+static DESKTREE: DeskTree = DeskTree {
+    obj: UnsafeCell::new([ZERO_OBJ; DESK_MAX + 1]),
+    ib: UnsafeCell::new([ZERO_IB; DESK_MAX]),
+    nm: UnsafeCell::new([[0; 8]; DESK_MAX]),
+};
+
+/// Fill tree slot `n` with a desktop fixture icon centred on `(cx, y)`: a
+/// 32-px icon in an 80-px cell, a centred label, and (for a drive) the
+/// letter in the icon's char cell. The positions mirror the former
+/// hand-drawn `draw_drive_icon` so the hit-tests (`drive_at`, `is_over_trash`)
+/// still match.
+#[allow(clippy::too_many_arguments)]
+fn set_desk_icon(
+    obj: &mut [Object; DESK_MAX + 1], ib: &mut [IconBlk; DESK_MAX], nm: &mut [[u8; 8]; DESK_MAX],
+    n: usize, cx: i16, y: i16, data: &[u16; 64], mask: &[u16; 64], label: &[u8],
+    letter: Option<(u8, (i16, i16))>,
+) {
+    nm[n] = [0; 8];
+    let ln = label.len().min(7);
+    nm[n][..ln].copy_from_slice(&label[..ln]);
+    let (ib_char, xchar, ychar) = match letter {
+        Some((c, ch)) => (0x1000 | c as i16, 24 + ch.0, ch.1),
+        None => (0, 0, 0),
+    };
+    ib[n] = IconBlk {
+        ib_pmask: mask.as_ptr() as u64,
+        ib_pdata: data.as_ptr() as u64,
+        ib_ptext: nm[n].as_ptr() as u64,
+        ib_char, ib_xchar: xchar, ib_ychar: ychar,
+        ib_xicon: 24, ib_yicon: 0, ib_wicon: 32, ib_hicon: 32,
+        ib_xtext: 0, ib_ytext: 34, ib_wtext: 80, ib_htext: 16,
+    };
+    obj[n + 1] = Object {
+        ob_next: 0, ob_head: -1, ob_tail: -1,
+        ob_type: G_ICON, ob_flags: 0, ob_state: 0,
+        ob_spec: (&ib[n] as *const IconBlk) as u64,
+        ob_x: cx - 40, ob_y: y, ob_width: 80, ob_height: 52,
+    };
+}
+
+/// Build + draw the desktop surface icon tree (drives top-left, trash
+/// bottom-left, printer bottom-right — EmuTOS `deskapp.c`), via `objc_draw`.
+fn draw_desktop_icons(sw: i16, sh: i16) {
+    use crate::desktop_icons as ic;
+    // SAFETY: single-CPU desktop; the tree buffers are used only here.
+    let obj = unsafe { &mut *DESKTREE.obj.get() };
+    let ib = unsafe { &mut *DESKTREE.ib.get() };
+    let nm = unsafe { &mut *DESKTREE.nm.get() };
+
     let icw = 80i16;
     let ich = 64i16;
     let xcnt = ((sw - 20) / icw).max(1);
+    let bits = tos_api::bios::drive::drvbits();
+    let mut n = 0usize;
     let mut idx = 0i16;
     for d in 0..26u32 {
-        if bits & (1 << d) != 0 {
+        if bits & (1 << d) != 0 && n < DESK_MAX {
             let cx = 20 + (idx % xcnt) * icw + icw / 2;
             let cy = MENU_H + 18 + (idx / xcnt) * ich;
             // EmuTOS deskapp.c:721 — A/B (drive < 2) are floppies, C+ hard.
-            draw_drive_icon(backend, cx, cy, b'A' + d as u8, d > 1, clip);
+            let (data, mask, ch) = if d > 1 {
+                (&ic::HARD_DATA, &ic::HARD_MASK, ic::HARD_CHAR)
+            } else {
+                (&ic::FLOPPY_DATA, &ic::FLOPPY_MASK, ic::FLOPPY_CHAR)
+            };
+            set_desk_icon(obj, ib, nm, n, cx, cy, data, mask, b"Disk", Some((b'A' + d as u8, ch)));
+            n += 1;
             idx += 1;
         }
     }
-
-    // EmuTOS desktop fixtures (deskapp.c:734-750): the Trash (#T, IG_TRASH)
-    // at the bottom-left, and the Printer (#O, IG_PRINT) at the bottom-right.
+    // Fixtures: Trash bottom-left, Printer bottom-right.
     let ycnt = ((sh - MENU_H) / ich).max(1);
     let cy_bot = MENU_H + 18 + (ycnt - 1) * ich;
-    draw_fixture_icon(backend, 20 + icw / 2, cy_bot, &ic::TRASH_DATA, &ic::TRASH_MASK, b"Trash", clip);
-    let printer_cx = 20 + (xcnt - 1) * icw + icw / 2;
-    draw_fixture_icon(backend, printer_cx, cy_bot, &ic::PRINTER_DATA, &ic::PRINTER_MASK, b"Printer", clip);
-}
+    if n < DESK_MAX {
+        set_desk_icon(obj, ib, nm, n, 20 + icw / 2, cy_bot, &ic::TRASH_DATA, &ic::TRASH_MASK, b"Trash", None);
+        n += 1;
+    }
+    if n < DESK_MAX {
+        let printer_cx = 20 + (xcnt - 1) * icw + icw / 2;
+        set_desk_icon(obj, ib, nm, n, printer_cx, cy_bot, &ic::PRINTER_DATA, &ic::PRINTER_MASK, b"Printer", None);
+        n += 1;
+    }
 
-/// Draw a non-drive desktop fixture icon (trash/printer): the real ICONBLK
-/// bitmap with a name label, no drive letter.
-fn draw_fixture_icon(
-    backend: &dyn RasterBackend, cx: i16, y: i16,
-    data: &[u16; 64], mask: &[u16; 64], label: &[u8], clip: ClipRect,
-) {
-    blit_icon(backend, cx - 16, y, data, mask, clip);
-    draw_icon_label(backend, cx, y, label, clip);
+    for i in 0..n {
+        obj[i + 1].ob_next = if i + 1 == n { 0 } else { (i + 2) as i16 };
+    }
+    if n > 0 {
+        obj[n].ob_flags |= LASTOB;
+    }
+    obj[0] = Object {
+        ob_next: -1, ob_head: if n > 0 { 1 } else { -1 }, ob_tail: n as i16,
+        ob_type: G_IBOX, ob_flags: 0, ob_state: 0, ob_spec: 0,
+        ob_x: 0, ob_y: MENU_H, ob_width: sw, ob_height: sh - MENU_H,
+    };
+
+    let mut a = Aes::new();
+    a.addrin[0] = obj.as_ptr() as i64;
+    a.intin[0] = 0;
+    a.intin[1] = 8;
+    a.intin[2] = 0; a.intin[3] = MENU_H; a.intin[4] = sw; a.intin[5] = sh - MENU_H;
+    a.call(42, 6, 1); // objc_draw
 }
 
 // The desktop menu (EmuTOS desktop.rsc ADMENU). NUL-terminated; a string
@@ -1585,55 +1665,6 @@ fn draw_menu_bar() {
     control[0] = 30; control[1] = 1; control[3] = 1; // menu_bar
     intin[0] = 1; addrin[0] = tree as i64;
     aes(block.as_ptr() as u64);
-}
-
-/// Blit a 32×32 1bpp EmuTOS ICONBLK with mask, top-left at `(ix, y)`:
-/// opaque where the mask is set (body white, data pixels black),
-/// transparent elsewhere (the desktop shows through).
-fn blit_icon(backend: &dyn RasterBackend, ix: i16, y: i16, data: &[u16; 64], mask: &[u16; 64], clip: ClipRect) {
-    for r in 0..32i16 {
-        let dw = ((data[r as usize * 2] as u32) << 16) | data[r as usize * 2 + 1] as u32;
-        let mw = ((mask[r as usize * 2] as u32) << 16) | mask[r as usize * 2 + 1] as u32;
-        for c in 0..32i16 {
-            let bit = 1u32 << (31 - c);
-            if mw & bit != 0 {
-                let px = if dw & bit != 0 { BLACK } else { WHITE };
-                backend.fill_rect(ix + c, y + r, 1, 1, px, clip);
-            }
-        }
-    }
-}
-
-/// Draw a centred name label below an icon (`ib_ptext`), at `(cx, y+34)`.
-/// The label sits in a solid white rectangle (EmuTOS `gr_gicon` draws the
-/// icon text on a solid `bgcol` background) so it reads against a patterned
-/// desktop instead of black glyphs directly on the dither.
-fn draw_icon_label(backend: &dyn RasterBackend, cx: i16, y: i16, label: &[u8], clip: ClipRect) {
-    use tos_api::vdi::font::{CELL_H, CELL_W};
-    let w = label.len() as i16 * CELL_W;
-    let lx = cx - w / 2;
-    let ly = y + 34;
-    backend.fill_rect(lx, ly, w, CELL_H, WHITE, clip);
-    for (i, &c) in label.iter().enumerate() {
-        backend.draw_glyph(lx + i as i16 * CELL_W, ly, tos_api::vdi::font::glyph(c as u16), BLACK, clip);
-    }
-}
-
-/// Draw a drive icon using the real EmuTOS ICONBLK bitmap (hard disk for
-/// `hard`, else floppy), the drive letter OR-ed into the icon
-/// (`ib_char` cell), and the "Disk" name below (`ib_ptext`/STDISK).
-fn draw_drive_icon(backend: &dyn RasterBackend, cx: i16, y: i16, letter: u8, hard: bool, clip: ClipRect) {
-    use crate::desktop_icons as ic;
-    let (data, mask, ch) = if hard {
-        (&ic::HARD_DATA, &ic::HARD_MASK, ic::HARD_CHAR)
-    } else {
-        (&ic::FLOPPY_DATA, &ic::FLOPPY_MASK, ic::FLOPPY_CHAR)
-    };
-    let ix = cx - 16; // 32-px icon centred on cx
-    blit_icon(backend, ix, y, data, mask, clip);
-    // Drive letter in the icon's char cell (EmuTOS `ib_char |= a_letter`).
-    backend.draw_glyph(ix + ch.0, y + ch.1, tos_api::vdi::font::glyph(letter as u16), BLACK, clip);
-    draw_icon_label(backend, cx, y, b"Disk", clip);
 }
 
 /// Window border `kind` bits (aesdefs.h:519).
