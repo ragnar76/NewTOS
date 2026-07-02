@@ -671,6 +671,15 @@ pub fn wind_get(pb: &Aespb) {
         return;
     }
 
+    // WF_TOP is answered from the global stack, independent of `handle` —
+    // in particular wind_get(0, WF_TOP) (a desktop-owner query) must return
+    // the top window handle, not fall through to the handle-0 screen rect.
+    if field == WF_TOP {
+        pb.set_intout(1, get_top());
+        pb.set_ret(1);
+        return;
+    }
+
     // Desktop (handle 0) reports the full screen for the rect fields.
     let r = match win(handle) {
         Some(w) => match field {
@@ -680,11 +689,6 @@ pub fn wind_get(pb: &Aespb) {
             WF_FXYWH => w.full,
             WF_KIND => {
                 pb.set_intout(1, w.kind as i16);
-                pb.set_ret(1);
-                return;
-            }
-            WF_TOP => {
-                pb.set_intout(1, get_top());
                 pb.set_ret(1);
                 return;
             }
@@ -893,7 +897,7 @@ fn gadget_at(w: &Window, mx: i16, my: i16) -> Gadget {
         if kind & UPARROW != 0 && my < top + GAD {
             return Gadget::Up;
         }
-        if kind & DNARROW != 0 && my >= bot - GAD {
+        if kind & DNARROW != 0 && my >= bot - GAD + 1 {
             return Gadget::Dn;
         }
     }
