@@ -16,6 +16,66 @@
 use super::object::{self, Object};
 use super::Aespb;
 use crate::host::host;
+use crate::vdi::backend::{ClipRect, RasterBackend};
+
+/// Alert colours (`vdi` palette indices).
+const BLACK: crate::vdi::backend::Pel = 1;
+
+/// The three 32×32 alert icons (EmuTOS `aes/gem.rsc` BITBLKs NOTEBB /
+/// QUESTBB / STOPBB — the `[1]`/`[2]`/`[3]` fields of a `form_alert`
+/// string). One `u32` per row, bit 0x8000_0000 = leftmost pixel; set bits
+/// are drawn black (a transparent mono blit, like EmuTOS `G_IMAGE`).
+const ALERT_ICONS: [[u32; 32]; 3] = [
+    // 1 = NOTE (exclamation)
+    [
+        0x00000000, 0x00018000, 0x00024000, 0x00024000,
+        0x00042000, 0x0005A000, 0x00099000, 0x000BD000,
+        0x0013C800, 0x0017E800, 0x00266400, 0x002C3400,
+        0x004C3200, 0x005C3A00, 0x009C3900, 0x00BC3D00,
+        0x013C3C80, 0x017E7E80, 0x027E7E40, 0x02FE7F40,
+        0x04FE7F20, 0x05FE7FA0, 0x09FFFF90, 0x0BFFFFD0,
+        0x13FE7FC8, 0x17FC3FE8, 0x27FC3FE4, 0x2FFE7FF4,
+        0x4FFFFFF2, 0x40000002, 0x7FFFFFFE, 0x00000000,
+    ],
+    // 2 = QUEST (question mark)
+    [
+        0x00000000, 0x7FFFFFFE, 0x40000002, 0x4FFFFFF2,
+        0x2FFFFFF4, 0x27F83FE4, 0x17E01FE8, 0x13C00FC8,
+        0x0BC307D0, 0x09E78790, 0x05FF87A0, 0x04FF8720,
+        0x02FF0F40, 0x027E1E40, 0x017C3E80, 0x013C7C80,
+        0x00BC7D00, 0x009FF900, 0x005E7A00, 0x004C3200,
+        0x002C3400, 0x00266400, 0x0017E800, 0x0013C800,
+        0x000BD000, 0x00099000, 0x0005A000, 0x00042000,
+        0x00024000, 0x00024000, 0x00018000, 0x00000000,
+    ],
+    // 3 = STOP (stop sign)
+    [
+        0x00000000, 0x00000000, 0x003FFC00, 0x00400200,
+        0x009FF900, 0x013FFC80, 0x027FFE40, 0x04FFFF20,
+        0x09FFFF90, 0x13FFFFC8, 0x27EFF7E4, 0x2FC7E3F4,
+        0x2FE3C7F4, 0x2FF18FF4, 0x2FF81FF4, 0x2FFC3FF4,
+        0x2FFC3FF4, 0x2FF81FF4, 0x2FF18FF4, 0x2FE3C7F4,
+        0x2FC7E3F4, 0x27EFF7E4, 0x13FFFFC8, 0x09FFFF90,
+        0x04FFFF20, 0x027FFE40, 0x013FFC80, 0x009FF900,
+        0x00400200, 0x003FFC00, 0x00000000, 0x00000000,
+    ],
+];
+
+/// Blit a 32×32 alert icon (transparent, set bits in black) at `(x, y)`.
+fn draw_alert_icon(icon: i16, x: i16, y: i16, backend: &dyn RasterBackend) {
+    if icon < 1 || icon > 3 {
+        return;
+    }
+    let clip = ClipRect::full(backend.width(), backend.height());
+    let bmp = &ALERT_ICONS[(icon - 1) as usize];
+    for (row, &bits) in bmp.iter().enumerate() {
+        for col in 0..32i16 {
+            if bits & (0x8000_0000u32 >> col) != 0 {
+                backend.fill_rect(x + col, y + row as i16, 1, 1, BLACK, clip);
+            }
+        }
+    }
+}
 
 const G_BOX: u16 = 20;
 const G_BUTTON: u16 = 26;
@@ -74,9 +134,16 @@ fn do_alert(defbut: i16, s: &[u8], modal: bool) -> i16 {
     let mut msg = [(0usize, 0i16); MAX_MSG]; // (offset, char-len)
     let mut btn = [(0usize, 0i16); MAX_BTN];
 
-    let (_g1s, _g1e, p1) = group(s, 0); // icon (parsed, not drawn)
+    let (g1s, g1e, p1) = group(s, 0); // icon number [0..3]
     let (g2s, g2e, p2) = group(s, p1);
     let (g3s, g3e, _p3) = group(s, p2);
+
+    // Icon number (0 = none, 1 = NOTE, 2 = QUEST, 3 = STOP).
+    let icon = if g1e > g1s && s[g1s].is_ascii_digit() {
+        ((s[g1s] - b'0') as i16).clamp(0, 3)
+    } else {
+        0
+    };
 
     let nummsg = split_copy(&s[g2s..g2e], &mut buf, &mut used, &mut msg);
     let numbut = split_copy(&s[g3s..g3e], &mut buf, &mut used, &mut btn).max(1);
@@ -107,16 +174,26 @@ fn do_alert(defbut: i16, s: &[u8], modal: bool) -> i16 {
     let btn_h = CH + 6;
     let gap = 2 * CW;
 
+    // Icon column on the left (32-px icon + a one-char gap), EmuTOS
+    // `fm_build`: the messages sit to its right, the box grows to fit.
+    let icon_w = if icon != 0 { 32 + CW } else { 0 };
     let total_btn = numbut as i16 * btn_w + (numbut as i16 - 1) * gap;
-    let content_w = (mlenmsg * CW).max(total_btn);
+    let content_w = (icon_w + mlenmsg * CW).max(total_btn);
     let box_w = content_w + 2 * padx;
 
-    let msg_y0 = pady;
-    let btn_y = pady + nummsg as i16 * CH + CH / 2; // gap below messages
+    // Content height is the taller of the message block and the icon; the
+    // messages are centred against it when the icon is taller.
+    let msg_area_h = nummsg as i16 * CH;
+    let content_h = msg_area_h.max(if icon != 0 { 32 } else { 0 });
+    let msg_y0 = pady + (content_h - msg_area_h) / 2;
+    let btn_y = pady + content_h + CH / 2; // gap below the content
     let box_h = btn_y + btn_h + pady;
 
     let box_x = (sw - box_w) / 2;
     let box_y = (sh - box_h) / 2;
+    // Icon position (screen-absolute), vertically centred in the content.
+    let icon_x = box_x + padx;
+    let icon_y = box_y + pady + (content_h - 32) / 2;
 
     // ── build the tree: [0]=box, [1..nummsg]=strings, then buttons ──
     let nobj = 1 + nummsg + numbut;
@@ -138,7 +215,7 @@ fn do_alert(defbut: i16, s: &[u8], modal: bool) -> i16 {
         tree[1 + i] = Object {
             ob_next: (2 + i) as i16, ob_head: -1, ob_tail: -1, ob_type: G_STRING,
             ob_flags: 0, ob_state: 0, ob_spec: buf.as_ptr() as u64 + msg[i].0 as u64,
-            ob_x: padx, ob_y: msg_y0 + i as i16 * CH, ob_width: msg[i].1 * CW, ob_height: CH,
+            ob_x: padx + icon_w, ob_y: msg_y0 + i as i16 * CH, ob_width: msg[i].1 * CW, ob_height: CH,
         };
     }
     // buttons
@@ -159,6 +236,7 @@ fn do_alert(defbut: i16, s: &[u8], modal: bool) -> i16 {
     let tp = tree.as_ptr();
     // SAFETY: locally-built valid tree; backend is the live screen.
     unsafe { object::draw_root(tp, 16, backend) };
+    draw_alert_icon(icon, icon_x, icon_y, backend);
 
     if !modal {
         return defbut.max(1); // draw-only (showcase): no waiting
@@ -171,6 +249,7 @@ fn do_alert(defbut: i16, s: &[u8], modal: bool) -> i16 {
         tree[idx].ob_state |= SELECTED;
         // SAFETY: valid tree.
         unsafe { object::draw_root(tp, 16, backend) };
+        draw_alert_icon(icon, icon_x, icon_y, backend);
     }
     chosen
 }
