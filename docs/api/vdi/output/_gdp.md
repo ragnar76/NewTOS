@@ -12,11 +12,11 @@
 |-------------|-----------|-------|------------|
 | 1  | `v_bar`            | `PTSIN[0..3]` rect | fill + (perimeter if `fill_per`) |
 | 2  | `v_arc`            | `PTSIN[0..1]` centre, `PTSIN[6]` radius; `INTIN[0..1]` begin/end angle | line |
-| 3  | `v_pieslice`       | as arc | fill + line |
+| 3  | `v_pieslice`       | as arc | fill (perimeter in `fill_color` if `fill_per`) |
 | 4  | `v_circle`         | `PTSIN[0..1]` centre, `PTSIN[4]` radius | fill |
 | 5  | `v_ellipse`        | `PTSIN[0..1]` centre, `PTSIN[2]` xrad, `PTSIN[3]` yrad | fill |
 | 6  | `v_ellarc`         | centre + `PTSIN[2/3]` radii; `INTIN[0..1]` angles | line |
-| 7  | `v_ellpie`         | as ellarc | fill + line |
+| 7  | `v_ellpie`         | as ellarc | fill (perimeter in `fill_color` if `fill_per`) |
 | 8  | `v_rbox`           | `PTSIN[0..3]` rect | line (rounded corners) |
 | 9  | `v_rfbox`          | `PTSIN[0..3]` rect | fill (rounded corners) |
 | 10 | `v_justified`      | see below | text |
@@ -46,6 +46,13 @@ from `PTSIN[0..3]`.
 - Early-out if the bounding box is fully outside the clip rect.
 - **Pieslice/ellpie** close to the centre and fill; **arc/ellarc** are
   open polylines; **circle/ellipse** are closed and filled.
+- Colour/attributes (EmuTOS `clc_arc`): **arc/ellarc** stroke via
+  `polyline`/`wideline` in **`line_color`** with the line width and style.
+  **circle/ellipse/pieslice/ellpie** go through `polygon()` — filled in
+  **`fill_color`**, and (only when `fill_per`) their boundary is a **solid,
+  width-1 polyline in `fill_color`** (`vdi_fill.c:606`), i.e. *no* line
+  attribute is used for the closed shapes. Earlier revisions of this table
+  listed pieslice/ellpie as "fill + line"; that was an extraction error.
 
 ## Rounded boxes: rbox (8) / rfbox (9)
 

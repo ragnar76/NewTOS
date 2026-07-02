@@ -128,13 +128,15 @@ fn curve(pb: &Vdipb, vwk: &Vwk, backend: &dyn RasterBackend, closed: bool, to_ce
             fill_polygon(backend, n, &pts, fill, clip);
         }
     }
-    // Outline: filled shapes get a perimeter too when fill_per (or when
-    // open). Closed shapes close the loop.
+    // Perimeter. Open arc/ellarc are stroked with the line attributes
+    // (EmuTOS `clc_arc` → polyline/wideline in `line_color`). Closed
+    // circle/ellipse/pieslice/ellpie go through EmuTOS `polygon()`, which
+    // draws the boundary — only when `fill_per` — in the **fill colour**,
+    // solid and width 1 (`vdi_fill.c:606`), exactly like `bar`/`rfbox`.
     if !closed && !to_centre {
         polyline(backend, n, |i| pts[i], vwk.line_color, clip, vwk.line_width, 0xFFFF);
-    } else if vwk.fill_per || fill_of(vwk).is_none() {
-        let color = vwk.line_color;
-        polyline(backend, n + 1, |i| pts[i % n], color, clip, vwk.line_width, 0xFFFF);
+    } else if vwk.fill_per {
+        polyline(backend, n + 1, |i| pts[i % n], vwk.fill_color, clip, 1, 0xFFFF);
     }
 }
 
