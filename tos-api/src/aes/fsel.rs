@@ -144,17 +144,48 @@ fn set_drive_states(tree: *mut Object, cur: u8) {
     }
 }
 
+/// Object types (`obdefs.h`).
+const G_TEXT: u16 = 21;
+const G_BOXTEXT: u16 = 22;
+const G_FTEXT: u16 = 29;
+const G_FBOXTEXT: u16 = 30;
+
+/// An empty (identity) template, so `edit_field`'s `find_pos` is the
+/// identity on the plain fields below.
+static EMPTY_TMPL: [u8; 1] = [0];
+
 /// Point object `idx`'s TEDINFO text at `ptr` (capacity `cap`), black ink,
-/// left-justified.
+/// left-justified, and make the field a **plain** box.
+///
+/// The GEM.RSC file-selector fields are `G_FBOXTEXT` with formatted
+/// templates that embed literals and the 8.3 filename slots (e.g.
+/// `Selection: ________.___`). NewTOS stores **plain** names/paths in its
+/// own buffers, not the template-raw form those templates expect, so we
+/// down-convert the repointed fields to `G_BOXTEXT`/`G_TEXT` and clear the
+/// template — `just_draw` then draws the stored string directly (and
+/// `edit_field` keeps an identity caret). Real RSC dialogs, which we do not
+/// repoint, keep full `ob_format` template merging.
 fn set_ted(tree: *mut Object, idx: i16, ptr: *mut u8, cap: usize) {
     // SAFETY: idx is a valid TEDINFO-bearing object in the tree.
     unsafe {
-        let spec = (*tree.add(idx as usize)).ob_spec;
+        let ob = &mut *tree.add(idx as usize);
+        match ob.ob_type {
+            G_FBOXTEXT => ob.ob_type = G_BOXTEXT,
+            G_FTEXT => ob.ob_type = G_TEXT,
+            _ => {}
+        }
+        let spec = ob.ob_spec;
         if spec == 0 {
             return;
         }
         let t = &mut *(spec as *mut TedInfo);
         t.te_ptext = ptr as u64;
+        t.te_ptmplt = EMPTY_TMPL.as_ptr() as u64;
+        // Clear validation too: NewTOS stores the *plain* name/path, so the
+        // RSC's raw-form `te_pvalid` codes are wrong here (e.g. the filename
+        // set 'F' excludes '.', which a plain "NAME.EXT" needs). An empty
+        // pvalid makes `edit_field` accept any character.
+        t.te_pvalid = EMPTY_TMPL.as_ptr() as u64;
         t.te_txtlen = cap as i16;
         t.te_color = BLACK_TEXT;
         t.te_just = 0;
