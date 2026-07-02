@@ -455,3 +455,67 @@ pub fn form_error(pb: &Aespb) {
     }
     pb.set_ret(do_alert(1, &buf[..n], true));
 }
+
+// form_dial types (aesbind.h).
+const FMD_START: i16 = 0;
+const FMD_GROW: i16 = 1;
+const FMD_SHRINK: i16 = 2;
+const FMD_FINISH: i16 = 3;
+/// ob_state OUTLINED bit (obdefs.h).
+const OUTLINED: u16 = 0x0010;
+
+/// `form_center` (54) — centre the tree at `addr_in[0]` on screen (EmuTOS
+/// `ob_center`) and report its outer rectangle in `int_out[1..4]`.
+pub fn form_center(pb: &Aespb) {
+    let tree = pb.addrin(0) as *mut Object;
+    if tree.is_null() {
+        pb.set_ret(0);
+        return;
+    }
+    let Some(backend) = host().and_then(|h| h.raster()) else {
+        pb.set_ret(0);
+        return;
+    };
+    let (sw, sh) = (backend.width() as i16, backend.height() as i16);
+    // SAFETY: valid tree; the ROOT is index 0.
+    let (mut xd, mut yd, mut wd, mut hd, outlined) = unsafe {
+        let root = &mut *tree;
+        let (wd, hd) = (root.ob_width, root.ob_height);
+        let xd = (sw - wd) / 2;
+        let yd = (sh - hd) / 2;
+        root.ob_x = xd;
+        root.ob_y = yd;
+        (xd, yd, wd, hd, root.ob_state & OUTLINED != 0)
+    };
+    // Account for a 3px OUTLINE in the reported rectangle (EmuTOS ob_center).
+    if outlined {
+        xd = (xd - 3).max(0);
+        yd = (yd - 3).max(0);
+        wd += 6;
+        hd += 6;
+    }
+    pb.set_intout(1, xd);
+    pb.set_intout(2, yd);
+    pb.set_intout(3, wd);
+    pb.set_intout(4, hd);
+    pb.set_ret(1);
+}
+
+/// `form_dial` (51) — reserve/animate/release the dialog screen area (EmuTOS
+/// `fm_dial`). `int_in[0]` = type; `int_in[1..4]` = the small rect,
+/// `int_in[5..8]` = the big rect.
+pub fn form_dial(pb: &Aespb) {
+    let fmd = pb.intin(0);
+    let little = (pb.intin(1), pb.intin(2), pb.intin(3), pb.intin(4));
+    let big = (pb.intin(5), pb.intin(6), pb.intin(7), pb.intin(8));
+    match fmd {
+        FMD_GROW => super::graf::animate(little, big),
+        FMD_SHRINK => super::graf::animate(big, little),
+        FMD_FINISH => super::window::redraw(), // repaint under the closed dialog
+        // FMD_START: grab the screen for the dialog — no window rectangle list
+        // to lock at our altitude, so a successful no-op.
+        FMD_START => {}
+        _ => {}
+    }
+    pb.set_ret(1);
+}

@@ -112,7 +112,8 @@ pub fn graf_dragbox(pb: &Aespb) {
 }
 
 /// Quick N-step outline animation between two rects (movebox/grow/shrink).
-fn animate(from: (i16, i16, i16, i16), to: (i16, i16, i16, i16)) {
+/// Also used by the Form Manager's `form_dial` (FMD_GROW/FMD_SHRINK).
+pub(crate) fn animate(from: (i16, i16, i16, i16), to: (i16, i16, i16, i16)) {
     let Some(backend) = host().and_then(|h| h.raster()) else {
         return;
     };

@@ -816,6 +816,15 @@ fn inside(r: Grect, x: i16, y: i16) -> bool {
     x >= r.x && x < r.x + r.w && y >= r.y && y < r.y + r.h
 }
 
+/// Repaint the desktop background + every open window. The Form Manager's
+/// `form_dial(FMD_FINISH)` calls this to restore the screen under a
+/// just-closed modal dialog (NewTOS has no per-dialog save/restore).
+pub fn redraw() {
+    if let Some(backend) = host().and_then(|h| h.raster()) {
+        redraw_all(backend);
+    }
+}
+
 fn screen_rect() -> Grect {
     if let Some(backend) = host().and_then(|h| h.raster()) {
         Grect { x: 0, y: 0, w: backend.width() as i16, h: backend.height() as i16 }
