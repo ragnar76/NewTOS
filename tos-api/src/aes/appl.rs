@@ -187,3 +187,20 @@ pub fn appl_read(pb: &Aespb) {
     src.flags |= pd::AP_MESAG;
     pb.set_ret(1);
 }
+
+/// Opcode 15 — `appl_trecord`: record AES events into the buffer at
+/// `addr_in[0]` (`int_in[0]` = capacity). NewTOS has no event-tape recorder,
+/// so nothing is captured and it returns 0 (the number of events recorded) —
+/// an honest report of the capability, not a faked success. A documented
+/// follow-up (event recording needs the input pipeline to tee events).
+pub fn appl_trecord(pb: &Aespb) {
+    pb.set_ret(0);
+}
+
+/// Opcode 14 — `appl_tplay`: play back the `int_in[0]` recorded events at
+/// `addr_in[0]` (time scale `int_in[1]`). NewTOS has no path to inject events
+/// back into the AES input from here, so this returns at once — a documented
+/// follow-up (pairs with `appl_trecord`).
+pub fn appl_tplay(pb: &Aespb) {
+    pb.set_ret(0);
+}

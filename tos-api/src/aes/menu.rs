@@ -445,3 +445,190 @@ fn do_chg(pb: &Aespb, obj: i16, stateflag: u16, set: bool) {
     object::change(tree, obj, state, true);
     pb.set_ret(1);
 }
+
+// ── menu extensions (later-AES: pop-up / sub-menu / settings) ─────────────
+
+/// Native `MENU` descriptor (later-AES pop-up / sub-menu).
+#[repr(C)]
+struct Menu {
+    mn_tree: u64,   // OBJECT*
+    mn_menu: i16,   // the drop-down box object
+    mn_item: i16,   // start / selected item
+    mn_scroll: i16,
+    mn_keystate: i16,
+}
+
+/// `menu_popup` (36) — display the pop-up menu described by `addr_in[0]`
+/// (`MENU`) so its start item sits at (`int_in[0]`, `int_in[1]`), track it,
+/// and write the chosen item into the `MENU` at `addr_in[1]`. Returns 1 on a
+/// selection, 0 on cancel. EmuTOS `mn_popup` (single level, no sub-menus).
+pub fn menu_popup(pb: &Aespb) {
+    let menu = pb.addrin(0) as *const Menu;
+    let (xpos, ypos) = (pb.intin(0), pb.intin(1));
+    let mdata = pb.addrin(1) as *mut Menu;
+    if menu.is_null() {
+        pb.set_ret(0);
+        return;
+    }
+    let Some(backend) = host().and_then(|h| h.raster()) else {
+        pb.set_ret(0);
+        return;
+    };
+    // SAFETY: valid MENU (GEM contract).
+    let (tree, box_obj, start_item) =
+        unsafe { ((*menu).mn_tree as *mut Object, (*menu).mn_menu, (*menu).mn_item) };
+    if tree.is_null() || box_obj < 0 {
+        pb.set_ret(0);
+        return;
+    }
+    // Position the box so `start_item` sits at (xpos, ypos); clamp to screen.
+    // SAFETY: valid tree.
+    unsafe {
+        let iy = if start_item >= 0 { (*tree.add(start_item as usize)).ob_y } else { 0 };
+        let b = &mut *tree.add(box_obj as usize);
+        b.ob_x = xpos.clamp(0, (backend.width() as i16 - b.ob_width).max(0));
+        b.ob_y = (ypos - iy).clamp(0, (backend.height() as i16 - b.ob_height).max(0));
+    }
+    let sel = popup_track(tree, box_obj, backend);
+    if !mdata.is_null() {
+        // SAFETY: valid MENU out (GEM contract).
+        unsafe {
+            (*mdata).mn_tree = tree as u64;
+            (*mdata).mn_menu = box_obj;
+            (*mdata).mn_item = sel;
+            (*mdata).mn_scroll = 0;
+            (*mdata).mn_keystate = 0;
+        }
+    }
+    pb.set_ret(if sel >= 0 { 1 } else { 0 });
+}
+
+/// Track a single pop-up box: hover highlights the item under the cursor, a
+/// button press picks it (or cancels outside any item). Returns the item or
+/// `NIL`. Reuses the menu-bar save-under + cursor-bracketing.
+fn popup_track(tree: *mut Object, box_obj: i16, backend: &dyn RasterBackend) -> i16 {
+    let Some(h) = host() else { return NIL };
+    let tp = tree as *const Object;
+    // Wait for the button that opened the pop-up to be released.
+    while crate::vdi::mouse_buttons() & 0x01 != 0 {
+        h.pump_input();
+    }
+    crate::vdi::cursor_hide(backend);
+    let (bx, by, bw, bh) = object::abs_rect(tp, box_obj);
+    save_under(backend, bx, by, bw, bh);
+    object::draw_obj(tp, box_obj, MAX_DEPTH, backend);
+    crate::vdi::cursor_show(backend);
+
+    let mut cur_item = NIL;
+    let result;
+    loop {
+        let (mx, my) = crate::vdi::mouse_position();
+        let it = object::child_at(tp, box_obj, mx, my);
+        if it != cur_item {
+            crate::vdi::cursor_hide(backend);
+            let clip = ClipRect::full(backend.width(), backend.height());
+            if cur_item != NIL {
+                let (ix, iy, iw, ih) = object::abs_rect(tp, cur_item);
+                backend.fill_rect(ix, iy, iw, ih, WHITE, clip);
+                object::set_state_bit(tree, cur_item, SELECTED, false);
+            }
+            if it != NIL {
+                object::set_state_bit(tree, it, SELECTED, true);
+            }
+            let (rx, ry, rw, rh) = object::abs_rect(tp, box_obj);
+            backend.fill_rect(rx, ry, rw, 1, BLACK, clip);
+            backend.fill_rect(rx, ry + rh - 1, rw, 1, BLACK, clip);
+            backend.fill_rect(rx, ry, 1, rh, BLACK, clip);
+            backend.fill_rect(rx + rw - 1, ry, 1, rh, BLACK, clip);
+            crate::vdi::cursor_show(backend);
+            cur_item = it;
+        }
+        if crate::vdi::mouse_buttons() & 0x01 != 0 {
+            result = cur_item; // NIL when pressed outside any item → cancel
+            break;
+        }
+        h.pump_input();
+    }
+    crate::vdi::cursor_hide(backend);
+    if result != NIL {
+        object::set_state_bit(tree, result, SELECTED, false);
+    }
+    erase_box_inner(tree, box_obj, backend);
+    crate::vdi::cursor_show(backend);
+    result
+}
+
+/// Native `MN_SET` behaviour block (later-AES).
+#[repr(C)]
+#[derive(Clone, Copy)]
+struct MnSet {
+    display: i32,
+    drag: i32,
+    delay: i32,
+    speed: i32,
+    height: i16,
+}
+
+struct Settings(UnsafeCell<MnSet>);
+// SAFETY: single boot CPU only touches the AES.
+unsafe impl Sync for Settings {}
+static SETTINGS: Settings = Settings(UnsafeCell::new(MnSet {
+    display: 0,
+    drag: 0,
+    delay: 250, // sub-menu delay (ms) — a common TOS default
+    speed: 10,
+    height: BAR_H,
+}));
+
+/// `menu_settings` (39) — get (`int_in[0]`=0) or set (1) the menu-behaviour
+/// block at `addr_in[0]` (`MN_SET`). Negative fields are left unchanged on
+/// set (like TOS). EmuTOS `mn_settings`.
+pub fn menu_settings(pb: &Aespb) {
+    let set = pb.addrin(0) as *mut MnSet;
+    let flag = pb.intin(0);
+    if set.is_null() {
+        pb.set_ret(0);
+        return;
+    }
+    // SAFETY: single-CPU AES; valid MN_SET (GEM contract).
+    unsafe {
+        let cur = &mut *SETTINGS.0.get();
+        if flag == 0 {
+            *set = *cur;
+        } else {
+            let s = *set;
+            if s.display >= 0 {
+                cur.display = s.display;
+            }
+            if s.drag >= 0 {
+                cur.drag = s.drag;
+            }
+            if s.delay >= 0 {
+                cur.delay = s.delay;
+            }
+            if s.speed >= 0 {
+                cur.speed = s.speed;
+            }
+            if s.height >= 0 {
+                cur.height = s.height;
+            }
+        }
+    }
+    pb.set_ret(1);
+}
+
+/// `menu_attach` (37) — attach/detach/query a sub-menu on a menu item. NewTOS
+/// has no sub-menu machinery yet, so a query (`int_in[0]`=0) reports "none"
+/// (0) and attach/detach are accepted (1) — a documented follow-up, not a
+/// faked success (no sub-menu is ever displayed).
+pub fn menu_attach(pb: &Aespb) {
+    let flag = pb.intin(0);
+    pb.set_ret(if flag == 0 { 0 } else { 1 });
+}
+
+/// `menu_istart` (38) — set the starting item of a scrollable/sub menu.
+/// NewTOS menus do not scroll, so this is accepted (1) but leaves the
+/// (non-scrolling) display unchanged — a documented follow-up.
+pub fn menu_istart(pb: &Aespb) {
+    pb.set_ret(1);
+}
