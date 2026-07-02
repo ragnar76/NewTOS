@@ -1366,11 +1366,8 @@ fn resolve_selection() -> Option<(i16, u8, [u8; 14], bool)> {
         _ => return None,
     };
     let idx = SEL_IDX.load(core::sync::atomic::Ordering::Acquire) as usize;
-    let path = [letter, b':', b'\\', b'*', b'.', b'*'];
-    let path_str = core::str::from_utf8(&path).unwrap_or("C:\\*.*");
     let mut ents = [tos_api::bdos::fs::find::DirInfo::default(); 64];
-    let n = tos_api::bdos::fs::find::list_dir_ex(path_str, &mut ents);
-    sort_entries(&mut ents[..n]);
+    let n = list_sorted(letter, &mut ents);
     if idx >= n {
         return None;
     }
@@ -1804,7 +1801,9 @@ static SEL_WIN: core::sync::atomic::AtomicI16 = core::sync::atomic::AtomicI16::n
 static SEL_IDX: core::sync::atomic::AtomicI16 = core::sync::atomic::AtomicI16::new(0);
 
 /// Select the entry under `(mx, my)` if it lands in the top window's work
-/// area. Returns true if a window click was consumed.
+/// area. Returns true if a window click was consumed. A hit on an icon/row
+/// selects that entry (via `objc_find`, scroll-aware); a click on empty
+/// work-area space clears the selection (GEM behaviour).
 fn select_at(mx: i16, my: i16) -> bool {
     let h = DESK_TOP.load(core::sync::atomic::Ordering::Acquire);
     let rect = match win_slot(h) {
@@ -1813,18 +1812,15 @@ fn select_at(mx: i16, my: i16) -> bool {
     };
     let (wx, wy, ww, wh) = work_of(rect);
     if mx < wx || mx >= wx + ww || my < wy || my >= wy + wh {
-        return false;
+        return false; // outside the work area — not our click
     }
-    let idx = if VIEW_MODE.load(core::sync::atomic::Ordering::Acquire) == 1 {
-        let cols = (ww / 76).max(1);
-        let col = ((mx - wx) / 76).clamp(0, cols - 1);
-        let row = ((my - wy - 6) / 52).max(0);
-        row * cols + col
-    } else {
-        ((my - wy - 4) / 16).max(0)
-    };
-    SEL_WIN.store(h, core::sync::atomic::Ordering::Release);
-    SEL_IDX.store(idx, core::sync::atomic::Ordering::Release);
+    match find_entry_at(h, mx, my) {
+        Some(idx) => {
+            SEL_WIN.store(h, core::sync::atomic::Ordering::Release);
+            SEL_IDX.store(idx as i16, core::sync::atomic::Ordering::Release);
+        }
+        None => SEL_WIN.store(0, core::sync::atomic::Ordering::Release),
+    }
     redraw_win(h);
     true
 }
@@ -1841,8 +1837,86 @@ fn set_view(mode: u8) {
     redraw_all_windows();
 }
 
-/// List `X:\*.*`, sort it, and draw it into the window's `work` rect as
-/// either a text listing or an icon grid per [`VIEW_MODE`].
+/// Read `X:\*.*` into `ents`, sort it, and return the entry count. Shared by
+/// the renderer (`draw_dir_listing`), the hit-test (`find_entry_at`) and the
+/// selection resolver so all three see the identical sorted listing.
+fn list_sorted(letter: u8, ents: &mut [tos_api::bdos::fs::find::DirInfo]) -> usize {
+    let path = [letter, b':', b'\\', b'*', b'.', b'*'];
+    let path_str = core::str::from_utf8(&path).unwrap_or("C:\\*.*");
+    let n = tos_api::bdos::fs::find::list_dir_ex(path_str, ents);
+    sort_entries(&mut ents[..n]);
+    n
+}
+
+/// `objc_draw` the freshly-built [`DIRTREE`], clipped to the work area.
+fn objc_draw_work(work: (i16, i16, i16, i16)) {
+    let (wx, wy, ww, wh) = work;
+    // SAFETY: single-CPU desktop; the tree was just built by `build_dir_*`.
+    let obj = unsafe { &*DIRTREE.obj.get() };
+    let mut a = Aes::new();
+    a.addrin[0] = obj.as_ptr() as i64;
+    a.intin[0] = 0; // start at the work-area root
+    a.intin[1] = 8; // root + one level of children
+    a.intin[2] = wx; a.intin[3] = wy; a.intin[4] = ww; a.intin[5] = wh;
+    a.call(42, 6, 1); // objc_draw
+}
+
+/// `objc_find` on the current [`DIRTREE`] at `(mx, my)`. Returns the object
+/// index: `>= 1` = a content child, `0` = the work-area root (empty space),
+/// `-1` = outside the work area.
+fn objc_find_work(mx: i16, my: i16) -> i16 {
+    // SAFETY: single-CPU desktop; the tree was just built by `build_dir_*`.
+    let obj = unsafe { &*DIRTREE.obj.get() };
+    let mut a = Aes::new();
+    a.addrin[0] = obj.as_ptr() as i64;
+    a.intin[0] = 0; // start at the work-area root
+    a.intin[1] = 8; // depth
+    a.intin[2] = mx; a.intin[3] = my;
+    a.call(43, 4, 1); // objc_find
+    a.intout[0]
+}
+
+/// Absolute index (into the sorted listing) of the entry under `(mx, my)` in
+/// window `handle`, via `objc_find` on a freshly-built content tree. `None`
+/// if the point lands on empty work-area space or outside it. Scroll-aware:
+/// the tree and the reverse mapping both use the window's clamped `scroll`,
+/// so a scrolled listing selects the correct entry (the old grid-math
+/// `select_at` ignored the offset).
+fn find_entry_at(handle: i16, mx: i16, my: i16) -> Option<usize> {
+    let (letter, rect, scroll) = match win_slot(handle) {
+        Some(s) if s.drive != 0 => (s.drive, s.rect, s.scroll),
+        _ => return None,
+    };
+    let work = work_of(rect);
+    let mut ents = [tos_api::bdos::fs::find::DirInfo::default(); 64];
+    let n = list_sorted(letter, &mut ents);
+
+    let icons = VIEW_MODE.load(core::sync::atomic::Ordering::Acquire) == 1;
+    let (total_rows, vis_rows) = row_metrics(icons, n, work);
+    let scroll = scroll.max(0).min((total_rows - vis_rows).max(0));
+
+    // Build exactly the tree the renderer would draw, then hit-test it.
+    if icons {
+        build_dir_icons(handle, work, &ents[..n], scroll);
+    } else {
+        build_dir_text(handle, work, &ents[..n], scroll);
+    }
+    let found = objc_find_work(mx, my);
+    if found < 1 {
+        return None; // 0 = empty work area, -1 = outside it
+    }
+    // Child object k (1-based) ⇒ absolute entry `start + (k - 1)`, where the
+    // first visible entry `start` is row-aligned for the icon grid.
+    let (_, _, ww, _) = work;
+    let start = if icons {
+        scroll as usize * (ww / ICON_CW).max(1) as usize
+    } else {
+        scroll as usize
+    };
+    let idx = start + (found - 1) as usize;
+    (idx < n).then_some(idx)
+}
+
 /// Repaint window `handle`'s directory listing at vertical offset `scroll`
 /// (in content rows). Returns `(clamped_scroll, vslide, vslsize)` — the
 /// offset bounded to the content plus the AES slider position/size
@@ -1855,22 +1929,21 @@ fn draw_dir_listing(handle: i16, letter: u8, work: (i16, i16, i16, i16), scroll:
     let (wx, wy, ww, wh) = work;
     backend.fill_rect(wx, wy, ww, wh, WHITE, clip);
 
-    let path = [letter, b':', b'\\', b'*', b'.', b'*'];
-    let path_str = core::str::from_utf8(&path).unwrap_or("C:\\*.*");
     let mut ents = [tos_api::bdos::fs::find::DirInfo::default(); 64];
-    let n = tos_api::bdos::fs::find::list_dir_ex(path_str, &mut ents);
-    sort_entries(&mut ents[..n]);
+    let n = list_sorted(letter, &mut ents);
 
     let icons = VIEW_MODE.load(core::sync::atomic::Ordering::Acquire) == 1;
     // Total content rows and how many are visible (in the same row units the
     // view uses); the scroll offset is clamped to their difference.
     let (total_rows, vis_rows) = row_metrics(icons, n, work);
     let scroll = scroll.max(0).min((total_rows - vis_rows).max(0));
+    // Build the content object tree, then render it once via `objc_draw`.
     if icons {
-        draw_dir_icons(backend, handle, work, &ents[..n], scroll, clip);
+        build_dir_icons(handle, work, &ents[..n], scroll);
     } else {
-        draw_dir_text(backend, handle, work, &ents[..n], scroll, clip);
+        build_dir_text(handle, work, &ents[..n], scroll);
     }
+    objc_draw_work(work);
     // AES slider (per-mille): thumb size = visible/total, position along the
     // travel = scroll/max_scroll. Everything fits → full thumb at the top.
     let max_scroll = (total_rows - vis_rows).max(0);
@@ -1903,14 +1976,14 @@ fn row_metrics(icons: bool, n: usize, work: (i16, i16, i16, i16)) -> (i16, i16) 
     }
 }
 
-/// Text view: one row per entry — name on the left, size (or `<DIR>`)
-/// right-aligned; the selected row is inverted.
-/// Text view: build an AES object tree — one `G_STRING` child per visible
-/// row, its text a formatted "name … right-aligned size / `<DIR>`" string —
-/// and render it via `objc_draw`. Selection inverts the row (`OB_SELECTED`).
-fn draw_dir_text(
-    _backend: &dyn RasterBackend, handle: i16, work: (i16, i16, i16, i16),
-    ents: &[tos_api::bdos::fs::find::DirInfo], scroll: i16, _clip: ClipRect,
+/// Text view: build an AES object tree into [`DIRTREE`] — one `G_STRING`
+/// child per visible row, its text a formatted "name … right-aligned size /
+/// `<DIR>`" string. Selection inverts the row (`OB_SELECTED`). Does **not**
+/// draw — the caller renders via `objc_draw_work` (or hit-tests via
+/// `objc_find_work`), so the same tree serves both.
+fn build_dir_text(
+    handle: i16, work: (i16, i16, i16, i16),
+    ents: &[tos_api::bdos::fs::find::DirInfo], scroll: i16,
 ) {
     let (wx, wy, ww, wh) = work;
     let rows = (wh / 16).max(1) as usize;
@@ -1966,13 +2039,6 @@ fn draw_dir_text(
         ob_type: G_IBOX, ob_flags: 0, ob_state: 0, ob_spec: 0,
         ob_x: wx, ob_y: wy, ob_width: ww, ob_height: wh,
     };
-
-    let mut a = Aes::new();
-    a.addrin[0] = obj.as_ptr() as i64;
-    a.intin[0] = 0;
-    a.intin[1] = 8;
-    a.intin[2] = wx; a.intin[3] = wy; a.intin[4] = ww; a.intin[5] = wh;
-    a.call(42, 6, 1); // objc_draw
 }
 
 /// Icon cell size (width/height in pixels), shared by the icon view and
@@ -2037,14 +2103,15 @@ fn fmt_u32(mut v: u32, buf: &mut [u8; 12]) -> &[u8] {
     &buf[..len]
 }
 
-/// Icon view: build an AES object tree (`G_IBOX` work-area container + one
-/// `G_ICON` child per visible entry) and render it via `objc_draw`, so the
-/// directory content uses the faithful AES object system — rendering,
-/// selection (`OB_SELECTED`), the `gr_gicon` label, and clipping — instead
-/// of hand-drawing. First step of migrating the desktop onto AES trees.
-fn draw_dir_icons(
-    _backend: &dyn RasterBackend, handle: i16, work: (i16, i16, i16, i16),
-    ents: &[tos_api::bdos::fs::find::DirInfo], scroll: i16, _clip: ClipRect,
+/// Icon view: build an AES object tree into [`DIRTREE`] — a `G_IBOX`
+/// work-area container plus one `G_ICON` child per visible entry — so the
+/// directory content uses the faithful AES object system (rendering,
+/// selection `OB_SELECTED`, the `gr_gicon` label, and clipping). Does
+/// **not** draw — the caller renders via `objc_draw_work` (or hit-tests via
+/// `objc_find_work`), so the same tree serves both.
+fn build_dir_icons(
+    handle: i16, work: (i16, i16, i16, i16),
+    ents: &[tos_api::bdos::fs::find::DirInfo], scroll: i16,
 ) {
     use crate::desktop_icons as ic;
     let (wx, wy, ww, wh) = work;
@@ -2104,12 +2171,4 @@ fn draw_dir_icons(
         ob_type: G_IBOX, ob_flags: 0, ob_state: 0, ob_spec: 0,
         ob_x: wx, ob_y: wy, ob_width: ww, ob_height: wh,
     };
-
-    // Render the tree via the AES, clipped to the work area.
-    let mut a = Aes::new();
-    a.addrin[0] = obj.as_ptr() as i64;
-    a.intin[0] = 0;
-    a.intin[1] = 8; // root + one level of children
-    a.intin[2] = wx; a.intin[3] = wy; a.intin[4] = ww; a.intin[5] = wh;
-    a.call(42, 6, 1); // objc_draw
 }
