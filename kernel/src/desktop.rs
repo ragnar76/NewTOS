@@ -493,9 +493,11 @@ fn set_desk_icon(
     nm[n] = [0; 8];
     let ln = label.len().min(7);
     nm[n][..ln].copy_from_slice(&label[..ln]);
+    // fg = black (bits 12..15 = 1), bg = white (bits 8..11 = 0); the low
+    // byte is the drive letter (0 = none for the trash / printer fixtures).
     let (ib_char, xchar, ychar) = match letter {
         Some((c, ch)) => (0x1000 | c as i16, 24 + ch.0, ch.1),
-        None => (0, 0, 0),
+        None => (0x1000, 0, 0),
     };
     ib[n] = IconBlk {
         ib_pmask: mask.as_ptr() as u64,
