@@ -422,11 +422,15 @@ fn nav_into_folder(name: &[u8]) {
 }
 
 /// Whether the directory field (`SYS.dir`, edited in place) now differs
-/// from the path last listed (EmuTOS `path_changed`).
+/// from the path last listed (EmuTOS `path_changed` — a `strncmp`, i.e. the
+/// logical NUL-terminated strings, not the raw buffers, so a shortened path
+/// with stale tail bytes past its NUL still compares equal).
 fn path_differs(listed: &[u8; 96]) -> bool {
     // SAFETY: single-CPU AES.
     let dir = unsafe { &*SYS.dir.get() };
-    dir[..] != listed[..]
+    let dlen = dir.iter().position(|&b| b == 0).unwrap_or(dir.len());
+    let llen = listed.iter().position(|&b| b == 0).unwrap_or(listed.len());
+    dlen != llen || dir[..dlen] != listed[..llen]
 }
 
 /// Set the directory buffer to `X:\*.*` for a clicked drive letter.
