@@ -3,6 +3,15 @@
 > Phase 00 spec. Source: EmuTOS @ `1a7484ab` —
 > `bios/ikbd.c:136` (`bioskeys`).
 
+## NewTOS status: **out-of-scope**
+
+`Bioskeys` resets the Atari keyboard-translation tables to their ROM defaults —
+tables NewTOS does not use (it translates scancodes natively in `crate::ikbd`
+off the IKBD path). It is therefore **not exposed** as a trap; the XBIOS
+dispatcher's `EINVFN` catch-all is the intended, documented behaviour (not a
+stub). See `docs/STATUS.md` (2026-07-02) and the "Keyboard via Atari IKBD"
+decision.
+
 ## EmuTOS source
 
 ```c

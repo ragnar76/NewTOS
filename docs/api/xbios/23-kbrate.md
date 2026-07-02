@@ -3,6 +3,15 @@
 > Phase 00 spec. Source: EmuTOS @ `1a7484ab` —
 > `bios/ikbd.c:439` (`kbrate`).
 
+## NewTOS status: **out-of-scope**
+
+`Kbrate` sets the Atari key-repeat delay/rate. NewTOS takes keyboard input
+natively via the IKBD path (ST keyboard on a UART / USB-HID → `crate::ikbd`);
+key repeat is owned by that input source, not this trap, so `Kbrate` is **not
+exposed**; the XBIOS dispatcher's `EINVFN` catch-all is the intended, documented
+behaviour (not a stub). See `docs/STATUS.md` (2026-07-02) and the "Keyboard via
+Atari IKBD" decision.
+
 ## EmuTOS source
 
 ```c

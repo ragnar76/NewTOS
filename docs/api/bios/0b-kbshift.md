@@ -3,6 +3,16 @@
 > Phase 00 spec. Source: EmuTOS @ `1a7484ab` —
 > `bios/ikbd.c:145` (`kbshift`).
 
+## NewTOS status: **out-of-scope**
+
+NewTOS handles the keyboard natively through the IKBD path — a real ST
+keyboard on a UART, or a USB-HID keyboard → `crate::ikbd::feed` — not the
+Atari keyboard-table trap ABI. Modifier state is tracked inside the `ikbd`
+decoder, not surfaced through this trap, so `Kbshift` is **not exposed** and
+the BIOS dispatcher's `EINVFN` catch-all is the intended, documented behaviour
+(not a stub). See `docs/STATUS.md` (2026-07-02) and the "Keyboard via Atari
+IKBD" decision.
+
 ## EmuTOS source
 
 ```c

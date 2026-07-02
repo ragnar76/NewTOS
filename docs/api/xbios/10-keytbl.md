@@ -3,6 +3,15 @@
 > Phase 00 spec. Source: EmuTOS @ `1a7484ab` —
 > `bios/ikbd.c:122` (`keytbl`).
 
+## NewTOS status: **out-of-scope**
+
+NewTOS translates scancodes to ASCII with a native table inside `crate::ikbd`,
+driven by the IKBD path (ST keyboard on a UART / USB-HID → `ikbd::feed`). It
+does not expose the Atari `KEYTAB` structure, so `Keytbl` is **not exposed** as
+a trap; the XBIOS dispatcher's `EINVFN` catch-all is the intended, documented
+behaviour (not a stub). See `docs/STATUS.md` (2026-07-02) and the "Keyboard via
+Atari IKBD" decision.
+
 ## EmuTOS source
 
 ```c
