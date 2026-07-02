@@ -439,21 +439,17 @@ impl Xhci {
             erst_pa,
             dma.dcbaa.0[0]
         );
-        // Read DCBAAP back from the controller: does the 64-bit register hold
-        // the full 35-bit address (incl. the 0x4_… bus offset), or did the
-        // BCM2711 MMIO drop the high half? Also AC64 (64-bit addressing cap).
+        // AC64 (64-bit addressing capability), CSZ (context size: 0 => 32-byte,
+        // which is what our contexts are), and the DCBAAP readback. The latter
+        // documents the BCM2711 64-bit-MMIO-read quirk (the high half mirrors
+        // the low), which is why we write 64-bit controller registers as two
+        // 32-bit halves.
         let cap1 = regs.capability.hccparams1.read_volatile();
-        // Raw 32-bit read of HCCPARAMS1 (CAPBASE+0x10), bypassing the crate, so
-        // CSZ (bit 2) is verified independent of any register-read mangling.
-        let hccp1_raw =
-            unsafe { core::ptr::read_volatile((mmio_va(mmio_base as usize) + 0x10) as *const u32) };
         kprintln!(
-            "[usb] reg readback: ac64={} csz={} dcbaap_hw={:#x} | HCCPARAMS1_raw={:#010x} csz_raw={}",
+            "[usb] reg readback: ac64={} csz={} dcbaap_hw={:#x}",
             cap1.addressing_capability() as u8,
-            cap1.context_size() as u8, // 1 => 64-byte contexts; we build 32-byte!
+            cap1.context_size() as u8,
             regs.operational.dcbaap.read_volatile().get(),
-            hccp1_raw,
-            (hccp1_raw >> 2) & 1,
         );
 
         // Run.
