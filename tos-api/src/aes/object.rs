@@ -116,6 +116,7 @@ pub struct TedInfo {
 
 /// `ICONBLK` — a monochrome icon (mask + data + optional char + text)
 /// for a `G_ICON` object (`obdefs.h`). Pointers are native 64-bit.
+#[derive(Clone, Copy)]
 #[repr(C)]
 pub struct IconBlk {
     /// pointer to the mask raster (16-bit words).

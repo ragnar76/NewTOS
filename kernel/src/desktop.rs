@@ -10,7 +10,7 @@
 
 use core::cell::UnsafeCell;
 
-use tos_api::aes::object::{Object, TedInfo};
+use tos_api::aes::object::{IconBlk, Object, TedInfo};
 use tos_api::vdi::backend::{ClipRect, PatternFill, RasterBackend};
 
 use crate::kprintln;
@@ -20,7 +20,10 @@ const G_BOX: u16 = 20;
 const G_BOXTEXT: u16 = 22;
 const G_BUTTON: u16 = 26;
 const G_STRING: u16 = 28;
+const G_ICON: u16 = 31;
 const G_TITLE: u16 = 32;
+// ob_state.
+const OB_SELECTED: u16 = 0x0001;
 // ob_flags.
 const SELECTABLE: u16 = 0x0001;
 const DEFAULT: u16 = 0x0002;
@@ -1940,43 +1943,112 @@ const ICON_CH: i16 = 52;
 
 /// Icon view: a grid of folder / document icons with the name underneath
 /// (EmuTOS "Show as icons"); the selected name is inverted.
+/// Max entries in the directory-window object tree (matches the `DirInfo`
+/// scan buffer size).
+const DIR_MAX: usize = 64;
+
+const ZERO_OBJ: Object = Object {
+    ob_next: -1, ob_head: -1, ob_tail: -1,
+    ob_type: 0, ob_flags: 0, ob_state: 0, ob_spec: 0,
+    ob_x: 0, ob_y: 0, ob_width: 0, ob_height: 0,
+};
+const ZERO_IB: IconBlk = IconBlk {
+    ib_pmask: 0, ib_pdata: 0, ib_ptext: 0, ib_char: 0,
+    ib_xchar: 0, ib_ychar: 0, ib_xicon: 0, ib_yicon: 0,
+    ib_wicon: 0, ib_hicon: 0, ib_xtext: 0, ib_ytext: 0,
+    ib_wtext: 0, ib_htext: 0,
+};
+
+/// The directory-window content as a reusable AES object tree: a `G_IBOX`
+/// work-area container (`obj[0]`) with one `G_ICON` child per visible entry
+/// (`obj[1..]`), each pointing at an [`IconBlk`] (`ib[i]`) and its own name
+/// buffer (`nm[i]`). Rebuilt each redraw; single boot CPU → hand-rolled
+/// `Sync`.
+struct DirTree {
+    obj: UnsafeCell<[Object; DIR_MAX + 1]>,
+    ib: UnsafeCell<[IconBlk; DIR_MAX]>,
+    nm: UnsafeCell<[[u8; 16]; DIR_MAX]>,
+}
+unsafe impl Sync for DirTree {}
+static DIRTREE: DirTree = DirTree {
+    obj: UnsafeCell::new([ZERO_OBJ; DIR_MAX + 1]),
+    ib: UnsafeCell::new([ZERO_IB; DIR_MAX]),
+    nm: UnsafeCell::new([[0; 16]; DIR_MAX]),
+};
+
+/// Icon view: build an AES object tree (`G_IBOX` work-area container + one
+/// `G_ICON` child per visible entry) and render it via `objc_draw`, so the
+/// directory content uses the faithful AES object system — rendering,
+/// selection (`OB_SELECTED`), the `gr_gicon` label, and clipping — instead
+/// of hand-drawing. First step of migrating the desktop onto AES trees.
 fn draw_dir_icons(
-    backend: &dyn RasterBackend, handle: i16, work: (i16, i16, i16, i16),
-    ents: &[tos_api::bdos::fs::find::DirInfo], scroll: i16, clip: ClipRect,
+    _backend: &dyn RasterBackend, handle: i16, work: (i16, i16, i16, i16),
+    ents: &[tos_api::bdos::fs::find::DirInfo], scroll: i16, _clip: ClipRect,
 ) {
     use crate::desktop_icons as ic;
     let (wx, wy, ww, wh) = work;
-    let cw = ICON_CW;
-    let ch = ICON_CH;
-    let cols = (ww / cw).max(1);
+    let cols = (ww / ICON_CW).max(1);
     let start = scroll as usize * cols as usize; // first visible entry (row-aligned)
-    for (i, e) in ents.iter().enumerate().skip(start) {
-        let rel = (i - start) as i16;
-        let col = rel % cols;
-        let row = rel / cols;
-        let cx = wx + col * cw + cw / 2;
-        let cy = wy + 6 + row * ch;
-        if cy + ch > wy + wh {
+
+    // SAFETY: single-CPU desktop; the tree buffers are used only here.
+    let obj = unsafe { &mut *DIRTREE.obj.get() };
+    let ib = unsafe { &mut *DIRTREE.ib.get() };
+    let nm = unsafe { &mut *DIRTREE.nm.get() };
+
+    let mut n = 0usize; // objects placed so far
+    for (vis, e) in ents.iter().enumerate().skip(start) {
+        let rel = n as i16;
+        let cy = 6 + (rel / cols) * ICON_CH;
+        if cy + ICON_CH > wh || n >= DIR_MAX {
             break;
         }
-        let (data, mask) = if e.attrib & FA_SUBDIR != 0 {
+        let cx = (rel % cols) * ICON_CW;
+        // Copy the (truncated) name into the tree's own buffer.
+        let end = e.name.iter().position(|&b| b == 0).unwrap_or(14).min(15);
+        nm[n] = [0; 16];
+        nm[n][..end].copy_from_slice(&e.name[..end]);
+        // The icon rasters are `const`, so the ICONBLK points straight at them.
+        let (data, mask): (&[u16; 64], &[u16; 64]) = if e.attrib & FA_SUBDIR != 0 {
             (&ic::FOLDER_DATA, &ic::FOLDER_MASK)
         } else {
             (&ic::DOC_DATA, &ic::DOC_MASK)
         };
-        blit_icon(backend, cx - 16, cy, data, mask, clip);
-        // Centred name below, truncated to the cell width; selected inverts.
-        let end = e.name.iter().position(|&b| b == 0).unwrap_or(14);
-        let shown = end.min(9);
-        let lx = cx - (shown as i16 * 8) / 2;
-        let ink = if is_selected(handle, i) {
-            backend.fill_rect(lx - 1, cy + 32, shown as i16 * 8 + 2, 16, BLACK, clip);
-            WHITE
-        } else {
-            BLACK
+        ib[n] = IconBlk {
+            ib_pmask: mask.as_ptr() as u64,
+            ib_pdata: data.as_ptr() as u64,
+            ib_ptext: nm[n].as_ptr() as u64,
+            ib_char: 0x1000, // fg = black (1), bg = white (0)
+            ib_xchar: 0, ib_ychar: 0,
+            ib_xicon: (ICON_CW - 32) / 2, ib_yicon: 0, ib_wicon: 32, ib_hicon: 32,
+            ib_xtext: 0, ib_ytext: 34, ib_wtext: ICON_CW, ib_htext: 16,
         };
-        for (j, &c) in e.name[..shown].iter().enumerate() {
-            backend.draw_glyph(lx + j as i16 * 8, cy + 34, tos_api::vdi::font::glyph(c as u16), ink, clip);
-        }
+        obj[n + 1] = Object {
+            ob_next: 0, ob_head: -1, ob_tail: -1,
+            ob_type: G_ICON, ob_flags: 0,
+            ob_state: if is_selected(handle, vis) { OB_SELECTED } else { 0 },
+            ob_spec: (&ib[n] as *const IconBlk) as u64,
+            ob_x: cx, ob_y: cy, ob_width: ICON_CW, ob_height: ICON_CH,
+        };
+        n += 1;
     }
+    // Link the children (each → the next; last → root 0) and build the root.
+    for i in 0..n {
+        obj[i + 1].ob_next = if i + 1 == n { 0 } else { (i + 2) as i16 };
+    }
+    if n > 0 {
+        obj[n].ob_flags |= LASTOB;
+    }
+    obj[0] = Object {
+        ob_next: -1, ob_head: if n > 0 { 1 } else { -1 }, ob_tail: n as i16,
+        ob_type: G_IBOX, ob_flags: 0, ob_state: 0, ob_spec: 0,
+        ob_x: wx, ob_y: wy, ob_width: ww, ob_height: wh,
+    };
+
+    // Render the tree via the AES, clipped to the work area.
+    let mut a = Aes::new();
+    a.addrin[0] = obj.as_ptr() as i64;
+    a.intin[0] = 0;
+    a.intin[1] = 8; // root + one level of children
+    a.intin[2] = wx; a.intin[3] = wy; a.intin[4] = ww; a.intin[5] = wh;
+    a.call(42, 6, 1); // objc_draw
 }
