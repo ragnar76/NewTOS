@@ -430,9 +430,28 @@ fn run_form(tree: *mut Object) -> i16 {
             // SAFETY: valid tree (GEM contract).
             let hit = unsafe { object::hit_test(tp, 0, MAX_DEPTH, mx, my) };
             if hit >= 0 {
-                // SAFETY: hit is a valid index.
-                let flags = unsafe { (*tree.add(hit as usize)).ob_flags };
-                if flags & (EXIT | TOUCHEXIT) != 0 {
+                let (state, flags) = ob_fs(tp, hit);
+                if flags & DISABLED != 0 {
+                    // A disabled object ignores the click.
+                } else if flags & SELECTABLE != 0 {
+                    // EmuTOS `fm_button`: a radio button selects itself and
+                    // deselects its siblings; any other SELECTABLE object
+                    // toggles. Then wait for the button release.
+                    let new_state = if flags & RBUTTON != 0 {
+                        select_radio(tree, hit);
+                        state | SELECTED
+                    } else {
+                        let ns = state ^ SELECTED;
+                        object::change(tree, hit, ns, true);
+                        ns
+                    };
+                    wait_up();
+                    // A now-selected EXIT object (e.g. an OK button) leaves.
+                    if new_state & SELECTED != 0 && flags & EXIT != 0 {
+                        return hit;
+                    }
+                } else if flags & (EXIT | TOUCHEXIT) != 0 {
+                    // A non-selectable exit/touchexit object leaves at once.
                     press(tree, hit);
                     return hit;
                 } else if flags & EDITABLE != 0 && hit != focus {
