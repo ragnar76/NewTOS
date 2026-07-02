@@ -851,6 +851,65 @@ fn draw_tree(
 }
 
 /// Render a single object by type at absolute `(x, y)` (Batch-1 types).
+// The 8 AES "inside patterns" IP_HOLLOW(0)..IP_SOLID(7) as 4-word dithers
+// (EmuTOS `vdi/vdi_fill.c` DITHER; IP_4PATT = 50 %).
+const IP_PATTERNS: [[u16; 4]; 8] = [
+    [0x0000, 0x0000, 0x0000, 0x0000], // IP_HOLLOW
+    [0x0000, 0x4444, 0x0000, 0x1111],
+    [0x0000, 0x5555, 0x0000, 0x5555],
+    [0x8888, 0x5555, 0x2222, 0x5555],
+    [0xAAAA, 0x5555, 0xAAAA, 0x5555], // IP_4PATT (50 %)
+    [0xAAAA, 0xDDDD, 0xAAAA, 0x7777],
+    [0xEEEE, 0xFFFF, 0xBBBB, 0xFFFF],
+    [0xFFFF, 0xFFFF, 0xFFFF, 0xFFFF], // IP_SOLID
+];
+const IP_HOLLOW: u16 = 0;
+const IP_SOLID: u16 = 7;
+
+/// Decode a GEM object colour word (EmuTOS `gr_crack`): returns
+/// `(border, text, pattern, inside, replace_mode)`.
+fn gr_crack(color: u16) -> (Pel, Pel, u16, Pel, bool) {
+    (
+        ((color >> 12) & 0x0f) as Pel, // border colour
+        ((color >> 8) & 0x0f) as Pel,  // text colour
+        (color >> 4) & 0x07,           // inside pattern
+        (color & 0x0f) as Pel,         // inside colour
+        color & 0x80 != 0,             // 1 = REPLACE, 0 = TRANSPARENT
+    )
+}
+
+/// Complementary colour for a SELECTED object (EmuTOS `xor_color`, reduced to
+/// the palette pairs NewTOS actually uses: white↔black, lwhite↔lblack, …).
+fn xor_color(c: Pel) -> Pel {
+    match c {
+        WHITE => BLACK,
+        BLACK => WHITE,
+        _ => c ^ 1,
+    }
+}
+
+/// Fill `(x,y,w,h)` with the AES inside pattern `ipat` in colour `icol`
+/// (EmuTOS `gr_rect`): HOLLOW draws nothing, SOLID a flat fill, the rest a
+/// dither of `icol` on white.
+fn gr_rect(backend: &dyn RasterBackend, x: i16, y: i16, w: i16, h: i16, icol: Pel, ipat: u16, clip: ClipRect) {
+    if w <= 0 || h <= 0 {
+        return;
+    }
+    match ipat {
+        IP_HOLLOW => {}
+        IP_SOLID => backend.fill_rect(x, y, w, h, icol, clip),
+        p => {
+            let pat = PatternFill {
+                fg: icol,
+                bg: WHITE,
+                pattern: &IP_PATTERNS[(p & 7) as usize],
+                opaque: false,
+            };
+            backend.fill_pattern(x, y, w, h, pat, clip);
+        }
+    }
+}
+
 fn just_draw(ob: &Object, x: i16, y: i16, clip: ClipRect, backend: &dyn RasterBackend) {
     let selected = ob.ob_state & SELECTED != 0;
     let disabled = ob.ob_state & DISABLED != 0;
@@ -880,9 +939,16 @@ fn just_draw(ob: &Object, x: i16, y: i16, clip: ClipRect, backend: &dyn RasterBa
 
     match ob.ob_type {
         G_BOX | G_IBOX | G_BUTTON | G_BOXCHAR => {
-            // Border thickness: for the box types `ob_spec` packs it in
-            // bits 16..23 (signed); for a G_BUTTON `ob_spec` is the text
-            // *pointer*, so a button uses a fixed 1-px border instead.
+            // Crack the colour word: box types pack it in `ob_spec`'s low 16
+            // bits (EmuTOS `gr_crack`); a G_BUTTON's `ob_spec` is a text
+            // pointer, so it takes the standard black-border / white-interior
+            // button colours. Border thickness is in `ob_spec` bits 16..23 for
+            // the box types; a button uses 1px.
+            let (bcol, tcol, mut ipat, mut icol, _mode) = if ob.ob_type == G_BUTTON {
+                (BLACK, BLACK, IP_HOLLOW, WHITE, false)
+            } else {
+                gr_crack(ob.ob_spec as u16)
+            };
             let th = if d3 != 0 {
                 0 // 3D objects use a bevel (drawn after), not a flat border
             } else if ob.ob_type == G_BUTTON {
@@ -890,12 +956,35 @@ fn just_draw(ob: &Object, x: i16, y: i16, clip: ClipRect, backend: &dyn RasterBa
             } else {
                 ((ob.ob_spec >> 16) as u8 as i8) as i16
             };
-            if ob.ob_type != G_IBOX {
-                backend.fill_rect(x, y, w, h, fill, clip);
+            // 3D colour override (EmuTOS): a hollow-white box/button takes a
+            // solid 3D face colour so the bevel reads against it.
+            if ob.ob_type != G_IBOX && ipat == IP_HOLLOW && icol == WHITE && d3 != 0 {
+                ipat = IP_SOLID;
+                icol = match d3 {
+                    FL3DACT => ACT_BUTCOL.load(Ordering::Relaxed) as Pel,
+                    FL3DIND => IND_BUTCOL.load(Ordering::Relaxed) as Pel,
+                    _ => BACKGR_COL.load(Ordering::Relaxed) as Pel, // FL3DBAK
+                };
             }
+            // SELECTED (EmuTOS): a hollow box goes solid black, else xor the
+            // interior colour.
+            if selected {
+                if ipat == IP_HOLLOW {
+                    ipat = IP_SOLID;
+                    icol = BLACK;
+                } else {
+                    icol = xor_color(icol);
+                }
+            }
+            let t = th.unsigned_abs() as i16;
             if th != 0 {
-                draw_border(backend, x, y, w, h, th.unsigned_abs() as i16, BLACK, clip);
+                draw_border(backend, x, y, w, h, t, bcol, clip);
             }
+            if ob.ob_type != G_IBOX {
+                gr_rect(backend, x + t, y + t, w - 2 * t, h - 2 * t, icol, ipat, clip);
+            }
+            // Text colour, xor'd when selected (EmuTOS).
+            let ink = if selected { xor_color(tcol) } else { tcol };
             if ob.ob_type == G_BOXCHAR {
                 let ch = ((ob.ob_spec >> 24) & 0xFF) as u8;
                 if ch != 0 {
