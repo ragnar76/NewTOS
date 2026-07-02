@@ -605,10 +605,14 @@ fn build_menu() -> *mut Object {
                 );
                 k += 1;
             }
-            // the box itself
+            // the box itself. Colour word `0x1070` = black border (bits
+            // 12..15 = BLACK), solid white interior (bits 4..6 = IP_SOLID,
+            // bits 0..3 = WHITE). Without an explicit inside pattern the word
+            // would be 0 → `gr_crack` decodes IP_HOLLOW → a transparent box
+            // (the drop-down would show the desktop through it).
             let next_box = if ti == nt - 1 { themenus as i16 } else { (k) as i16 };
             o[bi] = mk(
-                G_BOX, 0, 1 << 16, bx_x, MENU_H, iw, bh, next_box, first_item as i16, (k - 1) as i16,
+                G_BOX, 0, (1 << 16) | 0x1070, bx_x, MENU_H, iw, bh, next_box, first_item as i16, (k - 1) as i16,
             );
         }
         let last_box = box_idx[nt - 1];
