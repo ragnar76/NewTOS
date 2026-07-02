@@ -44,6 +44,7 @@ pub mod selftest_pexec_d4d5;
 pub mod bench;
 pub mod fbcon;
 pub mod ikbd;
+pub mod keymap;
 pub mod shell;
 pub mod selftest_aes;
 pub mod selftest_bios;
@@ -266,6 +267,9 @@ extern "C" fn kernel_main_rust(dtb_phys: usize) -> ! {
     // SAFETY: boot CPU; VideoCore firmware has released the card.
     if unsafe { drivers::bcm2711::emmc::init() } {
         tos_api::bios::mount();
+        // Select the keyboard layout from the card (KEYBOARD.KBD override or
+        // the #K line in NEWDESK.INF), before the console/desktop reads keys.
+        keymap::init_from_disk();
     }
 
     // Bring up the USB host stack (keyboard/mouse) — PHASE-16. On QEMU-virt
