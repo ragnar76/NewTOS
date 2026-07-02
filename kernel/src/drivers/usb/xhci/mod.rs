@@ -1146,7 +1146,20 @@ impl Xhci {
         self.get_device_descriptor(di);
         if self.hid[di].class == 9 {
             self.hid[di].protocol = 9; // hub: tracked, never polled as HID
-            self.enumerate_hub(di, root_port, speed, depth);
+            // Downstream hub enumeration is deferred. On the real Pi-4 the VL805
+            // returns Context State Error to both Configure Endpoint and Evaluate
+            // Context when we mark the slot as a hub, because it never writes a
+            // coherent output device context after Address Device (the slot's
+            // internal state is fine — EP0 transfers work — but the RAM copy
+            // reads slot_state = Disabled). The hub's own slot stays addressed;
+            // its downstream ports are not scanned. The bring-up path
+            // (`enumerate_hub` and helpers) is retained for the fix. See
+            // docs/STATUS.md "Blocked: VL805 hub configure".
+            let _ = depth;
+            kprintln!(
+                "[usb] hub on root port {} (slot {}): downstream deferred -- VL805 configure quirk (see STATUS)",
+                root_port, self.hid[di].slot
+            );
         } else if let Some((dci, protocol)) = self.configure_hid(di, root_port, speed) {
             self.hid[di].dci = dci;
             self.hid[di].protocol = protocol;
