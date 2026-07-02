@@ -38,6 +38,23 @@ const SIZ_TAB_ROM: [i16; 12] = [
     15, 11, 120, 88, // min/max marker width/height
 ];
 
+/// Maximum polygon vertices (matches `primitives::MAX_VERTS`).
+const MAX_VERTICES: i16 = 256;
+
+/// `INQ_TAB` template (45 WORDs), EmuTOS `INQ_TAB_rom` — the extended
+/// workstation capabilities returned by `vq_extnd` mode 1. Indices
+/// `[4]` (planes), `[5]` (video LUT) and `[19]` (clip flag) are patched
+/// from the live device / workstation.
+const INQ_TAB_ROM: [i16; 45] = [
+    4, 1, 0x1F, 0, 1, // 0..4  controller type, bg cols, text styles, scale rasters, planes
+    0, 50, 1, 1, 4, // 5..9  video LUT, perf factor, contour fill, char rotation, writing modes
+    2, 1, 0, 0, MAX_VERTICES, // 10..14 highest input mode, text align, inking, rubber band, max verts
+    -1, 1, 0, 0, 0, // 15..19 max intin, mouse buttons, wide-line style/mode, clip flag
+    0, 0, 0, 0, 0, 0, 0, 0, 0, 0, // 20..29 extended precision / bezier
+    0, 0, 0, 0, 0, 0, 0, 0, 0, 0, // 30..39 raster flag / reserved
+    0, 0, 0, 0, 0, // 40..44 printer borders / page size
+];
+
 /// Populate a freshly-allocated `Vwk` from `work_in` (INTIN) and write
 /// the device capability tables back into the parameter block. Mirrors
 /// EmuTOS `init_wk`.
@@ -110,6 +127,50 @@ pub fn v_opnvwk(pb: &Vdipb, backend: &dyn RasterBackend) {
         }
         None => pb.set_contrl(6, 0), // no free handle → fail (VDI: no error code)
     }
+}
+
+/// Opcode 102 — `vq_extnd`: extended workstation inquiry (EmuTOS
+/// `vdi_vq_extnd`). Mode 0 (`INTIN[0] == 0`) re-returns the standard open
+/// tables (`DEV_TAB` → `INTOUT`, `SIZ_TAB` → `PTSOUT`); mode ≠ 0 returns the
+/// extended `INQ_TAB` plus the workstation's current clipping rectangle.
+pub fn vq_extnd(pb: &Vdipb, vwk: &crate::vdi::vwk::Vwk, backend: &dyn RasterBackend) {
+    let xres = backend.width() as i16;
+    let yres = backend.height() as i16;
+    let ncol = backend.num_colors();
+
+    if pb.intin(0) == 0 {
+        // Mode 0: identical to v_opnvwk's device tables.
+        let mut dev = DEV_TAB_ROM;
+        dev[0] = xres - 1;
+        dev[1] = yres - 1;
+        dev[13] = ncol as i16;
+        dev[35] = if ncol <= 2 { 0 } else { 1 };
+        dev[39] = ncol as i16;
+        for (i, &v) in dev.iter().enumerate() {
+            pb.set_intout(i, v);
+        }
+        for (i, &v) in SIZ_TAB_ROM.iter().enumerate() {
+            pb.set_ptsout(i, v);
+        }
+    } else {
+        // Mode 1: the extended table + the live clipping rectangle.
+        let mut inq = INQ_TAB_ROM;
+        inq[4] = ncol.trailing_zeros() as i16; // number of planes = log2(colours)
+        inq[5] = if ncol > 2 { 1 } else { 0 }; // video lookup table present
+        inq[19] = i16::from(vwk.clip); // live clip flag
+        for (i, &v) in inq.iter().enumerate() {
+            pb.set_intout(i, v);
+        }
+        pb.set_ptsout(0, vwk.xmn_clip);
+        pb.set_ptsout(1, vwk.ymn_clip);
+        pb.set_ptsout(2, vwk.xmx_clip);
+        pb.set_ptsout(3, vwk.ymx_clip);
+        for i in 4..12 {
+            pb.set_ptsout(i, 0);
+        }
+    }
+    pb.set_contrl(4, 45); // # INTOUT
+    pb.set_contrl(2, 6); // # PTSOUT (6 pairs)
 }
 
 /// Opcode 1 — open the physical workstation (the screen device).

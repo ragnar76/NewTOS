@@ -175,12 +175,13 @@ pub unsafe fn dispatch(vdipb_ptr: u64) {
         // ── attribute setters + output primitives (need the vwk) ──
         5 | 6 | 7 | 8 | 9 | 11 | 12 | 13 | 14 | 15 | 16 | 17 | 18 | 19 | 20 | 21 | 22 | 23 | 24 | 25
         | 26 | 28 | 30 | 31 | 32 | 33 | 35 | 36 | 37 | 38 | 39 | 103 | 104 | 105 | 106 | 107 | 108
-        | 109 | 110 | 111 | 112 | 113 | 114 | 115 | 116 | 117 | 118 | 119 | 120 | 121 | 122 | 123
+        | 102 | 109 | 110 | 111 | 112 | 113 | 114 | 115 | 116 | 117 | 118 | 119 | 120 | 121 | 122 | 123
         | 124 | 125 | 126 | 127 | 128 | 129 | 130 | 131 | 134 => {
             // SAFETY: single trap path.
             if let Some(vwk) = unsafe { vwk::resolve(pb.contrl(C_HANDLE)) } {
                 let ncol = backend.num_colors();
                 match opcode {
+                    102 => workstation::vq_extnd(&pb, vwk, backend),
                     14 => attributes::vs_color(&pb, ncol, backend),
                     15 => attributes::vsl_type(&pb, vwk),
                     16 => attributes::vsl_width(&pb, vwk),

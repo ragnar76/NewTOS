@@ -19,6 +19,7 @@ use tos_types::error::EINVFN;
 const PHYSBASE: u16 = 0x02; // screen group (Phase 10)
 const LOGBASE: u16 = 0x03;
 const GETREZ: u16 = 0x04;
+const CURSCONF: u16 = 0x15;
 const SETSCREEN: u16 = 0x05;
 const SETPALETTE: u16 = 0x06;
 const SETCOLOR: u16 = 0x07;
@@ -37,6 +38,7 @@ pub fn dispatch(args: &TrapArgs) -> i64 {
         SETSCREEN => screen::setscreen(args),
         SETPALETTE => screen::setpalette(args),
         SETCOLOR => screen::setcolor(args),
+        CURSCONF => screen::cursconf(args),
         RANDOM => system::random(),
         // Clock group: Settime/Gettime read/write the same wall clock as
         // GEMDOS Tgetdate/Tgettime (no separate RTC on NewTOS). Settime

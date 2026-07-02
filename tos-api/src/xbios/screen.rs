@@ -13,7 +13,7 @@
 //! an arbitrary buffer is a later refinement; software that double-
 //! buffers by drawing into its own buffer and reading `Logbase` works.
 
-use core::sync::atomic::{AtomicI64, AtomicU64, Ordering};
+use core::sync::atomic::{AtomicI64, AtomicU64, AtomicU8, Ordering};
 
 use crate::host;
 use crate::trap::TrapArgs;
@@ -114,6 +114,46 @@ pub fn setcolor(args: &TrapArgs) -> i64 {
         pal[index] = (value as u16) & 0x0FFF;
     }
     old
+}
+
+// ── Cursconf (VT52 text-cursor config) ───────────────────────────────────
+//
+// `v_stat_0` flags (EmuTOS `vt52.h`): the cursor visible / flash-enable
+// bits. NewTOS' GUI-oriented framebuffer console has no *blinking* text
+// caret, so hide/show/flash track their state without a visible cursor —
+// but the blink-rate get/set are honoured (a real, usable value), so this
+// is a thin state model, not a stub.
+const M_CFLASH: u8 = 0x02;
+const M_CVIS: u8 = 0x10;
+/// `v_stat_0` cursor bits; default = visible + flashing (EmuTOS).
+static V_STAT_0: AtomicU8 = AtomicU8::new(M_CVIS | M_CFLASH);
+/// `v_period` — cursor blink period in VBLs (EmuTOS default 30).
+static V_PERIOD: AtomicU8 = AtomicU8::new(30);
+
+/// `Cursconf` (0x15) — configure the VT52 text cursor (EmuTOS `cursconf`):
+/// `function` 0 hide, 1 show, 2 disable flash, 3 enable flash, 4 set the
+/// blink period (`operand` low byte, VBLs), 5 return the period; ≥ 6 no-op.
+pub fn cursconf(args: &TrapArgs) -> i64 {
+    let function = args.arg_i16(0);
+    let operand = args.arg_i16(1);
+    match function {
+        0 => {
+            V_STAT_0.fetch_and(!M_CVIS, Ordering::Relaxed);
+        }
+        1 => {
+            V_STAT_0.fetch_or(M_CVIS, Ordering::Relaxed);
+        }
+        2 => {
+            V_STAT_0.fetch_and(!M_CFLASH, Ordering::Relaxed);
+        }
+        3 => {
+            V_STAT_0.fetch_or(M_CFLASH, Ordering::Relaxed);
+        }
+        4 => V_PERIOD.store(operand as u8, Ordering::Relaxed),
+        5 => return V_PERIOD.load(Ordering::Relaxed) as i64,
+        _ => {}
+    }
+    0
 }
 
 /// 16-entry ST palette shadow (0x0RGB, 3 bits per gun).
