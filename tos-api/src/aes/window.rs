@@ -966,8 +966,10 @@ fn drag_move(w: &mut Window, backend: &dyn RasterBackend) -> Grect {
     let mut last = orig;
     loop {
         let (mx, my) = crate::vdi::mouse_position();
-        let nx = (orig.x + mx - sx).clamp(0, sw - orig.w);
-        let ny = (orig.y + my - sy).clamp(0, sh - orig.h);
+        // `.max(0)` guards the clamp: a window wider/taller than the screen
+        // would make `max < min` and panic `i16::clamp` (fatal in no_std).
+        let nx = (orig.x + mx - sx).clamp(0, (sw - orig.w).max(0));
+        let ny = (orig.y + my - sy).clamp(0, (sh - orig.h).max(0));
         let nr = Grect { x: nx, y: ny, w: orig.w, h: orig.h };
         if nr != last {
             backend.fill_rect(last.x, last.y, last.w + 1, last.h + 1, WHITE, clip);
@@ -996,8 +998,10 @@ fn drag_size(w: &mut Window, backend: &dyn RasterBackend) -> Grect {
     let mut last = orig;
     loop {
         let (mx, my) = crate::vdi::mouse_position();
-        let nw = (mx - orig.x + 1).clamp(min_w, sw - orig.x);
-        let nh = (my - orig.y + 1).clamp(min_h, sh - orig.y);
+        // `.max(min_*)` guards the clamp bounds (origin near the screen edge
+        // could make `max < min`, panicking `i16::clamp` — fatal in no_std).
+        let nw = (mx - orig.x + 1).clamp(min_w, (sw - orig.x).max(min_w));
+        let nh = (my - orig.y + 1).clamp(min_h, (sh - orig.y).max(min_h));
         let nr = Grect { x: orig.x, y: orig.y, w: nw, h: nh };
         if nr != last {
             backend.fill_rect(orig.x, orig.y, last.w + 1, last.h + 1, WHITE, clip);

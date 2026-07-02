@@ -89,8 +89,10 @@ pub fn graf_dragbox(pb: &Aespb) {
         outline(lx, ly, w, h, BLACK, backend, clip);
         loop {
             let (mx, my) = crate::vdi::mouse_position();
-            let nx = (sx + mx - smx).clamp(bx, bx + bw - w);
-            let ny = (sy + my - smy).clamp(by, by + bh - h);
+            // Guard the clamp bounds: a bound rect smaller than the box makes
+            // `max < min`, which would panic `i16::clamp` (fatal in no_std).
+            let nx = (sx + mx - smx).clamp(bx, (bx + bw - w).max(bx));
+            let ny = (sy + my - smy).clamp(by, (by + bh - h).max(by));
             if nx != lx || ny != ly {
                 outline(lx, ly, w, h, WHITE, backend, clip);
                 lx = nx;
@@ -232,7 +234,10 @@ pub fn graf_slidebox(pb: &Aespb) {
             let (prx, pry, _, _) = object::abs_rect(tree as *const Object, parent);
             loop {
                 let (mx, my) = crate::vdi::mouse_position();
-                let rel = if isvert { (my - pry).clamp(0, travel) } else { (mx - prx).clamp(0, travel) };
+                // `travel` (parent − child extent) can be negative for a
+                // malformed slider; `.max(0)` keeps `i16::clamp` from panicking.
+                let hi = travel.max(0);
+                let rel = if isvert { (my - pry).clamp(0, hi) } else { (mx - prx).clamp(0, hi) };
                 if isvert {
                     c.ob_y = rel;
                 } else {
