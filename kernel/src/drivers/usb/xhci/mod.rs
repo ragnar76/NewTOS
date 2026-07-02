@@ -103,17 +103,38 @@ pub const MAX_HID: usize = 8;
 // device's contexts continuously, so they cannot be shared.
 #[repr(C, align(64))]
 struct DevDma {
-    input: [u32; 33 * 8],
+    // The Device Context MUST be 64-byte aligned: xHCI §6.2.1, and the DCBAA
+    // entry that points at it has bits 5:0 RsvdZ (a 64-byte-aligned base). It
+    // is placed FIRST so — with `DevDma` itself `align(64)` — it always lands
+    // on a 64-byte boundary regardless of the sizes of the other fields.
+    // (Previously `device` followed `input` at offset 0x420 = 32-byte aligned;
+    // the VL805 then wrote it to the masked 64-byte base 0x…400, so we read it
+    // 0x20 too high and saw the EP0 context in the slot region. See
+    // docs/STATUS.md "Blocked: VL805 hub configure".)
     device: [u32; 32 * 8],
+    // The Input Context needs 16-byte alignment (§6.2.5 / the command TRB's
+    // Input Context Pointer). At offset 0x400 after `device` that holds.
+    input: [u32; 33 * 8],
     ep0_ring: Ring,
     int_ring: Ring,
     buf: [u8; 256],
     intbuf: [u8; 8],
 }
 
+// Enforce the alignment contract at compile time so a future field reorder or
+// size change cannot silently re-break the Device / Input context alignment.
+const _: () = assert!(
+    core::mem::offset_of!(DevDma, device) % 64 == 0,
+    "xHCI Device Context must be 64-byte aligned (§6.2.1 / DCBAA RsvdZ[5:0])"
+);
+const _: () = assert!(
+    core::mem::offset_of!(DevDma, input) % 16 == 0,
+    "xHCI Input Context must be 16-byte aligned (§6.2.5)"
+);
+
 const DEV_INIT: DevDma = DevDma {
-    input: [0; 33 * 8],
     device: [0; 32 * 8],
+    input: [0; 33 * 8],
     ep0_ring: Ring([Trb([0; 4]); CMD_RING_LEN]),
     int_ring: Ring([Trb([0; 4]); CMD_RING_LEN]),
     buf: [0; 256],
@@ -761,6 +782,16 @@ impl Xhci {
                         "[usb]   ep0[8..16]={:08x} {:08x} {:08x} {:08x} {:08x} {:08x} {:08x} {:08x} (expect tr_dequeue={:#x})",
                         d[8], d[9], d[10], d[11], d[12], d[13], d[14], d[15], ep0_pa
                     );
+                    // VERDICT (device-context 64-byte alignment test): DCBAA[slot]
+                    // must now be 64-aligned (low6==0), and the decoded slot ctx
+                    // must read Addressed (state 2) with sane speed/entries/port.
+                    let dc_pa = dma_addr((&raw const (*(&raw const DEV))[di].device) as u64);
+                    kprintln!(
+                        "[usb]   VERDICT: DCBAA[{}]={:#x} low6={:#x} 64-aligned={}; slot_state={} (2=Addressed) speed={} entries={} root_port={} usb_addr={}",
+                        slot, dc_pa, dc_pa & 0x3f, dc_pa & 0x3f == 0,
+                        (d[3] >> 27) & 0x1f, (d[0] >> 20) & 0xf, (d[0] >> 27) & 0x1f,
+                        (d[1] >> 16) & 0xff, d[3] & 0xff
+                    );
                 }
                 if ok {
                     // The VL805 needs settling time after Address Device before
@@ -1146,20 +1177,10 @@ impl Xhci {
         self.get_device_descriptor(di);
         if self.hid[di].class == 9 {
             self.hid[di].protocol = 9; // hub: tracked, never polled as HID
-            // Downstream hub enumeration is deferred. On the real Pi-4 the VL805
-            // returns Context State Error to both Configure Endpoint and Evaluate
-            // Context when we mark the slot as a hub, because it never writes a
-            // coherent output device context after Address Device (the slot's
-            // internal state is fine — EP0 transfers work — but the RAM copy
-            // reads slot_state = Disabled). The hub's own slot stays addressed;
-            // its downstream ports are not scanned. The bring-up path
-            // (`enumerate_hub` and helpers) is retained for the fix. See
-            // docs/STATUS.md "Blocked: VL805 hub configure".
-            let _ = depth;
-            kprintln!(
-                "[usb] hub on root port {} (slot {}): downstream deferred -- VL805 configure quirk (see STATUS)",
-                root_port, self.hid[di].slot
-            );
+            // DIAGNOSTIC re-enable (device-context 64-byte alignment test): if
+            // the aligned output device context now reads a valid Addressed slot
+            // context, configure_hub should succeed. See docs/STATUS.md.
+            self.enumerate_hub(di, root_port, speed, depth);
         } else if let Some((dci, protocol)) = self.configure_hid(di, root_port, speed) {
             self.hid[di].dci = dci;
             self.hid[di].protocol = protocol;
