@@ -4,6 +4,14 @@
 > `bdos/umem.c:358` (`srealloc`). Dispatched from
 > `bdos/bdosmain.c:201`: `{ F(srealloc), 0, 2 }` (returns LONG, 1 LONG arg).
 
+## NewTOS status: **decision deferred**
+
+Returns `EINVFN` today (the GEMDOS dispatcher's catch-all — defined behaviour,
+not a stub). `Srealloc` reallocates VIDEL video-RAM; on non-VIDEL hardware
+EmuTOS itself returns `EINVFN`, so NewTOS (no VIDEL) already matches real TOS.
+The port-vs-reimplement decision (`docs/COMPATIBILITY.md`) is **deferred until a
+program actually needs it**.
+
 ## EmuTOS source (essence)
 
 ```c

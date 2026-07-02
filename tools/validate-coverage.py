@@ -45,7 +45,8 @@ ALIAS = {
 
 OOS_DOC = re.compile(
     r"out[- ]of[- ]scope|unimplemented|not implemented|nicht implementiert|"
-    r"no .{0,20}hardware|honest.{0,20}unsupported|\bstub\b", re.IGNORECASE)
+    r"no .{0,20}hardware|honest.{0,20}unsupported|\bstub\b|"
+    r"decision deferred|\bdeferred\b|to be decided|decide when", re.IGNORECASE)
 
 
 def read(p: Path) -> str:
@@ -116,7 +117,7 @@ def main():
         print(f"\n### {sub.upper()} ({phase}) — "
               f"{len(impl)} implementiert · {len(opn)} offen(doku) · {len(disc)} DISKREPANZ")
         if opn:
-            print(f"    offen (out-of-scope/stub laut Spec): {', '.join(sorted(opn))}")
+            print(f"    offen (out-of-scope/stub/deferred laut Spec): {', '.join(sorted(opn))}")
         if disc:
             print("    ⚠ DISKREPANZ (spec'd, Phase done, kein Handler, nicht als out-of-scope markiert):")
             for hexn, name in disc:

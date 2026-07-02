@@ -3,6 +3,13 @@
 > Phase 00 spec. Source: EmuTOS @ `1a7484ab` —
 > `bios/vectors.S:1376` (`_supexec`).
 
+## NewTOS status: **decision deferred** (needs ADR-Supexec)
+
+Returns `EINVFN` today (the XBIOS dispatcher's catch-all — defined behaviour, not
+a stub). `Supexec` runs a caller-provided routine "in supervisor mode"; on
+NewTOS that means executing user code at EL1, which needs the **ADR-Supexec**
+security / ABI decision first. **Deferred until a program actually needs it.**
+
 ## EmuTOS source
 
 ```asm

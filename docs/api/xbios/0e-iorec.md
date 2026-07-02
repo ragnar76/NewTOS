@@ -3,6 +3,14 @@
 > Phase 00 spec. Source: EmuTOS @ `1a7484ab` —
 > `bios/xbios.c:336` (`iorec`).
 
+## NewTOS status: **decision deferred**
+
+Returns `EINVFN` today (the XBIOS dispatcher's catch-all — defined behaviour, not
+a stub). `Iorec` returns a pointer to the Atari `IOREC` ring-buffer descriptor
+(IKBD/MIDI/RS-232); NewTOS has a native console-RX ring + `ikbd`. Whether to
+expose an `IOREC`-shaped view of that ring is a `docs/COMPATIBILITY.md`
+port-vs-reimplement call, **deferred until a program actually needs it**.
+
 ## EmuTOS source
 
 ```c

@@ -3,6 +3,15 @@
 > Phase 00 spec. Source: EmuTOS @ `1a7484ab` —
 > `bios/biosmem.c:134` (`getmpb`).
 
+## NewTOS status: **decision deferred**
+
+Returns `EINVFN` today (the BIOS dispatcher's catch-all — defined behaviour, not
+a stub). `Getmpb` fills the classic Memory Parameter Block, historically called
+once at boot by BDOS init; NewTOS has native init + ST-/TT-RAM pools. Whether to
+reimplement it as a thin MPB over the ST-RAM free list is a
+`docs/COMPATIBILITY.md` port-vs-reimplement call, **deferred until a program
+actually needs it**.
+
 ## EmuTOS source
 
 ```c
