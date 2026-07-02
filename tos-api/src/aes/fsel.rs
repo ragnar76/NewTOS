@@ -8,8 +8,13 @@
 //! read ([`bdos::fs::list_dir`], `Fsfirst`/`Fsnext`-style), draw it, and
 //! run a modal loop: a click selects a file, `OK`/`Cancel` exit.
 //!
-//! **Batch-1 scope:** list + click-to-select + OK/Cancel + write-back. The
-//! scroll bar (>9 files), drive grid, and typing a path land in Batch 2.
+//! **Implemented:** directory list + scroll bar/arrows + drive grid +
+//! click-to-select + double-click confirm + OK/Cancel + write-back, plus
+//! (EmuTOS `fs_input`) keyboard editing of the `FSDIRECT` path and
+//! `FSSELECT` name fields — typing a new path + Enter re-lists it — and
+//! walking into a sub-directory by clicking it (`.`/`..` handled). The one
+//! documented omission is the `FCLSBOX` close-box gadget for up-navigation
+//! (covered instead by editing the path or clicking `..`).
 
 use super::object::{self, Object, TedInfo};
 use super::{resource, Aespb};
@@ -56,6 +61,7 @@ struct Sys {
     sel: UnsafeCell<[u8; 16]>,     // FSSELECT filename text
     names: UnsafeCell<[[u8; 16]; NM_NAMES]>, // visible slot text
     all: UnsafeCell<[[u8; 16]; MAX_LIST]>,   // full directory listing
+    all_attr: UnsafeCell<[u8; MAX_LIST]>,    // per-entry attribute byte
     count: UnsafeCell<usize>,      // entries in `all`
     top: UnsafeCell<usize>,        // index of the first visible entry
 }
@@ -68,9 +74,17 @@ static SYS: Sys = Sys {
     sel: UnsafeCell::new([0u8; 16]),
     names: UnsafeCell::new([[0u8; 16]; NM_NAMES]),
     all: UnsafeCell::new([[0u8; 16]; MAX_LIST]),
+    all_attr: UnsafeCell::new([0u8; MAX_LIST]),
     count: UnsafeCell::new(0),
     top: UnsafeCell::new(0),
 };
+
+/// FAT/TOS directory attribute bit (a sub-directory entry).
+const FA_SUBDIR: u8 = 0x10;
+/// `objc_edit` kinds (EmuTOS `EDINIT`/`EDCHAR`/`EDEND`).
+const ED_INIT: i16 = 1;
+const ED_CHAR: i16 = 2;
+const ED_END: i16 = 3;
 
 /// Load + relocate GEM.RSC once; return the FSELECTR tree (or null).
 fn load_fselectr() -> *mut Object {
@@ -264,8 +278,10 @@ fn relist(tree: *mut Object) {
     // SAFETY: single-CPU AES.
     unsafe {
         let all = &mut *SYS.all.get();
+        let all_attr = &mut *SYS.all_attr.get();
         for (i, slot) in all.iter_mut().enumerate() {
             *slot = if i < n { name16(&raw[i]) } else { [0; 16] };
+            all_attr[i] = if i < n { attrs[i] } else { 0 };
         }
         *SYS.count.get() = n;
         *SYS.top.get() = 0;
@@ -338,6 +354,81 @@ fn scroll(tree: *mut Object, delta: i32) {
     }
 }
 
+/// Navigate the directory path into a sub-directory `name` from the list
+/// (EmuTOS fsel folder handling): insert the folder name before the mask.
+/// `.` is a no-op; `..` walks one level up (never past the drive root).
+fn nav_into_folder(name: &[u8]) {
+    let nlen = name.iter().position(|&b| b == 0).unwrap_or(name.len());
+    let nm = &name[..nlen];
+    if nm == b"." {
+        return;
+    }
+    // SAFETY: single-CPU AES.
+    unsafe {
+        let dir = &mut *SYS.dir.get();
+        let dlen = dir.iter().position(|&b| b == 0).unwrap_or(dir.len());
+        // Split into the directory prefix (up to & incl. the last '\') and
+        // the mask (the final path component).
+        let mask_start = match dir[..dlen].iter().rposition(|&b| b == b'\\') {
+            Some(p) => p + 1,
+            None => dlen,
+        };
+        let mut mask = [0u8; 16];
+        let mk = (dlen - mask_start).min(15);
+        mask[..mk].copy_from_slice(&dir[mask_start..mask_start + mk]);
+
+        let mut prefix = [0u8; 96];
+        prefix[..mask_start].copy_from_slice(&dir[..mask_start]);
+        let mut plen = mask_start;
+
+        if nm == b".." {
+            // Walk up: drop the trailing '\', then back to the previous '\',
+            // but never before the drive root ("X:\").
+            if plen >= 1 && prefix[plen - 1] == b'\\' {
+                plen -= 1;
+            }
+            let root = if plen >= 2 && prefix[1] == b':' { 3 } else { 0 };
+            while plen > root && prefix[plen - 1] != b'\\' {
+                plen -= 1;
+            }
+        } else {
+            // Walk down: append the folder name + '\'.
+            for &c in nm {
+                if plen < 95 {
+                    prefix[plen] = c;
+                    plen += 1;
+                }
+            }
+            if plen < 95 {
+                prefix[plen] = b'\\';
+                plen += 1;
+            }
+        }
+
+        // Rebuild dir = prefix + mask.
+        *dir = [0; 96];
+        dir[..plen].copy_from_slice(&prefix[..plen]);
+        let mut w = plen;
+        for i in 0..mk {
+            if mask[i] == 0 {
+                break;
+            }
+            if w < 95 {
+                dir[w] = mask[i];
+                w += 1;
+            }
+        }
+    }
+}
+
+/// Whether the directory field (`SYS.dir`, edited in place) now differs
+/// from the path last listed (EmuTOS `path_changed`).
+fn path_differs(listed: &[u8; 96]) -> bool {
+    // SAFETY: single-CPU AES.
+    let dir = unsafe { &*SYS.dir.get() };
+    dir[..] != listed[..]
+}
+
 /// Set the directory buffer to `X:\*.*` for a clicked drive letter.
 fn set_drive(ch: u8) {
     // SAFETY: single-CPU AES.
@@ -394,19 +485,63 @@ fn center(tree: *mut Object, backend: &dyn RasterBackend) {
     }
 }
 
-/// Modal loop: arrows scroll, a click selects a file (a double-click
-/// confirms = OK), a drive letter re-lists that drive, `OK`/`Cancel` exit.
-/// Returns 1 (OK) or 0 (Cancel).
+/// Modal loop (EmuTOS `fs_input`): the `FSDIRECT` path field and `FSSELECT`
+/// selection field are keyboard-editable; typing a new path + Enter re-lists
+/// it, a click on a folder walks into it, arrows scroll, a click selects a
+/// file (double-click confirms), a drive letter re-lists that drive,
+/// `OK`/`Cancel` exit. Returns 1 (OK) or 0 (Cancel).
 fn modal(tree: *mut Object, backend: &dyn RasterBackend) -> i16 {
     let Some(h) = host() else {
         return 0;
     };
     let tp = tree as *const Object;
+    // Snapshot the listed path so a manual edit of FSDIRECT is detected.
+    // SAFETY: single-CPU AES.
+    let mut listed: [u8; 96] = unsafe { *SYS.dir.get() };
+    // Focus the selection field for editing (EmuTOS `fm_do(tree, FSSELECT)`).
+    let mut focus = FSSELECT;
+    let mut idx = object::edit_field(tp, focus, 0, 0, ED_INIT);
+
     let mut prev = crate::vdi::mouse_buttons();
     let mut cur_sel: i16 = -1;
     let mut last_hit: i16 = -1;
     let mut last_t: u64 = 0;
+
+    // Re-list the (manually edited) directory path and re-arm editing.
+    let apply_path = |tree: *mut Object, focus: &mut i16, idx: &mut i16, listed: &mut [u8; 96]| {
+        object::edit_field(tp, *focus, 0, *idx, ED_END);
+        relist(tree);
+        // SAFETY: single-CPU AES.
+        *listed = unsafe { *SYS.dir.get() };
+        object::draw_obj(tp, FSDIRECT, 0, backend);
+        *focus = FSSELECT;
+        *idx = object::edit_field(tp, *focus, 0, 0, ED_INIT);
+    };
+
     loop {
+        // Keyboard: route to the focused editable field.
+        if let Some(c) = h.console_try_read() {
+            match c {
+                b'\r' | b'\n' => {
+                    // Enter: re-list if the path was edited, else confirm.
+                    if path_differs(&listed) {
+                        cur_sel = -1;
+                        apply_path(tree, &mut focus, &mut idx, &mut listed);
+                    } else {
+                        return 1;
+                    }
+                }
+                b'\t' => {
+                    object::edit_field(tp, focus, 0, idx, ED_END);
+                    focus = if focus == FSSELECT { FSDIRECT } else { FSSELECT };
+                    idx = object::edit_field(tp, focus, 0, 0, ED_INIT);
+                }
+                _ => {
+                    idx = object::edit_field(tp, focus, c as i16, idx, ED_CHAR);
+                }
+            }
+        }
+
         let cur = crate::vdi::mouse_buttons();
         if cur & 0x01 != 0 && prev & 0x01 == 0 {
             let (mx, my) = crate::vdi::mouse_position();
@@ -414,32 +549,55 @@ fn modal(tree: *mut Object, backend: &dyn RasterBackend) -> i16 {
             let hit = unsafe { object::hit_test(tp, 0, MAX_DEPTH, mx, my) };
             let now = h.monotonic_millis();
             if hit == FSOK {
-                return 1;
+                // Like TOS: if the mask was edited, OK re-lists, not exits.
+                if path_differs(&listed) {
+                    cur_sel = -1;
+                    apply_path(tree, &mut focus, &mut idx, &mut listed);
+                } else {
+                    return 1;
+                }
             } else if hit == FSCANCEL {
                 return 0;
             } else if hit == FUPAROW {
                 scroll(tree, -1);
             } else if hit == FDNAROW {
                 scroll(tree, 1);
+            } else if hit == FSDIRECT || hit == FSSELECT {
+                // Click into an editable field → focus it (caret to its end).
+                if hit != focus {
+                    object::edit_field(tp, focus, 0, idx, ED_END);
+                    focus = hit;
+                }
+                idx = object::edit_field(tp, focus, 0, 0, ED_INIT);
             } else if (F1NAME..F1NAME + NM_NAMES as i16).contains(&hit) {
                 let slot = (hit - F1NAME) as usize;
                 // SAFETY: single-CPU AES.
-                let (idx, count) = unsafe { (*SYS.top.get() + slot, *SYS.count.get()) };
-                if idx < count {
-                    if cur_sel >= 0 {
-                        object::set_state_bit(tree, cur_sel, SELECTED, false);
-                    }
-                    object::set_state_bit(tree, hit, SELECTED, true);
-                    cur_sel = hit;
-                    // SAFETY: single-CPU AES.
-                    unsafe {
-                        let all = &*SYS.all.get();
-                        copy_name(&mut *SYS.sel.get(), &all[idx]);
-                    }
-                    object::draw_obj(tp, FSSELECT, 0, backend);
-                    // Double-click on the same slot confirms.
-                    if hit == last_hit && now.saturating_sub(last_t) < DCLICK_MS {
-                        return 1;
+                let (entry, count) = unsafe { (*SYS.top.get() + slot, *SYS.count.get()) };
+                if entry < count {
+                    // SAFETY: single-CPU AES; entry < count.
+                    let (name, is_dir) = unsafe {
+                        ((*SYS.all.get())[entry], (*SYS.all_attr.get())[entry] & FA_SUBDIR != 0)
+                    };
+                    if is_dir {
+                        // Folder: walk into it and re-list (EmuTOS single click).
+                        nav_into_folder(&name);
+                        cur_sel = -1;
+                        apply_path(tree, &mut focus, &mut idx, &mut listed);
+                    } else {
+                        // File: select it; a double-click confirms (= OK).
+                        if cur_sel >= 0 {
+                            object::set_state_bit(tree, cur_sel, SELECTED, false);
+                        }
+                        object::set_state_bit(tree, hit, SELECTED, true);
+                        cur_sel = hit;
+                        // SAFETY: single-CPU AES.
+                        unsafe { copy_name(&mut *SYS.sel.get(), &name) };
+                        // Re-arm editing on the selection field (caret at end).
+                        focus = FSSELECT;
+                        idx = object::edit_field(tp, focus, 0, 0, ED_INIT);
+                        if hit == last_hit && now.saturating_sub(last_t) < DCLICK_MS {
+                            return 1;
+                        }
                     }
                 }
             } else if (FS1STDRV..=FSLSTDRV).contains(&hit) {
@@ -447,9 +605,15 @@ fn modal(tree: *mut Object, backend: &dyn RasterBackend) -> i16 {
                 let ch = unsafe { ((*tree.add(hit as usize)).ob_spec >> 24) as u8 };
                 if ch.is_ascii_uppercase() {
                     set_drive(ch);
+                    set_drive_states(tree, ch);
                     cur_sel = -1;
+                    object::edit_field(tp, focus, 0, idx, ED_END);
                     relist(tree);
-                    object::draw_obj(tp, 0, MAX_DEPTH, backend); // dir field + list
+                    // SAFETY: single-CPU AES.
+                    listed = unsafe { *SYS.dir.get() };
+                    object::draw_obj(tp, 0, MAX_DEPTH, backend); // drive states + dir + list
+                    focus = FSSELECT;
+                    idx = object::edit_field(tp, focus, 0, 0, ED_INIT); // caret last
                 }
             }
             last_hit = hit;
