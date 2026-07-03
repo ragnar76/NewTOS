@@ -115,10 +115,19 @@ fn rwabs(args: &TrapArgs) -> Long {
     }
 }
 
-/// `Mediach` (0x09) — media-change probe. The SD card is treated as
-/// non-removable, so it never reports a change (`0` = unchanged).
-fn mediach(_args: &TrapArgs) -> Long {
-    0
+/// `Mediach` (0x09) — media-change probe. `drv` is in `x0`
+/// (`docs/api/bios/09-mediach.md` §"Trap interface").
+///
+/// The contract validates the drive first: an invalid / unmounted drive
+/// returns `EUNDEV` (-15). A valid drive returns `0` (`MEDIANOCHANGE`) —
+/// the Pi's SD card is treated as non-removable, so it never reports a
+/// change (spec §"Pi / BCM2711 binding", `docs/HARDWARE-PROFILE.md` §3.4).
+fn mediach(args: &TrapArgs) -> Long {
+    let drive = args.arg_u16(0);
+    match drive::resolve(drive) {
+        Some(_) => 0,     // valid drive → non-removable → no change
+        None => EUNDEV,   // out-of-range / unmounted drive
+    }
 }
 
 /// `Drvmap` (0x0A) — bitmap of present drives (bit `n` = drive `n`),

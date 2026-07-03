@@ -28,6 +28,7 @@ const SETTIME: u16 = 0x16; // clock group — shares the GEMDOS wall clock
 const GETTIME: u16 = 0x17;
 const KBDVBASE: u16 = 0x22;
 const VSYNC: u16 = 0x25;
+const BLITMODE: u16 = 0x40;
 
 /// XBIOS Trap-14 dispatcher. Returns the value to load into `x0`.
 pub fn dispatch(args: &TrapArgs) -> i64 {
@@ -50,6 +51,9 @@ pub fn dispatch(args: &TrapArgs) -> i64 {
         GETTIME => crate::gemdos::time::xbios_gettime() as i64,
         KBDVBASE => system::kbdvbase(),
         VSYNC => system::vsync(),
+        // No Atari BLiTTER on the Pi → contract status word 0x0000
+        // (not EINVFN). See `docs/api/xbios/40-blitmode.md`.
+        BLITMODE => system::blitmode(),
         _ => EINVFN as i64,
     }
 }

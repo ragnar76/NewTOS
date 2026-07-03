@@ -39,6 +39,19 @@ pub fn vsync() -> i64 {
     0
 }
 
+/// `Blitmode` (0x40) — get/set the BLiTTER mode, returning the status
+/// word. The Pi/BCM2711 has no Atari BLiTTER, so the contract answer is
+/// `0x0000` (bit 1 = "present" clear → absent), for both the `-1` query
+/// and any set request — there is nothing to enable. This is a real
+/// status value, not an error: a blitter-presence probe correctly sees
+/// "absent" and falls back to CPU/VideoCore blits.
+///
+/// Spec: `docs/api/xbios/40-blitmode.md` §"Pi / BCM2711 binding";
+/// `docs/HARDWARE-PROFILE.md` §3.9.
+pub fn blitmode() -> i64 {
+    0x0000
+}
+
 /// IKBD vector table (Atari `struct kbdvecs`, 9 handler pointers).
 /// Programs read it via `Kbdvbase` and may install their own handlers.
 /// Native pointer width (not the m68k 4-byte layout); the IKBD-event
