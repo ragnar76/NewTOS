@@ -851,9 +851,10 @@ fn cstr_len_p(p: *const u8) -> usize {
     }
 }
 
-/// `objc_find` (43) — hit-test: index of the deepest visible, non-disabled
-/// object under `(OB_MX, OB_MY)` within `OB_DEPTH` levels of `OB_DRAWOB`,
-/// or `-1`. `addr_in[0]` = tree.
+/// `objc_find` (43) — hit-test: index of the deepest **visible** object
+/// (`!HIDETREE`, inside its rect) under `(OB_MX, OB_MY)` within `OB_DEPTH`
+/// levels of `OB_DRAWOB`, or `-1`. DISABLED objects **are** returned (the
+/// disabled filter is in `form_do`, not here). `addr_in[0]` = tree.
 pub fn objc_find(pb: &Aespb) {
     let tree = pb.addrin(0) as *const Object;
     let startob = pb.intin(0);
@@ -874,8 +875,9 @@ pub fn objc_find(pb: &Aespb) {
 }
 
 /// Hit-test entry for internal callers (the Form Manager's modal loop):
-/// deepest visible, enabled object under `(mx, my)` within `depth` levels
-/// of `root`, or `NIL`. Mirrors `objc_find`.
+/// deepest visible object under `(mx, my)` within `depth` levels of
+/// `root`, or `NIL`. Mirrors `objc_find` — DISABLED objects are returned;
+/// `form_do` applies the disabled filter on the result.
 ///
 /// # Safety
 /// `tree` is a valid OBJECT array.
@@ -1633,12 +1635,13 @@ fn find_hit(
         }
     }
 
-    // Hit on `obj` itself — but DISABLED objects are not selectable.
-    if ob.ob_state & DISABLED != 0 {
-        NIL
-    } else {
-        obj
-    }
+    // Hit on `obj` itself. Per the spec, `objc_find`/`find_hit` does **not**
+    // skip DISABLED objects — it checks only `inside()` and `!HIDETREE`
+    // (`gemoblib.c:1080`). A DISABLED object under the point is still
+    // returned; ignoring a click on a disabled object is the Form Manager's
+    // job (`form_do`/`fm_do` filters DISABLED itself, `gemfmlib.c:224`). See
+    // `docs/api/aes/object-form.md` ("objc_find returns DISABLED objects").
+    obj
 }
 
 // Keep LASTOB referenced (used by tree-building callers / future batches).
