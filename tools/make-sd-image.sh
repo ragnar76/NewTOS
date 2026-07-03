@@ -40,12 +40,21 @@ trap cleanup EXIT
 diskutil partitionDisk "$DEV" 1 MBR "MS-DOS FAT16" "$VOL" 100% >/dev/null
 V="/Volumes/${VOL}"
 
-# Populate with sample content (CR/LF line ends, TOS-style).
+# Populate with sample content (CR/LF line ends, TOS-style). The names
+# deliberately include worst-case 12-char 8.3 filenames (KEYBOARD.KBD,
+# LYNXBOOT.IMG) and several folders, so the icon-view label layout is tested
+# representatively — a run with only short names once hid a label-overlap bug.
 mdutil -i off "$V" >/dev/null 2>&1 || true
 printf 'NewTOS test disk (drive C:)\r\nFAT16 image for QEMU + real Pi-4.\r\n' > "$V/README.TXT"
 printf 'Hello from the NewTOS desktop!\r\n'                                   > "$V/HELLO.TXT"
+printf 'config placeholder\r\n'                                              > "$V/CONFIG.TXT"
+printf 'newdesk placeholder\r\n'                                             > "$V/NEWDESK.INF"
+printf 'keyboard table placeholder\r\n'                                      > "$V/KEYBOARD.KBD"
+head -c 4096 /dev/urandom                                                    > "$V/KERNEL8.IMG"
+head -c 512  /dev/urandom                                                    > "$V/LYNXBOOT.IMG"
 head -c 4096 /dev/urandom                                                    > "$V/DATA.BIN"
-printf 'GEM system placeholder\r\n'                                          > "$V/GEMSYS.INF"
+mkdir -p "$V/ACC"
+mkdir -p "$V/GEMSYS"
 mkdir -p "$V/SUB";  printf 'A file inside SUB.\r\n'                           > "$V/SUB/INSIDE.TXT"
 mkdir -p "$V/AUTO"; printf 'AUTO folder (\\AUTO\\*.PRG runs at boot)\r\n'     > "$V/AUTO/READ.ME"
 
