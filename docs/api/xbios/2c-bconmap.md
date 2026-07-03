@@ -220,3 +220,48 @@ PHASE-07: with a single PL011 UART the honest EmuTOS behaviour is the `0x2c`
 can enable a `MAPTAB`; until then `Bconmap` reports unavailable rather than
 faking a one-entry map. This is a deliberate departure from the old spec's
 plan — see D-045.
+
+---
+
+## Pi / BCM2711 binding
+
+> Re-points the hardware reference from the Atari **multi-port serial** models
+> (Falcon modem-1/2 + serial-1/2, TT ST-MFP + TT-MFP, SCC) to the **single
+> BCM2711 PL011 UART0**. The contract above (trap ID/ABI, the `-1`/`-2`
+> queries, `BCONMAP_START_HANDLE = 6`, the `BCONMAP`/`MAPTAB` layouts, the
+> `0x2c` unavailable return) is **unchanged**. See `HARDWARE-PROFILE.md` §3.2.
+
+**Peripheral / driver.** The Pi has exactly **one** TOS-visible serial port —
+**PL011 UART0** (`bcm2711/pl011.rs`), used as the AUX/debug channel. There is
+**no** SCC and **no** second MFP, so `BCONMAP_AVAILABLE = (CONF_WITH_SCC ||
+CONF_WITH_TT_MFP)` is **false** on the NewTOS-Pi profile
+(`HARDWARE-PROFILE.md` §4 — both off).
+
+**Pi rationale for the `0x2c` return.** `Bconmap` exists to *re-route* the
+"current RS-232" logical device across **several physical serial ports**. With
+a single UART there is nothing to map:
+- The `MAPTAB` array is **absent** (`maptabsize` would be 1, and a 1-entry map
+  is the no-op identity — EmuTOS compiles the whole body out rather than build
+  it).
+- `mapped_device` never changes from its single value.
+- `bconmap_root` is not initialised.
+
+So the honest, EmuTOS-faithful behaviour is the **`0x2c` "unavailable"** signal
+(the function number) — *not* a synthesized 1-entry table. This matches the
+default AUX wiring: `rsconfptr`/`rs232iorecptr` point at the one PL011 handler
+and are never swapped.
+
+**Absent second serial ports.** The BCM2711 does expose four *other* PL011s
+(UART2..5) plus the mini-UART (UART1) (DS §11.1 p.144), but NewTOS drives only
+UART0; a native Atari-IKBD UART2 is a shelved **(plan)** (`HARDWARE-PROFILE.md`
+§3.3) and would be the keyboard transport, not a `Bconmap`-selectable AUX port.
+If NewTOS later exposes a USB-CDC or second serial as a real second AUX device,
+it must **deliberately** enable a `MAPTAB` and document the choice (D-045).
+
+### Current-code gaps → Step-2
+
+- **R3 (GAP):** `Bconmap (0x2C)` is **not in the XBIOS dispatcher**
+  (`tos-api/src/xbios/mod.rs:33-55`), so it returns **`EINVFN`**, **not** the
+  contractually-correct **`0x2c`** ("unavailable"). This is an observable
+  deviation: a caller checking for the `0x2c` "no second port" signal instead
+  sees the generic `EINVFN`. Fix: wire a handler that returns `0x2c`.

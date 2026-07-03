@@ -170,3 +170,40 @@ No validation; a bogus `cnt` sends more/fewer bytes.
 PHASE-07 (optional): a NewTOS MIDI-over-USB or -UART path could give `Midiws`
 a real transport; until then it is an ABI no-op. The `bytes-1` unsigned count
 is honoured either way.
+
+---
+
+## Pi / BCM2711 binding
+
+> Re-points the hardware reference from the Atari **MIDI ACIA** (6850, `bconout3`
+> transport) to the Pi. The contract above (trap ID/ABI, `void` return, the
+> **`cnt = bytes − 1`** unsigned convention) is **unchanged**; the transport
+> disappears. See `HARDWARE-PROFILE.md` §2, §3.9.
+
+**Peripheral / driver.** There is **no MIDI ACIA on the BCM2711** and no MIDI
+DIN hardware on the Pi-4 board (`HARDWARE-PROFILE.md` §2 "Printer / MIDI …
+absent", §3.9 "MIDI ACIA absent → `Midiws`/MIDI iorec no-op"). The PL011 UART0
+is the *only* serial peripheral NewTOS drives, and it is reserved as the
+**debug/AUX** channel — it is **not** repurposed as a MIDI transport. So the
+EmuTOS `bconout3` path (BIOS handle 3, MIDI) has **no backing device**: BIOS
+handle 3 (MIDI) is one of the absent/dummy char devices
+(`tos-api/src/bios/chardev.rs` — only CON(2)/IKBD(4)/raw-CON(5) are real;
+handle 3 falls to the `char_dummy` "discard" slot).
+
+**Behaviour on the Pi.** `Midiws` transmits nothing: each byte would route to
+the absent MIDI handle-3 output and be discarded. The call is a **no-op** that
+returns normally (`void`), honouring the `bytes − 1` unsigned count contract
+(it "consumes" `cnt + 1` bytes without emitting them). No error is raised —
+consistent with EmuTOS on a `CONF_WITH_MIDI_ACIA`-off build.
+
+The related `Iorec(2)` MIDI **input** record is likewise a no-op / absent
+(cross-ref `docs/api/xbios/0e-iorec.md`).
+
+### Current-code gaps → Step-2
+
+- **R4 (GAP):** `Midiws (0x0C)` is **not in the XBIOS dispatcher**
+  (`tos-api/src/xbios/mod.rs:33-55`) → returns **`EINVFN`**. The contract is a
+  **`void`/no-op** (send nothing, no error), so a caller currently sees a
+  spurious `EINVFN` instead of the silent no-op. Fix: wire a handler that
+  consumes the args and returns `0` (void), leaving the `bytes − 1` count
+  semantics documented but inert.

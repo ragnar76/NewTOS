@@ -136,9 +136,36 @@ differ only in the peripheral drivers (`kernel/src/drivers/bcm2711/*` vs.
   return UART bytes — a console-policy violation to fix in Step 2. Console
   *output* also mirrors to the UART (`host_env.rs:17-20`), which is
   acceptable (debug mirror), unlike input.
-- **`Bconmap`:** single-UART build → returns `0x2c` (unavailable), per the
-  XBIOS spec. Handles: `CON` = screen+keyboard; `AUX` = PL011 (debug);
-  `PRN`/`MIDI` are absent (stubs).
+- **PL011 UART0 concrete values** (device: `bcm2711/pl011.rs`; DS §11 p.144,
+  §11.5 p.146; UART0 base `0x7E20_1000` → mapped `0xFE20_1000`,
+  `pl011.rs:29`):
+  - **Reference clock `FUARTCLK` = 48 MHz** (firmware `init_uart_clock`,
+    `pl011.rs:14-18`); `virt:` **24 MHz** (`qemu_virt/pl011.rs:11`).
+  - **Default line setting = 115200 8N1**, FIFO enabled (LCRH `WLEN_8 | FEN`,
+    no parity, 1 stop bit; `pl011.rs:132`, `hal/uart.rs:11`).
+  - **Baud programming:** `BAUDDIV = FUARTCLK/(16·baud)`, split into
+    `IBRD` (0x24) integer + `FBRD` (0x28) 6-bit fraction (DS §11.5 p.150). At
+    48 MHz/115200 → **IBRD=26, FBRD=3** (`pl011.rs:128-129`); `virt:` IBRD=13,
+    FBRD=1.
+  - **Flow control = none**: `CR = UARTEN|TXE|RXE` (`pl011.rs:135`); the RTS/CTS
+    hardware-flow bits `CR.RTSEN`/`CR.CTSEN` (DS §11.5 p.151-152) are **not**
+    set, and the CTS0/RTS0 pins (GPIO16/17, ALT3, DS §11.3 p.145) are **not**
+    muxed — only TX/RX (GPIO14/15, ALT0, `pl011.rs:98-103`). Hardware
+    (RTS/CTS) flow in `Rsconf` is therefore not honourable today (Step-2 R5).
+- **`Rsconf` on the PL011:** `speed` (baud idx) → IBRD/FBRD; `ctrl` NONE/SOFT
+  map (HARD/BOTH blocked until RTS/CTS pins are muxed); the MFP `ucr`/`rsr`/
+  `tsr`/`scr` register args have **no 1:1 PL011 model** — framing bits *could*
+  map to LCRH but are currently **ignored on input**, and the packed status
+  return is **synthesized** (`docs/api/xbios/0f-rsconf.md` Pi binding). **Not
+  wired in the dispatcher today (Step-2 R1).**
+- **`Bconmap`:** single-UART build → contractually returns `0x2c`
+  (unavailable), per the XBIOS spec — no `MAPTAB`, nothing to remap. **Not
+  wired today (Step-2 R3): returns `EINVFN` instead of `0x2c`.** Handles:
+  `CON` = screen+keyboard; `AUX (1)` = PL011 (debug, but a BIOS *dummy*
+  today — K9/R6); `PRN`/`MIDI` are absent.
+- **`Midiws`:** no MIDI ACIA on the Pi (§3.9) → contractual **no-op** (`void`).
+  **Not wired today (Step-2 R4): returns `EINVFN` instead of the silent
+  no-op.**
 - **RX IRQ caveat:** on real Pi-4 the PL011 RX IRQ is not delivered through
   GIC-400 as in QEMU, so UART input polls directly (`docs/MEMORY.md`); this
   only matters for the debug/shell path, not the framebuffer console.

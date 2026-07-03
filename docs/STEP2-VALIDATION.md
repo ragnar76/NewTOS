@@ -46,4 +46,22 @@
 | K12 | NOTE | **`Bcostat` MIDI/IKBD swap unobservable.** The handle-3↔4 status-slot swap is contract-relevant only if MIDI/IKBD-TX exist; both are absent on the Pi, so handles 3 and 4 both return 0. No explicit swap table needed today, but re-check if MIDI/IKBD ever return. | `tos-api/src/bios/chardev.rs:76-82` |
 | K13 | TEXT | **Stale "not wired / parked cursor" notes.** `tos-api/src/vdi/mouse.rs` module doc + `set_state` note and the `_mouse-packet.md`/`_mouse.md` notes state the mouse is "not yet wired" and `vq_mouse` returns a parked cursor — stale since the USB-HID mouse feeds `feed_relative`. `_mouse-packet.md` also says packets arrive "on UART2 and are discarded" (the shelved plan); they arrive over USB-HID and move the cursor. Update the code comments + spec prose. | `tos-api/src/vdi/mouse.rs:1-10,99-115`; `docs/api/vdi/input/_mouse-packet.md`, `_mouse.md` |
 
+## Serial / debug
+
+> AUX / serial = **PL011 UART0** (`bcm2711/pl011.rs`), a **debug channel
+> only**. MIDI and any second serial port are **absent** on the Pi. Bindings:
+> `docs/api/xbios/0f-rsconf.md`, `2c-bconmap.md`, `0c-midiws.md`;
+> `HARDWARE-PROFILE.md` §3.2.
+
+| # | Sev | Item | Where |
+|---|-----|------|-------|
+| R1 | GAP | **`Rsconf (0x0F)` not wired.** No `0x0F` entry in the XBIOS dispatcher → returns `EINVFN`. No baud change, no `-2` query, no flow config works. Contract wants: `speed`→IBRD/FBRD, `-2`→stored baud index, `ctrl`→flow, packed UCR/RSR/TSR return. | `tos-api/src/xbios/mod.rs:33-55` |
+| R2 | GAP | **`Rsconf` framing args ignored, not translated.** The MFP `ucr` word-length/parity/stop bits *could* map to PL011 `LCRH.WLEN/PEN/EPS/STP2` (DS §11.5 p.150-151) but are planned to be **ignored on input** — so parity/word-length/stop changes silently do nothing. `rsr`/`tsr`/`scr` have no PL011 model (ignored in + synthesized in the return). | `tos-api/src/xbios/mod.rs`; `bcm2711/pl011.rs` |
+| R3 | GAP | **`Bconmap (0x2C)` returns `EINVFN`, not `0x2c`.** Not in the dispatcher; the single-UART contract is the `0x2c` "unavailable" signal (no `MAPTAB` on the Pi — one serial port, nothing to remap). Caller sees generic `EINVFN` instead. | `tos-api/src/xbios/mod.rs:33-55` |
+| R4 | GAP | **`Midiws (0x0C)` returns `EINVFN`, not the no-op.** Not in the dispatcher; the no-MIDI-ACIA contract is a silent `void` no-op (honour `bytes−1` count, emit nothing). Caller sees `EINVFN`. | `tos-api/src/xbios/mod.rs:33-55` |
+| R5 | NOTE | **HARD/BOTH flow control unrealisable.** `Rsconf ctrl` 2/3 (RTS/CTS) cannot assert: `CR.RTSEN`/`CR.CTSEN` (DS §11.5 p.151-152) are never set and GPIO16/17 (CTS0/RTS0, ALT3, DS §11.3 p.145) are not muxed — only TX/RX GPIO14/15 ALT0. Only NONE/SOFT are physically possible today. | `kernel/src/drivers/bcm2711/pl011.rs:98-103,135` |
+| R6 | NOTE | **AUX (handle 1) is a BIOS dummy — no real PL011 binding.** `is_console_in`/`is_console_out` cover only CON(2)/IKBD(4)/raw-CON(5); `Bconstat(1)`/`Bconin(1)`/`Bconout(1)`/`Bcostat(1)` return 0 (absent), so AUX is **not** actually backed by the UART. The PL011 is instead used as the CON debug mirror (output) and leaked into the CON input ring (K1). Duplicate of K9 — recorded here for the serial view. A proper AUX binding must route handle 1 to `pl011.rs` (TX = `write_byte`, RX = `read_byte`/`Bconstat` = `!FR.RXFE`). | `tos-api/src/bios/chardev.rs:24-32` |
+| R7 | NOTE | **`-2` baud query has no HW read-back.** The PL011 has no "baud index" register (only IBRD/FBRD divisors); `Rsconf(-2)` must return a **driver-kept shadow** of the last set index, and IBRD/FBRD can't be reverse-mapped exactly to a 16-entry Atari code. Design a baud-index↔divisor table + shadow. | `bcm2711/pl011.rs` (no baud shadow today) |
+| R8 | NOTE | **115200 default has no Atari baud index.** The MFP table tops at 19200 (idx 0); the PL011 default 115200 is off-table. An `Rsconf` impl must choose the index→baud policy (D-SER-1) — e.g. treat idx 0 as "fastest" = 115200, or keep 19200 truthful and expose 115200 only as the boot default. | design decision |
+
 <!-- Subsequent binding agents append their subsystem section below. -->
