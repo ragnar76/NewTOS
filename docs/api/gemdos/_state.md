@@ -255,27 +255,49 @@ encoding is a free choice as long as `Fsnext` resumes correctly and returns
 
 ---
 
-## 7. `conterm` (`bdos/console.c`)
+## 7. `conterm` (system variable, `include/tosvars.h:38`)
 
 ```c
-extern UBYTE conterm;   /* low byte of OS var conterm @ 0x484 */
+extern UBYTE conterm;   /* low byte of OS var _conterm @ 0x484 */
 ```
 
-Bit fields:
+`conterm` is a single **UBYTE** system variable at low-memory address `0x484`
+(`tosvars.ld:70`, labelled `_conterm`; the linker comment "attribute vector for
+console output" is historical and misleading). It is initialised to **`7`** by
+`kbd_init` (`bios/ikbd.c:1100`, "keyclick, key repeat & system bell on by
+default") — bits 0,1,2 set, bit 3 clear.
 
-| Bit | Meaning                                               |
-|----:|-------------------------------------------------------|
-| 0   | `Cconin` echoes input                                  |
-| 1   | enable Ctrl-S / Ctrl-Q flow control                    |
-| 2   | enable Ctrl-C abort (raises terminate via Pterm)       |
-| 3   | reserved                                               |
-| 4   | reserved                                               |
-| 5   | reserved                                               |
-| 6   | reserved                                               |
-| 7   | reserved                                               |
+**Bit fields — as actually tested in this EmuTOS build (`1a7484ab`):**
 
-Read by `xconin`, `xnecin`, `xconrs`. Written by AES on init and by
-test programs.
+| Bit | Mask | Meaning | Read at |
+|----:|------|---------|---------|
+| 0   | `& 1` | keyboard **key click** sound on keypress | `bios/ikbd.c:495,801,845,894` |
+| 1   | `& 2` | keyboard **key repeat** enabled | `bios/ikbd.c:475` |
+| 2   | `& 4` | **system bell** on Ctrl-G / VT52 bell | `bios/vt52.c:215` (`do_bell`) |
+| 3   | `& 8` | return the **shift-state byte** in the `Bconin` high word (bits 24-31); if clear, `Bconin` masks it out (`value &= 0x00ffffff`) | `bios/ikbd.c:279-280` |
+| 4-7 | —    | unused in this build | — |
+
+> **Correction (D-027).** An earlier draft of this section claimed bit 0 =
+> "`Cconin` echoes input", bit 1 = "Ctrl-S/Ctrl-Q flow control", bit 2 =
+> "Ctrl-C abort", and that `conterm` is "read by `xconin`, `xnecin`, `xconrs`".
+> **All of that is wrong for this EmuTOS build.** `conterm` is **not read
+> anywhere in `bdos/console.c`** — a full-tree grep finds it only in
+> `bios/ikbd.c` and `bios/vt52.c` (the keyboard/screen BIOS layer). In the
+> GEMDOS console layer, echo (`Cconin`) and Ctrl-C/Ctrl-S/Ctrl-Q handling
+> (`conbrk`) are **unconditional** — no `conterm` bit gates them. The bit table
+> above is the classic Atari layout (key click / repeat / bell / shift-status)
+> and matches the code.
+
+**Contract vs. reference:** the *bit meanings and the value* are contract (a
+program that pokes `0x484` to toggle key click / repeat / bell / shift-status
+observes those effects), but the *effects live in the BIOS keyboard/screen
+layer*, not in the GEMDOS console calls. NewTOS keeps the four documented bits
+with the same semantics.
+
+**Read by:** `bios/ikbd.c` (key click, key repeat, shift-state packing),
+`bios/vt52.c` (`do_bell`). **Written by:** `kbd_init` (init to 7), AES/CPX/setup
+code and test programs that adjust keyboard behaviour. **Not read by any GEMDOS
+console function.**
 
 ---
 

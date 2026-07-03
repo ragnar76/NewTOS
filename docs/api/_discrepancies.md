@@ -669,3 +669,94 @@ Compendium's `EDRIVE` for `Dfree` is a documentation discrepancy. (Whether real
 Atari TOS returns `-1` here is not verifiable from `references/` — no
 disassembly is present — so that claim is left out; the EmuTOS behaviour is the
 contract per Rule 1.)
+
+---
+
+## D-027: `conterm` bits, and the GEMDOS console never reads `conterm` (spec-vs-source)
+
+**Date:** 2026-07-03
+**Phase 00 specs:** `docs/api/gemdos/_state.md §7`, and all console specs
+`docs/api/gemdos/console/*.md` (the "conterm" cross-references).
+
+**EmuTOS:** `conterm` is a single `UBYTE` system variable at `0x484`
+(`include/tosvars.h:38`, `tosvars.ld:70` `_conterm`), initialised to **`7`** by
+`kbd_init` (`bios/ikbd.c:1100`). A full-tree grep finds it read in **only two
+files**, both in the BIOS layer — never in `bdos/console.c`:
+- bit 0 (`& 1`) → keyboard **key click** (`bios/ikbd.c:495,801,845,894`);
+- bit 1 (`& 2`) → keyboard **key repeat** (`bios/ikbd.c:475`);
+- bit 2 (`& 4`) → **system bell** on Ctrl-G / VT52 (`bios/vt52.c:215`);
+- bit 3 (`& 8`) → return the **shift-state byte** in the `Bconin` high word,
+  else mask it out (`bios/ikbd.c:279-280`).
+
+In the GEMDOS console layer, echo (`xconin`→`conin`→`conout`) and Ctrl-C /
+Ctrl-S / Ctrl-Q / Ctrl-X handling (`conbrk`, `bdos/console.c:206-244`) are
+**unconditional** — no `conterm` bit gates any of them.
+
+**Prior NewTOS docs (wrong):** `_state.md §7` gave the bit table as bit 0 =
+"`Cconin` echoes input", bit 1 = "Ctrl-S/Ctrl-Q flow control", bit 2 = "Ctrl-C
+abort", and stated `conterm` is "read by `xconin`, `xnecin`, `xconrs`". None of
+that is true of this EmuTOS build; those meanings appear to have been invented
+from original-TOS lore. The console specs that referenced a `conterm`-gated echo
+were likewise corrected.
+
+**Compendium:** documents the classic four-bit layout (key click / repeat /
+bell / shift-status) — which **matches the EmuTOS code**, so the old NewTOS spec
+was wrong against *both* sources.
+
+**Decision:** follow EmuTOS — the four bits mean key click / key repeat /
+system bell / shift-state packing, and their effects live in the BIOS keyboard
+and screen layer, **not** in the GEMDOS console calls. The bit *values and
+semantics* remain contract (a program can poke `0x484` and observe them); the
+GEMDOS console echo and Ctrl-key handling are unconditional. Corrected in
+`_state.md §7` and every console spec.
+
+---
+
+## D-028: `Crawio` (GEMDOS 0x06) is never redirected to a file (spec-vs-source)
+
+**Date:** 2026-07-03
+**Phase 00 spec:** `docs/api/gemdos/console/06-crawio.md`
+
+**EmuTOS:** the `funcs[]` entry for `Crawio` has **`stdio_typ = 0`**
+(`bdos/bdosmain.c:161`, `{ F(xrawio), 0, 1 }`). The dispatcher's standard-handle
+interception is guarded by `if (typ && fn && ((fn<12) || …))`
+(`bdos/bdosmain.c:498`); with `typ == 0` the whole block is skipped for function
+6. Consequently the `case 6:` arm *inside* that switch (`:505-508`) is
+**unreachable** for the normal dispatch of `Crawio`. `Crawio` therefore always
+talks to the console BIOS device (`Bconstat`/`getch`/`Bconout`), even when
+stdin/stdout have been `Fforce`d to files.
+
+**Prior NewTOS doc (wrong):** `06-crawio.md` listed a "Standard-handle
+redirection" edge case claiming the dispatcher intercepts `Crawio` and does a
+one-byte file read (returning `EOF_INDICATOR`) or file write. That path is dead
+code for function 6 and never runs.
+
+**Compendium:** does not address dispatcher-level redirection; not a Compendium
+discrepancy — an internal spec error.
+
+**Decision:** follow EmuTOS — `Crawio` is never redirected; it is genuinely raw
+console I/O. Corrected in `06-crawio.md`. (The other console read/write
+functions, which *do* set a non-zero `stdio_typ`, are redirected as before.)
+
+---
+
+## D-029: `Cconin`/`Cnecin`/`Cconrs` echo to the stdin device, not stdout (spec-vs-source)
+
+**Date:** 2026-07-03
+**Phase 00 specs:** `docs/api/gemdos/console/01-cconin.md`, `0a-cconrs.md`
+
+**EmuTOS:** `xconin` echoes via `conin(h)` where `h = HXFORM(run->p_uft[0])` —
+the **stdin** device (`bdos/console.c:388,401-403`). `xconrs` passes
+`HXFORM(run->p_uft[0])` to `cgets` for **both** the read and the echo
+(`bdos/console.c:535`). Neither uses `p_uft[1]` (stdout) for the echo. So
+redirecting *stdout* does not move the echo; only redirecting *stdin* does. Echo
+is also unconditional (no `conterm` gate — see D-027).
+
+**Prior NewTOS doc (wrong):** `01-cconin.md` stated the echoed character "is
+also written to the device in `run->p_uft[1]`" and reasoned about stdout
+redirection. The echo device is `p_uft[0]`, not `p_uft[1]`.
+
+**Not a Compendium discrepancy** — an internal spec error.
+
+**Decision:** follow EmuTOS — the console read functions echo on the stdin
+device. Corrected in `01-cconin.md` and `0a-cconrs.md`.

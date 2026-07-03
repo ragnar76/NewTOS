@@ -1,78 +1,174 @@
-# `Cauxis` — GEMDOS 0x12
+# `Cauxis` (GEMDOS 0x12)
 
-> Phase 00 spec. Source: EmuTOS @ `1a7484ab` — `bdos/console.c:xauxistat()`.
+> Phase 00 spec (full-contract template). Source: EmuTOS @ `1a7484ab`.
+> Verified against `bdos/console.c:186` (`xauxistat`) and `:143` (`constat`).
+
+> **Contract vs. reference** — see [`docs/COMPATIBILITY.md`](../../../COMPATIBILITY.md).
+> Contract: trap ID/ABI, the truth-valued status return (`-1` available, `0`
+> not). Reference: the (unused) AUX typeahead buffer.
 
 ## EmuTOS source
 
-- **Primary:** `bdos/console.c:180` — `xauxistat()`
-- **Helpers:** `constat()` (l.144), `Bconstat`
-- **Globals read:** `run->p_uft[2]`, `aux_typeahead`
+**Primary location:** `bdos/console.c:186` — `long xauxistat(void)`
 
-## Source extraction
+**Installed handler / vector:** (none) — direct `funcs[]` entry `0x12` =
+`xauxistat`, `stdio_typ = 0x82` (stdaux), `wparms = 0` (`bdos/bdosmain.c:191`).
+When stdaux is redirected to a file (`run->p_uft[2] > 0`) the dispatcher returns
+`eof(h) ? 0L : -1L` — see Edge case 2.
 
-```c
-long xauxistat(void)
-{
-    return constat(HXFORM(run->p_uft[2]));
-}
-```
+**Helpers called:**
+- `bdos/console.c:143` — `constat(h)` — typeahead check, else `Bconstat(h)`.
+- BIOS `Bconstat(1)` (0x01).
 
-Goes through the same `constat()` as `Cconis`. For default
-configuration (`p_uft[2] = H_Aux = -2 → HXFORM = 1`), `constat` falls
-into its `(h<1)||(h>2)` test → `h == 1`, accepted; consults
-`aux_typeahead.add > aux_typeahead.remove`. **However, no GEMDOS
-function ever populates `aux_typeahead`** (see `D-003`), so the
-typeahead branch is dead in current EmuTOS — the function falls
-through to `Bconstat(1)`.
+**Headers / type definitions used:**
+- `bdos/console.h:24,36` — `H_Aux = -2`, `HXFORM(h) = 3+h` (→ BIOS handle 1).
+
+**System variables / globals read:**
+- `run->p_uft[2]` (`bdos/console.c:188`) — stdaux device.
+- `aux_typeahead` (via `constat`, through `buffer[1]`).
+
+**System variables / globals written:** none.
+
+**Build configuration affecting this function:** none directly (transitive
+serial back-end selection: `CONF_WITH_MFP` / `CONF_WITH_SCC`).
+
+---
+
+## Source extraction summary
+
+`Cauxis` reports whether a character is available on the auxiliary (serial)
+device. `xauxistat` resolves stdaux from `run->p_uft[2]` (default `H_Aux = -2` →
+BIOS handle 1) and calls the same `constat(h)` used by `Cconis`.
+
+For the default configuration `h == 1`, which `constat` accepts (its guard
+rejects only handles outside `1..2`). `constat` first checks the AUX typeahead
+buffer — but **no GEMDOS function ever populates `aux_typeahead`** (D-003), so
+that branch is dead and `constat` falls through to `Bconstat(1)`, the serial
+input-ready flag. The result is truth-valued: non-zero (canonically `-1`) means
+a byte is waiting, `0` means none. A redirected stdaux is answered by the
+dispatcher's `eof`-based logic.
+
+---
 
 ## Trap interface
 
-| | |
-|--|--|
-| Trap | 1 |
-| Function ID | `0x0012` |
-| WORD args | 0 |
+- **Trap number:** 1 (GEMDOS)
+- **Function ID:** 0x12
+- **Stack frame on entry (m68k):**
+  ```
+   0: function_id (word) = 0x0012
+  ```
+  No parameters.
+- **Total parameter bytes:** 2 → `wparms = 0`.
+- **Native (AArch64) ABI:** ID `0x12` in `x8`; no argument registers; LONG
+  result sign-extended into `x0`.
+
+  | m68k stack | AArch64 reg | Name | Type / size |
+  |------------|-------------|------|-------------|
+  | (none)     | —           | —    | —           |
+
+---
 
 ## Inputs
 
-None.
+None. The device is `run->p_uft[2]`, not a parameter.
+
+---
 
 ## Outputs
 
-| | |
-|--|--|
-| Reg | D0 |
-| Type | LONG |
-| Value | `-1L` if a byte is available on AUX (or queued in unused typeahead), else `0L`. |
+### Return value
 
-## Errors
+- **Register:** D0 / `x0`
+- **Type:** LONG
+- **Encoding:** `-1L` (or the non-zero `Bconstat(1)` value) if a byte is
+  available on AUX, else `0L`. Returns `0L` if `p_uft[2]` resolves to a handle
+  outside `1..2`.
+- **Source location:** `bdos/console.c:188` → `bdos/console.c:152`.
 
-None.
+### Side effects on global state
 
-## Edge cases
+- None (status probe; does not consume input).
 
-- **Standard-handle redirection** (`p_uft[2] > 0`): dispatcher uses
-  `eof()` over the file.
-- **AUX redirected to non-AUX device** via `p_uft[2]` set to
-  e.g. `H_Console`: `constat` is still called with the corresponding
-  handle (2 = CON) → reports CON typeahead status, not AUX. This is a
-  subtle but documented effect of the standard-handle abstraction.
+### Side effects on hardware
+
+- Reads the serial input-ready flag (via BIOS `Bconstat`).
+
+---
+
+## Error conditions
+
+| Condition | Source location | Returned value |
+|-----------|-----------------|----------------|
+| stdaux resolves to a handle outside `1..2` | `bdos/console.c:147-148` | `0L` |
+
+**Error paths not in Compendium:** the `0L` for an unsupported handle is not an
+error code.
+
+---
+
+## Verification criteria
+
+- **Available:** with a byte waiting on AUX, `Cauxis()` returns `-1L`.
+- **Not available:** with AUX idle, `Cauxis()` returns `0L`.
+- **Non-consuming:** `Cauxis` does not remove the byte; a following `Cauxin`
+  still returns it.
+- **Redirected stdaux:** with `run->p_uft[2]` forced to a file, `Cauxis()`
+  returns `0L` at EOF and `-1L` otherwise (`bdos/bdosmain.c:555-558`).
+
+---
+
+## Edge cases discovered in source
+
+1. **AUX typeahead is dead.** `constat` checks `aux_typeahead`, but nothing ever
+   fills it (D-003), so `Cauxis` effectively always reduces to `Bconstat(1)`.
+
+2. **Handle-remap subtlety.** If `p_uft[2]` were set (via `Fforce`) to
+   `H_Console` (→ handle 2), `constat` would report **CON** typeahead/status,
+   not AUX — a consequence of the standard-handle abstraction, not a bug.
+
+3. **Redirected stdaux uses `eof`.** `case 18` returns `0L` at EOF, `-1L` before
+   (`bdos/bdosmain.c:555-558`).
+
+---
 
 ## Dependencies
 
-- `Bconstat(h)`, `run->p_uft[2]`
+### Requires (must be initialized / functional)
 
-Used by: programs polling RS-232.
+- BIOS serial status `Bconstat(1)`.
+- `stdhdl_init()` (sets `p_uft[2] = H_Aux`).
+
+### Used by
+
+- Programs polling RS-232 before reading.
+
+---
+
+## Related data structures
+
+- `docs/api/bios/01-bconstat.md` — the underlying status BIOS call.
+
+---
 
 ## Cross-references
 
-- **Compendium:** "Cauxis" — agrees.
-- **Profibuch:** "Cauxis (18)" — agrees.
-- **`docs/api/_discrepancies.md` D-003**.
+### Atari Compendium
 
-## Configuration / version
+- Not present in `references/`. Cross-check deferred. (Documents `-1`/`0` status
+  — consistent with EmuTOS.)
 
-- AUX BIOS device: `CONF_WITH_MFP`, `CONF_WITH_SCC`.
+### Atari Profibuch
+
+- Not present in `references/`. Cross-check deferred.
+
+---
+
+## Configuration / version notes
+
+- AUX BIOS device selection: `CONF_WITH_MFP`, `CONF_WITH_SCC`.
+
+---
 
 ## NewTOS implementation notes
 

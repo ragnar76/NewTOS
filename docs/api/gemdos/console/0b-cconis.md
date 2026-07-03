@@ -1,96 +1,190 @@
-# `Cconis` — GEMDOS 0x0B
+# `Cconis` (GEMDOS 0x0B)
 
-> Phase 00 spec. Source: EmuTOS @ `1a7484ab` — `bdos/console.c:xconstat()`.
+> Phase 00 spec (full-contract template). Source: EmuTOS @ `1a7484ab`.
+> Verified against `bdos/console.c:159` (`xconstat`) and `:143` (`constat`).
+
+> **Contract vs. reference** — see [`docs/COMPATIBILITY.md`](../../../COMPATIBILITY.md).
+> Contract: trap ID/ABI, the truth-valued status return (`-1` available, `0`
+> not), and the `0` for a non-CON/AUX handle. Reference: the typeahead buffer.
 
 ## EmuTOS source
 
-- **Primary:** `bdos/console.c:155` — `xconstat()`
-- **Helpers:** `constat()` (l.144), `Bconstat` (BIOS 0x01)
-- **Globals read:** `run->p_uft[0]`, typeahead state
+**Primary location:** `bdos/console.c:159` — `long xconstat(void)`
 
-## Source extraction
+**Installed handler / vector:** (none) — direct `funcs[]` entry `0x0B` =
+`xconstat`, `stdio_typ = 0x80` (stdin), `wparms = 0` (`bdos/bdosmain.c:166`).
+When stdin is redirected to a file (`run->p_uft[0] > 0`) the dispatcher returns
+`eof(h) ? 0L : -1L` instead of entering this body — see Edge case 2.
 
-```c
-long xconstat(void)
-{
-    return constat(HXFORM(run->p_uft[0]));
-}
+**Helpers called:**
+- `bdos/console.c:143` — `constat(h)` — typeahead check, else `Bconstat(h)`.
+- BIOS `Bconstat(2)` (0x01).
 
-static long constat(int h)
-{
-    TYPEAHEAD *bufptr;
+**Headers / type definitions used:**
+- `bdos/console.h:23,36` — `H_Console`, `HXFORM(h) = 3+h`.
 
-    if ((h < 1) || (h > 2))
-        return 0;
+**System variables / globals read:**
+- `run->p_uft[0]` (`bdos/console.c:161`) — stdin device.
+- `con_typeahead` (via `constat`, through `buffer[2]`).
 
-    bufptr = buffer[h];
-    return (bufptr->add > bufptr->remove) ? -1L : Bconstat(h);
-}
-```
+**System variables / globals written:** none.
 
-`constat` reports availability for AUX (1) or CON (2) only — for any
-other handle (PRN=0, raw=5, redirected=6/7, etc.) it returns 0L
-unconditionally.
+**Build configuration affecting this function:** none.
 
-The typeahead buffer is consulted first — if non-empty, the function
-returns `-1L` without polling hardware.
+---
+
+## Source extraction summary
+
+`Cconis` reports whether a character is available on the console input. `xconstat`
+resolves stdin from `run->p_uft[0]` (default `H_Console` → BIOS handle 2) and
+calls `constat(h)`.
+
+`constat` only recognises handles 1 (AUX) and 2 (CON): for any handle outside
+`1..2` it returns `0L` unconditionally (`bdos/console.c:147-148`). For a valid
+handle it first checks the typeahead buffer — if `add > remove` it returns
+`-1L` without touching hardware — otherwise it returns `Bconstat(h)`, whose
+value is the BIOS ready flag (`-1`/non-zero if a byte is waiting, `0` if not).
+
+So the result is truth-valued: non-zero (canonically `-1`) means "input
+available", `0` means "none". When stdin has been redirected to a file, the
+dispatcher answers with `eof`-based logic instead of this function.
+
+---
 
 ## Trap interface
 
-| | |
-|--|--|
-| Trap | 1 |
-| Function ID | `0x000B` |
-| WORD args | 0 |
+- **Trap number:** 1 (GEMDOS)
+- **Function ID:** 0x0B
+- **Stack frame on entry (m68k):**
+  ```
+   0: function_id (word) = 0x000B
+  ```
+  No parameters.
+- **Total parameter bytes:** 2 → `wparms = 0`.
+- **Native (AArch64) ABI:** ID `0x0B` in `x8`; no argument registers; LONG
+  result sign-extended into `x0`.
+
+  | m68k stack | AArch64 reg | Name | Type / size |
+  |------------|-------------|------|-------------|
+  | (none)     | —           | —    | —           |
+
+---
 
 ## Inputs
 
-None.
+None. The device is `run->p_uft[0]`, not a parameter.
+
+---
 
 ## Outputs
 
-| | |
-|--|--|
-| Reg | D0 |
-| Type | LONG |
+### Return value
 
-| Condition                                              | Value  |
-|--------------------------------------------------------|--------|
-| Typeahead buffer for stdin device non-empty            | `-1L`  |
-| Typeahead empty, hardware indicates input available    | `-1L`  |
-| Neither                                                | `0L`   |
-| stdin redirected to printer/raw/unsupported handle     | `0L`   |
+- **Register:** D0 / `x0`
+- **Type:** LONG
+- **Encoding:** truth-valued —
 
-## Errors
+  | Condition | Value |
+  |-----------|-------|
+  | CON/AUX typeahead buffer non-empty | `-1L` |
+  | typeahead empty, BIOS reports a byte waiting | `Bconstat(h)` (non-zero, canonically `-1`) |
+  | nothing available | `0L` |
+  | handle not 1 or 2 (e.g. stdin forced to PRN/handle 0/other) | `0L` |
+- **Source location:** `bdos/console.c:152`.
 
-None.
+### Side effects on global state
 
-## Edge cases
+- None (a status probe; it does not consume input).
 
-- **Standard-handle redirection** (`p_uft[0] > 0`): dispatcher routes
-  via `eof()` on the file descriptor, returning `0L` if EOF and
-  `-1L` otherwise.
-- **`p_uft[0] = 0` (default = `H_Console = -1` → `HXFORM = 2`)**: normal
-  CON behaviour.
-- **Constant-time** when typeahead non-empty; otherwise calls into
-  BIOS which may briefly disable interrupts.
+### Side effects on hardware
+
+- May read the BIOS input-ready flag (`Bconstat` briefly disables interrupts on
+  the IKBD path).
+
+---
+
+## Error conditions
+
+| Condition | Source location | Returned value |
+|-----------|-----------------|----------------|
+| stdin resolves to a handle outside `1..2` | `bdos/console.c:147-148` | `0L` |
+
+**Error paths not in Compendium:** the `0L` for an unsupported handle is not an
+error code — it is indistinguishable from "no input".
+
+---
+
+## Verification criteria
+
+- **Available:** with a byte waiting on the console, `Cconis()` returns `-1L`.
+- **Not available:** with the input idle and typeahead empty, `Cconis()` returns
+  `0L`.
+- **Typeahead short-circuit:** if the CON typeahead buffer holds a byte, `Cconis`
+  returns `-1L` without polling the BIOS.
+- **Non-consuming:** two `Cconis` calls with no intervening read both report the
+  same availability; a following `Cconin` still returns the byte.
+- **Redirected stdin:** with `run->p_uft[0]` forced to a file, `Cconis` returns
+  `0L` at EOF and `-1L` otherwise (`bdos/bdosmain.c:555-558`).
+
+---
+
+## Edge cases discovered in source
+
+1. **Only handles 1 and 2 are supported.** `constat` returns `0L` for any other
+   handle (`bdos/console.c:147-148`) — so if stdin is redirected to PRN
+   (handle 0) or an out-of-range value, `Cconis` always reports "no input".
+
+2. **Typeahead is consulted first.** A non-empty buffer yields `-1L` with no
+   hardware access (`bdos/console.c:152`).
+
+3. **Redirected stdin uses `eof`.** The dispatcher returns `0L` at EOF, `-1L`
+   before EOF (`bdos/bdosmain.c:555-558`) — file "input" is "available" until the
+   file is fully consumed.
+
+4. **The exact non-zero value on the hardware path is `Bconstat`'s.** EmuTOS's
+   `Bconstat` returns `-1`/`0`, so the canonical result is `-1L`, but a program
+   should test for non-zero, not `== -1`.
+
+---
 
 ## Dependencies
 
-- `Bconstat(h)`
-- typeahead state, `run->p_uft[0]`
+### Requires (must be initialized / functional)
 
-Used by: programs polling for keyboard input, EmuCON, AES event loop
-(via `evnt_keybd`).
+- BIOS console status `Bconstat(2)`.
+- `stdhdl_init()` (sets `p_uft[0] = H_Console`).
+- `con_typeahead`.
+
+### Used by
+
+- Input-polling loops, EmuCON, the AES keyboard event path.
+
+---
+
+## Related data structures
+
+- `docs/api/bios/01-bconstat.md` — the underlying status BIOS call.
+
+---
 
 ## Cross-references
 
-- **Compendium:** "Cconis" — agrees.
-- **Profibuch:** "Cconis (11)" — agrees.
+### Atari Compendium
 
-## Configuration / version
+- Not present in `references/`. Cross-check deferred. (Documents `-1`/`0` status
+  — consistent with EmuTOS.)
 
-None.
+### Atari Profibuch
+
+- Not present in `references/`. Cross-check deferred.
+
+---
+
+## Configuration / version notes
+
+- Configuration-independent.
+
+---
 
 ## NewTOS implementation notes
 
