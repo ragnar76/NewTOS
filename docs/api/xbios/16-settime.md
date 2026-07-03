@@ -1,142 +1,198 @@
-# `Settime` — XBIOS 0x16
+# `Settime` (XBIOS 0x16)
 
-> Phase 00 spec. Source: EmuTOS @ `1a7484ab` —
-> `bios/clock.c:1218` (`settime`).
+> Phase 00 spec (full-contract template). Source: EmuTOS @ `1a7484ab`.
+> Verified against `bios/clock.c:1218` (`settime`).
+
+> **Contract vs. reference** — see [`docs/COMPATIBILITY.md`](../../COMPATIBILITY.md).
+> Contract: trap ID/ABI, `void` return, the DOS-packed datetime encoding, the
+> "no validation" behaviour, that it updates the GEMDOS `current_time`/
+> `current_date` globals. Reference: the RTC backend chain.
 
 ## EmuTOS source
 
-```c
-void settime(LONG time)
-{
-    current_time = LOWORD(time);    /* update GEMDOS cache */
-    current_date = HIWORD(time);
+**Primary location:** `bios/clock.c:1218` — `void settime(LONG time)`, slot
+0x16 of `xbios_vecs[]` (`bios/xbios.c:1312`). This is the XBIOS function the
+GEMDOS date/time setters commit through (`#define Settime(a) xbios_v_l(22,a)`,
+`include/xbiosbind.h:40`).
 
-#if CONF_WITH_NVRAM
-    if (has_nvram)            { nsetdt(time);          return; }
-#endif
-#if CONF_WITH_MEGARTC
-    if (has_megartc)          { msetdt(time);          return; }
-#endif
-#if CONF_WITH_MONSTER
-    if (has_monster_rtc)      { monstersetdt(time);    return; }
-#endif
-#if CONF_WITH_ICDRTC
-    if (has_icdrtc)           { icdsetdt(time);        return; }
-#endif
-#if CONF_WITH_ULTRASATAN_CLOCK
-    if (has_ultrasatan_clock) { ultrasatan_setdt(time); return; }
-#endif
-#if CONF_WITH_IKBD_CLOCK
-    isetdt(time);
-#endif
-}
-```
+**Installed handler / vector:** (none) — direct table entry.
 
-The function is the **single point of truth** for setting the
-system clock. It updates the GEMDOS-visible cached `current_time`
-/ `current_date` first, then dispatches to whichever RTC the
-hardware has — Mega ST RTC, NVRAM (Falcon), MonSTer board, ICD
-clock, UltraSatan clock, or IKBD clock as fallback.
+**Helpers called (RTC backends, one per build):**
+- `bios/clock.c` — `nsetdt` (NVRAM), `msetdt` (MegaRTC), `monstersetdt`,
+  `icdsetdt`, `ultrasatan_setdt`, `isetdt` (IKBD clock) — write the RTC
+  hardware (`bios/clock.c:1224-1263`).
+
+**Headers / type definitions used:**
+- `include/portab.h` — `LOWORD`/`HIWORD`.
+
+**System variables / globals read:** none.
+
+**System variables / globals written:**
+- `current_time = LOWORD(time)` (`bios/clock.c:1221`).
+- `current_date = HIWORD(time)` (`bios/clock.c:1222`). These are the GEMDOS
+  cache globals (`bdos/time.c:53`) that `Tgetdate`/`Tgettime` read.
+- the RTC hardware (per backend).
+
+**Build configuration affecting this function:**
+- `CONF_WITH_NVRAM`, `CONF_WITH_MEGARTC`, `CONF_WITH_MONSTER`,
+  `CONF_WITH_ICDRTC`, `CONF_WITH_ULTRASATAN_CLOCK`, `CONF_WITH_IKBD_CLOCK` —
+  which RTC (if any) is written. With **none** compiled in, `Settime` only
+  updates the GEMDOS cache and does not persist.
+
+---
+
+## Source extraction summary
+
+`Settime` sets the system clock from a 32-bit DOS-format value (time in the
+low word, date in the high word). It **always** writes the GEMDOS-visible
+cache first — `current_time = LOWORD(time)`, `current_date = HIWORD(time)` —
+then dispatches to whichever RTC the machine has (NVRAM → MegaRTC → MonSTer →
+ICD → UltraSatan → IKBD, in that detection order), returning after the first
+match. On a build with no RTC backend it updates only the cache.
+
+It does **no** range validation: a program can pass an impossible date and it
+is accepted into the cache and (if present) the RTC. GEMDOS `Tsetdate`/
+`Tsettime` (0x2B/0x2D) validate and then commit through `Settime`, so they are
+the safer entry point. There is no return value and no error report — RTC
+write failures are not surfaced.
+
+---
 
 ## Trap interface
 
-| | |
-|--|--|
-| Trap | 14 (XBIOS) |
-| Function ID | `0x16` |
-| WORD args | 2 (LONG) |
-| Stack frame | `+2: time (LONG)`, `+0: 0x0016` |
-| Vector | `xbios_vecs[22]` |
+- **Trap number:** 14 (XBIOS)
+- **Function ID:** 0x16
+- **Stack frame on entry (m68k):** `Settime(time)` = `xbios_v_l(22, a)`
+  (`include/xbiosbind.h:40`):
+  ```
+  +2: time (LONG)
+   0: function_id (word) = 0x0016
+  ```
+- **Total parameter bytes:** 6 (L).
+- **Native (AArch64) ABI:** ID `0x16` in `x8`; arg in `x0`; **`void`** — no
+  return value.
+
+  | m68k stack | AArch64 reg | Name   | Type / size |
+  |------------|-------------|--------|-------------|
+  | +2         | `x0`        | `time` | `LONG` (32) — packed datetime |
+
+---
 
 ## Inputs
 
-| Pos | Name   | Type | Range / meaning                                       |
-|-----|--------|------|-------------------------------------------------------|
-| 0   | `time` | LONG | packed datetime: high 16 bits = date, low 16 = time   |
+| Position | Name   | Type   | Size | Source location    | Notes |
+|----------|--------|--------|------|--------------------|-------|
+| arg0     | `time` | `LONG` | 4    | `bios/clock.c:1221`| high word = date, low word = time |
 
-`HIWORD(time)`: bits 15..9 year-since-1980, 8..5 month, 4..0 day.
-`LOWORD(time)`: bits 15..11 hour, 10..5 minute, 4..0 dbl-second.
-(Same encoding as `Tgetdate`/`Tgettime`.)
+### Packed datetime (same as `Tgetdate`/`Tgettime`)
+
+- `HIWORD(time)` (date): bits 0-4 day (1-31), 5-8 month (1-12), 9-15
+  year-since-1980 (0-127).
+- `LOWORD(time)` (time): bits 0-4 double-seconds (`sec/2`, 0-29), 5-10 minute
+  (0-59), 11-15 hour (0-23).
+
+---
 
 ## Outputs
 
-`void` — no return. D0 == 0 from dispatcher default.
+### Return value
 
-## Errors
+- **Register:** none (`void`).
+- **Type:** `void`.
+- **Source location:** `bios/clock.c:1218` (declared `void`).
 
-None — settime is unconditional. The RTC drivers do not report
-write failures back through this interface.
+### Side effects on global state
 
-## Edge cases
+- `current_time`/`current_date` updated (`bios/clock.c:1221-1222`).
 
-### 1. No validation
+### Side effects on hardware
 
-`Settime` does **no** range checking. A program can pass
-`(month=14, day=31)` and the cached `current_date` accepts it; the
-RTC chip stores it; `Tgetdate` returns it. Sanity-checking is the
-caller's responsibility — `Tsetdate` (GEMDOS 0x2B) does validate
-and is the safer entry point.
+- Writes the RTC chip (per backend), or none on a no-RTC build.
 
-### 2. Atomicity GEMDOS vs RTC
+---
 
-Update order: cached values first, then RTC. A `Tgettime` racing
-with `Settime` may see new cached time but old RTC state — but
-this only matters if something later reads from the RTC directly
-(not the case in EmuTOS GEMDOS path).
+## Error conditions
 
-### 3. RTC priority
+| Condition | Source location | Returned value |
+|-----------|-----------------|----------------|
+| (no error return) | — | — |
 
-The fallback chain `NVRAM → MEGARTC → MONSTER → ICDRTC →
-ULTRASATAN → IKBD` is the EmuTOS detection order. NewTOS profile
-disables `CONF_WITH_NVRAM`/`MEGARTC`/`MONSTER`/`ICDRTC`/
-`ULTRASATAN` and disables `IKBD_CLOCK` too (no IKBD chip on
-RPi4) — so on stock NewTOS profile, `Settime` only updates
-`current_time`/`current_date` and **does not persist**.
+No validation; RTC write failures are not reported.
 
-### 4. Persistence vs runtime
+---
 
-EmuTOS bootstraps `current_time` from the RTC at boot. NewTOS will
-need a real RTC source (see notes); without one, time resets to
-build-default on every boot.
+## Verification criteria
 
-### 5. `Tsetdate`/`Tsettime` route through here
+- **Cache updated:** after `Settime((date<<16)|time)`, a subsequent
+  `Gettime()`/`Tgetdate()`/`Tgettime()` reflects the new packed value.
+- **No validation:** `Settime` with an out-of-range field (e.g. month 14) is
+  accepted into the cache (unlike `Tsetdate`, which rejects it — see D-007).
+- **No return:** the call yields no error code even if there is no RTC.
+- **Persistence (RTC build):** on a build with an RTC, the value survives into
+  the RTC and is re-read at next boot.
 
-GEMDOS time setters call `Settime` with a re-packed full datetime,
-preserving the field they aren't changing. A naive call to
-`Settime` from a user program bypasses `Tsetdate`'s validation —
-intentional escape hatch for AES.
+---
+
+## Edge cases discovered in source
+
+1. **Cache written before the RTC, unconditionally.** `current_time`/
+   `current_date` are set first (`bios/clock.c:1221-1222`), so GEMDOS time is
+   updated even if the RTC write later fails or there is no RTC.
+2. **No validation.** Any packed value is accepted (`Settime` is the raw
+   setter); GEMDOS `Tsetdate`/`Tsettime` add the bounds checks (D-007).
+3. **No-RTC build only updates the cache.** With all RTC `CONF_WITH_*` off,
+   nothing persists; on the NewTOS profile (no IKBD clock either) time resets
+   to the boot default each power-up unless NewTOS supplies its own RTC.
+4. **Falcon RTC year offset quirks** are handled inside the backends, not
+   here — reference only.
+
+---
 
 ## Dependencies
 
-- `current_time`, `current_date` globals (shared with GEMDOS).
-- One of: `nsetdt`, `msetdt`, `monstersetdt`, `icdsetdt`,
-  `ultrasatan_setdt`, `isetdt` (per build config).
+### Requires (must be initialized / functional)
 
-Used by: GEMDOS `Tsetdate`/`Tsettime`, AES control panel, NTP-
-sync utilities.
+- `current_time`/`current_date` (shared with GEMDOS §12).
+- One RTC backend for persistence (optional).
+
+### Used by
+
+- GEMDOS `Tsetdate`/`Tsettime`, AES control panel, time-sync utilities.
+
+---
+
+## Related data structures
+
+- `docs/api/gemdos/_state.md §12` — `current_time`/`current_date` + packing.
+- `docs/api/xbios/17-gettime.md` — the reader.
+
+---
 
 ## Cross-references
 
-- **Compendium:** "Settime" — agrees.
-- **Profibuch:** "Settime (0x16)" — agrees.
-- `docs/api/xbios/17-gettime.md`
-- `docs/api/gemdos/time/2b-tsetdate.md`,
-  `docs/api/gemdos/time/2d-tsettime.md`
+### Atari Compendium
 
-## Configuration
+- Not present in `references/`. Cross-check deferred. (Documents the packed
+  datetime; the "no validation" is EmuTOS behaviour.)
 
-- One RTC backend must be enabled for persistence. NewTOS will
-  need to add a new RTC backend (see notes) since none of the
-  EmuTOS options apply.
+### Atari Profibuch
+
+- Not present in `references/`. Cross-check deferred.
+
+---
+
+## Configuration / version notes
+
+- One RTC backend must be enabled for persistence. NewTOS supplies its own
+  RTC path (below); the packed encoding is unchanged.
+
+---
 
 ## NewTOS implementation notes
 
 (Empty during Phase 00.)
 
-PHASE-07 plan: `Settime` updates the cached values and writes to
-the AArch64 RTC — on QEMU `aarch64-virt`, the PL031; on RPi4,
-the only true RTC is via I²C-attached PCF85063 on Pi 5 (RPi4 has
-none — boot timestamp comes from network/file). NewTOS will keep
-"persisted time" in a tagged region of the SD-card boot config or
-in CMOS-equivalent NVMEM if available, with PL031 as primary on
-QEMU.
+PHASE-07: `Settime` updates the kernel clock cache and writes the AArch64 RTC
+— PL031 on QEMU `aarch64-virt`; on RPi4 (no on-board RTC) NewTOS persists to
+a tagged SD/config region or an I²C RTC if present. The GEMDOS `current_time`/
+`current_date` update is mandatory; the packed encoding is contract.

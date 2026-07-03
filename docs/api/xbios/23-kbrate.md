@@ -1,117 +1,183 @@
-# `Kbrate` — XBIOS 0x23
+# `Kbrate` (XBIOS 0x23)
 
-> Phase 00 spec. Source: EmuTOS @ `1a7484ab` —
-> `bios/ikbd.c:439` (`kbrate`).
+> Phase 00 spec (full-contract template). Source: EmuTOS @ `1a7484ab`.
+> Verified against `bios/ikbd.c:439` (`kbrate`).
 
-## NewTOS status: **out-of-scope**
-
-`Kbrate` sets the Atari key-repeat delay/rate. NewTOS takes keyboard input
-natively via the IKBD path (ST keyboard on a UART / USB-HID → `crate::ikbd`);
-key repeat is owned by that input source, not this trap, so `Kbrate` is **not
-exposed**; the XBIOS dispatcher's `EINVFN` catch-all is the intended, documented
-behaviour (not a stub). See `docs/STATUS.md` (2026-07-02) and the "Keyboard via
-Atari IKBD" decision.
+> **Contract vs. reference** — see [`docs/COMPATIBILITY.md`](../../COMPATIBILITY.md).
+> Contract: trap ID/ABI, the `< 0` query per parameter, the packed return
+> (old initial in the high byte, old repeat in the low byte), the `& 0xFF`
+> store. Reference: the `kb_ticks` repeat timer.
 
 ## EmuTOS source
 
-```c
-WORD kbrate(WORD initial, WORD repeat)
-{
-    WORD ret = MAKE_UWORD(kb_initial, kb_repeat);
+**Primary location:** `bios/ikbd.c:439` — `WORD kbrate(WORD initial, WORD
+repeat)`, slot 0x23 of `xbios_vecs[]` (`bios/xbios.c:1338`).
 
-    if (initial >= 0)  kb_initial = initial & 0x00ff;
-    if (repeat  >= 0)  kb_repeat  = repeat  & 0x00ff;
+**Installed handler / vector:** (none) — direct table entry.
 
-    return ret;
-}
-```
+**Helpers called:** none.
 
-`kb_initial` and `kb_repeat` are byte-sized intervals (in 50 Hz
-VBL ticks) consumed by `do_key_repeat()` from the VBL handler.
+**Headers / type definitions used:**
+- `include/portab.h` — `MAKE_UWORD(hi, lo) = ((hi) << 8) | (lo)`.
+- `include/sysconf.h:68-69` — `KB_INITIAL = 15`, `KB_REPEAT = 2`.
+
+**System variables / globals read:**
+- `kb_initial`, `kb_repeat` (`bios/ikbd.c:425-426`).
+
+**System variables / globals written:**
+- `kb_initial` (if `initial >= 0`), `kb_repeat` (if `repeat >= 0`)
+  (`bios/ikbd.c:443-446`).
+
+**Build configuration affecting this function:** none.
+
+---
+
+## Source extraction summary
+
+`Kbrate` gets and/or sets the keyboard auto-repeat timing. It first computes
+the return value from the *current* settings — `MAKE_UWORD(kb_initial,
+kb_repeat)`, i.e. the old initial delay in the **high** byte and the old
+repeat interval in the **low** byte. Then, for each parameter that is `>= 0`,
+it stores it masked to `& 0x00FF` into the corresponding global; a parameter
+`< 0` (e.g. `-1`) is a **query** and leaves that setting unchanged. So the
+common idioms are `Kbrate(-1, -1)` (read only) and `Kbrate(newInit,
+newRepeat)` (set both, get old).
+
+Both values are in units of ~20 ms (the key-repeat timer tick). Power-up
+defaults are `kb_initial = 15` (≈300 ms) and `kb_repeat = 2` (≈40 ms). The
+repeat itself is driven by a separate `kb_ticks` countdown in the key-repeat
+handler.
+
+---
 
 ## Trap interface
 
-| | |
-|--|--|
-| Trap | 14 (XBIOS) |
-| Function ID | `0x23` |
-| WORD args | 2 (WORD + WORD) |
-| Stack frame | `+4: repeat (W)`, `+2: initial (W)`, `+0: 0x0023` |
-| Vector | `xbios_vecs[35]` |
+- **Trap number:** 14 (XBIOS)
+- **Function ID:** 0x23
+- **Stack frame on entry (m68k):** `Kbrate(initial, repeat)` =
+  `xbios_w_ww(35, a, b)` (`include/xbiosbind.h:53`):
+  ```
+  +4: repeat  (word)
+  +2: initial (word)
+   0: function_id (word) = 0x0023
+  ```
+- **Total parameter bytes:** 6 (W + W).
+- **Native (AArch64) ABI:** ID `0x23` in `x8`; args in `x0..x1`; the WORD
+  result **sign-extended** into `x0`.
+
+  | m68k stack | AArch64 reg | Name      | Type / size |
+  |------------|-------------|-----------|-------------|
+  | +2         | `x0`        | `initial` | `WORD` (16) — `< 0` = query |
+  | +4         | `x1`        | `repeat`  | `WORD` (16) — `< 0` = query |
+
+---
 
 ## Inputs
 
-| Pos | Name      | Type | Range / meaning                                           |
-|-----|-----------|------|-----------------------------------------------------------|
-| 0   | `initial` | WORD | initial delay before repeat starts (0..255 VBLs), `-1` = query |
-| 1   | `repeat`  | WORD | inter-repeat delay (0..255 VBLs), `-1` = query             |
+| Position | Name      | Type   | Size | Source location    | Notes |
+|----------|-----------|--------|------|--------------------|-------|
+| arg0     | `initial` | `WORD` | 2    | `bios/ikbd.c:443`  | new initial delay (20 ms units); `< 0` = keep; stored `& 0xFF` |
+| arg1     | `repeat`  | `WORD` | 2    | `bios/ikbd.c:445`  | new repeat interval (20 ms units); `< 0` = keep; stored `& 0xFF` |
+
+---
 
 ## Outputs
 
-| Reg | D0 |
-| --- | --- |
-| Type | LONG (zero-extended WORD) |
+### Return value
 
-Packed as `(prev_kb_initial << 8) | prev_kb_repeat` — the previous
-values, suitable for save-and-restore.
+- **Register:** D0 / `x0`
+- **Type:** WORD
+- **Encoding:** `MAKE_UWORD(old_kb_initial, old_kb_repeat)` — old initial in
+  bits 8-15, old repeat in bits 0-7.
+- **Source location:** `bios/ikbd.c:441,448`.
 
-## Errors
+### Side effects on global state
 
-None.
+- `kb_initial = initial & 0xFF` when `initial >= 0`; `kb_repeat = repeat &
+  0xFF` when `repeat >= 0` (`bios/ikbd.c:443-446`).
 
-## Edge cases
+### Side effects on hardware
 
-### 1. Defaults
+None (software repeat timer; the IKBD hardware repeat is not used).
 
-EmuTOS defaults: `kb_initial = 25` (≈500 ms at 50 Hz),
-`kb_repeat = 5` (≈100 ms). Atari TOS uses 25/5 too.
+---
 
-### 2. `0` value behaviour
+## Error conditions
 
-`kb_initial = 0`: every keypress repeats from the moment of press,
-no initial delay. `kb_repeat = 0`: repeats once per VBL — the
-fastest possible.
+| Condition | Source location | Returned value |
+|-----------|-----------------|----------------|
+| (no error return) | — | — |
 
-### 3. High-byte truncation
+---
 
-`& 0x00ff` discards the high byte. `Kbrate(0x0100, 0x0500)`
-quietly clamps to `0/5` — the high byte is silently dropped.
+## Verification criteria
 
-### 4. Global vs per-process
+- **Query:** `Kbrate(-1, -1)` returns the current packed `(initial<<8)|repeat`
+  and changes nothing. At power-up this is `(15<<8)|2 = 0x0F02`.
+- **Set both, get old:** `Kbrate(20, 3)` returns the previous packed value and
+  makes the next `Kbrate(-1,-1)` return `(20<<8)|3 = 0x1403`.
+- **Set one:** `Kbrate(30, -1)` updates only `kb_initial`, leaves `kb_repeat`.
+- **Masking:** `Kbrate(0x1FF, -1)` stores `kb_initial = 0xFF` (masked).
 
-`kb_initial` / `kb_repeat` are global. AES does not save/restore
-on process switch; the last-set values persist across program
-invocations. Programs altering them should restore on exit.
+---
 
-### 5. Disabled vs slow
+## Edge cases discovered in source
 
-Setting `conterm` bit 1 = 0 disables key repeat entirely (in
-`do_key_repeat()`). Programs that want "no repeat" should toggle
-`conterm` rather than set huge `kb_initial`/`kb_repeat`.
+1. **Old value computed before the update.** The return uses the *previous*
+   `kb_initial`/`kb_repeat`, even when both are being set (`bios/ikbd.c:441`).
+2. **Per-parameter query via `< 0`.** Only the parameters that are `>= 0` are
+   written, so you can set one and query the other in a single call.
+3. **Stored masked to a byte.** Values above 255 are truncated with `& 0xFF`
+   (`:444,446`); the packed return is a byte per field.
+4. **Defaults are 15/2, not 25/5.** Power-up `KB_INITIAL = 15`, `KB_REPEAT =
+   2` (`include/sysconf.h:68-69`). The old `_state.md` said 25/5 — corrected
+   (D-042).
+
+---
 
 ## Dependencies
 
-- `kb_initial`, `kb_repeat` (BIOS BSS).
-- VBL key-repeat handler (`do_key_repeat`).
-- `conterm` global (XBIOS 0x10 OS variable for repeat enable).
+### Requires (must be initialized / functional)
 
-Used by: AES control panel, accessibility programs, fast-typing
-games.
+- `kb_initial`/`kb_repeat` initialised by `kbd_init` (`bios/ikbd.c:1092-1093`).
+- The key-repeat timer (`kb_ticks`) for the effect to be observable.
+
+### Used by
+
+- Control panel / setup CPX, accessibility tools, games disabling repeat.
+
+---
+
+## Related data structures
+
+- `docs/api/xbios/_state.md §2` — `kb_initial`/`kb_repeat` and the defaults.
+
+---
 
 ## Cross-references
 
-- **Compendium:** "Kbrate" — agrees.
-- **Profibuch:** "Kbrate (0x23)" — agrees, notes 50 Hz unit.
-- `docs/api/xbios/_state.md` (pending) — `conterm` enable flag.
+### Atari Compendium
 
-## Configuration
+- Not present in `references/`. Cross-check deferred. (Documents the packed
+  old-value return and the `-1` query; classic-TOS defaults are often quoted
+  differently — EmuTOS uses 15/2.)
 
-None.
+### Atari Profibuch
+
+- Not present in `references/`. Cross-check deferred.
+
+---
+
+## Configuration / version notes
+
+- Defaults `KB_INITIAL = 15` / `KB_REPEAT = 2` in this build; classic TOS
+  values differ but the ABI (packed return, `-1` query, `& 0xFF`) is the same.
+
+---
 
 ## NewTOS implementation notes
 
 (Empty during Phase 00.)
 
-PHASE-07: NewTOS keeps the 50 Hz VBL unit for ABI compatibility
-even though native HDMI is 60 Hz — translate by multiplying by
-60/50 internally before driving the USB-HID repeat timer.
+PHASE-07: NewTOS drives the repeat from its own timer; `Kbrate` reads/writes
+the same two byte fields with the same packed return so setup tools work.

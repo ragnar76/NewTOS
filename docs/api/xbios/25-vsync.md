@@ -1,116 +1,179 @@
-# `Vsync` — XBIOS 0x25
+# `Vsync` (XBIOS 0x25)
 
-> Phase 00 spec. Source: EmuTOS @ `1a7484ab` —
-> `bios/screen.c:1206` (`vsync`).
+> Phase 00 spec (full-contract template). Source: EmuTOS @ `1a7484ab`.
+> Verified against `bios/screen.c:1205` (`vsync`).
+
+> **Contract vs. reference** — see [`docs/COMPATIBILITY.md`](../../COMPATIBILITY.md).
+> Contract: trap ID/ABI, the "block until the next frame boundary" behaviour,
+> `void` return. Reference: `frclock`, the SR manipulation, `stop_until_interrupt`.
 
 ## EmuTOS source
 
-```c
-void vsync(void)
-{
-    LONG a;
-#if CONF_WITH_ATARI_VIDEO
-    WORD old_sr = set_sr(0x2300);   /* allow VBL interrupt */
-#endif
-    a = frclock;
-    while (frclock == a) {
-#if USE_STOP_INSN_TO_FREE_HOST_CPU
-        stop_until_interrupt();
-#endif
-    }
-#if CONF_WITH_ATARI_VIDEO
-    set_sr(old_sr);
-#endif
-}
-```
+**Primary location:** `bios/screen.c:1205` — `void vsync(void)`, slot 0x25
+of `xbios_vecs[]` (`bios/xbios.c:1340`).
 
-`frclock` is incremented by the VBL handler (`bios/vectors.S`
-trampoline calls `int_vbl`). Spin-wait until it ticks.
+**Installed handler / vector:** (none) — direct table entry.
+
+**Helpers called:**
+- `stop_until_interrupt()` — optional low-power wait between polls
+  (`bios/screen.c:1219-1221`).
+
+**Headers / type definitions used:**
+- `include/tosvars.h` — `frclock`.
+
+**System variables / globals read:**
+- `frclock` (`0x466`) — the free-running VBL frame counter
+  (`bios/screen.c:1217-1218`).
+
+**System variables / globals written:**
+- temporarily lowers the SR to `0x2300` to allow the VBL interrupt, then
+  restores it (`bios/screen.c:1209,1226`); no persistent global written.
+
+**Build configuration affecting this function:**
+- `CONF_WITH_ATARI_VIDEO` — the SR/VBL mechanics; a build without Atari video
+  still needs a frame tick to increment `frclock`.
+
+---
+
+## Source extraction summary
+
+`Vsync` blocks until the next vertical-blank interrupt. It snapshots the
+current `frclock` value, temporarily sets the SR to `0x2300` so VBL
+interrupts can fire (in case the caller had interrupts masked), and then
+spins — optionally `stop_until_interrupt()`-ing — until `frclock` changes.
+The VBL handler increments `frclock` once per frame, so the loop exits after
+exactly one frame boundary. It then restores the saved SR and returns
+nothing.
+
+`Vsync` is the standard way to page-flip tear-free (draw off-screen, `Vsync`,
+`Setscreen` the new physical base) and to pace animation to the display
+refresh.
+
+---
 
 ## Trap interface
 
-| | |
-|--|--|
-| Trap | 14 (XBIOS) |
-| Function ID | `0x25` |
-| WORD args | 0 |
-| Stack frame | `+0: 0x0025` |
-| Vector | `xbios_vecs[37]` |
+- **Trap number:** 14 (XBIOS)
+- **Function ID:** 0x25
+- **Stack frame on entry (m68k):**
+  ```
+   0: function_id (word) = 0x0025
+  ```
+  No parameters (`Vsync()` = `xbios_v_v(37)`, `include/xbiosbind.h:55`).
+- **Total parameter bytes:** 2.
+- **Native (AArch64) ABI:** ID `0x25` in `x8`; no argument registers;
+  **`void`** — no return value.
+
+  | m68k stack | AArch64 reg | Name | Type / size |
+  |------------|-------------|------|-------------|
+  | (none)     | —           | —    | —           |
+
+---
 
 ## Inputs
 
 None.
 
+---
+
 ## Outputs
 
-`void`. D0 == 0 from dispatcher default.
+### Return value
 
-## Errors
+- **Register:** none (`void`).
+- **Type:** `void`.
+- **Source location:** `bios/screen.c:1205` (declared `void`).
 
-None.
+### Side effects on global state
 
-## Edge cases
+- None persistent (SR restored on exit).
 
-### 1. SR clobber to 0x2300
+### Side effects on hardware
 
-The function temporarily lowers IPL to 3 by writing `0x2300` to
-SR — supervisor mode + IPL 3. This **enables** any pending IRQ ≤
-level 3, including the VBL (level 4). The comment in source warns
-this also enables MFP interrupts as a side effect — callers
-disabling MFP via SR must reconfigure after `Vsync`.
+- Enables VBL interrupts for the duration of the wait; blocks the caller for
+  up to one frame.
 
-### 2. Spin-wait with optional STOP
+---
 
-If `USE_STOP_INSN_TO_FREE_HOST_CPU` is set (typically for QEMU /
-ARAnyM hosts), the wait uses `stop #0x2300` instead of busy-spin
-to yield to the host CPU. NewTOS on aarch64 will use `wfi` (wait
-for interrupt) for the same effect.
+## Error conditions
 
-### 3. Race window
+| Condition | Source location | Returned value |
+|-----------|-----------------|----------------|
+| (no error return) | — | — |
 
-Reading `frclock = a`, the next instruction is the test
-`while (frclock == a)`. If a VBL fires exactly between, the loop
-exits immediately — correct. If `frclock` was about to wrap
-around 2³² boundary mid-test, the wraparound is harmless because
-of `==` (not `<`).
+`Vsync` cannot fail. It can, however, block indefinitely if the VBL never
+fires (see edge cases).
 
-### 4. Up to 1 VBL latency
+---
 
-Worst case: called 1 µs before VBL — returns almost immediately.
-Best case: called 1 µs after VBL — waits ~16.6 ms (60 Hz) /
-~20 ms (50 Hz). Programs requiring exact timing budget the
-upper bound.
+## Verification criteria
 
-### 5. Re-entrant callers from MFP IRQ
+- **Blocks one frame:** `Vsync()` returns after `frclock` has advanced by at
+  least one (not before).
+- **Paced loop:** a loop of N `Vsync()` calls takes ≈ N frame periods
+  (≈ N/refresh seconds).
+- **Enables VBL even if masked:** calling `Vsync()` with interrupts masked at
+  entry still returns (it lowers the SR to allow the VBL).
 
-If a MFP timer ISR calls `Vsync` (rare but possible), the IPL-
-lowering may cause unexpected IRQ recursion. EmuTOS does not
-guard. NewTOS should detect "called from IRQ" and either reject or
-adjust.
+---
+
+## Edge cases discovered in source
+
+1. **Waits on `frclock`, not a fixed delay.** It compares against the entry
+   value and returns on the first change (`bios/screen.c:1217-1218`) — one
+   frame, regardless of how far into the current frame the call was made.
+2. **Temporarily unmasks interrupts.** SR → `0x2300` (`:1209`) so the VBL can
+   fire even if the caller masked it; the original SR is restored on exit
+   (`:1226`). A caller relying on interrupts staying masked across `Vsync`
+   would be surprised.
+3. **Hangs if no VBL source.** With no frame interrupt incrementing `frclock`,
+   the loop never exits. NewTOS must drive `frclock` from a real frame tick
+   (VideoCore vsync / a timer) so `Vsync` terminates.
+
+---
 
 ## Dependencies
 
-- `frclock` global, incremented by VBL.
-- VBL interrupt handler.
+### Requires (must be initialized / functional)
 
-Used by: animation pacing, palette/screen-flip synchronisation,
-rate-limited logic in games.
+- A VBL/frame interrupt incrementing `frclock`.
+
+### Used by
+
+- Page flipping, animation pacing, `Setpalette` timing, demos, games.
+
+---
+
+## Related data structures
+
+- `docs/api/xbios/_state.md §8` — `frclock` and the VBL state.
+
+---
 
 ## Cross-references
 
-- **Compendium:** "Vsync" — agrees.
-- **Profibuch:** "Vsync (0x25)" — agrees, notes IPL change quirk.
-- `docs/api/xbios/05-setscreen.md` — internal user.
+### Atari Compendium
 
-## Configuration
+- Not present in `references/`. Cross-check deferred. (Documents "wait for the
+  next vertical blank".)
 
-- `USE_STOP_INSN_TO_FREE_HOST_CPU` (build option).
-- `CONF_WITH_ATARI_VIDEO` (controls SR clobber).
+### Atari Profibuch
+
+- Not present in `references/`. Cross-check deferred.
+
+---
+
+## Configuration / version notes
+
+- None functional; the frame source differs by machine (Atari VBL vs NewTOS
+  framebuffer vsync).
+
+---
 
 ## NewTOS implementation notes
 
 (Empty during Phase 00.)
 
-PHASE-08: NewTOS exposes a vblank IRQ from the VideoCore mailbox
-or HDMI controller. `Vsync` waits on a per-CPU futex bumped by the
-vblank ISR, using `wfi`/`wfe` to idle.
+PHASE-08: `Vsync` blocks on the VideoCore vsync / a frame counter equivalent
+to `frclock`; must terminate on real hardware where a caller might have
+masked interrupts.

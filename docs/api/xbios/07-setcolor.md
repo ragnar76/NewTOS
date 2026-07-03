@@ -1,107 +1,211 @@
-# `Setcolor` — XBIOS 0x07
+# `Setcolor` (XBIOS 0x07)
 
-> Phase 00 spec. Source: EmuTOS @ `1a7484ab` —
-> `bios/screen.c:1192` (`setcolor`).
+> Phase 00 spec (full-contract template). Source: EmuTOS @ `1a7484ab`.
+> Verified against `bios/screen.c:1192` (`setcolor`) and
+> `bios/screen.c:1015` (`atari_setcolor`).
+
+> **Contract vs. reference** — see [`docs/COMPATIBILITY.md`](../../COMPATIBILITY.md).
+> Contract: trap ID/ABI, the `colorNum & 0x0F` range, the `color < 0` query,
+> the return of the previous (masked) colour, the ST `0x0777` / STe `0x0FFF`
+> mask. Reference: the `palette[]` shadow and the hardware register write.
 
 ## EmuTOS source
 
-```c
-WORD setcolor(WORD colorNum, WORD color)
-{
-#ifdef MACHINE_AMIGA   return amiga_setcolor(colorNum, color);
-#elif CONF_WITH_ATARI_VIDEO   return atari_setcolor(colorNum, color);
-#else                  return 0;          /* fake */
-#endif
-}
-```
+**Primary location:** `bios/screen.c:1192` —
+`WORD setcolor(WORD colorNum, WORD color)`, slot 7 of `xbios_vecs[]`
+(`bios/xbios.c:1293`); delegates to `atari_setcolor` (`:1015-1036`).
 
-`atari_setcolor()`:
-1. Reads existing palette[colorNum] (with mask for ST 9-bit vs STe
-   12-bit).
-2. If `color >= 0`, writes it.
-3. Returns the previous value.
+**Installed handler / vector:** (none) — direct table entry.
+
+**Helpers called:**
+- `bios/screen.c:1015` — `atari_setcolor()` — the masked read-modify-write.
+
+**Headers / type definitions used:**
+- `bios/screen.h` — `RGB_*` colour constants; the palette-register base.
+
+**System variables / globals read:**
+- `palette[colorNum]` (the 16-entry ST/STe palette shadow).
+- the video type (to pick the `0x0777` vs `0x0FFF` mask).
+
+**System variables / globals written:**
+- `palette[colorNum]` when `color >= 0` (`bios/screen.c:1033`), and the
+  hardware palette register.
+
+**Build configuration affecting this function:**
+- `CONF_WITH_ATARI_VIDEO` — the register write; without it the shadow-only
+  path applies.
+
+---
+
+## Source extraction summary
+
+`Setcolor` sets one hardware palette entry and returns its **previous** value.
+`colorNum` is masked to `& 0x000F` (`bios/screen.c:1024`), so only the 16
+ST/STe entries are addressable. It reads the old value masked with `0x0777`
+on a plain ST or `0x0FFF` on STe/TT/Videl (`:1027-1031`) — i.e. 3 bits per
+channel on ST, 4 bits on STe.
+
+If `color >= 0` it writes the new value into `palette[colorNum]` (and the
+hardware register); if `color < 0` it does **not** write — this is the query
+form, returning the current colour without changing it (`:1032-1033`). Either
+way it returns the old (masked) value.
+
+The packed word format is bits 11-8 red, 7-4 green, 3-0 blue (4 bits per
+channel, only 3 significant on plain ST). Real STe/TT hardware rotates each
+channel's LSB to the top bit for ST backward compatibility; EmuTOS stores and
+masks straight nibbles, so the *stored/returned* word is contract and the
+hardware nibble rotation is a driver detail.
+
+---
 
 ## Trap interface
 
-| | |
-|--|--|
-| Trap | 14 (XBIOS) |
-| Function ID | `0x07` |
-| WORD args | 2 (WORD + WORD) |
-| Stack frame | `+4: color (W)`, `+2: colorNum (W)`, `+0: 0x0007` |
-| Vector | `xbios_vecs[7]` |
+- **Trap number:** 14 (XBIOS)
+- **Function ID:** 0x07
+- **Stack frame on entry (m68k):** `Setcolor(colorNum, color)` =
+  `xbios_w_ww(7, a, b)` (`include/xbiosbind.h:26`):
+  ```
+  +4: color    (word)
+  +2: colorNum (word)
+   0: function_id (word) = 0x0007
+  ```
+- **Total parameter bytes:** 6 (W + W).
+- **Native (AArch64) ABI:** ID `0x07` in `x8`; args in `x0..x1`; the WORD
+  result **sign-extended** into `x0`.
+
+  | m68k stack | AArch64 reg | Name       | Type / size |
+  |------------|-------------|------------|-------------|
+  | +2         | `x0`        | `colorNum` | `WORD` (16) — masked `& 0x0F` |
+  | +4         | `x1`        | `color`    | `WORD` (16) — `< 0` = query |
+
+---
 
 ## Inputs
 
-| Pos | Name        | Type | Range / meaning                              |
-|-----|-------------|------|----------------------------------------------|
-| 0   | `colorNum`  | WORD | palette index 0..15                          |
-| 1   | `color`     | WORD | new colour value, or `-1` for query-only      |
+| Position | Name       | Type   | Size | Source location      | Notes |
+|----------|------------|--------|------|----------------------|-------|
+| arg0     | `colorNum` | `WORD` | 2    | `bios/screen.c:1024` | palette index, masked to `0..15` |
+| arg1     | `color`    | `WORD` | 2    | `bios/screen.c:1032` | new packed colour; `< 0` = query only |
+
+### Packed colour word
+
+| Bits  | Channel | ST (plain) | STe/TT/Videl |
+|-------|---------|------------|--------------|
+| 11-8  | Red     | 3 sig. bits | 4 bits |
+| 7-4   | Green   | 3 sig. bits | 4 bits |
+| 3-0   | Blue    | 3 sig. bits | 4 bits |
+
+Mask applied to the *returned* value: `0x0777` (ST) / `0x0FFF` (STe/TT/Videl).
+
+---
 
 ## Outputs
 
-| Reg | D0 |
-| --- | --- |
-| Type | LONG (zero-extended WORD) |
+### Return value
 
-The previous palette value at `colorNum`, masked to 9 bits (ST) or
-12 bits (STe).
+- **Register:** D0 / `x0`
+- **Type:** WORD
+- **Encoding:** the **previous** value of `palette[colorNum]`, masked
+  (`0x0777`/`0x0FFF`).
+- **Source location:** `bios/screen.c:1031,1035`.
 
-## Errors
+### Side effects on global state
 
-None directly. `colorNum` out of range (≥ 16) writes outside the
-palette array — undefined behaviour.
+- `palette[colorNum] = color` when `color >= 0` (`bios/screen.c:1033`).
 
-## Edge cases
+### Side effects on hardware
 
-### 1. `color == -1` is query
+- Writes the corresponding hardware palette register (Atari video). No write
+  when `color < 0`.
 
-Standard query idiom. Returns previous palette[colorNum] without
-modifying anything.
+---
 
-### 2. Mask depends on hardware
+## Error conditions
 
-ST: `0x0777` mask (3 bits per channel).
-STe: `0x0FFF` mask, but with STe bit-reordering `xRRRrGGGgBBBb`.
-EmuTOS picks the mask via `has_ste_palette` at runtime.
+| Condition | Source location | Returned value |
+|-----------|-----------------|----------------|
+| (no error return) | — | — |
 
-### 3. No range check on `colorNum`
+`Setcolor` has no error path; an out-of-range `colorNum` is silently masked,
+not rejected.
 
-`colorNum > 15` corrupts memory adjacent to the palette array. ST
-hardware silently clamps to bits 0..3, but the software palette
-shadow `palette[]` has only 16 entries.
+---
 
-### 4. Synchronisation with VBL
+## Verification criteria
 
-Like Setpalette, the change becomes visible at the next VBL.
-Calling repeatedly within a frame does not cause flicker on
-hardware (the shifter only latches on horizontal sync) but on
-NewTOS framebuffer emulation a flush-to-CLUT must be coalesced.
+- **Set + read old:** `Setcolor(1, 0x0700)` returns the previous entry-1
+  colour and makes `Setcolor(1, -1)` subsequently return `0x0700 &
+  mask`.
+- **Query does not write:** `Setcolor(2, -1)` returns entry 2 unchanged and
+  leaves the palette untouched.
+- **Index masking:** `Setcolor(16, c)` writes entry `16 & 0x0F = 0`, not a
+  17th entry.
+- **ST mask:** on a plain-ST profile, the returned value has bits 0/4/8
+  masked to the `0x0777` pattern.
 
-### 5. Falcon mode
+---
 
-In Falcon true-color mode, Setcolor accepts a packed 16-bit RGB
-value (`5R6G5B`). EmuTOS's `atari_setcolor` clamps to ST/STe
-behaviour; Videl path uses Esetcolor (XBIOS 0x53). NewTOS without
-Videl: only ST/STe encoding.
+## Edge cases discovered in source
+
+1. **`color < 0` is the query form.** No write occurs; only the old colour is
+   returned (`bios/screen.c:1032`). This is how a program reads a single
+   palette entry.
+2. **`colorNum & 0x0F` — silent wraparound.** Out-of-range indices wrap into
+   0..15 rather than erroring (`:1024`).
+3. **Return is masked, write is raw.** The old value is masked with
+   `0x0777`/`0x0FFF` (`:1031`); the new value is stored unmasked (`:1033`),
+   so a later query re-masks it. NewTOS must mask the returned value the same
+   way.
+4. **STe LSB rotation is a hardware detail.** EmuTOS stores straight nibbles;
+   the ST-vs-STe intensity-bit order lives in the hardware, not the stored
+   word. NewTOS's 4-bit→8-bit VideoCore mapping is free as long as the
+   returned word matches.
+
+---
 
 ## Dependencies
 
-- `atari_setcolor` ⇒ palette[] + shifter MMIO.
+### Requires (must be initialized / functional)
 
-Used by: Setpalette callers' single-entry updates, AES desk-
-accessory colour negotiation.
+- The `palette[]` shadow and (Atari) the palette registers.
+
+### Used by
+
+- Palette animation, single-colour tweaks, VDI `vs_color`, demos.
+
+---
+
+## Related data structures
+
+- `docs/api/xbios/_state.md §4` — palette shadow + word format.
+- `docs/api/xbios/06-setpalette.md` — full-block counterpart.
+
+---
 
 ## Cross-references
 
-- **Compendium:** "Setcolor" — agrees on `-1` query.
-- **Profibuch:** "Setcolor (0x07)" — agrees.
-- `docs/api/xbios/06-setpalette.md`
+### Atari Compendium
 
-## Configuration
+- Not present in `references/`. Cross-check deferred. (Documents `colorNum`
+  0..15, `color = -1` query, return of the old colour.)
 
-- `CONF_WITH_ATARI_VIDEO`.
+### Atari Profibuch
+
+- Not present in `references/`. Cross-check deferred.
+
+---
+
+## Configuration / version notes
+
+- ST returns `& 0x0777` (3-bit channels); STe/TT/Videl `& 0x0FFF` (4-bit).
+  The mask depends on the detected video, not a build flag alone.
+
+---
 
 ## NewTOS implementation notes
 
 (Empty during Phase 00.)
+
+PHASE-08: `Setcolor` writes one entry of the VideoCore palette (4-bit→8-bit
+expansion) and returns the previous masked word; the `color < 0` query and
+the `colorNum & 0x0F` masking are preserved.

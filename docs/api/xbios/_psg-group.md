@@ -1,194 +1,100 @@
 # YM2149 PSG group — XBIOS 0x1C / 0x1D / 0x1E / 0x20
 
-> Phase 00 spec. Source: EmuTOS @ `1a7484ab` —
-> `bios/sound.c:94/115/130/145`.
+> Phase 00 spec (reference-level; these four are outside the 24-function
+> "own-spec" set). Source: EmuTOS @ `1a7484ab` — `bios/sound.c`.
+> Cite-never-paste: no C bodies; constants/register tables as data.
 >
-> NewTOS profile: no YM2149 hardware. All four functions return
-> 0 immediately (the EmuTOS `#else` branch — *not* `xbios_unimpl`,
-> so callers see plausible defaults).
+> NewTOS profile: no YM2149 hardware. With `CONF_WITH_YM2149` off, all four
+> take the EmuTOS `#else` branch — `Giaccess`/`Dosound` return `0`,
+> `Ongibit`/`Offgibit` are no-ops. This is **not** the `xbios_unimpl`
+> function-number pattern; callers see plausible zero defaults.
 
-This spec covers four small, related functions:
+| ID    | Name      | Native ABI (`include/xbiosbind.h`) | Args | NewTOS return |
+|------:|-----------|------------------------------------|------|---------------|
+| 0x1C  | Giaccess  | `xbios_w_ww(28,…)` | data:WORD, reg:WORD | `0` |
+| 0x1D  | Offgibit  | `xbios_v_w(29,…)`  | mask:WORD | void |
+| 0x1E  | Ongibit   | `xbios_v_w(30,…)`  | mask:WORD | void |
+| 0x20  | Dosound   | `xbios_v_l(32,…)`  | table:UBYTE* | `0` |
 
-| ID    | Name      | Args                   | NewTOS return |
-|------:|-----------|------------------------|---------------|
-| 0x1C  | Giaccess  | data:WORD, reg:WORD    | `0`           |
-| 0x1D  | Offgibit  | mask:WORD              | `void`        |
-| 0x1E  | Ongibit   | mask:WORD              | `void`        |
-| 0x20  | Dosound   | table:UBYTE *          | `0`           |
-
-The PSG (Programmable Sound Generator, Yamaha YM2149) on Atari ST
-implements both audio and a parallel I/O port (Port A — drive
-select, side select, RTS, DTR, parallel-port strobe).
-
-## EmuTOS source
-
-```c
-LONG giaccess(WORD data, WORD reg)
-{
-#if CONF_WITH_YM2149
-    WORD old_sr = set_sr(0x2700);
-    PSG->control = reg & 0xF;
-    if (reg & GIACCESS_WRITE)  PSG->data = data;
-    LONG value = PSG->control;        /* read-back */
-    set_sr(old_sr);
-    return value;
-#else
-    return 0;
-#endif
-}
-
-void ongibit(WORD data) { /* atomic OR into PSG_PORT_A */ }
-void offgibit(WORD data){ /* atomic AND into PSG_PORT_A */ }
-
-LONG dosound(const UBYTE *table)
-{
-#if CONF_WITH_YM2149
-    const UBYTE *oldtable = sndtable;
-    if ((LONG)table >= 0) { sndtable = table; snddelay = 0; }
-    return (LONG)oldtable;
-#else
-    return 0;
-#endif
-}
-```
-
-## Trap interface
-
-Standard XBIOS. Stack frames:
-
-- 0x1C: `+4: reg (W), +2: data (W), +0: 0x001C`
-- 0x1D: `+2: mask (W), +0: 0x001D`
-- 0x1E: `+2: mask (W), +0: 0x001E`
-- 0x20: `+2: table (L), +0: 0x0020`
+The PSG (Yamaha YM2149) on the Atari ST is both a 3-channel sound generator
+and a parallel I/O port (Port A: floppy drive/side select, RTS, DTR,
+parallel-port strobe; Port B: Centronics data).
 
 ## Per-function details
 
-### `Giaccess` (0x1C)
+### `Giaccess(data, reg)` (0x1C) — vector `xbios_vecs[28]`
 
-| | |
-|--|--|
-| Vector | `xbios_vecs[28]` |
-| `reg` low 4 bits | PSG register 0..15                    |
-| `reg` bit 7 (`GIACCESS_WRITE`, `0x80`) | 1 = write, 0 = read |
-| `data` | byte to write (low 8 bits)                  |
-| Returns | previous value at the selected register     |
+Low 4 bits of `reg` select PSG register 0..15; bit 7
+(`GIACCESS_WRITE = 0x80`) means write, else read; `data` low byte is the
+value to write. Returns the register's value. With `CONF_WITH_YM2149` the
+access is bracketed by `set_sr(0x2700)` (IPL 7) because the VBL also pokes
+Port A for drive select. **NewTOS: returns `0`.**
 
-PSG registers:
+PSG register map (reference):
 
-| Reg | Purpose                            |
-|----:|-------------------------------------|
-| 0   | Channel A frequency low              |
-| 1   | Channel A frequency high (4 bits)    |
-| 2   | Channel B frequency low              |
-| 3   | Channel B frequency high (4 bits)    |
-| 4   | Channel C frequency low              |
-| 5   | Channel C frequency high (4 bits)    |
-| 6   | Noise frequency (5 bits)             |
-| 7   | Mixer / I/O direction                |
-| 8   | Channel A volume                     |
-| 9   | Channel B volume                     |
-| 10  | Channel C volume                     |
-| 11  | Envelope frequency low               |
-| 12  | Envelope frequency high              |
-| 13  | Envelope shape                       |
-| 14  | Port A (drive/side/RTS/DTR/strobe)   |
-| 15  | Port B (parallel port data byte)     |
+| Reg | Purpose | Reg | Purpose |
+|----:|---------|----:|---------|
+| 0/1 | Ch A frequency lo/hi(4) | 8  | Ch A volume |
+| 2/3 | Ch B frequency lo/hi(4) | 9  | Ch B volume |
+| 4/5 | Ch C frequency lo/hi(4) | 10 | Ch C volume |
+| 6   | Noise frequency (5)     | 11/12 | Envelope freq lo/hi |
+| 7   | Mixer / I/O direction   | 13 | Envelope shape |
+|     |                         | 14 | Port A (drive/side/RTS/DTR/strobe) |
+|     |                         | 15 | Port B (Centronics data) |
 
-### `Ongibit` / `Offgibit` (0x1D, 0x1E)
+### `Ongibit(mask)` / `Offgibit(mask)` (0x1D / 0x1E) — `xbios_vecs[29/30]`
 
-| | |
-|--|--|
-| Vectors | `xbios_vecs[29]`, `xbios_vecs[30]` |
-| `Ongibit(mask)` | sets bits where `mask` has 1 |
-| `Offgibit(mask)` | clears bits where `mask` has 0 |
+Atomic read-modify-write on PSG Port A (register 14): `Ongibit` OR-sets the
+bits of `mask`; `Offgibit` AND-masks with `mask` (so pass `~bit` to clear a
+bit — `bios/parport.c` calls `offgibit(~GI_STROBE)`). **NewTOS: no-op.**
 
-Atomic read-modify-write on PSG Port A (register 14). The "and"
-in `Offgibit` is intentional: pass `~bit_to_clear` to clear a
-specific bit (parport.c:93 calls `offgibit(~GI_STROBE)`).
+Port A bit assignments (reference):
 
-### `Dosound` (0x20)
+| Bit | Function | Bit | Function |
+|----:|----------|----:|----------|
+| 0 | Side 0/1 select | 4 | DTR (RS-232) |
+| 1 | Drive 0 select  | 5 | Parallel-port strobe |
+| 2 | Drive 1 select  | 6 | GPO (reserved) |
+| 3 | RTS (RS-232)    | 7 | GPO (reserved) |
 
-| | |
-|--|--|
-| Vector | `xbios_vecs[32]` |
-| `table` | pointer to a sound script |
-| `table == -1` | query; returns current `sndtable` |
-| `table == NULL` | stop sound playback |
-| Returns | previous `sndtable` pointer |
+### `Dosound(table)` (0x20) — vector `xbios_vecs[32]`
 
-Sound script format: a sequence of opcode bytes consumed by
-`sndirq` from the 50 Hz VBL. Opcodes:
-
-- `0x00..0x0F`: load PSG register (next byte = value)
-- `0x80`: set 8-bit signed counter from next byte
-- `0x81`: do `next byte` decrement steps
-- `0x82..0xFF`: pause N VBLs
-
-EmuTOS's `sndirq` runs the table tick by tick; complete description
-deferred to per-function spec at PHASE-07 time.
-
-## Outputs (NewTOS profile)
-
-All four return defaults — `Giaccess` and `Dosound` return `0`,
-`Ongibit`/`Offgibit` are void. No errors.
+With `CONF_WITH_YM2149`: if `(LONG)table >= 0` install `table` as the active
+sound script (`sndtable = table`, `snddelay = 0`) and return the previous
+`sndtable`; the script is run by the sound IRQ from the VBL. `table == -1`
+is the query (returns current `sndtable` without changing it); `table ==
+NULL` stops playback. **NewTOS: returns `0`** (no chip; `Dosound(NULL)` is a
+consistent no-op). The script opcode format is a `bios/sound.c` reference,
+not part of the NewTOS contract.
 
 ## Errors
 
-None.
+None. No error return in any of the four.
 
 ## Edge cases
 
-### 1. SR clobber to 0x2700
-
-All four functions raise IPL to 7 around the PSG access (atomic
-register access is critical: a VBL handler also writes Port A for
-disk-drive select). NewTOS without YM2149 hardware skips the SR
-manipulation.
-
-### 2. Port A bit assignments (Atari ST)
-
-| Bit | Function                 |
-|----:|--------------------------|
-| 0   | Side 0/1 select (floppy) |
-| 1   | Drive 0 select           |
-| 2   | Drive 1 select           |
-| 3   | RTS (RS-232)             |
-| 4   | DTR (RS-232)             |
-| 5   | Parallel-port strobe     |
-| 6   | reserved (GPO)           |
-| 7   | reserved (GPO)           |
-
-Programs hitting Port A bypass `Floprd` etc. — direct hardware
-control. NewTOS without ST hardware silently ignores.
-
-### 3. `Dosound` interrupt-driven
-
-The actual playback runs in `sndirq` (called from VBL). NewTOS
-synthesises a no-op `sndirq` so legacy programs that also call
-`Dosound(NULL)` to stop see consistent behaviour (ABI: both calls
-return 0; nothing audible).
-
-### 4. Atomicity of `Ongibit`/`Offgibit`
-
-The "atomic" claim depends on IPL=7 lockout of VBL/MFP. On
-multicore aarch64 NewTOS would need a spinlock — but since there
-is no hardware to access, the operations are effectively no-ops
-and trivially atomic.
+1. **IPL-7 atomicity** — the `CONF_WITH_YM2149` path locks interrupts around
+   Port A access; the VBL also writes Port A. Without hardware NewTOS skips
+   the SR manipulation. On SMP AArch64 a real Port A would need a spinlock,
+   but there is nothing to access.
+2. **Programs that poke Port A directly for drive select / RS-232
+   handshake** bypass `Floprd`/`Rsconf`. They will not function on NewTOS,
+   just as they would not on a Raspberry Pi — intentional ABI silence.
 
 ## Dependencies
 
-- (Atari) PSG MMIO at `0xFF8800/0xFF8802`.
-- `sndtable`, `snddelay`, `sndirq` (`bios/sound.c`).
-- `set_sr` (cpu.h).
+- (Atari) PSG MMIO `0xFF8800/0xFF8802`; `sndtable`/`snddelay`/`sndirq`
+  (`bios/sound.c`); `set_sr`.
 
-Used by: drive-select code, RS-232 handshake, parallel-port
-strobe, sound effects, classic Atari games for music.
+Used by: drive-select, RS-232 handshake, parallel-port strobe, sound
+effects, classic games' music.
 
 ## Cross-references
 
-- **Compendium:** all four functions documented; agrees on
-  semantics.
-- **Profibuch:** agrees, lists Port A bits.
+- **Compendium / Profibuch:** not present in `references/`; cross-check
+  deferred.
+- `docs/api/xbios/_dispatcher.md §3` — the `#else`-branch `0` return is
+  distinct from the `xbios_unimpl` func-number return.
 
 ## Configuration
 
@@ -198,14 +104,7 @@ strobe, sound effects, classic Atari games for music.
 
 (Empty during Phase 00.)
 
-**ABI choice:** EmuTOS-without-YM returns `0` — *not* the
-`xbios_unimpl` "function number" pattern. NewTOS follows EmuTOS
-to avoid breaking programs that probe `Giaccess(0, n)` and check
-for `==0`. Programs touching Port A for drive select / RS-232
-handshake will not function correctly on NewTOS, but they would
-not function on a Raspberry Pi anyway — this is intentional ABI
-silence.
-
-PHASE-07 may add a NewTOS-extension audio path: `Dosound(NULL)`
-remains a no-op; a new XBIOS slot exposes 16-bit PCM playback via
-the audio block of the VideoCore.
+**ABI choice:** EmuTOS-without-YM returns `0` (not the func-number pattern),
+so NewTOS returns `0` to avoid breaking programs that probe `Giaccess(0, n)`
+for `== 0`. A future NewTOS audio extension (`Dosound` stays a no-op) can
+expose PCM playback via the VideoCore audio block at a reserved XBIOS slot.

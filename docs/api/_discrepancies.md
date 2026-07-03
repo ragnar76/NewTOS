@@ -1042,3 +1042,211 @@ returns — FreeMiNT's MiNT-errno set (`EERROR=-1`, `EINVAL=-25`, `EPERM=-38`,
 `ENOMEM=-39`, `ENOSYS=-32`) collides with TOS codes (`ENOSYS -32 == EINVFN`;
 `EBADARG -64 == ERANGE`; TOS has no `EINVAL`), so the mapping needs an ADR (see
 `154-ssystem.md` Open questions).
+
+---
+
+## D-039: XBIOS out-of-range / unimplemented returns the **function number**, not `EINVFN` (spec-vs-source)
+
+**Date:** 2026-07-03
+**Phase 00 specs:** `docs/api/xbios/_dispatcher.md`, `_triage.md`,
+`_tt-shifter.md`
+
+**EmuTOS:** the shared `biosxbios` trampoline range-checks the function ID and,
+when `d0 >= xbios_ent`, branches to `bx_ret_exc` (`bios/vectors.S:1325-1359`)
+which `rte`s with **D0 unchanged** — D0 still holds the function number
+(`moveq #0,d0; move.w (sp)+,d0`, `:1323-1324`). In-range unimplemented slots
+use `xbios_unimpl` → `xbios_do_unimpl(number){return number;}`
+(`bios/xbios.c:1251`). **Both** paths return the positive function number.
+This is the same fact as D-008, restated for the *out-of-range* path.
+
+**Prior NewTOS docs (wrong):** `_triage.md`'s "Build-profile boundary" and
+`_tt-shifter.md`'s "Falcon overlap" said a trap with `ID > LAST_ENTRY (0x57)`
+"returns `EINVFN` (-32)". It does not — it returns the function number.
+`26-supexec.md` additionally claimed Supexec "returns `EINVFN` today (the
+dispatcher catch-all)" — doubly wrong, since Supexec has its own table slot
+(0x26) and never reaches the catch-all.
+
+**Compendium:** documents `EINVFN` for unimplemented XBIOS — incorrect against
+both the real hardware and EmuTOS (already noted in D-008).
+
+**Decision:** follow EmuTOS — every unimplemented XBIOS call (out-of-range or
+padded slot) returns its own function number. Corrected in `_dispatcher.md §3`,
+`_triage.md`, `_tt-shifter.md`, `26-supexec.md`.
+
+---
+
+## D-040: `Initmous` type 0 / bad type forces `mousevec = just_rts` (spec-vs-source)
+
+**Date:** 2026-07-03
+**Phase 00 spec:** `docs/api/xbios/00-initmous.md`
+
+**EmuTOS:** `Initmous` (`bios/mouse.c:40-122`) installs the mouse vector only
+on the success path: `if (retval != 0 && type != 0) { … if (newvec != NULL)
+kbdvecs.mousevec = newvec; } else { kbdvecs.mousevec = just_rts; }`
+(`:105-121`). So **`type == 0` (disable) and any invalid `type` set
+`mousevec = just_rts`** — the current handler is dropped — regardless of
+`newvec`. The mode-config bytes for types 1/2/4 are sent only if `param !=
+NULL`, and the button/Y-origin bytes are likewise `param`-gated. EmuTOS does
+not implement Compendium's mouse `type == 3`.
+
+**Prior NewTOS doc (incomplete):** `00-initmous.md` said `vec == NULL` "leaves
+`kbdvecs.mousevec` untouched" and described type 0 only as "disable mouse",
+without noting that type 0 / errors overwrite `mousevec` with `just_rts`.
+
+**Compendium:** documents types 0/1/2 and a type 3 EmuTOS does not implement.
+
+**Decision:** follow EmuTOS — document the `just_rts` install on
+disable/error, the `param`-gating, and the unimplemented type 3. Corrected in
+`00-initmous.md`.
+
+---
+
+## D-041: `Rsconf` query is `speed == -2`, and the MFP return omits `scr` (spec-vs-source)
+
+**Date:** 2026-07-03
+**Phase 00 spec:** `docs/api/xbios/0f-rsconf.md`
+
+**EmuTOS:** the default handler `rsconf_mfp` (`bios/serport.c:217-249`)
+treats **`baud == -2`** as the "return current baud code" query
+(`rs232iorecptr->baudrate`, `:222-223`); `baud == -1` merely means "don't
+change the baud". Each of `ucr`/`rsr`/`tsr`/`scr` is applied only when `>= 0`
+(`:239-246`). The `ULONG` return packs the **old** registers as
+`(ucr << 24) | (rsr << 16) | (tsr << 8)` (`:229`) — the low byte (`scr`) is
+**not** included. The SCC handler packs a different subset.
+
+**Prior NewTOS doc (wrong):** `0f-rsconf.md` said "`baud == -1` means query
+current" (it is `-2`) and gave the return as `(ucr<<24)|(rsr<<16)|(tsr<<8)|scr`
+(the `scr` byte is not in the MFP return).
+
+**Compendium:** documents the baud table and flow modes; the `-2` query and the
+exact return packing are EmuTOS specifics.
+
+**Decision:** follow EmuTOS — `-2` is the baud query, `-1` is "keep", and the
+MFP return is `(ucr<<24)|(rsr<<16)|(tsr<<8)`. Corrected in `0f-rsconf.md`.
+
+---
+
+## D-042: `Kbrate` defaults are 15/2 (not 25/5) and `struct keytbl` is 30 bytes (spec-vs-source)
+
+**Date:** 2026-07-03
+**Phase 00 specs:** `docs/api/xbios/23-kbrate.md`, `docs/api/xbios/10-keytbl.md`,
+`docs/api/xbios/_state.md`
+
+**EmuTOS:**
+- `kbrate` (`bios/ikbd.c:439-449`) returns `MAKE_UWORD(kb_initial, kb_repeat)`
+  (old initial in the high byte, old repeat in the low byte), stores each
+  non-negative parameter masked `& 0x00ff`, and treats a negative parameter as
+  a query. Power-up defaults are `KB_INITIAL = 15` and `KB_REPEAT = 2`
+  (`include/sysconf.h:68-69`, set by `kbd_init`, `bios/ikbd.c:1092-1093`), in
+  ~20 ms units.
+- `struct keytbl` (`bios/ikbd.h:57-86`) is **30 bytes** with eight fields:
+  `norm`, `shft`, `caps`, `altnorm`, `altshft`, `altcaps`, `dead` (a
+  `const UBYTE *const *`), and `features` (WORD). `Keytbl` (`:122-134`) sets
+  only `norm`/`shft`/`caps` (sentinel `(UBYTE *)-1` = keep) and returns
+  `&current_keytbl`.
+
+**Prior NewTOS docs (wrong):** `_state.md §2` gave defaults `kb_initial = 25`
+/ `kb_repeat = 5` in 50 Hz units, and described `current_keytbl` as only
+`{unshift, shift, caps}`. Both contradict the source (the 25/5 figure is
+original-TOS lore).
+
+**Compendium:** documents the packed `kbrate` return + `-1` query; classic-TOS
+default figures are often quoted differently — EmuTOS uses 15/2.
+
+**Decision:** follow EmuTOS — defaults 15/2 in 20 ms units, `MAKE_UWORD`
+return, `(UBYTE *)-1` sentinel, 30-byte 8-field `struct keytbl`. Corrected in
+`23-kbrate.md`, `10-keytbl.md`, `_state.md §2`.
+
+---
+
+## D-043: `IOREC` is 14 bytes input-only; IKBD buffer is 256 bytes; RS-232 uses `EXT_IOREC` (spec-vs-source)
+
+**Date:** 2026-07-03
+**Phase 00 specs:** `docs/api/xbios/0e-iorec.md`, `docs/api/xbios/_state.md`
+
+**EmuTOS:** the bare `IOREC` (`bios/iorec.h:20-27`) is **14 bytes**:
+`UBYTE *buf; WORD size; volatile WORD head; volatile WORD tail; WORD low;
+WORD high` — **input only**. `Iorec(1)` (IKBD) and `Iorec(2)` (MIDI) return
+bare `IOREC`s; the IKBD buffer is **256 bytes** (`low=64`, `high=192`), MIDI
+128 bytes (`bios/aciavecs.S`). `Iorec(0)` returns `rs232iorecptr`, an
+**`EXT_IOREC`** (`bios/serport.h:57-65`): an input `IOREC` **plus** an output
+`IOREC` plus `baudrate`/`flowctrl`/`ucr`/`datamask`/`wr5`.
+
+**Prior NewTOS docs (wrong):** `0e-iorec.md` and `_state.md §3` described a
+single 16-byte `IOREC` "with input + output ringbuffer" and an IKBD buffer of
+128 bytes, and treated all three devices as one shape.
+
+**Compendium:** documents the `IOREC` fields; the input-only vs `EXT_IOREC`
+split and the exact sizes are EmuTOS specifics.
+
+**Decision:** follow EmuTOS — 14-byte input-only `IOREC` for IKBD/MIDI,
+`EXT_IOREC` for RS-232, IKBD buffer 256 bytes. Corrected in `0e-iorec.md`,
+`_state.md §3`.
+
+---
+
+## D-044: `BCONMAP` field order is `{maptab, maptabsize, mapped_device}` (spec-vs-source)
+
+**Date:** 2026-07-03
+**Phase 00 specs:** `docs/api/xbios/2c-bconmap.md`, `docs/api/xbios/_state.md`
+
+**EmuTOS:** `BCONMAP` (`bios/serport.h:115-119`) is
+`{ MAPTAB *maptab; WORD maptabsize; WORD mapped_device; }` — **`maptab` at
+offset 0**. `MAPTAB` (`:106-113`) is 24 bytes: `Bconstat`, `Bconin`,
+`Bcostat`, `Bconout`, `Rsconf`, `EXT_IOREC *Iorec`. `Bconmap(-2)` returns
+`&bconmap_root`, so the field order is the layout a program walks.
+
+**Prior NewTOS docs (wrong):** `2c-bconmap.md` and `_state.md §3` gave the
+order as `{mapped_device, maptabsize, maptab}` — reversed.
+
+**Not a Compendium discrepancy** — an internal spec / layout error.
+
+**Decision:** use `{maptab, maptabsize, mapped_device}`. Corrected in
+`2c-bconmap.md`, `_state.md §3`.
+
+---
+
+## D-045: `Bconmap` is unavailable (returns `0x2c`) on a single-serial build (spec-vs-source)
+
+**Date:** 2026-07-03
+**Phase 00 spec:** `docs/api/xbios/2c-bconmap.md`
+
+**EmuTOS:** `BCONMAP_AVAILABLE = (CONF_WITH_SCC || CONF_WITH_TT_MFP)`
+(`bios/serport.h:18`). When it is false, `bconmap` compiles to a single
+`return 0x2c;` (`bios/serport.c:1124`) — the function-number "unimplemented"
+signal (D-008). On a single-serial build there is no `MAPTAB` and `Bconmap`
+reports "not available".
+
+**Prior NewTOS doc (wrong):** `2c-bconmap.md` said NewTOS "enables
+`BCONMAP_AVAILABLE = 1` with a single-entry `MAPTAB`" and that `Bconmap(6)` is
+a no-op — presenting a design choice as if it were the source behaviour. The
+source default for one serial port is the `0x2c` return.
+
+**Not a Compendium discrepancy** — a spec-vs-source / plan-drift error.
+
+**Decision:** on the single-PL011 NewTOS profile, `Bconmap` returns `0x2c`
+(unavailable), matching EmuTOS. Enabling a `MAPTAB` would be a deliberate,
+documented NewTOS extension. Corrected in `2c-bconmap.md`.
+
+---
+
+## D-046: `Scrdmp` default `dump_vec` is `just_rts` (no built-in printer dump) (spec-vs-source)
+
+**Date:** 2026-07-03
+**Phase 00 specs:** `docs/api/xbios/14-scrdmp.md`, `docs/api/xbios/_state.md`
+
+**EmuTOS:** `scrdmp` (`bios/xbios.c:490-494`) calls `dump_vec` via `protect_v`
+and resets `dumpflg = -1`. `dump_vec` (`0x502`) is initialised to `just_rts`
+(a no-op) at `bios/chardev.c:84`; EmuTOS ships **no** built-in screen-dump
+routine. Alt-Help does `dumpflg++` (`bios/ikbd.c:596`), which the VBL notices
+to invoke `dump_vec`. `dumpflg` (`0x4EE`) defaults to `-1` (`bios/bios.c:357`).
+
+**Prior NewTOS docs (imprecise):** `14-scrdmp.md` / `_state.md §5` said the
+default `dump_vec` is `dmpfunc` that "writes the printer-byte stream" — there
+is no such default; it is `just_rts`.
+
+**Not a Compendium discrepancy** — a precision fix.
+
+**Decision:** default `dump_vec = just_rts` (no-op); a NewTOS default dumper
+(e.g. PNG) would be an install-time choice. Corrected in `14-scrdmp.md`,
+`_state.md §5`.

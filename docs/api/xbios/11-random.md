@@ -1,117 +1,177 @@
-# `Random` — XBIOS 0x11
+# `Random` (XBIOS 0x11)
 
-> Phase 00 spec. Source: EmuTOS @ `1a7484ab` —
-> `bios/xbios.c:421` (`random`).
+> Phase 00 spec (full-contract template). Source: EmuTOS @ `1a7484ab`.
+> Verified against `bios/xbios.c:421` (`random`).
+
+> **Contract vs. reference** — see [`docs/COMPATIBILITY.md`](../../COMPATIBILITY.md).
+> Contract: trap ID/ABI, the 24-bit LONG result (bits 24-31 zero), the
+> deterministic LCG sequence from a given seed. Reference: the `rseed`
+> storage and the `hz_200` auto-seed.
 
 ## EmuTOS source
 
-```c
-static ULONG rseed;
+**Primary location:** `bios/xbios.c:421` — `static LONG random(void)`, slot
+0x11 of `xbios_vecs[]` (`bios/xbios.c:1307`). Uses the file-static seed
+`rseed` (`bios/xbios.c:419`).
 
-static LONG random(void)
-{
-    if (rseed == 0) {
-        rseed  = hz_200 << 16;
-        rseed += hz_200;
-    }
-    rseed *= 3141592621UL;
-    rseed += 1;
-    return (rseed >> 8) & 0xFFFFFF;
-}
-```
+**Installed handler / vector:** (none) — direct table entry.
 
-`hz_200` is the OS variable at addr `0x4BA`, a 200 Hz tick counter
-(LONG). Used as the entropy seed on first call.
+**Helpers called:** none.
+
+**Headers / type definitions used:**
+- `include/tosvars.h` — `hz_200` (the 200 Hz tick counter).
+
+**System variables / globals read:**
+- `hz_200` (`0x4BA`) — used to seed `rseed` on the first call.
+
+**System variables / globals written:**
+- `rseed` (`bios/xbios.c:419`) — advanced on every call.
+
+**Build configuration affecting this function:** none.
+
+---
+
+## Source extraction summary
+
+`Random` returns a 24-bit pseudo-random number using a linear congruential
+generator. On the first call (`rseed == 0`) it seeds `rseed = (hz_200 << 16)
++ hz_200`. Each call then does `rseed = rseed * 3141592621 + 1` (a 32-bit LCG,
+multiplier ≈ π×10⁹) and returns `(rseed >> 8) & 0xFFFFFF` — the middle 24 bits,
+with bits 24-31 always zero.
+
+The sequence is fully deterministic given a seed, which is contract: two runs
+that reach the same `rseed` produce the same sequence. The `>> 8` discards the
+worst low bits (bit 0 of an LCG alternates every step), but the result is not
+cryptographic. Well-behaved code that needs a specific starting sequence sets
+`rseed` (historically by patching the BIOS BSS location); NewTOS does not
+expose that back door.
+
+---
 
 ## Trap interface
 
-| | |
-|--|--|
-| Trap | 14 (XBIOS) |
-| Function ID | `0x11` |
-| WORD args | 0 |
-| Stack frame | `+0: 0x0011` |
-| Vector | `xbios_vecs[17]` |
+- **Trap number:** 14 (XBIOS)
+- **Function ID:** 0x11
+- **Stack frame on entry (m68k):**
+  ```
+   0: function_id (word) = 0x0011
+  ```
+  No parameters (`Random()` = `xbios_l_v(17)`, `include/xbiosbind.h:35`).
+- **Total parameter bytes:** 2.
+- **Native (AArch64) ABI:** ID `0x11` in `x8`; no argument registers; the
+  LONG result **sign-extended** into `x0` (top byte is 0, so the value is a
+  clean 0..0xFFFFFF).
+
+  | m68k stack | AArch64 reg | Name | Type / size |
+  |------------|-------------|------|-------------|
+  | (none)     | —           | —    | —           |
+
+---
 
 ## Inputs
 
 None.
 
+---
+
 ## Outputs
 
-| Reg | D0 |
-| --- | --- |
-| Type | LONG (24-bit pseudo-random) |
+### Return value
 
-A 24-bit unsigned value `0..0xFFFFFF`. Bits 31..24 are always 0.
+- **Register:** D0 / `x0`
+- **Type:** LONG (24-bit value)
+- **Encoding:** `(rseed >> 8) & 0xFFFFFF` — bits 0-23 random, bits 24-31 zero.
+- **Source location:** `bios/xbios.c:429`.
 
-## Errors
+### Side effects on global state
+
+- Advances `rseed` (and seeds it from `hz_200` on the first call).
+
+### Side effects on hardware
 
 None.
 
-## Edge cases
+---
 
-### 1. Linear congruential — not cryptographic
+## Error conditions
 
-The constant `3141592621` (≈ π × 10⁹) is the same multiplier used
-by classic TOS. `(seed * a + 1) mod 2^32` is a standard LCG with
-known weaknesses:
-- Low bits have very short cycles (bit 0 alternates every call).
-- Sequential outputs are linearly correlated.
-- Period at most 2^32; effective bit-32-truncated period 2^32.
+| Condition | Source location | Returned value |
+|-----------|-----------------|----------------|
+| (no error return) | — | — |
 
-The `>> 8` discards the worst low bits. Output looks "random
-enough" for game demos and AES timings, **never** for security.
+`Random` cannot fail.
 
-### 2. Auto-seed from `hz_200`
+---
 
-First call seeds from `hz_200` shifted into bits 16..31 plus
-ticks in bits 0..15. After boot but before user input, `hz_200`
-is small (a few thousand ticks per second, system has been up <1
-min typical), so seed has only ~16 bits of entropy.
+## Verification criteria
 
-### 3. Manual seeding
+- **Range:** every result satisfies `0 <= r <= 0xFFFFFF` (bits 24-31 zero).
+- **Determinism:** from a fixed `rseed`, the sequence of results matches the
+  LCG `rseed = rseed*3141592621 + 1; return (rseed>>8)&0xFFFFFF`.
+- **Auto-seed:** the first call after boot seeds from `hz_200`, so it is not a
+  constant across boots (but is a function of uptime at first call).
+- **Advances each call:** two consecutive calls return different values (for
+  any non-degenerate seed).
 
-Atari's documented "set seed" mechanism: write a non-zero value
-directly to `rseed` via `Setexc`-style memory access (`rseed` is
-not exported but lives at a fixed offset in BIOS BSS — programs
-historically patch it). NewTOS will not export this back-door;
-programs needing reseed will use a NewTOS extension.
+---
 
-### 4. Re-entrancy
+## Edge cases discovered in source
 
-Two calls in quick succession both update `rseed` — not a bug but
-a property: rapid consecutive calls produce a deterministic
-sequence per seed.
+1. **First-call seed from `hz_200`.** `rseed = (hz_200 << 16) + hz_200`
+   (`bios/xbios.c:423-426`); early after boot `hz_200` is small, so the
+   effective entropy is low (~16 bits). AES/games often mix `hz_200`
+   themselves for this reason.
+2. **24-bit result, LCG weaknesses.** The `>> 8` masks the worst low bits, but
+   sequential outputs remain linearly correlated; never use for security.
+3. **Seed is internal.** `rseed` is a BIOS static; the classic "poke the seed"
+   trick relies on a fixed BSS offset. NewTOS keeps the LCG for determinism
+   but does not expose the poke; a reseed is a NewTOS extension.
 
-### 5. AES uses `hz_200` directly for finer entropy
-
-AES and many games actually mix `hz_200` themselves to compensate
-for `Random()`'s weakness — implying the function is not trusted
-even by Atari's own software.
+---
 
 ## Dependencies
 
-- `hz_200` (OS var `0x4BA`).
-- `rseed` (BIOS BSS).
+### Requires (must be initialized / functional)
 
-Used by: games, AES message timer jitter, screen-saver pattern
-generation.
+- `hz_200` running (for the seed).
+
+### Used by
+
+- Games, AES timer jitter, screen-saver pattern generation, sample shuffling.
+
+---
+
+## Related data structures
+
+- `docs/api/xbios/_state.md §7` — `rseed`.
+
+---
 
 ## Cross-references
 
-- **Compendium:** "Random" — agrees on 24-bit return.
-- **Profibuch:** "Random (0x11)" — agrees, notes seed mechanism.
+### Atari Compendium
 
-## Configuration
+- Not present in `references/`. Cross-check deferred. (Documents the 24-bit
+  return.)
 
-None.
+### Atari Profibuch
+
+- Not present in `references/`. Cross-check deferred.
+
+---
+
+## Configuration / version notes
+
+- The multiplier `3141592621` and the `>> 8`/`& 0xFFFFFF` shaping match
+  classic TOS, so the sequence is bit-identical to real hardware for a given
+  seed.
+
+---
 
 ## NewTOS implementation notes
 
 (Empty during Phase 00.)
 
-PHASE-07: NewTOS will keep the same LCG for ABI determinism.
-Better entropy is exposed via a NewTOS-extension XBIOS function
-(reserved 0x2F..0x3F slot) backed by AArch64 `RNDR` instruction or
-`/dev/random`-style entropy pool.
+PHASE-07: NewTOS keeps this exact LCG for ABI determinism. Higher-quality
+entropy (AArch64 `RNDR`) is exposed via a separate NewTOS-extension slot, not
+by changing `Random`.

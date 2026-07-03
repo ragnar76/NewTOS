@@ -1,171 +1,247 @@
-# `Setscreen` — XBIOS 0x05
+# `Setscreen` (XBIOS 0x05)
 
-> Phase 00 spec. Source: EmuTOS @ `1a7484ab` —
-> `bios/screen.c:1102` (`setscreen`).
+> Phase 00 spec (full-contract template). Source: EmuTOS @ `1a7484ab`.
+> Verified against `bios/screen.c:1102` (`setscreen`).
 
-## EmuTOS source (essence)
+> **Contract vs. reference** — see [`docs/COMPATIBILITY.md`](../../COMPATIBILITY.md).
+> Contract: trap ID/ABI, the negative-argument "ignore" convention, the WORD
+> return (`-1` on error, previous Videl mode, else 0), the rez-change side
+> effects a program can observe (screen cleared, cursor homed, VT52 reset).
+> Reference: `vblsem`, `atari_setrez`, `Srealloc`, the Videl internals.
 
-```c
-WORD setscreen(UBYTE *logLoc, const UBYTE *physLoc, WORD rez, WORD videlmode)
-{
-    WORD oldmode = 0;
+## EmuTOS source
 
-    if ((LONG)logLoc  > 0)  v_bas_ad = logLoc;          /* set logical */
-    if ((LONG)physLoc > 0)  setphys(physLoc);           /* set physical */
+**Primary location:** `bios/screen.c:1102` —
+`WORD setscreen(UBYTE *logLoc, const UBYTE *physLoc, WORD rez, WORD videlmode)`,
+slot 5 of `xbios_vecs[]` (`bios/xbios.c:1291`).
 
-    if (rez_was_hacked || rez == -1)  return 0;          /* leave rez alone */
-    if (rez < MIN_REZ || rez > MAX_REZ)  return -1;
+**Installed handler / vector:** (none) — direct table entry.
 
-    /* (CONF_WITH_VIDEL Falcon mode reallocation omitted — disabled in NewTOS) */
+**Helpers called:**
+- `bios/screen.c` — `setphys(physLoc)` — program the hardware physical base
+  (`:1111`).
+- `bios/videl.c` — `vfixmode()`, `vgetsize()`, `vsetmode()` — Videl mode
+  fixup/size/set (`:1133,1135,1143`, `CONF_WITH_VIDEL`).
+- `bios/biosmem.c` — `Srealloc()` — reallocate screen RAM for a new Videl
+  size (`:1135`).
+- `bios/screen.c` — `atari_setrez(rez, videlmode)` — apply the resolution
+  (updates `sshiftmod`) (`:1154`).
+- `bios/lineainit.c` — `linea_init()` — re-init Line-A vars (`:1160`).
+- `bios/vt52.c` — `vt52_init()` — reset the VT52 emulator (`:1161`).
+- `bios/screen.c:1205` — `vsync()` — wait for end-of-frame before switching
+  (`:1149`).
 
-    vsync();                              /* wait for end-of-frame */
-    atari_setrez(rez, videlmode);         /* poke shifter registers */
+**Headers / type definitions used:**
+- `bios/screen.h` — `MIN_REZ`, `MAX_REZ`, `FALCON_REZ` (3), resolution codes.
+- `include/tosvars.h` — `v_bas_ad`, `vblsem`.
 
-    vblsem = 0;
-    linea_init();
-    vt52_init();
-    vblsem = 1;
-    return oldmode;                       /* 0 except on Falcon mode swap */
-}
-```
+**System variables / globals read:**
+- `rez_was_hacked` (Line-A hack guard, `:1115`), `has_videl` (`:1130`).
 
-The function is an **all-in-one display reconfigurator**:
-- Optionally update logical buffer.
-- Optionally update physical (visible) buffer.
-- Optionally change resolution.
-- Always re-initialise line-A and VT52 if rez changed.
+**System variables / globals written:**
+- `v_bas_ad` (`0x44E`, `:1107` and Videl realloc `:1139`).
+- `vblsem` (`0x452`, cleared `:1158`, restored `:1163`).
+- `sshiftmod` (`0x44C`, via `atari_setrez`).
+- the physical base register (via `setphys`).
+
+**Build configuration affecting this function:**
+- `CONF_WITH_VIDEL` — enables the `rez == FALCON_REZ` reallocation/mode path.
+- `CONF_WITH_ATARI_VIDEO` — `atari_setrez` / `vsync` mechanics.
+
+---
+
+## Source extraction summary
+
+`Setscreen` reconfigures the display: it optionally moves the logical base
+(`logLoc`), the physical base (`physLoc`), and the resolution (`rez`). A
+**negative** value for any of the three means "leave that unchanged": the code
+tests each as a signed LONG/WORD and only applies it when positive
+(`logLoc > 0 → v_bas_ad = logLoc`, `:1106-1107`; `physLoc > 0 →
+setphys(physLoc)`, `:1110-1111`; `rez == -1 → return 0` without a rez change,
+`:1115-1116`).
+
+The resolution is validated against `[MIN_REZ, MAX_REZ]`; an out-of-range
+`rez` returns `-1` (`:1120-1121`). On a Videl machine, `rez == FALCON_REZ`
+(3) enters a special path: if `videlmode != -1` it fixes the mode with
+`vfixmode`; if *both* `logLoc` and `physLoc` are NULL it reallocates screen
+RAM (`Srealloc(vgetsize(videlmode))`), returning `-1` on failure and setting
+both bases to the new buffer (`:1130-1141`). It saves the previous Videl mode
+(`oldmode = vsetmode(-1)`).
+
+When the resolution actually changes it: `vsync()`s to a frame boundary,
+clears `vblsem` to suspend the VBL, calls `atari_setrez` (which also updates
+`sshiftmod`), re-inits Line-A (`linea_init`) and the VT52 (`vt52_init`) —
+this is what clears the screen and homes the cursor — then restores
+`vblsem`. The WORD return is `oldmode` for Falcon resolutions, else `0`.
+
+Note the whole function is documented as `void` in Atari docs but EmuTOS
+returns a WORD for TOS-4 compatibility.
+
+---
 
 ## Trap interface
 
-| | |
-|--|--|
-| Trap | 14 (XBIOS) |
-| Function ID | `0x05` |
-| WORD args | 6 (LONG + LONG + WORD + WORD) |
-| Stack frame | `+10: videlmode (W)`, `+8: rez (W)`, `+4: physLoc (L)`, `+0+2: logLoc (L)`, `+0: 0x0005` |
-| Vector | `xbios_vecs[5]` |
+- **Trap number:** 14 (XBIOS)
+- **Function ID:** 0x05
+- **Stack frame on entry (m68k):** `Setscreen(logLoc, physLoc, rez,
+  videlmode)` = `xbios_v_llww(5, …)` (`include/xbiosbind.h:24`):
+  ```
+  +10: videlmode (word)
+   +8: rez       (word)
+   +4: physLoc   (LONG, pointer)
+   +2: logLoc    (LONG, pointer)
+    0: function_id (word) = 0x0005
+  ```
+- **Total parameter bytes:** 12 (L + L + W + W).
+- **Native (AArch64) ABI:** ID `0x05` in `x8`; args in `x0..x3`; the WORD
+  result **sign-extended** into `x0`.
 
-(Frame layout matches the Atari TOS 1.04+ ABI; pre-1.04 had no
-`videlmode` argument. EmuTOS unconditionally consumes 4 args.)
+  | m68k stack | AArch64 reg | Name        | Type / size |
+  |------------|-------------|-------------|-------------|
+  | +2         | `x0`        | `logLoc`    | `UBYTE *` (ptr) |
+  | +4         | `x1`        | `physLoc`   | `const UBYTE *` (ptr) |
+  | +8         | `x2`        | `rez`       | `WORD` (16) |
+  | +10        | `x3`        | `videlmode` | `WORD` (16) |
+
+---
 
 ## Inputs
 
-| Pos | Name        | Type    | Range / meaning                              |
-|-----|-------------|---------|----------------------------------------------|
-| 0   | `logLoc`    | UBYTE * | new logical base, or `0/-1` to leave alone   |
-| 1   | `physLoc`   | UBYTE * | new physical base, or `0/-1` to leave alone  |
-| 2   | `rez`       | WORD    | new resolution, or `-1` to leave alone       |
-| 3   | `videlmode` | WORD    | Falcon mode word (ignored without Videl)     |
+| Position | Name        | Type    | Size | Source location       | Notes |
+|----------|-------------|---------|------|-----------------------|-------|
+| arg0     | `logLoc`    | `UBYTE*`| 4    | `bios/screen.c:1106`  | new logical base; ≤ 0 ⇒ unchanged |
+| arg1     | `physLoc`   | `UBYTE*`| 4    | `bios/screen.c:1110`  | new physical base; ≤ 0 ⇒ unchanged |
+| arg2     | `rez`       | `WORD`  | 2    | `bios/screen.c:1115`  | resolution code; `-1` ⇒ unchanged; out of `[MIN_REZ,MAX_REZ]` ⇒ error |
+| arg3     | `videlmode` | `WORD`  | 2    | `bios/screen.c:1132`  | Videl mode word (used only when `rez == FALCON_REZ`); `-1` ⇒ keep |
 
-### `rez` values: see `docs/api/xbios/04-getrez.md`.
+> "≤ 0 ⇒ unchanged" for the pointers: the source tests `if ((LONG)logLoc > 0)`
+> / `if ((LONG)physLoc > 0)`, so `NULL` (0) and any negative value skip the
+> base update. (Documentation says "negative"; the code treats `0` the same
+> as negative for the base pointers.)
+
+---
 
 ## Outputs
 
-| Reg | D0 |
-| --- | --- |
-| Type | LONG (zero-extended WORD) |
+### Return value
 
-| Case                                 | Return                              |
-|--------------------------------------|-------------------------------------|
-| `rez == -1` or line-A vars hacked    | `0`                                 |
-| `rez` out of range                   | `-1`                                |
-| Falcon mode change (with Videl)      | previous Videl mode word            |
-| ST/TT mode change                    | `0`                                 |
+- **Register:** D0 / `x0`
+- **Type:** WORD
+- **Encoding:**
+  - `-1` if `rez` is invalid, or `Srealloc()` failed (`:1121,1137`).
+  - the **previous Videl mode** for Falcon resolutions (`oldmode =
+    vsetmode(-1)`, `:1143`).
+  - `0` otherwise (including `rez == -1` no-op, `:1116`).
+- **Source location:** `bios/screen.c:1116,1121,1137,1143,1165`.
 
-## Errors
+### Side effects on global state
 
-`-1` for invalid `rez`. No GEMDOS-style error code.
+- `v_bas_ad = logLoc` when `logLoc > 0` (`:1107`); both bases on a Videl
+  realloc (`:1139-1140`).
+- `sshiftmod` updated by `atari_setrez` on a rez change.
+- `vblsem` cleared then restored around the rez change (`:1158,1163`).
 
-## Edge cases
+### Side effects on hardware
 
-### 1. Pointer-vs-flag overload
+- `setphys` programs the physical video-base register.
+- On a rez change: screen cleared + cursor homed + VT52 reset (via
+  `linea_init`/`vt52_init`), one `vsync` wait.
 
-`logLoc` / `physLoc` of type `UBYTE *`, but the source casts to
-`(LONG)` for the `> 0` check. **Address `0` (NULL) is treated as
-"don't change"**. So is **address `0xFFFFFFFF` (-1)**, because
-`(LONG)0xFFFFFFFF` is negative. A program wanting to set the base
-to a low ST-RAM page near 0 would have its call ignored — but no
-real screen ever lives there.
+---
 
-### 2. `rez_was_hacked` veto
+## Error conditions
 
-If a TSR or hacker has poked line-A variables to use a
-non-standard mode, EmuTOS refuses to change resolution (returns
-0). The flag is set in `linea.c:linea_init()` when post-init
-mutations to `V_CEL_HT` etc. are detected.
+| Condition | Source location | Returned value |
+|-----------|-----------------|----------------|
+| `rez < MIN_REZ` or `rez > MAX_REZ` (and `rez != -1`) | `bios/screen.c:1120-1121` | `-1` |
+| Videl `Srealloc()` failed (both bases NULL, `rez == FALCON_REZ`) | `bios/screen.c:1135-1137` | `-1` |
 
-### 3. Vsync before rez change
+`rez == -1` is **not** an error — it returns `0` and changes only the bases.
 
-`vsync()` is called before the shifter register write to avoid the
-ST plane-shift bug (writing rez mid-line corrupts the next
-display frame). NewTOS HDMI has no such bug but the call should
-still wait for vblank to avoid tearing.
+---
 
-### 4. line-A + VT52 re-init
+## Verification criteria
 
-Resolution change zeroes the cursor position, font glyph tables,
-and line-A globals. Programs maintaining their own VT52 cursor
-state must re-establish it after `Setscreen`.
+- **Move logical base only:** `Setscreen(buf, -1, -1, -1)` sets
+  `Logbase() == buf`, leaves `Physbase()` and `Getrez()` unchanged, returns
+  `0`.
+- **Invalid rez:** `Setscreen(-1, -1, 99, -1)` returns `-1` and changes
+  nothing.
+- **Rez change clears screen:** `Setscreen(-1, -1, 2, -1)` sets `Getrez()`
+  to `2`, clears the screen, homes the VT52 cursor, returns `0`.
+- **No-op rez:** `Setscreen(-1, -1, -1, -1)` returns `0` and leaves the
+  display untouched.
+- **Falcon return:** on a Videl machine, `Setscreen(0, 0, 3, mode)` returns
+  the previous Videl mode (or `-1` on realloc failure).
 
-### 5. `vblsem` race window
+---
 
-`vblsem = 0` disables VBL processing during init; `linea_init()`
-and `vt52_init()` mutate state that the VBL handler reads.
-Restoring `vblsem = 1` re-enables it. The window is on the order
-of microseconds.
+## Edge cases discovered in source
 
-### 6. NewTOS double-buffering
+1. **Base pointers use `> 0`, not `>= 0`.** `NULL` (0) skips the base update
+   just like a negative value (`:1106,1110`); only a strictly positive
+   pointer moves the base.
+2. **`rez == -1` short-circuits before validation.** It returns `0`
+   immediately (`:1115-1116`), so you can move the bases without touching the
+   resolution and without risking the `-1` error.
+3. **Videl NULL/NULL triggers screen-RAM reallocation.** `rez ==
+   FALCON_REZ` with both bases NULL calls `Srealloc(vgetsize(videlmode))`
+   and points both bases at the fresh buffer; a failed alloc returns `-1`
+   (`:1134-1141`).
+4. **The WORD return is an EmuTOS/TOS-4 extension.** Atari docs call
+   `Setscreen` `void`; EmuTOS returns `-1`/oldmode/0. NewTOS follows EmuTOS.
+5. **Line-A "hacked" resolutions bypass the change.** If `rez_was_hacked`,
+   the function returns `0` early without touching rez (`:1115`).
 
-A common idiom is:
-
-```c
-Setscreen(buf, -1, -1, -1);  /* draw to off-screen */
-/* ... draw ... */
-Vsync();
-Setscreen(-1, buf, -1, -1);  /* flip on vblank */
-```
-
-The `physLoc=-1` first call leaves the physical base untouched;
-the `physLoc=buf` second call flips. Per the pointer-vs-flag rule,
-real `-1` is treated as "no change", so this exact idiom requires
-careful checking — most programs use a no-op flag of `0`, not `-1`.
-
-### 7. `vfixmode` clamping (Videl, not in NewTOS)
-
-The Falcon path passes `videlmode` through `vfixmode` which clamps
-it to a supported mode. NewTOS does not implement this; calling
-with `rez = FALCON_REZ` returns `-1` (out of range — `MAX_REZ <
-3` in TT-only profile).
+---
 
 ## Dependencies
 
-- `v_bas_ad`, `setphys()`, `atari_setrez()`.
-- `vsync()`, `linea_init()`, `vt52_init()`.
-- `vblsem` flag.
+### Requires (must be initialized / functional)
 
-Used by: AES on resolution change, GEM control panel, double-
-buffered games.
+- The display driver (`v_bas_ad`, `setphys`, `atari_setrez`), the VBL
+  (`vblsem`, `vsync`), the VT52/Line-A init.
+- (Videl only) `Srealloc`/`vgetsize`/`vsetmode`.
+
+### Used by
+
+- Double-buffering, mode switches, VDI `v_opnwk`, demos.
+
+---
+
+## Related data structures
+
+- `docs/api/xbios/_state.md §4` — `v_bas_ad`, `sshiftmod`, `vblsem`.
+- `docs/api/xbios/04-getrez.md` — the resolution codes.
+
+---
 
 ## Cross-references
 
-- **Compendium:** "Setscreen" — agrees on signature & semantics.
-- **Profibuch:** "Setscreen (0x05)" — agrees, notes 0/-1 idiom.
-- `docs/api/xbios/02-physbase.md`, `03-logbase.md`,
-  `04-getrez.md`, `25-vsync.md` (pending).
+### Atari Compendium
 
-## Configuration
+- Not present in `references/`. Cross-check deferred. (Documents `Setscreen`
+  as `void` with the negative-ignore convention; the WORD return is EmuTOS/
+  TOS-4.)
 
-- `CONF_WITH_ATARI_VIDEO`, `CONF_WITH_TT_SHIFTER` — define
-  `MIN_REZ`/`MAX_REZ`. NewTOS profile: `MIN_REZ=0`, `MAX_REZ=2`
-  (ST modes) extended to 7 if TT_LOW/TT_HIGH activated.
+### Atari Profibuch
+
+- Not present in `references/`. Cross-check deferred.
+
+---
+
+## Configuration / version notes
+
+- The `FALCON_REZ` realloc path is `CONF_WITH_VIDEL`-only; on the NewTOS
+  TT-shifter profile only ST/TT rez codes apply.
+
+---
 
 ## NewTOS implementation notes
 
 (Empty during Phase 00.)
 
-PHASE-08: NewTOS will support `rez ∈ {ST_LOW, ST_MEDIUM, ST_HIGH,
-TT_MEDIUM, TT_HIGH, TT_LOW}` by reconfiguring the VideoCore
-framebuffer (different geometry / depth) and re-allocating the
-buffer in the screen-RAM region. Buffers passed by `logLoc`/
-`physLoc` must be in the framebuffer-mapped region; otherwise
-return `-1`.
+PHASE-08: `Setscreen` maps to framebuffer retarget (log base) + swap-chain
+present (phys base) + mode reconfigure (rez) via the VideoCore mailbox; the
+screen-clear/cursor-home/VT52-reset side effects on a rez change must be
+reproduced. The WORD return follows EmuTOS (`-1`/0).

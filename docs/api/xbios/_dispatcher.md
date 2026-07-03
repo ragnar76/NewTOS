@@ -1,186 +1,188 @@
 # XBIOS Trap-14 Dispatcher
 
-> **Phase 00 deliverable D2 (Trap 14).**
-> Source: EmuTOS @ `1a7484ab`.
+> **Phase 00 deliverable D2 (Trap 14).** Source: EmuTOS @ `1a7484ab`.
+> Cite-never-paste: the dispatch mechanics are described in prose with
+> `file:line` cites; the opcode→handler map is a data table.
 >
-> XBIOS shares the trap dispatch trampoline with BIOS — the only
-> difference is which table is consulted. See
-> [`docs/api/bios/_dispatcher.md`](../bios/_dispatcher.md) for the
-> trampoline mechanics; this file documents only the XBIOS-specific
-> wiring.
+> XBIOS shares the trap dispatch trampoline with BIOS — the only difference
+> is which table is consulted. See
+> [`docs/api/bios/_dispatcher.md`](../bios/_dispatcher.md) for the shared
+> `biosxbios` trampoline body; this file documents only the XBIOS wiring.
 
 ---
 
 ## 1. Vector installation
 
-The trap-14 vector is set up alongside trap-13 in `vecs_init()`
-(`bios/bios.c`). Handler is `_xbiostrap` at `bios/vectors.S:1275`.
+The trap-14 exception vector is installed alongside trap-13 in the boot
+path (`vecs_init()`, `bios/bios.c`). The handler is `_xbiostrap`
+(`bios/vectors.S:1275`).
 
 ---
 
-## 2. `_xbiostrap` entry (`bios/vectors.S:1275`)
+## 2. `_xbiostrap` entry (`bios/vectors.S:1275-1277`)
 
-```asm
-_xbiostrap:
-    move.w  _xbios_ent, d1
-    lea     _xbios_vecs, a0
-    ; falls through into biosxbios:
-```
+`_xbiostrap` loads the table length into `d1` (`_xbios_ent`) and the table
+base into `a0` (`_xbios_vecs`), then falls through to the shared
+`biosxbios:` trampoline (`bios/vectors.S:1282`).
 
-- `_xbios_ent` (`bios/xbios.c:1517`) = `ARRAY_SIZE(xbios_vecs)`,
-  whose value depends on build configuration (see Section 4).
-- `_xbios_vecs` (`bios/xbios.c:1285`) is the function-pointer table.
+- `_xbios_ent` (`bios/xbios.c:1517`) = `ARRAY_SIZE(xbios_vecs)`; its value
+  depends on build configuration (Section 4).
+- `_xbios_vecs` (`bios/xbios.c:1285`) is the function-pointer table
+  (Section 5).
 
-Falls through to the shared `biosxbios:` trampoline (see BIOS
-dispatcher doc for the body).
-
----
-
-## 3. Function "not implemented" handler
-
-Out-of-range IDs (those past the table) cannot occur — the trampoline's
-`cmp.w d1, d0; jhs bx_ret_exc` check prevents lookups beyond
-`xbios_ent`. The function number is returned to caller in D0.
-
-For IDs **inside** the table that are not implemented in the current
-build, EmuTOS plants `xbios_unimpl` (`bios/vectors.S:1366`) at that
-slot. `xbios_unimpl` does:
-
-```asm
-_xbios_unimpl:
-    move.w  d0, -(sp)            ; push function number
-    jsr     _xbios_do_unimpl     ; C: kprintf + return number
-    addq.l  #2, sp
-    rts
-```
-
-`xbios_do_unimpl` (`bios/xbios.c:1251`):
-```c
-LONG xbios_do_unimpl(WORD number)
-{
-#if DBG_XBIOS
-    kprintf("unimplemented XBIOS function 0x%02x\n", number);
-#endif
-    return number;
-}
-```
-
-So calling an unimplemented XBIOS function returns the function number
-in D0 — the documented TOS behaviour.
+The trampoline saves the caller's registers to the `savptr`-anchored save
+area, switches to the caller's stack (USP if the caller was in user mode),
+pops the function ID, range-checks it, indexes the table (ID×4), and calls
+the handler (`bios/vectors.S:1282-1332`). See the BIOS dispatcher doc for
+the full save-area mechanics.
 
 ---
 
-## 4. Build-time table size
+## 3. "Not implemented" behaviour returns the **function number**, not `EINVFN`
 
-`bios/xbios.c:1268-1276` selects `LAST_ENTRY` based on configuration:
+There are two paths to "unimplemented", and **both return the (positive)
+function number in D0**, not an error code:
 
-```c
-#if   CONF_WITH_DMASOUND   /* Falcon DMA sound */
-# define LAST_ENTRY 0x8d
-#elif CONF_WITH_DSP        /* Falcon DSP */
-# define LAST_ENTRY 0x7f
-#elif CONF_WITH_VIDEL      /* Falcon Videl */
-# define LAST_ENTRY 0x5f
-#elif CONF_WITH_TT_SHIFTER /* TT256 shifter */
-# define LAST_ENTRY 0x57
-#else                      /* ST baseline */
-# define LAST_ENTRY 0x40
-#endif
-```
+1. **Out-of-range ID** (`d0 >= xbios_ent`): the trampoline's range check
+   (`cmp.w d1,d0; jhs bx_ret_exc`, `bios/vectors.S:1325-1326`) skips the
+   table lookup and returns with D0 still holding the function number (it
+   was loaded by `moveq #0,d0` then `move.w (sp)+,d0`,
+   `bios/vectors.S:1323-1324`).
+2. **In-range but unimplemented slot**: EmuTOS plants `xbios_unimpl`
+   (`bios/vectors.S:1366`) at that slot, which calls
+   `xbios_do_unimpl(WORD number)` (`bios/xbios.c:1251`) — a one-liner that
+   returns `number`.
 
-`xbios_vecs[]` is padded with `xbios_unimpl` slots to fill up to
-`LAST_ENTRY + 1` entries.
+So `Xbios(N, …)` for any unimplemented `N` (out-of-range **or** padded slot)
+returns `N` itself. A caller testing `result < 0` sees "success". This is
+the documented Atari-TOS behaviour; the Compendium's claim of `EINVFN`
+(-32) is wrong for both paths. Tracked as **D-008**.
 
-NewTOS target configuration: **TT shifter baseline** — the table will
-contain entries 0x00–0x57 (88 entries). The Falcon-only ranges
-(0x58–0x8D) are deferred / not exposed; reserve those IDs but return
-"unimplemented".
+> **Correction vs. earlier drafts:** `_triage.md` and `_tt-shifter.md`
+> previously stated that IDs ≥ `LAST_ENTRY` return `EINVFN` (-32). They do
+> not — the range check returns the function number, identical to
+> `xbios_unimpl`. Corrected there and logged as **D-039**.
 
 ---
 
-## 5. `xbios_vecs[]` table
+## 4. Build-time table size (`bios/xbios.c:1273-1283`)
 
-| ID    | C function       | TOS name          | Cfg                   |
-|------:|------------------|-------------------|-----------------------|
-| 0x00  | `Initmous`       | Initmous          |                       |
-| 0x01  | `xbios_unimpl`   | (Ssbrk)           | unused                |
-| 0x02  | `physbase`       | Physbase          |                       |
-| 0x03  | `logbase`        | Logbase           |                       |
-| 0x04  | `getrez`         | Getrez            |                       |
-| 0x05  | `setscreen`      | Setscreen         |                       |
-| 0x06  | `setpalette`     | Setpalette        |                       |
-| 0x07  | `setcolor`       | Setcolor          |                       |
-| 0x08  | `floprd`         | Floprd            |                       |
-| 0x09  | `flopwr`         | Flopwr            |                       |
-| 0x0A  | `flopfmt`        | Flopfmt           |                       |
-| 0x0B  | `xbios_unimpl`   | (used_by_bios)    | unused                |
-| 0x0C  | `midiws`         | Midiws            |                       |
-| 0x0D  | `mfpint`         | Mfpint            | `CONF_WITH_MFP`       |
-| 0x0E  | `iorec`          | Iorec             |                       |
-| 0x0F  | `rsconf`         | Rsconf            |                       |
-| 0x10  | `keytbl`         | Keytbl            |                       |
-| 0x11  | `random`         | Random            |                       |
-| 0x12  | `protobt`        | Protobt           |                       |
-| 0x13  | `flopver`        | Flopver           |                       |
-| 0x14  | `scrdmp`         | Scrdmp            |                       |
-| 0x15  | `cursconf`       | Cursconf          |                       |
-| 0x16  | `settime`        | Settime           |                       |
-| 0x17  | `gettime`        | Gettime           |                       |
-| 0x18  | `bioskeys`       | Bioskeys          |                       |
-| 0x19  | `ikbdws`         | Ikbdws            |                       |
-| 0x1A  | `jdisint`        | Jdisint           | `CONF_WITH_MFP`       |
-| 0x1B  | `jenabint`       | Jenabint          | `CONF_WITH_MFP`       |
-| 0x1C  | `giaccess`       | Giaccess          |                       |
-| 0x1D  | `offgibit`       | Offgibit          |                       |
-| 0x1E  | `ongibit`        | Ongibit           |                       |
-| 0x1F  | `xbtimer`        | Xbtimer           | `CONF_WITH_MFP`       |
-| 0x20  | `dosound`        | Dosound           |                       |
-| 0x21  | `setprt`         | Setprt            | `CONF_WITH_PRINTER_PORT` |
-| 0x22  | `kbdvbase`       | Kbdvbase          |                       |
-| 0x23  | `kbrate`         | Kbrate            |                       |
-| 0x24  | `xbios_unimpl`   | (Prtblk)          | unimpl                |
-| 0x25  | `vsync`          | Vsync             |                       |
-| 0x26  | `supexec`        | Supexec           |                       |
-| 0x27  | `xbios_unimpl`   | (Puntaes)         | unimpl                |
-| 0x28  | `xbios_unimpl`   | —                 | unimpl                |
-| 0x29  | `floprate`       | Floprate          |                       |
-| 0x2A  | `DMAread`        | DMAread           |                       |
-| 0x2B  | `DMAwrite`       | DMAwrite          |                       |
-| 0x2C  | `bconmap`        | Bconmap           |                       |
-| 0x2D  | `xbios_unimpl`   | —                 | unimpl                |
-| 0x2E  | `nvmaccess`      | NVMaccess         | `CONF_WITH_NVRAM`     |
-| 0x2F–0x3F | `xbios_unimpl` | —              | unimpl                |
-| 0x40  | `blitmode`       | Blitmode          |                       |
-| 0x41–0x4F | `xbios_unimpl` | —              | filler (TT shifter)   |
-| 0x50  | `esetshift`      | EsetShift         | `CONF_WITH_TT_SHIFTER`|
-| 0x51  | `egetshift`      | EgetShift         | `CONF_WITH_TT_SHIFTER`|
-| 0x52  | `esetbank`       | EsetBank          | `CONF_WITH_TT_SHIFTER`|
-| 0x53  | `esetcolor`      | EsetColor         | `CONF_WITH_TT_SHIFTER`|
-| 0x54  | `esetpalette`    | EsetPalette       | `CONF_WITH_TT_SHIFTER`|
-| 0x55  | `egetpalette`    | EgetPalette       | `CONF_WITH_TT_SHIFTER`|
-| 0x56  | `esetgray`       | EsetGray          | `CONF_WITH_TT_SHIFTER`|
-| 0x57  | `esetsmear`      | EsetSmear         | `CONF_WITH_TT_SHIFTER`|
+`LAST_ENTRY` selects the highest opcode compiled in; `xbios_vecs[]` is
+padded with `xbios_unimpl` slots to fill up to `LAST_ENTRY + 1` entries:
 
-Beyond 0x57 (out of NewTOS scope unless we adopt CONF_WITH_VIDEL/DSP/
-DMASOUND): VIDEL (0x58–0x5F), DSP (0x60–0x7F), DMA sound (0x80–0x8D).
-Consult `bios/xbios.c:1432-1517` for the exact list.
+| Highest `CONF_WITH_*` set | `LAST_ENTRY` | table entries |
+|---------------------------|:------------:|:-------------:|
+| `CONF_WITH_DMASOUND` (Falcon DMA sound) | `0x8D` | 142 |
+| `CONF_WITH_DSP` (Falcon DSP) | `0x7F` | 128 |
+| `CONF_WITH_VIDEL` (Falcon Videl) | `0x5F` | 96 |
+| `CONF_WITH_TT_SHIFTER` (TT shifter) | `0x57` | 88 |
+| (ST baseline) | `0x40` | 65 |
+
+NewTOS target profile: **TT-shifter baseline** — `LAST_ENTRY = 0x57`, table
+entries 0x00–0x57 (88 slots). The Falcon-only ranges (0x58–0x8D) are not in
+the table; a trap with `ID > 0x57` hits the range check and returns the
+function number (§3).
+
+---
+
+## 5. `xbios_vecs[]` opcode→handler map (`bios/xbios.c:1285-1515`)
+
+Handler is the `direct` target of each `VEC(wrapper, direct)` macro (the
+non-debug build; `DBG_XBIOS = 0`). "Cfg" names the `CONF_WITH_*` gate; when
+the gate is off the slot is `xbios_unimpl`.
+
+| ID    | Handler        | TOS name  | Cfg | Handler file |
+|------:|----------------|-----------|-----|--------------|
+| 0x00  | `Initmous`     | Initmous  |                          | `bios/mouse.c:40` |
+| 0x01  | `xbios_unimpl` | (Ssbrk)   | never (obsolete)         | — |
+| 0x02  | `physbase`     | Physbase  |                          | `bios/screen.c:1042` |
+| 0x03  | `logbase`      | Logbase   |                          | `bios/screen.c:1071` |
+| 0x04  | `getrez`       | Getrez    |                          | `bios/screen.c:1076` |
+| 0x05  | `setscreen`    | Setscreen |                          | `bios/screen.c:1102` |
+| 0x06  | `setpalette`   | Setpalette|                          | `bios/screen.c:1168` |
+| 0x07  | `setcolor`     | Setcolor  |                          | `bios/screen.c:1192` |
+| 0x08  | `floprd`       | Floprd    |                          | `bios/floppy.c` |
+| 0x09  | `flopwr`       | Flopwr    |                          | `bios/floppy.c` |
+| 0x0A  | `flopfmt`      | Flopfmt   |                          | `bios/floppy.c` |
+| 0x0B  | `xbios_unimpl` | (used_by_bios) | never                | — |
+| 0x0C  | `midiws`       | Midiws    |                          | `bios/midi.c:104` |
+| 0x0D  | `mfpint`       | Mfpint    | `CONF_WITH_MFP`          | `bios/mfp.c` |
+| 0x0E  | `iorec`        | Iorec     |                          | `bios/xbios.c:336` |
+| 0x0F  | `rsconf`       | Rsconf    |                          | `bios/xbios.c:376` → `*rsconfptr` |
+| 0x10  | `keytbl`       | Keytbl    |                          | `bios/ikbd.c:122` |
+| 0x11  | `random`       | Random    |                          | `bios/xbios.c:421` |
+| 0x12  | `protobt`      | Protobt   |                          | `bios/floppy.c` |
+| 0x13  | `flopver`      | Flopver   |                          | `bios/floppy.c` |
+| 0x14  | `scrdmp`       | Scrdmp    |                          | `bios/xbios.c:490` |
+| 0x15  | `cursconf`     | Cursconf  |                          | `bios/vt52.c:893` |
+| 0x16  | `settime`      | Settime   |                          | `bios/clock.c:1218` |
+| 0x17  | `gettime`      | Gettime   |                          | `bios/clock.c:1266` |
+| 0x18  | `bioskeys`     | Bioskeys  |                          | `bios/ikbd.c:136` |
+| 0x19  | `ikbdws`       | Ikbdws    |                          | `bios/ikbd.c:948` |
+| 0x1A  | `jdisint`      | Jdisint   | `CONF_WITH_MFP`          | `bios/mfp.c` |
+| 0x1B  | `jenabint`     | Jenabint  | `CONF_WITH_MFP`          | `bios/mfp.c` |
+| 0x1C  | `giaccess`     | Giaccess  |                          | `bios/sound.c` |
+| 0x1D  | `offgibit`     | Offgibit  |                          | `bios/sound.c` |
+| 0x1E  | `ongibit`      | Ongibit   |                          | `bios/sound.c` |
+| 0x1F  | `xbtimer`      | Xbtimer   | `CONF_WITH_MFP`          | `bios/mfp.c` |
+| 0x20  | `dosound`      | Dosound   |                          | `bios/sound.c` |
+| 0x21  | `setprt`       | Setprt    | `CONF_WITH_PRINTER_PORT` | `bios/parport.c` |
+| 0x22  | `kbdvbase`     | Kbdvbase  |                          | `bios/xbios.c:716` |
+| 0x23  | `kbrate`       | Kbrate    |                          | `bios/ikbd.c:439` |
+| 0x24  | `xbios_unimpl` | (Prtblk)  | never                    | — |
+| 0x25  | `vsync`        | Vsync     |                          | `bios/screen.c:1205` |
+| 0x26  | `supexec`      | Supexec   |                          | `bios/vectors.S:1376` (asm) |
+| 0x27  | `xbios_unimpl` | (Puntaes) | never                    | — |
+| 0x28  | `xbios_unimpl` | —         | never                    | — |
+| 0x29  | `floprate`     | Floprate  |                          | `bios/floppy.c` |
+| 0x2A  | `DMAread`      | DMAread   |                          | `bios/disk.c` |
+| 0x2B  | `DMAwrite`     | DMAwrite  |                          | `bios/disk.c` |
+| 0x2C  | `bconmap`      | Bconmap   |                          | `bios/serport.c:1082` |
+| 0x2D  | `xbios_unimpl` | —         | never                    | — |
+| 0x2E  | `nvmaccess`    | NVMaccess | `CONF_WITH_NVRAM`        | `bios/nvram.c` |
+| 0x2F–0x3F | `xbios_unimpl` | —     | never (17 slots)         | — |
+| 0x40  | `blitmode`     | Blitmode  |                          | `bios/xbios.c:886` |
+| 0x41–0x4F | `xbios_unimpl` | —     | filler when `LAST_ENTRY>0x40` | — |
+| 0x50–0x57 | `esetshift`…`esetsmear` | Eset*/Eget* | `CONF_WITH_TT_SHIFTER` | `bios/screen.c` |
+
+Beyond 0x57 (outside the NewTOS profile): Videl (0x58–0x5F,
+`CONF_WITH_VIDEL`), DSP (0x60–0x7F, `CONF_WITH_DSP`), DMA sound
+(0x80–0x8D, `CONF_WITH_DMASOUND`). See `bios/xbios.c:1411-1514`.
+
+> Note: the 24 in-scope functions are the ones present with a real handler
+> in the NewTOS TT-shifter profile *and* documented as their own spec file.
+> The floppy/DMA (`_floppy-stubs.md`), PSG (`_psg-group.md`) and TT-shifter
+> (`_tt-shifter.md`) entries are present in the table but grouped; the MFP
+> (0x0D/0x1A/0x1B/0x1F) and printer/NVRAM (0x21/0x2E) entries are
+> `xbios_unimpl` in the profile.
 
 ---
 
 ## 6. Source-location summary
 
-| Concern                       | File:line                  |
-|-------------------------------|----------------------------|
-| Trap-14 entry                 | `bios/vectors.S:1275`      |
-| Shared trampoline             | `bios/vectors.S:1282`      |
-| Unimpl shim                   | `bios/vectors.S:1366`      |
-| Unimpl C tail                 | `bios/xbios.c:1251`        |
-| Function table                | `bios/xbios.c:1285-1517`   |
-| `LAST_ENTRY` selector         | `bios/xbios.c:1268-1276`   |
-| Table size                    | `bios/xbios.c:1517` (`_xbios_ent`) |
+| Concern | File:line |
+|---------|-----------|
+| Trap-14 entry (`_xbiostrap`) | `bios/vectors.S:1275` |
+| Shared trampoline (`biosxbios`) | `bios/vectors.S:1282` |
+| Range check → func-number return (`bx_ret_exc`) | `bios/vectors.S:1325-1359` |
+| Unimpl shim (`_xbios_unimpl`) | `bios/vectors.S:1366` |
+| Unimpl C tail (`xbios_do_unimpl`) | `bios/xbios.c:1251` |
+| Supexec asm handler (`_supexec`) | `bios/vectors.S:1376` |
+| Function table (`xbios_vecs[]`) | `bios/xbios.c:1285-1515` |
+| `LAST_ENTRY` selector | `bios/xbios.c:1273-1283` |
+| Table size (`_xbios_ent`) | `bios/xbios.c:1517` |
+| Native ABI signatures (`xbios_*` macros) | `include/xbiosbind.h:19-64` |
 
 ---
 
 ## NewTOS ABI mapping notes
 
-(Empty during Phase 00. Filled in during Phase 07.)
+Function ID in `x8`; arguments in `x0..x6` in declaration order (one register
+each); result in `x0` (WORD/LONG sign-extended, pointer full-64-bit). The
+`include/xbiosbind.h` macro names encode the m68k signature
+(`xbios_<ret>_<args>`) — e.g. `Setcolor` = `xbios_w_ww` (two WORDs, WORD
+return), `Supexec` = `xbios_l_l` (one LONG, LONG return),
+`Initmous` = `xbios_v_wll` (WORD + two pointers, void). Detailed per-function
+ABI tables live in each function spec.
+
+(Populated further during Phase 07.)

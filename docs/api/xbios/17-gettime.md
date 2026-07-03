@@ -1,124 +1,186 @@
-# `Gettime` — XBIOS 0x17
+# `Gettime` (XBIOS 0x17)
 
-> Phase 00 spec. Source: EmuTOS @ `1a7484ab` —
-> `bios/clock.c:1266` (`gettime`).
+> Phase 00 spec (full-contract template). Source: EmuTOS @ `1a7484ab`.
+> Verified against `bios/clock.c:1266` (`gettime`).
 
-## EmuTOS source (essence)
+> **Contract vs. reference** — see [`docs/COMPATIBILITY.md`](../../COMPATIBILITY.md).
+> Contract: trap ID/ABI, the LONG result, the DOS-packed encoding (date high,
+> time low). Reference: the RTC backend chain and the `DEFAULT_DATETIME`
+> fallback.
 
-```c
-LONG gettime(void)
-{
-#ifdef MACHINE_AMIGA   return amiga_getdt();
-#endif
-#ifdef MACHINE_LISA    return lisa_getdt();
-#endif
-#if CONF_WITH_NVRAM    if (has_nvram)            return ngetdt();
-#endif
-#if CONF_WITH_MEGARTC  if (has_megartc)          return mgetdt();
-#endif
-#if CONF_WITH_MONSTER  if (has_monster_rtc)      return monstergetdt();
-#endif
-#if CONF_WITH_ICDRTC   if (has_icdrtc)           return icdgetdt();
-#endif
-#if CONF_WITH_ULTRASATAN_CLOCK
-                       if (has_ultrasatan_clock) return ultrasatan_getdt();
-#endif
-#if CONF_WITH_IKBD_CLOCK
-                       return igetdt();
-#endif
-    return MAKE_ULONG(current_date, current_time);  /* last-resort fallback */
-}
-```
+## EmuTOS source
+
+**Primary location:** `bios/clock.c:1266` — `LONG gettime(void)`, slot 0x17
+of `xbios_vecs[]` (`bios/xbios.c:1313`). GEMDOS boot seeds `current_date`/
+`current_time` from this (`time_init`, `bdos/time.c:160-165`;
+`#define Gettime() xbios_l_v(23)`, `include/xbiosbind.h:41`).
+
+**Installed handler / vector:** (none) — direct table entry.
+
+**Helpers called (RTC backends, one per build):**
+- `bios/clock.c` — `ngetdt`/`mgetdt`/`monstergetdt`/`icdgetdt`/
+  `ultrasatan_getdt`/`igetdt` — read the RTC hardware
+  (`bios/clock.c:1284-1321`).
+
+**Headers / type definitions used:**
+- `include/portab.h` — `MAKE_ULONG(hi, lo)`.
+- `bios/ikbd.h:95` — `DEFAULT_DATETIME = MAKE_ULONG(os_header.os_dosdate, 0)`.
+
+**System variables / globals read:**
+- the RTC hardware, or `os_header.os_dosdate` (the fallback build date).
+
+**System variables / globals written:** none.
+
+**Build configuration affecting this function:**
+- `MACHINE_AMIGA`/`MACHINE_LISA`, `CONF_WITH_NVRAM`/`MEGARTC`/`MONSTER`/
+  `ICDRTC`/`ULTRASATAN_CLOCK`/`IKBD_CLOCK` — which RTC is read. With none,
+  returns `DEFAULT_DATETIME`.
+
+---
+
+## Source extraction summary
+
+`Gettime` returns the current date and time as a 32-bit DOS-format value:
+the date in the high word, the time in the low word (via `MAKE_ULONG(date,
+time)`). It reads whichever RTC the machine has, checked in the same order as
+`Settime`; if no RTC backend is compiled in it returns `DEFAULT_DATETIME`,
+which is the OS-header build date (`os_header.os_dosdate`) with a zero time
+(midnight).
+
+At boot, GEMDOS `time_init` calls `Gettime()` once to seed the cached
+`current_date`/`current_time` globals; thereafter GEMDOS advances those from
+the 200 Hz timer and `Tgetdate`/`Tgettime` read the cache, not the RTC. So
+`Gettime` is chiefly the boot-time and RTC-direct reader.
+
+---
 
 ## Trap interface
 
-| | |
-|--|--|
-| Trap | 14 (XBIOS) |
-| Function ID | `0x17` |
-| WORD args | 0 |
-| Stack frame | `+0: 0x0017` |
-| Vector | `xbios_vecs[23]` |
+- **Trap number:** 14 (XBIOS)
+- **Function ID:** 0x17
+- **Stack frame on entry (m68k):**
+  ```
+   0: function_id (word) = 0x0017
+  ```
+  No parameters (`Gettime()` = `xbios_l_v(23)`, `include/xbiosbind.h:41`).
+- **Total parameter bytes:** 2.
+- **Native (AArch64) ABI:** ID `0x17` in `x8`; no argument registers; the
+  LONG result **sign-extended** into `x0` (a packed 32-bit datetime).
+
+  | m68k stack | AArch64 reg | Name | Type / size |
+  |------------|-------------|------|-------------|
+  | (none)     | —           | —    | —           |
+
+---
 
 ## Inputs
 
 None.
 
+---
+
 ## Outputs
 
-| Reg | D0 |
-| --- | --- |
-| Type | LONG (packed datetime) |
+### Return value
 
-High 16 bits = date (Tgetdate encoding); low 16 bits = time
-(Tgettime encoding).
+- **Register:** D0 / `x0`
+- **Type:** LONG
+- **Encoding:** `MAKE_ULONG(date, time)`:
+  - high word (date): bits 0-4 day, 5-8 month, 9-15 year-since-1980.
+  - low word (time): bits 0-4 double-seconds, 5-10 minute, 11-15 hour.
+- **Source location:** `bios/clock.c:1319` (fallback) or the RTC backend read.
 
-## Errors
+### Side effects on global state / hardware
 
-None.
+None (a pure read).
 
-## Edge cases
+---
 
-### 1. Reads RTC, not cache
+## Error conditions
 
-Unlike GEMDOS `Tgetdate`/`Tgettime` (which read the cached
-`current_date`/`current_time`), XBIOS `Gettime` reads the **RTC
-hardware** directly. This is slower (I²C / IKBD command + reply)
-but always current.
+| Condition | Source location | Returned value |
+|-----------|-----------------|----------------|
+| No RTC backend present | `bios/clock.c:1319` | `DEFAULT_DATETIME` (build date, midnight) |
 
-### 2. Cache vs RTC drift
+There is no error **code**; a missing RTC returns the build-date fallback, not
+an error.
 
-A program calling `Tgetdate` after `Settime` sees the new value
-immediately (cache updated first). A program calling `Gettime`
-reads the RTC, which may be a few microseconds behind because the
-RTC chip's internal counter has a granularity of 1 second.
+---
 
-### 3. IKBD command latency
+## Verification criteria
 
-The IKBD-clock path sends `0x1C` (read clock) over the 7812 baud
-ACIA, awaits a 7-byte reply via interrupt. Latency: ~2 ms. EmuTOS
-blocks (in supervisor mode) the calling task. NewTOS without IKBD
-hardware skips this.
+- **Round-trips with `Settime`:** after `Settime(v)`, on an RTC build
+  `Gettime()` returns a value whose fields match `v` (subject to RTC
+  granularity).
+- **Fallback:** on a no-RTC build, `Gettime()` returns `DEFAULT_DATETIME`
+  (the OS build date with time 0), not garbage.
+- **Encoding:** the high word is the date, the low word is the time
+  (`(Gettime() >> 16)` is a valid packed date; `(Gettime() & 0xFFFF)` a
+  packed time).
 
-### 4. NewTOS fallback path
+---
 
-With all `CONF_WITH_*_CLOCK` disabled and no IKBD chip,
-`gettime()` reaches the **last-resort** `MAKE_ULONG(current_date,
-current_time)` — i.e. it returns the GEMDOS cache. Since `Settime`
-also updates the cache, the round-trip Set→Get works, but time
-does **not advance** between sets unless the BIOS tick handler
-increments `current_time`/`current_date`. PHASE-07 must ensure
-the AArch64 timer IRQ updates these.
+## Edge cases discovered in source
 
-### 5. RTC time format
+1. **`DEFAULT_DATETIME` fallback.** With no RTC (and no IKBD clock),
+   `Gettime` returns `MAKE_ULONG(os_header.os_dosdate, 0)`
+   (`bios/clock.c:1319`, `bios/ikbd.h:95`) — the build date at midnight, so
+   time is deterministic but stuck until set.
+2. **Boot seed only.** GEMDOS reads `Gettime` once at `time_init`
+   (`bdos/time.c:160`); afterwards the GEMDOS cache is authoritative and
+   advances on the timer, so `Gettime` and `Tgettime` can diverge if the RTC
+   drifts from the cache.
+3. **Same packing as GEMDOS.** The date/time bit layout is identical to
+   `current_date`/`current_time` and to FAT directory timestamps, so no
+   conversion is needed across the boundary.
 
-The Atari clock encoding survives the round-trip. Year offset is
-1980-based.
+---
 
 ## Dependencies
 
-- One of the `*getdt()` backends (per RTC).
-- `current_time`, `current_date` (fallback / NewTOS path).
+### Requires (must be initialized / functional)
 
-Used by: GEMDOS time getters via cache, programs needing wall-
-clock time directly from RTC, AES message-time tagging.
+- An RTC backend (optional) or `os_header.os_dosdate` for the fallback.
+
+### Used by
+
+- GEMDOS `time_init` (boot seed), time-display utilities, RTC readers.
+
+---
+
+## Related data structures
+
+- `docs/api/gemdos/_state.md §12` — the cache globals + packing.
+- `docs/api/gemdos/_state.md §9` — `os_header.os_dosdate` (the fallback seed).
+- `docs/api/xbios/16-settime.md` — the writer.
+
+---
 
 ## Cross-references
 
-- **Compendium:** "Gettime" — agrees.
-- **Profibuch:** "Gettime (0x17)" — agrees.
-- `docs/api/xbios/16-settime.md`
-- `docs/api/gemdos/time/2a-tgetdate.md`
+### Atari Compendium
 
-## Configuration
+- Not present in `references/`. Cross-check deferred. (Documents the packed
+  datetime return.)
 
-- See Settime notes — exactly one RTC backend needs to be active
-  for hardware time. Otherwise falls through to GEMDOS cache.
+### Atari Profibuch
+
+- Not present in `references/`. Cross-check deferred.
+
+---
+
+## Configuration / version notes
+
+- The RTC read depends on the machine/build; the packed encoding is constant.
+  Falcon NVRAM uses a dynamic year base handled inside the backend.
+
+---
 
 ## NewTOS implementation notes
 
 (Empty during Phase 00.)
 
-PHASE-07: implement `gettime` to read the AArch64 generic timer
-or PL031 on QEMU. On RPi4 without RTC, return the GEMDOS-cached
-value updated from boot-time-set + monotonic-since-boot delta.
+PHASE-07: `Gettime` reads the kernel clock (AArch64 generic timer + an RTC
+abstraction: PL031 on QEMU, an SD/config-persisted or I²C RTC on RPi4). The
+`DEFAULT_DATETIME`-style fallback (a fixed build date) applies when no RTC is
+configured; the packed encoding is contract.

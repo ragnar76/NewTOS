@@ -1,126 +1,209 @@
-# `Cursconf` — XBIOS 0x15
+# `Cursconf` (XBIOS 0x15)
 
-> Phase 00 spec. Source: EmuTOS @ `1a7484ab` —
-> `bios/vt52.c:893` (`cursconf`).
+> Phase 00 spec (full-contract template). Source: EmuTOS @ `1a7484ab`.
+> Verified against `bios/vt52.c:893` (`cursconf`).
+
+> **Contract vs. reference** — see [`docs/COMPATIBILITY.md`](../../COMPATIBILITY.md).
+> Contract: trap ID/ABI, the 6 subfunctions, the WORD return (only subfn 5
+> returns the rate). Reference: the `v_stat_0`/`v_period` VT52 cursor state.
 
 ## EmuTOS source
 
-```c
-WORD cursconf(WORD function, WORD operand)
-{
-    switch (function) {
-    case 0:  cursor_off();              break;   /* hide */
-    case 1:  cursor_on();               break;   /* show */
-    case 2:  v_stat_0 &= ~M_CFLASH;     break;   /* disable flash */
-    case 3:  v_stat_0 |=  M_CFLASH;     break;   /* enable flash */
-    case 4:  v_period = LOBYTE(operand); break;  /* set blink rate */
-    case 5:  return v_period;                    /* get blink rate */
-    }
-    return 0;
-}
-```
+**Primary location:** `bios/vt52.c:893` — `WORD cursconf(WORD function, WORD
+operand)`, slot 0x15 of `xbios_vecs[]` (`bios/xbios.c:1311`).
 
-`v_stat_0` and `v_period` are line-A globals; `M_CFLASH` is bit 1
-of `v_stat_0` (`vt52.h`). `cursor_on/off()` (file-local) update
-`M_CVIS` (bit 4) and immediately repaint.
+**Installed handler / vector:** (none) — direct table entry.
+
+**Helpers called:**
+- `bios/vt52.c` — `cursor_off()` / `cursor_on()` — hide/show via the
+  `disab_cnt` nesting counter.
+
+**Headers / type definitions used:**
+- `bios/conout.h` — `M_CFLASH` (0x0001), `M_CSTATE` (0x0002), `M_CVIS`
+  (0x0004); `v_stat_0`, `v_period`.
+- `include/portab.h` — `LOBYTE(x)`.
+
+**System variables / globals read:**
+- `v_period` (returned by subfn 5).
+
+**System variables / globals written:**
+- `v_stat_0` (subfns 2/3, blink bit), `v_period` (subfn 4), `disab_cnt` /
+  `v_stat_0` (subfns 0/1 via `cursor_off`/`cursor_on`).
+
+**Build configuration affecting this function:** none.
+
+---
+
+## Source extraction summary
+
+`Cursconf` configures the VT52 text cursor. The `function` selects one of six
+sub-operations, `operand` is used only by subfunction 4:
+
+- **0 hide** — `cursor_off()` (increments the `disab_cnt` nesting counter).
+- **1 show** — `cursor_on()`.
+- **2 blink** — clear `M_CFLASH` in `v_stat_0` (flash **enabled**).
+- **3 steady** — set `M_CFLASH` (flash **disabled**).
+- **4 set rate** — `v_period = LOBYTE(operand)` (blink interval in VBL ticks).
+- **5 get rate** — `return v_period`.
+
+Subfunctions 0-4 (and any unhandled `function`) return `0`; only subfunction
+5 returns a value (the current blink rate). The blink itself runs in the VBL
+`blink()` routine, which decrements a timer and toggles `M_CSTATE` when it
+reaches `v_period`; `Cursconf` only sets the parameters/flags. Note the sign
+of `M_CFLASH` is inverted from intuition: **clear = blinking, set = steady**.
+
+`Cursconf` does not touch `conterm` (the bell/click/repeat byte).
+
+---
 
 ## Trap interface
 
-| | |
-|--|--|
-| Trap | 14 (XBIOS) |
-| Function ID | `0x15` |
-| WORD args | 2 (WORD + WORD) |
-| Stack frame | `+4: operand (W)`, `+2: function (W)`, `+0: 0x0015` |
-| Vector | `xbios_vecs[21]` |
+- **Trap number:** 14 (XBIOS)
+- **Function ID:** 0x15
+- **Stack frame on entry (m68k):** `Cursconf(function, operand)` =
+  `xbios_w_ww(21, a, b)` (`include/xbiosbind.h:39`):
+  ```
+  +4: operand  (word)
+  +2: function (word)
+   0: function_id (word) = 0x0015
+  ```
+- **Total parameter bytes:** 6 (W + W).
+- **Native (AArch64) ABI:** ID `0x15` in `x8`; args in `x0..x1`; the WORD
+  result **sign-extended** into `x0`.
+
+  | m68k stack | AArch64 reg | Name       | Type / size |
+  |------------|-------------|------------|-------------|
+  | +2         | `x0`        | `function` | `WORD` (16) — subfunction 0..5 |
+  | +4         | `x1`        | `operand`  | `WORD` (16) — blink rate (subfn 4 only) |
+
+---
 
 ## Inputs
 
-| Pos | Name      | Type | Range / meaning                                |
-|-----|-----------|------|------------------------------------------------|
-| 0   | `function` | WORD | 0..5 (sub-function selector)                  |
-| 1   | `operand` | WORD | only used when `function == 4` (rate, low byte) |
+| Position | Name       | Type   | Size | Source location   | Notes |
+|----------|------------|--------|------|-------------------|-------|
+| arg0     | `function` | `WORD` | 2    | `bios/vt52.c:895` | subfunction selector 0..5 |
+| arg1     | `operand`  | `WORD` | 2    | `bios/vt52.c:909` | new blink rate for subfn 4 (`LOBYTE` used) |
 
-### Sub-functions
+### Subfunction table (`bios/vt52.c:895-913`)
 
-| `function` | Action               | `operand` use | Returns       |
-|-----------:|----------------------|---------------|---------------|
-| 0          | hide cursor          | ignored       | 0             |
-| 1          | show cursor          | ignored       | 0             |
-| 2          | disable cursor flash | ignored       | 0             |
-| 3          | enable cursor flash  | ignored       | 0             |
-| 4          | set flash period     | period (low byte, in VBLs) | 0    |
-| 5          | get flash period     | ignored       | current `v_period` |
-| ≥ 6        | (no-op)              | ignored       | 0             |
+| `function` | Action | Global changed | Return |
+|-----------:|--------|----------------|--------|
+| 0 | hide cursor | `cursor_off()` (`disab_cnt`++/`M_CVIS`) | 0 |
+| 1 | show cursor | `cursor_on()` (`M_CVIS`) | 0 |
+| 2 | blink (flash on) | `v_stat_0 &= ~M_CFLASH` | 0 |
+| 3 | steady (flash off) | `v_stat_0 \|= M_CFLASH` | 0 |
+| 4 | set blink rate | `v_period = LOBYTE(operand)` | 0 |
+| 5 | get blink rate | (none) | `v_period` |
+| other | (falls through) | (none) | 0 |
 
-`v_period` is in VBL units (50/60 Hz). Default is 30
-(≈600 ms / 500 ms).
+---
 
 ## Outputs
 
-| Reg | D0 |
-| --- | --- |
-| Type | LONG (zero-extended WORD) |
+### Return value
 
-Sub-function-dependent — only function 5 returns useful data;
-others return 0.
+- **Register:** D0 / `x0`
+- **Type:** WORD
+- **Encoding:** `v_period` for subfunction 5; `0` for every other subfunction
+  (and unhandled selectors).
+- **Source location:** `bios/vt52.c:912,914`.
 
-## Errors
+### Side effects on global state
 
-None. Out-of-range `function` is a silent no-op.
+- Per the subfunction table above (`v_stat_0`, `v_period`, `disab_cnt`).
 
-## Edge cases
+### Side effects on hardware
 
-### 1. `operand` clamping
+- None directly; the VBL `blink()` renders the cursor per `v_stat_0`/`v_period`.
 
-`v_period = LOBYTE(operand)` keeps only the low byte. A program
-passing 0x0100 sets `v_period = 0` — instant flash. Programs
-should pass values 0..255.
+---
 
-### 2. `v_period == 0` semantics
+## Error conditions
 
-Cursor flashes at the highest possible rate (one toggle per VBL).
-Practically invisible-fast cursor — undefined in Compendium but
-real on hardware.
+| Condition | Source location | Returned value |
+|-----------|-----------------|----------------|
+| (no error return) | — | — |
 
-### 3. Hide vs disable-flash interaction
+An out-of-range `function` falls through the switch and returns `0`.
 
-`cursor_off()` clears `M_CVIS` (visible bit). `function 2/3` only
-touches `M_CFLASH`. So a hidden cursor with flash enabled stays
-hidden — `M_CVIS` dominates.
+---
 
-### 4. Repaint timing
+## Verification criteria
 
-`cursor_on/off()` immediately writes to `v_bas_ad`. If the cursor
-glyph crosses a screen-region boundary while VT52 init is in
-progress, line-A may corrupt. EmuTOS does not guard against this.
+- **Get rate:** `Cursconf(5, 0)` returns the current `v_period` and changes
+  nothing.
+- **Set rate round-trips:** `Cursconf(4, 20)` then `Cursconf(5, 0)` returns
+  `20`.
+- **Hide/show:** `Cursconf(0, 0)` hides the cursor (returns 0); `Cursconf(1,
+  0)` shows it.
+- **Blink toggle:** `Cursconf(2, 0)` enables blinking (clears `M_CFLASH`);
+  `Cursconf(3, 0)` makes it steady (sets `M_CFLASH`). Both return 0.
 
-### 5. `v_stat_0` is line-A territory
+---
 
-Programs that bypass `Cursconf` and write `v_stat_0` directly
-must coordinate with the VBL cursor-flash handler — race-prone.
+## Edge cases discovered in source
+
+1. **Only subfunction 5 returns a value.** Every other subfunction returns
+   `0`, so a program cannot read back the visibility/blink flags — only the
+   rate (`bios/vt52.c:911-914`).
+2. **`M_CFLASH` sense is inverted.** `function == 2` **clears** `M_CFLASH`
+   (blinking on) and `function == 3` **sets** it (steady). "Flash bit set" =
+   flash disabled (`bios/vt52.c:903,906`).
+3. **Hide/show is nested via `disab_cnt`.** `cursor_off` increments a disable
+   counter; balanced `cursor_on` calls are needed to re-show — subsystems can
+   independently hide/show without fighting.
+4. **`operand` is byte-truncated for the rate.** `v_period = LOBYTE(operand)`
+   (`:909`) — only the low 8 bits set the rate.
+5. **Does not touch `conterm`.** Cursor config and the bell/click/repeat byte
+   are unrelated (`conterm` is read only in `bios/ikbd.c`/`bios/vt52.c`
+   bell/keyboard paths).
+
+---
 
 ## Dependencies
 
-- `v_stat_0`, `v_period`, `v_bas_ad`, `cursor_on/off` (line-A /
-  vt52 globals).
+### Requires (must be initialized / functional)
 
-Used by: VT52 escape sequences (`Esc e/f/p/q/r/y`), AES cursor
-control, GEM mouse-vs-text-cursor coordination.
+- The VT52 cursor state (`v_stat_0`, `v_period`) and the VBL `blink()` routine.
+
+### Used by
+
+- Text-mode UIs that hide the cursor during redraws, setup tools adjusting
+  the blink rate.
+
+---
+
+## Related data structures
+
+- `docs/api/xbios/_state.md §4` — display/VT52 state.
+
+---
 
 ## Cross-references
 
-- **Compendium:** "Cursconf" — agrees on sub-functions.
-- **Profibuch:** "Cursconf (0x15)" — agrees.
-- `docs/api/structures/osheader.md` — line-A pointer.
+### Atari Compendium
 
-## Configuration
+- Not present in `references/`. Cross-check deferred. (Documents the 6
+  subfunctions; the "flash bit set = steady" sense is EmuTOS's.)
 
-- `CONF_WITH_VT52` — required (NewTOS profile yes).
+### Atari Profibuch
+
+- Not present in `references/`. Cross-check deferred.
+
+---
+
+## Configuration / version notes
+
+- No `CONF_WITH_*` gate; the cursor is a VT52 software feature present on all
+  builds.
+
+---
 
 ## NewTOS implementation notes
 
 (Empty during Phase 00.)
 
-PHASE-08: cursor flash is driven from the framebuffer compositor
-at 60 Hz. `v_period` units stay VBL-equivalent for ABI compat.
+PHASE-08: `Cursconf` drives the NewTOS text-console cursor (the VT52
+emulator's `v_stat_0`/`v_period` equivalents); subfn 5 returns the rate, the
+rest return 0, and the `M_CFLASH` inverted sense is preserved.

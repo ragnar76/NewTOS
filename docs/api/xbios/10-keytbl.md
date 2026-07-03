@@ -1,128 +1,201 @@
-# `Keytbl` — XBIOS 0x10
+# `Keytbl` (XBIOS 0x10)
 
-> Phase 00 spec. Source: EmuTOS @ `1a7484ab` —
-> `bios/ikbd.c:122` (`keytbl`).
+> Phase 00 spec (full-contract template). Source: EmuTOS @ `1a7484ab`.
+> Verified against `bios/ikbd.c:122` (`keytbl`).
 
-## NewTOS status: **out-of-scope**
-
-NewTOS translates scancodes to ASCII with a native table inside `crate::ikbd`,
-driven by the IKBD path (ST keyboard on a UART / USB-HID → `ikbd::feed`). It
-does not expose the Atari `KEYTAB` structure, so `Keytbl` is **not exposed** as
-a trap; the XBIOS dispatcher's `EINVFN` catch-all is the intended, documented
-behaviour (not a stub). See `docs/STATUS.md` (2026-07-02) and the "Keyboard via
-Atari IKBD" decision.
+> **Contract vs. reference** — see [`docs/COMPATIBILITY.md`](../../COMPATIBILITY.md).
+> Contract: trap ID/ABI, the `(UBYTE *)-1` "keep current" sentinel, the
+> returned `struct keytbl` layout (30 bytes), the 128-byte-table convention.
+> Reference: `current_keytbl`'s storage and the ISR that reads it.
 
 ## EmuTOS source
 
-```c
-LONG keytbl(const UBYTE *norm, const UBYTE *shft, const UBYTE *caps)
-{
-    if (norm != (UBYTE*)-1) current_keytbl.norm = norm;
-    if (shft != (UBYTE*)-1) current_keytbl.shft = shft;
-    if (caps != (UBYTE*)-1) current_keytbl.caps = caps;
-    return (LONG) &current_keytbl;
-}
-```
+**Primary location:** `bios/ikbd.c:122` —
+`LONG keytbl(const UBYTE *norm, const UBYTE *shft, const UBYTE *caps)`, slot
+0x10 of `xbios_vecs[]` (`bios/xbios.c:1306`).
 
-`current_keytbl` is a 3-pointer struct (`keytbl`) consulted by the
-IKBD scancode-to-ASCII translator on every keypress.
+**Installed handler / vector:** (none) — direct table entry.
+
+**Helpers called:** none.
+
+**Headers / type definitions used:**
+- `bios/ikbd.h:57-86` — `struct keytbl` (30 bytes).
+
+**System variables / globals read/written:**
+- `current_keytbl.norm/.shft/.caps` — overwritten unless the argument is the
+  sentinel (`bios/ikbd.c:124-132`).
+
+**Build configuration affecting this function:** none.
+
+---
+
+## Source extraction summary
+
+`Keytbl` sets or leaves the three primary keyboard translation tables and
+returns a pointer to the whole `current_keytbl` structure. Each of the three
+arguments is applied only if it is **not** the sentinel `(UBYTE *)-1`: a
+non-sentinel value overwrites the corresponding field
+(`current_keytbl.norm/.shft/.caps`), while `(UBYTE *)-1` means "keep the
+current pointer". Passing `-1` for all three is the idiom for "just give me
+the current table pointer".
+
+The return is `&current_keytbl`. The struct has six table pointers
+(`norm`, `shft`, `caps`, `altnorm`, `altshft`, `altcaps`), a `dead`-key
+table-array pointer, and a `features` word — 30 bytes total. `Keytbl` only
+touches the first three; the alt/dead/features fields are set by `Bioskeys`
+from the country tables and are readable through the returned pointer.
+
+Each of `norm`/`shft`/`caps` points at a 128-byte table indexed by scancode,
+producing the ASCII byte for that scancode. The IKBD ACIA ISR reads these
+when translating keypresses.
+
+---
 
 ## Trap interface
 
-| | |
-|--|--|
-| Trap | 14 (XBIOS) |
-| Function ID | `0x10` |
-| WORD args | 6 (LONG × 3) |
-| Stack frame | `+10: caps (L)`, `+6: shft (L)`, `+2: norm (L)`, `+0: 0x0010` |
-| Vector | `xbios_vecs[16]` |
+- **Trap number:** 14 (XBIOS)
+- **Function ID:** 0x10
+- **Stack frame on entry (m68k):** `Keytbl(norm, shft, caps)` =
+  `xbios_l_lll(16, a, b, c)` (`include/xbiosbind.h:34`):
+  ```
+  +10: caps (LONG, pointer)
+   +6: shft (LONG, pointer)
+   +2: norm (LONG, pointer)
+    0: function_id (word) = 0x0010
+  ```
+- **Total parameter bytes:** 14 (L + L + L).
+- **Native (AArch64) ABI:** ID `0x10` in `x8`; args in `x0..x2`; result is a
+  **pointer** in the full 64-bit `x0`.
+
+  | m68k stack | AArch64 reg | Name   | Type / size |
+  |------------|-------------|--------|-------------|
+  | +2         | `x0`        | `norm` | `const UBYTE *` (ptr) — `-1` = keep |
+  | +6         | `x1`        | `shft` | `const UBYTE *` (ptr) — `-1` = keep |
+  | +10        | `x2`        | `caps` | `const UBYTE *` (ptr) — `-1` = keep |
+
+---
 
 ## Inputs
 
-| Pos | Name   | Type            | Range / meaning                                      |
-|-----|--------|-----------------|------------------------------------------------------|
-| 0   | `norm` | const UBYTE *   | 128-byte normal table, `-1` = leave alone, `0` = clear |
-| 1   | `shft` | const UBYTE *   | shifted table, `-1` = leave alone                     |
-| 2   | `caps` | const UBYTE *   | caps-lock table, `-1` = leave alone                   |
+| Position | Name   | Type   | Size | Source location    | Notes |
+|----------|--------|--------|------|--------------------|-------|
+| arg0     | `norm` | `const UBYTE *` | 4 | `bios/ikbd.c:124` | unshifted table; `(UBYTE*)-1` = keep |
+| arg1     | `shft` | `const UBYTE *` | 4 | `bios/ikbd.c:127` | shifted table; `(UBYTE*)-1` = keep |
+| arg2     | `caps` | `const UBYTE *` | 4 | `bios/ikbd.c:130` | caps-lock table; `(UBYTE*)-1` = keep |
 
-Each table maps scancode (0..127) to an 8-bit ASCII / extended
-code.
+Each non-sentinel pointer must reference a 128-byte scancode→ASCII table.
+
+---
 
 ## Outputs
 
-| Reg | D0 |
-| --- | --- |
-| Type | LONG (`struct keytbl *`) |
+### Return value
 
-Pointer to the now-active `current_keytbl` struct. Programs that
-want only to **query** the current tables call
-`Keytbl(-1, -1, -1)` and dereference the result.
+- **Register:** D0 / `x0`
+- **Type:** pointer (`struct keytbl *`)
+- **Encoding:** `&current_keytbl`.
+- **Source location:** `bios/ikbd.c:133`.
 
-## Errors
+### `struct keytbl` (`bios/ikbd.h:57-86`) — 30 bytes
 
-None.
+| Offset | Field      | Type   | Meaning |
+|-------:|------------|--------|---------|
+| 0x00   | `norm`     | `const UBYTE *` | unshifted table (128 bytes) |
+| 0x04   | `shft`     | `const UBYTE *` | shifted table |
+| 0x08   | `caps`     | `const UBYTE *` | caps-lock table |
+| 0x0C   | `altnorm`  | `const UBYTE *` | Alt table (variable format) |
+| 0x10   | `altshft`  | `const UBYTE *` | Alt+Shift table |
+| 0x14   | `altcaps`  | `const UBYTE *` | Alt+Caps table |
+| 0x18   | `dead`     | `const UBYTE *const *` | dead-key table array |
+| 0x1C   | `features` | `WORD` | feature flags (`DUAL_KEYBOARD = 0x0001`, …) |
 
-## Edge cases
+### Side effects on global state / hardware
 
-### 1. `(UBYTE *)-1` sentinel
+- Overwrites `current_keytbl.norm/.shft/.caps` for non-sentinel args. No
+  hardware access.
 
-All three "no change" guards check against `-1` cast to a pointer.
-Address `0xFFFFFFFF` cannot be a valid table — but `0` (NULL)
-**is** treated as "clear / no table" and will crash the IKBD
-handler on the next keypress. Programs querying the current
-tables must use `-1`, not `0`.
+---
 
-### 2. Table layout is not validated
+## Error conditions
 
-EmuTOS does not check the pointers' validity, alignment, or the
-content. A bogus table corrupts every subsequent keystroke until
-`Bioskeys` (XBIOS 0x18) restores the ROM defaults.
+| Condition | Source location | Returned value |
+|-----------|-----------------|----------------|
+| (no error return) | — | — |
 
-### 3. Atomicity vs IKBD ISR
+`Keytbl` always returns `&current_keytbl`.
 
-The three pointer assignments are non-atomic. An IKBD interrupt
-arriving between assignments dereferences a half-updated state.
-EmuTOS does not guard. NewTOS must either disable IRQ around the
-update or update via a single-pointer-swap to a new struct.
+---
 
-### 4. Country-table quirk
+## Verification criteria
 
-EmuTOS distinguishes _modifiable user table_ from _ROM country
-default_. `Bioskeys` re-installs the country default. Programs
-that allocate three new 128-byte buffers, fill them, and call
-`Keytbl(b1, b2, b3)` survive `Bioskeys` only if they re-call
-`Keytbl` after.
+- **Query current:** `Keytbl(-1, -1, -1)` changes nothing and returns
+  `&current_keytbl`; a program can then read all eight fields.
+- **Swap one table:** `Keytbl(mytbl, -1, -1)` sets `current_keytbl.norm ==
+  mytbl` and leaves `shft`/`caps` unchanged.
+- **Returned pointer is stable:** the same address is returned on every call
+  (the struct lives in BIOS BSS).
 
-### 5. Extended scancodes
+---
 
-Some country variants need scancodes > 127 (dead keys, AltGr
-combinations). The 128-byte limit forces those to be encoded as
-side-effect state in the IKBD handler, not in the table itself.
-NewTOS extends to 256 bytes via a NewTOS-extension entry point.
+## Edge cases discovered in source
+
+1. **Sentinel is `(UBYTE *)-1`, not `NULL`.** `NULL` would be installed as an
+   actual (null) table pointer and crash the ISR; only `-1` means "keep"
+   (`bios/ikbd.c:124-132`). The old `_state.md` implied a `NULL` sentinel —
+   corrected (D-042).
+2. **Only three of eight fields are settable here.** `altnorm`/`altshft`/
+   `altcaps`/`dead`/`features` are set by `Bioskeys` from the country tables,
+   not by `Keytbl`; a program can read them via the returned pointer but not
+   set them through `Keytbl`.
+3. **Returned struct is 30 bytes, six table pointers.** Not the 3-pointer
+   struct the old spec implied (D-042).
+
+---
 
 ## Dependencies
 
-- `current_keytbl` (BIOS BSS).
-- IKBD interrupt handler (uses tables).
+### Requires (must be initialized / functional)
 
-Used by: locale switchers, AES locale change, custom keyboard
-layouts, dead-key emulators.
+- `current_keytbl` initialised at boot (`Bioskeys` / `kbd_init`).
+
+### Used by
+
+- Alternate-layout installers, keyboard-remapping TSRs; the IKBD ISR reads
+  the tables.
+
+---
+
+## Related data structures
+
+- `docs/api/xbios/_state.md §2` — `current_keytbl` + `struct keytbl`.
+- `docs/api/xbios/18-bioskeys.md` — resets the whole struct.
+
+---
 
 ## Cross-references
 
-- **Compendium:** "Keytbl" — agrees.
-- **Profibuch:** "Keytbl (0x10)" — agrees, lists ROM default
-  pointer mechanism.
-- `docs/api/xbios/18-bioskeys.md`
+### Atari Compendium
 
-## Configuration
+- Not present in `references/`. Cross-check deferred. (Documents the three
+  tables + the `-1` sentinel + the returned keytab pointer.)
 
-- `CONF_LANG` — chooses default country.
+### Atari Profibuch
+
+- Not present in `references/`. Cross-check deferred.
+
+---
+
+## Configuration / version notes
+
+- The `features`/`dead`/alt fields exist across EmuTOS builds; the specific
+  country default depends on the compiled keyboard tables.
+
+---
 
 ## NewTOS implementation notes
 
 (Empty during Phase 00.)
 
-PHASE-07: tables stay byte-for-byte compatible. NewTOS adds an
-extension call `KeytblEx` (reserved XBIOS slot) that takes a
-pointer to a 4-pointer struct including a 256-byte AltGr table.
+PHASE-07: NewTOS keeps the 30-byte `struct keytbl` layout; the USB-HID
+translator consumes the same `norm`/`shft`/`caps` tables. The `(UBYTE*)-1`
+sentinel and the returned pointer are preserved.

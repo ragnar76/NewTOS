@@ -1,109 +1,170 @@
-# `Scrdmp` — XBIOS 0x14
+# `Scrdmp` (XBIOS 0x14)
 
-> Phase 00 spec. Source: EmuTOS @ `1a7484ab` —
-> `bios/xbios.c:490` (`scrdmp`).
+> Phase 00 spec (full-contract template). Source: EmuTOS @ `1a7484ab`.
+> Verified against `bios/xbios.c:490` (`scrdmp`).
+
+> **Contract vs. reference** — see [`docs/COMPATIBILITY.md`](../../COMPATIBILITY.md).
+> Contract: trap ID/ABI, `void` return, the "invoke the installed dump
+> routine then reset `dumpflg`" behaviour, the replaceable `dump_vec`.
+> Reference: `protect_v`, the default `just_rts`, the Alt-Help trigger.
 
 ## EmuTOS source
 
-```c
-static void scrdmp(void)
-{
-    protect_v((PFLONG)dump_vec);
-    dumpflg = -1;            /* re-enable future dumps */
-}
-```
+**Primary location:** `bios/xbios.c:490` — `static void scrdmp(void)`, slot
+0x14 of `xbios_vecs[]` (`bios/xbios.c:1310`).
 
-`dump_vec` is the OS variable at addr `0x502`, a function pointer
-to the screen-dump routine (defaults to `dmpfunc` in
-`bios/screen.c`). `protect_v` is a marshalling wrapper that calls
-the function while preserving caller registers and aligning stack.
-`dumpflg` is the OS variable at addr `0x4EE` — when set to ≠ 0,
-the IKBD interrupt handler observing Alt-Help triggers a dump on
-the next VBL.
+**Installed handler / vector:** `dump_vec` (`include/tosvars.h:92`, sysvar
+`0x502`) — the screen-dump routine; default `just_rts` (a no-op), set by
+`bios/chardev.c:84`.
+
+**Helpers called:**
+- `util/miscasm.S` — `protect_v()` — call `dump_vec` in a `d2`/`a2`-preserving
+  supervisor wrapper.
+
+**Headers / type definitions used:**
+- `include/tosvars.h:61` — `dumpflg`; `:92` — `dump_vec`.
+
+**System variables / globals read:**
+- `dump_vec` (`0x502`) — the routine to invoke.
+
+**System variables / globals written:**
+- `dumpflg` (`0x4EE`) — reset to `-1` after the dump (`bios/xbios.c:493`).
+
+**Build configuration affecting this function:** none (always present).
+
+---
+
+## Source extraction summary
+
+`Scrdmp` performs a screen dump by calling whatever routine is installed at
+`dump_vec` (via `protect_v`, which preserves `d2`/`a2`), then resets
+`dumpflg = -1` to re-arm future dumps. EmuTOS ships **no** built-in dump
+routine: `dump_vec` defaults to `just_rts`, so a stock `Scrdmp` does nothing
+until a program installs a real dump handler. The Alt-Help key increments
+`dumpflg` (`bios/ikbd.c:596`), which the VBL notices to trigger a dump; the
+XBIOS call is the programmatic equivalent.
+
+Programs replace `dump_vec` to redirect the dump (to a printer, a file, a
+PostScript stream). `Scrdmp` returns nothing.
+
+---
 
 ## Trap interface
 
-| | |
-|--|--|
-| Trap | 14 (XBIOS) |
-| Function ID | `0x14` |
-| WORD args | 0 |
-| Stack frame | `+0: 0x0014` |
-| Vector | `xbios_vecs[20]` |
+- **Trap number:** 14 (XBIOS)
+- **Function ID:** 0x14
+- **Stack frame on entry (m68k):**
+  ```
+   0: function_id (word) = 0x0014
+  ```
+  No parameters (`Scrdmp()` = `xbios_v_v(20)`, `include/xbiosbind.h:38`).
+- **Total parameter bytes:** 2.
+- **Native (AArch64) ABI:** ID `0x14` in `x8`; no argument registers;
+  **`void`** — no return value.
+
+  | m68k stack | AArch64 reg | Name | Type / size |
+  |------------|-------------|------|-------------|
+  | (none)     | —           | —    | —           |
+
+---
 
 ## Inputs
 
 None.
 
+---
+
 ## Outputs
 
-`void`. D0 == 0 from dispatcher default.
+### Return value
 
-## Errors
+- **Register:** none (`void`).
+- **Type:** `void`.
+- **Source location:** `bios/xbios.c:490` (declared `void`).
 
-None.
+### Side effects on global state
 
-## Edge cases
+- `dumpflg = -1` (`bios/xbios.c:493`).
 
-### 1. `dump_vec` redirection
+### Side effects on hardware
 
-Programs override the dump destination (printer / file / network)
-by writing a new pointer to `dump_vec` (address 0x502). The
-default `dmpfunc` reads pixels and emits a printer-byte stream via
-`Bconout(0)` (printer device).
+- Whatever `dump_vec` does (nothing by default; a printer/file write if a
+  handler is installed).
 
-### 2. `dumpflg` interaction
+---
 
-The Alt-Help key sets `dumpflg = 0`; the VBL handler checks
-`dumpflg` and calls `Scrdmp` when zero. After a dump, `Scrdmp`
-sets `dumpflg = -1` to re-arm. A program calling `Scrdmp`
-explicitly bypasses Alt-Help.
+## Error conditions
 
-### 3. No printer = silent no-op
+| Condition | Source location | Returned value |
+|-----------|-----------------|----------------|
+| (no error return) | — | — |
 
-Default `dmpfunc` writes through `Bconout(0)`. NewTOS profile
-disables printer device — `Bconout(0)` returns ENODEV. The dump
-still runs; output is discarded.
+---
 
-### 4. Synchronous
+## Verification criteria
 
-`Scrdmp` blocks until the entire dump is sent. On a 9-pin printer,
-that's tens of seconds.
+- **Invokes `dump_vec`:** installing a routine at `dump_vec` and calling
+  `Scrdmp()` runs that routine exactly once.
+- **Resets `dumpflg`:** after `Scrdmp()`, `dumpflg == -1`.
+- **Default no-op:** with the default `dump_vec == just_rts`, `Scrdmp()` does
+  nothing observable (and does not error).
 
-### 5. Stack usage
+---
 
-`protect_v` calls a vector through an indirect pointer. EmuTOS's
-implementation in `vectors.S` saves D0..D7/A0..A6 (60 bytes). The
-called function must respect this convention — Atari-style
-register preservation, not C ABI.
+## Edge cases discovered in source
+
+1. **Default is a no-op.** `dump_vec` starts as `just_rts`
+   (`bios/chardev.c:84`); EmuTOS has no built-in printer dump. The old spec's
+   "default `dmpfunc` dumps to printer" is wrong — corrected (D-046).
+2. **`dumpflg` is the re-arm flag.** `Scrdmp` sets it to `-1` (idle) after the
+   dump; Alt-Help does `dumpflg++` (`bios/ikbd.c:596`) to request a dump the
+   VBL then performs. A program can watch/poke `dumpflg` to coordinate.
+3. **Runs via `protect_v`.** The dump routine executes in a supervisor
+   wrapper that preserves `d2`/`a2`, so a C dump handler is register-safe.
+
+---
 
 ## Dependencies
 
-- `dump_vec` (OS var 0x502).
-- `dumpflg` (OS var 0x4EE).
-- `protect_v` (vectors.S).
-- `Bconout(0)` (printer) — default dump target.
+### Requires (must be initialized / functional)
 
-Used by: Alt-Help via VBL handler, programs offering a "print
-screen" function.
+- `dump_vec` (installed routine or the default `just_rts`), `dumpflg`.
+
+### Used by
+
+- Screenshot / print-screen tools, the Alt-Help key path.
+
+---
+
+## Related data structures
+
+- `docs/api/xbios/_state.md §5` — `dump_vec`, `dumpflg`.
+
+---
 
 ## Cross-references
 
-- **Compendium:** "Scrdmp" — agrees, notes `dump_vec` redirection.
-- **Profibuch:** "Scrdmp (0x14)" — agrees.
-- `docs/api/xbios/_state.md` (pending) — `dumpflg` / `dump_vec`.
+### Atari Compendium
 
-## Configuration
+- Not present in `references/`. Cross-check deferred. (Documents "dump screen
+  to printer"; EmuTOS ships no default dumper.)
 
-None at XBIOS level; printer support gates the actual dump
-behaviour.
+### Atari Profibuch
+
+- Not present in `references/`. Cross-check deferred.
+
+---
+
+## Configuration / version notes
+
+- No `CONF_WITH_*` gate; the default `dump_vec` is a no-op on every build.
+
+---
 
 ## NewTOS implementation notes
 
 (Empty during Phase 00.)
 
-PHASE-07: `dump_vec` is preserved as ABI hook. NewTOS replaces the
-default function with one that writes a PNG/BMP into the
-filesystem (path configurable). Programs that override the vector
-work unchanged, but their printer-byte-stream output writes to
-`/dev/null` since printer device returns ENODEV.
+PHASE-07/08: NewTOS may install a default `dump_vec` that writes a PNG of the
+framebuffer to a configured path; `Scrdmp` invokes it and resets `dumpflg`,
+and programs can still replace `dump_vec`.

@@ -2,180 +2,279 @@
 
 > Phase 00 deliverable D7 (XBIOS). Documents the XBIOS-internal state
 > referenced by spec entries in this group. Source: EmuTOS @ `1a7484ab`.
+> Cite-never-paste: structures are given as byte-exact layout tables, not
+> as pasted C.
 
-XBIOS owns less mutable state than GEMDOS — most of its surface is
-direct hardware access plus a handful of OS variables in low memory.
-This file describes those variables and the small number of tables
-XBIOS maintains in higher memory.
+XBIOS owns less mutable state than GEMDOS — most of its surface is direct
+hardware access plus a handful of OS variables in low memory. This file
+describes those variables and the small number of tables XBIOS maintains.
 
 > **Observable vs. internal** — see [`docs/COMPATIBILITY.md`](../../COMPATIBILITY.md).
-> The per-entry **NewTOS:** notes below already draw this line: the OS
-> variables (`kbdvecs`/`Kbdvbase`, the low-memory vars `0x44E`/`0x4EE`/
-> `0x502`/`0x456`, `Random`'s reproducible sequence, the IORec) are
-> **contract**; the hardware shadows and SR-locking are NewTOS's own
-> implementation.
+> **Contract** (a program observes value/layout — keep exact): the
+> `kbdvecs` table (`Kbdvbase`), the `IOREC`/`EXT_IOREC` layouts (`Iorec`),
+> the packed palette word (`Setcolor`/`Setpalette`), the resolution codes
+> (`Getrez`/`Setscreen`), the `Random` reproducible sequence, the
+> `kbrate`/`keytbl` return encodings, the low-memory var *values* (`v_bas_ad`,
+> `dumpflg`, `dump_vec`, `colorptr`, `frclock`). **Free to reimplement**: the
+> hardware shadows, SR-locking, the ACIA/MFP driver internals, the RTC
+> backend, the physical low-memory addresses (meaningless on AArch64 for
+> native callers — see COMPATIBILITY §System variables).
 
 ---
 
-## 1. `kbdvecs` (`bios/ikbd.c:64`, returned by `Kbdvbase` 0x22)
+## 1. `kbdvecs` (`include/biosdefs.h:105`, returned by `Kbdvbase` 0x22)
 
-```c
-struct kbdvecs_t {
-    PFVOID midivec;     /* MIDI input byte */
-    PFVOID vkbderr;     /* IKBD overrun / parity error */
-    PFVOID vmiderr;     /* MIDI ACIA overrun */
-    PFVOID statvec;     /* IKBD status packet (0xF6) */
-    PFVOID mousevec;    /* IKBD mouse packet (0xF8..0xFB) */
-    PFVOID clockvec;    /* IKBD time-of-day packet (0xFC) */
-    PFVOID joyvec;      /* IKBD joystick packet (0xFD..0xFF) */
-    PFVOID midisys;     /* MIDI system handler */
-    PFVOID ikbdsys;     /* IKBD system handler */
-} kbdvecs;
-```
+The keyboard/MIDI packet-handler vector table. `Kbdvbase` returns `&kbdvecs`
+(`bios/xbios.c:716-718`). 9 function pointers, **36 bytes** on m68k:
 
-36 bytes, 9 function pointers. `Kbdvbase` returns `&kbdvecs` so
-applications can install custom packet handlers (mouse, joystick,
-clock).
+| Offset | Field       | Purpose |
+|-------:|-------------|---------|
+| 0x00   | `midivec`   | MIDI input byte handler |
+| 0x04   | `vkbderr`   | IKBD ACIA overrun / error handler |
+| 0x08   | `vmiderr`   | MIDI ACIA overrun / error handler |
+| 0x0C   | `statvec`   | IKBD status packet (0xF6) handler |
+| 0x10   | `mousevec`  | IKBD mouse packet (0xF8..0xFB) handler |
+| 0x14   | `clockvec`  | IKBD time-of-day packet (0xFC) handler |
+| 0x18   | `joyvec`    | IKBD joystick packet (0xFD..0xFF) handler |
+| 0x1C   | `midisys`   | top-level MIDI ACIA ISR |
+| 0x20   | `ikbdsys`   | top-level IKBD ACIA ISR |
 
-NewTOS: preserve as ABI surface. The synthetic IKBD-packet generator
-(USB-HID translator) feeds these vectors in the same byte format.
+All fields are `PFVOID` (4 bytes on m68k). `Initmous` writes `mousevec`
+(`bios/mouse.c:117,120`); applications install their own handlers by
+overwriting a field (read-save-chain — no previous-vector return). The
+struct lives in BIOS BSS, process-lifetime stable.
 
----
+> The internal IKBD-packet state machine keeps a few private fields
+> (`ikbdstate`, `kbdlength`) adjacent to the table in `bios/aciavecs.S`;
+> those are **not** part of the 36-byte contract surface returned to
+> applications and NewTOS need not expose them.
 
-## 2. `bioskeys` State (`bios/bios.c:140`, used by `Bioskeys` 0x18, `Keytbl` 0x10, `Kbrate` 0x23)
-
-```c
-struct keytbl current_keytbl;       /* unshift, shift, caps */
-WORD          kb_initial = 25;      /* repeat-delay (50 Hz units) */
-WORD          kb_repeat  = 5;       /* repeat-rate (50 Hz units) */
-```
-
-Set by:
-- `Bioskeys` resets `current_keytbl` to defaults from `country.c`.
-- `Keytbl(unshift, shift, caps)` overwrites individual table pointers
-  (sentinel `(UBYTE*)-1` keeps current).
-- `Kbrate(initial, repeat)` updates the two WORDs.
-
-Read by IKBD interrupt handler when translating scancodes to ASCII.
-
-NewTOS: software shadow only; HID-translator consumes the same
-tables.
+NewTOS: preserve the 36-byte ABI. The synthetic IKBD-packet generator
+(USB-HID translator) feeds these vectors in IKBD byte format.
 
 ---
 
-## 3. RS-232 / `bconmap` State (`bios/serport.c`)
+## 2. Keyboard-table state (`bios/ikbd.c`, used by `Bioskeys` 0x18, `Keytbl` 0x10, `Kbrate` 0x23)
 
-### `bconmap_root` (`MAPTAB`-array root, see [2c-bconmap.md](2c-bconmap.md))
+### `current_keytbl` (`struct keytbl`, `bios/ikbd.h:57-86`) — **30 bytes**
 
-```c
-struct bconmap {
-    WORD     mapped_device;     /* current dev, default 6 */
-    WORD     maptabsize;        /* number of MAPTAB entries */
-    MAPTAB  *maptab;            /* array */
-} bconmap_root;
+| Offset | Field      | Type | Meaning |
+|-------:|------------|------|---------|
+| 0x00   | `norm`     | `const UBYTE *` | 128-byte unshifted scancode→ASCII table |
+| 0x04   | `shft`     | `const UBYTE *` | 128-byte shifted table |
+| 0x08   | `caps`     | `const UBYTE *` | 128-byte caps-lock table |
+| 0x0C   | `altnorm`  | `const UBYTE *` | Alt (variable format) |
+| 0x10   | `altshft`  | `const UBYTE *` | Alt+Shift (variable format) |
+| 0x14   | `altcaps`  | `const UBYTE *` | Alt+Caps (variable format) |
+| 0x18   | `dead`     | `const UBYTE *const *` | dead-key table array |
+| 0x1C   | `features` | `WORD` | feature flags (e.g. `DUAL_KEYBOARD = 0x0001`) |
+
+`Keytbl` (0x10) overwrites `norm`/`shft`/`caps` unless the argument is the
+sentinel `(UBYTE *)-1`, and returns `&current_keytbl` (`bios/ikbd.c:122-134`).
+`Bioskeys` (0x18) resets `current_keytbl = *get_keytbl()` from the compiled
+country tables (`bios/ikbd.c:136-140`). The IKBD ACIA ISR reads these tables
+when converting scancodes.
+
+> **Correction vs. earlier draft:** the old `_state.md` listed the table as
+> only `{unshift, shift, caps}`. The real struct is 30 bytes with six table
+> pointers + `dead` + `features`. `Keytbl` returns a pointer to the whole
+> struct, and the sentinel is `(UBYTE *)-1`, not `NULL`. See D-042.
+
+### Key-repeat rate (`bios/ikbd.c:425-427`)
+
+```
+WORD kb_initial;   /* initial delay, units of 20 ms */
+WORD kb_repeat;    /* repeat interval, units of 20 ms */
+WORD kb_ticks;     /* countdown timer (private) */
 ```
 
-NewTOS profile: `maptabsize = 1`, single PL011 entry.
+`Kbrate(initial, repeat)` (0x23) returns `MAKE_UWORD(kb_initial, kb_repeat)`
+(old initial in the **high** byte, old repeat in the **low** byte), then, for
+each parameter `>= 0`, stores it masked to `& 0x00ff`; a negative parameter is
+a query (`bios/ikbd.c:439-449`). Powerup defaults are `KB_INITIAL = 15`
+(≈300 ms) and `KB_REPEAT = 2` (≈40 ms) (`include/sysconf.h:68-69`, set by
+`kbd_init`, `bios/ikbd.c:1092-1093`).
 
-### `rsconfptr`, `rs232iorecptr`
-
-Pointers to the current RS-232 device's `Rsconf` handler and IORec
-buffer. Rewired by `Bconmap` from the active `MAPTAB` entry.
-
-### IORec layout (`bios/serport.h`, used by `Iorec` 0x0E)
-
-Per-device: 16 bytes (input ringbuf head/tail/size/pointer +
-output ringbuf), tracked separately for IKBD, MIDI, RS-232.
-`Iorec(dev)` returns the appropriate record pointer.
+> **Correction vs. earlier draft:** the old `_state.md` gave defaults
+> `kb_initial = 25` / `kb_repeat = 5` and 50 Hz units. The source uses
+> 15 / 2 in 20 ms units. See D-042.
 
 ---
 
-## 4. Display State
+## 3. RS-232 / MIDI / IKBD `IOREC` state (`bios/iorec.h`, `bios/serport.h`, used by `Iorec` 0x0E)
 
-### Falcon / TT / ST screen pointers (`bios/screen.c`)
+### `IOREC` — the bare input ring descriptor (`bios/iorec.h:20-27`) — **14 bytes**
 
-```c
-extern UBYTE *v_bas_ad;     /* logical screen base, OS var 0x44E */
-extern UWORD  sshiftmod;    /* shift-mode shadow */
-extern WORD   sscreen[2];   /* physical/logical screen geometry */
-```
+| Offset | Field  | Type | Meaning |
+|-------:|--------|------|---------|
+| 0x00   | `buf`  | `UBYTE *` | ring buffer base |
+| 0x04   | `size` | `WORD` | buffer size in bytes |
+| 0x06   | `head` | `volatile WORD` | write index (ISR advances) |
+| 0x08   | `tail` | `volatile WORD` | read index (consumer advances) |
+| 0x0A   | `low`  | `WORD` | low-water mark (resume flow) |
+| 0x0C   | `high` | `WORD` | high-water mark (assert flow) |
 
-NewTOS framebuffer driver maintains shadow of all three; writes are
-mirrored to the VideoCore mailbox on `Setscreen`.
+`Iorec(1)` (IKBD) and `Iorec(2)` (MIDI) return the address of a bare
+`IOREC` (input only). `ikbdiorec` uses a **256-byte** buffer
+(`low = 64`, `high = 192`); `midiiorec` uses a **128-byte** buffer
+(`low = 32`, `high = 96`) (`bios/aciavecs.S`).
 
-### TT shifter shadow (see [_tt-shifter.md](_tt-shifter.md))
+> **Correction vs. earlier draft:** the old doc described a 16-byte IOREC
+> "with input+output ringbuf" and an IKBD buffer of 128 bytes. The bare
+> `IOREC` is **14 bytes and input-only**; the output ring lives in the
+> separate `EXT_IOREC` (below); the IKBD buffer is 256 bytes. See D-043.
 
-```c
-UWORD tt_shifter_shadow;            /* mirrors *0xFFFF8262 */
-UWORD tt_palette_shadow[256];       /* mirrors *0xFFFF8400 */
-WORD  has_tt_shifter;               /* 1 in NewTOS profile */
-```
+### `EXT_IOREC` — the RS-232 record (`bios/serport.h:57-65`) — **24 bytes**
 
-### Palette (`bios/screen.c`, OS var `palmode_flags`)
+`Iorec(0)` returns `rs232iorecptr`, which points at an `EXT_IOREC`:
 
-Software shadow of the ST/STe 16-entry palette, used by `Setpalette`
-0x06 and `Setcolor` 0x07. NewTOS forwards changes to VideoCore.
+| Offset | Field      | Type    | Meaning |
+|-------:|------------|---------|---------|
+| 0x00   | `in`       | `IOREC` (14) | input ring |
+| 0x0E   | `out`      | `IOREC` (14) | output ring |
+| 0x1C   | `baudrate` | `UBYTE` | current baud code (0..15) |
+| 0x1D   | `flowctrl` | `UBYTE` | flow-control mode (0..3) |
+| 0x1E   | `ucr`      | `UBYTE` | shadow of MFP/SCC UCR |
+| 0x1F   | `datamask` | `UBYTE` | data-bit mask for < 8-bit chars |
+| 0x20   | `wr5`      | `UBYTE` | SCC WR5 shadow (SCC only) |
+
+(The two nested 14-byte `IOREC`s make the leading 28 bytes; the 5 trailing
+`UBYTE`s + struct padding give 24 bytes of fields — actual `sizeof` is
+compiler/alignment-dependent, but the `in`/`out` offsets 0x00/0x0E are
+contract.)
+
+### `bconmap_root` (`BCONMAP`, `bios/serport.h:115-119`)
+
+| Offset | Field           | Type | Meaning |
+|-------:|-----------------|------|---------|
+| 0x00   | `maptab`        | `MAPTAB *` | array of per-device vector sets |
+| 0x04   | `maptabsize`    | `WORD` | number of `MAPTAB` entries |
+| 0x06   | `mapped_device` | `WORD` | currently-mapped device (6/7/8) |
+
+> **Correction vs. earlier draft:** the old `_state.md` and `2c-bconmap.md`
+> gave the field order as `{mapped_device, maptabsize, maptab}`. The real
+> order is `{maptab, maptabsize, mapped_device}` — `maptab` first. See D-044.
+
+### `MAPTAB` (`bios/serport.h:106-113`) — **24 bytes**
+
+Six vectors per device, in order: `Bconstat`, `Bconin`, `Bcostat`,
+`Bconout`, `Rsconf`, `EXT_IOREC *Iorec` (each 4 bytes on m68k).
+
+### `rsconfptr`, `rs232iorecptr` (`bios/serport.c:74-75`)
+
+Pointers to the active RS-232 `Rsconf` handler and its `EXT_IOREC`. Default
+targets `rsconf1` / `&iorec1` (`bios/serport.c:1018-1019`), rewired by
+`Bconmap` from the active `MAPTAB` entry. `BCONMAP_AVAILABLE =
+(CONF_WITH_SCC || CONF_WITH_TT_MFP)` (`bios/serport.h:18`) — on a
+single-serial build it is **false**, so `Bconmap` returns the function
+number `0x2c` (see `2c-bconmap.md` and D-045).
 
 ---
 
-## 5. Screen Dump (`bios/xbios.c`, `Scrdmp` 0x14)
+## 4. Display State (`bios/screen.c`)
 
-```c
-void (*dump_vec)(void);      /* OS var 0x502, default = dmpfunc */
-WORD  dumpflg;               /* OS var 0x4EE, -1 = idle */
-```
+### Screen base + resolution shadow
 
-`dumpflg = 0` triggers a dump on next VBL; `Scrdmp` resets it to -1.
-Programs replace `dump_vec` to redirect output (file, network,
-PostScript, …).
+| Var         | Sysvar addr | Meaning |
+|-------------|------------:|---------|
+| `v_bas_ad`  | `0x44E`     | logical screen base — `Logbase` returns it; `Setscreen` writes it |
+| `sshiftmod` | `0x44C`     | resolution-code shadow — `Getrez` returns it when there is no video hardware; `atari_setrez` updates it |
+| `vblsem`    | `0x452`     | VBL-enable semaphore (`Setscreen` clears then restores around a rez change) |
+| `colorptr`  | `0x45A`     | pointer to the palette to load at the next VBL (`Setpalette` writes it) |
+| `frclock`   | `0x466`     | free-running VBL frame counter (`Vsync` waits for it to change) |
 
-NewTOS: preserve both vars; default `dmpfunc` writes a PNG to
-configured path instead of the printer-byte stream.
+`physbase()` (`bios/screen.c:1042`) reads the Shifter video-base hardware
+registers (`0xFFFF8201/8203/820D`); with no Atari video it falls back to
+`logbase()`. So on the NewTOS profile `Physbase() == Logbase()` until the
+framebuffer driver implements real page flipping.
+
+### Palette shadow (`palette[]`, `bios/screen.c`)
+
+16-entry ST/STe palette shadow. `Setcolor` (0x07) reads/writes
+`palette[colorNum & 0x0F]`; masks the returned old value with `0x0777`
+(plain ST) or `0x0FFF` (STe/TT/Videl) (`bios/screen.c:1024-1035`). Packed
+word format: bits 11-8 red, 7-4 green, 3-0 blue (4 bits/channel).
+`Setpalette` (0x06) defers a 16-word load to the next VBL via `colorptr`.
+
+> Note (STe intensity-bit order): real STe/TT hardware rotates the LSB of
+> each 4-bit channel to the top for backward ST compatibility. EmuTOS stores
+> and masks straight 4-bit nibbles (`0x0FFF`); the hardware nibble rotation
+> is a driver detail. NewTOS maps the 4-bit channels to 8-bit VideoCore
+> palette entries; the *stored/returned word* is the contract, the mapping
+> is free. See `07-setcolor.md`.
+
+### TT shifter shadow (see [`_tt-shifter.md`](_tt-shifter.md))
+
+`TT_SHIFTER` (`0xFFFF8262`, resolution) and `TT_PALETTE_REGS`
+(`0xFFFF8400`, 256×UWORD) with `has_tt_shifter`. Out of the 24-function
+scope; reference only.
 
 ---
 
-## 6. PSG / Sound (`bios/sound.c`, `Dosound` 0x20)
+## 5. Screen Dump (`bios/xbios.c` + `bios/tosvars`, `Scrdmp` 0x14)
 
-```c
-const UBYTE *sndtable;       /* current sound script, NULL = idle */
-UBYTE        snddelay;       /* VBL delay counter */
-```
+| Var        | Sysvar addr | Meaning |
+|------------|------------:|---------|
+| `dump_vec` | `0x502`     | screen-dump routine pointer; default `just_rts` (no-op), `bios/chardev.c:84` |
+| `dumpflg`  | `0x4EE`     | dump-in-progress flag; `-1` = idle, `bios/bios.c:357` |
 
-NewTOS profile: no YM2149; both unused. `Dosound(NULL)` returns 0.
+`Scrdmp` (`bios/xbios.c:490-494`) calls `dump_vec` via `protect_v`, then
+resets `dumpflg = -1`. Pressing Alt-Help does `dumpflg++` (`bios/ikbd.c:596`),
+which the VBL notices to trigger a dump. No `CONF_WITH_*` gate. Programs
+replace `dump_vec` to redirect output.
+
+> **Correction vs. earlier draft:** the old doc's default `dump_vec` was
+> vaguely "dmpfunc"; the source initialises it to the no-op `just_rts`
+> (`bios/chardev.c:84`) — EmuTOS ships **no** built-in printer dump routine.
+> See D-046.
+
+NewTOS: preserve both vars; a NewTOS default `dump_vec` may write a PNG.
 
 ---
 
-## 7. Random Seed (`bios/xbios.c`, `Random` 0x11)
+## 6. PSG / Sound (`bios/sound.c`, `Dosound` 0x20) — reference (out of 24-function scope)
 
-```c
-LONG  seed;                  /* LCG state, seeded from hz_200 at boot */
-```
-
-24-bit LCG state. Updated on every `Random` call. ABI-relevant: the
-documented sequence is reproducible from a known seed.
+`sndtable` / `snddelay` drive the `Dosound` script from the VBL when
+`CONF_WITH_YM2149` is set. Without it, `Giaccess`/`Dosound` return `0` and
+`Ongibit`/`Offgibit` are no-ops (`_psg-group.md`). NewTOS profile: no YM2149.
 
 ---
 
-## 8. `dumpflg` / VBL hooks (`bios/vectors.S`)
+## 7. Random Seed (`bios/xbios.c:419`, `Random` 0x11)
 
-```c
-void (*vblqueue[8])(void);   /* OS var 0x456, slot 0..7 */
-WORD  nvbls;                 /* number of slots, OS var 0x454 */
+```
+static ULONG rseed;   /* LCG state, seeded from hz_200 at first call */
 ```
 
-VBL queue installed by AES, `vsync()` waits one tick. Specs that
-reference the VBL (e.g. `Vsync` 0x25, `Setpalette` 0x06 timing) read
-this state but do not modify it from XBIOS surface.
+On the first call (`rseed == 0`) it is seeded `(hz_200 << 16) + hz_200`
+(`bios/xbios.c:423-426`); each call does `rseed = rseed*3141592621 + 1` and
+returns `(rseed >> 8) & 0xFFFFFF`. **Contract:** the sequence is reproducible
+from a known seed; the return is a 24-bit LONG (bits 24-31 zero).
+
+---
+
+## 8. VBL queue / frame clock (`bios/*`, referenced by `Vsync`/`Setpalette` timing)
+
+| Var         | Sysvar addr | Meaning |
+|-------------|------------:|---------|
+| `frclock`   | `0x466`     | free-running VBL counter; `Vsync` waits for it to increment |
+| `vblqueue`  | `0x456`     | pointer to the VBL handler-slot array |
+| `nvbls`     | `0x454`     | number of VBL slots |
+| `vblsem`    | `0x452`     | VBL-enable semaphore |
+
+`Vsync` (0x25) reads `frclock` and busy-waits (optionally
+`stop_until_interrupt`) until it changes (`bios/screen.c:1205-1228`). The
+`colorptr` palette load and `dumpflg` dump also happen from the VBL. XBIOS
+specs read this state but do not modify the VBL queue from their surface.
 
 ---
 
 ## 9. Concurrency
 
-XBIOS is also single-threaded under EmuTOS. Hardware register
-accesses (PSG, palette, MFP) are bracketed by `set_sr(0x2700)` to
-lock interrupts. NewTOS replaces SR-locking with explicit per-device
-spinlocks; the ABI surface still ignores SMP because the trap
-dispatcher is serialised per-CPU.
+XBIOS is single-threaded under EmuTOS. Hardware register accesses (PSG,
+palette, MFP) are bracketed by `set_sr(0x2700)` to lock interrupts. NewTOS
+replaces SR-locking with per-device spinlocks; the trap dispatcher is
+serialised per-CPU, so the ABI surface still ignores SMP.
 
 ---
 
@@ -183,5 +282,6 @@ dispatcher is serialised per-CPU.
 
 - Per-function specs in `docs/api/xbios/`.
 - BIOS state — `docs/api/bios/_state.md`.
-- GEMDOS state — `docs/api/gemdos/_state.md`.
+- GEMDOS state — `docs/api/gemdos/_state.md` (§12 shares the date/time
+  globals `Settime`/`Gettime` write).
 - Structures — `docs/api/structures/`.

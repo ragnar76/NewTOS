@@ -68,10 +68,8 @@ existing volume, not low-level format.
 
 ### `Protobt`
 
-```c
-WORD protobt(UBYTE *buf, LONG serialno, WORD disktype, WORD execflag);
-```
-
+Signature (`include/xbiosbind.h:36`, `xbios_v_llww(18,…)`):
+`Protobt(UBYTE *buf, LONG serialno, WORD disktype, WORD execflag)`.
 Generates an Atari boot-sector image in `buf`:
 - `serialno = -1`: leave existing serial; otherwise stamp.
 - `disktype`: 0..3 (40-track SS / DS, 80-track SS / DS) — sets
@@ -118,11 +116,29 @@ be promoted out of this group spec into its own
 Used by: legacy Atari programs probing for floppy, disk-image
 creation tools.
 
+## Native ABI
+
+Shapes below are cited from `include/xbiosbind.h` where a macro exists
+(Floprd/Flopwr/Flopfmt/Protobt/Flopver), and otherwise inferred from the
+EmuTOS handler signatures (Floprate/DMAread/DMAwrite — no binding macro in
+`xbiosbind.h`, so the shape is read from the C prototype).
+
+| ID | Name | Shape | Source |
+|---:|------|-------|--------|
+| 0x08 | Floprd | buf:L, fill:L, dev/sect/track/side/cnt:W → WORD | `xbios_w_llwwwww(8,…)` (`xbiosbind.h:27`) |
+| 0x09 | Flopwr | (same) → WORD | `xbios_w_llwwwww(9,…)` (`xbiosbind.h:28`) |
+| 0x0A | Flopfmt | buf:L, skew:L, dev/spt/track/side/interlv:W, magic:L, virgin:W → WORD | `xbios_w_llwwwwwlw(10,…)` (`xbiosbind.h:29`) |
+| 0x12 | Protobt | buf:L, serialno:L, disktype:W, execflag:W (void) | `xbios_v_llww(18,…)` (`xbiosbind.h:36`) |
+| 0x13 | Flopver | buf:L, fill:L, dev/sect/track/side/cnt:W → WORD | `xbios_w_llwwwww(19,…)` (`xbiosbind.h:37`) |
+| 0x29 | Floprate | dev:W, rate:W → LONG | handler `LONG floprate(WORD,WORD)` |
+| 0x2A | DMAread | sect:L, cnt:W, buf:L, dev:W → LONG | handler `LONG DMAread(LONG,WORD,UBYTE*,WORD)` |
+| 0x2B | DMAwrite | sect:L, cnt:W, buf:L, dev:W → LONG | handler `LONG DMAwrite(LONG,WORD,const UBYTE*,WORD)` |
+
 ## Cross-references
 
-- **Compendium:** all 8 functions documented; arguments & error
-  codes match EmuTOS.
-- **Profibuch:** matches EmuTOS.
+- **Compendium / Profibuch:** not present in `references/`; cross-check
+  deferred. (Historically documents all eight signatures + error codes; the
+  `EUNDEV` return for a missing controller is EmuTOS/driver behaviour.)
 - `docs/api/bios/04-rwabs.md` — preferred portable raw-I/O entry.
 
 ## Configuration

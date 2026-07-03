@@ -1,103 +1,164 @@
-# `Bioskeys` — XBIOS 0x18
+# `Bioskeys` (XBIOS 0x18)
 
-> Phase 00 spec. Source: EmuTOS @ `1a7484ab` —
-> `bios/ikbd.c:136` (`bioskeys`).
+> Phase 00 spec (full-contract template). Source: EmuTOS @ `1a7484ab`.
+> Verified against `bios/ikbd.c:136` (`bioskeys`).
 
-## NewTOS status: **out-of-scope**
-
-`Bioskeys` resets the Atari keyboard-translation tables to their ROM defaults —
-tables NewTOS does not use (it translates scancodes natively in `crate::ikbd`
-off the IKBD path). It is therefore **not exposed** as a trap; the XBIOS
-dispatcher's `EINVFN` catch-all is the intended, documented behaviour (not a
-stub). See `docs/STATUS.md` (2026-07-02) and the "Keyboard via Atari IKBD"
-decision.
+> **Contract vs. reference** — see [`docs/COMPATIBILITY.md`](../../COMPATIBILITY.md).
+> Contract: trap ID/ABI, `void` return, the "reset to power-up country
+> defaults" behaviour. Reference: `current_keytbl` and the country tables.
 
 ## EmuTOS source
 
-```c
-void bioskeys(void)
-{
-    current_keytbl = *get_keytbl();
-}
-```
+**Primary location:** `bios/ikbd.c:136` — `void bioskeys(void)`, slot 0x18
+of `xbios_vecs[]` (`bios/xbios.c:1314`).
 
-`get_keytbl()` (defined in `bios/country.c`) returns a pointer to
-the keyboard table for the **default country** as built into the
-ROM. `current_keytbl` is the active KEYTAB struct — three pointers
-to 128-byte scancode-to-ASCII tables (norm / shft / caps).
+**Installed handler / vector:** (none) — direct table entry.
+
+**Helpers called:**
+- `bios/country.c` — `get_keytbl()` — return the compiled default keyboard
+  tables for the configured country.
+
+**Headers / type definitions used:**
+- `bios/ikbd.h:57-86` — `struct keytbl`.
+
+**System variables / globals read:** the compiled country keyboard tables.
+
+**System variables / globals written:**
+- `current_keytbl` — reset to `*get_keytbl()` (`bios/ikbd.c:138-139`).
+
+**Build configuration affecting this function:**
+- The compiled country / keyboard-layout selection (which tables
+  `get_keytbl` returns).
+
+---
+
+## Source extraction summary
+
+`Bioskeys` restores the keyboard translation tables to their power-up state.
+It fetches the country-default `struct keytbl` from `get_keytbl()` and copies
+it wholesale into `current_keytbl`, undoing any `Keytbl` (0x10) overrides —
+including the alt/dead/features fields that `Keytbl` cannot set. There are no
+arguments and no return value.
+
+This is the inverse of `Keytbl`: `Keytbl` swaps individual tables in;
+`Bioskeys` puts the whole default set back.
+
+---
 
 ## Trap interface
 
-| | |
-|--|--|
-| Trap | 14 (XBIOS) |
-| Function ID | `0x18` |
-| WORD args | 0 |
-| Stack frame | `+0: 0x0018` |
-| Vector | `xbios_vecs[24]` |
+- **Trap number:** 14 (XBIOS)
+- **Function ID:** 0x18
+- **Stack frame on entry (m68k):**
+  ```
+   0: function_id (word) = 0x0018
+  ```
+  No parameters (`Bioskeys()` = `xbios_v_v(24)`, `include/xbiosbind.h:42`).
+- **Total parameter bytes:** 2.
+- **Native (AArch64) ABI:** ID `0x18` in `x8`; no argument registers;
+  **`void`** — no return value.
+
+  | m68k stack | AArch64 reg | Name | Type / size |
+  |------------|-------------|------|-------------|
+  | (none)     | —           | —    | —           |
+
+---
 
 ## Inputs
 
 None.
 
+---
+
 ## Outputs
 
-`void` — no return.
+### Return value
 
-## Errors
+- **Register:** none (`void`).
+- **Type:** `void`.
+- **Source location:** `bios/ikbd.c:136` (declared `void`).
 
-None.
+### Side effects on global state
 
-## Edge cases
+- `current_keytbl = *get_keytbl()` — all eight fields reset
+  (`bios/ikbd.c:138-139`).
 
-### 1. Reset to ROM defaults
+### Side effects on hardware
 
-After a program has used `Keytbl(...)` (XBIOS 0x10) to install
-custom translation tables, `Bioskeys` reverts to the ROM-default
-country table. Used by exit handlers.
+None (software table swap; the ISR picks up the new tables on the next key).
 
-### 2. Country selection
+---
 
-The "default country" is set at boot by reading a NVRAM byte
-(Falcon) or compile-time constant (older TOS, EmuTOS). NewTOS
-profile: build-time constant (`CONF_LANG`). Runtime country
-switching requires NVRAM modification + reboot, mirroring Atari's
-behaviour.
+## Error conditions
 
-### 3. Atomic with respect to IKBD
+| Condition | Source location | Returned value |
+|-----------|-----------------|----------------|
+| (no error return) | — | — |
 
-The IKBD interrupt handler dereferences `current_keytbl.norm[]`
-etc. on every keypress. A `Bioskeys` mid-keypress can race — but
-since the call is just `current_keytbl = *new_table`, three
-pointer writes, a partially-updated state shows mixed tables for
-~6 m68k cycles. EmuTOS does not block IKBD interrupts. NewTOS on
-AArch64 must ensure the three-pointer copy is atomic or
-interrupt-disabled.
+---
 
-### 4. CONF_WITH_FORCED_LOCALE
+## Verification criteria
 
-Some EmuTOS builds force a specific country regardless of NVRAM.
-NewTOS will follow the build-config approach.
+- **Undoes `Keytbl`:** after `Keytbl(mytbl, -1, -1)` then `Bioskeys()`,
+  `Keytbl(-1,-1,-1)->norm` equals the country default again (not `mytbl`).
+- **Resets all fields:** `alt*`/`dead`/`features` are restored to the country
+  defaults, not just `norm`/`shft`/`caps`.
+
+---
+
+## Edge cases discovered in source
+
+1. **Whole-struct reset.** `Bioskeys` overwrites all eight `struct keytbl`
+   fields, so it also restores `altnorm/altshft/altcaps/dead/features` that
+   `Keytbl` never touches (`bios/ikbd.c:138-139`).
+2. **Country-dependent result.** The default tables come from the compiled
+   country (`get_keytbl`), so the "power-up state" differs between a US and a
+   German build.
+
+---
 
 ## Dependencies
 
-- `current_keytbl` (BIOS BSS, exposed via `Keytbl(-1, -1, -1)`).
-- `get_keytbl()` (`bios/country.c`).
+### Requires (must be initialized / functional)
 
-Used by: program exit cleanup, AES locale change.
+- The compiled country keyboard tables; `current_keytbl` storage.
+
+### Used by
+
+- Programs that installed a custom layout and want to restore the default on
+  exit; the desktop.
+
+---
+
+## Related data structures
+
+- `docs/api/xbios/_state.md §2` — `current_keytbl`.
+- `docs/api/xbios/10-keytbl.md` — the per-table setter.
+
+---
 
 ## Cross-references
 
-- **Compendium:** "Bioskeys" — agrees.
-- **Profibuch:** "Bioskeys (0x18)" — agrees.
-- `docs/api/bios/0b-kbshift.md` — shift-state companion.
-- `docs/api/xbios/_state.md` (pending) — `current_keytbl`
-  structure.
+### Atari Compendium
 
-## Configuration
+- Not present in `references/`. Cross-check deferred. (Documents "restore
+  power-up keyboard tables".)
 
-- `CONF_LANG` — chooses default country.
+### Atari Profibuch
+
+- Not present in `references/`. Cross-check deferred.
+
+---
+
+## Configuration / version notes
+
+- The default tables depend on the compiled country / keyboard layout.
+
+---
 
 ## NewTOS implementation notes
 
 (Empty during Phase 00.)
+
+PHASE-07: `Bioskeys` reloads the NewTOS country-default tables into
+`current_keytbl`; the USB-HID translator uses them thereafter.

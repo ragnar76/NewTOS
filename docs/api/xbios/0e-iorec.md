@@ -1,121 +1,195 @@
-# `Iorec` — XBIOS 0x0E
+# `Iorec` (XBIOS 0x0E)
 
-> Phase 00 spec. Source: EmuTOS @ `1a7484ab` —
-> `bios/xbios.c:336` (`iorec`).
+> Phase 00 spec (full-contract template). Source: EmuTOS @ `1a7484ab`.
+> Verified against `bios/xbios.c:336` (`iorec`).
+
+> **Contract vs. reference** — see [`docs/COMPATIBILITY.md`](../../COMPATIBILITY.md).
+> Contract: trap ID/ABI, the `devno` → record mapping, the `-1` out-of-range
+> return, and the `IOREC`/`EXT_IOREC` layouts a program reads/writes.
+> Reference: the ACIA/UART drivers behind each record.
 
 ## NewTOS status: **decision deferred**
 
-Returns `EINVFN` today (the XBIOS dispatcher's catch-all — defined behaviour, not
-a stub). `Iorec` returns a pointer to the Atari `IOREC` ring-buffer descriptor
-(IKBD/MIDI/RS-232); NewTOS has a native console-RX ring + `ikbd`. Whether to
-expose an `IOREC`-shaped view of that ring is a `docs/COMPATIBILITY.md`
-port-vs-reimplement call, **deferred until a program actually needs it**.
+`Iorec` returns a pointer to the Atari `IOREC` ring-buffer descriptor
+(IKBD/MIDI/RS-232). NewTOS has a native console-RX ring + an `ikbd` record;
+whether to expose an `IOREC`-shaped view is a port-vs-reimplement call
+(`docs/COMPATIBILITY.md`), **deferred until a program needs it**. If exposed,
+the layouts below are the contract.
 
 ## EmuTOS source
 
-```c
-static LONG iorec(WORD devno)
-{
-    switch (devno) {
-    case 0: return (LONG) rs232iorecptr;
-    case 1: return (LONG) &ikbdiorec;
-    case 2: return (LONG) &midiiorec;
-    default: return -1;
-    }
-}
-```
+**Primary location:** `bios/xbios.c:336` — `static LONG iorec(WORD devno)`,
+slot 0x0E of `xbios_vecs[]` (`bios/xbios.c:1304`).
 
-`IOREC` is the input ringbuffer descriptor used by the IKBD, MIDI,
-and RS-232 drivers. Layout: `ibuf*` ptr / `ibufsize` / `ibufhd` /
-`ibuftl` / `ibuflow` / `ibufhi`. See `docs/api/structures/iorec.md`.
+**Installed handler / vector:** (none) — direct table entry.
+
+**Helpers called:** none.
+
+**Headers / type definitions used:**
+- `bios/iorec.h:20-27` — `IOREC` (14-byte bare input ring descriptor).
+- `bios/serport.h:57-65` — `EXT_IOREC` (RS-232 record: input + output ring +
+  serial state).
+
+**System variables / globals read:**
+- `rs232iorecptr` (`bios/serport.c:75`) — pointer to the active RS-232
+  `EXT_IOREC` (device 0).
+- `ikbdiorec` (device 1), `midiiorec` (device 2) — static `IOREC`s.
+
+**System variables / globals written:** none.
+
+**Build configuration affecting this function:** none in the wrapper; the
+records exist per `CONF_WITH_IKBD_ACIA` / `CONF_WITH_MIDI_ACIA` / serial.
+
+---
+
+## Source extraction summary
+
+`Iorec` returns the address of the input-buffer descriptor for a serial
+device so a program can inspect or drive the ring directly. `devno == 0`
+returns `rs232iorecptr` (an `EXT_IOREC *`); `devno == 1` returns
+`&ikbdiorec`; `devno == 2` returns `&midiiorec`; any other value returns
+`-1` (`bios/xbios.c:338-347`).
+
+The IKBD and MIDI records are **bare `IOREC`** structures (14 bytes,
+input-only). The RS-232 record is an `EXT_IOREC` (an input `IOREC` **plus** an
+output `IOREC` plus baud/flow/UCR state), because RS-232 needs a TX ring and
+can be remapped by `Bconmap`. That is why device 0 is reached through a
+*pointer variable* (`rs232iorecptr`) while devices 1/2 return fixed struct
+addresses.
+
+Programs use the returned pointer to poll `head != tail` for "data available"
+without going through `Bconin`, or to replace `buf`/`size` with a larger
+ring.
+
+---
 
 ## Trap interface
 
-| | |
-|--|--|
-| Trap | 14 (XBIOS) |
-| Function ID | `0x0E` |
-| WORD args | 1 |
-| Stack frame | `+2: devno (W)`, `+0: 0x000E` |
-| Vector | `xbios_vecs[14]` |
+- **Trap number:** 14 (XBIOS)
+- **Function ID:** 0x0E
+- **Stack frame on entry (m68k):** `Iorec(devno)` = `xbios_l_w(14, a)`
+  (`include/xbiosbind.h:32`):
+  ```
+  +2: devno (word)
+   0: function_id (word) = 0x000E
+  ```
+- **Total parameter bytes:** 4 (W).
+- **Native (AArch64) ABI:** ID `0x0E` in `x8`; arg in `x0`; result is a
+  **pointer** in the full 64-bit `x0` on success, or the LONG `-1`
+  (sign-extended) on error.
+
+  | m68k stack | AArch64 reg | Name    | Type / size |
+  |------------|-------------|---------|-------------|
+  | +2         | `x0`        | `devno` | `WORD` (16) |
+
+---
 
 ## Inputs
 
-| Pos | Name    | Type | Range / meaning             |
-|-----|---------|------|-----------------------------|
-| 0   | `devno` | WORD | 0=RS-232, 1=IKBD, 2=MIDI    |
+| Position | Name    | Type   | Size | Source location     | Notes |
+|----------|---------|--------|------|---------------------|-------|
+| arg0     | `devno` | `WORD` | 2    | `bios/xbios.c:338`  | 0=RS-232, 1=IKBD, 2=MIDI; else `-1` |
+
+---
 
 ## Outputs
 
-| Reg | D0 |
-| --- | --- |
-| Type | LONG (`IOREC *`) or `-1` |
+### Return value
 
-Pointer to the device's IOREC structure — programs read/write the
-ring buffer head/tail, watermark thresholds, and handshake flags
-through this pointer.
+- **Register:** D0 / `x0`
+- **Type:** LONG (pointer, or `-1`)
+- **Encoding:** `EXT_IOREC *` (device 0) / `IOREC *` (devices 1,2) / `-1`.
+- **Source location:** `bios/xbios.c:340,342,344,346`.
 
-## Errors
+### Side effects on global state / hardware
 
-`-1` if `devno` is outside 0..2.
+None.
 
-## Edge cases
+---
 
-### 1. RS-232 returns a pointer-pointer
+## Error conditions
 
-Note `rs232iorecptr` (pointer indirection) for device 0, while
-IKBD and MIDI return the address of a static struct directly.
-Reason: RS-232 supports `Bconmap` device remapping (Falcon's
-multiple serial ports), so the active record can change at run
-time. NewTOS without Bconmap can use a fixed pointer.
+| Condition | Source location | Returned value |
+|-----------|-----------------|----------------|
+| `devno` not in {0,1,2} | `bios/xbios.c:345-346` | `-1` |
 
-### 2. Devices 3..7 not supported
+---
 
-Atari Falcon TOS extends `Iorec` to devices 3..7 (modem 1, modem
-2, serial 1, serial 2). EmuTOS clamps to 2 and returns `-1` for
-higher numbers — Compendium describes the Falcon extension that
-EmuTOS does not implement. Cross-reference, not a discrepancy.
+## Verification criteria
 
-### 3. Direct buffer manipulation
+- **IKBD record:** `Iorec(1)` returns a non-`-1` pointer to a 14-byte `IOREC`
+  whose `size` is 256 (the IKBD buffer).
+- **MIDI record:** `Iorec(2)` returns a pointer to a 14-byte `IOREC` whose
+  `size` is 128.
+- **RS-232 record:** `Iorec(0)` returns `rs232iorecptr` (an `EXT_IOREC` with
+  both `in` and `out` rings).
+- **Out of range:** `Iorec(3)` returns `-1`.
 
-Programs commonly read `ioreq->ibuftl` to detect "is data
-available" without going through `Bconin`. Writing to head/tail
-risks racing with the ISR — Atari convention is to disable the
-ACIA interrupt around updates.
+---
 
-### 4. Default ringbuffer sizes
+## Edge cases discovered in source
 
-IKBD: 128 bytes. MIDI: 128 bytes. RS-232: 256 bytes (varies by TOS
-version). EmuTOS uses the same sizes; programs that re-allocate
-to a larger buffer write a new `ibuf` pointer + `ibufsize` and
-update head/tail to 0.
+1. **Device 0 is a pointer-to-pointer indirection.** `Iorec(0)` returns
+   `rs232iorecptr` (`bios/xbios.c:340`), which `Bconmap` can retarget; devices
+   1/2 return fixed struct addresses. So the RS-232 record can change at run
+   time, the IKBD/MIDI ones cannot.
+2. **Device 0 record is bigger and different-shaped.** `Iorec(0)` →
+   `EXT_IOREC` (`in`/`out` rings + serial state); `Iorec(1/2)` → bare
+   `IOREC` (input only). A program must not treat a device-0 pointer as a
+   14-byte `IOREC`. (Old spec described all three as one shape — corrected,
+   D-043.)
+3. **Devices 3..7 are unsupported.** Falcon TOS extends `Iorec` to more
+   serial ports; EmuTOS clamps to 2 and returns `-1` above that — a
+   cross-reference, not a discrepancy.
+4. **Buffer sizes: IKBD 256, MIDI 128.** (`bios/aciavecs.S`.) The old spec
+   said IKBD 128 — corrected (D-043).
+
+---
 
 ## Dependencies
 
-- `rs232iorecptr` (`bios/serport.c`).
-- `ikbdiorec`, `midiiorec` (`bios/ikbd.c`, `bios/midi.c`).
-- `IOREC` struct (`docs/api/structures/iorec.md`).
+### Requires (must be initialized / functional)
 
-Used by: terminal programs, custom keyboard handlers, MIDI
-applications.
+- `rs232iorecptr`, `ikbdiorec`, `midiiorec` initialised at boot.
+
+### Used by
+
+- Terminal programs, custom keyboard handlers, MIDI applications.
+
+---
+
+## Related data structures
+
+- `docs/api/xbios/_state.md §3` — `IOREC` (14 bytes) + `EXT_IOREC` (24 bytes)
+  layouts.
+
+---
 
 ## Cross-references
 
-- **Compendium:** "Iorec" — Falcon devnos 3..7 documented.
-- **Profibuch:** "Iorec (0x0E)" — agrees with EmuTOS scope.
-- `docs/api/structures/iorec.md`
+### Atari Compendium
 
-## Configuration
+- Not present in `references/`. Cross-check deferred. (Documents devices 0..2
+  and the Falcon 3..7 extension.)
 
-- `CONF_WITH_IKBD_ACIA`, `CONF_WITH_MIDI_ACIA`,
-  `CONF_WITH_SERIAL_*`. NewTOS profile: synthesised IORECs, no
-  real ACIAs.
+### Atari Profibuch
+
+- Not present in `references/`. Cross-check deferred.
+
+---
+
+## Configuration / version notes
+
+- `CONF_WITH_IKBD_ACIA` / `CONF_WITH_MIDI_ACIA` / serial configs decide which
+  records are live; on NewTOS the records would be synthesised.
+
+---
 
 ## NewTOS implementation notes
 
 (Empty during Phase 00.)
 
-PHASE-07: NewTOS exposes synthetic IOREC structs whose ringbuffers
-are filled by the USB-HID translator (IKBD record) and the UART
-driver (RS-232 record). MIDI record present but always empty
-(no underlying device).
+PHASE-07 (if adopted): expose synthetic `IOREC`s — the IKBD ring filled by
+the USB-HID translator, the RS-232 `EXT_IOREC` by the UART driver, MIDI
+present but empty. Keep the 14-byte `IOREC` / device-0 `EXT_IOREC`
+distinction.

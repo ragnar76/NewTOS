@@ -1,116 +1,183 @@
-# `Kbdvbase` — XBIOS 0x22
+# `Kbdvbase` (XBIOS 0x22)
 
-> Phase 00 spec. Source: EmuTOS @ `1a7484ab` —
-> `bios/xbios.c:716` (`kbdvbase`).
+> Phase 00 spec (full-contract template). Source: EmuTOS @ `1a7484ab`.
+> Verified against `bios/xbios.c:716` (`kbdvbase`).
+
+> **Contract vs. reference** — see [`docs/COMPATIBILITY.md`](../../COMPATIBILITY.md).
+> Contract: trap ID/ABI, the full-64-bit pointer result, the 36-byte
+> `kbdvecs` layout programs hook. Reference: the ACIA ISRs the vectors
+> point at.
 
 ## EmuTOS source
 
-```c
-static LONG kbdvbase(void) { return (LONG)&kbdvecs; }
-```
+**Primary location:** `bios/xbios.c:716` — `static LONG kbdvbase(void)`; a
+one-liner returning `(LONG)&kbdvecs`. Slot 0x22 of `xbios_vecs[]`
+(`bios/xbios.c:1337`).
 
-`kbdvecs` is a `struct kbdvecs` global (`bios/ikbd.c`) populated
-at boot with default IKBD-event handlers.
+**Installed handler / vector:** (none) — direct table entry. Returns the
+address of the vector table other calls (`Initmous`) install into.
+
+**Helpers called:** none.
+
+**Headers / type definitions used:**
+- `include/biosdefs.h:105` — `struct kbdvecs` (36 bytes, 9 pointers).
+
+**System variables / globals read:**
+- `kbdvecs` (its address is returned).
+
+**System variables / globals written:** none.
+
+**Build configuration affecting this function:** none.
+
+---
+
+## Source extraction summary
+
+`Kbdvbase` returns a pointer to the global `kbdvecs` structure, a table of 9
+function pointers that dispatch IKBD/MIDI ACIA events (MIDI input, IKBD/MIDI
+errors, IKBD status/mouse/clock/joystick packets, and the two top-level
+ACIA ISRs). Applications install their own handlers by writing a field
+directly — there is no previous-vector return, so a program that wants to
+chain must read-save-restore the field itself.
+
+The struct lives in BIOS BSS and is process-lifetime stable; the pointer
+never changes. `Initmous` (0x00) writes `kbdvecs.mousevec`; AES hooks it to
+turn IKBD mouse packets into GEM events; MIDI sequencers hook `midivec`.
+
+---
 
 ## Trap interface
 
-| | |
-|--|--|
-| Trap | 14 (XBIOS) |
-| Function ID | `0x22` |
-| WORD args | 0 |
-| Stack frame | `+0: 0x0022` |
-| Vector | `xbios_vecs[34]` |
+- **Trap number:** 14 (XBIOS)
+- **Function ID:** 0x22
+- **Stack frame on entry (m68k):**
+  ```
+   0: function_id (word) = 0x0022
+  ```
+  No parameters (`Kbdvbase()` = `xbios_l_v(34)`, `include/xbiosbind.h:52`).
+- **Total parameter bytes:** 2.
+- **Native (AArch64) ABI:** ID `0x22` in `x8`; no argument registers; result
+  is a **pointer** in the full 64-bit `x0`.
+
+  | m68k stack | AArch64 reg | Name | Type / size |
+  |------------|-------------|------|-------------|
+  | (none)     | —           | —    | —           |
+
+---
 
 ## Inputs
 
 None.
 
+---
+
 ## Outputs
 
-| Reg | D0 |
-| --- | --- |
-| Type | LONG (`struct kbdvecs *`) |
+### Return value
 
-Pointer to the global `kbdvecs` struct.
+- **Register:** D0 / `x0`
+- **Type:** pointer (`struct kbdvecs *`)
+- **Encoding:** `&kbdvecs`.
+- **Source location:** `bios/xbios.c:718`.
 
-## `struct kbdvecs` (`include/biosdefs.h:105`)
+### `struct kbdvecs` (`include/biosdefs.h:105`) — 36 bytes
 
-| Offset | Field        | Description                              |
-|-------:|--------------|------------------------------------------|
-| 0x00   | `midivec`    | MIDI input handler                        |
-| 0x04   | `vkbderr`    | IKBD error handler                        |
-| 0x08   | `vmiderr`    | MIDI error handler                        |
-| 0x0C   | `statvec`    | IKBD status packet handler                |
-| 0x10   | `mousevec`   | IKBD mouse-packet handler (`evnt_mouse`)  |
-| 0x14   | `clockvec`   | IKBD clock-packet handler                 |
-| 0x18   | `joyvec`     | IKBD joystick-packet handler              |
-| 0x1C   | `midisys`    | top-level MIDI ISR                        |
-| 0x20   | `ikbdsys`    | top-level IKBD ISR                        |
+| Offset | Field      | Purpose |
+|-------:|------------|---------|
+| 0x00   | `midivec`  | MIDI input byte |
+| 0x04   | `vkbderr`  | IKBD ACIA overrun/error |
+| 0x08   | `vmiderr`  | MIDI ACIA overrun/error |
+| 0x0C   | `statvec`  | IKBD status packet (0xF6) |
+| 0x10   | `mousevec` | IKBD mouse packet (0xF8..0xFB) |
+| 0x14   | `clockvec` | IKBD clock packet (0xFC) |
+| 0x18   | `joyvec`   | IKBD joystick packet (0xFD..0xFF) |
+| 0x1C   | `midisys`  | top-level MIDI ACIA ISR |
+| 0x20   | `ikbdsys`  | top-level IKBD ACIA ISR |
 
-All fields are `PFVOID` (function pointers, 4 bytes on m68k).
-Total size 36 bytes.
+All fields `PFVOID` (4 bytes on m68k).
 
-## Errors
+### Side effects on global state / hardware
 
 None.
 
-## Edge cases
+---
 
-### 1. Direct hook installation
+## Error conditions
 
-Programs install their own handlers by overwriting the relevant
-`kbdvecs` field. Example: AES installs `mousevec` to translate
-IKBD mouse packets into AES mouse events. The pointer is **not**
-returned previous-vector style; programs must read the field, save
-it, and chain manually.
+| Condition | Source location | Returned value |
+|-----------|-----------------|----------------|
+| (no error return) | — | — |
 
-### 2. ISR context
+---
 
-The handlers run from interrupt context (IPL 6 for ACIA RX). They
-must save/restore registers per Atari ISR convention; calls into
-GEMDOS / line-A from these handlers are unsafe.
+## Verification criteria
 
-### 3. Pointer remains valid forever
+- **Stable pointer:** two `Kbdvbase()` calls return the same address.
+- **Hookable:** writing `((struct kbdvecs *)Kbdvbase())->mousevec = h` makes
+  the mouse ISR dispatch through `h` (as `Initmous` also does).
+- **36-byte layout:** offset `0x10` is `mousevec`, `0x1C`/`0x20` are the
+  `midisys`/`ikbdsys` ISRs.
 
-`kbdvecs` lives in BIOS BSS — not subject to GEMDOS memory
-management. The pointer returned is process-lifetime stable.
+---
 
-### 4. NULL handlers
+## Edge cases discovered in source
 
-Initially populated with default no-op handlers. Setting a field
-to `NULL` causes the dispatcher to call address 0 → crash.
-Programs uninstalling must restore the saved-original pointer.
+1. **No previous-vector return.** Installing a handler requires reading and
+   saving the field first; the API does not hand back the old pointer.
+2. **`NULL` field crashes the dispatcher.** The ISR calls the field
+   unconditionally; a program uninstalling must restore the saved original,
+   not write `NULL`.
+3. **Private state adjacent to the table.** The IKBD packet state machine
+   keeps `ikbdstate`/`kbdlength` near the table in `bios/aciavecs.S`; those
+   are **not** part of the 36-byte contract returned to applications and need
+   not be exposed by NewTOS.
 
-### 5. NewTOS without IKBD chip
-
-The `kbdvecs` struct is preserved as ABI; the entries point at
-NewTOS-internal stubs that translate USB-HID events into the
-expected IKBD packet format and call the user-installed handlers.
+---
 
 ## Dependencies
 
-- `kbdvecs` global (BIOS BSS).
-- IKBD ACIA interrupt handlers in `bios/ikbd.c`.
+### Requires (must be initialized / functional)
 
-Used by: AES (mouse vector hook), MIDI sequencer programs (midivec
-hook), TSRs that intercept keypresses.
+- `kbdvecs` populated at boot with default handlers.
+
+### Used by
+
+- `Initmous` (writes `mousevec`), AES (mouse hook), MIDI apps (`midivec`),
+  IKBD-packet TSRs.
+
+---
+
+## Related data structures
+
+- `docs/api/xbios/_state.md §1` — `kbdvecs`.
+- `docs/api/xbios/00-initmous.md` — writes `mousevec`.
+
+---
 
 ## Cross-references
 
-- **Compendium:** "Kbdvbase" — agrees on struct layout.
-- **Profibuch:** "Kbdvbase (0x22)" — agrees.
-- `docs/api/structures/iorec.md` — IKBD ringbuffer.
+### Atari Compendium
 
-## Configuration
+- Not present in `references/`. Cross-check deferred. (Documents the 9-vector
+  `kbdvecs` layout.)
 
-None.
+### Atari Profibuch
+
+- Not present in `references/`. Cross-check deferred.
+
+---
+
+## Configuration / version notes
+
+- The struct is 36 bytes across EmuTOS builds; handler targets are ACIA ISRs
+  on Atari, translator stubs on NewTOS.
+
+---
 
 ## NewTOS implementation notes
 
 (Empty during Phase 00.)
 
-PHASE-07: NewTOS keeps the exact 36-byte struct layout for ABI.
-USB-HID events feed into the IKBD-format packet generator
-(`bios/ikbd.c` analogues) which then calls through `kbdvecs`
-fields. Programs that hook `mousevec` work unchanged.
+PHASE-07: NewTOS keeps the 36-byte layout; the USB-HID translator generates
+IKBD-format packets and dispatches through these vectors, so programs that
+hook `mousevec`/`midivec`/`joyvec` work unchanged.

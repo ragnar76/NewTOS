@@ -1,125 +1,190 @@
-# `Blitmode` — XBIOS 0x40
+# `Blitmode` (XBIOS 0x40)
 
-> Phase 00 spec. Source: EmuTOS @ `1a7484ab` —
-> `bios/xbios.c:886` (`blitmode`).
+> Phase 00 spec (full-contract template). Source: EmuTOS @ `1a7484ab`.
+> Verified against `bios/xbios.c:886` (`blitmode`).
+
+> **Contract vs. reference** — see [`docs/COMPATIBILITY.md`](../../COMPATIBILITY.md).
+> Contract: trap ID/ABI, the status-word bit meanings, the `mode == -1`
+> query, the `0x0000` "no blitter" return. Reference: `has_blitter`,
+> `blitter_is_enabled`.
 
 ## EmuTOS source
 
-```c
-static WORD blitmode(WORD mode)
-{
-#if CONF_WITH_BLITTER
-    WORD status = 0x0000;
-    if (has_blitter) {
-        status = blitter_is_enabled ? 0x0003 : 0x0002;
-        if (mode != -1)  blitter_is_enabled = mode & 1;
-    }
-    return status;
-#else
-    return 0x0000;
-#endif
-}
-```
+**Primary location:** `bios/xbios.c:886` — `static WORD blitmode(WORD mode)`,
+slot 0x40 of `xbios_vecs[]` (`bios/xbios.c:1371`).
 
-`has_blitter` is detected at boot by probing the blitter MMIO
-register. `blitter_is_enabled` is a software flag consulted by the
-line-A and VDI bit-blit routines.
+**Installed handler / vector:** (none) — direct table entry.
+
+**Helpers called:** none.
+
+**Headers / type definitions used:**
+- `bios/processor.h` / `bios/machine.c` — `has_blitter`, `blitter_is_enabled`.
+
+**System variables / globals read:**
+- `has_blitter` (`bios/machine.c:300`), `blitter_is_enabled`
+  (`bios/machine.c:301`).
+
+**System variables / globals written:**
+- `blitter_is_enabled = mode & 1` when `mode != -1` and a blitter is present.
+
+**Build configuration affecting this function:**
+- `CONF_WITH_BLITTER` — without it, `blitmode` always returns `0x0000`.
+
+---
+
+## Source extraction summary
+
+`Blitmode` gets or sets whether the Atari BLiTTER chip is used and reports its
+presence/state. With `CONF_WITH_BLITTER`: if `has_blitter`, the status word is
+`0x0003` when the blitter is enabled, `0x0002` when present-but-disabled; and
+if `mode != -1` it sets `blitter_is_enabled = mode & 1` (only the LSB
+matters). It always returns the (pre-update? — see below) status. Without a
+blitter, or with `CONF_WITH_BLITTER` off, it returns `0x0000`.
+
+Status-word bits: **bit 0** = blitter currently on/off, **bit 1** = blitter
+hardware present. So `0x0000` = absent, `0x0002` = present+off, `0x0003` =
+present+on. `mode == -1` is the pure query (no state change).
+
+On NewTOS there is no Atari BLiTTER, so `Blitmode` returns `0x0000` — programs
+that probe for a blitter correctly see "absent" and fall back to CPU blits.
+
+---
 
 ## Trap interface
 
-| | |
-|--|--|
-| Trap | 14 (XBIOS) |
-| Function ID | `0x40` |
-| WORD args | 1 |
-| Stack frame | `+2: mode (W)`, `+0: 0x0040` |
-| Vector | `xbios_vecs[64]` |
+- **Trap number:** 14 (XBIOS)
+- **Function ID:** 0x40
+- **Stack frame on entry (m68k):** `Blitmode(mode)` = `xbios_w_w(64, a)`
+  (`include/xbiosbind.h:58`):
+  ```
+  +2: mode (word)
+   0: function_id (word) = 0x0040
+  ```
+- **Total parameter bytes:** 4 (W).
+- **Native (AArch64) ABI:** ID `0x40` in `x8`; arg in `x0`; the WORD status
+  **sign-extended** into `x0`.
+
+  | m68k stack | AArch64 reg | Name   | Type / size |
+  |------------|-------------|--------|-------------|
+  | +2         | `x0`        | `mode` | `WORD` (16) — `-1` query; else `& 1` sets enable |
+
+---
 
 ## Inputs
 
-| Pos | Name   | Type | Range / meaning                                  |
-|-----|--------|------|--------------------------------------------------|
-| 0   | `mode` | WORD | `-1` query / `0` software / `1` hardware blitter  |
+| Position | Name   | Type   | Size | Source location    | Notes |
+|----------|--------|--------|------|--------------------|-------|
+| arg0     | `mode` | `WORD` | 2    | `bios/xbios.c:895` | `-1` = query only; else bit 0 sets `blitter_is_enabled` |
+
+---
 
 ## Outputs
 
-| Reg | D0 |
-| --- | --- |
-| Type | LONG (zero-extended WORD) |
+### Return value
 
-Bit-encoded status of the **previous** state:
+- **Register:** D0 / `x0`
+- **Type:** WORD (status)
+- **Encoding:**
 
-| Bit | Meaning                          |
-|----:|----------------------------------|
-| 0   | hardware blitter currently ON     |
-| 1   | hardware blitter is **present**   |
+  | Status | Meaning |
+  |-------:|---------|
+  | 0x0000 | no blitter (absent, or `CONF_WITH_BLITTER` off) |
+  | 0x0002 | blitter present, disabled |
+  | 0x0003 | blitter present, enabled |
 
-| Hardware | `blitter_is_enabled` | Return |
-|----------|----------------------|-------:|
-| absent   | (n/a)                | `0x0000` |
-| present  | 0 (software)         | `0x0002` |
-| present  | 1 (hardware)         | `0x0003` |
+  bit 0 = enabled, bit 1 = present.
+- **Source location:** `bios/xbios.c:889-899` (`CONF_WITH_BLITTER`) / `:901`
+  (`#else`).
 
-## Errors
+### Side effects on global state
 
-None.
+- `blitter_is_enabled = mode & 1` when `mode != -1` and `has_blitter`.
 
-## Edge cases
+### Side effects on hardware
 
-### 1. NewTOS profile
+- None on the NewTOS profile (no blitter). On Atari, enabling routes VDI blits
+  through the BLiTTER.
 
-`CONF_WITH_BLITTER` disabled — return is always `0x0000`.
-Programs detecting "no blitter" via this XBIOS work correctly.
-Programs **assuming** the blitter exists will fall through to
-software bit-blit (line-A routines).
+---
 
-### 2. `mode = -1` is query
+## Error conditions
 
-Standard query idiom. Returns status without changing
-`blitter_is_enabled`.
+| Condition | Source location | Returned value |
+|-----------|-----------------|----------------|
+| (no error return) | — | — |
 
-### 3. Mask `mode & 1`
+`Blitmode` cannot fail; "no blitter" is reported as `0x0000`, not an error.
 
-Only the low bit of `mode` is consumed for the new state. Passing
-`mode = 2` therefore *disables* the hardware blitter (low bit is
-0). Programs should pass `0` or `1` only.
+---
 
-### 4. Old VDI / line-A path
+## Verification criteria
 
-When the blitter is enabled, line-A bit-blit calls (e.g. `bitblt`)
-program the blitter MMIO and start it; otherwise they execute the
-m68k software equivalent. The runtime cost difference is large
-(20× faster with blitter on STe). NewTOS line-A always runs
-software (no blitter).
+- **No-blitter profile:** `Blitmode(-1)` returns `0x0000` (bit 1 clear =
+  absent), and `Blitmode(1)` also returns `0x0000` (no state to change).
+- **Query does not change state:** on a blitter machine, `Blitmode(-1)`
+  returns the status without altering `blitter_is_enabled`.
+- **Enable/disable:** on a blitter machine, `Blitmode(1)` enables (status bit
+  0 set), `Blitmode(0)` disables; only the LSB of `mode` matters.
 
-### 5. Falcon Blitmode extension
+---
 
-Falcon TOS adds bits 2..3 (Falcon-specific blitter modes). EmuTOS
-does not implement; bits remain 0. Cross-reference, not
-discrepancy.
+## Edge cases discovered in source
+
+1. **`0x0000` means "absent", not "unimplemented".** This is the
+   `CONF_WITH_BLITTER`-off / `!has_blitter` return — a real status value with
+   bit 1 clear, distinct from the `xbios_unimpl` function-number path. A
+   program checking bit 1 sees "no blitter" and falls back correctly.
+2. **Only the LSB of `mode` sets the enable.** `blitter_is_enabled = mode & 1`
+   (`bios/xbios.c:897`); higher bits are ignored.
+3. **`mode == -1` is the query.** No state change (`:895`).
+
+---
 
 ## Dependencies
 
-- `has_blitter`, `blitter_is_enabled` (`bios/blitter.c`).
+### Requires (must be initialized / functional)
 
-Used by: GEM (line-A bit-blits), demos that explicitly want
-software blits for special effects.
+- `has_blitter`/`blitter_is_enabled` (boot detection) — trivially "no blitter"
+  on NewTOS.
+
+### Used by
+
+- VDI (routes blits through the blitter when enabled), performance-tuning
+  tools, blitter-presence probes.
+
+---
+
+## Related data structures
+
+- `docs/api/xbios/_state.md` — (no dedicated blitter section; state is the two
+  `machine.c` globals).
+
+---
 
 ## Cross-references
 
-- **Compendium:** "Blitmode" — agrees.
-- **Profibuch:** "Blitmode (0x40)" — agrees.
+### Atari Compendium
 
-## Configuration
+- Not present in `references/`. Cross-check deferred. (Documents the status
+  bits and the `-1` query.)
 
-- `CONF_WITH_BLITTER`. NewTOS: not present.
+### Atari Profibuch
+
+- Not present in `references/`. Cross-check deferred.
+
+---
+
+## Configuration / version notes
+
+- `CONF_WITH_BLITTER` off → always `0x0000`. NewTOS profile: no Atari blitter,
+  so `0x0000`.
+
+---
 
 ## NewTOS implementation notes
 
 (Empty during Phase 00.)
 
-PHASE-08: NewTOS may eventually add a hardware accelerator (V3D /
-DMA-blitter on the BCM2711) and re-expose it through `Blitmode`.
-For now: hard `0x0000`. Programs that ignore `Blitmode` and just
-call line-A `bitblt` get software speed — about 50× faster than ST
-hardware on the Pi 4 anyway.
+PHASE-07/08: `Blitmode` returns `0x0000` (no blitter); NewTOS uses CPU /
+VideoCore blits. If a future NewTOS "accelerated blit" path is exposed it
+would be a separate extension, not this bit.
