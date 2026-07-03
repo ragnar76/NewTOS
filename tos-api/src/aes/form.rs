@@ -234,9 +234,15 @@ fn do_alert(defbut: i16, s: &[u8], modal: bool) -> i16 {
 
     // ── draw + modal loop ──
     let tp = tree.as_ptr();
+    // Hide the cursor while drawing the alert so its save-under does not
+    // capture (or get overdrawn by) alert pixels; show it afterwards with a
+    // fresh backing. Otherwise the cursor would smear the alert as it moves,
+    // and closing the box would leave a stale square behind.
+    crate::vdi::cursor_hide(backend);
     // SAFETY: locally-built valid tree; backend is the live screen.
     unsafe { object::draw_root(tp, 16, backend) };
     draw_alert_icon(icon, icon_x, icon_y, backend);
+    crate::vdi::cursor_show(backend);
 
     if !modal {
         return defbut.max(1); // draw-only (showcase): no waiting
@@ -247,9 +253,11 @@ fn do_alert(defbut: i16, s: &[u8], modal: bool) -> i16 {
     if chosen >= 1 {
         let idx = first_btn + (chosen as usize - 1);
         tree[idx].ob_state |= SELECTED;
+        crate::vdi::cursor_hide(backend);
         // SAFETY: valid tree.
         unsafe { object::draw_root(tp, 16, backend) };
         draw_alert_icon(icon, icon_x, icon_y, backend);
+        crate::vdi::cursor_show(backend);
     }
     chosen
 }

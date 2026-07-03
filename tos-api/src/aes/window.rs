@@ -535,7 +535,10 @@ fn draw_frame(w: &Window, istop: bool, backend: &dyn RasterBackend) {
         top += GAD - 1;
     }
 
-    // Work area (white client region).
+    // Work area (white client region). Its 1 px black frame is drawn by the
+    // content owner *after* the content (the desktop's `draw_dir_listing`),
+    // because the app clears the work area on every content redraw and would
+    // otherwise overdraw a border painted here.
     let work = calc(WC_WORK, kind, b);
     backend.fill_rect(work.x, work.y, work.w, work.h, WHITE, clip);
 
@@ -545,6 +548,10 @@ fn draw_frame(w: &Window, istop: bool, backend: &dyn RasterBackend) {
     // Bottom scroll bar.
     if kind & (HGADGETS | SIZER) != 0 {
         let row_y = b.y + b.h - GAD;
+        // Fill the whole bottom band first: with a sizer but no horizontal
+        // scrollbar the band would otherwise be left unpainted, showing the
+        // desktop through the bottom of the window.
+        backend.fill_rect(b.x + 1, row_y, b.w - 2, GAD - 1, GRAY_LT, clip);
         let mut sx = b.x + 1;
         let mut send = b.x + b.w - 1;
         if kind & (VGADGETS | SIZER) != 0 {

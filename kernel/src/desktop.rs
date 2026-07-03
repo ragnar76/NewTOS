@@ -35,6 +35,7 @@ const FL3DACT: u16 = 0x0600;
 const FL3DBAK: u16 = 0x0400;
 
 const WHITE: u8 = 0;
+const BLACK: u8 = 1;
 
 // ── Desktop configuration (g_patcol / newdesk.inf) ──────────────────────
 //
@@ -435,6 +436,12 @@ fn redraw_screen() {
     let Some(backend) = tos_api::host::host().and_then(|h| h.raster()) else {
         return;
     };
+    // Erase the cursor and invalidate its save-under BEFORE repainting: a
+    // menu/alert drawn over a shown cursor left the save-under holding stale
+    // pixels; without this hide, the next mouse move would restore that stale
+    // square onto the fresh desktop (the "hole" where the cursor was). The
+    // matching `cursor_show_reset` below re-saves a fresh backing + redraws.
+    tos_api::vdi::cursor_hide(backend);
     paint_desktop_bg(backend, ClipRect::full(backend.width(), backend.height()));
     draw_menu_bar();
     redraw_all_windows();
@@ -2073,6 +2080,14 @@ fn draw_dir_listing(handle: i16, letter: u8, work: (i16, i16, i16, i16), scroll:
         build_dir_text(handle, work, &ents[..n], scroll);
     }
     objc_draw_work(work);
+    // 1 px black frame around the content, drawn last so neither the work-area
+    // clear above nor the content overdraws it — the clean edge that separates
+    // the white content from the surrounding scrollbar / gadget bands.
+    let (fx, fy, fw, fh) = work;
+    backend.fill_rect(fx, fy, fw, 1, BLACK, clip); // top
+    backend.fill_rect(fx, fy + fh - 1, fw, 1, BLACK, clip); // bottom
+    backend.fill_rect(fx, fy, 1, fh, BLACK, clip); // left
+    backend.fill_rect(fx + fw - 1, fy, 1, fh, BLACK, clip); // right
     // AES slider (per-mille): thumb size = visible/total, position along the
     // travel = scroll/max_scroll. Everything fits → full thumb at the top.
     let max_scroll = (total_rows - vis_rows).max(0);
@@ -2117,7 +2132,10 @@ fn build_dir_text(
     let (wx, wy, ww, wh) = work;
     let rows = (wh / 16).max(1) as usize;
     let start = scroll as usize; // first visible entry
-    let cols = (((ww - 16) / 8).clamp(1, 79)) as usize; // chars per row
+    // 8 px left margin + 16 px right margin: the extra right space keeps the
+    // right-aligned size clear of the vertical scrollbar (which sits just
+    // past the work area's right edge) instead of butting against it.
+    let cols = (((ww - 24) / 8).clamp(1, 79)) as usize; // chars per row
 
     // SAFETY: single-CPU desktop; the tree buffers are used only here.
     let obj = unsafe { &mut *DIRTREE.obj.get() };
