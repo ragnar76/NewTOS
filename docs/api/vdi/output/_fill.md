@@ -1,56 +1,294 @@
-# VDI area-fill primitives (Phase 00b D4)
+# VDI area-fill output primitives (Phase 00b D4)
 
-> Source: EmuTOS @ `1a7484ab` — `vdi/vdi_fill.c` (`vdi_v_fillarea`,
-> `vdi_vr_recfl`, `vdi_v_contourfill`). Calling convention:
-> [`../_dispatcher.md`](../_dispatcher.md). Fill attributes from the
-> [`Vwk`](../../structures/vwk.md) (set via the
-> [fill setters](../attributes/_fill.md)). No output, no error return.
+> Source: EmuTOS @ `1a7484ab` — `vdi/vdi_fill.c:617` (`vdi_v_fillarea`),
+> `:293` (`vdi_vr_recfl`), `:1084` (`vdi_v_contourfill`); polygon scan-fill
+> `:560` (`polygon`), `:948` (`contourfill`). Calling convention:
+> [`../_dispatcher.md`](../_dispatcher.md). Fill attribute state from the
+> [`Vwk`](../../structures/vwk.md), set via the
+> [fill setters](../attributes/_fill.md) and summarised in
+> [`../_state.md`](../_state.md). **No output array, no error return.**
+>
+> **Contract vs. reference** — see [`docs/COMPATIBILITY.md`](../../../COMPATIBILITY.md).
+> **Contract:** opcodes (9 / 114 / 103); the `PTSIN` vertex/coordinate
+> contracts (polygon vertex count in `CONTRL[1]`; rectangle in
+> `PTSIN[0..3]`; seed in `PTSIN[0..1]`); the `v_contourfill` boundary/seed
+> semantics via `INTIN[0]`; which fill attributes are consulted; the
+> perimeter rule; the "no output" shape. **Reference:** the scan-conversion
+> (`clc_flit`), the seed-fill queue (`contourfill`), `draw_rect`, and the
+> pattern/`patptr`/`patmsk` machinery — NewTOS fills its own way
+> (`tos-api/src/vdi/backend.rs`).
 
 | Op | Fn | Input | Fills |
 |----|----|-------|-------|
-| 9 | `v_fillarea`    | `CONTRL[1]` = vertex count; `PTSIN[]` = x,y pairs | the closed polygon |
-| 114 | `vr_recfl`    | `PTSIN[0..3]` = rectangle corners | the rectangle (no perimeter) |
-| 103 | `v_contourfill` | `PTSIN[0..1]` = seed x,y; `INTIN[0]` = boundary colour (or −1) | flood-fill region around the seed |
+| 9   | `v_fillarea`    | `CONTRL[1]` = vertex count; `PTSIN[]` = `(x,y)` pairs | the polygon (auto-closed) with the current interior style |
+| 114 | `vr_recfl`      | `PTSIN[0..3]` = two opposite corners | the rectangle, **no perimeter** |
+| 103 | `v_contourfill` | `PTSIN[0..1]` = seed `(x,y)`; `INTIN[0]` = boundary colour or −1 | the connected region around the seed |
 
-## `v_fillarea` (9)
+Native ABI (all): GEM trap `svc #2`, selector 115 in `x0`, `VDIPB*` in
+`x1`; opcode in `CONTRL[0]`, handle in `CONTRL[6]`. Dispatcher pre-loads
+`CONTRL[2]=CONTRL[4]=0` for all three (jump-table `{0,0}`).
 
-`polygon(vwk, PTSIN, CONTRL[1])` — scan-converts the closed polygon and
-fills each scanline span with the current interior style/pattern in
-`fill_color`, clipped to the `Vwk` clip rect. If `fill_per` is set, the
-perimeter is outlined with the line attributes afterwards.
-(Bezier-fill sub-case `CONTRL[5]==13` is out of bring-up scope.)
+All three read the fill attribute state: `fill_style` (0..4 `FIS_*`),
+`fill_index`, `fill_color`, `fill_per` (perimeter on/off), `ud_patrn[]`/
+`multifill` (user pattern), plus `wrt_mode` and the clip rect — see
+[`../attributes/_fill.md`](../attributes/_fill.md).
 
-## `vr_recfl` (114)
+---
 
-1. `arb_corner(PTSIN)` — normalise the two corners to (lower-left,
-   upper-right) order.
-2. Copy to a temp `Rect` (so clipping doesn't corrupt `PTSIN`, which a
-   perimeter pass — e.g. GDP bar — may still need).
-3. If `clip`, `clipbox()` the rect; quit if fully clipped.
-4. `draw_rect(vwk, &rect, fill_color)` with the current fill pattern.
+## `v_fillarea` — filled polygon (opcode 9)
 
-> `vr_recfl` itself draws **no** perimeter; the GDP `v_bar`
-> ([`_gdp.md`](_gdp.md) sub-op 1) adds the outline when `fill_per`.
+### EmuTOS source
 
-## `v_contourfill` (103)
+**Primary location:** `vdi/vdi_fill.c:617` — `vdi_v_fillarea(Vwk *vwk)`
+(reached via `jmptb1[8]`, `vdi_main.c:40`); does the work in
+`polygon(vwk, PTSIN, CONTRL[1])` (`:560`).
 
-Seed flood-fill (`contourfill`) starting at `PTSIN[0..1]`:
-- Reads the seed pixel's colour. The fill spreads to all connected
-  pixels matching the seed colour, stopping at:
-  - `INTIN[0] >= 0`: pixels of that explicit **boundary colour**.
-  - `INTIN[0] < 0`: any pixel **not** equal to the seed colour
-    (fill-while-same).
-- Fills with the current interior style in `fill_color`, clipped to the
-  `Vwk` clip rect. `SEEDABORT` (`no_abort`) is the abort hook.
+**Helpers called (reference):** `polygon()` (`vdi_fill.c:560`) →
+`clc_flit()` (`:434`, scan-conversion) and, for the perimeter,
+`polyline()` (`vdi_line.c:1101`).
 
-## NewTOS implementation notes
+**Globals read:** `CONTRL[1]` (vertex count), `PTSIN[]`, `fill_style`/
+`fill_index`/`fill_color`/`fill_per`/`ud_patrn`/`multifill`, `wrt_mode`,
+clip rect.
+
+**Build configuration:** `HAVE_BEZIER` = 0 (`vdi_defs.h:18`) — the
+`CONTRL[5]==13` filled-Bezier sub-case (`vdi_fill.c:622-625`) is compiled
+out; `v_fillarea` always scan-fills the polygon.
+
+### Behaviour
+
+`polygon()` scan-converts the polygon defined by the `CONTRL[1]` `PTSIN`
+vertices and fills each scanline span with the current interior style/
+pattern in `fill_color`. The polygon is **automatically closed** — the
+routine appends a copy of the first vertex after the last
+(`vdi_fill.c:594-598`) before scan-filling, so the caller does **not** need
+to repeat the first point (though doing so is harmless). It computes the
+polygon's y-extent, clips it to the clip rect's y-range when `clip` is set
+(`:584-592`), and returns early if the polygon is entirely outside the
+clip band.
+
+If `fill_per == TRUE`, after the fill the perimeter is stroked as a
+`count+1`-point `polyline` (closing edge included) in **`fill_color`** with
+`LN_MASK = 0xffff` (solid) — **not** the line attributes
+(`vdi_fill.c:606-608`). So the outline uses the fill colour, solid, width
+governed by the polyline path.
+
+### PTSIN vertex contract
+
+- `CONTRL[1]` = number of polygon vertices (= `(x,y)` pairs).
+- `PTSIN[2i]`, `PTSIN[2i+1]` = vertex `i`, raster coordinates.
+- **The polygon is auto-closed**: the last vertex connects back to the
+  first for both the fill and (when `fill_per`) the perimeter. A caller
+  that repeats the first vertex as the last gets a degenerate closing edge
+  of zero length, which is harmless.
+
+### Inputs / Outputs
+
+| Slot | Meaning |
+|------|---------|
+| `CONTRL[1]` | vertex count (clamped to `MAX_VERTICES` by the dispatcher) |
+| `PTSIN[2i]`, `PTSIN[2i+1]` | vertex `i` |
+
+**No output** (`{nptsout,nintout}={0,0}`), no error return.
+
+---
+
+## `vr_recfl` — filled rectangle (opcode 114)
+
+### EmuTOS source
+
+**Primary location:** `vdi/vdi_fill.c:293` — `vdi_vr_recfl(Vwk *vwk)`
+(reached via `jmptb2[14]`, `vdi_main.c:88`).
+
+**Helpers called (reference):** `arb_corner()` (`vdi_misc.c:30`, normalise
+corners), `clipbox()` (`vdi_fill.c:252`, clip to the rect), `draw_rect()`
+(the span fill).
+
+**Globals read:** `PTSIN[0..3]`, `fill_style`/`fill_index`/`fill_color`/
+`ud_patrn`/`multifill`, `wrt_mode`, clip rect. **`fill_per` is NOT read** —
+`vr_recfl` draws no perimeter.
+
+**Build configuration:** none.
+
+### Behaviour
+
+1. `arb_corner((Rect*)PTSIN)` normalises the two corner points to
+   (lower-left, upper-right) order **in place** in `PTSIN`
+   (`vdi_fill.c:300`).
+2. It copies the rect into a temporary so the clip step does not corrupt
+   the (now-normalised) `PTSIN` values, which a caller such as the GDP
+   `v_bar` still needs for the perimeter pass (`:303-306`).
+3. If `clip` is set, `clipbox()` intersects the rect with the clip
+   rectangle; if the result is empty, it returns doing nothing (`:308-310`).
+4. `draw_rect(vwk, &rect, fill_color)` fills the rectangle with the current
+   fill pattern (`:313`).
+
+`vr_recfl` itself draws **no** perimeter regardless of `fill_per`; the GDP
+`v_bar` ([`_gdp.md`](_gdp.md#bar-sub-op-1) sub-op 1) adds the outline when
+`fill_per` is set.
+
+### PTSIN coordinate contract
+
+- `PTSIN[0]`, `PTSIN[1]` = one corner `(x1,y1)`.
+- `PTSIN[2]`, `PTSIN[3]` = the opposite corner `(x2,y2)`.
+- Corners may be given in any order; `arb_corner` sorts them (and rewrites
+  `PTSIN` to the sorted order).
+
+**No output**, no error return.
+
+---
+
+## `v_contourfill` — seed / flood fill (opcode 103)
+
+### EmuTOS source
+
+**Primary location:** `vdi/vdi_fill.c:1084` — `vdi_v_contourfill(Vwk *vwk)`,
+which sets the abort hook and calls `contourfill()` (`:948`) (reached via
+`jmptb2[3]`, `vdi_main.c:77`).
+
+**Helpers called (reference):** `contourfill()` (`vdi_fill.c:948`) —
+scanline seed-fill with a queue in `vdishare`; `pixelread()` (read the
+seed pixel); `end_pts()`/`get_seed()` (span extension); `no_abort`
+(`SEEDABORT` hook).
+
+**Globals read:** `PTSIN[0..1]` (seed), `INTIN[0]` (boundary colour /
+mode), `numcolors`, `MAP_COL[]`, `fill_*` attributes, clip rect.
+
+**Build configuration:** `CONF_WITH_VDI_16BIT` (default 1) adds a
+true-colour branch that maps the search colour through the extended
+palette (`vdi_fill.c:979-985`) — reference; the index/boundary contract is
+unchanged for a palette screen.
+
+### Behaviour
+
+`contourfill()` flood-fills the connected region starting at the seed pixel
+`PTSIN[0..1]`, filling with the current interior style in `fill_color`,
+clipped to the `Vwk` clip rect. The `INTIN[0]` value chooses the stopping
+rule:
+
+- **`INTIN[0] < 0`** → *fill-while-same*: the search colour is read from the
+  seed pixel itself (`search_color = pixelread(xleft,oldy)`, `seed_type=1`,
+  `vdi_fill.c:971-973`); the fill spreads to all connected pixels equal to
+  the seed colour and stops where the colour differs.
+- **`INTIN[0] >= 0`** → *fill-to-boundary*: `INTIN[0]` is the boundary
+  colour index. It is **range-checked against `numcolors`** — if
+  `>= numcolors`, `contourfill` returns immediately (no fill,
+  `vdi_fill.c:976-977`) — then mapped to a PEL via `MAP_COL[]`
+  (`seed_type=0`); the fill spreads to pixels **not** equal to that
+  boundary colour and stops at boundary-coloured pixels.
+
+If the seed point lies **outside the clip rectangle**, `contourfill`
+returns immediately doing nothing (`vdi_fill.c:965-967`).
+
+### PTSIN / INTIN contract
+
+| Slot | Meaning |
+|------|---------|
+| `PTSIN[0]`, `PTSIN[1]` | seed `(x,y)`, raster coordinates |
+| `INTIN[0]` | boundary colour index (`>= 0`) or −1 (any negative) for fill-while-seed-colour |
+
+**No output**, no error return. (Both the out-of-clip seed and the
+`>= numcolors` boundary index are silent no-ops.)
+
+---
+
+## Verification criteria
+
+- **`v_fillarea` auto-close:** `CONTRL[1]=3` with three distinct vertices
+  fills the triangle **without** the caller repeating the first vertex; a
+  4th vertex equal to the first changes nothing.
+- **`v_fillarea` interior:** with `fill_style=FIS_SOLID`, the polygon is
+  solid `fill_color`; with `FIS_HOLLOW` and `fill_per=TRUE`, only the
+  solid `fill_color` outline is drawn (interior empty).
+- **`v_fillarea` perimeter colour:** with `fill_per=TRUE` the outline is
+  **solid `fill_color`**, not the line attributes — a program that set a
+  dashed line style still gets a solid fill-colour perimeter.
+- **`vr_recfl` corners any order:** `PTSIN=[x2,y2,x1,y1]` with `x2>x1`,
+  `y2>y1` fills the same rectangle as `[x1,y1,x2,y2]`.
+- **`vr_recfl` no perimeter:** with `fill_per=TRUE`, `vr_recfl` alone still
+  draws no outline (only `v_bar` adds it).
+- **`v_contourfill` fill-while-same:** `INTIN[0]=-1`, seed on a region of
+  colour C → fills the maximal connected run of colour C around the seed.
+- **`v_contourfill` fill-to-boundary:** `INTIN[0]=B` (`0 <= B < numcolors`)
+  → fills outward from the seed until it hits pixels of colour B.
+- **`v_contourfill` guards:** seed outside the clip rect → nothing drawn;
+  `INTIN[0] >= numcolors` → nothing drawn.
+
+## Edge cases discovered in source
+
+1. **`v_fillarea` closes the polygon itself.** `polygon()` appends
+   `PTSIN[0]` after the last vertex before scan-filling and stroking the
+   perimeter (`vdi_fill.c:594-598,608`). Auto-close is contract — the
+   caller need not repeat the first point (unlike `v_pline`, which is
+   open).
+2. **The fill perimeter is solid `fill_color`, not the line attributes.**
+   `polygon()` sets `LN_MASK = 0xffff` and calls `polyline(..., fill_color)`
+   (`vdi_fill.c:607-608`). A dashed or coloured *line* style has no effect
+   on a filled-area outline. Same for the closed GDP shapes — see
+   [`_gdp.md`](_gdp.md).
+3. **`vr_recfl` rewrites `PTSIN` in place** via `arb_corner`
+   (`vdi_fill.c:300`) — after the call, `PTSIN[0..3]` hold the *sorted*
+   (ll, ur) corners, not the caller's original order. The GDP `v_bar`
+   relies on this sorted form for its perimeter.
+4. **`v_contourfill` reads the seed colour when `INTIN[0] < 0`**, so the
+   fill mode depends on the pixel under the seed at call time — the same
+   call on a differently-coloured seed fills a different region.
+5. **`v_contourfill` two silent no-op guards:** seed outside the clip
+   rect, and a boundary index `>= numcolors` (`vdi_fill.c:965-977`). Both
+   return with nothing drawn and no error — VDI has no error channel.
+6. **`v_fillarea`/`v_contourfill` honour `multifill`** (the multi-plane
+   user pattern from `vsf_udpat`) only when `fill_style == FIS_USER`; the
+   dispatcher clears `multifill` for any other style before the call
+   (`vdi_main.c:146-147`).
+
+## Dependencies
+
+### Requires
+- An open workstation (dispatcher resolves `CONTRL[6]`).
+- The fill attribute state (`fill_style`/`fill_index`/`fill_color`/
+  `fill_per`/`ud_patrn`/`multifill`) and the active `patptr`/`patmsk`
+  (set by `st_fl_ptr` after `vsf_interior`/`vsf_style`) — see
+  [`../attributes/_fill.md`](../attributes/_fill.md).
+- `wrt_mode`, the clip rectangle, and (for `v_contourfill`) a
+  pixel-readback path plus `numcolors`/`MAP_COL[]`.
+
+### Used by
+- `v_fillarea`'s `polygon()` is the fill engine for the closed GDP shapes
+  (circle/ellipse/pieslice/ellpie/rfbox) and the `v_bar` fill via
+  `vr_recfl` — see [`_gdp.md`](_gdp.md).
+
+## Related data structures
+
+- [`../../structures/vwk.md`](../../structures/vwk.md) — the `fill_*` /
+  `ud_patrn` / `multifill` / clip fields.
+- [`../_state.md`](../_state.md) — fill attribute defaults and ranges.
+- Interior-style constants `FIS_HOLLOW`=0 … `FIS_USER`=4
+  (`vdi_defs.h:60-65`); see [`../attributes/_fill.md`](../attributes/_fill.md).
+
+## Cross-references
+
+### Atari Compendium / Profibuch
+- Not present in `references/` (no PDFs). Cross-check of the auto-close
+  rule, the solid-`fill_color` perimeter, the `v_contourfill` boundary/
+  seed semantics, and the `>= numcolors` guard is **deferred**.
+
+## Configuration / version notes
+
+- `HAVE_BEZIER` = 0 — the filled-Bezier sub-case of `v_fillarea` is
+  compiled out in the default build.
+- `CONF_WITH_VDI_16BIT` (default 1) adds a true-colour path to
+  `v_contourfill`'s colour mapping; the palette-index/boundary contract is
+  unaffected on a palette screen.
+
+## NewTOS implementation notes (Phase 12)
 
 - `polygon`/`draw_rect`/`contourfill` map to the framebuffer span-fill
   primitive, ANDing the active pattern (`patptr`/`patmsk`,
-  [`vsf_*`](../attributes/_fill.md)) per scanline and honouring
-  `wrt_mode`. Target = `vwk->device` (ADR-011).
+  [`vsf_*`](../attributes/_fill.md)) per scanline and honouring `wrt_mode`.
+  Target = `vwk->device` (ADR-011).
+- Keep the **auto-close** and **solid-`fill_color` perimeter** semantics —
+  they are observable contract, not raster details.
 - Flood-fill reads pixels back via the framebuffer pixel-read path
-  (palette index for the bring-up screen); needs a scanline seed stack —
-  size it to the device width to bound recursion.
-- `REV_MAP_COL`/`MAP_COL` translate between VDI colour index and PEL as
-  elsewhere.
+  (palette index for the bring-up screen); size the scanline seed stack to
+  the device width to bound recursion. `REV_MAP_COL`/`MAP_COL` translate
+  between VDI colour index and PEL as elsewhere.

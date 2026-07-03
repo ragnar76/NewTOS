@@ -1,85 +1,282 @@
 # VDI `v_gdp` — generalized drawing primitives (Phase 00b D4)
 
-> Source: EmuTOS @ `1a7484ab` — `vdi/vdi_gdp.c` (`vdi_v_gdp`,
-> `gdp_curve`, `gdp_rbox`), `vdi/vdi_text.c` (`gdp_justified`). Calling
-> convention: [`../_dispatcher.md`](../_dispatcher.md). Opcode 11; the
-> **sub-function is in `CONTRL[5]`**. Attributes from the
-> [`Vwk`](../../structures/vwk.md). No output, no error return.
+> Source: EmuTOS @ `1a7484ab` — `vdi/vdi_gdp.c:426` (`vdi_v_gdp`),
+> `:371` (`gdp_curve`), `:229` (`gdp_rbox`), `:178` (`clc_arc`);
+> `vdi/vdi_text.c:1177` (`gdp_justified`). Calling convention:
+> [`../_dispatcher.md`](../_dispatcher.md). Opcode **11**; the
+> **sub-function is in `CONTRL[5]`**. Attribute state from the
+> [`Vwk`](../../structures/vwk.md). **No output array, no error return.**
+>
+> **Contract vs. reference** — see [`docs/COMPATIBILITY.md`](../../../COMPATIBILITY.md).
+> **Contract:** opcode 11; the **GDP sub-opcode numbers** (1..10) in
+> `CONTRL[5]`; each sub-op's exact `PTSIN`/`INTIN` layout; the angle units
+> (tenths of a degree, CCW); which attributes each sub-op consults; the
+> full-circle/full-ellipse handling; the "no output" shape. **Reference:**
+> the sine table + `clc_pts`/`clc_arc` flattening, `clc_nsteps`, the
+> rounded-box corner geometry, and all pixel loops (which reduce to the
+> line/fill primitives) — NewTOS generates its own geometry.
 
-`v_gdp` is one dispatcher over `CONTRL[5]`:
+`v_gdp` (opcode 11) is a single dispatcher over `CONTRL[5]`
+(`vdi_gdp.c:433`). The dispatcher pre-loads `CONTRL[2]=CONTRL[4]=0`
+(`jmptb1[10]={0,0}`, `vdi_main.c:42`); the sub-handlers produce no output.
 
-| `CONTRL[5]` | Primitive | Input | Uses attrs |
-|-------------|-----------|-------|------------|
-| 1  | `v_bar`            | `PTSIN[0..3]` rect | fill + (perimeter if `fill_per`) |
-| 2  | `v_arc`            | `PTSIN[0..1]` centre, `PTSIN[6]` radius; `INTIN[0..1]` begin/end angle | line |
-| 3  | `v_pieslice`       | as arc | fill (perimeter in `fill_color` if `fill_per`) |
-| 4  | `v_circle`         | `PTSIN[0..1]` centre, `PTSIN[4]` radius | fill |
-| 5  | `v_ellipse`        | `PTSIN[0..1]` centre, `PTSIN[2]` xrad, `PTSIN[3]` yrad | fill |
-| 6  | `v_ellarc`         | centre + `PTSIN[2/3]` radii; `INTIN[0..1]` angles | line |
-| 7  | `v_ellpie`         | as ellarc | fill (perimeter in `fill_color` if `fill_per`) |
-| 8  | `v_rbox`           | `PTSIN[0..3]` rect | line (rounded corners) |
-| 9  | `v_rfbox`          | `PTSIN[0..3]` rect | fill (rounded corners) |
-| 10 | `v_justified`      | see below | text |
+| `CONTRL[5]` | Primitive | Input (raster coords) | Attribute state used | Shape |
+|:---:|-----------|-----------------------|----------------------|-------|
+| 1  | `v_bar`      | `PTSIN[0..3]` = two rect corners | fill; **line-independent solid `fill_color` perimeter if `fill_per`** | filled rectangle |
+| 2  | `v_arc`      | `PTSIN[0..1]` centre, **`PTSIN[6]`** radius; `INTIN[0]`/`INTIN[1]` begin/end angle | **line** (`line_color`/width/style) | open circular arc |
+| 3  | `v_pieslice` | as arc (`PTSIN[6]` radius) | fill; solid `fill_color` perimeter if `fill_per` | filled pie wedge |
+| 4  | `v_circle`   | `PTSIN[0..1]` centre, **`PTSIN[4]`** radius | fill; solid `fill_color` perimeter if `fill_per` | filled circle |
+| 5  | `v_ellipse`  | `PTSIN[0..1]` centre, **`PTSIN[2]`** xrad, **`PTSIN[3]`** yrad | fill; solid `fill_color` perimeter if `fill_per` | filled ellipse |
+| 6  | `v_ellarc`   | centre, `PTSIN[2]` xrad, `PTSIN[3]` yrad; `INTIN[0]`/`INTIN[1]` angles | **line** | open elliptical arc |
+| 7  | `v_ellpie`   | as ellarc (`PTSIN[2/3]` radii) | fill; solid `fill_color` perimeter if `fill_per` | filled elliptical pie |
+| 8  | `v_rbox`     | `PTSIN[0..3]` = two rect corners | **line** (ends forced `SQUARED`) | rounded-box outline |
+| 9  | `v_rfbox`    | `PTSIN[0..3]` = two rect corners | fill | filled rounded box |
+| 10 | `v_justified`| see [below](#justified-text-sub-op-10) | text | justified graphic text |
 
-(`CONTRL[5] == 13` = Bezier — out of bring-up scope.)
+Sub-op **13** (`v_bez`, Bezier) exists only `#if HAVE_BEZIER`, which is
+**hardcoded 0** (`vdi_defs.h:18`), so it is compiled out of every default
+build. Any `CONTRL[5]` value the `switch` does not handle is a silent
+no-op (`vdi_gdp.c:433-479`, no `default`).
 
-## Bar (1)
+Native ABI (all): GEM trap `svc #2`, selector 115 in `x0`, `VDIPB*` in
+`x1`; opcode 11 in `CONTRL[0]`, sub-op in `CONTRL[5]`, handle in
+`CONTRL[6]`.
 
-`vdi_vr_recfl(vwk)` fills the rectangle. Then, if `fill_per == TRUE`,
-the four edges are drawn as a 5-point `polyline` in `fill_color` with
-`LN_MASK = 0xffff` (solid). The edge coordinates are derived in place
-from `PTSIN[0..3]`.
+---
 
-## Curves: arc / pieslice / circle / ellipse / ellarc / ellpie (2–7)
+## Bar (sub-op 1)
 
-`gdp_curve`:
-- Centre = `PTSIN[0..1]`.
-- Radius: circle/arc/pieslice (≤4) use a single radius (`PTSIN[4]` for
-  circle, `PTSIN[6]` for arc/pieslice) and derive `yrad` via the
-  device aspect ratio (`mul_div(xrad, xsize, ysize)`); ellipse family
-  (5–7) uses `PTSIN[2]`=xrad, `PTSIN[3]`=yrad. Negative radii are
-  treated as positive.
-- Angles (`INTIN[0]`=begin, `INTIN[1]`=end) in **tenths of a degree**
-  (0..3600), CCW. Full shapes (circle 4, ellipse 5) force `0..TWOPI`.
-  `del_ang = end-begin` (+TWOPI if negative).
-- The arc is approximated by `clc_nsteps()` line segments (`clc_arc`).
-- Early-out if the bounding box is fully outside the clip rect.
-- **Pieslice/ellpie** close to the centre and fill; **arc/ellarc** are
-  open polylines; **circle/ellipse** are closed and filled.
-- Colour/attributes (EmuTOS `clc_arc`): **arc/ellarc** stroke via
-  `polyline`/`wideline` in **`line_color`** with the line width and style.
-  **circle/ellipse/pieslice/ellpie** go through `polygon()` — filled in
-  **`fill_color`**, and (only when `fill_per`) their boundary is a **solid,
-  width-1 polyline in `fill_color`** (`vdi_fill.c:606`), i.e. *no* line
-  attribute is used for the closed shapes. Earlier revisions of this table
-  listed pieslice/ellpie as "fill + line"; that was an extraction error.
+**Source:** `vdi_gdp.c:434-446`. Fills via `vdi_vr_recfl(vwk)`
+([`_fill.md`](_fill.md#vr_recfl--filled-rectangle-opcode-114)), then, if
+`fill_per == TRUE`, strokes the four edges as a **5-point `polyline` in
+`fill_color`** with `LN_MASK = 0xffff` (solid).
 
-## Rounded boxes: rbox (8) / rfbox (9)
+- **PTSIN:** `PTSIN[0..1]` = one corner, `PTSIN[2..3]` = the opposite
+  corner (any order; `vr_recfl`'s `arb_corner` sorts them in place).
+- The perimeter's five points are derived **in place** from the (now
+  sorted) `PTSIN[0..3]` (`xy[3..9]`, `vdi_gdp.c:439-442`). The outline uses
+  the **fill colour**, solid — not the line attributes.
 
-`gdp_rbox` from the rectangle `PTSIN[0..3]`. Corner radius is derived
-from the rectangle size. `v_rbox` (8) outlines with the line attributes
-(end styles forced `SQUARED`, then restored); `v_rfbox` (9) fills.
+## Curves: arc / pieslice / circle / ellipse / ellarc / ellpie (sub-ops 2–7)
 
-## Justified text (10)
+**Source:** `vdi_gdp.c:371` (`gdp_curve`) → `clc_arc` (`:178`) flattening.
 
-`gdp_justified` (`vdi_text.c`):
-- `CONTRL[3] - 2` = char count (`INTIN[0]`=interword flag,
-  `INTIN[1]`=interchar flag, then the char codes).
-- `PTSIN[0..1]` = position; `PTSIN[2]` = `max_x` (target run width).
-- Distributes the slack `max_x - natural_width` across word gaps
-  (interword) and/or all chars (interchar), honouring `chup`
-  (0/900/1800/2700), then calls `output_text` with the per-char/word
-  deltas (`JUSTINFO`). Interword expansion per gap is clamped to
-  ±½ cell width.
+**Centre:** `xc = PTSIN[0]`, `yc = PTSIN[1]` for all six.
 
-## NewTOS implementation notes
+**Radii (`vdi_gdp.c:378-384`):**
+
+| Sub-op | `CONTRL[5]` | xrad source | yrad source |
+|--------|:-----------:|-------------|-------------|
+| `v_circle`   | 4 | `PTSIN[4]` | `mul_div(xrad, xsize, ysize)` (device aspect) |
+| `v_arc`      | 2 | `PTSIN[6]` | `mul_div(xrad, xsize, ysize)` |
+| `v_pieslice` | 3 | `PTSIN[6]` | `mul_div(xrad, xsize, ysize)` |
+| `v_ellipse`  | 5 | `PTSIN[2]` | `PTSIN[3]` |
+| `v_ellarc`   | 6 | `PTSIN[2]` | `PTSIN[3]` |
+| `v_ellpie`   | 7 | `PTSIN[2]` | `PTSIN[3]` |
+
+The circle/arc/pieslice family (`CONTRL[5] <= 4`) takes a **single**
+radius: `PTSIN[4]` for the circle, `PTSIN[6]` for arc/pieslice
+(`vdi_gdp.c:379`), and derives `yrad` from the device pixel aspect ratio
+(`xsize`/`ysize` = `DEV_TAB[3]`/`[4]`). Negative radii are treated as
+positive (`:390-393`).
+
+**Angles** (arc/pieslice/ellarc/ellpie only): `INTIN[0]` = begin,
+`INTIN[1]` = end, in **tenths of a degree** (0..3600), counter-clockwise.
+`del_ang = end - begin` (`+TWOPI` if negative, `:412-414`). `v_circle`
+(4) and `v_ellipse` (5) ignore `INTIN` and force `beg_ang=0`,
+`end_ang=TWOPI` (3600) — a full closed shape (`:404-410`).
+
+**Flattening:** the curve is approximated by `clc_nsteps()` line segments
+(`MIN_ARC_CT`=32 … `MAX_ARC_CT`=128, chosen from the larger radius,
+`vdi_gdp.c:347-363`); duplicate adjacent points are dropped
+(`clc_arc:189-190`).
+
+**Open vs closed and colour (`clc_arc:205-221`):**
+- **arc (2) / ellarc (6)** — the point list is stroked as an **open
+  polyline** in **`line_color`** with the current line width/style
+  (`polyline`/`wideline`, plus `arrow()` if an end is `ARROWED`).
+- **pieslice (3) / ellpie (7)** — a point at the centre `(xc,yc)` is
+  appended (`clc_arc:199-203`), then the whole thing goes through
+  `polygon()`, so it is **filled** in `fill_color`; its boundary (only
+  when `fill_per`) is the **solid width-1 `fill_color` polyline**
+  `polygon` draws, **not** the line attributes.
+- **circle (4) / ellipse (5)** — closed and filled via `polygon()`,
+  perimeter as above.
+
+> Earlier revisions of this table listed pieslice/ellpie as "fill + line";
+> that was an extraction error — the closed/filled shapes never use the
+> line attributes for their boundary. Verified against
+> `clc_arc`/`polygon` (`vdi_gdp.c:210-221`, `vdi_fill.c:606-608`).
+
+**Early-out:** when `clip` is set and the curve's bounding box
+(`xc±xrad`, `yc±yrad`) is entirely outside the clip rect, `gdp_curve`
+returns immediately (`vdi_gdp.c:398-402`).
+
+## Rounded boxes: rbox (sub-op 8) / rfbox (sub-op 9)
+
+**Source:** `vdi_gdp.c:229` (`gdp_rbox`).
+
+- **PTSIN:** `PTSIN[0..3]` = two opposite corners of the box; `arb_line`
+  normalises them to (ll, ur) (`vdi_gdp.c:240`).
+- The corner radius is derived from the box size: x-radius ≈ 1/64 of the
+  screen width (`xres>>6`), clamped to half the box side; y-radius scaled
+  by the pixel aspect and clamped likewise (`vdi_gdp.c:254-255`). Each of
+  the four corners is a 5-point quarter-arc (`CORNER_POINTS`=5), giving
+  `RBOX_POINTS`=21 for the outline and `RFBOX_POINTS`=20 for the fill.
+- **`v_rbox` (8)** strokes the closed outline (`RBOX_POINTS` points) with
+  the current line attributes (`polyline`/`wideline` in `line_color`); the
+  dispatcher **forces the line ends to `SQUARED`** for the duration and
+  restores them afterwards (`vdi_gdp.c:457-465`).
+- **`v_rfbox` (9)** fills the shape (`RFBOX_POINTS` points) via `polygon()`
+  in `fill_color` (with the solid `fill_color` perimeter when `fill_per`,
+  as for any filled polygon).
+
+## Justified text (sub-op 10)
+
+**Source:** `vdi_text.c:1177` (`gdp_justified`) → `output_text` (the same
+engine as [`v_gtext`](_text.md)).
+
+- **Char count:** `CONTRL[3] - 2` (`vdi_text.c:1187`) — the first two
+  `INTIN` slots are flags, the rest are character codes.
+- **INTIN layout:** `INTIN[0]` = interword-spacing flag (nonzero = expand
+  spaces), `INTIN[1]` = interchar-spacing flag (nonzero = expand between
+  all characters), `INTIN[2..]` = the character codes (one ADE code per
+  WORD).
+- **PTSIN layout:** `PTSIN[0..1]` = the alignment `(x,y)`; **`PTSIN[2]` =
+  `max_x`**, the target run width (`vdi_text.c:1205`). (`PTSIN[3]` is
+  unused.)
+- It distributes the slack `max_x - natural_width` across word gaps
+  (interword) and/or all characters (interchar), honouring the rotation
+  `chup` (0/900/1800/2700), building per-word/per-char delta values
+  (`JUSTINFO`), then calls `output_text(vwk, cnt, str, max_x, &just)`.
+  Interword expansion per gap is clamped to ±½ `max_cell_width` when both
+  flags are set (`vdi_text.c:1222-1233`).
+
+### Justified-text INTIN / PTSIN table
+
+| Slot | Meaning |
+|------|---------|
+| `CONTRL[3]` | flags + chars; **char count = `CONTRL[3] - 2`** |
+| `INTIN[0]` | interword flag (expand spaces) |
+| `INTIN[1]` | interchar flag (expand between chars) |
+| `INTIN[2..]` | character codes (one per WORD) |
+| `PTSIN[0]`, `PTSIN[1]` | alignment `(x,y)` |
+| `PTSIN[2]` | `max_x` = target run width |
+
+---
+
+## Verification criteria
+
+- **Sub-op numbers:** `CONTRL[5]` selects
+  bar=1, arc=2, pieslice=3, circle=4, ellipse=5, ellarc=6, ellpie=7,
+  rbox=8, rfbox=9, justified=10 (`vdi_gdp.c:433-473`).
+- **`v_circle` (4):** `PTSIN=[cx,cy, _,_, r]` (radius at `PTSIN[4]`),
+  fills a disc of radius `r` centred at `(cx,cy)` in `fill_color`
+  (yrad = `mul_div(r, xsize, ysize)`; equal to `r` on square pixels).
+- **`v_arc` (2):** `PTSIN=[cx,cy, _,_,_,_, r]` (radius at `PTSIN[6]`),
+  `INTIN=[a0,a1]` → an **open** arc from `a0` to `a1` (tenths of a degree,
+  CCW) stroked in **`line_color`** with the current width/style.
+- **`v_ellipse` (5):** `PTSIN=[cx,cy, xr, yr]` → filled ellipse with the
+  given x/y radii; `INTIN` ignored (full `0..3600`).
+- **`v_pieslice` (3):** like `v_arc` but **filled** (closes to centre) in
+  `fill_color`; boundary solid `fill_color` when `fill_per` — never the
+  line attributes.
+- **Full-shape angle override:** `v_circle`/`v_ellipse` ignore `INTIN` and
+  always draw the full closed shape.
+- **`v_bar` (1):** `PTSIN[0..3]` = two corners → filled rectangle; with
+  `fill_per=TRUE`, a solid `fill_color` outline is added (the fill itself
+  via `vr_recfl` draws none).
+- **`v_rbox` (8) vs `v_rfbox` (9):** same `PTSIN[0..3]`; 8 outlines with
+  line attributes (ends forced squared), 9 fills.
+- **`v_justified` (10):** `PTSIN[2]=max_x` stretches the run to width
+  `max_x`; char count is `CONTRL[3]-2`; `INTIN[0]`/`INTIN[1]` select
+  interword/interchar expansion.
+
+## Edge cases discovered in source
+
+1. **Radius index differs by primitive:** circle uses `PTSIN[4]`, but
+   arc/pieslice use `PTSIN[6]` (`vdi_gdp.c:379`). A program reusing the
+   circle layout for an arc puts the radius in the wrong slot. The
+   ellipse family uses `PTSIN[2]`/`PTSIN[3]` for the two radii.
+2. **Circle/ellipse ignore `INTIN`** — they force `0..3600` regardless of
+   any angle a caller supplies (`vdi_gdp.c:404-410`). Only arc/pieslice/
+   ellarc/ellpie read `INTIN[0..1]`.
+3. **Negative and zero radii:** negative radii are made positive
+   (`vdi_gdp.c:390-393`); a zero radius degenerates to the centre point.
+4. **Closed filled shapes never use the line attributes for their
+   boundary.** Pieslice/ellpie/circle/ellipse/rfbox all outline (when
+   applicable) in solid `fill_color` via `polygon()` — a dashed/coloured
+   *line* style has no effect. Only arc/ellarc (open) and rbox use the
+   line attributes.
+5. **`v_bar` perimeter is fill-coloured and solid**, driven off `fill_per`
+   (a *fill* attribute), not the line attributes (`vdi_gdp.c:436-444`).
+6. **`del_ang` wraps:** a negative `end - begin` adds `TWOPI`
+   (`vdi_gdp.c:412-414`), so `INTIN=[3000, 600]` draws the CCW arc that
+   passes through 3600/0, not the short 2400-wide one.
+7. **`v_justified` char count is `CONTRL[3]-2`**, and the two flags occupy
+   `INTIN[0..1]` — the codes start at `INTIN[2]` (`vdi_text.c:1187-1192`).
+8. **`gdp_curve` early-out** on a fully-clipped bounding box
+   (`vdi_gdp.c:398-402`) — no segments generated.
+9. **`v_rbox` forces squared line ends** and restores the caller's
+   `line_beg`/`line_end` afterwards (`vdi_gdp.c:457-465`) — a program that
+   set arrowed ends does not get arrowheads on a rounded box.
+
+## Dependencies
+
+### Requires
+- An open workstation (dispatcher resolves `CONTRL[6]`).
+- The fill attributes (bar/pieslice/circle/ellipse/ellpie/rfbox) — see
+  [`../attributes/_fill.md`](../attributes/_fill.md); the line attributes
+  (arc/ellarc/rbox) — see
+  [`../attributes/_line-marker.md`](../attributes/_line-marker.md); the
+  text attributes (justified) — see
+  [`../attributes/_text.md`](../attributes/_text.md).
+- `wrt_mode`, the clip rectangle, and the device aspect `xsize`/`ysize`
+  (`DEV_TAB[3]`/`[4]`) for the circle-family y-radius.
+
+### Used by
+- All sub-primitives reduce to `polyline`/`wideline`/`polygon`/
+  `vr_recfl`/`output_text` — see [`_lines-markers.md`](_lines-markers.md),
+  [`_fill.md`](_fill.md), [`_text.md`](_text.md).
+
+## Related data structures
+
+- [`../../structures/vwk.md`](../../structures/vwk.md) — line/fill/text
+  attribute fields.
+- [`../_state.md`](../_state.md) — attribute defaults and ranges.
+- GDP constants: `CORNER_POINTS`=5, `RBOX_POINTS`=21, `RFBOX_POINTS`=20
+  (`vdi_gdp.c:23-25`); `HALFPI`=900, `PI`=1800, `TWOPI`=3600
+  (`vdi_gdp.c:28-30`); `MIN_ARC_CT`=32, `MAX_ARC_CT`=128
+  (`vdi_defs.h:84-85`).
+
+## Cross-references
+
+### Atari Compendium / Profibuch
+- Not present in `references/` (no PDFs). Cross-check of the per-primitive
+  radius `PTSIN` indices (esp. circle `PTSIN[4]` vs arc/pieslice
+  `PTSIN[6]`), the angle units, the full-shape `INTIN` override, and the
+  closed-shape "solid `fill_color` perimeter, not line attributes" rule is
+  **deferred**.
+
+## Configuration / version notes
+
+- `HAVE_BEZIER` = 0 (`vdi_defs.h:18`) — GDP sub-op 13 (Bezier) is compiled
+  out of every default build.
+- The circle-family y-radius uses the device pixel aspect (`xsize`/
+  `ysize`); on a square-pixel framebuffer these are equal, so `yrad ==
+  xrad`.
+
+## NewTOS implementation notes (Phase 12)
 
 - All sub-primitives reduce to the line/fill framebuffer primitives
   already used by [`_lines-markers.md`](_lines-markers.md) /
-  [`_fill.md`](_fill.md) — `v_gdp` adds no new low-level op, only
-  geometry generation. Target = `vwk->device` (ADR-011).
+  [`_fill.md`](_fill.md) / [`_text.md`](_text.md) — `v_gdp` adds no new
+  low-level op, only geometry generation. Target = `vwk->device`
+  (ADR-011).
 - Curve flattening (`clc_nsteps`/`clc_arc`) uses the device aspect
-  (`xsize`/`ysize`); on a square-pixel framebuffer these are equal, so
-  `yrad == xrad` for the circle case.
-- Angle units match [`vst_rotation`](../attributes/_text.md) (tenths of
-  a degree); reuse the same normalisation helper.
+  (`xsize`/`ysize`); on a square-pixel framebuffer `yrad == xrad` for the
+  circle case. NewTOS may generate curve geometry directly (its own
+  rasteriser), keeping the sub-op numbers, PTSIN layout, angle units, and
+  open/closed + colour semantics as contract.
+- Angle units match [`vst_rotation`](../attributes/_text.md) (tenths of a
+  degree); reuse the same normalisation helper.
