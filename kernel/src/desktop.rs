@@ -356,7 +356,9 @@ const MN_SELECTED: i16 = 10;
 const WM_REDRAW: i16 = 20;
 const WM_TOPPED: i16 = 21;
 const WM_CLOSED: i16 = 22;
+const WM_FULLED: i16 = 23;
 const WM_ARROWED: i16 = 24;
+const WM_SIZED: i16 = 27;
 const WM_MOVED: i16 = 28;
 
 // WM_ARROWED actions (aesdefs.h): page = a screenful, line = one row.
@@ -458,9 +460,9 @@ fn paint_desktop_bg(backend: &dyn RasterBackend) {
     let bg = PatternFill { fg: d & 0x0F, bg: WHITE, pattern: &pat, opaque: true };
     backend.fill_pattern(0, MENU_H, sw, sh - MENU_H, bg, clip);
 
-    // Draw the drive / trash / printer fixtures as an AES G_ICON tree over
-    // the pattern.
-    draw_desktop_icons(sw, sh);
+    // Draw the drive / trash fixtures as an AES G_ICON tree over the
+    // pattern (direct render — this runs inside `redraw_all`).
+    draw_desktop_icons(backend, sw, sh);
 }
 
 const DESK_MAX: usize = 32;
@@ -485,6 +487,18 @@ static DESKTREE: DeskTree = DeskTree {
 /// hand-drawn `draw_drive_icon` so the hit-tests (`drive_at`, `is_over_trash`)
 /// still match.
 #[allow(clippy::too_many_arguments)]
+/// Centre a label text box that hugs `chars` glyphs (plus a 2 px margin each
+/// side) within a `cell_w`-wide icon cell, returning `(ib_xtext, ib_wtext)`.
+/// The `gr_gicon` label background fills `ib_wtext`, so sizing it to the text
+/// (rather than the whole cell) keeps the white box tight under short names
+/// on the patterned desktop — EmuTOS uses a fixed `MAX_ICONTEXT_WIDTH` box,
+/// which reads as an over-long white bar on NewTOS' coloured background.
+fn label_box(chars: usize, cell_w: i16) -> (i16, i16) {
+    let cw = tos_api::vdi::font::CELL_W;
+    let tw = (chars as i16 * cw + 4).clamp(cw, cell_w);
+    ((cell_w - tw) / 2, tw)
+}
+
 fn set_desk_icon(
     obj: &mut [Object; DESK_MAX + 1], ib: &mut [IconBlk; DESK_MAX], nm: &mut [[u8; 8]; DESK_MAX],
     n: usize, cx: i16, y: i16, data: &[u16; 64], mask: &[u16; 64], label: &[u8],
@@ -499,13 +513,14 @@ fn set_desk_icon(
         Some((c, ch)) => (0x1000 | c as i16, 24 + ch.0, ch.1),
         None => (0x1000, 0, 0),
     };
+    let (xtext, wtext) = label_box(ln, 80);
     ib[n] = IconBlk {
         ib_pmask: mask.as_ptr() as u64,
         ib_pdata: data.as_ptr() as u64,
         ib_ptext: nm[n].as_ptr() as u64,
         ib_char, ib_xchar: xchar, ib_ychar: ychar,
         ib_xicon: 24, ib_yicon: 0, ib_wicon: 32, ib_hicon: 32,
-        ib_xtext: 0, ib_ytext: 34, ib_wtext: 80, ib_htext: 16,
+        ib_xtext: xtext, ib_ytext: 34, ib_wtext: wtext, ib_htext: 16,
     };
     obj[n + 1] = Object {
         ob_next: 0, ob_head: -1, ob_tail: -1,
@@ -523,9 +538,14 @@ fn trash_cy(sh: i16) -> i16 {
 }
 
 /// Build + draw the desktop surface icon tree (drives top-left, trash
-/// bottom-left — EmuTOS `deskapp.c`), via `objc_draw`. NewTOS has no printer
-/// device, so the EmuTOS Printer fixture is intentionally omitted.
-fn draw_desktop_icons(sw: i16, sh: i16) {
+/// bottom-left — EmuTOS `deskapp.c`). NewTOS has no printer device, so the
+/// EmuTOS Printer fixture is intentionally omitted.
+///
+/// Rendered via the **non-trapping** `object::render_tree`, not `objc_draw`:
+/// this runs as the `DESK_PAINTER` from inside `window::redraw_all` (the AES
+/// SVC handler), where a re-entrant `svc #2` is forbidden. The same direct
+/// path is correct from the plain `draw()` context too.
+fn draw_desktop_icons(backend: &dyn RasterBackend, sw: i16, sh: i16) {
     use crate::desktop_icons as ic;
     // SAFETY: single-CPU desktop; the tree buffers are used only here.
     let obj = unsafe { &mut *DESKTREE.obj.get() };
@@ -571,12 +591,13 @@ fn draw_desktop_icons(sw: i16, sh: i16) {
         ob_x: 0, ob_y: MENU_H, ob_width: sw, ob_height: sh - MENU_H,
     };
 
-    let mut a = Aes::new();
-    a.addrin[0] = obj.as_ptr() as i64;
-    a.intin[0] = 0;
-    a.intin[1] = 8;
-    a.intin[2] = 0; a.intin[3] = MENU_H; a.intin[4] = sw; a.intin[5] = sh - MENU_H;
-    a.call(42, 6, 1); // objc_draw
+    // Direct render (no `svc`): safe under `redraw_all`. See the fn doc.
+    // SAFETY: `obj` is a valid, just-built OBJECT array rooted at index 0.
+    unsafe {
+        tos_api::aes::object::render_tree(
+            obj.as_ptr(), 0, 8, 0, MENU_H, sw, sh - MENU_H, backend,
+        );
+    }
 }
 
 // The desktop menu (EmuTOS desktop.rsc ADMENU). NUL-terminated; a string
@@ -794,11 +815,17 @@ fn step(msg: &mut [i16; 8]) -> bool {
             WM_CLOSED => close_win(msg[3]),
             WM_TOPPED => {
                 set_top(msg[3]);
-                redraw_win(msg[3]);
+                // `top_window`'s `redraw_all` blanked every work area; repaint
+                // all content so the windows below the topped one return too.
+                redraw_all_windows();
             }
             WM_REDRAW => redraw_win(msg[3]),
             WM_ARROWED => arrow_win(msg[3], msg[4]),
             WM_MOVED => move_win(msg[3], (msg[4], msg[5], msg[6], msg[7])),
+            // A resize applies the new border rect exactly like a move
+            // (`move_win` re-clamps the scroll to the new work height).
+            WM_SIZED => move_win(msg[3], (msg[4], msg[5], msg[6], msg[7])),
+            WM_FULLED => full_win(msg[3]),
             _ => {}
         }
     }
@@ -1201,6 +1228,9 @@ fn close_win(handle: i16) {
     if DESK_TOP.load(core::sync::atomic::Ordering::Acquire) == handle {
         set_top(any_open_handle());
     }
+    // `wind_close`'s `redraw_all` blanked every remaining window's work area;
+    // repaint their content (the desktop background + frames are already done).
+    redraw_all_windows();
 }
 
 /// Handle `WM_REDRAW`/`WM_TOPPED`: repaint the directory listing from the
@@ -1230,8 +1260,37 @@ fn set_win_slider(handle: i16, vslide: i16, vslsize: i16) {
     a.call(105, 3, 0);
 }
 
-/// Handle `WM_MOVED`: confirm the drag via `wind_set(WF_CXYWH, rect)`,
-/// update the tracked rect, and repaint the listing.
+/// Read a window rectangle field (`WF_CXYWH`/`WF_FXYWH`/`WF_PXYWH`) via
+/// `wind_get`.
+fn wind_rect(handle: i16, field: i16) -> (i16, i16, i16, i16) {
+    let mut a = Aes::new();
+    a.intin[0] = handle;
+    a.intin[1] = field;
+    a.call(104, 2, 0); // wind_get
+    (a.intout[1], a.intout[2], a.intout[3], a.intout[4])
+}
+
+/// Handle `WM_FULLED` (the title-bar full box): toggle the window between its
+/// full extent (whole desktop below the menu) and its previous size — EmuTOS
+/// `wm_fulled`. Applied through `move_win`, which re-clamps the scroll and
+/// repaints.
+fn full_win(handle: i16) {
+    const WF_CXYWH: i16 = 5;
+    const WF_PXYWH: i16 = 6;
+    const WF_FXYWH: i16 = 7;
+    let cur = wind_rect(handle, WF_CXYWH);
+    let full = wind_rect(handle, WF_FXYWH);
+    let target = if cur == full {
+        wind_rect(handle, WF_PXYWH) // already full → restore previous size
+    } else {
+        full // grow to the full desktop extent
+    };
+    move_win(handle, target);
+}
+
+/// Handle `WM_MOVED` / `WM_SIZED`: confirm the new border rect via
+/// `wind_set(WF_CXYWH, rect)`, update the tracked rect, and repaint every
+/// window's content (the AES `redraw_all` blanked the work areas).
 fn move_win(handle: i16, rect: (i16, i16, i16, i16)) {
     let mut a = Aes::new();
     a.intin[0] = handle; a.intin[1] = 5; // WF_CXYWH
@@ -1240,7 +1299,9 @@ fn move_win(handle: i16, rect: (i16, i16, i16, i16)) {
     if let Some(s) = win_slot(handle) {
         s.rect = rect;
     }
-    redraw_win(handle);
+    // The move's `redraw_all` blanked every work area (moved window + any it
+    // uncovered); repaint all window content, not just the moved one.
+    redraw_all_windows();
 }
 
 /// Handle `WM_ARROWED`: scroll the listing vertically by a line or a page.
@@ -1426,6 +1487,7 @@ fn delete_selected() {
     if let Some((h, letter, name, is_dir)) = resolve_selection() {
         if confirm_delete(&name) && do_delete(letter, &name, is_dir) {
             SEL_WIN.store(0, core::sync::atomic::Ordering::Release);
+            set_win_info(h, letter); // item count / bytes changed
             redraw_win(h);
         }
     }
@@ -1664,8 +1726,8 @@ fn draw_menu_bar() {
 
 /// Window border `kind` bits (aesdefs.h:519).
 const W_KIND: i16 =
-    (0x0001 | 0x0002 | 0x0008 | 0x0010 | 0x0020 | 0x0040 | 0x0080 | 0x0100) as i16;
-// NAME | CLOSER | MOVER | INFO | SIZER | UPARROW | DNARROW | VSLIDE
+    (0x0001 | 0x0002 | 0x0004 | 0x0008 | 0x0010 | 0x0020 | 0x0040 | 0x0080 | 0x0100) as i16;
+// NAME | CLOSER | FULLER | MOVER | INFO | SIZER | UPARROW | DNARROW | VSLIDE
 
 /// Window → drive + current border rect, tracked by the desktop so window
 /// messages (redraw/move) can repaint the listing without the flaky
@@ -1736,8 +1798,50 @@ fn open_dir_window(letter: u8, rect: (i16, i16, i16, i16)) -> i16 {
         s.scroll = 0;
     }
     set_top(handle);
+    set_win_info(handle, letter);
     redraw_win(handle);
     handle
+}
+
+/// Append `s` to `dst` at `*p`, advancing `*p`; never overflows and always
+/// leaves room for a trailing NUL.
+fn append(dst: &mut [u8], p: &mut usize, s: &[u8]) {
+    for &c in s {
+        if *p + 1 < dst.len() {
+            dst[*p] = c;
+            *p += 1;
+        }
+    }
+}
+
+/// Set window `handle`'s info line to a summary of `letter`'s directory —
+/// item count and total file bytes, like the EmuTOS desktop info line. The
+/// AES stores the string (`draw_frame` reads `w.info`), so it survives frame
+/// redraws and only needs setting when the content changes (open, delete).
+fn set_win_info(handle: i16, letter: u8) {
+    let mut ents = [tos_api::bdos::fs::find::DirInfo::default(); 64];
+    let n = list_sorted(letter, &mut ents);
+    let mut bytes = 0u32;
+    for e in &ents[..n] {
+        if e.attrib & FA_SUBDIR == 0 {
+            bytes = bytes.saturating_add(e.size);
+        }
+    }
+    let mut buf = [0u8; 48];
+    let mut p = 0usize;
+    let mut num = [0u8; 12];
+    append(&mut buf, &mut p, b" ");
+    append(&mut buf, &mut p, fmt_u32(n as u32, &mut num));
+    append(&mut buf, &mut p, b" items    ");
+    append(&mut buf, &mut p, fmt_u32(bytes, &mut num));
+    append(&mut buf, &mut p, b" bytes used");
+    buf[p] = 0;
+
+    let mut a = Aes::new();
+    a.addrin[0] = buf.as_mut_ptr() as i64;
+    a.intin[0] = handle;
+    a.intin[1] = 3; // WF_INFO
+    a.call(105, 2, 1); // wind_set
 }
 
 /// Directory-view sort order (View menu): 0=name 1=type 2=size 3=date
@@ -1753,10 +1857,25 @@ fn set_sort(mode: u8) {
     redraw_all_windows();
 }
 
-/// Repaint the listing of every open directory window.
+/// Repaint the listing of every open directory window. The AES `redraw_all`
+/// (triggered by wind_open/close/set/top) repaints the desktop background and
+/// all window *frames* but leaves every work area blank — only the app can
+/// redraw window *content*. So after any such operation the desktop must
+/// repaint the content of **all** windows, not just the one it handled.
+///
+/// The top (focused) window is drawn last so it is never overdrawn by a
+/// lower window's content in an overlap. (Full z-ordered, rectangle-list
+/// clipping per window is a follow-up; handle order suffices until windows
+/// deeply overlap.)
 fn redraw_all_windows() {
+    let top = DESK_TOP.load(core::sync::atomic::Ordering::Acquire);
     for h in 1..8i16 {
-        redraw_win(h);
+        if h != top {
+            redraw_win(h);
+        }
+    }
+    if top >= 1 {
+        redraw_win(top);
     }
 }
 
@@ -2141,6 +2260,7 @@ fn build_dir_icons(
         } else {
             (&ic::DOC_DATA, &ic::DOC_MASK)
         };
+        let (xtext, wtext) = label_box(end, ICON_CW);
         ib[n] = IconBlk {
             ib_pmask: mask.as_ptr() as u64,
             ib_pdata: data.as_ptr() as u64,
@@ -2148,7 +2268,7 @@ fn build_dir_icons(
             ib_char: 0x1000, // fg = black (1), bg = white (0)
             ib_xchar: 0, ib_ychar: 0,
             ib_xicon: (ICON_CW - 32) / 2, ib_yicon: 0, ib_wicon: 32, ib_hicon: 32,
-            ib_xtext: 0, ib_ytext: 34, ib_wtext: ICON_CW, ib_htext: 16,
+            ib_xtext: xtext, ib_ytext: 34, ib_wtext: wtext, ib_htext: 16,
         };
         obj[n + 1] = Object {
             ob_next: 0, ob_head: -1, ob_tail: -1,

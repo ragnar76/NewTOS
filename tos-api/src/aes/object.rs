@@ -206,17 +206,43 @@ pub fn objc_draw(pb: &Aespb) {
     // this VDI clip before drawing, so a partial (damaged-rectangle)
     // redraw does not spill outside the caller's region.
     let (cx, cy, cw, ch) = (pb.intin(2), pb.intin(3), pb.intin(4), pb.intin(5));
-    let clip = ClipRect { xmn: cx, ymn: cy, xmx: cx + cw - 1, ymx: cy + ch - 1 };
-
-    // Absolute origin of `drawob` = sum of its ancestors' x/y. EmuTOS
-    // starts drawing at the parent offset; we compute it via objc_offset.
-    let (ox, oy) = abs_offset(tree, drawob);
     // SAFETY: the GEM caller guarantees a valid tree array.
-    unsafe {
-        let ob = &*tree.add(drawob as usize);
-        draw_tree(tree, drawob, depth, ox - ob.ob_x, oy - ob.ob_y, clip, backend);
-    }
+    unsafe { render_tree(tree, drawob, depth, cx, cy, cw, ch, backend) };
     pb.set_ret(1);
+}
+
+/// Render object tree `tree` starting at object `start` for `depth` levels,
+/// clipped to `(cx, cy, cw, ch)`, straight through `backend` — the body of
+/// [`objc_draw`] **without** the AES trap.
+///
+/// In-kernel callers that must draw an object tree while already inside the
+/// AES dispatch (e.g. the desktop background painter running under
+/// `window::redraw_all`) use this instead of a re-entrant `svc #2`, which the
+/// `DESK_PAINTER` contract forbids. Behaves identically to `objc_draw` for a
+/// valid tree.
+///
+/// # Safety
+/// `tree` must be a valid `OBJECT` array with `start` in range.
+#[allow(clippy::too_many_arguments)]
+pub unsafe fn render_tree(
+    tree: *const Object,
+    start: i16,
+    depth: i16,
+    cx: i16,
+    cy: i16,
+    cw: i16,
+    ch: i16,
+    backend: &dyn RasterBackend,
+) {
+    if tree.is_null() || start < 0 {
+        return;
+    }
+    let clip = ClipRect { xmn: cx, ymn: cy, xmx: cx + cw - 1, ymx: cy + ch - 1 };
+    // Absolute origin of `start` = sum of its ancestors' x/y (like objc_offset).
+    let (ox, oy) = abs_offset(tree, start);
+    // SAFETY: caller guarantees a valid tree with `start` in range.
+    let ob = unsafe { &*tree.add(start as usize) };
+    draw_tree(tree, start, depth, ox - ob.ob_x, oy - ob.ob_y, clip, backend);
 }
 
 /// `objc_offset` (44) — the object's absolute screen x/y (sum of parent
