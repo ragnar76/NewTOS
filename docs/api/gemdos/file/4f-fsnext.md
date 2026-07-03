@@ -1,144 +1,219 @@
-# `Fsnext` — GEMDOS 0x4F
+# `Fsnext` (GEMDOS 0x4F)
 
-> Phase 00 spec. Source: EmuTOS @ `1a7484ab` —
-> `bdos/fsdir.c:654` (`xsnext`), helper `ixsnext` at `:545`.
+> Phase 00 spec (full-contract template). Source: EmuTOS @ `1a7484ab`.
+> Verified against `bdos/fsdir.c:654` (`xsnext`) and the work helper
+> `bdos/fsdir.c:545` (`ixsnext`).
+
+> **Contract vs. reference** — see [`docs/COMPATIBILITY.md`](../../../COMPATIBILITY.md).
+> Contract: trap ID/ABI, "resume from the DTA private state", `ENMFIL` on
+> exhaustion / uninitialised DTA, the refilled public DTA fields. Reference:
+> the private-area encoding, `ixsnext`/`match` walk.
 
 ## EmuTOS source
 
-```c
-long xsnext(void)
-{
-    DTAINFO *dt = (DTAINFO *)run->p_xdta;
+**Primary location:** `bdos/fsdir.c:654` — `long xsnext(void)`.
 
-    if (dt->dt_offset_drive < 0L)         /* DTA not initialised */
-        return ENMFIL;
+**Installed handler / vector:** (none) — direct `funcs[]` entry `0x4F` =
+`xsnext`, `wparms=0` (`bdos/bdosmain.c:277`).
 
-    FCB *fcb = ixsnext(dt);
-    if (fcb == NULL) {
-        dt->dt_offset_drive = -1L;        /* mark exhausted */
-        return ENMFIL;
-    }
+**Helpers called:**
+- `bdos/fsdir.c:545` — `ixsnext()` — resume the directory walk from the DTA's
+  saved position.
+- `bdos/fsdir.c:1802` — `match()`, `bdos/fsdir.c:1851` — `makbuf()`;
+  `bdos/fsfat.c` — `getrealcl()`, `cl2rec()`; `bdos/fsbuf.c` — `getbcb()`.
+- `bdos/fsdir.c` — `builds()` (rebuild the FCB-style pattern from `dt_name`).
 
-    makbuf(fcb, (DTAINFO *)run->p_xdta);  /* refill DTA */
-    return E_OK;
-}
-```
+**Headers / type definitions used:**
+- `bdos/fs.h:319-337` — `DTAINFO`; `bdos/fs.h:339` — `DTA_DRIVEMASK`.
 
-`ixsnext` resumes the directory walk from the saved cluster /
-offset state stored in the DTA's reserved area.
+**System variables / globals read:** `run->p_xdta` (private search state);
+`drvtbl[]` (the DMD for the search drive).
+**System variables / globals written:** the DTA private area (advanced) and
+public fields (refilled), or `dt_offset_drive = -1` on exhaustion.
+
+**Build configuration affecting this function:** none.
+
+---
+
+## Source extraction summary
+
+`Fsnext` returns the next entry matching the pattern established by the most
+recent `Fsfirst` on the same DTA. It takes no arguments — all state lives in the
+process's current DTA at `run->p_xdta`.
+
+`xsnext` first checks the private `dt_offset_drive`: if it is negative the DTA is
+"uninitialised" — either `Fsfirst` was never called, it failed, or a previous
+`Fsnext` already exhausted the search — and it returns `ENMFIL`. Otherwise it
+calls `ixsnext`.
+
+`ixsnext` reconstructs the search: it extracts the drive (low 5 bits of
+`dt_offset_drive`), rebuilds the FCB-style pattern from `dt_name` and `dt_attr`,
+and picks up either the root-directory scan (`dt_cloffset == 0 && dt_clnum == 0`,
+resume byte offset from `dt_offset_drive`) or the sub-directory scan (resume
+`dt_cloffset` within cluster `dt_clnum`). It walks entries with `match()`,
+handling cross-cluster advance via `getrealcl` and stopping at end-of-chain or
+at a directory entry whose first byte is `0x00` (never-used → end of directory).
+On a match it updates the private area to point just past the found FCB and
+returns it; `xsnext` calls `makbuf` to refill the public DTA fields.
+
+If `ixsnext` finds nothing, `xsnext` sets `dt_offset_drive = -1` (so further
+`Fsnext` calls keep returning `ENMFIL`) and returns `ENMFIL`.
+
+---
 
 ## Trap interface
 
-| | |
-|--|--|
-| Trap | 1 (GEMDOS) |
-| Function ID | `0x004F` |
-| WORD args | 0 |
-| Stack frame | `+0: 0x004F` |
+- **Trap number:** 1 (GEMDOS)
+- **Function ID:** 0x4F
+- **Stack frame on entry (m68k):** `Fsnext()` = `trap1(0x4f)`:
+  ```
+   0: function_id (word) = 0x004F
+  ```
+- **Total parameter bytes:** 0 → `wparms = 0`.
+- **Native (AArch64) ABI:** ID `0x4F` in `x8`; no argument registers; LONG
+  result (0 or negative error) sign-extended into `x0`. The next match is
+  delivered via the **DTA output buffer** at `run->p_xdta`.
+
+  (no stack parameters)
+
+---
 
 ## Inputs
 
-None — state is entirely in the per-process DTA.
+None — the search state is entirely in the per-process DTA at `run->p_xdta`.
+
+---
 
 ## Outputs
 
-| Reg | D0 |
-| --- | --- |
-| Type | LONG: 0 success, ENMFIL on no-more |
+### Return value
 
-DTA reused — refilled with the next match.
+- **Register:** D0 / `x0`
+- **Type:** LONG
+- **Encoding:** `E_OK` (0) with the DTA refilled on a match; `ENMFIL` (-49) when
+  there are no more entries or the DTA is uninitialised.
+- **Source location:** `bdos/fsdir.c:663,670,675`.
 
-## Errors
+### DTA output buffer
 
-| Code   | Value | When                                                  |
-|--------|------:|-------------------------------------------------------|
-| ENMFIL | -49   | no more matches; DTA never initialised; DTA invalidated by previous failure |
+Same public fields as `Fsfirst` (attribute, packed time/date in native byte
+order, size, dotted 8.3 name), refilled by `makbuf`
+(`bdos/fsdir.c:673,1851`). See `docs/api/gemdos/file/4e-fsfirst.md`.
 
-## Edge cases
+### Side effects on global state
 
-### 1. State in DTA reserved area
+- The DTA private area is advanced to the next resume point, or set to the
+  "exhausted" sentinel `-1`.
 
-The 21-byte reserved area holds:
-- `dt_offset_drive` (LONG) — combined drive number (low 6 bits)
-  + offset within root directory (when in BT_ROOT)
-- `dt_cloffset` (WORD) — offset within current cluster
-- `dt_clnum` (CLNO/WORD) — current cluster number
-- `dt_attr`, `dt_name` — copy of search attribute and pattern
-  for `match()` re-evaluation
+### Side effects on hardware
 
-Programs that overwrite the reserved area corrupt the search
-state — well-behaved programs treat the DTA as opaque between
-`Fsfirst` and `Fsnext` calls.
+- Directory-sector reads via the buffer cache.
 
-### 2. Sentinel `dt_offset_drive = -1`
+---
 
-`Fsfirst` initialises this to `-1`. `Fsnext` checks for `<0` and
-returns ENMFIL — handles both "DTA never initialised" and
-"previous search exhausted" with one check.
+## Error conditions
 
-### 3. Walks both root and subdirs
+| Condition | Source location | Returned value |
+|-----------|-----------------|----------------|
+| DTA uninitialised (`dt_offset_drive < 0`: no prior `Fsfirst`, failed search, or already exhausted) | `bdos/fsdir.c:662-663` | `ENMFIL` (-49) |
+| No more matching entries | `bdos/fsdir.c:667-671` | `ENMFIL` (-49) |
+| Drive id in DTA out of range (`>= BLKDEVNUM`) | `bdos/fsdir.c:557-558` (`ixsnext` → NULL) | `ENMFIL` (-49) |
 
-`ixsnext` distinguishes BT_ROOT (fixed-size root area on FAT12/16)
-from BT_DATA (cluster-chained subdirs). When `dt_clnum == 0`, root
-is being scanned; otherwise a subdir.
+**Correction:** the single "no more / not initialised" signal is **`ENMFIL`
+(-49)** in every case. An earlier draft claimed `Fsnext` returns `EINTRN` (-65)
+when called without a prior `Fsfirst` — the source has no such path.
 
-### 4. Cross-cluster transitions
+---
 
-When `recnum` overflows the current cluster, `ixsnext` calls
-`getrealcl` to advance. End-of-chain produces NULL → ENMFIL.
+## Verification criteria
 
-### 5. End-of-directory marker
+- **Enumerate:** after `Fsfirst("C:\\*.TXT", 0)` returns `E_OK`, repeated
+  `Fsnext()` return `E_OK` for each further `.TXT` file, refilling the DTA, until
+  `ENMFIL` (-49).
+- **Exhaustion sticks:** once `Fsnext` returns `ENMFIL`, further `Fsnext` calls
+  keep returning `ENMFIL` (private state is `-1`).
+- **No prior Fsfirst:** calling `Fsnext()` on a DTA that never had a successful
+  `Fsfirst` returns `ENMFIL` (-49).
+- **Single exact match:** after `Fsfirst("C:\\ONE.TXT", 0)` (no wildcard),
+  `Fsnext()` returns `ENMFIL`.
 
-A directory entry with `f_name[0] == 0x00` marks "never used"
-(end of valid entries). Earlier scanned + erased (0xE5) entries
-are skipped via `match()`'s pattern check.
+---
 
-### 6. Concurrent searches
+## Edge cases discovered in source
 
-The search state is in `run->p_xdta`. A program doing two
-concurrent searches must save/restore the DTA via `Fgetdta`/
-`Fsetdta` between calls. The standard idiom uses a stack-
-allocated DTA per search context.
+1. **One sentinel covers three cases.** `dt_offset_drive < 0` means "never
+   initialised", "search failed", or "already exhausted" — all return `ENMFIL`
+   (`bdos/fsdir.c:662-663`).
 
-### 7. AES "find next executable"
+2. **Root vs. sub-directory resume.** `dt_cloffset == 0 && dt_clnum == 0`
+   selects the fixed-size root scan; otherwise the cluster-chained sub-dir scan
+   (`bdos/fsdir.c:568-583`).
 
-AES desktop iterates `Fsfirst("*.PRG", FA_NORM)` then `Fsnext`
-until ENMFIL to populate the launcher menu. Performance scales
-linearly with directory size.
+3. **End-of-directory marker.** A directory entry with first byte `0x00` is
+   "never used" and terminates the scan immediately (`bdos/fsdir.c:614-615`).
+   Erased (`0xE5`) and long-filename entries are skipped by `match()`.
 
-### 8. No `Fsclose` exists
+4. **Cross-cluster advance.** When a cluster is exhausted, `getrealcl` chains to
+   the next; end-of-chain → no more matches (`bdos/fsdir.c:601-607`).
 
-There is no explicit close for a directory iteration. The DTA
-sentinel after exhaustion (`-1L`) lets the OS know the iteration
-has ended; no resources to release.
+5. **No `Fsclose`.** There is no explicit close for a search; the private-area
+   sentinel after exhaustion is the only "end" signal — no resources to free
+   (`bdos/fsdir.c:669`).
 
-### 9. Mediach during iteration
+6. **State is per-DTA, per-process.** Nested/concurrent searches must each use
+   their own DTA (swap via `Fsetdta`/`Fgetdta`); overwriting bytes 0x00-0x14
+   corrupts the walk.
 
-If the user swaps the disk between `Fsfirst` and `Fsnext` on the
-*same* drive, EmuTOS detects via `mediach` and returns E_CHNG
-(-14) on the next disk read — the iteration aborts.
+7. **Media change aborts.** A disk swap between `Fsfirst` and `Fsnext` on the
+   same drive surfaces as a BIOS `E_CHNG` on the next directory read (via the
+   `longjmp` path), aborting the enumeration.
+
+---
 
 ## Dependencies
 
-- `run->p_xdta`, DTA reserved area.
-- `ixsnext`, `getrealcl`, `match`, `makbuf`.
-- `BT_ROOT`/`BT_DATA` distinction, FAT chain walk.
+### Requires (must be initialized / functional)
 
-Used by: paired with every `Fsfirst` call.
+- A prior successful `Fsfirst` on the same `run->p_xdta`.
+- The DMD for the search drive still logged in; buffer cache.
+
+### Used by
+
+- Paired with every `Fsfirst`; file managers, AES desktop menu population,
+  batch/shell globbing.
+
+---
+
+## Related data structures
+
+- `docs/api/structures/dta.md` — DTA private/public layout.
+- `docs/api/gemdos/file/4e-fsfirst.md` — establishes the search.
+
+---
 
 ## Cross-references
 
-- **Compendium:** "Fsnext" — agrees.
-- **Profibuch:** "Fsnext (0x4F)" — agrees, documents ENMFIL=-49.
-- `docs/api/gemdos/file/4e-fsfirst.md`, `dta/1a-fsetdta.md`.
+### Atari Compendium
 
-## Configuration
+- Not present in `references/`. Cross-check deferred. (Documents `ENMFIL` on
+  exhaustion.)
 
-None.
+### Atari Profibuch
+
+- Not present in `references/`. Cross-check deferred.
+
+---
+
+## Configuration / version notes
+
+- None.
+
+---
 
 ## NewTOS implementation notes
 
 (Empty during Phase 00.)
 
-PHASE-05: identical state model. The 21-byte reserved area in
-DTA is preserved as ABI requirement (programs serialise/restore).
+PHASE-05: identical resume model; the private-area encoding is free as long as
+`Fsnext` resumes correctly and returns `ENMFIL` for all three exhausted/
+uninitialised cases.

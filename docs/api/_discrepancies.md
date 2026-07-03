@@ -404,3 +404,206 @@ applied to input as well as output.
 Atari-hardware / `CONF_*` gated (MFP, ACIA, SCC, printer port). NewTOS supplies
 equivalent handlers for its own devices; these EmuTOS internals are *behaviour
 reference*, not contract.
+
+---
+
+## D-017: `Fopen` valid-mode mask is `0x07`, not `0x77` (spec-vs-source)
+
+**Date:** 2026-07-03
+**Phase 00 spec:** `docs/api/gemdos/file/3d-fopen.md`
+
+**EmuTOS:** `xopen` masks the mode with `VALID_FOPEN_BITS = MODE_FAC = 0x07`
+(`bdos/fs.h:169,173`; `bdos/fsopnclo.c:225`). Only the low three bits (the
+access code `RO_MODE`/`WO_MODE`/`RW_MODE`) survive; the file-sharing bits 4-6
+(`MODE_FSM`) and the inheritance bit 7 (`INH_MODE`) are **masked away** — this
+EmuTOS build does not implement file sharing / record locking.
+
+**Prior NewTOS doc (wrong):** `3d-fopen.md` claimed the mask was `0x77` and
+documented a "sharing mode" in bits 4-6 that `Fopen` accepts. Neither is true
+of the source.
+
+**Compendium:** documents the sharing/compatibility modes as part of `Fopen`;
+those bits are a real TOS/GEMDOS concept but are **not honoured** by EmuTOS
+`1a7484ab` (they never reach the OFD via `Fopen`).
+
+**Decision:** follow EmuTOS — `Fopen` honours only bits 0-2. Corrected in
+`3d-fopen.md`. If NewTOS later implements sharing it must widen the mask
+deliberately and document it.
+
+---
+
+## D-018: `Fopen`/`Fdelete`/`Fattrib` folder & path error codes (spec-vs-source)
+
+**Date:** 2026-07-03
+**Phase 00 specs:** `docs/api/gemdos/file/3d-fopen.md`, `41-fdelete.md`,
+`43-fattrib.md`
+
+**EmuTOS:**
+- `xopen` returns **`EFILNF`** (-33) when `findit` fails — i.e. even when the
+  *directory* part of the path is missing (`bdos/fsopnclo.c:248-249`). It never
+  returns `EPTHNF` for `Fopen`.
+- `xopen`/`xunlink` scan with `FA_NORM`, which excludes `FA_VOL`/`FA_SUBDIR`, so
+  a **folder** of that name is "not found" → `EFILNF`, **not** `EACCDN`
+  (`bdos/fsopnclo.c:256,604`).
+
+**Prior NewTOS docs (wrong):** `3d-fopen.md` listed `EPTHNF` as a possible
+`Fopen` return; `41-fdelete.md` claimed `Fdelete` on a folder returns `EACCDN`.
+Both contradict the source (`Fdelete` on a folder → `EFILNF`; `Fopen` on a bad
+path → `EFILNF`).
+
+**Compendium:** documents `EPTHNF`/`EFILNF` generically; the exact collapse to
+`EFILNF` is EmuTOS behaviour.
+
+**Decision:** follow EmuTOS. Corrected in the three specs. (`Fattrib` and
+`Frename` *do* return `EPTHNF` from their own `findit` failures — that part is
+unchanged.)
+
+---
+
+## D-019: `Fsnext`/`Fsetdta` error and default facts (spec-vs-source)
+
+**Date:** 2026-07-03
+**Phase 00 specs:** `docs/api/gemdos/file/4f-fsnext.md`,
+`docs/api/gemdos/dta/1a-fsetdta.md`, `docs/api/structures/dta.md`
+
+**EmuTOS:** `xsnext` returns **`ENMFIL`** (-49) for *every* exhausted /
+uninitialised case — no prior `Fsfirst`, failed search, or already-exhausted DTA
+(`bdos/fsdir.c:662-663,669-670`). There is no `EINTRN` path in `Fsnext`. The
+per-process DTA pointer field is **`p_xdta`** at basepage offset **0x20**
+(`include/bdosdefs.h:79`), defaulting to `p_cmdlin` (offset 0x80,
+`bdos/proc.c:375`).
+
+**Prior NewTOS docs (wrong):** `dta.md` claimed "`Fsnext` without a prior
+`Fsfirst` returns `EINTRN` (-65) on EmuTOS, `ENMFIL` on Atari TOS" — the source
+returns `ENMFIL` in all cases. The old DTA docs also referred to the pointer as
+`p_dta`/`p_xdta` inconsistently and to a nonexistent `p_dtabuf`.
+
+**Compendium:** documents `ENMFIL` on exhaustion — consistent with EmuTOS; the
+claimed `EINTRN` divergence never existed.
+
+**Decision:** follow EmuTOS — `ENMFIL` for all exhausted/uninitialised `Fsnext`.
+Corrected in `4f-fsnext.md`, `1a-fsetdta.md`, and the `dta.md` cross-reference
+note.
+
+---
+
+## D-020: SFT/handle sizing — `OPNFILES = 75`, `NUMHANDLES = 81` (spec-vs-source)
+
+**Date:** 2026-07-03
+**Phase 00 specs:** `docs/api/gemdos/file/45-fdup.md`, `3d-fopen.md`,
+`docs/api/gemdos/_state.md`
+
+**EmuTOS:** `OPNFILES = 75`, `NUMSTD = 6`, `NUMHANDLES = NUMSTD + OPNFILES = 81`
+(`bdos/fs.h:43-45`, `include/bdosdefs.h:61`). `PD.p_uft[NUMSTD]` is an array of
+**signed bytes** holding either a negative BIOS handle or a non-standard handle
+number; it is **not** an index into a `syshnd[]` array.
+
+**Prior NewTOS docs (wrong):** `45-fdup.md` computed `OPNFILES = NUMHANDLES -
+NUMSTD = 40 - 6 = 34`; `3d-fopen.md` and `_state.md` implied 32/40. All were
+wrong. `_state.md` also mis-described `p_uft` as pointing "into syshnd".
+
+**Not a Compendium discrepancy** — an internal spec error (Atari TOS 1.04-3.06
+also use 75 system-wide open files; TOS 4.04 uses 19 per-process). Corrected in
+the three docs; `docs/api/structures/ofd.md` already had the correct 75.
+
+**Decision:** use `OPNFILES = 75`, `NUMHANDLES = 81`.
+
+---
+
+## D-021: `Fcreate` illegal-character set is narrow and create-specific
+
+**Date:** 2026-07-03
+**Phase 00 spec:** `docs/api/gemdos/file/3c-fcreate.md`
+
+**EmuTOS:** `contains_illegal_characters` tests against
+`ILLEGAL_FNAME_CHARACTERS = " *,:;<=>?[]|"` (`bdos/fsopnclo.c:64`) — space,
+`*`, `,`, `:`, `;`, `<`, `=`, `>`, `?`, `[`, `]`, `|`. This is *mostly* the
+MS-DOS set **but** Atari additionally allows `+`, and the set does **not**
+include `/`, `\`, or `"`. The same test guards `Frename`'s new name.
+
+**Prior NewTOS doc (wrong):** `3c-fcreate.md` listed the rejected set as
+`< > : " / \ | ? *` — it wrongly included `"`, `/`, `\` and omitted space, `,`,
+`;`, `=`, `[`, `]`.
+
+**Compendium:** describes "invalid filename characters" loosely; the exact set
+is EmuTOS's.
+
+**Decision:** follow EmuTOS — reject exactly `" *,:;<=>?[]|"` on create/rename.
+Corrected in `3c-fcreate.md` (and referenced by `56-frename.md`).
+
+---
+
+## D-022: `Fcreate` opens the new file `RO_MODE` when `FA_RO` is set (nuance)
+
+**Date:** 2026-07-03
+**Phase 00 spec:** `docs/api/gemdos/file/3c-fcreate.md`
+
+**EmuTOS:** `ixcreat` calls `opnfil(..., (fcb->f_attrib & FA_RO) ? RO_MODE :
+RW_MODE)` (`bdos/fsopnclo.c:201`) — so a file created with `FA_RO` gets an OFD
+whose recorded access code is `RO_MODE`. **However**, EmuTOS does not enforce
+the access code on `Fwrite` (`bdos/fsio.c:536-538`), so the returned handle is
+still writable; the read-only attribute only blocks a *later* `Fopen` for write.
+
+**Prior NewTOS doc (imprecise):** `3c-fcreate.md` said the handle is "opened
+read-write, even if FA_RO is set". The observable result (writable handle) is
+correct, but the recorded OFD mode is `RO_MODE`, not `RW_MODE` — the handle is
+writable because the mode is *unenforced*, not because it is RW.
+
+**Not a Compendium discrepancy** — a precision fix. Corrected in `3c-fcreate.md`
+(edge case 2) and cross-referenced from `3d-fopen.md`/`3f-fread.md`/`40-fwrite.md`.
+
+**Decision:** document the observable contract (writable handle) and the exact
+mechanism (mode recorded but not enforced).
+
+---
+
+## D-023: `Frename` details — reserved word, folder `..` update, `EINTRN`, open-file corruption
+
+**Date:** 2026-07-03
+**Phase 00 spec:** `docs/api/gemdos/file/56-frename.md`
+
+**EmuTOS:** `xrename(int n, char *p1, char *p2)` (`bdos/fsdir.c:895`):
+- The `n` argument is a historical reserved word; the binding hard-codes 0
+  (`include/bdosbind.h:53`) and the code ignores it.
+- For a **cross-directory folder move** it **does** rewrite the moved folder's
+  `..` entry to the new parent's start cluster and fixes the folder's attribute
+  byte in the new parent (`bdos/fsdir.c:1043-1064`); failures there return
+  **`EINTRN`** (-65).
+- It does **not** check for open OFDs on the source; renaming an open file
+  leaves the OFD pointing at the erased old entry, which corrupts the directory
+  on the later `Fclose` (`bdos/fsdir.c` — no OFD check).
+
+**Prior NewTOS doc (wrong/incomplete):** `56-frename.md` claimed the folder `.`
+/`..` entries are **not** updated (the source updates `..`), and omitted the
+`EINTRN` error path.
+
+**NewTOS decision (deliberate divergence):** NewTOS will **not** reproduce the
+open-file rename corruption — it will check the OFD chain and return `EACCDN`
+if the source file has an open OFD. This is a strict safety improvement; a
+program relying on the buggy behaviour would already be corrupting directories
+on real TOS. Documented in `56-frename.md`; the `..`-update and `EINTRN` facts
+are corrected to match the source.
+
+---
+
+## D-024: DTA public time/date/size are native (m68k big-endian) in the buffer
+
+**Date:** 2026-07-03
+**Phase 00 specs:** `docs/api/gemdos/file/4e-fsfirst.md`, `4f-fsnext.md`,
+`docs/api/structures/dta.md`
+
+**EmuTOS:** `makbuf` copies the found FCB's time/date/size into the DTA's public
+fields using `swpw`/`swpl` (`bdos/fsdir.c:1851-1862`), converting from the
+**little-endian** on-disk FCB to **native (m68k big-endian)** order. So a
+program reading `DTA.d_time`/`d_date`/`d_length` sees big-endian words on m68k,
+matching the packed FAT *bit* layout but in host byte order.
+
+**Prior NewTOS doc (incomplete):** `dta.md` described the fields as "FAT packed"
+without stating the byte order, which matters for the AArch64 ABI.
+
+**Not a Compendium discrepancy** — a precision fix relevant to NewTOS's
+big-endian-ABI marshaling. Corrected in the two `Fsfirst`/`Fsnext` specs and
+`docs/api/gemdos/_state.md` §6.
+
+**Decision:** the DTA's public time/date/size are native byte order (big-endian
+for m68k callers) — contract for the marshaling shim.

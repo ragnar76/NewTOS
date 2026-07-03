@@ -1,170 +1,251 @@
-# `Frename` — GEMDOS 0x56
+# `Frename` (GEMDOS 0x56)
 
-> Phase 00 spec. Source: EmuTOS @ `1a7484ab` —
-> `bdos/fsdir.c:895` (`xrename`).
+> Phase 00 spec (full-contract template). Source: EmuTOS @ `1a7484ab`.
+> Verified against `bdos/fsdir.c:895` (`xrename`).
 
-## EmuTOS source (essence)
+> **Contract vs. reference** — see [`docs/COMPATIBILITY.md`](../../../COMPATIBILITY.md).
+> Contract: trap ID/ABI (**reserved word first, then two path pointers**), the
+> "target must not exist" / RO / cross-device rules, folder rename support, the
+> full error set. Reference: the create-then-erase cross-directory algorithm,
+> `is_subdir`, DND locking.
 
-```c
-long xrename(int n, char *p1, char *p2)
-{
-    /* n is unused (Atari historical) */
+## EmuTOS source
 
-    if (!ixsfirst(p2, FA_SUBDIR, NULL))   /* new path already exists? */
-        return EACCDN;
+**Primary location:** `bdos/fsdir.c:895` — `long xrename(int n, char *p1, char *p2)`
+(`n` is a historical, unused reserved word).
 
-    DND *dn1 = findit(p1, &s1, 0);
-    if (!dn1) return EPTHNF;
+**Installed handler / vector:** (none) — direct `funcs[]` entry `0x56` =
+`xrename`, `wparms=5` (`bdos/bdosmain.c:286`).
 
-    /* remember source drive and start cluster */
-    DMD  *dmd1   = dn1->d_drv;
-    CLNO  strtcl1 = dn1->d_parent ? dn1->d_strtcl : ROOT_PSEUDO_CLUSTER;
+**Helpers called:**
+- `bdos/fsdir.c:452` — `ixsfirst()` — check whether the target `p2` already
+  exists (called with a NULL DTA, search-only).
+- `bdos/fsdir.c:1407` — `findit()`, `bdos/fsdir.c:1525` — `scan()`.
+- `bdos/fsopnclo.c:708` — `contains_illegal_characters()`.
+- `bdos/fsdir.c:853` — `is_subdir()` — cycle-prevention predicate.
+- `bdos/fsdir.c:871` — `update_fcb()` — seek + write a directory-entry field.
+- `bdos/fsopnclo.c:99` — `ixcreat()` (cross-directory case creates the new
+  entry), `bdos/fsopnclo.c:426` — `xclose()`, `bdos/fsopnclo.c:511` —
+  `ixclose()`.
+- `bdos/fsdir.c` — `builds()`, `getdnd()`, `unpackit()`, `freednd()`.
 
-    FCB *fcb = scan(dn1, s1, FA_NORM|FA_SUBDIR, &posp);
-    if (!fcb) return EFILNF;
-    if (fcb->f_attrib & FA_RO) return EACCDN;     /* RO files refused */
+**Headers / type definitions used:**
+- `bdos/fs.h:195` — `FA_NORM`, `include/bdosdefs.h:40` — `FA_SUBDIR`.
+- `bdos/fsdir.c:137` — `ROOT_PSEUDO_CLUSTER = 1` (distinguishes the root from a
+  real start cluster).
+- `bdos/fs.h:230` — `DND_LOCKED`.
+- `bdos/fsdir.c:139` — `DIR_FILE_LENGTH` (fake size for directory entries).
 
-    /* save old attribute / time / cluster / length */
-    UBYTE att = fcb->f_attrib;
-    /* ... swpw / swpl into local copies ... */
+**System variables / globals read/written:** the source and destination
+directory sectors, FAT (unchanged — cluster chain is *not* copied), buffer cache;
+`sft[]`/OFD for the transient new entry in the cross-directory case.
 
-    dn1->d_flag |= DND_LOCKED;        /* prevent scavenge */
-    DND *dn2 = findit(p2, &s2, 0);
-    dn1->d_flag &= ~DND_LOCKED;
-    if (!dn2) return EPTHNF;
+**Build configuration affecting this function:** none.
 
-    if (contains_illegal_characters(s2))
-        return EACCDN;
-    if (dmd1 != dn2->d_drv)            /* cross-device */
-        return ENSAME;
+---
 
-    /* cross-directory: ensure no a\b -> a\b\c (would create cycle) */
-    if (strtcl1 != strtcl2) { /* extra checks ... */ }
+## Source extraction summary
 
-    /* create new entry, then erase old */
-}
-```
+`Frename` renames or moves a file (or folder) on the **same** drive. The `n`
+argument is a vestigial "drive number" that was never implemented and is ignored
+(the binding passes 0: `Frename(oldname, newname)` = `trap1(0x56, 0, oldname,
+newname)`, `include/bdosbind.h:53`).
 
-`ROOT_PSEUDO_CLUSTER` is a sentinel value distinguishing "root
-dir" from a real start-cluster of 2 (the actual root start).
+It first checks that the target path `p2` does **not** already exist by calling
+`ixsfirst(p2, FA_SUBDIR, NULL)`; a success (return 0) means the target exists →
+`EACCDN`. It resolves the source `p1` (`findit`; failure → `EPTHNF`) and scans
+it with `FA_NORM | FA_SUBDIR` — note this mask includes sub-directories (so
+folders can be renamed) but **excludes volume labels** (per the Rainbow TOS
+Release Notes, labels cannot be renamed → they are "not found", `EFILNF`).
+Read-only source files are refused (`EACCDN`). It saves the source's attribute,
+time/date, start cluster, and length.
+
+It then resolves the target directory `p2` (locking the source DND during the
+call so it is not scavenged) — failure → `EPTHNF`. Illegal characters in the new
+name → `EACCDN`. A different drive → `ENSAME`. If source and target are in the
+same directory (same start cluster) it simply overwrites the FCB name in place.
+If they differ, it prevents cycles (`is_subdir`, e.g. `a\b -> a\b\c` → `EACCDN`),
+`ixcreat`s a new entry in the target directory carrying the old
+time/date/cluster/length, erases the old entry (`0xE5`), and — for a folder move
+— updates the moved folder's `..` entry to point at the new parent and fixes the
+folder's attribute byte in the new parent (failures here → `EINTRN`). The FAT
+cluster chain is **not** copied; only the directory entry moves.
+
+---
 
 ## Trap interface
 
-| | |
-|--|--|
-| Trap | 1 (GEMDOS) |
-| Function ID | `0x0056` |
-| WORD args | 5 (WORD + LONG + LONG) |
-| Stack frame | `+10: p2 (L)`, `+6: p1 (L)`, `+2: n (W)`, `+0: 0x0056` |
+- **Trap number:** 1 (GEMDOS)
+- **Function ID:** 0x56
+- **Stack frame on entry (m68k):** `Frename(oldname, newname)` =
+  `trap1(0x56, 0, oldname, newname)` (`include/bdosbind.h:53`) — a reserved
+  WORD is pushed first, then the two path pointers:
+  ```
+  +10: newname (LONG, pointer) → p2
+   +6: oldname (LONG, pointer) → p1
+   +2: n = 0   (word, reserved)
+    0: function_id (word) = 0x0056
+  ```
+- **Total parameter bytes:** 10 (WORD + LONG + LONG) → `wparms = 5`.
+- **Native (AArch64) ABI:** ID `0x56` in `x8`; args in `x0..x2` in declaration
+  order; LONG result (0 or negative error) sign-extended into `x0`.
+
+  | m68k stack | AArch64 reg | Name | Type / size |
+  |------------|-------------|------|-------------|
+  | +2         | `x0`        | `n`  | `WORD` (16) — reserved, ignored |
+  | +6         | `x1`        | `p1` | `char *` (ptr) — old path |
+  | +10        | `x2`        | `p2` | `char *` (ptr) — new path |
+
+---
 
 ## Inputs
 
-| Pos | Name | Type    | Range / meaning                          |
-|-----|------|---------|------------------------------------------|
-| 0   | `n`  | WORD    | unused (historical reserved word)         |
-| 1   | `p1` | char *  | source path                                |
-| 2   | `p2` | char *  | destination path                           |
+| Position | Name | Type     | Size | Source location    | Notes |
+|----------|------|----------|------|--------------------|-------|
+| arg0     | `n`  | `int`    | 2    | `bdos/fsdir.c:895` | historical reserved word; unused |
+| arg1     | `p1` | `char *` | 4    | `bdos/fsdir.c:915` | source path (file or folder) |
+| arg2     | `p2` | `char *` | 4    | `bdos/fsdir.c:912` | destination path; must not already exist |
+
+---
 
 ## Outputs
 
-| Reg | D0 |
-| --- | --- |
-| Type | LONG: 0 success, negative error |
+### Return value
 
-## Errors
+- **Register:** D0 / `x0`
+- **Type:** LONG
+- **Encoding:** `E_OK` (0) on success; negative error otherwise.
+- **Source location:** `bdos/fsdir.c:1100` (final `ixclose(fd, CL_DIR)`).
 
-| Code   | Value | When                                                       |
-|--------|------:|------------------------------------------------------------|
-| EACCDN | -36   | `p2` already exists; `p1` is read-only; `p2` has illegal chars; cyclical move (`a\b` → `a\b\c`) |
-| EPTHNF | -34   | source or destination path component missing                |
-| EFILNF | -33   | source filename not present                                  |
-| ENSAME | -48   | cross-device rename (different drive letters)               |
+### Side effects on global state
 
-## Edge cases
+- Same-directory: overwrites the FCB name in place (`bdos/fsdir.c:1077-1082`).
+- Cross-directory: creates a new directory entry, erases the old, updates a
+  moved folder's `..` and parent attribute byte (`bdos/fsdir.c:1005-1073`).
+- For a folder rename, frees any stale DND for the old name
+  (`bdos/fsdir.c:1089-1098`).
 
-### 1. Volume labels not renameable
+### Side effects on hardware
 
-Per Rainbow TOS Release Notes, the scan uses `FA_NORM | FA_SUBDIR`
-(without FA_VOL); volume labels return EFILNF.
+- Directory-sector reads/writes; no FAT-data movement.
 
-### 2. Cross-device → ENSAME
+---
 
-Renaming `A:foo` → `B:bar` returns ENSAME (-48). Programs must
-copy + delete instead.
+## Error conditions
 
-### 3. Cross-directory rename supported
+| Condition | Source location | Returned value |
+|-----------|-----------------|----------------|
+| Target `p2` already exists | `bdos/fsdir.c:912-913` | `EACCDN` (-36) |
+| Source path (directory portion) not found | `bdos/fsdir.c:915-917` | `EPTHNF` (-34) |
+| Source name not found (or is a volume label) | `bdos/fsdir.c:937-938` | `EFILNF` (-33) |
+| Source is read-only (`FA_RO`) | `bdos/fsdir.c:943-944` | `EACCDN` (-36) |
+| Target directory not found | `bdos/fsdir.c:975-976` | `EPTHNF` (-34) |
+| Illegal characters in the new name | `bdos/fsdir.c:985-986` | `EACCDN` (-36) |
+| Cross-device (different drive) | `bdos/fsdir.c:989-990` | `ENSAME` (-48) |
+| Cyclical move (`is_subdir`, e.g. `a\b → a\b\c`) | `bdos/fsdir.c:1002-1003` | `EACCDN` (-36) |
+| `ixcreat` of the new entry failed | `bdos/fsdir.c:1017-1018` | `EPTHNF` (-34) |
+| Can't erase old entry (cross-dir) | `bdos/fsdir.c:1023-1027` | `EACCDN` (-36) |
+| Can't update folder `..` / parent attribute (cross-dir folder) | `bdos/fsdir.c:1053-1064` | `EINTRN` (-65) |
 
-Same drive, different directory — handled. The FCB is removed
-from the source directory and a new FCB is created in the target
-directory pointing at the same cluster chain. Cluster data is
-**not** copied.
+**Error paths not in Compendium:** the `EINTRN` cases for a cross-directory
+folder move, and the "target already exists → `EACCDN`" precheck.
 
-### 4. Cycle prevention
+---
 
-`a\b -> a\b\c` would create a cycle (folder containing itself).
-EmuTOS detects via `strtcl1 != strtcl2` plus a parent-walk check
-and returns EACCDN. `b -> a\b` (rename across folders, no cycle)
-is allowed.
+## Verification criteria
 
-### 5. Renaming open files
+- **Same-directory rename:** `Frename(0, "C:\\OLD.TXT", "C:\\NEW.TXT")` returns
+  `E_OK`; `OLD.TXT` becomes `NEW.TXT`, cluster chain unchanged.
+- **Cross-directory move:** `Frename(0, "C:\\A\\F.TXT", "C:\\B\\F.TXT")` (same
+  drive) returns `E_OK`.
+- **Target exists:** renaming onto an existing name returns `EACCDN` (-36).
+- **RO source:** renaming an `FA_RO` file returns `EACCDN` (-36).
+- **Cross-device:** `Frename(0, "A:\\F", "B:\\F")` returns `ENSAME` (-48).
+- **Missing source:** `Frename(0, "C:\\NONE", "C:\\X")` returns `EFILNF` (-33).
 
-`xrename` does not check for open OFDs. The OFD's `o_dirfil` /
-`o_dirbyt` continue to point at the **old** directory entry,
-which has been erased. Subsequent `Fclose` writes the new metadata
-to the freed slot — corrupts the directory. **Programs must close
-files before renaming.** TOS bug-compatibility: NewTOS preserves
-this trap.
+---
 
-### 6. RO files refused
+## Edge cases discovered in source
 
-`FA_RO` source returns EACCDN. Programs must clear FA_RO via
-`Fattrib` first. Comment in source: "renames are forbidden for
-Read-Only files".
+1. **`n` is ignored.** Historical reserved word; the binding hard-codes 0
+   (`bdos/fsdir.c:894-895`, `include/bdosbind.h:53`).
 
-### 7. Folder rename allowed (TOS-3+ behaviour)
+2. **Target must not exist.** Checked via `ixsfirst(p2, FA_SUBDIR, NULL)` before
+   anything else → `EACCDN` if it does (`bdos/fsdir.c:912-913`).
 
-Source attribute mask `FA_NORM | FA_SUBDIR` permits folder rename.
-The folder's own `.` and `..` entries are NOT updated — they
-still point at the parent's old/new cluster (which actually
-remains the same since the cluster chain is unchanged).
+3. **Folders can be renamed/moved; labels cannot.** Scan mask
+   `FA_NORM | FA_SUBDIR` includes directories but not `FA_VOL`
+   (`bdos/fsdir.c:936`).
 
-### 8. Argument `n` unused
+4. **Read-only files are refused.** `FA_RO` source → `EACCDN`
+   (`bdos/fsdir.c:943-944`).
 
-`n` is historically a "drive number" parameter that was never
-implemented. Programs pass 0 or any value; ignored by EmuTOS.
+5. **Cross-device → `ENSAME`.** Only same-drive renames; copy+delete otherwise
+   (`bdos/fsdir.c:989-990`).
 
-### 9. DND lock
+6. **Cross-directory move updates the folder `..`.** For a moved folder, the
+   `..` entry is rewritten to the new parent's start cluster and the folder's
+   attribute in the new parent is fixed (`bdos/fsdir.c:1043-1064`). (Correction:
+   the `..` entry **is** updated — an earlier draft claimed it was not.)
 
-`dn1->d_flag |= DND_LOCKED` prevents the `findit(p2)` call from
-scavenging `dn1`. Without this, a memory-pressure path in
-`makdnd()` might free `dn1` mid-operation.
+7. **FAT chain is not copied.** Only the directory entry moves; the file's data
+   clusters are untouched (`bdos/fsdir.c:1029-1034`).
+
+8. **DND locking during resolution.** `dn1->d_flag |= DND_LOCKED` around the
+   `findit(p2)` / `ixcreat` calls prevents the source DND being scavenged
+   mid-operation (`bdos/fsdir.c:971-973,1012-1016`).
+
+9. **Open source files are not checked.** `xrename` does not verify that the
+   source is closed; renaming an open file leaves the OFD pointing at the erased
+   old entry, which can corrupt the directory on a later `Fclose`. Programs must
+   close before renaming. (NewTOS intends to *fix* this — see NewTOS notes and
+   the discrepancy log.)
+
+---
 
 ## Dependencies
 
-- `findit`, `scan`, `ixsfirst`, `ixdel`.
-- DND chain, FCB layout, FAT directory writes.
-- `ROOT_PSEUDO_CLUSTER`, `DND_LOCKED`.
+### Requires (must be initialized / functional)
 
-Used by: file managers, archivers, command shells.
+- FAT subsystem for the drive; DND tree; buffer cache; `ixcreat` path.
+
+### Used by
+
+- File managers, archivers, shells.
+
+---
+
+## Related data structures
+
+- `docs/api/structures/ofd.md` — FCB fields moved; DND relationships.
+
+---
 
 ## Cross-references
 
-- **Compendium:** "Frename" — agrees, notes `n` unused.
-- **Profibuch:** "Frename (0x56)" — agrees.
-- `docs/api/gemdos/file/41-fdelete.md`, `3c-fcreate.md`.
+### Atari Compendium
 
-## Configuration
+- Not present in `references/`. Cross-check deferred. (Documents the reserved
+  `n`, `ENSAME` for cross-device, and rename semantics.)
 
-None.
+### Atari Profibuch
+
+- Not present in `references/`. Cross-check deferred.
+
+---
+
+## Configuration / version notes
+
+- Folder rename/move is supported (unlike the strict TOS-1 files-only view);
+  labels are not renameable. `ROOT_PSEUDO_CLUSTER = 1`.
+
+---
 
 ## NewTOS implementation notes
 
 (Empty during Phase 00.)
 
-PHASE-05: same algorithm. The "open file rename corrupts dir"
-quirk (Edge case 5) is **NOT** preserved — NewTOS will check the
-OFD chain and return EACCDN if any open OFD references the source.
-This is a deliberate divergence from TOS bug-compat; TBD whether
-it warrants a discrepancy entry. Logged informally in
-`docs/api/_discrepancies.md` once a real program is found that
-*depends* on the original buggy behaviour.
+PHASE-05: same algorithm. The **open-file rename corruption** (edge case 9) is
+**not** to be preserved — NewTOS will check the OFD chain and refuse (`EACCDN`)
+a rename of a file with an open OFD. That is a deliberate divergence from TOS
+bug-compat; it is logged in `docs/api/_discrepancies.md`.

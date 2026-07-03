@@ -1,136 +1,210 @@
-# `Fread` — GEMDOS 0x3F
+# `Fread` (GEMDOS 0x3F)
 
-> Phase 00 spec. Source: EmuTOS @ `1a7484ab` —
-> `bdos/fsio.c:440` (`xread`), helper `ixread` at `:512`.
+> Phase 00 spec (full-contract template). Source: EmuTOS @ `1a7484ab`.
+> Verified against `bdos/fsio.c:440` (`xread`) and the helper
+> `bdos/fsio.c:498` (`ixread`).
+
+> **Contract vs. reference** — see [`docs/COMPATIBILITY.md`](../../../COMPATIBILITY.md).
+> Contract: trap ID/ABI, "actual bytes read" return, EOF-truncation,
+> read-of-write-only allowed, error codes. Reference: `xrw`/buffer-cache
+> cluster walk.
 
 ## EmuTOS source
 
-```c
-long xread(int h, long len, void *ubufr)
-{
-    OFD *p = getofd(h);
-    if (!p) return EIHNDL;
-    return ixread(p, len, ubufr);
-}
+**Primary location:** `bdos/fsio.c:440` — `long xread(int h, long len, void *ubufr)`.
 
-long ixread(OFD *p, long len, void *ubufr)
-{
-    long maxlen = p->o_dfd->o_fileln - p->o_bytnum;
-    if (len > maxlen) len = maxlen;       /* truncate at EOF */
-    if (len > 0)  return xrw(0, p, len, ubufr);
-    return 0L;
-}
-```
+**Installed handler / vector:** (none) — direct `funcs[]` entry `0x3F` =
+`xread`, `stdio_typ = 0x82`, `wparms=5` (`bdos/bdosmain.c:259`). The `0x82`
+flag is **inert** for `Fread`: the dispatcher's standard-handle redirection
+only fires for `fn < 12` or `16 <= fn <= 19` (`bdos/bdosmain.c:498`), and
+`0x3F` is outside both ranges — so `Fread` is never intercepted and reaches
+`xread` directly.
 
-`xrw(0, ...)` is the unified read/write routine that walks
-clusters and copies through the buffer cache.
+**Helpers called:**
+- `bdos/fsmain.c:474` — `getofd()` — handle → OFD.
+- `bdos/fsio.c:498` — `ixread()` — EOF-clamp `len`, then call `xrw(0, …)`.
+- `bdos/fsio.c:208` — `xrw()` — unified read/write cluster walk through the
+  buffer cache; `bdos/fsio.c:57` — `usrio()` → `longjmp_rwabs` (`Rwabs`).
+
+**Headers / type definitions used:** `bdos/fs.h` — `OFD`, `DFD`, `DMD`.
+
+**System variables / globals read:** `run` (via `getofd`); `p->o_bytnum`,
+`p->o_dfd->o_fileln`.
+**System variables / globals written:** the OFD position fields (`o_bytnum`,
+`o_curcl`, `o_currec`, `o_curbyt`) advance as bytes are copied.
+
+**Build configuration affecting this function:** none.
+
+---
+
+## Source extraction summary
+
+`Fread` transfers up to `len` bytes from the file at handle `h` into `ubufr`,
+starting at the file's current position, and returns the number of bytes
+actually read. `xread` looks up the OFD (invalid handle → `EIHNDL`). `ixread`
+clamps `len` to `o_fileln - o_bytnum` (the bytes remaining before EOF); if that
+is `<= 0` it returns `0L` immediately. Otherwise it calls `xrw(0, …)`, which
+walks the FAT cluster chain, moving whole logical sectors through the buffer
+cache where possible and byte-copying the head/tail fragments, and returns the
+byte count transferred.
+
+The number returned may be less than `len` without being an error — that is how
+callers detect EOF (`ret < len`, or `ret == 0` at/after EOF). EmuTOS does not
+distinguish "reached EOF" from "read zero bytes" — both surface as `0`.
+
+A source comment (`bdos/fsio.c:503-505`) records that EmuTOS used to reject
+reads from a write-only handle but stopped, for Atari-TOS compatibility: the
+`o_mod` access code is **not** consulted by `Fread`. Disk errors during the
+transfer are raised via the BIOS `longjmp` path (see the dispatcher spec),
+not returned inline by `xread`.
+
+---
 
 ## Trap interface
 
-| | |
-|--|--|
-| Trap | 1 (GEMDOS) |
-| Function ID | `0x003F` |
-| WORD args | 5 (WORD + LONG + LONG) |
-| Stack frame | `+8: ubufr (L)`, `+4: len (L)`, `+2: h (W)`, `+0: 0x003F` |
-| Dispatcher flag | `0x82` (special arg pattern in `bdosmain.c`) |
+- **Trap number:** 1 (GEMDOS)
+- **Function ID:** 0x3F
+- **Stack frame on entry (m68k):** `Fread(handle, count, buf)` =
+  `trap1(0x3f, handle, count, buf)` (`include/bdosbind.h:40`):
+  ```
+  +8: buf    (LONG, pointer)
+  +4: count  (LONG)
+  +2: handle (word)
+   0: function_id (word) = 0x003F
+  ```
+- **Total parameter bytes:** 10 (WORD + LONG + LONG) → `wparms = 5`.
+- **Native (AArch64) ABI:** ID `0x3F` in `x8`; args in `x0..x2`; LONG result
+  (bytes read or negative error) sign-extended into `x0`.
+
+  | m68k stack | AArch64 reg | Name    | Type / size |
+  |------------|-------------|---------|-------------|
+  | +2         | `x0`        | `h`     | `WORD` (16) |
+  | +4         | `x1`        | `len`   | `LONG` (32) |
+  | +8         | `x2`        | `ubufr` | `void *` (ptr) |
+
+---
 
 ## Inputs
 
-| Pos | Name    | Type    | Range / meaning                                |
-|-----|---------|---------|------------------------------------------------|
-| 0   | `h`     | WORD    | file handle (≥ 0)                              |
-| 1   | `len`   | LONG    | bytes to read                                  |
-| 2   | `ubufr` | void *  | destination buffer in user space                |
+| Position | Name    | Type    | Size | Source location    | Notes |
+|----------|---------|---------|------|--------------------|-------|
+| arg0     | `h`     | `int`   | 2    | `bdos/fsio.c:440`  | file handle |
+| arg1     | `len`   | `long`  | 4    | `bdos/fsio.c:498`  | max bytes; clamped to bytes-to-EOF; `<= 0` ⇒ 0 |
+| arg2     | `ubufr` | `void *`| 4    | `bdos/fsio.c:440`  | destination buffer; no alignment or bounds check |
+
+---
 
 ## Outputs
 
-| Reg | D0 |
-| --- | --- |
-| Type | LONG: bytes actually read (0..`len`), or negative error |
+### Return value
 
-The "actually read" value can be less than `len` (EOF) without
-being an error — programs detect EOF by `ret < len` or `ret == 0`.
+- **Register:** D0 / `x0`
+- **Type:** LONG
+- **Encoding:** bytes actually read (`0 .. len`) on success; negative error.
+- **Source location:** `bdos/fsio.c:281-283` (`xrw` returns `o_bytnum - bytpos`).
 
-## Errors
+### Side effects on global state
 
-| Code   | Value | When                                              |
-|--------|------:|---------------------------------------------------|
-| EIHNDL | -37   | `getofd(h)` returned NULL (invalid handle)         |
-| BIOS errors | various | propagated from buffer-cache disk reads      |
+- Advances the OFD position fields (`bdos/fsio.c:33-47` `addit`).
 
-`ixread` does NOT distinguish EOF from "read 0 bytes" — caller
-sees `0` either way.
+### Side effects on hardware
 
-## Edge cases
+- Sector reads via the buffer cache / `Rwabs` for any cluster not already cached.
 
-### 1. `len <= 0`
+---
 
-`len = 0` returns 0 immediately. Negative `len` is silently treated
-as 0 (the `if (len > 0)` branch).
+## Error conditions
 
-### 2. Read past EOF
+| Condition | Source location | Returned value |
+|-----------|-----------------|----------------|
+| Invalid handle (`getofd` NULL) | `bdos/fsio.c:445-449` | `EIHNDL` (-37) |
+| Underlying disk read failure | via `longjmp_rwabs` (`bdos/fs.h:60`) | BIOS code (e.g. `EREADF` -11) |
 
-Truncates to `o_fileln - o_bytnum`. Reading at EOF returns 0.
-File pointer (`o_bytnum`) is left at file end after partial read.
+**Error paths not in Compendium:** none new; note `len <= 0` is **not** an
+error (returns `0`), and reading at/after EOF returns `0`, not an error.
 
-### 3. Read from write-only handle
+---
 
-Atari TOS allows it (originally EmuTOS rejected, then matched TOS
-per the source comment "we used to disallow reads from a file
-opened as write-only, but this is not compatible with Atari TOS").
-The mode bits in the OFD are recorded but not enforced for reads.
+## Verification criteria
 
-### 4. Cross-cluster read
+- **Nominal:** on a 100-byte file at position 0, `Fread(h, 100, buf)` returns
+  100 and fills `buf`.
+- **Partial at EOF:** at position 90 of that file, `Fread(h, 100, buf)` returns
+  10 and leaves the position at EOF.
+- **At EOF:** a further `Fread(h, 100, buf)` returns 0.
+- **Zero/negative len:** `Fread(h, 0, buf)` and `Fread(h, -5, buf)` return 0
+  with no transfer.
+- **Read of write-only handle succeeds** (mode not enforced).
+- **Error:** `Fread(9999, 1, buf)` (no such open handle) returns `EIHNDL` (-37).
 
-`xrw` chains through the FAT, reading whole clusters into the
-buffer cache and copying to user space. Crossing a cluster
-boundary is transparent.
+---
 
-### 5. Buffer alignment
+## Edge cases discovered in source
 
-No alignment requirement on `ubufr`. The buffer cache uses its own
-aligned record buffers; user-space copy is byte-wise via memcpy.
+1. **EOF truncation is silent.** `len` is clamped to `o_fileln - o_bytnum`;
+   there is no short-read error (`bdos/fsio.c:507-513`).
 
-### 6. Concurrent reads
+2. **`len <= 0` returns 0.** The `if (len > 0)` gate means zero and negative
+   requests transfer nothing (`bdos/fsio.c:510-513`).
 
-No locking. Two processes reading the same handle through
-`Fdup`/`Fforce` share the OFD's `o_bytnum` — interleaved reads
-will corrupt each other's positions. This is by design (TOS is
-single-tasking; concurrent access is the program's problem).
+3. **Write-only handles are readable.** The `o_mod` access code is not checked;
+   a comment documents the deliberate Atari-TOS compatibility choice
+   (`bdos/fsio.c:503-505`).
 
-### 7. BIOS character devices
+4. **BIOS char devices are not readable via `Fread`.** For `h < 0`, `getofd`
+   returns NULL → `EIHNDL`; console/serial input is via `Cconin`/`Bconin`,
+   not `Fread` (this build has no MiNT `Fread(-1)` bridge).
 
-If `h < 0` (BIOS char dev), `getofd` returns NULL and EIHNDL is
-raised. Character device input goes through `Cconin` / `Cnecin`
-/ `Bconin`, not `Fread`.
+5. **No buffer validation.** `ubufr` is trusted; no alignment or region check
+   (`bdos/fsio.c` uses `memcpy` into it).
 
-### 8. EmuTOS Mint extension
+6. **Shared-handle position hazard.** Two handles onto the same OFD (via
+   `Fdup`/`Fforce`) share `o_bytnum`; interleaved reads corrupt each other's
+   position. Single-tasking makes this the caller's responsibility.
 
-When `h == -1`, EmuTOS-MiNT redirects to `Bconin` loop. EmuTOS
-without MiNT does NOT — `Fread(-1, ...)` returns EIHNDL.
+---
 
 ## Dependencies
 
-- `getofd`, `xrw`, buffer cache (`getrec`, `getbcb`).
-- OFD `o_bytnum`, `o_curcl`, `o_curbyt`.
+### Requires (must be initialized / functional)
 
-Used by: every program that reads files.
+- A valid OFD (from `Fopen`/`Fcreate`); the FAT cluster chain; buffer cache.
+
+### Used by
+
+- Every program that reads files; the loader; AES resource loading.
+
+---
+
+## Related data structures
+
+- `docs/api/structures/ofd.md` — OFD position fields, DFD `o_fileln`.
+
+---
 
 ## Cross-references
 
-- **Compendium:** "Fread" — agrees on semantics.
-- **Profibuch:** "Fread (0x3F)" — agrees, notes EOF == 0 return.
-- `docs/api/gemdos/file/40-fwrite.md`, `42-fseek.md`.
+### Atari Compendium
 
-## Configuration
+- Not present in `references/`. Cross-check deferred. (Documents the
+  `(handle, count, buf)` ABI and "returns bytes read".)
 
-None.
+### Atari Profibuch
+
+- Not present in `references/`. Cross-check deferred.
+
+---
+
+## Configuration / version notes
+
+- None; behaviour independent of build flags.
+
+---
 
 ## NewTOS implementation notes
 
 (Empty during Phase 00.)
 
-PHASE-05: backed by the FAT driver. The user/kernel boundary on
-AArch64 is checked once at the trap entry (page-table valid +
-writable for the whole `[ubufr, ubufr+len)` range).
+PHASE-05: backed by the FAT driver. On AArch64 the `[ubufr, ubufr+len)` range
+is validated once at the trap boundary; the mode-not-enforced behaviour is
+contract for source compatibility.

@@ -1,142 +1,218 @@
-# `Fattrib` — GEMDOS 0x43
+# `Fattrib` (GEMDOS 0x43)
 
-> Phase 00 spec. Source: EmuTOS @ `1a7484ab` —
-> `bdos/fsdir.c:402` (`xchmod`).
+> Phase 00 spec (full-contract template). Source: EmuTOS @ `1a7484ab`.
+> Verified against `bdos/fsdir.c:402` (`xchmod`).
+
+> **Contract vs. reference** — see [`docs/COMPATIBILITY.md`](../../../COMPATIBILITY.md).
+> Contract: trap ID/ABI, get-vs-set semantics, the settable-bit mask
+> (`FA_NORM`), the returned attribute byte, error codes, files-only (TOS 1-3)
+> behaviour. Reference: the in-place directory-entry rewrite via `ixlseek`/
+> `ixwrite`.
 
 ## EmuTOS source
 
-```c
-long xchmod(char *p, int wrt, UBYTE mod)
-{
-    DND *dn = findit(p, &s, 0);
-    if (!dn) return EPTHNF;
+**Primary location:** `bdos/fsdir.c:402` — `long xchmod(char *p, int wrt, UBYTE mod)`.
 
-    long pos = 0;
-    if (!scan(dn, s, FA_NORM, &pos))
-        return EFILNF;
+**Installed handler / vector:** (none) — direct `funcs[]` entry `0x43` =
+`xchmod`, `wparms=4` (`bdos/bdosmain.c:263`).
 
-    if (wrt && (mod & ~FA_NORM))    /* invalid bits for ordinary file */
-        return EACCDN;
+**Helpers called:**
+- `bdos/fsdir.c:1407` — `findit()`, `bdos/fsdir.c:1525` — `scan()`.
+- `bdos/fsio.c:354` — `ixlseek()`, `bdos/fsio.c:498` — `ixread()`,
+  `bdos/fsio.c:554` — `ixwrite()`, `bdos/fsopnclo.c:511` — `ixclose()`.
 
-    pos -= 21;                       /* offset of attribute byte in FCB */
-    OFD *fd = dn->d_ofd;
-    ixlseek(fd, pos);
+**Headers / type definitions used:**
+- `bdos/fs.h:195` — `FA_NORM` (`= FA_ARCHIVE|FA_SYSTEM|FA_HIDDEN|FA_RO = 0x27`).
+- `include/bdosdefs.h:44-45` — `F_GETMOD (0)`, `F_SETMOD (1)` — values of `wrt`.
+- `bdos/fs.h:183-191` — `FCB` layout (attribute at byte offset 11).
 
-    if (!wrt)
-        ixread(fd, 1L, &mod);        /* get */
-    else {
-        ixwrite(fd, 1L, &mod);
-        ixclose(fd, CL_DIR);          /* flush dir */
-    }
-    return mod;
-}
-```
+**System variables / globals read:** `run` (path context); the directory OFD
+`dn->d_ofd`.
+**System variables / globals written:** on set — the attribute byte in the
+directory sector (via the buffer cache), flushed by `ixclose(CL_DIR)`.
 
-`FA_NORM = 0x27` (FA_RO | FA_HIDDEN | FA_SYSTEM | FA_ARCHIVE).
-Setting FA_VOL or FA_SUBDIR via `Fattrib` is rejected.
+**Build configuration affecting this function:** none.
+
+---
+
+## Source extraction summary
+
+`Fattrib` gets or sets the attribute byte of an existing file's directory
+entry. `xchmod` resolves the path with `findit` (failure → `EPTHNF`) and scans
+with the `FA_NORM` mask (`bdos/fsdir.c:415`). Because that mask excludes
+`FA_VOL`/`FA_SUBDIR`, `Fattrib` operates only on **normal files**: a folder or
+label returns `EFILNF`. A source comment (`bdos/fsdir.c:391-401`) documents that
+EmuTOS matches Atari TOS 1-3 here — TOS 4 extended `Fattrib` to folders, which
+EmuTOS deliberately does not.
+
+For a **get** (`wrt == 0`) it seeks to the attribute byte and reads one byte
+into `mod`, then returns it. For a **set** (`wrt == 1`) it first rejects any bit
+outside `FA_NORM` (`mod & ~FA_NORM` non-zero → `EACCDN`) — so you may set only
+read-only/hidden/system/archive; you may **not** set the volume-label or
+sub-directory bit via `Fattrib`. It writes the new byte in place and flushes
+with `ixclose(CL_DIR)`.
+
+Either way the return value is the attribute byte: the *current* attributes on a
+get, or the just-written `mod` on a set. On the native ABI it is a `UBYTE`
+sign-extended into `x0` — if bit 7 is ever set (unusual), it sign-extends;
+callers should mask `& 0xFF`.
+
+The seek offset `pos -= 21` (`bdos/fsdir.c:424`) is the attribute-byte position:
+`scan` leaves `pos` one whole FCB (`sizeof(FCB)=32`) past the entry, and the
+attribute is at FCB offset 11, so `32 - 11 = 21`.
+
+---
 
 ## Trap interface
 
-| | |
-|--|--|
-| Trap | 1 (GEMDOS) |
-| Function ID | `0x0043` |
-| WORD args | 4 (LONG + WORD + WORD) |
-| Stack frame | `+8: mod (W)`, `+6: wrt (W)`, `+2: p (L)`, `+0: 0x0043` |
+- **Trap number:** 1 (GEMDOS)
+- **Function ID:** 0x43
+- **Stack frame on entry (m68k):** `Fattrib(filename, wflag, attrib)` =
+  `trap1(0x43, filename, wflag, attrib)` (`include/bdosbind.h:44`):
+  ```
+  +8: attrib   (word)
+  +6: wflag    (word)
+  +2: filename (LONG, pointer)
+   0: function_id (word) = 0x0043
+  ```
+- **Total parameter bytes:** 8 (LONG + WORD + WORD) → `wparms = 4`.
+- **Native (AArch64) ABI:** ID `0x43` in `x8`; args in `x0..x2`; LONG result
+  (attribute byte, sign-extended, or negative error) in `x0`.
+
+  | m68k stack | AArch64 reg | Name  | Type / size |
+  |------------|-------------|-------|-------------|
+  | +2         | `x0`        | `p`   | `char *` (ptr) |
+  | +6         | `x1`        | `wrt` | `WORD` (16) — 0 get, 1 set |
+  | +8         | `x2`        | `mod` | `WORD` (16) — new attr (set only) |
+
+---
 
 ## Inputs
 
-| Pos | Name | Type    | Range / meaning                                 |
-|-----|------|---------|-------------------------------------------------|
-| 0   | `p`  | char *  | path                                            |
-| 1   | `wrt`| WORD    | 0 = get, 1 = set                                 |
-| 2   | `mod`| WORD    | new attribute byte (low 8 bits used; only on set) |
+| Position | Name  | Type     | Size | Source location    | Notes |
+|----------|-------|----------|------|--------------------|-------|
+| arg0     | `p`   | `char *` | 4    | `bdos/fsdir.c:409` | path to an existing file |
+| arg1     | `wrt` | `int`    | 2    | `bdos/fsdir.c:427` | 0 = get, 1 = set |
+| arg2     | `mod` | `UBYTE`  | 2    | `bdos/fsdir.c:402` | new attribute (only used when `wrt == 1`) |
+
+---
 
 ## Outputs
 
-| Reg | D0 |
-| --- | --- |
-| Type | LONG: attribute byte (sign-extended UBYTE) on success, negative error |
+### Return value
 
-For `wrt = 0`: returns the file's current attributes.
-For `wrt = 1`: returns the new attributes (i.e. `mod`).
+- **Register:** D0 / `x0`
+- **Type:** LONG (attribute byte, or negative error)
+- **Encoding:** on get, the file's current attribute byte; on set, the written
+  `mod`. Sign-extended from `UBYTE`.
+- **Source location:** `bdos/fsdir.c:435`.
 
-## Errors
+### Side effects on global state
 
-| Code   | Value | When                                              |
-|--------|------:|---------------------------------------------------|
-| EPTHNF | -34   | path component does not exist                      |
-| EFILNF | -33   | filename not found                                  |
-| EACCDN | -36   | `wrt = 1` and `mod` contains FA_VOL or FA_SUBDIR    |
+- On set only: rewrites the attribute byte in the directory sector and flushes
+  (`bdos/fsdir.c:431-432`). Get has no side effects on the entry.
 
-## Edge cases
+### Side effects on hardware
 
-### 1. EmuTOS = TOS 1-3 behaviour: files only
+- Directory-sector read (get and set) and write (set) via the block device.
 
-`scan(.., FA_NORM, ..)` only matches FA_NORM entries — folders and
-volume labels return EFILNF. TOS 4 added folder support; EmuTOS
-deliberately matches TOS 1-3.
+---
 
-### 2. FA_RO / FA_HIDDEN / FA_SYSTEM / FA_ARCHIVE
+## Error conditions
 
-These four bits are settable. The mask `~FA_NORM = 0xD8` rejects
-any combination including FA_VOL (0x08), FA_SUBDIR (0x10), or
-upper bits.
+| Condition | Source location | Returned value |
+|-----------|-----------------|----------------|
+| Path (directory portion) not found | `bdos/fsdir.c:410-411` | `EPTHNF` (-34) |
+| File not found by `scan` (or is a folder/label) | `bdos/fsdir.c:415-416` | `EFILNF` (-33) |
+| Set requested with a bit outside `FA_NORM` (`mod & ~0x27`) | `bdos/fsdir.c:421-422` | `EACCDN` (-36) |
 
-### 3. Read returns sign-extended
+**Error paths not in Compendium:** the exact settable mask is `FA_NORM = 0x27`
+(RO|HIDDEN|SYSTEM|ARCHIVE); attempting to set `FA_VOL` (0x08) or `FA_SUBDIR`
+(0x10) yields `EACCDN`.
 
-The byte read into `mod` is returned as a LONG. Bit 7 of the
-attribute byte (rare — usually 0) sign-extends. Programs should
-mask `& 0xFF`.
+---
 
-### 4. Directly writes to dir entry
+## Verification criteria
 
-The on-disk attribute byte at offset `+11` of the FCB is rewritten
-in place (`pos - 21` because `scan` advances `pos` by `sizeof(FCB)
-= 32` and `32 - 11 = 21`). The change is flushed via `ixclose(fd,
-CL_DIR)`.
+- **Get:** `Fattrib("C:\\F.TXT", 0, 0)` returns the file's attribute byte.
+- **Set RO:** `Fattrib("C:\\F.TXT", 1, FA_RO)` returns `FA_RO` (1) and makes a
+  later `Fopen(..., 2)` fail with `EACCDN`.
+- **Set invalid bit:** `Fattrib("C:\\F.TXT", 1, FA_SUBDIR)` returns `EACCDN`.
+- **Folder:** `Fattrib("C:\\SUBDIR", 0, 0)` returns `EFILNF` (-33).
+- **Bad path:** `Fattrib("C:\\NODIR\\F", 0, 0)` returns `EPTHNF` (-34).
 
-### 5. Open files
+---
 
-`Fattrib` operates on the directory entry, not on any open OFD.
-Changing FA_RO on a file currently open RW does not retroactively
-revoke the open mode. The next `Fopen` will see the new flag.
+## Edge cases discovered in source
 
-### 6. Write of identical value
+1. **Files only (TOS 1-3).** The `FA_NORM` scan mask excludes folders/labels →
+   `EFILNF`. EmuTOS deliberately does not implement the TOS 4 folder extension
+   (`bdos/fsdir.c:391-401,415`).
 
-Setting the same `mod` still triggers a dir flush. Programs
-hitting this in tight loops will thrash the buffer cache.
+2. **Settable bits limited to `FA_NORM`.** `mod & ~FA_NORM` on a set → `EACCDN`;
+   `FA_VOL`/`FA_SUBDIR` cannot be toggled here (`bdos/fsdir.c:421-422`).
 
-### 7. Wildcards
+3. **Return is sign-extended `UBYTE`.** Callers should mask `& 0xFF`
+   (`bdos/fsdir.c:435`).
 
-`Fattrib` does NOT iterate; passing `*.txt` returns EFILNF (scan
-with FA_NORM does match wildcards in `scan`, but the resulting
-behaviour is "first match wins" — which is undefined for a single
-attribute change). Programs should resolve names via `Fsfirst`/
-`Fsnext` and apply `Fattrib` per file.
+4. **Direct in-place directory rewrite.** The attribute byte at FCB offset 11 is
+   overwritten (`pos - 21`) and flushed via `ixclose(CL_DIR)`
+   (`bdos/fsdir.c:424-432`).
+
+5. **No effect on open handles.** `Fattrib` changes the directory entry, not any
+   open OFD's recorded mode; a file currently open RW keeps its access. The new
+   flag applies to the *next* `Fopen`.
+
+6. **Idempotent set still flushes.** Setting the same value re-writes and
+   flushes the directory sector; tight loops thrash the buffer cache.
+
+7. **No wildcard iteration.** `Fattrib` acts on one resolved name; callers
+   enumerate with `Fsfirst`/`Fsnext` and apply `Fattrib` per file.
+
+---
 
 ## Dependencies
 
-- `findit`, `scan`, `ixread`, `ixwrite`, `ixclose`, `ixlseek`.
-- FCB layout (`f_attrib` at offset +11).
-- `FA_NORM` (`bdos/fs.h`).
+### Requires (must be initialized / functional)
 
-Used by: file managers, archivers, installers.
+- FAT subsystem for the drive; the directory OFD; buffer cache + `Rwabs`.
+
+### Used by
+
+- File managers, archivers, installers (clearing `FA_RO` before delete/rename).
+
+---
+
+## Related data structures
+
+- `docs/api/structures/ofd.md` — FCB attribute byte.
+- `docs/api/structures/dta.md` — `FA_*` bit definitions.
+
+---
 
 ## Cross-references
 
-- **Compendium:** "Fattrib" — agrees with TOS 1-3 behaviour.
-- **Profibuch:** "Fattrib (0x43)" — notes TOS 4 folder support
-  (which EmuTOS does not implement).
-- `docs/api/gemdos/file/3c-fcreate.md` — initial attributes.
+### Atari Compendium
 
-## Configuration
+- Not present in `references/`. Cross-check deferred. (Documents get/set and the
+  attribute bits; the TOS 1-3 files-only restriction matches EmuTOS.)
 
-None.
+### Atari Profibuch
+
+- Not present in `references/`. Cross-check deferred. (Notes TOS 4 folder
+  support, which EmuTOS omits.)
+
+---
+
+## Configuration / version notes
+
+- EmuTOS behaves as Atari TOS 1-3 (files only). `FA_NORM = 0x27`.
+
+---
 
 ## NewTOS implementation notes
 
 (Empty during Phase 00.)
 
-PHASE-05: keeps TOS 1-3 file-only behaviour to avoid surprising
-programs that rely on EFILNF for folders.
+PHASE-05: keep the TOS 1-3 files-only behaviour so programs that rely on
+`EFILNF` for folders are not surprised.

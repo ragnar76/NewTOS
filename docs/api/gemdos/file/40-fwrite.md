@@ -1,140 +1,211 @@
-# `Fwrite` — GEMDOS 0x40
+# `Fwrite` (GEMDOS 0x40)
 
-> Phase 00 spec. Source: EmuTOS @ `1a7484ab` —
-> `bdos/fsio.c:528` (`xwrite`), helper `ixwrite` at `:558`.
+> Phase 00 spec (full-contract template). Source: EmuTOS @ `1a7484ab`.
+> Verified against `bdos/fsio.c:528` (`xwrite`) and the helper
+> `bdos/fsio.c:554` (`ixwrite`).
+
+> **Contract vs. reference** — see [`docs/COMPATIBILITY.md`](../../../COMPATIBILITY.md).
+> Contract: trap ID/ABI, "actual bytes written" return, short-write = disk
+> full, write-to-read-only allowed, error codes. Reference: `xrw`/`nextcl`
+> cluster allocation.
 
 ## EmuTOS source
 
-```c
-long xwrite(int h, long len, void *ubufr)
-{
-    OFD *p = getofd(h);
-    if (!p) return EIHNDL;
-    return ixwrite(p, len, ubufr);
-}
+**Primary location:** `bdos/fsio.c:528` — `long xwrite(int h, long len, void *ubufr)`.
 
-long ixwrite(OFD *p, long len, void *ubufr)
-{
-    return xrw(1, p, len, ubufr);
-}
-```
+**Installed handler / vector:** (none) — direct `funcs[]` entry `0x40` =
+`xwrite`, `stdio_typ = 0x82`, `wparms=5` (`bdos/bdosmain.c:260`). As with
+`Fread`, the `0x82` flag is **inert**: `0x40` is outside the redirection ranges
+(`fn < 12` / `16..19`, `bdos/bdosmain.c:498`), so `Fwrite` is never intercepted.
 
-`xrw(1, ...)` walks clusters, allocating new ones via `nextcl`
-when writing past EOF, and writes through the buffer cache.
+**Helpers called:**
+- `bdos/fsmain.c:474` — `getofd()`.
+- `bdos/fsio.c:554` — `ixwrite()` → `bdos/fsio.c:208` — `xrw(1, …)` — the
+  unified transfer, allocating clusters with `nextcl` when writing past EOF.
+- `bdos/fsfat.c` — `nextcl()` — extend the FAT chain.
+
+**Headers / type definitions used:** `bdos/fs.h` — `OFD`, `DFD`, `O_DIRTY`.
+
+**System variables / globals read:** `run`; OFD position; `dfd->o_fileln`.
+**System variables / globals written:** OFD position fields; `dfd->o_fileln`
+grows and `dfd->o_flag |= O_DIRTY` when the file extends (`bdos/fsio.c:42-46`).
+
+**Build configuration affecting this function:** none.
+
+---
+
+## Source extraction summary
+
+`Fwrite` transfers up to `len` bytes from `ubufr` to the file at handle `h`,
+starting at the current position, and returns the number of bytes actually
+written. `xwrite` looks up the OFD (invalid → `EIHNDL`) and — unlike `ixread`
+— calls `ixwrite` unconditionally, which forwards to `xrw(1, …)`. `xrw` walks
+the cluster chain, calling `nextcl` to allocate fresh clusters whenever the
+write runs past the currently allocated end. As bytes are written past the old
+file length, `addit` grows `dfd->o_fileln` and sets `O_DIRTY`, so the new size
+and time are flushed by `Fclose`.
+
+The return value is `o_bytnum - bytpos` (bytes moved). A return **less than
+`len`** signals a short write, typically because the disk is full: `xrw` stops
+when `nextcl` can no longer allocate a cluster and returns the partial count.
+There is no dedicated "disk full" error code from `Fwrite`; the caller must
+compare `ret == len`.
+
+There is no explicit `len <= 0` guard (`ixwrite` has none, unlike `ixread`);
+`xrw` with `len == 0` simply moves nothing and returns `0`. A source comment
+(`bdos/fsio.c:536-538`) documents that EmuTOS stopped rejecting writes to a
+read-only-*opened* handle for Atari-TOS compatibility — the `o_mod` access code
+is not enforced. Physical write faults (write-protect, media error) come back
+through the BIOS `longjmp` path, not as an inline `xwrite` return.
+
+---
 
 ## Trap interface
 
-| | |
-|--|--|
-| Trap | 1 (GEMDOS) |
-| Function ID | `0x0040` |
-| WORD args | 5 (WORD + LONG + LONG) |
-| Stack frame | `+8: ubufr (L)`, `+4: len (L)`, `+2: h (W)`, `+0: 0x0040` |
-| Dispatcher flag | `0x82` |
+- **Trap number:** 1 (GEMDOS)
+- **Function ID:** 0x40
+- **Stack frame on entry (m68k):** `Fwrite(handle, count, buf)` =
+  `trap1(0x40, handle, count, buf)` (`include/bdosbind.h:41`):
+  ```
+  +8: buf    (LONG, pointer)
+  +4: count  (LONG)
+  +2: handle (word)
+   0: function_id (word) = 0x0040
+  ```
+- **Total parameter bytes:** 10 (WORD + LONG + LONG) → `wparms = 5`.
+- **Native (AArch64) ABI:** ID `0x40` in `x8`; args in `x0..x2`; LONG result
+  (bytes written or negative error) sign-extended into `x0`.
+
+  | m68k stack | AArch64 reg | Name    | Type / size |
+  |------------|-------------|---------|-------------|
+  | +2         | `x0`        | `h`     | `WORD` (16) |
+  | +4         | `x1`        | `len`   | `LONG` (32) |
+  | +8         | `x2`        | `ubufr` | `void *` (ptr) |
+
+---
 
 ## Inputs
 
-| Pos | Name    | Type    | Range / meaning                          |
-|-----|---------|---------|------------------------------------------|
-| 0   | `h`     | WORD    | file handle (≥ 0)                        |
-| 1   | `len`   | LONG    | bytes to write                           |
-| 2   | `ubufr` | void *  | source buffer                             |
+| Position | Name    | Type    | Size | Source location    | Notes |
+|----------|---------|---------|------|--------------------|-------|
+| arg0     | `h`     | `int`   | 2    | `bdos/fsio.c:528`  | file handle |
+| arg1     | `len`   | `long`  | 4    | `bdos/fsio.c:554`  | bytes to write; `<= 0` transfers nothing |
+| arg2     | `ubufr` | `void *`| 4    | `bdos/fsio.c:528`  | source buffer; not validated |
+
+---
 
 ## Outputs
 
-| Reg | D0 |
-| --- | --- |
-| Type | LONG: bytes actually written (0..`len`), or negative error |
+### Return value
 
-`ret < len` indicates a short write — typically disk-full.
-Programs should compare `ret == len` and treat anything else as a
-soft error.
+- **Register:** D0 / `x0`
+- **Type:** LONG
+- **Encoding:** bytes actually written (`0 .. len`) on success; negative error.
+- **Source location:** `bdos/fsio.c:281-283` (`xrw` returns `o_bytnum - bytpos`).
 
-## Errors
+### Side effects on global state
 
-| Code        | Value | When                                                |
-|-------------|------:|-----------------------------------------------------|
-| EIHNDL      | -37   | invalid handle                                       |
-| BIOS errors | var   | disk write failures via `longjmp`                    |
+- OFD position advances; `dfd->o_fileln` grows and `O_DIRTY` is set on extend
+  (`bdos/fsio.c:42-46`). New clusters are linked into the FAT chain.
 
-`xrw` does not return ENSMEM for "disk full"; instead it returns a
-short count.
+### Side effects on hardware
 
-## Edge cases
+- Sector reads (for partial head/tail sectors) and writes via the buffer cache.
 
-### 1. `len <= 0`
+---
 
-Returns 0 with no side effects.
+## Error conditions
 
-### 2. Write extends file
+| Condition | Source location | Returned value |
+|-----------|-----------------|----------------|
+| Invalid handle (`getofd` NULL) | `bdos/fsio.c:540-543` | `EIHNDL` (-37) |
+| Disk full (cannot allocate cluster) | `bdos/fsio.c` (`xrw` stops, `nextcl` fails) | **short count**, not an error code |
+| Write-protect / media fault | via `longjmp_rwabs` (`bdos/fs.h:60`) | BIOS code (e.g. `EWRPRO` -13, `EWRITF` -10) |
 
-If `o_bytnum + len > o_fileln`, `xrw` calls `nextcl(p, 1)` to grow
-the file by allocating new clusters. The OFD `o_fileln` is updated
-in memory; the directory entry (`f_fileln` in FCB) is updated only
-on `Fclose` or buffer flush.
+**Error paths not in Compendium:** disk-full is reported as a **short byte
+count**, never as a negative code, from `Fwrite` itself.
 
-### 3. Write to read-only handle
+---
 
-Atari TOS allows it (per source comment "we used to disallow
-writes to an existing file opened as read-only, but this is not
-compatible with Atari TOS"). Mode bits are not enforced.
+## Verification criteria
 
-### 4. Disk full (short write)
+- **Nominal:** `Fwrite(h, 100, buf)` on a file with room returns 100 and
+  extends the file; a following `Fclose` persists the new length.
+- **Extend past EOF:** writing beyond the current end allocates clusters and
+  grows `o_fileln`.
+- **Short write on full disk:** on a nearly full volume, `Fwrite(h, N, buf)`
+  returns `< N`; the caller detects disk-full by `ret != N`.
+- **Zero len:** `Fwrite(h, 0, buf)` returns 0, no side effects.
+- **Write to read-only-opened handle succeeds** (mode not enforced).
+- **Error:** `Fwrite(9999, 1, buf)` returns `EIHNDL` (-37).
 
-When `nextcl` cannot allocate a cluster, `xrw` stops and returns
-the partial count. The caller must check `ret == len` for full
-success. Subsequent writes return 0.
+---
 
-### 5. Read-only file system / write-protected disk
+## Edge cases discovered in source
 
-Returns BIOS-level error (typically EWRPRO -13 or EWRITF -10) via
-the longjmp path before any data is written.
+1. **Disk full is a short count, not an error.** `xrw` returns the bytes it
+   managed to write; subsequent writes at the full boundary return 0
+   (`bdos/fsio.c`).
 
-### 6. Buffer-cache eviction
+2. **No explicit `len <= 0` guard.** Unlike `ixread`, `ixwrite` passes straight
+   to `xrw`; `len == 0` moves nothing and yields `0` (`bdos/fsio.c:554-557`).
 
-Long writes flush dirty cache entries asynchronously. A power loss
-mid-write produces a torn FAT — see `docs/api/_dependencies.md`
-for the recovery model. NewTOS plans optional sync-after-write.
+3. **Read-only-opened handles are writable.** The `o_mod` access code is not
+   enforced; documented Atari-TOS compatibility (`bdos/fsio.c:536-538`).
 
-### 7. Atari "0-byte truncate" idiom
+4. **Length update is in-memory until flush.** `o_fileln` and time are written
+   to the directory entry only by `Fclose` (or an internal buffer flush) — a
+   crash before close loses the size update.
 
-Some programs `Fopen` then `Fwrite` 0 bytes after `Fseek` to
-truncate. EmuTOS does **not** truncate on zero-byte write; the
-proper truncate is `Fseek(0, h, 0)` + `Fwrite(0)` followed by
-modifying `o_fileln` directly — actually, EmuTOS has no truncate
-syscall. Programs achieve truncation by `Fcreate` (which deletes
-+ recreates) or by writing zeros and updating `Fdatime` manually.
+5. **No truncate syscall.** GEMDOS has no "set length" call; shrinking a file
+   requires `Fcreate` (which deletes + recreates empty). Writing 0 bytes does
+   **not** truncate.
 
-### 8. Concurrent writes
+6. **Shared-handle position hazard.** As with `Fread`, handles sharing one OFD
+   share `o_bytnum`; concurrent writes must be serialised by the caller.
 
-Same caveat as `Fread` — no locking. Programs sharing a handle via
-`Fdup` must serialise externally.
+---
 
 ## Dependencies
 
-- `getofd`, `xrw`, `nextcl`.
-- Buffer cache (`getrec`, `getbcb`, `flush`).
-- FAT writer.
+### Requires (must be initialized / functional)
 
-Used by: every program that writes files.
+- A valid OFD; FAT free-cluster state; buffer cache + `Rwabs`.
+
+### Used by
+
+- Every program that writes files; the loader when creating files; AES.
+
+---
+
+## Related data structures
+
+- `docs/api/structures/ofd.md` — OFD/DFD position + length fields, `O_DIRTY`.
+
+---
 
 ## Cross-references
 
-- **Compendium:** "Fwrite" — agrees.
-- **Profibuch:** "Fwrite (0x40)" — agrees, notes short-write
-  signals disk-full.
-- `docs/api/gemdos/file/3f-fread.md`, `42-fseek.md`,
-  `3e-fclose.md`.
+### Atari Compendium
 
-## Configuration
+- Not present in `references/`. Cross-check deferred. (Documents the
+  `(handle, count, buf)` ABI and "returns bytes written / short = disk full".)
 
-None.
+### Atari Profibuch
+
+- Not present in `references/`. Cross-check deferred.
+
+---
+
+## Configuration / version notes
+
+- None; behaviour independent of build flags.
+
+---
 
 ## NewTOS implementation notes
 
 (Empty during Phase 00.)
 
-PHASE-05: write path goes through the FAT driver with explicit
-cluster allocation. NewTOS may add an `Fsync`-equivalent XBIOS
-extension; existing programs continue to rely on `Fclose` for
-flush.
+PHASE-05: FAT write path with explicit cluster allocation. NewTOS may add an
+`Fsync`-style extension later; existing programs rely on `Fclose` for flush.

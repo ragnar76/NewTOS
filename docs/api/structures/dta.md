@@ -57,14 +57,19 @@ mask. Bits per `bdosdefs.h:36-41`:
 #define FA_ARCHIVE  0x20    /* archive bit     */
 ```
 
-### `d_time` / `d_date` (0x16, 0x18) — FAT packed
+### `d_time` / `d_date` (0x16, 0x18) — FAT packed, native byte order
 
 ```
 d_time bits: hhhhh mmmmmm sssss (s in 2-second units)
 d_date bits: yyyyyyy mmmm ddddd (year - 1980)
 ```
 
-Same packing as `Tgettime`/`Tgetdate` and FAT directory entries.
+Same *bit* packing as `Tgettime`/`Tgetdate` and FAT directory entries — but the
+DTA words are stored in **native (m68k big-endian) byte order**, not the
+on-disk little-endian order. `makbuf` byte-swaps them from the FCB via
+`swpw`/`swpl` (`bdos/fsdir.c:1851-1862`); likewise `d_length` (0x1A) is native
+byte order. NewTOS must reproduce the m68k big-endian words for the AArch64 ABI
+(see `_discrepancies.md` D-024).
 
 ### `d_length` (0x1A)
 
@@ -100,8 +105,11 @@ explicitly before any `Fsfirst`.
    state.
 5. Calling `Fsfirst` again (with same or different DTA pointer)
    resets the iteration. Calling `Fsnext` *without* a prior matching
-   `Fsfirst` on the same DTA returns `EINTRN` (-65) on EmuTOS, ENMFIL
-   (-49) on Atari TOS — see discrepancy log.
+   `Fsfirst` on the same DTA returns `ENMFIL` (-49) — the `dt_offset_drive`
+   private field is `< 0` (uninitialised), and `xsnext` returns `ENMFIL`
+   for every uninitialised / exhausted case (`bdos/fsdir.c:662-663`). (An
+   earlier draft here wrongly claimed `EINTRN` on EmuTOS — corrected, see
+   `_discrepancies.md` D-019.)
 
 Multiple processes / multiple concurrent searches: each search needs
 its own DTA. The `p_xdta` pointer is per-process, but applications

@@ -1,145 +1,229 @@
-# `Fclose` — GEMDOS 0x3E
+# `Fclose` (GEMDOS 0x3E)
 
-> Phase 00 spec. Source: EmuTOS @ `1a7484ab` —
-> `bdos/fsopnclo.c:426` (`xclose`), helper `ixclose` at `:512`.
+> Phase 00 spec (full-contract template). Source: EmuTOS @ `1a7484ab`.
+> Verified against `bdos/fsopnclo.c:426` (`xclose`) and the flush helper
+> `bdos/fsopnclo.c:511` (`ixclose`).
 
-## EmuTOS source (essence)
+> **Contract vs. reference** — see [`docs/COMPATIBILITY.md`](../../../COMPATIBILITY.md).
+> Contract: trap ID/ABI, the handle-class behaviour (negative = no-op,
+> standard = revert-to-default, non-standard = real close), reference-count
+> semantics observable via `Fdup`/`Fforce`, error codes. Reference: `sftdel`,
+> buffer-cache flush order.
 
-```c
-long xclose(int h)
-{
-    if (h < 0) return E_OK;            /* BIOS character device */
-    if (h >= NUMHANDLES) return EIHNDL;
+## EmuTOS source
 
-    if (h < NUMSTD) {
-        int h0 = run->p_uft[h];
-        run->p_uft[h] = get_default_handle(h);
-        h = h0;
-        if (h < 0) return E_OK;
-        if (h < NUMSTD) return EIHNDL;  /* "can't happen" */
-    } else {
-        FTAB *ftab = &sft[h - NUMSTD];
-        if ((long)ftab->f_ofd < 0L) {   /* mapped to char dev */
-            if (--ftab->f_use == 0) { ftab->f_ofd = 0; ftab->f_own = 0; }
-            return E_OK;
-        }
-    }
+**Primary location:** `bdos/fsopnclo.c:426` — `long xclose(int h)`.
 
-    OFD *fd = getofd(h);
-    if (!fd) return EIHNDL;
+**Installed handler / vector:** (none) — direct `funcs[]` entry `0x3E` =
+`xclose`, `wparms=1` (`bdos/bdosmain.c:258`; comment "will handle its own
+redirection").
 
-    long rc = ixclose(fd, 0);
-    FTAB *ftab = &sft[h - NUMSTD];
-    if (--ftab->f_use == 0) sftdel(ftab);
-    return rc;
-}
-```
+**Helpers called:**
+- `bdos/fsmain.c:474` — `getofd()` — handle → OFD.
+- `bdos/console.c:132` — `get_default_handle()` — the boot-default device for a
+  standard handle (`default_handle[]`, `bdos/console.c:60`).
+- `bdos/fsopnclo.c:511` — `ixclose()` — flush the FCB (date/time/start/length)
+  to the directory entry, then flush all dirty buffers.
+- `bdos/fsopnclo.c:380` — `sftdel()` — release the SFT entry and, when the last
+  user is gone, free the OFD/DFD.
 
-`ixclose` flushes the FCB (date/time, start cluster, length) and
-calls the buffer cache to write back dirty blocks.
+**Headers / type definitions used:**
+- `bdos/fs.h:45` — `NUMHANDLES = 81`; `include/bdosdefs.h:61` — `NUMSTD = 6`.
+- `bdos/fs.h:490-491` — `CL_DIR`, `CL_FULL` (`ixclose` part flags).
+- `bdos/fs.h:130` — `O_DIRTY`.
+
+**System variables / globals read/written:**
+- `run->p_uft[h]` (standard-handle revert, `bdos/fsopnclo.c:452-453`).
+- `sft[h-NUMSTD]` (`f_use`, `f_ofd`, `f_own`).
+- Buffer-cache `bufl[]` (dirty-flush, `bdos/fsopnclo.c:576-579`).
+
+**Build configuration affecting this function:** none.
+
+---
+
+## Source extraction summary
+
+`Fclose` closes a handle. Its behaviour depends on the handle class:
+
+- **Negative handle** (`h < 0`): a raw BIOS character device — always a
+  successful no-op, returns `E_OK` (`bdos/fsopnclo.c:432-433`).
+- **`h >= NUMHANDLES` (81)**: out of range → `EIHNDL`
+  (`bdos/fsopnclo.c:435-436`).
+- **Standard handle `0..5`**: `p_uft[h]` is reverted to its boot default
+  (`get_default_handle`), and the *previously mapped* handle is what actually
+  gets closed. If that mapping was a BIOS device (negative), we are done
+  (`E_OK`). If — "can't happen" — it mapped to another standard handle,
+  `EIHNDL` (`bdos/fsopnclo.c:450-458`).
+- **Non-standard handle `6..80`**: if its `sft[]` entry is mapped to a BIOS
+  device (`f_ofd < 0`), just decrement `f_use`, freeing the slot at zero
+  (`E_OK`). Otherwise fall through to the real close.
+
+The real close validates the OFD (`getofd`; NULL → `EIHNDL`), calls `ixclose`
+to write back date/time/start-cluster/length and set the archive bit (for
+files) into the directory entry and flush all dirty buffers, then decrements
+`f_use`; when it reaches zero, `sftdel` releases the slot and — when the last
+OFD sharing the DFD is gone — frees the OFD/DFD.
+
+The reference count `f_use` is why `Fdup`/`Fforce` interact with close: a
+duplicated or forced handle bumps `f_use`, so several `Fclose` calls are needed
+before the underlying OFD is actually released.
+
+---
 
 ## Trap interface
 
-| | |
-|--|--|
-| Trap | 1 (GEMDOS) |
-| Function ID | `0x003E` |
-| WORD args | 1 |
-| Stack frame | `+2: h (W)`, `+0: 0x003E` |
+- **Trap number:** 1 (GEMDOS)
+- **Function ID:** 0x3E
+- **Stack frame on entry (m68k):** `Fclose(handle)` = `trap1(0x3e, handle)`:
+  ```
+  +2: handle (word)
+   0: function_id (word) = 0x003E
+  ```
+- **Total parameter bytes:** 2 (WORD) → `wparms = 1`.
+- **Native (AArch64) ABI:** ID `0x3E` in `x8`; `h` in `x0`; LONG result
+  sign-extended into `x0`.
+
+  | m68k stack | AArch64 reg | Name | Type / size |
+  |------------|-------------|------|-------------|
+  | +2         | `x0`        | `h`  | `WORD` (16, signed) |
+
+---
 
 ## Inputs
 
-| Pos | Name | Type | Range / meaning                                       |
-|-----|------|------|-------------------------------------------------------|
-| 0   | `h`  | WORD | file handle: `<0` BIOS char dev, `0..5` std, `6..` SFT |
+| Position | Name | Type  | Size | Source location      | Notes |
+|----------|------|-------|------|----------------------|-------|
+| arg0     | `h`  | `int` | 2    | `bdos/fsopnclo.c:426`| `<0` BIOS dev; `0..5` standard; `6..80` non-standard |
+
+---
 
 ## Outputs
 
-| Reg | D0 |
-| --- | --- |
-| Type | LONG: 0 success, negative error |
+### Return value
 
-## Errors
+- **Register:** D0 / `x0`
+- **Type:** LONG
+- **Encoding:** `E_OK` (0) on success; negative error otherwise.
+- **Source location:** `bdos/fsopnclo.c:433,456,471,495`.
 
-| Code   | Value | When                                                |
-|--------|------:|-----------------------------------------------------|
-| EIHNDL | -37   | `h >= NUMHANDLES`, or std-handle remapped to another std (corrupted Fforce), or non-std handle has no OFD |
-| EINTRN | -65   | `ixclose` flush failed (buffer cache write error)    |
+### Side effects on global state
 
-Bios-level disk errors propagate via `longjmp` and are surfaced as
-their original BIOS error code by the trap handler.
+- Standard handle: `p_uft[h]` reset to its default device
+  (`bdos/fsopnclo.c:453`).
+- `sft[].f_use` decremented; at zero the slot is cleared and the OFD/DFD freed
+  (`sftdel`, `bdos/fsopnclo.c:492-493`).
+- `ixclose` writes the directory entry (date/time/start/length, archive bit)
+  and flushes all dirty buffer-cache blocks.
 
-## Edge cases
+### Side effects on hardware
 
-### 1. `h < 0` is a no-op
+- Directory-sector and dirty-data writeback to the block device.
 
-Negative handles refer to raw BIOS character devices (e.g. `-1`
-console aux); they have no OFD and `Fclose` succeeds without doing
-anything. AES uses this for `Fclose(-1)` clean-up.
+---
 
-### 2. Standard handle (0..5) revert
+## Error conditions
 
-Closing a standard handle reverts `p_uft[h]` to the boot-default
-mapping and **does not free** the underlying file. Any subsequent
-read/write on the standard handle hits the default device. The
-underlying handle (returned via `h0`) is then closed if non-std.
+| Condition | Source location | Returned value |
+|-----------|-----------------|----------------|
+| `h >= NUMHANDLES` (81) | `bdos/fsopnclo.c:435-436` | `EIHNDL` (-37) |
+| Standard handle mapped to another standard handle ("can't happen") | `bdos/fsopnclo.c:457-458` | `EIHNDL` (-37) |
+| Non-standard handle with no OFD (`getofd` NULL) | `bdos/fsopnclo.c:481-482` | `EIHNDL` (-37) |
+| Internal: OFD not found on its directory's open-file list | `bdos/fsopnclo.c:565` (`ixclose`) | `EINTRN` (-65) |
 
-### 3. Reference counting
+Underlying BIOS write errors during the flush propagate through the
+GEMDOS `longjmp` recovery path (see `docs/api/gemdos/_dispatcher.md` §8), not as
+a direct `Fclose` return.
 
-`ftab->f_use` starts at 1 on `opnfil` and is incremented by `Fdup`
-and the Fforce-via-non-std-mapped path. Only when it reaches 0 is
-the OFD freed (`sftdel`). Closing a duplicate decrements without
-flushing.
+**Error paths not in Compendium:** the `EINTRN` from `ixclose` when the OFD is
+missing from `d_files`, and the negative-handle no-op (`E_OK` for `h < 0`).
 
-### 4. Dirty-flush ordering
+---
 
-`ixclose` writes:
-1. FCB time/date/cluster/length back to the directory entry.
-2. All dirty buffer cache entries for this OFD.
-3. Frees OFD memory.
+## Verification criteria
 
-Step 1 must precede step 2 because the directory entry sits in the
-cache too; flush order matters for crash consistency.
+- **Nominal:** `Fclose(h)` on a handle from `Fopen`/`Fcreate` returns `E_OK`
+  (0) and writes back the file's final length/time; a following op on `h`
+  returns `EIHNDL`.
+- **Negative handle no-op:** `Fclose(-1)` returns `E_OK` and changes nothing.
+- **Out-of-range:** `Fclose(81)` returns `EIHNDL` (-37).
+- **Standard-handle revert:** after `Fforce(1, fh)` then `Fclose(1)`,
+  handle 1 reads/writes the default console again, and `fh`'s OFD is released
+  only when `f_use` hits zero.
 
-### 5. CL_DIR / CL_FULL flags (internal)
+---
 
-`ixclose(fd, CL_DIR)` flushes the dir entry only (used by
-`Fcreate`'s partial close). `CL_FULL` forces all buffers. The
-public `Fclose` always uses flag 0 = full normal close.
+## Edge cases discovered in source
 
-### 6. Process termination cascade
+1. **`h < 0` always succeeds and does nothing.** BIOS character devices have no
+   OFD to release (`bdos/fsopnclo.c:432-433`). AES uses `Fclose(-1)` as a
+   harmless clean-up.
 
-`Pterm`/`Pterm0` calls `Fclose` on every handle owned by the
-process via `sft[].f_own == run`. Standard handles inherited via
-Fforce are restored to defaults.
+2. **Closing a standard handle reverts, does not free the device.**
+   `p_uft[h]` is set back to `default_handle[h]` (`bdos/fsopnclo.c:453`); the
+   underlying *forced* handle is what gets closed afterward.
 
-### 7. EIHNDL distinguishes errors
+3. **Reference counting via `f_use`.** Starts at 1 in `opnfil`, bumped by
+   `Fforce` (non-BIOS mapping) and set to 1 for each new `Fdup` slot. Only at
+   `f_use == 0` does `sftdel` free the OFD (`bdos/fsopnclo.c:492-493`).
 
-A "can't happen" path returns EIHNDL when a standard handle is
-mapped to another standard handle (would only occur if Fforce was
-called incorrectly). Programs should treat any EIHNDL as fatal.
+4. **DFD sharing survives one close.** If multiple OFDs share a DFD (same file
+   opened twice), `sftdel` decrements `o_usecnt` and only frees the base OFD
+   when the last user is gone (`bdos/fsopnclo.c:396-409`).
+
+5. **Flush order: directory entry before data.** `ixclose` first rewrites the
+   FCB (date/time/start/length + archive), then flushes all dirty buffers
+   (`bdos/fsopnclo.c:530-579`). `CL_DIR`/`CL_FULL` are internal partial-close
+   flags; public `Fclose` uses part `0` (full close).
+
+6. **Directory lengths are stored as zero on disk.** When closing with `CL_DIR`
+   the on-disk `f_fileln` is forced to 0 (`bdos/fsopnclo.c:542-543`); regular
+   files get the archive bit set instead.
+
+---
 
 ## Dependencies
 
-- `getofd`, `ixclose`, `sftdel`, `get_default_handle`.
-- `run->p_uft[]`, global `sft[]`.
-- Buffer cache, FAT writer.
+### Requires (must be initialized / functional)
 
-Used by: every program that called `Fopen`/`Fcreate`/`Fdup`.
+- `sft[]`, `run->p_uft[]`; a valid OFD for non-standard handles.
+- Buffer cache + `Rwabs` for the flush.
+
+### Used by
+
+- Every program that opened a handle; process termination auto-closes handles
+  owned by the exiting PD.
+
+---
+
+## Related data structures
+
+- `docs/api/structures/ofd.md` — OFD/DFD, `f_use`/`o_usecnt`.
+- `docs/api/gemdos/_state.md` §2 — SFT and standard-handle model.
+
+---
 
 ## Cross-references
 
-- **Compendium:** "Fclose" — agrees.
-- **Profibuch:** "Fclose (0x3E)" — agrees.
-- `docs/api/gemdos/file/3d-fopen.md`, `45-fdup.md`, `46-fforce.md`.
+### Atari Compendium
 
-## Configuration
+- Not present in `references/`. Cross-check deferred. (Documents "returns 0 on
+  success"; the negative-handle no-op and `EINTRN` internal path are EmuTOS's.)
 
-None.
+### Atari Profibuch
+
+- Not present in `references/`. Cross-check deferred.
+
+---
+
+## Configuration / version notes
+
+- `NUMHANDLES = 81`, `NUMSTD = 6`.
+
+---
 
 ## NewTOS implementation notes
 
 (Empty during Phase 00.)
 
-PHASE-05: identical SFT and PD `p_uft[]` semantics; flush calls
-into the FAT writer with the same ordering invariants.
+PHASE-05: identical SFT / `p_uft[]` semantics; the flush ordering (directory
+entry before data) is a crash-consistency contract worth preserving.

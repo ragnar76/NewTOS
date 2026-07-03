@@ -1,152 +1,215 @@
-# `Fdelete` — GEMDOS 0x41
+# `Fdelete` (GEMDOS 0x41)
 
-> Phase 00 spec. Source: EmuTOS @ `1a7484ab` —
-> `bdos/fsopnclo.c:623` (`xunlink`), helper `ixdel` at `:646`.
+> Phase 00 spec (full-contract template). Source: EmuTOS @ `1a7484ab`.
+> Verified against `bdos/fsopnclo.c:623` (`xunlink`), the static helper
+> `bdos/fsopnclo.c:588` (`ixunlink`), and the work routine
+> `bdos/fsopnclo.c:652` (`ixdel`).
+
+> **Contract vs. reference** — see [`docs/COMPATIBILITY.md`](../../../COMPATIBILITY.md).
+> Contract: trap ID/ABI, RO/folder/other-process refusals, error codes,
+> the on-disk `0xE5` erase marker. Reference: FAT-chain free, `ixdel`
+> internals, buffer flush.
 
 ## EmuTOS source
 
-```c
-long xunlink(char *name)
-{
-    return ixunlink(name);            /* trivial wrapper */
-}
+**Primary location:** `bdos/fsopnclo.c:623` — `long xunlink(char *name)`
+(thin wrapper over `ixunlink`).
 
-/* ixunlink does findit + scan, then ixdel */
-long ixdel(DND *dn, FCB *f, long pos)
-{
-    /* check if any open OFD points at this dir entry */
-    for (fd = dn->d_files; fd; fd = fd->o_link)
-        if (fd->o_dirbyt == pos)
-            for (n = 0; n < OPNFILES; n++)
-                if (sft[n].f_ofd == fd) {
-                    if (sft[n].f_own == run) ixclose(fd, 0);
-                    else                     return EACCDN;
-                }
+**Installed handler / vector:** (none) — direct `funcs[]` entry `0x41` =
+`xunlink`, `wparms=2` (`bdos/bdosmain.c:261`).
 
-    /* free FAT chain */
-    n = f->f_clust; swpw(n);
-    while (n && !endofchain(n)) {
-        n2 = getrealcl(n, dm);
-        clfix(n, FREECLUSTER, dm);
-        n = n2;
-    }
+**Helpers called:**
+- `bdos/fsopnclo.c:588` — `ixunlink()` — resolve + scan + RO check + `ixdel`.
+- `bdos/fsdir.c:1407` — `findit()`, `bdos/fsdir.c:1525` — `scan()`.
+- `bdos/fsopnclo.c:652` — `ixdel()` — close-if-mine-else-refuse, free FAT
+  chain, mark the directory entry erased.
+- `bdos/fsopnclo.c:511` — `ixclose()`; `bdos/fsfat.c` — `getrealcl()`,
+  `clfix()`, `endofchain()`.
 
-    /* mark dir entry as erased (0xE5 in first byte) */
-    fd = dn->d_ofd;
-    ixlseek(fd, pos);
-    c = ERASE_MARKER;
-    ixwrite(fd, 1L, &c);
-    ixclose(fd, CL_DIR);
-    return E_OK;
-}
-```
+**Headers / type definitions used:**
+- `bdos/fs.h:193` — `ERASE_MARKER = 0xE5`.
+- `bdos/fs.h:195` — `FA_NORM = 0x27`.
+- `bdos/fs.h:483-485` — `FREECLUSTER`, `ENDOFCHAIN`, `endofchain()`.
+
+**System variables / globals read:** `run` (for the owner check in `ixdel`);
+`dn->d_files` (open OFDs on the directory), `sft[]`.
+**System variables / globals written:** the FAT (clusters freed), the directory
+sector (first name byte → `0xE5`), buffer cache.
+
+**Build configuration affecting this function:** none.
+
+---
+
+## Source extraction summary
+
+`Fdelete` removes a file by name. `ixunlink` resolves the path (`findit`;
+failure → `EFILNF`) and scans the directory with the `FA_NORM` mask
+(`bdos/fsopnclo.c:604`). Because `FA_NORM` excludes `FA_VOL`/`FA_SUBDIR`,
+`Fdelete` matches only normal files — a folder or a volume label is simply "not
+found" and returns `EFILNF`. If the found entry is read-only (`FA_RO`), it
+returns `EACCDN`; the caller must clear the flag with `Fattrib` first.
+
+`ixdel` then does the real work. It walks the directory's list of open files
+(`dn->d_files`) looking for an OFD at the same directory offset; for each, it
+checks `sft[]`: if the file is open by the **current** process it is closed
+first (`ixclose`), but if it is open by **another** process, `ixdel` returns
+`EACCDN`. Next it frees the file's FAT cluster chain (`getrealcl`/`clfix` write
+`FREECLUSTER` into each entry). Finally it overwrites the first byte of the
+directory entry with the erase marker `0xE5` and flushes (`ixclose(fd,
+CL_DIR)`). On success `E_OK`. Physical failures during these steps take the
+BIOS `longjmp` path, so `ixdel` can simply return `E_OK` afterward.
+
+Note the interface: `Fdelete` has no wildcard iteration and no error for
+"already gone"; it targets one named file.
+
+---
 
 ## Trap interface
 
-| | |
-|--|--|
-| Trap | 1 (GEMDOS) |
-| Function ID | `0x0041` |
-| WORD args | 2 (LONG) |
-| Stack frame | `+2: name (L)`, `+0: 0x0041` |
+- **Trap number:** 1 (GEMDOS)
+- **Function ID:** 0x41
+- **Stack frame on entry (m68k):** `Fdelete(fname)` = `trap1(0x41, fname)`:
+  ```
+  +2: fname (LONG, pointer)
+   0: function_id (word) = 0x0041
+  ```
+- **Total parameter bytes:** 4 (LONG) → `wparms = 2`.
+- **Native (AArch64) ABI:** ID `0x41` in `x8`; `name` in `x0`; LONG result
+  sign-extended into `x0`.
+
+  | m68k stack | AArch64 reg | Name   | Type / size |
+  |------------|-------------|--------|-------------|
+  | +2         | `x0`        | `name` | `char *` (ptr) |
+
+---
 
 ## Inputs
 
-| Pos | Name   | Type    | Range / meaning             |
-|-----|--------|---------|-----------------------------|
-| 0   | `name` | char *  | path of file to delete       |
+| Position | Name   | Type     | Size | Source location       | Notes |
+|----------|--------|----------|------|-----------------------|-------|
+| arg0     | `name` | `char *` | 4    | `bdos/fsopnclo.c:588` | path of file to delete; exact name, no wildcards |
+
+---
 
 ## Outputs
 
-| Reg | D0 |
-| --- | --- |
-| Type | LONG: 0 success, negative error |
+### Return value
 
-## Errors
+- **Register:** D0 / `x0`
+- **Type:** LONG
+- **Encoding:** `E_OK` (0) on success; negative error otherwise.
+- **Source location:** `bdos/fsopnclo.c:699` (`ixdel` success).
 
-| Code   | Value | When                                                       |
-|--------|------:|------------------------------------------------------------|
-| EFILNF | -33   | filename not found in directory                             |
-| EPTHNF | -34   | path component does not exist                               |
-| EACCDN | -36   | file is read-only / is a folder / is open in another process |
+### Side effects on global state
 
-## Edge cases
+- Frees the file's FAT cluster chain (`bdos/fsopnclo.c:674-683`).
+- Marks the directory entry erased (`0xE5`) and flushes
+  (`bdos/fsopnclo.c:688-692`).
+- May close an OFD owned by the current process before deleting.
 
-### 1. Read-only files
+### Side effects on hardware
 
-EACCDN. Programs must clear FA_RO via `Fattrib` first.
+- FAT and directory-sector writes via the block device.
 
-### 2. Cannot delete folders
+---
 
-Use `Ddelete` for folders. `Fdelete` on a folder returns EACCDN
-(scan with FA_NORM finds it, the RO/folder check rejects it).
+## Error conditions
 
-### 3. Deletes own open file silently
+| Condition | Source location | Returned value |
+|-----------|-----------------|----------------|
+| Path/file not found (`findit` NULL, or `scan` no match) | `bdos/fsopnclo.c:598-599`, `:604-605` | `EFILNF` (-33) |
+| Entry is read-only (`FA_RO`) | `bdos/fsopnclo.c:607-608` | `EACCDN` (-36) |
+| File open by **another** process | `bdos/fsopnclo.c:668` (`ixdel`) | `EACCDN` (-36) |
 
-If the file is currently open by the **same** process, `ixdel`
-calls `ixclose` first, then proceeds. The handle becomes invalid
-(EIHNDL on subsequent ops). Programs commonly do
-`Fopen` → `Fread` → `Fclose` → `Fdelete`; the open-and-delete
-short-cut is supported but unusual.
+**Note:** because the scan uses `FA_NORM`, a **folder** or **volume label** of
+that name is not matched and the result is `EFILNF`, not `EACCDN` — the old
+spec's "delete on a folder returns EACCDN" is incorrect; delete folders with
+`Ddelete` (0x3A).
 
-### 4. Open in another process → EACCDN
+**Error paths not in Compendium:** the "open by another process → `EACCDN`"
+distinction and the same-process auto-close before delete.
 
-If `sft[n].f_own != run`, deletion fails. This is the main reason
-TOS tolerates `Fdelete` on a file with the same name created by
-another process — it's blocked.
+---
 
-### 5. FAT chain freeing
+## Verification criteria
 
-Walks the entire chain via `getrealcl` and writes `FREECLUSTER`
-(0x0000) into each FAT entry via `clfix`. A torn write here leaves
-orphaned clusters; CHKDSK-equivalents detect them via the standard
-"lost cluster" scan.
+- **Nominal:** `Fdelete("C:\\TMP.DAT")` on an existing, non-RO, unopened file
+  returns `E_OK` (0); a following `Fopen` of that name returns `EFILNF`.
+- **RO refusal:** `Fdelete` on an `FA_RO` file returns `EACCDN` (-36); after
+  `Fattrib(name, 1, 0)` the delete succeeds.
+- **Folder not matched:** `Fdelete("C:\\SUBDIR")` returns `EFILNF` (-33).
+- **Missing file:** `Fdelete("C:\\NONE")` returns `EFILNF` (-33).
 
-### 6. ERASE_MARKER = 0xE5
+---
 
-The first byte of the directory entry is set to 0xE5. A real TOS
-quirk: filenames starting with `0xE5` (Sigma-S in Atari ROM) get
-silently encoded as `0x05` to avoid mistaken erasure.
+## Edge cases discovered in source
 
-### 7. `dirinit` not called
+1. **RO files are refused.** `FA_RO` → `EACCDN` (`bdos/fsopnclo.c:607-608`).
 
-`ixdel` does not compact the directory; the slot stays marked as
-erased and `ixcreat` reuses it on the next file creation. `f_name[0]
-== 0x00` (never used) terminates the scan; erased entries (0xE5)
-are skipped by attribute matching.
+2. **Folders/labels are "not found", not "denied".** The `FA_NORM` scan mask
+   excludes them, so `Fdelete` returns `EFILNF` (`bdos/fsopnclo.c:604`).
 
-### 8. Volume labels
+3. **Same-process open file is auto-closed, then deleted.** If the file is open
+   by `run`, `ixdel` calls `ixclose` first and proceeds; the handle becomes
+   stale (`bdos/fsopnclo.c:665-666`).
 
-Volume labels are deleted by `Fdelete` only if the path matches.
-The standard idiom `Fdelete("\\*.*")` does NOT iterate; it just
-fails with EFILNF since `*` isn't valid in a path component for
-exact match. To delete a label, programs use `Fcreate(..., FA_VOL)`
-which replaces the existing label.
+4. **Open by another process blocks.** `sft[n].f_own != run` → `EACCDN`
+   (`bdos/fsopnclo.c:667-668`).
+
+5. **Erase marker `0xE5`.** The first name byte is set to `0xE5`
+   (`ERASE_MARKER`); the slot is not compacted and is reused by the next
+   `Fcreate` (`bdos/fsopnclo.c:688-692`). A name legitimately beginning with the
+   byte value `0xE5` is stored on disk as `0x05` by the create path to avoid
+   false-erasure — this is a FAT convention preserved on-media.
+
+6. **FAT chain freed cluster-by-cluster.** `getrealcl`/`clfix` write
+   `FREECLUSTER`; a crash mid-free leaves lost clusters that a CHKDSK-style scan
+   would reclaim (`bdos/fsopnclo.c:674-683`).
+
+---
 
 ## Dependencies
 
-- `findit`, `scan`, `ixdel`, `ixclose`.
-- FAT manipulation (`getrealcl`, `clfix`, `endofchain`).
-- Global `sft[]`, OFD chain (`dn->d_files`).
+### Requires (must be initialized / functional)
 
-Used by: file managers, installers, every program that cleans up
-temp files.
+- FAT subsystem for the drive; buffer cache + `Rwabs`; `sft[]`/OFD chain.
+
+### Used by
+
+- File managers, installers, temp-file cleanup; `Frename`'s overwrite path via
+  `ixcreat`→`ixdel` for a pre-existing target.
+
+---
+
+## Related data structures
+
+- `docs/api/structures/ofd.md` — FCB, `ERASE_MARKER`, FAT chain fields.
+
+---
 
 ## Cross-references
 
-- **Compendium:** "Fdelete" — agrees.
-- **Profibuch:** "Fdelete (0x41)" — agrees.
-- `docs/api/gemdos/directory/3a-ddelete.md` — folder deletion.
-- `docs/api/gemdos/file/43-fattrib.md` — clearing FA_RO first.
+### Atari Compendium
 
-## Configuration
+- Not present in `references/`. Cross-check deferred. (Documents "returns 0 or
+  error"; the "another process → EACCDN" and folder-is-EFILNF details are
+  EmuTOS's.)
 
-None.
+### Atari Profibuch
+
+- Not present in `references/`. Cross-check deferred.
+
+---
+
+## Configuration / version notes
+
+- None.
+
+---
 
 ## NewTOS implementation notes
 
 (Empty during Phase 00.)
 
-PHASE-05: full FAT delete with cluster-chain freeing. The
-ERASE_MARKER = 0xE5 / encoded-0x05 quirk is preserved for
-on-disk compatibility with native ST media.
+PHASE-05: FAT delete with cluster-chain free; the `0xE5`/`0x05` on-disk erase
+convention is preserved for native-ST media compatibility.
