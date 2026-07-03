@@ -35,13 +35,12 @@ impl Host for KernelHost {
     }
 
     fn pump_input(&self) {
-        // Briefly unmask IRQs so the PL011 RX interrupt can fill the ring
-        // (it is masked inside the synchronous SVC handler), and poll the
-        // UART0 console RX directly. Mirrors the loop body of
-        // `console_read_byte_blocking`, but for a single pass so the AES
-        // event loop stays responsive to its other (timer) conditions.
-        // (Keyboard/mouse input will be pumped here too once the USB-HID
-        // stack lands — `usb::poll()` — see ADR-015 / PHASE-16.)
+        // Briefly unmask IRQs so the PL011 RX interrupt (qemu-virt serial
+        // console) can fill the ring — it is masked inside the synchronous
+        // SVC handler. Mirrors the loop body of `console_read_byte_blocking`,
+        // but for a single pass so the AES event loop stays responsive to its
+        // other (timer) conditions. On real Pi-4 the console is the USB-HID
+        // keyboard, drained below via `usb::poll()`.
         let daif: u64;
         // SAFETY: reading DAIF and toggling the IRQ mask are permitted at
         // EL1; we restore the caller's DAIF before returning.
@@ -57,12 +56,9 @@ impl Host for KernelHost {
             );
         }
 
-        #[cfg(feature = "board-rpi4")]
-        {
-            crate::console::pl011_rx_poll();
-        }
         // Drain USB-HID interrupt transfers (keyboard/mouse) → ikbd::feed.
-        // No-op until a HID device is enumerated (qemu-virt for now).
+        // On real Pi-4 this is the sole console input source; no-op until a
+        // HID device is enumerated (qemu-virt uses the PL011 RX IRQ instead).
         crate::drivers::usb::poll();
         core::hint::spin_loop();
 
@@ -103,29 +99,22 @@ impl Host for KernelHost {
         }
 
         let byte = loop {
-            // Poll the UART0 console RX FIFO directly. The PL011 RX
-            // IRQ path is verified only in QEMU; on real GIC-400 silicon
-            // it is not yet confirmed to be delivered, which would leave
-            // the cable console with no input. Polling here mirrors the
-            // IKBD poll above and feeds the same ring.
-            #[cfg(feature = "board-rpi4")]
-            crate::console::pl011_rx_poll();
-
-            // Drain USB-HID interrupt transfers too, so a *blocking* console
+            // Drain USB-HID interrupt transfers, so a *blocking* console
             // read (Cconin/Bconin — e.g. the EmuCON shell) sees the USB
-            // keyboard, not only the UART0 cable. `pump_input` already does this
-            // for the desktop / AES event loops; without it here the USB
-            // keyboard reaches the desktop but never a blocking console read.
-            // No-op until a HID device is enumerated.
+            // keyboard. On real Pi-4 this is the sole console input source.
+            // `pump_input` already does this for the desktop / AES event
+            // loops; without it here the USB keyboard reaches the desktop
+            // but never a blocking console read. No-op until a HID device
+            // is enumerated (qemu-virt uses the PL011 RX IRQ instead).
             crate::drivers::usb::poll();
 
             if let Some(b) = crate::console::rx_pop() {
                 break b;
             }
-            // On board-rpi4 the IKBD UART is polled, so spin lightly
+            // On board-rpi4 the USB-HID keyboard is polled, so spin lightly
             // rather than sleeping (only the UART0 RX IRQ would wake a
-            // `wfi`, never the polled keyboard). On other boards `wfi`
-            // sleeps until the RX IRQ.
+            // `wfi`, and CON no longer reads the UART). On other boards
+            // (qemu-virt) `wfi` sleeps until the PL011 RX IRQ.
             #[cfg(feature = "board-rpi4")]
             core::hint::spin_loop();
             #[cfg(not(feature = "board-rpi4"))]
@@ -144,6 +133,61 @@ impl Host for KernelHost {
             );
         }
         byte
+    }
+
+    fn console_read_key_blocking(&self) -> u16 {
+        // Identical blocking strategy to `console_read_byte_blocking`, but
+        // pops the whole key word (`scancode << 8 | ascii`) via `rx_pop_key`
+        // — it does *not* skip scancode-only keys (ASCII 0), so arrow /
+        // function keys reach `Bconin(2)`/`Cconin` and friends. Runs inside
+        // the synchronous SVC handler with IRQs masked, so unmask + `wfi`
+        // while waiting (qemu-virt), or spin (rpi4 polls USB-HID).
+        let daif: u64;
+        // SAFETY: reading DAIF and clearing the IRQ mask are permitted
+        // at EL1; we restore DAIF before returning.
+        unsafe {
+            core::arch::asm!(
+                "mrs {0}, daif",
+                out(reg) daif,
+                options(nomem, nostack, preserves_flags),
+            );
+            core::arch::asm!(
+                "msr daifclr, #2",
+                options(nomem, nostack, preserves_flags),
+            );
+        }
+
+        let word = loop {
+            // Drain USB-HID interrupt transfers (keyboard) → ikbd::feed →
+            // the key ring. On real Pi-4 this is the sole console input
+            // source; no-op until a HID device is enumerated (qemu-virt
+            // uses the PL011 RX IRQ instead).
+            crate::drivers::usb::poll();
+
+            if let Some(w) = crate::console::rx_pop_key() {
+                break w;
+            }
+            // rpi4 polls the USB-HID keyboard, so spin lightly (no IRQ
+            // wakes a `wfi` for CON input); qemu-virt `wfi`s until the
+            // PL011 RX IRQ.
+            #[cfg(feature = "board-rpi4")]
+            core::hint::spin_loop();
+            #[cfg(not(feature = "board-rpi4"))]
+            // SAFETY: wait for the next interrupt (the RX IRQ wakes us).
+            unsafe {
+                core::arch::asm!("wfi", options(nomem, nostack, preserves_flags));
+            }
+        };
+
+        // SAFETY: restore the caller's original DAIF mask state.
+        unsafe {
+            core::arch::asm!(
+                "msr daif, {0}",
+                in(reg) daif,
+                options(nomem, nostack, preserves_flags),
+            );
+        }
+        word
     }
 
     fn monotonic_seconds(&self) -> u64 {

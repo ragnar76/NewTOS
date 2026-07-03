@@ -7,6 +7,7 @@
 //! programs see TOS-bit-compatible behaviour; per-function citations
 //! point to the EmuTOS source location used to derive the code.
 
+use crate::bios::chardev::pack_console_key;
 use crate::host::host;
 use crate::trap::TrapArgs;
 use tos_types::error::{EUNDEV, E_OK};
@@ -95,7 +96,8 @@ pub fn cprnout(_: &TrapArgs) -> Long {
 /// `Crawio(w)` — raw console I/O without echo or Ctrl-C handling.
 ///
 /// Per `docs/api/gemdos/console/06-crawio.md`: the read path
-/// (`w == 0x00FF`) returns the byte (low 8 bits) or `0` if no input;
+/// (`w == 0x00FF`) is **non-blocking** and returns the packed console
+/// LONG (scancode in bits 16-23, ASCII in bits 0-7) or `0` if no input;
 /// the write path returns **`0` always** (not the written byte —
 /// EmuTOS `xrawio` falls through to `Bconout(1, w)` and discards
 /// the BIOS return).
@@ -103,9 +105,11 @@ pub fn crawio(args: &TrapArgs) -> Long {
     let w = args.arg_u16(0);
     let h = host_or_eundev!();
     if w == 0x00FF {
-        // Read side: non-blocking; return 0 if no input.
-        match h.console_try_read() {
-            Some(b) => b as Long,
+        // Read side: non-blocking; return 0 if no input. Uses the whole
+        // key word so a pending non-ASCII key (arrow / function) is not
+        // silently dropped.
+        match h.console_try_read_key() {
+            Some(word) => pack_console_key(word),
             None => 0,
         }
     } else {
@@ -117,13 +121,15 @@ pub fn crawio(args: &TrapArgs) -> Long {
 // ---------------------------------------------------------------------------
 // Blocking console input (PHASE-02 D3, unblocked by PHASE-06).
 //
-// On the NewTOS serial console there is no IKBD scancode, so the LONG
-// return is `0x0000_00NN` (high word 0, low byte = ASCII) — what
-// EmuTOS's BIOS returns for a serial `Bconin`. Ctrl-C (0x03) maps to
-// `terminate()` = `Pterm(-32)`; a leaf GEMDOS function cannot redirect
-// the trap frame, so it records the request via
-// [`crate::bdos::process::request_terminate`] and the kernel SVC
-// handler performs the redirect after dispatch.
+// For the CON handle the blocking reads return the packed console LONG
+// (scancode in bits 16-23, ASCII in bits 0-7 — see `pack_console_key` and
+// `docs/api/gemdos/console/01-cconin.md`), built from the IKBD key word
+// delivered by `Host::console_read_key_blocking`. Non-ASCII keys
+// (arrows / function keys) arrive with ASCII 0 and a non-zero scancode.
+// Ctrl-C (ASCII 0x03) maps to `terminate()` = `Pterm(-32)`; a leaf GEMDOS
+// function cannot redirect the trap frame, so it records the request via
+// [`crate::bdos::process::request_terminate`] and the kernel SVC handler
+// performs the redirect after dispatch.
 // ---------------------------------------------------------------------------
 
 /// ASCII ETX — Ctrl-C. EmuTOS `terminate()` exit code is `-32`.
@@ -138,16 +144,21 @@ const CTRLC_RC: i32 = -32;
 // ---------------------------------------------------------------------------
 
 /// `Cconin()` — blocking read of one character with echo. Ctrl-C
-/// terminates the calling process (`Pterm(-32)`).
+/// terminates the calling process (`Pterm(-32)`). Returns the packed
+/// console LONG (scancode in bits 16-23, ASCII in bits 0-7); non-ASCII
+/// keys echo nothing (their ASCII byte is 0).
 pub fn cconin(_: &TrapArgs) -> Long {
     let h = host_or_eundev!();
-    let b = h.console_read_byte_blocking();
-    if b == CTRL_C {
+    let word = h.console_read_key_blocking();
+    let ascii = (word & 0xFF) as u8;
+    if ascii == CTRL_C {
         crate::bdos::process::request_terminate(CTRLC_RC);
         return 0; // value ignored — handler redirects to Pterm.
     }
-    h.console_write_byte(b); // echo (conin → conout)
-    b as Long
+    if ascii != 0 {
+        h.console_write_byte(ascii); // echo (conin → conout)
+    }
+    pack_console_key(word)
 }
 
 // ---------------------------------------------------------------------------
@@ -157,9 +168,10 @@ pub fn cconin(_: &TrapArgs) -> Long {
 // ---------------------------------------------------------------------------
 
 /// `Crawcin()` — blocking raw read of one character. No echo, no
-/// Ctrl-C handling (a Ctrl-C byte is returned as `0x03`).
+/// Ctrl-C handling (a Ctrl-C byte is returned as `0x03`). Returns the
+/// packed console LONG (scancode in bits 16-23, ASCII in bits 0-7).
 pub fn crawcin(_: &TrapArgs) -> Long {
-    host_or_eundev!().console_read_byte_blocking() as Long
+    pack_console_key(host_or_eundev!().console_read_key_blocking())
 }
 
 // ---------------------------------------------------------------------------
@@ -169,14 +181,15 @@ pub fn crawcin(_: &TrapArgs) -> Long {
 // ---------------------------------------------------------------------------
 
 /// `Cnecin()` — blocking read of one character without echo. Ctrl-C
-/// terminates the calling process (`Pterm(-32)`).
+/// terminates the calling process (`Pterm(-32)`). Returns the packed
+/// console LONG (scancode in bits 16-23, ASCII in bits 0-7).
 pub fn cnecin(_: &TrapArgs) -> Long {
-    let b = host_or_eundev!().console_read_byte_blocking();
-    if b == CTRL_C {
+    let word = host_or_eundev!().console_read_key_blocking();
+    if (word & 0xFF) as u8 == CTRL_C {
         crate::bdos::process::request_terminate(CTRLC_RC);
         return 0; // value ignored — handler redirects to Pterm.
     }
-    b as Long
+    pack_console_key(word)
 }
 
 // ---------------------------------------------------------------------------

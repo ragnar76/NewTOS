@@ -42,14 +42,25 @@ pub fn bconstat(args: &TrapArgs) -> Long {
     }
 }
 
-/// `Bconin` (0x02) — blocking read from an input device. Console handles
-/// return the byte as `0x0000_00NN` (ASCII in the low byte; the scancode
-/// high word is 0 — the serial/IKBD source carries ASCII only, the same
-/// convention as GEMDOS `Cconin`). Absent devices return `0`.
+/// Pack an IKBD key word (`scancode << 8 | ascii`) into the console
+/// `Bconin`/`Cconin` return LONG: bits 0-7 = ASCII (0 for non-ASCII keys),
+/// bits 8-15 = 0, bits 16-23 = IKBD scancode, bits 24-31 = 0. Shift state
+/// is *not* folded in — that is a `Kbshift`/`conterm & 8` concern, not this
+/// call's (`docs/api/bios/02-bconin.md`, `docs/api/gemdos/console/01-cconin.md`).
+pub fn pack_console_key(word: u16) -> Long {
+    let ascii = (word & 0xFF) as Long;
+    let scancode = (word >> 8) as Long;
+    (scancode << 16) | ascii
+}
+
+/// `Bconin` (0x02) — blocking read from an input device. For the CON
+/// handle (2) the packed LONG carries the IKBD scancode in bits 16-23 and
+/// the ASCII value in bits 0-7 (non-ASCII keys → ASCII 0 + scancode), per
+/// `docs/api/bios/02-bconin.md`. Absent devices return `0`.
 pub fn bconin(args: &TrapArgs) -> Long {
     let handle = args.arg_u16(0);
     match host::host() {
-        Some(h) if is_console_in(handle) => h.console_read_byte_blocking() as Long,
+        Some(h) if is_console_in(handle) => pack_console_key(h.console_read_key_blocking()),
         _ => 0,
     }
 }

@@ -3,11 +3,14 @@
 //! `CONSOLE` resolves to the PL011 driver instance for the active board so
 //! callers can `use kernel::console::CONSOLE;` without per-board `cfg`s.
 //!
-//! The RX ringbuffer is filled from the PL011 IRQ handler
-//! ([`pl011_rx_drain`]) and consumed by the TOS-API host
-//! (`host_env.rs`). PHASE-02 D5 keeps the buffer small (128 bytes); a
-//! typing burst that overflows simply drops bytes — the GEMDOS
-//! console functions are stateless w.r.t. lost input.
+//! The RX ringbuffer holds key **words** (`scancode << 8 | ascii`). On
+//! real Pi-4 it is filled by the IKBD decoder ([`push_rx`], fed from the
+//! USB-HID keyboard); on qemu-virt it is filled from the PL011 RX IRQ
+//! handler ([`pl011_rx_drain`], serial console — a plain ASCII byte with
+//! scancode 0). It is consumed by the TOS-API host (`host_env.rs`).
+//! PHASE-02 D5 keeps the buffer small (128 entries); a typing burst that
+//! overflows simply drops keys — the GEMDOS console functions are
+//! stateless w.r.t. lost input.
 
 use core::sync::atomic::{AtomicUsize, Ordering};
 
@@ -95,17 +98,6 @@ pub fn pl011_rx_drain() {
     CONSOLE.clear_rx_interrupt();
 }
 
-/// Poll the PL011 RX FIFO directly into the ringbuffer, without going
-/// through the IRQ path. Used by the blocking console read on boards
-/// where the UART0 RX interrupt is not (yet) delivered through the GIC.
-/// Mirrors [`pl011_rx_drain`] but does not touch the interrupt-clear
-/// register, so it is safe to call from ordinary (non-IRQ) context.
-pub fn pl011_rx_poll() {
-    while let Some(b) = CONSOLE.read_byte() {
-        RX_RING.push(b as u16); // serial byte → key word (scancode 0)
-    }
-}
-
 /// Push a key **word** into the RX ringbuffer from the IKBD decoder:
 /// `scancode << 8 | ascii` (ascii 0 for keys with no character, e.g. the
 /// arrow / function keys). ASCII readers (`rx_pop`) take the low byte;
@@ -114,9 +106,12 @@ pub fn push_rx(word: u16) {
     RX_RING.push(word);
 }
 
-/// Pop one **ASCII** byte from the RX ringbuffer for the GEMDOS console
-/// (`Cconin`/`Bconin`) and the serial console — scancode-only keys (arrows
-/// etc., ascii 0) are skipped, exactly as when they were never queued.
+/// Pop one **ASCII** byte from the RX ringbuffer for the console
+/// byte-stream readers (`Cconrs` line input, `Fread` from CON, VDI
+/// `v_locator`) — scancode-only keys (arrows etc., ascii 0) are skipped,
+/// exactly as when they were never queued. The scancode-returning char
+/// reads (`Bconin(2)`/`Cconin`/`Cnecin`/`Crawcin`) instead pop the whole
+/// key word via [`rx_pop_key`] to preserve the high-word scancode.
 pub fn rx_pop() -> Option<u8> {
     loop {
         let ascii = (RX_RING.pop()? & 0xff) as u8;

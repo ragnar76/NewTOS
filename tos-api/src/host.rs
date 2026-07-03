@@ -62,6 +62,26 @@ pub trait Host: Sync {
         }
     }
 
+    /// **Blocking** read of one whole **key word** (`scancode << 8 | ascii`)
+    /// from the console input device — waits until a key is available. Unlike
+    /// [`Host::console_read_byte_blocking`] this does **not** skip
+    /// scancode-only keys (ASCII 0, e.g. arrows / function keys): those must
+    /// be delivered so `Bconin(2)`/`Cconin`/`Cnecin`/`Crawcin` can return the
+    /// packed console LONG (scancode in bits 16-23, ASCII in bits 0-7 — see
+    /// `docs/api/bios/02-bconin.md`).
+    ///
+    /// The default busy-polls [`Host::console_try_read_key`]; the kernel host
+    /// overrides it to enable IRQs and spin/`wfi` while it waits (mirroring
+    /// `console_read_byte_blocking`).
+    fn console_read_key_blocking(&self) -> u16 {
+        loop {
+            if let Some(w) = self.console_try_read_key() {
+                return w;
+            }
+            core::hint::spin_loop();
+        }
+    }
+
     /// Advance the polled input sources once (keyboard/mouse bytes from
     /// the UART(s)), with interrupts briefly enabled. The AES event
     /// manager calls this while it polls for a wait condition: an
