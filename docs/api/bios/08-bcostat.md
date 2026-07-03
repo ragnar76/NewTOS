@@ -206,3 +206,48 @@ No distinct error code — `0L` means both "busy" and "unavailable/invalid".
 ## NewTOS implementation notes
 
 (Empty during Phase 00.)
+
+## Pi / BCM2711 binding
+
+> Re-points the *hardware reference* (per-handle TX-ready routines reading
+> MFP/SCC/ACIA transmitter flags) at the NewTOS device-handle map. The
+> **contract is unchanged** — `-1` = ready to accept a byte, `0` = busy /
+> absent; and the historical **MIDI/IKBD status-slot swap** (handle 3 →
+> `bcostat4` IKBD, handle 4 → `bcostat3` MIDI). Peripheral + driver: see
+> `docs/HARDWARE-PROFILE.md` §2, §3.1, §3.2.
+
+### The Pi device-handle map (output status)
+
+| Handle | TOS device (per swap) | Pi binding | Status |
+|-------:|-----------------------|------------|--------|
+| 0 | PRT / Centronics | **absent** | `0` (busy) |
+| 1 | AUX / RS-232 | PL011 UART0 | `0` (dummy today) |
+| 2 | CON / screen | **framebuffer VT52** | `-1` (always ready) |
+| 3 | **IKBD TX** (swapped) | **absent** | `0` |
+| 4 | **MIDI TX** (swapped) | **absent** | `0` |
+| 5 | raw screen | framebuffer | `-1` (always ready) |
+| 6,7 | unused / Bconmap | absent | `0` |
+
+- **CON output always ready.** The framebuffer VT52 console never blocks — a
+  glyph is composited synchronously — so console-output handles (2 CON, 5
+  raw) return `-1` (`tos-api/src/bios/chardev.rs:76-82` →
+  `is_console_out`). This matches the Atari `bcostat2 == -1` "screen always
+  ready". No hardware TX FIFO to poll (unlike the Shifter-era screen, which
+  was also always ready).
+- **The MIDI/IKBD swap on the Pi.** The swap is a property of the *handle→
+  routine* table on Atari; on the Pi both MIDI and IKBD-TX are **absent**
+  (§3.9 — no MIDI ACIA, no outbound IKBD command channel), so handles 3 and
+  4 both return `0` (busy) regardless of the swap. The swap is therefore
+  **unobservable** on this hardware (both swapped slots resolve to "absent →
+  0"); the contract's swap semantics are preserved in the sense that neither
+  handle 3 nor 4 is a live device. NewTOS `chardev.rs` treats only handles 2
+  and 5 as console output; 0/1/3/4/6/7 fall to the `_ => 0` arm
+  (`chardev.rs:76-82`), so no explicit swap table is needed. Recorded as a
+  NOTE in the Step-2 section (swap is contract-relevant only if MIDI/IKBD
+  ever come back).
+- **AUX (handle 1).** Returns `0` (dummy) today — the PL011 exists but is not
+  exposed as a BIOS AUX device (see `03-bconout.md`); its TX is always ready
+  in practice (the driver drains by polling), so a proper AUX binding would
+  return `-1`. Recorded as K-series.
+- **Datasheet.** Framebuffer transport = VideoCore mailbox (§1.3); AUX =
+  PL011 UART0 (datasheet §11).

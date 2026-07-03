@@ -115,11 +115,27 @@ differ only in the peripheral drivers (`kernel/src/drivers/bcm2711/*` vs.
 
 - **Console `CON` (BIOS handle 2 / GEMDOS `Cconin`/`Cconout`):** the console is
   the **screen + keyboard**, not the UART. Output = the framebuffer VT52
-  emulator (`fbcon.rs`); input = the USB-HID keyboard (`usb/hid.rs`, §3.3).
+  emulator (`fbcon.rs`); input = the USB-HID keyboard (`drivers/usb/hid.rs`,
+  §3.3).
+- **BIOS device-handle map (resolved, `tos-api/src/bios/chardev.rs`):**
+  **CON (2)** = framebuffer VT52 out + USB-HID keyboard in; **IKBD (4)** =
+  aliased to the same console keyboard ring (input); **raw-CON (5)** =
+  framebuffer out; **AUX (1)** = PL011 (present, but currently a dummy at the
+  BIOS char-device layer — returns 0); **PRT (0) / MIDI (3) / 6,7** = absent
+  → 0. The MIDI/IKBD `Bcostat` status-slot swap (handle 3↔4) is unobservable
+  since both are absent (see `docs/api/bios/08-bcostat.md`). VT52 output today
+  covers glyphs + CR/LF/BS/TAB + wrap/scroll; full escape sequences are
+  Step-2.
 - **UART (PL011) = debug channel only.** The PL011 carries `kprintln!` debug
   output (and can back the `AUX` device / an interactive shell during
   bring-up), but it is **not** the primary TOS console. Target model: `CON`
-  never reads/writes the UART.
+  never reads/writes the UART. **Step-2 violation (K1):** today the console
+  RX ring is fed **both** by the USB-HID keyboard and by the PL011 UART0
+  (`console.rs:91-107`), and the blocking/`pump_input` reads poll UART0 on
+  real Pi-4 (`host_env.rs:112,120`), so `Cconin`/`Bconin(2)` currently
+  return UART bytes — a console-policy violation to fix in Step 2. Console
+  *output* also mirrors to the UART (`host_env.rs:17-20`), which is
+  acceptable (debug mirror), unlike input.
 - **`Bconmap`:** single-UART build → returns `0x2c` (unavailable), per the
   XBIOS spec. Handles: `CON` = screen+keyboard; `AUX` = PL011 (debug);
   `PRN`/`MIDI` are absent (stubs).
@@ -130,17 +146,55 @@ differ only in the peripheral drivers (`kernel/src/drivers/bcm2711/*` vs.
 
 ### 3.3 Keyboard / mouse
 
-- **Current:** USB-HID keyboard + mouse over the xHCI controller on the PCIe
-  bus (`usb/xhci`, `usb/hid.rs`); HID scancodes are translated to Atari IKBD
-  scancodes (`ikbd.rs`, `keymap.rs`), feeding the console key ring and the VDI
-  mouse/AES event path.
+- **Current:** USB-HID keyboard + mouse over the xHCI controller (VL805) on
+  the PCIe bus (`drivers/usb/xhci`, `drivers/usb/hid.rs`, `drivers/usb/mod.rs`
+  `poll`). HID boot reports are translated to Atari IKBD scancodes / packets
+  (`drivers/usb/hid.rs`) and pushed as raw IKBD bytes through `ikbd.rs::feed`,
+  which drives the console key ring (keyboard) and `vdi::feed_relative` (mouse
+  cursor). Polled from `host_env::pump_input`, not IRQ-driven.
 - **Planned:** a native Atari ST keyboard on a second UART at 7812.5 baud
   (`docs/MEMORY.md`); the IKBD parser exists, UART2 pin wiring pending. **(plan)**
-- **Keyboard layout:** built-in US + DE, plus a loadable `.KBD` override;
-  `_AKP` cookie / `Bioskeys` reflect it.
-- **XBIOS `Kbdvbase`/`Iorec`/`Initmous`:** the IKBD vector table + input record
-  model is emulated over the HID/UART path (contract-level; the ISR internals
-  are NewTOS-native — see the "adapter, not 1:1 port" ADR).
+- **HID→IKBD keyboard scancode map** (`drivers/usb/hid.rs:14-43`
+  `translate_key`): USB HID usage → Atari **make** code (break = `| 0x80`).
+  Extracted from FreeMiNT `usb_keyboard.c`. Key examples: letters
+  `A=0x1e … Z=0x2c`; digits `1=0x02 … 0=0x0b`; `Return=0x1c Esc=0x01
+  Backspace=0x0e Tab=0x0f Space=0x39`; **arrows Left=0x4b Right=0x4d
+  Up=0x48 Down=0x50**; `F1..F10=0x3b..0x44`, `F11→Help=0x62 F12→Undo=0x61`;
+  `Home=0x47 Insert=0x52 Delete=0x53`. Modifiers
+  (`hid.rs:52-65`): Ctrl(either)=0x1d, LShift=0x2a, RShift=0x36, Alt=0x38,
+  CapsLock toggle=0x3a. Report processing is a make/break diff vs. the
+  previous 8-byte boot report (`hid.rs:69-100`).
+- **Key-ring word encoding** (`ikbd.rs:139`, `console.rs:109-133`): each make
+  key is queued as a 16-bit word **`scancode << 8 | ascii`** (ascii `0` for
+  keys with no character, e.g. arrows / function keys). ASCII readers
+  (`Cconin`/`Bconin` via `rx_pop`) take the low byte and skip ascii-0 keys;
+  the AES event manager reads the whole word via `rx_pop_key`. **(Note:
+  `Bconin(2)` should pack the scancode into bits 16-23 but currently returns
+  ASCII only — Step-2 K2.)**
+- **Mouse packet synthesis** (`drivers/usb/hid.rs:106-112`): USB boot mouse
+  report `[buttons, dx, dy]` → IKBD relative packet `[0xF8|wire, dx, dy]`.
+  Button double-swap: USB(bit0 left,bit1 right) → wire(bit0 right,bit1 left)
+  at `hid.rs:108` → VDI(bit0 left,bit1 right) at `ikbd.rs:98-104`; net =
+  identity. `+dy = down` passed through. Middle button + wheel dropped.
+  Decoded in `ikbd.rs:68-122` → `vdi::feed_relative` (accumulate + clamp to
+  the live framebuffer bounds).
+- **Keyboard layout:** built-in **US (QWERTY)** + **DE (QWERTZ)**, extracted
+  verbatim from EmuTOS `keyb_us.h`/`keyb_de.h` (`keymap.rs:50-103,118-171`),
+  each three 128-byte `norm`/`shft`/`caps` tables + AltGr `(scancode, ascii)`
+  override pairs (DE: `@ [ ] \ { }`, `keymap.rs:174-183`). Selected at boot by
+  `init_from_disk` (`keymap.rs:266-281`): `C:\KEYBOARD.KBD` (`KBD1`-magic
+  native blob, `load_kbd`) > `#K <layout>` line in `C:\NEWDESK.INF` >
+  compiled default **US**. `_AKP` cookie = `0x00000000` (US, §3.7).
+- **XBIOS `Kbdvbase`/`Iorec`/`Initmous`/`Keytbl`/`Bioskeys`/`Ikbdws`/`Kbrate`:**
+  the IKBD vector table + input record model is the *contract surface* over
+  the HID path. **Step-2 status:** only `Kbdvbase` (0x22) is wired in the
+  XBIOS dispatcher (and it returns an **all-zero** vector table that no code
+  populates or dispatches through); `Initmous 0x00`, `Iorec 0x0E`,
+  `Keytbl 0x10`, `Bioskeys 0x18`, `Ikbdws 0x19`, `Kbrate 0x23` are **not in
+  the dispatcher** (`tos-api/src/xbios/mod.rs`) → return `EINVFN`. The
+  keyboard/mouse *work* via the direct `ikbd::feed` path, but the XBIOS
+  keyboard-group **API** is unimplemented — see `docs/STEP2-VALIDATION.md`
+  (K-series).
 
 ### 3.4 Block device / drives (EMMC SD)
 

@@ -172,3 +172,28 @@ No validation: a bogus `cnt` (e.g. `0xFFFF`) simply sends 65536 bytes.
 PHASE-07: NewTOS parses the IKBD command bytes and applies them to the
 USB-HID translator (mouse mode, clock, etc.); the `bytes-1` unsigned count is
 honoured.
+
+## Pi / BCM2711 binding
+
+> Re-points the *hardware reference* (`ikbd_writeb` polling the IKBD ACIA
+> TX-ready flag and writing a byte to the 6301) at the NewTOS profile, where
+> there is **no ACIA** — the "keyboard controller" is the USB-HID stack, and
+> the command bytes would be *interpreted*, not transmitted. The **contract
+> is unchanged** if adopted — `void`, the **`cnt = bytes − 1` unsigned**
+> off-by-one convention, synchronous. Peripheral + driver: see
+> `docs/HARDWARE-PROFILE.md` §2, §3.3.
+
+- **No wire to write to.** On the Pi the keyboard/mouse arrive as USB-HID
+  reports (`kernel/src/drivers/usb/hid.rs`); there is no IKBD 6301 and no
+  ACIA data register. A NewTOS `Ikbdws` would have to *parse* the raw IKBD
+  command string (mouse mode/scale, Y-origin, button reaction, clock set,
+  LED/repeat) and apply the effects to the USB→IKBD translator and the
+  cursor accumulator — the same interpretation `Initmous` (`00-initmous.md`)
+  needs. The transport is instantaneous (no TX-ready poll, no blocking).
+- **Step-2 — not wired.** `Ikbdws` (XBIOS `0x19`) is **not in the NewTOS
+  XBIOS dispatcher** (`tos-api/src/xbios/mod.rs`), so it returns `EINVFN`.
+  The IKBD-command interpreter it depends on does not exist yet (nor does
+  `Initmous`, which is the higher-level user of the same command set).
+  Recorded as K-series below.
+- **Datasheet.** No peripheral register (the synthesised transport has no
+  hardware backing).

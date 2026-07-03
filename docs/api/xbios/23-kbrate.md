@@ -181,3 +181,29 @@ None (software repeat timer; the IKBD hardware repeat is not used).
 
 PHASE-07: NewTOS drives the repeat from its own timer; `Kbrate` reads/writes
 the same two byte fields with the same packed return so setup tools work.
+
+## Pi / BCM2711 binding
+
+> Re-points the *hardware reference* (the `kb_ticks` software repeat timer,
+> classically driven by the ~50 Hz VBL) at the NewTOS profile. The
+> **contract is unchanged** if adopted — the packed
+> `(old_initial << 8) | old_repeat` return, the `< 0` per-parameter query,
+> the `& 0xFF` store, defaults `15`/`2`. Peripheral + driver: see
+> `docs/HARDWARE-PROFILE.md` §3.3, §3.5.
+
+- **Timing base.** The 20 ms unit `kb_initial`/`kb_repeat` count is the
+  system tick; on the Pi the `_hz_200` clock ticks 200 Hz and `Tickcal` = 20
+  ms (`HARDWARE-PROFILE.md` §3.5, `tos-api/src/bios/mod.rs` `TICKCAL_MS=20`),
+  so the defaults `15`/`2` are ≈300 ms initial / ≈40 ms repeat, exactly as
+  on the Atari.
+- **Auto-repeat source on the Pi.** USB-HID does its own key-hold repeat at
+  the device/report level, but the NewTOS decoder currently emits one key
+  word per make event (`ikbd.rs:134-140` — no software repeat timer keyed off
+  `kb_initial`/`kb_repeat`). So `Kbrate`'s *stored values* have no observable
+  repeat effect yet; the repeat handler (`kb_ticks`) is unimplemented.
+- **Step-2 — not wired.** `Kbrate` (XBIOS `0x23`) is **not in the NewTOS
+  XBIOS dispatcher** (`tos-api/src/xbios/mod.rs`), so the get/set of the two
+  byte fields is not exposed (returns `EINVFN`), and no repeat timer consumes
+  them. Recorded as K-series below.
+- **Datasheet.** No peripheral register (software repeat timer; the ARM
+  generic timer / BCM system timer provides the tick — §3.5).

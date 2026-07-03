@@ -234,3 +234,46 @@ returns 0" guard is EmuTOS-specific and invisible to normal applications
 ## NewTOS implementation notes
 
 (Empty during Phase 00. Filled in during Phase 02 / Phase 07.)
+
+## Pi / BCM2711 binding
+
+> Re-points the *hardware reference* (per-handle status routines reading MFP/
+> SCC/ACIA receiver flags and the `ikbdiorec` queue) at the NewTOS
+> device-handle map. The **contract is unchanged** — `-1` = byte ready, `0`
+> = not ready / absent / boot-guard. Peripheral + driver: see
+> `docs/HARDWARE-PROFILE.md` §2, §3.2, §3.3.
+
+### The Pi device-handle map
+
+| Handle | TOS device | Pi binding | Status source |
+|-------:|------------|------------|---------------|
+| 0 | PRT / Centronics | **absent** → always `0` | no printer (§3.9) |
+| 1 | AUX / RS-232 | PL011 UART0 (debug) | UART RX (see caveat) |
+| 2 | CON | framebuffer VT52 + **USB-HID keyboard** | console RX ring |
+| 3 | MIDI in | **absent** → always `0` | no MIDI ACIA (§3.9) |
+| 4 | IKBD in (historical) | aliased to the console keyboard ring | console RX ring |
+| 5..7 | unused / Bconmap | absent → `0` | — |
+
+- **What "ready" tests on the Pi.** For console-input handles (2 CON, 4
+  IKBD) `bconstat` returns `-1` iff the console RX ring is non-empty
+  (`tos-api/src/bios/chardev.rs:37-43` → `Host::console_has_input` →
+  `console::rx_has_input`, `kernel/src/console.rs:136-138`). This is the
+  queue/flag test the contract calls for — never a physical key scan. Absent
+  devices (0/1-as-dummy/3/5..7) return `0` (`chardev.rs:25-32,40-42`), the
+  `char_dummy` equivalent. The boot-guard (`CHARDEV_AVAILABLE`) maps to the
+  "is a host installed" check (`host::host()` → `0` before it is).
+- **CON input is USB-HID, not the UART (policy).** Handle 2's ready-test
+  reads the console RX ring, which is fed by the USB-HID keyboard decoder
+  (`ikbd.rs:139` → `console::push_rx`). Per `HARDWARE-PROFILE.md` §3.2 the
+  console must not depend on the PL011 UART — but today the **same ring is
+  also filled from UART0** (`console.rs:91-107`), so `Bconstat(2)` currently
+  reports ready for UART bytes too. Recorded as K1 (Step-2).
+- **AUX (handle 1).** In this spec's table handle 1 is `bconstat1`
+  (RS-232). NewTOS `chardev.rs` treats handle 1 as an **absent/dummy** input
+  (`is_console_in` returns true only for 2 and 4, `chardev.rs:25-27`), so
+  `Bconstat(1)` returns `0` even though the PL011 exists and could back AUX.
+  A minor divergence — the UART is a debug channel, and its bytes currently
+  leak into the CON ring instead of a proper AUX record. Recorded as
+  K-series.
+- **Datasheet.** Keyboard transport = VL805 xHCI (§2); AUX = PL011 UART0,
+  BCM2711 peripherals datasheet §11.

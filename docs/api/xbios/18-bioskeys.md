@@ -162,3 +162,27 @@ None (software table swap; the ISR picks up the new tables on the next key).
 
 PHASE-07: `Bioskeys` reloads the NewTOS country-default tables into
 `current_keytbl`; the USB-HID translator uses them thereafter.
+
+## Pi / BCM2711 binding
+
+> Re-points the *hardware reference* (`get_keytbl` returning the compiled
+> country tables the ACIA ISR then reads) at the NewTOS profile. The
+> **contract is unchanged** if adopted — `void`, "reset all keytable fields
+> to the power-up country default". Peripheral + driver: see
+> `docs/HARDWARE-PROFILE.md` §2, §3.3.
+
+- **The "country default" on the Pi.** The NewTOS default is the compiled-in
+  **US** layout (`keymap.rs:193` `ACTIVE = US`), unless boot selected DE or a
+  loadable `.KBD` (`init_from_disk`, `keymap.rs:266`). The `_AKP` cookie is
+  seeded `0x00000000` = US (`HARDWARE-PROFILE.md` §3.7). `Bioskeys` would
+  reinstall this default, undoing a run-time `Keytbl` override — the inverse
+  of `Keytbl` (`10-keytbl.md`), which shares `keymap::install`
+  (`keymap.rs:214-217`).
+- **Step-2 — not wired.** `Bioskeys` (XBIOS `0x18`) has **no entry in the
+  NewTOS XBIOS dispatcher** (`tos-api/src/xbios/mod.rs`), so it returns
+  `EINVFN` instead of resetting the active layout. `keymap::select_builtin`
+  provides the "install a named built-in" mechanism the handler would call,
+  but nothing routes `Bioskeys` to it. Recorded as K-series below.
+  (Consistent with `Keytbl`/`Initmous` also being unwired — the whole XBIOS
+  keyboard group needs a dispatcher pass.)
+- **Datasheet.** No peripheral register (software table swap).

@@ -181,3 +181,41 @@ None.
 PHASE-07: NewTOS keeps the 36-byte layout; the USB-HID translator generates
 IKBD-format packets and dispatches through these vectors, so programs that
 hook `mousevec`/`midivec`/`joyvec` work unchanged.
+
+## Pi / BCM2711 binding
+
+> Re-points the *hardware reference* (the `kbdvecs` table whose slots point
+> at the IKBD/MIDI **ACIA ISRs**) at the NewTOS profile, where the keyboard
+> and mouse arrive as **USB-HID reports over xHCI/PCIe** and are synthesised
+> into the same IKBD byte stream. The **contract is unchanged** — a stable
+> full-64-bit pointer to a 9-slot vector table, no error path. Peripheral +
+> driver: see `docs/HARDWARE-PROFILE.md` §2 (Keyboard / mouse → USB-HID) and
+> §3.3.
+
+- **Where the table lives.** `Kbdvbase` returns `&KBDVECS`, a `struct
+  KbdVecs` of nine native-pointer slots in the tos-api layer
+  (`tos-api/src/xbios/system.rs:63-78`). Native pointer width, not the m68k
+  4-byte layout — the 36-byte offsets in the contract table above are the
+  m68k reference; NewTOS keeps the field *order* (midivec, vkbderr, vmiderr,
+  statvec, mousevec, clockvec, joyvec, midisys, ikbdsys) so a native caller
+  hooks the right slot.
+- **What feeds the vectors on the Pi.** There is **no ACIA ISR**. USB-HID
+  boot reports are decoded by `kernel/src/drivers/usb/hid.rs` into IKBD
+  bytes and pushed through `kernel/src/ikbd.rs::feed`, which drives the
+  console key ring (keyboard) and `vdi::feed_relative` (mouse). The
+  `kbdvecs` table is the *contract surface* a program reads/hooks; the
+  actual delivery path is the USB→IKBD translator, not a dispatch through
+  these slots.
+- **Step-2 — the table is never populated.** `KBDVECS` is initialised to
+  **all-zero** and no boot code installs default handlers or dispatches
+  IKBD packets through `mousevec`/`statvec`/etc.
+  (`tos-api/src/xbios/system.rs:63-73`). So today a program that reads
+  `Kbdvbase()->mousevec` sees `0`, and hooking a slot has **no effect** —
+  the IKBD decoder calls `vdi::feed_relative` directly, bypassing
+  `mousevec`. The stable-pointer + 9-slot-layout contract holds; the
+  dispatch-through-vectors contract does not yet. Recorded as K-series
+  below. (`Initmous`, which would install `mousevec`, is likewise not
+  wired — see `00-initmous.md`.)
+- **Datasheet.** No peripheral register: the keyboard/mouse transport is
+  the VL805 xHCI controller on the Pi-4 PCIe root complex; see
+  `docs/HARDWARE-PROFILE.md` §2 and the USB specs under `docs/api/usb/`.

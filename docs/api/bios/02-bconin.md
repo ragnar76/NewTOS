@@ -223,3 +223,40 @@ first when the distinction matters.
 ## NewTOS implementation notes
 
 (Empty during Phase 00.)
+
+## Pi / BCM2711 binding
+
+> Re-points the *hardware reference* (`bconin2` dequeuing a 4-byte
+> `ikbdiorec` record; `bconin1` reading the UART/ACIA) at the NewTOS
+> device-handle map. The **contract is unchanged** — blocking read, and for
+> CON (handle 2) the **scancode in bits 16-23, ASCII in bits 0-7** packing.
+> Peripheral + driver: see `docs/HARDWARE-PROFILE.md` §2, §3.2, §3.3.
+
+- **Device-handle map:** as in `01-bconstat.md` — CON (2) and IKBD (4) read
+  the console key ring fed by the USB-HID keyboard; AUX (1)/PRT (0)/MIDI
+  (3)/5..7 return `0`.
+- **How a byte is read.** Console-input handles block via
+  `Host::console_read_byte_blocking` (`tos-api/src/bios/chardev.rs:49-55`),
+  which spins/`wfi` until the RX ring delivers a byte
+  (`kernel/src/host_env.rs:83-147`) and returns the **ASCII low byte**
+  (`console::rx_pop`, `kernel/src/console.rs:120-127`, which skips
+  scancode-only keys with ascii 0).
+- **Step-2 — CON scancode high word is dropped (BUG).** The contract for CON
+  (handle 2) is a packed LONG with the **GSX/IKBD scancode in bits 16-23**;
+  a program pressing a non-ASCII key (arrow/function) must read ASCII `0`
+  with a non-zero scancode in the high word. NewTOS `bconin` returns only
+  `console_read_byte_blocking() as Long` (`chardev.rs:52`) = the ASCII byte,
+  high words `0`. The scancode **is available** — the key ring word is
+  `scancode << 8 | ascii` and `console::rx_pop_key` exposes it
+  (`console.rs:129-133`) — but `Bconin` uses the ASCII-only `rx_pop`. So
+  non-ASCII keys are invisible to `Bconin(2)`, and even ASCII keys report a
+  zero scancode. (The AES event path already uses `rx_pop_key` and sees the
+  scancode; only the BIOS/GEMDOS `Bconin`/`Cconin` path loses it.) Recorded
+  as K2 (Step-2).
+- **CON input is USB-HID, not the UART (policy).** Same K1 finding as
+  `Bconstat`: the blocking read also polls the PL011 UART0 on real Pi-4
+  (`host_env.rs:112` `pl011_rx_poll`, `:120` `usb::poll`), so `Bconin(2)`
+  returns UART bytes when the console policy says it should read only the
+  USB-HID keyboard. Recorded as K1.
+- **Datasheet.** Keyboard transport = VL805 xHCI (§2); AUX = PL011 UART0
+  (datasheet §11).

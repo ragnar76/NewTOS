@@ -167,3 +167,60 @@ nothing feeds `set_state` yet. Full `vq_mouse` contract:
   documented `0x20`/`0x21` terminators.
 - Extended buttons 3-5 + wheel (`CONF_WITH_EXTENDED_MOUSE`) arrive as
   separate IKBD status packets, not in this 3-byte report — deferred.
+
+## Pi / BCM2711 binding
+
+> Re-points the *hardware reference* (the IKBD 6301 relative-mouse packet
+> arriving over the ACIA) at the NewTOS profile, where the packet is
+> **synthesised from a USB-HID boot-mouse report** and fed to the same
+> decoder. The **contract is unchanged** — the 3-byte `[0xF8|buttons, dx,
+> dy]` layout, the `0xF8` header test, the IKBD-wire→VDI **button swap**, the
+> signed dx/dy accumulate + screen clamp, and the `MOUSE_BT` bit meanings.
+> Peripheral + driver: see `docs/HARDWARE-PROFILE.md` §2 (Keyboard / mouse →
+> USB-HID) and §3.3.
+
+- **Where the packet comes from.** A USB boot-protocol mouse on the xHCI
+  controller. Its report `[buttons, dx, dy, wheel]` (byte 0 buttons: bit0
+  left, bit1 right, bit2 middle; bytes 1/2 signed dx/dy) is polled by
+  `kernel/src/drivers/usb/mod.rs::poll` (`:136-143`) and converted by
+  `kernel/src/drivers/usb/hid.rs::mouse_report` (`:106-112`) into the exact
+  IKBD relative-mouse packet `[0xF8|wire, dx, dy]`, which it pushes byte by
+  byte through `kernel/src/ikbd.rs::feed`.
+- **The double button swap (verify the chain).** USB byte-0 is `bit0 = left,
+  bit1 = right`. `hid.rs:108` swaps it into **IKBD wire order** `bit0 =
+  right, bit1 = left` (`wire = ((usb&1)<<1) | ((usb&2)>>1)`). Then
+  `ikbd.rs:98-104` swaps wire→VDI (`gem = ((wire>>1)&1) | ((wire&1)<<1)`) so
+  `MOUSE_BT` ends `bit0 = left, bit1 = right`. The two swaps compose to
+  identity — the net effect is USB-left → VDI-bit0 — matching the contract
+  above and `hid-mouse.md`. The middle button and wheel (USB byte 0 bit 2,
+  byte 3) are dropped (no Atari equivalent in the 3-byte packet).
+- **Packet assembly + accumulate.** `ikbd.rs::feed` runs the same state
+  machine the contract describes: header `0xF8..0xFB` → collect `dx` then
+  `dy` (`ikbd.rs:69-107`), then `mouse_event` (`:116-122`) calls
+  `tos_api::vdi::feed_relative(dx, dy, buttons, VDI_SCREEN)`
+  (`tos-api/src/vdi/mouse.rs:126-134`), which adds the **sign-extended**
+  deltas onto `GCURX`/`GCURY` and **clamps** to `[0, width-1] × [0,
+  height-1]` from the live `RasterBackend` — the `scrn_clip` equivalent, with
+  screen bounds from the framebuffer, not a hard-coded resolution.
+- **Y direction.** USB `+dy = down` is passed through unchanged
+  (`hid.rs:111`) and added directly to `GCURY`, so `+dy` moves the cursor
+  down — the EmuTOS relative-mode / `IN_YBOT` behaviour. No inversion is
+  applied.
+- **Correction to the doc's premise.** The preamble/notes above say the IKBD
+  driver "already receives these packets on **UART2** and currently discards
+  them" — that reflects the shelved native-ST-keyboard plan. On the Pi the
+  packets come from **USB-HID** (the `ikbd_uart` driver was removed;
+  `ikbd.rs:8-12`), and they are **not discarded** — `feed_relative` moves the
+  cursor. The synthetic-packet path is verified (the headless directory-window
+  test; `hid-mouse.md`).
+- **Step-2 gaps against the full contract.** `feed_relative`/`set_state`
+  update `GCURX`/`GCURY`/`MOUSE_BT` and redraw the sprite, but they do **not**
+  maintain `cur_ms_stat` (motion bit 5, button-change bits 6/7) and do **not**
+  call the `user_but`/`user_mot`/`user_cur` exchange vectors in the
+  button→motion→cursor order (`tos-api/src/vdi/mouse.rs:105-134`). So the
+  locator's `0x20`/`0x21` button terminators and the AES `evnt_button`/
+  `evnt_mouse` wiring driven by those vectors are not yet fed by the mouse
+  packet. Extended buttons 3-5 + wheel are dropped at `hid.rs`. Recorded as
+  K-series in `docs/STEP2-VALIDATION.md`.
+- **Datasheet.** No peripheral register; transport is the VL805 xHCI
+  controller on the Pi-4 PCIe root complex (§2).

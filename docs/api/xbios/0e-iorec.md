@@ -193,3 +193,36 @@ PHASE-07 (if adopted): expose synthetic `IOREC`s — the IKBD ring filled by
 the USB-HID translator, the RS-232 `EXT_IOREC` by the UART driver, MIDI
 present but empty. Keep the 14-byte `IOREC` / device-0 `EXT_IOREC`
 distinction.
+
+## Pi / BCM2711 binding
+
+> Re-points the *hardware reference* (the ACIA/UART `IOREC` ring descriptors
+> behind IKBD/MIDI/RS-232) at the NewTOS profile. The **contract is
+> unchanged** if adopted — `devno` 0/1/2 → record pointer, `-1` out of
+> range, the 14-byte `IOREC` vs. device-0 `EXT_IOREC` shapes. **Status stays
+> decision-deferred** (see the header). Peripheral + driver: see
+> `docs/HARDWARE-PROFILE.md` §2 (Keyboard/mouse → USB-HID; AUX → PL011).
+
+- **What the underlying rings are on the Pi.**
+  - **`devno == 1` (IKBD):** the NewTOS console RX ring is `RX_RING` in
+    `kernel/src/console.rs:86` — a 128-entry SPSC ring of **key words**
+    (`scancode << 8 | ascii`, `console.rs:113`), filled by the USB-HID
+    keyboard decoder (`ikbd.rs::decode_key` → `console::push_rx`,
+    `ikbd.rs:139`). This is **not** laid out as a 14-byte Atari `IOREC`; a
+    synthetic `IOREC` view over it would have to be built to satisfy the
+    contract.
+  - **`devno == 0` (RS-232 / AUX):** the PL011 UART0 debug channel
+    (`kernel/src/drivers/bcm2711/pl011.rs`), which also feeds `RX_RING`
+    today (`console.rs:91-107`, see the UART-console Step-2 finding). No
+    `EXT_IOREC` is exposed.
+  - **`devno == 2` (MIDI):** no MIDI hardware (`HARDWARE-PROFILE.md` §3.9) —
+    an empty record if exposed.
+- **Step-2 — not wired, and the buffer shape differs.** `Iorec` (XBIOS
+  `0x0E`) is **not in the NewTOS XBIOS dispatcher**
+  (`tos-api/src/xbios/mod.rs`), so it returns `EINVFN`, not a record
+  pointer. Exposing it would require synthesising `IOREC`/`EXT_IOREC` headers
+  over the native `RX_RING` (whose element is a 16-bit key word, not the
+  4-byte IKBD record the Atari ring holds). Recorded as K-series below;
+  matches the doc's "decision deferred" status.
+- **Datasheet.** IKBD/mouse transport = VL805 xHCI (§2); AUX = PL011 UART0,
+  BCM2711 peripherals datasheet §11 (see the serial specs).

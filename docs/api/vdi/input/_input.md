@@ -321,3 +321,44 @@ not terminate (`vdi_input.c:70-74`). `CONTRL[4] = i` = count drained.
   codes; reuse the Phase-06 keyboard decode. Preserve the negative-`j` CR
   bug for bit-exact `vrq_string` compatibility (or document a deliberate
   deviation).
+
+## Pi / BCM2711 binding
+
+> Re-points the *hardware reference* (the four logical input devices reading
+> the IKBD keyboard queue via `Bconstat(2)`/`Bconin(2)` and the mouse
+> `cur_ms_stat`) at the NewTOS profile, where the keyboard is a **USB-HID
+> keyboard** feeding the console key ring and the locator's mouse state comes
+> from the **USB-HID mouse**. The **contract is unchanged** — the opcode
+> numbers, request/sample model, the mode globals, and the terminator/count
+> encodings. Peripheral + driver: see `docs/HARDWARE-PROFILE.md` §2, §3.3.
+
+- **Where the events come from.** `vsin_mode`/`vqin_mode` track the four
+  per-device modes (`tos-api/src/vdi/input.rs:23-47`). The keyboard-reading
+  devices — `v_string` (31), `v_choice` (30, dummy → key), and `v_locator`
+  (28) REQUEST terminator — read one char via
+  `host().console_read_byte_blocking()` (`input.rs:56-58`), which on the Pi
+  is the console RX ring filled by the **USB-HID keyboard**
+  (`kernel/src/host_env.rs:83-147` → `console::rx_pop`). `v_locator`'s
+  position comes from `mouse::position()` (`input.rs:65`) = the live
+  `GCURX`/`GCURY` moved by the USB-HID mouse.
+- **Locator sample vs request.** SAMPLE returns the live cursor position
+  immediately; REQUEST blocks for a key and returns it as the terminator
+  (`input.rs:64-73`). Because the current mouse path does not maintain
+  `cur_ms_stat` button-change bits (see `_mouse-packet.md`), the locator
+  does **not** yet produce the `0x20`/`0x21` mouse-button terminators — only
+  keyboard terminators. Recorded as K-series.
+- **Step-2 — UART leakage into the input queue.** The console RX ring these
+  devices read is fed **both** by the USB-HID keyboard and by the PL011 UART0
+  (`kernel/src/console.rs:91-107`, polled from `host_env.rs:112,120`). Per
+  the console policy (`HARDWARE-PROFILE.md` §3.2) the TOS console/input must
+  not depend on the UART; the UART bytes reaching `v_string`/`v_locator` are
+  the same policy issue flagged for the console. Recorded as K1.
+- **`v_choice` (dummy) / `v_valuator` (absent).** Match the contract:
+  `v_choice` returns a fixed value from a blocking key read in REQUEST, 0 in
+  SAMPLE (`input.rs:77-85`) — note this reads the keyboard rather than
+  returning the constant `1` the EmuTOS DRI dummy does (a minor divergence,
+  see K-series); `v_valuator` (op 29) is an honest unimplemented (no
+  handler).
+- **Datasheet.** Keyboard/mouse transport = VL805 xHCI (§2); no peripheral
+  register for the logical input devices (pure software over the console
+  ring + cursor state).

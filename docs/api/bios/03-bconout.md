@@ -237,3 +237,50 @@ boot-guard `0L`.
 ## NewTOS implementation notes
 
 (Empty during Phase 00.)
+
+## Pi / BCM2711 binding
+
+> Re-points the *hardware reference* (`bconout2` calling `cputc`/VT52 over the
+> Shifter screen; `bconout1` to the ACIA/UART; `bconout4` to the IKBD) at the
+> NewTOS device-handle map, where CON output is the **framebuffer VT52
+> emulator** (`fbcon.rs`). The **contract is unchanged** — `1L` = byte
+> accepted for console handles, `0L` for absent devices. Peripheral +
+> driver: see `docs/HARDWARE-PROFILE.md` §2, §3.1, §3.2.
+
+### The Pi device-handle map (output)
+
+| Handle | TOS device | Pi binding | Return |
+|-------:|------------|------------|--------|
+| 0 | PRT / Centronics | **absent** → discard | `0` |
+| 1 | AUX / RS-232 | PL011 UART0 (debug) — but see note | `0` (dummy today) |
+| 2 | CON / screen (VT52) | **framebuffer VT52** (`fbcon.rs`) + UART echo | `1` |
+| 3 | MIDI out | **absent** → discard | `0` |
+| 4 | IKBD command out | **absent** → discard | `0` |
+| 5 | raw screen (no VT52) | framebuffer (same path) | `1` |
+| 6,7 | unused / Bconmap | absent → discard | `0` |
+
+- **CON output = framebuffer VT52.** Console-output handles (2 CON, 5 raw)
+  write via `Host::console_write_byte` (`tos-api/src/bios/chardev.rs:61-71`),
+  which the kernel routes to **both** the framebuffer VT52 console
+  (`kernel/src/fbcon.rs::write_byte`) and the PL011 UART
+  (`kernel/src/host_env.rs:17-20`). The framebuffer path is the TOS console
+  (`fbcon.rs` renders glyphs + CR/LF/BS/TAB/scroll through the 8×16 system
+  font over the VideoCore buffer, §3.1); the UART write is a debug mirror,
+  not the primary console. Return `1` per `bconout2`/`bconout5`.
+- **VT52 scope (Step-2).** `fbcon.rs` currently handles printable glyphs +
+  `CR`/`LF`/`BS`/`TAB` + wrap + upward scroll (`fbcon.rs:62-89`); full VT52
+  escape sequences (cursor addressing, clear-to-EOL, etc.) that the handle-2
+  `bconout2` contract implies are not yet parsed. Recorded as K-series (a
+  screen/console overlap — the VT52 escape work is also noted in the Screen
+  section).
+- **Handle 1 (AUX) discarded today.** `is_console_out` is true only for
+  handles 2 and 5 (`chardev.rs:29-32`), so `Bconout(1, …)` returns `0`
+  (dummy) even though the PL011 exists — the UART is written only as the
+  CON debug mirror, not as a proper AUX device. Minor divergence, recorded
+  as K-series.
+- **Absent PRT/MIDI/IKBD-out (handles 0/3/4).** Return `0` (discarded),
+  matching §3.9 — no printer, no MIDI ACIA, no IKBD command channel. Note
+  the `char_dummy` semantics differ from `bconout`'s `1L`-on-CON: absent
+  devices here return `0`, an honest "not sent".
+- **Datasheet.** Framebuffer transport = VideoCore mailbox (§1.3); AUX =
+  PL011 UART0 (datasheet §11).

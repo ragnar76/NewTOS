@@ -199,3 +199,44 @@ Each non-sentinel pointer must reference a 128-byte scancode→ASCII table.
 PHASE-07: NewTOS keeps the 30-byte `struct keytbl` layout; the USB-HID
 translator consumes the same `norm`/`shft`/`caps` tables. The `(UBYTE*)-1`
 sentinel and the returned pointer are preserved.
+
+## Pi / BCM2711 binding
+
+> Re-points the *hardware reference* (the ACIA ISR that reads
+> `current_keytbl` to translate 6301 scancodes) at the NewTOS profile, where
+> the scancode→ASCII translation runs in `kernel/src/keymap.rs` over the
+> USB-HID→IKBD scancode stream. The **contract is unchanged** if adopted —
+> the `(UBYTE*)-1` "keep" sentinel, the 30-byte `struct keytbl`, the
+> 128-byte table convention, `&current_keytbl` return. Peripheral + driver:
+> see `docs/HARDWARE-PROFILE.md` §2, §3.3.
+
+- **Where the tables live on the Pi.** The active layout is a mutable RAM
+  copy of a `keymap::Layout` (`kernel/src/keymap.rs:26-36,187-200`), holding
+  the three 128-byte scancode→ASCII tables (`norm`/`shft`/`caps`) plus AltGr
+  `(scancode, ascii)` override pairs — the same three primary tables
+  `Keytbl` sets. The scancode index is the **Atari IKBD scancode** produced
+  by the USB-HID translator, so the tables are byte-for-byte the EmuTOS
+  `keyb_us.h`/`keyb_de.h` tables (`keymap.rs:50-103` US, `:118-171` DE,
+  extracted verbatim).
+- **US + DE built-in, plus loadable `.KBD`.** Two compiled-in layouts (`US`
+  `keymap.rs:106`, `DE` `:174`); the active one is chosen at boot by
+  `init_from_disk` (`keymap.rs:266-281`): a `C:\KEYBOARD.KBD` file
+  (`KBD1`-magic native format, `load_kbd` `:326`) overrides everything, else
+  a `#K <layout>` line in `C:\NEWDESK.INF` selects `us`/`de`
+  (`select_builtin` `:204`), else the compiled default US
+  (`ACTIVE = US` `:193`). The `.KBD` blob layout (magic + 3×128 tables + 3
+  AltGr groups) is documented at `keymap.rs:317-324`.
+- **How ASCII is produced.** `keymap::to_ascii(scancode, shift, caps, alt)`
+  (`keymap.rs:223-259`) picks `shft`/`caps`/`norm` by modifier, then applies
+  the AltGr override pairs — the EmuTOS `ascii_cnv` (non-DUAL_KEYBOARD)
+  selection logic. Ctrl-folding to a control code is done by the caller
+  (`ikbd.rs:176-183`).
+- **Step-2 — the XBIOS setter is not wired, and the struct is not exposed.**
+  `Keytbl` (XBIOS `0x10`) is **not in the NewTOS XBIOS dispatcher**
+  (`tos-api/src/xbios/mod.rs`), so a program cannot swap `norm`/`shft`/`caps`
+  or read `&current_keytbl` through it — it returns `EINVFN`. The layout is
+  selectable only at boot (`init_from_disk`), not at run time via `Keytbl`,
+  and the `keymap::Layout` in the kernel is not the 30-byte `struct keytbl`
+  the contract returns (it also carries the AltGr pairs inline rather than as
+  `altnorm`/`altshft`/`altcaps` pointers). Recorded as K-series below.
+- **Datasheet.** No peripheral register (software table).

@@ -337,3 +337,56 @@ by `tick_int`, which also chains the old system timer vector
   pointer width (see the trap pointer mapping).
 - `vex_timv` ties into the system tick (Phase-07 timer); `Tickcal` (BIOS
   0x06) returns the tick period in ms for `INTOUT[0]`.
+
+## Pi / BCM2711 binding
+
+> Re-points the *hardware reference* (the Line-A cursor sprite drawn over the
+> Shifter framebuffer, driven by the IKBD mouse ISR) at the NewTOS profile:
+> the cursor is a **software 16×16 sprite composited onto the VideoCore
+> framebuffer** by the `RasterBackend`, and its position/buttons come from the
+> **USB-HID mouse** (via the IKBD packet synthesiser). The **contract is
+> unchanged** — the opcode numbers, the 37-WORD MFORM `INTIN`, the hide-count
+> semantics, `vq_mouse`'s `INTOUT`/`PTSOUT`, and the `vex_*` install/return
+> shape. Peripheral + driver: see `docs/HARDWARE-PROFILE.md` §2 (Screen →
+> framebuffer; Keyboard/mouse → USB-HID) and §3.1/§3.3.
+
+- **Cursor rendering.** The sprite is drawn by save-under + XOR-style
+  mask/data compositing directly into the framebuffer via the
+  `RasterBackend` (`tos-api/src/vdi/mouse.rs:200-243`): `draw` saves the
+  16×16 pixels under the cursor, paints data pixels in the FG pen and mask
+  pixels in the BG pen; `erase` restores them. No hardware sprite — the
+  Shifter cursor overlay is replaced by this software composite over the
+  32bpp VideoCore buffer. The 16 CLUT indices map to RGB in
+  `kernel/src/vdi_backend.rs` (mask = white/pen 0, data = black/pen 1).
+- **MFORM install (`vsc_form`, 111).** `vsc_form` reads the 37-WORD `INTIN`
+  (hotspot, reserved plane word, mask/data colours, 16 mask + 16 data rows)
+  into the sprite state (`tos-api/src/vdi/mouse.rs:248-266`); the hotspot is
+  clamped to 0..15 (`:254-255`). Eight AES preset forms (arrow, I-beam,
+  hourglass, …) are compiled in from `aes/mform.rsc` (`mouse.rs:64-97`);
+  `graf_mouse` installs them via `set_preset`/`set_form`.
+- **Position + buttons (`vq_mouse`, 124).** `GCURX`/`GCURY`/`MOUSE_BT` come
+  from the **USB-HID mouse** through the IKBD packet path (`feed_relative`,
+  `mouse.rs:126-134`) — see `_mouse-packet.md`. `vq_mouse`
+  (`mouse.rs:349-355`) reports them and pre-loads `CONTRL[2]=1`,
+  `CONTRL[4]=1`. **Correction to the notes above:** they say the mouse is
+  "not yet wired" and `vq_mouse` returns a parked cursor — that is now
+  **stale**: `feed_relative` is wired to the HID mouse (`ikbd.rs:121`), so the
+  cursor moves and `vq_mouse` returns the live position. What is still true:
+  buttons and motion are delivered by the *direct* `feed_relative` call, not
+  through the `vex_*` vectors.
+- **Hide-count.** The `HIDE_COUNT` model (power-up hidden = 1, nested
+  hide/show balance, underflow clamp, reset-flag force-show) is implemented
+  in `v_show_c`/`v_hide_c` (`mouse.rs:270-289`) and the kernel-desktop
+  direct-control `hide`/`show`/`show_reset` (`:300-326`), matching the
+  contract.
+- **Step-2 — exchange vectors not driven; `Tickcal` unit.** `vex_butv`/
+  `vex_motv`/`vex_curv`/`vex_wheelv`/`vex_timv` install/return their pointer
+  slots correctly (`mouse.rs:359-388`), but the mouse packet path
+  (`feed_relative`) does **not** call `user_but`/`user_mot`/`user_cur` on a
+  packet, nor does any timer tick invoke `tim_addr`. So a program that hooks
+  a `vex_*` vector never sees a callback — the cursor/AES event path uses the
+  direct call instead. `vex_timv` returns `TICKCAL_MS = 20` for `INTOUT[0]`
+  (`mouse.rs:17,384-388`), matching `Tickcal`. Recorded as K-series in
+  `docs/STEP2-VALIDATION.md`.
+- **Datasheet.** Framebuffer transport = VideoCore mailbox (§1.3); mouse
+  transport = VL805 xHCI (§2). No peripheral cursor register.

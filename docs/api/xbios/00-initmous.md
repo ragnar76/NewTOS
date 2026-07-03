@@ -226,3 +226,45 @@ USB-HID-mouse translator (relative/absolute/keycode, scale, initial
 position). Mouse packets are synthesised in IKBD format and dispatched
 through `kbdvecs.mousevec` exactly as on hardware; `type == 0`/error must
 still reset `mousevec` to a no-op.
+
+## Pi / BCM2711 binding
+
+> Re-points the *hardware reference* (the IKBD ACIA command bytes
+> `ikbd_writeb` sends over the 6301 serial link) at the NewTOS profile,
+> where the mouse is a **USB-HID boot mouse over xHCI/PCIe** and IKBD mouse
+> packets are **synthesised**, not received. The **contract is unchanged** —
+> `void`, the `type` selector {0,1,2,4}, the 12-byte `struct param`, and the
+> `mousevec` install-on-success / reset-to-`just_rts`-on-disable-or-error
+> rule. Peripheral + driver: see `docs/HARDWARE-PROFILE.md` §2 (Keyboard /
+> mouse → USB-HID) and §3.3.
+
+- **What the mouse actually is.** A USB boot-protocol mouse enumerated on
+  the xHCI controller. Its 3-byte report `[buttons, dx, dy]` is turned into
+  an IKBD **relative-mouse packet** `[0xF8|wire, dx, dy]` by
+  `kernel/src/drivers/usb/hid.rs:106-112` and fed to
+  `kernel/src/ikbd.rs::feed`, which swaps the buttons wire→VDI and calls
+  `tos_api::vdi::feed_relative` (`ikbd.rs:98-104,116-122`). So the
+  *relative* mode (`type == 1`) that EmuTOS arms with `Initmous(1, …)` is
+  effectively the always-on default of the USB path.
+- **What `Initmous` would configure.** On the Pi the IKBD command bytes have
+  no ACIA to reach; the intent (relative/absolute/keycode mode, threshold/
+  scale, Y-origin, initial position, button reaction) would parameterise the
+  USB→IKBD translator (`hid.rs`) and the cursor accumulator
+  (`tos-api/src/vdi/mouse.rs::feed_relative`). Absolute (`type == 2`) and
+  keycode (`type == 4`) modes are not modelled by the current relative-only
+  synthesiser.
+- **Step-2 — not wired.** `Initmous` (XBIOS `0x00`) has **no entry in the
+  NewTOS XBIOS dispatcher** (`tos-api/src/xbios/mod.rs` — only `0x22`
+  Kbdvbase is present); calling it returns `EINVFN` instead of configuring
+  the mouse or installing `mousevec`. And because the USB decoder calls
+  `feed_relative` directly rather than dispatching through
+  `kbdvecs.mousevec` (which is all-zero, see `22-kbdvbase.md`), the
+  "install `newvec`" and "reset to `just_rts`" contract steps are not
+  implemented. The mouse *works* (cursor moves) via the direct path; the
+  `Initmous` *API contract* does not. Recorded as K-series below.
+- **Y direction.** The USB `+dy = down` convention is passed straight
+  through (`hid.rs:111`); `ikbd.rs`/`feed_relative` add the signed delta so
+  `+dy` increases `GCURY` (downward), matching the EmuTOS relative mode with
+  `IN_YBOT`. See `docs/api/vdi/input/_mouse-packet.md` and `hid-mouse.md`.
+- **Datasheet.** No peripheral register; transport is the VL805 xHCI
+  controller — see `docs/HARDWARE-PROFILE.md` §2.
