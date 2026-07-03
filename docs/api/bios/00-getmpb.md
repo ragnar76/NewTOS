@@ -244,3 +244,39 @@ PHASE-03: NewTOS initialises the GEMDOS allocator directly from the AArch64
 device-tree / memory map, so `Getmpb` is vestigial. If exposed at all it
 should be a read-only report of the ST-RAM-equivalent pool; calling it
 post-init must **not** reproduce EmuTOS's "destroy your free list" behaviour.
+
+---
+
+## Pi / BCM2711 binding
+
+> Re-points the free-RAM discovery from the **`membot`/`memtop` low-memory
+> globals** (set by `bmem_init` + `balloc_stram` on ST-RAM) to the **AArch64
+> memory map** discovered from the device tree at boot. The MPB/MD layout is
+> the contract; `Getmpb` itself is vestigial on the Pi. See
+> `docs/HARDWARE-PROFILE.md` §3.6, §3.8.
+
+### The allocator is seeded from the memory map, not from `Getmpb`
+
+NewTOS builds its pools directly: `kernel/src/bios/machine/layout.rs::discover`
+computes the ST-RAM (`pmd`) and TT-RAM (`pmdalt`) extents from the DTB memory
+node (or the board fallback), and `kernel/src/lib.rs:452-481` hands those ranges
+to `bdos::mem::init::init`. GEMDOS never calls `Getmpb` to learn the free region
+— the classic "one caller, at boot" role is filled by the memory-map path.
+
+| Atari reference | Pi-4 model today |
+|-----------------|------------------|
+| `membot`/`memtop` from `bmem_init` + `balloc_stram` (ST-RAM only) | ST-RAM pool `[kernel_end, DRAM_START + 14 MiB)` from the memory map (`layout.rs:310-313`) |
+| `themd` single static MD over `[membot, memtop)` | the `pmd` MPB's seed MD, plus a separate `pmdalt` for TT-RAM (`Getmpb` never reported TT-RAM) |
+| GEMDOS `osinit` calls `Getmpb` once | GEMDOS pools seeded from the AArch64 map before any trap runs |
+
+### Current-code gap (Step-2 candidate)
+
+- **`Getmpb` (BIOS 0x00) is not wired in the BIOS dispatcher.**
+  `tos-api/src/bios/mod.rs` has no `0x00` entry, so a call hits the BIOS
+  catch-all (`_ => EINVFN`, `mod.rs:58`). This is harmless — `Getmpb` is
+  vestigial — but a program that calls it gets `EINVFN`, not a filled MPB.
+  **Decision deferred** (see status banner): if exposed, it must be a
+  **read-only** report of the ST-RAM pool (`pmd`) that does **not** rewrite the
+  live free list (EmuTOS's "second call destroys your allocator state" quirk is
+  explicitly rejected for NewTOS). Recommend leaving it unwired until a program
+  needs it.

@@ -184,3 +184,39 @@ PHASE-07: `Gettime` reads the kernel clock (AArch64 generic timer + an RTC
 abstraction: PL031 on QEMU, an SD/config-persisted or I²C RTC on RPi4). The
 `DEFAULT_DATETIME`-style fallback (a fixed build date) applies when no RTC is
 configured; the packed encoding is contract.
+
+---
+
+## Pi / BCM2711 binding
+
+> Re-points the clock source from the **RTC chain / `DEFAULT_DATETIME`
+> fallback** to the **seeded software epoch** shared with GEMDOS. The LONG
+> result and the packed `date<<16 | time` encoding are unchanged. See
+> `docs/HARDWARE-PROFILE.md` §2 (RTC row), §3.5.
+
+### `Gettime` reads the same seeded epoch as GEMDOS
+
+`Gettime` (XBIOS 0x17) is dispatched (`tos-api/src/xbios/mod.rs:50`) to
+`gemdos::time::xbios_gettime` (`tos-api/src/gemdos/time.rs:220-223`), which reads
+`now = BASE_SECS + CNTPCT/CNTFRQ`, decomposes it, and returns
+`(pack_date << 16) | pack_time` — the EmuTOS `MAKE_ULONG(current_date,
+current_time)` fallback path, but over the seeded epoch instead of an RTC. It is
+a pure read (no side effects), matching the contract.
+
+| Atari reference | Pi-4 model today |
+|-----------------|------------------|
+| Reads whichever RTC the machine has | reads `BASE_SECS + monotonic` (no RTC) |
+| No-RTC fallback = `DEFAULT_DATETIME` (build date, midnight) | fallback = **1980-01-01 00:00** if the clock was never set (`BASE_SECS = 0` default), advancing by the monotonic delta |
+| `Gettime`/`Tgettime` can diverge (RTC drifts from the GEMDOS cache) | **cannot diverge** — both read the *same* `BASE_SECS`+monotonic clock; there is no separate cache to drift |
+
+### Note: no cache/RTC split
+
+On EmuTOS `Gettime` reads the RTC while `Tgettime` reads a GEMDOS cache that the
+200 Hz tick advances, so the two can drift. NewTOS has a **single** clock
+(`BASE_SECS` + generic-timer delta), so `Gettime`, `Tgetdate`, and `Tgettime`
+are always consistent — a benign simplification of the contract.
+
+### Gaps vs. the contract (Step-2 candidates)
+
+- **No RTC read; boot default is 1980-01-01** rather than the OS build date.
+  Persistence is the same Step-2/PHASE-07 item as `Settime` (an RTC backend).

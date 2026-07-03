@@ -196,3 +196,49 @@ PHASE-07: `Settime` updates the kernel clock cache and writes the AArch64 RTC
 — PL031 on QEMU `aarch64-virt`; on RPi4 (no on-board RTC) NewTOS persists to
 a tagged SD/config region or an I²C RTC if present. The GEMDOS `current_time`/
 `current_date` update is mandatory; the packed encoding is contract.
+
+---
+
+## Pi / BCM2711 binding
+
+> Re-points the clock backing from the **RTC chain** (NVRAM → MegaRTC → … →
+> IKBD clock) to a **seeded software epoch** — the same wall clock GEMDOS
+> `Tsetdate`/`Tsettime` use. The `void` return, the packed encoding, and the
+> "no validation, cache updated" contract are unchanged; only persistence is
+> re-pointed. See `docs/HARDWARE-PROFILE.md` §2 (RTC row), §3.5.
+
+### `Settime` writes the seeded epoch — there is no on-board RTC
+
+The Pi-4 has **no battery-backed RTC**. NewTOS models the wall clock as a
+settable base epoch (`BASE_SECS`, seconds since 1980-01-01) plus the monotonic
+generic-timer delta: `now = BASE_SECS + CNTPCT/CNTFRQ`
+(`tos-api/src/gemdos/time.rs:25-45`). `Settime` (XBIOS 0x16) is dispatched
+(`tos-api/src/xbios/mod.rs:46-49`) to `gemdos::time::xbios_settime`
+(`time.rs:203-214`), which unpacks the LONG (`date<<16 | time`) and recomputes
+`BASE_SECS` so the clock reads the requested value — exactly the EmuTOS
+"no-RTC build updates only the cache" path. **Nothing persists across boots.**
+
+| Atari reference | Pi-4 model today |
+|-----------------|------------------|
+| `current_time`/`current_date` cache written first | `BASE_SECS` recomputed (the single shared clock) |
+| RTC backend (NVRAM/MegaRTC/…/IKBD) written for persistence | **none** — no RTC hardware, nothing persisted |
+| Time survives power-off (RTC build) | resets to the boot default (1980-01-01 if never set) each power-up |
+
+### Validation deviation (documented)
+
+The contract says `Settime` does **no** validation. NewTOS's seconds-based clock
+cannot store an impossible calendar date the way EmuTOS's raw WORD cache can, so
+an out-of-range month/day is **clamped to the nearest valid date** rather than
+stored verbatim (`time.rs:206-208`, `.clamp(1,12)` / `.clamp(1, days_in_month)`).
+Hour/minute/second pass through unvalidated (they only roll the clock forward).
+This is a deliberate, documented divergence from the "accept any packed value"
+edge case.
+
+### Gaps vs. the contract (Step-2 candidates)
+
+- **No persistence.** With no RTC and no SD/config-region write, time resets
+  each boot. A NewTOS RTC backend (PL031 on QEMU `virt`; SD/config-region or I²C
+  RTC on real Pi-4) is the Step-2/PHASE-07 item — recommend an ADR to pick the
+  persistence path.
+- **Out-of-range date clamped, not stored** (above) — differs from EmuTOS's
+  verbatim cache write.

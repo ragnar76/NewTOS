@@ -47,10 +47,10 @@ differ only in the peripheral drivers (`kernel/src/drivers/bcm2711/*` vs.
 | Serial (AUX) / debug | MFP 68901 / ACIA           | PL011 UART0 — **debug channel only** | `bcm2711/pl011.rs` (virt: `qemu_virt/pl011.rs`), `hal/uart.rs` |
 | Keyboard / mouse     | IKBD (6301) on ACIA        | USB-HID over xHCI/PCIe (+ IKBD-on-UART2 **(plan)**) | `usb/xhci`, `usb/hid.rs`, `ikbd.rs`, `keymap.rs` |
 | Block device (drives)| WD1772 FDC / ACSI-SCSI HD  | EMMC2 SD-card controller          | `bcm2711/emmc.rs`, `hal/block.rs` |
-| System timer         | MFP timer C (200 Hz)       | ARM generic timer / BCM system timer | `arch/aarch64/*` |
+| System timer         | MFP timer C (200 Hz)       | **ARM generic timer** (`CNTPCT_EL0`/`CNTFRQ_EL0`), read on demand | `arch/aarch64/*`, `host_env.rs` |
 | Interrupt controller | MFP / GLUE                 | GIC-400 (GICv2)                   | `drivers/gic.rs` |
 | DRAM                 | ST-RAM (+ TT-RAM board)    | LPDDR4 (uniform), split logically | `bios/machine/layout.rs`, `mm/*` |
-| RTC / clock          | IKBD RTC / MC146818        | none on-board → seeded epoch **(TBV)** | `bios/…/time`, XBIOS `clock` |
+| RTC / clock          | IKBD RTC / MC146818        | **none on-board → seeded software epoch** (`BASE_SECS` + generic-timer delta, no persistence) | `gemdos/time.rs`, XBIOS `Settime`/`Gettime` |
 | Sound                | YM2149 PSG                 | **absent** (no PSG) → Dosound no-op | — |
 | Blitter              | BLiTTER                    | **absent** → Blitmode reports off | — |
 | Printer / MIDI       | Centronics / MIDI ACIA     | **absent** → EUNDEV / no-op stubs | — |
@@ -265,24 +265,65 @@ differ only in the peripheral drivers (`kernel/src/drivers/bcm2711/*` vs.
 
 ### 3.5 System timer
 
-- **Rate:** 200 Hz `_hz_200` system clock; `Tickcal` = **20 ms** per tick
-  (50 Hz VBL-equivalent), per `tos-api/src/bios/mod.rs` `TICKCAL_MS=20`.
-- **Source:** ARM generic timer / BCM system timer (`arch/aarch64`). **(TBV —
-  confirm CNTFRQ vs the BCM system timer 1 MHz path)**
+- **Source (pinned):** the **ARMv8 generic timer** — the EL0-readable system
+  registers `CNTPCT_EL0` (64-bit count) and `CNTFRQ_EL0` (its frequency, Hz).
+  All NewTOS clocks read these directly: `host_env.rs:149-206`
+  (`monotonic_seconds`/`monotonic_millis`/`frame_clock`), `arch/aarch64/mod.rs:24-48`
+  (`delay_ms`), `gemdos/time.rs:38-45` (the wall clock). The frequency is
+  **read at runtime from `CNTFRQ_EL0`, never hardcoded** (on a Pi-4 it is the
+  crystal-derived generic-timer frequency, typically 54 MHz; the code never
+  assumes a value).
+  - **Not used:** the BCM2711 datasheet **System Timer** (Ch. 10, p.142-143;
+    phys `0x7e003000`, a 1 MHz 64-bit free-running counter) and the SP804-derived
+    **ARM Timer** (Ch. 12). The generic timer is an ARMv8 CPU feature (ARM ARM
+    D17.6), **not** a BCM2711 peripheral, so it is absent from the peripherals
+    datasheet. The System Timer at `0x7e003000` is the datasheet-sourced
+    fallback if a memory-mapped counter is ever needed.
+- **`Tickcal` = 20 ms** (50 Hz) — an ABI constant (`tos-api/src/bios/mod.rs:41`),
+  independent of the real timer, matching EmuTOS `return 20L`.
+- **Derived rates:** millisecond clock `CNTPCT*1000/CNTFRQ` (AES `evnt_timer`);
+  frame clock `CNTPCT*60/CNTFRQ` (~60 Hz, backs `Vsync` + `Random`'s seed).
+- **No `_hz_200` counter, no timer IRQ.** The 200 Hz `_hz_200` counter is **not
+  materialised** — no periodic timer interrupt runs (`exceptions.rs` has only a
+  catch-all IRQ path), so nothing increments `_hz_200` and **no `etv_timer` hook
+  fires**. Elapsed time is always the on-demand `CNTPCT`-derived value. A program
+  installing an `etv_timer` (`Setexc 0x100`) callback gets no ticks — **Step-2
+  Y1/Y2**. `Random` seeds from the frame clock instead of `hz_200`
+  (`xbios/system.rs:14-28`).
 
 ### 3.6 DRAM / memory map
 
-- **Physical:** uniform LPDDR4 (rpi4) / QEMU DRAM (virt), but presented as **two
-  additive logical pools** to preserve `Mxalloc` mode semantics
-  (`bios/machine/layout.rs`):
-  - **ST-RAM slot:** fixed **16 MiB** at the low end of DRAM (14 MiB usable;
-    top 2 MiB reserved), matching the Atari ST address window.
-  - **TT-RAM (alt-RAM) pool:** ~**256 MiB** above it (registered via `Maddalt`).
-  - **Total managed:** ~272 MiB (not 256), both pools first-fit `Malloc`.
-- **`Mxalloc` modes 0..3** select ST vs alt-RAM as on a real TT/Falcon; on
-  AArch64 there is no DMA-zone distinction, so the split is a pure API contract
-  (ADR-010; pending ADR-005 for uniform-RAM mode handling).
-- **MPB / `Getmpb`:** the Memory Partition Block over the pools.
+- **Physical:** uniform LPDDR4 (rpi4) / QEMU DRAM (virt), presented as **two
+  additive logical pools** to preserve `Mxalloc` mode semantics — a **pure API
+  contract**, no DMA-zone hardware distinction on AArch64
+  (`kernel/src/bios/machine/layout.rs`, ADR-010):
+  - **ST-RAM slot:** fixed **16 MiB** window, **14 MiB usable** (top 2 MiB
+    reserved, mirroring the Atari `$E00000-$FFFFFF` I/O window)
+    (`layout.rs:52,57,62`). Pool = `[kernel_end, DRAM_START + 14 MiB)`.
+  - **TT-RAM (alt-RAM) pool:** **256 MiB** on `qemu-virt`
+    (`DRAM_SIZE - 16 MiB` on real Pi-4), immediately above the ST-RAM slot
+    (`layout.rs:136-139,315-318`). Seeded at boot from the memory map — **not**
+    via `Maddalt`, which is redundant on the Pi.
+  - **Total managed:** ~**272 MiB** on `qemu-virt` (16 + 256); both pools
+    first-fit.
+- **Board addresses** (`layout.rs`):
+  - `board-rpi4`: `DRAM_START = 0x0000_0000`; ST-RAM `[kernel_end, 0x00E0_0000)`;
+    TT-RAM `[0x0100_0000, DRAM_END)`.
+  - `board-qemu-virt`: `DRAM_START = 0x4000_0000`; ST-RAM
+    `[kernel_end, 0x40E0_0000)`; TT-RAM `[0x4100_0000, 0x5100_0000)`.
+- **`Mxalloc` modes 0..3** dispatch to `pmd` (ST) / `pmdalt` (TT) exactly per
+  the contract (`tos-api/src/bdos/mem/traps.rs:254-340`); `Malloc` forwards
+  `MX_PREFTTRAM` (kernel sentinel PD = `PF_TTRAMMEM`, `traps.rs:363-366`).
+  **Unknown masked mode → `0L`/NULL** (matches EmuTOS; the earlier `EINVFN`
+  draft is *not* implemented — see **Step-2 Y8**).
+- **Alignment:** NewTOS uses a **16-byte** grain for both pools
+  (`PoolConfig::AARCH64`), vs. EmuTOS's 2/4-byte ST-RAM and 4-byte alt-RAM.
+- **`i32` ABI cap:** `MD::m_start`/`m_length` are `Long` (i32), so ≥ 2 GiB
+  real-Pi-4 DRAM is **not fully managed** until the Phase-05 address-window
+  translation lands (`init.rs:14-21,195-205` returns `AddressOutOfRange`).
+- **MPB / `Getmpb`:** the Memory Partition Block over the pools; `Getmpb` (BIOS
+  0x00) is **vestigial and unwired** (allocator seeded from the memory map, not
+  from `Getmpb`) — **Step-2 Y9**.
 
 ### 3.7 Cookie jar (the Pi machine identity)
 
@@ -295,18 +336,45 @@ Seeded by `tos_api::cookie::seed_defaults` (`kernel/src/lib.rs`):
 | `_IDT` | `0x0000112F` | date/time format: `/` separator, DD-MM-YY, 24-hour |
 | `_AKP` | `0x00000000` | keyboard/language: US |
 
+Seeded by `seed_defaults` (`tos-api/src/cookie.rs:141-146`) with **no hardware
+probing** — a fixed set (jar capacity 32, `cookie.rs:20`), read by native
+programs through the FreeMiNT `Ssystem` cookie subfunctions (ADR-012), **not**
+via `$5A0` + `Supexec` (both blocked on NewTOS).
+
 Atari cookies NewTOS deliberately does **not** advertise (no matching
 hardware): `_VDO` (video shifter), `_SND` (PSG/DMA sound), `_FDC`, `_FLK`,
-`_CPU`/`_FPU` (could be added — ARM), `_SWI`. **(TBV — decide `_CPU`/`_SND`.)**
+`_CPU`/`_FPU`, `_SWI` (`cookie.rs:139-140`).
+
+- **`_CPU` — recommend keep omitted** (decision, not TBV): the cookie carries an
+  m68k CPU number (0/10/20/…/60); advertising any m68k value on AArch64 would
+  mislead ports. If architecture detection is ever needed, use the `NTOS`
+  identity cookie or a **NewTOS-defined non-m68k `_CPU` value**, not an m68k
+  number. Revisit only if a ported program demands `_CPU`.
+- **`_SND` — recommend keep omitted** (decision): no PSG/DMA/DSP (§3.9,
+  `Dosound` is a no-op); absence already signals "no sound features". A
+  `_SND = 0` cookie would be redundant.
 
 ### 3.8 System variables
 
 The documented low-memory globals keep their **values/semantics** as the
-contract (`_hz_200`, `_bootdev`, `_v_bas_ad` = the framebuffer base, `drvbits`
-= the mounted-drive bitmap, the `hdv_*` disk vectors, `etv_*` exception
-vectors, `_dumpflg`, etc.) but live in a kernel struct, not at the literal
-m68k addresses — access is via the BIOS/XBIOS calls, not a direct poke (see
-`docs/api/bios/_state.md`, `docs/api/xbios/_state.md`, `docs/api/gemdos/_state.md`).
+contract but live in kernel state, reached via the BIOS/XBIOS calls, **not** a
+direct poke — no Atari low-memory address is mapped on AArch64 (m68k-emulator
+scope only). See `docs/api/bios/_state.md` §"Pi / BCM2711 binding".
+
+| Sysvar (contract) | Pi backing | Access |
+|-------------------|------------|--------|
+| `drvbits` (`0x4c2`) | SD-MBR mounted-partition bitmap | `Drvmap` |
+| `hz_200` (`0x4ba`) | **not materialised** (no counter) — `CNTPCT`-derived on demand | — (Y1) |
+| `etv_timer/critic/term` | software vector shadow `VECTORS[0x100/0x101/0x102]` | `Setexc`; **stored but never invoked** (Y2) |
+| `shifty`/`os_kbshift` | IKBD-decoder byte from USB-HID | `host().keyboard_shift_state()`; `Kbshift` trap **not exposed** |
+| `membot`/`memtop`/`phystop` | ST-RAM pool extent from the memory map | allocator-internal; `Getmpb` vestigial (Y9) |
+| `bcon*_vec[8]`, `hdv_*` | kernel char-device / block dispatch | BIOS calls (not poke-installable) |
+| `dumpflg` (`0x4ee`) | no screen-dump path (`Scrdmp` unwired, S2) | — |
+
+Key pinned facts: **no `hz_200` counter and no timer IRQ** (§3.5); the **`etv_*`
+hooks are shadowed by `Setexc` but no code path dispatches through them** (they
+never fire); the **RTC is a seeded software epoch** (§2, no persistence). All
+three are Step-2 items (Y1/Y2/Y5).
 
 ### 3.9 Absent Atari hardware → NewTOS behaviour
 
@@ -335,7 +403,7 @@ NewTOS-Pi profile — the "is this present?" answer per switch:
 | `CONF_WITH_MENU_EXTENSION` | (TBV) | popups/submenus — bring-up-order |
 | `CONF_WITH_GDOS` | **off** | no external fonts at bring-up |
 | `CONF_WITH_VDI_16BIT` / Videl | **off** | 16-colour path only (though fb is 32bpp) |
-| `CONF_WITH_SHUTDOWN` | (TBV) | real RPi-4 power-off = a design decision |
+| `CONF_WITH_SHUTDOWN` | **on (halt-only)** | Desktop *File → Shutdown* exits the loop → `arch::aarch64::halt()` (a `wfe` spin, `lib.rs:311-313`, `desktop.rs:822,1124-1126`). A **real Pi-4 power-off** (VideoCore mailbox power / PSCI `SYSTEM_OFF`) is deferred — **decision: keep halt-only** until a power-down path is needed; a true `Ssystem(S_SHUTDOWN)` is Step-2 (Y10) |
 | `CONF_WITH_EXTENDED_MOUSE` | (TBV) | USB wheel/extra buttons available |
 | PSG / Blitter / FDC / MIDI / printer | **off** | no hardware (§3.9) |
 

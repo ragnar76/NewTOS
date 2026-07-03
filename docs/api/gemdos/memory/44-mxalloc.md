@@ -275,3 +275,72 @@ returns `EINVFN` (cleaner) or `NULL` (EmuTOS) — the earlier draft claimed
 divergence, not the extracted contract. **Protection bits** (Atari bits 4+)
 remain ignored until Phase 06 introduces process privilege; recorded as a known
 divergence from Atari docs (EmuTOS already ignores them).
+
+---
+
+## Pi / BCM2711 binding
+
+> Re-points the two-pool model from **physically distinct ST-RAM (chip-shared,
+> < 14 MiB) and TT-RAM (CPU-only extension board)** to **one uniform LPDDR4
+> address space split into two logical, additive pools**. The `mode` 0-3
+> pool-selection semantics, the `-1` largest-free query, and the pointer/`0L`
+> result shapes are unchanged; only the physical backing is re-pointed here.
+> See `docs/HARDWARE-PROFILE.md` §3.6, ADR-010.
+
+### The pools on the Pi — one DRAM, two logical partitions
+
+There is no DMA-zone distinction on AArch64, so the ST/TT split is a **pure API
+contract** kept so source-ported TOS programs still get the pool they ask for
+(`kernel/src/bios/machine/layout.rs:1-44`). The two MPBs (`pmd` = ST-RAM,
+`pmdalt` = TT-RAM) are seeded from the AArch64 memory map at boot
+(`tos-api/src/bdos/mem/init.rs`), fed by `kernel/src/lib.rs:452-481`
+(`bring_up_bdos_pools`).
+
+| Pool | Size | Placement | Source |
+|------|------|-----------|--------|
+| **ST-RAM slot** | **16 MiB** window, **14 MiB usable** (top 2 MiB reserved, mirroring the Atari `$E00000-$FFFFFF` I/O window) | low end of DRAM, above the kernel image | `layout.rs:52,57,62,310-313` |
+| **TT-RAM (alt-RAM) pool** | **256 MiB** on `qemu-virt` (`DRAM_SIZE - 16 MiB` on real Pi-4) | immediately above the ST-RAM slot | `layout.rs:136-139,315-318` |
+| **Total managed** | ~272 MiB (`qemu-virt`) | both first-fit `Malloc` | `layout.rs:280-331` |
+
+**Board addresses** (`layout.rs`):
+
+| Board | DRAM_START | ST-RAM slot | TT-RAM pool | Source |
+|-------|-----------:|-------------|-------------|--------|
+| `board-rpi4` | `0x0000_0000` | `[kernel_end, 0x00E0_0000)` (14 MiB minus kernel) | `[0x0100_0000, DRAM_END)` | `layout.rs:165,310-318` |
+| `board-qemu-virt` | `0x4000_0000` | `[kernel_end, 0x40E0_0000)` | `[0x4100_0000, 0x5100_0000)` (256 MiB) | `layout.rs:133-140,310-318` |
+
+> **Address-width gate.** `MD::m_start`/`m_length` are `Long` (`i32`), so on
+> real Pi-4 with ≥ 2 GiB DRAM the pool would overflow the Atari ABI; the seed
+> path returns `AddressOutOfRange` until the Phase-05 address-window translation
+> lands (`init.rs:14-21,195-205`). Today the managed region is capped to fit
+> `i32`.
+
+### `Mxalloc` mode → pool on the Pi
+
+`mxalloc` (`tos-api/src/bdos/mem/traps.rs:254-340`) masks `mode & MX_MODEMASK`
+and dispatches to `pmd` / `pmdalt` exactly as the contract table: `MX_STRAM`→ST
+only, `MX_TTRAM`→TT only, `MX_PREFSTRAM`/`MX_PREFTTRAM`→preferred-then-other.
+`amount == -1` returns the `largest_free` of the selected pool(s)
+(`traps.rs:260-285`). `find_mpb` (`traps.rs:386-393`) routes an address to `pmd`
+if it lies in the cached ST-RAM range, else `pmdalt`.
+
+| Atari reference | Pi-4 model today |
+|-----------------|------------------|
+| ST-RAM = chip-shared DMA memory < 14 MiB | ST-RAM slot = low 14 MiB of LPDDR4 (no DMA meaning, just the address window) |
+| TT-RAM = CPU-only extension board | TT-RAM = the DRAM above 16 MiB (same physical RAM, CPU-visible) |
+| `MX_STRAM` for DMA-safe buffers | `MX_STRAM` returns low-DRAM addresses (API hint only; no DMA-zone guarantee) |
+
+### Divergences / gaps vs. the contract (Step-2 candidates)
+
+- **Unknown masked mode returns `0L` (NULL) — matches EmuTOS.** `mxalloc`
+  returns `0` for a mode outside 0-3 (`traps.rs:283,331`), the extracted
+  contract. **The earlier draft's `EINVFN` claim is *not* implemented** and would
+  be a deliberate divergence if adopted; the code does the EmuTOS `NULL`. (Recorded
+  so Step-2 does not "fix" it toward `EINVFN` by accident — that needs a decision.)
+- **Alignment differs.** NewTOS uses a **16-byte** grain for both pools
+  (`PoolConfig::AARCH64`) vs. EmuTOS's 2/4-byte ST-RAM and 4-byte alt-RAM.
+  Unobservable except for block sizes rounded up more.
+- **Protection bits (Atari 4+) ignored** — as EmuTOS; process privilege lands
+  in Phase 06.
+- **≥ 2 GiB real-Pi-4 DRAM not fully managed** — capped to the `i32` ABI window
+  pending Phase-05 address translation.

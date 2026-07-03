@@ -260,3 +260,23 @@ to the block, coalesce if the neighbour is contiguous. No-op and same-size
 shrinks take a fast `E_OK` path without touching the MPB. Grow → `EGSBF`,
 `len == 0` → free, bad address → `EIMBA`, MD-arena exhaustion → `ERR` (block
 untouched), all per EmuTOS.
+
+---
+
+## Pi / BCM2711 binding
+
+> Re-points the pool backing to **uniform LPDDR4 split into ST-RAM + TT-RAM
+> logical pools** — pinned in `44-mxalloc.md`'s binding and
+> `docs/HARDWARE-PROFILE.md` §3.6. The `Mshrink` semantics are unchanged.
+
+`mshrink` (`tos-api/src/bdos/mem/traps.rs:471-530`) routes via `find_mpb`,
+rounds `len` up to the **16-byte** `PoolConfig::AARCH64.align_mask`
+(`traps.rs:497-501`) — NewTOS's grain for both pools vs. EmuTOS's 2/4 bytes —
+then the three-way compare (`EGSBF` grow / `E_OK` same / `freeit` on `len==0` /
+`shrinkit` on shrink). The rounded `len` is the observable result on both pools.
+
+### Gaps vs. the contract (Step-2 candidates)
+
+- **16-byte alignment grain** (not 2/4) — the only Pi-relevant divergence;
+  observable as a slightly larger rounded `len`. Callers must read back the
+  effective size, as the notes say.

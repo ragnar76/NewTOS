@@ -204,3 +204,33 @@ None — the value is read from a cached global, not from the RTC.
 PHASE-07: provide an atomic 32-bit fetch (`date << 16 | time`) for
 multitasking-safe reading; `Tgettime`/`Tgetdate` then decompose the snapshot.
 The tick source is the AArch64 generic timer.
+
+---
+
+## Pi / BCM2711 binding
+
+> Re-points the time source from the **RTC-seeded `current_time` cache advanced
+> by the 200 Hz `tikfrk` handler** to the **seeded software epoch** computed on
+> demand from the ARM generic timer. The packed-time WORD encoding (2-second
+> resolution) and the zero-extended LONG return are unchanged. See
+> `docs/HARDWARE-PROFILE.md` §2 (RTC row), §3.5.
+
+### `Tgettime` = pack_time of the seeded epoch
+
+`Tgettime` (0x2C) reads `now = BASE_SECS + CNTPCT/CNTFRQ`, decomposes it, and
+packs the time WORD (`time.rs:141-143`; `pack_time`, `time.rs:124-126` — hour
+<<11 | min <<5 | sec/2). No `current_time` cache, no RTC, no timer ISR; the
+seconds field keeps the classic 2-second (`sec/2`) resolution.
+
+| Atari reference | Pi-4 model today |
+|-----------------|------------------|
+| `current_time` cache read | `pack_time(decompose(BASE_SECS + CNTPCT/CNTFRQ))` — computed |
+| Cache advances on the 200 Hz `tikfrk` tick | time advances with the generic-timer count; no ISR |
+| `Gettime`/`Tgettime` can drift (RTC vs cache) | cannot drift — single clock (see `17-gettime.md`) |
+
+### Gaps vs. the contract (Step-2 candidates)
+
+- **No atomic combined snapshot** — `Tgetdate` and `Tgettime` are separate reads
+  of `now_secs()`; a torn date/time across a second boundary is possible. An
+  atomic `(date << 16 | time)` accessor is the recommended Step-2 add.
+- **No persistence** — shared item with `Settime`/`Gettime`.

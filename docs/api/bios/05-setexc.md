@@ -191,3 +191,63 @@ PHASE-06: NewTOS keeps a software "m68k vector shadow" at virtual `0..0x400`
 for m68k binaries; native AArch64 handlers consult the shadow for
 m68k-emulated hooks (etv_term etc.). For native source ports the etv_* hooks
 are reached by name, not by poking `4*num`.
+
+---
+
+## Pi / BCM2711 binding
+
+> Re-points the hardware reference from the **68000 low-memory vector table**
+> (`4*num` in physical RAM) and the MFP/GLUE interrupt sources to the **AArch64
+> exception model** (`VBAR_EL1` + GIC-400) plus a **software vector shadow**.
+> The `Setexc` contract (get/set an entry, `-1` = query, always return the
+> previous value) is unchanged; only the backing store is re-pointed here. See
+> `docs/HARDWARE-PROFILE.md` §3.8, §3.9.
+
+### There is no 68k vector page — `Setexc` is a software shadow
+
+AArch64 has **no flat `4*num` vector page**. Exceptions are dispatched through
+`VBAR_EL1` (a 2 KiB, 16-entry vector table set up in
+`kernel/src/arch/aarch64/exceptions.rs`), and hardware interrupts come from the
+GIC-400 (GICv2), not from the MFP/GLUE. NewTOS therefore keeps a **software
+shadow** of the m68k vector table in `tos-api/src/bios/vectors.rs`: a
+`[AtomicI64; NVEC]` array (`vectors.rs:22`) that `Setexc` reads/writes.
+
+| Property | Value | Source |
+|----------|-------|--------|
+| Shadow size `NVEC` | `0x120` entries (the 256-LONG m68k vector page + `etv_*`/GEM hooks above `$0400`) | `vectors.rs:21` |
+| Entry width | `i64` (native handler addresses are 64-bit) | `vectors.rs:22` |
+| Out-of-range `num` (`>= NVEC`) | returns `0`, **no write** (safer than m68k, which clobbers low memory) | `vectors.rs:38-40` |
+| `vector == -1` | query only — returns old, no store | `vectors.rs:42-44` |
+
+### Canonical hook vector numbers (unchanged from the contract)
+
+The `etv_*` system hooks keep their `4*num` addresses / `num` values as the
+contract; NewTOS shadows them at these indices (`vectors.rs:27-29`):
+
+| `Setexc` num | m68k addr | Symbol | Meaning |
+|-------------:|-----------|--------|---------|
+| `0x100` | `$0400` | `ETV_TIMER` | 20 ms system tick hook |
+| `0x101` | `$0404` | `ETV_CRITIC` | critical-error handler |
+| `0x102` | `$0408` | `ETV_TERM` | process-terminate hook |
+
+| Atari reference | Pi-4 model today |
+|-----------------|------------------|
+| `4*num` LONG in physical low RAM | `VECTORS[num]` atomic entry (a kernel struct, no fixed VA) |
+| CPU exception vectors `0..0xFF` | shadowed but **not dispatched** by the native EL1 handlers (kept for the future m68k userland) |
+| MFP timer-C / GLUE IRQ vectors | replaced by GIC-400 + `VBAR_EL1`; the `etv_*` hooks are logical, invoked by name |
+| Installing a vector changes CPU dispatch | installing a shadow entry changes nothing until a NewTOS code path calls `vectors::vector(num)` |
+
+### Gaps vs. the contract (Step-2 candidates)
+
+- **`etv_*` hooks are stored but never invoked.** `Setexc(0x100/0x101/0x102,
+  handler)` records the handler, but no NewTOS code path calls the reader
+  `vectors::vector(num)` (`vectors.rs:52-58`) — it is `#[allow(dead_code)]`.
+  So a program that installs an `etv_timer` / `etv_critic` / `etv_term` hook via
+  `Setexc` sees it **never fire**: there is no 20 ms timer IRQ dispatching
+  `etv_timer` (§ `06-tickcal.md` binding — the clock is derived on demand, not
+  tick-driven), no critical-error chain calling `etv_critic` (ties to the block
+  `Rwabs` B6 gap), and `Pterm` does not run `etv_term`. The get/set/return-old
+  contract holds; the **dispatch-through-the-vector** contract does not.
+- **CPU-exception shadow entries are inert.** Shadowing `num` in `0..0xFF` does
+  not redirect the AArch64 exception handlers; those entries exist only for the
+  deferred m68k userland.

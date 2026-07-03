@@ -175,3 +175,44 @@ None.
 PHASE-07: NewTOS keeps this exact LCG for ABI determinism. Higher-quality
 entropy (AArch64 `RNDR`) is exposed via a separate NewTOS-extension slot, not
 by changing `Random`.
+
+---
+
+## Pi / BCM2711 binding
+
+> Re-points the auto-seed source from **`hz_200`** (the 200 Hz counter, which
+> does not exist on the Pi) to the **generic-timer frame clock**. The 24-bit
+> result, the LCG recurrence, and the deterministic-from-a-seed contract are
+> unchanged; only the first-call seed is re-pointed. See
+> `docs/HARDWARE-PROFILE.md` §3.5.
+
+### The LCG is bit-identical; the seed comes from the frame clock
+
+`Random` (XBIOS 0x11) is dispatched (`tos-api/src/xbios/mod.rs:42`) to
+`system::random` (`tos-api/src/xbios/system.rs:14-28`). The recurrence is the
+exact EmuTOS LCG: `rseed = rseed*3141592621 + 1; return (rseed >> 8) &
+0xFFFFFF` (`system.rs:25-27`) — so for a given `rseed` the sequence is
+bit-identical to real TOS.
+
+On the **first** call (`rseed == 0`) the seed is drawn from the host **frame
+clock** (`h.frame_clock()` = `CNTPCT*60/CNTFRQ`, `host_env.rs:191-206`) as
+`s = (fc << 16) + fc` (`system.rs:17-22`) — structurally the EmuTOS
+`(hz_200 << 16) + hz_200`, but with the frame clock standing in for the
+non-existent `hz_200` counter (see `06-tickcal.md`: no 200 Hz counter is
+materialised on the Pi). A zero seed is bumped to 1 (`system.rs:20-22`).
+
+| Atari reference | Pi-4 model today |
+|-----------------|------------------|
+| First-call seed = `(hz_200 << 16) + hz_200` | `(frame_clock << 16) + frame_clock`, `frame_clock = CNTPCT*60/CNTFRQ` |
+| `hz_200` small early after boot (~16-bit entropy) | frame clock likewise small early after boot — same low-entropy caveat |
+| Sequence deterministic from `rseed` | identical LCG, identical determinism |
+
+### Gaps vs. the contract (Step-2 candidates)
+
+- **None functional.** The LCG matches; only the seed hardware differs (frame
+  clock vs. `hz_200`), which the contract already treats as "a function of
+  uptime at first call, not a constant across boots" — satisfied. The
+  low-entropy-early-after-boot caveat carries over unchanged.
+- **No reseed back door** (as the contract notes): `rseed` is an internal
+  static; a higher-quality source (AArch64 `RNDR`) would be a separate NewTOS
+  extension, not a change to `Random`.

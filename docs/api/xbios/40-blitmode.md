@@ -188,3 +188,35 @@ that probe for a blitter correctly see "absent" and fall back to CPU blits.
 PHASE-07/08: `Blitmode` returns `0x0000` (no blitter); NewTOS uses CPU /
 VideoCore blits. If a future NewTOS "accelerated blit" path is exposed it
 would be a separate extension, not this bit.
+
+---
+
+## Pi / BCM2711 binding
+
+> Re-points the reference from the **Atari BLiTTER chip** (`has_blitter` /
+> `blitter_is_enabled`) to **no blitter** on the Pi. The status-word contract
+> (`0x0000` = absent, `0x0002` = present+off, `0x0003` = present+on; `-1` =
+> query) is unchanged; the value is pinned to `0x0000`. See
+> `docs/HARDWARE-PROFILE.md` §3.9.
+
+### There is no blitter → `Blitmode` should report `0x0000`
+
+The BCM2711 has no Atari BLiTTER; NewTOS does CPU / VideoCore blits. The
+contract answer for a blitter-less machine is **`0x0000`** (bit 1 clear =
+absent), for both `Blitmode(-1)` (query) and any `Blitmode(mode)` (nothing to
+enable).
+
+| Atari reference | Pi-4 model today |
+|-----------------|------------------|
+| `has_blitter` from bus probe | always false (no blitter) |
+| `0x0003`/`0x0002` present+on/off | never — bit 1 always clear |
+| Enabling routes VDI blits through the BLiTTER | N/A — VDI blits are CPU/VideoCore |
+
+### Current-code gap (Step-2 candidate)
+
+- **`Blitmode` (0x40) is not wired in the XBIOS dispatcher.** There is no `0x40`
+  entry in `tos-api/src/xbios/mod.rs:33-55`, so the call hits the `_ => EINVFN`
+  catch-all and returns **`EINVFN`**, not the contractual **`0x0000`**. A program
+  probing bit 1 for a blitter sees a generic error instead of a clean "absent"
+  status. Step-2: add the `0x40` slot returning `0x0000` (a one-line
+  no-blitter constant, not a stub — it is the real status value).

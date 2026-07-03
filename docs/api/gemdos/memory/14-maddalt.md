@@ -268,3 +268,27 @@ location (EmuTOS treats anything passed here as alt-RAM by definition).
 Coalesce with a contiguous neighbour to avoid consuming a fresh MD. **Out of
 scope:** DMA-safety reclassification — AArch64 has no ST/alt-RAM hardware
 distinction; the split is purely a TOS-API contract.
+
+---
+
+## Pi / BCM2711 binding
+
+> Re-points alt-RAM from a **physical TT-RAM extension board** to **a logical
+> partition of uniform LPDDR4** — pinned in `44-mxalloc.md`'s binding and
+> `docs/HARDWARE-PROFILE.md` §3.6. The `Maddalt` semantics are unchanged.
+
+The TT-RAM (`pmdalt`) pool is already seeded at boot from the AArch64 memory map
+(`kernel/src/lib.rs:452-481` → `bdos/mem/init.rs`), so on the Pi `Maddalt` is
+mostly redundant — all DRAM is discovered up front. `maddalt`
+(`tos-api/src/bdos/mem/traps.rs:153-226`) still honours the full contract: round
+`size` down to ×4, reject `size <= 0` (`-1`), reject overlap with the cached
+ST-RAM range (`traps.rs:170-174`), merge with an adjacent free MD or prepend a
+fresh one, `ENSMEM` if the MD arena is exhausted. Accepted ranges go to
+`pmdalt` by definition (no physical zone check — there is no TT board).
+
+### Gaps vs. the contract (Step-2 candidates)
+
+- **`i32` address ABI** — a region above the `Long` range cannot be added until
+  the Phase-05 window (shared with `44-mxalloc.md`). Otherwise fully
+  implemented; on the Pi the call is chiefly a no-op because boot already
+  registers all DRAM.

@@ -235,3 +235,33 @@ day-0/month-0-style gap.
 NewTOS drives persistence through its own RTC abstraction (PL031 on QEMU; a
 software clock on RPi4). Keep the field ceilings and the 2-second quantisation
 so ported programs that round-trip `Tsettime`/`Tgettime` behave identically.
+
+---
+
+## Pi / BCM2711 binding
+
+> Re-points the commit target from the **RTC (via XBIOS `Settime`) + the
+> `current_time` cache** to the **seeded software epoch**. The validation
+> contract (`sec/2 >= 30` or `min >= 60` → `ERROR`, hour unvalidated per EmuTOS;
+> `E_OK` otherwise) and the 2-second quantisation are unchanged. See
+> `docs/HARDWARE-PROFILE.md` §2 (RTC row), §3.5.
+
+### `Tsettime` recomputes `BASE_SECS`
+
+`Tsettime` (0x2D) validates the packed time (`time.rs:174-182`; `dsec >= 30`
+or `min >= 60` → `ERROR`, hour not validated — EmuTOS parity), then recomputes
+the base epoch keeping the current date: `BASE_SECS = compose(cur.date, hour,
+min, dsec*2) - CNTPCT/CNTFRQ` (`time.rs:184-187`). The `sec/2` field is stored
+as whole seconds (`dsec*2`), preserving the 2-second resolution. No RTC write;
+nothing persists.
+
+| Atari reference | Pi-4 model today |
+|-----------------|------------------|
+| Validated, committed through XBIOS `Settime` → `current_time` + RTC | validated, then `BASE_SECS` recomputed (single shared clock) |
+| Persists in the RTC | **not persisted** — resets each power-up |
+
+### Gaps vs. the contract (Step-2 candidates)
+
+- **No persistence** — shared item with `Settime`/`Gettime` (needs an RTC
+  backend). Validation, the 2-second quantisation, and `E_OK`/`ERROR` are fully
+  implemented.

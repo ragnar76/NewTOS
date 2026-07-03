@@ -207,3 +207,61 @@ cheap privilege flip. The TOS `Supexec` semantics must resolve to one of:
 ADR to be filed in `docs/MEMORY.md` once PHASE-06 prototyping picks an
 approach. Until then `Supexec` is deferred; it is **not** silently stubbed to
 `EINVFN`.
+
+---
+
+## Pi / BCM2711 binding
+
+> Re-points the privilege model from the **m68k in-process supervisor flag**
+> (SR S-bit; the production handler is a bare `jmp` that stays in the mode the
+> XBIOS trap already entered) to the **AArch64 EL0/EL1 split**, where there is
+> no cheap in-process privilege flip. The trap ID/ABI contract is unchanged;
+> the mechanism is an **open decision** (ADR-Supexec). See
+> `docs/HARDWARE-PROFILE.md` §3.7-§3.8.
+
+### `Supexec` is deferred — not in the dispatcher today
+
+`Supexec` (XBIOS 0x26) has **no entry** in the NewTOS XBIOS dispatcher
+(`tos-api/src/xbios/mod.rs:33-55` — the `match` covers 0x02-0x07, 0x11, 0x15,
+0x16, 0x17, 0x22, 0x25 only), so a call falls through to the `_ => EINVFN`
+catch-all (`mod.rs:53`).
+
+> **Correction to the spec's own note.** This XBIOS dispatcher's catch-all is
+> `EINVFN` (`xbios/mod.rs:53`), *not* "the function number" — that fall-through
+> shape belongs to the **GEMDOS** table, not XBIOS. So on NewTOS **today**
+> `Supexec` **does** return `EINVFN` (the catch-all), because unlike EmuTOS it
+> has no table slot yet. This is the deferred-not-stubbed state: it is `EINVFN`
+> by *absence*, pending the ADR, not a silent stub pretending to succeed.
+
+### Why the m68k mechanism does not port
+
+| Atari reference | Pi-4 / AArch64 reality |
+|-----------------|------------------------|
+| XBIOS trap already in supervisor mode; `jmp (a0)` tail-calls the callback in the same mode | XBIOS `svc #14` runs at **EL1**; the caller runs at **EL0**. Jumping to a user pointer at EL1 = full-memory-access hole |
+| Callback's `rts` returns through the dispatcher's `rte`, restoring the caller's mode | AArch64 has no in-process privilege flip; returning to EL0 is an `eret`, not a mode-restore |
+| Callback reads supervisor-only locations / the SR | most real uses read MMIO/vector shadows NewTOS could map read-only into EL0 (pseudo-supervise) |
+
+### Decision recommended (ADR-Supexec)
+
+The three candidate mechanisms are already sketched in the NewTOS notes above
+(EL1 callback / pseudo-supervise at EL0 / kernel-side pattern translation).
+**Recommend option 2 (pseudo-supervise)** as the working assumption: run the
+callback at EL0 with a curated read/write map of the MMIO/shadows NewTOS already
+models (palette, Line-A shadows, cookie jar). This unblocks the two known
+consumers on the Pi:
+
+- the **cookie-jar** app-access pattern (`Supexec` + scan `$5A0`) — already
+  routed around via `Ssystem` (see `_cookie-jar.md`), so it does **not** need
+  `Supexec`;
+- generic hardware-poke callbacks (palette flips, benchmarks) — the pseudo-
+  supervise map covers the common cases; foreign callbacks fault gracefully.
+
+File the ADR before wiring `0x26`; until then keep it `EINVFN` (deferred).
+
+### Gaps vs. the contract (Step-2 candidates)
+
+- **Supexec callback-ABI unresolved (ADR-Supexec).** The whole call is deferred;
+  no callback runs today. This blocks any m68k `Supexec` idiom (including the
+  classic cookie-jar scan, though NewTOS provides `Ssystem` instead).
+- **`EINVFN` by catch-all** — once the ADR lands, `0x26` gets a real slot; the
+  catch-all `EINVFN` is a placeholder, not the intended contract answer.

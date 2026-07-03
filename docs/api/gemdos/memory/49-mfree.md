@@ -245,3 +245,23 @@ check** (Atari-compatible; parents legitimately free child memory after
 when `m_own != current_pd`, off by default, for catching bugs in ported
 sources. NewTOS should also clear `m_own` on free (cleaner than EmuTOS) since it
 does **not** rely on the stale-`m_own` quirk.
+
+---
+
+## Pi / BCM2711 binding
+
+> Re-points the pool backing to **uniform LPDDR4 split into ST-RAM + TT-RAM
+> logical pools** — pinned in `44-mxalloc.md`'s binding and
+> `docs/HARDWARE-PROFILE.md` §3.6. The `Mfree` semantics are unchanged.
+
+`mfree` (`tos-api/src/bdos/mem/traps.rs:413-440`) locates the owning pool with
+`find_mpb` (the cached ST-RAM range test → `pmd`, else `pmdalt`;
+`traps.rs:386-393`), walks `mp_mal` for `m_start == addr`, returns `EIMBA` if
+not found, else `freeit` (address-ordered `mp_mfl` insert + coalesce). Which
+physical pool an address belongs to is decided purely by the logical ST-RAM
+range on the Pi — there is no hardware zone.
+
+### Gaps vs. the contract (Step-2 candidates)
+
+- **None pool-specific.** The `find_mpb` routing is correct for the logical
+  split; the ownership/`m_own`-clearing choices above are generic (not Pi-bound).

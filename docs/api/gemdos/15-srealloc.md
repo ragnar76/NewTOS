@@ -258,3 +258,37 @@ NewTOS has no VIDEL and no RAM-carved framebuffer; the VideoCore owns the
 framebuffer. `Srealloc` returns `EINVFN`, exactly matching Falcon-without-VIDEL.
 Programs that detect this fall back to `Setscreen`/`Physbase`/`Logbase` on the
 VideoCore framebuffer.
+
+---
+
+## Pi / BCM2711 binding
+
+> Re-points the reference from **VIDEL RAM-carved screen memory** (`has_videl`,
+> `video_ram_addr`, the `pmd.mp_mfl` trailing block) to the **VideoCore-owned
+> framebuffer** — the screen is not carved from the GEMDOS pool at all. The
+> "no VIDEL ⇒ `EINVFN`" contract is unchanged. See `docs/HARDWARE-PROFILE.md`
+> §3.1, §3.6.
+
+### No VIDEL, no RAM-backed screen → `EINVFN` is correct — but not wired yet
+
+The BCM2711 framebuffer is a **mailbox-allocated VideoCore buffer**
+(`bcm2711/framebuffer.rs`), not memory carved from the ST-RAM pool, so the
+Falcon `Srealloc` mechanism has nothing to resize. The contract answer is
+`EINVFN` (-32), exactly the Falcon-without-VIDEL behaviour.
+
+| Atari reference | Pi-4 model today |
+|-----------------|------------------|
+| `has_videl` from bus probe | always false (no VIDEL) |
+| screen carved from `pmd.mp_mfl` trailing block | framebuffer owned by VideoCore, outside the GEMDOS pools |
+| grow/shrink vram via the last free MD | N/A — `Setscreen`/`Physbase`/`Logbase` re-point shadows, VideoCore owns scan-out |
+
+### Current-code status (contract already met)
+
+- **`Srealloc` (0x15) is not in the GEMDOS dispatch table**, but the GEMDOS
+  dispatcher returns **`EINVFN`** for any unregistered slot
+  (`tos-api/src/gemdos/mod.rs:128,132` — `None => EINVFN`). Since the contract
+  answer on a no-VIDEL machine *is* `EINVFN` (-32), the fall-through **already
+  produces the correct value** — unlike the XBIOS side, where an unwired slot
+  yields `EINVFN` for a call whose contract wants a *different* value (cf.
+  `Blitmode` wanting `0x0000`). No Step-2 fix required; an explicit 0x15 slot
+  would only make the intent self-documenting.

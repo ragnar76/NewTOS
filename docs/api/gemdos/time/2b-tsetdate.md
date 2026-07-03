@@ -265,3 +265,32 @@ for programs that incidentally relied on `(0,0)` succeeding (none known); they
 see `ERR`, consistent with Compendium's "valid date required". NewTOS drives
 persistence through its own RTC abstraction (PL031 on QEMU; a software clock on
 RPi4), replacing the IKBD-clock write.
+
+---
+
+## Pi / BCM2711 binding
+
+> Re-points the commit target from the **RTC (via XBIOS `Settime`) + the
+> `current_date` cache** to the **seeded software epoch**. The validation
+> contract (`year_off > 119`, `month` 1-12, day ≤ days-in-month → `ERROR`;
+> `E_OK` otherwise) is unchanged; only where the date is stored is re-pointed.
+> See `docs/HARDWARE-PROFILE.md` §2 (RTC row), §3.5.
+
+### `Tsetdate` recomputes `BASE_SECS`
+
+`Tsetdate` (0x2B) validates the packed date (`time.rs:150-163`, applying the
+D-007 `month >= 1 && day >= 1` fix), then recomputes the base epoch so the
+clock reads the requested date at the current time-of-day:
+`BASE_SECS = compose(...) - CNTPCT/CNTFRQ` (`time.rs:164-167`). No RTC write;
+nothing persists across boots. NewTOS reads `now_secs()` **once** to get the
+current time-of-day, so it has no separate `current_time`-vs-`Settime` tick race.
+
+| Atari reference | Pi-4 model today |
+|-----------------|------------------|
+| Validated, then committed through XBIOS `Settime` → `current_date` + RTC | validated, then `BASE_SECS` recomputed (the single shared clock) |
+| Persists in the RTC (build-dependent) | **not persisted** — resets to 1980-01-01 each power-up unless re-set |
+
+### Gaps vs. the contract (Step-2 candidates)
+
+- **No persistence** — shared item with `Settime`/`Gettime` (needs an RTC
+  backend). The validation and `E_OK`/`ERROR` returns are fully implemented.

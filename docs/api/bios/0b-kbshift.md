@@ -220,3 +220,46 @@ Not exposed as a trap in NewTOS (see status banner). If a future phase needs
 it for the m68k emulator, the USB-HID / IKBD decoder must publish a
 `shifty`-equivalent byte with this exact bit layout and mirror it into the
 `os_kbshift` slot.
+
+---
+
+## Pi / BCM2711 binding
+
+> Re-points the modifier-state source from the **IKBD 6301 / ACIA** (`shifty`
+> maintained by the ACIA scancode ISR) to the **USB-HID keyboard over
+> xHCI/PCIe** decoded into an IKBD `shifty`-equivalent. `Kbshift` the **trap**
+> is out-of-scope (see the status banner); this binding pins where the
+> modifier byte actually lives on the Pi. See `docs/HARDWARE-PROFILE.md` §3.3.
+
+### The modifier byte exists — but not behind this trap
+
+`Kbshift` (BIOS 0x0B) is **not wired** in the BIOS dispatcher
+(`tos-api/src/bios/mod.rs` has no `0x0B` entry), so a native `Kbshift` call hits
+the dispatcher's out-of-range fall-through (returns the function number, `0x0B`)
+— the intended out-of-scope behaviour, **not** the `shifty` contract above.
+
+The modifier state itself *is* maintained: the USB-HID report-modifier byte is
+translated into IKBD modifier make/break codes (`drivers/usb/hid.rs`), fed
+through `crate::ikbd::feed`, and exposed as a `shifty`-equivalent byte via the
+host method `keyboard_shift_state()` → `crate::ikbd::shift_state()`
+(`kernel/src/host_env.rs:231-233`). But that byte reaches consumers (the AES /
+VDI key-state path) through the host trait, **not** through the `Kbshift` trap
+and **not** through an `os_kbshift` low-memory alias.
+
+| Atari reference | Pi-4 model today |
+|-----------------|------------------|
+| `shifty` UBYTE updated by the ACIA/IKBD scancode ISR | a `shifty`-equivalent kept in the `ikbd` decoder, updated from USB-HID make/break |
+| `Kbshift(flag)` trap gets/sets it | trap **not exposed** → dispatcher returns `0x0B` |
+| `os_kbshift` aliases `&shifty` for pointer reads | no `os_kbshift` slot; access is `host().keyboard_shift_state()` (EL1 only) |
+| IKBD 6301 on ACIA | USB-HID keyboard over xHCI (VL805/PCIe) → `ikbd::feed` |
+
+### Gaps vs. the contract (Step-2 candidates)
+
+- **Trap not exposed (by design).** `Kbshift` returns the function number, not a
+  `shifty` byte — the documented out-of-scope status. If the m68k emulator ever
+  needs it, wire `0x0B` to a getter/setter over `ikbd::shift_state()` with the
+  exact bit layout above (note the Pi decoder currently tracks Ctrl/Shift/Alt/
+  Caps per `HARDWARE-PROFILE.md` §3.3; `MODE_HOME`/`MODE_INSERT` bits 5-6 are
+  TT/Falcon-era and not produced).
+- **No settable path.** The host method is read-only (`keyboard_shift_state()`);
+  the `flag >= 0` "set the modifier state" half of the contract has no backing.

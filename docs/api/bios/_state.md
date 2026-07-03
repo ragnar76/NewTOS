@@ -239,6 +239,48 @@ console only after the NewTOS `chardev_init` equivalent.
 
 ---
 
+## Pi / BCM2711 binding
+
+> Re-points the system-variable *storage* from **fixed m68k low-memory
+> addresses** (`tosvars.ld`) to **kernel structs reached by call**. The
+> observable *values/semantics* are the contract and are unchanged; the
+> addresses matter only for the deferred Phase-10 m68k emulator. See
+> `docs/HARDWARE-PROFILE.md` §3.8.
+
+### Where the system-variable values actually live on the Pi
+
+No Atari low-memory address is mapped on AArch64 (same decision as the
+`$420`/`$432` vars — direct poke is m68k-emulator-only). The documented globals
+keep their **values/semantics** but live in kernel state, accessed via the
+BIOS/XBIOS calls, not a poke:
+
+| Sysvar (contract) | Pi backing | Access | Source |
+|-------------------|------------|--------|--------|
+| `drvbits` (`0x4c2`) | mounted-partition bitmap from the SD MBR | `Drvmap` (0x0A) | `tos-api/src/bios/drive.rs` (see `0a-drvmap.md`) |
+| `hz_200` (`0x4ba`) | **not materialised** — derived on demand from `CNTPCT/CNTFRQ` | (no direct reader; `Random` uses the frame clock) | `kernel/src/host_env.rs` (see `06-tickcal.md`) |
+| `etv_timer/critic/term` (`$0400/04/08`) | software vector shadow `VECTORS[0x100/0x101/0x102]` | `Setexc` (0x05) | `tos-api/src/bios/vectors.rs:22,27-29` (see `05-setexc.md`) |
+| `shifty` / `os_kbshift` | IKBD-decoder modifier byte from USB-HID | `host().keyboard_shift_state()` (EL1); `Kbshift` trap **not exposed** | `kernel/src/ikbd.rs`, `host_env.rs:231-233` (see `0b-kbshift.md`) |
+| `membot`/`memtop`/`phystop` | ST-RAM pool extent from the AArch64 memory map | (allocator internal; `Getmpb` vestigial) | `kernel/src/bios/machine/layout.rs` (see `00-getmpb.md`) |
+| `bconstat/in/out/cost_vec[8]` | kernel char-device dispatch, not a poked table | BIOS char calls | `tos-api/src/bios/chardev.rs` (see `_state.md §3`) |
+| `hdv_bpb/rw/mediach/boot` | direct kernel calls into the block layer | `Getbpb`/`Rwabs`/`Mediach` | `tos-api/src/bios/` (see block specs) |
+| `dumpflg` (`0x4ee`) | no screen-dump path on the Pi (`Scrdmp` unwired, S2) | — | — |
+
+| Atari reference | Pi-4 model today |
+|-----------------|------------------|
+| Program pokes `4*num` / `$4c2` / `$4ba` directly in low RAM | reached by name/call; no address is exposed to EL0 |
+| Overwriting a `bcon*_vec` slot installs a driver | native char-device registration (deferred); table not at a fixed VA |
+| `hz_200` free-running at 200 Hz | no counter — elapsed time is `CNTPCT`-derived |
+
+### Gaps vs. the contract (Step-2 candidates)
+
+- **`hz_200` has no incrementing counter** (see `06-tickcal.md`): programs
+  reading a `hz_200` equivalent for elapsed time have no backing.
+- **`etv_*` hooks stored but never invoked** (see `05-setexc.md`).
+- **`dumpflg` / `Scrdmp` unwired** (Screen S2) — nothing resets the flag because
+  the call does not exist.
+- **char-device vector tables are not poke-installable** — native driver
+  registration is deferred; only the value-level contract is honoured today.
+
 ## Cross-references
 
 - `docs/api/bios/_dispatcher.md` — trap-13 trampoline + `savptr` save area.

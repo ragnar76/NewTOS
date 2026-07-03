@@ -228,3 +228,39 @@ an RTC abstraction (RPi4 has no battery-backed RTC by default; QEMU
 default remains a build constant. NewTOS may add an atomic combined
 `(date << 16) | time` snapshot accessor so multitasking readers cannot observe
 a date/time torn across a midnight tick (see `2c-tgettime.md`).
+
+---
+
+## Pi / BCM2711 binding
+
+> Re-points the date source from the **RTC-seeded `current_date` cache advanced
+> by the 200 Hz `tikfrk` handler** to a **seeded software epoch** computed on
+> demand from the ARM generic timer. The packed-date WORD encoding and the
+> zero-extended LONG return are unchanged. See `docs/HARDWARE-PROFILE.md` §2
+> (RTC row), §3.5.
+
+### `Tgetdate` = pack_date of the seeded epoch
+
+There is no RTC and no `current_date` cache advanced by a timer ISR. NewTOS
+computes `now = BASE_SECS + CNTPCT/CNTFRQ`
+(`tos-api/src/gemdos/time.rs:25-45`), decomposes it, and packs the date
+(`tgetdate`, `time.rs:136-138`; `pack_date`, `time.rs:117-119`). `BASE_SECS`
+defaults to `0` ⇒ the system boots reading **1980-01-01** until set via
+`Tsetdate` / XBIOS `Settime`.
+
+| Atari reference | Pi-4 model today |
+|-----------------|------------------|
+| `current_date` cache read (no I/O) | `pack_date(decompose(BASE_SECS + CNTPCT/CNTFRQ))` — computed, no cache |
+| Cache seeded from RTC at boot, advanced by `tikfrk` on midnight | epoch advances continuously with the generic-timer count; no midnight-rollover handler needed |
+| Boot default = `DEFAULT_DATETIME` (OS build date) | boot default = **1980-01-01** (`BASE_SECS = 0`) |
+
+Leap rule: EmuTOS's simplified "every 4th year" (`time.rs:47-51`), exact over
+1980..2099. Same packed encoding as the DTA and FAT directory entries.
+
+### Gaps vs. the contract (Step-2 candidates)
+
+- **No RTC / no persistence** — boot default is 1980-01-01, not the build date;
+  the clock resets each power-up (shared item with `Settime`/`Gettime`).
+- **No torn-read accessor** — `Tgetdate` and `Tgettime` are two separate reads
+  of `now_secs()`; a reader can still observe a date/time split across a
+  midnight second. An atomic combined snapshot is the recommended Step-2 add.

@@ -250,3 +250,25 @@ preferred modes). **Return width:** `Malloc` returns `LONG` (i32). On QEMU and
 RPi4 `mem=1G` the map fits in 32 bits; above 1 GiB of TT-RAM the address is not
 representable in i32, so a low-half user window (Phase 05) is required before
 ≥ 2 GiB RPi4 configs are enabled.
+
+---
+
+## Pi / BCM2711 binding
+
+> Re-points the pool backing to **uniform LPDDR4 split into ST-RAM (14 MiB) +
+> TT-RAM (256 MiB) logical pools** — pinned in `44-mxalloc.md`'s binding and
+> `docs/HARDWARE-PROFILE.md` §3.6. `Malloc` is unchanged as a wrapper.
+
+`malloc` (`tos-api/src/bdos/mem/traps.rs:363-366`) forwards to
+`mxalloc(amount, MX_PREFTTRAM)` — TT-RAM preferred, ST-RAM fallback — because
+until Phase 06 the sentinel kernel PD is treated as `PF_TTRAMMEM = 1`. So
+`Malloc(-1)` returns the larger of the two pools' biggest free blocks, and a
+normal `Malloc(n)` lands in TT-RAM when it fits. The pool sizes/addresses are
+the `44-mxalloc.md` table.
+
+### Gaps vs. the contract (Step-2 candidates)
+
+- **Fixed `MX_PREFTTRAM` mode** — no per-process `PF_TTRAMMEM` yet (Phase 06);
+  every `Malloc` prefers TT-RAM regardless of caller.
+- **≥ 2 GiB real-Pi-4 not representable in the `i32` return** — needs the
+  Phase-05 low-half window (shared with `44-mxalloc.md`).

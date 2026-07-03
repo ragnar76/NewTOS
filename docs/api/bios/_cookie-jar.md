@@ -109,6 +109,70 @@ anyway), with `Setcookie(tag, value)` to add/update. No user mapping, no
 `Supexec`. This spec is the access-agnostic data model; the function ABI
 + the NewTOS cookie set are pinned in the implementation spec.
 
+## Pi / BCM2711 binding
+
+> Re-points the cookie set from **Atari-hardware detection**
+> (`fill_cookie_jar` probing the Shifter / PSG / FDC / m68k CPU+FPU) to the
+> **fixed NewTOS-Pi machine identity**, seeded once at boot. The data model
+> (tag/value slots, `valid_tag`, enumeration) is unchanged; the *contents* and
+> the *access mechanism* are pinned here. See `docs/HARDWARE-PROFILE.md` §3.7.
+
+### The Pi cookie set (seeded at boot)
+
+`tos_api::cookie::seed_defaults(version)` (`tos-api/src/cookie.rs:141-146`),
+called from `kernel/src/lib.rs:256` with `version = 0x0000_0100`, seeds a
+kernel-owned fixed array (`JAR_CAP = 32`, `cookie.rs:20`) — **no** hardware
+probing:
+
+| Cookie | Value | Meaning | Source |
+|--------|-------|---------|--------|
+| `NTOS` | `0x00000100` | NewTOS identity + version 0x100 (the NewTOS-specific cookie; lets ports detect the environment) | `cookie.rs:142` |
+| `_MCH` | `0x00050000` | machine id — a **NewTOS-specific, non-Atari** marker (not ST/STe/TT/Falcon) | `cookie.rs:143` |
+| `_IDT` | `0x0000112F` | date/time format: `/` separator, DD-MM-YY, 24-hour | `cookie.rs:144` |
+| `_AKP` | `0x00000000` | keyboard/language: US | `cookie.rs:145` |
+
+Deliberately **absent** (no matching Pi hardware, `cookie.rs:139-140`): `_VDO`
+(no Shifter), `_SND` (no PSG/DMA sound), `_FDC` (no floppy controller), `_FPU`
+(re-purposing undecided). A program scanning for these correctly finds them
+missing and falls back.
+
+| Atari reference | Pi-4 model today |
+|-----------------|------------------|
+| `_MCH` = ST/STe/TT/Falcon id from bus/Shifter probe | `_MCH` = `0x00050000` fixed NewTOS marker |
+| `_CPU`/`_FPU` = m68k CPU/FPU type | **omitted** (AArch64) — see decision below |
+| `_VDO`/`_SND`/`_FDC` from hardware detect | **omitted** (hardware absent) |
+| `_AKP` from the IKBD layout | `_AKP` = `0` (US), matches the loaded keymap default (§3.3) |
+
+### Access mechanism (the critical part) — kernel-owned, no `$5A0`, no `Supexec`
+
+The classic `Supexec` + read `$5A0` + linear-scan path is **blocked** on NewTOS
+(no `$5A0` mapping; `Supexec` deferred — see the "How applications access it"
+section and `docs/api/xbios/26-supexec.md`). Per **ADR-012**, the jar is
+kernel-owned and accessed by **value**, through FreeMiNT `Ssystem` cookie
+subfunctions (`docs/api/gemdos/154-ssystem.md`) that scan the kernel's own jar
+(`cookie::get`/`count`/`slot_tag`, `cookie.rs:95-118`) and return the found
+value — a pointer would be useless to EL0 since the jar is EL1-only memory.
+
+### Decisions recommended
+
+- **`_CPU`** — could carry an AArch64 marker so ports can branch on
+  architecture. Recommend a **NewTOS-defined non-m68k value** (e.g. a sentinel
+  distinct from the m68k `0/10/20/30/40/60` scale) *or* omit it; do **not**
+  advertise an m68k CPU number. Decision open (`HARDWARE-PROFILE.md` §3.7 TBV).
+- **`_SND`** — recommend **keep omitted** (no PSG/DMA/DSP; §3.9 Dosound is a
+  no-op). A `_SND = 0` "no sound features" cookie is defensible but redundant
+  with absence. Decision open.
+
+### Gaps vs. the contract (Step-2 candidates)
+
+- **`_CPU` / `_SND` undecided** (above) — the jar advertises 4 cookies; whether
+  to add these two is unresolved.
+- **`Setcookie` reseat** — `cookie::set` supports add/update within `JAR_CAP`,
+  but no terminator-`{0, capacity}` slot is materialised (the EmuTOS array-form
+  terminator); enumeration uses `count()`/`slot_tag()` instead, so an m68k
+  binary scanning for a `tag == 0` terminator would not find one. Native access
+  via `Ssystem` is unaffected.
+
 ## Cross-references
 
 - ADR-012 (cookie-jar access mechanism) — `docs/MEMORY.md`

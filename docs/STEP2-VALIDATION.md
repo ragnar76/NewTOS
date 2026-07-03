@@ -88,4 +88,38 @@
 | B11 | NOTE | **`Drvmap`/`Mediach` static after boot (no hot-plug).** No SD/USB re-scan; a card swapped after boot does not flip a bit or report a change. Matches EmuTOS; SD/USB-MSC hot-plug is deferred (PHASE-04). | `tos-api/src/bios/drive.rs:57-133` |
 | B12 | NOTE | **`Rwabs` uses `adr` raw (no EL0 bounds check).** EL0 user-pointer validation deferred to the process-aware BIOS path (matches EmuTOS's no-bounds-check note). | `tos-api/src/bios/mod.rs:99-108` |
 
+## System (timer/vectors/memory/cookies/time)
+
+> Timer = **ARM generic timer** (`CNTPCT_EL0`/`CNTFRQ_EL0`, read on demand;
+> `host_env.rs`, `arch/aarch64/mod.rs`) — no 200 Hz IRQ, no BCM System Timer.
+> Vectors = **software shadow** (`bios/vectors.rs`) over `VBAR_EL1`+GIC-400.
+> Memory = **uniform LPDDR4** split into ST-RAM (14 MiB) + TT-RAM (256 MiB)
+> logical pools (`kernel/src/bios/machine/layout.rs`, `bdos/mem/*`). Cookies =
+> fixed Pi set (`cookie.rs`). Clock/RTC = **seeded software epoch**
+> (`BASE_SECS` + generic-timer delta, `gemdos/time.rs`), no persistence.
+> Bindings: `docs/api/bios/{05-setexc,06-tickcal,0b-kbshift,_cookie-jar,_state,00-getmpb}.md`,
+> `docs/api/xbios/{16-settime,17-gettime,26-supexec,40-blitmode,11-random}.md`,
+> `docs/api/gemdos/time/*`, `docs/api/gemdos/memory/*`, `docs/api/gemdos/15-srealloc.md`;
+> `HARDWARE-PROFILE.md` §3.5-§3.8, §2.
+
+| # | Sev | Item | Where |
+|---|-----|------|-------|
+| Y1 | GAP | **No 200 Hz tick / no `_hz_200` counter.** No periodic timer IRQ runs (`exceptions.rs` has only a catch-all IRQ path); `_hz_200` is never incremented. Elapsed time is the on-demand `CNTPCT/CNTFRQ` value. A program reading a `hz_200` equivalent has no backing. | `kernel/src/arch/aarch64/exceptions.rs`; `kernel/src/host_env.rs:149-206` |
+| Y2 | GAP | **`Setexc` `etv_*` hooks stored but never invoked.** `Setexc(0x100/0x101/0x102,h)` records the handler, but no code path calls `vectors::vector(num)` (`#[allow(dead_code)]`). No 20 ms `etv_timer` dispatch (Y1), no `etv_critic` chain (ties to block B6), no `etv_term` on `Pterm`. Get/set/return-old works; dispatch-through-vector does not. | `tos-api/src/bios/vectors.rs:35-58` |
+| Y3 | GAP | **CPU-exception shadow entries inert.** Shadowing `num` in `0..0xFF` does not redirect the AArch64 EL1 handlers; those entries exist only for the deferred m68k userland. | `tos-api/src/bios/vectors.rs:18-22` |
+| Y4 | GAP | **`Supexec` (0x26) callback-ABI unresolved (ADR-Supexec).** Not in the XBIOS dispatcher → returns `EINVFN` (catch-all) by absence; no callback runs. AArch64 has no in-process EL0→EL1 flip; recommend option 2 (pseudo-supervise at EL0). File the ADR before wiring `0x26`. | `tos-api/src/xbios/mod.rs:33-55` |
+| Y5 | GAP | **RTC has no persistence — clock resets each boot.** `Settime`/`Gettime`/`Tset*`/`Tget*` share a seeded `BASE_SECS`; no RTC hardware, no SD/config write. Boot default 1980-01-01. Needs an RTC backend (PL031 on QEMU `virt`; SD-region or I²C RTC on real Pi-4) — recommend an ADR. | `tos-api/src/gemdos/time.rs:25-29,203-223` |
+| Y6 | BUG | **`Blitmode` (0x40) returns `EINVFN`, not `0x0000`.** Not in the XBIOS dispatcher; the contract wants the "no blitter" status word `0x0000` (a real value, bit 1 clear), not the generic `EINVFN` catch-all. A blitter-presence probe sees an error. Add a `0x40` slot returning `0x0000`. | `tos-api/src/xbios/mod.rs:33-55` |
+| Y7 | NOTE | **`Settime` clamps out-of-range date instead of storing verbatim.** The seconds-based epoch cannot hold an impossible calendar date; month/day are `.clamp`ed (`time.rs:206-208`). EmuTOS caches any packed value. Deliberate, documented divergence. | `tos-api/src/gemdos/time.rs:203-214` |
+| Y8 | NOTE | **`Mxalloc` unknown-mode returns `0L`/NULL (EmuTOS), not `EINVFN`.** The code matches the extracted contract (`traps.rs:283,331`); the earlier draft's `EINVFN` is *not* implemented and would be a deliberate divergence if adopted. Decision needed before "fixing" toward `EINVFN`. | `tos-api/src/bdos/mem/traps.rs:254-340` |
+| Y9 | NOTE | **`Getmpb` (BIOS 0x00) vestigial + unwired → `EINVFN`.** Allocator seeded from the AArch64 memory map, not `Getmpb`. Decision deferred; if exposed it must be a **read-only** ST-RAM report that does **not** rewrite the live free list (reject EmuTOS's "second call destroys the allocator" quirk). Recommend leaving unwired. | `tos-api/src/bios/mod.rs:46-59` |
+| Y10 | NOTE | **Shutdown is halt-only.** *File → Shutdown* exits to `arch::aarch64::halt()` (a `wfe` spin), not a real Pi-4 power-off (VideoCore mailbox power / PSCI `SYSTEM_OFF`). Decision: keep halt-only; a true `Ssystem(S_SHUTDOWN)` power-down is deferred. | `kernel/src/lib.rs:311-313`; `kernel/src/desktop.rs:822,1124-1126` |
+| Y11 | NOTE | **≥ 2 GiB real-Pi-4 DRAM not fully managed.** `MD::m_start`/`m_length` are `Long` (i32); pool seed returns `AddressOutOfRange` above the i32 window until the Phase-05 address-window translation lands. Today the managed region is capped to fit i32. | `tos-api/src/bdos/mem/init.rs:14-21,195-205` |
+| Y12 | NOTE | **`Malloc` fixed to `MX_PREFTTRAM`.** No per-process `PF_TTRAMMEM` until Phase 06; every `Malloc` prefers TT-RAM regardless of caller. | `tos-api/src/bdos/mem/traps.rs:363-366` |
+| Y13 | NOTE | **`Mshrink`/`Mxalloc` use a 16-byte alignment grain** (not EmuTOS's 2/4). Observable only as a larger rounded `len`; callers must read back the effective size. | `tos-api/src/bdos/mem/traps.rs:497-501` |
+| Y14 | NOTE | **No torn-read date/time snapshot.** `Tgetdate`/`Tgettime` are separate `now_secs()` reads; a date/time split across a second boundary is possible. Recommend an atomic combined `(date<<16 | time)` accessor. | `tos-api/src/gemdos/time.rs:136-143` |
+| Y15 | NOTE | **`Kbshift` (0x0B) not exposed → returns func number.** Out-of-scope by design; the modifier byte lives in the `ikbd` decoder (`host().keyboard_shift_state()`), not behind the trap or an `os_kbshift` alias. Wire only if the m68k emulator needs it. | `tos-api/src/bios/mod.rs`; `kernel/src/host_env.rs:231-233` |
+| Y16 | NOTE | **Cookie `_CPU`/`_SND` omitted.** Decision: keep omitted (no m68k CPU/FPU, no PSG). Add a NewTOS-defined `_CPU` only if a port demands it — never an m68k value. | `tos-api/src/cookie.rs:139-146` |
+| Y17 | NOTE | **`Srealloc` (0x15) unwired but correct.** The GEMDOS dispatcher's `None => EINVFN` fall-through already yields the contractual no-VIDEL `EINVFN`; an explicit slot would only self-document. No fix required. | `tos-api/src/gemdos/mod.rs:128,132` |
+
 <!-- Subsequent binding agents append their subsystem section below. -->
