@@ -1318,3 +1318,83 @@ plus `ap_planes`/`ap_3resv`; `ap_version` = 0x0340 in the default build;
 NewTOS later adds `appl_getinfo` it is a documented extension. Corrected in
 `aes/application.md` (with the full `AESGLOBAL` layout table) and
 `aes/_state.md`.
+
+---
+
+## D-049: `evnt_multi` slot map, `MU_TOSVALID`/`MU_M3` flag values, and the `int_out[1..6]` return block (spec-vs-source)
+
+**Date:** 2026-07-03
+**Phase 00 spec:** `docs/api/aes/event.md`
+
+**EmuTOS:** the event-library slot macros (`include/aesdefs.h:178-224`) fix the
+`evnt_multi` (25) parameter layout exactly:
+`MU_FLAGS = int_in[0]`, button spec `MB_CLICKS = int_in[1]` / `MB_MASK =
+int_in[2]` / `MB_STATE = int_in[3]`, rectangle 1 `MMO1_FLAGS..MMO1_HEIGHT =
+int_in[4..8]`, rectangle 2 `MMO2_FLAGS..MMO2_HEIGHT = int_in[9..13]`, timer
+`MT_LOCOUNT = int_in[14]` / `MT_HICOUNT = int_in[15]`, message buffer
+`MME_PBUFF = addr_in[0]`. The shared **return block** is
+`EV_MX = int_out[1]`, `EV_MY = int_out[2]`, `EV_MB = int_out[3]`,
+`EV_KS = int_out[4]`, `EV_KRET = int_out[5]`, `EV_BRET = int_out[6]`, with
+`int_out[0]` = `RET_CODE` = the fired-event `MU_*` mask. The single-event waits
+`evnt_button`/`evnt_mouse` fill `int_out[1..4]` through the `&EV_MX` pointer
+(`gemsuper.c:130,133`). The flag values are `MU_KEYBD=0x01`, `MU_BUTTON=0x02`,
+`MU_M1=0x04`, `MU_M2=0x08`, `MU_MESAG=0x10`, `MU_TIMER=0x20`,
+**`MU_TOSVALID=0x003F`**, **`MU_M3=0x0100` (internal only)**; `ev_multi` is
+entered as `ev_multi(MU_FLAGS & MU_TOSVALID, …)`, so an application **cannot**
+request `MU_M3` (`gemsuper.c:153`, `aesdefs.h:256-263`).
+
+**Prior NewTOS doc (wrong/imprecise):** `aes/event.md`'s `evnt_multi` `int_in`
+table was off for the rectangles/timer (it lumped `int_in[1..3]` as generic
+"button clicks/mask/state" and mislaid the M2 rect / timer indices), described
+`MU_TOSVALID = 0x3F` only as "all of the above" without noting it is the mask
+applied to user flags, and **omitted `MU_M3 = 0x0100`**. It also cited
+non-existent return-index names (`EV_MOUT`/`EV_BUTTON`/`EV_MMGPBUFF`); the real
+names are `EV_MX/EV_MY/EV_MB/EV_KS/EV_KRET/EV_BRET` = `int_out[1..6]`, and the
+last slot is the **button** click count (`EV_BRET`), not "mouse click count".
+
+**Not a Compendium discrepancy** — a spec precision / completeness fix (no PDFs
+in `references/`, so the Compendium slot cross-check is deferred).
+
+**Decision:** follow EmuTOS — use the exact `int_in[0..15]` / `addr_in[0]` /
+`int_out[0..6]` slot map, the `MU_*` values incl. `MU_TOSVALID = 0x3F` (the
+user-flag mask) and internal `MU_M3 = 0x0100`. Corrected in `aes/event.md` with
+the full slot tables.
+
+---
+
+## D-050: `evnt_keybd` returns the key in `int_out[0]`; `evnt_dclick` queries via `setit == 0` (not `rate == -1`); dclick default index 3 (spec-vs-source)
+
+**Date:** 2026-07-03
+**Phase 00 spec:** `docs/api/aes/event.md`
+
+**EmuTOS:**
+- **`evnt_keybd` (20)** returns the packed key code (scancode high byte, ASCII
+  low byte) directly in **`int_out[0]` (`RET_CODE`)** via
+  `ret = ev_block(MU_KEYBD, 0)` (`gemsuper.c:127`). This differs from
+  `evnt_multi`, where the key is delivered in `EV_KRET = int_out[5]`
+  (`gemevlib.c:179`). The two calls use different slots for the same datum.
+- **`evnt_dclick` (26)** selects get-vs-set by `EV_DCSETIT = int_in[1]`:
+  `setit == 0` **reads** the current speed (ignoring `rate`); `setit != 0`
+  **sets** `gl_dcindex = rate` (0..4) (`gemevlib.c:300-309`). It **always**
+  returns `gl_dcindex`. Compendium sometimes documents the query as
+  `rate = -1`; this EmuTOS build keys the query off `setit`, not a `-1` rate.
+- The **double-click rate table** is `gl_dcrates[5] = {450, 330, 275, 220, 165}`
+  ms (indices 0..4), and the AES sets the **default to index 3** (220 ms) at
+  start-up (`ev_dclick(3, TRUE)`, `geminit.c:708`). The returned value is the
+  **index (0..4)**, never the ms figure.
+
+**Prior NewTOS doc (incomplete):** `aes/event.md` summarised `evnt_dclick` as
+"get (setit=0) or set" without the default-index-3 fact or the rate table
+values, did not state that `evnt_keybd`'s key lands in `int_out[0]` (vs
+`evnt_multi`'s `int_out[5]`), and did not flag the `rate == -1` vs `setit == 0`
+query-selection difference against Compendium.
+
+**Not a Compendium discrepancy for `evnt_keybd`** (an internal completeness
+fix); **is a Compendium discrepancy for `evnt_dclick`'s query selector**
+(`setit`-driven, not `rate == -1`), with the Compendium cross-check deferred (no
+PDFs in `references/`).
+
+**Decision:** follow EmuTOS — `evnt_keybd` key in `int_out[0]`;
+`evnt_dclick` query via `setit == 0`; default speed index 3; rate table
+`{450,330,275,220,165}` ms; return value is the index. Documented in
+`aes/event.md`.

@@ -123,7 +123,43 @@ overwrites pending `WM_ARROWED`) — a reference-level pipe optimisation
 
 ---
 
-## 6. NewTOS mapping (contract vs. reference)
+## 6. Event-manager input, timer, and double-click state
+
+The event manager ([`event.md`](./event.md)) reads a separate set of AES
+globals that mirror the current mouse / keyboard state and the timing config.
+These are **reference** internals (fed by the input path and the system tick);
+what a program observes is the values the `evnt_*` calls report, not the globals.
+
+| Global | Decl. | Meaning | Read by |
+|--------|-------|---------|---------|
+| `xrat`, `yrat` | `geminput.h:16` | live mouse x, y | `ev_rets`, `in_mrect` |
+| `button` | `geminput.h:16` | live mouse-button state | `ev_rets`, `ev_mouse`, `evnt_multi` quick-check |
+| `kstate` | `geminput.h:16` | keyboard shift state (`EV_KS`) | `ev_rets` |
+| `mclick` | `geminput.h:16` | last button click count (`EV_BRET`) | `evnt_multi`/`evnt_button` |
+| `mtrans` | `geminput.h:16` | pending button-transition flag (>1 ⇒ use the `pr_*` snapshot) | `ev_rets` |
+| `pr_xrat`/`pr_yrat`/`pr_button`/`pr_mclick` | `geminput.h:17` | transition-time snapshot of the above | `ev_rets`, `evnt_multi` |
+| `gl_mowner` | `geminput.h:19` | the AES process that currently owns the mouse | `evnt_multi` (button/rect quick-checks gated on `rlr == gl_mowner`) |
+| `gl_ticktime` | `gemevlib.c:36` | ms per system tick (`gsx_tick`, `geminit.c:704`) | `ev_timer`, `ev_dclick` (ms→ticks) |
+| `gl_dcindex` | `gemevlib.c:34` | current double-click **speed index** 0..4 (returned by `evnt_dclick`) | `ev_dclick` |
+| `gl_dclick` | `gemevlib.c:35` | click-window in **ticks** (`gl_dcrates[idx]/gl_ticktime`) | `b_click` (multi-click timing) |
+| `gl_dcrates[5]` | `gemevlib.c:33` | rate table `{450,330,275,220,165}` ms, indices 0..4 | `ev_dclick` |
+| `rlr->p_msg` | `struct.h:142-144` | control-manager fast-path `WM_ARROWED` (`action`/`wh`) that bypasses the queue | `ev_mesag` |
+
+- The click-count / double-click timing lives in `b_click`/`b_delay`
+  (`geminput.c:114-179`): a first click starts a `gl_dclick`-tick window; further
+  clicks into the same state increment `gl_bclick` and extend the window; mouse
+  motion of more than a couple of pixels cancels it (`mchange`,
+  `geminput.c:360-368`). The **default speed is index 3** (220 ms),
+  `ev_dclick(3, TRUE)` at start-up (`geminit.c:708`).
+- **Contract vs. reference:** the *values* the event calls report — mouse x/y,
+  button/shift state, click count, and the double-click speed index and its ms
+  semantics — are contract; the `xrat`/`mtrans`/`pr_*`/`gl_mowner` mirrors and
+  the `b_click` timing machinery are EmuTOS internals NewTOS reimplements over
+  its own USB-HID/IKBD input path and system tick.
+
+---
+
+## 7. NewTOS mapping (contract vs. reference)
 
 - **Contract to keep:** ap_id = a small process id (system 0/1, apps 2+);
   `appl_init` reports `ap_count = 1`; the 8-char space-padded name; the 16-byte
