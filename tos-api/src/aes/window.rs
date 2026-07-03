@@ -75,8 +75,11 @@ const BLACK: Pel = 1;
 const GRAY_LT: Pel = 8; // 3D face (EmuTOS LWHITE)
 const GRAY_DK: Pel = 9; // 3D shadow (EmuTOS LBLACK)
 
-/// 50 % dither to grey out an inactive window's name bar (EmuTOS `IP_4PATT`).
-const STIPPLE_50: [u16; 2] = [0xAAAA, 0x5555];
+/// The classic GEM "move-bar" dither on an **active** window's name area
+/// (EmuTOS `TOPPED_COLOR` = `IP_2PATT`, a light 25 % black stipple). The
+/// inactive window's name bar is left plain — the presence of the stipple is
+/// the active/inactive cue, matching EmuTOS.
+const TITLE_STIPPLE: [u16; 4] = [0x0000, 0x5555, 0x0000, 0x5555];
 
 const MAX_WINDOWS: usize = 8;
 const NAME_CAP: usize = 80;
@@ -486,10 +489,12 @@ fn draw_frame(w: &Window, istop: bool, backend: &dyn RasterBackend) {
 
     let mut top = b.y + 1; // running top of the next band
 
-    // Title row (name bar + closer + fuller).
+    // Title row (name area + closer + fuller). EmuTOS: white base, the name
+    // area carries a light dither on the *active* window (the classic
+    // move-bar look), plain on the inactive one.
     if kind & (NAME | CLOSER | FULLER) != 0 {
         let bar = Grect { x: b.x + 1, y: top, w: b.w - 2, h: GAD - 1 };
-        backend.fill_rect(bar.x, bar.y, bar.w, bar.h, GRAY_LT, clip);
+        backend.fill_rect(bar.x, bar.y, bar.w, bar.h, WHITE, clip);
 
         let mut name_x = bar.x;
         let mut name_w = bar.w;
@@ -504,23 +509,25 @@ fn draw_frame(w: &Window, istop: bool, backend: &dyn RasterBackend) {
             gadget(g, G_FULL, backend, clip);
             name_w -= GAD - 1;
         }
-        // Window name (centred when there is room).
-        let nlen = name_len(&w.name) as i16 * 8;
-        let nx = name_x + ((name_w - nlen) / 2).max(2);
-        draw_label(nx, top, name_w, &w.name, backend, clip);
-        // Non-topped window: grey out the name bar (EmuTOS marks W_NAME
-        // DISABLED for the inactive window, drawing a 50 % white stipple
-        // over it). Only the name bar carries the active/inactive cue.
-        if !istop {
+        // Active window: the classic move-bar dither behind the name.
+        if istop {
             backend.fill_pattern(
-                bar.x,
-                bar.y,
-                bar.w,
-                bar.h,
-                PatternFill { fg: WHITE, bg: WHITE, pattern: &STIPPLE_50, opaque: false },
+                name_x,
+                top,
+                name_w,
+                GAD - 1,
+                PatternFill { fg: BLACK, bg: WHITE, pattern: &TITLE_STIPPLE, opaque: true },
                 clip,
             );
         }
+        // Window name (centred when there is room), on a small white box so it
+        // stays crisp over the dither (EmuTOS clears the name's glyph cells).
+        let nlen = name_len(&w.name) as i16 * 8;
+        let nx = name_x + ((name_w - nlen) / 2).max(2);
+        if istop && nlen > 0 {
+            backend.fill_rect((nx - 3).max(name_x), top, nlen + 6, GAD - 1, WHITE, clip);
+        }
+        draw_label(nx, top, name_w, &w.name, backend, clip);
         // separator under the title row
         backend.fill_rect(b.x, top + GAD - 1, b.w, 1, BLACK, clip);
         top += GAD - 1;
