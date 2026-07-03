@@ -12,6 +12,14 @@
 //! base only updates the shadow — re-pointing the VideoCore scan-out at
 //! an arbitrary buffer is a later refinement; software that double-
 //! buffers by drawing into its own buffer and reading `Logbase` works.
+//!
+//! The palette (`Setpalette` / `Setcolor`) keeps an ST-format shadow for
+//! the read-back contract *and* programs the live VDI colour LUT the
+//! framebuffer displays through (the host's [`RasterBackend`], the same
+//! CLUT the VDI `vs_color` uses), so an XBIOS palette write changes the
+//! on-screen colour.
+//!
+//! [`RasterBackend`]: crate::vdi::backend::RasterBackend
 
 use core::sync::atomic::{AtomicI64, AtomicU64, AtomicU8, Ordering};
 
@@ -86,8 +94,16 @@ pub fn setscreen(args: &TrapArgs) -> i64 {
 }
 
 /// `Setpalette` (0x06) — load a 16-entry ST palette. Our framebuffer is
-/// truecolor (no hardware CLUT), so the palette is shadowed only; the
-/// VDI keeps its own PEL→RGB map for indexed drawing. `x0` = palette ptr.
+/// truecolor (no hardware CLUT), so NewTOS emulates the 16 STe palette
+/// registers with the VDI's 16-entry CLUT (`vdi_backend::PALETTE`). Each
+/// caller word is kept in the ST-format shadow (contract, read back by
+/// `Setcolor(n, -1)`) *and* pushed into that live CLUT so the colour
+/// change is displayed. `x0` = palette ptr.
+///
+/// Register index → CLUT index is identity: NewTOS's VDI `MAP_COL[]` is
+/// the identity 16-entry map (see `tos-api/src/vdi/inquiry.rs`), so the
+/// STe hardware-register index and the VDI pen coincide. Spec:
+/// `docs/api/xbios/06-setpalette.md` (Pi/BCM2711 binding).
 pub fn setpalette(args: &TrapArgs) -> i64 {
     let ptr = args.arg_u64(0);
     if ptr == 0 {
@@ -97,23 +113,52 @@ pub fn setpalette(args: &TrapArgs) -> i64 {
     let p = ptr as *const u16;
     let pal = palette();
     for (i, slot) in pal.iter_mut().enumerate() {
-        *slot = unsafe { p.add(i).read() } & 0x0FFF; // ST: 0x0RGB, 3 bits/gun
+        let word = unsafe { p.add(i).read() } & 0x0FFF; // STe: 0x0RGB, 4 bits/gun
+        *slot = word;
+        apply_to_clut(i as u16, word);
     }
     0
 }
 
 /// `Setcolor` (0x07) — set or query one palette entry. `x0` = index
 /// (0..15), `x1` = ST color value, or `-1` to query. Returns the old
-/// value.
+/// value. A write updates both the ST-format shadow (contract) and the
+/// live VDI CLUT (`vdi_backend::PALETTE`), so the colour changes on
+/// screen; a query (`value < 0`) leaves both untouched. Spec:
+/// `docs/api/xbios/07-setcolor.md` (Pi/BCM2711 binding).
 pub fn setcolor(args: &TrapArgs) -> i64 {
     let index = (args.arg_u16(0) & 0x0F) as usize;
     let value = args.arg_i16(1);
     let pal = palette();
     let old = pal[index] as Long as i64;
     if value >= 0 {
-        pal[index] = (value as u16) & 0x0FFF;
+        let word = (value as u16) & 0x0FFF;
+        pal[index] = word;
+        apply_to_clut(index as u16, word);
     }
     old
+}
+
+/// Push one ST/STe palette word into the live VDI colour LUT the backend
+/// displays through, so an XBIOS palette write actually changes the
+/// on-screen colour (the same CLUT `vs_color` programs, via the host's
+/// `RasterBackend::set_color`).
+///
+/// The STe packed word is `0x0RGB` — bits 11-8 red, 7-4 green, 3-0 blue,
+/// 4 significant bits per gun (`docs/api/xbios/07-setcolor.md` §"Packed
+/// colour word"). Each nibble (0..=15) expands to the VDI's 0..=1000 gun
+/// range by `n * 1000 / 15` (full-range: nibble `0xF` → `1000`); the
+/// backend then does the 0..1000 → 8-bit framebuffer expansion itself
+/// (`kernel/src/vdi_backend.rs`), matching the spec's "4→8-bit" note.
+fn apply_to_clut(index: u16, word: u16) {
+    let Some(raster) = host::host().and_then(|h| h.raster()) else {
+        return; // No display up (hostless / display-less): shadow only.
+    };
+    let gun = |nibble: u16| nibble * 1000 / 15;
+    let r = gun((word >> 8) & 0x0F);
+    let g = gun((word >> 4) & 0x0F);
+    let b = gun(word & 0x0F);
+    raster.set_color(index, r, g, b);
 }
 
 // ── Cursconf (VT52 text-cursor config) ───────────────────────────────────
