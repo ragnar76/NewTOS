@@ -7,12 +7,15 @@
 > (extern declarations). Calling convention:
 > [`_dispatcher.md`](_dispatcher.md).
 >
-> **Scope.** This file captures only **workstation-level** shared state
+> **Scope.** This file captures the **workstation-level** shared state
 > (the handle table, capability tables, and the current-workstation
-> pointer). The per-attribute state (line/marker/fill/text defaults, the
-> `MAP_COL`/palette machinery) is owned by the attributes/inquiry specs
-> and by [`../structures/vwk.md`](../structures/vwk.md); a later
-> attributes agent extends this file if needed.
+> pointer) **and** the **per-`Vwk` attribute-state model** (the
+> line/marker/fill/text/mode/clip/colour fields with their open-time
+> defaults and valid ranges) — the shared "current attribute state" the
+> attribute setters ([`attributes/`](attributes/)) write and the output
+> and inquiry handlers read. The `MAP_COL`/palette machinery detail lives
+> with the colour setter/inquiry; struct layout is in
+> [`../structures/vwk.md`](../structures/vwk.md).
 >
 > **Contract vs. reference** — see [`docs/COMPATIBILITY.md`](../../COMPATIBILITY.md).
 > The **values** `DEV_TAB`/`INQ_TAB`/`SIZ_TAB` report are contract
@@ -85,6 +88,68 @@ The convenient aliases `xres = DEV_TAB[0]`, `yres = DEV_TAB[1]`,
 - `MCS *mcs_ptr` (`vdi_control.c:41`) — mouse-cursor save area, sized by
   `v_planes` in `update_rez_dependent`. Mouse-subsystem state; documented
   fully under [`input/_mouse.md`](input/_mouse.md).
+
+## The per-`Vwk` attribute-state model
+
+Every open workstation carries its own **attribute state** — the pens,
+sizes, styles, writing mode, clip rectangle, and font that its drawing
+calls use. The attribute setters ([`attributes/`](attributes/)) mutate
+these fields; the output primitives and the `vq*_attributes` inquiries
+read them. `init_wk` (`vdi_control.c:269-380`) fills them at open time;
+some defaults come from the caller's `work_in`/`INTIN` open array, the
+rest from fixed `#define`s and the device tables.
+
+The **field set + valid ranges + defaults** are the contract (a program
+observes them through `v_opnvwk`, the setters' echoed values, and the
+inquiries). The **field storage/order in the `Vwk`** is reference
+([`../structures/vwk.md`](../structures/vwk.md)); NewTOS may lay it out
+freely.
+
+### Attribute-state fields (defaults from `init_wk` / `text_init2`)
+
+| Field | Set by | Valid range | Open default | Spec |
+|-------|--------|-------------|--------------|------|
+| `line_index` | `vsl_type` (15) | 0..6 (type 1..7 − 1) | 0 (`DEF_LINE_STYLE`−1) | [`attributes/_line-marker.md`](attributes/_line-marker.md) |
+| `line_color` | `vsl_color` (17) | `MAP_COL[0..numcolors-1]` | `MAP_COL[INTIN[2]]` (open pen) | — |
+| `line_width` | `vsl_width` (16) | odd, `1..SIZ_TAB[6]` | `DEF_LWID` (`SIZ_TAB[4]`) | — |
+| `line_beg` / `line_end` | `vsl_ends` (108) | 0..2 (squared/arrow/round) | 0 / 0 (`SQUARED`) | — |
+| `ud_ls` | `vsl_udsty` (113) | any 16-bit mask | `LINE_STYLE[0]` = `0xFFFF` | — |
+| `mark_index` | `vsm_type` (18) | 0..5 (type 1..6 − 1) | 2 (`DEF_MARK_STYLE`−1 = asterisk) | — |
+| `mark_height` | `vsm_height` (19) | `DEF_MKHT..MAX_MKHT` | `DEF_MKHT` (`SIZ_TAB[9]`) | — |
+| `mark_scale` | `vsm_height` (19) | ≥1 (integer) | 1 | — |
+| `mark_color` | `vsm_color` (20) | `MAP_COL[…]` | `MAP_COL[INTIN[4]]` (open pen) | — |
+| `fill_style` | `vsf_interior` (23) | 0..4 (`FIS_*`) | 0 (`FIS_HOLLOW`) | [`attributes/_fill.md`](attributes/_fill.md) |
+| `fill_index` | `vsf_style` (24) | pattern 1..24 or hatch 1..12 | `init_wk`: 1-based validated value; **setter: 0-based** (D-VDI-8) | — |
+| `fill_color` | `vsf_color` (25) | `MAP_COL[…]` | `MAP_COL[INTIN[9]]` (open pen) | — |
+| `fill_per` | `vsf_perimeter` (104) | 0 / 1 | **TRUE** (perimeter drawn) | — |
+| `ud_patrn[]` | `vsf_udpat` (112) | 16 or 16·planes WORDs | `ROM_UD_PATRN` (16 WORDs) | — |
+| `multifill` | `vsf_udpat` (112) | 0 / 1 | 0 | — |
+| `cur_font` | `vst_font` (21), `vst_height`/`vst_point` | loaded face | `def_font` (system font) | [`attributes/_text.md`](attributes/_text.md) |
+| `text_color` | `vst_color` (22) | `MAP_COL[…]` | `MAP_COL[INTIN[6]]` (open pen) | — |
+| `style` | `vst_effects` (106) | bits & `INQ_TAB[2]` (0x1F) | 0 (no effects) | — |
+| `h_align` / `v_align` | `vst_alignment` (39) | 0..2 / 0..5 | 0 / 0 (left / baseline) | — |
+| `chup` | `vst_rotation` (13) | 0/900/1800/2700/3600 | 0 | — |
+| `pts_mode` / `scaled` / `dda_inc` / `t_sclsts` | `vst_height`/`vst_point`/`vst_font` | scaling state | FALSE / FALSE / — / — | — |
+| `num_fonts` | `vst_load_fonts`/`unload` (119/120) | ≥ `font_count` | `font_count` | — |
+| `wrt_mode` | `vswr_mode` (32) | 0..3 (`WM_*` = `MD_*`−1) | 0 (`WM_REPLACE`) | [`attributes/_mode-clip-color.md`](attributes/_mode-clip-color.md) |
+| `clip` | `vs_clip` (129) | 0 / 1 | FALSE (off) | — |
+| `xmn_clip`/`ymn_clip`/`xmx_clip`/`ymx_clip` | `vs_clip` (129) | within `[0,0]..[xres,yres]` | `0,0,xres,yres` (full device) | — |
+| `xfm_mode` | (set at open from `INTIN[10]`) | 0 = NDC, 2 = RC | `INTIN[10]` (caller) | [`workstation/100-v_opnvwk.md`](workstation/100-v_opnvwk.md) |
+
+`flip_y` is forced to 1 by `init_wk` and by the size/inquiry handlers that
+return magnitudes (`vsm_height`, `vst_height`, `vqm_attributes`, …). The
+colours above are stored as **PEL** (hardware register index) via
+`MAP_COL[]` — pen `n` → `MAP_COL[n]`, with `MAP_COL[1] = numcolors-1`.
+
+### The colour-request palette (`REQ_COL` / `req_col2`)
+
+Separate from the per-`Vwk` PEL fields is the **device palette request**:
+`WORD REQ_COL[16][3]` (+ `req_col2[240][3]` on `EXTENDED_PALETTE`), the
+per-entry R/G/B *as requested* by `vs_color` (op 14) in VDI's 0..1000
+range. `init_colors` (`vdi_col.c:708`) seeds it from `st_palette`;
+`vs_color` overwrites an entry with the **raw** (unclamped) request and
+programs the DAC with a `[0,1000]`-clamped copy; `vq_color` (op 26) reads
+`REQ_COL` back. This is a **device-global** (Line-A) array, not per-`Vwk`.
 
 ## NewTOS implementation notes (Phase 12)
 
