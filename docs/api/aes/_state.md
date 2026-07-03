@@ -191,6 +191,51 @@ and the `menu_register` slot-id/-1 return.
 
 ---
 
+## 6b. Window-manager state — the window list, the top window, the rectangle list
+
+The window manager ([`window-graphics.md`](./window-graphics.md)) keeps the set
+of windows, their z-order, and the visible-region (rectangle) lists. These are
+**reference** internals (fed by `wind_create`/`open`/`close`/`set`); what a
+program observes is the `wind_get`/`wind_set` field values, the `WM_*` messages,
+and the `WF_FIRSTXYWH`/`NEXTXYWH` rectangle sequence.
+
+| Global | Decl. | Meaning | Read/written by |
+|--------|-------|---------|-----------------|
+| `D.w_win[NUM_WIN]` | `gemlib.h:66-86` (`WINDOW`) | the window records: `w_flags` (`VF_INUSE`/`VF_ISOPEN`/`VF_BROKEN`), `w_owner` (AESPD), `w_kind`, `w_pname`/`w_pinfo`, FULL/WORK/PREV/CURR rects, `w_hslide`/`w_vslide`/`w_hslsiz`/`w_vslsiz`, `w_rlist`/`w_rnext` | `w_setup`/`wm_create`/`wm_get`/`wm_set`; handle 0 = desktop (`wm_init`) |
+| `W_TREE[NUM_WIN]` | `gemwmlib.c:57` | on-screen **window z-order tree** (root `ROOT`, siblings = open windows; `ob_tail` = topmost) | `w_obadd`/`ob_delete`/`ob_order`; `wind_find` = `ob_find(gl_wtree,0,2,…)` |
+| `gl_wtree` | `gemwmlib.c:1298` | ptr to `W_TREE` (the desktop/window root tree) | `wind_find`, `draw_change`, `newrect` |
+| `gl_wtop` | `gemwmlib.c:51` | handle of the **topped (active)** window, or `NIL` if none (then desktop) | `w_top()`, `w_bldactive` (istop), `draw_change`; reported by `WF_TOP` |
+| `W_ACTIVE[NUM_ELEM]` / `gl_awind` | `gemwmlib.c:58,52` | scratch **frame OBJECT tree** rebuilt per draw by `w_bldactive` (`W_BOX`…`W_HELEV`, `gemlib.h:38-56`) | `w_bldactive`/`w_cpwalk`/`ob_draw`; hit-tested by the control manager |
+| `w_rlist`/`w_rnext` (per window) | `gemlib.h:84-85` | the window's **owner rectangle list** (visible non-overlapping pieces) + the `WF_NEXTXYWH` cursor | `newrect`/`mkrect`/`w_owns`; `wind_get(WF_FIRSTXYWH/NEXTXYWH)` |
+| `rul` / `D.g_olist[NUM_ORECT]` | `gemwrect.c:36`, `NUM_ORECT=NUM_WIN·10` | the `ORECT` **free list** the rectangle-list allocator draws from | `or_start`/`get_orect`/`newrect` |
+| `gl_newdesk`/`gl_newroot` | `gemwmlib.c:54-55` | the desktop-**background** OBJECT tree + root object (set by `wind_set(WF_NEWDESK)`) | `w_drawdesk`, `w_redraw_desktop` |
+| `wind_spb` | (AES sync block) | the `wind_update` **screen/window-tree lock** (counting mutex `sy_tas`) | `wm_update(BEG/END_UPDATE)`, `wm_open`/`close`/`set` |
+| `ml_ocnt` | (mouse-ctrl lock) | mouse-control ownership count | `wm_update(BEG/END_MCTRL)` → `fm_own`, `wm_new` |
+| `gl_wchar`/`gl_hchar`/`gl_wbox`/`gl_hbox` | `gemgraf.c:40-52`, set `:405-415` | system-font cell + gadget-box width/height (`gl_hbox=gl_hchar+3`) | `graf_handle`, `w_bldactive`, `wind_calc` |
+| `gl_handle` | `gemgraf.c:52` | the AES **physical VDI workstation handle** | `graf_handle`; every AES VDI call (`contrl[6]`) |
+| `mouse_cursor[8]` / `gl_mouse` / `gl_prevmouse` | `geminit.c:124-128` | the 8 preset mouse forms + current/previous form | `graf_mouse` (`gr_mouse`) |
+
+- **Rectangle-list contract (the redraw invariant).** `newrect` rebuilds each
+  window's `w_rlist` by breaking its true rect against every higher window
+  (`mkrect`/`brkrct`/`mkpiece`, up to four TOP/LEFT/RIGHT/BOTTOM pieces); a
+  window that got split is flagged `VF_BROKEN`. `wind_get(WF_FIRSTXYWH/NEXTXYWH)`
+  walks that list via `w_owns`, clipping each piece to the work area and
+  terminating with a `w=h=0` rect. **Contract** = the *sequence of visible,
+  non-overlapping, work-clipped pieces* an app redraws; the `ORECT` free-list
+  and four-way split are **reference**.
+- **Contract vs. reference.** The *observable* facts — the `WF_*` field values,
+  the top-window handle (`WF_TOP`), the `WM_*` messages, the
+  `WF_FIRSTXYWH`/`NEXTXYWH` rect sequence, the `graf_handle` VDI handle + cell
+  sizes — are contract; the `D.w_win[]`/`W_TREE`/`W_ACTIVE`/`ORECT` storage, the
+  `w_bldactive` frame tree, the blit-move optimisation (`w_move`/`bb_screen`),
+  and the `wind_spb`/`ml_ocnt` cooperative locks are EmuTOS internals NewTOS
+  reimplements over its own object manager, framebuffer, and process locks.
+- **Single-app note.** At NewTOS single-app bring-up there is one AES process
+  (the desktop); `gl_wtop`, the window list, and the locks still apply, but the
+  cross-process topping/`WM_UNTOPPED` machinery is inert until multi-app exists.
+
+---
+
 ## 7. NewTOS mapping (contract vs. reference)
 
 - **Contract to keep:** ap_id = a small process id (system 0/1, apps 2+);

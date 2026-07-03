@@ -1,103 +1,949 @@
-# AES Window Manager (`wind_*` 100–109) + Graphics (`graf_*` 70–79)
+# AES Window Manager (`wind_*` 100–109) + Graphics Manager (`graf_*` 70–79)
 
-> **PHASE-00b D8, Batch 4.** Source: EmuTOS @ `1a7484ab` —
-> `aes/gemwmlib.c` (`wm_*`), `aes/gemwrect.c` (rectangle list),
-> `aes/gemgrlib.c` (`gr_*`), `aes/gemgraf.c` (primitives), constants
-> `include/aesdefs.h:519-552`, dispatch `aes/gemsuper.c`.
+> **PHASE-00b D8, Batch 6 (full-contract refinement).**
+> Source: EmuTOS @ `1a7484ab`.
+> Primary: `aes/gemwmlib.c` (`wm_create`/`wm_open`/`wm_close`/`wm_delete`/
+> `wm_get`/`wm_set`/`wm_find`/`wm_update`/`wm_calc`/`wm_new`, the frame builder
+> `w_bldactive`, the redraw driver `draw_change`/`w_update`, the topped/untopped
+> title colour), `aes/gemwrect.c` (the rectangle-list algorithm
+> `newrect`/`mkrect`/`brkrct`/`w_owns`), `aes/gemgrlib.c` (`gr_rubbox`/
+> `gr_dragbox`/`gr_movebox`/`gr_growbox`/`gr_shrinkbox`/`gr_watchbox`/
+> `gr_slidebox`/`gr_mouse`/`gr_mkstate`); the WM_\* messages are built by the
+> **control manager** `aes/gemctrl.c:81-315` (`ct_msgup`/`hctl_window`/
+> `handle_arrow_msg`/`perform_untop`) → `aes/gemwmlib.c:851-863` (`ap_sendmsg`);
+> dispatch arm `aes/gemsuper.c:265-360`; constants `include/aesdefs.h:68-77,
+> 89-98,226-253,390-562`; window structs `aes/gemlib.h:38-94`.
 >
-> Call convention: [`_dispatcher.md`](./_dispatcher.md).
+> Call convention + AESPB layout: [`_dispatcher.md`](./_dispatcher.md).
+> Shared AES globals (the window list `D.w_win[]`, `gl_wtop`, the rectangle
+> list, the input mirrors `xrat`/`yrat`/`button`/`kstate`): [`_state.md`](./_state.md).
+>
+> **Contract vs. reference** — see [`docs/COMPATIBILITY.md`](../../COMPATIBILITY.md).
+> **Contract:** the opcode numbers (100–109, 70–79); the AESPB slot layout of
+> each call; the **window-kind gadget bits** (`NAME`…`HSLIDE`); the **`WF_*`
+> field numbers** and each field's `wind_get`/`wind_set` return; the **`WC_BORDER
+> 0`/`WC_WORK 1`** `wind_calc` border↔work model; the **`WF_FIRSTXYWH`/
+> `WF_NEXTXYWH` rectangle-list contract** (non-overlapping visible pieces of the
+> work area, walked until an empty rect); the **`WM_*` message ids + 16-byte
+> word layouts** and the **`WA_*` arrowed sub-actions**; the **`graf_mouse`
+> form numbers** (0–7, `USER_DEF`, `M_OFF`/`M_ON`); `graf_handle`'s VDI-handle +
+> cell-size return; `graf_mkstate`'s x/y/button/shift; the `wind_update`
+> BEG/END_UPDATE / BEG/END_MCTRL modes; the `wind_create` handle / `-1` return.
+> **Reference (NewTOS reimplements freely):** `w_bldactive`'s W_ACTIVE
+> frame-object tree and the exact XOR rubber-band tracking (`gr_rubwind`/
+> `gr_wait`/`gr_2box`/`gr_stepcalc`), the `ORECT` free-list allocator
+> (`or_start`/`get_orect`), the `WINDOW`/`ORECT` structs, the `w_move`/`bb_screen`
+> blit optimisation, and the cooperative screen-lock (`tak_flag`/`ev_block`/
+> `fm_own`) — these are EmuTOS internals NewTOS reimplements over its own
+> object manager, framebuffer XOR draw, event/IPC model, and process locks.
 
-## Window border components (the `kind` bitmask, `aesdefs.h:519-531`)
+---
 
-`wind_create`'s `kind` ORs the widgets the window border shows:
+## The frame IS a private OBJECT tree (reference)
+
+The window *border* is not a data structure the application sees. EmuTOS keeps
+one scratch object tree `W_ACTIVE[NUM_ELEM]` (`gemwmlib.c:58`, `NUM_ELEM = 19`)
+and, each time it must draw a window's frame, `w_bldactive(handle)`
+(`gemwmlib.c:479`/`716`) rebuilds that tree from the window's `w_kind` and
+current rect, then `do_walk`/`ob_draw` paints it clipped to the rectangle list.
+The element indices (`gemlib.h:38-56`) are:
+
+| # | Element | Object type | # | Element | Object type |
+|--:|---------|-------------|--:|---------|-------------|
+| 0 | `W_BOX` | `G_IBOX` | 10 | `W_UPARROW` | `G_BOXCHAR` |
+| 1 | `W_TITLE` | `G_BOX` | 11 | `W_DNARROW` | `G_BOXCHAR` |
+| 2 | `W_CLOSER` | `G_BOXCHAR` | 12 | `W_VSLIDE` | `G_BOX` |
+| 3 | `W_NAME` | `G_BOXTEXT` | 13 | `W_VELEV` | `G_BOX` |
+| 4 | `W_FULLER` | `G_BOXCHAR` | 14 | `W_HBAR` | `G_BOX` |
+| 5 | `W_INFO` | `G_BOXTEXT` | 15 | `W_LFARROW` | `G_BOXCHAR` |
+| 6 | `W_DATA` | `G_IBOX` | 16 | `W_RTARROW` | `G_BOXCHAR` |
+| 7 | `W_WORK` | `G_IBOX` | 17 | `W_HSLIDE` | `G_BOX` |
+| 8 | `W_SIZER` | `G_BOXCHAR` | 18 | `W_HELEV` | `G_BOX` |
+| 9 | `W_VBAR` | `G_BOX` | | | |
+
+This tree, `w_bldactive`, and the pixel drawing are **reference** — the object
+manager ([`object-form.md`](./object-form.md)) does the drawing. What is
+**contract** is the *observable geometry* the frame produces: the work rect
+(`WF_WORKXYWH`), the border thicknesses (`wind_calc`), and which pixels each
+gadget occupies (fed back to the app through `wind_get`).
+
+### Active vs. inactive title cue (`gemwmlib.c:150-151`, `537`, `778`)
+
+The topped (active) window's name is drawn differently from an untopped one.
+The two TEDINFO colour words (in the non-`CONF_WITH_WINDOW_COLOURS` build) are:
+
+| State | `te_color` | Decoded (border/text/mode/pattern/fill) |
+|-------|-----------:|------------------------------------------|
+| **topped / active** | `TOPPED_COLOR` = **0x11a1** | border 1, text 1, **opaque**, **`IP_2PATT` (pattern 2)**, fill 1 |
+| **untopped / inactive** | `UNTOPPED_COLOR` = **0x1100** | border 1, text 1, transparent, `IP_HOLLOW` (pattern 0), fill 0 |
+
+> **Cue direction (contract, corrects an easy-to-invert assumption).** The
+> **active/topped** title carries the **`IP_2PATT` dither** fill (`0x11a1`); the
+> **inactive/untopped** title is **plain/hollow** (`0x1100`)
+> (`gemwmlib.c:150-151`). `w_bldactive` also sets `W_NAME.ob_state = NORMAL`
+> when topped, `DISABLED` when not (`gemwmlib.c:537`/`778`); on an untopped
+> window the CLOSER/FULLER/scroll gadgets are not built at all in the non-3D
+> build (drawn only `if (istop)`, `gemwmlib.c:758-773`). Pattern-2 fill under
+> the title bytes = "this is the active window". (Constants `IP_HOLLOW`=0,
+> `IP_2PATT`=2, `obdefs.h:32-39`.)
+
+---
+
+## Window-kind gadget bits (`wind_create` `kind`, `aesdefs.h:519-531`)
+
+`kind` is an OR of the widgets the border shows:
 
 | Bit | hex | Widget | Bit | hex | Widget |
 |-----|----:|--------|-----|----:|--------|
-| NAME | 0x001 | title bar | UPARROW | 0x040 | scroll up |
-| CLOSER | 0x002 | close box | DNARROW | 0x080 | scroll down |
-| FULLER | 0x004 | full box | VSLIDE | 0x100 | vert. slider |
-| MOVER | 0x008 | drag bar | LFARROW | 0x200 | scroll left |
-| INFO | 0x010 | info line | RTARROW | 0x400 | scroll right |
-| SIZER | 0x020 | size box | HSLIDE | 0x800 | horiz. slider |
+| `NAME`   | 0x0001 | title bar (name) | `UPARROW` | 0x0040 | scroll-up arrow |
+| `CLOSER` | 0x0002 | close box | `DNARROW` | 0x0080 | scroll-down arrow |
+| `FULLER` | 0x0004 | full box | `VSLIDE`  | 0x0100 | vertical slider |
+| `MOVER`  | 0x0008 | drag / move bar | `LFARROW` | 0x0200 | scroll-left arrow |
+| `INFO`   | 0x0010 | info line | `RTARROW` | 0x0400 | scroll-right arrow |
+| `SIZER`  | 0x0020 | size box | `HSLIDE`  | 0x0800 | horizontal slider |
+| `HOTCLOSE` | 0x1000 | close-on-single-click *(PC-GEM, `CONF_WITH_PCGEM`)* | | | |
 
-A clicked widget generates a `WM_*` message (Batch 2) via `evnt_mesag`.
+Gadget **groups** used by the frame builder and `wind_calc` (`gemwmlib.h:16-18`):
 
-## Window fields (`WF_*`, used by `wind_get`/`wind_set`, `aesdefs.h:534-552`)
+- `TGADGETS = NAME | CLOSER | FULLER | MOVER` — anything in the **title band**.
+- `VGADGETS = UPARROW | DNARROW | VSLIDE` — the **vertical scroll bar**.
+- `HGADGETS = LFARROW | RTARROW | HSLIDE` — the **horizontal scroll bar**.
 
-| | | | |
-|--|--|--|--|
-| 1 `WF_KIND` | 2 `WF_NAME` | 3 `WF_INFO` | 4 `WF_WXYWH` work area |
-| 5 `WF_CXYWH` current (border) | 6 `WF_PXYWH` previous | 7 `WF_FXYWH` full size | 8 `WF_HSLIDE` |
-| 9 `WF_VSLIDE` | 10 `WF_TOP` | 11 `WF_FIRSTXYWH` | 12 `WF_NEXTXYWH` |
-| 14 `WF_NEWDESK` | 15 `WF_HSLSIZ` | 16 `WF_VSLSIZ` | 17 `WF_SCREEN` |
-| 18 `WF_COLOR` | 19 `WF_DCOLOR` | 20 `WF_OWNER` | |
-
-`WF_FIRSTXYWH`/`WF_NEXTXYWH` iterate the **rectangle list** (`gemwrect.c`):
-the visible (unobscured) pieces of a window's work area — what a
-`WM_REDRAW` handler must redraw, walked until a returned rect is empty.
+> **Edge case (`gemwmlib.c:542-551`):** in the TOS4-compatible build you may
+> specify `MOVER` **without** `NAME` — a drag bar with no name. A `SIZER` with
+> no scroll gadgets still forces a vertical bar band (see `wind_calc`).
 
 ---
 
-## Window Manager (`wm_*`)
+## `WF_*` field numbers (`wind_get`/`wind_set`, `aesdefs.h:534-552`)
 
-`WM_*` intin macros; rects are `GRECT{x,y,w,h}`.
+| # | Name | Meaning | # | Name | Meaning |
+|--:|------|---------|--:|------|---------|
+| 1 | `WF_KIND` | kind bitmask † | 11 | `WF_FIRSTXYWH` | first visible rect (list head) |
+| 2 | `WF_NAME` | title string ptr | 12 | `WF_NEXTXYWH` | next visible rect |
+| 3 | `WF_INFO` | info string ptr | 14 | `WF_NEWDESK` | desktop background tree ‡ |
+| 4 | `WF_WXYWH` (WORKXYWH) | work-area rect | 15 | `WF_HSLSIZ` | h-slider size 1..1000 / −1 |
+| 5 | `WF_CXYWH` (CURRXYWH) | current (border) rect | 16 | `WF_VSLSIZ` | v-slider size 1..1000 / −1 |
+| 6 | `WF_PXYWH` (PREVXYWH) | previous rect | 17 | `WF_SCREEN` | menu/alert buffer addr+len |
+| 7 | `WF_FXYWH` (FULLXYWH) | full-screen rect | 18 | `WF_COLOR` | per-window gadget colour § |
+| 8 | `WF_HSLIDE` | h-slider position 1..1000 | 19 | `WF_DCOLOR` | default gadget colour § |
+| 9 | `WF_VSLIDE` | v-slider position 1..1000 | 20 | `WF_OWNER` | owner pid + z-order ¶ |
+| 10 | `WF_TOP` | handle of the top window | | | |
 
-| Op | Name | Dispatch | Args / effect |
-|---:|------|----------|---------------|
-| 100 | `wind_create` | `wm_create(kind, &wx)` | allocate a window of border `kind`, max extent `wx`; returns a **handle** (≥0) or negative error |
-| 101 | `wind_open`   | `wm_open(handle, &wx)` | display window at rect `wx`; generates first `WM_REDRAW` |
-| 102 | `wind_close`  | `wm_close(handle)` | hide window (handle stays valid) |
-| 103 | `wind_delete` | `wm_delete(handle)` | free the handle |
-| 104 | `wind_get`    | `wm_get(handle, field, &out, &in)` | read a `WF_*` field → intout 1–4 |
-| 105 | `wind_set`    | `wm_set(handle, field, &in)` | set a `WF_*` field (name, slider pos, size, …) |
-| 106 | `wind_find`   | `wm_find(mx, my)` | handle of the window under (mx,my); 0 = desktop |
-| 107 | `wind_update` | `wm_update(beg)` | begin/end screen lock & mouse ownership. `beg` = END_UPDATE 0 / BEG_UPDATE 1 / END_MCTRL 2 / BEG_MCTRL 3 |
-| 108 | `wind_calc`   | `wm_calc(type, kind, ix,iy,iw,ih, &ox,&oy,&ow,&oh)` | convert work↔border rect. `type` = WC_BORDER 0 / WC_WORK 1 |
-| 109 | `wind_new`    | `wm_new()` | close+delete **all** windows, reset the manager (cleanup) |
+- † `WF_KIND` (1) is **not** handled by `wm_get`/`wm_set` in this source — it
+  falls into `default: return FALSE`. See "Fields with no handler" below.
+- ‡ `WF_NEWDESK` (14) is **`wind_set`-only** (sets the desktop-background object
+  tree `gl_newdesk`/`gl_newroot`); `wm_get` has no case for it → `FALSE`.
+- § `WF_COLOR` (18) / `WF_DCOLOR` (19) exist only with
+  `CONF_WITH_WINDOW_COLOURS` (default **1**). They use a **3-word `int_in`**
+  (gadget#, topped-colour, untopped-colour) — the one `wind_get`/`wind_set`
+  exception to the usual 2-word input (`gemwmlib.c:1491-1503`).
+- ¶ `WF_OWNER` (20) exists only with `AES_VERSION >= 0x330` (the default build
+  is 0x0340). Returns owner pid, open-flag, and (a partial) top/bottom z-order.
 
-Handle **0** is always the **desktop** (root) window. The AES owns the
-screen background (the desktop tree) and clips each window to the parts
-not covered by windows above it (the rectangle list).
+**Note there is no `WF_HSLSIZE`/`WF_VSLSIZE` spelling** in the source — the
+macros are `WF_HSLSIZ` (15) / `WF_VSLSIZ` (16). The field *numbers* 15/16 match
+the Compendium `WF_HSLSIZE`/`WF_VSLSIZE`.
 
 ---
 
-## Graphics Manager (`graf_*`) — interactive feedback
+## Trap interface (parameter-block form)
 
-Rubber-band / drag / animation helpers; most own the mouse for the
-duration and block until the button is released.
+All `wind_*`/`graf_*` calls enter via the GEM trap (`svc #2`), **selector 200
+in `x0`**, AESPB pointer in `x1`. The dispatcher (`gemsuper.c:xif`) reads
+`control[0]`=opcode and `control[1..3]`=#int_in/#int_out/#addr_in, calls the
+handler, and returns **`int_out[0]` = `RET_CODE`** (`aesdefs.h:140`). `RET_CODE`
+is initialised to `TRUE` (1) and stays 1 for the `void` handlers; the geometry
+results travel in **`int_out[1..4]`** (`WM_OX..WM_OH`, `GR_O1/O2`, `GR_WCHAR..`,
+`GR_MX..`). See [`_dispatcher.md`](./_dispatcher.md).
 
-| Op | Name | Dispatch | Effect |
-|---:|------|----------|--------|
-| 70 | `graf_rubberbox` | `gr_rubbox(x,y,minw,minh, &lastw,&lasth)` | rubber-band a box from a fixed corner; returns final w/h |
-| 71 | `graf_dragbox`   | `gr_dragbox(w,h,sx,sy, &bound, &lastx,&lasty)` | drag a fixed-size box within a bounding rect; returns final x/y |
-| 72 | `graf_movebox`   | `gr_movebox(w,h, sx,sy, dx,dy)` | animate an outline box from (sx,sy) to (dx,dy) |
-| 73 | `graf_growbox`   | `gr_growbox(&small, &big)` | zoom-rect animation small→big (window open) |
-| 74 | `graf_shrinkbox` | `gr_shrinkbox(&small, &big)` | zoom-rect big→small (window close) |
-| 75 | `graf_watchbox`  | `gr_watchbox(tree, obj, instate, outstate)` | track button in/out of an object, toggling state; returns 1 if released inside |
-| 76 | `graf_slidebox`  | `gr_slidebox(tree, parent, obj, isvert)` | slide a child within parent (scrollbar thumb); returns 0–1000 position |
-| 77 | `graf_handle`    | returns `gl_handle` + fills `gl_wchar/hchar/wbox/hbox` | **the VDI workstation handle** the AES draws through + system font cell size |
-| 78 | `graf_mouse`     | `gr_mouse(number, addr)` | set the mouse cursor shape (`number` = ARROW/HAND/… or `M_OFF/M_ON`; `addr` = `MFORM*` for user shape) |
-| 79 | `graf_mkstate`   | `gr_mkstate(&mx,&my,&mstate,&kstate)` | instantaneous mouse x/y + button + shift state (poll, no wait) |
+### Window Manager AESPB slots (`aesdefs.h:471-516`)
 
-`graf_handle` (77) is the bridge to the VDI: an application calls it once
-to learn the AES's VDI workstation handle, then issues VDI calls on it.
+| Op | Function | `int_in` | `int_out` (`[0]`=ret) | `addr_in` |
+|---:|----------|----------|-----------------------|-----------|
+| 100 | `wind_create` | `[0]`=kind, `[1..4]`=full-size x/y/w/h | `[0]`=**handle** ≥0 / −1 | — |
+| 101 | `wind_open`  | `[0]`=handle, `[1..4]`=x/y/w/h | `[0]`=1/0 | — |
+| 102 | `wind_close` | `[0]`=handle | `[0]`=1/0 | — |
+| 103 | `wind_delete`| `[0]`=handle | `[0]`=1/0 | — |
+| 104 | `wind_get`   | `[0]`=handle, `[1]`=field, (`[2]`=gadget for COLOR) | `[0]`=1/0; `[1..4]`=`WM_OX..WM_OH` | — |
+| 105 | `wind_set`   | `[0]`=handle, `[1]`=field, `[2..5]`=value(s) | `[0]`=1/0 | `[0]`=name/info str (WF_NAME/INFO/NEWDESK) |
+| 106 | `wind_find`  | `[0]`=mx, `[1]`=my | `[0]`=**handle** (0=desktop) | — |
+| 107 | `wind_update`| `[0]`=mode (0/1/2/3) | `[0]`=1 | — |
+| 108 | `wind_calc`  | `[0]`=type, `[1]`=kind, `[2..5]`=in x/y/w/h | `[0]`=1; `[1..4]`=`WM_WCOX..WM_WCOH` | — |
+| 109 | `wind_new`   | — | `[0]`=1 | — |
+
+> **`wind_get`/`wind_set` value slots.** The generic input value is `int_in[2]`
+> (`WM_IX`) onward; for rect fields it is `int_in[2..5]` = x/y/w/h (`WM_IX..
+> WM_IH`, `aesdefs.h:504-507`); for slider fields `int_in[2]` (`WM_ISLIDE`); for
+> `WF_NAME`/`WF_INFO`/`WF_NEWDESK` the pointer is in **`addr_in[0]`** (`WM_IOTITLE`,
+> `aesdefs.h:502`), read as `*(char **)pinwds`. `wind_get` results come back in
+> `int_out[1..4]` for rects/z-order and `int_out[0..]`/`poutwds[0]` for scalars.
+> `WF_FIRSTXYWH`/`WF_NEXTXYWH` fills `int_out[1..4]` with a rect.
+
+### Graphics Manager AESPB slots (`aesdefs.h:390-421`)
+
+| Op | Function | `int_in` | `int_out` (`[0]`=ret) | `addr_in` |
+|---:|----------|----------|-----------------------|-----------|
+| 70 | `graf_rubberbox` | `[0..3]`=x,y,minw,minh | `[0]`=1; `[1]`=`GR_O1` lastw, `[2]`=`GR_O2` lasth | — |
+| 71 | `graf_dragbox`   | `[0..3]`=w,h,sx,sy; `[4..7]`=bound x/y/w/h (`GR_I5`) | `[0]`=1; `[1]`=lastx, `[2]`=lasty | — |
+| 72 | `graf_movebox`   | `[0..3]`=w,h,sx,sy; `[4]`=dx, `[5]`=dy | `[0]`=1 | — |
+| 73 | `graf_growbox`   | `[0..3]`=small x/y/w/h; `[4..7]`=big x/y/w/h (`GR_I5`) | `[0]`=1 | — |
+| 74 | `graf_shrinkbox` | `[0..3]`=small; `[4..7]`=big (`GR_I5`) | `[0]`=1 | — |
+| 75 | `graf_watchbox`  | `[1]`=obj, `[2]`=instate, `[3]`=outstate | `[0]`=**final in/out flag** | `[0]`=`GR_TREE` |
+| 76 | `graf_slidebox`  | `[0]`=parent, `[1]`=obj, `[2]`=isvert | `[0]`=**0..1000** | `[0]`=`GR_TREE` |
+| 77 | `graf_handle`    | — | `[0]`=**VDI handle** `gl_handle`; `[1]`=wchar, `[2]`=hchar, `[3]`=wbox, `[4]`=hbox | — |
+| 78 | `graf_mouse`     | `[0]`=form# | `[0]`=1 | `[0]`=`GR_MADDR` (`MFORM*`) |
+| 79 | `graf_mkstate`   | — | `[0]`=1; `[1]`=mx, `[2]`=my, `[3]`=button, `[4]`=kstate | — |
+
+> `graf_rubberbox`/`dragbox`/`movebox`/`growbox`/`shrinkbox` are **`void`** —
+> `int_out[0]` stays 1; the useful outputs are the geometry words in
+> `int_out[1..4]` (for rubberbox/dragbox) or the in/out GRECTs the caller
+> passed (movebox has none; grow/shrink animate only). `graf_growbox`/
+> `graf_shrinkbox` take the **big** rect at `int_in[4..7]` (`GR_I5`), i.e. one
+> WORD gap after the small rect at `int_in[0..3]`.
+
+---
+
+## `wind_create` (100)
+
+**Source:** `gemsuper.c:330-332` → `gemwmlib.c:1369` (`wm_create`).
+**Globals written:** `D.w_win[i]` (`w_setup`, `gemwmlib.c:205`), the CURR/PREV
+rects set to `gl_rzero`, FULL set to the caller's max-extent rect.
+
+Allocates the first free window slot (`w_flags & VF_INUSE == 0`) among
+`NUM_WIN` windows (`NUM_WIN = 16` in the default `AES_VERSION > 0x0320` build;
+8 otherwise, `sysconf.h:31-36`). Records `w_owner = rlr`, `w_kind = kind`,
+empty name/info, sliders at top-left (`w_hslide = w_vslide = 0`), default
+slider sizes (`w_hslsiz = w_vslsiz = -1`), and stores the caller's rect as the
+window's **FULL** (max) extent. Returns the **handle** (0..NUM_WIN−1) or **−1**
+if all slots are in use (`gemwmlib.c:1384`). The window is created *closed*
+(no `VF_ISOPEN`); nothing is drawn.
+
+Handle **0** (`DESKWH`) is reserved for the **desktop** root window, set up once
+by `wm_init` (`gemwmlib.c:1290`); `wm_create` only ever returns 1..NUM_WIN−1.
+
+---
+
+## `wind_open` (101)
+
+**Source:** `gemsuper.c:333-335` → `gemwmlib.c:1410` (`wm_open`).
+Helpers: `wm_update(BEG_UPDATE/END_UPDATE)` (screen lock), `w_obadd(W_TREE,
+ROOT, handle)` (add to the on-screen window tree at the top), `draw_change`
+(the redraw driver). **Globals written:** `w_flags |= VF_ISOPEN`, the W_TREE
+sibling list, `gl_wtop`, PREV rect.
+
+Displays the created window at rect `pt`. Returns `FALSE` if the handle is
+invalid or the window is already open (`gemwmlib.c:1416-1419`). Otherwise it
+locks the screen, links the window as the new top of `W_TREE`, calls
+`draw_change` to compute the new rectangle lists and repaint, and — as part of
+that repaint — the owner receives the **first `WM_REDRAW`** for the newly
+exposed work area (via `w_update`→`w_redraw`, `gemwmlib.c:887-907`). The window
+becomes the top (active) window.
+
+---
+
+## `wind_close` (102)
+
+**Source:** `gemsuper.c:336-338` → `gemwmlib.c:1438` (`wm_close`).
+Helpers: `ob_delete(gl_wtree, handle)` (unlink from W_TREE), `draw_change` with
+a **zero rect** (drives the uncover-and-redraw of whatever was underneath).
+
+Hides an open window. Returns `FALSE` if the handle is invalid or the window is
+not open (`gemwmlib.c:1444-1447`). Sets the target size to `gl_rzero`, unlinks
+it, and `draw_change` redraws the desktop and lower windows that were covered
+(each gets its own `WM_REDRAW`). Clears `VF_ISOPEN` but **keeps** `VF_INUSE` —
+the handle remains valid and can be reopened.
+
+---
+
+## `wind_delete` (103)
+
+**Source:** `gemsuper.c:339-341` → `gemwmlib.c:1466` (`wm_delete`).
+
+Frees the handle. Returns `FALSE` on an invalid handle. If the window is still
+open, `wm_delete` closes it first (`gemwmlib.c:1473-1474`). It returns the
+window's rectangle list to the free pool (`newrect`), resets its rects to
+screen/full, and clears `w_flags = 0` and `w_owner = NULL`
+(`gemwmlib.c:1476-1483`). After this the handle may be reused by `wind_create`.
+
+---
+
+## `wind_get` (104)
+
+**Source:** `gemsuper.c:342-344` → `gemwmlib.c:1505` (`wm_get`).
+**Reads:** `D.w_win[handle]`, the window's rect fields via `w_getxptr`/
+`w_getsize` (`gemwmlib.c:231-262`), the rectangle list `w_rlist`/`w_rnext`, the
+screen buffer via `gsx_mret`. Result rect → `int_out[1..4]`; scalars →
+`poutwds[0]` (= `int_out[1]` for most, but the binding fills the caller's array).
+
+| Field | Returns (in `int_out`) | Source |
+|-------|------------------------|--------|
+| `WF_WXYWH` (4) | **work-area** rect x/y/w/h | `w_getsize(WS_WORK)` `gemwmlib.c:1529` |
+| `WF_CXYWH` (5) | **current border** rect | `w_getsize(WS_CURR)` `:1532` |
+| `WF_PXYWH` (6) | **previous** rect | `w_getsize(WS_PREV)` `:1535` |
+| `WF_FXYWH` (7) | **full-screen (max)** rect | `w_getsize(WS_FULL)` `:1538` |
+| `WF_HSLIDE` (8) | `w_hslide` position (1..1000) | `:1542` |
+| `WF_VSLIDE` (9) | `w_vslide` position (1..1000) | `:1544` |
+| `WF_HSLSIZ` (15) | `w_hslsiz` (1..1000, −1=default) | `:1547` |
+| `WF_VSLSIZ` (16) | `w_vslsiz` (1..1000, −1=default) | `:1550` |
+| `WF_TOP` (10) | handle of the top window (`w_top()`) | `:1553` |
+| `WF_FIRSTXYWH` (11) | **first** visible work rect (starts the walk) | `:1556` |
+| `WF_NEXTXYWH` (12) | **next** visible work rect (continues) | `:1557` |
+| `WF_SCREEN` (17) | menu/alert save-buffer address + length | `gsx_mret` `:1563` |
+| `WF_COLOR` (18) | `int_out[1]`=topped, `[2]`=untopped colour for gadget `int_in[0]` § | `:1567` |
+| `WF_DCOLOR` (19) | `int_out[1]`=default topped, `[2]`=untopped colour § | `:1572` |
+| `WF_OWNER` (20) | `[0]`=owner pid, `[1]`=is-open, `[2]`=`gl_wtop`, `[3]`=bottom ¶ | `:1579` |
+
+`WF_TOP`, `WF_SCREEN`, `WF_DCOLOR` do **not** require a valid handle
+(`gemwmlib.c:1517-1520`); every other field returns `FALSE` if the handle is
+invalid. Any unlisted field → `default: return FALSE`.
+
+### The rectangle-list iteration (`WF_FIRSTXYWH`/`WF_NEXTXYWH`) — the redraw contract
+
+This is the heart of the window-redraw protocol and the most bug-prone part.
+
+- `wind_get(handle, WF_FIRSTXYWH, …)` starts the walk at the window's owner
+  rectangle list `pwin->w_rlist`; `WF_NEXTXYWH` continues from the saved cursor
+  `pwin->w_rnext` (`gemwmlib.c:1559`).
+- `w_owns` (`gemwmlib.c:1230-1241`) walks the `ORECT` list, **intersecting each
+  owner rectangle with the window's work area** and skipping rects that clip to
+  nothing; it advances `w_rnext` and returns the **first non-empty** clipped
+  rect. When the list is exhausted it returns a rect with **`w=h=0`**.
+- The application's redraw idiom: `wind_get(h, WF_FIRSTXYWH)`, then repeatedly
+  intersect its own dirty rect with the returned piece, draw, and
+  `wind_get(h, WF_NEXTXYWH)` **until `w==0 && h==0`**. Each returned rect is a
+  **piece of the window's work area not covered by any higher window**, so
+  drawing clipped to each piece never paints over an overlapping window.
+- The owner rectangle list itself is built by `newrect`/`mkrect`/`brkrct`
+  (`gemwrect.c`, reference): when window geometry changes, each window's rect is
+  broken against every higher window's true rect into up to four
+  (TOP/LEFT/RIGHT/BOTTOM) non-overlapping pieces (`mkpiece`); a window that got
+  broken is flagged `VF_BROKEN` (can't be block-moved). The list therefore
+  always describes the **visible, non-overlapping** portions.
+
+> **Contract:** the *sequence of visible pieces* a redraw handler receives —
+> non-overlapping, clipped to the work area, terminated by an empty rect. The
+> `ORECT` free-list, the four-way split, and `VF_BROKEN` are **reference**;
+> NewTOS may compute the visible-region decomposition any way it likes as long
+> as `WF_FIRSTXYWH`/`WF_NEXTXYWH` yield the same set of pieces.
+
+---
+
+## `wind_set` (105)
+
+**Source:** `gemsuper.c:345-347` → `gemwmlib.c:1623` (`wm_set`).
+Helpers: `wm_update(BEG_UPDATE/END_UPDATE)`, `draw_change` (WF_CXYWH),
+`wm_mktop` (WF_TOP), `w_cpwalk` (redraw one gadget on all/topped windows).
+**Globals written:** the `WINDOW` field being set; for WF_NEWDESK
+`gl_newdesk`/`gl_newroot`.
+
+| Field | Effect | Triggers redraw of |
+|-------|--------|--------------------|
+| `WF_NAME` (2) | `w_pname = *(char**)addr_in[0]` | `W_NAME` gadget, **all open windows** (`do_cpwalk`, `:1665`) |
+| `WF_INFO` (3) | `w_pinfo = *(char**)addr_in[0]` | `W_INFO` gadget, **all open windows** (`:1673`) |
+| `WF_CXYWH` (5) | move/resize → `draw_change(handle, rect)` | **whole frame + uncovered areas** (`:1677`) |
+| `WF_TOP` (10) | if not already top → `wm_mktop` | full topping redraw (`:1682`) |
+| `WF_NEWDESK` (14) | set desktop-background tree `gl_newdesk`, root `gl_newroot` | (next desktop redraw) `:1685` |
+| `WF_HSLSIZ` (15) | `w_hslsiz` (clamped 1..1000, or −1) — only if changed | `W_HSLIDE` gadget `:1690` |
+| `WF_VSLSIZ` (16) | `w_vslsiz` (clamped, or −1) — only if changed | `W_VSLIDE` gadget `:1697` |
+| `WF_HSLIDE` (8) | `w_hslide` position (clamped 1..1000) — only if changed | `W_HSLIDE` gadget `:1704` |
+| `WF_VSLIDE` (9) | `w_vslide` position (clamped 1..1000) — only if changed | `W_VSLIDE` gadget `:1711` |
+| `WF_COLOR` (18) § | per-window `w_tcolor`/`w_bcolor[gadget]` (−1 skips) | that gadget, all windows `:1719` |
+| `WF_DCOLOR` (19) § | default `gl_wtcolor`/`gl_wbcolor[gadget]` (−1 skips) | **no** redraw (`gadget=-1`) `:1727` |
+
+Any unlisted field → `ret = FALSE` (`gemwmlib.c:1736`).
+
+> **Redraw scope (contract detail, corrects "redraw only affected gadget").**
+> `WF_NAME`/`WF_INFO`/`WF_COLOR` set `do_cpwalk = TRUE` — they redraw the one
+> gadget on **all open windows** (name/info apply to every window's frame).
+> Slider fields (`WF_HSLIDE`/`VSLIDE`/`HSLSIZ`/`VSLSIZ`) redraw **only the
+> slider gadget**, and — in the non-3D build — **only if the window is topped**
+> (`if (w_handle == gl_wtop)`, `gemwmlib.c:1747`); with `CONF_WITH_3D_OBJECTS`
+> (default) sliders are always visible so they redraw regardless. `WF_CXYWH`
+> and `WF_TOP` go through `draw_change`, which repaints the frame **and** every
+> uncovered area (whole-tree redraw with per-window `WM_REDRAW`). The
+> slider-position/size setters **early-out with no redraw if the value is
+> unchanged** (`if (pwin->w_hslide != pinwds[0])`).
+
+Slider **value validation** (`gemwmlib.c:1643-1656`): `WF_HSLIDE`/`WF_VSLIDE`
+positions and `WF_HSLSIZ`/`WF_VSLSIZ` sizes are clamped to **1..1000**; a size
+of **−1** ("use default") is passed through unclamped.
+
+---
+
+## `wind_find` (106)
+
+**Source:** `gemsuper.c:348-350` → `gemwmlib.c:1767` (`wm_find`), which is
+`ob_find(gl_wtree, 0, 2, x, y)`.
+
+Returns the handle of the topmost window whose rect contains (x,y).
+`ob_find` searches the on-screen window tree `W_TREE` from the root to depth 2.
+Because handle 0 (`DESKWH`) is the root box covering the whole screen, a click
+not inside any open window returns **0 = the desktop**.
+
+---
+
+## `wind_update` (107)
+
+**Source:** `gemsuper.c:351-353` → `gemwmlib.c:1778` (`wm_update`).
+`void`; `int_out[0]` stays 1.
+
+| `int_in[0]` | Mode | Effect (`gemwmlib.c:1781-1796`) |
+|--:|------|--------|
+| 0 | `END_UPDATE` | release the window-tree lock (`unsync(&wind_spb)`) |
+| 1 | `BEG_UPDATE` | take the window-tree lock (`tak_flag`; block on `ev_block(MU_MUTEX)` if held) |
+| 2 | `END_MCTRL` | release mouse-control ownership (`fm_own(0)`) |
+| 3 | `BEG_MCTRL` | take mouse-control ownership (`fm_own(1)`) |
+
+`BEG_UPDATE`/`END_UPDATE` guard the window tree while the app redraws from its
+rectangle list, so the AES doesn't restructure windows mid-redraw (it is a
+counting mutex — the AES itself brackets `wm_open`/`wm_close`/`wm_set` with the
+same lock). `BEG_MCTRL`/`END_MCTRL` let the app take over the mouse (e.g. to run
+its own rubber-band) so the control manager stops interpreting clicks as
+window-gadget hits.
+
+> **Reference vs. contract.** The lock *semantics* a program observes — "while I
+> hold BEG_UPDATE the window layout is frozen and my rectangle list stays
+> valid" — are contract; the `tak_flag`/`ev_block`/`sy_tas` cooperative-mutex
+> mechanics are EmuTOS internals NewTOS reimplements over its own process locks.
+
+---
+
+## `wind_calc` (108) — the border↔work conversion (the geometry contract)
+
+**Source:** `gemsuper.c:354-357` → `gemwmlib.c:1807` (`wm_calc`). `void`; the
+four output words are `int_out[1..4]` (`WM_WCOX..WM_WCOH`).
+
+Given `type`, `kind`, and an input rect (x,y,w,h) it returns an output rect:
+
+- **`WC_WORK` (1):** input is the **border** (outer) rect → returns the **work**
+  (inner) rect. `x += lb; y += tb; w -= lb+rb; h -= tb+bb`.
+- **`WC_BORDER` (0):** input is the **work** rect → returns the **border** rect.
+  Same code with the four border thicknesses **negated** (`gemwmlib.c:1856-1862`),
+  i.e. it grows the rect outward.
+
+The four border thicknesses are computed from `kind` (base 1 px each side):
+
+**Non-3D build (`CONF_WITH_3D_OBJECTS = 0`)** (`gemwmlib.c:1842-1853`):
+
+| Border | Base | Added when |
+|--------|-----:|-----------|
+| left `lb` | 1 | (never grows) |
+| top `tb` | 1 | `+ (gl_hbox-1)` if `TGADGETS` (title band); `+ (gl_hbox-1)` again if `INFO` |
+| right `rb` | 1 | `+ (gl_wbox-1)` if `UPARROW\|DNARROW\|VSLIDE\|SIZER` |
+| bottom `bb` | 1 | `+ (gl_hbox-1)` if `LFARROW\|RTARROW\|HSLIDE\|SIZER` |
+
+**3D build (`CONF_WITH_3D_OBJECTS = 1`, the default)** (`gemwmlib.c:1817-1840`):
+
+| Border | Base | Added when |
+|--------|-----:|-----------|
+| top `tb` | 1 | `+ (adj_hbox-1)` if `TGADGETS`; `+ gl_hbox` if `INFO` |
+| right `rb` | 1 | `+ (adj_wbox-1)` if a **vertical bar** is needed |
+| bottom `bb` | 1 | `+ (adj_hbox-1)` if a **horizontal bar** is needed |
+| left `lb` | 1 | (never grows) |
+
+where `adj_wbox = gl_wbox + 2·ADJ3DSTD`, `adj_hbox = gl_hbox + 2·ADJ3DSTD`,
+`ADJ3DSTD = 2` (`gemwmlib.c:1311-1312`, `obdefs.h:136`), and `gl_hbox =
+gl_hchar+3`, `gl_wbox = max(gl_wchar+4, gl_hbox·aspect)` (`gemgraf.c:412-415`).
+
+> **The SIZER-but-no-scroll-bar band (contract edge case).** In both builds a
+> `SIZER` counts toward *both* the vertical and horizontal bar tests, so a
+> window with only `SIZER` (no scroll gadgets) reserves both a right and a
+> bottom band. In the 3D build `wind_calc` additionally mirrors
+> `w_bldactive`'s rule: when both bars would be present *only because of* the
+> SIZER, it strips SIZER from both and, if that leaves neither bar, forces the
+> **vertical** bar back on (`gemwmlib.c:1827-1834`). So a SIZER-only window has
+> a **right band + a 1-px bottom** (the vertical bar carries the sizer corner),
+> matching TOS4. This is exactly the layout `w_bldactive` builds
+> (`gemwmlib.c:590-592`).
+
+`wind_calc` never touches the window list — it is a pure function of
+`kind`, `gl_wbox`/`gl_hbox`, and the config. `draw_change` itself calls
+`wm_calc(WC_WORK, …)` to derive each window's work rect from its border rect
+(`gemwmlib.c:1075`), so `WF_WORKXYWH` and `wind_calc(WC_WORK, kind, border)`
+agree by construction.
+
+---
+
+## `wind_new` (109)
+
+**Source:** `gemsuper.c:358-360` → `gemwmlib.c:1875` (`wm_new`). `void`.
+
+Cleanup call: releases **all** outstanding locks (`END_MCTRL` while `ml_ocnt>0`;
+`END_UPDATE` while `wind_spb.sy_tas>0`) and then **closes and deletes every
+window** 1..NUM_WIN−1 (`gemwmlib.c:1880-1892`). Used to reset the window manager
+to a clean state (e.g. a crashed/exiting app's leftover windows). The desktop
+window (handle 0) is not deleted.
+
+---
+
+## Graphics Manager
+
+The interactive trackers own the mouse for the duration, draw XOR feedback over
+the screen, and block until the button is released. All frame the tracking with
+`wm_update(BEG_UPDATE)`/`(END_UPDATE)` and draw in `MD_XOR` mode via
+`gr_setup`/`gsx_xbox` (`gemgrlib.c:76-80`, reference).
+
+### `graf_rubberbox` (70)
+
+**Source:** `gemsuper.c:266-268` → `gr_rubbox` → `gr_rubwind`
+(`gemgrlib.c:199-232`). Pins one corner at `(x,y)` and stretches the opposite
+corner to follow the mouse (`gr_clamp` uses live `xrat`/`yrat`) until the button
+comes up, clamped to a minimum `wmin`×`hmin`. Returns the final width/height in
+`int_out[1]`/`int_out[2]` (`GR_O1`/`GR_O2`). `void`; `int_out[0]`=1.
+
+### `graf_dragbox` (71)
+
+**Source:** `gemsuper.c:269-271` → `gr_dragbox` (`gemgrlib.c:243-268`). Drags a
+fixed-size `w`×`h` box, keeping the mouse's grab offset from `(sx,sy)`, until
+button-up, **constrained inside** the bounding rect `int_in[4..7]`
+(`rc_constrain`). Returns the final top-left x/y in `int_out[1]`/`int_out[2]`.
+
+### `graf_movebox` (72)
+
+**Source:** `gemsuper.c:272-274` → `gr_movebox` (`gemgrlib.c:287-302`). Animates
+an XOR outline box `w`×`h` sliding from `(srcx,srcy)` to `(dstx,dsty)` in
+`gr_scale`-derived steps. `void`, no result; a pure visual.
+
+### `graf_growbox` (73) / `graf_shrinkbox` (74)
+
+**Source:** `gemsuper.c:275-279` → `gr_growbox`/`gr_shrinkbox`
+(`gemgrlib.c:309-334`). Zoom-rect animations between a **small** rect
+(`int_in[0..3]`) and a **big** rect (`int_in[4..7]`): grow small→big (used at
+`wind_open`), shrink big→small (used at `wind_close`). `void`.
+
+### `graf_watchbox` (75)
+
+**Source:** `gemsuper.c:281-283` → `gr_watchbox` (`gemgrlib.c:337-355`). While
+the button is held, toggles object `obj`'s `ob_state` between `instate` (mouse
+inside its rect) and `outstate` (outside), redrawing on each transition. Returns
+in `int_out[0]` the **final `out` flag** after button-up: **`out` is `FALSE`
+(0) when the button was released *inside* the object, `TRUE` (1) when
+outside** (the loop toggles `out` before each `gr_stilldn` wait, so the returned
+value reflects the last region). The control manager treats **inside-release
+(0-becoming-`selected`)** as "clicked" — e.g. a CLOSER release inside fires
+`WM_CLOSED` (`gemctrl.c:218-220`).
+
+> **Return-value precision (corrects "returns 1 if released inside").** The raw
+> `gr_watchbox` return is the `out` flag; the *actioned* case (CLOSER/FULLER
+> firing its message) is when `gr_watchbox` returns **TRUE** at `gemctrl.c:218`
+> — that is the value after an odd number of toggles, i.e. the button came up
+> while the mouse was **inside** the last-drawn state. NewTOS must reproduce the
+> `gemctrl.c` semantics (message fires on inside-release), not a naive
+> "1 = inside" binding. Spec the *observable* result: CLOSER/FULLER clicked ⇒
+> `WM_CLOSED`/`WM_FULLED`.
+
+### `graf_slidebox` (76)
+
+**Source:** `gemsuper.c:284-286` → `gr_slidebox` (`gemgrlib.c:358-413`). Drags a
+child object (a scrollbar elevator) within its parent, constrained to the
+parent's rect, and returns the resulting position as **0..1000**
+(`mul_div_round(travel, 1000, range)`), or **0** if the track has zero range.
+`isvert` (`int_in[2]`) selects vertical vs. horizontal travel.
+
+### `graf_handle` (77) — the VDI bridge
+
+**Source:** `gemsuper.c:287-293`. Returns, with no helper call, four cached
+globals set at AES start-up (`gemgraf.c:40-52`, `405-415`): `int_out[0]` =
+**`gl_handle`** (the physical VDI workstation handle the AES draws through),
+`int_out[1]` = `gl_wchar`, `[2]` = `gl_hchar` (system-font cell width/height),
+`[3]` = `gl_wbox`, `[4]` = `gl_hbox` (the gadget box width/height,
+`gl_hbox = gl_hchar+3`). An application calls this once to learn the AES VDI
+handle, then issues VDI calls on it.
+
+### `graf_mouse` (78) — set the mouse cursor
+
+**Source:** `gemsuper.c:294-303` → `gr_mouse` (`gemgrlib.c:419-455`). If the
+control manager currently owns the mouse (`gl_ctmown`), the dispatcher
+temporarily drops and restores that ownership around the call
+(`gemsuper.c:295-302`). Form numbers (`aesdefs.h:423-438`):
+
+| # | Name | Cursor |
+|--:|------|--------|
+| 0 | `ARROW` | the standard arrow |
+| 1 | `TEXT_CRSR` | text I-beam |
+| 2 | `HOURGLASS` | busy-bee / hourglass |
+| 3 | `POINT_HAND` | pointing hand |
+| 4 | `FLAT_HAND` | open (flat) hand |
+| 5 | `THIN_CROSS` | thin crosshair |
+| 6 | `THICK_CROSS` | thick crosshair |
+| 7 | `OUTLN_CROSS` | outlined crosshair |
+| 255 | `USER_DEF` | caller-supplied `MFORM` in `addr_in[0]` |
+| 256 | `M_OFF` | hide the cursor (`gsx_moff`) |
+| 257 | `M_ON` | show the cursor (`gsx_mon`) |
+| 258 | `M_SAVE` † | save current form into the AESPD |
+| 259 | `M_RESTORE` † | restore the AESPD-saved form |
+| 260 | `M_PREVIOUS` † | restore the previously-used global form |
+
+Forms **0..7** select `mouse_cursor[mode]` from the eight preset MFORMs loaded
+at start-up (`geminit.c:124`, `NUM_MOUSE_CURSORS = 8`); an out-of-range preset
+falls back to `ARROW` (`gemgrlib.c:427`). `USER_DEF` uses the caller's `MFORM`
+(a 74-byte struct: hotspot x/y, planes, bg/fg mask colours, 16 mask + 16 data
+words, `aesdefs.h:441-450`). † `M_SAVE`/`M_RESTORE`/`M_PREVIOUS` (258–260) exist
+only with `CONF_WITH_GRAF_MOUSE_EXTENSION` (default **1**, AES 3.20+).
+
+### `graf_mkstate` (79) — poll input
+
+**Source:** `gemsuper.c:304-306` → `gr_mkstate` (`gemgrlib.c:458-464`). Returns
+the **instantaneous** input state (no wait): `int_out[1]`=mouse x (`xrat`),
+`[2]`=mouse y (`yrat`), `[3]`=button state (`button`), `[4]`=keyboard shift
+state (`kstate`). These are the same live input mirrors the event manager reads
+([`_state.md`](./_state.md) §6).
+
+---
+
+## The `WM_*` messages (generated by the control manager, not by `wind_*`)
+
+A user action on a window gadget does **not** change the window — it posts a
+16-byte message to the owner, who then calls the matching `wind_*` to act.
+Built by `ct_msgup`/`hctl_window`/`handle_arrow_msg`/`perform_untop` →
+`ap_sendmsg` (`gemctrl.c:81-315`, `gemwmlib.c:851-863`). `ap_sendmsg` always
+sets `msg[1] = rlr->p_pid` (sender), `msg[2] = 0` (extra bytes):
+
+| `msg[0]` id | value | `msg[3]` | `msg[4]` | `msg[5]` | `msg[6]` | `msg[7]` | Fired by |
+|-------------|------:|----------|----------|----------|----------|----------|----------|
+| `WM_REDRAW`  | 20 | wh | rect x | rect y | rect w | rect h | `w_redraw` (`gemwmlib.c:904`) — dirty piece to repaint |
+| `WM_TOPPED`  | 21 | wh | 0 | 0 | 0 | 0 | click on an inactive window (`gemctrl.c:178`) |
+| `WM_CLOSED`  | 22 | wh | 0 | 0 | 0 | 0 | CLOSER released inside (`gemctrl.c:220`) |
+| `WM_FULLED`  | 23 | wh | 0 | 0 | 0 | 0 | FULLER released inside (`gemctrl.c:220`) |
+| `WM_ARROWED` | 24 | wh | **`WA_*` action** | 0 | 0 | 0 | scroll arrow/page click (`gemctrl.c:125`) |
+| `WM_HSLID`   | 25 | wh | **0..1000 pos** | 0 | 0 | 0 | h-elevator drag (`gemctrl.c:300-305`) |
+| `WM_VSLID`   | 26 | wh | **0..1000 pos** | 0 | 0 | 0 | v-elevator drag (`gemctrl.c:300-305`) |
+| `WM_SIZED`   | 27 | wh | new x | new y | new w | new h | SIZER rubber-resize (`gemctrl.c:259`) |
+| `WM_MOVED`   | 28 | wh | new x | new y | new w | new h | MOVER/name drag (`gemctrl.c:238`) |
+| `WM_UNTOPPED`| 30 | wh | 0 | 0 | 0 | 0 | previous top is being deactivated (`gemctrl.c:151`) |
+
+> **`WM_SIZED`/`WM_MOVED` carry the *proposed new border rect* in `msg[4..7]`**
+> (x,y,w,h) — the app is expected to `wind_set(WF_CURRXYWH, …)` it (possibly
+> after clamping). For `WM_HSLID`/`WM_VSLID`, `msg[4]` is the **new slider
+> position 0..1000** the app should `wind_set(WF_HSLIDE/VSLIDE)`. For
+> `WM_ARROWED`, `msg[4]` is the sub-action below.
+
+### `WA_*` arrowed sub-actions (`aesdefs.h:245-253`, `gemctrl.c:63-74`)
+
+`WM_ARROWED`'s `msg[4]` is one of, mapped from the clicked gadget:
+
+| Value | Name | Gadget clicked |
+|------:|------|----------------|
+| 0 | `WA_UPPAGE` | above the vertical elevator (`W_VSLIDE`) |
+| 1 | `WA_DNPAGE` | below the vertical elevator (`W_VELEV`) |
+| 2 | `WA_UPLINE` | up arrow (`W_UPARROW`) |
+| 3 | `WA_DNLINE` | down arrow (`W_DNARROW`) |
+| 4 | `WA_LFPAGE` | left of the horizontal elevator (`W_HSLIDE`) |
+| 5 | `WA_RTPAGE` | right of the horizontal elevator (`W_HELEV`) |
+| 6 | `WA_LFLINE` | left arrow (`W_LFARROW`) |
+| 7 | `WA_RTLINE` | right arrow (`W_RTARROW`) |
+
+`WM_ARROWED` repeats continuously while the button stays down
+(`handle_arrow_msg`, `gemctrl.c:111-139`).
+
+> **`WM_NEWTOP` (29) and `WM_ONTOP` (31) are defined but NOT generated by this
+> build.** `aesdefs.h:238,240` declares them (they are TOS4/MultiTOS window
+> messages), but no code in `aes/` or `desk/` posts them (confirmed by grep of
+> the tree). NewTOS should recognise the ids but need not emit them unless it
+> later adds MultiTOS-style multi-app window ordering. Open question below.
+
+---
+
+## Inputs / Outputs summary
+
+Inputs arrive in the AESPB arrays. `int_out[0]` is the return code (`RET_CODE`,
+initialised 1); geometry results are in `int_out[1..4]`. `addr_in[0]` carries
+the string pointer (`wind_set` WF_NAME/INFO/NEWDESK) or the object tree
+(`graf_watchbox`/`graf_slidebox`) or the `MFORM` (`graf_mouse` USER_DEF). No
+`addr_out` is used by either manager (only `rsrc_gaddr` uses `addr_out`, see
+[`_dispatcher.md`](./_dispatcher.md)). The `WM_*` messages are delivered
+**asynchronously through the 16-byte message pipe**, never as a return value.
+
+---
+
+## Error conditions
+
+The window/graphics managers are "trusted" AES code with a small error surface —
+no negative TOS `E*` codes, only `TRUE`/`FALSE`/handle/`-1`:
+
+| Condition | Source location | Returned value |
+|-----------|-----------------|----------------|
+| `wind_create` with all `NUM_WIN` slots in use | `gemwmlib.c:1384` | `-1` |
+| `wind_open`/`close`/`delete`/`get`/`set` on an invalid or unused handle | `gemwmlib.c:1395-1401` (`get_pwin`) | `FALSE` (0) |
+| `wind_open` on an already-open window | `gemwmlib.c:1418` | `FALSE` |
+| `wind_close` on a not-open window | `gemwmlib.c:1446` | `FALSE` |
+| `wind_get` unknown field (incl. `WF_KIND`, `WF_NEWDESK`) | `gemwmlib.c:1591` | `FALSE` |
+| `wind_set` unknown field | `gemwmlib.c:1736` | `FALSE` |
+| `WF_TOP`/`WF_SCREEN`/`WF_DCOLOR` — valid without a handle | `gemwmlib.c:1517-1520` | proceed |
+| `graf_slidebox` with a zero-range track | `gemgrlib.c:411` | `0` |
+
+`graf_handle`/`graf_mkstate`/`graf_mouse`/the box trackers have no error path —
+they return their value (or 1) unconditionally.
+
+### Fields with no handler (return `FALSE`)
+
+`WF_KIND` (1) is **not** implemented by `wm_get`/`wm_set` in this source — the
+kind is set only at `wind_create` and cannot be queried/changed here (both fall
+to `default: return FALSE`). Compendium documents `WF_KIND` for both; **this
+build does not support it** (discrepancy D-053).
+
+---
+
+## Verification criteria
+
+- **`wind_create` handle / exhaustion:** `wind_create(kind, rect)` returns a
+  handle `1..NUM_WIN-1` and records `w_kind=kind`, `w_owner=rlr`,
+  `w_hslsiz=w_vslsiz=-1`; the `(NUM_WIN)`-th concurrent create returns `-1`
+  (`gemwmlib.c:1373-1384`).
+- **`wind_calc(WC_WORK)` subtracts the border:** for `kind = NAME|CLOSER|
+  FULLER|MOVER|SIZER|UPARROW|DNARROW|VSLIDE` and a full-screen border rect,
+  `wind_calc(WC_WORK, kind, x,y,w,h)` returns `(x+lb, y+tb, w-lb-rb, h-tb-bb)`
+  with `tb` including the title band and `rb` the vertical-bar band; the inverse
+  `wind_calc(WC_BORDER, kind, work)` grows it back (`gemwmlib.c:1856-1867`).
+- **`wind_calc(WC_WORK)` round-trips `WF_WORKXYWH`:** after `wind_open(h,
+  rect)`, `wind_get(h, WF_WORKXYWH)` equals `wind_calc(WC_WORK, kind, rect)`
+  (both go through `wm_calc`, `gemwmlib.c:1075`).
+- **SIZER-only band:** `wind_calc(WC_WORK, SIZER, full)` reserves a right band
+  (vertical bar) and a 1-px bottom, not a full bottom band (`gemwmlib.c:1827-
+  1834`).
+- **`wind_get(WF_FIRSTXYWH/NEXTXYWH)` rectangle list:** for a window fully
+  covering the screen with no higher windows, `WF_FIRSTXYWH` returns the whole
+  work rect and `WF_NEXTXYWH` returns `w=h=0`; with one higher window
+  overlapping, the walk returns the up-to-four non-overlapping pieces then
+  `w=h=0` (`gemwrect.c:mkpiece`, `gemwmlib.c:1230-1241`).
+- **`wind_get(WF_TOP)` needs no handle:** `wind_get(0, WF_TOP)` returns the top
+  window handle (or `DESKWH`=0) even for an invalid non-zero handle
+  (`gemwmlib.c:1517,1553`).
+- **`wind_set(WF_HSLIDE)` clamp + change-guard:** `wind_set(h, WF_HSLIDE, 0)`
+  clamps to 1; `2000` clamps to 1000; setting the current value again causes no
+  redraw (`gemwmlib.c:1652-1655,1705`).
+- **`wind_set(WF_NAME)` redraws all windows' name gadget** (`do_cpwalk`), while
+  `wind_set(WF_VSLIDE)` redraws only the slider and — non-3D — only if topped
+  (`gemwmlib.c:1665,1747-1751`).
+- **`wind_find` desktop fallthrough:** `wind_find(x,y)` over empty desktop
+  returns `0` (`gemwmlib.c:1769`).
+- **`graf_handle`:** returns `gl_handle` (the AES VDI workstation handle) in
+  `int_out[0]` and non-zero `gl_wchar/gl_hchar/gl_wbox/gl_hbox` in
+  `int_out[1..4]` (`gemsuper.c:288-292`).
+- **`graf_mouse(2)` shows the hourglass;** `graf_mouse(0)` the arrow;
+  `graf_mouse(255, mform)` the caller's shape; `graf_mouse(256)` hides it
+  (`gemgrlib.c:424-454`).
+- **`graf_mkstate`** returns the live `xrat/yrat/button/kstate`
+  (`gemgrlib.c:460-463`).
+- **`graf_slidebox`** returns a value in `0..1000` (or `0` for a zero-range
+  track) (`gemgrlib.c:409-412`).
+- **Active-title cue:** the topped window's `W_NAME` `te_color` is `0x11a1`
+  (`IP_2PATT` dither); an untopped window's is `0x1100` (hollow)
+  (`gemwmlib.c:150-151,539,780`).
+- **`WM_SIZED` payload:** dragging the SIZER posts `msg[0]=27, msg[3]=wh,
+  msg[4..7]=` proposed new border rect (`gemctrl.c:259,314`).
+
+---
+
+## Edge cases discovered in source
+
+1. **The active-window cue is the `IP_2PATT` dither on the topped title, plain
+   on untopped** — `TOPPED_COLOR=0x11a1` vs `UNTOPPED_COLOR=0x1100`
+   (`gemwmlib.c:150-151`). In the non-3D build, CLOSER/FULLER/scroll gadgets are
+   built **only for the topped window** (`if (istop)`, `gemwmlib.c:758-773`), so
+   an inactive window shows just its (plain) title and box.
+2. **`WF_FIRSTXYWH`/`WF_NEXTXYWH` clip each owner rect to the *work* area** and
+   skip empty pieces; the walk **terminates with a `w=h=0` rect**, not an error
+   (`w_owns`, `gemwmlib.c:1230-1241`). A redraw handler must loop on that
+   sentinel.
+3. **`WF_KIND` (1) is not queryable/settable** in this build — both `wm_get`
+   and `wm_set` fall through to `return FALSE` (D-053).
+4. **`WF_NEWDESK` (14) is set-only;** `WF_COLOR`/`WF_DCOLOR` use a **3-word
+   input** (the only `wind_get`/`set` exception), and `WF_DCOLOR` needs no valid
+   handle and never redraws (`gemwmlib.c:1491-1503,1727-1734`).
+5. **Slider setters early-out with no redraw when the value is unchanged**
+   (`if (pwin->w_hslide != pinwds[0])`, `gemwmlib.c:1705`); and, non-3D, sliders
+   redraw **only on the topped window** (`gemwmlib.c:1747`). With 3D objects
+   (default) they always redraw.
+6. **`WM_NEWTOP` (29) and `WM_ONTOP` (31) are declared but never emitted** by
+   EmuTOS's window/desktop code — TOS4 messages this build does not generate.
+7. **`WM_ARROWED` repeats while the button is held** (`handle_arrow_msg`); the
+   position messages `WM_HSLID`/`WM_VSLID` carry a **0..1000** value, and
+   `WM_SIZED`/`WM_MOVED` carry the **proposed new border rect** (`gemctrl.c:111-
+   139,238,259,300`).
+8. **`graf_watchbox` returns the `out` flag, not a literal "1 = inside".** The
+   *actioned* semantics live in `gemctrl.c`: CLOSER/FULLER fire their message
+   when `gr_watchbox` returns TRUE (button up inside the gadget)
+   (`gemgrlib.c:337-355`, `gemctrl.c:218-220`).
+9. **`graf_growbox`/`graf_shrinkbox` take the big rect at `int_in[4..7]`
+   (`GR_I5`), one word after the small rect at `int_in[0..3]`**
+   (`gemsuper.c:275-279`) — a slot layout easy to get wrong.
+10. **`wind_delete` closes an open window first;** `wind_close` keeps
+    `VF_INUSE` (reopenable); `wind_new` releases all locks and closes+deletes
+    every window (crash cleanup) (`gemwmlib.c:1473,1454,1875`).
+11. **`draw_change` (the redraw driver) computes each window's work rect via
+    `wm_calc(WC_WORK,…)`** so `WF_WORKXYWH` and `wind_calc(WC_WORK,…)` always
+    agree (`gemwmlib.c:1075`).
+12. **The mouse is dropped/restored around `graf_mouse` if the control manager
+    owns it** (`gl_ctmown`, `gemsuper.c:295-302`), so a busy-cursor change from
+    an app doesn't fight the ctlmgr.
+
+---
+
+## Dependencies
+
+### Requires (must be initialized / functional)
+
+- **The Object Manager** ([`object-form.md`](./object-form.md)) — the frame is
+  the `W_ACTIVE` OBJECT tree; `ob_draw`/`ob_find`/`ob_change`/`ob_order`/
+  `ob_actxywh`/`ob_relxywh`/`ob_offset` do all frame drawing, hit-testing
+  (`wind_find`, `gr_watchbox`), and z-ordering (`WF_TOP`). `graf_watchbox`/
+  `graf_slidebox` operate on caller OBJECT trees.
+- **The VDI** — `graf_handle` hands out the AES's VDI workstation handle; the
+  XOR box trackers (`gr_setup`/`gsx_xbox`), the frame draw (`gsx_sclip`/
+  `ob_draw`), the window blit (`bb_screen`), and the mouse form (`gsx_mfset`/
+  `gsx_moff`/`gsx_mon`) are VDI/line-A operations. `gl_wchar/hchar/wbox/hbox`
+  come from VDI font metrics (`gemgraf.c:405-415`).
+- **The Event Manager** ([`event.md`](./event.md)) — `WM_*` messages are
+  delivered through the 16-byte pipe `evnt_mesag`/`evnt_multi` read; the trackers
+  block on `ev_multi(MU_BUTTON|MU_M1|…)`; `graf_mkstate` reads the same input
+  mirrors (`xrat`/`yrat`/`button`/`kstate`).
+- **The Control Manager** (`gemctrl.c`) — turns clicks on window gadgets into
+  the `WM_*` messages and drives `w_setactive`/`ct_chgown` for topping.
+- **The AES process model / screen lock** ([`_state.md`](./_state.md)) — `rlr`
+  (window owner), `wind_spb` (the `wind_update` mutex), `fm_own`
+  (mouse-control ownership), `ap_sendmsg` → `ap_rdwr`.
+
+### Used by
+
+- **Every GEM application with a window** calls `wind_create`/`wind_open` at
+  start, handles `WM_REDRAW`/`WM_SIZED`/`WM_MOVED`/`WM_CLOSED`/`WM_ARROWED`/
+  `WM_*SLID` in its event loop (each answered by the matching `wind_set`), and
+  `wind_close`/`wind_delete` at exit; it walks `WF_FIRSTXYWH`/`NEXTXYWH` inside
+  every `WM_REDRAW`.
+- **The desktop** (`desk/`) owns the desktop window (handle 0) and the
+  background tree (`WF_NEWDESK`) — this is the NewTOS desktop.
+- **`graf_handle`** is the mandatory bridge every app crosses to reach the VDI.
+
+---
+
+## Related data structures
+
+- **`WINDOW`** (`gemlib.h:66-86`, `D.w_win[NUM_WIN]`) — the private per-window
+  record: `w_flags` (`VF_INUSE`/`VF_ISOPEN`/`VF_BROKEN`, `gemlib.h:60-63`),
+  `w_owner`, `w_kind`, `w_pname`/`w_pinfo`, the FULL/WORK/PREV/CURR rects,
+  `w_hslide`/`w_vslide`/`w_hslsiz`/`w_vslsiz`, and the rectangle-list pointers
+  `w_rlist`/`w_rnext`. **Reference** — NewTOS reimplements the storage; the
+  *observable* fields are the ones `wind_get`/`wind_set` expose.
+- **`ORECT`** (`struct.h`, free-listed by `gemwrect.c`, `NUM_ORECT = NUM_WIN·10`)
+  — a link + `GRECT` node in the owner rectangle list. **Reference.**
+- **Window-kind bit table** / **`WF_*` field-number table** / **`WM_*` message
+  layout table** / **`WA_*` sub-action table** / **`graf_mouse` form-number
+  table** — the contract tables above (`aesdefs.h:226-253,390-562`).
+- **`MFORM`** (`aesdefs.h:441-450`, 74 bytes) — `graf_mouse(USER_DEF)` cursor:
+  hotspot x/y, planes, mask/data colours, 16 mask + 16 data words. **Contract**
+  (a struct a program passes).
+- **The 16-byte GEM message** (`WORD msg[8]`) — shared with the event and menu
+  managers ([`_state.md`](./_state.md) §3, [`event.md`](./event.md)).
+- **`GRECT`** (`{WORD g_x,g_y,g_w,g_h}`) — the universal rect all window/graf
+  calls exchange.
+
+---
+
+## Cross-references
+
+### Atari Compendium / Profibuch
+
+- **Not present in `references/`** (no PDFs). Cross-check of the opcode numbers
+  (100–109, 70–79), the `WF_*` field numbers, the `WC_BORDER`/`WC_WORK` border
+  model, the `WF_FIRSTXYWH`/`NEXTXYWH` rectangle-list contract, the `WM_*`
+  message word layouts, the `WA_*` sub-actions, and the `graf_mouse` form
+  numbers is **deferred** until the PDFs are available. Two items to confirm
+  against Compendium when available: **`WF_KIND` support** (Compendium documents
+  it; this build returns `FALSE` — D-053) and **`WM_NEWTOP`/`WM_ONTOP`
+  generation** (defined but not emitted here).
+
+### AES managers
+
+- [`object-form.md`](./object-form.md) — the frame is an OBJECT tree; `objc_draw`
+  (`ob_draw`), `objc_find` (`ob_find`), `objc_change` do the drawing/hit-testing;
+  `graf_watchbox`/`graf_slidebox` act on caller trees.
+- [`event.md`](./event.md) — `evnt_mesag`/`evnt_multi` deliver `WM_*`; the box
+  trackers block on `ev_multi`; `graf_mkstate` mirrors the live input state.
+- [`menu.md`](./menu.md) — the menu bar sits above `gl_rfull` (top `gl_hbox`
+  row); `graf_handle`'s `gl_hchar`/`gl_hbox` size that bar.
+- [`_state.md`](./_state.md) — the window list `D.w_win[]`/`gl_wtop`, the
+  rectangle list, the input mirrors, the message pipe.
+- [`_dispatcher.md`](./_dispatcher.md) — selector-200 call model, `control[]`
+  counts, `int_out[0]`=`RET_CODE` return, results in `int_out[1..4]`.
+
+### VDI
+
+- `graf_handle` returns the VDI workstation handle; the XOR rubber-band, the
+  window blit (`bb_screen` = `vro_cpyfm`-class), and the mouse form
+  (`vsc_form`) are VDI operations. Do not edit the VDI docs — cross-reference
+  only (VDI Phase 12).
+
+---
+
+## Configuration / version notes
+
+- **`CONF_WITH_3D_OBJECTS`** (default **1**, `config.h:1259`) changes the frame
+  builder (`w_bldactive`) and the `wind_calc` border thicknesses (adds
+  `2·ADJ3DSTD` per gadget band via `adj_wbox`/`adj_hbox`), and makes scroll
+  sliders always visible (so `wind_set(WF_*SLIDE)` redraws regardless of topped
+  state). With it off, the classic TOS1-3 thin borders apply and inactive
+  windows omit their gadgets.
+- **`CONF_WITH_WINDOW_COLOURS`** (default **1**, `config.h:1329`) enables
+  `WF_COLOR`/`WF_DCOLOR` (18/19) and the per-window `w_tcolor`/`w_bcolor`
+  arrays; with it off those fields fall to `default: return FALSE`, and the
+  topped/untopped title colour comes from the fixed `TOPPED_COLOR`/
+  `UNTOPPED_COLOR`.
+- **`CONF_WITH_GRAF_MOUSE_EXTENSION`** (default **1**, `config.h:1283`) enables
+  `graf_mouse` forms `M_SAVE`/`M_RESTORE`/`M_PREVIOUS` (258–260, AES 3.20+).
+- **`CONF_WITH_PCGEM`** (default **1**, `config.h:1320`) enables the `HOTCLOSE`
+  (0x1000) kind bit (close on single click).
+- **`NUM_WIN`** is **16** when `AES_VERSION > 0x0320` (the default full build is
+  `AES_VERSION = 0x0340`), else **8** (`sysconf.h:31-36`). `WF_OWNER` (20)
+  exists only for `AES_VERSION >= 0x330`.
+- Opcodes 100–109 and 70–79 are unconditional across all builds; only the
+  *fields*/*forms* above are gated. `graf_watchbox`/`graf_slidebox`/`graf_mouse`
+  gain minor `CONF_WITH_3D_OBJECTS`/`MENU_EXTENSION` adjustments internally but
+  keep their ABI.
 
 ---
 
 ## NewTOS implementation notes
 
-- **Window clipping** = the rectangle list (`gemwrect.c`): the algorithm
-  that splits a window's work area into the visible pieces given the
-  windows stacked above it. This is the core invariant of the WM; a
-  redraw handler walks `WF_FIRSTXYWH`/`WF_NEXTXYWH` and clips each VDI
-  draw to that rect.
-- `graf_handle` ties the AES to **VDI Phase 12**: the AES must open its
-  own VDI workstation at init and hand its handle out here. `gl_wchar`/
-  `gl_hchar` come from the VDI system font metrics.
-- The mouse cursor (`graf_mouse`) and rubber-band feedback (`gr_*`) need a
-  **mouse sprite / XOR draw** primitive over the framebuffer — pairs with
-  the IKBD mouse packets ([[keyboard-via-atari-ikbd]]) feeding position.
-- `wind_update` locking presumes preemptible AES processes; single-app
-  bring-up can treat it as a no-op-ish screen lock.
-- Bring-up order: VDI workstation → `graf_handle` → `wind_create/open` +
-  desktop (handle 0) → rectangle list → `WM_REDRAW` loop.
+(Empty during Phase 00.)
+
+- **The rectangle list is the core invariant to get right.** A redraw handler
+  walks `WF_FIRSTXYWH`/`WF_NEXTXYWH` and clips every VDI draw to each visible
+  piece; if the decomposition is wrong, windows paint over each other — the
+  classic redraw bug. NewTOS may compute the visible region however it likes
+  (e.g. a proper region/rectangle-difference algorithm) but **must** yield the
+  same set of non-overlapping, work-clipped pieces terminated by an empty rect.
+  The EmuTOS four-way split (`gemwrect.c`) is reference, not contract.
+- **The frame drawing + rubber-band mechanics are reference** (NewTOS
+  reimplements `w_bldactive` and the XOR trackers over its own framebuffer XOR
+  primitive fed by IKBD/USB-HID mouse position, [[keyboard-via-atari-ikbd]]).
+  The **`WF_*` semantics, the `wind_calc` border model, the `WM_*` message
+  formats, the rectangle-list contract, the window-kind bits, and every
+  `wind_*`/`graf_*` ABI are hard contract.**
+- **Bring-up order:** VDI workstation → `graf_handle` (hand out the handle) →
+  `wm_init` (desktop = handle 0, `gl_rfull` below the menu row) →
+  `wind_create`/`wind_open` → the rectangle list → the `WM_REDRAW` loop. Match
+  the [`menu.md`](./menu.md) bar geometry (`gl_hbox` top row).
+- **`wind_update` locking** presumes preemptible AES processes; single-app
+  bring-up can implement it as a real (if usually-uncontended) screen lock, not
+  a stub — its observable contract is "layout frozen while held".
+- **Pointers in `addr_in[]`** (name/info strings, OBJECT trees, `MFORM`) are
+  application pointers — apply the same boundary handling as other AES `addr*`
+  reads; struct pointer widths follow the caller ABI (native vs m68k, see
+  [`docs/COMPATIBILITY.md`](../../COMPATIBILITY.md)).
+
+### Open questions
+
+- **`WF_KIND` (1)** is unsupported in this EmuTOS build (returns `FALSE`) but is
+  documented by Compendium for both get and set. Does a NewTOS-targeted program
+  rely on `wind_get(WF_KIND)`? If so, NewTOS should implement it (trivial —
+  `w_kind` is stored) rather than mirror the EmuTOS omission. Decide against
+  Compendium when the PDF is available (D-053).
+- **`WM_NEWTOP` (29) / `WM_ONTOP` (31)** are defined but never emitted here.
+  These are MultiTOS/TOS4 window-ordering messages. NewTOS's window model may
+  want to emit them once multi-app window ordering exists; until then, honest
+  non-support (recognise the ids, don't fabricate the messages).
+- **`WF_OWNER` z-order** is partial in EmuTOS (returns only global top/bottom,
+  not the immediate neighbours, `gemwmlib.c:1582-1588`). NewTOS can implement it
+  fully; confirm no program depends on the EmuTOS partial behaviour.

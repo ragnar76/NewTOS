@@ -1516,3 +1516,74 @@ the `gr_crack` bit split above; `objc_change` new-state/redraw at
 `form_alert` `[icon][msg][buttons]` grammar with `||`/`]]` escapes and 1-based
 return; `objc_sysvar` present with `CONF_WITH_3D_OBJECTS=1`. Corrected in
 `aes/object-form.md` and the four `structures/*.md` files.
+
+---
+
+## D-053: `wind_*`/`graf_*` — active-title cue direction, `WF_KIND` unsupported, `WM_NEWTOP`/`WM_ONTOP` never emitted, `WF_*` field numbers, `WM_*`/`WA_*` layouts, `graf_watchbox` return, `graf_growbox` slot (spec-vs-source)
+
+**Date:** 2026-07-03
+**Phase 00 spec:** `docs/api/aes/window-graphics.md`, `docs/api/aes/_state.md`
+
+**EmuTOS:** `aes/gemwmlib.c`, `aes/gemwrect.c`, `aes/gemgrlib.c`,
+`aes/gemctrl.c:63-315`, `aes/gemgraf.c:405-415`, `aes/gemlib.h:38-94`,
+`include/aesdefs.h:68-77,89-98,226-253,390-562`, `include/obdefs.h:32-39,136`,
+`aes/gemsuper.c:265-360`.
+
+The prior `aes/window-graphics.md` (a compact outline) was verified against the
+source. Substantive corrections (all map to real window-redraw behaviour):
+
+- **Active/inactive title cue direction.** The **topped (active)** window's
+  `W_NAME` carries the **`IP_2PATT` dither** fill (`TOPPED_COLOR = 0x11a1`); the
+  **untopped (inactive)** one is **plain/hollow** (`UNTOPPED_COLOR = 0x1100`)
+  (`gemwmlib.c:150-151`). In the non-3D build, CLOSER/FULLER/scroll gadgets are
+  built **only** for the topped window. (Confirms — and pins the direction of —
+  the task brief's "TOPPED = IP_2PATT dither vs UNTOPPED plain".)
+- **`WF_KIND` (1) is NOT supported** by `wm_get`/`wm_set` in this build — both
+  fall to `default: return FALSE` (`gemwmlib.c:1591,1736`). Compendium documents
+  `WF_KIND`; EmuTOS omits it. (NewTOS open question — trivial to implement since
+  `w_kind` is stored.)
+- **`WM_NEWTOP` (29) and `WM_ONTOP` (31) are declared but never emitted** by
+  `aes/` or `desk/` (grep-confirmed) — TOS4/MultiTOS messages this build does
+  not generate. The prior task hypothesis listed them as active; they are not.
+- **`WF_*` field numbers** confirmed against source (`aesdefs.h:534-552`):
+  `WF_WXYWH` 4, `WF_CXYWH` 5, `WF_PXYWH` 6, `WF_FXYWH` 7, `WF_HSLIDE` 8,
+  `WF_VSLIDE` 9, `WF_TOP` 10, `WF_FIRSTXYWH` 11, `WF_NEXTXYWH` 12, `WF_NEWDESK`
+  **14** (no field 13), `WF_HSLSIZ` 15, `WF_VSLSIZ` 16, `WF_SCREEN` 17,
+  `WF_COLOR` 18, `WF_DCOLOR` 19, `WF_OWNER` 20. The source spells them
+  `WF_HSLSIZ`/`WF_VSLSIZ`/`WF_WXYWH`/`WF_CXYWH`/`WF_FXYWH` (Compendium's
+  `…SIZE`/`…WORKXYWH`/`…CURRXYWH`/`…FULLXYWH` are the same numbers).
+- **`WM_*` message word layouts** (`gemctrl.c:81-315`, `gemwmlib.c:851-904`):
+  `WM_SIZED` (27)/`WM_MOVED` (28) carry the **proposed new border rect** in
+  `msg[4..7]`; `WM_HSLID` (25)/`WM_VSLID` (26) carry the **new 0..1000 slider
+  position** in `msg[4]`; `WM_ARROWED` (24) carries a **`WA_*` sub-action** in
+  `msg[4]`; `WM_REDRAW` (20) carries the **dirty rect** in `msg[4..7]`;
+  `WM_TOPPED`/`CLOSED`/`FULLED`/`UNTOPPED` carry only `msg[3]=wh`. `WA_*` =
+  `UPPAGE 0, DNPAGE 1, UPLINE 2, DNLINE 3, LFPAGE 4, RTPAGE 5, LFLINE 6,
+  RTLINE 7` (`aesdefs.h:245-253`).
+- **`graf_watchbox` returns the `out` flag, not a literal "1 = released
+  inside".** The actioned semantics are in `gemctrl.c:218-220` (CLOSER/FULLER
+  fire when it returns TRUE — button up inside the gadget) (`gemgrlib.c:337-355`).
+- **`graf_growbox`/`graf_shrinkbox` big rect is `int_in[4..7]` (`GR_I5`)**, one
+  word after the small rect at `int_in[0..3]` (`gemsuper.c:275-279`).
+- **`graf_mouse` form numbers** confirmed: `ARROW 0` … `OUTLN_CROSS 7`,
+  `USER_DEF 255`, `M_OFF 256`, `M_ON 257`, plus `M_SAVE 258`/`M_RESTORE 259`/
+  `M_PREVIOUS 260` under `CONF_WITH_GRAF_MOUSE_EXTENSION` (`aesdefs.h:423-438`).
+- **`wind_calc` border model** (`gemwmlib.c:1807-1868`): base 1 px/side; title
+  band adds to top, INFO adds to top, a vertical bar adds to right, a horizontal
+  bar adds to bottom; a **SIZER-only** window still reserves a vertical bar band
+  (TOS4 rule). 3D build adds `2·ADJ3DSTD` per band via `adj_wbox`/`adj_hbox`.
+
+**Not a Compendium discrepancy** (except `WF_KIND` and `WM_NEWTOP`/`WM_ONTOP`,
+which are genuine EmuTOS-vs-Compendium gaps) — mostly a spec
+precision/completeness fix. No PDFs in `references/`, so the Compendium
+cross-check of the field numbers, message layouts, `WA_*` codes, and
+`graf_mouse` forms is **deferred**.
+
+**Decision:** follow EmuTOS — topped title = `IP_2PATT` dither, untopped =
+hollow; `WF_KIND` unsupported here (NewTOS may add it, decide vs Compendium);
+`WM_NEWTOP`/`WM_ONTOP` recognised but not emitted (MultiTOS, deferred); the
+`WF_*`/`WM_*`/`WA_*`/`graf_mouse` tables above; `graf_watchbox` returns the
+`out` flag with `gemctrl` inside-release action; `graf_growbox` big rect at
+`GR_I5`; the `wind_calc` border model incl. the SIZER-only vertical band.
+Corrected in `aes/window-graphics.md`; window/rect/active-window globals added
+to `aes/_state.md`.
