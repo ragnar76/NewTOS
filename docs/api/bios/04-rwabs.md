@@ -278,3 +278,99 @@ impls. Sector size is 512 throughout. The `r_w` flag bits map onto a
 `BlockOp`/flags enum; the `adr == NULL` and sector-0-`forcechange` behaviours
 must be reproduced for m68k-binary compatibility (Phase 10) but may be
 NewTOS-native for source ports.
+
+---
+
+## Pi / BCM2711 binding
+
+> Re-points the hardware reference from the Atari WD1772 FDC / ACSI hard disk
+> to the **BCM2711 EMMC2 SD-card controller**. The contract above (ABI, flag
+> bits, error codes, the `adr==NULL` / sector-0 behaviours) is unchanged; only
+> the backing hardware and the concrete NewTOS values are pinned here. See
+> `docs/HARDWARE-PROFILE.md` §3.4.
+
+### Backing hardware + driver
+
+| Atari reference | Pi-4 (contract) | Driver |
+|-----------------|-----------------|--------|
+| WD1772 FDC / ACSI-SCSI hard disk | **EMMC2 SD-card controller** (Arasan/iproc SDHCI, phys `0xFE34_0000`) | `kernel/src/drivers/bcm2711/emmc.rs` behind `kernel/src/hal/block.rs::BlockDevice`, exposed to `tos-api` as `bios::block::BlockDev` via `kernel/src/host_env.rs:246-267` |
+
+- **Physical base / controller selection:** EMMC2 `0xFE34_0000` (real Pi-4 SD
+  slot); QEMU `raspi4b` wires its emulated card to the legacy EMMC
+  `0xFE30_0000`. The driver probes EMMC2 first, then EMMC, and binds to
+  whichever has a responding card (`emmc.rs:16-18,375-386`). One binary serves
+  both. Address map: BCM2711 datasheet §1.2 (p.4-6); EMMC register/bit detail
+  per BCM2835 datasheet §5 + SD Host Controller Simplified Spec, as documented
+  in `docs/hardware/emmc-sd.md`.
+- **Sector size = 512 bytes, fixed** (`hal/block.rs:9` `SECTOR_SIZE=512`;
+  `bios/mod.rs:26` `SECTOR=512`). The SD `BLKSIZECNT` block-size field is set
+  to 512 on every transfer (`emmc.rs:298,323`). SDSC cards are locked to a
+  512-byte block length via `SET_BLOCKLEN` (`emmc.rs:274-276`); SDHC/SDXC are
+  fixed at 512 in hardware.
+
+### The read/write path (`emmc.rs`)
+
+- `Rwabs` (`tos-api/src/bios/mod.rs:66-116`) resolves `drive`→partition,
+  range-checks, computes the absolute LBA, then calls
+  `BlockDev::read_blocks`/`write_blocks`, which forward to the EMMC driver
+  (`host_env.rs:256-263`).
+- **Read:** PIO single-block `CMD17 READ_SINGLE` per sector — `BLKSIZECNT`,
+  `ARG1=addr`, `CMDTM`, wait `CMD_DONE`, wait `READ_RDY`, drain 128×32-bit words
+  from `DATA`, wait `DATA_DONE` (`emmc.rs:284-308`, `read_blocks` loops one
+  block at a time `emmc.rs:339-347`).
+- **Write:** PIO single-block `CMD24 WRITE_SINGLE` per sector, symmetric
+  (`emmc.rs:310-331`, loop `emmc.rs:349-357`). **The write path is implemented**
+  (unlike the read-only default in the HAL trait, `hal/block.rs:36-38`, which
+  the EMMC impl overrides).
+- **Addressing:** SDHC/SDXC address by block (`arg=lba`); SDSC by byte
+  (`arg=lba*512`) — chosen per card at init (`emmc.rs:293-297,318-322`).
+- **No IRQ, no DMA:** the bring-up driver polls `INTERRUPT` (`IRPT_EN=0`,
+  `emmc.rs:210`); no DMA-coherency concern.
+
+### Partition-relative → absolute LBA
+
+`Rwabs` in **logical** mode maps `(drive, sector)` to
+`part.start_lba + sector` and range-checks `sector + numb <= part.count`
+(`bios/mod.rs:75-95`). `part.start_lba`/`part.count` come from the MBR parse in
+`bios/drive.rs` (see `0a-drvmap.md`). Drives are numbered A:=0, B:=1, C:=2, …;
+the SD partitions are assigned from **C:** upward (`drive.rs:14-15,71`).
+
+### Flag-bit effects on the Pi
+
+| Bit | Constant | On the EMMC SD today |
+|----:|----------|----------------------|
+| 0 | `RW_WRITE` | selects `write_blocks` (CMD24) vs `read_blocks` (CMD17) — `bios/mod.rs:97,102-108` |
+| 1 | `RW_NOMEDIACH` | **no effect** — `Rwabs` never invokes the media-change check (the SD is non-removable, `Mediach`≡0; see `09-mediach.md`). GAP vs the contract's "unless `RW_NOMEDIACH`, call `Mediach`". |
+| 2 | `RW_NORETRIES` | **no effect** — the EMMC driver does a single PIO attempt; there is no `RWABS_RETRIES` retry loop and no `etv_critic` chain. |
+| 3 | `RW_NOTRANSLATE` | **not honoured** — `drive` is always treated as a **logical** drive resolved through the partition table; physical/unit mode is not implemented. A caller setting bit 3 still gets partition-relative addressing (or `EUNDEV` if the letter is unmounted). GAP. |
+| 7 | `RW_NOBYTESWAP` | **irrelevant on ARM** — see below. |
+
+- **No byte-swap on ARM.** The Atari byte-swap logic (`RW_NOBYTESWAP`, forced
+  off in EmuTOS logical mode) has **no analogue**: FAT/DOS structures are
+  little-endian and AArch64 is little-endian, so sectors are transferred
+  byte-for-byte (`DATA` port read/written via `to_le_bytes`/`from_le_bytes`,
+  `emmc.rs:303-304,327`). The bit is simply ignored.
+
+### Contract behaviours vs. the current code (Step-2 candidates)
+
+- **`adr == NULL` set-mediachange feature:** not implemented — the branch is
+  floppy-only in EmuTOS and there is no floppy; a NULL buffer would be
+  dereferenced. Harmless on the Pi (no floppy caller) but the branch is absent.
+- **Sector-0 write → `forcechange`:** **not implemented.** A logical write to
+  sector 0 does not arm any change flag; the next `Mediach` still returns 0.
+  With a non-removable card this is cosmetically fine, but the boot-sector
+  re-login contract step is missing (see `09-mediach.md`, B-series).
+- **`first` unsigned-16 / `first==-1`⇒`lfirst`:** implemented
+  (`bios/mod.rs:86-90`).
+- **`numb == 0` ⇒ `E_OK`, no transfer:** implemented (`bios/mod.rs:83-84`).
+- **`0x7FFF`-sector chunking:** not needed — transfers loop one 512-byte block
+  at a time (`emmc.rs:343-346,353-356`); no signed-WORD count limit.
+- **Error codes:** invalid/unmounted drive → `EUNDEV`; out-of-range sector →
+  `ESECNF`; driver failure → `EREADF`/`EWRITF` (`bios/mod.rs:77,93,111-115`).
+  The invalid-BPB (`recsiz==0`) `ESECNF` guard is **not** in `Rwabs` here —
+  FAT32/exFAT rejection happens in `Getbpb` (see `07-getbpb.md`), and `Rwabs`
+  does no BPB lookup, so a logical `Rwabs` on a FAT32 partition transfers raw
+  sectors rather than returning `ESECNF`. GAP.
+- **Buffer pointer:** `adr` is used raw (`bios/mod.rs:99-108`); EL0 user-pointer
+  validation is deferred to the process-aware BIOS path (matches EmuTOS's
+  no-bounds-check note).

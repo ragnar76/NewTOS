@@ -225,14 +225,43 @@ differ only in the peripheral drivers (`kernel/src/drivers/bcm2711/*` vs.
 
 ### 3.4 Block device / drives (EMMC SD)
 
-- **Device:** EMMC2 SD-card controller (`bcm2711/emmc.rs`); `virt:` QEMU's
-  raspi4b/SD (the SD driver is QEMU-debuggable). `Rwabs`/`Getbpb`/`Mediach`/
-  `Drvmap` operate on it via `hal/block.rs`.
-- **Card layout (real HW):** MBR + **4 × FAT16 partitions → C: D: E: F:**
-  (verified on real Pi-4). `virt:` a raw FAT16 image built by
-  `tools/make-sd-image.sh` (MBR, type 0x06) → C:.
-- **Filesystem scope:** FAT16 hard-disk; FAT12/floppy out of scope; exFAT is a
-  Phase-09 goal (`docs/MEMORY.md`). `Mediach` treats the card as non-removable.
+- **Device:** **EMMC2 SD-card controller** (Arasan/iproc SDHCI, phys base
+  `0xFE34_0000`; `bcm2711/emmc.rs:16-18`). Address map: DS §1.2 (p.4-6); EMMC2
+  IRQ 62 (DS p.90 interrupt table); register/bit detail per BCM2835 DS §5 + SD
+  Host Controller Simplified Spec (`docs/hardware/emmc-sd.md`). `virt:` QEMU
+  `raspi4b` wires its emulated card to the **legacy EMMC** `0xFE30_0000`; the
+  driver probes EMMC2 then EMMC and binds whichever responds
+  (`emmc.rs:375-386`) — one binary for both. `Rwabs`/`Getbpb`/`Mediach`/
+  `Drvmap` operate on it via `hal/block.rs::BlockDevice` →
+  `tos-api::bios::block::BlockDev` (`host_env.rs:246-267`).
+- **Sector size = 512 bytes, fixed** (`hal/block.rs:9`, `bios/mod.rs:26`; SD
+  `BLKSIZECNT` = 512 per transfer, `emmc.rs:298,323`). PIO single-block read
+  (CMD17) + write (CMD24); **write path implemented**; no DMA, no IRQ (polled,
+  `emmc.rs:210,284-331`).
+- **Block count:** read from the card **CSD** at init (CMD9) — v2 SDHC/SDXC
+  `(C_SIZE+1)×1024` 512-B blocks, v1 SDSC from `C_SIZE`/`C_SIZE_MULT`/
+  `READ_BL_LEN` (`emmc.rs:107-130,262-270`); exposed as `block_count()`.
+- **Card layout (real HW):** MBR + **4 × FAT16 primary partitions → C: D: E: F:**
+  (verified on real Pi-4) ⇒ `Drvmap()` = bits 2-5 = `0x3C`. `virt:` a raw FAT16
+  image built by `tools/make-sd-image.sh` (MBR sig `0x55AA`, one primary of type
+  `0x06`) → **C:** ⇒ `Drvmap()` = `0x04`. Drives are assigned from **C:**
+  (`FIRST_HD=2`); A:/B: (floppy) never set. MBR parsed once at boot in
+  `bios/drive.rs::mount` (primaries at `0x1BE`, then the extended/EBR chain;
+  no-MBR device mounts whole as C:).
+- **BPB:** synthesized per call from the mounted partition's FAT16 boot sector
+  (partition-relative sector 0), little-endian, no byte-swap on ARM
+  (`bios/bpb.rs:60-103`). Fields filled: `recsiz clsiz clsizb rdlen fsiz fatrec
+  datrec numcl b_flags`; `B_16` when `numcl >= 4085`, `B_1FAT` when one FAT.
+- **Filesystem scope:** **FAT16 hard-disk only**; FAT12/floppy out of scope;
+  exFAT is a Phase-09 goal (`docs/MEMORY.md`). FAT32/exFAT boot sectors
+  (`fsiz16==0`) ⇒ `Getbpb` returns NULL.
+- **`Mediach` = non-removable → always `0`** (`bios/mod.rs:120-122`): ignores
+  its argument, never probes hardware, no `forcechange`/latch. **Step-2 gap:**
+  it does not return `EUNDEV` for an invalid drive (returns `0` for any input).
+- **Step-2 candidates:** `RW_NOTRANSLATE`/`RW_NOMEDIACH`/`RW_NORETRIES` flags
+  not honoured; sector-0-write `forcechange` and NULL-buffer `Rwabs` features
+  absent; `Mediach` invalid-drive `EUNDEV` missing; FAT16-only (FAT32/exFAT
+  deferred). See `docs/STEP2-VALIDATION.md` (B-series).
 
 ### 3.5 System timer
 

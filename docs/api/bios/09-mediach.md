@@ -220,3 +220,53 @@ PHASE-04: SD-card removal is detected via the card-detect line; USB-MSC via
 hot-plug events. Both feed a per-drive `mediachange` flag with the same
 latch/reset contract (`Mediach` reads the latch; `Getbpb` clears it). The
 `EUNDEV`-on-invalid-drive and negative-error pass-through must be preserved.
+
+---
+
+## Pi / BCM2711 binding
+
+> Re-points the hardware reference from the WD1772 floppy change-line / ACSI
+> removable probe to the **BCM2711 EMMC2 SD card**. The 3-state contract
+> (`0`/`1`/`2`, `EUNDEV` on invalid drive) is unchanged; only the backing model
+> is pinned here. See `docs/HARDWARE-PROFILE.md` §3.4.
+
+### The SD card is treated as non-removable → always `0`
+
+`Mediach` (`tos-api/src/bios/mod.rs:120-122`) returns **`0` (`MEDIANOCHANGE`)
+unconditionally** — it ignores its `drv` argument and never probes hardware.
+Rationale: the on-board microSD is a fixed boot card; the boot filesystem does
+not change under the running system, so there is never a media change to report
+(`docs/HARDWARE-PROFILE.md` §3.4, project memory "Mediach treats the card as
+non-removable").
+
+| Atari reference | Pi-4 model today |
+|-----------------|------------------|
+| WD1772 floppy change-line (first status read clears the latch) | **no probe** — the SD has no removal event wired |
+| ACSI/SCSI removable Test-Unit-Ready | **no probe** |
+| `forcechange` armed by a sector-0 write | **not armed** — `Rwabs` does not set any change flag (see `04-rwabs.md`) |
+
+### `forcechange` / sector-0-write contract vs. the Pi
+
+The EmuTOS contract has two ways `Mediach` reports a change without hardware
+help: (1) a latched `mediachange` from a prior probe, and (2) a `forcechange`
+armed by a logical write to sector 0 (forces a re-login when the boot sector is
+edited). **Neither is implemented on NewTOS today:** there is no per-drive
+`mediachange`/`forcechange` state, and `Rwabs`'s sector-0 write does not arm
+anything, so `Mediach` always returns `0` even immediately after rewriting the
+boot sector. With a genuinely non-removable card this is behaviourally safe, but
+it is a **divergence from the contract** — flagged below.
+
+### Divergences vs. the contract (Step-2 candidates)
+
+- **Invalid-drive `EUNDEV` not returned.** The contract requires `EUNDEV` (-15)
+  for a drive outside `0..BLKDEVNUM` / not `DEVICE_VALID`. NewTOS's `Mediach`
+  ignores `drv` entirely and returns `0` for **any** input, including an
+  unmounted or out-of-range letter. This is the one **observable** deviation
+  (a program probing a bogus drive sees "no change" instead of `EUNDEV`).
+- **No `forcechange` after a sector-0 write** (see above; ties to `04-rwabs.md`
+  and `07-getbpb.md`'s missing media-state reset).
+- **Latch/reset pair absent.** With `Mediach`≡0 there is no latch for `Getbpb`
+  to clear; the `Getbpb`→`Mediach` reset handshake is a no-op.
+- **`MEDIAMAYCHANGE` (1) is never produced** — the Pi SD path has no "same card
+  reinserted?" ambiguity, so only `0` is ever returned. (If USB-MSC hot-plug
+  drives land in a later phase, they would reintroduce the full 3-state latch.)

@@ -238,3 +238,80 @@ PHASE-04: NewTOS returns a `BPB *` only for FAT12/FAT16 logical drives,
 matching EmuTOS; FAT32/exFAT partitions return NULL from `Getbpb` and are
 reached through a NewTOS-native path instead. Note `Getbpb`'s result is a full
 64-bit pointer in `x0` for native callers.
+
+---
+
+## Pi / BCM2711 binding
+
+> Re-points the hardware reference from the Atari FDC / ACSI boot sector to the
+> **BCM2711 EMMC2 SD card**. The contract above (NULL-on-failure, the 18-byte
+> BPB, media-state reset, FAT type from cluster count) is unchanged; only the
+> backing hardware and the concrete NewTOS fields are pinned here. See
+> `docs/HARDWARE-PROFILE.md` §3.4.
+
+### Where the BPB comes from
+
+The BPB is **synthesized from the FAT16 boot sector of the mounted partition**,
+not from Atari media geometry. `Getbpb` (`tos-api/src/bios/bpb.rs:160-167`):
+
+1. resolves `drive`→partition via the MBR-built drive table
+   (`drive::resolve`, see `0a-drvmap.md`);
+2. reads **partition-relative sector 0** (the FAT boot sector) from the EMMC SD
+   at `part.start_lba` via `BlockDev::read_blocks` (`bpb.rs:139-148`) — which
+   forwards to `emmc.rs` (see `04-rwabs.md`);
+3. parses the DOS/BPB fields and caches the result in a per-drive static
+   (`TABLE`, one slot per drive, `bpb.rs:53-56,150-153`);
+4. returns a native 64-bit pointer into that slot (`bpb.rs:166`), or `0`.
+
+Every call re-reads and re-parses (no caching of the sector) — matching the
+EmuTOS "always re-reads" contract.
+
+### The exact fields NewTOS fills (`bpb.rs:60-103`)
+
+All fields decoded **little-endian** (no byte-swap on ARM) from the boot-sector
+BPB at the standard offsets:
+
+| BPB field | Source (boot-sector offset) | Computation |
+|-----------|-----------------------------|-------------|
+| `recsiz` | `0x0B..0x0C` bytes/sector | direct |
+| `clsiz` | `0x0D` sectors/cluster | direct |
+| `clsizb` | — | `recsiz * clsiz` |
+| `rdlen` | `0x11..0x12` root entries | `ceil(root_entries*32 / recsiz)` sectors |
+| `fsiz` | `0x16..0x17` sectors/FAT (16-bit) | direct |
+| `fatrec` | `0x0E..0x0F` reserved, `0x10` num_fats | `reserved + (num_fats-1)*fsiz` (first sector of the last FAT) |
+| `datrec` | reserved, num_fats, rdlen | `reserved + num_fats*fsiz + rdlen` |
+| `numcl` | total sectors, `datrec`, `clsiz` | `(total - datrec) / clsiz` |
+| `b_flags` | `numcl`, num_fats | `B_16` if `numcl >= 4085`; `B_1FAT` if `num_fats == 1` |
+
+- **Total sectors:** `tot16` (`0x13..0x14`) if non-zero, else `tot32`
+  (`0x20..0x23`), else the partition length `part.count` from the MBR
+  (`bpb.rs:75-81`).
+- **FAT type = cluster count** (`numcl >= 4085` ⇒ `B_16`), the Microsoft rule,
+  matching EmuTOS (`bpb.rs:95-97`).
+
+### FAT16-only; FAT32 / exFAT return NULL
+
+`parse` returns `None` (→ `Getbpb` returns `0`) when
+`recsiz==0 || clsiz==0 || num_fats==0 || fsiz16==0` (`bpb.rs:71-73`). A FAT32
+boot record has its 16-bit sectors-per-FAT field (`0x16`) zeroed, so `fsiz16==0`
+⇒ NULL — the same "FAT32 fails softly" outcome as EmuTOS. exFAT (no classic BPB)
+likewise fails. FAT16 hard-disk is the scope; FAT12/floppy is out of scope and
+exFAT is a Phase-09 goal (`docs/HARDWARE-PROFILE.md` §3.4).
+
+### Gaps vs. the contract (Step-2 candidates)
+
+- **Media-state reset not implemented.** EmuTOS resets
+  `mediachange = MEDIANOCHANGE`, `forcechange = FALSE` at the top of `Getbpb`
+  (`bios/blkdev.c:589-590`). NewTOS keeps **no per-drive media/force flags** at
+  all (`Mediach`≡0, no `forcechange`), so there is nothing to reset. Consistent
+  with the non-removable model, but the reset step is absent (B-series).
+- **No sector-size / cluster-size / FAT-count validation branches** beyond the
+  degenerate-zero check — EmuTOS's `max_sect_siz`, `MAX_CLUSTER_SIZE`,
+  `MIN_FATS`/`MAX_FATS` guards (each a NULL return) are not reproduced; a
+  malformed-but-nonzero BPB is parsed as-is.
+- **Zero-FAT→2 quirk not applied.** EmuTOS treats `num_fats==0` as 2; NewTOS
+  rejects `num_fats==0` outright (`bpb.rs:71`). Harmless for real FAT16 media
+  (always ≥1 FAT).
+- **`Geometry` extension:** NewTOS additionally exposes `reserved`+`num_fats`
+  raw (`bpb.rs:105-134`) for the FAT write path — a NewTOS-native superset, not
+  part of the Atari ABI BPB.

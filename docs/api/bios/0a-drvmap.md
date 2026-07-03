@@ -185,3 +185,69 @@ None.
 PHASE-04: NewTOS may make the map dynamic (SD/USB hot-plug flips bits).
 Programs must treat `Drvmap()` as a snapshot. `drvbits` is a kernel-owned
 variable (no `0x4c2` physical address for native ports).
+
+---
+
+## Pi / BCM2711 binding
+
+> Re-points the drive-bitmap source from Atari floppy/ACSI enumeration to the
+> **MBR partition table on the BCM2711 EMMC2 SD card**. The bitmap contract
+> (bit `n` = drive `n`, 0=A:) is unchanged; only how the bits are populated is
+> pinned here. See `docs/HARDWARE-PROFILE.md` §3.4.
+
+### `drvbits` is built from the SD MBR partitions
+
+`Drvmap` (`tos-api/src/bios/mod.rs:126-128`) returns `drive::drvbits()`
+(`tos-api/src/bios/drive.rs:145-155`), which OR's in bit `n` for every mounted
+partition slot. The table is filled once at boot by `drive::mount()`
+(`drive.rs:57-133`), which:
+
+1. reads **sector 0** (the MBR) from the EMMC SD via `BlockDev::read_blocks`
+   (`drive.rs:62-65`);
+2. checks the `0x55AA` signature at offset 510;
+3. walks the 4 primary partition entries at `0x1BE` (16 bytes each,
+   `drive.rs:44-50,78-90`), assigning each non-empty, non-extended filesystem
+   partition to the next drive letter from **C:** upward
+   (`FIRST_HD = 2`, `drive.rs:14-15,71`);
+4. walks any extended partition's EBR chain, appending each logical volume
+   (`drive.rs:95-122`);
+5. if there is no valid MBR / no partitions, mounts the whole device as a single
+   **C:** volume (super-floppy fallback, `drive.rs:129-132`).
+
+### Concrete drive-letter mapping
+
+| Config | Partitions → drives | `Drvmap()` bits |
+|--------|---------------------|-----------------|
+| **Real Pi-4** | MBR + 4 × FAT16 primary → **C: D: E: F:** (verified on HW) | bits 2,3,4,5 set = `0x3C` |
+| **QEMU `virt:`** | MBR + 1 × FAT16 primary (type `0x06`, built by `tools/make-sd-image.sh`) → **C:** | bit 2 set = `0x04` |
+
+- **A:/B: (bits 0,1) are never set** — there is no floppy on the Pi, so the
+  Atari A:+B: single-floppy convention does not apply. Hard-disk drives start at
+  C: (bit 2), matching the Atari hard-disk convention.
+- MBR partition type is recorded (`Partition.kind`, `drive.rs:19-26,44-50`) but
+  a slot is mounted regardless of FAT16 vs FAT32 type; whether it is *usable* is
+  decided later by `Getbpb` (FAT32/exFAT ⇒ NULL, see `07-getbpb.md`). So a bit
+  can be set for a partition that `Getbpb` will reject.
+
+### Contract behaviours vs. the current code
+
+- **Precomputed, read back** — `drvbits()` reads the mount-time table, matching
+  the EmuTOS "returns the raw `drvbits` global, not a recomputed map" contract
+  (though NewTOS recomputes from the `Option<Partition>` slots on each call
+  rather than caching a `LONG`; the result is identical and static after boot).
+- **Static after boot** — no SD/USB hot-plug re-scan today; a card swapped after
+  boot does not flip a bit (matches EmuTOS; hot-plug is deferred, §PHASE-04
+  above).
+- **`drvbits` is kernel-owned** — no `0x4c2` low-memory address; native callers
+  reach it only through `Drvmap`.
+- **Bits 16..31 always 0** — `MAX_DRIVES = 16` (`drive.rs:13`).
+
+### Gaps vs. the contract (Step-2 candidates)
+
+- **No `blkdev_avail` predicate exposed** — clients cannot query a single
+  drive's presence except by testing a bit of `Drvmap()`. (Cosmetic; the bit
+  test is equivalent.)
+- **Extended/logical partitions map past F:** — with 4 primaries plus an
+  extended chain, the EBR walk can assign G:+; documented here so the C:-F:
+  "verified" figure is understood as the 4-primary real-HW layout, not a hard
+  cap.

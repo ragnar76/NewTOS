@@ -64,4 +64,28 @@
 | R7 | NOTE | **`-2` baud query has no HW read-back.** The PL011 has no "baud index" register (only IBRD/FBRD divisors); `Rsconf(-2)` must return a **driver-kept shadow** of the last set index, and IBRD/FBRD can't be reverse-mapped exactly to a 16-entry Atari code. Design a baud-index↔divisor table + shadow. | `bcm2711/pl011.rs` (no baud shadow today) |
 | R8 | NOTE | **115200 default has no Atari baud index.** The MFP table tops at 19200 (idx 0); the PL011 default 115200 is off-table. An `Rsconf` impl must choose the index→baud policy (D-SER-1) — e.g. treat idx 0 as "fastest" = 115200, or keep 19200 truthful and expose 115200 only as the boot default. | design decision |
 
+## Block device / SD
+
+> Block device = **EMMC2 SD-card controller** (`bcm2711/emmc.rs`, phys
+> `0xFE34_0000`; QEMU `raspi4b` = legacy EMMC `0xFE30_0000`), 512-byte sectors,
+> PIO read+write, no DMA/IRQ. `Rwabs`/`Getbpb`/`Mediach`/`Drvmap` sit on
+> `hal/block.rs::BlockDevice` → `bios::block::BlockDev`. Real HW: MBR + 4×FAT16
+> → C:-F:. Bindings: `docs/api/bios/04-rwabs.md`, `07-getbpb.md`, `09-mediach.md`,
+> `0a-drvmap.md`; `HARDWARE-PROFILE.md` §3.4.
+
+| # | Sev | Item | Where |
+|---|-----|------|-------|
+| B1 | BUG | **`Mediach` ignores its `drv` argument.** Returns `0` for **any** input, including an out-of-range / unmounted drive; the contract requires `EUNDEV` (-15) for a drive outside `0..BLKDEVNUM` / not `DEVICE_VALID`. Only observable `Mediach` deviation. | `tos-api/src/bios/mod.rs:120-122` |
+| B2 | GAP | **`Rwabs` does not check media change.** The `RW_NOMEDIACH`-gated `Mediach` call (logical mode) is absent — `Rwabs` never probes for a change. Harmless while the SD is non-removable, but the contract step (and the `E_CHNG` return it can produce) is unimplemented. | `tos-api/src/bios/mod.rs:66-116` |
+| B3 | GAP | **Sector-0 write does not arm `forcechange`.** A logical write to sector 0 must set a change flag so the next `Mediach`/`Rwabs` reports `MEDIACHANGE` until `Getbpb` clears it (the boot-sector re-login contract). NewTOS keeps no `mediachange`/`forcechange` state, so this never fires. Ties to B1/B2 and the missing `Getbpb` media-state reset. | `tos-api/src/bios/mod.rs:66-122`; `tos-api/src/bios/bpb.rs:160-167` |
+| B4 | GAP | **NULL-buffer `Rwabs` set-mediachange feature absent.** The `adr==NULL` (FastCopy-III) branch that sets `blkdev[dev].mediachange = numb` and returns 0 without I/O is not implemented (it was floppy-only; there is no floppy). A NULL buffer would be dereferenced rather than handled. | `tos-api/src/bios/mod.rs:66-116` |
+| B5 | GAP | **`RW_NOTRANSLATE` (physical/unit mode) not honoured.** `drive` is always resolved through the partition table (logical mode); a caller setting bit 3 still gets partition-relative addressing or `EUNDEV`. No physical `unit` addressing path. | `tos-api/src/bios/mod.rs:75-95` |
+| B6 | GAP | **`RW_NORETRIES` / retry + critical-error chain absent.** The EMMC driver does a single PIO attempt; no `RWABS_RETRIES` loop and no `etv_critic` chain, so `RW_NORETRIES` is a no-op and transient errors are not retried. | `tos-api/src/bios/mod.rs:99-115`; `kernel/src/drivers/bcm2711/emmc.rs:284-331` |
+| B7 | GAP | **Logical `Rwabs` on FAT32/exFAT does not return `ESECNF`.** `Rwabs` does no BPB lookup, so the `recsiz==0` (invalid-BPB) guard is absent — a logical read/write on a FAT32 partition transfers raw sectors instead of failing. FAT32/exFAT is rejected only at `Getbpb`. FAT16-only scope. | `tos-api/src/bios/mod.rs:66-116` |
+| B8 | GAP | **FAT16 only; FAT32/exFAT unsupported.** `Getbpb`/`bpb::parse` reject `fsiz16==0` (FAT32) and any non-classic-BPB (exFAT) with NULL. Drive bits can still be set for such partitions (`Drvmap` mounts by MBR presence, not FS type), so a bit-set drive may be `Getbpb`-NULL. exFAT is a Phase-09 goal. | `tos-api/src/bios/bpb.rs:71-73`; `tos-api/src/bios/drive.rs:78-90` |
+| B9 | NOTE | **`Getbpb` media-state reset is a no-op.** EmuTOS resets `mediachange`/`forcechange` at the top of `Getbpb`; NewTOS keeps no such flags, so there is nothing to reset. Consistent with the non-removable model (pairs with B1-B3). | `tos-api/src/bios/bpb.rs:160-167` |
+| B10 | NOTE | **`Getbpb` skips EmuTOS's extra validation branches.** No `max_sect_siz` / `MAX_CLUSTER_SIZE` / `MIN_FATS`/`MAX_FATS` guards and no zero-FAT→2 quirk; only the degenerate-zero check. A malformed-but-nonzero BPB is parsed as-is. Harmless for real FAT16 media. | `tos-api/src/bios/bpb.rs:60-103` |
+| B11 | NOTE | **`Drvmap`/`Mediach` static after boot (no hot-plug).** No SD/USB re-scan; a card swapped after boot does not flip a bit or report a change. Matches EmuTOS; SD/USB-MSC hot-plug is deferred (PHASE-04). | `tos-api/src/bios/drive.rs:57-133` |
+| B12 | NOTE | **`Rwabs` uses `adr` raw (no EL0 bounds check).** EL0 user-pointer validation deferred to the process-aware BIOS path (matches EmuTOS's no-bounds-check note). | `tos-api/src/bios/mod.rs:99-108` |
+
 <!-- Subsequent binding agents append their subsystem section below. -->
