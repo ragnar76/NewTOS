@@ -43,7 +43,8 @@ differ only in the peripheral drivers (`kernel/src/drivers/bcm2711/*` vs.
 | TOS subsystem        | Atari hardware (reference) | Pi-4 hardware (contract)          | NewTOS driver |
 |----------------------|----------------------------|-----------------------------------|---------------|
 | Screen / framebuffer | Shifter + video RAM        | VideoCore mailbox framebuffer     | `bcm2711/framebuffer.rs` · `bcm2711/mailbox.rs` (virt: `qemu_virt/ramfb.rs`) |
-| Console / serial     | MFP 68901 / ACIA           | PL011 UART0                       | `bcm2711/pl011.rs` (virt: `qemu_virt/pl011.rs`), `hal/uart.rs` |
+| Console (CON)        | screen + IKBD              | framebuffer VT52 (out) + USB-HID (in) | `fbcon.rs`, `usb/hid.rs` |
+| Serial (AUX) / debug | MFP 68901 / ACIA           | PL011 UART0 — **debug channel only** | `bcm2711/pl011.rs` (virt: `qemu_virt/pl011.rs`), `hal/uart.rs` |
 | Keyboard / mouse     | IKBD (6301) on ACIA        | USB-HID over xHCI/PCIe (+ IKBD-on-UART2 **(plan)**) | `usb/xhci`, `usb/hid.rs`, `ikbd.rs`, `keymap.rs` |
 | Block device (drives)| WD1772 FDC / ACSI-SCSI HD  | EMMC2 SD-card controller          | `bcm2711/emmc.rs`, `hal/block.rs` |
 | System timer         | MFP timer C (200 Hz)       | ARM generic timer / BCM system timer | `arch/aarch64/*` |
@@ -60,9 +61,14 @@ differ only in the peripheral drivers (`kernel/src/drivers/bcm2711/*` vs.
 
 ### 3.1 Screen / framebuffer
 
-- **Geometry:** 640 × 480, **32 bpp truecolor** physical framebuffer
+- **Geometry (current):** 640 × 480, **32 bpp truecolor** physical framebuffer
   (`framebuffer.rs` `WIDTH=640, HEIGHT=480, DEPTH_BPP=32`). `virt:` same via
   `ramfb`.
+- **Geometry (goal):** full native Pi resolution — up to **1080p** and beyond
+  — is the target, **later**. It requires querying the HDMI mode at boot and
+  making the VDI/AES geometry-independent (currently hard-coded 640×480). For
+  now everything below assumes the fixed 640×480 mode; the higher-resolution
+  work is a separate phase.
 - **VDI logical model:** the VDI presents a **16-colour, 4-plane** raster over
   the truecolor buffer (`RasterBackend` maps 16 PEL indices → RGB).
 - **Screen base:** the mailbox-allocated framebuffer physical address; a single
@@ -82,15 +88,22 @@ differ only in the peripheral drivers (`kernel/src/drivers/bcm2711/*` vs.
 - **`NUM_VDI_HANDLES` / `MAX_VERTICES`:** pick the NewTOS profile values (the
   EmuTOS default is 128 / 1024; the small profile is 64 / 512). **(TBV)**
 
-### 3.2 Console / serial (PL011 UART)
+### 3.2 Console (CON) + serial/debug (PL011 UART)
 
-- **Device:** PL011 UART0 (`bcm2711/pl011.rs`); the BIOS char device and the
-  XBIOS `Rsconf` operate on it. Bit rate / line control per PL011 registers.
-- **`Bconmap`:** single UART build → returns `0x2c` (unavailable), per the
-  XBIOS spec. Handles: CON/AUX map to PL011; PRN/MIDI/IKBD are absent (stubs).
+- **Console `CON` (BIOS handle 2 / GEMDOS `Cconin`/`Cconout`):** the console is
+  the **screen + keyboard**, not the UART. Output = the framebuffer VT52
+  emulator (`fbcon.rs`); input = the USB-HID keyboard (`usb/hid.rs`, §3.3).
+- **UART (PL011) = debug channel only.** The PL011 carries `kprintln!` debug
+  output (and can back the `AUX` device / an interactive shell during
+  bring-up), but it is **not** the primary TOS console. Target model: `CON`
+  never reads/writes the UART.
+- **`Bconmap`:** single-UART build → returns `0x2c` (unavailable), per the
+  XBIOS spec. Handles: `CON` = screen+keyboard; `AUX` = PL011 (debug);
+  `PRN`/`MIDI` are absent (stubs).
 - **RX IRQ caveat:** on real Pi-4 the PL011 RX IRQ is not delivered through
-  GIC-400 as in QEMU; console input uses a direct UART0 poll (see
-  `docs/MEMORY.md`). `virt:` RX IRQ works.
+  GIC-400 as in QEMU, so UART input polls directly (`docs/MEMORY.md`); this
+  only matters for the debug/shell path, not the framebuffer console.
+  `virt:` RX IRQ works.
 
 ### 3.3 Keyboard / mouse
 
