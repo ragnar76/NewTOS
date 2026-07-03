@@ -156,6 +156,7 @@ const SELECTED: u16 = 0x0001;
 const DEFAULT: u16 = 0x0002;
 const CHECKED: u16 = 0x0004;
 const DISABLED: u16 = 0x0008;
+const OUTLINED: u16 = 0x0010;
 
 /// 50 % dither used to grey-out DISABLED objects (EmuTOS `IP_4PATT`).
 const STIPPLE_50: [u16; 2] = [0xAAAA, 0x5555];
@@ -1377,6 +1378,14 @@ fn just_draw(ob: &Object, x: i16, y: i16, clip: ClipRect, backend: &dyn RasterBa
     if ob.ob_flags & DEFAULT != 0 {
         draw_border(backend, x - 3, y - 3, w + 6, h + 6, 1, BLACK, clip);
         draw_border(backend, x - 4, y - 4, w + 8, h + 8, 1, BLACK, clip);
+    }
+
+    // OUTLINED object: the classic GEM double frame (EmuTOS `gemoblib.c`) —
+    // a black line 3 px outside plus a 2 px white gap, so the object's own
+    // border becomes the inner line of a double border (dialogs/alerts).
+    if ob.ob_state & OUTLINED != 0 {
+        draw_border(backend, x - 3, y - 3, w + 6, h + 6, 1, BLACK, clip);
+        draw_border(backend, x - 2, y - 2, w + 4, h + 4, 2, WHITE, clip);
     }
 }
 

@@ -204,10 +204,11 @@ fn do_alert(defbut: i16, s: &[u8], modal: bool) -> i16 {
     }; 1 + MAX_MSG + MAX_BTN];
 
     let first_btn = 1 + nummsg;
-    // root box (absolute position) — 3D grey background panel
+    // root box (absolute position) — 3D grey background panel with the
+    // classic GEM double frame (OUTLINED).
     tree[0] = Object {
         ob_next: -1, ob_head: 1, ob_tail: (nobj - 1) as i16, ob_type: G_BOX,
-        ob_flags: FL3DBAK, ob_state: 0, ob_spec: 1 << 16,
+        ob_flags: FL3DBAK, ob_state: OUTLINED, ob_spec: 1 << 16,
         ob_x: box_x, ob_y: box_y, ob_width: box_w, ob_height: box_h,
     };
     // message strings
