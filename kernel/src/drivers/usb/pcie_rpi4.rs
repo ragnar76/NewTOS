@@ -455,6 +455,18 @@ fn enable_device() -> bool {
 /// return the CPU base its xHCI is reachable at (`0x6_0000_0000`, mapped
 /// high-half). `None` on any failure. Mirrors `xhcidevice.cpp` ordering.
 pub fn find_xhci(dtb_phys: usize) -> Option<u64> {
+    // Probe the PCIe root complex before any destructive bring-up. This code
+    // is real-HW-only: QEMU's `raspi4b` does not model the BCM2711 PCIe RC, so
+    // the first RC register access (`PCIE_RGR1_SW_INIT_1`) takes a synchronous
+    // external abort and panics the kernel before the desktop runs. A
+    // recoverable probe returns `None` there (skip USB) while proceeding on
+    // real hardware, which responds. The RC block is mapped device MMIO, so a
+    // non-responding controller aborts (recovered), not translation-faults.
+    if crate::arch::aarch64::exceptions::probe_read32(reg(PCIE_RGR1_SW_INIT_1)).is_none() {
+        crate::kprintln!("[pcie] RC not present (no response at RC_BASE); USB disabled");
+        return None;
+    }
+
     // The outbound window is a >4 GiB address → high L2 device mapping.
     unsafe { mmu::map_device_high(OUT_CPU, 0x20_0000) }; // 2 MiB covers the xHCI BAR
 

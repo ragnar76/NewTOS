@@ -33,7 +33,7 @@
 //! public function call boundary.
 
 use core::arch::global_asm;
-use core::sync::atomic::Ordering;
+use core::sync::atomic::{AtomicBool, Ordering};
 
 use tos_api::trap::{TrapArgs, TrapClass};
 
@@ -164,6 +164,42 @@ pub fn init() {
 }
 
 // ---------------------------------------------------------------------------
+// Recoverable MMIO probe (optional / possibly-absent controllers)
+// ---------------------------------------------------------------------------
+
+/// Set while [`probe_read32`] is doing its single guarded MMIO read, so the
+/// synchronous handler knows a Data Abort in that window is expected.
+static PROBE_ACTIVE: AtomicBool = AtomicBool::new(false);
+/// Set by the handler when the guarded read took a Data Abort — the target
+/// device did not respond.
+static PROBE_FAULTED: AtomicBool = AtomicBool::new(false);
+
+/// Read a 32-bit MMIO register that may belong to a **possibly-absent**
+/// controller, surviving a synchronous external abort. Returns `Some(value)`
+/// if the read completed, or `None` if the access faulted — i.e. nothing
+/// responds at `va` (e.g. the BCM2711 PCIe root complex under QEMU `raspi4b`,
+/// which is not modelled). EL1, single-CPU: the read is a single 4-byte load,
+/// and on a Data Abort the handler advances `ELR` past it and sets
+/// [`PROBE_FAULTED`]. `va` must be a mapped device VA (a translation fault is
+/// **not** recovered — only external aborts on a mapped MMIO page).
+pub fn probe_read32(va: u64) -> Option<u32> {
+    PROBE_FAULTED.store(false, Ordering::SeqCst);
+    PROBE_ACTIVE.store(true, Ordering::SeqCst);
+    core::sync::atomic::compiler_fence(Ordering::SeqCst);
+    // SAFETY: `va` is a mapped device VA; a fault here is caught and recovered
+    // by `rust_sync_handler` (advances ELR, sets PROBE_FAULTED), so the read
+    // never escalates to `unhandled`. The loaded value is ignored on fault.
+    let v = unsafe { core::ptr::read_volatile(va as *const u32) };
+    core::sync::atomic::compiler_fence(Ordering::SeqCst);
+    PROBE_ACTIVE.store(false, Ordering::SeqCst);
+    if PROBE_FAULTED.load(Ordering::SeqCst) {
+        None
+    } else {
+        Some(v)
+    }
+}
+
+// ---------------------------------------------------------------------------
 // Rust-level handlers (called from exception_vectors.s)
 // ---------------------------------------------------------------------------
 
@@ -174,6 +210,16 @@ pub fn init() {
 pub extern "C" fn rust_sync_handler(frame: &mut ExceptionFrame) {
     let ec = esr_ec(frame.esr);
     if ec != EC_SVC_AARCH64 && ec != EC_SVC_FROM_EL1 {
+        // Recoverable MMIO probe: a same-EL Data Abort while a `probe_read32`
+        // is in flight means the probed device did not respond. Flag it and
+        // step `ELR` past the faulting load (all A64 instructions are 4 bytes)
+        // so the probe returns `None` instead of panicking. Every other abort
+        // still falls through to `unhandled`.
+        if ec == EC_DABT_SAME && PROBE_ACTIVE.load(Ordering::SeqCst) {
+            PROBE_FAULTED.store(true, Ordering::SeqCst);
+            frame.elr = frame.elr.wrapping_add(4);
+            return;
+        }
         unhandled(frame, "synchronous (non-SVC)");
     }
 
