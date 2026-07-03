@@ -760,3 +760,103 @@ redirection. The echo device is `p_uft[0]`, not `p_uft[1]`.
 
 **Decision:** follow EmuTOS — the console read functions echo on the stdin
 device. Corrected in `01-cconin.md` and `0a-cconrs.md`.
+
+---
+
+## D-030: GEMDOS allocator lives in `bdos/iumem.c`, not `bdos/mem.c`; there is no `mdalloc` (spec-vs-source)
+
+**Date:** 2026-07-03
+**Phase 00 specs:** `docs/api/structures/md.md`, `docs/api/gemdos/memory/*.md`
+
+**EmuTOS:** the user-memory trap wrappers (`xmalloc`/`xmfree`/`xsetblk`/
+`xmxalloc`/`xmaddalt`/`srealloc`, `find_mpb`, `umem_init`, `set_owner`) are in
+`bdos/umem.c`; the internal allocator (`ffit`/`freeit`/`shrinkit`) is in
+`bdos/iumem.c`; the MD/OS-memory meta-allocator (`xmgetmd`/`xmfremd`/`xmgetblk`/
+`xmfreblk`) is in `bdos/osmem.c`. There is **no** `bdos/mem.c` (only the header
+`bdos/mem.h`) and **no** function named `mdalloc`.
+
+**Prior NewTOS doc (wrong):** `md.md` repeatedly cited `bdos/mem.c:xmalloc`,
+`bdos/mem.c:xmfree`, and `bdos/mem.c:mdalloc`; the memory specs said
+`ffit`/`freeit` live in `bdos/mem.c`.
+
+**Not a Compendium discrepancy** — internal spec / citation error.
+
+**Decision:** cite `bdos/umem.c` (wrappers), `bdos/iumem.c` (allocator),
+`bdos/osmem.c` (MD pool). Corrected across `md.md` and the five memory specs.
+
+---
+
+## D-031: `freeit` does NOT clear `m_own`; `m_own == NULL` is not a "free" flag (spec-vs-source)
+
+**Date:** 2026-07-03
+**Phase 00 specs:** `docs/api/structures/md.md`, `docs/api/gemdos/memory/49-mfree.md`,
+`4a-mshrink.md`, `docs/api/gemdos/_state.md §8`
+
+**EmuTOS:** `freeit` (`bdos/iumem.c:144-222`) only relinks the MD between
+`mp_mal` and the address-sorted `mp_mfl` and coalesces neighbours — it **never**
+writes `m_own`. `ffit` sets `m_own = run` on allocation (`bdos/iumem.c:134`),
+but a freed MD keeps its stale owner pointer. Nothing in the alloc/free path
+reads `m_own` for a free MD (membership is by list + `m_start`), so it is
+internally harmless; but `m_own == NULL` is **not** an invariant of free MDs.
+`shrinkit` likewise puts the freed tail MD on `mp_mal` without setting `m_own`
+before `freeit`ing it (`bdos/iumem.c:242-260`). Only `Pterm`/`Ptermres`
+(`free_all_owned`/`reserve_blocks`, `bdos/proc.c:77-101`) consult `m_own`, and
+they walk `mp_mal` (allocated MDs), where it is meaningful.
+
+**Prior NewTOS docs (wrong):** `md.md` asserted "Free flow … set `m_own =
+NULL`" and the invariant "Every MD on `mp_mfl` has `m_own == NULL` (used as the
+free flag)"; `4a-mshrink.md` claimed "the new freed-tail MD has `m_own = NULL`".
+
+**Not a Compendium discrepancy** — internal spec error.
+
+**Decision:** document that `freeit` leaves `m_own` stale; the free flag is list
+membership, not `m_own`. NewTOS *may* cleanly clear `m_own` on free (a permitted
+improvement — it does not rely on the stale value). Corrected in the four docs.
+
+---
+
+## D-032: `Maddalt` first add sets `pmdalt.mp_mal = NULL`, not `mp_rover` (spec-vs-source)
+
+**Date:** 2026-07-03
+**Phase 00 spec:** `docs/api/gemdos/memory/14-maddalt.md`
+
+**EmuTOS:** on the first successful `xmaddalt`, the one-time init writes
+`pmdalt.mp_mfl = md; pmdalt.mp_mal = NULL; has_alt_ram = 1`
+(`bdos/umem.c:509-514`); `mp_rover` is never touched. The merge path extends an
+adjacent free MD in place and consumes no MD (`bdos/umem.c:472-483`).
+
+**Prior NewTOS doc (wrong):** `14-maddalt.md` carried a pasted C body showing
+`pmdalt.mp_rover = md; has_alt_ram = TRUE;` on the first add — a fabricated
+line; the source sets `mp_mal = NULL`, not `mp_rover`.
+
+**Not a Compendium discrepancy** — the pasted "source extraction" C in the old
+spec did not match the actual `bdos/umem.c`.
+
+**Decision:** follow the actual source (`mp_mal = NULL`). Also removed the
+pasted C bodies from all five memory specs per the sharpened cite-never-paste
+rule (`_template.md`). Corrected in `14-maddalt.md`.
+
+---
+
+## D-033: `Malloc(-1)` largest-free scope depends on `PF_TTRAMMEM`; `Mxalloc(-1)` is per selected pool(s) (spec-vs-source)
+
+**Date:** 2026-07-03
+**Phase 00 specs:** `docs/api/gemdos/memory/48-malloc.md`, `44-mxalloc.md`
+
+**EmuTOS:** `xmalloc` forwards `Malloc(-1)` to `xmxalloc(-1, mode)` where `mode`
+is `MX_STRAM` (no `PF_TTRAMMEM`) or `MX_PREFTTRAM` (with it)
+(`bdos/umem.c:120-126`). In `xmxalloc`, `amount == -1` returns `ffit(-1,&pmd)`
+for `MX_STRAM`, `ffit(-1,&pmdalt)` for `MX_TTRAM`, and the **larger of both
+pools'** biggest single free block for the two preferred modes
+(`bdos/umem.c:247-278`). It is the largest *single* MD, never the sum of free
+space. With `CONF_WITH_ALT_RAM == 0`, `MX_TTRAM` (mode 1) query falls to
+`default → NULL`.
+
+**Prior NewTOS docs (imprecise/wrong):** `48-malloc.md` said `Malloc(-1)`
+returns "the largest free block across both pools" unconditionally — true only
+for `PF_TTRAMMEM` programs; a plain program's `Malloc(-1)` reports ST-RAM only.
+
+**Not a Compendium discrepancy** — a precision fix.
+
+**Decision:** document the `PF_TTRAMMEM`-dependent scope for `Malloc(-1)` and
+the per-selected-pool(s) scope for `Mxalloc(-1, mode)`. Corrected in both specs.

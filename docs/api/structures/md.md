@@ -1,10 +1,16 @@
 # `MD` / `MPB` — Memory Descriptor and Memory Partition Block
 
 > Phase 00 spec D6. Sources: EmuTOS @ `1a7484ab` —
-> `include/bdosdefs.h:14-29` (`MD`, `MPB`, `MX_*`),
-> `bdos/mem.c` (allocator),
-> `bdos/iumem.c` (`ffit`, `freeit`, `shrinkit`, `xmaddalt`),
-> `bdos/osmem.c` (MD meta-allocator: `xmgetmd`, `xmfremd`).
+> `include/bdosdefs.h:108-125` (`MD`, `MPB`), `:18-22` (`MX_*`),
+> `bdos/umem.c` (user-memory interface: `xmalloc`/`xmfree`/`xsetblk`/
+> `xmxalloc`/`xmaddalt`, `find_mpb`, `umem_init`, `set_owner`),
+> `bdos/iumem.c` (internal allocator: `ffit`, `freeit`, `shrinkit`),
+> `bdos/osmem.c` (MD meta-allocator: `xmgetmd`, `xmfremd`, `xmgetblk`).
+>
+> **Note (corrected):** there is **no `bdos/mem.c`** in this tree — only
+> `bdos/mem.h`. The allocator body is `bdos/iumem.c`; the trap-level wrappers
+> are `bdos/umem.c`. There is no function named `mdalloc`. Earlier revisions
+> of this doc cited `bdos/mem.c:xmalloc`/`xmfree`/`mdalloc`; all were wrong.
 
 ## Purpose
 
@@ -52,37 +58,54 @@ First-fit linear scan of `mp_mfl`. EmuTOS does **not** use a roving
 pointer or buddy/best-fit. The free list is kept sorted by ascending
 `m_start` so coalescing on free is O(n) in the list length.
 
-### Allocation flow (`bdos/mem.c:xmalloc`)
+### Allocation flow (`bdos/iumem.c:35` `ffit`)
 
-1. Walk `mp_mfl`. First MD with `m_length >= request`: split.
-2. If the MD's length equals the request, unlink it and re-use the
-   MD struct.
-3. Otherwise, carve `request` bytes off the front: shrink the free MD
-   (`m_start += request`, `m_length -= request`), allocate a new MD
-   for the allocated region, prepend it to `mp_mal` with
-   `m_own = current PD`.
+Reached via `Mxalloc`/`Malloc`. The free MD's front is carved for the request:
 
-### Free flow (`bdos/mem.c:xmfree`)
+1. Walk `mp_mfl`; take the first MD with `m_length >= request` (after rounding
+   the request up to the pool's alignment grain, `bdos/iumem.c:83-86`).
+2. If that MD's length equals the request exactly, unlink it whole
+   (`bdos/iumem.c:103-104`).
+3. Otherwise carve `request` bytes off the *front*: allocate a **new** MD via
+   `xmgetmd` for the *remainder* and leave it on `mp_mfl`
+   (`m_start += request`, `m_length -= request`); the original MD is trimmed to
+   `request` and becomes the allocated block (`bdos/iumem.c:105-127`).
+4. Prepend the allocated MD to `mp_mal` and set `m_own = run`
+   (`bdos/iumem.c:132-134`). If the `xmgetmd` in step 3 fails, the whole
+   allocation fails (returns NULL) — the free MD is *not* modified.
 
-1. Find the MD on `mp_mal` whose `m_start == addr`. If none → `EIMBA`.
-2. Unlink from `mp_mal`, set `m_own = NULL`, insert into `mp_mfl`
-   at the position keeping it sorted.
-3. Coalesce with adjacent free MDs (front and back).
+### Free flow (`bdos/iumem.c:144` `freeit`)
 
-> **Note on ownership.** `Mfree` does **not** check `m_own ==
-> current PD` — EmuTOS preserves the original Atari quirk that any
-> process can free any block by passing its address. Ownership is
-> consulted only by `Pterm`'s `free_all_owned` path (see below),
-> not by interactive `Mfree`. This was incorrectly stated as a
-> validation step in earlier revisions of this document; the
-> per-function spec at `docs/api/gemdos/memory/49-mfree.md`
-> § "Edge cases — No ownership check" is authoritative.
+1. Find the MD on `mp_mal` whose `m_start` matches. If none → return (caller
+   `xmfree` maps this to `EIMBA`).
+2. Unlink from `mp_mal`; walk `mp_mfl` to the ascending-`m_start` position and
+   link it in there (`bdos/iumem.c:180-202`).
+3. Coalesce with the higher and lower free neighbours if contiguous, freeing the
+   absorbed neighbour's MD via `xmfremd` (`bdos/iumem.c:207-221`).
 
-### `Pterm` cleanup
+> **Note on ownership.** `Mfree` does **not** check `m_own == current PD` —
+> EmuTOS preserves the original Atari quirk that any process can free any block
+> by passing its address. Ownership is consulted only by `Pterm`'s
+> `free_all_owned` / `Ptermres`'s `reserve_blocks` paths (see below), not by
+> interactive `Mfree`. The per-function spec
+> `docs/api/gemdos/memory/49-mfree.md` § "Edge cases" is authoritative.
+>
+> **Note (corrected): `freeit` does NOT clear `m_own`.** It only relinks the MD
+> between the lists (`bdos/iumem.c:144-222` — no `m_own` write). The freed MD
+> keeps its previous owner pointer. Nothing in the free/alloc path reads
+> `m_own` for a free MD (membership is by list position + `m_start`), so this is
+> internally harmless — but "`m_own == NULL` ⇔ free" is **not** an invariant of
+> this build. Earlier revisions asserted `freeit` sets `m_own = NULL`; it does
+> not.
 
-When a process terminates, EmuTOS walks `mp_mal` and frees every MD
-with `m_own == &terminating_PD`. This is the mechanism that prevents
-process leaks, including basepage and TPA storage.
+### `Pterm` / `Ptermres` cleanup (`bdos/proc.c:77-101`)
+
+When a process terminates, EmuTOS walks `mp_mal` (both pools) and frees every
+MD with `m_own == the PD` via `free_all_owned` → `freeit`
+(`bdos/proc.c:92-101,136-139`). `Ptermres` uses `reserve_blocks`, which instead
+*detaches* the owned MDs from `mp_mal` (via `xmfremd`) so the memory stays
+reserved after the process becomes resident (`bdos/proc.c:77-89,628`). This
+owner filter is the only place `m_own` gates a free.
 
 ## Multiple pools (`MX_*` modes)
 
@@ -95,15 +118,20 @@ process leaks, including basepage and TPA storage.
 | 2      | `MX_PREFSTRAM`   | ST-RAM preferred, fall back TT    |
 | 3      | `MX_PREFTTRAM`   | TT-RAM preferred, fall back ST    |
 
-`MX_MODEMASK = 0x03`. Bits 2..15 of `mode` are reserved; EmuTOS
-clears them with `mode &= MX_MODEMASK` (`bdos/umem.c:241`) before
-dispatching, so caller-supplied protection bits (Atari documents
+`MX_MODEMASK = 0x03` (`include/bdosdefs.h:22`). Bits 2..15 of `mode` are
+reserved; EmuTOS clears them with `mode &= MX_MODEMASK` (`bdos/umem.c:241`)
+before dispatching, so caller-supplied protection bits (Atari documents
 bits 4..15 as supervisor/global flags) are silently ignored.
 NewTOS does the same and records the divergence under
-`docs/api/gemdos/memory/44-mxalloc.md` § "Known divergences".
+`docs/api/gemdos/memory/44-mxalloc.md`.
 
-Each pool has its own MPB. EmuTOS's globals: `pmd` (ST-RAM MPB),
-`pmdalt` (TT-RAM MPB, only when `CONF_WITH_TTRAM`).
+Each pool has its own MPB. EmuTOS's globals (`bdos/umem.c:35-38`): `pmd`
+(ST-RAM MPB, always present), `pmdalt` (alt-/TT-RAM MPB) plus the
+`int has_alt_ram` flag, both compiled in **only under `CONF_WITH_ALT_RAM`**.
+(`CONF_WITH_TTRAM` is a separate flag that governs *detecting* TT-RAM at boot
+and requires `CONF_WITH_ALT_RAM`; the pool struct itself is gated on
+`CONF_WITH_ALT_RAM`.) When `CONF_WITH_ALT_RAM == 0`, `Mxalloc` mode 1
+(`MX_TTRAM`) returns NULL and modes 2/3 have no alt-RAM half.
 
 NewTOS: two MPBs from the start (one per pool). See
 "NewTOS implementation notes" below.
@@ -115,13 +143,15 @@ them on the heap they manage — it would be a bootstrap problem.
 Instead it carves them out of a fixed-size internal OS-memory pool
 (`osmem.c`):
 
-- A static word array `osmem[LENOSM]` (~7.7 KiB) sized for
-  `NUM_OSM_BLOCKS = 118` blocks of `LEN_OSM_BLOCK = 66` bytes each
-  (`bdos/osmem.c:36-39`).
+- A static word array `osmem[LENOSM]` where `LENOSM =
+  LEN_OSM_BLOCK*NUM_OSM_BLOCKS/sizeof(WORD) = 66*118/2 = 3894` words = **7788
+  bytes**, sized for `NUM_OSM_BLOCKS = 118` blocks of `LEN_OSM_BLOCK = 66`
+  bytes each (`bdos/osmem.c:36-39`).
 - `xmgetblk(WORD i)` / `xmfreblk` allocate fixed-size blocks from
   this pool via a quick-list of LIFO free chains indexed by
-  paragraph count (`root[MAXQUICK]`, `MAXQUICK = 5`). Only index 4
-  (= 4 paragraphs = 64 bytes) is used in practice.
+  paragraph count (`root[MAXQUICK]`, `MAXQUICK = 5`). In practice `xmgetblk`
+  always uses index 4: a 64-byte payload + 1 control word = 66 bytes = one
+  `LEN_OSM_BLOCK` (`bdos/osmem.c:304-321`).
 - MDs are not allocated one-by-one. They live in `MDBLOCK`s, each
   holding `MDS_PER_BLOCK = 3` MDs plus a `mdb_next` link
   (`bdos/osmem.c:44-55`):
@@ -183,12 +213,12 @@ follows `md` in memory; pad to keep alignment. See PHASE-04 D5.
 
 ## Sizing constraints
 
-- `osmem` capacity: 118 blocks of 64 bytes = 7552 bytes. Each
-  `MDBLOCK` consumes one block and provides 3 MDs, so the absolute
-  ceiling is `118 * 3 = 354` MDs — minus whatever `osmem` storage
-  the OFD/DND/handle tables consume.
-- Real-world EmuTOS observation: typical workloads peak around
-  60–80 simultaneously live MDs.
+- `osmem` capacity: `NUM_OSM_BLOCKS = 118` blocks of `LEN_OSM_BLOCK = 66` bytes
+  = 7788 bytes (the array is declared in words: `LENOSM = 3894` words). Each
+  `MDBLOCK` consumes one 64-byte-payload block and provides 3 MDs, so the
+  absolute ceiling is `118 * 3 = 354` MDs — minus whatever `osmem` storage the
+  DMD/DND/OFD tables consume (they draw from the same pool via
+  `MEMTYPE_DMD`/`DND`/`OFD`, `bdos/mem.h`).
 - NewTOS PHASE-04 D5 plans for **256 MDs** (≡ 86 `MDBlock`s) backed
   by a static array in `tos-api::bdos::mem`. We do **not** port the
   `osmem` quick-list; we allocate `MDBlock` slots from a static
@@ -197,30 +227,43 @@ follows `md` in memory; pad to keep alignment. See PHASE-04 D5.
 
 ## Invariants
 
-- Free list is sorted ascending by `m_start`; allocated list is in
-  insertion order.
-- Adjacent regions on the free list are always coalesced —
-  `mp_mfl` never contains two MDs `A`, `B` with
-  `A->m_start + A->m_length == B->m_start`.
-- Every MD on `mp_mal` has `m_own != NULL`.
-- Every MD on `mp_mfl` has `m_own == NULL` (used as the free flag).
-- `m_length > 0` for all MDs (zero-length MDs are deleted on free).
-- The MD struct itself is allocated separately from the region it
-  describes (in a dedicated MD pool — see `bdos/mem.c:mdalloc`).
+- Free list (`mp_mfl`) is sorted ascending by `m_start` (`freeit` inserts in
+  order, `bdos/iumem.c:191-202`); allocated list (`mp_mal`) is in insertion
+  order (prepend, `bdos/iumem.c:132-133`).
+- Adjacent regions on the free list are coalesced by `freeit` — after a free,
+  `mp_mfl` holds no two MDs `A`, `B` with `A->m_start + A->m_length ==
+  B->m_start` (`bdos/iumem.c:207-221`). Caveat: `Maddalt` prepends to `pmdalt`
+  without full re-sort, so alt-RAM can be transiently unsorted until the first
+  alloc/free cycle self-heals it (see `14-maddalt.md` edge case 5).
+- `m_length > 0` for all MDs.
+- **`m_own` is NOT a reliable free flag.** `ffit` sets `m_own = run` on
+  allocation, but `freeit` does **not** clear it on free (see the corrected
+  "Free flow" note). Only `Pterm`/`Ptermres` read `m_own`, and they walk
+  `mp_mal` (allocated MDs), where `m_own` *is* meaningful. Do not treat
+  "`m_own == NULL`" as "this MD is free". (NewTOS may cleanly clear `m_own` on
+  free — a permitted improvement, since it doesn't rely on the stale value.)
+- The MD struct itself is allocated separately from the region it describes,
+  from the OS-memory pool via `xmgetmd`/`xmfremd` (`bdos/osmem.c`), **not** from
+  the heap the MDs manage. There is no `mdalloc` function.
 
 ## Cross-references
 
 - **Compendium:** "Memory Allocation" / "MD" — agrees on layout.
 - **Profibuch:** "Speicherverwaltung" — agrees.
 - **`docs/api/structures/basepage.md`** — `m_own` points to PD.
-- **`docs/api/gemdos/memory/Malloc.md`** (TBD) — uses MPB.
-- **EmuTOS source:** `bdos/mem.c` — full allocator.
+- **`docs/api/gemdos/memory/48-malloc.md`**, **`44-mxalloc.md`**,
+  **`49-mfree.md`**, **`4a-mshrink.md`**, **`14-maddalt.md`** — use MPB/MD.
+- **EmuTOS source:** `bdos/iumem.c` (allocator), `bdos/umem.c` (wrappers),
+  `bdos/osmem.c` (MD meta-allocator).
 
 ## Configuration
 
-- `CONF_WITH_TTRAM` enables the second pool (`pmdalt`).
-- `CONF_WITH_FRB` reserves a 64 KiB ST-RAM buffer for DMA fallback —
-  not part of the regular MPB.
+- `CONF_WITH_ALT_RAM` compiles in the second pool `pmdalt` + `has_alt_ram`
+  (`bdos/umem.c:36-38`). `CONF_WITH_TTRAM` (which requires `CONF_WITH_ALT_RAM`)
+  additionally enables *detecting* TT-RAM at boot.
+- `CONF_WITH_FRB` (= `CONF_WITH_ALT_RAM` by default, `include/config.h:1504`)
+  reserves a 64 KiB ST-RAM buffer for DMA fallback — not part of the regular
+  MPB.
 
 ## NewTOS implementation notes
 

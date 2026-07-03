@@ -301,21 +301,57 @@ console function.**
 
 ---
 
-## 8. Memory Pool `pmd` and `pmdalt` (`bdos/umem.c:38..55`)
+## 8. Memory Pools `pmd` / `pmdalt` and the `Mxalloc` modes (`bdos/umem.c:35-45`)
 
 ```c
-MPB pmd;        /* main ST-RAM pool */
+MPB pmd;                 /* bdos/umem.c:35 — main ST-RAM pool (always present) */
 #if CONF_WITH_ALT_RAM
-MPB pmdalt;     /* alt-RAM pool (TT/Falcon/expansion) */
+MPB pmdalt;              /* bdos/umem.c:37 — alt-/TT-RAM pool */
+int has_alt_ram;         /* bdos/umem.c:38 — TRUE once Maddalt has run */
 #endif
+ULONG malloc_align_stram;/* bdos/umem.c:40 — 1 (2-byte) or 3 (4-byte, Falcon) */
+
+static UBYTE *start_stram, *end_stram;  /* bdos/umem.c:44-45 — ST-RAM bounds */
 ```
 
-Each `MPB` has `mp_mfl` (free list) and `mp_mal` (allocated list)
-of `MD` records. `Malloc`/`Mfree`/`Mxalloc`/`Mshrink` operate on
-these lists. `Maddalt` adds a region to `pmdalt`.
+Each `MPB` (`include/bdosdefs.h:120-125`) has `mp_mfl` (free-list head),
+`mp_mal` (allocated-list head) and the vestigial `mp_rover` ("no longer used").
+`Malloc`/`Mfree`/`Mxalloc`/`Mshrink` operate on these lists via the `ffit` /
+`freeit` / `shrinkit` allocator (`bdos/iumem.c`); `Maddalt` adds a free region
+to `pmdalt`. `MD` records themselves come from a separate OS-memory pool
+(`bdos/osmem.c`), never from the heap they describe. See
+`docs/api/structures/md.md` for the full model.
 
-NewTOS: implement two pools; ST-RAM is the lower 1 MiB of the 1 GiB
-mapped region (Phase 03), Alt-RAM is the rest.
+**Pool bounds / routing.** `umem_init` (`bdos/umem.c:549`) calls `Getmpb` to
+fill `pmd`, then records `start_stram = pmd.mp_mfl->m_start` and `end_stram =
+start_stram + pmd.mp_mfl->m_length`. `find_mpb(addr)` (`bdos/umem.c:99`) routes
+a free/shrink: `addr ∈ [start_stram, end_stram)` → `pmd`; otherwise, if
+`has_alt_ram`, `pmdalt` (a trust-the-caller shortcut — real membership is the
+subsequent `mp_mal` scan); else NULL → `EIMBA`.
+
+**`Mxalloc` mode constants (`include/bdosdefs.h:18-22`) — CONTRACT:**
+
+| Value | Constant       | Pool selection |
+|------:|----------------|----------------|
+| 0 | `MX_STRAM`     | `pmd` (ST-RAM) only |
+| 1 | `MX_TTRAM`     | `pmdalt` (alt-/TT-RAM) only; NULL if no alt-RAM |
+| 2 | `MX_PREFSTRAM` | `pmd` preferred, `pmdalt` fallback |
+| 3 | `MX_PREFTTRAM` | `pmdalt` preferred, `pmd` fallback |
+
+`MX_MODEMASK = 0x03` (`:22`) — only bits 0-1 are honoured; higher bits (Atari's
+supervisor/protection flags) are masked off (`bdos/umem.c:241`).
+
+**Ownership caveat (contract-relevant behaviour):** `ffit` tags an allocated
+MD with `m_own = run`; `freeit` does **not** clear `m_own` on free. So `m_own`
+is meaningful only for MDs on `mp_mal`; it is **not** a free flag. `Pterm` /
+`Ptermres` read `m_own` (walking `mp_mal`) to reclaim/reserve a process's
+blocks. `Mfree`/`Mshrink` themselves do **no** ownership check — any process
+can free any block by address.
+
+NewTOS: implement two pools (ST-RAM + alt/TT-RAM) mapped onto the AArch64
+device-tree memory layout (Phase 03/04). The ST/alt split is a TOS-API contract
+only — AArch64 has no hardware DMA-zone distinction. NewTOS may cleanly clear
+`m_own` on free (it does not depend on the stale-`m_own` quirk).
 
 ---
 

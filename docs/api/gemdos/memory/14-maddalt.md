@@ -1,208 +1,270 @@
-# `Maddalt` — GEMDOS 0x14
+# `Maddalt` (GEMDOS 0x14)
 
-> Phase 00 spec. Source: EmuTOS @ `1a7484ab` —
-> `bdos/umem.c:455` (`xmaddalt`).
+> Phase 00 spec (full-contract template). Source: EmuTOS @ `1a7484ab`.
+> Verified against `bdos/umem.c:455` (`xmaddalt`).
+
+> **Contract vs. reference** — see [`docs/COMPATIBILITY.md`](../../../COMPATIBILITY.md).
+> Contract: trap ID/ABI, the `size &= -4` round-down, the `-1L`/`ENSMEM`
+> failure returns, the one-way "register alt-RAM, never remove" semantics.
+> Reference: the exact overlap predicate, `xmgetmd`, the `pmdalt` list layout,
+> the static-alt-RAM carve-out.
 
 ## EmuTOS source
 
-- **Primary:** `bdos/umem.c:455` — `long xmaddalt(UBYTE *start, LONG size)`
-- **Helpers:** `xmgetmd()` — pull a fresh MD from the MD pool;
-  list manipulation on `pmdalt.mp_mfl`.
-- **Globals:** `pmdalt`, `has_alt_ram`, `start_stram`, `end_stram`,
-  `_static_altram_start`, `_static_altram_end` (CONF_WITH_STATIC_ALT_RAM).
-- **Build config:** `CONF_WITH_ALT_RAM`. Without it, `Maddalt` is
-  not present in the dispatcher table.
+**Primary location:** `bdos/umem.c:455` — `long xmaddalt(UBYTE *start, LONG size)`.
 
-## Source extraction
+**Installed handler / vector:** (none) — direct `funcs[]` entry `0x14` =
+`xmaddalt`, `wparms = 4`, **only when `CONF_WITH_ALT_RAM`** (else `NI`,
+"not implemented") (`bdos/bdosmain.c:194-198`).
 
-```c
-long xmaddalt(UBYTE *start, LONG size)
-{
-    /* round size down to multiple of 4 */
-    size &= -4L;
-    if (size <= 0) return -1;
+**Helpers called:**
+- `bdos/osmem.c:169` — `xmgetmd()` — obtain a fresh MD for the new region
+  (only on the non-merge path).
 
-    /* must not overlap ST-RAM */
-    if (((start < start_stram) && (start + size > start_stram))
-     || (start < end_stram))
-        return -1;
+**Headers / type definitions used:**
+- `include/bdosdefs.h:108-115` — `MD`.
+- `include/gemerror.h:47` — `ENSMEM = -39`.
+- (`bdos/mem.h` — `extern MPB pmdalt`.)
 
-    /* try to merge with an adjacent free block */
-    for (p = pmdalt.mp_mfl; p; p = p->m_link) {
-        if (p->m_start + p->m_length == start) {
-            p->m_length += size; return 0;
-        } else if (start + size == p->m_start) {
-            p->m_start  -= size;
-            p->m_length += size; return 0;
-        }
-    }
+**System variables / globals read:**
+- `start_stram`, `end_stram` (`bdos/umem.c:44-45`) — ST-RAM bounds for the
+  overlap check.
+- `has_alt_ram` (`bdos/umem.c:38`) — whether alt-RAM already registered.
+- `pmdalt.mp_mfl` — walked for the adjacent-block merge.
+- `_static_altram_start`/`_static_altram_end` (`CONF_WITH_STATIC_ALT_RAM`).
 
-#if CONF_WITH_STATIC_ALT_RAM
-    /* skip over EmuTOS's own alt-RAM static-data region */
-    if (start == _static_altram_start && _static_altram_end > _static_altram_start) {
-        start = _static_altram_end;
-        size -= _static_altram_end - _static_altram_start;
-    }
-#endif
+**System variables / globals written:**
+- `pmdalt.mp_mfl` (new/extended free MD), and on the **first** successful add
+  `pmdalt.mp_mal = NULL` and `has_alt_ram = 1` (`bdos/umem.c:502-514`).
 
-    md = xmgetmd();
-    if (!md) return ENSMEM;
-    md->m_start  = start;
-    md->m_length = size;
-    md->m_own    = NULL;
+**Build configuration affecting this function:**
+- `CONF_WITH_ALT_RAM` — **required**; without it the whole function and its
+  dispatch entry are absent (trap 0x14 falls through to `EINVFN`).
+- `CONF_WITH_STATIC_ALT_RAM` — adds the carve-out that skips EmuTOS's own
+  static-data region when the exact static base address is passed.
 
-    if (has_alt_ram) {
-        md->m_link = pmdalt.mp_mfl;
-        pmdalt.mp_mfl = md;
-    } else {
-        md->m_link = NULL;
-        pmdalt.mp_mfl = md;
-        pmdalt.mp_rover = md;
-        has_alt_ram = TRUE;
-    }
-    return E_OK;
-}
-```
+---
+
+## Source extraction summary
+
+`Maddalt` tells GEMDOS about a block of "alternate" RAM that the BIOS did not
+discover at boot (historically added via a VME card or hardware mod). The
+region is added to the alt-RAM pool `pmdalt` as **free** memory; from then on it
+is allocatable via `Mxalloc` (modes 1/2/3) or by `PF_TTRAMMEM` programs' plain
+`Malloc`.
+
+The function first rounds `size` **down** to a multiple of 4 (`size &= -4L`);
+if the result is `<= 0` it returns `-1`. It then rejects any region that
+overlaps ST-RAM: the predicate is `(start < start_stram && start + size >
+start_stram) || (start < end_stram)` — i.e. anything starting below the *end*
+of ST-RAM is refused, which also refuses ranges entirely below ST-RAM start
+(see D-010 for NewTOS's tighter predicate).
+
+Next it tries to **merge** with an existing free MD on `pmdalt.mp_mfl`: if the
+new region butts up against the end of a free block it extends that block's
+length; if it butts up against the start it moves that block's `m_start` down
+and extends its length. Either merge returns 0 and **consumes no new MD** —
+important, because `xmgetmd` can run out.
+
+If no merge applies, it (optionally, under `CONF_WITH_STATIC_ALT_RAM`) skips the
+static-data sub-region, then allocates a fresh MD via `xmgetmd`
+(`ENSMEM` if none), fills it (`m_start`, `m_length`, `m_own = NULL`), and links
+it onto `pmdalt.mp_mfl`. On the **very first** alt-RAM registration it also
+initialises the pool by setting `pmdalt.mp_mal = NULL` and `has_alt_ram = 1`;
+`mp_rover` is **not** touched. Registration is one-way — there is no
+"remove alt-RAM" call.
+
+---
 
 ## Trap interface
 
-| | |
-|--|--|
-| Trap | 1 (GEMDOS) |
-| Function ID | `0x0014` |
-| WORD args | 4 (LONG `start` + LONG `size`) |
-| Stack frame | `+6: size (LONG)`, `+2: start (LONG)`, `+0: 0x0014` |
+- **Trap number:** 1 (GEMDOS)
+- **Function ID:** 0x14
+- **Stack frame on entry (m68k):**
+  ```
+  +6: size  (LONG)
+  +2: start (LONG, UBYTE *)
+   0: function_id (word) = 0x0014
+  ```
+- **Total parameter bytes:** 8 (LONG + LONG) → `wparms = 4`.
+- **Native (AArch64) ABI:** ID `0x14` in `x8`; `start` (pointer, full 64-bit)
+  in `x0`, `size` in `x1`. LONG result (0 / `-1` / `ENSMEM`) sign-extended into
+  `x0`.
+
+  | m68k stack | AArch64 reg | Name    | Type / size |
+  |------------|-------------|---------|-------------|
+  | +2         | `x0`        | `start` | `UBYTE *` (ptr) |
+  | +6         | `x1`        | `size`  | `LONG` (32/`long`) — rounded down to ×4 |
+
+---
 
 ## Inputs
 
-| Pos | Name    | Type    | Range / meaning                              |
-|-----|---------|---------|----------------------------------------------|
-| 0   | `start` | UBYTE * | base address of new alt-RAM region            |
-| 1   | `size`  | LONG    | length in bytes (rounded down to multiple of 4) |
+| Position | Name    | Type     | Size | Source location   | Notes |
+|----------|---------|----------|------|-------------------|-------|
+| arg0     | `start` | `UBYTE *`| 4    | `bdos/umem.c:455` | base of the region to register |
+| arg1     | `size`  | `LONG`   | 4    | `bdos/umem.c:460` | length in bytes; `size &= -4` (round **down** to ×4) |
+
+---
 
 ## Outputs
 
-| Reg | D0 |
-| --- | --- |
-| Type | LONG (GEMDOS error code) |
+### Return value
 
-| Case                                          | Return       |
-|-----------------------------------------------|--------------|
-| Region added (or merged with neighbour)        | `E_OK` (0)  |
-| `size` after rounding ≤ 0                      | `-1`        |
-| Region overlaps ST-RAM                         | `-1`        |
-| MD pool exhausted                              | `ENSMEM` (-39) |
+- **Register:** D0 / `x0`
+- **Type:** LONG (GEMDOS error code / status)
+- **Encoding:**
 
-## Errors
+  | Case | Return |
+  |------|--------|
+  | Region added, or merged with an adjacent free block | `E_OK` (0) |
+  | `size` after round-down `<= 0` | `-1` |
+  | Region overlaps ST-RAM (per the predicate) | `-1` |
+  | No MD available from the MD pool | `ENSMEM` (-39) |
 
-`Maddalt` returns a bare `-1` (not a named GEMDOS error) for
-geometry rejection. This is **not** `EINVFN`/`ERR`/`EIMBA` — it is
-literal `-1L`. Compendium and Profibuch both document it as
-`-1L = error`.
+- **Source location:** `bdos/umem.c:464,469,476,481,497,516`.
 
-`ENSMEM` (-39) only when no MD struct is available.
+### Side effects on global state
 
-## Edge cases
+- Merge path: an existing `pmdalt.mp_mfl` MD's `m_length` (and possibly
+  `m_start`) grows; no MD allocated.
+- New-MD path: a fresh MD (`m_own = NULL`) is prepended to `pmdalt.mp_mfl`; the
+  first-ever add also sets `pmdalt.mp_mal = NULL`, `has_alt_ram = 1`
+  (`mp_rover` untouched).
+- Failure: no state change.
 
-### 1. Available "as of GEMDOS 0.19 only"
+### Side effects on hardware
 
-Programs that detect TOS ≥ 1.04 may call `Maddalt`. On older TOS,
-the trap returns whatever the dispatcher's unknown-function path
-yields (`EINVFN`). EmuTOS reports modern GEMDOS so applications
-calling `Maddalt` succeed unconditionally.
+None. (`Maddalt` records addresses; it does not probe or map the RAM.)
 
-### 2. Size rounding
+---
 
-`size &= -4L` rounds **down** to a multiple of 4. A `size` of 6
-becomes 4; a `size` of 3 becomes 0 → returns `-1`.
+## Error conditions
 
-### 3. ST-RAM overlap rejection
+| Condition | Source location | Returned value |
+|-----------|-----------------|----------------|
+| `size` non-positive after `& -4` | `bdos/umem.c:463-464` | `-1` |
+| Region overlaps ST-RAM | `bdos/umem.c:467-469` | `-1` |
+| MD pool exhausted (`xmgetmd` NULL), non-merge path | `bdos/umem.c:495-497` | `ENSMEM` (-39) |
 
-Two checks:
-- Region starts below `start_stram` but extends into it.
-- Region starts inside ST-RAM at all (`start < end_stram`).
+**Error paths not in Compendium:** the geometry rejection is a bare `-1L`, not a
+named GEMDOS error (`EINVFN`/`ERR`/`EIMBA` are all different values). Compendium/
+Profibuch document it simply as "`-1L` = error", which matches.
 
-The check missed a case where the region starts above ST-RAM but
-overlaps it from below — but that's geometrically impossible if
-`start_stram < end_stram` and the first check already covers it.
+---
 
-### 4. Adjacent-block merge
+## Verification criteria
 
-If the new region butts up against an existing free MD on `pmdalt`:
-- New region after free block: extend the free block's length.
-- New region before free block: extend the free block backwards.
+- **Nominal add (first):** with no alt-RAM yet, `Maddalt(A, S)` for a
+  non-ST-RAM `[A, A+S)` returns 0; afterwards `Mxalloc(-1, MX_TTRAM)` reports a
+  block of (rounded) size `S & -4`, and `has_alt_ram` is set.
+- **Merge:** a second `Maddalt(A + (S & -4), S2)` that butts against the first
+  free block returns 0 and extends the existing MD (no new MD consumed).
+- **Round-down:** `Maddalt(A, 6)` registers 4 bytes; `Maddalt(A, 3)` returns
+  `-1` (rounds to 0).
+- **ST-RAM overlap:** `Maddalt(start_stram, S)` (or any `start < end_stram`)
+  returns `-1`.
+- **MD exhaustion:** with the MD pool full and no adjacent block to merge,
+  `Maddalt(A, S)` returns `ENSMEM` (-39).
 
-**No new MD is allocated** in the merge path. This is important
-because `xmgetmd` can run out — the merge path avoids that risk.
+---
 
-### 5. Static alt-RAM carve-out
+## Edge cases discovered in source
 
-When EmuTOS itself uses alt-RAM for its BSS (`CONF_WITH_STATIC_ALT_RAM`),
-the boot code typically calls `Maddalt(start_of_altram, full_size)`.
-The function detects this exact base address and skips over the
-self-occupied portion before adding the rest.
+1. **`size &= -4` rounds *down*.** 6 → 4; 3 → 0 → `-1` (`bdos/umem.c:460`).
 
-### 6. First call vs. subsequent calls
+2. **Overlap predicate refuses everything below `end_stram`.** `start <
+   end_stram` alone rejects the region, so ranges entirely *below* ST-RAM start
+   are also refused (`bdos/umem.c:467-468`). NewTOS uses a tighter half-open
+   intersection predicate — see **D-010**.
 
-The first successful `Maddalt` sets `has_alt_ram = TRUE` and
-initialises `pmdalt`. Subsequent calls just prepend to the free
-list. There is no "remove alt-RAM" function — registration is
-permanent.
+3. **Adjacent-block merge consumes no MD.** The two merge arms extend an
+   existing free MD in place (`bdos/umem.c:472-483`), avoiding the `xmgetmd`
+   risk. The free list may end up unsorted across successive prepends, though
+   (see next).
 
-### 7. No coalescing on first add
+4. **First add sets `mp_mal = NULL`, not `mp_rover`.** The one-time init path
+   writes `pmdalt.mp_mfl = md; pmdalt.mp_mal = NULL; has_alt_ram = 1`
+   (`bdos/umem.c:509-514`); `mp_rover` is never touched. (Corrects the earlier
+   draft's fabricated `pmdalt.mp_rover = md`.)
 
-Note: when adding to an existing alt-RAM pool, EmuTOS prepends to
-`mp_mfl` *without* sorting or coalescing beyond the immediate
-adjacency check. The free list may end up unsorted. `xmxalloc`'s
-`ffit` doesn't depend on order, but `freeit` later expects sorted
-order — practical impact: the first allocation/free cycle on
-alt-RAM may produce non-coalesced free MDs that should have merged.
-Manually verifying this is on the PHASE-03 testing list.
+5. **Prepend without sort/coalesce (beyond the immediate adjacency check).**
+   Subsequent adds prepend to `mp_mfl` (`bdos/umem.c:506-508`); the list can
+   become unsorted. `ffit` does not require order, but `freeit` inserts
+   address-sorted and coalesces, so the lists self-heal on the first
+   alloc/free cycle. Flagged for the PHASE-04 alt-RAM test list.
 
-### 8. Owner of new MD
+6. **Static-alt-RAM carve-out.** With `CONF_WITH_STATIC_ALT_RAM`, when `start`
+   exactly equals EmuTOS's own static-data base, the function advances past the
+   occupied `[_static_altram_start, _static_altram_end)` before adding the rest
+   (`bdos/umem.c:485-493`).
 
-`m_own = NULL` — the region is added to the free list directly,
-not pre-allocated to anyone.
+7. **New MD is free (`m_own = NULL`), one-way registration.** The region joins
+   the free list unowned; there is no de-registration call
+   (`bdos/umem.c:499-501`).
+
+---
 
 ## Dependencies
 
-- `xmgetmd()` — fresh MD from the MD pool.
-- `pmdalt` MPB.
-- `has_alt_ram` flag.
+### Requires (must be initialized / functional)
 
-Used by: BIOS startup (registers physical alt-RAM detected at
-boot), VME-card drivers, hardware mod ROMs.
+- `umem_init` — `start_stram`/`end_stram` and `has_alt_ram = 0` initial state.
+- `xmgetmd` — MD meta-allocator (for the non-merge path).
+
+### Used by
+
+- BIOS/board startup registering physical alt-RAM detected at boot
+  (`altram_init` under `CONF_WITH_ALT_RAM`); VME-card / hardware-mod ROMs.
+
+---
+
+## Related data structures
+
+- `docs/api/structures/md.md` — `MD`/`MPB`, `pmdalt`.
+- `docs/api/gemdos/_state.md` §8 — the pool model.
+- `docs/api/gemdos/memory/44-mxalloc.md` — the consumer of `pmdalt`.
+
+---
 
 ## Cross-references
 
-- **Compendium:** "Maddalt" — agrees on signature and `-1L` error.
-- **Profibuch:** "Maddalt (0x14)" — agrees.
-- **`docs/api/gemdos/memory/44-mxalloc.md`** — consumer of `pmdalt`.
-- **`docs/api/structures/md.md`** — MD/MPB.
+### Atari Compendium
 
-## Configuration
+- Not present in `references/`. Cross-check deferred. Documents the signature
+  and the `-1L` error — consistent with EmuTOS.
 
-- `CONF_WITH_ALT_RAM` — required.
-- `CONF_WITH_STATIC_ALT_RAM` — adds the static-data carve-out.
+### Atari Profibuch
+
+- Not present in `references/`. Cross-check deferred.
+
+### Discrepancy log
+
+- **D-010** — NewTOS uses a half-open intersection overlap predicate instead of
+  EmuTOS's `start < end_stram`, accepting regions entirely below ST-RAM. No
+  impact on supported boards.
+
+---
+
+## Configuration / version notes
+
+- `CONF_WITH_ALT_RAM` **required** (default 1 on the full build, 0 on cut-down
+  machines). Historically "available as of GEMDOS 0.19"; EmuTOS reports modern
+  GEMDOS so the call always exists when alt-RAM support is compiled in.
+- `CONF_WITH_STATIC_ALT_RAM` adds the static-data carve-out.
+
+---
 
 ## NewTOS implementation notes
 
-Phase 04 (D7) plan:
+(Empty during Phase 00.)
 
-- **All DRAM is discovered at boot** via the device tree
-  (PHASE-03 D8). The ST-RAM and TT-RAM MPBs already cover everything
-  we know about \u2014 `Maddalt` is therefore a *no-op for in-range
-  addresses* and an *additive insertion* only when the caller
-  describes a region outside the existing MPB extents.
-- **Validation.** Reject ranges that overlap any existing MPB free
-  or allocated MD with return value `-1` (matches EmuTOS
-  `xmaddalt` failure semantics for double-add).
-- **Where it ends up.** The accepted range is added to `pmdalt`
-  (TT-RAM MPB), regardless of its physical location \u2014 EmuTOS
-  treats anything passed to `Maddalt` as alt-RAM by definition.
-- **Adjacency.** Coalesce with the neighbouring free MD if the new
-  region is contiguous; this avoids consuming a fresh MD for
-  back-to-back `Maddalt` calls.
-- **Out of scope.** No DMA-safety reclassification: AArch64 has no
-  ST-RAM/alt-RAM distinction at the hardware level, the split is
-  purely a TOS-API contract.
+PHASE-04 (D7): all DRAM is discovered at boot from the device tree, so the
+ST-RAM and TT-RAM MPBs already cover known memory — `Maddalt` is a no-op for
+in-range addresses and an additive insertion only for a region outside the
+existing extents. Reject overlaps with any existing MPB MD (`-1`, per D-010's
+tighter predicate). Accepted ranges go to `pmdalt` regardless of physical
+location (EmuTOS treats anything passed here as alt-RAM by definition).
+Coalesce with a contiguous neighbour to avoid consuming a fresh MD. **Out of
+scope:** DMA-safety reclassification — AArch64 has no ST/alt-RAM hardware
+distinction; the split is purely a TOS-API contract.

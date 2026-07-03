@@ -1,180 +1,277 @@
-# `Mxalloc` — GEMDOS 0x44
+# `Mxalloc` (GEMDOS 0x44)
 
-> Phase 00 spec. Source: EmuTOS @ `1a7484ab` —
-> `bdos/umem.c:234` (`xmxalloc`).
+> Phase 00 spec (full-contract template). Source: EmuTOS @ `1a7484ab`.
+> Verified against `bdos/umem.c:234` (`xmxalloc`).
+
+> **Contract vs. reference** — see [`docs/COMPATIBILITY.md`](../../../COMPATIBILITY.md).
+> Contract: trap ID/ABI, the `mode` 0-3 pool-selection semantics *as observed*
+> (which pool a block comes from and the preferred/fallback order), the `-1L`
+> largest-free query, the pointer / `0L` / LONG result shapes, `mode & 0x03`.
+> Reference: `ffit`, the MD/MPB lists, the `pmd`/`pmdalt` split.
 
 ## EmuTOS source
 
-- **Primary:** `bdos/umem.c:234` — `void *xmxalloc(long amount, int mode)`
-- **Helpers:** `ffit()` (`bdos/mem.c`) — first-fit allocator,
-  `dump_mem_map()` — debug only
-- **Globals read/written:** `pmd` (ST-RAM MPB), `pmdalt` (alt-RAM MPB)
-- **Build config:** `CONF_WITH_ALT_RAM`.
+**Primary location:** `bdos/umem.c:234` — `void *xmxalloc(long amount, int mode)`.
 
-## Source extraction (essence)
+**Installed handler / vector:** (none) — direct `funcs[]` entry `0x44` =
+`xmxalloc`, `wparms = 3` (`bdos/bdosmain.c:264`).
 
-```c
-void *xmxalloc(long amount, int mode)
-{
-    MD *m;
-    mode &= MX_MODEMASK;     /* keep only bits 0..1 */
+**Helpers called:**
+- `bdos/iumem.c:35` — `ffit()` — first-fit search on a pool's `mp_mfl`; on a
+  real allocation it also splits the free MD, prepends the allocated MD to
+  `mp_mal`, and sets `m_own = run`. For `amount == -1L` it instead returns the
+  largest `m_length` (cast to a pointer-shaped value), touching no state.
 
-    /* amount == -1: report largest free block in selected pool(s) */
-    if (amount == -1L) {
-        switch (mode) {
-        case MX_STRAM:     return ffit(-1L, &pmd);
-        case MX_TTRAM:     return ffit(-1L, &pmdalt);
-        case MX_PREFSTRAM:
-        case MX_PREFTTRAM: {
-            void *r = ffit(-1L, &pmd);
-            void *t = ffit(-1L, &pmdalt);
-            return r > t ? r : t;          /* biggest of either */
-        }
-        default: return NULL;
-        }
-    }
+**Headers / type definitions used:**
+- `include/bdosdefs.h:18-22` — `MX_STRAM=0`, `MX_TTRAM=1`, `MX_PREFSTRAM=2`,
+  `MX_PREFTTRAM=3`, `MX_MODEMASK=0x03`.
+- `include/bdosdefs.h:108-115` — `MD`.
+- `bdos/mem.h` — `MALLOC_ALIGN_ALTRAM = 3`; `extern MPB pmd, pmdalt`.
 
-    if (amount <= 0) return NULL;
+**System variables / globals read:**
+- `pmd` (`bdos/umem.c:35`) — ST-RAM MPB.
+- `pmdalt` (`bdos/umem.c:37`, `CONF_WITH_ALT_RAM`) — alt-RAM (TT-RAM) MPB.
+- `run` — via `ffit`, tags the new MD's `m_own`.
 
-    switch (mode) {
-    case MX_STRAM:     m = ffit(amount, &pmd);  break;
-    case MX_TTRAM:     m = ffit(amount, &pmdalt); break;
-    case MX_PREFSTRAM: m = ffit(amount, &pmd);
-                       if (!m) m = ffit(amount, &pmdalt);  break;
-    case MX_PREFTTRAM: m = ffit(amount, &pmdalt);
-                       if (!m) m = ffit(amount, &pmd);     break;
-    default:           m = NULL;
-    }
-    return m ? m->m_start : NULL;
-}
-```
+**System variables / globals written:**
+- The selected pool's `mp_mfl`/`mp_mal` lists and the split/allocated MDs
+  (`bdos/iumem.c:103-134`). Query and failure paths write nothing.
+
+**Build configuration affecting this function:**
+- `CONF_WITH_ALT_RAM` — when **0**, `pmdalt` is absent and the `MX_TTRAM` arms
+  are `#if`'d out of the switch, so `mode == MX_TTRAM (1)` falls to `default →
+  NULL`; `MX_PREFSTRAM`/`MX_PREFTTRAM` have no alt-RAM fallback and effectively
+  become ST-RAM-only.
+
+---
+
+## Source extraction summary
+
+`Mxalloc` is the general allocator that `Malloc` wraps. It takes a size and a
+`mode` selecting one of two logical pools — ST-RAM (`pmd`) or alternate/TT-RAM
+(`pmdalt`) — with two "preferred" modes that fall back to the other pool. The
+very first thing it does is `mode &= MX_MODEMASK` (`= 0x03`), keeping only bits
+0-1; any higher bits (Atari documents bits 4+ as supervisor / memory-protection
+/ globally-accessible flags) are silently discarded — EmuTOS has no MMU-based
+protection to honour them.
+
+For `amount == -1L` it performs the largest-free-block **query**: `MX_STRAM`
+reports `ffit(-1L,&pmd)`, `MX_TTRAM` reports `ffit(-1L,&pmdalt)`, and both
+"preferred" modes report the larger of the two pools' biggest single free
+blocks (verified on TOS3 per the source comment). An unknown mode returns NULL.
+The query is a pure scan for `max(m_length)` on the free list — it does not
+allocate and never reflects total free space, only the biggest single block.
+
+For a normal `amount > 0`, it dispatches to `ffit` on the pool(s) implied by
+the mode: `MX_STRAM` → `pmd` only; `MX_TTRAM` → `pmdalt` only; `MX_PREFSTRAM` →
+`pmd`, then `pmdalt` if that returned NULL; `MX_PREFTTRAM` → `pmdalt`, then
+`pmd`. On success it returns `m->m_start`; on any failure (no fitting block,
+`amount <= 0`, unknown mode, or a pool that doesn't exist in this build) it
+returns `NULL`. A single allocation always lives entirely in one pool — there
+is no split-across-pools path.
+
+---
 
 ## Trap interface
 
-| | |
-|--|--|
-| Trap | 1 (GEMDOS) |
-| Function ID | `0x0044` |
-| WORD args | 3 (LONG `amount` + WORD `mode`) |
-| Stack frame | `+6: mode (WORD)`, `+2: amount (LONG)`, `+0: 0x0044` |
+- **Trap number:** 1 (GEMDOS)
+- **Function ID:** 0x44
+- **Stack frame on entry (m68k):**
+  ```
+  +6: mode   (WORD)
+  +2: amount (LONG)
+   0: function_id (word) = 0x0044
+  ```
+- **Total parameter bytes:** 6 (LONG + WORD) → `wparms = 3`.
+- **Native (AArch64) ABI:** ID `0x44` in `x8`; `amount` in `x0`, `mode` in
+  `x1`. Result in `x0`, LONG: a **pointer** occupies the full 64-bit `x0`; a
+  **`0L`/NULL** failure is all-zero; the `-1L` **size query** returns a LONG.
+
+  | m68k stack | AArch64 reg | Name     | Type / size |
+  |------------|-------------|----------|-------------|
+  | +2         | `x0`        | `amount` | `LONG` (32/`long`) |
+  | +6         | `x1`        | `mode`   | `WORD` (16) — masked to `& 0x03` |
+
+---
 
 ## Inputs
 
-| Pos | Name     | Type | Range / meaning                            |
-|-----|----------|------|--------------------------------------------|
-| 0   | `amount` | LONG | bytes to allocate, `-1L` for query         |
-| 1   | `mode`   | WORD | pool selector (only bits 0..1 used)        |
+| Position | Name     | Type   | Size | Source location   | Notes |
+|----------|----------|--------|------|-------------------|-------|
+| arg0     | `amount` | `long` | 4    | `bdos/umem.c:234` | bytes to allocate; `-1L` = largest-free query; `<= 0` (else) → NULL |
+| arg1     | `mode`   | `int`  | 2    | `bdos/umem.c:241` | pool selector; masked with `MX_MODEMASK (0x03)` on entry |
 
-### `mode` values (`include/bdosdefs.h:18-22`)
+### `mode` values (`include/bdosdefs.h:18-22`), after `& MX_MODEMASK (0x03)`
 
-| Mode | Constant         | Behaviour                              |
-|------|------------------|----------------------------------------|
-| 0    | `MX_STRAM`       | ST-RAM only                            |
-| 1    | `MX_TTRAM`       | TT-RAM only                            |
-| 2    | `MX_PREFSTRAM`   | ST-RAM preferred, fallback TT-RAM      |
-| 3    | `MX_PREFTTRAM`   | TT-RAM preferred, fallback ST-RAM      |
+| Value | Constant       | Allocation behaviour |
+|------:|----------------|----------------------|
+| 0 | `MX_STRAM`     | ST-RAM (`pmd`) only |
+| 1 | `MX_TTRAM`     | TT-/alt-RAM (`pmdalt`) only |
+| 2 | `MX_PREFSTRAM` | ST-RAM preferred; fall back to alt-RAM |
+| 3 | `MX_PREFTTRAM` | alt-RAM preferred; fall back to ST-RAM |
 
-`mode & MX_MODEMASK = mode & 0x03` — upper bits silently ignored
-(some Atari documentation defines bits 4..15 for "memory protection
-mode" / "globally accessible"; EmuTOS does not implement those).
+Bits 2-15 are cleared by the mask and cannot influence the call. Some Atari
+documentation assigns bits 4+ to supervisor/memory-protection/global flags;
+this EmuTOS build ignores them (no MMU protection).
+
+---
 
 ## Outputs
 
-| | |
-|--|--|
-| Reg | D0 |
-| Type | LONG |
+### Return value
 
-| Case                                  | Return                          |
-|---------------------------------------|---------------------------------|
-| `amount > 0`, success                 | pointer to allocated region     |
-| `amount > 0`, no memory in pool       | `0L` (NULL)                     |
-| `amount == -1L`                       | size of largest free block (LONG) |
-| `amount <= 0` (and != -1L)            | `0L`                            |
-| `mode` invalid                        | `0L`                            |
-| `mode == MX_TTRAM` without alt-RAM    | `0L` (CONF_WITH_ALT_RAM=0)      |
+- **Register:** D0 / `x0`
+- **Type:** LONG (pointer, or size, or `0L`)
+- **Encoding:**
 
-## Errors
+  | Case | Return |
+  |------|--------|
+  | `amount > 0`, success | pointer to the region (full 64-bit on native) |
+  | `amount > 0`, selected pool(s) have no fitting block | `0L` (NULL) |
+  | `amount == -1L` | size of the largest single free block in the selected pool(s) |
+  | `amount <= 0` (and ≠ -1L) | `0L` (NULL) |
+  | `mode` (after mask) not 0-3, or a needed pool absent in build | `0L` (NULL) |
 
-No GEMDOS error codes returned. `0L` (NULL) covers all failure
-modes; callers must use the error log / context to distinguish.
+- **Source location:** `bdos/umem.c:327` (`ret_value = m->m_start`),
+  `:247-278` (query), `:324` (NULL).
 
-## Edge cases
+### Side effects on global state
 
-- **`MX_MODEMASK = 0x03`** masks the mode immediately on entry.
-  Calls passing `mode = 0x40` (Atari's "memory protection: globally
-  accessible") collapse to `MX_STRAM`. Programs depending on the
-  protection-mode behaviour will malfunction silently — but EmuTOS
-  has no MMU-based protection so the bits cannot be honoured anyway.
-- **`amount == -1L` query**: returns the size of the largest *single*
-  free MD, not the sum of all free space. Programs that want
-  total-free-bytes must walk the free list themselves (or use the
-  undocumented Atari `Maddalt` introspection — there is none).
-- **`MX_PREFSTRAM` fallback** retries the alt pool only if the
-  primary `ffit` returned NULL. There is no "split between pools"
-  fallback — a single allocation always lives in one pool.
-- **Negative `amount` other than `-1L`**: returns `0L`. Some Atari
-  documentation suggests `-2L` etc. have meanings; EmuTOS treats
-  them all as failure.
-- **Owner attribution**: `ffit` sets `m_own = run` on success. The
-  block belongs to the calling process and is freed by `Pterm`'s
-  `free_all_owned` path.
-- **Alignment**: same as `Malloc`; depends on pool. ST-RAM aligned to
-  `malloc_align_stram` (typically WORD); alt-RAM aligned to LONG
-  (`MALLOC_ALIGN_ALTRAM = 3`).
-- **`amount` rounding**: the requested size may be rounded up by
-  `ffit` to the alignment grain before the MD is sized. The caller
-  sees a region at least as large as requested, but may not see the
-  rounded-up size unless they query via `Mshrink(..., 0)`-then-fail.
+- Successful allocation: split/consume a free MD in the chosen pool, prepend
+  the allocated MD to that pool's `mp_mal`, set `m_own = run`
+  (`bdos/iumem.c:103-134`); a split consumes one MD from the OS-memory MD pool.
+- Query and all failures: no state change.
+
+### Side effects on hardware
+
+None.
+
+---
+
+## Error conditions
+
+| Condition | Source location | Returned value |
+|-----------|-----------------|----------------|
+| `amount > 0`, no fitting free block in selected pool(s) | `bdos/iumem.c:97-101` | `0L` (NULL) |
+| `amount == 0` or `amount < -1L` | `bdos/umem.c:284-286` | `0L` (NULL) |
+| `mode == MX_TTRAM` (1) with `CONF_WITH_ALT_RAM == 0` | `bdos/umem.c:315-317` (falls to `default`) | `0L` (NULL) |
+| unknown masked `mode` | `bdos/umem.c:274-276,315-317` | `0L` (NULL) |
+| MD-pool exhausted during split | `bdos/iumem.c:113-117` | `0L` (NULL) |
+
+**Error paths not in Compendium:** `Mxalloc` never returns a negative GEMDOS
+error code; every failure is `0L`. (NewTOS may choose to return `EINVFN` for a
+genuinely-unknown mode — see notes — but EmuTOS returns NULL.)
+
+---
+
+## Verification criteria
+
+- **Nominal ST-RAM alloc:** `Mxalloc(4096, MX_STRAM)` with ST-RAM room returns
+  a non-NULL pointer inside the ST-RAM pool; `m_own == run`.
+- **Nominal TT-RAM alloc:** `Mxalloc(4096, MX_TTRAM)` with alt-RAM present
+  returns a pointer inside `pmdalt`.
+- **Preferred fallback:** `Mxalloc(N, MX_PREFTTRAM)` where `pmdalt` cannot fit
+  `N` but `pmd` can returns an ST-RAM pointer; the symmetric `MX_PREFSTRAM`
+  falls back to alt-RAM.
+- **Largest-free query (mode 0):** `Mxalloc(-1, MX_STRAM)` returns the largest
+  single free ST-RAM block size and changes no state.
+- **Largest-free query (preferred):** `Mxalloc(-1, MX_PREFTTRAM)` returns the
+  larger of the two pools' biggest free blocks.
+- **TT-RAM unavailable:** `Mxalloc(4096, MX_TTRAM)` when the build has no
+  alt-RAM returns `0L`; likewise `Mxalloc(-1, MX_TTRAM)`.
+- **Mode masking:** `Mxalloc(4096, 0x40 | MX_STRAM)` behaves exactly as
+  `MX_STRAM` (the 0x40 bit is dropped).
+- **Zero / bad amount:** `Mxalloc(0, m)` and `Mxalloc(-2, m)` return `0L`.
+
+---
+
+## Edge cases discovered in source
+
+1. **`mode &= 0x03` on entry.** Any protection/supervisor bits are discarded
+   before dispatch (`bdos/umem.c:241`). A program passing `mode = 0x40`
+   ("globally accessible") gets `MX_STRAM` behaviour and no protection.
+
+2. **`amount == -1L` reports one block, not total free.** For `MX_PREFSTRAM`/
+   `MX_PREFTTRAM` it is the **larger** of the two pools' biggest single free
+   blocks (`bdos/umem.c:257-273`), not the combined free space.
+
+3. **No cross-pool split.** A single allocation is served entirely from one
+   pool; the "preferred" modes only retry the *other* pool wholesale, they do
+   not split a request across both.
+
+4. **`MX_TTRAM` without alt-RAM → NULL.** With `CONF_WITH_ALT_RAM == 0` the
+   `case MX_TTRAM` arm is compiled out, so mode 1 (alloc *and* query) hits
+   `default` and returns NULL — not an ST-RAM allocation.
+
+5. **Owner attribution.** `ffit` sets `m_own = run` (`bdos/iumem.c:134`); the
+   block is freed automatically at the owner's `Pterm` via `free_all_owned`
+   (`bdos/proc.c:92-101,136-139`).
+
+6. **Pointer-shaped query value.** `ffit(-1L,…)` casts the max length to
+   `(MD *)maxval` (`bdos/iumem.c:73`) and `xmxalloc` returns it directly; the
+   caller must read it as a LONG size, not dereference it.
+
+---
 
 ## Dependencies
 
-- `ffit` (`bdos/mem.c`) — first-fit search + MD split + ownership
-  tagging.
-- `pmd`, `pmdalt` MPBs initialised at boot.
+### Requires (must be initialized / functional)
 
-Used by: `Malloc` wrapper, AES (which sets `MX_PREFTTRAM` for large
-buffers), drivers needing DMA-safe ST-RAM via `MX_STRAM`.
+- `umem_init` (`bdos/umem.c:549`) — seeds `pmd`, `start_stram`/`end_stram`,
+  `malloc_align_stram`.
+- `pmdalt` seeded by one or more `Maddalt` calls (or `altram_init`) for the
+  TT-RAM paths — see [`14-maddalt.md`](14-maddalt.md).
+- `ffit`, `xmgetmd` (MD meta-allocator).
+
+### Used by
+
+- `Malloc` (0x48) — supplies the mode from `PF_TTRAMMEM`.
+- AES / drivers that want a specific pool (e.g. `MX_STRAM` for DMA-safe ST-RAM,
+  `MX_PREFTTRAM` for large buffers).
+
+---
+
+## Related data structures
+
+- `docs/api/structures/md.md` — `MD`/`MPB`, the pool lists, `ffit`.
+- `docs/api/gemdos/_state.md` §8 — the `pmd`/`pmdalt` pool model and `MX_*`.
+
+---
 
 ## Cross-references
 
-- **Compendium:** "Mxalloc" — agrees on modes 0..3 and `-1L`
-  behaviour.
-- **Profibuch:** "Mxalloc (0x44)" — agrees, notes higher mode bits
-  for memory protection (not implemented).
-- **`docs/api/gemdos/memory/48-malloc.md`** — wrapper.
-- **`docs/api/gemdos/memory/49-mfree.md`** — companion.
-- **`docs/api/structures/md.md`** — pool layout.
+### Atari Compendium
 
-## Configuration
+- Not present in `references/`. Cross-check deferred. Historically documents
+  modes 0-3 and the `-1L` query — consistent with EmuTOS; the higher
+  "protection" mode bits it lists are **not** honoured by this build.
 
-- `CONF_WITH_ALT_RAM` — without it, modes 1 and 3 always fail and 2
-  collapses to ST-RAM-only. Mode 1 returns `NULL`, mode 3 returns
-  whatever ST-RAM gives.
+### Atari Profibuch
+
+- Not present in `references/`. Cross-check deferred.
+
+---
+
+## Configuration / version notes
+
+- `CONF_WITH_ALT_RAM` (default 1 on the full build): without it, modes 1 and
+  the alt-RAM half of 2/3 disappear (mode 1 → NULL, modes 2/3 → ST-RAM only).
+- Alt-RAM allocations are always 4-byte aligned (`MALLOC_ALIGN_ALTRAM = 3`);
+  ST-RAM follows `malloc_align_stram` (2 or 4 bytes) — see
+  [`4a-mshrink.md`](4a-mshrink.md).
+
+---
 
 ## NewTOS implementation notes
 
-Phase 04 (D8) plan:
+(Empty during Phase 00.)
 
-- **Two pools always present.** Both ST-RAM and TT-RAM MPBs are
-  initialised at BIOS bring-up from the corresponding
-  `bios::machine::layout::Pool` extents. There is no "no TT-RAM"
-  configuration on AArch64 — the additive layout from PHASE-03 D1
-  guarantees `>= 256 MiB` of TT-RAM on every supported board.
-- **Mode dispatch.** `mode &= MX_MODEMASK` (clear the supervisor /
-  global bits) before the switch. Then:
-  - 0 (`MX_STRAM`)     → search `pmd` only.
-  - 1 (`MX_TTRAM`)     → search `pmdalt` only.
-  - 2 (`MX_PREFSTRAM`) → search `pmd`, on failure `pmdalt`.
-  - 3 (`MX_PREFTTRAM`) → search `pmdalt`, on failure `pmd`.
-  Other mode values → return `EINVFN` (the documented EmuTOS path).
-- **Probe semantics.** `Mxalloc(-1, mode)` returns the largest free
-  MD in the selected pool — implemented as a separate `largest_free`
-  scan on `mp_mfl` so callers can size buffers without committing.
-- **Atari divergence — protection bits ignored.** Atari documents
-  bits 4..15 of `mode` as supervisor/global flags. EmuTOS clears
-  them via `MX_MODEMASK` before dispatch (`bdos/umem.c:241`); we do
-  the same. Programs that rely on the supervisor-only flag for
-  safety on real hardware will silently get a normal allocation on
-  NewTOS. Recorded as a known divergence; revisit when Phase 06
-  introduces process privilege.
+PHASE-04 (D8): two MPBs always present (ST-RAM over `Pool::Stram`, TT-RAM over
+`Pool::Ttram`). `mode &= MX_MODEMASK` then dispatch 0/1/2/3 as above.
+`Mxalloc(-1, mode)` is a `largest_free` scan on `mp_mfl` so callers can size
+without committing. **Divergence to decide:** whether an unknown masked mode
+returns `EINVFN` (cleaner) or `NULL` (EmuTOS) — the earlier draft claimed
+`EINVFN`; EmuTOS returns `NULL`, so `EINVFN` would be a *deliberate* documented
+divergence, not the extracted contract. **Protection bits** (Atari bits 4+)
+remain ignored until Phase 06 introduces process privilege; recorded as a known
+divergence from Atari docs (EmuTOS already ignores them).

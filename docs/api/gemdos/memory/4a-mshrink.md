@@ -1,178 +1,262 @@
-# `Mshrink` — GEMDOS 0x4A
+# `Mshrink` (GEMDOS 0x4A)
 
-> Phase 00 spec. Source: EmuTOS @ `1a7484ab` —
-> `bdos/umem.c:170` (`xsetblk`).
+> Phase 00 spec (full-contract template). Source: EmuTOS @ `1a7484ab`.
+> Verified against `bdos/umem.c:170` (`xsetblk`) and `bdos/iumem.c:228`
+> (`shrinkit`).
+
+> **Contract vs. reference** — see [`docs/COMPATIBILITY.md`](../../../COMPATIBILITY.md).
+> Contract: trap ID/ABI, the unused reserved `n` word, the shrink-only rule
+> (grow → `EGSBF`), the `len == 0` ⇒ free equivalence, the
+> `E_OK`/`EIMBA`/`EGSBF`/`ERR` result codes, alignment rounding of `len`.
+> Reference: `find_mpb`, `shrinkit`, `freeit`, the MD/MPB lists.
 
 ## EmuTOS source
 
-- **Primary:** `bdos/umem.c:170` — `long xsetblk(int n, void *blk, long len)`
-- **Helpers:** `find_mpb`, `freeit`, `shrinkit` (`bdos/mem.c`).
+**Primary location:** `bdos/umem.c:170` — `long xsetblk(int n, void *blk, long len)`.
 
-## Source extraction
+**Installed handler / vector:** (none) — direct `funcs[]` entry `0x4A` =
+`xsetblk`, `wparms = 5` (`bdos/bdosmain.c:270`).
 
-```c
-long xsetblk(int n, void *blk, long len)
-{
-    MD *p;
-    MPB *mpb = find_mpb(blk);
-    if (!mpb) return EIMBA;
+**Helpers called:**
+- `bdos/umem.c:99` — `find_mpb()` — pool the block lives in.
+- `bdos/iumem.c:228` — `shrinkit()` — allocate a tail MD, place it on `mp_mal`,
+  update the block length, then `freeit` the tail (which coalesces).
+- `bdos/iumem.c:144` — `freeit()` — reached for the `len == 0` case and inside
+  `shrinkit`.
 
-    for (p = mpb->mp_mal; p; p = p->m_link)
-        if ((UBYTE *)blk == p->m_start) break;
-    if (!p) return EIMBA;
+**Headers / type definitions used:**
+- `include/bdosdefs.h:108-115` — `MD`.
+- `bdos/mem.h` — `MALLOC_ALIGN_ALTRAM = 3`; `extern ULONG malloc_align_stram`.
+- `include/gemerror.h:19,20,48,60` — `E_OK = 0`, `ERR = -1`, `EIMBA = -40`,
+  `EGSBF = -67`.
 
-    /* alignment: ST-RAM rounds to malloc_align_stram, alt-RAM to LONG */
-    if (mpb == &pmd)
-        len = (len + malloc_align_stram) & ~malloc_align_stram;
-    else
-        len = (len + MALLOC_ALIGN_ALTRAM) & ~MALLOC_ALIGN_ALTRAM;
+**System variables / globals read:**
+- `malloc_align_stram` (`bdos/umem.c:200`) — ST-RAM alignment grain.
+- `pmd`/`pmdalt`, `start_stram`/`end_stram` — via `find_mpb`.
 
-    if (p->m_length <  len) return EGSBF;     /* requested grow */
-    if (p->m_length == len) return E_OK;      /* no change */
-    if (len == 0) {                           /* equivalent to Mfree */
-        freeit(p, mpb);
-        return E_OK;
-    }
+**System variables / globals written:**
+- The block's MD `m_length` (shrunk) and, for a real shrink, a new tail MD on
+  `mp_mal` immediately freed into `mp_mfl` (coalesced) (`bdos/iumem.c:242-262`).
 
-    if (shrinkit(p, mpb, len) < 0) return ERR;
-    return E_OK;
-}
-```
+**Build configuration affecting this function:**
+- `CONF_WITH_ALT_RAM` — only then can `find_mpb` route to `pmdalt`; the
+  alt-RAM alignment path (`MALLOC_ALIGN_ALTRAM`) is otherwise unreached.
 
-The `n` argument is **unused** — it is the historic "block number"
-parameter from CP/M roots. Atari TOS preserves it for ABI
-compatibility.
+---
+
+## Source extraction summary
+
+`Mshrink` reduces the size of an already-allocated block, returning the freed
+tail to the pool. The first argument `n` is a historical CP/M "block number"
+reserved word — it is **completely unused**; the m68k bindings hard-code it and
+the code never reads it.
+
+`xsetblk` locates the block: `find_mpb(blk)` picks the pool, then a linear scan
+of `mp_mal` finds the MD whose `m_start == blk` (else `EIMBA`). It rounds the
+new length **up** to the pool's alignment grain — `malloc_align_stram + 1` for
+ST-RAM (2 or 4 bytes) or 4 bytes for alt-RAM — then compares against the
+current length:
+
+- rounded `len` **>** current length → `EGSBF` (you cannot grow with
+  `Mshrink`);
+- rounded `len` **==** current length → `E_OK`, nothing to do;
+- rounded `len` **== 0** (only when the caller passed 0) → treated exactly like
+  `Mfree`: the whole block is `freeit`-ed and `E_OK` returned;
+- otherwise → `shrinkit`.
+
+`shrinkit` needs a fresh MD to describe the freed tail. It calls `xmgetmd`; if
+the OS-memory MD pool is exhausted it returns -1 and `Mshrink` returns `ERR`
+(-1) with the original block **unchanged**. On success it sets the tail MD's
+`m_start = blk + newlen`, `m_length = old_length - newlen`, links it onto
+`mp_mal`, shrinks the original MD's `m_length` to `newlen`, and then calls
+`freeit` on the tail — which unlinks it from `mp_mal`, inserts it address-sorted
+into `mp_mfl`, and coalesces with the following free block if contiguous.
+
+Note that the tail MD's `m_own` is **not** explicitly set (it holds whatever
+`xmgetmd` left), and `freeit` does not clear it either — as in `Mfree`, the free
+flag is list membership, not `m_own`. The original (kept) MD retains its owner.
+
+---
 
 ## Trap interface
 
-| | |
-|--|--|
-| Trap | 1 (GEMDOS) |
-| Function ID | `0x004A` |
-| WORD args | 5 (WORD `n` + LONG `blk` + LONG `len`) |
-| Stack frame | `+8: len (LONG)`, `+4: blk (LONG)`, `+2: n (WORD)`, `+0: 0x004A` |
+- **Trap number:** 1 (GEMDOS)
+- **Function ID:** 0x4A
+- **Stack frame on entry (m68k):**
+  ```
+  +8: len (LONG)
+  +4: blk (LONG, void *)
+  +2: n   (WORD, reserved/unused)
+   0: function_id (word) = 0x004A
+  ```
+- **Total parameter bytes:** 10 (WORD + LONG + LONG) → `wparms = 5`.
+- **Native (AArch64) ABI:** ID `0x4A` in `x8`; `n` in `x0`, `blk` (pointer) in
+  `x1`, `len` in `x2`. LONG result (error code) sign-extended into `x0`.
+
+  | m68k stack | AArch64 reg | Name  | Type / size |
+  |------------|-------------|-------|-------------|
+  | +2         | `x0`        | `n`   | `WORD` (16) — reserved, ignored |
+  | +4         | `x1`        | `blk` | `void *` (ptr) |
+  | +8         | `x2`        | `len` | `LONG` (32/`long`) |
+
+---
 
 ## Inputs
 
-| Pos | Name | Type   | Range / meaning                                |
-|-----|------|--------|------------------------------------------------|
-| 0   | `n`  | WORD   | unused; historically zero                      |
-| 1   | `blk`| void * | start address of allocated block               |
-| 2   | `len`| LONG   | new block length in bytes; 0 == free           |
+| Position | Name  | Type     | Size | Source location   | Notes |
+|----------|-------|----------|------|-------------------|-------|
+| arg0     | `n`   | `int`    | 2    | `bdos/umem.c:170` | reserved; **never read** |
+| arg1     | `blk` | `void *` | 4    | `bdos/umem.c:177` | must equal an allocated block's `m_start` |
+| arg2     | `len` | `long`   | 4    | `bdos/umem.c:200` | new length; rounded **up** to alignment; 0 ⇒ free |
+
+---
 
 ## Outputs
 
-| Reg | D0 |
-| --- | --- |
-| Type | LONG (GEMDOS error code) |
+### Return value
 
-| Case                                                | Return       |
-|-----------------------------------------------------|--------------|
-| Shrink succeeded                                    | `E_OK`       |
-| `len == p->m_length` after alignment                | `E_OK`       |
-| `len == 0` after alignment (block freed)            | `E_OK`       |
-| `blk` not the start of any allocated MD             | `EIMBA` (-40) |
-| `len` (after rounding) > current block length       | `EGSBF` (-67) |
-| MD-pool exhaustion during split                     | `ERR` (-1)   |
+- **Register:** D0 / `x0`
+- **Type:** LONG (GEMDOS error code)
+- **Encoding:**
 
-## Errors
+  | Case | Return |
+  |------|--------|
+  | Shrink succeeded | `E_OK` (0) |
+  | rounded `len` == current length (no-op) | `E_OK` (0) |
+  | `len == 0` (block freed like `Mfree`) | `E_OK` (0) |
+  | `blk` not a block start | `EIMBA` (-40) |
+  | rounded `len` > current length (grow attempt) | `EGSBF` (-67) |
+  | MD pool exhausted while splitting the tail | `ERR` (-1) |
 
-| Code | Constant | Cause                                              |
-|-----:|----------|----------------------------------------------------|
-| -40  | `EIMBA`  | invalid block address                              |
-| -67  | `EGSBF`  | "Growth attempt" — new size larger than current    |
-| -1   | `ERR`    | could not allocate MD struct for the split half    |
+- **Source location:** `bdos/umem.c:194,211,213,217,224,228`.
 
-## Edge cases
+### Side effects on global state
 
-### 1. Alignment rounding
+- Real shrink: original MD's `m_length` reduced; a tail MD is created, briefly
+  on `mp_mal`, then moved to `mp_mfl` and coalesced (`bdos/iumem.c:242-262`).
+- `len == 0`: whole MD moved from `mp_mal` to `mp_mfl` (coalesced).
+- No-op / error: no change.
 
-`len` is rounded **up** to the pool's alignment grain. So
-`Mshrink(blk, 1)` rounds to 2 bytes (ST-RAM) or 4 bytes (alt-RAM).
-The caller cannot shrink below the alignment unit.
+### Side effects on hardware
 
-### 2. `len == 0` ⇒ free
+None.
 
-After alignment, `len == 0` only when the original `len` was 0.
-EmuTOS treats this as `Mfree` — the entire block is released and
-the MD goes onto `mp_mfl`. **Programs commonly use this idiom** to
-"free a block they previously got but no longer need" while
-continuing to address it via a different MD they kept.
+---
 
-### 3. Cannot grow
+## Error conditions
 
-`Mshrink` is a one-way operation: only shrinking is supported. A
-"grow" attempt returns `EGSBF`. Programs that need to grow must
-`Mfree` and `Malloc` afresh.
+| Condition | Source location | Returned value |
+|-----------|-----------------|----------------|
+| `find_mpb(blk)` NULL, or no `mp_mal` MD with `m_start == blk` | `bdos/umem.c:178-194` | `EIMBA` (-40) |
+| rounded `len` greater than the block's current length | `bdos/umem.c:210-211` | `EGSBF` (-67) |
+| `xmgetmd` fails (MD pool exhausted) inside `shrinkit` | `bdos/iumem.c:235-240` → `bdos/umem.c:223-224` | `ERR` (-1) |
 
-### 4. The `Pexec` post-load idiom
+**Error paths not in Compendium:** the `ERR` (-1) return on MD-pool exhaustion
+is an EmuTOS internal-resource failure not called out in typical documentation;
+the block is left unmodified in that case, so a retry is safe.
 
-Standard pattern after `Pexec(PE_LOADGO, ...)`:
+---
 
-```c
-basepage = Pexec(PE_LOAD, "child.prg", tail, env);
-needed = sizeof(BASEPAGE) + tlen + dlen + blen + stack_size;
-Mshrink(0, basepage, needed);          /* release excess TPA */
-Pexec(PE_GO, NULL, basepage, NULL);
-```
+## Verification criteria
 
-This is how an Atari shell hands a child program only the memory it
-truly needs — by default `Pexec` gives it the largest free block.
+- **Nominal shrink:** allocate `N`, `Mshrink(0, blk, N/2)` returns `E_OK`; the
+  freed tail becomes available (a `Malloc(N/2)`-sized request can reuse it).
+- **No-op shrink:** `Mshrink(0, blk, N)` (same size, after rounding) returns
+  `E_OK` and changes nothing.
+- **Free-via-shrink:** `Mshrink(0, blk, 0)` returns `E_OK` and releases the
+  whole block (equivalent to `Mfree(blk)`).
+- **Grow rejected:** `Mshrink(0, blk, N + 16)` returns `EGSBF` (-67); the block
+  is unchanged.
+- **Bad address:** `Mshrink(0, blk + 8, ...)` (mid-block) returns `EIMBA` (-40).
+- **Alignment:** `Mshrink(0, blk, 1)` on ST-RAM shrinks to the alignment grain
+  (2 bytes non-Falcon, 4 bytes Falcon/alt-RAM), not to 1 byte.
+- **Reserved word ignored:** any `n` value yields identical behaviour.
 
-### 5. `shrinkit` MD pool exhaustion
+---
 
-The split creates a new MD for the freed tail. If the system's MD
-pool (separate from regular memory) is exhausted, `shrinkit`
-returns -1 → `Mshrink` returns `ERR` (-1). The original block is
-**not** modified in this case — caller may retry later.
+## Edge cases discovered in source
 
-### 6. Ownership unchanged
+1. **`n` is dead.** Never read (`bdos/umem.c:170`). Disassemblies that show
+   "`Mshrink(handle, …)`" are mislabelling the reserved word.
 
-The shrunk MD retains `m_own`. The new freed-tail MD has
-`m_own = NULL` (free).
+2. **`len` rounds *up* to the alignment grain.** `Mshrink(blk, 1)` cannot
+   shrink below 2 bytes (ST-RAM) or 4 bytes (alt-RAM) (`bdos/umem.c:200-203`).
 
-### 7. `n` parameter
+3. **`len == 0` ⇒ free.** After rounding, `len` is 0 only if the caller passed
+   0; EmuTOS then `freeit`s the whole block (`bdos/umem.c:214-218`). Programs
+   use this as an alias for `Mfree`.
 
-Always ignored. Programs that pass garbage there work fine.
-Disassemblers occasionally show "Mshrink(handle, ...)" — the
-"handle" is `n` and has no meaning.
+4. **Grow is impossible.** `Mshrink` is one-way; a larger `len` returns `EGSBF`
+   (`bdos/umem.c:210-211`). To grow, `Mfree` + `Malloc` afresh.
+
+5. **The `Pexec` post-load idiom.** After `Pexec(PE_LOAD, …)` a shell shrinks
+   the child's over-large TPA to just what it needs, then `Pexec(PE_GO, …)`.
+   This is the canonical `Mshrink` use.
+
+6. **`shrinkit` MD-pool exhaustion leaves the block intact.** On `xmgetmd`
+   failure `Mshrink` returns `ERR` (-1) *without* modifying the block, so a
+   later retry is valid (`bdos/iumem.c:235-240`).
+
+7. **Tail-MD `m_own` is not zeroed.** `shrinkit` puts the tail MD on `mp_mal`
+   without setting `m_own`, and `freeit` does not clear it (`bdos/iumem.c`).
+   The kept MD keeps its owner; the freed tail's `m_own` is undefined but never
+   read (free ⇔ list membership, not `m_own`).
+
+---
 
 ## Dependencies
 
-- `find_mpb`, `freeit`, `shrinkit`.
+### Requires (must be initialized / functional)
 
-Used by: `Ptermres` (`xtermres` calls `xsetblk(0, run, blkln)`),
-shell post-`Pexec` size adjustment, programs that grab "all
-memory" via `Malloc(-1)` then trim.
+- `umem_init` — pools, `start_stram`/`end_stram`, `malloc_align_stram`.
+- `find_mpb`, `shrinkit`, `freeit`, `xmgetmd`.
+
+### Used by
+
+- `Ptermres` (`xtermres` calls `xsetblk(0, run, blkln)` and **discards** the
+  return, see D-006) — `docs/api/gemdos/process/03-ptermres.md`.
+- Shells trimming a child's TPA after `Pexec(PE_LOAD, …)`.
+- Programs that grab "all memory" via `Malloc(-1)` then trim.
+
+---
+
+## Related data structures
+
+- `docs/api/structures/md.md` — `MD`/`MPB`, `shrinkit`/`freeit`.
+- `docs/api/gemdos/_state.md` §8 — the pool model.
+
+---
 
 ## Cross-references
 
-- **Compendium:** "Mshrink" — agrees, including unused `n`.
-- **Profibuch:** "Mshrink (0x4A)" — agrees.
-- **`docs/api/gemdos/process/03-ptermres.md`** — primary internal user.
-- **`docs/api/gemdos/memory/49-mfree.md`** — `len = 0` case.
-- **`docs/api/structures/md.md`**.
+### Atari Compendium
 
-## Configuration
+- Not present in `references/`. Cross-check deferred. Documents the unused `n`,
+  the shrink-only rule, and `EGSBF` — consistent with EmuTOS.
 
-- `malloc_align_stram` is `1` (= 2-byte align) for 68000-class
-  builds, `3` (= 4-byte align) when LONG alignment is mandated.
-  Alt-RAM is always 4-byte aligned.
+### Atari Profibuch
+
+- Not present in `references/`. Cross-check deferred.
+
+---
+
+## Configuration / version notes
+
+- `malloc_align_stram` is 1 (2-byte align) on ST/STe/TT, 3 (4-byte) on Falcon;
+  alt-RAM is always 4-byte aligned. The **rounded** length is what the block
+  becomes, so a program recomputing its heap top must use the rounded value.
+
+---
 
 ## NewTOS implementation notes
 
-Phase 04 (D10) plan:
+(Empty during Phase 00.)
 
-- **Alignment grain.** `malloc_align_stram = 15` (16-byte) for
-  AArch64 SIMD friendliness; `malloc_align_ttram = 15` likewise.
-  Historic Atari TOS uses 2 / 4-byte alignment; the rounded `len`
-  is echoed back to the caller as part of `Mshrink` semantics, so
-  programs that recompute their heap top must consult the returned
-  size rather than the requested one.
-- **Trailing-MD reuse.** If shrinking creates a tail of
-  `>= sizeof(MD)` bytes, allocate a fresh MD via `xmgetmd`,
-  initialise it as free, and link it into `mp_mfl` adjacent to the
-  shrunk block. Coalesce immediately if the next MD on `mp_mfl` is
-  contiguous.
-- **Zero-grow fast path.** Shrink of `0` bytes (no-op) and
-  same-size shrink return `E_OK` without consulting the MPB.
+PHASE-04 (D10): alignment grain is a NewTOS choice (e.g. 16-byte for AArch64
+SIMD friendliness) — the *rounded* `len` is the observable result, so programs
+that recompute their heap top must read it back rather than assume the request.
+On a real shrink, allocate a tail MD, mark it free, link into `mp_mfl` adjacent
+to the block, coalesce if the neighbour is contiguous. No-op and same-size
+shrinks take a fast `E_OK` path without touching the MPB. Grow → `EGSBF`,
+`len == 0` → free, bad address → `EIMBA`, MD-arena exhaustion → `ERR` (block
+untouched), all per EmuTOS.
