@@ -1,0 +1,75 @@
+#!/usr/bin/env bash
+#
+# Create a raw FAT16 SD-card image for NewTOS (QEMU raspi4b / real Pi-4).
+#
+# The image is a standard MBR (signature 0x55AA) with one primary FAT16
+# partition of type 0x06, matching the kernel's MBR parser in
+# `tos-api/src/bios/drive.rs` (`entry()` reads the 16-byte records at 0x1BE;
+# type 0x06 = FAT16). The partition is populated with a handful of sample
+# files and folders so the desktop shows a `C:` drive with content.
+#
+# macOS only (uses hdiutil / diskutil / newfs_msdos). Runs without sudo — the
+# raw disk image is attached as a user-owned device.
+#
+# Usage:
+#   tools/make-sd-image.sh [image-path] [size-MiB]
+#     image-path   defaults to /tmp/sd.img (the path `xtask run --sd` expects)
+#     size-MiB     defaults to 64
+#
+# Re-run this after a reboot / power outage wiped /tmp.
+#
+set -euo pipefail
+
+IMG="${1:-/tmp/sd.img}"
+SIZE_MB="${2:-64}"
+VOL="NEWTOS"
+
+echo "Creating ${IMG} (${SIZE_MB} MiB, MBR + FAT16, volume ${VOL})…"
+rm -f "$IMG"
+dd if=/dev/zero of="$IMG" bs=1m count="$SIZE_MB" status=none 2>/dev/null \
+  || dd if=/dev/zero of="$IMG" bs=1m count="$SIZE_MB"
+
+# Attach the zero-filled file as a raw block device (no filesystem yet).
+DEV=$(hdiutil attach -imagekey diskimage-class=CRawDiskImage -nomount "$IMG" \
+        | head -1 | awk '{print $1}')
+echo "attached ${DEV}"
+cleanup() { hdiutil detach "$DEV" >/dev/null 2>&1 || true; }
+trap cleanup EXIT
+
+# One MBR FAT16 partition spanning the whole disk, mounted at /Volumes/$VOL.
+diskutil partitionDisk "$DEV" 1 MBR "MS-DOS FAT16" "$VOL" 100% >/dev/null
+V="/Volumes/${VOL}"
+
+# Populate with sample content (CR/LF line ends, TOS-style).
+mdutil -i off "$V" >/dev/null 2>&1 || true
+printf 'NewTOS test disk (drive C:)\r\nFAT16 image for QEMU + real Pi-4.\r\n' > "$V/README.TXT"
+printf 'Hello from the NewTOS desktop!\r\n'                                   > "$V/HELLO.TXT"
+head -c 4096 /dev/urandom                                                    > "$V/DATA.BIN"
+printf 'GEM system placeholder\r\n'                                          > "$V/GEMSYS.INF"
+mkdir -p "$V/SUB";  printf 'A file inside SUB.\r\n'                           > "$V/SUB/INSIDE.TXT"
+mkdir -p "$V/AUTO"; printf 'AUTO folder (\\AUTO\\*.PRG runs at boot)\r\n'     > "$V/AUTO/READ.ME"
+
+# Strip macOS metadata so it does not clutter the directory listing.
+sync
+rm -rf "$V/.Spotlight-V100" "$V/.fseventsd" "$V/.Trashes" "$V/.TemporaryItems" 2>/dev/null || true
+dot_clean -m "$V" 2>/dev/null || true
+sync
+
+diskutil unmount "${DEV}s1" >/dev/null
+cleanup
+trap - EXIT
+
+# Sanity-check the MBR: partition 0 must be type 0x06 (FAT16), 0x55AA present.
+python3 - "$IMG" <<'PY'
+import sys, struct
+d = open(sys.argv[1], 'rb').read(512)
+assert d[510] == 0x55 and d[511] == 0xAA, "missing 0x55AA MBR signature"
+typ = d[0x1BE + 4]
+start = struct.unpack('<I', d[0x1BE + 8:0x1BE + 12])[0]
+count = struct.unpack('<I', d[0x1BE + 12:0x1BE + 16])[0]
+assert typ == 0x06, f"partition type 0x{typ:02x}, expected 0x06 (FAT16)"
+print(f"OK: MBR FAT16 partition type=0x{typ:02x} start_lba={start} sectors={count}")
+PY
+
+echo "done: ${IMG}"
+echo "run:  cargo xtask run --sd ${IMG} --board rpi4 --window   # raspi4b emulates the SD controller"

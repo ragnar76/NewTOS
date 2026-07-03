@@ -185,7 +185,7 @@ fn set_background() {
     let newd = (cur & 0xF0) | CYCLE[next];
     G_PATCOL[4].store(newd, core::sync::atomic::Ordering::Release);
     if let Some(b) = tos_api::host::host().and_then(|h| h.raster()) {
-        paint_desktop_bg(b);
+        paint_desktop_bg(b, ClipRect::full(b.width(), b.height()));
         draw_menu_bar();
     }
     kprintln!("[desk] Set background: desktop = {:#04x}", newd);
@@ -416,7 +416,7 @@ pub fn draw() {
     // windows instead of being whited out (Bug 1). Register it, then paint
     // the first frame + the menu bar.
     tos_api::aes::window::set_desktop_painter(paint_desktop_bg);
-    paint_desktop_bg(backend);
+    paint_desktop_bg(backend, ClipRect::full(backend.width(), backend.height()));
     draw_menu_bar();
 
     let bits = tos_api::bios::drive::drvbits();
@@ -435,34 +435,36 @@ fn redraw_screen() {
     let Some(backend) = tos_api::host::host().and_then(|h| h.raster()) else {
         return;
     };
-    paint_desktop_bg(backend);
+    paint_desktop_bg(backend, ClipRect::full(backend.width(), backend.height()));
     draw_menu_bar();
     redraw_all_windows();
     tos_api::vdi::cursor_show_reset(backend);
 }
 
 /// Paint the desktop background — the pattern fill below the menu bar plus
-/// the drive icons — straight through the backend. **No AES trap**: the
-/// window manager calls this from inside `redraw_all` (the AES SVC
-/// handler), so it must not re-enter the AES. The menu bar (y < MENU_H) is
-/// deliberately left untouched: windows never cover it, so it survives.
-fn paint_desktop_bg(backend: &dyn RasterBackend) {
+/// the drive icons — straight through the backend, restricted to `clip`.
+/// **No AES trap**: the window manager calls this from inside `redraw_all`
+/// and the solid window drag (the AES SVC handler), so it must not re-enter
+/// the AES. The menu bar (y < MENU_H) is deliberately left untouched:
+/// windows never cover it, so it survives. `clip` lets the solid drag
+/// repaint only the vacated region.
+fn paint_desktop_bg(backend: &dyn RasterBackend, clip: ClipRect) {
     let sw = backend.width() as i16;
     let sh = backend.height() as i16;
-    let clip = ClipRect::full(backend.width(), backend.height());
 
     // Background: the configured g_patcol desktop pattern+colour (default
     // 0x43 = IP_4PATT + green; overridable via NEWDESK.INF / Set Background).
     // The menu bar, windows, icons and 3D gadgets stay monochrome / grey,
-    // as on real GEM — the colour lives in the background.
+    // as on real GEM — the colour lives in the background. `fill_pattern`
+    // intersects with `clip`, so only the clipped region is repainted.
     let d = patcol_desktop();
     let pat = IP_PATTERNS[(d >> 4) as usize & 7];
     let bg = PatternFill { fg: d & 0x0F, bg: WHITE, pattern: &pat, opaque: true };
     backend.fill_pattern(0, MENU_H, sw, sh - MENU_H, bg, clip);
 
     // Draw the drive / trash fixtures as an AES G_ICON tree over the
-    // pattern (direct render — this runs inside `redraw_all`).
-    draw_desktop_icons(backend, sw, sh);
+    // pattern (direct render — this runs inside `redraw_all`), clipped.
+    draw_desktop_icons(backend, sw, sh, clip);
 }
 
 const DESK_MAX: usize = 32;
@@ -545,7 +547,7 @@ fn trash_cy(sh: i16) -> i16 {
 /// this runs as the `DESK_PAINTER` from inside `window::redraw_all` (the AES
 /// SVC handler), where a re-entrant `svc #2` is forbidden. The same direct
 /// path is correct from the plain `draw()` context too.
-fn draw_desktop_icons(backend: &dyn RasterBackend, sw: i16, sh: i16) {
+fn draw_desktop_icons(backend: &dyn RasterBackend, sw: i16, sh: i16, clip: ClipRect) {
     use crate::desktop_icons as ic;
     // SAFETY: single-CPU desktop; the tree buffers are used only here.
     let obj = unsafe { &mut *DESKTREE.obj.get() };
@@ -592,11 +594,19 @@ fn draw_desktop_icons(backend: &dyn RasterBackend, sw: i16, sh: i16) {
     };
 
     // Direct render (no `svc`): safe under `redraw_all`. See the fn doc.
-    // SAFETY: `obj` is a valid, just-built OBJECT array rooted at index 0.
-    unsafe {
-        tos_api::aes::object::render_tree(
-            obj.as_ptr(), 0, 8, 0, MENU_H, sw, sh - MENU_H, backend,
-        );
+    // Restrict to `clip` ∩ the below-menu area so the solid window drag can
+    // repaint only the vacated region.
+    let rx = clip.xmn.max(0);
+    let ry = clip.ymn.max(MENU_H);
+    let rx2 = clip.xmx.min(sw - 1);
+    let ry2 = clip.ymx.min(sh - 1);
+    if rx2 >= rx && ry2 >= ry {
+        // SAFETY: `obj` is a valid, just-built OBJECT array rooted at index 0.
+        unsafe {
+            tos_api::aes::object::render_tree(
+                obj.as_ptr(), 0, 8, rx, ry, rx2 - rx + 1, ry2 - ry + 1, backend,
+            );
+        }
     }
 }
 

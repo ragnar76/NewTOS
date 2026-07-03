@@ -19,7 +19,7 @@
 
 use super::Aespb;
 use crate::host::host;
-use crate::vdi::backend::{ClipRect, Pel, PatternFill, RasterBackend};
+use crate::vdi::backend::{ClipRect, Pel, PatternFill, RasterBackend, Rect};
 use core::cell::UnsafeCell;
 use core::sync::atomic::{AtomicUsize, Ordering};
 
@@ -184,32 +184,43 @@ fn top_window(handle: i16) {
 /// Optional desktop-background painter. A GEM application that owns the
 /// desktop (e.g. the NewTOS desktop) registers a pure drawing function
 /// here; the window manager calls it to repaint the background underneath
-/// the windows (the EmuTOS DESKWH/DROOT idea). `0` = none → plain white
-/// erase, which is what the standalone AES demos want.
+/// the windows (the EmuTOS DESKWH/DROOT idea), restricted to a clip
+/// rectangle. `0` = none → plain white erase of the clip.
 ///
-/// The painter runs **inside** `redraw_all`, i.e. inside the AES SVC
-/// handler, so it must draw straight through the backend and issue **no
-/// further AES trap** (no re-entrant `svc`).
+/// The painter runs **inside** `redraw_all` and the solid window drag, i.e.
+/// inside the AES SVC handler, so it must draw straight through the backend
+/// and issue **no further AES trap** (no re-entrant `svc`).
 static DESK_PAINTER: AtomicUsize = AtomicUsize::new(0);
 
 /// Register the desktop-background painter (see [`DESK_PAINTER`]).
-pub fn set_desktop_painter(f: fn(&dyn RasterBackend)) {
+pub fn set_desktop_painter(f: fn(&dyn RasterBackend, ClipRect)) {
     DESK_PAINTER.store(f as usize, Ordering::Release);
 }
 
-/// Paint the desktop background: the registered painter if any, else a
-/// plain white erase of the whole screen.
-fn paint_background(backend: &dyn RasterBackend) {
+/// Paint the desktop background within `clip`: the registered painter if any
+/// (clipped), else a plain white erase of the clip.
+fn paint_bg_clip(backend: &dyn RasterBackend, clip: ClipRect) {
     let p = DESK_PAINTER.load(Ordering::Acquire);
     if p != 0 {
-        // SAFETY: only ever set via `set_desktop_painter` from a
-        // `fn(&dyn RasterBackend)`; the value is that same pointer.
-        let f: fn(&dyn RasterBackend) = unsafe { core::mem::transmute(p) };
-        f(backend);
-    } else {
-        let clip = ClipRect::full(backend.width(), backend.height());
-        backend.fill_rect(0, 0, backend.width() as i16, backend.height() as i16, WHITE, clip);
+        // SAFETY: only ever set via `set_desktop_painter` from that same
+        // `fn(&dyn RasterBackend, ClipRect)` pointer.
+        let f: fn(&dyn RasterBackend, ClipRect) = unsafe { core::mem::transmute(p) };
+        f(backend, clip);
+    } else if let Some((x0, y0, x1, y1)) = clip.clamp_to(backend.width(), backend.height()) {
+        backend.fill_rect(
+            x0 as i16, y0 as i16, (x1 - x0 + 1) as i16, (y1 - y0 + 1) as i16, WHITE, clip,
+        );
     }
+}
+
+/// Paint the whole desktop background (full-screen clip).
+fn paint_background(backend: &dyn RasterBackend) {
+    paint_bg_clip(backend, ClipRect::full(backend.width(), backend.height()));
+}
+
+/// A `ClipRect` for the rectangle `[x, x+w) × [y, y+h)`.
+fn rect_clip(x: i16, y: i16, w: i16, h: i16) -> ClipRect {
+    ClipRect { xmn: x, ymn: y, xmx: x + w - 1, ymx: y + h - 1 }
 }
 
 /// Repaint the desktop and every open window back-to-front (painter's
@@ -1043,7 +1054,7 @@ fn watchbox(r: Grect, ch: u16, backend: &dyn RasterBackend) -> bool {
 /// EmuTOS `gr_dragbox` (outline drag) at our altitude.
 fn drag_move(w: &mut Window, backend: &dyn RasterBackend) -> Grect {
     let Some(h) = host() else { return w.curr };
-    let clip = ClipRect::full(backend.width(), backend.height());
+    let full = ClipRect::full(backend.width(), backend.height());
     let (sx, sy) = crate::vdi::mouse_position();
     let orig = w.curr;
     let sw = backend.width() as i16;
@@ -1057,9 +1068,24 @@ fn drag_move(w: &mut Window, backend: &dyn RasterBackend) -> Grect {
         let ny = (orig.y + my - sy).clamp(0, (sh - orig.h).max(0));
         let nr = Grect { x: nx, y: ny, w: orig.w, h: orig.h };
         if nr != last {
-            backend.fill_rect(last.x, last.y, last.w + 1, last.h + 1, WHITE, clip);
+            // Solid drag (modern HW — no rubber-band outline): blit the
+            // rendered window (frame + content) to the new position via a
+            // fast screen-to-screen copy, then repaint the vacated L-region
+            // with the desktop background. The whole window follows the mouse
+            // over the intact background — no white trail, no re-render. Hide
+            // the cursor around the blit so its sprite isn't duplicated into
+            // the moved region.
+            crate::vdi::cursor_hide(backend);
+            backend.copy_rect(
+                Rect { x: last.x, y: last.y, w: last.w, h: last.h },
+                nr.x,
+                nr.y,
+                3, // BitBlt replace
+                full,
+            );
+            repaint_vacated(backend, last, nr);
+            crate::vdi::cursor_show(backend);
             w.curr = nr;
-            draw_frame(w, true, backend);
             last = nr;
         }
         if crate::vdi::mouse_buttons() & 0x01 == 0 {
@@ -1070,11 +1096,34 @@ fn drag_move(w: &mut Window, backend: &dyn RasterBackend) -> Grect {
     last
 }
 
+/// Repaint the part of `old` not covered by `new` (same size — a window
+/// move) with the desktop background: the vacated L-region of a solid drag.
+/// Up to two rectangles — a full-width horizontal strip for the vertical
+/// motion, plus a vertical strip limited to the overlapping rows (so the
+/// corner is not painted twice, and the still-covered part is never erased).
+fn repaint_vacated(backend: &dyn RasterBackend, old: Grect, new: Grect) {
+    let dx = new.x - old.x;
+    let dy = new.y - old.y;
+    if dy > 0 {
+        paint_bg_clip(backend, rect_clip(old.x, old.y, old.w, dy));
+    } else if dy < 0 {
+        paint_bg_clip(backend, rect_clip(old.x, new.y + old.h, old.w, -dy));
+    }
+    let oy = old.y.max(new.y);
+    let oh = (old.y + old.h).min(new.y + old.h) - oy;
+    if oh > 0 {
+        if dx > 0 {
+            paint_bg_clip(backend, rect_clip(old.x, oy, dx, oh));
+        } else if dx < 0 {
+            paint_bg_clip(backend, rect_clip(new.x + old.w, oy, -dx, oh));
+        }
+    }
+}
+
 /// Live-resize the frame (bottom-right corner follows the mouse) until
 /// release; returns the final border rect. Stands in for `gr_rubwind`.
 fn drag_size(w: &mut Window, backend: &dyn RasterBackend) -> Grect {
     let Some(h) = host() else { return w.curr };
-    let clip = ClipRect::full(backend.width(), backend.height());
     let orig = w.curr;
     let min_w = 3 * GAD;
     let min_h = 3 * GAD;
@@ -1089,9 +1138,15 @@ fn drag_size(w: &mut Window, backend: &dyn RasterBackend) -> Grect {
         let nh = (my - orig.y + 1).clamp(min_h, (sh - orig.y).max(min_h));
         let nr = Grect { x: orig.x, y: orig.y, w: nw, h: nh };
         if nr != last {
-            backend.fill_rect(orig.x, orig.y, last.w + 1, last.h + 1, WHITE, clip);
+            // Resize reflows the content, so (unlike a move) it cannot blit —
+            // repaint the desktop background over the previous window rect,
+            // then redraw the frame at the new size. No white trail; the work
+            // area's content returns on release via the desktop's redraw.
+            crate::vdi::cursor_hide(backend);
+            paint_bg_clip(backend, rect_clip(orig.x, orig.y, last.w, last.h));
             w.curr = nr;
             draw_frame(w, true, backend);
+            crate::vdi::cursor_show(backend);
             last = nr;
         }
         if crate::vdi::mouse_buttons() & 0x01 == 0 {
