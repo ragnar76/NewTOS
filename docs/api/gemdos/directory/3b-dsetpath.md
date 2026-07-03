@@ -1,145 +1,240 @@
-# `Dsetpath` — GEMDOS 0x3B
+# `Dsetpath` (GEMDOS 0x3B)
 
-> Phase 00 spec. Source: EmuTOS @ `1a7484ab` —
-> `bdos/fsdir.c:1113` (`xchdir`).
+> Phase 00 spec (full-contract template). Source: EmuTOS @ `1a7484ab`.
+> Verified against `bdos/fsdir.c:1113` (`xchdir`).
+
+> **Contract vs. reference** — see [`docs/COMPATIBILITY.md`](../../../COMPATIBILITY.md).
+> Contract: trap ID/ABI, the per-drive current-directory semantics (drive prefix
+> sets *that drive's* curdir, not the current drive), the error codes. Reference:
+> the `dirtbl[]` reference-counted DND cache, `findit`/`incr_curdir_usage`.
 
 ## EmuTOS source
 
-```c
-long xchdir(char *p)
-{
-    if (contains_wildcard_characters(p))
-        return EPTHNF;
+**Primary location:** `bdos/fsdir.c:1113` — `long xchdir(char *p)`.
 
-    int dlog = extract_drive_number(p);
-    if (dlog < 0) dlog = run->p_curdrv;
+**Installed handler / vector:** (none) — direct `funcs[]` entry `0x3B` =
+`xchdir`, `wparms = 2` (`bdos/bdosmain.c:255`).
 
-    int olddir = run->p_curdir[dlog];
+**Helpers called:**
+- `bdos/fsdir.c:505` — `contains_wildcard_characters(p)` — reject `*`/`?`.
+- `util/miscutil.c:34` — `extract_drive_number(p)` — parse a leading `X:` prefix
+  (returns 0..25, or -1 if absent).
+- `bdos/fsdir.c:1407` — `findit(p, &s, 1)` — resolve the path; **mode 1** = must
+  be a directory (returns its DND, else NULL).
+- `bdos/fsdir.c:1164` — `incr_curdir_usage(dnd)` — find/allocate a `dirtbl[]`
+  slot for the DND and bump its use count (returns the slot index, or `EINTRN`
+  if `dirtbl[]` is full).
+- `bdos/fsdir.c:1194` — `decr_curdir_usage(olddir)` — drop the old slot's use
+  count.
 
-    DND *dnd = findit(p, &s, 1);            /* mode 1: must be folder */
-    if (!dnd) return EPTHNF;
+**Headers / type definitions used:**
+- `bdos/fs.h:342-345` — `DIRTBL_ENTRY { DND *dnd; WORD use; }`.
+- `bdos/fs.h:44` — `NCURDIR = 40` (size of `dirtbl[]`).
+- `include/bdosdefs.h:89` — `PD.p_curdir[NUMCURDIR]` (`UBYTE[26]`, basepage
+  offset **0x40**) — per-drive `dirtbl[]` slot index.
+- `include/sysconf.h:43,62` — `BLKDEVNUM = 26`, `NUMCURDIR = BLKDEVNUM`.
 
-    int newdir = incr_curdir_usage(dnd);
-    if (newdir < 0) return EPTHNF;          /* dirtbl full */
-    run->p_curdir[dlog] = newdir;
+**System variables / globals read:** `run->p_curdrv` (when the path has no drive
+prefix); `run->p_curdir[dlog]` (old slot); `dirtbl[]`.
+**System variables / globals written:** `run->p_curdir[dlog]` (new slot index);
+`dirtbl[].use` counts.
 
-    if (olddir) decr_curdir_usage(olddir);
+**Build configuration affecting this function:** none.
 
-    return E_OK;
-}
-```
+---
 
-`dirtbl[]` is a global table of cached DND pointers, one entry per
-"current directory" reference, with reference counts.
+## Source extraction summary
+
+`Dsetpath` sets the calling process's **current directory** for a drive.
+`xchdir` first rejects any wildcard in the path (`*`/`?` → `EPTHNF`). It then
+extracts the target drive from a leading `X:` prefix via `extract_drive_number`
+(0..25); if there is no prefix it uses the current drive (`run->p_curdrv`). The
+resulting `dlog` selects **which drive's** per-process current-directory slot is
+updated. Crucially, a drive prefix changes only *that drive's* curdir — it does
+**not** change the current drive itself; to change both, call `Dsetdrv` then
+`Dsetpath`.
+
+It resolves the path with `findit(p, &s, 1)` (mode 1 = must be a directory);
+failure returns `EPTHNF`. (Because `findit`→`dcrack`→`ckdrv(TRUE)` runs, an
+invalid or unmounted drive prefix, or a media change, is caught here and also
+surfaces as `EPTHNF`.) On success it registers the resolved DND in the global
+`dirtbl[]` via `incr_curdir_usage`, which either finds an existing slot pointing
+at the same DND (and bumps its use count) or allocates a free slot. If
+`dirtbl[]` is full, `incr_curdir_usage` returns `EINTRN` and `xchdir` translates
+it to `EPTHNF`. It stores the new slot index into `run->p_curdir[dlog]`, then
+decrements the old slot (if any). The current directory is thus stored
+per-process, per-drive, as an index into the shared reference-counted `dirtbl[]`.
+
+---
 
 ## Trap interface
 
-| | |
-|--|--|
-| Trap | 1 (GEMDOS) |
-| Function ID | `0x003B` |
-| WORD args | 2 (LONG) |
-| Stack frame | `+2: p (L)`, `+0: 0x003B` |
+- **Trap number:** 1 (GEMDOS)
+- **Function ID:** 0x3B
+- **Stack frame on entry (m68k):** `Dsetpath(path)` = `trap1(0x3b, path)`:
+  ```
+  +2: path (LONG, pointer)
+   0: function_id (word) = 0x003B
+  ```
+- **Total parameter bytes:** 4 (LONG) → `wparms = 2`.
+- **Native (AArch64) ABI:** ID `0x3B` in `x8`; arg in `x0`; LONG result
+  (`E_OK` or negative error) sign-extended into `x0`.
+
+  | m68k stack | AArch64 reg | Name | Type / size |
+  |------------|-------------|------|-------------|
+  | +2         | `x0`        | `p`  | `char *` (ptr) — path to a directory (absolute or relative) |
+
+---
 
 ## Inputs
 
-| Pos | Name | Type   | Range / meaning                     |
-|-----|------|--------|-------------------------------------|
-| 0   | `p`  | char * | absolute or relative path to a folder |
+| Position | Name | Type    | Size | Source location     | Notes |
+|----------|------|---------|------|---------------------|-------|
+| arg0     | `p`  | `char *`| 4    | `bdos/fsdir.c:1113` | directory path; optional `X:` prefix selects the drive whose curdir changes; wildcards rejected |
+
+---
 
 ## Outputs
 
-| Reg | D0 |
-| --- | --- |
-| Type | LONG: 0 success, negative error |
+### Return value
 
-## Errors
+- **Register:** D0 / `x0`
+- **Type:** LONG
+- **Encoding:** `E_OK` (0) on success; `EPTHNF` (-34) on any failure.
+- **Source location:** `bdos/fsdir.c:1153` (`return E_OK`); error returns at
+  `:1120`, `:1136`, `:1144`.
 
-| Code   | Value | When                                                  |
-|--------|------:|-------------------------------------------------------|
-| EPTHNF | -34   | path contains wildcards; component missing; not a folder; `dirtbl[]` full |
+### Side effects on global state
 
-## Edge cases
+- `run->p_curdir[dlog]` is set to the new `dirtbl[]` slot index
+  (`bdos/fsdir.c:1145`).
+- `dirtbl[]` use counts change: the new slot's count is incremented (or a slot
+  allocated), the old slot's count decremented (`bdos/fsdir.c:1142,1150-1151`).
 
-### 1. Wildcards rejected
+### Side effects on hardware
 
-`*` or `?` in the path returns EPTHNF immediately, without trying
-to resolve. Programs can't `Dsetpath("*.dir")`.
+- Reads directory sectors during `findit` path resolution; a removable-media
+  change detected by `ckdrv` can trigger a re-login.
 
-### 2. Drive component changes target drive
+---
 
-`extract_drive_number("C:\foo")` returns 2 (C:); `dlog` becomes
-the per-drive current-directory slot for C:. The current drive
-(`p_curdrv`) is **not** changed — only the per-drive curdir for C:.
+## Error conditions
 
-To change drive AND curdir, use `Dsetdrv` then `Dsetpath`.
+| Condition | Source location | Returned value |
+|-----------|-----------------|----------------|
+| Path contains a wildcard (`*` or `?`) | `bdos/fsdir.c:1119-1120` | `EPTHNF` (-34) |
+| Path does not resolve to a directory (`findit` mode 1 fails; includes invalid/unmounted drive prefix) | `bdos/fsdir.c:1135-1136` | `EPTHNF` (-34) |
+| `dirtbl[]` full (`incr_curdir_usage` returns `EINTRN`) | `bdos/fsdir.c:1143-1144` | `EPTHNF` (-34) |
 
-### 3. Per-process per-drive curdir
+**Error paths not in Compendium:** the `dirtbl[]`-full case is internally
+`EINTRN` but is surfaced to the caller as `EPTHNF`; a path resolving to a *file*
+returns `EPTHNF` (not `EFILNF`). Compendium documents only `EPTHNF` generically.
 
-`p_curdir[16]` — one slot per possible drive A:..P:. Each slot is
-an index into the global `dirtbl[]`. Each process has its own
-table.
+---
 
-### 4. `dirtbl[]` overflow
+## Verification criteria
 
-`NCURDIR` is the size of `dirtbl`. When all slots are used (many
-processes / many drives with non-root cwd), `incr_curdir_usage`
-returns `EINTRN` which `xchdir` translates to EPTHNF. Real-world:
-unusual; AES cleans up on `Pterm`.
+- **Nominal:** with `C:\AUTO` existing, `Dsetpath("C:\\AUTO")` returns `E_OK` and
+  a following `Dgetpath(buf, 3)` yields `\AUTO`.
+- **Relative:** after `Dsetpath("C:\\AUTO")`, `Dsetpath("..")` (no prefix,
+  current drive C:) moves the C: curdir back to the root; `Dgetpath(buf, 3)`
+  yields `""`.
+- **Prefix does not change current drive:** with current drive A:,
+  `Dsetpath("C:\\AUTO")` sets C:'s curdir but `Dgetdrv()` still returns 0 (A:).
+- **Error — wildcard:** `Dsetpath("C:\\*.X")` returns `EPTHNF` (-34).
+- **Error — not a folder:** `Dsetpath("C:\\FILE.TXT")` (a file) returns `EPTHNF`
+  (-34).
+- **Error — missing:** `Dsetpath("C:\\NODIR")` returns `EPTHNF` (-34).
 
-### 5. Reference-counted DNDs
+---
 
-`incr_curdir_usage` either finds an existing slot pointing at the
-same DND (bumps refcount) or allocates a new one. `decr_curdir_usage`
-on the old slot drops refcount; reaching 0 frees the slot.
+## Edge cases discovered in source
 
-### 6. Relative path
+1. **Wildcards rejected up front.** `*`/`?` → `EPTHNF` before any resolution.
+   (`bdos/fsdir.c:1119`)
 
-Without a drive prefix, `p` is resolved relative to the current
-drive's curdir. `Dsetpath("..")` walks up one level.
+2. **Drive prefix changes that drive's curdir, not the current drive.**
+   `Dsetpath("C:\\foo")` sets `p_curdir[2]` (C:) but leaves `p_curdrv`
+   unchanged. Use `Dsetdrv` + `Dsetpath` to change both. (`bdos/fsdir.c:1122-1145`)
 
-### 7. `findit` mode 1
+3. **Per-process, per-drive current directory.** `p_curdir[NUMCURDIR]` has one
+   slot per drive A:..Z: (`NUMCURDIR = BLKDEVNUM = 26`), each an index into the
+   global `dirtbl[]`. Each process has its own `p_curdir[]`.
+   (`include/bdosdefs.h:89`) (Earlier drafts said `p_curdir[16]` — wrong; it is
+   26. See D-025.)
 
-Mode 1 means "result must be a directory". A path resolving to a
-file returns EPTHNF (not EFILNF — historical TOS quirk).
+4. **`dirtbl[]` is reference-counted and shared.** `NCURDIR = 40` slots; slot 0
+   is reserved (`p_curdir[i] == 0` means "not set yet, use root"). Multiple
+   processes/drives pointing at the same DND share one slot via the use count.
+   Overflow → `EINTRN` internally → `EPTHNF` to the caller.
+   (`bdos/fsdrive.c:47-54`, `bdos/fsdir.c:1164-1188`)
 
-### 8. Inherited by Pexec children
+5. **Path resolving to a file → `EPTHNF`.** `findit` mode 1 only matches
+   directories; a file name gives no DND. (`bdos/fsdir.c:1134`)
 
-`Pexec` copies `p_curdir[]` from parent to child. Child's
-`Dsetpath` calls only affect the child.
+6. **`ckdrv(TRUE)` inside `findit`.** Resolving the path logs in the drive and
+   checks removable media; an invalid/unmounted drive prefix fails there and
+   collapses to `EPTHNF`. (`bdos/fsdir.c:1715`)
 
-### 9. Atomicity
+7. **Inherited by `Pexec` children.** A child copies the parent's `p_curdir[]`
+   at creation; later `Dsetpath` calls affect only the caller.
 
-The sequence "incr new, decr old" — if `decr` ran first and freed
-the slot before `findit` succeeded, a concurrent process could
-reuse the slot. EmuTOS is single-threaded so this can't happen;
-NewTOS-on-RPi multitasking will need locking.
+8. **Single-threaded ordering.** The "incr new, then decr old" order avoids
+   freeing the DND that is being re-selected. EmuTOS is single-threaded, so no
+   locking; NewTOS multitasking will need it around `dirtbl[]`.
+
+---
 
 ## Dependencies
 
-- `findit` (mode 1), `extract_drive_number`,
-  `contains_wildcard_characters`.
-- `dirtbl[]`, `run->p_curdir[]`.
-- `incr_curdir_usage`, `decr_curdir_usage`.
+### Requires (must be initialized / functional)
 
-Used by: shell `cd` command, AES desktop, every program that
-touches the cwd.
+- FAT subsystem logged in for the target drive (`findit`/`ckdrv`).
+- The global `dirtbl[]` and the process's `p_curdir[]`.
+
+### Used by
+
+- Shell `cd` command, AES desktop, every program that changes its working
+  directory before relative-path file operations.
+
+---
+
+## Related data structures
+
+- `docs/api/gemdos/_state.md` §5 — the per-process current-path model
+  (`PD.p_curdir[]`) and the reference-counted `dirtbl[]`.
+- `docs/api/gemdos/directory/47-dgetpath.md` — reads back what this sets.
+- `docs/api/gemdos/drive/0e-dsetdrv.md` — changes the *current drive*
+  (orthogonal to the per-drive curdir).
+
+---
 
 ## Cross-references
 
-- **Compendium:** "Dsetpath" — agrees.
-- **Profibuch:** "Dsetpath (0x3B)" — agrees.
-- `docs/api/gemdos/directory/47-dgetpath.md`,
-  `docs/api/gemdos/drive/0e-dsetdrv.md`.
+### Atari Compendium
 
-## Configuration
+- Not present in `references/`. Cross-check deferred. (Documents `Dsetpath` and
+  `EPTHNF`; the "prefix sets only that drive's curdir" nuance is TOS behaviour.)
 
-None.
+### Atari Profibuch
+
+- Not present in `references/`. Cross-check deferred.
+
+---
+
+## Configuration / version notes
+
+- `NCURDIR = 40` (`dirtbl[]` size); `NUMCURDIR = 26` (`p_curdir[]` per drive).
+  NewTOS may enlarge `dirtbl[]` (RPi has plenty of memory) as a free
+  implementation choice.
+
+---
 
 ## NewTOS implementation notes
 
 (Empty during Phase 00.)
 
-PHASE-05: per-process curdir model preserved. `dirtbl[]` size
-extended (parameterised) since RPi memory is plentiful and AES-on-
-RPi may host more processes than original TOS.
+PHASE-05: preserve the per-process/per-drive current-directory model and the
+"prefix ≠ current drive" semantics. The `dirtbl[]` reference-counting is a free
+NewTOS implementation choice; the observable contract is the resolved path and
+the `EPTHNF`-for-everything error behaviour.

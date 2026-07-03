@@ -1,156 +1,250 @@
-# `Dfree` — GEMDOS 0x36
+# `Dfree` (GEMDOS 0x36)
 
-> Phase 00 spec. Source: EmuTOS @ `1a7484ab` —
-> `bdos/fsfat.c:337` (`xgetfree`).
+> Phase 00 spec (full-contract template). Source: EmuTOS @ `1a7484ab`.
+> Verified against `bdos/fsfat.c:337` (`xgetfree`).
+
+> **Contract vs. reference** — see [`docs/COMPATIBILITY.md`](../../../COMPATIBILITY.md).
+> Contract: trap ID/ABI, the `+1` drive convention, the 4-LONG output-buffer
+> layout, the single `ERR` (-1) error return. Reference: the DMD geometry fields
+> the values are copied from, `ckdrv`, `countfree16`/`getrealcl`.
 
 ## EmuTOS source
 
-```c
-long xgetfree(long *buf, int drv)
-{
-    drv = drv ? drv-1 : run->p_curdrv;       /* 0 = current */
+**Primary location:** `bdos/fsfat.c:337` — `long xgetfree(long *buf, int drv)`.
 
-    WORD n = ckdrv(drv, TRUE);
-    if (n < 0) return ERR;
+**Installed handler / vector:** (none) — direct `funcs[]` entry `0x36` =
+`xgetfree`, `wparms = 3` (`bdos/bdosmain.c:248`).
 
-    DMD *dm = drvtbl[n];
-    CLNO free;
+**Helpers called:**
+- `bdos/fsdrive.c:77` — `ckdrv(drv, TRUE)` — validate + lazily log in the drive;
+  **`TRUE` requests a media-change check** on removable media.
+- `bdos/fsfat.c:298` — `countfree16(dm)` — fast free-cluster count for 16-bit
+  FATs (scans `CLNO`-sized FAT slots directly).
+- `bdos/fsfat.c` — `getrealcl(cl, dm)` — read one cluster's FAT entry (the slow
+  12-bit path, one cluster at a time).
 
-    if (dm->m_16) {
-        free = countfree16(dm);              /* fast 16-bit FAT scan */
-    } else {
-        free = 0;
-        for (i = 0; i < dm->m_numcl; i++)
-            if (!getrealcl(i+2, dm))         /* cluster numbers from 2 */
-                free++;
-    }
+**Headers / type definitions used:**
+- `bdos/fs.h:240-266` — `DMD` (Drive Media Block); fields `m_numcl` (`CLNO`),
+  `m_recsiz` (`UWORD`), `m_clsiz` (`WORD`), `m_16` flag.
+- `bdos/fs.h:89` — `CLNO` = `UWORD`.
+- `include/gemerror.h:20` — `ERR = -1`.
 
-    *buf++ = (long) free;
-    *buf++ = (long) dm->m_numcl;
-    *buf++ = (long) dm->m_recsiz;
-    *buf   = (long) dm->m_clsiz;
-    return E_OK;
-}
-```
+**System variables / globals read:** `run->p_curdrv` (when `drv == 0`);
+`drvtbl[n]` (the DMD for the resolved drive, `bdos/fsglob.c:28`);
+`drvsel`/`drvrem` (indirectly, inside `ckdrv`).
+**System variables / globals written:** the 4-LONG buffer at `buf`; `ckdrv` may
+lazily populate `drvtbl[]`/`dirtbl[]` and, on a detected media change, `longjmp`
+out to the trap dispatcher (which re-logs the drive).
+
+**Build configuration affecting this function:** none (the 12-bit vs 16-bit FAT
+paths are runtime-selected via `dm->m_16`, not a build flag).
+
+---
+
+## Source extraction summary
+
+`Dfree` reports free-space geometry for a drive into a caller-supplied 16-byte
+buffer (four LONGs). `xgetfree` first maps the drive argument: `drv == 0` means
+"current drive" (`run->p_curdrv`), otherwise `drv-1` is the 0-based drive (so
+`1 = A:`, `2 = B:`, …) — the **`+1` convention**, the same as `Dgetpath` and the
+opposite of `Dsetdrv`/`Dgetdrv`.
+
+It then calls `ckdrv(drv, TRUE)`. `ckdrv` validates the drive, logs it in if it
+has not been accessed yet, and — because the second argument is `TRUE` — runs a
+`Mediach` check on removable media, which can trigger a media-change `longjmp`
+(re-login) before the count proceeds. If `ckdrv` returns a negative value (any of
+`EDRIVE`, `EPTHNF`, or `ENSMEM`), `xgetfree` collapses it to the generic
+`ERR = -1` and returns (the specific `ckdrv` code is discarded).
+
+On success it counts free clusters. For a 16-bit FAT (`dm->m_16` set) it uses the
+fast `countfree16` scan; for a 12-bit FAT it loops every cluster from 2 upward
+calling `getrealcl`, counting entries whose value is 0 (free). It then writes four
+LONGs: free clusters, total clusters (`m_numcl`), bytes per logical record/sector
+(`m_recsiz`), and records per cluster (`m_clsiz`), and returns `E_OK`.
+
+Note cluster numbering starts at 2 (clusters 0 and 1 are the FAT's reserved
+media-descriptor / end-of-chain slots), which is why the slow loop reads
+`getrealcl(i+2, dm)`.
+
+---
 
 ## Trap interface
 
-| | |
-|--|--|
-| Trap | 1 (GEMDOS) |
-| Function ID | `0x0036` |
-| WORD args | 3 (LONG + WORD) |
-| Stack frame | `+6: drv (W)`, `+2: buf (L)`, `+0: 0x0036` |
+- **Trap number:** 1 (GEMDOS)
+- **Function ID:** 0x36
+- **Stack frame on entry (m68k):** `Dfree(buf, drive)` = `trap1(0x36, buf, drive)`:
+  ```
+  +6: drive (word)
+  +2: buf   (LONG, pointer)
+   0: function_id (word) = 0x0036
+  ```
+- **Total parameter bytes:** 6 (LONG + WORD) → `wparms = 3`.
+- **Native (AArch64) ABI:** ID `0x36` in `x8`; args in `x0..x1`; LONG result
+  (`E_OK`/`ERR`) sign-extended into `x0`. The geometry is delivered via the
+  **output buffer** at `buf`, not the register.
+
+  | m68k stack | AArch64 reg | Name  | Type / size |
+  |------------|-------------|-------|-------------|
+  | +2         | `x0`        | `buf` | `long *` (ptr) — 16-byte / 4-LONG buffer |
+  | +6         | `x1`        | `drv` | `WORD` (16) — `0 = current`, `1 = A:`, … |
+
+---
 
 ## Inputs
 
-| Pos | Name | Type     | Range / meaning                                |
-|-----|------|----------|------------------------------------------------|
-| 0   | `buf`| LONG *   | pointer to 16-byte buffer (4 LONGs)             |
-| 1   | `drv`| WORD     | 0 = current drive, 1 = A:, 2 = B:, …             |
+| Position | Name  | Type    | Size | Source location     | Notes |
+|----------|-------|---------|------|---------------------|-------|
+| arg0     | `buf` | `long *`| 4    | `bdos/fsfat.c:337`  | pointer to a 16-byte (4-LONG) output buffer; **not validated** |
+| arg1     | `drv` | `int`   | 2    | `bdos/fsfat.c:343`  | `0 = current drive`, else `drv-1` = 0-based drive (`1 = A:`) |
 
-Note the `+1` offset: 0 means "current", not "A:".
+---
 
 ## Outputs
 
-| Reg | D0 |
-| --- | --- |
-| Type | LONG: 0 (E_OK) success, `ERR` (-1) on `ckdrv` failure |
+### Return value
 
-`buf[0..3]` filled in as 4 LONGs (16 bytes total):
+- **Register:** D0 / `x0`
+- **Type:** LONG
+- **Encoding:** `E_OK` (0) on success; `ERR` (-1) on any `ckdrv` failure.
+- **Source location:** `bdos/fsfat.c:346` (`return ERR`), `:366` (`return E_OK`).
 
-| Index | Value           | Meaning                              |
-|------:|-----------------|--------------------------------------|
-| 0     | `free`           | free clusters                         |
-| 1     | `m_numcl`        | total clusters on volume              |
-| 2     | `m_recsiz`       | bytes per logical record (sector)      |
-| 3     | `m_clsiz`        | records per cluster                    |
+### Output buffer (`buf`, 16 bytes = 4 LONGs)
 
-Bytes-per-cluster = `buf[2] * buf[3]`.
-Free bytes        = `buf[0] * buf[2] * buf[3]`.
-Total bytes       = `buf[1] * buf[2] * buf[3]`.
+Written at `bdos/fsfat.c:361-364`:
 
-## Errors
+| Index | Field    | Source (DMD)  | Meaning |
+|------:|----------|---------------|---------|
+| `buf[0]` | free clusters | computed | number of free (unallocated) clusters |
+| `buf[1]` | total clusters | `m_numcl` | total data clusters on the volume |
+| `buf[2]` | bytes/sector | `m_recsiz` | bytes per logical record (sector) |
+| `buf[3]` | sectors/cluster | `m_clsiz` | logical records per cluster |
 
-| Code | Value | When                                                  |
-|------|------:|-------------------------------------------------------|
-| ERR  | -1    | `ckdrv` failed (drive offline / not in `Drvmap`)       |
+Derived values a caller computes: bytes-per-cluster = `buf[2] * buf[3]`;
+free bytes = `buf[0] * buf[2] * buf[3]`; total bytes = `buf[1] * buf[2] * buf[3]`.
 
-EmuTOS returns the generic `ERR = -1`, not the specific EDRIVE
-(-46). Compendium documents EDRIVE here — see Discrepancy candidate.
+### Side effects on global state
 
-## Edge cases
+- `ckdrv` may log in a not-yet-accessed drive (populates `drvtbl[]`, a `dirtbl[]`
+  root slot, sets the bit in `drvsel`).
+- On a detected media change (`TRUE` flag), `ckdrv` `longjmp`s to the trap
+  dispatcher, which frees the old DMD/DND tree, invalidates the drive's buffer
+  cache, re-reads the BPB, and re-runs the call (`bdos/bdosmain.c:449-487`).
 
-### 1. Drive number `+1` convention
+### Side effects on hardware
 
-`drv = 0` is "current drive"; `drv = 1` is A:, `drv = 2` is B:.
-Compare to `Dgetpath` which uses the same convention. `Dsetdrv`
-uses 0-based (0 = A:).
+- Reads FAT sectors through the buffer cache to count free clusters. The
+  `Mediach` probe (removable media) may touch the block device.
 
-### 2. FAT12 vs FAT16 path
+---
 
-`m_16` (16-bit FAT) flag selects the fast `countfree16` path
-(scans 16-bit entries directly). FAT12 uses the slow per-cluster
-`getrealcl` loop (~3× slower because each entry crosses bytes).
-NewTOS supports FAT16/32; FAT12 (floppy) covered by the same code.
+## Error conditions
 
-### 3. Cluster numbers start at 2
+| Condition | Source location | Returned value |
+|-----------|-----------------|----------------|
+| `ckdrv` failed — invalid drive, unmounted removable drive, or out-of-memory logging in | `bdos/fsfat.c:345-346` | `ERR` (-1) |
 
-`for (i=0; i<m_numcl; i++) getrealcl(i+2, dm)` — FAT clusters
-start at 2 (clusters 0 and 1 are reserved for FAT signature and
-end-of-chain marker).
+`ckdrv` internally distinguishes `EDRIVE` (-46), `EPTHNF` (-34), and `ENSMEM`
+(-39) (`bdos/fsdrive.c:89-102`), but `xgetfree` discards the specific code and
+returns the generic **`ERR` (-1)** for all of them.
 
-### 4. `ERR` vs `EDRIVE` discrepancy candidate
+**Error paths not in Compendium:** Compendium documents `EDRIVE` here; EmuTOS
+(and real Atari TOS) actually return `ERR = -1`. See Discrepancy log D-026.
 
-EmuTOS returns `ERR = -1` on bad drive. Compendium and Profibuch
-both document `EDRIVE = -46`. Real Atari TOS also returns `-1`.
-**This matches the convention `EmuTOS = TOS`, so NewTOS follows.**
-Logged in `docs/api/_discrepancies.md` as candidate D-010 if
-worth tracking.
+---
 
-### 5. No buffer-validation
+## Verification criteria
 
-`xgetfree` does not check that `buf` is a valid pointer. Garbage
-or NULL crashes via the page-fault path on the host. NewTOS
-should validate at trap entry (basic user-pointer check).
+- **Nominal:** on a mounted FAT16 C: with known geometry, `Dfree(buf, 3)`
+  returns `E_OK` and fills `buf[1] = m_numcl`, `buf[2] = 512` (typical),
+  `buf[3] = sectors/cluster`, with `buf[0] <= buf[1]`.
+- **Current drive:** `Dfree(buf, 0)` reports the geometry of `Dgetdrv()`'s drive.
+- **Error — bad drive:** `Dfree(buf, 20)` (drive T:) on a system without that
+  drive returns `ERR` (-1), **not** `EDRIVE`.
+- **Free ≤ total invariant:** `buf[0] <= buf[1]` always holds on a consistent
+  volume.
 
-### 6. `ckdrv(drv, TRUE)` triggers media change check
+---
 
-The TRUE flag means "do mediach check". If the disk has been
-swapped, this remounts the drive (or returns E_CHNG depending on
-state). Programs use `Dfree(0, ?)` as a cheap "is the disk still
-there?" probe.
+## Edge cases discovered in source
 
-### 7. Performance on large volumes
+1. **`+1` drive convention.** `drv = 0` is "current"; `drv = 1` is A:. Same as
+   `Dgetpath`; opposite of `Dsetdrv`/`Dgetdrv` (0-based). (`bdos/fsfat.c:343`)
 
-Counting free clusters on a multi-GB FAT32 volume is O(N) — can
-take seconds. AES caches the result; programs hammering `Dfree`
-in tight loops noticeably slow down on large drives.
+2. **Any `ckdrv` failure collapses to `ERR` (-1).** The distinct `EDRIVE`/
+   `EPTHNF`/`ENSMEM` codes are discarded (`bdos/fsfat.c:345-346`). This is a
+   Compendium discrepancy (D-026).
+
+3. **`ckdrv(drv, TRUE)` triggers a media-change check.** On removable media the
+   `TRUE` flag runs `Mediach`; a swap causes a re-login via `longjmp`. Programs
+   use `Dfree(buf, d)` as a cheap "is the disk still there / has it changed?"
+   probe. (`bdos/fsdrive.c:106-115`)
+
+4. **Cluster numbers start at 2.** The slow 12-bit loop reads `getrealcl(i+2)`
+   for `i = 0..m_numcl-1`; clusters 0/1 are FAT-reserved. (`bdos/fsfat.c:356-357`)
+
+5. **12-bit vs 16-bit FAT selected at runtime.** `dm->m_16` picks the fast
+   `countfree16` path; a 12-bit FAT falls back to the per-cluster loop
+   (`getrealcl` crosses byte boundaries, so no bulk scan). This is a runtime
+   choice, not a build flag. (`bdos/fsfat.c:349-359`)
+
+6. **No buffer validation.** `xgetfree` never checks that `buf` is a valid,
+   16-byte-writable pointer; a bad pointer faults at the store. NewTOS should
+   validate the user pointer at trap entry. (`bdos/fsfat.c:361-364`)
+
+7. **O(N) on large volumes.** Counting free clusters is linear in the cluster
+   count; on a multi-GB volume this is slow. AES caches the result; tight
+   `Dfree` loops noticeably slow down on large drives.
+
+---
 
 ## Dependencies
 
-- `ckdrv`, `drvtbl[]`, `DMD` (drive media descriptor).
-- `countfree16`, `getrealcl`, `endofchain`.
-- `run->p_curdrv`.
+### Requires (must be initialized / functional)
 
-Used by: `df`-style tools, file managers showing "X bytes free",
-GEM disk-info dialog.
+- `ckdrv`, `drvtbl[]`, a logged-in DMD for the drive.
+- The FAT buffer cache (`getrec`) for the free-cluster scan.
+- `run->p_curdrv` (for `drv == 0`).
+
+### Used by
+
+- `df`-style tools, file managers showing "X bytes free", the GEM disk-info
+  dialog.
+
+---
+
+## Related data structures
+
+- `docs/api/gemdos/_state.md` §4 — drive descriptors (`drvtbl[]`, DMD) and the
+  current-drive model; §11 — the `Dfree` output-buffer layout.
+- `docs/api/structures/bpb.md` — the BPB the DMD geometry derives from.
+
+---
 
 ## Cross-references
 
-- **Compendium:** "Dfree" — agrees on layout, claims EDRIVE on
-  error (incorrect — see Edge case 4).
-- **Profibuch:** "Dfree (0x36)" — same.
-- `docs/api/gemdos/drive/0e-dsetdrv.md`.
+### Atari Compendium
 
-## Configuration
+- Not present in `references/`. Cross-check deferred. (Documents the 4-LONG
+  buffer layout and — incorrectly — `EDRIVE` on error; EmuTOS returns `ERR`. See
+  D-026.)
 
-None.
+### Atari Profibuch
+
+- Not present in `references/`. Cross-check deferred.
+
+---
+
+## Configuration / version notes
+
+- None; the 12/16-bit FAT split is runtime, not a build option.
+
+---
 
 ## NewTOS implementation notes
 
 (Empty during Phase 00.)
 
-PHASE-05: backed by FAT driver. NewTOS may add a "fast Dfree"
-extension that returns a cached value from the mount layer; the
-classic syscall keeps the precise (slow) scan for ABI fidelity.
+PHASE-05: backed by the FAT driver. The precise (slow) free-cluster scan is kept
+for ABI fidelity; a cached "fast Dfree" is a possible free-implementation
+extension that must return the same buffer values. Return `ERR` (-1), not
+`EDRIVE`, on bad drive for compatibility.

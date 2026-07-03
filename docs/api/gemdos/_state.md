@@ -121,48 +121,97 @@ preserve `flush` semantics for `Dskwrite/Dskread` ABI.
 
 ---
 
-## 4. Drive Descriptors
+## 4. Drive Descriptors and the current-drive model
 
-### `drvtbl[]` and `drvbits` (`bdos/fsdrive.c:42`, `bios/blkdev.c`)
+### Drive count: `BLKDEVNUM = 26` (A:..Z:)
 
-```c
-extern LONG drvbits;        /* bitmap of mounted drives, A=0..P=15 */
-DMD *drvtbl[BLKDEVNUM];     /* one per drive, NULL if not mounted */
-```
+`BLKDEVNUM = 26` (`include/sysconf.h:43`), so drives are **A:..Z:**, not
+A:..P:. `drvbits`/`Drvmap()` return a 32-bit bitmap with bits 0..25 usable
+(`A:` = bit 0 … `Z:` = bit 25). (Correction vs. earlier draft, which used 16 /
+A:..P: throughout — see `_discrepancies.md` D-025.)
 
-`drvbits` is the BIOS's `Drvmap()` return value. `drvtbl[d]` points
-to a Drive Media Descriptor for drive `d` once it has been accessed.
-
-### `DMD` (Drive Media Descriptor, `bdos/fs.h`)
-
-Holds: BPB-derived geometry, FAT cache pointers, root-directory DND,
-free-list bitmap state.
-
-Created lazily by `getdmd()` on first reference to a drive.
-
-### `curdrv` (`bdos/fsdrive.c:45`)
+### `drvtbl[]`, `drvbits`, `drvsel`, `drvrem`
 
 ```c
-WORD curdrv;    /* current default drive, 0=A..15=P */
+DMD *drvtbl[BLKDEVNUM];     /* bdos/fsglob.c:28 — one DMD per drive, NULL if not logged in */
+LONG drvsel;               /* bdos/fsdrive.c:59 — mask of drives selected since power-up */
 ```
 
-Read by `xgetdrv` (Dgetdrv 0x19), written by `xsetdrv` (Dsetdrv
-0x0E).
+- **`drvbits`** — the BIOS's `Drvmap()` return value (BIOS layer,
+  `bios/blkdev.c:833`, `drvbits`). Bitmap of **present** block devices. Read by
+  `xsetdrv`/`xgetdir` via `Drvmap()`.
+- **`drvrem`** — BIOS bitmap of **removable** drives (`include/biosext.h:36`);
+  read by `ckdrv` to decide whether to run a media-change check.
+- **`drvsel`** (BDOS) — drives logged in since power-up; set the first time a
+  drive is accessed. Read/written by `ckdrv`.
+- **`drvtbl[d]`** — points to a Drive Media Descriptor for drive `d` once it has
+  been logged in; created lazily by `getdmd()`/`log_media()` on first reference.
+
+### `DMD` (Drive Media Block, `bdos/fs.h:240-266`)
+
+Holds BPB-derived geometry, FAT cache pointers, and the root-directory DND.
+Fields read by the directory/drive group:
+`m_numcl` (`CLNO`, total data clusters), `m_recsiz` (`UWORD`, bytes/sector),
+`m_clsiz` (`WORD`, sectors/cluster), `m_16` (16-bit-FAT flag). These four (three
+plus a computed free count) are exactly what `Dfree` returns — see §11.
+
+Created lazily by `getdmd()` (`bdos/fsdrive.c:140`) on first reference to a drive.
+
+### Current drive: `PD.p_curdrv` (per-process) — there is **no** global `curdrv`
+
+The current default drive is **per-process**, stored in `PD.p_curdrv`
+(`UBYTE`, basepage offset **0x37**, `include/bdosdefs.h:86`):
+
+- Read by `xgetdrv` (Dgetdrv 0x19, `bdos/fsmain.c:440`) and by `xgetfree`/
+  `xgetdir`/`dcrack` when the drive argument is 0 ("current").
+- Written by `xsetdrv` (Dsetdrv 0x0E, `bdos/fsmain.c:423`) — only when the new
+  value is in `0..BLKDEVNUM-1`; otherwise unchanged (silent ignore).
+- Inherited by children at `Pexec` and thereafter diverges per process.
+
+(Correction vs. earlier draft: there is **no** global `WORD curdrv` variable in
+EmuTOS. The current drive lives only in `run->p_curdrv`. See `_discrepancies.md`
+D-025.)
+
+**Drive-number conventions differ across this group** (a frequent off-by-one
+source): `Dsetdrv`/`Dgetdrv` are **0-based** (`0 = A:`); `Dfree`/`Dgetpath` use
+the **`+1`** convention (`0 = current`, `1 = A:`).
 
 ---
 
 ## 5. Current Path per Drive
 
-Stored **per process** in `PD.p_curdir[NUMCURDIR]` (one slot per drive; each
-entry is an index into a system directory table, `include/bdosdefs.h:89`).
-(This is the current-directory state; the DTA pointer is `p_xdta`, §6 — the two
-are unrelated. An earlier draft mislabelled the path storage as `p_dta`.)
-The drive/directory sub-group specs own this section; noted here only to
-correct the field name.
+The current directory is **per-process, per-drive**, stored in
+`PD.p_curdir[NUMCURDIR]` (`UBYTE[26]`, basepage offset **0x40**,
+`include/bdosdefs.h:89`; `NUMCURDIR = BLKDEVNUM = 26`, `include/sysconf.h:62`).
+Each entry is an **index into the global `dirtbl[]`**, not a path string. Index
+`0` means "not set yet" (treated as the drive root). (This is the
+current-directory state; the DTA pointer is `p_xdta`, §6 — the two are
+unrelated. An earlier draft mislabelled the path storage as `p_dta` and used 16
+slots; it is 26 — see D-025.)
 
-`Dsetpath` (0x3B) updates `PD->p_curdir[curdrv]`; `Dgetpath` (0x47)
-reads it. Path strings are stored *without* drive letter and *with*
-leading backslash.
+### `dirtbl[]` — reference-counted DND cache (`bdos/fsdrive.c:54`)
+
+```c
+DIRTBL_ENTRY dirtbl[NCURDIR];   /* bdos/fs.h:342-345, NCURDIR = 40 (bdos/fs.h:44) */
+/* DIRTBL_ENTRY { DND *dnd; WORD use; } */
+```
+
+`dirtbl[]` maps a small integer (the value stored in `p_curdir[]`) to a cached
+directory `DND` plus a use count. Slot 0 is reserved. `Dsetpath` (via
+`incr_curdir_usage`, `bdos/fsdir.c:1164`) finds an existing slot for the target
+DND or allocates a free one and bumps its use count; the old slot is released by
+`decr_curdir_usage` (`bdos/fsdir.c:1194`). Multiple processes/drives referencing
+the same directory share one slot. When `dirtbl[]` is full,
+`incr_curdir_usage` returns `EINTRN`, which `Dsetpath` surfaces to the caller as
+`EPTHNF`.
+
+`Dsetpath` (0x3B) selects the drive from an optional `X:` prefix
+(`extract_drive_number`, 0..25) or the current drive, then updates
+`p_curdir[dlog]`; it does **not** change `p_curdrv`. `Dgetpath` (0x47) reads
+`dirtbl[p_curdir[drv]].dnd` and walks the DND parent chain (`dopath`) to build
+the path string, *without* drive letter and *with* a leading backslash (root =
+empty string). `NCURDIR` (40) is distinct from the drive count (26); NewTOS may
+enlarge `dirtbl[]` as a free implementation choice.
 
 ---
 
@@ -268,6 +317,27 @@ NewTOS: must serialise BDOS entry per-CPU using a per-process or
 global BDOS mutex (decision: ADR-pending, before PHASE-05). Disk
 buffer cache and SFT need explicit locks because the kernel is
 SMP-aware.
+
+---
+
+## 11. `Dfree` info buffer (4 LONGs / 16 bytes)
+
+`Dfree` (0x36, `xgetfree`, `bdos/fsfat.c:337`) fills a caller-supplied 16-byte
+buffer with four LONGs, copied from the drive's `DMD` (§4) plus a computed free
+count (`bdos/fsfat.c:361-364`):
+
+| Index | Field           | DMD source | Type | Meaning |
+|------:|-----------------|------------|------|---------|
+| `buf[0]` | free clusters   | computed (`countfree16` / `getrealcl` loop) | LONG | unallocated data clusters |
+| `buf[1]` | total clusters  | `m_numcl` (`CLNO`) | LONG | total data clusters on the volume |
+| `buf[2]` | bytes/sector    | `m_recsiz` (`UWORD`) | LONG | bytes per logical record (sector) |
+| `buf[3]` | sectors/cluster | `m_clsiz` (`WORD`) | LONG | logical records per cluster |
+
+Each field is written as a full 32-bit LONG (native byte order — big-endian for
+m68k callers). Derived: bytes/cluster = `buf[2]*buf[3]`; free bytes =
+`buf[0]*buf[2]*buf[3]`; total bytes = `buf[1]*buf[2]*buf[3]`. The buffer is
+**contract** (fixed layout a program reads); the DMD internals it derives from
+are **free** to reimplement. See `docs/api/gemdos/directory/36-dfree.md`.
 
 ---
 

@@ -607,3 +607,65 @@ big-endian-ABI marshaling. Corrected in the two `Fsfirst`/`Fsnext` specs and
 
 **Decision:** the DTA's public time/date/size are native byte order (big-endian
 for m68k callers) — contract for the marshaling shim.
+
+---
+
+## D-025: Drive count is 26 (A:..Z:), `LEN_ZPATH` is 114, and there is no global `curdrv` (spec-vs-source)
+
+**Date:** 2026-07-03
+**Phase 00 specs:** `docs/api/gemdos/drive/0e-dsetdrv.md`, `19-dgetdrv.md`,
+`docs/api/gemdos/directory/39-dcreate.md`, `3b-dsetpath.md`, `47-dgetpath.md`,
+`docs/api/gemdos/_state.md` §4, §5
+
+**EmuTOS:**
+- `BLKDEVNUM = 26` (`include/sysconf.h:43`, comment "A: ... Z:"). Drives are
+  **A:..Z:**, and `Drvmap()`/`drvbits` use bits 0..25. `xsetdrv` bounds-checks
+  `0 <= drv < 26` (`bdos/fsmain.c:422`).
+- `LEN_ZPATH = 114` (`include/sysconf.h:51`), so the `Dcreate` total-path cap
+  (`LEN_ZPATH-3`) is **111** (`bdos/fsdir.c:226`) and the `Dgetpath` write
+  budget (`LEN_ZPATH-3`) is **111** (`bdos/fsdir.c:1245`); callers still
+  allocate the full 114-byte buffer.
+- The current drive is **per-process** in `PD.p_curdrv` (`UBYTE`, basepage
+  offset 0x37, `include/bdosdefs.h:86`). There is **no** global `WORD curdrv`
+  variable anywhere in EmuTOS. `PD.p_curdir[NUMCURDIR]` is `UBYTE[26]`
+  (`NUMCURDIR = BLKDEVNUM = 26`), each entry an index into `dirtbl[NCURDIR]`
+  with `NCURDIR = 40` (`bdos/fs.h:44`).
+
+**Prior NewTOS docs (wrong):** the drive/directory specs and `_state.md` §4/§5
+repeatedly used `BLKDEVNUM = 16` / "A:..P:", `LEN_ZPATH = 128` (deriving a
+"124-byte cap"), a `p_curdir[16]` array, and a non-existent global
+`WORD curdrv` "read by xgetdrv, written by xsetdrv". All contradict the source.
+
+**Not a Compendium discrepancy** — internal spec errors. (The A:..P: figure and
+`curdrv` come from original-TOS lore, not this EmuTOS build.) Corrected in all
+five specs and `_state.md` §4/§5.
+
+**Decision:** use `BLKDEVNUM = 26`, `LEN_ZPATH = 114` (cap 111), `NCURDIR = 40`,
+and the per-process `PD.p_curdrv`/`PD.p_curdir[26]` model.
+
+---
+
+## D-026: `Dfree` returns generic `ERR` (-1) on bad drive, not `EDRIVE`
+
+**Date:** 2026-07-03
+**Phase 00 spec:** `docs/api/gemdos/directory/36-dfree.md`
+
+**EmuTOS:** `xgetfree` (`bdos/fsfat.c:337`) calls `ckdrv(drv, TRUE)`; on any
+negative return it does `return ERR` (`bdos/fsfat.c:345-346`) — the generic
+`ERR = -1` (`include/gemerror.h:20`). `ckdrv` itself distinguishes `EDRIVE`
+(-46), `EPTHNF` (-34), and `ENSMEM` (-39) (`bdos/fsdrive.c:89-102`), but
+`xgetfree` **discards** the specific code and always returns `-1`.
+
+**Compendium:** documents `EDRIVE` (-46) as the `Dfree` error return.
+
+**Prior NewTOS doc:** already returned `ERR` (-1) in its output table (correct),
+but flagged this only as a tentative "candidate D-010" that was never logged;
+this entry records it properly. (`Dgetpath`, by contrast, *does* return `EDRIVE`
+— `bdos/fsdir.c:1240` — so the two directory-group calls differ on bad-drive
+codes.)
+
+**Decision:** follow EmuTOS — `Dfree` returns `ERR` (-1) on any `ckdrv` failure.
+Compendium's `EDRIVE` for `Dfree` is a documentation discrepancy. (Whether real
+Atari TOS returns `-1` here is not verifiable from `references/` — no
+disassembly is present — so that claim is left out; the EmuTOS behaviour is the
+contract per Rule 1.)

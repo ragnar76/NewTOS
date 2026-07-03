@@ -1,105 +1,217 @@
-# `Dsetdrv` — GEMDOS 0x0E
+# `Dsetdrv` (GEMDOS 0x0E)
 
-> Phase 00 spec. Source: EmuTOS @ `1a7484ab` —
-> `bdos/fsmain.c:420` (`xsetdrv`).
+> Phase 00 spec (full-contract template). Source: EmuTOS @ `1a7484ab`.
+> Verified against `bdos/fsmain.c:420` (`xsetdrv`).
+
+> **Contract vs. reference** — see [`docs/COMPATIBILITY.md`](../../../COMPATIBILITY.md).
+> Contract: trap ID/ABI, the 0-based drive index, the "silently ignore
+> out-of-range" rule, the LONG drive-bitmap return. Reference: the per-process
+> `PD.p_curdrv` field and the `Drvmap()` BIOS call it forwards to.
 
 ## EmuTOS source
 
-```c
-long xsetdrv(int drv)
-{
-    if ((drv >= 0) && (drv < BLKDEVNUM))
-        run->p_curdrv = drv;
-    return Drvmap();
-}
-```
+**Primary location:** `bdos/fsmain.c:420` — `long xsetdrv(int drv)`.
 
-`BLKDEVNUM = 16` — drives A:..P:. `Drvmap()` is BIOS function
-0x0A and returns the bitmap of all online drives.
+**Installed handler / vector:** (none) — direct `funcs[]` entry `0x0E` =
+`xsetdrv`, `wparms = 1` (`bdos/bdosmain.c:179`).
+
+**Helpers called:**
+- `include/biosbind.h:29` — `Drvmap()` = `bios_l_v(0xa)` → BIOS 0x0A
+  `blkdev_drvmap()` (`bios/blkdev.c:833`) — returns `drvbits`.
+
+**Headers / type definitions used:**
+- `include/sysconf.h:43` — `BLKDEVNUM = 26` (drives A:..Z:).
+- `include/bdosdefs.h:86` — `PD.p_curdrv` (`UBYTE`, basepage offset **0x37**).
+
+**System variables / globals read:** `run` (current PD, `bdos/proc.c:54`);
+`drvbits` (via `Drvmap()`, in the BIOS layer, `bios/blkdev.c`).
+**System variables / globals written:** `run->p_curdrv` (only when `drv` is in
+range).
+
+**Build configuration affecting this function:** none.
+
+---
+
+## Source extraction summary
+
+`Dsetdrv` sets the calling process's default (current) drive and returns the
+system drive bitmap. `xsetdrv` accepts a 0-based drive index (`0 = A:`,
+`25 = Z:`). If `drv` is in the range `0 <= drv < BLKDEVNUM` (i.e. `0..25`) it
+stores it into `run->p_curdrv`; otherwise it leaves the current drive
+**unchanged**. In **all** cases it then returns `Drvmap()` — the BIOS bitmap of
+all present block devices — so the return value does not tell the caller whether
+the requested change actually took effect.
+
+Two things are deliberately *not* done. First, `xsetdrv` does **not** verify
+that the requested drive is actually mounted/present: a program may select a
+drive whose bit is clear in `Drvmap()`; the failure only surfaces on the next
+filesystem operation (as `EDRIVE`/`EPTHNF` from `ckdrv`). The source comment
+(`bdos/fsmain.c:414-418`) records that this permissiveness is intentional —
+historically only mounted drives were selectable, but BetaDOS expects
+`Dsetdrv(15)` (P:) to succeed even when P: is offline, so EmuTOS follows TOS 4.04
+in only bounds-checking against `BLKDEVNUM`. Second, the current drive is
+**per-process**: `p_curdrv` lives in the caller's PD, so different processes can
+have different current drives.
+
+Note the argument is 0-based (`0 = A:`), unlike `Dfree`/`Dgetpath`/`Dgetdir`
+which use the `+1` convention (`0 = current`, `1 = A:`).
+
+---
 
 ## Trap interface
 
-| | |
-|--|--|
-| Trap | 1 (GEMDOS) |
-| Function ID | `0x000E` |
-| WORD args | 1 (WORD) |
-| Stack frame | `+2: drv (WORD)`, `+0: 0x000E` |
+- **Trap number:** 1 (GEMDOS)
+- **Function ID:** 0x0E
+- **Stack frame on entry (m68k):** `Dsetdrv(drv)` = `trap1(0x0e, drv)`:
+  ```
+  +2: drv (word)
+   0: function_id (word) = 0x000E
+  ```
+- **Total parameter bytes:** 2 (WORD) → `wparms = 1`.
+- **Native (AArch64) ABI:** ID `0x0E` in `x8`; arg in `x0`; LONG drive bitmap
+  returned in `x0` (a 32-bit value zero-extended into the 64-bit register — bits
+  0..25 only can be set, so bit 31 is never set and sign-extension is moot).
+
+  | m68k stack | AArch64 reg | Name  | Type / size |
+  |------------|-------------|-------|-------------|
+  | +2         | `x0`        | `drv` | `WORD` (16) — 0-based drive index |
+
+---
 
 ## Inputs
 
-| Pos | Name  | Type | Range / meaning                              |
-|-----|-------|------|----------------------------------------------|
-| 0   | `drv` | WORD | drive index (0=A:, 1=B:, …, 15=P:)            |
+| Position | Name  | Type  | Size | Source location      | Notes |
+|----------|-------|-------|------|----------------------|-------|
+| arg0     | `drv` | `int` | 2    | `bdos/fsmain.c:422`  | 0-based drive index (`0 = A:`, `25 = Z:`); out-of-range values are ignored |
+
+The C prototype is `int drv`, so the WORD is treated as a **signed** 16-bit
+value: a negative `drv` fails the `drv >= 0` guard and is ignored.
+
+---
 
 ## Outputs
 
-| Reg | D0 |
-| --- | --- |
-| Type | LONG (drive bitmap) |
+### Return value
 
-Bit `n` set ⇒ drive `n` exists. Returned **regardless of whether
-the change succeeded** — `xsetdrv` always calls `Drvmap()` at the
-end.
+- **Register:** D0 / `x0`
+- **Type:** LONG (drive bitmap)
+- **Encoding:** bit `n` set ⇒ drive `n` (`A:` = bit 0 … `Z:` = bit 25) is
+  present. Returned **regardless** of whether `p_curdrv` was updated.
+- **Source location:** `bdos/fsmain.c:425` (`return Drvmap()`).
 
-## Errors
+### Side effects on global state
 
-No error code. Out-of-range `drv` is silently ignored (current
-drive unchanged); the caller cannot tell the call failed except by
-calling `Dgetdrv` afterwards.
+- `run->p_curdrv = drv` **iff** `0 <= drv < 26` (`bdos/fsmain.c:422-423`).
+  Nothing else changes; no drive is logged in and no media check is performed
+  here (that happens lazily on the first file operation via `ckdrv`).
 
-## Edge cases
+### Side effects on hardware
 
-### 1. Range silently clamped
+- None directly. `Drvmap()` reads the cached `drvbits`; it does not probe
+  hardware.
 
-`drv < 0` or `drv >= 16`: `p_curdrv` is **not** updated. The
-returned drive bitmap may make the caller think the call worked.
-This is the historical Atari behaviour and is deliberately preserved.
+---
 
-### 2. No existence check
+## Error conditions
 
-`xsetdrv` does **not** verify that bit `drv` is set in the drive
-map. A program can `Dsetdrv(5)` with drive F: missing, succeed,
-then any subsequent file operation on the current drive returns
-`EDRIVE` (-46). This is by design — see comment in source about
-BetaDOS expecting `Dsetdrv(15)` (P:) to work even when P: is offline.
+| Condition | Source location | Returned value |
+|-----------|-----------------|----------------|
+| (no error path) | — | always returns the drive bitmap |
 
-### 3. Per-process current drive
+`xsetdrv` has **no error return**. An out-of-range `drv` (< 0 or >= 26) is
+silently ignored — the current drive is left unchanged and the bitmap is still
+returned, so the caller cannot detect the failure from the return value (it must
+call `Dgetdrv` to confirm). This matches historical Atari TOS behaviour.
 
-`p_curdrv` lives in the calling process's PD. Each process has its
-own current drive; `Pexec` inherits the parent's at child creation,
-then they diverge.
+**Error paths not in Compendium:** none; the silent-ignore behaviour is a
+non-error path Compendium does not spell out.
 
-### 4. Return value source
+---
 
-The Drvmap result reflects **all** present drives, not just the
-ones reachable from this process. EmuTOS has no per-process drive
-mapping or chrooting.
+## Verification criteria
 
-### 5. Boot-time default
+- **Nominal:** on a system with C: present, `Dsetdrv(2)` sets the current drive
+  to C: (a subsequent `Dgetdrv` returns 2) and returns a bitmap with at least
+  bit 2 set.
+- **Bitmap independent of change:** `Dsetdrv(drv)` returns the same value as a
+  standalone `Drvmap()` call, for any `drv`.
+- **Out-of-range ignored:** after `Dsetdrv(2)`, calling `Dsetdrv(30)` leaves the
+  current drive at 2 (`Dgetdrv` still returns 2) and still returns the bitmap.
+- **Offline drive selectable:** `Dsetdrv(15)` (P:) succeeds and updates the
+  current drive even when bit 15 is **clear** in the returned bitmap; the failure
+  only appears on the next file operation as `EDRIVE`/`EPTHNF`.
 
-PD's `p_curdrv` is initialised by `Pexec` to the parent's value.
-The first user process inherits from the BIOS bootstrap (typically
-the boot drive — drive C: for hard-disk boots, A: for floppy).
+---
+
+## Edge cases discovered in source
+
+1. **Range is A:..Z: (26), not A:..P: (16).** `BLKDEVNUM = 26`
+   (`include/sysconf.h:43`); the accepted range is `0..25`. (Earlier drafts of
+   this spec used 16 — wrong; see Discrepancy log D-025.)
+
+2. **Out-of-range is silently ignored.** `drv < 0` or `drv >= 26` leaves
+   `p_curdrv` untouched but still returns the bitmap (`bdos/fsmain.c:422-425`).
+
+3. **No mount/presence check.** The selected drive need not exist in the bitmap;
+   selection always "succeeds". Intentional (BetaDOS compatibility,
+   `bdos/fsmain.c:414-418`).
+
+4. **The bitmap reflects all present drives**, not a per-process view. EmuTOS
+   has no per-process drive masking or chroot.
+
+5. **0-based here, `+1` elsewhere.** `Dsetdrv`/`Dgetdrv` are 0-based;
+   `Dfree`/`Dgetpath` use `0 = current, 1 = A:`. A frequent source of off-by-one
+   bugs in TOS software.
+
+---
 
 ## Dependencies
 
-- `run` (current PD pointer).
-- BIOS `Drvmap` (fn 0x0A).
+### Requires (must be initialized / functional)
 
-Used by: shell `CD A:`, AES file selector, every chdir-equivalent.
+- `run` (current PD pointer, `bdos/proc.c:54`).
+- BIOS `Drvmap` (0x0A) and the populated `drvbits`.
+
+### Used by
+
+- Shell `cd X:` / drive-change commands, AES file selector, any chdir-equivalent
+  that switches drive before `Dsetpath`.
+
+---
+
+## Related data structures
+
+- `docs/api/gemdos/_state.md` §4 — current-drive model (`PD.p_curdrv`) and the
+  drive bitmap (`drvbits`/`Drvmap`).
+- `docs/api/structures/basepage.md` — `p_curdrv` at basepage offset 0x37.
+
+---
 
 ## Cross-references
 
-- **Compendium:** "Dsetdrv" — agrees on bitmap return.
-- **Profibuch:** "Dsetdrv (0x0E)" — agrees.
-- `docs/api/gemdos/drive/19-dgetdrv.md`
-- `docs/api/bios/0a-drvmap.md` (pending)
+### Atari Compendium
 
-## Configuration
+- Not present in `references/`. Cross-check deferred. (Historically documents the
+  0-based index and the drive-bitmap return; the silent-ignore of out-of-range
+  is EmuTOS/TOS behaviour.)
 
-- `BLKDEVNUM = 16` (`bdos/fs.h`); not user-tunable.
+### Atari Profibuch
+
+- Not present in `references/`. Cross-check deferred.
+
+---
+
+## Configuration / version notes
+
+- `BLKDEVNUM = 26` in this build (A:..Z:). The comment references TOS 4.04's
+  A:..P: restriction, but this EmuTOS build allows A:..Z:.
+
+---
 
 ## NewTOS implementation notes
 
 (Empty during Phase 00.)
+
+PHASE-05: `p_curdrv` is a per-process field in the kernel `Process`. Preserve the
+0-based index, the 26-drive range, and the silent-ignore-out-of-range behaviour
+for m68k-binary compatibility.
