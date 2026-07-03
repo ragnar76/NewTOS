@@ -1398,3 +1398,61 @@ PDFs in `references/`).
 `evnt_dclick` query via `setit == 0`; default speed index 3; rate table
 `{450,330,275,220,165}` ms; return value is the index. Documented in
 `aes/event.md`.
+
+---
+
+## D-051: `menu_*` slot map (`int_in[0]` index / `int_in[1]` state), `menu_ienable` item-bit-15 = redraw flag, and the full `MN_SELECTED` `msg[3..7]` layout (spec-vs-source)
+
+**Date:** 2026-07-03
+**Phase 00 spec:** `docs/api/aes/menu.md`
+
+**EmuTOS:**
+- **Menu slot map.** Every menu selector puts its **primary index in
+  `int_in[0]`** and its **state/flag in `int_in[1]`**: `SHOW_IT`/`ITEM_NUM`/
+  `TITLE_NUM`/`MM_PID` = `int_in[0]`; `CHECK_IT`/`ENABLE_IT`/`NORMAL_IT` =
+  `int_in[1]` (`include/aesdefs.h:275-283`). The tree is `MM_ITREE = addr_in[0]`,
+  the `menu_text` replacement string `MM_PTEXT = addr_in[1]`, the `menu_register`
+  title `MM_PSTR = addr_in[0]`.
+- **`menu_ienable` item bit 15.** The dispatch is
+  `do_chg(tree, ITEM_NUM & 0x7fff, DISABLED, !ENABLE_IT, (ITEM_NUM & 0x8000) != 0,
+  FALSE)` (`aes/gemsuper.c:174-176`). `do_chg`'s signature is
+  `do_chg(tree, iitem, chgvalue, dochg, dodraw, chkdisabled)`
+  (`aes/gemmnlib.c:145-146`), so **bit 15 of the item word is the `dodraw`
+  (redraw-now) flag**, not a title/special-item marker; the object index is the
+  low 15 bits.
+- **Redraw / disabled-guard per call.** `menu_icheck` passes `dodraw=FALSE`
+  (never repaints; `gemsuper.c:172`); `menu_tnormal` passes `dodraw=TRUE,
+  chkdisabled=TRUE` (repaints, and returns `0` on a disabled title;
+  `gemsuper.c:179`, `gemmnlib.c:158-159`); `menu_ienable` passes `chkdisabled=FALSE`.
+- **`MN_SELECTED` message layout.** Built by `ct_msgup` →
+  `ap_sendmsg(appl_msg, MN_SELECTED, owner, title, item, treehi, treelo, parent)`
+  (`aes/gemctrl.c:353-368`, `aes/gemwmlib.c:851-863`): `msg[0]=MN_SELECTED (10)`,
+  `msg[1]=sender pid`, `msg[2]=0`, `msg[3]=title obj`, `msg[4]=item obj`, and —
+  **with `CONF_WITH_MENU_EXTENSION` (the default build)** — `msg[5]=HIWORD(tree)`,
+  `msg[6]=LOWORD(tree)`, `msg[7]=submenu parent`; without the extension `msg[5..7]`
+  are 0. A desk-accessory pick sends `AC_OPEN (40)` with the DA id in `msg[4]`
+  instead (`gemctrl.c:337-349`).
+- **`menu_register` return.** Returns the slot index `0..NUM_ACCS-1` (0–5,
+  `NUM_ACCS=6`, `include/sysconf.h:37`), or `-1` on a negative pid / all slots
+  used (`aes/gemmnlib.c:789-816`); it stores the caller's string **pointer**, not
+  a copy (`:806`).
+
+**Prior NewTOS doc (wrong/incomplete):** `aes/menu.md` placed `ITEM_NUM`/
+`TITLE_NUM` at `int_in[1]` and `CHECK_IT`/`ENABLE_IT`/`NORMAL_IT` at `int_in[2]`
+(off by one slot); described `menu_ienable`'s `item & 0x8000` as "a
+title-bar/special item" flag (it is the redraw flag); did not note that
+`menu_icheck` never redraws or that `menu_tnormal` fails on a disabled title;
+and gave only `msg[3]=title, msg[4]=item` for `MN_SELECTED`, omitting the
+`msg[5..7]` tree-pointer/parent words present in the default build.
+
+**Not a Compendium discrepancy** — a spec precision/completeness fix (no PDFs in
+`references/`, so the Compendium slot/`msg[5..7]` cross-check is deferred). The
+`menu_ienable` high item bit and the AES-3.3 `msg[5..7]` tree pointer are
+documented in Compendium and match this build; verification deferred.
+
+**Decision:** follow EmuTOS — `int_in[0]` = index, `int_in[1]` = state;
+`menu_ienable` item bit 15 = redraw flag over a 15-bit index; `menu_icheck`
+deferred draw; `menu_tnormal` redraws + guards disabled titles; the full
+`MN_SELECTED` `msg[0..7]` layout incl. `msg[5..7]` under
+`CONF_WITH_MENU_EXTENSION`; `menu_register` slot `0..5` / `-1`, pointer stored
+not copied. Corrected in `aes/menu.md`.

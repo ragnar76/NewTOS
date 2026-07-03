@@ -159,6 +159,38 @@ what a program observes is the values the `evnt_*` calls report, not the globals
 
 ---
 
+## 6a. Menu-manager state — the active menu bar and DA registration
+
+The menu manager ([`menu.md`](./menu.md)) keeps a small amount of shared state
+identifying the currently installed menu bar and the registered desk
+accessories. These are **reference** internals (fed by `menu_bar`/`menu_register`);
+what a program observes is the drawn bar, the `MN_SELECTED`/`AC_OPEN` messages,
+and the `menu_register` slot-id/-1 return.
+
+| Global | Decl. | Meaning | Read/written by |
+|--------|-------|---------|-----------------|
+| `gl_mntree` | `gemmnlib.c:62` | ptr to the **active menu OBJECT tree** (`NULL` = no bar) | set/reset by `mn_bar` (`menu_bar`); read by the control manager's tracking loop `mn_do` |
+| `gl_mnppd` | `gemmnlib.c:63` | the AES process descriptor that **owns** the current bar | set by `mn_bar`; used as the `MN_SELECTED` recipient (`gemctrl.c:353`) |
+| `gl_ctwait` | `gemctrl.h:13` | the control-manager mouse-wait rectangle (bar extent when a bar is up, else full desktop `gl_rmenu`, `gsxdefs.h:108`) | `mn_bar` (`gemmnlib.c:715-726`) |
+| `gl_dafirst` | `gemmnlib.c:68` | object # of the first desk-accessory entry in the tree | `menu_fixup`; the pick router (`gemctrl.c:337`) |
+| `D.g_accreg` | `gemlib.h` (`THEGLO`) | count of registered DAs (bounded by `NUM_ACCS`) | `mn_register`/`mn_init` |
+| `D.g_acctitle[NUM_ACCS]` | `gemlib.h` (`THEGLO`) | the DA menu-item **title string pointers** (stored, not copied) | `mn_register`/`mn_cleanup`/`mn_init` |
+| `desk_ppd[NUM_ACCS]` | `gemmnlib.c:65` | the owner process descriptor per DA slot | `mn_register`; `mn_getownid` (route `AC_OPEN`) |
+| `acc_display[NUM_ACCS]` | `gemmnlib.c:66` | display-slot → DA menu-id lookup table | `build_menuid_lookup`; `mn_getownid` |
+| `gl_submenu`/`gl_submenu_hwm` | `gemmnext.c:57-58` | submenu-info (`SMIB`) array (`CONF_WITH_MENU_EXTENSION`) | `menu_attach`/`menu_istart`; freed by `mn_cleanup` |
+
+- **DA-slot model (contract vs. reference).** `NUM_ACCS = 6`
+  (`include/sysconf.h:37`) → six DA slots. `menu_register` returns the slot index
+  `0..5` (the DA's *menu id*) or `-1` when full/invalid — **the slot-id/-1 return
+  is contract**; the `g_acctitle[]`/`desk_ppd[]`/`acc_display[]` storage and
+  `gl_mntree`/`gl_mnppd` pointers are EmuTOS internals NewTOS reimplements.
+- **Single-app note.** `menu_register` and the `AC_OPEN` routing presume
+  concurrent AES processes (the accessories); at NewTOS single-app bring-up there
+  are none, so this state is inert until the DA machinery exists (cf.
+  [`application.md`](./application.md) `wait_for_accs`).
+
+---
+
 ## 7. NewTOS mapping (contract vs. reference)
 
 - **Contract to keep:** ap_id = a small process id (system 0/1, apps 2+);
