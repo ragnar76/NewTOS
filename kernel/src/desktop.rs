@@ -2045,7 +2045,7 @@ fn find_entry_at(handle: i16, mx: i16, my: i16) -> Option<usize> {
     // first visible entry `start` is row-aligned for the icon grid.
     let (_, _, ww, _) = work;
     let start = if icons {
-        scroll as usize * (ww / ICON_CW).max(1) as usize
+        scroll as usize * (ww / ICON_STEP_W).max(1) as usize
     } else {
         scroll as usize
     };
@@ -2110,7 +2110,7 @@ fn row_metrics(icons: bool, n: usize, work: (i16, i16, i16, i16)) -> (i16, i16) 
     let (_, _, ww, wh) = work;
     let n = n as i16;
     if icons {
-        let cols = (ww / ICON_CW).max(1);
+        let cols = (ww / ICON_STEP_W).max(1);
         let total_rows = (n + cols - 1) / cols;
         let vis_rows = ((wh - 6) / ICON_CH).max(1);
         (total_rows, vis_rows)
@@ -2188,10 +2188,17 @@ fn build_dir_text(
     };
 }
 
-/// Icon cell size (width/height in pixels), shared by the icon view and
-/// the scroll-metrics helper so they agree on rows-per-window.
-const ICON_CW: i16 = 76;
-const ICON_CH: i16 = 52;
+/// Icon-view grid metrics, faithful to EmuTOS `win_view`/`app_start`: the
+/// icon cell — and the label box under it — is `MAX_ICONTEXT_WIDTH` (12)
+/// characters wide, so a full 12-char 8.3 name fits without truncation; and
+/// columns are pitched one `MIN_WINT` gap apart, so adjacent labels never
+/// touch (the previous 76 px cell was narrower than a 96 px label, which is
+/// what made long names overlap). Icon bitmap (32 px) is centred in the
+/// cell; the row pitch holds the icon + its label + a small vertical gap.
+const ICON_LABEL_W: i16 = 12 * tos_api::vdi::font::CELL_W; // g_wicon: cell / label box = 96 px
+const ICON_GAP_W: i16 = 8; // MIN_WINT: inter-column gap
+const ICON_STEP_W: i16 = ICON_LABEL_W + ICON_GAP_W; // g_iwspc: column pitch = 104 px
+const ICON_CH: i16 = 52; // g_ihspc: row pitch (32 icon + label + gap)
 
 /// Icon view: a grid of folder / document icons with the name underneath
 /// (EmuTOS "Show as icons"); the selected name is inverted.
@@ -2262,7 +2269,7 @@ fn build_dir_icons(
 ) {
     use crate::desktop_icons as ic;
     let (wx, wy, ww, wh) = work;
-    let cols = (ww / ICON_CW).max(1);
+    let cols = (ww / ICON_STEP_W).max(1);
     let start = scroll as usize * cols as usize; // first visible entry (row-aligned)
 
     // SAFETY: single-CPU desktop; the tree buffers are used only here.
@@ -2277,7 +2284,7 @@ fn build_dir_icons(
         if cy + ICON_CH > wh || n >= DIR_MAX {
             break;
         }
-        let cx = (rel % cols) * ICON_CW;
+        let cx = (rel % cols) * ICON_STEP_W;
         // Copy the (truncated) name into the tree's own buffer.
         let end = e.name.iter().position(|&b| b == 0).unwrap_or(14).min(15);
         nm[n] = [0; 16];
@@ -2288,14 +2295,14 @@ fn build_dir_icons(
         } else {
             (&ic::DOC_DATA, &ic::DOC_MASK)
         };
-        let (xtext, wtext) = label_box(end, ICON_CW);
+        let (xtext, wtext) = label_box(end, ICON_LABEL_W);
         ib[n] = IconBlk {
             ib_pmask: mask.as_ptr() as u64,
             ib_pdata: data.as_ptr() as u64,
             ib_ptext: nm[n].as_ptr() as u64,
             ib_char: 0x1000, // fg = black (1), bg = white (0)
             ib_xchar: 0, ib_ychar: 0,
-            ib_xicon: (ICON_CW - 32) / 2, ib_yicon: 0, ib_wicon: 32, ib_hicon: 32,
+            ib_xicon: (ICON_LABEL_W - 32) / 2, ib_yicon: 0, ib_wicon: 32, ib_hicon: 32,
             ib_xtext: xtext, ib_ytext: 34, ib_wtext: wtext, ib_htext: 16,
         };
         obj[n + 1] = Object {
@@ -2303,7 +2310,7 @@ fn build_dir_icons(
             ob_type: G_ICON, ob_flags: 0,
             ob_state: if is_selected(handle, vis) { OB_SELECTED } else { 0 },
             ob_spec: (&ib[n] as *const IconBlk) as u64,
-            ob_x: cx, ob_y: cy, ob_width: ICON_CW, ob_height: ICON_CH,
+            ob_x: cx, ob_y: cy, ob_width: ICON_LABEL_W, ob_height: ICON_CH,
         };
         n += 1;
     }
