@@ -1,103 +1,378 @@
-# `Ssystem` — GEMDOS 0x154 (MiNT extension)
+# `Ssystem` (GEMDOS 0x154 — MiNT extension)
 
-> **FreeMiNT extension spec** (EmuTOS does not implement `Ssystem`).
-> Source: FreeMiNT @ `f906416` — `sys/syscalls.master:460`,
-> `sys/ssystem.c` (`s_system`), `sys/mint/ssystem.h` (mode codes),
+> **FreeMiNT extension spec** — `Ssystem` is **not implemented by EmuTOS**
+> (the EmuTOS GEMDOS table tops out at `MAX_FNCALL = 0x57`,
+> `bdos/bdosmain.c`). For this function **FreeMiNT is the source of truth**
+> (Track A source-hierarchy 2b, `docs/SOURCE-ANALYSIS-PROTOCOL.md`).
+> Source: FreeMiNT @ `f906416` —
+> `sys/syscall_vectors.c:473` (trap slot `0x154 = sys_s_system`),
+> `sys/ssystem.c:57` (`sys_s_system`), `sys/mint/ssystem.h` (mode codes),
 > `sys/cookie.c` (`get_cookie`/`set_cookie`/`del_cookie`).
-> Adopted per ADR-012 (`docs/MEMORY.md`) as NewTOS's cookie-jar access
-> path; data model: [`../bios/_cookie-jar.md`](../bios/_cookie-jar.md).
+> Adopted per ADR-012 (`docs/MEMORY.md`) as NewTOS's cookie-jar access path;
+> data model: [`../bios/_cookie-jar.md`](../bios/_cookie-jar.md).
 >
 > **Scope of this spec:** the `Ssystem` trap shell + the three **cookie**
-> subfunctions only. The many other FreeMiNT modes (`S_OSNAME`,
-> `S_OSVERSION`, `S_GETLVAL`, …) are out of scope for now; the dispatcher
-> returns `ENOSYS` for unimplemented modes so the surface stays honest.
+> subfunctions (`S_GETCOOKIE`/`S_SETCOOKIE`/`S_DELCOOKIE`) that ADR-012 needs.
+> FreeMiNT defines ~40 other modes (`S_OSNAME`, `S_OSVERSION`, `S_GETLVAL`,
+> `S_SETLVAL`, `S_SECLEVEL`, …) — catalogued below for completeness but marked
+> **deferred**; the dispatcher returns `ENOSYS` for every unimplemented mode so
+> the surface stays honest.
+
+> **Contract vs. reference** — see [`docs/COMPATIBILITY.md`](../../COMPATIBILITY.md).
+> Contract (for the modes NewTOS implements): trap ID `0x154`, the `(mode,
+> arg1, arg2)` ABI, the mode-code numbers, the cookie sub-op semantics
+> (return-by-value-or-pointer, tag validation, not-found error). Reference:
+> FreeMiNT's `*CJAR` sysvar, its `struct cookie` internals, its m68k
+> low-memory `S_*VAL` addresses — NewTOS reimplements the *behaviour*, not
+> these internals.
+
+## EmuTOS status
+
+Not applicable — EmuTOS has no `Ssystem`. Do **not** search EmuTOS for it; the
+authority here is FreeMiNT (confirmed: `sys_s_system` sits at trap index
+`0x154` in `sys/syscall_vectors.c:473`).
+
+---
 
 ## Trap interface
 
-| | |
-|--|--|
-| Trap | 1 (GEMDOS) |
-| Function ID | `0x0154` (340) |
-| Signature | `LONG Ssystem(WORD mode, LONG arg1, LONG arg2)` |
-| ABI | AAPCS64: `x8 = 0x154`, `x0 = mode`, `x1 = arg1`, `x2 = arg2`, result in `x0` |
+- **Trap number:** 1 (GEMDOS)
+- **Function ID:** `0x0154` (340 decimal)
+- **Signature (FreeMiNT):** `long _cdecl s_system(int mode, ulong arg1,
+  ulong arg2)` (`sys/ssystem.c:56-57`).
+- **Stack frame on entry (m68k):**
+  ```
+  +8: arg2 (LONG)
+  +4: arg1 (LONG)
+  +2: mode (word)
+   0: function_id (word) = 0x0154
+  ```
+- **Total parameter bytes:** 10 (WORD + LONG + LONG).
+- **Native (AArch64) ABI:** ID `0x154` in `x8`; `mode` in `x0`, `arg1` in
+  `x1`, `arg2` in `x2`; LONG result **sign-extended** into `x0`. When a mode
+  returns *by pointer* (e.g. `S_GETCOOKIE` with `arg2 != 0`), `arg2` is a
+  user-space pointer to a `LONG` the kernel writes; the LONG result is the
+  status.
 
-**Dispatch note (NewTOS):** `0x154` is far above the current GEMDOS
+  | m68k stack | AArch64 reg | Name   | Type / size |
+  |------------|-------------|--------|-------------|
+  | +2         | `x0`        | `mode` | `WORD` (16) — dispatch selector |
+  | +4         | `x1`        | `arg1` | `LONG` (32) — mode-specific |
+  | +8         | `x2`        | `arg2` | `LONG` (32) — mode-specific |
+
+**Dispatch note (NewTOS):** `0x154` is far above the EmuTOS-derived GEMDOS
 `MAX_FN = 0x57`, so the static dispatch table cannot hold it. The GEMDOS
-dispatcher special-cases `func_id == 0x154` **before** the table lookup
-(a small `match` arm), routing to the Ssystem handler. Future MiNT
-extensions follow the same "high id, special-cased" pattern.
+dispatcher special-cases `func_id == 0x154` **before** the table lookup (a
+small `match` arm that routes to the Ssystem handler). Future MiNT extensions
+follow the same "high id, special-cased" pattern. See
+`docs/api/gemdos/_dispatcher.md`.
 
-## Mode codes (cookie subset, `sys/mint/ssystem.h`)
+---
 
-| Mode | Value | Meaning |
-|------|------:|---------|
-| `S_GETCOOKIE` | 8 | read a cookie |
-| `S_SETCOOKIE` | 9 | add / update a cookie |
-| `S_DELCOOKIE` | 26 | remove a cookie |
+## Mode codes (FreeMiNT `sys/mint/ssystem.h`)
 
-Any other mode → `ENOSYS` (not yet implemented).
+### Implemented by NewTOS (cookie subset — in scope)
 
-## `S_GETCOOKIE` (mode 8) — `get_cookie(arg1, arg2)`
+| Mode          | Value | Meaning                    | Privilege |
+|---------------|------:|----------------------------|-----------|
+| `S_GETCOOKIE` |     8 | read a cookie              | any       |
+| `S_SETCOOKIE` |     9 | add / update a cookie      | root only |
+| `S_DELCOOKIE` |    26 | remove a cookie            | root only |
 
-`arg1` = cookie **tag**; `arg2` = pointer to a `LONG` where the value is
-written (the *return-by-pointer* form FreeMiNT uses). Three behaviours
-(`sys/cookie.c:get_cookie`):
+`mode == -1` in FreeMiNT is a "does this call exist" probe that returns `E_OK`
+(`sys/ssystem.c:72-76`); NewTOS should honour it so callers can feature-test.
 
-1. **`arg1 == 0`** → return the **NULL-slot value** = jar capacity. If
-   `arg2 != 0`, write it to `*arg2` and return `E_OK`; if `arg2 == 0`,
-   return the value directly in `x0`.
-2. **`arg1` high word == 0** (a small number) → treat `arg1` as a **1-based
-   slot index**: enumerate the Nth cookie, writing its `{tag,value}`
-   (FreeMiNT copies the entry). `EINVAL` (or the documented error) if the
-   index exceeds the cookie count.
-3. **otherwise** → search the jar for `tag`; on match write `value` to
-   `*arg2` and return `E_OK`; if absent return the not-found error.
+Any other mode → `ENOSYS` (`sys/ssystem.c:642-646`). In NewTOS the numeric
+value of "not implemented" is an **open question** — FreeMiNT's `ENOSYS` is
+`-32`, which collides with the TOS error `EINVFN` (`-32`); returning `EINVFN`
+is consistent with how the GEMDOS dispatcher reports unknown function IDs, so
+that is the recommended mapping (confirm — see Open questions).
 
-## `S_SETCOOKIE` (mode 9) — `set_cookie(arg1, arg2)`
+### Defined by FreeMiNT but DEFERRED (out of scope for now)
 
-`arg1` = tag, `arg2` = value (`sys/cookie.c:set_cookie`):
+Full list from `sys/mint/ssystem.h`, so the "unknown mode → error" surface is
+deliberate rather than accidental:
 
-- **Validate the tag**: every byte must be non-zero
-  (`tag & 0xFF000000`, `0x00FF0000`, `0x0000FF00`, `0x000000FF` all
-  non-zero) — this keeps the slot-number space (high word 0) usable by
-  `S_GETCOOKIE`. Invalid → `EINVAL`.
-- **Update or append**: scan to the terminator; if `tag` already present,
-  overwrite its value (`E_OK`). Otherwise, if there is room
-  (`count+1 < capacity`, where `capacity` = the terminator's `value`),
-  write `{tag,value}` into the terminator slot and push a fresh
-  `{0, capacity}` terminator down (`E_OK`). If full → error (FreeMiNT
-  grows the jar; NewTOS can grow via the kernel allocator, see below).
+| Mode | Value | Group | Notes |
+|------|------:|-------|-------|
+| `S_OSNAME` | 0 | OS info | returns `'MiNT'` |
+| `S_OSXNAME` | 1 | OS info | returns `'Free'` |
+| `S_OSVERSION` | 2 | OS info | kernel version |
+| `S_OSHEADER` | 3 | OS info | reads the m68k OS header (low-mem, m68k-only) |
+| `S_OSBUILDDATE` | 4 | OS info | |
+| `S_OSBUILDTIME` | 5 | OS info | |
+| `S_OSCOMPILE` | 6 | OS info | CPU the kernel was built for |
+| `S_OSFEATURES` | 7 | OS info | memory-protection / VM / crypto bitfield |
+| `S_GETLVAL` | 10 | sysvar peek | read LONG at `arg1` (low-mem `$420..$fffc`) |
+| `S_GETWVAL` | 11 | sysvar peek | read WORD |
+| `S_GETBVAL` | 12 | sysvar peek | read BYTE |
+| `S_SETLVAL` | 13 | sysvar poke | write LONG (root); low-mem addresses |
+| `S_SETWVAL` | 14 | sysvar poke | write WORD (root) |
+| `S_SETBVAL` | 15 | sysvar poke | write BYTE (root) |
+| `S_SECLEVEL` | 16 | security | get/set secure mode (root) |
+| `S_RUNLEVEL` | 17 | — | reserved / disabled in source |
+| `S_TSLICE` | 18 | scheduler | time-slice (root) |
+| `S_FASTLOAD` | 19 | loader | force fastload (root) |
+| `S_SYNCTIME` | 20 | clock | RTC sync interval (root) |
+| `S_BLOCKCACHE` | 21 | FS cache | cache % (root) |
+| `S_FLUSHCACHE` | 22 | CPU cache | `cpushi` |
+| `S_CTRLCACHE` | 23 | CPU cache | CPU-specific |
+| `S_INITIALTPA` | 24 | loader | initial TPA size (root) |
+| `S_CTRLALTDEL` | 25 | keyboard | Ctrl-Alt-Del behaviour (root) |
+| `S_LOADKBD` | 27 | keyboard | reload keyboard table (root) |
+| `S_SETEXC` | 28 | security | gate `Setexc` for non-kernel procs (root) |
+| `S_GETBOOTLOG` | 29 | debug | copy boot-log path (root) |
+| `S_CLOCKUTC` | 100 | clock | RTC-in-UTC flag |
+| `S_TIOCMGET` | 0x54f8 | serial | MiNTLib hack |
+| `S_KNAME` | 900 | info | kernel name string |
+| `S_CNAME`/`S_CVERSION`/`S_CDEFINES`/`S_COPTIM` | 910-913 | info | compiler strings |
+| `S_DEBUGLEVEL`/`S_DEBUGDEVICE`/`S_DEBUGKMTRACE` | 1000/1001/1100 | debug | |
 
-## `S_DELCOOKIE` (mode 26) — `del_cookie(arg1)`
+The `S_*VAL` peek/poke modes read/write **m68k low memory** (`arg1` in
+`$420..$ffff`, `sys/ssystem.c:189-272`) — meaningless for native AArch64 code
+(no low-memory map, same reason the cookie jar dropped `$5A0`). If NewTOS ever
+implements them it must be for the m68k emulator only, or re-mapped to the
+kernel's sysvar struct. Several `S_OS*` and info modes could later expose a
+NewTOS identity, but that is a separate decision.
 
-`arg1` = tag. Remove the entry and compact the jar. (Body:
-`sys/cookie.c:del_cookie`.)
+---
+
+## `S_GETCOOKIE` (mode 8) — `get_cookie(NULL, arg1, (ulong *)arg2)`
+
+Dispatcher: `sys/ssystem.c:277-282`. `arg1` = cookie **tag**; `arg2` = a
+pointer to a `LONG` where the value is written (the *return-by-pointer* form),
+or `0` to return the value directly in `x0`. **No privilege required.** Three
+behaviours (`sys/cookie.c:400-510`):
+
+1. **`arg1 == 0`** (`sys/cookie.c:422-442`) → scan to the terminator and take
+   the **NULL-slot value** = the jar's **total slot capacity**. If `arg2 != 0`,
+   write it to `*arg2` and return `E_OK`; if `arg2 == 0`, return the capacity
+   directly in `x0`.
+2. **`arg1` high word == 0** (`(arg1 & 0xffff0000) == 0`, a small number,
+   `sys/cookie.c:448-483`) → treat `arg1` as a **1-based slot index**: return
+   the **tag** of the Nth cookie (not its value, and **not** a `{tag,value}`
+   pair). If `arg2 != 0`, write the tag to `*arg2` and return `E_OK`; else
+   return the tag in `x0`. If the index exceeds `cookie_count + 1`, return
+   `EINVAL` (`sys/cookie.c:458-462`).
+3. **otherwise** (`sys/cookie.c:487-509`) → search the jar for `tag`; on match,
+   if `arg2 != 0` write the **value** to `*arg2` and return `E_OK`, else return
+   the value in `x0`. If the tag is absent, return `EERROR` (-1)
+   (`sys/cookie.c:508-509`).
+
+(Correction vs. earlier draft: slot-index mode returns the **tag only**, not a
+`{tag,value}` entry; not-found is `EERROR` (-1), and the over-index error is
+`EINVAL`. See D-038.)
+
+## `S_SETCOOKIE` (mode 9) — `set_cookie(NULL, arg1, arg2)`
+
+Dispatcher: `sys/ssystem.c:283-292`. **Root only** — if the caller is not root,
+return `EPERM` **without** touching the jar (`sys/ssystem.c:285-289`).
+Otherwise `arg1` = tag, `arg2` = value (`sys/cookie.c:516-576`):
+
+- **Validate the tag** (`sys/cookie.c:534-541`): each of the four bytes must be
+  non-zero (`tag & 0xff000000`, `& 0x00ff0000`, `& 0x0000ff00`, `& 0x000000ff`
+  all non-zero). This keeps the small-number space (high word 0) usable as slot
+  indices by `S_GETCOOKIE`. Invalid → `EINVAL`.
+- **Update or append** (`sys/cookie.c:545-570`): scan to the terminator,
+  counting entries into `n`. If `tag` is already present, overwrite its value →
+  `E_OK`. Otherwise, if there is room (after `n++`, `n < terminator.value`,
+  where `terminator.value` is the jar's total slot capacity), write
+  `{tag, value}` into the old terminator slot and push a fresh
+  `{0, capacity}` terminator one slot down → `E_OK`. If the jar is full →
+  `ENOMEM` (`sys/cookie.c:574-575`). (FreeMiNT does not grow the jar here; it
+  was sized with spare slots at `init_cookies`.)
+
+## `S_DELCOOKIE` (mode 26) — `del_cookie(NULL, arg1)`
+
+Dispatcher: `sys/ssystem.c:293-302`. **Root only** — non-root → `EPERM`
+(`sys/ssystem.c:295-299`). Otherwise `arg1` = tag; scan the jar, and on a match
+compact the array by copying each following entry (including the terminator)
+down one slot → `E_OK` (`sys/cookie.c:591-604`). If the tag is not found →
+`EINVAL` (`sys/cookie.c:606-607`).
+
+---
+
+## Error conditions (cookie subset)
+
+FreeMiNT error values (`sys/mint/errno.h`) — note these are the **FreeMiNT**
+numbering, which does not always coincide with the TOS/GEMDOS `tos-types::error`
+set NewTOS uses (see Open questions):
+
+| Condition | Mode | FreeMiNT code | Value |
+|-----------|------|---------------|------:|
+| success | any | `E_OK` | 0 |
+| `mode == -1` probe | — | `E_OK` | 0 |
+| tag not found | `S_GETCOOKIE` (search) | `EERROR` | -1 |
+| slot index too big | `S_GETCOOKIE` (index) | `EINVAL` | -25 |
+| caller not root | `S_SETCOOKIE`/`S_DELCOOKIE` | `EPERM` | -38 |
+| invalid tag (a zero byte) | `S_SETCOOKIE` | `EINVAL` | -25 |
+| jar full | `S_SETCOOKIE` | `ENOMEM` | -39 |
+| tag not found | `S_DELCOOKIE` | `EINVAL` | -25 |
+| unknown mode | any other | `ENOSYS` | -32 |
+
+---
+
+## Verification criteria (cookie subset)
+
+- **Probe:** `Ssystem(-1, 0, 0)` returns `E_OK` (0).
+- **Get capacity:** `Ssystem(S_GETCOOKIE, 0, 0)` returns the jar's total slot
+  count in `x0`; with a non-zero `arg2`, writes that count to `*arg2` and
+  returns `E_OK`.
+- **Get present tag by-value:** with an `NTOS` cookie present, `Ssystem(
+  S_GETCOOKIE, 'NTOS', &buf)` returns `E_OK` and writes the version value to
+  `buf`.
+- **Get absent tag:** `Ssystem(S_GETCOOKIE, 'ZZZZ', &buf)` returns `EERROR`
+  (-1) (or its NewTOS mapping) and does not fault.
+- **Get by slot index:** `Ssystem(S_GETCOOKIE, 1, &buf)` writes the **tag** of
+  the first cookie to `buf` and returns `E_OK`; an index past the end returns
+  `EINVAL`.
+- **Set new (root):** `Ssystem(S_SETCOOKIE, 'TEST', 0x1234)` as root returns
+  `E_OK`; a subsequent `S_GETCOOKIE 'TEST'` yields `0x1234`.
+- **Set invalid tag:** `Ssystem(S_SETCOOKIE, 0x00414243, v)` (a zero high
+  byte) returns `EINVAL`.
+- **Set non-root:** the same call from a non-root process returns `EPERM` and
+  leaves the jar unchanged.
+- **Delete present (root):** `Ssystem(S_DELCOOKIE, 'TEST', 0)` returns `E_OK`;
+  a following `S_GETCOOKIE 'TEST'` returns not-found.
+- **Delete absent:** `Ssystem(S_DELCOOKIE, 'ZZZZ', 0)` returns `EINVAL`.
+- **Unknown mode:** `Ssystem(9999, 0, 0)` returns `ENOSYS`/`EINVFN`.
+
+---
+
+## Edge cases discovered in source
+
+1. **`arg2` overloads value-in-d0 vs value-by-pointer.** For `S_GETCOOKIE`,
+   `arg2 == 0` means "return the value in `x0`"; `arg2 != 0` means "write the
+   value to `*arg2` and return status". FreeMiNT decides this per call
+   (`sys/cookie.c:431-441,472-482,492-502`). NewTOS must support both forms.
+
+2. **Slot-index mode returns the tag, not the value.** By-index
+   (`S_GETCOOKIE` with high-word-zero `arg1`) enumerates and returns the
+   **tag** of the Nth cookie — useful for walking the jar without knowing tags
+   up front. Returning the value would be wrong (D-038).
+
+3. **Tag validation exists to protect slot indexing.** `set_cookie` rejects any
+   tag with a zero byte precisely so the low-number tag space stays reserved
+   for the by-index `get_cookie` form (`sys/cookie.c:530-541`). NewTOS keeps
+   this rule.
+
+4. **Root gate on set/delete, none on get.** Reads are unprivileged; mutations
+   require root (`suser(...)`, `sys/ssystem.c:59,285,295`). NewTOS's process
+   model must define "root" (or the equivalent capability) before implementing
+   the mutating modes.
+
+5. **Not-found errors differ between get and delete.** `S_GETCOOKIE` returns
+   `EERROR` (-1) for a missing tag, but `S_DELCOOKIE` returns `EINVAL` (-25) —
+   two different codes for "no such cookie". Preserve the distinction (or
+   document a deliberate NewTOS unification).
+
+6. **Terminator `value` is the capacity, not a cookie value.** Both `get`
+   (capacity query) and `set` (room check) treat the `{0, N}` terminator's `N`
+   as the total slot count — the same invariant as the EmuTOS jar
+   (`docs/api/bios/_cookie-jar.md`).
+
+---
+
+## Dependencies
+
+### Requires (must be initialized / functional)
+
+- The NewTOS cookie jar (kernel-owned, ADR-012) — seeded at boot with the
+  NewTOS cookie set. See `docs/api/bios/_cookie-jar.md`.
+- A GEMDOS-dispatcher special-case arm for `0x154`
+  (`docs/api/gemdos/_dispatcher.md`).
+- A process privilege model (for the root gate on set/delete).
+- An EL0-checked user-store path for the `arg2` return-by-pointer writes.
+
+### Used by
+
+- MiNT-aware programs and libraries that read/write cookies without `Supexec`
+  + `$5A0` (the replacement path ADR-012 chose).
+
+---
+
+## Related data structures
+
+- `docs/api/bios/_cookie-jar.md` — the cookie-jar data model + NewTOS access
+  decision (ADR-012).
+- `docs/api/gemdos/_state.md` §9 — OS header / cookie-jar values (contract).
+- `docs/api/gemdos/_dispatcher.md` — the high-id special-case dispatch.
+
+---
+
+## Cross-references
+
+### FreeMiNT (authority for this function)
+
+- `sys/syscall_vectors.c:473` — trap `0x154` → `sys_s_system`.
+- `sys/ssystem.c:56-653` — the mode dispatch.
+- `sys/mint/ssystem.h` — mode-code numbers.
+- `sys/cookie.c:400-608` — `get_cookie`/`set_cookie`/`del_cookie`.
+- All @ FreeMiNT commit `f906416`.
+
+### Atari Compendium / MiNT programmer docs
+
+- Not present in `references/` as PDFs. Cross-check deferred.
+  (`references/freemint/doc/programmer/newcall.html/ssystem.html` is the
+  in-tree FreeMiNT programmer doc; it matches the source above.)
+
+### Decision
+
+- ADR-012 (`docs/MEMORY.md`) — kernel-owned jar, function-returns-content
+  access.
+
+---
+
+## Configuration / version notes
+
+- `Ssystem` and its mode codes are a FreeMiNT/MiNT feature; EmuTOS has none of
+  it. NewTOS implements only the cookie subset initially; the rest return
+  `ENOSYS`.
+- The FreeMiNT error numbering (`sys/mint/errno.h`) differs from TOS/GEMDOS
+  error codes; NewTOS returns the values chosen in the Open-questions
+  resolution below, not necessarily the FreeMiNT numbers verbatim.
+
+---
 
 ## NewTOS implementation notes
 
 - **Jar storage (ADR-012):** kernel-owned, allocated from the kernel heap,
   pointer in a kernel-internal global (the NewTOS analogue of FreeMiNT's
-  `*CJAR` — **not** the Atari `$5A0` sysvar). The jar is EL1 high-half
+  `*CJAR` — **not** the Atari `$5A0` sysvar). The jar lives in EL1 high-half
   memory; user programs never see the pointer, only values via this trap.
-  This *is* the value-query design ADR-012 chose — FreeMiNT's
-  return-by-pointer `arg2` fits it exactly (the kernel writes one `LONG`
-  to the caller's `arg2` buffer with an unprivileged/checked store).
-- **Growth:** dynamic allocation means no fixed cap; grow the jar (realloc
-  + copy + re-seed the `{0, capacity}` terminator) when `set_cookie` would
-  overflow, instead of failing.
-- **NewTOS cookie set** (seeded at boot, replacing `fill_cookie_jar`):
-  keep the meaningful tags — `_MCH` (a NewTOS machine id), `_IDT` (date/
-  time format), `_FLK` (GEMDOS file-locking present), `_AKP` (keyboard
-  language) — and add an **`NTOS`** identity cookie (value = NewTOS
+  FreeMiNT's return-by-pointer `arg2` fits this exactly — the kernel writes one
+  `LONG` to the caller's `arg2` buffer with a permission-checked store.
+- **Growth:** dynamic allocation means no hard cap; grow the jar (realloc +
+  copy + re-seed the `{0, capacity}` terminator) when `set_cookie` would
+  overflow, instead of returning `ENOMEM` — a permitted NewTOS improvement over
+  FreeMiNT's fixed spare-slot jar.
+- **NewTOS cookie set** (seeded at boot, replacing `fill_cookie_jar` /
+  `init_cookies`): keep the meaningful tags — `_MCH` (a NewTOS machine id),
+  `_IDT` (date/time format), `_FLK` (GEMDOS file-locking present), `_AKP`
+  (keyboard language) — and add an **`NTOS`** identity cookie (value = NewTOS
   version) so ported programs can detect the environment. **Drop**
-  `_VDO`/`_SND`/`_FDC`/`_FPU` (Shifter/PSG/floppy/m68k-FPU — meaningless).
-- **`arg2` writes** target a user buffer: use the same unprivileged-store
-  path as `Cconrs` (an EL0-permission-checked write), not a raw kernel
-  store, so a bad pointer faults the caller rather than the kernel.
+  `_VDO`/`_SND`/`_FDC`/`_FPU`/`_CPU` (Shifter/PSG/floppy/m68k-FPU/m68k-CPU —
+  meaningless on AArch64). See `docs/api/bios/_cookie-jar.md`.
+- **`arg2` writes** target a user buffer: use the same EL0-permission-checked
+  store path as `Cconrs`, not a raw kernel store, so a bad pointer faults the
+  caller rather than the kernel.
+- **Root gate:** map FreeMiNT's `suser()` to NewTOS's process privilege /
+  capability check; return the NewTOS "access denied" code for non-privileged
+  set/delete.
 
-## Cross-references
+---
 
-- Data model + access analysis: `docs/api/bios/_cookie-jar.md`
-- Decision: ADR-012 (`docs/MEMORY.md`)
-- FreeMiNT `sys/ssystem.c`, `sys/cookie.c`, `sys/mint/ssystem.h` @ `f906416`
-- Compendium / MiNT docs: "Ssystem", "Cookie Jar" — cross-check pending.
+## Open questions
+
+1. **Error-code mapping.** FreeMiNT returns MiNT errno values (`EERROR=-1`,
+   `EINVAL=-25`, `EPERM=-38`, `ENOMEM=-39`, `ENOSYS=-32`). Several collide with
+   or differ from the TOS/GEMDOS `tos-types::error` set NewTOS uses (`ENOSYS
+   -32 == EINVFN -32`; `EBADARG -64 == ERANGE -64`; TOS has no `EINVAL`). Which
+   numbers does NewTOS's `Ssystem` return — the FreeMiNT values (for MiNT-binary
+   compatibility) or a TOS-mapped set? **Needs a decision** (recommended:
+   unknown-mode → `EINVFN`; cookie not-found and bad-tag → a documented NewTOS
+   code; capture in an ADR).
+2. **Scope confirmation.** Only `S_GETCOOKIE`/`S_SETCOOKIE`/`S_DELCOOKIE` (+
+   the `mode == -1` probe) are in NewTOS scope for now; every other mode →
+   `ENOSYS`. Confirm no early consumer needs `S_OSVERSION`/`S_OSNAME` (identity)
+   or `S_SETEXC`/`S_SECLEVEL` before Phase-08.

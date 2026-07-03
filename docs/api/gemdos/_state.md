@@ -411,7 +411,16 @@ contains `os_version`, `os_beg`, `os_end`, `os_magic`, `os_date`,
 `os_palmode`, `os_dosdate`, plus pointers to drive table, run-time
 flags, etc.
 
-Read by `Sversion` (0x30) and the AES/CPX init code.
+Read by the AES/CPX init code. **`os_dosdate`** is the OS-header build date
+used as `DEFAULT_DATETIME = MAKE_ULONG(os_header.os_dosdate, 0)`
+(`bios/ikbd.h:95`), the fall-back returned by `Gettime()` when no RTC is
+present (`bios/clock.c:1319`) — this is the boot-time seed for `current_date`
+(§12).
+
+**`Sversion` (0x30) does *not* read this header.** It returns the compile-time
+`GEMDOS_VERSION` constant (§12), which is the *GEMDOS* version and is
+independent of the OS-header `os_version` (they can differ). Do not conflate
+the two. See `docs/api/gemdos/version/30-sversion.md`.
 
 ---
 
@@ -445,6 +454,63 @@ m68k callers). Derived: bytes/cluster = `buf[2]*buf[3]`; free bytes =
 `buf[0]*buf[2]*buf[3]`; total bytes = `buf[1]*buf[2]*buf[3]`. The buffer is
 **contract** (fixed layout a program reads); the DMD internals it derives from
 are **free** to reimplement. See `docs/api/gemdos/directory/36-dfree.md`.
+
+---
+
+## 12. GEMDOS date/time globals and the version constant (`bdos/time.c`)
+
+```c
+UWORD current_time, current_date;   /* bdos/time.c:53 */
+```
+
+Two file-local `UWORD`s hold the cached system time/date in **FAT/DOS packed**
+form (epoch 1980). They are the shared state behind `Tgetdate`/`Tgettime`
+(pure reads) and `Tsetdate`/`Tsettime` (validate then commit via XBIOS
+`Settime`). Read/written by:
+
+- **`time_init`** (`bdos/time.c:160`) — at boot, `current_date = HIWORD(
+  Gettime())`, `current_time = LOWORD(Gettime())`; also installs `etv_timer =
+  tikfrk`. `Gettime()` is **XBIOS 23 (0x17)** → `gettime()` (`bios/clock.c:
+  1266`), which reads whatever RTC is present or falls back to
+  `DEFAULT_DATETIME` (§9).
+- **`tikfrk`** (`bdos/time.c:175`) — the 200 Hz timer handler (via `etv_timer`);
+  every 2000 ms it bumps `current_time` and cascades minute/hour/day/month/year
+  rollovers into both words. This is the only place they advance on their own.
+- **`settime()`** (`bios/clock.c:1218`, reached by XBIOS 22 `Settime` from
+  `Tsetdate`/`Tsettime`) — writes both words directly from the packed LONG,
+  then persists to the RTC hardware.
+
+**Packed layouts (contract — a program reads these bits):**
+
+*Date WORD:* bits 0-4 day (1-31), bits 5-8 month (1-12), bits 9-15 year-offset
+-from-1980 (0-127). *Time WORD:* bits 0-4 double-seconds (`sec/2`, 0-29), bits
+5-10 minute (0-59), bits 11-15 hour (0-23). Odd seconds are not representable.
+The same bit layout appears in the DTA public `d_date`/`d_time` (§6) and in FAT
+directory entries. **Free to reimplement:** the internal storage of the clock,
+the tick mechanism, the RTC driver. **Contract:** the packed values the four
+`T*` calls read/accept.
+
+**Version constant:** `GEMDOS_VERSION` (`include/config.h:1590`, default
+`0x2000`) is a compile-time constant returned verbatim by `Sversion` (0x30,
+`xgetver`, `bdos/bdosmain.c:298`). Byte order is **minor in the high byte,
+major in the low byte** (`config.h:1577-1578`), so `0x2000` = GEMDOS 0.32. It
+is **contract** (programs branch on it) but **not** an OS-header field (§9) and
+**not** a reliable feature bitmap. NewTOS reports `0x2000`. See
+`docs/api/gemdos/version/30-sversion.md`.
+
+**Ssystem-reachable system values (FreeMiNT extension).** `Ssystem` (0x154) is
+not an EmuTOS function; in NewTOS its in-scope modes reach the **cookie jar**
+(kernel-owned per ADR-012), *not* the low-memory sysvars FreeMiNT's `S_*VAL`
+modes touch. The jar's `{tag,value}` array + `{0,capacity}` terminator is the
+observable state; see `docs/api/bios/_cookie-jar.md` and
+`docs/api/gemdos/154-ssystem.md`. The deferred `S_GETLVAL`/`S_SETLVAL`-style
+peek/poke of `$420..$ffff` is m68k-low-memory-only and out of scope for native
+AArch64.
+
+NewTOS: `current_date`/`current_time` become a kernel clock (AArch64 generic
+timer + RTC abstraction); an atomic `(date<<16)|time` snapshot accessor avoids
+a torn read across a midnight tick under preemption. The four `T*` traps wrap
+it; the version constant and cookie jar are kernel globals behind their traps.
 
 ---
 

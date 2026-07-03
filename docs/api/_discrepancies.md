@@ -954,3 +954,91 @@ the length byte and any CR are the caller's framing. Documented correctly in
 §`p_cmdlin` should be corrected in a structures pass to say the OS appends a NUL
 (not `\r`) and does not synthesize the length byte; left flagged here since the
 structures doc is outside this process-group pass.
+
+---
+
+## D-037: Time/date set goes through **XBIOS** `Settime` (22/0x16), and `Sversion` byte order / version table / OS-header claim (spec-vs-source)
+
+**Date:** 2026-07-03
+**Phase 00 specs:** `docs/api/gemdos/time/2a-tgetdate.md`, `2b-tsetdate.md`,
+`2c-tgettime.md`, `2d-tsettime.md`, `docs/api/gemdos/version/30-sversion.md`,
+`docs/api/gemdos/_state.md` §9, §12
+
+**EmuTOS:**
+- `xsetdate`/`xsettime` (`bdos/time.c:122,150`) commit via `Settime(...)`,
+  which is **XBIOS function 22 (0x16)** — `#define Settime(a) xbios_v_l(22,a)`
+  (`include/xbiosbind.h:40`) — reaching `settime()` (`bios/clock.c:1218`).
+  `settime()` updates the GEMDOS globals `current_time`/`current_date` directly
+  (`bios/clock.c:1221-1222`) **and** persists to the RTC. The boot seed comes
+  from `Gettime()` = **XBIOS 23 (0x17)** (`time_init`, `bdos/time.c:160-165`).
+- `Sversion`/`xgetver` (`bdos/bdosmain.c:298`) returns the compile-time
+  constant `GEMDOS_VERSION` (`include/config.h:1590`, default `0x2000`), byte
+  order **minor in the high byte, major in the low byte** (`config.h:1577-1578`).
+  It does **not** read the OS header. The `config.h` enumeration of version
+  values starts at `0x1300` (TOS 1.00/1.02); there is **no** `0x0F00` entry.
+
+**Prior NewTOS docs (wrong):** the time specs said the setters call "BIOS
+function 22" / "BIOS RTC" (it is **XBIOS** 22); several were still in the old
+paste-the-C-body format without the native-AArch64 ABI table or verification
+criteria. `30-sversion.md` carried a version table with a bogus `0x0F00` =
+"TOS 1.00" row (not in `config.h`) and `_state.md §9` claimed the OS header is
+"read by `Sversion`" — `Sversion` reads the `GEMDOS_VERSION` constant, not the
+header.
+
+**Not a Compendium discrepancy** — internal spec / citation errors (the BIOS-vs
+-XBIOS mislabel, the invented version row, the OS-header conflation). The
+day-0/month-0 acceptance remains tracked separately as **D-007** (unchanged).
+
+**Decision:** cite `include/xbiosbind.h:40` (Settime = XBIOS 22) and
+`bios/clock.c` (`settime`/`gettime`) for the RTC path; report `GEMDOS_VERSION =
+0x2000` with the minor-high/major-low byte order; drop the `0x0F00` row; state
+that `Sversion` is independent of the OS-header `os_version`. All five time/
+version specs migrated to the sharpened full-contract template (cite-never
+-paste; native-AArch64 ABI table; verification criteria) to match the other
+groups. `_state.md` gained §12 (date/time globals + version constant).
+
+---
+
+## D-038: `Ssystem` cookie sub-ops — slot-index returns the tag (not `{tag,value}`), not-found is `EERROR`, and set/delete are root-gated (spec-vs-source)
+
+**Date:** 2026-07-03
+**Phase 00 spec:** `docs/api/gemdos/154-ssystem.md`
+**Source:** FreeMiNT @ `f906416` (EmuTOS has no `Ssystem`; FreeMiNT is the
+authority, per `SOURCE-ANALYSIS-PROTOCOL.md` Track A source 2b).
+
+**FreeMiNT:**
+- Trap `0x154` → `sys_s_system` (`sys/syscall_vectors.c:473`); signature
+  `long s_system(int mode, ulong arg1, ulong arg2)` (`sys/ssystem.c:57`).
+- `S_GETCOOKIE` (8) calls `get_cookie(NULL, arg1, (ulong*)arg2)`
+  (`sys/ssystem.c:279`). Its by-**index** form (high word of `arg1` == 0)
+  returns the **tag** of the Nth cookie, **not** a `{tag,value}` pair
+  (`sys/cookie.c:472-482`), and an over-large index returns `EINVAL`
+  (`sys/cookie.c:458-462`). A tag search that misses returns `EERROR` (-1)
+  (`sys/cookie.c:508-509`). `arg2 == 0` returns the value/tag in d0; `arg2 != 0`
+  writes it to `*arg2` and returns `E_OK`. **No privilege** required.
+- `S_SETCOOKIE` (9) and `S_DELCOOKIE` (26) are **root only** — non-root returns
+  `EPERM` before touching the jar (`sys/ssystem.c:285-289,295-299`).
+  `set_cookie` rejects any tag with a zero byte (`EINVAL`,
+  `sys/cookie.c:534-541`) and returns `ENOMEM` when the jar is full
+  (`sys/cookie.c:574-575`). `del_cookie` returns `EINVAL` when the tag is not
+  found (`sys/cookie.c:606-607`) — a *different* not-found code than
+  `S_GETCOOKIE`'s `EERROR`.
+
+**Prior NewTOS doc (imprecise):** `154-ssystem.md` said the by-index form
+"writes its `{tag,value}` (FreeMiNT copies the entry)" (it returns the **tag**
+only), gave the not-found error vaguely as "the not-found error" (it is
+`EERROR`/`EINVAL` depending on the op), and omitted the **root gate** + `EPERM`
+on set/delete, the `ENOMEM`-when-full path, and the `del_cookie` `EINVAL`.
+
+**Not a Compendium discrepancy** — no Compendium/MiNT PDF is in `references/`
+(the in-tree `sys/doc/.../ssystem.html` matches the source). This is a
+spec-vs-FreeMiNT-source precision fix.
+
+**Decision:** follow the FreeMiNT source. Corrected `154-ssystem.md`: by-index
+returns the tag, not-found codes distinguished (`EERROR` for get, `EINVAL` for
+delete), root gate + `EPERM` documented, `ENOMEM`/`EINVAL` set-side errors
+tabulated. **Open question (not resolved):** the *numeric* error values NewTOS
+returns — FreeMiNT's MiNT-errno set (`EERROR=-1`, `EINVAL=-25`, `EPERM=-38`,
+`ENOMEM=-39`, `ENOSYS=-32`) collides with TOS codes (`ENOSYS -32 == EINVFN`;
+`EBADARG -64 == ERANGE`; TOS has no `EINVAL`), so the mapping needs an ADR (see
+`154-ssystem.md` Open questions).
