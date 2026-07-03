@@ -1587,3 +1587,92 @@ hollow; `WF_KIND` unsupported here (NewTOS may add it, decide vs Compendium);
 `GR_I5`; the `wind_calc` border model incl. the SIZER-only vertical band.
 Corrected in `aes/window-graphics.md`; window/rect/active-window globals added
 to `aes/_state.md`.
+
+---
+
+## D-054: `rsrc_*`/`fsel_*`/`scrp_*`/`shel_*` — `R_*` type table 0–16, `NEW_FORMAT_RSC` bit, `rs_obfix` signed-offset + width-80 rule, `rsrc_gaddr` sole `addr_out`, `rsrc_load`→`sh_find`, `fsel_*` button = `int_out[1]`, `scrp_read`/`write` always-1/no-validate, `shel_write` four modes + `isgem`/`isover`, `shel_envrn` slot swap, shell buffer sizes (spec-vs-source)
+
+**Date:** 2026-07-03
+**Phase 00 spec:** `docs/api/aes/resource-fileselector.md`,
+`docs/api/aes/scrap-shell.md`, `docs/api/aes/_state.md`
+
+**EmuTOS:** `aes/gemrslib.c`, `aes/gemfslib.c`, `aes/gemsclib.c`,
+`aes/gemshlib.c`, `aes/gemsuper.c:308-405`, `include/rsdefs.h:16-39`,
+`include/aesdefs.h:80-115,456-465,568-621`, `aes/gemrslib.h:15-27`,
+`aes/gemlib.h:97,120-129`, `include/sysconf.h:51-74`, `util/optimize.c:157-172`.
+
+The prior `aes/resource-fileselector.md` + `aes/scrap-shell.md` (compact
+outlines) were verified against the source. Substantive corrections:
+
+**Resource manager:**
+- **`R_*` type table is 0–16, not 0–15.** `R_FRIMG = 16` (free images) exists
+  (`aesdefs.h:594`). Codes 8/11/14 alias 2/3/4 (sub-pointer = struct's first
+  field). `R_STRING`(5)/`R_IMAGEDATA`(6) return the **dereferenced data**;
+  `R_FRSTR`(15)/`R_FRIMG`(16) return the **address of the pointer slot**
+  (`gemrslib.c:112-176`).
+- **`rsh_vrsn` is a bit field, not `0 = classic`.** `NEW_FORMAT_RSC = 0x0004`
+  bit marks colour-icon files whose true length is a LONG at offset `rsh_rssize`
+  (`rsdefs.h:39`, `gemrslib.c:764-772`).
+- **`rs_obfix` low byte is signed, and width 80 → full screen.** `char × cell` +
+  signed low byte (`>128 → −256`); `ob_w` char `== 80` maps to `gl_width`
+  (`gemrslib.c:53-83`). Box `ob_spec` (`G_BOX`/`G_IBOX`/`G_BOXCHAR`) is **not**
+  relocated (colour word); `G_CICON` `ob_spec` is an index→pointer
+  (`gemrslib.c:622-635`).
+- **`rsrc_load` calls `sh_find` first** to locate the file via the shell search
+  path (`gemrslib.c:836`) — not just the current dir.
+- **`rsrc_gaddr` is the only AES call whose `addr_out[0]` the dispatcher copies
+  back** (`gemsuper.c:446-447`); it returns `1`/`0` for valid/invalid **type**
+  and does **not** range-check the index (`gemrslib.c:715-721`).
+
+**File selector:**
+- **`fsel_*` button return is `int_out[1]` (`FS_BUTTON`), not an `addr_out`**
+  (`aesdefs.h:465`). `fs_input`'s **`int_out[0]` is 1 whenever the dialog ran**
+  (0 only on NULL path / no memory); the OK/Cancel value is `inf_what(tree,
+  FSOK)` = **1 (OK) / 0 (Cancel) / −1** (`gemfslib.c:922`, `optimize.c:157-172`).
+- **`fsel_exinput` label is `addr_in[2]` (`FS_TITLE`)**, defaulting to the "Item
+  Selector" string when NULL (`gemfslib.c:691-692`).
+- Path/mask split via `fs_pspec`/`fs_back`; empty mask → `*.*`; empty path →
+  `"<curdrive>:\*.*"`; folders sort first (`\007` prefix); editing the mask
+  turns OK into a rescan (`gemfslib.c:199-236,524-532,634-638,762-767`).
+
+**Scrap manager:**
+- **`scrp_read`/`scrp_write` always return 1 and never validate/create** — bare
+  `strcpy`s to/from `D.g_scrap` (`gemsclib.c:35-62`). The old "returns 0 if
+  unset" / "creates it if needed" were both wrong.
+
+**Shell manager:**
+- **`shel_write` has four modes, not two:** `SHW_NOEXEC 0`, `SHW_EXEC 1`,
+  `SHW_SHUTDOWN 4`, `SHW_RESCHNG 5` (`aesdefs.h:617-621`). The middle/third
+  `int_in` words are **`isgem`** (GEM vs char mode) and **`isover`** (shutdown
+  level / rez family), not `isgr`/`iscr`/"launch mode" (`gemshlib.c:127-196`).
+  Always returns `1`. **`SHW_SHUTDOWN` is `#if CONF_WITH_SHUTDOWN` = default 0**
+  → compiled out on the generic build (`config.h:2028-2034`).
+- **`shel_envrn`'s output pointer is `addr_in[0]` (a `char **`) and its search
+  string is `addr_in[1]`** — the reverse of the old spec (`aesdefs.h:611-612`,
+  `gemsuper.c:396`). Returns a pointer *into* `ad_envrn`, or NULL.
+- **`shel_find`'s search order** is app-dir → current-dir → drive-root → AES
+  `PATH=` (`gemshlib.c:389-472`); it rewrites the buffer in place and returns
+  1/0, saving/restoring the caller's DTA.
+- **Buffer sizes are contract:** command tail = `CMDTAILSIZE = 128` bytes
+  (`memcpy`, not NUL-bounded); shell buffer = `SIZE_SHELBUF = 4192` bytes
+  (`gemlib.h:97,129`, `sysconf.h:74`). `shel_get`/`shel_put`/`shel_read`/
+  `shel_write` are **unbounded `memcpy`s** — no length clamp.
+- **Scrap/shell/rdef/wdef gating:** `scrp_clear`(82)/`shel_rdef`(126)/
+  `shel_wdef`(127) are `#if CONF_WITH_PCGEM` (default 1) → `-1` when off.
+
+**Not (mostly) a Compendium discrepancy** — a spec precision/completeness fix.
+No PDFs in `references/`, so the Compendium cross-check of the `R_*` codes, the
+`rs_obfix` rule, the `fsel_*` button convention, the `shel_write` modes, the
+`shel_envrn` slots, and the buffer sizes is **deferred**.
+
+**Decision:** follow EmuTOS — `R_*` 0–16 with the deref/address-of split;
+`NEW_FORMAT_RSC` bit + trailing-length; signed-low-byte + width-80 `rs_obfix`;
+box `ob_spec` not relocated; `rsrc_load`→`sh_find`; `rsrc_gaddr` sole `addr_out`,
+no index check; `fsel_*` button at `int_out[1]` = 1/0/−1, `int_out[0]` = ran;
+`fsel_exinput` label at `addr_in[2]`; `scrp_read`/`write` always-1/no-validate;
+`shel_write` four modes with `isgem`/`isover`, `SHW_SHUTDOWN` off by default;
+`shel_envrn` output `addr_in[0]`/search `addr_in[1]`; `shel_find` app-dir-first
+order; 128-byte tail + 4192-byte shell buffer. Corrected in
+`aes/resource-fileselector.md` + `aes/scrap-shell.md`; resource/scrap/shell
+globals added to `aes/_state.md` §6c. **This completes the AES manager set and
+the full Phase-00 API spec re-derivation.**

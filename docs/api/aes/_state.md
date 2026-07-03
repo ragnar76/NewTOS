@@ -236,6 +236,48 @@ and the `WF_FIRSTXYWH`/`NEXTXYWH` rectangle sequence.
 
 ---
 
+## 6c. Resource / scrap / shell state — the loaded RSC, the clipboard path, the shell buffer
+
+The resource, scrap, and shell managers
+([`resource-fileselector.md`](./resource-fileselector.md),
+[`scrap-shell.md`](./scrap-shell.md)) keep the loaded-resource pointers, the
+clipboard directory, and the process-launch context. The **resource** pointers
+are *per-application* (in the caller's `AESGLOBAL`); the **scrap** + **shell**
+globals are AES-wide (in `THEGLO D`). These are **reference** internals; what a
+program observes is the `rsrc_gaddr` addresses, the `scrp_read` path, the
+`shel_read`/`shel_get` values, and the `shel_find` result.
+
+| Global | Decl. | Meaning | Read/written by |
+|--------|-------|---------|-----------------|
+| `ap_rscmem` | `gemrslib.h:22` (`AESGLOBAL`) | base of the loaded `.RSC` blob (`RSHDR *`), or NULL | `rs_load`/`rs_free` (`gemrslib.c:787,699`); `get_addr` via `rs_hdr` |
+| `ap_rsclen` | `gemrslib.h:23` (`AESGLOBAL`) | length of the loaded resource in bytes | `rs_load` (`gemrslib.c:788`) |
+| `ap_ptree` | `gemrslib.h:20` (`AESGLOBAL`) | the **tree table** (`OBJECT **`) — relocated `rsh_trindex` | `fix_trindex` (`gemrslib.c:597`); `rsrc_gaddr(R_TREE)`, the whole AES |
+| `rs_hdr`/`rs_global` | `gemrslib.c:44-45` | file-local statics = the current resource's `RSHDR`/`AESGLOBAL` during a `rs_*` call | `rs_sglobe` sets them from `AESGLOBAL` (`gemrslib.c:675-679`) |
+| `D.g_scrap` | `gemlib.h:120` (`THEGLO`, `LEN_ZPATH=114`) | the **scrap (clipboard) directory** path string | `sc_write`/`sc_read`/`sc_clear` (`gemsclib.c:42,59,84`) |
+| `D.s_cmd` | `gemlib.h:122` (`THEGLO`, `MAXPATHLEN`) | fully-qualified name of the **next program to run** | `sh_write`/`sh_read`/`sh_ldapp` (`gemshlib.c:104,163,594`) |
+| `ad_stail` | `gemshlib.h:13` (`char *`) | the **command tail** (`CMDTAILSIZE=128` bytes) for the next/this app | `sh_write`/`sh_read` (`gemshlib.c:105,170`) |
+| `D.g_shelbuf` | `gemlib.h:129` (`THEGLO`, `SIZE_SHELBUF=4192`) | the **shell buffer** — desktop context carried across launches | `sh_get`/`sh_put` (`gemshlib.c:205,215`) |
+| `ad_envrn` | `geminit.h:15` (`char *`) | the DOS **environment** block (double-NUL-terminated `NAME=VALUE` run) | `sh_envrn`, `sh_find`'s `PATH=` step, `dos_exec` (`gemshlib.c:338,448,645`) |
+| `SHELL sh` | `gemshlib.c:85` | file-local shell state: `sh_doexec`/`sh_nextapp`/`sh_isgem`/`sh_desk`/`sh_cdir` | `sh_write`/`sh_rdef`/`sh_wdef`/`sh_main`/`sh_ldapp` |
+| `gl_changerez`/`gl_nextrez` | `gemshlib.c:98-99` | pending resolution change (from `shel_write(SHW_RESCHNG)`) | `sh_write`/`sh_main` |
+| `D.g_dta` | `gemlib.h:124` (`THEGLO`) | the AES's own DTA, swapped in for directory scans | `sc_clear`/`sh_find`/`fs_active` (save+restore the caller's DTA) |
+
+- **Resource pointers are per-app (contract-adjacent).** `ap_rscmem`/`ap_rsclen`/
+  `ap_ptree` live in the caller's `AESGLOBAL` (filled by `appl_init`, populated
+  by `rsrc_load`); one resource per application. The *addresses* `rsrc_gaddr`
+  returns are contract; the blob layout/statics are reference.
+- **Scrap = one path string (contract vs. reference).** `D.g_scrap` is a bare
+  directory path; the file-based clipboard convention (`SCRAP.*`) is the
+  contract, the storage is reference. `scrp_read`/`scrp_write` never validate.
+- **Shell context = launch command + tail + buffer.** `D.s_cmd`/`ad_stail` (128
+  bytes) carry the next program + tail; `D.g_shelbuf` (4192 bytes) carries
+  desktop context across the app-exit→desktop-relaunch loop. The **128-byte tail
+  size and 4192-byte buffer size are contract**; the `SHELL sh` struct, the
+  launch loop `sh_main`/`sh_ldapp`, and the alpha↔graphic switching are
+  reference (NewTOS rebuilds them on Phase-06 `Pexec`/`Pterm`).
+
+---
+
 ## 7. NewTOS mapping (contract vs. reference)
 
 - **Contract to keep:** ap_id = a small process id (system 0/1, apps 2+);
