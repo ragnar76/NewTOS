@@ -76,3 +76,31 @@ No inputs, no outputs, no return value, no error path — always succeeds.
 - The `0x00`/`0xff` fill-byte distinction is a **reference** detail tied
   to EmuTOS's framebuffer format; NewTOS writes background colour index 0
   through its own backend regardless.
+
+---
+
+## Pi / BCM2711 binding
+
+> Re-points the *hardware reference* (the raw `memset(v_bas_ad, …)` of the
+> Shifter framebuffer) at a `RasterBackend` full-screen fill over the
+> BCM2711 VideoCore buffer. The **contract is unchanged** — clears the
+> whole screen to background (PEL 0), ignores the clip rect, always
+> succeeds. Peripheral + driver: see `docs/HARDWARE-PROFILE.md` §2/§3.1.
+
+- **How it clears.** `v_clrwk` fills the full `width × height` device with
+  PEL 0 (background) via `RasterBackend::fill_rect` over a full clip rect
+  (`tos-api/src/vdi/workstation.rs:193-196`); geometry is the live
+  framebuffer size (640×480), so the whole VideoCore buffer is cleared,
+  clip ignored — matching the contract.
+- **PEL 0 = white.** The bring-up palette maps index 0 to white
+  (`kernel/src/vdi_backend.rs:26-31`), so the cleared screen is white
+  (GEM's default desktop background), not black. The EmuTOS `0x00`/`0xff`
+  fill-byte choice is irrelevant here — NewTOS writes the resolved RGB of
+  PEL 0 into the 32 bpp buffer through the backend.
+- **Cache clean for scan-out.** The backend cleans the filled rectangle to
+  PoC after writing (`vdi_backend.rs:118-125`, `:201`) so the VideoCore
+  display DMA sees the cleared pixels on real hardware (the framebuffer is
+  mapped Non-Cacheable on rpi4, making this a no-op there;
+  `framebuffer.rs:183-187`).
+- **1080p later.** Clears whatever geometry the `RasterBackend` reports;
+  no dependency on the fixed 640×480 mode.

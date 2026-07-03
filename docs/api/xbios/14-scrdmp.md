@@ -168,3 +168,31 @@ None.
 PHASE-07/08: NewTOS may install a default `dump_vec` that writes a PNG of the
 framebuffer to a configured path; `Scrdmp` invokes it and resets `dumpflg`,
 and programs can still replace `dump_vec`.
+
+---
+
+## Pi / BCM2711 binding
+
+> Re-points the *hardware reference* (the Centronics printer + `dump_vec`/
+> `dumpflg` path) at the NewTOS profile, which has **no printer**. The
+> **contract is unchanged** — `void`, "invoke `dump_vec` then reset
+> `dumpflg`", the default no-op. Peripheral: see `docs/HARDWARE-PROFILE.md`
+> §3.9 (Centronics printer → absent).
+
+- **No printer hardware.** The Pi-4 profile has no Centronics port
+  (`docs/HARDWARE-PROFILE.md` §2, §3.9), so the Atari default `dump_vec ==
+  just_rts` no-op is the correct, honest behaviour: a stock `Scrdmp` does
+  nothing, exactly as on EmuTOS with no dump handler installed.
+- **Not yet wired (Step-2).** `Scrdmp` (XBIOS `0x14`) is **not present in
+  the NewTOS XBIOS dispatcher** (`tos-api/src/xbios/mod.rs` has no `0x14`
+  entry); calling it currently falls through to the dispatcher's
+  unknown-function path rather than performing the "reset `dumpflg`"
+  contract step. Recorded as a Step-2 finding — the no-op *behaviour* is
+  correct for the hardware, but the call and its `dumpflg` re-arm are not
+  implemented.
+- **Future (not required by the hardware).** A `dump_vec` that encodes the
+  32 bpp VideoCore framebuffer to a PNG on the SD card is the natural
+  NewTOS equivalent of "screen dump to printer" (PHASE-07/08 note); this is
+  optional, since the contract's default is already a no-op.
+- **1080p later.** A framebuffer dump would use the live geometry; no
+  dependency on the fixed 640×480 mode.

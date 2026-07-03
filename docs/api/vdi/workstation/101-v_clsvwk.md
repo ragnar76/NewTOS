@@ -109,3 +109,26 @@ mode). Inputs/outputs: 0/0/0/0.
   equivalent.
 - `v_clswk` must **not** tear down the framebuffer in bring-up — keep the
   physical device open, only return the console to text mode.
+
+---
+
+## Pi / BCM2711 binding
+
+> Re-points the *hardware reference* (`Mfree`'d `Vwk` chain, `esc_exit`
+> back to alpha mode) at the NewTOS static handle table over the BCM2711
+> VideoCore framebuffer. The **contract is unchanged** — opcode 101, closes
+> the named virtual workstation, physical handle protected, silent no-op on
+> a bad/closed handle. Peripheral + driver: see `docs/HARDWARE-PROFILE.md`
+> §2/§3.1.
+
+- **Frees a static slot, not heap.** `v_clsvwk` releases the handle's slot
+  in the fixed 16-entry table (`tos-api/src/vdi/workstation.rs:186-189` →
+  `vwk::free_handle`, `vwk.rs:238`); there is no `Mfree` because the `Vwk`s
+  are static (`vwk.rs:9-20`), not `Mxalloc`'d. Handle 1 (physical) is
+  protected by the resolve/`PHYS_HANDLE` logic.
+- **Framebuffer stays up.** Closing a virtual workstation never touches the
+  VideoCore framebuffer; the physical device remains the shared draw
+  target for the remaining workstations. `v_clswk` (opcode 2) likewise must
+  not tear down the framebuffer in bring-up (keep the VideoCore buffer
+  allocated, return the console to text mode).
+- **1080p later.** Lifecycle-only; geometry-independent.

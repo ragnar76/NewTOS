@@ -177,3 +177,40 @@ fires (see edge cases).
 PHASE-08: `Vsync` blocks on the VideoCore vsync / a frame counter equivalent
 to `frclock`; must terminate on real hardware where a caller might have
 masked interrupts.
+
+---
+
+## Pi / BCM2711 binding
+
+> Re-points the *hardware reference* (`frclock` incremented by the Atari
+> VBL interrupt, the SR-lowering) at a NewTOS frame counter derived from
+> the ARM generic timer. The **contract is unchanged** — block until the
+> next frame boundary, `void`, always terminates. Peripheral: see
+> `docs/HARDWARE-PROFILE.md` §2/§3.5.
+
+- **Frame source = a synthesized 60 Hz from the ARM generic timer, not a
+  real VideoCore vblank.** `vsync` snapshots `Host::frame_clock()` and
+  spins until it advances (`tos-api/src/xbios/system.rs:32-40`);
+  `frame_clock()` is computed as `CNTPCT_EL0 * 60 / CNTFRQ_EL0`
+  (`kernel/src/host_env.rs:191-206`) — i.e. a free-running ~60 Hz frame
+  number off the generic timer, the NewTOS analogue of `frclock`. It is
+  **not** tied to the display's actual scan-out, so `Vsync` paces at ~60 Hz
+  regardless of the HDMI refresh.
+- **Always terminates.** Because the counter is driven by the always-
+  running generic timer (not a maskable VBL IRQ), the spin cannot hang even
+  if the caller had interrupts masked — satisfying the contract's "enables
+  VBL even if masked / must terminate" criterion. No SR manipulation is
+  needed on AArch64.
+- **Not tear-free against real scan-out (Step-2 candidate).** Since the
+  frame clock is a timer approximation, `Vsync` does not guarantee
+  alignment to the VideoCore vertical blank, so page-flip / palette-swap
+  timing is only *approximately* tear-free. A true vblank source (a
+  VideoCore vsync mailbox/IRQ or the HVS) would be needed for exact
+  frame-boundary sync — deferred, and noted here as a fidelity gap, not a
+  correctness bug (the call still returns after ≈ one 60 Hz period).
+- **Datasheet.** The generic-timer counter (`CNTPCT_EL0`/`CNTFRQ_EL0`) is
+  ARM-architectural (ARM ARM D17.6). A real display-vblank signal would
+  come from the BCM2711 HVS/PixelValve (datasheet §6), which NewTOS does
+  not yet consume.
+- **1080p later.** The 60 Hz approximation is geometry-independent; a real
+  vblank binding would follow the negotiated HDMI mode's refresh.

@@ -186,3 +186,44 @@ None (a pure register read on Atari video).
 PHASE-08: `Physbase` = the currently-displayed framebuffer in the VideoCore
 swap chain; after `Setscreen(log, phys, …)` the next mailbox-driven flip
 aligns the two on the next vblank.
+
+---
+
+## Pi / BCM2711 binding
+
+> Re-points the *hardware reference* (Shifter video-base registers
+> `0xFFFF8201`/`0xFFFF8203`/`0xFFFF820D`) at the BCM2711 VideoCore
+> framebuffer. The **contract is unchanged** — a full-64-bit pointer, no
+> error path, `Physbase() == Logbase()` on the no-page-flip profile.
+> Peripheral + driver: see `docs/HARDWARE-PROFILE.md` §2 (Screen /
+> framebuffer).
+
+- **What the base *is*.** The single VideoCore-allocated framebuffer, one
+  buffer for both physical and logical (no hardware page flip). The value
+  returned is the **CPU-visible high-half VA** of the pixel store, not the
+  VC bus address: the mailbox reply's bus address is masked to an ARM
+  physical address and offset into the high half
+  (`kernel/src/drivers/bcm2711/framebuffer.rs:178-179`), and that VA is
+  what `screen()`/`Physbase` hand back
+  (`kernel/src/vdi_backend.rs:405-407`, `kernel/src/host_env.rs:218-229`).
+- **How it is read.** `physbase()` returns the `PHYSBASE` shadow, or the
+  live framebuffer base when the shadow is `0`
+  (`tos-api/src/xbios/screen.rs:41-46`); the live base comes from
+  `Host::screen().base` (`tos-api/src/xbios/screen.rs:36-38`). Before the
+  framebuffer is up, `screen()` returns `None` and `Physbase` yields `0`.
+- **Geometry (current):** 640 × 480, 32 bpp XRGB8888, single buffer
+  (`framebuffer.rs:23-25`; `virt:` `qemu_virt/ramfb.rs:75-76`). Buffer
+  size ≈ `pitch × 480`; the VC-reported pitch is 640 × 4 = 2560 B/line for
+  this mode.
+- **Setscreen interaction.** `Setscreen(-1, phys, -1)` only writes the
+  `PHYSBASE` shadow — the VideoCore scan-out is **not** re-pointed
+  (`tos-api/src/xbios/screen.rs:75-77` and the module note at `:9-14`), so
+  the displayed pixels do not change even though `Physbase` reports the new
+  value. Full page-flipping (a second buffer + a mailbox set-virtual-offset
+  flip) is deferred with the 1080p work.
+- **Datasheet.** Mailbox property transport: BCM2711 peripherals datasheet
+  §1.3 (`references/datasheets/RP-008248-DS-1-bcm2711-peripherals.pdf`);
+  the framebuffer allocate/get-pitch tags are firmware-property tags, not
+  peripheral registers.
+- **1080p later.** The 640×480 geometry is hard-coded today; querying the
+  live HDMI mode and returning a mode-sized base is the deferred phase.

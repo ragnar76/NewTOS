@@ -183,3 +183,43 @@ function returns nothing.
 PHASE-08: `Setpalette` records the 16 words and schedules a VideoCore
 `set_palette` for the next present; the deferred-until-VBL timing is
 preserved so palette-animation programs stay tear-free.
+
+---
+
+## Pi / BCM2711 binding
+
+> Re-points the *hardware reference* (the STe/Videl 16 palette registers +
+> the `colorptr`/VBL deferred load) at the emulated 16-entry CLUT over the
+> 32 bpp VideoCore framebuffer. The **contract is unchanged** — a 16-word
+> ST-packed palette pointer input, `void` return. Peripheral + driver: see
+> `docs/HARDWARE-PROFILE.md` §2/§3.1.
+
+- **No hardware CLUT — the framebuffer is truecolor.** The BCM2711
+  framebuffer is 32 bpp XRGB8888 (`framebuffer.rs:23-25`); there are no
+  16 palette registers to load. NewTOS emulates a **16-entry CLUT**: PEL
+  indices 0..15 map to packed RGB, which the VDI expands per pixel
+  (`kernel/src/vdi_backend.rs:26-59`).
+- **What `Setpalette` does today.** `setpalette` copies the 16 caller words
+  into a **local ST-format shadow** (`0x0RGB`, 3 bits/gun), masked `&
+  0x0FFF` (`tos-api/src/xbios/screen.rs:91-103`). It is applied
+  **immediately** into that shadow, not deferred to a VBL, and — critically
+  — it does **not** touch the VDI's live `PALETTE`
+  (`vdi_backend.rs:49-50`) that actually colours the framebuffer.
+- **Mismatch flagged (Step-2).** The XBIOS palette shadow and the VDI CLUT
+  are two disconnected tables: `Setpalette`/`Setcolor` update the ST-format
+  shadow in `tos-api/src/xbios/screen.rs`, while `vs_color` updates
+  `vdi_backend::PALETTE`. So an XBIOS palette write does **not** change any
+  displayed colour, and the "applied at next VBL" timing is not modelled.
+  Wiring the XBIOS shadow to the VideoCore CLUT (via the `RasterBackend`
+  `set_color`) is a Step-2 item — not fixed in this pass.
+- **Colour format bridge.** ST packs 3 significant bits/gun into `0x0RGB`;
+  the VideoCore path is 8 bits/gun. When wired, each ST nibble expands to
+  8 bits (as `Setcolor`'s 4→8 note describes). The VDI's own `vs_color`
+  already works in the 0..1000-per-gun range and scales to 8 bit
+  (`vdi_backend.rs:62-68`, `:142-151`).
+- **Datasheet.** No peripheral register is involved (the CLUT is pure
+  software over the framebuffer); the framebuffer itself is the VideoCore
+  mailbox buffer, BCM2711 datasheet §1.3 mailbox transport.
+- **1080p later.** Unaffected by resolution; the 16-entry CLUT model holds
+  at any geometry until a truecolor VDI path (`CONF_WITH_VDI_16BIT`) is
+  adopted.

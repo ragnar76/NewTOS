@@ -245,3 +245,46 @@ PHASE-08: `Setscreen` maps to framebuffer retarget (log base) + swap-chain
 present (phys base) + mode reconfigure (rez) via the VideoCore mailbox; the
 screen-clear/cursor-home/VT52-reset side effects on a rez change must be
 reproduced. The WORD return follows EmuTOS (`-1`/0).
+
+---
+
+## Pi / BCM2711 binding
+
+> Re-points the *hardware reference* (`setphys` video-base register,
+> `atari_setrez`, the Videl realloc path) at the BCM2711 VideoCore
+> framebuffer. The **contract is unchanged** — the negative-argument
+> "ignore" convention, the `-1`-on-invalid-rez WORD return, `rez == -1` =
+> no-op. Peripheral + driver: see `docs/HARDWARE-PROFILE.md` §2/§3.1.
+
+- **Base re-pointing is a bounded no-op today.** `setscreen` stores `log`
+  into the `LOGBASE` shadow and `phys` into the `PHYSBASE` shadow when each
+  is `> 0` (`tos-api/src/xbios/screen.rs:72-77`, keeping the `> 0` /
+  `NULL-or-negative-ignored` rule), but it does **not** program the
+  VideoCore scan-out or retarget the `RasterBackend`. `Physbase`/`Logbase`
+  then report the shadow values while the display keeps showing the single
+  live framebuffer. Real page-flipping (a second VC buffer +
+  set-virtual-offset) is deferred with the 1080p work.
+- **Resolution range.** `rez` is validated against `[MIN_REZ, MAX_REZ]` =
+  `[0, 2]` (`tos-api/src/xbios/screen.rs:26-27`, `:81-83`); an
+  out-of-range `rez` returns `-1`, `rez == -1` returns `0` without a
+  change, and a valid `rez` is stored in the `REZ` shadow that `Getrez`
+  reads. No actual mode switch happens — the framebuffer stays 640×480×
+  (16-colour over 32 bpp) regardless of the stored code.
+- **Falcon/Videl path is absent.** No `videlmode` handling, no `Srealloc`
+  (arg 3 is ignored — there is no Falcon). `rez == FALCON_REZ (3)` is
+  simply out of `[0,2]` and returns `-1`, matching "no Videl" for this
+  board.
+- **Missing rez-change side effects (Step-2).** EmuTOS clears the screen,
+  homes the cursor, and re-inits the VT52 on a rez change; the NewTOS
+  `setscreen` does none of these (it only stores shadows). Since the mode
+  never actually changes on the fixed framebuffer this is currently
+  harmless, but it diverges from the contract's "rez change clears screen"
+  verification criterion — recorded as a Step-2 finding, not fixed here.
+- **`MAX_REZ = 2` vs a 16-colour framebuffer.** Because `Getrez` reports
+  `2` (mono) for a 4-plane 640×480 mode and `MAX_REZ` is `2`, no legacy
+  rez code can name the true mode. This is the same tension flagged in
+  `docs/api/xbios/04-getrez.md`; the resolution stays a bring-up shim
+  until the mode-query phase.
+- **1080p later.** A real `Setscreen` mode reconfigure (mailbox
+  set-physical/-virtual + geometry re-publish + VDI table refresh) lands
+  with the HDMI-mode-query phase.

@@ -349,3 +349,75 @@ No `INTOUT`/`PTSOUT`.
   Phase-10 shim.
 - Truecolor paths (`CONF_WITH_VDI_16BIT`) are out of bring-up scope
   (8-bit palette screen first).
+
+---
+
+## Pi / BCM2711 binding
+
+> Re-points the *hardware reference* for the **screen MFDB** (`v_bas_ad` /
+> `v_planes` / `v_lin_wr` Shifter screen vars) at the BCM2711 VideoCore
+> framebuffer. The **contract is unchanged** — the MFDB layout, the
+> `fd_addr == NULL ⇒ screen` rule, the 16-op logic table, the `MD_*` codes.
+> Peripheral + driver: see `docs/HARDWARE-PROFILE.md` §2/§3.1.
+
+### The screen MFDB = the VideoCore framebuffer
+
+When a program passes `fd_addr == 0` (NULL MFDB), the source/destination is
+the physical screen (`tos-api/src/vdi/raster.rs:39-42,59-61`). NewTOS
+substitutes the live framebuffer rather than `v_bas_ad`/`v_planes`/
+`v_lin_wr`: the `RasterBackend` reads/writes the VideoCore buffer directly
+(`kernel/src/vdi_backend.rs` `copy_rect`/`blit_mono`), so raster ops never
+dereference the MFDB geometry for screen forms — they use the backend's
+`width()`/`height()`/`stride_px()`. The equivalent screen-MFDB values for
+the current mode:
+
+| MFDB field | Atari screen var | NewTOS 640×480×16 value | Source |
+|-----------|------------------|-------------------------|--------|
+| `fd_addr` (screen) | `v_bas_ad` | the VideoCore fb base (CPU high-half VA) | `vdi_backend.rs:405-407`; `host_env.rs:218-229` |
+| `fd_w` | `V_REZ_HZ` | **640** | `framebuffer.rs:23` |
+| `fd_h` | `V_REZ_VT` | **480** | `framebuffer.rs:24` |
+| `fd_wdwidth` | — | **40** = `(640+15)/16` | words/row for the 640-px logical raster |
+| `fd_nplanes` | `v_planes` | **4** (16-colour VDI model) | `vdi_backend.rs:21`, `NUM_COLORS=16` |
+| `fd_stand` | — | 0 (device) for the screen | — |
+
+### Important: the logical raster is 4-plane, the store is 32 bpp
+
+The MFDB `nplanes = 4` / `wdwidth = 40` describe the **VDI logical raster**
+(16 colours = 4 planes), *not* the physical pixel store. The physical
+VideoCore buffer is **32 bpp XRGB8888** with pitch 640 × 4 = 2560 B/line
+(`framebuffer.rs:23-25`; VC-reported pitch at `framebuffer.rs:53,192`). The
+`RasterBackend` bridges the two: PEL indices from the 4-plane model are
+expanded through the 16-entry CLUT to packed XRGB when written to the 32 bpp
+store (`vdi_backend.rs:107-110`, `pel_to_rgb`). So a program that computes a
+screen-MFDB plane offset from `nplanes/wdwidth` gets the *logical* raster
+geometry; NewTOS does not expose the raw 32 bpp bytes as planes.
+
+- **Screen-to-screen ops use the backend.** `vro_cpyfm` screen→screen maps
+  to `RasterBackend::copy_rect` (replace op 3 / XOR op 6), overlap-safe
+  (`vdi_backend.rs:345-387`); the cache clean to PoC
+  (`vdi_backend.rs:118-125`) makes the copy visible to the VideoCore
+  display DMA on real hardware.
+- **Mono→colour `vrt_cpyfm`** expands a 1-plane source to fg/bg PEL via
+  `blit_mono` (`vdi_backend.rs:311-343`); the mono-source (`s_nxwd==2`)
+  requirement is a contract kept above the backend.
+- **Native 64-bit MFDB pointer.** NewTOS carries the source MFDB in
+  `CONTRL[7..10]` and the destination in `CONTRL[11..14]` (four WORDs each)
+  because AArch64 pointers are 64-bit (`raster.rs:4-9`) — a documented
+  NewTOS-native ABI extension of the 32-bit m68k `CONTRL[7..8]`/`[9..10]`
+  layout; the field *meanings* are unchanged.
+
+### Mismatch note (Step-2)
+
+- **Off-screen (memory-MFDB) copies are bring-up-limited.** The current
+  backend implements the screen-form cases (screen↔screen copy, mono→colour
+  expand into the screen); full off-screen colour MFDB↔MFDB copies and the
+  complete 16-op path across arbitrary buffers are noted as later work in
+  the module docs. Flagged so Step-2 can check coverage against the 16-op
+  contract; no code change in this pass.
+
+### 1080p later
+
+`fd_w`/`fd_h`/`fd_wdwidth` for the screen MFDB derive from the live
+framebuffer geometry via the `RasterBackend`; a larger negotiated mode
+flows through without changing the raster-op code. `nplanes = 4` is tied to
+the 16-colour CLUT model, independent of resolution.

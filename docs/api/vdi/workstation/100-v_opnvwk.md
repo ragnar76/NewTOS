@@ -333,3 +333,85 @@ and return with no `Vwk` allocated:
   left at the ROM `372` — see `_discrepancies.md` D-VDI-7.
 - `work_in[10]` (NDC vs RC): the screen workstation is RC (raster, origin
   top-left); NDC scaling is a later refinement.
+
+---
+
+## Pi / BCM2711 binding
+
+> Re-points the *hardware reference* (`V_REZ_HZ`/`V_REZ_VT`/`v_planes`
+> Line-A screen vars, the `Mxalloc`'d `Vwk` chain) at the BCM2711
+> VideoCore framebuffer read through the `RasterBackend`. The **contract is
+> unchanged** — opcode 100, the `work_in` layout/validation, the returned
+> handle, the 45-word `DEV_TAB` / 12-word `SIZ_TAB` byte indices.
+> Peripheral + driver: see `docs/HARDWARE-PROFILE.md` §2/§3.1.
+
+### Resolved `DEV_TAB` / `SIZ_TAB` values for the 640×480×16-colour framebuffer
+
+The ROM template `DEV_TAB_ROM`/`SIZ_TAB_ROM` lives in
+`tos-api/src/vdi/workstation.rs:24-39`; `init_wk` patches the
+geometry/colour entries from the live `RasterBackend`
+(`workstation.rs:61-117`). The backend reports `width=640`, `height=480`,
+`num_colors=16` (`kernel/src/vdi_backend.rs:130-140`, `NUM_COLORS=16` at
+`:21`). Concrete patched values:
+
+| Idx | Capability | NewTOS value | Source |
+|-----|-----------|--------------|--------|
+| 0 | x res − 1 | **639** | `xres-1`, `width()=640` (`workstation.rs:102`) |
+| 1 | y res − 1 | **479** | `yres-1`, `height()=480` (`workstation.rs:103`) |
+| 3 | pixel width (µm) | **372** (ROM default, **not** patched) | see mismatch below |
+| 4 | pixel height (µm) | **372** (ROM default, **not** patched) | see mismatch below |
+| 13 | # simultaneous colours | **16** | `ncol` (`workstation.rs:104`) |
+| 14 | # GDPs | 10 | ROM (`workstation.rs:27`) |
+| 35 | colour capable (0=mono) | **1** | `ncol>2 → 1` (`workstation.rs:105`) |
+| 39 | palette size | **16** | `ncol` (`workstation.rs:106`) |
+| 44 | workstation type | 2 (in/out) | ROM |
+
+`SIZ_TAB` (`workstation.rs:35-39`) is fixed: min/max char `0..7`, min
+line width `1` / max `40`, marker widths `15/120`, heights `11/88`. Note
+NewTOS does **not** run a `text_init` that overwrites the char-metric
+entries — they come straight from the template.
+
+### Handle count and vertex cap (resolved TBVs)
+
+- **`NUM_VDI_HANDLES` → 16.** NewTOS uses `HANDLE_COUNT = 16`
+  (`tos-api/src/vdi/vwk.rs:20`): handle 1 = physical workstation, 2..=16
+  virtual (a **static slot table**, not `Mxalloc`). This is the small
+  NewTOS profile, **not** the EmuTOS 64/128. The spec's "no free handle"
+  cap and the exhaustion criterion are therefore at **16**, not
+  `NUM_VDI_HANDLES = 64/128` — see the mismatch note.
+- **`MAX_VERTICES` → 256.** Polygon vertex cap is `256`
+  (`tos-api/src/vdi/workstation.rs:42`, matching `primitives.rs:115`),
+  used in `INQ_TAB[14]` (`vq_extnd`). Again smaller than the EmuTOS
+  512/1024.
+
+### Mismatches flagged (Step-2 candidates)
+
+1. **Handle cap 16, not 64/128.** This spec (§ Error conditions, § Edge
+   cases 3, § Configuration) states the cap is `NUM_VDI_HANDLES = 64/128`.
+   NewTOS pins it at **16** (`vwk.rs:20`). Not a contract violation (the
+   VDI cap is build-config), but the spec text should read 16 for NewTOS.
+2. **Pixel size `[3]/[4]` left at ROM `372`.** `init_wk` never patches
+   `DEV_TAB[3]/[4]` (`workstation.rs:101-106` patches only `[0],[1],[13],
+   [35],[39]`), so both report the Atari ROM default `372` (≈ 0.372 mm ≈
+   the ST's pixel pitch), **not** the true Pi/HDMI pixel size. The profile
+   §3.1 said "report truthfully or leave at ROM default"; NewTOS leaves it
+   at ROM. Acceptable for bring-up (few programs read pixel size); a
+   truthful value needs the physical display dimensions, which the mailbox
+   can report but NewTOS does not yet query.
+3. **`text_init` char metrics not applied.** EmuTOS's `text_init` fills
+   `SIZ_TAB[0..3]`; NewTOS uses the template `0/7/0/7` directly. Values
+   happen to match the common case; flagged for completeness.
+
+### Palette / colour model
+
+The 16 `DEV_TAB[13]`/`[39]` colours are the fixed GEM 16-colour palette
+(`vdi_backend.rs:26-43`, index 0 = white/background, 1 = black/foreground)
+emulated over the 32 bpp VideoCore framebuffer; `vs_color` mutates entries
+in the 0..1000-per-gun range (`vdi_backend.rs:142-151`).
+
+### 1080p later
+
+`DEV_TAB[0]/[1]` already derive from the live `RasterBackend` geometry, so
+a larger negotiated mode flows through automatically once the framebuffer
+reports it; the fixed 640×480 is only in the driver
+(`framebuffer.rs:23-25`), not in the VDI table code.

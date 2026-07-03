@@ -182,3 +182,46 @@ None.
 
 PHASE-08: `Getrez` reports the code matching the active framebuffer mode; the
 TT-shifter profile can return TT codes (4/6/7) for HD-friendly modes.
+
+---
+
+## Pi / BCM2711 binding
+
+> Re-points the *hardware reference* (Shifter/Videl mode register, or the
+> `sshiftmod` shadow at `0x44C`) at the fixed NewTOS framebuffer mode. The
+> **contract is unchanged** — a WORD resolution code, no error path.
+> Peripheral + driver: see `docs/HARDWARE-PROFILE.md` §2/§3.1.
+
+- **Value NewTOS returns today: `2` (`ST_HIGH`).** `getrez()` returns the
+  `REZ` shadow, defaulting to `ST_HIGH = 2` when unset
+  (`tos-api/src/xbios/screen.rs:25`, `:57-62`). This is the
+  no-Atari-video `sshiftmod`-fallback path: there is no Shifter to read, so
+  a fixed shadow is reported.
+- **This is a compatibility shim, not a truthful geometry code.** The
+  framebuffer is 640×480 presenting a **16-colour / 4-plane** VDI raster
+  (`kernel/src/vdi_backend.rs:21` `NUM_COLORS=16`), whereas code `2`
+  (`ST_HIGH`) is 640×400 **monochrome**. The one Atari code that actually
+  matches 640×480×16-colour is `4` (`TT_MEDIUM`). NewTOS returns `2`
+  because the VDI reads geometry/colours from the `RasterBackend`
+  (`DEV_TAB`/`INQ_TAB`, §3.1), not from `Getrez`, so the rez code is only a
+  branch hint for legacy programs.
+- **Decision (recommended).** Keep publishing **`2` (`ST_HIGH`)** as the
+  NewTOS rez code for the bring-up 640×480 mode — it is what the code
+  returns, it is the safe "high-res desktop" hint most GEM programs expect,
+  and the true device capabilities come from the VDI tables. Do **not**
+  switch to `4` (`TT_MEDIUM`) unless the TT-shifter profile is adopted:
+  `MAX_REZ` is `2` (`tos-api/src/xbios/screen.rs:27`), so `Setscreen`
+  would reject a rez of `4` today (see the mismatch note below). Revisit
+  when the 1080p / mode-query phase lands, where `Getrez` should report a
+  code chosen per the negotiated HDMI mode.
+- **Round-trip.** `Setscreen(-1, -1, r)` for `r ∈ [0, 2]` stores the
+  shadow and a later `Getrez` returns `r`
+  (`tos-api/src/xbios/screen.rs:78-84`); the shadow does **not** change any
+  real geometry.
+- **Mismatch flagged (Step-2).** The `docs/api/xbios/05-setscreen.md`
+  round-trip criterion and this spec's "reports the code matching the
+  active mode" wording are in tension with returning a mono code (`2`) for
+  a 16-colour framebuffer. Recorded as a Step-2 finding — no code change in
+  this pass.
+- **1080p later.** A mode-derived rez code is deferred to the HDMI-query
+  phase.

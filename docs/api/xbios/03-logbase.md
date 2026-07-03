@@ -162,3 +162,33 @@ None.
 
 PHASE-08: `Logbase` returns the current "draw" framebuffer in the swap chain;
 `Setscreen(log, …)` retargets it.
+
+---
+
+## Pi / BCM2711 binding
+
+> Re-points the *hardware reference* (`v_bas_ad` at m68k `0x44E`) at the
+> BCM2711 VideoCore framebuffer. The **contract is unchanged** — a
+> full-64-bit pointer equal to the logical draw base. Peripheral +
+> driver: see `docs/HARDWARE-PROFILE.md` §2 (Screen / framebuffer).
+
+- **`v_bas_ad` maps to the framebuffer base.** NewTOS keeps no low-memory
+  `0x44E` cell; `Logbase` returns the `LOGBASE` shadow, or the live
+  framebuffer base when the shadow is `0`
+  (`tos-api/src/xbios/screen.rs:49-54`). The live base is the
+  CPU-visible high-half VA of the VideoCore pixel store
+  (`kernel/src/vdi_backend.rs:405-407`, `host_env.rs:218-229`) — the
+  same value `Physbase` returns on this single-buffer profile.
+- **Single buffer.** With one VideoCore framebuffer and no page flip,
+  `Logbase() == Physbase()` until double-buffering lands. The VDI, the VT52
+  framebuffer console (`fbcon`), and the mouse sprite all draw through the
+  `RasterBackend` into this one buffer.
+- **Setscreen interaction.** `Setscreen(log, -1, -1)` writes the `LOGBASE`
+  shadow (`tos-api/src/xbios/screen.rs:72-74`); a subsequent `Logbase`
+  returns that pointer. But the NewTOS drawing path (the `RasterBackend`)
+  always renders into the *live* framebuffer, not into a caller-supplied
+  `log` buffer — so retargeting the logical base does not actually redirect
+  VDI/console drawing yet (a Step-2 concern; see the profile note on
+  deferred double-buffering).
+- **1080p later.** Base is for the fixed 640×480 mode; a mode-sized base
+  follows the HDMI-query phase.

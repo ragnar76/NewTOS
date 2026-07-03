@@ -195,3 +195,35 @@ allocation and no free-handle scan; the physical handle is fixed).
 - The `init_colors`/`timer_init`/`vdimouse_init`/`esc_init` bring-up
   sequence is **reference**; NewTOS runs the equivalent framebuffer /
   input / console init, not the EmuTOS routines.
+
+---
+
+## Pi / BCM2711 binding
+
+> Re-points the *hardware reference* (the `Setscreen` resolution switch,
+> `phys_work` Line-A globals) at the BCM2711 VideoCore framebuffer. The
+> **contract is unchanged** — opcode 1, `work_in[0] = rez+2`, the fixed
+> handle `1`, the same `DEV_TAB`/`SIZ_TAB` as `v_opnvwk`. Peripheral +
+> driver: see `docs/HARDWARE-PROFILE.md` §2/§3.1.
+
+- **Same resolved tables as `v_opnvwk`.** `v_opnwk` runs the same `init_wk`
+  (`tos-api/src/vdi/workstation.rs:177-183` → `:61-117`), so
+  `DEV_TAB`/`SIZ_TAB` carry the identical 640×480×16-colour values pinned
+  in [`100-v_opnvwk`](100-v_opnvwk.md#pi--bcm2711-binding): `[0]=639`,
+  `[1]=479`, `[13]=16`, `[35]=1`, `[39]=16`, type `[44]=2`.
+- **Physical handle = 1.** `open_physical()` returns handle
+  `PHYS_HANDLE = 1` (`tos-api/src/vdi/vwk.rs:23`,
+  `workstation.rs:177-183`); the physical workstation uses a static slot,
+  cannot fail, and stays open for the system lifetime.
+- **`work_in[0]` (rez+2) is effectively ignored — no mode switch.** The
+  framebuffer is a single fixed 640×480 mode; there is no `Setscreen`
+  resolution change wired to a real mode switch (XBIOS `Setscreen` only
+  stores a rez shadow — see `docs/api/xbios/05-setscreen.md#pi--bcm2711-binding`).
+  `DEV_TAB[0,1]` always reflect the live framebuffer size regardless of
+  `work_in[0]`, matching this spec's "idempotent geometry" note.
+- **Bring-up sequence is native.** `init_colors`/`timer_init`/
+  `vdimouse_init`/`esc_init` are reference; NewTOS initialises the
+  framebuffer palette (`vdi_backend::PALETTE`), the mouse sprite
+  (`tos-api/src/vdi/mouse.rs`), and the frame clock instead.
+- **1080p later.** As in `v_opnvwk`, the geometry flows from the
+  `RasterBackend`; a negotiated larger mode needs no VDI table change.

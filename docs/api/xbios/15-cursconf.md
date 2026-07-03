@@ -207,3 +207,38 @@ An out-of-range `function` falls through the switch and returns `0`.
 PHASE-08: `Cursconf` drives the NewTOS text-console cursor (the VT52
 emulator's `v_stat_0`/`v_period` equivalents); subfn 5 returns the rate, the
 rest return 0, and the `M_CFLASH` inverted sense is preserved.
+
+---
+
+## Pi / BCM2711 binding
+
+> Re-points the *hardware reference* (the Shifter-era VT52 cursor state) at
+> the NewTOS framebuffer VT52 console (`fbcon`). The **contract is
+> unchanged** — the 6 subfunctions, only subfn 5 returns the rate, the
+> inverted `M_CFLASH` sense. Peripheral + driver: the framebuffer VT52
+> console over the VideoCore buffer (`docs/HARDWARE-PROFILE.md` §2/§3.2).
+
+- **State model, no blinking caret.** `cursconf` tracks the VT52 cursor
+  flags in software: `V_STAT_0` carries `M_CVIS (0x10)` /
+  `M_CFLASH (0x02)`, defaulting to visible + flashing, and `V_PERIOD`
+  the blink period (default 30 VBLs)
+  (`tos-api/src/xbios/screen.rs:126-157`). The GUI-oriented framebuffer
+  console has **no visible blinking text caret**, so hide/show/flash update
+  their state but render no on-screen blink; the blink **rate** get/set are
+  real values, so this is a thin state model, not a stub.
+- **Subfunction behaviour.** 0 hide, 1 show, 2 enable-flash (clears
+  `M_CFLASH`), 3 disable-flash (sets `M_CFLASH`), 4 set period (low byte),
+  5 return period, ≥ 6 no-op — all returning `0` except subfn 5
+  (`screen.rs:136-157`). The inverted `M_CFLASH` sense (clear = blinking)
+  is preserved.
+- **Bit-value note.** NewTOS uses `M_CFLASH = 0x02`, `M_CVIS = 0x10`
+  (`screen.rs:126-127`), which differ from EmuTOS's `conout.h`
+  (`M_CFLASH=0x0001`, `M_CVIS=0x0004`). These are **internal** flag bits
+  never exposed by the ABI — only subfn 5's *rate* is returned, and the
+  visibility/flash bits are write-only — so the difference is not
+  observable to a program. (Noted for Step-2 completeness; no contract
+  impact.)
+- **No Atari hardware dependency.** There is no Shifter or MFP-driven
+  blink; if a real blinking caret is added later it would run off the frame
+  clock (§ `Vsync`), not a VBL interrupt.
+- **1080p later.** Cursor config is geometry-independent.

@@ -71,22 +71,45 @@ differ only in the peripheral drivers (`kernel/src/drivers/bcm2711/*` vs.
   work is a separate phase.
 - **VDI logical model:** the VDI presents a **16-colour, 4-plane** raster over
   the truecolor buffer (`RasterBackend` maps 16 PEL indices → RGB).
-- **Screen base:** the mailbox-allocated framebuffer physical address; a single
-  buffer (no separate physical/logical). `Physbase`/`Logbase` return it;
-  `Setscreen` re-pointing is a no-op / bounded (single buffer). **(TBV)**
-- **`Getrez`:** a fixed NewTOS resolution code for 640×480×16 — **decide the
-  value** (ST high = 2 is monochrome; this is a 4-plane mode, so pick/publish a
-  NewTOS code). **(TBV — the VDI DEV_TAB open question)**
-- **Palette / colour:** 16 CLUT entries emulated over 32bpp; `Setcolor`/
-  `Setpalette`/`vs_color` set the PEL→RGB map. VDI colour mask is the standard
-  0..1000 per component.
-- **VDI `DEV_TAB`/`INQ_TAB` answers (the framebuffer profile):**
-  `DEV_TAB[0,1]` = 639, 479 (max x/y); `DEV_TAB[13]` = 16 (colours);
-  `DEV_TAB[35]` = 1 (>1 plane); `INQ_TAB[4]` = 4 (planes); pixel size in
-  microns (`DEV_TAB[3,4]`) — report truthfully from the HDMI mode or leave at
-  the ROM default. **(TBV — pin these in the VDI workstation binding)**
-- **`NUM_VDI_HANDLES` / `MAX_VERTICES`:** pick the NewTOS profile values (the
-  EmuTOS default is 128 / 1024; the small profile is 64 / 512). **(TBV)**
+- **Screen base:** the mailbox-allocated framebuffer, CPU-visible high-half VA
+  of the pixel store (the bus address is masked to an ARM physical address and
+  offset into the high half; `framebuffer.rs:178-179`,
+  `vdi_backend.rs:405-407`). A **single buffer** (no separate physical/
+  logical): `Physbase`/`Logbase` both return it. `Setscreen` re-pointing writes
+  only the log/phys **shadows** and does **not** move the VideoCore scan-out
+  (`xbios/screen.rs:72-77`) — a bounded no-op until double-buffering lands with
+  the 1080p work.
+- **`Getrez`:** returns **`2` (`ST_HIGH`)** — the no-Atari-video `sshiftmod`
+  fallback shadow (`xbios/screen.rs:25,57-62`). This is a compatibility shim,
+  **not** a truthful geometry code (`ST_HIGH` is 640×400 mono, whereas the mode
+  is 640×480×16-colour; the exact Atari match would be `4`/`TT_MEDIUM`).
+  **Decision: keep `2`** — it is what the code returns and the safe "high-res
+  desktop" hint; the real device caps come from the VDI `DEV_TAB`/`INQ_TAB`,
+  not from `Getrez`. `MAX_REZ = 2` (`xbios/screen.rs:27`), so `Setscreen` only
+  accepts `0..2` today. Revisit at the HDMI-mode-query (1080p) phase.
+- **Palette / colour:** 16 CLUT entries emulated over 32bpp
+  (`vdi_backend.rs:21,26-43`; index 0 = white/background, 1 = black/
+  foreground). `vs_color` sets the PEL→RGB map in the standard 0..1000-per-gun
+  range (`vdi_backend.rs:142-151`). **Caveat (Step-2):** XBIOS
+  `Setpalette`/`Setcolor` write a *separate* ST-format shadow in
+  `xbios/screen.rs` that is **not** wired to the VDI CLUT, so they do not yet
+  change displayed colours — see the palette-spec bindings.
+- **VDI `DEV_TAB`/`INQ_TAB` answers (resolved from `tos-api/src/vdi/`):**
+  `DEV_TAB[0,1]` = **639, 479** (max x/y, patched from the live framebuffer);
+  `DEV_TAB[13]` = **16** (colours); `DEV_TAB[35]` = **1** (>1 plane);
+  `DEV_TAB[39]` = **16** (palette size); `INQ_TAB[4]` = **4** (planes,
+  `log2(16)`); `INQ_TAB[5]` = **1** (colour LUT). Pixel size in microns
+  (`DEV_TAB[3,4]`) is **left at the ROM default `372`** — not patched from the
+  HDMI mode (`workstation.rs:101-106` patches only `[0],[1],[13],[35],[39]`);
+  truthful values need the mailbox physical-display-size query, deferred.
+  Source: `tos-api/src/vdi/workstation.rs:24-56,100-117,155-160`.
+- **`NUM_VDI_HANDLES` / `MAX_VERTICES`:** the **small NewTOS profile** —
+  `NUM_VDI_HANDLES` = **16** (`HANDLE_COUNT`, `tos-api/src/vdi/vwk.rs:20`;
+  handle 1 = physical, 2..=16 virtual, a static slot table not `Mxalloc`);
+  `MAX_VERTICES` = **256** (`workstation.rs:42`, `primitives.rs:115`). Both are
+  smaller than the EmuTOS 64/128 handles and 512/1024 verts — the existing
+  `v_opnvwk`/`vq_extnd` specs still cite the EmuTOS figures; that text should be
+  updated to 16/256 for NewTOS (a Step-2 spec-text fix).
 
 ### 3.2 Console (CON) + serial/debug (PL011 UART)
 

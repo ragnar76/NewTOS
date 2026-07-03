@@ -209,3 +209,36 @@ not rejected.
 PHASE-08: `Setcolor` writes one entry of the VideoCore palette (4-bit→8-bit
 expansion) and returns the previous masked word; the `color < 0` query and
 the `colorNum & 0x0F` masking are preserved.
+
+---
+
+## Pi / BCM2711 binding
+
+> Re-points the *hardware reference* (the `palette[]` shadow + the STe/TT
+> palette register write) at the emulated 16-entry CLUT over the 32 bpp
+> VideoCore framebuffer. The **contract is unchanged** — `colorNum & 0x0F`,
+> `color < 0` query, the previous masked word returned. Peripheral +
+> driver: see `docs/HARDWARE-PROFILE.md` §2/§3.1.
+
+- **What `setcolor` does today.** Index is masked `& 0x0F`; when `color >=
+  0` the entry is stored `& 0x0FFF` (STe 4-bit mask), and the previous
+  value is returned as a WORD (`tos-api/src/xbios/screen.rs:108-117`).
+  `color < 0` is the query — no write. Matches the contract's masking and
+  query rules.
+- **STe 4-bit mask (`0x0FFF`) is used, not the ST `0x0777`.** NewTOS treats
+  the profile as STe-class for the return mask (4 significant bits/gun),
+  which is consistent with an emulated CLUT that has ≥ 4-bit precision.
+- **Same disconnected-shadow caveat as `Setpalette` (Step-2).** The 16
+  entries written here live in the XBIOS ST-format shadow
+  (`screen.rs:160-168`), **not** the VDI CLUT
+  (`vdi_backend::PALETTE`) that actually colours pixels. So `Setcolor`
+  updates a value you can read back via `Setcolor(n, -1)` but does not
+  change the displayed colour. Bridging XBIOS `Setcolor` to the
+  `RasterBackend::set_color` (4→8-bit expansion into the VideoCore CLUT) is
+  the Step-2 fix — not done in this pass.
+- **4→8-bit expansion (when wired).** Each stored ST nibble maps to an
+  8-bit channel for the truecolor framebuffer, exactly the VideoCore
+  mapping the PHASE-08 note describes; the returned word stays the masked
+  ST value (contract), the 8-bit expansion is a driver detail.
+- **1080p later.** Resolution-independent; the 16-entry CLUT model is
+  unchanged by geometry.

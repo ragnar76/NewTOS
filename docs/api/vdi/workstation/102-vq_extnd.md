@@ -172,3 +172,55 @@ dispatcher before `vq_extnd` runs.)
 - **Open question:** confirm `INQ_TAB[4]` (# planes) and `[5]` (video
   lookup table) for the NewTOS 640×480×16-colour framebuffer (4 planes;
   `[5]` = 1 for a colour LUT) — `_discrepancies.md` D-VDI-7.
+
+---
+
+## Pi / BCM2711 binding
+
+> Re-points the *hardware reference* (`INQ_TAB` storage, `v_planes`) at the
+> BCM2711 VideoCore framebuffer read through the `RasterBackend`. The
+> **contract is unchanged** — opcode 102, the `INTIN[0]` mode flag, the
+> mode-0 tables, the mode-1 clip rect + 45-word `INQ_TAB`. Peripheral +
+> driver: see `docs/HARDWARE-PROFILE.md` §2/§3.1.
+
+### Open question resolved — `INQ_TAB[4]`/`[5]` for 640×480×16-colour
+
+Confirmed from the code (`tos-api/src/vdi/workstation.rs:155-160`):
+
+| Idx | Meaning | NewTOS value | Source |
+|-----|---------|--------------|--------|
+| 4 | # planes | **4** | `ncol.trailing_zeros()` = `log2(16)` (`workstation.rs:158`) |
+| 5 | video lookup table | **1** | `ncol>2 → 1` (`workstation.rs:159`) |
+| 14 | max vertices | **256** | `MAX_VERTICES` (`workstation.rs:42`) |
+| 19 | clip flag | live `vwk.clip` | per-query (`workstation.rs:160`) |
+| 16 | # mouse buttons | 1 | ROM template (`workstation.rs:49-56`) |
+
+So `INQ_TAB[4] = 4` (four planes for 16 colours) and `[5] = 1` (colour
+LUT present) — exactly the values the D-VDI-7 open question predicted.
+Mode-0 returns the same `DEV_TAB`/`SIZ_TAB` as
+[`100-v_opnvwk`](100-v_opnvwk.md#pi--bcm2711-binding) (`[0]=639`,
+`[1]=479`, `[13]=16`, `[35]=1`, `[39]=16`).
+
+### Mismatch flagged (Step-2)
+
+- **`INQ_TAB[14]` max vertices = 256, not 512/1024.** This spec's table
+  row 14 lists "MAX_VERTICES (512/1024)". NewTOS reports **256**
+  (`workstation.rs:42`, `primitives.rs:115`) — the smaller NewTOS profile
+  (same as the handle-count reduction in `100-v_opnvwk`). Not a contract
+  violation (the cap is device-reported), but the spec text should read
+  256 for NewTOS.
+
+### Pixel-size / resolution `INQ_TAB` fields
+
+`INQ_TAB[20..24]` (extended pixel-size / dpi) stay `0` in the ROM template
+(`workstation.rs:53-55`) — NewTOS does not patch them, so pixel width/
+height in microns and dpi are reported as "unknown" (0). Consistent with
+`DEV_TAB[3]/[4]` staying at the ROM default (see
+[`100-v_opnvwk`](100-v_opnvwk.md#pi--bcm2711-binding) mismatch 2); a
+truthful value needs the mailbox physical-display-size query, not yet done.
+
+### 1080p later
+
+`INQ_TAB[4]/[5]` derive from `num_colors` (16), which is fixed by the VDI
+CLUT model, not the resolution; a larger framebuffer does not change the
+plane/LUT answers until a truecolor path is adopted.
