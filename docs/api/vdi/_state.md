@@ -151,6 +151,67 @@ range. `init_colors` (`vdi_col.c:708`) seeds it from `st_palette`;
 programs the DAC with a `[0,1000]`-clamped copy; `vq_color` (op 26) reads
 `REQ_COL` back. This is a **device-global** (Line-A) array, not per-`Vwk`.
 
+## Input and cursor state
+
+> **Scope note.** These are the **device-global** input/cursor variables
+> (Line-A globals in EmuTOS), *not* per-`Vwk` attribute state — the mouse
+> and the logical input mode are properties of the physical device, shared
+> by every workstation. Full behaviour lives in
+> [`input/_input.md`](input/_input.md), [`input/_mouse.md`](input/_mouse.md)
+> and [`input/_mouse-packet.md`](input/_mouse-packet.md); this section only
+> catalogues the shared slots so the state map is complete.
+>
+> Source: `vdi/vdi_defs.h:258,272,285-294`, `bios/lineavars.S:123-173`
+> (offsets), initialised by `vdimouse_init` (`vdi/vdi_mouse.c:565-615`).
+> The **values/semantics** are contract (programs read them via `vq_mouse`,
+> `vqin_mode`, and the locator/string terminators); the **storage** (Line-A
+> addresses) is reference — NewTOS keeps equivalent per-device state.
+
+### Input mode (set by `vsin_mode` 33, read by `vqin_mode` 115)
+
+| Global | Device | Value |
+|--------|--------|-------|
+| `loc_mode` | locator | `0` = request, `1` = sample |
+| `val_mode` | valuator | tracked for ABI; no handler (op 29 = nop) |
+| `chc_mode` | choice | tracked; `v_choice` ignores it (dummy) |
+| `str_mode` | string | `0` = request, `1` = sample |
+
+Each holds `mode − 1` (`vdi_input.c:122-141`); all default to `0`
+(request) at `vdimouse_init` (`vdi_mouse.c:575-578`). See
+[`input/_input.md`](input/_input.md).
+
+### Mouse position / buttons / cursor visibility
+
+| Global | Type | Meaning | Written by | Read by |
+|--------|------|---------|-----------|---------|
+| `GCURX` / `GCURY` | WORD | cursor x / y, clamped to `[0,xres-1]`/`[0,yres-1]` | packet handler (`scrn_clip`); `v_locator` seeds from `PTSIN` | `vq_mouse`, locator, cursor draw |
+| `MOUSE_BT` | WORD | button bitmask: bit0 = left, bit1 = right (2-4 = ext buttons under `CONF_WITH_EXTENDED_MOUSE`) | packet handler (`mouse_int`) | `vq_mouse` |
+| `cur_ms_stat` | UBYTE | status: bit5 = moved, bit6/7 = right/left changed, bit0/1 = live state | `mouse_int` | `gloc_key` (locator terminators) |
+| `TERM_CH` | WORD | last input terminator/char (scancode<<8 \| ASCII) | `gloc_key`/`gchr_key`/`gchc_key` | locator/string/choice outputs |
+| `HIDE_CNT` | WORD | cursor hide depth; visible only at 0; show-underflow clamped to 0 | `v_show_c`/`v_hide_c` (`dis_cur`/`hide_cur`) | VBL draw (`vb_draw`) |
+| `draw_flag` / `mouse_flag` | UBYTE | "redraw pending" / "form being redefined" (VBL interlock) | `mov_cur`, `set_mouse_form`, `dis_cur`/`hide_cur` | `vb_draw` |
+| `newx` / `newy` | WORD | pending cursor coords for the VBL redraw | `mov_cur` | `vb_draw` |
+
+`GCURX`/`GCURY` init to `xres/2`, `yres/2`; `HIDE_CNT = 1` (hidden) at
+`vdimouse_init`. Full model: [`input/_mouse.md`](input/_mouse.md),
+[`input/_mouse-packet.md`](input/_mouse-packet.md).
+
+### The exchange-vector slots (`vex_*` 118, 125-127, 134)
+
+| Global | Type | Installed by | Called on | Init |
+|--------|------|--------------|-----------|------|
+| `user_but` | `void(*)(void)` | `vex_butv` (125) | button change | `just_rts` |
+| `user_mot` | `void(*)(void)` | `vex_motv` (126) | coordinate change | `just_rts` |
+| `user_cur` | `void(*)(void)` | `vex_curv` (127) | cursor (re)draw | `mov_cur` |
+| `tim_addr` | `void(*)(int)` | `vex_timv` (118) | Timer-C tick | `just_rts` |
+| `user_wheel` | `PFVOID` | `vex_wheelv` (134) | wheel (`CONF_WITH_EXTENDED_MOUSE`) | `just_rts` |
+
+Each `vex_*` returns the **old** pointer in `CONTRL[9..10]` and installs the
+new one from `CONTRL[7..8]` (`vdi_mouse.c:370-418`, `vdi_misc.c:100-112`);
+programs chain the previous vector. `mcs_ptr`/`mouse_cdb` (below) hold the
+save-under buffer and the interleaved sprite — a **reference** rasterisation
+detail. See [`input/_mouse.md`](input/_mouse.md).
+
 ## NewTOS implementation notes (Phase 12)
 
 - The handle registry is a NewTOS structure (not a raw `Vwk *[]` at a

@@ -1,65 +1,323 @@
-# VDI logical input devices (Phase 00b D6)
+# VDI logical input devices — locator / valuator / choice / string (Phase 00b D6)
 
-> Source: EmuTOS @ `1a7484ab` — `vdi/vdi_mouse.c` (`vdi_v_locator`),
-> `vdi/vdi_input.c` (`vdi_v_choice`, `vdi_v_string`, `vdi_vsin_mode`).
+> Source: EmuTOS @ `1a7484ab`. Verified against:
+> `vdi/vdi_mouse.c:280` (`vdi_v_locator`), `:195` (`gloc_key`),
+> `vdi/vdi_input.c:31` (`vdi_v_choice`), `:79` (`vdi_v_string`), `:118`
+> (`vdi_vsin_mode`), `:154` (`vdi_vqin_mode`), `:199` (`gchc_key`), `:215`
+> (`gchr_key`); globals `vdi/vdi_defs.h:258` (`loc_mode`/`val_mode`/
+> `chc_mode`/`str_mode`), `:272` (`TERM_CH`). Opcode numbers from
+> [`../_dispatcher.md`](../_dispatcher.md) jump table 1.
 > Calling convention: [`../_dispatcher.md`](../_dispatcher.md).
-> `vqin_mode` (115) is in
-> [`../inquiry/_color-pixel-input.md`](../inquiry/_color-pixel-input.md).
+> `vqin_mode` (115) / `vq_key_s` (128) are inquiries, documented in
+> [`../inquiry/_color-pixel-input.md`](../inquiry/_color-pixel-input.md);
+> summarised here because `vqin_mode` reads the same mode globals.
+>
+> **Contract vs. reference** — see [`../../../COMPATIBILITY.md`](../../../COMPATIBILITY.md).
+> **Contract** (must match TOS exactly): the opcode numbers, the
+> request-vs-sample model, the `INTIN`/`PTSIN` inputs, the `INTOUT`/
+> `PTSOUT`/`CONTRL[2]`/`CONTRL[4]` outputs and their terminator/count
+> encodings, the four mode globals' `0`/`1` meaning, and the dummy nature
+> of `v_choice`/`v_valuator`. **Reference** (NewTOS reimplements freely):
+> `gloc_key`/`gchr_key` reading `Bconstat(2)`/`Bconin(2)` + `cur_ms_stat`,
+> and how the event source is polled — NewTOS drives it from the USB-HID /
+> IKBD path.
 
-Each logical input device has a **mode**: REQUEST (block until input)
-or SAMPLE (poll, return immediately). The mode is set by `vsin_mode`
-and stored in `loc_mode`/`val_mode`/`chc_mode`/`str_mode`
-(0 = request, 1 = sample, internally; see note).
+The VDI defines four **logical input devices**, each with a **REQUEST**
+handler (block until a trigger) and a **SAMPLE** handler (poll, return
+immediately). The C bindings `vrq_*`/`vsm_*` are *not* separate opcodes:
+each device is one opcode, and the current **input mode** (set by
+`vsin_mode`, op 33) selects request vs. sample inside the handler.
 
-| Op | Fn | Device | Request vs. Sample |
-|----|----|--------|--------------------|
-| 28 | `v_locator` | locator (mouse/keys) | `vrq_locator` / `vsm_locator` |
-| 30 | `v_choice`  | choice (function keys) | `vrq_choice` / `vsm_choice` |
-| 31 | `v_string`  | string (keyboard) | `vrq_string` / `vsm_string` |
-| 33 | `vsin_mode` | set input mode | — |
+| Device | Opcode | Fn | Request binding | Sample binding | Mode global |
+|--------|:------:|----|-----------------|----------------|-------------|
+| locator | 28 | `v_locator` (`vdi_mouse.c:280`) | `vrq_locator` | `vsm_locator` | `loc_mode` |
+| valuator | 29 | *(no handler — `vdi_v_nop`)* | `vrq_valuator` | `vsm_valuator` | `val_mode` |
+| choice | 30 | `v_choice` (`vdi_input.c:31`) | `vrq_choice` | `vsm_choice` | `chc_mode` |
+| string | 31 | `v_string` (`vdi_input.c:79`) | `vrq_string` | `vsm_string` | `str_mode` |
+| set mode | 33 | `vsin_mode` (`vdi_input.c:118`) | — | — | (writes all four) |
 
-## `vsin_mode` (33)
+**Mode-global convention (contract).** Each global holds `mode − 1`:
+`0` = **REQUEST**, `1` = **SAMPLE** (`vdi_input.c:122-141`). All four
+default to `0` (request) at mouse init (`vdi_mouse.c:575-578`). `vqin_mode`
+returns the stored value (`0`/`1`), not the documented `1`/`2` — this is a
+known Atari-TOS quirk, see the inquiry doc.
 
-`INTIN[0]` = device (1=locator, 2=valuator, 3=choice, 4=string);
-`INTIN[1]` = mode (1=request, 2=sample). Stores `mode-1` in the
-matching global and echoes `INTOUT[0] = INTIN[1]`.
+---
 
-## `v_locator` (28)
+## `vsin_mode` (33) — SET INPUT MODE
 
-Initial position from `PTSIN[0..1]` → `GCURX`/`GCURY`.
-- **Request** (`loc_mode==0`): show cursor, loop until a button or
-  keyboard event (`gloc_key()`); return `INTOUT[0]` = terminating char
-  (`TERM_CH & 0xff`), `PTSOUT[0..1]` = final position, `CONTRL[2]=1`
-  (one point), `CONTRL[4]=1` (one char); hide cursor.
-- **Sample** (`loc_mode!=0`): poll once; if a key event, set
-  `CONTRL[4]=1` + `INTOUT[0]`; if a motion event, set `CONTRL[2]=1` +
-  `PTSOUT[0..1]`.
+**Primary location:** `vdi/vdi_input.c:118` (`vdi_vsin_mode`).
+**Build config:** none (configuration-independent).
 
-## `v_choice` (30)
+### Parameter-block interface
 
-`gchc_key()`; `INTOUT[0] = TERM_CH & 0xff` — the choice value (function
-key) the user pressed.
+| Slot | Meaning |
+|------|---------|
+| `CONTRL[0]` | opcode = 33 |
+| `INTIN[0]` | device: 1 = locator, 2 = valuator, 3 = choice, 4 = string |
+| `INTIN[1]` | mode: 1 = request, 2 = sample |
+| `CONTRL[3]` (`N_INTIN`) | 2 |
+| `CONTRL[4]` (`N_INTOUT`) | 1 (dispatcher pre-load) |
+| `INTOUT[0]` | echo of `INTIN[1]` (the requested mode, **1 or 2**) |
 
-## `v_string` (31)
+### Behaviour
 
-`INTIN[0]` = max length `j`; negative `j` = return raw scancodes
-(`mask=0xffff`), positive = ASCII only (`mask=0xff`).
-- **Request** (`str_mode==0`): read chars until `j` reached or CR
-  (`0x0d`); each goes to `INTOUT[i]`. CR is not counted. `CONTRL[4]` =
-  char count.
-- **Sample** (`str_mode!=0`): drain available chars (up to `j`) without
-  blocking; `CONTRL[4]` = count.
+Reads `INTIN[1]` into `INTOUT[0]` (echoes the raw 1/2 mode), then stores
+`INTIN[1] − 1` into the mode global selected by `INTIN[0]`
+(`vdi_input.c:122-141`). A device selector outside `1..4` stores nothing
+(the `switch` has no `default`) but still echoes `INTOUT[0]`. No range
+check on the mode value: `INTIN[1]` values other than 1/2 are stored
+verbatim as `INTIN[1] − 1`.
+
+### Verification criteria
+
+- `vsin_mode(dev=1, mode=2)` → `INTOUT[0] = 2`, `loc_mode = 1` (sample).
+- `vsin_mode(dev=4, mode=1)` → `INTOUT[0] = 1`, `str_mode = 0` (request).
+- `vsin_mode(dev=5, mode=1)` → `INTOUT[0] = 1`, no mode global changed.
+
+---
+
+## `v_locator` (28) — LOCATOR INPUT (mouse position + terminator)
+
+**Primary location:** `vdi/vdi_mouse.c:280` (`vdi_v_locator`).
+**Helpers:** `vdi/vdi_mouse.c:195` `gloc_key()` — poll one locator event;
+`vdi/vdi_mouse.c:127` `dis_cur()` / `:157` `hide_cur()` — show/hide the
+cursor around a request.
+**Globals read:** `loc_mode`; `GCURX`/`GCURY`; `cur_ms_stat`; `TERM_CH`.
+**Globals written:** `GCURX`/`GCURY` (from `PTSIN`); `TERM_CH`;
+`cur_ms_stat` (button-change bits cleared by `gloc_key`).
+**Build config:** none.
+
+### Parameter-block interface
+
+| Slot | Meaning |
+|------|---------|
+| `CONTRL[0]` | opcode = 28 |
+| `CONTRL[1]` (`N_PTSIN`) | 1 (one input point) |
+| `PTSIN[0]`, `PTSIN[1]` | initial locator x, y → seed `GCURX`/`GCURY` |
+| `CONTRL[2]` (`N_PTSOUT`) | out: 1 if a point is returned, else 0 |
+| `CONTRL[4]` (`N_INTOUT`) | out: 1 if a terminator is returned, else 0 |
+| `INTOUT[0]` | out: terminating character (`TERM_CH & 0xff`) |
+| `PTSOUT[0]`, `PTSOUT[1]` | out: locator x, y |
+
+Jump-table pre-load is `{nptsout=0, nintout=0}` (`vdi_main.c`): the handler
+sets `CONTRL[2]`/`CONTRL[4]` itself.
+
+### Behaviour — request (`loc_mode == 0`)
+
+Seed `GCURX`/`GCURY` from `PTSIN[0..1]`, show the cursor (`dis_cur`), then
+**loop until `gloc_key()` returns a button/key event** (its bit 0 set)
+(`vdi_mouse.c:289-301`). On return: `INTOUT[0] = TERM_CH & 0xff`,
+`CONTRL[4] = 1`, `CONTRL[2] = 1`, `PTSOUT[0..1]` = the seeded input point,
+then hide the cursor (`hide_cur`).
+
+- **First-call quirk / terminators.** `gloc_key` treats a mouse button
+  press *or* release as a trigger, returning `TERM_CH = 0x20` for the left
+  button, `0x21` for the right, or the keyboard char (ASCII in bits 0-7,
+  scancode in 8-15; `INTOUT[0]` keeps only the low byte). Because press and
+  release are separate events, a single click satisfies **two** successive
+  `vrq_locator` calls; `0x20`/`0x21` are also indistinguishable from
+  pressing space / `!`. (`vdi_mouse.c:203-216`, header comment
+  `:240-254`.)
+- **Returned point.** `PTSOUT` is the *input* point (`point->x/y`), **not**
+  the live `GCURX`/`GCURY` — EmuTOS notes this differs from the Atari docs
+  (`vdi_mouse.c:277-278`).
+
+### Behaviour — sample (`loc_mode != 0`)
+
+Seed `GCURX`/`GCURY` from `PTSIN`, call `gloc_key()` **once**
+(`vdi_mouse.c:302-313`):
+
+- bit 0 set (button/key) → `CONTRL[4] = 1`, `INTOUT[0] = TERM_CH & 0xff`;
+- bit 1 set (motion) → `CONTRL[2] = 1`, `PTSOUT[0..1]` = input point;
+- neither → both counts left 0 → the call returns "no event".
+
+`gloc_key` returns `1` (button/key), `2` (motion), or `3` (both); a pending
+keyboard char is fetched via `Bconstat(2)`/`Bconin(2)` (**reference** event
+source).
+
+### Verification criteria
+
+- Sample, no event pending → `CONTRL[2] = CONTRL[4] = 0` (returns
+  immediately, nothing in `INTOUT`/`PTSOUT`).
+- Sample, left button change → `CONTRL[4] = 1`, `INTOUT[0] = 0x20`.
+- Request, left button press → blocks, then `INTOUT[0] = 0x20`,
+  `CONTRL[2] = CONTRL[4] = 1`, `PTSOUT[0..1] = PTSIN[0..1]`.
+
+---
+
+## `v_valuator` (29) — VALUATOR INPUT (not implemented)
+
+**Primary location:** none — opcode 29 maps to `vdi_v_nop` in jump table 1
+(`vdi_main.c`; see [`../_dispatcher.md`](../_dispatcher.md)), i.e. it does
+nothing. The Atari ST has no analogue valuator device.
+
+`vsin_mode`/`vqin_mode` still track `val_mode` for ABI completeness, but a
+`vrq_valuator`/`vsm_valuator` call reaches no handler: the dispatcher's
+pre-loaded `{nptsout=0, nintout=0}` stand, and the call returns with empty
+output arrays. This is an **honest unimplemented**, not a stub — the device
+genuinely does not exist. (Contract: a program calling op 29 observes zero
+output counts.)
+
+---
+
+## `v_choice` (30) — CHOICE INPUT (dummy device)
+
+**Primary location:** `vdi/vdi_input.c:31` (`vdi_v_choice`).
+**Helper:** `vdi/vdi_input.c:199` `gchc_key()`.
+**Globals written:** `TERM_CH` (set to 1 by `gchc_key`).
+**Build config:** none.
+
+### Parameter-block interface
+
+| Slot | Meaning |
+|------|---------|
+| `CONTRL[0]` | opcode = 30 |
+| `CONTRL[4]` (`N_INTOUT`) | 1 (dispatcher pre-load) |
+| `INTOUT[0]` | out: choice value (`TERM_CH & 0xff`) |
+
+### Behaviour
+
+**This is a dummy function in both Atari TOS and EmuTOS** (the imported DRI
+source; the "GEM Programmer's Guide: VDI" marks the choice device as not
+required). `vdi_v_choice` ignores `chc_mode` entirely — there is **no
+request/sample branch**. It calls `gchc_key()`, which unconditionally sets
+`TERM_CH = 1` and returns, then writes `INTOUT[0] = TERM_CH & 0xff = 1`
+(`vdi_input.c:31-36,199-203`). So `v_choice` always returns choice value
+**1** immediately, whatever the mode or keyboard state.
+
+### Verification criteria
+
+- `v_choice` in any mode → `INTOUT[0] = 1`, `CONTRL[4] = 1` (dispatcher
+  pre-load), returns immediately without blocking.
+
+> **Correction vs. earlier revision:** a prior version of this doc
+> described `v_choice` as reading function keys and honouring
+> request/sample via `gchc_key()`. That is wrong — `gchc_key` is a stub
+> returning constant `1`; `v_choice` is a DRI dummy. Logged as D-VDI-10.
+
+---
+
+## `v_string` (31) — STRING INPUT (keyboard)
+
+**Primary location:** `vdi/vdi_input.c:79` (`vdi_v_string`).
+**Helper:** `vdi/vdi_input.c:215` `gchr_key()` — fetch one char via
+`Bconstat(2)`/`Bconin(2)`; sets `TERM_CH` (scancode in 8-15, ASCII in 0-7).
+**Globals written:** `TERM_CH`.
+**Build config:** none.
+
+### Parameter-block interface
+
+| Slot | Meaning |
+|------|---------|
+| `CONTRL[0]` | opcode = 31 |
+| `INTIN[0]` | max length `j` (see sign rule below) |
+| `INTIN[1]` | echo flag — **ignored** (`vdi_input.c:62,77`) |
+| `CONTRL[3]` (`N_INTIN`) | 2 |
+| `CONTRL[4]` (`N_INTOUT`) | out: number of characters returned |
+| `INTOUT[0..count-1]` | out: the characters (one per WORD) |
+
+The string is the logical keyboard device. The max-length sign selects the
+character encoding (`vdi_input.c:83-88`):
+
+- `j ≥ 0` → `mask = 0x00ff`: **ASCII only**, one char per `INTOUT` word,
+  high byte 0.
+- `j < 0` → `j = |j|`, `mask = 0xffff`: **extended codes**, scancode in the
+  high byte, ASCII in the low byte.
+
+### Behaviour — request (`str_mode == 0`)
+
+`TERM_CH = 0`; read chars in a `for` loop until `i` reaches `j` **or** the
+last char's low byte is CR (`0x0d`) (`vdi_input.c:89-97`). Each iteration
+**busy-waits** `while (gchr_key() == 0);` for a keystroke, then stores
+`INTOUT[i] = TERM_CH & mask`. If terminated by CR, `i` is decremented so
+**the CR is not stored and not counted** (`:95-96`). `CONTRL[4] = i` = the
+character count.
+
+- **Atari-TOS bug preserved (`vdi_input.c:63-65`):** when `j` was specified
+  *negative* (extended-code mode), the CR check compares against the *low
+  byte* of a value whose *high byte holds the scancode*; in practice CR
+  does **not** terminate input in extended mode — input ends only at the
+  max count. This bug is preserved verbatim.
+
+### Behaviour — sample (`str_mode != 0`)
+
+Non-blocking drain: `while (gchr_key() != 0 && i < j) INTOUT[i++] = TERM_CH
+& mask;` (`vdi_input.c:100-103`). Returns immediately if no char is
+pending. **CR is treated like any other character** — it is stored and does
+not terminate (`vdi_input.c:70-74`). `CONTRL[4] = i` = count drained.
+
+### Verification criteria
+
+- Request, `INTIN[0] = 4`, user types `AB<CR>` → `INTOUT = ['A','B']`,
+  `CONTRL[4] = 2` (CR dropped, not counted).
+- Request, `INTIN[0] = 2`, user types `ABC` → stops at 2, `INTOUT =
+  ['A','B']`, `CONTRL[4] = 2`.
+- Sample, nothing pending → `CONTRL[4] = 0`, returns immediately.
+- Sample, `INTIN[0] = -3`, one key pending → `INTOUT[0]` carries scancode
+  in bits 8-15 + ASCII in 0-7.
+
+---
+
+## Dependencies
+
+### Requires (must be functional)
+
+- **Keyboard/console input queue** — `gloc_key`/`gchr_key` read it through
+  `Bconstat(2)`/`Bconin(2)` (BIOS device 2 = keyboard). NewTOS supplies
+  this from the Phase-06 console + IKBD/USB-HID path.
+- **Mouse button/motion state** — `cur_ms_stat`, `GCURX`/`GCURY`,
+  `TERM_CH`, maintained by the mouse packet handler
+  ([`_mouse-packet.md`](_mouse-packet.md)).
+
+### Used by
+
+- `vrq_*`/`vsm_*` C bindings map onto these opcodes with the mode preset by
+  `vsin_mode`.
+- `v_dspcur`/`v_rmcur` (escape sub 18/19) reuse the cursor show/hide, not
+  the locator (see [`../_escape.md`](../_escape.md)).
+
+---
+
+## Related data structures
+
+- Input-mode / terminator / button constant tables →
+  [`_mouse-packet.md`](_mouse-packet.md).
+- Shared input globals (`loc_mode` … `TERM_CH`, `GCURX`/`GCURY`) →
+  [`../_state.md`](../_state.md#input-and-cursor-state).
+
+---
+
+## Cross-references
+
+- **Atari Compendium / Profibuch:** cross-check of the documented
+  `vrq_*`/`vsm_*` ABIs, the first-call locator behaviour, and the
+  documented (1/2 vs. 0/1) `vqin_mode` return is **deferred** — no PDFs in
+  `references/` (see [`../_discrepancies.md`](../_discrepancies.md)
+  preamble).
+- **XBIOS:** the locator/button events originate from the IKBD mouse
+  configured by `Initmous` ([`../../xbios/00-initmous.md`](../../xbios/00-initmous.md));
+  keyboard events from `Kbdvbase` / `Bconin(2)`.
+
+---
+
+## Configuration / version notes
+
+- None of the four handlers is gated by `CONF_WITH_*`. The dummy
+  `v_choice`/`v_valuator` and the negative-`j` CR bug are present across all
+  EmuTOS build configurations and match Atari TOS.
 
 ## NewTOS implementation notes
 
-- All four bind to the **keyboard/mouse input subsystem**
-  (`gloc_key`/`gchc_key`/`gchr_key` = the VDI input event sources).
-  Until that subsystem exists for QEMU, REQUEST-mode calls must block
-  on the real event queue (as console input already does, Phase 06),
-  not return canned values; SAMPLE-mode returns "no event" cleanly.
-- The valuator device (`v_valuator`, op 29) is absent from EmuTOS
-  (no analogue input on Atari) — `vsin_mode`/`vqin_mode` still track
-  `val_mode` for ABI completeness, but there is no `v_valuator`
-  handler. Note in the dispatcher.
-- Char/scancode encoding (`mask` 0xff vs 0xffff) matches the BIOS
-  keyboard codes; reuse the Phase-06 keyboard decode.
+- All four bind to the **keyboard/mouse input subsystem** (`gloc_key`/
+  `gchr_key`/`gchc_key` are EmuTOS's event pumps). Until that subsystem is
+  wired for QEMU, REQUEST-mode calls must block on the real event queue (as
+  console input already does, Phase 06), not return canned values;
+  SAMPLE-mode returns "no event" cleanly (zero output counts).
+- `v_choice` (dummy) and `v_valuator` (absent) return their fixed results
+  without touching the input queue — reimplement them as such, not as
+  faked keyboard reads.
+- Char/scancode encoding (`mask` 0xff vs 0xffff) matches the BIOS keyboard
+  codes; reuse the Phase-06 keyboard decode. Preserve the negative-`j` CR
+  bug for bit-exact `vrq_string` compatibility (or document a deliberate
+  deviation).
