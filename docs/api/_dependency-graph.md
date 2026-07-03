@@ -146,7 +146,7 @@ without first implementing process management. Ctrl-C handling is
 the single dependency that bridges to the process group.
 
 **Update (D6 + process group spec'd):** `Pterm` spec is now in
-`docs/api/gemdos/process/01-pterm.md`; the implementation dependency
+`docs/api/gemdos/process/4c-pterm.md`; the implementation dependency
 for Ctrl-C is unblocked. Implementation order for Ctrl-C-aware
 console reads:
 

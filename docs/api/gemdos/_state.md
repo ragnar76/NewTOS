@@ -21,21 +21,70 @@ expectations.
 
 ---
 
-## 1. Process descriptor `run` (`bdos/proc.c:54`)
+## 1. Process descriptor `run` and the basepage/parent chain (`bdos/proc.c:52`)
 
 ```c
-PD *run;        /* current PD (process descriptor) */
+PD *run;        /* bdos/proc.c:52 — current PD (process descriptor / basepage) */
 ```
 
-Pointer to the currently-running process. Set by `xexec` /
-`proc_go`, read by virtually every BDOS call that needs the calling
-process's path, DTA, FCB table, or memory descriptor.
+Pointer to the currently-running process. Read by virtually every BDOS call that
+needs the calling process's path, DTA, file-handle table, current dirs/drive, or
+memory ownership.
 
-Initialised at boot to the descriptor of the bootstrap process
-(EmuTOS shell or AUTO program). Updated by `Pexec(0)` and
-`Pterm`/`Pterm0`/`Ptermres`.
+**Lifecycle / writers:**
+- Initialised at boot to the descriptor of the bootstrap process (EmuTOS shell
+  or AUTO program).
+- `proc_go` (`bdos/proc.c:575`, reached by `Pexec` modes 0/4/6) sets
+  `run = child` when launching.
+- `xterm`/`x0term`/`xtermres` (`bdos/proc.c:609`) set `run = run->p_parent`
+  **before** dismantling the terminating process.
 
-NewTOS: same pointer, mapped to the kernel's `Process` struct.
+### Parent chain (`PD.p_parent`, basepage offset 0x24)
+
+Each launched process records its launcher in `p_parent`, set by `proc_go`
+(`p->p_parent = run`, `bdos/proc.c:541`) at the moment of launch — **not** at
+load time. So a `Pexec(3)` (load, don't go) basepage has `p_parent == 0` until it
+is actually launched via `Pexec(4/6)`. `Pterm` walks exactly one link
+(`run = run->p_parent`) to return control; the exit code is stored into the
+**parent's** saved-D0 slot `p_parent->p_dreg[0]` (offset 0x68). The boot process
+has `p_parent == NULL`; EmuTOS does not guard a `Pterm` from it (would deref
+NULL). **Contract:** `p_parent` at offset 0x24 and `p_dreg[0]` at 0x68 are the
+observable way a child's exit code reaches its parent's `Pexec`. The full
+basepage byte layout is in `docs/api/structures/basepage.md` and
+`docs/api/gemdos/process/4b-pexec.md` (PD table).
+
+NewTOS: same `run` pointer + parent link, mapped to the kernel's `Process`
+struct; a sentinel init PD catches `Pterm` from the top-level shell instead of
+dereferencing a NULL parent.
+
+### Process-owned resources released at termination
+
+`Pterm`/`Pterm0` release **everything** the process owns; `Ptermres` **reserves**
+its memory instead of freeing it. Ownership is tracked per resource:
+- **Open files** — the six standard handles `p_uft[0..5]` (§2) plus every
+  `sft[]` entry with `f_own == run` (§2). Both are closed by `ixterm`
+  (`bdos/proc.c:117-123`). Cross-reference §2; not duplicated here.
+- **Current directories** — each non-zero `p_curdir[d]` index into `dirtbl[]`
+  (§5) is `decr_curdir_usage`'d (`bdos/proc.c:128-132`). Cross-reference §5.
+- **Memory** — every MD with `m_own == run` in `pmd`/`pmdalt` (§8), freed by
+  `free_all_owned` (`bdos/proc.c:92-101`) or, for `Ptermres`, orphaned by
+  `reserve_blocks` (`bdos/proc.c:77-89`). Cross-reference §8 (including the
+  `m_own` ownership caveat).
+
+### ETV_TERM — the user/GEM termination vector (`0x102` / `0x408`)
+
+`Pterm`/`Pterm0`/`Ptermres` invoke a user-installed termination handler **before**
+teardown. `xterm` fetches it with `Setexc(0x102, -1L)` — exception number
+`0x102`, i.e. byte address `4 * 0x102 = 0x408 = _etv_term` (`tosvars.ld:35`,
+"GEM program termination vector"; the C global is `etv_term`,
+`include/tosvars.h:112`). The `-1` sentinel makes `Setexc` **read without
+replacing** (`bios/bios.c:1076`). The handler is called via `protect_v`
+(`util/miscasm.S:213`), which preserves `d2`/`a2`. This is the `atexit`/GEM
+`etv_term` hook. **Contract:** a program that installs a handler at `Setexc(0x102,
+…)` sees it run once, before file/memory teardown, on every `Pterm` variant.
+NewTOS maps exception *number* `0x102` to a per-process handler slot (byte address
+`0x408` is meaningless on AArch64). See
+`docs/api/gemdos/process/4c-pterm.md`.
 
 ---
 

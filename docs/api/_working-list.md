@@ -47,8 +47,8 @@ Legend: ✅ done · ⏳ in progress · 🔒 blocked · ⏸ deferred · ☐ not s
 |------:|-------------|-----------------|:------:|-------------------------------------------|
 | 0x00  | Pterm0      | `x0term`        | ✅     | `gemdos/process/00-pterm0.md`             |
 | 0x4B  | Pexec       | `xexec`         | ✅     | `gemdos/process/4b-pexec.md`              |
-| 0x4C  | Pterm       | `xterm`         | ✅     | `gemdos/process/01-pterm.md`              |
-| 0x31  | Ptermres    | `xtermres`      | ✅     | `gemdos/process/03-ptermres.md`           |
+| 0x4C  | Pterm       | `xterm`         | ✅     | `gemdos/process/4c-pterm.md`              |
+| 0x31  | Ptermres    | `xtermres`      | ✅     | `gemdos/process/31-ptermres.md`           |
 | 0x4D  | (Pwait)     | (not in funcs)  | —     | not implemented in EmuTOS                 |
 
 ### Memory group (`bdos/umem.c`, `iumem.c`)

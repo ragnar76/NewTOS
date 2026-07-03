@@ -100,7 +100,7 @@ exactly (see `docs/api/gemdos/_dispatcher.md`).
 ## D-005: `Pterm`/`Pterm0` exit-code width
 
 **Date:** 2026-05-02
-**Phase 00 spec:** `docs/api/gemdos/process/01-pterm.md`
+**Phase 00 spec:** `docs/api/gemdos/process/4c-pterm.md`
 
 **EmuTOS:** `xterm()` declares `rc` as `UWORD` and stores it directly
 into the parent's `p_dreg[0]` (a `LONG` field) via
@@ -125,7 +125,7 @@ the LONG return.
 ## D-006: `Ptermres` ignores `xsetblk` return
 
 **Date:** 2026-05-02
-**Phase 00 spec:** `docs/api/gemdos/process/03-ptermres.md`
+**Phase 00 spec:** `docs/api/gemdos/process/31-ptermres.md`
 
 **EmuTOS:** `xtermres()` calls `xsetblk(0, run, blkln)` and
 **discards the return value**, then proceeds with `reserve_blocks` +
@@ -860,3 +860,97 @@ for `PF_TTRAMMEM` programs; a plain program's `Malloc(-1)` reports ST-RAM only.
 
 **Decision:** document the `PF_TTRAMMEM`-dependent scope for `Malloc(-1)` and
 the per-selected-pool(s) scope for `Mxalloc(-1, mode)`. Corrected in both specs.
+
+---
+
+## D-034: `Ptermres`/`Pterm` process specs cited a nonexistent `bdos/mem.c` and `NUMCURDIR = 16` (spec-vs-source)
+
+**Date:** 2026-07-03
+**Phase 00 specs:** `docs/api/gemdos/process/31-ptermres.md`,
+`4c-pterm.md`
+
+**EmuTOS:**
+- `Ptermres`'s TPA shrink is `xsetblk(0, run, blkln)` defined in **`bdos/umem.c`**
+  (`bdos/umem.c:170`) — the same helper `Mshrink`/0x4A uses. There is **no**
+  `bdos/mem.c` in the tree (only the header `bdos/mem.h`), consistent with D-030.
+  `xsetblk` returns `EIMBA` (block not in a pool) / `EGSBF` (`blkln` >
+  current block) / `E_OK`; `xtermres` **discards** this result (already D-006).
+- `Pterm`'s current-directory teardown loops `NUMCURDIR = BLKDEVNUM = 26`
+  (`include/bdosdefs.h:62`, `include/sysconf.h:43`), not 16.
+
+**Prior NewTOS docs (wrong):** `31-ptermres.md` located `xsetblk` in
+`bdos/mem.c`; `4c-pterm.md`'s configuration note said `NUMCURDIR = 16`. Both
+contradict the source (the `NUMCURDIR = 16` figure is the same original-TOS
+lore corrected for the drive group in D-025).
+
+**Not a Compendium discrepancy** — internal spec / citation errors.
+
+**Decision:** cite `bdos/umem.c` for `xsetblk`/`set_owner`; use `NUMCURDIR = 26`.
+Both process specs were also migrated from the old "paste-the-C-body" format to
+the sharpened full-contract template (cite-never-paste; native-AArch64 ABI table;
+verification criteria) to match the other groups. Corrected in the two specs.
+
+---
+
+## D-035: `Pexec` never returns `EGSBF`; the load path collapses magic/reloc errors to `EPLFMT` (spec-vs-source)
+
+**Date:** 2026-07-03
+**Phase 00 spec:** `docs/api/gemdos/process/4b-pexec.md`
+
+**EmuTOS:** the `xexec` load path (`bdos/proc.c:256-360`, `bdos/kpgmld.c`) yields
+exactly: `EINVFN` (unknown mode), `EFILNF` (`ixsfirst` miss), a pass-through of
+`xopen`'s error (`EPTHNF`/`ENHNDL`/…), `EPLFMT` (magic ≠ `0x601A`, short header,
+or a malformed *present* relocation — `bdos/kpgmld.c:48-63,184-185,265-268`),
+`ENSMEM` (no memory for env/TPA, or image too big — `bdos/proc.c:216-300`,
+`bdos/kpgmld.c:140-141`), and a pass-through of `Rwabs` I/O errors during load.
+It does **not** produce `EGSBF` (-67) — that code originates only in `xsetblk`
+(`bdos/umem.c:211`), reached via `Mshrink`/`Ptermres`, never via `Pexec`. It is
+also tolerant: a failed read of the relocation-start longword loads the program
+**without** relocating rather than failing (`bdos/kpgmld.c:176-178`).
+
+**Prior NewTOS doc (wrong):** `4b-pexec.md` listed `EGSBF` (-67, "bad relocation
+table") as a `Pexec` error return. The source uses `EPLFMT` for bad relocation
+and never returns `EGSBF` from the exec path.
+
+**Compendium:** historically lists `EGSBF` among `Pexec` errors; that does not
+match this EmuTOS load path (so also a Compendium discrepancy). Compendium's tie
+of `EGSBF` to `Pexec` appears to come from the shared setblock machinery.
+
+**Decision:** follow EmuTOS — `Pexec` returns `EPLFMT` for bad
+magic/format/relocation and never `EGSBF`; relocation-read failure loads
+unrelocated. Corrected in `4b-pexec.md`.
+
+---
+
+## D-036: `Pexec`/`init_pd_fields` copies the command tail verbatim + a NUL; it does not write a `\r` or synthesize the length byte (spec-vs-source)
+
+**Date:** 2026-07-03
+**Phase 00 specs:** `docs/api/gemdos/process/4b-pexec.md`,
+`docs/api/structures/basepage.md` (flagged for correction — out of this pass's
+write scope)
+
+**EmuTOS:** `init_pd_fields` (`bdos/proc.c:379-384`) builds `p_cmdlin` by copying
+the caller-supplied `tail` string byte-for-byte, stopping at the first NUL or at
+`PDCLSIZE (0x80)` bytes, then appending a single **NUL (0x00)** terminator. It
+does **not** append a carriage return, and it does **not** itself write or
+compute the length byte — the length-prefixed `[len][text…]` framing is whatever
+the caller passes in `tail`. A `NULL`/empty `tail` therefore yields
+`p_cmdlin[0] = 0` followed by a NUL, **not** `p_cmdlin[1] = '\r'`.
+
+**Prior NewTOS doc (wrong):** `docs/api/structures/basepage.md §p_cmdlin` states
+the tail is "terminated by `\r` (0x0D), not NUL", that trailing bytes after the
+CR are zeroed, and that a NULL tail gives `p_cmdlin[1] = '\r'`. None of that is
+what `init_pd_fields` writes — those are the classic-TOS command-line
+*convention* (what a shell typically supplies in `tail`), not what `Pexec`
+synthesizes.
+
+**Compendium:** documents the `[length byte][command tail]` convention; the CR
+terminator is a DOS/TOS shell convention, not something the OS's basepage builder
+adds.
+
+**Decision:** follow EmuTOS — the OS copies `tail` verbatim and NUL-terminates;
+the length byte and any CR are the caller's framing. Documented correctly in
+`4b-pexec.md` (Inputs → "Command tail format" + Edge case 5). `basepage.md`
+§`p_cmdlin` should be corrected in a structures pass to say the OS appends a NUL
+(not `\r`) and does not synthesize the length byte; left flagged here since the
+structures doc is outside this process-group pass.

@@ -214,7 +214,7 @@ the block is left unmodified in that case, so a retry is safe.
 ### Used by
 
 - `Ptermres` (`xtermres` calls `xsetblk(0, run, blkln)` and **discards** the
-  return, see D-006) — `docs/api/gemdos/process/03-ptermres.md`.
+  return, see D-006) — `docs/api/gemdos/process/31-ptermres.md`.
 - Shells trimming a child's TPA after `Pexec(PE_LOAD, …)`.
 - Programs that grab "all memory" via `Malloc(-1)` then trim.
 
