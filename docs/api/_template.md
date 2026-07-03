@@ -72,6 +72,15 @@ Example:
    0: function_id (word)
   ```
 - **Total parameter bytes:** N (for stack cleanup)
+- **Native (AArch64) ABI:** how NewTOS receives the call — function ID in
+  `x8`, arguments in `x0..x6` (in declaration order, one register each),
+  result sign-extended into `x0` (a `BPB *`/pointer result is the full
+  64-bit `x0`). Map each m68k stack parameter to its `x` register:
+
+  | m68k stack | AArch64 reg | Name     | Type / size |
+  |------------|-------------|----------|-------------|
+  | +2         | `x0`        | `<name>` | `<type>`    |
+  | +4         | `x1`        | `<name>` | `<type>`    |
 
 ---
 
@@ -123,6 +132,22 @@ lead to it):
 
 **Error paths not in Compendium:** if EmuTOS has error returns that
 Compendium doesn't document, list them here explicitly.
+
+---
+
+## Verification criteria
+
+At least one concrete, testable pair per function — the measuring stick for
+the implementation and the seed for its `#[cfg(test)]` cases. Derived from
+the documented behaviour above, not invented:
+
+- **Nominal:** given `<documented input>` (registers set to …) → returns
+  `<documented output>` in `x0`, side effects `<…>`.
+- **Error:** given `<documented error input>` → returns `<error code>`
+  (e.g. `EFILNF` = -33) and leaves `<state>` unchanged.
+
+List every distinct observable outcome that a conforming implementation
+must reproduce (one row per behaviour).
 
 ---
 
