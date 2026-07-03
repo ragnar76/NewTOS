@@ -1456,3 +1456,63 @@ deferred draw; `menu_tnormal` redraws + guards disabled titles; the full
 `MN_SELECTED` `msg[0..7]` layout incl. `msg[5..7]` under
 `CONF_WITH_MENU_EXTENSION`; `menu_register` slot `0..5` / `-1`, pointer stored
 not copied. Corrected in `aes/menu.md`.
+
+---
+
+## D-052: `objc_*`/`form_*` — no `DRAW3D` state bit, colour-word bit split, `objc_change` slots `int_in[6/7]`, `objc_find` does not skip DISABLED, `form_alert` grammar/return (spec-vs-source)
+
+**Date:** 2026-07-03
+**Phase 00 spec:** `docs/api/aes/object-form.md`,
+`docs/api/structures/{object,tedinfo,iconblk,bitblk}.md`
+
+**EmuTOS:** `aes/gemoblib.c`, `aes/gemobed.c`, `aes/gemfmlib.c`,
+`aes/gemfmalt.c`, `aes/gemobjop.c`, `aes/gemgraf.c:612-628`,
+`include/obdefs.h`, `include/aesdefs.h:48-65,305-384`, `aes/gemsuper.c:203-263`.
+
+The prior `aes/object-form.md` (a thin outline) was verified against the
+source. The following are the substantive corrections (all map to
+desktop-rendering / dialog behaviour):
+
+- **No `ob_state` `DRAW3D = 0x80` bit.** `obdefs.h:100-107` defines state bits
+  only through `WHITEBAK = 0x40`; 0x80 is not a standard state. 3D drawing is
+  driven by the **`ob_flags` FL3D\* bits** (`FL3DIND=0x200`, `FL3DBAK=0x400`,
+  `FL3DACT=0x600`, mask `FL3DMASK=0x600`, `obdefs.h:92-98`), plus `SUBMENU=0x800`.
+  The task brief's "DRAW3D 0x80" was incorrect and is **not** documented as a
+  state bit.
+- **Colour-word bit split (`gr_crack`, `gemgraf.c:612-628`):** border colour
+  bits 15–12, text colour 11–8, **writing mode = bit 7** (set → `MD_REPLACE`),
+  inside pattern = 3 bits 6–4, inside colour bits 3–0. For box types the
+  **border thickness is byte 1 of the LONG `ob_spec`** (`gemobjop.c:57`).
+- **`objc_change` slots:** new state = `int_in[6]` (`OB_NEWSTATE`), redraw flag
+  = `int_in[7]` (`OB_REDRAW`), clip rect = `int_in[2..5]`
+  (`aesdefs.h:352-377`). (The old outline gave the argument order but not the
+  slot numbers.)
+- **`objc_find` does NOT skip `DISABLED`.** It returns the deepest object that
+  is `inside()` and not `HIDETREE` (`gemoblib.c:1080`); disabled objects are
+  ignored only at the *form* layer (`fm_button`, `gemfmlib.c:224`). The old
+  wording "deepest visible **non-disabled** object" was wrong.
+- **`form_alert` grammar/return:** `[icon][msg][buttons]`, icon `0`=none /
+  `1`=NOTE / `2`=QUEST / `≥3`=STOP; up to 5 msg lines (max 40, TOS cap 32) and
+  3 buttons (max 20, TOS cap 10); `||`/`]]` escape to literal `|`/`]`; return
+  is the **1-based** pressed-button number (`gemfmalt.c:163,258-270,395`,
+  `fm_strbrk`).
+- **`objc_sysvar` (48) is present in the default build** (`CONF_WITH_3D_OBJECTS
+  = 1`, `config.h:1259`), returning the 3D indicator/activator/colour globals
+  with defaults from `init_3d` (`gemoblib.c:1327-1344`); `AD3DVALUE` is
+  get-only = `ADJ3DSTD` (2).
+- **`form_dial` rects** occupy `int_in[1..4]` (small) and `int_in[5..8]`
+  (large), four WORDs each (`aesdefs.h:315-322`).
+- **`OBJECT`/`TEDINFO`/`ICONBLK`/`BITBLK` byte layouts** documented byte-exact
+  in `docs/api/structures/` (24/28/34/14 bytes m68k; native 64-bit-pointer
+  variants noted).
+
+**Not a Compendium discrepancy** — a spec precision/completeness fix. No PDFs
+in `references/`, so the Compendium cross-check of the slot layouts, the
+colour-word split, the alert grammar and the `te_pvalid` codes is **deferred**.
+
+**Decision:** follow EmuTOS — no `DRAW3D` state bit (FL3D\* flags instead);
+the `gr_crack` bit split above; `objc_change` new-state/redraw at
+`int_in[6]`/`[7]`; `objc_find` returns DISABLED objects (form layer filters);
+`form_alert` `[icon][msg][buttons]` grammar with `||`/`]]` escapes and 1-based
+return; `objc_sysvar` present with `CONF_WITH_3D_OBJECTS=1`. Corrected in
+`aes/object-form.md` and the four `structures/*.md` files.
