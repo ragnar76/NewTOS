@@ -1250,3 +1250,71 @@ is no such default; it is `just_rts`.
 **Decision:** default `dump_vec = just_rts` (no-op); a NewTOS default dumper
 (e.g. PNG) would be an install-time choice. Corrected in `14-scrdmp.md`,
 `_state.md §5`.
+
+---
+
+## D-047: AES dispatcher DOES return -1 for an unsupported opcode (spec-vs-source)
+
+**Date:** 2026-07-03
+**Phase 00 specs:** `docs/api/aes/_dispatcher.md`, `docs/api/aes/application.md`
+
+**EmuTOS:** `crysbind` (`aes/gemsuper.c:77-420`) has a `default:` arm that sets
+`unsupported = TRUE` (`:406-408`); after the switch it runs
+`fm_show(ALNOFUNC, &opcode, 1)` (unless `opcode == 0`, which is silently
+ignored "since some PRGs make this call") and sets **`ret = -1`**
+(`:411-417`). So an out-of-range or not-compiled-in opcode returns `-1`, a
+defined value. Applies to `appl_yield` (17) when `CONF_WITH_PCGEM == 0`, the
+absent `appl_getinfo` (130) / `appl_search` (18), and every gap in the opcode
+table (16, 18, 27–29, 49, 57–69, 83–89, 92–99, 115–119, ≥128).
+
+**Prior NewTOS doc (wrong):** `aes/_dispatcher.md §2` stated "There is **no**
+'invalid opcode' error path — an out-of-range opcode falls through the switch
+and returns an undefined value (the AES is trusted)." The source has an
+explicit `default` → `-1` path with an alert.
+
+**Not a Compendium discrepancy** — an internal spec-vs-source error.
+
+**Decision:** follow EmuTOS — unknown/uncompiled opcodes return `-1` (opcode 0
+silently, others with an alert). The `-1` return is contract; the `fm_show`
+alert is a reference-level UI behaviour NewTOS need not reproduce. Corrected in
+`aes/_dispatcher.md §2` and referenced from `aes/application.md`.
+
+---
+
+## D-048: `appl_init` fills `ap_private` (not `ap_ptree`); `appl_getinfo`/`appl_search` absent; AESGLOBAL layout (spec-vs-source)
+
+**Date:** 2026-07-03
+**Phase 00 spec:** `docs/api/aes/application.md`
+
+**EmuTOS:** the `APPL_INIT` arm (`aes/gemsuper.c:92-99`) writes exactly:
+`AP_VERSION`=`AES_VERSION` (`global[0]`), `AP_COUNT`=1 (`global[1]`),
+`AP_ID`=`rlr->p_pid` (`global[2]`), **`AP_PRIVATE`** (`global[3]`) =
+`rs_trees[DESKTOP][ROOT].ob_spec`, `ap_planes` (`global[10]`)=`gl_nplanes`, and
+`ap_3resv` (`global[11]`) = `&D`. It does **not** write `AP_PTREE` (`global[5]`)
+— that is filled later by `rsrc_load`. The `AESGLOBAL` field/offset table is
+`aes/gemrslib.h:15-27` + `include/aesdefs.h:147-157`. `appl_getinfo` (130),
+`appl_search` (18) and `appl_control` have **no** opcode macro and **no**
+dispatch `case` in this build (`include/aesdefs.h:16-24`, `gemsuper.c:88-123`);
+they return `-1` (per D-047). `AES_VERSION` is build-dependent
+(`include/config.h:1345-1355`) and is **0x0340** in the default build (all four
+of `CONF_WITH_3D_OBJECTS`/`MENU_EXTENSION`/`WINDOW_COLOURS`/
+`GRAF_MOUSE_EXTENSION` = 1). `CONF_WITH_PCGEM` defaults to 1, so `appl_yield`
+(17) is present.
+
+**Prior NewTOS doc (wrong/imprecise):** `aes/application.md` said `appl_init`
+sets `ap_private = DESKTOP tree's ROOT ob_spec` **and separately** labelled the
+value against `ap_ptree` in the field description; it also did not state that
+`ap_planes`/`ap_3resv` are written, nor the exact `AES_VERSION` default, and
+listed `appl_getinfo`/`appl_search` as candidate functions rather than
+confirming their absence.
+
+**Not a Compendium discrepancy** — a spec precision / completeness fix. (The
+`appl_getinfo`/`appl_search` functions are real AES 4.1+/MagiC calls, but they
+are not in EmuTOS `1a7484ab`, so cross-check against Compendium is deferred.)
+
+**Decision:** follow EmuTOS — `appl_init` writes `ap_private` (not `ap_ptree`),
+plus `ap_planes`/`ap_3resv`; `ap_version` = 0x0340 in the default build;
+`appl_getinfo`/`appl_search`/`appl_control` are unimplemented (→ `-1`). If
+NewTOS later adds `appl_getinfo` it is a documented extension. Corrected in
+`aes/application.md` (with the full `AESGLOBAL` layout table) and
+`aes/_state.md`.
