@@ -10,8 +10,10 @@ fills it, `CUR_WORK` points at the active one, and the `next_work`
 chain links them all. Unlike [`BasePage`](basepage.md) it is **not** a
 fixed-ABI structure that ported programs parse — programs hold only the
 *handle* (`contrl[6]`); the VDI resolves it to the `Vwk`. (EmuTOS notes
-some programs fake a `Vwk` by pointing `CUR_WORK` at a 16-element array
-for Line-A, so the *first several* fields have de-facto Line-A meaning;
+some programs fake a `Vwk` by pointing `CUR_WORK` at a 16-element WORD
+array whose last element is the fill colour — this is the `fill_color`
+offset-`0x1e` compatibility constraint in `vdi_defs.h:163-169`, a Line-A
+flood-fill hack — so a few *low* fields have de-facto Line-A meaning;
 treat the layout as internal otherwise.)
 
 ## Field groups
@@ -70,11 +72,13 @@ treat the layout as internal otherwise.)
 
 ## NewTOS implementation notes
 
-- Allocated from the kernel/BDOS heap (`Mxalloc`), 16-handle cap; the
-  `Vwk`'s field layout is **internal** (not an ABI promise), so NewTOS
-  may reorder/retype fields freely as long as the VDI call semantics
-  match. Keep the first Line-A-visible fields only if/when a real
-  Line-A binding needs them.
+- Allocated from the kernel/BDOS heap (`Mxalloc`), up to
+  `NUM_VDI_HANDLES` (64 or 128, build-config — **not 16**; see
+  [`../vdi/_dispatcher.md`](../vdi/_dispatcher.md)); the `Vwk`'s field
+  layout is **internal** (not an ABI promise), so NewTOS may
+  reorder/retype fields freely as long as the VDI call semantics match.
+  Keep the low `fill_color`-at-`0x1e` Line-A-visible field only if/when a
+  real Line-A binding needs it.
 - **Per-device link (ADR-011).** NewTOS adds a `device` reference to
   the `Vwk` (which physical screen workstation / `Framebuffer` it
   draws on); EmuTOS implies the single global screen. Drawing

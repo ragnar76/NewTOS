@@ -51,6 +51,19 @@
 
 **Batch 1 complete.** Workstation lifecycle (D2) done.
 
+> **Refinement pass 2026-07-03 (full-contract).** Re-verified D1
+> (`_dispatcher.md`), D2 (`workstation/*.md`), and D6-escape
+> (`_escape.md`) against `vdi/vdi_control.c` / `vdi_main.c` / `vdi_esc.c`
+> / `vdi_asm.S` / `vdi_defs.h` at `1a7484ab`. Removed all pasted C bodies
+> (cite-never-paste), lifted the docs to the sharpened full-contract
+> template, added a workstation-level [`_state.md`](_state.md), and logged
+> the corrections in [`_discrepancies.md`](_discrepancies.md) D-VDI-2..7.
+> Key fixes: handle cap is `NUM_VDI_HANDLES` (64/128, **not 16**);
+> `vq_tabstatus` returns 1 (not 0); `v_hardcopy` calls `Scrdmp()`;
+> `DEV_TAB[35]` ROM=0 patched to 1; VDI trap ABI is `trap #2 / d0=0x73 /
+> d1=VDIPB*` with the `PTSIN`/`MAX_VERTICES` clamp; opcodes 132-134 are
+> `CONF_WITH_EXTENDED_MOUSE`-gated.
+
 ## Batch 2 — attribute setters (D3)
 
 - [x] line + marker — [`attributes/_line-marker.md`](attributes/_line-marker.md):

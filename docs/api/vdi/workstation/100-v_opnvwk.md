@@ -1,145 +1,335 @@
 # `v_opnvwk` — VDI opcode 100 (open virtual workstation)
 
-> Phase 00b spec. Source: EmuTOS @ `1a7484ab` —
-> `vdi/vdi_control.c:407` (`vdi_v_opnvwk`), `:269` (`init_wk`),
-> `:128` (`DEV_TAB_rom`), `:58` (`SIZ_TAB_rom`). Calling convention:
-> [`../_dispatcher.md`](../_dispatcher.md).
+> Phase 00b spec (full-contract template). Source: EmuTOS @ `1a7484ab`.
+> Verified against `vdi/vdi_control.c:407` (`vdi_v_opnvwk`), `:269`
+> (`init_wk`), `:390` (`build_vwk_chain`), `:128-174` (`DEV_TAB_rom`),
+> `:58-71` (`SIZ_TAB_rom`), `:193` (`update_rez_dependent`),
+> `vdi/vdi_defs.h:36-115` (constants, `CONTRL[]` indices).
+> Calling convention: [`../_dispatcher.md`](../_dispatcher.md).
+>
+> **Contract vs. reference** — see [`docs/COMPATIBILITY.md`](../../../COMPATIBILITY.md).
+> **Contract:** opcode 100, the 11-word `work_in` (`INTIN`) input layout
+> and its validation/clamping rules, the returned handle in `CONTRL[6]`,
+> and the `DEV_TAB` (`INTOUT`, 45 WORDs) / `SIZ_TAB` (`PTSOUT`, 12 WORDs)
+> byte-index contents. **Reference:** the `Mxalloc`'d `Vwk` heap block, the
+> `vwk_ptr[]`/`CUR_WORK`/`next_work` chain, `MAP_COL[]`, `st_fl_ptr` —
+> NewTOS reimplements these.
 
-Opens a **virtual workstation** on the screen device: allocates a
-`Vwk` attribute area, initialises it from the caller's `work_in`
-inputs, and returns a fresh **handle** plus the device's capability
-tables. AES and applications open a virtual workstation to draw with
-independent attributes while sharing the one physical screen.
+Opens a **virtual workstation** on the screen device: finds a free
+handle, allocates a `Vwk` attribute area, initialises it from the
+caller's `work_in` inputs, links it into the workstation chain, and
+returns a fresh **handle** plus the device's capability tables. AES and
+applications open a virtual workstation to draw with independent
+attributes while sharing the one physical screen.
 
-## Source extraction
+## EmuTOS source
 
-```c
-void vdi_v_opnvwk(Vwk *vwk) {
-    CUR_WORK = &phys_work;                 /* keep CUR_WORK valid */
-    /* find a free handle in (VDI_PHYS_HANDLE, LAST_VDI_HANDLE] */
-    if (none) { CONTRL[6] = 0; return; }   /* no handle → fail */
-    vwk = Mxalloc(sizeof(Vwk), MX_SUPER);
-    if (!vwk) { CONTRL[6] = 0; return; }   /* no memory → fail */
-    vwk_ptr[handle] = vwk;
-    vwk->handle = CONTRL[6] = handle;      /* return the handle */
-    init_wk(vwk);                          /* attrs + INTOUT/PTSOUT */
-    build_vwk_chain();                     /* link all Vwks */
-    CUR_WORK = vwk;
-}
-```
+**Primary location:** `vdi/vdi_control.c:407` — `vdi_v_opnvwk(Vwk *vwk)`
+(reached via `jmptb2[0]`, `vdi_main.c:75`).
 
-There are **at most 16 handles** (`VDI_PHYS_HANDLE` = the physical
-workstation; virtual ones use the rest up to `LAST_VDI_HANDLE`). The
-`Vwk` is heap-allocated (`Mxalloc`, supervisor-accessible). On failure
-the function returns with `CONTRL[6] = 0` and no error code (VDI has
-no error return — see dispatcher).
+**Installed handler / vector:** (none) — direct jump-table entry.
+
+**Helpers called:**
+- `vdi/vdi_control.c:269` — `init_wk()` — validate `work_in`, set `Vwk`
+  attribute defaults, and copy `DEV_TAB`→`INTOUT`, `SIZ_TAB`→`PTSOUT`.
+- `vdi/vdi_control.c:390` — `build_vwk_chain()` — link all open `Vwk`s.
+- `vdi/vdi_control.c:224` — `validate_color_index()` — clamp a palette
+  index (out-of-range → 1).
+- `st_fl_ptr()` / `text_init2()` — set the fill pattern and text metrics
+  (`vdi_defs.h:305,329`).
+- `Mxalloc(size, MX_SUPER)` (GEMDOS 0x44) — allocate the `Vwk`.
+
+**Headers / type definitions used:**
+- `vdi/vdi_defs.h:171-221` — `Vwk` struct (attribute area).
+- `vdi/vdi_defs.h:45-82` — `MIN/MAX/DEF_*` validation constants.
+- `vdi/vdi_control.c:35` — `MX_SUPER = (3<<4)` (Mxalloc mode; ignored by
+  EmuTOS, only meaningful under FreeMiNT).
+
+**System variables / globals read:** `vwk_ptr[]` (free-handle scan),
+`DEV_TAB`/`SIZ_TAB` (`bios/lineavars.S`), `xres`/`yres`
+(`= DEV_TAB[0]/[1]`), `MAP_COL[]`, `ROM_UD_PATRN`, `LINE_STYLE[0]`.
+**System variables / globals written:** `vwk_ptr[handle]`, `CONTRL[6]`,
+`CUR_WORK`, `flip_y` (set to 1 by `init_wk`), the new `Vwk`.
+
+**Build configuration affecting this function:**
+- `CONF_WITH_VDI_16BIT` — when the mode is TrueColor (`v_planes > 8`),
+  the allocation is enlarged by `sizeof(VwkExt)` and a pseudo-palette is
+  built (`vdi_control.c:439-453`, `:354-363`). **Out of NewTOS bring-up
+  scope** (8-bit/palette first).
+- `HAVE_BEZIER` (0 here) — would init `vwk->bez_qual` (`:365-375`).
+
+---
+
+## Source extraction summary
+
+`v_opnvwk` first sets `CUR_WORK = &phys_work` so `CUR_WORK` stays valid
+even on an early exit. It scans `vwk_ptr[VDI_PHYS_HANDLE+1 ..
+LAST_VDI_HANDLE]` for a free slot; if none is free it sets
+`CONTRL[6] = 0` and returns (no error code). It then `Mxalloc`s a `Vwk`
+in supervisor-accessible memory; on allocation failure it likewise sets
+`CONTRL[6] = 0` and returns. On success it stores the pointer in
+`vwk_ptr[handle]`, records the handle in both `vwk->handle` and
+`CONTRL[6]`, runs `init_wk`, rebuilds the workstation chain, and makes
+the new `Vwk` current (`CUR_WORK = vwk`).
+
+`init_wk` reads the 11-word `work_in` array (`INTIN[0..10]`) and stores a
+validated attribute into the `Vwk`. Each attribute is range-checked: an
+out-of-range value falls back to a documented default (`DEF_*`), never an
+error. Line/marker/fill *style* indices are stored **0-based** (`value-1`)
+in the `Vwk`; colour indices are validated and mapped through `MAP_COL[]`.
+`work_in[5]` (text font) is **ignored** — you always get the default
+font. `init_wk` also sets attributes not carried in `work_in` (marker
+height/scale, replace write mode, default line width and squared ends,
+fill-perimeter on, clip disabled covering the whole screen, the ROM
+default fill pattern, `multifill=0`, `ud_ls`). Finally it copies the live
+`DEV_TAB` (45 WORDs) into `INTOUT` and `SIZ_TAB` (12 WORDs) into `PTSOUT`,
+and sets `flip_y = 1`.
+
+The virtual workstations are chained together (`build_vwk_chain`) because
+some programs (notably Warp9) depend on the chain existing — a
+**reference** detail NewTOS keeps for compatibility but need not build the
+same way.
+
+---
 
 ## Trap interface
 
-| | |
-|--|--|
-| Opcode | `contrl[0] = 100` |
-| Handle | `contrl[6]` — **ignored on input**, set to the new handle on output (`0` on failure) |
-| `# INTIN` (`contrl[3]`) | 11 (`work_in`) |
-| `# PTSIN` (`contrl[1]`) | 0 |
-| `# INTOUT` (`contrl[4]`) | 45 (set by dispatcher) |
-| `# PTSOUT` (`contrl[2]`) | 6 (set by dispatcher; `init_wk` writes 12 WORDs = 6 pairs) |
+- **Opcode:** `CONTRL[0] = 100`
+- **Sub-opcode:** none
+- **Handle:** `CONTRL[6]` — **ignored on input**; set to the new handle
+  on output (`0` on failure).
+- **Input counts:** `# INTIN = CONTRL[3] = 11` (`work_in`);
+  `# PTSIN = CONTRL[1] = 0`.
+- **Output counts:** `# INTOUT = CONTRL[4] = 45` (pre-loaded by the
+  dispatcher), `# PTSOUT = CONTRL[2] = 6` (pre-loaded; `init_wk` writes
+  12 WORDs = 6 pairs).
+- **Native (AArch64) ABI:** GEM trap `svc #2`, selector 115 in `x0`,
+  `VDIPB*` in `x1` (see [`../_dispatcher.md`](../_dispatcher.md)). No
+  register return value; results are in `CONTRL[6]`/`INTOUT`/`PTSOUT`.
 
-## Inputs — `INTIN` (`work_in[11]`)
+---
 
-| Idx | Field | Meaning / validation (else default) |
-|-----|-------|-------------------------------------|
-| 0 | device id | Driver/“Getrez+2”. For a virtual ws the screen driver id; `v_opnwk` uses `rez + 2`. |
-| 1 | line type | `1..MAX_LINE_STYLE` → `line_index = v-1`; else `DEF_LINE_STYLE`. |
-| 2 | line colour | validated palette index → `MAP_COL[]`. |
-| 3 | marker type | `1..MAX_MARK_STYLE`; else `DEF_MARK_STYLE`. |
-| 4 | marker colour | validated → `MAP_COL[]`. |
-| 5 | text font | **ignored** — you always get the default font. |
-| 6 | text colour | validated → `MAP_COL[]`. |
-| 7 | fill interior style | `MIN..MAX_FILL_STYLE`; else `DEF_FILL_STYLE`. |
-| 8 | fill style index | if interior == pattern: `1..MAX_FILL_PATTERN`; else hatch range; else default. |
-| 9 | fill colour | validated → `MAP_COL[]`. |
-| 10 | coordinate system | `xfm_mode`: `0` = NDC (normalised), `2` = RC (raster). |
+## Inputs — `INTIN` = `work_in[11]` (`init_wk`, `vdi_control.c:269-316`)
 
-`init_wk` also sets the non-`work_in` defaults: `mark_height = DEF_MKHT`,
-`mark_scale = 1`, `wrt_mode = WM_REPLACE`, `line_width = DEF_LWID`,
-`line_beg/line_end = SQUARED`, `fill_per = TRUE`, clip rect =
-`[0,0]..[xres,yres]` with `clip = FALSE`, the ROM default fill pattern
-copied into `ud_patrn[16]`, `multifill = 0`, `ud_ls = LINE_STYLE[0]`.
+| Idx | `work_in` field | Validation → stored value (else default) |
+|-----|-----------------|------------------------------------------|
+| 0 | device id | Driver/device id (screen). `v_opnwk` uses `rez+2` here; for `v_opnvwk` it selects the screen driver. Not range-checked by `init_wk`. |
+| 1 | line type | `MIN_LINE_STYLE(1)..MAX_LINE_STYLE(7)` → `line_index = v-1`; else `DEF_LINE_STYLE(1)` (`:279-281`). |
+| 2 | line colour | `validate_color_index` → `line_color = MAP_COL[v]` (out-of-range → index 1) (`:283-284`). |
+| 3 | marker type | `MIN_MARK_STYLE(1)..MAX_MARK_STYLE(6)` → `mark_index = v-1`; else `DEF_MARK_STYLE(3)` (`:286-289`). |
+| 4 | marker colour | `validate_color_index` → `mark_color = MAP_COL[v]` (`:291-292`). |
+| 5 | text font | **ignored** — pointer advanced, value discarded; you always get the default font (`:294-295`). |
+| 6 | text colour | `validate_color_index` → `text_color = MAP_COL[v]` (`:297-298`). |
+| 7 | fill interior style | `MIN_FILL_STYLE(0)..MAX_FILL_STYLE(4)` → `fill_style`; else `DEF_FILL_STYLE(0=hollow)` (`:303-304`). |
+| 8 | fill style index | if `fill_style==FIS_PATTERN(2)`: `1..MAX_FILL_PATTERN(24)` else `DEF_FILL_PATTERN(1)`; otherwise `1..MAX_FILL_HATCH(12)` else `DEF_FILL_HATCH(1)`. Stored in `fill_index` (`:306-311`). |
+| 9 | fill colour | `validate_color_index` → `fill_color = MAP_COL[v]` (`:313-314`). |
+| 10 | coordinate system | stored verbatim in `vwk->xfm_mode` (`:316`): `0` = NDC (normalised), `2` = RC (raster). |
+
+Non-`work_in` defaults `init_wk` also sets (`:300-343`):
+`mark_height = DEF_MKHT`, `mark_scale = 1`, `wrt_mode = WM_REPLACE`,
+`line_width = DEF_LWID`, `line_beg = line_end = SQUARED`, `fill_per = TRUE`,
+clip rect `[0,0]..[xres,yres]` with `clip = FALSE`, the ROM default fill
+pattern copied into `ud_patrn[]`, `multifill = 0`, `ud_ls = LINE_STYLE[0]`,
+`next_work = NULL`, `flip_y = 1`.
+
+---
 
 ## Outputs
 
-`CONTRL[6]` = the new handle (`0` = open failed). `INTOUT[0..44]` =
-the device capability table (`DEV_TAB`), `PTSOUT[0..11]` = the size
-table (`SIZ_TAB`).
+### Return
+
+- `CONTRL[6]` = the new handle on success (in `[2 .. NUM_VDI_HANDLES]`,
+  since handle 1 is the physical workstation); **`0`** = open failed.
+- `INTOUT[0..44]` = the device capability table (`DEV_TAB`, 45 WORDs).
+- `PTSOUT[0..11]` = the size table (`SIZ_TAB`, 12 WORDs = 6 pairs).
+
+There is **no register/`D0` return value** — VDI results live in the
+parameter-block arrays.
 
 ### `INTOUT` = `DEV_TAB` (45 WORDs, device capabilities)
 
-ROM template (`DEV_TAB_rom`), patched at init with the real screen
-geometry (`[0]=V_REZ_HZ-1`, `[1]=V_REZ_VT-1`, `[13]=#colours`,
-`[35]`=colour-capable, `[39]`=palette size, `[10]`=#fonts):
+The ROM template `DEV_TAB_rom` (`vdi_control.c:128-174`) is copied into
+`DEV_TAB` at `v_opnwk` time, then patched with the live screen geometry
+by `update_rez_dependent` (`:193-214`). `v_opnvwk`/`init_wk` return the
+already-patched `DEV_TAB`. Byte-exact template values and their patched
+overrides:
 
-| Idx | Capability | Idx | Capability |
-|-----|-----------|-----|-----------|
-| 0 | x resolution − 1 | 23 | GDP filled rounded rect |
-| 1 | y resolution − 1 | 24 | GDP justified text |
-| 2 | device precision (0=exact) | 25–34 | GDP attribute codes (#1..#10) |
-| 3 | pixel width | 35 | colour capability (0=mono) |
-| 4 | pixel height | 36 | text rotation |
-| 5 | # text font heights | 37 | polygon fill |
-| 6 | # line styles | 38 | cell array |
-| 7 | line width flag | 39 | palette size |
-| 8 | # marker types | 40 | # locator devices (mouse) |
-| 9 | # marker sizes | 41 | # valuator devices |
-| 10 | # text fonts | 42 | # choice devices |
-| 11 | # area (fill) patterns | 43 | # string devices |
-| 12 | # crosshatch patterns | 44 | workstation type (2 = in/out) |
-| 13 | # simultaneous colours | | |
-| 14 | # GDPs (10) | | |
-| 15–24 | GDP ids: bar, arc, pieslice, circle, ellipse, ell-arc, ell-pie, rounded-rect, filled-rounded-rect, justified-text | | |
+| Idx | Capability | ROM value | Patched by `update_rez_dependent` |
+|-----|-----------|-----------|-----------------------------------|
+| 0 | x resolution − 1 | 639 | **`V_REZ_HZ - 1`** |
+| 1 | y resolution − 1 | 399 | **`V_REZ_VT - 1`** |
+| 2 | device precision (0=exact) | 0 | — |
+| 3 | pixel width | 372 | **`get_pixel_size()` (x)** |
+| 4 | pixel height | 372 | **`get_pixel_size()` (y)** |
+| 5 | # text font heights | 3 | — |
+| 6 | # line styles | `MAX_LINE_STYLE` (7) | — |
+| 7 | line-width flag | 0 | — |
+| 8 | # marker types | 6 | — |
+| 9 | # marker sizes | 8 | — |
+| 10 | # text fonts | 1 | — |
+| 11 | # area (fill) patterns | `MAX_FILL_PATTERN` (24) | — |
+| 12 | # crosshatch patterns | `MAX_FILL_HATCH` (12) | — |
+| 13 | # simultaneous colours | 2 | **`(v_planes<8)?(1<<v_planes):256`** |
+| 14 | # GDPs | 10 | — |
+| 15–24 | GDP ids | 1..10 | — (bar, arc, pie, circle, ellipse, ell-arc, ell-pie, rounded-rect, filled-rounded-rect, justified-text) |
+| 25–34 | GDP attribute codes (#1..#10) | 3,0,3,3,3,0,3,0,3,2 | — |
+| 35 | colour capability (0=mono) | **0** | **`(v_planes==1)?0:1`** |
+| 36 | text rotation | 1 | — |
+| 37 | polygon fill | 1 | — |
+| 38 | cell array | 0 | — |
+| 39 | palette size | 2 | **`get_palette()`** |
+| 40 | # locator devices (mouse) | 2 | — |
+| 41 | # valuator devices | 1 | — |
+| 42 | # choice devices | 1 | — |
+| 43 | # string devices | 1 | — |
+| 44 | workstation type (2 = in/out) | 2 | — |
 
-### `PTSOUT` = `SIZ_TAB` (12 WORDs = 6 pairs, sizes in device coords)
+> Note the ROM `[35]` = **0**; the colour-capability flag a program reads
+> is the *patched* value (1 for any multi-plane screen). Index 39 is
+> `get_palette()`, not the literal ROM `2`. (An earlier revision labelled
+> `[35]` as if the ROM value were the contract — clarified.)
 
-| Idx | Size | Idx | Size |
-|-----|------|-----|------|
-| 0 | min char width | 6 | max line width |
-| 1 | min char height (7) | 7 | reserved |
-| 2 | max char width | 8 | min marker width (15) |
-| 3 | max char height (7) | 9 | min marker height (11) |
-| 4 | min line width (1) | 10 | max marker width (120) |
-| 5 | reserved | 11 | max marker height (88) |
+### `PTSOUT` = `SIZ_TAB` (12 WORDs = 6 pairs, device coords)
 
-## Errors
+ROM template `SIZ_TAB_rom` (`vdi_control.c:58-71`); `text_init` fills the
+font-metric entries at `v_opnwk` (`0/2` char width, `1/3` char height):
 
-None (no VDI error return). Failure paths set `CONTRL[6] = 0`:
-no free handle (all 16 in use) or `Mxalloc` out of memory.
+| Idx | Size | ROM value |
+|-----|------|-----------|
+| 0 | min char width | 0 (set by `text_init`) |
+| 1 | min char height | 7 (set by `text_init`) |
+| 2 | max char width | 0 (set by `text_init`) |
+| 3 | max char height | 7 (set by `text_init`) |
+| 4 | min line width | 1 |
+| 5 | reserved | 0 |
+| 6 | max line width | `MAX_LINE_WIDTH` (40) |
+| 7 | reserved | 0 |
+| 8 | min marker width | 15 |
+| 9 | min marker height | 11 |
+| 10 | max marker width | 120 |
+| 11 | max marker height | 88 |
+
+### Side effects on global state
+
+- Allocates one `Vwk` (`Mxalloc`), fills `vwk_ptr[handle]`, sets
+  `CUR_WORK` and `CONTRL[6]`, rebuilds the `next_work` chain, sets
+  `flip_y = 1`.
+
+### Side effects on hardware
+
+- None directly (no resolution change; that is `v_opnwk`).
+
+---
+
+## Error conditions
+
+VDI has **no error return.** The two failure paths both set `CONTRL[6] = 0`
+and return with no `Vwk` allocated:
+
+| Condition | Source location | Result |
+|-----------|-----------------|--------|
+| No free handle (all `NUM_VDI_HANDLES` virtual slots in use) | `vdi_control.c:425-428` | `CONTRL[6] = 0` |
+| `Mxalloc` out of memory | `vdi_control.c:444-447` | `CONTRL[6] = 0` |
+
+**Error paths not in Compendium:** the "no free handle" cap is
+`NUM_VDI_HANDLES` (build-config: 64 or 128), not a fixed 16.
+
+---
+
+## Verification criteria
+
+- **Nominal open:** `v_opnvwk` with a valid `work_in` returns a
+  `CONTRL[6]` handle in `[2 .. NUM_VDI_HANDLES]`, `CONTRL[4]=45`,
+  `CONTRL[2]=6`.
+- **DEV_TAB geometry:** for a 640×480 framebuffer, `INTOUT[0]=639`,
+  `INTOUT[1]=479`; `INTOUT[44]=2` (workstation type in/out);
+  `INTOUT[14]=10` (# GDPs).
+- **Colour capability:** on a multi-plane (≥2-plane) screen `INTOUT[35]=1`;
+  on a 1-plane mono screen `INTOUT[35]=0`.
+- **SIZ_TAB:** `PTSOUT[6]=40` (max line width), `PTSOUT[8]=15`,
+  `PTSOUT[10]=120` (marker widths).
+- **Input clamping:** `work_in[1]=99` (invalid line type) yields
+  `line_index = DEF_LINE_STYLE-1 = 0`; `work_in[5]` (font) is ignored.
+- **Exhaustion:** after `NUM_VDI_HANDLES` successful opens without closes,
+  the next `v_opnvwk` returns `CONTRL[6]=0`.
+
+---
+
+## Edge cases discovered in source
+
+1. **`work_in[5]` (text font) is silently ignored** — you always get the
+   default font (`vdi_control.c:294-295`).
+2. **Style indices are stored 0-based** in the `Vwk` (`line_index`,
+   `mark_index` = `value-1`), while `fill_index` keeps the 1-based value
+   (`:281,289,311`). This matters for the inquiry round-trip (see
+   `_discrepancies.md` D-VDI-1 for the marker asymmetry).
+3. **Handle count is `NUM_VDI_HANDLES`** (64 or 128), not 16
+   (`vdi_control.c:25-27`; `config.h:391-393,1660-1662`). Handle 1 is the
+   physical workstation, so virtual handles run `2..NUM_VDI_HANDLES`.
+4. **`CUR_WORK` is set to `&phys_work` on entry** so it stays valid even
+   if the open fails early (`vdi_control.c:417`).
+5. **`flip_y` is set to 1** by `init_wk` (`:379`) — the driver's
+   coordinate/magnitude flag.
+
+---
 
 ## Dependencies
 
-- `Mxalloc(MX_SUPER)` (GEMDOS 0x44) for the `Vwk`; `Mfree` on close.
-- `validate_color_index` / `MAP_COL[]`, `st_fl_ptr`, `text_init2`.
-- Globals: `vwk_ptr[]`, `CUR_WORK`, `phys_work`, `DEV_TAB`/`SIZ_TAB`
-  (Line-A vars, `lineavars.S`), `xres`/`yres`, `flip_y`.
+### Requires
+- `Mxalloc`/`Mfree` (GEMDOS 0x44/0x49) for the `Vwk`.
+- A prior `v_opnwk` (the physical workstation supplies `DEV_TAB`/`SIZ_TAB`
+  and the palette via `init_colors`/`text_init`).
+- `validate_color_index`/`MAP_COL[]`, `st_fl_ptr`, `text_init2`.
+
+### Used by
+- AES (`gsx_1code`/`gsx2`) and every application opening a virtual
+  workstation to draw.
+
+---
+
+## Related data structures
+
+- [`../structures/vwk.md`](../../structures/vwk.md) — the `Vwk` attribute area.
+- [`_state.md`](../_state.md) — the `vwk_ptr[]`/`CUR_WORK`/chain model,
+  `DEV_TAB`/`SIZ_TAB`/`INQ_TAB` ownership.
+
+---
+
+## Cross-references
+
+### Atari Compendium / Profibuch
+- Not present in `references/` (no PDFs). Cross-check of the `work_in`/
+  `work_out` layouts and `DEV_TAB` index meanings is **deferred**.
+
+---
+
+## Configuration / version notes
+
+- `NUM_VDI_HANDLES` = 64 (small/STe target) or 128 (default);
+  `MAX_VERTICES` = 512 or 1024 — build-config, see
+  [`../_dispatcher.md`](../_dispatcher.md).
+- `CONF_WITH_VDI_16BIT` (TrueColor) enlarges the allocation and builds a
+  pseudo-palette — out of NewTOS bring-up scope.
+
+---
 
 ## NewTOS implementation notes (Phase 12)
 
-- The `Vwk` is a real heap allocation (`Malloc`/`Mxalloc` already work,
-  Phase 04/06). Keep the 16-handle cap and the `CUR_WORK`/chain model
-  for Line-A compatibility.
-- **Per-device / multi-screen (ADR-011).** The *physical* workstation
-  is a **per-device struct** (own `Framebuffer` + geometry + palette)
-  in a screen-device registry — not EmuTOS's global `phys_work` /
-  Line-A screen vars. Each `Vwk` links to its physical device; the
-  primitives draw into that device's framebuffer. `v_opnwk(device_id)`
-  selects the screen. This keeps the API bit-exact while leaving the
-  door open for the Pi 4's two HDMI outputs. (AES-level multi-monitor
-  is out of scope — see ADR-011.)
-- `DEV_TAB`/`SIZ_TAB` are filled from the **framebuffer** geometry
-  (`hal::framebuffer` width/height) and the bring-up palette
-  (8-bit/palette first; `CONF_WITH_VDI_16BIT` truecolor is out of
-  scope initially). `[0]=width-1`, `[1]=height-1`.
-- `work_in[10]` (NDC vs RC): the screen workstation is RC (raster,
-  origin top-left) — matches the framebuffer directly; NDC scaling is
-  a later refinement.
-- The default font (`work_in[5]` ignored) is the system bitmap font
-  the framebuffer text path provides.
+- The `Vwk` is a real heap allocation (`Malloc`/`Mxalloc` from Phase
+  04/06). Keep the handle cap and the `CUR_WORK`/chain model for
+  compatibility with programs that walk the chain (Warp9-class), but the
+  chain storage itself is **reference**, not contract.
+- **Per-device / multi-screen (ADR-011).** The *physical* workstation is a
+  per-device struct (own `Framebuffer` + geometry + palette) in a
+  screen-device registry, not EmuTOS's global `phys_work` / Line-A screen
+  vars. Each `Vwk` links to its physical device; the `RasterBackend`
+  (`tos-api/src/vdi/backend.rs`) draws into that device's framebuffer.
+- `DEV_TAB`/`SIZ_TAB` are filled from the framebuffer geometry
+  (`hal::framebuffer`) and the bring-up palette: `[0]=width-1`,
+  `[1]=height-1`, `[13]=#colours`, `[35]=1` (multi-plane), `[39]`=palette
+  size. **Open question:** confirm the exact `[13]/[35]/[39]` values
+  NewTOS reports for a 640×480×16-colour (4-plane) framebuffer, and
+  whether `[3]/[4]` (pixel size in microns) are reported truthfully or
+  left at the ROM `372` — see `_discrepancies.md` D-VDI-7.
+- `work_in[10]` (NDC vs RC): the screen workstation is RC (raster, origin
+  top-left); NDC scaling is a later refinement.

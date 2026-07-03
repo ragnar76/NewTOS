@@ -100,6 +100,22 @@ Example:
   | +2         | `x0`        | `<name>` | `<type>`    |
   | +4         | `x1`        | `<name>` | `<type>`    |
 
+### Parameter-block variant (VDI / AES)
+
+The VDI and AES do **not** use the m68k stack frame + `x`-register form
+above. They enter through the GEM trap `svc #2` with a **selector in `x0`**
+(**115 = VDI**, **200 = AES**) and a **parameter-block pointer in `x1`**;
+arguments and results travel in the block's WORD/pointer arrays, not in
+registers. For those functions replace the two subsections above with:
+
+- **VDI** — opcode in `CONTRL[0]`, sub-opcode in `CONTRL[5]`; inputs in
+  `INTIN[]`/`PTSIN[]` (counts in `CONTRL[3]`/`CONTRL[1]`); outputs in
+  `INTOUT[]`/`PTSOUT[]` (counts in `CONTRL[4]`/`CONTRL[2]`); `CONTRL[6]` =
+  device handle. Give the slot→meaning table for the used slots.
+- **AES** — opcode in `control[0]`; `int_in[]`/`addr_in[]` inputs,
+  `int_out[]`/`addr_out[]` outputs (`int_out[0]` = the return code); counts
+  in `control[1..4]`. Give the slot→meaning table.
+
 ---
 
 ## Inputs
