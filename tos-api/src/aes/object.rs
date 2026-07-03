@@ -1447,9 +1447,20 @@ fn draw_text(
         _ => x, // TE_LEFT
     };
     let ty = y + (h - crate::vdi::font::CELL_H) / 2;
+    // Confine the glyphs to the object's text box `(x, y, w, h)` by
+    // intersecting the caller's clip with it. EmuTOS `gr_gicon` clips the
+    // icon label to `ib_wtext`; without this a string wider than its box
+    // (e.g. a 12-char 8.3 name in a narrower icon cell) bleeds past the box
+    // into neighbouring objects instead of truncating at the box edge.
+    let box_clip = ClipRect {
+        xmn: clip.xmn.max(x),
+        ymn: clip.ymn.max(y),
+        xmx: clip.xmx.min(x + w - 1),
+        ymx: clip.ymx.min(y + h - 1),
+    };
     for (i, &c) in text.iter().enumerate() {
         let gx = tx + i as i16 * crate::vdi::font::CELL_W;
-        backend.draw_glyph(gx, ty, crate::vdi::font::glyph(c as u16), fg, clip);
+        backend.draw_glyph(gx, ty, crate::vdi::font::glyph(c as u16), fg, box_clip);
     }
 }
 
