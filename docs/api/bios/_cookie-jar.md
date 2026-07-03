@@ -71,21 +71,14 @@ TOS / EmuTOS. Access is always: **read the system-variable pointer at
 `$5A0` (`_p_cookies`), then scan the array.** Reading `$5A0` is a
 supervisor-only low-memory access, so two patterns exist:
 
-**1. Application context** — must elevate via `Supexec` (XBIOS 0x26):
-```c
-/* cli/cmdutil.c:321 */
-jar = (COOKIE *)Supexec(getjar);          /* getjar returns *(COOKIE**)0x5A0 */
-for (c = jar; c->cookie; c++)
-    if (c->cookie == tag) { *pvalue = c->value; return 1; }
-return 0;
-```
+**1. Application context** — must elevate via `Supexec` (XBIOS 0x26): inside
+the callback, read the jar pointer from `$5A0`, then scan the array of
+`(cookie, value)` LONG pairs and return the value of the entry whose `cookie`
+matches the wanted tag; stop at the terminator (`cookie == 0`).
+(`cli/cmdutil.c:321`)
 
-**2. Supervisor context** — direct dereference:
-```c
-/* util/boot.c:72 */
-struct cookie *cptr = _p_cookies;         /* the $5A0 variable */
-do { if (cptr->id == id) return cptr->value; } while ((++cptr)->id);
-```
+**2. Supervisor context** — dereference `$5A0` directly and scan the same
+array the same way. (`util/boot.c:72`)
 
 So the access contract an application relies on is:
 **`Supexec` + read `$5A0` + linear scan until `tag == 0`.**

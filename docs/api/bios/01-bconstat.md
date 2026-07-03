@@ -1,132 +1,235 @@
-# `Bconstat` — BIOS 0x01
+# `Bconstat` (BIOS 0x01)
 
-> Phase 00 spec. Source: EmuTOS @ `1a7484ab` — `bios/bios.c:914` (`bconstat`).
+> Phase 00 spec (full-contract template). Source: EmuTOS @ `1a7484ab`.
+> Verified against `bios/bios.c:914` (`bconstat`).
 
 ## EmuTOS source
 
-- **Primary:** `bios/bios.c:914` — `bconstat(WORD handle)`
-- **Helpers:** `protect_v()` (`util/miscasm.S:213`) — d2/a2-preserving call thunk
-- **Tables consulted:** `bconstat_vec[8]` (initialised by
-  `chardev_init`), `bconmap_root.maptab[]` (when
-  `BCONMAP_AVAILABLE` and handle ≥ `BCONMAP_START_HANDLE`)
-- **Globals read:** `boot_status` (must have `CHARDEV_AVAILABLE` =
-  `0x10` set, see `bios/bios.h:89`)
-- **Build config:** `BCONMAP_AVAILABLE` adds the per-handle remap table.
+**Primary location:** `bios/bios.c:914` — `LONG bconstat(WORD handle)`
 
-## Source extraction
+**Helpers called:**
+- `util/miscasm.S:213` — `protect_v(func)` — calls the handler through the
+  device vector, saving/restoring `d2`/`a2` around it (old asm drivers used
+  `d0-d2/a0-a2` as scratch, violating the C ABI).
+- The per-handle status routines the vector points at, e.g.
+  `bios/serport.c:255` `bconstat1` (RS-232), `bios/ikbd.c:235` `bconstat2`
+  (IKBD/console), `bios/midi.c` `bconstat3` (MIDI), `bios/chardev.c:50`
+  `char_dummy` (returns 0).
 
-```c
-LONG bconstat(WORD handle)
-{
-    if (!(boot_status & CHARDEV_AVAILABLE))
-        return 0;
+**Headers / type definitions used:**
+- `include/tosvars.h` — `bconstat_vec[8]`, `bconin_vec` etc.
+- `bios/bios.h` — `boot_status`, `CHARDEV_AVAILABLE` (`0x10`)
+- `bios/bconmap.h` — `bconmap_root`, `BCONMAP_START_HANDLE` (when
+  `BCONMAP_AVAILABLE`)
 
-#if BCONMAP_AVAILABLE
-    WORD map_index = handle - BCONMAP_START_HANDLE;
-    if (map_index >= bconmap_root.maptabsize) return 0L;
-    if (map_index >= 0)
-        return protect_v(bconmap_root.maptab[map_index].Bconstat);
-#endif
+**System variables / globals read:**
+- `boot_status` (`bios/bios.c:920`) — must have `CHARDEV_AVAILABLE` set
+- `bconstat_vec[handle]` (TOS var `0x51e`) — the per-handle status routine
+- `bconmap_root.maptab[]` / `.maptabsize` — when `BCONMAP_AVAILABLE`
 
-    if ((handle >= 0) && (handle <= 7))
-        return protect_v(bconstat_vec[handle]);
-    return 0L;
-}
-```
+**System variables / globals written:** none directly (the handler it calls
+may touch device state).
 
-Three-stage dispatch:
-1. Boot guard — return `0L` until `chardev_init()` has run
-   (`bios/bios.c:430` sets the flag).
-2. `Bconmap` remap (handle ≥ 6 in default config) — table lookup into
-   `bconmap_root.maptab`. Out-of-range → `0L`.
-3. Per-handle vector table — handles 0..7 → `bconstat_vec[handle]`.
+**Build configuration affecting this function:**
+- `BCONMAP_AVAILABLE` — inserts the handle-remap stage for handles ≥
+  `BCONMAP_START_HANDLE` (6 on TT/Falcon). Without it, handles 0..7 index
+  `bconstat_vec` directly and anything else returns `0L`.
+- `CONF_WITH_PRINTER_PORT`, `CONF_SERIAL_CONSOLE_POLLING_MODE`,
+  `CONF_ATARI_HARDWARE`/`CONF_WITH_MFP` — affect the *handlers* the vector
+  points at, not `bconstat` itself (see per-handler notes).
 
-`protect_v` is an asm wrapper that pushes/pops `d2`/`a2` around the
-indirect call, because original Atari hardware drivers were written in
-assembly and used `d0–d2/a0–a2` as scratch — non-compliant with the C
-ABI which preserves `d2`/`a2` across calls.
+---
+
+## Source extraction summary
+
+`Bconstat` reports whether a character-input device has data ready. It is a
+three-stage dispatcher: (1) if `chardev_init()` has not run yet
+(`CHARDEV_AVAILABLE` clear in `boot_status`) it returns `0L`; (2) under
+`BCONMAP_AVAILABLE`, handles ≥ `BCONMAP_START_HANDLE` index the
+`bconmap_root.maptab[]` remap table (out-of-range → `0L`); (3) otherwise, for
+`handle` in `0..7`, it calls `bconstat_vec[handle]` through `protect_v`.
+Anything else returns `0L`.
+
+The actual "ready" test lives in the per-handle routine, not here. The
+routines are installed by `chardev_init()` (`bios/chardev.c:63`) from the
+`bconstat_init[]` table: `{char_dummy, bconstat1, bconstat2, bconstat3,
+char_dummy, char_dummy, char_dummy, char_dummy}`. So by default only handles
+1 (AUX/RS-232), 2 (CON/IKBD) and 3 (MIDI) have real status routines; handles
+0, 4, 5, 6, 7 map to `char_dummy` which always returns `0L`.
+
+Every default status routine is heavily Atari-hardware gated: `bconstat1`
+reads the MFP/SCC receiver flag; `bconstat2` (`bios/ikbd.c:235`) compares
+`ikbdiorec.head`/`.tail` (or polls the serial port under
+`CONF_SERIAL_CONSOLE_POLLING_MODE`). These are behaviour reference, not
+contract — NewTOS supplies equivalent status routines for its own devices.
+
+---
 
 ## Trap interface
 
-| | |
-|--|--|
-| Trap | 13 (BIOS) |
-| Function ID | `0x0001` |
-| WORD args | 1 |
-| Stack frame | `+2: handle (WORD)`, `+0: 0x0001 (fn)` |
+- **Trap number:** 13 (BIOS)
+- **Function ID:** 0x01
+- **Stack frame on entry (m68k):**
+  ```
+  +2: handle (word)
+   0: function_id (word) = 0x0001
+  ```
+- **Total parameter bytes:** 4
+- **Native (AArch64) ABI:** ID `0x01` in `x8`; `handle` in `x0`; result
+  sign-extended into `x0` (`0` or `-1`).
+
+  | m68k stack | AArch64 reg | Name     | Type / size |
+  |------------|-------------|----------|-------------|
+  | +2         | `x0`        | `handle` | `WORD` (16-bit) |
+
+---
 
 ## Inputs
 
-| Pos | Name     | Type | Range / meaning                                |
-|-----|----------|------|------------------------------------------------|
-| 0   | `handle` | WORD | 0=PRT, 1=AUX, 2=CON, 3=MIDI-in, 4=IKBD-in, 5=raw-CON, 6,7=Bconmap |
+| Position | Name     | Type | Size | Source location    | Notes |
+|----------|----------|------|------|--------------------|-------|
+| arg0     | `handle` | `WORD` | 2  | `bios/bios.c:914`  | device handle; only `0..7` are table-indexed |
+
+Handle meanings (default table, `bios/chardev.c:30`):
+
+| Handle | Device (status)             | Default routine |
+|-------:|-----------------------------|-----------------|
+| 0      | PRT / Centronics            | `char_dummy` → always 0 |
+| 1      | AUX / RS-232                | `bconstat1` |
+| 2      | CON / IKBD (console input)  | `bconstat2` |
+| 3      | MIDI in                     | `bconstat3` |
+| 4      | (IKBD-in, historical)       | `char_dummy` → 0 |
+| 5..7   | unused / Bconmap            | `char_dummy` → 0 |
+
+No range check beyond `0..7`; validation is `handle >= 0 && handle <= 7`
+(`bios/bios.c:931`).
+
+---
 
 ## Outputs
 
-| | |
-|--|--|
-| Reg | D0 |
-| Type | LONG |
+### Return value
 
-| State                           | Value |
-|---------------------------------|-------|
-| Input device has data ready     | `-1L` |
-| No data available               | `0L`  |
-| Boot stage before `chardev_init`| `0L`  |
-| `handle` out of `[0,7]` and not in `bconmap` range | `0L` |
-| `bconmap` index out of bounds   | `0L`  |
+- **Register:** D0 / `x0`
+- **Type:** LONG
+- **Encoding:** `-1L` = data available; `0L` = no data / unavailable /
+  invalid handle. Any handler is expected to return only these two values.
+- **Source location:** `bios/bios.c:928-933` (dispatch); the value is the
+  handler's return.
 
-## Errors
+### Side effects on global state
 
-None as a separate error code; the "0L" return doubles as both
-"not ready" and "invalid handle" / "device unavailable".
+None in `bconstat` itself. (Handlers only read device state.)
 
-## Edge cases
+### Side effects on hardware
 
-- **`handle` < 0** without `BCONMAP_AVAILABLE` → `0L` (final guard).
-  With `BCONMAP_AVAILABLE`, `map_index = handle - 6` is *more* negative
-  → still `0L` via the `map_index < 0` fall-through.
-- **Default `bconstat_vec[]` initialisation** (`bios/chardev.c:31-32`):
-  ```
-  [0]=char_dummy, [1]=bconstat1, [2]=bconstat2, [3]=bconstat3,
-  [4..7]=char_dummy
-  ```
-  - `char_dummy` returns `0L`.
-  - `bconstat1` → RS-232 receiver-ready (`bios/serport.c`).
-  - `bconstat2` → IKBD queue non-empty (`bios/bios.c:bconstat2`).
-  - `bconstat3` → MIDI receiver-ready (`bios/midi.c`).
-  - **No `bconstat4` (IKBD)** in this table because IKBD reads come via
-    handle 2 (CON) which already returns IKBD events; handle 4 input
-    is a Bconmap-era extension.
-- **Vector overwrite**: applications may install custom drivers by
-  writing `bconstat_vec[h]`. The TOS standard exposes the table at a
-  documented address (low memory area); EmuTOS's `bconstat_vec` is
-  declared in `tosvars.h`/`tosvars.S` at the standard fixed offset.
-- **`protect_v` does not catch faults** in the called handler. A
-  buggy driver crashes BIOS.
+The default handlers read hardware status registers (MFP GPIP, SCC/ACIA
+status). No writes, no state change.
+
+---
+
+## Error conditions
+
+| Condition | Source location | Returned value |
+|-----------|-----------------|----------------|
+| `chardev_init` not yet run (`CHARDEV_AVAILABLE` clear) | `bios/bios.c:920` | `0L` |
+| `handle` outside `0..7` and not in Bconmap range | `bios/bios.c:931-933` | `0L` |
+| Bconmap index ≥ `maptabsize` (when `BCONMAP_AVAILABLE`) | `bios/bios.c:925` | `0L` |
+| Handle wired to `char_dummy` | `bios/chardev.c:50` | `0L` |
+
+There is **no distinct error code**: `0L` doubles as "not ready", "invalid
+handle" and "device unavailable". Callers needing to distinguish must know
+the device is present.
+
+**Error paths not in Compendium:** the "boot-stage before `chardev_init`
+returns 0" guard is EmuTOS-specific and invisible to normal applications
+(they run long after boot).
+
+---
+
+## Verification criteria
+
+- **Nominal (ready):** with `CHARDEV_AVAILABLE` set and a byte queued for a
+  handle whose status routine reports ready, `Bconstat(handle) == -1`.
+- **Nominal (empty):** same handle, no byte queued → `Bconstat(handle) == 0`.
+- **Invalid handle:** `Bconstat(9)` (no Bconmap) → `0`.
+- **Before chardev init:** `Bconstat(2)` with `CHARDEV_AVAILABLE` clear
+  → `0`.
+
+---
+
+## Edge cases discovered in source
+
+1. **Negative handle path.** With `BCONMAP_AVAILABLE`, `map_index = handle -
+   BCONMAP_START_HANDLE` for a negative `handle` is even more negative, so
+   the `map_index >= 0` test fails and control falls through to the
+   `handle >= 0` guard, returning `0L`. Without `BCONMAP_AVAILABLE`, the
+   `handle >= 0` guard catches it directly.
+
+2. **`bconstat2` is IKBD queue, not "keyboard hardware".** It compares
+   `ikbdiorec.head == ikbdiorec.tail` (`bios/ikbd.c:242`). Under
+   `CONF_SERIAL_CONSOLE_POLLING_MODE` it instead delegates to `bconstat(1)`
+   (serial). Either way it is a queue/flag test, never a physical key scan.
+
+3. **Handle 0 (PRT) has no input.** `bconstat_vec[0] == char_dummy`;
+   printer-port input is not implemented (`bconin0` is a stub too,
+   `bios/parport.c:123`). Always `0L`.
+
+4. **Vector overwrite is the extension mechanism.** `bconstat_vec` sits at a
+   fixed TOS address (`0x51e`); programs install custom drivers by writing
+   the slot. This is contract for m68k binaries (Phase 10); native NewTOS
+   ports use a NewTOS-native registration path.
+
+5. **`protect_v` does not catch faults.** A buggy handler crashes inside the
+   BIOS call; there is no sandbox.
+
+---
 
 ## Dependencies
 
-- `chardev_init()` must have run (sets `CHARDEV_AVAILABLE` in
-  `boot_status`).
-- `bconstat_vec[handle]` must point at a callable.
+### Requires (must be initialized / functional)
 
-Used by: `Cconis` (GEMDOS 0x0B), `Cauxis` (0x12), `constat()`
-(`bdos/console.c`), every typeahead-aware GEMDOS reader.
+- `chardev_init()` (`bios/chardev.c:63`) — sets `CHARDEV_AVAILABLE` and
+  populates `bconstat_vec`.
+- For handle 1: `init_serport()`; for handle 2: `kbd_init()` +
+  `init_acia_vecs()`; for handle 3: `midi_init()`.
+
+### Used by
+
+- GEMDOS `Cconis` (0x0B), `Cauxis` (0x12); `constat()` in `bdos/console.c`;
+  every typeahead-aware GEMDOS reader.
+
+---
+
+## Related data structures
+
+- `docs/api/bios/_state.md` — the four `bcon*_vec[8]` tables and `boot_status`
+- `docs/api/structures/iorec.md` — `ikbdiorec` queue read by `bconstat2`
+
+---
 
 ## Cross-references
 
-- **Compendium:** "Bconstat" — agrees, including `-1L`/`0L` encoding.
-- **Profibuch:** "Bconstat (1)" — agrees.
-- **`docs/api/bios/_dispatcher.md`** — trap-13 trampoline.
-- **`docs/api/bios/_state.md`** (TBD D7) — `bconstat_vec[]` table layout.
+### Atari Compendium
 
-## Configuration / version
+- Not present in `references/`. Cross-check deferred. (Historically: agrees
+  on `-1`/`0` encoding.)
 
-- `BCONMAP_AVAILABLE`: enables the per-handle remap, used by RS-232
-  multiplexers on TT/Falcon.
-- `CONF_SERIAL_CONSOLE`: leaves the `bconstat_vec` initialiser
-  unchanged but redirects underlying CON I/O at the conout level.
+### Atari Profibuch
+
+- Not present in `references/`. Cross-check deferred.
+
+---
+
+## Configuration / version notes
+
+- `BCONMAP_AVAILABLE` (TT/Falcon) adds the handle-remap stage.
+- `CONF_SERIAL_CONSOLE_POLLING_MODE` makes `bconstat2` poll RS-232 instead of
+  the IKBD queue.
+- Handler availability depends on `CONF_WITH_MFP`/`CONF_WITH_SCC`/
+  `CONF_ATARI_HARDWARE` (which devices exist).
+
+---
 
 ## NewTOS implementation notes
 

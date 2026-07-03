@@ -285,3 +285,122 @@ returns `1` (matching D-001); **Crawio** write now returns `0`
 self-tests because neither is checked, but it would have
 surfaced as soon as a Compendium-aware program checked
 `Cconout`'s return for "1 means success".
+
+---
+
+## D-012: BIOS disk-vector low-memory addresses (spec-vs-source)
+
+**Date:** 2026-07-03
+**Phase 00 specs:** `docs/api/bios/04-rwabs.md`, `09-mediach.md`,
+`07-getbpb.md`, `_state.md`
+
+**EmuTOS:** `tosvars.ld` fixes the disk-vector sysvars at:
+`hdv_bpb = 0x472`, `hdv_rw = 0x476`, `hdv_boot = 0x47a`,
+`hdv_mediach = 0x47e`. Installed by `blkdev_init()` (`bios/blkdev.c:101-103`).
+
+**Prior NewTOS docs (wrong):** `04-rwabs.md` claimed `hdv_rw = 0x47E`;
+`09-mediach.md` claimed `hdv_mediach = 0x47A`. Both were swapped/wrong —
+`0x47A` is `hdv_boot`, `0x47E` is `hdv_mediach`, and `hdv_rw` is `0x476`.
+
+**Not a Compendium discrepancy** — an internal spec error. Corrected in the
+refined docs and catalogued once in `_state.md §1`.
+
+**Decision:** use the `tosvars.ld` addresses. (For native AArch64 these live
+in a kernel struct; the physical address only matters to the Phase-10 m68k
+emulator.)
+
+---
+
+## D-013: `Mediach` invalid-drive and error returns (spec-vs-source)
+
+**Date:** 2026-07-03
+**Phase 00 spec:** `docs/api/bios/09-mediach.md`
+
+**EmuTOS:** `blkdev_mediach()` (`bios/blkdev.c:783`) returns **`EUNDEV` (-15)**
+for an out-of-range / invalid drive (`:789-790`), and **passes through the
+negative error code** from `flop_mediach`/`disk_mediach` when the probe fails
+(`:810-811`). It does not normalise failures to `MEDIAMAYCHANGE`.
+
+**Prior NewTOS doc (wrong):** said an out-of-range drive "returns 0 (pretends
+no change)" and that "any underlying I/O failure is collapsed into 'may have
+changed' (1)". Both contradict the source.
+
+**Compendium:** documents only the 3-state 0/1/2 return; does not mention
+`EUNDEV` or negative pass-through (so this is also a Compendium omission).
+
+**Decision:** follow EmuTOS — return `EUNDEV` for invalid drive and propagate
+negative driver errors. Corrected in `09-mediach.md`.
+
+---
+
+## D-014: `Rwabs` flag bits, `numb==0`, and undocumented features
+
+**Date:** 2026-07-03
+**Phase 00 spec:** `docs/api/bios/04-rwabs.md`
+
+**EmuTOS:** `r_w` flags (`bios/disk.h:53-61`): bit0 `RW_WRITE`, bit1
+`RW_NOMEDIACH`, bit2 `RW_NORETRIES`, bit3 `RW_NOTRANSLATE`, bit7
+`RW_NOBYTESWAP`. `blkdev_rwabs()` has **no `EBADRQ` path for `numb==0`** (a
+zero count returns `E_OK`). It has two behaviours not in any documentation:
+(a) `adr==NULL` on a floppy **sets** `blkdev[dev].mediachange = numb` and
+returns 0 (FastCopy-III feature, `bios/blkdev.c:419-428`); (b) a logical
+**write to sector 0** arms `forcechange`, so the *next* access returns
+`E_CHNG` until `Getbpb` clears it (`:452-453`).
+
+**Prior NewTOS doc (wrong / incomplete):** named bit 3 as "don't retry" and
+bit 4 as "don't translate" (off by one; missing `RW_NOBYTESWAP`); claimed
+`numb==0` returns `EBADRQ` (no such check exists); omitted both undocumented
+features.
+
+**Compendium:** documents the standard flags and the `lfirst` extension; does
+**not** document the `NULL`-buffer feature or `forcechange`.
+
+**Decision:** follow EmuTOS — correct flag bits, no `EBADRQ` for zero count,
+and reproduce both undocumented behaviours for m68k-binary compatibility
+(may be NewTOS-native for source ports). Corrected in `04-rwabs.md`.
+
+---
+
+## D-015: `Getbpb` does not flush the GEMDOS FAT cache
+
+**Date:** 2026-07-03
+**Phase 00 spec:** `docs/api/bios/07-getbpb.md`
+
+**EmuTOS:** `blkdev_getbpb()` (`bios/blkdev.c:569`) **resets the media-change
+state** (`mediachange = MEDIANOCHANGE`, `forcechange = FALSE`, `:589-590`) and
+re-reads/re-parses the boot sector on every call. It does **not** flush any
+GEMDOS in-memory FAT cache — that is a separate GEMDOS concern.
+
+**Prior NewTOS doc (wrong):** listed as an edge case that `Getbpb` "also
+flushes any GEMDOS in-memory FAT cache for that drive when it detects media
+change." No such action is in the BIOS-layer source.
+
+**Decision:** follow EmuTOS — `Getbpb` resets the BIOS media-change flag and
+rebuilds the BPB; the FAT-cache flush claim is removed. Corrected in
+`07-getbpb.md`.
+
+---
+
+## D-016: `bconin0` (PRT input) is a stub, and MIDI/IKBD swap is bcostat-only
+
+**Date:** 2026-07-03
+**Phase 00 specs:** `docs/api/bios/02-bconin.md`, `08-bcostat.md`,
+`_state.md`, `_dispatcher.md`
+
+**EmuTOS:** `bconin0` (`bios/parport.c:123`) is `/* not implemented */` and
+returns `0` unconditionally. The MIDI/IKBD slot swap exists **only** in the
+`bcostat_vec` table (`bcostat_vec[3]=bcostat4`, `[4]=bcostat3`,
+`bios/chardev.c:38-41`); the `bconin`/`bconout`/`bconstat` tables are **not**
+swapped (handle 3 = MIDI, handle 4 = IKBD there).
+
+**Prior NewTOS docs (wrong):** `02-bconin.md` claimed `bconin0` "reads the
+parport status / data lines"; `_dispatcher.md §5` implied the MIDI/IKBD swap
+applied to input as well as output.
+
+**Decision:** follow EmuTOS — `bconin0` is a stub returning 0; the swap is
+`bcostat`-only. Corrected in the refined docs.
+
+**Note (not a discrepancy):** all four char-device default handlers are
+Atari-hardware / `CONF_*` gated (MFP, ACIA, SCC, printer port). NewTOS supplies
+equivalent handlers for its own devices; these EmuTOS internals are *behaviour
+reference*, not contract.

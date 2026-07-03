@@ -23,17 +23,12 @@ the trampoline body (see `_dispatcher.md` for XBIOS).
 
 ## 2. `_biostrap` entry (`bios/vectors.S:1268`)
 
-```asm
-_biostrap:
-    move.w  _bios_ent, d1            ; bios_ent = ARRAY_SIZE(bios_vecs) = 12
-    lea     _bios_vecs, a0           ; a0 -> table base
-    jra     biosxbios
-```
+The trap-13 entry loads the table length into `d1` (`_bios_ent` = 12) and the
+table base into `a0` (`_bios_vecs`), then falls through to the shared
+`biosxbios:` trampoline (`bios/vectors.S:1282`).
 
 - `_bios_ent` (`bios/bios.c:1267`) = `ARRAY_SIZE(bios_vecs)` = 12.
-- `_bios_vecs` (`bios/bios.c:1252`) is the function pointer table.
-
-Falls through to the shared `biosxbios:` body at `bios/vectors.S:1282`.
+- `_bios_vecs` (`bios/bios.c:1252`) is the function-pointer table.
 
 ---
 
@@ -79,15 +74,9 @@ Trampoline steps:
    branch `bx_ret_exc` (return whatever D0 carries, which becomes the
    "function not implemented" return = function number itself —
    identical to the `xbios_unimpl` shim).
-9. Index into the table:
-   ```
-   move.l d0, d1
-   add.l  d1, d1
-   add.l  d1, d1     ; *4 (LONG-pointer table)
-   add.l  d1, a0
-   move.l (a0), a0   ; a0 = handler address
-   jsr    (a0)
-   ```
+9. Index into the table: scale the function ID by 4 (LONG-pointer table),
+   add it to the table base `a0`, load the handler address from that slot,
+   and call it.
 10. After the handler returns (with result in D0), restore registers
     from the save area, restore exception frame, `rte`.
 
@@ -99,43 +88,37 @@ volatile-register save code in every BIOS handler.
 
 ## 4. `bios_vecs[]` table (`bios/bios.c:1252`)
 
-```c
-const PFLONG bios_vecs[] = {
-    VEC(bios_0, getmpb),       /* 0x00 */
-    VEC(bios_1, bconstat),     /* 0x01 */
-    VEC(bios_2, bconin),       /* 0x02 */
-    VEC(bios_3, bconout),      /* 0x03 */
-    VEC(bios_4, lrwabs),       /* 0x04 */
-    VEC(bios_5, setexc),       /* 0x05 */
-    VEC(bios_6, tickcal),      /* 0x06 */
-    VEC(bios_7, getbpb),       /* 0x07 */
-    VEC(bios_8, bcostat),      /* 0x08 */
-    VEC(bios_9, mediach),      /* 0x09 */
-    VEC(bios_a, drvmap),       /* 0x0A */
-    VEC(bios_b, kbshift),      /* 0x0B */
-};
-const UWORD bios_ent = ARRAY_SIZE(bios_vecs);
-```
+The function-ID → handler map (12 entries; `bios_ent = ARRAY_SIZE = 12`):
 
-`VEC(wrapper, direct)` expands to `(PFLONG)direct` for normal builds.
+| ID   | Handler   | ID   | Handler   |
+|------|-----------|------|-----------|
+| 0x00 | `getmpb`  | 0x06 | `tickcal` |
+| 0x01 | `bconstat`| 0x07 | `getbpb`  |
+| 0x02 | `bconin`  | 0x08 | `bcostat` |
+| 0x03 | `bconout` | 0x09 | `mediach` |
+| 0x04 | `lrwabs`  | 0x0A | `drvmap`  |
+| 0x05 | `setexc`  | 0x0B | `kbshift` |
+
+Each slot is wrapped by `VEC(wrapper, direct)`, which reduces to the direct
+handler for normal builds.
 With `DBGBIOS` defined, it expands to the wrapper which prints debug
 info before calling the real function. NewTOS extracts against
 `DBGBIOS = 0` (default).
 
 | ID    | C function   | TOS name    | Defined in       | Notes                                  |
 |------:|--------------|-------------|------------------|----------------------------------------|
-| 0x00  | `getmpb`     | Getmpb      | `bios/bios.c`    | fills caller-supplied MPB              |
+| 0x00  | `getmpb`     | Getmpb      | `bios/biosmem.c` | fills caller-supplied MPB              |
 | 0x01  | `bconstat`   | Bconstat    | `bios/bios.c`    | indirect via `bconstat_vec[handle]`    |
 | 0x02  | `bconin`     | Bconin      | `bios/bios.c`    | indirect via `bconin_vec[handle]`      |
 | 0x03  | `bconout`    | Bconout     | `bios/bios.c`    | indirect via `bconout_vec[handle]`     |
-| 0x04  | `lrwabs`     | Rwabs       | `bios/bios.c`    | extended-sector long form              |
-| 0x05  | `setexc`     | Setexc      | `bios/bios.c`    | direct vector poke                     |
+| 0x04  | `lrwabs`     | Rwabs       | `bios/bios.c`    | forwards to `hdv_rw` (`0x476`)         |
+| 0x05  | `setexc`     | Setexc      | `bios/bios.c`    | direct vector poke at `4*num`          |
 | 0x06  | `tickcal`    | Tickcal     | `bios/bios.c`    | constant `20`                          |
-| 0x07  | `getbpb`     | Getbpb      | `bios/bios.c`    | calls `hdv_bpb`                        |
+| 0x07  | `getbpb`     | Getbpb      | `bios/bios.c`    | forwards to `hdv_bpb` (`0x472`)        |
 | 0x08  | `bcostat`    | Bcostat     | `bios/bios.c`    | indirect via `bcostat_vec[handle]`     |
-| 0x09  | `mediach`    | Mediach     | `bios/bios.c`    | calls `hdv_mediach`                    |
-| 0x0A  | `drvmap`     | Drvmap      | `bios/bios.c`    | returns `_drvbits`                     |
-| 0x0B  | `kbshift`    | Kbshift     | `bios/bios.c`    | reads/writes `kbshift` byte at $E1B    |
+| 0x09  | `mediach`    | Mediach     | `bios/bios.c`    | forwards to `hdv_mediach` (`0x47e`)    |
+| 0x0A  | `drvmap`     | Drvmap      | `bios/bios.c`    | returns `drvbits` (`0x4c2`); no vector |
+| 0x0B  | `kbshift`    | Kbshift     | `bios/ikbd.c`    | reads/writes the `shifty` byte         |
 
 There is no `xbios_unimpl`-equivalent for BIOS — every entry has a
 real handler. Out-of-range IDs are caught by the `cmp.w d1,d0` test
@@ -149,7 +132,7 @@ For character-device BIOS calls (`bconstat`/`bconin`/`bconout`/`bcostat`),
 the `bios_*` C functions further dispatch through a per-handle table:
 
 - `bconstat_vec[8]` initialised by `chardev_init()` at boot
-  (`bios/chardev.c:55`).
+  (`bios/chardev.c:63`).
 - `bconin_vec[8]`, `bconout_vec[8]`, `bcostat_vec[8]` similarly.
 - Handle range `0..7` → table lookup; `>= BCONMAP_START_HANDLE` (build
   config `BCONMAP_AVAILABLE`) → consult the `bconmap_root.maptab[]`
@@ -160,13 +143,17 @@ the `bios_*` C functions further dispatch through a per-handle table:
 | 0      | Centronics / parallel printer (`parport.c`)         |
 | 1      | RS-232 / serial (`serport.c`)                       |
 | 2      | Console / screen (`conout.c:cputc`)                 |
-| 3      | MIDI out (`midi.c`) / IKBD in (`ikbd.c` — swapped)  |
-| 4      | IKBD out (`ikbd.c`) / MIDI in (`midi.c` — swapped)  |
+| 3      | MIDI (in `bconin3`, out `bconout3`) (`midi.c`)      |
+| 4      | IKBD (out `bconout4`) (`ikbd.c`)                    |
 | 5      | "raw" console (`bconout5` → `ascii_out` no VT52)    |
 | 6,7    | unused, `char_dummy` / `charout_dummy`              |
 
-Note the swap of MIDI vs. IKBD between in and out: see comment in
-`bios/chardev.c:39` ("note that IKBD and MIDI bcostat() are swapped!").
+**Important:** the MIDI/IKBD swap applies **only to `bcostat`** (the
+output-status table): `bcostat_vec[3] = bcostat4` (IKBD TX) and
+`bcostat_vec[4] = bcostat3` (MIDI TX). See comment
+`/* note that IKBD and MIDI bcostat() are swapped! */` at
+`bios/chardev.c:40`. The `bconin`/`bconout`/`bconstat` tables are **not**
+swapped — handle 3 is MIDI, handle 4 is IKBD in those three.
 
 ---
 
@@ -174,13 +161,19 @@ Note the swap of MIDI vs. IKBD between in and out: see comment in
 
 | Concern                         | File:line                       |
 |---------------------------------|---------------------------------|
-| Trap-13 entry                   | `bios/vectors.S:1268`           |
-| Shared trampoline               | `bios/vectors.S:1282`           |
-| Save-area pointer               | `bios/vectors.S:1448` (`_trap_save_area`) |
+| Trap-13 entry (`_biostrap`)     | `bios/vectors.S:1268`           |
+| Shared trampoline (`biosxbios`) | `bios/vectors.S:1282`           |
+| Save-area storage               | `bios/vectors.S:1451` (`_trap_save_area`) |
+| Save-area stack pointer         | `savptr` sysvar `0x4a2` (`bios/vectors.S:1283`) |
 | Function table                  | `bios/bios.c:1252`              |
 | Table size                      | `bios/bios.c:1267` (`_bios_ent`)|
-| Per-handle device tables        | `bios/chardev.c:30-44`          |
-| Char-device init                | `bios/chardev.c:64-79`          |
+| Per-handle device tables        | `bios/chardev.c:30-45`          |
+| Char-device init                | `bios/chardev.c:63-85`          |
+
+Note: `_savptr.w` / `_longframe.w` in the trampoline use m68k
+absolute-**short** addressing (the symbol's address fits in 16 bits,
+sign-extended) — the `.w` is the addressing mode, not the datum width.
+`savptr` itself is a 4-byte LONG pointer (sysvar `0x4a2`).
 
 ---
 

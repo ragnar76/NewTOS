@@ -1,115 +1,187 @@
-# `Drvmap` — BIOS 0x0A
+# `Drvmap` (BIOS 0x0A)
 
-> Phase 00 spec. Source: EmuTOS @ `1a7484ab` —
-> `bios/bios.c:1206` (`drvmap`).
+> Phase 00 spec (full-contract template). Source: EmuTOS @ `1a7484ab`.
+> Verified against `bios/bios.c:1206` (`drvmap`) and `bios/blkdev.c:833`
+> (`blkdev_drvmap`).
 
 ## EmuTOS source
 
-```c
-LONG drvmap(void) { return blkdev_drvmap(); }
-```
+**Primary location:** `bios/bios.c:1206` — `LONG drvmap(void)`
+(body: `return blkdev_drvmap();`).
 
-`blkdev_drvmap()` (`bios/blkdev.c`) returns a 32-bit bitmap built
-from the per-drive `blkdev[i].valid` flags during the boot
-device-discovery scan.
+**Handler:** `bios/blkdev.c:833` — `LONG blkdev_drvmap(void)`
+(body: `return drvbits;`). It returns the global `drvbits` variable directly;
+it does **not** recompute a bitmap from per-drive flags.
+
+**Helpers called:** none (a plain read of `drvbits`; no `protect_*` wrapper —
+`drvmap` calls `blkdev_drvmap` directly, not through `hdv_*`).
+
+**Headers / type definitions used:**
+- `include/tosvars.h:57` — `extern LONG drvbits;`
+
+**System variables / globals read:**
+- `drvbits` (TOS var **`0x4c2`**) — bit `n` set ⇒ logical drive `n` present.
+
+**System variables / globals written:** none.
+
+**Build configuration affecting this function:** none directly; which bits are
+set in `drvbits` is decided during `blkdev_init()` / partition scan.
+
+---
+
+## Source extraction summary
+
+`Drvmap` returns the 32-bit logical-drive bitmap: bit 0 = A:, bit 1 = B:, …,
+bit 15 = P:. It is a one-line read of the global `drvbits`, which the block-
+device layer builds during boot device discovery (each valid logical drive
+sets its bit). `blkdev_avail(dev)` (`bios/blkdev.c:846`) is the matching
+predicate — `(1L << dev) & drvbits`.
+
+The bitmap is essentially static after boot: EmuTOS does not update `drvbits`
+on hot-plug (Atari hardware had no such expectation). Bits 16..31 are unused
+in EmuTOS (only 16 logical drives). Steem's GEMDOS-HD emulation is known to
+poke `drvbits` from a cartridge hook, which is why `biosmain` calls `Drvmap()`
+once at boot (`bios/bios.c:791`) to let it take effect.
+
+---
 
 ## Trap interface
 
-| | |
-|--|--|
-| Trap | 13 (BIOS) |
-| Function ID | `0x0A` |
-| WORD args | 0 |
-| Stack frame | `+0: 0x000A` |
-| Vector entry | `bios_vecs[10]` |
+- **Trap number:** 13 (BIOS)
+- **Function ID:** 0x0A
+- **Stack frame on entry (m68k):**
+  ```
+   0: function_id (word) = 0x000A
+  ```
+- **Total parameter bytes:** 2 (just the ID)
+- **Native (AArch64) ABI:** ID `0x0A` in `x8`; no arguments; the drive bitmap
+  in `x0`.
+
+  | m68k stack | AArch64 reg | Name | Type / size |
+  |------------|-------------|------|-------------|
+  | (none)     | —           | —    | —           |
+
+---
 
 ## Inputs
 
 None.
 
+---
+
 ## Outputs
 
-| Reg | D0 |
-| --- | --- |
-| Type | LONG (drive bitmap) |
+### Return value
 
-Bit `n` (n ∈ 0..15) set ⇒ drive at index `n` is online.
-Bits 16..31 are zero in EmuTOS (only 16 drives supported).
+- **Register:** D0 / `x0`
+- **Type:** LONG (drive bitmap)
+- **Encoding:** bit `n` set ⇒ drive index `n` (0=A:) is present. Bits 16..31
+  are 0.
+- **Source location:** `bios/blkdev.c:835` (`return drvbits;`).
 
-| Bit | Drive |
-|----:|-------|
-| 0   | A:    |
-| 1   | B:    |
-| 2   | C:    |
-| …   | …     |
-| 15  | P:    |
+| Bit | Drive | … | Bit | Drive |
+|----:|-------|---|----:|-------|
+| 0   | A:    |   | 8   | I:    |
+| 1   | B:    |   | …   | …     |
+| 2   | C:    |   | 15  | P:    |
 
-## Errors
+### Side effects on global state
 
-None — function cannot fail.
+None.
 
-## Edge cases
+### Side effects on hardware
 
-### 1. Floppy A: + B: convention
+None.
 
-Per the Compendium: "if the BIOS supports logical drives A and B
-on a single physical drive, it should return both bits set if a
-floppy drive is present." EmuTOS follows this — single-floppy
-systems still report bits 0 AND 1 set, so old programs that
-expect "drive B: exists" can do their swap-prompt routine.
+---
 
-### 2. Static after boot
+## Error conditions
 
-The bitmap is computed once during boot-device discovery and not
-updated for hot-plug. SD-card insertion *after* boot does not flip
-a bit in the EmuTOS bitmap. Atari hardware had no hot-plug
-expectation. NewTOS will likely make this dynamic — see notes.
+| Condition | Source location | Returned value |
+|-----------|-----------------|----------------|
+| (none — cannot fail) | `bios/blkdev.c:833` | the bitmap (possibly 0) |
 
-### 3. P: BetaDOS quirk
+---
 
-The fsmain.c comment "BetaDOS expects to be able to select drive
-P: even if it does not exist" implies that `Dsetdrv(15)` succeeds
-even with bit 15 clear. Drvmap remains the truthful map; clients
-must consult it before assuming a drive is usable.
+## Verification criteria
 
-### 4. Boot drive
+- **Nominal:** on a system with C:..F: mounted, `Drvmap()` has bits 2..5 set
+  and returns the same `LONG` as the `drvbits` variable.
+- **Floppy convention:** on a system with a single floppy, bits 0 **and** 1
+  are set (A: and B: on one physical drive).
+- **`blkdev_avail` consistency:** for every bit `n` set in `Drvmap()`,
+  `blkdev_avail(n)` is non-zero, and vice-versa.
 
-The boot drive (whatever device the kernel was loaded from) is
-always present in the bitmap. On a typical Mega ST/STe with hard
-disk, that's bit 2 (C:). On a floppy boot, bits 0 and 1.
+---
 
-### 5. No drive ordering guarantee
+## Edge cases discovered in source
 
-The mapping of bits to physical hardware is a BIOS implementation
-detail. Floppy 0 → A: is universal; partition layout for hard
-disks is per-driver. NewTOS will document its own mapping in
-`docs/api/bios/_state.md`.
+1. **It returns the raw `drvbits` global, not a recomputed map.** `Drvmap`
+   never scans `blkdev[]` at call time (`bios/blkdev.c:833-836`). (Prior spec
+   said the bitmap is "built from the per-drive `blkdev[i].valid` flags" *on
+   each call* — that is wrong; it is precomputed into `drvbits` and simply
+   read back.)
+
+2. **A:+B: single-floppy convention.** If a floppy is present, both bit 0 and
+   bit 1 are set so B:-swap prompts work, even with one physical drive.
+
+3. **Static after boot.** `drvbits` is not updated on hot-plug in EmuTOS. A
+   card inserted after boot does not flip a bit.
+
+4. **P: (bit 15) may be selectable even if clear.** A BetaDOS quirk lets
+   `Dsetdrv(15)` succeed regardless; `Drvmap` remains the truthful presence
+   map, and clients must consult it before assuming a drive is usable.
+
+5. **Bits 16..31 are always 0** in EmuTOS (16-drive limit); do not assume they
+   carry information.
+
+---
 
 ## Dependencies
 
-- `blkdev[].valid` flags set by `blkdev_init()`.
+### Requires (must be initialized / functional)
 
-Used by: `Dsetdrv`/`Dgetdrv` (returned drive map), AES drive
-enumeration, shell drive list.
+- `blkdev_init()` and the boot partition scan (populate `drvbits`).
+
+### Used by
+
+- GEMDOS `Dsetdrv`/`Dgetdrv` (returned drive map); AES/desktop drive
+  enumeration; shell drive listing; `biosmain` (called once at boot,
+  `bios/bios.c:791`, to let Steem's cartridge hook take effect).
+
+---
+
+## Related data structures
+
+- `docs/api/bios/_state.md` — `drvbits` variable + address
+- `docs/api/gemdos/drive/0e-dsetdrv.md` — consumes the map
+
+---
 
 ## Cross-references
 
-- **Compendium:** "Drvmap" — agrees.
-- **Profibuch:** "Drvmap (0x0A)" — agrees, notes A:+B: convention.
-- `docs/api/gemdos/drive/0e-dsetdrv.md`
-- `docs/api/bios/_state.md`
+### Atari Compendium
 
-## Configuration
+- Not present in `references/`. Cross-check deferred. (Historically documents
+  the A:+B: convention verbatim — EmuTOS mirrors that wording,
+  `bios/blkdev.c:826-830`.)
 
-- `BLKDEVNUM = 16`.
+### Atari Profibuch
+
+- Not present in `references/`. Cross-check deferred.
+
+---
+
+## Configuration / version notes
+
+- `BLKDEVNUM = 16` logical drives.
+
+---
 
 ## NewTOS implementation notes
 
 (Empty during Phase 00.)
 
-**PHASE-04 plan**: SD-card hot-plug will dynamically update the
-bitmap. NewTOS programs querying Drvmap repeatedly will see bits
-appear/disappear as USB drives are attached. Programs that cache
-the map must treat it as a snapshot. A separate Drvmap-changed
-event mechanism may be added (NewTOS extension, not exposed
-through TOS API).
+PHASE-04: NewTOS may make the map dynamic (SD/USB hot-plug flips bits).
+Programs must treat `Drvmap()` as a snapshot. `drvbits` is a kernel-owned
+variable (no `0x4c2` physical address for native ports).

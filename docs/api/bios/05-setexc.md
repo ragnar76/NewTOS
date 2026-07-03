@@ -1,142 +1,193 @@
-# `Setexc` — BIOS 0x05
+# `Setexc` (BIOS 0x05)
 
-> Phase 00 spec. Source: EmuTOS @ `1a7484ab` —
-> `bios/bios.c:1071` (`setexc`).
+> Phase 00 spec (full-contract template). Source: EmuTOS @ `1a7484ab`.
+> Verified against `bios/bios.c:1070` (`setexc`).
 
 ## EmuTOS source
 
-```c
-LONG setexc(WORD num, LONG vector)
-{
-    LONG *addr = (LONG *)(4L * num);
-    LONG oldvector = *addr;
-    if (vector != -1) *addr = vector;
-    return oldvector;
-}
-```
+**Primary location:** `bios/bios.c:1070` — `LONG setexc(WORD num, LONG vector)`
 
-The function treats the first 1024 bytes of m68k memory as a flat
-array of 256 LONG vectors. Vector `num` lives at byte offset
-`4 * num`. m68k vector layout:
+**Helpers called:** none (a bare read-modify-write of `*(LONG *)(4L*num)`).
 
-| `num`       | Vector                                       |
-|-------------|----------------------------------------------|
-| 0           | reset SP (read-only — overwriting it is harmless on m68k post-reset) |
-| 1           | reset PC                                     |
-| 2..63       | CPU traps + interrupts (bus error, address error, illegal instruction, divide-by-zero, autovectors 1..7, traps 0..15) |
-| 64..255     | user/system vectors                          |
-| 0x100..0x102 | "etv_term" (process terminate hook), used by `Pterm` |
-| 0x100..0x118 | various GEM/AES hooks                       |
+**Headers / type definitions used:**
+- `tosvars.ld` — the low-memory vector layout (`etv_timer=0x400`,
+  `etv_critic=0x404`, `etv_term=0x408`) that specific `num` values address.
+
+**System variables / globals read/written:**
+- The 4-byte LONG at address `4 * num`. For `num` in the standard vector
+  range this is a CPU exception vector (`0..0xFF` → `0x000..0x3FC`) or a TOS
+  system-vector (`0x100`→`0x400` etv_timer, `0x101`→`0x404` etv_critic,
+  `0x102`→`0x408` etv_term).
+
+**Build configuration affecting this function:** none — configuration- and
+version-independent.
+
+---
+
+## Source extraction summary
+
+`Setexc` gets/sets a raw 32-bit exception (or system) vector. It computes the
+byte address `4 * num`, reads the current LONG there into `oldvector`, and —
+only if `vector != -1` — overwrites it with the new value. It always returns
+the previous value. `vector == -1` is therefore the "query without changing"
+idiom.
+
+There is **no range check** and **no protection**: `num` is a `WORD`, so the
+address `4*num` can land anywhere in the low 256 KB (and negative `num` wraps
+via unsigned addressing). Writing `num` outside the vector page clobbers
+whatever system variable lives at `4*num`. This is intentional 1980s
+minimalism; the caller is trusted.
+
+---
 
 ## Trap interface
 
-| | |
-|--|--|
-| Trap | 13 (BIOS) |
-| Function ID | `0x05` |
-| WORD args | 3 (WORD + LONG) |
-| Stack frame | `+4: vector (LONG)`, `+2: num (W)`, `+0: 0x0005` |
-| Vector entry | `bios_vecs[5]` |
+- **Trap number:** 13 (BIOS)
+- **Function ID:** 0x05
+- **Stack frame on entry (m68k):**
+  ```
+  +4: vector (LONG)
+  +2: num    (word)
+   0: function_id (word) = 0x0005
+  ```
+- **Total parameter bytes:** 8
+- **Native (AArch64) ABI:** ID `0x05` in `x8`; `num` in `x0`, `vector` in
+  `x1`; previous vector value returned in `x0`.
+
+  | m68k stack | AArch64 reg | Name     | Type / size |
+  |------------|-------------|----------|-------------|
+  | +2         | `x0`        | `num`    | `WORD` (16) |
+  | +4         | `x1`        | `vector` | `LONG` (32) |
+
+---
 
 ## Inputs
 
-| Pos | Name     | Type | Range / meaning                              |
-|-----|----------|------|----------------------------------------------|
-| 0   | `num`    | WORD | exception vector number (0..1023 practically) |
-| 1   | `vector` | LONG | new handler address, or `-1L` for query-only  |
+| Position | Name     | Type   | Size | Source location    | Notes |
+|----------|----------|--------|------|--------------------|-------|
+| arg0     | `num`    | `WORD` | 2    | `bios/bios.c:1073` | vector number; address is `4*num`. Not range-checked. |
+| arg1     | `vector` | `LONG` | 4    | `bios/bios.c:1076` | new handler address, or `-1L` for query-only |
+
+---
 
 ## Outputs
 
-| Reg | D0 |
-| --- | --- |
-| Type | LONG |
+### Return value
 
-The **previous** vector value (always returned, regardless of
-whether `vector == -1`).
+- **Register:** D0 / `x0`
+- **Type:** LONG
+- **Encoding:** the previous 32-bit value at `4*num`, returned always
+  (whether or not a write happened).
+- **Source location:** `bios/bios.c:1074,1079`.
 
-## Errors
+### Side effects on global state
 
-None. The function cannot fail in EmuTOS. Out-of-range `num`
-silently writes to addresses outside the vector table — caller
-ruins their own memory.
+- Writes `*(LONG *)(4*num) = vector` when `vector != -1`
+  (`bios/bios.c:1076-1078`). No other state.
 
-## Edge cases
+### Side effects on hardware
 
-### 1. `vector == -1` ⇒ query
+None directly — but installing a CPU-exception vector changes which handler
+the CPU dispatches to on the corresponding fault/interrupt.
 
-Standard idiom for "what is the current handler?":
+---
 
-```c
-LONG cur = Setexc(num, -1L);
-```
+## Error conditions
 
-Atari documentation explicitly defines `-1` as the query value.
-Returning `-1L` from a previous Setexc that genuinely tried to
-install address `-1` is **not possible** — the function refuses to
-write `-1`. In practice no real handler lives at address `-1`.
+| Condition | Source location | Returned value |
+|-----------|-----------------|----------------|
+| (none — the function cannot fail) | `bios/bios.c:1070` | n/a |
 
-### 2. No range check
+An out-of-range `num` silently writes outside the vector page and returns the
+prior contents of that address. There is no error signalling.
 
-`num` is a `WORD`. Negative `num` writes to addresses below 0
-(unsigned wrap). `num > 1023` writes outside the m68k vector page
-into low memory (system globals at `0x400+`). EmuTOS does not
-protect this.
+**Error paths not in Compendium:** none; Compendium likewise documents no
+error.
 
-### 3. The MMU/MPU question
+---
 
-On m68k there is no MMU protection of the vector page by default.
-On NewTOS / AArch64, the "vector page" is a software fiction —
-exception handlers live in the AArch64 VBAR_EL1 table, not at
-`0..0x400`. NewTOS must maintain a **shadow vector table** at the
-emulated `0..0x400` and have its actual exception handlers consult
-the shadow when dispatching m68k-style hooks.
+## Verification criteria
 
-### 4. Atomicity
+- **Nominal set + return old:** `Setexc(0x102, newaddr)` returns the previous
+  `etv_term` value (at `0x408`) and stores `newaddr` there.
+- **Query only:** `Setexc(0x102, -1)` returns the current `etv_term` value and
+  leaves it unchanged.
+- **`-1` is never installed:** even if a caller passes `vector == -1`, no
+  write occurs; the vector cannot be *set* to `-1` via this call.
 
-Read-modify-write of a 32-bit word. On m68k a single LONG store is
-atomic w.r.t. interrupts at the same level. On AArch64 we need
-explicit atomic semantics if the vector page is shared across CPUs.
+---
 
-### 5. `etv_term` (vector 0x102)
+## Edge cases discovered in source
 
-`Pterm`'s user-term-handler protocol uses `Setexc(0x102, -1L)` to
-fetch the current term hook, install a custom one, then chain via
-the saved value. See `docs/api/gemdos/process/01-pterm.md` for the
-protect_v wrapping.
+1. **`vector == -1` is a magic "don't write" sentinel**, not a real address.
+   The install idiom is: `old = Setexc(num, -1)` to read, then
+   `Setexc(num, myhandler)` to install and chain via `old`.
 
-### 6. AES "ev_timer" et al.
+2. **No range check on `num`.** `num > 0xFF` addresses TOS system-vectors
+   (`0x100`→etv_timer, `0x101`→etv_critic, `0x102`→etv_term); larger values
+   clobber arbitrary low memory. `num` is a signed `WORD` but is used as
+   `4L*num`, so negative values compute negative addresses.
 
-AES hooks several vectors (0x102 etv_term, 0x108 etv_critic,
-0x10C etv_term, etc.) via Setexc. NewTOS must honour these as the
-canonical TOS hooks.
+3. **Read-modify-write is a single LONG store.** On m68k the store is atomic
+   against equal-or-lower-priority interrupts; there is no explicit locking.
+
+4. **The standard TOS system-vector numbers** (via `4*num`): `0x100`=etv_timer
+   (`0x400`), `0x101`=etv_critic (`0x404`), `0x102`=etv_term (`0x408`). AES
+   installs its own via these. (The prior spec listed these offsets
+   inconsistently; corrected here from `tosvars.ld:33-35`.)
+
+---
 
 ## Dependencies
 
-- The 1024-byte vector page at address 0.
+### Requires (must be initialized / functional)
 
-Used by: AES/VDI installation, `Pterm` cleanup, custom interrupt
-handlers, debuggers, terminate-stay-resident programs.
+- A populated low-memory vector page (set up by `vecs_init()`,
+  `bios/bios.c:118`, and the boot ROM).
+
+### Used by
+
+- AES/VDI install hooks; `Pterm` cleanup via `etv_term`; custom interrupt
+  handlers; debuggers; terminate-stay-resident programs.
+
+---
+
+## Related data structures
+
+- `docs/api/bios/_state.md` — low-memory vector / etv_* layout
+- `docs/api/structures/osheader.md` — related boot vectors
+
+---
 
 ## Cross-references
 
-- **Compendium:** "Setexc" — agrees on `-1` semantics and return
-  value.
-- **Profibuch:** "Setexc (0x05)" — agrees, lists known vector
-  numbers.
-- `docs/api/gemdos/process/01-pterm.md`
-- `docs/api/bios/_state.md` — vector page layout.
+### Atari Compendium
 
-## Configuration
+- Not present in `references/`. Cross-check deferred. (Historically: agrees on
+  `-1` query semantics and always-return-old.)
 
-None.
+### Atari Profibuch
+
+- Not present in `references/`. Cross-check deferred.
+
+### Atari ST Internals
+
+- Not present in `references/`. (Would be the reference for the full vector
+  number → address table.)
+
+---
+
+## Configuration / version notes
+
+None. Identical across all EmuTOS builds and TOS versions.
+
+---
 
 ## NewTOS implementation notes
 
 (Empty during Phase 00.)
 
-**PHASE-06 design driver**: NewTOS keeps a 1024-byte software
-"m68k vector shadow" mapped at virtual `0..0x400` (read-write to
-all processes — this is *the* ABI). Native AArch64 exception
-handlers in `kernel/arch/aarch64/exceptions.rs` consult the shadow
-when delivering m68k-emulated traps. Setexc becomes a plain
-trapping store into that page.
+PHASE-06: NewTOS keeps a software "m68k vector shadow" at virtual `0..0x400`
+for m68k binaries; native AArch64 handlers consult the shadow for
+m68k-emulated hooks (etv_term etc.). For native source ports the etv_* hooks
+are reached by name, not by poking `4*num`.

@@ -1,139 +1,246 @@
-# `Getmpb` — BIOS 0x00
+# `Getmpb` (BIOS 0x00)
 
-> Phase 00 spec. Source: EmuTOS @ `1a7484ab` —
-> `bios/biosmem.c:134` (`getmpb`).
+> Phase 00 spec (full-contract template). Source: EmuTOS @ `1a7484ab`.
+> Verified against `bios/biosmem.c:134` (`getmpb`).
 
-## NewTOS status: **decision deferred**
+## NewTOS status: **decision deferred** (see NewTOS implementation notes)
 
-Returns `EINVFN` today (the BIOS dispatcher's catch-all — defined behaviour, not
-a stub). `Getmpb` fills the classic Memory Parameter Block, historically called
-once at boot by BDOS init; NewTOS has native init + ST-/TT-RAM pools. Whether to
-reimplement it as a thin MPB over the ST-RAM free list is a
-`docs/COMPATIBILITY.md` port-vs-reimplement call, **deferred until a program
-actually needs it**.
+Historically called exactly once, by GEMDOS init, to discover the ST-RAM
+extent. NewTOS initialises its allocator directly from the AArch64 memory
+map, so this call is vestigial. Whether to expose a thin MPB-over-free-list
+is a `docs/COMPATIBILITY.md` port-vs-reimplement decision, deferred until a
+program needs it. The dispatcher's out-of-range fall-through is *not* the
+answer — `getmpb` is a real, in-range handler (`bios_vecs[0]`).
+
+---
 
 ## EmuTOS source
 
-```c
-void getmpb(MPB *mpb)
-{
-    themd.m_link   = NULL;
-    themd.m_start  = membot;
-    themd.m_length = memtop - themd.m_start;
-    themd.m_own    = NULL;
+**Primary location:** `bios/biosmem.c:134` — `void getmpb(MPB *mpb)`
+(the exported `getmpb` symbol; `bios/bios.c:895` `bios_0()` is only a
+`DBGBIOS` debug wrapper and is compiled out in the default build).
 
-    mpb->mp_mfl = &themd;       /* free list = single MD */
-    mpb->mp_mal = NULL;
-    /* mpb->mp_rover left untouched (caller's MPB) */
-}
-```
+**Helpers called:** none. The function is a straight-line field fill.
 
-`themd` is a single static `MD` in BIOS BSS. `membot`/`memtop` are
-the global ST-RAM bounds set by `biosmem_init()` after the BIOS
-balloc-stage allocations have settled.
+**Headers / type definitions used:**
+- `include/bdosdefs.h:108` — `MD` (memory descriptor) definition
+- `include/bdosdefs.h:120` — `MPB` (memory partition block) definition
+- `include/tosvars.h:83` — `extern struct _md themd;`
 
-`Getmpb` is **called once at boot by GEMDOS init** to discover the
-ST-RAM extent. After this point, `bmem_allowed = FALSE` (with
-`DBG_BALLOC`) and the BIOS may not allocate further. GEMDOS takes
-ownership of the `MPB` and from that point manages all memory.
+**System variables / globals read:**
+- `membot` (`bios/biosmem.c:145`, TOS var `0x432`) — bottom of TPA (free ST-RAM)
+- `memtop` (`bios/biosmem.c:146`, TOS var `0x436`) — top of TPA
+- (`end_os`, `0x4fa`, is set to `membot` in `balloc_stram`; `getmpb` reads
+  `membot` after all `balloc_stram` calls have settled)
+
+**System variables / globals written:**
+- `themd` (`bios/biosmem.c:144-147`) — the single static BIOS `MD`
+- `*mpb` (`bios/biosmem.c:149-150`) — caller-supplied struct
+- `bmem_allowed = FALSE` (`bios/biosmem.c:137`) **only under `DBG_BALLOC`** —
+  the "no more BIOS allocation past this point" guard
+
+**Build configuration affecting this function:**
+- `DBG_BALLOC` (default `0`, `bios/biosmem.c:15`) — when set, `getmpb`
+  additionally clears `bmem_allowed` so any later `balloc_stram` panics.
+  In the default build the body is only the six field stores.
+
+---
+
+## Source extraction summary
+
+`Getmpb` reports the initial free ST-RAM region to GEMDOS as a Memory
+Partition Block. It fills a single static memory descriptor `themd`
+describing the whole free region `[membot, memtop)`: `m_link = NULL` (only
+one descriptor), `m_start = membot`, `m_length = memtop - membot`,
+`m_own = NULL` (unowned). It then points the caller's MPB free list at
+`themd` (`mp_mfl = &themd`) and empties the allocated list (`mp_mal = NULL`).
+
+Note what it does **not** touch: `mp_rover` (the third MPB field) is left
+exactly as the caller supplied it. `getmpb` writes only `mp_mfl` and
+`mp_mal`. (`mp_rover` is documented as "roving pointer — no longer used" in
+`include/bdosdefs.h:125`.)
+
+`membot`/`memtop` are set by `bmem_init()` (`bios/biosmem.c:51`) at boot:
+`membot = end_os` (end of OS static data), `memtop = phystop` (top of
+ST-RAM), then adjusted downward/upward by every `balloc_stram()` call during
+BIOS init. By the time GEMDOS calls `Getmpb`, they bound the final free
+region.
+
+---
 
 ## Trap interface
 
-| | |
-|--|--|
-| Trap | 13 (BIOS) |
-| Function ID | `0x00` |
-| WORD args | 2 (LONG `mpb`) |
-| Stack frame | `+2: mpb (LONG)`, `+0: 0x0000` |
-| Vector entry | `bios_vecs[0]` (`bios.c:1252`) |
+- **Trap number:** 13 (BIOS)
+- **Function ID:** 0x00
+- **Stack frame on entry (m68k):**
+  ```
+  +2: mpb (LONG, MPB *)
+   0: function_id (word) = 0x0000
+  ```
+- **Total parameter bytes:** 6 (word ID + LONG pointer)
+- **Native (AArch64) ABI:** function ID `0x00` in `x8`; the single pointer
+  argument in `x0`. `getmpb` is `void` — the dispatcher leaves whatever is in
+  `x0` (classically `d0`); programs must read the populated `*mpb`, never the
+  return value.
+
+  | m68k stack | AArch64 reg | Name  | Type / size |
+  |------------|-------------|-------|-------------|
+  | +2         | `x0`        | `mpb` | `MPB *` (pointer) |
+
+---
 
 ## Inputs
 
-| Pos | Name  | Type   | Range / meaning                              |
-|-----|-------|--------|----------------------------------------------|
-| 0   | `mpb` | MPB *  | caller-owned MPB struct to populate          |
+| Position | Name  | Type    | Size | Source location      | Notes |
+|----------|-------|---------|------|----------------------|-------|
+| arg0     | `mpb` | `MPB *` | 4/8  | `bios/biosmem.c:134` | caller-owned, writable 12-byte (m68k) MPB. **Not validated**: `NULL` is dereferenced. |
+
+`getmpb` performs no input validation whatsoever.
+
+---
 
 ## Outputs
 
-The function is `void` — no return value. The dispatcher returns 0
-(or whatever was in D0). Programs must read the populated `*mpb`
-not the return value.
+### Return value
+
+- **Register:** D0 (m68k) / `x0` (native)
+- **Type:** none — `getmpb` is declared `void`
+- **Encoding:** undefined; the result is delivered entirely through `*mpb`.
+- **Source location:** `bios/biosmem.c:134` (no `return` statement)
+
+### Side effects on global state
+
+- `themd` rewritten (`bios/biosmem.c:144-147`): `m_link=NULL`,
+  `m_start=membot`, `m_length=memtop-membot`, `m_own=NULL`.
+- `*mpb` written (`bios/biosmem.c:149-150`): `mp_mfl=&themd`, `mp_mal=NULL`.
+  `mp_rover` is **not** written.
+- Under `DBG_BALLOC` only: `bmem_allowed=FALSE`.
 
 The MPB after the call:
 
-| Field        | Value                                       |
-|--------------|---------------------------------------------|
-| `mp_mfl`     | `&themd` (free list with one MD)            |
-| `mp_mal`     | `NULL` (allocated list empty)               |
-| `mp_rover`   | **untouched** (caller-supplied)             |
+| Field      | Value                          | Written? |
+|------------|--------------------------------|----------|
+| `mp_mfl`   | `&themd`                       | yes      |
+| `mp_mal`   | `NULL`                         | yes      |
+| `mp_rover` | (caller's prior value)         | **no**   |
 
-The MD `themd`:
+The MD `themd` after the call:
 
-| Field        | Value                                       |
-|--------------|---------------------------------------------|
-| `m_link`     | `NULL`                                      |
-| `m_start`    | `membot` (first byte of free ST-RAM)        |
-| `m_length`   | `memtop - membot`                           |
-| `m_own`      | `NULL`                                      |
+| Field      | Value               |
+|------------|---------------------|
+| `m_link`   | `NULL`              |
+| `m_start`  | `membot`            |
+| `m_length` | `memtop - membot`   |
+| `m_own`    | `NULL`              |
 
-## Errors
+### Side effects on hardware
 
-None. Function cannot fail. Caller is responsible for `mpb` being a
-writable 12-byte region.
+None.
 
-## Edge cases
+---
 
-### 1. Single static MD
+## Error conditions
 
-`themd` is a single static MD shared across all `Getmpb` calls.
-Calling `Getmpb` a second time (after GEMDOS has already
-initialised) **rewrites `themd`** based on the **current** values of
-`membot`/`memtop` and replaces the free list with a single MD —
-forgetting all of GEMDOS's allocations and free-list state. This
-will corrupt the system; programs must not call `Getmpb` after
-boot. EmuTOS does not protect against this.
+| Condition | Source location | Returned value |
+|-----------|-----------------|----------------|
+| (none — the function cannot fail) | `bios/biosmem.c:134` | n/a |
 
-### 2. ST-RAM only
+`getmpb` has no error path. A `NULL` or non-writable `mpb` faults; EmuTOS
+does not guard it.
 
-`Getmpb` reports only ST-RAM. Alternate RAM is registered later via
-`Maddalt` from `bios/altram.c` after device detection.
+**Error paths not in Compendium:** none (Compendium also documents no error).
 
-### 3. NULL `mpb` not handled
+---
 
-Passing `mpb = NULL` dereferences null. EmuTOS does not check.
+## Verification criteria
 
-### 4. The "two-bank" Atari fiction
+- **Nominal:** given a writable `MPB` at `mpb`, after the call
+  `mpb->mp_mfl` points at a single `MD` with `m_link == NULL`,
+  `m_start == membot`, `m_length == memtop - membot`, `m_own == NULL`, and
+  `mpb->mp_mal == NULL`.
+- **`mp_rover` untouched:** pre-load `mpb->mp_rover` with a sentinel; after
+  the call it is unchanged (`getmpb` writes only `mp_mfl`/`mp_mal`).
+- **Error:** none defined. (A conforming NewTOS `Getmpb` need not fault on
+  `NULL`; matching EmuTOS's unguarded dereference is not required — it is a
+  scarcity-era omission, not observable contract.)
 
-Some Atari documentation describes Getmpb as returning two MPBs (ST
-and TT). EmuTOS, like classic TOS, fills exactly one — the one
-pointed at by the caller's argument. A second `Getmpb` call with a
-different argument would just rewrite `themd` again.
+---
+
+## Edge cases discovered in source
+
+1. **Single static MD, shared across calls.** `themd` is one static `MD`
+   (`bios/biosmem.c:144`). A second `Getmpb` call after GEMDOS init rewrites
+   `themd` from the *current* `membot`/`memtop` and replaces the free list
+   with one descriptor — discarding all of GEMDOS's allocation state. EmuTOS
+   does not protect against this; the call is meant to run exactly once.
+
+2. **`mp_rover` deliberately preserved.** Unlike `mp_mfl`/`mp_mal`, the
+   third MPB field is never written, so the caller's value survives. (Old
+   docs correctly flagged this; the source confirms it.)
+
+3. **ST-RAM only.** `Getmpb` reports `[membot, memtop)` = ST-RAM. Alternate
+   (TT-)RAM is added to the BDOS pool separately via `Maddalt`
+   (`altram_init`, gated by `CONF_WITH_ALT_RAM`), never through `Getmpb`.
+
+4. **The "two-bank MPB" documentation fiction.** Some Atari docs describe
+   `Getmpb` returning ST and TT MPBs. EmuTOS fills exactly the one MPB the
+   caller points at; there is no second bank.
+
+---
 
 ## Dependencies
 
-- `membot`, `memtop`, `end_os` globals (set by `biosmem_init`).
-- `themd` (static MD).
+### Requires (must be initialized / functional)
 
-Used by: GEMDOS `osinit()` once at boot.
+- `bmem_init()` (`bios/biosmem.c:51`) — sets `membot`/`memtop`/`end_os`.
+- All BIOS `balloc_stram()` allocations complete (final `membot`/`memtop`).
+- `themd` (static, in BIOS BSS).
+
+### Used by
+
+- GEMDOS `osinit()` — the one caller, at boot, to seed the free-memory pool.
+
+---
+
+## Related data structures
+
+- `docs/api/structures/md.md` — `MD` memory descriptor (16 bytes m68k)
+- `docs/api/structures/basepage.md` — TPA context
+- `MPB` (`include/bdosdefs.h:120`): three pointer fields `mp_mfl`, `mp_mal`,
+  `mp_rover` (12 bytes on m68k). Note the struct name in source is
+  **Memory _Partition_ Block**, and `mp_rover` is "no longer used".
+
+---
 
 ## Cross-references
 
-- **Compendium:** "Getmpb" — agrees on populate-and-return-void.
-- **Profibuch:** "Getmpb (0x00)" — agrees, notes "obsolete after
-  GEMDOS init".
-- `docs/api/structures/md.md`
-- `docs/api/bios/_state.md`
+### Atari Compendium
 
-## Configuration
+- Not present in `references/` (no Compendium PDF). Cross-check deferred.
+  Historically documents populate-MPB-and-return-void.
 
-- `DBG_BALLOC` (debug build) — enables `bmem_allowed` assertion.
+### Atari Profibuch
+
+- Not present in `references/`. Cross-check deferred.
+
+### Atari ST Internals
+
+- Not present in `references/`.
+
+---
+
+## Configuration / version notes
+
+- `DBG_BALLOC` (debug builds only) adds the `bmem_allowed=FALSE` guard.
+- Configuration-independent in release builds across all TOS versions.
+
+---
 
 ## NewTOS implementation notes
 
 (Empty during Phase 00.)
 
-PHASE-03 plan: NewTOS will implement `Getmpb` purely for ABI
-compatibility but the GEMDOS allocator is initialised directly from
-the AArch64 device-tree memory region — `Getmpb` is essentially
-vestigial. Calling it post-init may be made a no-op rather than the
-EmuTOS "destroy your free list" behaviour.
+PHASE-03: NewTOS initialises the GEMDOS allocator directly from the AArch64
+device-tree / memory map, so `Getmpb` is vestigial. If exposed at all it
+should be a read-only report of the ST-RAM-equivalent pool; calling it
+post-init must **not** reproduce EmuTOS's "destroy your free list" behaviour.

@@ -1,166 +1,280 @@
-# `Rwabs` — BIOS 0x04
+# `Rwabs` (BIOS 0x04)
 
-> Phase 00 spec. Source: EmuTOS @ `1a7484ab` —
-> `bios/bios.c:1045` (`lrwabs`).
+> Phase 00 spec (full-contract template). Source: EmuTOS @ `1a7484ab`.
+> Verified against `bios/bios.c:1045` (`lrwabs`) and the installed handler
+> `bios/blkdev.c:406` (`blkdev_rwabs`).
 
 ## EmuTOS source
 
-```c
-LONG lrwabs(WORD r_w, UBYTE *adr, WORD numb, WORD first, WORD drive,
-            LONG lfirst)
-{
-    return protect_wlwwwl((PFLONG)hdv_rw, r_w, (LONG)adr, numb, first,
-                          drive, lfirst);
-}
-```
+**Primary location:** `bios/bios.c:1045` — `lrwabs(r_w, adr, numb, first,
+drive, lfirst)`. A one-line forwarder: it calls the vector `hdv_rw` through
+the `protect_wlwwwl` thunk, passing the six arguments unchanged.
 
-`hdv_rw` is a function pointer in the OS variables area
-(`tosvars.S:hdv_rw`), addr `0x47E`. It is set by the BIOS at boot
-to the active block-device driver's read/write entry — typically
-`blkdev_rwabs()` (`bios/blkdev.c`).
+**Handler behind the vector:** `bios/blkdev.c:406` — `blkdev_rwabs()`,
+installed as `hdv_rw` by `blkdev_init()` (`bios/blkdev.c:102`).
 
-`protect_wlwwwl` (`util/miscasm.S`) preserves d2/a2 across the asm
-driver call and marshals the C-style argument list into the
-register / stack convention the driver expects.
+**Helpers called:**
+- `util/miscasm.S:255` — `protect_wlwwwl(func, …)` — d2/a2-preserving thunk
+  marshalling the W+L+W+W+W+L argument list.
+- `bios/blkdev.c:783` — `blkdev_mediach()` — media-change check inside the
+  logical path.
+- `bios/floppy.c` — `floppy_rw()` (units < `NUMFLOPPIES`).
+- `bios/disk.c` — `disk_rw()` (hard-disk units), `disk_rescan()`.
+- `bios/blkdev.c` — `call_etv_critic()` — critical-error handler chain.
+
+**Headers / type definitions used:**
+- `bios/disk.h:53-61` — `RW_READ`/`RW_WRITE`/`RW_RW`/`RW_NOMEDIACH`/
+  `RW_NORETRIES`/`RW_NOTRANSLATE`/`RW_NOBYTESWAP`
+- `bios/disk.h:69-71` — `MEDIANOCHANGE`/`MEDIAMAYCHANGE`/`MEDIACHANGE`
+- `include/gemerror.h` — `E_OK`, `EUNDEV`, `ESECNF`, `E_CHNG`
+- `include/tosvars.h` — `hdv_rw` (`extern LONG (*hdv_rw)(...)`)
+
+**System variables / globals read/written:**
+- `hdv_rw` (TOS var **`0x476`**) — the read/write vector (`bios/blkdev.c:102`)
+- `blkdev[dev].mediachange` / `.forcechange` (read + written by the handler)
+- `units[unit].status` / `.last_access`, `hz_200` (`bios/blkdev.c:535`)
+
+**Build configuration affecting this function:**
+- `RWABS_RETRIES` — automatic retry count (bypassed by `RW_NORETRIES`).
+- `CONF_WITH_1FAT_SUPPORT`, floppy/ACSI/IDE/SCSI driver `CONF_*` flags — which
+  units exist and how `disk_rw`/`floppy_rw` behave (behaviour reference).
+
+---
+
+## Source extraction summary
+
+`Rwabs` reads or writes whole sectors. The trap-level `lrwabs` just forwards
+to whatever driver is hooked at `hdv_rw`; on EmuTOS that is `blkdev_rwabs`.
+
+`blkdev_rwabs` has two modes selected by the `RW_NOTRANSLATE` (bit 3) flag.
+In **logical** mode (default) it validates `drive` against `BLKDEVNUM` and
+`DEVICE_VALID`, rejects an invalid BPB (`recsiz == 0`, e.g. FAT32) with
+`ESECNF`, converts logical sectors to physical using the BPB's
+sectors-per-logical ratio, bounds-checks against the partition size, adds the
+partition start, and (unless `RW_NOMEDIACH`) calls `blkdev_mediach`. In
+**physical** mode it validates `unit` against `UNITSNUM` and the unit's own
+size. It then loops, splitting the transfer into ≤ `0x7FFF`-sector chunks and
+calling `floppy_rw`/`disk_rw`, retrying up to `RWABS_RETRIES` times (unless
+`RW_NORETRIES`), and routing persistent errors through `call_etv_critic`.
+
+Two behaviours are invisible from the signature but are real contract for
+compatible software: (1) if `dev < NUMFLOPPIES` **and `adr == NULL`**, the
+call does **not** transfer data — it *sets* `blkdev[dev].mediachange = numb`
+and returns 0 (used by FastCopy III); (2) a logical **write to sector 0**
+sets `forcechange`, so the next `Mediach`/`Rwabs` reports a media change until
+`Getbpb` clears it (this is how altering the boot sector forces a re-login).
+
+The `recnr == -1` convention selects the LONG sector number `lfirst`;
+otherwise `first` is used as an **unsigned** 16-bit sector (`(UWORD)recnr`,
+`bios/blkdev.c:430-431`).
+
+---
 
 ## Trap interface
 
-| | |
-|--|--|
-| Trap | 13 (BIOS) |
-| Function ID | `0x04` |
-| WORD args | 8 (W + L + W + W + W + L) |
-| Stack frame | `+12: lfirst (LONG)`, `+10: drive (W)`, `+8: first (W)`, `+6: numb (W)`, `+2: adr (LONG)`, `+0: 0x0004 r_w-merged` — see Compendium for exact layout |
-| Vector entry | `bios_vecs[4]` |
+- **Trap number:** 13 (BIOS)
+- **Function ID:** 0x04
+- **Stack frame on entry (m68k):** C parameter order is
+  `r_w, adr, numb, first, drive, lfirst`, pushed right-to-left above the ID:
+  ```
+  +14: lfirst (LONG)
+  +12: drive  (word)
+  +10: first  (word)
+   +8: numb   (word)
+   +4: adr    (LONG)
+   +2: r_w    (word)
+   0: function_id (word) = 0x0004
+  ```
+- **Total parameter bytes:** 16 (W + L + W + W + W + L)
+- **Native (AArch64) ABI:** ID `0x04` in `x8`; args in `x0..x5` in
+  declaration order; error code sign-extended into `x0`.
 
-The classic TOS frame is: `r_w` (W) + `adr` (L) + `numb` (W) +
-`first` (W) + `drive` (W). The `lfirst` (LONG) was added in TOS
-1.04 for sector numbers > 65535. Atari's convention: pass `first =
--1` and put the real sector number in `lfirst`. EmuTOS always
-forwards both.
+  | m68k stack | AArch64 reg | Name     | Type / size |
+  |------------|-------------|----------|-------------|
+  | +2         | `x0`        | `r_w`    | `WORD` (16) |
+  | +4         | `x1`        | `adr`    | `UBYTE *` (ptr) |
+  | +8         | `x2`        | `numb`   | `WORD` (16) |
+  | +10        | `x3`        | `first`  | `WORD` (16) |
+  | +12        | `x4`        | `drive`  | `WORD` (16) |
+  | +14        | `x5`        | `lfirst` | `LONG` (32) |
+
+---
 
 ## Inputs
 
-| Pos | Name     | Type   | Range / meaning                              |
-|-----|----------|--------|----------------------------------------------|
-| 0   | `r_w`    | WORD   | bit 0: 0=read, 1=write; bit 3: don't retry; bit 4: don't translate |
-| 1   | `adr`    | UBYTE* | buffer (must be word-aligned for floppy DMA) |
-| 2   | `numb`   | WORD   | sector count                                 |
-| 3   | `first`  | WORD   | starting sector # (use `-1` if `lfirst` valid) |
-| 4   | `drive`  | WORD   | physical drive index (0=A:, 1=B:, 2=C:, …)   |
-| 5   | `lfirst` | LONG   | extended starting sector (TOS ≥ 1.04)        |
+| Position | Name     | Type    | Size | Source location       | Notes |
+|----------|----------|---------|------|-----------------------|-------|
+| arg0     | `r_w`    | `WORD`  | 2    | `bios/blkdev.c:406`   | flag bits, see below |
+| arg1     | `adr`    | `UBYTE*`| 4    | `bios/blkdev.c:413`   | buffer; **`NULL` triggers the set-mediachange feature** for floppies |
+| arg2     | `numb`   | `WORD`  | 2    | `bios/blkdev.c:410`   | sector count (also the mediachange value when `adr==NULL`) |
+| arg3     | `first`  | `WORD`  | 2    | `bios/blkdev.c:430`   | 16-bit sector, treated **unsigned**; `-1` ⇒ use `lfirst` |
+| arg4     | `drive`  | `WORD`  | 2    | `bios/blkdev.c:409`   | logical drive (0=A:) or physical unit if `RW_NOTRANSLATE` |
+| arg5     | `lfirst` | `LONG`  | 4    | `bios/blkdev.c:431`   | 32-bit sector number (used when `first == -1`) |
 
-### `r_w` flags
+### `r_w` flag bits (`bios/disk.h:53-61`) — **corrected from prior spec**
 
-| Bit | Constant     | Meaning                                       |
-|-----|--------------|-----------------------------------------------|
-| 0   | `RW_WRITE`   | 0 ⇒ read, 1 ⇒ write                           |
-| 1   | `RW_NOMEDIACH` | suppress media-change detection             |
-| 2   | `RW_NORETRY` | abort on first error (don't retry)            |
-| 3   | `RW_NOTRANS` | physical sector (no logical translation)      |
+| Bit | Mask | Constant         | Meaning                                    |
+|----:|-----:|------------------|--------------------------------------------|
+| 0   | 0x01 | `RW_WRITE`/`RW_RW` | 0 ⇒ read, 1 ⇒ write                      |
+| 1   | 0x02 | `RW_NOMEDIACH`   | suppress the media-change check            |
+| 2   | 0x04 | `RW_NORETRIES`   | do not auto-retry (1 attempt)              |
+| 3   | 0x08 | `RW_NOTRANSLATE` | physical mode: `drive` is a physical unit  |
+| 7   | 0x80 | `RW_NOBYTESWAP`  | skip byte-swap (physical mode only; cleared in logical mode, `bios/blkdev.c:481`) |
+
+Prior spec named bit 3 "don't retry" and bit 4 "don't translate" — both were
+wrong; retry is bit 2 and no-translate is bit 3, and it omitted
+`RW_NOBYTESWAP`.
+
+---
 
 ## Outputs
 
-| Reg | D0 |
-| --- | --- |
-| Type | LONG (BIOS error code) |
+### Return value
 
-| Case               | Return                                         |
-|--------------------|------------------------------------------------|
-| Success            | `E_OK` (0)                                     |
-| Error              | negative BIOS error (see `include/gemerror.h`) |
+- **Register:** D0 / `x0`
+- **Type:** LONG (BIOS/GEMDOS error code, 2's-complement negative on error)
+- **Encoding:** `E_OK` (0) on success; a negative code otherwise.
+- **Source location:** `bios/blkdev.c:541` (the loop's `retval`).
 
-Common errors: `EUNDEV` (-15) unknown device, `ESECNF` (-8) sector
-not found, `EWRPRO` (-13) write-protected, `EWRITF` (-10) write
-fault, `EREADF` (-11) read fault, `ECHMED` (-14) media change,
-`EBADSF` (-16) bad sectors on format.
+### Side effects on global state
 
-## Errors
+- `blkdev[dev].mediachange = numb` (the `adr == NULL` feature,
+  `bios/blkdev.c:426`).
+- `blkdev[dev].forcechange = TRUE` after a logical write to sector 0
+  (`bios/blkdev.c:452-453`).
+- `units[unit].status &= ~UNIT_CHANGED` when the physical-mode media-change is
+  consumed (`bios/blkdev.c:500`); `units[unit].last_access = hz_200` on success
+  (`bios/blkdev.c:535`).
+- On `E_CHNG` for a non-floppy unit, `disk_rescan(unit)` re-scans partitions
+  (`bios/blkdev.c:537-539`).
 
-The driver hooked at `hdv_rw` defines the exact set. The standard
-EmuTOS block-device dispatcher returns:
+### Side effects on hardware
 
-- `EUNDEV` (-15) — `drive` out of range or unmapped.
-- `EBADRQ` (-5) — `numb == 0` or invalid command in `r_w`.
-- `EWRPRO` (-13) — write attempted on RO drive.
-- `EREADF` / `EWRITF` — physical I/O failure.
-- `ECHMED` (-14) — `mediach()` reported "definitely changed" since
-  last access.
+- Issues real sector reads/writes to the floppy controller / ACSI / IDE /
+  SCSI / SD unit.
+- On read, invalidates the instruction cache over the buffer
+  (`instruction_cache_kludge`, `bios/blkdev.c:531`) to mimic TOS.
 
-## Edge cases
+---
 
-### 1. `first = -1` LONG-sector convention
+## Error conditions
 
-When `first == -1`, drivers read the sector number from `lfirst`.
-This was Atari's way of extending the API past 65535 sectors
-without breaking old callers (which pass meaningful 16-bit `first`
-and `lfirst = 0`, so old behaviour is preserved when sector < 65535).
+| Condition | Source location | Returned value |
+|-----------|-----------------|----------------|
+| Logical: `drive` invalid / not `DEVICE_VALID` | `bios/blkdev.c:440` | `EUNDEV` (-15) |
+| Logical: invalid BPB (`recsiz == 0`, e.g. FAT32/ext2) | `bios/blkdev.c:443` | `ESECNF` (-8) |
+| Logical: `forcechange` still pending | `bios/blkdev.c:450` | `E_CHNG` (-14) |
+| Logical: `lrecnr < 0` or `lrecnr+lcount > partition size` | `bios/blkdev.c:461` | `ESECNF` (-8) |
+| Logical: `blkdev_mediach` != no-change (unless `RW_NOMEDIACH`) | `bios/blkdev.c:474` | `E_CHNG` (-14) |
+| Physical: `unit` invalid / not present | `bios/blkdev.c:484` | `EUNDEV` (-15) |
+| Physical: sector range out of unit bounds | `bios/blkdev.c:488` | `ESECNF` (-8) |
+| Physical: `UNIT_CHANGED` set (unless `RW_NOMEDIACH`) | `bios/blkdev.c:498` | `E_CHNG` (-14) |
+| Underlying `floppy_rw`/`disk_rw` failure (retries exhausted) | `bios/blkdev.c:515-523` | driver code, e.g. `EREADF`/`EWRITF`/`EWRPRO`/`ESECNF` |
 
-### 2. Physical vs. logical drive numbers
+**Error paths not in Compendium:** the `forcechange`-driven `E_CHNG` on the
+call *following* a sector-0 write, and the whole `adr == NULL` set-mediachange
+branch (which returns `0`, not an error). Prior spec listed `EBADRQ` for
+`numb == 0`; **the source has no such check** — a zero count simply performs
+zero transfers and returns `E_OK`.
 
-`drive` is **physical** — the BIOS does no GEMDOS-style logical
-mapping. The standard floppy-on-physical-0/1 + hard-disk-on-2..15
-arrangement is hard-coded.
+---
 
-### 3. Word alignment for floppy DMA
+## Verification criteria
 
-The Atari floppy DMA controller requires word-aligned `adr`.
-Passing an odd address to a floppy `Rwabs` historically caused
-silent corruption. Hard-disk drivers (ACSI / IDE / SCSI) typically
-don't care.
+- **Nominal read:** `Rwabs(RW_READ, buf, 1, 0, 2, 0)` on a valid FAT16 C:
+  fills `buf` with logical sector 0 of C: and returns `E_OK` (0).
+- **Unknown device:** `Rwabs(RW_READ, buf, 1, 0, 15, 0)` on a system with no
+  P: returns `EUNDEV` (-15).
+- **FAT32 partition:** logical `Rwabs` on a device whose `bpb.recsiz == 0`
+  returns `ESECNF` (-8).
+- **Sector-0 write forces media change:** after
+  `Rwabs(RW_WRITE, buf, 1, 0, 2, 0)`, the next `Mediach(2)` returns
+  `MEDIACHANGE` (2) until `Getbpb(2)` is called.
+- **NULL-buffer feature (floppy):** `Rwabs(0, NULL, 2, 0, 0, 0)` sets
+  `blkdev[0].mediachange = 2` and returns `0` (no transfer).
 
-### 4. `numb == 0` is an error
+---
 
-EmuTOS's drivers return `EBADRQ` for zero-count requests; classic
-TOS behaviour was undefined.
+## Edge cases discovered in source
 
-### 5. Media-change interaction
+1. **`adr == NULL` on a floppy sets mediachange and returns.** Undocumented
+   FastCopy-III feature (`bios/blkdev.c:419-428`): the `numb` value becomes the
+   drive's media-change status; **no I/O happens**. Only for `dev <
+   NUMFLOPPIES`.
 
-Programs writing to FAT sectors must check `mediach()` first per
-the BIOS contract. The driver does NOT auto-check; a write to a
-swapped floppy succeeds and corrupts the new disk's data unless
-the caller honoured the media-change protocol.
+2. **Logical write to sector 0 arms `forcechange`.** `bios/blkdev.c:452-453`.
+   The *next* logical access then returns `E_CHNG` (line 450) until `Getbpb`
+   resets it. This makes editing the boot sector force a re-login.
 
-### 6. `protect_wlwwwl` semantics
+3. **`first`/`recnr` is unsigned 16-bit unless -1.** `lrecnr = (UWORD)recnr`
+   (`bios/blkdev.c:431`) — sectors 32768..65535 work via `first`; `first == -1`
+   switches to the 32-bit `lfirst`.
 
-`a2`/`d2` saved/restored. Drivers written in 68k-asm rely on the
-caller preserving these registers per the Atari `cdecl`-asm
-calling convention; the C `protect_*` wrappers exist precisely to
-bridge this.
+4. **Transfers are split into `0x7FFF`-sector chunks.** `CNTMAX = 0x7FFF`
+   (`bios/blkdev.c:404,511`) because the low-level functions take a signed WORD
+   count.
 
-### 7. No buffer-size validation
+5. **`RW_NOBYTESWAP` is forced off in logical mode.** `rw &= ~RW_NOBYTESWAP`
+   (`bios/blkdev.c:481`) — byte-swap control only applies to physical access.
 
-`adr + numb*sector_size` is not bounds-checked against any process
-or system region. Wild buffers crash silently into device memory.
+6. **No buffer bounds check.** `adr + numb*secsize` is never validated against
+   any process region.
+
+7. **`numb == 0` is not an error.** Contrary to the prior spec, there is no
+   `EBADRQ` path; the loop just does nothing and returns `E_OK`.
+
+---
 
 ## Dependencies
 
-- `hdv_rw` vector at `0x47E`.
-- The active block-device driver (typically `blkdev_rwabs`).
+### Requires (must be initialized / functional)
 
-Used by: GEMDOS file I/O (Fread/Fwrite via FAT layer), GEMDOS
-directory walks, `Getbpb` indirectly (via media-change), every disk
-operation.
+- `hdv_rw` populated (`blkdev_init`, `bios/blkdev.c:102`).
+- Valid `blkdev[]`/`units[]` tables; a live floppy/disk driver.
+- For logical mode: a valid BPB (`Getbpb` populated `blkdev[dev].bpb`).
+
+### Used by
+
+- GEMDOS FAT layer (`Fread`/`Fwrite`, directory walks); `Getbpb`
+  (`blkdev_getbpb` calls `blkdev_rwabs` in physical no-translate mode,
+  `bios/blkdev.c:625`); disk boot.
+
+---
+
+## Related data structures
+
+- `docs/api/structures/bpb.md` — per-drive BPB used for logical→physical
+- `docs/api/bios/_state.md` — `hdv_rw`/`hdv_bpb`/`hdv_mediach` vectors + addrs
+
+---
 
 ## Cross-references
 
-- **Compendium:** "Rwabs" — agrees on signature and `lfirst`.
-- **Profibuch:** "Rwabs (0x04)" — agrees.
-- `docs/api/bios/07-getbpb.md`
-- `docs/api/bios/09-mediach.md`
-- `docs/api/bios/_state.md`
-- **PHASE-04**: block-storage subsystem, `hdv_rw` design.
+### Atari Compendium
 
-## Configuration
+- Not present in `references/`. Cross-check deferred. (Historically documents
+  the W+L+W+W+W signature and the `lfirst` extension; does **not** document
+  the `NULL`-buffer feature or `forcechange`.)
 
-- `BLKDEVNUM = 16` (drives A:..P:).
+### Atari Profibuch
+
+- Not present in `references/`. Cross-check deferred.
+
+---
+
+## Configuration / version notes
+
+- `BLKDEVNUM = 16` logical drives (A:..P:); `UNITSNUM` physical units.
+- `RWABS_RETRIES` sets the auto-retry count.
+
+---
 
 ## NewTOS implementation notes
 
 (Empty during Phase 00.)
 
-**PHASE-04 design driver**: `hdv_rw` will be a Rust trait dispatch
-into a per-drive `BlockDevice` impl. The MMC/SD-card driver
-(`bcm2711::sdhost`) services drives 0..1 (boot SD); USB-MSC drives
-2..15. The `r_w` flag bits map cleanly onto a `BlockOp` enum.
-Sector size will be 512 throughout (no Atari 512-vs-1024 switch).
+PHASE-04: `hdv_rw` becomes a Rust trait dispatch to per-unit `BlockDevice`
+impls. Sector size is 512 throughout. The `r_w` flag bits map onto a
+`BlockOp`/flags enum; the `adr == NULL` and sector-0-`forcechange` behaviours
+must be reproduced for m68k-binary compatibility (Phase 10) but may be
+NewTOS-native for source ports.

@@ -1,140 +1,240 @@
-# `Getbpb` — BIOS 0x07
+# `Getbpb` (BIOS 0x07)
 
-> Phase 00 spec. Source: EmuTOS @ `1a7484ab` —
-> `bios/bios.c:1117` (`getbpb`).
+> Phase 00 spec (full-contract template). Source: EmuTOS @ `1a7484ab`.
+> Verified against `bios/bios.c:1120` (`getbpb`) and the installed handler
+> `bios/blkdev.c:569` (`blkdev_getbpb`).
 
 ## EmuTOS source
 
-```c
-LONG getbpb(WORD drive)
-{
-    return protect_w(hdv_bpb, drive);
-}
-```
+**Primary location:** `bios/bios.c:1120` — `LONG getbpb(WORD drive)`
+(body: `return protect_w(hdv_bpb, drive);`).
 
-`hdv_bpb` is the OS-variable function pointer at addr `0x472`. It
-is set at boot to `blkdev_getbpb()` (`bios/blkdev.c`), which:
+**Handler behind the vector:** `bios/blkdev.c:569` — `blkdev_getbpb()`,
+installed as `hdv_bpb` by `blkdev_init()` (`bios/blkdev.c:101`).
 
-1. Checks media change via `hdv_mediach`.
-2. Reads boot sector via `hdv_rw`.
-3. Parses the boot record into a static `BPB` struct
-   (one per drive, in `blkdev[].bpb`).
-4. Returns a pointer to that struct (or `NULL` on error).
+**Helpers called:**
+- `util/miscasm.S:225` — `protect_w(func, drive)` — d2/a2-preserving thunk.
+- `bios/blkdev.c:625` — `blkdev_rwabs(RW_READ|RW_NOMEDIACH|RW_NOTRANSLATE,…)` —
+  physical read of the boot sector into `dskbufp`.
+- `bios/disk.c` — `disk_mediach()` (removable non-floppy re-scan).
+- `bios/blkdev.c` — `getiword()` (big-endian field decode), `flop_checksum()`.
+
+**Headers / type definitions used:**
+- `include/biosdefs.h:67` — `BPB` struct (9 UWORDs = 18 bytes)
+- `include/biosdefs.h:84-85` — `B_16`, `B_1FAT` flags
+- `bios/blkdev.h:25-26` — `MAX_FAT12_CLUSTERS` (4084), `MAX_FAT16_CLUSTERS`
+  (65524)
+- `bios/blkdev.h` — `struct bs`, `struct fat16_bs` (boot-sector layout)
+
+**System variables / globals read/written:**
+- `hdv_bpb` (TOS var **`0x472`**) — the get-BPB vector (`bios/blkdev.c:101`)
+- `blkdev[drive].bpb` — the returned struct (filled in place)
+- `blkdev[drive].mediachange = MEDIANOCHANGE`, `.forcechange = FALSE` (reset,
+  `bios/blkdev.c:589-590`)
+- `dskbufp` — the shared boot-sector read buffer
+
+**Build configuration affecting this function:**
+- `CONF_WITH_1FAT_SUPPORT` — enables the single-FAT (`B_1FAT`) path and its
+  `fatrec` computation (`bios/blkdev.c:711,753-756`).
+
+---
+
+## Source extraction summary
+
+`Getbpb` returns a pointer to the BIOS Parameter Block for a logical drive,
+re-reading and re-parsing the boot sector every call (no caching). The
+trap-level `getbpb` forwards to `hdv_bpb`; on EmuTOS that is `blkdev_getbpb`.
+
+`blkdev_getbpb` validates the drive (`0..BLKDEVNUM-1`, `DEVICE_VALID`),
+**resets** the drive's `mediachange`/`forcechange` state, primes `bpb.recsiz`
+(real size for floppies, 0 = "invalid" for hard units until proven valid),
+optionally re-scans a removable unit's partitions, then reads the boot sector
+via physical `blkdev_rwabs`. It decodes the (big-endian) boot-sector fields
+with `getiword`, validates sector size against `pun_info.max_sect_siz`,
+cluster size against `MAX_CLUSTER_SIZE`, and the FAT count, then computes the
+9 BPB fields (`recsiz`, `clsiz`, `clsizb`, `rdlen`, `fsiz`, `fatrec`,
+`datrec`, `numcl`, `b_flags`). It classifies FAT12 vs FAT16 purely by cluster
+count (`numcl > MAX_FAT12_CLUSTERS` ⇒ `B_16`), and rejects FAT32
+(`numcl > MAX_FAT16_CLUSTERS` **or** `fsiz == 0`). On success it returns
+`(LONG)&blkdev[drive].bpb`; on **any** failure it returns `0L` (NULL).
+
+There is no separate error code — the only failure signal is the NULL return.
+
+---
 
 ## Trap interface
 
-| | |
-|--|--|
-| Trap | 13 (BIOS) |
-| Function ID | `0x07` |
-| WORD args | 1 (WORD) |
-| Stack frame | `+2: drive (W)`, `+0: 0x0007` |
-| Vector entry | `bios_vecs[7]` |
+- **Trap number:** 13 (BIOS)
+- **Function ID:** 0x07
+- **Stack frame on entry (m68k):**
+  ```
+  +2: drive (word)
+   0: function_id (word) = 0x0007
+  ```
+- **Total parameter bytes:** 4
+- **Native (AArch64) ABI:** ID `0x07` in `x8`; `drive` in `x0`; **the full
+  64-bit pointer result (or 0) in `x0`** — this is a `BPB *`, not a
+  sign-extended WORD.
+
+  | m68k stack | AArch64 reg | Name    | Type / size |
+  |------------|-------------|---------|-------------|
+  | +2         | `x0`        | `drive` | `WORD` (16) |
+
+---
 
 ## Inputs
 
-| Pos | Name    | Type | Range / meaning                              |
-|-----|---------|------|----------------------------------------------|
-| 0   | `drive` | WORD | physical drive index (0=A:, …, 15=P:)         |
+| Position | Name    | Type   | Size | Source location     | Notes |
+|----------|---------|--------|------|---------------------|-------|
+| arg0     | `drive` | `WORD` | 2    | `bios/blkdev.c:569` | logical drive 0=A:..15=P:; validated against `BLKDEVNUM` |
+
+---
 
 ## Outputs
 
-| Reg | D0 |
-| --- | --- |
-| Type | LONG (`BPB *` or `NULL`) |
+### Return value
 
-Returns a pointer to the drive's 18-byte BPB
-(see `docs/api/structures/bpb.md`). The pointer is into a
-**BIOS-owned static buffer** — caller must not free or modify it
-beyond the documented mutable fields.
+- **Register:** D0 / `x0` (full pointer width)
+- **Type:** `BPB *` (LONG on m68k)
+- **Encoding:** non-NULL pointer to the drive's 18-byte BPB on success; `0L`
+  (NULL) on any failure. The pointer is into a BIOS-owned per-drive struct —
+  the caller must not free or write it.
+- **Source location:** `bios/blkdev.c:776` (success) / `:584,615,634,646,655,
+  669,741` (each NULL return).
 
-| Case                                       | Return       |
-|--------------------------------------------|--------------|
-| Boot sector readable, BPB parsed           | `BPB *` (non-NULL) |
-| Drive offline / media not present          | `0L` (NULL)  |
-| Boot sector unreadable                     | `0L` (NULL)  |
-| Unsupported FAT (e.g. exFAT)               | `0L` (NULL)  |
+### Side effects on global state
 
-## Errors
+- `blkdev[drive].bpb` fully rewritten (`bios/blkdev.c:675-762`).
+- `blkdev[drive].mediachange = MEDIANOCHANGE`, `.forcechange = FALSE`
+  (`bios/blkdev.c:589-590`) — clears any pending media-change.
+- `blkdev[drive].geometry`, `.serial`, `.serial2` updated.
+- `dskbufp` overwritten with the boot sector.
+- For a removable non-floppy unit, `disk_mediach(unit)` may re-scan partitions
+  (`bios/blkdev.c:608-609`).
 
-`Getbpb` returns `NULL` (`0L`) on any failure — there is **no
-error code**. To distinguish "drive offline" from "unreadable
-boot sector" the caller must consult `mediach()` separately.
+### Side effects on hardware
 
-## Edge cases
+- Reads the physical boot sector from the drive.
 
-### 1. Pointer aliasing
+---
 
-The BPB buffer is shared across calls — calling `Getbpb(0)` then
-`Getbpb(1)` returns two distinct pointers (one per drive),
-**both** of which remain valid concurrently. EmuTOS keeps one BPB
-struct per drive in `blkdev[]`.
+## Error conditions
 
-### 2. Re-read on media change
+| Condition | Source location | Returned value |
+|-----------|-----------------|----------------|
+| `drive` invalid / not `DEVICE_VALID` | `bios/blkdev.c:581` | `0L` (NULL) |
+| Device does not support GetBPB (`!GETBPB_ALLOWED`) | `bios/blkdev.c:612` | `0L` |
+| Boot sector unreadable (I/O error) | `bios/blkdev.c:631` | `0L` |
+| Logical sector size > `pun_info.max_sect_siz` | `bios/blkdev.c:642` | `0L` |
+| Cluster size 0 or > `MAX_CLUSTER_SIZE` | `bios/blkdev.c:651` | `0L` |
+| FAT count < `MIN_FATS` or > `MAX_FATS` | `bios/blkdev.c:666` | `0L` |
+| FAT32 (`numcl > MAX_FAT16_CLUSTERS` or `fsiz == 0`) | `bios/blkdev.c:736` | `0L` (also sets `recsiz=0`) |
 
-`Getbpb` always re-runs the boot-sector read; it does not cache.
-This is by design — media change must invalidate the cached BPB.
+**No error code is ever returned — only `0L`.** To distinguish "drive absent"
+from "unreadable/unsupported filesystem" the caller must consult `Mediach`
+and/or prior state; `Getbpb` collapses all of it to NULL.
 
-### 3. Side effect: GEMDOS dirty cache flush
+**Error paths not in Compendium:** the `!GETBPB_ALLOWED` and FAT32 branches
+are EmuTOS-specific NULL returns.
 
-`blkdev_getbpb` also flushes any GEMDOS in-memory FAT cache for
-that drive when it detects media change. Programs that intend to
-"check if media changed" should NOT call `Getbpb` lightly — they
-should use `Mediach` instead.
+---
 
-### 4. Atari boot-sector fields
+## Verification criteria
 
-The on-disk boot sector has many fields; `Getbpb` returns a
-**reduced** 18-byte BPB. The full boot sector (with serial
-number, reserved sectors, etc.) is not exposed via this call.
+- **Nominal (FAT16):** `Getbpb(2)` on a valid FAT16 C: returns a non-NULL
+  `BPB *` whose `recsiz == 512`, `b_flags & B_16 != 0`, and `clsizb ==
+  recsiz*clsiz`.
+- **Nominal (FAT12):** on a valid FAT12 floppy A:, `Getbpb(0)` returns
+  non-NULL with `b_flags & B_16 == 0` (`numcl <= 4084`).
+- **FAT32/unsupported:** `Getbpb` on a FAT32 partition returns `0L`.
+- **Absent drive:** `Getbpb(15)` with no P: returns `0L`.
+- **State reset:** after `Getbpb(d)`, `Mediach(d)` no longer reports the
+  media change that `Getbpb` consumed (mediachange reset to `MEDIANOCHANGE`).
 
-### 5. `drive` out of range
+---
 
-Drives ≥ `BLKDEVNUM` (16): `blkdev_getbpb` returns NULL.
+## Edge cases discovered in source
 
-### 6. FAT12 vs FAT16
+1. **No caching — always re-reads the boot sector.** Every call re-does the
+   physical read and rebuild (`bios/blkdev.c:624-776`), so a media change is
+   always reflected. Programs that only want to *test* for change must use
+   `Mediach`, not `Getbpb`.
 
-The BPB's `b_flags` field bit 0 (`B_16`) distinguishes 12-bit and
-16-bit FATs. The threshold is 4085 clusters per Microsoft's
-algorithm. EmuTOS correctly classifies this. Larger FATs (FAT32,
-exFAT) are not supported.
+2. **`Getbpb` resets the media-change state.** It sets `mediachange =
+   MEDIANOCHANGE` and `forcechange = FALSE` up front (`:589-590`) — this is the
+   documented "clears the change flag" behaviour, **not** a GEMDOS FAT-cache
+   flush. (The prior spec's "flushes any GEMDOS in-memory FAT cache" claim is
+   not in the source and has been removed.)
 
-### 7. UWORD `recsiz`/`numcl`
+3. **FAT type from cluster count only.** `B_16` is set iff `numcl >
+   MAX_FAT12_CLUSTERS` (4084) — the Microsoft rule, cluster-count based, not
+   media-size based (`bios/blkdev.c:750-752`).
 
-The BPB uses 16-bit fields throughout. Maximum representable
-partition size is 2 GiB (UWORD numcl × cluster size). Larger
-partitions will either return NULL or report truncated values —
-both are observable, neither is handled gracefully.
+4. **FAT32 fails softly.** `numcl > MAX_FAT16_CLUSTERS` (65524) or `fsiz == 0`
+   ⇒ mark `recsiz = 0` (XHDI "invalid BPB") and return NULL
+   (`bios/blkdev.c:736-742`). A subsequent logical `Rwabs` on that drive then
+   returns `ESECNF` (see `04-rwabs.md`).
+
+5. **Zero-FAT boot sector accepted as 2 FATs.** For TOS compatibility, `fat ==
+   0` is treated as 2 (`bios/blkdev.c:662-665`).
+
+6. **Per-drive pointer, stable across drives.** `Getbpb(0)` and `Getbpb(1)`
+   return distinct pointers (each into its own `blkdev[].bpb`) that both stay
+   valid; a re-call for the *same* drive rewrites that drive's struct in place.
+
+7. **`datrec` computed for all cases as `fatrec + fsiz + rdlen`.** For the
+   2-FAT case `fatrec` already includes `+fsiz` (second FAT); for 1-FAT it does
+   not (`bios/blkdev.c:705-713`).
+
+---
 
 ## Dependencies
 
-- `hdv_bpb` vector (addr `0x472`).
-- `hdv_mediach`, `hdv_rw` (transitively).
-- `blkdev[].bpb` static array.
+### Requires (must be initialized / functional)
 
-Used by: GEMDOS `flopopn`/disk-mount logic, AES drive enumerator,
-BPB-aware utilities (`SHOWBPB.PRG`).
+- `hdv_bpb` populated (`blkdev_init`).
+- `hdv_rw`/`hdv_mediach` functional (used internally).
+- `dskbufp` allocated; a live disk/floppy driver.
+
+### Used by
+
+- GEMDOS drive-login / mount logic; drive-enumeration utilities; anything
+  needing sector/cluster geometry.
+
+---
+
+## Related data structures
+
+- `docs/api/structures/bpb.md` — the returned 18-byte BPB
+- `docs/api/bios/_state.md` — `hdv_bpb` vector + address
+
+---
 
 ## Cross-references
 
-- **Compendium:** "Getbpb" — agrees on NULL-on-failure.
-- **Profibuch:** "Getbpb (0x07)" — agrees, notes that return
-  pointer survives across calls.
-- `docs/api/structures/bpb.md`
-- `docs/api/bios/04-rwabs.md`
-- `docs/api/bios/09-mediach.md`
+### Atari Compendium
 
-## Configuration
+- Not present in `references/`. Cross-check deferred. (Historically documents
+  NULL-on-failure and pointer-into-BIOS-buffer.)
 
-- `BLKDEVNUM = 16`.
-- FAT support implicit; no toggles.
+### Atari Profibuch
+
+- Not present in `references/`. Cross-check deferred.
+
+---
+
+## Configuration / version notes
+
+- `BLKDEVNUM = 16`. `MAX_FAT12_CLUSTERS = 4084`, `MAX_FAT16_CLUSTERS = 65524`.
+- `CONF_WITH_1FAT_SUPPORT` toggles the single-FAT path.
+
+---
 
 ## NewTOS implementation notes
 
 (Empty during Phase 00.)
 
-**PHASE-04**: NewTOS implements FAT12/FAT16 only, matching EmuTOS.
-A separate FAT32 path (for SD-card boot) lives parallel to the
-classic-BPB path. `Getbpb` will return a pointer to a
-NewTOS-managed `BPB` only for FAT12/FAT16 partitions; FAT32
-partitions return NULL (caller must use a NewTOS-extension call).
+PHASE-04: NewTOS returns a `BPB *` only for FAT12/FAT16 logical drives,
+matching EmuTOS; FAT32/exFAT partitions return NULL from `Getbpb` and are
+reached through a NewTOS-native path instead. Note `Getbpb`'s result is a full
+64-bit pointer in `x0` for native callers.

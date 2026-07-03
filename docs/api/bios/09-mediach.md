@@ -1,124 +1,222 @@
-# `Mediach` — BIOS 0x09
+# `Mediach` (BIOS 0x09)
 
-> Phase 00 spec. Source: EmuTOS @ `1a7484ab` —
-> `bios/bios.c:1158` (`mediach`).
+> Phase 00 spec (full-contract template). Source: EmuTOS @ `1a7484ab`.
+> Verified against `bios/bios.c:1184` (`mediach`) and the installed handler
+> `bios/blkdev.c:783` (`blkdev_mediach`).
 
 ## EmuTOS source
 
-```c
-LONG mediach(WORD drv)
-{
-    return protect_w(hdv_mediach, drv);
-}
-```
+**Primary location:** `bios/bios.c:1184` — `LONG mediach(WORD drv)`
+(body: `return protect_w(hdv_mediach, drv);`).
 
-`hdv_mediach` (OS variable at addr `0x47A`) points at the active
-driver's media-change probe — typically `blkdev_mediach()`
-(`bios/blkdev.c`), which dispatches per-drive to the floppy
-controller's WP-line check, the ACSI driver's spin-up state, etc.
+**Handler behind the vector:** `bios/blkdev.c:783` — `blkdev_mediach()`,
+installed as `hdv_mediach` by `blkdev_init()` (`bios/blkdev.c:103`).
+
+**Helpers called:**
+- `util/miscasm.S:225` — `protect_w(func, drv)` — d2/a2-preserving thunk.
+- `bios/floppy.c` — `flop_mediach(dev)` (units < `NUMFLOPPIES`).
+- `bios/disk.c` — `disk_mediach(unit)` (hard-disk units).
+- `bios/blkdev.c` — `call_etv_critic()` (critical-error retry).
+
+**Headers / type definitions used:**
+- `bios/disk.h:69-71` — `MEDIANOCHANGE` (0), `MEDIAMAYCHANGE` (1),
+  `MEDIACHANGE` (2)
+- `include/gemerror.h` — `EUNDEV` (-15)
+- `include/tosvars.h` — `hdv_mediach`
+
+**System variables / globals read/written:**
+- `hdv_mediach` (TOS var **`0x47e`**) — the media-change vector
+  (`bios/blkdev.c:103`)
+- `blkdev[dev].mediachange` (read; latched), `blkdev[dev].forcechange` (read)
+- `units[unit].status` (`UNIT_CHANGED` bit set on change, `bios/blkdev.c:815`)
+
+**Build configuration affecting this function:** the underlying
+`flop_mediach`/`disk_mediach` behaviour depends on the floppy/ACSI/IDE/SCSI
+driver `CONF_*` flags (behaviour reference).
+
+---
+
+## Source extraction summary
+
+`Mediach` reports whether the media in a drive may have changed since the last
+access, as a 3-state value. The trap-level `mediach` forwards to
+`hdv_mediach`; on EmuTOS that is `blkdev_mediach`.
+
+`blkdev_mediach` validates the drive (`0..BLKDEVNUM-1`, `DEVICE_VALID`) and
+returns `EUNDEV` for an invalid one. If the drive is already latched as
+`MEDIACHANGE`, it returns that immediately. If a `forcechange` is armed (e.g.
+by a prior write to logical sector 0, see `04-rwabs.md`) it returns
+`MEDIACHANGE`. Otherwise it calls `flop_mediach`/`disk_mediach` (with
+`call_etv_critic` retry). If that returns a **negative** error, `Mediach`
+**returns that error unchanged**. If it reports a change (`!= MEDIANOCHANGE`),
+it marks `units[unit].status |= UNIT_CHANGED` and latches
+`blkdev[dev].mediachange`. Finally it returns the latched `mediachange`.
+
+The 3-state distinction (`MAYCHANGE` vs `CHANGE`) exists because some hardware
+cannot tell "new disk" from "same disk reinserted" without re-reading the boot
+sector; `MEDIAMAYCHANGE` forces GEMDOS to re-validate the BPB/serial.
+
+---
 
 ## Trap interface
 
-| | |
-|--|--|
-| Trap | 13 (BIOS) |
-| Function ID | `0x09` |
-| WORD args | 1 (WORD) |
-| Stack frame | `+2: drv (W)`, `+0: 0x0009` |
-| Vector entry | `bios_vecs[9]` |
+- **Trap number:** 13 (BIOS)
+- **Function ID:** 0x09
+- **Stack frame on entry (m68k):**
+  ```
+  +2: drv (word)
+   0: function_id (word) = 0x0009
+  ```
+- **Total parameter bytes:** 4
+- **Native (AArch64) ABI:** ID `0x09` in `x8`; `drv` in `x0`; result
+  sign-extended into `x0` (0/1/2, or a negative error code).
+
+  | m68k stack | AArch64 reg | Name  | Type / size |
+  |------------|-------------|-------|-------------|
+  | +2         | `x0`        | `drv` | `WORD` (16) |
+
+---
 
 ## Inputs
 
-| Pos | Name  | Type | Range / meaning                              |
-|-----|-------|------|----------------------------------------------|
-| 0   | `drv` | WORD | physical drive index                          |
+| Position | Name  | Type   | Size | Source location     | Notes |
+|----------|-------|--------|------|---------------------|-------|
+| arg0     | `drv` | `WORD` | 2    | `bios/blkdev.c:783` | logical drive 0=A:..15=P:; validated against `BLKDEVNUM` |
+
+---
 
 ## Outputs
 
-| Reg | D0 |
-| --- | --- |
-| Type | LONG (3-state media-change indicator) |
+### Return value
 
-| Value | Meaning                                                |
-|------:|--------------------------------------------------------|
-| 0     | media **definitely has not** changed                   |
-| 1     | media **may** have changed (re-read BPB to be sure)    |
-| 2     | media **definitely has** changed                       |
+- **Register:** D0 / `x0`
+- **Type:** LONG
+- **Encoding (success):** 3-state — `0` no change, `1` may have changed, `2`
+  definitely changed (`bios/disk.h:69-71`).
+- **Encoding (error):** a negative BIOS error code (see below), passed through
+  from the driver.
+- **Source location:** `bios/blkdev.c:819` (success) / `:790,811` (errors).
 
-## Errors
+| Value | Constant        | Meaning |
+|------:|-----------------|---------|
+| 0     | `MEDIANOCHANGE` | media definitely has not changed |
+| 1     | `MEDIAMAYCHANGE`| media may have changed (re-validate BPB) |
+| 2     | `MEDIACHANGE`   | media definitely has changed |
+| < 0   | (driver error)  | e.g. `EUNDEV`, or `flop_/disk_mediach` failure |
 
-`Mediach` does not return GEMDOS-style errors. Any underlying I/O
-failure is collapsed into "may have changed" (1) so that the
-caller's recovery path (re-mount / re-read BPB) takes over.
+### Side effects on global state
 
-## Edge cases
+- `units[unit].status |= UNIT_CHANGED` and `blkdev[dev].mediachange` latched
+  when a change is detected (`bios/blkdev.c:814-816`).
+- The latched `mediachange` is **not** cleared here (it is cleared by
+  `Getbpb`, `bios/blkdev.c:589`). A repeated `Mediach` keeps returning the
+  latched value.
 
-### 1. Three-state semantics
+### Side effects on hardware
 
-The split between "may" and "definitely" exists because some
-hardware (1.44 MB floppies on a stock ST) cannot distinguish
-"new disk" from "same disk reinserted" without re-reading the
-boot sector. The "may" case forces GEMDOS to re-validate the BPB
-and serial number; if those match, treat as no-change.
+- May read the floppy WD1772 status register (which itself clears the
+  hardware change latch) or issue a Test-Unit-Ready to a removable SCSI/USB
+  unit, per the driver.
 
-### 2. Floppy WP-line trick
+---
 
-Atari's standard floppy media-change is a hardware signal latched
-in the WD1772. Reading the floppy's status register clears the
-latch, so the *first* `Mediach` call after a swap returns 2; the
-*second* immediate call returns 0.
+## Error conditions
 
-### 3. Hard-disk drives
+| Condition | Source location | Returned value |
+|-----------|-----------------|----------------|
+| `drv` invalid / not `DEVICE_VALID` | `bios/blkdev.c:789` | `EUNDEV` (-15) |
+| Underlying `flop_mediach`/`disk_mediach` returns negative (after `etv_critic` retry) | `bios/blkdev.c:810-811` | that negative code |
 
-ACSI/IDE/SCSI drives typically return 0 always (no removable
-media) — except SCSI removable media (Syquest, ZIP) which
-implement TUR (Test Unit Ready) and report 2 on cartridge swap.
+**Corrections vs. prior spec:** an out-of-range drive returns **`EUNDEV`, not
+`0`**; and driver I/O errors are **propagated as negative codes, not collapsed
+to `1` (may have changed)**. Both prior claims were wrong.
 
-### 4. Drive out of range
+**Error paths not in Compendium:** the `EUNDEV` and driver-error pass-through.
 
-`drv >= BLKDEVNUM`: returns 0 (per `blkdev_mediach` defensive
-default — pretends no change so callers don't panic).
+---
 
-### 5. The "media-change protocol" contract
+## Verification criteria
 
-GEMDOS file ops are **required** by Atari spec to call `Mediach`
-before any FAT-modifying write. `Rwabs` itself does not auto-check.
-Failure to honour this protocol results in disk corruption when
-users hot-swap floppies. EmuTOS GEMDOS does honour it; third-party
-direct-`Rwabs` callers may not.
+- **Nominal (no change):** `Mediach(2)` on a settled fixed disk returns `0`.
+- **Nominal (changed):** after a floppy swap (or a logical write to sector 0
+  arming `forcechange`), `Mediach(0)` returns `2`.
+- **Latched:** two successive `Mediach(d)` calls without an intervening
+  `Getbpb(d)` return the same latched value; `Getbpb(d)` then resets it to `0`.
+- **Invalid drive:** `Mediach(15)` with no P: returns `EUNDEV` (-15), **not**
+  `0`.
 
-### 6. Cached state
+---
 
-The driver tracks a per-drive "media changed" flag in
-`blkdev[].mediachange`. `Mediach` reads-and-clears this flag for
-the "definitely changed" path. Re-reading boot sector via
-`Getbpb` (which calls Mediach internally) consumes the flag.
+## Edge cases discovered in source
+
+1. **Out-of-range returns `EUNDEV`, not 0.** `bios/blkdev.c:789-790`. (Prior
+   spec incorrectly said "returns 0 to avoid panic".)
+
+2. **Negative driver errors are passed through.** If `flop_mediach`/
+   `disk_mediach` returns `< 0` after the critical-error retry, that exact code
+   is returned (`bios/blkdev.c:810-811`) — it is **not** normalised to
+   `MEDIAMAYCHANGE`.
+
+3. **`forcechange` short-circuits to `MEDIACHANGE`.** If a prior write to
+   logical sector 0 armed `forcechange`, `Mediach` returns `2` without probing
+   hardware, until `Getbpb` clears it (`bios/blkdev.c:802-803`).
+
+4. **The change is latched, not one-shot.** Once `mediachange == MEDIACHANGE`
+   is set, `Mediach` keeps returning `2` (`bios/blkdev.c:795-796`); only
+   `Getbpb` clears it. (Contrast the hardware WD1772 latch, which the *first*
+   read clears — but EmuTOS re-latches in `blkdev[]`.)
+
+5. **Media-change protocol is caller responsibility.** `Rwabs` only auto-checks
+   when `RW_NOMEDIACH` is *not* set; direct `Rwabs` callers that set it and
+   skip `Mediach` can corrupt a swapped disk.
+
+---
 
 ## Dependencies
 
-- `hdv_mediach` vector.
-- Per-drive `blkdev[].mediachange` state.
+### Requires (must be initialized / functional)
 
-Used by: GEMDOS file write paths (mandatory pre-flight check),
-`Getbpb` (re-validates BPB on change).
+- `hdv_mediach` populated (`blkdev_init`).
+- Per-drive `blkdev[]` state; a live driver with a `mediach` probe.
+
+### Used by
+
+- GEMDOS FAT-write paths (mandatory pre-flight check); `Getbpb` (resets the
+  flag); `Rwabs` (internal check in logical mode).
+
+---
+
+## Related data structures
+
+- `docs/api/bios/_state.md` — `hdv_mediach` vector + address, media constants
+- `docs/api/structures/bpb.md` — re-validated on `MEDIAMAYCHANGE`
+
+---
 
 ## Cross-references
 
-- **Compendium:** "Mediach" — agrees on 3-state return.
-- **Profibuch:** "Mediach (0x09)" — agrees.
-- `docs/api/bios/04-rwabs.md`
-- `docs/api/bios/07-getbpb.md`
+### Atari Compendium
 
-## Configuration
+- Not present in `references/`. Cross-check deferred. (Historically documents
+  the 3-state return; does not mention `EUNDEV`/negative pass-through.)
 
-None.
+### Atari Profibuch
+
+- Not present in `references/`. Cross-check deferred.
+
+---
+
+## Configuration / version notes
+
+None specific to `Mediach`; behaviour of the probes varies by driver `CONF_*`.
+
+---
 
 ## NewTOS implementation notes
 
 (Empty during Phase 00.)
 
-**PHASE-04**: SD-card hot-swap detection on RPi4 is via the
-SDHOST card-detect pin (CD line). USB-MSC removability comes from
-udev-style hot-plug events on the USB stack. Both feed into a
-per-drive `mediachange` flag the NewTOS Mediach trap reads and
-clears.
+PHASE-04: SD-card removal is detected via the card-detect line; USB-MSC via
+hot-plug events. Both feed a per-drive `mediachange` flag with the same
+latch/reset contract (`Mediach` reads the latch; `Getbpb` clears it). The
+`EUNDEV`-on-invalid-drive and negative-error pass-through must be preserved.

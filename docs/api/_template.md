@@ -22,7 +22,19 @@
 
 ## EmuTOS source
 
-**Primary location:** `<path>:<line>` — the dispatched handler function
+> **Cite, never paste.** Reference EmuTOS as `path:line` or
+> `file:function()`. Do **not** paste C (or asm) source bodies into a spec
+> entry — the spec describes the contract in prose + structured fields, not
+> the implementation. (Constant/flag/`#define` value tables and byte-exact
+> struct layouts are fine; algorithm code is not.)
+
+**Primary location:** `<path>:<line>` — the trap-level dispatched handler
+
+**Installed handler / vector:** if the trap forwards through an indirect
+vector (`hdv_bpb`/`hdv_rw`/`hdv_mediach`, `bconin_vec[]`, …), name the vector
+**and** the function it points at (`file:function()`), which usually lives in
+a different file than the trap entry. (`(none)` if the trap handles it
+inline.)
 
 **Helpers called:**
 - `<path>:<line>` — `<helper_name>()` — purpose
@@ -73,9 +85,15 @@ Example:
   ```
 - **Total parameter bytes:** N (for stack cleanup)
 - **Native (AArch64) ABI:** how NewTOS receives the call — function ID in
-  `x8`, arguments in `x0..x6` (in declaration order, one register each),
-  result sign-extended into `x0` (a `BPB *`/pointer result is the full
-  64-bit `x0`). Map each m68k stack parameter to its `x` register:
+  `x8`, arguments in `x0..x6` (in declaration order, one register each).
+  Result in `x0`, per result shape:
+  - **WORD / LONG** → sign-extended into `x0`.
+  - **pointer** (e.g. `BPB *`) → occupies the full 64-bit `x0`, **not**
+    sign-extended from 32 bits.
+  - **`void`** → no return value; the result is delivered via an
+    output-pointer argument (say which).
+
+  Map each m68k stack parameter to its `x` register:
 
   | m68k stack | AArch64 reg | Name     | Type / size |
   |------------|-------------|----------|-------------|
