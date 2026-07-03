@@ -23,6 +23,9 @@ const CURSCONF: u16 = 0x15;
 const SETSCREEN: u16 = 0x05;
 const SETPALETTE: u16 = 0x06;
 const SETCOLOR: u16 = 0x07;
+const SCRDMP: u16 = 0x14; // no printer on the Pi → documented no-op
+const MIDIWS: u16 = 0x0C; // no MIDI ACIA → documented no-op
+const BCONMAP: u16 = 0x2C; // single serial port → returns 0x2c ("absent")
 const RANDOM: u16 = 0x11; // system group (Phase 11)
 const SETTIME: u16 = 0x16; // clock group — shares the GEMDOS wall clock
 const GETTIME: u16 = 0x17;
@@ -40,6 +43,14 @@ pub fn dispatch(args: &TrapArgs) -> i64 {
         SETPALETTE => screen::setpalette(args),
         SETCOLOR => screen::setcolor(args),
         CURSCONF => screen::cursconf(args),
+        // Absent Atari peripherals → the contract's documented value for
+        // "hardware not present", not the generic EINVFN catch-all.
+        // Scrdmp: no printer / default dump_vec is a no-op (0x14-scrdmp.md);
+        // Midiws: no MIDI ACIA, bytes dropped (0c-midiws.md);
+        // Bconmap: single serial port → 0x2c "unavailable" (2c-bconmap.md).
+        SCRDMP => system::scrdmp(),
+        MIDIWS => system::midiws(),
+        BCONMAP => system::bconmap(),
         RANDOM => system::random(),
         // Clock group: Settime/Gettime read/write the same wall clock as
         // GEMDOS Tgetdate/Tgettime (no separate RTC on NewTOS). Settime

@@ -52,6 +52,48 @@ pub fn blitmode() -> i64 {
     0x0000
 }
 
+/// `Scrdmp` (0x14) — trigger a screen dump through the installed
+/// `dump_vec`, then reset `dumpflg`. The Pi has no printer, and EmuTOS's
+/// own default `dump_vec` is `just_rts` — a no-op — so a stock `Scrdmp`
+/// does nothing observable. That is exactly the spec's "Default no-op"
+/// behaviour, so on NewTOS this is a documented no-op returning `void`
+/// (→ 0): there is no dump target, and `dumpflg` (the Alt-Help re-arm
+/// flag) has no consumer here. Installing a custom `dump_vec` depends on
+/// the deferred BIOS vector dispatch (STEP2-VALIDATION Y2).
+///
+/// Spec: `docs/api/xbios/14-scrdmp.md` ("Default no-op" criterion).
+pub fn scrdmp() -> i64 {
+    0
+}
+
+/// `Midiws` (0x0C) — write `cnt + 1` bytes (unsigned count) to the MIDI
+/// port. The Pi has no MIDI ACIA, so — exactly as on an EmuTOS build
+/// without `CONF_WITH_MIDI_ACIA` — the bytes have no transport and are
+/// dropped; the call transmits nothing and returns without error
+/// (`void` → 0). Wired for ABI completeness so a caller sees the
+/// contractual no-op, not the generic `EINVFN` catch-all.
+///
+/// Spec: `docs/api/xbios/0c-midiws.md` ("No-MIDI profile" criterion).
+pub fn midiws() -> i64 {
+    0
+}
+
+/// `Bconmap` (0x2C) — remap the "current RS-232" logical device onto one
+/// of several physical serial ports. The Pi has a single serial port
+/// (PL011 UART0) and no SCC / TT-MFP, so `BCONMAP_AVAILABLE` is false —
+/// as on a single-serial EmuTOS build — and the contract return is the
+/// function number `0x2c` ("feature not available"), independent of
+/// `dev` (the body is compiled out when the feature is absent). This is
+/// a real contractual value (the D-008 "unimplemented" signal), not the
+/// generic `EINVFN`: a caller probing for remappable ports learns there
+/// is one fixed port.
+///
+/// Spec: `docs/api/xbios/2c-bconmap.md` (`BCONMAP_AVAILABLE == 0` →
+/// `0x2c`); `docs/HARDWARE-PROFILE.md` §3.2.
+pub fn bconmap() -> i64 {
+    0x2c
+}
+
 /// IKBD vector table (Atari `struct kbdvecs`, 9 handler pointers).
 /// Programs read it via `Kbdvbase` and may install their own handlers.
 /// Native pointer width (not the m68k 4-byte layout); the IKBD-event
