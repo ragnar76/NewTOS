@@ -138,6 +138,18 @@ pub fn position() -> (i16, i16) {
     (GCURX.load(Ordering::Relaxed), GCURY.load(Ordering::Relaxed))
 }
 
+/// The current cursor position, materialising the parked start position
+/// (screen centre) on first use. `graf_mouse(M_ON)` shows the cursor "where
+/// it is"; before any mouse motion that must be the initialised park
+/// position, never the power-up `(0, 0)`. Reading the raw [`position`]
+/// before [`ensure_init`] yields `(0, 0)`, so the very first `M_ON` would
+/// pin the cursor over the menu bar (opening an AES hover-menu at boot).
+/// Idempotent — `ensure_init` runs at most once.
+pub fn position_init(backend: &dyn RasterBackend) -> (i16, i16) {
+    ensure_init(backend);
+    position()
+}
+
 /// The current button bitmask (for the locator/choice input devices).
 #[allow(dead_code)]
 pub fn buttons() -> u8 {

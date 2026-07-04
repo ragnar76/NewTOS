@@ -46,7 +46,9 @@ const WF_NAME: i16 = 2;
 const WF_INFO: i16 = 3;
 const WF_WXYWH: i16 = 4;
 const WF_CXYWH: i16 = 5;
+const WF_HSLIDE: i16 = 8;
 const WF_VSLIDE: i16 = 9;
+const WF_HSLSIZ: i16 = 15;
 const WF_VSLSIZ: i16 = 16;
 const WF_PXYWH: i16 = 6;
 const WF_FXYWH: i16 = 7;
@@ -111,6 +113,10 @@ struct Window {
     /// the whole track, i.e. nothing to scroll).
     vslide: i16,
     vslsize: i16,
+    /// Horizontal slider position (`WF_HSLIDE`) and thumb size (`WF_HSLSIZ`),
+    /// same per-mille encoding as the vertical pair (mirror axis).
+    hslide: i16,
+    hslsize: i16,
 }
 
 impl Window {
@@ -127,6 +133,8 @@ impl Window {
         info: [0; NAME_CAP],
         vslide: 0,
         vslsize: 1000,
+        hslide: 0,
+        hslsize: 1000,
     };
 }
 
@@ -552,32 +560,16 @@ fn draw_frame(w: &Window, istop: bool, backend: &dyn RasterBackend) {
     // Right scroll bar (arrows + track + thumb).
     draw_vslider(w, backend);
 
-    // Bottom scroll bar.
+    // Bottom scroll bar (arrows + track + thumb). Fill the whole bottom band
+    // first: with a sizer but no horizontal scrollbar the band would otherwise
+    // be left unpainted, showing the desktop through the bottom of the window.
+    // The band fill lives here (not in `draw_hslider`) so the slider-only
+    // redraw path never erases the sizer corner it does not repaint.
     if kind & (HGADGETS | SIZER) != 0 {
         let row_y = b.y + b.h - GAD;
-        // Fill the whole bottom band first: with a sizer but no horizontal
-        // scrollbar the band would otherwise be left unpainted, showing the
-        // desktop through the bottom of the window.
         backend.fill_rect(b.x + 1, row_y, b.w - 2, GAD - 1, GRAY_LT, clip);
-        let mut sx = b.x + 1;
-        let mut send = b.x + b.w - 1;
-        if kind & (VGADGETS | SIZER) != 0 {
-            send -= GAD - 1;
-        }
-        if kind & LFARROW != 0 {
-            gadget(Grect { x: sx, y: row_y, w: GAD, h: GAD }, G_LF, backend, clip);
-            sx += GAD - 1;
-        }
-        if kind & RTARROW != 0 {
-            gadget(Grect { x: send - GAD + 1, y: row_y, w: GAD, h: GAD }, G_RT, backend, clip);
-            send -= GAD - 1;
-        }
-        if kind & HSLIDE != 0 && send > sx {
-            backend.fill_rect(sx, row_y, send - sx, GAD, GRAY_LT, clip);
-            rect_outline(Grect { x: sx, y: row_y, w: send - sx, h: GAD }, backend, clip);
-            rect_outline(Grect { x: sx, y: row_y, w: GAD.min(send - sx), h: GAD }, backend, clip);
-        }
     }
+    draw_hslider(w, backend);
 
     // Sizer (bottom-right corner).
     if kind & SIZER != 0 {
@@ -644,6 +636,62 @@ fn redraw_vslider(handle: i16) {
     if let (Some(backend), Some(w)) = (host().and_then(|h| h.raster()), win(handle)) {
         if w.open {
             draw_vslider(w, backend);
+        }
+    }
+}
+
+/// Draw the bottom (horizontal) scroll bar — left/right arrows, the track, and
+/// a thumb positioned + sized from `w.hslide` / `w.hslsize` (both per-mille).
+/// The mirror image of [`draw_vslider`] with the axes swapped (x↔y, w↔h): the
+/// track runs along the bottom row instead of the right column, offset only by
+/// the left border and the vertical scroll bar / sizer column on the right (no
+/// title/info bands consume the horizontal axis). Shared by `draw_frame` and
+/// `wind_set(WF_HSLIDE/WF_HSLSIZ)`; drawing only the slider row leaves the work
+/// area (content) untouched. The bottom-band fill is done by the caller.
+fn draw_hslider(w: &Window, backend: &dyn RasterBackend) {
+    let b = w.curr;
+    let kind = w.kind;
+    if kind & (HGADGETS | SIZER) == 0 {
+        return;
+    }
+    let clip = ClipRect::full(backend.width(), backend.height());
+    let row_y = b.y + b.h - GAD;
+    // Track left: just past the left border (no left-side bands on this axis).
+    let mut sx = b.x + 1;
+    let mut send = b.x + b.w - 1;
+    if kind & (VGADGETS | SIZER) != 0 {
+        send -= GAD - 1;
+    }
+    if kind & LFARROW != 0 {
+        gadget(Grect { x: sx, y: row_y, w: GAD, h: GAD }, G_LF, backend, clip);
+        sx += GAD - 1;
+    }
+    if kind & RTARROW != 0 {
+        gadget(Grect { x: send - GAD + 1, y: row_y, w: GAD, h: GAD }, G_RT, backend, clip);
+        send -= GAD - 1;
+    }
+    if kind & HSLIDE != 0 && send > sx {
+        let track_w = send - sx;
+        backend.fill_rect(sx, row_y, track_w, GAD, GRAY_LT, clip);
+        rect_outline(Grect { x: sx, y: row_y, w: track_w, h: GAD }, backend, clip);
+        // Thumb: size = hslsize per-mille of the track (min one gadget cell),
+        // position = hslide per-mille of the remaining travel.
+        let size = w.hslsize.clamp(1, 1000);
+        let thumb_w = ((track_w as i32 * size as i32 / 1000) as i16).clamp(GAD.min(track_w), track_w);
+        let travel = track_w - thumb_w;
+        let pos = w.hslide.clamp(0, 1000);
+        let thumb_x = sx + (travel as i32 * pos as i32 / 1000) as i16;
+        backend.fill_rect(thumb_x, row_y, thumb_w, GAD, GRAY_LT, clip);
+        bevel(Grect { x: thumb_x, y: row_y, w: thumb_w, h: GAD }, true, backend, clip);
+    }
+}
+
+/// Redraw just window `handle`'s horizontal slider (no work-area clear), for
+/// `wind_set(WF_HSLIDE/WF_HSLSIZ)`.
+fn redraw_hslider(handle: i16) {
+    if let (Some(backend), Some(w)) = (host().and_then(|h| h.raster()), win(handle)) {
+        if w.open {
+            draw_hslider(w, backend);
         }
     }
 }
@@ -844,6 +892,18 @@ pub fn wind_set(pb: &Aespb) {
                 w.vslsize = pb.intin(2).clamp(1, 1000);
             }
             redraw_vslider(handle);
+        }
+        WF_HSLIDE => {
+            if let Some(w) = win(handle) {
+                w.hslide = pb.intin(2).clamp(0, 1000);
+            }
+            redraw_hslider(handle);
+        }
+        WF_HSLSIZ => {
+            if let Some(w) = win(handle) {
+                w.hslsize = pb.intin(2).clamp(1, 1000);
+            }
+            redraw_hslider(handle);
         }
         _ => {}
     }

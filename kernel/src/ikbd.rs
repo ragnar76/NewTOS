@@ -155,6 +155,9 @@ pub fn shift_state() -> u8 {
     if CTRL.load(Ordering::Relaxed) {
         m |= 0x04; // MODE_CTRL
     }
+    if ALT.load(Ordering::Relaxed) {
+        m |= 0x08; // MODE_ALT
+    }
     if CAPS.load(Ordering::Relaxed) {
         m |= 0x10; // MODE_CAPS
     }

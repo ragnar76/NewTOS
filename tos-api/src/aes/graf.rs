@@ -286,7 +286,10 @@ pub fn graf_mouse(pb: &Aespb) {
         match number {
             M_OFF => crate::vdi::mouse::remove(backend),
             M_ON => {
-                let (x, y) = crate::vdi::mouse_position();
+                // Read the parked position *after* init so the first M_ON
+                // shows the cursor at screen centre, not the power-up (0,0)
+                // over the menu bar (would open an AES hover-menu at boot).
+                let (x, y) = crate::vdi::mouse::position_init(backend);
                 crate::vdi::mouse::display_at(x, y, backend);
             }
             USER_DEF => set_user_form(pb, backend),

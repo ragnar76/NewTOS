@@ -107,42 +107,34 @@ fn shift_state() -> i16 {
 }
 
 /// `evnt_button` (21) — block until the mouse buttons match the
-/// requested state, then return the click count and fill the mouse /
-/// keyboard return slots.
+/// requested state, then return the **actual** click count and fill the
+/// mouse / keyboard return slots.
 ///
 /// `int_in[0]` = clicks to wait for (`B_CLICKS`), `int_in[1]` = button
 /// mask (`B_MASK`), `int_in[2]` = desired masked state (`B_STATE`).
-/// `RET_CODE` = clicks; `int_out[1..4]` = x, y, buttons, shift.
+/// `RET_CODE` = clicks reached; `int_out[1..4]` = x, y, buttons, shift.
 ///
-/// Bring-up: waits for the masked button bits to reach the requested
-/// state and reports the requested click count. Multi-click
-/// (double-click) timing — the EmuTOS `gl_dclick`/`gl_bclick` machinery
-/// — is deferred; single clicks are exact.
+/// Waits for the masked button bits to reach the requested state (the
+/// first click), then counts any further presses that fall inside the
+/// double-click window (`dclick_ms()`) up to the requested maximum, and
+/// returns the *actual* click count (1 for a single click, 2 for a double
+/// click within the window). The window counting is factored into the
+/// shared [`count_clicks`] helper, which `evnt_multi` reuses.
 pub fn evnt_button(pb: &Aespb) {
     let clicks = pb.intin(0);
     let mask = pb.intin(1) as u8;
     let state = pb.intin(2) as u8;
     let mut got = 0i16;
     if let Some(h) = host() {
-        let matches = |m: u8, s: u8| crate::vdi::mouse_buttons() & m == s & m;
+        let matches = || crate::vdi::mouse_buttons() & mask == state & mask;
         // Wait for the button to reach the requested state (the first click).
-        while !matches(mask, state) {
+        while !matches() {
             h.pump_input();
         }
-        got = 1;
-        // Count further press cycles that fall inside the double-click window
-        // (EmuTOS reports the number of clicks up to the requested maximum).
-        let win = dclick_ms();
-        while got < clicks {
-            let deadline = h.monotonic_millis().saturating_add(win);
-            // The button must leave, then re-reach, the state within `win`.
-            if !wait_until(h, deadline, || !matches(mask, state))
-                || !wait_until(h, deadline, || matches(mask, state))
-            {
-                break;
-            }
-            got += 1;
-        }
+        // Count further clicks inside the double-click window. `evnt_button`
+        // has no timer source, so counting runs to the full window (no outer
+        // deadline: `cap = None`).
+        got = count_clicks(h, clicks, None, matches);
     }
     fill_rets(pb);
     pb.set_ret(got.max(1));
@@ -166,6 +158,48 @@ fn wait_until(h: &dyn crate::host::Host, deadline: u64, cond: impl Fn() -> bool)
         h.pump_input();
     }
     cond()
+}
+
+/// Count mouse-button clicks in the double-click window, given the button has
+/// *already* reached the requested state for the first click — so the count
+/// starts at 1. Each further click must leave and then re-reach the state (as
+/// reported by `matches`) within one `dclick_ms()` window. Counting stops when
+/// `max_clicks` is reached, when a window closes without another press, or when
+/// `cap` (an optional outer deadline) is reached. Returns the click count
+/// (always >= 1).
+///
+/// This is the shared counter behind both `evnt_button` and `evnt_multi`'s
+/// `MU_BUTTON` branch, so a single click and a double click are told apart the
+/// same way in either call (`EV_BRET` / `RET_CODE`).
+///
+/// * `evnt_button` passes `cap = None`: it has no timer source, so counting
+///   runs to the full double-click window.
+/// * `evnt_multi` passes `cap = Some(deadline)` iff `MU_TIMER` is armed, so the
+///   click count never overruns the multi-wait's timer deadline nor stalls the
+///   other event sources (keyboard/message) past it. Without a timer it too
+///   uses `cap = None`; either way the stall is bounded by one window, and any
+///   keystroke/message that arrives meanwhile is buffered and seen on the next
+///   loop pass (it is delayed, never lost).
+fn count_clicks(
+    h: &dyn crate::host::Host,
+    max_clicks: i16,
+    cap: Option<u64>,
+    matches: impl Fn() -> bool,
+) -> i16 {
+    let win = dclick_ms();
+    let mut got = 1i16;
+    while got < max_clicks {
+        let mut deadline = h.monotonic_millis().saturating_add(win);
+        if let Some(cap) = cap {
+            deadline = deadline.min(cap);
+        }
+        // The button must leave, then re-reach, the state within the window.
+        if !wait_until(h, deadline, || !matches()) || !wait_until(h, deadline, &matches) {
+            break;
+        }
+        got += 1;
+    }
+    got
 }
 
 /// `evnt_mouse` (22) — block until the mouse enters (`flags` = 0) or
@@ -219,8 +253,10 @@ pub fn evnt_dclick(pb: &Aespb) {
 ///
 /// Each single `evnt_*` wait is a special case of this loop. `EV_KRET`
 /// carries the full `scancode << 8 | ascii` key word (cursor / function
-/// keys included). Bring-up limits: single application, single-click
-/// button matching.
+/// keys included). The `MU_BUTTON` click count (`EV_BRET`) is the real
+/// count from [`count_clicks`] (1 = single, 2 = double click within the
+/// double-click window), so callers can tell a Select from an Open.
+/// Bring-up limit: single AES application.
 pub fn evnt_multi(pb: &Aespb) {
     let flags = (pb.intin(0) as u16) & MU_TOSVALID;
 
@@ -274,7 +310,16 @@ pub fn evnt_multi(pb: &Aespb) {
             if flags & MU_BUTTON != 0
                 && crate::vdi::mouse_buttons() & b_mask == b_state & b_mask
             {
-                clicks = b_clicks;
+                // Resolve the *real* click count (single vs. double) inside the
+                // double-click window — the same counter `evnt_button` uses, so
+                // the desktop can tell Select (1) from Open (2). Cap counting at
+                // the multi-wait deadline when a timer is armed so it never
+                // overruns MU_TIMER (a 0-ms poll timer collapses to a count of
+                // 1, matching the "poll now" contract).
+                let cap = (flags & MU_TIMER != 0).then_some(deadline);
+                clicks = count_clicks(h, b_clicks, cap, || {
+                    crate::vdi::mouse_buttons() & b_mask == b_state & b_mask
+                });
                 fired |= MU_BUTTON;
             }
             if flags & MU_M1 != 0 && rect_event(&m1) {
