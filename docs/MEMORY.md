@@ -551,6 +551,102 @@ cursor), so the desktop is source-agnostic.
   See ADR-014 (high-half MMIO — the mailbox/MMIO groundwork this builds on)
   and [[keyboard-via-atari-ikbd]] (the shelved IKBD path).
 
+## ADR-016: Ground-up desktop rebuild — EmuTOS-faithful, in `kernel/src/desk/`
+
+**Date:** 2026-07-04
+**Status:** **Accepted** (user decision 2026-07-04).
+**Phase:** PHASE-14 (Desktop).
+
+### Context
+
+The hand-rolled desktop (`kernel/src/desktop.rs` ~2329 lines +
+`kernel/src/desktop_icons.rs` ~442 lines) keeps producing rendering defects:
+icon-view 8.3 label overlap on real Pi-4 (`CONFIG.TXFIXUP4.DARERNEL8.IME…`),
+view-switch (text↔icon) residue, and a redraw path that repaints by handle
+order with a full-screen clip instead of honoring the window's damage-rectangle
+list. The root causes sit in the **ad-hoc directory-window subsystem** (its own
+`DIRTREE`/`build_dir_*`/`draw_dir_listing`/`redraw_*`/`VIEW_MODE`/`SORT_MODE`),
+**not** in the AES/VDI foundation, which is EmuTOS-aligned. An earlier QMP
+screendump "passed" only because the test image used short names — the
+verification was not representative. A targeted patch was drafted
+(`~/.claude/plans/mossy-knitting-scone.md`), but after repeated regressions the
+user judged the desktop untrustworthy and chose a full ground-up rebuild.
+
+### Decision
+
+Rebuild the entire desktop **application** from scratch as an EmuTOS-faithful
+reimplementation in a **new module `kernel/src/desk/`**, mirroring EmuTOS
+`desk/` (`deskmain`/`deskapp`/`deskwin`/`desksupp`/`deskdir`/`deskfun`/
+`deskact`/`deskins`/`deskinf`/`deskrez`). `desk::run()` replaces
+`desktop::run()` at boot. Keep only the OS layer below it — AES/VDI/GEMDOS in
+`tos-api` — which is the compatibility contract, **not** "the desktop". The old
+`desktop.rs`/`desktop_icons.rs` are declared **deprecated** and stay in git
+until the new module reaches feature parity, then are removed. Extraction of
+`references/emutos/desk/` into `docs/api/desktop/` **precedes** implementation
+(Rule 5, spec before code).
+
+### Rationale
+
+The bug class is structural — an ad-hoc data model + view builder + a redraw
+that ignores the real AES rectangle list. Faithfully re-deriving the EmuTOS
+window/file data model (`FNODE`/`WNODE`), grid-metric globals (`win_view`), view
+builder (`win_bldview`) and damage-rect redraw (`do_wredraw`) on top of the
+already-faithful AES/VDI kills the class at the root instead of patching the
+three symptoms currently visible. A **module** (chosen over a separate crate,
+user decision) gives a clean home and a clear old/new boundary with minimal
+workspace-wiring churn.
+
+### Consequences
+
+- Positive: a clean, EmuTOS-conformant desktop; the label-overlap / redraw bug
+  class eliminated at the root; the desktop is spec-backed (`docs/api/desktop/`)
+  for the first time.
+- Positive: reuse of the verified AES/VDI/GEMDOS layer — no contract risk.
+- Negative: substantial reimplementation (~full desktop app); two
+  implementations coexist until parity (old deprecated + guarded off).
+- Negative: as a module (not a crate) the desktop *can* still reach kernel
+  internals; the EmuTOS discipline (go through AES/VDI/BIOS calls, as `desk/`
+  uses `aesbind`) must be enforced by **review**, not by the compiler — this is
+  the Auditor's standing charge.
+- Neutral: supersedes the partial `mossy-knitting-scone` plan.
+
+### Alternatives considered
+
+- **Separate `desk/` crate:** the strongest EmuTOS-faithful boundary
+  (compiler-enforced app/OS split) but more workspace wiring and API-surface
+  exposure. Rejected by the user in favor of the lighter module; revisit if the
+  boundary needs enforcing.
+- **Targeted patch (`mossy-knitting-scone`):** fix `draw_text` clip + icon-cell
+  metric + redraw only, keep the rest. Rejected: the user judged the desktop
+  untrustworthy after repeated regressions; a rebuild removes the whole ad-hoc
+  subsystem rather than the three symptoms currently visible.
+- **Keep everything, patch in place:** rejected — same reason; leaves the ad-hoc
+  model that keeps regressing.
+
+### Orchestration (process)
+
+Executed by a **three-role subagent team** under team-lead (Claude) supervision,
+defined in `.claude/agents/`:
+- **Researcher** (Sonnet) — extracts `references/emutos/desk/` → `docs/api/desktop/`
+  per SOURCE-ANALYSIS-PROTOCOL + defect catalog of the current desktop; **no
+  product code**.
+- **Developer** (Opus) — writes **all** Rust/AArch64 code in `kernel/src/desk/`;
+  **no stubs**.
+- **Auditor** (Opus) — reviews Developer code against spec + COMPATIBILITY,
+  adversarially verifies (representative data), reports findings; **no code**.
+
+Model rule: simple tasks on Sonnet, **code exclusively on Opus**.
+
+### References
+
+- `references/emutos/desk/` (`deskmain.c`/`deskapp.c`/`deskwin.c`/`desksupp.c`/
+  `deskdir.c`/`deskinf.c`/`deskrez.c`/`deskfpd.c`/…)
+- `~/.claude/plans/mossy-knitting-scone.md` (superseded)
+- `docs/api/desktop.md` (to be expanded into `docs/api/desktop/`)
+- `docs/COMPATIBILITY.md` (desktop = app; AES/VDI/GEMDOS = contract)
+- STATUS Recent-Decisions 2026-07-03 (icon-overlap partial fix — now subsumed)
+- `.claude/agents/{researcher,developer,auditor}.md`
+
 ### Template for new ADRs
 
 ```markdown

@@ -1,0 +1,856 @@
+# `deskinf.c` — info/preference dialogs, text-view formatting — **plus** the `EMUDESK.INF` file format
+
+> Phase-00 extraction, Track A. Source: EmuTOS @ `1a7484ab`,
+> `desk/deskinf.c` (1272 lines). Per
+> [`docs/api/desktop/_overview.md`](_overview.md): this file was
+> previously flagged "out of scope … `dr_code`/`format_fnode` are the
+> `V_TEXT` rendering callback referenced (not traced) from
+> `win_bldview` … flagged **needs deeper analysis**" and
+> [`desksupp-redraw.md`](desksupp-redraw.md) similarly deferred it. This
+> entry resolves both flags.
+
+## Important naming note: the `EMUDESK.INF` line format is **not** in this file
+
+The task brief asks for the "`NEWDESK.INF` Parse/Save inkl. `#W`
+(Fensterpositionen), `#M`/`#T`/`#O` (Icon-Platzierung), `#E`
+(Environment/Desktop-Flags), `#Q`/`#D`/`#G`/`#F`/`#P`" to be extracted
+from `deskinf.c`. **This is a naming mismatch in the task brief, not in
+this extraction**: `deskinf.c` contains **no** `EMUDESK.INF` parsing or
+saving code at all — it is entirely dialog/display logic (Show Info,
+Preferences, Set Background, Desktop Configuration). The actual
+`EMUDESK.INF` parser and writer (`app_parse()`, `app_start()`,
+`build_inf()`, `app_save()`) live in **`desk/deskapp.c`**, which is a
+sibling extraction task's file
+([`deskapp.md`](deskapp.md), produced in parallel) — that file's own
+scope note says "EMUDESK.INF parsing / ANODE installation already
+narrated in `docs/api/desktop.md`", but neither `deskapp.md` nor
+`docs/api/desktop.md` actually give the **per-prefix line format**
+(verified by reading both — see the report to the lead for the grep
+evidence). Since the exact line format is the one thing the task brief
+explicitly calls "the most valuable extract," and it is genuinely
+missing from every existing spec file, it is documented **here**, in a
+clearly-separated [appendix](#appendix-the-emudeskinf-file-format-source-deskappc-not-deskinfc)
+below, honestly cited to `desk/deskapp.c` (not `deskinf.c`). The rest of
+this file documents `deskinf.c`'s actual, real content.
+
+---
+
+## EmuTOS source (`deskinf.c` itself)
+
+**Primary locations (public, `deskinf.h`):**
+- `deskinf.c:331-343` `dr_code(pparms)` — the `V_TEXT` `USERBLK` draw
+  callback
+- `deskinf.c:396-403` `inf_show(tree, start)`
+- `deskinf.c:493-639` `inf_file_folder(ppath, pf)`
+- `deskinf.c:650-693` `inf_disk(dr_id)`
+- `deskinf.c:410-420` `inf_numset(tree, obj, value)`
+- `deskinf.c:721-818` `inf_pref(void)`
+- `deskinf.c:427-433` `set_tedinfo_name(tree, obj, str)`
+- `deskinf.c:1253-1271` `opn_appl(papname, ptail)`
+- `deskinf.c:349-357` `start_dialog(tree)` / `:363-390` `end_dialog(tree)`
+- `deskinf.c:825-921` `inf_backgrounds(void)` (`CONF_WITH_BACKGROUNDS`)
+- `deskinf.c:1096-1246` `inf_conf(void)` (`CONF_WITH_DESKTOP_CONFIG`)
+
+**Installed handler / vector:** `(none)` — called from `deskmain.c`'s
+`do_filemenu`/`do_optnmenu` (`SHOWITEM`→`inf_file_folder`/`inf_disk`,
+`PREFITEM`→`inf_pref`, `BACKGRND`→`inf_backgrounds`, `CONFITEM`→
+`inf_conf`), and from other `desk/` modules for dialog primitives
+(`start_dialog`/`end_dialog`/`inf_show`/`inf_numset`/`set_tedinfo_name`
+are used throughout `deskdir.c`, `deskins.c`, `deskfun.c` — see those
+files' "Helpers called (other files)" sections).
+
+**Helpers called (this file, `static`):**
+- `deskinf.c:74-105` `fmt_time(time, fmt_string, ptime)` — DOS packed
+  time → display string
+- `deskinf.c:124-180` `fmt_date(date, fourdigit, pdate)` — DOS packed
+  date → display string, per `G.g_cdateform`/`_IDT` cookie
+- `deskinf.c:190-217` `fmt_size(size, wide, psize)` — file size → display
+  string, kbyte-scaled for huge files on narrow screens
+- `deskinf.c:220-307` `format_fnode(pf, pfmt)` — **the `V_TEXT` line
+  formatter** (detailed [below](#format_fnode--dr_code--the-v_text-line-formatter))
+- `deskinf.c:310-328` `dr_fnode(last_state, curr_state, x, y, w, h, fnode)`
+  — draws one formatted line, or XOR-inverts it for a selection-state
+  change
+- `deskinf.c:440-457` `inf_fifosz(tree, dl_fi, dl_fo, dl_sz)` — files/
+  folders/size triple into a dialog (used by both `inf_file_folder` and
+  `inf_disk`)
+- `deskinf.c:460-469` `inf_dttm(tree, pf, dl_dt, dl_tm)` — date+time pair
+  into a dialog
+- `deskinf.c:476-481` `count_ffs(path)` — thin wrapper over
+  `d_doop(0, OP_COUNT, path, path, 0, NULL)` (see
+  [`deskdir.md`](deskdir.md))
+- `deskinf.c:705-715` `inf_which(tree, baseobj, numobj)` — reverse of
+  `inf_gindex` (find the selected radio button, counting from the end)
+- Desktop-configuration-dialog helpers (`CONF_WITH_DESKTOP_CONFIG`):
+  `:929-944` `get_all_funkeys`, `:957-973` `scroll_conf_funkeys`,
+  `:979-996` `init_conf_funkeys`, `:1002-1018` `init_conf_shortcuts`,
+  `:1028-1057` `save_shortcut`, `:1066-1090` `recover_shortcuts`
+
+**Helpers called (other files, cited — not re-derived here):**
+- `deskdir.c:528` `d_doop()` (via `count_ffs`) — see
+  [`deskdir.md`](deskdir.md)
+- `desksupp.c` `desk_busy_on`/`desk_busy_off`, `valid_drive`
+- `deskrsrc.c` `desktop_str_addr`
+- AES: `form_center`, `form_dial`, `objc_draw`, `evnt_multi`, `form_do`
+  (contract, `docs/api/aes/object-form.md`)
+- GEMDOS: `dos_chmod`, `dos_rename`, `dos_space`, `dos_label`
+- `util/optimize.c` `unfmt_str`/`fmt_str` (dialog text field ↔ plain
+  string conversion, not re-derived)
+
+**Headers / type definitions used:**
+- `include/aesdefs.h` — `PARMBLK` (the `objc_draw`/`USERBLK` callback
+  parameter block: `pb_prevstate`/`pb_currstate`/`pb_x`/`pb_y`/`pb_w`/
+  `pb_h`/`pb_parm`/`pb_xc`) — this is the AES contract `dr_code`
+  implements against; see `docs/api/structures/` for `USERBLK`/`PARMBLK`
+  if separately documented (cross-check — not verified present in this
+  pass)
+- `deskfpd.h` — `FNODE` (`f_attr`/`f_name`/`f_size`/`f_date`/`f_time`)
+- `deskwin.h:36` — `LEN_FNODE`=48 (the fixed formatted-line buffer size;
+  see [`deskact.md`](deskact.md)'s `act_chkobj`, which hit-tests against
+  this same width in `V_TEXT` mode)
+
+**System variables / globals read:**
+- `G.g_ctimeform`/`G.g_cdateform` (`deskbind.h:176-177`) — display format
+  preference (`TIMEFORM_12H`/`_24H`/`_IDT`, `DATEFORM_MDY`/`_DMY`/`_IDT`)
+- `G.g_idt` (`deskbind.h:183`) — the `_IDT` cookie value, consulted when
+  the format preference is `*FORM_IDT`
+- `G.g_ndirs`/`g_nfiles`/`g_size` — populated by `count_ffs`, displayed
+  by `inf_fifosz`
+- `G.g_cdelepref`/`g_ccopypref`/`g_covwrpref`/`g_cdclkpref` — Preferences
+  dialog state (`inf_pref`)
+- `G.g_appdir`/`g_fullpath` (`CONF_WITH_DESKTOP_CONFIG`) — Desktop
+  Configuration dialog state (`inf_conf`)
+- `G.g_screen[DROOT].ob_spec`/`G.g_screen[DROOT+1].ob_spec` — current
+  desktop/window background pattern+colour (`inf_backgrounds`)
+- `G.g_patcol[]` (`CONF_WITH_BACKGROUNDS`) — background defaults array
+- `G.g_rmsg[]` — AES message buffer, drained by `end_dialog`'s
+  redraw-catch-up loop
+
+**System variables / globals written:**
+- `G.g_cdelepref`/`g_ccopypref`/`g_covwrpref`/`g_cdclkpref`/
+  `g_ctimeform`/`g_cdateform` — by `inf_pref` on OK
+- `G.g_appdir`/`g_fullpath` (`CONF_WITH_DESKTOP_CONFIG`) — by `inf_conf`
+  on OK
+- `G.g_screen[DROOT/DROOT+1].ob_spec`, `G.g_patcol[index]` — by
+  `inf_backgrounds` on OK (`CONF_WITH_BACKGROUNDS`)
+- `menu_shortcuts[]` (`deskmain.h`, not `G`) — by `save_shortcut`/
+  `inf_conf` (`CONF_WITH_DESKTOP_CONFIG`)
+
+**Build configuration affecting this function:**
+- `CONF_WITH_BACKGROUNDS` — gates `inf_backgrounds` entirely
+- `CONF_WITH_DESKTOP_CONFIG` — gates `inf_conf` and its helpers; the menu
+  item itself (`CONFITEM`) is also config-gated (see `docs/api/desktop.md`)
+- Both default **on** in the general/Atari build, off under `TARGET_192`
+  (same convention as `_overview.md`).
+
+---
+
+## Source extraction summary
+
+`deskinf.c` is a grab-bag of dialog-driven "information display" and
+"preference editing" features, unified only by all going through the
+same `start_dialog`/`form_do`/`end_dialog` pattern:
+
+1. **Formatting helpers** (`fmt_time`/`fmt_date`/`fmt_size`) — convert
+   DOS-packed date/time/size values into display strings, honoring the
+   user's chosen format (12/24-hour, MDY/DMY, or `_IDT`-cookie-driven) —
+   used both by dialogs in this file (`inf_file_folder`/`inf_disk`) *and*
+   by the `V_TEXT` per-file line formatter below.
+2. **`format_fnode`/`dr_fnode`/`dr_code`** — the actual "show folder
+   contents as a text list" renderer, invoked indirectly by
+   `deskwin.c`'s `win_bldview()` (not re-derived here, see
+   [`deskwin.md`](deskwin.md)) via a `USERBLK` callback installed on each
+   `G_USERDEF` object.
+3. **`inf_file_folder`/`inf_disk`** — the "Show Info" dialogs for a
+   single file/folder and for a whole disk, respectively; both use
+   `count_ffs`/`inf_fifosz` to show folder/disk content totals.
+4. **`inf_pref`** — the global Preferences dialog (confirm-copy/-delete/
+   -overwrite, double-click speed, date/time format).
+5. **`inf_backgrounds`** (`CONF_WITH_BACKGROUNDS`) — the "Set
+   Background" pattern/colour picker, live-previewed.
+6. **`inf_conf`** (`CONF_WITH_DESKTOP_CONFIG`) — the "Desktop
+   Configuration" dialog: browse/edit function-key-to-application
+   assignments and menu-item keyboard shortcuts.
+7. **`opn_appl`** — the "enter command-line arguments" prompt shown when
+   launching a `.TTP`/`.GTP` (parameter-requiring) application.
+8. **`start_dialog`/`end_dialog`** — shared dialog open/close plumbing,
+   used by essentially every dialog in `desk/`, not just this file's own.
+
+---
+
+## `format_fnode`/`dr_code` — the `V_TEXT` line formatter
+
+`deskinf.c:220-307` (`format_fnode`), `:310-328` (`dr_fnode`),
+`:331-343` (`dr_code`). This is the callback `win_bldview()` installs
+(via a `USERBLK` whose `ub_code = dr_code`, `ub_parm = <FNODE*>`) on
+every `G_USERDEF` object when the current view is `V_TEXT` — the AES
+calls `dr_code` (through the generic `USERBLK`/`objc_draw` contract)
+every time that object needs (re)drawing, passing a `PARMBLK*` with the
+object's screen rectangle and previous/current `ob_state`.
+
+**`dr_code(pparms)`**: saves/restores the VDI clip rectangle around the
+call (`gsx_gclip`/`gsx_sclip`), delegating to `dr_fnode`.
+
+**`dr_fnode(last_state, curr_state, x, y, w, h, fnode)`**: if only the
+`SELECTED` bit changed between the previous and current state (i.e. this
+redraw is purely a selection-highlight toggle, not a content change),
+does a cheap **XOR fill** over the object's rectangle
+(`bb_fill(MD_XOR, FIS_SOLID, IP_SOLID, x,y,w,h)`) instead of
+re-formatting and redrawing the text — an optimisation that only works
+because XOR-filling an already-drawn text line twice restores it exactly
+(text drawn in `MD_TRANS` mode, i.e. it only sets the foreground pixels
+class, so XOR-filling the whole cell inverts foreground pixels to
+background and background to a color that, XORed again, returns to
+original — this reasoning is implicit in the code, not spelled out in
+comments; flagged as **needs deeper analysis** only if a pixel-exact
+reimplementation of the XOR-select visual is required — the *contract*
+observable here is simply "selected text lines are shown inverted," the
+XOR mechanism is a free implementation choice). Otherwise, calls
+`format_fnode` to build the line text, then draws it with
+`gsx_tblt(IBM, x, y, len)` after `expand_string()` (tab/control-char
+expansion, not re-derived — `intin[]`-based, VDI-internal) in
+`MD_TRANS` mode.
+
+**`format_fnode(pf, pfmt)`** — the actual column layout, returns the
+formatted line's length. Fields, in order:
+
+1. **Indicator character** (1 byte): `0x07` (bullet, a special glyph in
+   the desktop's font) if the entry is a folder (`FA_SUBDIR`); `0x7F`
+   (another special glyph) if read-only (`FA_RO`); else a space.
+2. *(wide format only)* one extra space.
+3. **Name** (9 chars) + **extension** (3 chars), both space-padded,
+   built by copying `f_name` up to the first `.` (max 9 chars — **not**
+   validated against overflow beyond that count; a legally-8.3-formed
+   name never exceeds this, so no bounds check is needed given TOS's own
+   filename length limits) then the extension.
+4. **Size**: for folders, blank-filled (8 or 11 chars depending on
+   width, no digits shown at all — folder sizes are never displayed in
+   the text view, unlike the "Show Info" dialogs which *do* show a
+   folder's aggregate content size via `count_ffs`); for files,
+   `fmt_size()` (right-justified, kbyte-scaled above 9,999,999 bytes on
+   narrow screens only).
+5. **Date**, then **Time** (space-separated, extra padding space on wide
+   screens), via `fmt_date`/`fmt_time`.
+6. **Trailing 2-space trim** (`:300-304`): if the formatted line's last
+   two characters are both spaces (which only happens when using a
+   24-hour clock, since `fmt_time`'s AM/PM suffix is otherwise
+   non-blank), they're trimmed — explicitly to keep the line at a
+   maximum of 36 characters so it still qualifies for a VDI "fast text
+   output" fast-path in a maximum-width low-resolution window (comment,
+   `:296-299`) — a **performance-motivated formatting rule**, not a
+   display preference; a NewTOS reimplementation is free to always emit
+   the two trailing spaces (or not) as long as the visually-relevant
+   content (name/size/date/time) is unaffected — the trim exists purely
+   as an EmuTOS-internal rendering optimisation.
+
+**Wide vs. narrow format** (`USE_WIDE_FORMAT()`, not traced — presumably
+a screen-width macro in `deskbind.h`/similar, gates the extra padding
+spaces and `fmt_size`'s 8-vs-11-char field and the year's 2-vs-4-digit
+display): affects total line length (32 vs. some larger count) but not
+field order or semantic content.
+
+**Contract note**: the *visual layout* of `V_TEXT` mode (what a user
+sees) is behaviour a NewTOS desktop should reproduce for fidelity, but
+it is not TOS-API contract in the trap-ABI sense — no program reads this
+formatted string. It is documented here purely to resolve the
+"needs deeper analysis" flags left by `_overview.md`/`desksupp-redraw.md`.
+
+---
+
+## `inf_file_folder`/`inf_disk` — Show Info dialogs
+
+`inf_file_folder(ppath, pf)` (`:493-639`): for a folder, runs
+`count_ffs()` (recursive `OP_COUNT`, [`deskdir.md`](deskdir.md)) and
+populates file/folder/size fields via `inf_fifosz`; for a file, blanks
+those fields and shows just its own size. Always shows name/date/time
+(`inf_dttm`) and the read-only checkbox state. The dialog **loops**
+(`while(1)`, `:551-634`) to allow retrying a failed rename: `FFOK`
+commits both a possible attribute change (`dos_chmod`, **result not
+checked** — "like Atari TOS, we don't check the return code," comment
+`:592-593`) and a possible rename (`dos_rename`); on rename failure,
+shows `STRENAME` and loops back to redisplay the same dialog with the
+attempted (unsuccessful) new name still shown (`:632-633`, `Cancel`
+breaks out, anything else retries the same values — no re-prompt for
+different input; the field is still editable, the user just re-submits
+the OK button after adjusting it). Returns `0` (cancel), `1` (continue,
+no change), or `-1` (continue, mark for redraw — a rename or attribute
+change happened).
+
+`inf_disk(dr_id)` (`:650-693`): if `!valid_drive(dr_id)` (the drive is no
+longer present), returns `1` immediately with **no dialog shown at all**
+— this handles the case where the drive was removed between the user
+selecting "Show Info" and the dialog actually opening. Otherwise counts
+the whole drive's contents (`count_ffs("X:\*.*")`), reads free/total
+space (`dos_space`) and the volume label (`dos_label` — if it fails,
+label is blank, not an error), and shows the dialog.
+
+---
+
+## `inf_pref`/`inf_backgrounds`/`inf_conf` — preference dialogs
+
+**`inf_pref`** (`:721-818`): pre-selects each radio/checkbox group from
+the current `G.g_c*pref` globals, plus `evnt_dclick(0,FALSE)` (query,
+don't set, the current double-click speed — an AES call). On OK,
+reads every group back via `inf_which` and calls `evnt_dclick(newval,
+TRUE)` to actually apply the double-click speed change immediately.
+**Returns `TRUE` only if** the current view is `V_TEXT` **and** either
+the time or date format actually changed (`:812-814`) — signalling to
+the caller (`deskmain.c`'s `do_optnmenu`, per `deskmain.md`) that
+open windows need rebuilding (since `V_TEXT` lines embed formatted
+dates/times; `V_ICON` mode never shows dates, so a format change there
+needs no rebuild).
+
+**`inf_backgrounds`** (`CONF_WITH_BACKGROUNDS`, `:825-921`): a live
+preview loop — every button press updates `tree[BGSAMPLE].ob_spec` (the
+preview swatch) in place and redraws just that one field
+(`draw_fld(tree, BGSAMPLE)`) before calling `form_do` again, rather than
+running one `form_do` to completion. Tracks **desktop** and **window**
+background candidates (`curdesk`/`curwin`) independently, switching
+which one the swatch reflects based on the `BGDESK`/`BGWIN` radio
+buttons. On `BGOK`: if the desktop background actually changed, applies
+it immediately (`set_aes_background`, updates `G.g_patcol[index]` and
+`G.g_screen[DROOT].ob_spec`, and calls `do_wredraw(DESKWH,&G.g_desk)`
+directly — the desktop repaints itself before this function even
+returns); if the **window** background changed, updates every open
+window's border object (`G.g_screen[DROOT+1 .. WOBS_START-1]`, i.e. all
+window-frame slots, whether or not currently occupied by an open
+window) and returns `TRUE` (the caller must trigger a full rebuild for
+window content areas, unlike the desktop case which is handled
+in-function).
+
+**`inf_conf`** (`CONF_WITH_DESKTOP_CONFIG`, `:1096-1246`): two
+independent "scroll through a list" mini-UIs in one dialog — function
+keys (`DCFUNPRV`/`DCFUNNXT`/`DCFUNLT`/`DCFUNRT` to move between assigned
+function keys and horizontally scroll a long pathname within a fixed-
+width field, `scroll_conf_funkeys`) and menu shortcuts
+(`DCMNUPRV`/`DCMNUNXT` to move between the 33 (`NUM_SHORTCUTS`,
+`deskmain.h:18`) shortcut-assignable menu items, editing a single
+shortcut-key character per item via `save_shortcut`, which itself
+handles duplicate-key detection with a user prompt). `DCMNUCLR` clears
+**all** shortcuts at once, no per-item confirmation. On exit,
+`DCOK` calls `install_shortcuts()` (`deskmain.c`, not re-derived — see
+`deskmain.md`'s helper list) to copy the in-memory `menu_shortcuts[]`
+array into the actual menu resource strings; any other exit calls
+`recover_shortcuts()` to rebuild `menu_shortcuts[]` from the resource as
+it currently stands (undoing any not-yet-committed edits made during the
+dialog).
+
+---
+
+## Edge cases discovered in source
+
+- **`inf_disk` silently no-ops for a removed drive** (`:662-663`) — no
+  alert, just returns as if the user had clicked OK.
+- **`dos_chmod`'s return code is deliberately ignored** in
+  `inf_file_folder` (`:604-605`, explicit comment citing Atari TOS
+  parity) — an attribute-change failure is invisible to the user.
+- **`format_fnode` never shows a folder's own size** in the text view,
+  even though the exact same information (aggregate folder size) *is*
+  computed and shown in the "Show Info" dialog via `count_ffs` — two
+  different code paths, two different answers to "what's this folder's
+  size."
+- **The trailing-2-space trim in `format_fnode`** exists purely for a
+  VDI fast-path performance reason, not a display preference — see
+  above.
+- **`inf_backgrounds` applies the desktop-background change immediately,
+  in-function**, but leaves the window-background change for the caller
+  to apply via a full rebuild — an asymmetry between the two "background"
+  concepts that a reimplementation must preserve (or verify unifying
+  them doesn't change observable timing/flicker in ways that matter).
+- **`inf_pref`'s rebuild signal is narrowly scoped**: only date/time
+  format changes in `V_TEXT` mode trigger a `TRUE` return — a
+  double-click-speed or confirm-preference change is applied immediately
+  (`evnt_dclick`, the `G.g_c*pref` writes) but never signals "please
+  rebuild," since none of those affect anything currently on screen.
+
+---
+
+## Error conditions
+
+`deskinf.c` has few hard "error" paths (it's dialog logic, not I/O) —
+the notable ones:
+
+| Condition | Source location | Result |
+|---|---|---|
+| `count_ffs` fails (deep recursion/OOM, see `deskdir.md`) | `deskinf.c:525-529`,`:673-677` | `inf_file_folder`/`inf_disk` return `1` immediately, dialog never shown |
+| `dos_rename` fails in `inf_file_folder`'s commit | `deskinf.c:622-633` | `STRENAME` alert; Cancel exits the loop (change so far, if any attribute change succeeded, still applies), else retries |
+| `dos_label` fails (no volume label) | `deskinf.c:682-683` | label field left blank, not an error |
+| Drive no longer valid | `deskinf.c:662-663` | `inf_disk` returns `1`, no dialog |
+
+---
+
+## Verification criteria
+
+- **`format_fnode` column layout**: given a file `README.TXT`, 1234
+  bytes, dated 2024-01-15, must produce a line with the exact fixed-width
+  name/extension/size/date/time columns per the format above (folder
+  indicator space, 9-char name, 3-char extension, size field, date,
+  time) — a concrete byte-for-byte test is the natural verification here
+  once NewTOS implements `V_TEXT` mode.
+- **`inf_pref` rebuild signal**: changing only the double-click speed
+  must return `FALSE`; changing only the date format while in `V_ICON`
+  mode must also return `FALSE`; changing the date format while in
+  `V_TEXT` mode must return `TRUE`.
+- **`inf_disk` on a removed drive**: must show no dialog and return `1`.
+
+---
+
+## Dependencies
+
+### Requires (must be initialized / functional)
+- [`deskdir.md`](deskdir.md) — `d_doop`/`count_ffs`
+- `desksupp.c` — `valid_drive`, `desk_busy_on`/`off`
+- AES dialog primitives (`docs/api/aes/object-form.md`)
+
+### Used by
+- `deskmain.c`'s `do_filemenu`/`do_optnmenu` (see `deskmain.md`)
+- [`deskdir.md`](deskdir.md), [`deskins.md`](deskins.md),
+  [`deskfun.md`](deskfun.md) — all use `start_dialog`/`end_dialog`/
+  `inf_show`/`inf_numset`/`set_tedinfo_name`/`draw_dial`/`draw_fld`
+  (the last two are actually `deskdir.c`'s own, see
+  [`deskdir.md`](deskdir.md) — not this file; cited here only because
+  they're used alongside these dialog primitives throughout)
+- `deskwin.c`'s `win_bldview()` — installs `dr_code` as the `V_TEXT`
+  `USERBLK` callback (see [`deskwin.md`](deskwin.md))
+
+## Related data structures
+
+- `docs/api/desktop/_data-model.md` — `SCREENINFO.u.udef` (the
+  `USERBLK` whose `ub_code`/`ub_parm` this file's `dr_code`/`FNODE*`
+  fill in)
+- `docs/api/structures/dta.md` — `FNODE`'s DTA-mirrored fields
+  (`f_attr`/`f_date`/`f_time`/`f_size`) that `format_fnode` renders
+
+## Cross-references
+
+Not independently cross-checked against Compendium/Profibuch for the
+dialog UI flows. The `EMUDESK.INF` format appendix below **was**
+loosely cross-checked against general knowledge that Atari's original
+EMUDESK.INF format is informally documented in period sources — no
+specific page citation is available in this pass; treat the appendix as
+EmuTOS-sourced only, per protocol Rule 1.
+
+## Configuration / version notes
+
+See [Build configuration](#emutos-source-deskinfc-itself) above
+(`CONF_WITH_BACKGROUNDS`, `CONF_WITH_DESKTOP_CONFIG`). No TOS-version-
+specific behaviour identified (EmuDesk-specific file).
+
+---
+
+## NewTOS implementation notes
+
+(Empty during Phase 00. Filled in when the corresponding implementation
+phase begins.)
+
+---
+---
+
+# Appendix: the `EMUDESK.INF` file format (source: `desk/deskapp.c`, NOT `deskinf.c`)
+
+> **Re-stating the naming note from the top of this file**: everything
+> below is extracted from `desk/deskapp.c`, not `desk/deskinf.c`. It is
+> placed in this document because the task brief asked for it under the
+> name `deskinf.md`, and it is not duplicated anywhere else in the
+> existing extraction (`deskapp.md` narrates the *loading process* —
+> icon setup, grid metrics, `ANODE` list init — but does not give the
+> line grammar). If the lead prefers this material physically relocated
+> into `deskapp.md` (its rightful home by source file), that's a trivial
+> move; the content is kept self-contained here so it isn't lost either
+> way.
+
+## Primary locations
+
+- `desk/deskapp.c:295-436` `app_parse(pcurr, pa)` — parses **one**
+  `ANODE`-describing line (`#T`/`#M`/`#G`/`#Y`/`#F`/`#P`/`#D`/`#I`/`#N`/
+  `#X`/`#V`/`#O`) into an already-allocated `ANODE`
+- `desk/deskapp.c:781-1014` `app_start(void)` — the full-file parse loop
+  (the `switch(*pcurr)` over line-prefix characters, `:851-976`), calling
+  `app_parse` for the `ANODE` lines and handling `#R`/`#Z`/`#W`/`#E`/`#Q`/
+  `#K` inline
+- `desk/deskapp.c:1106-1300` `app_save(todisk)` — writes every line back
+  out, mirroring `app_start`'s format exactly
+- `desk/deskapp.c:698-753` `build_inf(infbuf, xcnt, ycnt)` — synthesizes
+  a **default** in-memory `EMUDESK.INF` (used when no saved file/shell
+  buffer is found) from the two built-in string constants below plus a
+  generated `#M`-line-per-drive loop
+- `desk/deskapp.c:171-189` `desk_inf_data1`/`desk_inf_data2` — the
+  literal built-in default-file text (the actual byte-for-byte default
+  content, invaluable as ground truth for the format)
+- `util/optimize.c:202-219` `scan_2(pcurr, pwd)` — the shared 2-hex-digit
+  field parser **every** numeric field in the format uses (see
+  [below](#shared-field-encodings))
+- `util/optimize.c` `scan_str`(`deskapp.c:258-289`, despite living in
+  `deskapp.c` it's declared for reuse, not `util/`) — the shared
+  `@`-terminated string field parser
+
+## Line-oriented structure
+
+The file (or in-memory shell buffer) is one giant character buffer, not
+literally split into records; both `app_start`'s reader and `app_save`'s
+writer treat it as line-oriented only by convention: every logical line
+begins with `#` immediately followed by a **one-character prefix**, and
+ends with `\r\n` (written explicitly; the reader doesn't require it —
+it just scans forward for the next `#`, `deskapp.c:848` `if (*pcurr++ !=
+'#') continue;` — so any bytes between the end of one recognized field
+and the next `#` are silently skipped, including a missing or malformed
+`\r\n`). Fields *within* a line are whitespace-separated only by
+convention of the specific parser called for that field; `scan_2` skips
+leading spaces itself, `scan_str` also skips leading spaces before
+capturing.
+
+## Shared field encodings
+
+- **2-hex-digit numeric field** (`scan_2`, `util/optimize.c:202-219`):
+  skips leading spaces; if the next character is `\r` (end of line
+  reached early), the value is `0` and no characters are consumed
+  beyond that check; otherwise reads exactly 2 hex digits. **Special
+  case: the value `0xFF` is converted to `-1`** — this is how
+  `a_aicon`/`a_dicon` encode "no icon override" (`IG_APPL`/`IG_DOCU`
+  defaults apply instead, per `app_parse:359-364`).
+- **`@`-terminated string field** (`scan_str`, `deskapp.c:258-289`):
+  skips leading spaces, copies characters into the shared `G.g_atext[]`
+  arena (`SIZE_BUFF`=4096 bytes total, shared across **every** `ANODE`'s
+  strings for the whole desktop session — `deskapp.h:76`) until `@`,
+  `\r`, or NUL; the terminator (`@` or `\r`) is consumed, NUL is not. If
+  the arena fills up, further characters are silently dropped (`KDEBUG`
+  only, no user-visible error) — a hard **4 KB ceiling on the total
+  size of all `ANODE` path/label/argument strings combined**, not
+  per-string.
+- **Single literal character field** (used only for the desktop drive
+  letter): exactly one raw ASCII byte, not hex-encoded; a space means
+  "no letter."
+
+## Per-prefix line grammar
+
+### `#R <rr>\r\n` — revision level
+
+`deskapp.c:853-856` (parse), `:1128` (save: `"#R %02X\r\n"`,
+`INF_REV_LEVEL`=`0x02`, `deskapp.c:129`). One 2-hex field,
+`inf_rev_level`, consulted by `app_parse` to convert two legacy icon
+index values (`IG_APPL_REV0`=8→`IG_APPL`, `IG_DOCU_REV0`=40→`IG_DOCU`,
+`app_parse:370-375`) and by the desktop-shortcut fixup (swaps
+`a_pappl`/`a_pdata` for old-format `X`/`V` entries if `inf_rev_level<2`,
+`app_parse:406-423`, `CONF_WITH_DESKTOP_SHORTCUTS`). **Always written as
+`INF_REV_LEVEL`=2 on save**, regardless of what was read (the file is
+always upgraded to the current revision when re-saved).
+
+### `#Z <cc> <path>@\r\n` — autorun program
+
+`deskapp.c:857-859` (parse: `scan_str(pcurr+5, &pauto)` — the `<cc>`
+byte is **skipped, never actually parsed** into anything; `pcurr+5`
+jumps straight past `Z`+space+2 chars+space to the path), `:1131-1133`
+(save: `"#Z %02X %s@\r\n"`, `pa->a_flags & AF_ISCRYS`). The path is held
+in a local `pauto` pointer until a later `#G`/`#Y`/`#F`/`#P` line's
+`a_pappl` matches it by `strcmp`, at which point that `ANODE` gets
+`AF_AUTORUN` set (`app_start:880-887`) — **the `<cc>` (`AF_ISCRYS`) byte
+written on save is redundant / write-only**, since the reader discards
+it and instead re-derives everything about the autorun program from the
+`ANODE` line it matches.
+
+### `#E <e1> <e2> <vh> <vl> <e5>\r\n` — environment/desktop flags
+
+`deskapp.c:914-951` (parse), `:1135-1174` (save,
+`"#E %02X %02X %02X %02X %02X\r\n"`). Five 2-hex fields:
+
+| Field | Bit | Meaning | Constant |
+|---|---|---|---|
+| `e1` bit 7 | `0x80` | view folder contents as text (else icons) | `INF_E1_VIEWTEXT` |
+| `e1` bits 6-5 | `0x60` | sort mode 0-3 (`S_NAME`/`S_TYPE`/`S_SIZE`/`S_DATE`) | `INF_E1_SORTMASK` |
+| `e1` bit 4 | `0x10` | confirm deletes | `INF_E1_CONFDEL` |
+| `e1` bit 3 | `0x08` | confirm copies | `INF_E1_CONFCPY` |
+| `e1` bits 2-0 | `0x07` | double-click speed 0-4 | `INF_E1_DCMASK` |
+| `e2` bit 7 | `0x80` | blitter enabled | `INF_E2_BLITTER` |
+| `e2` bit 6 | `0x40` | date format from `_IDT` cookie (ignore day/month bit) | `INF_E2_IDTDATE` |
+| `e2` bit 5 | `0x20` | time format from `_IDT` cookie (ignore 24h bit) | `INF_E2_IDTTIME` |
+| `e2` bit 4 | `0x10` | **allow overwrites** — inverted sense: `1` = allow, i.e. **do not** confirm overwrite (see [Edge cases](#edge-cases-in-the-format)) | `INF_E2_ALLOWOVW` |
+| `e2` bit 2 | `0x04` | day-before-month (only if not `_IDT`-driven) | `INF_E2_DAYMONTH` |
+| `e2` bit 1 | `0x02` | 24-hour clock (only if not `_IDT`-driven) | `INF_E2_24HCLOCK` |
+| `vh`,`vl` | — | video mode, high/low byte of `Getrez()`/Falcon mode (`0xFF00\|Getrez()` if not Videl) — **read but discarded on load** (`scan_2(pcurr,&dummy)` ×2, `app_start:935-936`); only ever written, for informational/diagnostic value, never restored | — |
+| `e5` bit 7 | `0x80` | do not sort folder contents (**overrides** the `e1` sort-mask entirely) | `INF_E5_NOSORT` |
+| `e5` bit 6 | `0x40` | new-app launch: use app's own dir as CWD (else top window's) — `CONF_WITH_DESKTOP_CONFIG` | `INF_E5_APPDIR` |
+| `e5` bit 5 | `0x20` | new-app launch: pass full path in args (else filename only) — `CONF_WITH_DESKTOP_CONFIG` | `INF_E5_ISFULL` |
+| `e5` bit 4 | `0x10` | disable "size to fit" — `CONF_WITH_SIZE_TO_FIT` | `INF_E5_NOSIZE` |
+| `e5` bit 3 | `0x08` | disable CPU cache — `CONF_WITH_CACHE_CONTROL` | `INF_E5_NOCACHE` |
+
+Default (`INF_E1_DEFAULT`=`INF_E1_CONFDEL|INF_E1_CONFCPY|2`,
+`INF_E2_DEFAULT`=`INF_E2_BLITTER|INF_E2_IDTDATE|INF_E2_IDTTIME`,
+`INF_E5_DEFAULT`=`INF_E5_APPDIR|INF_E5_ISFULL`) is embedded verbatim in
+`desk_inf_data1`: `"#E 1A E0 00 00 60\r\n"` (`deskapp.c:173`) — i.e.
+`e1=0x1A`, `e2=0xE0`, video=`0000`, `e5=0x60`.
+
+### `#Q <d1> <w1> <d2> <w2> <d3> <w3>\r\n` — background pattern/colour (`CONF_WITH_BACKGROUNDS`)
+
+`deskapp.c:952-960` (parse), `:1176-1182` (save,
+`"#Q %02X %02X %02X %02X %02X %02X\r\n"`). Three `(desktop, window)`
+pattern+colour byte pairs, one pair per **plane-count bucket**
+(`G.g_patcol[0]`=1-plane/mono, `[1]`=2-plane, `[2]`=more-than-2-plane —
+see `_overview.md`'s config-variant note and `deskapp.md`'s
+`set_background` narration). Each byte packs a fill-pattern index in the
+high nibble and a colour index in the low nibble (per
+`INF_Q1_DEFAULT`=`(IP_4PATT<<4)|BLACK` etc., `deskapp.c:118-123`).
+Built-in default: `"#Q 41 40 43 40 43 40\r\n"` (`deskapp.c:175`) →
+mono desktop=`0x41`, mono window=`0x40`, colour(2pl) desktop=`0x43`,
+colour(2pl) window=`0x40`, colour(>2pl) desktop=`0x43`, colour(>2pl)
+window=`0x40`.
+
+### `#K <k0> <k1> … <k32>\r\n` — menu-item keyboard shortcuts
+
+`deskapp.c:967-975` (parse — **always readable**, regardless of
+`CONF_WITH_DESKTOP_CONFIG`, per the source comment "we allow all
+versions of the ROM to _load_ menu item shortcuts", `:964-966`),
+`:1184-1192` (save — **only written if `CONF_WITH_DESKTOP_CONFIG`**).
+Exactly `NUM_SHORTCUTS`=33 (`deskmain.h:18`) 2-hex fields, one byte per
+menu item slot, each holding an ASCII shortcut-key character (or `0x00`
+for none) — see [`deskinf.md`](#inf_pref--inf_backgrounds--inf_conf--preference-dialogs)'s
+`inf_conf` for how these are edited.
+
+### `#W <hsl> <vsl> <xc> <yc> <wc> <hc> <00> <path>@\r\n` — saved window geometry
+
+`deskapp.c:889-913` (parse), `:1195-1204` (save,
+`"#W %02X %02X %02X %02X %02X %02X %02X"` then `" %s@\r\n"`). **Seven**
+2-hex fields, then a path string:
+
+| Field | Meaning | Unit |
+|---|---|---|
+| `hsl` | horizontal slider position | slider units (opaque, passed through as-is) |
+| `vsl` | vertical slider position | slider units |
+| `xc` | window X position | **character cells** — multiplied by `gl_wchar` on load (`app_start:897-898`), divided by `gl_wchar` on save (`app_save:1200`) |
+| `yc` | window Y position | character cells, × `gl_hchar` |
+| `wc` | window width | character cells, × `gl_wchar` |
+| `hc` | window height | character cells, × `gl_hchar` |
+| `00` | **unused placeholder**, always written as literal `0`, **read but never stored anywhere** — `app_start`'s parser does not even call `scan_2` for it, it does a raw `pcurr += 4` to skip " XX " (the field plus its two surrounding separators), `app_start:906` | — |
+
+Up to `NUM_WNODES`=7 (`deskconf.h:30`) `#W` lines are read into
+`cnxsave->cs_wnode[0..wincnt-1]` in **file order** (the `wincnt`
+counter increments per line seen, capped at `NUM_WNODES` — excess `#W`
+lines beyond the 7th are parsed for side effects (path chars still
+consumed) but **not stored anywhere**, `app_start:891-912` — the `if
+(wincnt < NUM_WNODES)` guard wraps the whole body). The **character-cell
+→ pixel scaling** (`gl_wchar`/`gl_hchar`, the current font's cell size)
+means a saved window position is **resolution/font-dependent** — moving
+to a different video mode or font size before the next load shifts
+every saved window position by the ratio of old to new cell size. Built-
+in default (`desk_inf_data1`, `deskapp.c:177-180`): four `#W` lines all
+reading `00 00 02 06/08/0A/0D 26 0C 00 @` — i.e. staggered cascading
+default positions (row 6, 8, 10, 13 in character-cell Y), width `0x26`
+=38 chars, height `0x0C`=12 chars, no saved path (empty, meaning "not yet
+associated with an open directory" — the `#T`/`ANODE` lines are what
+actually get displayed; these four blank `#W` lines are just pre-seeded
+"remember where the next few windows the user opens should default to"
+slots).
+
+### `#<C> [<xx> <yy>] <aa> <dd> [<L>] <pappl>@ <pdata>@ [<f><kk> <pargs>@]\r\n` — one `ANODE`
+
+`deskapp.c:295-436` (`app_parse`, the field reader shared by every
+prefix below), `:1216-1283` (`app_save`'s mirroring writer). General
+grammar (bracketed groups are conditional, detailed per-tag below):
+
+| Segment | Present when | Encoding |
+|---|---|---|
+| `<C>` | always | 1-char tag, see table below |
+| `<xx> <yy>` | tag implies `AF_ISDESK` (T/M/O/X/V) | 2×2-hex: desktop grid **column**/**row** (0-255) — see the dual-unit lifecycle already noted in `_data-model.md` |
+| `<aa> <dd>` | always | 2×2-hex: `a_aicon`/`a_dicon` index into `G.g_iblist[]`; `FF`→`-1` |
+| `<L>` | tag implies `AF_ISDESK` | 1 literal char: drive letter, or space for none |
+| `<pappl>@` | always | `@`-terminated string, semantics per tag (see `deskapp.h:83-98`, already in `_data-model.md`) |
+| `<pdata>@` | always | `@`-terminated string, semantics per tag |
+| `<f><kk> <pargs>@` | `a_type==AT_ISFILE && !AF_ISDESK` (tags G/Y/F/P/I/N) | `<f>` = **one un-padded hex digit** (`INF_AT_APPDIR`=1 / `INF_AT_ISFULL`=2 bit flags), `<kk>` = 2-hex function-key number, then `<pargs>@` |
+
+Tag table (`app_parse:301-350` / `app_save:1218-1256`):
+
+| Tag | `a_type` | `a_flags` set | Meaning | Config gate |
+|---|---|---|---|---|
+| `T` | `AT_ISTRSH` | `AF_ISDESK` | Trash icon | — |
+| `M` | `AT_ISDISK` | `AF_ISDESK` | Disk/media icon | — |
+| `O` | `AT_ISPRNT` | `AF_ISDESK` | Printer icon | `CONF_WITH_PRINTER_ICON` |
+| `X` | `AT_ISFILE` | `AF_ISDESK` | File shortcut on desktop | `CONF_WITH_DESKTOP_SHORTCUTS` |
+| `V` | `AT_ISFOLD` | `AF_ISDESK` | Folder shortcut on desktop | `CONF_WITH_DESKTOP_SHORTCUTS` |
+| `D` | `AT_ISFOLD` | `0` | Folder (default type-association entry) | — |
+| `G` | `AT_ISFILE` | `AF_ISCRYS` | GEM application, no parameters | — |
+| `Y` | `AT_ISFILE` | `AF_ISCRYS\|AF_ISPARM` | GEM application, needs parameters | — |
+| `F` | `AT_ISFILE` | `0` | TOS application/file, no parameters | — |
+| `P` | `AT_ISFILE` | `AF_ISPARM` | TOS application, needs parameters | — |
+| `I` | `AT_ISFILE` | `AF_WINDOW\|AF_ISEXEC` | Window icon, executable file | parsed unconditionally; **created** only via `CONF_WITH_WINDOW_ICONS` (see [Edge cases](#edge-cases-in-the-format)) |
+| `N` | `AT_ISFILE` | `AF_WINDOW` | Window icon, non-executable file | same as `I` |
+
+Every `M`/`T`/`O`/`G`/`Y`/`F`/`P`/`D`/`I`/`N`/`X`/`V` line is created via
+`app_alloc()` (`app_start:876-878`) — if the fixed 64-entry `ANODE` pool
+(`NUM_ANODES`, `deskapp.h:75`) is already exhausted, `app_alloc` itself
+issues `STAPGONE` and `app_start` **returns immediately**, silently
+abandoning the rest of the file's still-unparsed lines
+(`app_start:877-878` — `if (!pa) return;`) — **a truncated
+`EMUDESK.INF` beyond the 64th `ANODE` line is simply never read**, no
+error surfaced beyond that one alert.
+
+**Built-in default `#M`/`#T`/`#O` lines** (`build_inf`, `deskapp.c:698-753`,
+used only when no `EMUDESK.INF`/shell-buffer data is found at all):
+generated **not** from a string constant but computed per mounted drive:
+`"#M %02X %02X %02X FF %c %s %c@ @\r\n"` — `xx`=`icon_index % xcnt`,
+`yy`=`icon_index / xcnt` (row-major fill from the top-left, **same
+placement rule** as `deskins.md`'s `install_drive`/`ins_posdisk`, though
+this is an independent code path used only for the very-first-ever-boot
+default), `aicon`=`IG_HARD`(drives >1) or `IG_FLOPPY`(A/B),
+`dicon`=literal `FF`(-1, no override), drive letter twice (once as the
+`<L>` field, once embedded in the label text `pappl` — "Disk C" for
+example, `pdata` is empty (just `" @"` — a lone space then terminator,
+i.e. an empty string after the leading-space-skip)). The Trash icon is
+appended after all drives, positioned bottom-left unless a drive icon
+would overlap that row (in which case bottom-**right**,
+`build_inf:735-737`); the Printer icon (`CONF_WITH_PRINTER_ICON`) goes
+to the *other* bottom corner, but **only if the Trash ended up on the
+left** (`:745` `if (icon_x==0)`) — if the drive count pushed Trash to
+the right, **no Printer icon is generated at all** in the built-in
+default (the user would have to install one manually via
+[`deskins.md`](deskins.md)'s `ins_icon`).
+
+**Built-in default `#F`/`#N`/`#D`/`#Y`/`#G`/`#G`/`#P`/`#F` lines**
+(`desk_inf_data2`, `deskapp.c:181-189`, literal constant) — these are
+**generic per-extension type-default entries**, not tied to any specific
+installed file (their `pappl` field holds a **wildcard**, e.g. `*.APP`,
+not a real path — see the source comment at `deskapp.c:167-169`: "the
+first `F` entry (for `*.*`) exists for compatibility... not otherwise
+necessary"):
+
+```
+#F FF 07 @ *.*@\r\n      -> generic file, no app icon, IG_DOCU data icon, matches *.*
+#N FF 07 @ *.*@\r\n      -> window-icon analogue of the same
+#D FF 02 @ *.*@\r\n      -> generic folder, IG_FOLDER data icon
+#Y 06 FF *.GTP@ @\r\n    -> GEM app needing parms, matches *.GTP, IG_APPL icon
+#G 06 FF *.APP@ @\r\n    -> GEM app, matches *.APP
+#G 06 FF *.PRG@ @\r\n    -> GEM app, matches *.PRG
+#P 06 FF *.TTP@ @\r\n    -> TOS app needing parms, matches *.TTP
+#F 06 FF *.TOS@ @\r\n    -> TOS app, matches *.TOS
+```
+
+---
+
+## Edge cases in the format
+
+- **`INF_E2_ALLOWOVW`'s sense is inverted relative to its name**: bit
+  set (`1`) means "allow overwrites **without confirmation**" — the
+  *preference* variable `cs_confovwr` is the **logical negation**
+  (`app_start:925` `cnxsave->cs_confovwr = ((envr & INF_E2_ALLOWOVW) ==
+  0);`) — reading the raw bit as "confirm overwrite = true when set"
+  would be backwards.
+- **The `#E` line's video-mode bytes are write-only** — computed fresh
+  every save (`desk_get_videomode()`) but never restored on load
+  (explicitly `scan_2(pcurr,&dummy)` twice, discarding both). Their only
+  purpose is informational/diagnostic in a saved file, not functional.
+- **The `#Z` autorun line's flag byte is write-only** in the same way —
+  see above; the actual `AF_ISCRYS` state of the autorun program comes
+  from whichever `#G`/`#Y`/`#F`/`#P` line's path matches, not from the
+  `#Z` line's own byte.
+- **`#W`'s 7th field is a placeholder that was never removed** — the
+  source comment "skip no-longer-used field" (`app_start:906`) confirms
+  this is legacy cruft kept only for file-format stability across
+  EmuTOS versions (and, presumably, cross-compatibility with real Atari
+  TOS's own EMUDESK.INF, which likely used this field for something once
+  — not independently verified against Compendium/Profibuch in this
+  pass).
+- **Window position/size are stored in character cells, not pixels** —
+  meaning a saved desktop layout is **not** resolution- or font-
+  independent; loading a file saved under a different font size shifts
+  every window.
+- **`I`/`N` (window-icon) lines are parsed unconditionally**, regardless
+  of `CONF_WITH_WINDOW_ICONS` — only their *creation* via the interactive
+  "Install window icon" dialog is gated (see [`deskins.md`](deskins.md)).
+  A file saved by a `CONF_WITH_WINDOW_ICONS`-enabled build, then loaded
+  by a build without that feature, still gets those `ANODE`s created
+  (they just can't be edited/created interactively going forward).
+- **The flags nibble in the `G/Y/F/P/I/N` extra block is tested via a
+  raw ASCII-bitwise-AND on the character itself, not a parsed hex
+  value** (`app_parse:388-390`: `if (*pcurr & INF_AT_APPDIR)` where
+  `INF_AT_APPDIR`=`0x01`, applied directly to the ASCII digit
+  character `'0'`-`'3'`) — this only produces the correct result because
+  the flags value is restricted to `0-3` and ASCII `'0'` (`0x30`) has
+  bits 0-1 clear, so testing bits 0/1 of the character byte happens to
+  equal testing bits 0/1 of the numeric value. A reimplementation that
+  parses this nibble as an actual hex digit first (the "obviously
+  correct" way) will still produce the identical result for the valid
+  range `0-3`, but should not copy the raw-character-AND trick itself.
+- **64-`ANODE`-pool exhaustion truncates the whole rest of the file
+  silently** (`app_start:876-878`) — any lines after the 64th `ANODE`
+  line (of any tag) are never read, not even `#W` lines that might
+  physically appear later in the file (the file's line order is
+  whatever `app_save` wrote — see next point).
+- **File line order** (from `app_save`, `deskapp.c:1106-1300`): `#R`,
+  then all `#Z` (autorun, at most one in practice since only one `ANODE`
+  can carry `AF_AUTORUN`), then `#E`, then `#Q` (`CONF_WITH_BACKGROUNDS`),
+  then `#K` (`CONF_WITH_DESKTOP_CONFIG`), then all 7 `#W` lines
+  (always exactly `NUM_WNODES`, even for unopened window slots — their
+  `pth_save` is empty), then every `ANODE` line in **reverse-of-reverse**
+  order (`app_revit()` is called before *and* after the save loop,
+  `:1213`/`:1287` — this ensures generic/built-in `ANODE`s are written
+  before user-installed ones, so that re-reading via `app_alloc`'s
+  head-insertion produces the same relative order as before the save —
+  see the source comment at `:1206-1212`).
+
+---
+
+## Verification criteria (format)
+
+- **Round-trip**: parsing a saved `EMUDESK.INF`, then immediately saving
+  it again (with no user changes in between), must reproduce the
+  **same set of `ANODE`s** with the same fields (byte-for-byte
+  reproduction of the file is *not* guaranteed — e.g. video-mode/autorun-
+  flag write-only fields may differ — but the resulting in-memory state
+  after re-parsing the re-saved file must be identical to the original
+  in-memory state).
+- **`FF` sentinel**: an `aicon`/`dicon` field of `FF` must parse to `-1`
+  (not `255`), verified via `pa->a_aicon == -1`.
+- **`e2` overwrite bit inversion**: `#E .. 10 ..` (bit 4 set) must result
+  in `cs_confovwr == FALSE` (confirmation **disabled**).
+- **Window cell scaling**: a `#W` line with `xc=02` under a font with
+  `gl_wchar=8` must produce `x_save == 16` pixels.
+- **64-ANODE truncation**: a file with 65 `ANODE`-tagged lines followed
+  by a `#W` line must result in exactly 64 `ANODE`s and the trailing
+  `#W` line's data **not** overwriting any `cs_wnode[]` slot beyond
+  whatever earlier `#W` lines (if any occurred before the 65th ANODE
+  line) already set.
+
+---
+
+## Dependencies (format)
+
+### Requires
+- `deskapp.c`'s `ANODE` pool (`app_alloc`/`app_free`, `NUM_ANODES`=64)
+- `G.g_atext[]` arena (`SIZE_BUFF`=4096 bytes, shared string storage)
+- `gl_wchar`/`gl_hchar` (current font cell size, for `#W` scaling)
+
+### Used by
+- `deskapp.c`'s `app_start()` (load) / `app_save()` (save) — the only
+  two callers of the format as a whole
+- `deskmain.c`'s `SAVEITEM` (`cnx_put()`+`app_save(TRUE)`) and
+  `app_read_inf()` (`CONF_WITH_READ_INF`, default on) for the "Read
+  desktop" menu-equivalent reload — neither traced further in this pass
+
+## Related data structures
+
+- `docs/api/desktop/_data-model.md` — `ANODE`, the `a_xspot`/`a_yspot`
+  dual-unit lifecycle (grid units on disk ↔ pixels in memory)
+- `docs/api/desktop/deskapp.md` — `app_start`'s icon/grid metrics, which
+  the `#M`/build-in-default placement math depends on (`G.g_icw`/`g_ich`)
+
+## Cross-references
+
+Not cross-checked against Compendium/Profibuch in this pass (see the
+note in the main body above) — flagged for follow-up if NewTOS ever
+adopts real-`EMUDESK.INF`-file compatibility as a goal (currently out of
+scope per `_data-model.md`'s existing note on this topic).
+
+## Configuration / version notes
+
+- `CONF_WITH_BACKGROUNDS` — gates `#Q`
+- `CONF_WITH_DESKTOP_CONFIG` — gates `#K`'s *write* (not its read) and
+  the `e5` `APPDIR`/`ISFULL` fields' effect
+- `CONF_WITH_SIZE_TO_FIT` / `CONF_WITH_CACHE_CONTROL` — gate two `e5`
+  bits' effect (always parsed, only conditionally *applied*)
+- `CONF_WITH_PRINTER_ICON` — gates the `O` tag and the built-in default's
+  printer-icon generation
+- `CONF_WITH_DESKTOP_SHORTCUTS` — gates `X`/`V` tags and the
+  revision-0-format fixup for them
+- `CONF_WITH_WINDOW_ICONS` — gates only the *interactive creation* of
+  `I`/`N` tags, not their parsing (see edge case above)
+- `INF_REV_LEVEL`=2 is the only revision EmuTOS currently writes;
+  revision 0 and 1 read-compatibility fixups exist for icon-index
+  remapping and (shortcuts only) `a_pappl`/`a_pdata` swap

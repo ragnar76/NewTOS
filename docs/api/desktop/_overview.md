@@ -1,0 +1,137 @@
+# EmuTOS `desk/` — Rendering Core Overview
+
+> Phase-00 extraction, Track A, per `docs/SOURCE-ANALYSIS-PROTOCOL.md`.
+> Source: EmuTOS @ `1a7484ab` (pinned, see `docs/MEMORY.md` ADR-003),
+> directory `desk/`. This directory (`docs/api/desktop/`) extracts the
+> **rendering core**: the data model, the icon/text grid metrics, view
+> building (turning a file list into an on-screen `OBJECT` tree), and the
+> redraw dispatch. It complements — does not replace — the existing
+> `docs/api/desktop.md`, which covers the desktop **application** structure
+> (main loop, menu, `app_blddesk`'s drive-icon/background narrative). Where
+> the two overlap, this directory goes one level deeper into the geometry
+> and cites the exact formulas; `desktop.md` is left as-is and cross-linked.
+
+## Files in this directory
+
+| File | Covers |
+|---|---|
+| `_overview.md` | this map |
+| `_data-model.md` | `GLOBES` (`G`), `WNODE`, `PNODE`, `FNODE`, `ANODE` (rendering-relevant fields), `SCREENINFO`/`ICONINFO`, the `g_screen[]`/`g_screeninfo[]` layout |
+| `deskapp.md` | `app_start()`'s icon/grid metrics (`g_wicon`/`g_hicon`/`g_icw`/`g_ich`), `app_blddesk()`'s use of them |
+| `deskwin.md` | `win_view()`, `win_start()`, `win_ocalc()`, `win_bldview()`, plus the rest of `deskwin.c` (scrolling, window list, sort/rebuild-all) |
+| `desksupp-redraw.md` | `do_wredraw()` and the `WF_FIRSTXYWH`/`WF_NEXTXYWH` rectangle-iteration contract it consumes |
+| `deskmain.md` | *(sibling extraction, not produced by this task)* `deskmain()`'s event loop, menu dispatch and keyboard handling — the caller-side context for the `WM_REDRAW`→`do_wredraw` wiring documented in `desksupp-redraw.md` |
+
+## Map of `desk/` (what each source file does)
+
+The full directory has 22 `.c` files; this task's scope is the five
+covering data model + rendering core. The rest are listed for
+orientation (already covered, or out of scope, per the task boundary):
+
+| File | Role | Status |
+|---|---|---|
+| `deskglob.c/.h` | Declares/defines the single global instance `GLOBES G` | extracted → `_data-model.md` |
+| `deskobj.c/.h` | `G.g_screen[]`/`g_screeninfo[]` allocation (`sob_malloc`), init (`obj_init`), the item-object free-chain allocator (`obj_walloc`/`obj_wfree`/`obj_ialloc`), `obj_get_obid` | extracted → `_data-model.md` (structure) + `deskapp.md`/`deskwin.md` (call sites) |
+| `deskfpd.c/.h` | `FNODE`/`PNODE` — open/close a directory path (`pn_open`/`pn_close`), scan it into a sorted `FNODE` list (`pn_active`/`pn_sort`), selection queries (`pn_selected`/`pn_count`/`pn_clear`) | extracted → `_data-model.md` |
+| `deskapp.c/.h` | `ANODE` list; icon/grid metrics (`app_start`); desktop `OBJECT` tree build (`app_blddesk`); background pattern (`set_background`); EMUDESK.INF parse/build | **this task**: metrics + `app_blddesk`'s consumption of them → `deskapp.md`. INF parsing / ANODE installation already narrated in `docs/api/desktop.md`; not re-derived here except where it feeds grid placement (`a_xspot`/`a_yspot`) |
+| `deskwin.c/.h` | `WNODE`; per-view sizing (`win_view`), window list management (`win_start`/`win_alloc`/`win_free`/`win_find`/`win_top`/`win_ontop`), the virtual-grid calculator (`win_ocalc`) and view builder (`win_bldview`), scrolling (`win_slide`/`win_arrow`/`win_blt`/`win_delta`), bulk operations (`win_srtall`/`win_bdall`/`win_shwall`), selection walk (`win_isel`), name/info line (`win_sname`/`win_sinfo`) | **this task** → `deskwin.md` |
+| `desksupp.c/.h` | Grab-bag of desktop support routines: selection clearing (`desk_clear*`), `desk_verify`, **`do_wredraw`** (redraw dispatch), `do_xyfix`, `do_wopen`, `do_wfull`, file-exists check, disk format (`CONF_WITH_FORMAT`), show-file/print-file (`CONF_WITH_SHOW_FILE`/printer) | **this task**: `do_wredraw` only → `desksupp-redraw.md`. The rest (format, show-file, `do_wopen`/`do_wfull` widget handling) is out of scope for the *rendering core* task — flagged for a later batch if needed |
+| `deskact.c/.h` | Object-selection/highlight state machine (`act_chg`, `act_allchg`, mouse-driven select/drag) | out of scope (interaction, not rendering) — calls `do_wredraw` (3 call sites), noted as a dependency in `desksupp-redraw.md` |
+| `deskfun.c/.h` | Menu/file-operation dispatch (copy/move/delete/rename, open, new folder, …) | out of scope — one `do_wredraw` call site noted |
+| `deskdir.c/.h` | Directory operation helpers (recursive count/copy/move/delete) used by `deskfun.c` | out of scope |
+| `deskins.c/.h` | Install application / install icon dialogs | out of scope; referenced only for `a_aicon`/`a_dicon` semantics already covered by `deskapp.h` |
+| `deskinf.c/.h` | "Show info" dialogs, text-view line formatting (`format_fnode`, `dr_code` `USERBLK` callback), disk info | out of scope — `dr_code`/`format_fnode` are the V_TEXT rendering callback referenced (not traced) from `win_bldview`; flagged **needs deeper analysis** if a later task needs the text-view line format |
+| `deskmain.c/.h` | Main loop, menu dispatch, AES message switch (`hndl_button`, the `WM_REDRAW`/`MN_SELECTED`/… switch) | extracted in the sibling `deskmain.md` (not produced by this task); also narrated in `docs/api/desktop.md`. The `WM_REDRAW` case (the primary caller of `do_wredraw`) is additionally cited in this task's `desksupp-redraw.md` |
+| `deskpro.c/.h` | Desktop "process" launch helper | out of scope |
+| `deskrez.c/.h` | Resolution-change handling | out of scope (but interacts with `app_start`'s recompute of `g_wicon`/`g_icw` on rez change — noted in `deskapp.md` as a dependency) |
+| `deskrsrc.c/.h` | Resource-string lookup (`desktop_str_addr`) | out of scope (utility) |
+| `deskstart.S` | Desktop process entry stub | out of scope |
+| `gembind.c/.h`, `aesbind.h` | AES binding stubs (trap glue for the desktop's own AES calls) | out of scope — already covered by `docs/api/aes/` |
+| `desktop.def`/`.rsc`, `icon.def`/`.rsc` | Resource source (menu tree text, icon bitmaps) — compiled at build time by an external resource tool (`erd`); **not present as generated C** in this checkout | see `deskapp.md` "needs deeper analysis" note about `ib_xtext` |
+
+> **Update (Task #3, 2026-07-04):** the six modules marked *out of scope* above
+> (`deskdir`/`deskfun`/`deskact`/`deskins`/`deskinf`/`deskrez`) are **now
+> extracted** into their own specs — `deskdir.md` (also covers `deskfpd.c`
+> sort: Shell-sort, folders-first, 5 keys + name tiebreak), `deskfun.md`,
+> `deskact.md`, `deskins.md`, `deskinf.md` (its appendix holds the exact
+> **NEWDESK.INF line grammar**, sourced from `deskapp.c` `app_parse`/
+> `build_inf`), `deskrez.md`. The V_TEXT renderer callback (`format_fnode`/
+> `dr_code`) flagged *needs deeper analysis* here and in `desksupp-redraw.md`
+> is resolved in `deskinf.md`.
+
+## How the pieces connect (data flow for one redraw)
+
+1. **Boot-once setup** (`win_start()`, `deskwin.c:105-135`): picks the
+   default view type (`V_ICON`) and sort order, calls `win_view()` to
+   derive the per-item grid pitch (`g_iwspc`/`g_ihspc`), *then* calls
+   `obj_init()` (`deskobj.c:113-147`) which allocates `G.g_screen[]`/
+   `g_screeninfo[]` sized using that pitch — **ordering dependency**:
+   `win_view()` must run first (`deskwin.c:117-118` comment). Allocates the
+   `WNODE` array (`G.g_wlist`, `NUM_WNODES`=7 entries, `deskbind.h:30`/
+   `deskconf.h`), chained via `w_next`, all initially free (`w_id=0`).
+
+2. **Icon/grid metrics** (`app_start()`, `deskapp.c:781-1014`, see
+   `deskapp.md`): once the built-in/user icon set is loaded, derives the
+   universal icon-cell size `g_wicon`×`g_hicon` from icon #0 (the hard-disk
+   icon) and the **desktop's** grid pitch `g_icw`×`g_ich` (which evenly
+   divides the desktop's pixel width/height — *not* the same computation
+   `win_view()` uses for **window** grids).
+
+3. **Opening a window / building the desktop** — either
+   `app_blddesk()` (`deskapp.c:1337-1404`, the desktop pseudo-window) or
+   `win_bldview()` (`deskwin.c:392-520`, a real directory window) walks a
+   list — `ANODE`s flagged `AF_ISDESK` for the desktop, sorted `FNODE`s
+   (from `pn_active()`/`pn_sort()`, `deskfpd.c`) for a window — and
+   allocates one `G_ICON`/`G_USERDEF` `OBJECT` per visible item via
+   `obj_ialloc()` (`deskobj.c:220-240`), placing it on the *virtual* grid
+   computed by `win_ocalc()` (`deskwin.c:293-372`, windows only; the
+   desktop has no scrolling, so it has no virtual/physical distinction).
+
+4. **Redraw**: any AES `WM_REDRAW` message (`deskmain.c:1279`), any
+   view-rebuild (`app_blddesk`, `win_blt` after scrolling, `win_dispfile`),
+   or any selection-state change (`deskact.c`) ends by calling
+   `do_wredraw(handle, clip_rect)` (`desksupp.c:202-232`, see
+   `desksupp-redraw.md`), which walks the AES window manager's **owned
+   rectangle list** (`WF_FIRSTXYWH`/`WF_NEXTXYWH` — the non-overlapping
+   visible pieces of the window, already extracted in
+   `docs/api/aes/window-graphics.md`) and calls `objc_draw()` once per
+   piece, clipped to both the AES-owned rectangle and the caller's dirty
+   rectangle.
+
+## Config-variant notes for this extraction
+
+Two `#if CONF_WITH_*` gates materially change the rendering core and are
+called out per-entry below; both default **on** in the general/Atari
+build (the one NewTOS should follow — not the ROM-constrained
+`TARGET_192` build):
+
+- **`CONF_WITH_SIZE_TO_FIT`** (`config.h:1850-1852`, default `1`; forced to
+  `0` only under `TARGET_192`, `config.h:334-336`, a 192 KB-ROM ST-only
+  build that strips advanced features for space). Changes `win_ocalc`'s
+  virtual-column calculation, `win_bldview`'s horizontal-fit/skip logic,
+  and adds the horizontal slider math. NewTOS should extract the
+  `CONF_WITH_SIZE_TO_FIT=1` variant (full behaviour).
+- **`CONF_WITH_BACKGROUNDS`** (`config.h:1747-1749`, default `1`; forced to
+  `0` under `TARGET_192`, `config.h:328-330`). Changes `set_background()`'s
+  `ob_spec` value and `INITIAL_ICON_STATE` (`deskwin.c:57-61`: `0` vs
+  `WHITEBAK`, i.e. whether icon backgrounds are hard-coded white or
+  configurable — this `INITIAL_ICON_STATE` detail is new in this
+  extraction). The gate itself is already noted in `docs/api/desktop.md`
+  (re the "Set background" menu item); repeated here in `deskapp.md`
+  where it affects the grid-adjacent `set_background` call.
+
+## Cross-references to already-extracted AES contract
+
+- `docs/api/structures/object.md` — `OBJECT` field layout (`ob_x/y/width/
+  height`, `ob_head/tail/next`, `ob_type`, `ob_spec`, `ob_state`/`ob_flags`
+  bits `SELECTED`/`LASTOB`/…) — used verbatim by `g_screen[]`.
+- `docs/api/structures/iconblk.md` — `ICONBLK` field layout (`ib_xicon`/
+  `ib_wicon`/`ib_xtext`/`ib_wtext`/`ib_char`/`ib_ptext`/…) — used verbatim
+  by `g_iblist[]`/`SCREENINFO.u.icon.block`.
+- `docs/api/aes/window-graphics.md` — `wind_calc_grect`, the `WF_*`
+  `wind_get`/`wind_set` field IDs, and (critically) the
+  `WF_FIRSTXYWH`/`WF_NEXTXYWH` rectangle-list contract that
+  `desksupp-redraw.md` builds on rather than re-deriving.
+- `docs/api/aes/event.md` — the AES message array layout (`G.g_rmsg[]`
+  ≙ `int_out`/message buffer), relevant to how `deskmain.c` feeds
+  `do_wredraw` its clip rectangle.
