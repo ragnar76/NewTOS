@@ -1,3 +1,9 @@
+//! DEPRECATED (ADR-016): superseded by the ground-up desktop rebuild in
+//! `crate::desk` (`docs/api/desktop/_rebuild-plan.md`). This module is out of
+//! the build (commented out in `lib.rs`) but kept in the tree + git as a
+//! behavioural reference until the rebuild reaches feature parity. Do not
+//! extend it; new desktop work goes into `crate::desk`.
+//!
 //! NewTOS Desktop — Phase 14, Batch 1: the desktop *screen*.
 //!
 //! Draws the GEM desktop over the AES: a grey desktop background pattern,

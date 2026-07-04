@@ -1,3 +1,9 @@
+//! DEPRECATED (ADR-016): superseded by the ground-up desktop rebuild in
+//! `crate::desk`. This module is out of the build (commented out in
+//! `lib.rs`) but kept in the tree + git until the rebuild reaches feature
+//! parity; NewTOS's own icon bitmaps land in `desk/icons.rs` (Task #6). Do
+//! not extend — see `docs/api/desktop/_rebuild-plan.md`.
+//!
 //! Real EmuTOS desktop ICONBLK bitmaps (32×32, 1bpp + mask), extracted
 //! from `references/emutos/desk/icon.rsc`: [0] hard disk, [1] floppy,
 //! [3] trash, [4] printer, [2] folder, [7] document. Generated.

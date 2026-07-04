@@ -51,9 +51,13 @@ pub mod selftest_bios;
 pub mod selftest_cookie;
 pub mod selftest_objc;
 pub mod aes_demo;
-pub mod desktop;
+pub mod desk;
 pub mod launch;
-pub mod desktop_icons;
+// ADR-016: the legacy hand-rolled desktop (`desktop` + `desktop_icons`) is
+// superseded by the ground-up `desk` rebuild and taken out of the build; the
+// source is kept in the tree as a behavioural reference until feature parity.
+// pub mod desktop;
+// pub mod desktop_icons;
 pub mod selftest_ikbd;
 pub mod selftest_vdi;
 pub mod selftest_fbcon;
@@ -306,7 +310,7 @@ extern "C" fn kernel_main_rust(dtb_phys: usize) -> ! {
     // invalid/empty .PRG fails the load gracefully (no fault).
     launch::run_auto_folder();
 
-    desktop::run();
+    desk::run();
 
     // The desktop loop returns only on Shutdown.
     kprintln!("[desk] shutdown — halting");

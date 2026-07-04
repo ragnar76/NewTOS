@@ -1,0 +1,1120 @@
+//! `desk::main` — the desktop event loop and interaction dispatch (EmuTOS
+//! `deskmain.c` main loop + handlers), per `docs/api/desktop/deskmain.md`.
+//!
+//! Reimplements the `evnt_multi` outer loop + message-drain sub-loop, the mouse
+//! button handler (`hndl_button` — resolves the click through `wind_find`, the
+//! **D3** fix), the keyboard handler (`hndl_kbd` — CR/ESC/arrows/function keys/
+//! Alt-letter/Ctrl-shortcut, the **D4** fix), the menu dispatch (`hndl_menu` →
+//! the four `do_*menu`), the `desk_all` view/sort pipeline, and the AES window
+//! messages (`WM_TOPPED`/`WM_MOVED`/`WM_SIZED`/`WM_FULLED`/`WM_ARROWED`/
+//! `WM_*SLID`/`WM_CLOSED`). `men_update` (the **D6** fix) lives in
+//! [`super::menu`] and runs after every dispatched event except a bare redraw.
+
+use alloc::string::String;
+
+use tos_api::bios::drive::drvbits;
+
+use super::global::{self, Grect, DROOT, MAX_DEPTH, NIL, NUM_WNODES, WINDOW_STYLE};
+use super::menu::{self, Item, Title};
+use super::win::{DESKWH, SliderSet, WA_DNLINE, WA_DNPAGE, WA_LFLINE, WA_RTLINE, WA_UPLINE, WA_UPPAGE};
+use super::{dir, redraw};
+use super::{
+    wind_get_grect, wind_get_top, wind_get_work, MU_BUTTON, MU_KEYBD, MU_MESAG, MU_TIMER, WF_CXYWH,
+    WF_FXYWH, WF_HSLIDE, WF_HSLSIZ, WF_INFO, WF_NAME, WF_PXYWH, WF_TOP, WF_VSLIDE, WF_VSLSIZ,
+};
+
+// AES message ids (`aesdefs.h:227-261`).
+const MN_SELECTED: i16 = 10;
+const WM_REDRAW: i16 = 20;
+const WM_TOPPED: i16 = 21;
+const WM_CLOSED: i16 = 22;
+const WM_FULLED: i16 = 23;
+const WM_ARROWED: i16 = 24;
+const WM_VSLID: i16 = 25;
+const WM_HSLID: i16 = 26;
+const WM_SIZED: i16 = 27;
+const WM_MOVED: i16 = 28;
+
+// `do_viewmenu` change bits (EmuTOS `deskmain.c:93-96`), fed to `desk_all`.
+const VIEW_CHANGED: u16 = 0x0001;
+const SORT_CHANGED: u16 = 0x0002;
+const SIZETOFIT_CHANGED: u16 = 0x0004;
+
+// ── Event loop ─────────────────────────────────────────────────────────────
+
+/// The desktop main loop (EmuTOS `deskmain.c:2077-2123`): block in `evnt_multi`
+/// for keyboard / button / message events, dispatch whichever fired, then drain
+/// any further queued messages with a message-only `evnt_multi` before blocking
+/// again. Runs until a handler requests exit (currently only a Task-#9 shutdown
+/// path would; the desktop otherwise runs forever, which is correct).
+pub fn event_loop() {
+    let mut msg = [0i16; 8];
+    let mut done = false;
+    while !done {
+        let ev = super::evnt_multi(MU_KEYBD | MU_BUTTON | MU_MESAG, &mut msg);
+
+        if ev.which & MU_KEYBD != 0 && hndl_kbd(ev.kret) {
+            done = true;
+        }
+        if ev.which & MU_BUTTON != 0 && hndl_button(ev.bret, ev.mx, ev.my) {
+            done = true;
+        }
+
+        // Message-drain sub-loop: process this message, then keep pulling
+        // queued ones (a single user action can queue several) until the pipe
+        // is empty — the `MU_TIMER` "quick-out" returns as soon as none is
+        // pending (EmuTOS `deskmain.c:2107-2118`).
+        let mut which = ev.which;
+        while which & MU_MESAG != 0 {
+            if done {
+                break;
+            }
+            if hndl_msg(&msg) {
+                done = true;
+            }
+            let ev2 = super::evnt_multi(MU_MESAG | MU_TIMER, &mut msg);
+            which = ev2.which;
+        }
+    }
+}
+
+/// The AES message-pipe handler (EmuTOS `hndl_msg`, `deskmain.c:1250-1361`).
+/// Dispatches on the message type (`msg[0]`) with `msg[3]` the window handle
+/// (or, for `MN_SELECTED`, the menu title). Returns `true` to end the loop.
+/// Every message except `WM_REDRAW` re-runs `men_update`.
+fn hndl_msg(msg: &[i16; 8]) -> bool {
+    let handle = msg[3];
+    let mut done = false;
+    match msg[0] {
+        MN_SELECTED => {
+            // Re-sync the current window to whichever last held a selection,
+            // then dispatch the (title, item) exactly like a mouse menu click.
+            desk_verify_last();
+            if let Some(item) = menu::item_of_obj(msg[4]) {
+                done = hndl_menu(item, msg[3]);
+            }
+        }
+        WM_REDRAW => {
+            // D8: repaint exactly the AES-supplied damage rectangle (`msg[4..8]`)
+            // of the message's window, via the occlusion-aware `do_wredraw`.
+            let clip = Grect { x: msg[4], y: msg[5], w: msg[6], h: msg[7] };
+            redraw::do_wredraw(handle, clip);
+            return done; // WM_REDRAW suppresses the trailing men_update
+        }
+        WM_TOPPED => top_msg(handle),
+        WM_CLOSED => do_close_folder(), // == File → Close (EmuTOS CLOSITEM)
+        WM_FULLED => full_msg(handle),
+        WM_ARROWED => arrow_msg(handle, msg[4]),
+        WM_VSLID => slid_msg(handle, false, msg[4]),
+        WM_HSLID => slid_msg(handle, true, msg[4]),
+        WM_MOVED => moved_msg(handle),
+        WM_SIZED => sized_msg(handle),
+        _ => {}
+    }
+    menu::men_update();
+    done
+}
+
+// ── Mouse button (D3) ──────────────────────────────────────────────────────
+
+/// `hndl_button` (EmuTOS `deskmain.c:947`) — the raw mouse-button handler.
+///
+/// Resolves the click through `wind_find` (**D3**: acts on whichever window it
+/// fell in), clears the *previous* window's selection when the click landed in
+/// a different window or the desktop (**F1**, `deskmain.c:957-958`), makes the
+/// clicked window current (`desk_verify`), then:
+///
+/// * single click → `act_bsclick` (the four selection rules); if the button is
+///   still held afterwards, `act_bdown` (rubber-band **or** drag of the
+///   selection) → `fun_drag` on a cross-window/icon drop;
+/// * double click → select-only then open (folder → new window, drive → root).
+fn hndl_button(clicks: i16, mx: i16, my: i16) -> bool {
+    let handle = super::wind_find(mx, my);
+
+    // F1 (deskmain.c:957-958): a click in a *different* window — or on the
+    // desktop while a window was current — clears the old window's selection.
+    let cwin = global::with(|g| g.g_cwin).unwrap_or(DESKWH);
+    if handle != cwin {
+        desk_clear_all();
+    }
+
+    let work = if handle == DESKWH { g_desk() } else { wind_get_work(handle) };
+    let root = global::with(|g| {
+        g.desk_verify(handle, work, false);
+        g.g_croot
+    })
+    .unwrap_or(DROOT);
+
+    let mut done = false;
+    if clicks == 1 {
+        let obid = gr_obfind(root, mx, my);
+        let keystate = super::graf_mkstate().kstate;
+        let shifted = keystate & 0x03 != 0;
+        // act_bsclick: apply the selection rules and repaint if changed.
+        if global::with(|g| g.act_bsclick(handle, root, obid, shifted, false)).unwrap_or(false) {
+            redraw_window(handle);
+        }
+        // If the button is still down, this is a rubber-band or a drag.
+        let st = super::graf_mkstate();
+        if st.buttons & 0x01 != 0 {
+            done = act_bdown(handle, root, mx, my);
+        }
+    } else {
+        // Double-click: select just the hit item, then open it.
+        let obid = gr_obfind(root, mx, my);
+        global::with(|g| g.act_bsclick(handle, root, obid, false, true));
+        redraw_window(handle);
+        do_open_selected();
+        // Drain the button-up so the AES does not re-fire the double-click.
+        super::evnt_button(1, 0x01, 0x00);
+    }
+
+    menu::men_update();
+    done
+}
+
+/// `gr_obfind` (EmuTOS `deskact.c:50`) — the deepest object of `root` under
+/// `(mx, my)` (`objc_find`, the **one** `g_screen` geometry source, the **D7**
+/// requirement), refined by `act_chkobj` to the object's own icon/text
+/// sub-rectangle. Returns `root` when the point misses every item's glyph/label
+/// (empty area / the dead space around a small icon).
+fn gr_obfind(root: i16, mx: i16, my: i16) -> i16 {
+    let Some(tree) = global::screen_addr() else {
+        return root;
+    };
+    let obid = super::objc_find(tree, root, MAX_DEPTH, mx, my);
+    if obid == NIL || obid == root {
+        return root;
+    }
+    if global::with(|g| g.act_chkobj(root, obid, mx, my)).unwrap_or(false) {
+        obid
+    } else {
+        root
+    }
+}
+
+/// `act_bdown` (EmuTOS `deskact.c:609`) — the button-held handler, run after
+/// `act_bsclick` when the button is still down: a **rubber-band** select when
+/// the press missed every item, or a **drag** of the current selection when it
+/// landed on an already-selected item. On a drag, resolves the drop
+/// destination and either repositions desktop icons in place (`move_drvicon`,
+/// bypassing `fun_drag`) or dispatches [`dir::fun_drag`]. Returns the
+/// desktop-exit flag. The drop-time modifier keystate (Copy vs. Move) is re-read
+/// from `graf_mkstate` at release, matching EmuTOS's per-frame keystate tracking.
+fn act_bdown(handle: i16, root: i16, mx: i16, my: i16) -> bool {
+    let sobj = gr_obfind(root, mx, my);
+
+    // Nothing under the press point → rubber-band select.
+    if sobj == root {
+        let (w, h) = super::graf_rubberbox(mx, my, 1, 1);
+        let (rx, ry) = (mx.min(mx + w), my.min(my + h));
+        let (rw, rh) = (w.abs().max(1), h.abs().max(1));
+        if global::with(|g| g.act_allchg_rect(handle, root, rx, ry, rw, rh)).unwrap_or(false) {
+            redraw_window(handle);
+        }
+        return false;
+    }
+
+    // A held button on an already-selected item → drag the whole selection.
+    if !global::with(|g| g.is_selected(sobj)).unwrap_or(false) {
+        return false;
+    }
+    let Some((ex, ey, ew, eh)) = global::with(|g| g.selection_extent(root)).flatten() else {
+        return false;
+    };
+    let desk = g_desk();
+    let bound = Grect { x: 0, y: 0, w: desk.x + desk.w, h: desk.y + desk.h };
+    let (fx, fy) = super::graf_dragbox(ew, eh, ex, ey, bound);
+
+    // Resolve the drop destination from the release point.
+    let st = super::graf_mkstate();
+    let dst_wh = super::wind_find(st.mx, st.my);
+    let dst_root = global::with(|g| g.root_of(dst_wh)).unwrap_or(DROOT);
+    let dobj = gr_obfind(dst_root, st.mx, st.my);
+    let drop_keystate = st.kstate as u16;
+
+    // Self-drop in the same window → cancel (deskact.c:668).
+    if dst_wh == handle && dobj == sobj {
+        return false;
+    }
+
+    // Desktop icon → empty desktop space: reposition in place, bypass fun_drag
+    // (deskact.c:673 `move_drvicon`).
+    if handle == DESKWH && dst_wh == DESKWH && dobj == DROOT {
+        if global::with(|g| g.move_drvicon(fx - ex, fy - ey)).unwrap_or(false) {
+            redraw::do_wredraw(DESKWH, desk);
+        }
+        return false;
+    }
+
+    // Otherwise dispatch the drag through the deskfun dispatch tree.
+    let done = dir::fun_drag(handle, dst_wh, dobj, drop_keystate);
+    global::with(|g| g.desk_clear(handle));
+    done
+}
+
+/// What a double-clicked / File→Open item resolves to.
+enum OpenTarget {
+    /// A sub-folder: its search spec + window title.
+    Folder(String, String),
+    /// A drive icon: the drive letter.
+    Drive(u8),
+    /// Nothing openable in Task #8 (a plain file → launch its app is Task #9,
+    /// the Trash / Printer fixtures).
+    None,
+}
+
+/// Open the item object `obid` of window `handle` (folder → new directory
+/// window, drive icon → root window). A plain file would launch its associated
+/// application (Task #9) — a no-op here.
+fn open_item(handle: i16, obid: i16) {
+    let target = global::with(|g| {
+        let fnode = g.g_screeninfo[obid as usize].fnode;
+        if fnode >= 0 {
+            let Some(slot) = g.win_slot(handle) else {
+                return OpenTarget::None;
+            };
+            let pn = &g.windows.slots[slot].w_pnode;
+            let Some(f) = pn.p_flist.get(fnode as usize) else {
+                return OpenTarget::None;
+            };
+            if f.is_dir() {
+                let name = core::str::from_utf8(f.name_bytes()).unwrap_or("");
+                let (spec, title) = child_spec(&pn.p_spec, name);
+                OpenTarget::Folder(spec, title)
+            } else {
+                OpenTarget::None
+            }
+        } else {
+            // Desktop icon: the drive letter overlay in ib_char's low byte.
+            let letter = (g.g_screeninfo[obid as usize].block.ib_char & 0xFF) as u8;
+            if letter.is_ascii_uppercase() {
+                OpenTarget::Drive(letter)
+            } else {
+                OpenTarget::None
+            }
+        }
+    })
+    .unwrap_or(OpenTarget::None);
+
+    match target {
+        OpenTarget::Folder(spec, title) => open_dir_window(&spec, &title),
+        OpenTarget::Drive(letter) => open_root_window(letter),
+        OpenTarget::None => {}
+    }
+}
+
+// ── Keyboard (D4) ──────────────────────────────────────────────────────────
+
+/// `hndl_kbd` (EmuTOS `deskmain.c:1201`) — the keyboard handler. `key` is the
+/// AES `EV_KRET` (`scancode << 8 | ascii`). Checked in EmuTOS order, first match
+/// wins; CR / ESC / arrow keys return early (no `men_update`), everything else
+/// ends with `men_update`. Returns `true` to end the loop.
+fn hndl_kbd(key: i16) -> bool {
+    let ascii = (key & 0xFF) as u8;
+
+    // 1. CR — deselect everything (no men_update).
+    if ascii == 0x0D {
+        desk_clear_all();
+        return false;
+    }
+    // 2. ESC — refresh the top window (no men_update).
+    if ascii == 0x1B {
+        refresh_top();
+        return false;
+    }
+    // 3. Arrow key — scroll the top window (no men_update).
+    if let Some(action) = check_arrow_key(key) {
+        kbd_arrow(action);
+        return false;
+    }
+    // 4. Function key F1-F20 — launch its installed application (none until
+    //    Task #9 → unhandled, falls through).
+    if let Some(done) = check_function_key(key) {
+        menu::men_update();
+        return done;
+    }
+    // 5. Alt+letter — open that drive (inert on the current keymap, see below).
+    if check_alt_letter_key(key) {
+        menu::men_update();
+        return false;
+    }
+    // 6. Ctrl-shortcut — dispatch through hndl_menu, same as a mouse menu click.
+    let done = if let Some(item) = menu::lookup_ascii_shortcut(ascii) {
+        let title = menu::title_obj(menu::item_title(item));
+        super::menu_tnormal(menu::tree_ptr(), title, false); // flash the title
+        hndl_menu(item, title)
+    } else {
+        false
+    };
+    menu::men_update();
+    done
+}
+
+// The arrow-key scancode → `WM_ARROWED` action table (EmuTOS `arrow_table[]`,
+// `deskmain.c:316-325`; the full 16-bit `scancode<<8|ascii` word). Shift-arrow
+// page entries carry the numpad ASCII EmuTOS's IKBD produces; NewTOS's IKBD
+// yields ascii 0 for arrows regardless of shift, so those page rows never match
+// and plain arrows drive a line scroll — a minor page-scroll fidelity gap, not
+// a defect.
+const ARROW_TABLE: [(i16, i16); 6] = [
+    (0x4838, WA_UPPAGE),
+    (0x5032, WA_DNPAGE),
+    (0x4800, WA_UPLINE),
+    (0x5000, WA_DNLINE),
+    (0x4b00, WA_LFLINE),
+    (0x4d00, WA_RTLINE),
+];
+
+/// `check_arrow_key` (EmuTOS `deskmain.c:1067`) — an arrow scancode → its
+/// `WM_ARROWED` action, or `None`.
+fn check_arrow_key(key: i16) -> Option<i16> {
+    ARROW_TABLE.iter().find(|&&(k, _)| k == key).map(|&(_, a)| a)
+}
+
+/// `kbd_arrow` (EmuTOS `deskmain.c:1043`) — scroll the topped window by an
+/// arrow action: no-op on the desktop or an unresolved handle; else deselect
+/// the window first, then scroll and repaint.
+fn kbd_arrow(action: i16) {
+    let handle = wind_get_top();
+    if handle == DESKWH {
+        return;
+    }
+    let Some(slot) = global::with(|g| g.win_slot(handle)).flatten() else {
+        return;
+    };
+    global::with(|g| g.desk_clear(handle));
+    let work = wind_get_work(handle);
+    if let Some(sliders) = global::with(|g| g.win_arrow(slot, work, action)).flatten() {
+        set_sliders(handle, sliders);
+        redraw::do_wredraw(handle, work);
+    }
+}
+
+/// `check_function_key` (EmuTOS `deskmain.c:1117`) — F1-F20 launch the
+/// installed application bound to that function key. The application list
+/// (ANODE chain) is built by Install-Application (deskins, **Task #9**); with
+/// none installed, no function key resolves to a launch target, so the key is
+/// unhandled and falls through (EmuTOS `process_funkey` → `do_aopen` only on a
+/// matching `a_funkey`). Returns `None` (unhandled) for both a non-function key
+/// and a function key with no bound application — a genuine no-op over an empty
+/// list, not a stub.
+fn check_function_key(key: i16) -> Option<bool> {
+    funkey_number(key)?; // must be F1-F20, else fall through
+    None // no installed application bound yet (Task #9)
+}
+
+/// The function-key number 1..20 for `key`, or `None` if it is not a function
+/// key. F1-F10 = scancodes `0x3B..0x44`, F11-F20 = `0x54..0x5D`
+/// (`scancode.h` `FUNKEY_01`/`FUNKEY_10`/`FUNKEY_11`/`FUNKEY_20`).
+fn funkey_number(key: i16) -> Option<u16> {
+    let sc = ((key as u16) >> 8) & 0xFF;
+    match sc {
+        0x3B..=0x44 => Some(sc - 0x3B + 1),
+        0x54..=0x5D => Some(sc - 0x54 + 11),
+        _ => None,
+    }
+}
+
+/// `check_alt_letter_key` (EmuTOS `deskmain.c:1136`) — Alt+A..Z opens that
+/// drive letter. Only fires for a key whose ASCII byte is genuinely `0` (a bare
+/// scancode), reading the shifted character for the scancode to infer the
+/// letter (EmuTOS reads `KEYTAB.shift[]`; there is no dedicated Alt table).
+///
+/// **Inert on the current NewTOS keymap:** the IKBD/keymap folds Alt into AltGr
+/// and never yields ASCII `0` for a letter key, so a letter never arrives with
+/// the bare-scancode shape this path requires — the drive never opens. Faithful
+/// check, left in place; a keyboard-layer limitation flagged to the lead, not a
+/// desktop stub. Returns `true` only if it actually opened a drive.
+fn check_alt_letter_key(key: i16) -> bool {
+    if (key & 0xFF) != 0 {
+        return false;
+    }
+    let sc = ((key >> 8) & 0xFF) as u8;
+    let letter = crate::keymap::to_ascii(sc, true, false, false);
+    if letter.is_ascii_uppercase() {
+        let drive = letter - b'A';
+        if drvbits() & (1u32 << drive) != 0 {
+            open_root_window(letter);
+            return true;
+        }
+    }
+    false
+}
+
+// ── Menu dispatch (D6 wiring) ──────────────────────────────────────────────
+
+/// `hndl_menu` (EmuTOS `deskmain.c:1012`) — route a selected [`Item`] to its
+/// `do_*menu`, feed a View change through `desk_all`, and un-highlight the
+/// title. Shared by the mouse (`MN_SELECTED`) and keyboard-shortcut paths.
+/// Returns the loop-exit flag.
+fn hndl_menu(item: Item, title_obj: i16) -> bool {
+    let done = match menu::item_title(item) {
+        Title::Desk => {
+            do_deskmenu(item);
+            false
+        }
+        Title::File => do_filemenu(item),
+        Title::View => {
+            let bits = do_viewmenu(item);
+            if bits != 0 {
+                desk_all(bits);
+            }
+            false
+        }
+        // Every Options item is a Task-#9 op — `men_update` keeps them
+        // disabled, so a well-behaved AES never dispatches one; guard anyway.
+        Title::Options => false,
+    };
+    super::menu_tnormal(menu::tree_ptr(), title_obj, true);
+    done
+}
+
+/// `do_deskmenu` (EmuTOS `deskmain.c:612`) — the Desk menu. Only `About`
+/// (Desktop info); a `form_alert` stands in for the resource About dialog.
+fn do_deskmenu(_item: Item) {
+    let text = b"[1][ NewTOS Desktop | EmuTOS-conformant rebuild | ADR-016 (Task #8) ][ OK ]\0";
+    super::form_alert(1, text.as_ptr());
+    redraw::full_redraw(); // restore the screen under the alert
+}
+
+/// `do_filemenu` (EmuTOS `deskmain.c:654`) — the File menu. Task-#8 items:
+/// Open, Close folder, Close top window, Cycle windows. The rest are Task-#9
+/// ops kept disabled by `men_update`. Returns the loop-exit flag (never, here).
+fn do_filemenu(item: Item) -> bool {
+    match item {
+        Item::Open => do_open_selected(),
+        Item::CloseFolder => do_close_folder(),
+        Item::CloseWindow => do_close_window(),
+        Item::Cycle => do_cycle(),
+        Item::Delete => {
+            dir::fun_del();
+        }
+        Item::SelectAll => {
+            dir::fun_selectall();
+        }
+        Item::NewFolder => do_new_folder(),
+        Item::InfoRename => do_info_rename(),
+        _ => {} // Task-#14 items (Search) stay disabled
+    }
+    false
+}
+
+/// `fun_mkdir` (EmuTOS `deskfun.c:680`) — File → New folder: prompt for a name,
+/// create it (`Dcreate`) in the current window's directory, and rebuild that
+/// window. The name-entry box is [`super::dlg::edit_name`]; the deeply-nested
+/// path-length guard is `Dcreate`'s own `EPTHNF`.
+fn do_new_folder() {
+    let cwin = global::with(|g| g.g_cwin).unwrap_or(DESKWH);
+    if cwin == DESKWH {
+        return;
+    }
+    let Some(name) = super::dlg::edit_name(b"Name of new folder:\0", "") else {
+        redraw::full_redraw(); // dialog cancelled — restore the screen
+        return;
+    };
+    let created = global::with(|g| {
+        g.win_slot(cwin).and_then(|s| {
+            let spec = &g.windows.slots[s].w_pnode.p_spec;
+            spec.rfind('\\').map(|i| String::from(&spec[..=i]))
+        })
+    })
+    .flatten();
+    if let Some(dir_path) = created {
+        let mut full = dir_path;
+        full.push_str(name.trim());
+        if dir::mkdir(&full) {
+            dir::rebuild_window(cwin);
+            return;
+        }
+        dir::fun_alert(1, b"Could not create the folder.");
+    }
+    redraw::full_redraw();
+}
+
+/// File → Info/Rename (EmuTOS `do_filemenu` `SHOWITEM`): the **Rename** half —
+/// prompt for a new name for the single selected item and `Frename` it. The
+/// Show-Info panel (size/date/attributes) is deskinf (Task #14).
+fn do_info_rename() {
+    let cwin = global::with(|g| g.g_cwin).unwrap_or(DESKWH);
+    if cwin == DESKWH {
+        return;
+    }
+    // The single selected window item.
+    let sel = global::with(|g| {
+        let slot = g.win_slot(cwin)?;
+        let spec = g.windows.slots[slot].w_pnode.p_spec.clone();
+        let dir = spec.rfind('\\').map(|i| String::from(&spec[..=i]))?;
+        let f = g.windows.slots[slot].w_pnode.p_flist.iter().find(|f| f.f_selected)?;
+        let name = core::str::from_utf8(f.name_bytes()).ok().map(String::from)?;
+        Some((dir, name))
+    })
+    .flatten();
+    let Some((dir_path, old)) = sel else {
+        return;
+    };
+    let Some(new) = super::dlg::edit_name(b"Rename to:\0", &old) else {
+        redraw::full_redraw();
+        return;
+    };
+    let new = new.trim();
+    if !new.is_empty() && new != old {
+        let mut oldp = dir_path.clone();
+        oldp.push_str(&old);
+        let mut newp = dir_path;
+        newp.push_str(new);
+        if dir::rename(&oldp, &newp) {
+            dir::rebuild_window(cwin);
+            return;
+        }
+        dir::fun_alert(1, b"Could not rename the item.");
+    }
+    redraw::full_redraw();
+}
+
+/// `do_viewmenu` (EmuTOS `deskmain.c:786`) — the View menu. Flips the view /
+/// sort / size-to-fit state and returns the change bitmask `hndl_menu` feeds to
+/// [`desk_all`]. A view/sort item that is already current is a no-op (`0`);
+/// size-to-fit toggles.
+fn do_viewmenu(item: Item) -> u16 {
+    use super::model::{Sort, View};
+    global::with(|g| match item {
+        Item::ShowIcons => {
+            if g.view == View::Icon {
+                0
+            } else {
+                g.view = View::Icon;
+                g.win_view();
+                VIEW_CHANGED
+            }
+        }
+        Item::ShowText => {
+            if g.view == View::Text {
+                0
+            } else {
+                g.view = View::Text;
+                g.win_view();
+                VIEW_CHANGED
+            }
+        }
+        Item::SortName => set_sort(g, Sort::Name),
+        Item::SortType => set_sort(g, Sort::Type),
+        Item::SortSize => set_sort(g, Sort::Size),
+        Item::SortDate => set_sort(g, Sort::Date),
+        Item::NoSort => set_sort(g, Sort::NoSort),
+        Item::SizeToFit => {
+            // Toggle (no "already selected" guard, unlike view/sort). This makes
+            // the horizontal slider real when off — WF_HSLSIZ/WF_HSLIDE are
+            // computed and pushed via `set_sliders`; `tos-api` currently ignores
+            // them (a real AES gap, reported to the lead, not worked around).
+            g.size_to_fit = !g.size_to_fit;
+            g.win_view();
+            SIZETOFIT_CHANGED
+        }
+        _ => 0,
+    })
+    .unwrap_or(0)
+}
+
+/// Switch the sort key, returning `SORT_CHANGED` (or `0` if unchanged).
+fn set_sort(g: &mut global::DeskState, sort: super::model::Sort) -> u16 {
+    if g.sort == sort {
+        0
+    } else {
+        g.sort = sort;
+        SORT_CHANGED
+    }
+}
+
+/// `desk_all` (EmuTOS `deskmain.c:438`) — the View-menu → redraw pipeline:
+/// re-sort every window (`SORT_CHANGED`), rebuild every window's view
+/// (`VIEW`/`SORT`/`SIZETOFIT`), then repaint every window's content. The
+/// self-clearing white item-root box makes `win_shwall`'s `do_wredraw` erase
+/// the old view before laying the new one — **this is the path that makes the
+/// view-switch residue reproducible and structurally fixes it (D2/R2)**.
+fn desk_all(bits: u16) {
+    if bits & SORT_CHANGED != 0 {
+        global::with(|g| g.win_srtall());
+    }
+    if bits & (VIEW_CHANGED | SORT_CHANGED | SIZETOFIT_CHANGED) != 0 {
+        win_bdall();
+    }
+    redraw::win_shwall();
+}
+
+/// `win_bdall` (EmuTOS `deskwin.c:786`) — rebuild every open window's view for
+/// its current work rect and push the new scrollbar geometry. No redraw
+/// (`win_shwall` does that).
+fn win_bdall() {
+    let (handles, n) = open_handles();
+    for &handle in &handles[..n] {
+        let work = wind_get_work(handle);
+        if let Some(slot) = global::with(|g| g.win_slot(handle)).flatten() {
+            if let Some(sliders) = global::with(|g| g.win_bldview(slot, work)) {
+                set_sliders(handle, sliders);
+            }
+        }
+    }
+}
+
+// ── File-menu actions ──────────────────────────────────────────────────────
+
+/// File → Open: open the single selected item of the current window (a folder
+/// in a new window, a drive icon at its root). Enabled only when exactly one
+/// item is selected (`men_update`).
+fn do_open_selected() {
+    let picked = global::with(|g| {
+        let root = g.g_croot;
+        let handle = g.g_cwin;
+        let mut child = g.g_screen[root as usize].ob_head;
+        while child != NIL && child != root {
+            if g.g_screen[child as usize].ob_state & super::win::OB_SELECTED != 0 {
+                return Some((handle, child));
+            }
+            child = g.g_screen[child as usize].ob_next;
+        }
+        None
+    })
+    .flatten();
+    if let Some((handle, obid)) = picked {
+        open_item(handle, obid);
+    }
+}
+
+/// File → Close top window (EmuTOS `CLSWITEM`) — close the top window entirely.
+fn do_close_window() {
+    let handle = wind_get_top();
+    if handle != DESKWH {
+        close_window(handle);
+    }
+}
+
+/// File → Close folder (EmuTOS `CLOSITEM`, also `WM_CLOSED`) — navigate the top
+/// window up one directory level; at a drive root, close the window entirely.
+fn do_close_folder() {
+    let handle = wind_get_top();
+    if handle == DESKWH {
+        return;
+    }
+    let spec = global::with(|g| {
+        g.win_slot(handle).map(|s| g.windows.slots[s].w_pnode.p_spec.clone())
+    })
+    .flatten();
+    let Some(spec) = spec else {
+        return;
+    };
+    if is_drive_root(&spec) {
+        close_window(handle);
+    } else {
+        let (pspec, ptitle) = parent_spec(&spec);
+        navigate_window(handle, &pspec, &ptitle);
+    }
+}
+
+/// File → Cycle windows (EmuTOS `BTOPITEM`) — bring the bottom-most window to
+/// the top. Enabled only with two or more windows (`men_update`).
+fn do_cycle() {
+    let bottom = global::with(|g| g.windows.zorder.last().map(|&s| g.windows.slots[s].w_id))
+        .flatten();
+    let Some(handle) = bottom else {
+        return;
+    };
+    // F2 (deskmain.c:540-553): deselect the *previously* current window before
+    // switching — the regular WM_TOPPED path does this via `desk_clear(g_cwin)`
+    // in `top_msg`, and Cycle must match so a stale selection does not survive
+    // the top change.
+    global::with(|g| {
+        let prev = g.g_cwin;
+        g.desk_clear(prev);
+    });
+    // Tell the AES (redraws frames), update the desktop z-order + current
+    // window, then repaint everything.
+    super::wind_set_int(handle, WF_TOP, 0);
+    global::with(|g| g.win_top(handle));
+    let work = wind_get_work(handle);
+    global::with(|g| g.desk_verify(handle, work, false));
+    redraw::full_redraw();
+}
+
+// ── Window-manager messages ────────────────────────────────────────────────
+
+/// `WM_TOPPED` — the AES already brought `handle` to the front (and redrew the
+/// frames); update the desktop's own z-order + current window and repaint the
+/// content.
+fn top_msg(handle: i16) {
+    global::with(|g| {
+        let prev = g.g_cwin;
+        g.desk_clear(prev);
+        g.win_top(handle);
+    });
+    let work = wind_get_work(handle);
+    global::with(|g| g.desk_verify(handle, work, false));
+    redraw::full_redraw();
+}
+
+/// `WM_FULLED` — toggle the top window between its full extent and its previous
+/// one; rebuild the item grid for the new size and repaint.
+fn full_msg(handle: i16) {
+    let cur = wind_get_grect(handle, WF_CXYWH);
+    let full = wind_get_grect(handle, WF_FXYWH);
+    let target = if cur.w >= full.w && cur.h >= full.h {
+        wind_get_grect(handle, WF_PXYWH) // currently full → restore previous
+    } else {
+        full
+    };
+    global::with(|g| g.win_top(handle)); // fuller implies top
+    super::wind_set_grect(handle, WF_CXYWH, target); // AES redraws frames
+    let work = wind_get_work(handle);
+    if let Some(sliders) = global::with(|g| g.desk_verify(handle, work, true)).flatten() {
+        set_sliders(handle, sliders);
+    }
+    redraw::full_redraw();
+}
+
+/// `WM_MOVED` — the AES already moved `handle` (frame + content blitted).
+/// Re-sync the desktop's cached work-area origin (the item objects are placed
+/// relative to it) and repaint to settle any overlap the live drag disturbed.
+fn moved_msg(handle: i16) {
+    let work = wind_get_work(handle);
+    global::with(|g| {
+        if let Some(slot) = g.win_slot(handle) {
+            let root = g.windows.slots[slot].w_root as usize;
+            g.g_screen[root].ob_x = work.x;
+            g.g_screen[root].ob_y = work.y;
+            g.g_screen[root].ob_width = work.w;
+            g.g_screen[root].ob_height = work.h;
+        }
+    });
+    redraw::full_redraw();
+}
+
+/// `WM_SIZED` — the AES already resized `handle`'s frame; rebuild the item grid
+/// for the new work area (columns may re-flow) and repaint.
+fn sized_msg(handle: i16) {
+    let work = wind_get_work(handle);
+    if let Some(sliders) = global::with(|g| g.desk_verify(handle, work, true)).flatten() {
+        set_sliders(handle, sliders);
+    }
+    redraw::full_redraw();
+}
+
+/// `WM_ARROWED` — an arrow-gadget scroll of `handle`.
+fn arrow_msg(handle: i16, action: i16) {
+    let Some(slot) = global::with(|g| g.win_slot(handle)).flatten() else {
+        return;
+    };
+    let work = wind_get_work(handle);
+    if let Some(sliders) = global::with(|g| g.win_arrow(slot, work, action)).flatten() {
+        set_sliders(handle, sliders);
+        redraw::do_wredraw(handle, work);
+    }
+}
+
+/// `WM_VSLID` / `WM_HSLID` — a slider drag of `handle` (`value` = per-mille of
+/// travel).
+fn slid_msg(handle: i16, horizontal: bool, value: i16) {
+    let Some(slot) = global::with(|g| g.win_slot(handle)).flatten() else {
+        return;
+    };
+    let work = wind_get_work(handle);
+    if let Some(sliders) = global::with(|g| g.win_slide(slot, work, horizontal, value)).flatten() {
+        set_sliders(handle, sliders);
+        redraw::do_wredraw(handle, work);
+    }
+}
+
+// ── Window open / close / navigate ─────────────────────────────────────────
+
+/// Open a directory window on drive `letter`'s root (`X:\`).
+pub fn open_root_window(letter: u8) {
+    let mut spec = String::new();
+    spec.push(letter as char);
+    spec.push_str(":\\*.*");
+    let mut title = String::new();
+    title.push(letter as char);
+    title.push_str(":\\");
+    open_dir_window(&spec, &title);
+}
+
+/// Open a new directory window for `spec` (e.g. `C:\SUB\*.*`), titled `title`,
+/// scan + sort its contents, build the view, and paint it (EmuTOS `do_diropen`
+/// + `win_bldview`). A no-op if all window slots are in use.
+fn open_dir_window(spec: &str, title: &str) {
+    let Some(desk) = global::with(|g| g.g_desk) else {
+        return;
+    };
+    let handle = super::wind_create(WINDOW_STYLE as i16, desk);
+    if handle < 1 {
+        return;
+    }
+    let scanned = global::with(|g| {
+        let sort = g.sort;
+        let slot = g.win_alloc(handle, 0)?;
+        {
+            let pn = &mut g.windows.slots[slot].w_pnode;
+            pn.pn_open(spec);
+            pn.pn_active(true);
+            pn.pn_sort(sort);
+        }
+        let pn = &g.windows.slots[slot].w_pnode;
+        Some((slot, pn.p_count, pn.p_size))
+    })
+    .flatten();
+    let Some((slot, count, size)) = scanned else {
+        super::wind_delete(handle);
+        return;
+    };
+
+    // Title (WF_NAME) + info line (WF_INFO); both copied by the AES during the
+    // trap, so the local buffers only need to outlive the call.
+    let mut tbuf = [0u8; 96];
+    let tb = title.as_bytes();
+    let tn = tb.len().min(tbuf.len() - 1);
+    tbuf[..tn].copy_from_slice(&tb[..tn]);
+    super::wind_set_ptr(handle, WF_NAME, tbuf.as_ptr() as u64);
+
+    let mut info = [0u8; 64];
+    fmt_info(&mut info, count, size);
+    super::wind_set_ptr(handle, WF_INFO, info.as_ptr() as u64);
+
+    // Open at a staggered sub-rectangle of the desktop (later windows offset so
+    // they do not exactly overlap).
+    let step = (slot as i16) * 24;
+    let rw = (desk.w - 96).min(560);
+    let rh = (desk.h - 56).min(400);
+    let r = Grect { x: desk.x + 48 + step, y: desk.y + 24 + step, w: rw, h: rh };
+    super::wind_open(handle, r);
+
+    // Build the view for the actual work rect + push the scrollbar geometry,
+    // then make it the current window and paint everything.
+    let work = wind_get_work(handle);
+    if let Some(sliders) = global::with(|g| g.win_bldview(slot, work)) {
+        set_sliders(handle, sliders);
+    }
+    global::with(|g| g.desk_verify(handle, work, false));
+    redraw::full_redraw();
+}
+
+/// Close window `handle`: AES `wind_close` + `wind_delete`, free the desktop
+/// slot, re-verify whatever is now on top, and repaint.
+fn close_window(handle: i16) {
+    super::wind_close(handle);
+    super::wind_delete(handle);
+    global::with(|g| g.win_free(handle));
+    let top = wind_get_top();
+    let work = if top == DESKWH { g_desk() } else { wind_get_work(top) };
+    global::with(|g| g.desk_verify(top, work, false));
+    redraw::full_redraw();
+}
+
+/// Re-scan window `handle` in place for a new directory `spec`/`title` (the
+/// Close-folder "up one level" navigation), reset its scroll, rebuild + repaint.
+fn navigate_window(handle: i16, spec: &str, title: &str) {
+    let scanned = global::with(|g| {
+        let sort = g.sort;
+        let slot = g.win_slot(handle)?;
+        {
+            let pn = &mut g.windows.slots[slot].w_pnode;
+            pn.pn_open(spec);
+            pn.pn_active(true);
+            pn.pn_sort(sort);
+        }
+        g.windows.slots[slot].w_cvrow = 0;
+        g.windows.slots[slot].w_cvcol = 0;
+        let pn = &g.windows.slots[slot].w_pnode;
+        Some((slot, pn.p_count, pn.p_size))
+    })
+    .flatten();
+    let Some((slot, count, size)) = scanned else {
+        return;
+    };
+
+    let mut tbuf = [0u8; 96];
+    let tb = title.as_bytes();
+    let tn = tb.len().min(tbuf.len() - 1);
+    tbuf[..tn].copy_from_slice(&tb[..tn]);
+    super::wind_set_ptr(handle, WF_NAME, tbuf.as_ptr() as u64);
+
+    let mut info = [0u8; 64];
+    fmt_info(&mut info, count, size);
+    super::wind_set_ptr(handle, WF_INFO, info.as_ptr() as u64);
+
+    let work = wind_get_work(handle);
+    if let Some(sliders) = global::with(|g| g.win_bldview(slot, work)) {
+        set_sliders(handle, sliders);
+    }
+    redraw::full_redraw();
+}
+
+// ── Small helpers ──────────────────────────────────────────────────────────
+
+/// The desktop work-area rectangle.
+fn g_desk() -> Grect {
+    global::with(|g| g.g_desk).unwrap_or_default()
+}
+
+/// The open (non-desktop) window handles, into a fixed buffer.
+fn open_handles() -> ([i16; NUM_WNODES], usize) {
+    let mut h = [0i16; NUM_WNODES];
+    let n = global::with(|g| {
+        let mut n = 0;
+        for w in &g.windows.slots {
+            if w.w_id != DESKWH && n < h.len() {
+                h[n] = w.w_id;
+                n += 1;
+            }
+        }
+        n
+    })
+    .unwrap_or(0);
+    (h, n)
+}
+
+/// Push a window's scrollbar size/position (`wind_set` `WF_*SLSIZ`/`WF_*SLIDE`).
+/// The horizontal pair is currently ignored by `tos-api` (see the size-to-fit
+/// note); the values are still computed and sent so the desktop side is correct
+/// the moment the AES renders a horizontal slider.
+fn set_sliders(handle: i16, s: SliderSet) {
+    super::wind_set_int(handle, WF_VSLSIZ, s.vslsize);
+    super::wind_set_int(handle, WF_VSLIDE, s.vslide);
+    super::wind_set_int(handle, WF_HSLSIZ, s.hslsize);
+    super::wind_set_int(handle, WF_HSLIDE, s.hslide);
+}
+
+/// `set_sliders` for [`dir::rebuild_window`] (cross-module caller).
+pub fn set_sliders_pub(handle: i16, s: SliderSet) {
+    set_sliders(handle, s);
+}
+
+/// `fun_msg(MN_SELECTED, …)` (EmuTOS `deskfun.c:101`) — synthesize a menu
+/// message and dispatch it synchronously through `hndl_menu`, exactly as a real
+/// `MN_SELECTED` would (`fun_msg` writes into `G.g_rmsg` and calls `hndl_msg`
+/// in-process). Used by the Delete→Remove redirect ([`dir::fun_del`]).
+pub fn fun_msg_mn_selected(title: Title, item: Item) {
+    desk_verify_last();
+    let title_obj = menu::title_obj(title);
+    hndl_menu(item, title_obj);
+}
+
+/// Deselect every window (and the desktop), repainting those that changed
+/// (EmuTOS `desk_clear_all`).
+fn desk_clear_all() {
+    let (handles, n) = open_handles();
+    let mut any_win = false;
+    for &handle in &handles[..n] {
+        if global::with(|g| g.desk_clear(handle)).unwrap_or(false) {
+            any_win = true;
+        }
+    }
+    let any_desk = global::with(|g| g.desk_clear(DESKWH)).unwrap_or(false);
+    if any_win {
+        redraw::win_shwall();
+    }
+    if any_desk {
+        redraw::do_wredraw(DESKWH, g_desk());
+    }
+}
+
+/// Rebuild + repaint the topped window (EmuTOS ESC `refresh_window`).
+fn refresh_top() {
+    let handle = wind_get_top();
+    if handle == DESKWH {
+        return;
+    }
+    let work = wind_get_work(handle);
+    if let Some(slot) = global::with(|g| g.win_slot(handle)).flatten() {
+        if let Some(sliders) = global::with(|g| g.win_bldview(slot, work)) {
+            set_sliders(handle, sliders);
+        }
+    }
+    redraw::do_wredraw(handle, work);
+}
+
+/// Make `g_wlastsel` the current window again (EmuTOS `desk_verify` before an
+/// `MN_SELECTED` dispatch).
+fn desk_verify_last() {
+    let handle = global::with(|g| g.g_wlastsel).unwrap_or(DESKWH);
+    let work = if handle == DESKWH { g_desk() } else { wind_get_work(handle) };
+    global::with(|g| g.desk_verify(handle, work, false));
+}
+
+/// Repaint a single window's (or the desktop's) content.
+fn redraw_window(handle: i16) {
+    if handle == DESKWH {
+        redraw::do_wredraw(DESKWH, g_desk());
+    } else {
+        let work = wind_get_work(handle);
+        redraw::do_wredraw(handle, work);
+    }
+}
+
+/// Whether `spec` is a drive root (`X:\*.*`) — its directory part is just
+/// `X:\`.
+fn is_drive_root(spec: &str) -> bool {
+    let dir = &spec[..=spec.rfind('\\').unwrap_or(0)];
+    dir.len() == 3 && dir.as_bytes().get(1) == Some(&b':')
+}
+
+/// The parent directory's `(spec, title)` for a non-root `spec` (`C:\A\B\*.*`
+/// → `C:\A\*.*`, `C:\A\`).
+fn parent_spec(spec: &str) -> (String, String) {
+    let dir = &spec[..=spec.rfind('\\').unwrap_or(0)]; // ".../"
+    let trimmed = dir.trim_end_matches('\\'); // "..."
+    let parent_dir = match trimmed.rfind('\\') {
+        Some(i) => &trimmed[..=i],
+        None => trimmed,
+    };
+    let mut s = String::from(parent_dir);
+    s.push_str("*.*");
+    (s, String::from(parent_dir))
+}
+
+/// The child directory's `(spec, title)` for folder `name` inside `parent_spec`
+/// (`C:\*.*`, `SUB` → `C:\SUB\*.*`, `C:\SUB\`).
+fn child_spec(parent_spec: &str, name: &str) -> (String, String) {
+    let dir = &parent_spec[..=parent_spec.rfind('\\').unwrap_or(0)];
+    let mut d = String::from(dir);
+    d.push_str(name);
+    d.push('\\');
+    let title = d.clone();
+    d.push_str("*.*");
+    (d, title)
+}
+
+/// Build a directory-window info line ` N items   M bytes used` into `out`.
+fn fmt_info(out: &mut [u8; 64], count: usize, size: u64) {
+    let mut p = 0usize;
+    let mut num = [0u8; 20];
+    let push = |out: &mut [u8; 64], p: &mut usize, s: &[u8]| {
+        for &b in s {
+            if *p < out.len() - 1 {
+                out[*p] = b;
+                *p += 1;
+            }
+        }
+    };
+    push(out, &mut p, b" ");
+    push(out, &mut p, fmt_u64(count as u64, &mut num));
+    push(out, &mut p, b" items   ");
+    push(out, &mut p, fmt_u64(size, &mut num));
+    push(out, &mut p, b" bytes used");
+    out[p] = 0;
+}
+
+/// Format `v` as decimal into `buf`, returning the written slice.
+fn fmt_u64(mut v: u64, buf: &mut [u8; 20]) -> &[u8] {
+    if v == 0 {
+        buf[0] = b'0';
+        return &buf[..1];
+    }
+    let mut tmp = [0u8; 20];
+    let mut i = 20;
+    while v > 0 {
+        i -= 1;
+        tmp[i] = b'0' + (v % 10) as u8;
+        v /= 10;
+    }
+    let len = 20 - i;
+    buf[..len].copy_from_slice(&tmp[i..]);
+    &buf[..len]
+}
