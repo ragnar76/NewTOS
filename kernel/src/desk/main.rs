@@ -204,9 +204,17 @@ fn gr_obfind(root: i16, mx: i16, my: i16) -> i16 {
 fn act_bdown(handle: i16, root: i16, mx: i16, my: i16) -> bool {
     let sobj = gr_obfind(root, mx, my);
 
-    // Nothing under the press point → rubber-band select.
+    // Nothing under the press point → rubber-band select. `minw = minh =
+    // i16::MIN` (EmuTOS `deskact.c:631` passes `SHRT_MIN`) requests a free
+    // 4-quadrant band: `graf_rubberbox` returns the *signed* `cursor - origin +
+    // 1` deltas (§70) instead of clamping a leftward/upward drag back to a 1×1
+    // box — that clamp was the original #9 bug. The reconstruction below then
+    // mirrors `deskact.c:632-642` (`l_mw < 0` → `l_mx += l_mw; l_mw = -l_mw`):
+    // `mx.min(mx + w)` is the left edge, `w.abs()` the width, so both drag
+    // directions yield the same box `min(anchor, cursor)..max(anchor, cursor)`;
+    // `.max(1)` keeps a degenerate zero-extent drag a 1 px selection band.
     if sobj == root {
-        let (w, h) = super::graf_rubberbox(mx, my, 1, 1);
+        let (w, h) = super::graf_rubberbox(mx, my, i16::MIN, i16::MIN);
         let (rx, ry) = (mx.min(mx + w), my.min(my + h));
         let (rw, rh) = (w.abs().max(1), h.abs().max(1));
         if global::with(|g| g.act_allchg_rect(handle, root, rx, ry, rw, rh)).unwrap_or(false) {
@@ -719,10 +727,11 @@ fn do_cycle() {
     let Some(handle) = bottom else {
         return;
     };
-    // F2 (deskmain.c:540-553): deselect the *previously* current window before
-    // switching — the regular WM_TOPPED path does this via `desk_clear(g_cwin)`
-    // in `top_msg`, and Cycle must match so a stale selection does not survive
-    // the top change.
+    // BTOPITEM (deskmain.c:711) synthesizes a WM_TOPPED for the bottom window
+    // (`fun_msg(WM_TOPPED, ...)`, :717); the WM_TOPPED handler (deskmain.c:1282)
+    // then deselects the *previously* current window via `desk_clear(G.g_cwin)`
+    // (:1283) before switching. `do_cycle` inlines that clear (mirroring
+    // `top_msg`) so a stale selection does not survive the top change.
     global::with(|g| {
         let prev = g.g_cwin;
         g.desk_clear(prev);

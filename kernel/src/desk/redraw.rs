@@ -30,21 +30,72 @@ use super::{
     WF_FIRSTXYWH, WF_NEXTXYWH,
 };
 
+/// Resolve the object-tree root for the redraw and apply the empty-clip guard.
+/// Returns `None` — "nothing to paint" — when the clip is degenerate **or** the
+/// handle no longer maps to a live window (closed between the redraw being
+/// queued and processed, EmuTOS `desksupp.c:214-215`). [`DESKWH`] (0) always
+/// resolves to [`DROOT`]; any other handle to its `w_root`. Pure lookup: no
+/// drawing, no cursor toggle — so [`do_wredraw`] can consult it *before*
+/// touching the cursor and thus reproduce EmuTOS's "a stale/empty redraw toggles
+/// nothing" exactly.
+fn wredraw_root(handle: i16, clip: Grect) -> Option<i16> {
+    if clip.w <= 0 || clip.h <= 0 {
+        return None;
+    }
+    if handle == DESKWH {
+        return Some(DROOT);
+    }
+    global::with(|g| g.win_find(handle).map(|w| w.w_root)).flatten()
+}
+
+/// `do_wredraw_nocursor(handle, clip)` — the **pure clip-and-draw** half of
+/// [`do_wredraw`]: every step *except* the `graf_mouse(M_OFF/M_ON)` bracket. The
+/// caller owns the cursor, which lets a multi-window composite hide it **once**
+/// around the whole fan-out instead of blinking it back on between windows —
+/// AES `graf_mouse` is not ref-counted, so a nested `M_ON` shows the cursor
+/// unconditionally mid-paint (the **F3** flicker). [`win_shwall`] and
+/// [`full_redraw`] therefore call *this* inside their single outer bracket,
+/// while the public [`do_wredraw`] (the `WM_REDRAW` path) keeps its own.
+///
+/// Steps 1 + 3 of [`do_wredraw`]'s contract: resolve the root via
+/// [`wredraw_root`] (a stale handle or empty clip is a silent no-op), then walk
+/// the AES owner-rectangle list — `t = wind_get(handle, WF_FIRSTXYWH)`, then
+/// `while t.w != 0 && t.h != 0 { if rc_intersect(clip, t) { objc_draw(…, root,
+/// …, t) } t = wind_get(handle, WF_NEXTXYWH) }` — draining the entire list once.
+fn do_wredraw_nocursor(handle: i16, clip: Grect) {
+    let Some(root) = wredraw_root(handle, clip) else {
+        return;
+    };
+    if handle == DESKWH {
+        // Desktop surface (root == DROOT): background pattern + desktop icons
+        // (the DROOT subtree) within `clip`. Occlusion by the redraw_all
+        // compositing order, not an owner-rectangle list (see the doc-comment).
+        paint_desktop_region(clip);
+    } else if let Some(tree) = global::screen_addr() {
+        // Window content: one clip-and-draw per visible owner rectangle.
+        let mut t = wind_get_rect(handle, WF_FIRSTXYWH);
+        while t.w != 0 && t.h != 0 {
+            if let Some(piece) = rc_intersect(clip, t) {
+                objc_draw_tree(tree, root, piece);
+            }
+            t = wind_get_rect(handle, WF_NEXTXYWH);
+        }
+    }
+}
+
 /// `do_wredraw(handle, clip)` — repaint whatever part of the object tree rooted
 /// at window `handle` (or the desktop) is both (a) currently visible on screen
 /// and (b) within the caller-supplied damage rectangle `clip`
-/// (`desksupp.c:202-232`, `desksupp-redraw.md`).
+/// (`desksupp.c:202-232`, `desksupp-redraw.md`). The public `WM_REDRAW` entry
+/// point; the actual drawing lives in [`do_wredraw_nocursor`].
 ///
 /// Steps, exactly per §6:
 /// 1. Resolve the object-tree root: [`DESKWH`] (0) → [`DROOT`]; otherwise the
-///    window's `w_root`. A stale/closed handle (`win_find` → `None`) returns
-///    immediately — no drawing, no cursor toggle (EmuTOS `desksupp.c:214-215`).
+///    window's `w_root`. A stale/closed handle (`win_find` → `None`) or an empty
+///    clip returns immediately — no drawing, **no cursor toggle** (EmuTOS
+///    `desksupp.c:214-215`); the [`wredraw_root`] pre-check preserves that.
 /// 2. `graf_mouse(M_OFF)` — hide the cursor for the paint.
-/// 3. Walk the AES owner-rectangle list: `t = wind_get(handle, WF_FIRSTXYWH)`,
-///    then `while t.w != 0 && t.h != 0 { if rc_intersect(clip, t) { objc_draw(…,
-///    root, …, t) } t = wind_get(handle, WF_NEXTXYWH) }` — the sentinel is
-///    `w == 0 || h == 0`; the loop always re-fetches the next piece, even after
-///    a hit, so the entire list is drained once.
+/// 3. Draw via [`do_wredraw_nocursor`] (the owner-rectangle-list walk).
 /// 4. `graf_mouse(M_ON)` — restore the cursor.
 ///
 /// The [`DESKWH`] arm draws the desktop surface (background + icons over
@@ -54,39 +105,13 @@ use super::{
 /// `WM_REDRAW` path — handle 0 is skipped, the AES redraws the desktop). Its
 /// under-window occlusion comes from the `redraw_all` compositing order.
 pub fn do_wredraw(handle: i16, clip: Grect) {
-    // 1. Resolve the object-tree root (silent no-op on a stale handle).
-    let root = if handle == DESKWH {
-        DROOT
-    } else {
-        match global::with(|g| g.win_find(handle).map(|w| w.w_root)).flatten() {
-            Some(r) => r,
-            None => return, // window closed between redraw queued and processed
-        }
-    };
-    if clip.w <= 0 || clip.h <= 0 {
+    // Preserve EmuTOS's "a stale/empty redraw toggles nothing" (desksupp.c:214-215):
+    // resolve first, and only bracket the cursor around a real paint.
+    if wredraw_root(handle, clip).is_none() {
         return;
     }
-
-    // 2. Hide the cursor around the draw.
     graf_mouse(M_OFF);
-
-    if handle == DESKWH {
-        // Desktop surface (root == DROOT): background pattern + desktop icons
-        // (the DROOT subtree) within `clip`. Occlusion by the redraw_all
-        // compositing order, not an owner-rectangle list (see the doc-comment).
-        paint_desktop_region(clip);
-    } else if let Some(tree) = global::screen_addr() {
-        // 3. Window content: one clip-and-draw per visible owner rectangle.
-        let mut t = wind_get_rect(handle, WF_FIRSTXYWH);
-        while t.w != 0 && t.h != 0 {
-            if let Some(piece) = rc_intersect(clip, t) {
-                objc_draw_tree(tree, root, piece);
-            }
-            t = wind_get_rect(handle, WF_NEXTXYWH);
-        }
-    }
-
-    // 4. Restore the cursor.
+    do_wredraw_nocursor(handle, clip);
     graf_mouse(M_ON);
 }
 
@@ -104,6 +129,20 @@ pub fn do_wredraw(handle: i16, clip: Grect) {
 /// (which erases every window's work area to draw the frames), so all open
 /// windows' content must be re-laid on top — this is that fan-out.
 pub fn win_shwall() {
+    // One outer cursor bracket around the whole fan-out — the per-window paints
+    // go through `do_wredraw_nocursor`, so the cursor is never blinked back on
+    // between windows (the F3 flicker fix).
+    graf_mouse(M_OFF);
+    win_shwall_nocursor();
+    graf_mouse(M_ON);
+}
+
+/// The cursor-unbracketed body of [`win_shwall`]: snapshot the open handles and
+/// paint each window's content occlusion-clipped via [`do_wredraw_nocursor`].
+/// Split out so [`full_redraw`] can fold the fan-out into its *own* single outer
+/// `graf_mouse` bracket — without the mid-fan-out `M_ON` that (as `graf_mouse`
+/// is not ref-counted) would flash the cursor over a half-drawn desktop (F3).
+fn win_shwall_nocursor() {
     // Snapshot the open handles under the lock; draw with the lock released.
     let mut handles = [0i16; global::NUM_WNODES];
     let n = global::with(|g| {
@@ -123,7 +162,7 @@ pub fn win_shwall() {
     // the owner-rectangle list, so nothing a higher window covers is drawn.
     for &h in &handles[..n] {
         let work = wind_get_work(h);
-        do_wredraw(h, work);
+        do_wredraw_nocursor(h, work);
     }
 }
 
@@ -134,15 +173,16 @@ pub fn win_shwall() {
 /// once at boot and never covered (windows live below it), so it is not
 /// reinstalled here.
 ///
-/// The cursor is hidden for the frame paint (`redraw_all` does not manage it)
-/// and restored at the end; [`do_wredraw`]'s own `graf_mouse` brackets nest
-/// harmlessly inside.
+/// The cursor is hidden **once** for the whole composite (`redraw_all` does not
+/// manage it) and restored at the end; the window-content fan-out runs through
+/// [`win_shwall_nocursor`] so no inner `graf_mouse(M_ON)` flashes the cursor
+/// over a half-drawn desktop between windows (the F3 flicker fix).
 pub fn full_redraw() {
     graf_mouse(M_OFF);
     // Desktop background + icons + every window frame, occluded by draw order.
     tos_api::aes::window::redraw();
-    // Each open window's content, occlusion-clipped via `do_wredraw`.
-    win_shwall();
+    // Each open window's content, occlusion-clipped — no inner cursor toggle.
+    win_shwall_nocursor();
     graf_mouse(M_ON);
 }
 
