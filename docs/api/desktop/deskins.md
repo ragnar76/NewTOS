@@ -174,7 +174,17 @@ desktop-visible, trigger `app_blddesk()` to rebuild the desktop's
 "`a_xspot`/`a_yspot` unit gotcha" section (flagged there as **needs
 deeper analysis** — this section resolves that flag).
 
-- **`snap_icon(x, y, px, py, sxoff, syoff)`**: converts a raw pixel
+**Build configuration:** all three functions are **unconditional** — none
+of `snap_icon`/`grid_free`/`ins_posdisk` is wrapped in any `#if
+CONF_WITH_*` (verified by rereading `deskins.c` in full). Only some of
+their *callers* are conditional: `ins_shortcut` (`CONF_WITH_DESKTOP_
+SHORTCUTS`) and, transitively, `move_drvicon`'s desktop-only invocation
+context; `install_drive`/`install_desktop_icon`/`app_start`'s call sites
+are unconditional in the general/Atari build NewTOS targets (see
+`_overview.md`'s config-variant convention).
+
+- **`snap_icon(x, y, px, py, sxoff, syoff)`** (`WORD` params, no return
+  value; result via the `px`/`py` out-params) — converts a raw pixel
   position (typically the current mouse position, minus the cursor's
   offset within the dragged icon, `sxoff`/`syoff`) into a grid-aligned
   pixel position. Computes how many whole columns/rows fit in
@@ -188,10 +198,27 @@ deeper analysis** — this section resolves that flag).
   The target column/row are clamped to `[0, columns-1]`/`[0, rows-1]`
   (`:164,181` — `min(...)`) as a safety measure against
   out-of-range results from a mouse position outside the desktop.
+  **`snap_icon` itself performs no collision check whatsoever** — reading
+  the full body (`:146-184`) top to bottom, it only rounds `(x,y)` to the
+  nearest grid cell and clamps to the desktop bounds; it never inspects
+  `G.g_ahead`/any `ANODE`, never calls `grid_free`, and has **no
+  "exclusion icon" parameter** (there is nothing to exclude — it doesn't
+  look at other icons at all). Collision avoidance, where it exists at
+  all, is entirely the job of `grid_free`/`ins_posdisk` below, and only
+  the three *new-icon-install* call sites use them; `app_start()`'s
+  INF-position-apply loop and `move_drvicon()`'s drag-drop path (see
+  below) call `snap_icon` **alone**, so both can silently place/leave an
+  icon exactly on top of another one.
 - **`grid_free(x, y)`** (grid coordinates, not pixels): `TRUE` unless
   some other `AF_ISDESK` `ANODE`'s **current** `a_xspot`/`a_yspot`
   (pixels, per the dual-unit lifecycle already documented in
-  `_data-model.md`) divides back to the same grid cell.
+  `_data-model.md`) divides back to the same grid cell. No exclusion
+  parameter either; the callers below rely instead on calling it
+  **before** the new `ANODE` is allocated (`install_drive`/
+  `install_desktop_icon`, `:236`/`:793`, both call `ins_posdisk` before
+  `app_alloc()`), so the not-yet-existing icon can never collide with
+  itself. `ins_shortcut` breaks this ordering for its *first* icon — see
+  below.
 - **`ins_posdisk(dx, dy, pdx, pdy)`**: starting from the grid cell
   containing `(dx,dy)`, scans rightward, then wraps to the next row
   (resetting the column to 0, not to the original starting column) via
@@ -202,17 +229,26 @@ deeper analysis** — this section resolves that flag).
   the new icon exactly on top of an existing one, with no further
   fallback (no scrolling, no error, no alert).
 
-`install_drive`/`install_desktop_icon`/`ins_shortcut` all call
-`ins_posdisk(0, 0, &x, &y)` — i.e. **always starting the search from grid
-cell `(0,0)`**, not from any "last placed" position — meaning
-successively-installed icons are placed by scanning from the top-left
-every time, not by remembering where the last one landed. `ins_shortcut`
-is the one exception among these three: for multiple simultaneously
-dragged icons, it calls `ins_posdisk(x, y, &x, &y)` **after** placing
-each one, using the *just-placed* position as the next search's start,
-so multiple icons dropped together fill left-to-right/top-to-bottom
-starting from the drop point rather than from `(0,0)` each time
-(`deskins.c:1396`).
+`install_drive` (`:236`) and `install_desktop_icon` (`:793`) both call
+`ins_posdisk(0, 0, &x, &y)` **before** allocating the new `ANODE` — i.e.
+**always starting the search from grid cell `(0,0)`**, not from any
+"last placed" position — meaning successively-installed icons are placed
+by scanning from the top-left every time, not by remembering where the
+last one landed. **`ins_shortcut` does *not* follow this pattern — this
+corrects an earlier draft of this entry**, which mis-stated that all
+three call sites call `ins_posdisk(0,0,…)`: rereading `deskins.c:1341-
+1411` shows `ins_shortcut` calls `snap_icon(mx, my, &x, &y, 0, 0)`
+directly (`:1353`) for its *first* icon — using the actual mouse-drop
+position, with **zero collision checking**, since (as established above)
+`snap_icon` never calls `grid_free` — and only calls `ins_posdisk(x, y,
+&x, &y)` (`:1396`) **after** placing each icon, to find the position for
+the *next* one in the same multi-select drop. Net effect: **the first
+icon dropped in a multi-icon desktop-shortcut install can land exactly on
+top of a pre-existing icon** (no check at all), while the second and
+later icons in that same drop *are* collision-safe (each `ins_posdisk`
+call scans starting from the previous icon's just-placed position, and
+`grid_free` sees that previous icon's now-committed `ANODE` and skips
+past it) — see [Edge cases](#edge-cases-discovered-in-source).
 
 ---
 
@@ -357,6 +393,39 @@ being called on the wrong root, is silently skipped, not erred).
 
 ## Edge cases discovered in source
 
+- **`snap_icon` is pure grid-rounding, not collision avoidance** — the
+  function has no knowledge of other icons at all (no `G.g_ahead` walk,
+  no `grid_free` call, no exclusion parameter); only `grid_free`/
+  `ins_posdisk` avoid collisions, and only three call sites
+  (`install_drive`, `install_desktop_icon`, and `ins_shortcut`'s 2nd+
+  icon) use them. Two important consumers call `snap_icon` **alone**,
+  with no collision check at all:
+  - `deskapp.c:979-987`'s `app_start()` INF-position-apply loop (see
+    [`deskapp.md`](deskapp.md)) — every `AF_ISDESK` `ANODE`'s parsed
+    grid-unit spot is converted to pixels and passed through
+    `snap_icon` independently, in `G.g_ahead` list order. **Two
+    EMUDESK.INF entries with the same (or rounding-adjacent) saved grid
+    position produce two desktop icons drawn on top of each other at
+    boot**, with no detection, no error, no re-spacing. This is the key
+    fact for INF-position handling (task #14): the INF file's grid
+    coordinates are trusted verbatim; nothing in `app_start()` de-duplicates
+    or nudges them apart.
+  - `deskact.c:126-163`'s `move_drvicon()` (see [`deskact.md`](deskact.md))
+    — dragging one or more desktop icons to a new spot calls `snap_icon`
+    per selected icon with no `grid_free` check either; a user can drag
+    an icon (or a multi-selection) directly on top of another icon and
+    EmuTOS will happily overlap them.
+- **`ins_shortcut`'s first icon in a multi-select drop is not
+  collision-checked; the rest are** (`deskins.c:1341-1411`, see above) —
+  the initial `snap_icon(mx,my,…)` call (`:1353`) has no `grid_free`
+  behind it, but every subsequent icon in the same drop goes through
+  `ins_posdisk(x,y,&x,&y)` (`:1396`), which *is* collision-safe because
+  it re-scans starting from the position just committed. Relevant to
+  task #20 (install-icon placement): a NewTOS reimplementation that
+  wants to guarantee no overlap for *every* installed icon (including
+  the first of a batch) must add a `grid_free`/`ins_posdisk`-style check
+  before the first placement too — EmuTOS itself does not do this for
+  `ins_shortcut`, only for `install_drive`/`install_desktop_icon`.
 - **A completely full desktop icon grid silently overlaps a new icon
   onto an existing one** (`ins_posdisk`, `:220-221`) — no error, no
   scroll, no alert; this is a genuine "can't happen in practice" gap

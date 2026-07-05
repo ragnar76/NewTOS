@@ -50,7 +50,12 @@ task; see `deskmain.md`).
 - `deskact.c:126-163` `move_drvicon(tree, root, x, y, pts, sxoff, syoff)`
   — desktop-icon-drag completion: snaps each selected icon to the grid
   via `snap_icon()` (see [`deskins.md`](deskins.md)), updates its `ANODE`
-  `a_xspot`/`a_yspot`, and redraws old+new positions
+  `a_xspot`/`a_yspot`, and redraws old+new positions. **No collision
+  check**: `snap_icon()` only rounds/clamps to the nearest grid cell and
+  never consults `G.g_ahead`/`grid_free`, so dragging one or more desktop
+  icons onto a cell already occupied by another icon silently overlaps
+  them — confirmed by rereading `deskins.c:146-184` (see `deskins.md`'s
+  `snap_icon` section for the full analysis).
 - `deskact.c:169-188` `gr_extent(numpts, xylnpts, pt)` — bounding
   rectangle of a point list
 - `deskact.c:195-207` `gr_plns(x, y, numpts, xylnpts, numobs, xyobpts)` —

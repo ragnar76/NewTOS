@@ -152,11 +152,25 @@ set.
   structurally; **Auditor must drive the specific repro** (single window, two
   overlapping, 3-window overlap, plus a menu/dialog overlap) to confirm.
 - **`format_fnode`/`dr_code`** (text-view line format) — **resolved** by Task #3
-  in `deskinf.md`. **`snap_icon`** (icon-placement collision avoidance) is still
-  unextracted (R3 non-blocking flag) — needed before `ins.rs` desktop-icon
-  placement (#9); extract it then. NEWDESK.INF grammar lives in `deskinf.md`'s
-  appendix (sourced from `deskapp.c`), **not** `deskinf.c` — `inf.rs` builds
-  against that.
+  in `deskinf.md`. **`snap_icon`** — **resolved** by Task #19 in `deskins.md`
+  (section "`snap_icon`/`ins_posdisk`/`grid_free` — desktop grid placement",
+  cross-linked from `deskapp.md` and `_data-model.md`). Correction to the
+  framing above: `snap_icon` itself is **not** collision avoidance — it only
+  rounds a pixel position to the nearest desktop grid cell and clamps it to
+  the desktop bounds. Collision avoidance against already-placed icons is a
+  *separate* pair of helpers, `grid_free`/`ins_posdisk`, used only by the
+  three new-icon-install call sites (`install_drive`, `install_desktop_icon`,
+  and `ins_shortcut`'s 2nd+ icon in a multi-drop) — `ins_shortcut`'s *first*
+  icon, `app_start()`'s INF-position-apply loop, and `move_drvicon()`'s
+  drag-drop path all call `snap_icon` alone, with **no** collision check, so
+  EmuTOS itself can (and does, given colliding input) silently overlap desktop
+  icons. `ins.rs` (this plan's Task #9 "Dir/file/INF/rez"; tracker #20
+  "Install-Icon-Platzierung") must decide explicitly whether NewTOS
+  reproduces this gap or adds a stronger free-cell guarantee everywhere (a
+  deliberate improvement, not contract — see `docs/COMPATIBILITY.md`).
+  NEWDESK.INF
+  grammar lives in `deskinf.md`'s appendix (sourced from `deskapp.c`), **not**
+  `deskinf.c` — `inf.rs` builds against that.
 - **AES gaps:** if #6/#7 hit a missing/incorrect `wind_*`/`objc_*` in `tos-api`,
   that is a `tos-api` fix (separate Developer task), **not** a desk-side
   workaround.

@@ -239,10 +239,14 @@ snap_icon(x, y, &pa->a_xspot, &pa->a_yspot, 0, 0);   /* deskapp.c:983-985 */
 ```
 
 i.e. the *parsed* (grid-unit) value is read once, multiplied out to
-pixels, passed through `snap_icon()` (collision-avoidance against
-already-placed icons — **not traced in this task**, flagged **needs
-deeper analysis** if a later task needs icon-install placement), and the
-*result* (pixels) is written back into the same two fields. Every later
+pixels, passed through `snap_icon()` — **resolved** (was flagged "needs
+deeper analysis" here): full extraction in [`deskins.md`](deskins.md),
+section "`snap_icon`/`ins_posdisk`/`grid_free` — desktop grid placement".
+`snap_icon()` only rounds/clamps to the nearest grid cell — it performs
+**no collision avoidance** against other already-placed icons, so this
+loop can (and does, given colliding INF data) silently overlap two
+desktop icons — and the *result* (pixels) is written back into the same
+two fields. Every later
 read of `a_xspot`/`a_yspot` (`app_blddesk`'s `obj_ialloc` call,
 `deskapp.c:1362`) sees **pixels**, not grid units. Only the INF-save path
 (`deskinf.c`) converts back. This dual-unit lifecycle is invisible from

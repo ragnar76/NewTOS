@@ -241,8 +241,8 @@
   D:\ (heavy — use the small test image). Drop onto Trash → confirm + delete.
 - [ ] **G10 — (move_drvicon, bypasses fun_drag) Drag a desktop drive icon to an
   empty desktop cell** → the icon snaps to the nearest grid cell and stays there;
-  **no** file operation happens, **no** confirm. (Position is session-only until
-  NEWDESK.INF persistence, Task #14.)
+  **no** file operation happens, **no** confirm. Position now **persists** via
+  Options→Save desktop (Task #14, see H4/H5).
 - [ ] **G11 — Drag an icon and release it back on itself (same window)** →
   treated as a **cancelled** drop; nothing copies/moves.
 - [ ] **G12 — Drag a window item onto empty desktop space** → "Can't drop items
@@ -257,9 +257,12 @@
   OK → `Dcreate`; the folder appears in the window. Empty name / Cancel → no-op,
   screen restored. Grey with **no** window open.
 - [ ] **G15 — Select exactly one item, File→Info/Rename (Ctrl-I)** → the
-  **Rename** dialog (name pre-filled); a changed name → `Frename`; window
-  rebuilds. *The Show-Info panel (size/date/attributes) is deskinf = Task #14 —
-  this item is Rename-only for now.* Grey unless exactly one item is selected.
+  **Show-Info** dialog (`inf_file_folder`, Task #14): shows the item's
+  size/date/time/attributes with an editable name; a changed name on OK →
+  `Frename`, window rebuilds; Cancel / no change → screen restored. Grey unless
+  exactly one item is selected. **[E]** size = byte count for a file, `(folder)`
+  for a directory; date = `MM/DD/YYYY  HH:MM`; attributes list `DIR`/`R`/`H`/
+  `S`/`A` as set.
 - [ ] **G16 — File→Select all (a window open)** → every item in the current
   window highlights; menu state updates (Open greys at >1 selected). Grey with
   no window open.
@@ -268,6 +271,43 @@
   Options→Remove-desktop-icon (icon removal, files untouched — the handler is
   Task #14, so it is currently a no-op redirect); "Delete" deletes the drive's
   contents (dangerous — only on the throw-away test image).
+
+## H. NEWDESK.INF read/save + Show-Info / Set-background (Task #14, deskinf)
+
+> **Non-interactive parts already verified on `qemu raspi4b`** (serial log,
+> `/tmp/sd.img`): boot **reads** a hand-crafted `C:\NEWDESK.INF` and applies
+> `#E` view/sort/size-to-fit, `#Q` background (`g_patcol`), `#M`/`#T`
+> desktop-icon grid positions, and the `#W` window rectangle; the
+> `inf::selftest()` save→read round-trip passed 11/11 (in-memory **and** through
+> the SD image). The rows below are the **interactive** dialogs, which need a
+> live pointer/keyboard. Run only against a **fresh** `/tmp/sd.img` (writes
+> mutate the image).
+
+- [ ] **H1 — Boot with a `C:\NEWDESK.INF` present** → the desktop comes up with
+  the file's saved view/sort (check the View menu check-marks), background
+  pattern/colour, and desktop drive/trash icon positions. **[E]** menu checks +
+  icon grid spots match the file.
+- [ ] **H2 — Boot with NO `NEWDESK.INF`** → the desktop uses its built-in
+  defaults (Icon view, name sort, drives down column 0, trash/printer at the
+  right). **[E]** no error, clean boot.
+- [ ] **H3 — Options→Set background** → the pattern/colour stepper dialog opens;
+  `-`/`+` change the Pattern (0-7) and Colour (0-15) numbers; **OK** repaints the
+  desktop with the new background **and** writes `NEWDESK.INF`; **Cancel** leaves
+  it unchanged. **[E]** desktop background visibly changes on OK; re-boot keeps
+  it (persisted).
+- [ ] **H4 — Options→Save desktop** → writes `C:\NEWDESK.INF` from the current
+  state (view/sort/background/desktop-icon positions/open windows). **[E]** no
+  alert on success; an "`Could not save…`" alert only on a write failure.
+- [ ] **H5 — Move a drive icon (G10), Options→Save desktop, then Options→Read
+  .INF (or reboot)** → the icon returns to the saved grid cell. **[E]** the
+  moved position round-trips through the file.
+- [ ] **H6 — Change view (icon↔text) / sort, Options→Save desktop, reboot** →
+  the desktop boots into the saved view/sort. **[E]** View-menu checks match
+  what was saved.
+- [ ] **H7 — Options→Read .INF file** (after an external edit or a Save) →
+  re-applies the on-disk `NEWDESK.INF`: view/sort re-checked, background
+  repainted, desktop icons re-placed, open windows re-laid. A missing file is a
+  silent no-op.
 
 ---
 

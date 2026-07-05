@@ -28,9 +28,13 @@
 - `desk/deskobj.c:220` — `obj_ialloc()` — allocates + places one item
   `OBJECT` (used by `app_blddesk` for desktop icons, by `win_bldview` for
   window items)
-- `desk/deskapp.c` (not traced in this task) — `snap_icon()` — collision
-  avoidance when placing a new desktop icon; **needs deeper analysis** if
-  a later task covers desktop-icon installation
+- `desk/deskins.c:146-184` — `snap_icon()` — grid-rounding of a pixel
+  position (used by `app_start()`'s INF-position-apply loop, `:983-985`,
+  see below). **Resolved** (was flagged "needs deeper analysis" here) —
+  full extraction, including the important finding that `snap_icon`
+  itself performs **no** collision avoidance, is in
+  [`deskins.md`](deskins.md), section "`snap_icon`/`ins_posdisk`/
+  `grid_free` — desktop grid placement".
 - `aes/gemwrect.c` (not traced) — `r_set`/`r_get` GRECT helpers
 
 **Headers / type definitions used:**
@@ -208,10 +212,16 @@ for (pa = G.g_ahead; pa; pa = pa->a_next) {
 Converts the EMUDESK.INF-supplied **grid-unit** spot (`a_xspot`/`a_yspot`
 as parsed — column/row indices) into pixel coordinates, offsetting `y` by
 the desktop's top (`g_desk.g_y`, below the menu bar), then hands both to
-`snap_icon()` (not traced — collision avoidance / nudging to an unused
-spot) which writes the **final pixel** coordinates back into the same
-`a_xspot`/`a_yspot` fields. See `_data-model.md` for the full unit-
-lifecycle note (grid units in the INF file, pixels in memory afterwards).
+`snap_icon()`, which writes the **final pixel** coordinates back into the
+same `a_xspot`/`a_yspot` fields. **Correction to an earlier draft of this
+entry:** `snap_icon()` does **not** perform collision avoidance — it only
+rounds the pixel position to the nearest grid cell and clamps it to the
+desktop bounds (full extraction: [`deskins.md`](deskins.md)). This loop
+therefore applies **no** collision avoidance at all between the
+`AF_ISDESK` `ANODE`s it places: two EMUDESK.INF entries with the same (or
+rounding-adjacent) saved grid position produce two icons drawn on top of
+each other, silently. See `_data-model.md` for the full unit-lifecycle
+note (grid units in the INF file, pixels in memory afterwards).
 
 ### 4. `app_blddesk()`'s consumption (`deskapp.c:1358-1399`)
 
