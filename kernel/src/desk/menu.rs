@@ -702,8 +702,11 @@ fn item_enabled(item: Item, nsel: usize, nwin: usize) -> bool {
         Item::Delete => nsel >= 1,
         Item::InfoRename => nsel == 1,
         Item::NewFolder | Item::SelectAll => nwin >= 1,
-        // Search + every Options item stay disabled (Task #14: deskins /
-        // deskinf / deskrez).
+        // Task-#14 deskinf/NEWDESK.INF ops: always available (EmuTOS
+        // `CONF_WITH_BACKGROUNDS`/`CONF_WITH_READ_INF` + the always-live Save).
+        Item::SetBackground | Item::ReadInf | Item::SaveDesktop => true,
+        // Search + the remaining install/prefs/resolution Options items stay
+        // disabled (deskins #20 / deskrez).
         _ => false,
     }
 }

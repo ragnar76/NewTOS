@@ -154,6 +154,32 @@ pub fn patcol_desktop() -> u8 {
     G_PATCOL[4].load(Ordering::Acquire)
 }
 
+/// Set the desktop background byte for the current (>2-plane) bucket
+/// (`g_patcol[2].desktop`), written by the Set-background dialog
+/// ([`super::inf::set_background`]).
+pub fn set_patcol_desktop(v: u8) {
+    G_PATCOL[4].store(v, Ordering::Release);
+}
+
+/// Overwrite all six background pattern/colour bytes
+/// (`[desk0, win0, desk1, win1, desk2, win2]`), applied from a parsed
+/// `NEWDESK.INF` `#Q` line ([`super::inf::load_and_apply`]).
+pub fn set_patcol_all(vals: [u8; 6]) {
+    for (slot, v) in G_PATCOL.iter().zip(vals.iter()) {
+        slot.store(*v, Ordering::Release);
+    }
+}
+
+/// Read all six background pattern/colour bytes, for serialising the `#Q` line
+/// ([`super::inf::save_desktop`]).
+pub fn patcol_all() -> [u8; 6] {
+    let mut out = [0u8; 6];
+    for (o, slot) in out.iter_mut().zip(G_PATCOL.iter()) {
+        *o = slot.load(Ordering::Acquire);
+    }
+    out
+}
+
 /// The desktop's process-lifetime global state (EmuTOS `GLOBES G`).
 pub struct DeskState {
     /// Current view mode (`g_iview`).
@@ -223,6 +249,16 @@ pub struct DeskState {
 
     /// The window list (`g_wdesktop`/`g_wlist`/`g_wfirst`/`g_wcnt`).
     pub windows: WindowList,
+
+    /// Parsed `NEWDESK.INF` desktop-icon grid positions, one per `#M`/`#T`/`#O`
+    /// line: `(a_type code, drive letter, a_xspot, a_yspot)` in **grid units**.
+    /// Consulted by [`DeskState::inf_desk_pos`] during `app_blddesk`. Empty when
+    /// no INF file was loaded (icons then take their built-in default spots).
+    pub inf_desk_icons: alloc::vec::Vec<(u8, u8, u8, u8)>,
+    /// Parsed `NEWDESK.INF` window rectangles (`#W` lines, in file order,
+    /// converted to pixels), indexed by window slot. Consulted when a directory
+    /// window opens.
+    pub inf_windows: alloc::vec::Vec<Grect>,
 }
 
 impl DeskState {
@@ -255,6 +291,8 @@ impl DeskState {
             g_screeninfo: Vec::new(),
             g_screenfree: NIL,
             windows: WindowList::default(),
+            inf_desk_icons: Vec::new(),
+            inf_windows: Vec::new(),
         }
     }
 

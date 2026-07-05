@@ -470,9 +470,10 @@ fn hndl_menu(item: Item, title_obj: i16) -> bool {
             }
             false
         }
-        // Every Options item is a Task-#9 op — `men_update` keeps them
-        // disabled, so a well-behaved AES never dispatches one; guard anyway.
-        Title::Options => false,
+        Title::Options => {
+            do_optnmenu(item);
+            false
+        }
     };
     super::menu_tnormal(menu::tree_ptr(), title_obj, true);
     done
@@ -508,6 +509,48 @@ fn do_filemenu(item: Item) -> bool {
     false
 }
 
+/// `do_optnmenu` (EmuTOS `deskmain.c:786`) — the Options menu. Task-#14 items:
+/// Set background (`inf_backgrounds`), Read .INF (reload + apply), Save desktop
+/// (`app_save`). The install / preferences / resolution items stay disabled by
+/// `men_update` (deskins #20 / deskrez).
+fn do_optnmenu(item: Item) {
+    match item {
+        Item::SetBackground => {
+            // The dialog applies + persists on OK; repaint the screen it covered.
+            super::inf::set_background();
+            redraw::full_redraw();
+        }
+        Item::ReadInf => do_read_inf(),
+        Item::SaveDesktop => do_save_desktop(),
+        _ => {} // remaining Options items stay disabled
+    }
+}
+
+/// Options → Read .INF file: re-read `NEWDESK.INF`, re-apply it (view/sort,
+/// background, desktop-icon positions), rebuild the desktop icon tree and every
+/// open window's view, and repaint. A missing file is a silent no-op.
+fn do_read_inf() {
+    if !super::inf::load_and_apply() {
+        return;
+    }
+    global::with(|g| {
+        g.win_view();
+        g.app_blddesk();
+        g.win_srtall();
+    });
+    win_bdall();
+    redraw::full_redraw();
+}
+
+/// Options → Save desktop: serialise the current desktop state to
+/// `NEWDESK.INF`. Reports failure through an alert.
+fn do_save_desktop() {
+    if !super::inf::save_desktop() {
+        dir::fun_alert(1, b"Could not save the desktop file.");
+        redraw::full_redraw();
+    }
+}
+
 /// `fun_mkdir` (EmuTOS `deskfun.c:680`) — File → New folder: prompt for a name,
 /// create it (`Dcreate`) in the current window's directory, and rebuild that
 /// window. The name-entry box is [`super::dlg::edit_name`]; the deeply-nested
@@ -540,29 +583,31 @@ fn do_new_folder() {
     redraw::full_redraw();
 }
 
-/// File → Info/Rename (EmuTOS `do_filemenu` `SHOWITEM`): the **Rename** half —
-/// prompt for a new name for the single selected item and `Frename` it. The
-/// Show-Info panel (size/date/attributes) is deskinf (Task #14).
+/// File → Info/Rename (EmuTOS `do_filemenu` `SHOWITEM` → `inf_file_folder`,
+/// `deskinf.c:493-639`): show the single selected item's size/date/attributes
+/// in a dialog with an editable name; on OK with a changed name, `Frename` it.
+/// The dialog itself lives in [`super::inf`].
 fn do_info_rename() {
     let cwin = global::with(|g| g.g_cwin).unwrap_or(DESKWH);
     if cwin == DESKWH {
         return;
     }
-    // The single selected window item.
+    // The single selected window item and its display fields.
     let sel = global::with(|g| {
         let slot = g.win_slot(cwin)?;
         let spec = g.windows.slots[slot].w_pnode.p_spec.clone();
         let dir = spec.rfind('\\').map(|i| String::from(&spec[..=i]))?;
         let f = g.windows.slots[slot].w_pnode.p_flist.iter().find(|f| f.f_selected)?;
         let name = core::str::from_utf8(f.name_bytes()).ok().map(String::from)?;
-        Some((dir, name))
+        Some((dir, name, f.f_size, f.f_date, f.f_time, f.f_attr))
     })
     .flatten();
-    let Some((dir_path, old)) = sel else {
+    let Some((dir_path, old, size, date, time, attr)) = sel else {
         return;
     };
-    let Some(new) = super::dlg::edit_name(b"Rename to:\0", &old) else {
-        redraw::full_redraw();
+    let renamed = super::inf::inf_file_folder(&old, size, date, time, attr);
+    let Some(new) = renamed else {
+        redraw::full_redraw(); // dialog cancelled / no change — restore the screen
         return;
     };
     let new = new.trim();
@@ -886,12 +931,14 @@ fn open_dir_window(spec: &str, title: &str) {
     fmt_info(&mut info, count, size);
     super::wind_set_ptr(handle, WF_INFO, info.as_ptr() as u64);
 
-    // Open at a staggered sub-rectangle of the desktop (later windows offset so
-    // they do not exactly overlap).
+    // Open at the window's saved `NEWDESK.INF` rectangle for this slot, or a
+    // staggered sub-rectangle of the desktop (later windows offset so they do
+    // not exactly overlap) when the INF supplies none.
     let step = (slot as i16) * 24;
     let rw = (desk.w - 96).min(560);
     let rh = (desk.h - 56).min(400);
-    let r = Grect { x: desk.x + 48 + step, y: desk.y + 24 + step, w: rw, h: rh };
+    let default_r = Grect { x: desk.x + 48 + step, y: desk.y + 24 + step, w: rw, h: rh };
+    let r = super::inf::window_rect(slot).unwrap_or(default_r);
     super::wind_open(handle, r);
 
     // Build the view for the actual work rect + push the scrollbar geometry,

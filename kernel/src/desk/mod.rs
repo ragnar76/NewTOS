@@ -26,6 +26,7 @@ pub mod dir;
 pub mod dlg;
 pub mod global;
 pub mod icons;
+pub mod inf;
 pub mod main;
 pub mod menu;
 pub mod model;
@@ -563,6 +564,16 @@ pub fn run() {
     global::with(|g| {
         g.full_work_w = full_work_w;
         g.app_start();
+    });
+
+    // Read NEWDESK.INF and apply it (view/sort, g_patcol background, desktop-icon
+    // grid positions, window rectangles) — after `app_start` so the grid pitch
+    // (`g_icw`/`g_ich`) exists for the icon-position rounding, before `win_view`/
+    // `app_blddesk` so the view and positions take effect. A missing file is not
+    // an error (the desktop keeps its built-in defaults).
+    inf::load_and_apply();
+
+    global::with(|g| {
         g.win_view();
         g.app_blddesk();
     });

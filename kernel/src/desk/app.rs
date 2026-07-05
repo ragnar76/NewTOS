@@ -61,15 +61,50 @@ impl DeskState {
         self.g_ich = self.g_desk.h / ycnt;
     }
 
+    /// `snap_icon` (`deskins.c:146-184`) — round a raw pixel position to the
+    /// nearest desktop grid cell and clamp it to `[0, cols-1]`/`[0, rows-1]`.
+    /// Returns the target **grid** cell `(col, row)`.
+    ///
+    /// **Pure grid-rounding, no collision avoidance** — it never inspects other
+    /// icons (`deskins.md`: `snap_icon` "performs no collision check
+    /// whatsoever"). The INF-position apply path (`app_start:983-985`) and the
+    /// drag path (`move_drvicon`) both call it alone, so colliding INF positions
+    /// silently overlap — faithful to EmuTOS. Collision avoidance is the install
+    /// path's job (`ins_posdisk`, #20), not here.
+    pub fn snap_icon_grid(&self, x: i16, y: i16) -> (i16, i16) {
+        let icw = self.g_icw.max(1);
+        let ich = self.g_ich.max(1);
+        let cols = (self.g_desk.w / icw).max(1);
+        let rows = (self.g_desk.h / ich).max(1);
+        let col = ((x + icw / 2) / icw).clamp(0, cols - 1);
+        let row = ((y + ich / 2) / ich).clamp(0, rows - 1);
+        (col, row)
+    }
+
+    /// The desktop grid cell for the icon of `a_type` `code` (and, for a disk,
+    /// drive `letter`) from the parsed `NEWDESK.INF`, or [`None`] when no INF
+    /// entry matches. The parsed grid-unit spot is scaled to pixels
+    /// (`a_xspot * g_icw`, `a_yspot * g_ich`) and passed through
+    /// [`DeskState::snap_icon_grid`], exactly as `app_start:983-985` does.
+    fn inf_desk_pos(&self, code: u8, letter: u8) -> Option<(i16, i16)> {
+        let (xspot, yspot) = self
+            .inf_desk_icons
+            .iter()
+            .find(|&&(a, l, _, _)| a == code && (code != super::inf::AT_ISDISK || l == letter))
+            .map(|&(_, _, xs, ys)| (xs, ys))?;
+        Some(self.snap_icon_grid(xspot as i16 * self.g_icw, yspot as i16 * self.g_ich))
+    }
+
     /// `app_blddesk` (`deskapp.c:1337-1404`) — build the desktop pseudo-window
     /// icon tree under `DROOT`: one `G_ICON` per present drive, plus the Trash
     /// and Printer fixtures, placed on the desktop grid (`g_icw`/`g_ich`).
     ///
-    /// NewTOS has no `NEWDESK.INF` desktop-icon positions yet (Task #9), so
-    /// icons take built-in default grid spots: drives down column 0, Trash and
-    /// Printer in the rightmost column. Each icon's object box equals the icon
-    /// cell (`g_wicon`×`g_hicon`) and its bitmap is recentred live against
-    /// `g_wicon` (the `deskapp.c:1391` `ib_xicon` recentre, done inside
+    /// Each icon takes its `NEWDESK.INF` grid position ([`DeskState::inf_desk_pos`],
+    /// grid-rounded via `snap_icon` with **no** collision check) when the loaded
+    /// file supplies one; otherwise a built-in default spot (drives down column
+    /// 0, Trash/Printer in the rightmost column). Each icon's object box equals
+    /// the icon cell (`g_wicon`×`g_hicon`) and its bitmap is recentred live
+    /// against `g_wicon` (the `deskapp.c:1391` `ib_xicon` recentre, done inside
     /// [`build_iconblk`]).
     pub fn app_blddesk(&mut self) {
         // Reset DROOT's item tree and reposition it to the desktop work rect.
@@ -79,8 +114,8 @@ impl DeskState {
         let cols = (d.w / self.g_icw).max(1);
         let bits = drvbits();
 
-        // Drives down column 0 (A/B are floppies, C+ hard disks —
-        // deskapp.c:721).
+        // Drives down column 0 by default (A/B are floppies, C+ hard disks —
+        // deskapp.c:721), or at their saved INF grid position.
         let mut row = 0i16;
         for drv in 0..26u32 {
             if bits & (1 << drv) != 0 {
@@ -90,17 +125,21 @@ impl DeskState {
                 } else {
                     (IconKind::Floppy, b"Floppy disk")
                 };
-                if self.place_desk_icon(0, row, kind, letter, label).is_none() {
+                let (col, r) = self.inf_desk_pos(super::inf::AT_ISDISK, letter).unwrap_or((0, row));
+                if self.place_desk_icon(col, r, kind, letter, label).is_none() {
                     return; // arena exhausted — stop placing (EmuTOS parity)
                 }
                 row += 1;
             }
         }
 
-        // Trash + Printer fixtures in the rightmost column.
+        // Trash + Printer fixtures in the rightmost column by default, or at
+        // their saved INF grid position.
         let rc = cols - 1;
-        self.place_desk_icon(rc, 0, IconKind::Trash, 0, b"Trash");
-        self.place_desk_icon(rc, 1, IconKind::Printer, 0, b"Printer");
+        let (tc, tr) = self.inf_desk_pos(super::inf::AT_ISTRSH, 0).unwrap_or((rc, 0));
+        self.place_desk_icon(tc, tr, IconKind::Trash, 0, b"Trash");
+        let (pc, pr) = self.inf_desk_pos(super::inf::AT_ISPRNT, 0).unwrap_or((rc, 1));
+        self.place_desk_icon(pc, pr, IconKind::Printer, 0, b"Printer");
     }
 
     /// Allocate and populate one desktop `G_ICON` at grid cell `(col, row)`
