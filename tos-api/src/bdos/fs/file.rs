@@ -17,7 +17,7 @@ use super::fat::Volume;
 use super::path;
 use crate::trap::TrapArgs;
 use tos_types::error::{
-    EACCDN, EFILNF, EIHNDL, EINVFN, ENHNDL, ENSAME, EPTHNF, ERANGE, E_OK,
+    EACCDN, EFILNF, EIHNDL, EINTRN, EINVFN, ENHNDL, ENSAME, EPTHNF, ERANGE, E_OK,
 };
 use tos_types::Long;
 
@@ -593,8 +593,35 @@ pub fn frename(args: &TrapArgs) -> Long {
         old[0] = 0xE5;
         dir::write_slot(&vol1, parent1, src_slot, &old);
     }
+    // Moving a *folder* into a *different* directory leaves its `..` entry
+    // pointing at the old parent. Rewrite it to the new parent's start
+    // cluster (0 when the new parent is the root, per FAT convention).
+    // File renames and same-directory folder renames need no such fix-up.
+    if entry.attrib & dir::FA_SUBDIR != 0 && parent1 != parent2 && !fix_dotdot(&vol1, entry.cluster, parent2) {
+        return EINTRN;
+    }
     super::cache::flush();
     E_OK
+}
+
+/// FAT short name of the `..` directory entry (`".."` + nine spaces).
+const DOTDOT: [u8; 11] = *b"..         ";
+
+/// Rewrite the `..` entry of a moved folder (whose first cluster is
+/// `folder_cluster`) to point at `new_parent`'s start cluster (0 = root).
+/// Returns `false` if the `..` entry cannot be located or written back.
+fn fix_dotdot(vol: &Volume, folder_cluster: u32, new_parent: u32) -> bool {
+    let slot = match dir::slot_of(vol, folder_cluster, &DOTDOT) {
+        Some(s) => s,
+        None => return false,
+    };
+    let mut e = [0u8; 32];
+    if !dir::read_slot(vol, folder_cluster, slot, &mut e) {
+        return false;
+    }
+    // FAT12/16 has no high cluster word; write the low 16 bits at 0x1A.
+    e[0x1A..0x1C].copy_from_slice(&((new_parent & 0xFFFF) as u16).to_le_bytes());
+    dir::write_slot(vol, folder_cluster, slot, &e)
 }
 
 /// `Fdatime` (0x57) — get or set an open file's time/date stamp.

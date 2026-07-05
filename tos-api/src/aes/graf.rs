@@ -39,37 +39,79 @@ fn mouse_down() -> bool {
     crate::vdi::mouse_buttons() & 0x01 != 0
 }
 
-/// `graf_rubberbox` (70) — rubber-band a box anchored at `(x,y)`; the
-/// opposite corner follows the mouse (min size `minw`/`minh`). Returns the
-/// final `w,h` in `int_out[1..2]`.
+/// `gr_clamp` (EmuTOS `gemgrlib.c:83`): the signed rubber-band extent from a
+/// pinned `origin` to the live `cursor`, plus one, clamped by a **signed** `max`
+/// to `min`. The `+1` makes the extent span both endpoints inclusively; the
+/// clamp is a signed `max`, *not* a magnitude clamp. A positive `min` therefore
+/// forces a down-right minimum-size box (a leftward drag is pulled back up to
+/// `+min`); `SHRT_MIN` disables the clamp for free four-quadrant growth
+/// (`w`/`h` go negative when dragging up/left).
+fn gr_clamp(cursor: i16, origin: i16, min: i16) -> i16 {
+    (cursor - origin + 1).max(min)
+}
+
+/// Normalise a pinned `origin` plus a signed `gr_clamp` extent
+/// (`ext = cursor - origin + 1`) into a drawable top-left / positive-length
+/// pair for [`outline`]: the far corner sits at `origin + ext - 1`, so the box
+/// spans that corner and `origin` and grows toward the cursor in any quadrant.
+/// Saturating arithmetic keeps a `SHRT_MIN`-derived extreme extent from
+/// overflowing (`outline` needs a non-negative length).
+fn draw_span(origin: i16, ext: i16) -> (i16, i16) {
+    let far = origin.saturating_add(ext.saturating_sub(1));
+    let lo = origin.min(far);
+    let hi = origin.max(far);
+    (lo, (hi - lo).saturating_add(1))
+}
+
+/// `graf_rubberbox` (70) — rubber-band a box with one corner pinned at `(x,y)`;
+/// the opposite corner tracks the mouse until the button comes up
+/// (spec: `window-graphics.md` §`graf_rubberbox (70)`).
+///
+/// `int_out[1]`/`int_out[2]` are the **signed** `gr_clamp` extents
+/// `w = max(cursor_x - x + 1, minw)`, `h = max(cursor_y - y + 1, minh)` — the
+/// `+1` and the *signed* `max` are load-bearing. A positive `minw`/`minh`
+/// yields a positive, down-right-only minimum-size box; a caller wanting free
+/// four-quadrant growth (negative `w`/`h` when dragging up/left) passes
+/// `minw = minh = SHRT_MIN`, exactly as the desktop's rubber-band select does
+/// (EmuTOS `deskact.c:631`). The live outline follows the same signed extent
+/// (top-left/length via [`draw_span`], like EmuTOS `gr_rubwind`). `int_out[0]`=1.
 pub fn graf_rubberbox(pb: &Aespb) {
-    let x = pb.intin(0);
-    let y = pb.intin(1);
-    let minw = pb.intin(2).max(1);
-    let minh = pb.intin(3).max(1);
-    let (mut lw, mut lh) = (minw, minh);
-    if let (Some(h), Some(backend)) = (host(), host().and_then(|h| h.raster())) {
+    let ax = pb.intin(0);
+    let ay = pb.intin(1);
+    let minw = pb.intin(2);
+    let minh = pb.intin(3);
+    // Seed the extent from the current mouse position so the first drawn box is
+    // the live rubber-band rect, not a degenerate `SHRT_MIN`-sized frame.
+    let (mut w, mut h) = {
+        let (mx, my) = crate::vdi::mouse_position();
+        (gr_clamp(mx, ax, minw), gr_clamp(my, ay, minh))
+    };
+    if let (Some(host_h), Some(backend)) = (host(), host().and_then(|h| h.raster())) {
         let clip = ClipRect::full(backend.width(), backend.height());
-        outline(x, y, lw, lh, BLACK, backend, clip);
+        let (mut bx, mut bw) = draw_span(ax, w);
+        let (mut by, mut bh) = draw_span(ay, h);
+        outline(bx, by, bw, bh, BLACK, backend, clip);
         loop {
             let (mx, my) = crate::vdi::mouse_position();
-            let nw = (mx - x + 1).max(minw);
-            let nh = (my - y + 1).max(minh);
-            if nw != lw || nh != lh {
-                outline(x, y, lw, lh, WHITE, backend, clip);
-                lw = nw;
-                lh = nh;
-                outline(x, y, lw, lh, BLACK, backend, clip);
+            let nw = gr_clamp(mx, ax, minw);
+            let nh = gr_clamp(my, ay, minh);
+            if nw != w || nh != h {
+                outline(bx, by, bw, bh, WHITE, backend, clip);
+                w = nw;
+                h = nh;
+                (bx, bw) = draw_span(ax, w);
+                (by, bh) = draw_span(ay, h);
+                outline(bx, by, bw, bh, BLACK, backend, clip);
             }
             if !mouse_down() {
                 break;
             }
-            h.pump_input();
+            host_h.pump_input();
         }
-        outline(x, y, lw, lh, WHITE, backend, clip);
+        outline(bx, by, bw, bh, WHITE, backend, clip);
     }
-    pb.set_intout(1, lw);
-    pb.set_intout(2, lh);
+    pb.set_intout(1, w);
+    pb.set_intout(2, h);
     pb.set_ret(1);
 }
 

@@ -230,7 +230,9 @@
   while dragging → **moved** instead (source disappears).
 - [ ] **G6 — Drag a selection from one window into another window** → copied to
   the target window's directory (Ctrl = move); the source selection clears; both
-  windows rebuild.
+  windows rebuild. A **folder** Ctrl-moved this way keeps a correct `..` entry
+  (fixed in #15 — spot-check the moved folder still opens and its parent chain is
+  intact; `fsck` clean).
 - [ ] **G7 — Drag a window selection onto the desktop Trash icon** → a confirm
   alert appears; OK **deletes** the files; rebuild the source window.
 - [ ] **G8 — Drag a window selection onto a desktop Disk icon** → copied to that

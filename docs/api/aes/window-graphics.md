@@ -184,7 +184,7 @@ results travel in **`int_out[1..4]`** (`WM_OX..WM_OH`, `GR_O1/O2`, `GR_WCHAR..`,
 
 | Op | Function | `int_in` | `int_out` (`[0]`=ret) | `addr_in` |
 |---:|----------|----------|-----------------------|-----------|
-| 70 | `graf_rubberbox` | `[0..3]`=x,y,minw,minh | `[0]`=1; `[1]`=`GR_O1` lastw, `[2]`=`GR_O2` lasth | — |
+| 70 | `graf_rubberbox` | `[0..3]`=x,y,minw,minh | `[0]`=1; `[1]`=`GR_O1` lastw *(signed)*, `[2]`=`GR_O2` lasth *(signed)* | — |
 | 71 | `graf_dragbox`   | `[0..3]`=w,h,sx,sy; `[4..7]`=bound x/y/w/h (`GR_I5`) | `[0]`=1; `[1]`=lastx, `[2]`=lasty | — |
 | 72 | `graf_movebox`   | `[0..3]`=w,h,sx,sy; `[4]`=dx, `[5]`=dy | `[0]`=1 | — |
 | 73 | `graf_growbox`   | `[0..3]`=small x/y/w/h; `[4..7]`=big x/y/w/h (`GR_I5`) | `[0]`=1 | — |
@@ -488,9 +488,20 @@ the screen, and block until the button is released. All frame the tracking with
 
 **Source:** `gemsuper.c:266-268` → `gr_rubbox` → `gr_rubwind`
 (`gemgrlib.c:199-232`). Pins one corner at `(x,y)` and stretches the opposite
-corner to follow the mouse (`gr_clamp` uses live `xrat`/`yrat`) until the button
-comes up, clamped to a minimum `wmin`×`hmin`. Returns the final width/height in
-`int_out[1]`/`int_out[2]` (`GR_O1`/`GR_O2`). `void`; `int_out[0]`=1.
+corner to follow the mouse until the button comes up. `gr_clamp`
+(`gemgrlib.c:83`) computes the returned extent as
+**`w = max(xrat - x + 1, wmin)`, `h = max(yrat - y + 1, hmin)`** (`xrat`/`yrat` =
+live mouse). The result is therefore **signed**: `w`/`h` are the
+pointer-minus-origin deltas (**note the `+1`**), clamped *by a signed `max`* to
+`wmin`/`hmin`. A normal app passing **positive** `wmin`/`hmin` gets a positive
+minimum-size box that only grows down-right (a leftward drag is clamped back up
+to `wmin`). To get **free 4-quadrant** growth (negative `w`/`h` when dragging
+up/left), the caller passes **`wmin = hmin = SHRT_MIN`** — exactly what the
+desktop's rubber-band select does (`deskact.c:631`
+`graf_rubbox(mx, my, SHRT_MIN, SHRT_MIN, ...)`). Returns `int_out[1]`/`int_out[2]`
+(`GR_O1`/`GR_O2`) = **signed** `w`/`h`. `void`; `int_out[0]`=1. **NewTOS note:**
+implement `int_out[1]/[2] = max(cursor - origin + 1, wmin/hmin)` directly — the
+`+1` and the signed `max` (not a magnitude-clamp) are load-bearing.
 
 ### `graf_dragbox` (71)
 
