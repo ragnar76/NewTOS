@@ -36,13 +36,12 @@
   background window becomes the current window **and** the clicked icon is
   selected (the click is *consumed*, not ignored). **[E]** background window is
   now current; item selected. *This is the core D3 fix.*
-- [ ] **A4 — (A #1, CONFIRMED gap) Two windows, select an icon in window 1,
-  then click an icon (or empty area) in window 2** → **window 1's selection
-  must clear**; only window 2 shows a highlighted item. **[E per EmuTOS]** only
-  ONE window ever shows a selection. **Known finding:** the current code does
-  **not** clear window 1 (missing `desk_clear_all` on `wh != g_cwin`,
-  deskmain.c:957-958) — expect window 1 to *stay* highlighted. Confirm the
-  symptom, then re-test after the fix.
+- [ ] **A4 — (was audit #1, now FIXED in #9/F1) Two windows, select an icon in
+  window 1, then click an icon (or empty area) in window 2** → **window 1's
+  selection clears**; only window 2 shows a highlighted item. **[E per EmuTOS]**
+  only ONE window ever shows a selection. The `desk_clear_all` on `wh != g_cwin`
+  (deskmain.c:957-958) was added in #9 — confirm the correct single-window
+  behaviour on HW.
 - [ ] **A5 — Single-click a desktop drive icon** (outside any window) → the
   drive icon selects; open windows de-select as appropriate; menu updates.
 - [ ] **A6 — Double-click a folder icon** → a new directory window opens showing
@@ -85,9 +84,9 @@
   Ctrl-I (Info), Ctrl-N (New-folder) → **nothing happens** (all are Task-#9
   items kept disabled; the shortcut must not dispatch a disabled handler).
 - [ ] **B11 — F1…F20** → no-op (no installed applications yet — Task #9).
-- [ ] **B12 — (tracked #13) Alt-A…Alt-Z** → currently inert on the NewTOS keymap
-  (documented keyboard-layer gap). Confirm it does **not** crash or open the
-  wrong drive; do **not** file as new.
+- [ ] **B12 — Alt-A…Alt-Z** (fixed in #13: the keymap folds Alt+letter → ASCII 0
+  and the Alt bit is now in `shift_state`) → opens that drive letter's root
+  window (e.g. Alt-C → `C:\`). Confirm the correct drive opens (and no crash).
 
 ## C. Menu manager + `men_update` (D6)
 
@@ -142,8 +141,9 @@
   alphabetically. *(Statically + boot-screendump confirmed already; re-confirm
   interactively.)*
 - [ ] **D8 — Size to fit toggle off** → a horizontal scrollbar becomes
-  meaningful; **(tracked #12)** the H-slider thumb may not render yet — confirm
-  scrolling still *works* via Left/Right arrows even if the thumb is not drawn.
+  meaningful; the H-slider thumb now **renders** (fixed in #12, a mirror of the
+  vertical slider). Confirm the thumb reflects the horizontal position and that
+  Left/Right arrows scroll by a column.
 
 ## E. Window management (`hndl_msg`: TOPPED/MOVED/SIZED/FULLED/CLOSED/ARROWED/SLID)
 
@@ -165,12 +165,12 @@
 - [ ] **E7 — Drag the vertical slider** → jumps to the proportional scroll
   position; content correct; **at the extreme top/bottom** the last row is fully
   backed (no blank strip below the last item).
-- [ ] **E8 — (A #3, cosmetic) Any full repaint (open/close/move/size/top/cycle,
-  or dismissing the About box)** → watch the pointer: it may **flicker** briefly
-  mid-repaint (nested `graf_mouse` M_OFF/M_ON, non-ref-counted). Confirm there
-  are **no persistent cursor "droppings"** (holes/ghosts) left after the
-  repaint settles — flicker-only is the accepted (cosmetic) outcome; a leftover
-  cursor artifact is a real defect.
+- [ ] **E8 — (was audit #3, fixed in #17/F3) Any full repaint
+  (open/close/move/size/top/cycle, or dismissing the About box)** → the pointer
+  should stay hidden for the whole repaint and reappear **once**, cleanly (the
+  nested `graf_mouse` M_OFF/M_ON was collapsed to a single outer bracket in
+  `full_redraw`/`win_shwall`). Confirm **no** mid-repaint cursor flicker and
+  **no** persistent cursor droppings (holes/ghosts).
 - [ ] **E9 — Open the maximum number of windows (7), each on a full directory,
   then close and reopen several times** → every window keeps showing its full
   content (no items silently missing). *This exercises the lazy
