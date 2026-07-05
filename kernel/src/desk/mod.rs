@@ -513,17 +513,18 @@ fn paint_desktop_bg(backend: &dyn RasterBackend, clip: ClipRect) {
     global::render_desktop_icons(backend, clip);
 }
 
-/// Repaint the desktop surface — background pattern + desktop icons (the
-/// `DROOT` subtree) — within `clip`, straight through the backend (no AES
-/// trap). The `DESKWH` arm of [`redraw::do_wredraw`]: it draws the same content
-/// the [`paint_desktop_bg`] painter hook does, restricted to the caller's
-/// damage rectangle. Occlusion of the desktop *under* windows is provided by
-/// the AES `redraw_all` compositing order (painter first, window frames on
-/// top), not by an owner-rectangle list — the desktop pseudo-window has none
-/// (EmuTOS likewise redraws the desktop via the AES, skipping `WM_REDRAW` for
-/// handle 0), so callers that touch desktop content while windows are open pair
-/// this with a window recomposite (`win_shwall`), exactly as EmuTOS
-/// `app_blddesk` follows `do_wredraw(DESKWH, &g_desk)` with the window redraws.
+/// Repaint one piece of the desktop surface — background pattern + desktop
+/// icons (the `DROOT` subtree) — within `clip`, straight through the backend
+/// (no AES trap). It draws the same content the [`paint_desktop_bg`] painter
+/// hook does, restricted to the caller's rectangle.
+///
+/// The `DESKWH` arm of [`redraw::do_wredraw`] calls this once per **visible**
+/// desktop piece — the desk area minus every open window, from the AES
+/// owner-rectangle list (`wind_get(DESKWH, WF_FIRSTXYWH/NEXTXYWH)`) — so it
+/// never paints over a window (the desktop is the bottom of the z-order; the
+/// Task-#18 Z-order fix). In the full composite ([`redraw::full_redraw`]) the
+/// under-window occlusion instead comes from the `redraw_all` draw order
+/// (painter first, window frames on top); the two paths agree.
 pub(super) fn paint_desktop_region(clip: Grect) {
     let Some(backend) = tos_api::host::host().and_then(|h| h.raster()) else {
         return;

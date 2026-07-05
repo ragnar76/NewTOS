@@ -41,6 +41,18 @@ pub fn active() -> *mut Object {
 /// Menu-bar height in pixels (≈ char height + 3, the GEM `gl_hbox`).
 const BAR_H: i16 = 19;
 
+/// The y-coordinate where the desktop work area begins: the bottom edge of the
+/// installed menu bar ([`BAR_H`]), or `0` when no menu bar is installed. The
+/// window manager uses this to bound the desktop pseudo-window's rectangle list
+/// (the desk area = screen minus the menu bar); see `window::desktop_work`.
+pub(super) fn desk_top() -> i16 {
+    if active().is_null() {
+        0
+    } else {
+        BAR_H
+    }
+}
+
 // ob_state bits.
 const SELECTED: u16 = 0x0001;
 const CHECKED: u16 = 0x0004;

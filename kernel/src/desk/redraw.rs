@@ -13,15 +13,19 @@
 //! The AES window manager in `tos-api` owns the desktop-background painter hook
 //! and the window **frames**; its `redraw_all` composites the desktop surface
 //! (background + icons, via the painter hook) and every window frame
-//! back-to-front, so *frames* and the *desktop* are occluded by draw order. The
-//! desktop **application** owns the window **content** — the item `OBJECT`s —
-//! and draws it here. [`do_wredraw`] clips that content to the window's AES
-//! owner-rectangle list (`WF_FIRSTXYWH`/`WF_NEXTXYWH`: the work area minus every
-//! higher window) intersected with the caller's damage rectangle, and calls
-//! `objc_draw` once per surviving piece — so a covered window never paints over
-//! the window on top of it, **regardless of draw order** (the D2 fix). The AES
-//! rectangle list is used as-is (`tos_api::aes::window::compute_rlist`); this
-//! module builds no rectangle list of its own.
+//! back-to-front, so *frames* and the *desktop* are occluded by draw order in
+//! the full composite ([`full_redraw`]). The desktop **application** owns the
+//! window **content** — the item `OBJECT`s — and the desktop **surface**, and
+//! draws both here. [`do_wredraw`] clips whatever it draws to the target's AES
+//! owner-rectangle list (`WF_FIRSTXYWH`/`WF_NEXTXYWH`: the work/desk area minus
+//! every higher window) intersected with the caller's damage rectangle, and
+//! draws once per surviving piece — so a covered window never paints over the
+//! window on top of it, and the desktop background never paints over a window,
+//! **regardless of draw order** (the D2 / Task-#18 fix). The desktop
+//! pseudo-window (handle 0 / `DESKWH`) is the bottom of the z-order, so its
+//! rectangle list is the desk area minus every open window. The AES rectangle
+//! list is used as-is (`tos_api::aes::window::compute_rlist`); this module
+//! builds no rectangle list of its own.
 
 use super::global::{self, Grect, DROOT};
 use super::win::DESKWH;
@@ -66,20 +70,26 @@ fn do_wredraw_nocursor(handle: i16, clip: Grect) {
     let Some(root) = wredraw_root(handle, clip) else {
         return;
     };
-    if handle == DESKWH {
-        // Desktop surface (root == DROOT): background pattern + desktop icons
-        // (the DROOT subtree) within `clip`. Occlusion by the redraw_all
-        // compositing order, not an owner-rectangle list (see the doc-comment).
-        paint_desktop_region(clip);
-    } else if let Some(tree) = global::screen_addr() {
-        // Window content: one clip-and-draw per visible owner rectangle.
-        let mut t = wind_get_rect(handle, WF_FIRSTXYWH);
-        while t.w != 0 && t.h != 0 {
-            if let Some(piece) = rc_intersect(clip, t) {
+    // Uniform owner-rectangle-list walk for BOTH the desktop pseudo-window and
+    // real windows (EmuTOS `do_wredraw`, `desksupp.c:223-229`): `wind_get(…,
+    // WF_FIRSTXYWH/NEXTXYWH)` yields each visible piece (the work/desk area
+    // minus every higher window), intersected here with the caller's damage
+    // rectangle `clip`. The desktop is the *bottom* of the z-order, so its list
+    // excludes every open window — the background is drawn only on the exposed
+    // desk area and never paints over a window (the Task-#18 Z-order fix). Real
+    // windows draw their item subtree via `objc_draw`; the desktop draws its
+    // background pattern + icons via `paint_desktop_region`.
+    let tree = if handle == DESKWH { None } else { global::screen_addr() };
+    let mut t = wind_get_rect(handle, WF_FIRSTXYWH);
+    while t.w != 0 && t.h != 0 {
+        if let Some(piece) = rc_intersect(clip, t) {
+            if handle == DESKWH {
+                paint_desktop_region(piece);
+            } else if let Some(tree) = tree {
                 objc_draw_tree(tree, root, piece);
             }
-            t = wind_get_rect(handle, WF_NEXTXYWH);
         }
+        t = wind_get_rect(handle, WF_NEXTXYWH);
     }
 }
 
@@ -98,12 +108,14 @@ fn do_wredraw_nocursor(handle: i16, clip: Grect) {
 /// 3. Draw via [`do_wredraw_nocursor`] (the owner-rectangle-list walk).
 /// 4. `graf_mouse(M_ON)` — restore the cursor.
 ///
-/// The [`DESKWH`] arm draws the desktop surface (background + icons over
-/// `DROOT`) within `clip` via `super::paint_desktop_region` instead of walking
-/// the owner-rectangle list: the desktop pseudo-window has no such list in
-/// `tos-api` (nor does EmuTOS route the desktop through `do_wredraw`'s
-/// `WM_REDRAW` path — handle 0 is skipped, the AES redraws the desktop). Its
-/// under-window occlusion comes from the `redraw_all` compositing order.
+/// The [`DESKWH`] arm draws the desktop surface (background pattern + icons over
+/// `DROOT`) via `super::paint_desktop_region`, but — like the window arm — only
+/// on the pieces the AES owner-rectangle list yields for the desktop
+/// pseudo-window: the desk area (screen minus the menu bar) minus every open
+/// window (the desktop is the bottom of the z-order). Walking that list is what
+/// keeps a standalone desktop redraw from painting over the windows above it
+/// (the Task-#18 Z-order fix); it mirrors EmuTOS routing the desktop through the
+/// very same `wind_get_grect(DESKWH, WF_FIRSTXYWH/NEXTXYWH)` loop as a window.
 pub fn do_wredraw(handle: i16, clip: Grect) {
     // Preserve EmuTOS's "a stale/empty redraw toggles nothing" (desksupp.c:214-215):
     // resolve first, and only bracket the cursor around a real paint.

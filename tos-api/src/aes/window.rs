@@ -86,6 +86,11 @@ const TITLE_STIPPLE: [u16; 4] = [0x0000, 0x5555, 0x0000, 0x5555];
 const MAX_WINDOWS: usize = 8;
 const NAME_CAP: usize = 80;
 
+/// The desktop pseudo-window's AES handle (EmuTOS `DESKWH`) — the bottom of the
+/// window z-order. It has no table slot; its rectangle list is the desk area
+/// (the screen minus the menu bar) minus every open window's border rect.
+const DESKWH: i16 = 0;
+
 /// A rectangle (GEM `GRECT`).
 #[derive(Clone, Copy, Default, PartialEq)]
 struct Grect {
@@ -322,6 +327,14 @@ fn subtract(list: &mut [Grect; RCAP], n: usize, c: Grect) -> usize {
 
 /// Compute `handle`'s visible work-area pieces (work rect minus every
 /// higher-z open window) into `RLIST`, cursor reset.
+///
+/// [`DESKWH`] (the desktop pseudo-window) is treated as the **bottom** of the
+/// z-order: its work area is the desk rectangle ([`desktop_work`], the screen
+/// minus the menu bar) and *every* open window is above it, so the subtraction
+/// loop removes each open window's border rect. This is the occlusion-aware
+/// rectangle list EmuTOS's `do_wredraw(DESKWH, …)` walks uniformly with real
+/// windows (`desksupp.c:223`), so the desktop background never reports — and
+/// therefore never repaints over — a piece a window covers.
 fn compute_rlist(handle: i16) {
     // SAFETY: single-CPU AES.
     let (rects, count, cursor) = unsafe {
@@ -329,9 +342,14 @@ fn compute_rlist(handle: i16) {
     };
     *count = 0;
     *cursor = 0;
-    let (work, myz) = match win(handle) {
-        Some(w) if w.open => (calc(WC_WORK, w.kind, w.curr), w.z),
-        _ => return,
+    let (work, myz) = if handle == DESKWH {
+        // Desktop: desk area, z below every window (i16::MIN → all subtracted).
+        (desktop_work(), i16::MIN)
+    } else {
+        match win(handle) {
+            Some(w) if w.open => (calc(WC_WORK, w.kind, w.curr), w.z),
+            _ => return,
+        }
     };
     let mut list = [Grect::default(); RCAP];
     list[0] = work;
@@ -992,6 +1010,16 @@ fn screen_rect() -> Grect {
     } else {
         Grect { x: 0, y: 0, w: 640, h: 480 }
     }
+}
+
+/// The desktop pseudo-window's work rectangle: the full screen minus the menu
+/// bar at the top (EmuTOS `gl_rscreen` minus the menu-bar owner rect). When no
+/// menu bar is installed it is the whole screen. Seeds [`compute_rlist`]'s
+/// [`DESKWH`] rectangle list.
+fn desktop_work() -> Grect {
+    let full = screen_rect();
+    let top = super::menu::desk_top();
+    Grect { x: full.x, y: full.y + top, w: full.w, h: full.h - top }
 }
 
 // ── Batch 2: interactive frame + WM_* messages ──────────────────────────
