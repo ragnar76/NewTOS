@@ -32,7 +32,16 @@ Audit a scoped area (a subsystem, function group, or a Developer change) against
    values, observable behaviour) matched exactly? Distinguish a real **bug** from
    an **acceptable NewTOS deviation** (an EmuTOS internal NewTOS may legitimately
    implement differently because it is unobservable) — don't flag the latter as a
-   bug, but do confirm it is genuinely unobservable.
+   bug, but do confirm it is genuinely unobservable. **Atari-hardware-specific
+   functionality that has no Pi4/NewTOS equivalent — the IKBD/keyboard clock,
+   MIDI/serial ACIA, MFP-68901, YM2149/PSG sound, the Shifter, floppy/DMA,
+   TT/Falcon video — does NOT need a 1:1 implementation**: a thin adapter, a
+   defined no-op, or a sensible default that honours the *observable* contract is
+   correct, not a defect (CLAUDE.md non-goals: NewTOS is the TOS **API** surface,
+   not Atari hardware emulation; see [[altitude-syscall-not-hardware-emulation]]).
+   The test for a bug: does a **conforming program observe a wrong result through
+   the documented API**? If the missing thing only matters to Atari hardware,
+   classify it as an *acceptable HW-absence deviation*, not a bug.
 4. **The no-stub rule:** a function returning a hardcoded value, ignoring args, or
    `todo!()`-ing to pass the build is a finding.
 
