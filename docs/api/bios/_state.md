@@ -27,7 +27,8 @@ addresses matter only for the Phase-10 m68k emulator.
 |--------:|------------------|-----------------|---------|---------|
 | `0x432` | `membot`         | `LONG`          | bottom of free ST-RAM (TPA) | `Getmpb` |
 | `0x436` | `memtop`         | `LONG`          | top of free ST-RAM | `Getmpb` |
-| `0x43a` | `phystop`        | `LONG`          | top of physical ST-RAM | `bmem_init` |
+| `0x42e` | `phystop`        | `LONG`          | top of physical ST-RAM | `bmem_init` |
+| `0x43a` | `memval2`        | `LONG`          | validates memcntlr/memconf if `0x237698aa` (unrelated to `phystop`; see correction below) | boot RAM-config check |
 | `0x454` | `nvbls`          | `WORD`          | number of VBL routines | VBL |
 | `0x456` | `vblqueue`       | `LONG` (ptr)    | pointer to the VBL routine list | VBL |
 | `0x46e` | `swv_vec`        | `LONG` (vector) | resolution-change vector | screen |
@@ -35,6 +36,8 @@ addresses matter only for the Phase-10 m68k emulator.
 | `0x476` | `hdv_rw`         | `LONG` (vector) | read/write routine → `blkdev_rwabs` | `Rwabs` |
 | `0x47a` | `hdv_boot`       | `LONG` (vector) | hard-disk boot routine | boot |
 | `0x47e` | `hdv_mediach`    | `LONG` (vector) | media-change routine → `blkdev_mediach` | `Mediach` |
+| `0x484` | `conterm`        | `UBYTE`         | console-output attribute bits (bit0 keyclick, bit1 key-repeat, bit2 bell, **bit3 = fold `shifty` into `Bconin(2)`'s high byte**) | `Bconin` (handle 2) |
+| `0x48e` | `themd`          | `MD` (16 bytes) | the single static memory descriptor `Getmpb` points `mp_mfl` at | `Getmpb` |
 | `0x4a2` | `savptr`         | `LONG` (ptr)    | BIOS register save-area stack pointer | trap trampoline |
 | `0x4ba` | `hz_200`         | `LONG` (volatile) | 200 Hz free-running system clock counter | timing |
 | `0x4c2` | `drvbits`        | `LONG`          | logical-drive presence bitmap | `Drvmap` |
@@ -49,6 +52,25 @@ addresses matter only for the Phase-10 m68k emulator.
 > `04-rwabs.md` said `0x47E`); `hdv_mediach` is at **`0x47e`** (earlier
 > `09-mediach.md` said `0x47A`, which is actually `hdv_boot`). `savptr` is at
 > `0x4a2`, `drvbits` at `0x4c2`.
+>
+> **New correction (this pass, 2026-07):** `phystop` is at **`0x42e`**, not
+> `0x43a` as previously listed here. The wrong value came from a stale comment
+> in `bios/biosmem.c:49` ("`LONG phystop TOS variable in 0x43a`") — the
+> authoritative source is the linker script `tosvars.ld:42`
+> (`_phystop = 0x42e`), which the C compiler's `_`-prefix convention ties
+> directly to the `phystop` global (`include/tosvars.h:49`). `0x43a` is
+> actually `memval2` (`tosvars.ld:45`), an unrelated RAM-config validity
+> marker — not read by any function in this group. CLAUDE.md Rule 1 applies
+> literally here: the comment lied, the linker script (the actual link-time
+> binding) is authoritative. `00-getmpb.md` itself never cited the address
+> directly so it needed no fix, only this table.
+>
+> **Gap filled (this pass):** `conterm` (`0x484`) was missing from this table
+> entirely, even though bit 3 changes `Bconin`'s (handle 2) return-value
+> contract — see `02-bconin.md` for the corrected encoding. `themd`'s fixed
+> address (`0x48e`) was also missing; it is the classic documented "first
+> memory descriptor block" sysvar and is exactly the `MD` `Getmpb` points
+> `mp_mfl` at (`bios/biosmem.c:144-147`, `tosvars.ld:73`).
 
 The GEM/AES exception hooks live at the very start of the sysvar area
 (`tosvars.ld:31-36`) and are installed via `Setexc(num, …)` where `addr =

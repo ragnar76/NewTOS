@@ -136,6 +136,19 @@ error.
    installs its own via these. (The prior spec listed these offsets
    inconsistently; corrected here from `tosvars.ld:33-35`.)
 
+5. **The `etv_*` hooks have real, non-zero default handlers at boot, not
+   NULL (gap filled this pass).** `bios_init()` sets `etv_timer = just_rts`,
+   `etv_critic = default_etv_critic`, `etv_term = just_rts`
+   (`bios/bios.c:360-362`) *before* GEMDOS/AES ever run. So `Setexc(0x100,
+   -1)` / `Setexc(0x102, -1)` at any point after boot return the address of
+   the no-op `just_rts` stub — never `0` — and `Setexc(0x101, -1)` returns
+   `default_etv_critic` (`bios/vectors.S:823-826`), which just extracts the
+   error code passed on the stack and returns it in D0 — a real, callable
+   passthrough handler, not a null pointer. A conforming implementation must
+   not treat "unset" as `0`;
+   the query-before-install idiom (`old = Setexc(n, -1)`) always yields a
+   valid, callable address to chain to.
+
 ---
 
 ## Dependencies

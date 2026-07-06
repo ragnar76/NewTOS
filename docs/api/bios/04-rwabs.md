@@ -223,6 +223,19 @@ zero transfers and returns `E_OK`.
 7. **`numb == 0` is not an error.** Contrary to the prior spec, there is no
    `EBADRQ` path; the loop just does nothing and returns `E_OK`.
 
+8. **Logical vs. physical range checks use different boundary operators
+   (gap filled this pass).** The logical-mode bounds check is
+   `(lrecnr + lcount) > blkdev[dev].size` (`bios/blkdev.c:461-462`, strict
+   `>`), but the physical-mode check is `(lrecnr + lcount) >=
+   units[unit].size` (`bios/blkdev.c:488-489`, `>=`). A transfer that ends
+   *exactly* at the device's sector count (`lrecnr+lcount == size`) is
+   therefore accepted in logical mode but rejected with `ESECNF` in physical
+   (`RW_NOTRANSLATE`) mode on the identical underlying unit — a genuine,
+   source-confirmed asymmetry, not a documentation gap. Whether this is an
+   intentional off-by-one or an EmuTOS bug is not resolved by the source;
+   flagged here as-is per the "trust the code" rule rather than "corrected"
+   to a single consistent rule.
+
 ---
 
 ## Dependencies
@@ -265,7 +278,17 @@ zero transfers and returns `E_OK`.
 ## Configuration / version notes
 
 - `BLKDEVNUM = 16` logical drives (A:..P:); `UNITSNUM` physical units.
-- `RWABS_RETRIES` sets the auto-retry count.
+- `RWABS_RETRIES` sets the auto-retry count — **currently defined as `1`**
+  (`bios/blkdev.h:34`, `#define RWABS_RETRIES 1 /* on real machine might
+  want to increase this */`). Gap-filled finding this pass: since
+  `retry_count = (rw & RW_NORETRIES) ? 1 : RWABS_RETRIES` evaluates to `1`
+  on **both** branches when `RWABS_RETRIES == 1`, the `RW_NORETRIES` flag
+  currently has **no observable effect** in EmuTOS as shipped — every
+  logical/physical transfer already gets exactly one attempt (no retry)
+  regardless of whether the caller sets bit 2. This is a real, source-
+  confirmed fact (not a spec error to "fix"; `RW_NORETRIES` remains part of
+  the ABI contract and must still be *accepted*, it simply changes nothing
+  observable under the current constant).
 
 ---
 

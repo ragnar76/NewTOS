@@ -24,6 +24,9 @@
 - `boot_status` (`bios/bios.c:964`)
 - `bconin_vec[handle]` (TOS var `0x53e`)
 - `bconmap_root.maptab[]` — when `BCONMAP_AVAILABLE`
+- `conterm` (TOS var `0x484`, `bios/ikbd.c:279`) — `bconin2` only: bit 3
+  gates whether the `shifty` byte is folded into the returned LONG's top
+  byte (see Outputs; gap filled this pass, was previously undocumented)
 
 **System variables / globals written:** none in `bconin`; `bconin2` advances
 `ikbdiorec.head` (`bios/ikbd.c:269`).
@@ -102,12 +105,39 @@ Handle meanings (default `bconin_vec`, `bios/chardev.c:34`):
 - **Register:** D0 / `x0`
 - **Type:** LONG
 - **Encoding (CON, handle 2):** bits 0–7 = ASCII (0 if non-ASCII key);
-  bits 8–15 = 0; bits 16–23 = GSX-2.0 IKBD scancode; bits 24–31 = 0.
-  (Shift state is *not* folded into this word by `bconin`; use `Kbshift`.)
+  bits 8–15 = 0; bits 16–23 = GSX-2.0 IKBD scancode; bits 24–31 = the
+  `shifty` modifier byte **latched at key-press time** — *if and only if*
+  `conterm` bit 3 (`0x08`) is set — **else 0**. See the correction below:
+  this is not the unconditional "never folded" behaviour a prior draft
+  claimed.
 - **Encoding (AUX, handle 1 / MIDI, handle 3):** byte in bits 0–7, upper
   bits 0.
 - **Source location:** header comment `bios/bios.c:948-956`; value produced by
-  the handler (`bconin2` packs the 4-byte `ikbdiorec` record).
+  the handler (`bconin2` packs the 4-byte `ikbdiorec` record and then masks
+  it, `bios/ikbd.c:279-280`).
+
+**Correction (this pass):** a prior draft stated flatly "shift state is not
+folded into this word by `bconin`; use `Kbshift`". That is only true for the
+**default** boot configuration. The actual code
+(`bios/ikbd.c:279-280`):
+
+```
+if (!(conterm & 8))         /* shift status not wanted? */
+    value &= 0x00ffffffL;   /* true, so clean it out */
+```
+
+masks bits 24–31 to zero **only when `conterm` bit 3 is clear**. `conterm`
+(TOS sysvar `0x484`, a directly-pokeable `UBYTE`) is initialised to `7` at
+boot (`bios/ikbd.c:1100`, "keyclick, key repeat & system bell on by
+default") — bit 3 is *not* one of those three, so it is clear by default,
+and the masking *does* happen out of the box. But a program that sets
+`conterm |= 8` (poking `$484` directly, or via whatever TOS exposes for it)
+changes `Bconin(2)`'s contract: the returned LONG then carries the `shifty`
+snapshot from the moment the key was generated (`kb_last.k.shifty`, set at
+`bios/ikbd.c:900`) in its top byte, on top of the existing
+scancode/ASCII packing. This is real, source-backed, observable behaviour
+that the prior spec missed entirely; `conterm` has been added to
+`docs/api/bios/_state.md`'s sysvar table.
 
 ### Side effects on global state
 
@@ -151,6 +181,10 @@ first when the distinction matters.
   `Bconin(2)` still report ready for the same byte; `Bconin(2)` then removes
   it and `Bconstat(2) == 0`.
 - **Invalid handle:** `Bconin(9)` → `0`.
+- **`conterm` bit 3 set (gap-filled):** with `conterm |= 8` and a real key
+  press with Shift held, `Bconin(2) >> 24 == shifty-at-press-time` (a
+  non-zero byte with `MODE_LSHIFT`/`MODE_RSHIFT` set); with `conterm & 8 ==
+  0` (the boot default) the same press yields `Bconin(2) >> 24 == 0`.
 
 ---
 
@@ -174,6 +208,17 @@ first when the distinction matters.
 
 5. **No timeout on AUX.** `bconin1` blocks indefinitely on a stuck UART; only
    the IKBD path has a reset-driven recovery.
+
+6. **`conterm` bit 3 conditionally folds `shifty` into bits 24–31 (gap
+   filled this pass).** `bconin2` always builds the full 32-bit record with
+   the modifier byte in the top 8 bits, then masks it to 0 unless `conterm &
+   8` (`bios/ikbd.c:279-280`). The default boot value `conterm == 7`
+   (`bios/ikbd.c:1100`) has bit 3 clear, so out of the box the mask always
+   applies and bits 24–31 read 0 — which is why a prior draft's blanket "not
+   folded" claim looked correct under casual testing. A program (or the
+   Desktop) that sets `conterm |= 8` changes this. This is the one instance
+   in this function group where a plain TOS system variable, not a build
+   `CONF_*` flag, silently changes a trap's return-value contract.
 
 ---
 
