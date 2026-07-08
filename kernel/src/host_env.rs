@@ -276,6 +276,10 @@ impl Host for KernelHost {
         crate::ikbd::shift_state()
     }
 
+    fn set_keyboard_shift_state(&self, mask: u8) {
+        crate::ikbd::set_shift_state(mask);
+    }
+
     #[cfg(feature = "board-rpi4")]
     fn block(&self) -> Option<&dyn tos_api::bios::block::BlockDev> {
         use crate::hal::block::BlockDevice;

@@ -164,6 +164,22 @@ pub fn shift_state() -> u8 {
     m
 }
 
+/// Overwrite the keyboard shift-state from a `Kbshift(flag)` set call
+/// (`flag >= 0`). Mirrors EmuTOS storing `flag` into the single `shifty`
+/// byte (`bios/ikbd.c:150`): each modifier atomic is written from the
+/// matching `MODE_*` bit so a following [`shift_state`] reads the value
+/// back, and a later physical make/break still updates its own bit. The
+/// decoder tracks one shift flag, so either shift bit (`MODE_RSHIFT` /
+/// `MODE_LSHIFT`, `0x03`) sets it; bits 5-7 (`MODE_HOME`/`MODE_INSERT`/
+/// reserved) are TT/Falcon-era and not represented, so they do not
+/// round-trip (`docs/api/bios/0b-kbshift.md`).
+pub fn set_shift_state(mask: u8) {
+    SHIFT.store(mask & 0x03 != 0, Ordering::Relaxed); // MODE_RSHIFT|MODE_LSHIFT
+    CTRL.store(mask & 0x04 != 0, Ordering::Relaxed); // MODE_CTRL
+    ALT.store(mask & 0x08 != 0, Ordering::Relaxed); // MODE_ALT
+    CAPS.store(mask & 0x10 != 0, Ordering::Relaxed); // MODE_CAPS
+}
+
 /// Translate a key scancode to ASCII against the active keyboard layout
 /// ([`crate::keymap`]) and the current modifiers, folding Ctrl + letter to
 /// its control code. Returns `None` when the key has no character (cursor /

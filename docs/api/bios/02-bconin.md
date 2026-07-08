@@ -286,18 +286,18 @@ first when the distinction matters.
   (`kernel/src/host_env.rs:83-147`) and returns the **ASCII low byte**
   (`console::rx_pop`, `kernel/src/console.rs:120-127`, which skips
   scancode-only keys with ascii 0).
-- **Step-2 — CON scancode high word is dropped (BUG).** The contract for CON
+- **CON scancode high word — FIXED (was K2 Step-2).** The contract for CON
   (handle 2) is a packed LONG with the **GSX/IKBD scancode in bits 16-23**;
   a program pressing a non-ASCII key (arrow/function) must read ASCII `0`
-  with a non-zero scancode in the high word. NewTOS `bconin` returns only
-  `console_read_byte_blocking() as Long` (`chardev.rs:52`) = the ASCII byte,
-  high words `0`. The scancode **is available** — the key ring word is
-  `scancode << 8 | ascii` and `console::rx_pop_key` exposes it
-  (`console.rs:129-133`) — but `Bconin` uses the ASCII-only `rx_pop`. So
-  non-ASCII keys are invisible to `Bconin(2)`, and even ASCII keys report a
-  zero scancode. (The AES event path already uses `rx_pop_key` and sees the
-  scancode; only the BIOS/GEMDOS `Bconin`/`Cconin` path loses it.) Recorded
-  as K2 (Step-2).
+  with a non-zero scancode in the high word. NewTOS `bconin` now reads the
+  whole key word via `Host::console_read_key_blocking` (the scancode-carrying
+  `rx_pop_key` path, not the ASCII-only `rx_pop`) and packs it with
+  `chardev::pack_console_key` — scancode into bits 16-23, ASCII into bits 0-7
+  (`tos-api/src/bios/chardev.rs`). So non-ASCII keys are visible to `Bconin(2)`
+  and ASCII keys carry their scancode. The earlier K2 finding ("scancode
+  dropped") no longer holds. Shift-state folding into bits 24-31 (the
+  `conterm & 8` behaviour) is still not implemented — see the shift-state
+  note above.
 - **CON input is USB-HID, not the UART (policy).** Same K1 finding as
   `Bconstat`: the blocking read also polls the PL011 UART0 on real Pi-4
   (`host_env.rs:112` `pl011_rx_poll`, `:120` `usb::poll`), so `Bconin(2)`

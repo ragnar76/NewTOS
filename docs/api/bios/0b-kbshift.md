@@ -3,15 +3,19 @@
 > Phase 00 spec (full-contract template). Source: EmuTOS @ `1a7484ab`.
 > Verified against `bios/ikbd.c:145` (`kbshift`).
 
-## NewTOS status: **out-of-scope (not exposed)**
+## NewTOS status: **implemented (wired at BIOS 0x0B)**
 
-NewTOS handles the keyboard natively (real ST keyboard on a UART, or USB-HID →
-`crate::ikbd::feed`); modifier state lives in the `ikbd` decoder, not behind
-this trap. `Kbshift` is therefore not exposed and the dispatcher's
-out-of-range fall-through (returning the function number) is the intended,
-documented behaviour — **not** the answer this spec describes, which is the
-EmuTOS contract kept for reference and for the Phase-10 m68k emulator. See
-`docs/STATUS.md` (2026-07-02) and the "Keyboard via Atari IKBD" decision.
+NewTOS handles the keyboard natively (USB-HID → `crate::ikbd::feed`); the
+modifier state lives in the `ikbd` decoder. As of Task #24 `Kbshift` **is**
+wired as an in-range dispatcher handler (`tos-api/src/bios/mod.rs`,
+`kbshift`): the query path (`flag < 0`) returns
+`host().keyboard_shift_state()` and the set path (`flag >= 0`) writes it back
+through `host().set_keyboard_shift_state(flag as u8)`
+(`kernel/src/ikbd.rs::set_shift_state`). `0x0B` is a real in-range function
+id, so it dispatches to `kbshift` — it is **not** the dispatcher's
+out-of-range fall-through (which returns the function number for ids
+`> 0x0B` only). See `docs/STATUS.md` and the "Keyboard via Atari IKBD"
+decision.
 
 ---
 
@@ -214,12 +218,16 @@ None (does not command the keyboard controller).
 
 ## NewTOS implementation notes
 
-(Empty during Phase 00.)
-
-Not exposed as a trap in NewTOS (see status banner). If a future phase needs
-it for the m68k emulator, the USB-HID / IKBD decoder must publish a
-`shifty`-equivalent byte with this exact bit layout and mirror it into the
-`os_kbshift` slot.
+Wired at BIOS 0x0B (Task #24). `tos-api/src/bios/mod.rs::kbshift` returns the
+previous shift byte (zero-extended) always, and on `flag >= 0` truncates
+`flag` to a byte and stores it via `Host::set_keyboard_shift_state`. The byte
+is the `shifty`-equivalent maintained by the IKBD decoder
+(`crate::ikbd::{shift_state, set_shift_state}`) with the `MODE_*` layout
+above. NewTOS' decoder tracks a single shift flag (not L/R separately) and
+does not represent bits 5-7 (`MODE_HOME`/`MODE_INSERT`/reserved — TT/Falcon
+-era), so a set of those bits does not round-trip; bits 0-4 do. There is no
+`os_kbshift` low-memory alias on the Pi — access is via the trap or the host
+method, not a pointer poke.
 
 ---
 
@@ -228,38 +236,35 @@ it for the m68k emulator, the USB-HID / IKBD decoder must publish a
 > Re-points the modifier-state source from the **IKBD 6301 / ACIA** (`shifty`
 > maintained by the ACIA scancode ISR) to the **USB-HID keyboard over
 > xHCI/PCIe** decoded into an IKBD `shifty`-equivalent. `Kbshift` the **trap**
-> is out-of-scope (see the status banner); this binding pins where the
-> modifier byte actually lives on the Pi. See `docs/HARDWARE-PROFILE.md` §3.3.
+> is wired (Task #24) over that byte; this binding pins where the modifier
+> byte actually lives on the Pi. See `docs/HARDWARE-PROFILE.md` §3.3.
 
-### The modifier byte exists — but not behind this trap
+### The modifier byte lives in the IKBD decoder; the trap reads/writes it
 
-`Kbshift` (BIOS 0x0B) is **not wired** in the BIOS dispatcher
-(`tos-api/src/bios/mod.rs` has no `0x0B` entry), so a native `Kbshift` call hits
-the dispatcher's out-of-range fall-through (returns the function number, `0x0B`)
-— the intended out-of-scope behaviour, **not** the `shifty` contract above.
-
-The modifier state itself *is* maintained: the USB-HID report-modifier byte is
-translated into IKBD modifier make/break codes (`drivers/usb/hid.rs`), fed
-through `crate::ikbd::feed`, and exposed as a `shifty`-equivalent byte via the
-host method `keyboard_shift_state()` → `crate::ikbd::shift_state()`
-(`kernel/src/host_env.rs:231-233`). But that byte reaches consumers (the AES /
-VDI key-state path) through the host trait, **not** through the `Kbshift` trap
-and **not** through an `os_kbshift` low-memory alias.
+`Kbshift` (BIOS 0x0B) is wired in the BIOS dispatcher
+(`tos-api/src/bios/mod.rs::kbshift`). The modifier state is maintained by the
+USB-HID stack: the HID report-modifier byte is translated into IKBD modifier
+make/break codes (`drivers/usb/hid.rs`), fed through `crate::ikbd::feed`, and
+kept as a `shifty`-equivalent (`crate::ikbd::{shift_state, set_shift_state}`).
+The trap's query path returns it via `Host::keyboard_shift_state`; the set
+path writes it via `Host::set_keyboard_shift_state`. The same byte reaches the
+AES / VDI key-state consumers through the host trait. There is no
+`os_kbshift` low-memory alias on the Pi.
 
 | Atari reference | Pi-4 model today |
 |-----------------|------------------|
 | `shifty` UBYTE updated by the ACIA/IKBD scancode ISR | a `shifty`-equivalent kept in the `ikbd` decoder, updated from USB-HID make/break |
-| `Kbshift(flag)` trap gets/sets it | trap **not exposed** → dispatcher returns `0x0B` |
+| `Kbshift(flag)` trap gets/sets it | in-range handler `kbshift`; get = `keyboard_shift_state()`, set = `set_keyboard_shift_state()` |
 | `os_kbshift` aliases `&shifty` for pointer reads | no `os_kbshift` slot; access is `host().keyboard_shift_state()` (EL1 only) |
 | IKBD 6301 on ACIA | USB-HID keyboard over xHCI (VL805/PCIe) → `ikbd::feed` |
 
-### Gaps vs. the contract (Step-2 candidates)
+### Gaps vs. the contract (residual)
 
-- **Trap not exposed (by design).** `Kbshift` returns the function number, not a
-  `shifty` byte — the documented out-of-scope status. If the m68k emulator ever
-  needs it, wire `0x0B` to a getter/setter over `ikbd::shift_state()` with the
-  exact bit layout above (note the Pi decoder currently tracks Ctrl/Shift/Alt/
-  Caps per `HARDWARE-PROFILE.md` §3.3; `MODE_HOME`/`MODE_INSERT` bits 5-6 are
-  TT/Falcon-era and not produced).
-- **No settable path.** The host method is read-only (`keyboard_shift_state()`);
-  the `flag >= 0` "set the modifier state" half of the contract has no backing.
+- **L/R shift not distinguished.** The Pi decoder tracks one shift flag, so
+  `MODE_RSHIFT`/`MODE_LSHIFT` collapse: a held shift reads back as
+  `MODE_LSHIFT`, and setting `MODE_RSHIFT` alone reads back as the shift bit
+  it can represent.
+- **Bits 5-7 not represented.** `MODE_HOME`/`MODE_INSERT` (bits 5-6) are
+  TT/Falcon-era and not produced by the USB-HID decoder, and bit 7 is
+  reserved; a `Kbshift` set of those bits does not round-trip. Bits 0-4
+  (shift/ctrl/alt/caps) do.

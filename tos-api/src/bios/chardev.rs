@@ -4,29 +4,39 @@
 //! Spec: `docs/api/bios/{01,02,03,08}-*.md`. EmuTOS dispatches each
 //! through a per-handle vector table (`bcon*_vec[8]`). The NewTOS profile
 //! has one real character device — the console (PL011 + framebuffer):
-//! keyboard input on handles 2 (CON) and 4 (IKBD), screen output on
+//! keyboard **input** on handle 2 (CON) only, screen **output** on
 //! handles 2 (CON) and 5 (raw-CON). The absent devices (0 PRT, 1 AUX,
-//! 3 MIDI) follow EmuTOS' `char_dummy` slot semantics — status 0, input
-//! 0, output discarded — rather than blocking on hardware that does not
-//! exist. All four guard on an installed host (EmuTOS' `CHARDEV_AVAILABLE`
-//! boot gate: return 0 before the console is up).
+//! 3 MIDI, 4 IKBD-TX) follow EmuTOS' `char_dummy` slot semantics —
+//! status 0, input 0, output discarded — rather than blocking on hardware
+//! that does not exist. All four guard on an installed host (EmuTOS'
+//! `CHARDEV_AVAILABLE` boot gate: return 0 before the console is up).
 
 use tos_types::Long;
 
 use crate::host;
 use crate::trap::TrapArgs;
 
-// Device handles (EmuTOS `bios/bios.c`).
+// Device handles (EmuTOS `bios/bios.c`, `bios/chardev.c`).
 const CON: u16 = 2;
-const IKBD: u16 = 4;
 const RAW_CON: u16 = 5;
 
-/// Handles whose input is the console keyboard ring.
+/// Handles whose input is the console keyboard ring. **Only CON (handle
+/// 2).** EmuTOS routes keyboard input through `bconin2` / `bconstat2`
+/// (the IKBD queue); handle 4 (IKBD) is an *output* channel
+/// (keyboard-controller TX) whose *input* slot is `char_dummy`
+/// (`bios/chardev.c:34-36`, `bconin_init[4] = char_dummy`), so
+/// `Bconstat(4)` and `Bconin(4)` return `0` immediately. Treating 4 as a
+/// console-input handle made `Bconin(4)` block forever waiting for a key
+/// that never routes there (the handle-4 hang).
 fn is_console_in(handle: u16) -> bool {
-    handle == CON || handle == IKBD
+    handle == CON
 }
 
-/// Handles whose output is the console screen.
+/// Handles whose output is the console screen: CON (`bconout2`) and
+/// raw-CON (`bconout5` → `ascii_out`), both `bios/chardev.c:43-45`. Note
+/// this is *not* symmetric with output *status*: `Bcostat` reports ready
+/// only for CON — handle 5's `bcostat` slot is `char_dummy` (see
+/// [`bcostat`]).
 fn is_console_out(handle: u16) -> bool {
     handle == CON || handle == RAW_CON
 }
@@ -81,13 +91,18 @@ pub fn bconout(args: &TrapArgs) -> Long {
     }
 }
 
-/// `Bcostat` (0x08) — output-device status. Console output is always
-/// ready (`-1`, the PL011 TX drains by polling); absent devices report
-/// busy (`0`).
+/// `Bcostat` (0x08) — output-device status. Ready (`-1`) only for CON
+/// (handle 2 → `bcostat2`, `bios/chardev.c:112-118`): the PL011 TX drains
+/// by polling so it is always ready. Every other handle — including
+/// raw-CON (handle 5), whose `bcostat` slot is `char_dummy`
+/// (`bcostat_init[5]`, `bios/chardev.c:38-41`) — reports busy (`0`), as do
+/// the boot guard and absent devices. This is deliberately **not** the
+/// same handle set as `Bconout`: `Bconout(5)` writes and returns `1`, but
+/// `Bcostat(5)` is `0`.
 pub fn bcostat(args: &TrapArgs) -> Long {
     let handle = args.arg_u16(0);
     match host::host() {
-        Some(_) if is_console_out(handle) => -1,
+        Some(_) if handle == CON => -1,
         _ => 0,
     }
 }

@@ -13,6 +13,7 @@ pub mod block;
 pub mod bpb;
 pub mod chardev;
 pub mod drive;
+pub mod getmpb;
 pub mod vectors;
 
 pub use drive::mount;
@@ -26,16 +27,18 @@ use crate::trap::TrapArgs;
 const SECTOR: usize = 512;
 
 // BIOS function ids.
+const GETMPB: u16 = 0x00;
 const BCONSTAT: u16 = 0x01;
 const BCONIN: u16 = 0x02;
 const BCONOUT: u16 = 0x03;
 const RWABS: u16 = 0x04;
 const SETEXC: u16 = 0x05;
-const BCOSTAT: u16 = 0x08;
 const TICKCAL: u16 = 0x06;
 const GETBPB: u16 = 0x07;
+const BCOSTAT: u16 = 0x08;
 const MEDIACH: u16 = 0x09;
 const DRVMAP: u16 = 0x0A;
+const KBSHIFT: u16 = 0x0B;
 
 /// System-timer period in milliseconds (50 Hz → 20 ms), per EmuTOS.
 const TICKCAL_MS: Long = 20;
@@ -45,6 +48,7 @@ const TICKCAL_MS: Long = 20;
 /// `BPB *` pointer, so the result is widened to `i64`.
 pub fn dispatch(args: &TrapArgs) -> i64 {
     match args.func_id() {
+        GETMPB => getmpb::getmpb(args) as i64,
         BCONSTAT => chardev::bconstat(args) as i64,
         BCONIN => chardev::bconin(args) as i64,
         BCONOUT => chardev::bconout(args) as i64,
@@ -55,8 +59,38 @@ pub fn dispatch(args: &TrapArgs) -> i64 {
         GETBPB => bpb::getbpb(args.arg_u16(0)),
         MEDIACH => mediach(args) as i64,
         DRVMAP => drvmap() as i64,
-        _ => tos_types::error::EINVFN as i64,
+        KBSHIFT => kbshift(args) as i64,
+        // Out-of-range function id (> 0x0B): EmuTOS' trampoline returns
+        // the function number itself, not an error code — the `cmp.w d1,d0`
+        // / `bx_ret_exc` path leaves the number in D0 (`bios/vectors.S:1323`,
+        // `docs/api/bios/_dispatcher.md §3-4`). Every id 0x00..=0x0B has a
+        // real handler above, so this arm is only reached for out-of-range
+        // ids. `func_id()` is a `u16`, so the value is zero-extended.
+        other => other as i64,
     }
+}
+
+/// `Kbshift` (0x0B) — get or set the keyboard modifier-state byte.
+///
+/// `flag < 0` (the `-1` query idiom) returns the current shift-state
+/// bitmask without changing it; `flag >= 0` overwrites the modifier state
+/// with `flag` **truncated to a byte** (EmuTOS `bios/ikbd.c:145` stores
+/// `(UBYTE)flag` into `shifty`). Always returns the **previous** value,
+/// zero-extended into the LONG (bits 8-31 clear), per
+/// `docs/api/bios/0b-kbshift.md`. The state lives in the IKBD decoder and
+/// is reached through the host trait (there is no `os_kbshift` low-memory
+/// alias on the Pi — spec "Pi / BCM2711 binding").
+fn kbshift(args: &TrapArgs) -> Long {
+    let flag = args.arg_i16(0);
+    let h = match host::host() {
+        Some(h) => h,
+        None => return 0,
+    };
+    let old = h.keyboard_shift_state() as Long;
+    if flag >= 0 {
+        h.set_keyboard_shift_state(flag as u8);
+    }
+    old
 }
 
 /// `Rwabs` (0x04) — read/write absolute sectors.

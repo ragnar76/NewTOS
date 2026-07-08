@@ -149,6 +149,17 @@ pub trait Host: Sync {
     fn keyboard_shift_state(&self) -> u8 {
         0
     }
+
+    /// Overwrite the keyboard shift-state bitmask (same `MODE_*` bits as
+    /// [`Host::keyboard_shift_state`]) — the set half of BIOS `Kbshift`
+    /// (`flag >= 0`, EmuTOS `ikbd.c:150` stores `flag` into the `shifty`
+    /// byte). The kernel host writes the IKBD decoder's modifier state so
+    /// a subsequent [`Host::keyboard_shift_state`] reads the value back;
+    /// the default is a no-op (a hostless / keyboard-less configuration
+    /// has no modifier state to set). Not a stub — a `Kbshift` set with no
+    /// backing keyboard simply has nothing to store, exactly as EmuTOS'
+    /// `shifty` write is inert with no ACIA present.
+    fn set_keyboard_shift_state(&self, _mask: u8) {}
 }
 
 /// The hardware framebuffer as the XBIOS screen calls see it.
