@@ -1676,3 +1676,128 @@ order; 128-byte tail + 4192-byte shell buffer. Corrected in
 `aes/resource-fileselector.md` + `aes/scrap-shell.md`; resource/scrap/shell
 globals added to `aes/_state.md` §6c. **This completes the AES manager set and
 the full Phase-00 API spec re-derivation.**
+
+---
+
+## D-055: `Protobt`'s "executable" flag is a whole-sector checksum trick, not a BRA.S byte write; `disktype` is 0..6, not 0..3 (spec-vs-source)
+
+**Date:** 2026-07-08 (XBIOS re-validation pass, Task #25)
+**Phase 00 spec:** `docs/api/xbios/_floppy-stubs.md`
+
+**EmuTOS:** `protobt()` (`bios/floppy.c:690-737`) never writes offset 0x00/0x01
+(`struct bs.bra`, `bios/blkdev.h:44`). The "executable" state is controlled
+entirely by the boot sector's **512-byte word checksum**
+(`compute_cksum()`, `bios/blkdev.c:69-75`, sums all 256 words): `is_exec =
+(compute_cksum(b) == 0x1234)` (`:696`); `execflag < 0` keeps the current
+`is_exec`; `execflag == 0`/`> 0` force non-exec/exec. Either way `protobt`
+recomputes the **last two bytes of the sector** (`cksum[0..1]`, offset
+0x1FE/0x1FF) so the whole-sector checksum becomes exactly `0x1234`
+(executable) or, "for hyper-compatibility" with real Falcon/TT TOS (source
+comment `:723-729`), exactly `0x1235` (non-executable — not "any value ≠
+0x1234" as the generic Atari spec allows). Separately, `disktype` selects one
+of **7** template entries (`NUM_PROTOBT_ENTRIES = ARRAY_SIZE(protobt_data) =
+7`, `bios/floppy.c:672-682`), not 4; `serialno >= 0x01000000` triggers a
+**random** serial via `Random()` (`:702-703`), not a literal stamp.
+
+**Prior NewTOS doc (wrong):** `_floppy-stubs.md`'s `Protobt` section said
+"`execflag`: 0 = non-bootable (clears bytes 0..1); ≠0 = bootable (sets `0x60
+0x1E` BRA.S …)" — a mechanism EmuTOS does not implement — and "`disktype`:
+0..3", omitting both the 7-entry range and the `>= 0x01000000` random-serial
+rule.
+
+**Compendium:** the generic BRA.S / "any non-0x1234 checksum is
+non-executable" description matches the *classic* Atari ST boot-sector
+convention; EmuTOS's `protobt()` implements the checksum-only mechanism (no
+BRA.S write) and pins the non-executable checksum to `0x1235` specifically,
+matching Falcon/TT TOS rather than the generic spec.
+
+**Decision:** follow EmuTOS — document the checksum-based exec mechanism,
+the 7-entry `disktype` range, and the random-serial rule. Corrected in
+`_floppy-stubs.md`.
+
+---
+
+## D-056: `TT_SHIFTER_BITMASK` is `0x970f`, not `0x0700` (spec-vs-source)
+
+**Date:** 2026-07-08 (XBIOS re-validation pass, Task #25)
+**Phase 00 spec:** `docs/api/xbios/_tt-shifter.md`
+
+**EmuTOS:** `#define TT_SHIFTER_BITMASK 0x970f` (`bios/screen.h:33`). The mask
+covers bits 0-3 (colour bank), bits 8-10 (resolution — the subset the
+mode-code table documents), bit 12, and bit 15 — not just bits 8-10.
+`esetshift`/`egetshift` mask the *whole* register with this value
+(`bios/screen.c:194-195,215`).
+
+**Prior NewTOS doc (wrong):** `_tt-shifter.md` stated `TT_SHIFTER_BITMASK =
+0x0700` ("only bits 8..10 encode the resolution"), understating the real
+mask by omitting bits 0-3/12/15.
+
+**Compendium:** not present in `references/`; cross-check deferred.
+
+**Decision:** follow EmuTOS — correct the mask value; keep the resolution
+sub-table (still accurate as a subset of the corrected mask). Corrected in
+`_tt-shifter.md`.
+
+---
+
+## D-057: `EsetPalette`/`EgetPalette` are `WORD`-returning in EmuTOS (not `void`); most TT-shifter ABI shapes are not in `xbiosbind.h` (spec-vs-source)
+
+**Date:** 2026-07-08 (XBIOS re-validation pass, Task #25)
+**Phase 00 spec:** `docs/api/xbios/_tt-shifter.md`
+
+**EmuTOS:** `bios/screen.c:265` / `:290` declare `WORD esetpalette(...)` /
+`WORD egetpalette(...)`, with an explicit comment (`:260-263`) that this is a
+**deliberate deviation** from the Atari-documented `void` signature: *"if the
+TT shifter is not present, it should return the function number in a WORD,
+which is the de facto TOS standard for unimplemented xbios functions."* Both
+return `0` on success or the function number (`0x54`/`0x55`) when
+`!has_tt_shifter` — the same D-008 pattern as the other six TT-shifter calls.
+Separately, `include/xbiosbind.h` only defines binding macros for **two** of
+the eight TT-shifter opcodes — `EgetShift() xbios_w_v(81)` (`:59`) and
+`EsetColor(a,b) xbios_w_ww(83,a,b)` (`:60`); `EsetShift`/`EsetBank`/
+`EsetPalette`/`EgetPalette`/`EsetGray`/`EsetSmear` have **no** macro there.
+
+**Prior NewTOS doc (wrong):** `_tt-shifter.md`'s ABI table listed `xbios_v_wwl`
+(`void`) for `EsetPalette`/`EgetPalette` and attributed all eight ABI shapes
+to `include/xbiosbind.h`, when only two are actually defined there.
+
+**Compendium:** documents `EsetPalette`/`EgetPalette` as `void`, matching the
+*declared* Atari API but not EmuTOS's actual C signature/return value.
+
+**Decision:** follow EmuTOS — document the `WORD` return (D-008 pattern) for
+`EsetPalette`/`EgetPalette` and correct the ABI-source attribution.
+Corrected in `_tt-shifter.md`.
+
+---
+
+## D-058: The NewTOS XBIOS "profile" mixes two mutually-exclusive EmuTOS build branches for the screen group (spec-internal consistency finding)
+
+**Date:** 2026-07-08 (XBIOS re-validation pass, Task #25)
+**Phase 00 specs:** `docs/api/xbios/_dispatcher.md`, `_tt-shifter.md`
+
+**EmuTOS:** `include/config.h:2147-2157` — `#if !CONF_WITH_ATARI_VIDEO` /
+`#if CONF_WITH_TT_SHIFTER` / `#error CONF_WITH_TT_SHIFTER requires
+CONF_WITH_ATARI_VIDEO.` A real EmuTOS build can **never** have
+`CONF_WITH_TT_SHIFTER=1` (the TT-shifter opcode table shape `_dispatcher.md`
+/ `_triage.md` select as the "NewTOS target profile") together with
+`CONF_WITH_ATARI_VIDEO=0` (the "no Atari video" runtime fallback —
+`Physbase()==Logbase()`, `Getrez()` returns the `sshiftmod` shadow, `Setcolor`
+fakes `return 0`, … — that `02-physbase.md`/`04-getrez.md`/`05-setscreen.md`/
+`06-setpalette.md`/`07-setcolor.md`/`25-vsync.md` extract as the NewTOS
+profile behaviour).
+
+**Finding:** this is not a spec-vs-source error in any single function's
+extraction — each function's documented behaviour is a real, correctly-cited
+EmuTOS `#if` branch — but the two groups of specs silently assume **different,
+mutually-exclusive** `CONF_WITH_*` combinations without saying so. A reader
+combining "table has real `Eset*`/`Eget*` slots" with "`Physbase` falls back
+to `Logbase`" would be describing a `#if` combination EmuTOS itself refuses
+to compile.
+
+**Decision:** NewTOS deliberately combines the *table-shape* branch (TT
+shifter opcodes present) with the *runtime-behaviour* branch (no Atari video
+MMIO) because the real target (BCM2711, no Shifter/TT-Shifter hardware at
+all) cannot faithfully run either branch's hardware path — both are already
+software shadows on NewTOS. Documented explicitly in `_dispatcher.md §4` and
+`_tt-shifter.md`'s header so the combination is understood as a NewTOS
+choice, not an EmuTOS-attested configuration.

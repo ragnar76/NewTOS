@@ -83,6 +83,21 @@ entries 0x00–0x57 (88 slots). The Falcon-only ranges (0x58–0x8D) are not in
 the table; a trap with `ID > 0x57` hits the range check and returns the
 function number (§3).
 
+> **Profile-mixing note (re-validation finding, D-058):** `CONF_WITH_TT_SHIFTER`
+> selects the *table shape* here (opcodes 0x50–0x57 get real handlers instead
+> of `xbios_unimpl`). But EmuTOS's own `include/config.h:2151-2152` makes
+> `CONF_WITH_TT_SHIFTER` **require** `CONF_WITH_ATARI_VIDEO` — no real EmuTOS
+> build has this table shape *and* the "no Atari video" fallback behaviour
+> (`Physbase() == Logbase()`, `Getrez()` returns the `sshiftmod` shadow,
+> `Setcolor` fakes `return 0`, …) that the individual screen-function specs
+> (`02-physbase.md`, `04-getrez.md`, `05-setscreen.md`, `06-setpalette.md`,
+> `07-setcolor.md`, `25-vsync.md`) extract for the NewTOS profile. NewTOS
+> deliberately combines the table-size branch of one `#if` with the
+> runtime-behaviour branch of a mutually-exclusive one, because the real
+> target (BCM2711 VideoCore) has neither a Shifter nor a TT shifter to back
+> either branch faithfully — it is a documentation/extraction choice, not an
+> EmuTOS-attested build. See `docs/api/_discrepancies.md` D-058.
+
 ---
 
 ## 5. `xbios_vecs[]` opcode→handler map (`bios/xbios.c:1285-1515`)
