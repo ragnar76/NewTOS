@@ -53,3 +53,11 @@ pub const ERANGE:   Long = -64;  // Seek out of range
 pub const EINTRN:   Long = -65;  // Internal error
 pub const EPLFMT:   Long = -66;  // Invalid program load format
 pub const EGSBF:    Long = -67;  // Memory block growth failure
+
+// FreeMiNT / MiNT extension error codes (`sys/mint/errno.h`). These are
+// FreeMiNT's own numbering, used verbatim by the MiNT-only syscalls (e.g.
+// `Ssystem`, docs/api/gemdos/154-ssystem.md) whose return values are a
+// contract toward MiNT-aware callers, not a classical TOS/GEMDOS code.
+// Neither value collides with a classical `gemerror.h` slot above.
+pub const EINVAL:   Long = -25;  // Invalid argument (`sys/mint/errno.h:85`)
+pub const EPERM:    Long = -38;  // Operation not permitted (`sys/mint/errno.h:318`)

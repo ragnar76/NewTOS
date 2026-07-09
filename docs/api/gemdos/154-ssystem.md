@@ -79,14 +79,18 @@ follow the same "high id, special-cased" pattern. See
 | `S_SETCOOKIE` |     9 | add / update a cookie      | root only |
 | `S_DELCOOKIE` |    26 | remove a cookie            | root only |
 
-`mode == -1` in FreeMiNT is a "does this call exist" probe that returns `E_OK`
-(`sys/ssystem.c:72-76`); NewTOS should honour it so callers can feature-test.
+`mode == -1` in FreeMiNT is a "does this call exist" probe. `sys_s_system`
+pre-initializes `register long r = E_OK;` (`sys/ssystem.c:66`) before the
+`switch (mode)` (`sys/ssystem.c:70`); `case -1:` (`sys/ssystem.c:72-76`) only
+does a `TRACE()` and `break`s — it never assigns to `r`. Execution falls
+through to `return r;` (`sys/ssystem.c:651-652`) with `r` still `E_OK`.
+Confirmed by direct line-by-line re-read (D-072): `Ssystem(-1, arg1, arg2)`
+returns `E_OK` (0) **unconditionally**, independent of `arg1`/`arg2`. NewTOS
+must honour it so callers can feature-test.
 
-Any other mode → `ENOSYS` (`sys/ssystem.c:642-646`). In NewTOS the numeric
-value of "not implemented" is an **open question** — FreeMiNT's `ENOSYS` is
-`-32`, which collides with the TOS error `EINVFN` (`-32`); returning `EINVFN`
-is consistent with how the GEMDOS dispatcher reports unknown function IDs, so
-that is the recommended mapping (confirm — see Open questions).
+Any other mode → `ENOSYS` (`sys/ssystem.c:642-648`). In NewTOS this maps to
+`EINVFN` (`-32`, numerically identical to FreeMiNT's `ENOSYS`) — consistent
+with how the GEMDOS dispatcher reports unknown function IDs.
 
 ### Defined by FreeMiNT but DEFERRED (out of scope for now)
 
@@ -362,16 +366,44 @@ set NewTOS uses (see Open questions):
 
 ---
 
+## Known implementation gaps (`tos-api`, audit 2026-07-09)
+
+A source-analysis audit of `tos-api/src/gemdos/ssystem.rs` and
+`tos-api/src/cookie.rs` against this spec found two divergences (D-072,
+D-073, `docs/api/_discrepancies.md`). Both are **implementation** bugs — the
+spec above was already correct on every point checked — for the Developer to
+fix, not a spec correction:
+
+1. **`mode == -1` probe missing.** `ssystem()`'s `match` only handles
+   `S_GETCOOKIE`(8)/`S_SETCOOKIE`(9)/`S_DELCOOKIE`(26); every other value,
+   including `-1`, falls to the wildcard arm and returns `EINVFN`, so a
+   feature-test probe wrongly reports "not implemented". See D-072 for the
+   exact fix.
+2. **Cookie error codes wrong; `S_GETCOOKIE(0)` returns occupied count, not
+   capacity.** `s_getcookie`'s slot-index-too-big and `s_delcookie`'s
+   not-found both currently return `ERROR` (-1) instead of `EINVAL` (-25);
+   `s_setcookie`'s invalid-tag path returns `EINVFN` (-32) instead of
+   `EINVAL` (-25). `cookie::count()` (occupied slots) is used for the
+   `tag == 0` capacity query, where FreeMiNT returns the jar's fixed **total
+   capacity** instead. See D-073 for the exact fix (including the two new
+   `tos_types::error` constants it requires).
+
 ## Open questions
 
-1. **Error-code mapping.** FreeMiNT returns MiNT errno values (`EERROR=-1`,
-   `EINVAL=-25`, `EPERM=-38`, `ENOMEM=-39`, `ENOSYS=-32`). Several collide with
-   or differ from the TOS/GEMDOS `tos-types::error` set NewTOS uses (`ENOSYS
-   -32 == EINVFN -32`; `EBADARG -64 == ERANGE -64`; TOS has no `EINVAL`). Which
-   numbers does NewTOS's `Ssystem` return — the FreeMiNT values (for MiNT-binary
-   compatibility) or a TOS-mapped set? **Needs a decision** (recommended:
-   unknown-mode → `EINVFN`; cookie not-found and bad-tag → a documented NewTOS
-   code; capture in an ADR).
+1. ~~**Error-code mapping.**~~ **RESOLVED (D-073, 2026-07-09).** For the
+   cookie subset in scope here, NewTOS returns FreeMiNT's own MiNT-errno
+   values **verbatim**: `E_OK`=0, `EERROR`=-1 (`ERROR` in `tos_types::error`,
+   already correct), `EINVAL`=-25 (new constant needed), `EPERM`=-38 (new
+   constant needed, for the root gate), `ENOMEM`=-39 (`ENSMEM` in
+   `tos_types::error`, already numerically identical). Rationale: `Ssystem`
+   is a FreeMiNT-only extension with no classical TOS/GEMDOS equivalent, so
+   per `docs/COMPATIBILITY.md` its return values are **contract** toward
+   MiNT-aware callers, not a free NewTOS internal — and none of these four
+   values collides with an existing TOS `gemerror.h` code (`-25` and `-38`
+   are unused slots in the classical table; only `ENOSYS`/`EINVFN` (`-32`)
+   and `EBADARG`/`ERANGE` (`-64`) coincidentally alias, and those affect only
+   the *deferred* modes, not the cookie subset). The unknown-mode return
+   stays `EINVFN` as already recommended above.
 2. **Scope confirmation.** Only `S_GETCOOKIE`/`S_SETCOOKIE`/`S_DELCOOKIE` (+
    the `mode == -1` probe) are in NewTOS scope for now; every other mode →
    `ENOSYS`. Confirm no early consumer needs `S_OSVERSION`/`S_OSNAME` (identity)

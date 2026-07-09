@@ -98,11 +98,20 @@ pub fn get(tag: u32) -> Option<u32> {
     (0..j.count).find(|&i| j.slots[i].tag == tag).map(|i| j.slots[i].value)
 }
 
-/// Number of cookies present — the value returned for the `tag == 0`
-/// (NULL-slot) query.
+/// Number of cookies **present** (occupied slots). Not the value returned
+/// for the `tag == 0` capacity query — see [`capacity`].
 pub fn count() -> u32 {
     // SAFETY: single-CPU access.
     unsafe { jar() }.count as u32
+}
+
+/// Total slot **capacity** of the jar — what FreeMiNT stores in the
+/// terminator slot (`sys/cookie.c:322-326`) and returns for
+/// `S_GETCOOKIE(tag == 0)`. This is the fixed jar size, preserved verbatim
+/// on every `set_cookie` append; it is **not** the occupied count
+/// ([`count`]).
+pub fn capacity() -> u32 {
+    JAR_CAP as u32
 }
 
 /// Tag of the 1-based `n`-th cookie (slot enumeration). `None` if out of

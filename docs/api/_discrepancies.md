@@ -2328,3 +2328,157 @@ least five separate files (`_state.md`, the drive/directory function specs,
 `dnd.md`, `basepage.md`); a grep for `BLKDEVNUM = 16\|A:\.\.P:\|NDIRS = 16`
 across all of `docs/api/` is a cheap way to catch a future regression or a
 missed file in one pass.
+
+---
+
+## D-072: `Ssystem(-1, …)` "does this call exist" probe confirmed `E_OK`; NewTOS `ssystem.rs` has no arm for it (spec correct, implementation gap)
+
+**Date:** 2026-07-09
+**Phase 00 spec:** `docs/api/gemdos/154-ssystem.md`
+**Source:** FreeMiNT @ `f906416` (EmuTOS has no `Ssystem`).
+
+**FreeMiNT:** `sys_s_system` pre-initializes `register long r = E_OK;`
+(`sys/ssystem.c:66`) before the `switch (mode)` (`sys/ssystem.c:70`).
+`case -1:` (`sys/ssystem.c:72-76`) does only a `TRACE()` and `break`s — it
+never assigns `r`. Execution falls through to `return r;`
+(`sys/ssystem.c:651-652`) with `r` still `0`. So `Ssystem(-1, arg1, arg2)`
+returns `E_OK` (0) **unconditionally**, independent of `arg1`/`arg2`; every
+*other* unrecognized mode instead falls into `default:` and gets `ENOSYS`
+(`sys/ssystem.c:642-648`).
+
+**Spec status:** `154-ssystem.md:82-83` (pre-audit line numbers) already
+stated this correctly ("`mode == -1` … returns `E_OK`"), and the
+verification criterion "Probe: `Ssystem(-1, 0, 0)` returns `E_OK` (0)"
+already tested it. **No spec correction needed** — the lead's audit
+suspected the opposite (that `-1` would fall into an unhandled/`EINVFN`
+path), so this entry exists to record the line-by-line source confirmation
+and to log the actual implementation gap the audit uncovered.
+
+**Implementation gap (not a spec bug):**
+`tos-api/src/gemdos/ssystem.rs:25-32` (`ssystem()`) matches only
+`S_GETCOOKIE`(8)/`S_SETCOOKIE`(9)/`S_DELCOOKIE`(26) on `args.arg_u16(0)`;
+every other value — including `-1` (`0xFFFF` as `u16`, i.e.
+`args.arg_i16(0) == -1`) — falls to the wildcard arm and returns `EINVFN`.
+A MiNT-aware caller probing for `Ssystem` support before touching the cookie
+jar sees "not implemented" and falls back to a `$5A0`/`Supexec` path that
+ADR-012 removed — cookie access then fails outright.
+
+**Fix (for the Developer, exact match arm):**
+```rust
+pub fn ssystem(args: &TrapArgs) -> Long {
+    if args.arg_i16(0) == -1 {
+        // "does this call exist" probe (sys/ssystem.c:66,70-76): `r` is
+        // pre-set to E_OK and case -1 never touches it.
+        return E_OK;
+    }
+    match args.arg_u16(0) {
+        S_GETCOOKIE => s_getcookie(args),
+        S_SETCOOKIE => s_setcookie(args),
+        S_DELCOOKIE => s_delcookie(args),
+        _ => EINVFN,
+    }
+}
+```
+
+**Decision:** confirmed against source; the fix is scoped to `ssystem.rs`
+only (no `cookie.rs` change, no further spec change beyond the two
+clarifying notes added to `154-ssystem.md`).
+
+---
+
+## D-073: `Ssystem` cookie error codes must be FreeMiNT-verbatim (`EINVAL`=-25, not `ERROR`/`EINVFN`); `S_GETCOOKIE(0)` returns jar **capacity**, not occupied count (open-question resolution + implementation gap)
+
+**Date:** 2026-07-09
+**Phase 00 spec:** `docs/api/gemdos/154-ssystem.md`
+**Source:** FreeMiNT @ `f906416`, `sys/cookie.c`, `sys/mint/errno.h`.
+
+**FreeMiNT error values** (`sys/mint/errno.h:52,85,241,265,318,322`):
+`E_OK`=0, `EERROR`=-1, `EINVAL`=-25, `ENOSYS`=-32, `EPERM`=-38, `ENOMEM`=-39.
+
+**Confirmed per-path codes** (re-derivation of D-038, now cross-checked
+against the live `errno.h` values):
+- `get_cookie`, tag search miss → `EERROR` (-1) (`sys/cookie.c:508-509`).
+- `get_cookie`, slot-index too big → `EINVAL` (-25) (`sys/cookie.c:458-462`).
+- `set_cookie`, invalid tag (a zero byte) → `EINVAL` (-25)
+  (`sys/cookie.c:538-541`).
+- `set_cookie`, jar full → `ENOMEM` (-39) (`sys/cookie.c:574-575`).
+- `del_cookie`, tag not found → `EINVAL` (-25) (`sys/cookie.c:606-607`).
+
+**`S_GETCOOKIE` with `arg1 == 0` (capacity query):** `get_cookie` scans to
+the terminator (`cjar->tag == 0`) and returns `cjar->value`
+(`sys/cookie.c:422-442`). That value is the jar's **fixed total slot
+capacity**, set once in `init_cookies()`
+(`ncsize / sizeof(struct cookie)`, `sys/cookie.c:322-326`) and **preserved
+verbatim** on every successful `set_cookie` append: `set_cookie` copies the
+*same* `n = cjar->value` (the capacity) into the new terminator
+(`sys/cookie.c:557-566`) — it never decrements a "remaining free slots"
+counter, and it never becomes the count of *occupied* slots.
+
+**Spec status:** `154-ssystem.md` was already correct on the capacity
+question (`S_GETCOOKIE (mode 8)` §, "the NULL-slot value = the jar's total
+slot capacity"; verification criterion "Get capacity"). **Open Question 1
+(error-code mapping) is now RESOLVED and its "open question" marking
+removed** in `154-ssystem.md`: NewTOS's `Ssystem` cookie subset returns the
+FreeMiNT values verbatim (`E_OK`/`EERROR`/`EINVAL`/`EPERM`/`ENOMEM` as
+above); no numeric collision exists within this subset against classical
+`gemerror.h` codes (`-25` and `-38` are unused slots in the TOS table). This
+follows `docs/COMPATIBILITY.md`'s contract/internal split: a MiNT-aware
+caller's `Ssystem` return value is observable behaviour and therefore
+contract, not a free NewTOS internal.
+
+**Implementation gap (not a spec bug):**
+- `tos_types::error` has no `EINVAL`/`EPERM` equivalents (only `ERROR`=-1
+  and `ENSMEM`=-39 exist, which numerically match `EERROR`/`ENOMEM`;
+  `EINVAL`=-25 and `EPERM`=-38 are missing entirely).
+- `s_getcookie`'s slot-index-too-big and `s_delcookie`'s not-found both
+  currently return `ERROR` (`-1`) instead of `EINVAL` (`-25`);
+  `s_setcookie`'s invalid-tag path returns `EINVFN` (`-32`) instead of
+  `EINVAL` (`-25`) (`tos-api/src/gemdos/ssystem.rs:39-86`). Jar-full already
+  returns `ENSMEM` (`-39`), which is correct (numerically == FreeMiNT
+  `ENOMEM`) — no change needed there. `s_getcookie`'s tag-search-miss path
+  already returns `ERROR` (`-1`), which is correct (== FreeMiNT `EERROR`) —
+  no change needed there either.
+- `cookie::count()` (`tos-api/src/cookie.rs:101-106`, occupied-slot count)
+  is used by `s_getcookie`'s `tag == 0` branch
+  (`tos-api/src/gemdos/ssystem.rs:44`), where FreeMiNT wants the jar's fixed
+  **capacity**, not the occupied count. With the current 4-cookie boot seed
+  and `JAR_CAP = 32`, `Ssystem(S_GETCOOKIE, 0, 0)` today returns `4` instead
+  of `32` — a MiNT program pre-flighting jar headroom before `S_SETCOOKIE`
+  undercounts available slots by a wide margin.
+
+**Fix (for the Developer):**
+1. Add to `tos_types::error` (values confirmed above, FreeMiNT
+   `sys/mint/errno.h:241,318`):
+   ```rust
+   pub const EINVAL: Long = -25; // FreeMiNT / MiNT: invalid argument
+   pub const EPERM:  Long = -38; // FreeMiNT / MiNT: operation not permitted
+   ```
+2. In `tos-api/src/cookie.rs`, add a capacity accessor distinct from the
+   existing occupied-count `count()`:
+   ```rust
+   /// Total slot capacity of the jar — what FreeMiNT stores in the
+   /// terminator slot (`sys/cookie.c:322-326`) and returns for
+   /// `S_GETCOOKIE(tag == 0)`. NOT the occupied count; see `count()`.
+   pub fn capacity() -> u32 {
+       JAR_CAP as u32
+   }
+   ```
+3. In `tos-api/src/gemdos/ssystem.rs`:
+   - `s_getcookie`'s `tag == 0` branch: use `cookie::capacity()` instead of
+     `cookie::count()`.
+   - `s_getcookie`'s slot-index branch (`tag & 0xFFFF_0000 == 0`): `None`
+     (index out of range) → `EINVAL`, not `ERROR`.
+   - `s_getcookie`'s tag-search branch (the `else` arm): `None` (tag not
+     found) → stays `ERROR` (already correct, matches FreeMiNT `EERROR`).
+   - `s_setcookie`: invalid-tag → `EINVAL`, not `EINVFN`. Jar-full stays
+     `ENSMEM` (already correct).
+   - `s_delcookie`: not-found → `EINVAL`, not `ERROR`.
+
+**Decision:** confirmed against source; Open Question 1 in
+`154-ssystem.md` is resolved and its marking removed (see spec edit
+referenced above). No change to the root-gate logic (`EPERM` on
+`S_SETCOOKIE`/`S_DELCOOKIE` for non-root callers) is part of this entry —
+`ssystem.rs`'s current code has no privilege check at all for those two
+modes, which is a **separate**, pre-existing gap (FreeMiNT
+`sys/ssystem.c:285-289,295-299`) outside the two questions this audit
+scoped; flagged for the lead, not fixed here.
