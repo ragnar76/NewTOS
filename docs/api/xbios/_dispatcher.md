@@ -164,12 +164,19 @@ Beyond 0x57 (outside the NewTOS profile): Videl (0x58–0x5F,
 `CONF_WITH_VIDEL`), DSP (0x60–0x7F, `CONF_WITH_DSP`), DMA sound
 (0x80–0x8D, `CONF_WITH_DMASOUND`). See `bios/xbios.c:1411-1514`.
 
-> Note: the 24 in-scope functions are the ones present with a real handler
+> Note: the 25 in-scope functions are the ones present with a real handler
 > in the NewTOS TT-shifter profile *and* documented as their own spec file.
 > The floppy/DMA (`_floppy-stubs.md`), PSG (`_psg-group.md`) and TT-shifter
 > (`_tt-shifter.md`) entries are present in the table but grouped; the MFP
-> (0x0D/0x1A/0x1B/0x1F) and printer/NVRAM (0x21/0x2E) entries are
-> `xbios_unimpl` in the profile.
+> (0x0D/0x1A/0x1B/0x1F) and NVRAM (0x2E) entries are `xbios_unimpl` in the
+> profile.
+>
+> **Setprt (0x21) is not in that unimpl group** despite `CONF_WITH_PRINTER_PORT`
+> being off in the NewTOS profile: `setprt()` (`bios/parport.c:49-57`) is a
+> pure software config-word getter/setter with no hardware dependency — only
+> the paired `prnout()` output path needs the (absent) parallel port. NewTOS
+> honours the `Setprt` contract regardless of the config gate; see
+> `docs/api/xbios/21-setprt.md` and `docs/api/_discrepancies.md` D-060.
 
 ---
 

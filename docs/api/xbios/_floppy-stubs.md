@@ -70,23 +70,24 @@ existing volume, not low-level format.
 
 Signature (`include/xbiosbind.h:36`, `xbios_v_llww(18,…)`):
 `Protobt(UBYTE *buf, LONG serialno, WORD disktype, WORD execflag)`.
-Generates an Atari boot-sector image in `buf` (`bios/floppy.c:690-737`,
+Generates an Atari boot-sector image in `buf` (`bios/floppy.c:690-736`,
 struct layout `bios/blkdev.h:43-60` — `struct bs`, 512 bytes: `bra[2]`
 at 0x00, `loader[6]` at 0x02, `serial[3]` at 0x08, the BPB fields
 `bps..hid` at 0x0B-0x1D, `cksum[2]` at the last two bytes 0x1FE-0x1FF).
 
-- **`serialno`** (`:701-706`): applied whenever `serialno >= 0` (not just
+- **`serialno`** (`:698-704`): applied whenever `serialno >= 0` (not just
   "≠ -1" — any non-negative value stamps). If `serialno >= 0x01000000` a
   **random** serial is generated via `Random()` instead of the literal
   value. The 3 serial bytes are stored **little-endian** into `serial[0..2]`
-  ("reversed as per Atari TOS", source comment `:704`).
-- **`disktype`** (`:708-715`): valid range is **0..6** (`NUM_PROTOBT_ENTRIES
-  = ARRAY_SIZE(protobt_data) = 7`, `bios/floppy.c:672-682`), not 0..3 — copies
-  the whole 17-byte `_protobt` template (`bps` through `hid`, `bios/floppy.c
-  :661-671`) byte-for-byte into the buffer at offset 0x0B. The 7 entries cover
+  ("reversed as per Atari TOS", source comment `:701`).
+- **`disktype`** (`:706-713`): valid range is **0..6** (`NUM_PROTOBT_ENTRIES
+  = ARRAY_SIZE(protobt_data) = 7`, macro defined `bios/floppy.c:688`; the
+  7-entry array itself at `bios/floppy.c:676-687`), not 0..3 — copies the
+  whole **19-byte** `_protobt` template (`bps` through `hid`, `bios/floppy.c
+  :662-674`) byte-for-byte into the buffer at offset 0x0B. The 7 entries cover
   360K SS / 720K DS / 720K DS-9spt / 1.44M DS-9spt / 2.88M HD-18spt / ED
   5.76M-36spt / 800K-10spt geometries (media bytes `0xfc/0xfd/0xf9/0xf9/0xf0
-  /0xf0/0xf9` respectively, `bios/floppy.c:674-680`) — an EmuTOS extension
+  /0xf0/0xf9` respectively, `bios/floppy.c:679-685`) — an EmuTOS extension
   beyond the classic 4-entry (0..3) Atari ST table. `disktype < 0` leaves the
   BPB fields unchanged; `disktype` out of `[0,6]` is silently ignored (no
   error, no BPB write).
@@ -94,17 +95,26 @@ at 0x00, `loader[6]` at 0x02, `serial[3]` at 0x08, the BPB fields
   **never touches offset 0x00/0x01** (`bra[2]`). Instead it reads the
   *current* executable status via the boot sector's own 512-byte word
   checksum (`is_exec = compute_cksum(b) == 0x1234`, `:696`,
-  `bios/blkdev.c:69-75` — sum of all 256 words of the sector). `execflag < 0`
+  `bios/blkdev.c:69-79` — sum of all 256 words of the sector). `execflag < 0`
   keeps that current status; `execflag == 0` forces non-executable;
   `execflag > 0` forces executable. Either way `protobt` recomputes
   `cksum[0..1]` (the **last two bytes of the 512-byte sector**, offset
   0x1FE/0x1FF) so the whole-sector checksum becomes **exactly `0x1234`** for
   executable — and, "for hyper-compatibility" with real Falcon/TT TOS
-  (source comment `:723-729`), **exactly `0x1235`** (not "any other value",
+  (source comment `:722-726`), **exactly `0x1235`** (not "any other value",
   despite the generic Atari spec saying "anything ≠ 0x1234 is non-executable")
   for non-executable. **Correction:** the previous text ("clears bytes 0..1"
   / "sets `0x60 0x1E` BRA.S at offset 30") described a mechanism EmuTOS does
   not implement; fixed here. See `docs/api/_discrepancies.md` D-055.
+  **Struct-size correction:** `struct _protobt` (`bios/floppy.c:662-674`,
+  `PACKED`) is **19 bytes**, not 17 as an earlier revision of this section
+  claimed: `bps[2]+spc+res[2]+fat+dir[2]+sec[2]+media+spf[2]+spt[2]+
+  sides[2]+hid[2]` = 2+1+2+1+2+2+1+2+2+2+2 = 19. This is consistent with the
+  `bps..hid` offset range already stated above (`0x0B-0x1D` = `0x1D-0x0B+1 =
+  19` bytes) — only the "17-byte" prose was wrong, not the offsets. Several
+  other line citations in this section had also drifted from the current
+  EmuTOS revision and are corrected above. See `docs/api/_discrepancies.md`
+  D-059.
 
 Otherwise pure data-shuffling; NewTOS implements the checksum + BPB-copy
 verbatim. Useful for SD-card image preparation tools.

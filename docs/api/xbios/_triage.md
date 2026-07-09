@@ -6,6 +6,14 @@
 > `CONF_WITH_DSP`, `CONF_WITH_DMASOUND`, `CONF_WITH_MFP`,
 > `CONF_WITH_PRINTER_PORT`, `CONF_WITH_NVRAM`, and the Atari-hardware
 > device configs (no floppy/ACSI, no YM2149, no ACIA).
+>
+> **Exception (D-060):** `CONF_WITH_PRINTER_PORT` off means EmuTOS's
+> `setprt()` (0x21) is not compiled and its `xbios_vecs[]` slot falls back
+> to `xbios_unimpl` (`bios/xbios.c:1332-1336`) — but `setprt()` itself never
+> touches hardware (`bios/parport.c:49-57`); only the paired `prnout()`
+> output path needs the (absent) Centronics/PSG wiring. NewTOS honours the
+> `Setprt` config-word contract regardless of the printer-port gate; see
+> `docs/api/xbios/21-setprt.md`.
 
 For NewTOS, `LAST_ENTRY = 0x57` — the XBIOS table covers 0x00..0x57
 (88 entries). Functions outside the build profile (Falcon DSP / DMA sound /
@@ -56,7 +64,7 @@ function number itself — **not** a GEMDOS error (see *D-008* / *D-039*).
 | 0x1E  | Ongibit    | `ongibit` (`sound.c`)         | 🟡 stub → void | ✅ (`_psg-group.md`) | no YM2149 |
 | 0x1F  | Xbtimer    | `xbtimer`                     | ⛔ unimpl | (dispatcher) | `CONF_WITH_MFP` off |
 | 0x20  | Dosound    | `dosound` (`sound.c`)         | 🟡 stub → 0 | ✅ (`_psg-group.md`) | no YM2149 |
-| 0x21  | Setprt     | `setprt`                      | ⛔ unimpl | (dispatcher) | `CONF_WITH_PRINTER_PORT` off |
+| 0x21  | Setprt     | `setprt` (`parport.c:49-57`)  | 🟢 implement | ✅ (`21-setprt.md`) | pure software config word (D-060); `CONF_WITH_PRINTER_PORT` off does **not** apply — no HW touch |
 | 0x22  | Kbdvbase   | `kbdvbase` (`xbios.c:716`)    | 🟢 PHASE-07 | ✅ | returns `&kbdvecs` |
 | 0x23  | Kbrate     | `kbrate` (`ikbd.c:439`)       | 🟢 PHASE-07 | ✅ | repeat-rate config |
 | 0x24  | Prtblk     | `xbios_unimpl`                | ⛔ unimpl | (dispatcher) | no printer |
@@ -108,10 +116,10 @@ matching the incorrect Compendium text.
 
 | Category    | Count | NewTOS plan |
 |-------------|------:|-------------|
-| 🟢 implement | 22 | PHASE-04/07/08 (screen, keyboard, time, TT-shifter, Random, Protobt, Iorec, Kbdvbase) |
+| 🟢 implement | 23 | PHASE-04/07/08 (screen, keyboard, time, TT-shifter, Random, Protobt, Iorec, Kbdvbase, **Setprt**) |
 | 🟡 stub      | 12 | return `EUNDEV`/`0`/default (floppy/DMA, PSG, Midiws/Ikbdws/Rsconf/Scrdmp/Blitmode) |
 | ➡ dispatch   | 1 | `Bconmap` returns the func number (`BCONMAP_AVAILABLE` off) |
-| ⛔ unimpl    | 53 | `xbios_unimpl` (MFP/printer/NVRAM/reserved/Ssbrk/Prtblk/Puntaes/used_by_bios + 0x2F..0x3F + 0x41..0x4F) |
+| ⛔ unimpl    | 52 | `xbios_unimpl` (MFP/NVRAM/reserved/Ssbrk/Prtblk/Puntaes/used_by_bios + 0x2F..0x3F + 0x41..0x4F) |
 | **Total**   | 88 | (`LAST_ENTRY = 0x57`) |
 
 The counts are approximate at the category boundary (e.g. `Bconmap` could be

@@ -384,7 +384,7 @@ three are Step-2 items (Y1/Y2/Y5).
 | BLiTTER | absent → `Blitmode` reports "no blitter" |
 | WD1772 FDC / floppy | absent → floppy XBIOS = `EUNDEV`; FAT12 out of scope |
 | MIDI ACIA | absent → `Midiws`/MIDI iorec no-op |
-| Centronics printer | absent → `Cprnout`/printer XBIOS = no-op / busy |
+| Centronics printer | absent → `Cprnout`/printer XBIOS = no-op / busy (**exception:** `Setprt` (0x21) is a pure software config word with no HW dependency — honoured, not stubbed; `docs/api/xbios/21-setprt.md`, D-060) |
 | Shifter video modes | replaced by the single 640×480×16 framebuffer mode |
 | MFP interrupts | replaced by GIC-400 + the software vector shadow (`Setexc`) |
 

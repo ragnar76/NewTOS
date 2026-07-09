@@ -1801,3 +1801,93 @@ all) cannot faithfully run either branch's hardware path — both are already
 software shadows on NewTOS. Documented explicitly in `_dispatcher.md §4` and
 `_tt-shifter.md`'s header so the combination is understood as a NewTOS
 choice, not an EmuTOS-attested configuration.
+
+---
+
+## D-059: `struct _protobt` is 19 bytes, not 17; several stale line citations in the `Protobt` section (spec-vs-source)
+
+**Date:** 2026-07-09 (XBIOS re-validation pass, code-audit follow-up)
+**Phase 00 spec:** `docs/api/xbios/_floppy-stubs.md`
+
+**EmuTOS:** `struct _protobt` (`bios/floppy.c:662-674`, `PACKED`) totals
+**19 bytes**: `bps[2]+spc+res[2]+fat+dir[2]+sec[2]+media+spf[2]+spt[2]+
+sides[2]+hid[2]` = 2+1+2+1+2+2+1+2+2+2+2 = 19. This is consistent with the
+BPB field range already stated elsewhere in the same doc — `bps..hid`
+occupies offset `0x0B-0x1D` in `struct bs` (`bios/blkdev.h:47-57`), and
+`0x1D-0x0B+1 = 19`. Separately, several `bios/floppy.c`/`bios/blkdev.c` line
+citations in the `Protobt` section had drifted from the current source
+revision: `protobt_data[]` (the 7-entry template array) is
+`bios/floppy.c:676-687` (`NUM_PROTOBT_ENTRIES = ARRAY_SIZE(protobt_data)`
+defined at `:688`, not embedded in the array's own range); the `protobt()`
+function itself is `bios/floppy.c:690-736` (not `-737`, a blank line);
+`compute_cksum()` is `bios/blkdev.c:69-79` (not `-75`, which cuts off the
+closing brace); the `serialno`-handling `if` block is `:698-704` (not
+`:701-706`), with the "reversed as per Atari TOS" comment on `:701` (not
+`:704`); the `disktype` copy loop is `:706-713` (not `:708-715`); the media
+byte literals are on `:679-685` (not `:674-680`); and the "hyper-
+compatibility" comment justifying the `0x1235` non-executable checksum is
+`:722-726` (not `:723-729`, which runs into unrelated code).
+
+**Prior NewTOS doc (wrong):** `_floppy-stubs.md` stated "the whole
+**17-byte** `_protobt` template" — directly contradicting its own correct
+`0x0B-0x1D` (= 19-byte) offset range given two sentences earlier in the same
+paragraph — plus the stale line citations listed above.
+
+**Compendium:** not present in `references/`; cross-check deferred.
+
+**Decision:** follow EmuTOS — the struct is 19 bytes; the offset range
+(`0x0B-0x1D`) was already correct and needed no change, only the "17-byte"
+prose. Corrected the prose and every stale citation in `_floppy-stubs.md`'s
+`Protobt` section.
+
+---
+
+## D-060: `Setprt` (XBIOS 0x21) is a pure software config word — NewTOS honours it independent of `CONF_WITH_PRINTER_PORT` (spec-vs-source / NewTOS decision)
+
+**Date:** 2026-07-09 (XBIOS re-validation pass, code-audit follow-up)
+**Phase 00 specs:** `docs/api/xbios/21-setprt.md` (new), `_dispatcher.md`,
+`_triage.md`
+
+**EmuTOS:** `WORD setprt(WORD config)` (`bios/parport.c:49-57`) is pure
+software: `old_config = printer_config; if (config != -1) printer_config =
+config; return old_config;`. It touches **no hardware register at all** —
+the Centronics/PSG output path lives entirely in the separate `prnout()`
+helper (`bios/parport.c:62-105`), which `setprt()` never calls.
+`printer_config` (`bios/parport.c:36`) defaults to `0` at `parport_init()`
+(`bios/parport.c:118`, comment: *"Setprt() default: output via parallel
+port"*). However, in EmuTOS both `setprt()` and `prnout()` sit inside the
+*same* `#if CONF_WITH_PRINTER_PORT` block (`bios/parport.c:45-106`), and the
+`xbios_vecs[]` slot for 0x21 is `xbios_unimpl` when that config is off
+(`bios/xbios.c:1332-1336`, returning the function number per D-008).
+`CONF_WITH_PRINTER_PORT` defaults to `0` for non-Atari hardware
+(`include/config.h:673,707-708`) and to `1` otherwise
+(`include/config.h:987-988`) — a literal EmuTOS build for the
+`!CONF_ATARI_HARDWARE` profile (the one NewTOS's target most resembles)
+would not compile `setprt()` at all.
+
+**Prior NewTOS doc (wrong/missing):** `_dispatcher.md` and `_triage.md`
+grouped 0x21/Setprt with the MFP/NVRAM "printer/NVRAM" `xbios_unimpl`
+entries (`_dispatcher.md:171` pre-fix, `_triage.md:59` pre-fix), i.e.
+treated it as absent hardware in the same category as the floppy/PSG stub
+groups. No per-function spec existed.
+
+**Decision — NewTOS deviates deliberately from a literal
+`CONF_WITH_PRINTER_PORT=0` port:** `Setprt`'s get/set of `printer_config`
+has zero hardware dependency; only `prnout` needs the (absent) parallel
+port. Per `docs/COMPATIBILITY.md` ("if a program can read it … through a
+documented interface, it is contract"), the save/restore idiom (`old =
+Setprt(cfg); …; Setprt(old);`) is part of the observable contract. Falling
+back to `xbios_unimpl`'s function-number-return pattern (D-008) would make
+`Setprt(-1)` return `33` instead of the stored config word, silently
+corrupting that idiom — with no compensating benefit, since honouring the
+word costs nothing (a single scalar `WORD`, default `0`, no I/O). This is
+distinct from the genuinely hardware-dependent stubs (floppy `EUNDEV`,
+PSG `0`/no-op) — those fail because the *operation* needs absent silicon;
+`Setprt` needs none. NewTOS therefore implements `Setprt` with the same
+store/return contract EmuTOS gives it when `CONF_WITH_PRINTER_PORT=1`, while
+still having **no** parallel-port hardware — the same "config variable =
+honour, real HW = absence contract" split already applied to `Rsconf`'s
+baud-index shadow (`docs/api/xbios/0f-rsconf.md`). Documented in the new
+`docs/api/xbios/21-setprt.md`; `_dispatcher.md`/`_triage.md` and
+`docs/HARDWARE-PROFILE.md` §3.9 updated to move 0x21 out of the
+printer-hardware-absence grouping.
