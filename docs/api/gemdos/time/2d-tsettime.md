@@ -242,18 +242,18 @@ so ported programs that round-trip `Tsettime`/`Tgettime` behave identically.
 
 > Re-points the commit target from the **RTC (via XBIOS `Settime`) + the
 > `current_time` cache** to the **seeded software epoch**. The validation
-> contract (`sec/2 >= 30` or `min >= 60` → `ERROR`, hour unvalidated per EmuTOS;
-> `E_OK` otherwise) and the 2-second quantisation are unchanged. See
-> `docs/HARDWARE-PROFILE.md` §2 (RTC row), §3.5.
+> contract (`sec/2 >= 30` or `min >= 60` or `hour >= 24` → `ERROR`; `E_OK`
+> otherwise — **all three fields are validated in EmuTOS**, see Edge case 1
+> above and `bdos/time.c:144-146`) and the 2-second quantisation are
+> unchanged. See `docs/HARDWARE-PROFILE.md` §2 (RTC row), §3.5.
 
 ### `Tsettime` recomputes `BASE_SECS`
 
 `Tsettime` (0x2D) validates the packed time (`time.rs:174-182`; `dsec >= 30`
-or `min >= 60` → `ERROR`, hour not validated — EmuTOS parity), then recomputes
-the base epoch keeping the current date: `BASE_SECS = compose(cur.date, hour,
-min, dsec*2) - CNTPCT/CNTFRQ` (`time.rs:184-187`). The `sec/2` field is stored
-as whole seconds (`dsec*2`), preserving the 2-second resolution. No RTC write;
-nothing persists.
+or `min >= 60` → `ERROR`), then recomputes the base epoch keeping the current
+date: `BASE_SECS = compose(cur.date, hour, min, dsec*2) - CNTPCT/CNTFRQ`
+(`time.rs:184-187`). The `sec/2` field is stored as whole seconds (`dsec*2`),
+preserving the 2-second resolution. No RTC write; nothing persists.
 
 | Atari reference | Pi-4 model today |
 |-----------------|------------------|
@@ -263,5 +263,11 @@ nothing persists.
 ### Gaps vs. the contract (Step-2 candidates)
 
 - **No persistence** — shared item with `Settime`/`Gettime` (needs an RTC
-  backend). Validation, the 2-second quantisation, and `E_OK`/`ERROR` are fully
-  implemented.
+  backend). The `dsec`/`min` checks and the 2-second quantisation are
+  implemented; **the `hour >= 24` check is missing** — see D-074
+  (`docs/api/_discrepancies.md`) for the exact source citation and fix. This
+  is an **implementation bug**, not a documented divergence: earlier revisions
+  of this file incorrectly claimed "hour unvalidated — EmuTOS parity" in this
+  section, contradicting the correctly-sourced Error-conditions table above
+  (`bdos/time.c:146`, `HRS_BM >= 24 << HRS_SHIFT`). Corrected 2026-07-09
+  (D-074).

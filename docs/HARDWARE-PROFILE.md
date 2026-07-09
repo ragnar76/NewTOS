@@ -61,32 +61,56 @@ differ only in the peripheral drivers (`kernel/src/drivers/bcm2711/*` vs.
 
 ### 3.1 Screen / framebuffer
 
-- **Geometry (current):** 640 × 480, **32 bpp truecolor** physical framebuffer
-  (`framebuffer.rs` `WIDTH=640, HEIGHT=480, DEPTH_BPP=32`). `virt:` same via
-  `ramfb`.
-- **Geometry (goal):** full native Pi resolution — up to **1080p** and beyond
-  — is the target, **later**. It requires querying the HDMI mode at boot and
-  making the VDI/AES geometry-independent (currently hard-coded 640×480). For
-  now everything below assumes the fixed 640×480 mode; the higher-resolution
-  work is a separate phase.
-- **VDI logical model:** the VDI presents a **16-colour, 4-plane** raster over
-  the truecolor buffer (`RasterBackend` maps 16 PEL indices → RGB).
+> **Direction changed 2026-07-09 (ADR-017, revised same day).** The
+> single-fixed-640×480/`TT_MEDIUM` policy below a previous revision of this
+> section described was **never committed** and is superseded: NewTOS now
+> targets a **native, geometry-independent** resolution — default
+> **1920×1080**, switchable at runtime to **1280×800** — while keeping the
+> existing 16-colour VDI palette model (real truecolor VDI stays a later,
+> separate step). See `docs/MEMORY.md` ADR-017 for the full decision,
+> source analysis, and the open points flagged below.
+
+- **Geometry (current implementation, to be changed):** 640 × 480, **32 bpp
+  truecolor** physical framebuffer (`framebuffer.rs` `WIDTH=640, HEIGHT=480,
+  DEPTH_BPP=32`, compile-time constants). `virt:` same via `ramfb`. This is
+  the value **before** the ADR-017 geometry-independence work lands — per
+  the ADR's staging rule, it must **not** be raised until VDI/AES/desktop
+  render correctly at a live resolution ≠ 640×480 (verified by screendump).
+- **Geometry (target, ADR-017):** **1920×1080×32bpp (default)**, switchable
+  at runtime to **1280×800×32bpp**, both over the existing VideoCore mailbox
+  path — the RPi4 boot firmware already forces a 1920×1080@60 Hz HDMI signal
+  (`boot/rpi4/config.txt:12-18`, "DMT 1080p60"), so both target modes ride
+  the same physical wire timing (1280×800 is expected to be scaled/
+  letterboxed by VideoCore onto it — **empirical verification pending**, not
+  yet confirmed against real firmware behaviour). The VDI/AES/desktop stack
+  is largely already geometry-independent (reads live `RasterBackend`/
+  `Host::screen()` geometry per call, not a cached constant); the concrete
+  gaps that still block this (arena sizing, two desktop-side caches) are
+  enumerated in ADR-017's Consequences.
+- **Colour model (unchanged by ADR-017 for this round):** the VDI presents a
+  **16-colour, 4-plane** raster over the truecolor buffer (`RasterBackend`
+  maps 16 PEL indices → RGB), regardless of which of the two live
+  resolutions is active. A real truecolor VDI mode is a documented, later,
+  separate decision — not part of this geometry change.
 - **Screen base:** the mailbox-allocated framebuffer, CPU-visible high-half VA
   of the pixel store (the bus address is masked to an ARM physical address and
   offset into the high half; `framebuffer.rs:178-179`,
   `vdi_backend.rs:405-407`). A **single buffer** (no separate physical/
   logical): `Physbase`/`Logbase` both return it. `Setscreen` re-pointing writes
   only the log/phys **shadows** and does **not** move the VideoCore scan-out
-  (`xbios/screen.rs:72-77`) — a bounded no-op until double-buffering lands with
-  the 1080p work.
-- **`Getrez`:** returns **`2` (`ST_HIGH`)** — the no-Atari-video `sshiftmod`
-  fallback shadow (`xbios/screen.rs:25,57-62`). This is a compatibility shim,
-  **not** a truthful geometry code (`ST_HIGH` is 640×400 mono, whereas the mode
-  is 640×480×16-colour; the exact Atari match would be `4`/`TT_MEDIUM`).
-  **Decision: keep `2`** — it is what the code returns and the safe "high-res
-  desktop" hint; the real device caps come from the VDI `DEV_TAB`/`INQ_TAB`,
-  not from `Getrez`. `MAX_REZ = 2` (`xbios/screen.rs:27`), so `Setscreen` only
-  accepts `0..2` today. Revisit at the HDMI-mode-query (1080p) phase.
+  (`xbios/screen.rs:72-77`) — unaffected by ADR-017.
+- **`Getrez`/`Setscreen` classic-rez mapping: OPEN, a Lead decision (ADR-017
+  point 6).** Neither 1920×1080 nor 1280×800 (16 colours) matches any entry
+  of EmuTOS's `vmode_table[]` (`bios/screen.c:724-735`); EmuTOS's own Falcon
+  `atari_getrez()` has no honest classic code for an off-table Videl mode
+  either (it hardcodes `rez=2` for any non-ST-compatible mode,
+  `bios/screen.c:948-971`, while `vsetmode()` sets the *different* value
+  `sshiftmod=FALCON_REZ` for the same case, `bios/videl.c:648-656`) — real
+  Falcon software instead queries `VsetMode(-1)` for ground truth. NewTOS's
+  equivalent choice (a fixed degenerate classic code vs. a resolution-derived
+  one vs. a NewTOS-native query call) is deliberately **not** decided here;
+  see `docs/api/xbios/04-getrez.md` / `05-setscreen.md` for the sketched
+  options and D-078 in `docs/api/_discrepancies.md`.
 - **Palette / colour:** 16 CLUT entries emulated over 32bpp
   (`vdi_backend.rs:21,26-43`; index 0 = white/background, 1 = black/
   foreground). `vs_color` sets the PEL→RGB map in the standard 0..1000-per-gun
@@ -95,13 +119,17 @@ differ only in the peripheral drivers (`kernel/src/drivers/bcm2711/*` vs.
   `xbios/screen.rs` that is **not** wired to the VDI CLUT, so they do not yet
   change displayed colours — see the palette-spec bindings.
 - **VDI `DEV_TAB`/`INQ_TAB` answers (resolved from `tos-api/src/vdi/`):**
-  `DEV_TAB[0,1]` = **639, 479** (max x/y, patched from the live framebuffer);
-  `DEV_TAB[13]` = **16** (colours); `DEV_TAB[35]` = **1** (>1 plane);
-  `DEV_TAB[39]` = **16** (palette size); `INQ_TAB[4]` = **4** (planes,
-  `log2(16)`); `INQ_TAB[5]` = **1** (colour LUT). Pixel size in microns
-  (`DEV_TAB[3,4]`) is **left at the ROM default `372`** — not patched from the
-  HDMI mode (`workstation.rs:101-106` patches only `[0],[1],[13],[35],[39]`);
-  truthful values need the mailbox physical-display-size query, deferred.
+  `DEV_TAB[0,1]` = live-framebuffer `width-1, height-1` (already patched from
+  `RasterBackend` at `v_opnvwk`/`vq_extnd` time, `workstation.rs:101-106` —
+  today `639, 479` for the still-640×480 implementation; this patch already
+  works for any width/height the framebuffer reports, no VDI-side change
+  needed for the ADR-017 geometry move); `DEV_TAB[13]` = **16** (colours);
+  `DEV_TAB[35]` = **1** (>1 plane); `DEV_TAB[39]` = **16** (palette size);
+  `INQ_TAB[4]` = **4** (planes, `log2(16)`); `INQ_TAB[5]` = **1** (colour
+  LUT). Pixel size in microns (`DEV_TAB[3,4]`) is **left at the ROM default
+  `372`** — not patched from the HDMI mode (`workstation.rs:101-106` patches
+  only `[0],[1],[13],[35],[39]`); truthful values need the mailbox
+  physical-display-size query, still deferred (independent of ADR-017).
   Source: `tos-api/src/vdi/workstation.rs:24-56,100-117,155-160`.
 - **`NUM_VDI_HANDLES` / `MAX_VERTICES`:** the **small NewTOS profile** —
   `NUM_VDI_HANDLES` = **16** (`HANDLE_COUNT`, `tos-api/src/vdi/vwk.rs:20`;

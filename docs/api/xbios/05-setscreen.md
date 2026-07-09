@@ -256,35 +256,60 @@ reproduced. The WORD return follows EmuTOS (`-1`/0).
 > "ignore" convention, the `-1`-on-invalid-rez WORD return, `rez == -1` =
 > no-op. Peripheral + driver: see `docs/HARDWARE-PROFILE.md` §2/§3.1.
 
-- **Base re-pointing is a bounded no-op today.** `setscreen` stores `log`
-  into the `LOGBASE` shadow and `phys` into the `PHYSBASE` shadow when each
-  is `> 0` (`tos-api/src/xbios/screen.rs:72-77`, keeping the `> 0` /
-  `NULL-or-negative-ignored` rule), but it does **not** program the
-  VideoCore scan-out or retarget the `RasterBackend`. `Physbase`/`Logbase`
-  then report the shadow values while the display keeps showing the single
+> **Resolution policy (ADR-017, revised 2026-07-09, `docs/MEMORY.md`):**
+> NewTOS targets a **native, geometry-independent** resolution — default
+> **1920×1080**, switchable at runtime to **1280×800** — both at 16 VDI
+> colours, applied via the same mailbox path `Setscreen` would need to
+> reach. This **supersedes** a same-day, never-committed draft that fixed
+> NewTOS permanently to 640×480×16/`TT_MEDIUM`; that draft's rez-range
+> widening (D-077 in `docs/api/_discrepancies.md`) is **reopened**, not
+> retracted — see D-078.
+
+- **Base re-pointing is unaffected by this policy change.** `setscreen`
+  stores `log`/`phys` into shadows when each is `> 0`
+  (`tos-api/src/xbios/screen.rs:72-77`, the `> 0` / `NULL-or-negative-
+  ignored` rule matching `screen.c:1106,1110`), but does **not** program
+  the VideoCore scan-out or retarget the `RasterBackend`. `Physbase`/
+  `Logbase` report the shadow values while the display keeps showing the
   live framebuffer. Real page-flipping (a second VC buffer +
-  set-virtual-offset) is deferred with the 1080p work.
-- **Resolution range.** `rez` is validated against `[MIN_REZ, MAX_REZ]` =
-  `[0, 2]` (`tos-api/src/xbios/screen.rs:26-27`, `:81-83`); an
-  out-of-range `rez` returns `-1`, `rez == -1` returns `0` without a
-  change, and a valid `rez` is stored in the `REZ` shadow that `Getrez`
-  reads. No actual mode switch happens — the framebuffer stays 640×480×
-  (16-colour over 32 bpp) regardless of the stored code.
-- **Falcon/Videl path is absent.** No `videlmode` handling, no `Srealloc`
-  (arg 3 is ignored — there is no Falcon). `rez == FALCON_REZ (3)` is
-  simply out of `[0,2]` and returns `-1`, matching "no Videl" for this
-  board.
-- **Missing rez-change side effects (Step-2).** EmuTOS clears the screen,
-  homes the cursor, and re-inits the VT52 on a rez change; the NewTOS
-  `setscreen` does none of these (it only stores shadows). Since the mode
-  never actually changes on the fixed framebuffer this is currently
-  harmless, but it diverges from the contract's "rez change clears screen"
-  verification criterion — recorded as a Step-2 finding, not fixed here.
-- **`MAX_REZ = 2` vs a 16-colour framebuffer.** Because `Getrez` reports
-  `2` (mono) for a 4-plane 640×480 mode and `MAX_REZ` is `2`, no legacy
-  rez code can name the true mode. This is the same tension flagged in
-  `docs/api/xbios/04-getrez.md`; the resolution stays a bring-up shim
-  until the mode-query phase.
-- **1080p later.** A real `Setscreen` mode reconfigure (mailbox
-  set-physical/-virtual + geometry re-publish + VDI table refresh) lands
-  with the HDMI-mode-query phase.
+  set-virtual-offset) remains deferred, orthogonal to this ADR.
+- **A real `Setscreen`-driven mode reconfigure is now in scope** (it was
+  filed as deferred "1080p later" work under the superseded draft): the
+  1920×1080 ⇄ 1280×800 switch needs a mailbox re-request (`set physical/
+  virtual size`, re-`allocate`, `get pitch` — `kernel/src/drivers/bcm2711/
+  mailbox.rs`, `docs/hardware/mailbox-framebuffer.md` §3) plus the desktop
+  re-init chain (ADR-017 Decision point 5). Whether that reconfigure is
+  triggered *through* the `Setscreen` XBIOS call itself (giving `rez` a
+  live-switching meaning again, unlike the superseded draft's "no code
+  ever really changes anything" semantics) or only through a
+  desktop-menu/NEWDESK.INF path outside the XBIOS surface is an **open
+  Lead decision**, tied to the `Getrez`/`Setscreen` rez-value question in
+  `docs/api/xbios/04-getrez.md`.
+- **The `rez` validation range and match arms below are PROVISIONAL,
+  pending the same Lead decision** — they described the superseded
+  single-mode policy and are kept here only as the still-relevant EmuTOS
+  source precedent for "an in-range-but-hardware-unsupported `rez` is a
+  silent no-op, not an error" (`atari_setrez`/`videl_setrez`/`vsetmode`,
+  `bios/screen.c:990-1013`, `bios/videl.c:619-659,976-993`) — a precedent
+  that still constrains whatever the Lead decides, since it is sourced from
+  EmuTOS itself, not invented:
+  ```
+  rez == -1              → no rez change; return 0.               (screen.c:1115-1116)
+  rez < 0 || rez > 7      → return -1 (invalid code).               (screen.c:1120-1121)
+  rez == <TBD>            → [OPEN] which code(s), if any, map to the
+                            two live NewTOS resolutions is undecided
+                            (see 04-getrez.md).
+  every other in-range rez → [PROVISIONAL] accept the call (return 0)
+                            but make no change, mirroring EmuTOS's
+                            own "hardware can't do this rez" no-op
+                            precedent — unless the Lead instead wires
+                            rez to the real 1920×1080⇄1280×800 switch.
+  ```
+- **Falcon/Videl `videlmode` argument:** still unused by NewTOS (no Falcon
+  hardware to target); whether it gains a NewTOS-specific meaning (e.g.
+  selecting between the two live resolutions, echoing how Falcon overloads
+  it for `vsetmode`) is part of the same open Lead decision.
+- **`deskrez` (desktop resolution dialog) is back in scope** under this
+  ADR (it was "moot" under the superseded single-mode draft) — see ADR-017
+  point 7 and `docs/api/desktop/deskrez.md`, which needs its own EmuTOS
+  extraction pass before implementation.

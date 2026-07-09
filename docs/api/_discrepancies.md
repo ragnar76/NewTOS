@@ -2482,3 +2482,298 @@ referenced above). No change to the root-gate logic (`EPERM` on
 modes, which is a **separate**, pre-existing gap (FreeMiNT
 `sys/ssystem.c:285-289,295-299`) outside the two questions this audit
 scoped; flagged for the lead, not fixed here.
+
+---
+
+## D-074: `Tsettime` (0x2D) does not validate the hour field; the spec's own "Pi/BCM2711 binding" section contradicted its correctly-sourced main body (self-contradiction, implementation gap)
+
+**Date:** 2026-07-09
+**Phase 00 spec:** `docs/api/gemdos/time/2d-tsettime.md`
+**Source:** EmuTOS @ `1a7484ab`, `bdos/time.c:142-153` (`xsettime`).
+
+**EmuTOS validates all three fields**, not two:
+```c
+long xsettime(UWORD t)
+{
+    if (((t & SEC_BM) >= 30)                /* 30 "double-seconds" per minute */
+     || ((t & MIN_BM) >= (60 << MIN_SHIFT)) /* 60 minutes per hour */
+     || ((t & HRS_BM) >= (24 << HRS_SHIFT)))/* 24 hours per day */
+        return ERR;
+    ...
+```
+(`bdos/time.c:144-146`). `HRS_BM = 0xF800`, `HRS_SHIFT = 11`; the third
+condition rejects any packed hour field ≥ 24 (values 24-31 are representable
+in the 5-bit field but invalid). This third check exists in the source and
+was already correctly captured in `2d-tsettime.md`'s main body — the
+"Error conditions" table (`Hour field ≥ 24 → ERR (-1)`, citing
+`bdos/time.c:146`) and Edge case 1 both stated it correctly.
+
+**Spec self-contradiction found on re-validation:** the same file's trailing
+"Pi / BCM2711 binding" section (added in a later pass, not cross-checked
+against the main body) asserted the *opposite*: "hour unvalidated per
+EmuTOS" / "hour not validated — EmuTOS parity". This is the "spec itself may
+be wrong" case the task called out — not a misreading of EmuTOS (the main
+body read it right), but a stale/wrong claim introduced in a later section
+of the *same document* that was never reconciled against the earlier,
+source-verified section. **Corrected** (this pass) — see the edit to
+`2d-tsettime.md`.
+
+**Implementation gap (not a spec-reading error):**
+`tos-api/src/gemdos/time.rs:174-188` (`tsettime`) matches the *wrong* claim,
+not the source:
+```rust
+pub fn tsettime(args: &TrapArgs) -> Long {
+    let t = args.arg_u16(0);
+    let hour = (t >> 11) as u32; // not validated (EmuTOS parity)
+    let min = ((t >> 5) & 0x3F) as u32;
+    let dsec = (t & 0x1F) as u32; // second / 2
+
+    if dsec >= 30 || min >= 60 {
+        return ERROR;
+    }
+    ...
+```
+There is no `hour >= 24` check, so `Tsettime` currently accepts hour field
+values 24-31 (e.g. `Tsettime(31 << 11)` → `E_OK`, silently producing a
+wall-clock time one or more days in the future via `compose()`'s hour
+arithmetic) where EmuTOS returns `ERR` (-1) and leaves the clock unchanged.
+The doc-comment above `tsettime` (`time.rs:170-173`) repeats the same wrong
+"EmuTOS parity" claim and needs updating alongside the code fix.
+
+The sibling `xbios_settime` (`time.rs:203-214`, the `Settime`/XBIOS-0x16
+path) is **not** affected — `Settime`/`settime()` genuinely performs no
+field validation in EmuTOS (`bios/clock.c:1218-1264`), so "hour/min/sec pass
+through unvalidated" is correct there. The bug is scoped to the GEMDOS
+`Tsettime` entry point only, which EmuTOS's `xsettime()` gates before
+calling `Settime`.
+
+**Fix (for the Developer, exact match to `bdos/time.c:144-146`):**
+```rust
+pub fn tsettime(args: &TrapArgs) -> Long {
+    let t = args.arg_u16(0);
+    let hour = (t >> 11) as u32;
+    let min = ((t >> 5) & 0x3F) as u32;
+    let dsec = (t & 0x1F) as u32; // second / 2
+
+    if dsec >= 30 || min >= 60 || hour >= 24 {
+        return ERROR;
+    }
+    ...
+```
+Update the doc-comment on `tsettime` (`time.rs:170-173`) to drop "the hour
+field is not validated, matching EmuTOS" and state the three-field check
+instead.
+
+**Decision:** confirmed against source (`bdos/time.c:142-153`); the spec's
+main body was already right, only the later "Pi/BCM2711 binding" addendum in
+the same file was wrong and has been corrected. This is an implementation
+bug in `tos-api/src/gemdos/time.rs`, flagged for the Developer — Researcher
+does not edit `.rs` files.
+
+---
+
+## D-075 (OPEN QUESTION, not a fix): XBIOS `Gettime` (0x17) upper-32-bits-of-`x0` convention — spec/global-rule say sign-extend, code zero-extends via `u32 as i64`
+
+**Date:** 2026-07-09
+**Phase 00 spec:** `docs/api/xbios/17-gettime.md`
+**Source:** N/A for the extension question itself — m68k has no 64-bit
+registers, so EmuTOS cannot answer this; it is a **NewTOS-only native-ABI
+design question** surfaced while cross-checking XBIOS `Settime`/`Gettime`
+against the GEMDOS time-group specs (as instructed).
+
+**The inconsistency, three places disagree:**
+1. **Global convention** (`tos-api/src/trap.rs:6`): "return value in `x0`
+   (sign-extended `i64`)" — stated as the universal rule for all native
+   trap returns.
+2. **Per-function spec** (`docs/api/xbios/17-gettime.md:68`): "the LONG
+   result **sign-extended** into `x0` (a packed 32-bit datetime)" — matches
+   the global rule.
+3. **Implementation** (`tos-api/src/xbios/mod.rs:94-99`):
+   ```rust
+   // Clock group: Settime/Gettime read/write the same wall clock as
+   // GEMDOS Tgetdate/Tgettime (no separate RTC on NewTOS). Settime
+   // returns void → 0; Gettime returns the packed LONG (zero-extended).
+   ...
+   GETTIME => crate::gemdos::time::xbios_gettime() as i64,
+   ```
+   `xbios_gettime() -> u32`; Rust's `as i64` cast from an unsigned source
+   type always **zero**-extends (regardless of destination signedness), so
+   the actual code contradicts both (1) and (2) — and its own inline
+   comment asserts the zero-extension is intentional, without updating (1)
+   or (2) to match.
+
+**Why it is currently latent, not observed:** EmuTOS `gettime()`
+(`bios/clock.c:1266`) returns `MAKE_ULONG(date, time)` — a genuine
+combined 32-bit value (date in the high word, time in the low word), whose
+bit 31 is the date word's bit 15 = the year-offset field's MSB, set only
+when the year offset ≥ 64 (calendar year ≥ 2044). At the current NewTOS
+default epoch (booting 1980, or any date before 2044) bit 31 is always 0,
+so sign-extension and zero-extension of the upper 32 bits of `x0` produce
+an *identical* result — the divergence has no observable effect until the
+wall clock is set to (or advances to) 2044 or later.
+
+**Contrast with GEMDOS `Tgetdate`/`Tgettime` (0x2A/0x2C), which are NOT
+inconsistent:** those C functions return a `UWORD` implicitly promoted to
+`long` (`bdos/time.c:99,132`), so the C-level 32-bit value already has its
+upper 16 bits zero and bit 31 is *always* 0 — "zero-extended" and
+"sign-extended" are mathematically identical there, and both this file's
+main body and the NewTOS binding section say "zero-extended" consistently.
+`Gettime`'s packed value has no such guarantee (both halves are meaningful,
+combined via `MAKE_ULONG`, not a single small type promoted).
+
+**This is a STOP, not a fix — flagged for the lead:** resolving it requires
+an architectural decision on the general x0-upper-bits ABI convention, not
+just a source re-read:
+- **Option A:** the global rule (`trap.rs:6`) is right; fix
+  `tos-api/src/xbios/mod.rs:99` to genuinely sign-extend
+  (`(crate::gemdos::time::xbios_gettime() as i32) as i64`) and correct its
+  comment. `17-gettime.md` stays as-is.
+- **Option B:** "packed bit-pattern LONG, not a signed count/error code"
+  values are meant to be a *documented exception* to the global
+  sign-extend default (as pointers already are, per
+  `docs/api/xbios/_dispatcher.md:203`, "pointer full-64-bit"); then the
+  code is already correct, and `17-gettime.md:68` needs correcting from
+  "sign-extended" to "zero-extended" (and the general rule in `trap.rs`/
+  `_dispatcher.md` should gain an explicit exception clause covering
+  packed-bitfield LONGs).
+
+Whether the upper 32 bits of `x0` are even **observable by a caller**
+(contract question) — i.e. whether native NewTOS/AArch64 or the future
+m68k-emulator marshaling shim ever exposes more than the low 32 bits
+(`w0`) to TOS-API-facing code — is itself unresolved in the read
+architecture docs and bears on whether this is a contract bug or a
+harmless kernel-internal inconsistency. Researcher does not decide ABI
+design or edit `.rs`; recorded here for the lead/Developer to resolve.
+
+---
+
+## D-076: `Getrez` NewTOS binding published a mono code (`2`/`ST_HIGH`) for a 16-colour device — corrected to `4`/`TT_MEDIUM` (resolution-policy fix)
+
+**Date:** 2026-07-09
+**Phase 00 spec:** `docs/api/xbios/04-getrez.md`, `docs/HARDWARE-PROFILE.md` §3.1
+**Decision:** ADR-017 (`docs/MEMORY.md`)
+
+**EmuTOS:** `getrez()`/`atari_getrez()` (`bios/screen.c:1076-1084,948-988`)
+reads the live Shifter/Videl mode and reports the matching Atari code; the
+per-code geometry+plane table is `vmode_table[]` (`bios/screen.c:724-735`):
+code `2` (`ST_HIGH`) = `{planes:1, hz_rez:640, vt_rez:400}` (**mono**), code
+`4` (`TT_MEDIUM`) = `{planes:4, hz_rez:640, vt_rez:480}` (**16 colours**).
+
+**Prior NewTOS binding (wrong, self-flagged as a shim, now confirmed a
+defect):** `docs/api/xbios/04-getrez.md` and `docs/HARDWARE-PROFILE.md` §3.1
+both documented (and the code at `tos-api/src/xbios/screen.rs:33,68`
+implements) `Getrez() == 2` ("`ST_HIGH`, the safe legacy hint") for a
+framebuffer the same codebase's VDI reports as 640×480×16-colour
+(`DEV_TAB[0,1]=639,479`, `DEV_TAB[13]=16`, `INQ_TAB[4]=4` planes,
+`tos-api/src/vdi/workstation.rs:100-106,143-160`). Two subsystems of the
+same running system disagreed about the display's colour depth — `2` claims
+monochrome, the VDI tables claim 16 colours/4 planes. This was already
+flagged twice as a "Step-2 tension" in both specs but not resolved.
+
+**Not a Compendium/Profibuch discrepancy** — this is a NewTOS-internal
+binding defect (the value chosen for the fixed Pi-4 mode contradicted the
+device's own reported capabilities), caught during the resolution-policy
+review requested by the user.
+
+**Decision:** `Getrez` truthfully reports **`4` (`TT_MEDIUM`)** — the exact
+Atari code whose `vmode_table` entry matches NewTOS's live VDI geometry and
+colour count. Corrected in `docs/api/xbios/04-getrez.md` (Pi/BCM2711
+binding) and `docs/HARDWARE-PROFILE.md` §3.1. See ADR-017 for the full
+resolution policy this is part of (a fixed single mode, no runtime switch).
+Implementation change (constant/shadow return value) is the Developer's;
+Researcher does not edit `.rs`.
+
+---
+
+## D-077: `Setscreen`'s NewTOS `rez` range (`[0,2]`) was narrower than EmuTOS's own sanity bound (`[0,7]`); resolved by the single-mode policy, not by inventing a NewTOS-specific range
+
+**Date:** 2026-07-09
+**Phase 00 spec:** `docs/api/xbios/05-setscreen.md`
+**Decision:** ADR-017 (`docs/MEMORY.md`)
+
+**EmuTOS:** `setscreen()` (`bios/screen.c:1102-1166`) validates `rez` only
+against the flat range `MIN_REZ=ST_LOW=0` .. `MAX_REZ=TT_LOW=7`
+(`include/biosdefs.h:132-133`; check at `screen.c:1120-1121`) — a generic
+sanity bound, **not** a per-hardware capability check. Whether a validated
+`rez` is actually achievable on the connected hardware is decided one layer
+down in `atari_setrez`/`videl_setrez`/`vsetmode` (`screen.c:990-1013`,
+`bios/videl.c:619-659,976-993`), and in every branch examined, an in-range
+but hardware-unsupported `rez` is **silently ignored** (current mode kept,
+no error) rather than rejected:
+- TT-shifter: `atari_setrez` writes the shifter only `if ((rez != 3) &&
+  (rez != 5))` (`screen.c:1006-1007`) — codes 3 (Falcon-only) and 5
+  (unused) are silently skipped on TT hardware.
+- Plain ST/STe: the final `else if (rez < 3)` branch (`screen.c:1010-1012`)
+  does nothing for TT-only codes 4-7.
+- Videl: `vsetmode()` itself returns the **unchanged** `current_video_mode`
+  if the fixed-up mode is invalid for the monitor (`bios/videl.c:636-637`,
+  `set_videl_vga(mode) < 0`), and that return value is discarded by the
+  (void) caller chain — never surfaced as a `Setscreen` error.
+
+**Prior NewTOS implementation (found narrower than the source, flagged by
+the earlier XBIOS audit):** `tos-api/src/xbios/screen.rs:34-35` defines
+`MIN_REZ=0, MAX_REZ=2` — a NewTOS-specific range with no basis in the
+EmuTOS source's own flat bound, and any `rez` in `{3..7}` (including the
+true live mode `TT_MEDIUM=4`!) was **rejected with `-1`** instead of being
+handled per the "valid code, unsupported hardware → silent no-op" precedent
+above.
+
+**Not a Compendium/Profibuch discrepancy** — a NewTOS-internal range chosen
+too narrowly, caught during the resolution-policy review.
+
+**Decision (ADR-017):** widen the `Setscreen` `rez` validation to EmuTOS's
+real bound `[0,7]`; `rez == 4` (`TT_MEDIUM`) is accepted (a no-op, already
+live); every other in-range code (`0,1,2,3,5,6,7`) is accepted (returns `0`)
+but produces **no** state/mode change — mirroring EmuTOS's own "hardware
+can't do this rez" no-op precedent rather than inventing new NewTOS
+behaviour. Out-of-range (`rez<0 || rez>7`) still returns `-1`. Corrected in
+`docs/api/xbios/05-setscreen.md` (Pi/BCM2711 binding, exact match arms
+given for the Developer). Implementation change is the Developer's;
+Researcher does not edit `.rs`.
+
+---
+
+## D-078: D-076/D-077 reopened — ADR-017's single-fixed-640×480 policy was superseded same-day before it was ever committed
+
+**Date:** 2026-07-09
+**Phase 00 spec:** `docs/api/xbios/04-getrez.md`, `docs/api/xbios/05-setscreen.md`
+**Decision:** ADR-017 (`docs/MEMORY.md`, revised 2026-07-09)
+
+**Context:** D-076 and D-077 recorded corrections for a draft of ADR-017
+("NewTOS presents exactly one VDI resolution, 640×480×16 =
+`TT_MEDIUM`") that was drafted and never committed the same day. The user
+overrode that direction before it shipped: NewTOS now targets a **native,
+geometry-independent** resolution — default 1920×1080, switchable at
+runtime to 1280×800 — not a single fixed 640×480 canvas (full decision +
+source analysis: `docs/MEMORY.md` ADR-017, revised text).
+
+**This entry does not retract D-076/D-077** (the log is append-only) — their
+EmuTOS source analysis (the `atari_setrez`/`videl_setrez`/`vsetmode`
+"silently ignore an unsupported `rez`" precedent, and the Falcon
+`atari_getrez`/`sshiftmod` disagreement for off-table modes) remains
+factually correct and is still cited by the revised ADR-017 and the updated
+`04-getrez.md`/`05-setscreen.md`. What changes is the **policy conclusion**
+built on top of it:
+
+- D-076's "`Getrez` must return `4` (`TT_MEDIUM`), unconditionally" is
+  **reopened**: neither 1920×1080 nor 1280×800 (16 colours) is a
+  `vmode_table[]` entry, so `4` is no longer a truthful match for either
+  live mode. What `Getrez` should return instead is an **open Lead
+  decision** — see `docs/api/xbios/04-getrez.md` (Pi/BCM2711 binding) for
+  three sketched (undecided) options.
+- D-077's "`Setscreen` range widens to `[0,7]`, only `rez==4` applies, every
+  other in-range code is a no-op" is **reopened** in the same way: the
+  match arms assumed the single-fixed-mode policy. Whether `Setscreen`
+  should drive the real 1920×1080⇄1280×800 switch, and which (if any)
+  classic `rez` codes apply, is the same open Lead decision — see
+  `docs/api/xbios/05-setscreen.md` (Pi/BCM2711 binding).
+
+**Not a Compendium/Profibuch discrepancy** — a NewTOS-internal policy
+reopened by a same-day user course-correction, caught before either draft
+value shipped as contract.
+
+**Decision:** no value is chosen by this entry. `docs/api/xbios/
+04-getrez.md`/`05-setscreen.md` (Pi/BCM2711 binding sections) are updated to
+mark the return value / match arms as open pending the Lead's choice among
+the sketched options. Implementation is blocked on that choice; Researcher
+does not decide it unilaterally (CLAUDE.md Rule 3: stop on uncertainty).

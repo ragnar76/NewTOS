@@ -213,7 +213,7 @@ The Pi-4 has **no battery-backed RTC**. NewTOS models the wall clock as a
 settable base epoch (`BASE_SECS`, seconds since 1980-01-01) plus the monotonic
 generic-timer delta: `now = BASE_SECS + CNTPCT/CNTFRQ`
 (`tos-api/src/gemdos/time.rs:25-45`). `Settime` (XBIOS 0x16) is dispatched
-(`tos-api/src/xbios/mod.rs:46-49`) to `gemdos::time::xbios_settime`
+(`tos-api/src/xbios/mod.rs:95-98`) to `gemdos::time::xbios_settime`
 (`time.rs:203-214`), which unpacks the LONG (`date<<16 | time`) and recomputes
 `BASE_SECS` so the clock reads the requested value — exactly the EmuTOS
 "no-RTC build updates only the cache" path. **Nothing persists across boots.**

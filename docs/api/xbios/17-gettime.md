@@ -196,7 +196,7 @@ configured; the packed encoding is contract.
 
 ### `Gettime` reads the same seeded epoch as GEMDOS
 
-`Gettime` (XBIOS 0x17) is dispatched (`tos-api/src/xbios/mod.rs:50`) to
+`Gettime` (XBIOS 0x17) is dispatched (`tos-api/src/xbios/mod.rs:99`) to
 `gemdos::time::xbios_gettime` (`tos-api/src/gemdos/time.rs:220-223`), which reads
 `now = BASE_SECS + CNTPCT/CNTFRQ`, decomposes it, and returns
 `(pack_date << 16) | pack_time` — the EmuTOS `MAKE_ULONG(current_date,

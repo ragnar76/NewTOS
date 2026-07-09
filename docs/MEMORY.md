@@ -647,6 +647,295 @@ Model rule: simple tasks on Sonnet, **code exclusively on Opus**.
 - STATUS Recent-Decisions 2026-07-03 (icon-overlap partial fix — now subsumed)
 - `.claude/agents/{researcher,developer,auditor}.md`
 
+## ADR-017: NewTOS resolution policy — native, geometry-independent, default 1920×1080, switchable to 1280×800
+
+**Date:** 2026-07-09 (revises a same-day, never-committed draft of this ADR —
+see "Superseded draft" below).
+**Status:** **Accepted** (user course-correction 2026-07-09, confirmed via
+team lead).
+**Phase:** cross-cutting (framebuffer driver, VDI workstation, AES globals,
+desktop `deskapp`/`deskwin`/`deskrez`, XBIOS screen group).
+
+### Superseded draft
+
+Earlier the same day this ADR was drafted — and never committed — as
+"**single fixed 640×480 mode, truthfully `TT_MEDIUM`**": exactly one
+hardcoded VDI resolution forever, `Getrez` corrected from `2` to `4`,
+`Setscreen`'s range widened to EmuTOS's flat `[0,7]` bound with every
+non-`4` code accepted-but-ignored, and native/1080p geometry filed as an
+explicitly deferred future option. The user overrode this direction before
+it was committed: NewTOS presents a **native, geometry-independent**
+resolution — default **1920×1080**, switchable at runtime to **1280×800** —
+not a single fixed 640×480 canvas. The EmuTOS source analysis performed for
+the superseded draft (its own "silently ignore an unsupported `rez`"
+precedent, `bios/screen.c:990-1013`, `bios/videl.c:619-659,976-993`) is
+still factually correct and is kept below where it still bears on the
+still-open `Getrez`/`Setscreen` question (see Decision point 6); the
+**policy conclusion built on top of it — "there is only one mode, ever" —
+is replaced.**
+
+### Context
+
+NewTOS's physical framebuffer is currently a **compile-time-fixed** 640×480,
+32bpp truecolor VideoCore mailbox buffer (`kernel/src/drivers/bcm2711/
+framebuffer.rs:23-24` `const WIDTH: u32 = 640; const HEIGHT: u32 = 480;`,
+mirrored in the QEMU dev-vehicle `kernel/src/drivers/qemu_virt/ramfb.rs:75-76`).
+This is an **implementation** limit, not a **hardware** one: the RPi4's own
+boot firmware config already forces a 1920×1080@60 Hz HDMI signal
+(`boot/rpi4/config.txt:12-16`, `hdmi_group=2`/`hdmi_mode=82` = "DMT
+1080p60", per the file's own comment), and the mailbox property tags the
+driver already speaks (`set physical/virtual size`, `set depth`, `allocate`,
+`get pitch` — `kernel/src/drivers/bcm2711/mailbox.rs`,
+`docs/hardware/mailbox-framebuffer.md` §3) are fully parametric; only the
+values fed into them are hardcoded today. The superseded draft's central
+premise — "the framebuffer is fixed at boot, there is no second mode to
+switch into" — conflated *what the code currently asks for* with *what the
+hardware and firmware config can do*; this rewrite corrects that premise.
+
+A Researcher code survey (2026-07-09, same session) of `tos-api::vdi`,
+`tos-api::aes` and `kernel::desk` found that **most of the VDI/AES stack is
+already geometry-independent**: `RasterBackend::width()/height()`
+(`kernel/src/vdi_backend.rs:130-136`) and `Host::screen()`
+(`kernel/src/host_env.rs:262-273`) both re-derive from the live framebuffer
+atomics on every call — nothing caches 640/480 as a value, only
+`kernel/src/drivers/bcm2711/framebuffer.rs`'s `WIDTH`/`HEIGHT` **constants**
+feed those atomics once at boot. `tos-api/src/vdi/workstation.rs:100-117,
+143-160` (`DEV_TAB`/`INQ_TAB` patching), `tos-api/src/aes/{graf,form,fsel,
+menu,appl,window}.rs` (screen-rect/centring/planes) all read
+`backend.width()/height()` fresh per call; `tos-api/src/aes/window.rs:1007-
+1013`'s `640, 480` is an unreachable-in-practice fallback (no backend
+installed), not the live path. The full file:line inventory — including the
+few genuine gaps found (see Consequences) — was handed to the team lead
+alongside this ADR, not duplicated here.
+
+EmuTOS's own resolution-change precedent (Track A, `1a7484ab`) directly
+informs the switch-mechanism decision below: a rez change is **never** a
+live hot-patch of a running desktop. The desktop's `RESITEM` menu action
+(`desk/deskmain.c:900-917`) runs a resolution dialog
+(`desk/deskrez.c:change_resolution`/`change_falcon_rez`/`change_tt_rez`),
+then calls `shel_write(SHW_RESCHNG, …)` (`aes/gemshlib.c:157-196`), which
+only sets the `gl_changerez`/`gl_nextrez` globals and asks the desktop
+process to **exit**. The actual `Setscreen()` call happens at the very top
+of the AES's cold-start entry point, `gem_main()`
+(`aes/geminit.c:753,775-806`), **before** any window/menu/VDI-workstation
+state exists — i.e. "switch resolution" == "apply the new mode, then run
+the exact same from-scratch init sequence boot uses", not an incremental
+re-layout of live state. The choice is persisted across boots by
+overloading the `#E` NEWDESK.INF line's mode-word field
+(`desk/deskapp.c:1161-1174` writes it via `desk_get_videomode()`;
+`aes/geminit.c:343-392` `process_inf1()` reads it back and sets
+`gl_changerez`/`gl_nextrez` from it at the next boot).
+
+Separately, EmuTOS's own Falcon `Getrez` has no classic code for a
+non-ST-compatible (true-colour/high-res VGA) Videl mode: `atari_getrez()`
+(`bios/screen.c:948-971`) reads `vsetmode(-1)`, and for any Videl mode
+**without** the `VIDEL_COMPAT` bit it hardcodes `rez = 2` (`ST_HIGH`) —
+*not* `FALCON_REZ` (3) — regardless of the mode's real geometry/depth
+(`screen.c:968-970`). Meanwhile `vsetmode()` itself
+(`bios/videl.c:619-659`) sets the **`sshiftmod`** shadow to `FALCON_REZ`
+for exactly the same non-compat modes (`videl.c:648-656`) — so even in
+EmuTOS, two internal state variables disagree about "the" rez code the
+instant the live mode isn't one of the eight classic Atari codes, and the
+XBIOS-visible `Getrez()` picks the degenerate ST-compatible guess, not the
+Falcon indicator. Real Falcon programs query the *actual* mode via
+`VsetMode(-1)` (a raw Falcon mode word: bpp bits, VGA/RGB, sync, resolution
+flags), never by inferring it from `Getrez`. This precedent is why point 6
+below leaves NewTOS's `Getrez`/`Setscreen` classic-rez contract an **open
+question** rather than guessing a value: 1920×1080 and 1280×800 are exactly
+the situation EmuTOS itself has no honest classic code for.
+
+### Decision
+
+1. **Two native, live VDI resolutions**, both delivered through the
+   existing VideoCore mailbox path: **1920×1080×32bpp (default)** and
+   **1280×800×32bpp (switchable at runtime)**. Both ride the *same* fixed
+   1920×1080@60 Hz HDMI wire signal already forced by
+   `boot/rpi4/config.txt`; a 1280×800 mailbox "set physical size" request is
+   expected to be scaled/letterboxed by the VideoCore firmware onto that
+   fixed signal without an HDMI/EDID renegotiation — **this is an
+   expectation to verify empirically (Stufe 1), not an assumed fact**, since
+   `docs/hardware/mailbox-framebuffer.md` does not yet document VideoCore's
+   physical-size-vs-forced-`hdmi_mode` scaling behaviour.
+2. **Colour model unchanged for this round.** The VDI keeps presenting the
+   existing 16-colour/4-plane palette raster
+   (`RasterBackend::num_colors() == 16`, `kernel/src/vdi_backend.rs:21`)
+   over the (now larger) 32bpp truecolor physical buffer, exactly as today
+   at 640×480. A genuine truecolor VDI mode (a real `DEV_TAB`/`INQ_TAB`
+   colour-depth increase, a new pixel-format contract for programs) is
+   **explicitly out of scope for this ADR** — a later, separate decision.
+3. **Geometry independence is the actual engineering target** and a hard
+   rule going forward: no VDI/AES/desktop code may assume 640/480/639/479
+   (or any other fixed dimension) — every consumer reads the live geometry
+   (`RasterBackend::width()/height()`, `Host::screen()`, or the desktop's
+   own `DeskState::g_desk`/`screen_dims()` plumbing). Most of the stack
+   already follows this (see Context); the remaining gaps are enumerated in
+   Consequences and must close.
+4. **Staging rule (non-negotiable):** the physical framebuffer stays at its
+   present geometry until geometry independence is verified end-to-end
+   (VDI + AES + desktop rendering correctly at a live resolution ≠
+   640×480, confirmed by screendump) — only then does the framebuffer
+   driver's target geometry change to 1920×1080. Raising the physical
+   resolution before that point would render a broken desktop, per the
+   user's explicit instruction.
+5. **Switch-mechanism skeleton (proposed, mirrors the EmuTOS precedent in
+   Context, not yet a final API — Developer's to implement):** a
+   resolution change re-runs the same cold-start sequence boot already
+   uses, rather than hot-patching live state: re-issue the mailbox request
+   with the new geometry → invalidate the desktop's one-time-computed state
+   (`kernel/src/desk/global.rs`'s idempotent `DESK` static,
+   `kernel/src/desk/menu.rs`'s idempotent `MENU.built` cache — both
+   currently "compute once at boot, never again") → re-run the equivalent
+   of `DeskState::new`/`app_start`/`win_start`/`build_menu` → full redraw.
+   NewTOS has no separate AES *process* to restart (the desktop is a kernel
+   module, `desk::run()`), so "restart" here means "re-run the one-time
+   setup", not a reboot.
+6. **`Getrez`/`Setscreen`'s classic-rez mapping is explicitly NOT settled by
+   this ADR — flagged as an open Lead decision.** Neither 1920×1080 nor
+   1280×800 (16 colours) matches any entry of EmuTOS's `vmode_table[]`
+   (`bios/screen.c:724-735`); per the Falcon precedent in Context, EmuTOS
+   itself has no honest classic code for an "off-table" mode either. Three
+   sketched options (none chosen): (a) a fixed degenerate code regardless of
+   which of the two live resolutions is active — mirroring Falcon's
+   `Getrez`-returns-`2`-regardless precedent; (b) a resolution-derived code
+   that differs between the two modes; (c) a NewTOS-native query function
+   (cookie-jar or a new trap) alongside a degenerate classic `Getrez`,
+   mirroring Falcon's real `VsetMode(-1)`-is-ground-truth /
+   `Getrez`-is-a-hint split. See the Researcher's 2026-07-09 report to the
+   lead for the full option writeup.
+7. **Persistence + UI entry points (proposed, mirrors EmuTOS):** a resolution
+   choice persists across boots via a NEWDESK.INF field analogous to the
+   `#E` mode word (`desk/deskapp.c:1161-1174`, `aes/geminit.c:343-392`); a
+   desktop menu item analogous to `RESITEM`/`deskrez` offers the two
+   resolutions. Whether NewTOS reuses the literal `#E` byte layout (risk:
+   collides with real `#E` semantics for the environment/time-format bits
+   sharing that line) or adds a NewTOS-private INF line is an **open Lead
+   decision**, not decided here — `docs/api/desktop/deskrez.md`
+   (previously "out of scope" under the superseded draft) is back in scope
+   and needs its own extraction pass before implementation (Rule 5).
+
+### Rationale
+
+- **The Pi-4 hardware trivially supports more than 640×480**: the boot
+  firmware already negotiates a 1920×1080@60 Hz HDMI signal
+  (`boot/rpi4/config.txt:12-16`) and the mailbox driver already speaks the
+  parametric tags needed (`mailbox.rs`, `framebuffer.rs:build_request`);
+  nothing here is invented hardware behaviour (CLAUDE.md Rule 6) — it is
+  the same documented mailbox interface (`docs/hardware/mailbox-framebuffer.md`
+  §3) fed different, still-data, values.
+- **"New" means modern, not artificially ST/TT/Falcon-constrained.** NewTOS
+  is a clean-room reimplementation, not a binary-compatible emulator
+  (`CLAUDE.md` non-goals); a source-ported program queries the VDI for its
+  geometry (`v_opnvwk`/`vq_extnd`) rather than assuming a fixed Atari
+  screen size, so raising the native canvas is transparent to a
+  well-behaved program exactly as it was across real ST/TT/Falcon
+  resolutions.
+- **Colour truecolor is deliberately not bundled with this change**: it is
+  an orthogonal VDI/backend redesign (an actual `DEV_TAB`/`INQ_TAB`
+  colour-depth increase, a program-visible pixel-format change) that would
+  multiply the risk of this change; isolating the work to geometry keeps
+  the blast radius bounded and independently verifiable.
+- **Source-backed switch model.** EmuTOS itself never hot-patches a live
+  AES for a resolution change — it always applies `Setscreen()` at the very
+  top of a fresh `gem_main()` and lets the rest of AES/desktop init run from
+  scratch (Context). Mirroring "tear down cached state, re-run the one-time
+  setup" rather than inventing a live incremental re-layout is the
+  source-faithful choice, not a shortcut.
+- **The `Getrez`/`Setscreen` question is left open, not guessed**, per
+  CLAUDE.md Rule 3 (STOP on uncertainty): EmuTOS's own Falcon behaviour
+  shows that "what classic code does an off-table mode get" has no single
+  precedent-mandated answer (its own `Getrez`/`sshiftmod` even disagree with
+  each other for the same mode, Context) — inventing a value here would be
+  exactly the kind of guess CLAUDE.md forbids.
+
+### Consequences
+
+- Positive: matches modern expectations (an HD desktop) using only the
+  mailbox interface the codebase already implements — no invented hardware.
+- Positive: the code survey shows most of VDI/AES already reads geometry
+  live; the remaining work is bounded and enumerated, not open-ended.
+- Negative (correctness blocker, must close before 1080p goes live): the
+  desktop's fixed-size object arena
+  (`MAX_WIN_ITEMS = 48`, `INITIAL_ITEM_SLOTS = (NUM_WNODES+1)*MAX_WIN_ITEMS`,
+  `kernel/src/desk/global.rs:43-62`) is explicitly sized "at 640×480" in its
+  own doc comment; a maximized window/desktop at 1920×1080 fits roughly
+  17×20 = 340 icon cells with the current fixed cell pitch (`g_wicon=100`,
+  `g_hicon=50`, `min_wint=8` — `kernel/src/desk/app.rs:44-61`), not 48. The
+  arena cannot grow after `obj_init` (raw `ob_spec`/`ib_ptext` pointers baked
+  into the tree would dangle on a `Vec` regrow, per the existing doc
+  comment), so this constant must be recomputed for the worst-case
+  resolution *before* 1080p is enabled, not patched reactively.
+- Negative: two desktop caching spots need an explicit invalidate/rebuild
+  path that does not exist today — `kernel/src/desk/global.rs:471-487`'s
+  `DESK` static (`init()` is a no-op on a second call) and
+  `kernel/src/desk/menu.rs:372-378,483`'s `MENU.built` flag (the menu-bar
+  object tree, sized to screen width/height, is built exactly once).
+- Negative/Open: `docs/api/desktop/deskrez.md` re-enters scope (was
+  "out of scope" under the superseded draft) and needs its own EmuTOS
+  extraction pass (`desk/deskrez.c`) before the Developer implements the
+  switch-UI, per Rule 5.
+- Negative/Open: the classic-rez (`Getrez`/`Setscreen`) contract question
+  is reopened (point 6) — no classic Atari code matches either target
+  resolution; this needs a Lead decision, not a Researcher default.
+  `docs/api/_discrepancies.md` D-076/D-077 (written for the superseded
+  single-mode draft) are **not** retracted (append-only log) but a
+  follow-up entry marks them reopened — see D-078.
+- Neutral: `Physbase`/`Logbase` behaviour is unaffected by this ADR.
+- Deferred: real truecolor VDI remains a documented future step, out of
+  scope here — inverse framing of the superseded draft (geometry ships now,
+  colour depth later, rather than the other way around).
+
+### Alternatives considered
+
+- **Keep the single fixed 640×480/`TT_MEDIUM` mode** (the just-superseded
+  draft): rejected same-day by the user — the Pi4 hardware and firmware
+  config trivially support more; "New" should mean modern, not an
+  artificial 1980s-Atari-geometry ceiling.
+- **Ship geometry independence and real truecolor together:** rejected —
+  bundling maximizes scope/risk for one change; colour depth is a separate,
+  program-visible contract question better isolated as its own later ADR.
+- **Query HDMI/EDID for the monitor's native mode instead of a fixed
+  1920×1080 default:** not chosen for this round — `hdmi_mode` is already
+  forced in `boot/rpi4/config.txt`, so there is no live EDID negotiation
+  today; real EDID-driven mode detection remains a further-future option,
+  not a blocker for the two-fixed-resolution switch requested here.
+- **A single resolution that just moves from 640×480 to one higher fixed
+  value (no runtime switch):** rejected — the user explicitly asked for two
+  selectable live resolutions (1920×1080 default, 1280×800 alternate).
+
+### References
+
+- `kernel/src/drivers/bcm2711/framebuffer.rs:23-24,86-143` (fixed
+  `WIDTH`/`HEIGHT` consts + the parametric mailbox request they feed)
+- `kernel/src/drivers/qemu_virt/ramfb.rs:75-76` (QEMU dev-vehicle mirror)
+- `boot/rpi4/config.txt:12-18` (forced DMT 1080p60 HDMI timing)
+- `docs/hardware/mailbox-framebuffer.md` §3 (mailbox tag reference —
+  needs a Track-B addendum on physical-size-vs-forced-`hdmi_mode` scaling
+  and the buffer-release tag before a live re-request is implemented)
+- `kernel/src/vdi_backend.rs:130-136`, `kernel/src/host_env.rs:262-273`,
+  `tos-api/src/vdi/workstation.rs:100-117,143-160`,
+  `tos-api/src/aes/window.rs:1007-1013` (already-dynamic geometry reads)
+- `kernel/src/desk/global.rs:43-62,471-487`, `kernel/src/desk/menu.rs:372-
+  378,483`, `kernel/src/desk/app.rs:44-61` (the desktop-side gaps: arena
+  sizing, the two one-time caches)
+- EmuTOS `1a7484ab`: `aes/gemshlib.c:157-196` (`SHW_RESCHNG`),
+  `aes/geminit.c:334-392,753,775-806` (`process_inf1`, `gem_main` cold
+  `Setscreen`), `desk/deskmain.c:900-917` (`RESITEM`), `desk/deskrez.c`
+  (`change_resolution`/`change_falcon_rez`/`change_tt_rez`),
+  `desk/deskapp.c:1083-1174` (`#E` mode-word read/write), `bios/screen.c:
+  724-735,948-971` (`vmode_table`, `atari_getrez` Falcon quirk),
+  `bios/videl.c:619-659` (`vsetmode`, `sshiftmod = FALCON_REZ`)
+- `docs/api/xbios/04-getrez.md`, `docs/api/xbios/05-setscreen.md`,
+  `docs/HARDWARE-PROFILE.md` §3.1 (updated alongside this ADR, open points
+  marked)
+- `docs/api/_discrepancies.md` D-076, D-077 (superseded draft's corrections,
+  now reopened — see D-078)
+- `docs/api/desktop/deskrez.md`, `docs/api/desktop/_overview.md` (back in
+  scope — needs its own extraction pass)
+- [[qemu-window-view-command]] (how to visually verify framebuffer output
+  in QEMU at a non-default resolution)
+- ADR-016 (desktop rebuild — the geometry work is cross-cutting and must be
+  sequenced against the in-flight `kernel/src/desk/` task list)
+
 ### Template for new ADRs
 
 ```markdown
