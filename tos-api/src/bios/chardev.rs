@@ -63,14 +63,45 @@ pub fn pack_console_key(word: u16) -> Long {
     (scancode << 16) | ascii
 }
 
+/// `Bconin` core keyed by device handle — the value part of `Bconin`
+/// without the [`TrapArgs`] marshalling. For the CON handle (2) it blocks
+/// and returns the packed console LONG (IKBD scancode in bits 16-23, ASCII
+/// in bits 0-7); every absent device returns `0` immediately (`char_dummy`).
+///
+/// Shared with the GEMDOS `Cauxin` pass-through, which routes through
+/// `Bconin(1)` exactly as EmuTOS' `xauxin` does (`bdos/console.c:432`);
+/// handle 1 (AUX) is an absent device in the NewTOS profile, so it yields
+/// `0` rather than blocking on serial hardware that does not exist.
+pub(crate) fn bconin_handle(handle: u16) -> Long {
+    match host::host() {
+        Some(h) if is_console_in(handle) => pack_console_key(h.console_read_key_blocking()),
+        _ => 0,
+    }
+}
+
 /// `Bconin` (0x02) — blocking read from an input device. For the CON
 /// handle (2) the packed LONG carries the IKBD scancode in bits 16-23 and
 /// the ASCII value in bits 0-7 (non-ASCII keys → ASCII 0 + scancode), per
 /// `docs/api/bios/02-bconin.md`. Absent devices return `0`.
 pub fn bconin(args: &TrapArgs) -> Long {
-    let handle = args.arg_u16(0);
+    bconin_handle(args.arg_u16(0))
+}
+
+/// `Bconout` core keyed by device handle — the value part of `Bconout`
+/// without the [`TrapArgs`] marshalling. Console handles (CON, raw-CON)
+/// write to the screen and return `1`; every absent device discards the
+/// byte and returns `0` (`char_dummy`).
+///
+/// Shared with the GEMDOS `Cauxout` pass-through, which routes through
+/// `Bconout(1, ch)` exactly as EmuTOS' `xauxout` does
+/// (`bdos/console.c:331`); handle 1 (AUX) is an absent device in the
+/// NewTOS profile, so it discards and returns `0`.
+pub(crate) fn bconout_handle(handle: u16, byte: u8) -> Long {
     match host::host() {
-        Some(h) if is_console_in(handle) => pack_console_key(h.console_read_key_blocking()),
+        Some(h) if is_console_out(handle) => {
+            h.console_write_byte(byte);
+            1
+        }
         _ => 0,
     }
 }
@@ -80,15 +111,7 @@ pub fn bconin(args: &TrapArgs) -> Long {
 /// `bconout2`/`bconout5` handlers); absent devices discard and return
 /// `0` (`char_dummy`).
 pub fn bconout(args: &TrapArgs) -> Long {
-    let handle = args.arg_u16(0);
-    let what = args.arg_u16(1) as u8;
-    match host::host() {
-        Some(h) if is_console_out(handle) => {
-            h.console_write_byte(what);
-            1
-        }
-        _ => 0,
-    }
+    bconout_handle(args.arg_u16(0), args.arg_u16(1) as u8)
 }
 
 /// `Bcostat` (0x08) — output-device status. Ready (`-1`) only for CON

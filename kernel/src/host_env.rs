@@ -34,6 +34,10 @@ impl Host for KernelHost {
         crate::console::rx_pop_key()
     }
 
+    fn console_peek_key(&self) -> Option<u16> {
+        crate::console::rx_peek_key()
+    }
+
     fn pump_input(&self) {
         // Briefly unmask IRQs so the PL011 RX interrupt (qemu-virt serial
         // console) can fill the ring — it is masked inside the synchronous

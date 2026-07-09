@@ -40,6 +40,17 @@ pub trait Host: Sync {
         self.console_try_read().map(|b| b as u16)
     }
 
+    /// Non-blocking, **non-destructive** peek of the next whole key word
+    /// (`scancode << 8 | ascii`) at the front of the console input queue —
+    /// the value the next [`Host::console_try_read_key`] would return —
+    /// without consuming it. Used by the GEMDOS output-side break check
+    /// (`Cconout`/`Cconws` conbrk) to spot a pending Ctrl-C without
+    /// disturbing normal type-ahead. The default has no peekable source
+    /// (`None`); the kernel host overrides it with the IKBD key ring.
+    fn console_peek_key(&self) -> Option<u16> {
+        None
+    }
+
     /// Returns `true` if the console has at least one byte ready.
     fn console_has_input(&self) -> bool {
         false

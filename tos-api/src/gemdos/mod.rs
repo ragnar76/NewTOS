@@ -8,11 +8,12 @@
 //! [`crate::trap::TrapArgs`]. The return value is a sign-extended
 //! `Long` (`i32` in `x0`).
 //!
-//! PHASE-02 implements the twelve "leaf" console functions that do
-//! not depend on Phase 06 (process management) for Ctrl-C handling.
-//! The remaining three input-with-Ctrl-C functions (Cconin 0x01,
-//! Cnecin 0x08, Cconrs 0x0A) are gated and return [`EINVFN`] until
-//! Phase 06 lands.
+//! The full GEMDOS console group is wired below. The three
+//! input-with-Ctrl-C functions (Cconin 0x01, Cnecin 0x08, Cconrs 0x0A)
+//! defer their Ctrl-C `terminate()` to the kernel SVC handler via
+//! [`crate::bdos::process::request_terminate`] (a leaf function cannot
+//! redirect the trap frame itself); the other console leaves dispatch
+//! directly.
 
 use crate::host::host;
 use crate::trap::TrapArgs;
@@ -55,9 +56,8 @@ const fn build_table() -> [Option<GemdosFn>; MAX_FN + 1] {
     t[0x11] = Some(console::cprnos);
     t[0x12] = Some(console::cauxis);
     t[0x13] = Some(console::cauxos);
-    // 0x0A Cconrs (line editor) — wired separately; Ctrl-C in the
-    // blocking input functions records a deferred terminate consumed
-    // by the kernel SVC handler.
+    // Ctrl-C in the blocking input functions (Cconin/Cnecin/Cconrs)
+    // records a deferred terminate consumed by the kernel SVC handler.
 
     // --- Memory group (PHASE-04 D7..D11) --------------------------
     t[0x14] = Some(memory::maddalt);

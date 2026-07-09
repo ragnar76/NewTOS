@@ -84,6 +84,26 @@ impl RxRing {
     fn is_empty(&self) -> bool {
         self.head.load(Ordering::Acquire) == self.tail.load(Ordering::Acquire)
     }
+
+    /// Non-destructive read of the oldest queued word (at `tail`) without
+    /// advancing `tail`. Consumer-side only — the producer owns `head` and
+    /// never touches `tail` — so it is race-free against the IRQ producer:
+    /// if `head != tail` the slot at `tail` was fully written (the producer
+    /// stores the slot before advancing `head` with `Release`, and we load
+    /// `head` with `Acquire`).
+    fn peek(&self) -> Option<u16> {
+        let tail = self.tail.load(Ordering::Relaxed);
+        let head = self.head.load(Ordering::Acquire);
+        if head == tail {
+            return None;
+        }
+        let idx = tail % RX_CAPACITY;
+        // SAFETY: SPSC — slot < head, producer has finished writing it; we
+        // only read the slot and never advance `tail`, so no consumer state
+        // changes and the producer can keep filling ahead of `head`.
+        let w = unsafe { *self.buf[idx].get() };
+        Some(w)
+    }
 }
 
 static RX_RING: RxRing = RxRing::new();
@@ -125,6 +145,16 @@ pub fn rx_pop() -> Option<u8> {
 /// manager, so it can deliver scancodes (arrow / function keys) to apps.
 pub fn rx_pop_key() -> Option<u16> {
     RX_RING.pop()
+}
+
+/// Non-destructively peek the oldest queued key word (`scancode << 8 |
+/// ascii`) — the front element a subsequent [`rx_pop_key`] would return —
+/// without consuming it. Backs the GEMDOS output-side break check
+/// (`Cconout`/`Cconws` conbrk): it inspects the pending key for Ctrl-C
+/// without disturbing normal type-ahead. Consumer-side, race-free against
+/// the IRQ producer (see [`RxRing::peek`]).
+pub fn rx_peek_key() -> Option<u16> {
+    RX_RING.peek()
 }
 
 /// `true` if the RX ringbuffer holds at least one byte.

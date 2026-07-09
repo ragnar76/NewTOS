@@ -48,6 +48,7 @@ pub mod keymap;
 pub mod shell;
 pub mod selftest_aes;
 pub mod selftest_bios;
+pub mod selftest_console;
 pub mod selftest_cookie;
 pub mod selftest_objc;
 pub mod aes_demo;
