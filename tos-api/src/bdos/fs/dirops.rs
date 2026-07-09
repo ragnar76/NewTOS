@@ -31,12 +31,25 @@ pub fn dcreate(args: &TrapArgs) -> Long {
         Some(p) => p,
         None => return EPTHNF,
     };
-    let (vol, parent, name11) = match path::findit(pathstr) {
+    // Resolve the parent directory but keep the *raw* final component, so the
+    // illegal-character check runs against the user's folder name before it
+    // is folded to an 8.3 FCB name.
+    let (vol, parent, comp) = match path::resolve_parent(pathstr) {
         Ok(x) => x,
         // `Dcreate` resolves its directory portion (an unmountable drive
         // included) to `EPTHNF` (EmuTOS `xmkdir`→`ixcreat` `findit` NULL →
         // `EPTHNF`, `fsopnclo.c:114`).
         Err(e) => return path::drive_notfound(e, EPTHNF),
+    };
+    // F7: reject illegal characters in the new folder name (EmuTOS
+    // `xmkdir`→`ixcreat` `contains_illegal_characters(s)` → `EACCDN`,
+    // `fsopnclo.c:121-122`).
+    if path::contains_illegal_characters(comp) {
+        return EACCDN;
+    }
+    let name11 = match dir::fcb_name(comp) {
+        Some(n) => n,
+        None => return EPTHNF,
     };
     if !vol.is_writable() {
         return EACCDN;
@@ -65,12 +78,13 @@ pub fn dcreate(args: &TrapArgs) -> Long {
         vol.write_cluster_sector(cl, s, &zero);
     }
 
-    // Link the new directory into the parent.
-    let slot = match dir::find_free_slot(&vol, parent) {
+    // Link the new directory into the parent. F5: a full non-root parent
+    // grows by a cluster; only the fixed-size root still fails here.
+    let slot = match dir::find_free_slot_grow(&vol, parent) {
         Some(s) => s,
         None => {
             vol.free_chain(cl);
-            return EACCDN; // parent directory full
+            return EACCDN; // parent directory full (root is fixed-size)
         }
     };
     let fcb = dir::build_fcb(&name11, FA_SUBDIR, cl, 0, time, date);

@@ -156,6 +156,19 @@ pub fn drive_notfound(e: Long, notfound: Long) -> Long {
     }
 }
 
+/// EmuTOS' `ILLEGAL_FNAME_CHARACTERS` set (`bdos/fsopnclo.c:64`): a space
+/// and the ten characters `*,:;<=>?[]|`. `true` if `name` contains any of
+/// them. Checked by `Fcreate` / `Dcreate` (`ixcreat`, `fsopnclo.c:121`) and
+/// `Frename` (`xrename`, `fsdir.c:985`) against the **user-supplied path's
+/// final component** — before it is folded to an 8.3 FCB name, so the
+/// rejected characters are still visible — and yields `EACCDN`. Wildcard
+/// searches (`Fsfirst`) deliberately do **not** run this check, so `*`/`?`
+/// stay legal there.
+pub fn contains_illegal_characters(name: &str) -> bool {
+    const ILLEGAL: &[u8] = b" *,:;<=>?[]|";
+    name.bytes().any(|c| ILLEGAL.contains(&c))
+}
+
 /// The 11-byte FAT name for the `".."` entry (`b".."` + spaces).
 fn fcb_dotdot() -> [u8; 11] {
     let mut n = [b' '; 11];

@@ -255,6 +255,64 @@ pub fn find_free_slot(vol: &Volume, start: u32) -> Option<u32> {
     }
 }
 
+/// Find a free slot in directory `start` (0 = root), **growing a non-root
+/// directory by one cluster** when it is full. The fixed-size root directory
+/// still returns `None` on exhaustion.
+///
+/// Mirrors the EmuTOS `ixcreat` grow loop (`fsopnclo.c:172-183`): when
+/// `scan` finds no free slot it appends a cluster with `nextcl(fd,1)`,
+/// zeroes it with `dirinit(dn)` and rescans; only the root (`!fd->o_dnode`)
+/// cannot grow and returns `EACCDN`. Used by `Fcreate`, `Dcreate` and the
+/// cross-directory `Frename` so a sub-directory can hold more than one
+/// cluster's worth of entries.
+pub fn find_free_slot_grow(vol: &Volume, start: u32) -> Option<u32> {
+    if let Some(slot) = find_free_slot(vol, start) {
+        return Some(slot);
+    }
+    if start == 0 {
+        return None; // the root directory has a fixed size and cannot grow
+    }
+    grow_dir(vol, start)
+}
+
+/// Grow a non-root directory by one cluster: allocate a fresh FAT cluster,
+/// link it to the end of the directory's cluster chain, zero every sector
+/// (so all its entries read as end-of-directory `0x00`), and return the
+/// slot index of the first entry in the new cluster. `None` on allocation
+/// or write failure. Mirrors EmuTOS `nextcl(fd,1)` + `dirinit(dn)`
+/// (`fsopnclo.c:178-181`).
+fn grow_dir(vol: &Volume, start: u32) -> Option<u32> {
+    // Walk to the last cluster of the chain, counting the clusters so far.
+    let mut last = start;
+    let mut count = 1u32;
+    loop {
+        match vol.fat_entry(last) {
+            Some(n) if !vol.is_eoc(n) && vol.is_data_cluster(n) => {
+                last = n;
+                count += 1;
+            }
+            _ => break,
+        }
+    }
+    // Allocate the new cluster (marked EOC by `alloc_cluster`) and splice
+    // it onto the chain: previous last cluster now points at it.
+    let new = vol.alloc_cluster()?;
+    if !vol.set_fat_entry(last, new) {
+        return None;
+    }
+    // Zero every sector of the new cluster: all entries become the
+    // end-of-directory marker (empty slots).
+    let zero = [0u8; SECTOR];
+    for s in 0..vol.clsiz {
+        if !vol.write_cluster_sector(new, s, &zero) {
+            return None;
+        }
+    }
+    // The first slot of the new cluster follows every slot that already
+    // existed: `count` clusters × `clsiz` sectors × entries-per-sector.
+    Some(count * vol.clsiz * ENTRIES_PER_SECTOR as u32)
+}
+
 /// Read the raw 32-byte directory entry at `slot` in directory `start`.
 pub fn read_slot(vol: &Volume, start: u32, slot: u32, out: &mut [u8; ENTRY]) -> bool {
     let rel = match slot_sector(vol, start, slot) {

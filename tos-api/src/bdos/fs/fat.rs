@@ -167,6 +167,12 @@ impl Volume {
         if !self.fat16 {
             return false;
         }
+        // F8 hardening: reject an out-of-range cluster before the
+        // `cluster * 2` offset math (see `fat_entry`); a defined `false`
+        // (write failed) instead of an overflow panic / FAT-sector wrap.
+        if !self.is_data_cluster(cluster) {
+            return false;
+        }
         let off = cluster * 2;
         let sec_in_fat = off / self.recsiz;
         let within = (off % self.recsiz) as usize;
@@ -261,8 +267,20 @@ impl Volume {
     }
 
     /// Read the FAT entry for `cluster` (the next cluster in the chain,
-    /// or an end-of-chain marker). `None` on a read error.
+    /// or an end-of-chain marker). `None` on a read error **or** an
+    /// out-of-range cluster.
+    ///
+    /// The bound check (F8 hardening) rejects any `cluster` outside the
+    /// partition's valid data range `2..=numcl+1` **before** the
+    /// `cluster * 2` (FAT16) / `cluster + cluster/2` (FAT12) offset math,
+    /// so a corrupt directory entry or an uninitialised DTA cluster number
+    /// yields a defined `None` (treated as end-of-chain / error by every
+    /// caller) instead of a debug overflow panic or a release wrap into an
+    /// unrelated FAT sector. No behaviour change for valid clusters.
     pub fn fat_entry(&self, cluster: u32) -> Option<u32> {
+        if !self.is_data_cluster(cluster) {
+            return None;
+        }
         if self.fat16 {
             let off = cluster * 2;
             let sec = self.fatrec + off / self.recsiz;

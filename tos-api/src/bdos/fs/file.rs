@@ -161,9 +161,13 @@ pub fn fopen(args: &TrapArgs) -> Long {
 
     let (vol, parent, name11) = match path::findit(path) {
         Ok(x) => x,
-        // An unmountable drive resolves to `EFILNF` for `Fopen`, matching
-        // EmuTOS `ixopen` (`findit` NULL → `EFILNF`, `fsopnclo.c:248`).
-        Err(e) => return path::drive_notfound(e, EFILNF),
+        // `Fopen` collapses *any* path-resolution failure to `EFILNF` — an
+        // unmountable drive **and** a missing intermediate directory alike.
+        // This is the TOS `Fopen` quirk: `ixopen`'s `findit` NULL branch
+        // returns `EFILNF`, never `EPTHNF`, whatever the underlying cause
+        // (`fsopnclo.c:247-249`; spec `3d-fopen.md:145-148`). Every other
+        // caller keeps its own `EPTHNF` for a bad directory portion.
+        Err(_) => return EFILNF,
     };
     let drive = super::path::split_drive(path).0;
     // `FA_NORM` scan semantics: a sub-directory (or label) is invisible here,
@@ -212,12 +216,24 @@ pub fn fcreate(args: &TrapArgs) -> Long {
     // Mask off the sub-directory bit — Fcreate cannot make folders.
     let attr = (args.arg_u16(1) as u8) & !0x10;
 
-    let (vol, parent, name11) = match path::findit(path) {
+    // Resolve the directory portion but keep the *raw* final component, so
+    // the illegal-character check runs against the user's path name (before
+    // it is folded to an 8.3 FCB name), exactly like EmuTOS `ixcreat`.
+    let (vol, parent, comp) = match path::resolve_parent(path) {
         Ok(x) => x,
         // The directory portion of a create resolves to `EPTHNF`, including an
         // unmountable drive (EmuTOS `ixcreat` `findit` NULL → `EPTHNF`,
         // `fsopnclo.c:114`).
         Err(e) => return path::drive_notfound(e, EPTHNF),
+    };
+    // F7: reject illegal characters in the new name (EmuTOS `ixcreat`
+    // `contains_illegal_characters(s)` → `EACCDN`, `fsopnclo.c:121-122`).
+    if path::contains_illegal_characters(comp) {
+        return EACCDN;
+    }
+    let name11 = match dir::fcb_name(comp) {
+        Some(n) => n,
+        None => return EPTHNF,
     };
     let drive = path::split_drive(path).0;
     if !vol.is_writable() {
@@ -234,7 +250,9 @@ pub fn fcreate(args: &TrapArgs) -> Long {
         }
     }
 
-    let dir_slot = match dir::find_free_slot(&vol, parent) {
+    // F5: a full non-root directory grows by a cluster; only the fixed-size
+    // root still reports `EACCDN` on exhaustion.
+    let dir_slot = match dir::find_free_slot_grow(&vol, parent) {
         Some(s) => s,
         None => return EACCDN, // directory full (root is fixed-size)
     };
@@ -451,6 +469,12 @@ fn resolve_cluster(ofd: &mut Ofd, index: u32) -> Option<u32> {
 /// Free a file's cluster chain and mark its directory entry erased.
 /// `start` is the directory holding the entry (0 = root).
 fn erase_entry(vol: &Volume, start: u32, slot: u32, start_cluster: u32) {
+    // F6: close any open handle to this same file *before* freeing its
+    // clusters, so a stale handle (`Fopen`→`Fdelete`→`Fwrite`/`Fclose`)
+    // cannot write into the freed / re-allocated chain. EmuTOS `ixdel`
+    // scans the OFDs open on this directory position and, for the running
+    // process, closes them before the chain is freed (`fsopnclo.c:660-669`).
+    close_open_file(start, slot);
     if vol.is_data_cluster(start_cluster) {
         vol.free_chain(start_cluster);
     }
@@ -458,6 +482,28 @@ fn erase_entry(vol: &Volume, start: u32, slot: u32, start_cluster: u32) {
     if dir::read_slot(vol, start, slot, &mut e) {
         e[0] = 0xE5; // erased marker
         dir::write_slot(vol, start, slot, &e);
+    }
+}
+
+/// Close every open-file-table entry that refers to the directory entry at
+/// (`dir_start`, `dir_slot`) — i.e. an open handle to a file being deleted
+/// or overwritten. Invalidating the slot here means a subsequent
+/// `Fread`/`Fwrite`/`Fclose` on that handle returns `EIHNDL` rather than
+/// operating on freed clusters.
+///
+/// The identifying key `(dir_start, dir_slot)` is EmuTOS' `(o_dnode,
+/// o_dirbyt)` pair and uniquely names the file. EmuTOS distinguishes the
+/// *owning* process (close it via `ixclose`) from a foreign one (refuse the
+/// delete with `EACCDN`); NewTOS' open-file table is process-agnostic (one
+/// shared SFT, the desktop's single active process), so it always takes the
+/// owning-process branch and closes the handle.
+fn close_open_file(dir_start: u32, dir_slot: u32) {
+    for s in table().iter_mut() {
+        if let Some(Slot::File(ofd)) = s {
+            if ofd.dir_start == dir_start && ofd.dir_slot == dir_slot {
+                *s = None;
+            }
+        }
     }
 }
 
@@ -572,9 +618,22 @@ pub fn frename(args: &TrapArgs) -> Long {
         Ok(x) => x,
         Err(e) => return path::drive_notfound(e, EPTHNF),
     };
-    let (_vol2, parent2, name2) = match path::findit(dst) {
+    // Resolve the destination directory but keep the *raw* final component
+    // so the illegal-character check sees the user's new name.
+    let (_vol2, parent2, dcomp) = match path::resolve_parent(dst) {
         Ok(x) => x,
         Err(e) => return path::drive_notfound(e, EPTHNF),
+    };
+    // F7: the *new* name may not contain illegal characters (EmuTOS
+    // `xrename` `contains_illegal_characters(s2)` → `EACCDN`, `fsdir.c:985`).
+    // Checked before the cross-device / target-exists checks, matching the
+    // source order.
+    if path::contains_illegal_characters(dcomp) {
+        return EACCDN;
+    }
+    let name2 = match dir::fcb_name(dcomp) {
+        Some(n) => n,
+        None => return EPTHNF,
     };
     // Cross-device renames are not supported.
     if path::split_drive(src).0 != path::split_drive(dst).0 {
@@ -618,7 +677,8 @@ pub fn frename(args: &TrapArgs) -> Long {
         return EACCDN;
     }
     fcb[0..11].copy_from_slice(&name2);
-    let dst_slot = match dir::find_free_slot(&vol1, parent2) {
+    // F5: grow a full non-root destination directory (the root stays fixed).
+    let dst_slot = match dir::find_free_slot_grow(&vol1, parent2) {
         Some(s) => s,
         None => return EACCDN, // destination directory full
     };
