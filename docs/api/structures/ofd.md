@@ -43,7 +43,7 @@ typedef struct {
 Stored **little-endian on disk** even on m68k. EmuTOS handles the
 byte swap explicitly; in memory the WORDs are native-endian.
 
-## `DFD` — Disk File Data (16 bytes)
+## `DFD` — Disk File Data (14 bytes)
 
 In-memory shared mirror of the FCB. **One DFD per file**, not per
 handle. Multiple OFDs that opened the same file share the DFD via
@@ -57,9 +57,16 @@ typedef struct {
 /* 0x04 */ DOSTIME o_td;       /* mirrors FCB f_td */
 /* 0x08 */ CLNO    o_strtcl;   /* mirrors FCB f_clust */
 /* 0x0A */ LONG    o_fileln;   /* mirrors FCB f_fileln */
-/* 0x0E — end (with 2 bytes pad to 16 in FCB-compatible layout) */
+/* 0x0E — end, 14 bytes total */
 } DFD;
 ```
+
+**Correction:** an earlier draft claimed 16 bytes ("2 bytes pad to 16") — no
+such padding exists in `bdos/fs.h:116-124`; the struct is exactly 14 bytes
+(all fields 2-byte-aligned, m68k needs no trailing pad). The tail three
+fields (`o_td`, `o_strtcl`, `o_fileln` = 4+2+4 = 10 bytes) are laid out
+identically to the FCB's tail so `ixclose` can `memcpy(&fcb->f_td,
+&dfd->o_td, 10)` in one shot (`bdos/fsopnclo.c:538`).
 
 `o_flag` bits:
 ```c
@@ -93,6 +100,11 @@ struct _ofd {
 /* 0x38 — total 56 bytes; fits in 64-byte budget */
 };
 ```
+
+(Verified: `o_mod` — `UWORD`, 2 bytes — sits at 0x28, ending at 0x2A; the
+embedded `o_disk` is the corrected 14-byte `DFD` above, so it runs 0x2A–0x38.
+`sizeof(OFD) = 0x38 = 56` bytes, fields matched one-for-one against
+`bdos/fs.h:140-157` with no invented padding anywhere in the struct.)
 
 `RECNO` is `ULONG`, `CLNO` is `UWORD` (`bdos/fs.h:88-90`).
 

@@ -100,9 +100,9 @@ explicitly before any `Fsfirst`.
    success, fills bytes 0x15..0x2B with the first match.
 3. Subsequent `Fsnext()` mutate `d_reserved[]` and rewrite the
    visible fields with the next match.
-4. After `EFILNF` (no more matches) the visible fields hold the last
-   successful match; the reserved area is in a "search exhausted"
-   state.
+4. After `ENMFIL` (-49, no more matches — **not** `EFILNF`, which is
+   `Fsfirst`'s own "no match at all" code) the visible fields hold the last
+   successful match; the reserved area is in a "search exhausted" state.
 5. Calling `Fsfirst` again (with same or different DTA pointer)
    resets the iteration. Calling `Fsnext` *without* a prior matching
    `Fsfirst` on the same DTA returns `ENMFIL` (-49) — the `dt_offset_drive`

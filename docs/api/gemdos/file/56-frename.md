@@ -142,13 +142,21 @@ cluster chain is **not** copied; only the directory entry moves.
 | Target directory not found | `bdos/fsdir.c:975-976` | `EPTHNF` (-34) |
 | Illegal characters in the new name | `bdos/fsdir.c:985-986` | `EACCDN` (-36) |
 | Cross-device (different drive) | `bdos/fsdir.c:989-990` | `ENSAME` (-48) |
-| Cyclical move (`is_subdir`, e.g. `a\b → a\b\c`) | `bdos/fsdir.c:1002-1003` | `EACCDN` (-36) |
+| Cyclical move, **one level only** (`is_subdir`, e.g. `a\b → a\b\c`) | `bdos/fsdir.c:1002-1003` | `EACCDN` (-36) |
 | `ixcreat` of the new entry failed | `bdos/fsdir.c:1017-1018` | `EPTHNF` (-34) |
 | Can't erase old entry (cross-dir) | `bdos/fsdir.c:1023-1027` | `EACCDN` (-36) |
 | Can't update folder `..` / parent attribute (cross-dir folder) | `bdos/fsdir.c:1053-1064` | `EINTRN` (-65) |
 
 **Error paths not in Compendium:** the `EINTRN` cases for a cross-directory
 folder move, and the "target already exists → `EACCDN`" precheck.
+
+**Not caught at all (EmuTOS source gap, see edge case 6a / D-070):** a
+multi-level self-nesting move (moving a folder into a subdirectory of
+itself, e.g. `a → a\sub\a2`) is **not** rejected — `is_subdir` only detects
+the immediate one-level case. NewTOS must decide whether to widen this check
+(walking the full ancestor chain) as a deliberate safety improvement, or
+reproduce the gap for bug-compat (not recommended, given this is exactly the
+historical `Frename` corruption class this batch was asked to scrutinise).
 
 ---
 
@@ -187,6 +195,25 @@ folder move, and the "target already exists → `EACCDN`" precheck.
    `..` entry is rewritten to the new parent's start cluster and the folder's
    attribute in the new parent is fixed (`bdos/fsdir.c:1043-1064`). (Correction:
    the `..` entry **is** updated — an earlier draft claimed it was not.)
+
+6a. **`is_subdir` only catches a one-level self-nesting cycle — deeper cycles
+   are not detected.** Its own doc comment says exactly this: "check if
+   directory 2 is an **immediate** subdirectory of directory 1"
+   (`bdos/fsdir.c:844-863`). The check is
+   `dn2->d_parent != dn1 → not a cycle; else compare dn2's name to s1`. This
+   catches `Frename(0,"C:\A","C:\A\NEW")` (moving `A` to be nested directly
+   inside itself) but **not** a two-or-more-level self-nesting move, e.g.
+   `Frename(0,"C:\A","C:\A\SUB\NEW")` where `SUB` is a subdirectory of `A`:
+   there, `dn2` (the DND for `C:\A\SUB`) has `d_parent == A`'s DND, not the
+   root (`dn1`), so `is_subdir` returns `FALSE` and the rename **proceeds**,
+   moving `A`'s directory entry to live inside its own descendant `SUB` — a
+   genuine directory-tree cycle (traversal code such as `Dgetpath`'s
+   `dopath()`, which recurses via `d_parent`, or any future CHKDSK-style
+   tree walker, would recurse without terminating). This is a **source-level
+   gap in EmuTOS's own cycle prevention**, not a misreading of it — see
+   `docs/api/_discrepancies.md` D-070. NewTOS's mutation path must decide
+   whether to walk the full ancestor chain (not just one level) before
+   allowing a cross-directory folder move.
 
 7. **FAT chain is not copied.** Only the directory entry moves; the file's data
    clusters are untouched (`bdos/fsdir.c:1029-1034`).

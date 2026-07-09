@@ -129,6 +129,28 @@ long osif(short *pw)
 Unimplemented IDs map to `ni()` (`bdos/bdosmain.c:316`) which returns
 `EINVFN` (-32).
 
+> **Contrast with BIOS/XBIOS — verify before "fixing" (2026-07-09
+> re-validation, GEMDOS Batch 1 Task 1).** BIOS/XBIOS's `xbios_unimpl`
+> returns the **function number itself**, not `EINVFN` — for both an
+> out-of-range ID and an in-range-but-unimplemented table slot (D-008,
+> D-039). **GEMDOS does the opposite in both cases**, confirmed directly
+> against this source revision:
+> - **Out-of-range** (`fn > MAX_FNCALL`, `bdos/bdosmain.c:444-445`): `return
+>   EINVFN;` — a literal `-32`, not `fn`.
+> - **In-range, unimplemented slot** (every `funcs[]` entry built with the
+>   `NI` macro, e.g. `bdos/bdosmain.c:176-177,181,206-208,213-217,...,279-284`):
+>   `f->fncall.v` points at `ni()` (`bdos/bdosmain.c:307-310`), which is
+>   `static long ni(void) { return EINVFN; }` — again `-32`, not `fn`.
+>
+> Both dispatchers are internally *self-consistent* (out-of-range and
+> in-range-unimplemented agree with each other within each trap), but the
+> **two traps disagree with each other**: GEMDOS ⇒ `EINVFN` always; BIOS/XBIOS
+> ⇒ function number always. This is a real per-trap difference in EmuTOS, not
+> a spec inconsistency to reconcile. **No correction needed here** — this
+> file already documented `EINVFN` correctly; this note exists so a future
+> audit does not "fix" GEMDOS toward the BIOS/XBIOS convention (or vice
+> versa) by analogy instead of by re-reading each trap's source.
+
 ---
 
 ## 5. Standard-handle (`p_uft[]`) interception
@@ -266,7 +288,8 @@ All other entries (0x0C, 0x0D, 0x0F, 0x16-0x18, 0x1B-0x29, 0x2E, 0x32-0x35,
 `EINVFN`.
 
 `Super` (0x20) is **not** in `funcs[]` because it's intercepted by
-`_enter` itself.
+`_enter` itself. Full contract spec:
+[`process/20-super.md`](process/20-super.md).
 
 ---
 
@@ -328,7 +351,7 @@ preserved (consistent with documented TOS calling convention).
 | FND struct                     | `bdos/bdosmain.c:117-129`    |
 | Stdhandle redirection          | `bdos/bdosmain.c:498-575`    |
 | Special name interception      | `bdos/bdosmain.c:646-660`    |
-| `Super`/`x20` short-circuit    | `bdos/rwa.S:175-201`         |
+| `Super`/`x20` short-circuit    | `bdos/rwa.S:162-184` (detect), `:280-346` (`x20_usr`/`x20_sup`/`x20_inq`); full spec `process/20-super.md` |
 | Hard-error recovery            | `bdos/bdosmain.c:454-489`    |
 | Return / register restore      | `bdos/rwa.S:240` (`_gouser`) |
 

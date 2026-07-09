@@ -149,24 +149,60 @@ short-circuit to the console/serial/printer layer without touching the SFT.
 
 ## 3. Disk Buffer Cache `bufl[]` (`bdos/fsbuf.c`)
 
-Two singly-linked lists of cached disk sectors:
+Two singly-linked lists of cached disk sectors, indexed by `BI_FAT = 0` /
+`BI_DATA = 1` (`bdos/fs.h:278-279`):
 
 ```c
-BCB *bufl[2];   /* [0] = FAT/dir buffers, [1] = data buffers */
+BCB *bufl[2];
+/* bufl[BI_FAT]  (index 0) — FAT-sector buffers ONLY (buftype BT_FAT) */
+/* bufl[BI_DATA] (index 1) — root-directory AND ordinary dir/file data
+                             buffers, COMBINED (buftypes BT_ROOT + BT_DATA);
+                             getbcb() maps both to BI_DATA */
 ```
 
-Each `BCB` (`bdos/fs.h`) holds `b_bufdrv`, `b_bufrec` (lba),
-`b_bufr` (pointer to actual sector buffer), `b_dirty`, `b_link`.
-The cache is small (4 buffers per list by default) and uses LRU via
-list-head insertion.
+**Correction:** an earlier draft labelled these "`[0] = FAT/dir buffers, [1]
+= data buffers`" — wrong split. `getbcb()`'s own selector is
+`phdr = &bufl[buftype==BT_FAT ? BI_FAT : BI_DATA]` (`bdos/fsbuf.c:121`): only
+`BT_FAT` gets its own list; **root-directory sectors share the *data* list**
+with ordinary file/subdirectory sectors (`getrec()`'s three-way `BT_FAT` /
+`BT_ROOT` / `BT_DATA` classification collapses to two physical lists,
+`bdos/fsbuf.c:218-222`).
+
+Each `BCB` (`bdos/fs.h:290-299`) holds `b_link`, `b_bufdrv`, `b_bufrec` (lba),
+`b_buftyp`, `b_dirty`, `b_dm`, `b_bufr` (pointer to the actual sector buffer).
+
+**Correction:** the cache is **not** "4 buffers per list" — `NUMBUFS = 2`
+(`bdos/fsbuf.c:26`), a plain `#define` with no `CONF_WITH_*` gating, so there
+are exactly **2 buffers in each of the 2 lists (4 physical sector buffers
+system-wide)**, sized `sizeof(BCB) + pun_ptr->max_sect_siz` each
+(`bufl_init()`, `bdos/fsbuf.c:56-73`). This is small enough that a single
+file write (dirtying a data-cluster buffer) competing with its own directory
+entry's flush (a root/dir-cluster buffer sharing the *same* 2-slot `BI_DATA`
+list) can evict each other under light concurrent access to more than 2
+distinct root/dir/data sectors. `getbcb()` does use MRU-at-head /
+LRU-at-tail list-head insertion for eviction order (`bdos/fsbuf.c:130-201`)
+— that part of the original description was correct.
 
 Critical invariants:
-- `b_dirty == 1` requires writeback before eviction.
-- `flush(d)` writes all dirty buffers for drive `d`.
-- `flush()` (no arg) writes all dirty buffers across all drives.
+- `b_dirty == 1` requires writeback before eviction (checked in `getbcb()`,
+  `bdos/fsbuf.c:162-163`).
+- **Correction:** there is **no** `flush(drive)` or no-arg `flush()` API.
+  `void flush(BCB *b)` (`bdos/fsbuf.c:85-105`) always writes back exactly
+  **one** buffer (plus its mirror in the second FAT copy, if `b` is a
+  `BT_FAT` buffer on a 2-FAT medium). "Flush every dirty buffer for every
+  drive" is achieved by **callers looping over both lists themselves** — e.g.
+  `ixclose()`'s full-close path (`bdos/fsopnclo.c:576-579`, `for (i=BI_FAT;
+  i<=BI_DATA; i++) for (b=bufl[i]; …) if (dirty) flush(b);`) flushes dirty
+  buffers for **all** drives on every real file close, not just the closed
+  file's drive. There is a *separate*, non-flushing mechanism for
+  media-change recovery: `mark_bcbs_invalid(drv)`
+  (`bdos/bdosmain.c:409-424`) merely sets `b_bufdrv = -1` for the affected
+  drive's buffers — it **discards** any dirty content instead of writing it
+  back (the medium is assumed gone). See `docs/api/_discrepancies.md` D-065.
 
 NewTOS: replace with a write-back page cache in the FAT driver;
-preserve `flush` semantics for `Dskwrite/Dskread` ABI.
+preserve the "close flushes all drives, media-change discards without
+flushing" observable behaviour, not literally a `flush()` API shape.
 
 ---
 

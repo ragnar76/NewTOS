@@ -158,9 +158,18 @@ distinction and the same-process auto-close before delete.
 
 5. **Erase marker `0xE5`.** The first name byte is set to `0xE5`
    (`ERASE_MARKER`); the slot is not compacted and is reused by the next
-   `Fcreate` (`bdos/fsopnclo.c:688-692`). A name legitimately beginning with the
-   byte value `0xE5` is stored on disk as `0x05` by the create path to avoid
-   false-erasure — this is a FAT convention preserved on-media.
+   `Fcreate` (`bdos/fsopnclo.c:688-692`). **Correction:** an earlier draft of
+   this spec claimed a name legitimately beginning with byte `0xE5` is stored
+   on disk as `0x05` by the create path (the classic MS-DOS convention to avoid
+   false-erasure). **This EmuTOS build implements no such substitution** —
+   `builds()`/`ixcreat()` (`bdos/fsopnclo.c:99-208`, `bdos/fsdir.c:737-796`)
+   copy/uppercase bytes verbatim (`toupper()` is a plain `'a'..'z'` fold,
+   `util/string.c:171-177`) with no `0xE5`→`0x05` special case anywhere in
+   `bdos/fsdir.c`/`bdos/fsopnclo.c`. A file whose 8.3-encoded name legitimately
+   starts with the byte `0xE5` is therefore indistinguishable from an erased
+   entry on the next directory scan (`match()`/`ixgetfcb()` both treat
+   `f_name[0] == 0xE5` as "deleted", `bdos/fsdir.c:1818`, `:614`) — a latent,
+   real EmuTOS limitation, not a NewTOS bug. See `_discrepancies.md` D-063.
 
 6. **FAT chain freed cluster-by-cluster.** `getrealcl`/`clfix` write
    `FREECLUSTER`; a crash mid-free leaves lost clusters that a CHKDSK-style scan

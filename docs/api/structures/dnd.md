@@ -71,20 +71,65 @@ path resolution), `d_dirfil` holds the OFD used to read the
 directory data, and `d_dirpos` is the byte offset within the
 directory of the next entry to read.
 
-`d_scan` is a **separate** scan position used by tree walks for
-internal operations like flushing modified DNDs at unmount.
+**Correction:** `d_scan` is **not** a separate scan position used by tree
+walks or unmount flushing — that description was fabricated. A full-tree
+grep of `bdos/*.c` finds exactly one reference: `makdnd()` zeroes it
+(`p1->d_scan = 0L;`, `bdos/fsdir.c:1644`) when recycling a scavenged DND; it
+is **never read anywhere**. The 1986 changelog at the top of `fsdir.c` even
+says so directly: "removed all references to d_scan" (`bdos/fsdir.c:55,60`).
+The field is dead/vestigial, kept only because the struct's on-disk-adjacent
+layout is pinned for `FOLDRnnn.PRG` compatibility (see "Lifetime" below) —
+there is no "flush modified DNDs at unmount" mechanism in this codebase at
+all (EmuTOS has no directory-tree unmount concept; see the corrected
+`d_files`/`m_ofl` note below).
+
+**Correction:** `d_fill` (offset 0x0B) is likewise **never referenced**
+anywhere in `bdos/*.c` — its own source comment already hedges with a
+question mark (`/* attributes? */`, `bdos/fs.h:209`). Treat it as reserved
+padding, not a real attributes field.
 
 ### Lifetime
 
-- Root DND created at mount time and never freed.
-- Non-root DNDs lazily allocated when path resolution descends into a
-  new directory.
-- Reclaimed when the DND pool is exhausted, in LRU order,
-  skipping `DND_LOCKED` ones.
-
-DND pool size: `NDIRS = 16` (`bdos/fs.h` constant area). Tunable at
-build time but ABI-visible only as "system supports up to N cached
-directories".
+- Root DND created at mount time (`getdmd()`/`log_media()`,
+  `bdos/fsdrive.c:140-158,184-249`) and never freed by ordinary operation.
+- Non-root DNDs lazily allocated (`makdnd()`, `bdos/fsdir.c:1610`) when path
+  resolution descends into a new directory.
+- **Correction:** there is no `NDIRS` constant and no per-type DND pool.
+  DND/DMD/OFD structs are all carved from the **same shared static
+  `osmem[]` block pool** used for `MD`s (`bdos/osmem.c`, see
+  `docs/api/structures/md.md` "MD meta-allocator" — `MEMTYPE_DND = 2`,
+  `MEMTYPE_DMD = 1`, `MEMTYPE_OFD = 3`, `bdos/mem.h:44-48`). Each allocation
+  is a fixed 64-byte block; the pool holds `NUM_OSM_BLOCKS = 118` such
+  blocks total, shared system-wide across MDBLOCKs, DMDs, DNDs, *and* OFDs —
+  there is no independent "N cached directories" limit.
+- Reclamation is **not LRU**. Two distinct mechanisms exist, neither of which
+  tracks recency:
+  1. `makdnd()` (`bdos/fsdir.c:1610-1682`), when adding a child DND, first
+     scans the **existing siblings of that one parent** for a candidate with
+     no children (`!d_left`), not `DND_LOCKED`, not referenced by any
+     `dirtbl[]` entry, and with no open files (`d_files == NULL`) — the
+     first such sibling found is recycled in place. This is a local,
+     single-parent scavenge, not a tree-wide LRU.
+  2. `free_available_dnds()` (`bdos/fsdir.c:2053-2074`, via
+     `process_dnd_tree()`, `:1957-2044`) runs only when `xmgetblk()` cannot
+     get memory for a DND/DMD/OFD request. It walks **every** DND tree on
+     **every** drive and frees **every** eligible DND it finds in one pass
+     (no children, no open files, not a current directory in `dirtbl[]`, not
+     a drive root, not `DND_LOCKED`) — an eligibility sweep, not a
+     bounded LRU eviction of "just enough" entries.
+  3. **If neither scavenge yields a free block**, `xmgetblk()`
+     (`bdos/osmem.c:291-354`) prints `"Out of internal memory... System
+     halted!"` and calls `halt()` — **a full system freeze**, not a
+     GEMDOS error return. This is why every DND/OFD/DMD allocation site in
+     `bdos/fsdir.c`/`bdos/fsopnclo.c`/`bdos/fsdrive.c` is commented "only
+     returns if it succeeds" — `MGET(DND)`/`MGET(OFD)`/`MGET(DMD)` for these
+     three types genuinely cannot return failure to the caller; they halt
+     instead. **Only `MEMTYPE_MDBLOCK` requests get a `NULL` return on
+     exhaustion** (`bdos/osmem.c:295-299,327-329`). See
+     `docs/api/_discrepancies.md` D-064 — this is a real, previously
+     undocumented risk on the `Fopen`/`Fcreate`/`Dcreate`/`Frename` mutation
+     paths and needs a NewTOS design decision (do **not** replicate the
+     halt).
 
 ## `DMD` — Drive Media Block (per mounted drive)
 
@@ -136,21 +181,40 @@ machinery.
 
 ### `m_ofl` and `DND.d_files`
 
-Two intersecting open-file linked lists per drive:
+**Correction:** `m_ofl` is declared (`bdos/fs.h:258`) but **never assigned or
+read anywhere** in `bdos/*.c` — it is completely dead/vestigial in this
+EmuTOS build, not "every OFD whose drive == this DMD". The claim that it is
+"used at `Mediach`-detection time... and at unmount to flush dirty DFDs" was
+fabricated; there is no unmount concept in EmuTOS, and the actual
+media-change recovery path (`osif()`'s `E_CHNG` handler,
+`bdos/bdosmain.c:455-487`) does its cleanup differently — see below.
 
-- `m_ofl`: every OFD whose drive == this DMD, regardless of which
-  directory.
-- `DND.d_files`: every OFD whose containing directory == this DND.
+`DND.d_files` **is** real and used: it is the per-directory list of open
+OFDs (every OFD whose containing directory == this DND), walked by `ixdel()`
+to detect/close same-process open files before erasing a directory entry
+(`bdos/fsopnclo.c:660-669`) and checked by `xrmdir()`/`process_dnd_tree()` to
+refuse recycling a DND that still has open files.
 
-Used at `Mediach`-detection time to fail outstanding I/O cleanly,
-and at unmount to flush dirty DFDs.
+### What actually happens on media change
+
+On a detected media change (`E_CHNG`, propagated via `longjmp`), `osif()`
+(`bdos/bdosmain.c:455-487`) does **not** flush anything for the old media —
+it discards the old DMD/DND tree wholesale: `offree(dmd)` frees every open
+OFD still pointing at that DMD (`bdos/bdosmain.c:387-405`, **without**
+closing/flushing them — any unwritten data is lost), `freetree(dn)` releases
+the whole DND tree, `mark_bcbs_invalid(errdrv)` **invalidates** (does not
+flush) that drive's buffer-cache entries (`bdos/bdosmain.c:409-424`), then
+the BPB is re-read and the drive re-logged via `log_media()`. This is
+"discard, don't persist" — the opposite of a flush. See
+`docs/api/_discrepancies.md` D-065 for the corresponding `_state.md` §3
+correction.
 
 ## Relationship summary
 
 ```
    PD.p_curdir[d]  →  index into dirtbl[]  →  DND  ⇄  DND tree
                                                 ↓
-                                              DMD  ─→  m_ofl  →  OFD list
+                                              DMD  ─→  m_ofl  (declared, dead — never used)
                                                        m_dtl  →  root DND
    OFD.o_dnode  →  DND
    OFD.o_dmd    →  DMD
@@ -170,8 +234,14 @@ and at unmount to flush dirty DFDs.
 
 ## Configuration
 
-- `NDIRS = 16` — DND pool size.
-- `BLKDEVNUM = 16` — DMD array size (one per drive).
+- **Correction:** `BLKDEVNUM = 26` (`include/sysconf.h:43`, drives A:..Z:),
+  **not 16** — `drvtbl[BLKDEVNUM]` (`bdos/fsglob.c:28`) is the DMD array size,
+  one slot per drive. An earlier draft used 16/A:..P: throughout; see
+  `docs/api/_discrepancies.md` D-025 (already corrected in the drive/directory
+  function specs, but this structures file had not been updated — fixed now).
+- **Correction:** there is no `NDIRS` constant; DND/DMD/OFD share one static
+  118-block `osmem[]` pool with the MD allocator (see "Lifetime" above and
+  `docs/api/structures/md.md`).
 - `CONF_WITH_TT_SHIFTER` does not affect filesystem; matters only for
   total drive count vs. floppy-only configs.
 

@@ -18,7 +18,7 @@ The currently-running PD is reachable via `os_run` in the OS header
 
 ```c
 #define NUMSTD     6                    /* standard handles 0..5 */
-#define NUMCURDIR  BLKDEVNUM            /* one per drive (16 in default cfg) */
+#define NUMCURDIR  BLKDEVNUM            /* one per drive (26 in this build: A:..Z:) */
 #define PDCLSIZE   0x80                 /* command-line buffer */
 
 struct _pd {
@@ -139,9 +139,11 @@ Per-drive current-directory index into the system DND tree. One byte
 per drive. `p_curdir[d]` is an index into `dirtbl[]`; the actual DND
 pointer is `dirtbl[p_curdir[d]]`.
 
-In default config `BLKDEVNUM = 16`, so this array uses 16 of the 32
-reserved bytes; the remaining 16 (`p_2fill`) are kept zeroed for
-future expansion.
+**Correction:** `BLKDEVNUM = 26` in this build (`include/sysconf.h:43`,
+drives A:..Z: — see `docs/api/_discrepancies.md` D-025), not 16. The array
+therefore uses 26 of the 32 reserved bytes; the remaining 6
+(`p_2fill[32-NUMCURDIR] = p_2fill[6]`) pad out to keep `p_3fill` at the fixed
+offset 0x60 regardless of `BLKDEVNUM`.
 
 ### `p_dreg`/`p_areg` (0x68/0x6C)
 
@@ -209,7 +211,11 @@ emulator (Phase 10+).
 
 ## Configuration
 
-- `NUMCURDIR = BLKDEVNUM` (16 with default `CONF_WITH_TT_SHIFTER`)
+- `NUMCURDIR = BLKDEVNUM = 26` (`include/sysconf.h:43`) — a plain,
+  unconditional `#define`; **not** gated by `CONF_WITH_TT_SHIFTER` or any
+  other `CONF_WITH_*` (an earlier draft claimed 16-with-that-gate; wrong on
+  both the value and the conditional — see `docs/api/_discrepancies.md`
+  D-025/D-066).
 - `NUMSTD = 6` — fixed by ABI.
 - `PDCLSIZE = 0x80` — fixed by ABI.
 

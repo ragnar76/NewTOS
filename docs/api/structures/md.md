@@ -224,6 +224,16 @@ follows `md` in memory; pad to keep alignment. See PHASE-04 D5.
   `osmem` quick-list; we allocate `MDBlock` slots from a static
   bump arena because we don't share storage with OFD/DND tables
   (those will get their own arenas in PHASE-08/PHASE-09).
+- **On real exhaustion, EmuTOS halts, it does not return an error.**
+  `xmgetblk()` (`bdos/osmem.c:291-354`) returns `NULL` only for
+  `MEMTYPE_MDBLOCK` requests; for `MEMTYPE_DMD`/`DND`/`OFD` it tries
+  `free_available_dnds()` once and, if that still yields nothing, prints
+  `"System halted!"` and calls `halt()` — a full system freeze, never an
+  `ENSMEM` return to the GEMDOS caller. See
+  `docs/api/structures/dnd.md` ("Lifetime") and
+  `docs/api/_discrepancies.md` D-064 for the fuller writeup and the open
+  NewTOS design question (do not replicate the halt without an explicit
+  decision).
 
 ## Invariants
 

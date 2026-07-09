@@ -1891,3 +1891,440 @@ baud-index shadow (`docs/api/xbios/0f-rsconf.md`). Documented in the new
 `docs/api/xbios/21-setprt.md`; `_dispatcher.md`/`_triage.md` and
 `docs/HARDWARE-PROFILE.md` §3.9 updated to move 0x21 out of the
 printer-hardware-absence grouping.
+
+---
+
+## D-061: GEMDOS's unimplemented-function convention is `EINVFN`, the **opposite** of BIOS/XBIOS's function-number return — confirmed, not a spec bug (cross-trap verification)
+
+**Date:** 2026-07-09 (GEMDOS Batch 1 re-validation, Task 1)
+**Phase 00 spec:** `docs/api/gemdos/_dispatcher.md` §4
+
+**Context:** D-008/D-039 established that BIOS/XBIOS's `xbios_unimpl` returns
+the **function number**, not `EINVFN`, for both an out-of-range ID and an
+in-range-but-unimplemented slot — the original XBIOS bug was returning
+`EINVFN` where the function number was expected. Before auditing GEMDOS
+(trap 1) it had to be confirmed from source whether GEMDOS follows the same
+convention or a different one — guessing by analogy from the BIOS/XBIOS
+finding would risk "fixing" GEMDOS in the wrong direction.
+
+**EmuTOS (verified against `bdos/bdosmain.c` @ `1a7484ab`):** GEMDOS does
+**not** follow the BIOS/XBIOS convention. Both of GEMDOS's unimplemented
+paths return `EINVFN` (-32), a literal error code, never the function number:
+- **Out-of-range** (`fn > MAX_FNCALL`, i.e. `fn > 0x57`): `osif()` returns
+  `EINVFN` directly (`bdos/bdosmain.c:444-445`).
+- **In-range, unimplemented slot:** every gap in `funcs[]` is built with the
+  `NI` macro (`bdos/bdosmain.c:145` `#define NI F(ni)`), which points
+  `f->fncall.v` at `static long ni(void) { return EINVFN; }`
+  (`bdos/bdosmain.c:307-310`), reached through the ordinary arity-dispatch
+  switch (`bdos/bdosmain.c:667-700`).
+
+Both paths in GEMDOS agree with each other (`EINVFN`, always); both paths in
+BIOS/XBIOS agree with each other (function number, always) — but the two
+traps use **opposite** conventions from each other. This is a genuine,
+verified difference between traps, not an inconsistency in either spec.
+
+**Prior NewTOS doc:** `docs/api/gemdos/_dispatcher.md` §4 already documented
+`EINVFN` correctly for both paths before this pass — no factual correction
+was needed. What was missing was the explicit cross-trap contrast, now added
+to §4, so a future auditor does not "fix" GEMDOS toward the BIOS/XBIOS
+function-number convention (or vice versa) by analogy instead of re-reading
+each trap's source.
+
+**Decision:** NewTOS's GEMDOS dispatcher returns `EINVFN` for any unknown
+function ID (out-of-range or in-range-unimplemented), matching EmuTOS;
+NewTOS's BIOS/XBIOS dispatcher returns the function number for the same
+cases (D-008/D-039). These are two independently-correct, opposite contracts
+— do not unify them.
+
+**Additional finding (same pass):** GEMDOS's dispatcher does have a
+per-function argument-count convention relevant to a later code audit: each
+`funcs[]` entry (`FND`, `bdos/bdosmain.c:120-133`) carries `wparms` — the
+parameter size in 16-bit WORDs (a `LONG`/pointer counts as 2) — and `osif()`
+dispatches through a `switch (f->wparms)` arity table (0/1/2/3/4/5/7 slots,
+`bdos/bdosmain.c:667-700`) that calls the matching `union fncall` member with
+that many `short` arguments pulled from `pw[1]…pw[wparms]`. This table was
+cross-checked function-by-function against `bdos/bdosmain.c:142-289` and
+matches `_dispatcher.md` §6 exactly; no correction needed.
+
+---
+
+## D-062: `Super` (GEMDOS 0x20) is a new spec, and its NewTOS implementation is grouped with ADR-Supexec (spec gap filled / decision grouping)
+
+**Date:** 2026-07-09 (GEMDOS Batch 1, follow-up)
+**Phase 00 spec:** `docs/api/gemdos/process/20-super.md` (new)
+
+**Gap found:** unlike every other function EmuTOS implements in the GEMDOS
+`funcs[]` table, `Super` (0x20) had no spec file, because it is intercepted
+directly in the trap-1 assembly trampoline (`bdos/rwa.S:159`,
+`x20_usr`/`x20_sup`/`x20_inq` at `:280-346`) and therefore never shows up in
+a "one spec per `funcs[]` entry" inventory sweep (`_dispatcher.md` §6 already
+noted it is "not in `funcs[]`", but no per-function spec existed). Flagged
+as a STOP-block in the GEMDOS Batch 1 report; the coordinator confirmed
+creating the spec now (documenting EmuTOS's behaviour), while leaving the
+NewTOS/AArch64 implementation itself undecided.
+
+**EmuTOS (now documented in full in `20-super.md`):** `Super` toggles the
+CPU mode relative to the caller's current mode (never "set to supervisor")
+- user-to-super always raises the S-bit, super-to-user always clears it,
+with `stack` (0 / 1-inquiry / explicit address) selecting only which stack
+pointer becomes active in the destination mode. The supervisor-to-user
+direction has a genuine, source-verified D0 asymmetry: the user-to-super
+direction explicitly sets D0 to the previous stack pointer
+(`bdos/rwa.S:298`, commented "set return value"), but the super-to-user
+direction never assigns D0 at all (no `move.l ...,d0` in `x20_sup`/`xs_0`/
+`xs_usp`/`xs_exit`/`xs_scram`) - a caller returning to user mode gets no
+meaningful D0, matching the classic idiom where only the entering call's
+return value is ever used.
+
+**Grouping decision:** `Super`'s contract ("flip my own privilege bit,
+using this stack, give me a token to flip it back") requires exactly the
+in-process EL0-to-EL1 privilege flip that ADR-Supexec (open, referenced in
+`docs/api/xbios/26-supexec.md`) already identifies as unresolved for
+`Supexec`. AArch64 has no per-instruction supervisor-bit flip a user
+program can trigger on itself (no m68k-SR equivalent writable from EL0), so
+whichever of the three candidate mechanisms ADR-Supexec picks (EL1
+callback / pseudo-supervise at EL0 / kernel-side pattern translation)
+determines what `Super` can mean on NewTOS too. Decision: `Super`'s NewTOS
+implementation is deferred and tracked together with ADR-Supexec, not as an
+independent ADR - do not implement one without revisiting the other. Until
+resolved, `Super` should surface as `EINVFN` only because it has no
+dispatcher slot yet (honest "not wired"), never as a fabricated
+stack-pointer value, matching how `Supexec` is currently deferred.
+
+**Not a Compendium discrepancy** - a spec-completeness gap plus a
+decision-tracking grouping, not a factual disagreement with any source.
+
+---
+
+## D-063: `Fdelete`'s "0xE5→0x05 substitution" claim is fabricated — EmuTOS has no such convention (spec-vs-source)
+
+**Date:** 2026-07-09
+**Phase 00 spec:** `docs/api/gemdos/file/41-fdelete.md`
+
+**EmuTOS:** the classic MS-DOS convention of storing a filename that
+legitimately starts with byte `0xE5` as `0x05` on disk (to avoid confusing it
+with the erased-entry marker) is **not implemented anywhere** in this build.
+`ixcreat()`/`builds()` (`bdos/fsopnclo.c:99-208`, `bdos/fsdir.c:737-796`) copy
+and uppercase name bytes verbatim; `toupper()` (`util/string.c:171-177`) is a
+plain `'a'..'z'` fold with no special-casing of `0xE5`. A full grep of
+`bdos/fsdir.c`/`bdos/fsopnclo.c` finds no `0x05` substitution logic at all. A
+file whose 8.3-encoded name genuinely starts with `0xE5` is therefore
+indistinguishable from an erased entry on the next scan (`match()`,
+`bdos/fsdir.c:1818`; `ixgetfcb()`'s end-of-directory test only checks byte
+`0x00`, but `scan()`/`ixsnext()` both treat `f_name[0] == ERASE_MARKER` as
+"skip/deleted").
+
+**Prior NewTOS doc (wrong):** `41-fdelete.md` edge case 5 claimed "a name
+legitimately beginning with the byte value `0xE5` is stored on disk as `0x05`
+by the create path to avoid false-erasure — this is a FAT convention
+preserved on-media." No such code exists in EmuTOS `1a7484ab`.
+
+**Not a Compendium discrepancy** — an internal spec fabrication, caught the
+same way the earlier `scasb` misread was: by re-reading the cited source
+lines instead of trusting the existing prose. This is a real, latent EmuTOS
+limitation (not a NewTOS bug) — filenames with a raw `0xE5` lead byte are rare
+(the byte is outside 7-bit ASCII) but not impossible via 8-bit path input.
+
+**Decision:** corrected `41-fdelete.md` to state plainly that no substitution
+happens. NewTOS is **not required** to reproduce the collision (it is a
+latent EmuTOS bug, not an observed-by-programs contract) but should decide
+explicitly if it ever supports non-ASCII 8.3 names; flagged for awareness,
+not for mandatory bug-compat.
+
+---
+
+## D-064: DND/DMD/OFD share EmuTOS's static `osmem` pool with `MD`s; exhaustion **halts the system**, not `ENSMEM` (spec-vs-source)
+
+**Date:** 2026-07-09
+**Phase 00 spec:** `docs/api/structures/dnd.md`
+
+**EmuTOS:** `xmgetblk(WORD memtype)` (`bdos/osmem.c:291-354`) is the sole
+allocator for `MDBLOCK`, `DMD`, `DND`, and `OFD` requests, all carved as
+fixed 64-byte blocks from one static array `osmem[LENOSM]`
+(`NUM_OSM_BLOCKS = 118`, `bdos/osmem.c:36-39` — see also `docs/api/structures/md.md`).
+When the free list and the raw pool are both exhausted:
+- for `MEMTYPE_MDBLOCK`, `xmgetblk` returns `NULL` (`bdos/osmem.c:327-329`);
+- for `MEMTYPE_DMD`/`DND`/`OFD`, it first calls `free_available_dnds()`
+  (`bdos/fsdir.c:2053-2074`) to scavenge eligible DNDs tree-wide; **if that
+  still doesn't yield a block**, it prints `"Out of internal memory... Use
+  FOLDR100.PRG to get more.\nSystem halted!"` and calls `halt()`
+  (`bdos/osmem.c:338-342`) — an unrecoverable system freeze, not a GEMDOS
+  error return. This is why essentially every DND/OFD/DMD allocation site in
+  `bdos/fsdir.c`/`bdos/fsopnclo.c`/`bdos/fsdrive.c` carries a comment like
+  "`MGET(OFD)` only returns if it succeeds" — it is **literally true**: those
+  three memory types cannot signal allocation failure to their caller.
+
+**Impact on the FS mutation batch:** `Fopen`, `Fcreate`, `Dcreate`,
+`Frename` (cross-directory), and any path resolution that must allocate a
+fresh `DND` (`makdnd`) or `OFD` (`makofd`/`opnfil`) are all reachable from
+this path. Under sustained internal-memory pressure (many simultaneously
+open files/directories across many drives), real EmuTOS **halts the whole
+machine** rather than returning `ENSMEM` from the syscall.
+
+**Prior NewTOS docs:** `dnd.md` did not mention this at all; it instead
+invented a fictitious `NDIRS = 16` "DND pool size" constant (see D-066)
+that implied ordinary bounded allocation failure, not a halt.
+
+**Not a Compendium discrepancy** — Compendium does not document internal
+allocator exhaustion behaviour at all.
+
+**Open question for the lead / STOP:** NewTOS's kernel allocator for the
+Rust ports of DND/OFD/DMD-equivalent structures should almost certainly
+**not** replicate a full-system halt on exhaustion — but this requires an
+explicit decision (return `ENSMEM` gracefully instead, most likely paired
+with the already-planned larger static arenas per PHASE-04 D5's memory
+sizing notes in `docs/api/structures/md.md`). Flagging here rather than
+silently assuming the "obviously better" behaviour, since it changes an
+observable failure mode of the whole FS layer under load and any Phase-05
+test suite asserting resource-exhaustion behaviour needs to target the
+decided-upon NewTOS behaviour, not EmuTOS's halt.
+
+---
+
+## D-065: Disk buffer cache — 2 buffers per list (not 4), FAT list is FAT-only (not "FAT/dir"), and there is no `flush(drive)`/`flush()` API (spec-vs-source)
+
+**Date:** 2026-07-09
+**Phase 00 spec:** `docs/api/gemdos/_state.md` §3, `docs/api/structures/dnd.md`
+
+**EmuTOS:**
+- `NUMBUFS = 2` (`bdos/fsbuf.c:26`, no `CONF_WITH_*` gating) — each of the
+  two lists (`bufl[BI_FAT]`, `bufl[BI_DATA]`) holds exactly **2** `BCB`s, not
+  4; 4 physical sector buffers exist system-wide.
+- `getbcb()`'s list selector (`bdos/fsbuf.c:121`) is
+  `phdr = &bufl[buftype==BT_FAT ? BI_FAT : BI_DATA]` — `bufl[BI_FAT]`
+  (index 0) holds **only** `BT_FAT` buffers; `bufl[BI_DATA]` (index 1) holds
+  **both** `BT_ROOT` (root-directory sectors) **and** `BT_DATA` (ordinary
+  file/subdirectory sectors) buffers, combined in one 2-slot list.
+- There is **no** `flush(int drv)` or no-argument `flush(void)` function.
+  `void flush(BCB *b)` (`bdos/fsbuf.c:85-105`) always writes back exactly one
+  buffer (plus its FAT-mirror copy on a 2-FAT medium). "Flush all dirty
+  buffers, all drives" is achieved by an explicit loop at the call site —
+  e.g. `ixclose()`'s full close (`bdos/fsopnclo.c:576-579`) — not by a
+  dedicated flush-everything primitive. A separate, **non-flushing** cleanup
+  path, `mark_bcbs_invalid(drv)` (`bdos/bdosmain.c:409-424`), runs on media
+  change and **discards** (does not write back) that drive's dirty buffers,
+  because the medium is assumed to be physically gone.
+
+**Prior NewTOS doc (wrong):** `_state.md` §3 said "4 buffers per list by
+default", mislabelled the lists as "`[0] = FAT/dir buffers, [1] = data
+buffers`", and asserted a `flush(d)`/`flush()` two-arity API with "writes all
+dirty buffers" semantics in both cases — none of which exists; the no-arg
+form doesn't exist and the media-change path specifically *discards without
+flushing*.
+
+**Not a Compendium discrepancy** — internal-cache-shape spec errors.
+
+**Decision:** corrected `_state.md` §3 and cross-referenced from `dnd.md`.
+NewTOS's actual FAT driver cache size/shape is a free implementation choice
+(PHASE-05); the *observable* contract worth preserving is: a real `Fclose`
+flushes all dirty state across all drives (crash-consistency behaviour
+programs may rely on), while a media-change event discards unwritten data
+for the affected drive without an attempt to persist it.
+
+---
+
+## D-066: `docs/api/structures/dnd.md` had stale `BLKDEVNUM = 16` and a fabricated `NDIRS = 16` / "LRU" / "d_scan"/"m_ofl" description (spec-vs-source)
+
+**Date:** 2026-07-09
+**Phase 00 spec:** `docs/api/structures/dnd.md`
+
+**EmuTOS:** `BLKDEVNUM = 26` (`include/sysconf.h:43`) — `dnd.md`'s
+"Configuration" section still said 16 even though D-025 (2026-07-03) already
+corrected every drive/directory *function* spec; the shared *structures* doc
+was missed in that pass. Separately: there is no `NDIRS` constant anywhere in
+EmuTOS (grepped, absent) — DND/DMD/OFD allocation is unbounded-by-type,
+sharing one static block pool with `MD`s (see D-064). `d_scan`
+(`bdos/fs.h:223`) is written in exactly one place (`makdnd`,
+`bdos/fsdir.c:1644`, zeroed on recycle) and **read nowhere** — the file's own
+1986 changelog says "removed all references to d_scan" (`bdos/fsdir.c:55,60`).
+`d_fill` (`bdos/fs.h:209`, `/* attributes? */`) is likewise referenced
+nowhere. `DMD.m_ofl` (`bdos/fs.h:258`) is declared but never assigned or read
+anywhere in `bdos/*.c` — dead, not "every OFD whose drive == this DMD, used at
+Mediach-detection/unmount". Reclamation of DNDs is an eligibility sweep
+(`free_available_dnds()`/`process_dnd_tree()`, `bdos/fsdir.c:1957-2074`) or a
+same-parent scavenge (`makdnd()`, `bdos/fsdir.c:1610-1651`) — neither tracks
+recency, so "LRU order" mischaracterised both mechanisms.
+
+**Prior NewTOS doc (wrong):** all of the above were asserted as fact in
+`dnd.md` without a matching source citation that actually supports them; none
+survive a direct grep of `bdos/*.c`.
+
+**Not a Compendium discrepancy** — internal spec fabrication /
+staleness, same category as D-030/D-032 (pasted-looking prose that didn't
+match a re-read of the actual source).
+
+**Decision:** corrected in full in `dnd.md` (BLKDEVNUM, DND/DMD/OFD shared
+pool + halt-on-exhaustion cross-reference to D-064, dead `d_scan`/`d_fill`/
+`m_ofl` fields, eligibility-sweep-not-LRU reclamation, and the real
+media-change cleanup path cross-referenced to D-065).
+
+---
+
+## D-067: `ckdrv`/`dcrack` discard the specific error code — `EDRIVE`/`ENSMEM` never surface from `Fopen`/`Fcreate`/`Fdelete`/`Fattrib`/`Frename`/`Dcreate`/`Ddelete`/`Fsfirst`/`Dsetpath` (cross-cutting, spec-vs-source)
+
+**Date:** 2026-07-09
+**Phase 00 specs:** cross-cutting; see `docs/api/gemdos/_state.md` §4/§5 and
+every `docs/api/gemdos/{file,directory}/*.md` entry whose path resolution goes
+through `findit()`.
+
+**EmuTOS:** `findit()` (`bdos/fsdir.c:1407`) resolves the drive via
+`dcrack()` (`bdos/fsdir.c:1695-1739`), which calls `ckdrv(d, TRUE)`
+(`bdos/fsdrive.c:77-134`, distinguishes `EDRIVE` -46 for an invalid drive
+number, `EPTHNF` -34 for an unmounted removable drive, and `ENSMEM` -39 for
+`log_media()` OOM *or* a full `dirtbl[]`) but **`dcrack` discards the specific
+code**: `if (ckdrv(d, TRUE) < 0) return NULL;` — any negative `ckdrv` result
+collapses to a plain "path not found" signal. `findit()` then returns `NULL`
+uniformly, and each caller applies its *own* generic "resolution failed"
+error (`EPTHNF` for most; `EFILNF` for `Fopen`/`Fdelete`'s `ixopen`/`ixunlink`,
+already noted in D-018). The practical effect: **an invalid drive letter, an
+unmounted removable drive, and a `dirtbl[]`/`osmem` exhaustion are all
+observationally identical** from any of these callers — none of them can
+ever produce `EDRIVE` or `ENSMEM`, regardless of which of the three actually
+happened. Only functions that call `ckdrv`/`Drvmap()` **directly**, bypassing
+`findit`/`dcrack` — `Dgetpath` (`xgetdir`, returns `EDRIVE` directly,
+`bdos/fsdir.c:1237-1240`) and `Dfree` (`xgetfree`, collapses to generic `ERR`,
+already logged as D-026) — preserve any distinction at all, and even then not
+the full `EDRIVE`/`ENSMEM` split.
+
+**Prior NewTOS docs:** each individual function spec already documents its
+*own* generic error return correctly (e.g. `EPTHNF` for `Fcreate`/`Dcreate`,
+`EFILNF` for `Fopen`), so no single spec is factually wrong — but the
+*reason* (this shared `dcrack`/`ckdrv` collapse) was previously stated only
+for `Dsetpath` (`_state.md` §5, the `dirtbl[]`-full case). It was not
+connected as a general fact spanning `Fopen`/`Fcreate`/`Fdelete`/`Fattrib`/
+`Frename`/`Dcreate`/`Ddelete`/`Fsfirst` as well.
+
+**Decision:** documented here as a cross-cutting fact rather than editing all
+nine affected per-function specs individually (time-boxed; flagged in the
+researcher report). No spec correction needed *per function* — each already
+states the right observable error — but any NewTOS test suite probing
+"invalid drive letter" or "directory-cache exhaustion" behaviour for these
+nine functions must expect the *generic* path-resolution error, never
+`EDRIVE`/`ENSMEM`, and should cite this entry rather than re-deriving it.
+
+---
+
+## D-068: `docs/api/structures/ofd.md`'s `DFD` was documented as 16 bytes with a fabricated 2-byte pad; actual size is 14 bytes (spec-vs-source)
+
+**Date:** 2026-07-09
+**Phase 00 spec:** `docs/api/structures/ofd.md`
+
+**EmuTOS:** `DFD` (`bdos/fs.h:116-124`) is `{ UWORD o_flag; WORD o_usecnt;
+DOSTIME o_td; CLNO o_strtcl; long o_fileln; }` = 2+2+4+2+4 = **14 bytes**, with
+every field already 2-byte-aligned and nothing declared after `o_fileln` —
+there is no padding to 16 bytes anywhere in the source or its usage (the
+tail three fields, 10 bytes, are `memcpy`'d as a block against the matching
+FCB tail in `ixclose`, `bdos/fsopnclo.c:538`, which only works if there is
+**no** gap). With the corrected 14-byte `DFD`, `sizeof(OFD)` (embedding
+`DFD o_disk` as its last member) is confirmed at **56 bytes (0x38)** — the
+number the doc's own byte-offset table already implied field-by-field; only
+the `DFD` sub-figure (16, with an invented "2 bytes pad") was wrong.
+
+**Prior NewTOS doc (wrong):** `ofd.md`'s `DFD` section stated 16 bytes with
+"2 bytes pad to 16 in FCB-compatible layout" — no such pad exists.
+
+**Not a Compendium discrepancy** — internal struct-arithmetic error, same
+category as D-030/D-032/D-066 (asserted numbers not re-derived from the
+actual field list).
+
+**Decision:** corrected `DFD` to 14 bytes in `ofd.md`; `OFD`'s 56-byte total
+was already right and is unchanged, now with the arithmetic shown explicitly
+so it doesn't drift again.
+
+---
+
+## D-069: `docs/api/structures/dta.md` lifecycle note said `EFILNF` where the source returns `ENMFIL` for `Fsnext` exhaustion (self-consistency fix)
+
+**Date:** 2026-07-09
+**Phase 00 spec:** `docs/api/structures/dta.md`
+
+**EmuTOS:** `xsnext()` (`bdos/fsdir.c:654-676`) returns `ENMFIL` (-49) for
+every exhausted/uninitialised case (already established as D-019). `dta.md`'s
+own "Lifecycle / invariants" list item 4 said "After `EFILNF` (no more
+matches)…", contradicting item 5 two lines below (which correctly says
+`ENMFIL`) and contradicting D-019/the `4f-fsnext.md` spec it cross-references.
+
+**Not a Compendium discrepancy** — an internal self-consistency slip (`EFILNF`
+is `Fsfirst`'s "no match at all" code, `ENMFIL` is `Fsnext`'s "no more
+matches" code; the two were conflated in one sentence).
+
+**Decision:** corrected item 4 in `dta.md` to say `ENMFIL`.
+
+---
+
+## D-070: `Frename`'s cycle-prevention check (`is_subdir`) only catches a one-level self-nesting move, not deeper ones (source-level EmuTOS gap, not a spec-reading error)
+
+**Date:** 2026-07-09
+**Phase 00 spec:** `docs/api/gemdos/file/56-frename.md`
+
+**EmuTOS:** `xrename()`'s cross-directory cycle guard is
+`if (is_subdir(s1,dn1,dn2)) return EACCDN;` (`bdos/fsdir.c:1002-1003`).
+`is_subdir()`'s own doc comment states its scope precisely: "check if
+directory 2 is an **immediate** subdirectory of directory 1"
+(`bdos/fsdir.c:844-863`) — it tests only `dn2->d_parent == dn1 && dn2's name
+== s1`, i.e. "is the target's parent directory *exactly* the folder being
+moved". This catches the one-level case
+(`Frename(0,"C:\A","C:\A\NEW")` — moving `A` to nest directly inside
+itself) but **does not walk further up the ancestor chain**. A move like
+`Frename(0,"C:\A","C:\A\SUB\NEW")`, where `SUB` is a subdirectory of `A`,
+passes the check (`dn2` = the DND for `C:\A\SUB` has `d_parent` = `A`'s DND,
+not the root `dn1`, so `is_subdir` returns `FALSE`) and **proceeds**: the
+directory entry for `A` is relocated to live inside `A\SUB`, one of its own
+descendants — a genuine cycle in the on-disk/in-memory directory tree. Any
+future recursive tree walker (`Dgetpath`'s `dopath()` already recurses via
+`d_parent`; a CHKDSK-style scan would recurse via `d_left`/`d_right`) would
+not terminate against such a structure.
+
+**This is a source-level EmuTOS limitation, not a misreading of the spec** —
+confirmed by `is_subdir`'s own comment stating "immediate" as its documented
+scope, and by tracing the exact DND-parent comparison for a concrete
+multi-level example. It is the closest analogue in this codebase to the
+"the code IS the bug" class of finding (cf. the historical `scasb` misread,
+which was a *documentation* error; this one is a genuine *gap in EmuTOS's
+own defensive check*).
+
+**Prior NewTOS doc:** `56-frename.md` described the one-level case
+correctly ("prevents cycles… e.g. `a\b -> a\b\c`") but did not note that the
+check's scope stops there.
+
+**Decision:** documented as edge case 6a and a new error-table footnote in
+`56-frename.md`. **Open question for the lead:** does NewTOS's `Frename`
+implementation widen this check to walk the full ancestor chain (a
+deliberate safety improvement over EmuTOS, analogous to the D-023
+open-file-rename decision), or intentionally reproduce the gap for
+m68k-binary bug-compat? Given this batch's explicit focus on the historical
+`Frename` corruption class, the researcher's recommendation is to **widen
+the check** — but this is a decision for the Developer/lead, not something
+to silently implement here.
+
+---
+
+## D-071: `docs/api/structures/basepage.md` also missed the D-025 `BLKDEVNUM` fix (16 → 26)
+
+**Date:** 2026-07-09
+**Phase 00 spec:** `docs/api/structures/basepage.md`
+
+**EmuTOS:** `BLKDEVNUM = 26` (`include/sysconf.h:43`), a plain unconditional
+`#define` — not gated by `CONF_WITH_TT_SHIFTER` or any other build flag.
+`NUMCURDIR = BLKDEVNUM` (`include/bdosdefs.h:62`), so `PD.p_curdir[26]` +
+`p_2fill[6]` fill the fixed 32-byte region at basepage offset 0x40-0x60
+(`include/bdosdefs.h:89-90`).
+
+**Prior NewTOS doc (wrong):** `basepage.md` still said `BLKDEVNUM = 16`
+("16 in default cfg", "uses 16 of the 32 reserved bytes", and "16 with
+default `CONF_WITH_TT_SHIFTER`" — the last also fabricating a conditional
+that does not exist in the source) in three places. D-025 (2026-07-03)
+corrected every drive/directory *function* spec and `_state.md` §4/§5 for
+this same fact, but this particular structures file was missed in that pass
+— the same gap D-066 found in `dnd.md`.
+
+**Not a Compendium discrepancy** — internal spec staleness, same root cause
+as D-025/D-066 (a shared fact that needed propagating to every file that
+restates it, and one file was missed each time).
+
+**Decision:** corrected all three occurrences in `basepage.md`. **Process
+note for future passes:** `BLKDEVNUM`/`NUMCURDIR` values are restated in at
+least five separate files (`_state.md`, the drive/directory function specs,
+`dnd.md`, `basepage.md`); a grep for `BLKDEVNUM = 16\|A:\.\.P:\|NDIRS = 16`
+across all of `docs/api/` is a cheap way to catch a future regression or a
+missed file in one pass.
