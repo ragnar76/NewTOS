@@ -135,6 +135,27 @@ pub fn findit(path: &str) -> Result<(Volume, u32, [u8; 11]), Long> {
     Ok((vol, parent, name))
 }
 
+/// Collapse a path-resolution failure caused by an **unmountable drive**
+/// (`Volume::mount` → `EDRIVE`) to a syscall-specific "not found" code,
+/// exactly as EmuTOS' `dcrack`→`ckdrv(<0)`→`findit` NULL does: `dcrack`
+/// throws away the `ckdrv` error and returns NULL, so the caller's
+/// `findit`-NULL branch, not `EDRIVE`, decides the observable code. Only the
+/// drive error is remapped; a missing directory component keeps its own
+/// `EPTHNF`. Non-drive errors pass through unchanged.
+///
+/// EmuTOS per-caller mapping (verified against `bdos/` @ `1a7484ab`):
+///   * `Fopen` (`ixopen`) / `Fdelete` (`ixunlink`) → `EFILNF`
+///   * `Fcreate` (`ixcreat`), `Fattrib` (`xchmod`), `Frename` (`xrename`),
+///     `Fsfirst` (`ixsfirst`), `Dcreate` (`xmkdir`), `Ddelete` (`xrmdir`),
+///     `Dsetpath` (`xchdir`) → `EPTHNF`
+pub fn drive_notfound(e: Long, notfound: Long) -> Long {
+    if e == EDRIVE {
+        notfound
+    } else {
+        e
+    }
+}
+
 /// The 11-byte FAT name for the `".."` entry (`b".."` + spaces).
 fn fcb_dotdot() -> [u8; 11] {
     let mut n = [b' '; 11];

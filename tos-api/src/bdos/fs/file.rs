@@ -161,10 +161,16 @@ pub fn fopen(args: &TrapArgs) -> Long {
 
     let (vol, parent, name11) = match path::findit(path) {
         Ok(x) => x,
-        Err(e) => return e,
+        // An unmountable drive resolves to `EFILNF` for `Fopen`, matching
+        // EmuTOS `ixopen` (`findit` NULL → `EFILNF`, `fsopnclo.c:248`).
+        Err(e) => return path::drive_notfound(e, EFILNF),
     };
     let drive = super::path::split_drive(path).0;
-    let entry = match dir::find_in_dir(&vol, parent, &name11) {
+    // `FA_NORM` scan semantics: a sub-directory (or label) is invisible here,
+    // so `Fopen` on a folder returns `EFILNF` and never hands out a handle
+    // whose writes would land in the directory cluster (EmuTOS
+    // `scan(dn, s, FA_NORM, …)`, `fsopnclo.c:256`).
+    let entry = match dir::find_file_in_dir(&vol, parent, &name11) {
         Some(e) => e,
         None => return EFILNF,
     };
@@ -208,7 +214,10 @@ pub fn fcreate(args: &TrapArgs) -> Long {
 
     let (vol, parent, name11) = match path::findit(path) {
         Ok(x) => x,
-        Err(e) => return e,
+        // The directory portion of a create resolves to `EPTHNF`, including an
+        // unmountable drive (EmuTOS `ixcreat` `findit` NULL → `EPTHNF`,
+        // `fsopnclo.c:114`).
+        Err(e) => return path::drive_notfound(e, EPTHNF),
     };
     let drive = path::split_drive(path).0;
     if !vol.is_writable() {
@@ -471,7 +480,10 @@ pub fn fdelete(args: &TrapArgs) -> Long {
     };
     let (vol, parent, name11) = match path::findit(path) {
         Ok(x) => x,
-        Err(e) => return e,
+        // `Fdelete` collapses a resolution failure to `EFILNF`, including an
+        // unmountable drive (EmuTOS `ixunlink` `findit` NULL → `EFILNF`,
+        // `fsopnclo.c:598`).
+        Err(e) => return path::drive_notfound(e, EFILNF),
     };
     let entry = match dir::find_in_dir(&vol, parent, &name11) {
         Some(e) => e,
@@ -504,9 +516,16 @@ pub fn fattrib(args: &TrapArgs) -> Long {
 
     let (vol, parent, name11) = match path::findit(pathstr) {
         Ok(x) => x,
-        Err(e) => return e,
+        // The directory portion of the path resolves to `EPTHNF`, including an
+        // unmountable drive (EmuTOS `xchmod` `findit` NULL → `EPTHNF`,
+        // `fsdir.c:410`).
+        Err(e) => return path::drive_notfound(e, EPTHNF),
     };
-    let entry = match dir::find_in_dir(&vol, parent, &name11) {
+    // Files only (TOS 1-3): the `FA_NORM` scan omits sub-directories, so
+    // `Fattrib` on a folder returns `EFILNF` and never gets or mutates a
+    // directory's attribute byte (EmuTOS `scan(dn, s, FA_NORM, …)`,
+    // `fsdir.c:415`).
+    let entry = match dir::find_file_in_dir(&vol, parent, &name11) {
         Some(e) => e,
         None => return EFILNF,
     };
@@ -546,13 +565,16 @@ pub fn frename(args: &TrapArgs) -> Long {
         None => return EPTHNF,
     };
 
+    // Both the source and target directory portions resolve to `EPTHNF` on
+    // failure, an unmountable drive included (EmuTOS `xrename`: `findit(p1)`
+    // and `findit(p2)` NULL → `EPTHNF`, `fsdir.c:916,975`).
     let (vol1, parent1, name1) = match path::findit(src) {
         Ok(x) => x,
-        Err(e) => return e,
+        Err(e) => return path::drive_notfound(e, EPTHNF),
     };
     let (_vol2, parent2, name2) = match path::findit(dst) {
         Ok(x) => x,
-        Err(e) => return e,
+        Err(e) => return path::drive_notfound(e, EPTHNF),
     };
     // Cross-device renames are not supported.
     if path::split_drive(src).0 != path::split_drive(dst).0 {
@@ -568,6 +590,21 @@ pub fn frename(args: &TrapArgs) -> Long {
         None => return EFILNF,
     };
     if entry.attrib & FA_RO != 0 {
+        return EACCDN;
+    }
+    // Cycle guard (before any mutation): a cross-directory move of a *folder*
+    // into itself or one of its own descendants would splice the directory
+    // tree into a loop — `fix_dotdot` below would then chain the folder's
+    // `..` back into its subtree, orphaning the clusters between (the
+    // fsck-reproduced corruption). EmuTOS' `is_subdir` only catches the
+    // single immediate level (`fsdir.c:1002`, gap D-070); NewTOS walks the
+    // full `..` ancestor chain of the target parent, so one-, two- and
+    // deeper-level self-nesting are all refused with `EACCDN`. A legitimate
+    // cross-directory move (target parent not under the source) is unaffected.
+    if entry.attrib & dir::FA_SUBDIR != 0
+        && parent1 != parent2
+        && is_self_or_descendant(&vol1, entry.cluster, parent2)
+    {
         return EACCDN;
     }
     let src_slot = match dir::slot_of(&vol1, parent1, &name1) {
@@ -606,6 +643,35 @@ pub fn frename(args: &TrapArgs) -> Long {
 
 /// FAT short name of the `..` directory entry (`".."` + nine spaces).
 const DOTDOT: [u8; 11] = *b"..         ";
+
+/// Whether `target_parent` **is** the folder `folder_cluster`, or lives
+/// somewhere beneath it — i.e. moving that folder so its new parent is
+/// `target_parent` would nest the folder inside its own subtree (a directory
+/// cycle). Walks the `..` chain of `target_parent` toward the root (cluster 0
+/// = root, chain terminates); a match against `folder_cluster` anywhere along
+/// the way means "self or descendant". The step count is bounded so an
+/// already-corrupt (pre-existing cyclic) `..` chain cannot hang the walk —
+/// hitting the bound is itself treated as a cycle (refuse the move).
+fn is_self_or_descendant(vol: &Volume, folder_cluster: u32, target_parent: u32) -> bool {
+    // FAT16 tops out around 65525 clusters, and legitimate directory nesting
+    // is far shallower still (bounded by the path-length limit); this cap is a
+    // safety net against a corrupt `..` chain, not a real depth limit.
+    const MAX_DEPTH: u32 = 4096;
+    let mut cur = target_parent;
+    for _ in 0..MAX_DEPTH {
+        if cur == 0 {
+            return false; // reached the root without meeting the folder
+        }
+        if cur == folder_cluster {
+            return true; // target parent is the folder or below it
+        }
+        cur = match dir::find_in_dir(vol, cur, &DOTDOT) {
+            Some(e) => e.cluster,
+            None => return false, // no `..` entry to follow (malformed dir)
+        };
+    }
+    true // bound exhausted → assume a cycle and refuse
+}
 
 /// Rewrite the `..` entry of a moved folder (whose first cluster is
 /// `folder_cluster`) to point at `new_parent`'s start cluster (0 = root).

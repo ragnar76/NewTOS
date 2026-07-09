@@ -377,7 +377,10 @@ pub fn fsfirst(args: &TrapArgs) -> Long {
     // wildcarded) search pattern.
     let (vol, parent, comp) = match super::path::resolve_parent(path) {
         Ok(x) => x,
-        Err(e) => return e,
+        // The directory portion of the search, an unmountable drive included,
+        // resolves to `EPTHNF` (EmuTOS `ixsfirst` `findit` NULL → `EPTHNF`,
+        // `fsdir.c:463`).
+        Err(e) => return super::path::drive_notfound(e, EPTHNF),
     };
     let drive = super::path::split_drive(path).0 as u8;
     let pattern = fcb_pattern(comp);

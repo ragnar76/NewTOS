@@ -33,7 +33,10 @@ pub fn dcreate(args: &TrapArgs) -> Long {
     };
     let (vol, parent, name11) = match path::findit(pathstr) {
         Ok(x) => x,
-        Err(e) => return e,
+        // `Dcreate` resolves its directory portion (an unmountable drive
+        // included) to `EPTHNF` (EmuTOS `xmkdir`→`ixcreat` `findit` NULL →
+        // `EPTHNF`, `fsopnclo.c:114`).
+        Err(e) => return path::drive_notfound(e, EPTHNF),
     };
     if !vol.is_writable() {
         return EACCDN;
@@ -100,7 +103,10 @@ pub fn ddelete(args: &TrapArgs) -> Long {
     };
     let (vol, parent, name11) = match path::findit(pathstr) {
         Ok(x) => x,
-        Err(e) => return e,
+        // A path that does not resolve to a folder — an unmountable drive
+        // included — returns `EPTHNF` (EmuTOS `xrmdir` `findit` mode-1 NULL →
+        // `EPTHNF`, `fsdir.c:307`).
+        Err(e) => return path::drive_notfound(e, EPTHNF),
     };
     let entry = match dir::find_in_dir(&vol, parent, &name11) {
         Some(e) => e,
@@ -140,9 +146,13 @@ pub fn dsetpath(args: &TrapArgs) -> Long {
         return EPTHNF;
     }
     let (drive, rest) = path::split_drive(p);
+    // An invalid or unmounted drive prefix surfaces as `EPTHNF`, not `EDRIVE`:
+    // EmuTOS resolves the whole path through `findit`→`dcrack`→`ckdrv`, whose
+    // failure collapses to `xchdir`'s `findit` NULL → `EPTHNF`
+    // (`fsdir.c:1135`; spec `3b-dsetpath.md` error table).
     let vol = match Volume::mount(drive) {
         Some(v) => v,
-        None => return EDRIVE,
+        None => return EPTHNF,
     };
 
     // Build the component stack: seed from the current directory unless

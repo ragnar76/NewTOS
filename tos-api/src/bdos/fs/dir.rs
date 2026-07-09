@@ -179,8 +179,22 @@ pub fn find_in_root(vol: &Volume, name11: &[u8; 11]) -> Option<DirEntry> {
 }
 
 /// Find an 8.3 entry in a directory (0 = root) by its FAT short name.
+/// Sees files **and** sub-directories (volume labels / LFN records are
+/// already skipped by [`DirIter`]).
 pub fn find_in_dir(vol: &Volume, start: u32, name11: &[u8; 11]) -> Option<DirEntry> {
     DirIter::new(vol, start).find(|e| &e.name == name11)
+}
+
+/// Find an 8.3 **normal-file** entry by its FAT short name — like
+/// [`find_in_dir`] but sub-directories are excluded, so a caller can never
+/// resolve a folder (or label) as if it were a file. Mirrors EmuTOS'
+/// `scan(dn, s, FA_NORM, …)`, whose `FA_NORM` mask omits `FA_SUBDIR`/`FA_VOL`
+/// (`bdos/fs.h:195`); used by `Fopen` (`ixopen`) and `Fattrib` (`xchmod`) so
+/// both report `EFILNF`/`EPTHNF` for a directory instead of operating on it.
+/// Directory traversal (`Fsfirst`, `list_dir`, …) keeps using [`find_in_dir`]
+/// / [`DirIter`] and still sees folders.
+pub fn find_file_in_dir(vol: &Volume, start: u32, name11: &[u8; 11]) -> Option<DirEntry> {
+    DirIter::new(vol, start).find(|e| &e.name == name11 && e.attrib & FA_SUBDIR == 0)
 }
 
 /// Map the partition-relative sector of directory slot `slot`.
