@@ -319,3 +319,96 @@ pub fn run_pexec_test() {
         kprintln!("[d3] === D3 PEXEC FAIL ===");
     }
 }
+
+/// F1 — verify `Pexec` populates the child's command tail (`p_cmdlin`,
+/// EmuTOS `init_pd_fields`) and environment (`p_env`, EmuTOS
+/// `alloc_env`). Drives the loader directly (like the other Pexec
+/// selftests) so the basepage fields are QEMU-checkable without an EL0
+/// parent; the exit-code / launch delivery stays EL0-gated.
+pub fn run_pexec_env_test() {
+    use tos_api::bdos::mem::traps::mfree;
+    use tos_api::bdos::process::free_slot;
+    use tos_api::bdos::process::loader::{load_to_slot_with, EnvSpec};
+    use tos_types::BasePage;
+
+    // High-half linear-map offset (kernel VA = phys + VA_OFFSET); the
+    // env block lives in pool phys, read back here from the kernel.
+    const VA_OFFSET: u64 = 0xFFFF_0000_0000_0000;
+
+    kprintln!("");
+    kprintln!("[f1] === Pexec command-tail + environment test ===");
+
+    // Atari command-tail image: a length byte followed by the text (no
+    // trailing NUL — the loader appends it). "HELLO" → length 5.
+    let tail: [u8; 6] = [5, b'H', b'E', b'L', b'L', b'O'];
+    // Environment image: two records + terminating double NUL (20 bytes).
+    let env: &[u8] = b"PATH=C:\\\0TERM=vt52\0\0";
+
+    let slot_idx = match allocate_slot() {
+        Some(i) => i,
+        None => {
+            kprintln!("[f1] === FAIL: no slot ===");
+            return;
+        }
+    };
+
+    // SAFETY: pre-test, single-CPU; slot just claimed. `true` = PE_LOADGO
+    // → the env block is owned by the child.
+    let loaded = match unsafe {
+        load_to_slot_with(&CHILD_ELF, slot_idx, &tail, EnvSpec::Explicit(env), true)
+    } {
+        Ok(img) => img,
+        Err(e) => {
+            kprintln!("[f1] === FAIL: loader {:?} ===", e);
+            free_slot(slot_idx);
+            return;
+        }
+    };
+
+    let bp_kva = PROCESS_TABLE[loaded.slot]
+        .basepage_kva
+        .load(Ordering::Acquire);
+    // SAFETY: the loader published a valid basepage kernel VA for the slot.
+    let bp: &BasePage = unsafe { &*bp_kva };
+
+    // Command tail: length byte, then the text, then a NUL.
+    let len = bp.p_cmdlin[0] as usize;
+    let tail_ok = len == 5 && &bp.p_cmdlin[1..6] == b"HELLO" && bp.p_cmdlin[6] == 0;
+
+    // Environment: p_env is non-zero and the pool copy matches verbatim.
+    let penv = bp.p_env;
+    let env_ok = if penv != 0 {
+        let src = (penv as u64 + VA_OFFSET) as *const u8;
+        // SAFETY: p_env points at the copied env block in mapped pool mem.
+        let copy = unsafe { core::slice::from_raw_parts(src, env.len()) };
+        copy == env
+    } else {
+        false
+    };
+
+    kprintln!(
+        "[f1]   p_cmdlin[0]={} text=\"{}\" NUL@{}          {}",
+        len,
+        core::str::from_utf8(&bp.p_cmdlin[1..6]).unwrap_or("?"),
+        6,
+        if tail_ok { "OK" } else { "FAIL" },
+    );
+    kprintln!(
+        "[f1]   p_env=0x{:x} (!=0 & content match)         {}",
+        penv,
+        if env_ok { "OK" } else { "FAIL" },
+    );
+
+    // Clean up: free the env block, release the slot.
+    if penv != 0 {
+        // SAFETY: single-CPU pre-test; p_env is a live pool allocation.
+        let _ = unsafe { mfree(penv) };
+    }
+    free_slot(loaded.slot);
+
+    if tail_ok && env_ok {
+        kprintln!("[f1] === F1 PEXEC TAIL+ENV PASS ===");
+    } else {
+        kprintln!("[f1] === F1 PEXEC TAIL+ENV FAIL ===");
+    }
+}

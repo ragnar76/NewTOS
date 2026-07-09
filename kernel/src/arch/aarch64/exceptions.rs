@@ -445,10 +445,16 @@ fn handle_pterm(frame: &mut ExceptionFrame, func: u16) {
     //   * `Ptermres` (0x31): `Ptermres(blkln, rc)` — `blkln` in `x0`,
     //     `rc` in `x1`. `blkln` (keep-resident size) is a no-op under
     //     the static-arena TPA model (see `pterm::terminate_resident`).
+    //
+    // The exit code is a **UWORD** (D-005): EmuTOS `xterm(UWORD rc)`
+    // (`bdos/proc.c:601,616`) stores `run->p_dreg[0] = rc`, i.e. the
+    // low 16 bits **zero-extended** into the LONG the parent reads back
+    // from `Pexec`. Mask to 16 bits here so `Pterm(-1)` delivers 65535,
+    // `Pterm(0x12345)` delivers 0x2345 — never a sign-extended value.
     let rc: i32 = match func {
         0x00 => 0,
-        0x31 => frame.gpr[1] as i32,
-        _ => frame.gpr[0] as i32,
+        0x31 => (frame.gpr[1] & 0xFFFF) as i32,
+        _ => (frame.gpr[0] & 0xFFFF) as i32,
     };
 
     // SAFETY: trap-context single-CPU contract; the BDOS giant lock
@@ -633,6 +639,61 @@ fn read_user_cstr(user_va: u64, buf: &mut [u8]) -> usize {
     n
 }
 
+/// Byte length of the Pexec environment scratch buffer. Bounds a
+/// caller-supplied environment block; generous versus real Atari
+/// environments (a handful of `KEY=value` records). A larger block is
+/// truncated to a double-NUL-terminated prefix.
+const ENV_BUF_LEN: usize = 512;
+
+/// Read a `Pexec` environment block (a sequence of NUL-terminated
+/// records ended by a **double NUL**) from a pointer into `buf`,
+/// returning the byte count **including** the terminating double NUL.
+/// `from_el0` selects unprivileged (`ldtrb`, user pointer) vs ordinary
+/// (kernel pointer) loads, exactly like the `path`/tail readers. On
+/// overflow the last two bytes are forced to NUL so the copied env is
+/// always double-NUL terminated.
+fn read_env_block(va: u64, buf: &mut [u8], from_el0: bool) -> usize {
+    let mut p = va;
+    let mut n = 0;
+    let mut prev_nul = false;
+    while n < buf.len() {
+        let b: u8 = if from_el0 {
+            let v: u8;
+            // SAFETY: single unprivileged byte load; bounded by buf.len().
+            unsafe {
+                core::arch::asm!(
+                    "ldtrb {v:w}, [{p}]",
+                    p = in(reg) p,
+                    v = out(reg) v,
+                    options(nostack, preserves_flags, readonly),
+                );
+            }
+            v
+        } else {
+            // SAFETY: bounded by buf.len(); provenance is the caller's env.
+            unsafe { (p as *const u8).read_volatile() }
+        };
+        buf[n] = b;
+        n += 1;
+        p += 1;
+        if b == 0 {
+            if prev_nul {
+                return n; // double NUL: env complete, both NULs included
+            }
+            prev_nul = true;
+        } else {
+            prev_nul = false;
+        }
+    }
+    // Overflow without a natural double-NUL terminator: force one so the
+    // downstream verbatim copy stays well-formed.
+    if n >= 2 {
+        buf[n - 1] = 0;
+        buf[n - 2] = 0;
+    }
+    n
+}
+
 /// Pexec (GEMDOS 0x4B) handler. Sets up a child process and
 /// rewrites the trap frame so the post-handler `eret` lands in the
 /// child at EL0 instead of returning to the parent.
@@ -643,10 +704,14 @@ fn read_user_cstr(user_va: u64, buf: &mut [u8]) -> usize {
 fn handle_pexec(frame: &mut ExceptionFrame) {
     use core::sync::atomic::Ordering;
 
+    use tos_api::bdos::process::loader::EnvSpec;
+    use tos_api::bdos::process::pexec::{PE_LOAD, PE_LOADGO};
+
     let mode = frame.gpr[0] as u16;
     let path_user_va = frame.gpr[1];
-    let tail = frame.gpr[2];
-    let env = frame.gpr[3];
+    let tail_arg = frame.gpr[2];
+    let env_arg = frame.gpr[3];
+    let from_el0 = frame.spsr & 0xF == 0;
 
     // Read the NUL-terminated `path` string from the parent's user
     // space. The parent's TTBR0 is still active (we switch to the
@@ -664,23 +729,52 @@ fn handle_pexec(frame: &mut ExceptionFrame) {
     // loads; a kernel (EL1) caller — e.g. the built-in shell — passes a
     // kernel pointer that must be read with ordinary loads (an `ldtrb`
     // would fault as EL0 on a kernel page).
-    let path_len = if frame.spsr & 0xF == 0 {
+    let path_len = if from_el0 {
         read_user_cstr(path_user_va, &mut path_buf)
     } else {
         read_kernel_cstr(path_user_va, &mut path_buf)
     };
     let path_bytes = &path_buf[..path_len];
 
+    // Command tail + environment. Only the **load** modes consume them;
+    // for `PE_GO` the `x2` argument is the opaque PD handle (a value,
+    // not a pointer) so we must not dereference it. `x2` = command-tail
+    // image (`init_pd_fields`), `x3` = environment (`env == 0` → inherit
+    // `run->p_env`). Both are read from the caller's address space with
+    // the same EL0/EL1 discipline as `path`.
+    let mut tail_buf = [0u8; 128];
+    let mut env_buf = [0u8; ENV_BUF_LEN];
+    let (tail_bytes, env_spec): (&[u8], EnvSpec) =
+        if mode == PE_LOADGO || mode == PE_LOAD {
+            let tlen = if tail_arg == 0 {
+                0
+            } else if from_el0 {
+                read_user_cstr(tail_arg, &mut tail_buf)
+            } else {
+                read_kernel_cstr(tail_arg, &mut tail_buf)
+            };
+            let env_spec = if env_arg == 0 {
+                EnvSpec::Inherit
+            } else {
+                let elen = read_env_block(env_arg, &mut env_buf, from_el0);
+                EnvSpec::Explicit(&env_buf[..elen])
+            };
+            (&tail_buf[..tlen], env_spec)
+        } else {
+            (&[][..], EnvSpec::None)
+        };
+
     // SAFETY: trap context, BDOS giant lock implicit, single-CPU.
     let result = unsafe {
         tos_api::bdos::process::pexec::dispatch(
-            mode, path_bytes, tail, env,
+            mode, path_bytes, tail_arg, tail_bytes, env_spec,
         )
     };
 
     let child = match result {
         Ok(c) => c,
         Err(e) => {
+            use tos_api::bdos::process::loader::LoadError;
             use tos_api::bdos::process::pexec::PexecError;
             let err = match e {
                 PexecError::UnknownMode | PexecError::UnsupportedMode => {
@@ -689,7 +783,19 @@ fn handle_pexec(frame: &mut ExceptionFrame) {
                 PexecError::NotFound => tos_types::error::EFILNF,
                 PexecError::NoSlot => tos_types::error::ENSMEM,
                 PexecError::BadHandle => tos_types::error::EIMBA,
-                PexecError::LoadFailed(_) => tos_types::error::EPLFMT,
+                // A *memory/size* shortfall maps to `ENSMEM` (EmuTOS
+                // `bdos/proc.c:295-300`: no TPA → `ENSMEM`); a malformed
+                // image / bad header maps to `EPLFMT` (`kpgmld.c:47-63`).
+                // `ProgramTooLarge` is the single-page TPA cap (D3
+                // limitation) — a size shortfall, so `ENSMEM`. The env
+                // allocation shortfall (`alloc_env`, `proc.c:284-288`)
+                // is likewise `ENSMEM`.
+                PexecError::LoadFailed(le) => match le {
+                    LoadError::ProgramTooLarge | LoadError::NoEnvMemory => {
+                        tos_types::error::ENSMEM
+                    }
+                    _ => tos_types::error::EPLFMT,
+                },
             };
             frame.gpr[0] = err as i64 as u64;
             return;

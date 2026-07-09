@@ -128,10 +128,14 @@ pub fn is_kernel_owned(m_own: *mut c_void) -> bool {
 ///    EmuTOS does this unconditionally; the rounded size is what
 ///    enters the pool.
 /// 2. Reject `size <= 0` with `-1`.
-/// 3. Reject if the new range `[start, start+size)` overlaps the
-///    ST-RAM pool. EmuTOS implements this with two checks against
-///    `start_stram` / `end_stram`; we use one half-open intersection
-///    test.
+/// 3. Reject any block whose `start` lies below `end_stram`. EmuTOS
+///    (`bdos/umem.c:467-469`) rejects
+///    `(start < start_stram && start+size > start_stram) || start < end_stram`.
+///    Because `start_stram <= end_stram`, the first clause is subsumed
+///    by the second, so the effective rule is: **accept only blocks
+///    that start at or above `end_stram`.** A block lying entirely
+///    below ST-RAM (`start+size <= start_stram`) is therefore rejected,
+///    not accepted.
 /// 4. Walk `pmdalt.mp_mfl` and merge with an adjacent free block
 ///    (either end). On a successful merge, return `0` without
 ///    consuming a fresh MD.
@@ -166,10 +170,14 @@ pub unsafe fn maddalt(start: Long, size: Long) -> Long {
         None => return -1,
     };
 
-    // 3. Reject overlap with ST-RAM. Half-open intervals overlap iff
-    //    `a.start < b.end && b.start < a.end`.
+    // 3. Reject any block that starts below the ST-RAM pool end.
+    //    EmuTOS accepts a new alt-RAM region only when `start >=
+    //    end_stram`; a block wholly below ST-RAM (`end <= st_start`)
+    //    still has `start < end_stram` and must be rejected. The
+    //    `st_end > st_start` guard means "ST-RAM is populated" — with
+    //    no ST-RAM pool there is nothing to sit below.
     let (st_start, st_end) = init::stram_range();
-    if st_end > st_start && start < st_end && st_start < end {
+    if st_end > st_start && start < st_end {
         return -1;
     }
 
@@ -390,6 +398,43 @@ unsafe fn find_mpb(addr: Long) -> *mut MPB {
     } else {
         init::pmdalt()
     }
+}
+
+/// Re-tag the owner cookie of the allocated block starting at `addr`,
+/// mirroring EmuTOS `set_owner` (`bdos/umem.c:587`). Walks the owning
+/// pool's allocated list for the MD whose `m_start == addr` and stamps
+/// its `m_own`. Returns `true` if the block was found.
+///
+/// `Pexec` uses this to hand a freshly-`Mxalloc`'d environment block to
+/// the process that should free it: the **child** for `PE_LOADGO`
+/// (`owner = p`, `bdos/proc.c:305`), so the child's `Pterm`
+/// (`free_all_owned`) reclaims it. Blocks allocated with the wrong
+/// running-process cookie would otherwise leak.
+///
+/// # Safety
+///
+/// Caller holds the BDOS giant lock.
+pub unsafe fn set_owner(addr: Long, owner: *mut c_void) -> bool {
+    // SAFETY: caller holds the BDOS lock.
+    let mpb = unsafe { find_mpb(addr) };
+    if mpb.is_null() {
+        return false;
+    }
+    // SAFETY: caller holds the BDOS lock; walk the allocated list.
+    let mut p = unsafe { (*mpb).mp_mal };
+    while !p.is_null() {
+        // SAFETY: list invariant.
+        if unsafe { (*p).m_start } == addr {
+            // SAFETY: `p` is a live MD on `mp_mal`.
+            unsafe {
+                (*p).m_own = owner;
+            }
+            return true;
+        }
+        // SAFETY: list invariant.
+        p = unsafe { (*p).m_link };
+    }
+    false
 }
 
 /// `Mfree(addr)` — GEMDOS 0x49.

@@ -31,14 +31,30 @@
 //! EL0 → SVC trap-back) without any stub layers. Phase 09 will
 //! relax all three when source-port programs land.
 
+use core::ffi::c_void;
 use core::sync::atomic::Ordering;
 
-use tos_types::{BasePage, Long, NUMSTD, PF_STANDARD};
+use tos_types::{BasePage, Long, MX_PREFTTRAM, NUMSTD, PDCLSIZE, PF_STANDARD};
 
 use super::arena;
 use super::elf::{self, ElfImage, LoadSegment, ParseError, PF_W, PF_X};
 use super::mmu::{self, MapError, PageFlags};
 use super::PROCESS_TABLE;
+
+/// High-half kernel VA offset (mirror of [`super::arena`]'s constant and
+/// `kernel::arch::aarch64::mmu::VA_OFFSET`). The whole of DRAM is mapped
+/// read/write in the high half at `phys + VA_OFFSET`, so a BDOS-pool
+/// physical address (an Atari `Long`, always in the low 2 GiB) is
+/// reachable from the kernel at this VA — which is how the loader writes
+/// a freshly-`Mxalloc`'d environment block into pool memory.
+const VA_OFFSET: u64 = 0xFFFF_0000_0000_0000;
+
+/// Kernel VA that aliases physical address `pa`. Inverse of
+/// [`super::arena`]'s `va_to_pa`.
+#[inline(always)]
+const fn pa_to_kva(pa: u64) -> u64 {
+    pa.wrapping_add(VA_OFFSET)
+}
 
 /// Failure modes for [`load_to_slot`].
 #[derive(Copy, Clone, Debug, Eq, PartialEq)]
@@ -59,7 +75,34 @@ pub enum LoadError {
     /// `super::mmu::map_page` failed (validation error inside the
     /// page-table builder).
     MapPage(MapError),
+    /// The environment block could not be allocated from the BDOS pool
+    /// (`Mxalloc` returned 0). EmuTOS `alloc_env` failure →
+    /// `ENSMEM` (`bdos/proc.c:284-288`).
+    NoEnvMemory,
 }
+
+/// How `Pexec` supplies the child's environment block. Mirrors the
+/// `env` argument of EmuTOS `xexec` / `alloc_env` (`bdos/proc.c:413`).
+#[derive(Copy, Clone, Debug)]
+pub enum EnvSpec<'a> {
+    /// No environment is set — `p_env` stays `0`. Used by the
+    /// kernel-launch selftests (`load_to_slot`), which never handed the
+    /// child an env and predate this plumbing.
+    None,
+    /// Copy this explicit environment image verbatim. The slice is the
+    /// caller's block **including** its terminating double-NUL, i.e.
+    /// `envsize` bytes (`bdos/proc.c:150`).
+    Explicit(&'a [u8]),
+    /// `env == NULL`: duplicate the parent's `run->p_env`
+    /// (`bdos/proc.c:419-420`). The root process carries an empty
+    /// double-NUL env (`bdos/bdosmain.c:341`), so with no running parent
+    /// (or a parent whose `p_env` is 0) the child inherits an empty env.
+    Inherit,
+}
+
+/// The empty environment: a single double-NUL. Matches EmuTOS's
+/// `double_nul` static (`bdos/bdosmain.c:341`).
+static EMPTY_ENV: [u8; 2] = [0, 0];
 
 impl From<ParseError> for LoadError {
     fn from(e: ParseError) -> Self {
@@ -121,6 +164,45 @@ pub unsafe fn load_to_slot(
     elf_bytes: &[u8],
     slot: usize,
 ) -> Result<LoadedImage, LoadError> {
+    // Legacy 2-arg entry (kernel-launch D3/D6/D7 selftests): no command
+    // tail, no environment — the child's `p_cmdlin` and `p_env` stay
+    // zero, exactly as before this plumbing landed.
+    // SAFETY: forwarded — same BDOS-lock / trap-context contract.
+    unsafe { load_to_slot_with(elf_bytes, slot, &[], EnvSpec::None, false) }
+}
+
+/// Load an ELF blob into `slot`, additionally populating the child's
+/// command tail (`p_cmdlin`) and environment (`p_env`) per `Pexec`.
+///
+/// This is the full `Pexec`-path entry; [`load_to_slot`] is the
+/// tail-/env-less legacy wrapper. See [`load_to_slot`] for the load
+/// sequence; the only additions are:
+///
+///   * **Command tail** (`tail`): copied verbatim into `p_cmdlin`
+///     (offset 0x80), truncated to 127 bytes, NUL-terminated —
+///     EmuTOS `init_pd_fields` (`bdos/proc.c:378-383`). The classic
+///     Atari image is a 1-byte length followed by the text; the copy
+///     is byte-for-byte, so `p_cmdlin[0]` is whatever the caller put
+///     there (the length under the convention).
+///   * **Environment** (`env`): allocated from the BDOS pool and copied
+///     verbatim — EmuTOS `alloc_env` (`bdos/proc.c:413-431`). `p_env`
+///     receives the pool address of the copy.
+///   * **Ownership** (`env_owned_by_child`): when `true` (PE_LOADGO),
+///     the env block is re-tagged to the child so the child's `Pterm`
+///     frees it (`owner = p`, `bdos/proc.c:305`); when `false`
+///     (PE_LOAD) it keeps the allocating-process cookie (`owner =
+///     run`).
+///
+/// # Safety
+///
+/// Caller holds the BDOS giant lock; see [`load_to_slot`].
+pub unsafe fn load_to_slot_with(
+    elf_bytes: &[u8],
+    slot: usize,
+    tail: &[u8],
+    env: EnvSpec<'_>,
+    env_owned_by_child: bool,
+) -> Result<LoadedImage, LoadError> {
     if slot >= super::MAX_PROCESSES {
         return Err(LoadError::InvalidSlot);
     }
@@ -168,12 +250,21 @@ pub unsafe fn load_to_slot(
         }
     }
 
-    // 3. Populate the BasePage in the reserved 256-byte block at
+    // 3. Allocate + copy the environment (EmuTOS `alloc_env`). Done
+    //    before `populate_basepage` so `p_env` can be stamped in one
+    //    pass. The child's basepage kernel VA (= the page start) is the
+    //    ownership cookie for the `PE_LOADGO` re-tag.
+    // SAFETY: BDOS lock held; single-CPU pre-test.
+    let env_phys = unsafe {
+        alloc_env_for(env, page.as_mut_ptr() as *mut c_void, env_owned_by_child)?
+    };
+
+    // 3b. Populate the BasePage in the reserved 256-byte block at
     //    the start of the page. Segments have already been copied
     //    above and `validate_segment` guarantees none of them
     //    overlap the basepage window, so this is the last write to
     //    `page` before the slot mapping is installed.
-    populate_basepage(page, &img);
+    populate_basepage(page, &img, tail, env_phys);
 
     // 3a. The page now holds the final program image. Make those bytes
     //     observable to instruction fetch on real hardware (clean D-cache
@@ -234,11 +325,19 @@ pub unsafe fn load_to_slot(
 ///   * `p_flags` — [`PF_STANDARD`] (TT-RAM-friendly modern flags).
 ///   * `p_uft` — all `-1` (no inherited handle redirections).
 ///
-/// `p_parent`, `p_env`, `p_curdir`, the saved-register cells and the
-/// `p_cmdlin` buffer are left zero for D3 — they'll be filled in by
-/// `Pexec` (D4/D5) once it has parent + env + cmdline arguments to
-/// hand down.
-fn populate_basepage(page: &mut [u8; 4096], img: &ElfImage) {
+/// `p_cmdlin` receives the caller's command `tail` (verbatim, truncated
+/// to 127 bytes, NUL-terminated — EmuTOS `init_pd_fields`
+/// `bdos/proc.c:378-383`); `p_env` receives the pool address of the
+/// copied environment block (`env_phys`), or `0` when none was
+/// allocated. `p_parent`, `p_curdir` and the saved-register cells are
+/// left zero (parent linkage is set by the launch path; current-dir
+/// inheritance is a Phase-08 concern).
+fn populate_basepage(
+    page: &mut [u8; 4096],
+    img: &ElfImage,
+    tail: &[u8],
+    env_phys: Option<Long>,
+) {
     let mut text_base: u64 = 0;
     let mut text_len: u64 = 0;
     let mut data_base: u64 = 0;
@@ -283,11 +382,149 @@ fn populate_basepage(page: &mut [u8; 4096], img: &ElfImage) {
         + core::mem::offset_of!(BasePage, p_cmdlin) as u64) as Long;
     bp.p_parent = 0;
     bp.p_flags = PF_STANDARD;
-    bp.p_env = 0;
+    bp.p_env = env_phys.unwrap_or(0);
     bp.p_uft = [-1; NUMSTD];
     bp.p_lddrv = 0;
     bp.p_curdrv = 0;
+
+    // Command tail → `p_cmdlin` (offset 0x80). EmuTOS `init_pd_fields`
+    // copies the caller's `tail` byte-for-byte up to `PDCLSIZE` or the
+    // first NUL, then appends a NUL. We cap the copy at `PDCLSIZE - 1`
+    // (127) so the terminating NUL always fits inside the 128-byte
+    // buffer (the spec's "127-byte usable region + trailing NUL"); the
+    // caller's `tail` carries no embedded NUL (it was read up to the
+    // first one), so this is the same observable image. Under the Atari
+    // convention `tail[0]` is the length byte, preserved verbatim.
+    let n = core::cmp::min(tail.len(), PDCLSIZE - 1);
+    bp.p_cmdlin[..n].copy_from_slice(&tail[..n]);
+    bp.p_cmdlin[n] = 0;
 }
+
+/// Resolve an [`EnvSpec`] into an optional pool address for `p_env`,
+/// allocating + copying the environment via the BDOS pool. Mirrors
+/// EmuTOS `alloc_env` (`bdos/proc.c:413-431`) plus the `set_owner`
+/// hand-off (`bdos/proc.c:305-307`).
+///
+/// `child_cookie` is the child basepage's kernel VA (the ownership tag
+/// `free_all_owned` matches); `owned_by_child` selects whether the env
+/// block is re-tagged to the child (`PE_LOADGO`) or left owned by the
+/// allocating process (`PE_LOAD`).
+///
+/// # Safety
+///
+/// Caller holds the BDOS giant lock.
+unsafe fn alloc_env_for(
+    env: EnvSpec<'_>,
+    child_cookie: *mut c_void,
+    owned_by_child: bool,
+) -> Result<Option<Long>, LoadError> {
+    // Materialise the source env image (including its terminating
+    // double-NUL) as a byte slice, then copy it into a fresh pool block.
+    match env {
+        EnvSpec::None => Ok(None),
+        EnvSpec::Explicit(img) => {
+            // SAFETY: BDOS lock held.
+            let phys = unsafe { alloc_env(img, child_cookie, owned_by_child)? };
+            Ok(Some(phys))
+        }
+        EnvSpec::Inherit => {
+            // env == NULL → duplicate run->p_env (EmuTOS proc.c:419-420).
+            let run = crate::bdos::process::current();
+            // SAFETY: BDOS lock held; `run`/its `p_env` phys point at
+            // live pool memory when non-null.
+            let phys = unsafe {
+                let src: &[u8] = if run.is_null() {
+                    &EMPTY_ENV
+                } else {
+                    let penv = (*run).p_env;
+                    if penv == 0 {
+                        &EMPTY_ENV
+                    } else {
+                        env_slice_from_phys(penv)
+                    }
+                };
+                alloc_env(src, child_cookie, owned_by_child)?
+            };
+            Ok(Some(phys))
+        }
+    }
+}
+
+/// Allocate a pool block for `img` and copy it verbatim, returning the
+/// block's pool address. `img` is the env content **including** its
+/// terminating double-NUL (its length is EmuTOS's `envsize`). The size
+/// is rounded up to even (`bdos/proc.c:421`) and the rounding tail is
+/// zero-filled.
+///
+/// # Safety
+///
+/// Caller holds the BDOS giant lock.
+unsafe fn alloc_env(
+    img: &[u8],
+    child_cookie: *mut c_void,
+    owned_by_child: bool,
+) -> Result<Long, LoadError> {
+    // Round the byte count up to even; never below the 2-byte empty env.
+    let size = (((img.len() + 1) & !1).max(2)) as Long;
+    // PF_STANDARD carries PF_TTRAMLOAD, so `alloc_env`'s TT-RAM-preferred
+    // arm applies (`(flags & PF_TTRAMLOAD) ? MX_PREFTTRAM : MX_STRAM`).
+    // SAFETY: BDOS lock held.
+    let phys = unsafe { crate::bdos::mem::traps::mxalloc(size, MX_PREFTTRAM) };
+    if phys == 0 {
+        return Err(LoadError::NoEnvMemory);
+    }
+    // Copy verbatim into the pool block (reachable at phys + VA_OFFSET),
+    // zero-padding the even-rounding tail.
+    let dst = pa_to_kva(phys as u64) as *mut u8;
+    // SAFETY: `dst` aliases `size` bytes of live, RW-mapped pool memory
+    // (whole DRAM is linearly mapped in the high half); `img` is a
+    // distinct, live slice.
+    unsafe {
+        core::ptr::copy_nonoverlapping(img.as_ptr(), dst, img.len());
+        for i in img.len()..size as usize {
+            dst.add(i).write(0);
+        }
+    }
+    // PE_LOADGO: hand ownership to the child so its `Pterm` frees it.
+    if owned_by_child {
+        // SAFETY: BDOS lock held; `phys` is on the allocated list.
+        unsafe {
+            crate::bdos::mem::traps::set_owner(phys, child_cookie);
+        }
+    }
+    Ok(phys)
+}
+
+/// Borrow the environment block living at pool physical address `penv`
+/// as a byte slice, including its terminating double-NUL. Scans for the
+/// `\0\0` terminator, bounded by [`ENV_SCAN_LIMIT`] against a malformed
+/// (unterminated) parent env.
+///
+/// # Safety
+///
+/// Caller holds the BDOS giant lock and `penv` addresses a live pool
+/// environment block (invariant of every `p_env` this loader writes).
+unsafe fn env_slice_from_phys(penv: Long) -> &'static [u8] {
+    let base = pa_to_kva(penv as u64) as *const u8;
+    let mut n = 0usize;
+    while n + 1 < ENV_SCAN_LIMIT {
+        // SAFETY: `n + 1 < ENV_SCAN_LIMIT`; pool memory is mapped.
+        let b0 = unsafe { base.add(n).read() };
+        let b1 = unsafe { base.add(n + 1).read() };
+        if b0 == 0 && b1 == 0 {
+            n += 2; // include the terminating double-NUL
+            break;
+        }
+        n += 1;
+    }
+    // SAFETY: `base .. base+n` is within the scanned, mapped range.
+    unsafe { core::slice::from_raw_parts(base, n) }
+}
+
+/// Upper bound on a parent environment scan (`env_slice_from_phys`),
+/// guarding against an unterminated block. Generous versus real Atari
+/// environments (a handful of `KEY=value` records).
+const ENV_SCAN_LIMIT: usize = 4096;
 
 /// Reject segments that don't fit in the single 4-KiB page or that
 /// would clobber the basepage window at the start of the page.

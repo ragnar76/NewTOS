@@ -40,9 +40,16 @@ pub fn run_program(path: &[u8]) -> bool {
     // Busy cursor while loading from disk (the desktop is still on screen).
     busy_cursor(true);
     // Load from the registry or the FAT16 file system into a fresh slot.
+    // No command tail, no environment (`EnvSpec::None` → `p_env = 0`) —
+    // the desktop/AUTO launcher hands neither down, preserving the
+    // pre-env-plumbing behaviour on this boot-critical path. Wiring an
+    // inherited env here waits on the process-ownership model (Phase 09)
+    // so the block is reclaimed at the program's `Pterm`.
     // SAFETY: single-CPU boot/desktop context; the BDOS is not concurrently
     // locked, and the returned `LoadedChild` borrows nothing past this call.
-    let child = match unsafe { process::pexec::load(path, false) } {
+    let child = match unsafe {
+        process::pexec::load(path, &[], process::loader::EnvSpec::None, false)
+    } {
         Ok(c) => c,
         Err(e) => {
             kprintln!("[launch] load failed: {:?}", e);

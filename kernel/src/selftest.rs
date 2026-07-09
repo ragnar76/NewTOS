@@ -193,6 +193,7 @@ pub fn run_phase04_self_test() {
     tally(test_mshrink_smaller_works());
     tally(test_mshrink_zero_frees());
     tally(test_maddalt_overlap_reject());
+    tally(test_maddalt_below_stram_reject());
     tally(test_mxalloc_prefstram_fallback());
     tally(test_churn_no_leak());
 
@@ -437,6 +438,22 @@ fn test_maddalt_overlap_reject() -> bool {
     let middle = st_start + (st_end - st_start) / 2;
     let r = gemdos_maddalt(middle, 64);
     check(r == -1, "EC7 Maddalt ST-RAM overlap → −1")
+}
+
+/// F5 — `Maddalt` rejects a block lying **entirely below** ST-RAM.
+/// EmuTOS (`bdos/umem.c:467-469`) accepts a new alt-RAM region only when
+/// `start >= end_stram`; a block with `start + size <= start_stram` still
+/// has `start < end_stram` and must return −1 (the pre-fix half-open
+/// intersection wrongly accepted it → 0). The probe is pure arithmetic
+/// (`start` is never dereferenced) and, being rejected, allocates no MD,
+/// so the pool baseline is untouched.
+fn test_maddalt_below_stram_reject() -> bool {
+    let (st_start, _st_end) = stram_range();
+    // Strictly below ST-RAM start and positive: half of `st_start` with a
+    // tiny size keeps `end = st_start/2 + 4 < st_start`.
+    let below = st_start / 2;
+    let r = gemdos_maddalt(below, 4);
+    check(r == -1, "F5 Maddalt fully below ST-RAM → −1")
 }
 
 /// EC3 — `MX_PREFSTRAM` falls back to TT-RAM when ST-RAM is full.

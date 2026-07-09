@@ -32,7 +32,7 @@ use core::sync::atomic::Ordering;
 
 use tos_types::BasePage;
 
-use super::loader::{load_to_slot, LoadError, LoadedImage};
+use super::loader::{load_to_slot_with, EnvSpec, LoadError, LoadedImage};
 use super::registry;
 use super::{allocate_slot, free_slot, PROCESS_TABLE};
 
@@ -106,14 +106,18 @@ pub enum PexecError {
 
 // ─── Mode dispatch ──────────────────────────────────────────────────
 
-/// `Pexec(mode, path, tail, env)` — the GEMDOS-side dispatch. Only
-/// [`PE_LOADGO`] is implemented in Phase 06 D3.
+/// `Pexec(mode, path, tail, env)` — the GEMDOS-side dispatch.
 ///
-/// `path_bytes` is the registry key (NUL-terminated user string;
-/// caller is responsible for the bytes it hands in — Pexec does
-/// **not** scan past the slice's `len`). `_tail` and `_env` are
-/// reserved for D4 / D5 (cmdline tail and environment block); D3
-/// ignores them and the child sees the basepage's defaults.
+/// `path_bytes` is the registry key / file path (NUL-terminated user
+/// string; caller is responsible for the bytes it hands in — Pexec does
+/// **not** scan past the slice's `len`).
+///
+/// The pointer arguments are overloaded by mode. For the **load** modes
+/// (`PE_LOADGO` / `PE_LOAD`), `tail` is the command-tail image and `env`
+/// the environment source (both materialised by the kernel SVC handler
+/// from the caller's address space, since they are user pointers). For
+/// **`PE_GO`**, `go_handle` is the opaque PD handle a prior `PE_LOAD`
+/// returned (the child's `basepage_pa`); `tail`/`env` are unused.
 ///
 /// # Safety
 ///
@@ -123,17 +127,19 @@ pub enum PexecError {
 pub unsafe fn dispatch(
     mode: u16,
     path_bytes: &[u8],
-    tail: u64,
-    _env: u64,
+    go_handle: u64,
+    tail: &[u8],
+    env: EnvSpec<'_>,
 ) -> Result<LoadedChild, PexecError> {
     match mode {
-        // PE_LOADGO (D3): load + launch. PE_LOAD (D4): load only,
-        // basepage owned by the parent, returned as a handle.
-        PE_LOADGO => unsafe { load(path_bytes, true) },
-        PE_LOAD => unsafe { load(path_bytes, false) },
-        // PE_GO (D5): launch an already-loaded slot identified by the
-        // `tail` handle (the basepage_pa a prior PE_LOAD returned).
-        PE_GO => go(tail),
+        // PE_LOADGO: load + launch, env+basepage owned by the child.
+        // PE_LOAD: load only, basepage owned by the parent, returned as
+        // a handle.
+        PE_LOADGO => unsafe { load(path_bytes, tail, env, true) },
+        PE_LOAD => unsafe { load(path_bytes, tail, env, false) },
+        // PE_GO: launch an already-loaded slot identified by the
+        // handle (the basepage_pa a prior PE_LOAD returned).
+        PE_GO => go(go_handle),
         PE_BASEPAGE | PE_GOTHENFREE | PE_BASEPAGEFLAGS => {
             Err(PexecError::UnsupportedMode)
         }
@@ -154,10 +160,21 @@ pub unsafe fn dispatch(
 /// `parent_slot` link is set at **launch** time (here for `PE_LOADGO`,
 /// in [`go`] for `PE_GO`) so `Pterm` returns to whoever launched it.
 ///
+/// `tail` is the command-tail image copied verbatim into the child's
+/// `p_cmdlin`; `env` is the environment source (`EnvSpec::Explicit` /
+/// `Inherit`, or `None` for callers that hand down neither). For
+/// `PE_LOADGO` (`launch == true`) the env block is owned by the child
+/// (`owner = p`); for `PE_LOAD` it is owned by the launching process.
+///
 /// # Safety
 ///
 /// Caller's BDOS-lock contract; see [`dispatch`].
-pub unsafe fn load(path_bytes: &[u8], launch: bool) -> Result<LoadedChild, PexecError> {
+pub unsafe fn load(
+    path_bytes: &[u8],
+    tail: &[u8],
+    env: EnvSpec<'_>,
+    launch: bool,
+) -> Result<LoadedChild, PexecError> {
     // Resolve the program bytes: an embedded registry entry first (test
     // programs), otherwise read the file off the FAT16 file system into
     // the static load buffer.
@@ -177,16 +194,18 @@ pub unsafe fn load(path_bytes: &[u8], launch: bool) -> Result<LoadedChild, Pexec
     let slot_idx = allocate_slot().ok_or(PexecError::NoSlot)?;
 
     // SAFETY: slot is freshly claimed; loader populates the slot's
-    // basepage_kva / basepage_pa / l0_pa atomics.
-    let loaded: LoadedImage = match unsafe { load_to_slot(blob, slot_idx) } {
-        Ok(img) => img,
-        Err(e) => {
-            // Roll back the slot reservation so the table doesn't
-            // leak entries on a malformed blob.
-            free_slot(slot_idx);
-            return Err(PexecError::LoadFailed(e));
-        }
-    };
+    // basepage_kva / basepage_pa / l0_pa atomics, the command tail and
+    // the environment. `launch` == PE_LOADGO → env owned by the child.
+    let loaded: LoadedImage =
+        match unsafe { load_to_slot_with(blob, slot_idx, tail, env, launch) } {
+            Ok(img) => img,
+            Err(e) => {
+                // Roll back the slot reservation so the table doesn't
+                // leak entries on a malformed blob.
+                free_slot(slot_idx);
+                return Err(PexecError::LoadFailed(e));
+            }
+        };
 
     Ok(LoadedChild {
         slot: loaded.slot,
@@ -198,13 +217,14 @@ pub unsafe fn load(path_bytes: &[u8], launch: bool) -> Result<LoadedChild, Pexec
     })
 }
 
-/// Backwards-compatible alias for [`load`]`(path, true)` (PE_LOADGO).
+/// Convenience `PE_LOADGO` launcher with no command tail and an
+/// inherited environment (the common "run this program" case).
 ///
 /// # Safety
 ///
 /// See [`load`].
 pub unsafe fn load_go(path_bytes: &[u8]) -> Result<LoadedChild, PexecError> {
-    unsafe { load(path_bytes, true) }
+    unsafe { load(path_bytes, &[], EnvSpec::Inherit, true) }
 }
 
 /// `Pexec(PE_GO, 0, tail, 0)` — launch an already-loaded program. The
