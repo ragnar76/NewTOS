@@ -2777,3 +2777,211 @@ value shipped as contract.
 mark the return value / match arms as open pending the Lead's choice among
 the sketched options. Implementation is blocked on that choice; Researcher
 does not decide it unilaterally (CLAUDE.md Rule 3: stop on uncertainty).
+
+---
+
+## D-079: VDI dispatcher (trap #2 / `screen()`) — "no-op" convention
+re-validated, confirmed; a third distinct convention alongside GEMDOS
+`EINVFN` and BIOS/XBIOS's function-number echo
+
+**Date:** 2026-07-09
+**Phase 00b spec:** `docs/api/vdi/_dispatcher.md`
+
+**Context:** first task of the VDI leg of the bottom-up sweep (GEMDOS,
+BIOS, XBIOS already done). Re-read `vdi/vdi_main.c:121-192`
+(`screen()`), `vdi/vdi_control.c:178-184` (`get_vwk_by_handle`),
+`vdi/vdi_asm.S` (`_vditrap`/`_GSX_ENTRY`), `aes/gemdosif.S:222-304`
+(`_aestrap`/`set_aestrap`), and `bios/bios.c:173` (`VEC_GEM = vditrap`)
+against the existing `docs/api/vdi/_dispatcher.md`.
+
+**Finding — confirmed, no source-behaviour correction:** `_dispatcher.md`
+already stated correctly that VDI has no error return and that an
+unknown/invalid opcode is a silent no-op. This holds for **every**
+failure path in `screen()`:
+- an out-of-range or empty-slot handle (`get_vwk_by_handle()` returns
+  `NULL`) → bare `return;` before the output-count preload, `CONTRL[2]/
+  [4]` left at the `0/0` set at entry;
+- an opcode outside both jump-table ranges (`[1,40)` ∪ `[100,100+
+  JMPTB2_ENTRIES)`) → same bare `return;`, same `0/0`;
+- an opcode that *is* in-range but mapped to a "does not exist"/"not
+  implemented" slot (4, 10, 27, 29, 34, and 132/133 without
+  `CONF_WITH_EXTENDED_MOUSE`) → the jump-table entry `{0,0,vdi_v_nop}`
+  runs the output-count preload (itself `0/0`) then calls `vdi_v_nop`
+  (`just_rts`), which also does nothing observable.
+
+No path writes a `D0` error code, a function-number echo, or an
+`INTOUT`/`PTSOUT` sentinel; a caller cannot distinguish these three cases
+from the `VDIPB` alone.
+
+**Contrast (the point of this entry — three traps, three conventions):**
+- GEMDOS (trap #1): unknown/unimplemented `fn` → **`EINVFN` (-32)**,
+  always (`bdos/bdosmain.c:444-445` out-of-range; `ni()` at
+  `bdos/bdosmain.c:307-310` for in-range-unimplemented) — see
+  `docs/api/gemdos/_dispatcher.md` §4.
+- BIOS (trap #13) / XBIOS (trap #14): unknown/unimplemented ID → returns
+  the **function number itself** in `D0`, both paths
+  (`bios/vectors.S:1323-1326`; `bios/xbios.c:1251`) — not an error code;
+  see `docs/api/xbios/_dispatcher.md` §3 (D-008/D-039) and
+  `docs/api/bios/_dispatcher.md` §4.
+- VDI (trap #2, selector `0x73`): unknown/unimplemented opcode → **no
+  signal whatsoever** — a bare `return;`, no D0 code, no echoed number, no
+  output-array marker.
+
+Each convention is internally self-consistent within its own trap; per
+the same caution already recorded for the GEMDOS/BIOS-XBIOS pair, none
+should be "fixed" toward another by analogy.
+
+**Doc-precision fix (not a behaviour correction):** `_dispatcher.md`'s
+trap-chain description previously read "`_vditrap` … passes everything
+else through", which could be misread as `_vditrap` itself forwarding
+unrecognised calls onward. Re-verified: `_vditrap` never forwards
+anywhere (`vdi_asm.S:40-48`, falls through to a bare `rte` for any `d0`
+other than `0x73`/`0xffff`). The forwarding is one layer *above* it and
+only while the AES is running: `_aestrap` (installed by `set_aestrap()`
+over the previously-installed `_vditrap`, `aes/gemdosif.S:295-304`)
+recognises its own `0xC8`/`0xC9` selectors and, for anything else,
+tail-calls the saved `savetrap2` (= `_vditrap`) via `aes/gemdosif.S:
+222-228`. Corrected in `docs/api/vdi/_dispatcher.md`.
+
+**Decision:** no value changes; `docs/api/vdi/_dispatcher.md` is
+confirmed accurate at the "no-op" claim and updated only for the
+trap-chain-topology precision fix and this three-way-contrast writeup.
+
+---
+
+## D-080: `flip_y` (the VDI trap's `d0` return value) is silently set to `1` by four attribute setters (`vsm_height`, `vst_height`, `vst_point`, and — as a leaked side effect — `vst_font`), undocumented in the Batch-2 attribute specs
+
+**Date:** 2026-07-10
+**Phase 00b spec:** `docs/api/vdi/attributes/_line-marker.md`,
+`docs/api/vdi/attributes/_text.md`
+
+**Context:** re-validating the VDI attribute-setter specs
+(`_line-marker.md`, `_fill.md`, `_text.md`, `_mode-clip-color.md`)
+against `vdi/vdi_line.c`, `vdi_marker.c`, `vdi_fill.c`, `vdi_text.c`,
+`vdi_control.c`, `vdi_col.c` at `1a7484ab`. `docs/api/vdi/_dispatcher.md`
+already documents that the raw `trap #2` VDI call returns `d0 = flip_y`
+(0 or 1, "coordinate vs magnitude" flag, `vdi_asm.S:124-125`) as part of
+the native trap ABI — but no per-function spec states *which* opcodes
+set it.
+
+**EmuTOS:** `flip_y` is a single global (`vdi_main.c:20`), reset to `0`
+at the top of every `screen()` call (`vdi_main.c:135`) and left at `0`
+unless a handler explicitly sets it. Within the Batch-2 attribute
+setters, exactly three do:
+- `vdi_vsm_height` (op 19, `vdi_marker.c:49`, inside the function body
+  after computing `mark_scale`);
+- `setup_width_height()` (`vdi_text.c:678`), the shared helper called by
+  both `vdi_vst_height` (op 12) and `vdi_vst_point` (op 107) to write
+  their `PTSOUT[0..3]` metrics.
+
+`vdi_vst_font` (op 21, `vdi_text.c:939-985`) does **not** set `flip_y`
+directly, but it internally re-drives the current size by calling
+`vdi_vst_point`/`vdi_vst_height` (`vdi_text.c:975-978`) through a
+redirected `PTSIN`/`PTSOUT` (a local `dummy[4]` buffer, so the caller's
+*real* `PTSOUT` — 0 points declared for op 21 — is never touched). That
+inner call still runs `setup_width_height()` against the global
+`flip_y`, so **`vst_font` leaves `flip_y = 1` on return as a leaked side
+effect**, even though its own jump-table entry declares `0` `PTSOUT`
+words (`vdi_main.c:53`) and no code path writes the real `PTSOUT`.
+
+Every other Batch-2 setter (`vsl_type/width/color/ends/udsty`,
+`vsm_type/color`, `vsf_interior/style/color/perimeter/udpat`,
+`vswr_mode`, `vs_clip`, `vs_color`, `vst_color/effects/alignment/
+rotation`, `vst_load_fonts`/`vst_unload_fonts`) leaves `flip_y` at the
+`0` set on entry to `screen()` — confirmed by grepping every `flip_y`
+assignment in `vdi/*.c` (12 total: 2 in this batch's scope —
+`vdi_marker.c:49`, `vdi_text.c:678` — plus `vdi_control.c:379`
+(`init_wk`, batch 1), `vdi_control.c:631` (`vq_extnd`, batch 1), and
+`vdi_text.c:1020,1058,1095,1173` (`vqt_attributes`/`vqt_extent`/
+`vqt_width`/`vqt_fontinfo`, batch 4 — out of this task's scope, flagged
+for the inquiry-spec owner).
+
+**Prior NewTOS doc:** `_line-marker.md`'s `vsm_height` row and
+`_text.md`'s `vst_height`/`vst_point`/`vst_font` rows did not mention
+`flip_y` at all, even though `_dispatcher.md` already treats `d0 =
+flip_y` as part of the documented native-trap **contract**.
+
+**Decision:** documented in `attributes/_line-marker.md` (`vsm_height`)
+and `attributes/_text.md` (`vst_height`/`vst_point`/`vst_font`) as an
+explicit "sets `flip_y = 1`, so the trap's `d0` return is `1` for this
+call" note. **Open question for the lead:** does NewTOS's native ABI
+(selector-based `svc #2`, no m68k `d0` register) need an equivalent
+per-call "coordinate vs magnitude" signal at all, or is this purely an
+artifact of the m68k GEM binding library's PTSOUT-copy convention with
+no observable effect through a flat struct-passing ABI? Recommend
+treating it as **reference** (EmuTOS mechanism), not **contract**,
+unless a concrete NewTOS C-binding consumer is shown to depend on it —
+but flagging it here since `_dispatcher.md` currently classifies it as
+contract without qualification.
+
+---
+
+## D-081: `st_fl_ptr()` reads past the end of `HATCH1[96]` if `vsf_interior` switches `FIS_PATTERN` → `FIS_HATCH` (or restores a pattern-range `fill_index` under hatch) without an intervening `vsf_style` call — a genuine EmuTOS source-level gap, not a spec-reading error
+
+**Date:** 2026-07-10
+**Phase 00b spec:** `docs/api/vdi/attributes/_fill.md`
+
+**EmuTOS:** `vdi_vsf_interior` (`vdi_fill.c:173-181`) validates and
+stores `vwk->fill_style` and calls `st_fl_ptr(vwk)` — it **never
+touches `vwk->fill_index`**. `vdi_vsf_style` (`vdi_fill.c:186-201`)
+validates `INTIN[0]` against a range that depends on the **current**
+`fill_style` (`1..24` for `FIS_PATTERN`, else `1..12`) and stores
+`fill_index = accepted-1` (0-based, so `0..23` for pattern, `0..11` for
+every other style). `st_fl_ptr()` (`vdi_fill.c:338-380`) then picks the
+pattern table using `vwk->fill_index` **re-interpreted under the
+style current at the time `st_fl_ptr` runs**, with no bounds check
+against the range the stored `fill_index` was originally validated for:
+
+```
+case FIS_HATCH:
+    if (fi < 6) { pm = HAT_0_MSK; pp = &HATCH0[fi*(pm+1)]; }      /* HATCH0[48], safe for fi 0..5 */
+    else        { pm = HAT_1_MSK; pp = &HATCH1[(fi-6)*(pm+1)]; }  /* HATCH1[96], safe only for fi 6..11 */
+```
+
+If a program does `vsf_interior(FIS_PATTERN)` → `vsf_style(24)` (stores
+`fill_index = 23`, valid for `FIS_PATTERN`'s `OEMPAT[128]` table) →
+`vsf_interior(FIS_HATCH)` **without an intervening `vsf_style`**,
+`fill_style` becomes `FIS_HATCH` but `fill_index` is still `23`.
+`st_fl_ptr()` (called by `vsf_interior` itself, `vdi_fill.c:180`) then
+takes the `fi >= 6` branch with `fi=23`: `&HATCH1[(23-6)*16]` =
+`HATCH1[272]` — **176 words past the end of the 96-word `HATCH1[]`
+array** — and `vwk->patptr` is left pointing into whatever static data
+follows `HATCH1` in the binary (`HOLLOW`/`SOLID`/other tables), which
+the next fill/rectangle-fill/GDP draw call then reads as if it were a
+16-word hatch pattern. Any `fill_index` in `12..23` inherited from a
+prior `FIS_PATTERN` state triggers this (the safe range for
+`FIS_HATCH` is only `fi <= 11`); the reverse direction (hatch→pattern,
+`fi` up to `11`) stays in-bounds because pattern's own tables
+(`DITHER[32]`+`OEMPAT[128]`) cover `fi` up to `23`. Confirmed by
+tracing the array sizes: `DITHRMSK`(3)+1 × 8 dither slots = `DITHER[32]`;
+`OEMMSKPAT`(7)+1 × 16 OEM slots = `OEMPAT[128]`, together spanning
+`fi` `0..23` (`MAX_FILL_PATTERN`); `HAT_0_MSK`(7)+1 × 6 slots =
+`HATCH0[48]`; `HAT_1_MSK`(0xF)+1 × 6 slots = `HATCH1[96]`, together only
+`fi` `0..11` (`MAX_FILL_HATCH`) — there is no code path that clamps
+`fill_index` back into range when `fill_style` changes without a
+`vsf_style` call (unlike the line-style table, which explicitly guards
+`line_index < 6` before indexing `LINE_STYLE[]`, falling back to
+`ud_ls` otherwise — `vdi_line.c:2389`).
+
+**This is a source-level EmuTOS gap** (an out-of-bounds read triggered
+by a legal, undocumented setter call sequence), analogous in kind to
+D-070 (`Frename`'s incomplete cycle check) rather than a documentation
+misreading.
+
+**Prior NewTOS doc:** `attributes/_fill.md` documented `st_fl_ptr()`
+only as "recomputes the active `patptr`/`patmsk` from `fill_style`/
+`fill_index`" without noting that `fill_index` is never reset or
+re-validated on a bare style change, or that this can walk off the end
+of a pattern table.
+
+**Decision:** documented as a new edge case in `attributes/_fill.md`
+with the exact unsafe sequence and the safe/unsafe `fill_index` ranges
+per style. **Open question for the lead / Developer:** NewTOS's own
+fill-pattern-table implementation must decide whether to reproduce this
+verbatim (bug-for-bug, reading whatever static data trails its own
+hatch table — implementation-defined, not useful to copy) or to add a
+defensive re-clamp of `fill_index` on every `fill_style` change (a
+NewTOS-side hardening, analogous to the D-070 `Frename` recommendation)
+— **not** a decision to make silently in the spec.
+
+---

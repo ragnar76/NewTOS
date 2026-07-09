@@ -64,6 +64,33 @@
 > d1=VDIPB*` with the `PTSIN`/`MAX_VERTICES` clamp; opcodes 132-134 are
 > `CONF_WITH_EXTENDED_MOUSE`-gated.
 
+> **Re-validation pass 2026-07-09 (bottom-up sweep, VDI leg — dispatcher +
+> lifecycle + inquiry).** Re-read `_dispatcher.md`'s dispatch/no-op claim
+> line-by-line against `vdi_main.c:121-192`, `vdi_control.c:178-184`,
+> `vdi_asm.S`, `aes/gemdosif.S:222-304`, `bios/bios.c:173` — **confirmed
+> correct**, logged as [`_discrepancies.md`](_discrepancies.md) via
+> [`../_discrepancies.md`](../_discrepancies.md) **D-079** (global log;
+> this file's own `D-VDI-N` series continues to track VDI-source-vs-doc
+> conflicts locally). Added the explicit three-way contrast (GEMDOS
+> `EINVFN` / BIOS-XBIOS function-number echo / VDI silent no-op) to
+> `_dispatcher.md`, and fixed an imprecise trap-chain description
+> (`_vditrap` does not itself forward anywhere; `_aestrap` sits above it
+> and tail-calls the saved vector). Re-verified `v_opnwk`/`v_opnvwk`/
+> `v_clswk`/`v_clsvwk`/`v_clrwk`/`v_updwk`/`vq_extnd`/`vq_color` against
+> `vdi_control.c`/`vdi_col.c`/`bios/screen.c` — all byte-index tables and
+> citations confirmed accurate, no source-behaviour correction needed.
+> One semantic finding: `DEV_TAB[39]` ("palette size" per EmuTOS's own
+> comment) is actually `get_palette()`'s RGB-precision figure (4096/2/512/
+> 0), a different quantity than `DEV_TAB[13]`'s colour count — flagged as
+> Mismatch #4 in [`workstation/100-v_opnvwk.md`](workstation/100-v_opnvwk.md#mismatches-flagged-step-2-candidates)
+> since NewTOS currently reports the colour count there instead. Added
+> ADR-017 cross-references to the Pi/BCM2711 binding sections of
+> `01-v_opnwk.md`/`100-v_opnvwk.md`/`102-vq_extnd.md`: the 640×480×16
+> numbers there are today's *staged* bring-up geometry (ADR-017's Staging
+> rule), not the final NewTOS target — the VDI table code already reads
+> the live `RasterBackend` geometry, so no VDI code change is needed when
+> the framebuffer driver's target geometry is raised.
+
 ## Batch 2 — attribute setters (D3)
 
 - [x] line + marker — [`attributes/_line-marker.md`](attributes/_line-marker.md):
@@ -84,6 +111,52 @@
 **Batch 2 complete.** Attribute setters (D3) done. Common shape:
 validate (clamp to range, else default) → store in `Vwk` → echo the
 accepted value; none can fail.
+
+> **Re-validation pass 2026-07-10 (bottom-up sweep, VDI leg — attribute
+> setters).** Re-read every setter's implementation incl. helpers
+> line-by-line against `vdi_line.c`, `vdi_marker.c`, `vdi_fill.c`,
+> `vdi_text.c`, `vdi_control.c`, `vdi_col.c`, `vdi_defs.h`, and the
+> `jmptb1`/`jmptb2` output-count declarations in `vdi_main.c` at
+> `1a7484ab`. All clamp ranges, defaults, 0-/1-based storage, and echoed
+> values in all four spec files (`_line-marker.md`, `_fill.md`,
+> `_text.md`, `_mode-clip-color.md`) were confirmed **accurate**,
+> including the "echo the actually-set (clamped/quantised) value, not
+> the request" contract for every setter, and every `PTSOUT`/`INTOUT`
+> word count cross-checked against the jump table. (Note: the task
+> brief's opcode list had `vsl_udsty` at 112 — the source and the
+> existing spec both correctly have it at **113**; opcode **112** is
+> `vsf_udpat`. No doc change needed there, already right.) Four findings
+> from this pass:
+> - **D-VDI-15** (local): `_line-marker.md`'s "NewTOS implementation
+>   notes" cited `validate_color_index` as `vdi_col.c:224-230` — wrong
+>   file, it's `vdi_control.c:224-230`. Fixed (pure citation typo, no
+>   semantic error).
+> - **D-VDI-16** (local): `_mode-clip-color.md` described `vswr_mode`'s
+>   explicit `CONTRL[4] = 1` as "overriding the jump-table pre-load" —
+>   overstated; the jump table already declares `nintout = 1` for op 32
+>   and `vswr_mode` has no other call site, so the line is redundant,
+>   not an observable override. Reworded.
+> - **D-080** (global): `vsm_height` (19), `vst_height` (12), `vst_point`
+>   (107), and (as a leaked side effect) `vst_font` (21) set the global
+>   `flip_y` to `1`, which the raw trap returns in `d0`
+>   (`vdi_asm.S:124-125`) — previously undocumented in the attribute
+>   specs even though `_dispatcher.md` already treats `d0 = flip_y` as
+>   part of the native-trap contract. Documented in `_line-marker.md`
+>   and `_text.md`; open question logged for whether NewTOS's
+>   selector-based ABI needs an equivalent signal at all.
+> - **D-081** (global): `vsf_interior` never resets/re-validates
+>   `fill_index` when `fill_style` changes; `st_fl_ptr()` re-interprets
+>   the stale value under the new style with no bounds check. A
+>   `FIS_PATTERN` (`fill_index` up to 23) → `FIS_HATCH` switch without an
+>   intervening `vsf_style` call reads up to 176 words past the end of
+>   `HATCH1[96]` — a genuine EmuTOS source-level out-of-bounds gap
+>   (unlike the line-style table, which does guard its index). Documented
+>   in `_fill.md` as a new edge case; open question logged for whether
+>   NewTOS should reproduce or defensively fix this.
+>
+> All four opcode groups (line/marker, fill, text, mode/clip/color —
+> 23 opcodes total) are now re-validated and ready for the Phase-12
+> code-audit batch against `tos-api/src/vdi/attributes.rs`.
 
 ## Batch 3 — output primitives (D4)
 

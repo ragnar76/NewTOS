@@ -24,9 +24,9 @@ Per function: opcode in `CONTRL[0]`, handle in `CONTRL[6]`.
 | 106 | `vst_effects`  | `INTIN[0]` style bits | `style = INTIN[0] & INQ_TAB[2]` (mask to supported) | `INTOUT[0]` = accepted bits |
 | 39 | `vst_alignment` | `INTIN[0]`=horiz, `INTIN[1]`=vert | horiz `0..2` else 0 → `h_align`; vert `0..5` else 0 → `v_align` | `INTOUT[0]`/`[1]` = accepted h/v |
 | 13 | `vst_rotation`  | `INTIN[0]` angle (1/10°) | normalise to `0..3599`, then round to nearest 900 (0/900/1800/2700/**3600**); `chup` | `INTOUT[0]` = rounded angle |
-| 21 | `vst_font`      | `INTIN[0]` face id | walk font ring for the face; **default to system font `fon6x6` if not found**; re-apply current size | `INTOUT[0]` = selected `font_id` |
-| 12 | `vst_height`    | `PTSIN[1]` = requested char height (device units); `PTSIN[0]` ignored | pick the loaded font of the same face whose `top` is nearest ≤ request; scale via DDA if `top != request`; set `cur_font` | `PTSOUT[0..3]` = actual char width, char height, cell width, cell height |
-| 107 | `vst_point`    | `INTIN[0]` = requested point size | pick the font of the same face whose `point` is nearest ≤ request (may double via DDA); `pts_mode = TRUE` | `INTOUT[0]` = actual point size; `PTSOUT[0..3]` = actual sizes |
+| 21 | `vst_font`      | `INTIN[0]` face id | walk font ring for the face; **default to system font `fon6x6` if not found**; re-apply current size | `INTOUT[0]` = selected `font_id`; also leaves `flip_y = 1` (leaked from the internal size re-drive, edge case 7 below) |
+| 12 | `vst_height`    | `PTSIN[1]` = requested char height (device units); `PTSIN[0]` ignored | pick the loaded font of the same face whose `top` is nearest ≤ request; scale via DDA if `top != request`; set `cur_font` | `PTSOUT[0..3]` = actual char width, char height, cell width, cell height; also sets `flip_y = 1` (trap `d0` = 1, edge case 7 below) |
+| 107 | `vst_point`    | `INTIN[0]` = requested point size | pick the font of the same face whose `point` is nearest ≤ request (may double via DDA); `pts_mode = TRUE` | `INTOUT[0]` = actual point size; `PTSOUT[0..3]` = actual sizes; also sets `flip_y = 1` (trap `d0` = 1, edge case 7 below) |
 | 119 | `vst_load_fonts`| `CONTRL[7-8]`/`[9]`/`[10-11]` (GDOS ptrs) | link extra font faces (`CONF_WITH_GDOS`) | `INTOUT[0]` = count of newly added faces (0 if already loaded / no GDOS) |
 | 120 | `vst_unload_fonts`| `INTIN[0]` (select, ignored) | unload all extra faces (`CONF_WITH_GDOS`) | none |
 
@@ -141,6 +141,21 @@ font's id when the request was unavailable).
    the current size.
 6. **`vst_height` reads `PTSIN[1]` (the y magnitude)**, not `PTSIN[0]` —
    `PTSIN[0]` (requested width) is ignored (`vdi_text.c:704`).
+7. **`vst_height`/`vst_point` set `flip_y = 1`** via the shared
+   `setup_width_height()` helper (`vdi_text.c:678`) — the global
+   "coordinate vs magnitude" flag consumed by the trap return (`d0`,
+   `vdi_asm.S:124-125`; see [`../_dispatcher.md`](../_dispatcher.md)).
+   **`vst_font` leaks the same side effect**: it re-drives the saved size
+   by internally calling `vst_point`/`vst_height` (edge case 5 above)
+   against a *redirected* `PTSIN`/`PTSOUT` (a local `dummy[4]` buffer, so
+   the caller's real `PTSOUT` — 0 words declared for op 21 — is never
+   written), but that inner call still runs `setup_width_height()`
+   against the one global `flip_y`, so `vst_font` also leaves `flip_y =
+   1` on return even though it writes no `PTSOUT`. Every other setter in
+   this file (`vst_color`/`effects`/`alignment`/`rotation`/
+   `load_fonts`/`unload_fonts`) leaves `flip_y` at the `0` reset on entry
+   to `screen()` (`vdi_main.c:135`). Not previously documented; see
+   [`../_discrepancies.md`](../_discrepancies.md) D-080 (global log).
 
 ---
 

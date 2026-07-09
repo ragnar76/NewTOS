@@ -206,6 +206,14 @@ allocation and no free-handle scan; the physical handle is fixed).
 > handle `1`, the same `DEV_TAB`/`SIZ_TAB` as `v_opnvwk`. Peripheral +
 > driver: see `docs/HARDWARE-PROFILE.md` §2/§3.1.
 
+> **ADR-017 cross-reference (2026-07-09, `docs/MEMORY.md`).** See
+> [`100-v_opnvwk`'s Pi/BCM2711 binding note](100-v_opnvwk.md#pi--bcm2711-binding) —
+> the 640×480×16 numbers below are today's staged bring-up geometry, not
+> the final NewTOS target (native, geometry-independent, default
+> 1920×1080/switchable 1280×800); the VDI table code already reads the
+> live framebuffer, so no VDI change is needed when the driver's target
+> geometry is raised.
+
 - **Same resolved tables as `v_opnvwk`.** `v_opnwk` runs the same `init_wk`
   (`tos-api/src/vdi/workstation.rs:177-183` → `:61-117`), so
   `DEV_TAB`/`SIZ_TAB` carry the identical 640×480×16-colour values pinned

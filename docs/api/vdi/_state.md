@@ -222,4 +222,13 @@ detail. See [`input/_mouse.md`](input/_mouse.md).
 - **Open questions** (see [`_discrepancies.md`](_discrepancies.md)):
   the `NUM_VDI_HANDLES`/`MAX_VERTICES` profile (D-VDI-3/D-VDI-7) and the
   exact `DEV_TAB[13/35/39]` / `INQ_TAB[4/5]` values NewTOS reports for a
-  640×480×16-colour framebuffer (D-VDI-7).
+  640×480×16-colour framebuffer (D-VDI-7). **2026-07-09:** per ADR-017
+  (`docs/MEMORY.md`), 640×480 is the *currently staged* bring-up geometry,
+  not the final target (native/geometry-independent, default 1920×1080,
+  switchable 1280×800); `DEV_TAB[0,1]`/`INQ_TAB` already derive from the
+  live per-device geometry here, so this model needs no change when the
+  staged geometry is raised — only the concrete numbers quoted in
+  cross-referenced specs are provisional. `DEV_TAB[39]`'s "palette size"
+  is also not what it sounds like — see
+  [`workstation/100-v_opnvwk.md`](workstation/100-v_opnvwk.md#mismatches-flagged-step-2-candidates)
+  mismatch #4.

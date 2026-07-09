@@ -90,7 +90,7 @@ Notes:
 | Op | Fn | Reads | Validation → `Vwk` | Echoes |
 |----|----|-------|--------------------|--------|
 | 18 | `vsm_type`   | `INTIN[0]` type | `MIN_MARK_STYLE..MAX_MARK_STYLE` (1..6) else `DEF_MARK_STYLE` (3); `mark_index = v-1` (**0-based**) | `INTOUT[0]` = accepted type (1-based) |
-| 19 | `vsm_height` | `PTSIN[1]` height | clamp `[DEF_MKHT, MAX_MKHT]`; `mark_height = h`; `mark_scale = (h + DEF_MKHT/2) / DEF_MKHT` (integer) | `PTSOUT[0]` = `mark_scale * DEF_MKWD`, `PTSOUT[1]` = `mark_scale * DEF_MKHT` |
+| 19 | `vsm_height` | `PTSIN[1]` height | clamp `[DEF_MKHT, MAX_MKHT]`; `mark_height = h`; `mark_scale = (h + DEF_MKHT/2) / DEF_MKHT` (integer) | `PTSOUT[0]` = `mark_scale * DEF_MKWD`, `PTSOUT[1]` = `mark_scale * DEF_MKHT`; also sets `flip_y = 1` (trap `d0` = 1, see edge case 6 below) |
 | 20 | `vsm_color`  | `INTIN[0]` colour | `validate_color_index`; `mark_color = MAP_COL[i]` | `INTOUT[0]` = validated index |
 
 Source: `vdi_marker.c:57` (`vsm_type`), `:30` (`vsm_height`), `:72`
@@ -169,6 +169,14 @@ not the request. `mark_scale` multiplies the base marker bitmap at draw time.
    raw mask is stored; a mask of 0 makes line type 7 invisible.
 5. **The marker `mark_scale` is integer** — fine-grained marker heights are
    quantised to whole multiples of the base cell (`vdi_marker.c:44`).
+6. **`vsm_height` sets `flip_y = 1`** (`vdi_marker.c:49`) — the global
+   "coordinate vs magnitude" flag consumed by the trap return (`d0`,
+   `vdi_asm.S:124-125`; see [`../_dispatcher.md`](../_dispatcher.md)).
+   Every other setter in this file leaves `flip_y` at the `0` reset on
+   entry to `screen()` (`vdi_main.c:135`); only `vsm_height` (here) and
+   `vst_height`/`vst_point`/`vst_font` (text group,
+   [`_text.md`](_text.md)) touch it. Not previously documented; see
+   [`../_discrepancies.md`](../_discrepancies.md) D-080 (global log).
 
 ---
 
@@ -217,4 +225,6 @@ not the request. `mark_scale` multiplies the base marker bitmap at draw time.
 - `SIZ_TAB[6]` (max line width) and the marker cell bounds come from the
   per-device tables (ADR-011), so different screens may clamp differently.
 - `validate_color_index` clamps to the device colour count (`DEV_TAB[13]`);
-  an out-of-range index maps to **pen 1** (`vdi_col.c:224-230`), *not* pen 0.
+  an out-of-range index maps to **pen 1** (`vdi_control.c:224-230`), *not*
+  pen 0. (Corrected file citation — was misattributed to `vdi_col.c`; see
+  [`../_discrepancies.md`](../_discrepancies.md) local log D-VDI-15.)

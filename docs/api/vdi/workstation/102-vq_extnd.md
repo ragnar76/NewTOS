@@ -183,6 +183,14 @@ dispatcher before `vq_extnd` runs.)
 > mode-0 tables, the mode-1 clip rect + 45-word `INQ_TAB`. Peripheral +
 > driver: see `docs/HARDWARE-PROFILE.md` §2/§3.1.
 
+> **ADR-017 cross-reference (2026-07-09, `docs/MEMORY.md`).** See
+> [`100-v_opnvwk`'s Pi/BCM2711 binding note](100-v_opnvwk.md#pi--bcm2711-binding) —
+> `INQ_TAB[4]/[5]` below (4 planes / colour LUT) hold for today's staged
+> 640×480×16-colour bring-up geometry; they derive from `num_colors()`
+> (the CLUT model), which is unaffected by the pending geometry-only
+> resolution change (1920×1080 default / 1280×800 switchable) — this
+> spec's own "1080p later" note below already says as much.
+
 ### Open question resolved — `INQ_TAB[4]`/`[5]` for 640×480×16-colour
 
 Confirmed from the code (`tos-api/src/vdi/workstation.rs:155-160`):

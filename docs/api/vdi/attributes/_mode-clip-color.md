@@ -43,8 +43,19 @@ Per function: opcode in `CONTRL[0]`, handle in `CONTRL[6]`.
 `vswr_mode` clamps `INTIN[0]` to `1..4`, substituting `DEF_WRT_MODE` (1) for
 anything outside, echoes the accepted **1-based** value in `INTOUT[0]`, and
 stores it **0-based** as `wrt_mode = mode-1` (`vdi_control.c:261-264`). It
-also sets `CONTRL[4] = 1` itself (`vdi_control.c:260`), overriding the
-jump-table pre-load. The drawing primitives switch on the 0-based `wrt_mode`.
+also contains an explicit `CONTRL[4] = 1` as its first statement
+(`vdi_control.c:260`). The drawing primitives switch on the 0-based
+`wrt_mode`.
+
+**Precision note (was: "overriding the jump-table pre-load"):** this line is
+**functionally redundant**, not an observable override. `jmptb1`'s entry for
+op 32 already declares `nintout = 1` (`vdi_main.c:64`), which `screen()`
+writes to `CONTRL[4]` *before* calling `vdi_vswr_mode` (`vdi_main.c:158-160`);
+`vdi_vswr_mode` is reached **only** through this jump table (no other call
+site in `vdi/`). The explicit line therefore reassigns the identical value
+`1` — a caller cannot observe any difference with or without it. Corrected
+per [`../_discrepancies.md`](../_discrepancies.md) local log D-VDI-16 (an
+earlier revision of this doc overstated it as a behavioural override).
 
 > Mode 4's EmuTOS constant is `MD_ERASE`; Atari docs call it
 > "reverse-transparent" — same mode (draw the *background* where the pattern
@@ -120,8 +131,10 @@ setters, is stricter in the *other* direction: it returns **1** (pen 1, not
 1. **`vs_color` stores the *unclamped* request in `REQ_COL`** — only the DAC
    copy is clamped to `[0,1000]` (`vdi_col.c:690,695-699`). A round-trip
    `vs_color` → `vq_color` can therefore return values outside 0..1000.
-2. **`vswr_mode` overrides `CONTRL[4]` to 1 itself** (`vdi_control.c:260`),
-   unlike the pure jump-table pre-load.
+2. **`vswr_mode` contains an explicit `CONTRL[4] = 1`** (`vdi_control.c:260`)
+   that duplicates, but does not change, the jump table's own `nintout = 1`
+   preload for op 32 — dead/redundant code, not an observable behaviour
+   difference (see the precision note above, D-VDI-16).
 3. **`vs_clip` normalises corners** (`arb_corner`) before intersecting — a
    caller may pass the rectangle in any corner order.
 4. **`vs_color` and `validate_color_index` disagree on out-of-range** —
@@ -174,6 +187,12 @@ setters, is stricter in the *other* direction: it returns **1** (pen 1, not
   `req_col2` (16..255) is unused.
 - On `CONF_WITH_VDI_16BIT` truecolor builds, `vs_color` early-dispatches to
   `vs_color16` (`vdi_col.c:661-666`) — **out of bring-up scope**.
+- On `CONF_WITH_TT_SHIFTER` builds with the TT palette-bank feature active
+  at runtime (`has_tt_shifter`), `vs_color` remaps `colnum` via
+  `adjust_tt_colnum()` before storing/programming it (`vdi_col.c:678-681`).
+  Doubly gated (build config **and** runtime hardware detection), both
+  **0**/false in the default build — out of bring-up scope, noted here only
+  for completeness of the `vs_color` CONF-gating picture.
 - `vswr_mode`/`vs_clip` are configuration-independent.
 
 ## NewTOS implementation notes (Phase 12)

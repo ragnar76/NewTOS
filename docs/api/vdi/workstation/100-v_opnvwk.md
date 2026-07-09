@@ -189,6 +189,24 @@ overrides:
 > `get_palette()`, not the literal ROM `2`. (An earlier revision labelled
 > `[35]` as if the ROM value were the contract — clarified.)
 
+> **Re-validation 2026-07-09 — `DEV_TAB[39]`'s real semantics (`get_palette`,
+> `bios/screen.c:831-864`).** Despite the source's own "Palette size"
+> comment (`vdi_control.c:168`), `get_palette()` does **not** return the
+> number of simultaneously displayable colours — that is `DEV_TAB[13]`.
+> It returns the **RGB precision available to `vs_color`** (how many
+> distinct values the hardware DAC can hold per gun, expressed as a total
+> choice count): **`4096`** for any STe/TT-style colour shifter or a Videl
+> mode with `VIDEL_COMPAT`/4bpp (`screen.c:850,843-845`), **`2`** for a
+> monochrome screen (`ST_HIGH`/`TT_HIGH`, `screen.c:853-857`), **`512`**
+> for plain-ST colour modes without an STe shifter (`screen.c:858-864`),
+> or **`0`** for a Videl truecolor mode without `VIDEL_COMPAT`
+> (`screen.c:846`, "no discrete palette"). None of these values equal
+> `DEV_TAB[13]`'s colour-count for the corresponding mode (e.g. STe
+> 16-colour ST-medium: `[13]=16`, `[39]=4096`). See the "Mismatch flagged"
+> note in the Pi/BCM2711 binding section below — the current NewTOS code
+> substitutes the colour count (`ncol`) for this field, which is a
+> different EmuTOS quantity, not an equivalent one.
+
 ### `PTSOUT` = `SIZ_TAB` (12 WORDs = 6 pairs, device coords)
 
 ROM template `SIZ_TAB_rom` (`vdi_control.c:58-71`); `text_init` fills the
@@ -345,6 +363,21 @@ and return with no `Vwk` allocated:
 > handle, the 45-word `DEV_TAB` / 12-word `SIZ_TAB` byte indices.
 > Peripheral + driver: see `docs/HARDWARE-PROFILE.md` §2/§3.1.
 
+> **ADR-017 cross-reference (2026-07-09, `docs/MEMORY.md`).** The
+> 640×480×16-colour numbers below are the **currently staged bring-up
+> geometry**, not a permanent fixed target: NewTOS's resolution policy is
+> now native/geometry-independent (default 1920×1080, switchable
+> 1280×800), and per ADR-017's Staging rule the physical framebuffer
+> deliberately stays at 640×480 until geometry independence is verified
+> end-to-end — only then does the target geometry change. This spec's
+> "the fixed 640×480 is only in the driver, not in the VDI table code"
+> point below is exactly the property ADR-017 relies on: `init_wk`
+> already reads `backend.width()/height()/num_colors()` fresh
+> (`workstation.rs:62-64,101-106`), so `DEV_TAB[0,1,13,35,39]` will follow
+> the framebuffer driver's geometry the moment it changes, with **no VDI
+> code change required**. The concrete `639`/`479`/`16` values below hold
+> for *today's* staged geometry only.
+
 ### Resolved `DEV_TAB` / `SIZ_TAB` values for the 640×480×16-colour framebuffer
 
 The ROM template `DEV_TAB_ROM`/`SIZ_TAB_ROM` lives in
@@ -401,6 +434,21 @@ entries — they come straight from the template.
 3. **`text_init` char metrics not applied.** EmuTOS's `text_init` fills
    `SIZ_TAB[0..3]`; NewTOS uses the template `0/7/0/7` directly. Values
    happen to match the common case; flagged for completeness.
+4. **`DEV_TAB[39]` reports the colour count, not `get_palette()`'s
+   semantics (re-validation 2026-07-09).** `workstation.rs:106` sets
+   `dev[39] = ncol as i16` (`16`) — but per the source analysis above,
+   EmuTOS's `DEV_TAB[39]` is the DAC's RGB-choice count (`4096`/`2`/`512`/
+   `0`), a different quantity than `DEV_TAB[13]`'s colour count, which
+   NewTOS already reports correctly and separately at `[13]`. Concretely:
+   for a 16-colour palette screen with a real RGB DAC, the EmuTOS-faithful
+   `[39]` would be a colour-precision figure (the closest analogue,
+   `4096, ` since NewTOS's `vs_color` also accepts 0..1000-per-gun input
+   like STe/TT), not `16`. **Open question, not decided here:** whether
+   any real-world program branches on `DEV_TAB[39]` for a palette (as
+   opposed to truecolor) screen — if not, the mismatch is cosmetic; if a
+   program uses it to decide "is this greyscale/2-colour vs. full RGB", a
+   wrong `16` could misinform it. Flagged for the Developer's VDI code
+   audit, not fixed here (docs-only, CLAUDE.md Rule to not edit `.rs`).
 
 ### Palette / colour model
 

@@ -114,6 +114,30 @@ Selecting the user pattern for drawing still requires
    same requested pattern the open-time default therefore ends up one higher
    than a later `vsf_style` would set. Preserved verbatim; see
    [`../_discrepancies.md`](../_discrepancies.md) D-VDI-8.
+6. **`vsf_interior` never resets or re-validates `fill_index` when the
+   style changes — `st_fl_ptr()` can read past the end of `HATCH1[96]`
+   as a result (out-of-bounds, EmuTOS source-level gap).**
+   `vdi_vsf_interior` (`vdi_fill.c:173-181`) only stores `fill_style` and
+   calls `st_fl_ptr()`; it leaves the *existing* `fill_index` untouched.
+   `st_fl_ptr()` (`vdi_fill.c:338-380`) re-interprets that `fill_index`
+   under the *new* `fill_style` with no bounds check: for `FIS_PATTERN`,
+   `fill_index` `0..23` is safe (`DITHER[32]` for `fi<8`, `OEMPAT[128]`
+   for `fi>=8`); for `FIS_HATCH`, only `fill_index` `0..11` is safe
+   (`HATCH0[48]` for `fi<6`, `HATCH1[96]` for `fi>=6`, `(fi-6)*16` must
+   stay `<96`). Calling `vsf_interior(FIS_PATTERN)` →
+   `vsf_style(<13..24>)` (stores `fill_index` `12..23`) →
+   `vsf_interior(FIS_HATCH)` **without an intervening `vsf_style`**
+   leaves `fill_style=FIS_HATCH` with the stale `fill_index` in
+   `12..23`; `st_fl_ptr()`'s `FIS_HATCH` branch then computes
+   `&HATCH1[(fill_index-6)*16]`, up to `HATCH1[272]` — **176 words past
+   the 96-word array** — and `vwk->patptr` ends up pointing at whatever
+   static data trails `HATCH1[]` in the binary. The next fill/GDP draw
+   reads that as a 16-word hatch pattern. (The reverse direction,
+   hatch→pattern, stays in-bounds: pattern's own tables cover the full
+   `0..23` range.) Unlike this, the line-style table is explicitly
+   guarded (`line_index < 6` before indexing `LINE_STYLE[]`, else
+   `ud_ls`, `vdi_line.c:2389`) — fill has no equivalent guard. See
+   [`../_discrepancies.md`](../_discrepancies.md) D-081 (global log).
 
 ---
 
@@ -123,7 +147,9 @@ Selecting the user pattern for drawing still requires
 - An open workstation; `INQ_TAB[4]` (number of planes) for the `vsf_udpat`
   multi-plane count; `numcolors`/`MAP_COL[]` for `vsf_color`.
 - `st_fl_ptr()` (`vdi_fill.c:338`) — recomputes the active `patptr`/`patmsk`
-  from `fill_style`/`fill_index` after `vsf_interior`/`vsf_style`.
+  from `fill_style`/`fill_index` after `vsf_interior`/`vsf_style`. It does
+  **not** re-validate `fill_index` against the new `fill_style`'s range —
+  see edge case 6 above (D-081) for the resulting out-of-bounds read.
 
 ### Used by
 - `v_fillarea` (9), `v_bar`/other GDPs (11), `v_contourfill` (103),

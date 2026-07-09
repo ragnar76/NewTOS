@@ -32,11 +32,25 @@ in five WORD arrays.
 | `d1` | pointer to the `VDIPB` (`vdi_asm.S:74`; set by `gsx2.c:26`) |
 | Return `d0` | `flip_y` (0/1) — "coordinate vs magnitude" flag (`vdi_asm.S:124-125`) |
 
-`trap #2` is shared with the AES: the AES hooks the trap-2 vector and
-recognises its own selector; `_vditrap` handles only `d0 == 0x73`
-(VDI), the `d0 == -1` query, and passes everything else through
-(`vdi_asm.S:34-52`). AES uses `d0 == 0xC8`; that is documented in the
-AES dispatcher, not here.
+`trap #2` is shared with the AES. **Precise chain topology (re-verified
+2026-07-09 VDI re-validation, corrects an earlier looser phrasing that
+could be misread as "`_vditrap` forwards unrecognised calls onward"):**
+`_vditrap` itself never forwards anywhere — for any `d0` other than
+`0x73` or `0xffff` it just falls through to `rte`, unchanged state,
+full stop (`vdi_asm.S:40-48`). The forwarding happens **one layer above
+it**, and only while the AES is running: at BIOS init `VEC_GEM =
+vditrap` installs `_vditrap` directly as the trap-2 vector
+(`bios/bios.c:173`); later, AES startup's `set_aestrap()` saves that
+vector into `savetrap2` and installs `_aestrap` on top of it
+(`aes/gemdosif.S:295-304`). `_aestrap` recognises **its own** selectors
+`0xC8`/`0xC9` and dispatches to `trapaes`; for every other `d0`
+(including `0x73`, `0xffff`, and `-2`) it pushes the saved `savetrap2`
+address and does `rts` — i.e. tail-calls into `_vditrap`
+(`aes/gemdosif.S:222-228`). So the full chain, once AES is up, is
+`trap #2 → _aestrap → (non-AES d0) → _vditrap → (0x73/-1 handled,
+anything else rte)`; before AES starts, `trap #2 → _vditrap` directly.
+AES uses `d0 == 0xC8`/`0xC9`; that is documented in the AES dispatcher,
+not here.
 
 ### `d0` special values (`vdi_asm.S:40-52`)
 
@@ -161,6 +175,67 @@ Unknown / unimplemented opcodes resolve to `vdi_v_nop`
 (`vdi_main.c:23` — an alias for `just_rts`), present for ABI
 completeness but doing nothing. **VDI has no error return**; failures are
 silent no-ops or are reported through the inquiry calls.
+
+---
+
+## Re-validation 2026-07-09 — the no-op convention, confirmed, and its contrast with the other three TOS dispatch conventions
+
+**Re-read against `1a7484ab` line-by-line (`vdi_main.c:121-192`,
+`vdi_control.c:178-184`, `vdi_asm.S`, `vdi_defs.h:36-39,108-115`);
+confirms the dispatch description above without factual correction.**
+Every path that "goes wrong" in `screen()` is a bare `return;` with no
+side effect beyond whatever was already set up:
+
+- **Bad/unassigned handle** (`get_vwk_by_handle()` returns `NULL` — either
+  `handle` is outside `[FIRST_VDI_HANDLE, LAST_VDI_HANDLE]`, or it is
+  in-range but the slot is empty, `vdi_control.c:178-184`): `screen()`
+  returns at `vdi_main.c:142-143`, **before** the output-count preload —
+  so `CONTRL[2]`/`CONTRL[4]` are left at the `0`/`0` set at entry
+  (`vdi_main.c:132-133`), not the opcode's declared `nptsout`/`nintout`.
+- **Opcode outside both jump-table ranges** (`< 1`, in the `[40,100)`
+  gap, or `≥ 100+JMPTB2_ENTRIES`): `screen()` returns at
+  `vdi_main.c:155-156`, again before the output-count preload — same
+  `0`/`0` `CONTRL[2]`/`[4]`.
+- **Opcode in-range but mapped to a "does not exist" or "not implemented"
+  slot** (4, 10, 27, 29, 34, and 132/133 when `CONF_WITH_EXTENDED_MOUSE`
+  is off): the jump-table entry itself is `{0, 0, vdi_v_nop}` — the
+  output-count preload **does** run (`CONTRL[2]=CONTRL[4]=0`, which
+  happen to be the declared counts for every one of these slots), then
+  `vdi_v_nop` (`just_rts`) is called and returns immediately.
+
+None of these three paths write a `D0`/return-register error code (VDI's
+`d0` carries only `flip_y`, unrelated to success/failure — see the trap
+table above), none write an `INTOUT`/`PTSOUT` sentinel, and none set any
+observable flag a caller could branch on. A program cannot distinguish
+"opcode executed a genuine no-op primitive" from "opcode was entirely
+unknown" from "handle was invalid" by inspecting the `VDIPB` afterward —
+all three are silent.
+
+**This is a *third*, distinct convention, next to the other two traps
+already extracted in this sweep:**
+
+| Trap | Unknown/unimplemented function ID | Source |
+|------|-----------------------------------|--------|
+| GEMDOS (trap #1) | Returns **`EINVFN` (-32)** — both for an out-of-range `fn` (`bdos/bdosmain.c:444-445`) and for an in-range slot wired to `ni()` (`bdos/bdosmain.c:307-310`, every `NI`-macro'd `funcs[]` entry) | [`docs/api/gemdos/_dispatcher.md`](../gemdos/_dispatcher.md) §4 |
+| BIOS (trap #13) / XBIOS (trap #14) | Return the **function number itself** in `D0` — both for an out-of-range ID (`bios/vectors.S:1323-1326`) and an in-range `xbios_unimpl`/no-BIOS-equivalent slot (`bios/xbios.c:1251`); *not* an error code, a caller testing `result < 0` sees "success" | [`docs/api/xbios/_dispatcher.md`](../xbios/_dispatcher.md) §3 (D-008/D-039), [`docs/api/bios/_dispatcher.md`](../bios/_dispatcher.md) §4 |
+| VDI (trap #2, selector `0x73`) | **No signal at all** — a bare `return;` with no error code, no function-number echo, no output-array marker; the *only* externally visible difference between "ran a real no-op opcode", "opcode entirely unknown", and "handle was bad" is whether `CONTRL[2]`/`[4]` end up at `0`/`0` (bad handle / unknown opcode) vs. the jump table's declared `nptsout`/`nintout` (assigned-but-`vdi_v_nop` slot) — and for opcodes 4/10/27/29/34/132/133 those declared counts are *also* `0`/`0`, so even that distinction collapses | `vdi_main.c:121-192` (this file) |
+
+So three traps, three different answers to "what happens when a program
+calls something that isn't there": GEMDOS signals an explicit error code,
+BIOS/XBIOS signal (ambiguously) via the echoed function number, VDI
+signals **nothing observable whatsoever**. Each is internally
+self-consistent within its own trap; none should be "fixed" toward
+another by analogy — this is the same caution the GEMDOS dispatcher doc
+already recorded for the GEMDOS/BIOS-XBIOS pair (`docs/api/gemdos/
+_dispatcher.md` §4, "Contrast with BIOS/XBIOS").
+
+**Prior spec check:** this file already stated "**VDI has no error
+return**; failures are silent no-ops" (line above, pre-existing text) —
+that claim is confirmed correct by this re-read; no value in the opcode
+map or the dispatch description changes. Logged as
+[`docs/api/_discrepancies.md`](../_discrepancies.md) **D-079** (a
+confirmation + a documentation-precision fix to the trap-chain
+description above, not a source-behaviour correction).
 
 ---
 
