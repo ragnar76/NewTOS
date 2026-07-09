@@ -168,16 +168,18 @@ pub fn tsetdate(args: &TrapArgs) -> Long {
 }
 
 /// `Tsettime(t)` (0x2D) — set the time part of the wall clock. Returns
-/// `E_OK`, or `ERROR` if the second/2 field ≥ 30 or the minute field
-/// ≥ 60 (EmuTOS `xsettime`; the hour field is not validated, matching
-/// EmuTOS). See `docs/api/gemdos/time/2d-tsettime.md`.
+/// `E_OK`, or `ERROR` if any of the three fields is out of range: the
+/// second/2 field ≥ 30, the minute field ≥ 60, **or the hour field ≥ 24**.
+/// All three are validated in EmuTOS `xsettime` (`bdos/time.c:144-146`,
+/// including `(t & HRS_BM) >= (24 << HRS_SHIFT)`; D-074). See
+/// `docs/api/gemdos/time/2d-tsettime.md`.
 pub fn tsettime(args: &TrapArgs) -> Long {
     let t = args.arg_u16(0);
-    let hour = (t >> 11) as u32; // not validated (EmuTOS parity)
+    let hour = (t >> 11) as u32; // bits 15..11
     let min = ((t >> 5) & 0x3F) as u32;
     let dsec = (t & 0x1F) as u32; // second / 2
 
-    if dsec >= 30 || min >= 60 {
+    if dsec >= 30 || min >= 60 || hour >= 24 {
         return ERROR;
     }
 
