@@ -1,12 +1,18 @@
 //! AES Menu Manager (`menu_*`, opcodes 30–34) — Batch 1.
 //!
 //! Spec: [`docs/api/aes/menu.md`]. A menu **is** an OBJECT tree: the root
-//! (`G_IBOX`) holds the bar (`THEBAR`, object 1) whose children are the
-//! titles (`G_TITLE`); each title's child is a drop-down `G_BOX` of items
-//! (`G_STRING`). So `menu_bar` just draws the bar subtree, and the
-//! item/title state calls (`icheck`/`ienable`/`tnormal`) flip one
-//! `ob_state` bit and redraw via the shared `object::change` helper
-//! (EmuTOS `do_chg`).
+//! (`THESCREEN`, `G_IBOX`) holds the bar (`THEBAR`, object 1) as its
+//! `ob_head`, and the titles (`G_TITLE`) hang under `THEACTIVE`. A title's
+//! drop-down box is **not** its child (D-085): the drop-down `G_BOX`es are the
+//! `ob_next` sibling chain rooted at `THESCREEN`'s hidden *second* child
+//! (`ob_tail`, the `THEMENUS` container), the *N*-th box matching the *N*-th
+//! title — this is what `menu_sub` walks. Each box's own children are the
+//! items (`G_STRING`). So `menu_bar` just draws the bar subtree, and the
+//! item/title state calls (`icheck`/`ienable`/`tnormal`) flip one `ob_state`
+//! bit through the shared `do_chg` helper — each with its own redraw /
+//! disabled-guard contract (`gemsuper.c:171-180`): `icheck` never repaints,
+//! `ienable` repaints only when item bit 15 is set, `tnormal` always repaints
+//! and refuses a `DISABLED` title.
 //!
 //! **Batch-1 scope:** draw the bar + the four original-TOS state/text
 //! calls. The interactive drop-down tracking (mouse over titles → open
@@ -57,6 +63,11 @@ pub(super) fn desk_top() -> i16 {
 const SELECTED: u16 = 0x0001;
 const CHECKED: u16 = 0x0004;
 const DISABLED: u16 = 0x0008;
+
+/// `G_STRING` object type (`obdefs.h`) — the low byte of `ob_type`. A submenu
+/// can only be attached to a `G_STRING` menu item (`menu_attach` guard,
+/// `gemmnext.c:539-541`).
+const G_STRING: u16 = 28;
 
 const WHITE: Pel = 0;
 const BLACK: Pel = 1;
@@ -344,26 +355,40 @@ fn erase_box_inner(tree: *mut Object, imenu: i16, backend: &dyn RasterBackend) {
 }
 
 /// `menu_icheck` (31) — add (`int_in[1]`=1) / remove the check mark on
-/// item `int_in[0]`.
+/// item `int_in[0]`. `do_chg(..., CHECKED, CHECK_IT, FALSE, FALSE)`
+/// (`gemsuper.c:172`): **no immediate redraw** (`dodraw=false`) — the mark
+/// appears the next time the drop-down is drawn — and **no disabled guard**.
 pub fn menu_icheck(pb: &Aespb) {
-    do_chg(pb, pb.intin(0), CHECKED, pb.intin(1) != 0);
+    do_chg(pb, pb.intin(0), CHECKED, pb.intin(1) != 0, false, false);
 }
 
 /// `menu_ienable` (32) — enable (`int_in[1]`=1) / disable item
-/// `int_in[0]` (bit 15 = a special/title item, masked off).
+/// `int_in[0]`. `do_chg(..., ITEM_NUM&0x7fff, DISABLED, !ENABLE_IT,
+/// (ITEM_NUM&0x8000)!=0, FALSE)` (`gemsuper.c:175-176`): bit 15 of the item
+/// word is the **redraw-now** flag (masked off the index, reused as `dodraw`);
+/// no disabled guard.
 pub fn menu_ienable(pb: &Aespb) {
-    let item = pb.intin(0) & 0x7fff;
-    do_chg(pb, item, DISABLED, pb.intin(1) == 0); // disable when enable==0
+    let raw = pb.intin(0);
+    let item = raw & 0x7fff;
+    let dodraw = (raw as u16) & 0x8000 != 0; // item bit 15 = redraw-now flag
+    do_chg(pb, item, DISABLED, pb.intin(1) == 0, dodraw, false); // disable when enable==0
 }
 
 /// `menu_tnormal` (33) — draw title `int_in[0]` normal (`int_in[1]`=1) or
-/// highlighted/inverted (0).
+/// highlighted/inverted (0). `do_chg(..., TITLE_NUM, SELECTED, !NORMAL_IT,
+/// TRUE, TRUE)` (`gemsuper.c:179`): **always redraws** and, with
+/// `chkdisabled=true`, refuses a `DISABLED` title (returns `0`, state
+/// unchanged).
 pub fn menu_tnormal(pb: &Aespb) {
-    do_chg(pb, pb.intin(0), SELECTED, pb.intin(1) == 0); // select when normal==0
+    do_chg(pb, pb.intin(0), SELECTED, pb.intin(1) == 0, true, true); // select when normal==0
 }
 
 /// `menu_text` (34) — replace item `int_in[0]`'s text with the string at
-/// `addr_in[1]`, in place.
+/// `addr_in[1]`, in place. EmuTOS is an inline `strcpy` into `ob_spec` with
+/// **no redraw** (`gemsuper.c:183`): the caller repaints the item itself
+/// (e.g. via `objc_draw`, or a `menu_ienable` with item bit 15 set). Bounded
+/// to 128 bytes as a NewTOS safety cap over EmuTOS's unbounded copy — see the
+/// spec "NewTOS implementation notes".
 pub fn menu_text(pb: &Aespb) {
     let tree = pb.addrin(0) as *const Object;
     let item = pb.intin(0);
@@ -387,9 +412,6 @@ pub fn menu_text(pb: &Aespb) {
                 i += 1;
             }
         }
-    }
-    if let Some(backend) = host().and_then(|h| h.raster()) {
-        object::draw_obj(tree, item, 0, backend);
     }
     pb.set_ret(1);
 }
@@ -439,22 +461,32 @@ pub fn menu_register(pb: &Aespb) {
     pb.set_ret(-1); // no free accessory slot
 }
 
-/// Shared helper: set/clear one `ob_state` bit on `obj` and redraw it
-/// (EmuTOS `do_chg`).
-fn do_chg(pb: &Aespb, obj: i16, stateflag: u16, set: bool) {
+/// Shared helper: set/clear one `ob_state` bit on `obj`, optionally redrawing
+/// it (EmuTOS `do_chg`, `gemmnlib.c:145-172`).
+///
+/// - `set`: set (`true`) or clear (`false`) `stateflag` in `ob_state` (EmuTOS
+///   `dochg`).
+/// - `dodraw`: repaint the object after the change (EmuTOS `dodraw`). When
+///   `false`, `ob_state` is still updated but nothing is drawn — the change
+///   shows on the next draw of the enclosing box.
+/// - `chkdisabled`: if `true` and the object is already `DISABLED`, refuse the
+///   change — leave `ob_state` untouched, draw nothing, return `0`.
+///
+/// Returns `1` normally, `0` only when the disabled guard blocks the change.
+fn do_chg(pb: &Aespb, obj: i16, stateflag: u16, set: bool, dodraw: bool, chkdisabled: bool) {
     let tree = pb.addrin(0) as *mut Object;
     if tree.is_null() || obj < 0 {
         pb.set_ret(0);
         return;
     }
     // SAFETY: valid tree.
-    let mut state = unsafe { (*tree.add(obj as usize)).ob_state };
-    if set {
-        state |= stateflag;
-    } else {
-        state &= !stateflag;
+    let state = unsafe { (*tree.add(obj as usize)).ob_state };
+    if chkdisabled && (state & DISABLED) != 0 {
+        pb.set_ret(0); // disabled item: no mutation, no draw
+        return;
     }
-    object::change(tree, obj, state, true);
+    let new = if set { state | stateflag } else { state & !stateflag };
+    object::change(tree, obj, new, dodraw);
     pb.set_ret(1);
 }
 
@@ -581,6 +613,31 @@ struct MnSet {
     height: i16,
 }
 
+/// EmuTOS `MIN_HEIGHT_VALUE` (`gemmnext.c:76`) — the smallest legal scroll
+/// height, in items.
+const MIN_HEIGHT_VALUE: i16 = 5;
+
+/// Clamp `menu_settings`'s `height` field to EmuTOS's
+/// `[MIN_HEIGHT_VALUE, gl_rfull.g_h / gl_hchar]` range (`clamp_height`,
+/// `gemmnext.c:83-95`): at least 5 items, at most as many system-font rows as
+/// fit on the full screen. `gl_hchar` maps to the 16-pixel system-font cell
+/// height ([`crate::vdi::font::CELL_H`]); `gl_rfull.g_h` to the raster
+/// backend's full-screen height. When no raster is up (workstation not yet
+/// initialised) only the lower bound is enforceable — the upper clamp is
+/// skipped rather than guessed.
+fn clamp_height(height: i16) -> i16 {
+    if height < MIN_HEIGHT_VALUE {
+        return MIN_HEIGHT_VALUE;
+    }
+    if let Some(backend) = host().and_then(|h| h.raster()) {
+        let max_height = backend.height() as i16 / crate::vdi::font::CELL_H;
+        if height > max_height {
+            return max_height;
+        }
+    }
+    height
+}
+
 struct Settings(UnsafeCell<MnSet>);
 // SAFETY: single boot CPU only touches the AES.
 unsafe impl Sync for Settings {}
@@ -622,25 +679,72 @@ pub fn menu_settings(pb: &Aespb) {
                 cur.speed = s.speed;
             }
             if s.height >= 0 {
-                cur.height = s.height;
+                cur.height = clamp_height(s.height);
             }
         }
     }
     pb.set_ret(1);
 }
 
-/// `menu_attach` (37) — attach/detach/query a sub-menu on a menu item. NewTOS
-/// has no sub-menu machinery yet, so a query (`int_in[0]`=0) reports "none"
-/// (0) and attach/detach are accepted (1) — a documented follow-up, not a
-/// faked success (no sub-menu is ever displayed).
+/// `menu_attach` (37) — attach (`ME_ATTACH`=1) / remove (`ME_REMOVE`=2) /
+/// query (`ME_INQUIRE`=0) a submenu on a menu-bar item (EmuTOS `mn_attach`,
+/// `gemmnext.c:535-557`). Dispatch: `mn_attach(MPOP_FLAG, MPOP_IN,
+/// MPOP_ITEM, MPOP_OUT)` = `(int_in[0], addr_in[0], int_in[1], addr_in[1])`.
+///
+/// NewTOS has no `SMIB` submenu registry (`gl_submenu`) yet, so no submenu can
+/// actually be recorded or displayed. The **argument-determined** outcomes are
+/// still honoured with EmuTOS's real failure values — **no faked success**:
+///  - the target item must be a `G_STRING` (guard applied to all three
+///    operations, `gemmnext.c:539-541`) → else `0`;
+///  - `ME_REMOVE` / `ME_INQUIRE` on an item with no attached submenu → `0`
+///    (nothing to remove/report), `gemmnext.c:401-433,471-481`;
+///  - `ME_ATTACH` → `0`: a real attach needs the SMIB registry NewTOS lacks
+///    → returned as "not attached", never a fake `1`.
+///
+/// Full submenu support (`ME_ATTACH` success, the `ob_type`/`ob_flags`
+/// encoding of D-087) requires the SMIB submenu infrastructure — tracked as a
+/// separate task. Until then every path returns an honest EmuTOS `FALSE`.
 pub fn menu_attach(pb: &Aespb) {
-    let flag = pb.intin(0);
-    pb.set_ret(if flag == 0 { 0 } else { 1 });
+    let tree = pb.addrin(0) as *const Object;
+    let item = pb.intin(1);
+    if tree.is_null() || item < 0 {
+        pb.set_ret(0);
+        return;
+    }
+    // A submenu can only be attached to a G_STRING item — the guard EmuTOS
+    // applies before the ME_* switch, for all three operations.
+    // SAFETY: valid tree (GEM contract).
+    let ob_type = unsafe { (*tree.add(item as usize)).ob_type };
+    if (ob_type & 0x00ff) != G_STRING {
+        pb.set_ret(0);
+        return;
+    }
+    // With no SMIB registry, no item ever has a submenu: inquire/remove report
+    // "none" and attach cannot record one. All honest EmuTOS FALSE values.
+    pb.set_ret(0);
 }
 
-/// `menu_istart` (38) — set the starting item of a scrollable/sub menu.
-/// NewTOS menus do not scroll, so this is accepted (1) but leaves the
-/// (non-scrolling) display unchanged — a documented follow-up.
+/// `menu_istart` (38) — get/set the starting item of a scrollable submenu
+/// (EmuTOS `mn_istart`, `gemmnext.c:562-587`). Dispatch: `mn_istart(MPOP_FLAG,
+/// MPOP_IN, MPOP_ITEM, MPOP_ITEM2)` = `(int_in[0], addr_in[0], int_in[1],
+/// int_in[2])`.
+///
+/// `mn_istart` first looks the submenu up by (tree, menu box) and returns
+/// `FALSE` (0) when none is attached — *before* the flag switch. NewTOS
+/// registers no submenus (no SMIB registry, same separate task as
+/// `menu_attach`), so the lookup always fails: return `0` honestly after
+/// validating the arguments. **Never a fake `1`.**
 pub fn menu_istart(pb: &Aespb) {
-    pb.set_ret(1);
+    let flag = pb.intin(0);
+    let tree = pb.addrin(0) as *const Object;
+    let menu = pb.intin(1);
+    // Valid flags are 0 (inquire) and 1 (update); any other → FALSE
+    // (gemmnext.c:584-585). A null tree or negative box is likewise invalid.
+    if tree.is_null() || menu < 0 || (flag != 0 && flag != 1) {
+        pb.set_ret(0);
+        return;
+    }
+    // No submenu is ever attached → find_submenu_from_tree fails → 0, exactly
+    // as EmuTOS returns for an unattached submenu.
+    pb.set_ret(0);
 }
