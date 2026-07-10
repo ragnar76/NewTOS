@@ -167,6 +167,64 @@ When a flag is 0, the opcode falls to `default` → `-1`.
 
 ---
 
+## 3a. Re-validation 2026-07-10 — the `-1` convention confirmed, and its contrast with the other three TOS dispatch conventions
+
+**Re-read against `1a7484ab` line-by-line** (`aes/gemsuper.c:77-466`,
+`include/aesdefs.h:16-140`) as the first task of the AES leg of the bottom-up
+sweep (GEMDOS, BIOS, XBIOS, VDI already done). This confirms D-047 (the `-1`
+unknown-opcode path) without a factual correction, and adds the four-way
+cross-trap contrast that D-061/D-079 already recorded for the other three
+traps.
+
+`crysbind`'s `default:` arm is the **only** path an unhandled `opcode` can
+take (`gemsuper.c:406-417`): no case in the `switch(opcode)` falls through to
+another one, and there is no secondary range check before the switch — any
+`WORD` opcode not matched by a `case` (including negative values and values
+`> 127`) lands on `default`. The arm always does the same three things:
+`KDEBUG` trace, then (unless `opcode == 0`) `fm_show(ALNOFUNC, &opcode, 1)`
+(an on-screen alert box), then unconditionally `ret = -1`. `crysbind`'s
+return value is assigned to `xif`'s **local** `int_out[0]`
+(`RET_CODE = crysbind(...)`, `gemsuper.c:441`), which is a stack buffer, not
+a slot inside the caller's own AESPB array. That local buffer is copied back
+to `pcrys_blk->intout` **only if `OUT_LEN` (`control[2]`) is non-zero**
+(`gemsuper.c:444-445`). So a caller that declared `control[2] = 0` (no output
+words requested) never sees the `-1` in its own `intout[0]` at all — that
+array is left exactly as the caller set it up, and only the trap's own
+return register is left to observe, which is unconditionally `0`
+(`super()`, `gemsuper.c:465`, carries no information about success/failure).
+**A caller must declare `OUT_LEN ≥ 1` to observe the `-1`.**
+
+**This is a *fourth*, distinct convention, next to the three traps already
+extracted in this sweep:**
+
+| Trap | Unknown/unimplemented function ID | Source |
+|------|-----------------------------------|--------|
+| GEMDOS (trap #1) | Returns **`EINVFN` (-32)** — both for an out-of-range `fn` and for an in-range slot wired to `ni()` | [`docs/api/gemdos/_dispatcher.md`](../gemdos/_dispatcher.md) §4 |
+| BIOS (trap #13) / XBIOS (trap #14) | Return the **function number itself** in `D0` — not an error code | [`docs/api/xbios/_dispatcher.md`](../xbios/_dispatcher.md) §3 (D-008/D-039), [`docs/api/bios/_dispatcher.md`](../bios/_dispatcher.md) §4 |
+| VDI (trap #2, selector `0x73`) | **No signal at all** — a bare `return;`, no error code, no echo | [`docs/api/vdi/_dispatcher.md`](../vdi/_dispatcher.md) §"Re-validation 2026-07-09" (D-079) |
+| AES (trap #2, selector `200`) | Returns the fixed literal **`-1`** in `int_out[0]` (only if the caller declared `OUT_LEN ≥ 1`) — plus a **synchronous on-screen alert** (`fm_show(ALNOFUNC,…)`) unless `opcode == 0`, which is silently ignored "since some PRGs make this call" (`gemsuper.c:414`) | `aes/gemsuper.c:77-420` (this file, §2) |
+
+So the AES is the only one of the four TOS traps whose "unknown function"
+path has a **user-visible side effect** (the alert box) in addition to its
+return value, and the only one whose return value is a fixed sentinel
+literal (`-1`) rather than an echoed function number or a named error
+constant. Opcode `0` is a documented, deliberate exception to the alert
+(not to the `-1` return) — EmuTOS's own comment attributes this to real
+programs making a spurious opcode-0 call, so a conforming AES must special
+-case it exactly as EmuTOS does (no alert, still `-1`).
+
+Each of the four conventions is internally self-consistent within its own
+trap; none should be "fixed" toward another by analogy — the same caution
+D-061 and D-079 already recorded for the other three.
+
+**Prior spec check:** D-047 already corrected the "no invalid-opcode path"
+claim from an even earlier spec revision (2026-07-03) to the `-1`-with-alert
+behaviour documented here; this re-read confirms that correction is accurate
+and adds the four-way contrast table plus the `OUT_LEN ≥ 1` visibility
+caveat (not previously stated). Logged as D-084.
+
+---
+
 ## 4. NewTOS implementation notes
 
 - The AESPB is preserved **bit-exactly** (six array pointers; `WORD` arrays +

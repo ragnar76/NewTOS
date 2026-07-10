@@ -3210,3 +3210,59 @@ sentinel?) that the spec alone cannot resolve — flagged for the
 Developer/lead, not decided here.
 
 ---
+
+## D-084: AES dispatcher's `-1` unknown-opcode convention — re-confirmed, is the fourth distinct TOS dispatch convention, and is only visible to a caller that declares `OUT_LEN ≥ 1`
+
+**Date:** 2026-07-10 (AES leg of the bottom-up sweep, Task 1)
+**Phase 00b spec:** `docs/api/aes/_dispatcher.md` §2, §3a (new)
+
+**Context:** first task of the AES leg of the bottom-up sweep (GEMDOS,
+BIOS, XBIOS, VDI already done; see D-061 for the GEMDOS/BIOS-XBIOS
+contrast and D-079 for the three-way contrast that added VDI). Re-read
+`aes/gemsuper.c:77-466` and `include/aesdefs.h:16-140` line-by-line
+against the existing `docs/api/aes/_dispatcher.md` (which already carries
+D-047's `-1`-with-alert correction from 2026-07-03).
+
+**EmuTOS (confirmed, no factual correction to D-047's value):**
+`crysbind`'s `default:` arm (`gemsuper.c:406-417`) is the only path any
+unhandled `WORD opcode` (including negative values, values > 127, and any
+compiled-out opcode) can take. It always sets `ret = -1`; unless
+`opcode == 0` it also pops up a synchronous on-screen alert
+(`fm_show(ALNOFUNC, &opcode, 1)`) — opcode `0` is silently ignored "since
+some PRGs make this call" (`gemsuper.c:414`).
+
+**New finding not previously documented:** the `-1` only reaches the
+*caller's* `intout[0]` if the caller declared `control[2]` (`OUT_LEN`)
+`≥ 1`. `xif` writes the opcode's result into a **local** `int_out[0]`
+(`RET_CODE = crysbind(...)`, `gemsuper.c:441`) and only copies it back to
+`pcrys_blk->intout` when `OUT_LEN` is non-zero (`gemsuper.c:444-445`); a
+call that declares zero output words never sees the `-1` in its own
+`intout` array — that array is left exactly as the caller set it up. The
+trap's own return register is unaffected either way (`super()` always
+returns `0`, `gemsuper.c:465`). This is a corollary of the already-documented
+`xif` copy-back mechanics in §2, not a new mechanism, but it had not been
+connected to the unknown-opcode path before.
+
+**Four-way cross-trap contrast (extends D-061/D-079 to all four TOS
+traps):** GEMDOS returns `EINVFN` (-32, an explicit error code); BIOS/XBIOS
+return the echoed function number (not an error code); VDI signals nothing
+observable at all (a bare `return;`); **AES returns the fixed literal `-1`
+and — uniquely among all four traps — also produces a user-visible
+synchronous side effect (the alert box)**, except for the deliberately
+silent opcode-0 case. Each convention is internally self-consistent within
+its own trap; none should be "fixed" toward another by analogy.
+
+**Prior NewTOS doc:** `docs/api/aes/_dispatcher.md` already had D-047's
+`-1`-with-alert correction; it did not have the four-way contrast table nor
+the `OUT_LEN ≥ 1` visibility caveat. Both added as new §3a.
+
+**Not a Compendium discrepancy** — an internal completeness addition (no
+PDFs in `references/` for cross-check).
+
+**Decision:** follow EmuTOS — unknown/unimplemented AES opcodes return the
+literal `-1`, visible only when the caller declares `OUT_LEN ≥ 1`; the
+reference alert box is optional for NewTOS to reproduce, the `-1` value and
+its `OUT_LEN`-gated visibility are contract. Documented in
+`docs/api/aes/_dispatcher.md` §3a.
+
+---
