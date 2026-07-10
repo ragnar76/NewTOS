@@ -6,7 +6,7 @@
 
 use super::backend::{PatternFill, RasterBackend};
 use super::fill_patterns;
-use super::primitives::{fill_polygon, polyline};
+use super::primitives::{fill_polygon, line_mask, polyline};
 use super::vwk::Vwk;
 use super::Vdipb;
 
@@ -100,8 +100,12 @@ fn curve(pb: &Vdipb, vwk: &Vwk, backend: &dyn RasterBackend, closed: bool, to_ce
     // Angles in tenths of a degree (CCW). Full shapes force 0..3600.
     let full = matches!(sub, CIRCLE | ELLIPSE);
     let (begin, end) = if full { (0i32, 3600i32) } else { (pb.intin(0) as i32, pb.intin(1) as i32) };
+    // EmuTOS `gdp_curve` (vdi_gdp.c:412-414): `del_ang = end - begin;
+    // if (del_ang < 0) del_ang += TWOPI;`. Only a *negative* sweep wraps —
+    // `begin == end` yields a zero sweep (a degenerate point), NOT a full
+    // circle. Full shapes (circle/ellipse) are forced to 0..3600 above.
     let mut sweep = end - begin;
-    if sweep <= 0 {
+    if sweep < 0 {
         sweep += 3600;
     }
     // Flatten into segments (one per ~6°, min 16, max MAX_ARC).
@@ -129,12 +133,15 @@ fn curve(pb: &Vdipb, vwk: &Vwk, backend: &dyn RasterBackend, closed: bool, to_ce
         }
     }
     // Perimeter. Open arc/ellarc are stroked with the line attributes
-    // (EmuTOS `clc_arc` → polyline/wideline in `line_color`). Closed
-    // circle/ellipse/pieslice/ellpie go through EmuTOS `polygon()`, which
-    // draws the boundary — only when `fill_per` — in the **fill colour**,
-    // solid and width 1 (`vdi_fill.c:606`), exactly like `bar`/`rfbox`.
+    // (EmuTOS `clc_arc` → `set_LN_MASK(vwk); polyline(...)` in
+    // `line_color`, vdi_gdp.c:212-213 — so the current line style dashes
+    // the stroke). For a wide line EmuTOS uses `wideline` (always solid);
+    // our `polyline`/`segment` matches that: width > 1 ignores the mask.
+    // Closed circle/ellipse/pieslice/ellpie go through EmuTOS `polygon()`,
+    // which draws the boundary — only when `fill_per` — in the **fill
+    // colour**, solid and width 1 (`vdi_fill.c:606-608`).
     if !closed && !to_centre {
-        polyline(backend, n, |i| pts[i], vwk.line_color, clip, vwk.line_width, 0xFFFF);
+        polyline(backend, n, |i| pts[i], vwk.line_color, clip, vwk.line_width, line_mask(vwk));
     } else if vwk.fill_per {
         polyline(backend, n + 1, |i| pts[i % n], vwk.fill_color, clip, 1, 0xFFFF);
     }

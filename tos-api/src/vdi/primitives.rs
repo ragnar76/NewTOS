@@ -17,7 +17,7 @@ const WM_REPLACE: i16 = 0;
 const LINE_STYLE: [u16; 6] = [0xFFFF, 0xFFF0, 0xC0C0, 0xFF18, 0xFF00, 0xF191];
 
 /// The active line dash mask for the workstation's line style.
-fn line_mask(vwk: &Vwk) -> u16 {
+pub(super) fn line_mask(vwk: &Vwk) -> u16 {
     let idx = vwk.line_index;
     if (0..6).contains(&idx) {
         LINE_STYLE[idx as usize]

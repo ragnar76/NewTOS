@@ -61,12 +61,17 @@ fn top_for(y: i16, v_align: i16) -> i16 {
 }
 
 /// Draw the underline run if the effect is set: a `UL_SIZE`-thick line
-/// just below the baseline, spanning `[x0, x0+width)`.
+/// below the baseline, spanning `[x0, x0+width)`.
 fn underline(backend: &dyn RasterBackend, x0: i16, top_y: i16, width: i16, vwk: &Vwk, clip: ClipRect) {
     if vwk.style & T_UNDERLINE == 0 || width <= 0 {
         return;
     }
-    let y = top_y + font::TOP + 1; // one row under the baseline
+    // EmuTOS `vdi_text.c:399-413`: the underline row within the cell is
+    // `top + underline`, where `underline = 1 + ul_size` when the font has
+    // room (`bottom > ul_size` — true for the 8x16 font: bottom=2,
+    // ul_size=1). That drops the line to cell row 15 (`13 + 2`), i.e. two
+    // rows under the baseline, keeping it inside the cell.
+    let y = top_y + font::TOP + 1 + font::UL_SIZE;
     for r in 0..font::UL_SIZE {
         backend.draw_line(x0, y + r, x0 + width - 1, y + r, vwk.text_color, clip, 0xFFFF);
     }

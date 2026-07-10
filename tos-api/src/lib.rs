@@ -14,6 +14,8 @@
 #![deny(unsafe_op_in_unsafe_fn)]
 #![warn(missing_docs)]
 
+extern crate alloc;
+
 pub mod aes;
 pub mod bdos;
 pub mod bios;
