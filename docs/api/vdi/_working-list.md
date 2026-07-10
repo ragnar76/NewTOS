@@ -258,6 +258,50 @@ real BitBlt (all 16 ops). Mouse/input bind to the not-yet-existing
 QEMU input subsystem → REQUEST-mode blocks on the real event queue,
 no canned values.
 
+> **Re-validation pass 2026-07-10 (raster + mouse/input).** Re-checked
+> `raster/_raster.md` against `vdi_raster.c` (full file, `vdi_vro_cpyfm`/
+> `vdi_vrt_cpyfm`/`vdi_vr_trnfm`/`cpy_raster`/`bit_blt`/`do_blit`/
+> `setup_info`/`setup_pattern`) and `vdi_blit.S`'s `P_ADDR` test, and
+> `input/_mouse.md` + `input/_mouse-packet.md` + `input/_input.md`
+> against the full `vdi_mouse.c`, `vdi_input.c`, `vdi_asm.S`, and the
+> `vdi_main.c` jump tables at `1a7484ab`. MFDB layout, the 16-op BitBlt
+> table, `MD_*` codes, `v_get_pixel`'s two-value output, all
+> opcode/output-count dispatcher entries, the hide-count model, the
+> `vex_*` exchange shape, and the four logical-input-device
+> request/sample contracts were all confirmed **accurate**. Four
+> findings:
+> - **D-082** (global): `PAT_FLAG` (bit 5) on `vro_cpyfm`/`vrt_cpyfm`/
+>   line-A raster copy never actually applies a pattern — `cpy_raster`
+>   nulls the pattern pointer unconditionally before the flag is even
+>   tested, and `setup_pattern` never restores it. A genuine EmuTOS
+>   source-level gap dating to commit `d7ac3170` (2013), confirmed dead
+>   across every build path (assembler `fast_bit_blt` and the C
+>   `bit_blt`/`do_blit` fallback alike).
+> - **D-VDI-19** (local): `input/_mouse-packet.md`'s `cur_ms_stat`
+>   bit-6/7 table had left/right-button-changed backwards, copying the
+>   source's own wrong docstring comment (`vdi_mouse.c:186-193`) instead
+>   of the actual bit assignment computed by the mouse ISR
+>   (`vdi_asm.S:295-297`) and consumed by `gloc_key`
+>   (`vdi_mouse.c:203-207`) — both of which agree with each other and
+>   disagree with the comment. Corrected to bit 6 = left-changed, bit 7
+>   = right-changed.
+> - **D-VDI-20** (local): `input/_mouse.md`'s default `arrow_mform`
+>   `mf_bg`/`mf_fg` values were swapped (a positional-initializer
+>   misread). Corrected to `mf_bg=0, mf_fg=1`.
+> - **Flagged, not fixed (STOP):** `input/_input.md`'s "Atari-TOS bug
+>   preserved" claim for `vrq_string`'s extended-mode (`INTIN[0]<0`) CR
+>   handling does not survive a line-by-line trace of the current
+>   `vdi_v_string` C code — the CR test is hard-coded to `& 0x00ff`,
+>   which behaves identically regardless of `mask`. Left as an open
+>   question in the doc (candidate discrepancy, no D-VDI number
+>   assigned) pending empirical confirmation, since it contradicts an
+>   explicit EmuTOS source comment and this tool could not execute code
+>   to verify beyond a manual trace.
+>
+> Raster and input/mouse specs are re-validated and ready for the
+> Phase-12 code-audit batch against `tos-api/src/vdi/raster.rs`,
+> `backend.rs`, `input.rs`, and `mouse.rs`.
+
 ---
 
 **PHASE-00b VDI spec extraction COMPLETE** — D1 (dispatcher) +

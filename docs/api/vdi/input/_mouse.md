@@ -90,8 +90,17 @@ colour index; `MAP_COL[]` — pen → hardware PEL.
 5. `mouse_flag -= 1` re-enables drawing.
 
 The default installed at init is the arrow `arrow_mform` (hotspot 1,0;
-`mf_bg=1`, `mf_fg=0` — but only in the `!WITH_AES` build; with AES the AES
+`mf_bg=0`, `mf_fg=1` — but only in the `!WITH_AES` build; with AES the AES
 supplies the default form) (`vdi_mouse.c:69-110,593`).
+
+> **Correction (D-VDI-20).** An earlier revision of this doc had the
+> colours backwards (`mf_bg=1, mf_fg=0`). `arrow_mform`'s initializer
+> `{ 1, 0, 1, 0, 1, {...}, {...} }` maps positionally onto `MFORM`'s
+> field order `mf_xhot, mf_yhot, mf_nplanes, mf_bg, mf_fg, mf_mask[16],
+> mf_data[16]` (`vdi_mouse.c:69-73`; struct `include/aesdefs.h:441-449`):
+> `mf_xhot=1, mf_yhot=0, mf_nplanes=1, mf_bg=0, mf_fg=1`. Consistent
+> with a black arrow (pen 1, the `mf_data`/foreground shape) outlined in
+> white (pen 0, the `mf_mask`/background shape).
 
 ### Verification criteria
 

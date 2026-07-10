@@ -2985,3 +2985,98 @@ NewTOS-side hardening, analogous to the D-070 `Frename` recommendation)
 — **not** a decision to make silently in the spec.
 
 ---
+
+## D-082: `PAT_FLAG` (bit 5, `0x10`) on `vro_cpyfm`/`vrt_cpyfm`/line-A raster copy never applies a pattern — the pattern pointer is unconditionally nulled before the flag is even tested (a genuine EmuTOS source-level gap, not a spec-reading error)
+
+**Date:** 2026-07-10
+**Phase 00b spec:** `docs/api/vdi/raster/_raster.md`
+
+**EmuTOS:** `cpy_raster` (`vdi_raster.c:1330-1462`), the shared driver
+behind `vdi_vro_cpyfm` (109), `vdi_vrt_cpyfm` (121) and `linea_raster`,
+handles the pattern flag like this:
+
+```c
+/* check the pattern flag (bit 5) and revert to log op # */
+info->p_addr = NULL;        /* get pattern pointer */
+if (mode & PAT_FLAG) {
+    mode &= ~PAT_FLAG;      /* set bit to 0! */
+    setup_pattern(raster, info);   /* fill in pattern related stuff */
+}
+```
+(`vdi_raster.c:1344-1349`). `info->p_addr` is unconditionally set to
+`NULL` **before** the `PAT_FLAG` check, and `setup_pattern`
+(`vdi_raster.c:790-800`) — called only when the flag is set — fills in
+`p_nxpl`/`p_nxln`/`p_mask` but never touches `p_addr`:
+
+```c
+static void
+setup_pattern (struct raster_t *raster, struct blit_frame *info)
+{
+    info->p_nxpl = 0;
+    if (raster->multifill) {
+        info->p_nxpl = 32;
+    }
+    info->p_nxln = 2;
+    info->p_mask = 0xf;
+}
+```
+
+Both callers of `cpy_raster` that own a `Vwk` pre-load the *intended*
+pattern pointer just before the call — `vdi_info.p_addr = vwk->patptr;`
+in `vdi_vro_cpyfm` (`:1475`) and `vdi_vrt_cpyfm` (`:1497`) — but this
+assignment is immediately discarded by the unconditional null two
+function calls later. `linea_raster` (the Line-A wrapper) never sets
+`p_addr` at all before calling `cpy_raster`, so it is nulled all the
+same. The only place `P_ADDR` is tested is the assembler fast path,
+`fast_bit_blt` (`vdi_blit.S:1055-1056`):
+```
+tst.l   P_ADDR(a6)              // pattern and source ?
+jeq     next_plane               // no pattern if pointer is null
+```
+— since `P_ADDR` is always null when reached through `cpy_raster`, this
+branch is always skipped, i.e. the pattern-AND step never executes. The
+alternate C blit path, `bit_blt()`/`do_blit()` (`vdi_raster.c:588-773`,
+`424-565`, used for `CONF_WITH_BLITTER` and ColdFire), does not
+reference `p_addr`/`p_indx`/`p_mask`/`p_nxln`/`p_nxpl` **anywhere** —
+pattern support is entirely absent from that path regardless of
+`p_addr`.
+
+**Net effect:** setting `PAT_FLAG` (`mode |= 0x10`) on `vro_cpyfm`,
+`vrt_cpyfm`, or the Line-A raster-copy primitive is **observably
+identical to leaving it clear** in every EmuTOS build configuration —
+the flag is read and stripped from `mode` (so the low-4-bit logic op
+selection is unaffected), `setup_pattern` runs and computes some
+now-unused fields, but no pattern is ever composited into the
+destination.
+
+**History (not a recent regression, but a real one):** `git blame`
+shows the `p_addr = vwk->patptr` assignment used to live *inside*
+`setup_pattern` itself (taking a `Vwk *` directly) before commit
+`d7ac3170` ("Added support for 'Copy raster form'", Dec 2013), which
+introduced the shared `struct raster_t` (needed because the new
+Line-A caller has no `Vwk`) and moved responsibility for `p_addr` out
+to the individual callers — but the replacement assignments in
+`vdi_vro_cpyfm`/`vdi_vrt_cpyfm` were placed *before* `cpy_raster`'s own
+unconditional `p_addr = NULL`, so they never take effect. The bug has
+been present, unchanged, in every EmuTOS release since that commit
+(confirmed unchanged at `1a7484ab`).
+
+**This is a source-level EmuTOS gap** (dead code / silently
+non-functional flag triggered by a legal, documented parameter value),
+analogous in kind to D-081 rather than a documentation misreading.
+
+**Prior NewTOS doc:** `docs/api/vdi/raster/_raster.md` stated bit 5
+"additionally enables pattern blitting" — implying `vro_cpyfm`/
+`vrt_cpyfm` can pattern-fill a copy. That capability does not exist in
+EmuTOS as shipped.
+
+**Decision:** corrected `raster/_raster.md` to document `PAT_FLAG` as a
+stripped-but-inert bit (contract: identical output with or without it)
+and added an explicit "do not implement pattern-fill for `PAT_FLAG`"
+note for the Phase-12 `RasterBackend`. **Open question for the lead:**
+none — this is a case where reproducing EmuTOS exactly means
+implementing *less* than the opcode name suggests; no design decision
+needed, just confirmation that NewTOS should not add pattern-fill
+capability to `vro_cpyfm`/`vrt_cpyfm` that the reference never had.
+
+---

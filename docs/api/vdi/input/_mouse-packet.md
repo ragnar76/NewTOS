@@ -66,7 +66,7 @@ called, then the **change deltas** are computed — `eor` old vs new, `ror #2`
 to place them in bits 6/7 — and stored into `cur_ms_stat` alongside the
 live state.
 
-### `cur_ms_stat` bit layout (`vdi_mouse.c:183-194`)
+### `cur_ms_stat` bit layout (`vdi_mouse.c:183-194`, corrected — see D-VDI-19)
 
 `cur_ms_stat` (`UBYTE`) is the mouse-status snapshot the locator polls:
 
@@ -76,12 +76,29 @@ live state.
 | 1 (0x02) | right button state (0 = up) |
 | 2-4 | reserved |
 | 5 (0x20) | **motion flag** (1 = moved since last poll) |
-| 6 (0x40) | **right-button-changed** flag |
-| 7 (0x80) | **left-button-changed** flag |
+| 6 (0x40) | **left-button-changed** flag |
+| 7 (0x80) | **right-button-changed** flag |
+
+> **D-VDI-19 — the source's own `gloc_key` docstring comment
+> (`vdi_mouse.c:183-194`, "6 - 0x40 Right mouse button status flag; 7 -
+> 0x80 Left mouse button status flag") is backwards.** Trust the code:
+> the ISR that *writes* `cur_ms_stat` computes `eor.b d0,d1` (delta =
+> old-2-bit-state XOR new-2-bit-state, VDI convention bit0=left/bit1=
+> right) then `ror.b #2,d1`, which rotates delta-bit0 (left-changed)
+> into result-bit6 and delta-bit1 (right-changed) into result-bit7
+> (`vdi_asm.S:295-297`; the ColdFire variant `lsl.l #6,d1` at `:291-293`
+> shifts the same two bits into the same two positions). The reader,
+> `gloc_key`, agrees: `if (cur_ms_stat & 0x40) TERM_CH = 0x20; /* ...
+> left key */ else TERM_CH = 0x21; /* ... right key */`
+> (`vdi_mouse.c:203-207`) — bit `0x40` (bit 6) drives the **left**
+> terminator. Three independent code sites (the 68K ISR, the ColdFire
+> ISR, and the C reader) agree with each other and all contradict the
+> comment; per CLAUDE.md Rule 1 ("comments lie; code doesn't"), the code
+> wins: **bit 6 = left-button-changed, bit 7 = right-button-changed.**
 
 `gloc_key` (locator) consumes bits 6/7: a set change-bit yields terminator
-`0x20` (left) / `0x21` (right), and it clears bits 6/7 with `& 0x23`
-(keeping live state bits 0/1 and any reserved) after reporting
+`0x20` (left, bit 6) / `0x21` (right, bit 7), and it clears bits 6/7 with
+`& 0x23` (keeping live state bits 0/1 and any reserved) after reporting
 (`vdi_mouse.c:203-208`). It consumes bit 5 for motion, clearing it after
 returning the point (`:221-228`).
 
@@ -140,10 +157,10 @@ nothing feeds `set_state` yet. Full `vq_mouse` contract:
 
 - Packet `{0xF9, 0, 0}` (header + wire right-button-down, no motion) →
   `MOUSE_BT` bit 1 (right) set, bit 0 clear; `GCURX`/`GCURY` unchanged;
-  `cur_ms_stat` bit 5 clear, bit 6 set (right changed).
+  `cur_ms_stat` bit 5 clear, bit 7 set (right changed — see D-VDI-19).
 - Packet `{0xFA, 5, -3}` (wire left-button-down, motion) → `MOUSE_BT` bit 0
   (left) set; `GCURX += 5`, `GCURY += -3` then clamped; `cur_ms_stat` bit 5
-  set, bit 7 set (left changed).
+  set, bit 6 set (left changed — see D-VDI-19).
 - Packet `{0xFF, 0, 0}` — not a relative-mouse header? `0xFF & 0xF8 = 0xF8`
   → **is** valid (both buttons down, no motion).
 - Non-mouse packet (header `& 0xF8 != 0xF8`) → ignored, no state change.

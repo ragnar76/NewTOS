@@ -234,11 +234,48 @@ last char's low byte is CR (`0x0d`) (`vdi_input.c:89-97`). Each iteration
 **the CR is not stored and not counted** (`:95-96`). `CONTRL[4] = i` = the
 character count.
 
-- **Atari-TOS bug preserved (`vdi_input.c:63-65`):** when `j` was specified
-  *negative* (extended-code mode), the CR check compares against the *low
-  byte* of a value whose *high byte holds the scancode*; in practice CR
-  does **not** terminate input in extended mode — input ends only at the
-  max count. This bug is preserved verbatim.
+- **Source comment claims an "Atari TOS bug" that a line-by-line trace does
+  not confirm — flagged, not silently accepted (STOP, needs empirical
+  check).** The doc-comment above `vdi_v_string` (`vdi_input.c:63-65`)
+  states: *"Atari TOS bug: when the maximum is specified as negative,
+  carriage returns do NOT terminate input; input is only terminated by
+  the maximum number of characters being reached."* Tracing the actual
+  loop (`vdi_input.c:89-97`) against this claim:
+  ```c
+  for (i = 0; (i < j) && ((TERM_CH & 0x00ff) != 0x000d); i++) {
+      while (gchr_key() == 0);
+      INTOUT[i] = TERM_CH = TERM_CH & mask;
+  }
+  if ((TERM_CH & 0x00ff) == 0x000d)
+      --i;
+  ```
+  The CR test is **hard-coded to `& 0x00ff`** — it is *not* `& mask`. Since
+  both `mask` values (`0x00ff` ASCII-only and `0xffff` extended) leave bits
+  0-7 unchanged, `TERM_CH & 0x00ff` reads the same ASCII byte regardless of
+  which mode is active (`gchr_key`, `vdi_input.c:215-227`, always puts
+  ASCII in bits 0-7 and scancode in bits 8-15, independent of `mask`).
+  Manually tracing `j=-3` (extended mode) with keystrokes `'A'` then
+  `<CR>`: iteration 0 stores `INTOUT[0]=0x1E41` (scancode 0x1E, ASCII
+  `'A'`=0x41), loop continues (`0x41 != 0x0d`); iteration 1 stores
+  `INTOUT[1]=0x1C0D` (scancode 0x1C, ASCII `0x0d`) and sets `TERM_CH =
+  0x1C0D`; the **next** loop-condition check evaluates `TERM_CH & 0x00ff =
+  0x0d`, which is **false** → the loop **does** terminate on CR, and the
+  post-loop `if` decrements `i` so the CR is excluded from
+  `CONTRL[4]`, identically to ASCII mode. This appears to contradict the
+  comment's claim for the *current* C reimplementation (plausible
+  explanation: real Atari ROM TOS may have compared the *full* `TERM_CH`
+  word against `0x000d` without an explicit low-byte mask — which *would*
+  produce the described bug in extended mode, since a scancode-populated
+  high byte makes the full word never equal `0x000d` — and EmuTOS's
+  from-scratch C rewrite, using `& 0x00ff` on both sides, does not
+  reproduce that specific ROM behaviour even though its own comment still
+  describes it). **Not resolved here** — flagged for the lead/Developer:
+  either (a) confirm empirically (build EmuTOS, run `vrq_string` with
+  `INTIN[0]<0` and check whether CR terminates), or (b) treat this
+  spec bullet as unverified and keep NewTOS's behaviour aligned with
+  the **traced code** (CR terminates and is excluded in both modes)
+  rather than the comment, per CLAUDE.md Rule 1. Logged as a candidate
+  discrepancy, not yet assigned a D-VDI number pending confirmation.
 
 ### Behaviour — sample (`str_mode != 0`)
 

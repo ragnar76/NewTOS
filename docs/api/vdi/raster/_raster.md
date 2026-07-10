@@ -15,8 +15,11 @@
 > (`fd_addr`, `fd_w`, `fd_h`, `fd_wdwidth`, `fd_stand`, `fd_nplanes`, three
 > reserved WORDs); the MFDB pointer slots in `CONTRL[7..10]`; the source/
 > destination rectangle `PTSIN` layout; the **16-entry logic-op table**
-> (`INTIN[0]`, esp. 3 = replace, 6 = XOR, 7 = OR) + the `PAT_FLAG` (bit 5)
-> and `mode & ~0x1f` invalid rule; the `vrt_cpyfm` `MD_*` codes and its
+> (`INTIN[0]`, esp. 3 = replace, 6 = XOR, 7 = OR) + the `PAT_FLAG` (bit 5,
+> which is read and stripped from `mode` but — per **D-082** — never
+> actually enables a pattern fill through this opcode in EmuTOS; the
+> contract is the strip-only behaviour, not a pattern) and `mode & ~0x1f`
+> invalid rule; the `vrt_cpyfm` `MD_*` codes and its
 > fg/bg colours; the standard↔device form transform direction (`vr_trnfm`
 > toggles `fd_stand` per the source). **Reference:** the BitBlt pixel
 > loops, skew/endmask machinery, the blitter register programming, the
@@ -81,7 +84,7 @@ Total 20 bytes on m68k. **Contract:** field order, sizes, and semantics.
   `vdi_raster.c:925-950`). Clipping is applied **only** when the
   *destination* is the screen and `vwk->clip` is set (`:947-949`).
 - **`s_nxwd`/`d_nxwd`** (bytes to next word in a line) = `fd_nplanes × 2`
-  for an MFDB, `v_planes × 2` for the screen (`:922,937,944`). Equal
+  for an MFDB, `v_planes × 2` for the screen (`:922,928,937,944`). Equal
   `nxwd` on both sides ⇔ equal plane counts — the `vro_cpyfm` match test.
 
 ### Native (AArch64) variant
@@ -111,10 +114,29 @@ binaries. Both expose the same fields.
 | **7** | **`S_OR_D`** | **`S \| D`  (OR)** | 15 | `ALL_BLACK` | `1` |
 
 *`BM_NOT_SANDD` is coded as `~S | ~D` in EmuTOS (`vdi_raster.c:539`;
-De Morgan of `~(S & D)`). **Bit 5 (`0x10` = `PAT_FLAG`)** additionally
-enables pattern blitting (`vdi_raster.c:113,1346-1349`); **any bit above
-bit 5 set (`mode & ~0x1f`) is invalid → silent no-op**
+De Morgan of `~(S & D)`). **Bit 5 (`0x10` = `PAT_FLAG`)** is stripped from
+`mode` before the logic-op switch (`vdi_raster.c:113,1345-1349`); **any
+bit above bit 5 set (`mode & ~0x1f`) is invalid → silent no-op**
 (`cpy_raster:1341-1342`).
+
+> **`PAT_FLAG` does not enable a pattern fill (D-082).** `cpy_raster`
+> unconditionally sets `info->p_addr = NULL` (`vdi_raster.c:1345`)
+> *before* checking the flag, and `setup_pattern` — called only when
+> `PAT_FLAG` is set — fills in `p_nxpl`/`p_nxln`/`p_mask` but never
+> restores `p_addr` (`:790-800`). So even though `vdi_vro_cpyfm`/
+> `vdi_vrt_cpyfm` pre-load `vdi_info.p_addr = vwk->patptr` (`:1475,1497`),
+> `cpy_raster` immediately discards it. `fast_bit_blt`'s only pattern
+> test (`vdi_blit.S:1055-1056`, `tst.l P_ADDR(a6) / jeq next_plane`)
+> therefore always takes the "no pattern" branch, and the C `bit_blt`/
+> `do_blit()` fallback (`:588-773`, `424-565`) never references the
+> pattern fields at all. **Net effect: setting `PAT_FLAG` on `vro_cpyfm`/
+> `vrt_cpyfm`/line-A raster copy is observably identical to leaving it
+> clear** (bit 5 is stripped, the low 4 bits are interpreted the same,
+> no pattern is ever blitted) — a genuine EmuTOS source-level gap
+> (regression from the Line-A-raster refactor in `d7ac3170`, which moved
+> the `p_addr = vwk->patptr` assignment out of `setup_pattern` without
+> replacing it), not a spec-reading error. See global discrepancy log
+> **D-082**.
 
 ## Source / destination rectangle — `PTSIN` layout
 
@@ -142,8 +164,10 @@ Source: `vdi_vro_cpyfm` (`vdi_raster.c:1470-1483`) → `cpy_raster`
 
 1. `arb_corner` both rectangles; `mode = INTIN[0]`. If `mode & ~0x1f` →
    **no-op** (`:1341-1342`).
-2. If bit 5 (`PAT_FLAG`) set, strip it and set up the `Vwk` pattern
-   (`:1346-1349`).
+2. If bit 5 (`PAT_FLAG`) set, strip it and call `setup_pattern`, which
+   fills `p_nxpl`/`p_nxln`/`p_mask` — but the pattern pointer itself is
+   always `NULL` at this point and stays `NULL` (`:1345-1349`), so no
+   pattern is actually applied (D-082, see above).
 3. `setup_info` fills the blit frame from both MFDBs (screen substitution
    for `fd_addr == NULL`); returns "nothing to do" if the plane count is
    invalid (`> 8`, or `> 16` under `CONF_WITH_VDI_16BIT`) or clipping took
@@ -284,6 +308,15 @@ No `INTOUT`/`PTSOUT`.
 8. **Clipping is destination-screen-only.** A blit into an off-screen
    MFDB is never clipped to the `Vwk` clip rect, even with clipping
    enabled (`setup_info:947-949`).
+9. **`PAT_FLAG` (bit 5) never actually blits a pattern** through
+   `vro_cpyfm`/`vrt_cpyfm`/line-A raster copy — `cpy_raster` nulls the
+   pattern pointer unconditionally before the flag is even tested, and
+   `setup_pattern` doesn't restore it (`vdi_raster.c:1345-1349`,
+   `790-800`). Confirmed dead in every build configuration: the
+   assembler `fast_bit_blt` skips its pattern branch on a null pointer
+   (`vdi_blit.S:1055-1056`), and the C `bit_blt`/`do_blit` fallback used
+   for the hardware blitter / ColdFire never references the pattern
+   fields at all. See **D-082** (global discrepancy log).
 
 ## Dependencies
 
@@ -319,7 +352,16 @@ No `INTOUT`/`PTSOUT`.
   layout, the 16-entry logic-op numbering, the `MD_*` code values (esp.
   the `MD_REPLACE=1`/`MD_TRANS=2` correction), and the `vrt_cpyfm`
   fg/bg (`INTIN[1]`/`INTIN[2]`) order against the documented ABI is
-  **deferred**.
+  **deferred**. Also unresolved: whether real Atari TOS's `vro_cpyfm`/
+  `vrt_cpyfm` PAT_FLAG ever functioned (D-082 is confirmed dead in
+  EmuTOS across its whole history back to the source's initial DRI
+  import; no comparison possible without ROM disassembly).
+
+### Discrepancies found in this re-validation (2026-07-10)
+- **D-082** (global log) — `PAT_FLAG` (bit 5 of `vro_cpyfm`/`vrt_cpyfm`/
+  line-A raster copy's mode byte) never applies a pattern; see the boxed
+  note under "Logic operations" above and
+  [`../../_discrepancies.md`](../../_discrepancies.md#d-082).
 
 ## Configuration / version notes
 
@@ -341,6 +383,13 @@ No `INTOUT`/`PTSOUT`.
 - Keep `vro_cpyfm`'s equal-plane requirement, `vrt_cpyfm`'s mono-source
   requirement, and the overlap-safe copy direction as observable
   contract.
+- **Do not implement pattern-fill for `PAT_FLAG`.** Per D-082, EmuTOS
+  itself never blits a pattern through `vro_cpyfm`/`vrt_cpyfm` — bit 5
+  is read and stripped from `mode` (so the low-4-bit logic op is
+  unaffected) but no pattern is ever composited. Reproducing EmuTOS
+  means treating `PAT_FLAG` as a no-op flag, not building pattern
+  support into `vro_cpyfm`/`vrt_cpyfm`. (Pattern-fill for *fill* opcodes,
+  e.g. `v_fillarea`/`vr_recfl`, is unrelated and out of this doc's scope.)
 - `vr_trnfm` matters for unpacking icon/image data authored in standard
   form; keep both directions and the source-driven `fd_stand` toggle.
 - The MFDB is a **fixed ABI** parsed by ported programs — match the field
