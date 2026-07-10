@@ -123,6 +123,7 @@ fn scroll() {
     let (w, h) = (w as i16, h as i16);
     let clip = full_clip();
     // Move everything below the top line up by one cell, clear the gap.
-    VDI_SCREEN.copy_rect(Rect { x: 0, y: CELL_H, w, h: h - CELL_H }, 0, 0, 0, clip);
+    // Op 3 = BM_S_ONLY (replace) in the 16-entry logic-op table.
+    VDI_SCREEN.copy_rect(Rect { x: 0, y: CELL_H, w, h: h - CELL_H }, 0, 0, 3, clip);
     VDI_SCREEN.fill_rect(0, h - CELL_H, w, CELL_H, BG, clip);
 }

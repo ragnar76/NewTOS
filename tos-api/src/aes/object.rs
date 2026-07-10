@@ -1598,7 +1598,9 @@ fn blit_plane(
         },
         fg,
         WHITE,
-        false,
+        // Transparent (former `opaque = false`): set bits in `fg`, clear
+        // bits leave the background — the desktop icon/image blit path.
+        WriteMode::Transparent,
         clip,
     );
 }

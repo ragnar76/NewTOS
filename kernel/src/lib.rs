@@ -61,6 +61,7 @@ pub mod launch;
 // pub mod desktop_icons;
 pub mod selftest_ikbd;
 pub mod selftest_vdi;
+pub mod selftest_raster;
 pub mod selftest_fbcon;
 pub mod selftest_xbios;
 pub mod sync;

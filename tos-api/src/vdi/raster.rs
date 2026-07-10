@@ -9,11 +9,12 @@
 //! screen device.
 //!
 //! Bring-up scope: `vrt_cpyfm` with a 1-plane source (icons/sprites),
-//! replace + transparent modes; `vro_cpyfm` for the screen-to-screen
-//! case (replace / XOR). Off-screen colour copies and the full 16-op /
-//! multi-plane paths land later.
+//! all four `MD_*` write modes (replace / transparent / XOR / erase);
+//! `vro_cpyfm` for the screen-to-screen case with the full 16-entry
+//! logic-op table. Off-screen colour (memory-MFDB) copies and multi-plane
+//! paths land later.
 
-use super::backend::{MonoSrc, RasterBackend, Rect};
+use super::backend::{MonoSrc, RasterBackend, Rect, WriteMode};
 use super::vwk::{validate_color_index, Vwk};
 use super::Vdipb;
 
@@ -88,11 +89,18 @@ pub fn vrt_cpyfm(pb: &Vdipb, vwk: &Vwk, backend: &dyn RasterBackend, ncol: u16) 
         return;
     }
 
-    let mode = pb.intin(0);
-    let opaque = match mode {
-        2 => true,  // MD_REPLACE: fg on 1, bg on 0
-        1 => false, // MD_TRANS: fg on 1, leave 0
-        _ => false, // XOR/ERASE not yet distinguished → transparent
+    // `INTIN[0]` is the `MD_*` write mode (EmuTOS `vdi_defs.h:77-80`,
+    // `cpy_raster:1397-1430`): MD_REPLACE=1, MD_TRANS=2, MD_XOR=3,
+    // MD_ERASE=4. Any other value (0 or ≥5) is a silent no-op — EmuTOS'
+    // `default: return` — so we must not blit. (The old code decoded 1/2
+    // swapped and folded XOR/ERASE onto transparent; corrected here per
+    // `_raster.md:195,208-213,286-288`.)
+    let mode = match pb.intin(0) {
+        1 => WriteMode::Replace,        // fg on 1-bits, bg on 0-bits
+        2 => WriteMode::Transparent,    // fg on 1-bits, leave 0-bits
+        3 => WriteMode::Xor,            // complement on 1-bits, leave 0-bits
+        4 => WriteMode::RevTransparent, // leave 1-bits, bg on 0-bits (MD_ERASE)
+        _ => return,                    // invalid → no-op
     };
     let fg = validate_color_index(pb.intin(1), ncol);
     let bg = validate_color_index(pb.intin(2), ncol);
@@ -109,7 +117,7 @@ pub fn vrt_cpyfm(pb: &Vdipb, vwk: &Vwk, backend: &dyn RasterBackend, ncol: u16) 
         MonoSrc { bits, stride_words: src.wdwidth as u16, x: s.x, y: s.y },
         fg,
         bg,
-        opaque,
+        mode,
         vwk.clip_rect(),
     );
 }
@@ -125,13 +133,19 @@ pub fn vro_cpyfm(pb: &Vdipb, vwk: &Vwk, backend: &dyn RasterBackend) {
     if !src.is_screen() || !dst.is_screen() {
         return; // only screen↔screen for now
     }
-    let mode = pb.intin(0);
+    // `INTIN[0]` carries the raster op in the low 4 bits, `PAT_FLAG`
+    // (bit 4, 0x10) in bit 4, and is invalid if anything above bit 4 is
+    // set (`cpy_raster:1341-1349`). Strip `PAT_FLAG` before dispatch — per
+    // D-082 it never enables a pattern here — and pass the 16-entry op.
+    let mut mode = pb.intin(0);
     if mode & !0x1F != 0 {
-        return; // invalid logic op
+        return; // bits above PAT_FLAG set → invalid, no-op
     }
+    mode &= !0x10; // strip PAT_FLAG (bit 4); D-082: never blits a pattern
+    let op = (mode & 0x0F) as u8;
     let s = rect_from_ptsin(pb, 0);
     let d = rect_from_ptsin(pb, 4);
-    backend.copy_rect(s, d.x, d.y, mode as u8, vwk.clip_rect());
+    backend.copy_rect(s, d.x, d.y, op, vwk.clip_rect());
 }
 
 /// Opcode 110 — `vr_trnfm`: transform a bitmap between **standard**

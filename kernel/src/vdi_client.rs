@@ -200,8 +200,8 @@ impl Vdi {
     }
 
     /// Blit the `sw×sh` mono source at `src_mfdb` to the screen at
-    /// `(dx, dy)` in colour `fg`/`bg` (vrt_cpyfm; mode 1 = transparent,
-    /// 2 = replace).
+    /// `(dx, dy)` in colour `fg`/`bg` (vrt_cpyfm `MD_*` mode:
+    /// 1 = replace, 2 = transparent, 3 = XOR, 4 = erase).
     #[allow(clippy::too_many_arguments)]
     pub fn blit_mono(&mut self, src_mfdb: u64, sw: i16, sh: i16, dx: i16, dy: i16, fg: i16, bg: i16, mode: i16) {
         self.contrl.fill(0);
@@ -216,8 +216,8 @@ impl Vdi {
         self.call();
     }
 
-    /// Copy a screen rectangle to `(dx, dy)` with logic op `op`
-    /// (vro_cpyfm; 3 = replace, 6 = XOR).
+    /// Copy a screen rectangle to `(dx, dy)` with one of the 16 BitBlt
+    /// logic ops `op` (vro_cpyfm; 3 = replace/S, 6 = XOR/S^D, 7 = OR/S|D).
     #[allow(clippy::too_many_arguments)]
     pub fn copy_screen(&mut self, sx: i16, sy: i16, sw: i16, sh: i16, dx: i16, dy: i16, op: i16) {
         self.contrl.fill(0);

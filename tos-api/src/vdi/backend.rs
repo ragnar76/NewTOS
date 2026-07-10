@@ -148,14 +148,29 @@ pub trait RasterBackend: Sync {
     fn draw_glyph(&self, x: i16, y: i16, glyph: &[u8; 16], fg: Pel, mode: WriteMode, clip: ClipRect);
 
     /// Blit a monochrome source ([`MonoSrc`]) into the screen rectangle
-    /// `dst`, expanding set bits to `fg` and (when `opaque`) clear bits
-    /// to `bg` (`vrt_cpyfm`). Clipped to `clip` ∩ the visible area.
-    fn blit_mono(&self, dst: Rect, src: MonoSrc, fg: Pel, bg: Pel, opaque: bool, clip: ClipRect);
+    /// `dst`, expanding it to colour per the VDI [`WriteMode`]
+    /// (`vrt_cpyfm`'s `MD_*` codes). A source bit is the primitive's
+    /// "source set"; the mode decides what lands on set/clear bits:
+    ///
+    /// | mode | source **set** (1) | source **clear** (0) |
+    /// |------|--------------------|----------------------|
+    /// | `Replace`        | `fg` | `bg` |
+    /// | `Transparent`    | `fg` | untouched |
+    /// | `Xor`            | complement | untouched |
+    /// | `RevTransparent` | untouched | `bg` |
+    ///
+    /// `RevTransparent` maps EmuTOS' `MD_ERASE`: the 0-bits take the
+    /// **background** colour (`INTIN[2]`), the 1-bits are left alone.
+    /// Clipped to `clip` ∩ the visible area.
+    fn blit_mono(&self, dst: Rect, src: MonoSrc, fg: Pel, bg: Pel, mode: WriteMode, clip: ClipRect);
 
     /// Copy a screen rectangle `src` to the screen position `(dx, dy)`
-    /// using BitBlt logic op `op` (3 = replace, 6 = XOR) — the
-    /// screen-to-screen case of `vro_cpyfm`. The destination write is
-    /// clipped to `clip` ∩ the visible area.
+    /// applying one of the 16 BitBlt logic ops `op` (`D' = op(S, D)`, the
+    /// `vro_cpyfm` `INTIN[0]` table with `PAT_FLAG` already stripped): e.g.
+    /// `0`=`0`, `3`=`S` (replace), `5`=`D` (no-op), `6`=`S ^ D` (XOR),
+    /// `7`=`S | D` (OR), `15`=`~0`. The op acts literally on the packed
+    /// pixel word — the screen-to-screen case of `vro_cpyfm`. The
+    /// destination write is clipped to `clip` ∩ the visible area.
     fn copy_rect(&self, src: Rect, dx: i16, dy: i16, op: u8, clip: ClipRect);
 }
 

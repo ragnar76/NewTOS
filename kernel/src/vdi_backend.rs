@@ -389,7 +389,7 @@ impl RasterBackend for VdiScreen {
         Self::clean(fb, x0 as u32, y0 as u32, x1 as u32, y1 as u32);
     }
 
-    fn blit_mono(&self, dst: Rect, src: MonoSrc, fg: Pel, bg: Pel, opaque: bool, clip: ClipRect) {
+    fn blit_mono(&self, dst: Rect, src: MonoSrc, fg: Pel, bg: Pel, mode: WriteMode, clip: ClipRect) {
         let fb = active_fb();
         // Destination box ∩ clip ∩ screen.
         let box_ = ClipRect {
@@ -403,6 +403,16 @@ impl RasterBackend for VdiScreen {
         };
         let fg_rgb = Self::pel_to_rgb(fg);
         let bg_rgb = Self::pel_to_rgb(bg);
+        // Reuse the shared four-mode `combine` (DRY with glyph/pattern/line).
+        // `combine`'s `RevTransparent` paints its `fg` slot on the *clear*
+        // bits; `vrt_cpyfm`'s `MD_ERASE` paints the **background** colour
+        // (INTIN[2]) there, so hand `combine` `bg_rgb` as its fg slot for
+        // that one mode. All other modes forward (fg, bg) directly:
+        //   Replace: set→fg, clear→bg; Transparent: set→fg; Xor: set→~D.
+        let (c_fg, c_bg) = match mode {
+            WriteMode::RevTransparent => (bg_rgb, fg_rgb),
+            _ => (fg_rgb, bg_rgb),
+        };
         let stride = src.stride_words as usize;
         for dyc in y0..=y1 {
             let sy = src.y as i32 + (dyc - dst.y as i32);
@@ -413,17 +423,19 @@ impl RasterBackend for VdiScreen {
                     .bits
                     .get(widx)
                     .is_some_and(|w| w & (0x8000u16 >> (sx & 15)) != 0);
-                if set {
-                    fb.put_pixel(dxc as u32, dyc as u32, fg_rgb);
-                } else if opaque {
-                    fb.put_pixel(dxc as u32, dyc as u32, bg_rgb);
-                }
+                Self::combine(fb, dxc as u32, dyc as u32, set, mode, c_fg, c_bg);
             }
         }
         Self::clean(fb, x0 as u32, y0 as u32, x1 as u32, y1 as u32);
     }
 
     fn copy_rect(&self, src: Rect, dx: i16, dy: i16, op: u8, clip: ClipRect) {
+        // BM_D_ONLY (op 5): `D' = D` — the destination is untouched, so we
+        // do nothing at all (EmuTOS `vro_cpyfm16` "nothing to do"; avoids
+        // needlessly re-writing/cleaning the rectangle and any corruption).
+        if op & 0x0f == 5 {
+            return;
+        }
         let fb = active_fb();
         let scr_w = fb.width() as i32;
         let scr_h = fb.height() as i32;
@@ -459,12 +471,42 @@ impl RasterBackend for VdiScreen {
                 unsafe {
                     let sp = base.add(sy as usize * stride + sx as usize).read_volatile();
                     let dp = base.add(ty as usize * stride + tx as usize);
-                    let val = if op == 6 { sp ^ dp.read_volatile() } else { sp };
+                    let val = raster_op(op, sp, dp.read_volatile());
                     dp.write_volatile(val);
                 }
             }
         }
         Self::clean(fb, tx0 as u32, ty0 as u32, tx1 as u32, ty1 as u32);
+    }
+}
+
+/// The 16-entry BitBlt logic-op table, `D' = op(S, D)`, acting **literally
+/// on the packed pixel word** (`vro_cpyfm`, EmuTOS `vdi_raster.c:495-544` /
+/// `vro_cpyfm16:1008-1220`). Only the low nibble of `op` selects the
+/// operation (`PAT_FLAG` is stripped by the caller); the same chunky word
+/// semantics EmuTOS' truecolor `vro_cpyfm16` uses. Note the Atari planar
+/// names invert against a truecolor screen: `ALL_WHITE` (0) writes `0`
+/// (black), `ALL_BLACK` (15) writes `!0` (white) — the op acts on bits,
+/// not palette indices.
+#[inline]
+pub fn raster_op(op: u8, s: u32, d: u32) -> u32 {
+    match op & 0x0f {
+        0 => 0,             // BM_ALL_WHITE   D' = 0
+        1 => s & d,         // BM_S_AND_D     D' = S & D
+        2 => s & !d,        // BM_S_AND_NOTD  D' = S & ~D
+        3 => s,             // BM_S_ONLY      D' = S            (replace)
+        4 => !s & d,        // BM_NOTS_AND_D  D' = ~S & D
+        5 => d,             // BM_D_ONLY      D' = D            (no-op)
+        6 => s ^ d,         // BM_S_XOR_D     D' = S ^ D        (XOR)
+        7 => s | d,         // BM_S_OR_D      D' = S | D        (OR)
+        8 => !(s | d),      // BM_NOT_SORD    D' = ~(S | D)
+        9 => !(s ^ d),      // BM_NOT_SXORD   D' = ~(S ^ D)
+        10 => !d,           // BM_NOT_D       D' = ~D
+        11 => s | !d,       // BM_S_OR_NOTD   D' = S | ~D
+        12 => !s,           // BM_NOT_S       D' = ~S
+        13 => !s | d,       // BM_NOTS_OR_D   D' = ~S | D
+        14 => !(s & d),     // BM_NOT_SANDD   D' = ~(S & D)
+        _ => !0,            // BM_ALL_BLACK   D' = ~0
     }
 }
 
