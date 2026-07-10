@@ -6,7 +6,7 @@
 > `mn_getownid`, the drop-down tracking `mn_do`), `aes/gemmnext.c`
 > (`mn_popup`/`mn_attach`/`mn_istart`/`mn_settings` — AES 3.30 extensions);
 > dispatch arm `aes/gemsuper.c:167-201` (`crysbind`); the MN_SELECTED message is
-> built by the control manager `aes/gemctrl.c:328-371` (`hctl_rect`/`ct_msgup`)
+> built by the control manager `aes/gemctrl.c:318-371` (`hctl_rect`/`ct_msgup`)
 > → `aes/gemwmlib.c:851-863` (`ap_sendmsg`); opcode + slot macros
 > `include/aesdefs.h:36-45,266-299`; menu structs `aes/gemmnext.h:16-33`.
 >
@@ -24,12 +24,18 @@
 > obj, `msg[4]`=item obj, and — with `CONF_WITH_MENU_EXTENSION` — `msg[5..7]` =
 > tree-ptr hi/lo + submenu parent); the `menu_register` slot-id / -1 return; the
 > `ME_INQUIRE`/`ME_ATTACH`/`ME_REMOVE` flags; the `MENU`/`MN_SET` struct field
-> layout. **Reference (NewTOS reimplements freely):** `do_chg`/`menu_sub`/
-> `menu_down`/`menu_sr`, the `mn_do` mouse-tracking state machine, `bb_save`/
-> `bb_restore`/`popup_blit` raster save-restore, the `gl_mntree`/`gl_mnppd`/
-> `desk_ppd[]`/`D.g_acctitle[]`/`gl_submenu` internals, and `ct_msgup`'s
-> button-wait loop — these are the EmuTOS AES internals NewTOS reimplements on
-> the object manager + its own event/IPC model.
+> layout; **the menu-bar tree topology `menu_sub` reveals** — a title's
+> drop-down box is *not* its child, it is the *N*-th object in the `ob_next`
+> sibling chain rooted at `THESCREEN`'s `ob_tail` child, *N* = the title's
+> ordinal position (D-085) — because this defines how every real menu-bar
+> resource is laid out and must be interpreted, even though `menu_sub`'s own
+> C loop is reimplementable. **Reference (NewTOS reimplements freely):**
+> `do_chg`'s exact signature, `menu_down`/`menu_sr`, the `mn_do`
+> mouse-tracking state machine, `bb_save`/`bb_restore`/`popup_blit` raster
+> save-restore, the `gl_mntree`/`gl_mnppd`/`desk_ppd[]`/`D.g_acctitle[]`/
+> `gl_submenu` internals, and `ct_msgup`'s button-wait loop — these are the
+> EmuTOS AES internals NewTOS reimplements on the object manager + its own
+> event/IPC model.
 
 ---
 
@@ -41,39 +47,80 @@ with a fixed shape. Object indices used by the menu code
 
 | Index | Constant | Object | Role |
 |------:|----------|--------|------|
-| 0 | `THESCREEN` (= `ROOT`, `obdefs.h:20`) | `G_IBOX` | the root box covering the whole bar area |
-| 1 | `THEBAR` | `G_BOX` | the visible bar strip drawn by `menu_bar` |
+| 0 | `THESCREEN` (= `ROOT`, `obdefs.h:20`) | `G_IBOX` | the tree root; **two** children (see below) |
+| 1 | `THEBAR` | `G_BOX` | the visible bar strip drawn by `menu_bar` — `THESCREEN`'s `ob_head` child |
 | 2 | `THEACTIVE` | `G_IBOX` | the box holding the application titles |
 | 3 | `THEDESK` | `G_TITLE` | the **Desk** title (system menu; must equal `DESKMENU` in the desktop resource) |
 
-Under `THEACTIVE` the **titles** (`G_TITLE`) are siblings; each title's child is
-a `G_BOX` drop-down whose children are the **items** (`G_STRING`). The AES draws
-the bar, tracks the mouse over titles, drops the box, highlights the item under
-the cursor, and on button release posts an **`MN_SELECTED`** message carrying
-`[title obj, item obj]`. So most `menu_*` calls simply flip one object's
-`ob_state` bit and (sometimes) redraw it — routed through the shared `do_chg`
-helper. The **tree layout, the drop-down tracking result, and the message
-format are contract**; the pixel drawing is the object manager's job
-(`ob_draw`/`ob_change`, cross-ref — do not re-specify here).
+Under `THEACTIVE` the **titles** (`G_TITLE`) are siblings, `THEDESK`(3) being
+the first. The AES draws the bar, tracks the mouse over titles, drops the box,
+highlights the item under the cursor, and on button release posts an
+**`MN_SELECTED`** message carrying `[title obj, item obj]`. So most `menu_*`
+calls simply flip one object's `ob_state` bit and (sometimes) redraw it —
+routed through the shared `do_chg` helper. The **tree layout, the drop-down
+tracking result, and the message format are contract**; the pixel drawing is
+the object manager's job (`ob_draw`/`ob_change`, cross-ref — do not re-specify
+here).
+
+### Correction (D-085): a title's drop-down box is *not* its child — it is looked up positionally
+
+> **Correction vs. the previous spec.** The old file claimed "each title's
+> child is a `G_BOX` drop-down whose children are the items." **This is
+> wrong.** The drop-down boxes are **not** parented under their titles at all
+> — they are found by `menu_sub` (`aes/gemmnlib.c:71-86`), which walks a
+> completely separate part of the tree:
+>
+> ```c
+> static WORD menu_sub(OBJECT *tree, WORD ititle)
+> {
+>     themenus = (tree+THESCREEN)->ob_tail;         /* THESCREEN's 2nd child */
+>     imenu = (tree+themenus)->ob_head;              /* 1st drop-down box    */
+>     for (i = ititle-THEACTIVE; i > 1; i--)
+>         imenu = (tree+imenu)->ob_next;             /* walk sibling chain   */
+>     return imenu;
+> }
+> ```
+>
+> `THESCREEN`'s **`ob_tail`** (its *second*, not first, child — `THEBAR` is
+> `ob_head`) is a hidden container object (`themenus`); **its children, in
+> `ob_next` sibling-chain order, are the drop-down `G_BOX`es, one per title —
+> ordered to match title order, not linked to any specific title object.**
+> Title *N* (counting from `THEDESK`=3 as position 1) maps to the *N*-th box in
+> that chain. `menu_fixup` (`gemmnlib.c:89-125`) confirms this independently:
+> it computes the **Desk** menu's own drop-down box as
+> `dabox = tree[themenus].ob_head` (`gemmnlib.c:101-102`) — i.e. literally
+> "`themenus`'s first child", matching `menu_sub`'s result for `ititle =
+> THEDESK` (loop body skipped, `i = THEDESK-THEACTIVE = 1`).
+>
+> **This is contract, not internal**, even though `menu_sub`'s C loop itself
+> is a reimplementable detail: any menu-bar `OBJECT` resource built by an
+> external resource compiler (and any real GEM program's static resource
+> file) is laid out this way, and a NewTOS object-tree/menu-resource walker
+> that instead assumed "drop-down = title's `ob_head` child" would
+> misinterpret every real menu-bar resource — the item highlighting, the
+> drop-down draw, and `MN_SELECTED`'s `item` object number would all be
+> wrong. What each drop-down box's *children* are (the **items**,
+> `G_STRING`) is unaffected by this correction — that part of the old text
+> was right. See D-085.
 
 ### `do_chg` — the shared state-setter (reference)
 
 `do_chg(tree, iitem, chgvalue, dochg, dodraw, chkdisabled)`
-(`gemmnlib.c:145-171`) sets (`dochg≠0`) or clears (`dochg=0`) the `chgvalue`
+(`gemmnlib.c:145-172`) sets (`dochg≠0`) or clears (`dochg=0`) the `chgvalue`
 bit in object `iitem`'s `ob_state`, optionally redraws it (`dodraw`), and — if
 `chkdisabled` — refuses when the item is already `DISABLED`. It returns `TRUE`
 unless the disabled-guard blocked it. **The important per-call detail is which
 of `dochg`/`dodraw`/`chkdisabled` each menu selector passes** (table below);
 `do_chg` itself is a reimplementable helper.
 
-### Object `ob_state` bits touched (`include/obdefs.h:100-107`)
+### Object `ob_state`/`ob_flags` bits touched (`include/obdefs.h:82-107`)
 
-| Bit | Value | Set by |
-|-----|------:|--------|
-| `SELECTED` | 0x0001 | `menu_tnormal` (title highlight), the tracking loop (item/title hilite) |
-| `CHECKED`  | 0x0004 | `menu_icheck` (the ✓ mark) |
-| `DISABLED` | 0x0008 | `menu_ienable` (greyed / non-selectable) |
-| `SUBMENU`  | 0x0800 | `menu_attach` (`ob_flags`, marks an item as having a submenu) |
+| Bit | Value | Field | Set by |
+|-----|------:|-------|--------|
+| `SELECTED` | 0x0001 | `ob_state` (`obdefs.h:101`) | `menu_tnormal` (title highlight), the tracking loop (item/title hilite) |
+| `CHECKED`  | 0x0004 | `ob_state` (`obdefs.h:103`) | `menu_icheck` (the ✓ mark) |
+| `DISABLED` | 0x0008 | `ob_state` (`obdefs.h:104`) | `menu_ienable` (greyed / non-selectable) |
+| `SUBMENU`  | 0x0800 | `ob_flags` (`obdefs.h:98`) | `menu_attach` — marks an item as having a submenu; **`menu_attach` also encodes the submenu-table index into `ob_type`'s upper byte**, see D-087 below |
 
 ---
 
@@ -182,8 +229,10 @@ FALSE, FALSE)`.
 
 Sets/clears the `CHECKED` (0x0004) `ob_state` bit. **`dodraw = FALSE`** — the
 change is *not* drawn immediately; the check mark appears the next time the
-drop-down is drawn (`gemmnlib.c:172`). Contract detail: `menu_icheck` alone
-never repaints.
+drop-down is drawn (`gemsuper.c:172`, the `do_chg` call site — not
+`gemmnlib.c:172`, a citation error in the previous spec: that line is
+`do_chg`'s closing brace, not the `FALSE, FALSE` arguments). Contract detail:
+`menu_icheck` alone never repaints.
 
 ---
 
@@ -259,7 +308,7 @@ itself (e.g. via `objc_draw`, or a subsequent `menu_ienable` with bit 15).
 
 **Source:** `gemsuper.c:185-187` → `aes/gemmnlib.c:789-816` (`mn_register`).
 Helpers: `menu_fixup()` (splices the DA into the tree), `build_menuid_lookup()`
-(`gemmnlib.c:766-786`, the display-slot → menu-id table). **Globals written:**
+(`gemmnlib.c:766-782`, the display-slot → menu-id table). **Globals written:**
 `D.g_accreg` (count of registered DAs), `D.g_acctitle[NUM_ACCS]` (the DA title
 string pointers), `desk_ppd[NUM_ACCS]` (the DA owner process descriptors),
 `acc_display[]` (the lookup table) (`gemmnlib.c:64-65,798-810`).
@@ -291,11 +340,12 @@ that id in `msg[4]` (`gemctrl.c:337-346`, `gemmnlib.c:838-849`).
 
 ## `menu_popup` (36) — `CONF_WITH_MENU_EXTENSION`
 
-**Source:** `gemsuper.c:189-191` → `aes/gemmnext.c:304-357` (`mn_popup`).
+**Source:** `gemsuper.c:189-191` → `aes/gemmnext.c:304-356` (`mn_popup`).
 Helpers: `wm_update(BEG_MCTRL/END_MCTRL)` (grab/release the mouse),
-`ev_button` (wait for button-up), `popup_blit` (save/restore background),
-`handle_popup`/`submenu_event` (the pop-up tracking loop, sets `keystate`),
-`clamp_ypos` (keep the box on-screen).
+`ev_button` (wait for button-up, called **both before and after** the
+tracking loop, `gemmnext.c:314,351`), `popup_blit` (save/restore background),
+`handle_popup` (the pop-up tracking loop; it sets `keystate` itself at
+`gemmnext.c:272` — see D-086 below), `clamp_ypos` (keep the box on-screen).
 
 | Slot | Meaning |
 |------|---------|
@@ -305,22 +355,51 @@ Helpers: `wm_update(BEG_MCTRL/END_MCTRL)` (grab/release the mouse),
 | `addr_in[1]` (`MPOP_OUT`) | output `MENU *` — filled with the choice |
 | `int_out[0]` | **`1`** if an item was chosen, **`0`** otherwise |
 
-Displays the pop-up menu at (x,y), where (x,y) is the position of the *start*
-item; the parent box y is derived by subtracting the start item's y offset, then
-the box is clamped to the screen. Saves the background, runs the tracking loop,
-restores the background. On a pick, fills `*mdata`: `mn_tree`/`mn_menu` copied
-from the input (**no submenus from popups — restriction #1 below**), `mn_item` =
-the chosen object number, `mn_scroll` copied, `mn_keystate` = the shift state at
-selection; returns `1`. On no pick, sets `mdata->mn_keystate = 0` and returns
-`0` (`gemmnext.c:337-353`).
+**Behaviour.** `mn_popup` first grabs the mouse (`wm_update(BEG_MCTRL)`) and
+**blocks until any currently-held mouse button is released**
+(`ev_button(1, 0x00ff, 0x0000, rets)`, `gemmnext.c:314`) — the popup is not
+shown while a button is still down. It then positions the parent box at
+(x,y), where (x,y) is the position of the *start* item; the parent box y is
+derived by subtracting the start item's y offset, then the box is clamped to
+the screen (`clamp_ypos`). It saves the background (`popup_blit`), runs the
+tracking loop (`handle_popup`), and restores the background. On a pick,
+fills `*mdata`: `mn_tree`/`mn_menu` copied from the input (**no submenus
+from popups — restriction #1 below**), `mn_item` = the chosen object
+number, `mn_scroll` copied, `mn_keystate` = the shift state at selection;
+returns `1`. On no pick, sets `mdata->mn_keystate = 0` and returns `0`
+(`gemmnext.c:336-349`). Either way, it waits for button-up again
+(`gemmnext.c:351`) and releases the mouse (`wm_update(END_MCTRL)`,
+`gemmnext.c:353`) before returning.
+
+> **Correction / addition (D-086).** The previous spec listed a helper
+> function `submenu_event` that "sets `keystate`". **No such function
+> exists anywhere in EmuTOS** (`grep -rn submenu_event references/emutos/`
+> matches only a stale comment, `gemmnext.c:342`: `/* set by
+> submenu_event() */`). `keystate` is in fact set directly inside
+> `handle_popup` (`gemmnext.c:272`, `keystate = rets[3];`) — the comment
+> referencing a `submenu_event()` helper is inaccurate/outdated EmuTOS
+> source-comment cruft (per the project rule "comments lie, code doesn't").
+> The previous spec derived a fictitious helper name from this stale
+> comment instead of from the code. See D-086.
+
+> **New edge case (D-086).** If `popup_blit`'s background-save allocation
+> fails (`dos_alloc_stram` returns `NULL`, `gemmnext.c:157-163`), `mn_popup`
+> **never calls `handle_popup`** (`gemmnext.c:329-334` is skipped, `buf ==
+> NULL`) — `objnum` stays `-1` and the function falls straight through to
+> the "no pick" branch (`mdata->mn_keystate = 0`, `rc = FALSE`,
+> `gemmnext.c:336,345-349`), while still correctly waiting for button-up
+> and releasing the mouse (`gemmnext.c:351,353`). A caller cannot
+> distinguish "no item chosen" from "out of ST-RAM" — both return `0`.
 
 ---
 
 ## `menu_attach` (37) — `CONF_WITH_MENU_EXTENSION`
 
-**Source:** `gemsuper.c:192-194` → `aes/gemmnext.c:535-556` (`mn_attach`).
-Helpers: `query_submenu`/`attach_submenu` (`gemmnext.c` — manage the `SMIB`
-submenu-info array `gl_submenu`).
+**Source:** `gemsuper.c:192-194` → `aes/gemmnext.c:535-557` (`mn_attach`).
+Helpers: `query_submenu` (`gemmnext.c:401-433`), `attach_submenu`
+(`gemmnext.c:465-530`), `detach_submenu` (`gemmnext.c:438-460`) — manage the
+`SMIB` submenu-info array `gl_submenu` (`aes/struct.h:32,53`: `NUM_SMIBS =
+128` entries, allocated on first use).
 
 | Slot | Meaning |
 |------|---------|
@@ -330,13 +409,53 @@ submenu-info array `gl_submenu`).
 | `addr_in[1]` (`MPOP_OUT`) | `MENU *` — submenu descriptor (in for attach, out for inquire) |
 | `int_out[0]` | `1`/`TRUE` on success, `0`/`FALSE` on failure |
 
-Attaches (1), removes (2), or queries (0) a submenu on a menu-bar item.
-**Guard:** the target item must be a `G_STRING` (`tree[item].ob_type & 0xff ==
-G_STRING`), else return `FALSE` immediately (`gemmnext.c:539-540`). Attaching
-sets the item's `SUBMENU` (0x0800) `ob_flags` bit and writes a right-arrow
-marker (0x03) two chars from the end of the item text (`gemmnext.c:521-528`).
+Attaches (`ME_ATTACH`=1), removes (`ME_REMOVE`=2), or queries (`ME_INQUIRE`=0)
+a submenu on a menu-bar item. **Guard:** the target item must be a `G_STRING`
+(`tree[item].ob_type & 0xff == G_STRING`), else return `FALSE` immediately,
+**for all three operations** (`gemmnext.c:539-541`). Attaching sets the
+item's `SUBMENU` (0x0800) `ob_flags` bit and writes a right-arrow marker
+(0x03) two chars from the end of the item text (`gemmnext.c:522-527`).
 
-> **EmuTOS restriction (`gemmnext.c:12-27`):** submenus can be attached **only
+> **Correction / addition (D-087).** The previous spec said attaching "sets
+> the item's `SUBMENU` `ob_flags` bit and writes a right-arrow marker" — true
+> but **incomplete**: `attach_submenu` **also writes the `SMIB` array index
+> into the item's `ob_type` upper byte**: `obj->ob_type |= ((submenu -
+> gl_submenu) + 128) << 8;` (`gemmnext.c:524`). This is how `query_submenu`
+> and `find_submenu_from_obtype` (`gemmnext.c:361-375`) later recover which
+> `SMIB` entry belongs to the item (`n = ((ob_type>>8)&0xff) - 128;`,
+> `gemmnext.c:369`). `detach_submenu` reverses this: it clears the upper byte
+> (`obj->ob_type &= 0x00ff;`), clears `SUBMENU`, and blanks the marker
+> character with a space (`gemmnext.c:449-452`). **This mutates `ob_type`, a
+> field a program's own resource/tree code may read directly** (TOS has no
+> memory protection between an app and its own OBJECT tree) — a NewTOS
+> object-tree/menu implementation must reproduce this exact encoding if it is
+> to remain source-compatible with programs that inspect `ob_type` after
+> calling `menu_attach`/`menu_istart`. See D-087.
+
+> **Addition (D-088) — `menu_attach` behaviour and failure paths not
+> previously documented:**
+> - **`ME_ATTACH` on an item that already has a submenu *replaces* it**:
+>   `attach_submenu` detaches the existing submenu first, then proceeds to
+>   attach the new one (`gemmnext.c:471-477`) — it does not fail or leak the
+>   old `SMIB` slot.
+> - **`ME_REMOVE` on an item with *no* attached submenu returns `FALSE`**
+>   (nothing to remove): `attach_submenu(tree, item, NULL)` — `mdata==NULL`
+>   for `ME_REMOVE` — falls through `query_submenu`'s `FALSE` case straight to
+>   `if (!mdata) return FALSE;` (`gemmnext.c:471-481`).
+> - **`gl_submenu` array allocation failure** (`dos_alloc_anyram`, first
+>   `ME_ATTACH` call ever) → `FALSE` (`gemmnext.c:484-488`).
+> - **`SMIB` table full** (all `NUM_SMIBS`=128 entries in use, no matching or
+>   free slot) → `FALSE` (`gemmnext.c:509-512`).
+> - **`ME_INQUIRE` tolerates `mdata == NULL`** as an EmuTOS-only convenience
+>   ("not specified by TOS", `gemmnext.c:397-400`) to test "does this item
+>   have a submenu" without needing the descriptor — real TOS's documented
+>   behaviour for a null output pointer is unspecified; do not rely on this
+>   as contract.
+>
+> None of these paths were in the previous spec's "Error conditions" table.
+> See D-088.
+
+> **EmuTOS restriction (`gemmnext.c:13-28`):** submenus can be attached **only
 > to the main menu bar** — one level of submenus, no submenus of submenus, and
 > no submenus from popups.
 
@@ -364,7 +483,7 @@ nor 1 (`gemmnext.c:566-587`).
 
 ## `menu_settings` (39) — `CONF_WITH_MENU_EXTENSION`
 
-**Source:** `gemsuper.c:198-200` → `aes/gemmnext.c:596-618` (`mn_settings`).
+**Source:** `gemsuper.c:198-200` → `aes/gemmnext.c:596-616` (`mn_settings`).
 
 | Slot | Meaning |
 |------|---------|
@@ -482,9 +601,12 @@ The menu manager has almost no error surface — like the rest of the AES it is
 | `menu_register` when all `NUM_ACCS` (6) slots are used | `gemmnlib.c:796,815` | `-1` |
 | `menu_tnormal` on a **disabled** title (`chkdisabled=TRUE`) | `gemmnlib.c:158-159` | `0` (state unchanged) |
 | `menu_ienable` — no error path (`chkdisabled=FALSE`) | `gemmnlib.c:172-176` | always `1` |
-| `menu_attach` on a non-`G_STRING` item | `gemmnext.c:539-540` | `0`/`FALSE` |
-| `menu_istart` with no attached submenu / bad flag | `gemmnext.c:566,585` | `0`/`FALSE` |
-| `menu_popup` with no item chosen | `gemmnext.c:351-353` | `0` |
+| `menu_attach` on a non-`G_STRING` item (any flag) | `gemmnext.c:539-541` | `0`/`FALSE` |
+| `menu_attach(ME_REMOVE, …)` when the item has no submenu | `gemmnext.c:471-481` | `0`/`FALSE` (D-088) |
+| `menu_attach(ME_ATTACH, …)` — `gl_submenu` allocation (OOM) fails | `gemmnext.c:484-488` | `0`/`FALSE` (D-088) |
+| `menu_attach(ME_ATTACH, …)` — `SMIB` table full (`NUM_SMIBS`=128) | `gemmnext.c:509-512` | `0`/`FALSE` (D-088) |
+| `menu_istart` with no attached submenu / bad flag | `gemmnext.c:568-569,584-585` | `0`/`FALSE` |
+| `menu_popup` with no item chosen (incl. background-save OOM, D-086) | `gemmnext.c:336,345-349` | `0` |
 | any of 36–39 when `CONF_WITH_MENU_EXTENSION == 0` | `gemsuper.c:406-417` | `-1` (unsupported opcode) |
 
 There are **no** TOS negative error codes (`E*`) in the menu manager — returns
@@ -522,9 +644,14 @@ are `1` / `0` / slot-id / `-1` only.
   and `msg[7]` = the submenu parent (`gemctrl.c:353-368`).
 - **`menu_popup` result:** `menu_popup(in, x, y, out)` returns `1` and fills
   `out->mn_item` with the chosen object when an item is picked; returns `0` and
-  sets `out->mn_keystate = 0` otherwise (`gemmnext.c:337-353`).
+  sets `out->mn_keystate = 0` otherwise, including on background-save OOM
+  (`gemmnext.c:336,345-349`).
 - **`menu_attach` guard:** `menu_attach(ME_ATTACH, tree, item, m)` on an item
-  whose `ob_type` is not `G_STRING` returns `0` (`gemmnext.c:539-540`).
+  whose `ob_type` is not `G_STRING` returns `0` (`gemmnext.c:539-541`).
+- **`menu_attach` encodes into `ob_type`:** after a successful `ME_ATTACH`,
+  `tree[item].ob_type`'s upper byte is non-zero (the `SMIB` index + 128) in
+  addition to `ob_flags & SUBMENU`; after `ME_REMOVE`, the upper byte is back
+  to `0` (`gemmnext.c:524`, `449`).
 - **Extension gating:** with `CONF_WITH_MENU_EXTENSION = 0`, opcodes 36–39
   return `-1` (`gemsuper.c:406-417`).
 
@@ -564,11 +691,30 @@ are `1` / `0` / slot-id / `-1` only.
 9. **The extension calls are deliberately minimal.** `menu_settings` stores its
    `MN_SET` fields but the submenu code ignores the timing/scroll values; only
    one level of submenus is supported, attached only to the main bar, and no
-   popups-with-submenus (`gemmnext.c:12-27`, `594`).
+   popups-with-submenus (`gemmnext.c:13-28`, `594`).
 10. **Menu selection runs in the control manager, not the `menu_*` trap.** The
     `menu_*` calls only set object state / install the tree; the actual pick →
     `MN_SELECTED` happens later inside `hctl_rect`/`mn_do` while the app is in
     `evnt_multi` (`gemctrl.c:318-371`).
+11. **A title's drop-down box is not its child object.** It is the *N*-th
+    `ob_next` sibling under `tree[THESCREEN].ob_tail` (a hidden container),
+    *N* = the title's ordinal position among titles (`menu_sub`,
+    `gemmnlib.c:71-86`). See D-085 — this is a correction, not an addition,
+    to the previous spec's tree-shape description.
+12. **`menu_attach` writes `ob_type`, not just `ob_flags`.** Attaching encodes
+    the `SMIB` array index into the item's `ob_type` upper byte
+    (`gemmnext.c:524`); detaching clears it (`gemmnext.c:449`). Re-attaching
+    over an existing submenu detaches the old one first (replace semantics,
+    `gemmnext.c:471-477`); `ME_REMOVE` on an item with no submenu, an OOM
+    on the (lazily-allocated, 128-entry) `SMIB` table, and a full `SMIB`
+    table all return `FALSE` (`gemmnext.c:471-481,484-488,509-512`). See D-087/D-088.
+13. **`menu_popup`'s `submenu_event` does not exist.** `handle_popup`
+    (`gemmnext.c:245-299`) sets `keystate` itself; the `/* set by
+    submenu_event() */` comment at `gemmnext.c:342` is stale EmuTOS source
+    text referencing a function that is absent from the entire EmuTOS tree.
+    `mn_popup` also blocks until any held mouse button releases before
+    showing the popup, and silently returns "no pick" if the background-save
+    allocation fails (`gemmnext.c:314,157-163`). See D-086.
 
 ---
 
@@ -612,12 +758,18 @@ are `1` / `0` / slot-id / `-1` only.
 
 - **Menu OBJECT tree** — a standard `OBJECT` tree (see
   [`object-form.md`](./object-form.md) and `docs/api/structures/` for the
-  `OBJECT` layout) with the fixed index roles `THESCREEN`(0, root `G_IBOX`) /
-  `THEBAR`(1) / `THEACTIVE`(2) / `THEDESK`(3) and the title(`G_TITLE`) →
-  box(`G_BOX`) → item(`G_STRING`) hierarchy (`gemmnlib.c:46-48`,
-  `gemctrl.c:42`). The `ob_state` bits `CHECKED`/`DISABLED`/`SELECTED` and the
-  `ob_flags` bit `SUBMENU` (`obdefs.h:98-107`) are the contract fields the menu
-  calls flip.
+  `OBJECT` layout) with the fixed index roles `THESCREEN`(0, root `G_IBOX`,
+  **two** children) / `THEBAR`(1, `THESCREEN`'s `ob_head`) / `THEACTIVE`(2) /
+  `THEDESK`(3, first title) (`gemmnlib.c:46-48`, `gemctrl.c:42`). Titles
+  (`G_TITLE`) are children of `THEACTIVE`; drop-down boxes (`G_BOX`) are
+  **not** children of their titles — they are the `ob_next` sibling chain
+  under `THESCREEN`'s `ob_tail` (a hidden container), positionally
+  correlated by title order (`menu_sub`, `gemmnlib.c:71-86`; **corrected**,
+  see D-085); each drop-down's own children are the items (`G_STRING`). The
+  `ob_state` bits `CHECKED`/`DISABLED`/`SELECTED` and the `ob_flags` bit
+  `SUBMENU` (`obdefs.h:82-107`) are the contract fields the menu calls flip;
+  `menu_attach` additionally writes the `SMIB` index into `ob_type`'s upper
+  byte (`gemmnext.c:524`, see D-087).
 - **`MN_SELECTED` / `AC_OPEN` messages** — the 16-byte `WORD msg[8]` layout
   above (`gemctrl.c:353-368`, `aesdefs.h:227,242`). Shared with the event and
   application managers ([`event.md`](./event.md), [`_state.md`](./_state.md) §3).
@@ -627,14 +779,37 @@ are `1` / `0` / slot-id / `-1` only.
 - **`MN_SET`** (`aes/gemmnext.h:27-33`) — `menu_settings` block: `LONG display`
   (submenu-display delay ms), `LONG drag` (submenu-drag delay ms), `LONG delay`
   (single-click scroll delay ms), `LONG speed` (continuous-scroll delay ms),
-  `WORD height` (default scroll height in items). Get/set with non-negative-only
-  writes; `height` clamped ≥ 5.
+  `WORD height` (default scroll height in items, clamped to `[5, gl_rfull.g_h
+  / gl_hchar]` on set — `clamp_height`, `gemmnext.c:83-95`). Get/set with
+  non-negative-only writes.
+- **`SMIB`** (`aes/struct.h:180-186`) — submenu info block: `WORD s_usage`
+  (refcount), `OBJECT *s_tree`, `WORD s_menu` (enclosing box obj), `WORD
+  s_start`. Stored in `gl_submenu[NUM_SMIBS]` (`NUM_SMIBS = 128`,
+  `aes/struct.h:53`), lazily allocated on the first `menu_attach(ME_ATTACH,
+  …)`. **Reference** — the array/index-encoding scheme is EmuTOS-internal;
+  only the item's `ob_type`/`ob_flags` mutation (D-087) and the `menu_attach`/
+  `menu_istart` return values are contract.
 - **DA-slot model** — `D.g_acctitle[NUM_ACCS]` (title ptrs), `desk_ppd[NUM_ACCS]`
   (owner descriptors), `D.g_accreg` (count), `acc_display[]` (display-slot →
   menu-id lookup), `gl_dafirst` (first DA object in the tree); `NUM_ACCS = 6`
   (`sysconf.h:37`). **Reference** — NewTOS reimplements the storage; the
   *observable* contract is the slot-id (0..5)/-1 return and the `AC_OPEN`
   routing.
+
+  > **Internal oddity found, not contract-relevant.**
+  > `build_menuid_lookup`'s fill-remainder-with-`-1` loop
+  > (`gemmnlib.c:778-781`) double-increments its index —
+  > `for ( ; slot < NUM_ACCS; slot++) { acc_display[slot++] = -1; }` — so it
+  > sets only every *other* `acc_display[]` slot above the registered count
+  > to `-1`, leaving the skipped ones at their previous value (`0` from
+  > static init, the first time). This looks like a real EmuTOS off-by-one,
+  > but it is **unreachable through the documented API**: `mn_getownid`'s
+  > `item` argument (`gemctrl.c:340`) is always an object index `ob_find`
+  > returned from the *actual* tree `menu_fixup` built, which only ever
+  > contains `D.g_accreg` real DA objects — so `acc_display[]` is never read
+  > at an index beyond what the first (correct) loop already filled. Noted
+  > for completeness; **not** given a D-number since it changes no observable
+  > `menu_*` behaviour and NewTOS reimplements this storage freely anyway.
 
 ---
 
@@ -683,7 +858,7 @@ are `1` / `0` / slot-id / `-1` only.
   `MN_SELECTED` carries only `msg[3]/msg[4]`. This flag is also one of the four
   that push `AES_VERSION` to 0x0330/0x0340 (see
   [`application.md`](./application.md)).
-- The extension implementation is deliberately **minimal** (`gemmnext.c:12-27`):
+- The extension implementation is deliberately **minimal** (`gemmnext.c:13-28`):
   submenus only on the main bar, one level deep, no popup-submenus, scroll flag
   ignored. Popups, one-level submenus, and `menu_settings` storage do work.
 - Opcodes **30–35** are unconditional across all EmuTOS builds and all TOS
@@ -705,6 +880,16 @@ are `1` / `0` / slot-id / `-1` only.
   repaint. The **only genuinely new logic** is the drop-down mouse-tracking
   state machine that produces `MN_SELECTED` — reimplemented over NewTOS
   hit-testing + the event pipe, not ported from `mn_do`.
+- **The title→drop-down correlation (D-085) must be honoured by whatever
+  parses/produces menu-bar resources for NewTOS**, since it defines the
+  on-disk/in-memory tree shape any GEM menu-bar resource has: title *N*'s
+  drop-down is the *N*-th sibling under the tree root's second child, not
+  that title's own child. If NewTOS gains its own resource compiler/editor
+  for menu-bar trees, it must emit this exact shape (or NewTOS's own
+  menu-bar walker must special-case its own, more natural in-memory layout
+  — an explicit ADR-worthy choice, since "reimplement freely" only covers
+  the *algorithm*, not third-party `.RSC` files that already exist in this
+  shape).
 - **Bring-up order:** original 30–34 (bar + item state) first, `menu_register`
   and the extensions (36–39) later with the DA / submenu machinery — matching
   the [`application.md`](./application.md) DA-deferral. `menu_register` returning

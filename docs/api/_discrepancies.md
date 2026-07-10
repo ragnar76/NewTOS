@@ -3266,3 +3266,200 @@ its `OUT_LEN`-gated visibility are contract. Documented in
 `docs/api/aes/_dispatcher.md` §3a.
 
 ---
+
+## D-085: Menu-bar tree topology — a title's drop-down box is *not* its child object; it is looked up positionally through a separate hidden container
+
+**Date:** 2026-07-10 (AES leg, Menu Manager re-validation, Batch 2)
+**Phase 00b spec:** `docs/api/aes/menu.md` ("The menu bar IS an OBJECT tree")
+
+**Context:** third validation pass of the Menu Manager spec (opcodes 30–39),
+after the 2026-07-03 re-derive round (D-051). Read the full implementation of
+`menu_sub`, `menu_fixup`, `menu_down`, `mn_do` in `aes/gemmnlib.c` line by
+line, not just the already-validated slot-map/return-value tables.
+
+**Previous spec (wrong):** "Under `THEACTIVE` the titles (`G_TITLE`) are
+siblings; each title's child is a `G_BOX` drop-down whose children are the
+items (`G_STRING`)."
+
+**EmuTOS (confirmed):** `menu_sub` (`aes/gemmnlib.c:71-86`) — the function
+that maps a title object index to its drop-down box index — does **not**
+read the title object's own `ob_head`. It reads `tree[THESCREEN].ob_tail`
+(`THESCREEN`'s *second* child, called `themenus` in the source; `THEBAR` is
+the first/`ob_head` child), then walks `themenus`'s children via the
+`ob_next` sibling chain, one hop per title position, starting from
+`tree[themenus].ob_head`:
+
+```c
+static WORD menu_sub(OBJECT *tree, WORD ititle)
+{
+    themenus = (tree+THESCREEN)->ob_tail;
+    imenu = (tree+themenus)->ob_head;
+    for (i = ititle-THEACTIVE; i > 1; i--)
+        imenu = (tree+imenu)->ob_next;
+    return imenu;
+}
+```
+
+I.e. the drop-down boxes for all titles are siblings of *each other* under a
+hidden container object, positionally correlated with title order — **not**
+children of their respective title objects. `menu_fixup`
+(`gemmnlib.c:89-125`) independently confirms this: it computes the Desk
+menu's own drop-down box directly as `dabox = tree[themenus].ob_head`
+(`gemmnlib.c:101-102`), matching `menu_sub`'s result for `ititle=THEDESK`
+(the first title). `menu_down` (`gemmnlib.c:229-245`) calls `menu_sub` to
+locate the box before drawing it — it is never obtained via any parent-child
+relationship from the title.
+
+**Why this is contract, not internal:** even though `menu_sub`'s C loop is a
+reimplementable helper, the *tree shape it decodes* is not — it is exactly
+how any external resource compiler lays out (and any real GEM program's
+compiled `.RSC` menu bar contains) a menu-bar `OBJECT` tree. A NewTOS
+menu-bar object-tree interpreter built on the (incorrect) "drop-down is the
+title's child" assumption would misinterpret every real menu-bar resource:
+wrong box drawn on drop-down, wrong item highlighted, wrong `item` object
+number in `MN_SELECTED`.
+
+**Not a Compendium discrepancy** — no PDFs in `references/` for cross-check;
+this is a pure source-reading correction of the previous NewTOS spec, found
+by reading the full function body instead of trusting the earlier
+high-level description.
+
+**Decision:** `docs/api/aes/menu.md` corrected — new object-index table
+annotations, a dedicated "Correction (D-085)" callout under "The menu bar
+IS an OBJECT tree", updated "Related data structures" and edge-case #11,
+and a NewTOS-implementation-notes callout that this topology is a real
+constraint on any menu-bar resource format NewTOS accepts.
+
+---
+
+## D-086: `menu_popup` — the `submenu_event` helper cited in the previous spec does not exist (stale EmuTOS source comment); plus two undocumented behaviours (blocks on held button, silent OOM)
+
+**Date:** 2026-07-10 (AES leg, Menu Manager re-validation, Batch 2)
+**Phase 00b spec:** `docs/api/aes/menu.md` (`menu_popup` (36))
+
+**Context:** same pass as D-085; read `mn_popup`/`handle_popup`/`popup_blit`
+(`aes/gemmnext.c:136-356`) in full.
+
+**Previous spec (wrong):** listed `handle_popup`/`submenu_event` as the two
+helpers implementing the pop-up tracking loop that "sets `keystate`".
+
+**EmuTOS (confirmed):** `grep -rn submenu_event references/emutos/` matches
+exactly **one** location in the whole tree: a comment,
+`aes/gemmnext.c:342: mdata->mn_keystate = keystate; /* set by
+submenu_event() */`. No function, static or otherwise, named
+`submenu_event` exists anywhere in EmuTOS. `keystate` is in fact a
+file-static (`gemmnext.c:65`) set directly inside `handle_popup`
+(`gemmnext.c:245-299`) at `gemmnext.c:272: keystate = rets[3];` — the
+comment is stale/inaccurate EmuTOS source text (per project rule: comments
+lie, code doesn't). The previous spec derived a fictitious helper name from
+this comment rather than from the code that actually sets the value.
+
+**New, previously-undocumented behaviour found in the same pass:**
+- `mn_popup` calls `ev_button(1, 0x00ff, 0x0000, rets)` (`gemmnext.c:314`)
+  **before** doing anything else (grabbing background, positioning the box)
+  — it blocks until any currently-held mouse button is released before the
+  popup is shown.
+- If `popup_blit`'s background-save allocation fails
+  (`dos_alloc_stram`, `gemmnext.c:157-163`, returns `NULL`), `mn_popup`
+  never calls `handle_popup` at all (`gemmnext.c:329-334` skipped) and falls
+  straight through to the "no item chosen" return path
+  (`mdata->mn_keystate = 0`, `rc = FALSE`) — a caller cannot distinguish "no
+  pick" from "out of ST-RAM" from the return value alone.
+
+**Not a Compendium discrepancy** — no PDFs in `references/` for
+cross-check; a source-reading correction/completion of the previous NewTOS
+spec.
+
+**Decision:** `docs/api/aes/menu.md` `menu_popup (36)` section corrected
+(helper list, behaviour paragraph, new callout, edge-case #13); error table
+updated to note the OOM path returns the same `0` as "no pick".
+
+---
+
+## D-087: `menu_attach` also writes the item's `ob_type` upper byte (submenu-table index), not just `ob_flags`/the marker character
+
+**Date:** 2026-07-10 (AES leg, Menu Manager re-validation, Batch 2)
+**Phase 00b spec:** `docs/api/aes/menu.md` (`menu_attach` (37))
+
+**Context:** same pass as D-085/D-086; read `attach_submenu`/
+`detach_submenu`/`find_submenu_from_obtype` (`aes/gemmnext.c:358-460,
+465-530`) in full, not just `mn_attach`'s own three-line dispatch body.
+
+**Previous spec (incomplete):** "Attaching sets the item's `SUBMENU`
+(0x0800) `ob_flags` bit and writes a right-arrow marker (0x03) two chars
+from the end of the item text."
+
+**EmuTOS (confirmed):** true, but incomplete. `attach_submenu`
+(`gemmnext.c:522-527`) also does:
+
+```c
+obj->ob_type |= ((submenu - gl_submenu) + 128) << 8;   /* gemmnext.c:524 */
+```
+
+— it encodes the item's `SMIB` array index (offset by 128) into the **upper
+byte of `ob_type`**, a field otherwise holding the object's display-class
+number (`G_STRING`=28 etc., always < 256 for a plain object). This is how
+`find_submenu_from_obtype` (`gemmnext.c:361-375`) later recovers which
+`SMIB` entry an item's submenu lives in: `n = ((ob_type>>8)&0xff) - 128;`
+(`gemmnext.c:369`). `detach_submenu` (`gemmnext.c:438-460`) reverses this
+exactly: `obj->ob_type &= 0x00ff;` (`gemmnext.c:449`), clears `SUBMENU`, and
+blanks the marker character with a space.
+
+**Why this matters for NewTOS:** classic TOS has no memory protection
+between an application and its own `OBJECT` tree — a program can (and
+historically, some do) read `ob_type` directly after calling
+`menu_attach`/`menu_istart`. A NewTOS reimplementation that only sets
+`ob_flags` (as the previous spec said) and manages the `SMIB` mapping some
+other way would leave `ob_type`'s upper byte at `0`, which is an observable
+difference for any such program.
+
+**Not a Compendium discrepancy** — no PDFs in `references/` for
+cross-check; a source-reading completion of the previous NewTOS spec.
+
+**Decision:** `docs/api/aes/menu.md` corrected: `ob_state`/`ob_flags` bit
+table now notes the `ob_type` mutation; `menu_attach (37)` section has a new
+correction callout; "Related data structures" documents `SMIB`
+(`aes/struct.h:180-186`, `NUM_SMIBS=128`) and the `ob_type` encoding as
+(narrowly) contract even though the `SMIB` array/index-allocation scheme
+itself remains reference/reimplementable.
+
+---
+
+## D-088: `menu_attach` — undocumented failure paths (OOM, table-full, remove-nothing) and replace-on-reattach semantics
+
+**Date:** 2026-07-10 (AES leg, Menu Manager re-validation, Batch 2)
+**Phase 00b spec:** `docs/api/aes/menu.md` (`menu_attach` (37))
+
+**Context:** same pass as D-087; the previous spec's "Error conditions"
+table for `menu_attach` had exactly one row (non-`G_STRING` item guard).
+Reading all of `attach_submenu` (`gemmnext.c:465-530`) surfaces four more
+observable outcomes.
+
+**EmuTOS (confirmed):**
+- **`ME_ATTACH` on an item that already has a submenu replaces it**:
+  `attach_submenu` detaches the existing submenu first
+  (`gemmnext.c:471-477`), then proceeds to attach the new one — it does not
+  fail, and does not leak the old `SMIB` slot (`detach_submenu` decrements
+  `s_usage`).
+- **`ME_REMOVE` on an item with no attached submenu returns `FALSE`**:
+  `mn_attach(ME_REMOVE, …)` calls `attach_submenu(tree, item, NULL)`; since
+  `query_submenu` is `FALSE` (no submenu to detach) execution falls through
+  to `if (!mdata) return FALSE;` (`gemmnext.c:471-481`) — "nothing to
+  remove" is indistinguishable from any other failure via the return value.
+- **`gl_submenu` array allocation (`dos_alloc_anyram`, on the very first
+  `ME_ATTACH` call) failing → `FALSE`** (`gemmnext.c:484-488`).
+- **The `SMIB` table (`NUM_SMIBS`=128 entries, `aes/struct.h:53`) being
+  full → `FALSE`** (`gemmnext.c:509-512`).
+- (Separately, `query_submenu` explicitly tolerates a `NULL` output pointer
+  for `ME_INQUIRE` as an EmuTOS-only convenience — "not specified by TOS"
+  per its own comment, `gemmnext.c:397-400` — flagged as non-contract.)
+
+**Not a Compendium discrepancy** — no PDFs in `references/` for
+cross-check; a source-reading completion of the previous NewTOS spec's
+error-conditions coverage.
+
+**Decision:** `docs/api/aes/menu.md`'s "Error conditions" table gained four
+new rows; `menu_attach (37)` section gained a "D-088" addition callout;
+edge-case #12 added.
+
+---
