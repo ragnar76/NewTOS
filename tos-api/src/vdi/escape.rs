@@ -125,13 +125,19 @@ pub fn v_escape(pb: &Vdipb, backend: &dyn RasterBackend) {
             pb.set_contrl(4, 2);
         }
         16 => {
-            // vq_tabstatus: no tablet device.
-            pb.set_intout(0, 0);
+            // vq_tabstatus: a mouse/tablet device IS available — NewTOS has a
+            // USB-HID mouse. EmuTOS escfn16 unconditionally returns 1
+            // (`vdi_esc.c:248-252`); the function name is deceptive.
+            pb.set_intout(0, 1);
             pb.set_contrl(4, 1);
         }
         17 => {} // v_hardcopy: no printer device → documented no-op
-        18 => mouse::display_at(pb.ptsin(0), pb.ptsin(1), backend), // v_dspcur
-        19 => mouse::remove(backend),                               // v_rmcur
+        // v_dspcur: EmuTOS escfn18 ignores the PTSIN coordinates and force-shows
+        // the cursor at its current position (v_show_c with INTIN[0]=0).
+        18 => mouse::force_show(backend),
+        // v_rmcur: EmuTOS escfn19 = vdi_v_hide_c → increments the hide count
+        // (not an absolute hide), so it balances against a matching show.
+        19 => mouse::v_hide_c(backend),
         _ => {} // > 19 → no-op
     }
 }

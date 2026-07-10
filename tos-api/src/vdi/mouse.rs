@@ -12,6 +12,7 @@ use core::cell::UnsafeCell;
 use core::sync::atomic::{AtomicI16, AtomicU16, AtomicU64, AtomicU8, Ordering};
 
 use super::backend::{ClipRect, Pel, RasterBackend};
+use super::vwk::validate_color_index;
 use super::Vdipb;
 
 const TICKCAL_MS: i16 = 20; // ms per timer-C tick (matches BIOS Tickcal)
@@ -174,6 +175,17 @@ fn ensure_init(backend: &dyn RasterBackend) {
     GCURY.store(backend.height() as i16 / 2, Ordering::Relaxed);
 }
 
+/// Initialise the cursor subsystem at workstation-open time (EmuTOS
+/// `vdimouse_init`, `vdi_mouse.c:582-583`): load the default arrow form and
+/// park the cursor at the screen centre. This materialises `GCURX`/`GCURY`
+/// **before** the first cursor op, so `vq_mouse`/`v_locator` report the parked
+/// centre rather than the power-up `(0, 0)`. Idempotent (guarded by
+/// `INIT_DONE`), so it never clobbers a live cursor position moved by the HID
+/// mouse.
+pub fn init(backend: &dyn RasterBackend) {
+    ensure_init(backend);
+}
+
 /// Install an arbitrary cursor form (16-row mask + data, hotspot), drawn
 /// with the standard mask=white / data=black colours. Erases and redraws
 /// the sprite if it is currently shown. Shared by the AES presets and
@@ -263,11 +275,16 @@ pub fn vsc_form(pb: &Vdipb, backend: &dyn RasterBackend) {
     if was_shown {
         erase(backend);
     }
-    HOT_X.store(pb.intin(0).clamp(0, 15), Ordering::Relaxed);
-    HOT_Y.store(pb.intin(1).clamp(0, 15), Ordering::Relaxed);
-    // intin(2) = reserved (planes, must be 1)
-    BG_COL.store(pb.intin(3) as u8, Ordering::Relaxed);
-    FG_COL.store(pb.intin(4) as u8, Ordering::Relaxed);
+    // Hotspot constrained to 0..15 by masking (EmuTOS `set_mouse_form`
+    // `& 0x0f`): values above 15 wrap, they never overflow the 16×16 sprite.
+    HOT_X.store(pb.intin(0) & 0x0f, Ordering::Relaxed);
+    HOT_Y.store(pb.intin(1) & 0x0f, Ordering::Relaxed);
+    // intin(2) = reserved (planes, must be 1) — ignored, like `set_mouse_form`.
+    // Mask/data colour indices run through `validate_color_index`: an
+    // out-of-range pen (< 0 or ≥ numcolors) silently becomes pen 1.
+    let ncol = backend.num_colors();
+    BG_COL.store(validate_color_index(pb.intin(3), ncol), Ordering::Relaxed);
+    FG_COL.store(validate_color_index(pb.intin(4), ncol), Ordering::Relaxed);
     for i in 0..16 {
         MASK[i].store(pb.intin(5 + i) as u16, Ordering::Relaxed);
         DATA[i].store(pb.intin(21 + i) as u16, Ordering::Relaxed);
@@ -277,17 +294,42 @@ pub fn vsc_form(pb: &Vdipb, backend: &dyn RasterBackend) {
     }
 }
 
-/// Opcode 122 — `v_show_c`: decrement the hide depth (or force it to
-/// shown when `INTIN[0]` ≠ 0) and draw the cursor when it becomes shown.
-pub fn v_show_c(pb: &Vdipb, backend: &dyn RasterBackend) {
-    ensure_init(backend);
-    let reset = pb.intin(0) != 0;
+/// EmuTOS `dis_cur`: the counted-show core. Decrement the hide depth,
+/// underflow-clamped to 0, and physically draw the cursor on the 1 → 0
+/// transition (`vdi_mouse.c:127-141`).
+fn dis_cur(backend: &dyn RasterBackend) {
     let prev = HIDE_COUNT.load(Ordering::Relaxed);
-    let new = if reset { 0 } else { (prev - 1).max(0) };
+    let new = (prev - 1).max(0);
     HIDE_COUNT.store(new, Ordering::Relaxed);
     if prev > 0 && new == 0 {
         draw(backend);
     }
+}
+
+/// Opcode 122 — `v_show_c`: counted show. `INTIN[0] == 0` is a **force-show**
+/// (EmuTOS `linea_show_mouse`, `vdi_mouse.c:1125-1131`): if the cursor is
+/// currently hidden (`HIDE_COUNT != 0`), collapse the hide depth to a single
+/// level so the following `dis_cur` uncovers it immediately. A **non-zero**
+/// `INTIN[0]` performs an ordinary counted show — this is the reverse of the
+/// naive reading of the flag.
+pub fn v_show_c(pb: &Vdipb, backend: &dyn RasterBackend) {
+    ensure_init(backend);
+    if pb.intin(0) == 0 && HIDE_COUNT.load(Ordering::Relaxed) != 0 {
+        HIDE_COUNT.store(1, Ordering::Relaxed);
+    }
+    dis_cur(backend);
+}
+
+/// Force-show the cursor at its **current** position (VDI `v_dspcur` escape,
+/// EmuTOS escfn18 → `v_show_c` with `INTIN[0]` forced to 0): collapse any hide
+/// depth to a single level, then display. The Atari-documented `x,y`
+/// coordinates are ignored, matching EmuTOS/Atari TOS.
+pub fn force_show(backend: &dyn RasterBackend) {
+    ensure_init(backend);
+    if HIDE_COUNT.load(Ordering::Relaxed) != 0 {
+        HIDE_COUNT.store(1, Ordering::Relaxed);
+    }
+    dis_cur(backend);
 }
 
 /// Opcode 123 — `v_hide_c`: erase the cursor (if shown) and increment the
@@ -317,15 +359,10 @@ pub fn hide(backend: &dyn RasterBackend) {
 }
 
 /// Decrement the hide depth; draw the cursor when it becomes shown (kernel
-/// `v_show_c`). Balances a [`hide`].
+/// `v_show_c`). Balances a [`hide`]. Same counted-show core as the trap path.
 pub fn show(backend: &dyn RasterBackend) {
     ensure_init(backend);
-    let prev = HIDE_COUNT.load(Ordering::Relaxed);
-    let new = (prev - 1).max(0);
-    HIDE_COUNT.store(new, Ordering::Relaxed);
-    if prev > 0 && new == 0 {
-        draw(backend);
-    }
+    dis_cur(backend);
 }
 
 /// Force the cursor visible (hide depth 0) and draw it — the initial unhide.

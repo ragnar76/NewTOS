@@ -129,6 +129,11 @@ fn init_wk(vwk: &mut Vwk, pb: &Vdipb, backend: &dyn RasterBackend) {
     // Output counts (the dispatcher pre-zeroed them).
     pb.set_contrl(4, 45);
     pb.set_contrl(2, 6);
+
+    // Materialise the parked cursor centre + default arrow form now (EmuTOS
+    // `vdimouse_init`), so `vq_mouse`/`v_locator` report the centre before the
+    // first explicit cursor op instead of the power-up (0, 0). Idempotent.
+    super::mouse::init(backend);
 }
 
 /// Opcode 100 — open a virtual workstation.
