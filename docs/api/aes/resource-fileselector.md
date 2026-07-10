@@ -35,6 +35,22 @@
 > `fs_nscroll`'s `bb_screen` blit-scroll, and the `dos_alloc_anyram` work-area
 > layout — these are the EmuTOS internals NewTOS rebuilds on its own file I/O,
 > object manager, and rasteriser.
+>
+> **NewTOS deviation (ADR-013, D-100).** Everything in §0 below is EmuTOS's
+> **classic Atari on-disk `.RSC` format** — accurately extracted, and it is
+> what a byte-compatible loader (a future m68k-emulator compat phase) would
+> need. **NewTOS's actual `rsrc_load` does not read this format at all.**
+> Per ADR-013 (`docs/MEMORY.md`), NewTOS defines its own **native** `.RSC`
+> (`NrscHeader`, magic `"NRSC"`, little-endian, 64-bit `ob_spec`, offsets
+> from blob base, coordinates already in pixels — `tos-api/src/aes/resource.rs`);
+> `rsrc_load` searches a **hardcoded** `C:\GEMSYS\RSC\<name>` then `C:\<name>`
+> (not `sh_find`'s shell-path search), and `rsrc_obfix` is an **identity** (no
+> char→pixel fix — native resources are already in pixels). The `rsrc_gaddr`/
+> `rsrc_saddr` ABI slots, the `R_*` type semantics, and the 1/0 return
+> convention remain contract; the on-disk byte layout, `sh_find`, and the
+> char→pixel rule are EmuTOS-reference only for NewTOS's current native-format
+> loader. Full accounting: "NewTOS implementation notes" below and
+> `docs/api/_discrepancies.md` D-100.
 
 ---
 
@@ -169,6 +185,18 @@ failure; `1` on success. Only **one** resource is loaded per application at a
 time — a second `rsrc_load` overwrites `ap_rscmem` without freeing the first
 (the app must `rsrc_free` between loads).
 
+> **NewTOS status (deviation, ADR-013/D-100).** NewTOS's `rsrc_load`
+> (`tos-api/src/aes/resource.rs::rsrc_load`) does none of the above at the
+> byte level: it copies the bare filename from `addr_in[0]`, tries
+> `C:\GEMSYS\RSC\<name>` then `C:\<name>` (a **fixed two-entry search**, not
+> `sh_find`), reads the file into a static 64 KiB buffer
+> (`crate::bdos::fs::read_file`), and — if the header magic is `"NRSC"` —
+> relocates the **native** offset table in place (`relocate_and_register`).
+> There is no classic `RSHDR`, no big-endian header, no `NEW_FORMAT_RSC`/CICON
+> path, and no separate coordinate-fix pass (coordinates are already pixels;
+> see `rsrc_obfix` below). The `int_out[0] = 1`/`0` success contract is
+> preserved.
+
 ### `rsrc_free` (111) — `rs_free`
 
 **Source:** `gemsuper.c:366-367` → `aes/gemrslib.c:685-708` (`rs_free`).
@@ -263,6 +291,14 @@ on it. `rs_obfix` fixes **one** object; `fix_objects` applies it to all
 > missed two source facts: the low-byte offset is **signed** (>128 → −256), and
 > **width == 80 maps to full screen width** (`gemrslib.c:71-74,81`). See D-054.
 
+> **NewTOS status (deviation, ADR-013/D-100).** `rsrc_obfix`
+> (`tos-api/src/aes/resource.rs::rsrc_obfix`) is an **identity operation** —
+> it touches no coordinates and just reports success (`int_out[0] = 1`).
+> Native `.RSC` objects already store pixel `ob_x`/`ob_y`/`ob_width`/
+> `ob_height` (no char-grid encoding survives the host-side `mkrsc.py`
+> conversion from a classic `.rsc`), so there is nothing left for
+> `rsrc_obfix` to do. The char→pixel rule above is EmuTOS-reference only.
+
 ---
 
 ## 4. File Selector (`fsel_*` 90–91)
@@ -315,6 +351,19 @@ also deselects that button. This is written to `int_out[1]`. So a caller reads
 > `int_out[1]`, decoded by `inf_what`, and can be **−1** if neither button ended
 > the loop. (3) `fsel_exinput`'s label is `addr_in[2]` (`FS_TITLE`), defaulting
 > to the "Item Selector" string when NULL (`gemfslib.c:691-692`). See D-054.
+
+> **NewTOS status (GEM.RSC lazy-load, D-100).** NewTOS has no in-ROM
+> `rs_trees[FSELECTR]` (see the `ap_private`/D-099 note: NewTOS's AES kernel
+> carries no built-in resource ensemble at all). Instead, `fsel_input`/
+> `fsel_exinput` (`tos-api/src/aes/fsel.rs::load_fselectr`) load
+> `C:\GEMSYS\RSC\GEM.RSC` (the EmuTOS `gem.rsc`, converted to native format by
+> `tools/mkrsc.py convert`) into a **second, dedicated native-`.RSC` buffer**
+> that coexists with whatever the calling application loaded via `rsrc_load`
+> — the two do not share `ap_rscmem`. The load happens **lazily, on the
+> first `fsel_input`/`fsel_exinput` call**, and the resolved tree root is
+> cached (`SYS.root`) so later calls skip the file read. This is the concrete
+> mechanism behind D-099's "the only resource NewTOS's AES loads is `GEM.RSC`,
+> and only lazily, on first use of the file selector".
 
 ---
 
@@ -400,6 +449,18 @@ as success — an empty list, not an error (`gemfslib.c:330-336,733-754`).
 - **`fsel_exinput` label:** `fsel_exinput` shows the `addr_in[2]` string as the
   dialog title; `fsel_input` shows the default "Item Selector"
   (`gemfslib.c:691-692`).
+
+> **Applicability note (D-100).** The criteria above verify the **EmuTOS
+> source** (the primary specification, per CLAUDE.md Rule 1) and are the
+> right target for a future classic-`.RSC`-compatible loader. Two of them do
+> not hold against NewTOS's *current* native-format implementation: the
+> `rsrc_obfix` coordinate-fix criterion (NewTOS's `rsrc_obfix` is an
+> identity — no coordinates change), and the `sh_find`-based "not found"
+> mechanism in the `rsrc_load` criterion (NewTOS fails to find a file via its
+> own fixed `C:\GEMSYS\RSC\`/`C:\` search instead — the `int_out[0] = 0`
+> outcome and the "leaves the loaded resource unchanged" behaviour still
+> hold, just via a different lookup). See the "NewTOS status" callouts under
+> `rsrc_load (110)`/`rsrc_obfix (114)` and "NewTOS implementation notes".
 
 ---
 
@@ -529,8 +590,12 @@ as success — an empty list, not an error (`gemfslib.c:330-336,733-754`).
   (`fix_cicons`/`transform_all_cicons`) and the new-format (`NEW_FORMAT_RSC`)
   true-length read. With it off, only classic-format resources are handled and
   `G_CICON` objects are not fixed up. This is a **reference** path (NewTOS draws
-  colour icons with its own rasteriser); the RSC format + relocation are
-  contract.
+  colour icons with its own rasteriser). **Note (D-100):** unlike the earlier
+  wording here, the classic on-disk `RSHDR` byte format + its offset-table
+  relocation are themselves **reference** for NewTOS too (ADR-013's native
+  `.RSC`) — only the relocation's *shape* (offsets → pointers, box-`ob_spec`
+  skipped) and the `rsrc_gaddr`/`rsrc_saddr`/`fsel_*` ABI are contract; see
+  the intro deviation note.
 - **`CONF_WITH_3D_OBJECTS`** (default **1**): `fs_start` sets FL3D\* flags and
   repositions the FSELECTR objects for the 3D look; otherwise it uses the flat
   layout (`gemfslib.c:59-172`). Reference (dialog appearance), not contract.
@@ -542,28 +607,56 @@ as success — an empty list, not an error (`gemfslib.c:330-336,733-754`).
 
 ## NewTOS implementation notes
 
-- `rsrc_load` is the bridge from **GEMDOS files** to the in-memory object trees
-  the rest of the AES draws. The **offset→pointer relocation** and the
-  **char→pixel coordinate fix** are the core logic and are pure arithmetic over
-  the loaded blob — easy to unit-test on host against a known `.RSC`. Preserve
-  the `sh_find` lookup, the `-1L`-stays-`-1L` rule, the box-`ob_spec`-not-
-  relocated rule, and the signed-low-byte + width-80 coordinate rule exactly.
+- **(D-100, ADR-013 already decided — supersedes the older guidance below.)**
+  NewTOS does **not** load EmuTOS's classic big-endian on-disk `.RSC`. It
+  defines and loads its own **native** format (`NrscHeader`, magic `"NRSC"`,
+  little-endian, 64-bit `ob_spec`, pixel coordinates —
+  `tos-api/src/aes/resource.rs`), built from a classic `.rsc` by the host
+  tool `tools/mkrsc.py convert`. Consequently: `rsrc_load` does **not** call
+  `sh_find` — it tries a fixed `C:\GEMSYS\RSC\<name>` then `C:\<name>`;
+  `rsrc_obfix` is an **identity** (no char→pixel fix — see the callouts under
+  `rsrc_load (110)` and `rsrc_obfix (114)` above). What **is** preserved
+  exactly: the offset→pointer relocation *shape* (byte offsets from blob
+  base → absolute pointers, type-aware for `ob_spec` per object type), the
+  box-`ob_spec`-not-relocated rule, and — as contract — the `rsrc_gaddr`/
+  `rsrc_saddr` ABI slots, the `R_*` type semantics, and the `1`/`0` return
+  convention. A classic-Atari-`.RSC` loader (the `RSHDR` byte layout, `-1L`
+  sentinel, big-endian swap, char→pixel `rs_obfix`, `sh_find` lookup — all
+  accurately extracted in §0–§3 above) remains a candidate for a future
+  m68k-emulator compatibility phase, per ADR-013's own "alternatives
+  rejected" note; it is not implemented today.
+- **`R_*` type coverage is currently partial.** `rsrc_gaddr`/`rsrc_saddr`
+  (`tos-api/src/aes/resource.rs`) implement only `R_TREE` (0) and `R_OBJECT`
+  (1); every other type code (`R_TEDINFO`…`R_FRIMG`, 2–16) falls through to
+  the "not found" path (`addr_out[0] = 0`, `int_out[0] = 0`) — observably
+  indistinguishable from an invalid type per the contract's own 1/0
+  convention, but it is an **implementation gap**, not a deliberate
+  behavioural choice; document any code work here as filling in `get_addr`'s
+  remaining cases, not as re-deriving the contract (already correct above).
+  `rsrc_saddr` currently always returns `0`/`FALSE` regardless of input — a
+  **no-op stub** (CLAUDE.md Rule 2 concern; flagged for the lead, not fixed
+  here — this is a doc-only pass).
 - **`rsrc_gaddr` is the only `addr_out` writer.** NewTOS's dispatcher must copy
-  `addr_out[0]` back for opcode 112 and no other (matching EmuTOS `xif`).
-- The RSC blob holds **m68k-endian** header WORDs and (for recompiled native
-  code) needs the native `OBJECT`/`TEDINFO`/… pointer widths — the m68k-vs-native
-  layout question is the same as everywhere (COMPATIBILITY "Native vs m68k struct
-  variants"). A native-built `.RSC` toolchain (`erd`-equivalent) and/or an
-  endian/width-translating loader is an open design point.
-- `fsel_input` needs the directory read (GEMDOS `Fsfirst`/`Fsnext`, done), the
-  FSELECTR OBJECT-tree dialog (`form_do`, Batch 3), and a scrollable list — so
-  it comes **after** the Form + Window managers. The **rendering** of the
-  file-selector is NewTOS's own (per the brief); the **path/mask split, the
-  wildcard filter, the folders-first sort, and the 1/0 button return** are
-  contract.
+  `addr_out[0]` back for opcode 112 and no other (matching EmuTOS `xif`); this
+  is unaffected by the native-format change and confirmed against
+  `tos-api/src/aes/mod.rs`'s opcode 90–91/110–114 routing.
+- `fsel_input`/`fsel_exinput` load the **real EmuTOS `FSELECTR` tree**
+  (converted `GEM.RSC`, see the GEM.RSC-lazy-load callout under
+  `fsel_input (90)` above), not a NewTOS-authored dialog — so the FSELECTR
+  object indices (`FSDIRECT`, `FSSELECT`, `F1NAME`…, `FSOK`/`FSCANCEL`, the
+  drive-letter grid) are the ones `aes/gem.rsc` defines, hard-coded in
+  `tos-api/src/aes/fsel.rs`. The **path/mask split, the wildcard filter, the
+  folders-first sort, and the 1/0 (`int_out[1]`) button return** are
+  contract; the dialog's resource tree and its rendering are EmuTOS-derived
+  but reference-level (a NewTOS-authored `FSELECTR` tree would be equally
+  conformant as long as the objects `fsel_input` needs — path field,
+  selection field, name-list slots, OK/Cancel, drive grid — exist and this
+  contract behaviour holds).
 - Pointers in `addr_in[]` (the filename, the path/name buffers, the store
   address) are **user (application) pointers** — apply the
   [`_dispatcher.md`](./_dispatcher.md) user/kernel boundary handling; `fsel_*`
   writes back into `pipath`/`pisel`, so those must be flushed to user memory.
-- The `.RSC` loader + `rsrc_gaddr` are what let real GEM apps (and the NewTOS
-  desktop's own resource) run unmodified → high value for compatibility.
+- The `.RSC` loader + `rsrc_gaddr` are what let recompiled GEM apps (and the
+  file selector's own `GEM.RSC`) run against a real resource tree → high
+  value for compatibility, even though the on-disk byte format itself is
+  NewTOS-native rather than the classic Atari one.

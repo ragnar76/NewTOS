@@ -4012,3 +4012,91 @@ architecture (no kernel-side DESKTOP tree), not by oversight. Documented in
   only, `g_patcol` lives in the desktop client above the syscall boundary).
 
 ---
+
+## D-100: `resource-fileselector.md` labelled EmuTOS's classic on-disk `.RSC` format as NewTOS "contract" — it contradicts the already-accepted ADR-013 (native format); the GEM.RSC lazy-load fact D-099 forward-referenced was never actually documented there
+
+**Date:** 2026-07-10 (AES leg, Resource + Fileselector re-validation, third
+round — tasked with the same rigour that found D-085 (menu tree topology),
+D-089 (border-sign inversion), and D-094 (window-set pointer packing))
+**Phase 00b spec:** `docs/api/aes/resource-fileselector.md` (intro
+Contract/Reference block, `rsrc_load (110)`, `rsrc_obfix (114)`,
+`fsel_input (90)`/`fsel_exinput (91)`, Verification criteria, Configuration
+notes, NewTOS implementation notes)
+
+**Context:** every EmuTOS-source claim in the existing spec (the `RSHDR`
+byte layout, the `R_*` type-code table 0–16 incl. the 8/11/14 aliasing, the
+`rs_obfix`/`fix_chpos` signed-low-byte + width-80 rule, the `rsrc_gaddr`-only
+`addr_out[0]` copy-back, the `fsel_*` `int_out[1]` button convention) was
+re-verified line-by-line against `aes/gemrslib.c`, `aes/gemfslib.c`,
+`aes/gemsuper.c`, `include/aesdefs.h`, `include/rsdefs.h`, and
+`aes/gemrslib.h` and found **correct** — the prior "full-contract-refinement"
+pass (D-054) already got these right, so this round found no EmuTOS
+source-misreading error of the D-085/D-089/D-094 kind. Instead, checking the
+spec against NewTOS's *own* accepted architecture (as the task explicitly
+asked for the GEM.RSC-lazy-load fact) found a different, still substantial,
+problem: the spec's "NewTOS implementation notes" section instructed
+"Preserve the `sh_find` lookup, the `-1L`-stays-`-1L` rule, the
+box-`ob_spec`-not-relocated rule, and the signed-low-byte + width-80
+coordinate rule **exactly**" (old wording) — but ADR-013 (`docs/MEMORY.md`,
+accepted **2026-06-21**, i.e. *before* this spec's last full-refinement pass
+on **2026-07-03**) already committed NewTOS to a **native** `.RSC` format
+that does none of that. The spec's own "Contract" list in the intro
+block also stated "the `.RSC` on-disk file format (the `RSHDR` byte
+layout...)" and "the `rs_obfix` char→pixel coordinate rule" as contract
+outright, with no NewTOS-deviation qualifier — directly contradicting
+ADR-013. Separately, `docs/api/aes/application.md`'s D-099 entry
+(`gemsuper.c:95-96` `ap_private` deviation, written the same day as this
+round) explicitly says "the only resource the AES loads is `GEM.RSC`, loaded
+**lazily** on first use of the file selector (`resource-fileselector.md`,
+tree 0 = `FSELECTR`)" — forward-referencing this very spec as the place that
+documents the lazy-load mechanism. It did not: `resource-fileselector.md`
+had **no mention** of GEM.RSC being a second, separately-loaded,
+lazily-cached resource distinct from the app's own `rsrc_load`.
+
+**Verified against the current NewTOS implementation** (read-only, no code
+changed): `tos-api/src/aes/resource.rs` (`NrscHeader`, magic `"NRSC"`,
+little-endian, `relocate_and_register`/`relocate_blob`, `rsrc_load` trying
+`C:\GEMSYS\RSC\<name>` then `C:\<name>` — not `sh_find` — and `rsrc_obfix`
+being a bare `pb.set_ret(1)` identity) and `tos-api/src/aes/fsel.rs`
+(`load_fselectr`: loads `C:\GEMSYS\RSC\GEM.RSC` into `SYS.buf` on first call,
+caches the resolved tree root in `SYS.root`, returns the cached pointer on
+every later call). Also noted in passing (implementation-status finding, not
+a spec-writing error, and **not fixed here** — Researcher role is docs-only
+per CLAUDE.md): `rsrc_gaddr`/`rsrc_saddr` currently implement only
+`R_TREE`/`R_OBJECT` (types 2–16 fall through to "not found"), and
+`rsrc_saddr` (`tos-api/src/aes/resource.rs::rsrc_saddr`) unconditionally
+returns `0` regardless of input — a no-op stub in the sense CLAUDE.md Rule 2
+forbids. Flagged for the lead/Developer; out of scope for this pass.
+
+**Not a Compendium discrepancy, and not an EmuTOS-source misreading** — the
+EmuTOS extraction in §0–§3 of `resource-fileselector.md` is accurate and
+remains the right reference for a future classic-`.RSC`-compatible loader
+(explicitly anticipated by ADR-013's own "alternatives rejected" section, for
+an optional m68k-emulator phase). The bug was the spec's failure to carry the
+already-accepted ADR-013 decision into its own Contract/Reference framing and
+"NewTOS implementation notes" — the same class of gap D-099 caught for
+`ap_private`, just on the resource-loading side, and directly undermining the
+sibling spec's forward-reference.
+
+**Decision:** `docs/api/aes/resource-fileselector.md` corrected in seven
+places: (1) a new "NewTOS deviation (ADR-013, D-100)" callout in the intro
+block; (2) a "NewTOS status" callout under `rsrc_load (110)` describing the
+actual `NrscHeader`/fixed-path-search mechanism; (3) one under
+`rsrc_obfix (114)` stating it is an identity; (4) one under
+`fsel_input (90)`/`fsel_exinput (91)` describing the GEM.RSC lazy-load +
+cache mechanism (closing the D-099 forward-reference gap); (5) an
+applicability footnote under "Verification criteria" flagging the two
+criteria (`rsrc_obfix` coordinate fix, `sh_find`-based not-found) that do not
+hold against the current native-format implementation; (6) a correction to
+the `CONF_WITH_COLOUR_ICONS` config note's "the RSC format + relocation are
+contract" claim; (7) the "NewTOS implementation notes" section's stale
+"preserve … exactly" bullet replaced with the accurate native-format status,
+plus new bullets for the `R_*` coverage gap, the `rsrc_saddr` stub, and the
+`FSELECTR` tree provenance. NewTOS's contract remains: the `rsrc_gaddr`/
+`rsrc_saddr` ABI slots, the `R_*` type semantics (once fully implemented),
+the `1`/`0` return convention, and the `fsel_*` path/mask-split +
+folders-first + `int_out[1]` button contract. The on-disk byte format,
+`sh_find`, and the char→pixel `rs_obfix` rule are EmuTOS-reference only,
+per ADR-013.
+
+---
