@@ -9,11 +9,29 @@
 > mode flags `include/aesdefs.h:456,600-621`; opcode numbers
 > `include/aesdefs.h:80-82,108-115`. Buffer sizes `aes/gemlib.h:97,120-129`,
 > `include/sysconf.h:51-74`. `PATH_ENV` `include/bdosdefs.h:128`.
+> Cross-checked for the `SHW_RESCHNG`/`SHW_SHUTDOWN` value semantics (D-101)
+> against `aes/geminit.c:343-392` (`process_inf1`, a second producer of
+> `gl_changerez`/`gl_nextrez`) and `aes/geminit.c:753,775-793` (`gem_main`'s
+> resolution-apply/consumer code) and `desk/deskmain.c:772-776,900-914` (real
+> `shel_write` call sites); `WITH_CLI` build flag `Makefile:150,534`.
 >
 > Call convention + AESPB layout: [`_dispatcher.md`](./_dispatcher.md).
 > Shared AES globals (the scrap dir `D.g_scrap`, the shell buffer
 > `D.g_shelbuf`, the command/tail `D.s_cmd`/`ad_stail`, the environment
 > `ad_envrn`): [`_state.md`](./_state.md) §6c.
+>
+> **Third-round re-validation (2026-07-11).** Re-checked line-by-line against
+> `aes/gemsclib.c`, `aes/gemshlib.c` @ `1a7484ab` (unchanged from the D-054
+> pass). The ABI slot layout (D-054's `shel_write` four-mode table, the
+> `shel_envrn` `addr_in[0]`/`[1]` swap) re-verified **correct**. Found one
+> substantial *value*-semantics gap the slot-level D-054 pass did not probe:
+> **`SHW_RESCHNG`'s `isgem` (`int_in[1]`) is not a plain Setscreen mode
+> number** — ST/TT-family requests (`isover=0`) require a caller-added `+2`
+> offset that the consumer (`geminit.c`) subtracts back off; Falcon-family
+> requests (`isover=1`) use the raw value. Also found that `SHW_SHUTDOWN`'s
+> `isover` parameter, while part of the documented ABI, is never read by the
+> current `sh_write` implementation. See D-101 in
+> `docs/api/_discrepancies.md`.
 >
 > **Contract vs. reference** — see [`docs/COMPATIBILITY.md`](../../COMPATIBILITY.md).
 > **Contract:** the opcode numbers (80–82, 120–127); each call's
@@ -147,14 +165,55 @@ selector (`gemshlib.c:127-196`):
 |------:|------|--------|-----------------------|------------------------|
 | 0 | `SHW_NOEXEC`  | **exit to desktop** — run the default desktop (`EMUDESK`) next | ignored (forced GEM) | ignored |
 | 1 | `SHW_EXEC`    | **run `pcmd` next** (after this app terminates) | `0` = TOS/char mode (TTP), `1` = GEM/graphic (PRG/APP) | ignored (should be 1) |
-| 4 | `SHW_SHUTDOWN`† | **shut the system down** (if `can_shutdown()`) | ignored | 0 abort (ignored) / 1 partial / 2 full |
-| 5 | `SHW_RESCHNG` | **change screen resolution** — sets `gl_changerez`/`gl_nextrez`, clears `s_cmd`/tail | Setscreen video-mode value | 0 = ST/TT rez, 1 = Falcon rez (→ `gl_changerez = 1+isover`) |
+| 4 | `SHW_SHUTDOWN`† | **shut the system down** (if `can_shutdown()`) | ignored | accepted but **not read** by `sh_write` — see below |
+| 5 | `SHW_RESCHNG` | **change screen resolution** — sets `gl_changerez`/`gl_nextrez`, clears `s_cmd`/tail | Setscreen video-mode value — **with a family-dependent offset, see below** | `0` = ST/TT rez family (→ `gl_changerez = 1`), `1` = Falcon rez family (→ `gl_changerez = 2`) |
 
 † `SHW_SHUTDOWN` (4) is `#if CONF_WITH_SHUTDOWN` — **default 0** for the standard
 RPi/AArch64-style build (`config.h:2028-2034`), so the `case SHW_SHUTDOWN` arm is
 **compiled out by default**; the opcode still returns `1` but does nothing (the
 `switch` has no matching `case` → falls through). `SHW_NOEXEC`/`SHW_EXEC`/
-`SHW_RESCHNG` are unconditional.
+`SHW_RESCHNG` are unconditional. **The `CONSOLE_APP` launch path (the internal
+classification `shel_write(SHW_EXEC, …, "EMUCON", …)` triggers) is `#if
+WITH_CLI`-gated** (a Makefile-level build flag, default **1**, `Makefile:150`;
+only the memory-constrained "192" target turns it off, `Makefile:534`) — with
+it off, `shel_write(SHW_EXEC, …, "EMUCON", …)` still records `sh_nextapp =
+CONSOLE_APP` (`sh_write` itself is unconditional), but `sh_ldapp`'s
+`CONSOLE_APP` arm is compiled out (`gemshlib.c:614-622`), so the launch loop
+falls through to the "normal application" path and tries `sh_find("EMUCON")`
+as an ordinary program name — which fails (`EFILNF`) since no such file
+exists.
+
+> **`SHW_RESCHNG`'s `isgem` value is *not* a plain Setscreen mode number — it
+> carries a `+2` offset for the ST/TT family.** Per the `sh_write` source
+> comment (`gemshlib.c:131-138`): for `isover = 0` (ST/TT-style video),
+> `isgem = 2 + <the value Getrez()/Setscreen() would use>`; for `isover = 1`
+> (Falcon-style video), `isgem` **is** the raw Setscreen mode value, no offset.
+> `sh_write` itself does not apply or remove this offset — it just stores
+> `gl_nextrez = isgem` verbatim (`gemshlib.c:188-189`). The offset is added by
+> the **caller** and later subtracted by the **consumer**: EmuTOS's own
+> resolution-change dialog (`desk/deskmain.c:900-913`, `do_optnmenu`/`RESITEM`)
+> calls `shel_write(SHW_RESCHNG, newmode, 1, …)` for a Falcon mode (no offset)
+> but `shel_write(SHW_RESCHNG, newres+2, 0, …)` for an ST/TT mode (`+2` added
+> by the caller); the consumer, `geminit.c`'s post-.INF resolution-apply code
+> (`:775-793`), does `Setscreen(-1L, -1L, gl_nextrez-2, 0)` for the ST/TT case
+> (`gl_changerez == 1`, `:782`) — subtracting the `2` back off — versus
+> `Setscreen(0L, 0L, FALCON_REZ, gl_nextrez)` for the Falcon case
+> (`gl_changerez == 2`, `:788`), passing `gl_nextrez` straight through. A
+> NewTOS implementation of `shel_write(SHW_RESCHNG, …)` (should it ever
+> support ST/TT-style multi-resolution switching) must preserve this `+2`/`-2`
+> round trip exactly, or a well-formed caller's `isover = 0` request resolves
+> to the wrong video mode. See D-101.
+>
+> **`SHW_SHUTDOWN`'s `isover` parameter is part of the documented ABI
+> (`gemshlib.c:140-145`: "isover = 0 abort … / 1 partial … / 2 full") but the
+> `case SHW_SHUTDOWN` implementation never reads it** (`gemshlib.c:177-186`):
+> it only checks `can_shutdown()`.  Any `isover` value — including `0`
+> ("abort") — behaves identically: if `can_shutdown()` is true, the shutdown
+> request is recorded (unconditionally full); if false, it is silently
+> dropped. "Partial" (`1`) is not currently distinguishable from "full" (`2`)
+> at all — the source comment concedes this itself ("partial shutdown
+> (currently the same as full)"). EmuTOS's own caller (`desk/deskmain.c:776`,
+> the desktop's `QUITITEM`) always passes `isover = 2`. See D-101.
 
 **Behaviour.** `SHW_NOEXEC`: set `D.s_cmd = "EMUDESK"`, mark the next app as the
 desktop, GEM-mode. `SHW_EXEC`: copy `pcmd` into `D.s_cmd`, `memcpy` the 128-byte
@@ -171,6 +230,14 @@ snapshot the current drive+dir (`sh_apdir`) to restore after it exits.
 > `SHW_RESCHNG 5`** (`aesdefs.h:617-621`); the second word is **`isgem`**
 > (GEM/char) and the third **`isover`** (shutdown level / rez family)
 > (`gemshlib.c:127-196`). (2) `shel_write` **always returns `TRUE`**. See D-054.
+> (3) **Third-round correction (D-101):** the mode-flag table's `SHW_RESCHNG`
+> row previously described `isgem` as a flat "Setscreen video-mode value" —
+> it omitted that ST/TT-family requests (`isover = 0`) require the caller to
+> add `+2` to the real Setscreen mode value (Falcon requests, `isover = 1`, do
+> not); and the `SHW_SHUTDOWN` row's `isover` column reproduced the source
+> comment's 0/1/2 abort/partial/full semantics without noting that the actual
+> `case SHW_SHUTDOWN` code never reads `isover` at all. See D-101 for the full
+> derivation (`gemshlib.c`, `geminit.c`, `desk/deskmain.c` cross-checked).
 
 ### `shel_get` (122) / `shel_put` (123) — `sh_get` / `sh_put`
 
@@ -304,10 +371,11 @@ No TOS `E*` codes surface at the `scrp_*`/`shel_*` boundary — the returns are
 | `scrp_read`/`scrp_write`/`shel_write` | `gemsclib.c:44,61`, `gemshlib.c:195` | always `1` |
 | any of 82/126/127 when `CONF_WITH_PCGEM == 0` | `gemsuper.c` default arm | `-1` (unsupported opcode) |
 
-(Internally the launch loop `sh_ldapp` maps a load failure to `EFILNF` and shows
-it via `form_error`, but that is not returned to the `shel_write` caller —
-`shel_write` returned `1` when it merely *recorded* the request,
-`gemshlib.c:681-688,722-723`.)
+(Internally the launch loop `sh_ldapp` maps a load failure to `EFILNF` and
+`sh_main` shows it via the internal helper `fm_error()` (`aes/gemfmlib.c:436`
+— not an AES opcode; no such call as "`form_error`" exists), but that is not
+returned to the `shel_write` caller — `shel_write` returned `1` when it merely
+*recorded* the request, `gemshlib.c:681-688,722-723`.)
 
 ---
 
@@ -325,7 +393,10 @@ it via `form_error`, but that is not returned to the `shel_write` caller —
   (`D.s_cmd = "EMUDESK"`) as the next app (`gemshlib.c:162-167`).
 - **`shel_write(SHW_RESCHNG, isgem=mode, isover=0)`** sets `gl_changerez = 1`
   and `gl_nextrez = mode`, clears `D.s_cmd`/tail, returns `1`
-  (`gemshlib.c:187-192`).
+  (`gemshlib.c:187-192`) — **`mode` here must already be the target Setscreen
+  value `+2`** (ST/TT family); the consumer subtracts `2` back off
+  (`geminit.c:782`). For `isover=1` (Falcon family), `mode` is the raw
+  Setscreen value, no offset (`geminit.c:788`). See D-101.
 - **`shel_read`** fills `addr_in[0]` with the launching command and `addr_in[1]`
   with exactly 128 tail bytes (`gemshlib.c:104-105`).
 - **`shel_get`/`shel_put` round-trip:** `shel_put(data, n)` then
@@ -359,32 +430,58 @@ it via `form_error`, but that is not returned to the `shel_write` caller —
    arm is absent, so `shel_write(4, …)` returns `1` but does nothing on a
    standard NewTOS-style target. A NewTOS build must decide whether to implement
    power-off (open question).
-4. **`shel_write(SHW_EXEC)` copies a fixed 128-byte tail** (`CMDTAILSIZE`,
+4. **`SHW_SHUTDOWN`'s `isover` parameter is dead in the current implementation
+   (D-101).** It is part of the documented ABI (0/1/2 = abort/partial/full,
+   `gemshlib.c:140-145`), but the `case SHW_SHUTDOWN` code never reads it
+   (`gemshlib.c:177-186`) — the shutdown request is recorded unconditionally
+   (gated only by `can_shutdown()`) regardless of the value passed; "partial"
+   and "full" are not currently distinguished at all (source comment,
+   `gemshlib.c:144`: "currently the same as full"). EmuTOS's own caller
+   (`desk/deskmain.c:776`) always passes `isover = 2`.
+5. **`SHW_RESCHNG`'s `isgem` carries a hidden `+2` offset for ST/TT-family
+   requests (D-101).** `isover = 0` → the caller must pass `isgem = 2 +
+   <Setscreen mode value>`; `isover = 1` (Falcon) → `isgem` is the raw
+   Setscreen value. `sh_write` stores `gl_nextrez = isgem` verbatim
+   (`gemshlib.c:188-189`); the `+2` is added by the caller and subtracted by
+   the consumer (`geminit.c:782` vs. `:788`). Confirmed by EmuTOS's own
+   resolution-change dialog (`desk/deskmain.c:900-913`).
+6. **`shel_write(SHW_EXEC)` copies a fixed 128-byte tail** (`CMDTAILSIZE`,
    `gemshlib.c:170`) — the tail is a fixed-size buffer, not NUL-bounded copy;
    `shel_read` mirrors it (128-byte `memcpy`).
-5. **The next-app launch is deferred to the shell loop.** `shel_write` only
+7. **The next-app launch is deferred to the shell loop.** `shel_write` only
    *records* the request in the `SHELL sh` struct; the real `Pexec` happens later
    in `sh_ldapp` when the current app calls `appl_exit`/`Pterm` and the loop in
    `sh_main` runs the recorded program (`gemshlib.c:692-731`). `shel_write` thus
    returns `1` even for a program that later fails to load.
-6. **The console name is magic.** `shel_write(SHW_EXEC, …, "EMUCON", …)`
-   classifies the next app as the console (CLI) rather than a normal program
-   (`gemshlib.c:172`, `DEF_CONSOLE = "EMUCON"`).
-7. **`shel_get`/`shel_put` are unbounded 4192-byte `memcpy`s.** No length clamp
-   — a `len > SIZE_SHELBUF` overruns `D.g_shelbuf` (`gemshlib.c:205,215`). NewTOS
-   should clamp to 4192 (a safety choice that does not change well-formed
-   behaviour).
-8. **`shel_find`'s search order is app-dir-first.** Step 1 is the *application*
-   directory (`rlr->p_appdir`), not the current directory — this is how a program
-   finds resources shipped next to it even when the current directory differs
-   (`gemshlib.c:416-427`). It saves/restores the caller's DTA.
-9. **`shel_envrn`'s output goes through `addr_in[0]` (a `char **`)** and its
-   search string is `addr_in[1]` — the two are the reverse of what the old spec
-   implied (`aesdefs.h:611-612`).
-10. **`shel_envrn` returns a pointer *into* the environment**, not a copy — the
+8. **The console name is magic, and its dispatch is `#if WITH_CLI`-gated.**
+   `shel_write(SHW_EXEC, …, "EMUCON", …)` classifies the next app as the
+   console (CLI) rather than a normal program (`gemshlib.c:172`,
+   `DEF_CONSOLE = "EMUCON"`) — this classification itself is unconditional.
+   But `sh_ldapp`'s `CONSOLE_APP` dispatch arm is `#if WITH_CLI`
+   (`gemshlib.c:614-622`), a Makefile-level build flag defaulting to **1**
+   (`Makefile:150`; off only for the memory-constrained "192" target,
+   `Makefile:534`). With `WITH_CLI` off, the classification still happens but
+   the launch falls through to the "normal app" path, which tries
+   `sh_find("EMUCON")` and fails (`EFILNF`).
+9. **Unrecognised `doex` values are silently accepted and ignored.** The
+   `switch(doex)` in `sh_write` has no `default` case; a `doex` outside
+   `{0, 1, 4, 5}` matches no `case`, so `sh_write` does nothing but still
+   `return TRUE` (`gemshlib.c:161-196`).
+10. **`shel_get`/`shel_put` are unbounded 4192-byte `memcpy`s.** No length clamp
+    — a `len > SIZE_SHELBUF` overruns `D.g_shelbuf` (`gemshlib.c:205,215`). NewTOS
+    should clamp to 4192 (a safety choice that does not change well-formed
+    behaviour).
+11. **`shel_find`'s search order is app-dir-first.** Step 1 is the *application*
+    directory (`rlr->p_appdir`), not the current directory — this is how a program
+    finds resources shipped next to it even when the current directory differs
+    (`gemshlib.c:416-427`). It saves/restores the caller's DTA.
+12. **`shel_envrn`'s output goes through `addr_in[0]` (a `char **`)** and its
+    search string is `addr_in[1]` — the two are the reverse of what the old spec
+    implied (`aesdefs.h:611-612`).
+13. **`shel_envrn` returns a pointer *into* the environment**, not a copy — the
     value string lives in `ad_envrn` and is only valid while the environment is
     (`gemshlib.c:342`).
-11. **`scrp_clear` uses and restores the AES DTA.** It swaps in `D.g_dta` for the
+14. **`scrp_clear` uses and restores the AES DTA.** It swaps in `D.g_dta` for the
     `Fsfirst`/`Fsnext`/`Fdelete` scan and restores the caller's DTA afterward
     (`gemsclib.c:90-104`) — so it does not disturb a caller mid-directory-scan.
 
@@ -540,7 +637,19 @@ AES done, the GEMDOS / BIOS / XBIOS / VDI / AES specification extraction (Phase
   that does not change observable behaviour for well-formed callers.
 - **`SHW_SHUTDOWN`** power-off is an open question: EmuTOS compiles it out for
   generic builds; NewTOS may implement a real RPi4 power-off later (out of the
-  compatibility contract, since the mode is optional).
+  compatibility contract, since the mode is optional). If implemented, `isover`
+  need not be honoured beyond gating (EmuTOS's own implementation does not
+  read it either, D-101) — a NewTOS deviation that *adds* real partial/full
+  distinction would still satisfy the contract (no well-formed EmuTOS-observed
+  behaviour to preserve there).
+- **`SHW_RESCHNG`** (screen-resolution switch via `shel_write`) is currently
+  out of scope (no ST/TT-vs-Falcon dual video hardware on RPi4/AArch64 — the
+  whole `gl_changerez`/`Setscreen`-family distinction is EmuTOS-hardware
+  reference). **If a future NewTOS resolution-switch facility reuses opcode
+  121/mode 5 for compatibility, the `+2` ST/TT offset convention on `isgem`
+  (D-101) is contract**, not internal — a real GEM application computing
+  `isgem` per the documented Getrez()/Setscreen() convention expects it
+  honoured symmetrically by whatever consumes `gl_nextrez`.
 - Pointers in `addr_in[]` (paths, buffers, the environment search string, the
   `char **` for `shel_envrn`) are **user (application) pointers** — apply the
   [`_dispatcher.md`](./_dispatcher.md) user/kernel boundary handling; the

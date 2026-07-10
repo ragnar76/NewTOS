@@ -4100,3 +4100,132 @@ folders-first + `int_out[1]` button contract. The on-disk byte format,
 per ADR-013.
 
 ---
+
+## D-101: `shel_write`'s `SHW_RESCHNG` mode carries a hidden `+2` offset on `isgem` for ST/TT-family resolution requests (Falcon requests do not); `SHW_SHUTDOWN`'s `isover` parameter is part of the documented ABI but is never read by the current implementation
+
+**Date:** 2026-07-11 (AES leg, Scrap + Shell re-validation, third and final
+round — tasked with the same rigour that found D-085 (menu tree topology),
+D-089 (border-sign inversion), D-094 (window-set pointer packing), and D-100
+(resource-format contract framing))
+**Phase 00b spec:** `docs/api/aes/scrap-shell.md` (`shel_write (121)` mode
+table + corrections note, Verification criteria, Edge cases discovered in
+source, NewTOS implementation notes)
+
+**Context:** every ABI-slot-level claim in the existing spec (the four
+`shel_write` modes, the `isgem`/`isover` naming, the `shel_envrn`
+`addr_in[0]`/`[1]` swap, the always-1 returns, the buffer sizes) — all
+established by the prior full-contract-refinement pass, D-054 — was
+re-verified against `aes/gemsclib.c`/`aes/gemshlib.c` @ `1a7484ab` and found
+**correct**; this round found no slot-level misreading. Digging one level
+deeper than D-054 (into the *values* the ABI slots carry, not just which slot
+they occupy) surfaced a genuine gap: the source comment documenting
+`sh_write`'s `doex = 5` (`SHW_RESCHNG`) mode (`aes/gemshlib.c:131-138`) reads:
+
+```
+ *      (1) doex = 5
+ *          . selects next video resolution
+ *              (a) isover = 0
+ *                  . indicates ST/TT-style video
+ *                      isgem = 2 + value used by Getrez()/Setscreen()
+ *              (b) isover = 1
+ *                  . indicates Falcon-style video)
+ *                      isgem = value used by Setscreen() for video mode
+```
+
+i.e. **for `isover = 0` (ST/TT family) the caller must add 2 to the real
+Setscreen mode value before passing it as `isgem`; for `isover = 1` (Falcon
+family) `isgem` is the raw value, no offset.** `sh_write`'s actual code
+(`gemshlib.c:187-192`) does not apply or remove this offset itself — it just
+stores `gl_changerez = 1 + isover; gl_nextrez = isgem;` verbatim. The `+2` is
+the *caller's* job to add and the *consumer's* job to subtract:
+- **Consumer**, `aes/geminit.c:778-793` (the post-`.INF` resolution-apply
+  code, shared by both the boot-time `.INF` `#E`-line path and the
+  `shel_write`-driven path since both write the same `gl_changerez`/
+  `gl_nextrez` globals): `case 1` (ST/TT, `gl_changerez==1`) does
+  `Setscreen(-1L, -1L, gl_nextrez-2, 0)` (`:782`) — subtracting the `2` back
+  off; `case 2` (Falcon, `gl_changerez==2`) does `Setscreen(0L, 0L,
+  FALCON_REZ, gl_nextrez)` (`:788`) — no offset.
+- **Caller**, EmuTOS's own resolution-change dialog,
+  `desk/deskmain.c:900-914` (`do_optnmenu`/`RESITEM`): for a Falcon mode,
+  `shel_write(SHW_RESCHNG, newmode, 1, NULL, NULL)` (`:910`, no offset); for
+  an ST/TT mode, `shel_write(SHW_RESCHNG, newres+2, 0, NULL, NULL)` (`:913`,
+  **`+2` added explicitly by the caller**) — an independent, real EmuTOS
+  call site confirming the comment is not aspirational.
+- Corroborating evidence: `aes/geminit.c:343-392` (`process_inf1`, the
+  `.INF`-file `#E`-line resolution parser, a *different* producer of the same
+  `gl_changerez`/`gl_nextrez` globals) independently applies the same `+2`
+  when building an ST/TT `gl_nextrez` (`mode = (mode & 0x00ff) + 2;`, `:380`)
+  but not for a Falcon one (`gl_nextrez = mode;`, `:375`) — the same
+  convention, reached by a wholly separate code path.
+
+The prior spec's `shel_write` mode table collapsed both branches into one
+cell — `isgem` = "Setscreen video-mode value" — losing the family-dependent
+`+2`. This matters as more than documentation polish: **a well-formed GEM
+application computing `isgem` per the documented convention and an AES
+implementation that consumes `gl_nextrez` without the matching `+2`/`-2`
+round trip will resolve to the wrong video mode for every ST/TT-family
+request** — a real ABI/behavioural mismatch, not merely a missing detail.
+
+Separately, re-reading the `SHW_SHUTDOWN` (`doex = 4`) case
+(`gemshlib.c:177-186`) against its own documented `isover` semantics
+(`gemshlib.c:140-145`: "isover = 0 abort … / 1 partial … / 2 full") found
+that **the C implementation never reads `isover` at all** — it only checks
+`can_shutdown()`. So while `isover` is part of the call's documented ABI, it
+is currently inert: `isover = 0` ("abort") does not abort anything (if
+`can_shutdown()` is true, shutdown is recorded exactly as for `isover = 2`);
+"partial" (`1`) and "full" (`2`) are not currently distinguished at all — the
+source comment itself concedes this ("currently the same as full"). EmuTOS's
+own caller (`desk/deskmain.c:776`, the desktop's `QUITITEM`) always passes
+`isover = 2`, consistent with this being effectively a fixed "full or
+nothing" call in practice. The old spec's mode table reproduced the 0/1/2
+gloss without noting the implementation gap.
+
+Two smaller precision fixes bundled into the same pass: (1) the spec's
+Error-conditions note said the launch loop shows a load failure "via
+`form_error`" — the actual internal function is `fm_error()`
+(`aes/gemfmlib.c:436`); there is no AES opcode named `form_error`. (2) the
+`SHEL_WRITE` dispatcher case (`aes/gemsuper.c:383-384`) reveals `sh_write`'s
+`CONSOLE_APP` dispatch in `sh_ldapp` is itself gated `#if WITH_CLI`
+(`gemshlib.c:614-622`), a Makefile-level flag defaulting to 1
+(`Makefile:150`, off only for the memory-constrained "192" target,
+`Makefile:534`) — not previously noted; with it off, `shel_write(SHW_EXEC,
+…, "EMUCON", …)` still classifies the next app as `CONSOLE_APP` (that
+assignment is unconditional in `sh_write`), but the launch loop has no
+matching dispatch arm and falls through to the normal-app path, which fails
+to find "EMUCON" as a file (`EFILNF`).
+
+**Not a Compendium discrepancy** — no PDFs in `references/`; Compendium
+cross-check of the `+2` `SHW_RESCHNG` offset convention and the `SHW_SHUTDOWN`
+`isover` semantics remains deferred, as for the rest of `scrap-shell.md`
+(see the existing Compendium/Profibuch note in that file, itself deferred
+under D-054).
+
+**Decision:** follow EmuTOS exactly — `shel_write(SHW_RESCHNG, isgem, isover,
+…)` requires `isgem = 2 + <Setscreen mode>` when `isover = 0` and `isgem =
+<Setscreen mode>` (no offset) when `isover = 1`; any NewTOS consumer of
+`gl_nextrez`-equivalent state must apply the matching `-2`/`-0` when deriving
+the real video mode. `SHW_SHUTDOWN`'s `isover` need not be honoured by NewTOS
+beyond the existing `can_shutdown()`-equivalent gate — EmuTOS's own
+implementation does not read it either; a NewTOS deviation that adds real
+partial/full shutdown levels would not break compatibility (there is no
+EmuTOS-observed distinct behaviour to preserve). Corrected in
+`docs/api/aes/scrap-shell.md`: the `shel_write (121)` mode-flag table (both
+the `SHW_RESCHNG` `isgem` cell and the `SHW_SHUTDOWN` `isover` cell), a new
+"third-round re-validation" callout in the intro block, an expanded
+"Corrections vs. the previous spec" note, the `SHW_RESCHNG` verification
+criterion, four new/renumbered "Edge cases discovered in source" bullets
+(the `+2` offset, the dead `SHW_SHUTDOWN.isover`, the `WITH_CLI`-gated
+`EMUCON` dispatch, unrecognised `doex` values being silently ignored), the
+`form_error`→`fm_error` naming fix in "Error conditions", and two new "NewTOS
+implementation notes" bullets. **Scrap + Shell was the last outstanding
+batch assigned for this re-validation initiative.** With it done, every
+`docs/api/aes/*.md` manager spec has been checked against current EmuTOS
+source at least once beyond the original D-054 full-contract-refinement pass
+(Menu: D-085 through D-088; Object/Form: D-089 through D-093; Window/
+Graphics: D-094 through D-098, plus the D-099 `ap_private` follow-up;
+Resource/File selector: D-100; Scrap/Shell: this entry). Application- and
+Event-Manager's last dedicated pass remains the 2026-07-03 batch (D-049/
+D-050, plus the `appl_init` fix D-099 references) — no source-misreading was
+reported against them in this later round.
+
+---
