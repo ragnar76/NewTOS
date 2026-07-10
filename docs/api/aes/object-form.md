@@ -1,7 +1,9 @@
 # AES Object Manager (`objc_*` 40–48) + Form Manager (`form_*` 50–56)
 
 > **PHASE-00b (AES Object/Form, full-contract refinement).**
-> Source: EmuTOS @ `1a7484ab`.
+> Source: EmuTOS @ `1a7484ab`. Re-validated 2026-07-10 (AES leg, Batch 3) —
+> found and corrected D-089…D-093 (see `_discrepancies.md`), most notably
+> an inverted `th`/border-thickness sign convention (D-089).
 > Primary handlers: `aes/gemoblib.c` (`ob_*`, `just_draw`, `gr_crack` via
 > `aes/gemgraf.c`), `aes/gemobed.c` (`ob_edit`, `ob_center`),
 > `aes/gemfmlib.c` (`fm_do`/`fm_dial`/`fm_keybd`/`fm_button`/`fm_error`),
@@ -51,7 +53,9 @@ the `ob_spec` colour-word decode. Two shared internals recur below:
   TED types → `te_thickness`; box types → byte 1 of `ob_spec`; `G_BUTTON` →
   `-1`, minus 1 more if `EXIT`, minus 1 more if `DEFAULT` (so a default exit
   button has a thicker outline). Values >128 are treated as negative
-  (`th -= 256`) — **`th < 0` = inside border, `th > 0` = outside border**.
+  (`th -= 256`) — **`th > 0` = inside border, `th < 0` = outside border**
+  (see D-089 below — this is the opposite of an earlier version of this
+  spec).
 - **`gr_crack`** (`gemgraf.c:612-628`) decodes the colour word — the single
   most bug-prone table for the desktop renderer:
 
@@ -67,6 +71,45 @@ the `ob_spec` colour-word decode. Two shared internals recur below:
   `ob_draw` uses: it visits an object, descends into children while
   `depth <= maxdep` and the node is not `HIDETREE`, then walks siblings back
   up to the parent. `MAX_DEPTH = 8` (`obdefs.h:30`).
+
+> **Correction (D-089): the `th` sign convention was inverted in an earlier
+> version of this spec.** Traced through three independent call sites in
+> `gemoblib.c`/`gemgraf.c`:
+> 1. **`gr_box`** (`gemgraf.c:813-832`): for `th > 0` it iterates
+>    `gr_inside(&n, th)` with a **positive** offset each pass — this
+>    *shrinks* the nested outline rectangles, so all border lines land
+>    **on or inside** the base rect. For `th < 0`, `gr_inside` receives a
+>    **negative** offset — this *grows* the rect each pass, so the border
+>    lines land **on or outside** the base rect.
+> 2. **`just_draw`**'s fill inset (`gemoblib.c:553,663-671`):
+>    `tmpth = (th < 0) ? 0 : th;` then `gr_inside(&t, tmpth)` before filling
+>    the box interior. For `th < 0` (outside border) the fill is **not**
+>    inset — the interior fill occupies the *entire* nominal rect, because
+>    the border sits outside it and doesn't eat into the content area. For
+>    `th > 0` (inside border) the fill *is* inset by `th`, leaving room for
+>    the border inside the rect.
+> 3. **`just_draw`**'s state-decoration inset (`gemoblib.c:889-892`):
+>    `if (th > 0) gr_inside(&t, th); else th = -th;` — again, only a
+>    positive (inside) border shrinks the content rect; a negative (outside)
+>    border leaves it alone and just takes `|th|` for the shadow-size calc
+>    that follows.
+> 4. **`ob_actxywh`**'s 3D shadow-hit-test adjustment (`gemoblib.c:329-334`)
+>    only grows the hit-test rect for `SHADOWED` **when `border < 0`** — a
+>    drop shadow, which visually extends *outward* past the object, only
+>    needs a bigger hit box when the border itself is an outward
+>    (negative-`th`) one. This is consistent with (1)–(3), not with the
+>    inverted reading.
+>
+> So the correct rule is **`th > 0` ⇒ border drawn inside the object's
+> nominal rect (content area shrinks by `th`); `th < 0` ⇒ border drawn
+> outside the nominal rect (content area is the full rect, border is an
+> add-on)**. `G_BUTTON`'s `th` is always negative (`-1`, or more negative
+> with `EXIT`/`DEFAULT`, `gemobjop.c:59-65`), i.e. **every button's border
+> is drawn outside its nominal rect**, growing the button's apparent
+> footprint — consistent with a `DEFAULT` exit button looking visually
+> "bigger"/more emphasized. A renderer built on the inverted rule would draw
+> every box/button border on the wrong side of the object's edge and get
+> `SHADOWED` hit-test sizing backwards. See `_discrepancies.md` D-089.
 
 ---
 
@@ -142,9 +185,28 @@ the EmuTOS VDI sequence):
 3. **Text family** (`G_TEXT`/`G_BOXTEXT`/`G_FTEXT`/`G_FBOXTEXT`): copy the
    `TEDINFO`, crack `te_color`. For the **formatted** types (`G_FTEXT`/
    `G_FBOXTEXT`) merge `te_ptext` into `te_ptmplt` via `ob_format`
-   (`_` slots filled, literals kept, `TE_LEFT`/`RIGHT`/`CNTR` justification;
-   `gemoblib.c:716-757`). `G_BOXCHAR` centres the single spec char in the
-   IBM font.
+   (`_` slots filled, literals kept; `gemoblib.c:716-757` calls
+   `ob_format`, defined at `gemoblib.c:361-408` — see the D-091 correction
+   below on what "justification" actually means here). `G_BOXCHAR` centres
+   the single spec char in the IBM font.
+> **Correction (D-091): `ob_format` implements only *two* fill directions,
+> not three "`TE_LEFT`/`RIGHT`/`CNTR`" behaviours.** Reading `ob_format`
+> in full (`gemoblib.c:361-408`): it has exactly one conditional,
+> `if (just == TE_RIGHT)`. `TE_RIGHT` anchors the raw text to the *end* of
+> the template and fills underscore slots **backward** from there; every
+> other `just` value — including `TE_LEFT` **and `TE_CNTR`** — takes the
+> same, unconditional forward branch and fills underscore slots from the
+> *start* of the template. I.e. for the purposes of merging `te_ptext`
+> into `te_ptmplt`, `TE_CNTR` behaves **identically to `TE_LEFT`**; there
+> is no distinct "centred slot-fill" in `ob_format`. Whole-string `TE_CNTR`
+> positioning (centring the *rendered* text within the object's box) is a
+> separate, later step done by `gr_just`/`gr_gtext` (`gemgraf.c:567-605`),
+> which *does* implement all three `TE_LEFT`/`TE_CNTR`/`TE_RIGHT` values —
+> `gr_gtext` is called right after `ob_format` in the same `just_draw` type
+> switch (`gemoblib.c:757`) and is what the earlier "TE_LEFT/RIGHT/CNTR
+> justification" phrase was actually describing, misattributed to
+> `ob_format`. See `_discrepancies.md` D-091.
+
 4. **`G_STRING`/`G_TITLE`/`G_BUTTON`**: draw the plain text centred (button)
    or left-aligned, vertically centred (`gemoblib.c:801-862`).
 5. **`G_IMAGE`**: blit the `BITBLK` transparently in `bi_color`
@@ -287,6 +349,22 @@ always redraws (never XOR); other types toggle SELECTED via a fast XOR fill
 when possible (avoiding a full redraw), and fall back to `just_draw`
 otherwise.
 
+> **Addition (D-093a): deselecting a `G_IMAGE` XORs *and* redraws — the
+> two are not mutually exclusive.** In the default (non-radio) branch, when
+> the `SELECTED` bit toggles, `ob_change` does an XOR background-fill and
+> then sets `redraw = !ok` where `ok = xor_is_ok(...)`
+> (`gemoblib.c:1295-1304`). `xor_is_ok` returns `FALSE` for `G_IMAGE`
+> unconditionally (`gemoblib.c:114`), so `ok` is `FALSE` and `redraw` stays
+> `TRUE` — **both** the XOR fill **and** a subsequent `just_draw` run,
+> whenever the object being deselected is a `G_IMAGE`. (For a
+> selected→selected-XOR-toggle-only object, `ok == TRUE` and only the XOR
+> fill runs, no `just_draw`.) The XOR pass undoes the background inversion
+> `just_draw` applies to a *selected* `G_IMAGE`
+> (`gemoblib.c:766-770`); the follow-up `just_draw` then re-blits the icon
+> with its normal (non-complemented) colour. A NewTOS implementation must
+> reproduce both steps for `G_IMAGE`, not treat the XOR/redraw paths as
+> alternatives.
+
 ### `objc_sysvar` (48)
 
 **Source:** `gemsuper.c:232-236` (guarded `#if CONF_WITH_3D_OBJECTS`) →
@@ -395,6 +473,21 @@ Reserves/releases screen space and animates the dialog box:
 > `int_in[1..4]` (`pi`) and `int_in[5..8]` (`pt`) — four WORDs each, not a
 > single slot per rect (`aesdefs.h:315-322`).
 
+> **Correction (D-092): `form_dial` does *not* save or restore the screen —
+> it never calls `bb_save`/`bb_restore`.** Reading all of `fm_dial`
+> (`gemfmlib.c:360-383`) line by line: `FMD_START` is a bare `switch` case
+> with only a comment (`/* grab screen sync or some other mutual exclusion
+> method */`) and no body; `FMD_GROW`/`FMD_SHRINK` draw an animated
+> *outline* box via `gr_growbox`/`gr_shrinkbox` (vector lines, no pixel
+> save/restore); `FMD_FINISH` asks the **window manager** to redraw what's
+> under `pt` (`w_drawdesk`/`w_update`) rather than restoring a saved
+> bitmap. **The VDI Memory-MFDB gap noted under `form_alert` below does
+> not block `form_dial`** — `form_dial` has no `vro_cpyfm`/Memory-MFDB
+> dependency at all. (An earlier task briefing for this validation round
+> conflated `form_dial`'s screen reservation with `form_alert`'s actual
+> `bb_save`/`bb_restore` background copy; corrected here — see
+> `_discrepancies.md` D-092.)
+
 ### `form_alert` (52)
 
 **Source:** `gemsuper.c:245-246` → `fm_alert` (`gemfmalt.c:319-396`).
@@ -418,12 +511,30 @@ Reserves/releases screen space and animates the dialog box:
 - **Escaping:** `||` or `]]` yields a literal `|`/`]` (undocumented TOS/PC-GEM
   behaviour EmuTOS matches, `gemfmalt.c:64-76,94-98`).
 
-`fm_build` (`gemfmalt.c:188-316`) sizes and positions the DIALERT tree
-(`rs_trees[DIALERT]`, 10 objects `NUM_ALOBJS`), converts char coords to
-pixels (`rs_obfix`), sets the `DEFAULT` flag on button `defbut`, centres the
-tree (`ob_center`), saves the screen underneath (`bb_save`), draws it
-(`ob_draw`), and runs `fm_do`. The return is `i - BUTOFF + 1` — the pressed
-button's **1-based** number (`gemfmalt.c:395`).
+**`fm_build`** (`gemfmalt.c:188-316`) sizes and positions the DIALERT tree
+(`rs_trees[DIALERT]`, 10 objects `NUM_ALOBJS`), adds the icon/message/button
+objects as children of `ROOT` (`ob_add`, `gemfmalt.c:274,282,292`), and
+converts the character coordinates to pixels (`rs_obfix`,
+`gemfmalt.c:299-300`). **`fm_alert`** itself (`gemfmalt.c:319-396`) then, in
+this order: sets the `DEFAULT` flag on button `defbut` (`gemfmalt.c:343-347`,
+*after* `fm_build` returns), fixes up the icon object to `G_IMAGE`/32×32
+(`:349-352`), centres the tree (`ob_center`, `:355`), saves the screen
+underneath (`bb_save`, `:363`), draws it (`ob_draw`, `:367`), runs `fm_do`
+(`:383`), then restores the saved screen (`bb_restore`, `:390`). The return
+is `i - BUTOFF + 1` — the pressed button's **1-based** number
+(`gemfmalt.c:395`).
+
+> **Correction (D-090).** An earlier version of this spec attributed the
+> `DEFAULT`-flag set, centring, screen save, draw, and `fm_do` call to
+> `fm_build` itself. All of these are done by `fm_alert` *after* `fm_build`
+> returns; `fm_build` only builds/sizes/positions the tree and converts
+> character→pixel coordinates. **The order matters for a NewTOS
+> reimplementation**: `fm_build` **unconditionally assigns** (not ORs)
+> `obj->ob_flags = BUTTON_FLAGS` for every button object
+> (`gemfmalt.c:288`), so setting a button's `DEFAULT` bit *before* or
+> *during* the tree-build step would be silently wiped out — `DEFAULT` must
+> be applied strictly after `fm_build` returns, as EmuTOS does. See
+> `_discrepancies.md` D-090.
 
 > **DIALERT tree object map** (from `fm_build`/`erd.c`): object 0 = ROOT,
 > object 1 = the icon (`G_IMAGE`), objects `MSGOFF..MSGOFF+4` = message
@@ -431,7 +542,25 @@ button's **1-based** number (`gemfmalt.c:395`).
 > (`G_BUTTON` with `SELECTABLE|EXIT`, plus `FL3DACT` when
 > `CONF_WITH_3D_OBJECTS`, `gemfmalt.c:52-56`). `MSGOFF`/`BUTOFF` are fixed by
 > the resource (`gem.rsc`); they are **reference** internals — the observable
-> contract is the string grammar and the 1-based return.
+> contract is the string grammar and the 1-based return. Unlike the menu
+> bar's drop-down boxes (D-085 in `menu.md`), these **are** genuine
+> `ROOT`-children via `ob_add` — no hidden-container indirection here.
+
+> **`form_alert`'s screen save/restore depends on VDI Memory-MFDB support
+> (blocking note).** `bb_save`/`bb_restore` (`gemgsxif.c:320-393`, called
+> from `fm_alert` at `gemfmalt.c:363,390`) blit through `vro_cpyfm(S_ONLY,
+> …)` between the physical screen and an off-screen memory buffer `gl_tmp`
+> (`fd_addr` set by `gsx_malloc`/`dos_alloc_anyram`, `gemgsxif.c:108-113`) —
+> i.e. one side of the copy is always a **non-screen (Memory) MFDB**. Per
+> `docs/STATUS.md` (2026-07-10 VDI-audit entry, item **F3**), NewTOS's
+> current `vro_cpyfm`/`vrt_cpyfm` implementation is a **no-op when either
+> side is a non-screen MFDB** (only screen↔screen copies are wired up). As
+> written today, **`form_alert` (52) cannot save the background under the
+> alert box before drawing it, nor restore it afterward** — this is a VDI
+> raster-layer gap, not an AES spec ambiguity, and it is a prerequisite for
+> a faithful `form_alert`/menu-drop-down implementation (the Menu Manager's
+> own drop-down save/restore has the identical dependency, see `menu.md`
+> "Used by"/Dependencies). See `_discrepancies.md` D-092.
 
 ### `form_error` (53)
 
@@ -510,6 +639,19 @@ the full clip rect first.
 Lets an application drive dialog click handling itself, with the same
 `TOUCHEXIT`/`RBUTTON`/`EXIT`/disabled semantics as the internal `fm_do` loop
 (see `form_do` above).
+
+> **Addition (D-093b): `FM_ONXTOB` is zeroed unless the dialog is exiting or
+> the clicked object is `EDITABLE`.** At the end of `fm_button`
+> (`gemfmlib.c:264-267`): `if (cont && !(flags & EDITABLE)) new_obj = 0;`
+> — i.e. clicking a plain (non-editable) button/box that does **not** end
+> the dialog reports `FM_ONXTOB = 0`, *not* the clicked object's index. Only
+> when the click is on an `EDITABLE` field (so `fm_do`/an application should
+> move text-edit focus there) or the dialog is ending (`cont == FALSE`,
+> in which case the real object index — possibly OR'd with `0x8000` for a
+> `TOUCHEXIT` double-click — is preserved) does `FM_ONXTOB` carry the
+> clicked object's index. This is why clicking an ordinary button in
+> `fm_do`'s loop does not change the active edit field: `fm_button`'s
+> `new_obj` output is intentionally suppressed for that case.
 
 ---
 
@@ -658,6 +800,43 @@ codes:
     repeated to fill (`gemobed.c:353-356`).
 16. **`ob_format` `@` sentinel:** a `te_ptext` starting with `'@'` is treated
     as empty (`gemoblib.c:367-368`).
+17. **`th` sign convention (D-089):** `th > 0` draws the border *inside* the
+    object's nominal rect (content shrinks by `th`); `th < 0` draws it
+    *outside* (content stays full-size, border is an add-on). Confirmed via
+    `gr_box` (`gemgraf.c:813-832`), `just_draw`'s fill/decoration insets
+    (`gemoblib.c:553,663-671,889-892`), and `ob_actxywh`'s
+    `SHADOWED && border < 0` hit-test gate (`gemoblib.c:329-334`). An
+    earlier version of this spec had the sign backwards.
+18. **`fm_build` vs. `fm_alert` (D-090):** the `DEFAULT`-flag set, centring,
+    screen save, `ob_draw`, and `fm_do` call are all done by `fm_alert`
+    itself, *after* `fm_build` returns — not by `fm_build`. `fm_build`
+    unconditionally **assigns** (not ORs) each button's `ob_flags` to
+    `BUTTON_FLAGS` (`gemfmalt.c:288`), so any `DEFAULT`-flag set must happen
+    strictly after `fm_build`, or it is silently lost.
+19. **`ob_format` has only two fill directions, not three (D-091):**
+    `TE_RIGHT` anchors/fills backward from the template's end; `TE_LEFT`
+    *and* `TE_CNTR` both take the same forward-fill branch — there is no
+    distinct "centred" underscore-fill in `ob_format` itself
+    (`gemoblib.c:361-408`). Whole-string `TE_CNTR` box-centring happens
+    later, in `gr_just`/`gr_gtext` (`gemgraf.c:567-605`).
+20. **`form_dial` never saves/restores the screen; `form_alert` does, but
+    NewTOS's raster layer currently can't (D-092):** `fm_dial`
+    (`gemfmlib.c:360-383`) has no `bb_save`/`bb_restore`/`vro_cpyfm` call at
+    all — it only draws animated outline boxes and asks the window manager
+    to redraw on finish. `fm_alert`'s `bb_save`/`bb_restore`
+    (`gemfmalt.c:363,390`) *do* copy Screen↔Memory via `vro_cpyfm`, which
+    per `docs/STATUS.md` (2026-07-10, item F3) is currently a no-op in
+    NewTOS for any non-screen MFDB — a VDI-layer blocker for a faithful
+    `form_alert`.
+21. **Deselecting a `G_IMAGE` both XORs and redraws (D-093a):**
+    `xor_is_ok` always returns `FALSE` for `G_IMAGE` (`gemoblib.c:114`), so
+    `ob_change`'s SELECTED-toggle path does the XOR background-fill *and*
+    falls through to a full `just_draw` (`gemoblib.c:1295-1304`) — the two
+    are not exclusive alternatives for this one type.
+22. **`fm_button`'s `FM_ONXTOB` is zeroed for non-editable, non-exiting
+    clicks (D-093b):** `if (cont && !(flags & EDITABLE)) new_obj = 0;`
+    (`gemfmlib.c:264-267`) — clicking an ordinary button that doesn't end
+    the dialog reports next-object `0`, not the clicked index.
 
 ---
 
@@ -667,8 +846,12 @@ codes:
 
 - The **VDI / rasteriser** (NewTOS `RasterBackend`) for all of `objc_draw`,
   `objc_change`, `form_alert`, `form_dial`: box/line/fill, text (`gr_gtext`),
-  icon/image blits, clipping (`gsx_sclip` → `vs_clip`), and screen
-  save/restore (`bb_save`/`bb_restore`).
+  icon/image blits, and clipping (`gsx_sclip` → `vs_clip`). **`form_alert`
+  additionally needs Screen↔Memory `vro_cpyfm`** for `bb_save`/`bb_restore`
+  (`gemfmalt.c:363,390`) — currently a no-op gap in NewTOS per
+  `docs/STATUS.md` (2026-07-10, item F3); see D-092. `form_dial` has **no**
+  screen save/restore dependency (D-092) — it only needs outline-box drawing
+  (`gr_growbox`/`gr_shrinkbox`) and the window manager's desktop redraw.
 - The **Event Manager** ([`event.md`](./event.md)) for `form_do`'s modal loop
   (`ev_multi`, `ev_button`) and the mouse-owner handshake
   ([`_state.md`](./_state.md) `gl_mowner`).

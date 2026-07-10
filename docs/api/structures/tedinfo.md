@@ -56,7 +56,7 @@ typedef struct {
 | `te_font`      | `IBM = 3` (system) or `SMALL = 5` (`obdefs.h:62-63`) |
 | `te_just`      | `TE_LEFT=0`, `TE_RIGHT=1`, `TE_CNTR=2` (`obdefs.h:253-255`) |
 | `te_color`     | colour word, decoded by `gr_crack` exactly like a box `ob_spec` (border/text/mode/pattern/inside — see [`object.md`](object.md)) |
-| `te_thickness` | border thickness; **signed**: `ob_sst` converts >128 to negative (`gemobjop.c:68-69`). Negative = inside border, positive = outside |
+| `te_thickness` | border thickness; **signed**: `ob_sst` converts >128 to negative (`gemobjop.c:68-69`). **Positive = inside border, negative = outside** (corrected per [`object-form.md`](../aes/object-form.md) D-089 — traced through `gr_box`/`just_draw`; an earlier version of this table had the sign backwards) |
 | `te_txtlen`    | buffer size of `te_ptext`; `ob_edit` never grows past `te_txtlen-2` data chars (`gemobed.c:394,407`) |
 | `te_tmplen`    | buffer size of `te_ptmplt`; bounds the validation-string expansion (`gemobed.c:354`) |
 

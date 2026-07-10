@@ -3463,3 +3463,268 @@ new rows; `menu_attach (37)` section gained a "D-088" addition callout;
 edge-case #12 added.
 
 ---
+
+## D-089: the `ob_state`/`ob_spec` border-thickness (`th`) sign convention was inverted — `th > 0` is *inside*, `th < 0` is *outside*, not the reverse
+
+**Date:** 2026-07-10 (AES leg, Object/Form Manager re-validation, Batch 3)
+**Phase 00b spec:** `docs/api/aes/object-form.md` §0 ("The object tree and
+the drawing primitives"), `docs/api/structures/tedinfo.md` (`te_thickness`)
+
+**Context:** third validation pass of the Object/Form spec, specifically
+tasked with the same rigour that found D-085 (menu tree topology). Traced
+every use of the `th`/`border` value computed by `ob_sst`
+(`gemobjop.c:25-73`) through to where it actually determines pixel
+geometry, rather than trusting the existing one-line summary.
+
+**Previous spec (wrong):** "Values >128 are treated as negative
+(`th -= 256`) — **`th < 0` = inside border, `th > 0` = outside border**."
+The same claim, "Negative = inside border, positive = outside", was also
+copied into `docs/api/structures/tedinfo.md`'s `te_thickness` row (`th` and
+`te_thickness` are the same value — `ob_sst` reads `te_thickness` directly
+for TED types, `gemobjop.c:51-52`).
+
+**EmuTOS (confirmed, sign is the opposite):**
+1. **`gr_box`** (`gemgraf.c:813-832`), which actually draws the border
+   lines: for `th > 0` each iteration calls `gr_inside(&n, th)` with a
+   **positive** offset, which *shrinks* the box each pass — so the drawn
+   lines are **on or inside** the base rect. For `th < 0`, `gr_inside`
+   receives a **negative** offset, which *grows* the box each pass — the
+   drawn lines are **on or outside** the base rect.
+2. **`just_draw`**'s fill inset (`gemoblib.c:553,663-671`):
+   `tmpth = (th < 0) ? 0 : th;` then `gr_inside(&t, tmpth)` before filling
+   the interior. An outside (`th < 0`) border does **not** inset the fill —
+   the interior occupies the full nominal rect, because the border sits
+   outside it. An inside (`th > 0`) border **does** inset the fill by `th`.
+3. **`just_draw`**'s state-decoration inset (`gemoblib.c:889-892`):
+   `if (th > 0) gr_inside(&t, th); else th = -th;` — only a positive
+   (inside) border shrinks the content rect before drawing
+   `SHADOWED`/`CHECKED`/`CROSSED`/`DISABLED`/`SELECTED` decorations.
+4. **`ob_actxywh`**'s 3D shadow hit-test adjustment (`gemoblib.c:329-334`)
+   only grows the AES hit-test rect for a `SHADOWED` object **when
+   `border < 0`** — a drop shadow (which visually extends outward) only
+   needs a bigger hit box when the object's own border is the
+   outward-growing (negative) kind, confirming the same polarity.
+
+All four independent code paths agree: **`th > 0` ⇒ border drawn inside
+the object's nominal rect (content shrinks by `th`); `th < 0` ⇒ border
+drawn outside the nominal rect (content is the full rect, border is an
+add-on)**. `G_BUTTON`'s `th` is always negative (`-1`, further decremented
+for `EXIT`/`DEFAULT`, `gemobjop.c:59-65`) — i.e. **every button's border is
+drawn outside its nominal rect**, which is also why a `DEFAULT` exit button
+(most negative `th`) looks visually larger/more emphasized: its border
+rings extend further outward, not inward.
+
+**Why this matters for NewTOS:** a renderer built on the inverted rule
+would draw every `G_BOX`/`G_BUTTON`/`G_BOXTEXT`/etc. border on the wrong
+side of the object's edge (buttons would appear to shrink instead of grow
+their visual footprint), get the interior-fill inset backwards for boxes
+with an outside border, and get `SHADOWED`-object hit-test sizing
+backwards (`ob_actxywh`'s shadow-rect growth is gated on the sign of
+`border`).
+
+**Not a Compendium discrepancy** — no PDFs in `references/` for
+cross-check; a source-reading correction of the previous NewTOS spec, found
+by tracing `th` through its actual consumers instead of trusting the
+existing summary sentence (the same class of error as D-085 and the
+`scasb` misread referenced in CLAUDE.md).
+
+**Decision:** `docs/api/aes/object-form.md` §0 corrected (with a full
+citation trail across `gr_box`/`just_draw`/`ob_actxywh`) and a new edge
+case #17; `docs/api/structures/tedinfo.md`'s `te_thickness` row corrected
+to match.
+
+---
+
+## D-090: `fm_alert`'s pipeline steps (DEFAULT-flag set, centring, screen save, draw, `fm_do`) were misattributed to `fm_build`; the real caller order matters because `fm_build` unconditionally overwrites button `ob_flags`
+
+**Date:** 2026-07-10 (AES leg, Object/Form Manager re-validation, Batch 3)
+**Phase 00b spec:** `docs/api/aes/object-form.md` (`form_alert` (52))
+
+**Context:** same pass as D-089; read all of `fm_build`
+(`gemfmalt.c:188-316`) and `fm_alert` (`gemfmalt.c:319-396`) line by line
+instead of trusting the previous spec's single run-on sentence describing
+the alert-building pipeline.
+
+**Previous spec (wrong attribution):** "`fm_build` (`gemfmalt.c:188-316`)
+sizes and positions the DIALERT tree …, converts char coords to pixels
+(`rs_obfix`), sets the `DEFAULT` flag on button `defbut`, centres the tree
+(`ob_center`), saves the screen underneath (`bb_save`), draws it
+(`ob_draw`), and runs `fm_do`." — attributing all of these actions to
+`fm_build`.
+
+**EmuTOS (confirmed):** `fm_build` (`gemfmalt.c:188-316`) only sizes,
+positions, and pixel-converts the DIALERT tree, and adds the
+icon/message/button objects as `ROOT`'s children. Everything else is done
+by **`fm_alert`** itself, strictly *after* `fm_build` returns
+(`gemfmalt.c:319-396`): setting `DEFAULT` on button `defbut`
+(`:343-347`), fixing up the icon to `G_IMAGE`/32×32 (`:349-352`), centring
+(`ob_center`, `:355`), saving the screen (`bb_save`, `:363`), drawing
+(`ob_draw`, `:367`), running `fm_do` (`:383`), and restoring the screen
+(`bb_restore`, `:390`).
+
+**Why the order is load-bearing, not just cosmetic:** `fm_build`
+**unconditionally assigns** (not ORs) each button object's flags:
+`obj->ob_flags = BUTTON_FLAGS;` (`gemfmalt.c:288`, where `BUTTON_FLAGS =
+SELECTABLE|EXIT[|FL3DACT]`). If a NewTOS reimplementation, following the
+previous spec's (wrong) attribution, applied the `DEFAULT` bit *inside* or
+*before* the tree-build step, `fm_build`'s flag assignment would silently
+overwrite/discard it. EmuTOS avoids this by construction, applying
+`DEFAULT` only after `fm_build` has returned — an implementer must
+replicate that ordering, not just the end state.
+
+**Not a Compendium discrepancy** — no PDFs in `references/` for
+cross-check; a source-reading correction of the previous NewTOS spec.
+
+**Decision:** `docs/api/aes/object-form.md`'s `form_alert (52)` section
+rewritten to attribute each step to the correct function with line
+citations, a "D-090" correction callout explaining the flag-overwrite
+hazard, and a new edge case #18.
+
+---
+
+## D-091: `ob_format` implements only two fill directions (`TE_RIGHT` vs. everything else), not three distinct `TE_LEFT`/`TE_CNTR`/`TE_RIGHT` behaviours
+
+**Date:** 2026-07-10 (AES leg, Object/Form Manager re-validation, Batch 3)
+**Phase 00b spec:** `docs/api/aes/object-form.md` (`objc_draw` (42), text
+family / `just_draw` item 3)
+
+**Context:** same pass as D-089/D-090; read `ob_format`
+(`gemoblib.c:361-408`) and `gr_just`/`gr_gtext` (`gemgraf.c:567-605`) in
+full to check the previous spec's "`_` slots filled, literals kept,
+`TE_LEFT`/`RIGHT`/`CNTR` justification" claim against the actual code.
+
+**Previous spec (imprecise):** described `ob_format` (the routine that
+merges `te_ptext` into the `te_ptmplt` template for `G_FTEXT`/`G_FBOXTEXT`)
+as implementing "`TE_LEFT`/`RIGHT`/`CNTR` justification".
+
+**EmuTOS (confirmed):** `ob_format` has exactly one conditional:
+`if (just == TE_RIGHT)`. That branch anchors the raw text to the *end* of
+the template and fills `_` slots **backward**. Every other value of
+`just` — **including both `TE_LEFT` and `TE_CNTR`** — falls through to the
+same unconditional forward-fill code, filling `_` slots from the *start* of
+the template. `ob_format` therefore cannot distinguish `TE_LEFT` from
+`TE_CNTR` at all; there is no third, "centred", underscore-fill behaviour
+in this function. The whole-string centring/right-justification that
+`TE_CNTR`/`TE_RIGHT` are normally associated with (positioning the
+*rendered* text within the object's display box) is a separate, later step
+performed by `gr_just`/`gr_gtext` (`gemgraf.c:567-605`), which *does*
+implement all three values distinctly — and which `just_draw` calls right
+after `ob_format`, in the same type-switch (`gemoblib.c:757`).
+
+**Why this matters for NewTOS:** an implementer following the previous
+spec literally would try to build a three-way "centred slot-fill" branch
+into the template-merge routine that does not exist in EmuTOS, and might
+miss that `TE_CNTR` for an *editable* field data-entry point
+(`find_pos`/`ob_stfn`, `gemobed.c:158-173,316-320`) is computed against a
+left-filled raw string, not a centre-filled one.
+
+**Not a Compendium discrepancy** — no PDFs in `references/` for
+cross-check; a source-reading correction/precision-fix of the previous
+NewTOS spec.
+
+**Decision:** `docs/api/aes/object-form.md`'s text-family description in
+`objc_draw (42)` corrected; new "D-091" correction callout and edge case
+#19 added, distinguishing `ob_format`'s two-way fill from `gr_just`'s
+three-way box-positioning.
+
+---
+
+## D-092: `form_dial` has no screen save/restore at all; it is `form_alert` (and the Menu Manager's drop-down) that depends on Screen↔Memory `vro_cpyfm`, currently a no-op gap in NewTOS
+
+**Date:** 2026-07-10 (AES leg, Object/Form Manager re-validation, Batch 3)
+**Phase 00b spec:** `docs/api/aes/object-form.md` (`form_dial` (51),
+`form_alert` (52), "Dependencies")
+
+**Context:** the task briefing for this validation round asked to document
+an interaction between `form_dial`'s `FMD_START`/`FMD_FINISH` phases and
+the VDI Memory-MFDB gap flagged in the 2026-07-10 VDI-audit `STATUS.md`
+entry (item F3: `vro_cpyfm`/`vrt_cpyfm` are a no-op in NewTOS when either
+side is a non-screen MFDB). Reading `fm_dial` (`gemfmlib.c:360-383`) in
+full to locate the save/restore call shows this premise does not match the
+source.
+
+**EmuTOS (confirmed):** `fm_dial` never calls `bb_save`, `bb_restore`, or
+`vro_cpyfm`, directly or indirectly. `FMD_START` is an empty `switch` case
+with only a comment ("grab screen sync or some other mutual exclusion
+method"); `FMD_GROW`/`FMD_SHRINK` draw an animated **outline** box
+(`gr_growbox`/`gr_shrinkbox`, vector lines only); `FMD_FINISH` asks the
+**window manager** to redraw the area under `pt` (`w_drawdesk`/`w_update`),
+which recomputes desktop/window content rather than restoring a saved
+bitmap. `form_dial` therefore has **no** dependency on Memory-MFDB support.
+
+The function that actually does a Screen↔Memory copy is **`fm_alert`**
+(opcode 52, not 51): `bb_save`/`bb_restore` (`gemfmalt.c:363,390`, defined
+`gemgsxif.c:320-393`) blit between the physical screen and an off-screen
+buffer `gl_tmp` (`fd_addr` allocated via `dos_alloc_anyram`,
+`gemgsxif.c:108-113`) using `vro_cpyfm(S_ONLY, …)` — this **is** exactly
+the Screen↔Memory-MFDB case that `docs/STATUS.md`'s F3 item flags as
+currently a no-op in NewTOS's `RasterBackend`. The Menu Manager's
+drop-down save/restore (`gemmnlib.c:219,221`, already noted as a
+`vro_cpyfm`-class dependency in `docs/api/aes/menu.md`) shares the same
+`gl_tmp` buffer and has the identical dependency.
+
+**Consequence:** as implemented today, `form_alert` (52) can draw an alert
+box but cannot properly save the background before drawing it nor restore
+it afterward — this is a VDI raster-layer gap (already tracked in
+`docs/STATUS.md` as deferred item F3), not an AES spec ambiguity.
+`form_dial` (51) is unaffected and has no such prerequisite.
+
+**Not a Compendium discrepancy** — no PDFs in `references/` for
+cross-check; a source-reading correction of a premise in this validation
+round's task briefing, confirmed against the full `fm_dial`/`fm_alert`
+source.
+
+**Decision:** `docs/api/aes/object-form.md` corrected: `form_dial (51)`
+gained a callout stating it has no save/restore dependency; `form_alert
+(52)` gained the Memory-MFDB blocking note (with citations to
+`docs/STATUS.md` F3); the "Dependencies → Requires" VDI bullet rewritten to
+attribute the save/restore need to `form_alert` only; new edge case #20.
+
+---
+
+## D-093: two previously-undocumented `objc_change`/`fm_button` behaviours (`G_IMAGE` deselect does XOR *and* redraw; `fm_button` zeroes the next-object output for ordinary button clicks)
+
+**Date:** 2026-07-10 (AES leg, Object/Form Manager re-validation, Batch 3)
+**Phase 00b spec:** `docs/api/aes/object-form.md` (`objc_change` (47),
+`form_button` (56))
+
+**Context:** same pass as D-089–D-092; read `ob_change`
+(`gemoblib.c:1253-1320`) and `fm_button` (`gemfmlib.c:201-270`) in full,
+beyond the previously-validated slot tables and high-level behaviour
+summaries.
+
+**EmuTOS (confirmed), two additions:**
+- **(a) `ob_change` on a `G_IMAGE` whose `SELECTED` bit toggles does *both*
+  an XOR background-fill *and* a full `just_draw`, not one or the other.**
+  `xor_is_ok` returns `FALSE` unconditionally for `G_IMAGE`
+  (`gemoblib.c:114`). In `ob_change`'s default case
+  (`gemoblib.c:1295-1304`): `if (ok || ((obtype==G_IMAGE) &&
+  !(new_state&SELECTED))) { bb_fill(MD_XOR, …); redraw = !ok; }` — for a
+  `G_IMAGE` being *deselected*, this condition is true via the `G_IMAGE`
+  special case, `ok` is `FALSE`, so `redraw` stays `TRUE`: the XOR fill
+  runs (undoing the background inversion `just_draw` applies to a
+  *selected* `G_IMAGE`, `gemoblib.c:766-770`) **and** `just_draw` runs
+  afterward (re-blitting the icon in its normal colour). The previous spec
+  described these as alternative paths ("toggle SELECTED via a fast XOR
+  fill when possible … and fall back to `just_draw` otherwise"), which is
+  correct for every other type but not for `G_IMAGE` deselection, where
+  both happen.
+- **(b) `fm_button` zeroes its next-object output (`FM_ONXTOB`) for a click
+  on an ordinary, non-`EDITABLE` object that doesn't end the dialog.**
+  `gemfmlib.c:264-267`: `if (cont && !(flags & EDITABLE)) new_obj = 0;`.
+  The previous spec's `form_button (56)` section stated the output is "next
+  object" without this qualifier — in practice, clicking a plain button
+  that doesn't exit the dialog reports `FM_ONXTOB = 0`, not the clicked
+  object's index; only an `EDITABLE`-field click (to move edit focus) or a
+  dialog-ending click (where the real index, possibly `|0x8000` for
+  `TOUCHEXIT` double-click, is preserved) yields a non-zero `FM_ONXTOB`.
+
+**Not a Compendium discrepancy** — no PDFs in `references/` for
+cross-check; a source-reading completion of the previous NewTOS spec's
+behaviour coverage for `objc_change`/`form_button`.
+
+**Decision:** `docs/api/aes/object-form.md` gained a "D-093a" callout under
+`objc_change (47)`, a "D-093b" callout under `form_button (56)`, and edge
+cases #21/#22.
+
+---
