@@ -20,7 +20,7 @@ use core::sync::atomic::{AtomicI16, Ordering};
 
 use super::Aespb;
 use crate::host::host;
-use crate::vdi::backend::{ClipRect, MonoSrc, PatternFill, Pel, RasterBackend, Rect};
+use crate::vdi::backend::{ClipRect, MonoSrc, PatternFill, Pel, RasterBackend, Rect, WriteMode};
 
 // ── OBJECT model ────────────────────────────────────────────────────
 
@@ -1101,7 +1101,7 @@ fn gr_rect(backend: &dyn RasterBackend, x: i16, y: i16, w: i16, h: i16, icol: Pe
                 fg: icol,
                 bg: WHITE,
                 pattern: &IP_PATTERNS[(p & 7) as usize],
-                opaque: false,
+                mode: WriteMode::Transparent,
             };
             backend.fill_pattern(x, y, w, h, pat, clip);
         }
@@ -1273,6 +1273,7 @@ fn just_draw(ob: &Object, x: i16, y: i16, clip: ClipRect, backend: &dyn RasterBa
                     y + (h - crate::vdi::font::CELL_H) / 2,
                     crate::vdi::font::glyph(0x08), // ST-font check mark
                     ink,
+                    WriteMode::Transparent,
                     clip,
                 );
             }
@@ -1371,7 +1372,7 @@ fn just_draw(ob: &Object, x: i16, y: i16, clip: ClipRect, backend: &dyn RasterBa
     // 3D panel, else white.
     if disabled {
         let fg = if d3 == FL3DBAK { GRAY_LT } else { WHITE };
-        let pat = PatternFill { fg, bg: WHITE, pattern: &STIPPLE_50, opaque: false };
+        let pat = PatternFill { fg, bg: WHITE, pattern: &STIPPLE_50, mode: WriteMode::Transparent };
         backend.fill_pattern(x, y, w, h, pat, clip);
     }
 
@@ -1460,7 +1461,7 @@ fn draw_text(
     };
     for (i, &c) in text.iter().enumerate() {
         let gx = tx + i as i16 * crate::vdi::font::CELL_W;
-        backend.draw_glyph(gx, ty, crate::vdi::font::glyph(c as u16), fg, box_clip);
+        backend.draw_glyph(gx, ty, crate::vdi::font::glyph(c as u16), fg, WriteMode::Transparent, box_clip);
     }
 }
 
@@ -1532,6 +1533,7 @@ fn draw_icon(
             oy + ib.ib_ychar,
             crate::vdi::font::glyph(c as u16),
             fg,
+            WriteMode::Transparent,
             clip,
         );
     }

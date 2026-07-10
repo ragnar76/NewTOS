@@ -46,12 +46,10 @@ use core::cell::UnsafeCell;
 
 use alloc::alloc::{alloc_zeroed, dealloc, Layout};
 
-use super::backend::{PatternFill, RasterBackend};
+use super::backend::{PatternFill, RasterBackend, WriteMode};
 use super::fill_patterns;
 use super::vwk::Vwk;
 use super::Vdipb;
-
-const WM_REPLACE: i16 = 0;
 
 /// Bounded seed stack. Sized for screen-area fills; an overflow simply
 /// truncates the fill rather than recursing unboundedly (like EmuTOS'
@@ -176,7 +174,7 @@ pub fn v_contourfill(pb: &Vdipb, vwk: &Vwk, backend: &dyn RasterBackend) {
         fg: vwk.fill_color,
         bg: 0,
         pattern,
-        opaque: vwk.wrt_mode == WM_REPLACE,
+        mode: WriteMode::from_wrt_mode(vwk.wrt_mode),
     };
 
     // Seed predicate on a pixel's original colour: fill-while-same for

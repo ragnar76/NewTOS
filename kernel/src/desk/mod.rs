@@ -33,7 +33,7 @@ pub mod model;
 pub mod redraw;
 pub mod win;
 
-use tos_api::vdi::backend::{ClipRect, PatternFill, RasterBackend};
+use tos_api::vdi::backend::{ClipRect, PatternFill, RasterBackend, WriteMode};
 
 use crate::kprintln;
 
@@ -509,7 +509,7 @@ fn paint_desktop_bg(backend: &dyn RasterBackend, clip: ClipRect) {
     let sh = backend.height() as i16;
     let d = global::patcol_desktop();
     let pat = IP_PATTERNS[(d >> 4) as usize & 7];
-    let bg = PatternFill { fg: d & 0x0F, bg: WHITE, pattern: &pat, opaque: true };
+    let bg = PatternFill { fg: d & 0x0F, bg: WHITE, pattern: &pat, mode: WriteMode::Replace };
     backend.fill_pattern(0, MENU_H, sw, sh - MENU_H, bg, clip);
     global::render_desktop_icons(backend, clip);
 }

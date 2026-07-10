@@ -8,7 +8,7 @@
 //! transparently in `text_color`; rotation is limited to the four right
 //! angles (only `chup == 0` is drawn horizontally here).
 
-use super::backend::{ClipRect, RasterBackend};
+use super::backend::{ClipRect, RasterBackend, WriteMode};
 use super::font;
 use super::vwk::Vwk;
 use super::Vdipb;
@@ -32,20 +32,28 @@ fn effect_row(bits: u8, row: usize, style: i16) -> (u8, i16) {
     (b, shift)
 }
 
-/// Blit one cell at `(x, y)` applying the active text effects.
+/// Blit one cell at `(x, y)` applying the active text effects, in the
+/// workstation writing mode.
 fn draw_cell(backend: &dyn RasterBackend, x: i16, y: i16, code: u16, vwk: &Vwk, clip: ClipRect) {
     let glyph = font::glyph(code);
     let style = vwk.style;
     let mut cell = [0u8; 16];
     for (row, out) in cell.iter_mut().enumerate() {
         let (b, shift) = effect_row(glyph[row], row, style);
-        *out = b >> shift.clamp(0, 7);
+        let mut b = b >> shift.clamp(0, 7);
+        if style & T_THICKEN != 0 {
+            // Bold: overstrike one pixel to the right, baked into the same
+            // source cell (EmuTOS ORs a right-shifted copy into the source
+            // before the write-mode blit). Baking it — rather than blitting
+            // the glyph twice — keeps a single source bitmap, so the four
+            // write modes (notably replace/xor, where a second blit would
+            // re-clear or re-invert the cell) stay correct.
+            b |= b >> font::THICKEN;
+        }
+        *out = b;
     }
-    backend.draw_glyph(x, y, &cell, vwk.text_color, clip);
-    if style & T_THICKEN != 0 {
-        // Bold: overstrike one pixel to the right.
-        backend.draw_glyph(x + font::THICKEN, y, &cell, vwk.text_color, clip);
-    }
+    let mode = WriteMode::from_wrt_mode(vwk.wrt_mode);
+    backend.draw_glyph(x, y, &cell, vwk.text_color, mode, clip);
 }
 
 /// Vertical-alignment reference → glyph-cell top, for `v_align`.
@@ -72,8 +80,9 @@ fn underline(backend: &dyn RasterBackend, x0: i16, top_y: i16, width: i16, vwk: 
     // ul_size=1). That drops the line to cell row 15 (`13 + 2`), i.e. two
     // rows under the baseline, keeping it inside the cell.
     let y = top_y + font::TOP + 1 + font::UL_SIZE;
+    let mode = WriteMode::from_wrt_mode(vwk.wrt_mode);
     for r in 0..font::UL_SIZE {
-        backend.draw_line(x0, y + r, x0 + width - 1, y + r, vwk.text_color, clip, 0xFFFF);
+        backend.draw_line(x0, y + r, x0 + width - 1, y + r, vwk.text_color, mode, clip, 0xFFFF);
     }
 }
 

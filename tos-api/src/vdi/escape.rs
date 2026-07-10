@@ -9,7 +9,7 @@
 
 use core::sync::atomic::{AtomicBool, AtomicI16, Ordering};
 
-use super::backend::{ClipRect, RasterBackend};
+use super::backend::{ClipRect, RasterBackend, WriteMode};
 use super::{font, mouse, Vdipb};
 
 // Alpha colours (Atari style: black text on white).
@@ -36,7 +36,8 @@ fn put_cell(backend: &dyn RasterBackend, col: i16, row: i16, code: u16) {
     let clip = full_clip(backend);
     let (fg, bg) = if REVERSE.load(Ordering::Relaxed) { (BG, FG) } else { (FG, BG) };
     backend.fill_rect(x, y, font::CELL_W, font::CELL_H, bg, clip);
-    backend.draw_glyph(x, y, font::glyph(code), fg, clip);
+    // The cell background is painted above, so the glyph blits transparently.
+    backend.draw_glyph(x, y, font::glyph(code), fg, WriteMode::Transparent, clip);
 }
 
 /// Erase a run of cells on `row` from `col0` to `col1` (inclusive).

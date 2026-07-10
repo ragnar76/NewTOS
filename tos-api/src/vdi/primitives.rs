@@ -5,12 +5,10 @@
 //! the actual pixels go through the [`RasterBackend`]. Coordinates are
 //! raster (RC, origin top-left), matching the screen workstation.
 
-use super::backend::{ClipRect, PatternFill, Pel, RasterBackend};
+use super::backend::{ClipRect, PatternFill, Pel, RasterBackend, WriteMode};
 use super::fill_patterns;
 use super::vwk::Vwk;
 use super::Vdipb;
-
-const WM_REPLACE: i16 = 0;
 
 /// The six built-in line-style dash masks (`vdi_line.c LINE_STYLE`);
 /// index 6 (style 7) is the user mask `ud_ls`.
@@ -37,32 +35,37 @@ fn segment(
     x1: i16,
     y1: i16,
     color: Pel,
+    mode: WriteMode,
     clip: ClipRect,
     width: i16,
     mask: u16,
 ) {
     if width <= 1 {
-        backend.draw_line(x0, y0, x1, y1, color, clip, mask);
+        backend.draw_line(x0, y0, x1, y1, color, mode, clip, mask);
         return;
     }
+    // A wide line draws parallel solid copies (`wideline`, always solid).
     let half = (width - 1) / 2;
     let horizontalish = (x1 as i32 - x0 as i32).abs() >= (y1 as i32 - y0 as i32).abs();
     for off in -half..=half {
         if horizontalish {
-            backend.draw_line(x0, y0 + off, x1, y1 + off, color, clip, 0xFFFF);
+            backend.draw_line(x0, y0 + off, x1, y1 + off, color, mode, clip, 0xFFFF);
         } else {
-            backend.draw_line(x0 + off, y0, x1 + off, y1, color, clip, 0xFFFF);
+            backend.draw_line(x0 + off, y0, x1 + off, y1, color, mode, clip, 0xFFFF);
         }
     }
 }
 
-/// Draw a polyline through `n` `(x,y)` pairs read from `pts(i)`.
+/// Draw a polyline through `n` `(x,y)` pairs read from `pts(i)` in the
+/// given writing `mode` (EmuTOS `polyline` → `abline(&line, vwk->wrt_mode,
+/// color)` — perimeters and strokes honour the workstation mode).
 #[allow(clippy::too_many_arguments)]
 pub(super) fn polyline(
     backend: &dyn RasterBackend,
     n: usize,
     mut pt: impl FnMut(usize) -> (i16, i16),
     color: Pel,
+    mode: WriteMode,
     clip: ClipRect,
     width: i16,
     mask: u16,
@@ -73,7 +76,7 @@ pub(super) fn polyline(
     for i in 0..n - 1 {
         let (x0, y0) = pt(i);
         let (x1, y1) = pt(i + 1);
-        segment(backend, x0, y0, x1, y1, color, clip, width, mask);
+        segment(backend, x0, y0, x1, y1, color, mode, clip, width, mask);
     }
 }
 
@@ -105,7 +108,7 @@ pub fn vr_recfl(pb: &Vdipb, vwk: &Vwk, backend: &dyn RasterBackend) {
         fg: vwk.fill_color,
         bg: 0, // background = colour 0
         pattern,
-        opaque: vwk.wrt_mode == WM_REPLACE,
+        mode: WriteMode::from_wrt_mode(vwk.wrt_mode),
     };
     backend.fill_pattern(x1, y1, x2 - x1 + 1, y2 - y1 + 1, fill, vwk.clip_rect());
 }
@@ -189,22 +192,26 @@ pub fn v_fillarea(pb: &Vdipb, vwk: &Vwk, backend: &dyn RasterBackend) {
         *slot = (pb.ptsin(2 * i), pb.ptsin(2 * i + 1));
     }
     let clip = vwk.clip_rect();
+    let mode = WriteMode::from_wrt_mode(vwk.wrt_mode);
     if let Some(pattern) = fill_patterns::select(vwk) {
         let fill = PatternFill {
             fg: vwk.fill_color,
             bg: 0,
             pattern,
-            opaque: vwk.wrt_mode == WM_REPLACE,
+            mode,
         };
         fill_polygon(backend, n, &v, fill, clip);
     }
     if vwk.fill_per {
-        // Outline: the polygon closed back to the first vertex.
+        // Outline: the polygon closed back to the first vertex, in the
+        // fill colour and the workstation writing mode (EmuTOS `polygon`
+        // → `polyline(vwk, ..., vwk->fill_color)`, `vdi_fill.c:608`).
         polyline(
             backend,
             n + 1,
             |i| v[i % n],
             vwk.fill_color,
+            mode,
             clip,
             1,
             0xFFFF,
@@ -225,6 +232,7 @@ pub fn v_pline(pb: &Vdipb, vwk: &Vwk, backend: &dyn RasterBackend) {
         count as usize,
         |i| (pb.ptsin(2 * i), pb.ptsin(2 * i + 1)),
         vwk.line_color,
+        WriteMode::from_wrt_mode(vwk.wrt_mode),
         vwk.clip_rect(),
         vwk.line_width,
         line_mask(vwk),
@@ -252,6 +260,9 @@ pub fn v_pmarker(pb: &Vdipb, vwk: &Vwk, backend: &dyn RasterBackend) {
     let glyph = MARKERS[(vwk.mark_index.clamp(0, 5)) as usize];
     let scale = vwk.mark_scale.max(1);
     let clip = vwk.clip_rect();
+    // Markers honour the workstation writing mode (EmuTOS `v_pmarker`
+    // borrows the polyline path, which draws with `vwk->wrt_mode`).
+    let mode = WriteMode::from_wrt_mode(vwk.wrt_mode);
     for p in 0..count as usize {
         let (cx, cy) = (pb.ptsin(2 * p), pb.ptsin(2 * p + 1));
         let mut k = 1usize; // skip num_polylines header
@@ -264,6 +275,7 @@ pub fn v_pmarker(pb: &Vdipb, vwk: &Vwk, backend: &dyn RasterBackend) {
                 npts,
                 |i| (cx + scale * glyph[k + 2 * i], cy + scale * glyph[k + 2 * i + 1]),
                 vwk.mark_color,
+                mode,
                 clip,
                 1,
                 0xFFFF,

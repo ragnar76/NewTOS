@@ -21,6 +21,54 @@
 /// (RGB for the bring-up truecolor framebuffer).
 pub type Pel = u8;
 
+/// The VDI writing mode (`wrt_mode`), selecting how a primitive's
+/// foreground pixels combine with what is already on screen. Mapped from
+/// the **0-based** `wrt_mode` the `Vwk` stores (`vswr_mode` stores
+/// `INTIN[0] - 1`; EmuTOS `WM_REPLACE`/`WM_TRANS`/`WM_XOR`/`WM_ERASE` =
+/// 0/1/2/3). Spec: `docs/api/vdi/attributes/_mode-clip-color.md`.
+///
+/// A primitive presents each candidate pixel with a boolean "source bit":
+/// for a filled span it is the interior-pattern bit, for a dashed line it
+/// is the `LN_MASK` bit, for a glyph it is the font bit. The mode decides
+/// what (if anything) is written:
+///
+/// | mode | source **set** | source **clear** |
+/// |------|----------------|------------------|
+/// | `Replace`        | foreground | background |
+/// | `Transparent`    | foreground | untouched  |
+/// | `Xor`            | complement | untouched  |
+/// | `RevTransparent` | untouched  | foreground |
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+pub enum WriteMode {
+    /// `WM_REPLACE` (0, the default): foreground on set bits, background
+    /// on clear bits — opaque, so it also clears the cell/gap.
+    Replace,
+    /// `WM_TRANS` (1): foreground on set bits; clear bits untouched.
+    Transparent,
+    /// `WM_XOR` (2): complement the destination on set bits; clear bits
+    /// untouched. Self-inverse (drawing twice restores the original).
+    Xor,
+    /// `WM_ERASE` (3), reverse-transparent: foreground on **clear** bits;
+    /// set bits untouched — the inverse of [`Transparent`](Self::Transparent).
+    RevTransparent,
+}
+
+impl WriteMode {
+    /// Map the **0-based** `wrt_mode` stored in the [`Vwk`](crate::vdi::vwk::Vwk)
+    /// to a [`WriteMode`]. Out-of-range values fall back to
+    /// [`Replace`](Self::Replace) (`DEF_WRT_MODE`), matching how
+    /// `vswr_mode` clamps an out-of-range `INTIN[0]`.
+    #[inline]
+    pub fn from_wrt_mode(wrt_mode: i16) -> WriteMode {
+        match wrt_mode {
+            1 => WriteMode::Transparent,
+            2 => WriteMode::Xor,
+            3 => WriteMode::RevTransparent,
+            _ => WriteMode::Replace,
+        }
+    }
+}
+
 /// The set of raster primitives the VDI layer needs from the device.
 ///
 /// Intentionally minimal for the workstation-lifecycle milestone
@@ -66,20 +114,38 @@ pub trait RasterBackend: Sync {
     /// (inclusive device coordinates — the caller passes the workstation
     /// clip rectangle). Endpoints are inclusive. `mask` is the 16-bit
     /// dash pattern (`0xFFFF` = solid), consumed one bit per plotted step
-    /// and rotated, matching the VDI `LN_MASK`.
+    /// and rotated, matching the VDI `LN_MASK`; a set mask bit is the
+    /// primitive's "source set". `mode` selects the raster combination:
+    /// `Replace` also paints the background on the dash gaps, `Xor`
+    /// complements the dash-on pixels, `RevTransparent` paints the gaps.
     #[allow(clippy::too_many_arguments)]
-    fn draw_line(&self, x0: i16, y0: i16, x1: i16, y1: i16, pel: Pel, clip: ClipRect, mask: u16);
+    fn draw_line(
+        &self,
+        x0: i16,
+        y0: i16,
+        x1: i16,
+        y1: i16,
+        pel: Pel,
+        mode: WriteMode,
+        clip: ClipRect,
+        mask: u16,
+    );
 
     /// Fill the rectangle `[x, x+w) × [y, y+h)` with the monochrome
-    /// pattern in [`PatternFill`], expanded into colour. Clipped to
-    /// `clip` ∩ the visible area.
+    /// pattern in [`PatternFill`], expanded into colour per its
+    /// [`WriteMode`](PatternFill::mode). Clipped to `clip` ∩ the visible
+    /// area.
     fn fill_pattern(&self, x: i16, y: i16, w: i16, h: i16, fill: PatternFill, clip: ClipRect);
 
     /// Blit an 8-wide × 16-tall monochrome glyph with its top-left at
     /// `(x, y)` in colour `fg`. Bit 7 (`0x80`) of each byte is the
-    /// leftmost pixel; only set bits are drawn (transparent). Clipped to
-    /// `clip` ∩ the visible area.
-    fn draw_glyph(&self, x: i16, y: i16, glyph: &[u8; 16], fg: Pel, clip: ClipRect);
+    /// leftmost pixel; the font bit is the primitive's "source set".
+    /// `mode` selects the raster combination — `Transparent` draws only
+    /// set bits (the common text case), `Replace` also clears the cell
+    /// background (VDI background pen 0), `Xor` complements, and
+    /// `RevTransparent` draws the clear bits. Clipped to `clip` ∩ the
+    /// visible area.
+    fn draw_glyph(&self, x: i16, y: i16, glyph: &[u8; 16], fg: Pel, mode: WriteMode, clip: ClipRect);
 
     /// Blit a monochrome source ([`MonoSrc`]) into the screen rectangle
     /// `dst`, expanding set bits to `fg` and (when `opaque`) clear bits
@@ -122,23 +188,24 @@ pub struct MonoSrc<'a> {
     pub y: i16,
 }
 
-/// A monochrome fill source: a pattern expanded into a foreground /
-/// background colour. The `pattern` is a run of 16-bit rows whose length
-/// is a power of two; scanline `yy` uses row `pattern[yy & (len-1)]`,
-/// pixel `xx` uses bit `0x8000 >> (xx & 0xF)` (patterns are
-/// screen-aligned to absolute device coordinates). A set bit writes
-/// `fg`; a clear bit writes `bg` when `opaque`, else leaves the pixel
-/// unchanged.
+/// A monochrome fill source: a pattern expanded into colour per a
+/// [`WriteMode`]. The `pattern` is a run of 16-bit rows whose length is a
+/// power of two; scanline `yy` uses row `pattern[yy & (len-1)]`, pixel
+/// `xx` uses bit `0x8000 >> (xx & 0xF)` (patterns are screen-aligned to
+/// absolute device coordinates). The pattern bit is the primitive's
+/// "source set"; [`mode`](Self::mode) decides what is written for set and
+/// clear bits (see [`WriteMode`]).
 #[derive(Clone, Copy)]
 pub struct PatternFill<'a> {
-    /// Colour for set bits.
+    /// Colour for the foreground pixels (see [`WriteMode`]).
     pub fg: Pel,
-    /// Colour for clear bits (used only when `opaque`).
+    /// Colour for the background pixels (used only by
+    /// [`WriteMode::Replace`]).
     pub bg: Pel,
     /// The pattern rows (length a power of two).
     pub pattern: &'a [u16],
-    /// Write `bg` on clear bits (replace) vs. leave them (transparent).
-    pub opaque: bool,
+    /// The raster combination applied to the pattern.
+    pub mode: WriteMode,
 }
 
 /// Inclusive clipping rectangle in device coordinates, as carried by the

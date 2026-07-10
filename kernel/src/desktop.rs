@@ -17,7 +17,7 @@
 use core::cell::UnsafeCell;
 
 use tos_api::aes::object::{IconBlk, Object, TedInfo};
-use tos_api::vdi::backend::{ClipRect, PatternFill, RasterBackend};
+use tos_api::vdi::backend::{ClipRect, PatternFill, RasterBackend, WriteMode};
 
 use crate::kprintln;
 
@@ -472,7 +472,7 @@ fn paint_desktop_bg(backend: &dyn RasterBackend, clip: ClipRect) {
     // intersects with `clip`, so only the clipped region is repainted.
     let d = patcol_desktop();
     let pat = IP_PATTERNS[(d >> 4) as usize & 7];
-    let bg = PatternFill { fg: d & 0x0F, bg: WHITE, pattern: &pat, opaque: true };
+    let bg = PatternFill { fg: d & 0x0F, bg: WHITE, pattern: &pat, mode: WriteMode::Replace };
     backend.fill_pattern(0, MENU_H, sw, sh - MENU_H, bg, clip);
 
     // Draw the drive / trash fixtures as an AES G_ICON tree over the

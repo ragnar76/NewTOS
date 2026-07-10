@@ -4,13 +4,11 @@
 //! Every sub-primitive reduces to the line / fill primitives in
 //! [`primitives`](super::primitives); `v_gdp` only generates geometry.
 
-use super::backend::{PatternFill, RasterBackend};
+use super::backend::{PatternFill, RasterBackend, WriteMode};
 use super::fill_patterns;
 use super::primitives::{fill_polygon, line_mask, polyline};
 use super::vwk::Vwk;
 use super::Vdipb;
-
-const WM_REPLACE: i16 = 0;
 
 // GDP sub-function codes (`CONTRL[5]`).
 const BAR: i16 = 1;
@@ -57,7 +55,7 @@ fn fill_of(vwk: &Vwk) -> Option<PatternFill<'_>> {
         fg: vwk.fill_color,
         bg: 0,
         pattern,
-        opaque: vwk.wrt_mode == WM_REPLACE,
+        mode: WriteMode::from_wrt_mode(vwk.wrt_mode),
     })
 }
 
@@ -66,12 +64,13 @@ fn fill_of(vwk: &Vwk) -> Option<PatternFill<'_>> {
 fn bar(pb: &Vdipb, vwk: &Vwk, backend: &dyn RasterBackend) {
     let (x1, y1, x2, y2) = rect(pb);
     let clip = vwk.clip_rect();
+    let mode = WriteMode::from_wrt_mode(vwk.wrt_mode);
     if let Some(fill) = fill_of(vwk) {
         backend.fill_pattern(x1, y1, x2 - x1 + 1, y2 - y1 + 1, fill, clip);
     }
     if vwk.fill_per {
         let pts = [(x1, y1), (x2, y1), (x2, y2), (x1, y2), (x1, y1)];
-        polyline(backend, 5, |i| pts[i], vwk.fill_color, clip, 1, 0xFFFF);
+        polyline(backend, 5, |i| pts[i], vwk.fill_color, mode, clip, 1, 0xFFFF);
     }
 }
 
@@ -127,6 +126,7 @@ fn curve(pb: &Vdipb, vwk: &Vwk, backend: &dyn RasterBackend, closed: bool, to_ce
         n += 1;
     }
     let clip = vwk.clip_rect();
+    let mode = WriteMode::from_wrt_mode(vwk.wrt_mode);
     if closed || to_centre {
         if let Some(fill) = fill_of(vwk) {
             fill_polygon(backend, n, &pts, fill, clip);
@@ -141,9 +141,9 @@ fn curve(pb: &Vdipb, vwk: &Vwk, backend: &dyn RasterBackend, closed: bool, to_ce
     // which draws the boundary — only when `fill_per` — in the **fill
     // colour**, solid and width 1 (`vdi_fill.c:606-608`).
     if !closed && !to_centre {
-        polyline(backend, n, |i| pts[i], vwk.line_color, clip, vwk.line_width, line_mask(vwk));
+        polyline(backend, n, |i| pts[i], vwk.line_color, mode, clip, vwk.line_width, line_mask(vwk));
     } else if vwk.fill_per {
-        polyline(backend, n + 1, |i| pts[i % n], vwk.fill_color, clip, 1, 0xFFFF);
+        polyline(backend, n + 1, |i| pts[i % n], vwk.fill_color, mode, clip, 1, 0xFFFF);
     }
 }
 
@@ -179,14 +179,15 @@ fn rbox(pb: &Vdipb, vwk: &Vwk, backend: &dyn RasterBackend, filled: bool) {
         }
     }
     let clip = vwk.clip_rect();
+    let mode = WriteMode::from_wrt_mode(vwk.wrt_mode);
     if filled {
         if let Some(fill) = fill_of(vwk) {
             fill_polygon(backend, n, &pts, fill, clip);
         }
         if vwk.fill_per {
-            polyline(backend, n + 1, |i| pts[i % n], vwk.fill_color, clip, 1, 0xFFFF);
+            polyline(backend, n + 1, |i| pts[i % n], vwk.fill_color, mode, clip, 1, 0xFFFF);
         }
     } else {
-        polyline(backend, n + 1, |i| pts[i % n], vwk.line_color, clip, vwk.line_width, 0xFFFF);
+        polyline(backend, n + 1, |i| pts[i % n], vwk.line_color, mode, clip, vwk.line_width, 0xFFFF);
     }
 }

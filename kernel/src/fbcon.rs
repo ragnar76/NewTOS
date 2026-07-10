@@ -12,7 +12,7 @@
 
 use core::sync::atomic::{AtomicBool, AtomicI16, Ordering};
 
-use tos_api::vdi::backend::{ClipRect, RasterBackend, Rect};
+use tos_api::vdi::backend::{ClipRect, RasterBackend, Rect, WriteMode};
 use tos_api::vdi::font;
 
 use crate::vdi_backend::{self, VDI_SCREEN};
@@ -104,7 +104,8 @@ fn put_glyph(b: u8) {
     let (x, y) = (col * CELL_W, row * CELL_H);
     let clip = full_clip();
     VDI_SCREEN.fill_rect(x, y, CELL_W, CELL_H, BG, clip);
-    VDI_SCREEN.draw_glyph(x, y, font::glyph(b as u16), FG, clip);
+    // Cell background is cleared above, so the glyph blits transparently.
+    VDI_SCREEN.draw_glyph(x, y, font::glyph(b as u16), FG, WriteMode::Transparent, clip);
     let nc = col + 1;
     if nc >= cols() {
         newline();

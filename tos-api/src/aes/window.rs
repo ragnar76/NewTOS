@@ -19,7 +19,7 @@
 
 use super::Aespb;
 use crate::host::host;
-use crate::vdi::backend::{ClipRect, Pel, PatternFill, RasterBackend, Rect};
+use crate::vdi::backend::{ClipRect, Pel, PatternFill, RasterBackend, Rect, WriteMode};
 use core::cell::UnsafeCell;
 use core::sync::atomic::{AtomicUsize, Ordering};
 
@@ -469,7 +469,7 @@ fn gadget_sel(r: Grect, ch: u16, sel: bool, backend: &dyn RasterBackend, clip: C
     bevel(r, !sel, backend, clip);
     let gx = r.x + (r.w - 8) / 2;
     let gy = r.y + (r.h - 16) / 2;
-    backend.draw_glyph(gx, gy, crate::vdi::font::glyph(ch), BLACK, clip);
+    backend.draw_glyph(gx, gy, crate::vdi::font::glyph(ch), BLACK, WriteMode::Transparent, clip);
 }
 
 /// Draw a 2-pixel 3D bevel: `raised` = white top/left + dark-grey
@@ -499,7 +499,7 @@ fn draw_label(x: i16, y: i16, max_w: i16, s: &[u8], backend: &dyn RasterBackend,
         if b == 0 || cx + 8 > x + max_w {
             break;
         }
-        backend.draw_glyph(cx, cy, crate::vdi::font::glyph(b as u16), BLACK, clip);
+        backend.draw_glyph(cx, cy, crate::vdi::font::glyph(b as u16), BLACK, WriteMode::Transparent, clip);
         cx += 8;
     }
 }
@@ -542,7 +542,7 @@ fn draw_frame(w: &Window, istop: bool, backend: &dyn RasterBackend) {
                 top,
                 name_w,
                 GAD - 1,
-                PatternFill { fg: BLACK, bg: WHITE, pattern: &TITLE_STIPPLE, opaque: true },
+                PatternFill { fg: BLACK, bg: WHITE, pattern: &TITLE_STIPPLE, mode: WriteMode::Replace },
                 clip,
             );
         }

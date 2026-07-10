@@ -13,7 +13,7 @@
 
 use core::sync::atomic::{AtomicU32, Ordering};
 
-use tos_api::vdi::backend::{ClipRect, MonoSrc, PatternFill, Pel, RasterBackend, Rect};
+use tos_api::vdi::backend::{ClipRect, MonoSrc, PatternFill, Pel, RasterBackend, Rect, WriteMode};
 
 use crate::hal::framebuffer::{rgb, Framebuffer};
 
@@ -124,6 +124,73 @@ impl VdiScreen {
         unsafe { crate::arch::aarch64::mmu::clean_dcache_range(start, end - start) };
     }
 
+    /// Combine one candidate pixel into the framebuffer per the VDI
+    /// [`WriteMode`], where `set` is the primitive's source bit
+    /// (pattern / dash / glyph) at this pixel. This is the single point
+    /// that realises the four modes from EmuTOS' truecolor VDI driver
+    /// (`swblit_vertical_line16`/`draw_rect_common`, `vdi_textblit.c`).
+    /// Bounds are enforced by [`Framebuffer::put_pixel`] and
+    /// [`Self::xor_pixel`].
+    #[inline]
+    fn combine(fb: &dyn Framebuffer, x: u32, y: u32, set: bool, mode: WriteMode, fg: u32, bg: u32) {
+        match mode {
+            // fg on set bits, bg on clear bits (opaque).
+            WriteMode::Replace => fb.put_pixel(x, y, if set { fg } else { bg }),
+            // fg on set bits; clear bits untouched.
+            WriteMode::Transparent => {
+                if set {
+                    fb.put_pixel(x, y, fg);
+                }
+            }
+            // Complement the destination on set bits; clear untouched.
+            WriteMode::Xor => {
+                if set {
+                    Self::xor_pixel(fb, x, y);
+                }
+            }
+            // Reverse-transparent: fg on clear bits; set bits untouched.
+            WriteMode::RevTransparent => {
+                if !set {
+                    fb.put_pixel(x, y, fg);
+                }
+            }
+        }
+    }
+
+    /// Complement the RGB of one pixel in place (VDI `WM_XOR`).
+    ///
+    /// **XOR design decision (chunky-framebuffer reimplementation).** Our
+    /// device is a chunky 32-bpp XRGB framebuffer with no stored palette
+    /// index, so the planar Atari's index-XOR does not apply directly. We
+    /// reimplement the *observable contract* of `WM_XOR`: EmuTOS' own
+    /// truecolor VDI driver XORs the **stored colour value** — it writes
+    /// `*work = ~temp` (`vdi_line.c:494`, `draw_rect_common`) and
+    /// `*q = ~*q` (`vdi_textblit.c`, glyph blit), i.e. it complements the
+    /// destination and *ignores the pen*. We do exactly that: invert the
+    /// low 24 RGB bits (keeping the top X/alpha byte so the pixel stays
+    /// opaque).
+    ///
+    /// This is chosen over a `dest ^= fg_rgb` scheme deliberately:
+    /// (1) it is **self-inverse** — two applications restore the original
+    /// pixel, the property GEM relies on for rubber-band / drag feedback;
+    /// (2) it matches EmuTOS' truecolor driver bit-for-bit on real palette
+    /// pixels; and (3) unlike `dest ^ pen`, it is **always visible** for
+    /// any pen — a `dest ^ pen` with the common black pen (RGB 0) would be
+    /// a no-op and the feedback would vanish.
+    #[inline]
+    fn xor_pixel(fb: &dyn Framebuffer, x: u32, y: u32) {
+        if x >= fb.width() || y >= fb.height() {
+            return;
+        }
+        let off = (y * fb.stride_px() + x) as usize;
+        // SAFETY: bounds checked above; one aligned u32 read-modify-write
+        // inside the pixel store, on the single IRQ-off VDI trap path.
+        unsafe {
+            let p = fb.pixels().add(off);
+            let v = p.read_volatile();
+            p.write_volatile(v ^ 0x00FF_FFFF);
+        }
+    }
 }
 
 impl RasterBackend for VdiScreen {
@@ -202,12 +269,27 @@ impl RasterBackend for VdiScreen {
     }
 
     #[allow(clippy::too_many_arguments)]
-    fn draw_line(&self, x0: i16, y0: i16, x1: i16, y1: i16, pel: Pel, clip: ClipRect, mask: u16) {
+    fn draw_line(
+        &self,
+        x0: i16,
+        y0: i16,
+        x1: i16,
+        y1: i16,
+        pel: Pel,
+        mode: WriteMode,
+        clip: ClipRect,
+        mask: u16,
+    ) {
         let fb = active_fb();
         let color = Self::pel_to_rgb(pel);
-        // Bresenham; plot only pixels inside the inclusive clip rect (and
-        // the framebuffer, which `put_pixel` enforces too). `bit` walks
-        // the 16-bit dash mask from the MSB, one step per pixel.
+        // Background pen (pen 0) for Replace's dash gaps — EmuTOS
+        // `swblit_vertical_line16` writes `bgcol = palette[0]` on the
+        // dash-off pixels in `WM_REPLACE`.
+        let bg = Self::pel_to_rgb(0);
+        // Bresenham; touch only pixels inside the inclusive clip rect (and
+        // the framebuffer, which `combine` enforces too). `bit` walks the
+        // 16-bit dash mask from the MSB, one step per pixel; a set mask bit
+        // is the line's "source set" for the write mode.
         let (mut x, mut y) = (x0 as i32, y0 as i32);
         let (xe, ye) = (x1 as i32, y1 as i32);
         let dx = (xe - x).abs();
@@ -217,13 +299,13 @@ impl RasterBackend for VdiScreen {
         let mut err = dx + dy;
         let mut bit: u32 = 0x8000;
         loop {
-            if mask as u32 & bit != 0
-                && x >= clip.xmn as i32
+            if x >= clip.xmn as i32
                 && x <= clip.xmx as i32
                 && y >= clip.ymn as i32
                 && y <= clip.ymx as i32
             {
-                fb.put_pixel(x as u32, y as u32, color);
+                let dash_on = mask as u32 & bit != 0;
+                Self::combine(fb, x as u32, y as u32, dash_on, mode, color, bg);
             }
             bit = if bit == 1 { 0x8000 } else { bit >> 1 };
             if x == xe && y == ye {
@@ -272,17 +354,14 @@ impl RasterBackend for VdiScreen {
             // Pattern rows are screen-aligned to the absolute y coordinate.
             let row = fill.pattern[(yy as usize) & pmask];
             for xx in x0..=x1 {
-                if row & (0x8000u16 >> (xx & 0xF)) != 0 {
-                    fb.put_pixel(xx as u32, yy as u32, fg_rgb);
-                } else if fill.opaque {
-                    fb.put_pixel(xx as u32, yy as u32, bg_rgb);
-                }
+                let set = row & (0x8000u16 >> (xx & 0xF)) != 0;
+                Self::combine(fb, xx as u32, yy as u32, set, fill.mode, fg_rgb, bg_rgb);
             }
         }
         Self::clean(fb, x0 as u32, y0 as u32, x1 as u32, y1 as u32);
     }
 
-    fn draw_glyph(&self, x: i16, y: i16, glyph: &[u8; 16], fg: Pel, clip: ClipRect) {
+    fn draw_glyph(&self, x: i16, y: i16, glyph: &[u8; 16], fg: Pel, mode: WriteMode, clip: ClipRect) {
         let fb = active_fb();
         // The 8×16 cell intersected with the clip rectangle and the
         // screen — only pixels inside this inclusive box are touched.
@@ -296,13 +375,15 @@ impl RasterBackend for VdiScreen {
             return;
         };
         let fg_rgb = Self::pel_to_rgb(fg);
+        // Replace's cell-clear background is VDI pen 0 (`bgcol = palette[0]`
+        // in EmuTOS `vdi_textblit.c` `WM_REPLACE`).
+        let bg_rgb = Self::pel_to_rgb(0);
         for yy in y0..=y1 {
             let bits = glyph[(yy - y as i32) as usize];
             for xx in x0..=x1 {
                 let col = xx - x as i32; // 0..=7 within the cell
-                if bits & (0x80u8 >> col) != 0 {
-                    fb.put_pixel(xx as u32, yy as u32, fg_rgb);
-                }
+                let set = bits & (0x80u8 >> col) != 0;
+                Self::combine(fb, xx as u32, yy as u32, set, mode, fg_rgb, bg_rgb);
             }
         }
         Self::clean(fb, x0 as u32, y0 as u32, x1 as u32, y1 as u32);
