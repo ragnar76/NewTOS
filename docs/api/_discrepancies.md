@@ -3080,3 +3080,133 @@ needed, just confirmation that NewTOS should not add pattern-fill
 capability to `vro_cpyfm`/`vrt_cpyfm` that the reference never had.
 
 ---
+
+## D-083: `v_escape` sub 12 (`v_curtext`/`escfn12`) cannot output character code `0xFF` — `Crawio`'s own read/write sentinel intercepts it (a genuine interaction gap between two independently-correct pieces of source, not a spec-reading error)
+
+**Date:** 2026-07-10
+**Phase 00b spec:** `docs/api/vdi/_escape.md`
+
+**EmuTOS:** `escfn12` (`v_curtext`, VDI opcode 5 sub 12) writes cursor-
+addressable alpha text by looping over the caller's `INTIN[]` character
+array and sending each one through the local `crawio()` wrapper
+(`vdi/vdi_esc.c:196-207`):
+```c
+static void escfn12(Vwk * vwk)
+{
+    int cnt;
+    WORD *chr;
+
+    cnt = CONTRL[3];            /* get the character count */
+    chr = INTIN;                /* address of the character array */
+
+    while (cnt--) {
+        crawio(*chr++);         /* raw i/o to standard input/output */
+    }
+}
+```
+`crawio()` (`vdi_esc.c:29-32`) is a thin wrapper around the GEMDOS trap:
+```c
+static LONG crawio(WORD ch)
+{
+    return Crawio(ch);          /* #define Crawio(w) trap1(0x06, w) */
+}
+```
+GEMDOS function `0x06` is `xrawio` (`bdos/console.c:441-453`):
+```c
+long xrawio(int parm)
+{
+    int i;
+
+    if (parm == 0xFF)
+    {
+        i = HXFORM(run->p_uft[0]);
+        return constat(i) ? getch(i) : 0L;
+    }
+
+    Bconout(HXFORM(run->p_uft[1]), parm);
+    return 0; /* dummy */
+}
+```
+`xrawio` uses the exact WORD value `0x00FF` as a **read-vs-write
+sentinel**: `parm == 0xFF` means "read a character from stdin instead of
+writing one" (already documented in
+[`docs/api/gemdos/console/06-crawio.md`](gemdos/console/06-crawio.md),
+edge case 3, which independently confirms the comparison is against the
+*full* WORD `0x00FF`, not just the low byte). A `v_curtext`
+character-array entry of exactly `INTIN[i] = 0x00FF` (character/glyph
+code **255**) therefore never reaches `Bconout`; instead `xrawio` probes
+`constat()` and, if a key is pending, consumes it via `getch()` — a
+side-effecting **read**, not the intended **write**. The character byte
+that should have appeared on screen is silently dropped either way.
+
+**Is `0xFF` a real, reachable glyph, or an edge-of-range curiosity?**
+Confirmed reachable: the standard EmuTOS/Atari system font
+(`bios/fnt_st_8x8.c:150-151`) declares `first_ade=0, last_ade=255` — the
+full byte range 0–255 is defined glyph data, so code 255 is a normal,
+renderable character, not an out-of-font sentinel value the font itself
+reserves.
+
+**Scope — `v_curtext` only:** the other `v_escape` sub-functions that
+write to the console (`v_exit_cur`/`v_enter_cur`/cursor moves/erase/
+reverse-video, subs 2–10, 13, 14) use `bios_conws()` →
+`Bconout(2, ch)` directly (`vdi_esc.c:39-43`), which has no read/write
+duality — every byte value, including `0xFF`, is written unconditionally.
+The `0xFF` gap is specific to the one sub-function (12) that was
+deliberately routed through raw GEMDOS console I/O instead of the BIOS
+path (see `_escape.md` edge case 5 for *why* `v_curtext` uses `Crawio`
+at all: unrelated to this gap — GEMDOS `Cconout`/`Crawio` semantics for
+tab expansion / column tracking, not a read/write concern).
+
+**Not avoidable by the caller within the documented ABI:** `v_curtext`
+passes one character per `WORD` slot in `INTIN[]`; a caller wanting to
+display glyph 255 has no alternate encoding available through this VDI
+entry point (there is no escaping/doubling convention) — the character
+is categorically unwritable via `v_curtext`, for any `v_escape` caller,
+in every EmuTOS build (no `CONF_WITH_*` gates either function).
+
+**This is a genuine EmuTOS source-level gap** — not a documentation
+misreading — but it differs in *kind* from D-081/D-082: those were
+single-function oversights (an unguarded array read; a pattern pointer
+nulled before its own flag check). This one is an **emergent
+interaction** between two functions that are each individually correct
+on their own terms: `Crawio`'s `0xFF` sentinel is a deliberate,
+documented (`06-crawio.md`) part of that trap's own contract, and
+`escfn12`'s per-character `Crawio` loop is a reasonable, simple
+implementation choice — the gap only exists at the seam between them,
+and only for the one value where the sentinel and a legitimate character
+code coincide.
+
+**Contract-vs-internal open question (Compendium cross-check deferred,
+consistent with this spec file's front matter):** whether this is
+*contract* (real Atari TOS's `v_curtext` presumably also routes through
+`Crawio`, since `Crawio`'s `0xFF` read/write convention is a
+long-standing, pre-EmuTOS GEMDOS ABI feature, not an EmuTOS invention —
+so real TOS very plausibly shares this exact limitation) or merely an
+*EmuTOS implementation detail* cannot be settled from source alone; no
+Compendium/Profibuch PDF is present in `references/` to check the
+documented `v_curtext` semantics against. Until that cross-check happens,
+treat this as EmuTOS-confirmed, presumed-contract (per CLAUDE.md Rule 1,
+EmuTOS is the spec until shown otherwise) — **not** a NewTOS-side bug to
+silently "fix" by special-casing byte `0xFF` in a NewTOS `v_curtext`
+implementation.
+
+**Prior NewTOS doc:** `docs/api/vdi/_escape.md`'s sub-12 section
+described only the happy path ("Writes each character via `Crawio()`
+… Text appears at the current cursor position") with no mention of the
+`0xFF` interaction. Added as a new callout in that section, plus edge
+case 6 and this global write-up; local table row `docs/api/vdi/
+_discrepancies.md` **D-VDI-22**.
+
+**Decision:** none required right now — documentation-only finding for
+this pass. **Open question for the lead:** should NewTOS's own
+`v_curtext` implementation (Phase 12) reproduce this exact limitation
+(bit-for-bit contract fidelity, pending the Compendium cross-check
+above), or should it always write the byte and let a NewTOS-native
+`Crawio` keep its own `0xFF` sentinel *only* for the direct `Crawio`
+trap, not for `v_curtext`'s internal use of it? This is a genuine
+API-layering decision (does NewTOS's `v_curtext` have to call through
+its own `Crawio`, or may it write to the console directly and bypass the
+sentinel?) that the spec alone cannot resolve — flagged for the
+Developer/lead, not decided here.
+
+---
