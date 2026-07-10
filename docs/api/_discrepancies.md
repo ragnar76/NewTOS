@@ -3728,3 +3728,287 @@ behaviour coverage for `objc_change`/`form_button`.
 cases #21/#22.
 
 ---
+
+## D-094: `wind_set(WF_NAME/WF_INFO/WF_NEWDESK)`'s string/tree pointer travels packed in `int_in[2..3]`, not via `addr_in[0]` — the `WM_IOTITLE` macro is dead code
+
+**Date:** 2026-07-10 (AES leg, Window/Graphics Manager re-validation, Batch 4)
+**Phase 00b spec:** `docs/api/aes/window-graphics.md` (`wind_set` (105),
+Trap interface, Inputs/Outputs summary, NewTOS implementation notes)
+
+**Context:** third validation round of Window/Graphics Manager, tasked with
+the same rigour that found D-085 (menu tree topology) and D-089 (border-sign
+inversion). Read the `WIND_SET`/`WIND_GET` dispatch arms (`gemsuper.c:342-347`)
+and `wm_set`/`wm_get` (`gemwmlib.c:1505,1623`) in full, beyond the previously
+validated slot tables.
+
+**Previous spec (wrong):** stated that for `wind_set`'s `WF_NAME`/`WF_INFO`/
+`WF_NEWDESK` fields "the pointer is in `addr_in[0]`" (citing the `WM_IOTITLE
+= addr_in[0]` macro at `aesdefs.h:502`), in several places (the AESPB slot
+table, the value-slots note, the per-field table, the Inputs/Outputs summary,
+and the NewTOS implementation notes' `addr_in[]` bullet).
+
+**EmuTOS (confirmed):** the `WIND_SET` dispatch arm calls
+`wm_set(WM_HANDLE, WM_WFIELD, &WM_IX)` — **three** arguments only
+(`gemsuper.c:345-347`); `wm_set`'s prototype is `BOOL wm_set(WORD w_handle,
+WORD w_field, WORD *pinwds)` (`gemwmlib.c:1623`) — it never receives an
+`addr_in` array. `WM_IX` = `int_in[2]`, so `pinwds = &int_in[2]`. Inside,
+`case WF_NAME: gl_aname.te_ptext = pwin->w_pname = *(char **)pinwds;` and the
+analogous `WF_INFO` case (`gemwmlib.c:1660-1674`) read the string pointer by
+reinterpreting `int_in[2]`/`int_in[3]` (two `WORD`s) as one packed `LONG`
+pointer. `WF_NEWDESK` does the same for the tree pointer (`*(OBJECT
+**)pinwds`) plus `pinwds[2]` (`= int_in[4]`) for the root index
+(`gemwmlib.c:1685-1689`). The `AESPB` struct itself has `intin`/`intout`/
+`addrin`/`addrout` as four **separate** arrays (`gemsuper.h:13-20`), and the
+`xif()` trampoline copies each into its own local buffer (`gemsuper.c:428-448`)
+— `int_in[2..3]` and `addr_in[0]` are genuinely different memory. Grepping the
+entire EmuTOS tree for `WM_IOTITLE` finds exactly one hit: its own
+`#define` at `aesdefs.h:502` — it is never referenced by any dispatch arm,
+confirming it is vestigial/dead code, not the actual mechanism.
+`wind_get` has no case for `WF_NAME`/`WF_INFO`/`WF_NEWDESK` at all (falls to
+`default: return FALSE`), so this only affects `wind_set`.
+
+**Contract impact:** this is a hard ABI detail a real caller (or a compatible
+NewTOS binding) must get right — the previous spec directed implementers to
+populate `addr_in[0]`, which `wm_set` never reads; the actual, working
+mechanism is a packed 32-bit pointer occupying two `int_in` words (the high
+word first, matching m68k big-endian LONG layout), exactly like a rect's x/y
+occupy two `int_in` words elsewhere in the same ABI.
+
+**Not a Compendium discrepancy** — no PDFs in `references/` for cross-check;
+a source-reading correction of a previous spec-writing error (the spec
+apparently trusted the `WM_IOTITLE` macro's name/comment instead of tracing
+the actual call site — "comments/macro names lie, code doesn't").
+
+**Decision:** `docs/api/aes/window-graphics.md` corrected in six places (the
+`wind_set` AESPB slot-table row, the value-slots note, a new "D-094" callout
++ corrected per-field table rows under `wind_set (105)`, the Inputs/Outputs
+summary, the NewTOS implementation notes' `addr_in[]` bullet, and a new edge
+case #14). NewTOS follows EmuTOS: the string/tree pointer for `wind_set`
+`WF_NAME`/`WF_INFO`/`WF_NEWDESK` must be packed into `int_in[2..3]`.
+
+---
+
+## D-095: `wind_get(WF_COLOR/WF_DCOLOR)` writes the two colour words one slot later than previously documented — `int_out[2]`/`int_out[3]`, not `int_out[1]`/`int_out[2]`
+
+**Date:** 2026-07-10 (AES leg, Window/Graphics Manager re-validation, Batch 4)
+**Phase 00b spec:** `docs/api/aes/window-graphics.md` (`wind_get` (104),
+`WF_*` field numbers)
+
+**Context:** same pass as D-094; traced the exact `poutwds` indices `wm_get`
+writes for `WF_COLOR`/`WF_DCOLOR`, rather than trusting the general "rect/
+scalar" slot summary.
+
+**Previous spec (wrong):** "`WF_COLOR` (18): `int_out[1]`=topped, `[2]`=
+untopped colour for gadget `int_in[0]`" (and the analogous claim for
+`WF_DCOLOR`).
+
+**EmuTOS (confirmed):** `wm_get`'s `WF_COLOR` case writes `poutwds[1] =
+pwin->w_tcolor[gadget]; poutwds[2] = pwin->w_bcolor[gadget];`
+(`gemwmlib.c:1567-1571`; `WF_DCOLOR` analogous at `:1572-1576`) — it never
+writes `poutwds[0]`. The dispatch arm calls `wm_get(WM_HANDLE, WM_WFIELD,
+&WM_OX, &WM_IX)` with `poutwds = &WM_OX = &int_out[1]` (`gemsuper.c:343`), so
+`poutwds[1]` is `int_out[2]` and `poutwds[2]` is `int_out[3]` — one slot
+later than the previous spec stated. `int_out[1]` (`poutwds[0]`) is left
+untouched; per the source's own doc comment (`gemwmlib.c:1494-1503`), the C
+binding stages the gadget-number *input* in that same slot, which is simply
+not overwritten on output. Also corrected: the gadget number is read from
+`pinwds[0]` = `int_in[2]`, not `int_in[0]` (`int_in[0]` is the window handle)
+— the previous spec's "for gadget `int_in[0]`" was off by the same kind of
+index slip.
+
+**Not a Compendium discrepancy** — no PDFs in `references/` for cross-check;
+a source-reading index correction.
+
+**Decision:** `docs/api/aes/window-graphics.md` corrected: the `WF_*` field
+numbers §-footnote, the `wind_get (104)` per-field table rows for
+`WF_COLOR`/`WF_DCOLOR`, a new "D-095" callout, and edge case #15.
+
+---
+
+## D-096: `graf_watchbox`'s return-value direction was documented backwards — `out == TRUE` on inside-release, `FALSE` on outside-release (not the reverse)
+
+**Date:** 2026-07-10 (AES leg, Window/Graphics Manager re-validation, Batch 4)
+**Phase 00b spec:** `docs/api/aes/window-graphics.md` (`graf_watchbox` (75),
+edge case #8)
+
+**Context:** same pass as D-094/D-095; the section already carried a
+"Return-value precision" callout from an earlier round that itself stated the
+correct direction, but the lead sentence directly above it stated the
+opposite — an internal contradiction that a careful re-read of `gr_watchbox`
+resolves in favour of the callout, not the lead sentence. This is exactly the
+class of load-bearing sign/direction error D-089 (border-thickness sign) was.
+
+**Previous spec (wrong lead sentence):** "`out` is `FALSE` (0) when the
+button was released *inside* the object, `TRUE` (1) when outside" — while the
+"corrects" callout immediately below it said the opposite (`TRUE` = inside),
+without the contradiction ever being resolved.
+
+**EmuTOS (confirmed):** `gr_watchbox` (`gemgrlib.c:337-355`): `out` starts
+`FALSE`. Loop iteration 1 draws `instate` (`state = out ? outstate :
+instate`, `out` is `FALSE`), *then* flips `out = !out` to `TRUE`, *then* calls
+`gr_stilldn(out, …)` which blocks for either a button-state change or a
+mouse boundary crossing. In the ordinary single-click case — button released
+before the mouse ever leaves the gadget's rect — `gr_stilldn` detects the
+button change first and returns `FALSE`; the `do…while` loop condition is
+`FALSE` and exits immediately, with `out` still holding the `TRUE` value it
+was flipped to just before the wait. Only if the mouse first leaves the rect
+(second iteration draws `outstate`, flips `out` back to `FALSE`) and *then*
+the button comes up does the function return `FALSE`. This matches
+`gemctrl.c:218`'s `if (gr_watchbox(gl_awind, gadget, selected, normal))`,
+which fires `WM_CLOSED`/`WM_FULLED` exactly when the call returns non-zero
+— i.e. on inside-release. **`TRUE` = released inside; `FALSE` = released
+outside.**
+
+**Not a Compendium discrepancy** — no PDFs in `references/` for cross-check;
+a source-reading correction of an unresolved internal contradiction left over
+from an earlier spec round.
+
+**Decision:** `docs/api/aes/window-graphics.md` corrected: the `graf_watchbox
+(75)` section's lead sentence and callout merged into one "D-096" callout
+with the traced step-by-step derivation, and edge case #8 rewritten.
+
+---
+
+## D-097: non-3D `wind_calc`'s title-band border test is `kind & (NAME|CLOSER|FULLER)`, not the `TGADGETS` macro (which also includes `MOVER`)
+
+**Date:** 2026-07-10 (AES leg, Window/Graphics Manager re-validation, Batch 4)
+**Phase 00b spec:** `docs/api/aes/window-graphics.md` (`wind_calc` (108),
+"Window-kind gadget bits")
+
+**Context:** same pass as D-094–D-096; cross-checked the "Non-3D build" border
+table against the actual `wm_calc` literal, since the 3D build's row
+correctly uses `TGADGETS` and the previous spec generalised that label to the
+non-3D row too.
+
+**Previous spec (wrong):** the non-3D `wind_calc` border table stated the top
+border grows "if `TGADGETS` (title band)".
+
+**EmuTOS (confirmed):** the non-3D branch of `wm_calc` (`gemwmlib.c:1841-1853`,
+inside `#else` for `CONF_WITH_3D_OBJECTS`) tests `if (kind & (NAME|CLOSER|
+FULLER)) tb += (gl_hbox - 1);` — explicitly **not** the `TGADGETS` macro
+(`NAME|CLOSER|FULLER|MOVER`, `gemwmlib.h:16`). This exactly mirrors
+`w_bldactive`'s own non-3D branch, which tests the identical
+`kind & (NAME|CLOSER|FULLER)` literal (`gemwmlib.c:750`) and has no
+`MOVER`-without-`NAME` special case (unlike the 3D branch's `else if (kind &
+MOVER)` at `gemwmlib.c:542-551`). The 3D branch of `wm_calc`
+(`gemwmlib.c:1818`) does correctly use `kind & TGADGETS`. Consequence: in a
+non-3D build, a `MOVER`-only window (no `NAME`/`CLOSER`/`FULLER`) reserves
+**no** title band at all, in either `w_bldactive` or `wind_calc`/`wm_calc`.
+
+**Impact:** low — `CONF_WITH_3D_OBJECTS` defaults to 1 in the reference
+build, so this only matters for a non-default build variant. Recorded for
+completeness and because the previous spec stated it as fact.
+
+**Not a Compendium discrepancy** — no PDFs in `references/` for cross-check;
+a source-reading correction.
+
+**Decision:** `docs/api/aes/window-graphics.md` corrected: the non-3D border
+table row, a new "D-097" callout, and the `MOVER`-without-`NAME` edge case
+under "Window-kind gadget bits" now scoped explicitly to the 3D-object build.
+
+---
+
+## D-098: the "slider creep" rounding fix (`mul_div` → `mul_div_round`) was never applied to the 3D-object (default) build's `w_bldvbar`/`w_bldhbar` — a genuine, still-present EmuTOS source gap
+
+**Date:** 2026-07-10 (AES leg, Window/Graphics Manager re-validation, Batch 4)
+**Phase 00b spec:** `docs/api/aes/window-graphics.md` (`wind_set` (105),
+edge case #13)
+
+**Context:** the task briefing for this round flagged a known historical
+"H-slider fix" to check against the current `wind_set` spec. Located it via
+`git log`: commit `a04ebb02` ("Fix 'slider creep' in AES windows", 2021-07-19,
+Roger Burrows) — "If you single click on the vertical or horizontal slider in
+a window, it will often move upwards/leftwards even if you haven't moved the
+mouse. This is because the translation from slider position to pixel
+position and back again does not yield the original result, because the
+`mul_div()` function does not round." Checked whether the fix is present, in
+full, in the pinned commit's source (not just referenced by name).
+
+**EmuTOS (confirmed):** commit `a04ebb02` replaced `mul_div` with
+`mul_div_round` in three places: `gr_slidebox` (`gemgrlib.c:410`, drag →
+stored 0..1000 value), the file selector's elevator math
+(`gemfslib.c`, out of scope here), and the **non-3D** `w_bldvbar`/`w_bldhbar`
+(`gemwmlib.c:667-669,708-710`, stored value → pixel geometry). `git log
+--follow` on `aes/gemwmlib.c` shows the `#if CONF_WITH_3D_OBJECTS` variant of
+`w_bldvbar`/`w_bldhbar` was introduced *later* by commit `dfa61fe9` ("Add 3D
+object support"), which duplicated the *pre-fix* pattern: its
+`w_bldvbar`/`w_bldhbar` (`gemwmlib.c:433-434,471-472`, the code path active
+in the default `CONF_WITH_3D_OBJECTS=1` build) still call plain `mul_div`,
+never `mul_div_round`. Confirmed directly against the pinned commit
+`1a7484ab`'s checked-out source (not just the historical diff): the 3D
+branch's `size = max(gl_hbox, mul_div(h, pw->w_vslsiz, 1000)); posn =
+mul_div(h-size, pw->w_vslide, 1000);` is unrounded. Net effect in the
+*default* EmuTOS build: a slider drag is converted to a stored value with
+rounding (`gr_slidebox`), but the elevator's redrawn pixel geometry from that
+same stored value is computed without rounding (`w_bldvbar`/`w_bldhbar`,
+3D variant) — the "slider creep" symptom the 2021 fix targeted can still
+occur in the reference build, just one layer removed from where it was
+originally observed and fixed.
+
+**Scope:** this sits entirely inside `w_bldactive`/`w_bldvbar`/`w_bldhbar`,
+which this document already marks **reference** (NewTOS reimplements the
+frame-drawing over its own object manager) — not **contract**. The contract
+surface (`WF_HSLIDE`/`WF_VSLIDE`/`WF_HSLSIZ`/`WF_VSLSIZ` values, always
+1..1000 or −1) is unaffected. Classed like D-081/D-082: a genuine EmuTOS
+source-level gap, not a spec-reading error.
+
+**Not a Compendium discrepancy** — no PDFs in `references/` for cross-check;
+a genuine source-level finding from `git log`/source cross-reference, not a
+documentation disagreement.
+
+**Decision:** `docs/api/aes/window-graphics.md` gained a "D-098" callout
+under `wind_set (105)`'s slider-value-validation paragraph and edge case #13.
+NewTOS's own elevator geometry may round consistently rather than reproduce
+the residual creep — the choice is free (reference-level), not mandated
+either way.
+
+---
+
+## D-099: NewTOS deviation — `appl_init` reports `ap_private = 0`, not `rs_trees[DESKTOP][ROOT].ob_spec`, because NewTOS's AES has no DESKTOP resource tree
+
+**Date:** 2026-07-10 (AES leg, Window/Graphics Manager re-validation, Batch 4
+— `ap_private` follow-up from the App/Event-Manager fix)
+**Phase 00b spec:** `docs/api/aes/application.md` (`appl_init` (10),
+`AESGLOBAL`, Verification criteria)
+
+**Context:** the lead flagged that NewTOS's `appl_init` sets `ap_private = 0`
+where EmuTOS sets `rs_trees[DESKTOP][ROOT].ob_spec` (`gemsuper.c:95-96`,
+already correctly documented per D-… the `ap_private`/`ap_ptree` correction in
+`application.md`). This entry records the *reason* this is an intentional
+NewTOS deviation, not an unimplemented EmuTOS behaviour, and downgrades the
+matching verification criterion.
+
+**EmuTOS:** `appl_init` writes `AP_PRIVATE` (`global[3]`) with
+`rs_trees[DESKTOP][ROOT].ob_spec` — the `ob_spec` of the root object of the
+**DESKTOP** resource tree, one of several trees EmuTOS keeps permanently
+resident (built into the ROM ".rsc" ensemble, `rs_trees[]`,
+`aes/gem_rsc.h`/`obdefs.h`), used by EmuDesk to encode the desktop
+background pattern/colour.
+
+**NewTOS (deviation, by design):** NewTOS's AES kernel has **no** DESKTOP
+resource tree at all — EmuTOS's `rs_trees`/permanent in-ROM `gem.rsc`
+ensemble does not exist on NewTOS. The only resource NewTOS's AES loads is
+`GEM.RSC`, and only **lazily**, on first use of the file selector (tree 0 =
+`FSELECTR`); there is no tree slot analogous to EmuTOS's `DESKTOP` index.
+What EmuTOS encodes in that tree's root `ob_spec` (the desktop background
+pattern/colour) lives on NewTOS as `g_patcol` **inside the desktop client
+application**, strictly **above** the AES/syscall layer — the AES kernel
+(where `appl_init`'s dispatch arm runs) has no reference to it and cannot
+reach it. `appl_init` therefore reports `ap_private = 0` on NewTOS: there is
+no non-zero value it could honestly report from the syscall layer.
+
+**Decision:** NewTOS deviates from EmuTOS here by necessity of its
+architecture (no kernel-side DESKTOP tree), not by oversight. Documented in
+`docs/api/aes/application.md`:
+- a "NewTOS deviation" callout added directly under the `ap_private`/
+  `ap_ptree` correction note (in the `AESGLOBAL` section),
+- `appl_init (10)`'s behaviour list annotated at the `AP_PRIVATE` bullet,
+- the "`appl_init` private" verification criterion (previously stated as an
+  unconditional check) downgraded to explicitly flag it as **not
+  satisfiable on NewTOS** (deviation, not an open bug) with a cross-reference
+  to this entry,
+- a new "NewTOS deviation" bullet added under "NewTOS implementation notes"
+  giving the full rationale (no `rs_trees`, `GEM.RSC` lazy-loaded FSELECTR
+  only, `g_patcol` lives in the desktop client above the syscall boundary).
+
+---

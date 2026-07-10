@@ -109,9 +109,12 @@ Gadget **groups** used by the frame builder and `wind_calc` (`gemwmlib.h:16-18`)
 - `VGADGETS = UPARROW | DNARROW | VSLIDE` — the **vertical scroll bar**.
 - `HGADGETS = LFARROW | RTARROW | HSLIDE` — the **horizontal scroll bar**.
 
-> **Edge case (`gemwmlib.c:542-551`):** in the TOS4-compatible build you may
-> specify `MOVER` **without** `NAME` — a drag bar with no name. A `SIZER` with
-> no scroll gadgets still forces a vertical bar band (see `wind_calc`).
+> **Edge case (`gemwmlib.c:542-551`, `CONF_WITH_3D_OBJECTS` build only — see
+> D-097):** in the TOS4-compatible (3D-object) build you may specify `MOVER`
+> **without** `NAME` — a drag bar with no name. The non-3D build has no such
+> case (`gemwmlib.c:750-786`): `MOVER` alone reserves no title band there, or
+> in `wind_calc`. A `SIZER` with no scroll gadgets still forces a vertical bar
+> band (see `wind_calc`).
 
 ---
 
@@ -135,9 +138,13 @@ Gadget **groups** used by the frame builder and `wind_calc` (`gemwmlib.h:16-18`)
 - ‡ `WF_NEWDESK` (14) is **`wind_set`-only** (sets the desktop-background object
   tree `gl_newdesk`/`gl_newroot`); `wm_get` has no case for it → `FALSE`.
 - § `WF_COLOR` (18) / `WF_DCOLOR` (19) exist only with
-  `CONF_WITH_WINDOW_COLOURS` (default **1**). They use a **3-word `int_in`**
-  (gadget#, topped-colour, untopped-colour) — the one `wind_get`/`wind_set`
-  exception to the usual 2-word input (`gemwmlib.c:1491-1503`).
+  `CONF_WITH_WINDOW_COLOURS` (default **1**). `wind_set` uses a **3-word
+  `int_in`** (gadget#, topped-colour, untopped-colour) — the one `wind_set`
+  exception to the usual 2-word input (`gemwmlib.c:1719-1734`); `wind_get`
+  needs only **one** input word (gadget#, `pinwds[0]` = `int_in[2]`) and
+  returns the two colours **not** at `int_out[1]`/`int_out[2]` but at
+  `int_out[2]`/`int_out[3]` (`poutwds[1]`/`poutwds[2]` — **D-095**, see
+  `wind_get (104)` below).
 - ¶ `WF_OWNER` (20) exists only with `AES_VERSION >= 0x330` (the default build
   is 0x0340). Returns owner pid, open-flag, and (a partial) top/bottom z-order.
 
@@ -166,7 +173,7 @@ results travel in **`int_out[1..4]`** (`WM_OX..WM_OH`, `GR_O1/O2`, `GR_WCHAR..`,
 | 102 | `wind_close` | `[0]`=handle | `[0]`=1/0 | — |
 | 103 | `wind_delete`| `[0]`=handle | `[0]`=1/0 | — |
 | 104 | `wind_get`   | `[0]`=handle, `[1]`=field, (`[2]`=gadget for COLOR) | `[0]`=1/0; `[1..4]`=`WM_OX..WM_OH` | — |
-| 105 | `wind_set`   | `[0]`=handle, `[1]`=field, `[2..5]`=value(s) | `[0]`=1/0 | `[0]`=name/info str (WF_NAME/INFO/NEWDESK) |
+| 105 | `wind_set`   | `[0]`=handle, `[1]`=field, `[2..5]`=value(s) — for `WF_NAME`/`INFO`/`NEWDESK`, `[2..3]` is a **packed pointer** (D-094) | `[0]`=1/0 | — |
 | 106 | `wind_find`  | `[0]`=mx, `[1]`=my | `[0]`=**handle** (0=desktop) | — |
 | 107 | `wind_update`| `[0]`=mode (0/1/2/3) | `[0]`=1 | — |
 | 108 | `wind_calc`  | `[0]`=type, `[1]`=kind, `[2..5]`=in x/y/w/h | `[0]`=1; `[1..4]`=`WM_WCOX..WM_WCOH` | — |
@@ -175,10 +182,18 @@ results travel in **`int_out[1..4]`** (`WM_OX..WM_OH`, `GR_O1/O2`, `GR_WCHAR..`,
 > **`wind_get`/`wind_set` value slots.** The generic input value is `int_in[2]`
 > (`WM_IX`) onward; for rect fields it is `int_in[2..5]` = x/y/w/h (`WM_IX..
 > WM_IH`, `aesdefs.h:504-507`); for slider fields `int_in[2]` (`WM_ISLIDE`); for
-> `WF_NAME`/`WF_INFO`/`WF_NEWDESK` the pointer is in **`addr_in[0]`** (`WM_IOTITLE`,
-> `aesdefs.h:502`), read as `*(char **)pinwds`. `wind_get` results come back in
-> `int_out[1..4]` for rects/z-order and `int_out[0..]`/`poutwds[0]` for scalars.
-> `WF_FIRSTXYWH`/`WF_NEXTXYWH` fills `int_out[1..4]` with a rect.
+> `WF_NAME`/`WF_INFO`/`WF_NEWDESK` the pointer is **packed as a LONG across
+> `int_in[2..3]`** (`WM_IX`/`WM_IY`), read via `*(char **)pinwds` where
+> `pinwds = &int_in[2]` — **not** through `addr_in[0]`. `aesdefs.h:502` defines
+> a `WM_IOTITLE = addr_in[0]` macro seemingly for this purpose, but it is never
+> referenced anywhere in the EmuTOS tree; the `WIND_SET`/`WIND_GET` dispatch
+> arms (`gemsuper.c:342-347`) don't even pass an `addr_in` argument to
+> `wm_set`/`wm_get`. See **D-094** — this corrects the previous spec, which
+> wrongly documented the pointer as travelling via `addr_in[0]`. `wind_get`
+> results come back in `int_out[1..4]` for rects/z-order, `poutwds[0]`
+> (`=int_out[1]`) for most scalars, and `poutwds[1..2]` (`=int_out[2..3]`) for
+> `WF_COLOR`/`WF_DCOLOR` (see **D-095**). `WF_FIRSTXYWH`/`WF_NEXTXYWH` fills
+> `int_out[1..4]` with a rect.
 
 ### Graphics Manager AESPB slots (`aesdefs.h:390-421`)
 
@@ -290,9 +305,24 @@ screen buffer via `gsx_mret`. Result rect → `int_out[1..4]`; scalars →
 | `WF_FIRSTXYWH` (11) | **first** visible work rect (starts the walk) | `:1556` |
 | `WF_NEXTXYWH` (12) | **next** visible work rect (continues) | `:1557` |
 | `WF_SCREEN` (17) | menu/alert save-buffer address + length | `gsx_mret` `:1563` |
-| `WF_COLOR` (18) | `int_out[1]`=topped, `[2]`=untopped colour for gadget `int_in[0]` § | `:1567` |
-| `WF_DCOLOR` (19) | `int_out[1]`=default topped, `[2]`=untopped colour § | `:1572` |
+| `WF_COLOR` (18) | `int_out[2]`=topped, `int_out[3]`=untopped colour for gadget `int_in[2]` § (D-095) | `:1567` |
+| `WF_DCOLOR` (19) | `int_out[2]`=default topped, `int_out[3]`=untopped colour § (D-095) | `:1572` |
 | `WF_OWNER` (20) | `[0]`=owner pid, `[1]`=is-open, `[2]`=`gl_wtop`, `[3]`=bottom ¶ | `:1579` |
+
+> **D-095 — `WF_COLOR`/`WF_DCOLOR` colours land one slot later than
+> documented.** The handler writes `poutwds[1] = w_tcolor[gadget]; poutwds[2]
+> = w_bcolor[gadget]` (`gemwmlib.c:1567-1571`, and analogously for
+> `WF_DCOLOR` at `:1572-1576`) — it never touches `poutwds[0]`. Because the
+> dispatcher calls `wm_get(WM_HANDLE, WM_WFIELD, &WM_OX, &WM_IX)` with
+> `poutwds = &WM_OX = &int_out[1]` (`gemsuper.c:343`), `poutwds[1]` is
+> `int_out[2]` and `poutwds[2]` is `int_out[3]` — **not** `int_out[1]`/
+> `int_out[2]` as a previous spec revision stated. `int_out[1]` is left
+> untouched by `wm_get`; per the source's own doc comment
+> (`gemwmlib.c:1494-1503`), that slot aliases the gadget-number *input* word
+> in the C binding, not an output. A conforming caller's `w1` (mapped to
+> `int_out[1]`) therefore reads back unchanged / the input gadget number, `w2`
+> (`int_out[2]`) is the topped colour, and `w3` (`int_out[3]`) is the untopped
+> colour.
 
 `WF_TOP`, `WF_SCREEN`, `WF_DCOLOR` do **not** require a valid handle
 (`gemwmlib.c:1517-1520`); every other field returns `FALSE` if the handle is
@@ -337,10 +367,27 @@ Helpers: `wm_update(BEG_UPDATE/END_UPDATE)`, `draw_change` (WF_CXYWH),
 **Globals written:** the `WINDOW` field being set; for WF_NEWDESK
 `gl_newdesk`/`gl_newroot`.
 
+> **D-094 — `WF_NAME`/`WF_INFO`/`WF_NEWDESK` do *not* use `addr_in[0]`.** A
+> previous spec revision (and the `WM_IOTITLE = addr_in[0]` macro at
+> `aesdefs.h:502`) claimed the string/tree pointer for these three fields
+> arrives via `addr_in[0]`. Tracing the actual dispatch
+> (`gemsuper.c:345-347`: `wm_set(WM_HANDLE, WM_WFIELD, &WM_IX)`) shows `wm_set`
+> is called with only **three** arguments — handle, field, and `pinwds =
+> &int_in[2]` — no `addr_in` array is passed at all (`gemwmlib.c:1623`:
+> `BOOL wm_set(WORD w_handle, WORD w_field, WORD *pinwds)`). Inside, `WF_NAME`/
+> `WF_INFO` do `*(char **)pinwds` and `WF_NEWDESK` does `*(OBJECT **)pinwds`
+> plus `pinwds[2]` for the root index (`gemwmlib.c:1660-1669,1685-1689`) — i.e.
+> the 32-bit pointer is packed directly into `int_in[2]` (high word) and
+> `int_in[3]` (low word), exactly like a rect's x/y occupy two `int_in` words.
+> `WM_IOTITLE` is dead code: grepping the whole EmuTOS tree finds no other
+> reference to it. **Contract impact:** a caller must pack the pointer into
+> `int_in[2..3]`, not populate `addr_in[0]` — the opposite of what the
+> previous spec (and the unused macro) implied.
+
 | Field | Effect | Triggers redraw of |
 |-------|--------|--------------------|
-| `WF_NAME` (2) | `w_pname = *(char**)addr_in[0]` | `W_NAME` gadget, **all open windows** (`do_cpwalk`, `:1665`) |
-| `WF_INFO` (3) | `w_pinfo = *(char**)addr_in[0]` | `W_INFO` gadget, **all open windows** (`:1673`) |
+| `WF_NAME` (2) | `w_pname = *(char**)pinwds` — pointer packed in `int_in[2..3]`, **not** `addr_in[0]` (D-094) | `W_NAME` gadget, **all open windows** (`do_cpwalk`, `:1665`) |
+| `WF_INFO` (3) | `w_pinfo = *(char**)pinwds` — pointer packed in `int_in[2..3]`, **not** `addr_in[0]` (D-094) | `W_INFO` gadget, **all open windows** (`:1673`) |
 | `WF_CXYWH` (5) | move/resize → `draw_change(handle, rect)` | **whole frame + uncovered areas** (`:1677`) |
 | `WF_TOP` (10) | if not already top → `wm_mktop` | full topping redraw (`:1682`) |
 | `WF_NEWDESK` (14) | set desktop-background tree `gl_newdesk`, root `gl_newroot` | (next desktop redraw) `:1685` |
@@ -368,6 +415,27 @@ Any unlisted field → `ret = FALSE` (`gemwmlib.c:1736`).
 Slider **value validation** (`gemwmlib.c:1643-1656`): `WF_HSLIDE`/`WF_VSLIDE`
 positions and `WF_HSLSIZ`/`WF_VSLSIZ` sizes are clamped to **1..1000**; a size
 of **−1** ("use default") is passed through unclamped.
+
+> **D-098 — the "slider creep" rounding fix is only half-applied in the
+> reference build.** EmuTOS commit `a04ebb02` ("Fix 'slider creep' in AES
+> windows", 2021) replaced `mul_div` with `mul_div_round` in `gr_slidebox`
+> (`gemgrlib.c:410`, drag → stored 0..1000 value) and in the **non-3D**
+> `w_bldvbar`/`w_bldhbar` (`gemwmlib.c:667-669,708-710`, stored value → pixel
+> geometry). The **3D-object (default, `CONF_WITH_3D_OBJECTS=1`)**
+> `w_bldvbar`/`w_bldhbar` (`gemwmlib.c:433-434,471-472`) still use the
+> unrounded `mul_div` — 3D-object support (commit `dfa61fe9`) was added
+> *after* the rounding fix and reused the old, unrounded pattern for its own
+> elevator-geometry code, so the fix never propagated there. Net effect in
+> EmuTOS's default build: dragging a slider is converted to a value with
+> `mul_div_round`, but the elevator's *redrawn* size/position from that same
+> stored value uses plain (truncating) `mul_div` — a residual, genuine
+> EmuTOS source-level rounding asymmetry (same class as D-081/D-082), not a
+> spec-reading error. This sits entirely inside the frame-drawing code
+> (`w_bldactive`/`w_bldvbar`/`w_bldhbar`) already marked **reference** at the
+> top of this document, so it is not contract; NewTOS's own elevator geometry
+> is free to round consistently instead of reproducing the creep, as long as
+> the **contract** value — `WF_HSLIDE`/`WF_VSLIDE`/`WF_HSLSIZ`/`WF_VSLSIZ`,
+> always 1..1000 or −1 — round-trips correctly through `wind_get`/`wind_set`.
 
 ---
 
@@ -424,14 +492,26 @@ Given `type`, `kind`, and an input rect (x,y,w,h) it returns an output rect:
 
 The four border thicknesses are computed from `kind` (base 1 px each side):
 
-**Non-3D build (`CONF_WITH_3D_OBJECTS = 0`)** (`gemwmlib.c:1842-1853`):
+**Non-3D build (`CONF_WITH_3D_OBJECTS = 0`)** (`gemwmlib.c:1841-1853`):
 
 | Border | Base | Added when |
 |--------|-----:|-----------|
 | left `lb` | 1 | (never grows) |
-| top `tb` | 1 | `+ (gl_hbox-1)` if `TGADGETS` (title band); `+ (gl_hbox-1)` again if `INFO` |
+| top `tb` | 1 | `+ (gl_hbox-1)` if `kind & (NAME\|CLOSER\|FULLER)`; `+ (gl_hbox-1)` again if `INFO` |
 | right `rb` | 1 | `+ (gl_wbox-1)` if `UPARROW\|DNARROW\|VSLIDE\|SIZER` |
 | bottom `bb` | 1 | `+ (gl_hbox-1)` if `LFARROW\|RTARROW\|HSLIDE\|SIZER` |
+
+> **D-097 — `TGADGETS` does not apply to the non-3D title-band test.** The
+> literal at `gemwmlib.c:1842` is `kind & (NAME|CLOSER|FULLER)`, **not** the
+> `TGADGETS` macro (`NAME|CLOSER|FULLER|MOVER`, `gemwmlib.h:16`) — a previous
+> spec revision labelled this row `TGADGETS`, which is wrong for the non-3D
+> branch (it *is* correct for the 3D branch below, which uses `kind &
+> TGADGETS` at `gemwmlib.c:1818`). Consequence: in the **non-3D** build, a
+> `MOVER`-only window (no `NAME`/`CLOSER`/`FULLER`) gets **no** title band
+> from `wind_calc`/`wm_calc`, consistent with `w_bldactive`'s own non-3D
+> branch using the identical literal with no `MOVER`-without-`NAME` special
+> case (`gemwmlib.c:750`). Low real-world impact (`CONF_WITH_3D_OBJECTS`
+> defaults to 1), but a factual correction to the table as stated.
 
 **3D build (`CONF_WITH_3D_OBJECTS = 1`, the default)** (`gemwmlib.c:1817-1840`):
 
@@ -518,7 +598,7 @@ an XOR outline box `w`×`h` sliding from `(srcx,srcy)` to `(dstx,dsty)` in
 
 ### `graf_growbox` (73) / `graf_shrinkbox` (74)
 
-**Source:** `gemsuper.c:275-279` → `gr_growbox`/`gr_shrinkbox`
+**Source:** `gemsuper.c:275-280` → `gr_growbox`/`gr_shrinkbox`
 (`gemgrlib.c:309-334`). Zoom-rect animations between a **small** rect
 (`int_in[0..3]`) and a **big** rect (`int_in[4..7]`): grow small→big (used at
 `wind_open`), shrink big→small (used at `wind_close`). `void`.
@@ -528,21 +608,31 @@ an XOR outline box `w`×`h` sliding from `(srcx,srcy)` to `(dstx,dsty)` in
 **Source:** `gemsuper.c:281-283` → `gr_watchbox` (`gemgrlib.c:337-355`). While
 the button is held, toggles object `obj`'s `ob_state` between `instate` (mouse
 inside its rect) and `outstate` (outside), redrawing on each transition. Returns
-in `int_out[0]` the **final `out` flag** after button-up: **`out` is `FALSE`
-(0) when the button was released *inside* the object, `TRUE` (1) when
-outside** (the loop toggles `out` before each `gr_stilldn` wait, so the returned
-value reflects the last region). The control manager treats **inside-release
-(0-becoming-`selected`)** as "clicked" — e.g. a CLOSER release inside fires
-`WM_CLOSED` (`gemctrl.c:218-220`).
+in `int_out[0]` the **final `out` flag** after button-up: **`out` is `TRUE`
+(1) when the button was released *inside* the object, `FALSE` (0) when
+outside**. The control manager treats this **inside-release (`out == TRUE`)**
+as "clicked" — e.g. a CLOSER release inside fires `WM_CLOSED`
+(`gemctrl.c:218-220`, `if (gr_watchbox(...))` fires exactly on `TRUE`).
 
-> **Return-value precision (corrects "returns 1 if released inside").** The raw
-> `gr_watchbox` return is the `out` flag; the *actioned* case (CLOSER/FULLER
-> firing its message) is when `gr_watchbox` returns **TRUE** at `gemctrl.c:218`
-> — that is the value after an odd number of toggles, i.e. the button came up
-> while the mouse was **inside** the last-drawn state. NewTOS must reproduce the
-> `gemctrl.c` semantics (message fires on inside-release), not a naive
-> "1 = inside" binding. Spec the *observable* result: CLOSER/FULLER clicked ⇒
-> `WM_CLOSED`/`WM_FULLED`.
+> **D-096 — direction correction.** An earlier revision of this spec stated
+> the semantics **backwards** ("`out` is `FALSE` when released inside, `TRUE`
+> when outside") in its lead sentence, directly contradicted by a "corrects"
+> callout immediately below it that already had the right direction (`TRUE` =
+> inside) — an unresolved internal inconsistency. Traced `gr_watchbox`
+> (`gemgrlib.c:337-355`) step by step: `out` starts `FALSE`; the first loop
+> iteration draws `instate` (`out==FALSE` selects `instate`) and only *then*
+> flips `out` to `TRUE`, before calling `gr_stilldn(out, …)` to wait for
+> either a button-state change or a boundary crossing. In the common
+> single-click case (button released before the mouse ever leaves the
+> gadget), `gr_stilldn` returns `FALSE` (button-up detected) and the
+> `do…while` loop exits immediately — with `out` still holding the `TRUE` it
+> was flipped to just before the wait. Only if the mouse first leaves the
+> rect (drawing `outstate`, flipping `out` back to `FALSE`) and *then* the
+> button comes up does the function return `FALSE`. So **`TRUE` = released
+> inside, `FALSE` = released outside** — matching `gemctrl.c:218`'s
+> `if (gr_watchbox(...))` firing `WM_CLOSED`/`WM_FULLED` exactly on `TRUE`.
+> NewTOS must reproduce this direction (`TRUE` = inside-release), not the
+> previously-documented inverted one.
 
 ### `graf_slidebox` (76)
 
@@ -660,9 +750,10 @@ sets `msg[1] = rlr->p_pid` (sender), `msg[2] = 0` (extra bytes):
 
 Inputs arrive in the AESPB arrays. `int_out[0]` is the return code (`RET_CODE`,
 initialised 1); geometry results are in `int_out[1..4]`. `addr_in[0]` carries
-the string pointer (`wind_set` WF_NAME/INFO/NEWDESK) or the object tree
-(`graf_watchbox`/`graf_slidebox`) or the `MFORM` (`graf_mouse` USER_DEF). No
-`addr_out` is used by either manager (only `rsrc_gaddr` uses `addr_out`, see
+the object tree (`graf_watchbox`/`graf_slidebox`) or the `MFORM` (`graf_mouse`
+USER_DEF) — **not** the `wind_set` `WF_NAME`/`WF_INFO`/`WF_NEWDESK`
+string/tree pointer, which travels packed as a LONG in `int_in[2..3]` instead
+(D-094). No `addr_out` is used by either manager (only `rsrc_gaddr` uses `addr_out`, see
 [`_dispatcher.md`](./_dispatcher.md)). The `WM_*` messages are delivered
 **asynchronously through the 16-byte message pipe**, never as a return value.
 
@@ -773,10 +864,10 @@ build does not support it** (discrepancy D-053).
    position messages `WM_HSLID`/`WM_VSLID` carry a **0..1000** value, and
    `WM_SIZED`/`WM_MOVED` carry the **proposed new border rect** (`gemctrl.c:111-
    139,238,259,300`).
-8. **`graf_watchbox` returns the `out` flag, not a literal "1 = inside".** The
-   *actioned* semantics live in `gemctrl.c`: CLOSER/FULLER fire their message
-   when `gr_watchbox` returns TRUE (button up inside the gadget)
-   (`gemgrlib.c:337-355`, `gemctrl.c:218-220`).
+8. **`graf_watchbox` returns `TRUE` when released inside, `FALSE` when
+   released outside** (D-096; a previous spec revision had this backwards).
+   CLOSER/FULLER fire their message exactly when `gr_watchbox` returns `TRUE`
+   (button up inside the gadget) (`gemgrlib.c:337-355`, `gemctrl.c:218-220`).
 9. **`graf_growbox`/`graf_shrinkbox` take the big rect at `int_in[4..7]`
    (`GR_I5`), one word after the small rect at `int_in[0..3]`**
    (`gemsuper.c:275-279`) — a slot layout easy to get wrong.
@@ -789,6 +880,18 @@ build does not support it** (discrepancy D-053).
 12. **The mouse is dropped/restored around `graf_mouse` if the control manager
     owns it** (`gl_ctmown`, `gemsuper.c:295-302`), so a busy-cursor change from
     an app doesn't fight the ctlmgr.
+13. **The "slider creep" rounding fix is only half-applied in the default
+    build** (D-098): `gr_slidebox` and the non-3D `w_bldvbar`/`w_bldhbar`
+    round (`mul_div_round`); the 3D-object (default) `w_bldvbar`/`w_bldhbar`
+    still truncate (`mul_div`) — a genuine, still-present EmuTOS source gap in
+    reference-level (non-contract) elevator-drawing code.
+14. **`wind_set`'s `WF_NAME`/`WF_INFO`/`WF_NEWDESK` pointer travels packed in
+    `int_in[2..3]`, not via `addr_in[0]`** (D-094) — the `WM_IOTITLE` macro is
+    defined but dead code, referenced nowhere in the EmuTOS tree.
+15. **`wind_get(WF_COLOR/WF_DCOLOR)` writes the two colour words to
+    `int_out[2]`/`int_out[3]`, not `int_out[1]`/`int_out[2]`** (D-095) —
+    `int_out[1]` is left untouched (it aliases the gadget-number input slot in
+    the C binding).
 
 ---
 
@@ -939,10 +1042,15 @@ build does not support it** (discrepancy D-053).
 - **`wind_update` locking** presumes preemptible AES processes; single-app
   bring-up can implement it as a real (if usually-uncontended) screen lock, not
   a stub — its observable contract is "layout frozen while held".
-- **Pointers in `addr_in[]`** (name/info strings, OBJECT trees, `MFORM`) are
-  application pointers — apply the same boundary handling as other AES `addr*`
-  reads; struct pointer widths follow the caller ABI (native vs m68k, see
-  [`docs/COMPATIBILITY.md`](../../COMPATIBILITY.md)).
+- **Pointers in `addr_in[]`** (OBJECT trees for `graf_watchbox`/
+  `graf_slidebox`, the `MFORM` for `graf_mouse`) are application pointers —
+  apply the same boundary handling as other AES `addr*` reads; struct pointer
+  widths follow the caller ABI (native vs m68k, see
+  [`docs/COMPATIBILITY.md`](../../COMPATIBILITY.md)). **`wind_set`'s
+  `WF_NAME`/`WF_INFO`/`WF_NEWDESK` string/tree pointer is *not* an `addr_in[]`
+  pointer** (D-094) — it is packed as a raw LONG across `int_in[2..3]` and
+  needs the identical cross-boundary validation, just read from a different
+  slot.
 
 ### Open questions
 

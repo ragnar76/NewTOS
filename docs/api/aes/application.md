@@ -57,6 +57,18 @@ Byte offsets are the m68k layout (`WORD` = 2 bytes; `LONG`/pointer = 4 bytes,
 > by `rsrc_load` when the application loads its resource file. (The previous
 > spec wrongly attributed the DESKTOP `ob_spec` to `ap_ptree`; the source
 > writes it to `ap_private`.)
+>
+> **NewTOS deviation (D-099).** NewTOS reports `ap_private = 0` here, not
+> `rs_trees[DESKTOP][ROOT].ob_spec`. NewTOS's AES kernel has **no** DESKTOP
+> resource tree — EmuTOS's `rs_trees`/permanent in-ROM `gem.rsc` ensemble does
+> not exist on NewTOS; the only resource the AES loads is `GEM.RSC`, and only
+> **lazily**, on first use of the file selector (tree 0 = `FSELECTR`). What
+> EmuTOS encodes in the DESKTOP tree's root `ob_spec` (the desktop background
+> pattern/colour) lives on NewTOS as `g_patcol` **inside the desktop client
+> application**, strictly above the AES/syscall layer — `appl_init`'s
+> dispatch arm has no way to reach it. This is an intentional, necessary
+> deviation, not an unimplemented behaviour; see `docs/api/_discrepancies.md`
+> D-099.
 
 The application's identity is its **AES process id** (`AESPD.p_pid`,
 `aes/struct.h:129`). The AES keeps a per-application process descriptor
@@ -108,7 +120,9 @@ inline) + `aes/gemaplib.c:54-63` (`ap_init` sets the flag and returns the pid).
   count — see the single-app note);
 - `AP_ID` (`global[2]`) = `rlr->p_pid` (the running process's pid);
 - `AP_PRIVATE` (`global[3]`) = `rs_trees[DESKTOP][ROOT].ob_spec` (the DESKTOP
-  resource tree's root `ob_spec`);
+  resource tree's root `ob_spec`) — **NewTOS deviation:** NewTOS reports `0`
+  here, since it has no DESKTOP resource tree at the AES/syscall layer (see
+  the deviation callout above and D-099);
 - `AP_2RESV1`/`ap_planes` (`global[10]`) = `gl_nplanes` (screen colour planes);
 - `AP_3RESV`/`ap_3resv` (`global[11]`) = `&D` (address of the AES global area
   `THEGLO`, an internal pointer).
@@ -330,9 +344,14 @@ returns are pid / 0 / 1 / -1 only.
   (the pid), sets `global[0]` = `AES_VERSION` (0x0340 in the default build),
   `global[1]` = 1, and `global[2]` = the same pid it returned
   (`gemsuper.c:92-99`).
-- **`appl_init` private:** after `appl_init`, `global[3..4]` (`ap_private`,
-  read via `ULONG_AT(&global[3])`) equals the DESKTOP tree root's `ob_spec`
-  (non-zero on a built resource) (`gemsuper.c:95-96`).
+- **`appl_init` private (EmuTOS reference behaviour):** after `appl_init`,
+  `global[3..4]` (`ap_private`, read via `ULONG_AT(&global[3])`) equals the
+  DESKTOP tree root's `ob_spec` (non-zero on a built resource)
+  (`gemsuper.c:95-96`). **Not satisfiable on NewTOS — documented deviation,
+  not an open bug (D-099):** NewTOS has no DESKTOP resource tree at the AES
+  layer to source this value from, so `ap_private` is `0` on NewTOS by
+  design. A NewTOS-targeted program must not rely on `ap_private` carrying
+  the desktop background `ob_spec`.
 - **`appl_find` unknown:** `appl_find` of a name that no application registered
   returns `-1` (`gemaplib.c:106-107`).
 - **`appl_find` NULL:** `appl_find` with `addr_in[0] == NULL` returns `-1`
@@ -466,6 +485,24 @@ returns are pid / 0 / 1 / -1 only.
 
 (Empty during Phase 00.)
 
+- **`ap_private = 0` on NewTOS (D-099, deviation, not a gap).** EmuTOS's
+  `appl_init` writes `rs_trees[DESKTOP][ROOT].ob_spec` into `ap_private`
+  (`gemsuper.c:95-96`) — the desktop background pattern/colour object, sourced
+  from a permanently-resident, in-ROM DESKTOP resource tree that is part of
+  EmuTOS's `rs_trees[]` ensemble. NewTOS's AES has **no** such tree: there is
+  no in-ROM `gem.rsc`, and the only resource the AES ever loads is `GEM.RSC`,
+  loaded **lazily** on first use of the file selector (`resource-fileselector.md`,
+  tree 0 = `FSELECTR`). The desktop background equivalent — `g_patcol` — is
+  private state inside the **desktop client application**, which sits above
+  the AES/syscall boundary; `appl_init`'s dispatch arm (which runs inside the
+  AES kernel) has no path to it. Reporting `0` is therefore the honest value,
+  not a stub: there is nothing at the syscall layer to report, and no
+  NewTOS-targeted program can rely on `ap_private` carrying a desktop
+  `ob_spec` because no such tree exists to source it from. If a future
+  NewTOS revision grows a kernel-side desktop-background hook, this decision
+  should be revisited; until then this is a permanent, documented deviation
+  (see `docs/api/_discrepancies.md` D-099), and the "`appl_init` private"
+  verification criterion above is downgraded accordingly (not an open bug).
 - **Single-app vs. multi-app (the contract split).** EmuTOS runs the desktop
   plus up to `NUM_ACCS` desk accessories as concurrent AES processes, but
   reports `ap_count = 1`. The **reported value 1** and the **pid-as-ap_id**
