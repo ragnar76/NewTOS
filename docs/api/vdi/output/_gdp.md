@@ -211,8 +211,14 @@ engine as [`v_gtext`](_text.md)).
 5. **`v_bar` perimeter is fill-coloured and solid**, driven off `fill_per`
    (a *fill* attribute), not the line attributes (`vdi_gdp.c:436-444`).
 6. **`del_ang` wraps:** a negative `end - begin` adds `TWOPI`
-   (`vdi_gdp.c:412-414`), so `INTIN=[3000, 600]` draws the CCW arc that
-   passes through 3600/0, not the short 2400-wide one.
+   (`vdi_gdp.c:412-414`), so `INTIN=[3000, 600]` gives `del_ang =
+   (600-3000)+3600 = 1200`: the CCW sweep drawn passes through 3600/0 and
+   is **1200° wide — the *shorter* of the two possible spans** (the other,
+   non-wrapping, CW-only span from 3000 down to 600 would be 2400° and is
+   never drawn, because `del_ang` is always forced non-negative). An
+   earlier revision of this note called the un-drawn 2400° span "the short
+   one" — backwards: 2400 > 1200, so the wrapped span is the shorter one.
+   Corrected; see [`../_discrepancies.md`](../_discrepancies.md) D-VDI-17.
 7. **`v_justified` char count is `CONTRL[3]-2`**, and the two flags occupy
    `INTIN[0..1]` — the codes start at `INTIN[2]` (`vdi_text.c:1187-1192`).
 8. **`gdp_curve` early-out** on a fully-clipped bounding box

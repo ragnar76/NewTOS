@@ -174,6 +174,52 @@ accepted value; none can fail.
 line/fill/text framebuffer ops; `v_gdp` adds geometry only. Bezier
 (`CONTRL[5]==13`) deferred per build-config scope.
 
+> **Re-validation pass 2026-07-10 (VDI leg — output primitives, Batch
+> 3).** Re-read every output primitive's implementation incl. helpers
+> line-by-line against `vdi_line.c`, `vdi_marker.c`, `vdi_text.c`,
+> `vdi_fill.c`, `vdi_gdp.c`, and the `jmptb1`/`jmptb2` output-count
+> declarations in `vdi_main.c` at `1a7484ab`. Confirmed **accurate**
+> across all four spec files (`output/_lines-markers.md`, `_text.md`,
+> `_fill.md`, `_gdp.md`): the `PTSIN`/`CONTRL[1]` vertex/point-count
+> conventions, the "no output" shape (`{nptsout,nintout}={0,0}` for
+> opcodes 6/7/8/9/11/103/114, cross-checked against every jump-table
+> entry individually), the per-primitive `wrt_mode` application, the
+> `vwk->clip`-gated clipping on every primitive (`v_pline`'s
+> `clip_line`, `polygon`'s y-band clip, `vr_recfl`'s `clipbox`,
+> `contourfill`'s seed-in-clip guard, `gdp_curve`'s bounding-box
+> early-out), the GDP sub-opcode (`CONTRL[5]` 1–10) parameter layout
+> including the circle-vs-arc/pieslice radius slot difference
+> (`PTSIN[4]` vs `PTSIN[6]`), the open/closed + line-vs-fill-colour
+> perimeter rules, and `v_justified`'s `CONTRL[3]-2` char count. `HAVE_
+> BEZIER=0` (`vdi_defs.h:18`) confirmed to gate out `vdi_bezier.c`
+> wholesale (the entire file body, lines 21-572, is `#if HAVE_BEZIER`)
+> and every `CONTRL[5]==13`/Bezier branch in `vdi_line.c`/`vdi_fill.c`/
+> `vdi_gdp.c` — out of scope, correctly noted in all four files.
+> `v_cellarray` (10) confirmed a hard `vdi_v_nop` in `jmptb1`
+> (`vdi_main.c:42`, comment "not usually implemented by drivers") —
+> already documented in [`_dispatcher.md`](_dispatcher.md), not an
+> output primitive. Two findings:
+> - **D-VDI-17** (local): `output/_gdp.md` edge case 6 mislabelled the
+>   `del_ang`-wrap example — called the un-drawn 2400° span "the short
+>   one" when the wrapped 1200° span EmuTOS actually draws is the
+>   shorter of the two. Reworded with the explicit arithmetic.
+> - **D-VDI-18** (local): `attributes/_text.md`'s "NewTOS implementation
+>   notes" (`:213-215`) contradicted that same file's own contract and
+>   verification criteria (`:26,76-79,113-114,127-129`) by claiming
+>   "3600 folds to 0" for `vst_rotation`. Source (`vdi_text.c:924-935`)
+>   holds no modulo — `chup=3600`/`INTOUT[0]=3600` is genuinely
+>   stored/echoed for inputs normalising to `3150..3599`. Only
+>   `output_text`'s *rendering* switch (`vdi_text.c:408-441`, no `case
+>   3600`) treats it like `0` visually. Corrected the implementation
+>   note to separate "stored value" from "render path" — the Developer
+>   was concurrently removing an erroneous `% 3600` from
+>   `tos-api/src/vdi/attributes.rs`'s `vst_rotation`, which this wrong
+>   note likely motivated.
+>
+> All four output-primitive spec files are re-validated and ready for
+> the Phase-12 code-audit batch against `tos-api/src/vdi/primitives.rs`,
+> `gdp.rs`, `text.rs`, and `contour.rs`.
+
 ## Batch 4 — inquiry (D5)
 
 - [x] attribute inquiries — [`inquiry/_attributes.md`](inquiry/_attributes.md):

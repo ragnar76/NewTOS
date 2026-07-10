@@ -210,8 +210,25 @@ font's id when the request was unavailable).
   face until a real font subsystem lands. `vst_height`/`vst_point` report the
   one available cell size (plus any integer doubling we support), not
   arbitrary scaling — but must still return *actual* metrics in `PTSOUT`.
-- Text rotation is limited to the four right angles (`chup` ∈ {0,900,1800,
-  2700}; 3600 folds to 0); arbitrary angles snap — matches the EmuTOS screen
-  driver.
+- Text rotation storage must match EmuTOS exactly: `vst_rotation` echoes
+  and stores one of **five** values — `0`, `900`, `1800`, `2700`, or
+  `3600` (`((angle+450)/900)*900` after normalising to `0..3599`,
+  `vdi_text.c:928-935`). **`3600` is genuinely stored/echoed, not folded
+  to `0`** — an input that normalises to `3150..3599` rounds up to
+  `3600`, and both `chup` and `INTOUT[0]` hold `3600` verbatim; there is
+  **no `% 3600`** on the stored value. Do not apply one in the setter.
+  What *is* true: the **rendering** switch in `output_text` (`v_gtext`'s
+  glyph-placement code, `vdi_text.c:408-441`) has no explicit `case
+  3600:`, so a stored `chup=3600` falls into the same `default`
+  (unrotated) branch as `chup=0` — visually indistinguishable from `0`,
+  but that is a coincidence of the rendering switch's case labels, not
+  evidence that the stored/echoed attribute value is folded. NewTOS must
+  reproduce both facts: store/echo `3600` verbatim from `vst_rotation`,
+  and render `chup=3600` identically to `chup=0` in the glyph blit (four
+  right-angle rendering cases: 0/900/1800/2700, with 3600 sharing the 0
+  path). See [`../_discrepancies.md`](../_discrepancies.md) D-VDI-18 —
+  this paragraph previously (incorrectly) said "3600 folds to 0" without
+  qualification, contradicting the contract/verification-criteria above
+  (`:26,76-79,113-114,127-129`); corrected.
 - `style`/`h_align`/`v_align`/`chup`/`text_color` are consumed by `v_gtext`
   (opcode 8) at draw time.
