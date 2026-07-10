@@ -39,6 +39,7 @@ pub use mouse::{
 };
 mod primitives;
 mod raster;
+mod req_col;
 mod text;
 mod trig;
 mod vwk;
@@ -203,7 +204,7 @@ pub unsafe fn dispatch(vdipb_ptr: u64) {
                     21 => attributes::vst_font(&pb, vwk),
                     12 => attributes::vst_height(&pb, vwk),
                     107 => attributes::vst_point(&pb, vwk),
-                    112 => attributes::vsf_udpat(&pb, vwk),
+                    112 => attributes::vsf_udpat(&pb, vwk, ncol),
                     129 => attributes::vs_clip(&pb, vwk, backend),
                     5 => escape::v_escape(&pb, backend),
                     119 => attributes::vst_load_fonts(&pb),

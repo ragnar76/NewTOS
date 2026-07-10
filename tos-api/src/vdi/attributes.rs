@@ -8,6 +8,7 @@
 
 use super::backend::RasterBackend;
 use super::font;
+use super::req_col;
 use super::vwk::{validate_color_index, Vwk};
 use super::Vdipb;
 
@@ -151,14 +152,16 @@ pub fn vst_effects(pb: &Vdipb, vwk: &mut Vwk) {
 }
 
 /// Opcode 13 — `vst_rotation`: set the text baseline angle in 1/10°.
-/// On a raster screen it snaps to the nearest right angle (`chup` ∈
-/// {0,900,1800,2700}).
+/// The angle is normalised to `[0,3599]`, then snapped to the nearest
+/// right angle (`chup` ∈ {0,900,1800,2700,**3600**}). EmuTOS
+/// `vdi_text.c:924-936`: an angle in 3150..3599 rounds up to 3600 (kept
+/// distinct from 0 — no `% 3600`).
 pub fn vst_rotation(pb: &Vdipb, vwk: &mut Vwk) {
     let mut angle = pb.intin(0) % 3600;
     if angle < 0 {
         angle += 3600;
     }
-    vwk.chup = ((angle + 450) / 900) * 900 % 3600;
+    vwk.chup = ((angle + 450) / 900) * 900;
     pb.set_intout(0, vwk.chup);
     pb.set_contrl(4, 1);
 }
@@ -215,15 +218,23 @@ pub fn vsf_perimeter(pb: &Vdipb, vwk: &mut Vwk) {
 }
 
 /// Opcode 14 — `vs_color`: set a palette entry. `INTIN[0]` = colour
-/// index, `INTIN[1..3]` = R/G/B in the VDI 0..=1000 range (clamped).
-/// Out-of-range indices are ignored. No output.
+/// index, `INTIN[1..3]` = R/G/B. Out-of-range indices are ignored. The
+/// **raw** request is stored in the `REQ_COL` shadow (so `vq_color`
+/// flag 0 round-trips it verbatim, possibly outside 0..1000); only the
+/// copy programmed into the CLUT is clamped to 0..=1000. No output.
+/// EmuTOS `vdi_col.c:656-704`.
 pub fn vs_color(pb: &Vdipb, ncol: u16, backend: &dyn RasterBackend) {
     let idx = pb.intin(0);
     if idx < 0 || idx as u16 >= ncol {
         return;
     }
+    let (r, g, b) = (pb.intin(1), pb.intin(2), pb.intin(3));
+    // Store the raw, unclamped request (EmuTOS `REQ_COL[colnum][i] = *intin`).
+    // SAFETY: single trap path (see `req_col`).
+    unsafe { req_col::store_request(idx as u16, r, g, b) };
+    // Clamp only the DAC copy to the VDI 0..1000 range.
     let clamp = |v: i16| v.clamp(0, 1000) as u16;
-    backend.set_color(idx as u16, clamp(pb.intin(1)), clamp(pb.intin(2)), clamp(pb.intin(3)));
+    backend.set_color(idx as u16, clamp(r), clamp(g), clamp(b));
 }
 
 /// Opcode 17 — `vsl_color`: set the polyline colour.
@@ -295,16 +306,23 @@ pub fn vsf_style(pb: &Vdipb, vwk: &mut Vwk) {
 }
 
 /// Opcode 112 — `vsf_udpat`: set the user-defined fill pattern from
-/// `INTIN` (`CONTRL[3]` words). A 16-word count is a single-plane
-/// pattern; a multiple of 16 is multi-plane (we store plane 0). Invalid
-/// counts are ignored.
-pub fn vsf_udpat(pb: &Vdipb, vwk: &mut Vwk) {
+/// `INTIN` (`CONTRL[3]` words). EmuTOS (`vdi_fill.c:149-166`) accepts
+/// **only** a 16-word single-plane pattern (`multifill = 0`) or a full
+/// `planes*16`-word multi-plane pattern (`multifill = 1`, `planes =
+/// INQ_TAB[4] = log2(ncol)`); any other count is invalid and leaves the
+/// state unchanged. We store plane 0 either way (multi-plane colour
+/// reduction — an accepted single-plane-backend limitation).
+pub fn vsf_udpat(pb: &Vdipb, vwk: &mut Vwk, ncol: u16) {
     let count = pb.contrl(3);
-    if count < 16 || count % 16 != 0 {
-        return;
+    let planes = ncol.trailing_zeros() as i16; // INQ_TAB[4]
+    if count == 16 {
+        vwk.multifill = false;
+    } else if count == planes * 16 {
+        vwk.multifill = true;
+    } else {
+        return; // invalid count: no state change
     }
     for i in 0..16 {
         vwk.ud_patrn[i] = pb.intin(i) as u16;
     }
-    vwk.multifill = count != 16;
 }

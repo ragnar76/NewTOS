@@ -18,6 +18,15 @@ const MAX_LINE_STYLE: i16 = 7;
 const MAX_LINE_WIDTH: i16 = 40;
 const MAX_FILL_PATTERN: i16 = 24;
 const MAX_FILL_HATCH: i16 = 12;
+const FIS_PATTERN: i16 = 2; // interior style: dither pattern
+
+/// `DEV_TAB[39]` — the DAC's RGB choice count (`get_palette()`, EmuTOS
+/// `bios/screen.c:831`). This is **not** the number of displayable
+/// colours (that is `DEV_TAB[13]`) but the palette precision: EmuTOS
+/// returns 4096 for any STe/TT-style colour shifter, 512 for a plain-ST
+/// colour mode, 2 for mono. NewTOS' `vs_color` accepts the full STe/TT
+/// 0..1000-per-gun request range, so 4096 is the faithful value.
+const PALETTE_PRECISION: i16 = 4096;
 
 /// `DEV_TAB` template (45 WORDs), EmuTOS `DEV_TAB_rom`. Indices
 /// `[0],[1],[13],[35],[39]` are patched from the live device.
@@ -85,7 +94,13 @@ fn init_wk(vwk: &mut Vwk, pb: &Vdipb, backend: &dyn RasterBackend) {
 
     let fill_int = pb.intin(7);
     vwk.fill_style = if (0..=4).contains(&fill_int) { fill_int } else { 0 };
-    vwk.fill_index = pb.intin(8); // refined against style by vsf_style later
+    // Clamp work_in[8] to the current interior style's index range
+    // (EmuTOS `vdi_control.c:305-311`). NB: `init_wk` stores the *1-based*
+    // validated value (no `-1`), unlike `vsf_style` which stores it
+    // 0-based — the deliberate D-VDI-8 quirk, preserved here.
+    let fi = pb.intin(8);
+    let max = if vwk.fill_style == FIS_PATTERN { MAX_FILL_PATTERN } else { MAX_FILL_HATCH };
+    vwk.fill_index = if (1..=max).contains(&fi) { fi } else { 1 };
     vwk.fill_color = validate_color_index(pb.intin(9), ncol);
 
     vwk.xfm_mode = pb.intin(10); // 0 = NDC, 2 = RC (screen is RC)
@@ -103,7 +118,7 @@ fn init_wk(vwk: &mut Vwk, pb: &Vdipb, backend: &dyn RasterBackend) {
     dev[1] = yres - 1;
     dev[13] = ncol as i16;
     dev[35] = if ncol <= 2 { 0 } else { 1 }; // colour capable?
-    dev[39] = ncol as i16; // palette size
+    dev[39] = PALETTE_PRECISION; // DAC RGB-choice count (get_palette)
     for (i, &v) in dev.iter().enumerate() {
         pb.set_intout(i, v);
     }
@@ -145,7 +160,7 @@ pub fn vq_extnd(pb: &Vdipb, vwk: &crate::vdi::vwk::Vwk, backend: &dyn RasterBack
         dev[1] = yres - 1;
         dev[13] = ncol as i16;
         dev[35] = if ncol <= 2 { 0 } else { 1 };
-        dev[39] = ncol as i16;
+        dev[39] = PALETTE_PRECISION; // DAC RGB-choice count (get_palette)
         for (i, &v) in dev.iter().enumerate() {
             pb.set_intout(i, v);
         }

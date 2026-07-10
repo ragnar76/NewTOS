@@ -8,6 +8,7 @@
 
 use super::backend::RasterBackend;
 use super::font;
+use super::req_col;
 use super::vwk::Vwk;
 use super::Vdipb;
 
@@ -66,11 +67,14 @@ pub fn vqt_attributes(pb: &Vdipb, vwk: &Vwk) {
 }
 
 /// Opcode 26 — `vq_color`: read a palette entry. `INTIN[0]` = index,
-/// `INTIN[1]` = flag (0 = last requested value, ≠0 = actual). The
-/// bring-up palette screen returns the same value for both within DAC
-/// precision (the backend stores the request scaled to 0..=1000).
+/// `INTIN[1]` = flag (0 = last *requested* value, ≠0 = *actual*). EmuTOS
+/// `vdi_col.c:843-936`: flag 0 returns the raw `REQ_COL` request (which
+/// may lie outside 0..1000), flag ≠0 the hardware DAC read-back. NewTOS
+/// keeps the raw request in the `REQ_COL` shadow and reads the clamped/
+/// quantised palette from the backend for the "actual" path.
 pub fn vq_color(pb: &Vdipb, ncol: u16, backend: &dyn RasterBackend) {
     let idx = pb.intin(0);
+    let flag = pb.intin(1);
     pb.set_intout(1, 0);
     pb.set_intout(2, 0);
     pb.set_intout(3, 0);
@@ -79,11 +83,26 @@ pub fn vq_color(pb: &Vdipb, ncol: u16, backend: &dyn RasterBackend) {
         pb.set_contrl(4, 4);
         return;
     }
-    let (r, g, b) = backend.query_color(idx as u16);
     pb.set_intout(0, idx);
-    pb.set_intout(1, r as i16);
-    pb.set_intout(2, g as i16);
-    pb.set_intout(3, b as i16);
+    // flag 0: the raw last-requested value (REQ_COL); registers never set
+    // by vs_color fall back to the live palette (the hardware default).
+    // flag ≠0: the actual hardware palette read-back.
+    let raw = if flag == 0 {
+        // SAFETY: single trap path (see `req_col`).
+        unsafe { req_col::requested(idx as u16) }
+    } else {
+        None
+    };
+    let (r, g, b) = match raw {
+        Some(rgb) => rgb,
+        None => {
+            let (r, g, b) = backend.query_color(idx as u16);
+            (r as i16, g as i16, b as i16)
+        }
+    };
+    pb.set_intout(1, r);
+    pb.set_intout(2, g);
+    pb.set_intout(3, b);
     pb.set_contrl(4, 4);
 }
 
