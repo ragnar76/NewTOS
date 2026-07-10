@@ -77,6 +77,26 @@ pub fn appl_init(pb: &Aespb) {
         (*g).ap_version = AES_VERSION;
         (*g).ap_count = 1;
         (*g).ap_id = pid;
+        // `ap_private` deviation (documented, not a stub).
+        //
+        // EmuTOS sets `ap_private = rs_trees[DESKTOP][ROOT].ob_spec`
+        // (`gemsuper.c:95-96`) — the root `ob_spec` of the DESKTOP form in
+        // its *built-in* AES resource (`gem.rsc`, statically compiled into
+        // ROM, always in memory). Its low byte doubles as the AES desktop
+        // background pattern/colour (`set_aes_background`, `geminit.c:637`).
+        //
+        // NewTOS has **no tos-api-reachable equivalent** at `appl_init` time:
+        //  * the AES owns no statically-compiled built-in resource; the only
+        //    resource it loads (`GEM.RSC`, for the file selector) is an
+        //    optional SD file, read lazily when `fsel_input` first runs, and
+        //    even then its tree 0 is FSELECTR, not DESKTOP (`fsel.rs`);
+        //  * the desktop background pattern/colour (`g_patcol`) lives in the
+        //    desktop *client* (`kernel/src/desk/global.rs`), which sits above
+        //    this syscall layer and must not be reached downward.
+        // Inventing EmuTOS's gem.rsc-specific `ob_spec` literal here would be
+        // a wrong value with no NewTOS meaning (CLAUDE.md Rule 2/3). Left 0
+        // pending an ADR/spec decision on whether the AES should embed a
+        // DESKTOP form. Reported to the lead. See application.md:110 / D-...
         (*g).ap_private = 0;
         (*g).ap_ptree = 0;
         (*g).ap_rscmem = 0;

@@ -193,10 +193,15 @@ pub unsafe fn dispatch(aespb_ptr: u64) {
         125 => shell::shel_envrn(&pb),
         126 => shell::shel_rdef(&pb),
         127 => shell::shel_wdef(&pb),
-        // Remaining managers (event/object/form/window/menu/resource/
-        // scrap/shell) land in later sub-phases. The AES has no invalid-
-        // opcode error path (the GEM environment is trusted), so an
-        // unimplemented opcode is a no-op until its manager is added.
-        _ => {}
+        // Any opcode not matched above — out of range, negative, or a
+        // not-compiled-in function — returns the AES unsupported-opcode
+        // sentinel `-1` in `int_out[0]` (`RET_CODE`). This mirrors EmuTOS
+        // `crysbind`'s `default:` arm (`gemsuper.c:406-417`), which sets
+        // `unsupported = TRUE` and then `ret = -1` unconditionally. Opcode 0
+        // is included: EmuTOS returns `-1` for it too, only suppressing the
+        // on-screen `fm_show(ALNOFUNC)` alert ("since some PRGs make this
+        // call"). The alert is reference-level (spec `_dispatcher.md` §2/§3a,
+        // D-084); the `-1` return is the contract, so we set it here.
+        _ => pb.set_ret(-1),
     }
 }
