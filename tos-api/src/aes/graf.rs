@@ -23,6 +23,9 @@ const BLACK: Pel = 1;
 // graf_mouse special numbers.
 const M_OFF: i16 = 256;
 const M_ON: i16 = 257;
+const M_SAVE: i16 = 258;
+const M_RESTORE: i16 = 259;
+const M_PREVIOUS: i16 = 260;
 
 /// Draw (or erase) a 1-pixel outline rectangle.
 fn outline(x: i16, y: i16, w: i16, h: i16, col: Pel, backend: &dyn RasterBackend, clip: ClipRect) {
@@ -37,6 +40,22 @@ fn outline(x: i16, y: i16, w: i16, h: i16, col: Pel, backend: &dyn RasterBackend
 
 fn mouse_down() -> bool {
     crate::vdi::mouse_buttons() & 0x01 != 0
+}
+
+/// EmuTOS `mul_div_round` (util/miscasm.S): `mult1 * mult2 / divisor`, rounded
+/// **away from zero** — the D-098 "slider creep" fix (gemgrlib.c:410). Computed
+/// as `((m1·m2·2)/divisor ± 1) >> 1`, matching the m68k `divs.w`/`asr.w`
+/// sequence; done in `i32` so `rel·1000` cannot overflow.
+fn mul_div_round(mult1: i32, mult2: i32, divisor: i32) -> i32 {
+    if divisor == 0 {
+        return 0;
+    }
+    let n = mult1 * mult2 * 2 / divisor;
+    if n < 0 {
+        (n - 1) >> 1
+    } else {
+        (n + 1) >> 1
+    }
 }
 
 /// `gr_clamp` (EmuTOS `gemgrlib.c:83`): the signed rubber-band extent from a
@@ -275,20 +294,37 @@ pub fn graf_slidebox(pb: &Aespb) {
     unsafe {
         let p = &*tree.add(parent as usize);
         let c = &mut *tree.add(obj as usize);
-        let (travel, csize, c0) = if isvert {
-            (p.ob_height - c.ob_height, c.ob_height, c.ob_y)
+        // `travel` = parent − child extent (EmuTOS `divis = c.g_h - t.g_h`);
+        // `c0` = the elevator's start position relative to the parent.
+        let (travel, c0) = if isvert {
+            (p.ob_height - c.ob_height, c.ob_y)
         } else {
-            (p.ob_width - c.ob_width, c.ob_width, c.ob_x)
+            (p.ob_width - c.ob_width, c.ob_x)
         };
-        let _ = (csize, c0);
         if let Some(h) = host() {
             let (prx, pry, _, _) = object::abs_rect(tree as *const Object, parent);
+            // Grip offset: how far the mouse sat from the elevator's top-left
+            // at grab time, held constant for the whole drag so the elevator
+            // does not snap its leading edge to the cursor. EmuTOS `gr_dragbox`
+            // takes it via `gr_clamp(sx+1, sy+1, 0, 0, &off)` → `off =
+            // max(mouse − elev, 0)` (gemgrlib.c:253-260). `travel` can be
+            // negative for a malformed slider; `.max(0)` keeps `clamp` sound.
+            let (m0x, m0y) = crate::vdi::mouse_position();
+            let grip = if isvert {
+                (m0y - (pry + c0)).max(0)
+            } else {
+                (m0x - (prx + c0)).max(0)
+            };
+            let hi = travel.max(0);
             loop {
                 let (mx, my) = crate::vdi::mouse_position();
-                // `travel` (parent − child extent) can be negative for a
-                // malformed slider; `.max(0)` keeps `i16::clamp` from panicking.
-                let hi = travel.max(0);
-                let rel = if isvert { (my - pry).clamp(0, hi) } else { (mx - prx).clamp(0, hi) };
+                // New elevator position (relative to the parent) = mouse − grip
+                // − parent origin, constrained to the track [0, travel].
+                let rel = if isvert {
+                    (my - grip - pry).clamp(0, hi)
+                } else {
+                    (mx - grip - prx).clamp(0, hi)
+                };
                 if isvert {
                     c.ob_y = rel;
                 } else {
@@ -297,7 +333,14 @@ pub fn graf_slidebox(pb: &Aespb) {
                 if let Some(backend) = h.raster() {
                     object::draw_obj(tree as *const Object, parent, 8, backend);
                 }
-                pos = if travel > 0 { (rel as i32 * 1000 / travel as i32) as i16 } else { 0 };
+                // Position 0..1000, rounded away from zero — EmuTOS D-098
+                // "slider creep" fix: `mul_div_round(divnd, 1000, divis)`
+                // (gemgrlib.c:410), not a truncating divide.
+                pos = if travel > 0 {
+                    mul_div_round(rel as i32, 1000, travel as i32) as i16
+                } else {
+                    0
+                };
                 if !mouse_down() {
                     break;
                 }
@@ -310,13 +353,18 @@ pub fn graf_slidebox(pb: &Aespb) {
 }
 
 /// `graf_handle` (77) — the AES's VDI workstation handle (`int_out[0]`)
-/// plus the system-font cell metrics in `int_out[1..4]`.
+/// plus the system-font cell metrics in `int_out[1..4]` (EmuTOS
+/// gemsuper.c:287-293).
 pub fn graf_handle(pb: &Aespb) {
-    pb.set_ret(1); // physical-workstation handle
-    pb.set_intout(1, 8); // wchar
-    pb.set_intout(2, 16); // hchar
-    pb.set_intout(3, 8); // wbox
-    pb.set_intout(4, 16); // hbox
+    pb.set_ret(1); // gl_handle: the physical VDI workstation the AES draws through
+    pb.set_intout(1, 8); // gl_wchar: system-font cell width
+    pb.set_intout(2, 16); // gl_hchar: system-font cell height
+    // gl_wbox / gl_hbox: the gadget box unit. For the 8×16 system font both
+    // are 19 — gl_hbox = gl_hchar+3 = 19; gl_wbox = max(gl_wchar+4, gl_hbox·
+    // aspect) = 19 (gemgraf.c:412-415, gemsuper.c:290-291). Shared with the
+    // window manager's gadget cell so there is only one `19` in the tree.
+    pb.set_intout(3, super::window::GAD); // gl_wbox
+    pb.set_intout(4, super::window::GAD); // gl_hbox
 }
 
 /// `graf_mouse` (78) — set the mouse cursor: `int_in[0]` = a preset shape
@@ -336,6 +384,16 @@ pub fn graf_mouse(pb: &Aespb) {
             }
             USER_DEF => set_user_form(pb, backend),
             0..=7 => crate::vdi::mouse::set_preset(number, backend),
+            M_SAVE | M_RESTORE | M_PREVIOUS => {
+                // DEFERRED (see docs/STATUS.md "Blocked/deferred"): EmuTOS
+                // gr_mouse M_SAVE stores the current cursor form in the process
+                // descriptor, M_RESTORE/M_PREVIOUS reinstall it (gemgrlib.c:
+                // 440-450). Faithful support needs a saved-form slot *and* a
+                // current-form reader in the VDI cursor subsystem
+                // (tos-api/src/vdi/mouse.rs) — outside these two files. The
+                // cursor form is left unchanged (an honest no-op, never a
+                // fabricated form). graf_mouse is void, so int_out[0] stays 1.
+            }
             _ => {} // undefined shape number: leave the cursor unchanged
         }
     }

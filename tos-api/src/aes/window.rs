@@ -55,6 +55,7 @@ const WF_FXYWH: i16 = 7;
 const WF_TOP: i16 = 10;
 const WF_FIRSTXYWH: i16 = 11;
 const WF_NEXTXYWH: i16 = 12;
+const WF_SCREEN: i16 = 17;
 
 // ── wind_calc types ──
 const WC_BORDER: i16 = 0;
@@ -69,8 +70,12 @@ const G_CLOSE: u16 = 0x05;
 const G_SIZE: u16 = 0x06;
 const G_FULL: u16 = 0x07;
 
-/// Gadget cell size (`gl_hbox` = char height + 3; square gadgets).
-const GAD: i16 = 19;
+/// Gadget cell size (`gl_hbox` = char height + 3; square gadgets). This is
+/// also EmuTOS `gl_wbox`/`gl_hbox`: for the 8×16 system font both are 19
+/// (`gl_hbox = gl_hchar+3 = 19`, `gl_wbox = max(gl_wchar+4, gl_hbox·aspect) =
+/// 19`, `gemgraf.c:412-415`), so `graf::graf_handle` returns this same unit as
+/// its box metric instead of a second magic 19.
+pub(super) const GAD: i16 = 19;
 
 const WHITE: Pel = 0;
 const BLACK: Pel = 1;
@@ -113,13 +118,15 @@ struct Window {
     prev: Grect, // previous border rect (WF_PXYWH)
     name: [u8; NAME_CAP],
     info: [u8; NAME_CAP],
-    /// Vertical slider position (`WF_VSLIDE`, 0..1000 per-mille of travel)
-    /// and thumb size (`WF_VSLSIZ`, 1..1000 per-mille of the track; 1000 =
-    /// the whole track, i.e. nothing to scroll).
+    /// Vertical slider position (`WF_VSLIDE`, 1..1000 per-mille of travel)
+    /// and thumb size (`WF_VSLSIZ`, 1..1000 per-mille of the track, or **−1**
+    /// = "use default size", one gadget cell). `wind_create` inits the size to
+    /// −1 (EmuTOS `w_vslsiz`, gemwmlib.c:232); the getter round-trips −1.
     vslide: i16,
     vslsize: i16,
     /// Horizontal slider position (`WF_HSLIDE`) and thumb size (`WF_HSLSIZ`),
-    /// same per-mille encoding as the vertical pair (mirror axis).
+    /// same per-mille encoding as the vertical pair (mirror axis); size −1 =
+    /// default.
     hslide: i16,
     hslsize: i16,
 }
@@ -137,9 +144,9 @@ impl Window {
         name: [0; NAME_CAP],
         info: [0; NAME_CAP],
         vslide: 0,
-        vslsize: 1000,
+        vslsize: -1,
         hslide: 0,
-        hslsize: 1000,
+        hslsize: -1,
     };
 }
 
@@ -637,9 +644,16 @@ fn draw_vslider(w: &Window, backend: &dyn RasterBackend) {
         backend.fill_rect(col_x, sy, GAD, track_h, GRAY_LT, clip);
         rect_outline(Grect { x: col_x, y: sy, w: GAD, h: track_h }, backend, clip);
         // Thumb: size = vslsize per-mille of the track (min one gadget cell),
-        // position = vslide per-mille of the remaining travel.
-        let size = w.vslsize.clamp(1, 1000);
-        let thumb_h = ((track_h as i32 * size as i32 / 1000) as i16).clamp(GAD.min(track_h), track_h);
+        // position = vslide per-mille of the remaining travel. A stored −1
+        // ("use default size") renders as one gadget cell — EmuTOS `w_bldvbar`
+        // `if (w_vslsiz == -1) size = gl_hbox` (gemwmlib.c:665-667) — never a
+        // zero/negative-height elevator; the stored/returned value stays −1.
+        let min_thumb = GAD.min(track_h);
+        let thumb_h = if w.vslsize == -1 {
+            min_thumb
+        } else {
+            ((track_h as i32 * w.vslsize.clamp(1, 1000) as i32 / 1000) as i16).clamp(min_thumb, track_h)
+        };
         let travel = track_h - thumb_h;
         let pos = w.vslide.clamp(0, 1000);
         let thumb_y = sy + (travel as i32 * pos as i32 / 1000) as i16;
@@ -693,9 +707,16 @@ fn draw_hslider(w: &Window, backend: &dyn RasterBackend) {
         backend.fill_rect(sx, row_y, track_w, GAD, GRAY_LT, clip);
         rect_outline(Grect { x: sx, y: row_y, w: track_w, h: GAD }, backend, clip);
         // Thumb: size = hslsize per-mille of the track (min one gadget cell),
-        // position = hslide per-mille of the remaining travel.
-        let size = w.hslsize.clamp(1, 1000);
-        let thumb_w = ((track_w as i32 * size as i32 / 1000) as i16).clamp(GAD.min(track_w), track_w);
+        // position = hslide per-mille of the remaining travel. A stored −1
+        // ("use default size") renders as one gadget cell — EmuTOS `w_bldhbar`
+        // `if (w_hslsiz == -1) size = gl_wbox` (gemwmlib.c:706-708) — never a
+        // zero/negative-width elevator; the stored/returned value stays −1.
+        let min_thumb = GAD.min(track_w);
+        let thumb_w = if w.hslsize == -1 {
+            min_thumb
+        } else {
+            ((track_w as i32 * w.hslsize.clamp(1, 1000) as i32 / 1000) as i16).clamp(min_thumb, track_w)
+        };
         let travel = track_w - thumb_w;
         let pos = w.hslide.clamp(0, 1000);
         let thumb_x = sx + (travel as i32 * pos as i32 / 1000) as i16;
@@ -807,6 +828,13 @@ pub fn wind_delete(pb: &Aespb) {
     }
 }
 
+/// Write a single scalar to `int_out[1]` with `ret = 1` — the common
+/// `wind_get` scalar-field return (WF_KIND / WF_TOP / the slider fields).
+fn scalar_out(pb: &Aespb, v: i16) {
+    pb.set_intout(1, v);
+    pb.set_ret(1);
+}
+
 /// `wind_get` (104) — read a `WF_*` field of window `int_in[0]`.
 pub fn wind_get(pb: &Aespb) {
     let handle = pb.intin(0);
@@ -835,7 +863,19 @@ pub fn wind_get(pb: &Aespb) {
         return;
     }
 
-    // Desktop (handle 0) reports the full screen for the rect fields.
+    // WF_SCREEN (17): the menu/alert bb_save buffer address + length. Like
+    // WF_TOP it needs no valid handle (EmuTOS gemwmlib.c:1517-1520). NewTOS has
+    // no VDI memory-MFDB save buffer yet, so report a null/zero-length buffer
+    // honestly (ret=1, address = length = 0) rather than fabricating one.
+    // TODO(#51): WF_SCREEN returns the bb_save buffer once memory-MFDB lands.
+    if field == WF_SCREEN {
+        for i in 1..=4 {
+            pb.set_intout(i, 0); // address (hi/lo) + length (hi/lo)
+        }
+        pb.set_ret(1);
+        return;
+    }
+
     let r = match win(handle) {
         Some(w) => match field {
             WF_WXYWH => calc(WC_WORK, w.kind, w.curr),
@@ -847,9 +887,30 @@ pub fn wind_get(pb: &Aespb) {
                 pb.set_ret(1);
                 return;
             }
-            _ => Grect::default(),
+            // Slider position/size scalars → int_out[1] (EmuTOS wm_get,
+            // gemwmlib.c:1542-1551). WF_HSLSIZ/WF_VSLSIZ round-trip the −1
+            // "use default size" marker unchanged.
+            WF_HSLIDE => return scalar_out(pb, w.hslide),
+            WF_VSLIDE => return scalar_out(pb, w.vslide),
+            WF_HSLSIZ => return scalar_out(pb, w.hslsize),
+            WF_VSLSIZ => return scalar_out(pb, w.vslsize),
+            // Any other field on a valid window (COLOR/DCOLOR/OWNER/… — not
+            // implemented at this altitude) → FALSE (EmuTOS default).
+            _ => {
+                pb.set_ret(0);
+                return;
+            }
         },
-        None if handle == 0 => screen_rect(),
+        // Desktop (handle 0): the WORK area sits *under* the menu bar (EmuTOS
+        // gl_rfull); CURR/PREV/FULL are the whole screen (gl_rscreen).
+        None if handle == 0 => match field {
+            WF_WXYWH => desktop_work(),
+            WF_CXYWH | WF_PXYWH | WF_FXYWH => screen_rect(),
+            _ => {
+                pb.set_ret(0);
+                return;
+            }
+        },
         None => {
             pb.set_ret(0);
             return;
@@ -866,21 +927,26 @@ pub fn wind_get(pb: &Aespb) {
 pub fn wind_set(pb: &Aespb) {
     let handle = pb.intin(0);
     let field = pb.intin(1);
-    let title = pb.addrin(0) as *const u8;
     if win(handle).is_none() {
         pb.set_ret(0);
         return;
     }
     match field {
         WF_NAME => {
+            // Native ABI: the string pointer travels in addr_in[0] (read
+            // *only* in the pointer-taking arms, so a conforming WF_TOP/
+            // WF_VSLIDE/WF_CXYWH set with AIN_LEN=0 and a NULL addr_in never
+            // faults). Cleaner than EmuTOS's m68k int_in[2..3] packing (D-094).
+            let title = pb.addrin(0) as *const u8;
             if let Some(w) = win(handle) {
                 copy_cstr(&mut w.name, title);
             }
             redraw_open(handle);
         }
         WF_INFO => {
+            let info = pb.addrin(0) as *const u8;
             if let Some(w) = win(handle) {
-                copy_cstr(&mut w.info, title);
+                copy_cstr(&mut w.info, info);
             }
             redraw_open(handle);
         }
@@ -899,33 +965,52 @@ pub fn wind_set(pb: &Aespb) {
             send_redraw(handle, calc(WC_WORK, kind, r));
         }
         WF_TOP => top_window(handle),
+        // Slider positions clamp to 1..1000; sizes clamp to 1..1000 but let −1
+        // ("use default size") pass through (EmuTOS wm_set, gemwmlib.c:1643-1656).
         WF_VSLIDE => {
             if let Some(w) = win(handle) {
-                w.vslide = pb.intin(2).clamp(0, 1000);
+                w.vslide = pb.intin(2).clamp(1, 1000);
             }
             redraw_vslider(handle);
         }
         WF_VSLSIZ => {
             if let Some(w) = win(handle) {
-                w.vslsize = pb.intin(2).clamp(1, 1000);
+                w.vslsize = slider_size(pb.intin(2));
             }
             redraw_vslider(handle);
         }
         WF_HSLIDE => {
             if let Some(w) = win(handle) {
-                w.hslide = pb.intin(2).clamp(0, 1000);
+                w.hslide = pb.intin(2).clamp(1, 1000);
             }
             redraw_hslider(handle);
         }
         WF_HSLSIZ => {
             if let Some(w) = win(handle) {
-                w.hslsize = pb.intin(2).clamp(1, 1000);
+                w.hslsize = slider_size(pb.intin(2));
             }
             redraw_hslider(handle);
         }
-        _ => {}
+        // Unknown or unimplemented field → FALSE (EmuTOS wm_set default:
+        // gemwmlib.c:1736). NewTOS does not implement WF_NEWDESK/WF_COLOR/
+        // WF_DCOLOR at this altitude, so they honestly report FALSE rather
+        // than faking success.
+        _ => {
+            pb.set_ret(0);
+            return;
+        }
     }
     pb.set_ret(1);
+}
+
+/// Validate a slider *size* (`WF_HSLSIZ`/`WF_VSLSIZ`): clamp to 1..1000, but
+/// pass −1 ("use default size") through unclamped (EmuTOS gemwmlib.c:1643-1648).
+fn slider_size(v: i16) -> i16 {
+    if v == -1 {
+        -1
+    } else {
+        v.clamp(1, 1000)
+    }
 }
 
 /// Redraw just `handle`'s frame if it is open (for name/info changes).
@@ -940,23 +1025,7 @@ fn redraw_open(handle: i16) {
 /// `wind_find` (106) — handle of the window under `(int_in[0], int_in[1])`;
 /// 0 = desktop.
 pub fn wind_find(pb: &Aespb) {
-    let mx = pb.intin(0);
-    let my = pb.intin(1);
-    // Top-most first (Batch 1: the single top window, then any open one).
-    let top = get_top();
-    if let Some(w) = win(top) {
-        if w.open && inside(w.curr, mx, my) {
-            pb.set_ret(top);
-            return;
-        }
-    }
-    for (i, w) in slots().iter().enumerate() {
-        if w.in_use && w.open && inside(w.curr, mx, my) {
-            pb.set_ret((i + 1) as i16);
-            return;
-        }
-    }
-    pb.set_ret(0); // desktop
+    pb.set_ret(find_handle(pb.intin(0), pb.intin(1)));
 }
 
 /// `wind_update` (107) — screen-lock / mouse-ownership begin/end. Batch 1
@@ -1269,20 +1338,20 @@ fn wait_release() {
     }
 }
 
-/// Handle of the open window under `(mx,my)` (top-most first); 0 = desktop.
+/// Handle of the open window under `(mx,my)`, **top-most first** (the highest
+/// z among the windows whose border rect contains the point); 0 = desktop.
+/// Mirrors EmuTOS `wm_find` = `ob_find(gl_wtree, 0, 2, x, y)`, which walks the
+/// window tree strictly top-to-bottom (gemsuper.c:348-350, gemwmlib.c:1767).
 fn find_handle(mx: i16, my: i16) -> i16 {
-    let top = get_top();
-    if let Some(w) = win(top) {
-        if w.open && inside(w.curr, mx, my) {
-            return top;
-        }
-    }
+    let mut best = 0i16;
+    let mut best_z = i16::MIN;
     for (i, w) in slots().iter().enumerate() {
-        if w.in_use && w.open && inside(w.curr, mx, my) {
-            return (i + 1) as i16;
+        if w.in_use && w.open && inside(w.curr, mx, my) && w.z >= best_z {
+            best_z = w.z;
+            best = (i + 1) as i16;
         }
     }
-    0
+    best
 }
 
 /// AES window-frame interception (the `evnt_multi` hook, like the Menu
