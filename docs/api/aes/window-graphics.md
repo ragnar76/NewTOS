@@ -1047,10 +1047,24 @@ build does not support it** (discrepancy D-053).
   apply the same boundary handling as other AES `addr*` reads; struct pointer
   widths follow the caller ABI (native vs m68k, see
   [`docs/COMPATIBILITY.md`](../../COMPATIBILITY.md)). **`wind_set`'s
-  `WF_NAME`/`WF_INFO`/`WF_NEWDESK` string/tree pointer is *not* an `addr_in[]`
-  pointer** (D-094) — it is packed as a raw LONG across `int_in[2..3]` and
-  needs the identical cross-boundary validation, just read from a different
-  slot.
+  `WF_NAME`/`WF_INFO`/`WF_NEWDESK` string/tree pointer is, on NewTOS,
+  `addr_in[0]`** — the same slot as every other AES pointer-class argument;
+  apply the identical boundary validation. This is the *native* mapping, not
+  the 68k one D-094 documents: on EmuTOS/68k TOS, `wm_set(w_handle, w_field,
+  pinwds)` (`gemwmlib.c:1623`) receives the pointer packed as a raw LONG
+  across two `int_in` words (`pinwds = &int_in[2]`, dispatched at
+  `gemsuper.c:345-346`; read back via `*(char **)pinwds`/`*(OBJECT
+  **)pinwds` at `gemwmlib.c:1660-1689`) — correct for the 68k ABI, where the
+  AESPB's `int_in` array holds only 16-bit words. A native 64-bit AArch64
+  pointer does not fit in two `i16` words, so per
+  [`docs/COMPATIBILITY.md`](../../COMPATIBILITY.md#native-vs-m68k-struct-variants)
+  (pointer width follows the caller ABI; the API must not branch on caller
+  type) the native ABI collapses this pointer-class argument to `addr_in[0]`
+  instead — exactly what `wind_set` already reads
+  (`tos-api/src/aes/window.rs`), consistent with every other AES pointer
+  argument (`menu.rs`, `object.rs`, `appl.rs`). The `int_in[2..3]` packing
+  described elsewhere in this file for `wind_set`'s pointer field is the 68k
+  form of the ABI, not the NewTOS native contract.
 
 ### Open questions
 

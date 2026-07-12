@@ -4229,3 +4229,60 @@ D-050, plus the `appl_init` fix D-099 references) — no source-misreading was
 reported against them in this later round.
 
 ---
+
+## D-102: `wind_set(WF_NAME/WF_INFO/WF_NEWDESK)`'s pointer is `addr_in[0]` on the NewTOS *native* ABI — D-094's `int_in[2..3]` packing is the 68k form only, not the NewTOS contract
+
+**Date:** 2026-07-12 (AES leg, Window/Graphics code audit — spec-vs-code
+cross-check)
+**Phase 00b spec:** `docs/api/aes/window-graphics.md` (NewTOS implementation
+notes, `addr_in[]`/pointer-width bullet)
+
+**Context:** a Window/Graphics implementation audit compared the spec's
+guidance for `wind_set`'s `WF_NAME`/`WF_INFO`/`WF_NEWDESK` pointer against the
+actual NewTOS code and found a contradiction: the spec's "NewTOS
+implementation notes" bullet (added by D-094) instructed implementers to read
+this pointer "packed as a raw LONG across `int_in[2..3]`", but
+`tos-api/src/aes/window.rs::wind_set` already reads it from `pb.addrin(0)` —
+the same slot every other AES pointer argument uses (`tos-api/src/aes/
+menu.rs`, `object.rs`, `appl.rs`). D-094 was correct about EmuTOS/68k
+behaviour; the error was carrying that 68k-ABI fact over into the
+*NewTOS-native* instruction, where it does not apply.
+
+**EmuTOS (confirmed, same citations as D-094):** `wm_set(WORD w_handle, WORD
+w_field, WORD *pinwds)` (`gemwmlib.c:1623`) is dispatched from `WIND_SET` as
+`wm_set(WM_HANDLE, WM_WFIELD, &WM_IX)` (`gemsuper.c:345-346`), where `WM_IX =
+int_in[2]`; `WF_NAME`/`WF_INFO` read `*(char **)pinwds` and `WF_NEWDESK` reads
+`*(OBJECT **)pinwds` (`gemwmlib.c:1660-1689`) — a 32-bit pointer packed across
+two 16-bit `int_in` words, because the AESPB's `int_in` array element width is
+a `WORD` on the m68k ABI. This is genuinely how the 68k-callable `wind_set()`
+binding packs the argument, and D-094 documents it correctly for that world.
+
+**Why it does not carry over to native NewTOS:** per `docs/COMPATIBILITY.md`
+("Native vs m68k struct variants" — pointer width follows the caller ABI —
+and the audit rubric's caller-type-branching rule), a native AArch64 caller
+has a 64-bit pointer that cannot round-trip through two 16-bit words at all.
+NewTOS's actual, already-implemented native ABI does not attempt it: every
+AES pointer-class argument, including this one, is read from a single
+`addr_in[]` slot (`tos-api/src/aes/window.rs:869`, `pb.addrin(0)`; same
+pattern throughout `menu.rs`/`object.rs`/`appl.rs`). The `int_in[2..3]`
+packing is specific to the 68k parameter-block encoding of `wind_set`, not a
+NewTOS contract requirement — the two ABIs disagree here by construction
+(word-packed LONG vs. a native pointer slot), which is expected and is why
+`docs/COMPATIBILITY.md` says pointer width, not pointer *location*, follows
+the caller.
+
+**Not a Compendium discrepancy** — an internal spec-vs-code consistency fix
+found during implementation audit, not a source-misreading.
+
+**Decision:** `docs/api/aes/window-graphics.md`'s "NewTOS implementation
+notes" bullet (the `addr_in[]`/pointer-widths bullet, previously stating the
+pointer "is *not* an `addr_in[]` pointer") corrected to state that on NewTOS
+natively this pointer **is** `addr_in[0]`, with a one-line cross-reference to
+D-094's `int_in[2..3]` finding labelled explicitly as the 68k form, so the two
+facts are not mistaken for one another again. The document's description of
+the 68k-callable contract elsewhere (the `wind_set` AESPB slot-table row, the
+per-field table, the Inputs/Outputs summary, edge case #14) is unchanged — it
+correctly documents the 68k ABI per D-094 and remains accurate for that
+world; only the native-implementation guidance was wrong and is now fixed.
+
+---
