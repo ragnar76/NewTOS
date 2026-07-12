@@ -89,6 +89,7 @@ const FL3DBAK: u16 = 0x0400; // 3D background panel
 const FL3DACT: u16 = 0x0600; // 3D activator (button)
 const LASTOB: u16 = 0x0020;
 const TOUCHEXIT: u16 = 0x0040;
+const HIDETREE: u16 = 0x0080; // ob_flags: subtree hidden
 const SELECTED: u16 = 0x0001;
 const MAX_DEPTH: i16 = 16;
 
@@ -336,6 +337,11 @@ unsafe fn cstr_slice(p: *const u8) -> &'static [u8] {
 
 /// Locate the next `[..]` group at/after `from`. Returns
 /// `(content_start, content_end, after_close)`.
+///
+/// A doubled `]]` inside the group is a **literal** `]` (EmuTOS `fm_strbrk`
+/// `isduplicate`, gemfmalt.c:94), not the group terminator: both bytes are
+/// skipped and scanning continues. The content span therefore still contains
+/// the raw `]]`/`||` pairs; [`split_copy`] collapses them.
 fn group(s: &[u8], from: usize) -> (usize, usize, usize) {
     let mut i = from;
     while i < s.len() && s[i] != b'[' {
@@ -343,7 +349,14 @@ fn group(s: &[u8], from: usize) -> (usize, usize, usize) {
     }
     let start = if i < s.len() { i + 1 } else { s.len() };
     let mut j = start;
-    while j < s.len() && s[j] != b']' {
+    while j < s.len() {
+        if s[j] == b']' {
+            if j + 1 < s.len() && s[j + 1] == b']' {
+                j += 2; // literal ']]' — not the terminator
+                continue;
+            }
+            break; // a lone ']' ends the group
+        }
         j += 1;
     }
     let after = if j < s.len() { j + 1 } else { s.len() };
@@ -352,6 +365,12 @@ fn group(s: &[u8], from: usize) -> (usize, usize, usize) {
 
 /// Split `seg` on `'|'` and copy each piece (NUL-terminated) into `buf`,
 /// recording `(offset, char-len)`. Returns the number of pieces.
+///
+/// Faithful to EmuTOS `fm_strbrk` (gemfmalt.c:78-134): `'|'` and `']'` both
+/// end a substring, but a doubled `'||'` / `']]'` is a **literal** `|` / `]`
+/// that is copied and skipped rather than treated as a break. (`group` has
+/// already stopped the enclosing scan at the first lone `']'`, so any `']'`
+/// reaching here is the first byte of a `']]'` pair.)
 fn split_copy(
     seg: &[u8],
     buf: &mut [u8],
@@ -359,27 +378,45 @@ fn split_copy(
     out: &mut [(usize, i16)],
 ) -> usize {
     let mut count = 0;
-    let mut start = 0;
     let mut i = 0;
     loop {
-        let at_end = i >= seg.len();
-        if at_end || seg[i] == b'|' {
-            if count < out.len() {
-                let piece = &seg[start..i];
-                let off = *used;
-                let n = piece.len().min(buf.len() - *used - 1);
-                buf[off..off + n].copy_from_slice(&piece[..n]);
-                buf[off + n] = 0;
-                out[count] = (off, n as i16);
-                *used += n + 1;
-                count += 1;
-            }
-            if at_end {
+        if count >= out.len() {
+            break;
+        }
+        let off = *used;
+        let mut n = 0usize;
+        // Copy one substring up to the next unescaped `|`/`]` or the end.
+        loop {
+            let at_end = i >= seg.len();
+            let c = if at_end { 0u8 } else { seg[i] };
+            if at_end || c == b'|' || c == b']' {
+                // A doubled separator (`||`/`]]`) is a literal, not a break.
+                if !at_end && i + 1 < seg.len() && seg[i + 1] == c {
+                    if off + n + 1 < buf.len() {
+                        buf[off + n] = c;
+                        n += 1;
+                    }
+                    i += 2;
+                    continue;
+                }
                 break;
             }
-            start = i + 1;
+            if off + n + 1 < buf.len() {
+                buf[off + n] = c;
+                n += 1;
+            }
+            i += 1;
         }
-        i += 1;
+        if off + n < buf.len() {
+            buf[off + n] = 0;
+        }
+        out[count] = (off, n as i16);
+        *used += n + 1;
+        count += 1;
+        if i >= seg.len() {
+            break;
+        }
+        i += 1; // skip the `|` separator
     }
     count
 }
@@ -448,8 +485,13 @@ fn run_form(tree: *mut Object) -> i16 {
             let hit = unsafe { object::hit_test(tp, 0, MAX_DEPTH, mx, my) };
             if hit >= 0 {
                 let (state, flags) = ob_fs(tp, hit);
-                if flags & DISABLED != 0 {
-                    // A disabled object ignores the click.
+                if state & DISABLED != 0 {
+                    // A DISABLED object ignores the click. DISABLED is an
+                    // ob_state bit (EmuTOS `fm_button`, gemfmlib.c:224 tests
+                    // `!(state & DISABLED)`), not an ob_flags bit — testing
+                    // `flags & DISABLED` here would instead read EDITABLE
+                    // (both are 0x0008), firing disabled EXIT buttons and
+                    // swallowing clicks that should refocus a second field.
                 } else if flags & SELECTABLE != 0 {
                     // EmuTOS `fm_button`: a radio button selects itself and
                     // deselects its siblings (on press). Any other SELECTABLE
@@ -526,14 +568,18 @@ fn press(tree: *mut Object, obj: i16) {
     object::change(tree, obj, state, true);
 }
 
-/// Index of the first object carrying `flag` (walking to `LASTOB`), or -1.
+/// Index of the first **visible, enabled** object carrying `flag` (walking to
+/// `LASTOB`), or -1. Mirrors EmuTOS `find_obj` (gemfmlib.c:135-147): a
+/// HIDETREE (ob_flags) or DISABLED (ob_state) object is skipped, so e.g. a
+/// disabled DEFAULT button is never picked by Enter.
 fn find_flag(tree: *mut Object, flag: u16) -> i16 {
     let mut i = 0i16;
     // SAFETY: the flat tree array terminates at the LASTOB object.
     unsafe {
         loop {
             let ob = &*tree.add(i as usize);
-            if ob.ob_flags & flag != 0 {
+            if ob.ob_flags & HIDETREE == 0 && ob.ob_state & DISABLED == 0 && ob.ob_flags & flag != 0
+            {
                 return i;
             }
             if ob.ob_flags & LASTOB != 0 {

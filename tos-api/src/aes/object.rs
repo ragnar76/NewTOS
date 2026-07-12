@@ -169,6 +169,12 @@ const FL3DMASK: u16 = 0x0600;
 
 const NIL: i16 = -1;
 
+/// The `ob_spec` "none" sentinel — `-1` in the native 64-bit field (EmuTOS
+/// `spec == -1L`, a 32-bit `LONG`). `just_draw` skips drawing such an object
+/// and `ob_change` leaves it untouched, so `-1` is never dereferenced as a
+/// pointer (which would fault) or cracked as a colour word.
+const OB_SPEC_NONE: u64 = u64::MAX;
+
 // VDI default palette pens.
 const WHITE: Pel = 0;
 const BLACK: Pel = 1;
@@ -551,6 +557,12 @@ pub fn objc_sysvar(pb: &Aespb) {
 pub(crate) fn change(tree: *mut Object, obj: i16, newstate: u16, redraw: bool) {
     // SAFETY: valid tree (GEM contract); the caller owns the array.
     unsafe {
+        // EmuTOS `ob_change` (gemoblib.c:1263): a `spec == -1` sentinel object
+        // is left entirely untouched — no state change, no redraw — so the
+        // redraw path never dereferences `-1` as a pointer.
+        if (*tree.add(obj as usize)).ob_spec == OB_SPEC_NONE {
+            return;
+        }
         (*tree.add(obj as usize)).ob_state = newstate;
     }
     if !redraw {
@@ -583,9 +595,14 @@ const ED_END: i16 = 3;
 pub fn objc_edit(pb: &Aespb) {
     let tree = pb.addrin(0) as *const Object;
     let obj = pb.intin(0);
-    if tree.is_null() || obj < 0 {
+    if tree.is_null() || obj <= 0 {
+        // EmuTOS `ob_edit` (gemobed.c:342): `obj <= 0` — including the ROOT
+        // (0) — is a no-op that returns TRUE without touching the field. The
+        // ROOT of a dialog is a box whose `ob_spec` is a colour/thickness
+        // word, not a `TEDINFO` pointer, so `edit_field` would deref a wild
+        // pointer. The objc_edit slot contract is "always TRUE".
         pb.set_intout(1, pb.intin(2));
-        pb.set_ret(0);
+        pb.set_ret(1);
         return;
     }
     let idx = edit_field(tree, obj, pb.intin(1), pb.intin(2), pb.intin(3));
@@ -1031,7 +1048,13 @@ fn draw_tree(
     }
     let x = px + ob.ob_x;
     let y = py + ob.ob_y;
-    just_draw(ob, x, y, clip, backend);
+    // Skip drawing an object whose `ob_spec` is the `-1` "none" sentinel
+    // (EmuTOS `just_draw`, gemoblib.c:491) so it is never dereferenced as a
+    // pointer — but still recurse into its children: EmuTOS `everyobj` stops
+    // the tree walk only on HIDETREE, not on `spec == -1`.
+    if ob.ob_spec != OB_SPEC_NONE {
+        just_draw(ob, x, y, clip, backend);
+    }
 
     if depth > 0 {
         let mut child = ob.ob_head;
