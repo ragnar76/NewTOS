@@ -132,26 +132,40 @@ pub unsafe fn relocate_blob(base: *mut u8) -> bool {
             if o.ob_spec == 0 {
                 continue;
             }
-            match o.ob_type {
+            // Classify by the *base* type only: the high byte carries
+            // extended-type flags (EmuTOS `fix_objects`, gemrslib.c:619
+            // `obtype = obj->ob_type & 0x00ff`; `mkrsc.py` writes the full
+            // 16-bit `typ` but classifies on `typ & 0xFF`). Without the mask
+            // an object with the high byte set would miss every arm, its
+            // `ob_spec` would keep a raw file offset, and `objc_draw` would
+            // dereference a small integer.
+            match o.ob_type & 0x00ff {
                 G_STRING | G_BUTTON | G_TITLE => o.ob_spec += b,
                 G_TEXT | G_BOXTEXT | G_FTEXT | G_FBOXTEXT => {
                     o.ob_spec += b;
-                    let t = &mut *(o.ob_spec as *mut TedInfo);
-                    reloc(&mut t.te_ptext, b);
-                    reloc(&mut t.te_ptmplt, b);
-                    reloc(&mut t.te_pvalid, b);
+                    // Relocate the shared TEDINFO's internal pointers once.
+                    if !substruct_seen(objs, i, o.ob_spec) {
+                        let t = &mut *(o.ob_spec as *mut TedInfo);
+                        reloc(&mut t.te_ptext, b);
+                        reloc(&mut t.te_ptmplt, b);
+                        reloc(&mut t.te_pvalid, b);
+                    }
                 }
                 G_IMAGE => {
                     o.ob_spec += b;
-                    let bi = &mut *(o.ob_spec as *mut BitBlk);
-                    reloc(&mut bi.bi_pdata, b);
+                    if !substruct_seen(objs, i, o.ob_spec) {
+                        let bi = &mut *(o.ob_spec as *mut BitBlk);
+                        reloc(&mut bi.bi_pdata, b);
+                    }
                 }
                 G_ICON => {
                     o.ob_spec += b;
-                    let ib = &mut *(o.ob_spec as *mut IconBlk);
-                    reloc(&mut ib.ib_pmask, b);
-                    reloc(&mut ib.ib_pdata, b);
-                    reloc(&mut ib.ib_ptext, b);
+                    if !substruct_seen(objs, i, o.ob_spec) {
+                        let ib = &mut *(o.ob_spec as *mut IconBlk);
+                        reloc(&mut ib.ib_pmask, b);
+                        reloc(&mut ib.ib_pdata, b);
+                        reloc(&mut ib.ib_ptext, b);
+                    }
                 }
                 // G_BOX/G_IBOX/G_BOXCHAR: ob_spec is a literal word.
                 _ => {}
@@ -181,6 +195,44 @@ fn reloc(field: &mut u64, base: u64) {
     if *field != 0 {
         *field += base;
     }
+}
+
+/// Object base types whose `ob_spec` points at a sub-struct (TEDINFO,
+/// BITBLK or ICONBLK) with its own internal pointers to relocate.
+#[inline]
+fn has_substruct(base_type: u16) -> bool {
+    matches!(
+        base_type,
+        G_TEXT | G_BOXTEXT | G_FTEXT | G_FBOXTEXT | G_IMAGE | G_ICON
+    )
+}
+
+/// Whether the sub-struct now at absolute address `spec` was already
+/// relocated by an earlier object (`objs[0..upto]` are already processed).
+///
+/// EmuTOS walks the TEDINFO/BITBLK/ICONBLK arrays once each, so a sub-struct
+/// shared by several objects is relocated exactly once
+/// (gemrslib.c:655-669,799-805). `NrscHeader` omits those array offsets, so
+/// we dedup on the *target address* instead: two objects share a sub-struct
+/// iff their (already relocated) `ob_spec` values are equal. A byte offset in
+/// the blob maps to exactly one sub-struct type, so equal addresses imply the
+/// same struct — no cross-type false match. The per-object `ob_spec` itself is
+/// still relocated for every object (both sharers must point at the struct);
+/// only the struct's *internal* pointers are deduped.
+///
+/// # Safety
+/// `objs` must point at the relocated OBJECT array with at least `upto`
+/// valid entries.
+unsafe fn substruct_seen(objs: *mut Object, upto: usize, spec: u64) -> bool {
+    for j in 0..upto {
+        // SAFETY: j < upto ≤ processed count; distinct from the current
+        // object, so no aliasing with the caller's live &mut.
+        let o = unsafe { &*objs.add(j) };
+        if has_substruct(o.ob_type & 0x00ff) && o.ob_spec == spec {
+            return true;
+        }
+    }
+    false
 }
 
 /// Capacity of the single resource buffer (one loaded `.RSC` at a time).
@@ -245,14 +297,22 @@ pub fn rsrc_load(pb: &Aespb) {
 }
 
 /// `rsrc_free` (111) — drop the loaded resource's tree table.
+///
+/// Returns 1 only if a resource was actually loaded; 0 when nothing was
+/// loaded and on a double free, matching EmuTOS `rs_free` (returns 0 when
+/// `ap_rscmem == NULL`, gemrslib.c:685-708; spec verification criterion
+/// resource-fileselector.md:439-440). The tree table is reset either way.
 pub fn rsrc_free(pb: &Aespb) {
+    // SAFETY: single-CPU AES. `objects` is non-null iff a resource is loaded
+    // (set by `relocate_and_register`, cleared here).
+    let was_loaded = unsafe { !(*RSC.objects.get()).is_null() };
     // SAFETY: single-CPU AES.
     unsafe {
         *RSC.n_trees.get() = 0;
         *RSC.objects.get() = core::ptr::null_mut();
         *RSC.n_objects.get() = 0;
     }
-    pb.set_ret(1);
+    pb.set_ret(if was_loaded { 1 } else { 0 });
 }
 
 /// `rsrc_gaddr` (112) — address of resource object `int_in[1]` of `R_*`

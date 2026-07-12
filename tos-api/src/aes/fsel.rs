@@ -248,6 +248,15 @@ fn run(pb: &Aespb) {
     let path_p = pb.addrin(0) as *mut u8;
     let sel_p = pb.addrin(1) as *mut u8;
 
+    // EmuTOS `fs_input`: bail out immediately on a NULL path pointer
+    // (gemfslib.c:630-631; spec resource-fileselector.md:328,411,447). The
+    // dialog never opens: int_out[0] = 0 (did not run), int_out[1] = 0.
+    if path_p.is_null() {
+        pb.set_intout(1, 0);
+        pb.set_ret(0);
+        return;
+    }
+
     let tree = load_fselectr();
     let Some(backend) = host().and_then(|h| h.raster()) else {
         pb.set_intout(1, 0);
@@ -265,6 +274,17 @@ fn run(pb: &Aespb) {
     // SAFETY: single-CPU AES; the resource TEDINFOs are distinct memory.
     unsafe {
         copy_in(&mut *SYS.dir.get(), path_p);
+        // EmuTOS `fs_input`: an empty path defaults to "<curdrive>:\*.*"
+        // (`strcpy(pipath,"A:\\*.*"); *pipath += dos_gdrv()`,
+        // gemfslib.c:634-638; spec resource-fileselector.md:446). The default
+        // is written back to the caller on exit (via `write_out` below).
+        {
+            let dir = &mut *SYS.dir.get();
+            if dir[0] == 0 {
+                let drv = b'A' + crate::bdos::fs::drive::current_drive() as u8;
+                dir[..6].copy_from_slice(&[drv, b':', b'\\', b'*', b'.', b'*']);
+            }
+        }
         copy_in(&mut *SYS.sel.get(), sel_p);
         set_ted(tree, FSDIRECT, (*SYS.dir.get()).as_mut_ptr(), 96);
         set_ted(tree, FSSELECT, (*SYS.sel.get()).as_mut_ptr(), 16);
