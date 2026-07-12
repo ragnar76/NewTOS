@@ -244,6 +244,7 @@ Konsolen-Fundaments (nicht mehr „die aktuelle Phase").
 | 13    | AES                                    | ✅ **KOMPLETT** — alle 11 Manager **D1–D9** (~80 Funktionen). D1 Dispatcher, D2 Application (`appl_*`+Pipe), D3 Event (alle 7 `evnt_*`), D4 Window (`wind_*` 100–109 + Rect-Liste + WM_*), D5 Menu (`menu_*` 30–35 + Dropdown-Tracking), D6 Object+Form (`objc_*`, `form_alert`/`form_do`/`form_error`, Icons/Images/TEDINFO/`objc_edit`), D7 RSC (natives `.RSC` + EmuTOS-Konverter, `rsrc_load` C:\GEMSYS\RSC\→C:\), D8 Fileselector, D9 Scrap+Shell (`scrp_*`/`shel_*`). **Modernes 3D-(Falcon-)Design** (`add_3d_effect`, graue Flächen, DISABLED-Stipple, DEFAULT-Outline). **Per Screendump/Serial verifiziert.** Feinschliff offen: `rsrc_saddr` (113), Free-Strings/Images, Fileselector-Pfad-Tippen | 2026-06-19 | 2026-06-21 |
 | 14    | Desktop                                | **In Arbeit — läuft als Boot-Anwendung.** Desktop-Screen (grüner `g_patcol`-BG + Menüleiste + echte EmuTOS-Icons C:/D:/Trash/Printer), vollständige Dropdown-Menüs, Verzeichnis-Fenster (Text-/Icon-Ansicht), Fenster-Manager + `evnt_multi`-Loop. **Menü-Aktionen:** Gruppe A (Close/Cycle, Sort, icons/text, Size-to-fit), Gruppe B (New folder/Delete+Confirm/Drag-to-Trash/Info-Rename), Gruppe-C-Start (data-driven `g_patcol`+NEWDESK.INF: Set background/Save desktop). Boot = `desktop::run()`. **Per Screendump/Serial verifiziert** (raspi4b+SD). **Offen:** Maus-Input HW (IKBD/UART2 — SW fertig, Datenblatt+HW fehlen; QEMU kein Maus-Pfad → statisch), Rest Gruppe C (Picker-Dialoge/Install/Preferences/Resolution/`#E`/`#W`), Rest-File-Items (Search/Select-all/Mask/Execute-EmuCON). **⚠️ 2026-07-04 (ADR-016): als komplett buggy deklariert → Ground-up-Rebuild nach EmuTOS in neuem Modul `kernel/src/desk/`; alter `desktop.rs`+`desktop_icons.rs` deprecated; Umsetzung via 3-Worker-Team (Researcher/Developer/Auditor).** | 2026-06-22 |           |
 | 15    | First C Source Port                    | Not started                           |            |           |
+| 16    | USB-HID Input (xHCI + VL805)           | ✅ **D1–D7 — läuft auf echter Pi 4.** Kompletter xHCI-Host-Stack from scratch (ADR-015): `drivers/usb/xhci` auf `rust-osdev/xhci`, PCIe-ECAM aus dem DTB, Enumeration, HID-Boot-Keyboard+Maus → `ikbd::feed`. **D7 real-Pi4 (2026-07-02, gelöst):** die 4 USB-A-Buchsen hängen hinter dem VL805-VIA-Hub am BCM2711-PCIe-RC (`pcie_rpi4.rs`); der `ContextStateError` beim Hub-Configure war ein **eigener Speicherlayout-Bug** — Output-Device-Context 32- statt 64-Byte-aligned (xHCI §6.2.1), gefixt via `align(64)` + `offset_of`-Compile-Asserts (`463cf6a`) + Interrupt-EP-Pflichtfelder/EP0-Evaluate-Context (`b040bb6`). **Auf echter HW verifiziert:** Apple-Tastatur `05ac:020c` + Apple-Maus `05ac:0304` (LS, EP0=8) + Roccat-Maus `1e7d:2cee` (FS, EP0=64) alle „HID configured"; Maus bewegt den Cursor/öffnet Menüs, Tastatur tippt in EmuCON (`desk/` nutzt denselben `usb::poll`→`ikbd::feed`→`evnt_multi`-Pfad). QEMU: HID enumeriert über den emulierten Pfad (raspi4b braucht den PCIe-RC-Probe-Skip). Offen: nur weitere Geräteklassen (Massenspeicher etc.), nicht HID | 2026-06-26 | 2026-07-02 |
 
 ## Open ADRs
 
@@ -280,6 +281,17 @@ Phasenbeginn entschieden sein (siehe `docs/api/_phase00-completion.md`):
   keine Klicks** (Task #11, HIGH — blockiert Select-vs-Open/D3); H-Slider
   `wind_set(WF_HSLSIZ/WF_HSLIDE)` nicht gerendert (Task #12, MED); `graf_mouse`-
   Cursor-Init-Quirk + Alt-Buchstabe-ikbd (Task #13, LOW).
+- **`graf_mouse` M_SAVE/M_RESTORE/M_PREVIOUS (258–260) deferred (AES-Audit
+  Window/Graphics, Finding L-5).** EmuTOS `gr_mouse` (gemgrlib.c:440-450) sichert
+  bei `M_SAVE` die aktuelle Cursor-Form in den Prozess-Deskriptor und stellt sie
+  bei `M_RESTORE`/`M_PREVIOUS` wieder her. Faithful umsetzbar erst mit einem
+  **Saved-Form-Slot _und_ einem Current-Form-Reader** in der VDI-Cursor-Subsystem
+  (`tos-api/src/vdi/mouse.rs`) — außerhalb der beiden Audit-Dateien
+  (`aes/window.rs`, `aes/graf.rs`). `graf_mouse` behandelt die drei Modi jetzt
+  **explizit als dokumentierten No-Op** (Cursor-Form unverändert, `int_out[0]=1`
+  wie beim void-`gr_mouse`), **kein** fabricierter Wert. Die anderen 8 Findings
+  (H-1, L-2, M-1, M-2, M-3, L-1, L-3, L-4) sind gelandet. Aufheben, sobald die
+  VDI-Maus einen Form-Snapshot exportiert.
 - **ADR-010 / dereferenzierbarer PD (PHASE-06)** — der „single shared
   address space" (ADR-010) ist akzeptiert, aber auf QEMU blockiert (3
   TCG-Wände); live läuft Option (b): per-process-TTBR0 + **opaker** PD.
