@@ -78,7 +78,9 @@ fn draw_alert_icon(icon: i16, x: i16, y: i16, backend: &dyn RasterBackend) {
 }
 
 const G_BOX: u16 = 20;
+const G_IBOX: u16 = 25;
 const G_BUTTON: u16 = 26;
+const G_BOXCHAR: u16 = 27;
 const G_STRING: u16 = 28;
 
 const SELECTABLE: u16 = 0x0001;
@@ -621,8 +623,9 @@ const FMD_START: i16 = 0;
 const FMD_GROW: i16 = 1;
 const FMD_SHRINK: i16 = 2;
 const FMD_FINISH: i16 = 3;
-/// ob_state OUTLINED bit (obdefs.h).
+/// ob_state OUTLINED / SHADOWED bits (obdefs.h).
 const OUTLINED: u16 = 0x0010;
+const SHADOWED: u16 = 0x0020;
 
 /// `form_center` (54) — centre the tree at `addr_in[0]` on screen (EmuTOS
 /// `ob_center`) and report its outer rectangle in `int_out[1..4]`.
@@ -638,21 +641,37 @@ pub fn form_center(pb: &Aespb) {
     };
     let (sw, sh) = (backend.width() as i16, backend.height() as i16);
     // SAFETY: valid tree; the ROOT is index 0.
-    let (mut xd, mut yd, mut wd, mut hd, outlined) = unsafe {
+    let (mut xd, mut yd, mut wd, mut hd, state, spec, otype) = unsafe {
         let root = &mut *tree;
         let (wd, hd) = (root.ob_width, root.ob_height);
         let xd = (sw - wd) / 2;
-        let yd = (sh - hd) / 2;
+        // Centre BELOW the menu bar (EmuTOS ob_center, gemobed.c:76-80:
+        // `yd = gl_hbox + (gl_height - gl_hbox - hd) / 2`), so a centred dialog
+        // never lands under the menu bar. gl_hbox = gl_hchar + 3 = 19 pixels
+        // (== window::GAD == the menu BAR_H).
+        let bar = super::window::GAD;
+        let yd = bar + (sh - bar - hd) / 2;
         root.ob_x = xd;
         root.ob_y = yd;
-        (xd, yd, wd, hd, root.ob_state & OUTLINED != 0)
+        (xd, yd, wd, hd, root.ob_state, root.ob_spec, root.ob_type)
     };
-    // Account for a 3px OUTLINE in the reported rectangle (EmuTOS ob_center).
-    if outlined {
+    // Account for a 3px OUTLINE in the reported rectangle (EmuTOS ob_center):
+    // the OUTLINED double frame reaches 3 px past the object on every side.
+    if state & OUTLINED != 0 {
         xd = (xd - 3).max(0);
         yd = (yd - 3).max(0);
         wd += 6;
         hd += 6;
+    }
+    // Account for a SHADOWED drop shadow (EmuTOS ob_center, gemobed.c:96-103):
+    // the reported rect grows by 2*|th|, `th` being the root box's thickness
+    // word. Only box types pack a thickness in `ob_spec`'s high byte; other
+    // (pointer-spec) roots contribute no shadow extent.
+    if state & SHADOWED != 0 && matches!(otype, G_BOX | G_IBOX | G_BOXCHAR) {
+        let th = ((spec >> 16) as u8 as i8) as i16;
+        let s = 2 * th.abs();
+        wd += s;
+        hd += s;
     }
     pb.set_intout(1, xd);
     pb.set_intout(2, yd);

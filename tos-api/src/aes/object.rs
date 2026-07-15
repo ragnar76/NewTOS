@@ -153,10 +153,12 @@ pub struct IconBlk {
 const LASTOB: u16 = 0x0020;
 const HIDETREE: u16 = 0x0080;
 const SELECTED: u16 = 0x0001;
-const DEFAULT: u16 = 0x0002;
+const DEFAULT: u16 = 0x0002; // ob_flags: default (heavy-frame) object
+const CROSSED: u16 = 0x0002; // ob_state: draw a diagonal cross over the object
 const CHECKED: u16 = 0x0004;
 const DISABLED: u16 = 0x0008;
 const OUTLINED: u16 = 0x0010;
+const SHADOWED: u16 = 0x0020; // ob_state: solid drop shadow to the lower-right
 
 /// 50 % dither used to grey-out DISABLED objects (EmuTOS `IP_4PATT`).
 const STIPPLE_50: [u16; 2] = [0xAAAA, 0x5555];
@@ -487,7 +489,8 @@ const INDBUTCOL: i16 = 3;
 const ACTBUTCOL: i16 = 4;
 const BACKGRCOL: i16 = 5;
 const AD3DVALUE: i16 = 6;
-const ADJ3DSTD: i16 = 2; // NewTOS's bevel is 2px
+const ADJ3DSTD: i16 = 2; // NewTOS's bevel is 2px (EmuTOS ADJ3DSTD)
+const ADJ3DOUT: i16 = 3; // extra extent of an OUTLINED 3D object (EmuTOS ADJ3DOUT)
 
 /// `objc_sysvar` (48) — get (`int_in[0]` = 0) or set (1) a 3-D look variable
 /// `int_in[1]` from values `int_in[2..3]`. GET returns the pair in
@@ -1220,6 +1223,12 @@ fn just_draw(ob: &Object, x: i16, y: i16, clip: ClipRect, backend: &dyn RasterBa
         _ => (false, true),
     };
 
+    // Border colour + signed thickness captured from the type body for the
+    // SHADOWED decoration below (EmuTOS `just_draw` reuses `bcol`/`th` from the
+    // box/text body in the trailing `if (state)` block, gemoblib.c:894-901).
+    let mut deco_bcol: Pel = BLACK;
+    let mut deco_th: i16 = 0;
+
     match ob.ob_type {
         G_BOX | G_IBOX | G_BUTTON | G_BOXCHAR => {
             // Crack the colour word: box types pack it in `ob_spec`'s low 16
@@ -1261,13 +1270,19 @@ fn just_draw(ob: &Object, x: i16, y: i16, clip: ClipRect, backend: &dyn RasterBa
                     icol = xor_color(icol);
                 }
             }
-            let t = th.unsigned_abs() as i16;
+            // D-089 signed thickness: `th > 0` draws the border INSIDE the rect
+            // (the interior fill is inset by `th`); `th < 0` draws it OUTSIDE
+            // (the fill keeps the full rect, the border is an add-on around it);
+            // `th == 0` = no border. `inset` is EmuTOS `tmpth = (th<0)?0:th`.
+            let inset = th.max(0);
             if th != 0 {
-                draw_border(backend, x, y, w, h, t, bcol, clip);
+                draw_signed_border(backend, x, y, w, h, th, bcol, clip);
             }
             if ob.ob_type != G_IBOX {
-                gr_rect(backend, x + t, y + t, w - 2 * t, h - 2 * t, icol, ipat, clip);
+                gr_rect(backend, x + inset, y + inset, w - 2 * inset, h - 2 * inset, icol, ipat, clip);
             }
+            deco_bcol = bcol;
+            deco_th = th;
             // Text colour, xor'd when selected *and* the object changes colour.
             let ink = if selected && changecol { xor_color(tcol) } else { tcol };
             // `movetext` (EmuTOS): an activator's label sits 1px up-left while
@@ -1338,13 +1353,18 @@ fn just_draw(ob: &Object, x: i16, y: i16, clip: ClipRect, backend: &dyn RasterBa
                         icol = xor_color(icol);
                     }
                 }
-                let t = th.unsigned_abs() as i16;
+                // D-089 signed thickness (see the box arm above): positive =
+                // inside border (fill/text inset by `inset`), negative = outside
+                // border (fill/text keep the full rect).
+                let inset = th.max(0);
                 if is_box {
                     if th != 0 {
-                        draw_border(backend, x, y, w, h, t, bcol, clip);
+                        draw_signed_border(backend, x, y, w, h, th, bcol, clip);
                     }
-                    gr_rect(backend, x + t, y + t, w - 2 * t, h - 2 * t, icol, ipat, clip);
+                    gr_rect(backend, x + inset, y + inset, w - 2 * inset, h - 2 * inset, icol, ipat, clip);
                 }
+                deco_bcol = bcol;
+                deco_th = th;
                 // Format the string: the F-variants merge `te_ptext` into the
                 // `te_ptmplt` template (EmuTOS `ob_format`); the plain variants
                 // draw `te_ptext` directly.
@@ -1359,15 +1379,30 @@ fn just_draw(ob: &Object, x: i16, y: i16, clip: ClipRect, backend: &dyn RasterBa
                 };
                 // Text colour from te_color, xor'd when SELECTED (EmuTOS).
                 let ink = if selected { xor_color(tcol) } else { tcol };
-                // Text sits inside the box, shrunk by the border thickness.
-                draw_text(backend, x + t, y + t, w - 2 * t, h - 2 * t, s, ted.te_just, ink, clip);
+                // Text sits inside the box, shrunk by a positive border only.
+                draw_text(backend, x + inset, y + inset, w - 2 * inset, h - 2 * inset, s, ted.te_just, ink, clip);
             }
         }
         G_IMAGE => {
             if ob.ob_spec != 0 {
                 // SAFETY: ob_spec of a G_IMAGE points at a BITBLK.
                 let bi = unsafe { &*(ob.ob_spec as *const BitBlk) };
-                blit_image(backend, bi, x, y, clip);
+                // SELECTED (EmuTOS just_draw, gemoblib.c:766-770): XOR the image
+                // background (the blit is transparent, so the inverted ground
+                // shows through the clear bits) and invert the image ink.
+                let col = if selected {
+                    let pat = PatternFill {
+                        fg: BLACK,
+                        bg: WHITE,
+                        pattern: &IP_PATTERNS[IP_SOLID as usize],
+                        mode: WriteMode::Xor,
+                    };
+                    backend.fill_pattern(x, y, w, h, pat, clip);
+                    xor_color(bi.bi_color as Pel)
+                } else {
+                    bi.bi_color as Pel
+                };
+                blit_image(backend, bi, x, y, col, clip);
             }
         }
         G_ICON => {
@@ -1382,36 +1417,66 @@ fn just_draw(ob: &Object, x: i16, y: i16, clip: ClipRect, backend: &dyn RasterBa
         _ => {}
     }
 
-    // 3D bevel overlay (the modern / Falcon look): a raised activator
-    // (unless pressed), a recessed indicator/background panel.
-    match d3 {
-        FL3DACT => add_3d_effect(backend, x, y, w, h, !selected, clip),
-        FL3DIND | FL3DBAK => add_3d_effect(backend, x, y, w, h, false, clip),
-        _ => {}
+    // ── ob_state decorations ────────────────────────────────────────────
+    // EmuTOS `just_draw` draws these after the type body, in the order
+    // OUTLINED → SHADOWED → CHECKED → CROSSED → DISABLED → SELECTED, then the
+    // 3D bevel last (gemoblib.c:867-952). CHECKED is drawn inline in the
+    // G_STRING arm (the only checked object type NewTOS renders); the trailing
+    // SELECTED XOR is folded into each type's inline colour inversion (EmuTOS's
+    // `changecol` path) for the black/white palette.
+
+    // DEFAULT: NewTOS draws the default object's heavy frame explicitly
+    // (EmuTOS derives it from the button's thicker, negative `th`). OUTLINED:
+    // the classic GEM double frame — a black line 3 px out plus a 2 px white
+    // ring — so the object's own border becomes the inner line (dialogs/alerts).
+    if ob.ob_flags & DEFAULT != 0 {
+        draw_border(backend, x - 3, y - 3, w + 6, h + 6, 1, BLACK, clip);
+        draw_border(backend, x - 4, y - 4, w + 8, h + 8, 1, BLACK, clip);
+    }
+    if ob.ob_state & OUTLINED != 0 {
+        draw_border(backend, x - 3, y - 3, w + 6, h + 6, 1, BLACK, clip);
+        draw_border(backend, x - 2, y - 2, w + 4, h + 4, 2, WHITE, clip);
     }
 
-    // DISABLED: grey the object out with a 50 % transparent dither
-    // (EmuTOS `bb_fill(IP_4PATT)`), over the 3D-background colour for a
-    // 3D panel, else white.
+    // SHADOWED: a solid drop shadow to the lower-right, sized by |th| and drawn
+    // in the border colour (EmuTOS gemoblib.c:889-901). A th==0 object casts no
+    // shadow (the shadow size derives from the border thickness). For a positive
+    // (inside) border the shadow hugs the inset content rect; for a negative
+    // (outside) border it hugs the full rect.
+    if ob.ob_state & SHADOWED != 0 {
+        let sth = deco_th.abs();
+        if sth != 0 {
+            let (sx, sy, sw, sh) = if deco_th > 0 {
+                (x + deco_th, y + deco_th, w - 2 * deco_th, h - 2 * deco_th)
+            } else {
+                (x, y, w, h)
+            };
+            backend.fill_rect(sx, sy + sh + sth, sw + sth, 2 * sth, deco_bcol, clip);
+            backend.fill_rect(sx + sw + sth, sy, 2 * sth, sh + 3 * sth, deco_bcol, clip);
+        }
+    }
+
+    // CROSSED: two WHITE diagonals across the object (EmuTOS gemoblib.c:910-915,
+    // transparent) — visible over a filled/selected box.
+    if ob.ob_state & CROSSED != 0 {
+        backend.draw_line(x, y, x + w - 1, y + h - 1, WHITE, WriteMode::Transparent, clip, 0xFFFF);
+        backend.draw_line(x, y + h - 1, x + w - 1, y, WHITE, WriteMode::Transparent, clip, 0xFFFF);
+    }
+
+    // DISABLED: grey the object out with a 50 % transparent dither (EmuTOS
+    // `bb_fill(IP_4PATT)`), over the 3D-background colour for a 3D panel.
     if disabled {
         let fg = if d3 == FL3DBAK { GRAY_LT } else { WHITE };
         let pat = PatternFill { fg, bg: WHITE, pattern: &STIPPLE_50, mode: WriteMode::Transparent };
         backend.fill_pattern(x, y, w, h, pat, clip);
     }
 
-    // DEFAULT object: a thick outline a few pixels outside it (the
-    // "fat frame" around the default exit button).
-    if ob.ob_flags & DEFAULT != 0 {
-        draw_border(backend, x - 3, y - 3, w + 6, h + 6, 1, BLACK, clip);
-        draw_border(backend, x - 4, y - 4, w + 8, h + 8, 1, BLACK, clip);
-    }
-
-    // OUTLINED object: the classic GEM double frame (EmuTOS `gemoblib.c`) —
-    // a black line 3 px outside plus a 2 px white gap, so the object's own
-    // border becomes the inner line of a double border (dialogs/alerts).
-    if ob.ob_state & OUTLINED != 0 {
-        draw_border(backend, x - 3, y - 3, w + 6, h + 6, 1, BLACK, clip);
-        draw_border(backend, x - 2, y - 2, w + 4, h + 4, 2, WHITE, clip);
+    // 3D bevel LAST (EmuTOS calls add_3d_effect after the whole state block):
+    // a raised activator (unless pressed), a recessed indicator/background panel.
+    match d3 {
+        FL3DACT => add_3d_effect(backend, x, y, w, h, !selected, clip),
+        FL3DIND | FL3DBAK => add_3d_effect(backend, x, y, w, h, false, clip),
+        _ => {}
     }
 }
 
@@ -1448,6 +1513,24 @@ fn draw_border(
     backend.fill_rect(x, y + h - t, w, t, col, clip); // bottom
     backend.fill_rect(x, y, t, h, col, clip); // left
     backend.fill_rect(x + w - t, y, t, h, col, clip); // right
+}
+
+/// Draw a box border honouring the D-089 signed-thickness convention: a
+/// positive `th` draws the frame INSIDE `(x, y, w, h)` (EmuTOS `gr_box` with
+/// `th > 0` shrinks the nested outlines inward), a negative `th` draws it
+/// OUTSIDE (the frame sits in the |th|-pixel margin around the rect, leaving the
+/// rect itself for the fill — matching `gr_box`'s outward-growing outlines once
+/// the full-rect fill overpaints the shared edge). `th == 0` draws nothing.
+#[allow(clippy::too_many_arguments)]
+fn draw_signed_border(backend: &dyn RasterBackend, x: i16, y: i16, w: i16, h: i16, th: i16, col: Pel, clip: ClipRect) {
+    match th.cmp(&0) {
+        core::cmp::Ordering::Greater => draw_border(backend, x, y, w, h, th, col, clip),
+        core::cmp::Ordering::Less => {
+            let t = -th;
+            draw_border(backend, x - t, y - t, w + 2 * t, h + 2 * t, t, col, clip);
+        }
+        core::cmp::Ordering::Equal => {}
+    }
 }
 
 /// Draw `text` justified inside `(x, y, w, h)`, vertically centred, one
@@ -1506,9 +1589,10 @@ fn read_cstr(spec: u64) -> &'static [u8] {
     }
 }
 
-/// Blit a `G_IMAGE` BITBLK at `(x, y)`: a transparent mono blit in
-/// `bi_color` (set bits drawn, clear bits leave the background).
-fn blit_image(backend: &dyn RasterBackend, bi: &BitBlk, x: i16, y: i16, clip: ClipRect) {
+/// Blit a `G_IMAGE` BITBLK at `(x, y)`: a transparent mono blit in colour
+/// `col` (set bits drawn, clear bits leave the background). `col` is normally
+/// `bi_color`, or its complement for a SELECTED image (EmuTOS `just_draw`).
+fn blit_image(backend: &dyn RasterBackend, bi: &BitBlk, x: i16, y: i16, col: Pel, clip: ClipRect) {
     let stride = (bi.bi_wb / 2).max(1) as u16; // bytes → 16-bit words
     blit_plane(
         backend,
@@ -1517,7 +1601,7 @@ fn blit_image(backend: &dyn RasterBackend, bi: &BitBlk, x: i16, y: i16, clip: Cl
         bi.bi_x,
         bi.bi_y,
         Rect { x, y, w: bi.bi_wb * 8, h: bi.bi_hl },
-        bi.bi_color as Pel,
+        col,
         clip,
     );
 }
@@ -1646,7 +1730,25 @@ fn find_hit(
     }
     let x = px + ob.ob_x;
     let y = py + ob.ob_y;
-    let inside = mx >= x && mx < x + ob.ob_width && my >= y && my < y + ob.ob_height;
+    // Hit-test the same extent `just_draw` renders. A 3D object (FL3DMASK) is
+    // drawn ADJ3DSTD px larger on every side (EmuTOS `ob_actxywh`,
+    // gemoblib.c:322-335), plus ADJ3DOUT when OUTLINED, so a click on the
+    // visible bevel/outline edge must count as inside — otherwise the drawn
+    // extent exceeds the hittable one and edge clicks are lost. SHADOWED objects
+    // are the documented exception: EmuTOS `ob_find` (gemoblib.c:1063-1072)
+    // hit-tests them at their un-grown relative rect. Children keep the nominal
+    // origin `(x, y)`, exactly as `draw_tree` passes it — draw and hit stay
+    // consistent at every level.
+    let (hx, hy, hw, hh) = if ob.ob_flags & FL3DMASK != 0 && ob.ob_state & SHADOWED == 0 {
+        let mut adj = ADJ3DSTD;
+        if ob.ob_state & OUTLINED != 0 {
+            adj += ADJ3DOUT;
+        }
+        (x - adj, y - adj, ob.ob_width + 2 * adj, ob.ob_height + 2 * adj)
+    } else {
+        (x, y, ob.ob_width, ob.ob_height)
+    };
+    let inside = mx >= hx && mx < hx + hw && my >= hy && my < hy + hh;
     if !inside {
         return NIL;
     }
