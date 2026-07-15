@@ -70,10 +70,13 @@ static mut CFG: RamFbCfg = RamFbCfg {
     stride: 0,
 };
 
-/// Default display geometry — matches ramfb's default surface so a
-/// headless `screendump` lines up.
-const WIDTH: u32 = 640;
-const HEIGHT: u32 = 480;
+/// Display geometry, read from the shared [`crate::drivers::BOOT_WIDTH`]/
+/// [`BOOT_HEIGHT`] so the ramfb dev vehicle stays in lock-step with the RPi4
+/// VideoCore mailbox geometry (ADR-017 Stage 1: native 1920×1080). We publish
+/// this surface to ramfb via fw_cfg, so a headless `screendump` captures it at
+/// the same size.
+const WIDTH: u32 = crate::drivers::BOOT_WIDTH;
+const HEIGHT: u32 = crate::drivers::BOOT_HEIGHT;
 
 /// Issue one fw_cfg DMA op via the static [`DMA`] block.
 ///

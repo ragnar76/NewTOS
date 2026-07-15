@@ -19,9 +19,13 @@ use crate::arch::aarch64::mmu::{va_to_pa, VA_OFFSET};
 use crate::drivers::bcm2711::mailbox;
 use crate::hal::framebuffer::Framebuffer;
 
-/// Default display geometry for bring-up (32-bit XRGB).
-const WIDTH: u32 = 640;
-const HEIGHT: u32 = 480;
+/// Display geometry for bring-up (32-bit XRGB). Read from the shared
+/// [`crate::drivers::BOOT_WIDTH`]/[`BOOT_HEIGHT`] so the VideoCore mailbox
+/// geometry cannot drift from the QEMU `ramfb` dev vehicle (ADR-017 Stage 1:
+/// native 1920×1080). These values feed the set-physical (`0x00048003`) and
+/// set-virtual (`0x00048004`) tags below.
+const WIDTH: u32 = crate::drivers::BOOT_WIDTH;
+const HEIGHT: u32 = crate::drivers::BOOT_HEIGHT;
 const DEPTH_BPP: u32 = 32;
 /// VC pixel order. `0 = BGR, 1 = RGB` (firmware wiki). Our pixel store is
 /// XRGB8888 packed by [`hal::framebuffer::rgb`] as `0xFF_RR_GG_BB`, i.e.

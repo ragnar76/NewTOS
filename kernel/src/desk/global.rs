@@ -50,13 +50,28 @@ pub const MAX_DEPTH: i16 = 8;
 /// `objc_draw` (a `Vec` regrow would reallocate and dangle them).
 ///
 /// Worst case = `(NUM_WNODES + 1)` surfaces (the 7 windows + the desktop) ×
-/// [`MAX_WIN_ITEMS`] visible cells in a maximum-size window. At 640×480 the
-/// densest layout is `V_ICON`: `g_iwspc ≈ g_wicon(100) + MIN_WINT(8) = 108`,
-/// `g_ihspc ≈ g_hicon(50) + MIN_HINT(2) = 52`, over a ~620×405 full-window
-/// work area → 5 cols × 8 rows (incl. `win_bldview`'s +1 fringe) = 40 cells;
-/// the desktop's own drive/trash/printer icons are ≤ 26. [`MAX_WIN_ITEMS`] =
-/// 48 is a safe per-surface cap above both, so `8 × 48 = 384` never exhausts.
-pub const MAX_WIN_ITEMS: usize = 48;
+/// [`MAX_WIN_ITEMS`] visible cells in a maximum-size window. The densest layout
+/// is `V_ICON` (`win_view`): `g_iwspc = g_wicon(100) + min_wint(8) = 108`,
+/// `g_ihspc = g_hicon(50) + MIN_HINT(2) = 52` (`app.rs`/`win.rs`).
+///
+/// **At 1920×1080 (ADR-017 Stage 1, native boot)** a maximised window's border
+/// rect is the desktop work area `{0, MENU_H, 1920, 1080-MENU_H}`; `wind_calc`
+/// subtracts the `WINDOW_STYLE` borders `(l=1, t=37, r=19, b=19)`
+/// (`tos-api::aes::window::borders`, `GAD=19`) → a work area of `1900 × 1005`.
+/// `win_bldview` then fits `wfit = 1900/108 = 17` cols and `hfit = 1005/52 = 19`
+/// rows; with its deliberate `+1` fringe row (`o_hfit = pnrow+1 = 20`, columns
+/// stay capped at `17` in size-to-fit) the loop places at most
+/// `17 × 20 = 340` cells. The desktop's own drive/trash/printer icons under
+/// `DROOT` are ≤ 28 (26 drives + Trash + Printer). [`MAX_WIN_ITEMS`] = 350 is a
+/// per-surface cap covering the 340-cell window with a small margin (and the
+/// 28-icon desktop many times over), so the pool `8 × 350 = 2800` covers even
+/// all 7 windows *and* the desktop simultaneously maxed (`7×340 + 28 = 2408`).
+///
+/// The extra static cost over the old 640×480 `48`-cell cap is one-time heap
+/// (the arena is a `Vec`, allocated once in `obj_init` and never regrown):
+/// `(2800-384) = 2416` more `Object` (~32 B) + `ScreenInfo` (~104 B) pairs,
+/// ≈ 330 KB — negligible against the framebuffer's own ~8.3 MB.
+pub const MAX_WIN_ITEMS: usize = 350;
 
 /// See [`MAX_WIN_ITEMS`]. `(NUM_WNODES + 1) * MAX_WIN_ITEMS`.
 pub const INITIAL_ITEM_SLOTS: usize = (NUM_WNODES + 1) * MAX_WIN_ITEMS;
