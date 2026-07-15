@@ -12,6 +12,21 @@
 > representative SD image). This checklist is the **primary verification
 > instrument** for everything that needs a live pointer/keyboard.
 >
+> **Status (2026-07-15).** The bottom-up TOS-API re-audit (BIOS→XBIOS→GEMDOS→
+> VDI→AES) landed on `desk-rebuild` through commit `9ae7edf` — see
+> `docs/STATUS.md` Recent Decisions 2026-07-15 for the full commit chain
+> (`fb8c443`…`9ae7edf`) and `docs/api/_discrepancies.md` D-084..D-102. A real-HW
+> pass on 2026-07-12 (user, `kernel8.img` @ `916168e`) already confirmed clean
+> boot, working menus/dropdowns, working dialog boxes, opening drives, and
+> copying a file — see **"Real-HW Validation Log"** below for the exact rows
+> this covers. The three later commits (`5d33238`/`74b79c8`/`9ae7edf`) are
+> committed and QEMU/screendump-verified but **not yet flashed** to the user's
+> card; a fresh `kernel8.img` @ `9ae7edf` is built and waiting. **New section I**
+> at the end of this file adds explicit checks for the AES rendering/behaviour
+> fixes in that delta, with honest reachability notes (some fixed paths are not
+> yet wired into any desktop menu action and need a direct AES-trap probe, not
+> normal desktop use, to observe).
+>
 > **How to run:** boot the current `kernel8.img` on the Pi4 with the 4×500 MB
 > FAT16 SD card (C–F) attached (see [[sd-card-real-hw-layout]]). Use a directory
 > with **≥ 20 entries incl. sub-folders and 12-char 8.3 names** for the
@@ -20,7 +35,52 @@
 >
 > Legend: **[E]** = expected result. **[A #n]** = watch here for audit finding
 > #n (see the Round-2 audit report). Rows marked **(residue)** are the
-> historically fragile paths.
+> historically fragile paths. **[PASS yyyy-mm-dd @ hash]** = confirmed on real
+> Pi4 hardware at that commit.
+
+---
+
+## Real-HW Validation Log
+
+**2026-07-12, `kernel8.img` @ commit `916168e` (user, real Pi 4).** Coarse-
+grained pass, not a row-by-row run of this checklist — recorded here as the
+broad categories the user explicitly confirmed working; the granular rows
+below (individual click/drag/menu-state variants) are **not** individually
+re-verified by this pass and stay open until ticked on HW:
+
+- **Boot** — clean boot to the desktop, no panic. Supersedes/reconfirms the
+  QEMU-screendump-only boot check under "What the Round-2 audit already
+  confirmed" below, now on real hardware.
+- **Menus** — the menu bar's drop-downs open and items dispatch on a real
+  pointer. Covers the coarse behaviour underlying section **C** (Menu manager);
+  the per-item graying/checkmark rows (C2–C9) were not individually confirmed
+  and remain open.
+- **Dialog boxes** — `form_alert`-based dialogs (the Desk→Info about box, **C1**;
+  delete-confirm alerts, **G7/G13/G17**) render and respond. **Known
+  exception, still present:** the **#66 menu-bar-border bug** — dismissing the
+  Desk→Info alert leaves a residue at the menu-bar edge, because `form_alert`'s
+  screen save/restore depends on a memory-MFDB `vro_cpyfm` copy (**#51
+  `bb_save`**, deferred — VDI has no off-screen MFDB backend yet, see
+  `docs/api/aes/object-form.md:824-850` / `docs/api/_discrepancies.md` D-090,
+  D-092). Expect this artifact until #51 lands; it is **not** part of the AES
+  re-audit's scope and is not newly introduced by it.
+- **Opening drives** — double-click a drive icon opens a window at that
+  drive's root. Matches row **A7**.
+- **Copying a file** — a file copy operation completed successfully. The exact
+  interactive mechanism (drag-onto-folder same-window vs. cross-window vs.
+  onto-a-drive-icon) was not specified in the report; treated here as
+  confirming the **G5**-class path (drag a file icon onto a folder, same
+  window) at the coarse level. The Ctrl-held-move variant and the other G.2
+  drag targets (G6/G8/G9/G10/G11/G12) are **not** individually confirmed and
+  stay open.
+
+Of the checklist rows below: **A7** is ticked `[x]` (a clean 1:1 match — "opening
+drives works"). **C1** and **G5** carry a `[PASS 2026-07-12 @ 916168e]` note but
+stay **unticked**, because each row bundles more than the coarse report
+confirmed (C1's residue-free-dismiss clause is known-still-broken; G5's
+Ctrl-move variant is unconfirmed) — see the per-row notes. "Boot" and "Menus"
+have no single 1:1 checklist row and are recorded only here. Every other row
+is unticked and still needs a live run.
 
 ---
 
@@ -46,8 +106,9 @@
   drive icon selects; open windows de-select as appropriate; menu updates.
 - [ ] **A6 — Double-click a folder icon** → a new directory window opens showing
   that folder's contents, staggered from the parent, titled `X:\SUB\`.
-- [ ] **A7 — Double-click a drive icon** → a window opens at that drive's root
-  (`X:\`), listing its contents.
+- [x] **A7 — Double-click a drive icon** → a window opens at that drive's root
+  (`X:\`), listing its contents. **[PASS 2026-07-12 @ 916168e]** ("opening
+  drives works" — see Real-HW Validation Log above).
 - [ ] **A8 — Double-click a plain file** → **nothing happens** (launch is Task
   #9; must be an honest no-op, not a crash).
 - [ ] **A9 — Click in the menu bar area / on the closer/fuller/mover/sizer** →
@@ -94,6 +155,15 @@
 
 - [ ] **C1 — Desk menu** → `Desktop info...` enabled; selecting it shows the
   About alert; dismissing it repaints the screen underneath cleanly **(residue)**.
+  **Partial [PASS 2026-07-12 @ 916168e]:** the menu opens and the alert
+  renders/dismisses (part of "menus"/"dialog boxes work" in the Real-HW
+  Validation Log). **Known-open defect, expected still present on the fresh
+  kernel (`9ae7edf`) too:** the **#66 menu-bar-border bug** — the repaint after
+  dismissing this specific alert is *not* clean at the menu-bar edge, because
+  `form_alert` has no screen save/restore (blocked on **#51 `bb_save`**, a VDI
+  memory-MFDB `vro_cpyfm` gap — see `docs/api/aes/object-form.md:824-850`,
+  D-090/D-092). This is a pre-existing gap, not something the AES re-audit
+  introduced or was scoped to fix — do not re-file it as a new regression.
 - [ ] **C2 — View menu checkmarks** → exactly one of `Show as icons` /
   `Show as text` is checked (Icon at boot); exactly one sort key checked
   (`Sort by name` at boot); `Size to fit` checked at boot. Switch each and
@@ -143,7 +213,12 @@
 - [ ] **D8 — Size to fit toggle off** → a horizontal scrollbar becomes
   meaningful; the H-slider thumb now **renders** (fixed in #12, a mirror of the
   vertical slider). Confirm the thumb reflects the horizontal position and that
-  Left/Right arrows scroll by a column.
+  Left/Right arrows scroll by a column. **Re-check on the fresh kernel
+  (`9ae7edf`):** the AES Window/Graphics audit (`0493a85`, findings L-2/L-4)
+  changed the underlying slider-size default (`-1` "full window" marker,
+  previously clamped to `1000`) and the drag-rounding (`mul_div_round` instead
+  of a truncating `mul_div`, D-098) — thumb size/position should be at least as
+  correct as before, ideally with less "creep" during a drag.
 
 ## E. Window management (`hndl_msg`: TOPPED/MOVED/SIZED/FULLED/CLOSED/ARROWED/SLID)
 
@@ -164,7 +239,10 @@
   content repaints cleanly; the vertical slider thumb tracks the position.
 - [ ] **E7 — Drag the vertical slider** → jumps to the proportional scroll
   position; content correct; **at the extreme top/bottom** the last row is fully
-  backed (no blank strip below the last item).
+  backed (no blank strip below the last item). **Re-check on the fresh kernel
+  (`9ae7edf`):** same `graf_slidebox` rounding fix as **D8** (`0493a85`
+  L-4/D-098) — the grip should now stay under the cursor at the offset it was
+  grabbed at, instead of snapping the elevator's edge to the cursor.
 - [ ] **E8 — (was audit #3, fixed in #17/F3) Any full repaint
   (open/close/move/size/top/cycle, or dismissing the About box)** → the pointer
   should stay hidden for the whole repaint and reappear **once**, cleanly (the
@@ -227,7 +305,11 @@
 
 - [ ] **G5 — Drag a file icon onto a folder icon (same window)** → the file is
   **copied** into that folder; the folder window (if open) rebuilds. Hold **Ctrl**
-  while dragging → **moved** instead (source disappears).
+  while dragging → **moved** instead (source disappears). **Partial
+  [PASS 2026-07-12 @ 916168e]:** "copying a file works" was confirmed at the
+  coarse level (Real-HW Validation Log above) and is treated as covering this
+  row's plain-copy path; the **Ctrl-held-move** variant of this row was **not**
+  separately confirmed — leave it open until explicitly re-tested.
 - [ ] **G6 — Drag a selection from one window into another window** → copied to
   the target window's directory (Ctrl = move); the source selection clears; both
   windows rebuild. A **folder** Ctrl-moved this way keeps a correct `..` entry
@@ -252,7 +334,8 @@
 
 - [ ] **G13 — Select one/more items, File→Delete (or Ctrl-D)** → confirm alert;
   OK deletes them; window rebuilds; dir rescan shows them gone. Delete is
-  **grey** with nothing selected.
+  **grey** with nothing selected. This alert is `form_alert`-based — see **I1**
+  for the fresh 3D-bevel edge-click check on its OK/Cancel buttons.
 - [ ] **G14 — File→New folder (a window open)** → name-entry dialog; type a name,
   OK → `Dcreate`; the folder appears in the window. Empty name / Cancel → no-op,
   screen restored. Grey with **no** window open.
@@ -270,7 +353,8 @@
   three-choice alert **Cancel / Remove / Delete**; "Remove" must route to
   Options→Remove-desktop-icon (icon removal, files untouched — the handler is
   Task #14, so it is currently a no-op redirect); "Delete" deletes the drive's
-  contents (dangerous — only on the throw-away test image).
+  contents (dangerous — only on the throw-away test image). Also
+  `form_alert`-based — see **I1/I2**.
 
 ## H. NEWDESK.INF read/save + Show-Info / Set-background (Task #14, deskinf)
 
@@ -308,6 +392,74 @@
   re-applies the on-disk `NEWDESK.INF`: view/sort re-checked, background
   repainted, desktop icons re-placed, open windows re-laid. A missing file is a
   silent no-op.
+
+---
+
+## I. Fresh-kernel regression checks (commit `9ae7edf` — AES re-audit delta since the `916168e` HW pass)
+
+> The 2026-07-12 HW pass validated `916168e`. Three more AES re-audit commits
+> landed since (`5d33238` Resource/Fileselector, `74b79c8` Scrap/Shell,
+> `9ae7edf` Object/Form rendering — see `docs/STATUS.md` 2026-07-15 for the full
+> summary). This section adds targeted checks for that delta, split into what
+> is genuinely reachable through the current desktop UI (**I.1**) and what
+> landed in the code but has **no** desktop-UI path to reach yet (**I.2**) — so
+> a tester does not spend time hunting for a menu action that does not exist.
+
+### I.1 Reachable through normal desktop use (`form_alert`-based dialogs: About box **C1**, delete-confirm **G7/G13/G17**)
+
+- [ ] **I1 — 3D button bevel + edge clicks on an alert's OK/Cancel button**
+  (`9ae7edf`, `find_hit` hit-test fix, EmuTOS `ob_find` gemoblib.c:1063-1072) →
+  click at the very edge of the visibly-drawn raised bevel of an alert's
+  button (not just its nominal flat rect, on all four sides) → the click still
+  registers. Previously a click on the bevel pixels just outside the nominal
+  object rect could miss.
+- [ ] **I2 — Alert box double-frame (`OUTLINED`) renders unchanged** (`9ae7edf`
+  `draw_signed_border`, D-089) → the alert's outer box still shows the classic
+  GEM double frame exactly as before. This is a **regression check**, not a new
+  behaviour: every current desktop/alert box uses a positive border thickness,
+  and the signed-`th` fix is defined to leave that path bit-for-bit unchanged
+  (confirmed by screendump before/after in `9ae7edf`). A visible difference
+  here would itself be a *new* bug, not the expected fix.
+- [ ] **I3 — `form_alert` `|`/`]` escaping** (`f0b30de`, `gemfmalt.c
+  isduplicate`) — not currently reachable: no desk-built alert string uses
+  `||`/`]]`. Regression-safe by construction; no interactive row possible until
+  a desk alert string needs the escape.
+- [ ] **I4 — Disabled dialog objects don't fire** (`f0b30de` F1, `run_form`
+  now tests `ob_state & DISABLED` instead of the colliding `ob_flags` bit) —
+  no desk-built dialog `OBJECT` is currently marked DISABLED (the Options-menu
+  greying in **C8** is a *menu*-level disable, a different code path). Not
+  reachable through the desktop UI today; regression-only.
+
+### I.2 Landed in code, NOT yet reachable through the desktop UI
+
+> Do **not** file a defect for these unless you are testing them through a
+> direct AES-trap probe (e.g. a selftest binary calling the opcode) — normal
+> desktop interaction cannot currently reach them.
+
+- **`form_center` placement** (`9ae7edf`, `gl_hbox`/menu-bar offset fix) — no
+  desk-internal dialog calls the AES `form_center` trap (opcode 54).
+  `form_alert` (`tos-api/src/aes/form.rs:195-196`), the file selector's
+  `center()` (`tos-api/src/aes/fsel.rs:534-541`), and `kernel/src/desk/inf.rs`'s
+  hand-built Show-Info/Set-background dialogs (`:1040-1041,1098-1099`) each
+  compute their own full-screen centring independently and do not call the
+  fixed function. Confirming this fix needs a probe that invokes opcode 54
+  directly.
+- **File selector empty-path → current-drive root** (`5d33238` L-5,
+  `gemfslib.c:634-638`) — `fsel_input`/`fsel_exinput` (opcodes 90/91) are not
+  called from anywhere in `kernel/src/desk/` yet (no File→Open/Install picker
+  is wired — a Task #9/#14 item). Needs a direct AES-trap probe.
+- **Resource loader `ob_type` mask, `rsrc_free` return contract, shared-TEDINFO
+  relocation dedup** (`5d33238` M-1/M-2/L-4) — internal `.RSC`-loader
+  correctness fixes with no distinguishing visual symptom on the current
+  `GEM.RSC`; own coverage was the commit's QEMU selftest (all asserts passing,
+  round-trip unregressed).
+- **Shell manager fixes** (`74b79c8`: `shel_get`/`put` 4192-byte buffer,
+  `shel_envrn` NULL-on-miss, `shel_rdef`/`wdef` own storage, `shel_write`
+  `doex`/`isgem` dispatch, `shel_find` current-drive root) — `kernel/src/desk/`
+  calls no `shel_*`/`scrp_*` AES entry point yet; this is forward
+  infrastructure for the not-yet-wired shell-loop↔`Pexec` launch path (see
+  `docs/STATUS.md` Blocked, the F5/F7 note). Nothing to test on the desktop
+  yet.
 
 ---
 
