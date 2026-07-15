@@ -292,6 +292,25 @@ Phasenbeginn entschieden sein (siehe `docs/api/_phase00-completion.md`):
   wie beim void-`gr_mouse`), **kein** fabricierter Wert. Die anderen 8 Findings
   (H-1, L-2, M-1, M-2, M-3, L-1, L-3, L-4) sind gelandet. Aufheben, sobald die
   VDI-Maus einen Form-Snapshot exportiert.
+- **Scrap/Shell-Audit (#65): zwei ehrliche Lücken deferred, pending
+  Prozessmodell (`tos-api/src/aes/shell.rs`).** Die F1–F6-Fixes sind gelandet
+  und in QEMU (svc #2, Selektor 200) verifiziert. Offen, bewusst **nicht**
+  gestubbt/gefälscht:
+  (F7) **`shel_read`-Producer fehlt** — `launch_cmd`/`launch_tail` werden von
+  keinem Producer beschrieben; EmuTOS füllt `D.s_cmd`/`ad_stail` in `sh_ldapp`
+  vor `dos_exec` (`gemshlib.c:645`). Braucht die Shell-Loop↔`Pexec`-
+  Launch-Verdrahtung (der Loader muss Kommando+Tail beim Programmstart
+  hinterlegen). Bis dahin liefert `shel_read` das definiert-leere Paar (Read-
+  Seite korrekt, nur der Schreiber fehlt).
+  (F5-Teil) **`shel_find` app-dir + `PATH=`-Suchstufen deferred** — die
+  4-stufige `findfile`-Ordnung (`gemshlib.c:406-472`) ist umgesetzt für
+  Stufe (2) Pfad-wie-übergeben und (3) Wurzel des **aktuellen** Laufwerks
+  (`<Dgetdrv()>:\<name>`, ersetzt das alte hartkodierte `C:\`). Stufe (1)
+  App-Verzeichnis braucht `rlr->p_appdir` aus dem Prozessmodell, Stufe (4)
+  eine echte DOS-Environment — beides noch nicht exponiert, daher weggelassen
+  statt gefälscht. Zusatznote im Code: `read_file` als Existenz-Probe ist
+  fragil ggü. einem `Fsfirst`-Existenz-Check (verfehlt Verzeichnis-Treffer,
+  ignoriert Wildcards) — langfristig auf `Fsfirst` umstellen.
 - **ADR-010 / dereferenzierbarer PD (PHASE-06)** — der „single shared
   address space" (ADR-010) ist akzeptiert, aber auf QEMU blockiert (3
   TCG-Wände); live läuft Option (b): per-process-TTBR0 + **opaker** PD.
