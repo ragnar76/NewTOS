@@ -69,6 +69,11 @@ const DISABLED: u16 = 0x0008;
 /// `gemmnext.c:539-541`).
 const G_STRING: u16 = 28;
 
+/// `G_TITLE` object type (`obdefs.h`) — a menu-bar title. A title spans the
+/// full bar height, so its `just_draw` fill covers the separator row at
+/// `BAR_H-1` (see [`redraw_bar_separator`]).
+const G_TITLE: u16 = 32;
+
 const WHITE: Pel = 0;
 const BLACK: Pel = 1;
 
@@ -335,10 +340,38 @@ fn close_box(tree: *mut Object, title: i16, imenu: i16, backend: &dyn RasterBack
     object::set_state_bit(tree, title, SELECTED, false); // redraws the title normal
     // A G_TITLE spans the whole bar height, so the white un-highlight fill
     // erased the bar's separator line under it — redraw it.
+    redraw_bar_separator(backend);
+    crate::vdi::cursor_show(backend);
+}
+
+/// Repaint the menu bar's separator line — the full-width black stroke at
+/// `y = BAR_H-1` drawn by [`menu_bar`] (`menu.rs`). A bar `G_TITLE` has
+/// `ob_height == BAR_H`, so drawing a title (normal *or* highlighted) fills its
+/// cell across the whole bar height, including the separator row — erasing the
+/// segment of the line under that title. This is the single source of truth
+/// both the interactive cancel path ([`close_box`]) and the app-driven
+/// un-highlight ([`menu_tnormal`]) call to restore the line after the title
+/// redraw. A full-width repaint over an intact line is idempotent.
+fn redraw_bar_separator(backend: &dyn RasterBackend) {
     let sw = backend.width() as i16;
     let clip = ClipRect::full(backend.width(), backend.height());
     backend.fill_rect(0, BAR_H - 1, sw, 1, BLACK, clip);
-    crate::vdi::cursor_show(backend);
+}
+
+/// Does normalizing `obj` need the bar separator repainted? True only for a
+/// bar-level `G_TITLE` whose absolute cell spans the separator row `BAR_H-1` —
+/// the objects whose `just_draw` white-fill erases the line. Drop-down items
+/// (`G_STRING`, below the bar) and non-title objects do not qualify, so an
+/// unrelated `menu_tnormal` never paints a spurious line across the screen.
+fn title_touches_separator(tree: *const Object, obj: i16) -> bool {
+    // SAFETY: valid tree (GEM contract); `obj` is a caller-validated index.
+    let ob_type = unsafe { (*tree.add(obj as usize)).ob_type & 0x00ff };
+    if ob_type != G_TITLE {
+        return false;
+    }
+    let sep_row = BAR_H - 1;
+    let (_, y, _, h) = object::abs_rect(tree, obj);
+    y <= sep_row && sep_row < y + h
 }
 
 /// Put the pixels saved under the box back, or white-erase if the box was too
@@ -381,6 +414,22 @@ pub fn menu_ienable(pb: &Aespb) {
 /// unchanged).
 pub fn menu_tnormal(pb: &Aespb) {
     do_chg(pb, pb.intin(0), SELECTED, pb.intin(1) == 0, true, true); // select when normal==0
+    // `do_chg` (dodraw=true) repainted the title's cell. A bar `G_TITLE` spans
+    // the full bar height, so that fill covered the separator row at BAR_H-1,
+    // erasing the segment of the bar's separator line under the title (the same
+    // reason `close_box` restores it on the cancel path). Repaint the line when
+    // the normalized object is a bar title touching that row — not for
+    // drop-down items or unrelated objects.
+    let tree = pb.addrin(0) as *const Object;
+    let obj = pb.intin(0);
+    if tree.is_null() || obj < 0 {
+        return;
+    }
+    if title_touches_separator(tree, obj) {
+        if let Some(backend) = host().and_then(|h| h.raster()) {
+            redraw_bar_separator(backend);
+        }
+    }
 }
 
 /// `menu_text` (34) — replace item `int_in[0]`'s text with the string at
