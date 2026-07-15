@@ -936,6 +936,107 @@ the situation EmuTOS itself has no honest classic code for.
 - ADR-016 (desktop rebuild — the geometry work is cross-cutting and must be
   sequenced against the in-flight `kernel/src/desk/` task list)
 
+## ADR-018: Native executable extension family — `.NAP` / `.NCP` / `.NTP`
+
+**Date:** 2026-07-16
+**Status:** **Accepted** (user decision 2026-07-16, confirmed via team lead)
+**Phase:** cross-cutting (desktop launcher `kernel/src/desk/`, `kernel/src/launch.rs`,
+program-build tooling, NEWDESK.INF associations)
+
+### Context
+
+NewTOS programs are **native AArch64 ELF** binaries: `pexec::load` reads the
+file, parses the ELF, loads it into a process slot, and `kernel::launch::
+run_program` drops to EL0, runs it, and resumes when it `Pterm`s. They are
+**not** m68k Atari `.PRG`/`.APP`/`.TOS`/`.TTP` binaries. The desktop must be
+able to launch a program by double-click; today `open_item`
+(`kernel/src/desk/main.rs`) returns `OpenTarget::None` for a plain file (an
+explicit no-op).
+
+Reusing the classic Atari suffixes for native ELF apps would conflate two
+architectures under one name: once the m68k userland emulator (a later phase)
+exists, a `.PRG` could be *either* a native ELF *or* an original m68k binary,
+indistinguishable by name. We cannot rename existing Atari binaries — they
+*are* named `.PRG`/`.APP`/`.TOS`/`.TTP` — so the m68k side is fixed and the
+**native** side takes the new, distinct extensions.
+
+### Decision
+
+Native NewTOS ELF programs use a new **`N_P` family** (middle letter = role);
+the classic Atari suffixes are **reserved for m68k** binaries (run via the
+future emulator). The file extension is a desktop/shell convention, **not** part
+of the TOS syscall ABI, so this does not touch TOS API compatibility.
+
+| Ext | Role | m68k analog | Launcher behavior |
+|-----|------|-------------|-------------------|
+| `.NAP` | Native **A**pp (GEM) | `.PRG` / `.APP` | `run_program`; the app uses AES and draws its own windows over the desktop |
+| `.NCP` | Native **C**onsole program | `.TOS` | `fbcon::activate` (VT52 text screen), `run_program`, restore the desktop on `Pterm` |
+| `.NTP` | Native, **T**akes params | `.TTP` / `.GTP` | prompt for a command tail (form dialog), pass it as the child's cmdline, then run |
+
+**Why exactly three:** NewTOS's AES environment is always up, so the launcher
+does *not* need the classic GEM-vs-console environment selection at load time —
+the program decides its own UI. The three roles are precisely the cases that
+need distinct *launcher* behavior: GUI app (nothing special), console app (text
+screen), takes-params (tail dialog). "GEM with params" collapses into `.NTP`
+(the tail dialog is identical). More roles can be added later without breaking
+the scheme.
+
+### Routing
+
+- **Double-click / File→Open** on a file (`open_item`):
+  - native ext → build the full `C:` path (window `p_spec` drive+dir + filename)
+    → `run_program` (console mode for `.NCP`, tail dialog for `.NTP`) →
+    `full_redraw` on return.
+  - classic m68k ext (`.PRG`/`.APP`/`.TOS`/`.TTP`/`.GTP`) → an honest
+    `form_alert` "m68k programs need the emulator (not yet available)" until the
+    m68k userland phase.
+  - anything else → document / no-op (associated-app opening is future work).
+- **AUTO-folder autorun** (`run_auto_folder`, `launch.rs`) + `#Z` NEWDESK.INF
+  autorun: run native extensions (`.NAP`/`.NCP`); a `.PRG` in `\AUTO\` fails to
+  load gracefully today (m68k unsupported), which is the current behavior.
+
+### Change surface
+
+- `kernel/src/desk/main.rs` — `open_item`: native-ext detection +
+  `OpenTarget::App{path, flavor}` + path construction + route to `run_program`
+  + return `full_redraw` + m68k/error alerts.
+- `kernel/src/desk/` — an extension-classification helper
+  (`NAP`/`NCP`/`NTP`/m68k/document). The dead `kernel/src/desktop.rs`
+  `name_is_program` is a **reference only** (do not resurrect it).
+- `kernel/src/launch.rs` — `run_program` extended for a command tail (`.NTP`)
+  and console mode (`.NCP`: `fbcon::activate` + restore); `run_auto_folder`
+  filter to include native extensions.
+- `kernel/src/desk/inf.rs` — NEWDESK.INF file-type/icon associations gain the
+  native family alongside the m68k ones (`inf.rs:566-570`).
+- **Program-build tooling — PREREQUISITE.** The old `programs/lineecho` crate +
+  generated ELF are **gone**; native programs currently exist only as
+  hand-crafted ELF byte arrays in the selftests (`selftest_pexec.rs`) + the
+  in-kernel `registry`. To ship a *double-clickable file on C:*, either (a)
+  hand-craft a minimal native ELF (a console `.NCP`: `Cconws` + `Pterm`) and
+  write its bytes onto the SD image, or (b) re-establish a program-build crate
+  (Rust `no_std` → stripped ELF → `make-sd-image.sh`) for a real `.NAP` GEM
+  demo. (a) proves the chain now; (b) is needed for a real GEM app.
+- `tools/make-sd-image.sh` — place `HELLO.NCP` (and later `HELLO.NAP`) on C:
+  (+ optionally in `\AUTO\`).
+- Doc/comment reconciliation — `launch.rs` / `bdos/fs` comments that say
+  "`.PRG`" for the *native* launch path.
+
+### Staged plan (Task #72)
+
+1. Family + routing + classification helper + `.NAP` wiring (`run_program` on
+   double-click) + m68k/error alerts + return redraw.
+2. `.NCP` console mode (`fbcon` activate/restore).
+3. `.NTP` command-tail dialog.
+4. A native demo program on C: — start with a hand-crafted `.NCP` for an
+   end-to-end proof; a real `.NAP` GEM demo needs the build-crate prerequisite.
+
+### Related
+
+ADR-013 (native `.RSC` format — the same "native, not m68k-packed" principle),
+ADR-016 (the desk rebuild `open_item` lives in), and the AES shell manager
+(`shel_write`/`pending_launch`, `tos-api/src/aes/shell.rs` — the AES-faithful
+launch path that the kernel-driven `run_program` deliberately bypasses).
+
 ### Template for new ADRs
 
 ```markdown
