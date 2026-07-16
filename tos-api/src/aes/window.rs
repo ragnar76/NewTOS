@@ -236,11 +236,6 @@ fn paint_bg_clip(backend: &dyn RasterBackend, clip: ClipRect) {
     }
 }
 
-/// Paint the whole desktop background (full-screen clip).
-fn paint_background(backend: &dyn RasterBackend) {
-    paint_bg_clip(backend, ClipRect::full(backend.width(), backend.height()));
-}
-
 /// A `ClipRect` for the rectangle `[x, x+w) × [y, y+h)`.
 fn rect_clip(x: i16, y: i16, w: i16, h: i16) -> ClipRect {
     ClipRect { xmn: x, ymn: y, xmx: x + w - 1, ymx: y + h - 1 }
@@ -251,7 +246,18 @@ fn rect_clip(x: i16, y: i16, w: i16, h: i16) -> ClipRect {
 /// stand-in for per-window rectangle-list clipping when redrawing frames;
 /// the rectangle list (`WF_FIRSTXYWH`) still drives what the *app* redraws.
 fn redraw_all(backend: &dyn RasterBackend) {
-    paint_background(backend);
+    compose(backend, ClipRect::full(backend.width(), backend.height()));
+}
+
+/// The desktop-background + window-frame composite, confined to `clip`. Paints
+/// the desktop background (painter hook) then every open window's frame
+/// back-to-front (painter's algorithm — front windows overwrite the ones they
+/// cover), each clipped to `clip`. [`redraw_all`] passes the full-device clip;
+/// [`redraw_clip`] passes a damage rectangle so a move/size settle repaints only
+/// the affected area instead of the whole screen. The window **content** (item
+/// objects) is re-laid by the owner afterwards, exactly as in the full path.
+fn compose(backend: &dyn RasterBackend, clip: ClipRect) {
+    paint_bg_clip(backend, clip);
     let top = get_top();
     // Selection sort by ascending z, drawing each open window once.
     let mut drawn = [false; MAX_WINDOWS];
@@ -272,8 +278,35 @@ fn redraw_all(backend: &dyn RasterBackend) {
         }
         drawn[pick] = true;
         let istop = (pick as i16 + 1) == top;
-        draw_frame(&slots()[pick], istop, backend);
+        draw_frame(&slots()[pick], istop, backend, clip);
     }
+}
+
+/// Damage-scoped repaint of the desktop background + every window frame, clipped
+/// to `clip` (a border-rect union). The public entry the desktop drives after a
+/// solid window move/resize (WM_MOVED/WM_SIZED) and the programmatic WF_CXYWH
+/// path use, in place of [`redraw`] (whole-screen `redraw_all`) — only the union
+/// of the window's old and new border rects is repainted, which removes the
+/// full-screen flicker. The window content is re-laid by the desktop
+/// (`do_wredraw`) / by the `send_redraw` WM_REDRAW that follows.
+pub fn redraw_clip(x: i16, y: i16, w: i16, h: i16) {
+    if w <= 0 || h <= 0 {
+        return;
+    }
+    if let Some(backend) = host().and_then(|h| h.raster()) {
+        let cr = ClipRect { xmn: x, ymn: y, xmx: x + w - 1, ymx: y + h - 1 };
+        compose(backend, cr);
+    }
+}
+
+/// The bounding rectangle enclosing both `a` and `b` — the damage region of a
+/// window move/resize (old border rect ∪ new border rect).
+fn union_grect(a: Grect, b: Grect) -> Grect {
+    let x0 = a.x.min(b.x);
+    let y0 = a.y.min(b.y);
+    let x1 = (a.x + a.w).max(b.x + b.w);
+    let y1 = (a.y + a.h).max(b.y + b.h);
+    Grect { x: x0, y: y0, w: x1 - x0, h: y1 - y0 }
 }
 
 // ── rectangle list (visible pieces) ──────────────────────────────────────
@@ -511,9 +544,12 @@ fn draw_label(x: i16, y: i16, max_w: i16, s: &[u8], backend: &dyn RasterBackend,
     }
 }
 
-/// Draw the full window frame for `w` (border + gadgets + work area).
-fn draw_frame(w: &Window, istop: bool, backend: &dyn RasterBackend) {
-    let clip = ClipRect::full(backend.width(), backend.height());
+/// Draw the full window frame for `w` (border + gadgets + work area), confined
+/// to `clip`. Callers repainting the whole screen pass the full-device clip;
+/// the damage-scoped composite ([`redraw_clip`]) passes the union of the moved
+/// window's old and new border rects, so a settle-overlap repaint never clears
+/// a work area (or overdraws a frame) outside the damage region.
+fn draw_frame(w: &Window, istop: bool, backend: &dyn RasterBackend, clip: ClipRect) {
     let b = w.curr;
     let kind = w.kind;
 
@@ -583,7 +619,7 @@ fn draw_frame(w: &Window, istop: bool, backend: &dyn RasterBackend) {
     backend.fill_rect(work.x, work.y, work.w, work.h, WHITE, clip);
 
     // Right scroll bar (arrows + track + thumb).
-    draw_vslider(w, backend);
+    draw_vslider(w, backend, clip);
 
     // Bottom scroll bar (arrows + track + thumb). Fill the whole bottom band
     // first: with a sizer but no horizontal scrollbar the band would otherwise
@@ -594,7 +630,7 @@ fn draw_frame(w: &Window, istop: bool, backend: &dyn RasterBackend) {
         let row_y = b.y + b.h - GAD;
         backend.fill_rect(b.x + 1, row_y, b.w - 2, GAD - 1, GRAY_LT, clip);
     }
-    draw_hslider(w, backend);
+    draw_hslider(w, backend, clip);
 
     // Sizer (bottom-right corner).
     if kind & SIZER != 0 {
@@ -611,13 +647,12 @@ fn draw_frame(w: &Window, istop: bool, backend: &dyn RasterBackend) {
 /// thumb positioned + sized from `w.vslide` / `w.vslsize` (both per-mille).
 /// Shared by `draw_frame` and `wind_set(WF_VSLIDE/WF_VSLSIZ)`; drawing only
 /// the slider column leaves the work area (content) untouched.
-fn draw_vslider(w: &Window, backend: &dyn RasterBackend) {
+fn draw_vslider(w: &Window, backend: &dyn RasterBackend, clip: ClipRect) {
     let b = w.curr;
     let kind = w.kind;
     if kind & (VGADGETS | SIZER) == 0 {
         return;
     }
-    let clip = ClipRect::full(backend.width(), backend.height());
     let col_x = b.x + b.w - GAD;
     // Track top: below the title + info bands.
     let mut sy = b.y + 1;
@@ -667,7 +702,7 @@ fn draw_vslider(w: &Window, backend: &dyn RasterBackend) {
 fn redraw_vslider(handle: i16) {
     if let (Some(backend), Some(w)) = (host().and_then(|h| h.raster()), win(handle)) {
         if w.open {
-            draw_vslider(w, backend);
+            draw_vslider(w, backend, ClipRect::full(backend.width(), backend.height()));
         }
     }
 }
@@ -680,13 +715,12 @@ fn redraw_vslider(handle: i16) {
 /// title/info bands consume the horizontal axis). Shared by `draw_frame` and
 /// `wind_set(WF_HSLIDE/WF_HSLSIZ)`; drawing only the slider row leaves the work
 /// area (content) untouched. The bottom-band fill is done by the caller.
-fn draw_hslider(w: &Window, backend: &dyn RasterBackend) {
+fn draw_hslider(w: &Window, backend: &dyn RasterBackend, clip: ClipRect) {
     let b = w.curr;
     let kind = w.kind;
     if kind & (HGADGETS | SIZER) == 0 {
         return;
     }
-    let clip = ClipRect::full(backend.width(), backend.height());
     let row_y = b.y + b.h - GAD;
     // Track left: just past the left border (no left-side bands on this axis).
     let mut sx = b.x + 1;
@@ -730,7 +764,7 @@ fn draw_hslider(w: &Window, backend: &dyn RasterBackend) {
 fn redraw_hslider(handle: i16) {
     if let (Some(backend), Some(w)) = (host().and_then(|h| h.raster()), win(handle)) {
         if w.open {
-            draw_hslider(w, backend);
+            draw_hslider(w, backend, ClipRect::full(backend.width(), backend.height()));
         }
     }
 }
@@ -952,16 +986,21 @@ pub fn wind_set(pb: &Aespb) {
         }
         WF_CXYWH => {
             let r = Grect { x: pb.intin(2), y: pb.intin(3), w: pb.intin(4), h: pb.intin(5) };
-            let kind = if let Some(w) = win(handle) {
+            let (kind, prev) = if let Some(w) = win(handle) {
                 w.prev = w.curr;
                 w.curr = r;
-                w.kind
+                (w.kind, w.prev)
             } else {
-                0
+                (0, r)
             };
-            if let Some(backend) = host().and_then(|h| h.raster()) {
-                redraw_all(backend);
-            }
+            // Repaint only the union of the old and new border rects — the
+            // programmatic move/size path (desktop WM_FULLED, app `wind_set`) —
+            // not the whole screen. The frame composite (background + frames) is
+            // damage-scoped here; this window's content follows via `send_redraw`
+            // (WM_REDRAW). Lower windows' content is re-laid by the owner's
+            // damage repaint when it drives this path (`desk::redraw`).
+            let d = union_grect(prev, r);
+            redraw_clip(d.x, d.y, d.w, d.h);
             send_redraw(handle, calc(WC_WORK, kind, r));
         }
         WF_TOP => top_window(handle),
@@ -1017,7 +1056,7 @@ fn slider_size(v: i16) -> i16 {
 fn redraw_open(handle: i16) {
     if let (Some(backend), Some(w)) = (host().and_then(|h| h.raster()), win(handle)) {
         if w.open {
-            draw_frame(w, handle == get_top(), backend);
+            draw_frame(w, handle == get_top(), backend, ClipRect::full(backend.width(), backend.height()));
         }
     }
 }
@@ -1264,6 +1303,11 @@ fn drag_move(w: &mut Window, backend: &dyn RasterBackend) -> Grect {
         }
         h.pump_input();
     }
+    // Record the pre-move border rect as the window's previous rect so the owner
+    // (the desktop) can compute the damage region (old ∪ new) for the
+    // settle-overlap repaint on WM_MOVED. The interactive drag mutated `w.curr`
+    // directly, bypassing the `wind_set(WF_CXYWH)` path that maintains `prev`.
+    w.prev = orig;
     last
 }
 
@@ -1316,7 +1360,7 @@ fn drag_size(w: &mut Window, backend: &dyn RasterBackend) -> Grect {
             crate::vdi::cursor_hide(backend);
             paint_bg_clip(backend, rect_clip(orig.x, orig.y, last.w, last.h));
             w.curr = nr;
-            draw_frame(w, true, backend);
+            draw_frame(w, true, backend, ClipRect::full(backend.width(), backend.height()));
             crate::vdi::cursor_show(backend);
             last = nr;
         }
@@ -1325,6 +1369,12 @@ fn drag_size(w: &mut Window, backend: &dyn RasterBackend) -> Grect {
         }
         h.pump_input();
     }
+    // Record the pre-resize border rect as the window's previous rect so the
+    // owner (the desktop) can compute the damage region (old ∪ new) for the
+    // settle-overlap repaint on WM_SIZED, exactly as a programmatic WF_CXYWH
+    // set would. The interactive drag mutated `w.curr` directly, bypassing the
+    // `wind_set(WF_CXYWH)` path that normally maintains `prev`.
+    w.prev = orig;
     last
 }
 

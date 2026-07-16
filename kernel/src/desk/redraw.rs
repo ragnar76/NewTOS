@@ -157,18 +157,7 @@ pub fn win_shwall() {
 fn win_shwall_nocursor() {
     // Snapshot the open handles under the lock; draw with the lock released.
     let mut handles = [0i16; global::NUM_WNODES];
-    let n = global::with(|g| {
-        let mut n = 0;
-        for &slot in g.windows.zorder.iter() {
-            let wn = &g.windows.slots[slot];
-            if wn.w_id != DESKWH && n < handles.len() {
-                handles[n] = wn.w_id;
-                n += 1;
-            }
-        }
-        n
-    })
-    .unwrap_or(0);
+    let n = snapshot_window_handles(&mut handles);
 
     // Order is irrelevant to correctness — each piece is occlusion-clipped by
     // the owner-rectangle list, so nothing a higher window covers is drawn.
@@ -176,6 +165,64 @@ fn win_shwall_nocursor() {
         let work = wind_get_work(h);
         do_wredraw_nocursor(h, work);
     }
+}
+
+/// Snapshot the open (non-desktop) window handles in z-order into `out`,
+/// returning the count. Taken under the global lock so the drawing that follows
+/// runs with the lock released (each `do_wredraw_nocursor` re-acquires it for
+/// the owner-rectangle-list walk).
+fn snapshot_window_handles(out: &mut [i16; global::NUM_WNODES]) -> usize {
+    global::with(|g| {
+        let mut n = 0;
+        for &slot in g.windows.zorder.iter() {
+            let wn = &g.windows.slots[slot];
+            if wn.w_id != DESKWH && n < out.len() {
+                out[n] = wn.w_id;
+                n += 1;
+            }
+        }
+        n
+    })
+    .unwrap_or(0)
+}
+
+/// Damage-scoped repaint: the [`full_redraw`] composite confined to `clip` — the
+/// desktop surface + every window frame within `clip` (AES `redraw_clip`), then
+/// every open window's content occlusion-clipped and intersected with `clip`
+/// (`do_wredraw_nocursor(handle, clip)`). Settles the overlap after a solid
+/// window move/resize (`WM_MOVED`/`WM_SIZED`) or a programmatic full/move
+/// (`WM_FULLED`) without repainting the whole ~2M-pixel screen — the
+/// full-screen-flicker fix. `clip` is the union of the window's old and new
+/// border rects; a lower window under the vacated part repaints correctly
+/// because both the frame composite (painter's algorithm, front over back) and
+/// the content fan-out (AES owner-rectangle list) are occlusion-correct.
+pub fn damage_redraw(clip: Grect) {
+    if clip.w <= 0 || clip.h <= 0 {
+        return;
+    }
+    graf_mouse(M_OFF);
+    // Desktop background + icons + every window frame, occluded by draw order,
+    // confined to the damage rect.
+    tos_api::aes::window::redraw_clip(clip.x, clip.y, clip.w, clip.h);
+    // Each open window's content, occlusion-clipped and intersected with the
+    // damage rect — no inner cursor toggle (folded into the outer bracket).
+    let mut handles = [0i16; global::NUM_WNODES];
+    let n = snapshot_window_handles(&mut handles);
+    for &h in &handles[..n] {
+        do_wredraw_nocursor(h, clip);
+    }
+    graf_mouse(M_ON);
+}
+
+/// The bounding rectangle enclosing both `a` and `b` — the damage region of a
+/// window move/resize (old border rect ∪ new border rect), fed to
+/// [`damage_redraw`].
+pub fn union(a: Grect, b: Grect) -> Grect {
+    let x0 = a.x.min(b.x);
+    let y0 = a.y.min(b.y);
+    let x1 = (a.x + a.w).max(b.x + b.w);
+    let y1 = (a.y + a.h).max(b.y + b.h);
+    Grect { x: x0, y: y0, w: x1 - x0, h: y1 - y0 }
 }
 
 /// Full desktop composite: the desktop surface + every window frame (the AES

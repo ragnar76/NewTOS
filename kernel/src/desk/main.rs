@@ -910,18 +910,29 @@ fn full_msg(handle: i16) {
         full
     };
     global::with(|g| g.win_top(handle)); // fuller implies top
-    super::wind_set_grect(handle, WF_CXYWH, target); // AES redraws frames
+    super::wind_set_grect(handle, WF_CXYWH, target); // AES redraws frames (damage-scoped)
     let work = wind_get_work(handle);
     if let Some(sliders) = global::with(|g| g.desk_verify(handle, work, true)).flatten() {
         set_sliders(handle, sliders);
     }
-    redraw::full_redraw();
+    // A maximize/restore legitimately changes a large area, but only the union
+    // of the old and new border rects — not the whole screen. `damage_redraw`
+    // settles that region (background, frames, and every window's content),
+    // including any lower window exposed by a restore.
+    redraw::damage_redraw(redraw::union(cur, target));
 }
 
 /// `WM_MOVED` — the AES already moved `handle` (frame + content blitted).
 /// Re-sync the desktop's cached work-area origin (the item objects are placed
 /// relative to it) and repaint to settle any overlap the live drag disturbed.
 fn moved_msg(handle: i16) {
+    // The solid drag already blitted the window to its end position and
+    // repainted the vacated region with the desktop background; on release only
+    // the overlap needs settling. Damage = old border rect ∪ new border rect
+    // (the drag stashed the pre-move rect in WF_PXYWH). Repaint just that region
+    // so a lower window under the vacated area returns — no full-screen flicker.
+    let old = wind_get_grect(handle, WF_PXYWH);
+    let new = wind_get_grect(handle, WF_CXYWH);
     let work = wind_get_work(handle);
     global::with(|g| {
         if let Some(slot) = g.win_slot(handle) {
@@ -932,17 +943,24 @@ fn moved_msg(handle: i16) {
             g.g_screen[root].ob_height = work.h;
         }
     });
-    redraw::full_redraw();
+    redraw::damage_redraw(redraw::union(old, new));
 }
 
 /// `WM_SIZED` — the AES already resized `handle`'s frame; rebuild the item grid
 /// for the new work area (columns may re-flow) and repaint.
 fn sized_msg(handle: i16) {
+    // The resize repainted the old window rect with the background and drew the
+    // frame at its new size during the drag, but the work-area content is only
+    // re-laid now. Damage = old border rect ∪ new border rect (the drag stashed
+    // the pre-resize rect in WF_PXYWH); repaint just that region — no full-screen
+    // flicker, and a lower window exposed by a shrink returns correctly.
+    let old = wind_get_grect(handle, WF_PXYWH);
+    let new = wind_get_grect(handle, WF_CXYWH);
     let work = wind_get_work(handle);
     if let Some(sliders) = global::with(|g| g.desk_verify(handle, work, true)).flatten() {
         set_sliders(handle, sliders);
     }
-    redraw::full_redraw();
+    redraw::damage_redraw(redraw::union(old, new));
 }
 
 /// `WM_ARROWED` — an arrow-gadget scroll of `handle`.
