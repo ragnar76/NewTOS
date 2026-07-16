@@ -88,12 +88,12 @@ pub fn run_program(path: &[u8]) -> bool {
 /// runs to its `Pterm`, then the next. AUTO programs are typically drivers /
 /// TSRs that set something up at boot. Absent `\AUTO\` folder → no-op.
 ///
-/// Runs the native NewTOS extensions `.NAP` / `.NCP` (ADR-018) **and** the
-/// classic Atari `.PRG` extension. A `.PRG` in `\AUTO\` fails to load
-/// gracefully today (it is m68k and the emulator is not available), which is
-/// the current, intended behaviour — the native family is what actually
-/// launches. `.NTP` is excluded: it takes a command tail there is no dialog
-/// for at boot.
+/// Runs **only** the native NewTOS extensions `.NAP` / `.NCP` (ADR-018). Classic
+/// Atari `.PRG` / `.TOS` are m68k and cannot load without the (unavailable)
+/// emulator — attempting one at boot only produced a failed load and an alert,
+/// so they are now skipped here (the desktop still reports them as m68k when a
+/// user explicitly opens one). `.NTP` is also excluded: it takes a command tail
+/// there is no dialog for at boot.
 pub fn run_auto_folder() {
     use crate::desk::ftype::{classify, FileType, Flavor};
     use tos_api::bdos::fs::find::{list_dir_ex, DirInfo};
@@ -107,10 +107,9 @@ pub fn run_auto_folder() {
         }
         let end = e.name.iter().position(|&b| b == 0).unwrap_or(14);
         let name = &e.name[..end];
-        // Native .NAP/.NCP (ADR-018), or the classic Atari .PRG auto-run ext.
-        let native_auto =
-            matches!(classify(name), FileType::Native(Flavor::App | Flavor::Console));
-        if !native_auto && (end < 4 || &name[end - 4..] != b".PRG") {
+        // Only native .NAP/.NCP auto-run (ADR-018). Classic .PRG/.TOS are m68k
+        // and would only fail to load + alert, so skip anything non-native.
+        if !matches!(classify(name), FileType::Native(Flavor::App | Flavor::Console)) {
             continue;
         }
         // Build "C:\AUTO\<name>\0".
