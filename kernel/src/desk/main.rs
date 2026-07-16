@@ -870,17 +870,25 @@ fn do_cycle() {
     // then deselects the *previously* current window via `desk_clear(G.g_cwin)`
     // (:1283) before switching. `do_cycle` inlines that clear (mirroring
     // `top_msg`) so a stale selection does not survive the top change.
+    let prev = global::with(|g| g.g_cwin).unwrap_or(DESKWH);
+    let prev_rect = (prev != DESKWH).then(|| wind_get_grect(prev, WF_CXYWH));
     global::with(|g| {
-        let prev = g.g_cwin;
-        g.desk_clear(prev);
+        let p = g.g_cwin;
+        g.desk_clear(p);
     });
-    // Tell the AES (redraws frames), update the desktop z-order + current
-    // window, then repaint everything.
+    // Tell the AES (repaints the union of the topped + old-top rects), update the
+    // desktop z-order + current window, then settle that same damage — not the
+    // whole screen (topping-flicker fix).
     super::wind_set_int(handle, WF_TOP, 0);
     global::with(|g| g.win_top(handle));
     let work = wind_get_work(handle);
     global::with(|g| g.desk_verify(handle, work, false));
-    redraw::full_redraw();
+    let new_rect = wind_get_grect(handle, WF_CXYWH);
+    let damage = match prev_rect {
+        Some(pr) => redraw::union(new_rect, pr),
+        None => new_rect,
+    };
+    redraw::damage_redraw(damage);
 }
 
 // ── Window-manager messages ────────────────────────────────────────────────
@@ -889,14 +897,25 @@ fn do_cycle() {
 /// frames); update the desktop's own z-order + current window and repaint the
 /// content.
 fn top_msg(handle: i16) {
+    // The AES already topped `handle` and repainted the union of the new/old top
+    // rects; settle the same damage (background + frames + content). The
+    // previously-current window (`g_cwin`) loses its active-title highlight, so
+    // the damage is the union of both border rects — not the whole screen.
+    let prev = global::with(|g| g.g_cwin).unwrap_or(DESKWH);
+    let prev_rect = (prev != DESKWH).then(|| wind_get_grect(prev, WF_CXYWH));
     global::with(|g| {
-        let prev = g.g_cwin;
-        g.desk_clear(prev);
+        let p = g.g_cwin;
+        g.desk_clear(p);
         g.win_top(handle);
     });
     let work = wind_get_work(handle);
     global::with(|g| g.desk_verify(handle, work, false));
-    redraw::full_redraw();
+    let new_rect = wind_get_grect(handle, WF_CXYWH);
+    let damage = match prev_rect {
+        Some(pr) => redraw::union(new_rect, pr),
+        None => new_rect,
+    };
+    redraw::damage_redraw(damage);
 }
 
 /// `WM_FULLED` — toggle the top window between its full extent and its previous

@@ -194,13 +194,24 @@ fn get_top() -> i16 {
     best
 }
 
-/// Raise `handle` to the top of the stack and repaint.
+/// Raise `handle` to the top of the stack and repaint only the union of the
+/// newly-topped window and the previously-top window (which loses its
+/// active-title highlight) — not the whole screen (the topping-flicker fix,
+/// same damage-scope as move/open/close).
 fn top_window(handle: i16) {
+    let old_top = get_top(); // current top before the bump (may equal handle)
+    let old_rect = win(old_top).map(|w| w.curr);
     if let Some(w) = win(handle) {
         w.z = bump_z();
     }
-    if let Some(backend) = host().and_then(|h| h.raster()) {
-        redraw_all(backend);
+    let new_rect = win(handle).map(|w| w.curr);
+    let damage = match (new_rect, old_rect) {
+        (Some(n), Some(o)) => Some(union_grect(n, o)),
+        (Some(n), None) => Some(n),
+        _ => None,
+    };
+    if let Some(d) = damage {
+        redraw_clip(d.x, d.y, d.w, d.h);
     }
 }
 
