@@ -39,6 +39,11 @@ pub use mouse::{
 };
 mod primitives;
 mod raster;
+/// AES form-manager screen save/restore (`bb_save`/`bb_restore`): a
+/// `vro_cpyfm` Screen↔Memory copy over a caller-owned 32-bpp device-format
+/// buffer. Used by `form_alert`/`form_dial` to preserve the screen behind
+/// a dialog. See [`raster`] for the memory-MFDB format.
+pub use raster::{bb_restore, bb_save, bb_save_words};
 mod req_col;
 mod text;
 mod trig;

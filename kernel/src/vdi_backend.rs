@@ -478,6 +478,43 @@ impl RasterBackend for VdiScreen {
         }
         Self::clean(fb, tx0 as u32, ty0 as u32, tx1 as u32, ty1 as u32);
     }
+
+    fn get_device_pixel(&self, x: i16, y: i16) -> u32 {
+        let fb = active_fb();
+        if x < 0 || y < 0 || x as u32 >= fb.width() || y as u32 >= fb.height() {
+            return 0;
+        }
+        let off = y as usize * fb.stride_px() as usize + x as usize;
+        // SAFETY: (x, y) is within the framebuffer bounds checked above.
+        unsafe { fb.pixels().add(off).read_volatile() }
+    }
+
+    fn put_device_pixel(&self, x: i16, y: i16, argb: u32) {
+        let fb = active_fb();
+        if x < 0 || y < 0 || x as u32 >= fb.width() || y as u32 >= fb.height() {
+            return;
+        }
+        let off = y as usize * fb.stride_px() as usize + x as usize;
+        // SAFETY: (x, y) is within the framebuffer bounds checked above.
+        // The caller flushes the region afterwards (see `flush_rect`).
+        unsafe { fb.pixels().add(off).write_volatile(argb) };
+    }
+
+    fn flush_rect(&self, x0: i16, y0: i16, x1: i16, y1: i16) {
+        let fb = active_fb();
+        let (w, h) = (fb.width(), fb.height());
+        if w == 0 || h == 0 {
+            return;
+        }
+        let cx0 = x0.max(0) as u32;
+        let cy0 = y0.max(0) as u32;
+        let cx1 = (x1.max(0) as u32).min(w - 1);
+        let cy1 = (y1.max(0) as u32).min(h - 1);
+        if cx0 > cx1 || cy0 > cy1 {
+            return;
+        }
+        Self::clean(fb, cx0, cy0, cx1, cy1);
+    }
 }
 
 /// The 16-entry BitBlt logic-op table, `D' = op(S, D)`, acting **literally

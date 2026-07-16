@@ -172,6 +172,34 @@ pub trait RasterBackend: Sync {
     /// pixel word — the screen-to-screen case of `vro_cpyfm`. The
     /// destination write is clipped to `clip` ∩ the visible area.
     fn copy_rect(&self, src: Rect, dx: i16, dy: i16, op: u8, clip: ClipRect);
+
+    /// Read the **raw device pixel word** (the packed value actually stored
+    /// in the framebuffer — XRGB8888 for the bring-up truecolor screen) at
+    /// device coordinate `(x, y)`. Out-of-bounds → `0`.
+    ///
+    /// Unlike [`read_pixel`](Self::read_pixel), which reverse-maps to the
+    /// nearest CLUT index (lossy), this returns the exact stored colour.
+    /// It is the screen side of a memory-MFDB copy (`vro_cpyfm`
+    /// Screen→Memory, i.e. AES `bb_save`): the saved bitmap must reproduce
+    /// the screen bit-for-bit on restore, which a PEL round-trip cannot
+    /// guarantee for non-palette content.
+    fn get_device_pixel(&self, x: i16, y: i16) -> u32;
+
+    /// Write the **raw device pixel word** at `(x, y)`; out-of-bounds is
+    /// ignored. Writes made this way are not flushed to the point of
+    /// coherency — the caller batches a region and calls
+    /// [`flush_rect`](Self::flush_rect) once, so the display DMA (a
+    /// separate master beyond the CPU caches on real hardware) sees them.
+    /// This is the screen side of `vro_cpyfm` Memory→Screen (AES
+    /// `bb_restore`).
+    fn put_device_pixel(&self, x: i16, y: i16, argb: u32);
+
+    /// Flush (clean to the point of coherency) the inclusive device
+    /// rectangle `[x0..=x1] × [y0..=y1]`, so writes made via
+    /// [`put_device_pixel`](Self::put_device_pixel) become visible to the
+    /// display controller. Coordinates are clamped to the screen; a no-op
+    /// on a Non-Cacheable framebuffer.
+    fn flush_rect(&self, x0: i16, y0: i16, x1: i16, y1: i16);
 }
 
 /// A rectangle in device coordinates (top-left + size).

@@ -455,14 +455,57 @@ geometry; NewTOS does not expose the raw 32 bpp bytes as planes.
   NewTOS-native ABI extension of the 32-bit m68k `CONTRL[7..8]`/`[9..10]`
   layout; the field *meanings* are unchanged.
 
-### Mismatch note (Step-2)
+### NewTOS memory-MFDB format (device form, `fd_stand = 0`) — task #51
 
-- **Off-screen (memory-MFDB) copies are bring-up-limited.** The current
-  backend implements the screen-form cases (screen↔screen copy, mono→colour
-  expand into the screen); full off-screen colour MFDB↔MFDB copies and the
-  complete 16-op path across arbitrary buffers are noted as later work in
-  the module docs. Flagged so Step-2 can check coverage against the 16-op
-  contract; no code change in this pass.
+A memory MFDB (`fd_addr != 0`) in NewTOS is a **32-bpp chunky truecolor**
+buffer that mirrors the framebuffer store: **one `u32` (XRGB8888) per
+pixel**, not a planar bitmap. This is a NewTOS-native format decision
+(`docs/COMPATIBILITY.md` — reproduce the *observable* save/restore
+contract, own the internal buffer layout), justified because the backend
+screen store is chunky 32 bpp (§ "the logical raster is 4-plane, the store
+is 32 bpp"): saving/restoring the raw device pixels is lossless where a
+4-plane PEL round-trip would not be.
+
+| MFDB field | NewTOS memory value | Meaning |
+|-----------|---------------------|---------|
+| `fd_addr` | caller-owned buffer | base of the `u32` pixel array |
+| `fd_w` / `fd_h` | region size (px) | extent; every access is bounds-checked against it |
+| `fd_wdwidth` | `(fd_w + 15) / 16` | 16-px words; **row stride in pixels = `fd_wdwidth × 16`** (padded up, mirroring EmuTOS `bb_set`'s word alignment) |
+| `fd_stand` | `0` (device) | chunky, not plane-sequential |
+| `fd_nplanes` | `32` | 32-bpp depth; the interleaved-stride identity `bytes/line = fd_wdwidth × fd_nplanes / 8 × 16 = fd_wdwidth × 64` holds |
+
+- **Pixel offset** of `(col, row)` = `row × (fd_wdwidth × 16) + col` `u32`
+  words — computed from the MFDB's *own* `fd_wdwidth`, **never** the screen
+  stride. Reads/writes outside `fd_w × fd_h` (or the buffer) are ignored.
+- This differs from the m68k planar `bb_save`, which uses `fd_stand = TRUE`
+  (plane-sequential); on NewTOS the store has no planes, so a device-form
+  chunky buffer is the natural, lossless save target.
+
+### `vro_cpyfm` off-screen coverage (implemented, task #51)
+
+All four source/destination combinations are implemented
+(`tos-api/src/vdi/raster.rs`): **Screen↔Screen** (backend block-copy),
+**Screen→Memory** (`bb_save`), **Memory→Screen** (`bb_restore`), and
+**Memory↔Memory**, each with the full 16-op `raster_op` table on the raw
+pixel word. Clipping applies **only** when the destination is the screen
+(edge case 8). The Memory→Screen write region is flushed to the point of
+coherency (`RasterBackend::flush_rect`) so the display DMA sees it. The
+screen side reads/writes raw device words via
+`RasterBackend::get_device_pixel` / `put_device_pixel` (added for this
+task; distinct from the lossy PEL `read_pixel`). `vrt_cpyfm`'s
+memory-mono-source → screen expand was already in place and is unchanged.
+
+### AES consumer — `bb_save` / `bb_restore`
+
+`tos_api::vdi::bb_save` / `bb_restore` wrap the Screen↔Memory copies with
+`S_ONLY` (op 3) for the AES form manager (EmuTOS `gemgsxif.c` `bb_set`).
+`form_alert` allocates a per-alert device-format buffer
+(`bb_save_words(w, h)` `u32` words) from the heap, saves the screen under
+the box before drawing, and restores it on close — so the desktop under a
+dismissed alert is reinstated without a full repaint (`tos-api/src/aes/
+form.rs`). NewTOS uses a *transient* per-alert buffer, not EmuTOS's single
+persistent menu/alert buffer, so `wind_get(WF_SCREEN)` still honestly
+reports a null/zero-length buffer (see `tos-api/src/aes/window.rs`).
 
 ### 1080p later
 

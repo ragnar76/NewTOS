@@ -916,10 +916,14 @@ pub fn wind_get(pb: &Aespb) {
     }
 
     // WF_SCREEN (17): the menu/alert bb_save buffer address + length. Like
-    // WF_TOP it needs no valid handle (EmuTOS gemwmlib.c:1517-1520). NewTOS has
-    // no VDI memory-MFDB save buffer yet, so report a null/zero-length buffer
-    // honestly (ret=1, address = length = 0) rather than fabricating one.
-    // TODO(#51): WF_SCREEN returns the bb_save buffer once memory-MFDB lands.
+    // WF_TOP it needs no valid handle (EmuTOS gemwmlib.c:1517-1520). EmuTOS
+    // reports a single *persistent* global menu/alert save buffer
+    // (gl_pmpmlo/gl_mlen). NewTOS's memory-MFDB bb_save (#51) instead
+    // allocates a *transient* per-alert buffer from the heap and frees it on
+    // close (tos_api::vdi::bb_save), so there is no stable address/length to
+    // hand back. Report a null/zero-length buffer honestly (ret=1) rather
+    // than exposing a freed transient pointer; deferred until/unless a
+    // program is found that relies on a persistent buffer here.
     if field == WF_SCREEN {
         for i in 1..=4 {
             pb.set_intout(i, 0); // address (hi/lo) + length (hi/lo)
