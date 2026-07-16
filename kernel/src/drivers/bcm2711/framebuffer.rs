@@ -19,13 +19,18 @@ use crate::arch::aarch64::mmu::{va_to_pa, VA_OFFSET};
 use crate::drivers::bcm2711::mailbox;
 use crate::hal::framebuffer::Framebuffer;
 
-/// Display geometry for bring-up (32-bit XRGB). Read from the shared
-/// [`crate::drivers::BOOT_WIDTH`]/[`BOOT_HEIGHT`] so the VideoCore mailbox
-/// geometry cannot drift from the QEMU `ramfb` dev vehicle (ADR-017 Stage 1:
-/// native 1920×1080). These values feed the set-physical (`0x00048003`) and
-/// set-virtual (`0x00048004`) tags below.
-const WIDTH: u32 = crate::drivers::BOOT_WIDTH;
-const HEIGHT: u32 = crate::drivers::BOOT_HEIGHT;
+/// Fallback display geometry (32-bit XRGB), used **only** when the VideoCore
+/// get-physical query ([`query_physical_size`]) returns nothing. On real HW
+/// the firmware/`config.txt` (`hdmi_group`/`hdmi_mode`) already drives the
+/// HDMI mode, so [`init`] queries the *current* physical (display) size and
+/// renders natively at it; these constants are the fallback when the query
+/// yields 0/none (e.g. the emulated raspi4b VideoCore reports no configured
+/// display). Shared with the QEMU `ramfb` default via
+/// [`crate::drivers::BOOT_WIDTH`]/[`BOOT_HEIGHT`] (ADR-017 rev 2,
+/// config.txt-driven). The detected-or-fallback geometry feeds the
+/// set-physical (`0x00048003`) and set-virtual (`0x00048004`) tags below.
+const FALLBACK_WIDTH: u32 = crate::drivers::BOOT_WIDTH;
+const FALLBACK_HEIGHT: u32 = crate::drivers::BOOT_HEIGHT;
 const DEPTH_BPP: u32 = 32;
 /// VC pixel order. `0 = BGR, 1 = RGB` (firmware wiki). Our pixel store is
 /// XRGB8888 packed by [`hal::framebuffer::rgb`] as `0xFF_RR_GG_BB`, i.e.
@@ -55,6 +60,13 @@ const I_PHYS_H: usize = 6; // set-physical height
 const I_FB_BASE: usize = 23; // allocate → base (bus address)
 const I_FB_SIZE: usize = 24; // allocate → size
 const I_PITCH: usize = 28; // get-pitch → bytes per line
+
+/// Indices into [`MBOX_BUF`] for the standalone get-physical query message
+/// (see [`query_physical_size`]): the get-physical tag and the width/height
+/// the VideoCore writes into its 8-byte value buffer.
+const Q_TAG: usize = 2; // get-physical tag id
+const Q_W: usize = 5; // response: physical width
+const Q_H: usize = 6; // response: physical height
 
 /// The installed framebuffer.
 pub struct VcFb {
@@ -87,12 +99,14 @@ impl Framebuffer for VcFb {
     }
 }
 
-/// Fill the property buffer with the framebuffer-allocate tag sequence.
+/// Fill the property buffer with the framebuffer-allocate tag sequence for
+/// the given physical geometry `w`×`h` (the detected-or-fallback size, see
+/// [`init`]). Virtual size is set equal to physical (non-scrolled FB).
 ///
 /// # Safety
 /// Single-CPU boot; `MBOX_BUF` is a BSS static.
 #[allow(clippy::deref_addrof)] // see `ramfb::fwcfg_dma` for the static-mut idiom.
-unsafe fn build_request() {
+unsafe fn build_request(w: u32, h: u32) {
     // SAFETY: single-CPU boot context, exclusive access to the static.
     let b = unsafe { &mut (*(&raw mut MBOX_BUF)).words };
 
@@ -103,15 +117,15 @@ unsafe fn build_request() {
     b[2] = 0x0004_8003;
     b[3] = 8;
     b[4] = 0;
-    b[5] = WIDTH;
-    b[6] = HEIGHT;
+    b[5] = w;
+    b[6] = h;
 
     // set virtual (buffer) width/height — tag 0x00048004, value 8B.
     b[7] = 0x0004_8004;
     b[8] = 8;
     b[9] = 0;
-    b[10] = WIDTH;
-    b[11] = HEIGHT;
+    b[10] = w;
+    b[11] = h;
 
     // set depth — tag 0x00048005, value 4B.
     b[12] = 0x0004_8005;
@@ -146,6 +160,68 @@ unsafe fn build_request() {
     b[0] = (b.len() * 4) as u32;
 }
 
+/// Query the VideoCore for the **current physical (display) width/height** —
+/// the resolution the firmware/`config.txt` (`hdmi_group`/`hdmi_mode`) already
+/// configured for the HDMI output — via property tag `0x0004_0003`, the GET
+/// counterpart of the set-physical `0x0004_8003` tag used in [`build_request`]
+/// (same 8-byte `u32 width, u32 height` value layout; the request value is
+/// empty and the VC writes the geometry into it).
+///
+/// Reference: `docs/hardware/mailbox-framebuffer.md` §2 (buffer format) + §3
+/// (the `0x0004_8003` set-physical layout this mirrors), sourced from the
+/// firmware *Mailbox property interface* wiki (doc source #4). Per CLAUDE.md
+/// Rule 6 the tag id/layout is sourced, not invented: the `0x0004_0xxx` ids
+/// are the GET/action family (cf. `allocate 0x0004_0001`, `get pitch
+/// 0x0004_0008` already in the doc), the `0x0004_8xxx` ids the SET family.
+///
+/// Returns `Some((w, h))` when the VC reports a valid non-zero geometry
+/// (`config.txt` drove a real HDMI mode → render natively at it); `None` when
+/// the transaction fails or the VC reports 0 (no configured display, e.g. the
+/// emulated raspi4b path) → the caller falls back to
+/// [`FALLBACK_WIDTH`]/[`FALLBACK_HEIGHT`].
+///
+/// # Safety
+/// Boot CPU, single-threaded; exclusive use of the static buffer. Runs before
+/// [`build_request`], which then overwrites the buffer for the allocate call.
+#[allow(clippy::deref_addrof)]
+unsafe fn query_physical_size() -> Option<(u32, u32)> {
+    // SAFETY: single-CPU boot; exclusive use of the static buffer.
+    unsafe {
+        {
+            let b = &mut (*(&raw mut MBOX_BUF)).words;
+            b[1] = 0x0000_0000; // request
+
+            // get physical (display) width/height — tag 0x00040003, value 8B.
+            // Request value is empty; the VC writes width/height into b[5]/b[6].
+            b[Q_TAG] = 0x0004_0003;
+            b[Q_TAG + 1] = 8; // value buffer size = max(req 0, resp 8)
+            b[Q_TAG + 2] = 0; // request code
+            b[Q_W] = 0;
+            b[Q_H] = 0;
+            b[7] = 0x0000_0000; // end tag
+
+            b[0] = 8 * 4; // total message size in bytes (header + 1 tag + end)
+        }
+
+        let buf_va = (&raw const MBOX_BUF) as usize;
+        let buf_pa = va_to_pa(buf_va as u64) as u32;
+        let len = core::mem::size_of::<MboxBuf>();
+
+        if !mailbox::call_property(buf_va, buf_pa, len) {
+            return None;
+        }
+
+        let b = &(*(&raw const MBOX_BUF)).words;
+        let w = b[Q_W];
+        let h = b[Q_H];
+        if w != 0 && h != 0 {
+            Some((w, h))
+        } else {
+            None
+        }
+    }
+}
+
 /// Bring up the VideoCore framebuffer. Returns `false` if the mailbox
 /// transaction fails or returns an implausible buffer — the caller then
 /// skips graphics (never a stubbed success).
@@ -156,7 +232,25 @@ unsafe fn build_request() {
 pub unsafe fn init() -> bool {
     // SAFETY: single-CPU boot; exclusive use of the static buffer.
     unsafe {
-        build_request();
+        // Ask the VideoCore for the display geometry the firmware/config.txt
+        // configured, and render natively at it; fall back to the compile-time
+        // default when the VC reports none (ADR-017 rev 2, config.txt-driven).
+        let (w, h) = match query_physical_size() {
+            Some((qw, qh)) => {
+                crate::kprintln!("[fb] VideoCore display geometry detected: {}x{}", qw, qh);
+                (qw, qh)
+            }
+            None => {
+                crate::kprintln!(
+                    "[fb] VideoCore reports no display; falling back to {}x{}",
+                    FALLBACK_WIDTH,
+                    FALLBACK_HEIGHT,
+                );
+                (FALLBACK_WIDTH, FALLBACK_HEIGHT)
+            }
+        };
+
+        build_request(w, h);
 
         let buf_va = (&raw const MBOX_BUF) as usize;
         let buf_pa = va_to_pa(buf_va as u64) as u32;

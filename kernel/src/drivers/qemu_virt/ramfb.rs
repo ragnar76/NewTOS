@@ -71,10 +71,12 @@ static mut CFG: RamFbCfg = RamFbCfg {
 };
 
 /// Display geometry, read from the shared [`crate::drivers::BOOT_WIDTH`]/
-/// [`BOOT_HEIGHT`] so the ramfb dev vehicle stays in lock-step with the RPi4
-/// VideoCore mailbox geometry (ADR-017 Stage 1: native 1920×1080). We publish
-/// this surface to ramfb via fw_cfg, so a headless `screendump` captures it at
-/// the same size.
+/// [`BOOT_HEIGHT`]. Asymmetry vs. the RPi4 driver (ADR-017 rev 2): the RPi4
+/// VideoCore path *auto-detects* the firmware/config.txt geometry and uses
+/// these only as a fallback, whereas ramfb has no firmware display to query —
+/// the guest defines the geometry — so it always uses the const default. We
+/// publish this surface to ramfb via fw_cfg, so a headless `screendump`
+/// captures it at the same size.
 const WIDTH: u32 = crate::drivers::BOOT_WIDTH;
 const HEIGHT: u32 = crate::drivers::BOOT_HEIGHT;
 

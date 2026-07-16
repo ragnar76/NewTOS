@@ -146,6 +146,7 @@ Tag IDs and exact value-buffer layouts:
 
 | Tag id | Name | Request value | Response value |
 |--------|------|---------------|----------------|
+| `0x0004_0003` | get physical (display) w/h | (none, 0 B) | `u32 width, u32 height` (8 B) |
 | `0x0004_8003` | set physical (display) w/h | `u32 width, u32 height` (8 B) | same (8 B) |
 | `0x0004_8004` | set virtual (buffer) w/h | `u32 width, u32 height` (8 B) | same (8 B) |
 | `0x0004_8005` | set depth | `u32 bpp` (4 B) | `u32 bpp` (4 B) |
