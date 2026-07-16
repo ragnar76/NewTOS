@@ -412,8 +412,16 @@ impl DeskState {
 
         match view {
             View::Icon => {
-                let kind = if f.is_dir() { IconKind::Folder } else { IconKind::Doc };
                 let name = f.name_bytes();
+                // Folder, else an application icon for a native NewTOS program
+                // (`.NAP`/`.NCP`/`.NTP`, ADR-018), else the generic document.
+                let kind = if f.is_dir() {
+                    IconKind::Folder
+                } else if matches!(super::ftype::classify(name), super::ftype::FileType::Native(_)) {
+                    IconKind::App
+                } else {
+                    IconKind::Doc
+                };
                 let end = name.len().min(LEN_LABEL - 1);
                 info.label[..end].copy_from_slice(&name[..end]);
                 let ptext = info.label.as_ptr() as u64;
