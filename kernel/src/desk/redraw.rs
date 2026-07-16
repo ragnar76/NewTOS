@@ -227,21 +227,30 @@ pub fn union(a: Grect, b: Grect) -> Grect {
 
 /// Full desktop composite: the desktop surface + every window frame (the AES
 /// `redraw_all`, which runs the `super::paint_desktop_bg` painter hook), then
-/// every open window's content occlusion-clipped ([`win_shwall`]). Boot's
-/// initial paint and any "repaint everything" path. The menu bar is installed
-/// once at boot and never covered (windows live below it), so it is not
-/// reinstalled here.
+/// every open window's content occlusion-clipped ([`win_shwall`]), and finally
+/// the menu bar. Boot's initial paint and any "repaint everything" path.
+///
+/// The menu bar is re-installed here because "repaint everything" must include
+/// it: a full-screen program launched from the desktop — a `.NCP` console
+/// (`fbcon::activate` clears the whole screen) or a `.NAP` app drawing its own
+/// UI — can overwrite the menu-bar strip, so the trailing `full_redraw` that
+/// restores the desktop on the program's `Pterm` must repaint the bar too.
+/// `install_menu_bar` re-uses the already-built menu tree (idempotent) and now
+/// clears its strip to white, so this is a clean, cheap redraw.
 ///
 /// The cursor is hidden **once** for the whole composite (`redraw_all` does not
 /// manage it) and restored at the end; the window-content fan-out runs through
 /// [`win_shwall_nocursor`] so no inner `graf_mouse(M_ON)` flashes the cursor
-/// over a half-drawn desktop between windows (the F3 flicker fix).
+/// over a half-drawn desktop between windows (the F3 flicker fix). The menu bar
+/// is drawn inside the same bracket so the cursor never smears over it.
 pub fn full_redraw() {
     graf_mouse(M_OFF);
     // Desktop background + icons + every window frame, occluded by draw order.
     tos_api::aes::window::redraw();
     // Each open window's content, occlusion-clipped — no inner cursor toggle.
     win_shwall_nocursor();
+    // The menu bar (top strip), which a full-screen program may have clobbered.
+    super::menu::install_menu_bar();
     graf_mouse(M_ON);
 }
 

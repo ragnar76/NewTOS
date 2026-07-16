@@ -374,7 +374,13 @@ fn launch_native(path: &str, name: &str, flavor: ftype::Flavor) {
         ftype::Flavor::App => crate::launch::run_program(path.as_bytes()),
         ftype::Flavor::Console => {
             crate::fbcon::activate();
-            crate::launch::run_program(path.as_bytes())
+            let ran = crate::launch::run_program(path.as_bytes());
+            // Classic TOS keeps the console up until the user acknowledges, so
+            // the program's final output stays readable before the desktop
+            // repaints over it. Only reached from a real double-click (an
+            // interaction path that requires HID input — verified on hardware).
+            console_pause_for_key();
+            ran
         }
         ftype::Flavor::Params => {
             // TODO(#72 stage 3): command-tail dialog — prompt for a tail and
@@ -386,6 +392,25 @@ fn launch_native(path: &str, name: &str, flavor: ftype::Flavor) {
         alert_launch_failed(name);
     }
     redraw::full_redraw(); // restore the desktop over console / app / alert
+}
+
+/// Keep the VT52 console up after a `.NCP` program returns and block until the
+/// user presses a key, then let the caller repaint the desktop — the classic-TOS
+/// "the program's output stays on screen until acknowledged" affordance.
+///
+/// The prompt renders through the same `fbcon` console the program wrote to
+/// (still active on return); the blocking read reuses the EmuCON shell's console
+/// input source ([`crate::host_env`] `console_read_key_blocking` → IKBD / USB
+/// HID). That input path exists only on hardware (and interactive QEMU), which
+/// is also the only place a `.NCP` can be double-clicked — so this never stalls
+/// a headless boot (the `\AUTO\` path does not go through here).
+fn console_pause_for_key() {
+    for &b in b"\r\n[ Press any key to return to the desktop ]" {
+        crate::fbcon::write_byte(b);
+    }
+    if let Some(h) = tos_api::host::host() {
+        let _ = h.console_read_key_blocking();
+    }
 }
 
 /// Raise a `form_alert` reporting that `name` could not be launched (an

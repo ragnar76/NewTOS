@@ -101,6 +101,12 @@ pub fn menu_bar(pb: &Aespb) {
     let clip = ClipRect::full(backend.width(), backend.height());
 
     if show != 0 {
+        // The bar is an opaque white strip. THEBAR (the G_BOX background) is
+        // hollow (`gr_crack(0)` → IP_HOLLOW), so it relies on the strip being
+        // clean underneath; clear it to white first, mirroring the `show == 0`
+        // erase, so drawing the bar always yields a clean strip even when a
+        // full-screen program (e.g. a `.NCP` console) left content there.
+        backend.fill_rect(0, 0, sw, BAR_H, WHITE, clip);
         // The bar spans the full screen width.
         // SAFETY: valid menu tree; THEBAR is object 1.
         unsafe {
