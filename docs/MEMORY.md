@@ -656,6 +656,41 @@ team lead).
 **Phase:** cross-cutting (framebuffer driver, VDI workstation, AES globals,
 desktop `deskapp`/`deskwin`/`deskrez`, XBIOS screen group).
 
+### Revision 2 (2026-07-16) — config.txt-driven, no in-menu switch
+
+The 2026-07-09 policy kept an *in-menu runtime resolution switch* (deskrez ->
+`shel_write(SHW_RESCHNG)` -> reinit) as on classic TOS. On reflection with the
+user (2026-07-16) that is **dropped**: on Atari, rez switching mattered for
+gaming (ST Low/Med/High; programs demanded a specific mode). On NewTOS/Pi4 the
+**firmware `config.txt` owns the HDMI mode** (`boot/rpi4/config.txt`
+`hdmi_group`/`hdmi_mode`), and a framebuffer-only in-menu switch to a *different*
+geometry would merely be **scaled** by the VideoCore to the fixed HDMI signal —
+not native. So:
+
+- **Resolution is driven by `config.txt`.** NewTOS **auto-detects** the display
+  geometry from the VideoCore at boot (mailbox *get physical (display)
+  width/height*, tag `0x00040003`) and renders natively at whatever `config.txt`
+  set. `drivers::BOOT_WIDTH/BOOT_HEIGHT` (1920x1080) becomes the **fallback** —
+  used when the query returns 0/none and as the **QEMU/ramfb default** (ramfb has
+  no firmware display to query; the guest defines the geometry). Change the panel
+  resolution by editing `config.txt`; NewTOS follows with no code change.
+- **The in-menu switch (deskrez runtime switch) is not implemented.** `Getrez`
+  reports the auto-detected mode honestly; there is **no in-system `Setscreen`
+  rez change**. (This narrows Decision point 6 / the still-open Getrez question:
+  Getrez only *reports*, it does not *switch*.)
+- **Config surface = exactly two files:** `config.txt` (firmware: HDMI/resolution,
+  `gpu_mem`, `kernel=`, UART, DTB) and `NEWDESK.INF` on C: (desktop state:
+  background, view/sort, drive icons `#M`, installed apps `#G/#P/#F/#Y`, autorun
+  `#Z`). No third NewTOS-specific config.
+- **Wallpaper** (a full-screen background image, a NewTOS extension) is a separate
+  future feature: a `NEWDESK.INF` path + an image loader + the desktop background
+  painter (`paint_desktop_bg`). It is sensibly done **after** the truecolor VDI
+  step — a photo wallpaper in the current 16-colour palette would dither badly.
+
+Everything below about *geometry-independence*, the *arena/cache blockers*, and
+the native-vs-16-colour split still holds; only the "runtime switchable via menu"
+mechanism is replaced by "config.txt-driven + boot-time auto-detect".
+
 ### Superseded draft
 
 Earlier the same day this ADR was drafted — and never committed — as
