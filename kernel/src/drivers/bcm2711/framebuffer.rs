@@ -276,13 +276,21 @@ pub unsafe fn init() -> bool {
         let fb_phys = (fb_bus & BUS_TO_PHYS) as u64;
         let fb_va = fb_phys + VA_OFFSET; // draw through the high half
 
-        // Map the framebuffer Non-Cacheable so the display DMA (which
-        // reads DRAM beyond the ARM caches) sees our pixel writes without
-        // per-frame cache cleaning. QEMU has no real cache so this is a
-        // no-op there; it is the fix for real RPi4 hardware.
+        // Map the framebuffer Normal Cacheable Write-Back Write-Allocate so
+        // CPU pixel writes hit the cache (line-fill + write-allocate + prefetch)
+        // — software blits/fills are catastrophically slow through the previous
+        // Non-Cacheable mapping on real HW, where every access is one uncached
+        // DRAM transaction. The display controller scans out DRAM beyond the ARM
+        // caches, so with a cacheable FB every drawn region must be cleaned to
+        // PoC: NewTOS routes all FB writes through the `VdiScreen` backend, which
+        // cleans each primitive's rectangle (`clean_dcache_range`), so no stale
+        // pixels result. The VC never writes the FB, so no invalidate is needed.
+        // QEMU has no cache model, so cacheable vs. NC render identically there;
+        // this is a real-RPi4 speed fix (and the no-stale-pixels correctness is
+        // HW-verified).
         // SAFETY: boot CPU, Stage-2 tables installed; the VC-allocated FB
         // holds no executing code or the active stack.
-        crate::arch::aarch64::mmu::remap_normal_nc(fb_va, fb_size as u64);
+        crate::arch::aarch64::mmu::remap_normal_wb(fb_va, fb_size as u64);
 
         FRAMEBUFFER.pixels.store(fb_va, Ordering::Release);
         FRAMEBUFFER.width.store(w, Ordering::Release);

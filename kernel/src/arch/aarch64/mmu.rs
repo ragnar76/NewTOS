@@ -310,6 +310,38 @@ pub unsafe fn remap_normal_nc(va: u64, len: u64) {
     unsafe { remap_l2_attrs(va, len, attrs) };
 }
 
+/// Remap the 2-MiB high-half blocks covering `[va, va + len)` to **Normal
+/// Cacheable Write-Back Write-Allocate** (AttrIdx 0, MAIR `0xFF`), Inner
+/// Shareable — the same attribute the Stage-2 DRAM blocks carry.
+///
+/// Used for the VideoCore framebuffer: CPU pixel writes land in the cache
+/// (line-fill + write-allocate + prefetch make software blits/fills an order
+/// of magnitude faster than a Non-Cacheable mapping, where every access is a
+/// single uncached DRAM transaction). The display controller is a separate,
+/// read-only DMA master that scans out DRAM *beyond* the ARM caches, so with a
+/// cacheable FB **every** region the CPU draws must be cleaned to the point of
+/// coherency (`dc cvac` + `dsb`, see [`clean_dcache_range`]) or the scanout
+/// shows stale pixels. In NewTOS every framebuffer write routes through the
+/// `VdiScreen` raster backend, which cleans each primitive's touched rectangle,
+/// so the coherency requirement is already met; the VideoCore never writes the
+/// FB, so no invalidate is ever needed.
+///
+/// Whole 2-MiB blocks are converted (the VC-allocated FB region is dedicated).
+/// Only blocks that are currently valid-Normal or invalid are touched; Device
+/// (MMIO) blocks are skipped. Each block uses break-before-make per ARM ARM
+/// K11.5. `va` is a high-half kernel VA (VA = `VA_OFFSET` + PA).
+///
+/// # Safety
+///
+/// Same contract as [`remap_normal_nc`]: boot CPU, single-threaded, after
+/// [`reinstall`]; the target blocks hold no executing code or the active stack.
+#[allow(clippy::deref_addrof)]
+pub unsafe fn remap_normal_wb(va: u64, len: u64) {
+    let attrs = VALID | BLOCK_L2 | AF | AP_RW_EL1 | ATTRIDX_NORMAL | SH_INNER | PXN | UXN;
+    // SAFETY: forwarded from the caller's contract.
+    unsafe { remap_l2_attrs(va, len, attrs) };
+}
+
 /// Remap `[va, va + len)` as **Device-nGnRnE** (strongly-ordered, uncached).
 ///
 /// Used for the xHCI DMA block on the real Pi-4: the VL805 PCIe endpoint is
