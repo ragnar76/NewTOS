@@ -135,7 +135,7 @@ pub fn run() {
     let log0 = logbase();
     let rez = getrez();
     kprintln!(
-        "[xbios] Physbase=0x{:x} Logbase=0x{:x} Getrez={} (expect base!=0, log==phys, rez=2)",
+        "[xbios] Physbase=0x{:x} Logbase=0x{:x} Getrez={} (expect base!=0, log==phys, rez=4 TT_MEDIUM)",
         phys0, log0, rez,
     );
 
@@ -151,9 +151,9 @@ pub fn run() {
     // Restore the logical base to the hardware framebuffer.
     setscreen(log0, -1, -1);
 
-    // Setscreen rez range check: invalid rez -> -1.
+    // Setscreen rez is accepted-but-ignored (no in-system switch, ADR-017 rev 2).
     let bad = setscreen(-1, -1, 9);
-    kprintln!("[xbios] Setscreen(rez=9) -> {} (expect -1)", bad);
+    kprintln!("[xbios] Setscreen(rez=9) -> {} (expect 0, ignored)", bad);
 
     // Setcolor: set entry 3, then query it back.
     let old = setcolor(3, 0x0700);

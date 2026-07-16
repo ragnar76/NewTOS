@@ -183,6 +183,25 @@ None.
 PHASE-08: `Getrez` reports the code matching the active framebuffer mode; the
 TT-shifter profile can return TT codes (4/6/7) for HD-friendly modes.
 
+### NewTOS behavior (settled — ADR-017 rev 2, 2026-07-16)
+
+`getrez()` returns a **fixed constant `TT_MEDIUM` (4)** —
+`tos-api/src/xbios/screen.rs`. NewTOS is a native **16-colour** framebuffer,
+and `TT_MEDIUM` (640×480, 16 colours) is the classic code whose *colour depth*
+matches. `Getrez` here reports **colour depth, not geometry**: the one thing a
+coarse rez code meaningfully conveys about NewTOS that VDI `DEV_TAB` /
+`Physbase` do not is "16 colours / *not monochrome*". A program that read
+`ST_HIGH` (2, monochrome) would wrongly avoid colour; `TT_MEDIUM` is the honest
+answer.
+
+The native geometry is **config.txt-driven and auto-detected at boot** (ADR-017
+rev 2) and has **no classic `vmode_table[]` entry** (`bios/screen.c:724-735`),
+so the code deliberately does not attempt to encode 1920×1080 / 1280×800 as a
+rez value — geometry is read from VDI `DEV_TAB` / `Physbase`. There is **no
+in-system switch**: `Getrez` only reports, it never changes (see
+`05-setscreen.md`). Revisit at the truecolor VDI step, where a wider-depth code
+may become the more honest answer.
+
 ---
 
 ## Pi / BCM2711 binding
@@ -192,44 +211,33 @@ TT-shifter profile can return TT codes (4/6/7) for HD-friendly modes.
 > **contract is unchanged** — a WORD resolution code, no error path.
 > Peripheral + driver: see `docs/HARDWARE-PROFILE.md` §2/§3.1.
 
-> **Resolution policy (ADR-017, revised 2026-07-09, `docs/MEMORY.md`):**
-> NewTOS targets a **native, geometry-independent** resolution — default
-> **1920×1080**, switchable at runtime to **1280×800** — both at 16 VDI
-> colours. This **supersedes** an earlier, never-committed same-day draft of
-> ADR-017 that fixed NewTOS to a single 640×480/`TT_MEDIUM` mode forever;
-> that draft's `Getrez`-value correction (`2`→`4`, D-076 in
-> `docs/api/_discrepancies.md`) is **reopened**, not retracted — see D-078.
+> **Resolution policy (ADR-017 rev 2, 2026-07-16, `docs/MEMORY.md`):**
+> NewTOS renders **natively at the config.txt-driven HDMI geometry**
+> (auto-detected at boot; `drivers::BOOT_WIDTH/BOOT_HEIGHT` = 1920×1080 is the
+> fallback / QEMU-ramfb default), at 16 VDI colours. There is **no in-system
+> resolution switch** — the firmware `config.txt` owns the mode. This rev 2
+> **settles** the previously-open `Getrez`-value question below.
 
-- **The return value is now OPEN — a Lead decision, not decided by this
-  spec.** Neither 1920×1080 nor 1280×800 (16 colours) is an entry of
-  EmuTOS's `vmode_table[]` (`bios/screen.c:724-735`); `TT_MEDIUM` (`4`) was
-  only a truthful match while the live mode was 640×480×16. EmuTOS's own
-  Falcon precedent shows there is no single mandated answer for an
-  "off-table" mode: `atari_getrez()` (`bios/screen.c:948-971`) hardcodes
-  `rez=2` (`ST_HIGH`) for *any* non-ST-compatible Videl mode regardless of
-  its real geometry/depth, while `vsetmode()` (`bios/videl.c:619-659`) sets
-  the shadow `sshiftmod=FALCON_REZ` (`:648-656`) for the *same* case — two
-  EmuTOS-internal variables disagreeing about "the" code for one live mode.
-  Real Falcon software queries `VsetMode(-1)` (a raw Falcon mode word) for
-  ground truth instead of relying on `Getrez`.
-- **Sketched options for the Lead to choose from** (none chosen; see the
-  Researcher's 2026-07-09 report for the full writeup):
-  1. A **fixed degenerate classic code** regardless of which of the two live
-     resolutions is active (mirrors Falcon's "`Getrez` always says `2` for
-     any non-compat mode" precedent) — simplest, but two genuinely different
-     live geometries would report identically.
-  2. A **resolution-derived code** that differs between the 1920×1080 and
-     1280×800 modes (e.g. reusing `TT_MEDIUM`/`TT_HIGH`-style codes as
-     nearest-fit hints) — risks a program branching on a code that implies a
-     geometry that isn't actually live.
-  3. A **NewTOS-native query mechanism** (cookie-jar entry or a new trap)
-     returning the true live width/height/depth, paired with a degenerate
-     `Getrez` for classic-code compatibility — mirrors the real Falcon split
-     between `Getrez` (hint) and `VsetMode(-1)` (ground truth).
-- **`Setscreen`'s applicable-code set is correspondingly open** — see
-  `docs/api/xbios/05-setscreen.md` (Pi binding) for the matching open
-  match-arm question.
-- **What IS settled:** the framebuffer geometry itself (1920×1080 default,
-  1280×800 switchable) and the fact that the VDI colour model stays 16
-  colours regardless of which is live — see ADR-017 Decision points 1-2.
-  Only the XBIOS-visible classic-rez *code* returned by `Getrez` is open.
+- **Settled: `Getrez` returns the fixed constant `TT_MEDIUM` (`4`).** The
+  return value reports **colour depth (16 colours / not monochrome), not
+  geometry** — the live geometry has **no** `vmode_table[]` entry
+  (`bios/screen.c:724-735`) and is read from VDI `DEV_TAB` / `Physbase`
+  instead. `TT_MEDIUM` is chosen over `ST_HIGH` (2) precisely because
+  `ST_HIGH` means *monochrome* and would make colour-aware programs avoid the
+  16-colour palette NewTOS actually has.
+- **EmuTOS precedent for a fixed off-table code (retained reference).** EmuTOS
+  itself has no single mandated answer for an off-`vmode_table` mode and
+  simply hardcodes one: `atari_getrez()` (`bios/screen.c:948-971`) returns a
+  fixed `rez=2` (`ST_HIGH`) for *any* non-ST-compatible Videl mode regardless
+  of its real geometry/depth, while `vsetmode()` (`bios/videl.c:619-659`) sets
+  the shadow `sshiftmod=FALCON_REZ` (`:648-656`) for the same case. NewTOS
+  follows the same "one honest fixed code for the off-table native mode"
+  shape — choosing `TT_MEDIUM` because colour depth, not geometry, is what the
+  code can truthfully carry. Real Falcon software queries `VsetMode(-1)` for
+  ground-truth geometry; NewTOS software reads VDI `DEV_TAB` / `Physbase`.
+- **`Setscreen`'s `rez` is correspondingly accepted-but-ignored** — see
+  `docs/api/xbios/05-setscreen.md` (Pi binding).
+- **A NewTOS-native true-geometry query** (cookie-jar entry or new trap
+  returning live width/height/depth) remains a possible future refinement,
+  mirroring the Falcon `Getrez`(hint)/`VsetMode`(truth) split; not needed
+  today since VDI `DEV_TAB` / `Physbase` already carry the live geometry.

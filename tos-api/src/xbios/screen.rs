@@ -6,12 +6,17 @@
 //! Spec: `docs/api/xbios/{02-physbase,03-logbase,04-getrez,05-setscreen,
 //! 06-setpalette,07-setcolor}.md`.
 //!
-//! The logical / physical screen base and the resolution are kept as
-//! software shadows (EmuTOS' `v_bas_ad` / `sshiftmod`). A shadow base of
-//! `0` means "use the live hardware framebuffer". Setting the physical
-//! base only updates the shadow — re-pointing the VideoCore scan-out at
-//! an arbitrary buffer is a later refinement; software that double-
-//! buffers by drawing into its own buffer and reading `Logbase` works.
+//! The logical / physical screen base is kept as a software shadow
+//! (EmuTOS' `v_bas_ad`). A shadow base of `0` means "use the live
+//! hardware framebuffer". Setting the physical base only updates the
+//! shadow — re-pointing the VideoCore scan-out at an arbitrary buffer is
+//! a later refinement; software that double-buffers by drawing into its
+//! own buffer and reading `Logbase` works.
+//!
+//! Resolution is **not** a shadow: per ADR-017 rev 2 (config.txt-driven,
+//! no in-system switch), `Getrez` reports a fixed honest code and
+//! `Setscreen`'s `rez` is accepted-but-ignored — there is no in-system
+//! resolution change (the firmware `config.txt` owns the HDMI mode).
 //!
 //! The palette (`Setpalette` / `Setcolor`) keeps an ST-format shadow for
 //! the read-back contract *and* programs the live VDI colour LUT the
@@ -21,24 +26,23 @@
 //!
 //! [`RasterBackend`]: crate::vdi::backend::RasterBackend
 
-use core::sync::atomic::{AtomicI64, AtomicU64, AtomicU8, Ordering};
+use core::sync::atomic::{AtomicU64, AtomicU8, Ordering};
 
 use crate::host;
 use crate::trap::TrapArgs;
 use tos_types::Long;
 
-/// Atari resolution codes (`include/biosdefs.h`). Our truecolor
-/// framebuffer has no exact equivalent; `Getrez` returns a shadow whose
-/// default reports the high-resolution code as a compatibility shim.
-const ST_HIGH: i64 = 2;
-const MIN_REZ: i16 = 0;
-const MAX_REZ: i16 = 2;
+/// Atari resolution code `TT_MEDIUM` (`bios/screen.h`): 640×480, 16
+/// colours — the classic code whose colour depth matches NewTOS's native
+/// 16-colour framebuffer. `Getrez` reports this as an honest "not
+/// monochrome, 16 colours" indicator; the actual geometry is
+/// config.txt-driven and read via VDI `DEV_TAB` / `Physbase`, not this
+/// coarse code (ADR-017 rev 2).
+const TT_MEDIUM: i64 = 4;
 
 /// Shadow logical / physical screen base (`0` = use the live FB).
 static LOGBASE: AtomicU64 = AtomicU64::new(0);
 static PHYSBASE: AtomicU64 = AtomicU64::new(0);
-/// Shadow resolution code (`-1` = report the default).
-static REZ: AtomicI64 = AtomicI64::new(-1);
 
 /// Live hardware framebuffer base, or `0` if no display is up.
 fn fb_base() -> u64 {
@@ -62,20 +66,33 @@ pub fn logbase() -> i64 {
 }
 
 /// `Getrez` (0x04) — current resolution code.
+///
+/// NewTOS is a native 16-colour framebuffer, so `Getrez` reports the
+/// classic 16-colour code `TT_MEDIUM` (4) as an honest colour-depth
+/// indicator (the one thing this coarse code conveys that VDI `DEV_TAB` /
+/// `Physbase` don't: colour depth / *not monochrome*). It is **not** a
+/// geometry claim — the live geometry is config.txt-driven and read from
+/// VDI `DEV_TAB` / `Physbase`, not from this value (ADR-017 rev 2). Revisit
+/// at the truecolor VDI step, when a wider-depth code may be more honest.
 pub fn getrez() -> i64 {
-    match REZ.load(Ordering::Relaxed) {
-        r if r >= 0 => r,
-        _ => ST_HIGH,
-    }
+    TT_MEDIUM
 }
 
-/// `Setscreen` (0x05) — set logical/physical base and/or resolution.
-/// `x0` = logLoc, `x1` = physLoc (each `> 0` to apply), `x2` = rez
-/// (`-1` to leave unchanged), `x3` = videlmode (ignored — no Falcon).
+/// `Setscreen` (0x05) — set logical/physical base; `rez` is
+/// accepted-but-ignored.
+/// `x0` = logLoc, `x1` = physLoc (each `> 0` to apply), `x2` = rez,
+/// `x3` = videlmode (ignored — no Falcon).
+///
+/// There is no in-system resolution switch (ADR-017 rev 2: the firmware
+/// `config.txt` owns the HDMI mode). The `rez` parameter is therefore
+/// accepted for *any* value and ignored — no `REZ` shadow, no out-of-range
+/// rejection — mirroring EmuTOS silently ignoring a hardware-unsupported
+/// mode (`bios/screen.c:990-1013`). The logical/physical base handling is a
+/// separate concern and is unchanged: each base is stored only when `> 0`
+/// (`screen.c:1106,1110`). Always returns `0` (E_OK).
 pub fn setscreen(args: &TrapArgs) -> i64 {
     let log = args.arg_u64(0);
     let phys = args.arg_u64(1);
-    let rez = args.arg_i16(2);
 
     if (log as i64) > 0 {
         LOGBASE.store(log, Ordering::Relaxed);
@@ -83,13 +100,6 @@ pub fn setscreen(args: &TrapArgs) -> i64 {
     if (phys as i64) > 0 {
         PHYSBASE.store(phys, Ordering::Relaxed);
     }
-    if rez == -1 {
-        return 0;
-    }
-    if !(MIN_REZ..=MAX_REZ).contains(&rez) {
-        return -1;
-    }
-    REZ.store(rez as i64, Ordering::Relaxed);
     0
 }
 
