@@ -24,6 +24,7 @@ pub mod act;
 pub mod app;
 pub mod dir;
 pub mod dlg;
+pub mod ftype;
 pub mod global;
 pub mod icons;
 pub mod inf;

@@ -83,11 +83,19 @@ pub fn run_program(path: &[u8]) -> bool {
     true
 }
 
-/// Run every `\AUTO\*.PRG` on the boot drive (C:) in directory order,
-/// before the desktop — EmuTOS' `autoexec` (`bios/bios.c:697`). Each runs
-/// to its `Pterm`, then the next. AUTO programs are typically drivers /
+/// Run every auto-run program in `\AUTO\` on the boot drive (C:) in directory
+/// order, before the desktop — EmuTOS' `autoexec` (`bios/bios.c:697`). Each
+/// runs to its `Pterm`, then the next. AUTO programs are typically drivers /
 /// TSRs that set something up at boot. Absent `\AUTO\` folder → no-op.
+///
+/// Runs the native NewTOS extensions `.NAP` / `.NCP` (ADR-018) **and** the
+/// classic Atari `.PRG` extension. A `.PRG` in `\AUTO\` fails to load
+/// gracefully today (it is m68k and the emulator is not available), which is
+/// the current, intended behaviour — the native family is what actually
+/// launches. `.NTP` is excluded: it takes a command tail there is no dialog
+/// for at boot.
 pub fn run_auto_folder() {
+    use crate::desk::ftype::{classify, FileType, Flavor};
     use tos_api::bdos::fs::find::{list_dir_ex, DirInfo};
 
     let mut ents = [DirInfo::default(); 32];
@@ -98,19 +106,22 @@ pub fn run_auto_folder() {
             continue; // skip "." / ".." / sub-directories
         }
         let end = e.name.iter().position(|&b| b == 0).unwrap_or(14);
-        // Only *.PRG (the Atari auto-run extension).
-        if end < 4 || &e.name[end - 4..end] != b".PRG" {
+        let name = &e.name[..end];
+        // Native .NAP/.NCP (ADR-018), or the classic Atari .PRG auto-run ext.
+        let native_auto =
+            matches!(classify(name), FileType::Native(Flavor::App | Flavor::Console));
+        if !native_auto && (end < 4 || &name[end - 4..] != b".PRG") {
             continue;
         }
         // Build "C:\AUTO\<name>\0".
         let mut path = [0u8; 40];
         let prefix = b"C:\\AUTO\\";
         path[..prefix.len()].copy_from_slice(prefix);
-        path[prefix.len()..prefix.len() + end].copy_from_slice(&e.name[..end]);
+        path[prefix.len()..prefix.len() + end].copy_from_slice(name);
         path[prefix.len() + end] = 0;
         kprintln!(
             "[auto] running C:\\AUTO\\{}",
-            core::str::from_utf8(&e.name[..end]).unwrap_or("?")
+            core::str::from_utf8(name).unwrap_or("?")
         );
         run_program(&path);
         ran += 1;

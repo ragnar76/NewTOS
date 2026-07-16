@@ -17,7 +17,7 @@ use tos_api::bios::drive::drvbits;
 use super::global::{self, Grect, DROOT, MAX_DEPTH, NIL, NUM_WNODES, WINDOW_STYLE};
 use super::menu::{self, Item, Title};
 use super::win::{DESKWH, SliderSet, WA_DNLINE, WA_DNPAGE, WA_LFLINE, WA_RTLINE, WA_UPLINE, WA_UPPAGE};
-use super::{dir, redraw};
+use super::{dir, ftype, redraw};
 use super::{
     wind_get_grect, wind_get_top, wind_get_work, MU_BUTTON, MU_KEYBD, MU_MESAG, MU_TIMER, WF_CXYWH,
     WF_FXYWH, WF_HSLIDE, WF_HSLSIZ, WF_INFO, WF_NAME, WF_PXYWH, WF_TOP, WF_VSLIDE, WF_VSLSIZ,
@@ -267,14 +267,21 @@ enum OpenTarget {
     Folder(String, String),
     /// A drive icon: the drive letter.
     Drive(u8),
-    /// Nothing openable in Task #8 (a plain file → launch its app is Task #9,
-    /// the Trash / Printer fixtures).
+    /// A native NewTOS program to launch (ADR-018): its full NUL-terminated
+    /// `C:` path, the bare filename (for a failure alert), and the native
+    /// flavour that selects the launch behaviour.
+    App { path: String, name: String, flavor: ftype::Flavor },
+    /// A classic m68k Atari binary — needs the (not-yet-available) emulator.
+    M68k,
+    /// Nothing openable (a document → application association is future work,
+    /// or the Trash / Printer desktop fixtures).
     None,
 }
 
-/// Open the item object `obid` of window `handle` (folder → new directory
-/// window, drive icon → root window). A plain file would launch its associated
-/// application (Task #9) — a no-op here.
+/// Open the item object `obid` of window `handle`: a folder opens in a new
+/// directory window, a drive icon at its root, a native `.NAP`/`.NCP`/`.NTP`
+/// program launches (ADR-018), and a classic m68k binary raises an honest
+/// "needs the emulator" alert. A document is a no-op (association is future).
 fn open_item(handle: i16, obid: i16) {
     let target = global::with(|g| {
         let fnode = g.g_screeninfo[obid as usize].fnode;
@@ -291,7 +298,17 @@ fn open_item(handle: i16, obid: i16) {
                 let (spec, title) = child_spec(&pn.p_spec, name);
                 OpenTarget::Folder(spec, title)
             } else {
-                OpenTarget::None
+                // Plain file: classify by extension (ADR-018 routing).
+                let name_b = f.name_bytes();
+                match ftype::classify(name_b) {
+                    ftype::FileType::Native(flavor) => {
+                        let name = String::from(core::str::from_utf8(name_b).unwrap_or(""));
+                        let path = native_path(&pn.p_spec, name_b);
+                        OpenTarget::App { path, name, flavor }
+                    }
+                    ftype::FileType::M68k => OpenTarget::M68k,
+                    ftype::FileType::Doc => OpenTarget::None,
+                }
             }
         } else {
             // Desktop icon: the drive letter overlay in ib_char's low byte.
@@ -308,8 +325,84 @@ fn open_item(handle: i16, obid: i16) {
     match target {
         OpenTarget::Folder(spec, title) => open_dir_window(&spec, &title),
         OpenTarget::Drive(letter) => open_root_window(letter),
+        OpenTarget::App { path, name, flavor } => launch_native(&path, &name, flavor),
+        OpenTarget::M68k => {
+            let text = b"[1][ This is an m68k Atari program. | The m68k emulator is not | available yet. ][ OK ]\0";
+            super::form_alert(1, text.as_ptr());
+            redraw::full_redraw(); // restore the screen under the alert
+        }
         OpenTarget::None => {}
     }
+}
+
+/// Build the full NUL-terminated `C:` path of file `name` living in the
+/// directory of `p_spec` (a window search spec like `C:\SUB\*.*`): the
+/// directory part (up to and including the last `\`) + `name` + a `\0`, ready
+/// to hand to [`crate::launch::run_program`].
+fn native_path(p_spec: &str, name: &[u8]) -> String {
+    let dir = &p_spec[..=p_spec.rfind('\\').unwrap_or(0)]; // "C:\...\"
+    let mut s = String::from(dir);
+    if let Ok(n) = core::str::from_utf8(name) {
+        s.push_str(n);
+    }
+    s.push('\0'); // pexec::load / run_program read up to the first NUL
+    s
+}
+
+/// Launch a native NewTOS program (ADR-018) and repaint the desktop on return.
+///
+/// The launch primitive is [`crate::launch::run_program`], which loads the ELF
+/// from the `C:` FAT16 path, drops to EL0, runs it, and returns on `Pterm`.
+/// The flavour selects the surrounding behaviour:
+///
+/// * [`ftype::Flavor::App`] (`.NAP`) — run directly; the app draws its own AES
+///   UI over the desktop, so nothing special is needed around the call.
+/// * [`ftype::Flavor::Console`] (`.NCP`) — switch to the VT52 text screen
+///   (`fbcon::activate`) so the program's console output is visible, run it,
+///   then repaint the desktop over the text below — mirroring
+///   [`crate::shell::run_console`]'s enter/restore. `run_program` is kept pure
+///   (no console/redraw coupling); the enter is done here and the restore is
+///   the common trailing `full_redraw`.
+/// * [`ftype::Flavor::Params`] (`.NTP`) — Stage A runs it without a tail, like
+///   `.NAP`. The command-tail dialog is a Stage-3 follow-on.
+///
+/// A load/launch failure (`run_program` → `false`) raises an alert. The
+/// desktop is repainted on return in every case (it overpaints the console
+/// text, the app's UI, or the alert).
+fn launch_native(path: &str, name: &str, flavor: ftype::Flavor) {
+    let ok = match flavor {
+        ftype::Flavor::App => crate::launch::run_program(path.as_bytes()),
+        ftype::Flavor::Console => {
+            crate::fbcon::activate();
+            crate::launch::run_program(path.as_bytes())
+        }
+        ftype::Flavor::Params => {
+            // TODO(#72 stage 3): command-tail dialog — prompt for a tail and
+            // pass it to the child. Stage A runs without a tail.
+            crate::launch::run_program(path.as_bytes())
+        }
+    };
+    if !ok {
+        alert_launch_failed(name);
+    }
+    redraw::full_redraw(); // restore the desktop over console / app / alert
+}
+
+/// Raise a `form_alert` reporting that `name` could not be launched (an
+/// `ENSMEM` / bad-format / not-found from the loader).
+fn alert_launch_failed(name: &str) {
+    let mut buf = [0u8; 128];
+    let mut p = 0usize;
+    for part in [b"[1][ Could not launch ".as_slice(), name.as_bytes(), b". ][ OK ]"] {
+        for &b in part {
+            if p < buf.len() - 1 {
+                buf[p] = b;
+                p += 1;
+            }
+        }
+    }
+    buf[p] = 0;
+    super::form_alert(1, buf.as_ptr());
 }
 
 // ── Keyboard (D4) ──────────────────────────────────────────────────────────
