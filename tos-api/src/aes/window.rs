@@ -1272,10 +1272,16 @@ fn drag_move(w: &mut Window, backend: &dyn RasterBackend) -> Grect {
     let mut last = orig;
     loop {
         let (mx, my) = crate::vdi::mouse_position();
-        // `.max(0)` guards the clamp: a window wider/taller than the screen
-        // would make `max < min` and panic `i16::clamp` (fatal in no_std).
+        // Bound the window's top to the desktop work area — below the menu bar
+        // (`menu::desk_top`, 0 when none is installed). A drag must never push
+        // the window over the menu bar, which the desktop paints once and never
+        // restores (EmuTOS bounds window moves to `gl_rfull` = screen minus the
+        // menu bar). The bottom/left/right still reach the screen edges.
+        // `.max(..)` guards the clamp: a window wider/taller than the available
+        // area would make `max < min` and panic `i16::clamp` (fatal in no_std).
+        let top = super::menu::desk_top();
         let nx = (orig.x + mx - sx).clamp(0, (sw - orig.w).max(0));
-        let ny = (orig.y + my - sy).clamp(0, (sh - orig.h).max(0));
+        let ny = (orig.y + my - sy).clamp(top, (sh - orig.h).max(top));
         let nr = Grect { x: nx, y: ny, w: orig.w, h: orig.h };
         if nr != last {
             // Solid drag (modern HW — no rubber-band outline): blit the

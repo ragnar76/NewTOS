@@ -7,15 +7,18 @@
 //! `graf_mkstate`). The box-feedback calls own the mouse and block until
 //! the button is released.
 //!
-//! At our altitude the outline is a solid 1-pixel rectangle redrawn as it
-//! follows the mouse (erased to white between steps) rather than an XOR
-//! band — correct on the desktop background; full save/restore arrives
-//! with the window rectangle list (D4 Batch 3).
+//! The interactive outline (rubber-band select, drag-box, move-box) is a
+//! 1-pixel rectangle drawn in **XOR** mode: XOR is self-inverse, so
+//! redrawing the same rectangle erases it and restores the exact pixels
+//! underneath — over the (non-white) desktop pattern, window content and
+//! desktop icons alike. Matches EmuTOS `gr_rubwind` / `gsx_xline`
+//! (`MD_XOR`). (The earlier solid-white erase assumed a white background and
+//! left a white "staircase" trail on the patterned desktop / windows.)
 
 use super::object::{self, Object};
 use super::Aespb;
 use crate::host::host;
-use crate::vdi::backend::{ClipRect, Pel, RasterBackend};
+use crate::vdi::backend::{ClipRect, Pel, RasterBackend, WriteMode};
 
 const WHITE: Pel = 0;
 const BLACK: Pel = 1;
@@ -27,15 +30,36 @@ const M_SAVE: i16 = 258;
 const M_RESTORE: i16 = 259;
 const M_PREVIOUS: i16 = 260;
 
-/// Draw (or erase) a 1-pixel outline rectangle.
-fn outline(x: i16, y: i16, w: i16, h: i16, col: Pel, backend: &dyn RasterBackend, clip: ClipRect) {
+/// Draw/erase a 1-pixel outline rectangle in **XOR** mode. XOR is
+/// self-inverse, so drawing the same rectangle a second time restores the exact
+/// pixels underneath — the rubber-band / drag / move outline leaves no trail
+/// over the desktop pattern, window content or icons (unlike a solid draw, which
+/// would need the original pixels to erase and previously painted white).
+///
+/// The `_col` pen is ignored — `WriteMode::Xor` complements the destination
+/// regardless of pen — but the argument is kept so the draw/erase call sites
+/// read symmetrically (`BLACK` to show, `WHITE` to hide). The vertical edges
+/// exclude the corner rows already covered by the horizontal edges, so no pixel
+/// is XOR'd twice within one call (a double XOR would cancel it, leaving gaps).
+fn outline(x: i16, y: i16, w: i16, h: i16, _col: Pel, backend: &dyn RasterBackend, clip: ClipRect) {
     if w <= 0 || h <= 0 {
         return;
     }
-    backend.fill_rect(x, y, w, 1, col, clip);
-    backend.fill_rect(x, y + h - 1, w, 1, col, clip);
-    backend.fill_rect(x, y, 1, h, col, clip);
-    backend.fill_rect(x + w - 1, y, 1, h, col, clip);
+    const SOLID: u16 = 0xFFFF; // dash mask: every pixel on
+    let (xr, yb) = (x + w - 1, y + h - 1);
+    // Top + bottom edges (full width). A 1-row box has only the top edge.
+    backend.draw_line(x, y, xr, y, BLACK, WriteMode::Xor, clip, SOLID);
+    if h > 1 {
+        backend.draw_line(x, yb, xr, yb, BLACK, WriteMode::Xor, clip, SOLID);
+    }
+    // Left + right edges, excluding the corner rows already drawn above so no
+    // pixel is complemented twice. A 1-column box has only the left edge.
+    if h > 2 {
+        backend.draw_line(x, y + 1, x, yb - 1, BLACK, WriteMode::Xor, clip, SOLID);
+        if w > 1 {
+            backend.draw_line(xr, y + 1, xr, yb - 1, BLACK, WriteMode::Xor, clip, SOLID);
+        }
+    }
 }
 
 fn mouse_down() -> bool {
@@ -107,6 +131,12 @@ pub fn graf_rubberbox(pb: &Aespb) {
     };
     if let (Some(host_h), Some(backend)) = (host(), host().and_then(|h| h.raster())) {
         let clip = ClipRect::full(backend.width(), backend.height());
+        // Hide the cursor for the whole rubber-band: the XOR outline is the drag
+        // feedback (its far corner tracks the mouse), and a shown cursor's
+        // save-under would otherwise capture XOR outline pixels and strew single-
+        // pixel artefacts along the drag path. EmuTOS `gr_rubwind` likewise
+        // brackets the band with `gsx_moff`/`gsx_mon`.
+        crate::vdi::cursor_hide(backend);
         let (mut bx, mut bw) = draw_span(ax, w);
         let (mut by, mut bh) = draw_span(ay, h);
         outline(bx, by, bw, bh, BLACK, backend, clip);
@@ -128,6 +158,7 @@ pub fn graf_rubberbox(pb: &Aespb) {
             host_h.pump_input();
         }
         outline(bx, by, bw, bh, WHITE, backend, clip);
+        crate::vdi::cursor_show(backend);
     }
     pb.set_intout(1, w);
     pb.set_intout(2, h);
@@ -146,6 +177,10 @@ pub fn graf_dragbox(pb: &Aespb) {
     let (mut lx, mut ly) = (sx, sy);
     if let (Some(host_h), Some(backend)) = (host(), host().and_then(|h| h.raster())) {
         let clip = ClipRect::full(backend.width(), backend.height());
+        // Hide the cursor for the whole drag — see the note in `graf_rubberbox`:
+        // the XOR outline is the feedback, and a shown cursor's save-under would
+        // capture XOR pixels and leave a dotted trail.
+        crate::vdi::cursor_hide(backend);
         let (smx, smy) = crate::vdi::mouse_position();
         outline(lx, ly, w, h, BLACK, backend, clip);
         loop {
@@ -166,6 +201,7 @@ pub fn graf_dragbox(pb: &Aespb) {
             host_h.pump_input();
         }
         outline(lx, ly, w, h, WHITE, backend, clip);
+        crate::vdi::cursor_show(backend);
     }
     pb.set_intout(1, lx);
     pb.set_intout(2, ly);
