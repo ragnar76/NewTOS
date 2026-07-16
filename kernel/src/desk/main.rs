@@ -1059,19 +1059,26 @@ fn open_dir_window(spec: &str, title: &str) {
         set_sliders(handle, sliders);
     }
     global::with(|g| g.desk_verify(handle, work, false));
-    redraw::full_redraw();
+    // The new window covers exactly `r` and is on top; repaint only that region
+    // (background + frames + every window's content, occlusion-clipped) instead
+    // of the whole screen — no full-screen flicker on open.
+    redraw::damage_redraw(r);
 }
 
 /// Close window `handle`: AES `wind_close` + `wind_delete`, free the desktop
 /// slot, re-verify whatever is now on top, and repaint.
 fn close_window(handle: i16) {
+    // Capture the window's rect *before* closing — that is the vacated damage
+    // region the desktop must settle (background + any window that was below).
+    let vacated = wind_get_grect(handle, WF_CXYWH);
     super::wind_close(handle);
     super::wind_delete(handle);
     global::with(|g| g.win_free(handle));
     let top = wind_get_top();
     let work = if top == DESKWH { g_desk() } else { wind_get_work(top) };
     global::with(|g| g.desk_verify(top, work, false));
-    redraw::full_redraw();
+    // Repaint only the vacated rect, not the whole screen — no flicker on close.
+    redraw::damage_redraw(vacated);
 }
 
 /// Re-scan window `handle` in place for a new directory `spec`/`title` (the
@@ -1110,7 +1117,10 @@ fn navigate_window(handle: i16, spec: &str, title: &str) {
     if let Some(sliders) = global::with(|g| g.win_bldview(slot, work)) {
         set_sliders(handle, sliders);
     }
-    redraw::full_redraw();
+    // Same window, unchanged rect, new content (folder "up one level"); repaint
+    // only this window's rect instead of the whole screen — no flicker.
+    let border = wind_get_grect(handle, WF_CXYWH);
+    redraw::damage_redraw(border);
 }
 
 // ── Small helpers ──────────────────────────────────────────────────────────

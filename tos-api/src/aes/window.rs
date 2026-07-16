@@ -825,9 +825,12 @@ pub fn wind_open(pb: &Aespb) {
         w.open = true;
         w.owner = super::appl::current_pid();
         w.z = bump_z();
-        if let Some(backend) = host().and_then(|h| h.raster()) {
-            redraw_all(backend);
-        }
+        // The new window is topmost and covers exactly its own rect `r`; nothing
+        // outside `r` changes. Repaint only `r` (background + frames, this window
+        // on top) rather than the whole screen — the open/close full-screen
+        // flicker fix, mirroring the move/size damage-scope. This window's content
+        // follows via `send_redraw` (WM_REDRAW).
+        redraw_clip(r.x, r.y, r.w, r.h);
         send_redraw(handle, calc(WC_WORK, w.kind, r));
         pb.set_ret(1);
     } else {
@@ -841,9 +844,13 @@ pub fn wind_close(pb: &Aespb) {
     let handle = pb.intin(0);
     if let Some(w) = win(handle) {
         w.open = false;
-        if let Some(backend) = host().and_then(|h| h.raster()) {
-            redraw_all(backend);
-        }
+        // Only the closed window's rect is now vacated; repaint just that region
+        // (background + the frames of the windows below, which `compose` draws in
+        // z-order) instead of the whole screen — the open/close flicker fix. The
+        // exposed lower windows' content is re-laid by the desktop owner's
+        // `damage_redraw` after this returns.
+        let r = w.curr;
+        redraw_clip(r.x, r.y, r.w, r.h);
         pb.set_ret(1);
     } else {
         pb.set_ret(0);
