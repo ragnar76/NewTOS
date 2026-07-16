@@ -14,9 +14,16 @@
 //! `ienable` repaints only when item bit 15 is set, `tnormal` always repaints
 //! and refuses a `DISABLED` title.
 //!
-//! **Batch-1 scope:** draw the bar + the four original-TOS state/text
-//! calls. The interactive drop-down tracking (mouse over titles → open
-//! the box → highlight item → post `MN_SELECTED`) is Batch 2.
+//! **Scope:** the bar + the four original-TOS state/text calls, the
+//! interactive drop-down tracking (mouse over titles → open the box →
+//! highlight item → post `MN_SELECTED`), and the AES 3.30 extensions
+//! `menu_popup`/`menu_attach`/`menu_istart`/`menu_settings`. Submenus are
+//! backed by a fixed-size **SMIB** registry ([`SubmenuTable`]) modelled on
+//! EmuTOS `SMIB`/`gl_submenu`; `menu_attach` records a submenu for a
+//! `(tree, item)` pair (and reproduces the EmuTOS `ob_type`/`SUBMENU`/marker
+//! encoding of D-087 as contract), and the drop-down tracker opens an
+//! attached submenu as a nested box beside the highlighted parent item
+//! (EmuTOS `display_submenu`/`mn_do` `SUBMENU_STATE`).
 
 use super::object::{self, Object};
 use super::Aespb;
@@ -124,12 +131,29 @@ pub fn menu_bar(pb: &Aespb) {
 /// / `restore_under` — GEM's `menu_sr`), so it works over windows too; the
 /// mouse cursor is hidden across every box/highlight draw so it neither
 /// smears nor pollutes the backing.
+///
+/// **Nested submenus** (EmuTOS `mn_do` `SUBMENU_STATE` + `display_submenu`):
+/// when the highlighted item has an attached submenu ([`SubmenuTable`]), it
+/// opens as a nested box beside the parent item (right, or left if it would
+/// run off-screen), saved under [`SMBACK`]. Hovering into the submenu keeps
+/// the parent item highlighted; a press over a submenu item selects it. A
+/// submenu that lives in the **same** OBJECT tree as the bar returns its item
+/// through the existing `(title, item)` result (the item index is valid in the
+/// caller's tree, so it round-trips as `MN_SELECTED`'s `msg[4]`); a submenu in
+/// a *separate* tree needs the extended `msg[5..7]` tree-pointer return path
+/// and is left as a scoped follow-on (the tracking/rendering still work, only
+/// the cross-tree *selection delivery* is deferred).
 pub fn track(tree: *mut Object, backend: &dyn RasterBackend) -> Option<(i16, i16)> {
     let h = host()?;
     let tp = tree as *const Object;
     let mut cur_title = NIL;
     let mut cur_box = NIL;
     let mut cur_item = NIL;
+    // Nested submenu state (EmuTOS smtree/smroot/cur_submenu): `sub_tree == 0`
+    // means no submenu is open.
+    let mut sub_tree: u64 = 0;
+    let mut sub_box = NIL;
+    let mut sub_item = NIL;
     // Hover model (GEM): the menu opens as the cursor enters a title; an item
     // is chosen on a button *press* over it; leaving the bar and the open box
     // closes the menu with no selection.
@@ -143,6 +167,12 @@ pub fn track(tree: *mut Object, backend: &dyn RasterBackend) -> Option<(i16, i16
         let t = object::child_at(tp, THEACTIVE, mx, my);
         if t != NIL && t != cur_title {
             if cur_title != NIL {
+                if sub_tree != 0 {
+                    close_submenu(sub_tree, sub_box, sub_item, backend);
+                    sub_tree = 0;
+                    sub_box = NIL;
+                    sub_item = NIL;
+                }
                 close_box(tree, cur_title, cur_box, backend);
                 cur_item = NIL;
             }
@@ -150,57 +180,82 @@ pub fn track(tree: *mut Object, backend: &dyn RasterBackend) -> Option<(i16, i16
             cur_box = open_box(tree, t, backend);
         }
 
-        // Item under the cursor (children of the open box).
         if cur_box != NIL {
-            let it = object::child_at(tp, cur_box, mx, my);
-            if it != cur_item {
-                // Bracket the highlight change so the visible cursor (which
-                // sits over the item) does not smear.
-                crate::vdi::cursor_hide(backend);
-                if cur_item != NIL {
-                    // `draw_obj` only paints a G_STRING's background when it is
-                    // SELECTED, so clear the old item's black highlight to
-                    // white before redrawing it normal — otherwise the
-                    // hovered-over item stays black.
-                    let (ix, iy, iw, ih) = object::abs_rect(tp, cur_item);
-                    let clip = ClipRect::full(backend.width(), backend.height());
-                    backend.fill_rect(ix, iy, iw, ih, WHITE, clip);
-                    object::set_state_bit(tree, cur_item, SELECTED, false);
+            // The submenu box overlaps the parent box's right edge, so check
+            // the submenu first (EmuTOS gives `SUBMENU_STATE` priority).
+            let in_sub = sub_tree != 0 && point_in(sub_tree as *const Object, sub_box, mx, my);
+            if in_sub {
+                // Track the highlight *inside* the submenu; the parent item
+                // stays selected (cur_item is untouched).
+                let sit = object::child_at(sub_tree as *const Object, sub_box, mx, my);
+                if sit != sub_item {
+                    rehilite(sub_tree as *mut Object, sub_box, sub_item, sit, backend);
+                    sub_item = sit;
                 }
-                if it != NIL {
-                    object::set_state_bit(tree, it, SELECTED, true);
+            } else {
+                // Not over the submenu: drop any submenu-item highlight but
+                // keep the submenu open while we are still on its parent item.
+                if sub_item != NIL {
+                    rehilite(sub_tree as *mut Object, sub_box, sub_item, NIL, backend);
+                    sub_item = NIL;
                 }
-                // Item fills span the full box width, so a highlight/clear
-                // paints over the box's 1-px frame; redraw it so the hovered
-                // rows keep their border (top/bottom + both sides).
-                let (bx, by, bw, bh) = object::abs_rect(tp, cur_box);
-                let clip = ClipRect::full(backend.width(), backend.height());
-                backend.fill_rect(bx, by, bw, 1, BLACK, clip); // top
-                backend.fill_rect(bx, by + bh - 1, bw, 1, BLACK, clip); // bottom
-                backend.fill_rect(bx, by, 1, bh, BLACK, clip); // left
-                backend.fill_rect(bx + bw - 1, by, 1, bh, BLACK, clip); // right
-                crate::vdi::cursor_show(backend);
-                cur_item = it;
+                let it = object::child_at(tp, cur_box, mx, my);
+                if it != cur_item {
+                    // Item changed: close the old item's submenu, move the
+                    // parent highlight, then open the new item's submenu.
+                    if sub_tree != 0 {
+                        close_submenu(sub_tree, sub_box, sub_item, backend);
+                        sub_tree = 0;
+                        sub_box = NIL;
+                        sub_item = NIL;
+                    }
+                    rehilite(tree, cur_box, cur_item, it, backend);
+                    cur_item = it;
+                    if it != NIL {
+                        if let Some((st, sb)) = open_submenu(tree, it, backend) {
+                            sub_tree = st;
+                            sub_box = sb;
+                            sub_item = NIL;
+                        }
+                    }
+                }
             }
         }
 
-        // Press edge over an item → select it.
-        if !was_down && down && cur_item != NIL {
-            // Clear the item's highlight bit and restore the screen under the
-            // box, cursor hidden so neither smears. The title stays
-            // highlighted: the app un-highlights it via menu_tnormal after
-            // acting on MN_SELECTED.
-            crate::vdi::cursor_hide(backend);
-            object::set_state_bit(tree, cur_item, SELECTED, false);
-            erase_box_inner(tree, cur_box, backend);
-            crate::vdi::cursor_show(backend);
-            return Some((cur_title, cur_item));
+        // Press edge → select the highlighted item.
+        if !was_down && down {
+            if sub_tree != 0 && sub_item != NIL && sub_tree == tree as u64 {
+                // Submenu selection in the same tree: the item index is valid
+                // in the caller's tree (round-trips as MN_SELECTED msg[4]).
+                crate::vdi::cursor_hide(backend);
+                object::set_state_bit(sub_tree as *mut Object, sub_item, SELECTED, false);
+                close_submenu(sub_tree, sub_box, NIL, backend);
+                erase_box_inner(tree, cur_box, backend);
+                crate::vdi::cursor_show(backend);
+                return Some((cur_title, sub_item));
+            }
+            if sub_tree == 0 && cur_item != NIL {
+                // Clear the item's highlight bit and restore the screen under
+                // the box, cursor hidden so neither smears. The title stays
+                // highlighted: the app un-highlights it via menu_tnormal after
+                // acting on MN_SELECTED.
+                crate::vdi::cursor_hide(backend);
+                object::set_state_bit(tree, cur_item, SELECTED, false);
+                erase_box_inner(tree, cur_box, backend);
+                crate::vdi::cursor_show(backend);
+                return Some((cur_title, cur_item));
+            }
         }
 
-        // Leaving the bar *and* the open box closes the menu (no selection).
+        // Leaving the bar, the open box, *and* the open submenu closes the
+        // menu (no selection).
         let in_bar = my < BAR_H;
         let in_box = cur_box != NIL && point_in(tp, cur_box, mx, my);
-        if !in_bar && !in_box {
+        let in_sub_box = sub_tree != 0 && point_in(sub_tree as *const Object, sub_box, mx, my);
+        if !in_bar && !in_box && !in_sub_box {
+            if sub_tree != 0 {
+                close_submenu(sub_tree, sub_box, sub_item, backend);
+            }
             if cur_title != NIL {
                 close_box(tree, cur_title, cur_box, backend);
             }
@@ -210,6 +265,36 @@ pub fn track(tree: *mut Object, backend: &dyn RasterBackend) -> Option<(i16, i16
         was_down = down;
         h.pump_input();
     }
+}
+
+/// Move the SELECTED highlight within a drop-down / submenu box from `old` to
+/// `new` (either may be `NIL`), then repaint the box's 1-px frame that the
+/// full-width item fills overwrite. The mouse cursor is bracketed hidden/shown
+/// so it does not smear across the redraw. Shared by the parent-box and the
+/// nested-submenu hover tracking.
+fn rehilite(tree: *mut Object, box_obj: i16, old: i16, new: i16, backend: &dyn RasterBackend) {
+    let tp = tree as *const Object;
+    crate::vdi::cursor_hide(backend);
+    let clip = ClipRect::full(backend.width(), backend.height());
+    if old != NIL {
+        // `draw_obj` only paints a G_STRING's background when it is SELECTED,
+        // so clear the old item's black highlight to white before redrawing it
+        // normal — otherwise the hovered-over item stays black.
+        let (ix, iy, iw, ih) = object::abs_rect(tp, old);
+        backend.fill_rect(ix, iy, iw, ih, WHITE, clip);
+        object::set_state_bit(tree, old, SELECTED, false);
+    }
+    if new != NIL {
+        object::set_state_bit(tree, new, SELECTED, true);
+    }
+    // Item fills span the full box width, so a highlight/clear paints over the
+    // box's frame; redraw it so the hovered rows keep their border.
+    let (bx, by, bw, bh) = object::abs_rect(tp, box_obj);
+    backend.fill_rect(bx, by, bw, 1, BLACK, clip); // top
+    backend.fill_rect(bx, by + bh - 1, bw, 1, BLACK, clip); // bottom
+    backend.fill_rect(bx, by, 1, bh, BLACK, clip); // left
+    backend.fill_rect(bx + bw - 1, by, 1, bh, BLACK, clip); // right
+    crate::vdi::cursor_show(backend);
 }
 
 /// Programmatically open `title`'s drop-down and optionally highlight
@@ -222,6 +307,95 @@ pub fn open(tree: *mut Object, title: i16, item: i16, backend: &dyn RasterBacken
         object::set_state_bit(tree, item, SELECTED, true);
     }
     imenu
+}
+
+/// Render `title`'s drop-down with `item` highlighted and, if `item` has an
+/// attached submenu, that submenu opened beside it — the static picture the
+/// interactive [`track`] shows mid-hover. Returns the submenu box index, or
+/// `NIL` when `item` has no submenu. Lets the nested-submenu layout be
+/// verified headlessly (QMP screendump); the *live* hover (moving the mouse
+/// into the submenu) is real-Pi4 only per project memory.
+pub fn open_submenu_static(tree: *mut Object, title: i16, item: i16, backend: &dyn RasterBackend) -> i16 {
+    open_box(tree, title, backend);
+    object::set_state_bit(tree, item, SELECTED, true);
+    match open_submenu(tree, item, backend) {
+        Some((_, box_obj)) => box_obj,
+        None => NIL,
+    }
+}
+
+/// If parent `(tree, item)` has an attached submenu, open it as a nested
+/// drop-down: position its box to the **right** of the item overlapping the
+/// submenu arrow, or to the **left** if it would run off the right of the
+/// screen; align the box so its start item sits level with the parent item;
+/// save the pixels underneath (into [`SMBACK`]) and draw it. Mirrors EmuTOS
+/// `display_submenu` (`gemmnext.c:625-678`). Returns `(sub_tree_ptr, sub_box)`
+/// when a submenu was opened, `None` otherwise.
+fn open_submenu(tree: *mut Object, item: i16, backend: &dyn RasterBackend) -> Option<(u64, i16)> {
+    let slot = smib_find_parent(tree as u64, item)?;
+    // SAFETY: single-CPU AES; exclusive owner of the submenu table.
+    let s = unsafe { (*SUBMENU_TAB.0.get())[slot] };
+    if s.sub_tree == 0 || s.sub_menu < 0 {
+        return None;
+    }
+    let sub_tp = s.sub_tree as *const Object;
+    let sub = s.sub_tree as *mut Object;
+    let (ix, iy, iw, _ih) = object::abs_rect(tree as *const Object, item);
+    let (bx0, by0, bw, bh) = object::abs_rect(sub_tp, s.sub_menu);
+    let cw = crate::vdi::font::CELL_W;
+    let sw = backend.width() as i16;
+    let sh = backend.height() as i16;
+    // x: to the right of the item, overlapping the arrow; if that runs off the
+    // right edge, put the box to the left of the item instead, clamped on-screen.
+    let mut x = ix + iw - cw;
+    if x + bw > sw {
+        x = (ix - bw).max(0);
+    }
+    // y: align the submenu's start item with the parent item, then clamp below
+    // the menu bar and above the bottom of the screen.
+    let start_off = if s.sub_start >= 0 {
+        // SAFETY: valid submenu tree; sub_start is a child object index.
+        unsafe { (*sub_tp.add(s.sub_start as usize)).ob_y }
+    } else {
+        0
+    };
+    let ymax = (sh - bh).max(BAR_H);
+    let y = (iy - start_off).clamp(BAR_H, ymax);
+    // Re-home the box to the target absolute position: adjust its relative
+    // ob_x/ob_y by the delta from its current absolute origin, so this works
+    // wherever the box sits in the submenu tree (its parent offset cancels).
+    // SAFETY: valid submenu tree; sub_menu is a valid box object index.
+    unsafe {
+        let b = &mut *sub.add(s.sub_menu as usize);
+        b.ob_x += x - bx0;
+        b.ob_y += y - by0;
+    }
+    crate::vdi::cursor_hide(backend);
+    let (fx, fy, fw, fh) = object::abs_rect(sub_tp, s.sub_menu);
+    save_under(&SMBACK, backend, fx, fy, fw, fh);
+    object::draw_obj(sub_tp, s.sub_menu, MAX_DEPTH, backend);
+    crate::vdi::cursor_show(backend);
+    Some((s.sub_tree, s.sub_menu))
+}
+
+/// Close an open nested submenu: clear any highlighted submenu item, restore
+/// the pixels saved under its box ([`SMBACK`], or white-erase if the box was
+/// too big to snapshot). Mirrors EmuTOS `undisplay_submenu`.
+fn close_submenu(sub_tree: u64, sub_box: i16, sub_item: i16, backend: &dyn RasterBackend) {
+    if sub_tree == 0 || sub_box < 0 {
+        return;
+    }
+    let sub = sub_tree as *mut Object;
+    crate::vdi::cursor_hide(backend);
+    if sub_item != NIL {
+        object::set_state_bit(sub, sub_item, SELECTED, false);
+    }
+    if !restore_under(&SMBACK, backend) {
+        let (x, y, w, h) = object::abs_rect(sub_tree as *const Object, sub_box);
+        let clip = ClipRect::full(backend.width(), backend.height());
+        backend.fill_rect(x, y, w, h, WHITE, clip);
+    }
+    crate::vdi::cursor_show(backend);
 }
 
 /// Title index → its drop-down box index (EmuTOS `menu_sub`): walk the box
@@ -274,41 +448,54 @@ static MBACK: MenuBack = MenuBack {
     h: AtomicI16::new(0),
     valid: AtomicU8::new(0),
 };
+/// A **second** backing for the nested submenu box (EmuTOS keeps the
+/// drop-down's `bb_save` buffer and the submenu's `blitsave` separate, so a
+/// submenu open does not clobber the parent box's saved pixels). Used only by
+/// the submenu open/close path; the parent box + popups use [`MBACK`].
+static SMBACK: MenuBack = MenuBack {
+    px: UnsafeCell::new([0; MB_W * MB_H]),
+    x: AtomicI16::new(0),
+    y: AtomicI16::new(0),
+    w: AtomicI16::new(0),
+    h: AtomicI16::new(0),
+    valid: AtomicU8::new(0),
+};
 
-/// Snapshot the pixels the box `(x,y,w,h)` will cover. Marks invalid if the
-/// box is larger than the backing → the caller falls back to a white erase.
-fn save_under(backend: &dyn RasterBackend, x: i16, y: i16, w: i16, h: i16) {
+/// Snapshot the pixels the box `(x,y,w,h)` will cover into `back`. Marks the
+/// backing invalid if the box is larger than it → the caller falls back to a
+/// white erase.
+fn save_under(back: &MenuBack, backend: &dyn RasterBackend, x: i16, y: i16, w: i16, h: i16) {
     if w <= 0 || h <= 0 || w as usize > MB_W || h as usize > MB_H {
-        MBACK.valid.store(0, Ordering::Relaxed);
+        back.valid.store(0, Ordering::Relaxed);
         return;
     }
     // SAFETY: single path; bounds checked above.
-    let store = unsafe { &mut *MBACK.px.get() };
+    let store = unsafe { &mut *back.px.get() };
     for row in 0..h {
         for col in 0..w {
             store[row as usize * MB_W + col as usize] = backend.read_pixel(x + col, y + row);
         }
     }
-    MBACK.x.store(x, Ordering::Relaxed);
-    MBACK.y.store(y, Ordering::Relaxed);
-    MBACK.w.store(w, Ordering::Relaxed);
-    MBACK.h.store(h, Ordering::Relaxed);
-    MBACK.valid.store(1, Ordering::Relaxed);
+    back.x.store(x, Ordering::Relaxed);
+    back.y.store(y, Ordering::Relaxed);
+    back.w.store(w, Ordering::Relaxed);
+    back.h.store(h, Ordering::Relaxed);
+    back.valid.store(1, Ordering::Relaxed);
 }
 
-/// Blit the saved pixels back. Returns `false` if nothing was saved (box too
-/// big), so the caller can white-erase instead.
-fn restore_under(backend: &dyn RasterBackend) -> bool {
-    if MBACK.valid.swap(0, Ordering::Relaxed) == 0 {
+/// Blit the pixels saved in `back` back to the screen. Returns `false` if
+/// nothing was saved (box too big), so the caller can white-erase instead.
+fn restore_under(back: &MenuBack, backend: &dyn RasterBackend) -> bool {
+    if back.valid.swap(0, Ordering::Relaxed) == 0 {
         return false;
     }
-    let x = MBACK.x.load(Ordering::Relaxed);
-    let y = MBACK.y.load(Ordering::Relaxed);
-    let w = MBACK.w.load(Ordering::Relaxed);
-    let h = MBACK.h.load(Ordering::Relaxed);
+    let x = back.x.load(Ordering::Relaxed);
+    let y = back.y.load(Ordering::Relaxed);
+    let w = back.w.load(Ordering::Relaxed);
+    let h = back.h.load(Ordering::Relaxed);
     let clip = ClipRect::full(backend.width(), backend.height());
     // SAFETY: single path.
-    let store = unsafe { &*MBACK.px.get() };
+    let store = unsafe { &*back.px.get() };
     for row in 0..h {
         for col in 0..w {
             let p = store[row as usize * MB_W + col as usize];
@@ -326,7 +513,7 @@ fn open_box(tree: *mut Object, title: i16, backend: &dyn RasterBackend) -> i16 {
     object::set_state_bit(tree, title, SELECTED, true); // redraws the title highlighted
     let imenu = menu_sub(tree as *const Object, title);
     let (x, y, w, h) = object::abs_rect(tree as *const Object, imenu);
-    save_under(backend, x, y, w, h);
+    save_under(&MBACK, backend, x, y, w, h);
     object::draw_obj(tree as *const Object, imenu, MAX_DEPTH, backend);
     crate::vdi::cursor_show(backend);
     imenu
@@ -380,7 +567,7 @@ fn erase_box_inner(tree: *mut Object, imenu: i16, backend: &dyn RasterBackend) {
     if imenu == NIL {
         return;
     }
-    if !restore_under(backend) {
+    if !restore_under(&MBACK, backend) {
         let (x, y, w, h) = object::abs_rect(tree as *const Object, imenu);
         let clip = ClipRect::full(backend.width(), backend.height());
         backend.fill_rect(x, y, w, h, WHITE, clip);
@@ -608,7 +795,7 @@ fn popup_track(tree: *mut Object, box_obj: i16, backend: &dyn RasterBackend) -> 
     }
     crate::vdi::cursor_hide(backend);
     let (bx, by, bw, bh) = object::abs_rect(tp, box_obj);
-    save_under(backend, bx, by, bw, bh);
+    save_under(&MBACK, backend, bx, by, bw, bh);
     object::draw_obj(tp, box_obj, MAX_DEPTH, backend);
     crate::vdi::cursor_show(backend);
 
@@ -735,27 +922,247 @@ pub fn menu_settings(pb: &Aespb) {
     pb.set_ret(1);
 }
 
+// ── submenu (SMIB) registry — menu_attach / menu_istart storage ──────────
+//
+// EmuTOS keeps a lazily-allocated `SMIB gl_submenu[NUM_SMIBS]` (`struct.h:53,
+// 180-186`) holding `(s_usage, s_tree, s_menu, s_start)`, and recovers the
+// parent item from the item's `ob_type` upper byte (D-087). NewTOS uses a
+// **fixed static table** (no runtime growth, like the DA / settings tables)
+// and stores the parent `(tree, item)` explicitly, so the `ME_INQUIRE` /
+// `ME_REMOVE` lookup and the nested-dropdown lookup are direct table scans —
+// while **still** writing the EmuTOS `ob_type` index + `SUBMENU` flag + arrow
+// marker (D-087, contract), so a program that reads `ob_type` after
+// `menu_attach` sees the same value plain TOS wrote.
+
+/// SMIB capacity — matches EmuTOS `NUM_SMIBS` (`struct.h:53`), so the
+/// "table full → FALSE" path (`gemmnext.c:509-512`) triggers at the same count.
+const NUM_SMIBS: usize = 128;
+
+// `menu_attach` operation flags (`aesdefs.h:297-299`).
+const ME_INQUIRE: i16 = 0;
+const ME_ATTACH: i16 = 1;
+const ME_REMOVE: i16 = 2;
+
+/// `SUBMENU` — `ob_flags` bit marking a menu item as having a submenu
+/// (`obdefs.h`; D-087). `menu_attach` sets it, `detach` clears it.
+const SUBMENU: u16 = 0x0800;
+/// The right-arrow marker char written into an attached item's text
+/// (`gemmnext.c:62`).
+const SUBMENU_MARKER: u8 = 0x03;
+/// Offset of the marker char from the end of the item string
+/// (`gemmnext.c:63`).
+const SUBMENU_MARKER_OFFSET: usize = 2;
+
+/// One submenu attachment — EmuTOS `SMIB` (`struct.h:180-186`) extended with
+/// the parent `(tree, item)` linkage NewTOS keys on (EmuTOS instead encodes
+/// the array index into the parent item's `ob_type`).
+#[derive(Clone, Copy)]
+struct Smib {
+    /// EmuTOS `s_usage != 0` — this slot is in use.
+    used: bool,
+    /// `OBJECT*` of the menu-bar tree the parent item lives in.
+    parent_tree: u64,
+    /// the `G_STRING` bar item the submenu hangs off.
+    parent_item: i16,
+    /// `MENU.mn_tree` — the submenu's own OBJECT tree (EmuTOS `s_tree`).
+    sub_tree: u64,
+    /// `MENU.mn_menu` — the submenu's enclosing box object (EmuTOS `s_menu`).
+    sub_menu: i16,
+    /// `MENU.mn_item` — the (scroll) start item (EmuTOS `s_start`).
+    sub_start: i16,
+    /// `MENU.mn_scroll` — retained; the scroll flag is ignored (restriction #2).
+    sub_scroll: i16,
+}
+impl Smib {
+    const EMPTY: Smib = Smib {
+        used: false,
+        parent_tree: 0,
+        parent_item: NIL,
+        sub_tree: 0,
+        sub_menu: NIL,
+        sub_start: NIL,
+        sub_scroll: 0,
+    };
+}
+
+/// The submenu registry (EmuTOS `gl_submenu[]`). Fixed-size static, touched
+/// only on the single-CPU AES path.
+struct SubmenuTable(UnsafeCell<[Smib; NUM_SMIBS]>);
+// SAFETY: single boot CPU only touches the AES.
+unsafe impl Sync for SubmenuTable {}
+static SUBMENU_TAB: SubmenuTable = SubmenuTable(UnsafeCell::new([Smib::EMPTY; NUM_SMIBS]));
+
+/// Slot of the used entry attached to parent `(tree, item)`, or `None`.
+fn smib_find_parent(tree: u64, item: i16) -> Option<usize> {
+    // SAFETY: single-CPU AES; exclusive shared read of the table.
+    let tab = unsafe { &*SUBMENU_TAB.0.get() };
+    tab.iter()
+        .position(|s| s.used && s.parent_tree == tree && s.parent_item == item)
+}
+
+/// Slot of the used entry whose submenu is `(sub_tree, sub_menu)`, or `None`
+/// (EmuTOS `find_submenu_from_tree`, used by `menu_istart`).
+fn smib_find_sub(sub_tree: u64, sub_menu: i16) -> Option<usize> {
+    // SAFETY: single-CPU AES; exclusive shared read of the table.
+    let tab = unsafe { &*SUBMENU_TAB.0.get() };
+    tab.iter()
+        .position(|s| s.used && s.sub_tree == sub_tree && s.sub_menu == sub_menu)
+}
+
+/// First free slot, or `None` when the table is full (EmuTOS "SMIB table full").
+fn smib_free() -> Option<usize> {
+    // SAFETY: single-CPU AES; exclusive shared read of the table.
+    let tab = unsafe { &*SUBMENU_TAB.0.get() };
+    tab.iter().position(|s| !s.used)
+}
+
+/// Encode the submenu link into the parent item (EmuTOS `attach_submenu` tail,
+/// `gemmnext.c:522-527`; D-087): `ob_type` upper byte = `slot + 128`, set the
+/// `SUBMENU` `ob_flags` bit, and write the right-arrow marker two chars from
+/// the end of the item text.
+///
+/// # Safety
+/// `tree`/`item` are a valid menu-bar tree + `G_STRING` item index.
+unsafe fn submenu_mark(tree: *mut Object, item: i16, slot: usize) {
+    // SAFETY: forwarded from the caller's contract.
+    unsafe {
+        let obj = &mut *tree.add(item as usize);
+        obj.ob_type = (obj.ob_type & 0x00ff) | (((slot as u16) + 128) << 8);
+        obj.ob_flags |= SUBMENU;
+        write_marker(obj.ob_spec as *mut u8, SUBMENU_MARKER);
+    }
+}
+
+/// Reverse [`submenu_mark`] (EmuTOS `detach_submenu`, `gemmnext.c:449-452`):
+/// clear the `ob_type` upper byte, clear `SUBMENU`, blank the marker to a space.
+///
+/// # Safety
+/// `tree`/`item` are a valid menu-bar tree + item index.
+unsafe fn submenu_unmark(tree: *mut Object, item: i16) {
+    // SAFETY: forwarded from the caller's contract.
+    unsafe {
+        let obj = &mut *tree.add(item as usize);
+        obj.ob_type &= 0x00ff;
+        obj.ob_flags &= !SUBMENU;
+        write_marker(obj.ob_spec as *mut u8, b' ');
+    }
+}
+
+/// Write `c` at `strlen - SUBMENU_MARKER_OFFSET` of the NUL-terminated string
+/// at `p` (EmuTOS's marker slot). No-op if the pointer is null or the string is
+/// shorter than the offset (NewTOS bound over EmuTOS's unguarded write).
+///
+/// # Safety
+/// `p` is null or points at a writable NUL-terminated buffer.
+unsafe fn write_marker(p: *mut u8, c: u8) {
+    if p.is_null() {
+        return;
+    }
+    // SAFETY: caller guarantees a valid NUL-terminated buffer.
+    unsafe {
+        let mut len = 0usize;
+        while len < 256 && *p.add(len) != 0 {
+            len += 1;
+        }
+        if len >= SUBMENU_MARKER_OFFSET {
+            *p.add(len - SUBMENU_MARKER_OFFSET) = c;
+        }
+    }
+}
+
+/// EmuTOS `query_submenu` (`gemmnext.c:401-433`): copy the submenu descriptor
+/// attached to parent `(tree, item)` into `*mdata` (tolerating a null `mdata`,
+/// the EmuTOS convenience), returning whether one is attached.
+fn query_submenu(tree: *mut Object, item: i16, mdata: *mut Menu) -> bool {
+    let Some(slot) = smib_find_parent(tree as u64, item) else {
+        return false;
+    };
+    if !mdata.is_null() {
+        // SAFETY: single-CPU AES read; valid MENU out (GEM contract).
+        let s = unsafe { (*SUBMENU_TAB.0.get())[slot] };
+        // SAFETY: valid MENU out (GEM contract).
+        unsafe {
+            (*mdata).mn_tree = s.sub_tree;
+            (*mdata).mn_menu = s.sub_menu;
+            (*mdata).mn_item = s.sub_start;
+            // EmuTOS zeroes mn_scroll here (the scroll flag is ignored,
+            // restriction #2); NewTOS round-trips the value stored at attach so
+            // ME_INQUIRE reports the descriptor as given. The tracker still
+            // ignores the flag, so this changes no rendering/selection — only
+            // what INQUIRE reflects back.
+            (*mdata).mn_scroll = s.sub_scroll;
+            (*mdata).mn_keystate = 0;
+        }
+    }
+    true
+}
+
+/// EmuTOS `attach_submenu` (`gemmnext.c:465-530`): attach the submenu `*mdata`
+/// to parent `(tree, item)`, replacing any existing attachment first; a null
+/// `mdata` is the `ME_REMOVE` path. Returns `true` on success, `false` when
+/// there is nothing to remove, no descriptor to attach, or the table is full.
+fn attach_submenu(tree: *mut Object, item: i16, mdata: *mut Menu) -> bool {
+    // If the item already has a submenu, detach it first (replace semantics,
+    // gemmnext.c:471-477).
+    if let Some(old) = smib_find_parent(tree as u64, item) {
+        // SAFETY: single-CPU AES; exclusive mutable access to one slot.
+        unsafe { (*SUBMENU_TAB.0.get())[old].used = false };
+        // SAFETY: valid tree (GEM contract).
+        unsafe { submenu_unmark(tree, item) };
+        if mdata.is_null() {
+            return true; // ME_REMOVE on an attached item: done.
+        }
+    }
+    // ME_REMOVE on an item with no submenu (gemmnext.c:480-481).
+    if mdata.is_null() {
+        return false;
+    }
+    // Fixed-size table: no free slot → EmuTOS "table full" FALSE.
+    let Some(slot) = smib_free() else {
+        return false;
+    };
+    // SAFETY: single-CPU AES; valid MENU in (GEM contract); one slot only.
+    unsafe {
+        let m = &*mdata;
+        let s = &mut (*SUBMENU_TAB.0.get())[slot];
+        s.used = true;
+        s.parent_tree = tree as u64;
+        s.parent_item = item;
+        s.sub_tree = m.mn_tree;
+        s.sub_menu = m.mn_menu;
+        s.sub_start = m.mn_item;
+        s.sub_scroll = m.mn_scroll;
+    }
+    // Encode the D-087 ob_type index + SUBMENU flag + marker into the item.
+    // SAFETY: valid tree (GEM contract).
+    unsafe { submenu_mark(tree, item, slot) };
+    true
+}
+
 /// `menu_attach` (37) — attach (`ME_ATTACH`=1) / remove (`ME_REMOVE`=2) /
 /// query (`ME_INQUIRE`=0) a submenu on a menu-bar item (EmuTOS `mn_attach`,
-/// `gemmnext.c:535-557`). Dispatch: `mn_attach(MPOP_FLAG, MPOP_IN,
-/// MPOP_ITEM, MPOP_OUT)` = `(int_in[0], addr_in[0], int_in[1], addr_in[1])`.
+/// `gemmnext.c:535-557`). Dispatch: `mn_attach(MPOP_FLAG, MPOP_IN, MPOP_ITEM,
+/// MPOP_OUT)` = `(int_in[0], addr_in[0], int_in[1], addr_in[1])`.
 ///
-/// NewTOS has no `SMIB` submenu registry (`gl_submenu`) yet, so no submenu can
-/// actually be recorded or displayed. The **argument-determined** outcomes are
-/// still honoured with EmuTOS's real failure values — **no faked success**:
-///  - the target item must be a `G_STRING` (guard applied to all three
-///    operations, `gemmnext.c:539-541`) → else `0`;
-///  - `ME_REMOVE` / `ME_INQUIRE` on an item with no attached submenu → `0`
-///    (nothing to remove/report), `gemmnext.c:401-433,471-481`;
-///  - `ME_ATTACH` → `0`: a real attach needs the SMIB registry NewTOS lacks
-///    → returned as "not attached", never a fake `1`.
+/// Guard: the target item must be a `G_STRING` — applied before the operation
+/// switch, for all three flags (`gemmnext.c:539-541`) → else `0`. Then, per
+/// EmuTOS `mn_attach`:
+///  - `ME_INQUIRE`: `1` and `*MPOP_OUT` filled iff a submenu is attached;
+///  - `ME_ATTACH`: record the `MENU` at `MPOP_OUT` for `(tree, item)`
+///    (replacing any existing one) and return `1`, or `0` if the SMIB table is
+///    full;
+///  - `ME_REMOVE`: clear the attachment and return `1`, or `0` if the item had
+///    no submenu (D-088);
+///  - any other flag: `0` (EmuTOS switch default leaves `rc = FALSE`).
 ///
-/// Full submenu support (`ME_ATTACH` success, the `ob_type`/`ob_flags`
-/// encoding of D-087) requires the SMIB submenu infrastructure — tracked as a
-/// separate task. Until then every path returns an honest EmuTOS `FALSE`.
+/// A successful `ME_ATTACH` also sets the item's `SUBMENU` `ob_flags` bit and
+/// writes the SMIB index into its `ob_type` upper byte; `ME_REMOVE` reverses
+/// both (D-087, contract).
 pub fn menu_attach(pb: &Aespb) {
-    let tree = pb.addrin(0) as *const Object;
+    let flag = pb.intin(0);
+    let tree = pb.addrin(0) as *mut Object;
     let item = pb.intin(1);
+    let mdata = pb.addrin(1) as *mut Menu;
     if tree.is_null() || item < 0 {
         pb.set_ret(0);
         return;
@@ -768,9 +1175,13 @@ pub fn menu_attach(pb: &Aespb) {
         pb.set_ret(0);
         return;
     }
-    // With no SMIB registry, no item ever has a submenu: inquire/remove report
-    // "none" and attach cannot record one. All honest EmuTOS FALSE values.
-    pb.set_ret(0);
+    let rc = match flag {
+        ME_INQUIRE => query_submenu(tree, item, mdata),
+        ME_ATTACH => attach_submenu(tree, item, mdata),
+        ME_REMOVE => attach_submenu(tree, item, core::ptr::null_mut()),
+        _ => false, // undefined flag → FALSE (EmuTOS switch default)
+    };
+    pb.set_ret(if rc { 1 } else { 0 });
 }
 
 /// `menu_istart` (38) — get/set the starting item of a scrollable submenu
@@ -778,22 +1189,52 @@ pub fn menu_attach(pb: &Aespb) {
 /// MPOP_IN, MPOP_ITEM, MPOP_ITEM2)` = `(int_in[0], addr_in[0], int_in[1],
 /// int_in[2])`.
 ///
-/// `mn_istart` first looks the submenu up by (tree, menu box) and returns
-/// `FALSE` (0) when none is attached — *before* the flag switch. NewTOS
-/// registers no submenus (no SMIB registry, same separate task as
-/// `menu_attach`), so the lookup always fails: return `0` honestly after
-/// validating the arguments. **Never a fake `1`.**
+/// `MPOP_IN` (`addr_in[0]`) is the tree **containing the submenu**, `MPOP_ITEM`
+/// (`int_in[1]`) its box object. Looks the submenu up by `(sub_tree, sub_menu)`
+/// (EmuTOS `find_submenu_from_tree`) and returns `FALSE` (0) when none is
+/// attached — before the flag switch. `flag=0` inquires (returns the current
+/// `s_start`); `flag=1` clamps `int_in[2]` to the box's `[ob_head, ob_tail]`
+/// child range, stores it as `s_start`, and returns it; any other flag → `0`.
 pub fn menu_istart(pb: &Aespb) {
     let flag = pb.intin(0);
     let tree = pb.addrin(0) as *const Object;
-    let menu = pb.intin(1);
-    // Valid flags are 0 (inquire) and 1 (update); any other → FALSE
-    // (gemmnext.c:584-585). A null tree or negative box is likewise invalid.
-    if tree.is_null() || menu < 0 || (flag != 0 && flag != 1) {
+    let menu = pb.intin(1); // the submenu box object
+    let start = pb.intin(2); // desired start item (update only)
+    if tree.is_null() || menu < 0 {
         pb.set_ret(0);
         return;
     }
-    // No submenu is ever attached → find_submenu_from_tree fails → 0, exactly
-    // as EmuTOS returns for an unattached submenu.
-    pb.set_ret(0);
+    // Look the submenu up by (submenu tree, submenu box); no such submenu →
+    // FALSE, before the flag switch (gemmnext.c:567-569).
+    let Some(slot) = smib_find_sub(tree as u64, menu) else {
+        pb.set_ret(0);
+        return;
+    };
+    // SAFETY: single-CPU AES; exclusive mutable access to one slot.
+    let s = unsafe { &mut (*SUBMENU_TAB.0.get())[slot] };
+    match flag {
+        0 => {} // inquire: return the current start item
+        1 => {
+            // Clamp 'start' to the submenu box's child index range (the EmuTOS
+            // two-comparison form, which tolerates head > tail without the
+            // ordering panic `clamp` would raise on an empty box).
+            // SAFETY: valid submenu tree; `menu` is a valid box object index.
+            let (head, tail) = unsafe {
+                let b = &*tree.add(menu as usize);
+                (b.ob_head, b.ob_tail)
+            };
+            s.sub_start = if start < head {
+                head
+            } else if start > tail {
+                tail
+            } else {
+                start
+            };
+        }
+        _ => {
+            pb.set_ret(0); // bad flag → FALSE (gemmnext.c:584-585)
+            return;
+        }
+    }
+    pb.set_ret(s.sub_start);
 }
