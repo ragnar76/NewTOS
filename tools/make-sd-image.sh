@@ -68,6 +68,17 @@ mkdir -p "$V/AUTO"; printf 'AUTO runs .NAP/.NCP + .PRG at boot (ADR-018)\r\n' > 
 python3 "$SCRIPT_DIR/mk-hello-ncp.py" "$V/HELLO.NCP"
 python3 "$SCRIPT_DIR/mk-hello-ncp.py" "$V/AUTO/HELLO.NCP"
 
+# Native C SDK Stage 1: HELLO2.NCP is the *clang-built* console program (the
+# SDK end-to-end proof), compiled from sdk/examples/hello.c + sdk/crt0.S and
+# linked with sdk/newtos.ld into a NewTOS-native ELF. Placed on C: so it is
+# double-clickable and runnable via run_program(b"C:\\HELLO2.NCP"). Skipped
+# (with a note) if the clang/lld toolchain is unavailable on this host.
+if "$SCRIPT_DIR/../sdk/build.sh" "$SCRIPT_DIR/../sdk/examples/hello.c" "$V/HELLO2.NCP" >/dev/null 2>&1; then
+  echo "built + installed C:\\HELLO2.NCP (clang-built native C program)"
+else
+  echo "note: sdk/build.sh unavailable (no clang/lld?); C:\\HELLO2.NCP skipped"
+fi
+
 # Strip macOS metadata so it does not clutter the directory listing.
 sync
 rm -rf "$V/.Spotlight-V100" "$V/.fseventsd" "$V/.Trashes" "$V/.TemporaryItems" 2>/dev/null || true
