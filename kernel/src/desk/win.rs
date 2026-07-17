@@ -402,6 +402,14 @@ impl DeskState {
         // Copy the fields out first so the file-list borrow ends before the
         // g_screen/g_screeninfo borrows.
         let f = self.windows.slots[slot].w_pnode.p_flist[pidx].clone();
+        // Restore the selection highlight from the file's `f_selected`
+        // (EmuTOS `win_bldview`, deskwin.c:446-448) — `obj_ialloc` cleared
+        // `ob_state`, so a rebuilt view (scroll / sort / view-switch / a
+        // Select-all or Search that marked files off-screen) shows the
+        // selection instead of silently dropping it.
+        if f.f_selected {
+            self.g_screen[obid as usize].ob_state |= OB_SELECTED;
+        }
         let info = &mut self.g_screeninfo[obid as usize];
         info.label = [0; LEN_LABEL];
         info.atype = if f.is_dir() {

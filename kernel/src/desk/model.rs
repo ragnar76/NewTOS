@@ -111,8 +111,17 @@ impl FNode {
 pub struct PNode {
     /// Attribute mask passed to `Fsfirst` (always [`DISPATTR`]).
     pub p_attr: u8,
-    /// The directory path + wildcard (e.g. `C:\*.*`).
+    /// The directory path + wildcard (e.g. `C:\*.*`). The scan always runs with
+    /// the `*.*` tail so **all** entries are returned; the display filter is
+    /// [`PNode::p_mask`], not this spec (see [`PNode::pn_active`]).
     pub p_spec: String,
+    /// The File → Set-mask display filter (EmuTOS's `filename_start(p_spec)`,
+    /// the per-window file mask). Empty or `*.*` means "show everything";
+    /// otherwise a TOS 8.3 wildcard (e.g. `*.TXT`) applied to **files only** —
+    /// folders always appear, matching EmuTOS `pn_active` (deskfpd.c:227,
+    /// `del_fname(search)` + `wildcmp(match)` on files). Persists across a
+    /// rescan/navigation (it is a window property, not reset by [`PNode::pn_open`]).
+    pub p_mask: String,
     /// The matched entries, in current (sorted) order — dynamic, uncapped.
     pub p_flist: Vec<FNode>,
     /// Number of entries (`p_flist.len()`).
@@ -124,7 +133,10 @@ pub struct PNode {
 impl PNode {
     /// `pn_open` — prepare this node for a directory path (EmuTOS
     /// `deskfpd.c:73-96`). Stores the search spec and the [`DISPATTR`] mask;
-    /// does not scan (call [`PNode::pn_active`] for that).
+    /// does not scan (call [`PNode::pn_active`] for that). The display
+    /// [`PNode::p_mask`] is **left untouched** — it is a window property that
+    /// survives a rescan (so File → Set-mask's own rescan keeps the mask) and a
+    /// same-window navigation (EmuTOS keeps the mask via `add_one_level`).
     pub fn pn_open(&mut self, spec: &str) {
         self.p_attr = DISPATTR;
         self.p_spec.clear();
@@ -138,9 +150,10 @@ impl PNode {
     /// `Fsfirst`/`Fsnext` (EmuTOS `deskfpd.c:227-298`). `include_folders`
     /// keeps sub-directories in the listing. `.` and `..` are skipped. An
     /// empty directory (or `EFILNF`/`ENMFIL`) yields an empty list, matching
-    /// EmuTOS folding those errors to success.
+    /// EmuTOS folding those errors to success. The [`PNode::p_mask`] display
+    /// filter is applied to files only (folders always kept).
     pub fn pn_active(&mut self, include_folders: bool) {
-        let (list, total) = scan_dir(&self.p_spec, self.p_attr, include_folders);
+        let (list, total) = scan_dir(&self.p_spec, self.p_attr, include_folders, &self.p_mask);
         self.p_count = list.len();
         self.p_size = total;
         self.p_flist = list;
@@ -248,7 +261,16 @@ fn gemdos_args(func: u16, a0: u64, a1: u64) -> TrapArgs {
 /// the matched [`FNode`]s and the summed file size. This is the faithful
 /// `pn_active()` loop: point the current DTA at a local buffer, walk the
 /// matches, and copy each DTA field out individually.
-fn scan_dir(spec: &str, attr: u8, include_folders: bool) -> (Vec<FNode>, u64) {
+///
+/// `mask` is the File → Set-mask display filter (EmuTOS `pn_active`'s
+/// `match`): applied via [`wildcmp`] to **files only** so a `*.TXT` mask hides
+/// non-`.TXT` files but never a folder — EmuTOS scans with `*.*`
+/// (`del_fname(search)`) and `wildcmp`s the mask against files. An empty mask
+/// or `*.*` disables filtering.
+fn scan_dir(spec: &str, attr: u8, include_folders: bool, mask: &str) -> (Vec<FNode>, u64) {
+    // A `*.*` (or empty) mask matches everything, so skip the per-file test.
+    let apply_mask = !mask.is_empty() && mask != "*.*";
+    let mask_b = mask.as_bytes();
     // A 44-byte DTA buffer (`docs/api/structures/dta.md`). Kept alive for the
     // whole scan; the current-DTA pointer is a single-foreground-caller global
     // in `tos_api::bdos::fs::find`, matching EmuTOS's `p_xdta` model.
@@ -271,15 +293,61 @@ fn scan_dir(spec: &str, attr: u8, include_folders: bool) -> (Vec<FNode>, u64) {
     let mut rc = find::fsfirst(&gemdos_args(FSFIRST, cpath.as_ptr() as u64, attr as u64));
     while rc == E_OK {
         if let Some(f) = fnode_from_dta(&dta, seq, include_folders) {
-            if f.f_attr & FA_SUBDIR == 0 {
-                total = total.saturating_add(f.f_size as u64);
+            let is_file = f.f_attr & FA_SUBDIR == 0;
+            // File-mask filter: skip files that don't match; folders always pass.
+            if !(apply_mask && is_file && !wildcmp(mask_b, f.name_bytes())) {
+                if is_file {
+                    total = total.saturating_add(f.f_size as u64);
+                }
+                list.push(f);
+                seq = seq.wrapping_add(1);
             }
-            list.push(f);
-            seq = seq.wrapping_add(1);
         }
         rc = find::fsnext(&gemdos_args(FSNEXT, 0, 0));
     }
     (list, total)
+}
+
+/// `wildcmp` (EmuTOS `util/optimize.c:244`) — does 8.3 `filename` match the TOS
+/// wildcard `pattern`? Both are in `NAME.EXT` display form, uppercase; `*`
+/// matches the rest of a field, `?` matches one character. The name is matched
+/// on pass 1 and the extension on pass 2 (a `.`-less pattern/name has an empty
+/// extension field). A byte-faithful reimplementation of the algorithm the
+/// desktop's Set-mask and Search share with GEMDOS's own matcher; past the end
+/// of either string the read is `0` (C NUL semantics), so the final compare is
+/// "both exhausted".
+pub(super) fn wildcmp(pattern: &[u8], filename: &[u8]) -> bool {
+    let at = |s: &[u8], i: usize| -> u8 { s.get(i).copied().unwrap_or(0) };
+    let mut p = 0usize; // pattern cursor
+    let mut f = 0usize; // filename cursor
+    // Pass 0 = name field, pass 1 = extension field.
+    for _ in 0..2 {
+        while at(filename, f) != 0 && at(filename, f) != b'.' {
+            let pc = at(pattern, p);
+            if pc == b'*' {
+                f += 1; // '*' consumes the rest of the field; pattern stays put
+                continue;
+            }
+            if pc == b'?' || pc == at(filename, f) {
+                p += 1;
+                f += 1;
+                continue;
+            }
+            return false;
+        }
+        // Soak up any remaining wildcard characters in this field.
+        while at(pattern, p) == b'*' || at(pattern, p) == b'?' {
+            p += 1;
+        }
+        // Step past the field separator in each string, if present.
+        if at(pattern, p) == b'.' {
+            p += 1;
+        }
+        if at(filename, f) == b'.' {
+            f += 1;
+        }
+    }
+    at(pattern, p) == at(filename, f)
 }
 
 /// Decode one populated DTA into an [`FNode`], copying each field

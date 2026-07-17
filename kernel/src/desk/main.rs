@@ -620,9 +620,11 @@ fn do_filemenu(item: Item) -> bool {
         Item::SelectAll => {
             dir::fun_selectall();
         }
+        Item::SetMask => do_set_mask(),
+        Item::Search => do_search(),
         Item::NewFolder => do_new_folder(),
         Item::InfoRename => do_info_rename(),
-        _ => {} // Task-#14 items (Search) stay disabled
+        _ => {} // remaining File items have no live handler yet
     }
     false
 }
@@ -741,6 +743,230 @@ fn do_info_rename() {
         dir::fun_alert(1, b"Could not rename the item.");
     }
     redraw::full_redraw();
+}
+
+/// `fun_mask` (EmuTOS `deskfun.c:639`, `CONF_WITH_FILEMASK`) — File → Set file
+/// mask: prompt for the current window's display filter (default `*.*`), store
+/// it as the window's `p_mask`, re-scan + re-filter, and repaint. The mask
+/// filters **files only** — folders always show (`PNode::pn_active`). The edit
+/// field is [`super::dlg::edit_name`] (real keyboard only); the filter itself is
+/// applied by [`set_window_mask`], which a headless selftest can call directly.
+fn do_set_mask() {
+    let cwin = global::with(|g| g.g_cwin).unwrap_or(DESKWH);
+    if cwin == DESKWH {
+        return;
+    }
+    // Current mask (default `*.*` when unset), shown in the dialog for editing.
+    let cur = global::with(|g| {
+        let slot = g.win_slot(cwin)?;
+        let m = g.windows.slots[slot].w_pnode.p_mask.clone();
+        Some(if m.is_empty() { String::from("*.*") } else { m })
+    })
+    .flatten()
+    .unwrap_or_else(|| String::from("*.*"));
+
+    let Some(entered) = super::dlg::edit_name(b"Show only files matching:\0", &cur) else {
+        redraw::full_redraw(); // cancelled — restore the screen under the dialog
+        return;
+    };
+    set_window_mask(cwin, &entered);
+}
+
+/// Apply file mask `raw` to window `handle`: normalise it to an upper-case 8.3
+/// wildcard (empty → `*.*`), store it as the window's `p_mask`, rescan + refilter
+/// the listing, update the title + info line, rebuild the view and repaint —
+/// EmuTOS `fun_mask` → `refresh_window` → `do_fopen`/`do_diropen`. Factored out
+/// of [`do_set_mask`] so the filter can be driven with a mask value directly
+/// (the dialog's text entry needs a real keyboard).
+fn set_window_mask(handle: i16, raw: &str) {
+    let mask = mask_normalize(raw);
+    let work = wind_get_work(handle);
+    // Store the mask, rescan with it (files filtered, folders kept), re-sort.
+    let scanned = global::with(|g| {
+        let sort = g.sort;
+        let slot = g.win_slot(handle)?;
+        let spec = {
+            let pn = &mut g.windows.slots[slot].w_pnode;
+            pn.p_mask = mask.clone();
+            pn.pn_active(true);
+            pn.pn_sort(sort);
+            pn.p_spec.clone()
+        };
+        let pn = &g.windows.slots[slot].w_pnode;
+        Some((slot, spec, pn.p_count, pn.p_size))
+    })
+    .flatten();
+    let Some((slot, spec, count, size)) = scanned else {
+        return;
+    };
+
+    // Title: directory, plus the active mask when it is a real filter (EmuTOS
+    // `win_sname` always shows the full spec; NewTOS keeps the clean path for
+    // the unfiltered `*.*`).
+    let dir = spec.rfind('\\').map(|i| String::from(&spec[..=i])).unwrap_or(spec);
+    let mut title = dir;
+    if !mask.is_empty() && mask != "*.*" {
+        title.push_str(&mask);
+    }
+    set_window_title(handle, &title);
+
+    // Info line reflects the filtered item count / size.
+    let mut info = [0u8; 64];
+    fmt_info(&mut info, count, size);
+    super::wind_set_ptr(handle, WF_INFO, info.as_ptr() as u64);
+
+    if let Some(sliders) = global::with(|g| g.win_bldview(slot, work)) {
+        set_sliders(handle, sliders);
+    }
+    redraw::full_redraw();
+}
+
+/// Normalise a raw mask to an upper-case TOS wildcard: trim, keep only the
+/// filename part if a path separator was typed, and map empty → `*.*`.
+fn mask_normalize(raw: &str) -> String {
+    let last = raw.trim().rsplit(['\\', '/']).next().unwrap_or("").trim();
+    if last.is_empty() {
+        String::from("*.*")
+    } else {
+        last.to_ascii_uppercase()
+    }
+}
+
+/// Push a new title (`WF_NAME`) onto window `handle`. The AES copies the string
+/// during the trap, so a local buffer that outlives the call suffices.
+fn set_window_title(handle: i16, title: &str) {
+    let mut tbuf = [0u8; 96];
+    let tb = title.as_bytes();
+    let tn = tb.len().min(tbuf.len() - 1);
+    tbuf[..tn].copy_from_slice(&tb[..tn]);
+    super::wind_set_ptr(handle, WF_NAME, tbuf.as_ptr() as u64);
+}
+
+/// `fun_search` (EmuTOS `deskfun.c:560`, `CONF_WITH_SEARCH`) — File → Search:
+/// prompt for a name, convert it to a TOS wildcard, and search the current
+/// window. The name entry is [`super::dlg::edit_name`] (real keyboard only);
+/// [`search_current_window`] does the work and can be driven headless.
+///
+/// **Scope:** the current window only — EmuTOS's `mark_matching_fnodes` path
+/// (open window, no icon selected). The recursive descent through selected
+/// disk/folder icons (`search_recursive`/`search_icon`, which opens a scratch
+/// window per matching folder) is **not** implemented here — a documented
+/// subset, not a stub: a name typed while a window is on top is found, selected,
+/// and scrolled into view; nothing is faked.
+fn do_search() {
+    let cwin = global::with(|g| g.g_cwin).unwrap_or(DESKWH);
+    if cwin == DESKWH {
+        return;
+    }
+    let Some(name) = super::dlg::edit_name(b"Search for file:\0", "") else {
+        redraw::full_redraw(); // cancelled — restore the screen under the dialog
+        return;
+    };
+    search_current_window(cwin, &name);
+}
+
+/// Select every file in window `handle` matching search `name`
+/// (`convert`ed to a wildcard, EmuTOS `deskfun.c:mark_matching_fnodes`), scroll
+/// the first match to the top, and repaint; alert "file not found" when nothing
+/// matches. Returns the match count. Factored out of [`do_search`] so the search
+/// can be driven with a name directly (the dialog needs a real keyboard).
+fn search_current_window(handle: i16, name: &str) -> usize {
+    let wild = search_wildcard(name);
+    let work = wind_get_work(handle);
+    // Mark matches on the (already-scanned) file list; note the first match's
+    // linear index so the view can scroll to it.
+    let result = global::with(|g| {
+        let slot = g.win_slot(handle)?;
+        let mut count = 0usize;
+        let mut first: Option<usize> = None;
+        for (i, f) in g.windows.slots[slot].w_pnode.p_flist.iter_mut().enumerate() {
+            if super::model::wildcmp(wild.as_bytes(), f.name_bytes()) {
+                f.f_selected = true;
+                count += 1;
+                if first.is_none() {
+                    first = Some(i);
+                }
+            }
+        }
+        if let Some(idx) = first {
+            // Scroll so the first match sits at the top of the window; a bad
+            // row is re-clamped inside `win_bldview`/`win_ocalc`.
+            let vncol = g.windows.slots[slot].w_vncol.max(1) as usize;
+            g.windows.slots[slot].w_cvrow = (idx / vncol) as i16;
+            let sliders = g.win_bldview(slot, work);
+            Some((count, Some(sliders)))
+        } else {
+            Some((count, None))
+        }
+    })
+    .flatten()
+    .unwrap_or((0, None));
+
+    let (count, sliders) = result;
+    if let Some(sliders) = sliders {
+        set_sliders(handle, sliders);
+        redraw::full_redraw();
+    } else {
+        dir::fun_alert(1, b"No file matching the search was found.");
+        redraw::full_redraw();
+    }
+    count
+}
+
+/// `convert` (EmuTOS `deskfun.c:264`) — turn a Search name into a TOS wildcard,
+/// upper-cased: a partial name/extension gets a trailing `*` in that field
+/// (`"A"` → `"A*.*"`, `".DOC"` → `"*.DOC"`, `"X?Y.?Z"` → `"X?Y*.?Z*"`).
+fn search_wildcard(name: &str) -> String {
+    let s = name.trim().to_ascii_uppercase();
+    let b = s.as_bytes();
+    let at = |i: usize| -> u8 { b.get(i).copied().unwrap_or(0) };
+    let mut i = 0usize;
+    let mut out = String::new();
+
+    // Name field (up to 8): stop early on end/'.'/'*', padding with '*'.
+    for _ in 0..8 {
+        let c = at(i);
+        if c == 0 || c == b'.' {
+            out.push('*');
+            break;
+        }
+        if c == b'*' {
+            out.push('*');
+            i += 1;
+            break;
+        }
+        out.push(c as char);
+        i += 1;
+    }
+    out.push('.');
+    // Skip the rest of the input's name field, past the '.' separator.
+    loop {
+        let c = at(i);
+        if c == 0 {
+            break;
+        }
+        i += 1;
+        if c == b'.' {
+            break;
+        }
+    }
+    // Extension field (up to 3), same padding rule. Iterate the remaining bytes
+    // (no manual cursor) so the final step is not a dead store.
+    let mut ext = b.get(i..).unwrap_or(&[]).iter();
+    for _ in 0..3 {
+        match ext.next() {
+            None => {
+                out.push('*');
+                break;
+            }
+            Some(&b'*') => {
+                out.push('*');
+                break;
+            }
+            Some(&c) => out.push(c as char),
+        }
+    }
+    out
 }
 
 /// `do_viewmenu` (EmuTOS `deskmain.c:786`) — the View menu. Flips the view /

@@ -681,13 +681,18 @@ pub fn rename(old: &str, new: &str) -> bool {
 /// `fun_selectall` — select every item in the current window (EmuTOS
 /// `deskfun.c:607`). Returns `true` if the current root is a real window (the
 /// desktop has no "select all").
+///
+/// EmuTOS marks every `FNODE`/object `SELECTED` and sends a plain `WM_REDRAW`
+/// — it does **not** re-scan the directory (a rescan would reset `f_selected`).
+/// So this repaints the existing item objects (already flagged by
+/// [`DeskState::select_all`]) rather than calling [`rebuild_window`].
 pub fn fun_selectall() -> bool {
     let cwin = global::with(|g| g.g_cwin).unwrap_or(DESKWH);
     if cwin == DESKWH {
         return false;
     }
     global::with(|g| g.select_all(cwin));
-    rebuild_window(cwin);
+    super::redraw::full_redraw();
     true
 }
 

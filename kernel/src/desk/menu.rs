@@ -697,16 +697,20 @@ fn item_enabled(item: Item, nsel: usize, nwin: usize) -> bool {
         Item::CloseFolder | Item::CloseWindow => nwin >= 1,
         Item::Cycle => nwin >= 2,
         // Task-#9 file ops: Delete needs a selection; Info/Rename a single
-        // item; New folder / Select all an open window (EmuTOS `ILL_NOSEL`/
-        // `ILL_NOWIN`).
+        // item; New folder / Select all / Set mask an open window (EmuTOS
+        // `ILL_NOSEL`/`ILL_NOWIN` — `MASKITEM` is in `ILL_NOWIN`).
         Item::Delete => nsel >= 1,
         Item::InfoRename => nsel == 1,
-        Item::NewFolder | Item::SelectAll => nwin >= 1,
+        Item::NewFolder | Item::SelectAll | Item::SetMask => nwin >= 1,
+        // Search (`CONF_WITH_SEARCH`): EmuTOS disables it only when there is
+        // neither an open window nor a selection; NewTOS's Search scans the
+        // current window, so it needs an open window (`deskmain.c:548-556`).
+        Item::Search => nwin >= 1,
         // Task-#14 deskinf/NEWDESK.INF ops: always available (EmuTOS
         // `CONF_WITH_BACKGROUNDS`/`CONF_WITH_READ_INF` + the always-live Save).
         Item::SetBackground | Item::ReadInf | Item::SaveDesktop => true,
-        // Search + the remaining install/prefs/resolution Options items stay
-        // disabled (deskins #20 / deskrez).
+        // The remaining install/prefs/resolution Options items stay disabled
+        // (deskins #20 / deskrez).
         _ => false,
     }
 }
