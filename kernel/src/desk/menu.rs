@@ -658,13 +658,13 @@ pub fn lookup_ascii_shortcut(ascii: u8) -> Option<Item> {
 /// is dead-clickable and the shortcut lookup skips them (see the report for the
 /// exact disabled set).
 pub fn men_update() {
-    let (nsel, nwin, view, sort, fit) = global::with(|g| {
-        (g.count_selected(g.g_croot), g.win_count(), g.view, g.sort, g.size_to_fit)
+    let (nsel, nwin, napp, view, sort, fit) = global::with(|g| {
+        (g.count_selected(g.g_croot), g.win_count(), g.count_selected_apps(), g.view, g.sort, g.size_to_fit)
     })
-    .unwrap_or((0, 0, View::Icon, Sort::Name, true));
+    .unwrap_or((0, 0, 0, View::Icon, Sort::Name, true));
 
     for &item in &ALL_ITEMS {
-        set_disabled(item, !item_enabled(item, nsel, nwin));
+        set_disabled(item, !item_enabled(item, nsel, nwin, napp));
     }
 
     // View / sort / size-to-fit check marks.
@@ -678,8 +678,9 @@ pub fn men_update() {
     set_checked(Item::SizeToFit, fit);
 }
 
-/// Whether `item` is enabled for the current `nsel`/`nwin` (Task-#8 gating).
-fn item_enabled(item: Item, nsel: usize, nwin: usize) -> bool {
+/// Whether `item` is enabled for the current `nsel`/`nwin`/`napp` (`napp` = the
+/// number of selected native programs, EmuTOS `men_update`'s app count).
+fn item_enabled(item: Item, nsel: usize, nwin: usize, napp: usize) -> bool {
     match item {
         // Always available.
         Item::About
@@ -709,8 +710,12 @@ fn item_enabled(item: Item, nsel: usize, nwin: usize) -> bool {
         // Task-#14 deskinf/NEWDESK.INF ops: always available (EmuTOS
         // `CONF_WITH_BACKGROUNDS`/`CONF_WITH_READ_INF` + the always-live Save).
         Item::SetBackground | Item::ReadInf | Item::SaveDesktop => true,
+        // Install Application (deskins #20): enabled iff a native program is
+        // selected (EmuTOS disables `IAPPITEM` when `napp == 0`,
+        // `deskmain.c:536-538`).
+        Item::InstallApp => napp >= 1,
         // The remaining install/prefs/resolution Options items stay disabled
-        // (deskins #20 / deskrez).
+        // (deskins Install-Devices/Icon follow-ons; deskrez is config.txt-driven).
         _ => false,
     }
 }

@@ -627,6 +627,40 @@ impl DeskState {
         n
     }
 
+    /// Number of currently-selected items in the current window that are native
+    /// (`.N_P`) programs — EmuTOS `men_update`'s `napp` (`deskmain.c:503-505`),
+    /// which gates the Install-Application menu item. Zero on the desktop (no
+    /// `FNODE`-backed programs there in NewTOS: no desktop shortcuts).
+    pub fn count_selected_apps(&self) -> usize {
+        if self.g_cwin == DESKWH {
+            return 0;
+        }
+        let Some(slot) = self.win_slot(self.g_cwin) else {
+            return 0;
+        };
+        let mut n = 0;
+        let mut child = self.g_screen[self.g_croot as usize].ob_head;
+        while child != NIL && child != self.g_croot {
+            if self.g_screen[child as usize].ob_state & OB_SELECTED != 0 {
+                let fnode = self.g_screeninfo[child as usize].fnode;
+                if fnode >= 0 {
+                    if let Some(f) = self.windows.slots[slot].w_pnode.p_flist.get(fnode as usize) {
+                        if !f.is_dir()
+                            && matches!(
+                                super::ftype::classify(f.name_bytes()),
+                                super::ftype::FileType::Native(_)
+                            )
+                        {
+                            n += 1;
+                        }
+                    }
+                }
+            }
+            child = self.g_screen[child as usize].ob_next;
+        }
+        n
+    }
+
     /// The [`SliderSet`] describing the current scroll state of window `slot`
     /// without rebuilding — used when a scroll request was a no-op but the
     /// caller still wants the values.

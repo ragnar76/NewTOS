@@ -147,6 +147,18 @@ pub(super) const AT_ISTRSH: u8 = 3;
 /// `AT_ISPRNT` — printer icon (`#O`).
 pub(super) const AT_ISPRNT: u8 = 4;
 
+// ── Installed-application extra-block bits + icon indices ────────────────────
+/// `INF_AT_APPDIR` (`deskapp.c:126`) — 1 ⇒ set the current directory to the
+/// application's directory (else to the top window's).
+const INF_AT_APPDIR: u8 = 0x01;
+/// `INF_AT_ISFULL` (`deskapp.c:127`) — 1 ⇒ pass the document's full path in the
+/// command tail (else just the file name).
+const INF_AT_ISFULL: u8 = 0x02;
+/// `IG_APPL` (`deskapp.h:60`) — the generic application icon index.
+const IG_APPL: i16 = 6;
+/// `IG_DOCU` (`deskapp.h:61`) — the generic document icon index.
+const IG_DOCU: i16 = 7;
+
 // ── The serializable INF model ──────────────────────────────────────────────
 
 /// One `ANODE` line (`#M`/`#T`/`#O`/`#D`/`#G`/`#Y`/`#F`/`#P`/`#I`/`#N`/`#X`/
@@ -837,6 +849,209 @@ pub(super) fn save_desktop() -> bool {
     ok
 }
 
+// ── Install Application: the `ANODE` application-association model ────────────
+//
+// EmuTOS `deskins.c` `ins_app_dialog` creates/edits an `ANODE` whose `a_pappl`
+// is the full path of an application and whose `a_pdata` is a document wildcard
+// (`*.EXT`), so that later double-clicking a matching document launches the
+// application with the document as its command tail (`desksupp.c` `do_aopen`'s
+// `installed_datafile` branch). NewTOS keeps that association in the same
+// `NEWDESK.INF` `#G`/`#Y`/`#P`/`#F` line an `ANODE` serialises to (see
+// [`InfData::serialize`] and EmuTOS `deskapp.c:1216-1273` `app_save`), so it
+// survives Save Desktop + reboot exactly like the built-in type defaults.
+
+/// The application flavour chosen in the Install-Application dialog — selects
+/// the `NEWDESK.INF` line tag exactly as EmuTOS `app_save` (`deskapp.c:1232-
+/// 1235`) derives it from `AF_ISCRYS`/`AF_ISPARM`.
+#[derive(Clone, Copy, PartialEq, Eq)]
+pub(super) enum AppFlavor {
+    /// GEM application, no parameters (`AF_ISCRYS`) → `#G`.
+    Gem,
+    /// Plain TOS application, no parameters → `#F`.
+    Tos,
+    /// GEM application that takes parameters (`AF_ISCRYS|AF_ISPARM`) → `#Y`.
+    Gtp,
+    /// TOS application that takes parameters (`AF_ISPARM`) → `#P`.
+    Ttp,
+}
+
+impl AppFlavor {
+    /// The `NEWDESK.INF` `ANODE` tag byte for this flavour (`app_save`).
+    fn tag(self) -> u8 {
+        match self {
+            AppFlavor::Gem => b'G',
+            AppFlavor::Tos => b'F',
+            AppFlavor::Gtp => b'Y',
+            AppFlavor::Ttp => b'P',
+        }
+    }
+
+    /// Recover the flavour from a serialised `ANODE` tag byte (the load path).
+    fn from_tag(tag: u8) -> AppFlavor {
+        match tag {
+            b'G' => AppFlavor::Gem,
+            b'Y' => AppFlavor::Gtp,
+            b'P' => AppFlavor::Ttp,
+            _ => AppFlavor::Tos, // 'F' and anything else
+        }
+    }
+}
+
+/// A resolved document→application association, returned by
+/// [`lookup_association`] for the desktop's document-open path.
+#[derive(Clone)]
+pub(super) struct Association {
+    /// Full `C:` path of the associated application (`a_pappl`).
+    pub app_path: String,
+    /// `AF_ISFULL`: pass the document's full path in the tail (else file name).
+    pub full_path: bool,
+    /// The stored fixed argument prefix (`a_pargs`), prepended to the tail.
+    pub args: String,
+}
+
+/// Turn a document-type field (the extension the user types in the dialog, e.g.
+/// `TXT`) into the stored `a_pdata` wildcard, mirroring EmuTOS
+/// `ins_app_dialog` (`deskins.c:559-562`): prefix `*.`, upper-case, and collapse
+/// a leading `*` to the all-files `*.*` spec.
+fn doc_mask_from_ext(ext: &str) -> String {
+    let e = ext.trim().trim_start_matches("*.").to_ascii_uppercase();
+    if e.starts_with('*') || e.is_empty() {
+        String::from("*.*")
+    } else {
+        let mut s = String::from("*.");
+        s.push_str(&e);
+        s
+    }
+}
+
+/// The document-type extension currently associated with `app_path` (the
+/// `a_pdata` wildcard minus its `*.` prefix), for pre-filling the dialog when an
+/// application is already installed. [`None`] if it is not installed.
+pub(super) fn installed_doctype(app_path: &str) -> Option<(String, AppFlavor, bool)> {
+    let guard = SESSION.lock();
+    let data = guard.as_ref()?;
+    let a = data
+        .anodes
+        .iter()
+        .find(|a| !a.is_desk && is_real_path(&a.pappl) && a.pappl.eq_ignore_ascii_case(app_path))?;
+    let ext = a.pdata.strip_prefix("*.").unwrap_or(&a.pdata);
+    Some((String::from(ext), AppFlavor::from_tag(a.tag), a.flags & INF_AT_ISFULL != 0))
+}
+
+/// Whether `pappl` is a concrete file path rather than a wildcard/empty
+/// placeholder — EmuTOS `is_installed` (`deskins.c:71-80`).
+fn is_real_path(pappl: &str) -> bool {
+    !matches!(pappl.as_bytes().first(), None | Some(b'*') | Some(b'?'))
+}
+
+/// Ensure [`SESSION`] exists and carries the built-in file-type default
+/// `ANODE`s, so a subsequently-added association is preserved by
+/// [`build_from_state`]'s "any non-desk anode" branch on the next Save.
+fn session_with_type_defaults(guard: &mut Option<InfData>) -> &mut InfData {
+    let data = guard.get_or_insert_with(InfData::default);
+    if !data.anodes.iter().any(|a| !a.is_desk) {
+        data.anodes.extend(InfData::default_type_anodes());
+    }
+    data
+}
+
+/// Install (or re-install) an application association into the in-memory INF
+/// model — EmuTOS `ins_app_dialog`'s `APINSTAL` branch (`deskins.c:511-582`).
+/// `app_path` is the application's full `C:` path, `doc_ext` the document-type
+/// extension the user entered, `flavor` the GEM/TOS/(G)TP flavour, `full_path`
+/// the `AF_ISFULL` choice, `appdir` the `AF_APPDIR` choice, and `args` the fixed
+/// argument prefix. Re-installing the same application updates its existing
+/// record in place (one association record per application, as EmuTOS
+/// `app_afind_by_name` resolves). The change is persisted by Save Desktop.
+pub(super) fn install_application(
+    app_path: &str,
+    doc_ext: &str,
+    flavor: AppFlavor,
+    full_path: bool,
+    appdir: bool,
+    args: &str,
+) {
+    let mut guard = SESSION.lock();
+    let data = session_with_type_defaults(&mut guard);
+
+    let tag = flavor.tag();
+    let pdata = doc_mask_from_ext(doc_ext);
+    let flags = (if appdir { INF_AT_APPDIR } else { 0 }) | (if full_path { INF_AT_ISFULL } else { 0 });
+
+    if let Some(a) = data
+        .anodes
+        .iter_mut()
+        .find(|a| !a.is_desk && is_real_path(&a.pappl) && a.pappl.eq_ignore_ascii_case(app_path))
+    {
+        a.tag = tag;
+        a.has_extra = true;
+        a.aicon = IG_APPL;
+        a.dicon = IG_DOCU;
+        a.pdata = pdata;
+        a.flags = flags;
+        a.pargs = String::from(args);
+    } else {
+        // New application: insert ahead of the generic type defaults so a
+        // document matches the specific installed app first (EmuTOS `app_alloc`
+        // links new ANODEs at the head; `app_save` reverses so generics trail).
+        data.anodes.insert(
+            0,
+            InfAnode {
+                tag,
+                is_desk: false,
+                has_extra: true,
+                xspot: 0,
+                yspot: 0,
+                aicon: IG_APPL,
+                dicon: IG_DOCU,
+                letter: 0,
+                pappl: String::from(app_path),
+                pdata,
+                flags,
+                funkey: 0,
+                pargs: String::from(args),
+            },
+        );
+    }
+}
+
+/// Remove an installed application association — EmuTOS `ins_app_dialog`'s
+/// `APREMOVE` branch (`deskins.c:584-589`). Returns whether a record was
+/// removed. The change is persisted by Save Desktop.
+pub(super) fn remove_application(app_path: &str) -> bool {
+    let mut guard = SESSION.lock();
+    let Some(data) = guard.as_mut() else {
+        return false;
+    };
+    let before = data.anodes.len();
+    data.anodes
+        .retain(|a| !(!a.is_desk && is_real_path(&a.pappl) && a.pappl.eq_ignore_ascii_case(app_path)));
+    data.anodes.len() != before
+}
+
+/// Resolve a document `name` (a bare 8.3 file name, e.g. `README.TXT`) to its
+/// installed application, if any — the lookup EmuTOS performs implicitly when it
+/// binds an `FNODE` to its matching `ANODE` during a directory scan and then
+/// `do_aopen` sees `is_installed(pa) && !isapp`. Walks the session `ANODE`s for
+/// the first *installed* file record whose `a_pdata` wildcard matches `name`.
+pub(super) fn lookup_association(name: &[u8]) -> Option<Association> {
+    let guard = SESSION.lock();
+    let data = guard.as_ref()?;
+    for a in &data.anodes {
+        if a.is_desk || !is_real_path(&a.pappl) || a.pdata.is_empty() {
+            continue;
+        }
+        if super::model::wildcmp(a.pdata.as_bytes(), name) {
+            return Some(Association {
+                app_path: a.pappl.clone(),
+                full_path: a.flags & INF_AT_ISFULL != 0,
+                args: a.pargs.clone(),
+            });
+        }
+    }
+    None
+}
+
 // ── Show-Info dialog (`inf_file_folder`, `deskinf.c:493-639`) ───────────────
 
 // obdefs.h object graphic types.
@@ -1249,4 +1464,82 @@ pub fn selftest() {
     }
 
     kprintln!("[desk-inf] round-trip self-test: {} passed, {} failed", pass, fail);
+}
+
+/// Install-Application association self-test (deskins #20): install an
+/// application association, persist it to `NEWDESK.INF`, read it back off disk,
+/// and confirm the document→application lookup resolves correctly. Prints the
+/// written `NEWDESK.INF` and one line per check. **Mutates the SD image** — run
+/// only against a fresh `/tmp/sd.img`. Verifies the parts of the feature that do
+/// not need a keyboard (the dialog text entry is real-hardware-only).
+pub fn selftest_install() {
+    use crate::kprintln;
+
+    kprintln!("[desk-ins] Install-Application association self-test on C:\\ (mutates the SD image)");
+    let mut pass = 0u32;
+    let mut fail = 0u32;
+    let mut check = |name: &str, cond: bool| {
+        if cond {
+            pass += 1;
+            kprintln!("[desk-ins]  PASS {}", name);
+        } else {
+            fail += 1;
+            kprintln!("[desk-ins]  FAIL {}", name);
+        }
+    };
+
+    // Start from a clean model, then install HELLO.NCP (a real native console
+    // program on the test image) as the handler for *.TXT documents, passing the
+    // document's full path (AF_ISFULL) so the persisted line carries the extra
+    // flags block. A .NCP is a TOS-console flavour → the #F tag.
+    *SESSION.lock() = None;
+    install_application("C:\\HELLO.NCP", "TXT", AppFlavor::Tos, true, false, "");
+
+    // The in-memory model resolves the association immediately.
+    let mem = lookup_association(b"README.TXT");
+    check("mem: README.TXT resolves", mem.as_ref().map(|a| a.app_path.as_str()) == Some("C:\\HELLO.NCP"));
+    check("mem: full-path flag set", mem.as_ref().map(|a| a.full_path) == Some(true));
+    check("mem: HELLO.BIN has no association", lookup_association(b"HELLO.BIN").is_none());
+
+    // Persist to disk, then dump the written NEWDESK.INF so the #F line is visible.
+    let wrote = save_desktop();
+    check("disk: write NEWDESK.INF", wrote);
+    if let Some(bytes) = read_inf_file() {
+        kprintln!("[desk-ins] ---- NEWDESK.INF ({} bytes) ----", bytes.len());
+        for line in bytes.split(|&b| b == b'\n') {
+            let end = line.iter().position(|&b| b == b'\r').unwrap_or(line.len());
+            if end == 0 {
+                continue;
+            }
+            kprintln!("[desk-ins] | {}", core::str::from_utf8(&line[..end]).unwrap_or("<non-utf8>"));
+        }
+        kprintln!("[desk-ins] ---- end NEWDESK.INF ----");
+
+        // Reload purely from the disk bytes (fresh parse into the session), then
+        // confirm the association survived the write→read round-trip.
+        let reparsed = parse_inf(&bytes);
+        *SESSION.lock() = Some(reparsed);
+        let disk = lookup_association(b"README.TXT");
+        check("disk: README.TXT resolves to HELLO.NCP", disk.as_ref().map(|a| a.app_path.as_str()) == Some("C:\\HELLO.NCP"));
+        check("disk: full-path flag survived", disk.as_ref().map(|a| a.full_path) == Some(true));
+        check("disk: contains the #F HELLO.NCP line", contains_subslice(&bytes, b"#F 06 07 C:\\HELLO.NCP@ *.TXT@ 200 @"));
+        check("disk: INSIDE.TXT (any dir) resolves", lookup_association(b"INSIDE.TXT").is_some());
+        check("disk: HELLO.NCP is not its own document", lookup_association(b"HELLO.NCP").is_none());
+
+        // Removal round-trip.
+        check("model: remove HELLO.NCP association", remove_application("C:\\HELLO.NCP"));
+        check("model: README.TXT no longer resolves", lookup_association(b"README.TXT").is_none());
+    } else {
+        check("disk: read NEWDESK.INF back", false);
+    }
+
+    kprintln!("[desk-ins] association self-test: {} passed, {} failed", pass, fail);
+}
+
+/// Whether `hay` contains the contiguous byte sequence `needle` (self-test aid).
+fn contains_subslice(hay: &[u8], needle: &[u8]) -> bool {
+    if needle.is_empty() || needle.len() > hay.len() {
+        return needle.is_empty();
+    }
+    hay.windows(needle.len()).any(|w| w == needle)
 }

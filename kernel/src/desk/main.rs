@@ -273,8 +273,12 @@ enum OpenTarget {
     App { path: String, name: String, flavor: ftype::Flavor },
     /// A classic m68k Atari binary — needs the (not-yet-available) emulator.
     M68k,
-    /// Nothing openable (a document → application association is future work,
-    /// or the Trash / Printer desktop fixtures).
+    /// A document file: look up an installed application association (deskins
+    /// #20) and, if one exists, launch it with the document as the command
+    /// tail; otherwise report that no application is installed. Carries the
+    /// document's bare file name and its full `C:` path (no trailing NUL).
+    Doc { name: String, full_path: String },
+    /// Nothing openable (the Trash / Printer desktop fixtures).
     None,
 }
 
@@ -307,7 +311,11 @@ fn open_item(handle: i16, obid: i16) {
                         OpenTarget::App { path, name, flavor }
                     }
                     ftype::FileType::M68k => OpenTarget::M68k,
-                    ftype::FileType::Doc => OpenTarget::None,
+                    ftype::FileType::Doc => {
+                        let name = String::from(core::str::from_utf8(name_b).unwrap_or(""));
+                        let full_path = doc_full_path(&pn.p_spec, name_b);
+                        OpenTarget::Doc { name, full_path }
+                    }
                 }
             }
         } else {
@@ -325,27 +333,102 @@ fn open_item(handle: i16, obid: i16) {
     match target {
         OpenTarget::Folder(spec, title) => open_dir_window(&spec, &title),
         OpenTarget::Drive(letter) => open_root_window(letter),
-        OpenTarget::App { path, name, flavor } => launch_native(&path, &name, flavor),
+        OpenTarget::App { path, name, flavor } => launch_native(&path, &name, flavor, &[]),
         OpenTarget::M68k => {
             let text = b"[1][ This is an m68k Atari program. | The m68k emulator is not | available yet. ][ OK ]\0";
             super::form_alert(1, text.as_ptr());
             redraw::full_redraw(); // restore the screen under the alert
         }
+        OpenTarget::Doc { name, full_path } => open_document(&name, &full_path),
         OpenTarget::None => {}
     }
 }
 
-/// Build the full NUL-terminated `C:` path of file `name` living in the
-/// directory of `p_spec` (a window search spec like `C:\SUB\*.*`): the
-/// directory part (up to and including the last `\`) + `name` + a `\0`, ready
-/// to hand to [`crate::launch::run_program`].
-fn native_path(p_spec: &str, name: &[u8]) -> String {
+/// Open a document (deskins #20 / EmuTOS `do_aopen`'s `installed_datafile`
+/// branch, `desksupp.c:924-951`): resolve the installed application association
+/// for the document's type and, if one exists, launch that application with the
+/// document as its command tail. With no association installed, report it
+/// honestly (EmuTOS would offer Show/Print or alert `STNOAPPL`; NewTOS raises
+/// the "no application" alert — Show/Print is a separate, unimplemented feature).
+///
+/// The command tail is the classic Atari `[len][args][\0][\r]` image: the
+/// association's fixed argument prefix (`a_pargs`), then either the document's
+/// full path (`AF_ISFULL`) or just its file name (`deskins.md` §`ins_app`,
+/// `desksupp.c:942-950`). The associated application's own extension selects the
+/// launch behaviour (console screen setup etc.), exactly as a direct
+/// double-click would.
+fn open_document(name: &str, full_path: &str) {
+    let Some(assoc) = super::inf::lookup_association(name.as_bytes()) else {
+        let text = b"[1][ No application is installed | for this document type. ][ OK ]\0";
+        super::form_alert(1, text.as_ptr());
+        redraw::full_redraw();
+        return;
+    };
+
+    // The associated application must itself be a native NewTOS program.
+    let app_name = filename_of(&assoc.app_path);
+    let flavor = match ftype::classify(app_name.as_bytes()) {
+        ftype::FileType::Native(f) => f,
+        _ => {
+            let text = b"[1][ The associated application is | not a native NewTOS program. ][ OK ]\0";
+            super::form_alert(1, text.as_ptr());
+            redraw::full_redraw();
+            return;
+        }
+    };
+
+    // Build the command tail: fixed args + full path or file name.
+    let mut tail_str = String::from(assoc.args.as_str());
+    tail_str.push_str(if assoc.full_path { full_path } else { name });
+    let mut tailbuf = [0u8; 128];
+    let taillen = build_cmd_tail(&mut tailbuf, &tail_str);
+
+    // NUL-terminate the application path for the loader.
+    let mut app_path = String::from(assoc.app_path.as_str());
+    app_path.push('\0');
+    launch_native(&app_path, &app_name, flavor, &tailbuf[..taillen]);
+}
+
+/// Build the classic Atari command-tail image into `buf` and return its length:
+/// `buf[0]` = argument length, `buf[1..]` = the argument characters, then a NUL
+/// and a trailing `\r` (EmuTOS `pro_run`, `deskpro.c:56-57`; the loader appends
+/// the final NUL into `p_cmdlin`). The argument string is capped so the whole
+/// image fits the 128-byte `p_cmdlin`.
+fn build_cmd_tail(buf: &mut [u8; 128], s: &str) -> usize {
+    let bytes = s.as_bytes();
+    let n = bytes.len().min(124);
+    buf[0] = n as u8;
+    buf[1..1 + n].copy_from_slice(&bytes[..n]);
+    buf[1 + n] = 0; // NUL after the arguments
+    buf[2 + n] = 0x0D; // trailing CR, just like Atari TOS
+    3 + n
+}
+
+/// The bare file name of a `C:` path (the part after the last `\`).
+fn filename_of(path: &str) -> String {
+    match path.rfind('\\') {
+        Some(i) => String::from(&path[i + 1..]),
+        None => String::from(path),
+    }
+}
+
+/// The full `C:` path of file `name` living in the directory of `p_spec` (a
+/// window search spec like `C:\SUB\*.*`): the directory part (up to and
+/// including the last `\`) + `name`. No trailing NUL.
+fn doc_full_path(p_spec: &str, name: &[u8]) -> String {
     let dir = &p_spec[..=p_spec.rfind('\\').unwrap_or(0)]; // "C:\...\"
     let mut s = String::from(dir);
     if let Ok(n) = core::str::from_utf8(name) {
         s.push_str(n);
     }
-    s.push('\0'); // pexec::load / run_program read up to the first NUL
+    s
+}
+
+/// [`doc_full_path`] plus a trailing `\0`, ready to hand to
+/// [`crate::launch::run_program`] (which reads up to the first NUL).
+fn native_path(p_spec: &str, name: &[u8]) -> String {
+    let mut s = doc_full_path(p_spec, name);
+    s.push('\0');
     s
 }
 
@@ -363,29 +446,29 @@ fn native_path(p_spec: &str, name: &[u8]) -> String {
 ///   [`crate::shell::run_console`]'s enter/restore. `run_program` is kept pure
 ///   (no console/redraw coupling); the enter is done here and the restore is
 ///   the common trailing `full_redraw`.
-/// * [`ftype::Flavor::Params`] (`.NTP`) — Stage A runs it without a tail, like
-///   `.NAP`. The command-tail dialog is a Stage-3 follow-on.
+/// * [`ftype::Flavor::Params`] (`.NTP`) — a direct double-click runs it with an
+///   empty tail (`tail == &[]`, Stage A). When launched as a document's
+///   associated application (deskins #20), `tail` carries the document path.
 ///
-/// A load/launch failure (`run_program` → `false`) raises an alert. The
-/// desktop is repainted on return in every case (it overpaints the console
-/// text, the app's UI, or the alert).
-fn launch_native(path: &str, name: &str, flavor: ftype::Flavor) {
+/// `tail` is the command-tail image handed to the child's `p_cmdlin` (empty for
+/// a plain double-click; the document tail for an association launch). A
+/// load/launch failure (`run_program` → `false`) raises an alert. The desktop is
+/// repainted on return in every case (it overpaints the console text, the app's
+/// UI, or the alert).
+fn launch_native(path: &str, name: &str, flavor: ftype::Flavor, tail: &[u8]) {
     let ok = match flavor {
-        ftype::Flavor::App => crate::launch::run_program(path.as_bytes()),
+        ftype::Flavor::App | ftype::Flavor::Params => {
+            crate::launch::run_program_with_tail(path.as_bytes(), tail)
+        }
         ftype::Flavor::Console => {
             crate::fbcon::activate();
-            let ran = crate::launch::run_program(path.as_bytes());
+            let ran = crate::launch::run_program_with_tail(path.as_bytes(), tail);
             // Classic TOS keeps the console up until the user acknowledges, so
             // the program's final output stays readable before the desktop
             // repaints over it. Only reached from a real double-click (an
             // interaction path that requires HID input — verified on hardware).
             console_pause_for_key();
             ran
-        }
-        ftype::Flavor::Params => {
-            // TODO(#72 stage 3): command-tail dialog — prompt for a tail and
-            // pass it to the child. Stage A runs without a tail.
-            crate::launch::run_program(path.as_bytes())
         }
     };
     if !ok {
@@ -629,10 +712,11 @@ fn do_filemenu(item: Item) -> bool {
     false
 }
 
-/// `do_optnmenu` (EmuTOS `deskmain.c:786`) — the Options menu. Task-#14 items:
-/// Set background (`inf_backgrounds`), Read .INF (reload + apply), Save desktop
-/// (`app_save`). The install / preferences / resolution items stay disabled by
-/// `men_update` (deskins #20 / deskrez).
+/// `do_optnmenu` (EmuTOS `deskmain.c:786`) — the Options menu. Live items: Set
+/// background (`inf_backgrounds`), Install Application (deskins #20), Read .INF
+/// (reload + apply), Save desktop (`app_save`). The remaining preferences /
+/// resolution items stay disabled by `men_update` (deskrez is config.txt-driven,
+/// ADR-017 rev 2).
 fn do_optnmenu(item: Item) {
     match item {
         Item::SetBackground => {
@@ -640,10 +724,93 @@ fn do_optnmenu(item: Item) {
             super::inf::set_background();
             redraw::full_redraw();
         }
+        Item::InstallApp => do_install_app(),
         Item::ReadInf => do_read_inf(),
         Item::SaveDesktop => do_save_desktop(),
         _ => {} // remaining Options items stay disabled
     }
+}
+
+/// `ins_app` (EmuTOS `deskins.c:721-756`) — Options → Install Application.
+/// Resolves the single selected native program in the current window, runs the
+/// [`super::insapp`] dialog pre-filled from any existing association, and commits
+/// the result into the [`super::inf`] `NEWDESK.INF` association model. Like
+/// EmuTOS, the change lives in memory until the user does Save Desktop (which
+/// persists every association into `NEWDESK.INF`); the menu item is only enabled
+/// when a native program is selected (`men_update`).
+fn do_install_app() {
+    use super::insapp::Outcome;
+    let Some((app_path, app_name, flavor)) = selected_native_program() else {
+        return; // menu gating should have prevented this
+    };
+
+    // Pre-fill the dialog from an existing association for this program, if any.
+    let existing = super::inf::installed_doctype(&app_path);
+    let installed = existing.is_some();
+    let (init_ext, init_flavor, init_full) = match existing {
+        Some((ext, fl, full)) => (ext, fl, full),
+        None => (String::new(), default_flavor(flavor), false),
+    };
+
+    let outcome = super::insapp::ins_app_dialog(&app_name, &init_ext, init_flavor, init_full, installed);
+    match outcome {
+        Outcome::Install { doc_ext, flavor: fl, full_path } => {
+            super::inf::install_application(&app_path, &doc_ext, fl, full_path, false, "");
+        }
+        Outcome::Remove => {
+            super::inf::remove_application(&app_path);
+        }
+        Outcome::Cancel => {}
+    }
+    redraw::full_redraw(); // restore the screen the dialog covered
+}
+
+/// The default Install-Application flavour for a native program, from its
+/// extension: `.NAP` (GEM app) → GEM, `.NCP` (console) → TOS, `.NTP`
+/// (takes-parameters) → TTP. The user can change it in the dialog.
+fn default_flavor(flavor: ftype::Flavor) -> super::inf::AppFlavor {
+    match flavor {
+        ftype::Flavor::App => super::inf::AppFlavor::Gem,
+        ftype::Flavor::Console => super::inf::AppFlavor::Tos,
+        ftype::Flavor::Params => super::inf::AppFlavor::Ttp,
+    }
+}
+
+/// The single selected native program in the current window as
+/// `(full_path, file_name, flavour)` — the target of Install Application. Walks
+/// the current item-root for the first selected object that resolves to a native
+/// (`.N_P`) program `FNODE`. [`None`] on the desktop, with no selection, or when
+/// the selection is not a native program.
+fn selected_native_program() -> Option<(String, String, ftype::Flavor)> {
+    global::with(|g| {
+        let root = g.g_croot;
+        let handle = g.g_cwin;
+        if handle == DESKWH {
+            return None;
+        }
+        let slot = g.win_slot(handle)?;
+        let mut child = g.g_screen[root as usize].ob_head;
+        while child != NIL && child != root {
+            if g.g_screen[child as usize].ob_state & super::win::OB_SELECTED != 0 {
+                let fnode = g.g_screeninfo[child as usize].fnode;
+                if fnode >= 0 {
+                    let pn = &g.windows.slots[slot].w_pnode;
+                    if let Some(f) = pn.p_flist.get(fnode as usize) {
+                        if !f.is_dir() {
+                            if let ftype::FileType::Native(flavor) = ftype::classify(f.name_bytes()) {
+                                let name = String::from(core::str::from_utf8(f.name_bytes()).unwrap_or(""));
+                                let full = doc_full_path(&pn.p_spec, f.name_bytes());
+                                return Some((full, name, flavor));
+                            }
+                        }
+                    }
+                }
+            }
+            child = g.g_screen[child as usize].ob_next;
+        }
+        None
+    })
+    .flatten()
 }
 
 /// Options → Read .INF file: re-read `NEWDESK.INF`, re-apply it (view/sort,

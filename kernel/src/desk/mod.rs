@@ -28,6 +28,7 @@ pub mod ftype;
 pub mod global;
 pub mod icons;
 pub mod inf;
+pub mod insapp;
 pub mod main;
 pub mod menu;
 pub mod model;

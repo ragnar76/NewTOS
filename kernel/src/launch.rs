@@ -36,19 +36,35 @@ fn busy_cursor(on: bool) {
     }
 }
 
+/// Load and run the program named `path` (NUL-terminated; a registry key or a
+/// FAT16 path like `b"C:\\HELLO.PRG\0"`) with **no command tail**. Drops to EL0,
+/// runs it, and returns when it `Pterm`s. Returns `true` if it launched, `false`
+/// on a load/launch failure. The desktop / boot caller repaints the screen
+/// afterwards (the program owned it while running).
 pub fn run_program(path: &[u8]) -> bool {
+    run_program_with_tail(path, &[])
+}
+
+/// Load and run `path` like [`run_program`], but hand the child a **command
+/// tail** (`p_cmdlin`). `tail` is the Atari command-tail image copied verbatim
+/// into the basepage: `tail[0]` is the length byte, `tail[1..]` the argument
+/// characters (the loader appends the terminating NUL). This is the mechanism
+/// behind the desktop's document→application association (`deskins`/`do_aopen`):
+/// the associated application receives the document path as its command tail.
+pub fn run_program_with_tail(path: &[u8], tail: &[u8]) -> bool {
     // Busy cursor while loading from disk (the desktop is still on screen).
     busy_cursor(true);
     // Load from the registry or the FAT16 file system into a fresh slot.
-    // No command tail, no environment (`EnvSpec::None` → `p_env = 0`) —
-    // the desktop/AUTO launcher hands neither down, preserving the
-    // pre-env-plumbing behaviour on this boot-critical path. Wiring an
-    // inherited env here waits on the process-ownership model (Phase 09)
-    // so the block is reclaimed at the program's `Pterm`.
+    // No environment (`EnvSpec::None` → `p_env = 0`) — the desktop/AUTO launcher
+    // hands none down, preserving the pre-env-plumbing behaviour on this
+    // boot-critical path. Wiring an inherited env here waits on the
+    // process-ownership model (Phase 09) so the block is reclaimed at the
+    // program's `Pterm`. The command `tail` is copied into the child's
+    // `p_cmdlin` (offset 0x80) by the loader.
     // SAFETY: single-CPU boot/desktop context; the BDOS is not concurrently
     // locked, and the returned `LoadedChild` borrows nothing past this call.
     let child = match unsafe {
-        process::pexec::load(path, &[], process::loader::EnvSpec::None, false)
+        process::pexec::load(path, tail, process::loader::EnvSpec::None, false)
     } {
         Ok(c) => c,
         Err(e) => {
