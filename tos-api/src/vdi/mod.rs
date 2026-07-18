@@ -2,9 +2,10 @@
 //!
 //! Spec: [`docs/api/vdi/_dispatcher.md`] and the per-opcode files under
 //! `docs/api/vdi/`. Unlike GEMDOS/BIOS/XBIOS, the VDI is not
-//! register-based: it takes a single **parameter-block** pointer (in
-//! `x0`) and selects functions by an opcode in `contrl[0]`, passing all
-//! inputs/outputs through five WORD arrays.
+//! register-based: the kernel routes selector 115 (`x0`) here with a
+//! single **parameter-block** pointer (`x1`), and functions are selected
+//! by an opcode in `contrl[0]`, passing all inputs/outputs through five
+//! WORD arrays.
 //!
 //! Layering (see [`backend`]): this module is the hardware-independent
 //! VDI layer — dispatch, the [`vwk`] attribute state, parameter
@@ -53,8 +54,8 @@ mod workstation;
 use crate::host;
 
 /// The VDI parameter block: five pointers to WORD (`i16`) arrays. On
-/// native AArch64 each pointer is 64-bit; the block is what `x0` points
-/// at when the `svc #2` trap is taken.
+/// native AArch64 each pointer is 64-bit; the block is what `x1` points
+/// at when the `svc #2` trap is taken (`x0` holds the selector 115).
 ///
 /// Accessors read/write WORD slots directly. For the bring-up the VDI
 /// is exercised from EL1 (kernel selftest), so the arrays are ordinary
@@ -69,7 +70,7 @@ pub(crate) struct Vdipb {
 }
 
 impl Vdipb {
-    /// Build from the raw `x0` pointer to the 5-pointer block.
+    /// Build from the raw `x1` pointer to the 5-pointer block.
     ///
     /// # Safety
     /// `ptr` must point at five consecutive valid array pointers, each
@@ -143,8 +144,8 @@ const C_NPTSOUT: usize = 2;
 const C_NINTOUT: usize = 4;
 const C_HANDLE: usize = 6;
 
-/// VDI dispatch entry. `vdipb_ptr` is the `x0` value at the `svc #2`
-/// trap. The VDI returns nothing in a register — all results go into
+/// VDI dispatch entry. `vdipb_ptr` is the `x1` value at the `svc #2`
+/// trap (selector 115 in `x0`). The VDI returns nothing in a register — all results go into
 /// the parameter-block arrays — so this returns `()`.
 ///
 /// # Safety
