@@ -11,10 +11,15 @@
 # The output ELF is the .NCP itself (the loader parses ELF directly; no
 # flat-binary objcopy step, unlike the kernel image).
 #
+# The linked ELF is a single RWX PT_LOAD that may now span many pages; the
+# multi-page-TPA loader copies it, zeroes the BSS tail, and maps the whole
+# per-process TPA. No image-size cap beyond `TPA_SIZE - stack reserve`.
+#
 # Usage:
 #   sdk/build.sh [source.c] [output.NCP]
 #     source.c    defaults to sdk/examples/hello.c
 #     output.NCP  defaults to /tmp/HELLO2.NCP
+#   e.g. sdk/build.sh sdk/examples/big.c /tmp/BIG.NCP
 set -euo pipefail
 
 SDK_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"

@@ -786,14 +786,15 @@ fn handle_pexec(frame: &mut ExceptionFrame) {
                 // A *memory/size* shortfall maps to `ENSMEM` (EmuTOS
                 // `bdos/proc.c:295-300`: no TPA → `ENSMEM`); a malformed
                 // image / bad header maps to `EPLFMT` (`kpgmld.c:47-63`).
-                // `ProgramTooLarge` is the single-page TPA cap (D3
-                // limitation) — a size shortfall, so `ENSMEM`. The env
+                // `ProgramTooLarge` is the image+BSS overrunning the TPA
+                // image region — a size shortfall, so `ENSMEM`. A failed
+                // TPA pool allocation (`NoTpaMemory`) and the env
                 // allocation shortfall (`alloc_env`, `proc.c:284-288`)
-                // is likewise `ENSMEM`.
+                // are likewise `ENSMEM`.
                 PexecError::LoadFailed(le) => match le {
-                    LoadError::ProgramTooLarge | LoadError::NoEnvMemory => {
-                        tos_types::error::ENSMEM
-                    }
+                    LoadError::ProgramTooLarge
+                    | LoadError::NoEnvMemory
+                    | LoadError::NoTpaMemory => tos_types::error::ENSMEM,
                     _ => tos_types::error::EPLFMT,
                 },
             };
@@ -917,7 +918,10 @@ fn handle_pexec(frame: &mut ExceptionFrame) {
     frame.lr = 0;
     frame.elr = child.entry_va;
     frame.spsr = 0; // SPSR.M = EL0t, DAIF = 0
-    frame.sp_el0 = crate::arch::aarch64::el0::USER_STACK_TOP_EXCLUSIVE;
+    // Initial user stack = the mapped TPA top (multi-page TPA), 4-KiB /
+    // 16-byte aligned. The SDK crt0 re-derives the same value from the
+    // basepage's p_hitpa, so a compiled program lands on a mapped stack.
+    frame.sp_el0 = child.sp_el0;
 }
 
 /// Catch-all for IRQ / FIQ / SError and unimplemented synchronous

@@ -68,6 +68,10 @@ pub struct LoadedChild {
     /// User VA of the child's [`tos_types::BasePage`] — passed to
     /// the child entry in `x0` per NewTOS's AArch64 process ABI.
     pub basepage_va: u64,
+    /// Initial `SP_EL0` for the child: the mapped TPA top
+    /// ([`super::loader::USER_TPA_TOP`]), 4-KiB / 16-byte aligned.
+    /// The kernel launch path sets `SP_EL0` to this before the eret.
+    pub sp_el0: u64,
     /// **Opaque PD handle** the parent receives from `PE_LOAD` and
     /// hands back to `PE_GO` (in `tail`). It is the child's
     /// `basepage_pa` — slot-unique and `LONG`-representable (a DRAM
@@ -98,9 +102,10 @@ pub enum PexecError {
     /// `PE_GO`'s `tail` handle did not resolve to any loaded slot.
     /// Mapped to `EIMBA` (-40, "invalid memory block address").
     BadHandle,
-    /// The ELF blob was malformed or did not fit a single user
-    /// page (Phase 06 D3 limit). Mapped to `EPLFMT` (-66) for
-    /// most parser errors and `ENSMEM` for size-related ones.
+    /// The ELF blob was malformed, or its image + BSS overran the
+    /// per-process TPA, or the TPA/env pool allocation failed. Mapped
+    /// to `EPLFMT` (-66) for parser errors and `ENSMEM` for the
+    /// size/allocation shortfalls.
     LoadFailed(LoadError),
 }
 
@@ -212,6 +217,7 @@ pub unsafe fn load(
         entry_va: loaded.entry_va,
         l0_pa: loaded.l0_pa,
         basepage_va: loaded.basepage_va,
+        sp_el0: loaded.sp_el0,
         handle: PROCESS_TABLE[loaded.slot].basepage_pa.load(Ordering::Acquire),
         launch,
     })
@@ -239,6 +245,7 @@ pub fn go(handle: u64) -> Result<LoadedChild, PexecError> {
         entry_va: slot.entry_va.load(Ordering::Acquire),
         l0_pa: slot.l0_pa.load(Ordering::Acquire),
         basepage_va: super::loader::USER_VA_BASE,
+        sp_el0: super::loader::USER_TPA_TOP,
         handle,
         launch: true,
     })
@@ -269,9 +276,14 @@ pub fn child_basepage_kva(slot: usize) -> *mut BasePage {
 }
 
 /// Static scratch buffer for a program read off the file system. The
-/// single-page loader caps the loaded image at ~4 KiB; the ELF file
-/// (headers + segment) fits comfortably in 8 KiB.
-struct LoadBuf(UnsafeCell<[u8; 8192]>);
+/// multi-page TPA loader accepts an image up to a few MiB, but the
+/// on-disk `.NCP` files we ship (a compiled libc/gemlib app) are far
+/// smaller; 256 KiB comfortably holds their ELF (headers + segments)
+/// while keeping the static buffer modest. Larger images would need a
+/// pool-backed read buffer — a later refinement alongside per-`Pexec`
+/// TPA sizing.
+const LOAD_BUF_SIZE: usize = 256 * 1024;
+struct LoadBuf(UnsafeCell<[u8; LOAD_BUF_SIZE]>);
 // SAFETY: accessed only from the single-CPU, BDOS-locked trap path.
 unsafe impl Sync for LoadBuf {}
-static LOAD_BUF: LoadBuf = LoadBuf(UnsafeCell::new([0u8; 8192]));
+static LOAD_BUF: LoadBuf = LoadBuf(UnsafeCell::new([0u8; LOAD_BUF_SIZE]));

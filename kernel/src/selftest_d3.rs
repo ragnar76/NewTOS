@@ -240,6 +240,21 @@ pub fn run_d3_elf_loader_test() {
     //    so this read is independent of the slot's TTBR0 install.
     let bp_ok = validate_basepage(&loaded);
 
+    // The D3 user code exits via the EC4 sentinel (not `Pterm`), so nothing
+    // has run `free_all_owned` for this slot. Release its pool-backed TPA
+    // (owned by the basepage cookie) and free the slot so the loader test
+    // leaves no leaked TT-RAM behind.
+    let bp = PROCESS_TABLE[loaded.slot]
+        .basepage_kva
+        .load(Ordering::Acquire);
+    if !bp.is_null() {
+        // SAFETY: single-CPU pre-test; `bp` owns the slot's TPA.
+        unsafe {
+            tos_api::bdos::mem::free_all_owned::free_all_owned(bp.cast());
+        }
+    }
+    tos_api::bdos::process::free_slot(loaded.slot);
+
     if sp_ok && elr_ok && from_el0 && running_cleared && bp_ok {
         kprintln!("[d3] === D3 PASS ===");
     } else {
@@ -269,7 +284,12 @@ fn validate_basepage(loaded: &LoadedImage) -> bool {
     // single-CPU).
     let bp: &BasePage = unsafe { &*(page.as_ptr() as *const BasePage) };
 
-    let expected_hitpa: i32 = 0x1000;
+    // p_hitpa is now the multi-page TPA top (the loader hands each
+    // process a pool-backed TPA of `arena::TPA_SIZE`), not the old
+    // single 4-KiB page top. Derive it from the loader so the two stay
+    // in sync if the TPA size changes.
+    let expected_hitpa: i32 =
+        tos_api::bdos::process::loader::USER_TPA_TOP as i32;
     let expected_xdta: i32 = 0x80;
     let expected_uft = [-1i8; 6];
 

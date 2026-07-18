@@ -79,6 +79,17 @@ else
   echo "note: sdk/build.sh unavailable (no clang/lld?); C:\\HELLO2.NCP skipped"
 fi
 
+# BIG.NCP is the multi-page-TPA proof: a clang-built program larger than a
+# single 4-KiB page (8-KiB initialized table + 32-KiB BSS + deep-recursion
+# stack + an in-TPA heap). The loader hands it a pool-backed multi-MiB TPA
+# and frees it at Pterm; run it via run_program(b"C:\\BIG.NCP") to see its
+# computed results on the console.
+if "$SCRIPT_DIR/../sdk/build.sh" "$SCRIPT_DIR/../sdk/examples/big.c" "$V/BIG.NCP" >/dev/null 2>&1; then
+  echo "built + installed C:\\BIG.NCP (clang-built multi-page-TPA program)"
+else
+  echo "note: sdk/build.sh unavailable (no clang/lld?); C:\\BIG.NCP skipped"
+fi
+
 # Strip macOS metadata so it does not clutter the directory listing.
 sync
 rm -rf "$V/.Spotlight-V100" "$V/.fseventsd" "$V/.Trashes" "$V/.TemporaryItems" 2>/dev/null || true

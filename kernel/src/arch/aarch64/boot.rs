@@ -291,6 +291,28 @@ pub unsafe extern "C" fn _start() -> ! {
         "eret",                            // → EL1, continues at label 3
         "3:",
 
+        // ───── enable FP/SIMD access at EL0 and EL1 ──────────────
+        //
+        // CPACR_EL1.FPEN = 0b11: do not trap Advanced SIMD / floating-
+        // point at either EL. The kernel itself is soft-float and never
+        // issues FP instructions, but EL0 programs built with the C SDK
+        // use the hardware-float ABI (clang vectorises loops with NEON);
+        // without this their first FP/SIMD instruction takes a trap
+        // (ESR EC = 0x07). Reached on both the EL2→EL1 drop and the
+        // native-EL1 paths (label 3), so every entry EL is covered.
+        // ARM ARM D19.2 (CPACR_EL1); ISB is the mandatory context
+        // synchronisation before the enable can be relied upon.
+        //
+        // NOTE: FP/SIMD register state (V0..V31, FPCR/FPSR) is not yet
+        // saved/restored across the Pexec/Pterm trap frame, so a parent
+        // that keeps live FP values across a `Pexec` would see them
+        // clobbered by the child. The current callers (soft-float kernel
+        // launching one program at a time) never do; per-process FP
+        // context is a later refinement when nested FP-using Pexec lands.
+        "mov    x0, #(0b11 << 20)",        // FPEN = 0b11
+        "msr    cpacr_el1, x0",
+        "isb",
+
         // SP := __boot_core_stack_end_exclusive (low-half = LMA).
         // The boot stack symbol is linked at low-half by the linker
         // script (`segment_boot_core_stack`), so a plain LDR =sym

@@ -1,35 +1,43 @@
-//! ELF-to-slot loader (Phase 06 D3).
+//! ELF-to-slot loader — multi-page TPA.
 //!
-//! Combines [`super::elf`] (parser), [`super::arena`] (per-slot user
-//! page) and [`super::mmu`] (per-slot page tables) into a single
-//! function: given an ELF blob and a process slot, copy the program
-//! into the slot's user page and install the low-half mapping that
-//! lets EL0 fetch from it.
+//! Combines [`super::elf`] (parser), [`super::arena`] (the pool-backed
+//! per-process TPA) and [`super::mmu`] (per-slot page tables) into a
+//! single function: given an ELF blob and a process slot, allocate a
+//! multi-page Transient Program Area, copy the program image into it,
+//! zero its BSS, write the [`BasePage`], and install the low-half
+//! mapping that lets EL0 fetch and run from it.
 //!
-//! ## Phase-06-D3 limitations
+//! ## TPA layout
 //!
-//! - **One 4-KiB page total.** Programs larger than 4 KiB
-//!   (text + data + bss combined) currently fail with
-//!   [`LoadError::ProgramTooLarge`]. Lifting this requires
-//!   extending [`super::mmu`] to install multiple `L3` entries and
-//!   [`super::arena`] to hand out multiple pages per slot.
-//! - **No segment-permission split.** All segments share the single
-//!   page mapped [`super::mmu::PageFlags::UserRwExec`] (combined R+W
-//!   +X). Real text/data/bss separation arrives when the
-//!   multi-page mapping does.
-//! - **Static load address.** Every PT_LOAD segment must have
-//!   `p_vaddr` inside
-//!   `[USER_VA_BASE + sizeof(BasePage), USER_VA_BASE + 4 KiB)`.
-//!   The first 256 bytes of the page are reserved for the
-//!   [`BasePage`] that [`populate_basepage`] writes after the
-//!   segment copy. Anything below the reserved window returns
-//!   [`LoadError::SegmentVaOutOfRange`]; anything past the page
-//!   end returns [`LoadError::ProgramTooLarge`].
+//! ```text
+//!   USER_VA_BASE (0) ─┐ BasePage           (sizeof BasePage = 256 B)
+//!                     │ program image      (PT_LOAD segments, may span
+//!                     │                     many pages: text/rodata/data)
+//!        image_end    │ BSS                (zeroed: mem_size − file_size)
+//!                     │ heap               (free TPA, for malloc)
+//!                     │  ⋮
+//!   USER_TPA_TOP      ┘ SP_EL0 / p_hitpa   (stack grows down from here)
+//! ```
 //!
-//! These constraints are deliberately tight so the D3 selftest can
-//! exercise the **whole pipeline** (parse → copy → map → eret to
-//! EL0 → SVC trap-back) without any stub layers. Phase 09 will
-//! relax all three when source-port programs land.
+//! The whole `[USER_VA_BASE, USER_TPA_TOP)` window (4 MiB, see
+//! [`super::arena::TPA_SIZE`]) is a single pool block mapped page-by-
+//! page into the slot's `TTBR0_EL1`. The basepage carries the TPA and
+//! segment extents (`p_lowtpa`/`p_hitpa`/`p_tbase`/…/`p_bbase`) so a
+//! libc/crt0 can find its heap and stack.
+//!
+//! ## Deliberate simplifications
+//!
+//! - **Uniform `UserRwExec` pages.** Every TPA page is mapped
+//!   read/write/execute ([`super::mmu::PageFlags::UserRwExec`]) rather
+//!   than splitting `.text` RX from data/BSS/stack RW-NX. A per-segment
+//!   permission split is a later hardening step; it does not change the
+//!   observable program contract.
+//! - **Whole-TPA zero.** The loader zeroes the entire TPA before
+//!   copying segments, so BSS, heap and stack all start zeroed and no
+//!   stale pool contents leak into the new process. The SDK `crt0`
+//!   therefore does **not** zero BSS itself.
+//! - **Fixed TPA size.** [`USER_TPA_TOP`] is a compile-time constant;
+//!   a per-`Pexec` size (from a stack request) is a future refinement.
 
 use core::ffi::c_void;
 use core::sync::atomic::Ordering;
@@ -63,14 +71,14 @@ pub enum LoadError {
     Parse(ParseError),
     /// `slot` is `>= MAX_PROCESSES`.
     InvalidSlot,
-    /// A `PT_LOAD` segment lies outside the writable region of the
-    /// single 4-KiB user page. The first 256 bytes of the page are
-    /// reserved for the basepage; segments must therefore start at
-    /// `USER_VA_BASE + sizeof(BasePage)` or later. Anything below
-    /// the basepage window produces this error.
+    /// A `PT_LOAD` segment lies below the basepage window. The first
+    /// `sizeof(BasePage)` bytes of the TPA are reserved for the
+    /// basepage; segments must start at `USER_VA_BASE + sizeof(BasePage)`
+    /// or later. Anything below the window produces this error.
     SegmentVaOutOfRange,
-    /// `mem_size` exceeds the per-slot user page size (4 KiB).
-    /// Programs larger than that are out of scope for D3.
+    /// A `PT_LOAD` segment's `vaddr + mem_size` overruns the usable
+    /// TPA image region (`USER_TPA_TOP - USER_STACK_MIN`), i.e. the
+    /// program image + BSS would collide with the reserved stack.
     ProgramTooLarge,
     /// `super::mmu::map_page` failed (validation error inside the
     /// page-table builder).
@@ -79,6 +87,11 @@ pub enum LoadError {
     /// (`Mxalloc` returned 0). EmuTOS `alloc_env` failure →
     /// `ENSMEM` (`bdos/proc.c:284-288`).
     NoEnvMemory,
+    /// The per-process TPA could not be allocated from the BDOS pool
+    /// (`Mxalloc` returned 0). Maps to `ENSMEM` — the classic Atari
+    /// "not enough memory to load the program" (EmuTOS `bdos/proc.c`
+    /// `xexec` → `ENSMEM`).
+    NoTpaMemory,
 }
 
 /// How `Pexec` supplies the child's environment block. Mirrors the
@@ -127,22 +140,42 @@ pub struct LoadedImage {
     /// [`super::mmu::install_ttbr0`] right before the `eret`.
     pub l0_pa: u64,
     /// User VA of the [`BasePage`] populated by
-    /// [`populate_basepage`]. Always equals `USER_VA_BASE` for the
-    /// D3 single-page layout; multi-page layouts will lift the
-    /// basepage to its own page so the user code can be mapped
-    /// `RX` while the basepage stays `RW`.
+    /// [`populate_basepage`] — always equals `USER_VA_BASE` (the TPA
+    /// starts with its basepage).
     pub basepage_va: u64,
+    /// Initial `SP_EL0` for the child: the mapped TPA top
+    /// ([`USER_TPA_TOP`]), 4-KiB- and 16-byte-aligned per AAPCS64.
+    /// The stack grows down from here; the kernel launch path sets
+    /// `SP_EL0` to this and the SDK `crt0` re-derives the same value
+    /// from the basepage's `p_hitpa`.
+    pub sp_el0: u64,
 }
 
-/// Base of the user-space VA window — the only address `map_page`
-/// will accept for D3 (single-page mapping). Also the basepage VA
-/// (every process's TPA starts here in the per-slot model).
+/// Base of the user-space VA window and the basepage VA — every
+/// process's TPA starts here (`USER_VA_BASE + 0` holds the basepage,
+/// the program image begins at `USER_VA_BASE + sizeof(BasePage)`).
 pub const USER_VA_BASE: u64 = 0x0;
 
-/// Number of bytes at the start of the user page reserved for the
+/// Exclusive top of the per-process TPA (= initial `SP_EL0` and the
+/// basepage's `p_hitpa`). The TPA maps `[USER_VA_BASE, USER_TPA_TOP)`;
+/// the stack grows down from here. Fixed today at
+/// `USER_VA_BASE + arena::TPA_SIZE` (4 MiB); a per-`Pexec` size would
+/// make this a per-process value carried in [`LoadedImage`].
+pub const USER_TPA_TOP: u64 = USER_VA_BASE + arena::TPA_SIZE;
+
+/// Minimum stack reserved below [`USER_TPA_TOP`]: the program image +
+/// BSS may not grow into this window (they would collide with the
+/// stack). The heap lives between the image top and this reserve.
+const USER_STACK_MIN: u64 = 0x1_0000;
+
+/// Number of bytes at the start of the TPA reserved for the
 /// [`BasePage`]. ELF `PT_LOAD` segments must place themselves at or
 /// after `USER_VA_BASE + BASEPAGE_RESERVED`.
 const BASEPAGE_RESERVED: u64 = core::mem::size_of::<BasePage>() as u64;
+
+// The image window must leave room for both the basepage and the
+// minimum stack reserve inside the TPA.
+const _: () = assert!(BASEPAGE_RESERVED + USER_STACK_MIN < arena::TPA_SIZE);
 
 /// Load an ELF blob into the given process slot.
 ///
@@ -207,98 +240,140 @@ pub unsafe fn load_to_slot_with(
         return Err(LoadError::InvalidSlot);
     }
 
-    // 1. Parse.
+    // 1. Parse (before touching the pool, so a malformed blob costs no
+    //    allocation).
     let img: ElfImage = elf::parse(elf_bytes)?;
 
-    // 2. Validate + copy each PT_LOAD into the slot's user page.
-    let page_size = arena::page_size();
-    let user_va_end = USER_VA_BASE + page_size;
-    // SAFETY: slot has been bounds-checked.
-    let page = unsafe { arena::page_bytes_mut(slot) }
-        .ok_or(LoadError::InvalidSlot)?;
-    // Zero the page first so any unmapped offsets read as zero
-    // (BSS-like behaviour for offsets between segments).
-    for byte in page.iter_mut() {
-        *byte = 0;
+    // 2. Allocate the per-process TPA from the BDOS pool and re-tag it
+    //    to the child basepage cookie (= the TPA base kernel VA), so
+    //    the child's `Pterm` `free_all_owned` sweep reclaims it — the
+    //    EmuTOS m_own model for the basepage MD (`bdos/proc.c:305`).
+    // SAFETY: BDOS lock held; single-CPU pre-test.
+    let tpa = unsafe { arena::alloc_tpa() }.ok_or(LoadError::NoTpaMemory)?;
+    // SAFETY: `raw_start` is on the allocated list; `base_kva` is a
+    // pointer-equality cookie only (never dereferenced by the sweep).
+    unsafe {
+        crate::bdos::mem::traps::set_owner(tpa.raw_start, tpa.base_kva.cast());
     }
 
+    // 3. Populate + map; free the TPA on any failure — no `Pterm` runs
+    //    for a load that never launched, so we must not leak the block.
+    // SAFETY: BDOS lock held; `tpa` is a fresh, exclusively-owned
+    // page-aligned region.
+    match unsafe {
+        populate_and_map(elf_bytes, slot, &img, tail, env, env_owned_by_child, &tpa)
+    } {
+        Ok(loaded) => Ok(loaded),
+        Err(e) => {
+            // SAFETY: BDOS lock held; `raw_start` is still allocated.
+            unsafe { arena::free_tpa(tpa.raw_start) };
+            Err(e)
+        }
+    }
+}
+
+/// Copy the ELF image into `tpa`, zero its BSS, allocate the
+/// environment, write the basepage, sync the code caches, install the
+/// per-process page tables, and publish the slot metadata.
+///
+/// Factored out of [`load_to_slot_with`] so the caller can free the TPA
+/// on any error (the `?`/early-return points all propagate here).
+///
+/// # Safety
+///
+/// Caller holds the BDOS giant lock; `tpa` is a fresh page-aligned
+/// pool region owned by the child; `slot` is bounds-checked.
+unsafe fn populate_and_map(
+    elf_bytes: &[u8],
+    slot: usize,
+    img: &ElfImage,
+    tail: &[u8],
+    env: EnvSpec<'_>,
+    env_owned_by_child: bool,
+    tpa: &arena::Tpa,
+) -> Result<LoadedImage, LoadError> {
+    // Whole-TPA mutable byte view via the kernel high-half alias.
+    // SAFETY: the pool block backs `TPA_SIZE` contiguous bytes at
+    // `base_kva`, mapped RW in the high half; single-CPU under the lock.
+    let tpa_bytes = unsafe {
+        core::slice::from_raw_parts_mut(tpa.base_kva, arena::TPA_SIZE as usize)
+    };
+
+    // Zero the whole TPA: BSS, heap and stack all start zeroed and no
+    // stale pool contents leak into the new process (see module docs).
+    tpa_bytes.fill(0);
+
+    // Copy each PT_LOAD segment; track the highest image byte so the
+    // cache maintenance below covers exactly text+data (not the heap).
+    let mut image_top = BASEPAGE_RESERVED;
     for seg in img.segments() {
-        validate_segment(seg, USER_VA_BASE, user_va_end)?;
+        validate_segment(seg)?;
 
         let dest_off = (seg.vaddr - USER_VA_BASE) as usize;
         let file_size = seg.file_size as usize;
-        let mem_size = seg.mem_size as usize;
 
-        // Copy the file image.
         if file_size > 0 {
             let src = elf_bytes
                 .get(seg.file_offset as usize..(seg.file_offset as usize + file_size))
                 .ok_or(LoadError::Parse(ParseError::SegmentOutOfRange))?;
-            page[dest_off..dest_off + file_size].copy_from_slice(src);
+            tpa_bytes[dest_off..dest_off + file_size].copy_from_slice(src);
         }
-        // Zero the BSS tail. (`page` was zeroed above, but a later
-        // segment with a smaller mem_size could have skipped over
-        // a region previously zeroed; explicit re-zero here is a
-        // belt-and-braces for non-trivial programs that the
-        // future multi-segment loader needs to keep doing.)
-        if mem_size > file_size {
-            let bss_start = dest_off + file_size;
-            let bss_end = dest_off + mem_size;
-            for b in page[bss_start..bss_end].iter_mut() {
-                *b = 0;
-            }
-        }
+        // The BSS tail (`mem_size - file_size`) is already zero from the
+        // whole-TPA fill above, so no per-segment re-zero is needed.
+        image_top = image_top.max(seg.vaddr + seg.mem_size);
     }
 
-    // 3. Allocate + copy the environment (EmuTOS `alloc_env`). Done
-    //    before `populate_basepage` so `p_env` can be stamped in one
-    //    pass. The child's basepage kernel VA (= the page start) is the
-    //    ownership cookie for the `PE_LOADGO` re-tag.
-    // SAFETY: BDOS lock held; single-CPU pre-test.
+    // Allocate + copy the environment (EmuTOS `alloc_env`), before the
+    // basepage so `p_env` is stamped in one pass. The child cookie is
+    // the TPA base kernel VA (= the basepage VA on the kernel side).
+    // SAFETY: BDOS lock held.
     let env_phys = unsafe {
-        alloc_env_for(env, page.as_mut_ptr() as *mut c_void, env_owned_by_child)?
+        alloc_env_for(env, tpa.base_kva as *mut c_void, env_owned_by_child)?
     };
 
-    // 3b. Populate the BasePage in the reserved 256-byte block at
-    //    the start of the page. Segments have already been copied
-    //    above and `validate_segment` guarantees none of them
-    //    overlap the basepage window, so this is the last write to
-    //    `page` before the slot mapping is installed.
-    populate_basepage(page, &img, tail, env_phys);
+    // Write the BasePage into the reserved window at the TPA start.
+    populate_basepage(tpa_bytes, img, tail, env_phys);
 
-    // 3a. The page now holds the final program image. Make those bytes
-    //     observable to instruction fetch on real hardware (clean D-cache
-    //     to PoU + invalidate I-cache); QEMU has no caches so this is a
-    //     no-op there. Done via the kernel VA that owns the page; the
-    //     Cortex-A72 PIPT caches make by-VA maintenance hit the same PA the
-    //     program later fetches through its EL0 mapping.
-    // SAFETY: `page` is a live, mapped kernel slice for this slot.
+    // Make the freshly-written program bytes observable to instruction
+    // fetch on real hardware (clean D-cache to PoU + invalidate I-cache
+    // over the image region only). QEMU has no caches, so this is a
+    // no-op there. Cortex-A72 caches are PIPT, so by-VA maintenance via
+    // the kernel alias hits the same PA the program later fetches.
+    // SAFETY: `[base_kva, base_kva + image_top)` is live and mapped.
     unsafe {
-        mmu::sync_code_cache(page.as_ptr() as usize, page.len());
+        mmu::sync_code_cache(tpa.base_kva as usize, image_top as usize);
     }
 
-    // 4. Install the (single) mapping.
-    let user_page_pa = arena::page_phys(slot).ok_or(LoadError::InvalidSlot)?;
-    // SAFETY: slot is bounds-checked; pre-test single-CPU.
+    // Install the per-process page tables and map every TPA page into
+    // the slot's low half at `USER_VA_BASE + off`. All pages are mapped
+    // `UserRwExec` (image + heap + stack share the attribute; a per-
+    // segment RX/RW split is a later hardening step).
+    // SAFETY: slot bounds-checked; single-CPU under the lock.
     unsafe {
         mmu::init_slot_tables(slot)?;
-        mmu::map_page(slot, USER_VA_BASE, user_page_pa, PageFlags::UserRwExec)?;
+        let page_size = arena::page_size();
+        let mut off = 0u64;
+        while off < arena::TPA_SIZE {
+            mmu::map_page(
+                slot,
+                USER_VA_BASE + off,
+                tpa.base_pa + off,
+                PageFlags::UserRwExec,
+            )?;
+            off += page_size;
+        }
     }
 
-    // 5. Publish the slot metadata so `Pterm` (and the Phase 06 D9
-    //    `current_owner` shim) can find this process via
-    //    `slot_for(run)`. The basepage_kva is the high-half kernel VA
-    //    that owns the page bytes; basepage_pa is the low-half phys
-    //    that the user maps via TTBR0; l0_pa is the slot's
-    //    page-table root the trap handler installs on context
-    //    switch. State stays whatever the caller set — typically
-    //    `Loaded`; the caller flips it to `Running` once it has set
-    //    `RUN` and is about to `eret`.
+    // Publish the slot metadata so `Pterm` (via `slot_for(run)`) and the
+    // trap handler can find this process. `basepage_kva` is the high-
+    // half VA of the TPA base; `basepage_pa` the low-half phys the user
+    // maps via TTBR0; `l0_pa` the page-table root the handler installs.
     let l0_pa = mmu::l0_pa_for(slot);
-    let basepage_kva = page.as_mut_ptr() as *mut BasePage;
     let proc_slot = &PROCESS_TABLE[slot];
-    proc_slot.basepage_kva.store(basepage_kva, Ordering::Release);
-    proc_slot.basepage_pa.store(user_page_pa, Ordering::Release);
+    proc_slot
+        .basepage_kva
+        .store(tpa.base_kva as *mut BasePage, Ordering::Release);
+    proc_slot.basepage_pa.store(tpa.base_pa, Ordering::Release);
     proc_slot.l0_pa.store(l0_pa, Ordering::Release);
     proc_slot.entry_va.store(img.entry_va, Ordering::Release);
 
@@ -307,14 +382,18 @@ pub unsafe fn load_to_slot_with(
         entry_va: img.entry_va,
         l0_pa,
         basepage_va: USER_VA_BASE,
+        sp_el0: USER_TPA_TOP,
     })
 }
 
-/// Write the [`BasePage`] into the first 256 bytes of `page`.
+/// Write the [`BasePage`] into the reserved window at the start of the
+/// TPA (`tpa[0..sizeof(BasePage)]`).
 ///
 /// Sources:
-///   * `p_lowtpa` / `p_hitpa` — TPA extents (= the single user page
-///     for D3).
+///   * `p_lowtpa` / `p_hitpa` — TPA extents: `[USER_VA_BASE,
+///     USER_TPA_TOP)`. `p_hitpa` is the multi-page TPA top, i.e. the
+///     initial stack pointer; the heap lives between the BSS end
+///     (`p_bbase + p_blen`) and the downward-growing stack.
 ///   * `p_tbase` / `p_tlen` — first executable `PT_LOAD` segment.
 ///   * `p_dbase` / `p_dlen` — first non-executable, writable
 ///     `PT_LOAD` segment, file portion only.
@@ -333,7 +412,7 @@ pub unsafe fn load_to_slot_with(
 /// left zero (parent linkage is set by the launch path; current-dir
 /// inheritance is a Phase-08 concern).
 fn populate_basepage(
-    page: &mut [u8; 4096],
+    tpa: &mut [u8],
     img: &ElfImage,
     tail: &[u8],
     env_phys: Option<Long>,
@@ -359,10 +438,10 @@ fn populate_basepage(
         }
     }
 
-    // Carve the basepage window out of the page. Splitting first
-    // gives us a non-aliased mutable handle on exactly the 256 bytes
+    // Carve the basepage window out of the TPA. Splitting first gives
+    // us a non-aliased mutable handle on exactly the 256 bytes the
     // BasePage owns.
-    let (bp_bytes, _rest) = page.split_at_mut(BASEPAGE_RESERVED as usize);
+    let (bp_bytes, _rest) = tpa.split_at_mut(BASEPAGE_RESERVED as usize);
 
     // SAFETY: `bp_bytes` is exactly `size_of::<BasePage>()` bytes,
     // page-aligned (and therefore 4-aligned, satisfying
@@ -371,7 +450,7 @@ fn populate_basepage(
     let bp = unsafe { &mut *(bp_bytes.as_mut_ptr() as *mut BasePage) };
 
     bp.p_lowtpa = USER_VA_BASE as Long;
-    bp.p_hitpa = (USER_VA_BASE + arena::page_size()) as Long;
+    bp.p_hitpa = USER_TPA_TOP as Long;
     bp.p_tbase = text_base as Long;
     bp.p_tlen = text_len as Long;
     bp.p_dbase = data_base as Long;
@@ -526,17 +605,17 @@ unsafe fn env_slice_from_phys(penv: Long) -> &'static [u8] {
 /// environments (a handful of `KEY=value` records).
 const ENV_SCAN_LIMIT: usize = 4096;
 
-/// Reject segments that don't fit in the single 4-KiB page or that
-/// would clobber the basepage window at the start of the page.
-fn validate_segment(
-    seg: &LoadSegment,
-    user_va_base: u64,
-    user_va_end: u64,
-) -> Result<(), LoadError> {
-    // VA must lie within
-    // [user_va_base + sizeof(BasePage), user_va_end). Anything below
-    // would land in the basepage area we own.
-    let min_va = user_va_base + BASEPAGE_RESERVED;
+/// Reject segments that clobber the basepage window or overrun the
+/// usable TPA image region.
+///
+/// A `PT_LOAD` may now span many pages; it must start at or after the
+/// basepage window (`USER_VA_BASE + sizeof(BasePage)`) and end at or
+/// before `USER_TPA_TOP - USER_STACK_MIN`, leaving the top of the TPA
+/// for the downward-growing stack. The heap occupies whatever is left
+/// between the image top and the stack.
+fn validate_segment(seg: &LoadSegment) -> Result<(), LoadError> {
+    // VA must lie within [USER_VA_BASE + sizeof(BasePage), image_top).
+    let min_va = USER_VA_BASE + BASEPAGE_RESERVED;
     if seg.vaddr < min_va {
         return Err(LoadError::SegmentVaOutOfRange);
     }
@@ -544,15 +623,13 @@ fn validate_segment(
         .vaddr
         .checked_add(seg.mem_size)
         .ok_or(LoadError::ProgramTooLarge)?;
-    if end > user_va_end {
+    if end > USER_TPA_TOP - USER_STACK_MIN {
         return Err(LoadError::ProgramTooLarge);
     }
-    // PF_R is implicit for any LOAD; PF_W and PF_X drive the
-    // text/data classification in `populate_basepage`. For the D3
-    // single-page mapping every segment ends up in the same
-    // UserRwExec page, so the flags don't gate the mapping decision
-    // yet — the multi-page split arrives with the per-segment
-    // permission story.
+    // PF_R is implicit for any LOAD; PF_W and PF_X drive the text/data
+    // classification in `populate_basepage`. Every TPA page is mapped
+    // UserRwExec, so the flags don't gate the mapping decision yet — a
+    // per-segment RX/RW split is a later hardening step.
     let _ = seg.flags & (PF_W | PF_X);
     Ok(())
 }

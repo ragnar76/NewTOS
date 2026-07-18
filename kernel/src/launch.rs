@@ -16,7 +16,6 @@ use core::sync::atomic::Ordering;
 
 use tos_api::bdos::process::{self, set_current, slot, State, PROCESS_TABLE};
 
-use crate::arch::aarch64::el0::USER_STACK_TOP_EXCLUSIVE;
 use crate::kprintln;
 
 /// Load and run the program named `path` (NUL-terminated; a registry key or
@@ -85,12 +84,15 @@ pub fn run_program_with_tail(path: &[u8], tail: &[u8]) -> bool {
 
     // SAFETY: single-CPU; `parent_frame` captures this kernel resume point,
     // and the program's `Pterm` restores it via the handler's SPSR.M = EL1t
-    // (kernel-launched) branch — exactly as `selftest_pexec` does.
+    // (kernel-launched) branch — exactly as `selftest_pexec` does. The
+    // initial `SP_EL0` is the child's mapped multi-page TPA top
+    // (`child.sp_el0`); the SDK crt0 re-derives it from the basepage's
+    // p_hitpa, so a compiled program starts on a mapped stack.
     unsafe {
         crate::arch::aarch64::user_entry::enter_el0_with_resume_capture(
             child.entry_va,
             child.l0_pa,
-            USER_STACK_TOP_EXCLUSIVE,
+            child.sp_el0,
             &PROCESS_TABLE[child.slot].parent_frame,
         );
     }

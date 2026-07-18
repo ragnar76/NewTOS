@@ -24,12 +24,18 @@
 //!
 //! ## Coverage
 //!
-//! One L3 spans 512 × 4 KiB = **2 MiB** of low-half VA. That fits
-//! every reasonable Pexec'd test program (text+data+bss+stack ≪
-//! 2 MiB), and the EC4 self-test maps a single page.  When real
-//! source-port programs land in Phase 09+ and start needing larger
-//! TPAs, this module will gain L2-block support (each L2 entry
-//! covers a 2-MiB block; an L2 covers 1 GiB total).
+//! One L3 spans 512 × 4 KiB = **2 MiB** of low-half VA. To hold a
+//! multi-MiB per-process TPA (a real compiled libc/gemlib app plus a
+//! heap and a proper stack), each slot provisions [`USER_L3_COUNT`]
+//! contiguous L3 tables wired under `L2[0..USER_L3_COUNT]`, so the
+//! per-process low-half mapping capacity is
+//! [`USER_TPA_MAX_VA`] = `USER_L3_COUNT × 2 MiB` (4 MiB today). The
+//! loader maps every 4-KiB page of the TPA individually (all at
+//! 4-KiB granularity — the basepage/text/data at the bottom need it),
+//! so no 2-MiB block descriptors are used. The EC4 self-test maps a
+//! single page and is unaffected. Growing the cap further only means
+//! bumping [`USER_L3_COUNT`] (and the pool-backed TPA size in
+//! [`super::arena`]).
 //!
 //! ## Concurrency
 //!
@@ -39,6 +45,23 @@
 //! by the Inner-Shareable cacheable mapping (Phase 03 / 05 setup).
 
 use super::MAX_PROCESSES;
+
+// ─── Per-process low-half mapping capacity ──────────────────────────
+
+/// Number of L3 tables provisioned per process slot. Each L3 covers
+/// 512 × 4 KiB = 2 MiB, so the per-process low-half VA the loader can
+/// map is `USER_L3_COUNT × 2 MiB`. Two tables → a 4-MiB TPA, enough
+/// for a real compiled app's image + BSS + heap + stack. Bump this
+/// (and [`super::arena::TPA_SIZE`]) to enlarge the TPA; the BSS cost
+/// is `MAX_PROCESSES × USER_L3_COUNT × 4 KiB`.
+pub const USER_L3_COUNT: usize = 2;
+
+/// Low-half VA span covered by one L3 table (2 MiB).
+const L3_SPAN: u64 = 512 * 4096;
+
+/// One past the highest low-half VA the per-process tables can map.
+/// [`map_page`] rejects any VA at or above this.
+pub const USER_TPA_MAX_VA: u64 = USER_L3_COUNT as u64 * L3_SPAN;
 
 // ─── Descriptor bits (subset; mirror `boot.rs` / `mmu.rs`) ──────────
 
@@ -70,25 +93,28 @@ const fn va_to_pa(va: u64) -> u64 {
 #[repr(C, align(4096))]
 struct UserTable([u64; 512]);
 
-/// One process's full L0/L1/L2/L3 chain. 16 KiB total.
+/// One process's full L0/L1/L2 chain plus [`USER_L3_COUNT`] leaf L3
+/// tables. `(3 + USER_L3_COUNT) × 4 KiB` per slot.
 #[repr(C, align(4096))]
 struct UserTables {
     l0: UserTable,
     l1: UserTable,
     l2: UserTable,
-    l3: UserTable,
+    l3: [UserTable; USER_L3_COUNT],
 }
 
-/// Per-slot table storage. `MAX_PROCESSES = 16` × 16 KiB = 256 KiB
-/// in BSS — the same order of magnitude as the kernel heap pre-
-/// allocation, well within budget.
+/// Per-slot table storage. `MAX_PROCESSES = 16` × `(3 + USER_L3_COUNT)`
+/// × 4 KiB (= 320 KiB at `USER_L3_COUNT = 2`) in BSS — the same order
+/// of magnitude as the kernel heap pre-allocation, well within budget.
+/// Only the page tables live here; the TPA bytes they map are carved
+/// per-process from the BDOS pool (see [`super::arena`]).
 #[unsafe(no_mangle)]
 static mut __USER_TABLES: [UserTables; MAX_PROCESSES] =
     [const { UserTables {
         l0: UserTable([0; 512]),
         l1: UserTable([0; 512]),
         l2: UserTable([0; 512]),
-        l3: UserTable([0; 512]),
+        l3: [const { UserTable([0; 512]) }; USER_L3_COUNT],
     }}; MAX_PROCESSES];
 
 // ─── Public API ─────────────────────────────────────────────────────
@@ -134,16 +160,15 @@ pub enum MapError {
     UnalignedVa,
     /// Phys is not 4-KiB aligned.
     UnalignedPa,
-    /// VA is outside the L3-covered range `[0, 2 MiB)`. Will be
-    /// lifted in a future revision that grows the per-process
-    /// mapping to include L2 blocks.
+    /// VA is outside the per-process mapping range
+    /// `[0, USER_TPA_MAX_VA)`. Enlarge by bumping [`USER_L3_COUNT`].
     VaOutOfRange,
 }
 
-/// Zero a slot's tables and wire the chain `L0[0] → L1[0] → L2[0]
-/// → L3`. Idempotent — calling twice on the same slot is safe (the
-/// second call clears any prior [`map_page`] entries, which is
-/// what `Pexec` wants on slot reuse).
+/// Zero a slot's tables and wire the chain `L0[0] → L1[0] → L2[i]
+/// → L3[i]` for every `i` in `0..USER_L3_COUNT`. Idempotent — calling
+/// twice on the same slot is safe (the second call clears any prior
+/// [`map_page`] entries, which is what `Pexec` wants on slot reuse).
 ///
 /// # Safety
 ///
@@ -174,27 +199,34 @@ pub unsafe fn init_slot_tables(slot: usize) -> Result<(), MapError> {
     for slot_entry in tables.l2.0.iter_mut() {
         *slot_entry = 0;
     }
-    for slot_entry in tables.l3.0.iter_mut() {
-        *slot_entry = 0;
+    for l3 in tables.l3.iter_mut() {
+        for slot_entry in l3.0.iter_mut() {
+            *slot_entry = 0;
+        }
     }
 
-    // Wire the chain. All three intermediate descriptors are
-    // table-type pointers to the next level's phys.
+    // Wire the chain. `L0[0] → L1`, `L1[0] → L2`, and one `L2[i] →
+    // L3[i]` table descriptor per leaf table (each L3 covers 2 MiB of
+    // low-half VA). All intermediate descriptors are table-type
+    // pointers to the next level's phys.
     let l1_pa = va_to_pa((&raw const tables.l1) as u64);
     let l2_pa = va_to_pa((&raw const tables.l2) as u64);
-    let l3_pa = va_to_pa((&raw const tables.l3) as u64);
-
     tables.l0.0[0] = l1_pa | D_VALID | D_TABLE;
     tables.l1.0[0] = l2_pa | D_VALID | D_TABLE;
-    tables.l2.0[0] = l3_pa | D_VALID | D_TABLE;
+    for (i, l3) in tables.l3.iter().enumerate() {
+        let l3_pa = va_to_pa((l3 as *const UserTable) as u64);
+        tables.l2.0[i] = l3_pa | D_VALID | D_TABLE;
+    }
 
     Ok(())
 }
 
-/// Install one 4-KiB page mapping in `slot`'s L3.
+/// Install one 4-KiB page mapping in `slot`'s L3 tables.
 ///
 /// Both `va` and `pa` must be 4-KiB-aligned, and `va` must be in
-/// `[0, 0x200000)` (the range covered by one L3 table).
+/// `[0, USER_TPA_MAX_VA)` (the range covered by the slot's
+/// [`USER_L3_COUNT`] L3 tables). The VA selects the leaf table
+/// (`va >> 21`) and the entry within it (`(va >> 12) & 511`).
 ///
 /// Caller is expected to have called [`init_slot_tables`] for this
 /// slot first.
@@ -221,13 +253,14 @@ pub unsafe fn map_page(
     if !pa.is_multiple_of(0x1000) {
         return Err(MapError::UnalignedPa);
     }
-    if va >= 0x200000 {
+    if va >= USER_TPA_MAX_VA {
         return Err(MapError::VaOutOfRange);
     }
-    let idx = (va >> 12) as usize; // L3 index, 0..511.
+    let l3_table = (va >> 21) as usize; // which 2-MiB leaf table.
+    let idx = ((va >> 12) & 0x1FF) as usize; // L3 index within it, 0..511.
     // SAFETY: caller contract.
     let tables = unsafe { &mut (*&raw mut __USER_TABLES)[slot] };
-    tables.l3.0[idx] = pa | flags.descriptor_bits();
+    tables.l3[l3_table].0[idx] = pa | flags.descriptor_bits();
     Ok(())
 }
 
