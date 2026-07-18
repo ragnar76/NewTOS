@@ -1,0 +1,190 @@
+#!/usr/bin/env bash
+#
+# build-libc.sh -- build mintlib-0.60.1 into a NewTOS/AArch64 libc.a and link
+# the libtest client into a native program (.NCP).
+#
+# This replicates mintlib's own build rules (see sdk/libc/mintlib/buildrules and
+# sdk/libc/mintlib/configvars) but retargeted for NewTOS/AArch64:
+#
+#   - clang -target aarch64-unknown-none-elf, freestanding, no host libc/CRT.
+#   - The mintlib per-directory include search path (buildrules `INCLUDES`):
+#       -nostdinc -I<srcdir> -I<top> -I<top>/include -I<top>/mintlib
+#       -I<top>/stdlib  + clang's freestanding headers (stddef/stdarg/stdint),
+#     which stand in for the gcc "fixed includes" the m68k build pointed
+#     `includepath` at.
+#   - The mintlib DEFS: -DHAVE_CONFIG_H -D_LIBC -D_REENTRANT (buildrules), plus
+#     -D_GNU_SOURCE.
+#
+# NewTOS-specific deltas from the pristine m68k build:
+#   - -D__NO_LONG_DOUBLE_MATH: AArch64 `long double` is 128-bit IEEE quad, which
+#     would make the float printf engine (stdio/printf_fp.c) emit soft-float
+#     quad libcalls (__lttf2 & friends) we have no compiler-rt for. Forcing
+#     long double == double routes float printf through hardware `double`
+#     (%f/%e/%g fully correct; %Lf handled as double). No stub.
+#   - Arch shims in sdk/libc/newtos-arch/ replace m68k-only assembly:
+#       memops.c  -> memcpy/memmove/memset/bcopy/bzero (were bcopy.S/memset.S)
+#       proc.S    -> _exit/_Exit/__libc_exit via the Pterm trap (was libc_exit.S)
+#       heap_init.c -> points mintlib's malloc arena at the free TPA region.
+#   - Edits to vendored files live in sdk/libc/overlay/ (applied over the
+#     freshly-extracted mintlib tree by the preamble below):
+#       include/bits/byteswap.h  m68k ror/swap  -> __builtin_bswap32
+#       stdio/vfprintf.c         LP64 is_longlong assignment fix (SET_IS_LONGLONG)
+#       include/mint/{osbind,mintbind,falcon,metados}.h  trap-macro retarget
+#       include/{features,linker}.h  generated config headers
+#   - sdk/libc/crt0.S: libc-aware crt0 (sets SP from p_hitpa, calls
+#     __libc_init_heap, then main) -- distinct from sdk/crt0.S used by the
+#     libc-less examples.
+#
+# The linker pulls only the archive members it needs, so libc.a is compiled from
+# whole core directories best-effort (files that fail to assemble for AArch64 --
+# m68k asm, unrelated helpers -- are skipped and logged; if a *needed* one is
+# skipped it surfaces as an undefined symbol at link time).
+#
+# Usage:  sdk/libc/build-libc.sh [client.c] [output.NCP]
+#   client.c   defaults to sdk/libc/tests/libtest.c
+#   output.NCP defaults to <builddir>/libtest.NCP
+set -uo pipefail
+
+SDK="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"      # .../sdk
+LIBC="$SDK/libc"
+TOP="$LIBC/mintlib"                                          # mintlib top_srcdir
+CLIENT="${1:-$LIBC/tests/libtest.c}"
+BUILD="$LIBC/build"
+OUT="${2:-$BUILD/$(basename "${CLIENT%.c}").NCP}"
+OBJ="$BUILD/obj"
+mkdir -p "$OBJ"
+
+# --- ensure the mintlib source tree is present (extract tarball + overlay) ----
+# The pristine mintlib-0.60.1 source is vendored as a TARBALL; our NewTOS edits
+# live in sdk/libc/overlay/ (mirroring the mintlib layout). The extracted
+# sdk/libc/mintlib/ tree is a build artifact (gitignored). Set MINTLIB_REFRESH=1
+# to force a clean re-extract from the pristine tarball.
+TARBALL="$LIBC/mintlib-0.60.1.tar.xz"
+OVERLAY="$LIBC/overlay"
+if [ "${MINTLIB_REFRESH:-0}" = "1" ]; then rm -rf "$TOP"; fi
+if [ ! -d "$TOP" ]; then
+  [ -f "$TARBALL" ] || { echo "error: pristine tarball $TARBALL missing" >&2; exit 1; }
+  echo "extracting pristine mintlib from $(basename "$TARBALL")…"
+  tmp="$(mktemp -d)"
+  tar xf "$TARBALL" -C "$tmp"
+  mv "$tmp/mintlib-0.60.1" "$TOP"
+  rmdir "$tmp" 2>/dev/null || true
+fi
+# Always (re-)apply the NewTOS overlay so our edits are present after any extract.
+if [ -d "$OVERLAY" ]; then
+  ( cd "$OVERLAY" && find . -type f -print0 | while IFS= read -r -d '' f; do
+      mkdir -p "$TOP/$(dirname "$f")"
+      cp "$f" "$TOP/$f"
+    done )
+fi
+
+# --- toolchain ---------------------------------------------------------------
+CLANG="${CLANG:-clang}"
+command -v "$CLANG" >/dev/null 2>&1 || { echo "error: clang not found" >&2; exit 1; }
+RES="$($CLANG -print-resource-dir)/include"
+SYSROOT="$(rustc --print sysroot 2>/dev/null)"
+BIN="$SYSROOT/lib/rustlib/$(rustc -vV | sed -n 's/host: //p')/bin"
+AR="${AR:-$BIN/llvm-ar}"
+LLD="${LLD:-$BIN/rust-lld}"
+READOBJ="$BIN/llvm-readobj"
+for t in "$AR" "$LLD"; do
+    [ -x "$t" ] || { echo "error: missing LLVM tool: $t" >&2; exit 1; }
+done
+
+# --- flags (mintlib buildrules/configvars, retargeted) -----------------------
+CFLAGS=(-target aarch64-unknown-none-elf -ffreestanding -nostdlib -O2
+        -fno-pic -fno-builtin -nostdinc
+        -D_LIBC -D_REENTRANT -DHAVE_CONFIG_H -D_GNU_SOURCE -D__NO_LONG_DOUBLE_MATH
+        -Wno-macro-redefined)
+INCS=(-I"$TOP" -I"$TOP/include" -I"$TOP/mintlib" -I"$TOP/stdlib" -isystem "$RES")
+
+# mintlib core directories the linker draws from (buildrules `srcdirs` subset
+# relevant to a stdio/stdlib/malloc client; the archive is lazily resolved).
+DIRS="stdio stdlib string mintlib unix syscall time misc multibyte signal termios locale dirent gmp posix tz"
+
+# mintlib .c files replaced by lean NewTOS glue in newtos-arch/ (see below).
+# These are dropped from the archive so the linker takes OUR definitions:
+#   mintlib/do_fstat.c -> newtos-arch/do_fstat.c  (lean __do_fstat: st_mode +
+#     honest st_size via Fseek only; no time/owner/tty resolution tail)
+#   mintlib/isatty.c   -> newtos-arch/isatty.c    (fd 0-2 == tty; also carries
+#     the __open_stat[] storage the file layer references)
+#   mintlib/do_stat.c  -> newtos-arch/do_stat.c   (lean __sys_stat: real Fstat64
+#     trap only, no timestamp/owner tail; __quickstat's Fsfirst emulation does
+#     the real path stat on -ENOSYS)
+# (unix/ioctl.c is m68k Super() asm and never assembles for AArch64 anyway;
+#  newtos-arch/ioctl.c forwards to the GEMDOS Fcntl trap instead.)
+EXCLUDE="mintlib/do_fstat.c mintlib/isatty.c mintlib/do_stat.c"
+is_excluded() { case " $EXCLUDE " in *" $1 "*) return 0;; esac; return 1; }
+
+echo "clang : $($CLANG --version | head -1)"
+echo "ar    : $AR"
+echo "lld   : $LLD"
+echo
+
+# --- compile mintlib core into objects --------------------------------------
+rm -f "$OBJ"/*.o "$OBJ"/*.err
+: > "$BUILD/compiled.txt"; : > "$BUILD/failed.txt"; : > "$BUILD/excluded.txt"
+ok=0; fail=0
+for d in $DIRS; do
+    for c in "$TOP/$d"/*.c; do
+        [ -e "$c" ] || continue
+        b=$(basename "${c%.c}")
+        case "$b" in test-*|*-skeleton|ftest|xpg_basename|zdump|zic|tzselect) continue;; esac
+        if is_excluded "$d/$b.c"; then echo "$d/$b.c" >> "$BUILD/excluded.txt"; continue; fi
+        o="$OBJ/${d}__${b}.o"
+        if "$CLANG" "${CFLAGS[@]}" -I"$TOP/$d" "${INCS[@]}" -c "$c" -o "$o" 2>"$OBJ/${d}__${b}.err"; then
+            echo "$d/$b.c" >> "$BUILD/compiled.txt"; ok=$((ok+1))
+        else
+            echo "$d/$b.c" >> "$BUILD/failed.txt"; fail=$((fail+1)); rm -f "$o"
+        fi
+    done
+done
+
+# --- NewTOS arch shims -------------------------------------------------------
+# memcpy/memmove/memset/... (were bcopy.S/memset.S), _exit (was libc_exit.S),
+# the malloc-arena/heap init, and the lean stat/tty/ioctl glue replacing the
+# excluded mintlib files. The stat/tty/ioctl shims need the full mintlib
+# include path (struct stat, lib.h), so use $INCS for them.
+"$CLANG" "${CFLAGS[@]}" -I"$SDK/include" -I"$TOP/include" -isystem "$RES" \
+    -c "$LIBC/newtos-arch/memops.c"    -o "$OBJ/arch__memops.o"   || exit 1
+"$CLANG" "${CFLAGS[@]}" -I"$SDK/include" -I"$TOP/include" -isystem "$RES" \
+    -c "$LIBC/newtos-arch/heap_init.c" -o "$OBJ/arch__heapinit.o" || exit 1
+"$CLANG" "${CFLAGS[@]}" -I"$TOP/include" \
+    -c "$LIBC/newtos-arch/proc.S"      -o "$OBJ/arch__proc.o"     || exit 1
+"$CLANG" "${CFLAGS[@]}" -I"$SDK/include" "${INCS[@]}" \
+    -c "$LIBC/newtos-arch/do_fstat.c"  -o "$OBJ/arch__do_fstat.o" || exit 1
+"$CLANG" "${CFLAGS[@]}" -I"$SDK/include" "${INCS[@]}" \
+    -c "$LIBC/newtos-arch/isatty.c"    -o "$OBJ/arch__isatty.o"   || exit 1
+"$CLANG" "${CFLAGS[@]}" -I"$SDK/include" "${INCS[@]}" \
+    -c "$LIBC/newtos-arch/ioctl.c"     -o "$OBJ/arch__ioctl.o"    || exit 1
+"$CLANG" "${CFLAGS[@]}" -I"$SDK/include" "${INCS[@]}" \
+    -c "$LIBC/newtos-arch/do_stat.c"   -o "$OBJ/arch__do_stat.o"  || exit 1
+
+# --- archive -----------------------------------------------------------------
+rm -f "$LIBC/libc.a"
+"$AR" cr "$LIBC/libc.a" "$OBJ"/*.o
+echo "compiled OK=$ok  skipped=$fail  -> $LIBC/libc.a ($(wc -c < "$LIBC/libc.a" | tr -d ' ') bytes)"
+echo
+
+# --- CRT + client ------------------------------------------------------------
+"$CLANG" "${CFLAGS[@]}" -I"$SDK/include" -I"$TOP/include" -I"$TOP/mintlib" \
+    -c "$LIBC/crt0.S" -o "$BUILD/crt0.o" || exit 1
+"$CLANG" "${CFLAGS[@]}" -I"$TOP" "${INCS[@]}" \
+    -c "$CLIENT" -o "$BUILD/client.o" || exit 1
+
+# --- link (crt0 + client + libc.a via the NewTOS TPA linker script) ----------
+"$LLD" -flavor gnu -T "$SDK/newtos.ld" -no-pie -z max-page-size=0x1000 \
+    --build-id=none --why-extract="$BUILD/why.txt" \
+    "$BUILD/crt0.o" "$BUILD/client.o" "$LIBC/libc.a" -o "$OUT" 2>"$BUILD/link.err"
+lr=$?
+
+if [ $lr -eq 0 ]; then
+    echo "LINK OK -> $OUT ($(wc -c < "$OUT" | tr -d ' ') bytes)"
+    "$READOBJ" --file-headers "$OUT" | grep -iE 'Type:|Machine:|Entry:'
+else
+    echo "LINK FAILED -- residual undefined symbols (blockers):"
+    grep -oE "undefined symbol: [^ ]+" "$BUILD/link.err" | awk '{print $3}' | sort -u | sed 's/^/    /'
+    echo
+    echo "See $BUILD/why.txt for the archive pull chains that reference them."
+    exit 1
+fi

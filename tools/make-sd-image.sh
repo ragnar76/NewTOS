@@ -90,6 +90,20 @@ else
   echo "note: sdk/build.sh unavailable (no clang/lld?); C:\\BIG.NCP skipped"
 fi
 
+# libc milestone (mintlib port): LIBTEST.NCP is the mintlib-linked proof — real
+# printf(), malloc()/free(), and a stdio file round-trip (fopen/fwrite/fread/
+# fclose), linked against the ported mintlib libc.a by sdk/libc/build-libc.sh.
+# Copied in if already built (the 600-object archive build is slow, so it is not
+# forced here); double-clickable and runnable via run_program(b"C:\\LIBTEST.NCP")
+# (or drop it into \AUTO\ for a serial-verifiable auto-run).
+LIBTEST_NCP="$SCRIPT_DIR/../sdk/libc/build/libtest.NCP"
+if [ -f "$LIBTEST_NCP" ]; then
+  cp "$LIBTEST_NCP" "$V/LIBTEST.NCP"
+  echo "installed C:\\LIBTEST.NCP (mintlib-linked libc proof)"
+else
+  echo "note: sdk/libc/build/libtest.NCP not built; C:\\LIBTEST.NCP skipped (run sdk/libc/build-libc.sh)"
+fi
+
 # Strip macOS metadata so it does not clutter the directory listing.
 sync
 rm -rf "$V/.Spotlight-V100" "$V/.fseventsd" "$V/.Trashes" "$V/.TemporaryItems" 2>/dev/null || true

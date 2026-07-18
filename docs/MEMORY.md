@@ -1072,6 +1072,72 @@ ADR-016 (the desk rebuild `open_item` lives in), and the AES shell manager
 (`shel_write`/`pending_launch`, `tos-api/src/aes/shell.rs` — the AES-faithful
 launch path that the kernel-driven `run_program` deliberately bypasses).
 
+## ADR-019: Native C toolchain — port real Atari C libraries, don't reimplement
+
+**Date:** 2026-07-18
+**Status:** **Accepted** (user decision 2026-07-18)
+**Phase:** cross-cutting (SDK — `sdk/`, separate from the clean-room OS)
+
+### Context
+
+To run existing Atari C software (target app: **QED**, later **zView**) natively
+on NewTOS, we need a C toolchain: clang-aarch64 + a libc + GEM libraries. QED
+links **mintlib** (libc) + **gemlib** (GEM/AES/VDI) + **cflib** (dialogs). The
+tempting shortcut — hand-write a "minimal libc" — was rejected: we have the full
+LGPL sources, and reimplementing them from scratch is both wasteful and a poor
+test of whether the toolchain can build real software.
+
+### Decision
+
+**Port, don't reimplement.** Reuse the mintlib/gemlib/cflib source unchanged and
+retarget only the **thin arch/OS boundary**; compile the rest with clang. The
+SDK/libc is a **separate LGPL artifact** under `sdk/` (like glibc to a kernel),
+**not** part of the clean-room OS — the OS stays clean-room; the SDK reuses
+ported third-party code.
+
+The port surface, proven small for mintlib (Task #90):
+- **The trap boundary** — mintlib's ~56 `trap_1_*`/`trap_13_*`/`trap_14_*` macros
+  (`include/mint/{osbind,mintbind,falcon,metados}.h`), retargeted from m68k
+  stack-`trap` to NewTOS register-`svc` (args left-to-right x0..x7, fn in x8,
+  result x0). One change → all ~200 GEMDOS/BIOS/XBIOS bindings work unchanged.
+  gemlib's `crys_if` (AES/VDI) retargets the same way to `svc #2`.
+- **crt0** (`sdk/libc/newtos-arch/crt0.S`, sets SP from the BasePage `p_hitpa`,
+  inits the malloc arena over the free TPA), **setjmp** (aarch64, when pulled).
+- **A few honest LP64/endian fixes** to vendored files: aarch64 `byteswap.h`
+  (`__builtin_bswap*`), an `is_longlong` assign-to-constant fix in `vfprintf.c`,
+  and lean NewTOS `newtos-arch/{do_fstat,do_stat,isatty,ioctl}.c` that fill only
+  what stdio needs (cutting the Unix time/uid/passwd tail).
+- **Build harness** `sdk/libc/build-libc.sh` replicates mintlib's `buildrules`
+  (`-D_LIBC -D_REENTRANT -DHAVE_CONFIG_H -D_GNU_SOURCE -nostdinc` + include
+  order) → `libc.a`. `>8`-arg XBIOS macros (Falcon, unused) are guarded with a
+  loud `_Static_assert`, not stubbed.
+
+The 99% (printf/vfprintf, malloc, stdio buffering, string, qsort, strtol)
+compiles **as-is** on top of the retargeted trap layer.
+
+**The ported app is sacrosanct.** QED (and zView) source is **not modified** —
+every build failure is fixed in the toolchain (libc/gemlib/cflib/flags/headers),
+never in the app. The one exception: genuine **m68k assembly** (inline `asm`/
+`.S`) in the app must be retargeted to aarch64 (the arch boundary). Only after
+*every* toolchain avenue is exhausted do we even discuss an app-source change.
+This keeps QED an honest test that the toolchain builds real Atari software
+unmodified.
+
+### Verified
+
+`sdk/libc/tests/libtest.c` — real mintlib `printf("%d %ld")` / `malloc`+`free` /
+a `fopen`/`fwrite`/`fread`/`fclose` file round-trip on `C:` — runs on QEMU
+raspi4b (`\AUTO\LIBTEST.NCP`): `-42 305419896` / `heap: heap string` /
+`roundtrip OK (37 bytes)`, clean `Pterm`, then the desktop. No libc code was
+hand-written.
+
+### Related
+
+ADR-018 (the `.NCP`/`.NAP` native-extension family these programs use), the
+multi-page TPA loader (Task #89, the prerequisite for real-size programs), and
+the deferred native 64-bit ABI (Task #91 — the SDK is LP64 C over 32-bit-TOS
+structs today).
+
 ### Template for new ADRs
 
 ```markdown

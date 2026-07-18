@@ -1,0 +1,29 @@
+# NewTOS native C toolchain — tracking policy.
+#
+# The ported mintlib libc tree (libc/mintlib with our aarch64 trap-layer +
+# newtos-arch glue), the build harness, and the tests ARE tracked: the SDK is a
+# self-contained, reproducible LGPL artifact (clone -> build, no external tarball
+# dependency). Build artifacts and the not-yet-ported vendored trees are not.
+
+# Build artifacts (regenerable via sdk/libc/build-libc.sh).
+# The pristine mintlib source is vendored as sdk/libc/mintlib-0.60.1.tar.xz;
+# build-libc.sh extracts it to libc/mintlib/ and overlays sdk/libc/overlay/ —
+# that extracted tree is a build artifact, not tracked.
+/libc/mintlib/
+/libc/build/
+/libc/libc.a
+/libc/**/*.o
+*.NCP
+
+# Vendored trees not yet ported (extracted tarballs, no NewTOS work yet).
+# Vendor each when its port begins.
+/gemlib/
+/cflib/
+/apps/
+
+# macOS junk that FAT round-trips create.
+.DS_Store
+._*
+.Spotlight-V100
+.fseventsd
+.Trashes
