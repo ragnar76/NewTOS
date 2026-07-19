@@ -10,6 +10,10 @@
 /libc/mintlib/
 /libc/build/
 /libc/libc.a
+# ILP32 sibling artifacts (ADR-020 Stage 2; regenerable via build-libc-ilp32.sh).
+/libc/mintlib-ilp32/
+/libc/build-ilp32/
+/libc/libc-ilp32.a
 /gemlib/gemlib-0.44.0/
 /gemlib/build/
 /gemlib/gemlib.a

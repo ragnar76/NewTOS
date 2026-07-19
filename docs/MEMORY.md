@@ -1138,6 +1138,61 @@ multi-page TPA loader (Task #89, the prerequisite for real-size programs), and
 the deferred native 64-bit ABI (Task #91 — the SDK is LP64 C over 32-bit-TOS
 structs today).
 
+## ADR-020: App ABI is ILP32 (32-bit pointers) for Atari-compat programs; LP64 native deferred
+
+**Date:** 2026-07-19
+**Status:** **Accepted** (user decision 2026-07-19) — implementation staged
+**Phase:** cross-cutting (SDK toolchain + kernel loader/AES/VDI ABI boundary)
+
+### Context
+
+The goal is to run **unmodified** Atari C software (QED, then zView). We first
+built the native toolchain LP64 (ADR-019: 64-bit pointers, the aarch64 default),
+and it works — QED compiled + ran through the whole ported mintlib/gemlib/cflib
+stack. But **old Atari C assumes ILP32** (`sizeof(pointer)==sizeof(long)==4`,
+universal on m68k) in its *own* code. Under LP64 that breaks: QED's own bin
+allocator (`sdk/apps/qed/src/memory.c`) desyncs on 8-byte pointers, and the
+patch burden **grows with app complexity** (zView + FreeType/libpng/zlib/xpdf
+would need many). Patching each app abandons "unmodified" and adds divergence.
+
+### Decision
+
+**Target the ILP32 app ABI** — 32-bit pointers — so Atari C's assumptions hold
+and it compiles **unmodified**. This is the standard "32-bit apps on a 64-bit
+kernel" pattern (WoW64 / Linux compat): the kernel stays LP64 internally; only
+the app-facing boundary is 32-bit. Toolchain: **`aarch64-elf-gcc -mabi=ilp32`**
+(4-byte pointers, ELF32) **+ `aarch64-elf-ld -m aarch64elf32`** — spike-confirmed
+working. GCC is also the *native* compiler for this gcc-written code (clang
+frictions like the vfprintf computed-goto vanish).
+
+Payoffs: QED's allocator becomes correct (crash gone, no patch); the TOS structs
+(BASEPAGE/DTA) are naturally 4-byte-correct (the [[lp64-tos-struct-trap]] audit,
+task #98, vanishes); several LP64/clang overlays revert to pristine mintlib.
+
+**LP64 native stays the deferred future** (task #91): a 64-bit `.NAP` path for
+*new* NewTOS software that wants >4 GB — non-urgent (Pi4 RAM + a 4 MiB TPA make
+32-bit's 4 GB no constraint). The loader is **dual**: ELF32 = ILP32 compat apps,
+ELF64 = LP64-native apps + the embedded selftests. The two coexist.
+
+### Change surface (staged)
+
+1. **Foundation (done, commit `14a1f32`):** `tos-api/.../process/elf.rs` gains an
+   ELF32 AArch64 parse path (class-dispatched `ClassLayout`; ELF64 byte-identical);
+   `sdk/build-ilp32.sh`. A minimal ELF32 program loads + runs in QEMU alongside
+   ELF64.
+2. **mintlib ILP32** — rebuild with the GNU ILP32 toolchain; drop the now-moot
+   LP64 overlays (vfprintf is_longlong, labs, basepage/DTA); libtest as ELF32.
+3. **gemlib + cflib ILP32** + the kernel **AESPB/VDIPB** param-block readers
+   (`tos-api/src/aes|vdi`) read **32-bit** pointers for EL0 (svc #2) callers.
+4. **QED ILP32 — UNMODIFIED** → runs (the `memory.c` crash is gone by construction).
+
+### Related
+
+ADR-019 (the LP64 toolchain this pivots — not wasted; the trap retarget, port
+structure, and the crt0/loader/AES-rsrc fixes carry over), ADR-018 (the `.NAP`
+family gains an ILP32/LP64 distinction by ELF class), and the app-ABI memory
+[[native-64bit-abi-future]].
+
 ### Template for new ADRs
 
 ```markdown
