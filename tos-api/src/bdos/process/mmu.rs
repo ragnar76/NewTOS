@@ -29,7 +29,9 @@
 //! heap and a proper stack), each slot provisions [`USER_L3_COUNT`]
 //! contiguous L3 tables wired under `L2[0..USER_L3_COUNT]`, so the
 //! per-process low-half mapping capacity is
-//! [`USER_TPA_MAX_VA`] = `USER_L3_COUNT × 2 MiB` (4 MiB today). The
+//! [`USER_TPA_MAX_VA`] = `USER_L3_COUNT × 2 MiB` (6 MiB today: a 4-MiB
+//! TPA plus a 2-MiB spare window the AES resource loader maps per
+//! process — see [`USER_L3_COUNT`]). The
 //! loader maps every 4-KiB page of the TPA individually (all at
 //! 4-KiB granularity — the basepage/text/data at the bottom need it),
 //! so no 2-MiB block descriptors are used. The EC4 self-test maps a
@@ -49,12 +51,16 @@ use super::MAX_PROCESSES;
 // ─── Per-process low-half mapping capacity ──────────────────────────
 
 /// Number of L3 tables provisioned per process slot. Each L3 covers
-/// 512 × 4 KiB = 2 MiB, so the per-process low-half VA the loader can
-/// map is `USER_L3_COUNT × 2 MiB`. Two tables → a 4-MiB TPA, enough
-/// for a real compiled app's image + BSS + heap + stack. Bump this
-/// (and [`super::arena::TPA_SIZE`]) to enlarge the TPA; the BSS cost
-/// is `MAX_PROCESSES × USER_L3_COUNT × 4 KiB`.
-pub const USER_L3_COUNT: usize = 2;
+/// 512 × 4 KiB = 2 MiB, so the per-process low-half VA that can be
+/// mapped is `USER_L3_COUNT × 2 MiB`. The loader maps only the low
+/// [`super::arena::TPA_SIZE`] (4 MiB, two L3s) as the program's TPA —
+/// image + BSS + heap + stack; the remaining L3 is a **spare user
+/// window** that higher layers map on demand. The AES resource loader
+/// maps a per-process `.RSC` blob there so an EL0 app's `rsrc_gaddr`
+/// returns user-dereferenceable pointers (it cannot read the kernel
+/// high-half VAs the desktop/selftest path uses). Bump this to enlarge
+/// either region; the BSS cost is `MAX_PROCESSES × USER_L3_COUNT × 4 KiB`.
+pub const USER_L3_COUNT: usize = 3;
 
 /// Low-half VA span covered by one L3 table (2 MiB).
 const L3_SPAN: u64 = 512 * 4096;
@@ -104,7 +110,7 @@ struct UserTables {
 }
 
 /// Per-slot table storage. `MAX_PROCESSES = 16` × `(3 + USER_L3_COUNT)`
-/// × 4 KiB (= 320 KiB at `USER_L3_COUNT = 2`) in BSS — the same order
+/// × 4 KiB (= 384 KiB at `USER_L3_COUNT = 3`) in BSS — the same order
 /// of magnitude as the kernel heap pre-allocation, well within budget.
 /// Only the page tables live here; the TPA bytes they map are carved
 /// per-process from the BDOS pool (see [`super::arena`]).
@@ -337,6 +343,31 @@ pub unsafe fn install_ttbr0(l0_pa: u64) {
             ttbr0 = in(reg) l0_pa,
             options(nostack, preserves_flags),
         );
+    }
+}
+
+/// Make freshly-installed user page-table entries (and the data they
+/// map) observable to a subsequent EL0 access, **without** a TLB
+/// invalidate.
+///
+/// The AES resource loader calls this after installing a per-process
+/// `.RSC` mapping while the owning process's `TTBR0_EL1` is already
+/// active (the app trapped via `svc`). The target VAs were previously
+/// **invalid** (unmapped spare-window pages), so no stale TLB entry can
+/// exist for them and no TLBI is required — which also avoids the
+/// QUIRK-001 QEMU wedge that a TLBI immediately before an `eret`-to-EL0
+/// triggers (see [`install_ttbr0`]). A `dsb ish` orders the cacheable
+/// page-table and blob writes before the translation-table walker and
+/// EL0 observe them; the trailing `isb` is the context-synchronisation
+/// event so the handler's own EL1 view is consistent.
+///
+/// # Safety
+///
+/// Barrier-only; always permitted at EL1.
+pub unsafe fn publish_user_mappings() {
+    // SAFETY: DSB/ISB are unprivileged-safe barriers, permitted at EL1.
+    unsafe {
+        core::arch::asm!("dsb ish", "isb", options(nostack, preserves_flags));
     }
 }
 
