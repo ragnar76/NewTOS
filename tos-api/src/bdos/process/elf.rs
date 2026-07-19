@@ -165,54 +165,64 @@ fn read_u64_le(b: &[u8], off: usize) -> Option<u64> {
 
 // ─── Parser ────────────────────────────────────────────────────────
 
-/// Parse an ELF64 AArch64 executable from a byte blob.
+/// Parse an ELF64 AArch64 executable header.
+///
+/// `header` must hold at least the ELF header **and** the entire
+/// program-header table — the loader reads them from a small fixed
+/// buffer for a streamed file, or hands the whole in-memory blob for an
+/// embedded image. Segment *payloads* are never read here, only their
+/// program-header descriptors. `total_len` is the full image length in
+/// bytes (the on-disk file size, which may be far larger than `header`)
+/// and is what the `PT_LOAD` file-range check validates against — so a
+/// segment whose bytes stream straight into the TPA is accepted even
+/// though they are absent from `header`.
 ///
 /// On success, returns an [`ElfImage`] whose `segments()` slice is
 /// ready for [`super::loader`] to consume. On failure, returns the
-/// most specific [`ParseError`] that explains why the blob was
+/// most specific [`ParseError`] that explains why the image was
 /// rejected.
-pub fn parse(blob: &[u8]) -> Result<ElfImage, ParseError> {
-    if blob.len() < ELF64_EHDR_SIZE {
+pub fn parse(header: &[u8], total_len: u64) -> Result<ElfImage, ParseError> {
+    if header.len() < ELF64_EHDR_SIZE {
         return Err(ParseError::TooShort);
     }
 
     // ─── e_ident ────────────────────────────────────────────────
-    if &blob[0..4] != EI_MAG {
+    if &header[0..4] != EI_MAG {
         return Err(ParseError::BadMagic);
     }
-    if blob[EI_CLASS_OFF] != ELFCLASS64 {
+    if header[EI_CLASS_OFF] != ELFCLASS64 {
         return Err(ParseError::NotElf64);
     }
-    if blob[EI_DATA_OFF] != ELFDATA2LSB {
+    if header[EI_DATA_OFF] != ELFDATA2LSB {
         return Err(ParseError::NotLittleEndian);
     }
-    if blob[EI_VERSION_OFF] != EV_CURRENT {
+    if header[EI_VERSION_OFF] != EV_CURRENT {
         return Err(ParseError::BadVersion);
     }
     let _ = EI_NIDENT; // remaining e_ident bytes are OS/ABI — accept any.
 
     // ─── e_type / e_machine / e_version ─────────────────────────
-    let e_type = read_u16_le(blob, E_TYPE_OFF).ok_or(ParseError::TooShort)?;
+    let e_type = read_u16_le(header, E_TYPE_OFF).ok_or(ParseError::TooShort)?;
     if e_type != ET_EXEC {
         return Err(ParseError::NotExecutable);
     }
-    let e_machine = read_u16_le(blob, E_MACHINE_OFF).ok_or(ParseError::TooShort)?;
+    let e_machine = read_u16_le(header, E_MACHINE_OFF).ok_or(ParseError::TooShort)?;
     if e_machine != EM_AARCH64 {
         return Err(ParseError::NotAArch64);
     }
-    let e_version = read_u32_le(blob, E_VERSION_OFF).ok_or(ParseError::TooShort)?;
+    let e_version = read_u32_le(header, E_VERSION_OFF).ok_or(ParseError::TooShort)?;
     if e_version != EV_CURRENT as u32 {
         return Err(ParseError::BadVersion);
     }
 
     // ─── Header pointers ────────────────────────────────────────
-    let entry_va = read_u64_le(blob, E_ENTRY_OFF).ok_or(ParseError::TooShort)?;
-    let phoff = read_u64_le(blob, E_PHOFF_OFF).ok_or(ParseError::TooShort)?;
-    let phentsize = read_u16_le(blob, E_PHENTSIZE_OFF).ok_or(ParseError::TooShort)?;
+    let entry_va = read_u64_le(header, E_ENTRY_OFF).ok_or(ParseError::TooShort)?;
+    let phoff = read_u64_le(header, E_PHOFF_OFF).ok_or(ParseError::TooShort)?;
+    let phentsize = read_u16_le(header, E_PHENTSIZE_OFF).ok_or(ParseError::TooShort)?;
     if phentsize != ELF64_PHDR_SIZE {
         return Err(ParseError::BadPhEntSize);
     }
-    let phnum = read_u16_le(blob, E_PHNUM_OFF).ok_or(ParseError::TooShort)?;
+    let phnum = read_u16_le(header, E_PHNUM_OFF).ok_or(ParseError::TooShort)?;
 
     // ─── Walk program headers ───────────────────────────────────
     let mut segments = [LoadSegment {
@@ -231,11 +241,14 @@ pub fn parse(blob: &[u8]) -> Result<ElfImage, ParseError> {
         let end = ph_off
             .checked_add(phentsize as usize)
             .ok_or(ParseError::PhdrOutOfRange)?;
-        if end > blob.len() {
+        // The phdr table must lie inside the header window; if a producer
+        // placed it beyond the loader's header buffer this fails cleanly
+        // rather than mis-parsing (normal toolchains emit phoff == 64).
+        if end > header.len() {
             return Err(ParseError::PhdrOutOfRange);
         }
 
-        let p_type = read_u32_le(blob, ph_off + P_TYPE_OFF)
+        let p_type = read_u32_le(header, ph_off + P_TYPE_OFF)
             .ok_or(ParseError::PhdrOutOfRange)?;
         if p_type != PT_LOAD {
             // PT_NOTE, PT_GNU_STACK etc. — ignore.
@@ -246,25 +259,28 @@ pub fn parse(blob: &[u8]) -> Result<ElfImage, ParseError> {
             return Err(ParseError::TooManySegments);
         }
 
-        let flags = read_u32_le(blob, ph_off + P_FLAGS_OFF)
+        let flags = read_u32_le(header, ph_off + P_FLAGS_OFF)
             .ok_or(ParseError::PhdrOutOfRange)?;
-        let file_offset = read_u64_le(blob, ph_off + P_OFFSET_OFF)
+        let file_offset = read_u64_le(header, ph_off + P_OFFSET_OFF)
             .ok_or(ParseError::PhdrOutOfRange)?;
-        let vaddr = read_u64_le(blob, ph_off + P_VADDR_OFF)
+        let vaddr = read_u64_le(header, ph_off + P_VADDR_OFF)
             .ok_or(ParseError::PhdrOutOfRange)?;
-        let file_size = read_u64_le(blob, ph_off + P_FILESZ_OFF)
+        let file_size = read_u64_le(header, ph_off + P_FILESZ_OFF)
             .ok_or(ParseError::PhdrOutOfRange)?;
-        let mem_size = read_u64_le(blob, ph_off + P_MEMSZ_OFF)
+        let mem_size = read_u64_le(header, ph_off + P_MEMSZ_OFF)
             .ok_or(ParseError::PhdrOutOfRange)?;
 
         if file_size > mem_size {
             return Err(ParseError::BadSegmentSizes);
         }
-        // Validate the file range fits in the blob.
+        // Validate the file range fits in the full image. `total_len` is
+        // the on-disk file size, not the header window, so a large segment
+        // that streams straight into the TPA passes here (this is exactly
+        // the check that used to cap the program at the fixed load buffer).
         let file_end = file_offset
             .checked_add(file_size)
             .ok_or(ParseError::SegmentOutOfRange)?;
-        if file_end > blob.len() as u64 {
+        if file_end > total_len {
             return Err(ParseError::SegmentOutOfRange);
         }
 

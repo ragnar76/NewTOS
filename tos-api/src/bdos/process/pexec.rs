@@ -27,14 +27,14 @@
 //! (kernel-private). This module returns the metadata the handler
 //! needs to perform that work.
 
-use core::cell::UnsafeCell;
 use core::sync::atomic::Ordering;
 
 use tos_types::BasePage;
 
-use super::loader::{load_to_slot_with, EnvSpec, LoadError, LoadedImage};
+use super::loader::{load_file_to_slot, load_to_slot_with, EnvSpec, LoadError, LoadedImage};
 use super::registry;
 use super::{allocate_slot, free_slot, PROCESS_TABLE};
+use crate::bdos::fs::FileImage;
 
 // ─── Mode constants (`include/bdosdefs.h:24-32`) ────────────────────
 
@@ -180,20 +180,20 @@ pub unsafe fn load(
     env: EnvSpec<'_>,
     launch: bool,
 ) -> Result<LoadedChild, PexecError> {
-    // Resolve the program bytes: an embedded registry entry first (test
-    // programs), otherwise read the file off the FAT16 file system into
-    // the static load buffer.
-    let blob: &[u8] = match registry::lookup(path_bytes) {
-        Some(b) => b,
+    // Resolve the program source without yet consuming a slot (so a
+    // `NotFound` costs nothing): an embedded registry entry first (test
+    // programs), otherwise open the FAT16 file for streaming. The file's
+    // PT_LOAD segments are read straight into the mapped TPA by the
+    // loader — there is no fixed intermediate buffer capping the program
+    // size, so a multi-hundred-KiB GEM app loads the same as a tiny one.
+    let blob: Option<&[u8]> = registry::lookup(path_bytes);
+    let file: Option<FileImage> = match blob {
+        Some(_) => None,
         None => {
             let end = path_bytes.iter().position(|&c| c == 0).unwrap_or(path_bytes.len());
             let path =
                 core::str::from_utf8(&path_bytes[..end]).map_err(|_| PexecError::NotFound)?;
-            // SAFETY: single BDOS-locked trap path; the buffer is not
-            // aliased while the returned borrow is live.
-            let buf = unsafe { &mut *LOAD_BUF.0.get() };
-            let n = crate::bdos::fs::read_file(path, buf).ok_or(PexecError::NotFound)?;
-            &buf[..n]
+            Some(FileImage::open(path).ok_or(PexecError::NotFound)?)
         }
     };
     let slot_idx = allocate_slot().ok_or(PexecError::NoSlot)?;
@@ -201,16 +201,21 @@ pub unsafe fn load(
     // SAFETY: slot is freshly claimed; loader populates the slot's
     // basepage_kva / basepage_pa / l0_pa atomics, the command tail and
     // the environment. `launch` == PE_LOADGO → env owned by the child.
-    let loaded: LoadedImage =
-        match unsafe { load_to_slot_with(blob, slot_idx, tail, env, launch) } {
-            Ok(img) => img,
-            Err(e) => {
-                // Roll back the slot reservation so the table doesn't
-                // leak entries on a malformed blob.
-                free_slot(slot_idx);
-                return Err(PexecError::LoadFailed(e));
-            }
-        };
+    let loaded: Result<LoadedImage, LoadError> = match (blob, file) {
+        (Some(b), _) => unsafe { load_to_slot_with(b, slot_idx, tail, env, launch) },
+        (_, Some(f)) => unsafe { load_file_to_slot(f, slot_idx, tail, env, launch) },
+        // Unreachable: `blob`/`file` resolved above, one is always `Some`.
+        (None, None) => Err(LoadError::Parse(super::elf::ParseError::TooShort)),
+    };
+    let loaded: LoadedImage = match loaded {
+        Ok(img) => img,
+        Err(e) => {
+            // Roll back the slot reservation so the table doesn't
+            // leak entries on a malformed image.
+            free_slot(slot_idx);
+            return Err(PexecError::LoadFailed(e));
+        }
+    };
 
     Ok(LoadedChild {
         slot: loaded.slot,
@@ -274,16 +279,3 @@ fn resolve_handle(handle: u64) -> Option<usize> {
 pub fn child_basepage_kva(slot: usize) -> *mut BasePage {
     PROCESS_TABLE[slot].basepage_kva.load(Ordering::Acquire)
 }
-
-/// Static scratch buffer for a program read off the file system. The
-/// multi-page TPA loader accepts an image up to a few MiB, but the
-/// on-disk `.NCP` files we ship (a compiled libc/gemlib app) are far
-/// smaller; 256 KiB comfortably holds their ELF (headers + segments)
-/// while keeping the static buffer modest. Larger images would need a
-/// pool-backed read buffer — a later refinement alongside per-`Pexec`
-/// TPA sizing.
-const LOAD_BUF_SIZE: usize = 256 * 1024;
-struct LoadBuf(UnsafeCell<[u8; LOAD_BUF_SIZE]>);
-// SAFETY: accessed only from the single-CPU, BDOS-locked trap path.
-unsafe impl Sync for LoadBuf {}
-static LOAD_BUF: LoadBuf = LoadBuf(UnsafeCell::new([0u8; LOAD_BUF_SIZE]));

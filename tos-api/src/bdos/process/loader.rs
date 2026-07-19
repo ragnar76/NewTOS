@@ -39,10 +39,13 @@
 //! - **Fixed TPA size.** [`USER_TPA_TOP`] is a compile-time constant;
 //!   a per-`Pexec` size (from a stack request) is a future refinement.
 
+use core::cell::UnsafeCell;
 use core::ffi::c_void;
 use core::sync::atomic::Ordering;
 
 use tos_types::{BasePage, Long, MX_PREFTTRAM, NUMSTD, PDCLSIZE, PF_STANDARD};
+
+use crate::bdos::fs::FileImage;
 
 use super::arena;
 use super::elf::{self, ElfImage, LoadSegment, ParseError, PF_W, PF_X};
@@ -177,6 +180,66 @@ const BASEPAGE_RESERVED: u64 = core::mem::size_of::<BasePage>() as u64;
 // minimum stack reserve inside the TPA.
 const _: () = assert!(BASEPAGE_RESERVED + USER_STACK_MIN < arena::TPA_SIZE);
 
+/// Where the program image comes from. There is **no** fixed
+/// whole-file staging buffer: only the ELF header + program-header table
+/// pass through a small buffer ([`HEADER_BUF`]); every `PT_LOAD` payload
+/// streams straight into the mapped TPA, so a program is capped only by
+/// the TPA size, never by an intermediate buffer.
+///
+/// * [`ImageSource::Memory`] — an in-memory blob: an embedded registry
+///   program or a selftest image (`&'static [u8]`). The whole blob is
+///   already resident, so it doubles as its own header window.
+/// * [`ImageSource::File`] — a FAT file streamed by byte offset via
+///   [`FileImage::read_at`]; the header is read into [`HEADER_BUF`] and
+///   each segment's `[p_offset, p_offset + p_filesz)` range is read
+///   directly into the TPA VA.
+pub enum ImageSource<'a> {
+    /// In-memory ELF blob (embedded program / selftest image).
+    Memory(&'a [u8]),
+    /// FAT file streamed by offset.
+    File(FileImage),
+}
+
+impl ImageSource<'_> {
+    /// Read exactly `dst.len()` bytes of the image starting at byte
+    /// `offset` into `dst`. `false` on a short read or IO error (a
+    /// segment whose file range is not fully backed by the image); the
+    /// parser has already validated `offset + dst.len() <= total_len`,
+    /// so a well-formed image always fills `dst` completely.
+    fn read_exact_at(&self, offset: u64, dst: &mut [u8]) -> bool {
+        match self {
+            Self::Memory(b) => {
+                let Some(end) = (offset as usize).checked_add(dst.len()) else {
+                    return false;
+                };
+                match b.get(offset as usize..end) {
+                    Some(src) => {
+                        dst.copy_from_slice(src);
+                        true
+                    }
+                    None => false,
+                }
+            }
+            Self::File(f) => {
+                let Ok(off) = u32::try_from(offset) else {
+                    return false;
+                };
+                matches!(f.read_at(off, dst), Some(n) if n == dst.len())
+            }
+        }
+    }
+}
+
+/// Small buffer for the ELF header + program-header table of a streamed
+/// file (never a segment payload). 8 KiB holds `Ehdr` (64 B) plus up to
+/// ~145 program headers — orders of magnitude more than any real TOS
+/// executable, which emit `phoff == 64` and a handful of phdrs.
+const HEADER_BUF_SIZE: usize = 8 * 1024;
+struct HeaderBuf(UnsafeCell<[u8; HEADER_BUF_SIZE]>);
+// SAFETY: accessed only from the single-CPU, BDOS-locked trap path.
+unsafe impl Sync for HeaderBuf {}
+static HEADER_BUF: HeaderBuf = HeaderBuf(UnsafeCell::new([0u8; HEADER_BUF_SIZE]));
+
 /// Load an ELF blob into the given process slot.
 ///
 /// Sequence:
@@ -202,6 +265,29 @@ pub unsafe fn load_to_slot(
     // zero, exactly as before this plumbing landed.
     // SAFETY: forwarded — same BDOS-lock / trap-context contract.
     unsafe { load_to_slot_with(elf_bytes, slot, &[], EnvSpec::None, false) }
+}
+
+/// Load a FAT [`FileImage`] into `slot`, streaming each `PT_LOAD`
+/// segment straight from the file into the mapped TPA — the `Pexec`
+/// file-path entry. Segments never pass through a fixed buffer, so the
+/// program is limited only by the TPA size, not by any load-buffer cap.
+/// See [`load_to_slot_with`] for the `tail` / `env` / ownership
+/// semantics (identical; only the image source differs).
+///
+/// # Safety
+///
+/// Caller holds the BDOS giant lock; see [`load_to_slot`].
+pub unsafe fn load_file_to_slot(
+    file: FileImage,
+    slot: usize,
+    tail: &[u8],
+    env: EnvSpec<'_>,
+    env_owned_by_child: bool,
+) -> Result<LoadedImage, LoadError> {
+    // SAFETY: forwarded — same BDOS-lock / trap-context contract.
+    unsafe {
+        load_from_source(ImageSource::File(file), slot, tail, env, env_owned_by_child)
+    }
 }
 
 /// Load an ELF blob into `slot`, additionally populating the child's
@@ -236,13 +322,53 @@ pub unsafe fn load_to_slot_with(
     env: EnvSpec<'_>,
     env_owned_by_child: bool,
 ) -> Result<LoadedImage, LoadError> {
+    // SAFETY: forwarded — same BDOS-lock / trap-context contract.
+    unsafe {
+        load_from_source(
+            ImageSource::Memory(elf_bytes),
+            slot,
+            tail,
+            env,
+            env_owned_by_child,
+        )
+    }
+}
+
+/// Core loader shared by the in-memory ([`load_to_slot_with`]) and
+/// FAT-file ([`load_file_to_slot`]) entry points. Parses the header,
+/// allocates + owns the TPA, and streams the segments into it.
+///
+/// # Safety
+///
+/// Caller holds the BDOS giant lock; the slot must not currently be the
+/// active TTBR0 (or the TLB must be flushed before the next user access).
+unsafe fn load_from_source(
+    src: ImageSource<'_>,
+    slot: usize,
+    tail: &[u8],
+    env: EnvSpec<'_>,
+    env_owned_by_child: bool,
+) -> Result<LoadedImage, LoadError> {
     if slot >= super::MAX_PROCESSES {
         return Err(LoadError::InvalidSlot);
     }
 
-    // 1. Parse (before touching the pool, so a malformed blob costs no
-    //    allocation).
-    let img: ElfImage = elf::parse(elf_bytes)?;
+    // 1. Parse the header (before touching the pool, so a malformed image
+    //    costs no allocation). An in-memory blob is its own header window;
+    //    a streamed file reads its header + phdrs into `HEADER_BUF` (never
+    //    a segment payload — those go straight into the TPA in step 3).
+    let img: ElfImage = match &src {
+        ImageSource::Memory(blob) => elf::parse(blob, blob.len() as u64)?,
+        ImageSource::File(file) => {
+            // SAFETY: single BDOS-locked trap path; the buffer is not
+            // aliased while the returned borrow is live.
+            let hdr = unsafe { &mut *HEADER_BUF.0.get() };
+            let n = file
+                .read_at(0, hdr)
+                .ok_or(LoadError::Parse(ParseError::TooShort))?;
+            elf::parse(&hdr[..n], file.len() as u64)?
+        }
+    };
 
     // 2. Allocate the per-process TPA from the BDOS pool and re-tag it
     //    to the child basepage cookie (= the TPA base kernel VA), so
@@ -261,7 +387,7 @@ pub unsafe fn load_to_slot_with(
     // SAFETY: BDOS lock held; `tpa` is a fresh, exclusively-owned
     // page-aligned region.
     match unsafe {
-        populate_and_map(elf_bytes, slot, &img, tail, env, env_owned_by_child, &tpa)
+        populate_and_map(&src, slot, &img, tail, env, env_owned_by_child, &tpa)
     } {
         Ok(loaded) => Ok(loaded),
         Err(e) => {
@@ -272,11 +398,11 @@ pub unsafe fn load_to_slot_with(
     }
 }
 
-/// Copy the ELF image into `tpa`, zero its BSS, allocate the
+/// Stream the ELF image into `tpa`, zero its BSS, allocate the
 /// environment, write the basepage, sync the code caches, install the
 /// per-process page tables, and publish the slot metadata.
 ///
-/// Factored out of [`load_to_slot_with`] so the caller can free the TPA
+/// Factored out of [`load_from_source`] so the caller can free the TPA
 /// on any error (the `?`/early-return points all propagate here).
 ///
 /// # Safety
@@ -284,7 +410,7 @@ pub unsafe fn load_to_slot_with(
 /// Caller holds the BDOS giant lock; `tpa` is a fresh page-aligned
 /// pool region owned by the child; `slot` is bounds-checked.
 unsafe fn populate_and_map(
-    elf_bytes: &[u8],
+    src: &ImageSource<'_>,
     slot: usize,
     img: &ElfImage,
     tail: &[u8],
@@ -303,8 +429,11 @@ unsafe fn populate_and_map(
     // stale pool contents leak into the new process (see module docs).
     tpa_bytes.fill(0);
 
-    // Copy each PT_LOAD segment; track the highest image byte so the
-    // cache maintenance below covers exactly text+data (not the heap).
+    // Stream each PT_LOAD segment's file bytes directly into the mapped
+    // TPA at its VA — for a FAT file, straight from disk into the TPA VA
+    // with no fixed intermediate buffer (the segment can be any size up
+    // to the TPA). Track the highest image byte so the cache maintenance
+    // below covers exactly text+data (not the heap).
     let mut image_top = BASEPAGE_RESERVED;
     for seg in img.segments() {
         validate_segment(seg)?;
@@ -313,10 +442,10 @@ unsafe fn populate_and_map(
         let file_size = seg.file_size as usize;
 
         if file_size > 0 {
-            let src = elf_bytes
-                .get(seg.file_offset as usize..(seg.file_offset as usize + file_size))
-                .ok_or(LoadError::Parse(ParseError::SegmentOutOfRange))?;
-            tpa_bytes[dest_off..dest_off + file_size].copy_from_slice(src);
+            let dst = &mut tpa_bytes[dest_off..dest_off + file_size];
+            if !src.read_exact_at(seg.file_offset, dst) {
+                return Err(LoadError::Parse(ParseError::SegmentOutOfRange));
+            }
         }
         // The BSS tail (`mem_size - file_size`) is already zero from the
         // whole-TPA fill above, so no per-segment re-zero is needed.
