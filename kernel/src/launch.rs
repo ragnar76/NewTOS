@@ -79,6 +79,10 @@ pub fn run_program_with_tail(path: &[u8], tail: &[u8]) -> bool {
         None => return false,
     };
     s.set_state(State::Running);
+    // Record the program's own directory so a GEM app's `rsrc_load` finds its
+    // `.RSC` beside the executable (lead directive 2026-07-20): QED passes a
+    // bare `qed.rsc`, and its resource is staged next to `QED.NAP`.
+    tos_api::aes::resource::set_app_dir(path);
     set_current(s.basepage_kva.load(Ordering::Acquire));
     kprintln!("[launch] EL0: slot {} entry 0x{:x}", child.slot, child.entry_va);
 

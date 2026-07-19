@@ -111,7 +111,32 @@ def obfix(word, axis):
     return cpos
 
 
-def convert(path, out):
+def convert(path, out, ilp32=False):
+    # Native struct sizes + pack formats by target ABI (ADR-020 stage 4).
+    # ob_spec / te_p* / ib_p* / bi_pdata are POINTERS: 8 bytes on LP64, 4 on
+    # ILP32. An ILP32 app (QED, GNU -mabi=ilp32) links a 24-byte OBJECT with a
+    # 4-byte ob_spec @ 12 and correspondingly smaller TEDINFO/ICONBLK/BITBLK
+    # (verified by compile-time sizeof against gemlib mt_gem.h: OBJECT=24,
+    # TEDINFO=28, ICONBLK=36, BITBLK=16). The relocated pointer values still fit
+    # a 4-byte field because the per-process RSC window sits in low VA. The
+    # NrscHeader/tree-index (u32 byte offsets) are ABI-independent; `version`
+    # marks the OBJECT width (1 = LP64/64-bit ob_spec, 2 = ILP32/32-bit ob_spec)
+    # for tooling, but the kernel relocates by the *caller's* ABI.
+    if ilp32:
+        NAT_OBJ, NAT_TED, NAT_IB, NAT_BB = 24, 28, 36, 16
+        OBJ_FMT = "<hhhHHHIhhhh"          # 4-byte ob_spec @ 12
+        TED_FMT = "<IIIhhhhhhhh"          # 4-byte te_ptext/te_ptmplt/te_pvalid
+        BB_FMT = "<Ihhhhh2x"              # 4-byte bi_pdata, pad to 16
+        IB_FMT = "<IIIhhhhhhhhhhh2x"      # 4-byte ib_pmask/ib_pdata/ib_ptext, 36
+        version = 2
+    else:
+        NAT_OBJ, NAT_TED, NAT_IB, NAT_BB = 32, 40, 48, 24
+        OBJ_FMT = "<hhhHHH4xQhhhh"        # 8-byte ob_spec @ 16
+        TED_FMT = "<QQQhhhhhhhh"
+        BB_FMT = "<Qhhhhh6x"
+        IB_FMT = "<QQQhhhhhhhhhhh2x"
+        version = 1
+
     d = open(path, "rb").read()
     H = struct.unpack(">18H", d[:36])
     (vrsn, p_obj, p_ted, p_ib, p_bb, p_frstr, p_str, p_imd, p_frimg,
@@ -163,7 +188,7 @@ def convert(path, out):
         (ptext, ptmpl, pvalid, font, j1, just, color, j2, thick, txtlen,
          tmplen) = struct.unpack(">IIIhhhhhhhh", d[o:o + CLS_TED])
         teds.extend(struct.pack(
-            "<QQQhhhhhhhh", intern_str(ptext), intern_str(ptmpl),
+            TED_FMT, intern_str(ptext), intern_str(ptmpl),
             intern_str(pvalid), font, j1, just, color, j2, thick, txtlen, tmplen))
 
     # BITBLKs (remap raster data).
@@ -172,7 +197,7 @@ def convert(path, out):
         o = p_bb + i * CLS_BB
         pdata, wb, hl, x, y, col = struct.unpack(">Ihhhhh", d[o:o + CLS_BB])
         bbs.extend(struct.pack(
-            "<Qhhhhh6x", intern_bytes(pdata, wb * hl), wb, hl, x, y, col))
+            BB_FMT, intern_bytes(pdata, wb * hl), wb, hl, x, y, col))
 
     # ICONBLKs (remap mask/data/text).
     ibs = bytearray()
@@ -183,7 +208,7 @@ def convert(path, out):
         wicon, hicon = f[8], f[9]
         rb = ((wicon + 15) // 16) * 2 * hicon
         ibs.extend(struct.pack(
-            "<QQQhhhhhhhhhhh2x", intern_bytes(pmask, rb), intern_bytes(pdata, rb),
+            IB_FMT, intern_bytes(pmask, rb), intern_bytes(pdata, rb),
             intern_str(ptext), *f[3:]))
 
     # OBJECTs (obfix coords + remap ob_spec by type).
@@ -206,7 +231,7 @@ def convert(path, out):
         else:
             nspec = 0  # G_PROGDEF / G_CICON: unsupported, drawn empty
         objs.extend(struct.pack(
-            "<hhhHHH4xQhhhh", nxt, head, tail, typ, flags, state, nspec,
+            OBJ_FMT, nxt, head, tail, typ, flags, state, nspec,
             obfix(x, 0), obfix(y, 1), obfix(w, 2), obfix(h, 3)))
 
     # Tree index → native root OBJECT indices.
@@ -217,19 +242,27 @@ def convert(path, out):
 
     total = off_data + len(data)
     header = struct.pack(
-        "<4sIIIIII", b"NRSC", 1, ntree, nobs, off_tri, off_obj, total)
+        "<4sIIIIII", b"NRSC", version, ntree, nobs, off_tri, off_obj, total)
     blob = header + tri + objs + teds + bbs + ibs + data
     assert len(blob) == total, (len(blob), total)
     open(out, "wb").write(blob)
     print(f"converted {path} -> {out}: {ntree} trees, {nobs} objects, "
-          f"{nted} tedinfo, {nbb} bitblk, {nib} iconblk ({total} bytes)")
+          f"{nted} tedinfo, {nbb} bitblk, {nib} iconblk ({total} bytes) "
+          f"[{'ILP32/24B-OBJECT' if ilp32 else 'LP64/32B-OBJECT'}]")
 
 
 def main():
     if len(sys.argv) >= 2 and sys.argv[1] == "convert":
-        src = sys.argv[2]
-        out = sys.argv[3] if len(sys.argv) > 3 else "OUT.RSC"
-        convert(src, out)
+        # convert [--ilp32] SRC [OUT]: --ilp32 emits the 24-byte OBJECT / 4-byte
+        # ob_spec layout for GNU-ILP32 apps (QED), else the LP64 32-byte layout.
+        rest = sys.argv[2:]
+        ilp32 = False
+        if rest and rest[0] == "--ilp32":
+            ilp32 = True
+            rest = rest[1:]
+        src = rest[0]
+        out = rest[1] if len(rest) > 1 else "OUT.RSC"
+        convert(src, out, ilp32=ilp32)
         return
     out = sys.argv[1] if len(sys.argv) > 1 else "TEST.RSC"
     blob = build_demo()

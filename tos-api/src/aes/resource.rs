@@ -26,10 +26,10 @@
 
 use super::object::{BitBlk, IconBlk, Object, TedInfo};
 use super::Aespb;
-use crate::bdos::process::{arena, mmu as pmmu};
+use crate::bdos::process::{arena, mmu as pmmu, Abi};
 use core::cell::UnsafeCell;
 use core::mem::size_of;
-use core::sync::atomic::{AtomicI32, AtomicPtr, AtomicU64, Ordering};
+use core::sync::atomic::{AtomicI32, AtomicPtr, AtomicU64, AtomicUsize, Ordering};
 use tos_types::{BasePage, Long, MX_PREFTTRAM};
 
 // Object types whose `ob_spec` is a string pointer (needs relocation).
@@ -75,21 +75,41 @@ pub struct NrscHeader {
 }
 
 /// The loaded resource (single resource per app — NewTOS is single-app).
+///
+/// Stored as **target VAs + a record stride** rather than typed `*mut Object`
+/// pointers, so an ILP32 caller's 24-byte OBJECT array is indexed at its own
+/// stride (ADR-020 stage 4): the kernel `Object` type is the LP64 32-byte
+/// layout, but an ILP32 app links a 24-byte OBJECT with a 4-byte `ob_spec`.
+/// `rsrc_gaddr` hands back `obj_base + index * obj_size`, so the app always
+/// receives records of its own width.
 struct Loaded {
-    trees: UnsafeCell<[*mut Object; MAX_TREES]>,
+    /// Target VA of each tree's root OBJECT (0 = unused slot).
+    trees: UnsafeCell<[u64; MAX_TREES]>,
     n_trees: UnsafeCell<usize>,
-    objects: UnsafeCell<*mut Object>,
+    /// Target VA of the OBJECT array (0 = nothing loaded).
+    obj_base: UnsafeCell<u64>,
+    /// Stride of one OBJECT record: 32 (LP64 caller) or 24 (ILP32 caller).
+    obj_size: UnsafeCell<usize>,
     n_objects: UnsafeCell<usize>,
 }
 // SAFETY: single boot CPU only touches the AES.
 unsafe impl Sync for Loaded {}
 
 static RSC: Loaded = Loaded {
-    trees: UnsafeCell::new([core::ptr::null_mut(); MAX_TREES]),
+    trees: UnsafeCell::new([0u64; MAX_TREES]),
     n_trees: UnsafeCell::new(0),
-    objects: UnsafeCell::new(core::ptr::null_mut()),
+    obj_base: UnsafeCell::new(0),
+    obj_size: UnsafeCell::new(0),
     n_objects: UnsafeCell::new(0),
 };
+
+/// ILP32 OBJECT record stride (4-byte `ob_spec` @ +12; see `mt_gem.h`
+/// `sizeof(OBJECT) == 24`). The LP64 stride is [`OBJECT_SIZE`] (32).
+const OBJECT_SIZE_ILP32: usize = 24;
+/// Byte offset of `ob_type` within an OBJECT (same in both ABIs).
+const OB_TYPE_OFF: usize = 6;
+/// Byte offset of `ob_spec` within an ILP32 OBJECT (4-byte field).
+const OB_SPEC_OFF_ILP32: usize = 12;
 
 /// Relocate a native `.RSC` blob in place (offsets → absolute pointers)
 /// and register its trees. `base` points at the start of the blob (which
@@ -99,9 +119,10 @@ static RSC: Loaded = Loaded {
 /// `base` must point at a valid, writable native `.RSC` blob of at least
 /// its declared `total_size` bytes.
 pub unsafe fn relocate_and_register(base: *mut u8) -> bool {
-    // In-place kernel path: access base == target base.
+    // In-place kernel path: access base == target base, LP64 (desktop / the
+    // selftests always build 32-byte native resources).
     // SAFETY: caller guarantees a valid blob.
-    unsafe { relocate_and_register_core(base, base as u64) }
+    unsafe { relocate_and_register_core(base, base as u64, Abi::Lp64) }
 }
 
 /// [`relocate_and_register`] with the access/target-base split of
@@ -113,28 +134,170 @@ pub unsafe fn relocate_and_register(base: *mut u8) -> bool {
 /// # Safety
 /// As [`relocate_and_register`], with `access_base` reachable from the
 /// kernel and the blob eventually visible at `target_base`.
-unsafe fn relocate_and_register_core(access_base: *mut u8, target_base: u64) -> bool {
+unsafe fn relocate_and_register_core(access_base: *mut u8, target_base: u64, abi: Abi) -> bool {
     // SAFETY: caller guarantees a valid blob.
     unsafe {
-        if !relocate_blob_core(access_base, target_base) {
+        // Relocate offsets → target VAs at the caller's OBJECT width.
+        let ok = match abi {
+            Abi::Ilp32 => relocate_blob_core_ilp32(access_base, target_base),
+            Abi::Lp64 => relocate_blob_core(access_base, target_base),
+        };
+        if !ok {
             return false;
         }
+        let obj_size = match abi {
+            Abi::Ilp32 => OBJECT_SIZE_ILP32,
+            Abi::Lp64 => OBJECT_SIZE,
+        };
         let h = &*(access_base as *const NrscHeader);
         // Target VA of the object array (what callers dereference).
         let objs_target = target_base + h.off_objects as u64;
-        // The tree index is read through the kernel alias.
+        // The tree index is read through the kernel alias. It is `[u32]`
+        // (root OBJECT *index*) in both ABIs; the byte VA of a root is
+        // `objs_target + index * obj_size`.
         let tri = access_base.add(h.off_trindex as usize) as *const u32;
         let n = (h.n_trees as usize).min(MAX_TREES);
         let trees = &mut *RSC.trees.get();
         for (t, slot) in trees.iter_mut().enumerate().take(n) {
             let root = *tri.add(t) as u64;
-            *slot = (objs_target + root * OBJECT_SIZE as u64) as *mut Object;
+            *slot = objs_target + root * obj_size as u64;
         }
         *RSC.n_trees.get() = n;
-        *RSC.objects.get() = objs_target as *mut Object;
+        *RSC.obj_base.get() = objs_target;
+        *RSC.obj_size.get() = obj_size;
         *RSC.n_objects.get() = h.n_objects as usize;
     }
     true
+}
+
+// ─── ILP32 relocation (24-byte OBJECT / 4-byte ob_spec) ─────────────────
+//
+// Byte-addressed twin of `relocate_blob_core` for an ILP32 caller (ADR-020):
+// the OBJECT stride is 24, `ob_type` is a u16 @ +6 and `ob_spec` a u32 @ +12,
+// and the sub-structs (TEDINFO/BITBLK/ICONBLK) carry 4-byte pointers. Every
+// field is read/written unaligned through raw `u8` pointers, so the kernel's
+// LP64 `Object`/`TedInfo`/… structs are never imposed on the ILP32 blob.
+
+/// Read a little-endian u16 at `p` (unaligned-safe).
+///
+/// # Safety
+/// `p` must point at ≥ 2 readable bytes.
+#[inline]
+unsafe fn rd16(p: *const u8) -> u16 {
+    // SAFETY: caller guarantees 2 readable bytes; read_unaligned handles any
+    // alignment.
+    unsafe { (p as *const u16).read_unaligned() }
+}
+
+/// Read a little-endian u32 at `p` (unaligned-safe).
+///
+/// # Safety
+/// `p` must point at ≥ 4 readable bytes.
+#[inline]
+unsafe fn rd32(p: *const u8) -> u32 {
+    // SAFETY: caller guarantees 4 readable bytes.
+    unsafe { (p as *const u32).read_unaligned() }
+}
+
+/// Relocate a 4-byte offset field at `p` in place (add `tb`, skip 0).
+///
+/// # Safety
+/// `p` must point at ≥ 4 readable/writable bytes.
+#[inline]
+unsafe fn reloc32(p: *mut u8, tb: u32) {
+    // SAFETY: caller guarantees 4 accessible bytes.
+    unsafe {
+        let v = (p as *const u32).read_unaligned();
+        if v != 0 {
+            (p as *mut u32).write_unaligned(v.wrapping_add(tb));
+        }
+    }
+}
+
+/// ILP32 twin of [`relocate_blob_core`]: relocate the 24-byte OBJECT array and
+/// its 4-byte-pointer sub-structs from blob offsets to `target_base` VAs.
+///
+/// # Safety
+/// `access_base` must point at a valid, writable native `.RSC` blob of at
+/// least its declared `total_size` bytes.
+unsafe fn relocate_blob_core_ilp32(access_base: *mut u8, target_base: u64) -> bool {
+    // SAFETY: caller guarantees a valid blob.
+    unsafe {
+        let h = &*(access_base as *const NrscHeader);
+        if &h.magic != b"NRSC" {
+            return false;
+        }
+        let objs = access_base.add(h.off_objects as usize);
+        let tb = target_base as u32;
+        let n = h.n_objects as usize;
+        for i in 0..n {
+            let obj = objs.add(i * OBJECT_SIZE_ILP32);
+            let spec = rd32(obj.add(OB_SPEC_OFF_ILP32));
+            if spec == 0 {
+                continue;
+            }
+            // Classify by the *base* type only (high byte = extended flags),
+            // matching `relocate_blob_core` / `fix_objects`.
+            match rd16(obj.add(OB_TYPE_OFF)) & 0x00ff {
+                G_STRING | G_BUTTON | G_TITLE => {
+                    (obj.add(OB_SPEC_OFF_ILP32) as *mut u32)
+                        .write_unaligned(spec.wrapping_add(tb));
+                }
+                G_TEXT | G_BOXTEXT | G_FTEXT | G_FBOXTEXT => {
+                    let nspec = spec.wrapping_add(tb);
+                    (obj.add(OB_SPEC_OFF_ILP32) as *mut u32).write_unaligned(nspec);
+                    if !substruct_seen_ilp32(objs, i, nspec) {
+                        // TEDINFO: te_ptext@0, te_ptmplt@4, te_pvalid@8.
+                        let ted = access_base.add(spec as usize);
+                        reloc32(ted, tb);
+                        reloc32(ted.add(4), tb);
+                        reloc32(ted.add(8), tb);
+                    }
+                }
+                G_IMAGE => {
+                    let nspec = spec.wrapping_add(tb);
+                    (obj.add(OB_SPEC_OFF_ILP32) as *mut u32).write_unaligned(nspec);
+                    if !substruct_seen_ilp32(objs, i, nspec) {
+                        // BITBLK: bi_pdata@0.
+                        reloc32(access_base.add(spec as usize), tb);
+                    }
+                }
+                G_ICON => {
+                    let nspec = spec.wrapping_add(tb);
+                    (obj.add(OB_SPEC_OFF_ILP32) as *mut u32).write_unaligned(nspec);
+                    if !substruct_seen_ilp32(objs, i, nspec) {
+                        // ICONBLK: ib_pmask@0, ib_pdata@4, ib_ptext@8.
+                        let ib = access_base.add(spec as usize);
+                        reloc32(ib, tb);
+                        reloc32(ib.add(4), tb);
+                        reloc32(ib.add(8), tb);
+                    }
+                }
+                // G_BOX/G_IBOX/G_BOXCHAR: ob_spec is a literal word.
+                _ => {}
+            }
+        }
+    }
+    true
+}
+
+/// ILP32 twin of [`substruct_seen`]: whether an already-processed object
+/// (`objs[0..upto]`, 24-byte stride) shares the sub-struct now at `spec`.
+///
+/// # Safety
+/// `objs` must point at the ILP32 OBJECT array with at least `upto` entries.
+unsafe fn substruct_seen_ilp32(objs: *const u8, upto: usize, spec: u32) -> bool {
+    for j in 0..upto {
+        // SAFETY: j < upto ≤ processed count.
+        let o = unsafe { objs.add(j * OBJECT_SIZE_ILP32) };
+        // SAFETY: o is a valid 24-byte record.
+        let ty = unsafe { rd16(o.add(OB_TYPE_OFF)) } & 0x00ff;
+        let sp = unsafe { rd32(o.add(OB_SPEC_OFF_ILP32)) };
+        if has_substruct(ty) && sp == spec {
+            return true;
+        }
+    }
+    false
 }
 
 /// Relocate a native `.RSC` blob in place (offsets → pointers) **without**
@@ -341,9 +504,48 @@ static RSC_WINDOW_CURSOR: AtomicU64 = AtomicU64::new(0);
 /// Basepage of the process [`RSC_WINDOW_CURSOR`] belongs to (`null` = none).
 static RSC_WINDOW_OWNER: AtomicPtr<BasePage> = AtomicPtr::new(core::ptr::null_mut());
 
+/// Directory of the currently-launched program (e.g. `C:\APPS\QED\`), so
+/// `rsrc_load` finds the resource **beside the application** (lead directive
+/// 2026-07-20). A GEM app typically passes just `qed.rsc` (its `gl_appdir` is
+/// empty), so without this the kernel could only look in the fixed
+/// `C:\GEMSYS\RSC\` / `C:\` locations. Set by the kernel launcher
+/// ([`set_app_dir`]) from the launch path before the program enters EL0.
+const APP_DIR_CAP: usize = 64;
+struct AppDir {
+    buf: UnsafeCell<[u8; APP_DIR_CAP]>,
+    len: AtomicUsize,
+}
+// SAFETY: single boot CPU; set by the launcher, read by rsrc_load, never
+// concurrently.
+unsafe impl Sync for AppDir {}
+static APP_DIR: AppDir = AppDir {
+    buf: UnsafeCell::new([0u8; APP_DIR_CAP]),
+    len: AtomicUsize::new(0),
+};
+
+/// Record the launched program's directory so a later `rsrc_load` looks for
+/// its `.RSC` beside it. `path` is the full launch path (`C:\APPS\QED\QED.NAP`);
+/// the directory portion (up to and including the last `\`) is kept. Passing a
+/// path with no `\` clears the app directory. Called by the kernel launcher.
+pub fn set_app_dir(path: &[u8]) {
+    let dir_len = path
+        .iter()
+        .rposition(|&c| c == b'\\')
+        .map(|i| i + 1)
+        .unwrap_or(0)
+        .min(APP_DIR_CAP);
+    // SAFETY: single-CPU launcher context; exclusive writer.
+    unsafe {
+        let buf = &mut *APP_DIR.buf.get();
+        buf[..dir_len].copy_from_slice(&path[..dir_len]);
+    }
+    APP_DIR.len.store(dir_len, Ordering::Release);
+}
+
 /// `rsrc_load` (110) — load `addr_in[0]` (a `.RSC` filename) from disk.
-/// NewTOS searches `C:\GEMSYS\RSC\<name>` first, then `C:\<name>`.
-/// Returns 1 on success, 0 on failure.
+/// NewTOS searches the launched app's own directory first (lead directive),
+/// then `C:\GEMSYS\RSC\<name>`, then `C:\<name>`. Returns 1 on success, 0 on
+/// failure.
 pub fn rsrc_load(pb: &Aespb) {
     let fname = pb.addrin(0) as *const u8;
     if fname.is_null() {
@@ -376,10 +578,23 @@ pub fn rsrc_load(pb: &Aespb) {
     // to the launched process's basepage before its `eret` to EL0
     // (`launch.rs`), so it is non-null exactly for an EL0 app caller.
     let run = crate::bdos::process::current();
+    // The blob's OBJECT width must match the caller's ABI: an ILP32 app reads
+    // 24-byte OBJECTs, so relocate at that width and hand it 24-byte records.
+    let abi = crate::bdos::process::current_abi();
+
+    // App-directory prefix (lead directive): search the launched program's own
+    // folder first. Empty (a kernel-side caller / no launcher) → skipped.
+    let app_len = APP_DIR.len.load(Ordering::Acquire);
+    // SAFETY: single-CPU; `app_len` bytes were written by `set_app_dir`.
+    let app_buf = unsafe { &*APP_DIR.buf.get() };
+    let app_dir = &app_buf[..app_len];
 
     // SAFETY: single-CPU AES; exclusive logical owner of the buffer.
     let buf = unsafe { &mut *RSC_BUF.0.get() };
-    for prefix in [b"C:\\GEMSYS\\RSC\\".as_slice(), b"C:\\".as_slice()] {
+    for prefix in [app_dir, b"C:\\GEMSYS\\RSC\\".as_slice(), b"C:\\".as_slice()] {
+        if prefix.is_empty() {
+            continue; // no app directory recorded
+        }
         let mut path = [0u8; 64];
         let mut n = 0;
         for &c in prefix.iter().chain(name[..nlen].iter()) {
@@ -400,12 +615,12 @@ pub fn rsrc_load(pb: &Aespb) {
         // SAFETY: `buf` now holds `len` file bytes; both relocation paths
         // re-validate the `NRSC` header before touching anything.
         let ok = if run.is_null() {
-            // Kernel-side caller: relocate in place, kernel-VA pointers.
+            // Kernel-side caller: relocate in place, kernel-VA pointers (LP64).
             unsafe { relocate_and_register(buf.as_mut_ptr()) }
         } else {
             // EL0 app caller: copy into per-process EL0-mapped memory and
-            // relocate to user VAs.
-            unsafe { load_into_user(run, buf, len) }
+            // relocate to user VAs at the caller's OBJECT width.
+            unsafe { load_into_user(run, buf, len, abi) }
         };
         if ok {
             pb.set_ret(1);
@@ -429,7 +644,7 @@ pub fn rsrc_load(pb: &Aespb) {
 /// # Safety
 /// Single-CPU trap context (the implicit BDOS giant lock); `run` is the
 /// current process basepage; `src[..len]` is a candidate blob.
-unsafe fn load_into_user(run: *mut BasePage, src: &[u8; RSC_CAP], len: usize) -> bool {
+unsafe fn load_into_user(run: *mut BasePage, src: &[u8; RSC_CAP], len: usize, abi: Abi) -> bool {
     // Cheap non-NRSC reject before any allocation.
     // SAFETY: `len >= size_of::<NrscHeader>()` guaranteed by the caller.
     if unsafe { &(*(src.as_ptr() as *const NrscHeader)).magic } != b"NRSC" {
@@ -470,7 +685,7 @@ unsafe fn load_into_user(run: *mut BasePage, src: &[u8; RSC_CAP], len: usize) ->
         core::ptr::copy_nonoverlapping(src.as_ptr(), base_kva, len);
     }
     // SAFETY: `base_kva` holds the copied blob; header re-checked inside.
-    if !unsafe { relocate_and_register_core(base_kva, app_va) } {
+    if !unsafe { relocate_and_register_core(base_kva, app_va, abi) } {
         // SAFETY: `raw` is on the allocated list.
         unsafe { crate::bdos::mem::traps::mfree(raw) };
         return false;
@@ -527,13 +742,14 @@ pub fn rsrc_free(pb: &Aespb) {
         unsafe { crate::bdos::mem::traps::mfree(raw) };
     }
 
-    // SAFETY: single-CPU AES. `objects` is non-null iff a resource is loaded
+    // SAFETY: single-CPU AES. `obj_base` is non-zero iff a resource is loaded
     // (set by `relocate_and_register`, cleared here).
-    let was_loaded = unsafe { !(*RSC.objects.get()).is_null() };
+    let was_loaded = unsafe { *RSC.obj_base.get() != 0 };
     // SAFETY: single-CPU AES.
     unsafe {
         *RSC.n_trees.get() = 0;
-        *RSC.objects.get() = core::ptr::null_mut();
+        *RSC.obj_base.get() = 0;
+        *RSC.obj_size.get() = 0;
         *RSC.n_objects.get() = 0;
     }
     pb.set_ret(if was_loaded { 1 } else { 0 });
@@ -544,20 +760,21 @@ pub fn rsrc_free(pb: &Aespb) {
 pub fn rsrc_gaddr(pb: &Aespb) {
     let rtype = pb.intin(0);
     let index = pb.intin(1) as usize;
-    // SAFETY: single-CPU AES; pointers were set by relocate_and_register.
+    // SAFETY: single-CPU AES; the VAs + stride were set by
+    // relocate_and_register (LP64: 32-byte records; ILP32: 24-byte).
     let addr = unsafe {
         match rtype {
             R_TREE => {
                 if index < *RSC.n_trees.get() {
-                    (*RSC.trees.get())[index] as u64
+                    (*RSC.trees.get())[index]
                 } else {
                     0
                 }
             }
             R_OBJECT => {
-                let objs = *RSC.objects.get();
-                if !objs.is_null() && index < *RSC.n_objects.get() {
-                    objs.add(index) as u64
+                let base = *RSC.obj_base.get();
+                if base != 0 && index < *RSC.n_objects.get() {
+                    base + (index * *RSC.obj_size.get()) as u64
                 } else {
                     0
                 }
