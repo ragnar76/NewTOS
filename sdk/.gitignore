@@ -13,11 +13,13 @@
 /gemlib/gemlib-0.44.0/
 /gemlib/build/
 /gemlib/gemlib.a
+/cflib/cflib-21/
+/cflib/build/
+/cflib/cflib.a
 **/*.o
 *.NCP
 
 # Vendored trees not yet ported (vendor as tarball+overlay when the port begins).
-/cflib/
 /apps/
 
 # macOS junk that FAT round-trips create.

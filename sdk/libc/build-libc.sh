@@ -25,6 +25,9 @@
 #       memops.c  -> memcpy/memmove/memset/bcopy/bzero (were bcopy.S/memset.S)
 #       proc.S    -> _exit/_Exit/__libc_exit via the Pterm trap (was libc_exit.S)
 #       heap_init.c -> points mintlib's malloc arena at the free TPA region.
+#       getcookie.c -> Getcookie() via the Ssystem trap (was m68k getcookie.S,
+#                      which scans the _p_cookies sysvar / trap #1). Pulled by
+#                      cflib's cookie.c feature probes.
 #   - Edits to vendored files live in sdk/libc/overlay/ (applied over the
 #     freshly-extracted mintlib tree by the preamble below):
 #       include/bits/byteswap.h  m68k ror/swap  -> __builtin_bswap32
@@ -159,6 +162,8 @@ done
     -c "$LIBC/newtos-arch/ioctl.c"     -o "$OBJ/arch__ioctl.o"    || exit 1
 "$CLANG" "${CFLAGS[@]}" -I"$SDK/include" "${INCS[@]}" \
     -c "$LIBC/newtos-arch/do_stat.c"   -o "$OBJ/arch__do_stat.o"  || exit 1
+"$CLANG" "${CFLAGS[@]}" "${INCS[@]}" \
+    -c "$LIBC/newtos-arch/getcookie.c" -o "$OBJ/arch__getcookie.o" || exit 1
 
 # --- archive -----------------------------------------------------------------
 rm -f "$LIBC/libc.a"

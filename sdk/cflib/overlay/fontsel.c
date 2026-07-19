@@ -1,0 +1,392 @@
+/*
+ * CFLIB, a GEM library for ATARI/TOS
+ * Copyright (C) 1999, 2000 Christian Felsch
+ * 
+ * Modified for FreeMiNT CVS by Frank Naumann <fnaumann@freemint.de>
+ * 
+ * Please send suggestions, patches or bug reports to me or
+ * the MiNT mailing list.
+ * 
+ * 
+ * This library is free software; you can redistribute it and/or
+ * modify it under the terms of the GNU Lesser General Public
+ * License as published by the Free Software Foundation; either
+ * version 2.1 of the License, or (at your option) any later version.
+ * 
+ * This library is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
+ * Lesser General Public License for more details.
+ * 
+ * You should have received a copy of the GNU Lesser General Public
+ * License along with this library; if not, write to the Free Software
+ * Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA 02111-1307  USA
+ * 
+ */
+
+#include "intern.h"
+#include "app.h"
+#include "xfsl.h"
+
+
+/*
+ * NewTOS overlay: the __GNUC__ branch below is m68k inline assembly whose ONLY
+ * purpose is to marshal the external xFSL font-selector call to the m68k Pure-C
+ * word-push ABI (a `_WORD` argument pushed as a 16-bit word, cf. the German
+ * comment "int-Parameter auf wortbreite umzumappen"). It is NOT a system trap;
+ * the selector entry points are ordinary __CDECL function pointers obtained
+ * from the 'xFSL' cookie (see xfsl.h: xFSL_INIT/xFSL_EVENT/xFSL_EXIT).
+ *
+ * On AArch64 the function-pointer prototypes already pass the arguments per the
+ * native ABI, so the correct call is the plain indirect call in the #else
+ * branch -- exactly what the non-GNU (Pure-C/AHCC) build has always used. We
+ * therefore gate the m68k-asm block off under -D__NEWTOS__ and fall through to
+ * that direct-call branch. This preserves the observable contract (invoke the
+ * selector's init/event/exit with the given handle and parameter block); it is
+ * not a stub -- do_xfsl() stays fully functional for any future NewTOS-native
+ * xFSL provider. (On NewTOS the 'xFSL' cookie is absent, so check_for_xfsl()
+ * returns FALSE and this path is dead at run time regardless.)
+ */
+#if defined(__GNUC__) && !defined(__NEWTOS__)
+/*
+ * Hier muessen wir basteln, um int-Parameter auf wortbreite umzumappen.
+*/
+#define xfsl_init(f, w, l) \
+__extension__ \
+({ \
+	register short retvalue __asm__("d0"); \
+ \
+	__asm__ volatile \
+	( \
+		"movl	%3,%%sp@-\n\t" \
+		"movw	%2,%%sp@-\n\t" \
+		"movl	%1,%%a0\n\t" \
+		"jsr	%%a0@\n\t" \
+		"addql	#6,%%sp" \
+	: "=r"(retvalue)				/* output */ \
+	: "r"(f), "r"(w), "r"(l)	/* input */ \
+	: __CLOBBER_RETURN("d0") "d1", "a0", "a1", "cc"	/* clobbered regs */	\
+	AND_MEMORY \
+  ); \
+  retvalue; \
+})
+
+#define xfsl_event(f, w, l) \
+__extension__ \
+({ \
+	register short retvalue __asm__("d0"); \
+ \
+	__asm__ volatile \
+	( \
+		"movl	%3,%%sp@-\n\t" \
+		"movw	%2,%%sp@-\n\t" \
+		"movl	%1,%%a0\n\t" \
+		"jsr	%%a0@\n\t" \
+		"addql	#6,%%sp" \
+	: "=r"(retvalue)				/* output */ \
+	: "r"(f), "r"(w), "r"(l)	/* input */ \
+	: __CLOBBER_RETURN("d0") "d1", "a0", "a1", "cc"	/* clobbered regs */	\
+	AND_MEMORY \
+  ); \
+  retvalue; \
+})
+
+#define xfsl_exit(f, w) \
+__extension__ \
+({ \
+	register long retvalue __asm__("d0"); \
+ \
+	__asm__ volatile \
+	( \
+		"movw	%2,%%sp@-\n\t" \
+		"movl	%1,%%a0\n\t" \
+		"jsr	%%a0@\n\t" \
+		"addql	#2,%%sp" \
+	: "=r"(retvalue)		/* outputs */ \
+	: "r"(f), "r"(w)		/* inputs */ \
+	: __CLOBBER_RETURN("d0") "d1", "a0", "a1", "cc"	/* clobbered regs */	\
+	AND_MEMORY \
+  ); \
+  retvalue; \
+})
+
+#else
+#define xfsl_init(a,b,c)	a(b, c)
+#define xfsl_event(a,b,c)	a(b, c)
+#define xfsl_exit(a,b)		a(b)
+#endif
+
+
+static xFSL_PAR	xpar;
+static PFONTINFO f_info;
+
+static _WORD do_xfsl(long v, _WORD handle, _WORD flags, char *title, _WORD *id, _WORD *pts)
+{
+	xFSL *xfsl;
+	int ret = 0;
+	_WORD win;
+	int use_win;
+	EVENT ev;
+
+	xfsl = (xFSL *)v;
+	memset(&ev, 0, sizeof(EVENT));
+
+	memset(&xpar, 0, sizeof(xFSL_PAR));
+	xpar.par_size = (short)sizeof(xFSL_PAR);
+	xpar.pfi_size = (short)sizeof(PFONTINFO);
+	
+	xpar.headline = title;
+	xpar.fontflags = FF_ALL;
+	if (flags & FS_F_MONO)
+		xpar.fontflags &= ~FF_PROPORTIONAL;
+				
+	f_info.fontid = *id;
+	f_info.fontsize.size = *pts;
+	xpar.font = &f_info;
+
+	use_win = cf_msg_cb;		/* Msg-Routine da -> Fenster */
+	if (use_win)
+	{
+		xpar.control = (CC_WINDOW|CC_APPMODAL);
+		ev.ev_mflags = MU_MESAG;
+	}
+
+	win = xfsl_init(xfsl->xfsl_init, handle, &xpar);
+	if (win == xFS_ERROR)
+		return FALSE;
+
+	if (use_win && (win == xFS_NO_WINDOW))
+	{
+		xpar.control = 0;
+		ev.ev_mflags = 0;
+		use_win = FALSE;
+	}
+
+	if (use_win)
+		disable_menu();
+
+	ret = 0;
+	do
+	{
+		ret = xfsl_event(xfsl->xfsl_event, win, &ev);
+		if (ret == xFS_EVENT)
+		{
+			handle_mdial_msg(ev.ev_mmgpbuf);
+		}
+	} while (ret != xFS_OK && ret != xFS_STOP);
+	xfsl_exit(xfsl->xfsl_exit, win);
+
+	if (use_win)
+		enable_menu();
+
+	if (ret == xFS_OK)
+	{
+		*id = f_info.fontid;
+		*pts = f_info.fontsize.size;
+	}
+	return (ret == xFS_OK);
+}
+
+static int check_for_xfsl(long *v)
+{
+	int ok;
+	xFSL *xfsl;
+		
+	ok = getcookie("xFSL", v);
+	if (ok)
+	{
+		xfsl = (xFSL *)*v;
+		if (xfsl->product == 0x4D584653L)	/* MagxUFSL versteht uns nicht! */
+		{
+			ok = FALSE;								/* -> FALSE, damit MagiC benutz wird */
+			*v = 0L;
+		}
+	}
+	return ok;
+}
+
+/* --------------------------------------------------------------------------- */
+
+static short check_for_fprot(void)
+{
+	char name[9], *p;
+	short i = -1;
+
+	p = getenv("FONTSELECT");
+	if (p)
+	{
+		strncpy(name, p, 8);
+		name[8] = '\0';
+		for (i = (short)strlen(name); i < 8; i++)
+			strcat(name, " ");
+		i = appl_find(name);
+	}
+	return i;
+}
+
+static void do_fprotokoll(_WORD ap_id, _WORD id, _WORD pts)
+{
+	_WORD msgbuff[8];
+	
+	msgbuff[0] = 0x7A19;			/* FONT_SELECT */
+	msgbuff[1] = gl_apid;
+	msgbuff[2] = 0;
+	msgbuff[3] = -1;
+	msgbuff[4] = id;
+	msgbuff[5] = pts;
+	msgbuff[6] = 1;
+	msgbuff[7] = 0;
+
+	appl_write(ap_id, (int)sizeof(msgbuff), msgbuff);
+}
+
+/* --------------------------------------------------------------------------- */
+
+static _WORD do_magx(_WORD handle, _WORD f_anz, _WORD flags, _WORD *id, _WORD *pts)
+{
+	FNT_DIALOG *fnt_ptr;
+	_WORD f_typ, ret, win;
+	long ratio = 1l << 16;
+	long n_id, n_pts;
+	_WORD but, check, d;
+	EVNT ev;
+	
+	f_typ = FNTS_BTMP|FNTS_OUTL|FNTS_MONO;
+	if (!(flags & FS_F_MONO))
+		f_typ |= FNTS_PROP;
+		
+	n_id = *id;
+	n_pts = (long) *pts << 16;
+	
+	fnt_ptr = fnts_create(handle, f_anz, f_typ, FNTS_3D, "The quick brown...", NULL);
+
+	if (!cf_msg_cb)	/* keine Msg-Routine -> modal */
+		ret = fnts_do(fnt_ptr,  FNTS_BSET, n_id, n_pts, ratio, &check, &n_id, &n_pts, &ratio);
+	else
+	{
+		disable_menu();
+		
+		win = fnts_open(fnt_ptr, FNTS_BSET, -1, -1, n_id, n_pts, ratio);
+		
+		ret = 0;
+		while (ret == 0)
+		{
+			ev.mwhich = evnt_multi(MU_KEYBD | MU_MESAG | MU_BUTTON,
+				2, 1, 1, 
+				0, 0, 0, 0, 0,
+				0, 0, 0, 0, 0,
+				ev.msg,
+#if defined(__PUREC__) && !defined(_GEMLIB_COMPATIBLE)
+				0, 0,
+#else
+				0,
+#endif
+				&ev.mx, &ev.my, &ev.mbutton, &ev.kstate, &ev.key, &ev.mclicks);
+			if (ev.mwhich & MU_MESAG)
+			{
+				switch (ev.msg[0])
+				{
+					case WM_REDRAW:
+					case WM_MOVED:
+					case WM_SIZED:
+						if (ev.msg[3] != win)		/* fuer fremdes Fenster */
+							handle_mdial_msg(ev.msg);
+						break;
+
+					case WM_BOTTOMED:					/* nicht erlaubt! */
+						break;
+					
+					case WM_TOPPED:
+					case WM_NEWTOP:
+					case WM_ONTOP:		
+						ev.msg[0] = WM_TOPPED;		/* immer Fontbox toppen! */
+						ev.msg[3] = win;
+						break;
+				}
+
+			}
+			ret = fnts_evnt(fnt_ptr, &ev, &but, &check, &n_id, &n_pts, &ratio);
+			
+			if (ret == 0)
+				ret = but;
+			else
+				ret = 0;
+		}
+		fnts_close(fnt_ptr, &d, &d);
+		
+		enable_menu();
+	}
+	
+	fnts_delete(fnt_ptr, 0);
+
+	if (ret == FNTS_OK|| ret == FNTS_SET)
+	{
+		*id = (int) n_id;
+		*pts = (int) (n_pts >> 16);
+		return TRUE;
+	}
+	return FALSE;
+}
+
+/* --------------------------------------------------------------------------- */
+
+_WORD do_fontsel(_WORD flags, char *title, _WORD *id, _WORD *pts)
+{
+	_WORD new_id, new_pts;
+	_WORD fs_handle, workout[57], f_anz, d, i;
+	_WORD ok = FALSE;
+	long v;
+
+	/* 
+	 * Wir machen einfach eine eigene WS auf, da MagiC am Handle rumfummelt und
+	 * alte UFSL den Demotext drucken wuerden.
+	 * Wer einen Font fuer den Drucker nicht fuer den Bildschirm anmeldet,
+	 * hat selber schuld!
+	 */
+	fs_handle = open_vwork(workout);
+	f_anz = workout[10];
+
+	if (gl_gdos)
+	{
+		f_anz += vst_load_fonts(fs_handle, 0);
+		vst_font(fs_handle, *id);
+		vst_point(fs_handle, *pts, &d,&d,&d,&d);
+	}
+	new_id = *id;
+	new_pts = *pts;
+
+	if ((flags & FS_M_XFSL) && check_for_xfsl(&v))
+	{
+		ok = do_xfsl(v, fs_handle, flags, title, &new_id, &new_pts);
+	}
+
+	else if ((flags & FS_M_FPROT) && (i = check_for_fprot()) >= 0)
+	{
+		do_fprotokoll(i, *id, *pts);
+		return FALSE;				/* immer so, da neuer Font per Message kommt! */
+	}		
+
+	else if ((flags & FS_M_MAGX) && (appl_xgetinfo(7, &i, &d, &d, &d) && (i & 0x04)))
+	{
+		ok = do_magx(fs_handle, f_anz, flags, &new_id, &new_pts);
+	}
+	else			/* keine der drei Methoden moeglich */
+	{
+		*id = -1;
+		*pts = -1;
+		ok = FALSE;
+	}	
+
+	if (gl_gdos)
+		vst_unload_fonts(fs_handle, 0);
+
+	v_clsvwk(fs_handle);
+
+	if (ok)
+	{
+		*id = new_id;
+		*pts = new_pts;
+	}
+
+	return ok;
+}
