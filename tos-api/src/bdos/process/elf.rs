@@ -1,4 +1,5 @@
-//! Minimal ELF64 parser for the AArch64 process loader (Phase 06 D3).
+//! Minimal ELF32 / ELF64 AArch64 parser for the process loader
+//! (Phase 06 D3; ELF32 path added for the ILP32 pivot, ADR-020).
 //!
 //! Reads the bare minimum to feed [`super::loader`]: the ELF header,
 //! the program-header table, and a pre-validated array of `PT_LOAD`
@@ -11,7 +12,17 @@
 //!
 //! Accepts:
 //!
-//! - `ELFCLASS64` (8-byte words)
+//! - `ELFCLASS64` (8-byte words) **and** `ELFCLASS32` (4-byte words).
+//!   The class byte (`EI_CLASS`) is dispatched at parse time: LP64-native
+//!   NewTOS programs and the embedded selftests are ELF64, while ILP32
+//!   apps built with the GNU `-mabi=ilp32` toolchain are ELF32. The two
+//!   classes differ in header size, in the width of the address/offset/
+//!   size fields, and — critically — in the *order* of the program-header
+//!   fields (`p_flags` sits right after `p_type` in ELF64 but at the end
+//!   of the ELF32 phdr). All of that is captured in [`ClassLayout`] so a
+//!   single validated parse loop serves both. Every extracted `PT_LOAD`
+//!   descriptor is class-agnostic (widened to `u64`), so the whole
+//!   downstream loader — streaming, basepage, cache-sync — is unchanged.
 //! - `ELFDATA2LSB` (little-endian — AArch64 default)
 //! - `ET_EXEC` (statically-linked executable; `ET_DYN` / PIE will
 //!   come when relocation support is needed)
@@ -34,6 +45,7 @@ const EI_MAG: &[u8; 4] = b"\x7fELF";
 const EI_CLASS_OFF: usize = 4;
 const EI_DATA_OFF: usize = 5;
 const EI_VERSION_OFF: usize = 6;
+const ELFCLASS32: u8 = 1;
 const ELFCLASS64: u8 = 2;
 const ELFDATA2LSB: u8 = 1;
 const EV_CURRENT: u8 = 1;
@@ -50,26 +62,108 @@ pub const PF_W: u32 = 0x2;
 /// `p_flags` bit indicating the segment is readable.
 pub const PF_R: u32 = 0x4;
 
-// Offsets within the ELF64 header (Ehdr) — we only need a handful.
+// The `e_ident` block (magic, class, data, version) is byte-identical
+// across ELF32/ELF64, and so are `e_type` / `e_machine` / `e_version`,
+// which sit at fixed offsets 16 / 18 / 20 regardless of class.
 // Reference: ELF gABI § "ELF Header".
 const E_TYPE_OFF: usize = 16;
 const E_MACHINE_OFF: usize = 18;
 const E_VERSION_OFF: usize = 20;
-const E_ENTRY_OFF: usize = 24;
-const E_PHOFF_OFF: usize = 32;
-const E_PHENTSIZE_OFF: usize = 54;
-const E_PHNUM_OFF: usize = 56;
 
+// ── ELF64 Ehdr / Phdr layout ────────────────────────────────────────
+// e_entry / e_phoff are 8-byte words; the header is 64 bytes.
+const E64_ENTRY_OFF: usize = 24;
+const E64_PHOFF_OFF: usize = 32;
+const E64_PHENTSIZE_OFF: usize = 54;
+const E64_PHNUM_OFF: usize = 56;
 const ELF64_EHDR_SIZE: usize = 64;
 const ELF64_PHDR_SIZE: u16 = 56;
+// Phdr64 field offsets (ELF gABI § "Program Header"): p_flags sits
+// immediately after p_type, and the address/size fields are 8-byte.
+const P64_TYPE_OFF: usize = 0;
+const P64_FLAGS_OFF: usize = 4;
+const P64_OFFSET_OFF: usize = 8;
+const P64_VADDR_OFF: usize = 16;
+const P64_FILESZ_OFF: usize = 32;
+const P64_MEMSZ_OFF: usize = 40;
 
-// Offsets within Phdr64. Reference: ELF gABI § "Program Header".
-const P_TYPE_OFF: usize = 0;
-const P_FLAGS_OFF: usize = 4;
-const P_OFFSET_OFF: usize = 8;
-const P_VADDR_OFF: usize = 16;
-const P_FILESZ_OFF: usize = 32;
-const P_MEMSZ_OFF: usize = 40;
+// ── ELF32 Ehdr / Phdr layout ────────────────────────────────────────
+// e_entry / e_phoff are 4-byte words and therefore sit 4 bytes earlier
+// than in ELF64; the header is 52 bytes.
+const E32_ENTRY_OFF: usize = 24;
+const E32_PHOFF_OFF: usize = 28;
+const E32_PHENTSIZE_OFF: usize = 42;
+const E32_PHNUM_OFF: usize = 44;
+const ELF32_EHDR_SIZE: usize = 52;
+const ELF32_PHDR_SIZE: u16 = 32;
+// Phdr32 field offsets — the ORDER DIFFERS from ELF64: p_flags is the
+// second-to-last field (offset 24), not immediately after p_type. All
+// fields are 4-byte. Copying the ELF64 offsets here would mis-parse.
+const P32_TYPE_OFF: usize = 0;
+const P32_OFFSET_OFF: usize = 4;
+const P32_VADDR_OFF: usize = 8;
+const P32_FILESZ_OFF: usize = 16;
+const P32_MEMSZ_OFF: usize = 20;
+const P32_FLAGS_OFF: usize = 24;
+
+/// Per-class byte layout of the header/phdr fields the loader needs.
+///
+/// The `e_ident` block and `e_type`/`e_machine`/`e_version` are checked
+/// with fixed offsets before a layout is selected; everything captured
+/// here differs between ELF32 and ELF64. `wide` selects 8-byte (ELF64)
+/// vs 4-byte (ELF32) reads for the address / offset / size fields so a
+/// single validated parse loop serves both classes.
+#[derive(Copy, Clone)]
+struct ClassLayout {
+    /// Total ELF header size (`e_ehsize`): 52 (ELF32) or 64 (ELF64).
+    ehdr_size: usize,
+    /// Expected `e_phentsize`: 32 (ELF32) or 56 (ELF64).
+    phdr_size: u16,
+    e_entry: usize,
+    e_phoff: usize,
+    e_phentsize: usize,
+    e_phnum: usize,
+    p_type: usize,
+    p_flags: usize,
+    p_offset: usize,
+    p_vaddr: usize,
+    p_filesz: usize,
+    p_memsz: usize,
+    /// `true` for ELF64 (8-byte words), `false` for ELF32 (4-byte).
+    wide: bool,
+}
+
+const LAYOUT64: ClassLayout = ClassLayout {
+    ehdr_size: ELF64_EHDR_SIZE,
+    phdr_size: ELF64_PHDR_SIZE,
+    e_entry: E64_ENTRY_OFF,
+    e_phoff: E64_PHOFF_OFF,
+    e_phentsize: E64_PHENTSIZE_OFF,
+    e_phnum: E64_PHNUM_OFF,
+    p_type: P64_TYPE_OFF,
+    p_flags: P64_FLAGS_OFF,
+    p_offset: P64_OFFSET_OFF,
+    p_vaddr: P64_VADDR_OFF,
+    p_filesz: P64_FILESZ_OFF,
+    p_memsz: P64_MEMSZ_OFF,
+    wide: true,
+};
+
+const LAYOUT32: ClassLayout = ClassLayout {
+    ehdr_size: ELF32_EHDR_SIZE,
+    phdr_size: ELF32_PHDR_SIZE,
+    e_entry: E32_ENTRY_OFF,
+    e_phoff: E32_PHOFF_OFF,
+    e_phentsize: E32_PHENTSIZE_OFF,
+    e_phnum: E32_PHNUM_OFF,
+    p_type: P32_TYPE_OFF,
+    p_flags: P32_FLAGS_OFF,
+    p_offset: P32_OFFSET_OFF,
+    p_vaddr: P32_VADDR_OFF,
+    p_filesz: P32_FILESZ_OFF,
+    p_memsz: P32_MEMSZ_OFF,
+    wide: false,
+};
 
 // ─── Output types ──────────────────────────────────────────────────
 
@@ -126,7 +220,7 @@ pub enum ParseError {
     TooShort,
     /// First four bytes are not `\x7fELF`.
     BadMagic,
-    /// `EI_CLASS != ELFCLASS64`.
+    /// `EI_CLASS` is neither `ELFCLASS32` (1) nor `ELFCLASS64` (2).
     NotElf64,
     /// `EI_DATA != ELFDATA2LSB`.
     NotLittleEndian,
@@ -136,7 +230,8 @@ pub enum ParseError {
     NotExecutable,
     /// `e_machine != EM_AARCH64`.
     NotAArch64,
-    /// `e_phentsize` is not 56 (ELF64 phdr size).
+    /// `e_phentsize` is not the class's phdr size (32 for ELF32, 56 for
+    /// ELF64).
     BadPhEntSize,
     /// More than [`MAX_LOAD_SEGMENTS`] `PT_LOAD` entries.
     TooManySegments,
@@ -162,46 +257,66 @@ fn read_u32_le(b: &[u8], off: usize) -> Option<u32> {
 fn read_u64_le(b: &[u8], off: usize) -> Option<u64> {
     b.get(off..off + 8).map(|s| u64::from_le_bytes(s.try_into().unwrap()))
 }
+/// Read an address / offset / size field, widening to `u64`: an 8-byte
+/// word in ELF64, a 4-byte (zero-extended) word in ELF32.
+#[inline]
+fn read_word(b: &[u8], off: usize, wide: bool) -> Option<u64> {
+    if wide {
+        read_u64_le(b, off)
+    } else {
+        read_u32_le(b, off).map(u64::from)
+    }
+}
 
 // ─── Parser ────────────────────────────────────────────────────────
 
-/// Parse an ELF64 AArch64 executable header.
+/// Parse an ELF32 or ELF64 AArch64 executable header.
 ///
-/// `header` must hold at least the ELF header **and** the entire
-/// program-header table — the loader reads them from a small fixed
-/// buffer for a streamed file, or hands the whole in-memory blob for an
-/// embedded image. Segment *payloads* are never read here, only their
-/// program-header descriptors. `total_len` is the full image length in
-/// bytes (the on-disk file size, which may be far larger than `header`)
-/// and is what the `PT_LOAD` file-range check validates against — so a
-/// segment whose bytes stream straight into the TPA is accepted even
-/// though they are absent from `header`.
+/// The `EI_CLASS` byte selects a [`ClassLayout`]; from there a single
+/// validated loop parses either class. `header` must hold at least the
+/// ELF header **and** the entire program-header table — the loader reads
+/// them from a small fixed buffer for a streamed file, or hands the whole
+/// in-memory blob for an embedded image. Segment *payloads* are never read
+/// here, only their program-header descriptors. `total_len` is the full
+/// image length in bytes (the on-disk file size, which may be far larger
+/// than `header`) and is what the `PT_LOAD` file-range check validates
+/// against — so a segment whose bytes stream straight into the TPA is
+/// accepted even though they are absent from `header`.
 ///
 /// On success, returns an [`ElfImage`] whose `segments()` slice is
-/// ready for [`super::loader`] to consume. On failure, returns the
-/// most specific [`ParseError`] that explains why the image was
-/// rejected.
+/// ready for [`super::loader`] to consume (addresses/sizes widened to
+/// `u64`, so an ILP32 image is indistinguishable downstream). On failure,
+/// returns the most specific [`ParseError`] that explains why the image
+/// was rejected.
 pub fn parse(header: &[u8], total_len: u64) -> Result<ElfImage, ParseError> {
-    if header.len() < ELF64_EHDR_SIZE {
+    // ─── e_ident (class-independent) ────────────────────────────
+    // Magic, class, data and version all live in the 16-byte e_ident
+    // block, so validate them and pick the class layout before assuming
+    // any class-specific header size.
+    if header.len() < EI_NIDENT {
         return Err(ParseError::TooShort);
     }
-
-    // ─── e_ident ────────────────────────────────────────────────
     if &header[0..4] != EI_MAG {
         return Err(ParseError::BadMagic);
     }
-    if header[EI_CLASS_OFF] != ELFCLASS64 {
-        return Err(ParseError::NotElf64);
-    }
+    let layout = match header[EI_CLASS_OFF] {
+        ELFCLASS64 => LAYOUT64,
+        ELFCLASS32 => LAYOUT32,
+        _ => return Err(ParseError::NotElf64),
+    };
     if header[EI_DATA_OFF] != ELFDATA2LSB {
         return Err(ParseError::NotLittleEndian);
     }
     if header[EI_VERSION_OFF] != EV_CURRENT {
         return Err(ParseError::BadVersion);
     }
-    let _ = EI_NIDENT; // remaining e_ident bytes are OS/ABI — accept any.
 
-    // ─── e_type / e_machine / e_version ─────────────────────────
+    // With the class fixed, the whole ELF header must be present.
+    if header.len() < layout.ehdr_size {
+        return Err(ParseError::TooShort);
+    }
+
+    // ─── e_type / e_machine / e_version (fixed offsets) ─────────
     let e_type = read_u16_le(header, E_TYPE_OFF).ok_or(ParseError::TooShort)?;
     if e_type != ET_EXEC {
         return Err(ParseError::NotExecutable);
@@ -215,14 +330,17 @@ pub fn parse(header: &[u8], total_len: u64) -> Result<ElfImage, ParseError> {
         return Err(ParseError::BadVersion);
     }
 
-    // ─── Header pointers ────────────────────────────────────────
-    let entry_va = read_u64_le(header, E_ENTRY_OFF).ok_or(ParseError::TooShort)?;
-    let phoff = read_u64_le(header, E_PHOFF_OFF).ok_or(ParseError::TooShort)?;
-    let phentsize = read_u16_le(header, E_PHENTSIZE_OFF).ok_or(ParseError::TooShort)?;
-    if phentsize != ELF64_PHDR_SIZE {
+    // ─── Header pointers (class-specific offset + width) ────────
+    let entry_va =
+        read_word(header, layout.e_entry, layout.wide).ok_or(ParseError::TooShort)?;
+    let phoff =
+        read_word(header, layout.e_phoff, layout.wide).ok_or(ParseError::TooShort)?;
+    let phentsize =
+        read_u16_le(header, layout.e_phentsize).ok_or(ParseError::TooShort)?;
+    if phentsize != layout.phdr_size {
         return Err(ParseError::BadPhEntSize);
     }
-    let phnum = read_u16_le(header, E_PHNUM_OFF).ok_or(ParseError::TooShort)?;
+    let phnum = read_u16_le(header, layout.e_phnum).ok_or(ParseError::TooShort)?;
 
     // ─── Walk program headers ───────────────────────────────────
     let mut segments = [LoadSegment {
@@ -243,12 +361,13 @@ pub fn parse(header: &[u8], total_len: u64) -> Result<ElfImage, ParseError> {
             .ok_or(ParseError::PhdrOutOfRange)?;
         // The phdr table must lie inside the header window; if a producer
         // placed it beyond the loader's header buffer this fails cleanly
-        // rather than mis-parsing (normal toolchains emit phoff == 64).
+        // rather than mis-parsing (normal toolchains emit phoff == ehdr
+        // size: 52 for ELF32, 64 for ELF64).
         if end > header.len() {
             return Err(ParseError::PhdrOutOfRange);
         }
 
-        let p_type = read_u32_le(header, ph_off + P_TYPE_OFF)
+        let p_type = read_u32_le(header, ph_off + layout.p_type)
             .ok_or(ParseError::PhdrOutOfRange)?;
         if p_type != PT_LOAD {
             // PT_NOTE, PT_GNU_STACK etc. — ignore.
@@ -259,15 +378,15 @@ pub fn parse(header: &[u8], total_len: u64) -> Result<ElfImage, ParseError> {
             return Err(ParseError::TooManySegments);
         }
 
-        let flags = read_u32_le(header, ph_off + P_FLAGS_OFF)
+        let flags = read_u32_le(header, ph_off + layout.p_flags)
             .ok_or(ParseError::PhdrOutOfRange)?;
-        let file_offset = read_u64_le(header, ph_off + P_OFFSET_OFF)
+        let file_offset = read_word(header, ph_off + layout.p_offset, layout.wide)
             .ok_or(ParseError::PhdrOutOfRange)?;
-        let vaddr = read_u64_le(header, ph_off + P_VADDR_OFF)
+        let vaddr = read_word(header, ph_off + layout.p_vaddr, layout.wide)
             .ok_or(ParseError::PhdrOutOfRange)?;
-        let file_size = read_u64_le(header, ph_off + P_FILESZ_OFF)
+        let file_size = read_word(header, ph_off + layout.p_filesz, layout.wide)
             .ok_or(ParseError::PhdrOutOfRange)?;
-        let mem_size = read_u64_le(header, ph_off + P_MEMSZ_OFF)
+        let mem_size = read_word(header, ph_off + layout.p_memsz, layout.wide)
             .ok_or(ParseError::PhdrOutOfRange)?;
 
         if file_size > mem_size {
