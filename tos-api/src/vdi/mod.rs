@@ -51,16 +51,16 @@ mod trig;
 mod vwk;
 mod workstation;
 
+use crate::bdos::process::Abi;
 use crate::host;
 
-/// The VDI parameter block: five pointers to WORD (`i16`) arrays. On
-/// native AArch64 each pointer is 64-bit; the block is what `x1` points
-/// at when the `svc #2` trap is taken (`x0` holds the selector 115).
-///
-/// Accessors read/write WORD slots directly. For the bring-up the VDI
-/// is exercised from EL1 (kernel selftest), so the arrays are ordinary
-/// kernel memory; EL0 user-pointer access (à la the GEMDOS path) is a
-/// later concern when real programs issue Trap #2.
+/// The VDI parameter block: five pointers to WORD (`i16`) arrays
+/// (`contrl`/`intin`/`ptsin`/`intout`/`ptsout`). The five block pointers
+/// are the caller's pointer width — 8-byte for an LP64 caller, 4-byte for
+/// an ILP32 one (ADR-020) — so [`Vdipb::from_raw`] is told the caller's
+/// [`Abi`] and reads them at the right stride. The arrays they address
+/// are WORD arrays (16-bit either way), so the accessors keep plain
+/// `*mut i16`.
 pub(crate) struct Vdipb {
     contrl: *mut i16,
     intin: *mut i16,
@@ -70,21 +70,24 @@ pub(crate) struct Vdipb {
 }
 
 impl Vdipb {
-    /// Build from the raw `x1` pointer to the 5-pointer block.
+    /// Build from the raw `x1` pointer to the 5-pointer block, reading
+    /// the block pointers at the caller's pointer width (`abi`): 8-byte
+    /// LP64 pointers, or 4-byte (zero-extended) ILP32 pointers.
     ///
     /// # Safety
-    /// `ptr` must point at five consecutive valid array pointers, each
-    /// to a WORD array large enough for the opcode's counts.
-    pub(crate) unsafe fn from_raw(ptr: u64) -> Self {
-        // SAFETY: caller guarantees the 5-pointer block is valid.
-        let p = ptr as *const u64;
+    /// `ptr` must point at five consecutive valid array pointers of the
+    /// caller's width, each to a WORD array large enough for the opcode's
+    /// counts.
+    pub(crate) unsafe fn from_raw(ptr: u64, abi: Abi) -> Self {
+        // SAFETY: caller guarantees the 5-pointer block is valid and of
+        // `abi`'s width; `read_ptr` reads one such pointer per index.
         unsafe {
             Self {
-                contrl: p.add(0).read() as *mut i16,
-                intin: p.add(1).read() as *mut i16,
-                ptsin: p.add(2).read() as *mut i16,
-                intout: p.add(3).read() as *mut i16,
-                ptsout: p.add(4).read() as *mut i16,
+                contrl: abi.read_ptr(ptr, 0) as *mut i16,
+                intin: abi.read_ptr(ptr, 1) as *mut i16,
+                ptsin: abi.read_ptr(ptr, 2) as *mut i16,
+                intout: abi.read_ptr(ptr, 3) as *mut i16,
+                ptsout: abi.read_ptr(ptr, 4) as *mut i16,
             }
         }
     }
@@ -98,6 +101,14 @@ impl Vdipb {
     /// Read a native 64-bit pointer packed into four consecutive CONTRL
     /// WORDs starting at index `i` (NewTOS native MFDB-pointer
     /// convention; see [`crate::vdi::raster`]).
+    ///
+    /// This is the **LP64** packing (4 WORDs / 8 bytes), used by the
+    /// in-kernel VDI client and every native raster caller. An ILP32 app
+    /// packs a CONTRL pointer into 2 WORDs and at a different second-slot
+    /// offset (`7 + n * sizeof(void*)/sizeof(short)`); ILP32 raster/MFDB
+    /// support therefore also needs the raster callers to shift that
+    /// offset, so it is out of the ADR-020 block-pointer scope and tracked
+    /// separately (no ILP32 raster op is reachable through gemtest yet).
     #[inline]
     pub fn contrl_u64(&self, i: usize) -> u64 {
         // SAFETY: callers ensure CONTRL has ≥ i+4 WORDs.
@@ -145,14 +156,17 @@ const C_NINTOUT: usize = 4;
 const C_HANDLE: usize = 6;
 
 /// VDI dispatch entry. `vdipb_ptr` is the `x1` value at the `svc #2`
-/// trap (selector 115 in `x0`). The VDI returns nothing in a register — all results go into
-/// the parameter-block arrays — so this returns `()`.
+/// trap (selector 115 in `x0`); `abi` is the calling process's pointer
+/// width (the kernel passes [`crate::bdos::process::current_abi`]). The
+/// VDI returns nothing in a register — all results go into the
+/// parameter-block arrays — so this returns `()`.
 ///
 /// # Safety
-/// `vdipb_ptr` must be a valid VDI parameter block (see [`Vdipb`]).
-pub unsafe fn dispatch(vdipb_ptr: u64) {
-    // SAFETY: caller guarantees a valid parameter block.
-    let pb = unsafe { Vdipb::from_raw(vdipb_ptr) };
+/// `vdipb_ptr` must be a valid VDI parameter block of `abi`'s pointer
+/// width (see [`Vdipb`]).
+pub unsafe fn dispatch(vdipb_ptr: u64, abi: Abi) {
+    // SAFETY: caller guarantees a valid parameter block of `abi`'s width.
+    let pb = unsafe { Vdipb::from_raw(vdipb_ptr, abi) };
 
     let opcode = pb.contrl(C_OPCODE);
     // Default output counts; handlers refine them.

@@ -22,19 +22,29 @@ pub mod shell;
 pub mod window;
 mod pd;
 
+use crate::bdos::process::Abi;
+
 /// The AES parameter block: six pointers (four to WORD arrays, two to
-/// LONG arrays). On native AArch64 each pointer is 64-bit; `x1` points at
-/// the six consecutive pointers.
+/// LONG arrays). The block pointers — and the `addrin`/`addrout` LONG
+/// elements — are the caller's pointer width: 8-byte for an LP64 caller,
+/// 4-byte for an ILP32 one (ADR-020). `x1` points at the six consecutive
+/// pointers; [`Aespb::from_raw`] is told the caller's [`Abi`] so it reads
+/// them at the right stride. The WORD arrays (`control`/`global`/`intin`/
+/// `intout`) are 16-bit either way, so those stay plain `*mut i16`.
 pub(crate) struct Aespb {
     control: *mut i16,
     global: *mut i16,
     intin: *mut i16,
     intout: *mut i16,
-    addrin: *mut i64,
-    /// `addrout` — written by the managers that return addresses
-    /// (`rsrc_gaddr`, `graf_*`, …); unused until those land.
-    #[allow(dead_code)]
-    addrout: *mut i64,
+    /// Base address of the caller's `addrin` LONG array. Element width
+    /// tracks [`Self::abi`] (8 bytes LP64, 4 bytes ILP32), so this is
+    /// kept as a raw base and indexed at read time, not a typed pointer.
+    addrin: u64,
+    /// Base address of the caller's `addrout` LONG array — written by the
+    /// managers that return addresses (`rsrc_gaddr`, …).
+    addrout: u64,
+    /// Caller pointer width, threaded from the running process.
+    abi: Abi,
 }
 
 // CONTRL indices with fixed meaning (`include/aesdefs.h`).
@@ -47,21 +57,27 @@ const C_OUT_LEN: usize = 2;
 const C_AIN_LEN: usize = 3;
 
 impl Aespb {
-    /// Build from the raw `x1` pointer to the six-pointer block.
+    /// Build from the raw `x1` pointer to the six-pointer block, reading
+    /// the block pointers at the caller's pointer width (`abi`): 8-byte
+    /// LP64 pointers, or 4-byte (zero-extended) ILP32 pointers.
     ///
     /// # Safety
-    /// `ptr` must point at six consecutive valid array pointers, each to
-    /// an array large enough for the opcode's declared lengths.
-    pub(crate) unsafe fn from_raw(ptr: u64) -> Self {
-        // SAFETY: caller guarantees the six-pointer block is valid.
-        let p = ptr as *const u64;
-        Aespb {
-            control: unsafe { p.read() } as *mut i16,
-            global: unsafe { p.add(1).read() } as *mut i16,
-            intin: unsafe { p.add(2).read() } as *mut i16,
-            intout: unsafe { p.add(3).read() } as *mut i16,
-            addrin: unsafe { p.add(4).read() } as *mut i64,
-            addrout: unsafe { p.add(5).read() } as *mut i64,
+    /// `ptr` must point at six consecutive valid array pointers of the
+    /// caller's width, each to an array large enough for the opcode's
+    /// declared lengths.
+    pub(crate) unsafe fn from_raw(ptr: u64, abi: Abi) -> Self {
+        // SAFETY: caller guarantees the six-pointer block is valid and of
+        // `abi`'s width; `read_ptr` reads one such pointer per index.
+        unsafe {
+            Aespb {
+                control: abi.read_ptr(ptr, 0) as *mut i16,
+                global: abi.read_ptr(ptr, 1) as *mut i16,
+                intin: abi.read_ptr(ptr, 2) as *mut i16,
+                intout: abi.read_ptr(ptr, 3) as *mut i16,
+                addrin: abi.read_ptr(ptr, 4),
+                addrout: abi.read_ptr(ptr, 5),
+                abi,
+            }
         }
     }
 
@@ -87,14 +103,18 @@ impl Aespb {
     }
     #[inline]
     fn addrin(&self, i: usize) -> u64 {
-        // SAFETY: callers index within `control[AIN_LEN]` input addresses.
-        unsafe { self.addrin.add(i).read() as u64 }
+        // SAFETY: callers index within `control[AIN_LEN]` input addresses;
+        // element width tracks the caller's ABI (a `long` is one pointer
+        // wide in each). An ILP32 pointer stored here (e.g. an OBJECT tree
+        // in the low-VA TPA) zero-extends to a valid VA.
+        unsafe { self.abi.read_ptr(self.addrin, i) }
     }
     #[inline]
     #[allow(dead_code)] // used by the address-returning managers (later sub-phases)
     fn set_addrout(&self, i: usize, v: u64) {
-        // SAFETY: callers index within the addrout array.
-        unsafe { self.addrout.add(i).write(v as i64) }
+        // SAFETY: callers index within the addrout array; element width
+        // tracks the caller's ABI (ILP32 stores the low 4 bytes).
+        unsafe { self.abi.write_ptr(self.addrout, i, v) }
     }
     /// A mutable view of the caller's `global` array (the `AESGLOBAL`).
     #[inline]
@@ -104,13 +124,16 @@ impl Aespb {
 }
 
 /// AES dispatch entry. `aespb_ptr` is the `x1` value at the GEM trap
-/// (selector 200 in `x0`). Results go into the parameter-block arrays.
+/// (selector 200 in `x0`); `abi` is the calling process's pointer width
+/// (the kernel passes [`crate::bdos::process::current_abi`]). Results go
+/// into the parameter-block arrays.
 ///
 /// # Safety
-/// `aespb_ptr` must be a valid AES parameter block (see [`Aespb`]).
-pub unsafe fn dispatch(aespb_ptr: u64) {
-    // SAFETY: caller guarantees a valid parameter block.
-    let pb = unsafe { Aespb::from_raw(aespb_ptr) };
+/// `aespb_ptr` must be a valid AES parameter block of `abi`'s pointer
+/// width (see [`Aespb`]).
+pub unsafe fn dispatch(aespb_ptr: u64, abi: Abi) {
+    // SAFETY: caller guarantees a valid parameter block of `abi`'s width.
+    let pb = unsafe { Aespb::from_raw(aespb_ptr, abi) };
     let opcode = pb.control(C_OPCODE);
 
     match opcode {

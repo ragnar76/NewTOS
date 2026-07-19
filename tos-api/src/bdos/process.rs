@@ -97,6 +97,82 @@ impl State {
     }
 }
 
+// ─── Per-process ABI (pointer / `long` width) ───────────────────────
+
+/// Application binary interface of a loaded program, derived from its
+/// ELF class at load time (ADR-020, the ILP32 pivot). It is the width
+/// of a C pointer and `long` in the program's address space, and thus
+/// how the shared GEM trap (`svc #2`) must interpret the AES/VDI
+/// parameter block the app hands in: an ILP32 app builds the block from
+/// **4-byte** pointers, an LP64 app from **8-byte** pointers. The WORD
+/// arrays the pointers point at are 16-bit either way; only the pointer
+/// reads (the six/five block pointers, and any `long`/pointer inside the
+/// AES `addrin`/`addrout` arrays) change width.
+///
+/// Encoded as `u8` so it can live in an [`AtomicU8`] alongside the rest
+/// of the lock-free [`Process`] slot state.
+#[repr(u8)]
+#[derive(Copy, Clone, Debug, Eq, PartialEq)]
+pub enum Abi {
+    /// Native AArch64 LP64: 8-byte pointers and `long`. Kernel-launched
+    /// ELF64 programs, the embedded selftests, and every in-kernel (EL1)
+    /// GEM caller (the desktop, the boot VDI/AES selftests) use this.
+    Lp64 = 0,
+    /// GNU ILP32 (`aarch64-elf-gcc -mabi=ilp32`, `ELFCLASS32`): 4-byte
+    /// pointers and `long`. Source-port GEM apps built against the ILP32
+    /// SDK (libc-ilp32 / gemlib-ilp32 / cflib-ilp32) run in this ABI.
+    Ilp32 = 1,
+}
+
+impl Abi {
+    /// Decode a raw `u8` from [`Process::abi`]. Defensive: any value
+    /// other than `1` (`Ilp32`) is treated as `Lp64`, so a fresh/zeroed
+    /// slot reads as the native ABI.
+    #[inline]
+    pub const fn from_u8(v: u8) -> Self {
+        match v {
+            1 => Self::Ilp32,
+            _ => Self::Lp64,
+        }
+    }
+
+    /// Read the `i`-th pointer-width word from a parameter-block array
+    /// based at `base`, widened to `u64`: an 8-byte load at 8-byte stride
+    /// for [`Abi::Lp64`], a 4-byte (zero-extended) load at 4-byte stride
+    /// for [`Abi::Ilp32`]. Used for both the AES/VDI block pointers and
+    /// the AES `addrin` `long`/pointer elements (a `long` is exactly one
+    /// pointer wide in each ABI).
+    ///
+    /// # Safety
+    /// `base + i * width` must address a valid, readable slot.
+    #[inline]
+    pub unsafe fn read_ptr(self, base: u64, i: usize) -> u64 {
+        match self {
+            // SAFETY: forwarded to the caller's bounds contract.
+            Self::Lp64 => unsafe { (base as *const u64).add(i).read() },
+            // SAFETY: forwarded to the caller's bounds contract.
+            Self::Ilp32 => unsafe { (base as *const u32).add(i).read() as u64 },
+        }
+    }
+
+    /// Write `v` into the `i`-th pointer-width slot of a parameter-block
+    /// array based at `base` (the inverse of [`Self::read_ptr`]): an
+    /// 8-byte store for [`Abi::Lp64`], the low 4 bytes for [`Abi::Ilp32`].
+    /// Used by the AES `addrout` writers (`rsrc_gaddr`, …).
+    ///
+    /// # Safety
+    /// `base + i * width` must address a valid, writable slot.
+    #[inline]
+    pub unsafe fn write_ptr(self, base: u64, i: usize, v: u64) {
+        match self {
+            // SAFETY: forwarded to the caller's bounds contract.
+            Self::Lp64 => unsafe { (base as *mut u64).add(i).write(v) },
+            // SAFETY: forwarded to the caller's bounds contract.
+            Self::Ilp32 => unsafe { (base as *mut u32).add(i).write(v as u32) },
+        }
+    }
+}
+
 // ─── Process slot ───────────────────────────────────────────────────
 
 /// Per-process kernel state. Sits next to (but not inside) the
@@ -111,6 +187,13 @@ impl State {
 pub struct Process {
     /// Slot lifecycle (see [`State`]).
     pub state: AtomicU8,
+
+    /// Program ABI (pointer / `long` width), recorded from the ELF class
+    /// by the loader (ADR-020). Read lock-free by the GEM trap dispatch
+    /// via [`current_abi`] so the AES/VDI parameter-block readers use the
+    /// caller's pointer width. Encoded as `u8` per [`Abi`]; a zeroed slot
+    /// reads as [`Abi::Lp64`].
+    pub abi: AtomicU8,
 
     /// Kernel-side virtual address of the [`BasePage`] living at the
     /// start of this process's TPA. Always a high-half VA; the value
@@ -274,6 +357,7 @@ impl Process {
     pub const fn empty() -> Self {
         Self {
             state: AtomicU8::new(State::Free as u8),
+            abi: AtomicU8::new(Abi::Lp64 as u8),
             basepage_kva: AtomicPtr::new(ptr::null_mut()),
             basepage_pa: AtomicU64::new(0),
             l0_pa: AtomicU64::new(0),
@@ -299,6 +383,18 @@ impl Process {
     #[inline]
     pub fn set_state(&self, s: State) {
         self.state.store(s as u8, Ordering::Release);
+    }
+
+    /// Read the program ABI recorded for this slot.
+    #[inline]
+    pub fn read_abi(&self) -> Abi {
+        Abi::from_u8(self.abi.load(Ordering::Acquire))
+    }
+
+    /// Record the program ABI for this slot (loader, at load time).
+    #[inline]
+    pub fn set_abi(&self, a: Abi) {
+        self.abi.store(a as u8, Ordering::Release);
     }
 }
 
@@ -336,6 +432,24 @@ pub fn current() -> *mut BasePage {
 #[inline]
 pub fn set_current(bp: *mut BasePage) {
     RUN.store(bp, Ordering::Release);
+}
+
+/// ABI (pointer / `long` width) of the currently-running process, or
+/// [`Abi::Lp64`] when no user process owns the running basepage.
+///
+/// The GEM trap dispatch (`svc #2`) reads this to interpret the caller's
+/// AES/VDI parameter block at the right pointer width. An EL0 app's slot
+/// carries the ABI its ELF class implied; every in-kernel (EL1) GEM
+/// caller — the desktop and the boot-time VDI/AES selftests, which run
+/// while [`RUN`] is still null — resolves to [`Abi::Lp64`] and keeps its
+/// native 64-bit blocks. (The desktop never reaches this path at all: it
+/// calls the AES/VDI functions directly, not through the trap readers.)
+#[inline]
+pub fn current_abi() -> Abi {
+    match slot_for(current()) {
+        Some(idx) => PROCESS_TABLE[idx].read_abi(),
+        None => Abi::Lp64,
+    }
 }
 
 // ─── Deferred terminate (Ctrl-C from blocking console input) ────────
@@ -419,6 +533,7 @@ pub fn free_slot(idx: usize) {
         return;
     }
     let p = &PROCESS_TABLE[idx];
+    p.abi.store(Abi::Lp64 as u8, Ordering::Release);
     p.basepage_kva.store(ptr::null_mut(), Ordering::Release);
     p.basepage_pa.store(0, Ordering::Release);
     p.l0_pa.store(0, Ordering::Release);

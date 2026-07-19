@@ -318,11 +318,17 @@ pub extern "C" fn rust_sync_handler(frame: &mut ExceptionFrame) {
         // GEM trap (#2): shared by the VDI and the AES. `x0` is the
         // selector (115 = VDI, 200 = AES), `x1` the parameter block.
         // Neither returns a value in a register, so leave `x0 = 0`.
+        //
+        // The running process's ABI (ADR-020) tells the readers whether
+        // `x1` addresses a block of 4-byte (ILP32) or 8-byte (LP64)
+        // pointers; an in-kernel (EL1) caller has no user process and
+        // resolves to LP64, keeping the native 64-bit selftest blocks.
         TrapClass::Gem => {
+            let abi = tos_api::bdos::process::current_abi();
             match args.regs[0] {
                 // SAFETY: `x1` is the caller-supplied parameter block.
-                115 => unsafe { tos_api::vdi::dispatch(args.regs[1]) },
-                200 => unsafe { tos_api::aes::dispatch(args.regs[1]) },
+                115 => unsafe { tos_api::vdi::dispatch(args.regs[1], abi) },
+                200 => unsafe { tos_api::aes::dispatch(args.regs[1], abi) },
                 _ => {} // unknown selector → no-op (GEM trap is trusted)
             }
             0

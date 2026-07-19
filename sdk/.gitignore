@@ -20,6 +20,13 @@
 /cflib/cflib-21/
 /cflib/build/
 /cflib/cflib.a
+# ILP32 sibling artifacts (ADR-020 Stage 3; regenerable via build-*-ilp32.sh).
+/gemlib/gemlib-0.44.0-ilp32/
+/gemlib/build-ilp32/
+/gemlib/gemlib-ilp32.a
+/cflib/cflib-21-ilp32/
+/cflib/build-ilp32/
+/cflib/cflib-ilp32.a
 **/*.o
 *.NCP
 *.NAP

@@ -196,6 +196,11 @@ pub struct LoadSegment {
 pub struct ElfImage {
     /// User entry point (`e_entry`, AArch64 VA).
     pub entry_va: u64,
+    /// `true` for `ELFCLASS32` (ILP32, 4-byte pointers/`long`), `false`
+    /// for `ELFCLASS64` (LP64). The loader records this in the process
+    /// slot so the GEM trap readers use the program's pointer width; all
+    /// other parsed fields are class-agnostic (widened to `u64`).
+    is_ilp32: bool,
     /// `PT_LOAD` segments, in program-header order.
     segments: [LoadSegment; MAX_LOAD_SEGMENTS],
     /// Number of valid entries in `segments`.
@@ -206,6 +211,12 @@ impl ElfImage {
     /// Slice of the populated load segments.
     pub fn segments(&self) -> &[LoadSegment] {
         &self.segments[..self.num_segments]
+    }
+
+    /// `true` when the image is `ELFCLASS32` (ILP32 / GNU `-mabi=ilp32`).
+    #[inline]
+    pub fn is_ilp32(&self) -> bool {
+        self.is_ilp32
     }
 }
 
@@ -413,5 +424,12 @@ pub fn parse(header: &[u8], total_len: u64) -> Result<ElfImage, ParseError> {
         num_segments += 1;
     }
 
-    Ok(ElfImage { entry_va, segments, num_segments })
+    // `layout.wide` is true for ELF64 (8-byte words); its negation is the
+    // ILP32 (ELFCLASS32) flag the loader records for the GEM trap readers.
+    Ok(ElfImage {
+        entry_va,
+        is_ilp32: !layout.wide,
+        segments,
+        num_segments,
+    })
 }

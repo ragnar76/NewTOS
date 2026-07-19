@@ -505,6 +505,15 @@ unsafe fn populate_and_map(
     proc_slot.basepage_pa.store(tpa.base_pa, Ordering::Release);
     proc_slot.l0_pa.store(l0_pa, Ordering::Release);
     proc_slot.entry_va.store(img.entry_va, Ordering::Release);
+    // Record the program ABI (ELF class) so the GEM trap dispatch reads
+    // this process's AES/VDI parameter blocks at the caller's pointer
+    // width (ADR-020): 4-byte pointers for an ILP32 (ELFCLASS32) app,
+    // 8-byte for an LP64 (ELFCLASS64) one.
+    proc_slot.set_abi(if img.is_ilp32() {
+        super::Abi::Ilp32
+    } else {
+        super::Abi::Lp64
+    });
 
     Ok(LoadedImage {
         slot,
