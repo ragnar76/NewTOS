@@ -33,3 +33,23 @@ __sys_stat (const char *path, struct stat *st, int lflag, int exact)
 	(void) exact;   /* NewTOS lean: no timestamp/owner resolution */
 	return Fstat64 (lflag, path, st);
 }
+
+/*
+ * stat()/lstat() (mintlib unix/stat.c, unix/lstat.c) call the higher-level
+ * __do_stat. The pristine mintlib __do_stat (also in the excluded
+ * mintlib/do_stat.c) walked the path itself and then added a timestamp/owner
+ * conversion tail (__unixtime, geteuid/getegid, and for device names time()).
+ * The reused mintlib __quickstat (mintlib/quickstat.c) already performs the
+ * identical native-then-Fsfirst path walk and fills st_mode / st_size /
+ * st_uid / st_gid honestly; it only skips the timestamp resolution. QED's sole
+ * stat() caller (file.c) reads st_mode / st_uid / st_gid to preserve
+ * permissions across a save (Fchmod/Fchown), so the timestamp tail is dead
+ * weight. Delegate to __quickstat -- same lean pattern as __sys_stat above, no
+ * duplicated walk, no Unix time/owner tail. __quickstat already returns
+ * 0 / -1 (errno set), matching __do_stat's contract.
+ */
+int
+__do_stat (const char *path, struct stat *st, int lflag)
+{
+	return __quickstat (path, st, lflag);
+}

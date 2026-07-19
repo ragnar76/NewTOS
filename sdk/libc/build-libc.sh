@@ -116,7 +116,12 @@ DIRS="stdio stdlib string mintlib unix syscall time misc multibyte signal termio
 #     the real path stat on -ENOSYS)
 # (unix/ioctl.c is m68k Super() asm and never assembles for AArch64 anyway;
 #  newtos-arch/ioctl.c forwards to the GEMDOS Fcntl trap instead.)
-EXCLUDE="mintlib/do_fstat.c mintlib/isatty.c mintlib/do_stat.c"
+# unix/access.c -> newtos-arch/access.c  (lean access; drops the Unix passwd/
+#   group DB tail getgroups->getpwuid/getgrent/setgrent/endgrent, which has no
+#   TOS analog -- pulled by tz/localtime.c's access() call)
+# time/clock.c   -> newtos-arch/clock.c   (clock() over Tgetdate/Tgettime; the
+#   m68k _hz_200 sysvar read via get_sysvar/getsysvar.S has no AArch64 analog)
+EXCLUDE="mintlib/do_fstat.c mintlib/isatty.c mintlib/do_stat.c unix/access.c time/clock.c"
 is_excluded() { case " $EXCLUDE " in *" $1 "*) return 0;; esac; return 1; }
 
 echo "clang : $($CLANG --version | head -1)"
@@ -135,7 +140,13 @@ for d in $DIRS; do
         case "$b" in test-*|*-skeleton|ftest|xpg_basename|zdump|zic|tzselect) continue;; esac
         if is_excluded "$d/$b.c"; then echo "$d/$b.c" >> "$BUILD/excluded.txt"; continue; fi
         o="$OBJ/${d}__${b}.o"
-        if "$CLANG" "${CFLAGS[@]}" -I"$TOP/$d" "${INCS[@]}" -c "$c" -o "$o" 2>"$OBJ/${d}__${b}.err"; then
+        # Per-file DEFS, replicating mintlib buildrules. ident.c needs the
+        # library VERSION string (DEFS-ident.c = -DVERSION="$(VERSION)"); without
+        # it the `char __Ident_gnulib[] = "..." VERSION " $";` concat is a syntax
+        # error and the object (which QED's rsc.c references) is missing.
+        DEFS_FILE=()
+        case "$d/$b" in mintlib/ident) DEFS_FILE=(-DVERSION='"0.60.1"');; esac
+        if "$CLANG" "${CFLAGS[@]}" ${DEFS_FILE[@]+"${DEFS_FILE[@]}"} -I"$TOP/$d" "${INCS[@]}" -c "$c" -o "$o" 2>"$OBJ/${d}__${b}.err"; then
             echo "$d/$b.c" >> "$BUILD/compiled.txt"; ok=$((ok+1))
         else
             echo "$d/$b.c" >> "$BUILD/failed.txt"; fail=$((fail+1)); rm -f "$o"
@@ -164,6 +175,16 @@ done
     -c "$LIBC/newtos-arch/do_stat.c"   -o "$OBJ/arch__do_stat.o"  || exit 1
 "$CLANG" "${CFLAGS[@]}" "${INCS[@]}" \
     -c "$LIBC/newtos-arch/getcookie.c" -o "$OBJ/arch__getcookie.o" || exit 1
+# clock() over Tgetdate/Tgettime (replaces time/clock.c + m68k get_sysvar),
+# lean access() without the Unix passwd/group tail (replaces unix/access.c),
+# and the __extenddftf2 f64->f128 compiler-rt builtin the AArch64 long-double
+# ABI needs (pulled by strtold via sscanf/vfscanf).
+"$CLANG" "${CFLAGS[@]}" "${INCS[@]}" \
+    -c "$LIBC/newtos-arch/clock.c"     -o "$OBJ/arch__clock.o"     || exit 1
+"$CLANG" "${CFLAGS[@]}" "${INCS[@]}" \
+    -c "$LIBC/newtos-arch/access.c"    -o "$OBJ/arch__access.o"    || exit 1
+"$CLANG" "${CFLAGS[@]}" "${INCS[@]}" \
+    -c "$LIBC/newtos-arch/softfloat.c" -o "$OBJ/arch__softfloat.o" || exit 1
 
 # --- archive -----------------------------------------------------------------
 rm -f "$LIBC/libc.a"

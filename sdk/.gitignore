@@ -1,8 +1,8 @@
 # NewTOS native C toolchain — tracking policy.
 #
-# Each ported library (libc = mintlib, gemlib) vendors its PRISTINE source as a
-# tarball; build-*.sh extracts it and overlays our edits (overlay/). The
-# extracted tree, object files, and the archive are build artifacts and are NOT
+# Each ported library (libc = mintlib, gemlib, cflib) vendors its PRISTINE source
+# as a tarball; build-*.sh extracts it and overlays our edits (overlay/). The
+# extracted tree, object files, and archive are build artifacts and are NOT
 # tracked — the tarball + overlay/ + build script + tests ARE. A clone builds
 # with no external network.
 
@@ -18,9 +18,11 @@
 /cflib/cflib.a
 **/*.o
 *.NCP
+*.NAP
 
-# Vendored trees not yet ported (vendor as tarball+overlay when the port begins).
-/apps/
+# App source trees under /apps/ stay vendored (big; third-party — QED compiles
+# UNMODIFIED). Build scripts + tests directly in /apps/ ARE tracked.
+/apps/*/
 
 # macOS junk that FAT round-trips create.
 .DS_Store
