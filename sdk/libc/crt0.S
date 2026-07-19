@@ -37,8 +37,25 @@ _start:
     mov     x0, x9
     bl      __libc_init_heap
 
-    /* main takes no arguments in Stage-1; its return value (w0) is the exit
-       code. */
+    /* Set up argc/argv for main(int argc, char **argv).
+     *
+     * The launcher (kernel enter_el0_with_resume_capture) sets only ELR /
+     * SP_EL0 / the TTBR0 tables — it does NOT pass argc/argv in registers, and
+     * mintlib's crtinit.c parseargs() (which would build argv from the
+     * BasePage command-line tail p_cmdlin) is m68k assembly that does not
+     * assemble for AArch64, so it is never linked. Without this, main()
+     * inherits garbage: argc = the leftover x0 from the void __libc_init_heap
+     * (~4 MiB, i.e. >= 2) and argv = 0, so `if (argc > 1) ... argv[1]` faults
+     * dereferencing (char**)0 + 1.
+     *
+     * NewTOS launches GEM apps from the desktop with no command-line
+     * arguments, so the correct value is argc == 1 with a NUL-terminated argv
+     * whose argv[0] is "" — the TOS "program name not available" convention
+     * (matching mintlib crtinit.c's `*arg++ = ""`). main's own return value
+     * (w0) is the exit code. */
+    mov     x0, #1                      /* argc = 1 */
+    adrp    x1, __crt0_argv
+    add     x1, x1, :lo12:__crt0_argv   /* argv = { "", NULL } */
     bl      main
 
     /* Pterm(main's return): GEMDOS 0x4C, rc in x0, svc #1. Never returns. */
@@ -48,3 +65,16 @@ _start:
     /* Safety net: Pterm does not return, but guard against a runaway PC. */
 1:  b       1b
     .size   _start, . - _start
+
+    /* Minimal argv for a no-argument native launch: { "", NULL }. The empty
+     * argv[0] signals "program name not available" (TOS convention). Pointers
+     * are 8-byte (LP64) — the C program's `char **argv` ABI; the linker
+     * resolves the .quad relocations to absolute VAs (static, no-PIE). */
+    .section .data.crt0, "aw", @progbits
+    .align  3
+    .global __crt0_argv
+__crt0_argv:
+    .quad   __crt0_argv0                /* argv[0] = "" */
+    .quad   0                           /* argv[1] = NULL (terminator) */
+__crt0_argv0:
+    .byte   0                           /* the empty string "" */
