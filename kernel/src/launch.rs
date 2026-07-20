@@ -129,9 +129,13 @@ pub fn run_auto_folder() {
         }
         let end = e.name.iter().position(|&b| b == 0).unwrap_or(14);
         let name = &e.name[..end];
-        // Only native .NAP/.NCP auto-run (ADR-018). Classic .PRG/.TOS are m68k
-        // and would only fail to load + alert, so skip anything non-native.
-        if !matches!(classify(name), FileType::Native(Flavor::App | Flavor::Console)) {
+        // AUTO auto-runs native *console* (.NCP) programs only. It runs at boot,
+        // BEFORE the desktop and AES/appl_init are up, so a GEM app (.NAP) — which
+        // needs AES (menu_bar/objc_draw/gl_wchar…) — must NOT run here; GEM apps
+        // launch from the desktop instead (double-click, or the `#Z` NEWDESK.INF
+        // autorun, both after AES init). Classic .PRG/.TOS are non-native m68k, so
+        // skip anything that is not a native console program.
+        if !matches!(classify(name), FileType::Native(Flavor::Console)) {
             continue;
         }
         // Build "C:\AUTO\<name>\0".

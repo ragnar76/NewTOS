@@ -1026,9 +1026,13 @@ the scheme.
     `form_alert` "m68k programs need the emulator (not yet available)" until the
     m68k userland phase.
   - anything else → document / no-op (associated-app opening is future work).
-- **AUTO-folder autorun** (`run_auto_folder`, `launch.rs`) + `#Z` NEWDESK.INF
-  autorun: run native extensions (`.NAP`/`.NCP`); a `.PRG` in `\AUTO\` fails to
-  load gracefully today (m68k unsupported), which is the current behavior.
+- **AUTO-folder autorun** (`run_auto_folder`, `launch.rs`): runs native
+  **console** programs (`.NCP`) only — it executes at boot BEFORE the desktop and
+  AES/`appl_init`, so a GEM app (`.NAP`) must NOT run from `\AUTO\` (it needs AES).
+  GEM apps auto-launch instead via the desktop `#Z` NEWDESK.INF autorun (after AES
+  init). A `.PRG` in `\AUTO\` (m68k) is unsupported and skipped. *(Revised
+  2026-07-20: originally `\AUTO\` also ran `.NAP`; that let a GEM app launch before
+  AES — see [[singletasking-app-owns-full-screen]] and the AUTO-console-only rule.)*
 
 ### Change surface
 

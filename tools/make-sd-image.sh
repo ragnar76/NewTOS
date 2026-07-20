@@ -57,7 +57,7 @@ head -c 4096 /dev/urandom                                                    > "
 mkdir -p "$V/ACC"
 mkdir -p "$V/GEMSYS"
 mkdir -p "$V/SUB";  printf 'A file inside SUB.\r\n'                           > "$V/SUB/INSIDE.TXT"
-mkdir -p "$V/AUTO"; printf 'AUTO runs .NAP/.NCP + .PRG at boot (ADR-018)\r\n' > "$V/AUTO/READ.ME"
+mkdir -p "$V/AUTO"; printf 'AUTO runs native console (.NCP) programs at boot, before the desktop/AES.\r\nGEM apps (.NAP) do NOT belong here - they launch from the desktop.\r\n' > "$V/AUTO/READ.ME"
 
 # ADR-018 / Task #72 stage A: a native NewTOS `.NCP` console program (native
 # AArch64 ELF, prints a banner via Cconws then Pterm). Placed on C: so it is
