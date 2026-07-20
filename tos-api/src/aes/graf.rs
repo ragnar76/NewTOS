@@ -335,62 +335,64 @@ pub fn graf_slidebox(pb: &Aespb) {
         return;
     }
     let mut pos = 0i16;
-    // SAFETY: valid object tree (GEM contract).
-    unsafe {
-        let p = &*tree.add(parent as usize);
-        let c = &mut *tree.add(obj as usize);
-        // `travel` = parent − child extent (EmuTOS `divis = c.g_h - t.g_h`);
-        // `c0` = the elevator's start position relative to the parent.
-        let (travel, c0) = if isvert {
-            (p.ob_height - c.ob_height, c.ob_y)
+    // App-provided tree at `addr_in[0]`: read/write `parent`/`obj` through the
+    // caller-ABI `ObjTree` accessor so an ILP32 app's 24-byte OBJECT records are
+    // addressed at their own field offsets, not the native LP64 ones. For an
+    // LP64/kernel caller `current_abi()` is `Lp64`, so the offsets are
+    // byte-identical to the previous `*mut Object` access. `abs_rect`/`draw_obj`
+    // build their own ABI-aware accessor internally.
+    let t = ObjTree::new(tree as *const Object);
+    // `travel` = parent − child extent (EmuTOS `divis = c.g_h - t.g_h`);
+    // `c0` = the elevator's start position relative to the parent.
+    let (travel, c0) = if isvert {
+        (t.height(parent) - t.height(obj), t.y(obj))
+    } else {
+        (t.width(parent) - t.width(obj), t.x(obj))
+    };
+    if let Some(h) = host() {
+        let (prx, pry, _, _) = object::abs_rect(tree as *const Object, parent);
+        // Grip offset: how far the mouse sat from the elevator's top-left
+        // at grab time, held constant for the whole drag so the elevator
+        // does not snap its leading edge to the cursor. EmuTOS `gr_dragbox`
+        // takes it via `gr_clamp(sx+1, sy+1, 0, 0, &off)` → `off =
+        // max(mouse − elev, 0)` (gemgrlib.c:253-260). `travel` can be
+        // negative for a malformed slider; `.max(0)` keeps `clamp` sound.
+        let (m0x, m0y) = crate::vdi::mouse_position();
+        let grip = if isvert {
+            (m0y - (pry + c0)).max(0)
         } else {
-            (p.ob_width - c.ob_width, c.ob_x)
+            (m0x - (prx + c0)).max(0)
         };
-        if let Some(h) = host() {
-            let (prx, pry, _, _) = object::abs_rect(tree as *const Object, parent);
-            // Grip offset: how far the mouse sat from the elevator's top-left
-            // at grab time, held constant for the whole drag so the elevator
-            // does not snap its leading edge to the cursor. EmuTOS `gr_dragbox`
-            // takes it via `gr_clamp(sx+1, sy+1, 0, 0, &off)` → `off =
-            // max(mouse − elev, 0)` (gemgrlib.c:253-260). `travel` can be
-            // negative for a malformed slider; `.max(0)` keeps `clamp` sound.
-            let (m0x, m0y) = crate::vdi::mouse_position();
-            let grip = if isvert {
-                (m0y - (pry + c0)).max(0)
+        let hi = travel.max(0);
+        loop {
+            let (mx, my) = crate::vdi::mouse_position();
+            // New elevator position (relative to the parent) = mouse − grip
+            // − parent origin, constrained to the track [0, travel].
+            let rel = if isvert {
+                (my - grip - pry).clamp(0, hi)
             } else {
-                (m0x - (prx + c0)).max(0)
+                (mx - grip - prx).clamp(0, hi)
             };
-            let hi = travel.max(0);
-            loop {
-                let (mx, my) = crate::vdi::mouse_position();
-                // New elevator position (relative to the parent) = mouse − grip
-                // − parent origin, constrained to the track [0, travel].
-                let rel = if isvert {
-                    (my - grip - pry).clamp(0, hi)
-                } else {
-                    (mx - grip - prx).clamp(0, hi)
-                };
-                if isvert {
-                    c.ob_y = rel;
-                } else {
-                    c.ob_x = rel;
-                }
-                if let Some(backend) = h.raster() {
-                    object::draw_obj(tree as *const Object, parent, 8, backend);
-                }
-                // Position 0..1000, rounded away from zero — EmuTOS D-098
-                // "slider creep" fix: `mul_div_round(divnd, 1000, divis)`
-                // (gemgrlib.c:410), not a truncating divide.
-                pos = if travel > 0 {
-                    mul_div_round(rel as i32, 1000, travel as i32) as i16
-                } else {
-                    0
-                };
-                if !mouse_down() {
-                    break;
-                }
-                h.pump_input();
+            if isvert {
+                t.set_y(obj, rel);
+            } else {
+                t.set_x(obj, rel);
             }
+            if let Some(backend) = h.raster() {
+                object::draw_obj(tree as *const Object, parent, 8, backend);
+            }
+            // Position 0..1000, rounded away from zero — EmuTOS D-098
+            // "slider creep" fix: `mul_div_round(divnd, 1000, divis)`
+            // (gemgrlib.c:410), not a truncating divide.
+            pos = if travel > 0 {
+                mul_div_round(rel as i32, 1000, travel as i32) as i16
+            } else {
+                0
+            };
+            if !mouse_down() {
+                break;
+            }
+            h.pump_input();
         }
     }
     pb.set_intout(1, pos);

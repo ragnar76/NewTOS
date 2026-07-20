@@ -615,11 +615,14 @@ fn next_editable(tree: *mut Object, from: i16) -> i16 {
     if n <= 0 {
         return from;
     }
+    // App-provided tree at `addr_in[0]`: address each record at the caller's
+    // ABI width (24-byte ILP32 / 32-byte LP64) via `ObjTree::new`, not the
+    // native 32-byte `*mut Object` stride.
+    let t = ObjTree::new(tree as *const Object);
     let mut i = from;
     for _ in 0..n {
         i = (i + 1) % n;
-        // SAFETY: i is within [0, n).
-        if unsafe { (*tree.add(i as usize)).ob_flags } & EDITABLE != 0 {
+        if t.flags(i) & EDITABLE != 0 {
             return i;
         }
     }
@@ -628,25 +631,27 @@ fn next_editable(tree: *mut Object, from: i16) -> i16 {
 
 /// Number of objects in the flat tree array (up to and including LASTOB).
 fn tree_len(tree: *mut Object) -> i16 {
+    // App-provided tree: walk to LASTOB at the caller's ABI stride so the scan
+    // stops at the real terminator rather than running past the tree end at the
+    // wrong (native 32-byte) stride into an adjacent tree in the RSC blob.
+    let t = ObjTree::new(tree as *const Object);
     let mut i = 0i16;
-    // SAFETY: the array terminates at the LASTOB object.
-    unsafe {
-        loop {
-            if (*tree.add(i as usize)).ob_flags & LASTOB != 0 {
-                return i + 1;
-            }
-            i += 1;
-            if i > 256 {
-                return i; // safety cap
-            }
+    loop {
+        if t.flags(i) & LASTOB != 0 {
+            return i + 1;
+        }
+        i += 1;
+        if i > 256 {
+            return i; // safety cap
         }
     }
 }
 
 /// Show `obj` selected (pressed) and redraw it.
 fn press(tree: *mut Object, obj: i16) {
-    // SAFETY: valid index.
-    let state = unsafe { (*tree.add(obj as usize)).ob_state } | SELECTED;
+    // App-provided tree: read `ob_state` at the caller's ABI width.
+    let t = ObjTree::new(tree as *const Object);
+    let state = t.state(obj) | SELECTED;
     object::change(tree, obj, state, true);
 }
 
@@ -655,20 +660,19 @@ fn press(tree: *mut Object, obj: i16) {
 /// HIDETREE (ob_flags) or DISABLED (ob_state) object is skipped, so e.g. a
 /// disabled DEFAULT button is never picked by Enter.
 fn find_flag(tree: *mut Object, flag: u16) -> i16 {
+    // App-provided tree: read fields at the caller's ABI width, walking to the
+    // LASTOB terminator at the correct stride.
+    let t = ObjTree::new(tree as *const Object);
     let mut i = 0i16;
-    // SAFETY: the flat tree array terminates at the LASTOB object.
-    unsafe {
-        loop {
-            let ob = &*tree.add(i as usize);
-            if ob.ob_flags & HIDETREE == 0 && ob.ob_state & DISABLED == 0 && ob.ob_flags & flag != 0
-            {
-                return i;
-            }
-            if ob.ob_flags & LASTOB != 0 {
-                return -1;
-            }
-            i += 1;
+    loop {
+        let flags = t.flags(i);
+        if flags & HIDETREE == 0 && t.state(i) & DISABLED == 0 && flags & flag != 0 {
+            return i;
         }
+        if flags & LASTOB != 0 {
+            return -1;
+        }
+        i += 1;
     }
 }
 
@@ -720,21 +724,23 @@ pub fn form_center(pb: &Aespb) {
         return;
     };
     let (sw, sh) = (backend.width() as i16, backend.height() as i16);
-    // SAFETY: valid tree; the ROOT is index 0.
-    let (mut xd, mut yd, mut wd, mut hd, state, spec, otype) = unsafe {
-        let root = &mut *tree;
-        let (wd, hd) = (root.ob_width, root.ob_height);
-        let xd = (sw - wd) / 2;
-        // Centre BELOW the menu bar (EmuTOS ob_center, gemobed.c:76-80:
-        // `yd = gl_hbox + (gl_height - gl_hbox - hd) / 2`), so a centred dialog
-        // never lands under the menu bar. gl_hbox = gl_hchar + 3 = 19 pixels
-        // (== window::GAD == the menu BAR_H).
-        let bar = super::window::GAD;
-        let yd = bar + (sh - bar - hd) / 2;
-        root.ob_x = xd;
-        root.ob_y = yd;
-        (xd, yd, wd, hd, root.ob_state, root.ob_spec, root.ob_type)
-    };
+    // App-provided tree at `addr_in[0]`: read/write the ROOT (index 0) through
+    // the caller-ABI `ObjTree` accessor so an ILP32 app's 24-byte OBJECT record
+    // is addressed at its own field offsets, not the native LP64 ones. For an
+    // LP64/kernel caller `current_abi()` is `Lp64`, so the offsets are
+    // byte-identical to the previous `*mut Object` access.
+    let t = ObjTree::new(tree as *const Object);
+    let (mut wd, mut hd) = (t.width(0), t.height(0));
+    let mut xd = (sw - wd) / 2;
+    // Centre BELOW the menu bar (EmuTOS ob_center, gemobed.c:76-80:
+    // `yd = gl_hbox + (gl_height - gl_hbox - hd) / 2`), so a centred dialog
+    // never lands under the menu bar. gl_hbox = gl_hchar + 3 = 19 pixels
+    // (== window::GAD == the menu BAR_H).
+    let bar = super::window::GAD;
+    let mut yd = bar + (sh - bar - hd) / 2;
+    t.set_x(0, xd);
+    t.set_y(0, yd);
+    let (state, spec, otype) = (t.state(0), t.spec(0), t.ob_type(0));
     // Account for a 3px OUTLINE in the reported rectangle (EmuTOS ob_center):
     // the OUTLINED double frame reaches 3 px past the object on every side.
     if state & OUTLINED != 0 {
@@ -795,32 +801,32 @@ const SC_DOWN: i16 = 0x50; // arrow-down scancode
 
 /// Read an object's `(state, flags)` (EmuTOS `ob_fs`).
 fn ob_fs(tree: *const Object, obj: i16) -> (u16, u16) {
-    // SAFETY: valid tree (GEM contract).
-    unsafe {
-        let o = &*tree.add(obj as usize);
-        (o.ob_state, o.ob_flags)
-    }
+    // App-provided tree: read `ob_state`/`ob_flags` at the caller's ABI width.
+    let t = ObjTree::new(tree);
+    (t.state(obj), t.flags(obj))
 }
 
 /// Deselect the currently-selected radio sibling of `obj` and select `obj`
 /// (EmuTOS `fm_button` RBUTTON path).
 fn select_radio(tree: *mut Object, obj: i16) {
+    // App-provided tree: walk the sibling chain (`ob_head`/`ob_next`) and read
+    // state/flags at the caller's ABI width. `object::parent`/`object::change`
+    // are already ABI-aware, so pass them the raw pointer.
     // SAFETY: valid tree (GEM contract).
-    unsafe {
-        let parent = object::parent(tree as *const Object, obj);
-        if parent < 0 {
-            return;
+    let parent = unsafe { object::parent(tree as *const Object, obj) };
+    if parent < 0 {
+        return;
+    }
+    let t = ObjTree::new(tree as *const Object);
+    let mut cur = t.head(parent);
+    while cur != NIL && cur != parent {
+        let tflags = t.flags(cur);
+        let tstate = t.state(cur);
+        if tflags & RBUTTON != 0 && (tstate & SELECTED != 0 || cur == obj) {
+            let ns = if cur == obj { tstate | SELECTED } else { tstate & !SELECTED };
+            object::change(tree, cur, ns, true);
         }
-        let mut t = (*tree.add(parent as usize)).ob_head;
-        while t != NIL && t != parent {
-            let tflags = (*tree.add(t as usize)).ob_flags;
-            let tstate = (*tree.add(t as usize)).ob_state;
-            if tflags & RBUTTON != 0 && (tstate & SELECTED != 0 || t == obj) {
-                let ns = if t == obj { tstate | SELECTED } else { tstate & !SELECTED };
-                object::change(tree, t, ns, true);
-            }
-            t = (*tree.add(t as usize)).ob_next;
-        }
+        cur = t.next(cur);
     }
 }
 
@@ -830,11 +836,12 @@ fn prev_editable(tree: *mut Object, from: i16) -> i16 {
     if n <= 0 {
         return from;
     }
+    // App-provided tree: read `ob_flags` at the caller's ABI width.
+    let t = ObjTree::new(tree as *const Object);
     let mut i = from;
     for _ in 0..n {
         i = (i - 1 + n) % n;
-        // SAFETY: i is within [0, n).
-        if unsafe { (*tree.add(i as usize)).ob_flags } & EDITABLE != 0 {
+        if t.flags(i) & EDITABLE != 0 {
             return i;
         }
     }
