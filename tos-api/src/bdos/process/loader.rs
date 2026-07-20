@@ -493,6 +493,16 @@ unsafe fn populate_and_map(
         }
     }
 
+    // Register the TPA as the first per-process EL0 user-memory block
+    // (ADR-021): an EL0 `Mshrink`/`Mfree` of the basepage arrives as user
+    // VA 0, which must translate to the TPA's pool block (`raw_start`)
+    // instead of failing `EIMBA`. This also resets the slot's heap-window
+    // table so a reused slot starts clean.
+    // SAFETY: BDOS lock held; slot bounds-checked.
+    unsafe {
+        super::usermem::seed_tpa(slot, tpa.raw_start, tpa.base_pa, arena::TPA_SIZE);
+    }
+
     // Publish the slot metadata so `Pterm` (via `slot_for(run)`) and the
     // trap handler can find this process. `basepage_kva` is the high-
     // half VA of the TPA base; `basepage_pa` the low-half phys the user

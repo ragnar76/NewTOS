@@ -246,6 +246,21 @@ when `m_own != current_pd`, off by default, for catching bugs in ported
 sources. NewTOS should also clear `m_own` on free (cleaner than EmuTOS) since it
 does **not** rely on the stale-`m_own` quirk.
 
+### NewTOS EL0 realization (ADR-021)
+
+An **EL0** caller frees by the **user VA** it received from `Malloc`/`Mxalloc`,
+not a pool physical address. The trap entry translates that user VA back to the
+pool key (`m_start`) through the per-process block table
+(`bdos::process::usermem`) and frees it via the **unchanged**
+`bdos::mem::traps::mfree`; a user VA that is not a tracked block start returns
+`EIMBA`, matching EmuTOS's "address not on `mp_mal`". The window page mapping is
+left in place — the freed VA is never re-handed by the bump cursor, so no TLBI is
+required (QUIRK-001). A loaded AES resource is reclaimed via `rsrc_free` (which
+tracks it by pool key), **not** `Mfree`, so a stray `Mfree(rsc_va)` returns
+`EIMBA` rather than racing `rsrc_free` into a double free. **EL1 / kernel
+callers** free the raw address directly. Discrimination: non-null
+`bdos::process::current()`, mirroring `aes::resource`.
+
 ---
 
 ## Pi / BCM2711 binding

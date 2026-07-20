@@ -29,9 +29,10 @@
 //! heap and a proper stack), each slot provisions [`USER_L3_COUNT`]
 //! contiguous L3 tables wired under `L2[0..USER_L3_COUNT]`, so the
 //! per-process low-half mapping capacity is
-//! [`USER_TPA_MAX_VA`] = `USER_L3_COUNT × 2 MiB` (6 MiB today: a 4-MiB
-//! TPA plus a 2-MiB spare window the AES resource loader maps per
-//! process — see [`USER_L3_COUNT`]). The
+//! [`USER_TPA_MAX_VA`] = `USER_L3_COUNT × 2 MiB` (20 MiB today: a 4-MiB
+//! TPA plus a 16-MiB EL0 heap window into which GEMDOS `Malloc` blocks
+//! and the AES `.RSC` blob are mapped per process — see
+//! [`USER_L3_COUNT`] and [`super::usermem`]). The
 //! loader maps every 4-KiB page of the TPA individually (all at
 //! 4-KiB granularity — the basepage/text/data at the bottom need it),
 //! so no 2-MiB block descriptors are used. The EC4 self-test maps a
@@ -54,13 +55,19 @@ use super::MAX_PROCESSES;
 /// 512 × 4 KiB = 2 MiB, so the per-process low-half VA that can be
 /// mapped is `USER_L3_COUNT × 2 MiB`. The loader maps only the low
 /// [`super::arena::TPA_SIZE`] (4 MiB, two L3s) as the program's TPA —
-/// image + BSS + heap + stack; the remaining L3 is a **spare user
-/// window** that higher layers map on demand. The AES resource loader
-/// maps a per-process `.RSC` blob there so an EL0 app's `rsrc_gaddr`
-/// returns user-dereferenceable pointers (it cannot read the kernel
-/// high-half VAs the desktop/selftest path uses). Bump this to enlarge
-/// either region; the BSS cost is `MAX_PROCESSES × USER_L3_COUNT × 4 KiB`.
-pub const USER_L3_COUNT: usize = 3;
+/// image + BSS + heap + stack; the remaining L3s are the **per-process
+/// EL0 heap window** ([`super::usermem`]) into which GEMDOS
+/// `Malloc`/`Mxalloc` blocks *and* the AES `.RSC` blob are mapped on
+/// demand (ADR-021), so an EL0 app's `Mxalloc`/`rsrc_gaddr` returns
+/// user-dereferenceable pointers — it cannot read the kernel high-half
+/// VAs the desktop/selftest path uses.
+///
+/// `10` L3s ⇒ `20 MiB` mappable VA: the 4-MiB TPA plus a **16-MiB heap
+/// window**, a real `malloc` arena for a compiled app. Bump this to
+/// enlarge the window; the BSS cost is
+/// `MAX_PROCESSES × (3 + USER_L3_COUNT) × 4 KiB` (= 832 KiB here — the
+/// same order as the kernel heap pre-allocation).
+pub const USER_L3_COUNT: usize = 10;
 
 /// Low-half VA span covered by one L3 table (2 MiB).
 const L3_SPAN: u64 = 512 * 4096;

@@ -51,6 +51,7 @@ pub mod pterm;
 pub mod pexec;
 pub mod registry;
 pub mod sched;
+pub mod usermem;
 
 // ─── Bounds + state encoding ────────────────────────────────────────
 

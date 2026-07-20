@@ -276,6 +276,27 @@ divergence, not the extracted contract. **Protection bits** (Atari bits 4+)
 remain ignored until Phase 06 introduces process privilege; recorded as a known
 divergence from Atari docs (EmuTOS already ignores them).
 
+### NewTOS EL0 realization (ADR-021)
+
+For an **EL0** (SVC-originated) caller, `Mxalloc` does **not** hand back a raw
+pool physical address — an EL0 app runs behind `TTBR0_EL1` and would fault
+touching one (QED's `Mxalloc` → a TT-RAM PA `0x0160a000` write fault). Instead
+the trap entry (`tos-api/src/gemdos/memory.rs`) allocates the block from the real
+ST/TT pool via the **unchanged** `bdos::mem::traps::mxalloc` — so `mode`, the
+ST/TT preference and the `pmd`/`pmdalt` split stay faithful: the block genuinely
+comes from the requested pool — then **maps it into a per-process EL0 heap
+window** (`bdos::process::usermem`, an offset map directly above the 4 MiB TPA,
+16 MiB today) and returns the **user VA** the app can dereference. Blocks are
+handed out with a fresh-VA bump cursor, so no TLBI is needed before the app's
+return `eret` (QUIRK-001). `Mxalloc(-1, mode)` for EL0 reports
+`min(pool-largest-free-for-mode, remaining-window-bytes)` — bounded by what the
+app can actually map, not the ~1 GiB physical pool; the one deliberate,
+documented contract adaptation. **EL1 / kernel callers** (the desktop, the
+loader, boot init — which call `bdos::mem::traps` directly, so
+`bdos::process::current()` is null) keep the raw physical address unchanged. The
+EL0-vs-EL1 discrimination is the exact mechanism `aes::resource` uses (non-null
+`current()`).
+
 ---
 
 ## Pi / BCM2711 binding

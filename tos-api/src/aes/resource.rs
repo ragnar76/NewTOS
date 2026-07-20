@@ -26,10 +26,10 @@
 
 use super::object::{BitBlk, IconBlk, Object, TedInfo};
 use super::Aespb;
-use crate::bdos::process::{arena, mmu as pmmu, Abi};
+use crate::bdos::process::{usermem, Abi};
 use core::cell::UnsafeCell;
 use core::mem::size_of;
-use core::sync::atomic::{AtomicI32, AtomicPtr, AtomicU64, AtomicUsize, Ordering};
+use core::sync::atomic::{AtomicI32, AtomicUsize, Ordering};
 use tos_types::{BasePage, Long, MX_PREFTTRAM};
 
 // Object types whose `ob_spec` is a string pointer (needs relocation).
@@ -458,15 +458,16 @@ struct RscBuf(UnsafeCell<[u8; RSC_CAP]>);
 unsafe impl Sync for RscBuf {}
 static RSC_BUF: RscBuf = RscBuf(UnsafeCell::new([0u8; RSC_CAP]));
 
-// ─── Per-process EL0 resource window ────────────────────────────────
+// ─── Per-process EL0 resource window (folded into `usermem`, ADR-021) ─
 //
 // A `svc`-dispatched (EL0) `rsrc_load` cannot use the kernel high-half
 // RSC_BUF: an EL0 app faults reading a kernel VA. EmuTOS puts the RSC in
 // the *application's* memory (`rs_readit` → `dos_alloc_anyram`,
 // gemrslib.c:775) and returns app pointers via `rs_gaddr`. NewTOS mirrors
 // that: the blob goes into a BDOS-pool block that is mapped into the
-// calling process's spare L3 window above its TPA (see
-// `crate::bdos::process::mmu`), and `rsrc_gaddr` hands back the user VA.
+// calling process's **EL0 heap window** (`crate::bdos::process::usermem`)
+// as a `Kind::Rsc` block — sharing one per-process window + bump cursor
+// with GEMDOS `Malloc`/`Mxalloc` — and `rsrc_gaddr` hands back the user VA.
 
 /// Kernel high-half offset (mirror of `process::{arena,loader,mmu}`): a
 /// BDOS-pool physical address `pa` is reachable from the kernel at
@@ -474,35 +475,13 @@ static RSC_BUF: RscBuf = RscBuf(UnsafeCell::new([0u8; RSC_CAP]));
 const VA_OFFSET: u64 = 0xFFFF_0000_0000_0000;
 
 /// User-page size (one 4-KiB physical frame).
-const PAGE_SIZE: u64 = 4096;
-
-/// Base user VA of the per-process AES resource window — the spare L3
-/// above the TPA. An EL0 `.RSC` blob is mapped here.
-const RSC_WINDOW_BASE: u64 = arena::TPA_SIZE;
-
-/// Size of that window (all the mappable low-half VA above the TPA).
-const RSC_WINDOW_SIZE: u64 = pmmu::USER_TPA_MAX_VA - arena::TPA_SIZE;
-
-// The window must start page-aligned (`map_page` requires it) and be
-// non-empty (the extra L3 provisioned in `process::mmu`).
-const _: () = assert!(RSC_WINDOW_BASE.is_multiple_of(PAGE_SIZE));
-const _: () = assert!(RSC_WINDOW_SIZE >= PAGE_SIZE);
+const PAGE_SIZE: u64 = usermem::PAGE_SIZE;
 
 /// Pool `m_start` of the EL0 process's currently-loaded `.RSC` block, for
 /// `Mfree` at `rsrc_free`; `0` when nothing is loaded or the load used the
 /// kernel-VA path. Holds a [`Long`] (Atari 32-bit pool address) so it feeds
-/// `mfree` directly.
+/// `mfree` directly and identifies the `usermem` window entry to drop.
 static USER_RSC_RAW: AtomicI32 = AtomicI32::new(0);
-
-/// Next free byte offset within [`RSC_WINDOW_BASE`]. Advanced per load so a
-/// reload maps at a **fresh** (never-cached) VA — avoiding any TLB
-/// invalidate on the app's return path (which would risk the QUIRK-001
-/// QEMU wedge). Reset when the owning process changes so every process gets
-/// the whole window.
-static RSC_WINDOW_CURSOR: AtomicU64 = AtomicU64::new(0);
-
-/// Basepage of the process [`RSC_WINDOW_CURSOR`] belongs to (`null` = none).
-static RSC_WINDOW_OWNER: AtomicPtr<BasePage> = AtomicPtr::new(core::ptr::null_mut());
 
 /// Directory of the currently-launched program (e.g. `C:\APPS\QED\`), so
 /// `rsrc_load` finds the resource **beside the application** (lead directive
@@ -654,19 +633,12 @@ unsafe fn load_into_user(run: *mut BasePage, src: &[u8; RSC_CAP], len: usize, ab
         return false;
     };
 
-    // Page-round the blob and carve a fresh window VA (see cursor doc).
+    // Page-round the blob and allocate a page-aligned pool block (over-
+    // allocate one page so the rounded-up base fits, exactly as
+    // `arena::alloc_tpa` / the GEMDOS heap path). The block is stamped owned
+    // by the running process (`current_owner`), so its `Pterm` reclaims it
+    // even if the app exits without `rsrc_free`.
     let pages = (len as u64 + PAGE_SIZE - 1) & !(PAGE_SIZE - 1);
-    if RSC_WINDOW_OWNER.swap(run, Ordering::AcqRel) != run {
-        RSC_WINDOW_CURSOR.store(0, Ordering::Release);
-    }
-    let cursor = RSC_WINDOW_CURSOR.load(Ordering::Acquire);
-    if pages > RSC_WINDOW_SIZE - cursor {
-        return false; // window exhausted → honest ENSMEM-style failure
-    }
-    let app_va = RSC_WINDOW_BASE + cursor;
-
-    // Allocate a page-aligned pool block (over-allocate one page so the
-    // rounded-up base fits, exactly as `arena::alloc_tpa`).
     // SAFETY: single-CPU trap context holds the implicit BDOS lock.
     let raw = unsafe {
         crate::bdos::mem::traps::mxalloc((pages + PAGE_SIZE) as Long, MX_PREFTTRAM)
@@ -677,6 +649,17 @@ unsafe fn load_into_user(run: *mut BasePage, src: &[u8; RSC_CAP], len: usize, ab
     let base_pa = (raw as u64 + PAGE_SIZE - 1) & !(PAGE_SIZE - 1);
     let base_kva = base_pa.wrapping_add(VA_OFFSET) as *mut u8;
 
+    // Map the block into the process's EL0 heap window (as a `Kind::Rsc`
+    // block) and take the user VA the blob's pointers will resolve to.
+    // SAFETY: `raw` addresses `pages + one page` live pool bytes owned by
+    // the calling process.
+    let Some(app_va) = (unsafe { usermem::map(slot, raw, pages, usermem::Kind::Rsc) })
+    else {
+        // SAFETY: `raw` is on the allocated list.
+        unsafe { crate::bdos::mem::traps::mfree(raw) };
+        return false;
+    };
+
     // Copy the raw file bytes into the block via its kernel alias, then
     // relocate offsets → user VAs (accessed through the alias, resolved to
     // `app_va`).
@@ -686,38 +669,19 @@ unsafe fn load_into_user(run: *mut BasePage, src: &[u8; RSC_CAP], len: usize, ab
     }
     // SAFETY: `base_kva` holds the copied blob; header re-checked inside.
     if !unsafe { relocate_and_register_core(base_kva, app_va, abi) } {
+        // Drop the window entry and free the pool block.
+        usermem::free_by_mstart(slot, raw);
         // SAFETY: `raw` is on the allocated list.
         unsafe { crate::bdos::mem::traps::mfree(raw) };
         return false;
     }
 
-    // Map the block into the process's spare-L3 window (user RW, non-exec).
-    let mut off = 0u64;
-    while off < pages {
-        // SAFETY: slot valid; VA in-window & page-aligned; PA page-aligned.
-        if unsafe {
-            pmmu::map_page(slot, app_va + off, base_pa + off, pmmu::PageFlags::UserRwNx)
-        }
-        .is_err()
-        {
-            // SAFETY: `raw` is on the allocated list.
-            unsafe { crate::bdos::mem::traps::mfree(raw) };
-            return false;
-        }
-        off += PAGE_SIZE;
-    }
-    // Publish the new PTEs + blob before the app reads them (no TLBI: the
-    // window VAs were unmapped, so no stale TLB entry can exist).
+    // Order the blob writes (made through the kernel alias) before the app
+    // reads them at `app_va`; `usermem::map` already published the PTEs, and
+    // the window VAs were previously invalid so no TLBI is needed (QUIRK-001).
     // SAFETY: barrier-only.
-    unsafe { pmmu::publish_user_mappings() };
+    unsafe { usermem::publish() };
 
-    // Own the block by the calling process so its `Pterm` reclaims it even
-    // if the app exits without `rsrc_free` (EmuTOS frees `ap_rscmem` at
-    // process teardown). `rsrc_free` additionally `Mfree`s it eagerly.
-    // SAFETY: `raw` on the allocated list; `run` is a pointer-equality tag.
-    unsafe { crate::bdos::mem::traps::set_owner(raw, run.cast()) };
-
-    RSC_WINDOW_CURSOR.store(cursor + pages, Ordering::Release);
     USER_RSC_RAW.store(raw, Ordering::Release);
     true
 }
@@ -729,14 +693,20 @@ unsafe fn load_into_user(run: *mut BasePage, src: &[u8; RSC_CAP], len: usize, ab
 /// `ap_rscmem == NULL`, gemrslib.c:685-708; spec verification criterion
 /// resource-fileselector.md:439-440). The tree table is reset either way.
 pub fn rsrc_free(pb: &Aespb) {
-    // Return a per-process EL0 RSC block to the pool if one is tracked. The
-    // window mapping is intentionally left in place: the app holds no live
-    // pointers after the free, and the next load takes a fresh window VA, so
-    // the stale mapping is never remapped (no TLBI) nor read. The block's
-    // owner tag makes a later `Pterm` a no-op for it (it is now off the
-    // allocated list, so `free_all_owned` / a second `Mfree` skip it).
+    // Return a per-process EL0 RSC block to the pool if one is tracked, and
+    // drop its `usermem` window entry. The window *mapping* is intentionally
+    // left in place: the app holds no live pointers after the free, and the
+    // bump cursor never re-hands the VA, so the stale mapping is never
+    // remapped (no TLBI) nor read. The block's owner tag makes a later
+    // `Pterm` a no-op for it (it is now off the allocated list, so
+    // `free_all_owned` / a second `Mfree` skip it).
     let raw = USER_RSC_RAW.swap(0, Ordering::AcqRel);
     if raw != 0 {
+        if let Some(slot) =
+            crate::bdos::process::slot_for(crate::bdos::process::current())
+        {
+            usermem::free_by_mstart(slot, raw);
+        }
         // SAFETY: single-CPU trap context (implicit BDOS lock); `raw` came
         // from `mxalloc` in `load_into_user` and has not been freed.
         unsafe { crate::bdos::mem::traps::mfree(raw) };
