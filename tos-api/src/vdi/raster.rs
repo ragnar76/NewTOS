@@ -1,12 +1,16 @@
 //! VDI raster operations — `vrt_cpyfm` (transparent mono→colour blit)
 //! and `vro_cpyfm` (opaque copy). Spec: `docs/api/vdi/raster/_raster.md`.
 //!
-//! **MFDB pointer convention (NewTOS native).** The classic VDI packs a
-//! 32-bit MFDB pointer into `CONTRL[7..8]` (src) / `CONTRL[9..10]`
-//! (dst). Native AArch64 pointers are 64-bit, so NewTOS places the
-//! source MFDB pointer in `CONTRL[7..10]` and the destination in
-//! `CONTRL[11..14]` (four WORDs each). `fd_addr == NULL` means the
-//! screen device.
+//! **MFDB pointer convention (caller-ABI aware).** gemlib packs VDI
+//! pointer `n` at `CONTRL[7 + n * N_PTRINTS]`, with `N_PTRINTS =
+//! sizeof(void*) / sizeof(short)` (`gem_vdiP.h:177,204`). For an **LP64**
+//! caller `N_PTRINTS = 4`, so the source MFDB pointer occupies
+//! `CONTRL[7..10]` and the destination `CONTRL[11..14]` (8 bytes each).
+//! For an **ILP32** caller `N_PTRINTS = 2`: source at `CONTRL[7..8]`,
+//! destination at `CONTRL[9..10]` (4 bytes each). Both the pointer read
+//! and the MFDB struct-field offsets shift with the ABI — see
+//! [`Vdipb::contrl_ptr`] and [`Mfdb::from_ptr`]. `fd_addr == NULL` means
+//! the screen device under either width.
 //!
 //! Scope: `vrt_cpyfm` with a 1-plane source (icons/sprites), all four
 //! `MD_*` write modes (replace / transparent / XOR / erase); `vro_cpyfm`
@@ -34,6 +38,7 @@
 use super::backend::{ClipRect, MonoSrc, RasterBackend, Rect, WriteMode};
 use super::vwk::{validate_color_index, Vwk};
 use super::Vdipb;
+use crate::bdos::process::Abi;
 
 /// The `S_ONLY` logic op (`INTIN[0] = 3`, `D' = S`, replace) — the op AES
 /// `bb_save`/`bb_restore` use (EmuTOS `gemgsxif.c` `bb_set`).
@@ -53,26 +58,41 @@ struct Mfdb {
 }
 
 impl Mfdb {
-    /// Read an MFDB from its native pointer (0 ⇒ a null/screen MFDB).
+    /// Read an MFDB from its pointer at the caller's `abi` width (0 ⇒ a
+    /// null/screen MFDB). The struct is `void *fd_addr; short fd_w, fd_h,
+    /// fd_wdwidth, fd_stand, fd_nplanes, …` (`mt_gem.h:2757-2768`), so the
+    /// pointer width **and** the following WORD-field offsets shift with
+    /// the ABI: LP64 → `fd_addr` 8B @0, fields @8/10/12/14/16; ILP32 →
+    /// `fd_addr` 4B @0, fields @4/6/8/10/12. A NULL `fd_addr` (screen
+    /// MFDB) reads as `addr == 0` under either width.
     ///
     /// # Safety
-    /// `ptr` must be 0 or a valid MFDB.
-    unsafe fn from_ptr(ptr: u64) -> Self {
+    /// `ptr` must be 0 or a valid MFDB of `abi`'s layout.
+    unsafe fn from_ptr(ptr: u64, abi: Abi) -> Self {
         if ptr == 0 {
             return Mfdb { addr: 0, w: 0, h: 0, wdwidth: 0, stand: 0, nplanes: 0 };
         }
-        // SAFETY: caller guarantees a valid MFDB.
+        // SAFETY: caller guarantees a valid MFDB of `abi`'s layout.
         unsafe {
             let p = ptr as *const u8;
-            let addr = (p as *const u64).read_unaligned();
             let word = |off: usize| (p.add(off) as *const i16).read_unaligned();
-            Mfdb {
-                addr,
-                w: word(8),
-                h: word(10),
-                wdwidth: word(12),
-                stand: word(14),
-                nplanes: word(16),
+            match abi {
+                Abi::Lp64 => Mfdb {
+                    addr: (p as *const u64).read_unaligned(),
+                    w: word(8),
+                    h: word(10),
+                    wdwidth: word(12),
+                    stand: word(14),
+                    nplanes: word(16),
+                },
+                Abi::Ilp32 => Mfdb {
+                    addr: (p as *const u32).read_unaligned() as u64,
+                    w: word(4),
+                    h: word(6),
+                    wdwidth: word(8),
+                    stand: word(10),
+                    nplanes: word(12),
+                },
             }
         }
     }
@@ -193,9 +213,11 @@ fn rect_from_ptsin(pb: &Vdipb, base: usize) -> Rect {
 /// Opcode 121 — `vrt_cpyfm`: copy a 1-plane monochrome source into the
 /// colour screen, expanding to `INTIN[1]` (fg) / `INTIN[2]` (bg).
 pub fn vrt_cpyfm(pb: &Vdipb, vwk: &Vwk, backend: &dyn RasterBackend, ncol: u16) {
-    // SAFETY: native MFDB-pointer convention (see module docs).
+    let abi = pb.abi();
+    // SAFETY: caller-ABI MFDB-pointer convention (see module docs); the
+    // src pointer is at CONTRL[7], the dst at 7 + N_PTRINTS.
     let (src, dst) = unsafe {
-        (Mfdb::from_ptr(pb.contrl_u64(7)), Mfdb::from_ptr(pb.contrl_u64(11)))
+        (Mfdb::from_ptr(pb.contrl_ptr(0), abi), Mfdb::from_ptr(pb.contrl_ptr(1), abi))
     };
     // Bring-up: 1-plane source into the screen destination.
     if src.is_screen() || src.nplanes != 1 || !dst.is_screen() {
@@ -242,9 +264,11 @@ pub fn vrt_cpyfm(pb: &Vdipb, vwk: &Vwk, backend: &dyn RasterBackend, ncol: u16) 
 /// is the source extent; clipping applies **only** when the destination
 /// is the screen (`_raster.md` edge case 8).
 pub fn vro_cpyfm(pb: &Vdipb, vwk: &Vwk, backend: &dyn RasterBackend) {
-    // SAFETY: native MFDB-pointer convention (see module docs).
+    let abi = pb.abi();
+    // SAFETY: caller-ABI MFDB-pointer convention (see module docs); the
+    // src pointer is at CONTRL[7], the dst at 7 + N_PTRINTS.
     let (src, dst) = unsafe {
-        (Mfdb::from_ptr(pb.contrl_u64(7)), Mfdb::from_ptr(pb.contrl_u64(11)))
+        (Mfdb::from_ptr(pb.contrl_ptr(0), abi), Mfdb::from_ptr(pb.contrl_ptr(1), abi))
     };
     // `INTIN[0]` carries the raster op in the low 4 bits, `PAT_FLAG`
     // (bit 4, 0x10) in bit 4, and is invalid if anything above bit 4 is
@@ -387,14 +411,16 @@ pub unsafe fn bb_restore(
 /// the opposite of the source's; works in place when the addresses
 /// coincide. Faithful port of EmuTOS `vdi_vr_trnfm` (`vdi_raster.c`).
 pub fn vr_trnfm(pb: &Vdipb) {
-    // SAFETY: native MFDB-pointer convention (see module docs).
-    let src = unsafe { Mfdb::from_ptr(pb.contrl_u64(7)) };
-    let dst_ptr = pb.contrl_u64(11);
+    let abi = pb.abi();
+    // SAFETY: caller-ABI MFDB-pointer convention (see module docs).
+    let src = unsafe { Mfdb::from_ptr(pb.contrl_ptr(0), abi) };
+    let dst_ptr = pb.contrl_ptr(1);
     if src.addr == 0 || dst_ptr == 0 {
         return;
     }
-    // SAFETY: dst MFDB layout matches Mfdb (addr@0, …, stand@14).
-    let dst = unsafe { Mfdb::from_ptr(dst_ptr) };
+    // SAFETY: dst MFDB has `abi`'s layout (addr@0, …, fd_stand at
+    // `stand_off`).
+    let dst = unsafe { Mfdb::from_ptr(dst_ptr, abi) };
     if dst.addr == 0 {
         return;
     }
@@ -414,10 +440,16 @@ pub fn vr_trnfm(pb: &Vdipb) {
     let d = dst.addr as *mut u16;
     let inplace = src.addr == dst.addr;
 
-    // Force the destination form opposite to the source (offset 14 = fd_stand).
+    // Force the destination form opposite to the source. `fd_stand` sits
+    // after `fd_addr` + three WORDs, so its byte offset shifts with the
+    // ABI: 14 for LP64 (8B ptr), 10 for ILP32 (4B ptr).
     let new_stand: i16 = if src.stand != 0 { 0 } else { 1 };
-    // SAFETY: dst MFDB is valid; fd_stand is the WORD at byte offset 14.
-    unsafe { ((dst_ptr as *mut u8).add(14) as *mut i16).write_unaligned(new_stand) };
+    let stand_off = match abi {
+        Abi::Lp64 => 14,
+        Abi::Ilp32 => 10,
+    };
+    // SAFETY: dst MFDB is valid; fd_stand is the WORD at `stand_off`.
+    unsafe { ((dst_ptr as *mut u8).add(stand_off) as *mut i16).write_unaligned(new_stand) };
 
     if !inplace {
         // Simple transpose: read the source linearly, scatter into the

@@ -67,6 +67,12 @@ pub(crate) struct Vdipb {
     ptsin: *mut i16,
     intout: *mut i16,
     ptsout: *mut i16,
+    /// The calling process's pointer-width ABI (ADR-020), recorded at
+    /// construction. The raster ops need it to read the CONTRL MFDB
+    /// pointers (`N_PTRINTS` = 4 LP64 / 2 ILP32) and the MFDB struct
+    /// fields at the caller's width — see [`Vdipb::contrl_ptr`] and
+    /// [`crate::vdi::raster`].
+    abi: Abi,
 }
 
 impl Vdipb {
@@ -88,6 +94,7 @@ impl Vdipb {
                 ptsin: abi.read_ptr(ptr, 2) as *mut i16,
                 intout: abi.read_ptr(ptr, 3) as *mut i16,
                 ptsout: abi.read_ptr(ptr, 4) as *mut i16,
+                abi,
             }
         }
     }
@@ -102,17 +109,48 @@ impl Vdipb {
     /// WORDs starting at index `i` (NewTOS native MFDB-pointer
     /// convention; see [`crate::vdi::raster`]).
     ///
-    /// This is the **LP64** packing (4 WORDs / 8 bytes), used by the
-    /// in-kernel VDI client and every native raster caller. An ILP32 app
-    /// packs a CONTRL pointer into 2 WORDs and at a different second-slot
-    /// offset (`7 + n * sizeof(void*)/sizeof(short)`); ILP32 raster/MFDB
-    /// support therefore also needs the raster callers to shift that
-    /// offset, so it is out of the ADR-020 block-pointer scope and tracked
-    /// separately (no ILP32 raster op is reachable through gemtest yet).
+    /// This is the fixed **LP64** packing (4 WORDs / 8 bytes at word `i`),
+    /// used by the `vex_*` mouse-vector calls, which pass a single native
+    /// EL1 routine pointer and are only reachable from LP64 callers. The
+    /// raster ops instead use [`Vdipb::contrl_ptr`], which honours the
+    /// caller's ABI (`N_PTRINTS`) so an ILP32 MFDB pointer is read at the
+    /// right offset and width.
     #[inline]
     pub fn contrl_u64(&self, i: usize) -> u64 {
         // SAFETY: callers ensure CONTRL has ≥ i+4 WORDs.
         unsafe { (self.contrl.add(i) as *const u64).read_unaligned() }
+    }
+
+    /// The calling process's pointer-width ABI (ADR-020). Used by the
+    /// raster ops to read the MFDB struct fields at the caller's width.
+    #[inline]
+    pub fn abi(&self) -> Abi {
+        self.abi
+    }
+
+    /// Read the source (`n = 0`) / destination (`n = 1`) MFDB pointer from
+    /// CONTRL at the **caller's** pointer width. gemlib packs VDI pointer
+    /// `n` at CONTRL word `7 + n * N_PTRINTS`, where `N_PTRINTS =
+    /// sizeof(void*) / sizeof(short)` = 4 for LP64 / 2 for ILP32
+    /// (`sdk/gemlib/gemlib-0.44.0/gem_vdiP.h:177,204`); the pointer itself
+    /// is an 8-byte load (LP64) or a 4-byte zero-extended load (ILP32).
+    /// Unlike [`Vdipb::contrl_u64`], this honours the ILP32 packing
+    /// instead of assuming the LP64 layout, so an ILP32 app (QED, cflib)
+    /// no longer mis-reads its MFDB pointers.
+    #[inline]
+    pub fn contrl_ptr(&self, n: usize) -> u64 {
+        let nptrints = match self.abi {
+            Abi::Lp64 => 4,
+            Abi::Ilp32 => 2,
+        };
+        // SAFETY: a raster op's CONTRL holds ≥ 7 + (n+1)*N_PTRINTS WORDs;
+        // the packed pointer is WORD- but not pointer-aligned, so read it
+        // unaligned at the caller's width.
+        let base = unsafe { self.contrl.add(7 + n * nptrints) } as *const u8;
+        match self.abi {
+            Abi::Lp64 => unsafe { (base as *const u64).read_unaligned() },
+            Abi::Ilp32 => unsafe { (base as *const u32).read_unaligned() as u64 },
+        }
     }
     #[inline]
     pub fn set_contrl(&self, i: usize, v: i16) {
