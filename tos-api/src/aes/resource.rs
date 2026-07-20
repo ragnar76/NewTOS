@@ -8,16 +8,32 @@
 //! expansion (unlike a classic Atari `.RSC`). Coordinates are already in
 //! pixels, so `rsrc_obfix` is an identity.
 //!
-//! Native `.RSC` layout (all little-endian):
+//! Native `.RSC` layout (all little-endian). Two header generations coexist;
+//! the loader picks by `version` and is backward-compatible:
+//!
+//! * **v1 (LP64) / v2 (ILP32)** — 28-byte header, no free-string/free-image
+//!   tables. GEM.RSC / DESK.RSC and any pre-D-054 resource. R_FRSTR / R_STRING
+//!   / R_FRIMG / R_IMAGEDATA report the documented "not found" (there is no
+//!   table), so these files keep loading unchanged.
+//! * **v3 (LP64) / v4 (ILP32)** — 44-byte header that additionally carries a
+//!   **free-string** and a **free-image** pointer table, so `rsrc_gaddr`'s
+//!   `R_FRSTR`/`R_STRING`/`R_FRIMG`/`R_IMAGEDATA` selectors resolve (D-054).
+//!
 //! ```text
-//!   NrscHeader (28 bytes): magic "NRSC", version, n_trees, n_objects,
-//!                          off_trindex, off_objects, total_size
+//!   NrscHeader: magic "NRSC", version, n_trees, n_objects,
+//!               off_trindex, off_objects, total_size            (v1/v2: 28 B)
+//!               [, off_frstr, n_frstr, off_frimg, n_frimg]      (v3/v4: 44 B)
 //!   [u32; n_trees]   tree index  @ off_trindex  (root OBJECT index/tree)
 //!   [Object; n_objects]          @ off_objects  (ob_spec = offset for the
 //!                                                 string object types, else
 //!                                                 a literal colour/char word)
-//!   string / data bytes          (referenced by the ob_spec offsets)
+//!   [ptr; n_frstr]   frstr table @ off_frstr    (v3/v4: offset → string data)
+//!   [ptr; n_frimg]   frimg table @ off_frimg    (v3/v4: offset → a BITBLK)
+//!   string / data bytes          (referenced by the ob_spec / table offsets)
 //! ```
+//!
+//! The frstr/frimg **slot** width matches `ob_spec`: 8 bytes (LP64) or 4 bytes
+//! (ILP32), relocated at the calling app's ABI width like the OBJECT array.
 //!
 //! **Batch-1 scope:** the format, the relocation core
 //! (`relocate_and_register`), `rsrc_gaddr`, `rsrc_obfix`, `rsrc_free`.
@@ -43,9 +59,22 @@ const G_FBOXTEXT: u16 = 30;
 const G_ICON: u16 = 31;
 const G_TITLE: u16 = 32;
 
-// rsrc_gaddr / rsrc_saddr R_* selectors.
+// rsrc_gaddr / rsrc_saddr R_* selectors (spec resource-fileselector.md §0).
 const R_TREE: i16 = 0;
 const R_OBJECT: i16 = 1;
+/// Free-string **data** pointer `frstr[index]` (dereferenced).
+const R_STRING: i16 = 5;
+/// Free-image **data** pointer `frimg[index]` (dereferenced).
+const R_IMAGEDATA: i16 = 6;
+/// Address **of** the free-string pointer slot, `&frstr[index]`.
+const R_FRSTR: i16 = 15;
+/// Address **of** the free-image pointer slot, `&frimg[index]`.
+const R_FRIMG: i16 = 16;
+
+/// First NRSC `version` whose header carries the free-string / free-image
+/// pointer tables (44-byte header). v1/v2 have the 28-byte header and no
+/// tables — the loader treats their frstr/frimg counts as 0 (backward compat).
+const NRSC_VER_TABLES: u32 = 3;
 
 /// Maximum number of object trees registered from one `.RSC`. A real GEM
 /// app has one tree per dialog/menu: QED's `qed.rsc` declares 32
@@ -55,12 +84,15 @@ const R_OBJECT: i16 = 1;
 /// bounds the actual count.
 const MAX_TREES: usize = 64;
 
-/// Native resource-file header (little-endian, 28 bytes).
+/// Native resource-file header. 28 bytes for v1/v2, 44 bytes for v3/v4 (the
+/// last four fields exist only for `version >= NRSC_VER_TABLES`; for older
+/// files those bytes overlap the tree index and MUST NOT be interpreted).
 #[repr(C)]
 pub struct NrscHeader {
     /// `b"NRSC"`.
     pub magic: [u8; 4],
-    /// Format version (1).
+    /// Format version: 1 = LP64/28 B, 2 = ILP32/28 B, 3 = LP64/44 B (+tables),
+    /// 4 = ILP32/44 B (+tables).
     pub version: u32,
     /// Number of object trees.
     pub n_trees: u32,
@@ -72,6 +104,14 @@ pub struct NrscHeader {
     pub off_objects: u32,
     /// Total blob size in bytes.
     pub total_size: u32,
+    /// Offset to the free-string pointer table (v3/v4 only, else undefined).
+    pub off_frstr: u32,
+    /// Number of free strings (v3/v4 only, else undefined).
+    pub n_frstr: u32,
+    /// Offset to the free-image pointer table (v3/v4 only, else undefined).
+    pub off_frimg: u32,
+    /// Number of free images (v3/v4 only, else undefined).
+    pub n_frimg: u32,
 }
 
 /// The loaded resource (single resource per app — NewTOS is single-app).
@@ -91,6 +131,21 @@ struct Loaded {
     /// Stride of one OBJECT record: 32 (LP64 caller) or 24 (ILP32 caller).
     obj_size: UnsafeCell<usize>,
     n_objects: UnsafeCell<usize>,
+    /// Target VA of `frstr[0]` — the app-visible base returned by `R_FRSTR`
+    /// (0 = no free-string table, i.e. a v1/v2 resource).
+    frstr_target: UnsafeCell<u64>,
+    /// Kernel-reachable VA of `frstr[0]` — used to *dereference* a slot for
+    /// `R_STRING` (equals `frstr_target` for a direct EL1 caller; the pool
+    /// block's kernel alias for the EL0 path).
+    frstr_access: UnsafeCell<u64>,
+    n_frstr: UnsafeCell<usize>,
+    /// Target VA of `frimg[0]` (`R_FRIMG`), 0 = no free-image table.
+    frimg_target: UnsafeCell<u64>,
+    /// Kernel-reachable VA of `frimg[0]` (`R_IMAGEDATA` dereference).
+    frimg_access: UnsafeCell<u64>,
+    n_frimg: UnsafeCell<usize>,
+    /// Width of one frstr/frimg pointer slot: 8 (LP64) or 4 (ILP32).
+    ptr_size: UnsafeCell<usize>,
 }
 // SAFETY: single boot CPU only touches the AES.
 unsafe impl Sync for Loaded {}
@@ -101,6 +156,13 @@ static RSC: Loaded = Loaded {
     obj_base: UnsafeCell::new(0),
     obj_size: UnsafeCell::new(0),
     n_objects: UnsafeCell::new(0),
+    frstr_target: UnsafeCell::new(0),
+    frstr_access: UnsafeCell::new(0),
+    n_frstr: UnsafeCell::new(0),
+    frimg_target: UnsafeCell::new(0),
+    frimg_access: UnsafeCell::new(0),
+    n_frimg: UnsafeCell::new(0),
+    ptr_size: UnsafeCell::new(0),
 };
 
 /// ILP32 OBJECT record stride (4-byte `ob_spec` @ +12; see `mt_gem.h`
@@ -166,6 +228,33 @@ unsafe fn relocate_and_register_core(access_base: *mut u8, target_base: u64, abi
         *RSC.obj_base.get() = objs_target;
         *RSC.obj_size.get() = obj_size;
         *RSC.n_objects.get() = h.n_objects as usize;
+
+        // Free-string / free-image pointer tables (NRSC >= v3). The slots were
+        // already rebased onto `target_base` by the relocation core; here we
+        // record the app-visible base (`*_target`, returned by R_FRSTR/R_FRIMG)
+        // and the kernel-reachable base (`*_access`, used to dereference a slot
+        // for R_STRING/R_IMAGEDATA). An older file leaves the counts at 0, so
+        // those selectors report the documented "not found".
+        let ptr_size = match abi {
+            Abi::Ilp32 => 4usize,
+            Abi::Lp64 => 8usize,
+        };
+        *RSC.ptr_size.get() = ptr_size;
+        if h.version >= NRSC_VER_TABLES {
+            *RSC.frstr_target.get() = target_base + h.off_frstr as u64;
+            *RSC.frstr_access.get() = access_base as u64 + h.off_frstr as u64;
+            *RSC.n_frstr.get() = h.n_frstr as usize;
+            *RSC.frimg_target.get() = target_base + h.off_frimg as u64;
+            *RSC.frimg_access.get() = access_base as u64 + h.off_frimg as u64;
+            *RSC.n_frimg.get() = h.n_frimg as usize;
+        } else {
+            *RSC.frstr_target.get() = 0;
+            *RSC.frstr_access.get() = 0;
+            *RSC.n_frstr.get() = 0;
+            *RSC.frimg_target.get() = 0;
+            *RSC.frimg_access.get() = 0;
+            *RSC.n_frimg.get() = 0;
+        }
     }
     true
 }
@@ -277,6 +366,17 @@ unsafe fn relocate_blob_core_ilp32(access_base: *mut u8, target_base: u64) -> bo
                 _ => {}
             }
         }
+        // Free-string / free-image pointer tables (NRSC >= v3, 4-byte slots).
+        if h.version >= NRSC_VER_TABLES {
+            let fs = access_base.add(h.off_frstr as usize);
+            for i in 0..h.n_frstr as usize {
+                reloc32(fs.add(i * 4), tb);
+            }
+            let fi = access_base.add(h.off_frimg as usize);
+            for i in 0..h.n_frimg as usize {
+                reloc32(fi.add(i * 4), tb);
+            }
+        }
     }
     true
 }
@@ -386,8 +486,34 @@ unsafe fn relocate_blob_core(access_base: *mut u8, target_base: u64) -> bool {
                 _ => {}
             }
         }
+        // Free-string / free-image pointer tables (NRSC >= v3, 8-byte slots):
+        // each slot is a blob offset (string data for frstr, a BITBLK for
+        // frimg) rebased onto `target_base`, leaving 0 as "empty".
+        if h.version >= NRSC_VER_TABLES {
+            reloc_table_u64(access_base.add(h.off_frstr as usize), h.n_frstr as usize, tb);
+            reloc_table_u64(access_base.add(h.off_frimg as usize), h.n_frimg as usize, tb);
+        }
     }
     true
+}
+
+/// Relocate a table of `count` 8-byte pointer slots at `base` in place: add
+/// `tb` to each non-zero slot (LP64 frstr/frimg). Slots may be unaligned.
+///
+/// # Safety
+/// `base` must point at ≥ `count * 8` readable/writable bytes.
+unsafe fn reloc_table_u64(base: *mut u8, count: usize, tb: u64) {
+    for i in 0..count {
+        // SAFETY: i < count; the caller guarantees the slot span.
+        let p = unsafe { base.add(i * 8) } as *mut u64;
+        // SAFETY: 8 readable/writable bytes at `p`.
+        unsafe {
+            let v = p.read_unaligned();
+            if v != 0 {
+                p.write_unaligned(v + tb);
+            }
+        }
+    }
 }
 
 /// Pointer to the root object of tree `idx` in a relocated blob at `base`.
@@ -721,12 +847,28 @@ pub fn rsrc_free(pb: &Aespb) {
         *RSC.obj_base.get() = 0;
         *RSC.obj_size.get() = 0;
         *RSC.n_objects.get() = 0;
+        *RSC.frstr_target.get() = 0;
+        *RSC.frstr_access.get() = 0;
+        *RSC.n_frstr.get() = 0;
+        *RSC.frimg_target.get() = 0;
+        *RSC.frimg_access.get() = 0;
+        *RSC.n_frimg.get() = 0;
+        *RSC.ptr_size.get() = 0;
     }
     pb.set_ret(if was_loaded { 1 } else { 0 });
 }
 
 /// `rsrc_gaddr` (112) — address of resource object `int_in[1]` of `R_*`
 /// type `int_in[0]` → `addr_out[0]`.
+///
+/// Implemented selectors (spec resource-fileselector.md §0): `R_TREE`,
+/// `R_OBJECT`, plus the free-string / free-image family filled in for D-054 —
+/// `R_FRSTR`/`R_FRIMG` return the *address of* the pointer slot
+/// (`&frstr[index]` / `&frimg[index]`), while `R_STRING`/`R_IMAGEDATA` return
+/// the *dereferenced* data pointer (`frstr[index]` / `frimg[index]`). Every
+/// other type code, and any resource without a free-string/-image table (v1/v2
+/// NRSC), yields the documented "not found" (`addr_out[0] = 0`, `int_out[0] =
+/// 0`). Indices are bounds-checked against the resource's counts.
 pub fn rsrc_gaddr(pb: &Aespb) {
     let rtype = pb.intin(0);
     let index = pb.intin(1) as usize;
@@ -749,11 +891,64 @@ pub fn rsrc_gaddr(pb: &Aespb) {
                     0
                 }
             }
+            R_FRSTR => {
+                // &frstr[index] — the app-visible address OF the slot.
+                let base = *RSC.frstr_target.get();
+                if base != 0 && index < *RSC.n_frstr.get() {
+                    base + (index * *RSC.ptr_size.get()) as u64
+                } else {
+                    0
+                }
+            }
+            R_FRIMG => {
+                let base = *RSC.frimg_target.get();
+                if base != 0 && index < *RSC.n_frimg.get() {
+                    base + (index * *RSC.ptr_size.get()) as u64
+                } else {
+                    0
+                }
+            }
+            R_STRING => read_slot(
+                *RSC.frstr_access.get(),
+                index,
+                *RSC.n_frstr.get(),
+                *RSC.ptr_size.get(),
+            ),
+            R_IMAGEDATA => read_slot(
+                *RSC.frimg_access.get(),
+                index,
+                *RSC.n_frimg.get(),
+                *RSC.ptr_size.get(),
+            ),
             _ => 0,
         }
     };
     pb.set_addrout(0, addr);
     pb.set_ret(if addr != 0 { 1 } else { 0 });
+}
+
+/// Dereference the (already relocated) target VA stored in the `index`-th
+/// frstr/frimg pointer slot, read through the kernel-reachable table base
+/// `access_base`. Returns 0 for an empty table, an out-of-range index, or a
+/// NULL slot. This is the `R_STRING`/`R_IMAGEDATA` path: the slot holds an app
+/// VA, but the table itself is read via the kernel alias so EL1 never faults on
+/// an EL0 address.
+///
+/// # Safety
+/// Single-CPU AES. `access_base`, when non-zero, is a kernel-reachable base of
+/// a relocated frstr/frimg table with at least `count` slots of `ptr_size`.
+unsafe fn read_slot(access_base: u64, index: usize, count: usize, ptr_size: usize) -> u64 {
+    if access_base == 0 || index >= count {
+        return 0;
+    }
+    let p = (access_base + (index * ptr_size) as u64) as *const u8;
+    // SAFETY: `index < count`; the slot span is live per the caller contract.
+    unsafe {
+        match ptr_size {
+            4 => (p as *const u32).read_unaligned() as u64,
+            _ => (p as *const u64).read_unaligned(),
+        }
+    }
 }
 
 /// `rsrc_saddr` (113) — store an address into the resource table. Batch 2.

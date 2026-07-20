@@ -625,17 +625,27 @@ as success — an empty list, not an error (`gemfslib.c:330-336,733-754`).
   accurately extracted in §0–§3 above) remains a candidate for a future
   m68k-emulator compatibility phase, per ADR-013's own "alternatives
   rejected" note; it is not implemented today.
-- **`R_*` type coverage is currently partial.** `rsrc_gaddr`/`rsrc_saddr`
-  (`tos-api/src/aes/resource.rs`) implement only `R_TREE` (0) and `R_OBJECT`
-  (1); every other type code (`R_TEDINFO`…`R_FRIMG`, 2–16) falls through to
-  the "not found" path (`addr_out[0] = 0`, `int_out[0] = 0`) — observably
-  indistinguishable from an invalid type per the contract's own 1/0
-  convention, but it is an **implementation gap**, not a deliberate
-  behavioural choice; document any code work here as filling in `get_addr`'s
-  remaining cases, not as re-deriving the contract (already correct above).
+- **`R_*` type coverage (D-054, task #108).** `rsrc_gaddr`
+  (`tos-api/src/aes/resource.rs`) now implements `R_TREE` (0), `R_OBJECT` (1)
+  and the **free-string / free-image family** — `R_STRING` (5), `R_IMAGEDATA`
+  (6), `R_FRSTR` (15), `R_FRIMG` (16), exactly per `get_addr` (§0): `R_FRSTR`/
+  `R_FRIMG` return the *address of* the pointer slot (`&frstr[i]`/`&frimg[i]`),
+  `R_STRING`/`R_IMAGEDATA` return the *dereferenced* data pointer
+  (`frstr[i]`/`frimg[i]`), all bounds-checked against the resource's counts.
+  This unblocked QED, whose `note()`/alert path fetches its free-string table
+  via `rsrc_gaddr(R_FRSTR, NOWINDOW, &alertmsg)` (verified in QEMU: `R_FRSTR`
+  now returns a real user VA and QED reaches its editor + menu bar, where the
+  NULL table previously triggered a cflib `set_string()` panic). To carry the
+  tables the native `.RSC` format grew a **free-string** and a **free-image**
+  pointer table and a bumped version (v3 = LP64/44-byte header, v4 =
+  ILP32/44-byte header); the loader stays **backward-compatible** — v1/v2
+  files (GEM.RSC/DESK.RSC, no tables) load unchanged with those selectors
+  reporting the honest "not found". Still-unimplemented type codes
+  (`R_TEDINFO`…`R_BIPDATA`, `R_OBSPEC`, 2–4/7–14) remain the documented gap
+  (fall through to `addr_out[0] = 0`, `int_out[0] = 0`); QED does not use them.
   `rsrc_saddr` currently always returns `0`/`FALSE` regardless of input — a
-  **no-op stub** (CLAUDE.md Rule 2 concern; flagged for the lead, not fixed
-  here — this is a doc-only pass).
+  **no-op stub** (CLAUDE.md Rule 2 concern; flagged for the lead, a separate
+  task, **not** fixed here).
 - **`rsrc_gaddr` is the only `addr_out` writer.** NewTOS's dispatcher must copy
   `addr_out[0]` back for opcode 112 and no other (matching EmuTOS `xif`); this
   is unaffected by the native-format change and confirmed against

@@ -122,20 +122,24 @@ def convert(path, out, ilp32=False):
     # NrscHeader/tree-index (u32 byte offsets) are ABI-independent; `version`
     # marks the OBJECT width (1 = LP64/64-bit ob_spec, 2 = ILP32/32-bit ob_spec)
     # for tooling, but the kernel relocates by the *caller's* ABI.
+    # PTR = free-string/free-image pointer-slot width (matches ob_spec).
+    # version 3 = LP64/44-byte header (+frstr/frimg tables), 4 = ILP32/same.
+    # (v1/v2 were the earlier 28-byte header without the tables; the kernel
+    # loader stays backward-compatible with those.)
     if ilp32:
         NAT_OBJ, NAT_TED, NAT_IB, NAT_BB = 24, 28, 36, 16
         OBJ_FMT = "<hhhHHHIhhhh"          # 4-byte ob_spec @ 12
         TED_FMT = "<IIIhhhhhhhh"          # 4-byte te_ptext/te_ptmplt/te_pvalid
         BB_FMT = "<Ihhhhh2x"              # 4-byte bi_pdata, pad to 16
         IB_FMT = "<IIIhhhhhhhhhhh2x"      # 4-byte ib_pmask/ib_pdata/ib_ptext, 36
-        version = 2
+        PTR, PTR_FMT, version = 4, "<I", 4
     else:
         NAT_OBJ, NAT_TED, NAT_IB, NAT_BB = 32, 40, 48, 24
         OBJ_FMT = "<hhhHHH4xQhhhh"        # 8-byte ob_spec @ 16
         TED_FMT = "<QQQhhhhhhhh"
         BB_FMT = "<Qhhhhh6x"
         IB_FMT = "<QQQhhhhhhhhhhh2x"
-        version = 1
+        PTR, PTR_FMT, version = 8, "<Q", 3
 
     d = open(path, "rb").read()
     H = struct.unpack(">18H", d[:36])
@@ -144,13 +148,18 @@ def convert(path, out, ilp32=False):
     if vrsn & 0x0004:
         sys.exit("new-format (CICONBLK) .rsc not supported")
 
-    # Native section base offsets (counts are fixed up front).
-    off_tri = HDR_SIZE
+    # Native section base offsets (counts are fixed up front). The v3/v4 header
+    # is 44 bytes and adds a free-string then a free-image pointer table between
+    # the ICONBLKs and the string/image data (each table = count * PTR bytes).
+    HDR = 44
+    off_tri = HDR
     off_obj = off_tri + ntree * 4
     off_ted = off_obj + nobs * NAT_OBJ
     off_bb = off_ted + nted * NAT_TED
     off_ib = off_bb + nbb * NAT_BB
-    off_data = off_ib + nib * NAT_IB
+    off_frstr = off_ib + nib * NAT_IB
+    off_frimg = off_frstr + nstr * PTR
+    off_data = off_frimg + nimg * PTR
 
     data = bytearray()
     interned = {}
@@ -234,6 +243,32 @@ def convert(path, out, ilp32=False):
             OBJ_FMT, nxt, head, tail, typ, flags, state, nspec,
             obfix(x, 0), obfix(y, 1), obfix(w, 2), obfix(h, 3)))
 
+    # Free-string pointer table: nstr slots, each a native offset to the
+    # interned alert/string data (classic p_frstr holds LONG offsets into the
+    # string data; EmuTOS relocates them via fix_nptrs/R_FRSTR). rsrc_gaddr
+    # R_FRSTR returns &frstr[i]; R_STRING returns frstr[i].
+    frstr = bytearray()
+    for i in range(nstr):
+        coff = struct.unpack(">I", d[p_frstr + i * 4:p_frstr + i * 4 + 4])[0]
+        frstr.extend(struct.pack(PTR_FMT, intern_str(coff)))
+
+    # Free-image pointer table: nimg slots, each a native offset to a BITBLK.
+    # In a classic .rsc a free image *is* a BITBLK (verified against gem.rsc:
+    # frimg[i] points into the bb array), relocated as a raw pointer. We remap
+    # each into the native bb array; anything outside it is unsupported (rather
+    # than fabricate a location). QED has nimg == 0, so this loop is empty there.
+    frimg = bytearray()
+    for i in range(nimg):
+        coff = struct.unpack(">I", d[p_frimg + i * 4:p_frimg + i * 4 + 4])[0]
+        if coff == 0:
+            nat = 0
+        elif p_bb <= coff < p_bb + nbb * CLS_BB and (coff - p_bb) % CLS_BB == 0:
+            nat = nat_of(coff, p_bb, CLS_BB, off_bb, NAT_BB)
+        else:
+            sys.exit(f"free image {i} at 0x{coff:x} is not a BITBLK in the "
+                     f"bb array [{p_bb:#x},{p_bb + nbb * CLS_BB:#x}); unsupported")
+        frimg.extend(struct.pack(PTR_FMT, nat))
+
     # Tree index → native root OBJECT indices.
     tri = bytearray()
     for t in range(ntree):
@@ -242,12 +277,14 @@ def convert(path, out, ilp32=False):
 
     total = off_data + len(data)
     header = struct.pack(
-        "<4sIIIIII", b"NRSC", version, ntree, nobs, off_tri, off_obj, total)
-    blob = header + tri + objs + teds + bbs + ibs + data
+        "<4sIIIIIIIIII", b"NRSC", version, ntree, nobs, off_tri, off_obj, total,
+        off_frstr, nstr, off_frimg, nimg)
+    blob = header + tri + objs + teds + bbs + ibs + bytes(frstr) + bytes(frimg) + data
     assert len(blob) == total, (len(blob), total)
     open(out, "wb").write(blob)
     print(f"converted {path} -> {out}: {ntree} trees, {nobs} objects, "
-          f"{nted} tedinfo, {nbb} bitblk, {nib} iconblk ({total} bytes) "
+          f"{nted} tedinfo, {nbb} bitblk, {nib} iconblk, {nstr} frstr, "
+          f"{nimg} frimg ({total} bytes) "
           f"[{'ILP32/24B-OBJECT' if ilp32 else 'LP64/32B-OBJECT'}]")
 
 

@@ -411,6 +411,25 @@ emulator phase, if ever.
 - `docs/api/aes/resource-fileselector.md`; EmuTOS `aes/gemrslib.c`,
   `include/rsdefs.h`
 
+### Addendum 2026-07-20 (task #108): free-string / free-image tables
+
+The `NrscHeader` gained a **free-string** (`frstr`) and a **free-image**
+(`frimg`) pointer table so `rsrc_gaddr`'s `R_FRSTR`/`R_STRING`/`R_FRIMG`/
+`R_IMAGEDATA` selectors resolve (QED fetches its alert table via
+`rsrc_gaddr(R_FRSTR, …)`; without it `alertmsg` was NULL and cflib panicked).
+Layout: after the ICONBLKs come `[ptr; n_frstr]` then `[ptr; n_frimg]`, each
+slot a blob offset (string data for frstr, a BITBLK for frimg — a classic free
+image *is* a BITBLK) relocated to a user VA at the app's ABI width (8 B LP64 /
+4 B ILP32, matching `ob_spec`). The header grew from 28 to 44 bytes and the
+`version` field was bumped: **1 = LP64/28 B, 2 = ILP32/28 B (legacy, no
+tables); 3 = LP64/44 B, 4 = ILP32/44 B (with tables)**. The loader is
+**backward-compatible**: for `version < 3` it treats the free-string/-image
+counts as 0, so pre-existing v1/v2 resources (GEM.RSC, DESK.RSC) load unchanged
+with those selectors reporting the honest "not found". Emitted by
+`tools/mkrsc.py convert [--ilp32]`; relocated in `relocate_blob_core` /
+`relocate_blob_core_ilp32`; registered/served in `relocate_and_register_core` /
+`rsrc_gaddr` (`tos-api/src/aes/resource.rs`).
+
 ---
 
 > Anticipated further ADRs:
