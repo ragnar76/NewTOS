@@ -1236,6 +1236,120 @@ that seem obviously wrong** — future readers may not see why obvious.
 
 ---
 
+## ADR-021: EL0 apps get GEMDOS memory via a per-process mapped window; the pool allocator stays EmuTOS-faithful
+
+**Date:** 2026-07-20
+**Status:** Accepted
+**Phase:** cross-cutting (BDOS mem + process MMU)
+
+### Context
+
+Classic TOS is flat/unprotected: a program dereferences any physical address
+`Malloc`/`Mxalloc` returns. NewTOS runs apps at **EL0** behind `TTBR0_EL1`; the
+ported EmuTOS pool returns physical addresses mapped only in the kernel high
+half, so an EL0 app faults touching them (QED `Mxalloc` → `0x0160a000` write
+fault; note [[el0-app-memory-must-be-mapped]]). TT-RAM-aware apps *all* request
+TT-RAM, so this hits every non-trivial app, not just QED. The TPA image loads at
+a fixed low VA (non-relocating loader), and `Mshrink(basepage@VA 0)` already
+fails `EIMBA` for the same address-mismatch reason.
+
+Three sources were analysed (full extraction in
+`docs/analysis/emutos-memory-model.md`): **EmuTOS** (primary — the pool model:
+`MD`/`MPB`, two pools `pmd`/`pmdalt`, first-fit `ffit`+coalesce, TPA = the app
+owns ~all free RAM and sub-allocates, `m_own` is a reap-tag not access control);
+**FreeMiNT** (`references/freemint/`, the sanctioned MiNT-extension source — the
+one TOS-family OS that solved memory protection for *unmodified* TOS/GEM apps:
+one global identity-mapped ST/TT pool `sys/memory.c:210-211`, per-process page
+tables holding only *protection bits* over that same layout
+`sys/arch/mprot030.c`, default owner-exclusive `PROT_P` `sys/mint/mem.h:130`, an
+explicit `PROT_G` for shared memory); and **NewTOS-current** (a faithful pool
+port that returns raw kernel-reachable PAs + a fixed 4 MiB TPA). FreeMiNT's
+identity-map relies on load-time-**relocatable** binaries (§1B.4) and so does not
+transfer to NewTOS's fixed-load-VA ELF loader — but its *pattern* ("global pool;
+allocate then grant the owner exclusive access; reverse on free/`Pterm`")
+independently confirms the design below.
+
+### Decision
+
+Keep the ported EmuTOS pool allocator (`bdos/mem/{pool,traps}.rs`) **unchanged
+and authoritative**. Add a thin **per-process EL0 memory manager** that, for
+SVC-originated (EL0) callers, allocates from the real ST/TT pool, **maps the
+block into a per-process EL0 heap window**, returns the **user VA**, and tracks
+`user_va ↔ m_start` for `Mfree`/`Mshrink`/`Pterm`. This generalises the task-#99
+RSC window (the RSC becomes just another mapped block) and registers the TPA as
+its first entry (fixing `Mshrink(basepage)`). EL1/kernel callers keep raw PAs.
+`Malloc(-1)` for EL0 reports `min(pool-free, window-free)`; ST/TT preference is
+preserved because the block still comes from the requested pool.
+
+**Offset-map now** (compact low-VA window → 32-bit-safe pointers, tiny page
+tables); **identity-map with dynamic tables is the v2 target** once the
+LP64/PIC-relocatable path (#91) lands — the FreeMiNT precedent is independent
+evidence that identity-map is the right end-state once binaries no longer need a
+fixed load VA. **`Mxalloc`'s `F_PROTMODE` bits (FreeMiNT's `PROT_P/G/S/PR/I`)
+stay deferred**: continue masking them exactly as EmuTOS does
+(`mode &= MX_MODEMASK`) until real multitasking needs FreeMiNT-compatible
+isolation/sharing — EmuTOS, the primary source, ignores these bits too, so
+deferring is spec-faithful, not a gap.
+
+**Multitasking is the acknowledged Kernel end-goal (user, 2026-07-20).** When it
+lands, much of FreeMiNT's machinery is what we adopt: the `PROT_*` protection
+modes on `Mxalloc`, per-process protection over the shared pool, and `PROT_G`
+inter-process shared memory. This ADR is the deliberate v1 stepping-stone toward
+that — the block table already records `m_start ↔ user_va`, so extending one
+entry to a *list* of `(slot, user_va)` pairs is the natural growth path to shared
+memory; per-process `TTBR0` windows generalise to per-process protection tables.
+The FreeMiNT analysis is therefore **not** discarded — it is the roadmap for the
+multitasking phase, captured in [[freemint-extension-direction]].
+
+### Rationale
+
+Faithful (allocator untouched; contract preserved), uniform (image + heap + RSC
+all offset-mapped through one table), and minimal (a boundary shim). NewTOS's
+per-process `TTBR0` (same VA → different PA per process) is the ISA-appropriate
+generalisation of FreeMiNT's per-process-table-over-one-global-layout mechanism,
+not a weaker substitute. Pure identity-map cannot be uniform while the loader
+places images at fixed VAs — FreeMiNT shows *why* that is a loader property
+(relocatable binaries), not a limitation of this design.
+
+### Consequences
+
+- **Positive:** EL0 apps get dereferenceable `Malloc`/`Mxalloc` memory of the
+  right RAM type; `Mshrink(basepage)` works; the RSC window is subsumed; default
+  owner-exclusive access matches both EmuTOS's block-ownership model and
+  FreeMiNT's `PROT_P` default.
+- **Negative:** a per-process block table + window cap; an EL0 `Malloc(-1)`
+  bounded by mappable space (documented adaptation); one new EL0-caller signal to
+  plumb from the SVC path; **no inter-process shared memory** yet (FreeMiNT's
+  `PROT_G` has no NewTOS equivalent — documented forward gap for multitasking).
+- **Neutral:** returned pointers no longer equal PAs (fine — EL0 apps do no DMA).
+
+### Alternatives considered
+
+- **(b) Per-process physical arenas** (carve each app a private pool at `Pexec`):
+  breaks ST/TT faithfulness, caps memory at load time, wastes resident RAM,
+  fragments the address space. Independently corroborated as wrong by FreeMiNT
+  *also* using global, not per-process, pools.
+- **(c) Pure identity-map now** (VA = PA, FreeMiNT-style): impossible while the
+  loader places images at a fixed low VA — needs a relocating/PIC loader first.
+  Deferred to v2 (#91), where it becomes the maximally-faithful end-state.
+- **Adopt FreeMiNT's full protection model now** (`PROT_*` + per-process
+  protection tables over one identity space): premature — it presupposes both
+  multitasking and relocatable binaries. Its *pattern* is adopted; its mechanism
+  waits for the multitasking phase.
+
+### References
+
+- `docs/analysis/emutos-memory-model.md` (EmuTOS @1a7484ab: `umem.c`,
+  `osmem.c`, `iumem.c`, `biosmem.c`, `bdosdefs.h`; FreeMiNT: `sys/memory.c`,
+  `sys/arch/mprot030.c`, `sys/mint/mem.h`; NewTOS `bdos/mem/{pool,traps}.rs`).
+- ADR-020 (ILP32 pointers bound the window), ADR-010 / QUIRK-001 (no TLBI before
+  `eret` → fresh-VA cursor), ADR-013 (`.RSC` — the #99 window this subsumes).
+- Notes [[el0-app-memory-must-be-mapped]], [[freemint-extension-direction]],
+  [[native-64bit-abi-future]] (#91 LP64/identity-map v2).
+- Tasks #99 (RSC window — subsumed), #102 (this research — closed).
+
+---
+
 ## Quirks Discovered
 
 Format: `QUIRK-NNN`, dated, with severity (low / medium / high / critical).
