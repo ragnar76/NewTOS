@@ -113,12 +113,14 @@ impl ObjTree {
         Self { base: base as u64, abi: Abi::Lp64 }
     }
 
-    /// True for a 24-byte (ILP32) tree — used to gate the Stage-B sub-struct
-    /// (TEDINFO/ICONBLK/BITBLK) dereferences, which an LP64 struct cannot read
-    /// out of an ILP32-packed blob.
+    /// The tree's ABI — the width at which its `ob_spec`-pointed sub-structs
+    /// (TEDINFO/ICONBLK/BITBLK) are also packed. For an app tree ([`Self::new`])
+    /// this is `current_abi()`; for a kernel-built tree ([`Self::lp64`]) it is
+    /// forced `Lp64` even under an ILP32 app, so its LP64 sub-structs are read at
+    /// their native offsets. Used to drive the ABI-aware sub-struct readers.
     #[inline]
-    pub(crate) fn is_ilp32(self) -> bool {
-        matches!(self.abi, Abi::Ilp32)
+    pub(crate) fn abi(self) -> Abi {
+        self.abi
     }
 
     #[inline]
@@ -248,8 +250,9 @@ impl ObjTree {
 
     /// `ob_spec` read at the caller's width: a u64 for LP64, a u32
     /// zero-extended for ILP32. For a string/box object this is a user VA or a
-    /// packed colour word; for a sub-struct type it is a pointer only
-    /// dereferenced by the LP64 path (Stage A defers ILP32 sub-structs).
+    /// packed colour word; for a sub-struct type it is the base VA of the
+    /// TEDINFO/ICONBLK/BITBLK, read at the tree's ABI width by the sub-struct
+    /// readers ([`TedInfo::read_abi`] etc.).
     #[inline]
     pub(crate) fn spec(self, i: i16) -> u64 {
         let p = self.ptr(i, self.spec_off());
@@ -369,6 +372,156 @@ pub struct IconBlk {
     pub ib_wtext: i16,
     /// text height.
     pub ib_htext: i16,
+}
+
+// ── ABI-aware sub-struct readers (ADR-020 stage B) ──────────────────
+//
+// The `ob_spec` of a G_TEXT/G_IMAGE/G_ICON object points at a TEDINFO /
+// BITBLK / ICONBLK sub-struct laid out at the **tree's** ABI width: an LP64
+// tree (the desktop, kernel-built alerts, boot selftests) packs 8-byte pointer
+// fields, shifting the trailing WORDs; an ILP32 tree (a source-ported GEM app
+// such as QED) packs 4-byte pointer fields, so every WORD sits 4 bytes lower
+// per pointer. The native `TedInfo`/`BitBlk`/`IconBlk` structs above are the
+// LP64 layout, so a plain `&*(spec as *const TedInfo)` misreads an ILP32 blob.
+//
+// `*::read_abi(base, abi)` materialises the native struct by reading each field
+// at its ABI-correct offset with `read_unaligned`; pointer fields are 8 bytes
+// LP64 / 4 bytes zero-extended ILP32 (a user VA reachable via the active TTBR0,
+// exactly like the OBJECT tree and the string/bitmap data they point at). For
+// an LP64 base the offsets equal the native struct, so the materialised value
+// is byte-identical to the old direct dereference — LP64 rendering is unchanged.
+//
+// The `abi` argument is the **tree's** [`ObjTree::abi`], not `current_abi()`:
+// a kernel-built (`ObjTree::lp64`) tree points at LP64 sub-structs even while an
+// ILP32 app is current, so its readers must use LP64 offsets.
+
+/// Pointer-field width for `abi`: 8 bytes LP64, 4 bytes ILP32. The leading
+/// pointer fields of the three sub-structs stride by this, shifting every WORD.
+#[inline]
+fn abi_ptr_size(abi: Abi) -> u64 {
+    match abi {
+        Abi::Lp64 => 8,
+        Abi::Ilp32 => 4,
+    }
+}
+
+/// Read a sub-struct pointer field at `off` from `base` at the given ABI width,
+/// zero-extending an ILP32 (4-byte) pointer to a native VA.
+///
+/// # Safety
+/// `base + off` addresses a readable pointer field of the sub-struct (the GEM
+/// caller's contract for a valid `ob_spec` sub-struct), sized 8 (LP64) / 4
+/// (ILP32) bytes.
+#[inline]
+unsafe fn read_abi_ptr(base: u64, off: u64, abi: Abi) -> u64 {
+    let p = (base + off) as *const u8;
+    // SAFETY: caller's contract — `base + off` is a readable pointer field.
+    unsafe {
+        match abi {
+            Abi::Lp64 => (p as *const u64).read_unaligned(),
+            Abi::Ilp32 => (p as *const u32).read_unaligned() as u64,
+        }
+    }
+}
+
+/// Read a sub-struct WORD field at `off` from `base`.
+///
+/// # Safety
+/// `base + off` addresses a readable 2-byte WORD field of the sub-struct.
+#[inline]
+unsafe fn read_abi_word(base: u64, off: u64) -> i16 {
+    // SAFETY: caller's contract — `base + off` is a readable 2-byte WORD field.
+    unsafe { ((base + off) as *const i16).read_unaligned() }
+}
+
+impl BitBlk {
+    /// Materialise the BITBLK at `base` at the tree's ABI width. Layout: one
+    /// pointer (`bi_pdata`) @0, then five WORDs at `abi_ptr_size` (@8 LP64 /
+    /// @4 ILP32). `mt_gem.h:2023-2031`.
+    ///
+    /// # Safety
+    /// `base` is the valid `ob_spec` of a G_IMAGE object — a BITBLK packed at
+    /// `abi` width.
+    #[inline]
+    unsafe fn read_abi(base: u64, abi: Abi) -> BitBlk {
+        let w = abi_ptr_size(abi); // first WORD offset
+        // SAFETY: `base` is a valid BITBLK packed at `abi` width (caller's contract).
+        unsafe {
+            BitBlk {
+                bi_pdata: read_abi_ptr(base, 0, abi),
+                bi_wb: read_abi_word(base, w),
+                bi_hl: read_abi_word(base, w + 2),
+                bi_x: read_abi_word(base, w + 4),
+                bi_y: read_abi_word(base, w + 6),
+                bi_color: read_abi_word(base, w + 8),
+            }
+        }
+    }
+}
+
+impl TedInfo {
+    /// Materialise the TEDINFO at `base` at the tree's ABI width. Layout: three
+    /// pointers (`te_ptext`/`te_ptmplt`/`te_pvalid`), then eight WORDs at
+    /// `3 * abi_ptr_size` (@24 LP64 / @12 ILP32). `mt_gem.h:1988-2001`.
+    ///
+    /// # Safety
+    /// `base` is the valid `ob_spec` of a *TEXT object — a TEDINFO packed at
+    /// `abi` width.
+    #[inline]
+    unsafe fn read_abi(base: u64, abi: Abi) -> TedInfo {
+        let ps = abi_ptr_size(abi);
+        let w = 3 * ps; // first WORD offset
+        // SAFETY: `base` is a valid TEDINFO packed at `abi` width (caller's contract).
+        unsafe {
+            TedInfo {
+                te_ptext: read_abi_ptr(base, 0, abi),
+                te_ptmplt: read_abi_ptr(base, ps, abi),
+                te_pvalid: read_abi_ptr(base, 2 * ps, abi),
+                te_font: read_abi_word(base, w),
+                te_junk1: read_abi_word(base, w + 2),
+                te_just: read_abi_word(base, w + 4),
+                te_color: read_abi_word(base, w + 6),
+                te_junk2: read_abi_word(base, w + 8),
+                te_thickness: read_abi_word(base, w + 10),
+                te_txtlen: read_abi_word(base, w + 12),
+                te_tmplen: read_abi_word(base, w + 14),
+            }
+        }
+    }
+}
+
+impl IconBlk {
+    /// Materialise the ICONBLK at `base` at the tree's ABI width. Layout: three
+    /// pointers (`ib_pmask`/`ib_pdata`/`ib_ptext`), then eleven WORDs at
+    /// `3 * abi_ptr_size` (@24 LP64 / @12 ILP32). `mt_gem.h:2004-2020`.
+    ///
+    /// # Safety
+    /// `base` is the valid `ob_spec` of a G_ICON object — an ICONBLK packed at
+    /// `abi` width.
+    #[inline]
+    unsafe fn read_abi(base: u64, abi: Abi) -> IconBlk {
+        let ps = abi_ptr_size(abi);
+        let w = 3 * ps; // first WORD offset
+        // SAFETY: `base` is a valid ICONBLK packed at `abi` width (caller's contract).
+        unsafe {
+            IconBlk {
+                ib_pmask: read_abi_ptr(base, 0, abi),
+                ib_pdata: read_abi_ptr(base, ps, abi),
+                ib_ptext: read_abi_ptr(base, 2 * ps, abi),
+                ib_char: read_abi_word(base, w),
+                ib_xchar: read_abi_word(base, w + 2),
+                ib_ychar: read_abi_word(base, w + 4),
+                ib_xicon: read_abi_word(base, w + 6),
+                ib_yicon: read_abi_word(base, w + 8),
+                ib_wicon: read_abi_word(base, w + 10),
+                ib_hicon: read_abi_word(base, w + 12),
+                ib_xtext: read_abi_word(base, w + 14),
+                ib_ytext: read_abi_word(base, w + 16),
+                ib_wtext: read_abi_word(base, w + 18),
+                ib_htext: read_abi_word(base, w + 20),
+            }
+        }
+    }
 }
 
 // Flag / state bits.
@@ -824,18 +977,16 @@ pub(crate) fn edit_field(tree: *const Object, obj: i16, in_char: i16, idx: i16, 
 /// [`ObjTree`] accessor (`new` for an app tree, `lp64` for a kernel-built
 /// tree such as the fileselector's). Body of [`edit_field`].
 pub(crate) fn edit_field_t(t: ObjTree, obj: i16, in_char: i16, mut idx: i16, kind: i16) -> i16 {
-    // TEDINFO interior is Stage B: an ILP32 tree's `ob_spec` points at an
-    // ILP32-packed TEDINFO the LP64 struct cannot read, so decline the edit
-    // (cursor unchanged, no draw, no fault) until Stage B implements it.
-    if t.is_ilp32() {
-        return idx;
-    }
     let spec = t.spec(obj);
     if spec == 0 {
         return idx;
     }
-    // SAFETY: an editable field's ob_spec points at a TEDINFO (LP64 tree).
-    let ted = unsafe { &*(spec as *const TedInfo) };
+    // The editable field's ob_spec points at a TEDINFO packed at the tree's ABI
+    // width; read/write `te_ptext`/`te_ptmplt`/`te_pvalid` at that width so an
+    // ILP32 app's edit fields (cursor/insert/backspace) work like LP64's.
+    // SAFETY: `spec` is the valid TEDINFO base of an EDITABLE field (GEM contract).
+    let ted = unsafe { TedInfo::read_abi(spec, t.abi()) };
+    let ted = &ted;
     let txtlen = ted.te_txtlen.max(1);
     let text = ted.te_ptext as *mut u8;
     let tmpl = read_cstr(ted.te_ptmplt);
@@ -1378,8 +1529,8 @@ fn ob_format(just: i16, raw: &[u8], tmpl: &[u8], out: &mut [u8]) -> usize {
 
 fn just_draw(t: ObjTree, obj: i16, x: i16, y: i16, clip: ClipRect, backend: &dyn RasterBackend) {
     // Snapshot the object's fields once at the caller's ABI width; a sub-struct
-    // (`ob_spec`-pointed TEDINFO/ICONBLK/BITBLK) is only dereferenced on the
-    // LP64 path — the ILP32-packed sub-structs are Stage B (guarded below).
+    // (`ob_spec`-pointed TEDINFO/ICONBLK/BITBLK) is read through its ABI-aware
+    // reader (`*::read_abi`) at the same width in the type arms below.
     let ob_state = t.state(obj);
     let ob_flags = t.flags(obj);
     let ob_type = t.ob_type(obj);
@@ -1532,13 +1683,14 @@ fn just_draw(t: ObjTree, obj: i16, x: i16, y: i16, clip: ClipRect, backend: &dyn
             draw_text(backend, x + crate::vdi::font::CELL_W, y, w, h, s, TE_LEFT, ink, clip);
         }
         G_TEXT | G_BOXTEXT | G_FTEXT | G_FBOXTEXT => {
-            // Stage A: the TEDINFO interior is dereferenced only for an LP64
-            // tree. An ILP32 caller's `ob_spec` points at an ILP32-packed
-            // TEDINFO the LP64 struct cannot read; drawing its text/box is
-            // deferred to Stage B, so render blank here rather than fault.
-            if ob_spec != 0 && !t.is_ilp32() {
-                // SAFETY: ob_spec of a *TEXT object points at a TEDINFO (LP64).
-                let ted = unsafe { &*(ob_spec as *const TedInfo) };
+            // The TEDINFO interior is read at the tree's ABI width, so an ILP32
+            // app's text/box draws too; for an LP64 tree the reader reproduces
+            // the native offsets byte-for-byte (rendering unchanged).
+            if ob_spec != 0 {
+                // SAFETY: ob_spec of a *TEXT object points at a TEDINFO packed
+                // at the tree's ABI width.
+                let ted = unsafe { TedInfo::read_abi(ob_spec, t.abi()) };
+                let ted = &ted;
                 // Crack the TEDINFO colour word (EmuTOS `gr_crack`): border,
                 // text, inside pattern, inside colour.
                 let (bcol, tcol, mut ipat, mut icol, _mode) = gr_crack(ted.te_color as u16);
@@ -1593,11 +1745,13 @@ fn just_draw(t: ObjTree, obj: i16, x: i16, y: i16, clip: ClipRect, backend: &dyn
             }
         }
         G_IMAGE => {
-            // Stage A: the BITBLK interior is LP64-only (see the *TEXT arm);
-            // an ILP32 image is deferred to Stage B, rendered blank here.
-            if ob_spec != 0 && !t.is_ilp32() {
-                // SAFETY: ob_spec of a G_IMAGE points at a BITBLK (LP64).
-                let bi = unsafe { &*(ob_spec as *const BitBlk) };
+            // The BITBLK interior is read at the tree's ABI width (see the *TEXT
+            // arm); an LP64 tree reads it byte-identically to before.
+            if ob_spec != 0 {
+                // SAFETY: ob_spec of a G_IMAGE points at a BITBLK packed at the
+                // tree's ABI width.
+                let bi = unsafe { BitBlk::read_abi(ob_spec, t.abi()) };
+                let bi = &bi;
                 // SELECTED (EmuTOS just_draw, gemoblib.c:766-770): XOR the image
                 // background (the blit is transparent, so the inverted ground
                 // shows through the clear bits) and invert the image ink.
@@ -1617,12 +1771,13 @@ fn just_draw(t: ObjTree, obj: i16, x: i16, y: i16, clip: ClipRect, backend: &dyn
             }
         }
         G_ICON => {
-            // Stage A: the ICONBLK interior is LP64-only (see the *TEXT arm);
-            // an ILP32 icon is deferred to Stage B, rendered blank here.
-            if ob_spec != 0 && !t.is_ilp32() {
-                // SAFETY: ob_spec of a G_ICON points at an ICONBLK (LP64).
-                let ib = unsafe { &*(ob_spec as *const IconBlk) };
-                draw_icon(backend, ib, x, y, selected, clip);
+            // The ICONBLK interior is read at the tree's ABI width (see the
+            // *TEXT arm); an LP64 tree reads it byte-identically to before.
+            if ob_spec != 0 {
+                // SAFETY: ob_spec of a G_ICON points at an ICONBLK packed at
+                // the tree's ABI width.
+                let ib = unsafe { IconBlk::read_abi(ob_spec, t.abi()) };
+                draw_icon(backend, &ib, x, y, selected, clip);
             }
         }
         // Remaining types (TEDINFO text, colour icons, userdef) land in
