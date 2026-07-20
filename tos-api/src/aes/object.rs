@@ -94,6 +94,25 @@ impl ObjTree {
         Self { base: base as u64, abi: current_abi() }
     }
 
+    /// Build an accessor over a **kernel-built** tree at `base`, forcing the
+    /// native LP64 (32-byte) record layout regardless of the current execution
+    /// context's ABI.
+    ///
+    /// Kernel-built trees — the `form_alert`/`form_error` alert array assembled
+    /// on the kernel stack, and the fileselector's GEM.RSC tree — are always
+    /// native `Object`s (32-byte, `u64 ob_spec`) even while an ILP32 app such as
+    /// QED is the current process. Reading `current_abi()` there would pick the
+    /// app's 24-byte width and misread the kernel array, so these callers build
+    /// the accessor with an explicit LP64 width instead of [`Self::new`].
+    ///
+    /// # Invariant
+    /// As [`Self::new`]: `base` addresses a valid OBJECT array and every index
+    /// passed to a getter/setter is in range.
+    #[inline]
+    pub(crate) fn lp64(base: *const Object) -> Self {
+        Self { base: base as u64, abi: Abi::Lp64 }
+    }
+
     /// True for a 24-byte (ILP32) tree — used to gate the Stage-B sub-struct
     /// (TEDINFO/ICONBLK/BITBLK) dereferences, which an LP64 struct cannot read
     /// out of an ILP32-packed blob.
@@ -725,9 +744,17 @@ pub fn objc_sysvar(pb: &Aespb) {
 }
 
 /// Set `obj`'s state and optionally redraw just that object. Shared by
-/// `objc_change` and the Form Manager (to show a pressed button).
+/// `objc_change` and the Form Manager (to show a pressed button). Reads the
+/// tree at the **current** ABI width (an app-provided tree); a kernel-built
+/// tree uses [`change_t`] with an [`ObjTree::lp64`] accessor.
 pub(crate) fn change(tree: *mut Object, obj: i16, newstate: u16, redraw: bool) {
-    let t = ObjTree::new(tree);
+    change_t(ObjTree::new(tree), obj, newstate, redraw);
+}
+
+/// Set `obj`'s state and optionally redraw it, driving the tree through the
+/// caller-supplied [`ObjTree`] accessor (whose ABI width the caller chose:
+/// `new` for an app tree, `lp64` for a kernel-built one).
+pub(crate) fn change_t(t: ObjTree, obj: i16, newstate: u16, redraw: bool) {
     // EmuTOS `ob_change` (gemoblib.c:1263): a `spec == -1` sentinel object
     // is left entirely untouched — no state change, no redraw — so the
     // redraw path never dereferences `-1` as a pointer.
@@ -789,8 +816,14 @@ pub fn objc_edit(pb: &Aespb) {
 /// For a plain field (no template / no validation — e.g. the desktop's
 /// rename box) `find_pos` is the identity and validation accepts anything,
 /// so this reduces to plain in-place editing.
-pub(crate) fn edit_field(tree: *const Object, obj: i16, in_char: i16, mut idx: i16, kind: i16) -> i16 {
-    let t = ObjTree::new(tree);
+pub(crate) fn edit_field(tree: *const Object, obj: i16, in_char: i16, idx: i16, kind: i16) -> i16 {
+    edit_field_t(ObjTree::new(tree), obj, in_char, idx, kind)
+}
+
+/// Edit the EDITABLE `TEDINFO` field `obj` through the caller-supplied
+/// [`ObjTree`] accessor (`new` for an app tree, `lp64` for a kernel-built
+/// tree such as the fileselector's). Body of [`edit_field`].
+pub(crate) fn edit_field_t(t: ObjTree, obj: i16, in_char: i16, mut idx: i16, kind: i16) -> i16 {
     // TEDINFO interior is Stage B: an ILP32 tree's `ob_spec` points at an
     // ILP32-packed TEDINFO the LP64 struct cannot read, so decline the edit
     // (cursor unchanged, no draw, no fault) until Stage B implements it.
@@ -1075,14 +1108,26 @@ pub(crate) unsafe fn hit_test(
     mx: i16,
     my: i16,
 ) -> i16 {
-    let t = ObjTree::new(tree);
+    hit_test_t(ObjTree::new(tree), root, depth, mx, my)
+}
+
+/// Hit-test through the caller-supplied [`ObjTree`] accessor (`new` for an app
+/// tree, `lp64` for a kernel-built one such as an alert or the fileselector).
+/// Body of [`hit_test`].
+pub(crate) fn hit_test_t(t: ObjTree, root: i16, depth: i16, mx: i16, my: i16) -> i16 {
     let (ox, oy) = abs_offset(t, root);
     find_hit(t, root, depth, ox - t.x(root), oy - t.y(root), mx, my)
 }
 
-/// Absolute screen rectangle `(x, y, w, h)` of `obj`.
+/// Absolute screen rectangle `(x, y, w, h)` of `obj`, reading an app tree at
+/// the current ABI width. A kernel-built tree uses [`abs_rect_t`].
 pub(crate) fn abs_rect(tree: *const Object, obj: i16) -> (i16, i16, i16, i16) {
-    let t = ObjTree::new(tree);
+    abs_rect_t(ObjTree::new(tree), obj)
+}
+
+/// Absolute screen rectangle `(x, y, w, h)` of `obj` through the caller-supplied
+/// [`ObjTree`] accessor. Body of [`abs_rect`].
+pub(crate) fn abs_rect_t(t: ObjTree, obj: i16) -> (i16, i16, i16, i16) {
     let (x, y) = abs_offset(t, obj);
     (x, y, t.width(obj), t.height(obj))
 }
@@ -1105,29 +1150,42 @@ pub(crate) fn child_at(tree: *const Object, parent: i16, mx: i16, my: i16) -> i1
 /// Set or clear one `ob_state` bit on `obj` and redraw it. Thin wrapper
 /// the Menu Manager shares for title/item highlighting.
 pub(crate) fn set_state_bit(tree: *mut Object, obj: i16, bit: u16, set: bool) {
-    let st = ObjTree::new(tree).state(obj);
+    set_state_bit_t(ObjTree::new(tree), obj, bit, set);
+}
+
+/// Set or clear one `ob_state` bit on `obj` and redraw it, through the
+/// caller-supplied [`ObjTree`] accessor (`lp64` for a kernel-built tree such as
+/// the fileselector). Body of [`set_state_bit`].
+pub(crate) fn set_state_bit_t(t: ObjTree, obj: i16, bit: u16, set: bool) {
+    let st = t.state(obj);
     let new = if set { st | bit } else { st & !bit };
-    change(tree, obj, new, true);
+    change_t(t, obj, new, true);
 }
 
 /// Draw the subtree rooted at `obj` (any object), `depth` levels deep, at
 /// its absolute screen position. Used by the Menu Manager to draw the bar.
 pub(crate) fn draw_obj(tree: *const Object, obj: i16, depth: i16, backend: &dyn RasterBackend) {
-    let t = ObjTree::new(tree);
+    draw_obj_t(ObjTree::new(tree), obj, depth, backend);
+}
+
+/// Draw the subtree rooted at `obj` through the caller-supplied [`ObjTree`]
+/// accessor (`lp64` for a kernel-built tree such as the fileselector). Body of
+/// [`draw_obj`].
+pub(crate) fn draw_obj_t(t: ObjTree, obj: i16, depth: i16, backend: &dyn RasterBackend) {
     let clip = ClipRect::full(backend.width(), backend.height());
     let (ox, oy) = abs_offset(t, obj);
     draw_tree(t, obj, depth, ox - t.x(obj), oy - t.y(obj), clip, backend);
 }
 
-/// Draw a whole tree (used by the Form Manager after building an alert).
-///
-/// # Safety
-/// `tree` is a valid OBJECT array; `backend` is the live screen.
-pub(crate) unsafe fn draw_root(tree: *const Object, depth: i16, backend: &dyn RasterBackend) {
+/// Draw a whole tree (used by the Form Manager after building an alert and by
+/// the fileselector). The caller supplies the [`ObjTree`] accessor and thereby
+/// chooses the ABI width: kernel-built trees pass an [`ObjTree::lp64`] accessor
+/// so a 32-byte record is read even while an ILP32 app is current.
+pub(crate) fn draw_root(t: ObjTree, depth: i16, backend: &dyn RasterBackend) {
     let clip = ClipRect::full(backend.width(), backend.height());
     // Root is index 0; its ob_x/ob_y are absolute (no parent), so the parent
     // offset is 0.
-    draw_tree(ObjTree::new(tree), 0, depth, 0, 0, clip, backend);
+    draw_tree(t, 0, depth, 0, 0, clip, backend);
 }
 
 // ── tree helpers ────────────────────────────────────────────────────

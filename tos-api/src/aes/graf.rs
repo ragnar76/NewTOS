@@ -15,7 +15,7 @@
 //! (`MD_XOR`). (The earlier solid-white erase assumed a white background and
 //! left a white "staircase" trail on the patterned desktop / windows.)
 
-use super::object::{self, Object};
+use super::object::{self, Object, ObjTree};
 use super::Aespb;
 use crate::host::host;
 use crate::vdi::backend::{ClipRect, Pel, RasterBackend, WriteMode};
@@ -294,15 +294,24 @@ pub fn graf_watchbox(pb: &Aespb) {
 /// return whether it was released inside (EmuTOS `gr_watchbox`). Shared with
 /// the Form Manager's `form_button`.
 pub(crate) fn watchbox(tree: *mut Object, obj: i16, instate: u16, outstate: u16) -> bool {
+    watchbox_t(ObjTree::new(tree as *const Object), obj, instate, outstate)
+}
+
+/// Track the button over `obj` through the caller-supplied [`ObjTree`] accessor
+/// (`lp64` for a kernel-built tree such as a `form_alert` button). Body of
+/// [`watchbox`]; used by `do_alert`'s modal loop with an LP64 accessor so the
+/// kernel alert array is read at its native 32-byte width even while an ILP32
+/// app is current.
+pub(crate) fn watchbox_t(t: ObjTree, obj: i16, instate: u16, outstate: u16) -> bool {
     let mut was_in = true;
     if let Some(h) = host() {
-        object::change(tree, obj, instate, true);
+        object::change_t(t, obj, instate, true);
         loop {
             let (mx, my) = crate::vdi::mouse_position();
-            let (rx, ry, rw, rh) = object::abs_rect(tree as *const Object, obj);
+            let (rx, ry, rw, rh) = object::abs_rect_t(t, obj);
             let now_in = mx >= rx && mx < rx + rw && my >= ry && my < ry + rh;
             if now_in != was_in {
-                object::change(tree, obj, if now_in { instate } else { outstate }, true);
+                object::change_t(t, obj, if now_in { instate } else { outstate }, true);
                 was_in = now_in;
             }
             if !mouse_down() {

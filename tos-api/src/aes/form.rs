@@ -15,7 +15,7 @@
 //! buffer, see [`crate::vdi::bb_save`]), so the desktop under it is
 //! reinstated without a full repaint.
 
-use super::object::{self, Object};
+use super::object::{self, Object, ObjTree};
 use super::Aespb;
 use crate::host::host;
 use crate::vdi::backend::{ClipRect, RasterBackend};
@@ -240,6 +240,12 @@ fn do_alert(defbut: i16, s: &[u8], modal: bool) -> i16 {
 
     // ── save the screen under the alert, draw, run, restore ──
     let tp = tree.as_ptr();
+    // The alert array is a native (LP64, 32-byte) `Object` array built on this
+    // kernel stack, so it must be read at the LP64 width even when an ILP32 app
+    // (e.g. QED) is the current process and `current_abi()` would report ILP32.
+    // Build one LP64 accessor and thread it through every draw / hit-test /
+    // state helper this alert touches (`draw_root`, `hit_test_t`, `watchbox_t`).
+    let t = ObjTree::lp64(tp);
     // Save the pixels the alert will cover — the box plus its 3-px OUTLINED
     // double frame (the extent EmuTOS `ob_center` reports for OUTLINED) —
     // so the modal `form_alert` can reinstate the desktop on close without a
@@ -257,8 +263,7 @@ fn do_alert(defbut: i16, s: &[u8], modal: bool) -> i16 {
     // fresh backing. Otherwise the cursor would smear the alert as it moves,
     // and closing the box would leave a stale square behind.
     crate::vdi::cursor_hide(backend);
-    // SAFETY: locally-built valid tree; backend is the live screen.
-    unsafe { object::draw_root(tp, 16, backend) };
+    object::draw_root(t, 16, backend);
     draw_alert_icon(icon, icon_x, icon_y, backend);
     crate::vdi::cursor_show(backend);
 
@@ -274,8 +279,7 @@ fn do_alert(defbut: i16, s: &[u8], modal: bool) -> i16 {
         let idx = first_btn + (chosen as usize - 1);
         tree[idx].ob_state |= SELECTED;
         crate::vdi::cursor_hide(backend);
-        // SAFETY: valid tree.
-        unsafe { object::draw_root(tp, 16, backend) };
+        object::draw_root(t, 16, backend);
         draw_alert_icon(icon, icon_x, icon_y, backend);
         crate::vdi::cursor_show(backend);
     }
@@ -352,6 +356,9 @@ fn modal_loop(
     defbut: i16,
 ) -> i16 {
     let tp = tree as *const Object;
+    // Kernel-built alert array: read it at the native LP64 width regardless of
+    // the current app's ABI (see `do_alert`).
+    let t = ObjTree::lp64(tp);
     let mut prev_btn = h_mouse_buttons();
     loop {
         // keyboard
@@ -376,11 +383,10 @@ fn modal_loop(
         let cur = h_mouse_buttons();
         if cur & 0x01 != 0 && prev_btn & 0x01 == 0 {
             let (mx, my) = crate::vdi::mouse_position();
-            // SAFETY: valid tree.
-            let hit = unsafe { object::hit_test(tp, 0, 16, mx, my) };
+            let hit = object::hit_test_t(t, 0, 16, mx, my);
             if hit >= first_btn && hit < first_btn + numbut {
                 // Show it pressed while held; act only on release inside.
-                if super::graf::watchbox(tree, hit, SELECTED, 0) {
+                if super::graf::watchbox_t(t, hit, SELECTED, 0) {
                     return hit - first_btn + 1;
                 }
             }

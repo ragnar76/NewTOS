@@ -16,7 +16,7 @@
 //! documented omission is the `FCLSBOX` close-box gadget for up-navigation
 //! (covered instead by editing the path or clicking `..`).
 
-use super::object::{self, Object, TedInfo};
+use super::object::{self, Object, ObjTree, TedInfo};
 use super::{resource, Aespb};
 use crate::host::host;
 use crate::vdi::backend::RasterBackend;
@@ -299,8 +299,10 @@ fn run(pb: &Aespb) {
     set_drive_states(tree, cur);
     center(tree, backend);
     relist(tree); // read the directory, fill the slots + slider
-    // SAFETY: valid tree; backend is the live screen.
-    unsafe { object::draw_root(tree as *const Object, MAX_DEPTH, backend) };
+    // The FSELECTR tree is loaded from GEM.RSC as native (LP64) `Object`s, so it
+    // must be read at the LP64 width even when an ILP32 app is current — force
+    // the accessor's ABI here rather than reading `current_abi()`.
+    object::draw_root(ObjTree::lp64(tree as *const Object), MAX_DEPTH, backend);
 
     let button = modal(tree, backend);
 
@@ -360,8 +362,10 @@ fn refill(tree: *mut Object) {
     }
     update_slider(tree);
     if let Some(backend) = host().and_then(|h| h.raster()) {
-        object::draw_obj(tree as *const Object, FILEBOX, MAX_DEPTH, backend);
-        object::draw_obj(tree as *const Object, FSVSLID, MAX_DEPTH, backend);
+        // LP64 accessor for the kernel-built FSELECTR tree (see `run`).
+        let t = ObjTree::lp64(tree as *const Object);
+        object::draw_obj_t(t, FILEBOX, MAX_DEPTH, backend);
+        object::draw_obj_t(t, FSVSLID, MAX_DEPTH, backend);
     }
 }
 
@@ -526,8 +530,8 @@ pub fn preview() {
     set_drive_states(tree, b'C');
     center(tree, backend);
     relist(tree);
-    // SAFETY: valid tree; backend is the live screen.
-    unsafe { object::draw_root(tree as *const Object, MAX_DEPTH, backend) };
+    // LP64 accessor for the kernel-built FSELECTR tree (see `run`).
+    object::draw_root(ObjTree::lp64(tree as *const Object), MAX_DEPTH, backend);
 }
 
 /// Centre the FSELECTR root on screen.
@@ -550,12 +554,16 @@ fn modal(tree: *mut Object, backend: &dyn RasterBackend) -> i16 {
         return 0;
     };
     let tp = tree as *const Object;
+    // The FSELECTR tree is native (LP64) `Object`s from GEM.RSC; read it at the
+    // LP64 width even while an ILP32 app is current (see `run`). Thread this one
+    // accessor through every edit / hit-test / draw / state helper below.
+    let t = ObjTree::lp64(tp);
     // Snapshot the listed path so a manual edit of FSDIRECT is detected.
     // SAFETY: single-CPU AES.
     let mut listed: [u8; 96] = unsafe { *SYS.dir.get() };
     // Focus the selection field for editing (EmuTOS `fm_do(tree, FSSELECT)`).
     let mut focus = FSSELECT;
-    let mut idx = object::edit_field(tp, focus, 0, 0, ED_INIT);
+    let mut idx = object::edit_field_t(t, focus, 0, 0, ED_INIT);
 
     let mut prev = crate::vdi::mouse_buttons();
     let mut cur_sel: i16 = -1;
@@ -564,13 +572,13 @@ fn modal(tree: *mut Object, backend: &dyn RasterBackend) -> i16 {
 
     // Re-list the (manually edited) directory path and re-arm editing.
     let apply_path = |tree: *mut Object, focus: &mut i16, idx: &mut i16, listed: &mut [u8; 96]| {
-        object::edit_field(tp, *focus, 0, *idx, ED_END);
+        object::edit_field_t(t, *focus, 0, *idx, ED_END);
         relist(tree);
         // SAFETY: single-CPU AES.
         *listed = unsafe { *SYS.dir.get() };
-        object::draw_obj(tp, FSDIRECT, 0, backend);
+        object::draw_obj_t(t, FSDIRECT, 0, backend);
         *focus = FSSELECT;
-        *idx = object::edit_field(tp, *focus, 0, 0, ED_INIT);
+        *idx = object::edit_field_t(t, *focus, 0, 0, ED_INIT);
     };
 
     loop {
@@ -587,13 +595,13 @@ fn modal(tree: *mut Object, backend: &dyn RasterBackend) -> i16 {
                     }
                 }
                 b'\t' => {
-                    object::edit_field(tp, focus, 0, idx, ED_END);
+                    object::edit_field_t(t, focus, 0, idx, ED_END);
                     focus = if focus == FSSELECT { FSDIRECT } else { FSSELECT };
-                    idx = object::edit_field(tp, focus, 0, 0, ED_INIT);
+                    idx = object::edit_field_t(t, focus, 0, 0, ED_INIT);
                 }
                 _ => {
                     // Whole key word (scancode << 8 | ascii) → arrows move the caret.
-                    idx = object::edit_field(tp, focus, w as i16, idx, ED_CHAR);
+                    idx = object::edit_field_t(t, focus, w as i16, idx, ED_CHAR);
                 }
             }
         }
@@ -601,8 +609,7 @@ fn modal(tree: *mut Object, backend: &dyn RasterBackend) -> i16 {
         let cur = crate::vdi::mouse_buttons();
         if cur & 0x01 != 0 && prev & 0x01 == 0 {
             let (mx, my) = crate::vdi::mouse_position();
-            // SAFETY: valid tree.
-            let hit = unsafe { object::hit_test(tp, 0, MAX_DEPTH, mx, my) };
+            let hit = object::hit_test_t(t, 0, MAX_DEPTH, mx, my);
             let now = h.monotonic_millis();
             if hit == FSOK {
                 // Like TOS: if the mask was edited, OK re-lists, not exits.
@@ -621,10 +628,10 @@ fn modal(tree: *mut Object, backend: &dyn RasterBackend) -> i16 {
             } else if hit == FSDIRECT || hit == FSSELECT {
                 // Click into an editable field → focus it (caret to its end).
                 if hit != focus {
-                    object::edit_field(tp, focus, 0, idx, ED_END);
+                    object::edit_field_t(t, focus, 0, idx, ED_END);
                     focus = hit;
                 }
-                idx = object::edit_field(tp, focus, 0, 0, ED_INIT);
+                idx = object::edit_field_t(t, focus, 0, 0, ED_INIT);
             } else if (F1NAME..F1NAME + NM_NAMES as i16).contains(&hit) {
                 let slot = (hit - F1NAME) as usize;
                 // SAFETY: single-CPU AES.
@@ -642,15 +649,15 @@ fn modal(tree: *mut Object, backend: &dyn RasterBackend) -> i16 {
                     } else {
                         // File: select it; a double-click confirms (= OK).
                         if cur_sel >= 0 {
-                            object::set_state_bit(tree, cur_sel, SELECTED, false);
+                            object::set_state_bit_t(t, cur_sel, SELECTED, false);
                         }
-                        object::set_state_bit(tree, hit, SELECTED, true);
+                        object::set_state_bit_t(t, hit, SELECTED, true);
                         cur_sel = hit;
                         // SAFETY: single-CPU AES.
                         unsafe { copy_name(&mut *SYS.sel.get(), &name) };
                         // Re-arm editing on the selection field (caret at end).
                         focus = FSSELECT;
-                        idx = object::edit_field(tp, focus, 0, 0, ED_INIT);
+                        idx = object::edit_field_t(t, focus, 0, 0, ED_INIT);
                         if hit == last_hit && now.saturating_sub(last_t) < DCLICK_MS {
                             return 1;
                         }
@@ -663,13 +670,13 @@ fn modal(tree: *mut Object, backend: &dyn RasterBackend) -> i16 {
                     set_drive(ch);
                     set_drive_states(tree, ch);
                     cur_sel = -1;
-                    object::edit_field(tp, focus, 0, idx, ED_END);
+                    object::edit_field_t(t, focus, 0, idx, ED_END);
                     relist(tree);
                     // SAFETY: single-CPU AES.
                     listed = unsafe { *SYS.dir.get() };
-                    object::draw_obj(tp, 0, MAX_DEPTH, backend); // drive states + dir + list
+                    object::draw_obj_t(t, 0, MAX_DEPTH, backend); // drive states + dir + list
                     focus = FSSELECT;
-                    idx = object::edit_field(tp, focus, 0, 0, ED_INIT); // caret last
+                    idx = object::edit_field_t(t, focus, 0, 0, ED_INIT); // caret last
                 }
             }
             last_hit = hit;
