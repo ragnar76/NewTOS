@@ -19,6 +19,7 @@
 use core::sync::atomic::{AtomicI16, Ordering};
 
 use super::Aespb;
+use crate::bdos::process::{current_abi, Abi};
 use crate::host::host;
 use crate::vdi::backend::{ClipRect, MonoSrc, PatternFill, Pel, RasterBackend, Rect, WriteMode};
 
@@ -51,6 +52,208 @@ pub struct Object {
     pub ob_width: i16,
     /// height in pixels.
     pub ob_height: i16,
+}
+
+// ── ObjTree: ABI-parametrized in-place OBJECT accessor (ADR-020 stage 4) ──
+//
+// An OBJECT tree is read/written at the **caller's** ABI width: an LP64 caller
+// (the desktop, the boot selftests, any kernel-built tree) has 32-byte records
+// with a u64 `ob_spec` @16 and coordinates @24..30; an ILP32 caller (a
+// source-ported GEM app such as QED) has 24-byte records with a u32 `ob_spec`
+// @12 and coordinates @16..22 (confirmed against `Object` above + the ILP32
+// relocation in `resource.rs`: `OBJECT_SIZE_ILP32=24`, `OB_TYPE_OFF=6`,
+// `OB_SPEC_OFF_ILP32=12`). The link/type WORDs (next/head/tail/type/flags/state)
+// share offsets 0..10 in both ABIs.
+//
+// The ABI is not threaded through call sites; it is read from the current
+// execution context (`current_abi`) once when an accessor is built. During an
+// ILP32 app's `svc #2` that is `Ilp32`; for an in-kernel (EL1) caller — the
+// desktop, whose `current()` is null — it is `Lp64`, so the offsets equal the
+// native `Object` struct and every read/write is byte-identical to before.
+
+/// Field offset table for one ABI: the stride and the offsets that differ
+/// between LP64 (32-byte) and ILP32 (24-byte) OBJECT records.
+#[derive(Clone, Copy)]
+pub(crate) struct ObjTree {
+    /// VA of the OBJECT array's first record.
+    base: u64,
+    /// Caller ABI (pointer / record width).
+    abi: Abi,
+}
+
+impl ObjTree {
+    /// Build an accessor over the tree at `base`, reading fields at the
+    /// current execution context's ABI width.
+    ///
+    /// # Invariant
+    /// `base` addresses a valid OBJECT array; every index passed to a getter/
+    /// setter is in range (the GEM caller's contract, exactly as the previous
+    /// `*const Object` + `tree.add(i)` code assumed).
+    #[inline]
+    pub(crate) fn new(base: *const Object) -> Self {
+        Self { base: base as u64, abi: current_abi() }
+    }
+
+    /// True for a 24-byte (ILP32) tree — used to gate the Stage-B sub-struct
+    /// (TEDINFO/ICONBLK/BITBLK) dereferences, which an LP64 struct cannot read
+    /// out of an ILP32-packed blob.
+    #[inline]
+    pub(crate) fn is_ilp32(self) -> bool {
+        matches!(self.abi, Abi::Ilp32)
+    }
+
+    #[inline]
+    fn stride(self) -> u64 {
+        match self.abi {
+            Abi::Lp64 => 32,
+            Abi::Ilp32 => 24,
+        }
+    }
+    #[inline]
+    fn spec_off(self) -> u64 {
+        match self.abi {
+            Abi::Lp64 => 16,
+            Abi::Ilp32 => 12,
+        }
+    }
+    #[inline]
+    fn coord_off(self) -> u64 {
+        match self.abi {
+            Abi::Lp64 => 24,
+            Abi::Ilp32 => 16,
+        }
+    }
+    #[inline]
+    fn ptr(self, i: i16, off: u64) -> *mut u8 {
+        (self.base + i as u64 * self.stride() + off) as *mut u8
+    }
+    #[inline]
+    fn rd_i16(self, i: i16, off: u64) -> i16 {
+        // SAFETY: ObjTree invariant — `base` is a valid OBJECT array and `i`
+        // is in range; a WORD field is 2 readable bytes (unaligned-safe).
+        unsafe { (self.ptr(i, off) as *const i16).read_unaligned() }
+    }
+    #[inline]
+    fn wr_i16(self, i: i16, off: u64, v: i16) {
+        // SAFETY: as `rd_i16`; the record is writable (GEM contract).
+        unsafe { (self.ptr(i, off) as *mut i16).write_unaligned(v) }
+    }
+    #[inline]
+    fn rd_u16(self, i: i16, off: u64) -> u16 {
+        // SAFETY: as `rd_i16`.
+        unsafe { (self.ptr(i, off) as *const u16).read_unaligned() }
+    }
+    #[inline]
+    fn wr_u16(self, i: i16, off: u64, v: u16) {
+        // SAFETY: as `wr_i16`.
+        unsafe { (self.ptr(i, off) as *mut u16).write_unaligned(v) }
+    }
+
+    #[inline]
+    pub(crate) fn next(self, i: i16) -> i16 {
+        self.rd_i16(i, 0)
+    }
+    #[inline]
+    pub(crate) fn head(self, i: i16) -> i16 {
+        self.rd_i16(i, 2)
+    }
+    #[inline]
+    pub(crate) fn tail(self, i: i16) -> i16 {
+        self.rd_i16(i, 4)
+    }
+    #[inline]
+    pub(crate) fn ob_type(self, i: i16) -> u16 {
+        self.rd_u16(i, 6)
+    }
+    #[inline]
+    pub(crate) fn flags(self, i: i16) -> u16 {
+        self.rd_u16(i, 8)
+    }
+    #[inline]
+    pub(crate) fn state(self, i: i16) -> u16 {
+        self.rd_u16(i, 10)
+    }
+    #[inline]
+    pub(crate) fn x(self, i: i16) -> i16 {
+        self.rd_i16(i, self.coord_off())
+    }
+    #[inline]
+    pub(crate) fn y(self, i: i16) -> i16 {
+        self.rd_i16(i, self.coord_off() + 2)
+    }
+    #[inline]
+    pub(crate) fn width(self, i: i16) -> i16 {
+        self.rd_i16(i, self.coord_off() + 4)
+    }
+    #[inline]
+    pub(crate) fn height(self, i: i16) -> i16 {
+        self.rd_i16(i, self.coord_off() + 6)
+    }
+
+    #[inline]
+    pub(crate) fn set_next(self, i: i16, v: i16) {
+        self.wr_i16(i, 0, v)
+    }
+    #[inline]
+    pub(crate) fn set_head(self, i: i16, v: i16) {
+        self.wr_i16(i, 2, v)
+    }
+    #[inline]
+    pub(crate) fn set_tail(self, i: i16, v: i16) {
+        self.wr_i16(i, 4, v)
+    }
+    #[inline]
+    pub(crate) fn set_type(self, i: i16, v: u16) {
+        self.wr_u16(i, 6, v)
+    }
+    #[inline]
+    pub(crate) fn set_flags(self, i: i16, v: u16) {
+        self.wr_u16(i, 8, v)
+    }
+    #[inline]
+    pub(crate) fn set_state(self, i: i16, v: u16) {
+        self.wr_u16(i, 10, v)
+    }
+    #[inline]
+    pub(crate) fn set_x(self, i: i16, v: i16) {
+        self.wr_i16(i, self.coord_off(), v)
+    }
+    #[inline]
+    pub(crate) fn set_y(self, i: i16, v: i16) {
+        self.wr_i16(i, self.coord_off() + 2, v)
+    }
+    #[inline]
+    pub(crate) fn set_width(self, i: i16, v: i16) {
+        self.wr_i16(i, self.coord_off() + 4, v)
+    }
+
+    /// `ob_spec` read at the caller's width: a u64 for LP64, a u32
+    /// zero-extended for ILP32. For a string/box object this is a user VA or a
+    /// packed colour word; for a sub-struct type it is a pointer only
+    /// dereferenced by the LP64 path (Stage A defers ILP32 sub-structs).
+    #[inline]
+    pub(crate) fn spec(self, i: i16) -> u64 {
+        let p = self.ptr(i, self.spec_off());
+        // SAFETY: ObjTree invariant; ob_spec is 8 (LP64) / 4 (ILP32) bytes.
+        unsafe {
+            match self.abi {
+                Abi::Lp64 => (p as *const u64).read_unaligned(),
+                Abi::Ilp32 => (p as *const u32).read_unaligned() as u64,
+            }
+        }
+    }
+
+    /// The all-ones "no `ob_spec`" sentinel at the caller's width (EmuTOS
+    /// `spec == -1L`, a 32-bit LONG): `u64::MAX` for LP64, `0xFFFF_FFFF` for
+    /// ILP32 (matching the zero-extended read in [`Self::spec`]). Objects with
+    /// this value are neither dereferenced nor drawn.
+    #[inline]
+    pub(crate) fn spec_none(self) -> u64 {
+        match self.abi {
+            Abi::Lp64 => u64::MAX,
+            Abi::Ilp32 => 0xFFFF_FFFF,
+        }
+    }
 }
 
 // Graphic types (`obdefs.h`).
@@ -171,12 +374,6 @@ const FL3DMASK: u16 = 0x0600;
 
 const NIL: i16 = -1;
 
-/// The `ob_spec` "none" sentinel — `-1` in the native 64-bit field (EmuTOS
-/// `spec == -1L`, a 32-bit `LONG`). `just_draw` skips drawing such an object
-/// and `ob_change` leaves it untouched, so `-1` is never dereferenced as a
-/// pointer (which would fault) or cracked as a colour word.
-const OB_SPEC_NONE: u64 = u64::MAX;
-
 // VDI default palette pens.
 const WHITE: Pel = 0;
 const BLACK: Pel = 1;
@@ -246,12 +443,11 @@ pub unsafe fn render_tree(
     if tree.is_null() || start < 0 {
         return;
     }
+    let t = ObjTree::new(tree);
     let clip = ClipRect { xmn: cx, ymn: cy, xmx: cx + cw - 1, ymx: cy + ch - 1 };
     // Absolute origin of `start` = sum of its ancestors' x/y (like objc_offset).
-    let (ox, oy) = abs_offset(tree, start);
-    // SAFETY: caller guarantees a valid tree with `start` in range.
-    let ob = unsafe { &*tree.add(start as usize) };
-    draw_tree(tree, start, depth, ox - ob.ob_x, oy - ob.ob_y, clip, backend);
+    let (ox, oy) = abs_offset(t, start);
+    draw_tree(t, start, depth, ox - t.x(start), oy - t.y(start), clip, backend);
 }
 
 /// `objc_offset` (44) — the object's absolute screen x/y (sum of parent
@@ -263,7 +459,7 @@ pub fn objc_offset(pb: &Aespb) {
         pb.set_ret(0);
         return;
     }
-    let (x, y) = abs_offset(tree, obj);
+    let (x, y) = abs_offset(ObjTree::new(tree), obj);
     pb.set_intout(1, x);
     pb.set_intout(2, y);
     pb.set_ret(1);
@@ -279,8 +475,7 @@ pub fn objc_add(pb: &Aespb) {
         pb.set_ret(0);
         return;
     }
-    // SAFETY: valid tree (GEM contract).
-    unsafe { ob_add(tree, parent, child) };
+    ob_add(ObjTree::new(tree), parent, child);
     pb.set_ret(1);
 }
 
@@ -293,8 +488,7 @@ pub fn objc_delete(pb: &Aespb) {
         pb.set_ret(0);
         return;
     }
-    // SAFETY: valid tree (GEM contract).
-    let ok = unsafe { ob_delete(tree, obj) };
+    let ok = ob_delete(ObjTree::new(tree), obj);
     pb.set_ret(ok);
 }
 
@@ -309,64 +503,50 @@ pub fn objc_order(pb: &Aespb) {
         pb.set_ret(0);
         return;
     }
-    // SAFETY: valid tree (GEM contract).
-    let ok = unsafe { ob_order(tree, obj, newpos) };
+    let ok = ob_order(ObjTree::new(tree), obj, newpos);
     pb.set_ret(if ok { 1 } else { 0 });
 }
 
 /// Link `child` as the last child of `parent` (EmuTOS `ob_add`).
-///
-/// # Safety
-/// `tree` is a valid OBJECT array; `parent`/`child` are valid indices.
-unsafe fn ob_add(tree: *mut Object, parent: i16, child: i16) {
+fn ob_add(t: ObjTree, parent: i16, child: i16) {
     if parent == NIL || child == NIL {
         return;
     }
-    // SAFETY: caller guarantees a valid tree; each field write touches one
-    // node, so no overlapping `&mut` is formed.
-    unsafe {
-        (*tree.add(child as usize)).ob_next = parent; // last sibling → parent
-        let lastkid = (*tree.add(parent as usize)).ob_tail;
-        if lastkid == NIL {
-            (*tree.add(parent as usize)).ob_head = child; // first child
-        } else {
-            (*tree.add(lastkid as usize)).ob_next = child; // append to the end
-        }
-        (*tree.add(parent as usize)).ob_tail = child;
+    t.set_next(child, parent); // last sibling → parent
+    let lastkid = t.tail(parent);
+    if lastkid == NIL {
+        t.set_head(parent, child); // first child
+    } else {
+        t.set_next(lastkid, child); // append to the end
     }
+    t.set_tail(parent, child);
 }
 
 /// Unlink `obj` from its parent's child list (EmuTOS `ob_delete`). Returns 1
 /// on success, 0 for the ROOT or a not-found object.
-///
-/// # Safety
-/// `tree` is a valid OBJECT array.
-unsafe fn ob_delete(tree: *mut Object, obj: i16) -> i16 {
+fn ob_delete(t: ObjTree, obj: i16) -> i16 {
     if obj == 0 {
         return 0; // can't delete the ROOT
     }
-    // SAFETY: caller guarantees a valid tree.
-    unsafe {
-        let mut nextsib = (*tree.add(obj as usize)).ob_next;
-        let parent = parent_of(tree, obj);
-        if parent == NIL {
-            return 0;
+    let mut nextsib = t.next(obj);
+    let parent = parent_of(t, obj);
+    if parent == NIL {
+        return 0;
+    }
+    if t.head(parent) == obj {
+        if t.tail(parent) == obj {
+            nextsib = NIL; // the only child — clear head + tail
+            t.set_tail(parent, NIL);
         }
-        if (*tree.add(parent as usize)).ob_head == obj {
-            if (*tree.add(parent as usize)).ob_tail == obj {
-                nextsib = NIL; // the only child — clear head + tail
-                (*tree.add(parent as usize)).ob_tail = NIL;
-            }
-            (*tree.add(parent as usize)).ob_head = nextsib;
-        } else {
-            let prev = get_prev(tree, parent, obj);
-            if prev == NIL {
-                return 0; // not in this chain
-            }
-            (*tree.add(prev as usize)).ob_next = nextsib;
-            if (*tree.add(parent as usize)).ob_tail == obj {
-                (*tree.add(parent as usize)).ob_tail = prev;
-            }
+        t.set_head(parent, nextsib);
+    } else {
+        let prev = get_prev(t, parent, obj);
+        if prev == NIL {
+            return 0; // not in this chain
+        }
+        t.set_next(prev, nextsib);
+        if t.tail(parent) == obj {
+            t.set_tail(parent, prev);
         }
     }
     1
@@ -377,77 +557,66 @@ unsafe fn ob_delete(tree: *mut Object, obj: i16) -> i16 {
 /// left empty after the delete, or a `new_pos` past the end, is handled
 /// without dereferencing NIL (which the reference would).
 ///
-/// # Safety
-/// `tree` is a valid OBJECT array.
-unsafe fn ob_order(tree: *mut Object, mov_obj: i16, new_pos: i16) -> bool {
+fn ob_order(t: ObjTree, mov_obj: i16, new_pos: i16) -> bool {
     if mov_obj == 0 {
         return false; // the ROOT has no siblings
     }
-    // SAFETY: caller guarantees a valid tree.
-    unsafe {
-        let parent = parent_of(tree, mov_obj);
-        if parent == NIL {
-            return false;
-        }
-        ob_delete(tree, mov_obj);
-        let head = (*tree.add(parent as usize)).ob_head;
-        if head == NIL {
-            // parent is now empty → mov_obj becomes its sole child
-            (*tree.add(mov_obj as usize)).ob_next = parent;
-            (*tree.add(parent as usize)).ob_head = mov_obj;
-            (*tree.add(parent as usize)).ob_tail = mov_obj;
-            return true;
-        }
-        let mut chg_obj = head;
-        if new_pos == 0 {
-            (*tree.add(mov_obj as usize)).ob_next = chg_obj;
-            (*tree.add(parent as usize)).ob_head = mov_obj;
+    let parent = parent_of(t, mov_obj);
+    if parent == NIL {
+        return false;
+    }
+    ob_delete(t, mov_obj);
+    let head = t.head(parent);
+    if head == NIL {
+        // parent is now empty → mov_obj becomes its sole child
+        t.set_next(mov_obj, parent);
+        t.set_head(parent, mov_obj);
+        t.set_tail(parent, mov_obj);
+        return true;
+    }
+    let mut chg_obj = head;
+    if new_pos == 0 {
+        t.set_next(mov_obj, chg_obj);
+        t.set_head(parent, mov_obj);
+    } else {
+        if new_pos == NIL {
+            chg_obj = t.tail(parent);
         } else {
-            if new_pos == NIL {
-                chg_obj = (*tree.add(parent as usize)).ob_tail;
-            } else {
-                let mut ii = 1;
-                while ii < new_pos {
-                    let n = (*tree.add(chg_obj as usize)).ob_next;
-                    if n == parent || n == NIL {
-                        break; // clamp to the end of the sibling list
-                    }
-                    chg_obj = n;
-                    ii += 1;
+            let mut ii = 1;
+            while ii < new_pos {
+                let n = t.next(chg_obj);
+                if n == parent || n == NIL {
+                    break; // clamp to the end of the sibling list
                 }
+                chg_obj = n;
+                ii += 1;
             }
-            let cn = (*tree.add(chg_obj as usize)).ob_next;
-            (*tree.add(mov_obj as usize)).ob_next = cn;
-            (*tree.add(chg_obj as usize)).ob_next = mov_obj;
         }
-        if (*tree.add(mov_obj as usize)).ob_next == parent {
-            (*tree.add(parent as usize)).ob_tail = mov_obj;
-        }
+        let cn = t.next(chg_obj);
+        t.set_next(mov_obj, cn);
+        t.set_next(chg_obj, mov_obj);
+    }
+    if t.next(mov_obj) == parent {
+        t.set_tail(parent, mov_obj);
     }
     true
 }
 
 /// Previous sibling of `obj` under `parent`, or `NIL` (EmuTOS `get_prev`).
-///
-/// # Safety
-/// `tree` is a valid OBJECT array.
-unsafe fn get_prev(tree: *const Object, parent: i16, obj: i16) -> i16 {
-    // SAFETY: caller guarantees a valid tree.
-    unsafe {
-        let mut pobj = (*tree.add(parent as usize)).ob_head;
-        if pobj == obj {
+fn get_prev(t: ObjTree, parent: i16, obj: i16) -> i16 {
+    let mut pobj = t.head(parent);
+    if pobj == obj {
+        return NIL;
+    }
+    loop {
+        let nobj = t.next(pobj);
+        if nobj == obj {
+            return pobj;
+        }
+        if nobj == parent || nobj == NIL {
             return NIL;
         }
-        loop {
-            let nobj = (*tree.add(pobj as usize)).ob_next;
-            if nobj == obj {
-                return pobj;
-            }
-            if nobj == parent || nobj == NIL {
-                return NIL;
-            }
-            pobj = nobj;
-        }
+        pobj = nobj;
     }
 }
 
@@ -558,27 +727,22 @@ pub fn objc_sysvar(pb: &Aespb) {
 /// Set `obj`'s state and optionally redraw just that object. Shared by
 /// `objc_change` and the Form Manager (to show a pressed button).
 pub(crate) fn change(tree: *mut Object, obj: i16, newstate: u16, redraw: bool) {
-    // SAFETY: valid tree (GEM contract); the caller owns the array.
-    unsafe {
-        // EmuTOS `ob_change` (gemoblib.c:1263): a `spec == -1` sentinel object
-        // is left entirely untouched — no state change, no redraw — so the
-        // redraw path never dereferences `-1` as a pointer.
-        if (*tree.add(obj as usize)).ob_spec == OB_SPEC_NONE {
-            return;
-        }
-        (*tree.add(obj as usize)).ob_state = newstate;
+    let t = ObjTree::new(tree);
+    // EmuTOS `ob_change` (gemoblib.c:1263): a `spec == -1` sentinel object
+    // is left entirely untouched — no state change, no redraw — so the
+    // redraw path never dereferences `-1` as a pointer.
+    if t.spec(obj) == t.spec_none() {
+        return;
     }
+    t.set_state(obj, newstate);
     if !redraw {
         return;
     }
     if let Some(backend) = host().and_then(|h| h.raster()) {
         let clip = ClipRect::full(backend.width(), backend.height());
-        let (ox, oy) = abs_offset(tree, obj);
-        // SAFETY: valid tree; depth 0 redraws only this object.
-        unsafe {
-            let ob = &*tree.add(obj as usize);
-            draw_tree(tree, obj, 0, ox - ob.ob_x, oy - ob.ob_y, clip, backend);
-        }
+        let (ox, oy) = abs_offset(t, obj);
+        // depth 0 redraws only this object.
+        draw_tree(t, obj, 0, ox - t.x(obj), oy - t.y(obj), clip, backend);
     }
 }
 
@@ -626,13 +790,19 @@ pub fn objc_edit(pb: &Aespb) {
 /// rename box) `find_pos` is the identity and validation accepts anything,
 /// so this reduces to plain in-place editing.
 pub(crate) fn edit_field(tree: *const Object, obj: i16, in_char: i16, mut idx: i16, kind: i16) -> i16 {
-    // SAFETY: valid tree.
-    let ob = unsafe { &*tree.add(obj as usize) };
-    if ob.ob_spec == 0 {
+    let t = ObjTree::new(tree);
+    // TEDINFO interior is Stage B: an ILP32 tree's `ob_spec` points at an
+    // ILP32-packed TEDINFO the LP64 struct cannot read, so decline the edit
+    // (cursor unchanged, no draw, no fault) until Stage B implements it.
+    if t.is_ilp32() {
         return idx;
     }
-    // SAFETY: an editable field's ob_spec points at a TEDINFO.
-    let ted = unsafe { &*(ob.ob_spec as *const TedInfo) };
+    let spec = t.spec(obj);
+    if spec == 0 {
+        return idx;
+    }
+    // SAFETY: an editable field's ob_spec points at a TEDINFO (LP64 tree).
+    let ted = unsafe { &*(spec as *const TedInfo) };
     let txtlen = ted.te_txtlen.max(1);
     let text = ted.te_ptext as *mut u8;
     let tmpl = read_cstr(ted.te_ptmplt);
@@ -646,14 +816,14 @@ pub(crate) fn edit_field(tree: *const Object, obj: i16, in_char: i16, mut idx: i
     // Redraw the field, then the caret (unless we are ending the edit).
     if let Some(backend) = host().and_then(|h| h.raster()) {
         let clip = ClipRect::full(backend.width(), backend.height());
-        let (ox, oy) = abs_offset(tree, obj);
-        // SAFETY: valid tree; depth 0 redraws only this field.
-        unsafe { draw_tree(tree, obj, 0, ox - ob.ob_x, oy - ob.ob_y, clip, backend) };
+        let (ox, oy) = abs_offset(t, obj);
+        // depth 0 redraws only this field.
+        draw_tree(t, obj, 0, ox - t.x(obj), oy - t.y(obj), clip, backend);
         if kind != ED_END {
             // Caret at the template-relative column (EmuTOS `find_pos`): a
             // 1-px black bar the height of the text.
             let col = find_pos(tmpl, idx);
-            let cy = oy + (ob.ob_height - crate::vdi::font::CELL_H) / 2;
+            let cy = oy + (t.height(obj) - crate::vdi::font::CELL_H) / 2;
             backend.fill_rect(ox + col * crate::vdi::font::CELL_W, cy, 1, crate::vdi::font::CELL_H, BLACK, clip);
         }
     }
@@ -885,12 +1055,9 @@ pub fn objc_find(pb: &Aespb) {
         pb.set_ret(NIL);
         return;
     }
-    let (ox, oy) = abs_offset(tree, startob);
-    // SAFETY: valid tree (GEM contract).
-    let found = unsafe {
-        let ob = &*tree.add(startob as usize);
-        find_hit(tree, startob, depth, ox - ob.ob_x, oy - ob.ob_y, mx, my)
-    };
+    let t = ObjTree::new(tree);
+    let (ox, oy) = abs_offset(t, startob);
+    let found = find_hit(t, startob, depth, ox - t.x(startob), oy - t.y(startob), mx, my);
     pb.set_ret(found);
 }
 
@@ -908,35 +1075,29 @@ pub(crate) unsafe fn hit_test(
     mx: i16,
     my: i16,
 ) -> i16 {
-    // SAFETY: caller guarantees a valid tree.
-    unsafe {
-        let (ox, oy) = abs_offset(tree, root);
-        let ob = &*tree.add(root as usize);
-        find_hit(tree, root, depth, ox - ob.ob_x, oy - ob.ob_y, mx, my)
-    }
+    let t = ObjTree::new(tree);
+    let (ox, oy) = abs_offset(t, root);
+    find_hit(t, root, depth, ox - t.x(root), oy - t.y(root), mx, my)
 }
 
 /// Absolute screen rectangle `(x, y, w, h)` of `obj`.
 pub(crate) fn abs_rect(tree: *const Object, obj: i16) -> (i16, i16, i16, i16) {
-    let (x, y) = abs_offset(tree, obj);
-    // SAFETY: valid tree.
-    let ob = unsafe { &*tree.add(obj as usize) };
-    (x, y, ob.ob_width, ob.ob_height)
+    let t = ObjTree::new(tree);
+    let (x, y) = abs_offset(t, obj);
+    (x, y, t.width(obj), t.height(obj))
 }
 
 /// First child of `parent` whose absolute rectangle contains `(mx, my)`,
 /// scanning only direct children; `NIL` if none. Used for menu hit-tests.
 pub(crate) fn child_at(tree: *const Object, parent: i16, mx: i16, my: i16) -> i16 {
-    // SAFETY: valid tree; the sibling chain ends back at `parent`.
-    unsafe {
-        let mut c = (*tree.add(parent as usize)).ob_head;
-        while c != NIL && c != parent {
-            let (x, y, w, h) = abs_rect(tree, c);
-            if mx >= x && mx < x + w && my >= y && my < y + h {
-                return c;
-            }
-            c = (*tree.add(c as usize)).ob_next;
+    let t = ObjTree::new(tree);
+    let mut c = t.head(parent);
+    while c != NIL && c != parent {
+        let (x, y, w, h) = abs_rect(tree, c);
+        if mx >= x && mx < x + w && my >= y && my < y + h {
+            return c;
         }
+        c = t.next(c);
     }
     NIL
 }
@@ -944,8 +1105,7 @@ pub(crate) fn child_at(tree: *const Object, parent: i16, mx: i16, my: i16) -> i1
 /// Set or clear one `ob_state` bit on `obj` and redraw it. Thin wrapper
 /// the Menu Manager shares for title/item highlighting.
 pub(crate) fn set_state_bit(tree: *mut Object, obj: i16, bit: u16, set: bool) {
-    // SAFETY: valid tree.
-    let st = unsafe { (*tree.add(obj as usize)).ob_state };
+    let st = ObjTree::new(tree).state(obj);
     let new = if set { st | bit } else { st & !bit };
     change(tree, obj, new, true);
 }
@@ -953,13 +1113,10 @@ pub(crate) fn set_state_bit(tree: *mut Object, obj: i16, bit: u16, set: bool) {
 /// Draw the subtree rooted at `obj` (any object), `depth` levels deep, at
 /// its absolute screen position. Used by the Menu Manager to draw the bar.
 pub(crate) fn draw_obj(tree: *const Object, obj: i16, depth: i16, backend: &dyn RasterBackend) {
+    let t = ObjTree::new(tree);
     let clip = ClipRect::full(backend.width(), backend.height());
-    let (ox, oy) = abs_offset(tree, obj);
-    // SAFETY: valid tree (GEM contract).
-    unsafe {
-        let ob = &*tree.add(obj as usize);
-        draw_tree(tree, obj, depth, ox - ob.ob_x, oy - ob.ob_y, clip, backend);
-    }
+    let (ox, oy) = abs_offset(t, obj);
+    draw_tree(t, obj, depth, ox - t.x(obj), oy - t.y(obj), clip, backend);
 }
 
 /// Draw a whole tree (used by the Form Manager after building an alert).
@@ -968,30 +1125,23 @@ pub(crate) fn draw_obj(tree: *const Object, obj: i16, depth: i16, backend: &dyn 
 /// `tree` is a valid OBJECT array; `backend` is the live screen.
 pub(crate) unsafe fn draw_root(tree: *const Object, depth: i16, backend: &dyn RasterBackend) {
     let clip = ClipRect::full(backend.width(), backend.height());
-    // SAFETY: valid tree; root is index 0, its ob_x/ob_y are absolute
-    // (no parent), so the parent offset is 0.
-    unsafe {
-        draw_tree(tree, 0, depth, 0, 0, clip, backend);
-    }
+    // Root is index 0; its ob_x/ob_y are absolute (no parent), so the parent
+    // offset is 0.
+    draw_tree(ObjTree::new(tree), 0, depth, 0, 0, clip, backend);
 }
 
 // ── tree helpers ────────────────────────────────────────────────────
 
 /// Absolute screen origin of `obj` = sum of x/y from the root down. Walks
 /// parents by scanning sibling chains (EmuTOS `ob_offset`).
-fn abs_offset(tree: *const Object, obj: i16) -> (i16, i16) {
+fn abs_offset(t: ObjTree, obj: i16) -> (i16, i16) {
     let mut x = 0i16;
     let mut y = 0i16;
     let mut cur = obj;
-    // SAFETY: GEM contract — the tree array is valid and the parent walk
-    // terminates at the root (parent == NIL).
-    unsafe {
-        while cur != NIL {
-            let ob = &*tree.add(cur as usize);
-            x += ob.ob_x;
-            y += ob.ob_y;
-            cur = parent_of(tree, cur);
-        }
+    while cur != NIL {
+        x += t.x(cur);
+        y += t.y(cur);
+        cur = parent_of(t, cur);
     }
     (x, y)
 }
@@ -1002,41 +1152,34 @@ fn abs_offset(tree: *const Object, obj: i16) -> (i16, i16) {
 /// # Safety
 /// `tree` is a valid OBJECT array (GEM contract).
 pub(crate) unsafe fn parent(tree: *const Object, obj: i16) -> i16 {
-    // SAFETY: forwarded from the caller's contract.
-    unsafe { parent_of(tree, obj) }
+    parent_of(ObjTree::new(tree), obj)
 }
 
 /// Index of `obj`'s parent, or `NIL` for the root. The parent is the node
 /// whose child chain reaches `obj` (TOS finds it via `ob_next` wrapping
 /// back to the parent at the end of the sibling list).
-///
-/// # Safety
-/// `tree` is a valid OBJECT array (GEM contract).
-unsafe fn parent_of(tree: *const Object, obj: i16) -> i16 {
+fn parent_of(t: ObjTree, obj: i16) -> i16 {
     // Follow ob_next from obj until it points to a node that lists obj as
     // a child range end — TOS sets the last sibling's ob_next to the
-    // parent index. Walk ob_next until we find a node whose ob_tail chain
-    // includes obj.
-    unsafe {
-        let mut last = obj;
-        loop {
-            let n = (*tree.add(last as usize)).ob_next;
-            if n == NIL {
-                return NIL; // root
-            }
-            // If n's tail is `last`, then n is the parent.
-            if (*tree.add(n as usize)).ob_tail == last {
-                return n;
-            }
-            last = n;
+    // parent index. Walk ob_next until we find a node whose ob_tail is `last`.
+    let mut last = obj;
+    loop {
+        let n = t.next(last);
+        if n == NIL {
+            return NIL; // root
         }
+        // If n's tail is `last`, then n is the parent.
+        if t.tail(n) == last {
+            return n;
+        }
+        last = n;
     }
 }
 
 /// Recursively draw `obj` and up to `depth` levels of descendants. `(px,
 /// py)` is the absolute origin of `obj`'s parent.
 fn draw_tree(
-    tree: *const Object,
+    t: ObjTree,
     obj: i16,
     depth: i16,
     px: i16,
@@ -1044,32 +1187,27 @@ fn draw_tree(
     clip: ClipRect,
     backend: &dyn RasterBackend,
 ) {
-    // SAFETY: valid tree.
-    let ob = unsafe { &*tree.add(obj as usize) };
-    if ob.ob_flags & HIDETREE != 0 {
+    if t.flags(obj) & HIDETREE != 0 {
         return;
     }
-    let x = px + ob.ob_x;
-    let y = py + ob.ob_y;
+    let x = px + t.x(obj);
+    let y = py + t.y(obj);
     // Skip drawing an object whose `ob_spec` is the `-1` "none" sentinel
     // (EmuTOS `just_draw`, gemoblib.c:491) so it is never dereferenced as a
     // pointer — but still recurse into its children: EmuTOS `everyobj` stops
     // the tree walk only on HIDETREE, not on `spec == -1`.
-    if ob.ob_spec != OB_SPEC_NONE {
-        just_draw(ob, x, y, clip, backend);
+    if t.spec(obj) != t.spec_none() {
+        just_draw(t, obj, x, y, clip, backend);
     }
 
     if depth > 0 {
-        let mut child = ob.ob_head;
-        // SAFETY: valid tree; the sibling chain ends at ob_tail.
-        unsafe {
-            while child != NIL {
-                draw_tree(tree, child, depth - 1, x, y, clip, backend);
-                if child == ob.ob_tail {
-                    break;
-                }
-                child = (*tree.add(child as usize)).ob_next;
+        let mut child = t.head(obj);
+        while child != NIL {
+            draw_tree(t, child, depth - 1, x, y, clip, backend);
+            if child == t.tail(obj) {
+                break;
             }
+            child = t.next(child);
         }
     }
 }
@@ -1180,10 +1318,19 @@ fn ob_format(just: i16, raw: &[u8], tmpl: &[u8], out: &mut [u8]) -> usize {
     ptlen
 }
 
-fn just_draw(ob: &Object, x: i16, y: i16, clip: ClipRect, backend: &dyn RasterBackend) {
-    let selected = ob.ob_state & SELECTED != 0;
-    let disabled = ob.ob_state & DISABLED != 0;
-    let d3 = ob.ob_flags & FL3DMASK;
+fn just_draw(t: ObjTree, obj: i16, x: i16, y: i16, clip: ClipRect, backend: &dyn RasterBackend) {
+    // Snapshot the object's fields once at the caller's ABI width; a sub-struct
+    // (`ob_spec`-pointed TEDINFO/ICONBLK/BITBLK) is only dereferenced on the
+    // LP64 path — the ILP32-packed sub-structs are Stage B (guarded below).
+    let ob_state = t.state(obj);
+    let ob_flags = t.flags(obj);
+    let ob_type = t.ob_type(obj);
+    let ob_spec = t.spec(obj);
+    let ob_width = t.width(obj);
+    let ob_height = t.height(obj);
+    let selected = ob_state & SELECTED != 0;
+    let disabled = ob_state & DISABLED != 0;
+    let d3 = ob_flags & FL3DMASK;
 
     // EmuTOS `just_draw` grows a 3D object by ADJ3DSTD (2px) on every side, so
     // its bevel sits in the margin *outside* the nominal rectangle instead of
@@ -1192,9 +1339,9 @@ fn just_draw(ob: &Object, x: i16, y: i16, clip: ClipRect, backend: &dyn RasterBa
     // below — fill, border, text, bevel, DISABLED dither, DEFAULT frame —
     // draws against the grown rectangle.
     let (x, y, w, h) = if d3 != 0 {
-        (x - ADJ3DSTD, y - ADJ3DSTD, ob.ob_width + 2 * ADJ3DSTD, ob.ob_height + 2 * ADJ3DSTD)
+        (x - ADJ3DSTD, y - ADJ3DSTD, ob_width + 2 * ADJ3DSTD, ob_height + 2 * ADJ3DSTD)
     } else {
-        (x, y, ob.ob_width, ob.ob_height)
+        (x, y, ob_width, ob_height)
     };
 
     // Black-on-white look. SELECTED inverts fill/text. A 3D object keeps a
@@ -1229,28 +1376,28 @@ fn just_draw(ob: &Object, x: i16, y: i16, clip: ClipRect, backend: &dyn RasterBa
     let mut deco_bcol: Pel = BLACK;
     let mut deco_th: i16 = 0;
 
-    match ob.ob_type {
+    match ob_type {
         G_BOX | G_IBOX | G_BUTTON | G_BOXCHAR => {
             // Crack the colour word: box types pack it in `ob_spec`'s low 16
             // bits (EmuTOS `gr_crack`); a G_BUTTON's `ob_spec` is a text
             // pointer, so it takes the standard black-border / white-interior
             // button colours. Border thickness is in `ob_spec` bits 16..23 for
             // the box types; a button uses 1px.
-            let (bcol, tcol, mut ipat, mut icol, _mode) = if ob.ob_type == G_BUTTON {
+            let (bcol, tcol, mut ipat, mut icol, _mode) = if ob_type == G_BUTTON {
                 (BLACK, BLACK, IP_HOLLOW, WHITE, false)
             } else {
-                gr_crack(ob.ob_spec as u16)
+                gr_crack(ob_spec as u16)
             };
             let th = if d3 != 0 {
                 0 // 3D objects use a bevel (drawn after), not a flat border
-            } else if ob.ob_type == G_BUTTON {
+            } else if ob_type == G_BUTTON {
                 1
             } else {
-                ((ob.ob_spec >> 16) as u8 as i8) as i16
+                ((ob_spec >> 16) as u8 as i8) as i16
             };
             // 3D colour override (EmuTOS): a hollow-white box/button takes a
             // solid 3D face colour so the bevel reads against it.
-            if ob.ob_type != G_IBOX && ipat == IP_HOLLOW && icol == WHITE && d3 != 0 {
+            if ob_type != G_IBOX && ipat == IP_HOLLOW && icol == WHITE && d3 != 0 {
                 ipat = IP_SOLID;
                 icol = match d3 {
                     FL3DACT => ACT_BUTCOL.load(Ordering::Relaxed) as Pel,
@@ -1278,7 +1425,7 @@ fn just_draw(ob: &Object, x: i16, y: i16, clip: ClipRect, backend: &dyn RasterBa
             if th != 0 {
                 draw_signed_border(backend, x, y, w, h, th, bcol, clip);
             }
-            if ob.ob_type != G_IBOX {
+            if ob_type != G_IBOX {
                 gr_rect(backend, x + inset, y + inset, w - 2 * inset, h - 2 * inset, icol, ipat, clip);
             }
             deco_bcol = bcol;
@@ -1288,13 +1435,13 @@ fn just_draw(ob: &Object, x: i16, y: i16, clip: ClipRect, backend: &dyn RasterBa
             // `movetext` (EmuTOS): an activator's label sits 1px up-left while
             // raised and drops to the base position when pressed.
             let (tx, ty) = if movetext && !selected { (x - 1, y - 1) } else { (x, y) };
-            if ob.ob_type == G_BOXCHAR {
-                let ch = ((ob.ob_spec >> 24) & 0xFF) as u8;
+            if ob_type == G_BOXCHAR {
+                let ch = ((ob_spec >> 24) & 0xFF) as u8;
                 if ch != 0 {
                     draw_text(backend, tx, ty, w, h, &[ch], TE_CNTR, ink, clip);
                 }
-            } else if ob.ob_type == G_BUTTON {
-                let s = read_cstr(ob.ob_spec);
+            } else if ob_type == G_BUTTON {
+                let s = read_cstr(ob_spec);
                 draw_text(backend, tx, ty, w, h, s, TE_CNTR, ink, clip);
             }
         }
@@ -1305,7 +1452,7 @@ fn just_draw(ob: &Object, x: i16, y: i16, clip: ClipRect, backend: &dyn RasterBa
                 backend.fill_rect(x, y, w, h, BLACK, clip);
             }
             let cw = crate::vdi::font::CELL_W;
-            if ob.ob_state & CHECKED != 0 {
+            if ob_state & CHECKED != 0 {
                 backend.draw_glyph(
                     x,
                     y + (h - crate::vdi::font::CELL_H) / 2,
@@ -1315,7 +1462,7 @@ fn just_draw(ob: &Object, x: i16, y: i16, clip: ClipRect, backend: &dyn RasterBa
                     clip,
                 );
             }
-            let s = read_cstr(ob.ob_spec);
+            let s = read_cstr(ob_spec);
             // indent past the check column (2 cells), as GEM menu items do
             draw_text(backend, x + 2 * cw, y, w, h, s, TE_LEFT, ink, clip);
         }
@@ -1323,17 +1470,21 @@ fn just_draw(ob: &Object, x: i16, y: i16, clip: ClipRect, backend: &dyn RasterBa
             // A menu-bar title: text with a small left pad; SELECTED
             // (menu dropped) inverts to a highlighted look.
             backend.fill_rect(x, y, w, h, fill, clip);
-            let s = read_cstr(ob.ob_spec);
+            let s = read_cstr(ob_spec);
             draw_text(backend, x + crate::vdi::font::CELL_W, y, w, h, s, TE_LEFT, ink, clip);
         }
         G_TEXT | G_BOXTEXT | G_FTEXT | G_FBOXTEXT => {
-            if ob.ob_spec != 0 {
-                // SAFETY: ob_spec of a *TEXT object points at a TEDINFO.
-                let ted = unsafe { &*(ob.ob_spec as *const TedInfo) };
+            // Stage A: the TEDINFO interior is dereferenced only for an LP64
+            // tree. An ILP32 caller's `ob_spec` points at an ILP32-packed
+            // TEDINFO the LP64 struct cannot read; drawing its text/box is
+            // deferred to Stage B, so render blank here rather than fault.
+            if ob_spec != 0 && !t.is_ilp32() {
+                // SAFETY: ob_spec of a *TEXT object points at a TEDINFO (LP64).
+                let ted = unsafe { &*(ob_spec as *const TedInfo) };
                 // Crack the TEDINFO colour word (EmuTOS `gr_crack`): border,
                 // text, inside pattern, inside colour.
                 let (bcol, tcol, mut ipat, mut icol, _mode) = gr_crack(ted.te_color as u16);
-                let mut is_box = ob.ob_type == G_BOXTEXT || ob.ob_type == G_FBOXTEXT;
+                let mut is_box = ob_type == G_BOXTEXT || ob_type == G_FBOXTEXT;
                 let mut th = if d3 != 0 { 0 } else { ted.te_thickness };
                 // 3D background (EmuTOS): a hollow-white text background takes
                 // the solid 3D background colour; a plain TEXT/FTEXT becomes a
@@ -1370,7 +1521,7 @@ fn just_draw(ob: &Object, x: i16, y: i16, clip: ClipRect, backend: &dyn RasterBa
                 // draw `te_ptext` directly.
                 let raw = read_cstr(ted.te_ptext);
                 let mut fmtbuf = [0u8; MAX_LEN];
-                let s: &[u8] = if ob.ob_type == G_FTEXT || ob.ob_type == G_FBOXTEXT {
+                let s: &[u8] = if ob_type == G_FTEXT || ob_type == G_FBOXTEXT {
                     let tmpl = read_cstr(ted.te_ptmplt);
                     let n = ob_format(ted.te_just, raw, tmpl, &mut fmtbuf);
                     &fmtbuf[..n]
@@ -1384,9 +1535,11 @@ fn just_draw(ob: &Object, x: i16, y: i16, clip: ClipRect, backend: &dyn RasterBa
             }
         }
         G_IMAGE => {
-            if ob.ob_spec != 0 {
-                // SAFETY: ob_spec of a G_IMAGE points at a BITBLK.
-                let bi = unsafe { &*(ob.ob_spec as *const BitBlk) };
+            // Stage A: the BITBLK interior is LP64-only (see the *TEXT arm);
+            // an ILP32 image is deferred to Stage B, rendered blank here.
+            if ob_spec != 0 && !t.is_ilp32() {
+                // SAFETY: ob_spec of a G_IMAGE points at a BITBLK (LP64).
+                let bi = unsafe { &*(ob_spec as *const BitBlk) };
                 // SELECTED (EmuTOS just_draw, gemoblib.c:766-770): XOR the image
                 // background (the blit is transparent, so the inverted ground
                 // shows through the clear bits) and invert the image ink.
@@ -1406,9 +1559,11 @@ fn just_draw(ob: &Object, x: i16, y: i16, clip: ClipRect, backend: &dyn RasterBa
             }
         }
         G_ICON => {
-            if ob.ob_spec != 0 {
-                // SAFETY: ob_spec of a G_ICON points at an ICONBLK.
-                let ib = unsafe { &*(ob.ob_spec as *const IconBlk) };
+            // Stage A: the ICONBLK interior is LP64-only (see the *TEXT arm);
+            // an ILP32 icon is deferred to Stage B, rendered blank here.
+            if ob_spec != 0 && !t.is_ilp32() {
+                // SAFETY: ob_spec of a G_ICON points at an ICONBLK (LP64).
+                let ib = unsafe { &*(ob_spec as *const IconBlk) };
                 draw_icon(backend, ib, x, y, selected, clip);
             }
         }
@@ -1429,11 +1584,11 @@ fn just_draw(ob: &Object, x: i16, y: i16, clip: ClipRect, backend: &dyn RasterBa
     // (EmuTOS derives it from the button's thicker, negative `th`). OUTLINED:
     // the classic GEM double frame — a black line 3 px out plus a 2 px white
     // ring — so the object's own border becomes the inner line (dialogs/alerts).
-    if ob.ob_flags & DEFAULT != 0 {
+    if ob_flags & DEFAULT != 0 {
         draw_border(backend, x - 3, y - 3, w + 6, h + 6, 1, BLACK, clip);
         draw_border(backend, x - 4, y - 4, w + 8, h + 8, 1, BLACK, clip);
     }
-    if ob.ob_state & OUTLINED != 0 {
+    if ob_state & OUTLINED != 0 {
         draw_border(backend, x - 3, y - 3, w + 6, h + 6, 1, BLACK, clip);
         draw_border(backend, x - 2, y - 2, w + 4, h + 4, 2, WHITE, clip);
     }
@@ -1443,7 +1598,7 @@ fn just_draw(ob: &Object, x: i16, y: i16, clip: ClipRect, backend: &dyn RasterBa
     // shadow (the shadow size derives from the border thickness). For a positive
     // (inside) border the shadow hugs the inset content rect; for a negative
     // (outside) border it hugs the full rect.
-    if ob.ob_state & SHADOWED != 0 {
+    if ob_state & SHADOWED != 0 {
         let sth = deco_th.abs();
         if sth != 0 {
             let (sx, sy, sw, sh) = if deco_th > 0 {
@@ -1458,7 +1613,7 @@ fn just_draw(ob: &Object, x: i16, y: i16, clip: ClipRect, backend: &dyn RasterBa
 
     // CROSSED: two WHITE diagonals across the object (EmuTOS gemoblib.c:910-915,
     // transparent) — visible over a filled/selected box.
-    if ob.ob_state & CROSSED != 0 {
+    if ob_state & CROSSED != 0 {
         backend.draw_line(x, y, x + w - 1, y + h - 1, WHITE, WriteMode::Transparent, clip, 0xFFFF);
         backend.draw_line(x, y + h - 1, x + w - 1, y, WHITE, WriteMode::Transparent, clip, 0xFFFF);
     }
@@ -1715,7 +1870,7 @@ fn blit_plane(
 /// Recursive hit-test for `objc_find`. Returns the deepest matching child
 /// index, else `obj` if `(mx, my)` is inside it, else `NIL`.
 fn find_hit(
-    tree: *const Object,
+    t: ObjTree,
     obj: i16,
     depth: i16,
     px: i16,
@@ -1723,13 +1878,13 @@ fn find_hit(
     mx: i16,
     my: i16,
 ) -> i16 {
-    // SAFETY: valid tree.
-    let ob = unsafe { &*tree.add(obj as usize) };
-    if ob.ob_flags & HIDETREE != 0 {
+    let ob_flags = t.flags(obj);
+    if ob_flags & HIDETREE != 0 {
         return NIL;
     }
-    let x = px + ob.ob_x;
-    let y = py + ob.ob_y;
+    let ob_state = t.state(obj);
+    let x = px + t.x(obj);
+    let y = py + t.y(obj);
     // Hit-test the same extent `just_draw` renders. A 3D object (FL3DMASK) is
     // drawn ADJ3DSTD px larger on every side (EmuTOS `ob_actxywh`,
     // gemoblib.c:322-335), plus ADJ3DOUT when OUTLINED, so a click on the
@@ -1739,14 +1894,14 @@ fn find_hit(
     // hit-tests them at their un-grown relative rect. Children keep the nominal
     // origin `(x, y)`, exactly as `draw_tree` passes it — draw and hit stay
     // consistent at every level.
-    let (hx, hy, hw, hh) = if ob.ob_flags & FL3DMASK != 0 && ob.ob_state & SHADOWED == 0 {
+    let (hx, hy, hw, hh) = if ob_flags & FL3DMASK != 0 && ob_state & SHADOWED == 0 {
         let mut adj = ADJ3DSTD;
-        if ob.ob_state & OUTLINED != 0 {
+        if ob_state & OUTLINED != 0 {
             adj += ADJ3DOUT;
         }
-        (x - adj, y - adj, ob.ob_width + 2 * adj, ob.ob_height + 2 * adj)
+        (x - adj, y - adj, t.width(obj) + 2 * adj, t.height(obj) + 2 * adj)
     } else {
-        (x, y, ob.ob_width, ob.ob_height)
+        (x, y, t.width(obj), t.height(obj))
     };
     let inside = mx >= hx && mx < hx + hw && my >= hy && my < hy + hh;
     if !inside {
@@ -1756,19 +1911,16 @@ fn find_hit(
     if depth > 0 {
         // Search children last-to-first (topmost sibling wins).
         let mut found = NIL;
-        let mut child = ob.ob_head;
-        // SAFETY: valid tree; chain terminates at ob_tail.
-        unsafe {
-            while child != NIL {
-                let hit = find_hit(tree, child, depth - 1, x, y, mx, my);
-                if hit != NIL {
-                    found = hit; // keep the last (topmost) match
-                }
-                if child == ob.ob_tail {
-                    break;
-                }
-                child = (*tree.add(child as usize)).ob_next;
+        let mut child = t.head(obj);
+        while child != NIL {
+            let hit = find_hit(t, child, depth - 1, x, y, mx, my);
+            if hit != NIL {
+                found = hit; // keep the last (topmost) match
             }
+            if child == t.tail(obj) {
+                break;
+            }
+            child = t.next(child);
         }
         if found != NIL {
             return found;

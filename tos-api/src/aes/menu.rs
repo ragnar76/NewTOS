@@ -25,7 +25,7 @@
 //! attached submenu as a nested box beside the highlighted parent item
 //! (EmuTOS `display_submenu`/`mn_do` `SUBMENU_STATE`).
 
-use super::object::{self, Object};
+use super::object::{self, ObjTree, Object};
 use super::Aespb;
 use crate::host::host;
 use crate::vdi::backend::{ClipRect, Pel, RasterBackend};
@@ -107,12 +107,10 @@ pub fn menu_bar(pb: &Aespb) {
         // erase, so drawing the bar always yields a clean strip even when a
         // full-screen program (e.g. a `.NCP` console) left content there.
         backend.fill_rect(0, 0, sw, BAR_H, WHITE, clip);
-        // The bar spans the full screen width.
-        // SAFETY: valid menu tree; THEBAR is object 1.
-        unsafe {
-            let bar = &mut *tree.add(THEBAR as usize);
-            bar.ob_width = sw - bar.ob_x;
-        }
+        // The bar spans the full screen width. THEBAR is object 1; read/write
+        // its geometry at the caller's ABI width (24-byte ILP32 / 32-byte LP64).
+        let t = ObjTree::new(tree);
+        t.set_width(THEBAR, sw - t.x(THEBAR));
         object::draw_obj(tree as *const Object, THEBAR, MAX_DEPTH, backend);
         // Separator line under the bar.
         backend.fill_rect(0, BAR_H - 1, sw, 1, BLACK, clip);
@@ -345,7 +343,6 @@ fn open_submenu(tree: *mut Object, item: i16, backend: &dyn RasterBackend) -> Op
         return None;
     }
     let sub_tp = s.sub_tree as *const Object;
-    let sub = s.sub_tree as *mut Object;
     let (ix, iy, iw, _ih) = object::abs_rect(tree as *const Object, item);
     let (bx0, by0, bw, bh) = object::abs_rect(sub_tp, s.sub_menu);
     let cw = crate::vdi::font::CELL_W;
@@ -359,9 +356,9 @@ fn open_submenu(tree: *mut Object, item: i16, backend: &dyn RasterBackend) -> Op
     }
     // y: align the submenu's start item with the parent item, then clamp below
     // the menu bar and above the bottom of the screen.
+    let sub_t = ObjTree::new(sub_tp);
     let start_off = if s.sub_start >= 0 {
-        // SAFETY: valid submenu tree; sub_start is a child object index.
-        unsafe { (*sub_tp.add(s.sub_start as usize)).ob_y }
+        sub_t.y(s.sub_start)
     } else {
         0
     };
@@ -370,12 +367,8 @@ fn open_submenu(tree: *mut Object, item: i16, backend: &dyn RasterBackend) -> Op
     // Re-home the box to the target absolute position: adjust its relative
     // ob_x/ob_y by the delta from its current absolute origin, so this works
     // wherever the box sits in the submenu tree (its parent offset cancels).
-    // SAFETY: valid submenu tree; sub_menu is a valid box object index.
-    unsafe {
-        let b = &mut *sub.add(s.sub_menu as usize);
-        b.ob_x += x - bx0;
-        b.ob_y += y - by0;
-    }
+    sub_t.set_x(s.sub_menu, sub_t.x(s.sub_menu) + (x - bx0));
+    sub_t.set_y(s.sub_menu, sub_t.y(s.sub_menu) + (y - by0));
     crate::vdi::cursor_hide(backend);
     let (fx, fy, fw, fh) = object::abs_rect(sub_tp, s.sub_menu);
     save_under(&SMBACK, backend, fx, fy, fw, fh);
@@ -407,17 +400,15 @@ fn close_submenu(sub_tree: u64, sub_box: i16, sub_item: i16, backend: &dyn Raste
 /// Title index → its drop-down box index (EmuTOS `menu_sub`): walk the box
 /// list under `THESCREEN.ob_tail` by the title's position.
 fn menu_sub(tree: *const Object, title: i16) -> i16 {
-    // SAFETY: valid menu tree (GEM contract).
-    unsafe {
-        let themenus = (*tree.add(THESCREEN as usize)).ob_tail;
-        let mut imenu = (*tree.add(themenus as usize)).ob_head;
-        let mut i = title - THEACTIVE;
-        while i > 1 {
-            imenu = (*tree.add(imenu as usize)).ob_next;
-            i -= 1;
-        }
-        imenu
+    let t = ObjTree::new(tree);
+    let themenus = t.tail(THESCREEN);
+    let mut imenu = t.head(themenus);
+    let mut i = title - THEACTIVE;
+    while i > 1 {
+        imenu = t.next(imenu);
+        i -= 1;
     }
+    imenu
 }
 
 /// Is device point `(mx, my)` inside object `obj`'s absolute rectangle?
@@ -557,8 +548,7 @@ fn redraw_bar_separator(backend: &dyn RasterBackend) {
 /// (`G_STRING`, below the bar) and non-title objects do not qualify, so an
 /// unrelated `menu_tnormal` never paints a spurious line across the screen.
 fn title_touches_separator(tree: *const Object, obj: i16) -> bool {
-    // SAFETY: valid tree (GEM contract); `obj` is a caller-validated index.
-    let ob_type = unsafe { (*tree.add(obj as usize)).ob_type & 0x00ff };
+    let ob_type = ObjTree::new(tree).ob_type(obj) & 0x00ff;
     if ob_type != G_TITLE {
         return false;
     }
@@ -639,10 +629,14 @@ pub fn menu_text(pb: &Aespb) {
         pb.set_ret(0);
         return;
     }
-    // SAFETY: valid tree; the item's ob_spec points at a writable text
-    // buffer of at least the original capacity (GEM contract).
+    // Read `ob_spec` (the item's text buffer pointer) at the caller's ABI
+    // width — this is exactly the QED fault site: an ILP32 tree's `ob_spec`
+    // lives at byte 12 as a u32, not at byte 16 as a u64, so the previous
+    // 32-byte-stride read handed back a wild pointer.
+    let dst = ObjTree::new(tree).spec(item) as *mut u8;
+    // SAFETY: the item's ob_spec points at a writable text buffer of at least
+    // the original capacity (GEM contract).
     unsafe {
-        let dst = (*tree.add(item as usize)).ob_spec as *mut u8;
         if !dst.is_null() {
             let mut i = 0;
             while i < 128 {
@@ -721,8 +715,7 @@ fn do_chg(pb: &Aespb, obj: i16, stateflag: u16, set: bool, dodraw: bool, chkdisa
         pb.set_ret(0);
         return;
     }
-    // SAFETY: valid tree.
-    let state = unsafe { (*tree.add(obj as usize)).ob_state };
+    let state = ObjTree::new(tree).state(obj);
     if chkdisabled && (state & DISABLED) != 0 {
         pb.set_ret(0); // disabled item: no mutation, no draw
         return;
@@ -768,13 +761,10 @@ pub fn menu_popup(pb: &Aespb) {
         return;
     }
     // Position the box so `start_item` sits at (xpos, ypos); clamp to screen.
-    // SAFETY: valid tree.
-    unsafe {
-        let iy = if start_item >= 0 { (*tree.add(start_item as usize)).ob_y } else { 0 };
-        let b = &mut *tree.add(box_obj as usize);
-        b.ob_x = xpos.clamp(0, (backend.width() as i16 - b.ob_width).max(0));
-        b.ob_y = (ypos - iy).clamp(0, (backend.height() as i16 - b.ob_height).max(0));
-    }
+    let t = ObjTree::new(tree);
+    let iy = if start_item >= 0 { t.y(start_item) } else { 0 };
+    t.set_x(box_obj, xpos.clamp(0, (backend.width() as i16 - t.width(box_obj)).max(0)));
+    t.set_y(box_obj, (ypos - iy).clamp(0, (backend.height() as i16 - t.height(box_obj)).max(0)));
     let sel = popup_track(tree, box_obj, backend);
     if !mdata.is_null() {
         // SAFETY: valid MENU out (GEM contract).
@@ -1030,13 +1020,12 @@ fn smib_free() -> Option<usize> {
 /// # Safety
 /// `tree`/`item` are a valid menu-bar tree + `G_STRING` item index.
 unsafe fn submenu_mark(tree: *mut Object, item: i16, slot: usize) {
-    // SAFETY: forwarded from the caller's contract.
-    unsafe {
-        let obj = &mut *tree.add(item as usize);
-        obj.ob_type = (obj.ob_type & 0x00ff) | (((slot as u16) + 128) << 8);
-        obj.ob_flags |= SUBMENU;
-        write_marker(obj.ob_spec as *mut u8, SUBMENU_MARKER);
-    }
+    let t = ObjTree::new(tree);
+    t.set_type(item, (t.ob_type(item) & 0x00ff) | (((slot as u16) + 128) << 8));
+    t.set_flags(item, t.flags(item) | SUBMENU);
+    // SAFETY: forwarded from the caller's contract — the item's ob_spec points
+    // at a writable NUL-terminated string.
+    unsafe { write_marker(t.spec(item) as *mut u8, SUBMENU_MARKER) };
 }
 
 /// Reverse [`submenu_mark`] (EmuTOS `detach_submenu`, `gemmnext.c:449-452`):
@@ -1045,13 +1034,11 @@ unsafe fn submenu_mark(tree: *mut Object, item: i16, slot: usize) {
 /// # Safety
 /// `tree`/`item` are a valid menu-bar tree + item index.
 unsafe fn submenu_unmark(tree: *mut Object, item: i16) {
+    let t = ObjTree::new(tree);
+    t.set_type(item, t.ob_type(item) & 0x00ff);
+    t.set_flags(item, t.flags(item) & !SUBMENU);
     // SAFETY: forwarded from the caller's contract.
-    unsafe {
-        let obj = &mut *tree.add(item as usize);
-        obj.ob_type &= 0x00ff;
-        obj.ob_flags &= !SUBMENU;
-        write_marker(obj.ob_spec as *mut u8, b' ');
-    }
+    unsafe { write_marker(t.spec(item) as *mut u8, b' ') };
 }
 
 /// Write `c` at `strlen - SUBMENU_MARKER_OFFSET` of the NUL-terminated string
@@ -1175,8 +1162,7 @@ pub fn menu_attach(pb: &Aespb) {
     }
     // A submenu can only be attached to a G_STRING item — the guard EmuTOS
     // applies before the ME_* switch, for all three operations.
-    // SAFETY: valid tree (GEM contract).
-    let ob_type = unsafe { (*tree.add(item as usize)).ob_type };
+    let ob_type = ObjTree::new(tree).ob_type(item);
     if (ob_type & 0x00ff) != G_STRING {
         pb.set_ret(0);
         return;
@@ -1224,11 +1210,8 @@ pub fn menu_istart(pb: &Aespb) {
             // Clamp 'start' to the submenu box's child index range (the EmuTOS
             // two-comparison form, which tolerates head > tail without the
             // ordering panic `clamp` would raise on an empty box).
-            // SAFETY: valid submenu tree; `menu` is a valid box object index.
-            let (head, tail) = unsafe {
-                let b = &*tree.add(menu as usize);
-                (b.ob_head, b.ob_tail)
-            };
+            let bt = ObjTree::new(tree);
+            let (head, tail) = (bt.head(menu), bt.tail(menu));
             s.sub_start = if start < head {
                 head
             } else if start > tail {
