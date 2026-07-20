@@ -27,6 +27,7 @@
 
 use super::object::{self, ObjTree, Object};
 use super::Aespb;
+use crate::bdos::process::Abi;
 use crate::host::host;
 use crate::vdi::backend::{ClipRect, Pel, RasterBackend};
 use core::cell::UnsafeCell;
@@ -727,8 +728,14 @@ fn do_chg(pb: &Aespb, obj: i16, stateflag: u16, set: bool, dodraw: bool, chkdisa
 
 // ── menu extensions (later-AES: pop-up / sub-menu / settings) ─────────────
 
-/// Native `MENU` descriptor (later-AES pop-up / sub-menu).
-#[repr(C)]
+/// Decoded `MENU` descriptor (later-AES pop-up / sub-menu). This is a kernel
+/// value materialised from the caller's parameter block by [`Menu::read_abi`],
+/// **not** a memory overlay: the on-wire `MENU` is packed at the caller's ABI
+/// width (gemlib `mt_gem.h:2177-2191`,
+/// `{ OBJECT *mn_tree; short mn_menu, mn_item, mn_scroll, mn_keystate; }`),
+/// whose leading `mn_tree` pointer is 8 bytes at LP64 but 4 bytes at ILP32,
+/// shifting the four trailing WORDs. So a plain `&*(base as *const Menu)` would
+/// misread an ILP32 app's 12-byte MENU at the native 16-byte layout.
 struct Menu {
     mn_tree: u64,   // OBJECT*
     mn_menu: i16,   // the drop-down box object
@@ -737,15 +744,84 @@ struct Menu {
     mn_keystate: i16,
 }
 
+/// Pointer-field width for `abi`: 8 bytes LP64, 4 bytes ILP32. In a `MENU` the
+/// leading `mn_tree` pointer strides by this, shifting the four trailing WORDs.
+#[inline]
+fn menu_ptr_size(abi: Abi) -> u64 {
+    match abi {
+        Abi::Lp64 => 8,
+        Abi::Ilp32 => 4,
+    }
+}
+
+impl Menu {
+    /// Materialise the `MENU` at `base` at the caller's ABI width. Layout
+    /// (gemlib `mt_gem.h:2177-2191`): one pointer (`mn_tree`) @0, then four WORDs
+    /// (`mn_menu`/`mn_item`/`mn_scroll`/`mn_keystate`) at [`menu_ptr_size`]
+    /// (@8 LP64 / @4 ILP32). `mn_tree` is read 8 bytes LP64 / 4 bytes
+    /// zero-extended ILP32 — a submenu OBJECT-tree user VA reachable via the
+    /// active TTBR0, passed to the menu machinery unchanged. For an LP64 base the
+    /// offsets equal the native struct, so the value is byte-identical to the old
+    /// direct dereference and LP64 callers are unaffected.
+    ///
+    /// # Safety
+    /// `base` addresses a valid `MENU` packed at `abi` width (GEM contract).
+    #[inline]
+    unsafe fn read_abi(base: u64, abi: Abi) -> Menu {
+        let w = menu_ptr_size(abi); // first WORD offset
+        // SAFETY: `base` is a valid MENU packed at `abi` width (caller's
+        // contract); each field slot is only 2-byte aligned, so read unaligned.
+        unsafe {
+            let mn_tree = match abi {
+                Abi::Lp64 => (base as *const u64).read_unaligned(),
+                Abi::Ilp32 => (base as *const u32).read_unaligned() as u64,
+            };
+            Menu {
+                mn_tree,
+                mn_menu: ((base + w) as *const i16).read_unaligned(),
+                mn_item: ((base + w + 2) as *const i16).read_unaligned(),
+                mn_scroll: ((base + w + 4) as *const i16).read_unaligned(),
+                mn_keystate: ((base + w + 6) as *const i16).read_unaligned(),
+            }
+        }
+    }
+
+    /// Write this `MENU` back to `base` at the caller's ABI width (the inverse of
+    /// [`Self::read_abi`]): `mn_tree` as an 8-byte LP64 / low-4-byte ILP32
+    /// pointer, then the four WORDs at the ABI-shifted offsets. Byte-identical to
+    /// the old direct write for an LP64 base.
+    ///
+    /// # Safety
+    /// `base` addresses a valid, writable `MENU` packed at `abi` width.
+    #[inline]
+    unsafe fn write_abi(&self, base: u64, abi: Abi) {
+        let w = menu_ptr_size(abi);
+        // SAFETY: `base` is a valid writable MENU packed at `abi` width (caller's
+        // contract); each field slot is only 2-byte aligned, so write unaligned.
+        unsafe {
+            match abi {
+                Abi::Lp64 => (base as *mut u64).write_unaligned(self.mn_tree),
+                Abi::Ilp32 => (base as *mut u32).write_unaligned(self.mn_tree as u32),
+            }
+            ((base + w) as *mut i16).write_unaligned(self.mn_menu);
+            ((base + w + 2) as *mut i16).write_unaligned(self.mn_item);
+            ((base + w + 4) as *mut i16).write_unaligned(self.mn_scroll);
+            ((base + w + 6) as *mut i16).write_unaligned(self.mn_keystate);
+        }
+    }
+}
+
 /// `menu_popup` (36) — display the pop-up menu described by `addr_in[0]`
 /// (`MENU`) so its start item sits at (`int_in[0]`, `int_in[1]`), track it,
 /// and write the chosen item into the `MENU` at `addr_in[1]`. Returns 1 on a
 /// selection, 0 on cancel. EmuTOS `mn_popup` (single level, no sub-menus).
 pub fn menu_popup(pb: &Aespb) {
-    let menu = pb.addrin(0) as *const Menu;
+    // `MENU` bases, read at the caller's pointer width (0 = null); the struct
+    // fields are decoded at the caller ABI's offsets, not the native layout.
+    let menu = pb.addrin(0);
     let (xpos, ypos) = (pb.intin(0), pb.intin(1));
-    let mdata = pb.addrin(1) as *mut Menu;
-    if menu.is_null() {
+    let mdata = pb.addrin(1);
+    if menu == 0 {
         pb.set_ret(0);
         return;
     }
@@ -753,9 +829,9 @@ pub fn menu_popup(pb: &Aespb) {
         pb.set_ret(0);
         return;
     };
-    // SAFETY: valid MENU (GEM contract).
-    let (tree, box_obj, start_item) =
-        unsafe { ((*menu).mn_tree as *mut Object, (*menu).mn_menu, (*menu).mn_item) };
+    // SAFETY: valid MENU (GEM contract), packed at the caller ABI width.
+    let m = unsafe { Menu::read_abi(menu, pb.abi) };
+    let (tree, box_obj, start_item) = (m.mn_tree as *mut Object, m.mn_menu, m.mn_item);
     if tree.is_null() || box_obj < 0 {
         pb.set_ret(0);
         return;
@@ -766,15 +842,16 @@ pub fn menu_popup(pb: &Aespb) {
     t.set_x(box_obj, xpos.clamp(0, (backend.width() as i16 - t.width(box_obj)).max(0)));
     t.set_y(box_obj, (ypos - iy).clamp(0, (backend.height() as i16 - t.height(box_obj)).max(0)));
     let sel = popup_track(tree, box_obj, backend);
-    if !mdata.is_null() {
-        // SAFETY: valid MENU out (GEM contract).
-        unsafe {
-            (*mdata).mn_tree = tree as u64;
-            (*mdata).mn_menu = box_obj;
-            (*mdata).mn_item = sel;
-            (*mdata).mn_scroll = 0;
-            (*mdata).mn_keystate = 0;
-        }
+    if mdata != 0 {
+        let out = Menu {
+            mn_tree: tree as u64,
+            mn_menu: box_obj,
+            mn_item: sel,
+            mn_scroll: 0,
+            mn_keystate: 0,
+        };
+        // SAFETY: valid MENU out (GEM contract), packed at the caller ABI width.
+        unsafe { out.write_abi(mdata, pb.abi) };
     }
     pb.set_ret(if sel >= 0 { 1 } else { 0 });
 }
@@ -1066,26 +1143,27 @@ unsafe fn write_marker(p: *mut u8, c: u8) {
 /// EmuTOS `query_submenu` (`gemmnext.c:401-433`): copy the submenu descriptor
 /// attached to parent `(tree, item)` into `*mdata` (tolerating a null `mdata`,
 /// the EmuTOS convenience), returning whether one is attached.
-fn query_submenu(tree: *mut Object, item: i16, mdata: *mut Menu) -> bool {
+fn query_submenu(tree: *mut Object, item: i16, mdata: u64, abi: Abi) -> bool {
     let Some(slot) = smib_find_parent(tree as u64, item) else {
         return false;
     };
-    if !mdata.is_null() {
+    if mdata != 0 {
         // SAFETY: single-CPU AES read; valid MENU out (GEM contract).
         let s = unsafe { (*SUBMENU_TAB.0.get())[slot] };
-        // SAFETY: valid MENU out (GEM contract).
-        unsafe {
-            (*mdata).mn_tree = s.sub_tree;
-            (*mdata).mn_menu = s.sub_menu;
-            (*mdata).mn_item = s.sub_start;
+        let out = Menu {
+            mn_tree: s.sub_tree,
+            mn_menu: s.sub_menu,
+            mn_item: s.sub_start,
             // EmuTOS zeroes mn_scroll here (the scroll flag is ignored,
             // restriction #2); NewTOS round-trips the value stored at attach so
             // ME_INQUIRE reports the descriptor as given. The tracker still
             // ignores the flag, so this changes no rendering/selection — only
             // what INQUIRE reflects back.
-            (*mdata).mn_scroll = s.sub_scroll;
-            (*mdata).mn_keystate = 0;
-        }
+            mn_scroll: s.sub_scroll,
+            mn_keystate: 0,
+        };
+        // SAFETY: valid MENU out (GEM contract), packed at the caller ABI width.
+        unsafe { out.write_abi(mdata, abi) };
     }
     true
 }
@@ -1094,7 +1172,7 @@ fn query_submenu(tree: *mut Object, item: i16, mdata: *mut Menu) -> bool {
 /// to parent `(tree, item)`, replacing any existing attachment first; a null
 /// `mdata` is the `ME_REMOVE` path. Returns `true` on success, `false` when
 /// there is nothing to remove, no descriptor to attach, or the table is full.
-fn attach_submenu(tree: *mut Object, item: i16, mdata: *mut Menu) -> bool {
+fn attach_submenu(tree: *mut Object, item: i16, mdata: u64, abi: Abi) -> bool {
     // If the item already has a submenu, detach it first (replace semantics,
     // gemmnext.c:471-477).
     if let Some(old) = smib_find_parent(tree as u64, item) {
@@ -1102,21 +1180,22 @@ fn attach_submenu(tree: *mut Object, item: i16, mdata: *mut Menu) -> bool {
         unsafe { (*SUBMENU_TAB.0.get())[old].used = false };
         // SAFETY: valid tree (GEM contract).
         unsafe { submenu_unmark(tree, item) };
-        if mdata.is_null() {
+        if mdata == 0 {
             return true; // ME_REMOVE on an attached item: done.
         }
     }
     // ME_REMOVE on an item with no submenu (gemmnext.c:480-481).
-    if mdata.is_null() {
+    if mdata == 0 {
         return false;
     }
     // Fixed-size table: no free slot → EmuTOS "table full" FALSE.
     let Some(slot) = smib_free() else {
         return false;
     };
-    // SAFETY: single-CPU AES; valid MENU in (GEM contract); one slot only.
+    // SAFETY: valid MENU in (GEM contract), packed at the caller ABI width.
+    let m = unsafe { Menu::read_abi(mdata, abi) };
+    // SAFETY: single-CPU AES; exclusive mutable access to one slot.
     unsafe {
-        let m = &*mdata;
         let s = &mut (*SUBMENU_TAB.0.get())[slot];
         s.used = true;
         s.parent_tree = tree as u64;
@@ -1155,7 +1234,9 @@ pub fn menu_attach(pb: &Aespb) {
     let flag = pb.intin(0);
     let tree = pb.addrin(0) as *mut Object;
     let item = pb.intin(1);
-    let mdata = pb.addrin(1) as *mut Menu;
+    // `MENU` base, read at the caller's pointer width (0 = null); decoded at the
+    // caller ABI's field offsets by [`query_submenu`]/[`attach_submenu`].
+    let mdata = pb.addrin(1);
     if tree.is_null() || item < 0 {
         pb.set_ret(0);
         return;
@@ -1168,9 +1249,9 @@ pub fn menu_attach(pb: &Aespb) {
         return;
     }
     let rc = match flag {
-        ME_INQUIRE => query_submenu(tree, item, mdata),
-        ME_ATTACH => attach_submenu(tree, item, mdata),
-        ME_REMOVE => attach_submenu(tree, item, core::ptr::null_mut()),
+        ME_INQUIRE => query_submenu(tree, item, mdata, pb.abi),
+        ME_ATTACH => attach_submenu(tree, item, mdata, pb.abi),
+        ME_REMOVE => attach_submenu(tree, item, 0, pb.abi),
         _ => false, // undefined flag → FALSE (EmuTOS switch default)
     };
     pb.set_ret(if rc { 1 } else { 0 });
