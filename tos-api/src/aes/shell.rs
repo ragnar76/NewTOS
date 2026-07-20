@@ -312,14 +312,24 @@ pub fn shel_find(pb: &Aespb) {
 
 /// `shel_envrn` (125) — find the environment variable named by `addr_in[1]`
 /// (e.g. `"PATH="`) and store a pointer to its value through the
-/// `char **` at `addr_in[0]`.
+/// `char **` at `addr_in[0]` (gemlib `a_shel_envrn.c:31,35`:
+/// `mt_shel_envrn(char **result, …)` sets `aes_addrin[0] = (long)result`,
+/// and the AES fills `*result`).
+///
+/// The output slot `*result` is a **caller-width** `char*` — 4 bytes for an
+/// ILP32 app, 8 for an LP64 one — so the value pointer is stored at the
+/// caller's pointer width via [`Abi::write_ptr`]. An 8-byte store into a
+/// 4-byte ILP32 slot would clobber the following 4 bytes (this was the bug);
+/// the same holds for the "not found" NULL, which must be a NULL of the
+/// slot's width (gemlib immediately reads `*result`/`**result` back,
+/// `a_shel_envrn.c:47`).
 pub fn shel_envrn(pb: &Aespb) {
-    let pvalue = pb.addrin(0) as *mut u64; // char **
+    let pslot = pb.addrin(0); // char ** — address of the caller's char* slot
     let search = pb.addrin(1) as *const u8;
     // `sh_envrn` is `void`: `int_out[0]` stays `1` in every path (spec
     // edge-case 13, `gemshlib.c:296`). A null output pointer cannot receive
     // the result, but the call still reports success.
-    if pvalue.is_null() {
+    if pslot == 0 {
         pb.set_ret(1);
         return;
     }
@@ -343,15 +353,19 @@ pub fn shel_envrn(pb: &Aespb) {
         if nlen > 0 && entry.len() >= nlen && &entry[..nlen] == &needle[..nlen] {
             // Point at the value (just past "NAME=").
             // SAFETY: env outlives the call; the pointer is into it.
-            unsafe { *pvalue = env.as_ptr().add(start + nlen) as u64 };
+            let value = unsafe { env.as_ptr().add(start + nlen) } as u64;
+            // SAFETY: pslot is the caller's non-null char* slot; store the
+            // value pointer at the caller's pointer width so an ILP32 4-byte
+            // slot is not overrun (LP64 stores the full 8 bytes).
+            unsafe { pb.abi.write_ptr(pslot, 0, value) };
             pb.set_ret(1);
             return;
         }
         i += 1; // skip the NUL
     }
     // Not found → NULL (`*ppath = NULL`, `gemshlib.c:333,347`), still `1`.
-    // SAFETY: as above.
-    unsafe { *pvalue = 0 };
+    // SAFETY: as above; a NULL of the caller's pointer width.
+    unsafe { pb.abi.write_ptr(pslot, 0, 0) };
     pb.set_ret(1);
 }
 
