@@ -804,6 +804,42 @@ fn copy_cstr(dst: &mut [u8], src: *const u8) {
     }
 }
 
+/// Copy the NUL-terminated string in `src` (up to its terminator) out to the
+/// caller's `dst` buffer, including the terminating NUL. `src` is one of the
+/// window's own bounded name/info buffers (≤ `NAME_CAP - 1` chars + NUL), so
+/// the caller's buffer — which the WF_NAME/WF_INFO contract requires to be
+/// large enough — is never overrun by our stored length.
+fn copy_out_cstr(dst: *mut u8, src: &[u8]) {
+    let len = name_len(src);
+    // SAFETY: trusted GEM caller buffer, large enough per the WF_NAME/
+    // WF_INFO contract; we write `len + 1` bytes bounded by `NAME_CAP`.
+    unsafe {
+        for (i, &b) in src.iter().take(len).enumerate() {
+            *dst.add(i) = b;
+        }
+        *dst.add(len) = 0;
+    }
+}
+
+/// Resolve the `WF_NAME`/`WF_INFO` string/buffer pointer for both calling
+/// conventions used at our altitude (F7 ABI-width audit):
+///
+///  * **Native** (the desktop's `desk::wind_set_ptr`, `selftest_objc`): the
+///    pointer travels in `addr_in[0]` with `AIN_LEN == 1`.
+///  * **Classic AES** (gemlib `wind_set_str` / `wind_get`, both ILP32 and
+///    LP64): the pointer is packed at `&int_in[2]` with `AIN_LEN == 0`, at
+///    the caller's pointer width — 4 bytes ILP32, 8 bytes LP64.
+///
+/// `AIN_LEN` is the declared discriminator, so an LP64 desktop and an ILP32
+/// gemlib app (QED) both resolve to the right slot.
+fn wf_str_ptr(pb: &Aespb) -> u64 {
+    if pb.ain_len() >= 1 {
+        pb.addrin(0)
+    } else {
+        pb.intin_ptr(2)
+    }
+}
+
 // ── dispatch entry points ───────────────────────────────────────────────
 
 /// `wind_create` (100) — allocate a window of border `kind`, max extent
@@ -950,6 +986,27 @@ pub fn wind_get(pb: &Aespb) {
             WF_VSLIDE => return scalar_out(pb, w.vslide),
             WF_HSLSIZ => return scalar_out(pb, w.hslsize),
             WF_VSLSIZ => return scalar_out(pb, w.vslsize),
+            // WF_NAME/WF_INFO get: copy the stored title/info out to the
+            // caller's buffer (pointer at `&int_in[2]`, caller width —
+            // gemlib `wind_get`, `a_wind_get.c:344`; the native `addr_in[0]`
+            // convention is honoured too via `wf_str_ptr`). Per the gemlib
+            // contract, an empty title returns FALSE and leaves the caller's
+            // buffer untouched.
+            WF_NAME | WF_INFO => {
+                let src = if field == WF_NAME { w.name } else { w.info };
+                if name_len(&src) == 0 {
+                    pb.set_ret(0);
+                    return;
+                }
+                let dst = wf_str_ptr(pb) as *mut u8;
+                if dst.is_null() {
+                    pb.set_ret(0);
+                    return;
+                }
+                copy_out_cstr(dst, &src);
+                pb.set_ret(1);
+                return;
+            }
             // Any other field on a valid window (COLOR/DCOLOR/OWNER/… — not
             // implemented at this altitude) → FALSE (EmuTOS default).
             _ => {
@@ -989,18 +1046,20 @@ pub fn wind_set(pb: &Aespb) {
     }
     match field {
         WF_NAME => {
-            // Native ABI: the string pointer travels in addr_in[0] (read
-            // *only* in the pointer-taking arms, so a conforming WF_TOP/
-            // WF_VSLIDE/WF_CXYWH set with AIN_LEN=0 and a NULL addr_in never
-            // faults). Cleaner than EmuTOS's m68k int_in[2..3] packing (D-094).
-            let title = pb.addrin(0) as *const u8;
+            // The title pointer arrives two ways (see `wf_str_ptr`): the
+            // desktop's native `addr_in[0]` (AIN_LEN=1), or the classic-AES
+            // `&int_in[2]` packing at the caller's pointer width (gemlib
+            // `wind_set_str`, AIN_LEN=0) — the latter is how ILP32 apps
+            // (QED) pass it. Reading `addr_in[0]` unconditionally handed an
+            // ILP32 caller an empty slot → garbage title (F7 audit).
+            let title = wf_str_ptr(pb) as *const u8;
             if let Some(w) = win(handle) {
                 copy_cstr(&mut w.name, title);
             }
             redraw_open(handle);
         }
         WF_INFO => {
-            let info = pb.addrin(0) as *const u8;
+            let info = wf_str_ptr(pb) as *const u8;
             if let Some(w) = win(handle) {
                 copy_cstr(&mut w.info, info);
             }

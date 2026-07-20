@@ -109,6 +109,38 @@ impl Aespb {
         // in the low-VA TPA) zero-extends to a valid VA.
         unsafe { self.abi.read_ptr(self.addrin, i) }
     }
+    /// The declared `addrin` length, `control[AIN_LEN]`. Used by
+    /// `wind_set`/`wind_get` `WF_NAME`/`WF_INFO` to tell the native
+    /// convention (string pointer in `addr_in[0]`, `AIN_LEN >= 1`) from
+    /// the classic-AES gemlib convention (pointer packed in the `int_in`
+    /// WORDs, `AIN_LEN == 0`).
+    #[inline]
+    fn ain_len(&self) -> i16 {
+        self.control(C_AIN_LEN)
+    }
+    /// Read a caller-width pointer packed into the `int_in` WORD array
+    /// starting at WORD index `word`. This is the classic AES convention
+    /// for the `wind_set`/`wind_get` `WF_NAME`/`WF_INFO` string/buffer
+    /// pointer: gemlib writes `*(char**)(aes_intin + word) = ptr`
+    /// (`a_wind_set_str.c:25`, `a_wind_get.c:344`), i.e. 4 pointer bytes at
+    /// ILP32 (`int_in[word..word+2]`) or 8 at LP64 (`int_in[word..word+4]`),
+    /// stored at `&int_in[word]`. That address is only WORD-aligned, so the
+    /// load must be unaligned.
+    #[inline]
+    fn intin_ptr(&self, word: usize) -> u64 {
+        // &int_in[word] — the pointer bytes start `word` WORDs (2 bytes
+        // each) into the `int_in` array.
+        let base = (self.intin as u64).wrapping_add((word as u64) * 2);
+        // SAFETY: the opcode declares enough `int_in` WORDs to hold the
+        // packed pointer (gemlib's num_intin = 6); the load width tracks
+        // the caller ABI and tolerates the 2-byte alignment of the slot.
+        unsafe {
+            match self.abi {
+                Abi::Lp64 => (base as *const u64).read_unaligned(),
+                Abi::Ilp32 => (base as *const u32).read_unaligned() as u64,
+            }
+        }
+    }
     #[inline]
     #[allow(dead_code)] // used by the address-returning managers (later sub-phases)
     fn set_addrout(&self, i: usize, v: u64) {
