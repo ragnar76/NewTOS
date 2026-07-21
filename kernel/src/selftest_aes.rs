@@ -29,7 +29,12 @@ fn aes(aespb: u64) {
 pub fn run_phase13_aes_test() {
     // AESPB arrays.
     let mut control = [0i16; 8];
-    let mut global = [0i16; 32]; // AESGLOBAL (native layout) lives here
+    // AESGLOBAL. gemlib's real array is `short aes_global[16]` = 32 bytes
+    // (indices 0..15). This buffer is deliberately oversized: indices
+    // 16..31 are a canary that appl_init must leave untouched — the fixed
+    // LP64 writer stays inside the 32-byte array (the previous 56-byte
+    // native-struct writer overran it and would trip this canary).
+    let mut global = [0i16; 32];
     let mut intin = [0i16; 16];
     let mut intout = [0i16; 16];
     let mut addrin = [0i64; 4];
@@ -59,10 +64,25 @@ pub fn run_phase13_aes_test() {
     aes(pb);
     let ap_id = intout[0];
     check(ap_id >= 1, "appl_init returns an application id");
-    // AESGLOBAL (native): ap_version @ word0, ap_count @ word1, ap_id @ word2.
+    // AESGLOBAL, gemlib LP64 layout (this is an in-kernel / EL1 caller →
+    // Abi::Lp64): ap_version @ index 0, ap_count @ 1, ap_id @ 2, the zero
+    // long/pointer fields spanning bytes 6..19 (indices 3..9), ap_planes @
+    // index 10 (byte 20). See tos-api aes::appl module ABI note.
     check(global[0] == 0x0340, "AESGLOBAL ap_version = 0x0340");
     check(global[1] == 1, "AESGLOBAL ap_count = 1");
     check(global[2] == ap_id, "AESGLOBAL ap_id = returned id");
+    check(global[10] >= 1, "AESGLOBAL ap_planes at LP64 index 10 (byte 20)");
+    check(
+        (3..10).all(|i| global[i] == 0),
+        "AESGLOBAL zero long/pointer fields in indices 3..9",
+    );
+    // No overrun: gemlib's array ends at index 15. The canary past it must
+    // be pristine. The old 56-byte native-struct writer placed ap_planes
+    // at byte 34 = index 17 and reached index 27 — this would fail then.
+    check(
+        (16..32).all(|i| global[i] == 0),
+        "AESGLOBAL appl_init does not write past the 32-byte array",
+    );
 
     // ── appl_find (13) for an unknown name → −1 ──
     let name = *b"NOSUCH  ";
