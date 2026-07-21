@@ -164,6 +164,25 @@ static TABLE: WinTable = WinTable {
     next_z: UnsafeCell::new(1),
 };
 
+/// Saved copy of the desktop's window set for the single-tasking **screen
+/// handoff** ([`save_windows`] / [`restore_windows`]). Disjoint from [`TABLE`]:
+/// [`save_windows`] snapshots the live table here and clears the live one so a
+/// launched GEM app gets a clean window list; [`restore_windows`] copies it back
+/// on the child's `Pterm`. `active` guards a restore with no prior save.
+struct WinSave {
+    slots: UnsafeCell<[Window; MAX_WINDOWS]>,
+    next_z: UnsafeCell<i16>,
+    active: UnsafeCell<bool>,
+}
+// SAFETY: only the single boot CPU touches the AES; no concurrent access.
+unsafe impl Sync for WinSave {}
+
+static SAVE: WinSave = WinSave {
+    slots: UnsafeCell::new([Window::EMPTY; MAX_WINDOWS]),
+    next_z: UnsafeCell::new(1),
+    active: UnsafeCell::new(false),
+};
+
 #[allow(clippy::mut_from_ref)]
 fn slots() -> &'static mut [Window; MAX_WINDOWS] {
     // SAFETY: single-CPU AES; exclusive logical owner.
@@ -229,6 +248,63 @@ static DESK_PAINTER: AtomicUsize = AtomicUsize::new(0);
 /// Register the desktop-background painter (see [`DESK_PAINTER`]).
 pub fn set_desktop_painter(f: fn(&dyn RasterBackend, ClipRect)) {
     DESK_PAINTER.store(f as usize, Ordering::Release);
+}
+
+/// Neutralise the desktop-background painter (the inverse of
+/// [`set_desktop_painter`]): the next [`paint_bg_clip`] does the plain white
+/// erase — literally EmuTOS's `CLEAR_SCREEN` — instead of the desktop's
+/// green background + icons.
+///
+/// Used by the single-tasking **screen handoff**: when the desktop launches a
+/// GEM app it relinquishes the shared AES screen state, so the child composites
+/// on a clean white screen rather than over the desktop's own background. The
+/// desktop re-registers its painter via [`set_desktop_painter`] on the child's
+/// `Pterm` (see [`save_windows`] / [`restore_windows`]).
+pub fn clear_desktop_painter() {
+    DESK_PAINTER.store(0, Ordering::Release);
+}
+
+/// Screen handoff — **relinquish** the desktop's windows: snapshot the whole
+/// shared window table into [`SAVE`] and clear the live table (every desktop
+/// window is hidden, its z-order counter reset). The saved state is *preserved*,
+/// not destroyed, so [`restore_windows`] can rebuild it exactly; the launched
+/// GEM app then gets a fresh window list (all handles free), composites over no
+/// desktop windows, and its own `wind_*` calls run against the empty table.
+///
+/// This mirrors EmuTOS tearing the desktop's windows (`wm_init`) when a child is
+/// launched. It is called from the desktop's launch path (kernel) together with
+/// [`clear_desktop_painter`] and the menu-bar removal; the caller then clears the
+/// screen (a full composite over the empty table + neutralised painter is the
+/// white `CLEAR_SCREEN`).
+pub fn save_windows() {
+    // SAFETY: single-CPU AES; `SAVE` and `TABLE` are disjoint statics and
+    // `[Window; MAX_WINDOWS]` is `Copy`, so these are plain array copies.
+    unsafe {
+        *SAVE.slots.get() = *TABLE.slots.get();
+        *SAVE.next_z.get() = *TABLE.next_z.get();
+        *SAVE.active.get() = true;
+        // Hide every desktop window by resetting the live table (its state is
+        // held in `SAVE`); reset the z counter for the child.
+        *TABLE.slots.get() = [Window::EMPTY; MAX_WINDOWS];
+        *TABLE.next_z.get() = 1;
+    }
+}
+
+/// Screen handoff — **resume** the desktop's windows: restore the set saved by
+/// [`save_windows`] back into the shared window table, discarding whatever the
+/// child left there. A no-op if no set is currently saved. Called from the
+/// desktop's launch path on the child's `Pterm`, alongside re-registering the
+/// desktop painter ([`set_desktop_painter`]) and a repaint.
+pub fn restore_windows() {
+    // SAFETY: single-CPU AES; disjoint `Copy` statics (see [`save_windows`]).
+    unsafe {
+        if !*SAVE.active.get() {
+            return;
+        }
+        *TABLE.slots.get() = *SAVE.slots.get();
+        *TABLE.next_z.get() = *SAVE.next_z.get();
+        *SAVE.active.get() = false;
+    }
 }
 
 /// Paint the desktop background within `clip`: the registered painter if any

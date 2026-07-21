@@ -456,11 +456,22 @@ fn native_path(p_spec: &str, name: &[u8]) -> String {
 /// repainted on return in every case (it overpaints the console text, the app's
 /// UI, or the alert).
 fn launch_native(path: &str, name: &str, flavor: ftype::Flavor, tail: &[u8]) {
-    let ok = match flavor {
+    match flavor {
         ftype::Flavor::App | ftype::Flavor::Params => {
-            crate::launch::run_program_with_tail(path.as_bytes(), tail)
+            // GEM app (`.NAP`) / takes-parameters (`.NTP`): both draw their own
+            // AES UI directly over the screen, so they go through the
+            // single-tasking screen handoff (F5) — [`run_gem_app`] relinquishes
+            // the desktop before the child and rebuilds it on the child's
+            // `Pterm`. A load/launch failure surfaces as an alert on the
+            // (already rebuilt) desktop.
+            if !run_gem_app(path.as_bytes(), tail) {
+                alert_launch_failed(name);
+                redraw::full_redraw(); // restore the desktop under the alert
+            }
         }
         ftype::Flavor::Console => {
+            // Console (`.NCP`): its own VT52 text-screen enter/restore, NOT the
+            // GEM screen handoff — left exactly as before.
             crate::fbcon::activate();
             let ran = crate::launch::run_program_with_tail(path.as_bytes(), tail);
             // Classic TOS keeps the console up until the user acknowledges, so
@@ -468,13 +479,68 @@ fn launch_native(path: &str, name: &str, flavor: ftype::Flavor, tail: &[u8]) {
             // repaints over it. Only reached from a real double-click (an
             // interaction path that requires HID input — verified on hardware).
             console_pause_for_key();
-            ran
+            if !ran {
+                alert_launch_failed(name);
+            }
+            redraw::full_redraw(); // restore the desktop over the console / alert
         }
-    };
-    if !ok {
-        alert_launch_failed(name);
     }
-    redraw::full_redraw(); // restore the desktop over console / app / alert
+}
+
+/// Launch a GEM application with the single-tasking **screen handoff** — the
+/// EmuTOS child-launch *relinquish → run → resume* sequence (findings-log F5,
+/// `gemshlib.c:276-282,606,710-727`, `deskmain.c:2085-2171`). NewTOS runs the
+/// child as a **nested** call from the desktop's event loop (no separate desktop
+/// process that Pterms), so the desktop must explicitly give up — and later
+/// rebuild — the shared AES screen state around the child:
+///
+/// * **relinquish** ([`desktop_relinquish`], before the child): remove the
+///   desktop menu bar (`menu_bar(NULL,0)`), hide the desktop's own windows out
+///   of the shared AES window list (saved, not destroyed), neutralise the
+///   desktop-background painter (so the compositor's background erase is the
+///   white `CLEAR_SCREEN` rather than the desktop's green), and clear the
+///   screen — the child then composites on a clean screen with only its own
+///   windows + menu (fixes symptom #1: green desktop + leftover windows behind
+///   QED);
+/// * **resume** ([`desktop_resume`], after the child's `Pterm`): restore the
+///   painter + the saved window set, rebuild the menu bar, and repaint — the
+///   desktop is exactly as before the launch.
+///
+/// Returns whether the child launched (`run_program` → `true`).
+fn run_gem_app(path: &[u8], tail: &[u8]) -> bool {
+    desktop_relinquish();
+    let ran = crate::launch::run_program_with_tail(path, tail);
+    desktop_resume();
+    ran
+}
+
+/// The **relinquish** half of [`run_gem_app`]: give up the shared AES screen
+/// state to a launching GEM app (EmuTOS desktop epilog + `sh_draw` CLEAR_SCREEN).
+fn desktop_relinquish() {
+    // Remove the desktop menu bar (EmuTOS `menu_bar(NULL,0)`). Our AES
+    // `menu_bar(tree, 0)` needs the real (non-null) tree to erase the strip.
+    super::menu_bar(menu::tree_ptr(), 0);
+    // Hide the desktop's own windows out of the shared AES window list (saved for
+    // the resume) and neutralise the desktop-background painter so the composite
+    // erases to white.
+    tos_api::aes::window::save_windows();
+    tos_api::aes::window::clear_desktop_painter();
+    // Clear the screen: with the window list empty and the painter neutralised, a
+    // full composite paints the whole screen white — EmuTOS's `sh_draw`
+    // CLEAR_SCREEN. The child (QED) then draws on this clean screen.
+    tos_api::aes::window::redraw();
+}
+
+/// The **resume** half of [`run_gem_app`]: rebuild the desktop exactly as it was
+/// before the launch (EmuTOS `deskmain.c:2124-2171` + `gemshlib.c:606,710-727`).
+fn desktop_resume() {
+    // Re-register the desktop-background painter and restore the saved window set
+    // (discarding whatever the child left in the shared list).
+    tos_api::aes::window::set_desktop_painter(super::paint_desktop_bg);
+    tos_api::aes::window::restore_windows();
+    // Rebuild the menu bar + repaint the whole desktop (`full_redraw`
+    // re-installs the menu bar itself).
+    redraw::full_redraw();
 }
 
 /// Keep the VT52 console up after a `.NCP` program returns and block until the
