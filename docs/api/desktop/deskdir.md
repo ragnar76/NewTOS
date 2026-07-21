@@ -429,7 +429,17 @@ that produces it.
   nested folder structure can exhaust memory mid-operation (not just at
   the start), aborting only the affected subtree with `STFO8DEE`, not the
   whole `dir_op` — items already processed at shallower levels are not
-  rolled back.
+  rolled back. **Corrected 2026-07-21** (re-validation): the earlier
+  parenthetical here ("the alert text predates the current `MAX_LEVEL`=12
+  value") stated the alert's literal wording as if confirmed — it is
+  **not**: `desk/desktop.def` (10 lines) contains no string table in this
+  checkout, and no "8 deep"/similar text was found anywhere under
+  `references/emutos/` (checked by grep). The "8 deep" reading is only an
+  **inference from the identifier name** `STFO8DEE` itself, not a
+  verified string; `deskconf.h:34-42`'s comment only confirms `MAX_LEVEL`
+  is "arbitrary, but is the same as Atari TOS uses" (12), with no mention
+  of a former value of 8. Treat the identifier-name inference as
+  unverified, not as a documented fact.
 - **Folder counts in the progress dialog are counted post-order, file
   counts pre-order** (`deskdir.c:568-569` vs `:654-656`) — an
   implementation detail that affects exactly what number the live

@@ -65,6 +65,28 @@ desktop's entire startup + main loop + shutdown sequence.
 - `deskmain.c:1680` — `align_objects(obj_array, nobj)`, `deskmain.c:1731`
   — `align_title(root)` (declared in `deskmain.h:34`) — dialog-title/
   translated-text alignment, run once at startup over every resource tree.
+- **Missing-coverage fix**: `deskmain.c:1647-1656` —
+  `adjust_3d_positions(void)` (`CONF_WITH_3D_OBJECTS`, called from
+  `desk_xlate_fix`, `:1904`) — nudges two Desktop-configuration-dialog
+  button objects (`DCFUNPRV`/`DCMNUPRV`) left by `3*ADJ3DSTD` "to avoid
+  button overlap"; not previously cited in this file. Since NewTOS has
+  `CONF_WITH_3D_OBJECTS` **On** (`docs/HARDWARE-PROFILE.md:401`), this
+  fixup is in scope for a 1:1 rebuild, though it only affects one dialog
+  (`ADDESKCF`) outside the redraw/event-loop core this task validates.
+- **Missing-coverage fix**: `deskmain.c:1921-1931` —
+  `close_desktop_windows(void)` (`CONF_WITH_READ_INF`) — was already
+  described in prose under "Shutdown sequence" but not listed here as a
+  helper; walks `win_ontop()` closing each window (`wind_close` +
+  `dos_free(p_fbase)` + `win_free`) until none remain.
+- `deskmain.c:375-390` — `play_sound(frequency, duration)`
+  (`CONF_WITH_EASTER_EGG`) — builds a YM2149 register-write sequence and
+  calls `Dosound`; called only from `do_deskmenu`'s About-box Easter egg.
+  Out of scope (no AArch64 sound-chip equivalent; tracked as an open
+  `CONF_WITH_EASTER_EGG` question below, not decided here).
+- `deskmain.c:404-420` — `display_free_stack(void)`
+  (`CONF_DEBUG_DESK_STACK`, debug build only) — measures unused desktop
+  stack via a stack-marker scan; not previously cited, debug-only, no
+  1:1-rebuild relevance.
 
 **Helpers called (other `desk/` files — cited, not re-derived here; see
 their own module spec files):**
@@ -437,10 +459,17 @@ version-string + about-box insertion, `adjust_menu(desk_rs_trees[ADMENU])`
   must stay in sync with `tools/draftexc.c`'s `exclude_items[]`.
 - **`default_shortcuts[NUM_SHORTCUTS]`** (`:269-307`) — the built-in
   Ctrl-key per slot (uppercase display char; actual match is the control
-  character, `ascii|0x40` in `lookup_ascii_shortcut`). 9 of 33 slots are
-  `0x00` (no default shortcut): `SRCHITEM`, all sort-order items except
-  none really — actually **every View-menu and every Options-menu item
-  except `RESITEM`('R') and `SAVEITEM`('S')** has no default shortcut.
+  character, `ascii|0x40` in `lookup_ascii_shortcut`). **Correction** (the
+  prior "9 of 33" count was wrong — verified by counting every entry in
+  `deskmain.c:269-307`): **22 of 33** slots are `0x00` (no default
+  shortcut) — in the File menu: `SRCHITEM`, `MASKITEM`, `FORMITEM`,
+  `QUITITEM` (4 of 13); **every** View-menu item (9 of 9:
+  `ICONITEM`…`BACKGRND`); and every Options-menu item **except**
+  `RESITEM`('R') and `SAVEITEM`('S') (9 of 11). The 11 slots that *do*
+  have a default shortcut are `OPENITEM`('O'), `SHOWITEM`('I'),
+  `NFOLITEM`('N'), `CLOSITEM`('H'), `CLSWITEM`('U'), `BTOPITEM`('W'),
+  `SLCTITEM`('A'), `DELTITEM`('D'), `CLIITEM`('Z'), `RESITEM`('R'),
+  `SAVEITEM`('S').
 - **`arrow_table[]`** (`:316-325`) — scancode → `WA_*` pairs,
   `0`-terminated, consulted by `check_arrow_key`.
 
@@ -539,6 +568,125 @@ Runs after **every** dispatched event except a bare redraw. Algorithm:
    **not re-probed per menu open**). `BLITITEM`/`CACHITEM`: enabled +
    checkbox reflects `G.g_blitter`/`G.g_cache` iff the hardware feature was
    detected at startup, else force-disabled (+ `CACHITEM` force-unchecked).
+
+---
+
+## Mouse button handling (`hndl_button`, `deskmain.c:947-1009`)
+
+**Gap filled in this validation pass** — the prior extraction only listed
+`hndl_button` in the "Helpers called" table (one line); the task's special
+focus on the click path requires the exact call sequence, so it is spelled
+out here, verified against `deskmain.c:947-1009`.
+
+```c
+static WORD hndl_button(WORD clicks, WORD mx, WORD my, WORD button, WORD keystate)
+{
+    wh = wind_find(mx, my);                          /* :955 */
+    if (wh != G.g_cwin)
+        desk_clear_all();                            /* :957-958 */
+    desk_verify(wh, FALSE);                           /* :960 */
+    wind_get_grect(wh, WF_WXYWH, &c);                 /* :962 */
+
+    if (clicks == 1) {
+        act_bsclick(G.g_cwin, G.g_croot, mx, my,
+                    keystate, &c, FALSE);              /* :968-969 */
+        graf_mkstate(&junk, &junk, &button, &junk);    /* :970 */
+        if (button & 0x0001) {
+            dest_wh = act_bdown(G.g_cwin, G.g_croot, &mx, &my,
+                                &keystate, &c, &dobj);  /* :973-974 */
+            if (dest_wh != NIL) {
+                done = fun_drag(wh, dest_wh, 0, dobj, mx, my, keystate); /* :977 */
+                desk_clear(wh);                        /* :978 */
+            }
+        }
+        pw = win_find(wh);
+        win_sinfo(pw, TRUE);                           /* :982-983 */
+    } else {                                           /* clicks == 2 */
+        act_bsclick(G.g_cwin, G.g_croot, mx, my, keystate, &c, TRUE); /* :987 */
+        done = do_filemenu(OPENITEM);                  /* :988 */
+        evnt_button(1, 0x01, 0x00, &junk, &junk, &junk, &junk);       /* :1003 */
+    }
+
+    men_update();                                       /* :1006 */
+    return done;
+}
+```
+
+Step by step, precisely as the source has it:
+
+1. **`wh = wind_find(mx, my)`** (`:955`) — resolves the AES window under
+   the click from **screen coordinates**, unconditionally, before any
+   other state is touched. This is the mechanism the current NewTOS
+   desktop is missing entirely (see `_current-defects.md` D3): every click
+   anywhere on screen first asks the AES "which window (if any) is here?"
+   — it does not consult any desktop-tracked "current/topped window"
+   variable to decide *whether* to act.
+2. **`if (wh != G.g_cwin) desk_clear_all()`** (`:957-958`) — if the click
+   landed in a **different** window than the one the desktop currently
+   considers current, deselect everything **everywhere** (every open
+   window **and** the desktop) before processing the click. Clicking
+   inside the *same* already-current window does **not** clear other
+   windows' selections.
+3. **`desk_verify(wh, FALSE)`** (`:960`) — makes `wh` the new
+   `G.g_croot`/`G.g_cwin`/`G.g_wlastsel` (`desksupp.c:175-198`,
+   `changed=FALSE` — a click never rebuilds the item grid, only a size
+   change does).
+4. **`wind_get_grect(wh, WF_WXYWH, &c)`** (`:962`) — the (possibly just-
+   switched-to) window's current work-area rect, passed to every
+   selection/drag helper below as the clip rect for their own redraws.
+5. **Single click (`clicks==1`, `:964-984`):**
+   - `act_bsclick(G.g_cwin, G.g_croot, mx, my, keystate, &c, FALSE)`
+     (`:968-969`, `deskact.c:566-596`) — the click/selection state
+     machine (rules cited in its own header comment, `deskact.c:552-559`):
+     click on empty space deselects all; click on an unselected object
+     deselects all + selects it; Shift-click toggles just that object;
+     Shift-click on empty space is a no-op. **Out of scope for this
+     entry** (cited, not re-derived — see `deskact.md`), but its call
+     **signature and position in the sequence** is exactly what a 1:1
+     rebuild must reproduce.
+   - `graf_mkstate(&junk, &junk, &button, &junk)` (`:970`) — **re-reads the
+     live mouse button state** right after the click-selection call (not
+     the `button` parameter `hndl_button` was originally invoked with) —
+     i.e. the drag-start decision below uses a **fresh** read, not the
+     event's own `button` value.
+   - **If the (freshly re-read) left button is still down**
+     (`button & 0x0001`, `:971`): `act_bdown(G.g_cwin, G.g_croot, &mx, &my,
+     &keystate, &c, &dobj)` (`:973-974`, `deskact.c:609-...`) — the
+     drag-tracking state machine; returns the **destination** window
+     handle (`dest_wh`) the object was dropped on, or `NIL` if it was
+     simply a click-and-release with no drag. **Only if a real drag
+     happened** (`dest_wh != NIL`): `fun_drag(wh, dest_wh, 0, dobj, mx, my,
+     keystate)` (`:977`, out of scope — `deskfun.c`) performs the actual
+     copy/move, then `desk_clear(wh)` (`:978`) deselects the **source**
+     window (the item that was dragged is no longer "selected" after the
+     drop).
+   - **Always** (drag or not): `pw = win_find(wh); win_sinfo(pw, TRUE)`
+     (`:982-983`) — refreshes that window's info line (selected-count/size
+     or whole-directory count/size, `deskwin.c:867-906`) since a click may
+     have changed the selection.
+6. **Double click (`clicks==2`, `:985-1004`):** `act_bsclick(...,TRUE)`
+   (`:987`, `dclick=TRUE` changes rule 3 above — see the cited comment:
+   with `dclick` true, even an **already-selected** object is
+   deselect-all-then-reselect, ensuring a clean single-selection state
+   before the open) then **unconditionally** `do_filemenu(OPENITEM)`
+   (`:988`) — a double-click **is** "File → Open" on whatever
+   `act_bsclick` just made current, dispatched through the exact same
+   function a menu click would use. The trailing `evnt_button(1, 0x01,
+   0x00, ...)` (`:1003`) is a **deliberate wait-for-button-up**, documented
+   in-source (`:989-1002`) as a fix for AES double-click event replay and
+   a `.TOS`-program-launch mouse-blink artifact — **not** part of the
+   click/selection semantics itself, a defensive idiom a 1:1 rebuild
+   should reproduce but need not treat as behaviourally significant beyond
+   "don't return to the loop until the button is physically released
+   after a double-click".
+7. **Tail** (`:1006`): `men_update()` — **every** call to `hndl_button`
+   ends with a menu-state recompute, unconditionally (unlike `hndl_kbd`,
+   which skips it for CR/ESC/arrow-key).
+
+**Contrast with the current NewTOS desktop** (`_current-defects.md` D3):
+none of steps 1-4 exist — clicks are resolved exclusively against a single
+tracked "top" handle, never against screen coordinates via an
+AES-equivalent `wind_find`.
 
 ---
 
@@ -830,8 +978,14 @@ the screen (`cnx_put()` call at the tail of `hndl_msg`, `:1352-1353`).
   with a non-empty saved path, resolves it back to an object id
   (`obj_get_obid(pws->pth_save[0])` — **first character of the path only**,
   i.e. the drive letter) and calls `do_diropen` to reopen it — **silent
-  failure**: if `win_alloc`/`do_diropen` fails, the slot is just skipped
-  (`win_free(pw)`), no error surfaced to the user.
+  failure, two distinct paths** (`:1489-1499`, precision fix — the prior
+  wording implied a single `win_free` path for both failures): if
+  `win_alloc(obid)` itself fails (`NUM_WNODES` slots already used), the
+  `if ((pw = win_alloc(obid)))` block is skipped entirely — nothing was
+  allocated, so no `win_free` call is needed or made; if `win_alloc`
+  **succeeds** but the subsequent `do_diropen(...)` fails, **then**
+  `win_free(pw)` releases the just-allocated `WNODE`. Either way the slot
+  ends up simply not reopened, no error surfaced to the user.
 
 ---
 

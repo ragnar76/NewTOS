@@ -16,8 +16,13 @@
 - `desk/deskwin.c:768-819` — `win_srtall()`, `win_bdall()`, `win_shwall()`
 - `desk/deskwin.c:825-840` — `win_isel()`
 - `desk/deskwin.c:846-906` — `win_sname()`, `win_sinfo()`
-- `desk/deskwin.c:141-274` — `win_free`/`win_alloc`/`win_find`/`win_top`/
-  `win_onbottom`/`win_ontop`/`win_count`
+- `desk/deskwin.c:141-283` — `win_free`/`win_alloc`/`win_find`/`win_top`/
+  `win_onbottom`/`win_ontop`/`win_count` (**correction**: previously cited
+  as `141-274`, which excludes `win_count()` at `:280-283`; verified against
+  EmuTOS source — `win_free` `:141-150`, `win_alloc` `:156-190`, `win_find`
+  `:198-212`, `win_top` `:218-240`, `win_onbottom` `:247-256`
+  (`CONF_WITH_BOTTOMTOTOP`-gated, `:243-257` incl. the `#if`), `win_ontop`
+  `:265-274`, `win_count` `:280-283`)
 
 **Helpers called (outside this file):**
 - `desk/deskobj.c:113` `obj_init()`, `:156` `obj_walloc()`, `:187`

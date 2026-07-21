@@ -7,15 +7,29 @@
 > Charter: **ADR-016** — EmuTOS-faithful reimplementation of the desktop
 > *application* on top of the already-faithful AES/VDI/GEMDOS layer in `tos-api`.
 
+> **2026-07-22 revision (ADR-022).** The plan below stands, but its principle is
+> **tightened from "behavioural, internals-free" to 1:1 call-sequence
+> correspondence + full trap routing** after the drift it allowed (own
+> `do_wredraw`, direct-EL1 dialog `objc_draw`, `DESK_PAINTER` hook) let the
+> desktop mask app-path bugs that QED exposed. The `docs/api/desktop/` spec was
+> re-validated against EmuTOS across 4 chunks (real errors fixed; new
+> `gembind.md` call-surface + `deskpro.md`; all docs 1:1-ready). See §1 and §11.
+
 ## 1. Principle
 
-Reimplement EmuTOS `desk/` **behaviour** (window/file model, grid metrics, view
-building, damage-rect redraw, event loop, menu, file ops, INF) cleanly in
-`#![no_std]` Rust. Do **not** port the C line-by-line. The measuring stick is
-the **user-observable** desktop behaviour, not byte-identical internals
-(`WNODE`/`FNODE`/`G` are all *internal* per `_data-model.md` — free to redesign).
-What must match: the `OBJECT`/`ICONBLK` trees handed to `objc_draw`, and the AES
-call semantics — both already contract-documented.
+Reimplement EmuTOS `desk/` **1:1** in `#![no_std]` Rust: every EmuTOS `desk/`
+function → a **same-named Rust function that makes the same `tos-api`
+(AES/VDI/GEMDOS) calls in the same order/sequence**, going **through the AES trap**
+(opcode 200) like EmuDesk over `aesbind`/`gembind` — **no** in-kernel shortcuts,
+**no** hooks, **no** direct-EL1 `objc_draw` for client rendering. This is **not**
+a C port (Rust stays Rust; the source-correspondence gives the "debug against the
+EmuTOS reference" benefit). Purely-**private** data (`WNODE`/`FNODE`/`PNODE`/`G`/
+screen arena — all internal per `_data-model.md`) may stay idiomatic Rust; the
+debugging benefit rides on the call-sequence, not the data representation. What
+must match exactly: the `OBJECT`/`ICONBLK` trees handed to `objc_draw`, **and the
+AES/VDI/GEMDOS call sequence** (both spec-documented). Two EmuTOS single-binary
+shortcuts are **not** replicated (they re-bypass the AES): `gsx_trans` → public
+VDI `vr_trnfm`; `menu_text` → the real AES `menu_text` opcode.
 
 ## 2. Target module layout (`kernel/src/desk/`)
 
@@ -182,3 +196,47 @@ Every Developer deliverable: `cargo build` + `cargo clippy -D warnings` clean fo
 screendump on **`qemu raspi4b` with a realistic 8.3-long-name SD image** (the
 blind spot that hid the original bug). Then the **Auditor** gate (#10) with
 adversarial/representative data. Nothing is "done" before Auditor sign-off.
+
+## 11. 2026-07-22 validation outcome + 1:1 sequencing (ADR-022)
+
+**Spec validation (4 chunks vs EmuTOS `desk/`, all `file:line`-cited).** All docs
+are now **1:1-ready**. Real errors fixed: `deskins` (3D-objects default **ON**),
+`deskfun` (multi-launch was on the wrong function — `fun_desk2desk`, not
+`fun_desk2win`), `deskapp` (resolution change = **desktop reboot**, not in-place;
+full `app_start`/`app_blddesk` call-sequences added), `_overview`/`_data-model`
+(deskrez interaction). New docs: **`gembind.md`** (the AES/GEMDOS call-surface)
+and **`deskpro.md`** (`pro_run`/`pro_exec` launch). `deskrez`/`desksupp-redraw`
+were already exact (the load-bearing `do_wredraw` doc verified byte-for-byte).
+
+**AES call-surface (gembind.md).** **No AES-server-side gap** — every opcode the
+desktop calls already exists in `tos-api`. The rebuild adds the missing
+**client-side trap wrappers** our `desk/mod.rs` lacks: `menu_icheck`/`menu_ienable`,
+`objc_add`/`objc_offset`/`objc_order`, `form_dial`/`form_center`/`form_error`,
+`graf_growbox`/`graf_shrinkbox`/`graf_handle`, `fsel_exinput`, `rsrc_*`, `shel_*`,
+`appl_init`/`appl_exit`. Two non-trap EmuTOS shortcuts → public calls:
+`gsx_trans` → **`vr_trnfm`** (VDI), `menu_text` → the real AES **`menu_text`** op.
+
+**Concrete constraints surfaced.** Resolution change ⇒ reboot the desktop
+(`shel_write(SHW_RESCHNG)`+`done=TRUE`); `ib_xtext=0` ⇒ `g_wicon = 12·char_w`
+(erd-verified); deep copy needs **≥12 concurrent DTA slots** (`d_doop`
+private-DTA-per-level) plus a 3rd DTA swap in `item_exists`; the redraw path
+**skips `handle==DESKWH`** (background is the AES `WF_NEWDESK` job); `hndl_button`
+does `wind_find` **first** (click into any window — the D3 mechanism our desk/
+lacks).
+
+**Gap to close before the launch module:** extract `desksupp.c`
+(`do_aopen`/`do_open`/`i_find`/`build_root_path`/`is_installed`) into a new
+`desksupp.md` — the function every launch path calls first is still undocumented.
+
+**Revised 1:1 module order (redraw-path first), Developer → independent Tester →
+lead-commit per module:**
+1. **Redraw path** — `do_wredraw` over the AES `WF_FIRSTXYWH/WF_NEXTXYWH` rect
+   list + route WM_REDRAW/TOPPED/SIZED/MOVED through it; **delete** the drifted
+   own-redraw. (The app-path heart; where QED breaks.)
+2. **Dialogs onto the app path** — no direct-EL1 `objc_draw`; the `gembind`
+   wrapper layer (`form_*`, `fsel_*`, `rsrc_*`).
+3. **Menu/window/event 1:1** — `hndl_button` (`wind_find`-first), `hndl_kbd`,
+   `hndl_menu`, `men_update`, the `evnt_multi`+`wind_update(BEG/END)` loop.
+4. **File/dir/INF/rez 1:1** — `deskdir`/`deskfun`/`deskact`/`deskinf`/`deskins`/
+   `deskrez` + the `desksupp.md` launch layer (after the gap above is filled).
+5. **HW retest** after step 1 (the QED/desktop menu redraw) and again at parity.

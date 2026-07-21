@@ -1371,6 +1371,111 @@ places images at fixed VAs — FreeMiNT shows *why* that is a loader property
   [[native-64bit-abi-future]] (#91 LP64/identity-map v2).
 - Tasks #99 (RSC window — subsumed), #102 (this research — closed).
 
+## ADR-022: Desktop is a 1:1 EmuTOS-faithful rebuild that goes *through* the AES trap (refines ADR-016)
+
+**Date:** 2026-07-22
+**Status:** **Accepted** (user decision 2026-07-22).
+**Phase:** PHASE-14 (Desktop).
+
+### Context
+
+ADR-016 chartered the `kernel/src/desk/` rebuild but its principle was
+"reimplement the *behaviour* … do **not** port the C line-by-line … internals
+free to redesign; the measuring stick is user-observable behaviour". Under that
+latitude the desktop **drifted away from the AES app path**: it grew its own
+`do_wredraw` loop, drew dialogs via a direct EL1 `objc_draw` call, and used a
+`DESK_PAINTER` background hook — i.e. it does **not** exercise the app-facing
+AES round-trip (WM_REDRAW → `wind_update` → the `WF_FIRSTXYWH/WF_NEXTXYWH`
+rectangle list → clipped `objc_draw`) the way a real GEM app does.
+
+QED — the first real EL0 GEM client — exposed the cost: its menu dropdowns
+leave stale pixels (`menu_sr` save/restore area too small for `th=-1` outward
+borders) while the **desktop's own** menu looks clean, because the desktop's
+boxes fit `abs_rect` **and** it full-redraws after every pick. A pristine
+in-kernel desktop therefore gives **false confidence** — it masks app-path bugs,
+cannot be replaced by the user, and offers no reference to debug against. See
+[[desktop-bypasses-app-abi-path]] and `docs/analysis/qed-redraw-rootcause.md`.
+
+### Decision
+
+Rebuild `kernel/src/desk/` as a **1:1 EmuTOS-faithful reimplementation** in Rust:
+every EmuTOS `desk/` function maps to a **same-named Rust function that makes the
+same `tos-api` (AES/VDI/GEMDOS) calls in the same order and sequence**, and the
+desktop goes **fully through the AES trap** (opcode 200) like EmuDesk over
+`aesbind`/`gembind` — **no** in-kernel shortcuts, **no** hooks, **no** direct-EL1
+`objc_draw` for client rendering. Purely-private data structures
+(`WNODE`/`FNODE`/`PNODE`/screen arena) may stay idiomatic Rust — they never cross
+an ABI boundary, and the debugging benefit comes from the **call-sequence
+correspondence**, not the data representation.
+
+This is **not** a C port of EmuDesk (Rust stays Rust per the tech-stack rule; the
+source-correspondence alone gives the "debug against the reference" benefit the
+user wants). Two EmuTOS single-binary shortcuts are deliberately **not**
+replicated (they only work because EmuTOS links `desk/`+`aes/` into one image and
+would re-bypass the very AES we are validating):
+- `gsx_trans` (bitmap transform, `aes/gemgraf.c:369`) → use the public VDI
+  **`vr_trnfm`** trap.
+- `menu_text` (locally `#define`d in `deskmain.c` to a direct `ob_spec` write) →
+  use the real AES **`menu_text`** opcode.
+
+Sequence: **validate `docs/api/desktop/` against EmuTOS first** (done 2026-07-22
+across 4 chunks — a handful of real spec errors fixed, new `gembind.md`
+call-surface + `deskpro.md` created, all docs now 1:1-ready), **then** rebuild
+module by module — **redraw path first** (`do_wredraw` over the AES rectangle
+list), then dialogs onto the app path, then menu/window/file/INF — each under the
+Developer → independent Tester → lead-commit loop.
+
+Endgame (later stage, NOT now): the 1:1 desktop becomes a **replaceable EL0 AES
+app** (an EL0 GEM client), enabling an AUTO-folder / alternate desktop. In-kernel
+1:1 first (smaller steps); EL0 is a follow-on.
+
+### Rationale
+
+- **One world:** the desktop exercises the same app-facing AES paths as real apps,
+  so fixing the app path fixes *both* desktop and apps; no more masking.
+- **Debuggability (the user's decisive reason):** a divergence = "our Rust fn vs
+  the EmuTOS C fn" side by side, isolating a bug in *our* AES/VDI/GEMDOS, not the
+  desktop. The validated spec + gembind call-surface make the correspondence exact.
+- **Faithful by construction; replaceable later.**
+- The validation found **no AES-server-side gaps** — every opcode the desktop
+  needs already exists in `tos-api`; the rebuild mainly adds the missing
+  client-side trap **wrappers** (`menu_icheck/ienable`, `objc_add/offset/order`,
+  `form_*`, `graf_*`, `fsel_*`, `rsrc_*`, `shel_*`, `appl_*`).
+
+### Consequences
+
+- Positive: one AES world, reference-debuggable, EmuTOS-faithful, replaceable-later.
+- Negative: re-work the drifted parts of the substantial existing `desk/`
+  (~9200 lines); add the missing trap wrappers; extract the still-undocumented
+  `desksupp.c` (`do_aopen`/`do_open`/`i_find`/`build_root_path`/`is_installed`)
+  before the launch module.
+- Refines ADR-016 specifically: its "behavioural, internals-free, not
+  line-by-line" clause is tightened to **tight call-sequence correspondence + full
+  trap routing**. The module layout and AES-client discipline of ADR-016 stand.
+- Concrete constraints surfaced by validation: resolution change ⇒ **desktop
+  reboot** (`shel_write(SHW_RESCHNG)`+exit), not in-place recompute; `ib_xtext=0`
+  ⇒ `g_wicon = 12·char_w`; deep copy needs **≥12 concurrent DTA slots**
+  (`d_doop` private-DTA-per-level); the redraw path skips `handle==DESKWH` (the
+  background is the AES's `WF_NEWDESK` job, not `do_wredraw`).
+
+### Alternatives considered
+
+- **Keep in-kernel desk/ + patch the app path piecemeal via QED:** rejected —
+  masks bugs, no reference to debug against, never replaceable.
+- **Port EmuDesk C as an EL0 app:** rejected by the user — keep Rust; avoid
+  EmuDesk's ROM-integration glue; the debug benefit is achievable via
+  source-correspondence without running the C.
+- **Global UI scaling first:** deferred (task #122) — right direction, not now.
+- **Move the desktop to EL0 now:** deferred — in-kernel 1:1 first; EL0 follow-on.
+
+### References
+
+- `docs/api/desktop/_rebuild-plan.md` (updated), `gembind.md` (new, AES/GEMDOS
+  call-surface), `deskpro.md` (new), the 4 validation passes 2026-07-22.
+- `docs/analysis/qed-redraw-rootcause.md`; ADR-016 (refined), ADR-017 (resolution).
+- Tasks #115 (AES=core), #123 (QED redraw), #124 (this rebuild).
+- Notes [[desktop-bypasses-app-abi-path]], [[verify-actual-call-path-before-diagnosing]].
+
 ---
 
 ## Quirks Discovered

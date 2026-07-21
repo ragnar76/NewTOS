@@ -165,13 +165,23 @@ current view mode:
   text-line width, not just the name portion.
 - **`V_ICON`**: tests against the icon's **own two sub-rectangles**
   (`ib_xicon`/`ib_wicon`/`ib_hicon` for the glyph, `ib_xtext`/`ib_wtext`/
-  `ib_htext` for the label), read from that specific object's `ICONBLK`
-  copy (`G.g_screeninfo[obj].u.icon.block`/`u.icon.index`) — **not** the
-  object's overall bounding box. A click in the gap between the icon
-  glyph and its label (if any) misses and returns `root` (i.e. "no
-  object hit here"). The two sub-rectangle tests are OR'd (`:397-401`):
-  intersects text-box **or** icon-box, checked in that order (text
-  first).
+  `ib_htext` for the label). **Corrected 2026-07-21** (re-validation):
+  the previous wording here said these are read from "that specific
+  object's `ICONBLK` copy (`u.icon.block`/`u.icon.index`)" — that
+  overstates it. The code (`:395-396`) only reads `.u.icon.index` to
+  look up `ib = &G.g_iblist[icon]` — i.e. it consults the **shared
+  master icon-block template array** `G.g_iblist[]`, not the per-object
+  `.u.icon.block` copy that `_data-model.md` documents as existing
+  alongside it. In practice this makes no observable difference for
+  `ib_xicon`/`ib_xtext` (the master and every object's copy share the
+  same glyph-shape geometry — only fields like `ib_char`/`ib_ptext`
+  legitimately diverge per instance), but a NewTOS reimplementation
+  should know the hit-test reads the **shared template**, not each
+  object's own copy — **not** the object's overall bounding box either
+  way. A click in the gap between the icon glyph and its label (if any)
+  misses and returns `root` (i.e. "no object hit here"). The two
+  sub-rectangle tests are OR'd (`:397-401`): intersects text-box **or**
+  icon-box, checked in that order (text first).
 
 This function is why a desktop with widely-spaced icon cells (icons
 smaller than their grid cell) doesn't select an icon when clicking in
@@ -314,7 +324,9 @@ polygon-outline "ghost" that follows the mouse:
    the per-object point list around the combined origin
    (`gr_obalign`) — this produces a single reference frame the whole
    drag operates in.
-3. **Per-frame loop** (`do…while(down)`): compute the candidate new
+2. **Per-frame loop** (`do…while(down)`, renumbered 2026-07-21 — this
+   list previously skipped from "1." to "3." with no "2." at all, a
+   numbering slip, not a content error): compute the candidate new
    origin (`l_mx/l_my` minus fixed offsets), constrain it to stay within
    `pc` (the allowed drag bounds, typically the full screen —
    `rc_constrain`), then `gr_bwait()` draws the outline at the *old*
@@ -324,19 +336,23 @@ polygon-outline "ghost" that follows the mouse:
    frame does draw-wait-erase, and the *next* iteration draws again at
    the new position. This is a classic XOR-rubber-band animation, not a
    double-buffered one.
-4. **Per-frame destination tracking** (`:294-350`): re-reads the mouse
+3. **Per-frame destination tracking** (`:294-350`): re-reads the mouse
    position/button/keystate (`graf_mkstate`), resolves which window (if
    any) the mouse is now over (`wind_find`), and finds the object under
    the cursor in that window's tree (`gr_obfind`). If the object under
    the cursor **changed** since the last frame, un-highlights the
    previous candidate (`act_chg(…, FALSE, TRUE)`) before highlighting the
-   new one. **Only objects that resolve to a valid `ANODE`/`FNODE` via
-   `i_find`, and are not a plain (non-executable) file, get highlighted**
-   (`:336-349` — `if ((pa->a_type==AT_ISFILE) && !isapp) continue;` — you
-   cannot "drop onto" a plain data file as a highlighted target, only
-   onto folders/disks/trash/printer/applications).
-5. Loop continues `while(down)` (i.e. while the button remains held).
-6. On exit, un-highlights any still-highlighted candidate, passes back
+   new one — but only once it is re-resolved as *not currently selected*
+   (`:335-336`, `if (!(obj->ob_state & SELECTED))` — an object that is
+   itself part of the dragged group is never highlighted as a drop
+   target, added 2026-07-21 for completeness). **Only objects that
+   resolve to a valid `ANODE`/`FNODE` via `i_find`, and are not a plain
+   (non-executable) file, get highlighted** (`:336-349` —
+   `if ((pa->a_type==AT_ISFILE) && !isapp) continue;` — you cannot "drop
+   onto" a plain data file as a highlighted target, only onto
+   folders/disks/trash/printer/applications).
+4. Loop continues `while(down)` (i.e. while the button remains held).
+5. On exit, un-highlights any still-highlighted candidate, passes back
    the final mouse position, offsets, destination window and object, and
    calls `desk_busy_off()` (the drag itself runs with the busy/hourglass
    cursor implicitly off — `desk_busy_on()` is **not** called by this

@@ -91,6 +91,34 @@ files' "Helpers called (other files)" sections).
   [`deskdir.md`](deskdir.md)
 - `desksupp.c` `desk_busy_on`/`desk_busy_off`, `valid_drive`
 - `deskrsrc.c` `desktop_str_addr`
+
+**`deskrsrc.c` — checked directly, confirmed trivial (task-brief follow-up)**:
+`desk/deskrsrc.c` is 36 lines total, containing exactly **one** function,
+`char *desktop_str_addr(WORD stnum)` (`:33-36`) — a one-line wrapper over
+`gettext(desk_rs_fstr[stnum])` (NLS-aware resource-string lookup). It is
+**not** "built-in resource load" despite the name suggesting otherwise: the
+actual resource-loading entry point, `desk_rs_init()` (called once,
+`deskmain.c:1980`, "copies OBJECTs and TEDINFOs in ROM to RAM"), and the
+`desk_rs_trees[]`/`desk_rs_fstr[]` arrays it populates, have **no visible
+definition anywhere in `references/emutos/`** (verified by grep across the
+whole tree) — they are generated at build time by EmuTOS's resource
+compiler from `desktop.def`/`desktop.rsc` (confirmed no `desk_rsc.c` exists
+in the checkout; only the generated header `desk_rsc.h` is `#include`d by
+name, never present as source). **Conclusion: no new `deskrsrc.md` is
+needed** — `deskrsrc.c`'s only real content is already correctly cited here
+and in [`deskdir.md`](deskdir.md)/[`_overview.md`](_overview.md) ("resource
+string lookup... out of scope (utility)"). For NewTOS, "resource loading"
+has no EmuTOS-parity code to port at all: NewTOS builds its `OBJECT` trees
+directly in Rust rather than loading a compiled `.rsc` blob, so this whole
+mechanism is internal-and-free (`docs/COMPATIBILITY.md`), not contract.
+**Out-of-scope observation for the lead**: `deskmain.md:888` cites
+"`desk_rs_init()`/resource loading (`deskrsrc.md`/`deskobj.md`)" — but
+`deskobj.c` (checked directly, `obj_init`/`obj_walloc`/`obj_wfree`/
+`obj_ialloc`/`obj_get_obid`) is actually the **screen-object-arena
+allocator** (`G.g_screen[]`/`G.g_screeninfo[]` memory management), not
+resource loading either; this citation in `deskmain.md` appears imprecise
+and is outside this task's scope to fix (not one of the three files
+assigned here).
 - AES: `form_center`, `form_dial`, `objc_draw`, `evnt_multi`, `form_do`
   (contract, `docs/api/aes/object-form.md`)
 - GEMDOS: `dos_chmod`, `dos_rename`, `dos_space`, `dos_label`
@@ -655,6 +683,8 @@ grammar (bracketed groups are conditional, detailed per-tag below):
 | `<pappl>@` | always | `@`-terminated string, semantics per tag (see `deskapp.h:83-98`, already in `_data-model.md`) |
 | `<pdata>@` | always | `@`-terminated string, semantics per tag |
 | `<f><kk> <pargs>@` | `a_type==AT_ISFILE && !AF_ISDESK` (tags G/Y/F/P/I/N) | `<f>` = **one un-padded hex digit** (`INF_AT_APPDIR`=1 / `INF_AT_ISFULL`=2 bit flags), `<kk>` = 2-hex function-key number, then `<pargs>@` |
+
+**Parser control-flow precision (re-verified against `app_parse`, `deskapp.c:385-396`, for the 1:1 rebuild)**: only the `<f><kk>` prefix is actually gated in the parser — `if (*pcurr == ' ') { …parse f/kk… }` (`:385-395`). The final `pcurr = scan_str(pcurr, &pa->a_pargs);` (`:396`) runs **unconditionally, for every tag**, immediately after that `if` block — it is not itself inside the conditional. For tags that never write the `<f><kk> <pargs>@` segment (`T`/`M`/`O`/`X`/`V`/`D`), `app_save` writes `\r\n` immediately after `<pdata>@`, so on read the `if (*pcurr==' ')` test fails (next char is `\r`) and the subsequent unconditional `scan_str` call sees `\r` immediately and yields an empty `a_pargs` — the **file-level grammar** (what's present in the bytes) is correctly gated as the table shows, but a faithful **1:1 function-structure port** of `app_parse` must keep the `a_pargs` scan outside the `if`, called once per line regardless of tag, not branch it per-tag.
 
 Tag table (`app_parse:301-350` / `app_save:1218-1256`):
 

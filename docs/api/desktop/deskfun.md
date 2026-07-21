@@ -79,7 +79,12 @@ from `deskact.c`'s drag-release handler (see [`deskact.md`](deskact.md)).
 - `deskapp.c` `app_afind_by_id()`/`app_afind_by_name()` (`ANODE` lookup —
   see `deskapp.md`)
 - `desksupp.c` `desk_verify`/`desk_clear`/`do_wredraw`/`do_diropen`/
-  `do_aopen`/`i_find`/`refresh_drive`/`valid_drive`/`build_root_path`
+  `do_aopen`/`i_find`/`refresh_drive`/`valid_drive`/`build_root_path` —
+  **`do_aopen`/`do_open` themselves are not yet extracted anywhere**
+  (added 2026-07-21 — see "Missing coverage" under
+  [Dependencies](#dependencies) below); what *is* now covered is the
+  next link in their call chain, `deskpro.c`'s `pro_run`/`pro_exec`, see
+  [`deskpro.md`](deskpro.md) (new, 2026-07-21)
 - `deskins.c:146-184` `snap_icon()` (see [`deskins.md`](deskins.md)) —
   not called directly by `deskfun.c`, only by `deskact.c`'s drag code,
   but `fun_drag`'s `ins_shortcut` branch (`CONF_WITH_DESKTOP_SHORTCUTS`)
@@ -160,6 +165,21 @@ independent groups of functionality:
 
 `fun_op`/`fun_del`/`fun_mkdir` are the File-menu-facing entry points that
 ultimately call into [`deskdir.md`](deskdir.md)'s `dir_op()` engine.
+
+**Gap flagged 2026-07-21 (re-validation):** the "three groups" above is
+not exhaustive — the `CONF_WITH_SEARCH`/`CONF_WITH_SELECTALL`/
+`CONF_WITH_FILEMASK`/`CONF_WITH_PRINTER_ICON` functions (`fun_search` and
+its six static helpers `convert`/`search_prompt`/`mark_matching_fnodes`/
+`search_display`/`search_recursive`/`search_icon`; `fun_selectall`;
+`fun_mask`; `fun_print`) are correctly **located and cited** (file:line,
+[Helpers called](#emutos-source) above, all verified against source this
+task) but have **no narrative section** of their own here, unlike
+`fun_drag`/`fun_op`/`fun_mkdir`. Per `_rebuild-plan.md` §8, Search/
+Select-All/Set-mask/Printer-icon are all **"In"** for the 1:1 rebuild, so
+a NewTOS `act.rs`/`dir.rs`/`inf.rs` implementer will need a deeper pass on
+these six-plus functions before implementing them — this doc gives
+correct entry points, not yet a full behavioural narrative for that
+subsystem. Flagged rather than rushed, per protocol.
 
 ---
 
@@ -262,14 +282,22 @@ fun_drag(wh, dest_wh, sobj, dobj, mx, my, keystate):
   or printer icon itself anywhere). If the destination is an
   application icon in the window (`CONF_WITH_DESKTOP_SHORTCUTS`), builds
   a launch tail (drive-root path for a disk icon, else the shortcut's
-  own path) and calls `do_aopen` **once per loop iteration this
-  triggers** — note this means dragging *multiple* selected desktop
-  icons onto a single application icon in a window will attempt to
-  launch that application **once per selected source icon** (the loop
-  doesn't stop after the first `do_aopen`, though `exit_desktop` being
-  set will end the desktop after the *first* successful launch, since
-  `fun_desk2win`'s caller — `fun_drag` — returns immediately with
-  whatever `exit_desktop` ends up as). Otherwise, calls
+  own path) and calls `do_aopen`, **then unconditionally `return`s**
+  (`:1249-1250`) — **corrected 2026-07-21 (Researcher re-validation vs.
+  source)**: the previous entry here claimed `do_aopen` is invoked "once
+  per selected source icon"; that is **wrong**. `an_dest` is resolved
+  **once**, before the `while` loop (`:1209`), and never changes between
+  iterations, so `if (an_dest && (an_dest->a_aicon >= 0))` is either true
+  on every iteration or false on every iteration. The `return` at
+  `:1250` is a genuine C `return` from `fun_desk2win` itself (a `void`
+  function), not a `continue` — it exits the loop **and the function**
+  on the very **first** selected source icon that reaches this check, so
+  `do_aopen` fires **exactly once** per `fun_desk2win` call, using only
+  that first icon's tail; every other selected source icon is left
+  completely unprocessed (not even passed to `fun_file2any`). Multi-select
+  drag-to-application-icon-in-a-window is therefore a **single-launch,
+  first-icon-wins** operation, not a multi-launch one. Otherwise (`an_dest`
+  not an application, or `CONF_WITH_DESKTOP_SHORTCUTS` off), calls
   `fun_file2any` per source icon, rebuilding the destination window
   after each successful copy.
 - **`fun_desk2desk`** (`:1260-1299`): drag between two desktop icons.
@@ -277,6 +305,18 @@ fun_drag(wh, dest_wh, sobj, dobj, mx, my, keystate):
   itself (`:1285-1289`, `illegal_op_msg`). Same non-existent-drive/trash/
   printer skip rule as `fun_desk2win`. Delegates to `fun_file2any` with
   `wn_dest=NULL` (signals "desktop-to-desktop" inside `fun_file2any`).
+  **This — not `fun_desk2win` — is where the genuine multi-launch case
+  lives** (added 2026-07-21, see the correction above): unlike
+  `fun_desk2win`, this `while` loop has **no early `return`** and never
+  inspects `exit_desktop` or `fun_file2any`'s return value between
+  iterations (`:1297`, bare call, result discarded) — so if `target` is
+  an application file icon, dragging *N* selected desktop icons onto it
+  calls `fun_file2any` → `fun_file2desk`'s `AT_ISFILE`+`a_aicon>=0`
+  branch → `do_aopen` **once per selected source icon**, each overwriting
+  the file-static `exit_desktop`. Whether the desktop actually exits
+  after `fun_drag` returns therefore depends on the **last** icon
+  processed by `win_isel`'s iteration order, not "the first successful
+  launch" (there is no early exit at all in this function).
 
 ---
 
@@ -340,14 +380,23 @@ fun_drag(wh, dest_wh, sobj, dobj, mx, my, keystate):
   must preserve this redirection (Delete removes files; Remove removes
   just the desktop icon and leaves the file alone), not merely the alert
   text.
-- **Multi-select drag onto an application icon can trigger multiple
-  launches** (`fun_desk2win`, `:1234-1251`) — see the detailed note
-  above; only the *first* successful launch actually ends the desktop
-  process (`exit_desktop` causes the caller to stop), but `do_aopen` is
-  still invoked once per selected source icon before that unwinds,
-  meaning side effects from a failed/rejected `do_aopen` for
-  earlier-iterated icons are possible. Not fully traced (`do_aopen` is
-  `desksupp.c`, out of scope for this task).
+- **Multi-select drag onto an application icon triggers multiple
+  launches only in `fun_desk2desk`, not `fun_desk2win`** (**corrected
+  2026-07-21** — see the detailed note in the `fun_desk2win`/
+  `fun_desk2desk` section above; the previous version of this entry had
+  the two functions' behaviour backwards). `fun_desk2win` (`:1234-1251`)
+  calls `do_aopen` **at most once** — an unconditional `return` at
+  `:1250` ends the whole function immediately after the first qualifying
+  selected icon, so remaining selected icons are never even passed to
+  `fun_file2any`. `fun_desk2desk` (`:1260-1299`) has no such early exit:
+  every selected source icon reaches `fun_file2any`/`fun_file2desk` in
+  turn, so dropping *N* selected desktop icons onto a desktop
+  application icon **does** call `do_aopen` once per icon, each
+  overwriting `exit_desktop`; the final exit decision reflects whichever
+  icon `win_isel` visits last, not "the first successful launch." Not
+  fully traced beyond `do_aopen`'s call site (`do_aopen` itself is
+  `desksupp.c`, out of scope for this task — see the new "Missing
+  coverage" note under Dependencies).
 - **Copying a disk icon reads the drive letter from the live `ICONBLK`,
   not the `ANODE`** (`fun_file2desk`'s `AT_ISDISK` case, `:1043-1044`,
   and `fun_file2any`'s disk-icon path, `:1157-1159` via
@@ -408,6 +457,25 @@ fun_drag(wh, dest_wh, sobj, dobj, mx, my, keystate):
   `do_diropen`/`i_find`/`valid_drive`/`build_root_path`/`refresh_drive`
 - [`deskinf.md`](deskinf.md) — dialog helpers (`inf_sset`/`inf_sget`/
   `inf_show`/`set_tedinfo_name`)
+- [`deskpro.md`](deskpro.md) — `pro_run`/`pro_exec` (new, 2026-07-21) —
+  the desktop-side wrapper every `do_aopen` launch ultimately calls,
+  terminating in the AES `shel_write(SHW_EXEC,…)` call already
+  contract-documented in `docs/api/aes/scrap-shell.md`
+
+**Missing coverage (flagged 2026-07-21):** `do_aopen`/`do_open`
+(`desksupp.c:838-1090`/`:1191-…`) — the function that every launch path
+in this file (`fun_win2win`, `fun_file2desk`, `fun_desk2win`) calls
+directly, and which resolves the installed-application lookup, builds
+the command tail, and finally calls `pro_run` — is **referenced by name
+throughout this document and `deskmain.md` but has never itself been
+extracted**. `desksupp.c` is a large file only partially covered
+(`do_wredraw` alone, in `desksupp-redraw.md`); a full `do_aopen`/`do_open`
+extraction (their `ANODE`/`is_installed`/`app_afind_by_id`/
+`opn_appl`/`file_exists`/viewer-fallback logic) is out of scope for this
+task and should be a dedicated follow-up (candidate: extend
+`desksupp-redraw.md` into a general `desksupp.md`, or a new
+`desksupp-launch.md`) before the 1:1 rebuild's `dir.rs`/launch path can
+claim full call-sequence fidelity for "Open"/double-click/drag-to-app.
 
 ### Used by
 - `deskmain.c`'s `do_filemenu` (`OPENITEM`/`SHOWITEM`/`SRCHITEM`/

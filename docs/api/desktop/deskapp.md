@@ -35,7 +35,27 @@
   itself performs **no** collision avoidance, is in
   [`deskins.md`](deskins.md), section "`snap_icon`/`ins_posdisk`/
   `grid_free` — desktop grid placement".
-- `aes/gemwrect.c` (not traced) — `r_set`/`r_get` GRECT helpers
+- `include/obdefs.h:258-272` — `r_set`/`r_get` GRECT helpers. **Correction
+  (this validation pass, 2026-07-21):** an earlier draft of this entry cited
+  these as living in `aes/gemwrect.c`, "not traced." That file exists but
+  does not define or call `r_set`/`r_get` (grepped, zero hits). They are
+  tiny `static __inline__` field-copy functions in the **shared** header
+  `include/obdefs.h`, included by both `desk/*.c` and `aes/*.c` — calling
+  them is not a dependency on AES internals at all (unlike `gsx_trans`, see
+  `docs/api/desktop/gembind.md`); trivial to reimplement, nothing left to
+  trace.
+- **Real AES calls made from this file** (added in this validation pass —
+  the earlier draft's helper list didn't include any AES calls, but
+  `app_start()`/`app_rdicon()`/`app_blddesk()` do make some, all via
+  `desk/gembind.c`'s trap binding, see `docs/api/desktop/gembind.md` for the
+  full inventory and the client/server trap mechanism): `rsrc_load`/
+  `rsrc_free` (`load_icon_file()`/`setup_mono_icons()`, `deskapp.c:554,575,
+  593,600`), `shel_get`/`shel_put` (`deskapp.c:832,1123,1293,1532,1533`),
+  `fsel_exinput` (`deskapp.c:1505`, outside this doc's grid-metric scope —
+  install-application file selector), and (via `obj_ialloc`/`obj_wfree`,
+  not directly) `objc_add` (`deskobj.c:145,232`). See the "`app_start()` —
+  full AES/GEMDOS call sequence" and "`app_blddesk()` — full call sequence"
+  sections below for the ordered call chains.
 
 **Headers / type definitions used:**
 - `include/obdefs.h` — `ICONBLK` (see `docs/api/structures/iconblk.md`)
@@ -124,9 +144,8 @@ G.g_hicon = G.g_iblist[0].ib_hicon + gl_hschar + 2;
   height as the first." A user- or theme-supplied icon set with a
   differently-sized icon #0 would silently resize *every* icon's cell.
 - **`ib_xtext` is not recomputed here** — it is whatever value the icon
-  resource (`icon.rsc`, compiled at build time from `icon.def` by an
-  external `erd` tool; **not present as generated C** in this checkout —
-  see below) carried for icon #0. `setup_iconblks()`'s "fix up" loop
+  resource (`icon.rsc`, compiled at build time from `icon.def` by the `erd`
+  tool; **resolved to `0`, see below**) carried for icon #0. `setup_iconblks()`'s "fix up" loop
   (`deskapp.c:509-521`, called from `app_rdicon()`, `:662-674`) explicitly
   sets `ib_ytext`/`ib_wtext`/`ib_htext` for every icon but **does not
   touch `ib_xtext`**.
@@ -144,19 +163,45 @@ G.g_hicon = G.g_iblist[0].ib_hicon + gl_hschar + 2;
   reproduce byte-for-bit (visual centring is not contract) — but it is
   the authoritative reasoning behind why the cell width is
   `wtext + 2*xtext` and not simply `wtext`.
-- **STOP / needs deeper analysis:** the *numeric* value of
-  `G.g_iblist[0].ib_xtext` (i.e. what the built-in hard-disk icon's
-  `icon.rsc` actually encodes) could not be extracted from this checkout.
-  `desk/icon.rsc`/`icon.def` are present, but the compiled `icons.c`
-  (whose `icon_rs_iconblk[]` array `app_rdicon()` passes to
-  `setup_iconblks()` as `ibstart`, `deskapp.c:673`) is generated at
-  EmuTOS build time by an external resource
-  decompiler (`erd`) that is not part of this reference tree, and
-  decoding the binary `.rsc` `ICONBLK` table directly would require
-  reverse-engineering the GEM resource file's extension-block layout — out
-  of scope for a documentation task per the STOP rule. **If a later task
-  needs the exact baked pixel value, it must build EmuTOS (or acquire
-  `erd`) and inspect the generated `icons.c`.**
+- **RESOLVED (this validation pass, 2026-07-21) — was a STOP block, the
+  premise was wrong.** The earlier draft claimed the `erd` resource
+  decompiler was "not part of this reference tree." It **is**:
+  `references/emutos/tools/erd.c` is checked in, and the `Makefile` shows
+  exactly how to build/invoke it for the icon resource specifically
+  (`erd: tools/erd.c` → `$(NATIVECC) $< -o $@`, `Makefile:963-964`; the icon
+  variant is built with `-DICON_RSC` and invoked as `./ird -picon desk/icon
+  desk/icons`, `Makefile:1017`). Reproduced read-only, outside the repo
+  (`/tmp`, nothing written into `references/emutos/` or `docs/`):
+  ```
+  cc references/emutos/tools/erd.c -DICON_RSC -o /tmp/ird
+  cp references/emutos/desk/icon.{def,rsc} /tmp/desk/
+  cd /tmp && ./ird -picon desk/icon desk/icons   # → desk/icons.c, desk/icons.h
+  ```
+  `desk/icon.def`/`desk/icon.rsc` are confirmed unchanged since before the
+  pinned commit (`git log --oneline -- desk/icon.def desk/icon.rsc` shows no
+  commits after `1a7484ab`), so the generated `icons.c` reflects exactly
+  what `app_rdicon()`/`setup_iconblks()` see at runtime. The generated
+  `icon_rs_iconblk[]` array (field order per `ICONBLK`,
+  `include/obdefs.h:185-201`: `ib_pmask, ib_pdata, ib_ptext, ib_char,
+  ib_xchar, ib_ychar, ib_xicon, ib_yicon, ib_wicon, ib_hicon, ib_xtext,
+  ib_ytext, ib_wtext, ib_htext`) entry `[0]` (`IG_HARD`=0, `deskapp.h:54` —
+  confirmed the hard-disk icon by its `ib_char = 0x1000|'C'`, the classic
+  first-hard-disk drive letter):
+  ```c
+  { (WORD*)rs_iconmask0, (WORD*)rs_icondata0, "", 0x1000|'C',
+    /*xchar*/13, /*ychar*/16, /*xicon*/20, /*yicon*/0,
+    /*wicon*/32, /*hicon*/32, /*xtext*/0, /*ytext*/32,
+    /*wtext*/72, /*htext*/8 },
+  ```
+  **`G.g_iblist[0].ib_xtext = 0`.** So in practice `G.g_wicon =
+  MAX_ICONTEXT_WIDTH*gl_wschar + 2*0 = 12*gl_wschar` exactly — there is
+  **no** extra margin term for the shipped built-in icon set; the
+  "resolution-dependent label centring" property discussed above is a real
+  formula property but does not manifest with the actual built-in hard-disk
+  icon, since its baked offset is zero. Per `_rebuild-plan.md` §5,
+  `ib_xtext` is a free NewTOS design choice (not contract) — this resolved
+  value is useful precedent (pick `0`, or document why not), not a
+  requirement.
 
 ### 2. Desktop grid pitch (`g_icw`/`g_ich`) — `deskapp.c:813-817`
 
@@ -223,22 +268,96 @@ rounding-adjacent) saved grid position produce two icons drawn on top of
 each other, silently. See `_data-model.md` for the full unit-lifecycle
 note (grid units in the INF file, pixels in memory afterwards).
 
-### 4. `app_blddesk()`'s consumption (`deskapp.c:1358-1399`)
+### 4. `app_blddesk()` — full call sequence (`deskapp.c:1337-1404`)
 
-```c
-obid = obj_ialloc(DROOT, pa->a_xspot, pa->a_yspot, G.g_wicon, G.g_hicon);
-...
-pic->ib_xicon = ((G.g_wicon - pic->ib_wicon) / 2);   /* deskapp.c:1391 */
-```
+**Expanded in this validation pass** — the earlier draft only extracted the
+grid-metric-relevant lines (`obj_ialloc`/`ib_xicon`) from this function; for
+a call-for-call 1:1 rebuild, the *entire* function's call sequence matters,
+not just the metric-consuming half. In order:
 
-Every desktop icon `OBJECT` is placed at its (pixel) spot, sized exactly
-`g_wicon`×`g_hicon` — i.e. **the object box equals the icon cell**, not
-just the icon bitmap. The icon **bitmap**'s horizontal offset within that
-box (`ib_xicon`) is explicitly **recentred using the live `g_wicon`**
-(overriding whatever `ib_xicon` the source `ICONBLK` carried) — but the
-**label**'s offset (`ib_xtext`, copied verbatim via the preceding
-`memcpy(pic, &G.g_iblist[icon], sizeof(ICONBLK))`, `deskapp.c:1390`) is
-**not** recentred here.
+1. `obj_wfree(DROOT, 0, 0, gl_width, gl_height)` (`deskapp.c:1346`) — frees
+   every existing desktop item object back to the `g_screenfree` chain
+   (`deskobj.c:187-211`) and resets `DROOT`'s own box to the full screen.
+   **No AES call** (desk-internal free-chain op on `G.g_screen[]`, which the
+   desktop already owns).
+2. `set_background()` (`deskapp.c:1349`, see below) — sets `ob_spec` on
+   `DROOT` and every window slot. **No AES call.**
+3. `app_revit()` (`deskapp.c:1356`, defined `:1019-1033`) — reverses the
+   `G.g_ahead` singly-linked `ANODE` list in place. Comment
+   (`deskapp.c:1352-1355`): *"reverse the order of the ANODEs, so that the
+   disk icons will be allocated in the same sequence as they appear on the
+   desktop. this is important for 'Show info'."* **Not previously documented
+   in this file or in `docs/api/desktop.md`.** Since placement itself uses
+   `a_xspot`/`a_yspot` (pixels, not list order), a rebuild that walks its
+   ANODE-equivalent list in a different order will still draw icons at the
+   *same* pixel spots, but will assign `g_screen[]`/`a_obid` indices in a
+   *different* sequence — which this comment flags as user-visible via
+   'Show info' (not re-traced this pass; `deskinf.c` territory).
+4. For each `ANODE` with `AF_ISDESK` set, walked in the **reversed** (i.e.
+   original on-disk) order from step 3 — **the loop body below was
+   previously only shown as two lines; the full body, not previously
+   documented, is:**
+   ```c
+   obid = obj_ialloc(DROOT, pa->a_xspot, pa->a_yspot,
+                               G.g_wicon, G.g_hicon);
+   ...
+   pa->a_obid = obid;
+
+   /* choose appropriate icon (deskapp.c:1374-1378) */
+   if ((pa->a_dicon < 0)
+    || ((pa->a_type == AT_ISFILE) && (pa->a_flags & AF_ISEXEC)))
+       icon = pa->a_aicon;
+   else
+       icon = pa->a_dicon;
+
+   pob->ob_type = G_ICON;
+   memcpy(pic, &G.g_iblist[icon], sizeof(ICONBLK));   /* deskapp.c:1390 */
+   pic->ib_xicon = ((G.g_wicon - pic->ib_wicon) / 2);  /* deskapp.c:1391 */
+
+   /* label pointer varies by ANODE type (deskapp.c:1393-1396) */
+   if ((pa->a_type == AT_ISFILE) || (pa->a_type == AT_ISFOLD))
+       pic->ib_ptext = pa->a_pdata;
+   else
+       pic->ib_ptext = pa->a_pappl;
+
+   pic->ib_char |= pa->a_letter;                       /* deskapp.c:1397 */
+   ```
+   - `obj_ialloc()` (`deskobj.c:220-240`) allocates the item `OBJECT` from
+     the free chain and internally calls **`objc_add(G.g_screen, wparent,
+     objnum)`** (`deskobj.c:232`) — **the one real AES call `app_blddesk()`
+     triggers per placed desktop icon** (indirect, via `obj_ialloc`, not a
+     direct `app_blddesk()` call).
+   - Icon selection (`:1374-1378`, **not previously documented**): use the
+     "application" icon (`a_aicon`) when there is no data icon (`a_dicon <
+     0`) or the ANODE is an executable file; otherwise use the "data" icon
+     (`a_dicon`).
+   - The `OBJECT` box is sized exactly `g_wicon`×`g_hicon` (the object box
+     **equals the icon cell**, not just the icon bitmap); `ib_xicon` is
+     **recentred live** against `g_wicon` (`:1391`, already correctly
+     extracted in the earlier draft) — but `ib_xtext` (copied verbatim by
+     the `memcpy`) is **not** recentred here.
+   - Label pointer (`:1393-1396`, **not previously documented**):
+     `ib_ptext = pa->a_pdata` for `AT_ISFILE`/`AT_ISFOLD` ANODEs (matches the
+     "usage of `a_pappl`/`a_pdata`" comment, `deskapp.h:86-98`: file/folder
+     desktop items keep the label in `a_pdata`), else `ib_ptext =
+     pa->a_pappl` (disks/trash/printer keep their label in `a_pappl`).
+   - `pic->ib_char |= pa->a_letter` (`:1397`, **not previously documented**)
+     — ORs the drive letter (0 for non-drive icons) on top of the high byte
+     `setup_iconblks()` already stripped clean (`deskapp.c:517`).
+5. `app_revit()` again (`deskapp.c:1401`) — restores `G.g_ahead` to its
+   original order. **Not previously documented.**
+6. `do_wredraw(DESKWH, &G.g_desk)` (`deskapp.c:1403`) — the repaint; full
+   mechanism in `desksupp-redraw.md` (which already cites this exact line).
+   `app_blddesk()`'s **second** AES-call dependency, indirect via
+   `do_wredraw`'s own `wind_get`/`objc_draw` calls
+   (`docs/api/desktop/gembind.md`).
+
+**Net AES call footprint of `app_blddesk()` itself: zero direct calls** —
+exactly `objc_add` (via `obj_ialloc`, once per placed desktop icon) and
+whatever `do_wredraw` makes, both indirect. Steps 1-2 and the loop's
+in-object-tree bookkeeping (icon selection, label pointer, `ib_char`) are
+pure `G.g_screen[]`/`ANODE` manipulation the desktop performs on data it
+already owns.
 
 **Edge case discovered in source — icon-bitmap vs. label recentring
 asymmetry:** `app_blddesk()` (desktop icons) recomputes `ib_xicon` live
@@ -250,6 +369,101 @@ leave `ib_xtext` untouched in all cases. Net effect: the **icon bitmap**
 is guaranteed centred on the desktop but only "as-authored" in windows;
 the **label** is only "as-authored" (both places) — a discrepancy that
 only reading both call sites side-by-side reveals.
+
+**Cross-doc observation (out of this task's editable scope):**
+`docs/api/desktop.md`'s own `app_blddesk()` narrative ("Desktop object tree
++ drive icons") independently covers steps 1-2 and most of the loop body
+correctly, but likewise omits the double `app_revit()` (steps 3/5) and
+states the icon-selection/label-selection logic only loosely ("`ob_spec` to
+a copy of the disk `ICONBLK`... `ib_ptext` = the drive's name string" — true
+only for the `AT_ISDISK` case, not the general `AF_ISDESK` case which also
+covers files/folders/shortcuts under `CONF_WITH_DESKTOP_SHORTCUTS`). Noted
+for the lead since `docs/api/desktop.md` is not part of this task's
+editable file set.
+
+---
+
+## `app_start()` — full AES/GEMDOS call sequence (`deskapp.c:781-1014`)
+
+**New in this validation pass.** The grid-metric formulas above are two
+lines (`:810-817`) inside a 234-line function; the earlier draft's "EmuTOS
+source"/"Helpers called" section only listed `obj_ialloc`, `snap_icon`, and
+`r_set`/`r_get` as dependencies. For a 1:1 rebuild's call-surface inventory,
+the ordered list of *every* AES/GEMDOS call `app_start()` makes, directly or
+via its immediate helpers, is:
+
+1. `initialise_anodes()` (`deskapp.c:794`, defined `:611-645`) —
+   `dos_alloc_anyram()` ×2 (GEMDOS `Malloc`/`Mxalloc` via `trap1`,
+   `bdosbind.h:45,47`). No AES.
+2. `app_rdicon()` (`deskapp.c:801`, defined `:662-674`) — tries the
+   user-supplied icon resource first, falls back to the built-in set:
+   - `load_icon_file()` (`:537-559`): `dos_sfirst()` (GEMDOS `Fsfirst`,
+     checks the resource file exists *before* asking the AES to load it —
+     avoiding a slow multi-directory `rsrc_load` search or a spurious form
+     alert, per the comment at `:545-549`), then **`rsrc_load(icon_rsc_name)`**
+     (`:554`) — a real AES Resource Manager call.
+   - `setup_mono_icons()` (`:565-603`), only if `rsrc_load` succeeded: reads
+     the loaded resource header via `AP_1RESV` (an AES global the desktop
+     reads directly, `:571` — not a trap call, a shared-memory read of a
+     value the AES already wrote), then **`rsrc_free()`** (`:575`/`:593`/
+     `:600`, always reached before returning — `setup_iconblks()` has
+     already `memcpy`'d everything it needs out of the resource, so it's
+     safe to free).
+   - Fallback: `setup_iconblks(icon_rs_iconblk, BUILTIN_IBLKS)` (`:673`) —
+     `dos_alloc_anyram()` only, no AES.
+3. `must_alloc_buf(SIZE_SHELBUF)` (`deskapp.c:808`) — GEMDOS allocation.
+4. Grid-metric formulas (`:810-817`, already documented above). No AES/GEMDOS.
+5. **`shel_get(buf, SIZE_SHELBUF)`** (`deskapp.c:832`) — a real AES Shell
+   Manager call, **not previously documented in this spec**. The AES-side
+   handler, `sh_get()` (`aes/gemshlib.c:203-206`), `memcpy`s from
+   `D.g_shelbuf`, a small AES-internal buffer explicitly documented as
+   *"used by the DESKTOP to recall ... previously 'put' desktop-context
+   information"* (`aes/gemshlib.c:200-201`) — a fast in-memory staging area
+   the desktop uses to carry its EMUDESK.INF text across a restart (e.g.
+   after a resolution change, see the correction below) without necessarily
+   re-reading the disk file.
+6. `read_inf_file()` (`deskapp.c:836`, defined `:680-692`), conditionally,
+   if `shel_get`'s buffer didn't contain valid `'#'`-signed data:
+   `dos_load_file()` → wraps `Fopen`/`Fread`/`Fclose` (GEMDOS; the wrapper
+   itself lives in `bios/`, not traced further — out of scope).
+7. `build_inf()` (`:840`), if still no data — pure in-memory text
+   generation, no AES/GEMDOS.
+8. The `'#'`-line parser loop (`:846-977`) — pure in-memory (`app_alloc`/
+   `app_parse`/`scan_2`/`scan_str`). No AES/GEMDOS.
+9. The per-`ANODE` pixel-conversion + `snap_icon()` loop (`:979-987`,
+   already documented above) — pure in-memory (per `deskins.md`).
+10. Drag-outline setup (`:989-1011`) — pure in-memory.
+11. `dos_free(buf)` (`:1013`) — GEMDOS `Mfree`.
+
+**Net AES call footprint of `app_start()`:** `rsrc_load`/`rsrc_free` (only on
+the user-icon-resource path, step 2) and `shel_get` (step 5, unconditional).
+**Net GEMDOS call footprint:** `Fsfirst` (step 2), `dos_alloc_anyram`/
+`dos_free` (real `Malloc`/`Mfree` via `trap1`, steps 1/3/11), and
+`dos_load_file`'s `Fopen`/`Fread`/`Fclose` (step 6, conditional). Full
+catalogue and cross-reference to `tos-api`: `docs/api/desktop/gembind.md`.
+
+### Correction — resolution change does *not* call `app_start()` from `deskrez.c`
+
+The earlier draft's "Dependencies / Used by" section (below) speculated:
+*"`deskrez.c` (out of scope, resolution change) — presumably re-triggers
+`app_start()`'s metric recompute on a resolution switch; not traced in this
+task."* **This validation pass read `deskrez.c` in full and greps for
+`app_start`/`win_view`/`obj_init`/`g_wicon`/`g_icw` all return zero hits** —
+`deskrez.c` never calls any of them. The actual mechanism:
+`deskmain.c:900-913` (`RESITEM` case in the menu handler) calls
+`change_resolution()` (`deskrez.c:316-333`, only presents the dialog and
+computes the *requested* mode) and, on a confirmed change, calls
+**`shel_write(SHW_RESCHNG, newmode_or_newres, ...)`** (`deskmain.c:910,913`)
+— a real AES Shell Manager call whose AES-side handler
+(`aes/gemshlib.c:187-192`) just records `gl_changerez`/`gl_nextrez` and
+clears the command tail — then sets `done = TRUE`, **exiting the desktop's
+own main loop**. The grid-metric recompute happens because the resolution
+change causes the **entire desktop to restart** from scratch once the video
+mode actually changes (outside `desk/`, in whatever boot/shell sequencer
+relaunches the desktop program — not traced this pass, out of scope), not
+via any in-place "resolution changed, patch `g_icw`/`g_ich`" code path. A 1:1
+rebuild must reproduce "resolution change ⇒ full desktop reboot," not an
+incremental metric patch grafted onto a live desktop.
 
 ---
 
@@ -307,9 +521,12 @@ choice.
 - `win_view()` (`deskwin.c:83-86`, see `deskwin.md`) — `V_ICON` case sets
   `G.g_iwext = G.g_wicon`, `G.g_ihext = G.g_hicon`, so the same universal
   cell size governs window icon-view spacing too
-- `deskrez.c` (out of scope, resolution change) — presumably re-triggers
-  `app_start()`'s metric recompute on a resolution switch; not traced in
-  this task
+- **Not** `deskrez.c` directly — see the correction above ("resolution
+  change does *not* call `app_start()` from `deskrez.c`"). The metric
+  recompute happens as a side effect of the desktop's full restart after a
+  resolution change (`deskmain.c:900-913`'s `RESITEM`
+  handler → `shel_write(SHW_RESCHNG,...)` → `done=TRUE`), not a call from
+  `deskrez.c` itself.
 
 ## Related data structures
 
@@ -320,13 +537,16 @@ choice.
 
 ## NewTOS implementation notes
 
-(Empty during Phase 00 / this extraction task. NewTOS's current
-`kernel/src/desktop.rs` (`ICON_LABEL_W`/`ICON_GAP_W`/`ICON_STEP_W`
-constants, commit `af426a0`) already independently arrived at a
-`12*CELL_W`-wide fixed cell with a per-label dynamic centring offset —
-consistent in *spirit* with the `wtext + 2*xtext` formula above, though
-NewTOS recomputes the centring offset per-label rather than baking a
-single resource-authored `ib_xtext` for icon #0. Whether to also adopt
-the desktop-vs-window pitch distinction (symmetric redistribution vs.
-fixed gap) is a decision for the implementation phase, not this
-extraction.
+(Empty during Phase 00 / this extraction task, except for one staleness
+correction found while cross-checking: this note previously referenced
+`kernel/src/desktop.rs`'s `ICON_LABEL_W`/`ICON_GAP_W`/`ICON_STEP_W`
+constants, commit `af426a0`, as "NewTOS's current" grid-metric code. As of
+this validation pass, `kernel/src/desktop.rs` no longer exists — it has been
+superseded by `kernel/src/desk/` (`app.rs`, per `_rebuild-plan.md`'s module
+table), a substantially-progressed rebuild already wired into
+`kernel/src/lib.rs`. Whether `desk/app.rs` reproduces the `g_wicon`/`g_hicon`/
+`g_icw`/`g_ich` formulas above exactly, and whether it adopts the resolved
+`ib_xtext=0` precedent or the desktop-vs-window pitch distinction, was **not
+checked** this pass — out of scope for a docs-only validation task; flagged
+for the lead to confirm against the current `kernel/src/desk/app.rs` before
+treating this spec as implemented.

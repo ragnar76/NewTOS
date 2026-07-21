@@ -21,6 +21,7 @@
 | `deskwin.md` | `win_view()`, `win_start()`, `win_ocalc()`, `win_bldview()`, plus the rest of `deskwin.c` (scrolling, window list, sort/rebuild-all) |
 | `desksupp-redraw.md` | `do_wredraw()` and the `WF_FIRSTXYWH`/`WF_NEXTXYWH` rectangle-iteration contract it consumes |
 | `deskmain.md` | *(sibling extraction, not produced by this task)* `deskmain()`'s event loop, menu dispatch and keyboard handling — the caller-side context for the `WM_REDRAW`→`do_wredraw` wiring documented in `desksupp-redraw.md` |
+| `gembind.md` | **new, this validation pass (2026-07-04 re-validation, 2026-07-21):** the desktop's full AES/GEMDOS call-surface inventory — every live `gembind.c`/`aesbind.h` function, whether `desk/*.c` actually calls it (and where), its `tos-api` counterpart, the two real trap mechanisms (AES `trap #2`/GEMDOS `trap #1`), and the one found non-trap dependency (`gsx_trans`) |
 
 ## Map of `desk/` (what each source file does)
 
@@ -31,7 +32,7 @@ orientation (already covered, or out of scope, per the task boundary):
 | File | Role | Status |
 |---|---|---|
 | `deskglob.c/.h` | Declares/defines the single global instance `GLOBES G` | extracted → `_data-model.md` |
-| `deskobj.c/.h` | `G.g_screen[]`/`g_screeninfo[]` allocation (`sob_malloc`), init (`obj_init`), the item-object free-chain allocator (`obj_walloc`/`obj_wfree`/`obj_ialloc`), `obj_get_obid` | extracted → `_data-model.md` (structure) + `deskapp.md`/`deskwin.md` (call sites) |
+| `deskobj.c/.h` | `G.g_screen[]`/`g_screeninfo[]` allocation (`sob_malloc`), init (`obj_init`); **two distinct allocators** (precision fix, this validation pass — the earlier wording lumped them together as one "free-chain allocator"): `obj_walloc`/`obj_wfree` manage the fixed 7 **window** object slots (`obj_walloc` linear-scans for a zero-width/height slot, not a chain; `obj_wfree` returns a window's *children* to the item free chain but the window slot itself is never chained), while `obj_ialloc` is the actual **item**-object free-chain allocator (`G.g_screenfree`/`ob_next`); plus `obj_get_obid` | extracted → `_data-model.md` (structure) + `deskapp.md` (`obj_ialloc` call site)/`deskwin.md` (`obj_walloc`/`obj_wfree` call sites) |
 | `deskfpd.c/.h` | `FNODE`/`PNODE` — open/close a directory path (`pn_open`/`pn_close`), scan it into a sorted `FNODE` list (`pn_active`/`pn_sort`), selection queries (`pn_selected`/`pn_count`/`pn_clear`) | extracted → `_data-model.md` |
 | `deskapp.c/.h` | `ANODE` list; icon/grid metrics (`app_start`); desktop `OBJECT` tree build (`app_blddesk`); background pattern (`set_background`); EMUDESK.INF parse/build | **this task**: metrics + `app_blddesk`'s consumption of them → `deskapp.md`. INF parsing / ANODE installation already narrated in `docs/api/desktop.md`; not re-derived here except where it feeds grid placement (`a_xspot`/`a_yspot`) |
 | `deskwin.c/.h` | `WNODE`; per-view sizing (`win_view`), window list management (`win_start`/`win_alloc`/`win_free`/`win_find`/`win_top`/`win_ontop`), the virtual-grid calculator (`win_ocalc`) and view builder (`win_bldview`), scrolling (`win_slide`/`win_arrow`/`win_blt`/`win_delta`), bulk operations (`win_srtall`/`win_bdall`/`win_shwall`), selection walk (`win_isel`), name/info line (`win_sname`/`win_sinfo`) | **this task** → `deskwin.md` |
@@ -42,12 +43,12 @@ orientation (already covered, or out of scope, per the task boundary):
 | `deskins.c/.h` | Install application / install icon dialogs | out of scope; referenced only for `a_aicon`/`a_dicon` semantics already covered by `deskapp.h` |
 | `deskinf.c/.h` | "Show info" dialogs, text-view line formatting (`format_fnode`, `dr_code` `USERBLK` callback), disk info | out of scope — `dr_code`/`format_fnode` are the V_TEXT rendering callback referenced (not traced) from `win_bldview`; flagged **needs deeper analysis** if a later task needs the text-view line format |
 | `deskmain.c/.h` | Main loop, menu dispatch, AES message switch (`hndl_button`, the `WM_REDRAW`/`MN_SELECTED`/… switch) | extracted in the sibling `deskmain.md` (not produced by this task); also narrated in `docs/api/desktop.md`. The `WM_REDRAW` case (the primary caller of `do_wredraw`) is additionally cited in this task's `desksupp-redraw.md` |
-| `deskpro.c/.h` | Desktop "process" launch helper | out of scope |
-| `deskrez.c/.h` | Resolution-change handling | out of scope (but interacts with `app_start`'s recompute of `g_wicon`/`g_icw` on rez change — noted in `deskapp.md` as a dependency) |
+| `deskpro.c/.h` | Desktop "process" launch helper (`pro_run`/`pro_exec` → `shel_write(SHW_EXEC,…)`) | extracted 2026-07-21 → [`deskpro.md`](deskpro.md) (Researcher task, deskdir/deskfun/deskact re-validation). **Still missing**: `do_aopen`/`do_open` (`desksupp.c`), the actual caller of `pro_run` — see `deskpro.md`/`deskfun.md`'s "Missing coverage" notes |
+| `deskrez.c/.h` | Resolution-change handling | out of scope. **Correction (this validation pass):** `deskrez.c` does **not** call `app_start()`/recompute `g_wicon`/`g_icw` directly (grepped: zero hits) — it only presents the dialog and computes the requested mode; the metric recompute happens because a confirmed change triggers a full desktop restart (`deskmain.c:900-913` → `shel_write(SHW_RESCHNG,…)` → `done=TRUE`) — see `deskapp.md`'s corrected dependency note |
 | `deskrsrc.c/.h` | Resource-string lookup (`desktop_str_addr`) | out of scope (utility) |
 | `deskstart.S` | Desktop process entry stub | out of scope |
-| `gembind.c/.h`, `aesbind.h` | AES binding stubs (trap glue for the desktop's own AES calls) | out of scope — already covered by `docs/api/aes/` |
-| `desktop.def`/`.rsc`, `icon.def`/`.rsc` | Resource source (menu tree text, icon bitmaps) — compiled at build time by an external resource tool (`erd`); **not present as generated C** in this checkout | see `deskapp.md` "needs deeper analysis" note about `ib_xtext` |
+| `gembind.c/.h`, `aesbind.h` | AES binding stubs (trap glue for the desktop's own AES calls) | **corrected, this validation pass:** was marked "out of scope — already covered by `docs/api/aes/`," which is inaccurate — `docs/api/aes/` documents the AES's own per-function contract, not *which* of those functions `desk/` actually calls, how often, or in what order. Now extracted → [`gembind.md`](gembind.md), the full AES/GEMDOS call-surface inventory |
+| `desktop.def`/`.rsc`, `icon.def`/`.rsc` | Resource source (menu tree text, icon bitmaps) — compiled at build time by the `erd` resource decompiler | **corrected, this validation pass:** the earlier note said the generated C ("`icons.c`") and the `erd` tool itself were "not present in this checkout" — `erd`'s **source** (`tools/erd.c`) *is* checked in, just not built; building it read-only (`cc tools/erd.c -DICON_RSC -o ird`, per the `Makefile`'s own recipe) and running it against the checked-out `icon.def`/`icon.rsc` resolves the `ib_xtext` STOP block in `deskapp.md` (`ib_xtext=0` for the hard-disk icon) |
 
 > **Update (Task #3, 2026-07-04):** the six modules marked *out of scope* above
 > (`deskdir`/`deskfun`/`deskact`/`deskins`/`deskinf`/`deskrez`) are **now
@@ -58,6 +59,24 @@ orientation (already covered, or out of scope, per the task boundary):
 > `build_inf`), `deskrez.md`. The V_TEXT renderer callback (`format_fnode`/
 > `dr_code`) flagged *needs deeper analysis* here and in `desksupp-redraw.md`
 > is resolved in `deskinf.md`.
+>
+> **Update (Researcher re-validation, 2026-07-21):** `deskdir.md`/
+> `deskfun.md`/`deskact.md` re-checked function-by-function against current
+> `references/emutos/desk/` source. One load-bearing correction found and
+> fixed: `deskfun.md`'s `fun_desk2win`/`fun_desk2desk` description had the
+> "multi-select drag onto an application icon can launch it multiple times"
+> behaviour attributed to the **wrong** function (an unconditional `return`
+> at `deskfun.c:1250`, misread as a loop-continuing branch, actually makes
+> `fun_desk2win` launch **at most once**; the real multi-launch case is
+> `fun_desk2desk`, which has no such early exit). `deskpro.c` (previously
+> "out of scope", no doc) is now extracted → [`deskpro.md`](deskpro.md);
+> `do_aopen`/`do_open` (`desksupp.c`), the function every launch path
+> actually calls before reaching `pro_run`, remains **unextracted** — see
+> `deskpro.md`/`deskfun.md`'s "Missing coverage" notes for the follow-up
+> scope. `deskfpd.c`'s `pn_active`/`pn_open`/`pn_close`/`FNODE`/`DTA`
+> mirroring (already in `_data-model.md`) was spot-re-verified and found
+> accurate, including the 23-vs-22-byte `memcpy` overrun quirk
+> (`deskfpd.c:271`), already correctly documented there.
 
 ## How the pieces connect (data flow for one redraw)
 
@@ -135,3 +154,9 @@ build (the one NewTOS should follow — not the ROM-constrained
 - `docs/api/aes/event.md` — the AES message array layout (`G.g_rmsg[]`
   ≙ `int_out`/message buffer), relevant to how `deskmain.c` feeds
   `do_wredraw` its clip rectangle.
+- `docs/api/desktop/gembind.md` (new, this validation pass) — the desktop's
+  full AES/GEMDOS **call-surface** inventory: which `docs/api/aes/`-
+  documented functions `desk/` actually calls, from where, how many times,
+  and the one found non-trap dependency (`gsx_trans`, `aes/gemgraf.c:369`)
+  a genuinely separate-process NewTOS desktop cannot satisfy the same way
+  EmuTOS's monolithic-binary `desk/` does.

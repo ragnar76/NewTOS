@@ -127,12 +127,24 @@ if it doesn't already cite this).
 - `CONF_WITH_3D_OBJECTS` — purely cosmetic dialog Y-offset adjustments
   around the up/down icon-picker buttons (`install_desktop_icon`,
   `install_window_icon`) — **not** re-derived further, layout-only
-- All default **on** in the general/Atari build except
-  `CONF_WITH_3D_OBJECTS` (default `0`, see `_overview.md`'s config-variant
-  convention — this one is genuinely off by default even outside
-  `TARGET_192`, confirmed at `config.h` — **needs deeper analysis** if a
-  later task needs the exact default line; not re-verified here since it
-  only affects pixel offsets, not behaviour)
+- **Correction (this pass) — `CONF_WITH_3D_OBJECTS` default was mis-stated**:
+  the earlier draft claimed default `0` in the general/Atari build; this is
+  **wrong**. Resolving the `needs deeper analysis` flag by reading
+  `include/config.h` directly: the flag is forced to `0` only inside three
+  specific guarded blocks — `TARGET_192` (`config.h:310-312`, space-
+  constrained ROM), `TARGET_256` (`:436-438`, likewise), and
+  `#if !CONF_ATARI_HARDWARE` (`:800-802`, comment "Like ST, not Falcon" —
+  this is EmuTOS's **non**-Atari-hardware ports, e.g. Apple Lisa, per
+  `CLAUDE.md`'s own note "EmuTOS targets non-Atari machines"). The
+  **unconditional fallback** actually used by the standard Atari-hardware
+  build (ST/TT/Falcon/Firebee/ARAnyM — the profile NewTOS's extraction
+  treats as "general/Atari") is `config.h:1258-1259`: `#ifndef
+  CONF_WITH_3D_OBJECTS` → `#define CONF_WITH_3D_OBJECTS 1` — **on by
+  default**, like every other gate in this file. This matches
+  `docs/MEMORY.md`'s existing ADR ("AES dialogs: use the 3D look" — the
+  user wants EmuTOS's 3D optic) — confirms, rather than contradicts, that
+  decision. All gates in this file are therefore **on** by default in the
+  general/Atari build, with no exception.
 
 ---
 
@@ -334,11 +346,25 @@ button:
   or `0` (nothing changed/cancelled).
 - **`sobj!=0` and it resolves to a desktop `ANODE`**
   (`app_afind_by_id(sobj)` succeeds): loops every selected desktop icon
-  (again via `win_isel`), calling `install_desktop_icon(pa)` **per
-  existing icon** — i.e. selecting multiple desktop icons and choosing
-  "Install icon" edits each one in turn via repeated dialogs, summing how
-  many were actually changed into the return value; a negative
-  (cancelled) result from any one stops the loop early.
+  (again via `win_isel(G.g_screen, DROOT, sobj)`, `:1275`), calling
+  `install_desktop_icon(pa)` **per existing icon** — i.e. selecting
+  multiple desktop icons and choosing "Install icon" edits each one in
+  turn via repeated dialogs, summing how many were actually changed into
+  the return value; a negative (cancelled) result from any one stops the
+  loop early. **Precision note for the 1:1 rebuild** (re-verified against
+  source): `ins_icon`'s (and `rmv_icon`'s, `:1322`) desktop-selection walk
+  always passes the **literal `DROOT` object index** as `win_isel`'s root
+  parameter, not `G.g_croot` — this differs from `ins_app`'s desktop-shortcut
+  branch and `ins_shortcut`'s selection walk, both of which pass
+  `G.g_croot` (`deskins.c:730`, `:1359`). This is not a bug (both functions
+  only ever operate on desktop icons, whose root object *is* always
+  `DROOT`, so the literal constant and `G.g_croot` happen to coincide
+  whenever the desktop is actually current), but a faithful function-level
+  port must reproduce which of the two (constant vs. global) each specific
+  call site actually reads, since a Rust rebuild that always uses one form
+  could silently diverge from EmuTOS if `G.g_croot`'s desktop-context
+  invariant is ever violated (e.g. by a future non-EmuTOS-faithful call
+  path).
 - **Else, if `CONF_WITH_WINDOW_ICONS`**: assumes the selection is inside
   the current window, loops every selected `FNODE`, calling
   `install_window_icon(pf)` per file/folder — return sign convention is
