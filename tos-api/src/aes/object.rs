@@ -1713,14 +1713,18 @@ fn just_draw(t: ObjTree, obj: i16, x: i16, y: i16, clip: ClipRect, backend: &dyn
         }
         G_STRING => {
             // Menu items / plain strings. SELECTED inverts (menu
-            // highlight); CHECKED draws a check glyph at the left.
+            // highlight); CHECKED draws a check glyph over the leading blank.
             if selected {
                 backend.fill_rect(x, y, w, h, BLACK, clip);
             }
-            let cw = crate::vdi::font::CELL_W;
             if ob_state & CHECKED != 0 {
+                // EmuTOS draws the CHECKED mark at `t.g_x+2` — 2 *pixels*, not
+                // 2 cells — over the string's leading blank (gemoblib.c:903-908).
+                // Vertically centred to align with `draw_text`'s baseline
+                // (identical to EmuTOS's `t.g_y` when the cell height equals the
+                // font height, which is the menu-item case).
                 backend.draw_glyph(
-                    x,
+                    x + 2,
                     y + (h - crate::vdi::font::CELL_H) / 2,
                     crate::vdi::font::glyph(0x08), // ST-font check mark
                     ink,
@@ -1729,15 +1733,30 @@ fn just_draw(t: ObjTree, obj: i16, x: i16, y: i16, clip: ClipRect, backend: &dyn
                 );
             }
             let s = read_cstr(ob_spec);
-            // indent past the check column (2 cells), as GEM menu items do
-            draw_text(backend, x + 2 * cw, y, w, h, s, TE_LEFT, ink, clip);
+            // EmuTOS draws a G_STRING at `t.g_x` with no code indent
+            // (gemoblib.c:817, `tmpx = t.g_x`). A menu item's check column comes
+            // from the leading blanks built into its resource string (GEM uses
+            // two leading spaces), not a code-added indent — so plain dialog
+            // labels sit flush at `ob_x` and menu items reserve their column via
+            // the string itself.
+            draw_text(backend, x, y, w, h, s, TE_LEFT, ink, clip);
         }
         G_TITLE => {
-            // A menu-bar title: text with a small left pad; SELECTED
-            // (menu dropped) inverts to a highlighted look.
+            // EmuTOS draws a G_TITLE through the shared string block at `t.g_x`
+            // with no indent (gemoblib.c:801-846) and no box; the menu-dropped
+            // highlight is a whole-rect XOR (gemoblib.c:932-943,
+            // `xor_is_ok(G_TITLE) == TRUE`). NewTOS toggles a title's SELECTED
+            // state by *redrawing* it (`object::change`, not an XOR toggle), so
+            // the un-highlight redraw must clear the prior BLACK highlight —
+            // hence the state-driven fill here (BLACK highlight when dropped,
+            // WHITE clear otherwise) is the b/w equivalent of EmuTOS's XOR and
+            // is load-bearing for `close_box` / `menu_tnormal` in `aes/menu.rs`
+            // (removing the un-selected fill would leave black-on-black). The
+            // 1-cell text indent, by contrast, was pure divergence and is
+            // dropped so titles sit at `ob_x` like EmuTOS.
             backend.fill_rect(x, y, w, h, fill, clip);
             let s = read_cstr(ob_spec);
-            draw_text(backend, x + crate::vdi::font::CELL_W, y, w, h, s, TE_LEFT, ink, clip);
+            draw_text(backend, x, y, w, h, s, TE_LEFT, ink, clip);
         }
         G_TEXT | G_BOXTEXT | G_FTEXT | G_FBOXTEXT => {
             // The TEDINFO interior is read at the tree's ABI width, so an ILP32

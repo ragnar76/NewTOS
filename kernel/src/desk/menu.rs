@@ -187,61 +187,61 @@ const MENUS: [Def; 4] = [
     Def {
         title: Title::Desk,
         label: b" Desk \0",
-        entries: &[Act(Item::About, b" Desktop info... \0"), Sep(b"-----------------\0")],
+        entries: &[Act(Item::About, b"  Desktop info... \0"), Sep(b"------------------\0")],
     },
     Def {
         title: Title::File,
         label: b" File \0",
         entries: &[
-            Act(Item::Open, b" Open             \0"),
-            Act(Item::InfoRename, b" Info/Rename...   \0"),
-            Act(Item::Search, b" Search...        \0"),
-            Sep(b"------------------\0"),
-            Act(Item::NewFolder, b" New folder...    \0"),
-            Act(Item::CloseFolder, b" Close folder     \0"),
-            Act(Item::CloseWindow, b" Close top window \0"),
-            Act(Item::Cycle, b" Cycle windows    \0"),
-            Act(Item::SelectAll, b" Select all items \0"),
-            Act(Item::SetMask, b" Set file mask... \0"),
-            Sep(b"------------------\0"),
-            Act(Item::Delete, b" Delete...        \0"),
-            Sep(b"------------------\0"),
-            Act(Item::ExecEmuCon, b" Execute EmuCON   \0"),
-            Act(Item::Shutdown, b" Shutdown         \0"),
+            Act(Item::Open, b"  Open             \0"),
+            Act(Item::InfoRename, b"  Info/Rename...   \0"),
+            Act(Item::Search, b"  Search...        \0"),
+            Sep(b"-------------------\0"),
+            Act(Item::NewFolder, b"  New folder...    \0"),
+            Act(Item::CloseFolder, b"  Close folder     \0"),
+            Act(Item::CloseWindow, b"  Close top window \0"),
+            Act(Item::Cycle, b"  Cycle windows    \0"),
+            Act(Item::SelectAll, b"  Select all items \0"),
+            Act(Item::SetMask, b"  Set file mask... \0"),
+            Sep(b"-------------------\0"),
+            Act(Item::Delete, b"  Delete...        \0"),
+            Sep(b"-------------------\0"),
+            Act(Item::ExecEmuCon, b"  Execute EmuCON   \0"),
+            Act(Item::Shutdown, b"  Shutdown         \0"),
         ],
     },
     Def {
         title: Title::View,
         label: b" View \0",
         entries: &[
-            Act(Item::ShowIcons, b" Show as icons \0"),
-            Act(Item::ShowText, b" Show as text  \0"),
-            Sep(b"---------------\0"),
-            Act(Item::SortName, b" Sort by name  \0"),
-            Act(Item::SortType, b" Sort by type  \0"),
-            Act(Item::SortSize, b" Sort by size  \0"),
-            Act(Item::SortDate, b" Sort by date  \0"),
-            Act(Item::NoSort, b" No sort       \0"),
-            Sep(b"---------------\0"),
-            Act(Item::SizeToFit, b" Size to fit   \0"),
+            Act(Item::ShowIcons, b"  Show as icons \0"),
+            Act(Item::ShowText, b"  Show as text  \0"),
+            Sep(b"----------------\0"),
+            Act(Item::SortName, b"  Sort by name  \0"),
+            Act(Item::SortType, b"  Sort by type  \0"),
+            Act(Item::SortSize, b"  Sort by size  \0"),
+            Act(Item::SortDate, b"  Sort by date  \0"),
+            Act(Item::NoSort, b"  No sort       \0"),
+            Sep(b"----------------\0"),
+            Act(Item::SizeToFit, b"  Size to fit   \0"),
         ],
     },
     Def {
         title: Title::Options,
         label: b" Options \0",
         entries: &[
-            Act(Item::SetBackground, b" Set background...       \0"),
-            Act(Item::InstallIcon, b" Install icon...         \0"),
-            Act(Item::InstallApp, b" Install application...  \0"),
-            Act(Item::InstallDevices, b" Install devices         \0"),
-            Act(Item::RemoveIcon, b" Remove desktop icon     \0"),
-            Sep(b"-------------------------\0"),
-            Act(Item::SetPrefs, b" Set preferences...      \0"),
-            Act(Item::DeskConfig, b" Desktop configuration...\0"),
-            Act(Item::ChangeRez, b" Change resolution...    \0"),
-            Sep(b"-------------------------\0"),
-            Act(Item::ReadInf, b" Read .INF file...       \0"),
-            Act(Item::SaveDesktop, b" Save desktop...         \0"),
+            Act(Item::SetBackground, b"  Set background...       \0"),
+            Act(Item::InstallIcon, b"  Install icon...         \0"),
+            Act(Item::InstallApp, b"  Install application...  \0"),
+            Act(Item::InstallDevices, b"  Install devices         \0"),
+            Act(Item::RemoveIcon, b"  Remove desktop icon     \0"),
+            Sep(b"--------------------------\0"),
+            Act(Item::SetPrefs, b"  Set preferences...      \0"),
+            Act(Item::DeskConfig, b"  Desktop configuration...\0"),
+            Act(Item::ChangeRez, b"  Change resolution...    \0"),
+            Sep(b"--------------------------\0"),
+            Act(Item::ReadInf, b"  Read .INF file...       \0"),
+            Act(Item::SaveDesktop, b"  Save desktop...         \0"),
         ],
     },
 ];
@@ -309,8 +309,9 @@ struct MenuGeom {
 /// `adjust_menu` (EmuTOS `deskmain.c:1511-1641`) — measure every title and
 /// drop-down and compute their pixel geometry: title x/width laid left-to-right
 /// (each `strlen * CHAR_WIDTH + pad`, the documented ST system-font assumption),
-/// drop-down box width from its widest entry (+ a 2-cell check-column indent
-/// and a right margin), and box x-positioning under its title, **shifted left
+/// drop-down box width from its widest entry (+ a right margin; the 2-cell
+/// check column lives in the item strings' leading blanks, not code), and box
+/// x-positioning under its title, **shifted left
 /// if it would run off the right screen edge** (the drop-down re-position).
 ///
 /// EmuTOS additionally shrinks/truncates an over-wide title bar (its
@@ -328,9 +329,13 @@ fn adjust_menu(sw: i16) -> MenuGeom {
         g.title_w[ti] = tw;
         tx += tw;
 
-        // Drop-down width: widest entry + a 2-cell check-column indent + margin.
+        // Drop-down width: widest entry + a right margin. The 2-cell check
+        // column is no longer added by code — it lives in the two leading
+        // spaces every item label carries (EmuTOS menu-string convention, e.g.
+        // "  Open"), so the object renderer draws the text at `ob_x` and the
+        // check mark sits over the leading blank (see `object::just_draw` D1).
         let maxlen = def.entries.iter().map(|e| label_len(entry_label(e))).max().unwrap_or(8);
-        let bw = maxlen * CHAR_W + 2 * CHAR_W + 6;
+        let bw = maxlen * CHAR_W + 6;
         g.box_w[ti] = bw;
     }
     // Defensive over-wide-bar clamp: keep the last title on-screen.
