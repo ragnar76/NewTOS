@@ -270,8 +270,9 @@ from `graf_handle`, see [`window-graphics.md`](./window-graphics.md)) and
 | `int_out[0]` | `1` (`rs_obfix` is `void`; `crysbind` `ret` stays `TRUE`) |
 
 **The coordinate rule (contract).** Each of the object's four packed WORDs
-`ob_x`, `ob_y`, `ob_w`, `ob_h` encodes **a character count in the high byte and
-a signed pixel offset in the low byte** (`fix_chpos`, `gemrslib.c:53-83`):
+`ob_x`, `ob_y`, `ob_w`, `ob_h` encodes an unsigned **character count in the low
+byte** and a **signed pixel offset in the high byte** (`fix_chpos`,
+`gemrslib.c:53-83`: `coffset = HIBYTE(cpos); cpos = LOBYTE(cpos);`):
 
 | Field | offset | conversion |
 |-------|-------:|------------|
@@ -280,24 +281,33 @@ a signed pixel offset in the low byte** (`fix_chpos`, `gemrslib.c:53-83`):
 | `ob_w` | 2 | `char × gl_wchar`, **except `char == 80` → `gl_width`** (full-screen width) |
 | `ob_h` | 3 | `char × gl_hchar` |
 
-then **add the low-byte offset as signed** (`coffset > 128 ? coffset-256 :
-coffset`). So `ob_x = 0x0A05` = column 10 → `10·gl_wchar + 5` px. Get this
-exactly right — every dialog's layout, and `rsrc_load`'s `fix_objects`, depend
-on it. `rs_obfix` fixes **one** object; `fix_objects` applies it to all
-`rsh_nobs` objects during load.
+where `char = LOBYTE(word)`, then **add the high-byte offset as signed**
+(`coffset = HIBYTE(word); coffset > 128 ? coffset-256 : coffset`). So `ob_x =
+0x0405` = char 5, offset +4 → `5·gl_wchar + 4` px. Get this exactly right —
+every dialog's layout, and `rsrc_load`'s `fix_objects`, depend on it.
+`rs_obfix` fixes **one** object; `fix_objects` applies it to all `rsh_nobs`
+objects during load.
 
-> **Verified vs. the previous spec.** The old note ("hi byte = chars, lo byte =
-> pixel offset, multiply by `gl_wchar`/`gl_hchar`") is correct in spirit but
-> missed two source facts: the low-byte offset is **signed** (>128 → −256), and
-> **width == 80 maps to full screen width** (`gemrslib.c:71-74,81`). See D-054.
+> **Byte order (corrected 2026-07-21).** An earlier revision of this table had
+> the two bytes **reversed** ("character count in the high byte and a signed
+> pixel offset in the low byte"). That is wrong: EmuTOS `fix_chpos`
+> (`gemrslib.c:58-60`) reads `coffset = HIBYTE(cpos)` (the offset) and
+> `cpos = LOBYTE(cpos)` (the char count, multiplied by the cell). The
+> **low byte is the char count**, the **high byte is the signed pixel offset**.
+> This also matches the raw QED AKTION values seen in the trace (`0x0401` =
+> char 1 + offset 4, `0x2000` = char 0 + offset 32). The signed-offset and
+> `width == 80 → gl_width` facts (`gemrslib.c:71-74,81`) are unchanged.
 
-> **NewTOS status (deviation, ADR-013/D-100).** `rsrc_obfix`
-> (`tos-api/src/aes/resource.rs::rsrc_obfix`) is an **identity operation** —
-> it touches no coordinates and just reports success (`int_out[0] = 1`).
-> Native `.RSC` objects already store pixel `ob_x`/`ob_y`/`ob_width`/
-> `ob_height` (no char-grid encoding survives the host-side `mkrsc.py`
-> conversion from a classic `.rsc`), so there is nothing left for
-> `rsrc_obfix` to do. The char→pixel rule above is EmuTOS-reference only.
+> **NewTOS status (implemented 2026-07-21, D-101).** `rsrc_obfix`
+> (`tos-api/src/aes/resource.rs::rsrc_obfix`) performs the real char→pixel
+> conversion above, in place, on the object the app names. It is applied only
+> to **inline** resources an app built itself (an `rs_object[]` compiled into
+> the program, still in char-grid form): a resource loaded through `rsrc_load`
+> is already in pixels (host-side `mkrsc.py` pre-converts and `rsrc_load` does
+> not re-`ob_fix`), and a well-behaved GEM app never re-`rsrc_obfix`es loaded
+> objects (EmuTOS `rsrc_load` `ob_fix`es them once at load,
+> `gemrslib.c:606-637,815-819`), so `rsrc_obfix` never double-converts a loaded
+> `.RSC`. Coordinates/tree are read at the caller's ABI width via `ObjTree`.
 
 ---
 
@@ -427,9 +437,10 @@ as success — an empty list, not an error (`gemfslib.c:330-336,733-754`).
 - **`rsrc_gaddr(R_OBJECT, i)` vs `R_OBSPEC`:** `type=1` returns
   `&object[i]`; `type=7` returns `&object[i].ob_spec` — the same object, a
   different field (`gemrslib.c:125-127,144-146`).
-- **`rsrc_obfix` coordinate fix:** an object with `ob_x = 0x0A05` becomes
-  `10·gl_wchar + 5`; `ob_w = 0x5000` (char 80) becomes `gl_width`
-  (full-screen); a low byte `0xFF` subtracts 1 px (`gemrslib.c:64-82`).
+- **`rsrc_obfix` coordinate fix:** an object with `ob_x = 0x0405` (low byte =
+  char 5, high byte = offset +4) becomes `5·gl_wchar + 4`; `ob_w = 0x0050`
+  (char 80) becomes `gl_width` (full-screen); a high byte `0xFF` subtracts 1 px
+  (`gemrslib.c:64-82`).
 - **`rsrc_load` relocation:** after load, `ap_ptree[0]` and every object's
   relocated `ob_spec` are absolute addresses within `[ap_rscmem,
   ap_rscmem+ap_rsclen)`; a field stored as `-1L` on disk stays `-1L`
@@ -450,17 +461,19 @@ as success — an empty list, not an error (`gemfslib.c:330-336,733-754`).
   dialog title; `fsel_input` shows the default "Item Selector"
   (`gemfslib.c:691-692`).
 
-> **Applicability note (D-100).** The criteria above verify the **EmuTOS
-> source** (the primary specification, per CLAUDE.md Rule 1) and are the
-> right target for a future classic-`.RSC`-compatible loader. Two of them do
-> not hold against NewTOS's *current* native-format implementation: the
-> `rsrc_obfix` coordinate-fix criterion (NewTOS's `rsrc_obfix` is an
-> identity — no coordinates change), and the `sh_find`-based "not found"
-> mechanism in the `rsrc_load` criterion (NewTOS fails to find a file via its
-> own fixed `C:\GEMSYS\RSC\`/`C:\` search instead — the `int_out[0] = 0`
-> outcome and the "leaves the loaded resource unchanged" behaviour still
-> hold, just via a different lookup). See the "NewTOS status" callouts under
-> `rsrc_load (110)`/`rsrc_obfix (114)` and "NewTOS implementation notes".
+> **Applicability note (D-100, updated D-101).** The criteria above verify the
+> **EmuTOS source** (the primary specification, per CLAUDE.md Rule 1). The
+> `rsrc_obfix` coordinate-fix criterion now **holds against NewTOS** (D-101):
+> `rsrc_obfix` performs the real char→pixel conversion on the named inline
+> object. The one criterion that still differs is the `sh_find`-based "not
+> found" mechanism in the `rsrc_load` criterion (NewTOS fails to find a file
+> via its own app-dir + fixed `C:\GEMSYS\RSC\`/`C:\` search instead — the
+> `int_out[0] = 0` outcome and the "leaves the loaded resource unchanged"
+> behaviour still hold, just via a different lookup). Note the split from
+> EmuTOS: because `mkrsc.py` pre-converts a **loaded** `.RSC` to pixels,
+> `rsrc_load`/relocation does **not** call `ob_fix`; only a program's own
+> **inline** `rs_object[]` reaches `rsrc_obfix`. See the "NewTOS status"
+> callouts under `rsrc_load (110)`/`rsrc_obfix (114)`.
 
 ---
 

@@ -247,6 +247,10 @@ impl ObjTree {
     pub(crate) fn set_width(self, i: i16, v: i16) {
         self.wr_i16(i, self.coord_off() + 4, v)
     }
+    #[inline]
+    pub(crate) fn set_height(self, i: i16, v: i16) {
+        self.wr_i16(i, self.coord_off() + 6, v)
+    }
 
     /// `ob_spec` read at the caller's width: a u64 for LP64, a u32
     /// zero-extended for ILP32. For a string/box object this is a user VA or a

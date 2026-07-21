@@ -5,8 +5,10 @@
 //! own 64-bit `OBJECT` layout, little-endian, with internal pointers held
 //! as **byte offsets from the blob base**. Loading is therefore a pure
 //! offset→pointer relocation — no endianness swap and no 16→64-bit
-//! expansion (unlike a classic Atari `.RSC`). Coordinates are already in
-//! pixels, so `rsrc_obfix` is an identity.
+//! expansion (unlike a classic Atari `.RSC`). A **loaded** `.RSC`'s
+//! coordinates are already in pixels (the host-side `mkrsc.py` pre-converts,
+//! and `rsrc_load` does not re-`ob_fix`), so `rsrc_obfix` only ever converts
+//! an **inline** resource an app built itself (see [`rsrc_obfix`]).
 //!
 //! Native `.RSC` layout (all little-endian). Two header generations coexist;
 //! the loader picks by `version` and is backward-compatible:
@@ -40,9 +42,10 @@
 //! Loading from SD (`bdos::fs::read_file`), TEDINFO/ICONBLK/BITBLK
 //! sub-pointer relocation, and `rsrc_saddr` are Batch 2.
 
-use super::object::{BitBlk, IconBlk, Object, TedInfo};
+use super::object::{BitBlk, IconBlk, ObjTree, Object, TedInfo};
 use super::Aespb;
 use crate::bdos::process::{usermem, Abi};
+use crate::vdi::font::{CELL_H, CELL_W};
 use core::cell::UnsafeCell;
 use core::mem::size_of;
 use core::sync::atomic::{AtomicI32, AtomicUsize, Ordering};
@@ -956,11 +959,73 @@ pub fn rsrc_saddr(pb: &Aespb) {
     pb.set_ret(0);
 }
 
-/// `rsrc_obfix` (114) — convert object `int_in[1]`'s coordinates. Native
-/// resources already store pixel coordinates, so this is an identity that
-/// simply reports success.
+/// `rsrc_obfix` (114) — convert object `int_in[0]`'s packed char-grid
+/// coordinates (`ob_x`/`ob_y`/`ob_width`/`ob_height`) to pixels, in place.
+///
+/// Faithful to EmuTOS `rs_obfix` (`gemrslib.c:89-99`) + `fix_chpos`
+/// (`gemrslib.c:53-83`): each of the four coordinate WORDs packs an unsigned
+/// **character count in the low byte** and a **signed pixel offset in the high
+/// byte**; the pixel value is `char_count * cell + signed_offset`, where the
+/// cell is `gl_wchar` (8) for x/width and `gl_hchar` (16) for y/height, and a
+/// `ob_width` whose char count is exactly 80 maps to the full screen width
+/// (`gl_width`, `gemrslib.c:71-74`). The slots are `RS_TREE = addr_in[0]` and
+/// `RS_OBJ = int_in[0]` (`aesdefs.h:574-575`, `gemsuper.c:375-377`), read at
+/// the caller's ABI width via [`ObjTree`] exactly like every other object op.
+///
+/// **Scope — inline resources only, no double conversion.** This is applied
+/// solely to a resource an app built itself (an `rs_object[]` compiled into
+/// the program, still in char-grid form). A resource loaded through
+/// `rsrc_load` is already in pixels — the host-side `mkrsc.py` pre-converts
+/// and [`rsrc_load`] does not re-`ob_fix` — and a well-behaved GEM app never
+/// re-`rsrc_obfix`es loaded objects (EmuTOS `rsrc_load` `ob_fix`es them once
+/// at load, `gemrslib.c:606-637,815-819`), so converting here never touches
+/// the loaded `.RSC` and cannot double-convert it.
+///
+/// `rs_obfix` is `void`; the AES `ret` stays `TRUE`, so this always reports 1
+/// (`gemsuper.c:85,375-377`).
 pub fn rsrc_obfix(pb: &Aespb) {
+    let tree = pb.addrin(0) as *const Object;
+    let obj = pb.intin(0);
+    if tree.is_null() || obj < 0 {
+        pb.set_ret(1);
+        return;
+    }
+    // `gl_width` — the full-screen pixel width used by the `ob_width == 80`
+    // special case (EmuTOS `gl_width`, the VDI workstation width). Fall back to
+    // the classic 80-column full width (80 * gl_wchar = 640) if no raster is up,
+    // which only matters for that one special case with no display.
+    let gl_width = crate::host::host()
+        .and_then(|h| h.raster())
+        .map(|r| r.width() as i16)
+        .unwrap_or(80 * CELL_W);
+    let t = ObjTree::new(tree);
+    t.set_x(obj, fix_chpos(t.x(obj), CELL_W, false, gl_width));
+    t.set_y(obj, fix_chpos(t.y(obj), CELL_H, false, gl_width));
+    t.set_width(obj, fix_chpos(t.width(obj), CELL_W, true, gl_width));
+    t.set_height(obj, fix_chpos(t.height(obj), CELL_H, false, gl_width));
     pb.set_ret(1);
+}
+
+/// Convert one packed char-grid coordinate WORD to pixels (EmuTOS `fix_chpos`,
+/// `gemrslib.c:53-83`). The **low byte** is the unsigned character count,
+/// multiplied by the character cell size `cell` (`gl_wchar` for x/width,
+/// `gl_hchar` for y/height); the **high byte** is a signed pixel offset added
+/// afterwards (`> 128 ⇒ − 256`, matching `coffset > 128 ? coffset - 256 :
+/// coffset`). `is_width` selects the `char == 80 → gl_width` full-screen case,
+/// which EmuTOS applies to `ob_width` only. All arithmetic is done in `i32` and
+/// truncated to `i16`, which is bit-identical to EmuTOS' `WORD` (16-bit) math
+/// for the valid 0..=255 byte inputs (max `255 * 16 + 127`, never overflowing).
+fn fix_chpos(raw: i16, cell: i16, is_width: bool, gl_width: i16) -> i16 {
+    let v = raw as u16;
+    let coffset = (v >> 8) as i32; // high byte: signed pixel offset (0..=255)
+    let charcnt = (v & 0x00ff) as i32; // low byte: unsigned char count (0..=255)
+    let base = if is_width && charcnt == 80 {
+        gl_width as i32
+    } else {
+        charcnt * cell as i32
+    };
+    let offset = if coffset > 128 { coffset - 256 } else { coffset };
+    (base + offset) as i16
 }
 
 /// Size of one native `Object` record (for `R_OBJECT` indexing / tools).
