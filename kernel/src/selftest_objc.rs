@@ -926,6 +926,83 @@ pub fn run_d9() {
     kprintln!("[objc] shel_envrn PATH= -> ret {} val=\"{}\"", intout[0], s(&ev));
 }
 
+/// Group-B verification: a non-modal button showcase that renders, in one
+/// `objc_draw`, every button-border case the D3/D4/D5 fix touches — 2D
+/// buttons (plain `th=-1`, EXIT `th=-2`, DEFAULT `th=-2`, DEFAULT+EXIT
+/// `th=-3`), 3D buttons (raised EXIT + raised DEFAULT+EXIT + a pressed one),
+/// and a hollow `G_BOX` with a negative border (`th=-1`) that exercises the
+/// D5 `|th|+1` edge-inclusive geometry independently of any button. Draw-only
+/// (no modal loop), so it is screendump-friendly.
+// The AESPB arrays are read by the trap through the raw `block` pointer, which
+// clippy's dataflow cannot see, so it mis-reports the final config writes as
+// dead (same false positive as the rest of this selftest module).
+#[allow(unused_assignments)]
+pub fn run_button_showcase() {
+    const SHADOWED: u16 = 0x0020; // ob_state, unused here
+    static LBL: &[u8] = b"Group B: 2D th=-1/-2/-3, 3D outline+bevel, hollow neg-border box\0";
+    static PLAIN: &[u8] = b"Plain\0";
+    static EXITB: &[u8] = b"Exit\0";
+    static DEFLT: &[u8] = b"Deflt\0";
+    static DEFEX: &[u8] = b"Def+Ex\0";
+    static D3EX: &[u8] = b"3D Exit\0";
+    static D3DEF: &[u8] = b"3D Def+Ex\0";
+    static D3PRS: &[u8] = b"3D Press\0";
+    let _ = SHADOWED;
+
+    // hollow box: colour word 0x1000 = black border, hollow-white interior;
+    // byte 1 of the LONG = 0xFF → th = -1 (D5 negative-border case).
+    let box_hollow: u64 = 0x00FF_1000;
+    let btn = |spec: &[u8], fl, st, x, y, next| Object {
+        ob_next: next, ob_head: -1, ob_tail: -1, ob_type: G_BUTTON,
+        ob_flags: fl, ob_state: st, ob_spec: spec.as_ptr() as u64,
+        ob_x: x, ob_y: y, ob_width: 96, ob_height: 28,
+    };
+
+    let tree = [
+        // 0: plain dialog frame (2D, th=1 inside border)
+        Object { ob_next: -1, ob_head: 1, ob_tail: 9, ob_type: G_BOX, ob_flags: 0,
+                 ob_state: 0, ob_spec: 1 << 16, ob_x: 80, ob_y: 80, ob_width: 480, ob_height: 250 },
+        // 1: label
+        Object { ob_next: 2, ob_head: -1, ob_tail: -1, ob_type: G_STRING, ob_flags: 0,
+                 ob_state: 0, ob_spec: LBL.as_ptr() as u64, ob_x: 12, ob_y: 8, ob_width: 456, ob_height: 16 },
+        // 2..5: 2D buttons — plain / EXIT / DEFAULT / DEFAULT+EXIT
+        btn(PLAIN, SELECTABLE, 0, 16, 40, 3),
+        btn(EXITB, SELECTABLE | EXIT, 0, 124, 40, 4),
+        btn(DEFLT, SELECTABLE | DEFAULT, 0, 232, 40, 5),
+        btn(DEFEX, SELECTABLE | EXIT | DEFAULT, 0, 340, 40, 6),
+        // 6..8: 3D buttons — raised EXIT / raised DEFAULT+EXIT / pressed
+        Object { ob_next: 7, ob_head: -1, ob_tail: -1, ob_type: G_BUTTON,
+                 ob_flags: SELECTABLE | EXIT | FL3DACT, ob_state: 0,
+                 ob_spec: D3EX.as_ptr() as u64, ob_x: 40, ob_y: 108, ob_width: 110, ob_height: 30 },
+        Object { ob_next: 8, ob_head: -1, ob_tail: -1, ob_type: G_BUTTON,
+                 ob_flags: SELECTABLE | EXIT | DEFAULT | FL3DACT, ob_state: 0,
+                 ob_spec: D3DEF.as_ptr() as u64, ob_x: 185, ob_y: 108, ob_width: 110, ob_height: 30 },
+        Object { ob_next: 9, ob_head: -1, ob_tail: -1, ob_type: G_BUTTON,
+                 ob_flags: SELECTABLE | EXIT | FL3DACT, ob_state: 0x0001, // SELECTED = pressed
+                 ob_spec: D3PRS.as_ptr() as u64, ob_x: 330, ob_y: 108, ob_width: 110, ob_height: 30 },
+        // 9: hollow negative-border box (D5), LASTOB
+        Object { ob_next: 0, ob_head: -1, ob_tail: -1, ob_type: G_BOX, ob_flags: LASTOB,
+                 ob_state: 0, ob_spec: box_hollow, ob_x: 40, ob_y: 175, ob_width: 150, ob_height: 55 },
+    ];
+
+    let mut control = [0i16; 8];
+    let mut global = [0i16; 32];
+    let mut intin = [0i16; 16];
+    let mut intout = [0i16; 16];
+    let mut addrin = [0i64; 4];
+    let mut addrout = [0i64; 4];
+    let block: [u64; 6] = [
+        control.as_mut_ptr() as u64, global.as_mut_ptr() as u64,
+        intin.as_mut_ptr() as u64, intout.as_mut_ptr() as u64,
+        addrin.as_mut_ptr() as u64, addrout.as_mut_ptr() as u64,
+    ];
+    control[0] = 42; control[3] = 1; // objc_draw
+    addrin[0] = tree.as_ptr() as i64;
+    intin[0] = 0; intin[1] = 8; intin[2] = 0; intin[3] = 0; intin[4] = 640; intin[5] = 480;
+    aes(block.as_ptr() as u64);
+    kprintln!("[objc] button showcase drawn, ret={}", intout[0]);
+}
+
 /// 3D / modern-design test: a grey background panel (FL3DBAK) with a raised
 /// 3D OK button (FL3DACT) and a pressed one, to show the bevel look.
 pub fn run_3d() {

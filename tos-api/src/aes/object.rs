@@ -533,6 +533,7 @@ const LASTOB: u16 = 0x0020;
 const HIDETREE: u16 = 0x0080;
 const SELECTED: u16 = 0x0001;
 const DEFAULT: u16 = 0x0002; // ob_flags: default (heavy-frame) object
+const EXIT: u16 = 0x0004; // ob_flags: EXIT button (thickens the border by 1)
 const CROSSED: u16 = 0x0002; // ob_state: draw a diagonal cross over the object
 const CHECKED: u16 = 0x0004;
 const DISABLED: u16 = 0x0008;
@@ -1602,8 +1603,8 @@ fn just_draw(t: ObjTree, obj: i16, x: i16, y: i16, clip: ClipRect, backend: &dyn
     // its bevel sits in the margin *outside* the nominal rectangle instead of
     // eating the object's own edge (which shrank every 3D button/panel by 4px
     // and let the bevel overlap the border/text). Grow here, then everything
-    // below — fill, border, text, bevel, DISABLED dither, DEFAULT frame —
-    // draws against the grown rectangle.
+    // below — fill, border, text, bevel, DISABLED dither — draws against the
+    // grown rectangle.
     let (x, y, w, h) = if d3 != 0 {
         (x - ADJ3DSTD, y - ADJ3DSTD, ob_width + 2 * ADJ3DSTD, ob_height + 2 * ADJ3DSTD)
     } else {
@@ -1654,10 +1655,27 @@ fn just_draw(t: ObjTree, obj: i16, x: i16, y: i16, clip: ClipRect, backend: &dyn
             } else {
                 gr_crack(ob_spec as u16)
             };
-            let th = if d3 != 0 {
-                0 // 3D objects use a bevel (drawn after), not a flat border
-            } else if ob_type == G_BUTTON {
-                1
+            // D4: a G_BUTTON's border is derived from its role and drawn
+            // OUTSIDE its rect (negative th), EmuTOS `ob_sst`
+            // (gemobjop.c:59-65): base -1, one thinner for EXIT, one thinner
+            // for DEFAULT — so a default exit button is -3 and reads as the
+            // heavy "this is Enter" outline. The border is drawn whenever
+            // th != 0 *regardless of 3D* (gemoblib.c:663-667); the 3D bevel
+            // (add_3d_effect, gemoblib.c:950-951) is layered on top afterwards,
+            // so a 3D button keeps its black outline AND gains a bevel. Box
+            // types keep their spec-byte thickness (and the 3D no-border case
+            // stays as-is — that is the FL3DBAK panel path, D7).
+            let th = if ob_type == G_BUTTON {
+                let mut bt: i16 = -1;
+                if ob_flags & EXIT != 0 {
+                    bt -= 1;
+                }
+                if ob_flags & DEFAULT != 0 {
+                    bt -= 1;
+                }
+                bt
+            } else if d3 != 0 {
+                0 // 3D box types use a bevel (drawn after), not a flat border
             } else {
                 ((ob_spec >> 16) as u8 as i8) as i16
             };
@@ -1869,14 +1887,13 @@ fn just_draw(t: ObjTree, obj: i16, x: i16, y: i16, clip: ClipRect, backend: &dyn
     // SELECTED XOR is folded into each type's inline colour inversion (EmuTOS's
     // `changecol` path) for the black/white palette.
 
-    // DEFAULT: NewTOS draws the default object's heavy frame explicitly
-    // (EmuTOS derives it from the button's thicker, negative `th`). OUTLINED:
-    // the classic GEM double frame — a black line 3 px out plus a 2 px white
-    // ring — so the object's own border becomes the inner line (dialogs/alerts).
-    if ob_flags & DEFAULT != 0 {
-        draw_border(backend, x - 3, y - 3, w + 6, h + 6, 1, BLACK, clip);
-        draw_border(backend, x - 4, y - 4, w + 8, h + 8, 1, BLACK, clip);
-    }
+    // D3: EmuTOS draws NO extra frame for DEFAULT — `just_draw` never reads
+    // the DEFAULT flag; a default button's heavier look comes entirely from
+    // its thicker negative `th` (D4, gemobjop.c:63-64). The previously-invented
+    // double frame 3–4 px out is removed. OUTLINED (below) is a real EmuTOS
+    // decoration: the classic GEM double frame — a black line 3 px out plus a
+    // 2 px white ring — so the object's own border becomes the inner line
+    // (dialogs/alerts, gemoblib.c:882-885).
     if ob_state & OUTLINED != 0 {
         draw_border(backend, x - 3, y - 3, w + 6, h + 6, 1, BLACK, clip);
         draw_border(backend, x - 2, y - 2, w + 4, h + 4, 2, WHITE, clip);
@@ -1965,13 +1982,22 @@ fn draw_border(
 /// OUTSIDE (the frame sits in the |th|-pixel margin around the rect, leaving the
 /// rect itself for the fill — matching `gr_box`'s outward-growing outlines once
 /// the full-rect fill overpaints the shared edge). `th == 0` draws nothing.
+///
+/// D5: a negative `th` draws **`|th|+1`** pixels, **edge-inclusive** — EmuTOS
+/// `gr_box` (gemgraf.c:813-832) does `if (th < 0) th--;` then draws one nested
+/// outline per step up to and including `gr_inside(0)`, i.e. the innermost ring
+/// lands on the rect's own edge. So `th = -1` is a 2 px frame spanning `x-1..x`,
+/// not a single `x-1` ring. Because the border is drawn before the interior
+/// fill (see the box/button arm), a *solid* box's fill overpaints that inner
+/// (edge) ring, leaving the visible border unchanged; only HOLLOW interiors
+/// (buttons, hollow boxes) show the extra edge pixel.
 #[allow(clippy::too_many_arguments)]
 fn draw_signed_border(backend: &dyn RasterBackend, x: i16, y: i16, w: i16, h: i16, th: i16, col: Pel, clip: ClipRect) {
     match th.cmp(&0) {
         core::cmp::Ordering::Greater => draw_border(backend, x, y, w, h, th, col, clip),
         core::cmp::Ordering::Less => {
             let t = -th;
-            draw_border(backend, x - t, y - t, w + 2 * t, h + 2 * t, t, col, clip);
+            draw_border(backend, x - t, y - t, w + 2 * t, h + 2 * t, t + 1, col, clip);
         }
         core::cmp::Ordering::Equal => {}
     }
