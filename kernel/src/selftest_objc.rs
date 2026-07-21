@@ -687,6 +687,110 @@ pub fn run_two_windows() {
     kprintln!("[objc] A visible pieces: {}", piece);
 }
 
+/// P5 (QED-redraw #123) proof — NOT wired into boot. Opens two overlapping AES
+/// windows (A bottom, B top), then (1) closes B and (2) re-tops A, asserting
+/// each time that a `WM_REDRAW` (msg type 20) was queued for the newly-exposed
+/// window A with its work-area rectangle. Drives the real GEM trap end-to-end;
+/// the message is read back through `window::test_pending_msg`.
+///
+/// Invoke by hand (temporary hook before `desk::run()`) to capture the serial
+/// PASS/FAIL lines; it is intentionally not called during normal boot.
+#[allow(unused_assignments)] // the `control = [0; 8]` reset idiom, as elsewhere here
+pub fn run_p5_redraw() {
+    use tos_api::aes::window::{test_clear_msg, test_pending_msg};
+
+    let mut control = [0i16; 8];
+    let mut global = [0i16; 32];
+    let mut intin = [0i16; 16];
+    let mut intout = [0i16; 16];
+    let mut addrin = [0i64; 4];
+    let mut addrout = [0i64; 4];
+    let block: [u64; 6] = [
+        control.as_mut_ptr() as u64, global.as_mut_ptr() as u64,
+        intin.as_mut_ptr() as u64, intout.as_mut_ptr() as u64,
+        addrin.as_mut_ptr() as u64, addrout.as_mut_ptr() as u64,
+    ];
+    let bp = block.as_ptr() as u64;
+
+    // Clean window table, then register the pd so WM_REDRAW has a target queue.
+    control = [0; 8]; control[0] = 109; aes(bp); // wind_new
+    control = [0; 8]; control[0] = 10; aes(bp);  // appl_init
+    let ap_id = intout[0];
+
+    // Window A (bottom): create (all gadgets) + open at (60,50,360,250).
+    control = [0; 8]; control[0] = 100; control[1] = 5;
+    intin[0] = 0x0FFF; intin[1] = 0; intin[2] = 0; intin[3] = 640; intin[4] = 480;
+    aes(bp);
+    let ha = intout[0];
+    control = [0; 8]; control[0] = 101; control[1] = 5;
+    intin[0] = ha; intin[1] = 60; intin[2] = 50; intin[3] = 360; intin[4] = 250;
+    aes(bp);
+
+    // Window B (top): create + open at (230,170,360,250) — overlaps A.
+    control = [0; 8]; control[0] = 100; control[1] = 5;
+    intin[0] = 0x0FFF; intin[1] = 0; intin[2] = 0; intin[3] = 640; intin[4] = 480;
+    aes(bp);
+    let hb = intout[0];
+    control = [0; 8]; control[0] = 101; control[1] = 5;
+    intin[0] = hb; intin[1] = 230; intin[2] = 170; intin[3] = 360; intin[4] = 250;
+    aes(bp);
+
+    // Expected redraw rect = A's work area (wind_get WF_WXYWH = field 4).
+    control = [0; 8]; control[0] = 104; control[1] = 2;
+    intin[0] = ha; intin[1] = 4;
+    aes(bp);
+    let (ewx, ewy, eww, ewh) = (intout[1], intout[2], intout[3], intout[4]);
+    kprintln!(
+        "[p5] ap_id={} A={} B={} (B on top); A work=({},{},{},{})",
+        ap_id, ha, hb, ewx, ewy, eww, ewh
+    );
+
+    // ---- Case 1: wind_close(B) must post WM_REDRAW to A ----
+    test_clear_msg(ap_id);
+    control = [0; 8]; control[0] = 102; control[1] = 1;
+    intin[0] = hb;
+    aes(bp);
+    report_p5("close", test_pending_msg(ap_id), ha, ewx, ewy, eww, ewh);
+
+    // ---- Case 2: re-open B on top, then wind_set(A, WF_TOP) posts WM_REDRAW ----
+    control = [0; 8]; control[0] = 101; control[1] = 5;
+    intin[0] = hb; intin[1] = 230; intin[2] = 170; intin[3] = 360; intin[4] = 250;
+    aes(bp);
+    test_clear_msg(ap_id);
+    control = [0; 8]; control[0] = 105; control[1] = 2;
+    intin[0] = ha; intin[1] = 10; // WF_TOP
+    aes(bp);
+    report_p5("top", test_pending_msg(ap_id), ha, ewx, ewy, eww, ewh);
+
+    // Leave the window table clean for whatever runs next.
+    control = [0; 8]; control[0] = 109; aes(bp); // wind_new
+}
+
+/// Print a P5 selftest verdict line: the queued message and whether it is the
+/// expected `WM_REDRAW` (type 20) for window `hexp` with rect `(x,y,w,h)`.
+#[allow(clippy::too_many_arguments)]
+fn report_p5(
+    tag: &str,
+    msg: Option<[i16; 8]>,
+    hexp: i16,
+    x: i16,
+    y: i16,
+    w: i16,
+    h: i16,
+) {
+    match msg {
+        Some(m) => {
+            let ok = m[0] == 20 && m[3] == hexp && m[4] == x && m[5] == y && m[6] == w && m[7] == h;
+            kprintln!(
+                "[p5] {}: msg=[{},{},{},{},{},{},{},{}] -> {}",
+                tag, m[0], m[1], m[2], m[3], m[4], m[5], m[6], m[7],
+                if ok { "PASS" } else { "FAIL" }
+            );
+        }
+        None => kprintln!("[p5] {}: no WM_REDRAW queued -> FAIL", tag),
+    }
+}
+
 /// D7 Batch-1 demo: build a native .RSC blob (string pointers as offsets),
 /// relocate it (offset→pointer), fetch its tree via rsrc_gaddr, and draw
 /// it via objc_draw — proving the native resource format end-to-end.

@@ -457,6 +457,17 @@ fn union_grect(a: Grect, b: Grect) -> Grect {
     Grect { x: x0, y: y0, w: x1 - x0, h: y1 - y0 }
 }
 
+/// The intersection of `a` and `b`, or `None` when they don't overlap — the
+/// per-window clip EmuTOS's `w_redraw` computes with `rc_intersect`
+/// (`gemwmlib.c:897,903`).
+fn intersect_grect(a: Grect, b: Grect) -> Option<Grect> {
+    let x0 = a.x.max(b.x);
+    let y0 = a.y.max(b.y);
+    let x1 = (a.x + a.w).min(b.x + b.w);
+    let y1 = (a.y + a.h).min(b.y + b.h);
+    (x1 > x0 && y1 > y0).then_some(Grect { x: x0, y: y0, w: x1 - x0, h: y1 - y0 })
+}
+
 // ── rectangle list (visible pieces) ──────────────────────────────────────
 
 const RCAP: usize = 16;
@@ -586,6 +597,66 @@ fn send_redraw(handle: i16, rect: Grect) {
         if let Some(p) = super::pd::by_pid(owner) {
             p.msg = msg;
             p.msg_pending = true;
+        }
+    }
+}
+
+/// Bounding rectangle of `handle`'s currently-visible work-area pieces — its
+/// work rect minus every higher-z open window — i.e. EmuTOS `w_union` over the
+/// owner rectangle list (`w_union`/`w_owns`/`w_rlist`, `gemwmlib.c:869-884`).
+/// Empty when the window is closed or fully covered. Computed the same way as
+/// [`compute_rlist`], but returning only the enclosing rectangle and **without**
+/// disturbing the shared `WF_FIRSTXYWH`/`WF_NEXTXYWH` iterator state ([`RLIST`]).
+fn visible_bound(handle: i16) -> Grect {
+    let (work, myz) = match win(handle) {
+        Some(w) if w.open => (calc(WC_WORK, w.kind, w.curr), w.z),
+        _ => return Grect::default(),
+    };
+    let mut list = [Grect::default(); RCAP];
+    list[0] = work;
+    let mut n = 1;
+    for ow in slots().iter() {
+        if ow.in_use && ow.open && ow.z > myz {
+            n = subtract(&mut list, n, ow.curr);
+        }
+    }
+    let mut acc: Option<Grect> = None;
+    for r in list.iter().take(n) {
+        acc = Some(match acc {
+            Some(a) => union_grect(a, *r),
+            None => *r,
+        });
+    }
+    acc.unwrap_or_default()
+}
+
+/// Post a `WM_REDRAW` to `handle`'s owner for the intersection of `damage` with
+/// the window's now-visible area — EmuTOS `w_redraw`: `pt` ∩ work ∩
+/// `w_union(w_rlist)` (`gemwmlib.c:887-907`). No message when the intersection
+/// is empty (the window is not exposed inside `damage`).
+fn send_redraw_in(handle: i16, damage: Grect) {
+    if let Some(rect) = intersect_grect(damage, visible_bound(handle)) {
+        send_redraw(handle, rect);
+    }
+}
+
+/// EmuTOS `w_update`→`w_redraw` fan-out (`gemwmlib.c:1004-1048,887-907`): walk
+/// every still-open window and post a `WM_REDRAW` for the part of its
+/// now-visible area inside the exposed `damage` region. A window whose visible
+/// region grew because a removed/lowered window no longer covers it thus
+/// repaints its newly-exposed content; a window `damage` does not reach gets
+/// nothing (empty intersection → no message).
+///
+/// Note: NewTOS's process message slot holds a single pending message
+/// (`Aespd::msg`), so when several **same-owner** windows are
+/// uncovered at once only the last-walked one's `WM_REDRAW` survives — a
+/// limitation of the single-slot model, not of this walk. The common case (an
+/// app closing a dialog over its one main window) uncovers a single window.
+fn broadcast_redraw(damage: Grect) {
+    for i in 0..MAX_WINDOWS {
+        let handle = (i + 1) as i16;
+        if win(handle).map(|w| w.open).unwrap_or(false) {
+            send_redraw_in(handle, damage);
         }
     }
 }
@@ -1022,23 +1093,48 @@ pub fn wind_open(pb: &Aespb) {
     }
 }
 
-/// `wind_close` (102) — hide window `int_in[0]` (the handle stays valid).
-/// Repaints the desktop + remaining windows (no save/restore needed).
+/// `wind_close` (102) — hide window `int_in[0]` (the handle stays valid), then
+/// broadcast `WM_REDRAW` to every window newly uncovered by the removal.
+///
+/// EmuTOS `wm_close`→`draw_change`→`w_update` (`gemwmlib.c:1438-1459,1058-1223,
+/// 1004-1048`): once the window leaves the tree, the AES repaints the desktop
+/// background **directly** (`w_drawdesk`, `:340-360,1217-1219`) plus the
+/// remaining window frames over the exposed region `c`, and `w_update` walks
+/// every still-open window top-to-bottom posting a `WM_REDRAW` for the part of
+/// its now-visible area inside `c` (`w_redraw`, `:887-907`). `c` is the closed
+/// window's rect, unioned with the new top window's rect **when the closed
+/// window was on top** (so the newly-activated top frame + content repaint —
+/// `:1194-1211`). The exposed background gets no message; the AES paints it, as
+/// here via [`compose`]/[`redraw_clip`] — matching EmuTOS.
 pub fn wind_close(pb: &Aespb) {
     let handle = pb.intin(0);
-    if let Some(w) = win(handle) {
+    let old_top = get_top();
+    let Some((r, was_open)) = win(handle).map(|w| {
+        let was = w.open;
         w.open = false;
-        // Only the closed window's rect is now vacated; repaint just that region
-        // (background + the frames of the windows below, which `compose` draws in
-        // z-order) instead of the whole screen — the open/close flicker fix. The
-        // exposed lower windows' content is re-laid by the desktop owner's
-        // `damage_redraw` after this returns.
-        let r = w.curr;
-        redraw_clip(r.x, r.y, r.w, r.h);
-        pb.set_ret(1);
-    } else {
+        (w.curr, was)
+    }) else {
         pb.set_ret(0);
+        return;
+    };
+    if was_open {
+        // Damage region `c`: the vacated rect, plus the new top window's rect
+        // when the closed window was the top one (activates the new top frame).
+        let new_top = get_top();
+        let damage = if handle == old_top {
+            match win(new_top).map(|w| w.curr) {
+                Some(nt) => union_grect(r, nt),
+                None => r,
+            }
+        } else {
+            r
+        };
+        // AES repaints background + remaining frames directly over the damage,
+        redraw_clip(damage.x, damage.y, damage.w, damage.h);
+        // then fans WM_REDRAW out to every window whose visible region grew.
+        broadcast_redraw(damage);
     }
+    pb.set_ret(1);
 }
 
 /// `wind_delete` (103) — free the handle `int_in[0]`.
@@ -1230,7 +1326,25 @@ pub fn wind_set(pb: &Aespb) {
             redraw_clip(d.x, d.y, d.w, d.h);
             send_redraw(handle, calc(WC_WORK, kind, r));
         }
-        WF_TOP => top_window(handle),
+        WF_TOP => {
+            // EmuTOS `wm_set(WF_TOP)` tops the window only when it isn't already
+            // on top (`if (w_handle != gl_wtop) wm_mktop(...)`,
+            // `gemwmlib.c:1679-1683`), and the resulting `draw_change`→`w_update`
+            // posts a `WM_REDRAW` to just the newly-topped window for its
+            // now-fully-visible work area (`:1004-1048` walks bottom=top=w_handle;
+            // `w_redraw` at `:887-907`). Topping only *exposes* the topped window,
+            // so no other window's visible region grows — none else is redrawn.
+            // The send lives here (not in [`top_window`], which the interactive
+            // `intercept` path shares) so the click-to-top WM_TOPPED message it
+            // writes to `pbuff` is not clobbered by a queued WM_REDRAW.
+            let old_top = get_top();
+            top_window(handle);
+            if old_top != handle {
+                if let Some((kind, curr)) = win(handle).map(|w| (w.kind, w.curr)) {
+                    send_redraw(handle, calc(WC_WORK, kind, curr));
+                }
+            }
+        }
         // Slider positions clamp to 1..1000; sizes clamp to 1..1000 but let −1
         // ("use default size") pass through (EmuTOS wm_set, gemwmlib.c:1643-1656).
         WF_VSLIDE => {
@@ -1726,6 +1840,25 @@ fn emit(pbuff: u64, msg: &[i16; 8]) -> bool {
         }
     }
     true
+}
+
+/// Test hook (not wired to boot): the pending 8-WORD AES message queued for
+/// process `pid`, or `None` if none is pending. Lets the P5 redraw-broadcast
+/// selftest observe the `WM_REDRAW` posted on `wind_close` / `wind_set(WF_TOP)`.
+pub fn test_pending_msg(pid: i16) -> Option<[i16; 8]> {
+    // SAFETY: single-CPU AES; test scaffolding on the boot trap path.
+    unsafe { super::pd::by_pid(pid).filter(|p| p.msg_pending).map(|p| p.msg) }
+}
+
+/// Test hook (not wired to boot): drop any pending message for `pid`, so the P5
+/// selftest can isolate the `WM_REDRAW` a subsequent window op posts.
+pub fn test_clear_msg(pid: i16) {
+    // SAFETY: single-CPU AES; test scaffolding on the boot trap path.
+    unsafe {
+        if let Some(p) = super::pd::by_pid(pid) {
+            p.msg_pending = false;
+        }
+    }
 }
 
 /// Test hook: name of the gadget under a point (for the headless logic
