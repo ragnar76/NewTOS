@@ -54,11 +54,6 @@ pub mod selftest_objc;
 pub mod aes_demo;
 pub mod desk;
 pub mod launch;
-// ADR-016: the legacy hand-rolled desktop (`desktop` + `desktop_icons`) is
-// superseded by the ground-up `desk` rebuild and taken out of the build; the
-// source is kept in the tree as a behavioural reference until feature parity.
-// pub mod desktop;
-// pub mod desktop_icons;
 pub mod selftest_ikbd;
 pub mod selftest_vdi;
 pub mod selftest_raster;
