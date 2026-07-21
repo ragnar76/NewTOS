@@ -543,10 +543,11 @@ const SHADOWED: u16 = 0x0020; // ob_state: solid drop shadow to the lower-right
 /// 50 % dither used to grey-out DISABLED objects (EmuTOS `IP_4PATT`).
 const STIPPLE_50: [u16; 2] = [0xAAAA, 0x5555];
 
-// 3D-object flags (`ob_flags`, EmuTOS `CONF_WITH_3D_OBJECTS`).
-const FL3DIND: u16 = 0x0200; // indicator (recessed)
-const FL3DBAK: u16 = 0x0400; // background panel (recessed)
-const FL3DACT: u16 = 0x0600; // activator / button (raised)
+// 3D-object flags (`ob_flags`, EmuTOS `CONF_WITH_3D_OBJECTS`, obdefs.h:92-97).
+const FL3DOBJ: u16 = 0x0200; // "indicator OR activator" bit: set on IND/ACT, CLEAR on BAK
+const FL3DIND: u16 = 0x0200; // indicator (recessed): grown + beveled
+const FL3DBAK: u16 = 0x0400; // background panel: flat, NOT grown, NOT beveled
+const FL3DACT: u16 = 0x0600; // activator / button (raised): grown + beveled
 const FL3DMASK: u16 = 0x0600;
 
 const NIL: i16 = -1;
@@ -1598,14 +1599,21 @@ fn just_draw(t: ObjTree, obj: i16, x: i16, y: i16, clip: ClipRect, backend: &dyn
     let selected = ob_state & SELECTED != 0;
     let disabled = ob_state & DISABLED != 0;
     let d3 = ob_flags & FL3DMASK;
+    // D7: the grow and the add_3d_effect bevel key on FL3DOBJ (0x0200), the
+    // "indicator OR activator" bit — set on FL3DIND/FL3DACT but CLEAR on
+    // FL3DBAK (0x0400). EmuTOS `just_draw` grows only `if (flags & FL3DOBJ)`
+    // (gemoblib.c:504) and bevels only `if (flags & FL3DOBJ)` (gemoblib.c:950).
+    // An FL3DBAK background panel is therefore neither grown nor beveled; its
+    // 3D optic comes from `draw_3d_outline` when OUTLINED (gemoblib.c:875-877).
+    let d3obj = ob_flags & FL3DOBJ != 0;
 
-    // EmuTOS `just_draw` grows a 3D object by ADJ3DSTD (2px) on every side, so
-    // its bevel sits in the margin *outside* the nominal rectangle instead of
-    // eating the object's own edge (which shrank every 3D button/panel by 4px
-    // and let the bevel overlap the border/text). Grow here, then everything
-    // below — fill, border, text, bevel, DISABLED dither — draws against the
-    // grown rectangle.
-    let (x, y, w, h) = if d3 != 0 {
+    // EmuTOS `just_draw` grows an FL3DOBJ object by ADJ3DSTD (2px) on every side,
+    // so its bevel sits in the margin *outside* the nominal rectangle instead of
+    // eating the object's own edge (which shrank every 3D button by 4px and let
+    // the bevel overlap the border/text). Grow here, then everything below —
+    // fill, border, text, bevel, DISABLED dither — draws against the grown
+    // rectangle. FL3DBAK is not an FL3DOBJ, so it keeps its nominal rect.
+    let (x, y, w, h) = if d3obj {
         (x - ADJ3DSTD, y - ADJ3DSTD, ob_width + 2 * ADJ3DSTD, ob_height + 2 * ADJ3DSTD)
     } else {
         (x, y, ob_width, ob_height)
@@ -1663,8 +1671,11 @@ fn just_draw(t: ObjTree, obj: i16, x: i16, y: i16, clip: ClipRect, backend: &dyn
             // th != 0 *regardless of 3D* (gemoblib.c:663-667); the 3D bevel
             // (add_3d_effect, gemoblib.c:950-951) is layered on top afterwards,
             // so a 3D button keeps its black outline AND gains a bevel. Box
-            // types keep their spec-byte thickness (and the 3D no-border case
-            // stays as-is — that is the FL3DBAK panel path, D7).
+            // types keep their spec-byte thickness. D7: an FL3DBAK panel is NOT
+            // an FL3DOBJ, so it takes its spec-byte th too (EmuTOS `ob_sst`
+            // gives every G_BOX `th = spec byte 1`, gemobjop.c:54-58, and
+            // `just_draw` never zeroes a box th for 3D) — only FL3DIND/FL3DACT
+            // *boxes* keep the bevel-instead-of-border path (th=0).
             let th = if ob_type == G_BUTTON {
                 let mut bt: i16 = -1;
                 if ob_flags & EXIT != 0 {
@@ -1674,8 +1685,8 @@ fn just_draw(t: ObjTree, obj: i16, x: i16, y: i16, clip: ClipRect, backend: &dyn
                     bt -= 1;
                 }
                 bt
-            } else if d3 != 0 {
-                0 // 3D box types use a bevel (drawn after), not a flat border
+            } else if d3obj {
+                0 // FL3DIND/FL3DACT box types use a bevel (drawn after), not a border
             } else {
                 ((ob_spec >> 16) as u8 as i8) as i16
             };
@@ -1890,13 +1901,19 @@ fn just_draw(t: ObjTree, obj: i16, x: i16, y: i16, clip: ClipRect, backend: &dyn
     // D3: EmuTOS draws NO extra frame for DEFAULT — `just_draw` never reads
     // the DEFAULT flag; a default button's heavier look comes entirely from
     // its thicker negative `th` (D4, gemobjop.c:63-64). The previously-invented
-    // double frame 3–4 px out is removed. OUTLINED (below) is a real EmuTOS
-    // decoration: the classic GEM double frame — a black line 3 px out plus a
-    // 2 px white ring — so the object's own border becomes the inner line
-    // (dialogs/alerts, gemoblib.c:882-885).
+    // double frame 3–4 px out is removed. OUTLINED is a real EmuTOS decoration
+    // (gemoblib.c:869-887): an OUTLINED FL3DBAK background gets the nested 3D
+    // outline (`draw_3d_outline`, gemoblib.c:875-877), every other type gets the
+    // classic GEM double frame — a black line 3 px out plus a 2 px white ring —
+    // so the object's own border becomes the inner line (gemoblib.c:882-885).
     if ob_state & OUTLINED != 0 {
-        draw_border(backend, x - 3, y - 3, w + 6, h + 6, 1, BLACK, clip);
-        draw_border(backend, x - 2, y - 2, w + 4, h + 4, 2, WHITE, clip);
+        if d3 == FL3DBAK {
+            // D7 (N3): flat-panel 3D outline, not the flat double frame.
+            draw_3d_outline(backend, x, y, w, h, clip);
+        } else {
+            draw_border(backend, x - 3, y - 3, w + 6, h + 6, 1, BLACK, clip);
+            draw_border(backend, x - 2, y - 2, w + 4, h + 4, 2, WHITE, clip);
+        }
     }
 
     // SHADOWED: a solid drop shadow to the lower-right, sized by |th| and drawn
@@ -1932,12 +1949,14 @@ fn just_draw(t: ObjTree, obj: i16, x: i16, y: i16, clip: ClipRect, backend: &dyn
         backend.fill_pattern(x, y, w, h, pat, clip);
     }
 
-    // 3D bevel LAST (EmuTOS calls add_3d_effect after the whole state block):
-    // a raised activator (unless pressed), a recessed indicator/background panel.
+    // 3D bevel LAST (EmuTOS gemoblib.c:950-951 calls add_3d_effect after the
+    // whole state block, gated on `flags & FL3DOBJ`): a raised activator (unless
+    // pressed), a recessed indicator. D7: FL3DBAK is NOT an FL3DOBJ, so it gets
+    // NO button bevel — its 3D optic is the draw_3d_outline recess above.
     match d3 {
         FL3DACT => add_3d_effect(backend, x, y, w, h, !selected, clip),
-        FL3DIND | FL3DBAK => add_3d_effect(backend, x, y, w, h, false, clip),
-        _ => {}
+        FL3DIND => add_3d_effect(backend, x, y, w, h, false, clip),
+        _ => {} // FL3DBAK (flat panel) and non-3D: no bevel
     }
 }
 
@@ -1955,6 +1974,43 @@ fn add_3d_effect(backend: &dyn RasterBackend, x: i16, y: i16, w: i16, h: i16, ra
         backend.fill_rect(x + i, y + i, 1, h - 2 * i, tl, clip);
         backend.fill_rect(x + i, y + h - 1 - i, w - 2 * i, 1, br, clip);
         backend.fill_rect(x + w - 1 - i, y + i, 1, h - 2 * i, br, clip);
+    }
+}
+
+/// Draw the EmuTOS 3D outline for an OUTLINED FL3DBAK background panel
+/// (`draw_3d_outline`, gemoblib.c:153-214). It is a 3-pixel nested frame sitting
+/// 1..3 px *outside* the rect (offsets +3, +2, +1). The bottom+right edges are
+/// all grey (EmuTOS LBLACK = [`GRAY_DK`]); the top+left edges are grey on the
+/// outermost line (offset +3) and white on the two inner lines (+2, +1) — a
+/// raised-panel optic distinct from both the button bevel ([`add_3d_effect`])
+/// and the classic OUTLINED black+white double frame. All draws are opaque
+/// ([`WriteMode::Replace`], EmuTOS `MD_REPLACE`) with a solid line mask, and the
+/// top-left group is drawn after the bottom-right group so shared corner pixels
+/// take the later colour exactly as EmuTOS's `v_pline` order does.
+fn draw_3d_outline(backend: &dyn RasterBackend, x: i16, y: i16, w: i16, h: i16, clip: ClipRect) {
+    if w < 1 || h < 1 {
+        return;
+    }
+    let mode = WriteMode::Replace;
+    let solid = 0xFFFF;
+    // Bottom-left -> bottom-right -> top-right: 3 grey nested L-shapes.
+    for d in [3i16, 2, 1] {
+        let bl_x = x - d;
+        let br_x = x + w - 1 + d;
+        let bot_y = y + h - 1 + d;
+        let top_y = y - d;
+        backend.draw_line(bl_x, bot_y, br_x, bot_y, GRAY_DK, mode, clip, solid); // bottom
+        backend.draw_line(br_x, bot_y, br_x, top_y, GRAY_DK, mode, clip, solid); // right
+    }
+    // Bottom-left -> top-left -> top-right: outermost grey, inner two white.
+    for d in [3i16, 2, 1] {
+        let side_x = x - d;
+        let bot_y = y + h - 1 + d;
+        let top_y = y - d;
+        let tr_x = x + w - 1 + d;
+        let col = if d == 3 { GRAY_DK } else { WHITE };
+        backend.draw_line(side_x, bot_y, side_x, top_y, col, mode, clip, solid); // left
+        backend.draw_line(side_x, top_y, tr_x, top_y, col, mode, clip, solid); // top
     }
 }
 
@@ -2200,16 +2256,18 @@ fn find_hit(
     let ob_state = t.state(obj);
     let x = px + t.x(obj);
     let y = py + t.y(obj);
-    // Hit-test the same extent `just_draw` renders. A 3D object (FL3DMASK) is
-    // drawn ADJ3DSTD px larger on every side (EmuTOS `ob_actxywh`,
-    // gemoblib.c:322-335), plus ADJ3DOUT when OUTLINED, so a click on the
-    // visible bevel/outline edge must count as inside — otherwise the drawn
-    // extent exceeds the hittable one and edge clicks are lost. SHADOWED objects
+    // Hit-test the same extent `just_draw` renders. D7: EmuTOS grows the hit
+    // rect only for an FL3DOBJ object (`ob_actxywh`, gemoblib.c:322-335 keys on
+    // `flags & FL3DOBJ`), which is set on FL3DIND/FL3DACT but CLEAR on FL3DBAK —
+    // so an FL3DBAK panel is hit-tested at its un-grown rect, in lockstep with
+    // the draw path (which no longer grows it either). An FL3DOBJ object is drawn
+    // ADJ3DSTD px larger on every side, plus ADJ3DOUT when OUTLINED, so a click
+    // on the visible bevel/outline edge must count as inside. SHADOWED objects
     // are the documented exception: EmuTOS `ob_find` (gemoblib.c:1063-1072)
     // hit-tests them at their un-grown relative rect. Children keep the nominal
     // origin `(x, y)`, exactly as `draw_tree` passes it — draw and hit stay
     // consistent at every level.
-    let (hx, hy, hw, hh) = if ob_flags & FL3DMASK != 0 && ob_state & SHADOWED == 0 {
+    let (hx, hy, hw, hh) = if ob_flags & FL3DOBJ != 0 && ob_state & SHADOWED == 0 {
         let mut adj = ADJ3DSTD;
         if ob_state & OUTLINED != 0 {
             adj += ADJ3DOUT;
