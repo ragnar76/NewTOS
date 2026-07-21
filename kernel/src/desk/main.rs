@@ -95,10 +95,15 @@ fn hndl_msg(msg: &[i16; 8]) -> bool {
             }
         }
         WM_REDRAW => {
-            // D8: repaint exactly the AES-supplied damage rectangle (`msg[4..8]`)
-            // of the message's window, via the occlusion-aware `do_wredraw`.
-            let clip = Grect { x: msg[4], y: msg[5], w: msg[6], h: msg[7] };
-            redraw::do_wredraw(handle, clip);
+            // EmuTOS `deskmain.c:1275-1281`: `menu = TRUE` (suppress the trailing
+            // `men_update`); `if (handle) do_wredraw(handle, &G.g_rmsg[4])`.
+            // `handle == 0` (`DESKWH`) is **skipped** — the desktop surface is the
+            // AES's own `WF_NEWDESK` redraw, not the app's `do_wredraw` job. Paint
+            // exactly the AES-supplied damage rectangle (`msg[4..8]`).
+            if handle != DESKWH {
+                let clip = Grect { x: msg[4], y: msg[5], w: msg[6], h: msg[7] };
+                redraw::do_wredraw(handle, clip);
+            }
             return done; // WM_REDRAW suppresses the trailing men_update
         }
         WM_TOPPED => top_msg(handle),
@@ -107,8 +112,8 @@ fn hndl_msg(msg: &[i16; 8]) -> bool {
         WM_ARROWED => arrow_msg(handle, msg[4]),
         WM_VSLID => slid_msg(handle, false, msg[4]),
         WM_HSLID => slid_msg(handle, true, msg[4]),
-        WM_MOVED => moved_msg(handle),
-        WM_SIZED => sized_msg(handle),
+        WM_MOVED => moved_msg(handle, msg),
+        WM_SIZED => sized_msg(handle, msg),
         _ => {}
     }
     menu::men_update();
@@ -337,7 +342,8 @@ fn open_item(handle: i16, obid: i16) {
         OpenTarget::M68k => {
             let text = b"[1][ This is an m68k Atari program. | The m68k emulator is not | available yet. ][ OK ]\0";
             super::form_alert(1, text.as_ptr());
-            redraw::full_redraw(); // restore the screen under the alert
+            // No desktop repaint: the AES `form_alert` bb_save/restores the screen
+            // under the alert (EmuTOS `fm_alert`), so the desktop returns intact.
         }
         OpenTarget::Doc { name, full_path } => open_document(&name, &full_path),
         OpenTarget::None => {}
@@ -361,7 +367,7 @@ fn open_document(name: &str, full_path: &str) {
     let Some(assoc) = super::inf::lookup_association(name.as_bytes()) else {
         let text = b"[1][ No application is installed | for this document type. ][ OK ]\0";
         super::form_alert(1, text.as_ptr());
-        redraw::full_redraw();
+        // AES `form_alert` bb_save/restores the screen — no desktop repaint.
         return;
     };
 
@@ -372,7 +378,7 @@ fn open_document(name: &str, full_path: &str) {
         _ => {
             let text = b"[1][ The associated application is | not a native NewTOS program. ][ OK ]\0";
             super::form_alert(1, text.as_ptr());
-            redraw::full_redraw();
+            // AES `form_alert` bb_save/restores the screen — no desktop repaint.
             return;
         }
     };
@@ -445,7 +451,8 @@ fn native_path(p_spec: &str, name: &[u8]) -> String {
 ///   then repaint the desktop over the text below — mirroring
 ///   [`crate::shell::run_console`]'s enter/restore. `run_program` is kept pure
 ///   (no console/redraw coupling); the enter is done here and the restore is
-///   the common trailing `full_redraw`.
+///   the trailing [`redraw::redraw_desktop`] (whole-screen recovery — the
+///   console cleared the screen).
 /// * [`ftype::Flavor::Params`] (`.NTP`) — a direct double-click runs it with an
 ///   empty tail (`tail == &[]`, Stage A). When launched as a document's
 ///   associated application (deskins #20), `tail` carries the document path.
@@ -466,7 +473,8 @@ fn launch_native(path: &str, name: &str, flavor: ftype::Flavor, tail: &[u8]) {
             // (already rebuilt) desktop.
             if !run_gem_app(path.as_bytes(), tail) {
                 alert_launch_failed(name);
-                redraw::full_redraw(); // restore the desktop under the alert
+                // `run_gem_app` already rebuilt the desktop (`desktop_resume`); the
+                // AES `form_alert` bb_save/restores over it — no further repaint.
             }
         }
         ftype::Flavor::Console => {
@@ -482,7 +490,9 @@ fn launch_native(path: &str, name: &str, flavor: ftype::Flavor, tail: &[u8]) {
             if !ran {
                 alert_launch_failed(name);
             }
-            redraw::full_redraw(); // restore the desktop over the console / alert
+            // The console program cleared the whole screen: genuine whole-screen
+            // recovery of the desktop (background + windows + menu bar).
+            redraw::redraw_desktop();
         }
     }
 }
@@ -544,9 +554,10 @@ fn desktop_resume() {
         super::wind_set_newdesk(tree, super::global::DROOT);
     }
     tos_api::aes::window::restore_windows();
-    // Rebuild the menu bar + repaint the whole desktop (`full_redraw`
-    // re-installs the menu bar itself).
-    redraw::full_redraw();
+    // App-return recovery: the child cleared/overdrew the whole screen, so rebuild
+    // the desktop background + windows + menu bar (`redraw_desktop` re-installs the
+    // menu bar itself). Not a per-event shortcut — a genuine whole-screen restore.
+    redraw::redraw_desktop();
 }
 
 /// Keep the VT52 console up after a `.NCP` program returns and block until the
@@ -757,7 +768,9 @@ fn hndl_menu(item: Item, title_obj: i16) -> bool {
 fn do_deskmenu(_item: Item) {
     let text = b"[1][ NewTOS Desktop | EmuTOS-conformant rebuild | ADR-016 (Task #8) ][ OK ]\0";
     super::form_alert(1, text.as_ptr());
-    redraw::full_redraw(); // restore the screen under the alert
+    // No after-menu whole-desktop repaint: the Desk drop-down was save/restored by
+    // the AES menu manager (P1), and the AES `form_alert` bb_save/restores the
+    // screen under the About box — the desktop returns intact via the app path.
 }
 
 /// `do_filemenu` (EmuTOS `deskmain.c:654`) — the File menu. Task-#8 items:
@@ -792,9 +805,10 @@ fn do_filemenu(item: Item) -> bool {
 fn do_optnmenu(item: Item) {
     match item {
         Item::SetBackground => {
-            // The dialog applies + persists on OK; repaint the screen it covered.
+            // Self-drawn dialog (no AES save/restore): restore the whole desktop it
+            // covered (Module-2 restore path — see `redraw::redraw_desktop`).
             super::inf::set_background();
-            redraw::full_redraw();
+            redraw::redraw_desktop();
         }
         Item::InstallApp => do_install_app(),
         Item::ReadInf => do_read_inf(),
@@ -834,7 +848,7 @@ fn do_install_app() {
         }
         Outcome::Cancel => {}
     }
-    redraw::full_redraw(); // restore the screen the dialog covered
+    redraw::redraw_desktop(); // self-drawn dialog: restore the whole desktop it covered
 }
 
 /// The default Install-Application flavour for a native program, from its
@@ -898,7 +912,9 @@ fn do_read_inf() {
         g.win_srtall();
     });
     win_bdall();
-    redraw::full_redraw();
+    // Read .INF rebuilt the desktop icon tree + every window's view (background,
+    // icon grid, sort may all have changed): a genuine whole-desktop repaint.
+    redraw::redraw_desktop();
 }
 
 /// Options → Save desktop: serialise the current desktop state to
@@ -906,7 +922,7 @@ fn do_read_inf() {
 fn do_save_desktop() {
     if !super::inf::save_desktop() {
         dir::fun_alert(1, b"Could not save the desktop file.");
-        redraw::full_redraw();
+        // AES `form_alert` (fun_alert) bb_save/restores the screen — no repaint.
     }
 }
 
@@ -920,7 +936,7 @@ fn do_new_folder() {
         return;
     }
     let Some(name) = super::dlg::edit_name(b"Name of new folder:\0", "") else {
-        redraw::full_redraw(); // dialog cancelled — restore the screen
+        redraw::redraw_desktop(); // dialog cancelled — restore the screen
         return;
     };
     let created = global::with(|g| {
@@ -939,7 +955,7 @@ fn do_new_folder() {
         }
         dir::fun_alert(1, b"Could not create the folder.");
     }
-    redraw::full_redraw();
+    redraw::redraw_desktop();
 }
 
 /// File → Info/Rename (EmuTOS `do_filemenu` `SHOWITEM` → `inf_file_folder`,
@@ -966,7 +982,7 @@ fn do_info_rename() {
     };
     let renamed = super::inf::inf_file_folder(&old, size, date, time, attr);
     let Some(new) = renamed else {
-        redraw::full_redraw(); // dialog cancelled / no change — restore the screen
+        redraw::redraw_desktop(); // dialog cancelled / no change — restore the screen
         return;
     };
     let new = new.trim();
@@ -981,7 +997,7 @@ fn do_info_rename() {
         }
         dir::fun_alert(1, b"Could not rename the item.");
     }
-    redraw::full_redraw();
+    redraw::redraw_desktop();
 }
 
 /// `fun_mask` (EmuTOS `deskfun.c:639`, `CONF_WITH_FILEMASK`) — File → Set file
@@ -1005,7 +1021,7 @@ fn do_set_mask() {
     .unwrap_or_else(|| String::from("*.*"));
 
     let Some(entered) = super::dlg::edit_name(b"Show only files matching:\0", &cur) else {
-        redraw::full_redraw(); // cancelled — restore the screen under the dialog
+        redraw::redraw_desktop(); // cancelled — restore the screen under the dialog
         return;
     };
     set_window_mask(cwin, &entered);
@@ -1057,7 +1073,7 @@ fn set_window_mask(handle: i16, raw: &str) {
     if let Some(sliders) = global::with(|g| g.win_bldview(slot, work)) {
         set_sliders(handle, sliders);
     }
-    redraw::full_redraw();
+    redraw::redraw_desktop();
 }
 
 /// Normalise a raw mask to an upper-case TOS wildcard: trim, keep only the
@@ -1098,7 +1114,7 @@ fn do_search() {
         return;
     }
     let Some(name) = super::dlg::edit_name(b"Search for file:\0", "") else {
-        redraw::full_redraw(); // cancelled — restore the screen under the dialog
+        redraw::redraw_desktop(); // cancelled — restore the screen under the dialog
         return;
     };
     search_current_window(cwin, &name);
@@ -1144,10 +1160,10 @@ fn search_current_window(handle: i16, name: &str) -> usize {
     let (count, sliders) = result;
     if let Some(sliders) = sliders {
         set_sliders(handle, sliders);
-        redraw::full_redraw();
+        redraw::redraw_desktop();
     } else {
         dir::fun_alert(1, b"No file matching the search was found.");
-        redraw::full_redraw();
+        redraw::redraw_desktop();
     }
     count
 }
@@ -1347,70 +1363,75 @@ fn do_close_folder() {
     }
 }
 
-/// File → Cycle windows (EmuTOS `BTOPITEM`) — bring the bottom-most window to
-/// the top. Enabled only with two or more windows (`men_update`).
+/// File → Cycle windows (EmuTOS `BTOPITEM`, `deskmain.c:711-717`) — bring the
+/// bottom-most window to the top. Enabled only with two or more windows
+/// (`men_update`). EmuTOS synthesizes `fun_msg(WM_TOPPED, win_onbottom(), …)`;
+/// NewTOS dispatches the same [`top_msg`] handler directly on the bottom window,
+/// so cycle and a frame-click top are indistinguishable once dispatched.
 fn do_cycle() {
     let bottom = global::with(|g| g.windows.zorder.last().map(|&s| g.windows.slots[s].w_id))
         .flatten();
-    let Some(handle) = bottom else {
-        return;
-    };
-    // BTOPITEM (deskmain.c:711) synthesizes a WM_TOPPED for the bottom window
-    // (`fun_msg(WM_TOPPED, ...)`, :717); the WM_TOPPED handler (deskmain.c:1282)
-    // then deselects the *previously* current window via `desk_clear(G.g_cwin)`
-    // (:1283) before switching. `do_cycle` inlines that clear (mirroring
-    // `top_msg`) so a stale selection does not survive the top change.
-    let prev = global::with(|g| g.g_cwin).unwrap_or(DESKWH);
-    let prev_rect = (prev != DESKWH).then(|| wind_get_grect(prev, WF_CXYWH));
-    global::with(|g| {
-        let p = g.g_cwin;
-        g.desk_clear(p);
-    });
-    // Tell the AES (repaints the union of the topped + old-top rects), update the
-    // desktop z-order + current window, then settle that same damage — not the
-    // whole screen (topping-flicker fix).
-    super::wind_set_int(handle, WF_TOP, 0);
-    global::with(|g| g.win_top(handle));
-    let work = wind_get_work(handle);
-    global::with(|g| g.desk_verify(handle, work, false));
-    let new_rect = wind_get_grect(handle, WF_CXYWH);
-    let damage = match prev_rect {
-        Some(pr) => redraw::union(new_rect, pr),
-        None => new_rect,
-    };
-    redraw::damage_redraw(damage);
+    if let Some(handle) = bottom {
+        top_msg(handle);
+    }
 }
 
 // ── Window-manager messages ────────────────────────────────────────────────
 
-/// `WM_TOPPED` — the AES already brought `handle` to the front (and redrew the
-/// frames); update the desktop's own z-order + current window and repaint the
-/// content.
+/// `WM_TOPPED` (EmuTOS `deskmain.c:1282-1292`) — bring `handle` to the front.
+/// Exact sequence: `desk_clear(G.g_cwin)` (deselect the *previously* current
+/// window before switching); `pw = win_find(handle)`; if it exists,
+/// `wind_set(handle, WF_TOP, …)` (tell the AES), `win_top(pw)` (reorder the
+/// desktop's own z-chain + `objc_order`), `desk_verify(pw->w_id, FALSE)`
+/// (`changed = FALSE` — topping doesn't rebuild the item grid), `change = TRUE`.
+///
+/// No explicit content repaint: EmuTOS relies on the AES sending `WM_REDRAW` for
+/// the newly-uncovered pieces after `WF_TOP`, drained by the event loop into
+/// [`redraw::do_wredraw`]. **Exposed gap (#123, P5-family):** NewTOS's AES
+/// `wind_set(WF_TOP)` repaints background + frames but does not yet `send_redraw`
+/// the topped/uncovered windows' content — so a topped window that was partly
+/// covered is not re-laid here (only triggerable with two or more overlapping
+/// windows, i.e. real-HW interaction / File→Cycle). Flagged, not masked with a
+/// desktop-side composite.
 fn top_msg(handle: i16) {
-    // The AES already topped `handle` and repainted the union of the new/old top
-    // rects; settle the same damage (background + frames + content). The
-    // previously-current window (`g_cwin`) loses its active-title highlight, so
-    // the damage is the union of both border rects — not the whole screen.
-    let prev = global::with(|g| g.g_cwin).unwrap_or(DESKWH);
-    let prev_rect = (prev != DESKWH).then(|| wind_get_grect(prev, WF_CXYWH));
     global::with(|g| {
-        let p = g.g_cwin;
-        g.desk_clear(p);
-        g.win_top(handle);
+        let prev = g.g_cwin;
+        g.desk_clear(prev);
     });
-    let work = wind_get_work(handle);
-    global::with(|g| g.desk_verify(handle, work, false));
-    let new_rect = wind_get_grect(handle, WF_CXYWH);
-    let damage = match prev_rect {
-        Some(pr) => redraw::union(new_rect, pr),
-        None => new_rect,
-    };
-    redraw::damage_redraw(damage);
+    if global::with(|g| g.win_find(handle).is_some()).unwrap_or(false) {
+        super::wind_set_int(handle, WF_TOP, 0); // AES: top + repaint bg/frames
+        global::with(|g| g.win_top(handle));
+        let work = wind_get_work(handle);
+        global::with(|g| g.desk_verify(handle, work, false));
+        // change = TRUE → cnx_put() (session save) — not implemented (future module).
+    }
 }
 
-/// `WM_FULLED` — toggle the top window between its full extent and its previous
-/// one; rebuild the item grid for the new size and repaint.
+/// `WM_FULLED` (EmuTOS `deskmain.c:1296-1305`) — toggle the window between its
+/// full extent and its previous size. Exact sequence: `pw = win_find(handle)`;
+/// if it exists, `win_top(pw)` (fuller implies top), `do_wfull(handle)` (the
+/// full/previous toggle via `wind_set(WF_CXYWH)`), `desk_verify(handle, TRUE)`
+/// (`changed = TRUE` — a size change rebuilds the item grid), `change = TRUE`.
+///
+/// The window content repaint comes from the AES `send_redraw` that
+/// [`do_wfull`]'s `wind_set(WF_CXYWH)` queues — drained by the loop into
+/// [`redraw::do_wredraw`], after `desk_verify` has re-flowed the grid.
 fn full_msg(handle: i16) {
+    if global::with(|g| g.win_find(handle).is_some()).unwrap_or(false) {
+        global::with(|g| g.win_top(handle)); // fuller implies top
+        do_wfull(handle);
+        let work = wind_get_work(handle);
+        if let Some(sliders) = global::with(|g| g.desk_verify(handle, work, true)).flatten() {
+            set_sliders(handle, sliders);
+        }
+    }
+}
+
+/// `do_wfull(handle)` (EmuTOS `desksupp.c` `do_wfull`) — toggle a window between
+/// its full extent (`WF_FXYWH`) and its previous size (`WF_PXYWH`) via
+/// `wind_set(handle, WF_CXYWH, …)`. The AES applies the geometry, repaints
+/// background + frames over the damage, and `send_redraw`s the window's content.
+fn do_wfull(handle: i16) {
     let cur = wind_get_grect(handle, WF_CXYWH);
     let full = wind_get_grect(handle, WF_FXYWH);
     let target = if cur.w >= full.w && cur.h >= full.h {
@@ -1418,58 +1439,77 @@ fn full_msg(handle: i16) {
     } else {
         full
     };
-    global::with(|g| g.win_top(handle)); // fuller implies top
-    super::wind_set_grect(handle, WF_CXYWH, target); // AES redraws frames (damage-scoped)
-    let work = wind_get_work(handle);
-    if let Some(sliders) = global::with(|g| g.desk_verify(handle, work, true)).flatten() {
-        set_sliders(handle, sliders);
-    }
-    // A maximize/restore legitimately changes a large area, but only the union
-    // of the old and new border rects — not the whole screen. `damage_redraw`
-    // settles that region (background, frames, and every window's content),
-    // including any lower window exposed by a restore.
-    redraw::damage_redraw(redraw::union(cur, target));
+    super::wind_set_grect(handle, WF_CXYWH, target);
 }
 
-/// `WM_MOVED` — the AES already moved `handle` (frame + content blitted).
-/// Re-sync the desktop's cached work-area origin (the item objects are placed
-/// relative to it) and repaint to settle any overlap the live drag disturbed.
-fn moved_msg(handle: i16) {
-    // The solid drag already blitted the window to its end position and
-    // repainted the vacated region with the desktop background; on release only
-    // the overlap needs settling. Damage = old border rect ∪ new border rect
-    // (the drag stashed the pre-move rect in WF_PXYWH). Repaint just that region
-    // so a lower window under the vacated area returns — no full-screen flicker.
-    let old = wind_get_grect(handle, WF_PXYWH);
-    let new = wind_get_grect(handle, WF_CXYWH);
-    let work = wind_get_work(handle);
+/// `do_xyfix(px, py)` (EmuTOS `desksupp.c:262-272`) — fix a desktop window's
+/// position: align `x` to the nearest 16-pixel boundary and clamp `y` below the
+/// menu bar. Applied to the `WM_MOVED`/`WM_SIZED` message rectangle before it is
+/// confirmed to the AES with `wind_set(WF_CXYWH)`. (The `CONF_WITH_3D_OBJECTS`
+/// "keep the mover on-screen" nudge, `desksupp.c:265-269`, is omitted — a niche
+/// right-edge case not needed for the redraw contract.)
+fn do_xyfix(r: &mut Grect) {
+    r.x = (r.x + 8) & !0x000F; // align to the nearest 16-pixel boundary
+    let desk_y = global::with(|g| g.g_desk.y).unwrap_or(0);
+    if r.y < desk_y {
+        r.y = desk_y; // ensure it's below the menu bar
+    }
+}
+
+/// `WM_MOVED` (EmuTOS `deskmain.c:1317-1338`, shared move/size path) — confirm
+/// the window's new position to the AES. Exact sequence: `pw = win_find(handle)`
+/// (bail if gone); `rc_copy(&G.g_rmsg[4], &gr)`; `do_xyfix(&gr.x, &gr.y)`;
+/// `wind_set_grect(handle, WF_CXYWH, &gr)`; then (the `WM_MOVED` arm)
+/// `wind_get_grect(handle, WF_WXYWH, &gr)` and copy it straight into
+/// `G.g_screen[pw->w_root].ob_x/y/w/h` — the desktop's cached copy of the
+/// window's screen position for later screen-relative math.
+///
+/// The window content repaint comes from the AES `send_redraw` that
+/// `wind_set(WF_CXYWH)` queues (drained by the loop into [`redraw::do_wredraw`]);
+/// the vacated region was already restored to the desktop background by the AES
+/// solid-drag. `change = TRUE → cnx_put()` (session save) is a future module.
+fn moved_msg(handle: i16, msg: &[i16; 8]) {
+    let Some(slot) = global::with(|g| g.win_slot(handle)).flatten() else {
+        return;
+    };
+    let mut gr = Grect { x: msg[4], y: msg[5], w: msg[6], h: msg[7] };
+    do_xyfix(&mut gr);
+    super::wind_set_grect(handle, WF_CXYWH, gr); // AES: repaint bg/frames + send_redraw
+    let work = wind_get_work(handle); // WF_WXYWH — the confirmed work-area rect
     global::with(|g| {
-        if let Some(slot) = g.win_slot(handle) {
-            let root = g.windows.slots[slot].w_root as usize;
-            g.g_screen[root].ob_x = work.x;
-            g.g_screen[root].ob_y = work.y;
-            g.g_screen[root].ob_width = work.w;
-            g.g_screen[root].ob_height = work.h;
-        }
+        let root = g.windows.slots[slot].w_root as usize;
+        g.g_screen[root].ob_x = work.x;
+        g.g_screen[root].ob_y = work.y;
+        g.g_screen[root].ob_width = work.w;
+        g.g_screen[root].ob_height = work.h;
     });
-    redraw::damage_redraw(redraw::union(old, new));
 }
 
-/// `WM_SIZED` — the AES already resized `handle`'s frame; rebuild the item grid
-/// for the new work area (columns may re-flow) and repaint.
-fn sized_msg(handle: i16) {
-    // The resize repainted the old window rect with the background and drew the
-    // frame at its new size during the drag, but the work-area content is only
-    // re-laid now. Damage = old border rect ∪ new border rect (the drag stashed
-    // the pre-resize rect in WF_PXYWH); repaint just that region — no full-screen
-    // flicker, and a lower window exposed by a shrink returns correctly.
-    let old = wind_get_grect(handle, WF_PXYWH);
-    let new = wind_get_grect(handle, WF_CXYWH);
-    let work = wind_get_work(handle);
-    if let Some(sliders) = global::with(|g| g.desk_verify(handle, work, true)).flatten() {
-        set_sliders(handle, sliders);
+/// `WM_SIZED` (EmuTOS `deskmain.c:1317-1338`, shared move/size path) — confirm
+/// the window's new geometry and rebuild the item grid. Exact sequence:
+/// `pw = win_find(handle)` (bail if gone); `rc_copy(&G.g_rmsg[4], &gr)`;
+/// `do_xyfix(&gr.x, &gr.y)`; `wind_set_grect(handle, WF_CXYWH, &gr)`; then (the
+/// `WM_SIZED` arm) `desk_verify(handle, TRUE)` — rebuild the window, updating
+/// `w_pncol`.
+///
+/// EmuTOS additionally detects a *shrink with a changed column count* and
+/// synthesizes `fun_msg(WM_REDRAW, …)` because its AES sends no `WM_REDRAW` when a
+/// window only shrinks (`deskmain.c:1325-1350`). NewTOS's AES `wind_set(WF_CXYWH)`
+/// **unconditionally** `send_redraw`s the whole work area (grow *and* shrink), so
+/// the re-flowed content is always repainted via [`redraw::do_wredraw`] once the
+/// loop drains that message — the shrink-specific fixup is subsumed and omitted
+/// (the observable contract, content re-flowing into fewer columns on shrink, is
+/// met). `send_redraw` fires after `desk_verify` has rebuilt the grid.
+fn sized_msg(handle: i16, msg: &[i16; 8]) {
+    if global::with(|g| g.win_find(handle).is_some()).unwrap_or(false) {
+        let mut gr = Grect { x: msg[4], y: msg[5], w: msg[6], h: msg[7] };
+        do_xyfix(&mut gr);
+        super::wind_set_grect(handle, WF_CXYWH, gr); // AES: repaint bg/frames + send_redraw
+        let work = wind_get_work(handle);
+        if let Some(sliders) = global::with(|g| g.desk_verify(handle, work, true)).flatten() {
+            set_sliders(handle, sliders);
+        }
     }
-    redraw::damage_redraw(redraw::union(old, new));
 }
 
 /// `WM_ARROWED` — an arrow-gadget scroll of `handle`.
@@ -1568,26 +1608,30 @@ fn open_dir_window(spec: &str, title: &str) {
         set_sliders(handle, sliders);
     }
     global::with(|g| g.desk_verify(handle, work, false));
-    // The new window covers exactly `r` and is on top; repaint only that region
-    // (background + frames + every window's content, occlusion-clipped) instead
-    // of the whole screen — no full-screen flicker on open.
-    redraw::damage_redraw(r);
+    // No desktop-side repaint: `wind_open` (above) already repainted the AES
+    // background + frame over the new window's rect and `send_redraw`d a
+    // `WM_REDRAW` for its content — drained by the event loop into
+    // `redraw::do_wredraw` once `win_bldview` (above) has laid out the items.
+    // Exactly the EmuTOS `do_diropen` → `wind_open` → AES-`WM_REDRAW` path.
 }
 
 /// Close window `handle`: AES `wind_close` + `wind_delete`, free the desktop
-/// slot, re-verify whatever is now on top, and repaint.
+/// slot, and re-verify whatever is now on top.
 fn close_window(handle: i16) {
-    // Capture the window's rect *before* closing — that is the vacated damage
-    // region the desktop must settle (background + any window that was below).
-    let vacated = wind_get_grect(handle, WF_CXYWH);
     super::wind_close(handle);
     super::wind_delete(handle);
     global::with(|g| g.win_free(handle));
     let top = wind_get_top();
     let work = if top == DESKWH { g_desk() } else { wind_get_work(top) };
     global::with(|g| g.desk_verify(top, work, false));
-    // Repaint only the vacated rect, not the whole screen — no flicker on close.
-    redraw::damage_redraw(vacated);
+    // No desktop-side repaint: the AES `wind_close` repainted the desktop
+    // background + icons + the frames of the windows below over the vacated rect.
+    // A window that was *below* the closed one needs its content re-laid — EmuTOS
+    // relies on the AES sending it a `WM_REDRAW`. **Exposed gap (#123, P5):**
+    // NewTOS's AES `wind_close` does not yet `send_redraw` the newly-uncovered
+    // windows, so a lower window's content is not re-laid here (only observable
+    // with overlapping windows; closing the single boot window reveals the
+    // desktop surface, which the AES does repaint). Flagged, not masked.
 }
 
 /// Re-scan window `handle` in place for a new directory `spec`/`title` (the
@@ -1626,10 +1670,11 @@ fn navigate_window(handle: i16, spec: &str, title: &str) {
     if let Some(sliders) = global::with(|g| g.win_bldview(slot, work)) {
         set_sliders(handle, sliders);
     }
-    // Same window, unchanged rect, new content (folder "up one level"); repaint
-    // only this window's rect instead of the whole screen — no flicker.
-    let border = wind_get_grect(handle, WF_CXYWH);
-    redraw::damage_redraw(border);
+    // Same window, unchanged rect, new content (folder "up one level"): repaint
+    // this window's content directly via `do_wredraw` over its work area — the
+    // EmuTOS `win_blt`/`refresh_window` direct-`do_wredraw` idiom
+    // (`deskwin.c:635`), no geometry change and so no AES `WM_REDRAW` involved.
+    redraw::do_wredraw(handle, work);
 }
 
 // ── Small helpers ──────────────────────────────────────────────────────────

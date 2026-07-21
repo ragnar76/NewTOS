@@ -544,11 +544,12 @@ pub fn run() {
 
     // Open the C:\ directory window and build its view, set the menu state to
     // reflect it (men_update — the D6 machinery), then paint everything (desktop
-    // bg + icons + frames via redraw_all, each window's content
-    // occlusion-clipped via `do_wredraw`).
+    // bg + icons + frames via the AES compositor, each window's content
+    // occlusion-clipped via `do_wredraw`). Boot is a genuine first full paint —
+    // `redraw_desktop` (whole-screen recovery), not a per-event shortcut.
     main::open_root_window(b'C');
     menu::men_update();
-    redraw::full_redraw();
+    redraw::redraw_desktop();
 
     // Park the mouse pointer at the screen centre so the desktop boots into a
     // clean idle state (GEM positions the pointer at startup). Without this the

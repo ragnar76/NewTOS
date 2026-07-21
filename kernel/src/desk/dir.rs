@@ -637,7 +637,7 @@ fn fun_del_desktop() -> bool {
                 }
             }
             if any {
-                super::redraw::full_redraw();
+                super::redraw::redraw_desktop();
             }
             any
         }
@@ -692,7 +692,7 @@ pub fn fun_selectall() -> bool {
         return false;
     }
     global::with(|g| g.select_all(cwin));
-    super::redraw::full_redraw();
+    super::redraw::redraw_desktop();
     true
 }
 
@@ -776,7 +776,7 @@ fn fun_win2win(src_wh: i16, dst_wh: i16, dst_obj: i16, keystate: u16) {
             rebuild_window(src_wh);
         }
         rebuild_window(dst_wh);
-        super::redraw::full_redraw();
+        super::redraw::redraw_desktop();
     }
 }
 
@@ -793,7 +793,7 @@ fn fun_win2desk(src_wh: i16, dobj: i16, keystate: u16) {
     }
     if fun_file2desk(dobj, &src_dir, &entries, keystate) {
         rebuild_window(src_wh);
-        super::redraw::full_redraw();
+        super::redraw::redraw_desktop();
     }
 }
 
@@ -851,7 +851,7 @@ fn fun_desk2win(dest_wh: i16, dobj: i16, _keystate: u16) {
     }
     if any {
         rebuild_window(dest_wh);
-        super::redraw::full_redraw();
+        super::redraw::redraw_desktop();
     }
 }
 
@@ -897,7 +897,7 @@ fn fun_desk2desk(dobj: i16, keystate: u16) {
         any |= ran;
     }
     if any {
-        super::redraw::full_redraw();
+        super::redraw::redraw_desktop();
     }
 }
 
@@ -930,7 +930,7 @@ pub fn rebuild_window(handle: i16) {
             super::main::set_sliders_pub(handle, sliders);
         }
     }
-    super::redraw::full_redraw();
+    super::redraw::redraw_desktop();
 }
 
 /// `fun_rebld` — rebuild every open window whose directory equals `path`
