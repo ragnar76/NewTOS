@@ -459,6 +459,33 @@ fn fmeta_test() {
     // Clear read-only again so we can rename/delete it.
     gemdos_fattrib(f.as_ptr() as u64, 1, 0x00);
 
+    // ── Fattrib TOS4/FreeMiNT dir-GET extension (QED clipboard / cflib) ──
+    // GET on a folder must return its attribute (FA_SUBDIR = 0x10 set), for
+    // both the trailing-backslash form cflib passes and the plain form; SET on
+    // a folder must stay rejected (EACCDN); GET on a normal file and a missing
+    // name are unchanged. Create a CLIPBRD directory to mirror QED's probe.
+    let cdir = c"c:/CLIPBRD";
+    let dc = gemdos_dcreate(cdir.as_ptr() as u64);
+    let dir_bs = gemdos_fattrib(c"C:\\CLIPBRD\\".as_ptr() as u64, 0, 0); // (a) trailing '\'
+    let dir_ns = gemdos_fattrib(cdir.as_ptr() as u64, 0, 0); //             (a) plain form
+    let file_get = gemdos_fattrib(f.as_ptr() as u64, 0, 0); //             (b) normal file
+    let dir_set = gemdos_fattrib(cdir.as_ptr() as u64, 1, 0x00); //        (c) SET on folder
+    let miss = gemdos_fattrib(c"c:/NOSUCH.XYZ".as_ptr() as u64, 0, 0); //  (d) non-existent
+    kprintln!(
+        "[emmc] Fattrib dir GET(\"C:\\CLIPBRD\\\")={:#x} (exp>=0 &0x10) dir GET(\"C:\\CLIPBRD\")={:#x} \
+         ; file GET={:#x} (&0x10==0) ; dir SET={} (exp -36) ; missing GET={} (exp -33)",
+        dir_bs, dir_ns, file_get, dir_set, miss,
+    );
+    kprintln!(
+        "[emmc] Fattrib dir-GET asserts: (a) {} (b) {} (c) {} (d) {}",
+        dir_bs >= 0 && (dir_bs & 0x10) != 0 && dir_ns >= 0 && (dir_ns & 0x10) != 0,
+        file_get >= 0 && (file_get & 0x10) == 0,
+        dir_set == -36,
+        miss == -33,
+    );
+    let _ = dc;
+    gemdos_ddelete(cdir.as_ptr() as u64); // clean up
+
     // Fdatime: set a known stamp on the open file, close, reopen, get.
     let h = gemdos_fopen(f.as_ptr() as u64, 0);
     let stamp: [u16; 2] = [0x6000, 0x5AA1]; // time=12:00:02, date=2025-05-01

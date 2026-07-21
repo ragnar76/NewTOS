@@ -127,6 +127,22 @@ For every `docs/api/*.md` entry, phase plan, or piece of code, check:
 Findings feed back into the spec (`docs/api/`) and the phase plans; ADRs go
 in [`MEMORY.md`](MEMORY.md).
 
+## Sanctioned FreeMiNT/TOS4 extensions
+
+NewTOS is a **superset** of strict TOS 1-3: where a later reference (TOS 4 /
+FreeMiNT) lifted a restriction and real apps depend on it, NewTOS adopts the
+superset behaviour — additively, never breaking a conforming TOS 1-3 program.
+Each such divergence is recorded here with its reason and reference.
+
+- **`Fattrib` (GEMDOS 0x43) on directories.** GET (`wrt == 0`) on a folder
+  returns the folder's attribute byte with `FA_SUBDIR` (0x10) set, instead of
+  TOS 1-3's `EFILNF`. Reason: cflib `path_exists` (used by QED's clipboard init
+  and every FreeMiNT/cflib app) probes a directory with
+  `Fattrib(path, 0, 0) >= 0 && (attr & FA_DIR)`. Matches FreeMiNT `sys_f_attrib`
+  (`references/freemint/sys/dosdir.c:998-1002`). SET on a folder stays rejected
+  (`EACCDN`) — stricter than FreeMiNT — so a directory entry is never mutated
+  (the #38 corruption guard). Spec: `docs/api/gemdos/file/43-fattrib.md`.
+
 ## Deferred optimisations (Phase 2)
 
 Optimisations and modern extensions are **not built until the contract is

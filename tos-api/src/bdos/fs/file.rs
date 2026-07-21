@@ -548,9 +548,11 @@ pub fn fdelete(args: &TrapArgs) -> Long {
     E_OK
 }
 
-/// `Fattrib` (0x43) — get or set a file's attribute byte.
-/// `wrt = 0` returns the current attributes; `wrt = 1` sets `mod`
-/// (FA_VOL / FA_SUBDIR are rejected) and returns it.
+/// `Fattrib` (0x43) — get or set a file's (or, on GET, a directory's)
+/// attribute byte. `wrt = 0` returns the current attributes — for files
+/// *and*, per the TOS4/FreeMiNT extension, folders (with FA_SUBDIR set);
+/// `wrt = 1` sets `mod` on a **file** only (FA_VOL / FA_SUBDIR bits and any
+/// set on a folder/label are rejected with EACCDN) and returns it.
 pub fn fattrib(args: &TrapArgs) -> Long {
     // SAFETY: caller-supplied path pointer (kernel pointer at EL1).
     let pathstr = match unsafe { super::cstr(args.arg_u64(0)) } {
@@ -567,16 +569,36 @@ pub fn fattrib(args: &TrapArgs) -> Long {
         // `fsdir.c:410`).
         Err(e) => return path::drive_notfound(e, EPTHNF),
     };
-    // Files only (TOS 1-3): the `FA_NORM` scan omits sub-directories, so
-    // `Fattrib` on a folder returns `EFILNF` and never gets or mutates a
-    // directory's attribute byte (EmuTOS `scan(dn, s, FA_NORM, …)`,
-    // `fsdir.c:415`).
-    let entry = match dir::find_file_in_dir(&vol, parent, &name11) {
+    if wrt == 0 {
+        // GET — TOS4/FreeMiNT extension: resolve files *and* directories, so
+        // `Fattrib(dir, 0, 0)` returns the directory entry's attribute byte
+        // (with FA_SUBDIR = 0x10 set) instead of EFILNF. cflib `path_exists`
+        // (used by QED's clipboard init and every cflib app) probes a folder
+        // exactly this way. FreeMiNT `sys_f_attrib` returns the raw attribute
+        // for both files and folders (`return xattr.attr`, `sys/dosdir.c:1001`);
+        // the TOS4 lift of the folder restriction is documented in EmuTOS
+        // `bdos/fsdir.c:391-400`. The subdir-aware `find_in_dir` sees folders
+        // (volume-label/LFN records are already skipped by `DirIter`).
+        let entry = match dir::find_in_dir(&vol, parent, &name11) {
+            Some(e) => e,
+            None => return EFILNF,
+        };
+        return entry.attrib as i8 as Long; // sign-extended UBYTE
+    }
+    // SET (wrt == 1) — files only. A directory's (or volume label's) attribute
+    // byte stays immutable: never rewrite FA_SUBDIR/FA_VOL, which is the #38
+    // corruption guard (Fattrib must not mutate a folder entry). FreeMiNT
+    // forbids toggling FA_DIR on a set — `(attr & FA_DIR) != (xattr.attr &
+    // FA_DIR)` → EACCES (`sys/dosdir.c:976-981`) — and rejects a volume label
+    // (`sys/dosdir.c:987-990`); NewTOS is stricter and rejects *any* set on a
+    // folder or label. `find_in_dir` (not `find_file_in_dir`) is used so we can
+    // observe the folder and return EACCDN rather than the file-not-found path.
+    let entry = match dir::find_in_dir(&vol, parent, &name11) {
         Some(e) => e,
         None => return EFILNF,
     };
-    if wrt == 0 {
-        return entry.attrib as i8 as Long; // sign-extended UBYTE
+    if entry.attrib & (dir::FA_VOL | dir::FA_SUBDIR) != 0 {
+        return EACCDN;
     }
     // Set: FA_VOL (0x08) and FA_SUBDIR (0x10) are not settable here.
     if mode & 0x18 != 0 {
