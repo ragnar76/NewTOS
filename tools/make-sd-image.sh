@@ -6,7 +6,9 @@
 # partition of type 0x06, matching the kernel's MBR parser in
 # `tos-api/src/bios/drive.rs` (`entry()` reads the 16-byte records at 0x1BE;
 # type 0x06 = FAT16). The partition is populated with a handful of sample
-# files and folders so the desktop shows a `C:` drive with content.
+# files and folders so the desktop shows a `C:` drive with content — including
+# the ported GEM editor QED under `C:\Apps\QED\` (double-click to launch), if
+# its ILP32 build is present.
 #
 # macOS only (uses hdiutil / diskutil / newfs_msdos). Runs without sudo — the
 # raw disk image is attached as a user-owned device.
@@ -102,6 +104,22 @@ if [ -f "$LIBTEST_NCP" ]; then
   echo "installed C:\\LIBTEST.NCP (mintlib-linked libc proof)"
 else
   echo "note: sdk/libc/build/libtest.NCP not built; C:\\LIBTEST.NCP skipped (run sdk/libc/build-libc.sh)"
+fi
+
+# QED (Atari GEM editor) — the first ported GEM application, compiled UNMODIFIED
+# for NewTOS/AArch64 in the ILP32 ABI. Installed into its own app directory
+# C:\Apps\QED\ (classic GEM apps expect their .RSC beside the .NAP): QED.NAP is
+# the GEM program, qed.rsc its native NRSC-v4 resource. Launched by
+# double-clicking QED.NAP on the desktop — NEVER from \AUTO\ (console-only,
+# ADR-018). Copied in if the ILP32 build exists (built by sdk/apps/qed).
+QED_DIR="$SCRIPT_DIR/../sdk/apps/qed/build-ilp32"
+if [ -f "$QED_DIR/QED.NAP" ] && [ -f "$QED_DIR/qed.rsc" ]; then
+  mkdir -p "$V/Apps/QED"
+  cp "$QED_DIR/QED.NAP" "$V/Apps/QED/QED.NAP"
+  cp "$QED_DIR/qed.rsc" "$V/Apps/QED/qed.rsc"
+  echo "installed C:\\Apps\\QED\\QED.NAP + qed.rsc (ported GEM editor, ILP32)"
+else
+  echo "note: sdk/apps/qed/build-ilp32/{QED.NAP,qed.rsc} not built; C:\\Apps\\QED skipped"
 fi
 
 # Strip macOS metadata so it does not clutter the directory listing.
