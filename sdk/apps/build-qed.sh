@@ -8,7 +8,17 @@
 # reimplement"): its 37 src/*.c compile 100% UNMODIFIED. Every compile error or
 # undefined symbol is a TOOLCHAIN gap, fixed in the libraries -- NEVER in QED.
 # QED has ZERO assembly, so the one allowed app edit (m68k asm retarget) does not
-# apply here: nothing under sdk/apps/qed/ is touched by this script.
+# apply here.
+#
+# OVERLAY mechanism (same spirit as the m68k-asm retarget exception): a file
+# under sdk/overlays/qed/ replaces the same-named src/*.c at compile time,
+# leaving QED's src/ 100% pristine (upstream drop-in). The overlay lives OUTSIDE
+# the vendored QED tree (which is an embedded git repo) so it is tracked by the
+# NewTOS repo. Currently one overlay exists -- memory.c -- an LP64-correct
+# rewrite of QED's private pool
+# sub-allocator (upstream hardcodes sizeof(pointer)==4; see the file header).
+# The col_*/textring/REALLOC region is byte-identical to src/memory.c; only
+# MALLOC/FREE are re-backed with the LP64-correct libc malloc/free.
 #
 # QED's own build (sdk/apps/qed/{Makefile,CONFIGVARS,RULES,src/Makefile.objs})
 # uses, for a cross build:
@@ -27,6 +37,8 @@ set -uo pipefail
 SDK="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"      # .../sdk
 QED="$SDK/apps/qed"
 QSRC="$QED/src"
+OVL="$SDK/overlays/qed" # our LP64 drop-in replacements for individual src/*.c files
+                        # (outside the vendored, embedded-git QED tree, so tracked)
 CF="$SDK/cflib"
 GEM="$SDK/gemlib"
 LIBC="$SDK/libc"
@@ -101,7 +113,12 @@ rm -f "$OBJ"/*.o "$OBJ"/*.err
 ok=0; fail=0
 while IFS= read -r c; do
     [ -n "$c" ] || continue
-    src="$QSRC/$c"
+    # Prefer an LP64 overlay ($OVL/$c) over the pristine src/$c when present.
+    if [ -e "$OVL/$c" ]; then
+        src="$OVL/$c"; echo "  overlay: $c (from sdk/overlays/qed/, src/ untouched)"
+    else
+        src="$QSRC/$c"
+    fi
     [ -e "$src" ] || { echo "$c (missing)" >> "$BUILD/failed.txt"; fail=$((fail+1)); continue; }
     b="${c%.c}"
     o="$OBJ/${b}.o"

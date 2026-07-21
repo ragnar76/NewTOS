@@ -32,7 +32,9 @@
 *.NAP
 
 # App source trees under /apps/ stay vendored (big; third-party — QED compiles
-# UNMODIFIED). Build scripts + tests directly in /apps/ ARE tracked.
+# UNMODIFIED). Build scripts + tests directly in /apps/ ARE tracked. Our own LP64
+# overlay edits live OUTSIDE the vendored (embedded-git) app trees, under
+# sdk/overlays/<app>/, so they are tracked normally.
 /apps/*/
 
 # macOS junk that FAT round-trips create.

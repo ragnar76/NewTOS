@@ -107,19 +107,22 @@ else
 fi
 
 # QED (Atari GEM editor) — the first ported GEM application, compiled UNMODIFIED
-# for NewTOS/AArch64 in the ILP32 ABI. Installed into its own app directory
-# C:\Apps\QED\ (classic GEM apps expect their .RSC beside the .NAP): QED.NAP is
-# the GEM program, qed.rsc its native NRSC-v4 resource. Launched by
-# double-clicking QED.NAP on the desktop — NEVER from \AUTO\ (console-only,
-# ADR-018). Copied in if the ILP32 build exists (built by sdk/apps/qed).
-QED_DIR="$SCRIPT_DIR/../sdk/apps/qed/build-ilp32"
+# for NewTOS/AArch64 as **native LP64** (the app-ABI pivot: apps match the
+# kernel's native 64-bit ABI, so the app<->kernel width mismatch vanishes). Its
+# one 32-bit-assuming file (the private pool allocator memory.c) is replaced by
+# sdk/apps/qed/overlay/memory.c at build time — QED's src/ stays pristine.
+# Installed into its own app dir C:\Apps\QED\ (classic GEM apps expect their .RSC
+# beside the .NAP): QED.NAP is the GEM program, qed.rsc its native NRSC-v3 (LP64)
+# resource. Launched by double-clicking QED.NAP on the desktop — NEVER from \AUTO\
+# (console-only, ADR-018). Copied in if the LP64 build exists (sdk/apps/build-qed.sh).
+QED_DIR="$SCRIPT_DIR/../sdk/apps/qed/build"
 if [ -f "$QED_DIR/QED.NAP" ] && [ -f "$QED_DIR/qed.rsc" ]; then
   mkdir -p "$V/Apps/QED"
   cp "$QED_DIR/QED.NAP" "$V/Apps/QED/QED.NAP"
   cp "$QED_DIR/qed.rsc" "$V/Apps/QED/qed.rsc"
-  echo "installed C:\\Apps\\QED\\QED.NAP + qed.rsc (ported GEM editor, ILP32)"
+  echo "installed C:\\Apps\\QED\\QED.NAP + qed.rsc (ported GEM editor, LP64)"
 else
-  echo "note: sdk/apps/qed/build-ilp32/{QED.NAP,qed.rsc} not built; C:\\Apps\\QED skipped"
+  echo "note: sdk/apps/qed/build/{QED.NAP,qed.rsc} not built; C:\\Apps\\QED skipped"
 fi
 
 # Strip macOS metadata so it does not clutter the directory listing.
