@@ -1380,6 +1380,26 @@ pub(crate) fn draw_obj_t(t: ObjTree, obj: i16, depth: i16, backend: &dyn RasterB
     draw_tree(t, obj, depth, ox - t.x(obj), oy - t.y(obj), clip, backend);
 }
 
+/// Draw the subtree rooted at `obj`, `depth` levels deep, confined to `clip`.
+/// Like [`draw_obj`] but with a caller-supplied clip rectangle: the Menu Manager
+/// passes a clip equal to the drop-down box's grown save/restore area so nothing
+/// is painted outside the saved region — the invariant *saved-area ⊇ drawn-area*
+/// that makes the on-close restore exact even for a box with a `th<0` outward
+/// border or a child positioned past the box edge. EmuTOS's decoration-aware
+/// menu path does the same: `popup_blit` sets `gsx_sclip(&t)` over exactly the
+/// grown save rectangle before drawing (`gemmnext.c:154`).
+pub(crate) fn draw_obj_clip(
+    tree: *const Object,
+    obj: i16,
+    depth: i16,
+    clip: ClipRect,
+    backend: &dyn RasterBackend,
+) {
+    let t = ObjTree::new(tree);
+    let (ox, oy) = abs_offset(t, obj);
+    draw_tree(t, obj, depth, ox - t.x(obj), oy - t.y(obj), clip, backend);
+}
+
 /// Draw a whole tree (used by the Form Manager after building an alert and by
 /// the fileselector). The caller supplies the [`ObjTree`] accessor and thereby
 /// chooses the ABI width: kernel-built trees pass an [`ObjTree::lp64`] accessor

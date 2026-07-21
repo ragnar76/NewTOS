@@ -85,6 +85,17 @@ const G_TITLE: u16 = 32;
 const WHITE: Pel = 0;
 const BLACK: Pel = 1;
 
+/// EmuTOS `MENU_THICKNESS` (`gemmnlib.h:14`): the per-side margin `menu_sr` adds
+/// around a drop-down box before saving/restoring the screen under it
+/// (`gemmnlib.c:215-217`). It exists precisely to cover a box's 1-px outward
+/// border and overscan.
+const MENU_THICKNESS: i16 = 1;
+
+/// EmuTOS `ADJ3DSTD` (`obdefs.h:136`): the extra pixel adjustment for a 3D
+/// object. The decoration-aware save path adds it to the right/bottom of the
+/// grown save rectangle for a box's 3D drop shadow (`gemmnext.c:148-149`).
+const ADJ3DSTD: i16 = 2;
+
 /// `menu_bar` (30) — install (`int_in[0]`=1) or remove (0) the menu bar
 /// `addr_in[0]` at the top of the screen.
 pub fn menu_bar(pb: &Aespb) {
@@ -371,9 +382,9 @@ fn open_submenu(tree: *mut Object, item: i16, backend: &dyn RasterBackend) -> Op
     sub_t.set_x(s.sub_menu, sub_t.x(s.sub_menu) + (x - bx0));
     sub_t.set_y(s.sub_menu, sub_t.y(s.sub_menu) + (y - by0));
     crate::vdi::cursor_hide(backend);
-    let (fx, fy, fw, fh) = object::abs_rect(sub_tp, s.sub_menu);
+    let (fx, fy, fw, fh) = sr_rect(sub_tp, s.sub_menu, backend);
     save_under(&SMBACK, backend, fx, fy, fw, fh);
-    object::draw_obj(sub_tp, s.sub_menu, MAX_DEPTH, backend);
+    object::draw_obj_clip(sub_tp, s.sub_menu, MAX_DEPTH, sr_clip(fx, fy, fw, fh), backend);
     crate::vdi::cursor_show(backend);
     Some((s.sub_tree, s.sub_menu))
 }
@@ -390,11 +401,9 @@ fn close_submenu(sub_tree: u64, sub_box: i16, sub_item: i16, backend: &dyn Raste
     if sub_item != NIL {
         object::set_state_bit(sub, sub_item, SELECTED, false);
     }
-    if !restore_under(&SMBACK, backend) {
-        let (x, y, w, h) = object::abs_rect(sub_tree as *const Object, sub_box);
-        let clip = ClipRect::full(backend.width(), backend.height());
-        backend.fill_rect(x, y, w, h, WHITE, clip);
-    }
+    // Restore the pixels saved under the submenu box exactly (no content-
+    // destroying white-erase: the saved grown rect is a superset of the draw).
+    restore_under(&SMBACK, backend);
     crate::vdi::cursor_show(backend);
 }
 
@@ -418,7 +427,7 @@ fn point_in(tree: *const Object, obj: i16, mx: i16, my: i16) -> bool {
     mx >= x && mx < x + w && my >= y && my < y + h
 }
 
-// ── drop-down save/restore backing (GEM's "save under") ──────────────────
+// ── drop-down save/restore backing (GEM's "save under" — EmuTOS `menu_sr`) ──
 //
 // Opening a menu box covers part of the screen; closing it must put the
 // pixels back. Like the cursor backing, snapshot the box rectangle into a
@@ -426,10 +435,16 @@ fn point_in(tree: *const Object, obj: i16, mx: i16, my: i16) -> bool {
 // cancel without a full desktop repaint, and works over windows too. The
 // snapshot is taken with the mouse cursor hidden so it is clean and the
 // cursor stays on top of the open menu.
-const MB_W: usize = 256;
-const MB_H: usize = 400;
+//
+// The saved rectangle is the box **grown to cover its decoration** ([`sr_rect`],
+// EmuTOS `menu_sr`/`popup_blit`), and the draw is clipped to exactly that
+// rectangle, so *saved-area ⊇ drawn-area* always holds. The buffer is a
+// heap `Vec` sized to the grown rectangle (EmuTOS's `bb_save`/`gl_pmpmlo`
+// is screen-sized and unbounded): there is no fixed cap and thus no
+// content-destroying white-erase fallback — a wide/tall drop-down (up to a
+// large fraction of a 1080p screen) is saved and restored in full.
 struct MenuBack {
-    px: UnsafeCell<[Pel; MB_W * MB_H]>,
+    px: UnsafeCell<alloc::vec::Vec<Pel>>,
     x: AtomicI16,
     y: AtomicI16,
     w: AtomicI16,
@@ -438,40 +453,68 @@ struct MenuBack {
 }
 // SAFETY: touched only from the single-CPU AES trap / desktop event path.
 unsafe impl Sync for MenuBack {}
-static MBACK: MenuBack = MenuBack {
-    px: UnsafeCell::new([0; MB_W * MB_H]),
-    x: AtomicI16::new(0),
-    y: AtomicI16::new(0),
-    w: AtomicI16::new(0),
-    h: AtomicI16::new(0),
-    valid: AtomicU8::new(0),
-};
+impl MenuBack {
+    const fn new() -> MenuBack {
+        MenuBack {
+            px: UnsafeCell::new(alloc::vec::Vec::new()),
+            x: AtomicI16::new(0),
+            y: AtomicI16::new(0),
+            w: AtomicI16::new(0),
+            h: AtomicI16::new(0),
+            valid: AtomicU8::new(0),
+        }
+    }
+}
+static MBACK: MenuBack = MenuBack::new();
 /// A **second** backing for the nested submenu box (EmuTOS keeps the
 /// drop-down's `bb_save` buffer and the submenu's `blitsave` separate, so a
 /// submenu open does not clobber the parent box's saved pixels). Used only by
 /// the submenu open/close path; the parent box + popups use [`MBACK`].
-static SMBACK: MenuBack = MenuBack {
-    px: UnsafeCell::new([0; MB_W * MB_H]),
-    x: AtomicI16::new(0),
-    y: AtomicI16::new(0),
-    w: AtomicI16::new(0),
-    h: AtomicI16::new(0),
-    valid: AtomicU8::new(0),
-};
+static SMBACK: MenuBack = MenuBack::new();
 
-/// Snapshot the pixels the box `(x,y,w,h)` will cover into `back`. Marks the
-/// backing invalid if the box is larger than it → the caller falls back to a
-/// white erase.
+/// The EmuTOS `menu_sr` save/restore rectangle for a drop-down `box_obj`: its
+/// absolute rectangle grown to cover the decoration `draw_obj` can paint, then
+/// clamped to the screen. EmuTOS `menu_sr` grows the box by `MENU_THICKNESS` per
+/// side (`gemmnlib.c:215-217`: `g_x -= MT; g_w += 2*MT; g_h += 2*MT`), and the
+/// decoration-aware `popup_blit` additionally grows the top and adds `ADJ3DSTD`
+/// on the right/bottom for a 3D drop shadow (`gemmnext.c:146-149`:
+/// `g_x -= MT; g_y -= MT; g_w += 2*MT+ADJ3DSTD; g_h += 2*MT+ADJ3DSTD`). We
+/// reproduce that superset so the saved area covers a `th<0` outward border on
+/// every side (QED's `qed.rsc` boxes) plus a shadow, and clip the draw to it.
+fn sr_rect(tree: *const Object, box_obj: i16, backend: &dyn RasterBackend) -> (i16, i16, i16, i16) {
+    let (x, y, w, h) = object::abs_rect(tree, box_obj);
+    let sw = backend.width() as i16;
+    let sh = backend.height() as i16;
+    // Grown edges: MENU_THICKNESS on left/top, MENU_THICKNESS+ADJ3DSTD on
+    // right/bottom (the `popup_blit` shape), then clamp to the screen.
+    let x0 = (x - MENU_THICKNESS).max(0);
+    let y0 = (y - MENU_THICKNESS).max(0);
+    let x1 = (x + w + MENU_THICKNESS + ADJ3DSTD).min(sw);
+    let y1 = (y + h + MENU_THICKNESS + ADJ3DSTD).min(sh);
+    (x0, y0, (x1 - x0).max(0), (y1 - y0).max(0))
+}
+
+/// The VDI clip rectangle covering exactly the grown save rectangle `(x,y,w,h)`.
+fn sr_clip(x: i16, y: i16, w: i16, h: i16) -> ClipRect {
+    ClipRect { xmn: x, ymn: y, xmx: x + w - 1, ymx: y + h - 1 }
+}
+
+/// Snapshot the pixels the grown rectangle `(x,y,w,h)` covers into `back`. The
+/// buffer is resized to the rectangle (no fixed cap); an empty rectangle marks
+/// the backing invalid.
 fn save_under(back: &MenuBack, backend: &dyn RasterBackend, x: i16, y: i16, w: i16, h: i16) {
-    if w <= 0 || h <= 0 || w as usize > MB_W || h as usize > MB_H {
+    if w <= 0 || h <= 0 {
         back.valid.store(0, Ordering::Relaxed);
         return;
     }
-    // SAFETY: single path; bounds checked above.
+    // SAFETY: single-CPU AES path; exclusive access to this backing.
     let store = unsafe { &mut *back.px.get() };
+    let need = w as usize * h as usize;
+    store.clear();
+    store.reserve(need);
     for row in 0..h {
         for col in 0..w {
-            store[row as usize * MB_W + col as usize] = backend.read_pixel(x + col, y + row);
+            store.push(backend.read_pixel(x + col, y + row));
         }
     }
     back.x.store(x, Ordering::Relaxed);
@@ -482,7 +525,8 @@ fn save_under(back: &MenuBack, backend: &dyn RasterBackend, x: i16, y: i16, w: i
 }
 
 /// Blit the pixels saved in `back` back to the screen. Returns `false` if
-/// nothing was saved (box too big), so the caller can white-erase instead.
+/// nothing valid was saved — the caller does **not** white-erase (that would
+/// destroy live content); it simply leaves the screen as-is.
 fn restore_under(back: &MenuBack, backend: &dyn RasterBackend) -> bool {
     if back.valid.swap(0, Ordering::Relaxed) == 0 {
         return false;
@@ -492,11 +536,11 @@ fn restore_under(back: &MenuBack, backend: &dyn RasterBackend) -> bool {
     let w = back.w.load(Ordering::Relaxed);
     let h = back.h.load(Ordering::Relaxed);
     let clip = ClipRect::full(backend.width(), backend.height());
-    // SAFETY: single path.
+    // SAFETY: single-CPU AES path; the buffer holds w*h pixels (save_under).
     let store = unsafe { &*back.px.get() };
     for row in 0..h {
         for col in 0..w {
-            let p = store[row as usize * MB_W + col as usize];
+            let p = store[row as usize * w as usize + col as usize];
             backend.fill_rect(x + col, y + row, 1, 1, p, clip);
         }
     }
@@ -510,9 +554,13 @@ fn open_box(tree: *mut Object, title: i16, backend: &dyn RasterBackend) -> i16 {
     crate::vdi::cursor_hide(backend);
     object::set_state_bit(tree, title, SELECTED, true); // redraws the title highlighted
     let imenu = menu_sub(tree as *const Object, title);
-    let (x, y, w, h) = object::abs_rect(tree as *const Object, imenu);
+    // Save the box grown to its decoration (EmuTOS `menu_sr`), and clip the box
+    // draw to exactly that rectangle so the save area is a superset of every
+    // pixel drawn — an outward `th<0` border or an overflowing child cannot
+    // paint outside the saved region, so the on-close restore is exact.
+    let (x, y, w, h) = sr_rect(tree as *const Object, imenu, backend);
     save_under(&MBACK, backend, x, y, w, h);
-    object::draw_obj(tree as *const Object, imenu, MAX_DEPTH, backend);
+    object::draw_obj_clip(tree as *const Object, imenu, MAX_DEPTH, sr_clip(x, y, w, h), backend);
     crate::vdi::cursor_show(backend);
     imenu
 }
@@ -558,17 +606,15 @@ fn title_touches_separator(tree: *const Object, obj: i16) -> bool {
     y <= sep_row && sep_row < y + h
 }
 
-/// Put the pixels saved under the box back, or white-erase if the box was too
-/// big to snapshot. Caller owns the cursor hide/show.
-fn erase_box_inner(tree: *mut Object, imenu: i16, backend: &dyn RasterBackend) {
+/// Put the pixels saved under the box back exactly (EmuTOS `menu_sr` restore).
+/// The saved grown rectangle is a superset of the drawn area, so this fully
+/// undoes the box — including any outward border — with no content-destroying
+/// white-erase fallback. Caller owns the cursor hide/show.
+fn erase_box_inner(_tree: *mut Object, imenu: i16, backend: &dyn RasterBackend) {
     if imenu == NIL {
         return;
     }
-    if !restore_under(&MBACK, backend) {
-        let (x, y, w, h) = object::abs_rect(tree as *const Object, imenu);
-        let clip = ClipRect::full(backend.width(), backend.height());
-        backend.fill_rect(x, y, w, h, WHITE, clip);
-    }
+    restore_under(&MBACK, backend);
 }
 
 /// `menu_icheck` (31) — add (`int_in[1]`=1) / remove the check mark on
@@ -867,9 +913,9 @@ fn popup_track(tree: *mut Object, box_obj: i16, backend: &dyn RasterBackend) -> 
         h.pump_input();
     }
     crate::vdi::cursor_hide(backend);
-    let (bx, by, bw, bh) = object::abs_rect(tp, box_obj);
+    let (bx, by, bw, bh) = sr_rect(tp, box_obj, backend);
     save_under(&MBACK, backend, bx, by, bw, bh);
-    object::draw_obj(tp, box_obj, MAX_DEPTH, backend);
+    object::draw_obj_clip(tp, box_obj, MAX_DEPTH, sr_clip(bx, by, bw, bh), backend);
     crate::vdi::cursor_show(backend);
 
     let mut cur_item = NIL;
@@ -1307,4 +1353,131 @@ pub fn menu_istart(pb: &Aespb) {
         }
     }
     pb.set_ret(s.sub_start);
+}
+
+// ── headless save/restore regression scaffold (Group-1 P1+P2) ─────────────
+
+/// Test-only reproduction of the QED menu save/restore defect (P1 + P2),
+/// runnable headlessly for a QMP screendump. It builds the geometry parsed from
+/// QED's `qed.rsc`: drop-down boxes with an **outward** 1-px border (`th = -1`),
+/// overlapping in X, of **unequal height** — plus one box **wider than the old
+/// 256-px save cap**. It then:
+///
+///   * opens the wide box and closes it — exercising the P2 buffer cap: the old
+///     code marked the snapshot invalid for a box wider than 256 / taller than
+///     400 and **white-erased** the interior on close instead of restoring it;
+///   * drops box A, then switches to box B exactly as the interactive tracker
+///     does on a title slide (`close_box(A)` → `open_box(B)`) — under the old
+///     code this left box A's outward-border / outside-`abs_rect` pixels on
+///     screen, because `save_under`/`restore_under` covered only `abs_rect(box)`
+///     with no margin (the P1 stale residue).
+///
+/// Returns `(p1, p2)`: the count of stale pixels left outside box B for the
+/// slide (P1), and inside the wide box for the cap case (P2). Both are nonzero
+/// before the fix and `0` after. The final screen — box B open, everything else
+/// the plain background — is what a screendump captures. **Not wired to boot**;
+/// a temporary kernel hook drives it during verification.
+pub fn selftest_menu_sr_residue(backend: &dyn RasterBackend) -> (u32, u32) {
+    const G_BOX_T: u16 = 20; // object::G_BOX
+    const G_IBOX_T: u16 = 25; // object::G_IBOX
+    /// A distinctive, non-white/non-black background index, so a black
+    /// outward-border residue (1) and a white-erased interior (0) both differ
+    /// from it.
+    const BG: Pel = 8;
+    /// `ob_spec` for a box with an outward 1-px border (`th = -1`, byte 0xFF in
+    /// bits 16..23) over a solid white interior with a black border/text colour
+    /// word (`0x1170`: border BLACK, text BLACK, IP_SOLID, inside WHITE).
+    const SPEC_TH_NEG1: u64 = 0x00FF_1170;
+
+    // Object indices in the tree below.
+    const TITLE_A: i16 = 3;
+    const TITLE_B: i16 = 4;
+    const TITLE_C: i16 = 5;
+
+    let sw = backend.width() as i16;
+    let sh = backend.height() as i16;
+    let clip = ClipRect::full(backend.width(), backend.height());
+    // Lay down the distinctive background across the whole screen.
+    backend.fill_rect(0, 0, sw, sh, BG, clip);
+
+    static NA: &[u8] = b"A\0";
+    static NB: &[u8] = b"B\0";
+    static NC: &[u8] = b"C\0";
+    static A0: &[u8] = b"A item 0\0";
+    static A1: &[u8] = b"A item 1\0";
+    static B0: &[u8] = b"B item 0\0";
+    static B1: &[u8] = b"B item 1\0";
+    static C0: &[u8] = b"Wide item 0\0";
+    static C1: &[u8] = b"Wide item 1\0";
+
+    let mk = |ty, spec: u64, x, y, w, h, next, head, tail| Object {
+        ob_next: next, ob_head: head, ob_tail: tail, ob_type: ty, ob_flags: 0,
+        ob_state: 0, ob_spec: spec, ob_x: x, ob_y: y, ob_width: w, ob_height: h,
+    };
+    let title = |p: &[u8], x, next| mk(G_TITLE, p.as_ptr() as u64, x, 0, 64, BAR_H, next, -1, -1);
+    let item = |p: &[u8], y, w, next| mk(G_STRING, p.as_ptr() as u64, 0, y, w, BAR_H, next, -1, -1);
+
+    // Box A: 200×340 (under the old cap) — the box we slide *away* from.
+    // Box B: 170×130, overlapping A in X, much shorter — the box we slide *to*.
+    // Box C: 280 wide (> the old 256 cap), isolated — the cap/white-erase case.
+    let tree = [
+        /* 0 THESCREEN */ mk(G_IBOX_T, 0, 0, 0, sw, sh, -1, 1, 6),
+        /* 1 THEBAR    */ mk(G_BOX_T, 0, 0, 0, sw, BAR_H, 6, 2, 2),
+        /* 2 THEACTIVE */ mk(G_IBOX_T, 0, 0, 0, sw, BAR_H, 1, 3, 5),
+        /* 3 titleA    */ title(NA, 100, 4),
+        /* 4 titleB    */ title(NB, 40, 5),
+        /* 5 titleC    */ title(NC, 320, 2), // last title → next = THEACTIVE
+        /* 6 themenus  */ mk(G_IBOX_T, 0, 0, 0, sw, sh, 0, 7, 13),
+        /* 7 boxA      */ mk(G_BOX_T, SPEC_TH_NEG1, 100, 40, 200, 340, 10, 8, 9),
+        /* 8  A0       */ item(A0, 0, 200, 9),
+        /* 9  A1       */ item(A1, BAR_H, 200, 7), // last child → next = boxA
+        /*10 boxB      */ mk(G_BOX_T, SPEC_TH_NEG1, 40, 40, 170, 130, 13, 11, 12),
+        /*11  B0       */ item(B0, 0, 170, 12),
+        /*12  B1       */ item(B1, BAR_H, 170, 10), // last child → next = boxB
+        /*13 boxC      */ mk(G_BOX_T, SPEC_TH_NEG1, 320, 250, 280, 180, 6, 14, 15),
+        /*14  C0       */ item(C0, 0, 280, 15),
+        /*15  C1       */ item(C1, BAR_H, 280, 13), // last child → next = boxC
+    ];
+    let tp = tree.as_ptr() as *mut Object;
+
+    // Count on-screen pixels in [x0,x1)×[y0,y1) that differ from the background,
+    // excluding the rectangle `ex` (box B's territory, legitimately redrawn).
+    let count = |x0: i16, y0: i16, x1: i16, y1: i16, ex: (i16, i16, i16, i16)| -> u32 {
+        let (ex0, ey0, ex1, ey1) = ex;
+        let mut n = 0u32;
+        let yy0 = y0.max(0);
+        let yy1 = y1.min(sh);
+        let xx0 = x0.max(0);
+        let xx1 = x1.min(sw);
+        let mut y = yy0;
+        while y < yy1 {
+            let mut x = xx0;
+            while x < xx1 {
+                let excluded = x >= ex0 && x < ex1 && y >= ey0 && y < ey1;
+                if !excluded && backend.read_pixel(x, y) != BG {
+                    n += 1;
+                }
+                x += 1;
+            }
+            y += 1;
+        }
+        n
+    };
+
+    // ── P2: open + close the wide box, then check its footprint is clean.
+    let ic = open_box(tp, TITLE_C, backend);
+    close_box(tp, TITLE_C, ic, backend);
+    // boxC drawn extent = abs_rect grown 1 px for the th=-1 border: (319,249)..(601,431).
+    let p2 = count(319, 249, 601, 431, (0, 0, 0, 0));
+
+    // ── P1: drop box A, then slide to box B (close A → open B) and check that
+    // no box-A pixel survives outside box B's territory.
+    let ia = open_box(tp, TITLE_A, backend);
+    close_box(tp, TITLE_A, ia, backend);
+    open_box(tp, TITLE_B, backend); // leave box B open for the screendump
+    // boxA drawn extent = abs_rect grown 1 px: (99,39)..(301,381).
+    // Exclude box B's territory generously (abs_rect grown 6 px): (34,34)..(216,176).
+    let p1 = count(99, 39, 301, 381, (34, 34, 216, 176));
+
+    (p1, p2)
 }
