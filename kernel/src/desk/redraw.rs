@@ -30,7 +30,7 @@
 use super::global::{self, Grect, DROOT};
 use super::win::DESKWH;
 use super::{
-    graf_mouse, objc_draw_tree, paint_desktop_region, wind_get_rect, wind_get_work, M_OFF, M_ON,
+    graf_mouse, objc_draw_tree, wind_get_rect, wind_get_work, M_OFF, M_ON,
     WF_FIRSTXYWH, WF_NEXTXYWH,
 };
 
@@ -75,19 +75,18 @@ fn do_wredraw_nocursor(handle: i16, clip: Grect) {
     // WF_FIRSTXYWH/NEXTXYWH)` yields each visible piece (the work/desk area
     // minus every higher window), intersected here with the caller's damage
     // rectangle `clip`. The desktop is the *bottom* of the z-order, so its list
-    // excludes every open window — the background is drawn only on the exposed
-    // desk area and never paints over a window (the Task-#18 Z-order fix). Real
-    // windows draw their item subtree via `objc_draw`; the desktop draws its
-    // background pattern + icons via `paint_desktop_region`.
-    let tree = if handle == DESKWH { None } else { global::screen_addr() };
+    // excludes every open window — its subtree is drawn only on the exposed desk
+    // area and never over a window (the Task-#18 Z-order fix). Both draw the
+    // *same* `g_screen` tree via `objc_draw`: the desktop from `DROOT` (its
+    // background `G_BOX` + icon children), a window from its `w_root` — EmuTOS's
+    // "two paths, one tree" (`objc_draw(G.g_screen, root, MAX_DEPTH, …)`).
+    let Some(tree) = global::screen_addr() else {
+        return;
+    };
     let mut t = wind_get_rect(handle, WF_FIRSTXYWH);
     while t.w != 0 && t.h != 0 {
         if let Some(piece) = rc_intersect(clip, t) {
-            if handle == DESKWH {
-                paint_desktop_region(piece);
-            } else if let Some(tree) = tree {
-                objc_draw_tree(tree, root, piece);
-            }
+            objc_draw_tree(tree, root, piece);
         }
         t = wind_get_rect(handle, WF_NEXTXYWH);
     }
@@ -108,9 +107,10 @@ fn do_wredraw_nocursor(handle: i16, clip: Grect) {
 /// 3. Draw via [`do_wredraw_nocursor`] (the owner-rectangle-list walk).
 /// 4. `graf_mouse(M_ON)` — restore the cursor.
 ///
-/// The [`DESKWH`] arm draws the desktop surface (background pattern + icons over
-/// `DROOT`) via `super::paint_desktop_region`, but — like the window arm — only
-/// on the pieces the AES owner-rectangle list yields for the desktop
+/// The [`DESKWH`] arm draws the desktop surface (the `DROOT` background box +
+/// its icon children) via `objc_draw`, exactly like the window arm draws a
+/// window's item tree — only on the pieces the AES owner-rectangle list yields
+/// for the desktop
 /// pseudo-window: the desk area (screen minus the menu bar) minus every open
 /// window (the desktop is the bottom of the z-order). Walking that list is what
 /// keeps a standalone desktop redraw from painting over the windows above it
@@ -226,9 +226,10 @@ pub fn union(a: Grect, b: Grect) -> Grect {
 }
 
 /// Full desktop composite: the desktop surface + every window frame (the AES
-/// `redraw_all`, which runs the `super::paint_desktop_bg` painter hook), then
-/// every open window's content occlusion-clipped ([`win_shwall`]), and finally
-/// the menu bar. Boot's initial paint and any "repaint everything" path.
+/// `redraw_all` → `w_drawdesk`, which draws the registered desktop tree —
+/// `DROOT` background box + icons — via `objc_draw`), then every open window's
+/// content occlusion-clipped ([`win_shwall`]), and finally the menu bar. Boot's
+/// initial paint and any "repaint everything" path.
 ///
 /// The menu bar is re-installed here because "repaint everything" must include
 /// it: a full-screen program launched from the desktop — a `.NCP` console

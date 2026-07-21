@@ -35,14 +35,9 @@ pub mod model;
 pub mod redraw;
 pub mod win;
 
-use tos_api::vdi::backend::{ClipRect, PatternFill, RasterBackend, WriteMode};
-
 use crate::kprintln;
 
-use global::{Grect, MAX_DEPTH, MENU_H, WINDOW_STYLE};
-
-/// VDI colour pen: white.
-const WHITE: u8 = 0;
+use global::{Grect, MAX_DEPTH, WINDOW_STYLE};
 
 // ── AES parameter-block client ("aesbind") ─────────────────────────────────
 //
@@ -86,6 +81,7 @@ pub(super) const WF_VSLIDE: i16 = 9;
 pub(super) const WF_TOP: i16 = 10;
 pub(super) const WF_FIRSTXYWH: i16 = 11;
 pub(super) const WF_NEXTXYWH: i16 = 12;
+const WF_NEWDESK: i16 = 14;
 pub(super) const WF_HSLSIZ: i16 = 15;
 pub(super) const WF_VSLSIZ: i16 = 16;
 const WC_WORK: i16 = 1;
@@ -157,8 +153,9 @@ impl Aes {
 // ── aesbind wrappers (window manager) ──────────────────────────────────────
 
 /// `objc_draw` (42) the subtree rooted at `root` of the desktop object arena
-/// `tree`, clipped to `clip`. Used to paint window item objects (the desktop
-/// icons go through the painter hook instead, see [`paint_desktop_bg`]).
+/// `tree`, clipped to `clip`. Used by `do_wredraw` to paint a window's item
+/// tree **and** the desktop's own surface (`DROOT` background box + icons) — the
+/// "two paths, one tree" of EmuTOS `do_wredraw`.
 pub(super) fn objc_draw_tree(tree: u64, root: i16, clip: Grect) {
     let mut a = Aes::new();
     a.addrin[0] = tree as i64;
@@ -261,6 +258,24 @@ pub(super) fn wind_set_ptr(handle: i16, field: i16, ptr: u64) {
     a.intin[0] = handle;
     a.intin[1] = field;
     a.call(OP_WIND_SET, 2, 1);
+}
+
+/// `wind_set(DESKWH, WF_NEWDESK, tree, root)` — register (`tree != 0`) or
+/// un-register (`tree == 0`) the desktop's background object tree with the AES
+/// (EmuTOS `deskmain.c:2049`/`:2163`). Between registration and un-registration
+/// the AES's `w_drawdesk` draws `tree` from `root` (the desktop's `DROOT`, its
+/// background `G_BOX` + icon children) at `MAX_DEPTH` on every desktop redraw —
+/// the desktop no longer paints its own background. The tree pointer travels in
+/// `addr_in[0]`, the root in `int_in[2]` (the AES resolves either this native
+/// packing or the classic D-094 `int_in[2..4]` form). `tree` must stay valid for
+/// as long as it is registered (the desktop's `g_screen` arena is never freed).
+pub(super) fn wind_set_newdesk(tree: u64, root: i16) {
+    let mut a = Aes::new();
+    a.addrin[0] = tree as i64;
+    a.intin[0] = win::DESKWH;
+    a.intin[1] = WF_NEWDESK;
+    a.intin[2] = root;
+    a.call(OP_WIND_SET, 3, 1);
 }
 
 /// `wind_create(kind, x, y, w, h)` — reserve a window of border `kind` and max
@@ -480,70 +495,6 @@ pub(super) fn evnt_multi(flags: u16, msg: &mut [i16; 8]) -> EvntOut {
     }
 }
 
-// ── Desktop background painter ─────────────────────────────────────────────
-
-/// AES "inside patterns" IP_HOLLOW(0)..IP_SOLID(7) as 4-word dithers (EmuTOS
-/// `vdi/vdi_fill.c` DITHER intensities; IP_4PATT = 50 %).
-const IP_PATTERNS: [[u16; 4]; 8] = [
-    [0x0000, 0x0000, 0x0000, 0x0000], // 0 IP_HOLLOW
-    [0x0000, 0x4444, 0x0000, 0x1111], // 1 IP_1PATT
-    [0x0000, 0x5555, 0x0000, 0x5555], // 2 IP_2PATT
-    [0x8888, 0x5555, 0x2222, 0x5555], // 3 IP_3PATT
-    [0xAAAA, 0x5555, 0xAAAA, 0x5555], // 4 IP_4PATT (50 %)
-    [0xAAAA, 0xDDDD, 0xAAAA, 0x7777], // 5 IP_5PATT
-    [0xEEEE, 0xFFFF, 0xBBBB, 0xFFFF], // 6 IP_6PATT
-    [0xFFFF, 0xFFFF, 0xFFFF, 0xFFFF], // 7 IP_SOLID
-];
-
-/// Paint the desktop background — the `g_patcol` pattern fill below the menu
-/// bar — straight through the backend, restricted to `clip`.
-///
-/// **No AES trap:** the window manager calls this from inside `redraw_all`
-/// (the AES SVC handler), so it must not re-enter the AES, and it reads the
-/// background byte lock-free via [`global::patcol_desktop`]. The menu bar
-/// (`y < MENU_H`) is left untouched — windows never cover it. The desktop
-/// drive/trash/printer icons ([`app`]/[`icons`]) are rendered on top of the
-/// fill via [`global::render_desktop_icons`] — because this painter runs
-/// *before* `redraw_all` draws the window frames, those frames correctly
-/// overpaint any desktop icon a window covers (the right z-order for free).
-fn paint_desktop_bg(backend: &dyn RasterBackend, clip: ClipRect) {
-    let sw = backend.width() as i16;
-    let sh = backend.height() as i16;
-    let d = global::patcol_desktop();
-    let pat = IP_PATTERNS[(d >> 4) as usize & 7];
-    let bg = PatternFill { fg: d & 0x0F, bg: WHITE, pattern: &pat, mode: WriteMode::Replace };
-    backend.fill_pattern(0, MENU_H, sw, sh - MENU_H, bg, clip);
-    global::render_desktop_icons(backend, clip);
-}
-
-/// Repaint one piece of the desktop surface — background pattern + desktop
-/// icons (the `DROOT` subtree) — within `clip`, straight through the backend
-/// (no AES trap). It draws the same content the [`paint_desktop_bg`] painter
-/// hook does, restricted to the caller's rectangle.
-///
-/// The `DESKWH` arm of [`redraw::do_wredraw`] calls this once per **visible**
-/// desktop piece — the desk area minus every open window, from the AES
-/// owner-rectangle list (`wind_get(DESKWH, WF_FIRSTXYWH/NEXTXYWH)`) — so it
-/// never paints over a window (the desktop is the bottom of the z-order; the
-/// Task-#18 Z-order fix). In the full composite ([`redraw::full_redraw`]) the
-/// under-window occlusion instead comes from the `redraw_all` draw order
-/// (painter first, window frames on top); the two paths agree.
-pub(super) fn paint_desktop_region(clip: Grect) {
-    let Some(backend) = tos_api::host::host().and_then(|h| h.raster()) else {
-        return;
-    };
-    if clip.w <= 0 || clip.h <= 0 {
-        return;
-    }
-    let cr = ClipRect {
-        xmn: clip.x,
-        ymn: clip.y,
-        xmx: clip.x + clip.w - 1,
-        ymx: clip.y + clip.h - 1,
-    };
-    paint_desktop_bg(backend, cr);
-}
-
 // ── Boot entry ─────────────────────────────────────────────────────────────
 
 /// The desktop entry point (EmuTOS `deskmain`): one-time setup (metrics, the
@@ -580,10 +531,15 @@ pub fn run() {
         g.app_blddesk();
     });
 
-    // Register the background+icon painter so redraw_all composites the desktop
-    // icons under window frames, then install the menu bar (drawn once — it is
+    // Register the desktop's own object tree as the AES screen background
+    // (EmuTOS `wind_set(DESKWH, WF_NEWDESK, G.g_screen, 1, 0)`, `deskmain.c:2049`):
+    // from now on the AES's `w_drawdesk` draws `DROOT` (the background box) + the
+    // icon children whenever the desktop area is exposed — the desktop no longer
+    // paints its own background. Then install the menu bar (drawn once — it is
     // never covered, windows live below it).
-    tos_api::aes::window::set_desktop_painter(paint_desktop_bg);
+    if let Some(tree) = global::screen_addr() {
+        wind_set_newdesk(tree, global::DROOT);
+    }
     menu::install_menu_bar();
 
     // Open the C:\ directory window and build its view, set the menu state to

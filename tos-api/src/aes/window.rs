@@ -17,11 +17,12 @@
 //! `graf_*` are Batch 2+. No save/restore under windows yet (see the
 //! Menu-Manager note); closing erases to the desktop background.
 
+use super::object::{render_tree_lp64, Object};
 use super::Aespb;
 use crate::host::host;
 use crate::vdi::backend::{ClipRect, Pel, PatternFill, RasterBackend, Rect, WriteMode};
 use core::cell::UnsafeCell;
-use core::sync::atomic::{AtomicUsize, Ordering};
+use core::sync::atomic::{AtomicI16, AtomicU64, Ordering};
 
 // ── kind (border widget) bits, aesdefs.h:519-531 ──
 const NAME: u16 = 0x0001;
@@ -55,7 +56,13 @@ const WF_FXYWH: i16 = 7;
 const WF_TOP: i16 = 10;
 const WF_FIRSTXYWH: i16 = 11;
 const WF_NEXTXYWH: i16 = 12;
+const WF_NEWDESK: i16 = 14;
 const WF_SCREEN: i16 = 17;
+
+/// `objc_draw`/`ob_draw` recursion depth for the desktop-background composite
+/// (EmuTOS `MAX_DEPTH`, `obdefs.h:30`): deep enough to draw the registered
+/// desktop tree's `DROOT` box **and** every icon child under it.
+const MAX_DEPTH: i16 = 8;
 
 // ── wind_calc types ──
 const WC_BORDER: i16 = 0;
@@ -234,34 +241,64 @@ fn top_window(handle: i16) {
     }
 }
 
-/// Optional desktop-background painter. A GEM application that owns the
-/// desktop (e.g. the NewTOS desktop) registers a pure drawing function
-/// here; the window manager calls it to repaint the background underneath
-/// the windows (the EmuTOS DESKWH/DROOT idea), restricted to a clip
-/// rectangle. `0` = none → plain white erase of the clip.
+/// The registered desktop-background object tree (EmuTOS `gl_newdesk`,
+/// `gemwmlib.c:54`): the base VA of the desktop application's own `OBJECT`
+/// array, set via `wind_set(DESKWH, WF_NEWDESK, tree, 1, root)`. `0` = none →
+/// [`paint_bg_clip`] draws the AES-internal fallback root instead.
 ///
-/// The painter runs **inside** `redraw_all` and the solid window drag, i.e.
-/// inside the AES SVC handler, so it must draw straight through the backend
-/// and issue **no further AES trap** (no re-entrant `svc`).
-static DESK_PAINTER: AtomicUsize = AtomicUsize::new(0);
+/// This is a **native (LP64) `Object` array** — the desktop's `g_screen`, a
+/// kernel-built tree — so [`paint_bg_clip`] reads it via `render_tree_lp64`
+/// (forced 32-byte records), valid even while an ILP32 app is the current
+/// process. It stays stable for the desktop's lifetime (the arena is never
+/// reallocated), so holding the raw pointer across draws is sound.
+static NEWDESK_TREE: AtomicU64 = AtomicU64::new(0);
 
-/// Register the desktop-background painter (see [`DESK_PAINTER`]).
-pub fn set_desktop_painter(f: fn(&dyn RasterBackend, ClipRect)) {
-    DESK_PAINTER.store(f as usize, Ordering::Release);
+/// The object index within [`NEWDESK_TREE`] that the background composite draws
+/// from (EmuTOS `gl_newroot`, `gemwmlib.c:55`; the desktop passes its `DROOT`).
+static NEWDESK_ROOT: AtomicI16 = AtomicI16::new(0);
+
+/// `wind_set(DESKWH, WF_NEWDESK, …)` handler (EmuTOS `wm_set`,
+/// `gemwmlib.c:1685-1689`): register (non-null tree) or un-register (null tree)
+/// the desktop's background object tree + root object. Never fails.
+///
+/// The tree pointer + root arrive by the same dual convention as `WF_NAME`
+/// ([`wf_str_ptr`], D-094): the native desktop passes the tree in `addr_in[0]`
+/// (`ain_len == 1`) with the root in `int_in[2]`; a classic AES caller packs the
+/// tree pointer into `int_in[2..3]` with the root in `int_in[4]` (`pinwds[2]`).
+fn set_newdesk(pb: &Aespb) {
+    let tree = wf_str_ptr(pb);
+    let root = if pb.ain_len() >= 1 { pb.intin(2) } else { pb.intin(4) };
+    if tree == 0 {
+        NEWDESK_TREE.store(0, Ordering::Release);
+    } else {
+        NEWDESK_ROOT.store(root, Ordering::Release);
+        NEWDESK_TREE.store(tree, Ordering::Release);
+    }
 }
 
-/// Neutralise the desktop-background painter (the inverse of
-/// [`set_desktop_painter`]): the next [`paint_bg_clip`] does the plain white
-/// erase — literally EmuTOS's `CLEAR_SCREEN` — instead of the desktop's
-/// green background + icons.
-///
-/// Used by the single-tasking **screen handoff**: when the desktop launches a
-/// GEM app it relinquishes the shared AES screen state, so the child composites
-/// on a clean white screen rather than over the desktop's own background. The
-/// desktop re-registers its painter via [`set_desktop_painter`] on the child's
-/// `Pterm` (see [`save_windows`] / [`restore_windows`]).
-pub fn clear_desktop_painter() {
-    DESK_PAINTER.store(0, Ordering::Release);
+/// Build the AES-internal background **fallback root** (EmuTOS `gl_wtree[ROOT]`,
+/// object *B*): a full-screen drawable `G_BOX` drawn when no desktop tree is
+/// registered ([`NEWDESK_TREE`] == 0). Its `ob_spec` is a solid-white fill
+/// (`IP_SOLID | WHITE`, low byte `0x70`) so drawing it erases the clip to white
+/// — the `CLEAR_SCREEN` white-out EmuTOS shows between the desktop and a
+/// launching GEM app (`sh_draw(cmd, TRUE)`, `gemshlib.c:280`). Built fresh per
+/// call so it always spans the current framebuffer.
+fn fallback_root(w: i16, h: i16) -> Object {
+    Object {
+        ob_next: -1,
+        ob_head: -1,
+        ob_tail: -1,
+        ob_type: 20, // G_BOX
+        ob_flags: 0,
+        ob_state: 0,
+        // gr_crack: border/text WHITE, pattern IP_SOLID(7), fill colour WHITE(0),
+        // border thickness 0 → an opaque white rectangle, no frame.
+        ob_spec: 0x0070,
+        ob_x: 0,
+        ob_y: 0,
+        ob_width: w,
+        ob_height: h,
+    }
 }
 
 /// Screen handoff — **relinquish** the desktop's windows: snapshot the whole
@@ -273,9 +310,10 @@ pub fn clear_desktop_painter() {
 ///
 /// This mirrors EmuTOS tearing the desktop's windows (`wm_init`) when a child is
 /// launched. It is called from the desktop's launch path (kernel) together with
-/// [`clear_desktop_painter`] and the menu-bar removal; the caller then clears the
-/// screen (a full composite over the empty table + neutralised painter is the
-/// white `CLEAR_SCREEN`).
+/// the `wind_set(DESKWH, WF_NEWDESK, NULL, …)` un-registration and the menu-bar
+/// removal; the caller then clears the screen (a full composite over the empty
+/// table with no registered desktop tree draws the white `CLEAR_SCREEN`
+/// fallback root).
 pub fn save_windows() {
     // SAFETY: single-CPU AES; `SAVE` and `TABLE` are disjoint statics and
     // `[Window; MAX_WINDOWS]` is `Copy`, so these are plain array copies.
@@ -294,7 +332,8 @@ pub fn save_windows() {
 /// [`save_windows`] back into the shared window table, discarding whatever the
 /// child left there. A no-op if no set is currently saved. Called from the
 /// desktop's launch path on the child's `Pterm`, alongside re-registering the
-/// desktop painter ([`set_desktop_painter`]) and a repaint.
+/// desktop background tree (`wind_set(DESKWH, WF_NEWDESK, tree, …)`) and a
+/// repaint.
 pub fn restore_windows() {
     // SAFETY: single-CPU AES; disjoint `Copy` statics (see [`save_windows`]).
     unsafe {
@@ -307,19 +346,41 @@ pub fn restore_windows() {
     }
 }
 
-/// Paint the desktop background within `clip`: the registered painter if any
-/// (clipped), else a plain white erase of the clip.
+/// Paint the desktop background within `clip` — NewTOS's `w_drawdesk`
+/// (EmuTOS `gemwmlib.c:340-360`).
+///
+/// If a desktop tree is registered ([`NEWDESK_TREE`] != 0, via
+/// `wind_set(DESKWH, WF_NEWDESK, …)`), draw that tree from its root
+/// ([`NEWDESK_ROOT`], the desktop's `DROOT`) at **`MAX_DEPTH`** — the `DROOT`
+/// background box **and every icon child** — exactly as EmuTOS draws
+/// `gl_newdesk` at `MAX_DEPTH`. Otherwise draw the AES-internal [`fallback_root`]
+/// (a white `CLEAR_SCREEN` box) at depth 0. Both go through the ordinary object
+/// manager ([`render_tree_lp64`] = the non-trapping `ob_draw` engine), clipped
+/// to `clip` — never a bespoke fill.
+///
+/// Runs **inside** `compose`/`redraw_all` (the AES SVC handler), so it must not
+/// re-enter the AES trap: `render_tree_lp64` draws straight through the backend.
 fn paint_bg_clip(backend: &dyn RasterBackend, clip: ClipRect) {
-    let p = DESK_PAINTER.load(Ordering::Acquire);
-    if p != 0 {
-        // SAFETY: only ever set via `set_desktop_painter` from that same
-        // `fn(&dyn RasterBackend, ClipRect)` pointer.
-        let f: fn(&dyn RasterBackend, ClipRect) = unsafe { core::mem::transmute(p) };
-        f(backend, clip);
-    } else if let Some((x0, y0, x1, y1)) = clip.clamp_to(backend.width(), backend.height()) {
-        backend.fill_rect(
-            x0 as i16, y0 as i16, (x1 - x0 + 1) as i16, (y1 - y0 + 1) as i16, WHITE, clip,
-        );
+    let cw = (clip.xmx - clip.xmn + 1).max(0);
+    let ch = (clip.ymx - clip.ymn + 1).max(0);
+    if cw == 0 || ch == 0 {
+        return;
+    }
+    let tree = NEWDESK_TREE.load(Ordering::Acquire);
+    if tree != 0 {
+        let root = NEWDESK_ROOT.load(Ordering::Acquire);
+        // SAFETY: `tree` is the desktop's `g_screen` base, registered via
+        // WF_NEWDESK; it is a valid native OBJECT array kept stable for the
+        // desktop's lifetime, `root` is in range.
+        unsafe {
+            render_tree_lp64(tree as *const Object, root, MAX_DEPTH, clip.xmn, clip.ymn, cw, ch, backend);
+        }
+    } else {
+        let fb = fallback_root(backend.width() as i16, backend.height() as i16);
+        // SAFETY: `fb` is a single valid native OBJECT (root index 0, no children).
+        unsafe {
+            render_tree_lp64(&fb as *const Object, 0, 0, clip.xmn, clip.ymn, cw, ch, backend);
+        }
     }
 }
 
@@ -1116,6 +1177,15 @@ pub fn wind_get(pb: &Aespb) {
 pub fn wind_set(pb: &Aespb) {
     let handle = pb.intin(0);
     let field = pb.intin(1);
+    // WF_NEWDESK registers the desktop-background tree on the desktop
+    // pseudo-window (`DESKWH` = 0), which has no window-table slot — handle it
+    // before the `win()` guard (EmuTOS `wm_set` operates on the always-present
+    // `D.w_win[0]` slot, `gemwmlib.c:1685`). Never fails.
+    if field == WF_NEWDESK {
+        set_newdesk(pb);
+        pb.set_ret(1);
+        return;
+    }
     if win(handle).is_none() {
         pb.set_ret(0);
         return;
@@ -1188,8 +1258,8 @@ pub fn wind_set(pb: &Aespb) {
             redraw_hslider(handle);
         }
         // Unknown or unimplemented field → FALSE (EmuTOS wm_set default:
-        // gemwmlib.c:1736). NewTOS does not implement WF_NEWDESK/WF_COLOR/
-        // WF_DCOLOR at this altitude, so they honestly report FALSE rather
+        // gemwmlib.c:1736). WF_NEWDESK is handled above; WF_COLOR/WF_DCOLOR are
+        // not implemented at this altitude, so they honestly report FALSE rather
         // than faking success.
         _ => {
             pb.set_ret(0);

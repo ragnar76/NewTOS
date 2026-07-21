@@ -1369,7 +1369,9 @@ pub(super) fn set_background() -> bool {
         return false;
     }
     global::set_patcol_desktop(new);
-    // Repaint the exposed desktop with the new background, then persist.
+    // Push the new pattern/colour into DROOT's box `ob_spec` (the AES draws that
+    // box as the background), then repaint the exposed desktop and persist.
+    global::with(|g| g.sync_desk_background());
     let desk = global::with(|g| g.g_desk).unwrap_or_default();
     super::redraw::do_wredraw(super::win::DESKWH, desk);
     save_desktop();

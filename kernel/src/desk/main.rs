@@ -521,22 +521,28 @@ fn desktop_relinquish() {
     // `menu_bar(tree, 0)` needs the real (non-null) tree to erase the strip.
     super::menu_bar(menu::tree_ptr(), 0);
     // Hide the desktop's own windows out of the shared AES window list (saved for
-    // the resume) and neutralise the desktop-background painter so the composite
-    // erases to white.
+    // the resume) and un-register the desktop background tree (EmuTOS
+    // `wind_set(DESKWH, WF_NEWDESK, NULL, 0, 0)`, `deskmain.c:2163`) so the AES
+    // `w_drawdesk` falls back to its internal white CLEAR_SCREEN root.
     tos_api::aes::window::save_windows();
-    tos_api::aes::window::clear_desktop_painter();
-    // Clear the screen: with the window list empty and the painter neutralised, a
-    // full composite paints the whole screen white — EmuTOS's `sh_draw`
-    // CLEAR_SCREEN. The child (QED) then draws on this clean screen.
+    super::wind_set_newdesk(0, 0);
+    // Clear the screen: with the window list empty and no desktop tree registered,
+    // a full composite paints the whole screen white via the AES fallback root —
+    // EmuTOS's `sh_draw` CLEAR_SCREEN. The child (QED) then draws on this clean
+    // screen.
     tos_api::aes::window::redraw();
 }
 
 /// The **resume** half of [`run_gem_app`]: rebuild the desktop exactly as it was
 /// before the launch (EmuTOS `deskmain.c:2124-2171` + `gemshlib.c:606,710-727`).
 fn desktop_resume() {
-    // Re-register the desktop-background painter and restore the saved window set
-    // (discarding whatever the child left in the shared list).
-    tos_api::aes::window::set_desktop_painter(super::paint_desktop_bg);
+    // Re-register the desktop's background object tree (EmuTOS
+    // `wind_set(DESKWH, WF_NEWDESK, G.g_screen, 1, 0)`, `deskmain.c:2049`) and
+    // restore the saved window set (discarding whatever the child left in the
+    // shared list). The AES `w_drawdesk` draws `DROOT` + icons again from here.
+    if let Some(tree) = super::global::screen_addr() {
+        super::wind_set_newdesk(tree, super::global::DROOT);
+    }
     tos_api::aes::window::restore_windows();
     // Rebuild the menu bar + repaint the whole desktop (`full_redraw`
     // re-installs the menu bar itself).

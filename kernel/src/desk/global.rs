@@ -12,8 +12,7 @@
 use alloc::vec::Vec;
 use core::sync::atomic::{AtomicU8, Ordering};
 
-use tos_api::aes::object::{render_tree, Object};
-use tos_api::vdi::backend::{ClipRect, RasterBackend};
+use tos_api::aes::object::Object;
 
 use crate::sync::SpinMutex;
 
@@ -91,6 +90,12 @@ pub const G_ICON: u16 = 31;
 /// `G_TITLE` graphic type — a menu-bar title.
 pub const G_TITLE: u16 = 32;
 
+/// EmuTOS `BORDER_TEXT_COLOURS` (`deskapp.c:80`): `(BLACK << 12) | (BLACK << 8)`
+/// = `0x1100`. OR'd with the persisted background pattern/colour byte to form
+/// `DROOT`'s box colour word (`ob_spec`) — black border/text nibbles above the
+/// pattern (bits 4-6) and fill-colour (bits 0-3) the byte supplies.
+pub const BORDER_TEXT_COLOURS: u64 = 0x1100;
+
 // ── Grid-metric gaps (`deskbind.h:53-56`) ───────────────────────────────────
 
 /// `MIN_HINT` (`deskbind.h:56`) — the fixed 2-px vertical inter-icon gap.
@@ -146,10 +151,12 @@ const EMPTY_OBJ: Object = Object {
 
 // ── Background pattern/colour (`g_patcol`) ─────────────────────────────────
 //
-// Kept as atomics, separate from the mutex-guarded `DeskState`, because the
-// re-entrant desktop-background painter (`set_desktop_painter` hook, invoked
-// from inside the AES redraw path) must read it **lock-free** to avoid
-// deadlocking against a lock the event loop might hold. Six bytes:
+// Kept as atomics, separate from the mutex-guarded `DeskState`, so the persisted
+// pattern/colour byte can be read/written lock-free (EMUDESK.INF `#Q` load/save,
+// the Set-Background dialog) without contending the `DeskState` lock. This byte
+// is the single source of truth that feeds `DROOT`'s box `ob_spec` via
+// [`DeskState::sync_desk_background`] — the AES then draws that box as the screen
+// background (`WF_NEWDESK`/`w_drawdesk`). Six bytes:
 // `[desk0, win0, desk1, win1, desk2, win2]`, pattern+colour each; NewTOS is a
 // >2-plane display, so it uses the index-4/5 pair. Defaults are the EmuTOS
 // `#Q` defaults (IP_4PATT + green desktop). Reading/writing `NEWDESK.INF`
@@ -355,15 +362,22 @@ impl DeskState {
             ob_height: screen_h,
         };
 
-        // DROOT (index 1): the desktop itself (its work-area rect).
+        // DROOT (index 1): the desktop itself (its work-area rect). It is a
+        // drawable `G_BOX` whose `ob_spec` carries the visible desktop
+        // background pattern/colour (EmuTOS `gl_sampob[1]`, `deskobj.c:39`, and
+        // `G.g_screen[DROOT].ob_spec = g_patcol.desktop | BORDER_TEXT_COLOURS`,
+        // `deskapp.c:1327`). The AES draws this box — and the icon children under
+        // it — as the screen background via `w_drawdesk` (`WF_NEWDESK`). The
+        // low-byte fill is refreshed from the persisted byte by
+        // [`DeskState::sync_desk_background`].
         screen[DROOT as usize] = Object {
             ob_next: DROOT + 1,
             ob_head: NIL,
             ob_tail: NIL,
-            ob_type: G_IBOX,
+            ob_type: G_BOX,
             ob_flags: 0,
             ob_state: 0,
-            ob_spec: 0,
+            ob_spec: patcol_desktop() as u64 | BORDER_TEXT_COLOURS,
             ob_x: self.g_desk.x,
             ob_y: self.g_desk.y,
             ob_width: self.g_desk.w,
@@ -481,6 +495,16 @@ impl DeskState {
         r.ob_width = w;
         r.ob_height = h;
     }
+
+    /// Refresh `DROOT`'s box colour word from the persisted desktop
+    /// pattern/colour byte (EmuTOS `deskapp.c:1327`:
+    /// `G.g_screen[DROOT].ob_spec = G.g_patcol[n].desktop | BORDER_TEXT_COLOURS`).
+    /// The AES draws `DROOT` (via `WF_NEWDESK`/`w_drawdesk`) as the screen
+    /// background, so this makes a background-pattern change visible on the next
+    /// redraw. Called from `app_blddesk` (build) and the Set-Background dialog.
+    pub fn sync_desk_background(&mut self) {
+        self.g_screen[DROOT as usize].ob_spec = patcol_desktop() as u64 | BORDER_TEXT_COLOURS;
+    }
 }
 
 /// The single desktop-state instance. Lazily initialised by [`init`]; guarded
@@ -509,48 +533,17 @@ pub fn with<R>(f: impl FnOnce(&mut DeskState) -> R) -> Option<R> {
     guard.as_mut().map(f)
 }
 
-/// Base address of the object arena (`g_screen`), for handing the tree to
-/// `objc_draw` / `render_tree`. Stable for the desktop's lifetime: the arena
-/// is allocated once by `obj_init` and never reallocated (see
-/// [`DeskState::obj_ialloc`]), so this address — and the `ob_spec`/`ib_ptext`
-/// raw pointers baked into the tree — stay valid across the draw. [`None`]
-/// before [`init`].
+/// Base address of the object arena (`g_screen`), for handing the tree to the
+/// AES via `wind_set(DESKWH, WF_NEWDESK, …)` and to `objc_draw` (`do_wredraw`).
+/// Stable for the desktop's lifetime: the arena is allocated once by `obj_init`
+/// and never reallocated (see [`DeskState::obj_ialloc`]), so this address — and
+/// the `ob_spec`/`ib_ptext` raw pointers baked into the tree — stay valid across
+/// the draw. [`None`] before [`init`].
 ///
-/// The lock is released when this returns; the caller uses the address in an
-/// `objc_draw` that does not re-enter [`DESK`], so there is no re-entrancy on
-/// the single boot CPU.
+/// The lock is released when this returns; the AES background composite
+/// (`w_drawdesk`/`paint_bg_clip`) reads the tree without re-entering [`DESK`],
+/// so there is no re-entrancy on the single boot CPU.
 pub fn screen_addr() -> Option<u64> {
     let guard = DESK.lock();
     guard.as_ref().map(|s| s.g_screen.as_ptr() as u64)
-}
-
-/// Render the desktop-icon subtree (`DROOT` + children) clipped to `clip` ∩
-/// the desktop work area, straight through `backend` (no AES trap) — the
-/// desktop-icon half of the `crate::desk` background painter.
-///
-/// Runs **inside** `window::redraw_all` (the AES SVC handler), so it draws
-/// via [`render_tree`] rather than a re-entrant `objc_draw` trap. It locks
-/// [`DESK`]; this is deadlock-free because the desktop never holds that lock
-/// across a `wind_*` call (the only thing that triggers `redraw_all`) — every
-/// [`with`] closure completes and releases before any AES trap is issued.
-pub fn render_desktop_icons(backend: &dyn RasterBackend, clip: ClipRect) {
-    let guard = DESK.lock();
-    let Some(s) = guard.as_ref() else {
-        return;
-    };
-    let d = s.g_desk;
-    // Intersect the caller's clip with the desktop work area.
-    let x0 = clip.xmn.max(d.x);
-    let y0 = clip.ymn.max(d.y);
-    let x1 = clip.xmx.min(d.x + d.w - 1);
-    let y1 = clip.ymx.min(d.y + d.h - 1);
-    if x1 < x0 || y1 < y0 {
-        return;
-    }
-    let tree = s.g_screen.as_ptr();
-    // SAFETY: `tree` is a valid OBJECT array; `DROOT` is in range; the arena
-    // is not reallocated while the lock is held.
-    unsafe {
-        render_tree(tree, DROOT, MAX_DEPTH, x0, y0, x1 - x0 + 1, y1 - y0 + 1, backend);
-    }
 }

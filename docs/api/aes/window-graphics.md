@@ -926,8 +926,15 @@ build does not support it** (discrepancy D-053).
   `WM_*SLID` in its event loop (each answered by the matching `wind_set`), and
   `wind_close`/`wind_delete` at exit; it walks `WF_FIRSTXYWH`/`NEXTXYWH` inside
   every `WM_REDRAW`.
-- **The desktop** (`desk/`) owns the desktop window (handle 0) and the
-  background tree (`WF_NEWDESK`) — this is the NewTOS desktop.
+- **The desktop** (`kernel/src/desk/`) owns the desktop window (handle 0) and
+  registers its object tree as the AES screen background via
+  `wind_set(DESKWH, WF_NEWDESK, g_screen, 1, DROOT)` at startup (un-registered
+  with a NULL tree on app-launch / exit). This is **implemented**
+  (`tos-api/src/aes/window.rs`: `WF_NEWDESK` stores `gl_newdesk`/`gl_newroot`;
+  `paint_bg_clip` is NewTOS's `w_drawdesk`, drawing the registered `DROOT`
+  background box + icon children at `MAX_DEPTH`, or a white `CLEAR_SCREEN`
+  fallback root when none is registered — no `objc_draw`-bypassing painter hook).
+  See [`../desktop/aes-background-screen-model.md`](../desktop/aes-background-screen-model.md).
 - **`graf_handle`** is the mandatory bridge every app crosses to reach the VDI.
 
 ---

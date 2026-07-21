@@ -591,13 +591,14 @@ pub fn objc_draw(pb: &Aespb) {
 
 /// Render object tree `tree` starting at object `start` for `depth` levels,
 /// clipped to `(cx, cy, cw, ch)`, straight through `backend` — the body of
-/// [`objc_draw`] **without** the AES trap.
+/// [`objc_draw`] **without** the AES trap, reading the tree at the **current**
+/// ABI width ([`ObjTree::new`]).
 ///
 /// In-kernel callers that must draw an object tree while already inside the
-/// AES dispatch (e.g. the desktop background painter running under
-/// `window::redraw_all`) use this instead of a re-entrant `svc #2`, which the
-/// `DESK_PAINTER` contract forbids. Behaves identically to `objc_draw` for a
-/// valid tree.
+/// AES dispatch use this instead of a re-entrant `svc #2`. For a **kernel-built**
+/// tree (the desktop's `g_screen`, the AES background fallback root) that is
+/// always native `Object`s even while an ILP32 app is current, use
+/// [`render_tree_lp64`] instead, which forces the 32-byte record layout.
 ///
 /// # Safety
 /// `tree` must be a valid `OBJECT` array with `start` in range.
@@ -615,7 +616,52 @@ pub unsafe fn render_tree(
     if tree.is_null() || start < 0 {
         return;
     }
-    let t = ObjTree::new(tree);
+    render_tree_t(ObjTree::new(tree), start, depth, cx, cy, cw, ch, backend);
+}
+
+/// As [`render_tree`], but reads `tree` at the native LP64 (32-byte) record
+/// layout regardless of the current execution context's ABI ([`ObjTree::lp64`]).
+///
+/// This is the non-trapping `w_drawdesk`/`objc_draw` primitive for the AES
+/// screen-background composite ([`crate::aes::window`]): both the desktop's
+/// registered `g_screen` tree (`WF_NEWDESK`) and the AES-internal fallback root
+/// are kernel-built native `Object`s, so they must be read at LP64 width even
+/// when an ILP32 app is the current process (exactly like the kernel-built
+/// alert/fileselector trees use [`ObjTree::lp64`]).
+///
+/// # Safety
+/// `tree` must be a valid native (LP64) `OBJECT` array with `start` in range.
+#[allow(clippy::too_many_arguments)]
+pub unsafe fn render_tree_lp64(
+    tree: *const Object,
+    start: i16,
+    depth: i16,
+    cx: i16,
+    cy: i16,
+    cw: i16,
+    ch: i16,
+    backend: &dyn RasterBackend,
+) {
+    if tree.is_null() || start < 0 {
+        return;
+    }
+    render_tree_t(ObjTree::lp64(tree), start, depth, cx, cy, cw, ch, backend);
+}
+
+/// Shared body of [`render_tree`]/[`render_tree_lp64`]: draw the subtree rooted
+/// at `start`, `depth` levels deep, clipped to `(cx, cy, cw, ch)`, through the
+/// caller-chosen [`ObjTree`] accessor (which fixes the ABI width).
+#[allow(clippy::too_many_arguments)]
+fn render_tree_t(
+    t: ObjTree,
+    start: i16,
+    depth: i16,
+    cx: i16,
+    cy: i16,
+    cw: i16,
+    ch: i16,
+    backend: &dyn RasterBackend,
+) {
     let clip = ClipRect { xmn: cx, ymn: cy, xmx: cx + cw - 1, ymx: cy + ch - 1 };
     // Absolute origin of `start` = sum of its ancestors' x/y (like objc_offset).
     let (ox, oy) = abs_offset(t, start);
@@ -1460,8 +1506,15 @@ fn xor_color(c: Pel) -> Pel {
 }
 
 /// Fill `(x,y,w,h)` with the AES inside pattern `ipat` in colour `icol`
-/// (EmuTOS `gr_rect`): HOLLOW draws nothing, SOLID a flat fill, the rest a
-/// dither of `icol` on white.
+/// (EmuTOS `gr_rect`, `gemgraf.c:547-559`): HOLLOW draws nothing, SOLID a flat
+/// fill, the rest an `icol`-on-white dither.
+///
+/// The dither is drawn in **`WriteMode::Replace`** — EmuTOS `gr_rect` always
+/// fills with `MD_REPLACE` (`bb_fill(MD_REPLACE, …)`, `gemgraf.c:558`), so a
+/// pattern's *clear* bits are painted the background colour (white), not left
+/// transparent. This is what makes a patterned box (the desktop `DROOT`
+/// background, `IP_4PATT` green-on-white) an opaque fill that erases whatever it
+/// covers, rather than letting the underlying pixels show through the gaps.
 fn gr_rect(backend: &dyn RasterBackend, x: i16, y: i16, w: i16, h: i16, icol: Pel, ipat: u16, clip: ClipRect) {
     if w <= 0 || h <= 0 {
         return;
@@ -1474,7 +1527,7 @@ fn gr_rect(backend: &dyn RasterBackend, x: i16, y: i16, w: i16, h: i16, icol: Pe
                 fg: icol,
                 bg: WHITE,
                 pattern: &IP_PATTERNS[(p & 7) as usize],
-                mode: WriteMode::Transparent,
+                mode: WriteMode::Replace,
             };
             backend.fill_pattern(x, y, w, h, pat, clip);
         }
