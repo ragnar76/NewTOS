@@ -290,9 +290,18 @@ pub fn track(tree: *mut Object, backend: &dyn RasterBackend) -> Option<(i16, i16
 /// nested-submenu hover tracking.
 fn rehilite(tree: *mut Object, box_obj: i16, old: i16, new: i16, backend: &dyn RasterBackend) {
     let tp = tree as *const Object;
+    let t = ObjTree::new(tp);
     crate::vdi::cursor_hide(backend);
     let clip = ClipRect::full(backend.width(), backend.height());
-    if old != NIL {
+    // EmuTOS highlights and un-highlights a drop-down item only through
+    // `menu_select` → `do_chg(..., chkdisabled=TRUE)` (`gemmnlib.c:196` calling
+    // the guard at `:159-160`; invoked for the un-hilite at `:459` and the
+    // hilite at `:471`): a `DISABLED` item is never given the `SELECTED`
+    // (inverted) state. So a disabled item under the cursor stays in its normal,
+    // un-inverted state — it needs no white un-draw (its normal pixels are still
+    // there) and, never having been filled `BLACK` (`object.rs:1767`), it cannot
+    // leave a black-block residue when the drop-down closes.
+    if old != NIL && (t.state(old) & DISABLED) == 0 {
         // `draw_obj` only paints a G_STRING's background when it is SELECTED,
         // so clear the old item's black highlight to white before redrawing it
         // normal — otherwise the hovered-over item stays black.
@@ -300,7 +309,7 @@ fn rehilite(tree: *mut Object, box_obj: i16, old: i16, new: i16, backend: &dyn R
         backend.fill_rect(ix, iy, iw, ih, WHITE, clip);
         object::set_state_bit(tree, old, SELECTED, false);
     }
-    if new != NIL {
+    if new != NIL && (t.state(new) & DISABLED) == 0 {
         object::set_state_bit(tree, new, SELECTED, true);
     }
     // Item fills span the full box width, so a highlight/clear paints over the
