@@ -35,6 +35,10 @@ graphify-out/
 # Local SD-card backup (RPi firmware + game ROM) — not for the public repo
 sd-card-backup-*/
 
+# Real-HW capture photos (Pi4 desktop screenshots) — local review material,
+# large binaries, not repo content.
+/pictures/
+
 # Local app/tool sources — the basis for a native NewTOS toolchain
 # (compiler + tools). Kept out of the OS repo; see Task #76.
 /Applications/

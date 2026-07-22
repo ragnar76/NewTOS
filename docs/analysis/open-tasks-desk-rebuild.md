@@ -1,6 +1,6 @@
 # Offene Tasks — Desktop 1:1 EmuTOS Rebuild & AES Render-Kampagne
 
-> Stand: 2026-07-22, Branch `desk-rebuild`, HEAD `5b23601`.
+> Stand: 2026-07-22, Branch `desk-rebuild`, HEAD `db6052d`.
 > Ersetzt die (getrennten) MCP-Task-Tools — die sind disconnectet, Task-Nummern
 > sind nur noch historische Referenzen. Diese Datei ist der Tracker.
 
@@ -101,23 +101,30 @@ Groups A/B/C committet (D1/D9, D3/D4/D5, D7). Deferred:
 
 ---
 
-## F. Housekeeping / uncommitted Working-Tree
+## F. Housekeeping / Working-Tree
 
-Aktuell nicht committet (git status):
-- `M .claude/agents/{auditor,developer,researcher}.md`, `?? .claude/agents/tester.md`
-  — Agent-Definitionen (Tooling, nicht Produkt-Code).
-- `M kernel/src/arch/aarch64/exceptions.rs`, `M kernel/src/lib.rs`,
-  `?? kernel/src/dbg_qedtrace.rs` — QED-Trace-Debug-Instrumentierung. Klären:
-  committen (als `chore(debug):`) oder verwerfen, bevor #127 startet.
-- `?? docs/analysis/aes-object-form-render-audit.md` — Fix-B-Audit, sollte mit
-  committet werden (gehört zu C).
-- `?? sdk/apps/build-teradesk-ilp32.sh`, `?? pictures/` — Build-Script /
-  Test-Screenshots. Entscheiden ob ins Repo oder ignoren.
+**Erledigt (seit `5b23601` committet):**
+- `e330d71` Agent-Definitionen (auditor/developer/researcher + neuer tester).
+- `65fee47` Fix-B-Audit `aes-object-form-render-audit.md` (gehört zu C).
+- `db6052d` `sdk/apps/build-teradesk-ilp32.sh` (2. EL0-GEM-App-Validator).
+- `pictures/` (68 MB reale-HW-Fotos) → **gitignored** (`.gitignore`, analog
+  `sd-card-backup-*/`), bleiben lokal, nicht ins Repo.
+
+**Offen — vor Merge nach `main` zu erledigen:**
+- **F1 — Debug-Tracer revertieren:** `25fe27a` `chore(debug): TEMPORARY EL0 QED
+  syscall tracer` ist bewusst als **„revert before merge"** markiert. Betrifft
+  `kernel/src/dbg_qedtrace.rs` (+661 Z.), `kernel/src/arch/aarch64/exceptions.rs`
+  (+16), `kernel/src/lib.rs` (+5). Vor dem Branch-Merge zurücknehmen (git revert
+  oder Commit droppen). Nur QED/TeraDesk-Bring-up-Instrument, kein Produkt-Code.
 
 ---
 
 ## Erledigt (Referenz, Branch `desk-rebuild`, neueste zuerst)
 
+- `db6052d` TeraDesk ILP32 Build-Script (2. EL0-GEM-App-Validator)
+- `25fe27a` TEMPORARY EL0 QED syscall tracer — **F1: revert before merge**
+- `e330d71` Worker-Rollen verfeinert + dedizierter tester-Agent
+- `65fee47` Fix-B Render-Audit + dieser Tracker
 - `5b23601` appl_init füllt aes_global 1:1 (ap_private, ap_3resv)
 - `1579655` desk ruft appl_init (Empty-Window Root-Cause)
 - `8d77372` per-app FIFO Message-Queue (#125, notwendig aber nicht hinreichend)
