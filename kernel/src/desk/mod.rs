@@ -48,6 +48,8 @@ use global::{Grect, MAX_DEPTH, WINDOW_STYLE};
 // never touch the raw parameter block.
 
 // AES opcodes (`aes/mod.rs` dispatch table).
+const OP_APPL_INIT: i16 = 10;
+const OP_APPL_EXIT: i16 = 19;
 const OP_EVNT_BUTTON: i16 = 21;
 const OP_EVNT_MULTI: i16 = 25;
 const OP_MENU_BAR: i16 = 30;
@@ -148,6 +150,35 @@ impl Aes {
         ];
         gem_trap(block.as_ptr() as u64);
     }
+}
+
+// ── aesbind wrappers (application manager) ──────────────────────────────────
+
+/// `appl_init()` (10) — register the desktop as an AES application (EmuTOS
+/// `deskmain.c:1953`, `gl_apid = appl_init();`). On the trap side this runs
+/// `pd::open(current_pid())`, which for the desktop's kernel-boot context (null
+/// basepage) is pid 1: it allocates the AES process descriptor **and its FIFO
+/// message queue** for pid 1. Returns the assigned application id (`ap_id`, =
+/// pid), or −1 on failure.
+///
+/// This is the missing piece that made directory-window content vanish: without
+/// a descriptor for pid 1, `pd::by_pid(1)` is `None`, so every AES
+/// `send_redraw` → `post_msg(1, WM_REDRAW)` for a MOVE/SIZE/TOP/CLOSE/open is
+/// dropped, and window content only ever appeared on the direct-draw boot /
+/// view-switch paths. Uses the same GEM trap (`svc #2`, selector 200) as every
+/// other AES call the desktop makes.
+pub(super) fn appl_init() -> i16 {
+    let mut a = Aes::new();
+    a.call(OP_APPL_INIT, 0, 0);
+    a.intout[0]
+}
+
+/// `appl_exit()` (19) — deregister the desktop from the AES, closing its process
+/// descriptor and message queue (EmuTOS `deskmain.c:2166`). The symmetric
+/// counterpart to [`appl_init`], run on the desktop's shutdown path.
+pub(super) fn appl_exit() {
+    let mut a = Aes::new();
+    a.call(OP_APPL_EXIT, 0, 0);
 }
 
 // ── aesbind wrappers (window manager) ──────────────────────────────────────
@@ -506,6 +537,19 @@ pub fn run() {
         return;
     };
 
+    // The desktop is a normal AES application. Register it FIRST (EmuTOS
+    // `deskmain.c:1953`: `gl_apid = appl_init();` — the first library-init step,
+    // before window creation and the event loop). `appl_init` opens the AES
+    // process descriptor — and its FIFO message queue — for the desktop's pid
+    // (=1 in the kernel boot context). Without it `pd::by_pid(1)` is `None`, so
+    // every `send_redraw` → `post_msg(1, WM_REDRAW)` from a MOVE/SIZE/TOP/CLOSE/
+    // open-new-window drops silently and the window content only appears on the
+    // direct-draw boot / view-switch paths (the empty directory-window bug).
+    let ap_id = appl_init();
+    if ap_id < 0 {
+        kprintln!("[desk] appl_init failed — AES window redraws will be dropped");
+    }
+
     // One-time setup: DeskState (view/sort defaults, window list, object arena).
     global::init(backend.width() as i16, backend.height() as i16);
 
@@ -565,6 +609,10 @@ pub fn run() {
         tos_api::bios::drive::drvbits().count_ones()
     );
 
-    // Hand off to the interaction loop (never returns while the desktop runs).
+    // Hand off to the interaction loop; it returns only when a handler requests
+    // shutdown (Task #9 — the desktop otherwise runs forever, which is correct).
+    // On the way out, deregister from the AES — the symmetric counterpart to the
+    // boot `appl_init` (EmuTOS `deskmain.c:2166`, `appl_exit();`).
     main::event_loop();
+    appl_exit();
 }
