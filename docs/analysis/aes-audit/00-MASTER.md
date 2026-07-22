@@ -129,6 +129,15 @@ Teilphase mit realer-Pi-Verifikation fahren.
 
 ## 6. Reihenfolge & Akzeptanz
 
+> **RE-SEQUENCING (User, 2026-07-22, Memory `fix-vdi-before-aes-bottom-up`):**
+> **Zuerst das VDI 1:1 sauber, dann diese AES-Fixes.** AES setzt auf VDI-Primitiven
+> auf — AES auf kaputtem VDI zu fixen erzeugt nur Kompensations-Hacks. Der VDI-Audit
+> (`docs/analysis/vdi-audit/`) + VDI-Master laufen zuerst durch den Fix-Loop.
+> **Alle Findings werden gefixt**, nicht nach QED-Sichtbarkeit triagiert (QED = nur
+> Bug-Indikator). WP1 (#127) war reines AES-Message-Routing ohne VDI-Bezug → bleibt
+> gültig/committet. WP2ff folgen NACH dem sauberen VDI. Die untenstehende WP-Ordnung
+> ist damit Dependency-/Layer-basiert, nicht QED-Pain-basiert.
+
 **Phase 2a — Bugs (WP1–WP8):** WP1 (#127, läuft) → WP2 (Cursor) — beide
 adressieren die realen HW-Pains → WP3 (Resource/Object-Blocker, blockt
 QED/TeraDesk) → WP4 (Form) → WP6 (graf_slidebox-Blocker + Window-Rest) →
