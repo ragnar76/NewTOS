@@ -27,6 +27,15 @@ pub(super) const ROM_UD_PATRN: [u16; 16] = [
 /// SOLID = one all-ones row (every pixel set).
 static SOLID: [u16; 1] = [0xFFFF];
 
+/// HOLLOW = one all-zero row. EmuTOS `st_fl_ptr` (`vdi_fill.c:347-349`)
+/// sets `patptr = &HOLLOW` (a single `0x0000` word) and `patmsk = 0` for
+/// `FIS_HOLLOW`; it does **not** skip drawing. Fed through the write mode
+/// this reproduces EmuTOS' truecolor `swblit_rect_common16`
+/// (`vdi_line.c:463-549`) exactly: Replace fills every pixel with pen 0
+/// (`bgcol = palette[0]`), Reverse-transparent fills with the fill colour
+/// (`fgcol` on the all-clear pattern), Transparent/XOR draw nothing.
+static HOLLOW: [u16; 1] = [0x0000];
+
 /// Dither patterns — 8 patterns × 4 rows (`DITHRMSK = 3`).
 static DITHER: [u16; 32] = [
     0x0000, 0x4444, 0x0000, 0x1111, // level 2
@@ -85,32 +94,36 @@ static HATCH1: [u16; 96] = [
     0xFFFF, 0x8080, 0x8080, 0x8080, 0x8080, 0x8080, 0x8080, 0x8080, //
 ];
 
-/// Select the active fill pattern for a workstation (EmuTOS
-/// `st_fl_ptr`). Returns the run of 16-bit rows (length is a power of
-/// two: 1/4/8/16), or `None` for `HOLLOW` (nothing drawn). Out-of-range
-/// indices are clamped into their style's table.
-pub(crate) fn select(vwk: &Vwk) -> Option<&[u16]> {
+/// Select the active fill pattern for a workstation (EmuTOS `st_fl_ptr`,
+/// `vdi_fill.c:338-380`). Returns the run of 16-bit rows (length a power
+/// of two: 1/4/8/16). `HOLLOW` returns a single `0x0000` row — **not**
+/// nothing: EmuTOS always sets `patptr`, and for `FIS_HOLLOW` it points at
+/// the `HOLLOW` word, so the interior is still drawn through the write
+/// mode (Replace → pen 0, Reverse-transparent → fill colour; see
+/// [`static@HOLLOW`]). Out-of-range indices are clamped into their style's
+/// table.
+pub(crate) fn select(vwk: &Vwk) -> &[u16] {
     let fi = vwk.fill_index.max(0) as usize;
     match vwk.fill_style {
-        FIS_HOLLOW => None,
-        FIS_SOLID => Some(&SOLID),
+        FIS_HOLLOW => &HOLLOW,
+        FIS_SOLID => &SOLID,
         FIS_PATTERN => {
             if fi < 8 {
-                Some(&DITHER[fi * 4..fi * 4 + 4])
+                &DITHER[fi * 4..fi * 4 + 4]
             } else {
                 let i = (fi - 8).min(15);
-                Some(&OEMPAT[i * 8..i * 8 + 8])
+                &OEMPAT[i * 8..i * 8 + 8]
             }
         }
         FIS_HATCH => {
             if fi < 6 {
-                Some(&HATCH0[fi * 8..fi * 8 + 8])
+                &HATCH0[fi * 8..fi * 8 + 8]
             } else {
                 let i = (fi - 6).min(5);
-                Some(&HATCH1[i * 16..i * 16 + 16])
+                &HATCH1[i * 16..i * 16 + 16]
             }
         }
-        FIS_USER => Some(&vwk.ud_patrn),
-        _ => Some(&SOLID),
+        FIS_USER => &vwk.ud_patrn,
+        _ => &SOLID,
     }
 }

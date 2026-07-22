@@ -341,16 +341,34 @@ pub fn vsf_style(pb: &Vdipb, vwk: &mut Vwk) {
 /// Opcode 112 — `vsf_udpat`: set the user-defined fill pattern from
 /// `INTIN` (`CONTRL[3]` words). EmuTOS (`vdi_fill.c:149-166`) accepts
 /// **only** a 16-word single-plane pattern (`multifill = 0`) or a full
-/// `planes*16`-word multi-plane pattern (`multifill = 1`, `planes =
-/// INQ_TAB[4] = log2(ncol)`); any other count is invalid and leaves the
-/// state unchanged. We store plane 0 either way (multi-plane colour
-/// reduction — an accepted single-plane-backend limitation).
-pub fn vsf_udpat(pb: &Vdipb, vwk: &mut Vwk, ncol: u16) {
+/// `INQ_TAB[4]*16`-word multi-plane pattern (`multifill = 1`); any other
+/// count is invalid and leaves the state unchanged.
+///
+/// **Truecolor multi-plane reality (AUD-V2-009).** Under our Falcon
+/// truecolor profile EmuTOS renders user fill patterns **monochrome**:
+/// `swblit_rect_common16` (`vdi_line.c:450-551`) indexes `patptr[patmsk &
+/// y]` and — unlike the planar `swblit_rect_common` — never advances the
+/// pattern by 16 per plane (no `if (multifill) patind += 16`). It uses
+/// only the first 16 pattern words, painting `fgcol`/`bgcol` (the fill
+/// colour / pen 0). So storing plane 0 and rendering it monochrome is
+/// **1:1 with EmuTOS in truecolor**; colour multi-plane patterns are a
+/// planar-mode-only feature, unreachable on this device — the `multifill`
+/// flag is kept for a future planar backend.
+///
+/// The multi-plane count is validated against the true `INQ_TAB[4] =
+/// v_planes` (`planes`, threaded from `backend.planes()` = 16 in
+/// truecolor), so a correctly-sized 16-plane pattern (256 words) is
+/// accepted exactly as EmuTOS (`vdi_fill.c:157`: the count must equal
+/// `INQ_TAB[4]` times 16). Only the first 16 words (plane 0) are stored —
+/// the truecolor render uses only those (monochrome, see above); a future
+/// planar backend would extend the store, not the acceptance test.
+pub fn vsf_udpat(pb: &Vdipb, vwk: &mut Vwk, planes: u16) {
     let count = pb.contrl(3);
-    let planes = ncol.trailing_zeros() as i16; // INQ_TAB[4]
+    // EmuTOS `vdi_vsf_udpat` (`vdi_fill.c:155-160`): 16 words = single
+    // plane, `INQ_TAB[4] * 16` words = valid multi-plane, else invalid.
     if count == 16 {
         vwk.multifill = false;
-    } else if count == planes * 16 {
+    } else if count == planes as i16 * 16 {
         vwk.multifill = true;
     } else {
         return; // invalid count: no state change

@@ -166,10 +166,11 @@ pub fn v_contourfill(pb: &Vdipb, vwk: &Vwk, backend: &dyn RasterBackend) {
         (intin0 as u8, false) // fill region bounded by this colour
     };
 
-    let pattern = match fill_patterns::select(vwk) {
-        Some(p) => p,
-        None => return, // hollow → nothing to fill
-    };
+    // HOLLOW is not a no-op: EmuTOS `st_fl_ptr` points `patptr` at the
+    // all-zero HOLLOW word, so each filled span is drawn through the write
+    // mode (Replace → pen 0). The seed/visited logic is independent of the
+    // drawn colour, so this still terminates.
+    let pattern = fill_patterns::select(vwk);
     let fill = PatternFill {
         fg: vwk.fill_color,
         bg: 0,

@@ -510,18 +510,19 @@ pub(super) fn stroke(
 }
 
 /// Opcode 114 — `vr_recfl`: fill the rectangle `PTSIN[0..3]` with the
-/// current fill style (interior + pattern/hatch + colour).
+/// current fill style (interior + pattern/hatch + colour). EmuTOS
+/// `vdi_vr_recfl` → `draw_rect` → `draw_rect_common` (`vdi_fill.c:293-314`).
 ///
-/// The active pattern comes from [`fill_patterns::select`] (`HOLLOW`
-/// draws nothing); the writing mode chooses opaque (replace → clear bits
-/// become background) vs. transparent. The backend clips to the
-/// workstation rectangle. Wide-line perimeter (`vsf_perimeter`) is
-/// handled by the GDP bar, not here.
+/// The active pattern comes from [`fill_patterns::select`]; the writing
+/// mode chooses opaque (Replace → clear bits become background pen 0) vs.
+/// transparent. `HOLLOW` is **not** a no-op — its all-zero pattern erases
+/// the rectangle to pen 0 in Replace mode and paints the fill colour in
+/// Reverse-transparent mode (EmuTOS `st_fl_ptr` HOLLOW `patptr=&HOLLOW`,
+/// `swblit_rect_common16`). The backend clips to the workstation
+/// rectangle. Wide-line perimeter (`vsf_perimeter`) is handled by the GDP
+/// bar, not here.
 pub fn vr_recfl(pb: &Vdipb, vwk: &Vwk, backend: &dyn RasterBackend) {
-    let pattern = match fill_patterns::select(vwk) {
-        Some(p) => p,
-        None => return, // hollow → no fill
-    };
+    let pattern = fill_patterns::select(vwk);
     // Normalise the two corners (arb_corner); the backend clips.
     let mut x1 = pb.ptsin(0);
     let mut y1 = pb.ptsin(1);
@@ -549,8 +550,9 @@ pub fn vr_recfl(pb: &Vdipb, vwk: &Vwk, backend: &dyn RasterBackend) {
 pub(super) const MAX_VERTS: usize = 512;
 
 /// Scan-convert and fill the closed polygon `v[0..n]` with `fill`,
-/// clipped to `clip`. Even-odd rule; each scanline span is a 1-pixel-tall
-/// patterned rectangle, so the pattern stays screen-aligned.
+/// clipped to `clip`, reproducing EmuTOS `polygon` + `clc_flit`
+/// (`vdi_fill.c:434-610`). Even-odd rule; each scanline span is a
+/// 1-pixel-tall patterned rectangle, so the pattern stays screen-aligned.
 pub(super) fn fill_polygon(
     backend: &dyn RasterBackend,
     n: usize,
@@ -562,32 +564,64 @@ pub(super) fn fill_polygon(
         return;
     }
     let n = n.min(MAX_VERTS);
-    let (mut ymin, mut ymax) = (i16::MAX, i16::MIN);
+    // Vertex y-extent (EmuTOS `polygon` fill_miny/fill_maxy, `vdi_fill.c:568-580`).
+    let (mut fmin, mut fmax) = (i16::MAX, i16::MIN);
     for &(_, y) in &v[..n] {
-        ymin = ymin.min(y);
-        ymax = ymax.max(y);
+        fmin = fmin.min(y);
+        fmax = fmax.max(y);
     }
-    ymin = ymin.max(clip.ymn);
-    ymax = ymax.min(clip.ymx);
+    // Clip the y-extent to the workstation rectangle exactly as EmuTOS
+    // `polygon` (`vdi_fill.c:584-591`): a partial top overlap lowers the
+    // top bound to `ymn_clip - 1`, so `clc_flit`'s `y > end` loop still
+    // fills down to `ymn_clip` inclusive (the clipped top edge agrees with
+    // the unclipped case).
+    if fmax < clip.ymn || fmin > clip.ymx {
+        return; // polygon entirely outside the clip band
+    }
+    if fmin < clip.ymn {
+        fmin = clip.ymn - 1;
+    }
+    if fmax > clip.ymx {
+        fmax = clip.ymx;
+    }
     let mut xs = [0i16; MAX_VERTS];
-    for y in ymin..=ymax {
-        // Collect edge crossings at scanline centre `y`.
+    // `clc_flit`: `for (y = fmax; y > fmin; y--)` (`vdi_fill.c:441`) — the
+    // topmost vertex scan line (`fmin`) is deliberately skipped, so the
+    // filled band is the half-open `(fmin, fmax]`. We iterate upward over
+    // the identical set of scan lines.
+    for y in (fmin + 1)..=fmax {
+        let yc = y as i32;
+        // Collect edge crossings at scan line `y`.
         let mut cnt = 0usize;
         for i in 0..n {
-            let (x0, y0) = v[i];
-            let (x1, y1) = v[(i + 1) % n];
-            let (ya, yb) = (y0 as i32, y1 as i32);
-            let yc = y as i32;
-            // Half-open rule avoids double-counting shared vertices.
-            if (ya <= yc && yc < yb) || (yb <= yc && yc < ya) {
-                let x = x0 as i32 + (yc - ya) * (x1 as i32 - x0 as i32) / (yb - ya);
+            let (ex1, ey1) = v[i]; // point[i]
+            let (ex2, ey2) = v[(i + 1) % n]; // point[i+1]
+            let dy = ey2 as i32 - ey1 as i32;
+            if dy == 0 {
+                continue; // horizontal edge is ignored (`clc_flit:454`)
+            }
+            let dy1 = yc - ey1 as i32; // y - y1
+            let dy2 = yc - ey2 as i32; // y - y2
+            // Opposite signs ⇒ the scan line crosses this edge; the top
+            // vertex is inclusive, the bottom exclusive (`clc_flit:470`,
+            // `(dy1^dy2) < 0`).
+            if (dy1 ^ dy2) < 0 {
+                // `dx = (x2 - x1) << 1` so the +1/>>1 below rounds the
+                // intersection (`clc_flit:475-487`); take the endpoint on
+                // the side dictated by the sign of dx.
+                let dx = (ex2 as i32 - ex1 as i32) << 1;
+                let x = if dx < 0 {
+                    ((mul_div(dy2, dx, dy) + 1) >> 1) + ex2 as i32
+                } else {
+                    ((mul_div(dy1, dx, dy) + 1) >> 1) + ex1 as i32
+                };
                 if cnt < MAX_VERTS {
                     xs[cnt] = x as i16;
                     cnt += 1;
                 }
             }
         }
-        // Sort the crossings (small insertion sort).
+        // Sort the crossings ascending (EmuTOS `bub_sort`); insertion sort.
         for i in 1..cnt {
             let key = xs[i];
             let mut j = i;
@@ -597,7 +631,8 @@ pub(super) fn fill_polygon(
             }
             xs[j] = key;
         }
-        // Fill between consecutive pairs.
+        // Fill between consecutive pairs (perimeter pixels included); the
+        // backend clips x to the workstation rectangle.
         let mut i = 0;
         while i + 1 < cnt {
             let xa = xs[i];
@@ -624,15 +659,16 @@ pub fn v_fillarea(pb: &Vdipb, vwk: &Vwk, backend: &dyn RasterBackend) {
     }
     let clip = vwk.clip_rect();
     let mode = WriteMode::from_wrt_mode(vwk.wrt_mode);
-    if let Some(pattern) = fill_patterns::select(vwk) {
-        let fill = PatternFill {
-            fg: vwk.fill_color,
-            bg: 0,
-            pattern,
-            mode,
-        };
-        fill_polygon(backend, n, &v, fill, clip);
-    }
+    // EmuTOS `polygon` always fills the interior (`clc_flit`), then draws
+    // the perimeter when `fill_per`. HOLLOW is not skipped — its all-zero
+    // pattern erases to pen 0 / paints the fill colour per the write mode.
+    let fill = PatternFill {
+        fg: vwk.fill_color,
+        bg: 0,
+        pattern: fill_patterns::select(vwk),
+        mode,
+    };
+    fill_polygon(backend, n, &v, fill, clip);
     if vwk.fill_per {
         // Outline: the polygon closed back to the first vertex, in the
         // fill colour and the workstation writing mode (EmuTOS `polygon`

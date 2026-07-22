@@ -49,14 +49,17 @@ fn rect(pb: &Vdipb) -> (i16, i16, i16, i16) {
     (x1, y1, x2, y2)
 }
 
-/// The current interior fill descriptor, or `None` when hollow.
-fn fill_of(vwk: &Vwk) -> Option<PatternFill<'_>> {
-    fill_patterns::select(vwk).map(|pattern| PatternFill {
+/// The current interior fill descriptor. `HOLLOW` is not a no-op: its
+/// all-zero pattern erases the interior to pen 0 in Replace mode and
+/// paints the fill colour in Reverse-transparent mode (EmuTOS
+/// `st_fl_ptr` HOLLOW `patptr=&HOLLOW`, `swblit_rect_common16`).
+fn fill_of(vwk: &Vwk) -> PatternFill<'_> {
+    PatternFill {
         fg: vwk.fill_color,
         bg: 0,
-        pattern,
+        pattern: fill_patterns::select(vwk),
         mode: WriteMode::from_wrt_mode(vwk.wrt_mode),
-    })
+    }
 }
 
 /// Sub-op 1 — `v_bar`: a filled rectangle plus, if `fill_per`, a solid
@@ -65,9 +68,7 @@ fn bar(pb: &Vdipb, vwk: &Vwk, backend: &dyn RasterBackend) {
     let (x1, y1, x2, y2) = rect(pb);
     let clip = vwk.clip_rect();
     let mode = WriteMode::from_wrt_mode(vwk.wrt_mode);
-    if let Some(fill) = fill_of(vwk) {
-        backend.fill_pattern(x1, y1, x2 - x1 + 1, y2 - y1 + 1, fill, clip);
-    }
+    backend.fill_pattern(x1, y1, x2 - x1 + 1, y2 - y1 + 1, fill_of(vwk), clip);
     if vwk.fill_per {
         let pts = [(x1, y1), (x2, y1), (x2, y2), (x1, y2), (x1, y1)];
         polyline(backend, 5, |i| pts[i], vwk.fill_color, mode, clip, 0xFFFF);
@@ -128,9 +129,7 @@ fn curve(pb: &Vdipb, vwk: &Vwk, backend: &dyn RasterBackend, closed: bool, to_ce
     let clip = vwk.clip_rect();
     let mode = WriteMode::from_wrt_mode(vwk.wrt_mode);
     if closed || to_centre {
-        if let Some(fill) = fill_of(vwk) {
-            fill_polygon(backend, n, &pts, fill, clip);
-        }
+        fill_polygon(backend, n, &pts, fill_of(vwk), clip);
     }
     // Perimeter. Open arc/ellarc are stroked with the line attributes
     // (EmuTOS `clc_arc` → `set_LN_MASK(vwk); polyline(...)` in
@@ -185,9 +184,7 @@ fn rbox(pb: &Vdipb, vwk: &Vwk, backend: &dyn RasterBackend, filled: bool) {
     let clip = vwk.clip_rect();
     let mode = WriteMode::from_wrt_mode(vwk.wrt_mode);
     if filled {
-        if let Some(fill) = fill_of(vwk) {
-            fill_polygon(backend, n, &pts, fill, clip);
-        }
+        fill_polygon(backend, n, &pts, fill_of(vwk), clip);
         if vwk.fill_per {
             polyline(backend, n + 1, |i| pts[i % n], vwk.fill_color, mode, clip, 0xFFFF);
         }

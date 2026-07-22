@@ -293,7 +293,7 @@ pub unsafe fn dispatch(vdipb_ptr: u64, abi: Abi) {
                     21 => attributes::vst_font(&pb, vwk),
                     12 => attributes::vst_height(&pb, vwk),
                     107 => attributes::vst_point(&pb, vwk),
-                    112 => attributes::vsf_udpat(&pb, vwk, ncol),
+                    112 => attributes::vsf_udpat(&pb, vwk, backend.planes()),
                     129 => attributes::vs_clip(&pb, vwk, backend),
                     5 => escape::v_escape(&pb, backend),
                     119 => attributes::vst_load_fonts(&pb),
