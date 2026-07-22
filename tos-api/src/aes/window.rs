@@ -276,13 +276,20 @@ fn set_newdesk(pb: &Aespb) {
     }
 }
 
+/// The AES-internal background fallback root's `ob_spec` word (gr_crack:
+/// border/text WHITE, pattern `IP_SOLID`(7), fill colour WHITE(0), border
+/// thickness 0 → an opaque white rectangle, no frame). This is the AES's
+/// desktop-background box when no desktop tree is registered — the
+/// `CLEAR_SCREEN` white-out (`sh_draw(cmd, TRUE)`, `gemshlib.c:280`).
+const FALLBACK_ROOT_OBSPEC: u64 = 0x0070;
+
 /// Build the AES-internal background **fallback root** (EmuTOS `gl_wtree[ROOT]`,
 /// object *B*): a full-screen drawable `G_BOX` drawn when no desktop tree is
 /// registered ([`NEWDESK_TREE`] == 0). Its `ob_spec` is a solid-white fill
-/// (`IP_SOLID | WHITE`, low byte `0x70`) so drawing it erases the clip to white
-/// — the `CLEAR_SCREEN` white-out EmuTOS shows between the desktop and a
-/// launching GEM app (`sh_draw(cmd, TRUE)`, `gemshlib.c:280`). Built fresh per
-/// call so it always spans the current framebuffer.
+/// ([`FALLBACK_ROOT_OBSPEC`]) so drawing it erases the clip to white — the
+/// `CLEAR_SCREEN` white-out EmuTOS shows between the desktop and a launching GEM
+/// app (`sh_draw(cmd, TRUE)`, `gemshlib.c:280`). Built fresh per call so it
+/// always spans the current framebuffer.
 fn fallback_root(w: i16, h: i16) -> Object {
     Object {
         ob_next: -1,
@@ -291,14 +298,53 @@ fn fallback_root(w: i16, h: i16) -> Object {
         ob_type: 20, // G_BOX
         ob_flags: 0,
         ob_state: 0,
-        // gr_crack: border/text WHITE, pattern IP_SOLID(7), fill colour WHITE(0),
-        // border thickness 0 → an opaque white rectangle, no frame.
-        ob_spec: 0x0070,
+        ob_spec: FALLBACK_ROOT_OBSPEC,
         ob_x: 0,
         ob_y: 0,
         ob_width: w,
         ob_height: h,
     }
+}
+
+/// The `ob_spec` word of the object the AES currently draws as the desktop
+/// background **ROOT** — NewTOS's equivalent of EmuTOS `rs_trees[DESKTOP][ROOT]
+/// .ob_spec` (`gemsuper.c:96`), the desktop background pattern/colour word that
+/// `appl_init` returns in `ap_private`.
+///
+/// When the desktop has registered its background tree ([`NEWDESK_TREE`] != 0,
+/// via `wind_set(DESKWH, WF_NEWDESK, tree, root)`), this is that tree's
+/// registered **root object's** `ob_spec` (the desktop's `g_screen[DROOT]
+/// .ob_spec = g_patcol.desktop | BORDER_TEXT_COLOURS`). Real GEM apps (QED) call
+/// `appl_init` after the desktop is up, so they read this live value — exactly
+/// as an EmuTOS app reads the AES's pre-set DESKTOP-root `ob_spec` (which
+/// `set_aes_background`, `geminit.c:635-644`, keeps in sync with the background).
+///
+/// Before the desktop registers WF_NEWDESK — only the desktop's **own** early
+/// `appl_init` (run before it registers its tree, `deskmain.c:1953` vs `:2049`)
+/// reaches this — no tree is registered, so the AES background genuinely *is*
+/// the internal white [`fallback_root`] (`CLEAR_SCREEN`); its
+/// [`FALLBACK_ROOT_OBSPEC`] is returned. That is the truthful current background
+/// word, not a fabricated value: EmuTOS returns its pre-set DESKTOP pattern
+/// there only because its AES `gem.rsc` DESKTOP root is fixed during `geminit`
+/// (before the desktop process runs); NewTOS's AES owns no static DESKTOP
+/// resource, so at that instant the background is the white fallback. (The
+/// desktop's own `appl_init` discards `ap_private` anyway — `desk/mod.rs:170`
+/// returns only the id — so this pre-registration value is unobservable to any
+/// real consumer.)
+pub(crate) fn desktop_bg_obspec() -> u64 {
+    let tree = NEWDESK_TREE.load(Ordering::Acquire);
+    if tree == 0 {
+        return FALLBACK_ROOT_OBSPEC;
+    }
+    let root = NEWDESK_ROOT.load(Ordering::Acquire).max(0) as usize;
+    // SAFETY: `tree` is the desktop's `g_screen` base, registered via
+    // WF_NEWDESK — a valid native (LP64) `Object` array kept stable for the
+    // desktop's lifetime (see [`NEWDESK_TREE`]); `root` is a valid object index
+    // in it (the registered `DROOT`). We read the single 32-byte record's
+    // `ob_spec` (offset 16) only. Read directly at the native LP64 layout,
+    // like [`paint_bg_clip`]'s `render_tree_lp64`, regardless of the current
+    // app's ABI.
+    unsafe { (*(tree as *const Object).add(root)).ob_spec }
 }
 
 /// Screen handoff — **relinquish** the desktop's windows: snapshot the whole

@@ -58,17 +58,25 @@ Byte offsets are the m68k layout (`WORD` = 2 bytes; `LONG`/pointer = 4 bytes,
 > spec wrongly attributed the DESKTOP `ob_spec` to `ap_ptree`; the source
 > writes it to `ap_private`.)
 >
-> **NewTOS deviation (D-099).** NewTOS reports `ap_private = 0` here, not
-> `rs_trees[DESKTOP][ROOT].ob_spec`. NewTOS's AES kernel has **no** DESKTOP
-> resource tree — EmuTOS's `rs_trees`/permanent in-ROM `gem.rsc` ensemble does
-> not exist on NewTOS; the only resource the AES loads is `GEM.RSC`, and only
-> **lazily**, on first use of the file selector (tree 0 = `FSELECTR`). What
-> EmuTOS encodes in the DESKTOP tree's root `ob_spec` (the desktop background
-> pattern/colour) lives on NewTOS as `g_patcol` **inside the desktop client
-> application**, strictly above the AES/syscall layer — `appl_init`'s
-> dispatch arm has no way to reach it. This is an intentional, necessary
-> deviation, not an unimplemented behaviour; see `docs/api/_discrepancies.md`
-> D-099.
+> **NewTOS `ap_private` (D-099, resolved 2026-07-22).** NewTOS now fills
+> `ap_private` **1:1 with EmuTOS**, with the faithful NewTOS equivalent of
+> `rs_trees[DESKTOP][ROOT].ob_spec`: the **WF_NEWDESK-registered desktop-
+> background tree's root `ob_spec`**, read live by
+> `tos-api::aes::window::desktop_bg_obspec()`. NewTOS's AES owns no static
+> `gem.rsc` DESKTOP tree; instead the desktop client registers its background
+> object tree with the AES via `wind_set(DESKWH, WF_NEWDESK, g_screen, DROOT)`
+> (`deskmain.c:2049`), and that tree's root box carries the background
+> pattern/colour word (`g_screen[DROOT].ob_spec = g_patcol.desktop |
+> BORDER_TEXT_COLOURS`) — exactly what EmuTOS keeps in the DESKTOP tree's root
+> `ob_spec` (`set_aes_background`, `geminit.c:635-644`). Real GEM apps (QED)
+> call `appl_init` **after** the desktop is up, so they read this live value.
+> Before the desktop registers WF_NEWDESK — only the desktop's **own** early
+> `appl_init` (`deskmain.c:1953`, run before `:2049`) — no tree is registered,
+> so the AES background genuinely is the internal white `fallback_root`
+> (CLEAR_SCREEN); its `ob_spec` (`0x0070`) is returned. That is the truthful
+> current background word, not a fabricated value (and the desktop's own
+> `appl_init` discards `ap_private` anyway — `desk/mod.rs:170` returns only the
+> id). No AES-layer downward reach into the desktop client is needed.
 
 The application's identity is its **AES process id** (`AESPD.p_pid`,
 `aes/struct.h:129`). The AES keeps a per-application process descriptor
@@ -120,12 +128,20 @@ inline) + `aes/gemaplib.c:54-63` (`ap_init` sets the flag and returns the pid).
   count — see the single-app note);
 - `AP_ID` (`global[2]`) = `rlr->p_pid` (the running process's pid);
 - `AP_PRIVATE` (`global[3]`) = `rs_trees[DESKTOP][ROOT].ob_spec` (the DESKTOP
-  resource tree's root `ob_spec`) — **NewTOS deviation:** NewTOS reports `0`
-  here, since it has no DESKTOP resource tree at the AES/syscall layer (see
-  the deviation callout above and D-099);
-- `AP_2RESV1`/`ap_planes` (`global[10]`) = `gl_nplanes` (screen colour planes);
+  resource tree's root `ob_spec`, the desktop background pattern/colour word) —
+  **NewTOS:** the WF_NEWDESK-registered desktop-background tree's root `ob_spec`
+  (`tos-api::aes::window::desktop_bg_obspec()`), with the internal white
+  `fallback_root` `ob_spec` (`0x0070`) before that tree is registered (see the
+  `ap_private` callout above and D-099);
+- `AP_2RESV1`/`ap_planes` (`global[10]`) = `gl_nplanes` (screen colour planes) —
+  **NewTOS:** log2 of the framebuffer colour count (`screen_planes()`);
 - `AP_3RESV`/`ap_3resv` (`global[11]`) = `&D` (address of the AES global area
-  `THEGLO`, an internal pointer).
+  `THEGLO`, an internal pointer) — **NewTOS:** the AES process-descriptor table
+  address (`tos-api::aes::pd::table_addr()`), the process-management core of our
+  AES state. Written as a **4-byte** field at byte 0x16 (no gemlib reader; kept
+  4 bytes so the app-readable `ap_maxchar`/`ap_minchar` at `global[13]`/`[14]`
+  stay 0 as at EmuTOS `appl_init`; on LP64 the 64-bit pointer is truncated —
+  harmless, nothing reads it back).
 
 Then `ap_init()` (`gemaplib.c:54`) sets `rlr->p_flags |= AP_OPEN` and returns
 `rlr->p_pid`. That pid becomes `RET_CODE` (`int_out[0]`).

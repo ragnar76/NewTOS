@@ -188,6 +188,16 @@ unsafe fn table() -> &'static mut [Aespd; MAX_APPS] {
     unsafe { &mut *TABLE.0.get() }
 }
 
+/// Address of the AES process-descriptor table — NewTOS's nearest equivalent
+/// of EmuTOS's AES global data area `THEGLO D` (`aes/gemlib.h:116-144`, whose
+/// `g_int[]` holds the `AESPD` process descriptors; a single unified `D` struct
+/// with no NewTOS counterpart — our AES state is split across statics, of which
+/// this descriptor table is the process-management core). `appl_init` reports it
+/// in `ap_3resv` (EmuTOS `pglobal->ap_3resv = (LONG)&D`, `gemsuper.c:98`).
+pub fn table_addr() -> u64 {
+    TABLE.0.get() as u64
+}
+
 /// Register an application by `pid`, returning a mutable reference to its
 /// (possibly reused) descriptor, or `None` if the table is full. Sets
 /// `in_use`, `pid` and `AP_OPEN`; clears the rest.

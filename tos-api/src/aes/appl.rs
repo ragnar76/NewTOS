@@ -28,18 +28,33 @@
 //!    | ap_rscmem  | `*(void**)&aes_global[7]` | 7   | 14   | 4     | 8    |
 //!    | ap_rsclen  | `aes_global[9]`           | 9   | 18   | 2     | 2    |
 //!    | ap_planes  | `aes_global[10]`          | 10  | 20   | 2     | 2    |
-//!    | (reserved) | —                         |11–12| 22   | 4     | 4    |
+//!    | ap_3resv   | (no gemlib reader)        |11–12| 22   | 4     | 4    |
 //!    | ap_maxchar | `aes_global[13]`          | 13  | 26   | 2     | 2    |
 //!    | ap_minchar | `aes_global[14]`          | 14  | 28   | 2     | 2    |
 //!    | (reserved) | —                         | 15  | 30   | 2     | 2    |
 //!
+//!    `ap_3resv` is EmuTOS's `LONG ap_3resv` (`gemrslib.h:25`, the AES-internal
+//!    `&D` pointer, `gemsuper.c:98`). It has **no** gemlib accessor (`gem.h`
+//!    defines readers only through `ap_minchar`), so it is a **4-byte** field
+//!    on both ABIs — kept 4 bytes even at LP64 so the app-readable
+//!    `ap_maxchar`/`ap_minchar` (indices 13/14) stay 0 as at EmuTOS
+//!    `appl_init`. On LP64 the 64-bit AES-state pointer is therefore truncated
+//!    to its low 32 bits; harmless, because nothing reads `ap_3resv`
+//!    (no gemlib reader; NewTOS's AES holds its state in kernel statics, not by
+//!    reading this field back — the EmuTOS use of `&D` served here by
+//!    [`crate::aes::pd::table_addr`] as a fidelity fill, not a live pointer).
+//!
 //!    On **LP64** the three 8-byte fields at bytes 6/10/14 physically
 //!    *overlap* (6–13, 10–17, 14–21) — a gemlib quirk of its m68k-era
-//!    (4-byte-`long`) macros. At `appl_init` all three are 0, so the
-//!    overlap is unobservable: they are written as 0 and `ap_planes` (byte
-//!    20–21, the high WORD of the zero `ap_rscmem`) is stored last so it
-//!    survives. Both [`AesGlobalVals::write_ilp32`] and
-//!    [`AesGlobalVals::write_lp64`] touch **no byte past index 31**. The
+//!    (4-byte-`long`) macros. `ap_private` is `rs_trees[DESKTOP][ROOT].ob_spec`
+//!    (`gemsuper.c:96`), a ≤32-bit box `gr_crack` word, so its meaningful bits
+//!    live in the **low 4 bytes** (6–9); `ap_ptree` (0) written next clears the
+//!    overlapping high 4 bytes (10–13, already 0 for a box word), so a native
+//!    LP64 reader's `*(long*)&aes_global[3]` reads it back intact. `ap_ptree`
+//!    and `ap_rscmem` are 0 at `appl_init`; `ap_planes` (byte 20–21, the high
+//!    WORD of the zero `ap_rscmem`) is stored last so it survives. Both
+//!    [`AesGlobalVals::write_ilp32`] and [`AesGlobalVals::write_lp64`] touch
+//!    **no byte past index 31**. The
 //!    previous LP64 writer laid the kernel's own *natural-aligned 56-byte*
 //!    struct here, overrunning the 32-byte array by 24 bytes on every
 //!    `appl_init` — clobbering gemlib's adjacent `vdi_dummy` (`nm
@@ -74,6 +89,11 @@ struct AesGlobalVals {
     ap_rsclen: i16,
     /// VDI workstation plane count (ILP32 index 10, `a_appl_init.c:40`).
     ap_planes: i16,
+    /// EmuTOS `ap_3resv = (LONG)&D` (`gemsuper.c:98`, `gemrslib.h:25`): a
+    /// pointer to the AES global data area. Written as a **4-byte** field at
+    /// byte 22 (see the module ABI note); on LP64 the 64-bit pointer is
+    /// truncated (harmless — no reader).
+    ap_3resv: u64,
 }
 
 impl AesGlobalVals {
@@ -98,11 +118,14 @@ impl AesGlobalVals {
     /// 3/5/7 → bytes 6/10/14, none 8-aligned → unaligned stores). gemlib
     /// has no `__LP64__` conditional (`gem.h:30`, `..:72`), so these are
     /// exactly `_AESappglobal`/`_AESrscfile`/`_AESrscmem`. On LP64 they
-    /// overlap (bytes 6–13, 10–17, 14–21); at `appl_init` all are 0, so
-    /// storing them in ascending order and writing `ap_planes` (byte 20–21)
-    /// last leaves the array correct. Reserved / AES-0x0400 words (indices
-    /// 11–15) are cleared. Writes stay within the 32-byte array (last byte
-    /// touched = index 31); no overrun.
+    /// overlap (bytes 6–13, 10–17, 14–21); `ap_private` is a ≤32-bit box word
+    /// (its meaningful bits in bytes 6–9) and the zero `ap_ptree` written next
+    /// clears the overlapping high bytes (10–13), so storing them in ascending
+    /// order and writing `ap_planes` (byte 20–21) last leaves the array
+    /// correct. `ap_3resv` is a 4-byte field at byte 22 (indices 11–12);
+    /// `ap_maxchar`/`ap_minchar`/reserved (indices 13–15) are cleared so they
+    /// stay 0 as at EmuTOS `appl_init`. Writes stay within the 32-byte array
+    /// (last byte touched = index 31); no overrun.
     ///
     /// # Safety
     /// `global` addresses a writable 32-byte `short[16]` array.
@@ -123,10 +146,15 @@ impl AesGlobalVals {
             (base.add(14) as *mut u64).write_unaligned(self.ap_rscmem); // [7–10] @14
             global.add(9).write(self.ap_rsclen); //   ap_rsclen  [9]    @18
             global.add(10).write(self.ap_planes); //  ap_planes  [10]   @20
-            // Reserved [11–12], ap_maxchar [13] / ap_minchar [14] (AES
-            // 0x0400+, not reported at version 0x0340), reserved [15].
-            // Cleared so no stale value leaks past the fields above.
-            for i in 11..16 {
+            // ap_3resv [11–12] @22 — EmuTOS `LONG ap_3resv = &D` (`gemsuper.c:98`).
+            // A 4-byte field (no gemlib reader; see the module ABI note) so the
+            // app-readable ap_maxchar/ap_minchar below stay 0; the 64-bit AES
+            // state pointer is truncated to its low 32 bits.
+            (base.add(22) as *mut u32).write_unaligned(self.ap_3resv as u32);
+            // ap_maxchar [13] / ap_minchar [14] (AES 0x0400+, not reported at
+            // version 0x0340) and reserved [15]. Cleared so no stale value
+            // leaks — matching EmuTOS's 0 for these at appl_init.
+            for i in 13..16 {
                 global.add(i).write(0);
             }
         }
@@ -135,7 +163,8 @@ impl AesGlobalVals {
     /// gemlib's packed `short aes_global[16]` (32 bytes). Long/pointer
     /// fields are 4 bytes on 16-bit-word boundaries (indices 3/5/7 →
     /// bytes 6/10/14, none 4-aligned → unaligned stores), truncated to
-    /// 32 bits. Reserved / AES-0x0400 words (indices 11–15) are cleared.
+    /// 32 bits. `ap_3resv` is a 4-byte field at byte 22 (indices 11–12);
+    /// `ap_maxchar`/`ap_minchar`/reserved (indices 13–15) are cleared.
     /// Writes stay within the 32-byte array.
     ///
     /// # Safety
@@ -145,7 +174,7 @@ impl AesGlobalVals {
         // SAFETY: every access below is within the 32-byte array (max
         // byte index 31, written at index 15); `base`/`global` are valid
         // and writable per the contract. The 4-byte fields at bytes
-        // 6/10/14 are unaligned, hence `write_unaligned`.
+        // 6/10/14/22 are unaligned, hence `write_unaligned`.
         unsafe {
             global.add(0).write(self.ap_version); // ap_version [0] @0
             global.add(1).write(self.ap_count); //   ap_count   [1] @2
@@ -155,10 +184,12 @@ impl AesGlobalVals {
             (base.add(14) as *mut u32).write_unaligned(self.ap_rscmem as u32); // [7–8] @14
             global.add(9).write(self.ap_rsclen); //   ap_rsclen  [9] @18
             global.add(10).write(self.ap_planes); //  ap_planes  [10] @20
-            // Reserved [11–12], ap_maxchar [13] / ap_minchar [14]
-            // (AES 0x0400+, not reported at version 0x0340), reserved
-            // [15]. Cleared so no stale value leaks past the fields above.
-            for i in 11..16 {
+            // ap_3resv [11–12] @22 — EmuTOS `LONG ap_3resv = &D` (`gemsuper.c:98`).
+            (base.add(22) as *mut u32).write_unaligned(self.ap_3resv as u32);
+            // ap_maxchar [13] / ap_minchar [14] (AES 0x0400+, not reported at
+            // version 0x0340) and reserved [15]. Cleared so no stale value
+            // leaks — matching EmuTOS's 0 for these at appl_init.
+            for i in 13..16 {
                 global.add(i).write(0);
             }
         }
@@ -190,6 +221,26 @@ fn screen_planes() -> i16 {
 
 /// Opcode 10 — `appl_init`: register the application, fill `AESGLOBAL`,
 /// return the application id (`ap_id` = pid) or −1 on failure.
+///
+/// Fills the caller's `AESGLOBAL` **1:1 with EmuTOS's `APPL_INIT` arm**
+/// (`gemsuper.c:92-98`), field by field, at the caller's pointer width:
+///
+/// - `ap_version` (`:92`) = [`AES_VERSION`] (`0x0340`);
+/// - `ap_count` (`:93`) = 1;
+/// - `ap_id` (`:94`) = the caller pid ([`current_pid`]);
+/// - `ap_private` (`:95-96`) = `rs_trees[DESKTOP][ROOT].ob_spec` — the desktop
+///   background pattern/colour word. NewTOS's equivalent is the WF_NEWDESK
+///   registered desktop-background tree's root `ob_spec`, read live via
+///   [`super::window::desktop_bg_obspec`] (see its doc for the pre-registration
+///   fallback);
+/// - `ap_planes` (`:97`) = `gl_nplanes`, the screen colour-plane count
+///   ([`screen_planes`]);
+/// - `ap_3resv` (`:98`) = `(LONG)&D`, a pointer to the AES global data area —
+///   NewTOS's nearest equivalent is the AES process-descriptor table address
+///   ([`pd::table_addr`]).
+///
+/// `ap_ptree`/`ap_rscmem`/`ap_rsclen` are **not** set by `appl_init` (EmuTOS
+/// leaves them for `rsrc_load`), so they are 0 here.
 pub fn appl_init(pb: &Aespb) {
     let pid = current_pid();
     // SAFETY: single trap path.
@@ -199,35 +250,16 @@ pub fn appl_init(pb: &Aespb) {
         return;
     }
 
-    // `ap_private` deviation (documented, not a stub).
-    //
-    // EmuTOS sets `ap_private = rs_trees[DESKTOP][ROOT].ob_spec`
-    // (`gemsuper.c:95-96`) — the root `ob_spec` of the DESKTOP form in
-    // its *built-in* AES resource (`gem.rsc`, statically compiled into
-    // ROM, always in memory). Its low byte doubles as the AES desktop
-    // background pattern/colour (`set_aes_background`, `geminit.c:637`).
-    //
-    // NewTOS has **no tos-api-reachable equivalent** at `appl_init` time:
-    //  * the AES owns no statically-compiled built-in resource; the only
-    //    resource it loads (`GEM.RSC`, for the file selector) is an
-    //    optional SD file, read lazily when `fsel_input` first runs, and
-    //    even then its tree 0 is FSELECTR, not DESKTOP (`fsel.rs`);
-    //  * the desktop background pattern/colour (`g_patcol`) lives in the
-    //    desktop *client* (`kernel/src/desk/global.rs`), which sits above
-    //    this syscall layer and must not be reached downward.
-    // Inventing EmuTOS's gem.rsc-specific `ob_spec` literal here would be
-    // a wrong value with no NewTOS meaning (CLAUDE.md Rule 2/3). Left 0
-    // pending an ADR/spec decision on whether the AES should embed a
-    // DESKTOP form. Reported to the lead. See application.md:110 / D-...
     let vals = AesGlobalVals {
-        ap_version: AES_VERSION,
-        ap_count: 1,
-        ap_id: pid,
-        ap_private: 0,
-        ap_ptree: 0,
-        ap_rscmem: 0,
-        ap_rsclen: 0,
-        ap_planes: screen_planes(),
+        ap_version: AES_VERSION,                        // gemsuper.c:92
+        ap_count: 1,                                    // gemsuper.c:93
+        ap_id: pid,                                     // gemsuper.c:94
+        ap_private: super::window::desktop_bg_obspec(), // gemsuper.c:95-96
+        ap_ptree: 0,                                    // set later by rsrc_load
+        ap_rscmem: 0,                                   // set later by rsrc_load
+        ap_rsclen: 0,                                   // set later by rsrc_load
+        ap_planes: screen_planes(),                     // gemsuper.c:97
+        ap_3resv: pd::table_addr(),                     // gemsuper.c:98
     };
 
     // Fill the caller's AESGLOBAL — gemlib's 32-byte `short aes_global[16]`
