@@ -442,7 +442,7 @@ impl RasterBackend for VdiScreen {
     }
 
     #[allow(clippy::too_many_arguments)]
-    fn draw_line(
+    fn abline(
         &self,
         x0: i16,
         y0: i16,
@@ -452,35 +452,82 @@ impl RasterBackend for VdiScreen {
         mode: WriteMode,
         clip: ClipRect,
         mask: u16,
-    ) {
+        last: bool,
+    ) -> u16 {
         let fb = active_fb();
         let color = Self::pel_to_rgb(pel);
         // Background pen (pen 0) for Replace's dash gaps — EmuTOS
-        // `swblit_vertical_line16` writes `bgcol = palette[0]` on the
-        // dash-off pixels in `WM_REPLACE`.
+        // `swblit_*16` writes `bgcol = palette[0]` on the dash-off pixels in
+        // `WM_REPLACE`.
         let bg = Self::pel_to_rgb(0);
-        // Bresenham; touch only pixels inside the inclusive clip rect (and
-        // the framebuffer, which `combine` enforces too). `bit` walks the
-        // 16-bit dash mask from the MSB, one step per pixel; a set mask bit
-        // is the line's "source set" for the write mode.
-        let (mut x, mut y) = (x0 as i32, y0 as i32);
-        let (xe, ye) = (x1 as i32, y1 as i32);
+
+        // Always draw left→right (EmuTOS `abline:2300`): the dash walks from
+        // the geometrically-left endpoint. Vertical lines (x equal) keep the
+        // given point order, matching EmuTOS' vertical path (draws from y1).
+        let (ax, ay, mut bx, mut by) = if x1 < x0 {
+            (x1, y1, x0, y0)
+        } else {
+            (x0, y0, x1, y1)
+        };
+
+        // XOR `LSTLIN` kludge (EmuTOS `abline:2319`): on any but the last
+        // segment of a polyline, shorten the far endpoint by one pixel so the
+        // vertex shared with the next segment is not XOR'd twice.
+        if mode == WriteMode::Xor && !last {
+            if ax != bx {
+                bx -= 1;
+            } else if ay != by {
+                by -= 1;
+            }
+        }
+
+        // Horizontal segment: EmuTOS routes it through `draw_rect_common`
+        // (`abline:2330`), whose dash is **screen-aligned** — the pattern bit
+        // is `mask & (0x8000 >> (x & 0xf))` at absolute x — and `LN_MASK` is
+        // *not* advanced. Return the mask unchanged.
+        if ay == by {
+            let y = ay as i32;
+            let hmax = fb.height() as i32 - 1;
+            if y >= clip.ymn as i32 && y <= clip.ymx as i32 && y >= 0 && y <= hmax {
+                let wmax = fb.width() as i32 - 1;
+                let xlo = (ax.min(bx) as i32).max(clip.xmn as i32).max(0);
+                let xhi = (ax.max(bx) as i32).min(clip.xmx as i32).min(wmax);
+                if xlo <= xhi {
+                    for x in xlo..=xhi {
+                        let set = mask & (0x8000u16 >> (x & 0xf)) != 0;
+                        Self::combine(fb, x as u32, y as u32, set, mode, color, bg);
+                    }
+                    Self::clean(fb, xlo as u32, y as u32, xhi as u32, y as u32);
+                }
+            }
+            return mask;
+        }
+
+        // General (vertical / diagonal) line: Bresenham from the left
+        // endpoint, rotating the dash mask one bit per plotted pixel and
+        // writing it back (EmuTOS `draw_line16` rolw1 + `LN_MASK = linemask`,
+        // `:1645-1770`). `combine` enforces the framebuffer bounds; we clip to
+        // the inclusive workstation rectangle here.
+        let (mut x, mut y) = (ax as i32, ay as i32);
+        let (xe, ye) = (bx as i32, by as i32);
         let dx = (xe - x).abs();
         let dy = -(ye - y).abs();
         let sx = if x < xe { 1 } else { -1 };
         let sy = if y < ye { 1 } else { -1 };
         let mut err = dx + dy;
-        let mut bit: u32 = 0x8000;
+        let mut linemask = mask;
         loop {
+            // rolw1(linemask): rotate left 1, then test bit 0 (MSB-first),
+            // exactly as EmuTOS advances the line style before each pixel.
+            linemask = linemask.rotate_left(1);
             if x >= clip.xmn as i32
                 && x <= clip.xmx as i32
                 && y >= clip.ymn as i32
                 && y <= clip.ymx as i32
             {
-                let dash_on = mask as u32 & bit != 0;
+                let dash_on = linemask & 1 != 0;
                 Self::combine(fb, x as u32, y as u32, dash_on, mode, color, bg);
             }
-            bit = if bit == 1 { 0x8000 } else { bit >> 1 };
             if x == xe && y == ye {
                 break;
             }
@@ -497,11 +544,12 @@ impl RasterBackend for VdiScreen {
         // Clean the line's bounding box (clamped to the screen) to PoC.
         let wmax = fb.width().saturating_sub(1) as i32;
         let hmax = fb.height().saturating_sub(1) as i32;
-        let xlo = (x0.min(x1) as i32).clamp(0, wmax) as u32;
-        let xhi = (x0.max(x1) as i32).clamp(0, wmax) as u32;
-        let ylo = (y0.min(y1) as i32).clamp(0, hmax) as u32;
-        let yhi = (y0.max(y1) as i32).clamp(0, hmax) as u32;
+        let xlo = (ax.min(bx) as i32).clamp(0, wmax) as u32;
+        let xhi = (ax.max(bx) as i32).clamp(0, wmax) as u32;
+        let ylo = (ay.min(by) as i32).clamp(0, hmax) as u32;
+        let yhi = (ay.max(by) as i32).clamp(0, hmax) as u32;
         Self::clean(fb, xlo, ylo, xhi, yhi);
+        linemask
     }
 
     fn fill_pattern(&self, x: i16, y: i16, w: i16, h: i16, fill: PatternFill, clip: ClipRect) {

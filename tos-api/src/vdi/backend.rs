@@ -170,15 +170,48 @@ pub trait RasterBackend: Sync {
     /// clamped.
     fn fill_rect(&self, x: i16, y: i16, w: i16, h: i16, pel: Pel, clip: ClipRect);
 
-    /// Draw a one-pixel-wide line from `(x0, y0)` to `(x1, y1)` in
-    /// palette colour `pel`, clipped to `[xmn, ymn]..=[xmx, ymx]`
-    /// (inclusive device coordinates — the caller passes the workstation
-    /// clip rectangle). Endpoints are inclusive. `mask` is the 16-bit
-    /// dash pattern (`0xFFFF` = solid), consumed one bit per plotted step
-    /// and rotated, matching the VDI `LN_MASK`; a set mask bit is the
-    /// primitive's "source set". `mode` selects the raster combination:
-    /// `Replace` also paints the background on the dash gaps, `Xor`
-    /// complements the dash-on pixels, `RevTransparent` paints the gaps.
+    /// Draw one polyline segment from `(x0, y0)` to `(x1, y1)` with dash-mask
+    /// threading — the EmuTOS `abline` contract (`vdi_line.c:2266`). Clipped
+    /// to `[xmn, ymn]..=[xmx, ymx]` (inclusive device coordinates, the
+    /// workstation clip rectangle); endpoints are inclusive.
+    ///
+    /// `mask` is the 16-bit `LN_MASK` dash pattern (`0xFFFF` = solid), walked
+    /// MSB-first one bit per plotted pixel. The backend:
+    ///
+    /// - **Normalises left→right** (`abline:2300`) so the dash always starts
+    ///   at the geometrically-left endpoint;
+    /// - applies the **XOR `LSTLIN` kludge** (`abline:2319`): when
+    ///   `mode == Xor` and `!last`, the far endpoint is shortened by one pixel
+    ///   so a polyline's shared vertex is not XOR'd twice;
+    /// - **screen-aligns horizontal segments** (`abline:2330` →
+    ///   `draw_rect_common`): the dash bit is `mask & (0x8000 >> (x & 0xf))`
+    ///   at absolute `x`, and `LN_MASK` is *not* advanced;
+    /// - otherwise runs Bresenham and rotates the mask one bit per pixel.
+    ///
+    /// Returns the rotated mask (`LN_MASK` after the segment), so the caller
+    /// threads it into the next segment — reproducing EmuTOS' persistent
+    /// `LN_MASK` across a whole `v_pline` without a global. `last` marks the
+    /// final segment of the polyline (a standalone line is its own last).
+    #[allow(clippy::too_many_arguments)]
+    fn abline(
+        &self,
+        x0: i16,
+        y0: i16,
+        x1: i16,
+        y1: i16,
+        pel: Pel,
+        mode: WriteMode,
+        clip: ClipRect,
+        mask: u16,
+        last: bool,
+    ) -> u16;
+
+    /// Draw a standalone one-pixel-wide line from `(x0, y0)` to `(x1, y1)` in
+    /// palette colour `pel`. Convenience wrapper over [`abline`](Self::abline)
+    /// for callers that draw a single, independent line (AES chrome, text
+    /// decoration): a standalone line is its own last segment (`last = true`,
+    /// so the XOR `LSTLIN` shortening never applies) and the rotated mask is
+    /// discarded. `mask` and `mode` behave as for [`abline`](Self::abline).
     #[allow(clippy::too_many_arguments)]
     fn draw_line(
         &self,
@@ -190,7 +223,9 @@ pub trait RasterBackend: Sync {
         mode: WriteMode,
         clip: ClipRect,
         mask: u16,
-    );
+    ) {
+        self.abline(x0, y0, x1, y1, pel, mode, clip, mask, true);
+    }
 
     /// Fill the rectangle `[x, x+w) × [y, y+h)` with the monochrome
     /// pattern in [`PatternFill`], expanded into colour per its

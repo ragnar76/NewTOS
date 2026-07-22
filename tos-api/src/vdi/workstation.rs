@@ -84,7 +84,7 @@ const INQ_TAB_ROM: [i16; 45] = [
 /// Patched into `DEV_TAB[3]/[4]` by [`init_wk`] via `update_rez_dependent`
 /// (`vdi_control.c:205`). For the live 1920×1080 framebuffer this yields
 /// 278/278 (never the ROM template's ST-High 372).
-fn get_std_pixel_size(xres: i16, yres: i16) -> (i16, i16) {
+pub(crate) fn get_std_pixel_size(xres: i16, yres: i16) -> (i16, i16) {
     let width = if xres < 640 { 556 } else { 278 };
     let height = if yres < 400 { 556 } else { 278 };
     (width, height)

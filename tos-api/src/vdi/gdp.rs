@@ -6,7 +6,7 @@
 
 use super::backend::{PatternFill, RasterBackend, WriteMode};
 use super::fill_patterns;
-use super::primitives::{fill_polygon, line_mask, polyline};
+use super::primitives::{fill_polygon, line_mask, polyline, stroke};
 use super::vwk::Vwk;
 use super::Vdipb;
 
@@ -70,7 +70,7 @@ fn bar(pb: &Vdipb, vwk: &Vwk, backend: &dyn RasterBackend) {
     }
     if vwk.fill_per {
         let pts = [(x1, y1), (x2, y1), (x2, y2), (x1, y2), (x1, y1)];
-        polyline(backend, 5, |i| pts[i], vwk.fill_color, mode, clip, 1, 0xFFFF);
+        polyline(backend, 5, |i| pts[i], vwk.fill_color, mode, clip, 0xFFFF);
     }
 }
 
@@ -141,9 +141,11 @@ fn curve(pb: &Vdipb, vwk: &Vwk, backend: &dyn RasterBackend, closed: bool, to_ce
     // which draws the boundary — only when `fill_per` — in the **fill
     // colour**, solid and width 1 (`vdi_fill.c:606-608`).
     if !closed && !to_centre {
-        polyline(backend, n, |i| pts[i], vwk.line_color, mode, clip, vwk.line_width, line_mask(vwk));
+        // Open arc/ellarc: stroked with the line attributes (width 1 dashes
+        // via line_mask; width > 1 uses the wide line).
+        stroke(backend, &mut pts, n, vwk, vwk.line_color, mode, clip, line_mask(vwk));
     } else if vwk.fill_per {
-        polyline(backend, n + 1, |i| pts[i % n], vwk.fill_color, mode, clip, 1, 0xFFFF);
+        polyline(backend, n + 1, |i| pts[i % n], vwk.fill_color, mode, clip, 0xFFFF);
     }
 }
 
@@ -156,8 +158,10 @@ fn rbox(pb: &Vdipb, vwk: &Vwk, backend: &dyn RasterBackend, filled: bool) {
     // EmuTOS: corner ~ 1/8 of the shorter side, with a small floor.
     let r = (w.min(h) / 8).clamp(1, 16);
     // Build the rounded outline from four quarter-arcs (8 segments each).
+    // One extra slot holds the explicit closing vertex for the wide-line
+    // stroke (which detects a closed polyline via `pts[count-1] == pts[0]`).
     const SEG: usize = 8;
-    let mut pts = [(0i16, 0i16); SEG * 4 + 4];
+    let mut pts = [(0i16, 0i16); SEG * 4 + 5];
     let mut n = 0;
     // Corner centres: TR, TL, BL, BR (CCW), each sweeping 90°.
     let corners = [
@@ -185,9 +189,12 @@ fn rbox(pb: &Vdipb, vwk: &Vwk, backend: &dyn RasterBackend, filled: bool) {
             fill_polygon(backend, n, &pts, fill, clip);
         }
         if vwk.fill_per {
-            polyline(backend, n + 1, |i| pts[i % n], vwk.fill_color, mode, clip, 1, 0xFFFF);
+            polyline(backend, n + 1, |i| pts[i % n], vwk.fill_color, mode, clip, 0xFFFF);
         }
     } else {
-        polyline(backend, n + 1, |i| pts[i % n], vwk.line_color, mode, clip, vwk.line_width, 0xFFFF);
+        // Closed outline: append the closing vertex so a wide stroke sees a
+        // closed polyline (round joints all around).
+        pts[n] = pts[0];
+        stroke(backend, &mut pts, n + 1, vwk, vwk.line_color, mode, clip, 0xFFFF);
     }
 }

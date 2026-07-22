@@ -24,42 +24,38 @@ pub(super) fn line_mask(vwk: &Vwk) -> u16 {
     }
 }
 
-/// Draw a single segment honouring the line width (odd) and dash mask.
-/// A width &gt; 1 draws parallel offset copies perpendicular to the
-/// dominant axis (solid), matching the VDI `wideline` thick-line look.
-#[allow(clippy::too_many_arguments)]
-fn segment(
-    backend: &dyn RasterBackend,
-    x0: i16,
-    y0: i16,
-    x1: i16,
-    y1: i16,
-    color: Pel,
-    mode: WriteMode,
-    clip: ClipRect,
-    width: i16,
-    mask: u16,
-) {
-    if width <= 1 {
-        backend.draw_line(x0, y0, x1, y1, color, mode, clip, mask);
-        return;
-    }
-    // A wide line draws parallel solid copies (`wideline`, always solid).
-    let half = (width - 1) / 2;
-    let horizontalish = (x1 as i32 - x0 as i32).abs() >= (y1 as i32 - y0 as i32).abs();
-    for off in -half..=half {
-        if horizontalish {
-            backend.draw_line(x0, y0 + off, x1, y1 + off, color, mode, clip, 0xFFFF);
-        } else {
-            backend.draw_line(x0 + off, y0, x1 + off, y1, color, mode, clip, 0xFFFF);
-        }
-    }
-}
+/// Line end styles (EmuTOS `vdi_defs.h:89-91`): `SQUARED`, `ARROWED`,
+/// `ROUND`. `line_beg`/`line_end` hold one of these.
+const SQUARED: i16 = 0;
+const ARROWED: i16 = 1;
 
-/// Draw a polyline through `n` `(x,y)` pairs read from `pts(i)` in the
-/// given writing `mode` (EmuTOS `polyline` → `abline(&line, vwk->wrt_mode,
-/// color)` — perimeters and strokes honour the workstation mode).
-#[allow(clippy::too_many_arguments)]
+/// Maximum wide-line width (`vdi_defs.h:53`, `SIZ_TAB[6]`) and the derived
+/// circle-DDA row count (`vdi_line.c:54-55`). `MAX_PIXEL_ASPECT_RATIO` = 2.
+const MAX_LINE_WIDTH: i16 = 40;
+const MAX_QC_LINES: usize = (MAX_LINE_WIDTH as usize * 2) / 2 + 1; // 41
+
+/// A single solid pattern row (`vdi_fill.c SOLID`), used to fill the
+/// wide-line boxes / arrow triangles / round joints.
+const SOLID_PATTERN: [u16; 1] = [0xFFFF];
+
+/// Draw a width-1 polyline through `n` `(x,y)` pairs, threading the dash
+/// mask across the whole polyline exactly as EmuTOS' `polyline`
+/// (`vdi_line.c:1101-1121`) threads the persistent `LN_MASK`: each segment
+/// starts from the mask the previous segment left, and the last segment
+/// sets `LSTLIN` so the backend applies the XOR shared-vertex kludge only
+/// there. The caller passes the *initial* mask (EmuTOS `set_LN_MASK` value)
+/// — resetting once at the start, never per segment.
+///
+/// **Shared-vertex dash drift is EmuTOS-faithful.** Every segment draws
+/// both endpoints inclusively (`abline`), so the vertex shared with the
+/// next segment is plotted twice and the dash mask rotates one extra step
+/// there — a straight line of the same length is NOT an equivalent oracle;
+/// EmuTOS' bent dashed polyline drifts by exactly one mask step after each
+/// inner vertex. The endpoint decrement that would suppress this is
+/// **`WM_XOR`-only** (`vdi_line.c:1789-1798,2319`: the DRI kludge exists
+/// solely to stop a polyline XOR'ing itself at intermediate points); in the
+/// dash / replace path it is deliberately not applied, so the vertex is
+/// drawn twice on purpose.
 pub(super) fn polyline(
     backend: &dyn RasterBackend,
     n: usize,
@@ -67,8 +63,7 @@ pub(super) fn polyline(
     color: Pel,
     mode: WriteMode,
     clip: ClipRect,
-    width: i16,
-    mask: u16,
+    mut mask: u16,
 ) {
     if n < 2 {
         return;
@@ -76,7 +71,441 @@ pub(super) fn polyline(
     for i in 0..n - 1 {
         let (x0, y0) = pt(i);
         let (x1, y1) = pt(i + 1);
-        segment(backend, x0, y0, x1, y1, color, mode, clip, width, mask);
+        let last = i == n - 2; // EmuTOS sets LSTLIN only for the final segment
+        mask = backend.abline(x0, y0, x1, y1, color, mode, clip, mask, last);
+    }
+}
+
+// ── integer maths (EmuTOS intmath.c / miscasm.S), reimplemented for AArch64 ──
+
+/// EmuTOS `mul_div` (`intmath.h:51`): `(m1 * m2) / d`, truncating toward
+/// zero, with a LONG intermediate.
+fn mul_div(m1: i32, m2: i32, d: i32) -> i32 {
+    if d == 0 {
+        return 0;
+    }
+    m1 * m2 / d
+}
+
+/// EmuTOS `mul_div_round` (`miscasm.S:150`): `(m1 * m2) / d` rounded away
+/// from zero, computed as `((m1*m2*2 / d) ± 1) >> 1` (arithmetic shift).
+fn mul_div_round(m1: i32, m2: i32, d: i32) -> i32 {
+    if d == 0 {
+        return 0;
+    }
+    let t = m1 * m2 * 2 / d;
+    if t >= 0 {
+        (t + 1) >> 1
+    } else {
+        (t - 1) >> 1
+    }
+}
+
+/// EmuTOS `Isqrt` (`intmath.c:18`): integer square root rounded to nearest.
+fn isqrt(a: u32) -> u32 {
+    if a == 0 {
+        return 0;
+    }
+    let a = a - 1; // converges to (a + a_LSB)^1/2, so decrement first
+    let mut x = a;
+    let mut y = 8u32;
+    while x > y {
+        x /= 2;
+        y *= 2;
+    }
+    y = (2 + x + y / 2) / 4; // first estimate
+    // Positive-bias rounded Newton-Raphson iterator.
+    while x != y {
+        x = y;
+        y = (1 + a / y + y) / 2;
+    }
+    y
+}
+
+/// The device pixel dimensions `(xsize, ysize)` = `DEV_TAB[3]/[4]`
+/// (`vdi_defs.h:96-97`), used for the wide-line aspect correction. Our
+/// screen workstation always reports **square pixels** (see
+/// [`super::workstation::get_std_pixel_size`], 278/278 for the live
+/// ≥640×≥400 framebuffer).
+fn pixel_aspect(backend: &dyn RasterBackend) -> (i32, i32) {
+    let (xs, ys) = super::workstation::get_std_pixel_size(backend.width() as i16, backend.height() as i16);
+    (xs as i32, ys as i32)
+}
+
+/// EmuTOS `cir_dda` (`vdi_line.c:1240`): build the quarter-circle DDA that
+/// fattens and rounds a wide line of diameter `line_width`. `q[k]` is the
+/// horizontal offset of the circle edge on the k-th row from the centre;
+/// the return is `num_qc_lines` (rows in the quarter).
+///
+/// Because our screen reports **square pixels** (`xsize == ysize`, see
+/// [`pixel_aspect`]) this takes EmuTOS' `xsize == ysize` early-return path
+/// (Bresenham circle, `:1251-1271`); the tall/wide-pixel aspect averaging
+/// (`:1279-1311`) is unreachable on our device and therefore not carried.
+fn cir_dda(line_width: i16, xsize: i32, ysize: i32) -> ([i16; MAX_QC_LINES], usize) {
+    let lw = line_width.clamp(1, MAX_LINE_WIDTH);
+    let mut q = [0i16; MAX_QC_LINES];
+    let mut num = (lw as i32 * xsize / ysize) / 2 + 1;
+    if num > MAX_QC_LINES as i32 {
+        num = MAX_QC_LINES as i32; // circles will be flattened
+    }
+
+    // Bresenham circle octant; radius = (line_width + 1) / 2.
+    let mut x = 0i16;
+    let mut y = (lw + 1) / 2;
+    let mut d = 3 - 2 * y;
+    while x <= y {
+        q[y as usize] = x;
+        q[x as usize] = y;
+        if d < 0 {
+            d += 4 * x + 6;
+        } else {
+            d += 4 * (x - y) + 10;
+            y -= 1;
+        }
+        x += 1;
+    }
+    (q, num as usize)
+}
+
+/// EmuTOS `quad_xform` (`vdi_line.c:1133`): mirror `(x,y)` into/out of the
+/// first quadrant per `quad` (1=SE, 2=SW, 3=NW, 4=NE).
+fn quad_xform(quad: i16, x: i16, y: i16) -> (i16, i16) {
+    let tx = if quad == 2 || quad == 3 { -x } else { x };
+    let ty = if quad == 3 || quad == 4 { -y } else { y };
+    (tx, ty)
+}
+
+/// EmuTOS `perp_off` (`vdi_line.c:1169`): given a segment vector `(vx,vy)`,
+/// return the perpendicular half-width offsets forming one wide-line box
+/// edge, found by a DDA walk of the quarter circle `q`.
+///
+/// The magnitude comparison is deliberately truncated to 16 bits
+/// (`WORD magnitude`, `:1172,1200`) to match EmuTOS bit-for-bit — it can
+/// overflow for a long segment, which selects a slightly different circle
+/// point; short (typical) segments never overflow.
+fn perp_off(vx: i16, vy: i16, q: &[i16; MAX_QC_LINES], num_qc_lines: usize) -> (i16, i16) {
+    // Mirror the vector into the first quadrant.
+    let quad = if vx >= 0 {
+        if vy >= 0 {
+            1
+        } else {
+            4
+        }
+    } else if vy >= 0 {
+        2
+    } else {
+        3
+    };
+    let (qx, qy) = quad_xform(quad, vx, vy);
+    let (x, y) = (qx as i32, qy as i32);
+
+    let mut min_val = 32767i32;
+    let mut x_val = 0i32;
+    let mut y_val = 0i32;
+    let mut u = q[0] as i32;
+    let mut v = 0i32;
+    loop {
+        // ABS of the full 32-bit product, then truncated to WORD (as EmuTOS).
+        let magnitude = ((u * y - v * x).abs() as i16) as i32;
+        if magnitude < min_val
+            || (magnitude == min_val && (x_val - y_val).abs() > (u - v).abs())
+        {
+            min_val = magnitude;
+            x_val = u;
+            y_val = v;
+        } else {
+            break;
+        }
+        // Step to the next pixel of the quarter circle.
+        if v == num_qc_lines as i32 - 1 {
+            if u == 1 {
+                break;
+            }
+            u -= 1;
+        } else if q[(v + 1) as usize] as i32 >= u - 1 {
+            v += 1;
+            u = q[v as usize] as i32;
+        } else {
+            u -= 1;
+        }
+    }
+    quad_xform(quad, x_val as i16, y_val as i16)
+}
+
+/// Draw a solid horizontal span `[x1..=x2]` at `y` in the line colour and
+/// writing mode (EmuTOS `horzline` → `draw_rect`, solid). Clipping is done
+/// by the backend's horizontal `abline` path (screen-aligned, but solid).
+fn horzspan(
+    backend: &dyn RasterBackend,
+    x1: i16,
+    x2: i16,
+    y: i16,
+    color: Pel,
+    mode: WriteMode,
+    clip: ClipRect,
+) {
+    backend.abline(x1, y, x2, y, color, mode, clip, 0xFFFF, true);
+}
+
+/// EmuTOS `do_circ` (`vdi_line.c:1322`): draw a filled disc of the current
+/// wide-line radius centred at `(cx,cy)` — a round joint between segments
+/// or a round cap. Each row is a solid horizontal span.
+#[allow(clippy::too_many_arguments)]
+fn do_circ(
+    backend: &dyn RasterBackend,
+    cx: i16,
+    cy: i16,
+    q: &[i16; MAX_QC_LINES],
+    num_qc_lines: usize,
+    color: Pel,
+    mode: WriteMode,
+    clip: ClipRect,
+) {
+    for (k, &off) in q.iter().enumerate().take(num_qc_lines) {
+        // Upper semicircle plus the centre row.
+        horzspan(backend, cx - off, cx + off, cy - k as i16, color, mode, clip);
+        if k == 0 {
+            continue;
+        }
+        // Lower semicircle.
+        horzspan(backend, cx - off, cx + off, cy + k as i16, color, mode, clip);
+    }
+}
+
+/// EmuTOS `polygon` under the wide-line attribute environment
+/// (`vdi_fill.c:604-608` with `s_fa_attr`): fill the convex polygon solid
+/// in `color`, then draw its closed perimeter solid (width 1). Used for the
+/// wide-line boxes and the arrow triangles.
+fn polygon(
+    backend: &dyn RasterBackend,
+    pts: &[(i16, i16)],
+    n: usize,
+    color: Pel,
+    mode: WriteMode,
+    clip: ClipRect,
+) {
+    let fill = PatternFill {
+        fg: color,
+        bg: 0,
+        pattern: &SOLID_PATTERN,
+        mode,
+    };
+    fill_polygon(backend, n, pts, fill, clip);
+    // Perimeter: close back to the first vertex, solid width-1 (LN_MASK
+    // forced to 0xffff by EmuTOS' polygon()).
+    polyline(backend, n + 1, |i| pts[i % n], color, mode, clip, 0xFFFF);
+}
+
+/// EmuTOS `wideline` (`vdi_line.c:1389`): draw a polyline of width > 1 as a
+/// chain of perpendicular parallelogram boxes with round joints between
+/// segments and round/arrow caps at the ends. `pts[0..count]` are the
+/// vertices; the array is mutated by the arrow shortening.
+#[allow(clippy::too_many_arguments)]
+fn wideline(
+    backend: &dyn RasterBackend,
+    pts: &mut [(i16, i16)],
+    count: usize,
+    line_width: i16,
+    line_beg: i16,
+    line_end: i16,
+    color: Pel,
+    mode: WriteMode,
+    clip: ClipRect,
+    xsize: i32,
+    ysize: i32,
+) {
+    if count < 2 {
+        return;
+    }
+    let (q, num_qc_lines) = cir_dda(line_width, xsize, ysize);
+
+    // Arrows first — they shorten the polyline (EmuTOS `wideline:1407`).
+    if (line_beg | line_end) & ARROWED != 0 {
+        arrow(backend, pts, count, line_beg, line_end, line_width, color, mode, clip, xsize, ysize);
+    }
+
+    let (mut wx1, mut wy1) = pts[0];
+    // A closed polyline has its last vertex equal to the first.
+    let closed = pts[count - 1] == (wx1, wy1);
+
+    // Round cap at the start if the begin style is not squared, or closed.
+    if line_beg != SQUARED || closed {
+        do_circ(backend, wx1, wy1, &q, num_qc_lines, color, mode, clip);
+    }
+
+    for (i, &(wx2, wy2)) in pts.iter().enumerate().take(count).skip(1) {
+        let vx = wx2 as i32 - wx1 as i32;
+        let vy = wy2 as i32 - wy1 as i32;
+        // Ignore zero-length segments.
+        if vx == 0 && vy == 0 {
+            continue;
+        }
+
+        // Perpendicular half-width offsets that fatten this segment.
+        let (ox, oy) = if vx == 0 {
+            (q[0], 0) // vertical line
+        } else if vy == 0 {
+            (0, num_qc_lines as i16 - 1) // horizontal line
+        } else {
+            let k = mul_div(-vy, ysize, xsize);
+            let pvy = mul_div(vx, xsize, ysize);
+            perp_off(k as i16, pvy as i16, &q, num_qc_lines)
+        };
+
+        let box_pts = [
+            (wx1 + ox, wy1 + oy),
+            (wx1 - ox, wy1 - oy),
+            (wx2 - ox, wy2 - oy),
+            (wx2 + ox, wy2 + oy),
+        ];
+        polygon(backend, &box_pts, 4, color, mode, clip);
+
+        // Round joint at an internal vertex, or a round/closed end cap.
+        if i < count - 1 || line_end != SQUARED || closed {
+            do_circ(backend, wx2, wy2, &q, num_qc_lines, color, mode, clip);
+        }
+
+        wx1 = wx2;
+        wy1 = wy2;
+    }
+}
+
+/// EmuTOS `draw_arrow` (`vdi_line.c:1503`): draw one arrowhead at the tip
+/// vertex `tip`, walking toward the interior by `inc` (+1 for the begin
+/// end, -1 for the end). Mutates `pts` to shorten the line behind the head.
+#[allow(clippy::too_many_arguments)]
+fn draw_arrow(
+    backend: &dyn RasterBackend,
+    pts: &mut [(i16, i16)],
+    count: usize,
+    tip: usize,
+    inc: isize,
+    line_width: i16,
+    color: Pel,
+    mode: WriteMode,
+    clip: ClipRect,
+    xsize: i32,
+    ysize: i32,
+) {
+    let arrow_len = if line_width < 4 { 8 } else { 3 * line_width as i32 - 1 };
+    let arrow_wid = arrow_len / 2;
+
+    let (tx, ty) = (pts[tip].0 as i32, pts[tip].1 as i32);
+
+    // Find the first vertex far enough from the tip not to be obscured by
+    // the head (distance measured in aspect-uniform space).
+    let mut dx = 0i32;
+    let mut dy = 0i32;
+    let mut line_len2 = 0i64;
+    let mut cur = tip as isize;
+    for _ in 1..count {
+        cur += inc;
+        if cur < 0 || cur >= count as isize {
+            break;
+        }
+        let (px, py) = pts[cur as usize];
+        dx = tx - px as i32;
+        dy = mul_div_round(ty - py as i32, ysize, xsize);
+        line_len2 = dx as i64 * dx as i64 + dy as i64 * dy as i64;
+        if line_len2 >= arrow_len as i64 * arrow_len as i64 {
+            break;
+        }
+    }
+    let xybeg = cur;
+    let line_len = isqrt(line_len2 as u32) as i32;
+    if line_len < arrow_len {
+        return; // longest vector too short — no arrow
+    }
+
+    // Rotate the head height/base vectors (calculations in 1000x space).
+    let dxfactor = mul_div_round(dx, 1000, line_len);
+    let dyfactor = mul_div_round(dy, 1000, line_len);
+    let ht_x = mul_div_round(arrow_len, dxfactor, 1000);
+    let mut ht_y = mul_div_round(arrow_len, dyfactor, 1000);
+    let base_x = mul_div_round(arrow_wid, -dyfactor, 1000);
+    let mut base_y = mul_div_round(arrow_wid, dxfactor, 1000);
+    // Transform the y offsets back to the real aspect-ratio space.
+    ht_y = mul_div_round(ht_y, xsize, ysize);
+    base_y = mul_div_round(base_y, xsize, ysize);
+
+    let triangle = [
+        ((tx + base_x - ht_x) as i16, (ty + base_y - ht_y) as i16),
+        ((tx - base_x - ht_x) as i16, (ty - base_y - ht_y) as i16),
+        (tx as i16, ty as i16),
+    ];
+    polygon(backend, &triangle, 3, color, mode, clip);
+
+    // Shorten: move the tip inward by the head height, and collapse every
+    // skipped vertex onto it, so the line does not protrude past the head.
+    let new_tip = ((tx - ht_x) as i16, (ty - ht_y) as i16);
+    pts[tip] = new_tip;
+    let mut p = xybeg;
+    loop {
+        p -= inc;
+        if p == tip as isize {
+            break;
+        }
+        pts[p as usize] = new_tip;
+    }
+}
+
+/// EmuTOS `arrow` (`vdi_line.c:1597`): draw arrowheads at whichever ends of
+/// the polyline have the `ARROWED` style. Mutates `pts` (see `draw_arrow`).
+#[allow(clippy::too_many_arguments)]
+fn arrow(
+    backend: &dyn RasterBackend,
+    pts: &mut [(i16, i16)],
+    count: usize,
+    line_beg: i16,
+    line_end: i16,
+    line_width: i16,
+    color: Pel,
+    mode: WriteMode,
+    clip: ClipRect,
+    xsize: i32,
+    ysize: i32,
+) {
+    if line_beg & ARROWED != 0 {
+        draw_arrow(backend, pts, count, 0, 1, line_width, color, mode, clip, xsize, ysize);
+    }
+    if line_end & ARROWED != 0 {
+        draw_arrow(backend, pts, count, count - 1, -1, line_width, color, mode, clip, xsize, ysize);
+    }
+}
+
+/// Stroke a polyline honouring the current line width, the EmuTOS
+/// `clc_arc`/`vdi_v_pline` dispatch (`vdi_gdp.c:92-99`): width 1 threads the
+/// dash `mask`; width > 1 draws the wide line (round joins/caps, arrows).
+/// `pts[0..count]` is mutable because the wide-line arrow shortening writes
+/// back into it. Used by the GDP curve / rounded-box outlines.
+#[allow(clippy::too_many_arguments)]
+pub(super) fn stroke(
+    backend: &dyn RasterBackend,
+    pts: &mut [(i16, i16)],
+    count: usize,
+    vwk: &Vwk,
+    color: Pel,
+    mode: WriteMode,
+    clip: ClipRect,
+    mask: u16,
+) {
+    if vwk.line_width == 1 {
+        polyline(backend, count, |i| pts[i], color, mode, clip, mask);
+    } else {
+        let (xsize, ysize) = pixel_aspect(backend);
+        wideline(
+            backend,
+            pts,
+            count,
+            vwk.line_width,
+            vwk.line_beg,
+            vwk.line_end,
+            color,
+            mode,
+            clip,
+            xsize,
+            ysize,
+        );
     }
 }
 
@@ -208,37 +637,41 @@ pub fn v_fillarea(pb: &Vdipb, vwk: &Vwk, backend: &dyn RasterBackend) {
         // Outline: the polygon closed back to the first vertex, in the
         // fill colour and the workstation writing mode (EmuTOS `polygon`
         // → `polyline(vwk, ..., vwk->fill_color)`, `vdi_fill.c:608`).
-        polyline(
-            backend,
-            n + 1,
-            |i| v[i % n],
-            vwk.fill_color,
-            mode,
-            clip,
-            1,
-            0xFFFF,
-        );
+        polyline(backend, n + 1, |i| v[i % n], vwk.fill_color, mode, clip, 0xFFFF);
     }
 }
 
-/// Opcode 6 — `v_pline`: draw the polyline through `CONTRL[1]` vertices
-/// in `PTSIN` with the current line colour, width (odd) and dash style.
-/// Each segment is clipped to the workstation rectangle by the backend.
+/// Opcode 6 — `v_pline`: draw the polyline through `CONTRL[1]` vertices in
+/// `PTSIN`. EmuTOS `vdi_v_pline` (`vdi_line.c:1000`): reset `LN_MASK` once,
+/// then width 1 → threaded `polyline` (+ arrowheads if either end is
+/// `ARROWED`), width > 1 → `wideline` (perpendicular boxes, round joins/caps,
+/// arrows).
 pub fn v_pline(pb: &Vdipb, vwk: &Vwk, backend: &dyn RasterBackend) {
-    let count = pb.contrl(1);
-    if count < 2 {
+    let raw = pb.contrl(1);
+    if raw < 2 {
         return;
     }
-    polyline(
-        backend,
-        count as usize,
-        |i| (pb.ptsin(2 * i), pb.ptsin(2 * i + 1)),
-        vwk.line_color,
-        WriteMode::from_wrt_mode(vwk.wrt_mode),
-        vwk.clip_rect(),
-        vwk.line_width,
-        line_mask(vwk),
-    );
+    let count = (raw as usize).min(MAX_VERTS);
+    // Read the vertices into a local array: `wideline`/`arrow` mutate them
+    // (the arrow shortening), and `wideline` needs random access.
+    let mut pts = [(0i16, 0i16); MAX_VERTS];
+    for (i, slot) in pts[..count].iter_mut().enumerate() {
+        *slot = (pb.ptsin(2 * i), pb.ptsin(2 * i + 1));
+    }
+    let color = vwk.line_color;
+    let mode = WriteMode::from_wrt_mode(vwk.wrt_mode);
+    let clip = vwk.clip_rect();
+
+    if vwk.line_width == 1 {
+        polyline(backend, count, |i| pts[i], color, mode, clip, line_mask(vwk));
+        if (vwk.line_beg | vwk.line_end) & ARROWED != 0 {
+            let (xsize, ysize) = pixel_aspect(backend);
+            arrow(backend, &mut pts, count, vwk.line_beg, vwk.line_end, vwk.line_width, color, mode, clip, xsize, ysize);
+        }
+    } else {
+        let (xsize, ysize) = pixel_aspect(backend);
+        wideline(backend, &mut pts, count, vwk.line_width, vwk.line_beg, vwk.line_end, color, mode, clip, xsize, ysize);
+    }
 }
 
 /// The six marker glyphs as polyline vector tables (`vdi_marker.c`):
@@ -279,7 +712,6 @@ pub fn v_pmarker(pb: &Vdipb, vwk: &Vwk, backend: &dyn RasterBackend) {
                 vwk.mark_color,
                 mode,
                 clip,
-                1,
                 0xFFFF,
             );
             k += 2 * npts;
