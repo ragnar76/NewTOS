@@ -47,6 +47,8 @@
 //! reads/writes through `fd_addr`, always bounds-checked against
 //! `fd_w × fd_h`.
 
+use alloc::alloc::{alloc_zeroed, dealloc, Layout};
+
 use super::backend::{ClipRect, MonoSrc, RasterBackend, Rect, WriteMode};
 use super::vwk::{validate_color_index, Vwk};
 use super::Vdipb;
@@ -307,8 +309,22 @@ pub fn vrt_cpyfm(pb: &Vdipb, vwk: &Vwk, backend: &dyn RasterBackend, ncol: u16) 
     } else {
         // Memory destination (AUD-V5-005): expand into the 16-bit RGB565
         // buffer with the same `MD_*` semantics, resolving fg/bg through the
-        // active pseudo-palette (`vrt_cpyfm16`, `fgcol = palette[fg_col]`).
-        // No clipping (dst is not the screen).
+        // active pseudo-palette (`vrt_cpyfm16`, `fgcol = palette[fg_col]`,
+        // `vdi_raster.c:1234-1236`). No clipping (dst is not the screen).
+        //
+        // AUD-V5-008 (`MAP_COL` fold): EmuTOS resolves `palette[MAP_COL[fg]]`
+        // — `cpy_raster` maps `fg_col = MAP_COL[validate_color_index(INTIN[1])]`
+        // (`vdi_raster.c:1390-1395`) before `vrt_cpyfm16` indexes the
+        // pseudo-palette. NewTOS seeds the active pseudo-palette **in VDI-pen
+        // order** (`vdi_backend.rs` `videl_palette1`/`videl_palette2` at index
+        // = pen), i.e. the `MAP_COL` permutation is folded into the palette
+        // seed, so `palette[fg]` here equals EmuTOS' `palette[MAP_COL[fg]]`
+        // pixel-for-pixel — and identically to how every other primitive
+        // (line/fill/text/`blit_mono`) resolves the same pen. The fold holds
+        // for **all** pens (seed is a full 0..255 identity-ordered table), so
+        // V5-008 stays a folded-acceptable, unobservable deviation; adding a
+        // non-identity `MAP_COL` here would desync from the seeded palette and
+        // break the desktop's colours.
         let fg16 = backend.pel_to_device16(fg);
         let bg16 = backend.pel_to_device16(bg);
         mono_to_mem(&dst, mono, d.x, d.y, s.w, s.h, mode, fg16, bg16);
@@ -541,12 +557,130 @@ pub unsafe fn bb_restore(
     mem_to_screen(backend, &src, Rect { x: 0, y: 0, w, h }, x, y, OP_REPLACE, clip);
 }
 
+/// Truecolor `vr_trnfm` branch — a faithful port of EmuTOS `vr_trnfm16`
+/// (`vdi_raster.c:190-256`). Converts a bitmap between **16-bit standard**
+/// form (`fd_stand = 1`: 16 plane-sequential planes, machine-independent)
+/// and **Truecolor device-dependent** form (`fd_stand = 0`: 16-bit
+/// RGB565-chunky, one `UWORD` per pixel — NewTOS' memory-MFDB wireformat,
+/// [`CHUNKY_PLANES`]). Direction is chosen by `src.stand`; both forms hold
+/// the same `planesize * 16` words (`planesize = fd_h * fd_wdwidth`, in
+/// words) laid out flat, so the transpose is pure index arithmetic — a
+/// standard plane `p` contributes pixel-word bit `0x8000 >> p`, and pixel
+/// word `k` maps to plane word `k / 16` bit `0x8000 >> (k & 15)`. With the
+/// unified 16-bit memory format (TC3b) there is no format jump: the chunky
+/// output is exactly what [`vro_cpyfm`] / [`bb_save`] read, resolving
+/// AUD-V5-002/003.
+///
+/// The destination `fd_stand` is **not** written here, matching EmuTOS'
+/// truecolor branch (which, unlike the ≤8-plane planar path below, leaves
+/// `dst_mfdb->fd_stand` untouched — the caller stamps the target form).
+/// Works in place via a zeroed scratch buffer (EmuTOS `dos_alloc_anyram`);
+/// a tight heap fails silently, exactly as the reference does.
+fn vr_trnfm16(src: &Mfdb, dst: &Mfdb) {
+    // `planesize = fd_h * fd_wdwidth` words per plane; the whole form (either
+    // direction) is `planesize * 16` words (`formsize = planesize * 2 * 16`
+    // bytes, `vdi_raster.c:198-199`).
+    let planesize = (src.h.max(0) as usize) * (src.wdwidth.max(0) as usize);
+    if planesize == 0 {
+        return;
+    }
+    let total = planesize * 16;
+
+    let s = src.addr as *const u16;
+    let inplace = src.addr == dst.addr;
+
+    // Destination buffer: the caller's `dst` (cleared), or a zeroed scratch
+    // when transforming in place (EmuTOS `dos_alloc_anyram` + `bzero`). A
+    // failed allocation is a silent no-op, matching the reference.
+    let scratch = if inplace {
+        let Ok(layout) = Layout::array::<u16>(total) else {
+            return;
+        };
+        // SAFETY: `total >= 16` (planesize >= 1), so the layout is non-zero.
+        let p = unsafe { alloc_zeroed(layout) } as *mut u16;
+        if p.is_null() {
+            return;
+        }
+        Some((p, layout))
+    } else {
+        None
+    };
+    let d = match &scratch {
+        Some((p, _)) => *p,
+        None => {
+            // EmuTOS `bzero(dst, formsize)` — clear the output before OR-ing.
+            // SAFETY: the dst MFDB describes `total` words at `dst.addr`.
+            unsafe { core::ptr::write_bytes(dst.addr as *mut u16, 0, total) };
+            dst.addr as *mut u16
+        }
+    };
+
+    // SAFETY: `s` holds `total` words (the source form) and `d` holds `total`
+    // words (the caller's dst or the `total`-word scratch); every index below
+    // stays within `[0, total)`, mirroring the reference loops 1:1. In the
+    // in-place case `s` and `d` are disjoint (scratch), so there is no alias.
+    unsafe {
+        if src.stand != 0 {
+            // standard (16 plane-sequential planes) -> device (chunky):
+            // plane `p` sets bit `0x8000 >> p` of each pixel word.
+            let mut src_idx = 0usize;
+            for p in 0..16u32 {
+                let dst_mask = 0x8000u16 >> p;
+                let mut work = 0usize;
+                for _ in 0..planesize {
+                    let sword = *s.add(src_idx);
+                    src_idx += 1;
+                    let mut src_mask = 0x8000u16;
+                    while src_mask != 0 {
+                        if sword & src_mask != 0 {
+                            *d.add(work) |= dst_mask;
+                        }
+                        work += 1;
+                        src_mask >>= 1;
+                    }
+                }
+            }
+        } else {
+            // device (chunky) -> standard (16 plane-sequential planes):
+            // pixel-word bit `0x8000 >> p` becomes plane `p`.
+            let mut dst_idx = 0usize;
+            for p in 0..16u32 {
+                let src_mask = 0x8000u16 >> p;
+                let mut work = 0usize;
+                for _ in 0..planesize {
+                    let mut dst_mask = 0x8000u16;
+                    while dst_mask != 0 {
+                        if *s.add(work) & src_mask != 0 {
+                            *d.add(dst_idx) |= dst_mask;
+                        }
+                        work += 1;
+                        dst_mask >>= 1;
+                    }
+                    dst_idx += 1;
+                }
+            }
+        }
+    }
+
+    // In place: copy the finished scratch back over the shared buffer, free.
+    if let Some((p, layout)) = scratch {
+        // SAFETY: `p` holds `total` words (`alloc_zeroed(layout)`); `dst.addr`
+        // holds `total` words (MFDB geometry). Distinct allocations.
+        unsafe {
+            core::ptr::copy_nonoverlapping(p as *const u16, dst.addr as *mut u16, total);
+            dealloc(p as *mut u8, layout);
+        }
+    }
+}
+
 /// Opcode 110 — `vr_trnfm`: transform a bitmap between **standard**
 /// (plane-sequential, machine-independent) and **device-dependent**
-/// (word-interleaved) form. The destination's `fd_stand` is forced to
-/// the opposite of the source's; works in place when the addresses
-/// coincide. Faithful port of EmuTOS `vdi_vr_trnfm` (`vdi_raster.c`).
-pub fn vr_trnfm(pb: &Vdipb) {
+/// (word-interleaved for 1-8 planes, RGB565-chunky for Truecolor) form.
+/// The destination's `fd_stand` is forced to the opposite of the source's
+/// (planar path only); works in place when the addresses coincide. Faithful
+/// port of EmuTOS `vdi_vr_trnfm` (`vdi_raster.c:269-356`), including the
+/// Truecolor gate (`:281-294`).
+pub fn vr_trnfm(pb: &Vdipb, backend: &dyn RasterBackend) {
     let abi = pb.abi();
     // SAFETY: caller-ABI MFDB-pointer convention (see module docs).
     let src = unsafe { Mfdb::from_ptr(pb.contrl_ptr(0), abi) };
@@ -558,6 +692,18 @@ pub fn vr_trnfm(pb: &Vdipb) {
     // `stand_off`).
     let dst = unsafe { Mfdb::from_ptr(dst_ptr, abi) };
     if dst.addr == 0 {
+        return;
+    }
+
+    // TRUECOLOR_MODE branch (EmuTOS `vdi_vr_trnfm`, `vdi_raster.c:281-294`):
+    // in a Truecolor mode (`TRUECOLOR_MODE = v_planes > 8`) a source with more
+    // than 8 planes is transformed between 16-bit standard and Truecolor
+    // device form, *not* by the planar interleave below. The backend reports
+    // `v_planes` (16 under Falcon truecolor); a non-truecolor backend
+    // (`planes() <= 8`) falls through to the planar path, exactly as EmuTOS'
+    // gate does. (AUD-V5-002/003.)
+    if backend.planes() > 8 && src.nplanes > 8 {
+        vr_trnfm16(&src, &dst);
         return;
     }
 

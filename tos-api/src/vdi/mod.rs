@@ -334,7 +334,7 @@ pub unsafe fn dispatch(vdipb_ptr: u64, abi: Abi) {
                     114 => primitives::vr_recfl(&pb, vwk, backend),
                     121 => raster::vrt_cpyfm(&pb, vwk, backend, ncol),
                     109 => raster::vro_cpyfm(&pb, vwk, backend),
-                    110 => raster::vr_trnfm(&pb),
+                    110 => raster::vr_trnfm(&pb, backend),
                     // ── genuine VDI no-ops + not-yet-implemented opcodes ──
                     // (v_updwk #4, v_cellarray #10, vq_cellarray #27,
                     // v_valuator #29, #34, and any out-of-range opcode). By
