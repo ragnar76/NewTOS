@@ -47,7 +47,7 @@ Ersetzt/erweitert das alte VW1 (V5). 8-Schritt-Plan → 5 Fix-Pakete:
 | TC2 | per-Vwk-Palette + Farb-Setter/Query Truecolor (`vs/vq_color16` 5-bit, MAP_COL gefaltet) (Schritte 2+4) | V3-010 | 🟩 (abb2280) |
 | TC3a | 5-bit-Draw-Pfad über per-Vwk-Palette + `videl_palette1`-Default (der sichtbare Falcon-Look) | Fidelity | 🟩 (2f5cda2) |
 | TC3b | Memory-MFDB → 16-bit RGB565 + `bb_save` verlustfrei (Schritt 5) | V5-001/004/005 | 🟩 (3d4ab71) |
-| TC4 | `vr_trnfm16` + `vro/vrt_cpyfm16`-Truecolor (6) | V5-002/003/008 | ⬜ |
+| TC4 | `vr_trnfm16` + `vro/vrt_cpyfm16`-Truecolor (6) | V5-002/003/008 | 🟩 (516dc9a) |
 | TC5 | Cursor-Save-under bit-exakt (7) | V6-001 (akut) | ⬜ |
 
 ## Reihenfolge zum Grün-Machen (bottom-up)
