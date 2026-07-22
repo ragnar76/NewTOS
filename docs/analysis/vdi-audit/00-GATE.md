@@ -25,22 +25,38 @@ Legende: ⬜ offen · 🟡 auditiert (Findings offen) · 🟩 grün (gefixt + re
 |---|---|---|---|---|---|
 | Fundament | **V4 font-data** (font.rs/font_data.rs: 6x6/8x8 + DDA) | ✅ | ❌ | ❌ | 🟡 |
 | Fundament | **V5 raster/blit/backend** | ✅ | ❌ | ❌ | 🟡 |
-| Attribute | **V1 control/workstation/inquiry** | ✅ | ✅ | ✅ | 🟩 (727b33c) |
+| Attribute | **V1 control/workstation/inquiry** | ✅ | ⚠️ 16-Farb-Werte falsch → in TC revidieren | ❌ | 🟡 (reopened, war 727b33c) |
 | Primitive | **V2 line/marker/fill/attributes/contour** | ✅ | ❌ | ❌ | 🟡 |
 | Höher | **V3 gdp/bezier/color/escape** | ✅ | ❌ | ❌ | 🟡 |
 | Höher | **V4 text (v_gtext/vst_*/justified)** | ✅ | ❌ | ❌ | 🟡 |
 | I/O | **V6 mouse/input** | ✅ | ❌ | ❌ | 🟡 |
 | Coverage | **Inventar (269 Fn Presence)** | ⬜ | — | — | ⬜ |
 
-**Gate offen (🔴).** 1 von 6 grün (V1). Öffnet erst, wenn ALLE Zeilen 🟩 sind.
+**Gate offen (🔴).** 0 grün — **V1 reopened** für die Truecolor-Revision (User
+2026-07-22: VDI → Falcon-Truecolor, Memory `vdi-truecolor-workstation`). Das
+**Truecolor-Fundament (TC1–TC5, `truecolor-conversion-plan.md`) kommt ZUERST**,
+dann V1-Re-Green, dann V2/V3/V4/V6. Öffnet erst, wenn ALLE Zeilen 🟩 sind.
+
+### Truecolor-Fundament (TC, vor allem anderen)
+
+Ersetzt/erweitert das alte VW1 (V5). 8-Schritt-Plan → 5 Fix-Pakete:
+
+| TC | Inhalt (Plan-Schritt) | Fixt | Status |
+|---|---|---|---|
+| TC1 | Backend `planes()`+NUM_COLORS→256, per-Vwk-Palette, DEV_TAB/INQ Truecolor (1-3) | V1-Revision (DEV_TAB[13]/[39]=0), SPEC-V1-A | ⬜ |
+| TC2 | Farb-Setter/Query Truecolor (`vs/vq_color16`, MAP_COL real) (4) | V3-010 | ⬜ |
+| TC3 | Memory-MFDB → 16-bit RGB565 + bb_save (5) | V5-004/005 | ⬜ |
+| TC4 | `vr_trnfm16` + `vro/vrt_cpyfm16`-Truecolor (6) | V5-001/002/003/008 | ⬜ |
+| TC5 | Cursor-Save-under bit-exakt (7) | V6-001 (akut) | ⬜ |
 
 ## Reihenfolge zum Grün-Machen (bottom-up)
 
 Finalisiert im **VDI-Master** (`00-MASTER.md`), dependency-getrieben:
 
-**VW1 (V5 Raster/Backend + draw_glyph-Capability) → VW2 (V1 Workstation) →
-VW3 (V4 Fonts+Text) → VW4 (V2 Line/Marker/Fill) → VW5 (V3 GDP/Color/Escape) →
-VW6 (V6 Mouse/Input).**
+**TC1 → TC2 → TC3 → TC4 → TC5 (Truecolor-Fundament)** → **V1-Re-Green** →
+**V2 (Line/Marker/Fill) → V3 (GDP/Color/Escape) → V4 (Fonts+Text) → V6 (Mouse/Input).**
+(Truecolor liegt unter dem Farbmodell aller Render-Pakete → zuerst; sonst würden
+V2/V3/V4 aufs verworfene 16-Farben-Modell gefixt.)
 
 Jedes Paket durchläuft: Developer fixt alle Findings → unabhängiger Tester/Auditor
 bestätigt grün → Lead committet → Zeile oben auf 🟩 → nächstes Paket.

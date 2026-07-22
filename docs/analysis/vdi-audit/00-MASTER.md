@@ -6,6 +6,21 @@
 > nach komplett grünem VDI). Ziel-Profil Falcon030/TOS4 make-512.
 > Prinzip Memory `fix-vdi-before-aes-bottom-up`: **alle** Findings, bottom-up.
 
+## 0. REORG — Truecolor-Fundament zuerst (User 2026-07-22)
+
+Die VDI wird auf **Falcon-Truecolor (16-bit RGB565)** umgestellt (Memory
+`vdi-truecolor-workstation`, Plan `truecolor-conversion-plan.md`). Das Farbmodell
+liegt unter allen Render-Paketen → es kommt **VOR V2/V3/V4**. Neue Reihenfolge:
+
+**TC1–TC5 (Truecolor) → V1-Re-Green → V2 → V3 → V4 → V6.**
+
+TC-Pakete (aus dem 8-Schritt-Plan): TC1 Backend-Modell+per-Vwk-Palette+DEV_TAB/INQ
+(1-3, revidiert V1), TC2 Farb-Setter/Query (4), TC3 16-bit-MFDB (5, löst
+V5-004/005), TC4 `vr_trnfm16`/`cpyfm16` (6, löst V5-001/002/003/008), TC5
+Cursor-Save-under (7, V6-001 akut). Die unten stehenden VW-Pakete gelten
+inhaltlich weiter, aber V5 ist in TC aufgegangen und V1 wird in TC1 revidiert.
+Status/Tracking: `00-GATE.md`.
+
 ## 1. Dashboard
 
 | Dimension | Ergebnis |
