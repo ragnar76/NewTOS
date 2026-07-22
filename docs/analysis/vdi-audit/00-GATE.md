@@ -26,7 +26,7 @@ Legende: ⬜ offen · 🟡 auditiert (Findings offen) · 🟩 grün (gefixt + re
 | Fundament | **V4 font-data** (font.rs/font_data.rs: 6x6/8x8 + DDA) | ✅ | ❌ | ❌ | 🟡 |
 | Fundament | **V5 raster/blit/backend** | ✅ | ❌ | ❌ | 🟡 |
 | Attribute | **V1 control/workstation/inquiry** | ✅ | ✅ (727b33c) + Truecolor-Revision in TC1 (09c9ddc) | ✅ (TC1-Tester) | 🟩 (re-green) |
-| Primitive | **V2 line/marker/fill/attributes/contour** | ✅ | V2-line ✅ (637c868); V2-fill offen | teilw. | 🟡 (V2-line grün) |
+| Primitive | **V2 line/marker/fill/attributes/contour** | ✅ | V2-line ✅ (637c868) + V2-fill ✅ (406daa0) | ✅ | 🟩 |
 | Höher | **V3 gdp/bezier/color/escape** | ✅ | ❌ | ❌ | 🟡 |
 | Höher | **V4 text (v_gtext/vst_*/justified)** | ✅ | ❌ | ❌ | 🟡 |
 | I/O | **V6 mouse/input** | ✅ | ❌ | ❌ | 🟡 |
