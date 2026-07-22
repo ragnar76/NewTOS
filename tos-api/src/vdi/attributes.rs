@@ -9,7 +9,7 @@
 use super::backend::RasterBackend;
 use super::font;
 use super::req_col;
-use super::vwk::{validate_color_index, Vwk};
+use super::vwk::{self, validate_color_index, Vwk};
 use super::Vdipb;
 
 // Line / marker / text attribute bounds (EmuTOS `vdi_defs.h`).
@@ -219,16 +219,62 @@ pub fn vsf_perimeter(pb: &Vdipb, vwk: &mut Vwk) {
 
 /// Opcode 14 — `vs_color`: set a palette entry. `INTIN[0]` = colour
 /// index, `INTIN[1..3]` = R/G/B. Out-of-range indices are ignored. The
-/// **raw** request is stored in the `REQ_COL` shadow (so `vq_color`
-/// flag 0 round-trips it verbatim, possibly outside 0..1000); only the
-/// copy programmed into the CLUT is clamped to 0..=1000. No output.
-/// EmuTOS `vdi_col.c:656-704`.
-pub fn vs_color(pb: &Vdipb, ncol: u16, backend: &dyn RasterBackend) {
+/// **raw** request is stored (so `vq_color` flag 0 round-trips it verbatim,
+/// possibly outside 0..1000); only the copy that programmes the palette is
+/// clamped to 0..=1000. No output. EmuTOS `vdi_vs_color` (`vdi_col.c:656-704`).
+///
+/// Two paths, gated on `TRUECOLOR_MODE` (`v_planes > 8`, `vdi_col.c:661-666`):
+///
+/// - **Truecolor** (our Falcon profile, `planes == 16`): `vs_color16`
+///   (`vdi_col.c:620-648`) writes the **calling workstation's private**
+///   5-bit pseudo-palette + `req_col` (via [`vwk::ext`]), so two open
+///   workstations keep independent colours and `vq_color(flag=1)` reads
+///   back the 5-bit-quantised value. As a deliberate TC2 **interim bridge**
+///   (not a stub) it ALSO programs the full-precision backend CLUT: the
+///   NewTOS draw path still resolves PEL through that CLUT, whereas EmuTOS'
+///   truecolor VDI resolves through the per-Vwk 5-bit palette at the write
+///   point. Keeping the CLUT in sync here keeps `vs_color` affecting the
+///   drawn colour (no regression vs. pre-TC2) while the desktop screendumps
+///   stay byte-identical — the CLUT keeps full 8-bit precision and the
+///   desktop never calls `vs_color`. The full per-Vwk 5-bit *draw* path
+///   (quantised drawing + EmuTOS `videl_palette1` defaults + a desktop
+///   re-baseline) lands with the 16-bit RGB565 framebuffer format in **TC3**,
+///   where the 5-bit quantisation falls out naturally.
+/// - **Palette** (`planes <= 8`, unreachable in the truecolor profile but
+///   kept for a non-truecolor backend): the original hardware-CLUT path —
+///   raw request into the device-global `REQ_COL` shadow, clamped copy into
+///   the backend CLUT.
+pub fn vs_color(pb: &Vdipb, vwk: &Vwk, ncol: u16, backend: &dyn RasterBackend) {
     let idx = pb.intin(0);
     if idx < 0 || idx as u16 >= ncol {
         return;
     }
     let (r, g, b) = (pb.intin(1), pb.intin(2), pb.intin(3));
+
+    if backend.planes() > 8 {
+        // Truecolor (`vs_color16`): write the calling workstation's own
+        // 5-bit query tables. SAFETY: single trap path; `vwk.handle` is the
+        // open ws.
+        if let Some(ext) = unsafe { vwk::ext(vwk.handle) } {
+            let colnum = idx as usize;
+            // Raw, unclamped request (EmuTOS `req_col[colnum][i] = *intin`).
+            ext.req_col[colnum] = [r, g, b];
+            // Clamp only the copy that builds the pseudo-palette.
+            let clamp = |v: i16| v.clamp(0, 1000);
+            ext.set_color16(colnum, [clamp(r), clamp(g), clamp(b)]);
+        }
+        // Interim draw-path bridge (TC2 → resolved in TC3): also keep the
+        // full-precision backend CLUT the draw path reads in sync, so
+        // `vs_color` still changes the drawn colour. Full 5-bit per-Vwk draw
+        // fidelity is deferred to the TC3 16-bit RGB565 framebuffer (see the
+        // fn docs). NOT a stub — the CLUT and the query palette are both
+        // authoritative for their respective consumers (draw / vq_color).
+        let clamp = |v: i16| v.clamp(0, 1000) as u16;
+        backend.set_color(idx as u16, clamp(r), clamp(g), clamp(b));
+        return;
+    }
+
+    // Non-truecolor hardware CLUT path.
     // Store the raw, unclamped request (EmuTOS `REQ_COL[colnum][i] = *intin`).
     // SAFETY: single trap path (see `req_col`).
     unsafe { req_col::store_request(idx as u16, r, g, b) };

@@ -152,6 +152,96 @@ pub fn validate_color_index(c: i16, num_colors: u16) -> Pel {
     }
 }
 
+/// Per-workstation truecolor colour management — NewTOS' equivalent of
+/// EmuTOS' `VwkExt` (`vdi/vdi_defs.h:153-158`).
+///
+/// Under the Falcon truecolor profile (`v_planes = 16 > 8`,
+/// `TRUECOLOR_MODE`) each workstation carries its **own** pseudo-palette
+/// and requested-colour table, so two open workstations can hold different
+/// colours on the same pen index — an EmuTOS-documented, testable behaviour
+/// (`vdi_control.c:354-363`, `vdi_col.c:601-648,813-838`). `vs_color16`
+/// writes only the calling workstation's tables; `vq_color16` reads them.
+///
+/// **Storage.** The plan (`truecolor-conversion-plan.md` §3.5) sanctions
+/// either embedding the arrays in [`Vwk`] or a separate cell. NewTOS keeps
+/// a static table parallel to the [`Vwk`] handle table (indexed by the same
+/// handle, see [`ext`]): this keeps the 2 KiB/handle store in
+/// zero-initialised `.bss` instead of bloating the image `.data` with a
+/// non-zero embedded default across all 64 handles.
+///
+/// **MAP_COL is folded to the identity** (the pseudo-palette is indexed
+/// directly by the VDI pen, not by an EmuTOS "hardware register" via
+/// `MAP_COL[pen]`). This stays observably equivalent to EmuTOS' real
+/// `MAP_COL` permutation (V5-008): EmuTOS stores at `palette[MAP_COL[pen]]`
+/// and reads back through the same `MAP_COL[pen]`, so the indirection
+/// cancels for a consistent write+read of one pen; the default seed
+/// ([`crate::vdi::workstation`] `init_wk`) is laid out in matching VDI-pen
+/// order (pens 16..254 map to themselves in EmuTOS too; pen 255 maps to
+/// register 15, which no seeded pen writes, leaving that slot 0 — folded
+/// leaves `palette[255] = 0` the same way, so `vq_color(255, flag=1)` is
+/// `(0,0,0)` either way).
+pub struct VwkExt {
+    /// Pseudo-palette: one 16-bit pixel value per VDI pen, laid out
+    /// `RRRRRGGGGG0BBBBB` (5:5:5 packed into a 565 slot with the green LSB
+    /// / bit 5 always 0 — EmuTOS `vdi_defs.h:156`, `vdi_col.c:599`).
+    pub palette: [u16; 256],
+    /// Raw requested colour per pen (VDI 0..1000, stored **unclamped** so
+    /// `vq_color(flag=0)` round-trips the exact request — EmuTOS
+    /// `vdi_defs.h:157` `req_col[256][3]`, `vdi_col.c:640`).
+    pub req_col: [[i16; 3]; 256],
+}
+
+impl VwkExt {
+    /// A zeroed extension (pseudo-palette black, requests zero). `init_wk`
+    /// seeds it from the device-global default before the workstation is
+    /// used.
+    pub const EMPTY: VwkExt = VwkExt {
+        palette: [0; 256],
+        req_col: [[0; 3]; 256],
+    };
+
+    /// Scale a VDI colour component (0..1000, pre-clamped by the caller) to
+    /// 5 bits (0..31). EmuTOS `vdi2fivebits` (`vdi_col.c:588-591`), scale
+    /// 1000 → 31.
+    #[inline]
+    fn vdi2fivebits(col: i16) -> u16 {
+        ((col as u32 * 31 + 500) / 1000) as u16
+    }
+
+    /// Scale a 5-bit component (0..31) back to a VDI colour (0..1000).
+    /// EmuTOS `fivebits2vdi` (`vdi_col.c:804-807`), scale 31 → 1000.
+    #[inline]
+    fn fivebits2vdi(col: u16) -> i16 {
+        (((col & 0x1f) as u32 * 1000 + 16) / 31) as i16
+    }
+
+    /// Set pen `colnum`'s pseudo-palette entry from a clamped `rgb`
+    /// (each component 0..1000). EmuTOS `set_color16` (`vdi_col.c:601-614`):
+    /// quantise each gun to 5 bits and pack `(r<<11)|(g<<6)|b`. The green
+    /// LSB (bit 5) stays 0 by construction ("as in TOS4, the VDI never sets
+    /// the least-significant bit of green"). Folded MAP_COL (see the struct
+    /// docs): the slot index is the VDI pen itself.
+    pub fn set_color16(&mut self, colnum: usize, rgb: [i16; 3]) {
+        let r = Self::vdi2fivebits(rgb[0]);
+        let g = Self::vdi2fivebits(rgb[1]);
+        let b = Self::vdi2fivebits(rgb[2]);
+        self.palette[colnum] = (r << 11) | (g << 6) | b;
+    }
+
+    /// The current (5-bit-quantised) colour of pen `colnum`, read back from
+    /// the pseudo-palette as VDI 0..1000 triples. EmuTOS `vq_color16`
+    /// "actual" branch (`vdi_col.c:832-837`): `palette[colnum]` (folded
+    /// MAP_COL), then `fivebits2vdi` per gun.
+    pub fn actual16(&self, colnum: usize) -> [i16; 3] {
+        let rgb = self.palette[colnum];
+        [
+            Self::fivebits2vdi(rgb >> 11),
+            Self::fivebits2vdi(rgb >> 6),
+            Self::fivebits2vdi(rgb),
+        ]
+    }
+}
+
 /// Static handle table. Mirrors the `MdArenaCell` idiom: an
 /// `UnsafeCell` array accessed only from the single-CPU, IRQ-off trap
 /// context (serialised like the rest of the TOS-API surface).
@@ -164,6 +254,17 @@ unsafe impl Sync for VwkTableCell {}
 
 static TABLE: VwkTableCell = VwkTableCell(UnsafeCell::new([Vwk::EMPTY; HANDLE_COUNT]));
 
+/// Static per-workstation truecolor extension table, parallel to [`TABLE`]
+/// and indexed by the same handle (see [`VwkExt`]). Zero-initialised
+/// ([`VwkExt::EMPTY`] is all-zero), so it lives in `.bss`, not `.data`.
+struct VwkExtTableCell(UnsafeCell<[VwkExt; HANDLE_COUNT]>);
+
+// SAFETY: touched only from the single-CPU, IRQ-off VDI trap path — the
+// same discipline as the `Vwk` handle table (`VwkTableCell`).
+unsafe impl Sync for VwkExtTableCell {}
+
+static EXT_TABLE: VwkExtTableCell = VwkExtTableCell(UnsafeCell::new([VwkExt::EMPTY; HANDLE_COUNT]));
+
 /// Borrow the handle table mutably.
 ///
 /// # Safety
@@ -172,6 +273,24 @@ static TABLE: VwkTableCell = VwkTableCell(UnsafeCell::new([Vwk::EMPTY; HANDLE_CO
 unsafe fn table() -> &'static mut [Vwk; HANDLE_COUNT] {
     // SAFETY: see `VwkTableCell`'s Sync impl.
     unsafe { &mut *TABLE.0.get() }
+}
+
+/// Resolve a handle to its truecolor extension ([`VwkExt`]), or `None` for
+/// an out-of-range handle. Unlike [`resolve`], this does **not** check
+/// `in_use`: `init_wk` seeds a workstation's extension while opening it, and
+/// `vs_color16`/`vq_color16` only reach here for a handle the dispatcher
+/// already resolved to an open workstation. The extension lives in a static
+/// parallel to the `Vwk` table (see [`EXT_TABLE`]).
+///
+/// # Safety
+/// Single trap path (no re-entrancy), as for the `Vwk` table.
+pub unsafe fn ext(handle: i16) -> Option<&'static mut VwkExt> {
+    if handle < 1 || handle as usize > HANDLE_COUNT {
+        return None;
+    }
+    // SAFETY: see `VwkExtTableCell`'s Sync impl.
+    let t = unsafe { &mut *EXT_TABLE.0.get() };
+    Some(&mut t[(handle - 1) as usize])
 }
 
 /// Allocate a free virtual-workstation handle (2..=`HANDLE_COUNT`) and

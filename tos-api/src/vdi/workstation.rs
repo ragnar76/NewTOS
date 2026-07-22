@@ -196,6 +196,33 @@ fn init_wk(vwk: &mut Vwk, pb: &Vdipb, backend: &dyn RasterBackend) {
     pb.set_contrl(4, 45);
     pb.set_contrl(2, 6);
 
+    // ── truecolor: seed this workstation's private pseudo-palette ──
+    // Under TRUECOLOR_MODE (v_planes > 8) each workstation gets its own
+    // colour tables, seeded from the device-global default (EmuTOS
+    // `init_wk`, `vdi_control.c:354-363`: copy `REQ_COL`/`req_col2` into
+    // `ext->req_col`, then `set_color16` for each pen). NewTOS' device
+    // default is the backend's 256-entry palette, exposed as the requested
+    // RGB via `query_color`.
+    if planes > 8 {
+        // SAFETY: single trap path; `vwk.handle` is the just-opened ws.
+        if let Some(ext) = unsafe { vwk::ext(vwk.handle) } {
+            for (l, slot) in ext.req_col.iter_mut().enumerate() {
+                let (r, g, b) = backend.query_color(l as u16);
+                *slot = [r as i16, g as i16, b as i16];
+            }
+            // Build the pseudo-palette for pens 0..254 (EmuTOS loops
+            // `l < 255`, `vdi_control.c:360`): pen 255 maps to hardware
+            // register 15, which no seeded pen writes, so its slot stays 0
+            // — folded, `palette[255]` likewise stays 0 (its default is
+            // black anyway), so `vq_color(255, flag=1)` is `(0,0,0)` as in
+            // EmuTOS. The default req_col is already in 0..1000 range.
+            for l in 0..255usize {
+                let rgb = ext.req_col[l];
+                ext.set_color16(l, rgb);
+            }
+        }
+    }
+
     // Materialise the parked cursor centre + default arrow form now (EmuTOS
     // `vdimouse_init`), so `vq_mouse`/`v_locator` report the centre before the
     // first explicit cursor op instead of the power-up (0, 0). Idempotent.

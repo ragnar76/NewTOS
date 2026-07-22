@@ -2,14 +2,16 @@
 //! state, the palette, a pixel, and the keyboard. Spec:
 //! `docs/api/vdi/inquiry/`.
 //!
-//! Colours round-trip through `MAP_COL`/`REV_MAP_COL`; NewTOS stores PEL
-//! directly in the `Vwk` and uses an identity 16-entry map, so the VDI
-//! index and the PEL coincide.
+//! Colour queries follow the same folded-`MAP_COL` (identity) model as the
+//! setters: the attribute inquiries echo the stored PEL directly, and
+//! `vq_color` reads the calling workstation's private truecolor tables
+//! under `TRUECOLOR_MODE` (see [`vs_color`](super::attributes::vs_color)
+//! and [`VwkExt`](super::vwk::VwkExt)).
 
 use super::backend::RasterBackend;
 use super::font;
 use super::req_col;
-use super::vwk::Vwk;
+use super::vwk::{self, Vwk};
 use super::Vdipb;
 
 // Text effect bits queried by vqt_fontinfo (EmuTOS `F_THICKEN`/`F_SKEW`).
@@ -68,11 +70,19 @@ pub fn vqt_attributes(pb: &Vdipb, vwk: &Vwk) {
 
 /// Opcode 26 — `vq_color`: read a palette entry. `INTIN[0]` = index,
 /// `INTIN[1]` = flag (0 = last *requested* value, ≠0 = *actual*). EmuTOS
-/// `vdi_col.c:843-936`: flag 0 returns the raw `REQ_COL` request (which
-/// may lie outside 0..1000), flag ≠0 the hardware DAC read-back. NewTOS
-/// keeps the raw request in the `REQ_COL` shadow and reads the clamped/
-/// quantised palette from the backend for the "actual" path.
-pub fn vq_color(pb: &Vdipb, ncol: u16, backend: &dyn RasterBackend) {
+/// `vdi_vq_color` (`vdi_col.c:843-936`): the range check + `INTOUT[0]`
+/// default happen first, then it branches on `TRUECOLOR_MODE`
+/// (`v_planes > 8`, `vdi_col.c:862-868`):
+///
+/// - **Truecolor** (our profile): `vq_color16` (`vdi_col.c:813-838`) reads
+///   the **calling workstation's private** tables (via [`vwk::ext`]) —
+///   flag 0 the raw `req_col`, flag ≠0 the 5-bit-quantised value from the
+///   pseudo-palette ([`VwkExt::actual16`](super::vwk::VwkExt::actual16),
+///   solving V3-010 with the truecolor quantisation formula rather than a
+///   DAC read-back).
+/// - **Palette** (`planes <= 8`, non-truecolor backend): flag 0 the raw
+///   device-global `REQ_COL` shadow, flag ≠0 the backend read-back.
+pub fn vq_color(pb: &Vdipb, vwk: &Vwk, ncol: u16, backend: &dyn RasterBackend) {
     let idx = pb.intin(0);
     let flag = pb.intin(1);
     pb.set_intout(1, 0);
@@ -84,6 +94,26 @@ pub fn vq_color(pb: &Vdipb, ncol: u16, backend: &dyn RasterBackend) {
         return;
     }
     pb.set_intout(0, idx);
+
+    if backend.planes() > 8 {
+        // Truecolor (`vq_color16`): read the calling workstation's tables.
+        // SAFETY: single trap path; `vwk.handle` is the open workstation.
+        if let Some(ext) = unsafe { vwk::ext(vwk.handle) } {
+            let colnum = idx as usize;
+            let rgb = if flag == 0 {
+                ext.req_col[colnum] // last-requested (raw)
+            } else {
+                ext.actual16(colnum) // current 5-bit-quantised value
+            };
+            pb.set_intout(1, rgb[0]);
+            pb.set_intout(2, rgb[1]);
+            pb.set_intout(3, rgb[2]);
+        }
+        pb.set_contrl(4, 4);
+        return;
+    }
+
+    // Non-truecolor palette path.
     // flag 0: the raw last-requested value (REQ_COL); registers never set
     // by vs_color fall back to the live palette (the hardware default).
     // flag ≠0: the actual hardware palette read-back.

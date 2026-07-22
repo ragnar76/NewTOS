@@ -260,7 +260,7 @@ pub unsafe fn dispatch(vdipb_ptr: u64, abi: Abi) {
                 let ncol = backend.num_colors();
                 match opcode {
                     102 => workstation::vq_extnd(&pb, vwk, backend),
-                    14 => attributes::vs_color(&pb, ncol, backend),
+                    14 => attributes::vs_color(&pb, vwk, ncol, backend),
                     15 => attributes::vsl_type(&pb, vwk),
                     16 => attributes::vsl_width(&pb, vwk),
                     17 => attributes::vsl_color(&pb, vwk, ncol),
@@ -293,7 +293,7 @@ pub unsafe fn dispatch(vdipb_ptr: u64, abi: Abi) {
                     11 => gdp::v_gdp(&pb, vwk, backend),
                     103 => contour::v_contourfill(&pb, vwk, backend),
                     // ── inquiry (read-only) ──
-                    26 => inquiry::vq_color(&pb, ncol, backend),
+                    26 => inquiry::vq_color(&pb, vwk, ncol, backend),
                     35 => inquiry::vql_attributes(&pb, vwk),
                     36 => inquiry::vqm_attributes(&pb, vwk),
                     37 => inquiry::vqf_attributes(&pb, vwk),
