@@ -11,7 +11,7 @@
 use core::cell::UnsafeCell;
 use core::sync::atomic::{AtomicI16, AtomicU16, AtomicU64, AtomicU8, Ordering};
 
-use super::backend::{ClipRect, Pel, RasterBackend};
+use super::backend::{ClipRect, RasterBackend};
 use super::vwk::validate_color_index;
 use super::Vdipb;
 
@@ -41,8 +41,13 @@ static USER_WHEEL: AtomicU64 = AtomicU64::new(0);
 static TIM_ADDR: AtomicU64 = AtomicU64::new(0);
 
 // ── 16×16 backing store for the pixels under a shown cursor ──
+//
+// Holds the raw device pixel words (XRGB8888) saved by `draw`, restored
+// verbatim by `erase` — the bit-exact save-under EmuTOS' `cur_display`/
+// `cur_replace` perform on the screen words (AUD-V6-001). A PEL index would
+// lose any colour that is not a palette entry (Falcon truecolor content).
 struct Backing {
-    px: UnsafeCell<[Pel; 256]>,
+    px: UnsafeCell<[u32; 256]>,
     ox: AtomicI16,
     oy: AtomicI16,
     valid: AtomicU8,
@@ -221,7 +226,17 @@ fn full_clip(backend: &dyn RasterBackend) -> ClipRect {
     ClipRect::full(backend.width(), backend.height())
 }
 
-/// Save the 16×16 area under the cursor and draw the sprite.
+/// Save the 16×16 area under the cursor bit-exact, then draw the sprite.
+///
+/// EmuTOS `cur_display`/`cur_display16` save the raw screen words under the
+/// sprite (`*save++ = *dst`, `vdi_mouse.c:983-985`) *before* overwriting
+/// them. We do the chunky-per-pixel equivalent: store the exact device
+/// pixel word via [`get_device_pixel`](RasterBackend::get_device_pixel),
+/// **not** the nearest-PEL round-trip `read_pixel` gives — the latter
+/// corrupts every pixel whose colour is not a palette entry (Falcon
+/// truecolor content), AUD-V6-001. The sprite paint itself keeps the PEL
+/// `fill_rect` path (mask → bg, data → fg), which is exact for the
+/// two-colour sprite. Order (save → draw) is unchanged.
 fn draw(backend: &dyn RasterBackend) {
     let ox = GCURX.load(Ordering::Relaxed) - HOT_X.load(Ordering::Relaxed);
     let oy = GCURY.load(Ordering::Relaxed) - HOT_Y.load(Ordering::Relaxed);
@@ -235,7 +250,7 @@ fn draw(backend: &dyn RasterBackend) {
         let drow = DATA[dy as usize].load(Ordering::Relaxed);
         for dx in 0..16i16 {
             let (px, py) = (ox + dx, oy + dy);
-            store[(dy * 16 + dx) as usize] = backend.read_pixel(px, py);
+            store[(dy * 16 + dx) as usize] = backend.get_device_pixel(px, py);
             let bit = 0x8000u16 >> dx;
             if drow & bit != 0 {
                 backend.fill_rect(px, py, 1, 1, fg, clip);
@@ -249,21 +264,32 @@ fn draw(backend: &dyn RasterBackend) {
     BACK.valid.store(1, Ordering::Relaxed);
 }
 
-/// Restore the pixels saved under the cursor.
+/// Restore the pixels saved under the cursor bit-exact.
+///
+/// EmuTOS `cur_replace`/`cur_replace16` write the saved screen words
+/// straight back (`*dst = *src++`, `vdi_mouse.c:1099`/`:1046`). We do the
+/// chunky-per-pixel equivalent: put each saved device pixel word back via
+/// [`put_device_pixel`](RasterBackend::put_device_pixel) — restoring the
+/// exact original colour, not the palette approximation `fill_rect` would
+/// (AUD-V6-001). `put_device_pixel` does not flush on its own, so the whole
+/// 16×16 box is flushed to the point of coherency once at the end. Cells
+/// off the screen edge are ignored by the backend, matching the clipping in
+/// `cur_replace`. Order (erase → restore) and the `BACK.valid` swap
+/// (guarding against a double restore) are unchanged.
 fn erase(backend: &dyn RasterBackend) {
     if BACK.valid.swap(0, Ordering::Relaxed) == 0 {
         return;
     }
     let ox = BACK.ox.load(Ordering::Relaxed);
     let oy = BACK.oy.load(Ordering::Relaxed);
-    let clip = full_clip(backend);
     // SAFETY: single trap path.
     let store = unsafe { &*BACK.px.get() };
     for dy in 0..16i16 {
         for dx in 0..16i16 {
-            backend.fill_rect(ox + dx, oy + dy, 1, 1, store[(dy * 16 + dx) as usize], clip);
+            backend.put_device_pixel(ox + dx, oy + dy, store[(dy * 16 + dx) as usize]);
         }
     }
+    backend.flush_rect(ox, oy, ox + 15, oy + 15);
 }
 
 /// Opcode 111 — `vsc_form`: install the 37-WORD cursor definition from
