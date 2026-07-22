@@ -7,15 +7,20 @@
 //! replaces this impl without the VDI layer changing (see the
 //! `RasterBackend` docs).
 //!
-//! Colours arrive as PEL (palette index); we resolve them through a
-//! 256-entry palette into the truecolor framebuffer. VDI convention:
-//! index 0 = white (background), 1 = black (foreground). Pens 0..15 are
-//! the standard GEM 16; pens 16..255 are EmuTOS' extended VIDEL default
-//! (`videl_palette2`). The advertised colour count (`DEV_TAB[13]`) is 256,
+//! Colours arrive as PEL (palette index); we resolve each at the write
+//! point through the **active** per-workstation pseudo-palette
+//! ([`ACTIVE_PALETTE`], EmuTOS `CUR_WORK->ext->palette`, `vdi_line.c:459`),
+//! which the VDI dispatcher points at the drawing workstation before every
+//! colour-sensitive op. The pseudo-palette holds one RGB555-in-565 word per
+//! pen (Falcon truecolor, `vdi_col.c:601-614`); the backend expands each gun
+//! 5→8 bits into the 32-bpp XRGB8888 framebuffer (`c8 = (c5<<3)|(c5>>2)`).
+//! VDI convention: index 0 = white (background), 1 = black (foreground).
+//! Pens 0..15 default to EmuTOS `videl_palette1`, pens 16..255 to
+//! `videl_palette2`. The advertised colour count (`DEV_TAB[13]`) is 256,
 //! matching a Falcon truecolor workstation, while the framebuffer stays
 //! 32-bpp XRGB8888 (an internal detail per `docs/COMPATIBILITY.md`).
 
-use core::sync::atomic::{AtomicU32, Ordering};
+use core::sync::atomic::{AtomicBool, AtomicU16, AtomicU32, Ordering};
 
 use tos_api::vdi::backend::{ClipRect, MonoSrc, PatternFill, Pel, RasterBackend, Rect, WriteMode};
 
@@ -34,29 +39,21 @@ const NUM_COLORS: u16 = 256;
 /// (`vdi/vdi_defs.h:22`, `TRUECOLOR_MODE (v_planes > 8)`).
 const PLANES: u16 = 16;
 
-/// The standard GEM 16-colour palette (pens 0..15) as 8-bit `(r, g, b)`
-/// triples. Index 0 is white and 1 is black, matching VDI's background/
-/// foreground default. Kept unchanged for the truecolor bump so the
-/// desktop/AES (which draw with pens 0..15) render identically; pens
-/// 16..255 come from [`VIDEL_PALETTE2`]. `vs_color` overwrites entries at
-/// runtime (see [`PALETTE`]).
-const DEFAULT_PALETTE: [(u8, u8, u8); 16] = [
-    (255, 255, 255), // 0  white (background)
-    (0, 0, 0),       // 1  black (foreground)
-    (255, 0, 0),     // 2  red
-    (0, 255, 0),     // 3  green
-    (0, 0, 255),     // 4  blue
-    (0, 255, 255),   // 5  cyan
-    (255, 255, 0),   // 6  yellow
-    (255, 0, 255),   // 7  magenta
-    (192, 192, 192), // 8  light grey
-    (128, 128, 128), // 9  dark grey
-    (128, 0, 0),     // 10 dark red
-    (0, 128, 0),     // 11 dark green
-    (0, 0, 128),     // 12 dark blue
-    (0, 128, 128),   // 13 dark cyan
-    (128, 128, 0),   // 14 dark yellow
-    (128, 0, 128),   // 15 dark magenta
+/// EmuTOS' `videl_palette1` (`vdi/vdi_col.c:130-136`): the Falcon default
+/// palette for pens 0..15, as VDI `(r, g, b)` triples in the 0..=1000
+/// range. This is the device-global default a truecolor workstation seeds
+/// its low pens from (`init_colors`, `vdi_col.c:718`
+/// `memcpy(REQ_COL, videl_palette1, …)`). Index 0 is white (background),
+/// 1 is black (foreground); pens 16..255 come from [`VIDEL_PALETTE2`].
+/// Pens 8..15 are the Falcon look (light grey 733, dark grey 533,
+/// half-intensity primaries 667) — visibly different from the plain GEM-16
+/// greys, and the intended appearance for a 1:1 EmuTOS-Falcon desktop.
+#[rustfmt::skip]
+const VIDEL_PALETTE1: [(u16, u16, u16); 16] = [
+    (1000, 1000, 1000), (0, 0, 0),       (1000, 0, 0),    (0, 1000, 0),    // 0..3
+    (0, 0, 1000),       (0, 1000, 1000), (1000, 1000, 0), (1000, 0, 1000), // 4..7
+    (733, 733, 733),    (533, 533, 533), (667, 0, 0),     (0, 667, 0),     // 8..11
+    (0, 0, 667),        (0, 667, 667),   (667, 667, 0),   (667, 0, 667),   // 12..15
 ];
 
 /// EmuTOS' extended VIDEL default palette for pens 16..255, as VDI
@@ -129,30 +126,59 @@ const VIDEL_PALETTE2: [(u16, u16, u16); 240] = [
     (267, 133, 0), (267, 67, 0), (1000, 1000, 1000), (0, 0, 0),
 ];
 
-/// The live palette: PEL → packed XRGB, mutated by `vs_color`. Lazily
-/// initialised from [`DEFAULT_PALETTE`] on first read (entry 0 carrying
-/// the init sentinel in its high byte). Accessed only from the single
-/// trap path, but `AtomicU32` keeps it `Sync` without `unsafe`.
-static PALETTE: [AtomicU32; NUM_COLORS as usize] =
-    [const { AtomicU32::new(PAL_UNINIT) }; NUM_COLORS as usize];
+/// The **active** VDI pseudo-palette the draw path resolves each PEL
+/// through at the write point (EmuTOS `CUR_WORK->ext->palette`,
+/// `vdi_line.c:459-460`). One 16-bit value per pen, laid out
+/// `RRRRRGGGGG0BBBBB` (RGB555 packed into a 565 slot, green LSB / bit 5
+/// always 0 — EmuTOS `set_color16`, `vdi_col.c:601-614`). The VDI
+/// dispatcher points this at the drawing workstation's own per-`Vwk`
+/// pseudo-palette before every colour-sensitive op via
+/// [`RasterBackend::set_active_palette`]; its lazily-seeded default is the
+/// 5-bit quantisation of the device default (`videl_palette1` /
+/// `videl_palette2`), identical to what a fresh workstation seeds, so an
+/// in-kernel draw before any op resolves the same colours. Accessed only
+/// from the single trap path; `AtomicU16` keeps it `Sync` without `unsafe`.
+static ACTIVE_PALETTE: [AtomicU16; NUM_COLORS as usize] =
+    [const { AtomicU16::new(0) }; NUM_COLORS as usize];
 
-/// The requested RGB (0..=1000) per entry, packed `r<<20 | g<<10 | b`,
-/// returned by `vq_color`. Lazily initialised alongside [`PALETTE`].
+/// The device-global requested RGB (0..=1000) per pen, packed
+/// `r<<20 | g<<10 | b`, returned by `vq_color` and used to seed each
+/// workstation's private colour table (`init_wk`). Seeded from
+/// [`VIDEL_PALETTE1`] (0..15) + [`VIDEL_PALETTE2`] (16..255); `set_color`
+/// (XBIOS / the non-truecolor path) overwrites entries.
 static REQ_COL: [AtomicU32; NUM_COLORS as usize] =
     [const { AtomicU32::new(0) }; NUM_COLORS as usize];
 
-/// Sentinel marking an uninitialised [`PALETTE`] slot (alpha byte set,
-/// which a real XRGB colour never carries).
-const PAL_UNINIT: u32 = 0xFF00_0000;
+/// Set once [`REQ_COL`] / [`ACTIVE_PALETTE`] hold their seeded defaults.
+static PAL_INIT: AtomicBool = AtomicBool::new(false);
 
-/// Scale an 8-bit channel (0..=255) to the VDI 0..=1000 range.
-const fn to_vdi(c: u8) -> u16 {
-    ((c as u32 * 1000 + 127) / 255) as u16
+/// Quantise a VDI colour component (0..=1000, caller-clamped) to 5 bits
+/// (0..31). EmuTOS `vdi2fivebits` (`vdi_col.c:588-591`): scale 1000 → 31.
+const fn vdi2fivebits(col: u16) -> u16 {
+    ((col as u32 * 31 + 500) / 1000) as u16
 }
 
-/// Scale a VDI channel (0..=1000) to 8-bit (0..=255).
-fn to_rgb8(c: u16) -> u8 {
-    ((c.min(1000) as u32 * 255 + 500) / 1000) as u8
+/// Pack three VDI colour components (0..=1000) into the RGB555-in-565
+/// pseudo-palette word EmuTOS' `set_color16` builds (`vdi_col.c:601-614`):
+/// `(r5<<11)|(g5<<6)|b5`. Bit 5 (the green LSB) stays 0 by construction.
+const fn pack555(r: u16, g: u16, b: u16) -> u16 {
+    (vdi2fivebits(r) << 11) | (vdi2fivebits(g) << 6) | vdi2fivebits(b)
+}
+
+/// Expand a 5-bit colour component (0..31) to 8 bits by bit-replication —
+/// the Falcon VIDEL truecolor DAC expansion: `c8 = (c5<<3)|(c5>>2)`.
+const fn expand5to8(c5: u16) -> u8 {
+    ((c5 << 3) | (c5 >> 2)) as u8
+}
+
+/// Expand one RGB555-in-565 pseudo-palette word to packed XRGB8888 (the
+/// framebuffer pixel format), 5→8-bit per gun.
+fn pal555_to_xrgb(p: u16) -> u32 {
+    rgb(
+        expand5to8((p >> 11) & 0x1f),
+        expand5to8((p >> 6) & 0x1f),
+        expand5to8(p & 0x1f),
+    )
 }
 
 /// Squared RGB distance between two packed XRGB colours (for the
@@ -164,28 +190,28 @@ fn rgb_dist(a: u32, b: u32) -> u32 {
     (dr * dr + dg * dg + db * db) as u32
 }
 
-/// Initialise the palette from the defaults on first use: pens 0..15 from
-/// the GEM 16 ([`DEFAULT_PALETTE`], 8-bit), pens 16..255 from EmuTOS'
-/// extended VIDEL default ([`VIDEL_PALETTE2`], VDI 0..1000).
+/// Seed the device defaults on first use: the requested RGB
+/// ([`REQ_COL`], 0..1000) and the 5-bit-quantised active pseudo-palette
+/// ([`ACTIVE_PALETTE`]) from EmuTOS `videl_palette1` (pens 0..15) and
+/// `videl_palette2` (pens 16..255). The active-palette quantisation
+/// mirrors EmuTOS `set_color16` exactly, so it matches what each fresh
+/// workstation seeds via `init_wk`.
 fn ensure_palette_init() {
-    if PALETTE[0].load(Ordering::Relaxed) != PAL_UNINIT {
+    if PAL_INIT.load(Ordering::Relaxed) {
         return;
     }
-    // Pens 0..15: the GEM 16 (8-bit RGB; the VDI request is derived back
-    // to the 0..1000 range for `vq_color`).
-    for (i, &(r, g, b)) in DEFAULT_PALETTE.iter().enumerate() {
-        PALETTE[i].store(rgb(r, g, b), Ordering::Relaxed);
-        let req = (to_vdi(r) as u32) << 20 | (to_vdi(g) as u32) << 10 | to_vdi(b) as u32;
-        REQ_COL[i].store(req, Ordering::Relaxed);
-    }
-    // Pens 16..255: `videl_palette2` values are already VDI 0..1000, stored
-    // verbatim as the request and expanded to 8-bit for the live palette.
-    for (j, &(r, g, b)) in VIDEL_PALETTE2.iter().enumerate() {
-        let i = 16 + j;
-        PALETTE[i].store(rgb(to_rgb8(r), to_rgb8(g), to_rgb8(b)), Ordering::Relaxed);
+    let seed = |i: usize, r: u16, g: u16, b: u16| {
         let req = (r as u32) << 20 | (g as u32) << 10 | b as u32;
         REQ_COL[i].store(req, Ordering::Relaxed);
+        ACTIVE_PALETTE[i].store(pack555(r, g, b), Ordering::Relaxed);
+    };
+    for (i, &(r, g, b)) in VIDEL_PALETTE1.iter().enumerate() {
+        seed(i, r, g, b);
     }
+    for (j, &(r, g, b)) in VIDEL_PALETTE2.iter().enumerate() {
+        seed(16 + j, r, g, b);
+    }
+    PAL_INIT.store(true, Ordering::Relaxed);
 }
 
 /// Resolve the active board framebuffer (exactly one per board).
@@ -205,7 +231,11 @@ impl VdiScreen {
     #[inline]
     fn pel_to_rgb(pel: Pel) -> u32 {
         ensure_palette_init();
-        PALETTE[(pel as usize) & (NUM_COLORS as usize - 1)].load(Ordering::Relaxed)
+        // Resolve the PEL through the *active* workstation pseudo-palette at
+        // the write point (EmuTOS `CUR_WORK->ext->palette`,
+        // `vdi_line.c:459-460`), expanding the 5-bit guns to 8 bits. `pel` is
+        // a `u8`, so it always indexes the 256-entry array in bounds.
+        pal555_to_xrgb(ACTIVE_PALETTE[pel as usize].load(Ordering::Relaxed))
     }
 
     /// Clean the cache lines covering the inclusive pixel rectangle
@@ -317,7 +347,12 @@ impl RasterBackend for VdiScreen {
         let (r, g, b) = (r.min(1000), g.min(1000), b.min(1000));
         let req = (r as u32) << 20 | (g as u32) << 10 | b as u32;
         REQ_COL[index as usize].store(req, Ordering::Relaxed);
-        PALETTE[index as usize].store(rgb(to_rgb8(r), to_rgb8(g), to_rgb8(b)), Ordering::Relaxed);
+        // Program the active pseudo-palette (XBIOS `Setcolor` / the
+        // non-truecolor CLUT path), 5-bit-quantised like the Falcon DAC. The
+        // VDI truecolor draw path resets the active palette per-op from the
+        // drawing workstation's own table, so this is the immediate colour a
+        // non-VDI palette write (XBIOS) leaves until the next VDI op.
+        ACTIVE_PALETTE[index as usize].store(pack555(r, g, b), Ordering::Relaxed);
     }
 
     fn query_color(&self, index: u16) -> (u16, u16, u16) {
@@ -327,6 +362,13 @@ impl RasterBackend for VdiScreen {
         ensure_palette_init();
         let req = REQ_COL[index as usize].load(Ordering::Relaxed);
         (((req >> 20) & 0x3FF) as u16, ((req >> 10) & 0x3FF) as u16, (req & 0x3FF) as u16)
+    }
+
+    fn set_active_palette(&self, palette: &[u16; 256]) {
+        ensure_palette_init();
+        for (slot, &p) in ACTIVE_PALETTE.iter().zip(palette.iter()) {
+            slot.store(p, Ordering::Relaxed);
+        }
     }
 
     fn read_pixel(&self, x: i16, y: i16) -> Pel {
@@ -341,11 +383,13 @@ impl RasterBackend for VdiScreen {
                 .add(y as usize * fb.stride_px() as usize + x as usize)
                 .read_volatile()
         } & 0x00FF_FFFF;
-        // Reverse-map the XRGB value to the nearest palette index.
+        // Reverse-map the XRGB value to the nearest active-palette index —
+        // the same per-Vwk pseudo-palette the draw path resolves through, so
+        // a pixel this backend drew round-trips exactly.
         let mut best = 0u8;
         let mut best_d = u32::MAX;
-        for (i, entry) in PALETTE.iter().enumerate() {
-            let d = rgb_dist(packed, entry.load(Ordering::Relaxed) & 0x00FF_FFFF);
+        for (i, entry) in ACTIVE_PALETTE.iter().enumerate() {
+            let d = rgb_dist(packed, pal555_to_xrgb(entry.load(Ordering::Relaxed)) & 0x00FF_FFFF);
             if d < best_d {
                 best_d = d;
                 best = i as u8;

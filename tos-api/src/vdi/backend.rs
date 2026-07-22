@@ -109,6 +109,22 @@ pub trait RasterBackend: Sync {
     /// `index` (`vq_color` "requested" mode). Out-of-range → `(0,0,0)`.
     fn query_color(&self, index: u16) -> (u16, u16, u16);
 
+    /// Point the backend's PEL → device-colour resolution at the given
+    /// **active** pseudo-palette for the following draw ops. Under Falcon
+    /// truecolor every primitive keeps a plain PEL and resolves it at the
+    /// write point through `CUR_WORK->ext->palette` (EmuTOS
+    /// `swblit_rect_common16`, `vdi_line.c:459-460`) — not through a global
+    /// device CLUT. The VDI dispatcher sets this to the drawing
+    /// workstation's own per-`Vwk` pseudo-palette before each colour-
+    /// sensitive op (`vdi_col.c:601-614`, `set_color16`).
+    ///
+    /// Each entry is one 16-bit pixel value `RRRRRGGGGG0BBBBB` (RGB555
+    /// packed into a 565 slot, the green LSB / bit 5 always 0 — EmuTOS
+    /// `vdi_defs.h:156`, `vdi_col.c:599`); the backend expands each gun
+    /// 5→8 bits at the write point (`c8 = (c5<<3)|(c5>>2)`, the VIDEL
+    /// truecolor DAC expansion).
+    fn set_active_palette(&self, palette: &[u16; 256]);
+
     /// Read the palette index (PEL) at device pixel `(x, y)`, reverse-
     /// mapping the stored colour to the nearest CLUT entry (`v_get_pixel`,
     /// `v_contourfill`). Out-of-bounds → `0`.

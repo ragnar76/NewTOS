@@ -244,6 +244,18 @@ pub unsafe fn dispatch(vdipb_ptr: u64, abi: Abi) {
         None => return, // no such open workstation → VDI no-op
     }
 
+    // Point the backend's PEL resolution at THIS workstation's private
+    // pseudo-palette for the op about to run: under Falcon truecolor every
+    // primitive keeps a plain PEL and resolves it at the write point through
+    // `CUR_WORK->ext->palette` (EmuTOS `swblit_rect_common16`,
+    // `vdi_line.c:459-460`), so the active palette must track the drawing
+    // workstation. Unless `vs_color` changed it, this equals the device
+    // default, so `read_pixel`/inquiry stay consistent too.
+    // SAFETY: single trap path; `handle` resolved to an open ws above.
+    if let Some(ext) = unsafe { vwk::ext(handle) } {
+        backend.set_active_palette(&ext.palette);
+    }
+
     match opcode {
         // ── workstation close (dispatched by handle, not the vwk ref) ──
         // v_clswk (2) closes ALL virtual workstations and leaves the

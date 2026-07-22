@@ -226,20 +226,14 @@ pub fn vsf_perimeter(pb: &Vdipb, vwk: &mut Vwk) {
 /// Two paths, gated on `TRUECOLOR_MODE` (`v_planes > 8`, `vdi_col.c:661-666`):
 ///
 /// - **Truecolor** (our Falcon profile, `planes == 16`): `vs_color16`
-///   (`vdi_col.c:620-648`) writes the **calling workstation's private**
+///   (`vdi_col.c:620-648`) writes **only** the calling workstation's private
 ///   5-bit pseudo-palette + `req_col` (via [`vwk::ext`]), so two open
 ///   workstations keep independent colours and `vq_color(flag=1)` reads
-///   back the 5-bit-quantised value. As a deliberate TC2 **interim bridge**
-///   (not a stub) it ALSO programs the full-precision backend CLUT: the
-///   NewTOS draw path still resolves PEL through that CLUT, whereas EmuTOS'
-///   truecolor VDI resolves through the per-Vwk 5-bit palette at the write
-///   point. Keeping the CLUT in sync here keeps `vs_color` affecting the
-///   drawn colour (no regression vs. pre-TC2) while the desktop screendumps
-///   stay byte-identical — the CLUT keeps full 8-bit precision and the
-///   desktop never calls `vs_color`. The full per-Vwk 5-bit *draw* path
-///   (quantised drawing + EmuTOS `videl_palette1` defaults + a desktop
-///   re-baseline) lands with the 16-bit RGB565 framebuffer format in **TC3**,
-///   where the 5-bit quantisation falls out naturally.
+///   back the 5-bit-quantised value. The draw path resolves each PEL through
+///   this per-`Vwk` pseudo-palette at the write point (the active-palette
+///   boundary the VDI dispatcher sets, `mod.rs`), exactly as EmuTOS' truecolor
+///   VDI reads `CUR_WORK->ext->palette` (`vdi_line.c:459-460`) — so **no
+///   separate backend CLUT is programmed** (the TC2 interim bridge is gone).
 /// - **Palette** (`planes <= 8`, unreachable in the truecolor profile but
 ///   kept for a non-truecolor backend): the original hardware-CLUT path —
 ///   raw request into the device-global `REQ_COL` shadow, clamped copy into
@@ -252,9 +246,10 @@ pub fn vs_color(pb: &Vdipb, vwk: &Vwk, ncol: u16, backend: &dyn RasterBackend) {
     let (r, g, b) = (pb.intin(1), pb.intin(2), pb.intin(3));
 
     if backend.planes() > 8 {
-        // Truecolor (`vs_color16`): write the calling workstation's own
-        // 5-bit query tables. SAFETY: single trap path; `vwk.handle` is the
-        // open ws.
+        // Truecolor (`vs_color16`): write the calling workstation's own 5-bit
+        // query/draw tables and nothing else — the draw path resolves through
+        // this per-Vwk pseudo-palette at the write point. SAFETY: single trap
+        // path; `vwk.handle` is the open ws.
         if let Some(ext) = unsafe { vwk::ext(vwk.handle) } {
             let colnum = idx as usize;
             // Raw, unclamped request (EmuTOS `req_col[colnum][i] = *intin`).
@@ -263,14 +258,6 @@ pub fn vs_color(pb: &Vdipb, vwk: &Vwk, ncol: u16, backend: &dyn RasterBackend) {
             let clamp = |v: i16| v.clamp(0, 1000);
             ext.set_color16(colnum, [clamp(r), clamp(g), clamp(b)]);
         }
-        // Interim draw-path bridge (TC2 → resolved in TC3): also keep the
-        // full-precision backend CLUT the draw path reads in sync, so
-        // `vs_color` still changes the drawn colour. Full 5-bit per-Vwk draw
-        // fidelity is deferred to the TC3 16-bit RGB565 framebuffer (see the
-        // fn docs). NOT a stub — the CLUT and the query palette are both
-        // authoritative for their respective consumers (draw / vq_color).
-        let clamp = |v: i16| v.clamp(0, 1000) as u16;
-        backend.set_color(idx as u16, clamp(r), clamp(g), clamp(b));
         return;
     }
 
