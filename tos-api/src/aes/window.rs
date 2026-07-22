@@ -1799,25 +1799,38 @@ fn find_handle(mx: i16, my: i16) -> i16 {
     best
 }
 
-/// AES window-frame interception (the `evnt_multi` hook, like the Menu
-/// Manager). On a button press in a window frame, handle the gadget and
-/// write a `WM_*` message into `pbuff`; returns true if a message was
-/// produced. A click in the work area (or desktop) returns false so the
-/// app sees the raw button.
-pub fn intercept(pbuff: u64) -> bool {
+/// AES window-frame interception (the `evnt_multi` hook, mirroring the EmuTOS
+/// Control Manager's `hctl_window`, `gemctrl.c:158`). On a button press in a
+/// window frame, handle the gadget and post the resulting `WM_*` message into
+/// the window **owner's** per-app FIFO — the EmuTOS `ct_msgup`→`ap_sendmsg`→
+/// `aqueue`/`doq` path (`gemctrl.c:81-102`, `gemwmlib.c:851-863`,
+/// `gemqueue.c:85-125`), exactly the routing `send_redraw` already uses. The
+/// caller (`evnt_multi`) then delivers it through the regular `MU_MESAG`
+/// dequeue, so frame messages obey FIFO order (and same-window redraw / arrow
+/// coalescing) instead of clobbering a message the app has not yet read
+/// (AUD-P2-001). A click in the work area (or on the desktop) is a no-op.
+pub fn intercept() {
     if crate::vdi::mouse_buttons() & 0x01 == 0 {
-        return false;
+        return;
     }
     let (mx, my) = crate::vdi::mouse_position();
     let handle = find_handle(mx, my);
     if handle == 0 {
-        return false;
+        return;
     }
     let Some(backend) = host().and_then(|h| h.raster()) else {
-        return false;
+        return;
+    };
+    // The FIFO target is the window owner (EmuTOS `ct_msgup`'s `owner` =
+    // `pwin->w_owner`, `gemctrl.c:314`); at single-app this is the running app.
+    let owner = match win(handle) {
+        Some(w) => w.owner,
+        None => return,
     };
 
     let mut msg = [0i16; 8];
+    // `ap_sendmsg` sets `msg[1] = rlr->p_pid`, the sender pid (`gemwmlib.c:855`);
+    // for ctlmgr messages that is the control process, at single-app the app.
     msg[1] = super::appl::current_pid();
     msg[3] = handle;
 
@@ -1826,23 +1839,24 @@ pub fn intercept(pbuff: u64) -> bool {
         msg[0] = WM_TOPPED;
         wait_release();
         top_window(handle);
-        return emit(pbuff, &msg);
+        post_to_owner(owner, &msg);
+        return;
     }
 
     let w = match win(handle) {
         Some(w) => w,
-        None => return false,
+        None => return,
     };
     match gadget_at(w, mx, my) {
         Gadget::Closer => {
             if !watchbox(gad_rect(w, Gadget::Closer), G_CLOSE, backend) {
-                return false;
+                return;
             }
             msg[0] = WM_CLOSED;
         }
         Gadget::Fuller => {
             if !watchbox(gad_rect(w, Gadget::Fuller), G_FULL, backend) {
-                return false;
+                return;
             }
             msg[0] = WM_FULLED;
         }
@@ -1872,22 +1886,22 @@ pub fn intercept(pbuff: u64) -> bool {
             };
             wait_release();
         }
-        Gadget::None => return false,
+        Gadget::None => return,
     }
-    emit(pbuff, &msg)
+    post_to_owner(owner, &msg);
 }
 
-fn emit(pbuff: u64, msg: &[i16; 8]) -> bool {
-    if pbuff != 0 {
-        // SAFETY: the message buffer is >= 8 WORDs (GEM contract).
-        unsafe {
-            let p = pbuff as *mut i16;
-            for (i, &v) in msg.iter().enumerate() {
-                p.add(i).write(v);
-            }
-        }
+/// Post a Control-Manager `WM_*` message into `owner`'s per-app FIFO — the
+/// EmuTOS `ap_sendmsg`→`aqueue`/`doq` enqueue path (`gemwmlib.c:851-863`,
+/// `gemqueue.c:85-125`), the same routing [`send_redraw`] uses. This replaces
+/// the former direct-`pbuff` write so frame messages queue in FIFO order (and
+/// `WM_ARROWED` coalesces) instead of overwriting a message still unread by
+/// the app (AUD-P2-001).
+fn post_to_owner(owner: i16, msg: &[i16; 8]) {
+    // SAFETY: single trap path; `post_msg` hands the message to the live slot.
+    unsafe {
+        super::pd::post_msg(owner, *msg);
     }
-    true
 }
 
 /// Test hook (not wired to boot): the message at the **front** of process

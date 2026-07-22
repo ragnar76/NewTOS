@@ -50,42 +50,50 @@ const MENU_BAR_H: i16 = 19;
 /// `MN_SELECTED` message id.
 const MN_SELECTED: i16 = 10;
 
-/// AES menu-bar interception: if a menu bar is installed and the cursor is
+/// AES menu-bar interception (mirroring the EmuTOS Control Manager's
+/// `hctl_rect`, `gemctrl.c:318`): if a menu bar is installed and the cursor is
 /// over it, run the drop-down tracker (`menu::track`) — GEM hover menus, no
-/// click needed to open. On a selection, write an `MN_SELECTED` message into
-/// `pbuff` and return `MU_MESAG`; otherwise (no menu, not in the bar, or
-/// cancelled) return 0.
-fn menu_intercept(pbuff: u64) -> u16 {
+/// click needed to open. On a selection, post an `MN_SELECTED` message into
+/// the menu owner's per-app FIFO — the EmuTOS `ct_msgup(MN_SELECTED, gl_mnppd,
+/// …)`→`ap_sendmsg`→`aqueue`/`doq` path (`gemctrl.c:353-367`,
+/// `gemwmlib.c:851-863`, `gemqueue.c:85-125`) — and return `true`; the caller
+/// then delivers it through the regular `MU_MESAG` dequeue, so a menu
+/// selection can no longer clobber (or be clobbered by) an already-queued
+/// message (AUD-P2-002). Returns `false` when there is no menu, the cursor is
+/// not over the bar, or the drop-down was cancelled (no message).
+///
+/// `pid` is the current AES process — the menu owner (`gl_mnppd`) at
+/// single-app — used both as the FIFO target and as the `ap_sendmsg` sender
+/// pid `msg[1] = rlr->p_pid` (`gemwmlib.c:855`), replacing the former `0`.
+fn menu_intercept(pid: i16) -> bool {
     let tree = super::menu::active();
     if tree.is_null() {
-        return 0;
+        return false;
     }
     // Hover model: the drop-down opens whenever the cursor is over the bar, no
     // click required (the tracker selects on a button press over an item).
     let (_mx, my) = crate::vdi::mouse_position();
     if my >= MENU_BAR_H {
-        return 0;
+        return false;
     }
     let Some(backend) = host().and_then(|h| h.raster()) else {
-        return 0;
+        return false;
     };
     match super::menu::track(tree, backend) {
         Some((title, item)) => {
-            if pbuff != 0 {
-                // SAFETY: `MME_PBUFF` points at >= MSG_WORDS WORDs.
-                unsafe {
-                    let p = pbuff as *mut i16;
-                    for i in 0..pd::MSG_WORDS {
-                        p.add(i).write(0);
-                    }
-                    p.write(MN_SELECTED); // msg[0]
-                    p.add(3).write(title); // msg[3] = menu title object
-                    p.add(4).write(item); // msg[4] = menu item object
-                }
+            let mut msg = [0i16; pd::MSG_WORDS];
+            msg[0] = MN_SELECTED;
+            msg[1] = pid; // ap_sendmsg: msg[1] = rlr->p_pid (sender pid)
+            msg[3] = title; // menu title object
+            msg[4] = item; // menu item object
+            // SAFETY: single trap path; `post_msg` hands the message to the
+            // live slot (EmuTOS `aqueue`/`doq`, `gemqueue.c:85-125`).
+            unsafe {
+                pd::post_msg(pid, msg);
             }
-            MU_MESAG
+            true
         }
-        None => 0, // cancelled — the click is consumed, no message
+        None => false, // cancelled — the click is consumed, no message
     }
 }
 
@@ -290,16 +298,20 @@ pub fn evnt_multi(pb: &Aespb) {
     if let Some(h) = host() {
         let deadline = h.monotonic_millis().saturating_add(ms);
         loop {
-            // AES intercepts a click in the menu bar or a window frame
-            // before the app sees the raw button — it yields an
-            // MN_SELECTED / WM_* message.
-            if flags & (MU_BUTTON | MU_MESAG) != 0 {
-                let m = menu_intercept(pbuff);
-                if m != 0 {
-                    fired |= m;
-                } else if super::window::intercept(pbuff) {
-                    fired |= MU_MESAG;
-                }
+            // AES intercepts a click in the menu bar or a window frame before
+            // the app sees the raw button, mirroring the EmuTOS Control Manager
+            // process (`gemctrl.c:427`): it owns the mouse over the menu/frame
+            // and posts the resulting MN_SELECTED / WM_* message into the
+            // target's per-app FIFO via `ap_sendmsg` (`gemctrl.c:81`,
+            // `gemwmlib.c:851`). The message reaches the app through the regular
+            // MU_MESAG dequeue below — no direct `pbuff` write, no bypass. Done
+            // only when the app actually requested MU_MESAG: EmuTOS sets
+            // AP_MESAG (and processes the frame click) solely for MU_MESAG
+            // (`gemsuper.c:147`); an app waiting on MU_BUTTON alone is not woken
+            // by a frame click and must not receive a spurious MU_MESAG
+            // (AUD-P2-003).
+            if flags & MU_MESAG != 0 && !menu_intercept(pid) {
+                super::window::intercept();
             }
             if flags & MU_KEYBD != 0 {
                 if let Some(w) = h.console_try_read_key() {
