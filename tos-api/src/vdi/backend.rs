@@ -83,10 +83,21 @@ pub trait RasterBackend: Sync {
     /// Visible height in device pixels.
     fn height(&self) -> u16;
 
-    /// Number of simultaneously displayable colours (CLUT size as the
-    /// VDI advertises it in `DEV_TAB[13]`). The bring-up palette is
-    /// 16 colours regardless of the truecolor framebuffer underneath.
+    /// Number of simultaneously displayable colours (the VDI pen count as
+    /// advertised in `DEV_TAB[13]`; EmuTOS `numcolors`). The Falcon
+    /// truecolor profile reports 256 (`vdi_control.c:206`).
     fn num_colors(&self) -> u16;
+
+    /// Number of bit-planes the VDI advertises as `INQ_TAB[4] = v_planes`
+    /// (`vdi_control.c:210`). **Decoupled from** [`num_colors`](Self::num_colors):
+    /// under Falcon truecolor `v_planes == 16` while the pen count
+    /// (`DEV_TAB[13]`) is 256 — the two must not be conflated
+    /// (`vdi/vdi_defs.h:22`, `TRUECOLOR_MODE (v_planes > 8)`; they only
+    /// coincide in the palette modes, 16 colours = 4 planes). This feeds
+    /// `DEV_TAB[35]` (`v_planes == 1`), `INQ_TAB[4]`, and — since the AES
+    /// reads `ap_planes`/`gl_nplanes` straight from `INQ_TAB[4]`
+    /// (`gemgsxif.c:497-501`) — the AES plane count too.
+    fn planes(&self) -> u16;
 
     /// Set palette entry `index` to the requested RGB, each component in
     /// the VDI's 0..=1000 range (`vs_color`). The backend remembers the

@@ -89,10 +89,11 @@ pub fn run_phase13_aes_test() {
     aes(pb);
 
     // The screen colour-plane count appl_init should report (same source the
-    // AES uses for `gl_nplanes`): log2 of the framebuffer colour count.
+    // AES uses for `gl_nplanes`): the VDI `INQ_TAB[4] = v_planes` via
+    // `planes()`, which under truecolor is 16 (not log2(256)=8).
     let expected_planes = tos_api::host::host()
         .and_then(|h| h.raster())
-        .map(|r| r.num_colors().trailing_zeros() as i16)
+        .map(|r| r.planes() as i16)
         .unwrap_or(4);
 
     // ── appl_init (10) ──

@@ -210,12 +210,18 @@ pub(super) fn current_pid() -> i16 {
         .unwrap_or(1)
 }
 
-/// Screen bit-plane count (`ap_planes`) = log2 of the device colour
-/// count (16 colours → 4 planes); 4 when no display is up.
+/// Screen bit-plane count (`ap_planes`), the VDI's `INQ_TAB[4] = v_planes`.
+/// EmuTOS' AES reads exactly this: `ap_planes = gl_nplanes`
+/// (`gemsuper.c:97`), `gl_nplanes = gsx_nplanes()` (`gemgraf.c:395`), and
+/// `gsx_nplanes()` returns `intout[4]` of an `EXTENDED_INQUIRE`
+/// (`gemgsxif.c:497-501`) — i.e. `INQ_TAB[4]`. This is **not**
+/// `log2(num_colors)`: under Falcon truecolor `v_planes == 16` while the
+/// pen count is 256 (they only coincide in the palette modes, 16 colours =
+/// 4 planes). 4 when no display is up.
 fn screen_planes() -> i16 {
     crate::host::host()
         .and_then(|h| h.raster())
-        .map(|r| r.num_colors().trailing_zeros() as i16)
+        .map(|r| r.planes() as i16)
         .unwrap_or(4)
 }
 

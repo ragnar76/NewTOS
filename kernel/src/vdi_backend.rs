@@ -8,8 +8,12 @@
 //! `RasterBackend` docs).
 //!
 //! Colours arrive as PEL (palette index); we resolve them through a
-//! fixed 16-entry GEM palette into the truecolor framebuffer. VDI
-//! convention: index 0 = white (background), 1 = black (foreground).
+//! 256-entry palette into the truecolor framebuffer. VDI convention:
+//! index 0 = white (background), 1 = black (foreground). Pens 0..15 are
+//! the standard GEM 16; pens 16..255 are EmuTOS' extended VIDEL default
+//! (`videl_palette2`). The advertised colour count (`DEV_TAB[13]`) is 256,
+//! matching a Falcon truecolor workstation, while the framebuffer stays
+//! 32-bpp XRGB8888 (an internal detail per `docs/COMPATIBILITY.md`).
 
 use core::sync::atomic::{AtomicU32, Ordering};
 
@@ -17,13 +21,26 @@ use tos_api::vdi::backend::{ClipRect, MonoSrc, PatternFill, Pel, RasterBackend, 
 
 use crate::hal::framebuffer::{rgb, Framebuffer};
 
-/// Number of bring-up palette entries (advertised as `DEV_TAB[13]`).
-const NUM_COLORS: u16 = 16;
+/// Number of palette entries the VDI advertises as `DEV_TAB[13]`. The
+/// Falcon truecolor profile reports 256 (`vdi_control.c:206`,
+/// `numcolors = (v_planes<8) ? (1<<v_planes) : 256`), decoupled from the
+/// bit-plane count [`PLANES`].
+const NUM_COLORS: u16 = 256;
 
-/// The standard GEM 16-colour palette as 8-bit `(r, g, b)` triples.
-/// Index 0 is white and 1 is black, matching VDI's background/foreground
-/// default. `vs_color` overwrites entries at runtime (see [`PALETTE`]).
-const DEFAULT_PALETTE: [(u8, u8, u8); NUM_COLORS as usize] = [
+/// Bit-plane count the VDI advertises as `INQ_TAB[4] = v_planes`
+/// (`vdi_control.c:210`). Under Falcon truecolor this is **16**
+/// (`bios/videl.c:320-341`, `get_videl_bpp` SPS_HICOLOR → 16), *not*
+/// `log2(NUM_COLORS)` — the two only coincide in the palette modes
+/// (`vdi/vdi_defs.h:22`, `TRUECOLOR_MODE (v_planes > 8)`).
+const PLANES: u16 = 16;
+
+/// The standard GEM 16-colour palette (pens 0..15) as 8-bit `(r, g, b)`
+/// triples. Index 0 is white and 1 is black, matching VDI's background/
+/// foreground default. Kept unchanged for the truecolor bump so the
+/// desktop/AES (which draw with pens 0..15) render identically; pens
+/// 16..255 come from [`VIDEL_PALETTE2`]. `vs_color` overwrites entries at
+/// runtime (see [`PALETTE`]).
+const DEFAULT_PALETTE: [(u8, u8, u8); 16] = [
     (255, 255, 255), // 0  white (background)
     (0, 0, 0),       // 1  black (foreground)
     (255, 0, 0),     // 2  red
@@ -40,6 +57,76 @@ const DEFAULT_PALETTE: [(u8, u8, u8); NUM_COLORS as usize] = [
     (0, 128, 128),   // 13 dark cyan
     (128, 128, 0),   // 14 dark yellow
     (128, 0, 128),   // 15 dark magenta
+];
+
+/// EmuTOS' extended VIDEL default palette for pens 16..255, as VDI
+/// `(r, g, b)` triples in the 0..=1000 range — copied verbatim from
+/// `vdi/vdi_col.c:137-199` (`videl_palette2[240][3]`). This is the
+/// device-global default a truecolor workstation seeds its extended pens
+/// from; the current desktop/AES never use these pens, so their exact
+/// values are not observable yet, but they are kept EmuTOS-faithful.
+#[rustfmt::skip]
+const VIDEL_PALETTE2: [(u16, u16, u16); 240] = [
+    (1000, 1000, 1000), (933, 933, 933), (867, 867, 867), (800, 800, 800),
+    (733, 733, 733), (667, 667, 667), (600, 600, 600), (533, 533, 533),
+    (467, 467, 467), (400, 400, 400), (333, 333, 333), (267, 267, 267),
+    (200, 200, 200), (133, 133, 133), (67, 67, 67), (0, 0, 0),
+    (1000, 0, 0), (1000, 0, 67), (1000, 0, 133), (1000, 0, 200),
+    (1000, 0, 267), (1000, 0, 333), (1000, 0, 400), (1000, 0, 467),
+    (1000, 0, 533), (1000, 0, 600), (1000, 0, 667), (1000, 0, 733),
+    (1000, 0, 800), (1000, 0, 867), (1000, 0, 933), (1000, 0, 1000),
+    (933, 0, 1000), (867, 0, 1000), (800, 0, 1000), (733, 0, 1000),
+    (667, 0, 1000), (600, 0, 1000), (533, 0, 1000), (467, 0, 1000),
+    (400, 0, 1000), (333, 0, 1000), (267, 0, 1000), (200, 0, 1000),
+    (133, 0, 1000), (67, 0, 1000), (0, 0, 1000), (0, 67, 1000),
+    (0, 133, 1000), (0, 200, 1000), (0, 267, 1000), (0, 333, 1000),
+    (0, 400, 1000), (0, 467, 1000), (0, 533, 1000), (0, 600, 1000),
+    (0, 667, 1000), (0, 733, 1000), (0, 800, 1000), (0, 867, 1000),
+    (0, 933, 1000), (0, 1000, 1000), (0, 1000, 933), (0, 1000, 867),
+    (0, 1000, 800), (0, 1000, 733), (0, 1000, 667), (0, 1000, 600),
+    (0, 1000, 533), (0, 1000, 467), (0, 1000, 400), (0, 1000, 333),
+    (0, 1000, 267), (0, 1000, 200), (0, 1000, 133), (0, 1000, 67),
+    (0, 1000, 0), (67, 1000, 0), (133, 1000, 0), (200, 1000, 0),
+    (267, 1000, 0), (333, 1000, 0), (400, 1000, 0), (467, 1000, 0),
+    (533, 1000, 0), (600, 1000, 0), (667, 1000, 0), (733, 1000, 0),
+    (800, 1000, 0), (867, 1000, 0), (933, 1000, 0), (1000, 1000, 0),
+    (1000, 933, 0), (1000, 867, 0), (1000, 800, 0), (1000, 733, 0),
+    (1000, 667, 0), (1000, 600, 0), (1000, 533, 0), (1000, 467, 0),
+    (1000, 400, 0), (1000, 333, 0), (1000, 267, 0), (1000, 200, 0),
+    (1000, 133, 0), (1000, 67, 0), (733, 0, 0), (733, 0, 67),
+    (733, 0, 133), (733, 0, 200), (733, 0, 267), (733, 0, 333),
+    (733, 0, 400), (733, 0, 467), (733, 0, 533), (733, 0, 600),
+    (733, 0, 667), (733, 0, 733), (667, 0, 733), (600, 0, 733),
+    (533, 0, 733), (467, 0, 733), (400, 0, 733), (333, 0, 733),
+    (267, 0, 733), (200, 0, 733), (133, 0, 733), (67, 0, 733),
+    (0, 0, 733), (0, 67, 733), (0, 133, 733), (0, 200, 733),
+    (0, 267, 733), (0, 333, 733), (0, 400, 733), (0, 467, 733),
+    (0, 533, 733), (0, 600, 733), (0, 667, 733), (0, 733, 733),
+    (0, 733, 667), (0, 733, 600), (0, 733, 533), (0, 733, 467),
+    (0, 733, 400), (0, 733, 333), (0, 733, 267), (0, 733, 200),
+    (0, 733, 133), (0, 733, 67), (0, 733, 0), (67, 733, 0),
+    (133, 733, 0), (200, 733, 0), (267, 733, 0), (333, 733, 0),
+    (400, 733, 0), (467, 733, 0), (533, 733, 0), (600, 733, 0),
+    (667, 733, 0), (733, 733, 0), (733, 667, 0), (733, 600, 0),
+    (733, 533, 0), (733, 467, 0), (733, 400, 0), (733, 333, 0),
+    (733, 267, 0), (733, 200, 0), (733, 133, 0), (733, 67, 0),
+    (467, 0, 0), (467, 0, 67), (467, 0, 133), (467, 0, 200),
+    (467, 0, 267), (467, 0, 333), (467, 0, 400), (467, 0, 467),
+    (400, 0, 467), (333, 0, 467), (267, 0, 467), (200, 0, 467),
+    (133, 0, 467), (67, 0, 467), (0, 0, 467), (0, 67, 467),
+    (0, 133, 467), (0, 200, 467), (0, 267, 467), (0, 333, 467),
+    (0, 400, 467), (0, 467, 467), (0, 467, 400), (0, 467, 333),
+    (0, 467, 267), (0, 467, 200), (0, 467, 133), (0, 467, 67),
+    (0, 467, 0), (67, 467, 0), (133, 467, 0), (200, 467, 0),
+    (267, 467, 0), (333, 467, 0), (400, 467, 0), (467, 467, 0),
+    (467, 400, 0), (467, 333, 0), (467, 267, 0), (467, 200, 0),
+    (467, 133, 0), (467, 67, 0), (267, 0, 0), (267, 0, 67),
+    (267, 0, 133), (267, 0, 200), (267, 0, 267), (200, 0, 267),
+    (133, 0, 267), (67, 0, 267), (0, 0, 267), (0, 67, 267),
+    (0, 133, 267), (0, 200, 267), (0, 267, 267), (0, 267, 200),
+    (0, 267, 133), (0, 267, 67), (0, 267, 0), (67, 267, 0),
+    (133, 267, 0), (200, 267, 0), (267, 267, 0), (267, 200, 0),
+    (267, 133, 0), (267, 67, 0), (1000, 1000, 1000), (0, 0, 0),
 ];
 
 /// The live palette: PEL → packed XRGB, mutated by `vs_color`. Lazily
@@ -77,14 +164,26 @@ fn rgb_dist(a: u32, b: u32) -> u32 {
     (dr * dr + dg * dg + db * db) as u32
 }
 
-/// Initialise the palette from the GEM defaults on first use.
+/// Initialise the palette from the defaults on first use: pens 0..15 from
+/// the GEM 16 ([`DEFAULT_PALETTE`], 8-bit), pens 16..255 from EmuTOS'
+/// extended VIDEL default ([`VIDEL_PALETTE2`], VDI 0..1000).
 fn ensure_palette_init() {
     if PALETTE[0].load(Ordering::Relaxed) != PAL_UNINIT {
         return;
     }
+    // Pens 0..15: the GEM 16 (8-bit RGB; the VDI request is derived back
+    // to the 0..1000 range for `vq_color`).
     for (i, &(r, g, b)) in DEFAULT_PALETTE.iter().enumerate() {
         PALETTE[i].store(rgb(r, g, b), Ordering::Relaxed);
         let req = (to_vdi(r) as u32) << 20 | (to_vdi(g) as u32) << 10 | to_vdi(b) as u32;
+        REQ_COL[i].store(req, Ordering::Relaxed);
+    }
+    // Pens 16..255: `videl_palette2` values are already VDI 0..1000, stored
+    // verbatim as the request and expanded to 8-bit for the live palette.
+    for (j, &(r, g, b)) in VIDEL_PALETTE2.iter().enumerate() {
+        let i = 16 + j;
+        PALETTE[i].store(rgb(to_rgb8(r), to_rgb8(g), to_rgb8(b)), Ordering::Relaxed);
+        let req = (r as u32) << 20 | (g as u32) << 10 | b as u32;
         REQ_COL[i].store(req, Ordering::Relaxed);
     }
 }
@@ -204,6 +303,10 @@ impl RasterBackend for VdiScreen {
 
     fn num_colors(&self) -> u16 {
         NUM_COLORS
+    }
+
+    fn planes(&self) -> u16 {
+        PLANES
     }
 
     fn set_color(&self, index: u16, r: u16, g: u16, b: u16) {

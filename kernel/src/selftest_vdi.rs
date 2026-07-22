@@ -77,7 +77,9 @@ pub fn run_phase12_vdi_test() {
         intout[0] == (sw as i16 - 1) && intout[1] == (sh as i16 - 1),
         "DEV_TAB geometry = framebuffer size − 1",
     );
-    check(intout[13] == 16, "DEV_TAB[13] = 16 colours");
+    // Truecolor: DEV_TAB[13] = numcolors = 256 for v_planes=16
+    // (EmuTOS vdi_control.c:206, (v_planes<8)?(1<<v_planes):256).
+    check(intout[13] == 256, "DEV_TAB[13] = 256 colours (truecolor)");
     check(
         contrl[4] == 45 && contrl[2] == 6,
         "output counts (45 INTOUT, 6 PTSOUT pairs)",

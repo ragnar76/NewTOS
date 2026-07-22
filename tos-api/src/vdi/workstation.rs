@@ -21,12 +21,13 @@ const MAX_FILL_HATCH: i16 = 12;
 const FIS_PATTERN: i16 = 2; // interior style: dither pattern
 
 /// `DEV_TAB[39]` — the DAC's RGB choice count (`get_palette()`, EmuTOS
-/// `bios/screen.c:831`). This is **not** the number of displayable
-/// colours (that is `DEV_TAB[13]`) but the palette precision: EmuTOS
-/// returns 4096 for any STe/TT-style colour shifter, 512 for a plain-ST
-/// colour mode, 2 for mono. NewTOS' `vs_color` accepts the full STe/TT
-/// 0..1000-per-gun request range, so 4096 is the faithful value.
-const PALETTE_PRECISION: i16 = 4096;
+/// `bios/screen.c:831-869`). Under a VIDEL truecolor mode `get_palette()`
+/// returns **0** (a real non-ST-compatible truecolor mode has
+/// `mode & VIDEL_COMPAT == 0` and `bpp == VIDEL_TRUECOLOR != VIDEL_4BPP`,
+/// so it falls through to `return 0`). This is the Falcon030/TOS4 target
+/// value; the previous 4096 was correct only for the earlier 16-colour
+/// VIDEL-4bpp target.
+const PALETTE_PRECISION: i16 = 0;
 
 /// `DEV_TAB` template (45 WORDs), EmuTOS `DEV_TAB_rom`. Indices
 /// `[0],[1],[3],[4],[13],[35],[39]` are patched from the live device by
@@ -127,6 +128,7 @@ fn init_wk(vwk: &mut Vwk, pb: &Vdipb, backend: &dyn RasterBackend) {
     let xres = backend.width() as i16;
     let yres = backend.height() as i16;
     let ncol = backend.num_colors();
+    let planes = backend.planes();
 
     // ── attributes from work_in (INTIN[1..10]); [0] device id, [5]
     //    font are ignored per spec. Validate-or-default each. ──
@@ -181,8 +183,8 @@ fn init_wk(vwk: &mut Vwk, pb: &Vdipb, backend: &dyn RasterBackend) {
     dev[3] = pw; // pixel width  (get_pixel_size)
     dev[4] = ph; // pixel height (get_pixel_size)
     dev[13] = ncol as i16;
-    dev[35] = if ncol <= 2 { 0 } else { 1 }; // colour capable?
-    dev[39] = PALETTE_PRECISION; // DAC RGB-choice count (get_palette)
+    dev[35] = if planes == 1 { 0 } else { 1 }; // colour capable? (v_planes==1)
+    dev[39] = PALETTE_PRECISION; // DAC RGB-choice count (get_palette): 0 for truecolor
     for (i, &v) in dev.iter().enumerate() {
         pb.set_intout(i, v);
     }
@@ -221,6 +223,7 @@ pub fn vq_extnd(pb: &Vdipb, vwk: &crate::vdi::vwk::Vwk, backend: &dyn RasterBack
     let xres = backend.width() as i16;
     let yres = backend.height() as i16;
     let ncol = backend.num_colors();
+    let planes = backend.planes();
 
     if pb.intin(0) == 0 {
         // Mode 0: identical to v_opnvwk's device tables.
@@ -231,8 +234,8 @@ pub fn vq_extnd(pb: &Vdipb, vwk: &crate::vdi::vwk::Vwk, backend: &dyn RasterBack
         dev[3] = pw; // pixel width  (get_pixel_size)
         dev[4] = ph; // pixel height (get_pixel_size)
         dev[13] = ncol as i16;
-        dev[35] = if ncol <= 2 { 0 } else { 1 };
-        dev[39] = PALETTE_PRECISION; // DAC RGB-choice count (get_palette)
+        dev[35] = if planes == 1 { 0 } else { 1 }; // colour capable? (v_planes==1)
+        dev[39] = PALETTE_PRECISION; // DAC RGB-choice count (get_palette): 0 for truecolor
         for (i, &v) in dev.iter().enumerate() {
             pb.set_intout(i, v);
         }
@@ -242,8 +245,12 @@ pub fn vq_extnd(pb: &Vdipb, vwk: &crate::vdi::vwk::Vwk, backend: &dyn RasterBack
     } else {
         // Mode 1: the extended table + the live clipping rectangle.
         let mut inq = INQ_TAB_ROM;
-        inq[4] = ncol.trailing_zeros() as i16; // number of planes = log2(colours)
-        inq[5] = if ncol > 2 { 1 } else { 0 }; // video lookup table present
+        inq[4] = planes as i16; // number of planes = v_planes (vdi_control.c:210)
+        // Video lookup table present: 0 for truecolor (v_planes==16) or a
+        // mono monitor, 1 otherwise (vdi_control.c:211-213). The colour-only
+        // framebuffer never reports MON_MONO, so this reduces to the
+        // truecolor test.
+        inq[5] = if planes == 16 { 0 } else { 1 };
         inq[19] = i16::from(vwk.clip); // live clip flag
         for (i, &v) in inq.iter().enumerate() {
             pb.set_intout(i, v);
