@@ -311,6 +311,16 @@ pub extern "C" fn rust_sync_handler(frame: &mut ExceptionFrame) {
         svc_imm,
     };
 
+    // TEMPORARY QED syscall tracer (debug tooling, not product history). Traces
+    // only EL0 (user-app) traps — the desktop runs at EL1 and never reaches
+    // here. `pre_dispatch` flushes the RAM trace to C: at each `evnt_multi`
+    // entry; `post_dispatch` records the completed call. Both fold away when
+    // `QED_SVC_TRACE` is false, so this is a no-op with the tool disabled.
+    let dbg_from_el0 = (frame.spsr & 0xF) == 0;
+    if crate::dbg_qedtrace::QED_SVC_TRACE && dbg_from_el0 {
+        crate::dbg_qedtrace::pre_dispatch(class, &args);
+    }
+
     // Result is the full 64-bit `x0` value: GEMDOS returns a sign-
     // extended `Long`, but BIOS `Getbpb` returns a native 64-bit pointer.
     let result: i64 = match class {
@@ -338,6 +348,12 @@ pub extern "C" fn rust_sync_handler(frame: &mut ExceptionFrame) {
         // XBIOS (Trap 14): screen group (Physbase/Logbase/Getrez/...).
         TrapClass::Xbios => tos_api::xbios::dispatch(&args),
     };
+
+    // TEMPORARY QED syscall tracer (debug tooling): record the completed EL0
+    // call. Folds away when `QED_SVC_TRACE` is false.
+    if crate::dbg_qedtrace::QED_SVC_TRACE && dbg_from_el0 {
+        crate::dbg_qedtrace::post_dispatch(class, &args, result);
+    }
 
     // A blocking console input function (Cconin / Cnecin / Cconrs) may
     // have seen a Ctrl-C and recorded a deferred `Pterm(-32)`. A leaf

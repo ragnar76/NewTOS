@@ -66,6 +66,11 @@ pub mod selftest_emmc;
 pub mod vdi_backend;
 pub mod vdi_client;
 
+// TEMPORARY debug tooling — NOT for product history. Gated behind
+// `dbg_qedtrace::QED_SVC_TRACE`; remove the module + its exception hooks to
+// drop it entirely.
+pub mod dbg_qedtrace;
+
 // ---------------------------------------------------------------------------
 // kprintf! / kprintln! (Phase 03 D7) — formatter macros into the boot
 // console. Safe to call from any context (panic, IRQ, pre/post MMU) as
