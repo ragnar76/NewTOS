@@ -25,17 +25,19 @@ Legende: ⬜ offen · 🟡 auditiert (Findings offen) · 🟩 grün (gefixt + re
 |---|---|---|---|---|---|
 | Fundament | **V4 font-data** (font.rs/font_data.rs: 6x6/8x8 + DDA) | ✅ | ❌ | ❌ | 🟡 |
 | Fundament | **V5 raster/blit/backend** | ✅ | ❌ | ❌ | 🟡 |
-| Attribute | **V1 control/workstation/inquiry** | ✅ | ⚠️ 16-Farb-Werte falsch → in TC revidieren | ❌ | 🟡 (reopened, war 727b33c) |
+| Attribute | **V1 control/workstation/inquiry** | ✅ | ✅ (727b33c) + Truecolor-Revision in TC1 (09c9ddc) | ✅ (TC1-Tester) | 🟩 (re-green) |
 | Primitive | **V2 line/marker/fill/attributes/contour** | ✅ | ❌ | ❌ | 🟡 |
 | Höher | **V3 gdp/bezier/color/escape** | ✅ | ❌ | ❌ | 🟡 |
 | Höher | **V4 text (v_gtext/vst_*/justified)** | ✅ | ❌ | ❌ | 🟡 |
 | I/O | **V6 mouse/input** | ✅ | ❌ | ❌ | 🟡 |
 | Coverage | **Inventar (269 Fn Presence)** | ⬜ | — | — | ⬜ |
 
-**Gate offen (🔴).** 0 grün — **V1 reopened** für die Truecolor-Revision (User
-2026-07-22: VDI → Falcon-Truecolor, Memory `vdi-truecolor-workstation`). Das
-**Truecolor-Fundament (TC1–TC5, `truecolor-conversion-plan.md`) kommt ZUERST**,
-dann V1-Re-Green, dann V2/V3/V4/V6. Öffnet erst, wenn ALLE Zeilen 🟩 sind.
+**Gate offen (🔴).** ✅ **Truecolor-Fundament komplett (TC1–TC5) + V1 grün.** Der
+Desktop läuft jetzt auf einem echten Falcon-16-bit-RGB565-Truecolor-Modell
+(256 Pens, per-Vwk-Palette, 5-bit-Draw, `videl_palette1`, 16-bit-MFDB,
+verlustfreies bb_save, bit-exakter Cursor). **Verbleibend vor AES: V2, V3, V4, V6**
+(Render-/Input-Pakete, jetzt auf dem korrekten Farbmodell). Öffnet erst, wenn
+ALLE Zeilen 🟩 sind.
 
 ### Truecolor-Fundament (TC, vor allem anderen)
 
@@ -48,7 +50,7 @@ Ersetzt/erweitert das alte VW1 (V5). 8-Schritt-Plan → 5 Fix-Pakete:
 | TC3a | 5-bit-Draw-Pfad über per-Vwk-Palette + `videl_palette1`-Default (der sichtbare Falcon-Look) | Fidelity | 🟩 (2f5cda2) |
 | TC3b | Memory-MFDB → 16-bit RGB565 + `bb_save` verlustfrei (Schritt 5) | V5-001/004/005 | 🟩 (3d4ab71) |
 | TC4 | `vr_trnfm16` + `vro/vrt_cpyfm16`-Truecolor (6) | V5-002/003/008 | 🟩 (516dc9a) |
-| TC5 | Cursor-Save-under bit-exakt (7) | V6-001 (akut) | ⬜ |
+| TC5 | Cursor-Save-under bit-exakt (7) | V6-001 (akut) | 🟩 (c7fcff2) |
 
 ## Reihenfolge zum Grün-Machen (bottom-up)
 
