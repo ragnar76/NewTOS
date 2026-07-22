@@ -331,17 +331,19 @@ pub fn evnt_multi(pb: &Aespb) {
             if flags & MU_MESAG != 0 {
                 // SAFETY: single trap path; `by_pid` hands out the live slot.
                 if let Some(src) = unsafe { pd::by_pid(pid) } {
-                    if src.msg_pending {
+                    // Pop the FRONT of the FIFO (EmuTOS `ap_rdwr(MU_RDMSG)`
+                    // →`doq` dequeue, `gemqueue.c:76-81`); a single pending
+                    // message is just the 1-element case.
+                    if let Some(msg) = src.queue.pop() {
                         if pbuff != 0 {
                             // SAFETY: `MME_PBUFF` points at >= 16 bytes.
                             unsafe {
                                 let p = pbuff as *mut i16;
-                                for i in 0..pd::MSG_WORDS {
-                                    p.add(i).write(src.msg[i]);
+                                for (i, &w) in msg.iter().enumerate() {
+                                    p.add(i).write(w);
                                 }
                             }
                         }
-                        src.msg_pending = false;
                         src.flags |= pd::AP_MESAG;
                         fired |= MU_MESAG;
                     }
@@ -409,17 +411,18 @@ pub fn evnt_mesag(pb: &Aespb) {
             pb.set_ret(1);
             return;
         };
-        if src.msg_pending {
+        // Pop the FRONT of the FIFO (EmuTOS `ap_rdwr(MU_RDMSG)`→`doq` dequeue,
+        // `gemqueue.c:76-81`).
+        if let Some(msg) = src.queue.pop() {
             if dest != 0 {
                 // SAFETY: `ME_PBUFF` points at >= 16 bytes of storage.
                 unsafe {
                     let p = dest as *mut i16;
-                    for i in 0..pd::MSG_WORDS {
-                        p.add(i).write(src.msg[i]);
+                    for (i, &w) in msg.iter().enumerate() {
+                        p.add(i).write(w);
                     }
                 }
             }
-            src.msg_pending = false;
             src.flags |= pd::AP_MESAG;
             pb.set_ret(1);
             return;

@@ -592,12 +592,14 @@ fn send_redraw(handle: i16, rect: Grect) {
     msg[5] = rect.y;
     msg[6] = rect.w;
     msg[7] = rect.h;
-    // SAFETY: by_pid hands out the live process slot on the single trap path.
+    // Enqueue into the owner's FIFO — EmuTOS `w_redraw`→`ap_sendmsg`→`ap_rdwr`
+    // →`doq` (`gemwmlib.c:887-907,851-863`, `gemqueue.c`). Same-window redraws
+    // coalesce (rect-union) instead of overwriting, so no content redraw is
+    // lost when several are posted before the event loop drains them.
+    // SAFETY: post_msg hands the message to the live process slot on the
+    // single trap path.
     unsafe {
-        if let Some(p) = super::pd::by_pid(owner) {
-            p.msg = msg;
-            p.msg_pending = true;
-        }
+        super::pd::post_msg(owner, msg);
     }
 }
 
@@ -647,11 +649,11 @@ fn send_redraw_in(handle: i16, damage: Grect) {
 /// repaints its newly-exposed content; a window `damage` does not reach gets
 /// nothing (empty intersection → no message).
 ///
-/// Note: NewTOS's process message slot holds a single pending message
-/// (`Aespd::msg`), so when several **same-owner** windows are
-/// uncovered at once only the last-walked one's `WM_REDRAW` survives — a
-/// limitation of the single-slot model, not of this walk. The common case (an
-/// app closing a dialog over its one main window) uncovers a single window.
+/// Every posted `WM_REDRAW` is appended to the owner's per-app FIFO queue
+/// (`Aespd::queue`), so when several **same-owner** windows are uncovered at
+/// once each one's redraw is delivered (in FIFO order) — none is overwritten.
+/// Redraws for the *same* window coalesce via the queue's rectangle-union
+/// (EmuTOS `doq`, `gemqueue.c:45-56`).
 fn broadcast_redraw(damage: Grect) {
     for i in 0..MAX_WINDOWS {
         let handle = (i + 1) as i16;
@@ -1842,21 +1844,30 @@ fn emit(pbuff: u64, msg: &[i16; 8]) -> bool {
     true
 }
 
-/// Test hook (not wired to boot): the pending 8-WORD AES message queued for
-/// process `pid`, or `None` if none is pending. Lets the P5 redraw-broadcast
-/// selftest observe the `WM_REDRAW` posted on `wind_close` / `wind_set(WF_TOP)`.
+/// Test hook (not wired to boot): the message at the **front** of process
+/// `pid`'s FIFO queue (without removing it), or `None` if the queue is empty.
+/// Lets the P5 redraw-broadcast selftest observe the `WM_REDRAW` posted on
+/// `wind_close` / `wind_set(WF_TOP)`.
 pub fn test_pending_msg(pid: i16) -> Option<[i16; 8]> {
     // SAFETY: single-CPU AES; test scaffolding on the boot trap path.
-    unsafe { super::pd::by_pid(pid).filter(|p| p.msg_pending).map(|p| p.msg) }
+    unsafe { super::pd::by_pid(pid).and_then(|p| p.queue.front()) }
 }
 
-/// Test hook (not wired to boot): drop any pending message for `pid`, so the P5
-/// selftest can isolate the `WM_REDRAW` a subsequent window op posts.
+/// Test hook (not wired to boot): number of messages queued for `pid` (0 when
+/// empty). Lets a selftest assert the WM_REDRAW rectangle-union coalesces two
+/// same-window redraws into a single queue entry.
+pub fn test_msg_count(pid: i16) -> usize {
+    // SAFETY: single-CPU AES; test scaffolding on the boot trap path.
+    unsafe { super::pd::by_pid(pid).map(|p| p.queue.pending()).unwrap_or(0) }
+}
+
+/// Test hook (not wired to boot): drop every pending message for `pid`, so the
+/// P5 selftest can isolate the `WM_REDRAW` a subsequent window op posts.
 pub fn test_clear_msg(pid: i16) {
     // SAFETY: single-CPU AES; test scaffolding on the boot trap path.
     unsafe {
         if let Some(p) = super::pd::by_pid(pid) {
-            p.msg_pending = false;
+            p.queue.clear();
         }
     }
 }

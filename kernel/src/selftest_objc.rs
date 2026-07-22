@@ -791,6 +791,117 @@ fn report_p5(
     }
 }
 
+/// P6 (#125 message-queue) proof — NOT wired into boot. Drives the real GEM
+/// trap to prove the per-app FIFO message queue that replaced the single slot:
+///
+///  (a) Post TWO different-type messages (WM_REDRAW then WM_TOPPED) to one app
+///      via `appl_write` (opcode 12), then drain them via successive
+///      `evnt_mesag` (opcode 23) calls: BOTH are delivered, in FIFO order,
+///      neither dropped. Before the fix the 2nd post overwrote the 1st — this
+///      is the exact intermittent-empty-window bug.
+///  (b) Post TWO WM_REDRAWs for the SAME window with different rects: the queue
+///      coalesces them into ONE entry whose rect is the UNION of the two
+///      (EmuTOS `doq` rect-union, `gemqueue.c:45-56`), not two entries and not
+///      just the last rect.
+///
+/// Invoke by hand (temporary hook, e.g. in `initinfo::run()`) to capture the
+/// serial PASS/FAIL lines; it is intentionally not called during normal boot.
+#[allow(unused_assignments)] // the `control = [0; 8]` reset idiom, as elsewhere here
+pub fn run_p6_msgqueue() {
+    use tos_api::aes::window::{test_clear_msg, test_msg_count, test_pending_msg};
+
+    let mut control = [0i16; 8];
+    let mut global = [0i16; 32];
+    let mut intin = [0i16; 16];
+    let mut intout = [0i16; 16];
+    let mut addrin = [0i64; 4];
+    let mut addrout = [0i64; 4];
+    let block: [u64; 6] = [
+        control.as_mut_ptr() as u64, global.as_mut_ptr() as u64,
+        intin.as_mut_ptr() as u64, intout.as_mut_ptr() as u64,
+        addrin.as_mut_ptr() as u64, addrout.as_mut_ptr() as u64,
+    ];
+    let bp = block.as_ptr() as u64;
+
+    // Clean window table + register the pd so the queue has an owner.
+    control = [0; 8]; control[0] = 109; aes(bp); // wind_new
+    control = [0; 8]; control[0] = 10; aes(bp);  // appl_init
+    let ap = intout[0];
+
+    // Raw pointers to the parameter-block arrays (Copy), so the two trap
+    // helpers below can share them without re-borrowing the arrays.
+    let c = control.as_mut_ptr();
+    let ii = intin.as_mut_ptr();
+    let ai = addrin.as_mut_ptr();
+
+    // `appl_write` (opcode 12) a 16-byte message into `ap`'s own queue.
+    let post = |target: i16, msg: &[i16; 8]| {
+        // SAFETY: block pointers alias these arrays; the trap reads them.
+        unsafe {
+            for k in 0..8 { c.add(k).write(0); }
+            c.write(12); c.add(1).write(2); c.add(3).write(1); // op, n_intin, n_addrin
+            ii.write(target); ii.add(1).write(16); // id, byte length
+            ai.write(msg.as_ptr() as i64);
+        }
+        aes(bp);
+    };
+    // `evnt_mesag` (opcode 23): pop the front message into `out`.
+    let read = |out: &mut [i16; 8]| {
+        // SAFETY: as above.
+        unsafe {
+            for k in 0..8 { c.add(k).write(0); }
+            c.write(23); c.add(3).write(1); // op, n_addrin
+            ai.write(out.as_ptr() as i64);
+        }
+        aes(bp);
+    };
+
+    // ---- (a) two different-type messages both survive, FIFO ----
+    test_clear_msg(ap);
+    let m1 = [20i16, ap, 0, 1, 10, 20, 30, 40]; // WM_REDRAW, win 1
+    let m2 = [21i16, ap, 0, 1, 0, 0, 0, 0]; // WM_TOPPED, win 1
+    post(ap, &m1);
+    post(ap, &m2);
+    let queued = test_msg_count(ap);
+    let mut o1 = [0i16; 8];
+    let mut o2 = [0i16; 8];
+    // Guard the blocking `evnt_mesag` with the count so a broken build reports
+    // FAIL instead of hanging on an empty pop.
+    if test_msg_count(ap) > 0 { read(&mut o1); }
+    if test_msg_count(ap) > 0 { read(&mut o2); }
+    let fifo_ok = queued == 2 && o1[0] == 20 && o1[3] == 1 && o2[0] == 21 && o2[3] == 1;
+    kprintln!(
+        "[p6] fifo: queued={} first=[{},h{}] second=[{},h{}] -> {}",
+        queued, o1[0], o1[3], o2[0], o2[3],
+        if fifo_ok { "PASS" } else { "FAIL" }
+    );
+
+    // ---- (b) two same-window WM_REDRAWs coalesce to one union rect ----
+    test_clear_msg(ap);
+    let r1 = [20i16, ap, 0, 7, 10, 20, 30, 40]; // rect (10,20,30,40)
+    let r2 = [20i16, ap, 0, 7, 50, 5, 20, 100]; // rect (50, 5,20,100)
+    post(ap, &r1);
+    post(ap, &r2);
+    let count = test_msg_count(ap);
+    let front = test_pending_msg(ap);
+    // union: x=min(10,50)=10 y=min(20,5)=5 w=max(40,70)-10=60 h=max(60,105)-5=100
+    let union_ok = count == 1
+        && matches!(front, Some(m)
+            if m[0] == 20 && m[3] == 7 && m[4] == 10 && m[5] == 5 && m[6] == 60 && m[7] == 100);
+    match front {
+        Some(m) => kprintln!(
+            "[p6] union: count={} rect=({},{},{},{}) exp=(10,5,60,100) -> {}",
+            count, m[4], m[5], m[6], m[7],
+            if union_ok { "PASS" } else { "FAIL" }
+        ),
+        None => kprintln!("[p6] union: count={} no message -> FAIL", count),
+    }
+
+    // Leave the window table clean for whatever runs next.
+    test_clear_msg(ap);
+    control = [0; 8]; control[0] = 109; aes(bp); // wind_new
+}
+
 /// D7 Batch-1 demo: build a native .RSC blob (string pointers as offsets),
 /// relocate it (offset→pointer), fetch its tree via rsrc_gaddr, and draw
 /// it via objc_draw — proving the native resource format end-to-end.

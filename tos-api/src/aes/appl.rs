@@ -278,9 +278,10 @@ pub fn appl_yield(pb: &Aespb) {
 
 /// Opcode 12 — `appl_write`: deliver a message into another application's
 /// pipe. `intin[0]` = target id, `intin[1]` = byte length, `addrin[0]` =
-/// message buffer. Returns 1 on success, 0 if the target is unknown.
-/// The standard GEM message is 16 bytes (8 WORDs); longer writes are
-/// truncated to the single pending slot (bring-up limitation).
+/// message buffer. Returns 1 on success, 0 if the target is unknown or its
+/// message queue is full. The standard GEM message is 16 bytes (8 WORDs);
+/// longer writes are truncated to that length, then appended to the target's
+/// FIFO queue (EmuTOS `ap_rdwr(MU_SDMSG)`→`doq`, `gemqueue.c:85-125,31-74`).
 pub fn appl_write(pb: &Aespb) {
     let target = pb.intin(0);
     let len_bytes = pb.intin(1).max(0) as usize;
@@ -295,15 +296,16 @@ pub fn appl_write(pb: &Aespb) {
         return;
     }
     let words = (len_bytes / 2).min(pd::MSG_WORDS);
+    let mut msg = [0i16; pd::MSG_WORDS];
     // SAFETY: addrin[0] points at ≥ len_bytes of message data.
     unsafe {
         let p = buf as *const i16;
-        for i in 0..words {
-            dst.msg[i] = p.add(i).read();
+        for (i, slot) in msg.iter_mut().take(words).enumerate() {
+            *slot = p.add(i).read();
         }
     }
-    dst.msg_pending = true;
-    pb.set_ret(1);
+    // Enqueue into the target's FIFO (0 if the queue is full).
+    pb.set_ret(dst.queue.push(msg) as i16);
 }
 
 /// Opcode 11 — `appl_read`: read a message from the calling application's
@@ -323,19 +325,24 @@ pub fn appl_read(pb: &Aespb) {
         pb.set_ret(0);
         return;
     };
-    if dest == 0 || !src.msg_pending {
+    if dest == 0 {
         pb.set_ret(0);
         return;
     }
+    // Pop the FRONT of the FIFO (EmuTOS `ap_rdwr(MU_RDMSG)`→`doq` dequeue,
+    // `gemqueue.c:76-81`); empty queue → 0.
+    let Some(msg) = src.queue.pop() else {
+        pb.set_ret(0);
+        return;
+    };
     let words = (len_bytes / 2).min(pd::MSG_WORDS);
     // SAFETY: addrin[0] points at ≥ len_bytes of destination space.
     unsafe {
         let p = dest as *mut i16;
-        for i in 0..words {
-            p.add(i).write(src.msg[i]);
+        for (i, &w) in msg.iter().take(words).enumerate() {
+            p.add(i).write(w);
         }
     }
-    src.msg_pending = false;
     src.flags |= pd::AP_MESAG;
     pb.set_ret(1);
 }
