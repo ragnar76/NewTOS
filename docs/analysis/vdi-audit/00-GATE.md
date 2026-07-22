@@ -44,7 +44,7 @@ Ersetzt/erweitert das alte VW1 (V5). 8-Schritt-Plan → 5 Fix-Pakete:
 | TC | Inhalt (Plan-Schritt) | Fixt | Status |
 |---|---|---|---|
 | TC1 | Backend `planes()`(=16)+NUM_COLORS→256, DEV_TAB/INQ Truecolor, `ap_planes`-Konsistenz (Schritte 1+3) | V1-Revision (DEV_TAB[13]=256/[39]=0/INQ[4]=16) | 🟩 (09c9ddc) |
-| TC2 | per-Vwk-Palette + Farb-Setter/Query Truecolor (`vs/vq_color16`, MAP_COL real) (Schritte 2+4) | V3-010 | ⬜ |
+| TC2 | per-Vwk-Palette + Farb-Setter/Query Truecolor (`vs/vq_color16` 5-bit, MAP_COL gefaltet) (Schritte 2+4) | V3-010 | 🟩 (abb2280) |
 | TC3 | Memory-MFDB → 16-bit RGB565 + bb_save (5) | V5-004/005 | ⬜ |
 | TC4 | `vr_trnfm16` + `vro/vrt_cpyfm16`-Truecolor (6) | V5-001/002/003/008 | ⬜ |
 | TC5 | Cursor-Save-under bit-exakt (7) | V6-001 (akut) | ⬜ |
