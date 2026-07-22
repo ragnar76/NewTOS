@@ -218,26 +218,45 @@ pub unsafe fn dispatch(vdipb_ptr: u64, abi: Abi) {
         None => return,
     };
 
-    match opcode {
-        // ── workstation open (no handle required on input) ──
-        1 => workstation::v_opnwk(&pb, backend),
-        100 => workstation::v_opnvwk(&pb, backend),
+    // ── workstation open (no handle on input; must NOT reset multifill) ──
+    if opcode == 1 {
+        workstation::v_opnwk(&pb, backend);
+        return;
+    }
+    if opcode == 100 {
+        workstation::v_opnvwk(&pb, backend);
+        return;
+    }
 
-        // ── ops needing a valid, open workstation ──
-        2 | 101 => {
-            if let Some(h) = open_handle(&pb) {
-                workstation::v_clsvwk(h);
+    // Every other op needs a valid, open workstation (EmuTOS
+    // `vdi_main.c:139-148`). Resolve it and, unless the user fill style is
+    // active, reset the per-op `multifill` flag (AUD-V1-009). This borrow
+    // is scoped so the mutable handle-table borrow is released before a
+    // close op (`v_clswk`/`v_clsvwk`) re-borrows the table.
+    let handle = pb.contrl(C_HANDLE);
+    // SAFETY: single trap path.
+    match unsafe { vwk::resolve(handle) } {
+        Some(vwk) => {
+            if vwk.fill_style != 4 {
+                vwk.multifill = false;
             }
         }
-        3 if open_handle(&pb).is_some() => workstation::v_clrwk(backend),
+        None => return, // no such open workstation → VDI no-op
+    }
 
-        // ── attribute setters + output primitives (need the vwk) ──
-        5 | 6 | 7 | 8 | 9 | 11 | 12 | 13 | 14 | 15 | 16 | 17 | 18 | 19 | 20 | 21 | 22 | 23 | 24 | 25
-        | 26 | 28 | 30 | 31 | 32 | 33 | 35 | 36 | 37 | 38 | 39 | 103 | 104 | 105 | 106 | 107 | 108
-        | 102 | 109 | 110 | 111 | 112 | 113 | 114 | 115 | 116 | 117 | 118 | 119 | 120 | 121 | 122 | 123
-        | 124 | 125 | 126 | 127 | 128 | 129 | 130 | 131 | 134 => {
-            // SAFETY: single trap path.
-            if let Some(vwk) = unsafe { vwk::resolve(pb.contrl(C_HANDLE)) } {
+    match opcode {
+        // ── workstation close (dispatched by handle, not the vwk ref) ──
+        // v_clswk (2) closes ALL virtual workstations and leaves the
+        // physical one open (AUD-V1-001); v_clsvwk (101) closes a single
+        // virtual workstation, with a physical-handle guard (AUD-V1-002).
+        2 => workstation::v_clswk(),
+        101 => workstation::v_clsvwk(handle),
+        3 => workstation::v_clrwk(backend),
+
+        // ── attribute setters + output primitives + inquiry (need the vwk) ──
+        _ => {
+            // SAFETY: single trap path; `handle` was validated above.
+            if let Some(vwk) = unsafe { vwk::resolve(handle) } {
                 let ncol = backend.num_colors();
                 match opcode {
                     102 => workstation::vq_extnd(&pb, vwk, backend),
@@ -304,25 +323,14 @@ pub unsafe fn dispatch(vdipb_ptr: u64, abi: Abi) {
                     121 => raster::vrt_cpyfm(&pb, vwk, backend, ncol),
                     109 => raster::vro_cpyfm(&pb, vwk, backend),
                     110 => raster::vr_trnfm(&pb),
-                    _ => unreachable!(),
+                    // ── genuine VDI no-ops + not-yet-implemented opcodes ──
+                    // (v_updwk #4, v_cellarray #10, vq_cellarray #27,
+                    // v_valuator #29, #34, and any out-of-range opcode). By
+                    // VDI semantics an unrouted opcode is a no-op — EmuTOS
+                    // maps these to `vdi_v_nop` / returns without drawing.
+                    _ => {}
                 }
             }
         }
-
-        // ── genuine VDI no-ops + not-yet-implemented opcodes ──
-        // (remaining output/inquiry/raster opcodes land in later
-        // milestones; an unrouted opcode is a no-op by VDI semantics.)
-        _ => {}
-    }
-}
-
-/// Resolve `contrl[6]` to an open handle, returning it if valid.
-fn open_handle(pb: &Vdipb) -> Option<i16> {
-    let handle = pb.contrl(C_HANDLE);
-    // SAFETY: single trap path.
-    if unsafe { vwk::resolve(handle).is_some() } {
-        Some(handle)
-    } else {
-        None
     }
 }

@@ -6,18 +6,19 @@
 //! allocates one, `init_wk` fills it from the caller's `work_in`, and
 //! the dispatcher resolves `contrl[6]` to it.
 //!
-//! NewTOS keeps the 16-handle cap but, for the bring-up, backs the
-//! handles with a **static slot table** rather than `Mxalloc` (the
-//! `Vwk` layout is internal — not an ABI promise — so this is free to
-//! choose; a heap-allocated `Vwk` can come later if needed).
+//! NewTOS matches EmuTOS' `NUM_VDI_HANDLES` cap but, for the bring-up,
+//! backs the handles with a **static slot table** rather than `Mxalloc`
+//! (the `Vwk` layout is internal — not an ABI promise — so this is free
+//! to choose; a heap-allocated `Vwk` can come later if needed).
 
 use core::cell::UnsafeCell;
 
 use super::backend::{ClipRect, Pel};
 
-/// Total VDI handles. Handle 1 is the physical workstation; 2..=16 are
-/// virtual. Index 0 is unused (handle 0 = "no/failed handle").
-pub const HANDLE_COUNT: usize = 16;
+/// Total VDI handles (EmuTOS `NUM_VDI_HANDLES`, make-512 profile = 64).
+/// Handle 1 is the physical workstation; 2..=64 are virtual. Index 0 is
+/// unused (handle 0 = "no/failed handle").
+pub const HANDLE_COUNT: usize = 64;
 
 /// The physical-workstation handle (`v_opnwk`).
 pub const PHYS_HANDLE: i16 = 1;
@@ -173,9 +174,10 @@ unsafe fn table() -> &'static mut [Vwk; HANDLE_COUNT] {
     unsafe { &mut *TABLE.0.get() }
 }
 
-/// Allocate a free virtual-workstation handle (2..=16) and return a
-/// mutable reference to its freshly-reset slot, or `None` if all are in
-/// use. The slot's `handle`/`in_use` are set; the caller runs `init_wk`.
+/// Allocate a free virtual-workstation handle (2..=`HANDLE_COUNT`) and
+/// return a mutable reference to its freshly-reset slot, or `None` if all
+/// are in use. The slot's `handle`/`in_use` are set; the caller runs
+/// `init_wk`.
 ///
 /// # Safety
 /// Single trap path (see [`table`]).
@@ -242,4 +244,20 @@ pub unsafe fn free_handle(handle: i16) {
     // SAFETY: caller upholds the single-trap-path invariant.
     let t = unsafe { table() };
     t[(handle - 1) as usize] = Vwk::EMPTY;
+}
+
+/// Close every open virtual workstation (handles 2..=`HANDLE_COUNT`),
+/// leaving the physical workstation (handle 1 / index 0) untouched.
+/// Mirrors the loop in EmuTOS `vdi_v_clswk` (`vdi_control.c:579-584`),
+/// which frees `vwk_ptr[2..]` and keeps `vwk_ptr[VDI_PHYS_HANDLE]`.
+///
+/// # Safety
+/// Single trap path (see [`table`]).
+pub unsafe fn close_all_virtual() {
+    // SAFETY: caller upholds the single-trap-path invariant.
+    let t = unsafe { table() };
+    // Index 0 is the physical workstation (handle 1); skip it.
+    for slot in t.iter_mut().skip(1) {
+        *slot = Vwk::EMPTY;
+    }
 }

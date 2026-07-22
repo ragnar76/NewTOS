@@ -14,6 +14,16 @@ const FIS_PATTERN: i16 = 2;
 const FIS_HATCH: i16 = 3;
 const FIS_USER: i16 = 4;
 
+/// The ROM default user-defined fill pattern (16 rows), copied into a
+/// fresh workstation's `ud_patrn` by `init_wk` so that selecting
+/// `FIS_USER` before any `vsf_udpat` fills with this pattern rather than
+/// with zeroes. EmuTOS `vdi_fill.c:50-53` (`ROM_UD_PATRN`), used by
+/// `init_wk` (`vdi_control.c:335-339`).
+pub(super) const ROM_UD_PATRN: [u16; 16] = [
+    0x07E0, 0x0FF0, 0x1FD8, 0x1808, 0x1808, 0x1008, 0x1E78, 0x1348, 0x1108, 0x0810, 0x0B70, 0x0650,
+    0x07A0, 0x1E20, 0x1BC0, 0x1800,
+];
+
 /// SOLID = one all-ones row (every pixel set).
 static SOLID: [u16; 1] = [0xFFFF];
 

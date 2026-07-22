@@ -42,14 +42,13 @@ pub fn vsin_mode(pb: &Vdipb) {
 /// Atari-TOS quirk EmuTOS reproduces (`vdi_input.c:154-176`, D-VDI-11).
 pub fn vqin_mode(pb: &Vdipb) {
     let dev = pb.intin(0);
-    // Out-of-range device selectors leave INTOUT[0] at the dispatcher
-    // pre-load (0); the C `switch` has no default either.
-    let mode = if (1..=4).contains(&dev) {
-        MODES[dev as usize].load(Ordering::Relaxed)
-    } else {
-        0
-    };
-    pb.set_intout(0, mode);
+    // Out-of-range device selectors leave INTOUT[0] UNTOUCHED (its stale
+    // caller value): EmuTOS' `switch` has no `default` case, so it never
+    // writes INTOUT[0] for an invalid device (`vdi_input.c:154-176`,
+    // AUD-V1-013). CONTRL[4]=1 is still returned (the jump table's nintout).
+    if (1..=4).contains(&dev) {
+        pb.set_intout(0, MODES[dev as usize].load(Ordering::Relaxed));
+    }
     pb.set_contrl(4, 1);
 }
 

@@ -114,8 +114,10 @@ pub fn vr_recfl(pb: &Vdipb, vwk: &Vwk, backend: &dyn RasterBackend) {
 }
 
 /// Maximum polygon vertices / scanline edge crossings handled by the
-/// fixed-size fill buffers (GEM polygons are small).
-const MAX_VERTS: usize = 256;
+/// fixed-size fill buffers. This is EmuTOS' `MAX_VERTICES` (`config.h`,
+/// make-512 profile = 512); it is also advertised as `INQ_TAB[14]` (see
+/// [`super::workstation`], which references this same constant).
+pub(super) const MAX_VERTS: usize = 512;
 
 /// Scan-convert and fill the closed polygon `v[0..n]` with `fill`,
 /// clipped to `clip`. Even-odd rule; each scanline span is a 1-pixel-tall

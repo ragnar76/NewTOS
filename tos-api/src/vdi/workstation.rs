@@ -11,7 +11,7 @@
 
 use super::backend::{ClipRect, RasterBackend};
 use super::vwk::{self, validate_color_index, Vwk};
-use super::Vdipb;
+use super::{fill_patterns, font, Vdipb};
 
 // EmuTOS `vdi_defs.h` limits used in the capability tables.
 const MAX_LINE_STYLE: i16 = 7;
@@ -29,9 +29,17 @@ const FIS_PATTERN: i16 = 2; // interior style: dither pattern
 const PALETTE_PRECISION: i16 = 4096;
 
 /// `DEV_TAB` template (45 WORDs), EmuTOS `DEV_TAB_rom`. Indices
-/// `[0],[1],[13],[35],[39]` are patched from the live device.
+/// `[0],[1],[3],[4],[13],[35],[39]` are patched from the live device by
+/// [`init_wk`] (EmuTOS `update_rez_dependent`, `vdi_control.c:203-208`).
+/// `[3]/[4]` (pixel size) carry the ROM's ST-High placeholder 372 here
+/// and are overwritten with [`get_std_pixel_size`] at open time.
 const DEV_TAB_ROM: [i16; 45] = [
-    639, 399, 0, 372, 372, // 0..4  res-1 x/y, precision, pixel w/h
+    639, 399, 0, 372, 372, // 0..4  res-1 x/y, precision, pixel w/h (patched)
+    // [5] font heights = 3: EmuTOS `text_init` sets DEV_TAB[5] to the number
+    // of system-font (font_id==1) sizes; the Falcon target has three
+    // (6x6/8x8/8x16). VW3-dependent: only 8x16 is present today, so the
+    // value is correct for the target profile but currently over-announces
+    // the installed faces (the 6x6/8x8 faces land in VW3).
     3, MAX_LINE_STYLE, 0, 6, 8, // 5..9  font heights, line styles, lw flag, marker types/sizes
     1, MAX_FILL_PATTERN, MAX_FILL_HATCH, 2, 10, // 10..14 fonts, fill pats, hatches, colours, #GDP
     1, 2, 3, 4, 5, 6, 7, 8, 9, 10, // 15..24 GDP ids (bar..justified text)
@@ -40,15 +48,20 @@ const DEV_TAB_ROM: [i16; 45] = [
     2, 1, 1, 1, 2, // 40..44 #locator/valuator/choice/string devices, ws type
 ];
 
-/// `SIZ_TAB` template (12 WORDs = 6 pairs), EmuTOS `SIZ_TAB_rom`.
+/// `SIZ_TAB` template (12 WORDs = 6 pairs), EmuTOS `SIZ_TAB_rom`. The
+/// character-size fields `[0..3]` are placeholders here (EmuTOS' ROM
+/// template is likewise `{0,7,0,7}`); [`siz_tab`] overwrites them with the
+/// `text_init` fold before the table is returned.
 const SIZ_TAB_ROM: [i16; 12] = [
-    0, 7, 0, 7, // min/max char width/height
+    0, 7, 0, 7, // min/max char width/top — placeholder, filled by `siz_tab()`
     1, 0, MAX_LINE_WIDTH, 0, // min line width, reserved, max line width, reserved
     15, 11, 120, 88, // min/max marker width/height
 ];
 
-/// Maximum polygon vertices (matches `primitives::MAX_VERTS`).
-const MAX_VERTICES: i16 = 256;
+/// Maximum polygon vertices (`INQ_TAB[14]`), EmuTOS `MAX_VERTICES`. Shares
+/// the one definition with the real polygon cap in [`super::primitives`]
+/// (`config.h` make-512 profile = 512).
+const MAX_VERTICES: i16 = super::primitives::MAX_VERTS as i16;
 
 /// `INQ_TAB` template (45 WORDs), EmuTOS `INQ_TAB_rom` — the extended
 /// workstation capabilities returned by `vq_extnd` mode 1. Indices
@@ -63,6 +76,49 @@ const INQ_TAB_ROM: [i16; 45] = [
     0, 0, 0, 0, 0, 0, 0, 0, 0, 0, // 30..39 raster flag / reserved
     0, 0, 0, 0, 0, // 40..44 printer borders / page size
 ];
+
+/// EmuTOS' "standard" pixel size in 1/1000 mm, computed from the live
+/// resolution (`bios/screen.c:872-876`, `get_std_pixel_size`, the VIDEL /
+/// TT path taken by the Falcon030/TOS4 target profile — `HAS_VIDEL`).
+/// Patched into `DEV_TAB[3]/[4]` by [`init_wk`] via `update_rez_dependent`
+/// (`vdi_control.c:205`). For the live 1920×1080 framebuffer this yields
+/// 278/278 (never the ROM template's ST-High 372).
+fn get_std_pixel_size(xres: i16, yres: i16) -> (i16, i16) {
+    let width = if xres < 640 { 556 } else { 278 };
+    let height = if yres < 400 { 556 } else { 278 };
+    (width, height)
+}
+
+/// Cell metrics `(max_char_width, top)` of every system font (`font_id ==
+/// 1`), in font-ring order. EmuTOS' `text_init` (`vdi_text.c:598-663`)
+/// folds `SIZ_TAB[0..3]` from the min/max of these over the whole ring.
+///
+/// **VW3-dependent:** only the 8×16 face exists today, so the fold yields
+/// `{7,13,7,13}` (`min_cw=max_cw=7`, `min_top=max_top=13`). Adding the
+/// 6×6 / 8×8 system faces in VW3 extends this array and the fold then
+/// yields EmuTOS' full `{5,4,7,13}` — no change to the folding code below.
+const SYSTEM_FONT_METRICS: &[(i16, i16)] = &[(font::MAX_CHAR_WIDTH, font::TOP)];
+
+/// `SIZ_TAB` (12 WORDs) with the character-size fields `[0..3]` filled by
+/// the `text_init` fold (EmuTOS `vdi_text.c:598-642`) rather than left at
+/// the ROM template's placeholder `{0,7,0,7}`. `[4..11]` (line / marker
+/// sizes) keep the ROM values. `[0]` = min char width, `[1]` = min top,
+/// `[2]` = max char width, `[3]` = max top.
+fn siz_tab() -> [i16; 12] {
+    let mut siz = SIZ_TAB_ROM;
+    let (mut min_cw, mut min_top, mut max_cw, mut max_top) = (i16::MAX, i16::MAX, 0i16, 0i16);
+    for &(cw, top) in SYSTEM_FONT_METRICS {
+        min_cw = min_cw.min(cw);
+        min_top = min_top.min(top);
+        max_cw = max_cw.max(cw);
+        max_top = max_top.max(top);
+    }
+    siz[0] = min_cw;
+    siz[1] = min_top;
+    siz[2] = max_cw;
+    siz[3] = max_top;
+    siz
+}
 
 /// Populate a freshly-allocated `Vwk` from `work_in` (INTIN) and write
 /// the device capability tables back into the parameter block. Mirrors
@@ -112,17 +168,25 @@ fn init_wk(vwk: &mut Vwk, pb: &Vdipb, backend: &dyn RasterBackend) {
     vwk.xmx_clip = xres - 1;
     vwk.ymx_clip = yres - 1;
 
+    // Default user-defined fill pattern = the ROM pattern (EmuTOS
+    // `init_wk`, `vdi_control.c:335-339`), so `vsf_interior(FIS_USER)`
+    // before any `vsf_udpat` fills with it instead of with zeroes.
+    vwk.ud_patrn = fill_patterns::ROM_UD_PATRN;
+
     // ── outputs: DEV_TAB → INTOUT (45), SIZ_TAB → PTSOUT (12) ──
+    let (pw, ph) = get_std_pixel_size(xres, yres);
     let mut dev = DEV_TAB_ROM;
     dev[0] = xres - 1;
     dev[1] = yres - 1;
+    dev[3] = pw; // pixel width  (get_pixel_size)
+    dev[4] = ph; // pixel height (get_pixel_size)
     dev[13] = ncol as i16;
     dev[35] = if ncol <= 2 { 0 } else { 1 }; // colour capable?
     dev[39] = PALETTE_PRECISION; // DAC RGB-choice count (get_palette)
     for (i, &v) in dev.iter().enumerate() {
         pb.set_intout(i, v);
     }
-    for (i, &v) in SIZ_TAB_ROM.iter().enumerate() {
+    for (i, &v) in siz_tab().iter().enumerate() {
         pb.set_ptsout(i, v);
     }
 
@@ -160,16 +224,19 @@ pub fn vq_extnd(pb: &Vdipb, vwk: &crate::vdi::vwk::Vwk, backend: &dyn RasterBack
 
     if pb.intin(0) == 0 {
         // Mode 0: identical to v_opnvwk's device tables.
+        let (pw, ph) = get_std_pixel_size(xres, yres);
         let mut dev = DEV_TAB_ROM;
         dev[0] = xres - 1;
         dev[1] = yres - 1;
+        dev[3] = pw; // pixel width  (get_pixel_size)
+        dev[4] = ph; // pixel height (get_pixel_size)
         dev[13] = ncol as i16;
         dev[35] = if ncol <= 2 { 0 } else { 1 };
         dev[39] = PALETTE_PRECISION; // DAC RGB-choice count (get_palette)
         for (i, &v) in dev.iter().enumerate() {
             pb.set_intout(i, v);
         }
-        for (i, &v) in SIZ_TAB_ROM.iter().enumerate() {
+        for (i, &v) in siz_tab().iter().enumerate() {
             pb.set_ptsout(i, v);
         }
     } else {
@@ -202,8 +269,33 @@ pub fn v_opnwk(pb: &Vdipb, backend: &dyn RasterBackend) {
     pb.set_contrl(6, handle);
 }
 
-/// Opcodes 101 / 2 — close a (virtual or physical) workstation.
+/// Opcode 2 — `v_clswk`: close the physical workstation. EmuTOS
+/// `vdi_v_clswk` (`vdi_control.c:573-590`) closes **all** open virtual
+/// workstations (handles 2..=`NUM_VDI_HANDLES`) and leaves the physical
+/// workstation (handle 1) open, making it line-A's current workstation
+/// again. This is the opposite of the previous NewTOS behaviour, which
+/// aliased opcode 2 onto `v_clsvwk` and so closed the *physical* screen
+/// device on the standard standalone-GEM call (AUD-V1-001).
+///
+/// The timer / mouse / VT52-alpha teardown (`timer_exit` /
+/// `vdimouse_exit` / `esc_exit`) that EmuTOS also runs here is out of this
+/// package's scope — the mouse/input (VW6) and escape (VW5) audits own it
+/// — and NewTOS does not model line-A's `CUR_WORK` (documented acceptable
+/// deviation AUD-V1-010).
+pub fn v_clswk() {
+    // SAFETY: single trap path.
+    unsafe { vwk::close_all_virtual() };
+}
+
+/// Opcode 101 — `v_clsvwk`: close a single virtual workstation. EmuTOS
+/// `vdi_v_clsvwk` (`vdi_control.c:462-491`) refuses to close the physical
+/// workstation this way: `if (handle == VDI_PHYS_HANDLE) return;`
+/// (AUD-V1-002). Closing an already-closed handle is a no-op (the
+/// dispatcher already resolved it to an open workstation).
 pub fn v_clsvwk(handle: i16) {
+    if handle == vwk::PHYS_HANDLE {
+        return; // can't close the physical workstation this way
+    }
     // SAFETY: single trap path.
     unsafe { vwk::free_handle(handle) };
 }

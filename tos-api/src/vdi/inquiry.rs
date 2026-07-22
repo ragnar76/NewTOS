@@ -117,10 +117,14 @@ pub fn v_get_pixel(pb: &Vdipb, backend: &dyn RasterBackend) {
 }
 
 /// Opcode 128 — `vq_key_s`: the current keyboard shift-state bitmask
-/// (`MODE_*`), from the IKBD decoder via the host.
+/// (`MODE_*`), from the IKBD decoder via the host. EmuTOS `vdi_vq_key_s`
+/// returns `gshift_s()` = `Kbshift(-1) & 0x000f` (`vdi_input.c:112,187`),
+/// so only the four modifier bits (right-shift/left-shift/ctrl/alt) are
+/// reported — the Caps-Lock bit (0x10) that the IKBD decoder also tracks
+/// is masked off (AUD-V1-007).
 pub fn vq_key_s(pb: &Vdipb) {
     let state = crate::host::host().map(|h| h.keyboard_shift_state()).unwrap_or(0);
-    pb.set_intout(0, state as i16);
+    pb.set_intout(0, (state as i16) & 0x0f);
     pb.set_contrl(4, 1);
 }
 
@@ -185,9 +189,15 @@ pub fn vqt_width(pb: &Vdipb, _vwk: &Vwk) {
     pb.set_contrl(2, 3);
 }
 
-/// Opcode 130 — `vqt_name`: the `INTIN[0]`-th (1-based) font face. Only
-/// the system font exists, so every index returns it: `INTOUT[0]` = font
-/// id, `INTOUT[1..]` = the name, one char per WORD, padded to `NAME_LEN`.
+/// Opcode 130 — `vqt_name`: the `INTIN[0]`-th (1-based) font face.
+///
+/// **VW3-dependent:** EmuTOS `vdi_vqt_name` (`vdi_text.c:1100-1134`) walks
+/// the font ring and returns the element-th face (element 1 = `fon6x6` ⇒
+/// "6X6 system font"). NewTOS ships only the single 8×16 face today, so
+/// every index correctly resolves to it: `INTOUT[0]` = font id,
+/// `INTOUT[1..]` = the name, one char per WORD, padded to `NAME_LEN`. When
+/// the 6×6 / 8×8 faces land in VW3, `INTIN[0]` must index the ring
+/// (AUD-V1-011); until then there is no other face to select.
 pub fn vqt_name(pb: &Vdipb) {
     pb.set_intout(0, font::FONT_ID);
     for i in 0..font::NAME_LEN {
