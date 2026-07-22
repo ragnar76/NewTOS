@@ -14,10 +14,10 @@ liegt unter allen Render-Paketen → es kommt **VOR V2/V3/V4**. Neue Reihenfolge
 
 **TC1–TC5 (Truecolor) → V1-Re-Green → V2 → V3 → V4 → V6.**
 
-TC-Pakete (aus dem 8-Schritt-Plan): TC1 Backend-Modell+per-Vwk-Palette+DEV_TAB/INQ
-(1-3, revidiert V1), TC2 Farb-Setter/Query (4), TC3 16-bit-MFDB (5, löst
-V5-004/005), TC4 `vr_trnfm16`/`cpyfm16` (6, löst V5-001/002/003/008), TC5
-Cursor-Save-under (7, V6-001 akut). Die unten stehenden VW-Pakete gelten
+TC-Pakete (aus dem 8-Schritt-Plan): **TC1 Backend-Modell+DEV_TAB/INQ+ap_planes
+(Schritte 1+3, revidiert V1) — ✅ `09c9ddc`**, TC2 per-Vwk-Palette+Farb-Setter/Query
+(Schritte 2+4), TC3 16-bit-MFDB (5, löst V5-004/005), TC4 `vr_trnfm16`/`cpyfm16`
+(6, löst V5-001/002/003/008), TC5 Cursor-Save-under (7, V6-001 akut). Die unten stehenden VW-Pakete gelten
 inhaltlich weiter, aber V5 ist in TC aufgegangen und V1 wird in TC1 revidiert.
 Status/Tracking: `00-GATE.md`.
 
