@@ -19,21 +19,33 @@
 //! **Memory→Screen** (`bb_restore`), and **Memory↔Memory**.
 //!
 //! **NewTOS memory-MFDB format (device form, `fd_stand = 0`).** A memory
-//! MFDB (`fd_addr != 0`) is a **32-bpp chunky truecolor** buffer matching
-//! the backend's framebuffer store: one `u32` (XRGB8888) per pixel. The
-//! row stride is derived from `fd_wdwidth` (16-pixel words, so the row is
-//! rounded up to a multiple of 16 px, mirroring EmuTOS `bb_set`'s word
-//! alignment) — a memory copy uses the MFDB's *own* geometry, never the
-//! screen stride. `fd_nplanes = 32` marks the 32-bpp depth; with it the
-//! classic interleaved-stride identity `bytes/line = fd_wdwidth *
-//! fd_nplanes / 8 * 16 = fd_wdwidth * 64` holds. This differs from the
-//! m68k planar `bb_save` (which uses `fd_stand = TRUE`, plane-sequential):
-//! our screen store is chunky, so we save/restore the raw device pixels
-//! (`docs/api/vdi/raster/_raster.md`, "NewTOS memory-MFDB format";
-//! `docs/COMPATIBILITY.md` — the *observable* save/restore contract is
-//! reproduced, the internal buffer layout is ours). The buffer is
-//! caller-owned (AES `bb_save` allocates it); the VDI only reads/writes
-//! through `fd_addr`, always bounds-checked against `fd_w × fd_h`.
+//! MFDB (`fd_addr != 0`) is a **16-bit RGB565-chunky truecolor** buffer:
+//! one `UWORD` (`RRRRRGGGGG0BBBBB`, the green LSB / bit 5 always 0 — the
+//! Falcon truecolor pixel, `vdi_defs.h:156`, `vdi_col.c:599`) per pixel.
+//! This is the app-visible **wireformat** EmuTOS' `vro_cpyfm16` /
+//! `vrt_cpyfm16` operate on raw (`vdi_raster.c:975-1221,1226-1326`): a
+//! Falcon program that pokes RGB565 pixels into its own MFDB and blits
+//! expects exactly this layout — it is observable, not an implementation
+//! detail (`docs/COMPATIBILITY.md`). The row stride is derived from
+//! `fd_wdwidth` (16-pixel words, so the row is rounded up to a multiple of
+//! 16 px, mirroring EmuTOS `bb_set`'s word alignment) — a memory copy uses
+//! the MFDB's *own* geometry, never the screen stride. `fd_nplanes = 16`
+//! marks the depth ([`CHUNKY_PLANES`]); with it the classic interleaved
+//! identity `bytes/line = fd_wdwidth * fd_nplanes / 8 * 16 = fd_wdwidth *
+//! 32` holds.
+//!
+//! The **physical framebuffer stays 32-bpp XRGB8888** (an internal detail
+//! per `docs/COMPATIBILITY.md`); the 16↔32 conversion happens only at the
+//! screen boundary inside [`screen_to_mem`] / [`mem_to_screen`], via the
+//! backend's [`RasterBackend::device_to_rgb565`] /
+//! [`RasterBackend::rgb565_to_device`]. Because the screen is
+//! 5-bit-quantised (every VDI draw resolves through the RGB555-in-565
+//! pseudo-palette), that round-trip is **lossless**, so `bb_save`/
+//! `bb_restore` reproduce the screen bit-for-bit.
+//!
+//! The buffer is caller-owned (AES `bb_save` allocates it); the VDI only
+//! reads/writes through `fd_addr`, always bounds-checked against
+//! `fd_w × fd_h`.
 
 use super::backend::{ClipRect, MonoSrc, RasterBackend, Rect, WriteMode};
 use super::vwk::{validate_color_index, Vwk};
@@ -43,6 +55,14 @@ use crate::bdos::process::Abi;
 /// The `S_ONLY` logic op (`INTIN[0] = 3`, `D' = S`, replace) — the op AES
 /// `bb_save`/`bb_restore` use (EmuTOS `gemgsxif.c` `bb_set`).
 const OP_REPLACE: u8 = 3;
+
+/// The plane count of a NewTOS device-format memory MFDB (`fd_nplanes`) —
+/// **16**, the Falcon truecolor depth (`v_planes`, `bios/videl.c:320-341`).
+/// The screen resolves to the same count via
+/// [`RasterBackend::planes`](super::backend::RasterBackend::planes). Used
+/// both to stamp `device_mem` MFDBs and as the `setup_info`/`cpy_raster`
+/// plane-equality gate for `vro_cpyfm` (`vdi_raster.c:963,1360`, AUD-V5-004).
+const CHUNKY_PLANES: i16 = 16;
 
 /// Memory Form Definition Block (fixed ABI; native pointer in `addr`).
 /// `stand`/`nplanes` are parsed for completeness (they describe the form
@@ -97,11 +117,12 @@ impl Mfdb {
         }
     }
 
-    /// Build a NewTOS 32-bpp device-format memory MFDB over a caller-owned
-    /// `u32` pixel buffer of `w × h` pixels (AES `bb_save`): `stand = 0`
-    /// (device), `nplanes = 32` (32-bpp chunky), `wdwidth = (w + 15) / 16`.
+    /// Build a NewTOS 16-bit RGB565 device-format memory MFDB over a
+    /// caller-owned pixel buffer of `w × h` `u16` pixels (AES `bb_save`):
+    /// `stand = 0` (device), `nplanes = 16` ([`CHUNKY_PLANES`]),
+    /// `wdwidth = (w + 15) / 16`.
     fn device_mem(addr: u64, w: i16, h: i16) -> Self {
-        Mfdb { addr, w, h, wdwidth: mem_wdwidth(w), stand: 0, nplanes: 32 }
+        Mfdb { addr, w, h, wdwidth: mem_wdwidth(w), stand: 0, nplanes: CHUNKY_PLANES }
     }
 
     fn is_screen(&self) -> bool {
@@ -109,26 +130,26 @@ impl Mfdb {
     }
 
     /// Row stride in **pixels** of this device-format memory MFDB (one
-    /// `u32` per pixel), derived from `fd_wdwidth` (16-pixel words, so the
+    /// `u16` per pixel), derived from `fd_wdwidth` (16-pixel words, so the
     /// row is padded up to cover `fd_w`). The copy uses the MFDB's own
     /// geometry — never the screen stride.
     fn mem_stride_px(&self) -> usize {
         (self.wdwidth.max(0) as usize) * 16
     }
 
-    /// Number of `u32` pixel words the buffer holds (`stride × height`);
+    /// Number of `u16` pixel words the buffer holds (`stride × height`);
     /// every memory access is bounds-checked against this.
     fn mem_capacity(&self) -> usize {
         self.mem_stride_px() * (self.h.max(0) as usize)
     }
 
-    /// Read the 32-bpp pixel at `(col, row)` of a memory MFDB, or `0` when
-    /// outside the `fd_w × fd_h` extent (or the buffer).
+    /// Read the 16-bit RGB565 pixel at `(col, row)` of a memory MFDB, or `0`
+    /// when outside the `fd_w × fd_h` extent (or the buffer).
     ///
     /// # Safety
-    /// `addr` must point at a `mem_capacity()`-word `u32` buffer.
+    /// `addr` must point at a `mem_capacity()`-word `u16` buffer.
     #[inline]
-    unsafe fn get_mem(&self, col: i32, row: i32) -> u32 {
+    unsafe fn get_mem(&self, col: i32, row: i32) -> u16 {
         if col < 0 || row < 0 || col >= self.w as i32 || row >= self.h as i32 {
             return 0;
         }
@@ -137,17 +158,17 @@ impl Mfdb {
             return 0;
         }
         // SAFETY: `idx < mem_capacity()`, within the caller-owned buffer.
-        unsafe { (self.addr as *const u32).add(idx).read() }
+        unsafe { (self.addr as *const u16).add(idx).read_unaligned() }
     }
 
-    /// Write the 32-bpp pixel at `(col, row)` of a memory MFDB; a
+    /// Write the 16-bit RGB565 pixel at `(col, row)` of a memory MFDB; a
     /// coordinate outside the `fd_w × fd_h` extent (or the buffer) is
     /// ignored.
     ///
     /// # Safety
     /// As [`get_mem`](Self::get_mem).
     #[inline]
-    unsafe fn put_mem(&self, col: i32, row: i32, val: u32) {
+    unsafe fn put_mem(&self, col: i32, row: i32, val: u16) {
         if col < 0 || row < 0 || col >= self.w as i32 || row >= self.h as i32 {
             return;
         }
@@ -156,7 +177,7 @@ impl Mfdb {
             return;
         }
         // SAFETY: `idx < mem_capacity()`, within the caller-owned buffer.
-        unsafe { (self.addr as *mut u32).add(idx).write(val) }
+        unsafe { (self.addr as *mut u16).add(idx).write_unaligned(val) }
     }
 }
 
@@ -167,14 +188,17 @@ fn mem_wdwidth(w: i16) -> i16 {
     ((w.max(0) as i32 + 15) / 16) as i16
 }
 
-/// The 16-entry BitBlt logic-op table, `D' = op(S, D)`, on the raw pixel
-/// word (`docs/api/vdi/raster/_raster.md`, "Logic operations"). The same
-/// table the screen backend applies for Screen→Screen; kept here so the
-/// memory (off-screen) paths need no `kernel` dependency and so all four
-/// src/dst combinations share one definition. Only the low nibble selects
-/// the op (`PAT_FLAG` is already stripped by the caller).
+/// The 16-entry BitBlt logic-op table, `D' = op(S, D)`, acting **literally
+/// on the 16-bit RGB565 pixel word** — EmuTOS `vro_cpyfm16` operates the
+/// exact same table on `UWORD` pixels (`vdi_raster.c:1008-1220`). The
+/// memory side of every copy is now 16-bit RGB565 (see module docs), and
+/// the screen is converted to/from RGB565 at the boundary, so a
+/// memory-MFDB copy always computes the op in the 16-bit domain, matching
+/// the Falcon truecolor VDI. Kept here so the off-screen paths need no
+/// `kernel` dependency. Only the low nibble selects the op (`PAT_FLAG` is
+/// already stripped by the caller).
 #[inline]
-fn raster_op(op: u8, s: u32, d: u32) -> u32 {
+fn raster_op(op: u8, s: u16, d: u16) -> u16 {
     match op & 0x0f {
         0 => 0,          // BM_ALL_WHITE   D' = 0
         1 => s & d,      // BM_S_AND_D
@@ -195,6 +219,20 @@ fn raster_op(op: u8, s: u32, d: u32) -> u32 {
     }
 }
 
+/// Effective plane count of an MFDB for the `s_nxwd == d_nxwd` /
+/// `plane_ct <= 16` gates EmuTOS applies in `setup_info` / `cpy_raster`
+/// (`vdi_raster.c:922,937,963,1360`). The screen resolves to `v_planes`
+/// (the backend's [`planes`](RasterBackend::planes), 16 under Falcon
+/// truecolor); a memory MFDB carries its own `fd_nplanes`.
+#[inline]
+fn effective_planes(mfdb: &Mfdb, backend: &dyn RasterBackend) -> i16 {
+    if mfdb.is_screen() {
+        backend.planes() as i16
+    } else {
+        mfdb.nplanes
+    }
+}
+
 /// Normalise a rectangle's two corners read from `PTSIN[base..base+3]`.
 fn rect_from_ptsin(pb: &Vdipb, base: usize) -> Rect {
     let mut x1 = pb.ptsin(base);
@@ -210,8 +248,10 @@ fn rect_from_ptsin(pb: &Vdipb, base: usize) -> Rect {
     Rect { x: x1, y: y1, w: x2 - x1 + 1, h: y2 - y1 + 1 }
 }
 
-/// Opcode 121 — `vrt_cpyfm`: copy a 1-plane monochrome source into the
-/// colour screen, expanding to `INTIN[1]` (fg) / `INTIN[2]` (bg).
+/// Opcode 121 — `vrt_cpyfm`: copy a 1-plane monochrome source into a colour
+/// destination, expanding to `INTIN[1]` (fg) / `INTIN[2]` (bg). The
+/// destination may be the **screen** (the common case: icons/sprites onto
+/// the display) or a **memory MFDB** (16-bit RGB565, AUD-V5-005).
 pub fn vrt_cpyfm(pb: &Vdipb, vwk: &Vwk, backend: &dyn RasterBackend, ncol: u16) {
     let abi = pb.abi();
     // SAFETY: caller-ABI MFDB-pointer convention (see module docs); the
@@ -219,18 +259,29 @@ pub fn vrt_cpyfm(pb: &Vdipb, vwk: &Vwk, backend: &dyn RasterBackend, ncol: u16) 
     let (src, dst) = unsafe {
         (Mfdb::from_ptr(pb.contrl_ptr(0), abi), Mfdb::from_ptr(pb.contrl_ptr(1), abi))
     };
-    // Bring-up: 1-plane source into the screen destination.
-    if src.is_screen() || src.nplanes != 1 || !dst.is_screen() {
+    // Source must be a 1-plane memory raster (`cpy_raster:1384`,
+    // `s_nxwd != 2` ⇒ reject); a screen source is not a mono form.
+    if src.is_screen() || src.nplanes != 1 {
+        return;
+    }
+    // `setup_info`: the destination plane count must be ≤ 16
+    // (`vdi_raster.c:963`), else there is nothing to do.
+    if effective_planes(&dst, backend) > CHUNKY_PLANES {
         return;
     }
 
     // `INTIN[0]` is the `MD_*` write mode (EmuTOS `vdi_defs.h:77-80`,
     // `cpy_raster:1397-1430`): MD_REPLACE=1, MD_TRANS=2, MD_XOR=3,
-    // MD_ERASE=4. Any other value (0 or ≥5) is a silent no-op — EmuTOS'
-    // `default: return` — so we must not blit. (The old code decoded 1/2
-    // swapped and folded XOR/ERASE onto transparent; corrected here per
-    // `_raster.md:195,208-213,286-288`.)
-    let mode = match pb.intin(0) {
+    // MD_ERASE=4. Strip `PAT_FLAG` (bit 4) and reject anything above the
+    // low 5 bits before the switch, exactly like `vro_cpyfm` and EmuTOS
+    // `cpy_raster:1341,1347` (AUD-V5-001): a legal `MD_x|PAT_FLAG` must
+    // still copy, and a bit-5+ value is invalid. Any other value (0 or ≥5)
+    // is a silent no-op — EmuTOS' `default: return`.
+    let raw = pb.intin(0);
+    if raw & !0x1F != 0 {
+        return; // bits above PAT_FLAG set → invalid, no-op
+    }
+    let mode = match raw & !0x10 {
         1 => WriteMode::Replace,        // fg on 1-bits, bg on 0-bits
         2 => WriteMode::Transparent,    // fg on 1-bits, leave 0-bits
         3 => WriteMode::Xor,            // complement on 1-bits, leave 0-bits
@@ -246,15 +297,69 @@ pub fn vrt_cpyfm(pb: &Vdipb, vwk: &Vwk, backend: &dyn RasterBackend, ncol: u16) 
     // SAFETY: the source MFDB describes `h * wdwidth` words at `addr`.
     let words = (src.h as usize) * (src.wdwidth as usize);
     let bits = unsafe { core::slice::from_raw_parts(src.addr as *const u16, words) };
+    let mono = MonoSrc { bits, stride_words: src.wdwidth as u16, x: s.x, y: s.y };
 
-    backend.blit_mono(
-        Rect { x: d.x, y: d.y, w: s.w, h: s.h },
-        MonoSrc { bits, stride_words: src.wdwidth as u16, x: s.x, y: s.y },
-        fg,
-        bg,
-        mode,
-        vwk.clip_rect(),
-    );
+    if dst.is_screen() {
+        // Screen destination: the backend expands the mono source into the
+        // display, clipped to the workstation clip (the only clipped case,
+        // `setup_info` `use_clip` when dst is screen).
+        backend.blit_mono(Rect { x: d.x, y: d.y, w: s.w, h: s.h }, mono, fg, bg, mode, vwk.clip_rect());
+    } else {
+        // Memory destination (AUD-V5-005): expand into the 16-bit RGB565
+        // buffer with the same `MD_*` semantics, resolving fg/bg through the
+        // active pseudo-palette (`vrt_cpyfm16`, `fgcol = palette[fg_col]`).
+        // No clipping (dst is not the screen).
+        let fg16 = backend.pel_to_device16(fg);
+        let bg16 = backend.pel_to_device16(bg);
+        mono_to_mem(&dst, mono, d.x, d.y, s.w, s.h, mode, fg16, bg16);
+    }
+}
+
+/// `vrt_cpyfm` memory-destination expansion (EmuTOS `vrt_cpyfm16`,
+/// `vdi_raster.c:1226-1326`): blit the 1-plane `mono` source into the
+/// 16-bit RGB565 memory MFDB `dst` at origin `(dx, dy)` over `w × h`
+/// pixels, per the `MD_*` write mode. `fg16`/`bg16` are the already-
+/// resolved RGB565 pixel words. No clipping.
+#[allow(clippy::too_many_arguments)]
+fn mono_to_mem(dst: &Mfdb, mono: MonoSrc, dx: i16, dy: i16, w: i16, h: i16, mode: WriteMode, fg16: u16, bg16: u16) {
+    let stride = mono.stride_words as usize;
+    for r in 0..h as i32 {
+        let sy = mono.y as i32 + r;
+        for c in 0..w as i32 {
+            let sx = mono.x as i32 + c;
+            let widx = sy as usize * stride + (sx as usize) / 16;
+            let set = mono.bits.get(widx).is_some_and(|word| word & (0x8000u16 >> (sx & 15)) != 0);
+            let (col, row) = (dx as i32 + c, dy as i32 + r);
+            match mode {
+                // MD_REPLACE: fg on 1-bits, bg on 0-bits (opaque).
+                WriteMode::Replace => {
+                    // SAFETY: `dst` is a valid device-format memory MFDB.
+                    unsafe { dst.put_mem(col, row, if set { fg16 } else { bg16 }) };
+                }
+                // MD_TRANS: fg on 1-bits; 0-bits untouched.
+                WriteMode::Transparent => {
+                    if set {
+                        // SAFETY: as above.
+                        unsafe { dst.put_mem(col, row, fg16) };
+                    }
+                }
+                // MD_XOR: complement the destination on 1-bits.
+                WriteMode::Xor => {
+                    if set {
+                        // SAFETY: as above; `get_mem` bounds-checks.
+                        unsafe { dst.put_mem(col, row, !dst.get_mem(col, row)) };
+                    }
+                }
+                // MD_ERASE (reverse-transparent): bg on 0-bits; 1-bits alone.
+                WriteMode::RevTransparent => {
+                    if !set {
+                        // SAFETY: as above.
+                        unsafe { dst.put_mem(col, row, bg16) };
+                    }
+                }
+            }
+        }
+    }
 }
 
 /// Opcode 109 — `vro_cpyfm`: opaque copy. Handles all four source/
@@ -280,6 +385,19 @@ pub fn vro_cpyfm(pb: &Vdipb, vwk: &Vwk, backend: &dyn RasterBackend) {
     }
     mode &= !0x10; // strip PAT_FLAG (bit 4); D-082: never blits a pattern
     let op = (mode & 0x0F) as u8;
+
+    // Opaque-copy plane gate (AUD-V5-004), EmuTOS `setup_info` +
+    // `cpy_raster:1360`: the destination plane count must be ≤ 16
+    // (`vdi_raster.c:963`) and the source/destination plane counts must
+    // match (`s_nxwd != d_nxwd` ⇒ return). The screen resolves to
+    // `v_planes` (16), a memory MFDB to its own `fd_nplanes`; a
+    // `device_mem` buffer is stamped [`CHUNKY_PLANES`] (16), so the
+    // Screen↔Memory `bb_save`/`bb_restore` case (16 vs 16) still passes.
+    let (sp, dp) = (effective_planes(&src, backend), effective_planes(&dst, backend));
+    if dp > CHUNKY_PLANES || sp != dp {
+        return;
+    }
+
     let s = rect_from_ptsin(pb, 0); // source rect (extent)
     let d = rect_from_ptsin(pb, 4); // destination upper-left
     match (src.is_screen(), dst.is_screen()) {
@@ -301,7 +419,11 @@ pub fn vro_cpyfm(pb: &Vdipb, vwk: &Vwk, backend: &dyn RasterBackend) {
 fn screen_to_mem(backend: &dyn RasterBackend, dst: &Mfdb, s: Rect, dx: i16, dy: i16, op: u8) {
     for r in 0..s.h as i32 {
         for c in 0..s.w as i32 {
-            let sp = backend.get_device_pixel((s.x as i32 + c) as i16, (s.y as i32 + r) as i16);
+            // Convert the raw 32-bpp screen pixel to the 16-bit RGB565
+            // memory wireformat, then apply the logic op in the 16-bit
+            // domain (EmuTOS `vro_cpyfm16`, all ops on `UWORD` pixels).
+            let sp = backend
+                .device_to_rgb565(backend.get_device_pixel((s.x as i32 + c) as i16, (s.y as i32 + r) as i16));
             // SAFETY: `dst` is a valid device-format memory MFDB.
             let dp = unsafe { dst.get_mem(dx as i32 + c, dy as i32 + r) };
             // SAFETY: as above; `put_mem` bounds-checks the index.
@@ -338,9 +460,13 @@ fn mem_to_screen(
             let sc = s.x as i32 + (tx - dx as i32);
             let sr = s.y as i32 + (ty - dy as i32);
             // SAFETY: `src` is a valid device-format memory MFDB.
-            let sp = unsafe { src.get_mem(sc, sr) };
-            let dp = backend.get_device_pixel(tx as i16, ty as i16);
-            backend.put_device_pixel(tx as i16, ty as i16, raster_op(op, sp, dp));
+            let sp = unsafe { src.get_mem(sc, sr) }; // 16-bit RGB565
+            // Bring the live screen pixel into the 16-bit domain, apply the
+            // op there, then expand the result back to a device pixel — the
+            // op runs on `UWORD` pixels exactly as EmuTOS `vro_cpyfm16`.
+            let dp = backend.device_to_rgb565(backend.get_device_pixel(tx as i16, ty as i16));
+            let result = raster_op(op, sp, dp);
+            backend.put_device_pixel(tx as i16, ty as i16, backend.rgb565_to_device(result));
         }
     }
     backend.flush_rect(x0 as i16, y0 as i16, x1 as i16, y1 as i16);
@@ -365,18 +491,28 @@ fn mem_to_mem(src: &Mfdb, dst: &Mfdb, s: Rect, dx: i16, dy: i16, op: u8) {
     }
 }
 
-/// Number of `u32` pixel words a `bb_save` buffer for a `w × h` screen
-/// region needs (device-format, one word per pixel, rows padded to 16 px).
-/// AES allocates exactly this from the kernel heap.
+/// Number of `u32` words a `bb_save` buffer for a `w × h` screen region
+/// needs. The save bitmap is **16-bit RGB565 chunky** (one `u16` per pixel,
+/// rows padded to 16 px), unified with the app-visible memory-MFDB
+/// wireformat and EmuTOS' own truecolor `bb_save` buffer (`gemgsxif.c:334`,
+/// `gl_nplanes = v_planes = 16`). The AES form/menu code allocates it as a
+/// `Vec<u32>` — the container element type is an allocation detail while the
+/// *pixels* are 16-bit (`docs/COMPATIBILITY.md`): two 16-bit pixels per
+/// `u32`, so the count is `stride_px * h / 2 = fd_wdwidth * 8 * h`.
+/// `stride_px` is a multiple of 16, so the division is exact. AES allocates
+/// exactly this from the kernel heap.
 pub fn bb_save_words(w: i16, h: i16) -> usize {
-    (mem_wdwidth(w) as usize) * 16 * (h.max(0) as usize)
+    (mem_wdwidth(w) as usize) * 8 * (h.max(0) as usize)
 }
 
 /// AES `bb_save` (EmuTOS `gemgsxif.c` `bb_set`, save direction): copy the
-/// screen rectangle `(x, y, w, h)` into the caller-owned 32-bpp
-/// device-format buffer `mem` (a Screen→Memory `vro_cpyfm`, `S_ONLY` /
-/// replace). Called directly by the AES form manager rather than through a
-/// re-entrant trap.
+/// screen rectangle `(x, y, w, h)` into the caller-owned buffer `mem` as a
+/// 16-bit RGB565 device-format bitmap (a Screen→Memory `vro_cpyfm`, `S_ONLY`
+/// / replace). Since the screen is 5-bit-quantised, the RGB565 store is
+/// lossless and the matching [`bb_restore`] reproduces the pixels bit-for-
+/// bit. Called directly by the AES form manager rather than through a
+/// re-entrant trap. `mem` is a `u32` pointer for the caller's convenience;
+/// its bytes hold two 16-bit pixels per word (see [`bb_save_words`]).
 ///
 /// # Safety
 /// `mem` must point at a buffer of at least [`bb_save_words`]`(w, h)`
@@ -386,12 +522,12 @@ pub unsafe fn bb_save(backend: &dyn RasterBackend, mem: *mut u32, x: i16, y: i16
     screen_to_mem(backend, &dst, Rect { x, y, w, h }, 0, 0, OP_REPLACE);
 }
 
-/// AES `bb_restore`: copy the device-format buffer `mem` (filled by
-/// [`bb_save`]) back to the screen rectangle `(x, y, w, h)` — a
+/// AES `bb_restore`: copy the 16-bit RGB565 device-format buffer `mem`
+/// (filled by [`bb_save`]) back to the screen rectangle `(x, y, w, h)` — a
 /// Memory→Screen `vro_cpyfm` replace, clipped to `clip`.
 ///
 /// # Safety
-/// As [`bb_save`]; `mem` must hold [`bb_save_words`]`(w, h)` words.
+/// As [`bb_save`]; `mem` must hold [`bb_save_words`]`(w, h)` `u32` words.
 pub unsafe fn bb_restore(
     backend: &dyn RasterBackend,
     mem: *const u32,

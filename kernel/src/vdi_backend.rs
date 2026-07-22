@@ -371,6 +371,32 @@ impl RasterBackend for VdiScreen {
         }
     }
 
+    fn pel_to_device16(&self, pel: Pel) -> u16 {
+        ensure_palette_init();
+        // The active per-workstation pseudo-palette holds one RGB555-in-565
+        // word per pen (EmuTOS `CUR_WORK->ext->palette`); `vrt_cpyfm16` writes
+        // exactly this word into a memory destination (`vdi_raster.c:1234`).
+        // `pel` is a `u8`, so it always indexes the 256-entry array in bounds.
+        ACTIVE_PALETTE[pel as usize].load(Ordering::Relaxed)
+    }
+
+    fn device_to_rgb565(&self, argb: u32) -> u16 {
+        // XRGB8888 → RGB555-in-565: keep the top 5 bits of each 8-bit gun
+        // (bit 5 / green LSB stays 0 by construction). The framebuffer is
+        // 5-bit-quantised, so this recovers the exact stored value.
+        let r5 = ((argb >> 19) & 0x1f) as u16;
+        let g5 = ((argb >> 11) & 0x1f) as u16;
+        let b5 = ((argb >> 3) & 0x1f) as u16;
+        (r5 << 11) | (g5 << 6) | b5
+    }
+
+    fn rgb565_to_device(&self, px: u16) -> u32 {
+        // RGB555-in-565 word → XRGB8888, 5→8-bit gun replication — the same
+        // expansion the draw path uses, so a restored pixel equals the drawn
+        // one bit-for-bit.
+        pal555_to_xrgb(px)
+    }
+
     fn read_pixel(&self, x: i16, y: i16) -> Pel {
         let fb = active_fb();
         if x < 0 || y < 0 || x as u32 >= fb.width() || y as u32 >= fb.height() {

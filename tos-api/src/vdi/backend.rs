@@ -125,6 +125,40 @@ pub trait RasterBackend: Sync {
     /// truecolor DAC expansion).
     fn set_active_palette(&self, palette: &[u16; 256]);
 
+    /// Resolve a PEL to the **16-bit RGB565 memory-MFDB pixel word** through
+    /// the currently [active pseudo-palette](Self::set_active_palette) —
+    /// EmuTOS `vrt_cpyfm16`'s `fgcol = palette[info->fg_col]`
+    /// (`vdi_raster.c:1234-1236`). This is the value written into a
+    /// memory-destination bitmap (a `vrt_cpyfm` memory `d_form`), where the
+    /// stored pixels are raw `RRRRRGGGGG0BBBBB` words rather than expanded
+    /// framebuffer pixels. The screen-destination path resolves the same PEL
+    /// to a device pixel internally (`blit_mono`); this exposes the packed
+    /// 16-bit form the off-screen memory buffer needs. `pel` is a `u8`, so it
+    /// always indexes the 256-entry active palette in bounds.
+    fn pel_to_device16(&self, pel: Pel) -> u16;
+
+    /// Convert a **raw device pixel word** (as returned by
+    /// [`get_device_pixel`](Self::get_device_pixel)) to the 16-bit RGB565
+    /// memory-MFDB wireformat (`RRRRRGGGGG0BBBBB`, green LSB 0). This is the
+    /// screen→memory half of the 16↔32 boundary a memory-MFDB copy crosses
+    /// (`vro_cpyfm` Screen→Memory / AES `bb_save`): the physical framebuffer
+    /// is 32-bpp XRGB8888 (an internal detail per `docs/COMPATIBILITY.md`)
+    /// while the app-visible memory MFDB is 16-bit RGB565. Because the screen
+    /// is 5-bit-quantised (every VDI draw resolves through the RGB555-in-565
+    /// pseudo-palette), the top 5 bits of each gun recover the exact stored
+    /// value, so [`rgb565_to_device`](Self::rgb565_to_device) inverts this
+    /// losslessly.
+    fn device_to_rgb565(&self, argb: u32) -> u16;
+
+    /// Convert a 16-bit RGB565 memory-MFDB pixel (`RRRRRGGGGG0BBBBB`) back to
+    /// a raw device pixel word — the memory→screen half of the 16↔32 boundary
+    /// (`vro_cpyfm` Memory→Screen / AES `bb_restore`). Each 5-bit gun is
+    /// bit-replicated to 8 bits (`c8 = (c5<<3)|(c5>>2)`, the VIDEL truecolor
+    /// DAC expansion). Exact inverse of
+    /// [`device_to_rgb565`](Self::device_to_rgb565) on any 5-bit-quantised
+    /// pixel, so a `bb_save`/`bb_restore` round-trip is bit-exact.
+    fn rgb565_to_device(&self, px: u16) -> u32;
+
     /// Read the palette index (PEL) at device pixel `(x, y)`, reverse-
     /// mapping the stored colour to the nearest CLUT entry (`v_get_pixel`,
     /// `v_contourfill`). Out-of-bounds → `0`.
