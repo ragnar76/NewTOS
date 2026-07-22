@@ -25,14 +25,14 @@ Legende: ⬜ offen · 🟡 auditiert (Findings offen) · 🟩 grün (gefixt + re
 |---|---|---|---|---|---|
 | Fundament | **V4 font-data** (font.rs/font_data.rs: 6x6/8x8 + DDA) | ✅ | ❌ | ❌ | 🟡 |
 | Fundament | **V5 raster/blit/backend** | ✅ | ❌ | ❌ | 🟡 |
-| Attribute | **V1 control/workstation/inquiry** | ✅ | ❌ | ❌ | 🟡 |
+| Attribute | **V1 control/workstation/inquiry** | ✅ | ✅ | ✅ | 🟩 (727b33c) |
 | Primitive | **V2 line/marker/fill/attributes/contour** | ✅ | ❌ | ❌ | 🟡 |
 | Höher | **V3 gdp/bezier/color/escape** | ✅ | ❌ | ❌ | 🟡 |
 | Höher | **V4 text (v_gtext/vst_*/justified)** | ✅ | ❌ | ❌ | 🟡 |
 | I/O | **V6 mouse/input** | ✅ | ❌ | ❌ | 🟡 |
 | Coverage | **Inventar (269 Fn Presence)** | ⬜ | — | — | ⬜ |
 
-**Gate offen (🔴).** Kein Paket ist grün. Öffnet erst, wenn ALLE Zeilen 🟩 sind.
+**Gate offen (🔴).** 1 von 6 grün (V1). Öffnet erst, wenn ALLE Zeilen 🟩 sind.
 
 ## Reihenfolge zum Grün-Machen (bottom-up)
 
