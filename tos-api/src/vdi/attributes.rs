@@ -274,10 +274,19 @@ pub fn vst_height(pb: &Vdipb, vwk: &mut Vwk) {
         }
     }
     vwk.cur_font = single;
+    // Reset to the non-scaled state (EmuTOS `vdi_vst_height`: `vwk->scaled =
+    // FALSE`), overridden below when the size is not an exact ring match.
+    vwk.scaled = false;
 
     let f = font::font(single);
     let report = if (f.top as u16) != test_height {
         let (dda_inc, t_sclsts) = clc_dda(f.top as u16, test_height);
+        // Remember the DDA so the render path (`v_gtext`) actually scales the
+        // glyph, not just the reported metrics (EmuTOS stores these on the
+        // Vwk for `output_text`/`text_blt`).
+        vwk.dda_inc = dda_inc;
+        vwk.t_sclsts = t_sclsts;
+        vwk.scaled = true;
         scaled_report(f, dda_inc, t_sclsts)
     } else {
         base_report(f)
@@ -308,14 +317,22 @@ pub fn vst_point(pb: &Vdipb, vwk: &mut Vwk) {
         }
     }
     vwk.cur_font = single;
+    // Reset to the non-scaled state (EmuTOS `vdi_vst_point`: `vwk->scaled =
+    // FALSE`), overridden below when the doubled font is selected.
+    vwk.scaled = false;
 
     let sf = font::font(single);
     let (report, point_out) = if sf.point != test_height {
         let df = font::font(double);
         let h = df.point * 2;
         if h > sf.point && h <= test_height {
-            // The exact size is absent but the doubled font fits: use it.
+            // The exact size is absent but the doubled font fits: use it and
+            // record the exact-double DDA so the render path scales it 2×
+            // (EmuTOS sets `dda_inc = 0xFFFF; t_sclsts = 1` + `make_header`).
             vwk.cur_font = double;
+            vwk.dda_inc = 0xFFFF;
+            vwk.t_sclsts = true;
+            vwk.scaled = true;
             (scaled_report(df, 0xFFFF, true), df.point * 2)
         } else {
             (base_report(sf), sf.point)

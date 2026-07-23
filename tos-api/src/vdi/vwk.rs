@@ -88,6 +88,16 @@ pub struct Vwk {
     /// `vst_height`/`vst_point`, rendered by `v_gtext`. Defaults to the 8×16
     /// system font (`def_font`) on workstation open.
     pub cur_font: SysFontId,
+    /// DDA fraction for a non-exact `vst_height`/`vst_point` size (EmuTOS
+    /// `Vwk.dda_inc`). `0xFFFF` means "exactly double"; only meaningful when
+    /// [`scaled`](Self::scaled) is set.
+    pub dda_inc: u16,
+    /// `true` when the selected size is rendered by DDA-scaling the nearest
+    /// ring font rather than a native raster (EmuTOS `Vwk.scaled`).
+    pub scaled: bool,
+    /// Text-scaling direction (EmuTOS `Vwk.t_sclsts`): `true` enlarges,
+    /// `false` shrinks. Only meaningful when [`scaled`](Self::scaled) is set.
+    pub t_sclsts: bool,
 
     // Mode + clipping.
     pub wrt_mode: i16,
@@ -138,6 +148,9 @@ impl Vwk {
         v_align: 0,
         chup: 0,
         cur_font: super::font::DEFAULT,
+        dda_inc: 0,
+        scaled: false,
+        t_sclsts: false,
         wrt_mode: WM_REPLACE,
         xfm_mode: XFM_RC,
         clip: false,
