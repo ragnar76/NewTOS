@@ -737,6 +737,28 @@ const TE_CNTR: i16 = 2;
 
 // ── dispatch entry points ───────────────────────────────────────────
 
+/// Map an AES `int_in` clip quadruple (`OB_XCLIP..OB_HCLIP`, `int_in[2..5]`:
+/// `cx`/`cy`/`cw`/`ch`) to a VDI clip rectangle, honouring the EmuTOS
+/// **zero-clip convention** (`gsx_sclip`, gemgraf.c:88-104): a zero-sized
+/// rectangle (`cw <= 0 || ch <= 0`) means *no clip* — EmuTOS calls
+/// `vs_clip(FALSE)`, i.e. clipping is turned OFF and everything is drawn
+/// unclipped — so this returns `None` and the caller substitutes the full
+/// screen. A non-empty rectangle becomes `(cx, cy)..(cx+cw-1, cy+ch-1)`,
+/// exactly EmuTOS's `ptsin` computation.
+///
+/// This is the fix for AUD-P3-013: the previous inline `ClipRect { xmx: cx+cw-1
+/// }` turned `cw == 0` into an empty `xmx < xmn` rectangle that drew *nothing*,
+/// inverting the documented "w/h == 0 = draw everything" convention. Shared by
+/// `objc_draw` (through `render_tree_t`) and `objc_change` so both build the AES
+/// clip identically (D-052 documents `int_in[2..5]` as the clip).
+fn clip_from_intin(cx: i16, cy: i16, cw: i16, ch: i16) -> Option<ClipRect> {
+    if cw <= 0 || ch <= 0 {
+        None
+    } else {
+        Some(ClipRect { xmn: cx, ymn: cy, xmx: cx + cw - 1, ymx: cy + ch - 1 })
+    }
+}
+
 /// `objc_draw` (42) — draw the subtree rooted at `OB_DRAWOB`, `OB_DEPTH`
 /// levels deep, clipped to `OB_XCLIP..OB_HCLIP`. `addr_in[0]` = tree.
 pub fn objc_draw(pb: &Aespb) {
@@ -840,7 +862,11 @@ fn render_tree_t(
     ch: i16,
     backend: &dyn RasterBackend,
 ) {
-    let clip = ClipRect { xmn: cx, ymn: cy, xmx: cx + cw - 1, ymx: cy + ch - 1 };
+    // AUD-P3-013 zero-clip convention: `cw`/`ch == 0` means "no clip" = the full
+    // screen, not an empty rectangle (which drew nothing). For a real damaged
+    // rectangle this is byte-identical to the previous inline build.
+    let clip = clip_from_intin(cx, cy, cw, ch)
+        .unwrap_or_else(|| ClipRect::full(backend.width(), backend.height()));
     // Absolute origin of `start` = sum of its ancestors' x/y (like objc_offset).
     let (ox, oy) = abs_offset(t, start);
     draw_tree(t, start, depth, ox - t.x(start), oy - t.y(start), clip, backend);
@@ -1028,7 +1054,13 @@ pub fn objc_change(pb: &Aespb) {
         pb.set_ret(0);
         return;
     }
-    change(tree, obj, newstate, redraw);
+    // OB_XCLIP..OB_HCLIP (int_in[2..5]): EmuTOS sets exactly this VDI clip
+    // before `ob_change` (gemsuper.c:228-230, `gsx_sclip((GRECT*)&OB_XCLIP)`),
+    // so a partial (damaged-rectangle) redraw stays inside the caller's region
+    // instead of spilling full-screen. Zero w/h = no clip = full screen, per the
+    // `gsx_sclip` convention (AUD-P3-003; D-052 documents int_in[2..5] as clip).
+    let clip = clip_from_intin(pb.intin(2), pb.intin(3), pb.intin(4), pb.intin(5));
+    change_clip_t(ObjTree::new(tree), obj, newstate, redraw, clip);
     pb.set_ret(1);
 }
 
@@ -1130,33 +1162,46 @@ pub(crate) fn change(tree: *mut Object, obj: i16, newstate: u16, redraw: bool) {
 
 /// Set `obj`'s state and optionally redraw it, driving the tree through the
 /// caller-supplied [`ObjTree`] accessor (whose ABI width the caller chose:
-/// `new` for an app tree, `lp64` for a kernel-built one).
+/// `new` for an app tree, `lp64` for a kernel-built one). The redraw covers the
+/// full screen — the behaviour every internal caller (menu/form highlight,
+/// `graf_watchbox`) wants; `objc_change` uses [`change_clip_t`] directly to
+/// honour its `int_in[2..5]` clip rectangle instead.
 pub(crate) fn change_t(t: ObjTree, obj: i16, newstate: u16, redraw: bool) {
-    // EmuTOS `ob_change` (gemoblib.c:1263): a `spec == -1` sentinel object
-    // is left entirely untouched — no state change, no redraw — so the
-    // redraw path never dereferences `-1` as a pointer.
+    change_clip_t(t, obj, newstate, redraw, None);
+}
+
+/// Body of [`change_t`]: set `obj`'s state and, if `redraw`, redraw just that
+/// object within `clip_override` (`None` = the full screen, the internal
+/// callers' behaviour; `objc_change` passes the AES `int_in[2..5]` clip).
+fn change_clip_t(t: ObjTree, obj: i16, newstate: u16, redraw: bool, clip_override: Option<ClipRect>) {
     let spec = t.spec(obj);
-    if spec == t.spec_none() {
+    // EmuTOS `ob_change` early-out (gemoblib.c:1263): `if ((curr_state ==
+    // new_state) || (spec == -1L)) return;`. An unchanged state or the `-1`
+    // sentinel leaves the object entirely untouched — no state write, no redraw:
+    // the redraw path never dereferences `-1`, and re-asserting a state the
+    // object already has never flickers. AUD-P3-003 adds the previously-missing
+    // `curr_state == new_state` half (the `spec == -1` half was already present).
+    let curr_state = t.state(obj);
+    if curr_state == newstate || spec == t.spec_none() {
         return;
     }
-    // Capture the old state before overwriting it: a G_USERDEF redraw passes
-    // (prev=curr_state, curr=new_state) to its user routine (EmuTOS `ob_change`,
-    // gemoblib.c:1261/1283). Only read/used on the G_USERDEF path below.
-    let curr_state = t.state(obj);
     t.set_state(obj, newstate);
     if !redraw {
         return;
     }
     if let Some(backend) = host().and_then(|h| h.raster()) {
-        let clip = ClipRect::full(backend.width(), backend.height());
+        // Zero-clip (`None`) = the full screen; otherwise the caller's rectangle.
+        let clip = clip_override.unwrap_or_else(|| ClipRect::full(backend.width(), backend.height()));
         let (ox, oy) = abs_offset(t, obj);
         // AUD-P3-002: EmuTOS `ob_change` redraws a G_USERDEF by calling its user
         // routine with (prev=curr_state, curr=new_state) and suppresses the
         // generic object redraw (`redraw = FALSE`, gemoblib.c:1282-1284). The
-        // callback is only invoked for a kernel-built tree (see `ob_user`); an
-        // app tree's EL0 callback is deferred. A null `ob_spec` (no USERBLK) is
-        // left to the generic redraw below so `ob_user` never dereferences null.
-        if t.ob_type(obj) == G_USERDEF && spec != 0 {
+        // dispatch is on the 0x00ff-masked type (EmuTOS `ob_sst`, gemobjop.c:40 —
+        // AUD-P3-007). The callback is only invoked for a kernel-built tree (see
+        // `ob_user`); an app tree's EL0 callback is deferred. A null `ob_spec`
+        // (no USERBLK) is left to the generic redraw below so `ob_user` never
+        // dereferences null.
+        if t.ob_type(obj) & 0x00ff == G_USERDEF && spec != 0 {
             ob_user(t, obj, ox, oy, t.width(obj), t.height(obj), spec, clip, curr_state, newstate);
             return;
         }
@@ -1864,7 +1909,13 @@ fn just_draw(t: ObjTree, obj: i16, x: i16, y: i16, clip: ClipRect, backend: &dyn
     // leaves it unchanged, so their rendering is byte-identical to before.
     let mut ob_state = t.state(obj);
     let ob_flags = t.flags(obj);
-    let ob_type = t.ob_type(obj);
+    // AUD-P3-007: dispatch on the **base** type only. EmuTOS `ob_sst`
+    // (gemobjop.c:40) masks `*ptype = objptr->ob_type & 0x00ff` before every
+    // type switch — the high byte carries extended-type/flags (e.g. the
+    // submenu-slot the Menu Manager packs into a G_STRING item's `ob_type`), so
+    // an unmasked compare would drop any such object into the `_ => {}` arm and
+    // leave it undrawn. The masked value also drives the G_USERDEF check below.
+    let ob_type = t.ob_type(obj) & 0x00ff;
     let ob_spec = t.spec(obj);
     let ob_width = t.width(obj);
     let ob_height = t.height(obj);
