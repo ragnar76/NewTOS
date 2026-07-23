@@ -2,14 +2,26 @@
 //! cursor controls and a few inquiries. Spec: `docs/api/vdi/_escape.md`.
 //! The sub-function is in `CONTRL[5]`; `> 19` is a no-op.
 //!
-//! NewTOS drives a self-contained alpha layer directly over the
+//! NewTOS drives a **self-contained** alpha layer directly over the
 //! [`RasterBackend`] using the 8×16 system [`font`], with its own cursor
-//! row/column and reverse-video state. (This is the VDI's own text layer;
-//! GEMDOS console output uses the kernel's framebuffer console.)
+//! row/column and reverse-video state.
+//!
+//! This is a deliberate architecture deviation from EmuTOS (AUD-V3-011):
+//! EmuTOS routes every alpha escape through the *single shared* BIOS VT-52
+//! console (`vdi_esc.c`, `bios_conws`/`crawio`), so its alpha cursor,
+//! reverse-video flag and scroll are the same state GEMDOS/BIOS console
+//! output uses. NewTOS keeps the two apart — the VDI alpha layer here and
+//! the kernel's framebuffer console for GEMDOS/BIOS. The alpha cursor is
+//! **logical only** (position tracking); no visible block cursor is drawn,
+//! so EmuTOS' VT-52 cursor hide/show sequences (`ESC f`/`ESC e`, emitted by
+//! `v_exit_cur`/`v_enter_cur`) have no rendered counterpart here. Building
+//! the shared BIOS-console redirect is a large, separate change and is left
+//! as this documented deviation; the escape fixes below all operate cleanly
+//! on the private [`RasterBackend`] layer.
 
 use core::sync::atomic::{AtomicBool, AtomicI16, Ordering};
 
-use super::backend::{ClipRect, RasterBackend, WriteMode};
+use super::backend::{ClipRect, RasterBackend, Rect, WriteMode};
 use super::{font, mouse, Vdipb};
 
 // Alpha colours (Atari style: black text on white).
@@ -40,6 +52,44 @@ fn put_cell(backend: &dyn RasterBackend, col: i16, row: i16, code: u16) {
     backend.draw_glyph(x, y, font::glyph(code), fg, WriteMode::Transparent, clip);
 }
 
+/// Clear the whole alpha screen and home the cursor — the effect shared by
+/// EmuTOS' `v_exit_cur` (`\033H\033f\033E`) and `v_enter_cur`
+/// (`\033E\033e\015`), both of which clear-and-home via VT-52 `ESC E`
+/// (`vdi_esc.c:81,93`). Reverse video is **not** reset: neither sequence
+/// sends `ESC q`.
+fn clear_and_home(backend: &dyn RasterBackend) {
+    backend.fill_rect(
+        0,
+        0,
+        backend.width() as i16,
+        backend.height() as i16,
+        BG,
+        full_clip(backend),
+    );
+    CUR_X.store(0, Ordering::Relaxed);
+    CUR_Y.store(0, Ordering::Relaxed);
+}
+
+/// Scroll the whole alpha text area up by one cell row — the EmuTOS VT-52
+/// console behaviour when `v_curtext` output runs past the bottom of the
+/// screen (`vdi_esc.c:196`, `crawio` → BIOS conout, which scrolls). The top
+/// row is lost; the freed bottom row is cleared to the background. `mx`/`my`
+/// are the maximum (0-based) column/row.
+fn scroll_up(backend: &dyn RasterBackend, mx: i16, my: i16) {
+    let clip = full_clip(backend);
+    // Move rows 1..=my up onto rows 0..=my-1. op 3 = `S` (replace/copy);
+    // `copy_rect` picks a non-corrupting direction for the overlap.
+    let src = Rect {
+        x: 0,
+        y: font::CELL_H,
+        w: (mx + 1) * font::CELL_W,
+        h: my * font::CELL_H,
+    };
+    backend.copy_rect(src, 0, 0, 3, clip);
+    // Clear the freed bottom row.
+    erase_cells(backend, my, 0, mx);
+}
+
 /// Erase a run of cells on `row` from `col0` to `col1` (inclusive).
 fn erase_cells(backend: &dyn RasterBackend, row: i16, col0: i16, col1: i16) {
     if col0 > col1 {
@@ -66,13 +116,21 @@ pub fn v_escape(pb: &Vdipb, backend: &dyn RasterBackend) {
             pb.set_intout(1, mx + 1);
             pb.set_contrl(4, 2);
         }
-        2 => {} // v_exit_cur: enter graphics mode (nothing to tear down)
+        2 => {
+            // v_exit_cur: EmuTOS `escfn2` sends `\033H\033f\033E` = home, hide
+            // alpha cursor, clear-and-home (`vdi_esc.c:81`). Net rendered
+            // effect: clear the text area + home the cursor. The cursor-hide
+            // (`ESC f`) has no counterpart — the private alpha layer draws no
+            // visible block cursor (see module docs, AUD-V3-011).
+            clear_and_home(backend);
+        }
         3 => {
-            // v_enter_cur: enter alpha mode — clear screen, home cursor.
-            backend.fill_rect(0, 0, backend.width() as i16, backend.height() as i16, BG, full_clip(backend));
-            CUR_X.store(0, Ordering::Relaxed);
-            CUR_Y.store(0, Ordering::Relaxed);
-            REVERSE.store(false, Ordering::Relaxed);
+            // v_enter_cur: EmuTOS `escfn3` sends `\033E\033e\015` = clear-and-
+            // home, show alpha cursor, CR (`vdi_esc.c:93`). There is **no**
+            // `ESC q`, so reverse video is preserved (AUD-V3-012). Net rendered
+            // effect: clear the text area + home; the cursor-show (`ESC e`) and
+            // the CR (redundant after home) have no counterpart here.
+            clear_and_home(backend);
         }
         4 => fetch_update(&CUR_Y, |y| (y - 1).max(0)),          // up
         5 => fetch_update(&CUR_Y, |y| (y + 1).min(my)),         // down
@@ -101,7 +159,10 @@ pub fn v_escape(pb: &Vdipb, backend: &dyn RasterBackend) {
             CUR_X.store((pb.intin(1) - 1).clamp(0, mx), Ordering::Relaxed);
         }
         12 => {
-            // v_curtext: output CONTRL[3] chars at the cursor.
+            // v_curtext: output CONTRL[3] chars at the cursor. EmuTOS
+            // `escfn12` feeds each char to `crawio` → the VT-52 console, which
+            // scrolls the screen up once output passes the bottom line
+            // (`vdi_esc.c:196`). We reproduce that scroll here (AUD-V3-005).
             let n = pb.contrl(3).max(0);
             for i in 0..n as usize {
                 let mut x = CUR_X.load(Ordering::Relaxed);
@@ -110,7 +171,13 @@ pub fn v_escape(pb: &Vdipb, backend: &dyn RasterBackend) {
                 x += 1;
                 if x > mx {
                     x = 0;
-                    y = (y + 1).min(my);
+                    y += 1;
+                    if y > my {
+                        // Past the bottom line: scroll up and stay on the last
+                        // (now cleared) row instead of overwriting it.
+                        scroll_up(backend, mx, my);
+                        y = my;
+                    }
                 }
                 CUR_X.store(x, Ordering::Relaxed);
                 CUR_Y.store(y, Ordering::Relaxed);
