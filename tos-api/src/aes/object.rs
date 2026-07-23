@@ -336,6 +336,51 @@ impl ObjTree {
             Abi::Ilp32 => 0xFFFF_FFFF,
         }
     }
+
+    /// EmuTOS `ob_sst` border-thickness word `th` (gemobjop.c:41-70), used by
+    /// `ob_center` (`form_center`) to size a SHADOWED root's drop-shadow extent.
+    /// Reproduces the per-type `switch` for **every** object type, not just the
+    /// box family:
+    /// - `G_TITLE` → `1`
+    /// - `G_TEXT`/`G_BOXTEXT`/`G_FTEXT`/`G_FBOXTEXT` → the TEDINFO `te_thickness`
+    /// - `G_BOX`/`G_BOXCHAR`/`G_IBOX` → the signed thickness byte (bits 16..23 of
+    ///   the INDIRECT-resolved colour LONG, EmuTOS `*(((char *)pspec)+1)`)
+    /// - `G_BUTTON` → `-1`, one thinner for `EXIT`, one thinner for `DEFAULT`
+    /// - any other type → `0`
+    ///
+    /// The trailing `if (th > 128) th -= 256` byte fixup is preserved.
+    pub(crate) fn sst_th(self, obj: i16) -> i16 {
+        let mut th: i16 = match self.ob_type(obj) & 0x00ff {
+            G_TITLE => 1,
+            G_TEXT | G_BOXTEXT | G_FTEXT | G_FBOXTEXT => {
+                let spec = self.spec(obj);
+                if spec == 0 {
+                    0
+                } else {
+                    // SAFETY: the ob_spec of a *TEXT object is a TEDINFO packed
+                    // at the tree's ABI width (INDIRECT already resolved).
+                    unsafe { TedInfo::read_abi(spec, self.abi).te_thickness }
+                }
+            }
+            G_BOX | G_BOXCHAR | G_IBOX => ((self.spec(obj) >> 16) as u8 as i8) as i16,
+            G_BUTTON => {
+                let flags = self.flags(obj);
+                let mut bt: i16 = -1;
+                if flags & EXIT != 0 {
+                    bt -= 1;
+                }
+                if flags & DEFAULT != 0 {
+                    bt -= 1;
+                }
+                bt
+            }
+            _ => 0,
+        };
+        if th > 128 {
+            th -= 256;
+        }
+        th
+    }
 }
 
 // Graphic types (`obdefs.h`).

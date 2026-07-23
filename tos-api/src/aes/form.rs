@@ -27,6 +27,14 @@ const BLACK: crate::vdi::backend::Pel = 1;
 /// QUESTBB / STOPBB — the `[1]`/`[2]`/`[3]` fields of a `form_alert`
 /// string). One `u32` per row, bit 0x8000_0000 = leftmost pixel; set bits
 /// are drawn black (a transparent mono blit, like EmuTOS `G_IMAGE`).
+///
+/// **Verified byte-exact against `references/emutos/aes/gem.rsc` (AUD-P4-019):**
+/// `rsh_bitblk` @ file offset 0x7CC holds 3 BITBLKs (`rsh_nbb == 3`); indices
+/// 0/1/2 = NOTEBB/QUESTBB/STOPBB (order per `gem.def`), each `bi_wb == 4`,
+/// `bi_hl == 32`, raster data at 0xEBE / 0xF3E / 0xFBE. Reading each 4-byte row
+/// big-endian (leftmost pixel = MSB) reproduces the values below exactly, so
+/// the embedded bitmaps match the reference RSC 1:1 — no runtime `gem.rsc` load
+/// is needed.
 const ALERT_ICONS: [[u32; 32]; 3] = [
     // 1 = NOTE (exclamation)
     [
@@ -64,12 +72,22 @@ const ALERT_ICONS: [[u32; 32]; 3] = [
 ];
 
 /// Blit a 32×32 alert icon (transparent, set bits in black) at `(x, y)`.
-fn draw_alert_icon(icon: i16, x: i16, y: i16, backend: &dyn RasterBackend) {
-    if icon < 1 || icon > 3 {
+///
+/// `iconnum` is the raw `alert[1] - '0'` value (EmuTOS `fm_parse`): 0 draws no
+/// icon; otherwise the EmuTOS `fm_build` switch selects the bitmap — 1 → NOTEBB,
+/// 2 → QUESTBB, anything else (including negatives / >2) → STOPBB
+/// (gemfmalt.c:260-270).
+fn draw_alert_icon(iconnum: i16, x: i16, y: i16, backend: &dyn RasterBackend) {
+    if iconnum == 0 {
         return;
     }
     let clip = ClipRect::full(backend.width(), backend.height());
-    let bmp = &ALERT_ICONS[(icon - 1) as usize];
+    let idx = match iconnum {
+        1 => 0usize, // NOTE
+        2 => 1usize, // QUEST
+        _ => 2usize, // STOP (switch default)
+    };
+    let bmp = &ALERT_ICONS[idx];
     for (row, &bits) in bmp.iter().enumerate() {
         for col in 0..32i16 {
             if bits & (0x8000_0000u32 >> col) != 0 {
@@ -80,9 +98,7 @@ fn draw_alert_icon(icon: i16, x: i16, y: i16, backend: &dyn RasterBackend) {
 }
 
 const G_BOX: u16 = 20;
-const G_IBOX: u16 = 25;
 const G_BUTTON: u16 = 26;
-const G_BOXCHAR: u16 = 27;
 const G_STRING: u16 = 28;
 
 const SELECTABLE: u16 = 0x0001;
@@ -105,8 +121,14 @@ const ED_END: i16 = 3;
 const CW: i16 = 8; // system font cell width
 const CH: i16 = 16; // system font cell height
 
-const MAX_MSG: usize = 6;
-const MAX_BTN: usize = 3;
+// EmuTOS alert-string grammar limits (tools/erd.c:571-572 + generated
+// gem_rsc.h): MAX_LINENUM=5 message lines, MAX_BUTNUM=3 buttons, MAX_LINELEN=40
+// chars per message substring, MAX_BUTLEN=20 chars per button substring. A 6th
+// line / an overlong substring is swallowed by `fm_strbrk` (gemfmalt.c:78-134).
+const MAX_MSG: usize = 5; // EmuTOS MAX_LINENUM
+const MAX_BTN: usize = 3; // EmuTOS MAX_BUTNUM
+const MAX_LINELEN: usize = 40; // EmuTOS MAX_LINELEN (message substring cap)
+const MAX_BUTLEN: usize = 20; // EmuTOS MAX_BUTLEN (button substring cap)
 const STRBUF: usize = 512;
 
 /// `form_alert` (52). `int_in[0]` = default button (1-based, 0 = none),
@@ -139,29 +161,30 @@ fn do_alert(defbut: i16, s: &[u8], modal: bool) -> i16 {
     let mut msg = [(0usize, 0i16); MAX_MSG]; // (offset, char-len)
     let mut btn = [(0usize, 0i16); MAX_BTN];
 
-    let (g1s, g1e, p1) = group(s, 0); // icon number [0..3]
+    let (g1s, _g1e, p1) = group(s, 0); // icon field ([1] = the raw char)
     let (g2s, g2e, p2) = group(s, p1);
     let (g3s, g3e, _p3) = group(s, p2);
 
-    // Icon number (0 = none, 1 = NOTE, 2 = QUEST, 3 = STOP).
-    let icon = if g1e > g1s && s[g1s].is_ascii_digit() {
-        ((s[g1s] - b'0') as i16).clamp(0, 3)
+    // Icon number = `alert[1] - '0'` (EmuTOS `fm_parse`, gemfmalt.c:163),
+    // UNGUARDED: `s[g1s]` is the raw char right after the leading `[`. 0 = no
+    // icon; any nonzero value draws one (1 → NOTE, 2 → QUEST, else → STOP, per
+    // `fm_build`). A non-digit thus still draws an icon — e.g. `[ ]` gives
+    // `' ' - '0' = -16` ≠ 0 → STOP; `[]` gives `']' - '0' = 45` ≠ 0 → STOP.
+    let iconnum = if g1s < s.len() {
+        (s[g1s] as i16) - (b'0' as i16)
     } else {
         0
     };
 
-    let nummsg = split_copy(&s[g2s..g2e], &mut buf, &mut used, &mut msg);
-    let numbut = split_copy(&s[g3s..g3e], &mut buf, &mut used, &mut btn).max(1);
-    // If no buttons were given, default to a single localised "OK".
-    if numbut == 1 && btn[0].1 == 0 {
-        let ok = crate::i18n::sys_string(crate::i18n::Sys::Ok);
-        btn[0] = (used, ok.len() as i16);
-        buf[used..used + ok.len()].copy_from_slice(ok);
-        used += ok.len() + 1;
-    }
+    // fm_strbrk caps each message substring at MAX_LINELEN (40) and each button
+    // at MAX_BUTLEN (20), eating the overflow (gemfmalt.c:108-115). An empty
+    // button group yields one empty button — EmuTOS draws it blank (it never
+    // substitutes "OK"); `numbut` therefore stays >= 1 straight from fm_strbrk.
+    let nummsg = split_copy(&s[g2s..g2e], MAX_LINELEN, &mut buf, &mut used, &mut msg);
+    let numbut = split_copy(&s[g3s..g3e], MAX_BUTLEN, &mut buf, &mut used, &mut btn).max(1);
 
     let mlenmsg = msg.iter().take(nummsg).map(|m| m.1).max().unwrap_or(0);
-    let mlenbut = btn.iter().take(numbut).map(|b| b.1).max().unwrap_or(2);
+    let mlenbut = btn.iter().take(numbut).map(|b| b.1).max().unwrap_or(0);
 
     // ── layout (pixels), centred on screen ──
     let Some(h) = host() else {
@@ -181,7 +204,7 @@ fn do_alert(defbut: i16, s: &[u8], modal: bool) -> i16 {
 
     // Icon column on the left (32-px icon + a one-char gap), EmuTOS
     // `fm_build`: the messages sit to its right, the box grows to fit.
-    let icon_w = if icon != 0 { 32 + CW } else { 0 };
+    let icon_w = if iconnum != 0 { 32 + CW } else { 0 };
     let total_btn = numbut as i16 * btn_w + (numbut as i16 - 1) * gap;
     let content_w = (icon_w + mlenmsg * CW).max(total_btn);
     let box_w = content_w + 2 * padx;
@@ -189,13 +212,17 @@ fn do_alert(defbut: i16, s: &[u8], modal: bool) -> i16 {
     // Content height is the taller of the message block and the icon; the
     // messages are centred against it when the icon is taller.
     let msg_area_h = nummsg as i16 * CH;
-    let content_h = msg_area_h.max(if icon != 0 { 32 } else { 0 });
+    let content_h = msg_area_h.max(if iconnum != 0 { 32 } else { 0 });
     let msg_y0 = pady + (content_h - msg_area_h) / 2;
     let btn_y = pady + content_h + CH / 2; // gap below the content
     let box_h = btn_y + btn_h + pady;
 
     let box_x = (sw - box_w) / 2;
-    let box_y = (sh - box_h) / 2;
+    // Centre BELOW the menu bar (EmuTOS `ob_center`, gemobed.c:78:
+    // `yd = gl_hbox + (gl_height - gl_hbox - hd) / 2`), consistent with our own
+    // `form_center`. gl_hbox == window::GAD == 19 px (the menu BAR_H).
+    let bar = super::window::GAD;
+    let box_y = bar + (sh - bar - box_h) / 2;
     // Icon position (screen-absolute), vertically centred in the content.
     let icon_x = box_x + padx;
     let icon_y = box_y + pady + (content_h - 32) / 2;
@@ -238,6 +265,15 @@ fn do_alert(defbut: i16, s: &[u8], modal: bool) -> i16 {
         };
     }
 
+    // Flag the default button (EmuTOS `fm_alert`, gemfmalt.c:343-347:
+    // `tree[BUTOFF+defbut-1].ob_flags |= DEFAULT` after the tree is built) so it
+    // draws with the heavier "this is Enter" frame (`ob_sst` gives a DEFAULT
+    // button an extra -1 thickness; object.rs renders it). Guarded to a valid
+    // 1-based button so an out-of-range `defbut` can never index past the tree.
+    if defbut >= 1 && (defbut as usize) <= numbut {
+        tree[first_btn + (defbut as usize - 1)].ob_flags |= DEFAULT;
+    }
+
     // ── save the screen under the alert, draw, run, restore ──
     let tp = tree.as_ptr();
     // The alert array is a native (LP64, 32-byte) `Object` array built on this
@@ -264,7 +300,7 @@ fn do_alert(defbut: i16, s: &[u8], modal: bool) -> i16 {
     // and closing the box would leave a stale square behind.
     crate::vdi::cursor_hide(backend);
     object::draw_root(t, 16, backend);
-    draw_alert_icon(icon, icon_x, icon_y, backend);
+    draw_alert_icon(iconnum, icon_x, icon_y, backend);
     crate::vdi::cursor_show(backend);
 
     if !modal {
@@ -280,7 +316,7 @@ fn do_alert(defbut: i16, s: &[u8], modal: bool) -> i16 {
         tree[idx].ob_state |= SELECTED;
         crate::vdi::cursor_hide(backend);
         object::draw_root(t, 16, backend);
-        draw_alert_icon(icon, icon_x, icon_y, backend);
+        draw_alert_icon(iconnum, icon_x, icon_y, backend);
         crate::vdi::cursor_show(backend);
     }
 
@@ -344,10 +380,10 @@ impl BbSave {
     }
 }
 
-/// Modal wait: a key (Enter = default button, '1'..='9' = that button) or
-/// a left-mouse click on a button. A mouse press shows the button pressed
-/// and only fires on **release inside** it (EmuTOS `gr_watchbox`); releasing
-/// outside cancels. Returns the 1-based button.
+/// Modal wait: Enter fires the DEFAULT button (only when one is set — EmuTOS
+/// `fm_keybd`; no digit shortcuts), or a left-mouse click on a button. A mouse
+/// press shows the button pressed and only fires on **release inside** it
+/// (EmuTOS `gr_watchbox`); releasing outside cancels. Returns the 1-based button.
 fn modal_loop(
     h: &dyn crate::host::Host,
     tree: *mut Object,
@@ -371,12 +407,9 @@ fn modal_loop(
                 // sets DEFAULT only when defbut != 0). A false guard falls
                 // through to `_` (Enter ignored).
                 b'\r' | b'\n' if defbut >= 1 && defbut <= numbut => return defbut,
-                b'1'..=b'9' => {
-                    let n = (c - b'0') as i16;
-                    if n >= 1 && n <= numbut {
-                        return n;
-                    }
-                }
+                // EmuTOS `fm_keybd` handles no digit shortcuts — a digit is a
+                // plain character routed to `objc_edit`, which an alert button
+                // (not EDITABLE) drops. So '1'..'9' select no button (AUD-P4-015).
                 _ => {}
             }
         }
@@ -446,46 +479,53 @@ fn group(s: &[u8], from: usize) -> (usize, usize, usize) {
     (start, j, after)
 }
 
-/// Split `seg` on `'|'` and copy each piece (NUL-terminated) into `buf`,
-/// recording `(offset, char-len)`. Returns the number of pieces.
+/// Split `seg` into up to `out.len()` substrings, each capped at `maxlen`
+/// characters, copying each NUL-terminated into `buf` and recording
+/// `(offset, char-len)`. Returns the number of substrings.
 ///
-/// Faithful to EmuTOS `fm_strbrk` (gemfmalt.c:78-134): `'|'` and `']'` both
-/// end a substring, but a doubled `'||'` / `']]'` is a **literal** `|` / `]`
-/// that is copied and skipped rather than treated as a break. (`group` has
-/// already stopped the enclosing scan at the first lone `']'`, so any `']'`
-/// reaching here is the first byte of a `']]'` pair.)
+/// Faithful to EmuTOS `fm_strbrk` (gemfmalt.c:78-134):
+/// - `'|'` / `']'` / end-of-segment break a substring, but a doubled `'||'` /
+///   `']]'` is a **literal** `|` / `]` that is copied and skipped, not a break
+///   (`group` has already stopped the enclosing scan at the first lone `']'`,
+///   so any `']'` here is the first byte of a `']]'` pair);
+/// - a substring longer than `maxlen` is truncated at `maxlen` and its overflow
+///   is eaten up to the next separator (the eat loop makes **no** literal
+///   exception — matching EmuTOS, a `||` inside the overflow tail still breaks
+///   the eating);
+/// - the loop always yields at least one (possibly empty) substring — an empty
+///   `seg` gives one zero-length piece (EmuTOS `*pnum = 1`, a blank button).
 fn split_copy(
     seg: &[u8],
+    maxlen: usize,
     buf: &mut [u8],
     used: &mut usize,
     out: &mut [(usize, i16)],
 ) -> usize {
-    let mut count = 0;
-    let mut i = 0;
+    let maxnum = out.len();
+    // EmuTOS endsubstring() = '|' | ']' | '\0'; endstring() = ']' | '\0'.
+    let endsub = |i: usize| i >= seg.len() || seg[i] == b'|' || seg[i] == b']';
+    let endstr = |i: usize| i >= seg.len() || seg[i] == b']';
+
+    let mut count = 0usize;
+    let mut i = 0usize;
     loop {
-        if count >= out.len() {
+        if count >= maxnum {
             break;
         }
         let off = *used;
         let mut n = 0usize;
-        // Copy one substring up to the next unescaped `|`/`]` or the end.
-        loop {
-            let at_end = i >= seg.len();
-            let c = if at_end { 0u8 } else { seg[i] };
-            if at_end || c == b'|' || c == b']' {
-                // A doubled separator (`||`/`]]`) is a literal, not a break.
-                if !at_end && i + 1 < seg.len() && seg[i + 1] == c {
-                    if off + n + 1 < buf.len() {
-                        buf[off + n] = c;
-                        n += 1;
-                    }
-                    i += 2;
-                    continue;
+        // Copy up to `maxlen` output chars, breaking on an unescaped separator.
+        while n < maxlen {
+            if endsub(i) {
+                // isduplicate(): a doubled separator is a literal, not a break.
+                if i + 1 < seg.len() && seg[i + 1] == seg[i] {
+                    i += 1; // skip one of the pair; the other is copied below
+                } else {
+                    break;
                 }
-                break;
             }
             if off + n + 1 < buf.len() {
-                buf[off + n] = c;
+                buf[off + n] = seg[i];
                 n += 1;
             }
             i += 1;
@@ -496,10 +536,15 @@ fn split_copy(
         out[count] = (off, n as i16);
         *used += n + 1;
         count += 1;
-        if i >= seg.len() {
-            break;
+        // Overlong substring: eat the rest up to the next separator (plain
+        // endsubstring, no literal exception — EmuTOS gemfmalt.c:108-115).
+        while !endsub(i) {
+            i += 1;
         }
-        i += 1; // skip the `|` separator
+        if endstr(i) {
+            break; // ']' or end-of-segment → no more substrings
+        }
+        i += 1; // skip the '|' separator
     }
     count
 }
@@ -866,7 +911,7 @@ pub fn form_center(pb: &Aespb) {
     let mut yd = bar + (sh - bar - hd) / 2;
     t.set_x(0, xd);
     t.set_y(0, yd);
-    let (state, spec, otype) = (t.state(0), t.spec(0), t.ob_type(0));
+    let state = t.state(0);
     // Account for a 3px OUTLINE in the reported rectangle (EmuTOS ob_center):
     // the OUTLINED double frame reaches 3 px past the object on every side.
     if state & OUTLINED != 0 {
@@ -876,11 +921,12 @@ pub fn form_center(pb: &Aespb) {
         hd += 6;
     }
     // Account for a SHADOWED drop shadow (EmuTOS ob_center, gemobed.c:96-103):
-    // the reported rect grows by 2*|th|, `th` being the root box's thickness
-    // word. Only box types pack a thickness in `ob_spec`'s high byte; other
-    // (pointer-spec) roots contribute no shadow extent.
-    if state & SHADOWED != 0 && matches!(otype, G_BOX | G_IBOX | G_BOXCHAR) {
-        let th = ((spec >> 16) as u8 as i8) as i16;
+    // the reported rect grows by 2*|th|, where `th` is the ROOT's `ob_sst`
+    // border thickness — determined per object type (G_TITLE / the G_TEXT
+    // family / the G_BOX family / G_BUTTON), not just the box spec byte, exactly
+    // as EmuTOS `ob_sst` (gemobjop.c:41-70) supplies it to `ob_center`.
+    if state & SHADOWED != 0 {
+        let th = t.sst_th(0);
         let s = 2 * th.abs();
         wd += s;
         hd += s;
