@@ -451,6 +451,16 @@ fn redraw_all(backend: &dyn RasterBackend) {
 /// the affected area instead of the whole screen. The window **content** (item
 /// objects) is re-laid by the owner afterwards, exactly as in the full path.
 fn compose(backend: &dyn RasterBackend, clip: ClipRect) {
+    // Bracket the whole window redraw with the **counting** cursor semaphore,
+    // exactly as EmuTOS `w_update` wraps the frame walk in `gsx_moff()` /
+    // `gsx_mon()` (gemwmlib.c:1011/1047). The cursor is a save-under sprite:
+    // painting the desktop background + frames over the shown sprite would
+    // leave its backing store stale, so the next cursor move restores old
+    // pixels — the reported rectangular cursor "dropping". Hide it once here
+    // (its backing is restored first), repaint, then show it on top of the
+    // fresh pixels. The count makes any nested composite (an outer
+    // `graf_mouse(M_OFF)` desktop bracket, or a re-entrant redraw) safe.
+    crate::vdi::cursor_hide(backend);
     paint_bg_clip(backend, clip);
     let top = get_top();
     // Selection sort by ascending z, drawing each open window once.
@@ -474,6 +484,7 @@ fn compose(backend: &dyn RasterBackend, clip: ClipRect) {
         let istop = (pick as i16 + 1) == top;
         draw_frame(&slots()[pick], istop, backend, clip);
     }
+    crate::vdi::cursor_show(backend);
 }
 
 /// Damage-scoped repaint of the desktop background + every window frame, clipped
@@ -969,7 +980,12 @@ fn draw_vslider(w: &Window, backend: &dyn RasterBackend, clip: ClipRect) {
 fn redraw_vslider(handle: i16) {
     if let (Some(backend), Some(w)) = (host().and_then(|h| h.raster()), win(handle)) {
         if w.open {
+            // Bracket the slider repaint with the counting cursor semaphore
+            // (EmuTOS `w_update` moff/mon) so a cursor over the scroll bar
+            // leaves no dropping. See the note in [`compose`].
+            crate::vdi::cursor_hide(backend);
             draw_vslider(w, backend, ClipRect::full(backend.width(), backend.height()));
+            crate::vdi::cursor_show(backend);
         }
     }
 }
@@ -1031,7 +1047,11 @@ fn draw_hslider(w: &Window, backend: &dyn RasterBackend, clip: ClipRect) {
 fn redraw_hslider(handle: i16) {
     if let (Some(backend), Some(w)) = (host().and_then(|h| h.raster()), win(handle)) {
         if w.open {
+            // Counting cursor bracket around the slider repaint — see
+            // [`redraw_vslider`] / [`compose`].
+            crate::vdi::cursor_hide(backend);
             draw_hslider(w, backend, ClipRect::full(backend.width(), backend.height()));
+            crate::vdi::cursor_show(backend);
         }
     }
 }
@@ -1445,7 +1465,11 @@ fn slider_size(v: i16) -> i16 {
 fn redraw_open(handle: i16) {
     if let (Some(backend), Some(w)) = (host().and_then(|h| h.raster()), win(handle)) {
         if w.open {
+            // Counting cursor bracket around the single-frame repaint (EmuTOS
+            // `w_update` moff/mon) — see [`compose`].
+            crate::vdi::cursor_hide(backend);
             draw_frame(w, handle == get_top(), backend, ClipRect::full(backend.width(), backend.height()));
+            crate::vdi::cursor_show(backend);
         }
     }
 }

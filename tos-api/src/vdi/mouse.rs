@@ -41,6 +41,53 @@ static FG_COL: AtomicU8 = AtomicU8::new(1); // data colour (black)
 static MASK: [AtomicU16; 16] = [const { AtomicU16::new(0) }; 16];
 static DATA: [AtomicU16; 16] = [const { AtomicU16::new(0) }; 16];
 
+// ── AES-tracked cursor forms (EmuTOS gl_prevmouse / rlr->p_mouse) ──
+//
+// `graf_mouse(M_SAVE/M_RESTORE/M_PREVIOUS)` (EmuTOS `gemgrlib.c:439-451`) must
+// snapshot and re-install cursor forms. The *current* form is the live sprite
+// state (`HOT_*`/`*_COL`/`MASK`/`DATA` above, = EmuTOS `gl_mouse`).
+// [`PREV_FORM`] mirrors `gl_prevmouse` — the form installed immediately before
+// the current one, updated by every [`install_form`] (the `gsx_mfset`
+// equivalent, `gemgsxif.c:407-420`). [`SAVED_FORM`] mirrors `rlr->p_mouse`;
+// single-tasking makes one slot the 1:1 equivalent of the per-process field
+// (the per-process `p_mouse` belongs to the cooperative kernel, Phase 2b).
+
+/// A cursor form snapshot (`MFORM`): hotspot, mask/data colours, and the 16
+/// mask + 16 data rows.
+#[derive(Clone, Copy)]
+struct MForm {
+    hot_x: i16,
+    hot_y: i16,
+    bg_col: u8,
+    fg_col: u8,
+    mask: [u16; 16],
+    data: [u16; 16],
+}
+
+/// The default arrow form (mask=white / data=black): the power-up current form,
+/// and the initial value of both tracked slots so a stray `M_RESTORE` /
+/// `M_PREVIOUS` before any save/set installs the arrow, never a blank sprite.
+const ARROW_FORM: MForm = MForm {
+    hot_x: PRESET_FORMS[0].0,
+    hot_y: PRESET_FORMS[0].1,
+    bg_col: 0,
+    fg_col: 1,
+    mask: PRESET_FORMS[0].2,
+    data: PRESET_FORMS[0].3,
+};
+
+/// One `MFORM` slot, touched only from the single-CPU trap path (like [`Backing`]).
+struct FormSlot {
+    form: UnsafeCell<MForm>,
+}
+// SAFETY: touched only from the single-CPU, IRQ-off VDI trap path.
+unsafe impl Sync for FormSlot {}
+
+/// EmuTOS `gl_prevmouse` — the form installed before the current one.
+static PREV_FORM: FormSlot = FormSlot { form: UnsafeCell::new(ARROW_FORM) };
+/// EmuTOS `rlr->p_mouse` — the `M_SAVE` snapshot (one slot; single-tasking).
+static SAVED_FORM: FormSlot = FormSlot { form: UnsafeCell::new(ARROW_FORM) };
+
 // ── exchange-vector slots (function pointers) ──
 static USER_BUT: AtomicU64 = AtomicU64::new(0);
 static USER_MOT: AtomicU64 = AtomicU64::new(0);
@@ -309,22 +356,14 @@ pub fn init(backend: &dyn RasterBackend) {
 /// the sprite if it is currently shown. Shared by the AES presets and
 /// `graf_mouse`'s USER_DEF path.
 pub fn set_form(hot_x: i16, hot_y: i16, mask: &[u16; 16], data: &[u16; 16], backend: &dyn RasterBackend) {
-    ensure_init(backend);
-    let was_shown = shown();
-    if was_shown {
-        erase(backend);
-    }
-    HOT_X.store(hot_x.clamp(0, 15), Ordering::Relaxed);
-    HOT_Y.store(hot_y.clamp(0, 15), Ordering::Relaxed);
-    BG_COL.store(0, Ordering::Relaxed); // mask = white
-    FG_COL.store(1, Ordering::Relaxed); // data = black
-    for i in 0..16 {
-        MASK[i].store(mask[i], Ordering::Relaxed);
-        DATA[i].store(data[i], Ordering::Relaxed);
-    }
-    if was_shown {
-        draw(backend);
-    }
+    // Standard mask=white / data=black colours (the AES presets and the
+    // `graf_mouse(USER_DEF)` path). The install itself lives in [`install_form`]
+    // (the `gsx_mfset` equivalent), which also records the outgoing form as the
+    // "previous" one so `graf_mouse(M_PREVIOUS)` can revert to it.
+    install_form(
+        &MForm { hot_x, hot_y, bg_col: 0, fg_col: 1, mask: *mask, data: *data },
+        backend,
+    );
 }
 
 /// Install one of the eight preset cursor forms by its shape number
@@ -333,6 +372,77 @@ pub fn set_preset(n: i16, backend: &dyn RasterBackend) {
     if let Some((hx, hy, mask, data)) = PRESET_FORMS.get(n as usize) {
         set_form(*hx, *hy, mask, data, backend);
     }
+}
+
+/// Read the live sprite state into an [`MForm`] (EmuTOS `gl_mouse`).
+fn current_form() -> MForm {
+    let mut mask = [0u16; 16];
+    let mut data = [0u16; 16];
+    for i in 0..16 {
+        mask[i] = MASK[i].load(Ordering::Relaxed);
+        data[i] = DATA[i].load(Ordering::Relaxed);
+    }
+    MForm {
+        hot_x: HOT_X.load(Ordering::Relaxed),
+        hot_y: HOT_Y.load(Ordering::Relaxed),
+        bg_col: BG_COL.load(Ordering::Relaxed),
+        fg_col: FG_COL.load(Ordering::Relaxed),
+        mask,
+        data,
+    }
+}
+
+/// Install `form` as the current cursor — the `gsx_mfset` equivalent (EmuTOS
+/// `gemgsxif.c:407-420`). Record the outgoing form as [`PREV_FORM`]
+/// (`gl_prevmouse = gl_mouse`), then set the new one, erasing and redrawing the
+/// sprite if it is currently shown. The hotspot is clamped to the 16×16 grid,
+/// exactly as [`set_form`] did.
+fn install_form(form: &MForm, backend: &dyn RasterBackend) {
+    ensure_init(backend);
+    // EmuTOS `gsx_mfset`: gl_prevmouse = gl_mouse before installing the new form.
+    // SAFETY: single trap path.
+    unsafe { *PREV_FORM.form.get() = current_form() };
+    let was_shown = shown();
+    if was_shown {
+        erase(backend);
+    }
+    HOT_X.store(form.hot_x.clamp(0, 15), Ordering::Relaxed);
+    HOT_Y.store(form.hot_y.clamp(0, 15), Ordering::Relaxed);
+    BG_COL.store(form.bg_col, Ordering::Relaxed);
+    FG_COL.store(form.fg_col, Ordering::Relaxed);
+    for i in 0..16 {
+        MASK[i].store(form.mask[i], Ordering::Relaxed);
+        DATA[i].store(form.data[i], Ordering::Relaxed);
+    }
+    if was_shown {
+        draw(backend);
+    }
+}
+
+/// EmuTOS `gr_mouse(M_SAVE)` (`gemgrlib.c:441`): snapshot the current cursor
+/// form into the saved slot (`rlr->p_mouse`). No draw, no form change.
+pub fn save_form() {
+    // SAFETY: single trap path.
+    unsafe { *SAVED_FORM.form.get() = current_form() };
+}
+
+/// EmuTOS `gr_mouse(M_RESTORE)` (`gemgrlib.c:443-445`): reinstall the form
+/// stored by [`save_form`] (`rlr->p_mouse`).
+pub fn restore_form(backend: &dyn RasterBackend) {
+    // SAFETY: single trap path; `MForm` is `Copy`.
+    let form = unsafe { *SAVED_FORM.form.get() };
+    install_form(&form, backend);
+}
+
+/// EmuTOS `gr_mouse(M_PREVIOUS)` (`gemgrlib.c:446-450`): reinstall the form
+/// installed immediately before the current one (`gl_prevmouse`). EmuTOS copies
+/// it into a temporary first because `gsx_mfset` overwrites `gl_prevmouse`; we
+/// read the slot into a local before [`install_form`] rewrites it, so the two
+/// forms swap (current ↔ previous) exactly as EmuTOS does.
+pub fn previous_form(backend: &dyn RasterBackend) {
+    // SAFETY: single trap path; `MForm` is `Copy`.
+    let form = unsafe { *PREV_FORM.form.get() };
+    install_form(&form, backend);
 }
 
 fn full_clip(backend: &dyn RasterBackend) -> ClipRect {

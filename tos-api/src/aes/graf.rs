@@ -415,32 +415,30 @@ pub fn graf_handle(pb: &Aespb) {
 }
 
 /// `graf_mouse` (78) — set the mouse cursor: `int_in[0]` = a preset shape
-/// (ARROW 0 … OUTLN_CROSS 7), `USER_DEF` (255) with an `MFORM` in
-/// `addr_in[0]`, or `M_OFF`/`M_ON` to hide/show it.
+/// (ARROW 0 … OUTLN_CROSS 7), `USER_DEF` (255) with an `MFORM` in `addr_in[0]`,
+/// `M_OFF`/`M_ON` to hide/show it (the **counting** cursor semaphore), or
+/// `M_SAVE`/`M_RESTORE`/`M_PREVIOUS` to snapshot / re-install a cursor form.
+///
+/// EmuTOS `gr_mouse` (`gemgrlib.c:419-455`): `M_OFF`→`gsx_moff` (`gl_moff++`),
+/// `M_ON`→`gsx_mon` (`gl_moff--`, show only at 0) — a counting semaphore, so
+/// nested `M_OFF;M_OFF;M_ON` stays hidden. `M_SAVE` stores the current form in
+/// `rlr->p_mouse`; `M_RESTORE`/`M_PREVIOUS` reinstall the saved / previous form.
 pub fn graf_mouse(pb: &Aespb) {
     let number = pb.intin(0);
     if let Some(backend) = host().and_then(|h| h.raster()) {
         match number {
-            M_OFF => crate::vdi::mouse::remove(backend),
-            M_ON => {
-                // Read the parked position *after* init so the first M_ON
-                // shows the cursor at screen centre, not the power-up (0,0)
-                // over the menu bar (would open an AES hover-menu at boot).
-                let (x, y) = crate::vdi::mouse::position_init(backend);
-                crate::vdi::mouse::display_at(x, y, backend);
-            }
+            // Counting hide/show (EmuTOS gsx_moff/gsx_mon), the same primitives
+            // the window/menu/form redraw brackets use — not the force
+            // remove/display_at, so nested hide blocks balance correctly.
+            M_OFF => crate::vdi::mouse::hide(backend),
+            M_ON => crate::vdi::mouse::show(backend),
             USER_DEF => set_user_form(pb, backend),
             0..=7 => crate::vdi::mouse::set_preset(number, backend),
-            M_SAVE | M_RESTORE | M_PREVIOUS => {
-                // DEFERRED (see docs/STATUS.md "Blocked/deferred"): EmuTOS
-                // gr_mouse M_SAVE stores the current cursor form in the process
-                // descriptor, M_RESTORE/M_PREVIOUS reinstall it (gemgrlib.c:
-                // 440-450). Faithful support needs a saved-form slot *and* a
-                // current-form reader in the VDI cursor subsystem
-                // (tos-api/src/vdi/mouse.rs) — outside these two files. The
-                // cursor form is left unchanged (an honest no-op, never a
-                // fabricated form). graf_mouse is void, so int_out[0] stays 1.
-            }
+            // Saved-form slot (EmuTOS rlr->p_mouse) + previous-form slot
+            // (gl_prevmouse), both maintained in the VDI cursor subsystem.
+            M_SAVE => crate::vdi::mouse::save_form(),
+            M_RESTORE => crate::vdi::mouse::restore_form(backend),
+            M_PREVIOUS => crate::vdi::mouse::previous_form(backend),
             _ => {} // undefined shape number: leave the cursor unchanged
         }
     }
