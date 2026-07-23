@@ -35,6 +35,14 @@ read by other code, not by `xgetver`.)
 per-build in `config.h` (default `0x2000`). No other `CONF_*` flag alters the
 returned value.
 
+> **NewTOS choice:** NewTOS targets the Falcon030 / TOS 4.04 profile
+> ([[emutos-target-profile-falcon-tos4]]), so it reports `0x3000` — the value
+> `config.h:1583` documents as "used by TOS v4.0x" — rather than EmuTOS' own
+> conservative `0x2000` default. Implemented in `tos-api/src/gemdos/version.rs`.
+> The separate OS-header TOS version (`os_version` at `0x4F2`, see below) will
+> be `0x0404` once the BIOS OS header is built; the AES version is `0x0340`
+> (Falcon AES 3.40).
+
 ---
 
 ## Source extraction summary

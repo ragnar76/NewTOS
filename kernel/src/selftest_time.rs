@@ -65,7 +65,7 @@ pub fn run_phase07_time_test() {
 
     // D5 — Sversion.
     let v = sversion();
-    let sv_ok = v == 0x2000;
+    let sv_ok = v == 0x3000;
     ok &= sv_ok;
     kprintln!(
         "[time]   Sversion = 0x{:04x}  {}",
