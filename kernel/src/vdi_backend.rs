@@ -582,15 +582,28 @@ impl RasterBackend for VdiScreen {
         Self::clean(fb, x0 as u32, y0 as u32, x1 as u32, y1 as u32);
     }
 
-    fn draw_glyph(&self, x: i16, y: i16, glyph: &[u8; 16], fg: Pel, mode: WriteMode, clip: ClipRect) {
+    #[allow(clippy::too_many_arguments)]
+    fn draw_glyph_sized(
+        &self,
+        x: i16,
+        y: i16,
+        glyph: &[u8],
+        cell_w: i16,
+        cell_h: i16,
+        fg: Pel,
+        mode: WriteMode,
+        clip: ClipRect,
+    ) {
         let fb = active_fb();
-        // The 8×16 cell intersected with the clip rectangle and the
-        // screen — only pixels inside this inclusive box are touched.
+        // The `cell_w`×`cell_h` cell intersected with the clip rectangle and
+        // the screen — only pixels inside this inclusive box are touched.
+        // (For the 8×16 system font, `cell_w-1 = 7` / `cell_h-1 = 15`, so
+        // this reduces exactly to the former fixed-size glyph path.)
         let cell = ClipRect {
             xmn: x.max(clip.xmn),
             ymn: y.max(clip.ymn),
-            xmx: ((x as i32 + 7) as i16).min(clip.xmx),
-            ymx: ((y as i32 + 15) as i16).min(clip.ymx),
+            xmx: ((x as i32 + cell_w as i32 - 1) as i16).min(clip.xmx),
+            ymx: ((y as i32 + cell_h as i32 - 1) as i16).min(clip.ymx),
         };
         let Some((x0, y0, x1, y1)) = cell.clamp_to(fb.width() as u16, fb.height() as u16) else {
             return;
@@ -602,7 +615,7 @@ impl RasterBackend for VdiScreen {
         for yy in y0..=y1 {
             let bits = glyph[(yy - y as i32) as usize];
             for xx in x0..=x1 {
-                let col = xx - x as i32; // 0..=7 within the cell
+                let col = xx - x as i32; // 0..cell_w within the cell
                 let set = bits & (0x80u8 >> col) != 0;
                 Self::combine(fb, xx as u32, yy as u32, set, mode, fg_rgb, bg_rgb);
             }

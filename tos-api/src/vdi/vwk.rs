@@ -14,6 +14,7 @@
 use core::cell::UnsafeCell;
 
 use super::backend::{ClipRect, Pel};
+use super::font::SysFontId;
 
 /// Total VDI handles (EmuTOS `NUM_VDI_HANDLES`, make-512 profile = 64).
 /// Handle 1 is the physical workstation; 2..=64 are virtual. Index 0 is
@@ -83,6 +84,10 @@ pub struct Vwk {
     pub h_align: i16,
     pub v_align: i16,
     pub chup: i16,
+    /// The selected system font (`cur_font`, EmuTOS `Vwk.cur_font`). Set by
+    /// `vst_height`/`vst_point`, rendered by `v_gtext`. Defaults to the 8×16
+    /// system font (`def_font`) on workstation open.
+    pub cur_font: SysFontId,
 
     // Mode + clipping.
     pub wrt_mode: i16,
@@ -132,6 +137,7 @@ impl Vwk {
         h_align: 0,
         v_align: 0,
         chup: 0,
+        cur_font: super::font::DEFAULT,
         wrt_mode: WM_REPLACE,
         xfm_mode: XFM_RC,
         clip: false,

@@ -53,8 +53,8 @@ Usage: cargo xtask <command> [options]
 
 Commands:
   build --board {{rpi4|qemu-virt}} [--release]
-  gen-font                       — extract the EmuTOS 8x16 ST system font
-                                   into tos-api/src/vdi/font_data.rs
+  gen-font                       — extract the EmuTOS 6x6/8x8/8x16 ST system
+                                   fonts into tos-api/src/vdi/font_data.rs
   run [--board {{rpi4|qemu-virt}}] [--release] [--window] [--debug]
                                    — boot in QEMU (virt by default, or
                                      raspi4b with --board rpi4); --window
@@ -137,67 +137,111 @@ fn cmd_build(args: &[String]) -> Result<(), String> {
     Ok(())
 }
 
-/// Extract the EmuTOS 8×16 ST system font into a committed Rust module
-/// (`tos-api/src/vdi/font_data.rs`). The source raster (`dat_table` in
-/// `references/emutos/bios/fnt_st_8x16.c`) is a 2048×16 monochrome
-/// bitmap: 128 big-endian UWORDs per row × 16 rows, with all 256
-/// characters laid out horizontally at 8 px each. We transpose it into
-/// one `[u8; 16]` glyph per character (row r of char c = byte c of the
-/// raster row r).
+/// Extract the three EmuTOS Atari-ST system-font rasters (6×6, 8×8, 8×16)
+/// into a committed Rust module (`tos-api/src/vdi/font_data.rs`).
+///
+/// Each source `dat_table` (`references/emutos/bios/fnt_st_{6x6,8x8,8x16}.c`)
+/// is a monochrome raster of `form_height` scanlines, each `form_width`
+/// bytes wide (big-endian UWORDs), with all 256 characters laid out
+/// horizontally at `max_cell_width` px each:
+///   - 8×16: 128 words/row × 16 rows, 8 px/char  → one `[u8; 16]` per char
+///   - 8×8 : 128 words/row × 8 rows,  8 px/char  → one `[u8; 8]`  per char
+///   - 6×6 : 96 words/row  × 6 rows,  6 px/char  → one `[u8; 6]`  per char
+///
+/// For the byte-aligned 8-px fonts, glyph row r of char c is simply byte c
+/// of raster row r. For the 6-px font, char c occupies bits `[c*6, c*6+6)`
+/// of the scanline; we pack those 6 pixels MSB-left into a byte (bits 7..2),
+/// matching the `bit 7 = leftmost pixel` convention used by the raster
+/// backend for every size. The 8×16 output is byte-identical to the
+/// previous single-font extraction.
 fn cmd_gen_font() -> Result<(), String> {
     let root = workspace_root();
-    let src_c = root
-        .join("references")
-        .join("emutos")
-        .join("bios")
-        .join("fnt_st_8x16.c");
-    let text = std::fs::read_to_string(&src_c)
-        .map_err(|e| format!("read {}: {e} (is the EmuTOS reference checked out?)", src_c.display()))?;
+    let bios = root.join("references").join("emutos").join("bios");
 
-    // Slice out the `dat_table` initialiser and collect its hex words.
-    let start = text
-        .find("dat_table[]")
-        .ok_or("dat_table[] not found in font source")?;
-    let brace = text[start..].find('{').ok_or("dat_table: no '{'")? + start;
-    let end = text[brace..].find("};").ok_or("dat_table: no '};'")? + brace;
-    let body = &text[brace..end];
-
-    let mut words: Vec<u16> = Vec::with_capacity(2048);
-    for tok in body.split(|c: char| !c.is_ascii_hexdigit() && c != 'x' && c != 'X') {
-        let t = tok.trim();
-        if let Some(hex) = t.strip_prefix("0x").or_else(|| t.strip_prefix("0X")) {
-            if let Ok(v) = u16::from_str_radix(hex, 16) {
-                words.push(v);
+    // Pull the `dat_table` initialiser out of a font source and collect its
+    // hex words (the array size may be spelled `[]` or `[N]`).
+    let extract = |file: &str, want: usize| -> Result<Vec<u16>, String> {
+        let path = bios.join(file);
+        let text = std::fs::read_to_string(&path)
+            .map_err(|e| format!("read {}: {e} (is the EmuTOS reference checked out?)", path.display()))?;
+        let start = text
+            .find("dat_table")
+            .ok_or_else(|| format!("dat_table not found in {file}"))?;
+        let brace = text[start..].find('{').ok_or("dat_table: no '{'")? + start;
+        let end = text[brace..].find("};").ok_or("dat_table: no '};'")? + brace;
+        let mut words: Vec<u16> = Vec::with_capacity(want);
+        for tok in text[brace..end].split(|c: char| !c.is_ascii_hexdigit() && c != 'x' && c != 'X') {
+            let t = tok.trim();
+            if let Some(hex) = t.strip_prefix("0x").or_else(|| t.strip_prefix("0X")) {
+                if let Ok(v) = u16::from_str_radix(hex, 16) {
+                    words.push(v);
+                }
             }
         }
-    }
-    if words.len() != 2048 {
-        return Err(format!("expected 2048 dat_table words, got {}", words.len()));
-    }
+        if words.len() != want {
+            return Err(format!("expected {want} dat_table words in {file}, got {}", words.len()));
+        }
+        Ok(words)
+    };
 
-    // Raster: 128 words/row × 16 rows. Char c, row r → byte c of row r
-    // (high byte of word c/2 if c even, low byte if odd; big-endian).
-    const WORDS_PER_ROW: usize = 128;
-    let byte_at = |row: usize, c: usize| -> u8 {
-        let w = words[row * WORDS_PER_ROW + c / 2];
+    // Byte-aligned fonts (8 px/char): high byte of word c/2 if c even, low
+    // byte if odd (big-endian).
+    let byte_at = |w: &[u16], words_per_row: usize, row: usize, c: usize| -> u8 {
+        let word = w[row * words_per_row + c / 2];
         if c % 2 == 0 {
-            (w >> 8) as u8
+            (word >> 8) as u8
         } else {
-            (w & 0xFF) as u8
+            (word & 0xFF) as u8
         }
     };
 
+    let f8x16 = extract("fnt_st_8x16.c", 2048)?;
+    let f8x8 = extract("fnt_st_8x8.c", 1024)?;
+    let f6x6 = extract("fnt_st_6x6.c", 576)?;
+
     let mut s = String::new();
     s.push_str("//! GENERATED by `cargo xtask gen-font` — do not edit by hand.\n");
-    s.push_str("//! 8×16 Atari ST system font, transposed from EmuTOS\n");
-    s.push_str("//! `bios/fnt_st_8x16.c` (`dat_table`). One `[u8; 16]` glyph per\n");
-    s.push_str("//! character; bit 7 of each byte is the leftmost pixel.\n\n");
+    s.push_str("//! Atari ST system fonts (6×6, 8×8, 8×16), transposed from EmuTOS\n");
+    s.push_str("//! `bios/fnt_st_{6x6,8x8,8x16}.c` (`dat_table`). One byte-array\n");
+    s.push_str("//! (`form_height` rows) per character; bit 7 of each byte is the\n");
+    s.push_str("//! leftmost pixel. The 6×6 glyphs pack their 6 pixels into bits 7..2.\n\n");
+
     s.push_str("/// 256 glyphs of the 8×16 ST system font (row-major, MSB = left).\n");
     s.push_str("pub static SYSTEM_FONT_8X16: [[u8; 16]; 256] = [\n");
     for c in 0..256usize {
         s.push_str("    [");
         for r in 0..16usize {
-            s.push_str(&format!("0x{:02x},", byte_at(r, c)));
+            s.push_str(&format!("0x{:02x},", byte_at(&f8x16, 128, r, c)));
+        }
+        s.push_str("],\n");
+    }
+    s.push_str("];\n\n");
+
+    s.push_str("/// 256 glyphs of the 8×8 ST system font (row-major, MSB = left).\n");
+    s.push_str("pub static SYSTEM_FONT_8X8: [[u8; 8]; 256] = [\n");
+    for c in 0..256usize {
+        s.push_str("    [");
+        for r in 0..8usize {
+            s.push_str(&format!("0x{:02x},", byte_at(&f8x8, 128, r, c)));
+        }
+        s.push_str("],\n");
+    }
+    s.push_str("];\n\n");
+
+    s.push_str("/// 256 glyphs of the 6×6 ST system font (row-major, 6 px in bits 7..2).\n");
+    s.push_str("pub static SYSTEM_FONT_6X6: [[u8; 6]; 256] = [\n");
+    for c in 0..256usize {
+        s.push_str("    [");
+        for r in 0..6usize {
+            // Char c occupies bits [c*6, c*6+6) of the 96-word (1536-bit) row.
+            let mut val = 0u8;
+            for p in 0..6usize {
+                let gbit = c * 6 + p;
+                let word = f6x6[r * 96 + gbit / 16];
+                let pix = ((word >> (15 - (gbit % 16))) & 1) as u8;
+                val |= pix << (7 - p);
+            }
+            s.push_str(&format!("0x{val:02x},"));
         }
         s.push_str("],\n");
     }
@@ -209,7 +253,7 @@ fn cmd_gen_font() -> Result<(), String> {
         .join("vdi")
         .join("font_data.rs");
     std::fs::write(&out, &s).map_err(|e| format!("write {}: {e}", out.display()))?;
-    println!("xtask: wrote {} (256×16 glyphs)", out.display());
+    println!("xtask: wrote {} (6×6 + 8×8 + 8×16 glyphs)", out.display());
     Ok(())
 }
 

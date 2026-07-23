@@ -233,15 +233,37 @@ pub trait RasterBackend: Sync {
     /// area.
     fn fill_pattern(&self, x: i16, y: i16, w: i16, h: i16, fill: PatternFill, clip: ClipRect);
 
-    /// Blit an 8-wide × 16-tall monochrome glyph with its top-left at
-    /// `(x, y)` in colour `fg`. Bit 7 (`0x80`) of each byte is the
-    /// leftmost pixel; the font bit is the primitive's "source set".
-    /// `mode` selects the raster combination — `Transparent` draws only
-    /// set bits (the common text case), `Replace` also clears the cell
+    /// Blit a `cell_w`-wide × `cell_h`-tall monochrome glyph with its
+    /// top-left at `(x, y)` in colour `fg`. `glyph` holds `cell_h` rows,
+    /// one byte each, bit 7 (`0x80`) = leftmost pixel; only the leftmost
+    /// `cell_w` columns are used (the 6×6 font packs 6 px into bits 7..2).
+    /// The font bit is the primitive's "source set". `mode` selects the
+    /// raster combination — `Transparent` draws only set bits (the common
+    /// text case), `Replace` also clears the `cell_w`×`cell_h` cell
     /// background (VDI background pen 0), `Xor` complements, and
     /// `RevTransparent` draws the clear bits. Clipped to `clip` ∩ the
-    /// visible area.
-    fn draw_glyph(&self, x: i16, y: i16, glyph: &[u8; 16], fg: Pel, mode: WriteMode, clip: ClipRect);
+    /// visible area. `glyph.len()` must be `>= cell_h`.
+    #[allow(clippy::too_many_arguments)]
+    fn draw_glyph_sized(
+        &self,
+        x: i16,
+        y: i16,
+        glyph: &[u8],
+        cell_w: i16,
+        cell_h: i16,
+        fg: Pel,
+        mode: WriteMode,
+        clip: ClipRect,
+    );
+
+    /// Blit a fixed 8-wide × 16-tall monochrome glyph — the system-font
+    /// cell size used by the AES/desktop/console text paths. Forwards to
+    /// [`draw_glyph_sized`](Self::draw_glyph_sized) with `(cell_w, cell_h)
+    /// = (8, 16)`.
+    #[inline]
+    fn draw_glyph(&self, x: i16, y: i16, glyph: &[u8; 16], fg: Pel, mode: WriteMode, clip: ClipRect) {
+        self.draw_glyph_sized(x, y, glyph, 8, 16, fg, mode, clip);
+    }
 
     /// Blit a monochrome source ([`MonoSrc`]) into the screen rectangle
     /// `dst`, expanding it to colour per the VDI [`WriteMode`]

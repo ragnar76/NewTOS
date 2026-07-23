@@ -173,28 +173,158 @@ pub fn vst_font(pb: &Vdipb, _vwk: &mut Vwk) {
     pb.set_contrl(4, 1);
 }
 
-/// Fill `PTSOUT[0..3]` with the actual character/cell metrics of the
-/// single system font (EmuTOS `setup_width_height`).
-fn report_font_size(pb: &Vdipb) {
-    pb.set_ptsout(0, font::MAX_CHAR_WIDTH); // char width  (7)
-    pb.set_ptsout(1, font::TOP); // char height (top = 13)
-    pb.set_ptsout(2, font::CELL_W); // cell width  (8)
-    pb.set_ptsout(3, font::CELL_H); // cell height (16)
+/// The four metrics `setup_width_height` reports for the chosen (possibly
+/// DDA-scaled) font: `max_char_width`, `top`, `max_cell_width`, `bottom`.
+struct SizeReport {
+    max_char_width: i16,
+    top: i16,
+    max_cell_width: i16,
+    bottom: i16,
+}
+
+/// Fill `PTSOUT[0..3]` from a [`SizeReport`] (EmuTOS `setup_width_height`,
+/// `vdi_text.c:668-679`): char width, `top`, cell width, `top+bottom+1`.
+fn setup_width_height(pb: &Vdipb, r: &SizeReport) {
+    pb.set_ptsout(0, r.max_char_width);
+    pb.set_ptsout(1, r.top);
+    pb.set_ptsout(2, r.max_cell_width);
+    pb.set_ptsout(3, r.top + r.bottom + 1);
     pb.set_contrl(2, 2);
 }
 
-/// Opcode 12 — `vst_height`: request a text height in device units.
-/// Only the one fixed bitmap face exists (no scaling), so the actual
-/// 8×16 metrics are reported regardless of the request.
-pub fn vst_height(pb: &Vdipb, _vwk: &mut Vwk) {
-    report_font_size(pb);
+/// `clc_dda` (EmuTOS `vdi_text.c:1374-1391`): the DDA fraction to scale a
+/// font from `act` to `req` units. Returns `(dda_inc, t_sclsts)` where
+/// `t_sclsts` is `true` when enlarging; `0xFFFF` means "exactly double".
+fn clc_dda(act: u16, req: u16) -> (u16, bool) {
+    debug_assert!(act != 0);
+    if req < act {
+        let req = if req == 0 { 1 } else { req }; // scale down; min size 1
+        ((((req as u32) << 16) / act as u32) as u16, false)
+    } else {
+        let req = req - act; // scale up
+        if req >= act {
+            (0xFFFF, true) // larger than 2x → double
+        } else {
+            ((((req as u32) << 16) / act as u32) as u16, true)
+        }
+    }
 }
 
-/// Opcode 107 — `vst_point`: request a text height in points. Reports
-/// the single available point size (10) and its metrics.
-pub fn vst_point(pb: &Vdipb, _vwk: &mut Vwk) {
-    report_font_size(pb);
-    pb.set_intout(0, font::POINT);
+/// `act_siz` (EmuTOS `vdi_text.c:743-767`): the actual scaled size of a
+/// `top`-unit dimension under the DDA `(dda_inc, t_sclsts)`.
+fn act_siz(dda_inc: u16, t_sclsts: bool, top: u16) -> u16 {
+    if dda_inc == 0xFFFF {
+        return top << 1; // exact double
+    }
+    let mut accu: u16 = 0x7FFF;
+    let mut retval: u16 = if t_sclsts { top } else { 0 };
+    for _ in 0..top {
+        accu = accu.wrapping_add(dda_inc);
+        if accu < dda_inc {
+            retval += 1; // carry out of 16 bits
+        }
+    }
+    if top != 0 && retval == 0 {
+        retval = 1; // non-zero input → at least 1
+    }
+    retval
+}
+
+/// The four report metrics for `font` at its natural (unscaled) size.
+fn base_report(f: &font::SysFont) -> SizeReport {
+    SizeReport {
+        max_char_width: f.max_char_width,
+        top: f.top,
+        max_cell_width: f.max_cell_width,
+        bottom: f.bottom,
+    }
+}
+
+/// The four report metrics for `font` scaled by the DDA `(dda_inc,
+/// t_sclsts)` (EmuTOS `make_header`, `vdi_text.c:770-817`). The exact-double
+/// case gives `top` a `*2+1` (the header quirk); everything else is
+/// `act_siz`.
+fn scaled_report(f: &font::SysFont, dda_inc: u16, t_sclsts: bool) -> SizeReport {
+    let sz = |v: i16| act_siz(dda_inc, t_sclsts, v as u16) as i16;
+    let top = if dda_inc == 0xFFFF { f.top * 2 + 1 } else { sz(f.top) };
+    SizeReport {
+        max_char_width: sz(f.max_char_width),
+        top,
+        max_cell_width: sz(f.max_cell_width),
+        bottom: sz(f.bottom),
+    }
+}
+
+/// Opcode 12 — `vst_height`: request a text height in device units
+/// (EmuTOS `vdi_vst_height`, `vdi_text.c:681-727`). Walk the font ring for
+/// the largest size in the current face whose `top` fits `PTSIN[1]`,
+/// select it into `cur_font`, and — if it is not an exact match — report
+/// the DDA-scaled metrics. `PTSOUT[0..3]` = the actual char/cell metrics.
+pub fn vst_height(pb: &Vdipb, vwk: &mut Vwk) {
+    let face = font::font(vwk.cur_font).font_id;
+    // UWORD comparison (EmuTOS `vdi_vst_height` uses `UWORD test_height`).
+    let test_height = pb.ptsin(1) as u16;
+
+    // Largest ring font (of the face) with top <= requested; else smallest.
+    let mut single = font::RING[0];
+    for &fid in &font::RING {
+        let f = font::font(fid);
+        if f.font_id == face && (f.top as u16) <= test_height {
+            single = fid;
+        }
+    }
+    vwk.cur_font = single;
+
+    let f = font::font(single);
+    let report = if (f.top as u16) != test_height {
+        let (dda_inc, t_sclsts) = clc_dda(f.top as u16, test_height);
+        scaled_report(f, dda_inc, t_sclsts)
+    } else {
+        base_report(f)
+    };
+    setup_width_height(pb, &report);
+}
+
+/// Opcode 107 — `vst_point`: request a text height in points (EmuTOS
+/// `vdi_vst_point`, `vdi_text.c:820-878`). Walk the ring for the largest
+/// size whose `point` fits `INTIN[0]`, plus the largest whose *doubled*
+/// point still fits; if the exact size is missing but the double fits,
+/// select the doubled font (`dda_inc = 0xFFFF`). `INTOUT[0]` = the point
+/// size actually set; `PTSOUT[0..3]` = its char/cell metrics.
+pub fn vst_point(pb: &Vdipb, vwk: &mut Vwk) {
+    let face = font::font(vwk.cur_font).font_id;
+    // WORD (signed) comparison (EmuTOS `vdi_vst_point` uses `WORD test_height`).
+    let test_height = pb.intin(0);
+
+    let mut single = font::RING[0];
+    let mut double = font::RING[0];
+    for &fid in &font::RING {
+        let f = font::font(fid);
+        if f.font_id == face && f.point <= test_height {
+            single = fid;
+            if f.point * 2 <= test_height {
+                double = fid;
+            }
+        }
+    }
+    vwk.cur_font = single;
+
+    let sf = font::font(single);
+    let (report, point_out) = if sf.point != test_height {
+        let df = font::font(double);
+        let h = df.point * 2;
+        if h > sf.point && h <= test_height {
+            // The exact size is absent but the doubled font fits: use it.
+            vwk.cur_font = double;
+            (scaled_report(df, 0xFFFF, true), df.point * 2)
+        } else {
+            (base_report(sf), sf.point)
+        }
+    } else {
+        (base_report(sf), sf.point)
+    };
+    setup_width_height(pb, &report);
+    pb.set_intout(0, point_out); // point size actually set
     pb.set_contrl(4, 1);
 }
 
