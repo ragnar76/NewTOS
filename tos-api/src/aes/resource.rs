@@ -725,6 +725,33 @@ pub unsafe fn tree_root(base: *mut u8, idx: usize) -> *mut Object {
     }
 }
 
+/// Free-string data pointer `frstr[index]` from a **relocated** native blob at
+/// `base` — the direct analog of EmuTOS `rs_str()` (`gemrslib.c:854`, which
+/// indexes the AES's own resource free-string table). The file selector uses it
+/// to fetch its default dialog title `ITEMSLCT` from the loaded GEM.RSC
+/// (`gemfslib.c:692`, `rs_str(ITEMSLCT)`).
+///
+/// `base` is a blob relocated in place via [`relocate_blob`] (LP64), so the
+/// free-string table holds 8-byte pointer slots already rebased to valid
+/// pointers. Returns a null pointer when the blob predates the free-string
+/// table (`version < NRSC_VER_TABLES`, a v1/v2 resource) or `index` is out of
+/// range.
+///
+/// # Safety
+/// `base` must point at a relocated native `.RSC` blob.
+pub unsafe fn blob_frstr(base: *const u8, index: usize) -> *const u8 {
+    // SAFETY: caller guarantees a relocated blob at `base`.
+    unsafe {
+        let h = &*(base as *const NrscHeader);
+        if &h.magic != b"NRSC" || h.version < NRSC_VER_TABLES || index >= h.n_frstr as usize {
+            return core::ptr::null();
+        }
+        // LP64 free-string table: 8-byte pointer slots, possibly unaligned.
+        let slot = base.add(h.off_frstr as usize + index * 8) as *const u64;
+        slot.read_unaligned() as *const u8
+    }
+}
+
 /// Add `base` to a non-zero offset field (in-place relocation).
 #[inline]
 fn reloc(field: &mut u64, base: u64) {

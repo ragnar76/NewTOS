@@ -15,8 +15,10 @@
 //! walking into a sub-directory by clicking it. The listing matches EmuTOS
 //! `fs_active`: folders sort first, then files, both alphabetically, and
 //! `.`/`..`/dot-files are filtered out (`gemfslib.c:298,312`). Up-navigation
-//! is via editing the `FSDIRECT` path + Enter; the `FCLSBOX` close-box
-//! gadget (the EmuTOS up-one-level control) is not yet wired (WP7b).
+//! is the `FCLSBOX` close-box gadget (EmuTOS up-one-level, `gemfslib.c:839`)
+//! or editing the `FSDIRECT` path + Enter. `fsel_exinput` shows the caller's
+//! custom dialog title (`FS_TITLE = addr_in[2]`), else the default
+//! "ITEM SELECTOR", centred in the FSTITLE caption (`gemfslib.c:691-693`).
 
 use super::object::{self, Object, ObjTree, TedInfo};
 use super::{resource, Aespb};
@@ -26,10 +28,12 @@ use core::cell::UnsafeCell;
 
 // FSELECTR object indices (EmuTOS gem.rsc, verified against the converted
 // resource).
+const FSTITLE: i16 = 1; // dialog title caption (G_STRING); default "ITEM SELECTOR"
 const FSDIRECT: i16 = 3;
 const FSSELECT: i16 = 5;
 const FS1STDRV: i16 = 7; // first drive-letter gadget (A); A..Z = 7..32
 const FSLSTDRV: i16 = 32; // last drive-letter gadget (Z)
+const FCLSBOX: i16 = 34; // close-box gadget = up-one-level (EmuTOS fs_back)
 const FUPAROW: i16 = 37;
 const FDNAROW: i16 = 38;
 const FSVSLID: i16 = 39; // slider track
@@ -39,6 +43,10 @@ const F1NAME: i16 = 42;
 const NM_NAMES: usize = 9; // F1NAME..F9NAME
 const FSOK: i16 = 51;
 const FSCANCEL: i16 = 52;
+/// Free-string index of the default file-selector title in GEM.RSC (EmuTOS
+/// `rs_str(ITEMSLCT)`, `gemfslib.c:692`). Verified against `aes/gem.rsc`:
+/// free-string 14 = "ITEM SELECTOR".
+const ITEMSLCT: usize = 14;
 
 const SELECTED: u16 = 0x0001;
 const DISABLED: u16 = 0x0008;
@@ -69,6 +77,7 @@ struct Sys {
     root: UnsafeCell<*mut Object>, // FSELECTR root, null until loaded
     dir: UnsafeCell<[u8; 96]>,     // FSDIRECT path text
     sel: UnsafeCell<[u8; 16]>,     // FSSELECT filename text
+    title: UnsafeCell<[u8; 64]>,   // FSTITLE custom-title text (fsel_exinput)
     names: UnsafeCell<[[u8; 16]; NM_NAMES]>, // visible slot text
     all: UnsafeCell<[[u8; 16]; MAX_LIST]>,   // full directory listing
     all_attr: UnsafeCell<[u8; MAX_LIST]>,    // per-entry attribute byte
@@ -82,6 +91,7 @@ static SYS: Sys = Sys {
     root: UnsafeCell::new(core::ptr::null_mut()),
     dir: UnsafeCell::new([0u8; 96]),
     sel: UnsafeCell::new([0u8; 16]),
+    title: UnsafeCell::new([0u8; 64]),
     names: UnsafeCell::new([[0u8; 16]; NM_NAMES]),
     all: UnsafeCell::new([[0u8; 16]; MAX_LIST]),
     all_attr: UnsafeCell::new([0u8; MAX_LIST]),
@@ -243,18 +253,20 @@ fn write_out(dst: *mut u8, src: &[u8]) {
     }
 }
 
-/// `fsel_input` (90).
+/// `fsel_input` (90) — no caller title, so FSTITLE shows the default
+/// "ITEM SELECTOR" (EmuTOS `fs_input(..., NULL)`, gemsuper.c:323).
 pub fn fsel_input(pb: &Aespb) {
-    run(pb);
+    run(pb, core::ptr::null());
 }
 
-/// `fsel_exinput` (91) — same plus a custom title (drawn as the dialog
-/// title in Batch 2; identical selection behaviour here).
+/// `fsel_exinput` (91) — `fsel_input` plus a caller-supplied dialog title in
+/// `addr_in[2]` (`FS_TITLE`, gemsuper.c:326 / aesdefs.h:464), shown centred in
+/// the FSTITLE caption. A null title falls back to the default "ITEM SELECTOR".
 pub fn fsel_exinput(pb: &Aespb) {
-    run(pb);
+    run(pb, pb.addrin(2) as *const u8);
 }
 
-fn run(pb: &Aespb) {
+fn run(pb: &Aespb, label: *const u8) {
     let path_p = pb.addrin(0) as *mut u8;
     let sel_p = pb.addrin(1) as *mut u8;
 
@@ -308,6 +320,9 @@ fn run(pb: &Aespb) {
     let cur = unsafe { (*SYS.dir.get())[0] };
     set_drive_states(tree, cur);
     center(tree, backend);
+    // EmuTOS `fs_input` sets the dialog title — the caller's custom label or the
+    // default "ITEM SELECTOR" — and centres it (gemfslib.c:691-693).
+    apply_title(tree, label);
     relist(tree); // read the directory, fill the slots + slider
     // The FSELECTR tree is loaded from GEM.RSC as native (LP64) `Object`s, so it
     // must be read at the LP64 width even when an ILP32 app is current — force
@@ -592,6 +607,72 @@ fn center(tree: *mut Object, backend: &dyn RasterBackend) {
     }
 }
 
+/// Set the FSTITLE caption and centre it — EmuTOS `fs_input`
+/// (`gemfslib.c:691-693`): `obj->ob_spec = pilabel ? pilabel : rs_str(ITEMSLCT)`
+/// then `centre_title(tree, FSTITLE)`. The caller's custom `label` (copied into
+/// our own buffer so the tree never holds a raw EL0 pointer) takes precedence;
+/// otherwise the default is the `ITEMSLCT` free string read from the loaded
+/// GEM.RSC blob (the `rs_str` analog). The tree is cached across calls, so
+/// ob_spec is rewritten every call — a prior custom title never leaks into a
+/// later default-title dialog.
+fn apply_title(tree: *mut Object, label: *const u8) {
+    // SAFETY: single-CPU AES; valid FSELECTR tree; SYS.buf holds the blob.
+    unsafe {
+        let title_ptr: *const u8 = if !label.is_null() {
+            copy_in(&mut *SYS.title.get(), label);
+            (*SYS.title.get()).as_ptr()
+        } else {
+            resource::blob_frstr(SYS.buf.get() as *const u8, ITEMSLCT)
+        };
+        (*tree.add(FSTITLE as usize)).ob_spec = title_ptr as u64;
+        centre_title(tree, FSTITLE);
+    }
+}
+
+/// Centre the `objnum` G_STRING caption horizontally in the root — EmuTOS
+/// `centre_title` (`gemfslib.c:179-185`): `ob_x = (root.ob_width -
+/// strlen(ob_spec)*gl_wchar) / 2`. Unlike EmuTOS (whose G_STRING draw is not
+/// width-clipped) NewTOS clips a string's glyphs to `ob_width`
+/// (`object::draw_text`, the icon-label behaviour), so we also widen the object
+/// to the title's pixel width; the visible result — a fully drawn, centred
+/// caption — matches EmuTOS.
+fn centre_title(tree: *mut Object, objnum: i16) {
+    // SAFETY: single-CPU AES; valid tree; `objnum` is a G_STRING child of ROOT.
+    unsafe {
+        let root_w = (*tree).ob_width;
+        let ob = &mut *tree.add(objnum as usize);
+        // strlen(ob_spec): the title is our own buffer or a GEM.RSC frstr
+        // string, both NUL-terminated (capped like `object::read_cstr` at 255).
+        let tw = if ob.ob_spec == 0 {
+            0
+        } else {
+            let p = ob.ob_spec as *const u8;
+            let mut n = 0i16;
+            while n < 255 && *p.add(n as usize) != 0 {
+                n += 1;
+            }
+            n * crate::vdi::font::CELL_W
+        };
+        ob.ob_x = (root_w - tw) / 2;
+        ob.ob_width = tw;
+    }
+}
+
+/// Whether the directory path (`SYS.dir`, path+mask) is at the drive root, so
+/// FCLSBOX up-navigation must do nothing — EmuTOS `fs_back`/FCLSBOX
+/// (`gemfslib.c:840-844`): stop if there is no path separator (`pstr == locstr`)
+/// or the character before the last separator is the drive colon (`X:\`).
+fn at_drive_root() -> bool {
+    // SAFETY: single-CPU AES.
+    let dir = unsafe { &*SYS.dir.get() };
+    let dlen = dir.iter().position(|&b| b == 0).unwrap_or(dir.len());
+    match dir[..dlen].iter().rposition(|&b| b == b'\\') {
+        None => true,                  // no separator (locstr like "*.*")
+        Some(0) => true,               // separator at the very start
+        Some(p) => dir[p - 1] == b':', // char before last separator is ':'
+    }
+}
+
 /// Modal loop (EmuTOS `fs_input`): the `FSDIRECT` path field and `FSSELECT`
 /// selection field are keyboard-editable; typing a new path + Enter re-lists
 /// it, a click on a folder walks into it, arrows scroll, a click selects a
@@ -673,6 +754,18 @@ fn modal(tree: *mut Object, backend: &dyn RasterBackend) -> i16 {
                 scroll(tree, -1);
             } else if hit == FDNAROW {
                 scroll(tree, 1);
+            } else if hit == FCLSBOX {
+                // EmuTOS FCLSBOX (gemfslib.c:839-848): walk one directory level
+                // up, unless already at the drive root ("X:\"). This is the
+                // up-navigation control that replaces the (WP7a-filtered) ".."
+                // list entry; reuse the existing ".." path-shortening + relist
+                // (`nav_into_folder`/`apply_path`), guarded so we never shorten
+                // past the drive root.
+                if !at_drive_root() {
+                    nav_into_folder(b"..");
+                    cur_sel = -1;
+                    apply_path(tree, &mut focus, &mut idx, &mut listed);
+                }
             } else if hit == FSDIRECT || hit == FSSELECT {
                 // Click into an editable field → focus it (caret to its end).
                 if hit != focus {
