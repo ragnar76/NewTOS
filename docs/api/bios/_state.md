@@ -5,6 +5,14 @@
 > addresses), constants, error codes, and shared data-structure layouts. So it
 > is not repeated in every function entry.
 > Source: EmuTOS @ `1a7484ab`. Addresses from `tosvars.ld`.
+>
+> **§1's table below is a curated subset** (the sysvars this function group's
+> 12 traps actually touch). For the **complete** `tosvars.ld` coverage
+> (`$380`–`$5B4`, every symbol, with its boot-time initialiser and a
+> "no active EmuTOS backing" flag for pure address reservations) plus the
+> **boot-time population order** (cold- vs. warm-boot sysvar-clear
+> behaviour, the OSHEADER/`_sysbase`/cookie-jar init sequence), see
+> `docs/api/bios/_boot-init.md` (added 2026-07-23, BB1 pass).
 
 > **Observable vs. internal** — see [`docs/COMPATIBILITY.md`](../../COMPATIBILITY.md).
 > **Contract** (programs observe — keep value/semantics exact): the

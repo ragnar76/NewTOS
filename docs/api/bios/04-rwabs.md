@@ -236,6 +236,70 @@ zero transfers and returns `E_OK`.
    flagged here as-is per the "trust the code" rule rather than "corrected"
    to a single consistent rule.
 
+9. **The `etv_critic` critical-error path, end to end (gap filled this
+   pass — explicitly requested for the P4-012/eralert follow-up).** When
+   the inner retry loop exhausts (`retval < 0`) *and* the request is
+   **logical** (not `RW_NOTRANSLATE`), `blkdev_rwabs` calls
+   `call_etv_critic((WORD)retval, dev)` (`bios/blkdev.c:520-521`) and, if
+   the result is the sentinel `CRITIC_RETRY_REQUEST` (`0x00010000L`,
+   `bios/blkdev.h:36`), the **entire outer retry loop repeats**
+   (`bios/blkdev.c:522`) — a disk error can therefore cause `Rwabs` to
+   retry indefinitely if the installed handler keeps asking for a retry.
+   Physical (`RW_NOTRANSLATE`) requests **never** call `etv_critic`
+   (`bios/blkdev.c:520` guard) — a raw physical `Rwabs` failure is final,
+   no matter what handler is installed.
+
+   The call chain, fully traced (BIOS → AES), file:line:
+   - `call_etv_critic(error, device)` (`bios/vectors.S:807-818`, asm) packs
+     the two `WORD` args as the C function-pointer signature
+     `LONG (*etv_critic)(WORD err, WORD dev)` expects, sets `D0 = -1` as
+     the *default* return (TOS's own convention — "abort" if the handler
+     does nothing), then calls through `_etv_critic.w` — the same
+     low-memory vector `Setexc(0x101, …)` reads/writes (`0x404`,
+     `05-setexc.md`).
+   - **Boot default:** `etv_critic = default_etv_critic` is installed at
+     `bios_init()` time (`bios/bios.c:361`, before any program runs — see
+     `docs/api/bios/_boot-init.md` §3). `default_etv_critic`
+     (`bios/vectors.S:823-826`) simply re-extracts the error word passed
+     on the stack and returns it unchanged — i.e. with **no** AES/desktop
+     running, a disk error from `Rwabs` propagates straight through as the
+     original negative error code; `CRITIC_RETRY_REQUEST` is never
+     produced by the default handler, so the outer loop never spins.
+   - **AES override (the eralert connection, `aes/gemdosif.S`):** the
+     desktop installs its own `criterr_handler` via
+     `Setexc(0x0101, addr)` (`gemdosif.S:101-108`, `_takeerr`, called
+     during desktop startup) and saves the prior (BIOS default) handler
+     in `save_etv_critic` for both chaining and restoration
+     (`gemdosif.S:117,130,156-157`). `criterr_handler`
+     (`gemdosif.S:153-219`) only engages when `_enable_ceh` is set (i.e.
+     the desktop main loop has started, `gemdosif.S:154-157` — before
+     that it forwards straight to the saved handler, preserving classic
+     TOS boot-time behaviour). When engaged, it: reads `err`(`4(sp)`)/
+     `drive`(`6(sp)`) off the stack (the same layout `call_etv_critic`
+     built); maps the error to an alert-string index via `err_tbl`
+     (`gemdosif.S:179-192,424-431` — `entry[-error-1]`, out-of-range or
+     `error==0` defaults to entry 0); calls `_eralert(alert_num, drive)`
+     (`aes/gemfmlib.c:416-433`), which shows a `form_alert()` box and
+     returns `TRUE` if the user picked "Retry" (button 2/3), `FALSE` for
+     "Cancel" (button 1); and finally returns either the **original
+     error code** (Cancel) or `CRITIC_RETRY_REQUEST` (`0x00010000`, Retry,
+     `gemdosif.S:199-203`) — which is exactly the sentinel
+     `blkdev_rwabs`'s outer loop tests for.
+   - **Net effect:** with the desktop running, a disk I/O failure from a
+     *logical* `Rwabs` call pops a classic Atari "Abort/Retry" alert box;
+     choosing Retry re-runs the whole transfer from `blkdev_rwabs`'s outer
+     loop (fresh `retry_count` attempts before the next `etv_critic` call),
+     choosing Cancel returns the original error code to the GEMDOS/caller
+     level. Without a desktop (or before `_enable_ceh`), the error simply
+     propagates — no alert, no retry, matching plain BIOS-level behaviour.
+   - **AES scope note:** the `criterr_handler`/`eralert`/`err_tbl`
+     mechanism lives entirely in `aes/gemdosif.S` and `aes/gemfmlib.c`,
+     outside this BIOS-trap-13 spec's scope; documented here only to the
+     depth needed to explain `Rwabs`'s `CRITIC_RETRY_REQUEST` retry
+     contract. A full AES-side spec entry (if needed for the
+     GEMDOS/error-alert follow-up work referenced in the task) is a
+     separate, AES-scoped extraction.
+
 ---
 
 ## Dependencies

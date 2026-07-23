@@ -173,9 +173,28 @@ value — a pointer would be useless to EL0 since the jar is EL1-only memory.
   binary scanning for a `tag == 0` terminator would not find one. Native access
   via `Ssystem` is unaffected.
 
+## OFFEN (re-flagged 2026-07-23, BB1 boot-init pass)
+
+**ADR-012's "kernel-owned, no `$5A0`, `Ssystem` instead of `Supexec`"
+decision is now contested by evidence, not just noted as a limitation.**
+`docs/analysis/sysvar-osheader-lowmem-gap.md` (Prüfauftrag Punkt 4) and
+`docs/analysis/bios-audit/00-PLAN.md` (BB1) point out that TeraDesk's own
+`library/utility/cookie.c:28,56` implements exactly the classic
+`Setexc(0x5A0/4, -1)` + `$5A0` + linear-scan pattern this doc describes
+above — i.e. a real, 1:1-ported TOS application (ADR-019) depends on the
+access path ADR-012 explicitly closed off. This is the same class of
+"two-worlds assumption refuted by a ported app" finding as the OSHEADER
+correction in `docs/api/structures/osheader.md`. This Researcher pass
+does **not** re-decide ADR-012 — that is BB1's job, not a spec-extraction
+task — but the decision must be revisited with this evidence before BB1
+implements the boot-init layer. See `docs/api/bios/_boot-init.md` §6.
+
 ## Cross-references
 
-- ADR-012 (cookie-jar access mechanism) — `docs/MEMORY.md`
+- ADR-012 (cookie-jar access mechanism) — `docs/MEMORY.md` — **contested,
+  see "OFFEN" above**
 - Open-ADR *ADR-Supexec*, `$420`-vars decision — STATUS Recent-Decisions 2026-05-03
+- `docs/api/bios/_boot-init.md` — boot-time `cookie_init()`/
+  `fill_cookie_jar()` sequencing
 - Compendium: "Cookie Jar"; Profibuch: "Cookie-Jar" — both document the
   `$5A0` + scan contract; cross-check pending.

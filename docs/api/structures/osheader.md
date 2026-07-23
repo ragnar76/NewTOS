@@ -3,6 +3,17 @@
 > Phase 00 spec D6. Source: EmuTOS @ `1a7484ab` —
 > `include/biosdefs.h:44-63`. Located at the start of the ROM/RAM OS
 > image; pointer in low-memory `_sysbase` (0x4F2).
+>
+> **Re-validated 2026-07-23** (BB1 boot-init pass, see
+> `docs/analysis/bios-audit/00-PLAN.md` / `docs/api/bios/_boot-init.md`).
+> The struct's **actual assembly definition** is `bios/startup.S:73-114`
+> (label `_os_header`, the literal first bytes of the TEXT segment); the
+> `include/biosdefs.h:44-63` C `typedef` is the type only, not the
+> instance. Two corrections applied below: the `os_version` "typically
+> claims 0x0306" claim was **wrong** (EmuTOS' standard-profile default is
+> `0x206`, not `0x306` — see the `os_version` section); and the
+> "NewTOS implementation notes" closing section understated the scope —
+> corrected per the TeraDesk boot-crash finding.
 
 ## Purpose
 
@@ -72,9 +83,26 @@ BCD-packed: high byte = major, low byte = minor. Examples:
 - `0x0206` → TOS 2.06
 - `0x0404` → TOS 4.04
 
-EmuTOS reports a version compatible with the configured target
-(typically `0x0306` to claim TOS 3.06 compatibility). NewTOS will
-report `0x0400` to match the latest pre-Falcon Atari TOS.
+**Corrected (this pass):** the value is the build-time constant
+`TOS_VERSION` (`bios/startup.S:80-81`, `.dc.w TOS_VERSION`). EmuTOS'
+**default** in the standard-profile build (`config.h:1367-1372`) is
+**`0x206`** ("we pretend to be TOS 2.06"), *not* 0x0306 as a prior draft
+of this doc claimed. Neither `TARGET_512`, `TARGET_1024` nor `TARGET_PRG`
+(NewTOS' reference build family) override it — verified in
+`docs/analysis/aes-audit/emutos-config-profile.md` (Teil 1c/1l): none of
+the three defines a `TOS_VERSION` block, so all three fall through to the
+`0x206` default. `TOS_VERSION` is purely cosmetic in EmuTOS — the same
+analysis found **no** `#if TOS_VERSION` branch anywhere in the source
+tree; it only feeds this one field.
+
+**NewTOS target value — OFFEN, not decided.** `docs/analysis/bios-audit/
+00-PLAN.md` names `0x0404` (TOS 4.04/Falcon) as if settled, but the more
+careful config-profile analysis explicitly flags this as unverified:
+*"Zu verifizieren, NICHT raten … ob auch der `TOS_VERSION`-OS-Header-Wert
+(Standard `0x206`) auf den Falcon-TOS4-Wert (`0x0404`?) gehoben werden
+soll."* This spec does not resolve that; the BB1 auditor must cross-check
+against Compendium/Profibuch or real Falcon TOS4 hardware before picking
+a value. Do not implement `0x0404` from this doc alone.
 
 ### `reseth` (0x04)
 
@@ -157,6 +185,14 @@ process switch / `Pexec`. Programs read this to obtain their own
 basepage when they were not given it via the m68k entry-stack
 convention.
 
+`os_run` is a static link-time pointer to the GEMDOS variable `run`
+(`bios/startup.S:110-111`, `.dc.l _run`), which lives in the **BDOS**
+layer, not BIOS: `run = &initial_basepage;` at GEMDOS boot
+(`bdos/bdosmain.c:339`), `run = (PD *)p;` on every `Pexec`
+(`bdos/proc.c:575`), `run = run->p_parent;` on `Pterm`
+(`bdos/proc.c:609`). Verified this pass (`docs/api/bios/_boot-init.md`
+§4).
+
 ### `os_dummy` (0x2C)
 
 Four-byte signature. EmuTOS sets it to `'ETOS'` (`0x45544F53`) so
@@ -174,8 +210,11 @@ it to `'NTOS'` (`0x4E544F53`).
 ```
 
 `_sysbase` is the documented mechanism for finding the OSHEADER
-without knowing its address. NewTOS must populate `_sysbase` for
-m68k-emulator-running programs.
+without knowing its address. It is a **runtime write**, not a static
+value: `sysbase = &os_header;` (`bios/bios.c:358`), executed once during
+`bios_init()`'s "misc. variables" block, before `chardev_init()` and long
+before any program (Shell/AES/AUTO-folder) runs — see
+`docs/api/bios/_boot-init.md` §3/§4 for the full boot-order citation.
 
 ## Cross-references
 
@@ -195,6 +234,29 @@ m68k-emulator-running programs.
 
 ## NewTOS implementation notes
 
-(Empty during Phase 00. PHASE-11 / PHASE-12 will populate the
-m68k-visible OSHEADER once the user emulator can run programs that
-read `_sysbase`.)
+**CORRECTED (this pass, 2026-07-23) — the original note below was
+wrong and is exactly the finding that triggered this whole audit
+phase.** It read: *"Empty during Phase 00. PHASE-11 / PHASE-12 will
+populate the m68k-visible OSHEADER once the user emulator can run
+programs that read `_sysbase`."* That framing assumed a "two-worlds"
+split — native ports read state through API calls, only m68k-emulated
+binaries touch raw low memory — and deferred the OSHEADER instance to
+the (much later) m68k emulator phase.
+
+That assumption does not hold. Per
+`docs/analysis/sysvar-osheader-lowmem-gap.md` and
+`docs/analysis/bios-audit/00-PLAN.md` (BB1): real, 1:1-compiled TOS
+source ports (ADR-019) read `_sysbase`/OSHEADER directly, exactly like
+an m68k binary would — TeraDesk's `main.c:56`
+(`#define os_start (*(long*)0x4F2L)`) is a concrete, reproduced
+boot-crash example (Data Abort dereferencing an unpopulated `_sysbase`).
+So a real, kernel-populated OSHEADER instance (with the fields/values
+in this document) is needed **much earlier** than a Phase-11/12 m68k
+emulator — it is required for *any* native EL0 program built from
+ported TOS C source that performs the classic `_sysbase`/`os_version`
+check. This document (the field layout, offsets, and EmuTOS values) is
+the target the BB1 audit implements against; deciding *where* the
+struct and the `_sysbase` pointer live in a per-process AArch64 VA
+layout is BB1's architectural decision, not this spec-extraction
+pass's. See `docs/api/bios/_boot-init.md` for the full boot-time
+population sequence this document's fields come from.
