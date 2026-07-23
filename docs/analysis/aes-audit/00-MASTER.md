@@ -157,6 +157,25 @@ Accessories (größter Posten, eigene Teilphase).
   (QEMU hat keinen Maus-Input) → Meilenstein-Flash nach WP1+WP2.
   Offener ABI-Follow-up: `MN_SELECTED` `msg[5..7]` (Tree-Pointer in 2 WORDs,
   MENU_EXTENSION) — `lp64-tos-struct-trap`-Familie, bleibt 0.
+- **WP2 (Cursor-Semaphor) — grün (2026-07-23, `f3878eb`).** P5-002/006/007:
+  Redraw-Klammerung mit zählendem cursor_hide/show, graf_mouse M_OFF/M_ON
+  zählend, M_SAVE/RESTORE/PREVIOUS. Tester 11/11 (Dropping-Fix bestätigt).
+- **WP3 (Resource+Object) — grün.** object (`e745175`): INDIRECT/G_CICON-mono/
+  G_USERDEF-PARMBLK (EL0-ub_code-Upcall abgesplittet). rsrc (`cf6f3e6`):
+  rsrc_gaddr 11 R_*-Typen + NRSC v5/v6, rsrc_saddr, Relocation-Ausschluss
+  (voller CICON-Farbsupport = eigenes WP, mkrsc.py erzeugt keine CICONs).
+- **WP4 (Form) — grün für die implementierbaren Teile.** WP4a (`77ae9c4`):
+  form_do/form_error/find_obj/form_keybd. WP4b (`9e18d0a`): Alert-Grammatik+Optik
+  (Icons byte-exakt gem.rsc). WP4c-1 (`9b7278e`): form_dial FMD_FINISH pt-Rect +
+  distanz-basierte Animation + fq/Glocke.
+  **Dependency-gated, verschoben (kein Stub jetzt):**
+  - **P4-011 (fm_own)** → nach WP6: braucht das echte `wm_update` (P5-005);
+    der Screen-Lock/Menütree-Hold sitzt auf wm_update auf.
+  - **P4-012 (fm_show/eralert)** → zur Basis-Disk-Error-Arbeit: `ETV_CRITIC`
+    (bios/vectors.rs) ist definiert, wird aber NICHT aufgerufen — der
+    rwabs-Disk-Error-Pfad triggert den Critical-Vektor nicht, `eralert` hätte
+    keinen Aufrufer. Erst rwabs→etv_critic→Handler verdrahten, dann eralert/
+    fm_show (drive-letter AL00CRT…AL05CRT, Retry/Cancel).
 
 **Akzeptanz-Gate (durchgehend): sauber & fehlerfrei auf dem echten Pi.**
 Loop je WP: Developer → unabhängiger Tester (Build + QEMU-Selftest/Screendump,
