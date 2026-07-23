@@ -1516,13 +1516,33 @@ fn inside(r: Grect, x: i16, y: i16) -> bool {
     x >= r.x && x < r.x + r.w && y >= r.y && y < r.y + r.h
 }
 
-/// Repaint the desktop background + every open window. The Form Manager's
-/// `form_dial(FMD_FINISH)` calls this to restore the screen under a
-/// just-closed modal dialog (NewTOS has no per-dialog save/restore).
+/// Repaint the desktop background + every open window (whole screen). The
+/// desktop composite (`desk::redraw_desktop`) drives this after a full-screen
+/// program returns; the Form Manager's scoped `form_dial(FMD_FINISH)` uses
+/// [`redraw_dialog_area`] instead so only the dialog's rectangle is repainted.
 pub fn redraw() {
     if let Some(backend) = host().and_then(|h| h.raster()) {
         redraw_all(backend);
     }
+}
+
+/// Repaint the desktop background + remaining window frames within the dialog
+/// target rectangle `pt`, then fan a `WM_REDRAW` out to every window overlapping
+/// it — the Form Manager's `form_dial(FMD_FINISH)` restore, confined to `pt`
+/// (not the whole desktop).
+///
+/// EmuTOS `fm_dial` FMD_FINISH (gemfmlib.c:375-379): `w_drawdesk(pt)` +
+/// `w_update(DESKWH, pt, DESKWH, FALSE)` — the same background-repaint +
+/// window-redraw fan-out pair used on window close ([`wind_close`]),
+/// scoped to `pt` (`int_in[5..8]`, the big rect) rather than the full screen.
+pub fn redraw_dialog_area(x: i16, y: i16, w: i16, h: i16) {
+    if w <= 0 || h <= 0 {
+        return;
+    }
+    // w_drawdesk(pt) + remaining window frames over pt.
+    redraw_clip(x, y, w, h);
+    // w_update(DESKWH, pt, DESKWH, FALSE): WM_REDRAW for each overlapping window.
+    broadcast_redraw(Grect { x, y, w, h });
 }
 
 fn screen_rect() -> Grect {

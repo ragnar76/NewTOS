@@ -581,9 +581,8 @@ fn fm_inifld(tree: *mut Object, start_fld: i16) -> i16 {
 /// Returns the object index that caused the exit (bit 15 set = double-click on a
 /// TOUCHEXIT). Editable `TEDINFO` fields are edited in place through `ob_edit`.
 ///
-/// Out of scope here (separate findings): `fm_own` screen/mouse ownership
-/// (AUD-P4-011), the `fq()` keyboard flush and the click-into-empty bell
-/// (AUD-P4-018).
+/// Out of scope here (separate finding): `fm_own` screen/mouse ownership
+/// (AUD-P4-011).
 fn run_form(tree: *mut Object, start_fld: i16) -> i16 {
     let Some(h) = host() else {
         // Unreachable in the running kernel (the host is always present); report
@@ -591,6 +590,11 @@ fn run_form(tree: *mut Object, start_fld: i16) -> i16 {
         return fm_inifld(tree, start_fld);
     };
     let tp = tree as *const Object;
+
+    // Flush the keyboard before the loop (EmuTOS `fq()`, gemfmlib.c:290 →
+    // geminput.c:272 — dequeue every buffered key), so stale type-ahead entered
+    // before the dialog opened does not leak into it.
+    while h.console_try_read_key().is_some() {}
 
     // Determine the starting field to edit (EmuTOS fm_inifld).
     let mut next_obj = fm_inifld(tree, start_fld);
@@ -631,8 +635,9 @@ fn run_form(tree: *mut Object, start_fld: i16) -> i16 {
             // SAFETY: valid tree (GEM contract).
             let hit = unsafe { object::hit_test(tp, 0, MAX_DEPTH, mx, my) };
             if hit == NIL {
-                // EmuTOS rings the bell (Bconout(2,0x07)) here — out of scope
-                // (AUD-P4-018); a click into empty space selects no object.
+                // Click into empty space: ring the bell and select no object
+                // (EmuTOS fm_do, gemfmlib.c:332-335 `Bconout(2, 0x07)`).
+                crate::bios::chardev::bconout_handle(2, 0x07);
                 next_obj = 0;
             } else {
                 // The click count only matters for a TOUCHEXIT object (fm_button
@@ -948,7 +953,11 @@ pub fn form_dial(pb: &Aespb) {
     match fmd {
         FMD_GROW => super::graf::animate(little, big),
         FMD_SHRINK => super::graf::animate(big, little),
-        FMD_FINISH => super::window::redraw(), // repaint under the closed dialog
+        // EmuTOS `fm_dial` FMD_FINISH (gemfmlib.c:375-379): `w_drawdesk(pt)` +
+        // `w_update(DESKWH, pt, …)` — repaint only the `pt` (big) rectangle the
+        // dialog covered and fan WM_REDRAW to overlapping windows, not the whole
+        // desktop.
+        FMD_FINISH => super::window::redraw_dialog_area(big.0, big.1, big.2, big.3),
         // FMD_START: grab the screen for the dialog — no window rectangle list
         // to lock at our altitude, so a successful no-op.
         FMD_START => {}

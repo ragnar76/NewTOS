@@ -208,23 +208,34 @@ pub fn graf_dragbox(pb: &Aespb) {
     pb.set_ret(1);
 }
 
-/// Quick N-step outline animation between two rects (movebox/grow/shrink).
-/// Also used by the Form Manager's `form_dial` (FMD_GROW/FMD_SHRINK).
+/// Animate a 1-pixel **XOR** outline between two rects (movebox / grow /
+/// shrink), used by `graf_movebox`/`graf_growbox`/`graf_shrinkbox` and the Form
+/// Manager's `form_dial` (FMD_GROW/FMD_SHRINK). Each frame erases the previous
+/// outline and draws the next through [`outline`] (XOR is self-inverse), so the
+/// moving box restores the desktop pattern underneath and leaves no trail — no
+/// solid-white overpaint. The number of frames scales with the box's travel
+/// (EmuTOS `gr_scale`, see [`stepcalc`]), not a fixed count.
 pub(crate) fn animate(from: (i16, i16, i16, i16), to: (i16, i16, i16, i16)) {
     let Some(backend) = host().and_then(|h| h.raster()) else {
         return;
     };
     let clip = ClipRect::full(backend.width(), backend.height());
-    const STEPS: i16 = 8;
-    let lerp = |a: i16, b: i16, i: i16| a + (b - a) * i / STEPS;
+    // Frame count from the box's travel (move distance or size change), not a
+    // fixed 8 — see [`stepcalc`] (EmuTOS `gr_scale` halving cadence). A large
+    // dialog animates in more frames than a small one, matching the reference.
+    let steps = stepcalc(from, to);
+    let lerp = |a: i16, b: i16, i: i16| a + (b - a) * i / steps;
     let mut prev: Option<(i16, i16, i16, i16)> = None;
-    for i in 0..=STEPS {
+    for i in 0..=steps {
         let r = (
             lerp(from.0, to.0, i),
             lerp(from.1, to.1, i),
             lerp(from.2, to.2, i),
             lerp(from.3, to.3, i),
         );
+        // Erase the previous outline (a second XOR pass restores the exact
+        // pixels underneath), then draw the next — both are XOR, so no white
+        // erase-fill is ever painted.
         if let Some(p) = prev {
             outline(p.0, p.1, p.2, p.3, WHITE, backend, clip);
         }
@@ -241,6 +252,40 @@ pub(crate) fn animate(from: (i16, i16, i16, i16), to: (i16, i16, i16, i16)) {
     if let Some(p) = prev {
         outline(p.0, p.1, p.2, p.3, WHITE, backend, clip);
     }
+}
+
+/// The outline-animation frame count via EmuTOS `gr_scale` (gemgrlib.c:91-111):
+/// count how many times the average of an x-/y-distance halves to zero — i.e.
+/// `floor(log2((xdist+ydist)/2)) + 1`. The distance fed to `gr_scale` is chosen
+/// exactly as EmuTOS does per operation, so both callers stay faithful:
+/// - a pure translation (`graf_movebox`, same size) feeds the **move distance**,
+///   like `gr_movebox` (gemgrlib.c:296-299);
+/// - a grow/shrink (`graf_growbox`/`graf_shrinkbox`, `form_dial` FMD_GROW/SHRINK)
+///   feeds the width/height **half-difference** `pt_w/2 - orgw/2`, like
+///   `gr_stepcalc` (gemgrlib.c:114-124).
+///
+/// Each `/2` is applied per term as in EmuTOS so the integer rounding matches.
+/// Clamped to at least 1 so the outline lerp always reaches the far rect (a zero
+/// count would divide by zero and draw a single frame).
+fn stepcalc(a: (i16, i16, i16, i16), b: (i16, i16, i16, i16)) -> i16 {
+    let (dw, dh) = ((b.2 - a.2).abs(), (b.3 - a.3).abs());
+    let (xdist, ydist) = if dw == 0 && dh == 0 {
+        // Pure translation → gr_movebox's move distance.
+        ((b.0 - a.0).abs(), (b.1 - a.1).abs())
+    } else {
+        // Grow/shrink → gr_stepcalc's size half-difference (bigger − smaller).
+        (
+            (a.2.max(b.2) / 2) - (a.2.min(b.2) / 2),
+            (a.3.max(b.3) / 2) - (a.3.min(b.3) / 2),
+        )
+    };
+    let mut dist = (xdist + ydist) / 2;
+    let mut cnt = 0i16;
+    while dist != 0 {
+        cnt += 1;
+        dist /= 2;
+    }
+    cnt.max(1)
 }
 
 /// `graf_movebox` (72) — animate an outline box of size `w×h` from
