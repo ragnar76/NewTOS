@@ -44,7 +44,7 @@ use tos_api::trap::{TrapArgs, TrapClass};
 /// Master gate for the QED syscall tracer. Set to `false` to compile the tool
 /// out completely (both hook sites fold away, no runtime effect). This is the
 /// single obvious switch the task asks for.
-pub const QED_SVC_TRACE: bool = true;
+pub const QED_SVC_TRACE: bool = false;
 
 /// RAM trace buffer size (96 KiB) — generous for a full QED startup + a few
 /// idle-loop iterations; excess is dropped after the truncation marker.
