@@ -81,23 +81,17 @@ Legende Status: **HAS** = NewTOS hat ein Gegenstück; **—** = NO-COUNTERPART
 | 0x25 | `Vsync` | I | Vblank-Warten (RPi4-Vsync) | HAS |
 | 0x40 | `Blitmode` | A | kein BLiTTER → Kontrakt `0x0000` | HAS |
 
-### B) Falcon-VIDEL (0x58–0x5F, 7 Fn) → **ENTSCHEIDUNG (Empfehlung I, API-Ebene)**
+### B) Falcon-VIDEL (0x58–0x5F, 7 Fn) → **ENTSCHEIDUNG GETROFFEN: X (zurückgestellt)**
 
-Zielprofil ist Falcon030/TOS4 → VIDEL ist das *echte* Video-Subsystem, **kein**
-Non-Goal (der Shifter ist Non-Goal, VIDEL nicht). Memory
-`vdi-truecolor-workstation` plant Truecolor-VDI ohnehin. Unser Screen ist ein
-fester RPi4-Truecolor-Framebuffer → wir implementieren die **beobachtbare
-API-Ebene** (Modus-Queries beantworten), nicht die VIDEL-Register.
+**User 2026-07-23:** „Die VIDEL-Routinen sind irrelevant; sollten wir auf Apps
+stoßen, die das wirklich brauchen, können wir es im Nachhinein implementieren."
+→ **X / deferred.** Vorerst Catch-all; **bei konkretem App-Bedarf** (eine
+geportete App fragt VIDEL wirklich ab) nachziehen. Die geplante Truecolor-VDI-
+Arbeit (`vdi-truecolor-workstation`) ist davon **entkoppelt** — sie sitzt auf
+der VDI-Ebene (`v_*`), nicht an diesen XBIOS-Einstiegspunkten.
 
-| Op | Name | Empf. | Umsetzung auf festem Framebuffer |
-|---|---|---|---|
-| 0x58 | `Vsetmode` | I | Modus annehmen/validieren; ein fester Modus |
-| 0x59 | `Vmontype` | I | Kontrakt-Monitortyp (VGA/RGB) melden |
-| 0x5A | `Vsetsync` | A | keine Sync-Umschaltung → no-op |
-| 0x5B | `Vgetsize` | I | Bildspeichergröße des festen Modus rechnen |
-| 0x5D | `Vsetrgb` | I | **Truecolor-Palette — koppelt an VDI-Truecolor-Arbeit** |
-| 0x5E | `Vgetrgb` | I | Truecolor-Palette lesen |
-| 0x5F | `Vfixmode` | A | Modus-Freeze bedeutungslos → no-op/echo |
+`Vsetmode` `Vmontype` `Vsetsync` `Vgetsize` `Vsetrgb` `Vgetrgb` `Vfixmode`
+→ alle **X (deferred)**.
 
 ### C) TT-Shifter (0x50–0x57, 8 Fn) → **Kategorie X (Weglassen)**
 
@@ -217,33 +211,51 @@ nummer zurück) → NewTOS-Catch-all ist bereits identisch. **Kein NewTOS-Gap.**
 
 | Kategorie | BIOS | XBIOS | Bemerkung |
 |---|---|---|---|
-| **I — Implement** | 12 | ~24 (Screen 8, VIDEL-API ~4, Serial 2, Uhr/Random/Setprt 4, Kbd-HAS 2, Protobt 1, + Kbd-deferred 3) | Screen/Serial/Uhr vorhanden; VIDEL + Kbd = Ausbau |
-| **A — HW-Absenz** | — | ~20 (Floppy/ACSI 7, PSG 4, Midiws/Ikbdws/Scrdmp/Iorec 4, Blitmode 1, DMA-Sound-Probes ~) | ehrliche „kein Gerät"-Kontraktwerte, kein Stub |
-| **X — Weglassen** | — | ~62 (TT-Shifter 8, MFP 4, DSP-Verarbeitung ~30, unimpl-Slots 39-überlappend) | Catch-all; EmuTOS tut hier selbst nichts |
+| **I — Implement** | 12 | ~20 (Screen 8, Serial 2, Uhr/Random/Setprt 4, Kbd-HAS 2, Protobt 1, + Kbd-deferred 3, Supexec-deferred 1) | Screen/Serial/Uhr vorhanden; Kbd-XBIOS + Supexec = deferred |
+| **A — HW-Absenz** | — | ~23 (Floppy/ACSI 7, PSG 4, Midiws/Ikbdws/Scrdmp/Iorec 4, Blitmode 1, DMA-Sound-Probes ~5, Dsp_available 1, Nvmaccess 1) | ehrliche „kein Gerät"-Kontraktwerte, kein Stub |
+| **X — Weglassen** | — | ~60 (TT-Shifter 8, MFP 4, VIDEL 7, DSP-Verarbeitung ~30, DMA-Codec-Ops ~9, unimpl-Slots 39-überlappend) | Catch-all; EmuTOS tut hier selbst nichts / deferred |
 
-## Offene Lead-/User-Entscheidungen (die echten Triage-Calls)
+## Getroffene Entscheidungen (User 2026-07-23/24)
 
-1. **VIDEL (0x58–0x5F)** — beobachtbare API auf festem RPi4-Framebuffer
-   implementieren (Empf. **ja**, koppelt an geplante Truecolor-VDI-Arbeit)?
-2. **TT-Shifter (0x50–0x57)** — Weglassen (Empf. **ja**, Falcon-Profil); vorab
-   `CONF_WITH_TT_SHIFTER`-Zustand im echten `make 512` bestätigen.
-3. **DSP56001 (0x60–0x7F, 32 Fn)** — minimal A (`Dsp_available`→0) + Rest X
-   (Empf. **ja**); volle DSP-Emulation = nein (kein HW-Äquivalent)?
-4. **DMA-Sound (0x80–0x8D, 14 Fn)** — A (Probes beantworten) jetzt, echtes
-   RPi4-Audio-Backend als Zukunft (Empf. **ja**) — oder komplett X bis dahin?
-5. **PSG-Audio (0x1C–0x20)** — jetzt A/no-op belassen, echtes Audio Zukunft
-   (Empf. **ja**)?
-6. **Keyboard-XBIOS (Initmous/Keytbl/Bioskeys)** — I, sobald Keyboard-Infra
-   steht (Empf. **ja**, gehört zur Keyboard-Subsystem-Phase)?
-7. **Supexec (0x26)** — I via kontrolliertem EL1-Trampolin (später) oder X?
-8. **Nvmaccess (0x2E)** — A jetzt (Empf.), file-/EEPROM-Backing als Option?
+1. **VIDEL (0x58–0x5F)** — **X / zurückgestellt.** Irrelevant jetzt; bei
+   konkretem App-Bedarf nachziehen (User). Von der Truecolor-VDI-Arbeit entkoppelt.
+2. **DSP56001 (0x60–0x7F, 32 Fn)** — **HW-Absenz jetzt, Audio später.** Minimal A
+   für Präsenz-Probes (`Dsp_available`→0), Verarbeitungs-Ops X; kein DSP-HW-
+   Äquivalent auf dem RPi4.
+3. **DMA-Sound (0x80–0x8D, 14 Fn)** — **HW-Absenz jetzt (A), echtes RPi4-Audio-
+   Backend = eigene spätere Phase.** Lock/Status/Modus-Probes ehrlich beantworten,
+   Codec-Ops no-op.
+4. **PSG-Audio (0x1C–0x20)** — **A/no-op jetzt belassen**, echtes Audio Zukunft
+   (Teil derselben späteren Audio-Phase).
+5. **Supexec (0x26)** — **I via kontrolliertem EL1-Trampolin, aber deferred.**
+   Jetzt Catch-all; Trampolin bei konkretem App-Bedarf (sicherheitssensibel).
+
+## Noch abzuschließen (kleine offenen Rest-Calls, defaults gesetzt)
+
+- **TT-Shifter (0x50–0x57)** — **X** (Falcon-Profil). Vorab noch den
+  `CONF_WITH_TT_SHIFTER`-Zustand im echten `make 512` per Recherche bestätigen
+  (offener Punkt #2 des Inventars) — reine Doku-Genauigkeit, ändert das Ergebnis X
+  nicht.
+- **Keyboard-XBIOS (Initmous/Keytbl/Bioskeys)** — **I, deferred** in die Keyboard-
+  Subsystem-Phase (nicht Teil des jetzigen BIOS-Audits). Default gesetzt.
+- **Nvmaccess (0x2E)** — **A jetzt** (Fehler/all-null); file-/EEPROM-Backing als
+  optionale Zukunft. Default gesetzt.
 
 ## Reihenfolge-Empfehlung
 
-Die Triage ändert die aktuelle Umsetzung kaum — das meiste ist **bereits korrekt
-kategorisiert** (Screen/Serial/Uhr = I done, Floppy/PSG = A done, unimpl/MFP/
-TT-Shifter = X korrekt). Echte *neue* Arbeit fällt nur bei den Entscheidungen 1
-(VIDEL, koppelt an Truecolor-VDI) und 6 (Keyboard-XBIOS, koppelt an Keyboard-
-Subsystem) an — beide sind eigene Subsystem-Phasen, nicht Teil des jetzigen
-BIOS-Audits. Empfehlung: BIOS-Audit-Fixes (B1/H1/M1–M4) zuerst, VIDEL/Keyboard-
-XBIOS mit ihren jeweiligen Subsystem-Phasen.
+Nach den Entscheidungen fällt aus der Triage **keine neue XBIOS-Arbeit für jetzt**
+an — alles ist entweder **bereits korrekt umgesetzt** (Screen/Serial/Uhr = I done,
+Floppy/PSG = A done, unimpl/MFP/TT-Shifter = X korrekt) oder **bewusst
+zurückgestellt** (VIDEL, DSP/DMA-Sound-Audio, Supexec, Keyboard-XBIOS → jeweils
+bei konkretem Bedarf bzw. mit ihrer eigenen Subsystem-Phase).
+
+**Kleiner deferred-Rest** (nur bei App-Bedarf, sonst genügt der Catch-all):
+- Audio-Präsenz-Probes explizit als A ausformulieren (`Dsp_available`→0,
+  `Locksnd`→ok, `Sndstatus`→kein Fehler) statt Catch-all-Echo. Tiny; keine
+  aktuell geportete App (QED/TeraDesk) fragt Audio ab → niedrigste Priorität.
+- `Nvmaccess`→A (Fehler/all-null) explizit statt Echo. Tiny.
+
+**Nächster echter Schritt:** die **BIOS-Audit-Fixes** (B1 BLOCKER-Machbarkeit →
+H1 etv-Dispatch → M1–M4 FS-Härtung), *nicht* aus dieser Triage. Der B1-Fix (Low-
+Memory-Sysvars/OSHEADER für native EL0-Apps) ist der eigentliche Port-Blocker und
+die vom User „nach dem Audit" terminierte Machbarkeitsanalyse.
