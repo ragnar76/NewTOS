@@ -203,27 +203,55 @@ fn name_83(fat: &[u8; 11]) -> [u8; 14] {
     out
 }
 
-/// List up to `names.len()` directory entries matching `path` (which may
-/// end in a wildcard, e.g. `C:\*.*`), files **and** sub-directories. Each
-/// `names[i]` gets `NAME.EXT\0`, `attrs[i]` the attribute byte. Returns the
-/// number of entries found. Used by the AES file selector (`fsel_input`).
-pub fn list_dir(path: &str, names: &mut [[u8; 14]], attrs: &mut [u8]) -> usize {
+/// List directory `path` for the AES file selector, reproducing EmuTOS
+/// `fs_active` (`gemfslib.c:287-307`). The final path component is the
+/// wildcard mask (e.g. `C:\SUB\*.TXT`); the parent is scanned with an
+/// all-match pattern (EmuTOS `dos_sfirst(dir\*.*, FA_SUBDIR)`) and each
+/// entry is filtered exactly like the reference loop:
+///
+/// * `.`, `..` and every dot-file are skipped (`d_fname[0] != '.'`,
+///   `gemfslib.c:298`),
+/// * sub-directories are kept **unconditionally** (so folder navigation
+///   keeps working under a restrictive mask), and
+/// * plain files are kept only when they match the mask
+///   (`(d_attrib & FA_SUBDIR) || wildcmp(pspec, d_fname)`, `gemfslib.c:300`).
+///
+/// Each kept `names[i]` gets `NAME.EXT\0` (NUL-padded), `attrs[i]` the
+/// attribute byte. Entries are written **unsorted** (the caller sorts, like
+/// `fs_active`). Like Atari TOS / EmuTOS (`gemfslib.c:290-292`), entries
+/// past the buffer are silently ignored. Returns the number written. Used
+/// by the AES file selector (`fsel_input`).
+pub fn list_dir(path: &str, names: &mut [[u8; 16]], attrs: &mut [u8]) -> usize {
     let (vol, parent, comp) = match super::path::resolve_parent(path) {
         Ok(x) => x,
         Err(_) => return 0,
     };
-    let pattern = fcb_pattern(comp);
+    let mask = fcb_pattern(comp);
+    // Scan every entry (EmuTOS lists the directory with `*.*`); the real
+    // mask is applied to plain files only, below.
+    let any = [b'?'; 11];
+    let cap = names.len().min(attrs.len());
     let mut slot = 0u32;
     let mut n = 0;
-    while n < names.len() {
-        match scan(&vol, parent, slot, &pattern, FA_SUBDIR) {
+    while n < cap {
+        match scan(&vol, parent, slot, &any, FA_SUBDIR) {
             Some((entry, next)) => {
-                names[n] = name_83(&entry.name);
-                if n < attrs.len() {
-                    attrs[n] = entry.attrib;
-                }
-                n += 1;
                 slot = next;
+                // Skip `.`, `..` and all dot-files (EmuTOS gemfslib.c:298).
+                if entry.name[0] == b'.' {
+                    continue;
+                }
+                // Folders always; files only when they match the mask
+                // (EmuTOS gemfslib.c:300).
+                let is_dir = entry.attrib & FA_SUBDIR != 0;
+                if !is_dir && !pattern_match(&mask, &entry.name) {
+                    continue;
+                }
+                let disp = name_83(&entry.name);
+                names[n] = [0u8; 16];
+                names[n][..14].copy_from_slice(&disp);
+                attrs[n] = entry.attrib;
+                n += 1;
             }
             None => break,
         }

@@ -12,9 +12,11 @@
 //! click-to-select + double-click confirm + OK/Cancel + write-back, plus
 //! (EmuTOS `fs_input`) keyboard editing of the `FSDIRECT` path and
 //! `FSSELECT` name fields — typing a new path + Enter re-lists it — and
-//! walking into a sub-directory by clicking it (`.`/`..` handled). The one
-//! documented omission is the `FCLSBOX` close-box gadget for up-navigation
-//! (covered instead by editing the path or clicking `..`).
+//! walking into a sub-directory by clicking it. The listing matches EmuTOS
+//! `fs_active`: folders sort first, then files, both alphabetically, and
+//! `.`/`..`/dot-files are filtered out (`gemfslib.c:298,312`). Up-navigation
+//! is via editing the `FSDIRECT` path + Enter; the `FCLSBOX` close-box
+//! gadget (the EmuTOS up-one-level control) is not yet wired (WP7b).
 
 use super::object::{self, Object, ObjTree, TedInfo};
 use super::{resource, Aespb};
@@ -47,8 +49,16 @@ const MAX_DEPTH: i16 = 16;
 const BLACK_TEXT: i16 = 1 << 8; // te_color giving black ink (bits 8..11)
 
 const GEM_CAP: usize = 8 * 1024;
-/// Maximum directory entries held for scrolling.
-const MAX_LIST: usize = 128;
+/// Maximum directory entries held for scrolling. EmuTOS sizes this
+/// dynamically from free RAM (`gemfslib.c:655`, "usually thousands"); we
+/// use a large fixed cap in static BSS instead. Dynamic RAM sizing would
+/// mean reworking the static `SYS` arrays (`all`/`all_attr`) into heap
+/// allocations plus a `dos_avail_anyram()` equivalent — deferred (out of
+/// scope for this package). 2048 covers a full FAT16 root directory (512
+/// entries) with wide margin; the ~35 KB of BSS is negligible on RPi4.
+/// Entries beyond the cap are silently ignored, exactly as Atari TOS /
+/// EmuTOS do (`gemfslib.c:290-292`).
+const MAX_LIST: usize = 2048;
 /// Double-click window (milliseconds).
 const DCLICK_MS: u64 = 400;
 
@@ -316,30 +326,75 @@ fn run(pb: &Aespb) {
     pb.set_ret(1);
 }
 
-/// Read the current directory (`SYS.dir`) into the full list, reset the
-/// scroll position, and refill the visible slots + slider.
+/// Read the current directory (`SYS.dir`) into the full list, sort it
+/// (EmuTOS `fs_active`: folders first, then files, both alphabetical),
+/// reset the scroll position, and refill the visible slots + slider.
+///
+/// `list_dir` writes directly into the static `SYS` arrays (no large stack
+/// buffer), so `MAX_LIST` can be raised without risking the kernel stack.
 fn relist(tree: *mut Object) {
-    let mut raw = [[0u8; 14]; MAX_LIST];
-    let mut attrs = [0u8; MAX_LIST];
-    // SAFETY: single-CPU AES.
+    // SAFETY: single-CPU AES; `dir` and `all`/`all_attr` are distinct cells.
     let n = unsafe {
         let dir = &*SYS.dir.get();
         let dlen = dir.iter().position(|&b| b == 0).unwrap_or(dir.len());
         let dpath = core::str::from_utf8(&dir[..dlen]).unwrap_or("C:\\*.*");
-        crate::bdos::fs::find::list_dir(dpath, &mut raw, &mut attrs)
-    };
-    // SAFETY: single-CPU AES.
-    unsafe {
         let all = &mut *SYS.all.get();
         let all_attr = &mut *SYS.all_attr.get();
-        for (i, slot) in all.iter_mut().enumerate() {
-            *slot = if i < n { name16(&raw[i]) } else { [0; 16] };
-            all_attr[i] = if i < n { attrs[i] } else { 0 };
-        }
+        crate::bdos::fs::find::list_dir(dpath, all, all_attr)
+    };
+    sort_entries(n);
+    // SAFETY: single-CPU AES.
+    unsafe {
         *SYS.count.get() = n;
         *SYS.top.get() = 0;
     }
     refill(tree);
+}
+
+/// Sort the first `n` directory entries in place — folders before files,
+/// then alphabetically. This is EmuTOS `fs_active`'s shell sort
+/// (`gemfslib.c:312-326`) driven by the folder/file prefix key from
+/// `fs_add` (`gemfslib.c:254`) and `strcmp` from `fs_comp`
+/// (`gemfslib.c:243`), applied to our two parallel `SYS` arrays.
+fn sort_entries(n: usize) {
+    // SAFETY: single-CPU AES.
+    unsafe {
+        let all = &mut *SYS.all.get();
+        let attr = &mut *SYS.all_attr.get();
+        let mut gap = n / 2;
+        while gap > 0 {
+            let mut i = gap;
+            while i < n {
+                let mut j = i - gap;
+                loop {
+                    if entry_cmp(&all[j], attr[j], &all[j + gap], attr[j + gap])
+                        != core::cmp::Ordering::Greater
+                    {
+                        break;
+                    }
+                    all.swap(j, j + gap);
+                    attr.swap(j, j + gap);
+                    if j < gap {
+                        break;
+                    }
+                    j -= gap;
+                }
+                i += 1;
+            }
+            gap /= 2;
+        }
+    }
+}
+
+/// Compare two list entries by EmuTOS's sort key: the folder/file prefix
+/// (`\007` for a sub-directory, `' '` for a file, so folders sort lowest —
+/// `fs_add`, `gemfslib.c:254`) then the display name via `strcmp`
+/// (`fs_comp`, `gemfslib.c:243`). Names are NUL-padded, so a plain array
+/// compare is `strcmp`-equivalent.
+fn entry_cmp(na: &[u8; 16], aa: u8, nb: &[u8; 16], ab: u8) -> core::cmp::Ordering {
+    let pa = if aa & FA_SUBDIR != 0 { 0x07u8 } else { b' ' };
+    let pb = if ab & FA_SUBDIR != 0 { 0x07u8 } else { b' ' };
+    pa.cmp(&pb).then_with(|| na.cmp(nb))
 }
 
 /// Copy the visible window into the slot buffers, update the slider, and
@@ -496,13 +551,6 @@ fn set_drive(ch: u8) {
         *dir = [0; 96];
         dir[..6].copy_from_slice(&[ch, b':', b'\\', b'*', b'.', b'*']);
     }
-}
-
-fn name16(src: &[u8]) -> [u8; 16] {
-    let mut out = [0u8; 16];
-    let n = src.iter().position(|&b| b == 0).unwrap_or(src.len()).min(15);
-    out[..n].copy_from_slice(&src[..n]);
-    out
 }
 
 /// Draw the file selector on `C:\*.*` **without** the modal loop — for a
