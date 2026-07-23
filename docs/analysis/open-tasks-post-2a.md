@@ -71,14 +71,34 @@ nicht Weiterentwicklung.
 - ~26 echte Einzel-Gaps (CICON-Farbe, p_nameit erledigt in WP8a, fsel-Sort
   erledigt in WP7a, is_dashes …).
 
-## 4. Nächste Phase — BIOS + XBIOS Audit (vor dem kooperativen Kern)
+## 4. BIOS + XBIOS Audit — ✅ ANALYSE ABGESCHLOSSEN, Fixes offen
 
 Bottom-up: der kooperative Kern + praktisch alles sitzt auf der BIOS/Sysvar-Ebene.
-Siehe **`docs/analysis/bios-audit/00-PLAN.md`** + Memory
-`post-2a-roadmap-bios-freemint`. Kernbefund (blockierend, crasht Ports):
-`docs/analysis/sysvar-osheader-lowmem-gap.md` — Low-Memory-Sysvars + OSHEADER
-fehlen für native EL0-Apps. Enthält: STRAM/TTRAM-Split (fest 8 MB / Rest, rein
-logisch da kein Shifter), OSHEADER (liefert TOS 0x0404), Cookie-Jar-$5A0.
+
+**Analyse fertig (committet):**
+- Researcher-Spec: `docs/api/bios/_boot-init.md`, `docs/api/bios/04-rwabs.md`,
+  `docs/api/structures/osheader.md`.
+- BIOS-Audit: `bios-audit/bios-findings.md` + `00-DASHBOARD.md` (B1 BLOCKER,
+  H1 HIGH, M1–M4 MED, L1–L3 LOW, S1–S3 Spec/Doc).
+- Volles Funktionsinventar: `emutos-full-function-inventory.md` (1030 Fn).
+- **Machbarkeits-Triage: `bios-audit/bios-xbios-feasibility-triage.md`** —
+  BIOS 12/12 = I; XBIOS meist bereits korrekt (Screen/Serial/Uhr = I, Floppy/PSG
+  = A, MFP/TT-Shifter/unimpl = X). **Entscheidungen (User):** VIDEL → X/deferred
+  (bei App-Bedarf), Audio (PSG/DMA-Sound/DSP) → HW-Absenz jetzt + echtes Audio
+  spätere Phase, Supexec → I via EL1-Trampolin deferred, Kbd-XBIOS → I mit
+  Keyboard-Phase, Nvmaccess → A. **Kein neuer XBIOS-Arbeitsanfall jetzt.**
+
+**Offen — BIOS-Fixes (der eigentliche nächste Schritt):**
+1. **B1 BLOCKER-Machbarkeitsanalyse** (vom User „nach dem Audit" terminiert →
+   jetzt): Low-Memory-Sysvars (`$400`–`$5FF`) + OSHEADER (`$4F2`) + Cookie-Jar
+   (`$5A0`) je Prozess in die EL0-VA an klassischen Adressen mappen (App lädt ab
+   ~`0x100`) — **technisch machbar?** Wenn ja → umsetzen; wenn nein → App-Patch
+   notieren (User-Direktive). Liefert TOS-Version 0x0404. `sysvar-osheader-
+   lowmem-gap.md`. Verknüpft mit BB2 (STRAM/TTRAM 8 MB / Rest, rein logisch).
+2. **H1** etv_*-Dispatch (etv_term im Pterm-, etv_critic im Rwabs-Fehler-, etv_timer
+   im Tick-Pfad; Boot-Defaults echt-callable).
+3. **M1–M4** Getbpb-FS-Härtung + Rwabs→etv_critic.
+
 Danach: kooperativer Kern FreeMiNT-extensibel (references/freemint pinnen) +
 Multi-Core-Vorbereitung für die SMP-Zukunft.
 
