@@ -52,6 +52,31 @@ static MNTREE: AtomicUsize = AtomicUsize::new(0);
 pub fn active() -> *mut Object {
     MNTREE.load(Ordering::Relaxed) as *mut Object
 }
+
+/// Parked menu tree during a modal dialog (`ml_mnhold`, EmuTOS gemfmlib.c:56).
+/// A single slot suffices because `fm_own` only saves on the outermost
+/// `ml_ocnt == 0` → 1 transition and restores on 1 → 0 (nested dialogs do not
+/// re-save), so at most one tree is ever parked (see [`window::fm_own`]).
+static MNHOLD: AtomicUsize = AtomicUsize::new(0);
+
+/// Park the active menu tree while a modal dialog owns the screen — EmuTOS
+/// `fm_own`'s `ml_mnhold = gl_mntree; gl_mntree = NULL;` (gemfmlib.c:89-90).
+/// With `gl_mntree` NULL, [`active`] returns null so the Control Manager's menu
+/// interception (`menu_intercept`, the `if (gl_mntree)` guard of `hctl_rect`,
+/// gemctrl.c:328) finds no menu to track: a menu-bar click is inert for the
+/// duration of the dialog. Called on the outermost 0 → 1 mouse-control-ownership
+/// transition from [`window::fm_own`].
+pub(super) fn hold_menu() {
+    MNHOLD.store(MNTREE.load(Ordering::Relaxed), Ordering::Relaxed);
+    MNTREE.store(0, Ordering::Relaxed);
+}
+
+/// Restore the menu tree parked by [`hold_menu`] — EmuTOS `fm_own`'s
+/// `gl_mntree = ml_mnhold;` (gemfmlib.c:103). Called on the outermost 1 → 0
+/// mouse-control-ownership transition from [`window::fm_own`].
+pub(super) fn release_menu() {
+    MNTREE.store(MNHOLD.load(Ordering::Relaxed), Ordering::Relaxed);
+}
 /// Menu-bar height in pixels (≈ char height + 3, the GEM `gl_hbox`).
 const BAR_H: i16 = 19;
 

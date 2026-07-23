@@ -1820,22 +1820,45 @@ fn update_end() {
     }
 }
 
+/// Public `fm_own` entry for the Form Manager (EmuTOS gemfmlib.c:82-107): a
+/// modal dialog brackets its wait loop with `fm_own(TRUE)` / `fm_own(FALSE)`
+/// (`fm_do`, gemfmlib.c:287,349; `fm_alert` reaches the loop via `fm_do`).
+/// Delegates to [`mctrl_own`], the shared mouse-control-ownership + menu-hold
+/// transition that `wind_update(BEG/END_MCTRL)` also drives.
+pub fn fm_own(begin: bool) {
+    mctrl_own(begin);
+}
+
 /// `fm_own(begin)` — mouse-control-ownership transfer (EmuTOS gemfmlib.c:82-107).
-/// `begin` brackets with `BEG_UPDATE` then `ml_ocnt++`; `!begin` does `ml_ocnt--`
-/// then `END_UPDATE`. The `ml_ocnt == 0` edge body (park the menu tree, hand the
-/// control region to the app via `ct_chgown`) is P4-011 and builds on this
-/// counter; here we maintain the counter + the update-lock bracketing so
-/// [`intercept`] can already honour the app's mouse takeover.
+/// `begin`: `BEG_UPDATE`, then on the outermost 0 → 1 edge park the menu tree,
+/// then `ml_ocnt++`. `!begin`: `ml_ocnt--`, then on the 1 → 0 edge restore the
+/// menu tree, then `END_UPDATE`. The menu-hold (`gl_mntree = NULL`) is the
+/// observable part of the `ml_ocnt == 0` edge body: a menu-bar click is inert
+/// while the dialog is up. The control-region / mouse-owner handover
+/// (`get_ctrl`/`get_mown`/`ct_chgown`, gemfmlib.c:91-93,102) is the cooperative
+/// multi-process ownership transfer and is a no-op at single-tasking (one AES
+/// process owns everything) — deferred to the cooperative kernel (Phase 2b).
 fn mctrl_own(begin: bool) {
     if begin {
         update_beg(); // fm_own: wm_update(BEG_UPDATE) (gemfmlib.c:86)
+        // 0 → 1 edge, evaluated BEFORE the increment (EmuTOS tests `ml_ocnt`
+        // while still 0, gemfmlib.c:87): park the active menu tree so the
+        // Control Manager stops tracking the bar for the duration of the dialog.
+        if MCTRL_CNT.load(Ordering::Relaxed) == 0 {
+            super::menu::hold_menu();
+        }
         MCTRL_CNT.fetch_add(1, Ordering::Relaxed);
     } else {
-        // ml_ocnt-- then wm_update(END_UPDATE) (gemfmlib.c:99,105). EmuTOS
+        // ml_ocnt-- then, on the 1 → 0 edge, restore the parked menu tree
+        // (EmuTOS `ml_ocnt--; if (ml_ocnt == 0) { ...; gl_mntree = ml_mnhold; }`,
+        // gemfmlib.c:99-104), then wm_update(END_UPDATE). `fetch_sub` returns the
+        // PRE-decrement value, so the outermost edge is `prev == 1`. EmuTOS
         // decrements unconditionally; the `intercept` gate (`> 0`) treats any
         // non-positive count as "app does not own the mouse", so an unbalanced
         // END_MCTRL cannot wedge interception off.
-        MCTRL_CNT.fetch_sub(1, Ordering::Relaxed);
+        if MCTRL_CNT.fetch_sub(1, Ordering::Relaxed) == 1 {
+            super::menu::release_menu();
+        }
         update_end();
     }
 }

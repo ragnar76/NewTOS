@@ -306,7 +306,15 @@ fn do_alert(defbut: i16, s: &[u8], modal: bool) -> i16 {
     if !modal {
         return defbut.max(1); // draw-only (showcase): no waiting
     }
+    // Bracket the modal wait with `fm_own` (EmuTOS reaches the wait loop via
+    // `fm_alert` → `fm_do`, which calls `fm_own(TRUE)`/`fm_own(FALSE)` around its
+    // event loop, gemfmlib.c:287,349): park the menu tree so a menu-bar click is
+    // inert while the alert is up and take the window-tree screen lock. Placed
+    // AFTER the non-modal early return, so the showcase path stays unbracketed
+    // and every `fm_own(TRUE)` here is matched by the `fm_own(FALSE)` below.
+    super::window::fm_own(true);
     let chosen = modal_loop(h, tree.as_mut_ptr(), first_btn as i16, numbut as i16, defbut);
+    super::window::fm_own(false);
 
     // Show the chosen button selected (transient click feedback, as EmuTOS
     // `fm_do` does before returning). The bb_restore below then reinstates
@@ -581,8 +589,9 @@ fn fm_inifld(tree: *mut Object, start_fld: i16) -> i16 {
 /// Returns the object index that caused the exit (bit 15 set = double-click on a
 /// TOUCHEXIT). Editable `TEDINFO` fields are edited in place through `ob_edit`.
 ///
-/// Out of scope here (separate finding): `fm_own` screen/mouse ownership
-/// (AUD-P4-011).
+/// Bracketed by `fm_own(TRUE)`/`fm_own(FALSE)` (EmuTOS `fm_do`, gemfmlib.c:287,349):
+/// the menu bar is held inert and the window-tree screen lock is taken for the
+/// duration of the modal interaction (AUD-P4-011).
 fn run_form(tree: *mut Object, start_fld: i16) -> i16 {
     let Some(h) = host() else {
         // Unreachable in the running kernel (the host is always present); report
@@ -590,6 +599,12 @@ fn run_form(tree: *mut Object, start_fld: i16) -> i16 {
         return fm_inifld(tree, start_fld);
     };
     let tp = tree as *const Object;
+
+    // Grab ownership of screen and mouse for the modal interaction (EmuTOS
+    // `fm_own(TRUE)`, gemfmlib.c:287): take the window-tree screen lock and park
+    // the menu tree so a menu-bar click is inert while the form is up. Released
+    // by the matching `fm_own(FALSE)` at the single exit below.
+    super::window::fm_own(true);
 
     // Flush the keyboard before the loop (EmuTOS `fq()`, gemfmlib.c:290 →
     // geminput.c:272 — dequeue every buffered key), so stale type-ahead entered
@@ -666,6 +681,11 @@ fn run_form(tree: *mut Object, start_fld: i16) -> i16 {
         prev = cur;
         h.pump_input();
     }
+
+    // Give up screen and mouse ownership (EmuTOS `fm_own(FALSE)`, gemfmlib.c:349):
+    // restore the parked menu tree and release the window-tree screen lock. This
+    // is the single exit, so the `fm_own(TRUE)` above is always balanced.
+    super::window::fm_own(false);
 
     next_obj
 }
