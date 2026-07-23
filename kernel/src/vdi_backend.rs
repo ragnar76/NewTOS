@@ -612,11 +612,19 @@ impl RasterBackend for VdiScreen {
         // Replace's cell-clear background is VDI pen 0 (`bgcol = palette[0]`
         // in EmuTOS `vdi_textblit.c` `WM_REPLACE`).
         let bg_rgb = Self::pel_to_rgb(0);
+        // Each row occupies `bytes_per_row = ceil(cell_w/8)` bytes, MSB-first,
+        // leftmost byte first (so a cell wider than 8 px — text effects such as
+        // outline/skew widen the cell beyond the base 8 px — is a run of bytes
+        // per row). For `cell_w <= 8` this is one byte per row: `col/8 == 0` and
+        // `col & 7 == col`, so the 8×16 / 6×6 / 8×8 system-font path is byte-for-
+        // byte the former single-byte-per-row blit.
+        let bpr = (cell_w as usize).div_ceil(8);
         for yy in y0..=y1 {
-            let bits = glyph[(yy - y as i32) as usize];
+            let base = (yy - y as i32) as usize * bpr;
             for xx in x0..=x1 {
-                let col = xx - x as i32; // 0..cell_w within the cell
-                let set = bits & (0x80u8 >> col) != 0;
+                let col = (xx - x as i32) as usize; // 0..cell_w within the cell
+                let byte = glyph[base + col / 8];
+                let set = byte & (0x80u8 >> (col & 7)) != 0;
                 Self::combine(fb, xx as u32, yy as u32, set, mode, fg_rgb, bg_rgb);
             }
         }

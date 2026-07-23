@@ -216,6 +216,23 @@ pub fn font(id: SysFontId) -> &'static SysFont {
     }
 }
 
+/// Map a raw text character code to font `f`'s glyph index, substituting
+/// `'?'` for any code outside `[first_ade, last_ade]` (EmuTOS
+/// `output_text`, `vdi_text.c:464`: `if (temp < first_ade || temp >
+/// last_ade) temp = '?'`), then applying the `first_ade` offset. The
+/// caller passes the raw signed `INTIN` word, so a negative code (`< 0 =
+/// first_ade`) or a code above `last_ade` both become `'?'` rather than a
+/// wrapped glyph.
+#[inline]
+pub fn map_code(f: &SysFont, code: i16) -> u16 {
+    let c = if code < f.first_ade || code > f.last_ade {
+        b'?' as i16
+    } else {
+        code
+    };
+    (c - f.first_ade) as u16
+}
+
 /// One glyph scanline (`row`, 0-based from the cell top) of character `c`
 /// (low 8 bits) in font `id`. Bit 7 of the returned byte is the leftmost
 /// pixel; the 6×6 font uses bits 7..2. `row` must be `< form_height`.
