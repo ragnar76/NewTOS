@@ -364,12 +364,13 @@ fn modal_loop(
         // keyboard
         if let Some(c) = h.console_try_read() {
             match c {
-                b'\r' | b'\n' => {
-                    if defbut >= 1 && defbut <= numbut {
-                        return defbut;
-                    }
-                    return 1;
-                }
+                // EmuTOS fm_keybd RETURN → find_obj(DEFLT): Enter fires the
+                // DEFAULT button only when one exists (defbut in [1..numbut]).
+                // With none (defbut == 0) find_obj returns 0, cont stays TRUE
+                // and the loop keeps waiting — Enter does nothing (gemfmalt.c:343
+                // sets DEFAULT only when defbut != 0). A false guard falls
+                // through to `_` (Enter ignored).
+                b'\r' | b'\n' if defbut >= 1 && defbut <= numbut => return defbut,
                 b'1'..=b'9' => {
                     let n = (c - b'0') as i16;
                     if n >= 1 && n <= numbut {
@@ -503,151 +504,233 @@ fn split_copy(
     count
 }
 
-/// `form_do` (50) — run a modal dialog on the tree at `addr_in[0]`
-/// starting at edit object `int_in[0]`. Returns the index of the
-/// `EXIT`/`TOUCHEXIT` object that ended the dialog.
-///
-/// **Batch-5 scope:** handles button clicks (`EXIT`/`TOUCHEXIT`) and the
-/// keyboard (Enter = the `DEFAULT` button). Editable `TEDINFO` fields
-/// (`objc_edit`) and full keyboard navigation land in a later batch.
+/// `form_do` (50) — run a modal dialog on the tree at `addr_in[0]` (FM_FORM)
+/// starting at edit field `int_in[0]` (FM_START). Returns the index of the
+/// `EXIT`/`TOUCHEXIT` object that ended the dialog (EmuTOS `fm_do`).
 pub fn form_do(pb: &Aespb) {
     let tree = pb.addrin(0) as *mut Object;
     if tree.is_null() {
         pb.set_ret(-1);
         return;
     }
-    pb.set_ret(run_form(tree));
+    // FM_START (int_in[0]) is the starting field, not ignored (EmuTOS
+    // gemsuper.c:240 `fm_do(FM_FORM, FM_START)`).
+    let start_fld = pb.intin(0);
+    pb.set_ret(run_form(tree, start_fld));
 }
 
-/// The modal loop: wait for a click on an `EXIT`/`TOUCHEXIT` object or
-/// Enter (the default button); show it pressed and return its index.
-fn run_form(tree: *mut Object) -> i16 {
-    let def = find_flag(tree, DEFAULT);
+/// The starting edit field for `fm_do` (EmuTOS `fm_inifld`, gemfmlib.c:153-160):
+/// `start_fld` itself, or the first editable field forward from ROOT when it is
+/// 0 (`find_obj(tree, 0, FORWARD)`).
+fn fm_inifld(tree: *mut Object, start_fld: i16) -> i16 {
+    if start_fld == 0 {
+        find_obj(tree, 0, FORWARD)
+    } else {
+        start_fld
+    }
+}
+
+/// The modal loop (EmuTOS `fm_do`, gemfmlib.c:278-353): position the cursor on
+/// the starting field, then wait for keyboard / mouse events until an
+/// `EXIT`/`TOUCHEXIT` object (or Enter on the DEFAULT button) ends the dialog.
+/// Returns the object index that caused the exit (bit 15 set = double-click on a
+/// TOUCHEXIT). Editable `TEDINFO` fields are edited in place through `ob_edit`.
+///
+/// Out of scope here (separate findings): `fm_own` screen/mouse ownership
+/// (AUD-P4-011), the `fq()` keyboard flush and the click-into-empty bell
+/// (AUD-P4-018).
+fn run_form(tree: *mut Object, start_fld: i16) -> i16 {
     let Some(h) = host() else {
-        return def;
+        // Unreachable in the running kernel (the host is always present); report
+        // the field we would have started on.
+        return fm_inifld(tree, start_fld);
     };
     let tp = tree as *const Object;
 
-    // Focus the first editable field (cursor to its end).
-    let mut focus = find_flag(tree, EDITABLE);
+    // Determine the starting field to edit (EmuTOS fm_inifld).
+    let mut next_obj = fm_inifld(tree, start_fld);
+    let mut edit_obj = 0i16;
     let mut idx = 0i16;
-    if focus >= 0 {
-        idx = object::edit_field(tp, focus, 0, 0, ED_INIT);
-    }
-
+    let mut cont = true;
     let mut prev = crate::vdi::mouse_buttons();
-    loop {
-        if let Some(w) = h.console_try_read_key() {
-            let c = (w & 0xff) as u8; // ascii (0 for arrow / function keys)
-            match c {
-                b'\r' | b'\n' => {
-                    if def >= 0 {
-                        press(tree, def);
-                        return def;
-                    }
-                }
-                b'\t' if focus >= 0 => {
-                    // Tab: move to the next editable field.
-                    object::edit_field(tp, focus, 0, idx, ED_END);
-                    focus = next_editable(tree, focus);
-                    idx = object::edit_field(tp, focus, 0, 0, ED_INIT);
-                }
-                _ if focus >= 0 => {
-                    // Route the whole key word (scancode << 8 | ascii) to the
-                    // field, so the arrow keys move the caret.
-                    idx = object::edit_field(tp, focus, w as i16, idx, ED_CHAR);
-                }
-                _ => {}
+
+    while cont {
+        // Position the cursor on the selected editing field (EDINIT). ob_edit
+        // ignores obj <= 0 (the ROOT is a box, not a TEDINFO), so guard it.
+        if next_obj != 0 && edit_obj != next_obj {
+            edit_obj = next_obj;
+            next_obj = 0;
+            if edit_obj > 0 {
+                idx = object::edit_field(tp, edit_obj, 0, 0, ED_INIT);
             }
         }
+
+        // ── keyboard event ─────────────────────────────────────────────
+        if let Some(w) = h.console_try_read_key() {
+            let thechar = w as i16; // scancode << 8 | ascii (EV_KRET)
+            // fm_keybd handles RETURN/ARROW navigation; a residual character is
+            // passed to the edit field (EmuTOS fm_do:320-325). `next_obj` is the
+            // preinitialised *pnew_obj (left untouched by a plain character).
+            let (c, newchar, no) = fm_keybd(tree, edit_obj, thechar, next_obj);
+            cont = c;
+            next_obj = no;
+            if newchar != 0 && edit_obj > 0 {
+                idx = object::edit_field(tp, edit_obj, newchar, idx, ED_CHAR);
+            }
+        }
+
+        // ── button event ───────────────────────────────────────────────
         let cur = crate::vdi::mouse_buttons();
-        if cur & 0x01 != 0 && prev & 0x01 == 0 {
+        if cont && cur & 0x01 != 0 && prev & 0x01 == 0 {
             let (mx, my) = crate::vdi::mouse_position();
             // SAFETY: valid tree (GEM contract).
             let hit = unsafe { object::hit_test(tp, 0, MAX_DEPTH, mx, my) };
-            if hit >= 0 {
-                let (state, flags) = ob_fs(tp, hit);
-                if state & DISABLED != 0 {
-                    // A DISABLED object ignores the click. DISABLED is an
-                    // ob_state bit (EmuTOS `fm_button`, gemfmlib.c:224 tests
-                    // `!(state & DISABLED)`), not an ob_flags bit — testing
-                    // `flags & DISABLED` here would instead read EDITABLE
-                    // (both are 0x0008), firing disabled EXIT buttons and
-                    // swallowing clicks that should refocus a second field.
-                } else if flags & SELECTABLE != 0 {
-                    // EmuTOS `fm_button`: a radio button selects itself and
-                    // deselects its siblings (on press). Any other SELECTABLE
-                    // object is watched while held — it shows its toggled
-                    // state and only commits on release **inside** it, so an
-                    // EXIT button (OK/Cancel) fires on release, not on press.
-                    if flags & RBUTTON != 0 {
-                        select_radio(tree, hit);
-                        wait_up();
-                    } else {
-                        let inside =
-                            super::graf::watchbox(tree, hit, state ^ SELECTED, state);
-                        if inside && flags & EXIT != 0 {
-                            return hit;
-                        }
-                    }
-                } else if flags & (EXIT | TOUCHEXIT) != 0 {
-                    // A non-selectable exit/touchexit object leaves at once.
-                    press(tree, hit);
-                    return hit;
-                } else if flags & EDITABLE != 0 && hit != focus {
-                    // Click into another editable field → refocus it.
-                    if focus >= 0 {
-                        object::edit_field(tp, focus, 0, idx, ED_END);
-                    }
-                    focus = hit;
-                    idx = object::edit_field(tp, hit, 0, 0, ED_INIT);
-                }
+            if hit == NIL {
+                // EmuTOS rings the bell (Bconout(2,0x07)) here — out of scope
+                // (AUD-P4-018); a click into empty space selects no object.
+                next_obj = 0;
+            } else {
+                // The click count only matters for a TOUCHEXIT object (fm_button
+                // ORs 0x8000 on a double click); resolve single-vs-double only
+                // there, within the double-click window (EmuTOS fm_do waits on
+                // ev_multi `0x0002ff01L` = up to 2 left clicks). Ordinary buttons
+                // keep their immediate response — EmuTOS gets the count for free
+                // from the continuous mouse driver; we resolve it on demand.
+                let (_, flags) = ob_fs(tp, hit);
+                let clks = if flags & TOUCHEXIT != 0 {
+                    super::event::count_form_clicks(h)
+                } else {
+                    1
+                };
+                let (c, no) = fm_button(tree, hit, clks);
+                cont = c;
+                next_obj = no;
             }
         }
+
+        // Handle end-of-field clean up (EDEND) when leaving or switching fields.
+        if (!cont || (next_obj != 0 && next_obj != edit_obj)) && edit_obj > 0 {
+            object::edit_field(tp, edit_obj, 0, idx, ED_END);
+        }
+
         prev = cur;
         h.pump_input();
     }
+
+    next_obj
 }
 
-/// The next `EDITABLE` field after `from` (wrapping), or `from` if none.
-fn next_editable(tree: *mut Object, from: i16) -> i16 {
-    let n = tree_len(tree);
-    if n <= 0 {
-        return from;
+/// EmuTOS `fm_keybd` (gemfmlib.c:163-198): route the key word `thechar`
+/// (`scancode << 8 | ascii`) for the current edit object `obj`. Returns
+/// `(cont, newchar, newobj)`: `cont` = keep the dialog running (`false` = the
+/// DEFAULT button exited it), `newchar` = the character left for the edit field
+/// (0 when a navigation key was consumed), `newobj` = the field to focus / the
+/// exiting object. `newobj` is preinitialised by the caller (FM_INXTOB, or the
+/// running `next_obj`) and is left untouched for a non-navigation key.
+fn fm_keybd(tree: *mut Object, obj: i16, thechar: i16, newobj: i16) -> (bool, i16, i16) {
+    let ascii = thechar & 0xFF;
+    let scan = (thechar >> 8) & 0xFF;
+    // RETURN/ENTER reset obj to 0 and look for the DEFAULT return field;
+    // ARROW_UP navigates backward, TAB / ARROW_DOWN forward.
+    let (obj, direction) = if ascii == K_RETURN || ascii == 0x0A {
+        (0, DEFLT)
+    } else if scan == SC_UP {
+        (obj, BACKWARD)
+    } else if ascii == K_TAB || scan == SC_DOWN {
+        (obj, FORWARD)
+    } else {
+        (obj, -1)
+    };
+
+    let mut newchar = thechar;
+    let mut newobj = newobj;
+    if direction != -1 {
+        newchar = 0;
+        newobj = find_obj(tree, obj, direction);
+        // The DEFAULT button (if any) is selected and exits the dialog.
+        if direction == DEFLT && newobj != 0 {
+            press(tree, newobj);
+            return (false, newchar, newobj);
+        }
     }
-    // App-provided tree at `addr_in[0]`: address each record at the caller's
-    // ABI width (24-byte ILP32 / 32-byte LP64) via `ObjTree::new`, not the
-    // native 32-byte `*mut Object` stride.
+    (true, newchar, newobj)
+}
+
+/// EmuTOS `find_obj` (gemfmlib.c:114-150): the next EDITABLE field forward /
+/// backward from `start_obj`, or the DEFAULT return field. **No wrap** — the
+/// scan runs until LASTOB (or an index below 0) and returns `start_obj` when
+/// nothing matches; HIDETREE (`ob_flags`) and DISABLED (`ob_state`) objects are
+/// skipped. `which` is [`FORWARD`], [`BACKWARD`] or [`DEFLT`].
+fn find_obj(tree: *mut Object, start_obj: i16, which: i16) -> i16 {
+    // App-provided tree at `addr_in[0]`: address each record at the caller's ABI
+    // width (24-byte ILP32 / 32-byte LP64) via `ObjTree::new`.
     let t = ObjTree::new(tree as *const Object);
-    let mut i = from;
-    for _ in 0..n {
-        i = (i + 1) % n;
-        if t.flags(i) & EDITABLE != 0 {
-            return i;
+    let (mut obj, flag, inc) = match which {
+        BACKWARD => (start_obj - 1, EDITABLE, -1i16),
+        FORWARD => (start_obj + 1, EDITABLE, 1i16),
+        // DEFLT: scan from ROOT for the DEFAULT-flagged object.
+        _ => (0, DEFAULT, 1i16),
+    };
+
+    while obj >= 0 {
+        let theflag = t.flags(obj);
+        let state = t.state(obj);
+        if theflag & HIDETREE == 0 && state & DISABLED == 0 && theflag & flag != 0 {
+            return obj;
+        }
+        if theflag & LASTOB != 0 {
+            obj = -1;
+        } else {
+            obj += inc;
         }
     }
-    from
+    start_obj
 }
 
-/// Number of objects in the flat tree array (up to and including LASTOB).
-fn tree_len(tree: *mut Object) -> i16 {
-    // App-provided tree: walk to LASTOB at the caller's ABI stride so the scan
-    // stops at the real terminator rather than running past the tree end at the
-    // wrong (native 32-byte) stride into an adjacent tree in the RSC blob.
-    let t = ObjTree::new(tree as *const Object);
-    let mut i = 0i16;
-    loop {
-        if t.flags(i) & LASTOB != 0 {
-            return i + 1;
+/// EmuTOS `fm_button` (gemfmlib.c:201-270): process a click on `new_obj`
+/// (`clks` presses) in the dialog. Returns `(cont, newobj)` where `cont` =
+/// keep the dialog running and `newobj` = the resulting object (bit 15 set =
+/// double-click on a TOUCHEXIT). Shared by the `form_button` trap and
+/// `run_form`.
+fn fm_button(tree: *mut Object, new_obj: i16, clks: i16) -> (bool, i16) {
+    let (mut state, flags) = ob_fs(tree as *const Object, new_obj);
+    let mut cont = true;
+    let mut orword: u16 = 0;
+
+    // TOUCHEXIT: a double click sets the high bit; either way it exits.
+    if flags & TOUCHEXIT != 0 {
+        if clks == 2 {
+            orword = 0x8000;
         }
-        i += 1;
-        if i > 256 {
-            return i; // safety cap
+        cont = false;
+    }
+
+    // SELECTABLE (and enabled): a radio button selects itself + deselects its
+    // siblings; any other is watched while held (commit on release inside).
+    if flags & SELECTABLE != 0 && state & DISABLED == 0 {
+        if flags & RBUTTON != 0 {
+            select_radio(tree, new_obj);
+            state |= SELECTED;
+        } else if super::graf::watchbox(tree, new_obj, state ^ SELECTED, state) {
+            state ^= SELECTED;
+        }
+        // If not a touchexit, wait for the button to come up.
+        if cont && flags & (SELECTABLE | EDITABLE) != 0 {
+            wait_up();
         }
     }
+
+    // A selected EXIT object ends the dialog.
+    if state & SELECTED != 0 && flags & EXIT != 0 {
+        cont = false;
+    }
+
+    // A click that continues and is not an editable field selects no object.
+    let new_obj = if cont && flags & EDITABLE == 0 { 0 } else { new_obj };
+    (cont, ((new_obj as u16) | orword) as i16)
 }
 
-/// Show `obj` selected (pressed) and redraw it.
+/// Show `obj` selected (pressed) and redraw it (EmuTOS `ob_change(…SELECTED…)`).
 fn press(tree: *mut Object, obj: i16) {
     // App-provided tree: read `ob_state` at the caller's ABI width.
     let t = ObjTree::new(tree as *const Object);
@@ -655,51 +738,94 @@ fn press(tree: *mut Object, obj: i16) {
     object::change(tree, obj, state, true);
 }
 
-/// Index of the first **visible, enabled** object carrying `flag` (walking to
-/// `LASTOB`), or -1. Mirrors EmuTOS `find_obj` (gemfmlib.c:135-147): a
-/// HIDETREE (ob_flags) or DISABLED (ob_state) object is skipped, so e.g. a
-/// disabled DEFAULT button is never picked by Enter.
-fn find_flag(tree: *mut Object, flag: u16) -> i16 {
-    // App-provided tree: read fields at the caller's ABI width, walking to the
-    // LASTOB terminator at the correct stride.
-    let t = ObjTree::new(tree as *const Object);
-    let mut i = 0i16;
-    loop {
-        let flags = t.flags(i);
-        if flags & HIDETREE == 0 && t.state(i) & DISABLED == 0 && flags & flag != 0 {
-            return i;
-        }
-        if flags & LASTOB != 0 {
-            return -1;
-        }
-        i += 1;
+/// `form_error` (53) — the canned alert for the **positive DOS error number**
+/// in `int_in[0]` (EmuTOS `fm_error`, gemfmlib.c:436-472; the error number is
+/// a positive DOS code, e.g. the desktop's `form_error(2)` = "file not found").
+///
+/// EmuTOS maps `n` through a `switch` to a gem.rsc AL*ERR alert (each with its
+/// own icon + buttons), shows it via `fm_show(string, …, level=1)`, and returns
+/// `(button != 1)` — so dismissing the (single-button) alert yields `FALSE`(0).
+/// `n > 63` is out of range: return `FALSE` without drawing anything.
+pub fn form_error(pb: &Aespb) {
+    let n = pb.intin(0);
+
+    // EmuTOS `if (n > 63) return FALSE;` — no alert for an out-of-range code.
+    if n > 63 {
+        pb.set_ret(0);
+        return;
     }
+
+    use crate::i18n::ErrAlert;
+    // EmuTOS `switch (n)` → the AL*ERR resource string (gemfmlib.c:443-467).
+    let class = match n {
+        2 | 18 | 3 => ErrAlert::NotFound, // AL18ERR
+        4 => ErrAlert::NoRoom,            // AL04ERR
+        5 => ErrAlert::Exists,            // AL05ERR
+        15 => ErrAlert::NoDrive,          // AL15ERR
+        8 | 10 | 11 => ErrAlert::NoMem,   // AL08ERR
+        _ => ErrAlert::Generic,           // ALXXERR (with the number in %u)
+    };
+
+    // fm_show(string, (string == ALXXERR) ? &n : 0, level = 1). Only the
+    // generic ALXXERR carries a `%u` to fill with the error number.
+    let button = match class {
+        ErrAlert::Generic => {
+            let mut buf = [0u8; 64];
+            let len = format_err(crate::i18n::err_alert(class), n, &mut buf);
+            do_alert(1, &buf[..len], true)
+        }
+        _ => do_alert(1, crate::i18n::err_alert(class), true),
+    };
+
+    // EmuTOS `return (ret != 1)`: clicking button 1 yields FALSE(0).
+    pb.set_ret(i16::from(button != 1));
 }
 
-/// `form_error` (53) — a canned alert for the GEMDOS error number in
-/// `int_in[0]`. Builds `"[3]<localised message>[ OK ]"` and runs it as a
-/// modal alert; returns the button (1 = OK). First real i18n use.
-pub fn form_error(pb: &Aespb) {
-    let errnum = pb.intin(0);
-    let msg = crate::i18n::err_string(errnum);
-
-    let mut buf = [0u8; 160];
-    let mut n = 0usize;
-    for &b in b"[3][" {
-        buf[n] = b;
-        n += 1;
-    }
-    for &b in msg {
-        if n < buf.len() - 8 {
-            buf[n] = b;
-            n += 1;
+/// Substitute the first `%u`/`%d` in the alert template `tmpl` with `n` in
+/// decimal, into `buf`; returns the byte length written. Reproduces EmuTOS
+/// `fm_show`'s `sprintf(alert_str, ad_alert, *pwd)` for the `ALXXERR`
+/// ("TOS error #%u.") generic error string.
+fn format_err(tmpl: &[u8], n: i16, buf: &mut [u8]) -> usize {
+    let mut out = 0usize;
+    let mut i = 0usize;
+    while i < tmpl.len() {
+        if tmpl[i] == b'%' && i + 1 < tmpl.len() && matches!(tmpl[i + 1], b'u' | b'd') {
+            out += write_decimal(n, &mut buf[out..]);
+            i += 2;
+        } else {
+            if out < buf.len() {
+                buf[out] = tmpl[i];
+                out += 1;
+            }
+            i += 1;
         }
     }
-    for &b in b"][ OK ]" {
-        buf[n] = b;
-        n += 1;
+    out
+}
+
+/// Write `n` (as an unsigned 16-bit value, like C `%u`) in decimal into `buf`;
+/// returns the number of bytes written.
+fn write_decimal(n: i16, buf: &mut [u8]) -> usize {
+    let mut v = n as u16;
+    if v == 0 {
+        if !buf.is_empty() {
+            buf[0] = b'0';
+        }
+        return 1;
     }
-    pb.set_ret(do_alert(1, &buf[..n], true));
+    let mut tmp = [0u8; 5]; // u16 has at most 5 decimal digits
+    let mut len = 0usize;
+    while v > 0 {
+        tmp[len] = b'0' + (v % 10) as u8;
+        v /= 10;
+        len += 1;
+    }
+    for k in 0..len {
+        if k < buf.len() {
+            buf[k] = tmp[len - 1 - k];
+        }
+    }
+    len
 }
 
 // form_dial types (aesbind.h).
@@ -830,41 +956,6 @@ fn select_radio(tree: *mut Object, obj: i16) {
     }
 }
 
-/// Previous EDITABLE field before `from` (wrapping), or `from` if none.
-fn prev_editable(tree: *mut Object, from: i16) -> i16 {
-    let n = tree_len(tree);
-    if n <= 0 {
-        return from;
-    }
-    // App-provided tree: read `ob_flags` at the caller's ABI width.
-    let t = ObjTree::new(tree as *const Object);
-    let mut i = from;
-    for _ in 0..n {
-        i = (i - 1 + n) % n;
-        if t.flags(i) & EDITABLE != 0 {
-            return i;
-        }
-    }
-    from
-}
-
-/// The object a `form_keybd` direction navigates to (EmuTOS `find_obj`).
-fn find_obj(tree: *mut Object, obj: i16, direction: i16) -> i16 {
-    match direction {
-        DEFLT => {
-            let d = find_flag(tree, DEFAULT);
-            if d < 0 {
-                0
-            } else {
-                d
-            }
-        }
-        FORWARD => next_editable(tree, obj),
-        BACKWARD => prev_editable(tree, obj),
-        _ => obj,
-    }
-}
-
 /// Block until the left mouse button is released (the `ev_button` up-wait
 /// after a select).
 fn wait_up() {
@@ -881,80 +972,40 @@ fn wait_up() {
 /// exit (0). EmuTOS `fm_button`.
 pub fn form_button(pb: &Aespb) {
     let tree = pb.addrin(0) as *mut Object;
-    let obj = pb.intin(0);
-    let clks = pb.intin(1);
+    let obj = pb.intin(0); // FM_OBJ
+    let clks = pb.intin(1); // FM_CLKS
     if tree.is_null() || obj < 0 {
         pb.set_intout(1, obj.max(0));
         pb.set_ret(1);
         return;
     }
-    let (mut state, flags) = ob_fs(tree as *const Object, obj);
-    let mut cont = true;
-    let mut orword: u16 = 0;
-    if flags & TOUCHEXIT != 0 {
-        if clks == 2 {
-            orword = 0x8000; // double-click indicator (high bit of the object)
-        }
-        cont = false;
-    }
-    if flags & SELECTABLE != 0 && state & DISABLED == 0 {
-        if flags & RBUTTON != 0 {
-            select_radio(tree, obj);
-            state |= SELECTED;
-        } else if super::graf::watchbox(tree, obj, state ^ SELECTED, state) {
-            state ^= SELECTED;
-        }
-        if cont && flags & (SELECTABLE | EDITABLE) != 0 {
-            wait_up();
-        }
-    }
-    if state & SELECTED != 0 && flags & EXIT != 0 {
-        cont = false;
-    }
-    let newobj = if cont && flags & EDITABLE == 0 { 0 } else { obj };
-    pb.set_intout(1, ((newobj as u16) | orword) as i16);
+    let (cont, newobj) = fm_button(tree, obj, clks);
+    pb.set_intout(1, newobj); // FM_ONXTOB
     pb.set_ret(if cont { 1 } else { 0 });
 }
 
-/// `form_keybd` (55) — route a key `int_in[1]` in the dialog at `addr_in[0]`
-/// (current object `int_in[0]`): RETURN → the DEFAULT button (exit),
-/// TAB/down → next field, up → previous field. `int_out[1]` = the next
-/// object, `int_out[2]` = the (possibly cleared) char; `int_out[0]` =
-/// continue (1) / exit (0). EmuTOS `fm_keybd`.
+/// `form_keybd` (55) — route the key `int_in[1]` (FM_ICHAR) in the dialog at
+/// `addr_in[0]` (current object `int_in[0]` = FM_OBJ): RETURN → the DEFAULT
+/// button (exit), TAB/down → next field, up → previous field. `int_out[1]`
+/// (FM_ONXTOB) = the next object, `int_out[2]` (FM_OCHAR) = the (possibly
+/// cleared) char; `int_out[0]` = continue (1) / exit (0). EmuTOS `fm_keybd`.
+///
+/// `FM_ONXTOB` is preinitialised from `FM_INXTOB` (int_in[2]) before the call
+/// (EmuTOS gemsuper.c:256-258), so a non-navigation key returns int_in[2], not
+/// int_in[0].
 pub fn form_keybd(pb: &Aespb) {
     let tree = pb.addrin(0) as *mut Object;
-    let obj = pb.intin(0);
-    let thechar = pb.intin(1);
+    let obj = pb.intin(0); // FM_OBJ
+    let thechar = pb.intin(1); // FM_ICHAR
+    let inxtob = pb.intin(2); // FM_INXTOB (preinit of FM_ONXTOB)
     if tree.is_null() {
-        pb.set_intout(1, obj);
+        pb.set_intout(1, inxtob);
         pb.set_intout(2, thechar);
         pb.set_ret(1);
         return;
     }
-    let ascii = thechar & 0xFF;
-    let scan = (thechar >> 8) & 0xFF;
-    let direction = if ascii == K_RETURN || ascii == 0x0A {
-        DEFLT
-    } else if ascii == K_TAB || scan == SC_DOWN {
-        FORWARD
-    } else if scan == SC_UP {
-        BACKWARD
-    } else {
-        -1
-    };
-    let (mut newobj, mut newchar) = (obj, thechar);
-    if direction != -1 {
-        newchar = 0;
-        newobj = find_obj(tree, obj, direction);
-        if direction == DEFLT && newobj != 0 {
-            press(tree, newobj);
-            pb.set_intout(1, newobj);
-            pb.set_intout(2, newchar);
-            pb.set_ret(0); // the default button exits the dialog
-            return;
-        }
-    }
+    let (cont, newchar, newobj) = fm_keybd(tree, obj, thechar, inxtob);
     pb.set_intout(1, newobj);
     pb.set_intout(2, newchar);
-    pb.set_ret(1);
+    pb.set_ret(if cont { 1 } else { 0 });
 }

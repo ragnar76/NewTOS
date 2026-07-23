@@ -210,6 +210,16 @@ fn count_clicks(
     got
 }
 
+/// Resolve a single vs. double left-button click for the Form Manager's modal
+/// loop (EmuTOS `fm_do` waits on `ev_multi` with `0x0002ff01L` = up to 2 left
+/// clicks). The caller has already detected the press edge, so the left button
+/// is down (the first click); count a second click that falls inside the
+/// double-click window. Returns 1 or 2. Used by `form::run_form` only for a
+/// TOUCHEXIT object, where the count sets the 0x8000 return bit.
+pub(super) fn count_form_clicks(h: &dyn crate::host::Host) -> i16 {
+    count_clicks(h, 2, None, || crate::vdi::mouse_buttons() & 0x01 == 0x01)
+}
+
 /// `evnt_mouse` (22) — block until the mouse enters (`flags` = 0) or
 /// leaves (`flags` = 1) the rectangle in `int_in[1..4]`, then fill the
 /// return slots and return 1.
