@@ -1211,6 +1211,7 @@ fn change_clip_t(t: ObjTree, obj: i16, newstate: u16, redraw: bool, clip_overrid
 }
 
 // objc_edit kinds (`obdefs.h`).
+const ED_START: i16 = 0;
 const ED_INIT: i16 = 1;
 const ED_CHAR: i16 = 2;
 const ED_END: i16 = 3;
@@ -1220,23 +1221,26 @@ const ED_END: i16 = 3;
 /// kind (EDSTART/EDINIT/EDCHAR/EDEND). The new cursor index is returned
 /// in `OB_ODX` (`int_out[1]`).
 ///
-/// Batch-6 scope: plain in-place editing of `te_ptext` (insert printable,
-/// backspace; cursor shown as a caret). The template (`te_ptmplt`) and
-/// validation (`te_pvalid`) of formatted fields land in a later batch.
+/// Handles `EDINIT` (cursor to end), `EDCHAR` (validated insert / backspace /
+/// delete / arrows, with over-type at the length limit and template
+/// skip-ahead for formatted fields) and `EDEND`; `EDSTART` is a no-op.
 pub fn objc_edit(pb: &Aespb) {
     let tree = pb.addrin(0) as *const Object;
     let obj = pb.intin(0);
-    if tree.is_null() || obj <= 0 {
-        // EmuTOS `ob_edit` (gemobed.c:342): `obj <= 0` — including the ROOT
-        // (0) — is a no-op that returns TRUE without touching the field. The
-        // ROOT of a dialog is a box whose `ob_spec` is a colour/thickness
-        // word, not a `TEDINFO` pointer, so `edit_field` would deref a wild
-        // pointer. The objc_edit slot contract is "always TRUE".
+    let kind = pb.intin(3);
+    if kind == ED_START || tree.is_null() || obj <= 0 {
+        // EmuTOS `ob_edit` (gemobed.c:342-343): `if ((kind == EDSTART) ||
+        // (obj <= 0)) return TRUE;` — a pure no-op with no draw and no
+        // TEDINFO access, returning TRUE with the passed-in index unchanged
+        // (AUD-P3-008). EDSTART begins an edit sequence without touching the
+        // field; `obj <= 0` (incl. the ROOT, 0) has no TEDINFO (its `ob_spec`
+        // is a colour/thickness word), so editing it would deref a wild
+        // pointer. `int_out[1]` = the caller's `int_in[2]`.
         pb.set_intout(1, pb.intin(2));
         pb.set_ret(1);
         return;
     }
-    let idx = edit_field(tree, obj, pb.intin(1), pb.intin(2), pb.intin(3));
+    let idx = edit_field(tree, obj, pb.intin(1), pb.intin(2), kind);
     pb.set_intout(1, idx);
     pb.set_ret(1);
 }
@@ -1277,7 +1281,7 @@ pub(crate) fn edit_field_t(t: ObjTree, obj: i16, in_char: i16, mut idx: i16, kin
 
     match kind {
         ED_INIT => idx = cstr_len_p(text) as i16,
-        ED_CHAR => edit_char(ted, text, txtlen, &mut idx, in_char),
+        ED_CHAR => edit_char(ted, tmpl, text, txtlen, &mut idx, in_char),
         _ => {} // EDSTART / EDEND
     }
 
@@ -1305,7 +1309,7 @@ const SC_RIGHT: u8 = 0x4D;
 /// Apply one keystroke to the raw text buffer at the cursor (EmuTOS
 /// `ob_edit` EDCHAR). Handles backspace / delete / escape / left-right
 /// arrows and validated printable insertion.
-fn edit_char(ted: &TedInfo, text: *mut u8, txtlen: i16, idx: &mut i16, ch: i16) {
+fn edit_char(ted: &TedInfo, tmpl: &[u8], text: *mut u8, txtlen: i16, idx: &mut i16, ch: i16) {
     let pvalid = read_cstr(ted.te_pvalid);
     let c = (ch & 0xff) as u8;
     let scan = ((ch >> 8) & 0xff) as u8;
@@ -1349,12 +1353,44 @@ fn edit_char(ted: &TedInfo, text: *mut u8, txtlen: i16, idx: &mut i16, ch: i16) 
             unsafe { *text = 0 };
         }
         0x20..=0xFF => {
-            // Printable: validate against this position's `te_pvalid` code,
-            // then insert (subject to the text length).
+            // EmuTOS `ob_edit` EDCHAR `default` branch (gemobed.c:405-441):
+            // validated printable insertion, over-typing the last position at
+            // the length limit and, on a validation failure in a formatted
+            // field, skipping the cursor ahead to the next data slot.
+            //
+            // `cur_pos` is the template column of the cursor (EmuTOS `start` =
+            // `find_pos`), needed only by the skip-ahead scan.
+            let mut cur_pos = find_pos(tmpl, *idx);
+            let mut tmp_back = false;
+            // Full field (`idx > te_txtlen-2`): back the cursor up one so the
+            // insert over-types the last character rather than being dropped
+            // (gemobed.c:407-413, AUD-P3-009).
+            if *idx > txtlen - 2 {
+                cur_pos -= 1;
+                tmp_back = true;
+                *idx -= 1;
+            }
             let mut ic = c;
-            if check(&mut ic, valid_code(pvalid, *idx)) && len < txtlen - 1 {
-                ins_char(text, *idx, ic, len);
+            if check(&mut ic, valid_code(pvalid, *idx)) {
+                // `ins_char` truncates at `te_txtlen` (gemobed.c:420), so a
+                // full field drops its tail instead of overflowing.
+                ins_char(text, *idx, ic, txtlen);
                 *idx += 1;
+            } else {
+                // Validation failed: try to skip ahead to the next template
+                // data slot whose separator is the typed char, blanking the
+                // skipped positions (gemobed.c:424-438, AUD-P3-010). For a
+                // plain field (no validation) `check` always succeeds, so this
+                // branch runs for formatted (`te_ptmplt`) fields only.
+                if tmp_back {
+                    *idx += 1;
+                    cur_pos += 1;
+                }
+                let pos = scan_to_end(tmpl, cur_pos, *idx, c);
+                if pos < txtlen - 2 {
+                    fill_blanks(text, *idx, pos);
+                    *idx = pos;
+                }
             }
         }
         _ => {}
@@ -1374,17 +1410,58 @@ fn delete_at(text: *mut u8, pos: i16, len: i16) {
     }
 }
 
-/// Insert `chr` at `pos` in the NUL-terminated buffer of length `len`
-/// (EmuTOS `ins_char`; caller has already checked `len < tot_len - 1`).
-fn ins_char(text: *mut u8, pos: i16, chr: u8, len: i16) {
-    // SAFETY: room exists; shift the tail up (incl. the NUL) then store.
+/// Insert `chr` at `pos` in the NUL-terminated buffer, truncating at
+/// `tot_len` (the TEDINFO `te_txtlen`, buffer size including the NUL).
+/// Faithful to EmuTOS `ins_char` (gemobed.c:117): shifts the tail up and
+/// drops the overflow when the field is full, so the caller need not guard
+/// the length.
+fn ins_char(text: *mut u8, pos: i16, chr: u8, tot_len: i16) {
+    let len = cstr_len_p(text) as i16;
+    // SAFETY: `pos <= len <= tot_len-1`; every write index is `<= tot_len-1`,
+    // so all accesses stay inside the caller's `te_txtlen`-byte buffer.
     unsafe {
-        let mut i = len;
-        while i >= pos {
-            *text.add((i + 1) as usize) = *text.add(i as usize);
-            i -= 1;
+        let mut ii = len;
+        while ii > pos {
+            *text.add(ii as usize) = *text.add((ii - 1) as usize);
+            ii -= 1;
         }
         *text.add(pos as usize) = chr;
+        if len + 1 < tot_len {
+            *text.add((len + 1) as usize) = 0;
+        } else {
+            *text.add((tot_len - 1) as usize) = 0;
+        }
+    }
+}
+
+/// Scan the template `tmpl` forward from column `start`, counting `_` data
+/// slots into `idx`, until the typed separator `chr` is found (or the
+/// template ends), returning the raw-string index of that data slot. Faithful
+/// to EmuTOS `scan_to_end` (gemobed.c:141): lets a typed template separator
+/// jump the cursor to the following data position.
+fn scan_to_end(tmpl: &[u8], start: i16, mut idx: i16, chr: u8) -> i16 {
+    let mut i = start.max(0) as usize;
+    while i < tmpl.len() && tmpl[i] != chr {
+        if tmpl[i] == b'_' {
+            idx += 1;
+        }
+        i += 1;
+    }
+    idx
+}
+
+/// Blank out raw positions `[from, to)` and terminate at `to` (EmuTOS
+/// `memset(&rawstr[idx], ' ', pos-idx); rawstr[pos] = '\0'`, gemobed.c:434-435).
+fn fill_blanks(text: *mut u8, from: i16, to: i16) {
+    // SAFETY: caller guarantees `from <= to < te_txtlen-2`, so writes stay in
+    // the buffer.
+    unsafe {
+        let mut i = from;
+        while i < to {
+            *text.add(i as usize) = b' ';
+            i += 1;
+        }
+        *text.add(to as usize) = 0;
     }
 }
 
