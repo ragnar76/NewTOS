@@ -733,16 +733,50 @@ fn output_text_rotated(
     }
 }
 
+/// EmuTOS `JUSTINFO` (`vdi_text.c:139-149`): the per-glyph justification
+/// deltas that `gdp_justified` computes and the `output_text` apply-loop
+/// consumes. In each x/y pair only one component is ever non-zero — `chup`
+/// selects the axis. At `chup == 0` (the only orientation this path
+/// renders) the x-components (`wordx`/`charx`/`rmwordx`/`rmcharx`) carry the
+/// whole justification; the y-components stay zero. `rmword`/`rmchar` are
+/// the leftover pixels from the integer division, spread one at a time over
+/// the leading gaps/characters so the run lands exactly on the target width.
+#[derive(Default)]
+struct JustInfo {
+    /// #pixels added to each space (interword base delta).
+    wordx: i16,
+    wordy: i16,
+    /// Remaining interword pixels, spread one-per-gap.
+    rmword: i16,
+    rmwordx: i16,
+    rmwordy: i16,
+    /// #pixels added after each character (interchar base delta).
+    charx: i16,
+    chary: i16,
+    /// Remaining interchar pixels, spread one-per-character.
+    rmchar: i16,
+    rmcharx: i16,
+    rmchary: i16,
+}
+
 /// GDP sub-op 10 — `v_justified`: draw a run of text spread to fill a
 /// target width. `INTIN[0]` = interword flag, `INTIN[1]` = interchar
 /// flag, `INTIN[2..]` = char codes (`CONTRL[3] - 2` of them).
-/// `PTSIN[0..1]` = position, `PTSIN[2]` = target width. Slack is shared
-/// across word gaps and/or all characters. Drawn horizontally (`chup`
-/// right-angle rotations beyond 0 fall back to left-to-right).
+/// `PTSIN[0..1]` = position, `PTSIN[2]` = target width.
+///
+/// 1:1 port of EmuTOS `gdp_justified` (`vdi_text.c:1177-1289`) and the
+/// justification branch of the `output_text` apply-loop
+/// (`vdi_text.c:459-498`). The full `JustInfo`/`chup` model is computed, but
+/// this path only *renders* horizontally via [`draw_cell`]: at `chup == 0`
+/// (the observable case) the x-components make it byte-for-byte with EmuTOS;
+/// at a right-angle `chup` the glyph bitmaps are drawn unrotated as an
+/// L->R fallback (the rotated justified render belongs to a separate task —
+/// it is not one of the catalogued slack findings).
 pub fn v_justified(pb: &Vdipb, vwk: &Vwk, backend: &dyn RasterBackend) {
-    let nchars = (pb.contrl(3) - 2).max(0) as usize;
-    if nchars == 0 {
-        return;
+    // EmuTOS: cnt = CONTRL[3] - 2 (strip the two leading flag words).
+    let cnt = (pb.contrl(3) - 2).max(0);
+    if cnt <= 0 {
+        return; // output_text quick-out for count <= 0
     }
     let base = font::font(vwk.cur_font);
     let scaled_hdr;
@@ -752,38 +786,144 @@ pub fn v_justified(pb: &Vdipb, vwk: &Vwk, backend: &dyn RasterBackend) {
     } else {
         base
     };
-    let cell_w = f.max_cell_width;
     let interword = pb.intin(0) != 0;
     let interchar = pb.intin(1) != 0;
     let x0 = pb.ptsin(0);
     let top_y = top_for(f, pb.ptsin(1), vwk.v_align);
     let max_x = pb.ptsin(2);
 
-    // Natural run width and the word-gap count (spaces).
-    let natural = nchars as i16 * cell_w;
-    let spaces = (0..nchars).filter(|&i| pb.intin(2 + i) as u16 == b' ' as u16).count() as i16;
-    let mut slack = max_x - natural;
-
-    // Per-gap interword extra (clamped to ±½ cell), per-char interchar extra.
-    let word_extra = if interword && spaces > 0 {
-        (slack / spaces).clamp(-(cell_w / 2), cell_w / 2)
-    } else {
-        0
-    };
-    slack -= word_extra * spaces;
-    let char_extra = if interchar && nchars > 1 { slack / (nchars as i16 - 1) } else { 0 };
-
-    let clip = vwk.clip_rect();
-    let mut xdda: u16 = 0x7fff;
-    let mut cx = x0;
-    for i in 0..nchars {
-        let code = pb.intin(2 + i);
-        let (cell, _advance) = make_glyph(base, f, code, vwk, &mut xdda);
-        draw_cell(backend, &cell, cx, top_y, vwk, clip);
-        cx += cell_w + char_extra;
-        if code == b' ' as i16 {
-            cx += word_extra;
+    // Count spaces only when interword adjustment is required
+    // (EmuTOS gdp_justified:1197-1201).
+    let mut spaces = 0i16;
+    if interword {
+        for i in 0..cnt as usize {
+            if pb.intin(2 + i) as u16 == b' ' as u16 {
+                spaces += 1;
+            }
         }
     }
-    underline(backend, f, vwk, x0, top_y, cx - x0, clip);
+
+    // Natural on-screen width — EmuTOS calc_width (:1203); this is the scaled
+    // advance plus skew/outline extents, NOT nchars*cell_w. Kept as the base
+    // that the slack is measured against and that the interchar block divides.
+    let mut width = calc_width(base, f, cnt, vwk);
+
+    let mut just = JustInfo::default(); // bzero default (:1207)
+
+    // Interword spacing (:1212-1253).
+    if interword && spaces != 0 {
+        let mut delword = (max_x - width) / spaces;
+        just.rmword = (max_x - width) % spaces;
+        let direction;
+        if just.rmword < 0 {
+            direction = -1;
+            just.rmword = -just.rmword;
+        } else {
+            direction = 1;
+        }
+
+        // Clamp the per-gap delta to +/-half a cell ONLY when interchar
+        // spacing also runs (:1222); pure interword spreads the full slack
+        // (fixes AUD-V3-003). When clamped the remainder is dropped, then the
+        // interword slack is subtracted from `width` so the interchar block
+        // divides only what is left (fixes AUD-V4-007).
+        if interchar {
+            let expand = f.max_cell_width / 2;
+            if delword > expand {
+                delword = expand;
+                just.rmword = 0;
+            }
+            if delword < -expand {
+                delword = -expand;
+                just.rmword = 0;
+            }
+            width += delword * spaces + just.rmword * direction;
+        }
+
+        match vwk.chup {
+            900 => {
+                just.wordy = -delword;
+                just.rmwordy = -direction;
+            }
+            1800 => {
+                just.wordx = -delword;
+                just.rmwordx = -direction;
+            }
+            2700 => {
+                just.wordy = delword;
+                just.rmwordy = direction;
+            }
+            _ => {
+                just.wordx = delword;
+                just.rmwordx = direction;
+            }
+        }
+    }
+
+    // Intercharacter spacing (:1258-1286).
+    if interchar && cnt > 1 {
+        let delchar = (max_x - width) / (cnt - 1);
+        just.rmchar = (max_x - width) % (cnt - 1);
+        let direction;
+        if just.rmchar < 0 {
+            direction = -1;
+            just.rmchar = -just.rmchar;
+        } else {
+            direction = 1;
+        }
+
+        match vwk.chup {
+            900 => {
+                just.chary = -delchar;
+                just.rmchary = -direction;
+            }
+            1800 => {
+                just.charx = -delchar;
+                just.rmcharx = -direction;
+            }
+            2700 => {
+                just.chary = delchar;
+                just.rmchary = direction;
+            }
+            _ => {
+                just.charx = delchar;
+                just.rmcharx = direction;
+            }
+        }
+    }
+
+    // Apply-loop — EmuTOS output_text (:459-498). Each glyph blits at the
+    // current pen; the base advance moves the pen (EmuTOS `text_blt`'s DELX),
+    // then the interchar delta is added, then — on a space — the interword
+    // delta, each spreading its saved remainder one pixel at a time. Rendered
+    // horizontally: at chup==0 the y-components are zero so `desty` stays on
+    // the cell top (byte-1:1); at a right angle the deltas follow the model
+    // but the glyph bitmaps are not rotated (L->R fallback).
+    let clip = vwk.clip_rect();
+    let mut xdda: u16 = 0x7fff;
+    let mut destx = x0;
+    let mut desty = top_y;
+    for i in 0..cnt as usize {
+        let code = pb.intin(2 + i);
+        let (cell, advance) = make_glyph(base, f, code, vwk, &mut xdda);
+        draw_cell(backend, &cell, destx, desty, vwk, clip);
+        destx += advance; // base glyph advance (EmuTOS text_blt DELX)
+        destx += just.charx;
+        desty += just.chary;
+        if just.rmchar != 0 {
+            destx += just.rmcharx;
+            desty += just.rmchary;
+            just.rmchar -= 1;
+        }
+        if code == b' ' as i16 {
+            destx += just.wordx;
+            desty += just.wordy;
+            if just.rmword != 0 {
+                destx += just.rmwordx;
+                desty += just.rmwordy;
+                just.rmword -= 1;
+            }
+        }
+    }
+    underline(backend, f, vwk, x0, top_y, destx - x0, clip);
 }
