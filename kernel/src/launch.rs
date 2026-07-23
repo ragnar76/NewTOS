@@ -83,6 +83,10 @@ pub fn run_program_with_tail(path: &[u8], tail: &[u8]) -> bool {
     // `.RSC` beside the executable (lead directive 2026-07-20): QED passes a
     // bare `qed.rsc`, and its resource is staged next to `QED.NAP`.
     tos_api::aes::resource::set_app_dir(path);
+    // Name the launched program's AES process descriptor from its launch path
+    // (EmuTOS `pstart` → `p_nameit`, `aes/gempd.c:110-131`), so a later
+    // `appl_find(name)` resolves it. The program's AES id is `slot + 1`.
+    tos_api::aes::register_process(child.slot, path);
     set_current(s.basepage_kva.load(Ordering::Acquire));
     kprintln!("[launch] EL0: slot {} entry 0x{:x}", child.slot, child.entry_va);
 

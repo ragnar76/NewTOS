@@ -308,18 +308,24 @@ pub fn appl_find(pb: &Aespb) {
 }
 
 /// Opcode 17 — `appl_yield`: cooperative yield to the AES scheduler.
-/// With a single AES application there is nothing to schedule to, so this
-/// returns immediately (the documented single-app behaviour).
+/// EmuTOS's `APPL_YIELD` arm (`gemsuper.c:115-119`, `#if CONF_WITH_PCGEM`,
+/// default-on per `config.h`) only calls `dsptch()` and `break`s, leaving the
+/// enclosing `ret = TRUE` (`gemsuper.c:85`) — so it returns **1**
+/// (`application.md:229`). With a single AES application there is nothing to
+/// schedule to, so NewTOS returns immediately, but with the same `1`.
 pub fn appl_yield(pb: &Aespb) {
-    pb.set_ret(0);
+    pb.set_ret(1);
 }
 
 /// Opcode 12 — `appl_write`: deliver a message into another application's
-/// pipe. `intin[0]` = target id, `intin[1]` = byte length, `addrin[0]` =
-/// message buffer. Returns 1 on success, 0 if the target is unknown or its
-/// message queue is full. The standard GEM message is 16 bytes (8 WORDs);
-/// longer writes are truncated to that length, then appended to the target's
-/// FIFO queue (EmuTOS `ap_rdwr(MU_SDMSG)`→`doq`, `gemqueue.c:85-125,31-74`).
+/// pipe. `intin[0]` = target id, `intin[1]` = byte length (`AP_LENGTH`),
+/// `addrin[0]` = message buffer. Returns 1 on success, 0 if the target is
+/// unknown or its message queue is full. The message length is taken from
+/// `AP_LENGTH` (the standard GEM message is 16 bytes / 8 WORDs, the normal
+/// case) and clamped to the FIFO's per-message limit — [`pd::MAX_MSG_WORDS`] =
+/// `QUEUE_SIZE / 2`, matching EmuTOS's 128-byte queue (`ap_rdwr(MU_SDMSG)` →
+/// `doq`, which memcpys `qpb_cnt` bytes, `gemqueue.c:36,85-125`). The bytes are
+/// then appended to the target's FIFO whole.
 pub fn appl_write(pb: &Aespb) {
     let target = pb.intin(0);
     let len_bytes = pb.intin(1).max(0) as usize;
@@ -333,8 +339,10 @@ pub fn appl_write(pb: &Aespb) {
         pb.set_ret(0);
         return;
     }
-    let words = (len_bytes / 2).min(pd::MSG_WORDS);
-    let mut msg = [0i16; pd::MSG_WORDS];
+    // AP_LENGTH is a byte count (EmuTOS `qpb_cnt`); GEM messages are WORD-based,
+    // so read whole WORDs, capped at the per-message FIFO limit.
+    let words = (len_bytes / 2).min(pd::MAX_MSG_WORDS);
+    let mut msg = [0i16; pd::MAX_MSG_WORDS];
     // SAFETY: addrin[0] points at ≥ len_bytes of message data.
     unsafe {
         let p = buf as *const i16;
@@ -342,8 +350,9 @@ pub fn appl_write(pb: &Aespb) {
             *slot = p.add(i).read();
         }
     }
-    // Enqueue into the target's FIFO (0 if the queue is full).
-    pb.set_ret(dst.queue.push(msg) as i16);
+    // Enqueue into the target's FIFO (0 if the queue is full — AUD-P1-006, a
+    // separate finding; EmuTOS blocks the sender instead of returning 0).
+    pb.set_ret(dst.queue.push_words(&msg, words) as i16);
 }
 
 /// Opcode 11 — `appl_read`: read a message from the calling application's
@@ -367,17 +376,20 @@ pub fn appl_read(pb: &Aespb) {
         pb.set_ret(0);
         return;
     }
-    // Pop the FRONT of the FIFO (EmuTOS `ap_rdwr(MU_RDMSG)`→`doq` dequeue,
-    // `gemqueue.c:76-81`); empty queue → 0.
-    let Some(msg) = src.queue.pop() else {
+    // AP_LENGTH is a byte count; read whole WORDs, capped at the FIFO's
+    // per-message limit (EmuTOS `ap_rdwr(MU_MESAG,…,length,…)`).
+    let words = (len_bytes / 2).min(pd::MAX_MSG_WORDS);
+    let mut buf = [0i16; pd::MAX_MSG_WORDS];
+    // Pop the FRONT of the FIFO into the requested-length window (EmuTOS
+    // `ap_rdwr(MU_RDMSG)`→`doq` dequeue, `gemqueue.c:76-81`); empty queue → 0.
+    let Some(n) = src.queue.pop_into(&mut buf[..words]) else {
         pb.set_ret(0);
         return;
     };
-    let words = (len_bytes / 2).min(pd::MSG_WORDS);
     // SAFETY: addrin[0] points at ≥ len_bytes of destination space.
     unsafe {
         let p = dest as *mut i16;
-        for (i, &w) in msg.iter().take(words).enumerate() {
+        for (i, &w) in buf.iter().take(n).enumerate() {
             p.add(i).write(w);
         }
     }
@@ -395,9 +407,11 @@ pub fn appl_trecord(pb: &Aespb) {
 }
 
 /// Opcode 14 — `appl_tplay`: play back the `int_in[0]` recorded events at
-/// `addr_in[0]` (time scale `int_in[1]`). NewTOS has no path to inject events
-/// back into the AES input from here, so this returns at once — a documented
-/// follow-up (pairs with `appl_trecord`).
+/// `addr_in[0]` (time scale `int_in[1]`). EmuTOS's `ap_tplay` is `void` and the
+/// `APPL_TPLAY` arm leaves the enclosing `ret = TRUE` (`gemsuper.c:109-110,85`),
+/// so it returns **1** (`application.md:273,316`). NewTOS has no path to inject
+/// events back into the AES input from here, so it returns at once with that
+/// `1` — a documented follow-up (pairs with `appl_trecord`).
 pub fn appl_tplay(pb: &Aespb) {
-    pb.set_ret(0);
+    pb.set_ret(1);
 }

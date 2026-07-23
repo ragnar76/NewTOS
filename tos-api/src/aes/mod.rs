@@ -260,3 +260,18 @@ pub unsafe fn dispatch(aespb_ptr: u64, abi: Abi) {
         _ => pb.set_ret(-1),
     }
 }
+
+/// Name a freshly-launched EL0 program's AES process descriptor from its launch
+/// `path`, so a later `appl_find(name)` can locate it — the reimplementation of
+/// EmuTOS naming a process at start (`pstart` → `p_nameit`, `aes/gempd.c:110-131`).
+/// `slot` is the GEMDOS process-table slot the loader placed the program in; its
+/// AES id (pid) is `slot + 1`, the same value the app reports at `appl_init`
+/// (`appl::current_pid`). Called by the kernel launcher before the program
+/// enters EL0, alongside [`resource::set_app_dir`].
+pub fn register_process(slot: usize, path: &[u8]) {
+    let pid = slot as i16 + 1;
+    // SAFETY: single-CPU launcher context; the AES pd table follows the
+    // single-trap-path discipline and the launcher runs on that CPU with no
+    // concurrent GEM trap in flight.
+    unsafe { pd::register(pid, path) };
+}

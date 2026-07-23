@@ -27,14 +27,26 @@ pub const AP_MESAG: u16 = 0x0002;
 /// Maximum concurrently-registered AES applications.
 pub const MAX_APPS: usize = 8;
 
-/// Length of the standard GEM message (8 WORDs).
+/// Length of the standard GEM message (8 WORDs = 16 bytes) — the normal case
+/// for every internal AES poster (`WM_REDRAW`, menu, keyboard, …).
 pub const MSG_WORDS: usize = 8;
 
 /// EmuTOS per-process queue size in bytes (`aes/struct.h:56`,
-/// `p_queue[QUEUE_SIZE]` at `:152`).
+/// `p_queue[QUEUE_SIZE]` at `:152`). Also the largest a single message may be:
+/// EmuTOS `doq` memcpys up to `qpb_cnt` bytes into a queue of this size
+/// (`aes/gemqueue.c:36,97`).
 pub const QUEUE_SIZE: usize = 128;
-/// Queue capacity in whole 16-byte GEM messages: `QUEUE_SIZE / 16 = 8`
-/// (all NewTOS AES messages are the standard 8-WORD length).
+/// Largest single message in WORDs: `QUEUE_SIZE / 2 = 64`. `appl_write` clamps
+/// `AP_LENGTH` to this — the per-message FIFO limit (`aes/gemqueue.c` never
+/// enqueues more than `QUEUE_SIZE` bytes). The standard 16-byte message uses
+/// only the first [`MSG_WORDS`] of it.
+pub const MAX_MSG_WORDS: usize = QUEUE_SIZE / 2;
+/// Maximum number of messages the FIFO holds at once, kept at the original
+/// `QUEUE_SIZE / 16 = 8` (enough for one `WM_REDRAW` per open window before the
+/// event loop drains them). Unlike EmuTOS's single 128-byte byte-queue, each of
+/// these slots can independently hold a full [`MAX_MSG_WORDS`]-WORD message, so
+/// the FIFO over-provisions (8 × `QUEUE_SIZE` B) rather than sharing one
+/// 128-byte budget — a memory-for-simplicity trade of the slot model.
 pub const QUEUE_MSGS: usize = QUEUE_SIZE / (MSG_WORDS * 2);
 
 // GEM message types that `doq` coalesces when enqueued (`include/aesdefs.h`,
@@ -45,19 +57,29 @@ const WM_HSLID: i16 = 25;
 const WM_VSLID: i16 = 26;
 
 /// Per-application GEM message FIFO — the reimplementation of EmuTOS's
-/// `p_queue`/`p_qindex` byte queue. Holds up to [`QUEUE_MSGS`] standard
-/// 16-byte (8-WORD) messages; `count` is the number currently queued (the
-/// analog of `p_qindex`, in whole messages instead of bytes since every
-/// NewTOS message is exactly 16 bytes).
+/// `p_queue`/`p_qindex` byte queue. Holds up to [`QUEUE_MSGS`] messages, each
+/// of up to [`MAX_MSG_WORDS`] WORDs (`QUEUE_SIZE` bytes); the standard case is
+/// the 16-byte (8-WORD) GEM message. `count` is the number of messages
+/// currently queued (the analog of `p_qindex`, kept in whole messages here
+/// because the slot model delivers a message atomically rather than as a byte
+/// stream). Unlike EmuTOS the FIFO cannot split a message across reads: a
+/// message is enqueued and dequeued whole (see [`Self::pop_into`]).
 #[derive(Clone, Copy)]
 pub struct MsgQueue {
-    msgs: [[i16; MSG_WORDS]; QUEUE_MSGS],
+    /// Each queued message, held in up to [`MAX_MSG_WORDS`] WORDs
+    /// (`QUEUE_SIZE` bytes); only the first `lens[i]` WORDs are valid.
+    msgs: [[i16; MAX_MSG_WORDS]; QUEUE_MSGS],
+    /// Valid WORD length of each queued message (`msgs[i][..lens[i]]`). The
+    /// standard GEM message is [`MSG_WORDS`]; `appl_write` may queue up to
+    /// [`MAX_MSG_WORDS`].
+    lens: [usize; QUEUE_MSGS],
     count: usize,
 }
 
 impl MsgQueue {
     const EMPTY: MsgQueue = MsgQueue {
-        msgs: [[0; MSG_WORDS]; QUEUE_MSGS],
+        msgs: [[0; MAX_MSG_WORDS]; QUEUE_MSGS],
+        lens: [0; QUEUE_MSGS],
         count: 0,
     };
 
@@ -67,23 +89,49 @@ impl MsgQueue {
         self.count
     }
 
-    /// Peek the front (oldest) message without removing it. Used by the P5
-    /// test hook; the real `evnt_*`/`appl_read` paths [`pop`](Self::pop).
+    /// Peek the standard 16-byte front (oldest) message without removing it.
+    /// Used by the P5 test hook; the real `evnt_*`/`appl_read` paths
+    /// [`pop`](Self::pop)/[`pop_into`](Self::pop_into).
     pub fn front(&self) -> Option<[i16; MSG_WORDS]> {
-        (self.count > 0).then_some(self.msgs[0])
+        if self.count == 0 {
+            return None;
+        }
+        let mut out = [0i16; MSG_WORDS];
+        let n = self.lens[0].min(MSG_WORDS);
+        out[..n].copy_from_slice(&self.msgs[0][..n]);
+        Some(out)
     }
 
-    /// Enqueue a 16-byte message — the enqueue half of EmuTOS `doq`
-    /// (`aes/gemqueue.c:37-73`). Appends `msg` at the tail, except that for a
-    /// `WM_REDRAW`/`WM_ARROWED`/`WM_HSLID`/`WM_VSLID` (`:45`) it first scans
-    /// the messages already queued and coalesces:
+    /// Enqueue the standard 16-byte GEM message `msg` — [`Self::enqueue`] at
+    /// the standard [`MSG_WORDS`] length. Used by every internal poster
+    /// (`WM_REDRAW`, menu, keyboard). Returns `false` when the queue is full.
+    pub fn push(&mut self, msg: [i16; MSG_WORDS]) -> bool {
+        self.enqueue(&msg, MSG_WORDS)
+    }
+
+    /// Enqueue a variable-length message: the first `words` WORDs of `src` —
+    /// the `appl_write`/`ap_rdwr(MU_SDMSG)` → `doq` path (EmuTOS
+    /// `aes/gemqueue.c:31-73`, which memcpys `qpb_cnt` bytes). `words` is
+    /// clamped to [`MAX_MSG_WORDS`] (the per-message FIFO limit) and to
+    /// `src.len()`. Returns `false` when the queue is full.
+    pub fn push_words(&mut self, src: &[i16], words: usize) -> bool {
+        self.enqueue(src, words.min(src.len()))
+    }
+
+    /// Core enqueue for [`Self::push`] and [`Self::push_words`] — the enqueue
+    /// half of EmuTOS `doq` (`aes/gemqueue.c:37-73`). Appends the first `words`
+    /// WORDs of `src` at the tail, except that a standard-length
+    /// `WM_REDRAW`/`WM_ARROWED`/`WM_HSLID`/`WM_VSLID` (`:45`) is first coalesced
+    /// into an already-queued standard message:
     ///
-    /// * a `WM_REDRAW` for the **same window handle** (`msg[3]`): union the
-    ///   new rectangle (`msg[4..8]`) into that existing entry via `rc_union`
+    /// * a `WM_REDRAW` for the **same window handle** (`src[3]`): union the new
+    ///   rectangle (`src[4..8]`) into that entry via `rc_union`
     ///   (`aes/gemqueue.c:52-56`, `util/rectfunc.c:84-97`) and drop the new
-    ///   message — this is the fix for redraw flooding / lost content redraws;
-    /// * otherwise an existing `WM_ARROWED`: overwrite it with the new message
-    ///   (`aes/gemqueue.c:63-67`).
+    ///   message — the fix for redraw flooding / lost content redraws;
+    /// * otherwise an existing `WM_ARROWED`: overwrite it (`aes/gemqueue.c:63-67`).
+    ///
+    /// Only standard ([`MSG_WORDS`]-long) messages take part in coalescing — the
+    /// coalesced message types are always 16 bytes.
     ///
     /// Returns `false` when the queue is full. EmuTOS instead **blocks** the
     /// sender until a dequeue frees room (`aqueue`, `aes/gemqueue.c:120-124`,
@@ -93,43 +141,81 @@ impl MsgQueue {
     /// coalescing and a per-loop drain, a full queue is unreachable in the
     /// desktop's actual usage (at most `MAX_WINDOWS` distinct-window redraws
     /// per broadcast).
-    pub fn push(&mut self, msg: [i16; MSG_WORDS]) -> bool {
-        let t = msg[0];
-        if t == WM_REDRAW || t == WM_ARROWED || t == WM_HSLID || t == WM_VSLID {
-            for i in 0..self.count {
-                let om = &mut self.msgs[i];
-                if om[0] == WM_REDRAW && msg[3] == om[3] {
-                    // Union the new rectangle into the existing entry.
-                    rc_union_into(&msg, om);
-                    return true;
-                } else if om[0] == WM_ARROWED {
-                    // Replace the pending arrow with the newer message.
-                    *om = msg;
-                    return true;
+    fn enqueue(&mut self, src: &[i16], words: usize) -> bool {
+        let words = words.min(MAX_MSG_WORDS);
+        if words == MSG_WORDS {
+            let t = src[0];
+            if t == WM_REDRAW || t == WM_ARROWED || t == WM_HSLID || t == WM_VSLID {
+                for i in 0..self.count {
+                    if self.lens[i] != MSG_WORDS {
+                        continue; // only standard messages coalesce
+                    }
+                    let om = &mut self.msgs[i];
+                    if om[0] == WM_REDRAW && src[3] == om[3] {
+                        // Union the new rectangle into the existing entry.
+                        rc_union_into(src, om);
+                        return true;
+                    } else if om[0] == WM_ARROWED {
+                        // Replace the pending arrow with the newer message.
+                        om[..MSG_WORDS].copy_from_slice(&src[..MSG_WORDS]);
+                        return true;
+                    }
                 }
             }
         }
         if self.count >= QUEUE_MSGS {
             return false;
         }
-        self.msgs[self.count] = msg;
+        let slot = &mut self.msgs[self.count];
+        slot[..words].copy_from_slice(&src[..words]);
+        for w in &mut slot[words..] {
+            *w = 0;
+        }
+        self.lens[self.count] = words;
         self.count += 1;
         true
     }
 
-    /// Dequeue the front (oldest) message — the dequeue half of EmuTOS `doq`
-    /// (`aes/gemqueue.c:76-81`): return `p_queue[0]` and shift the residual
-    /// messages down. `None` when the queue is empty.
+    /// Dequeue the standard 16-byte front (oldest) message — the dequeue half
+    /// of EmuTOS `doq` (`aes/gemqueue.c:76-81`). Returns the first [`MSG_WORDS`]
+    /// WORDs of `p_queue[0]` and shifts the residual messages down; `None` when
+    /// the queue is empty. Used by the internal `evnt_mesag`/`evnt_multi` paths,
+    /// which read exactly 16 bytes (EmuTOS `ev_mesag` → `ap_rdwr(…,16,…)`).
     pub fn pop(&mut self) -> Option<[i16; MSG_WORDS]> {
         if self.count == 0 {
             return None;
         }
-        let front = self.msgs[0];
+        let mut out = [0i16; MSG_WORDS];
+        let n = self.lens[0].min(MSG_WORDS);
+        out[..n].copy_from_slice(&self.msgs[0][..n]);
+        self.remove_front();
+        Some(out)
+    }
+
+    /// Dequeue the front message into `dst`, copying at most `dst.len()` WORDs
+    /// (the `appl_read`/`ap_rdwr(MU_MESAG,…,length,…)` caller's requested
+    /// length); returns the number of WORDs delivered, or `None` when the queue
+    /// is empty. The whole message is removed even if `dst` is shorter than it —
+    /// the slot FIFO delivers a message atomically, without EmuTOS's byte-stream
+    /// partial reads (see the type-level note).
+    pub fn pop_into(&mut self, dst: &mut [i16]) -> Option<usize> {
+        if self.count == 0 {
+            return None;
+        }
+        let n = self.lens[0].min(dst.len());
+        dst[..n].copy_from_slice(&self.msgs[0][..n]);
+        self.remove_front();
+        Some(n)
+    }
+
+    /// Remove the front message, shifting the residual messages down (EmuTOS
+    /// `doq` dequeue, `aes/gemqueue.c:76-81`).
+    fn remove_front(&mut self) {
         for i in 1..self.count {
             self.msgs[i - 1] = self.msgs[i];
+            self.lens[i - 1] = self.lens[i];
         }
         self.count -= 1;
-        Some(front)
     }
 
     /// Discard every queued message (used on `appl_init` and by the test hook).
@@ -141,7 +227,8 @@ impl MsgQueue {
 /// Union the rectangle in `p1[4..8]` into `p2[4..8]`, storing the result in
 /// `p2` — EmuTOS `rc_union(p1, p2)` (`util/rectfunc.c:84-97`), used by `doq`
 /// to coalesce two same-window `WM_REDRAW` rectangles (`aes/gemqueue.c:54`).
-fn rc_union_into(p1: &[i16; MSG_WORDS], p2: &mut [i16; MSG_WORDS]) {
+/// Both slices are the coalesced standard messages, so index `4..8` is valid.
+fn rc_union_into(p1: &[i16], p2: &mut [i16]) {
     let tw = (p1[4] + p1[6]).max(p2[4] + p2[6]);
     let th = (p1[5] + p1[7]).max(p2[5] + p2[7]);
     let tx = p1[4].min(p2[4]);
@@ -271,4 +358,73 @@ pub unsafe fn close(pid: i16) {
     if let Some(slot) = t.iter_mut().find(|s| s.in_use && s.pid == pid) {
         *slot = Aespd::EMPTY;
     }
+}
+
+/// The 8-char `p_name` length (EmuTOS `aes/struct.h:111`, `AP_NAMELEN`).
+const AP_NAMELEN: usize = 8;
+
+/// The filename portion of a launch path — EmuTOS `sh_name` (`aes/gemshlib.c:594`):
+/// everything after the last path separator (`\`). A bare filename (no
+/// separator) is returned whole.
+fn base_name(path: &[u8]) -> &[u8] {
+    let start = path
+        .iter()
+        .rposition(|&c| c == b'\\')
+        .map(|i| i + 1)
+        .unwrap_or(0);
+    &path[start..]
+}
+
+/// Fill the 8-char `p_name` `dst` from the program name `src` — EmuTOS
+/// `p_nameit` (`aes/gempd.c:77-86`): copy up to [`AP_NAMELEN`] chars, stopping
+/// at the first `.` (drop the extension), then space-pad the remainder.
+fn p_nameit(dst: &mut [u8; AP_NAMELEN], src: &[u8]) {
+    let mut i = 0;
+    while i < AP_NAMELEN {
+        match src.get(i) {
+            Some(&c) if c != 0 && c != b'.' => {
+                dst[i] = c;
+                i += 1;
+            }
+            _ => break,
+        }
+    }
+    while i < AP_NAMELEN {
+        dst[i] = b' ';
+        i += 1;
+    }
+}
+
+/// Name (and, if needed, create) the AES process descriptor for `pid` from the
+/// launch `path` — the reimplementation of EmuTOS's process-start naming
+/// (`pstart` → `getpd`/`p_nameit`, `aes/gempd.c:110-131`, run before the
+/// program executes). Sets `p_name` to the 8-char, space-padded, extensionless
+/// program name so a later `appl_find(name)` can locate the process
+/// ([`find_by_name`] / EmuTOS `fpdnm`, `aes/gempd.c:38-57`).
+///
+/// If a descriptor already exists for `pid` (e.g. the desktop's kernel-context
+/// descriptor, or a prior program that ran in the same GEMDOS slot) only its
+/// name is (re)set — its live `flags`/`queue` are left untouched. Otherwise a
+/// free slot is claimed and initialised (`in_use`, `pid`, name; `flags = 0`,
+/// empty queue), mirroring `getpd` linking a fresh pd for the new process. A
+/// full table simply leaves the name unregistered.
+///
+/// # Safety
+/// Single trap / launcher path (no re-entrancy), same discipline as [`open`].
+pub unsafe fn register(pid: i16, path: &[u8]) {
+    // SAFETY: caller upholds the single-path invariant.
+    let t = unsafe { table() };
+    let idx = match t.iter().position(|s| s.in_use && s.pid == pid) {
+        Some(i) => i,
+        None => match t.iter().position(|s| !s.in_use) {
+            Some(i) => {
+                t[i] = Aespd::EMPTY;
+                t[i].in_use = true;
+                t[i].pid = pid;
+                i
+            }
+            None => return, // table full: the name is simply not registered
+        },
+    };
+    p_nameit(&mut t[idx].name, base_name(path));
 }
