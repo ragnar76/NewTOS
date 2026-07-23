@@ -80,7 +80,7 @@ pub(super) fn polyline(
 
 /// EmuTOS `mul_div` (`intmath.h:51`): `(m1 * m2) / d`, truncating toward
 /// zero, with a LONG intermediate.
-fn mul_div(m1: i32, m2: i32, d: i32) -> i32 {
+pub(super) fn mul_div(m1: i32, m2: i32, d: i32) -> i32 {
     if d == 0 {
         return 0;
     }
@@ -473,11 +473,15 @@ fn arrow(
     }
 }
 
-/// Stroke a polyline honouring the current line width, the EmuTOS
-/// `clc_arc`/`vdi_v_pline` dispatch (`vdi_gdp.c:92-99`): width 1 threads the
-/// dash `mask`; width > 1 draws the wide line (round joins/caps, arrows).
-/// `pts[0..count]` is mutable because the wide-line arrow shortening writes
-/// back into it. Used by the GDP curve / rounded-box outlines.
+/// Stroke a polyline honouring the current line width, reproducing EmuTOS
+/// `clc_arc`'s open-arc dispatch (`vdi_gdp.c:210-218`): width 1 threads the
+/// dash `mask` through `polyline`, then draws arrowheads at whichever ends
+/// are `ARROWED` (`arrow(vwk, point, steps)`, `vdi_gdp.c:215-216`); width > 1
+/// draws the wide line (round joins/caps, arrows handled inside `wideline`).
+/// `pts[0..count]` is mutable because the arrow shortening writes back into
+/// it. Used by the GDP curve / rounded-box outlines; the rounded box forces
+/// `line_beg`/`line_end` to `SQUARED` (EmuTOS `vdi_v_gdp` case 8), so no
+/// arrowhead fires there.
 #[allow(clippy::too_many_arguments)]
 pub(super) fn stroke(
     backend: &dyn RasterBackend,
@@ -491,6 +495,15 @@ pub(super) fn stroke(
 ) {
     if vwk.line_width == 1 {
         polyline(backend, count, |i| pts[i], color, mode, clip, mask);
+        // Arrowheads on the width-1 stroke (EmuTOS clc_arc calls
+        // `arrow(vwk, point, steps)` after the polyline).
+        if (vwk.line_beg | vwk.line_end) & ARROWED != 0 {
+            let (xsize, ysize) = pixel_aspect(backend);
+            arrow(
+                backend, pts, count, vwk.line_beg, vwk.line_end, vwk.line_width, color, mode, clip,
+                xsize, ysize,
+            );
+        }
     } else {
         let (xsize, ysize) = pixel_aspect(backend);
         wideline(
