@@ -58,6 +58,51 @@ const WF_FIRSTXYWH: i16 = 11;
 const WF_NEXTXYWH: i16 = 12;
 const WF_NEWDESK: i16 = 14;
 const WF_SCREEN: i16 = 17;
+const WF_COLOR: i16 = 18;
+const WF_DCOLOR: i16 = 19;
+const WF_OWNER: i16 = 20;
+
+// ── wind_update modes, aesdefs.h:559-562 ──
+const END_UPDATE: i16 = 0;
+const BEG_UPDATE: i16 = 1;
+const END_MCTRL: i16 = 2;
+const BEG_MCTRL: i16 = 3;
+
+/// Number of window gadget-colour slots — one per `W_*` gadget object (EmuTOS
+/// `NUM_ELEM`, gemlib.h:58). `WF_COLOR`/`WF_DCOLOR` index the per-window /
+/// global default colour-word arrays by gadget number.
+const NUM_ELEM: usize = 19;
+
+// The `W_*` gadget object indices (gemlib.h:38-56) the default colour init
+// special-cases; only the named ones matter here.
+const W_NAME_IDX: usize = 3;
+const W_VSLIDE_IDX: usize = 12;
+const W_HSLIDE_IDX: usize = 17;
+
+/// Global default per-gadget colour words for a **topped** window (EmuTOS
+/// `gl_wtcolor`, `wm_start` gemwmlib.c:1347-1354): every slot `0x1101`
+/// (border+text black, transparent fill, pattern 0), with `W_NAME |= 0xa0` and
+/// the two sliders `|= 0x10`. These are the AES colour-word values a
+/// `wind_get(WF_DCOLOR)` must return 1:1; our procedural [`draw_frame`] does not
+/// consume them (see the note there), so they are purely round-tripped state and
+/// changing/adding them cannot alter a single pixel.
+const GL_WTCOLOR_DEFAULT: [i16; NUM_ELEM] = {
+    let mut a = [0x1101i16; NUM_ELEM];
+    a[W_NAME_IDX] = 0x1101 | 0xa0; // 0x11a1
+    a[W_VSLIDE_IDX] = 0x1101 | 0x10; // 0x1111
+    a[W_HSLIDE_IDX] = 0x1101 | 0x10; // 0x1111
+    a
+};
+
+/// Global default per-gadget colour words for an **untopped** window (EmuTOS
+/// `gl_wbcolor`, `wm_start` gemwmlib.c:1348-1357): every slot `0x1101`, the two
+/// sliders `|= 0x10` (3D object support on — our Falcon030/TOS4 target profile).
+const GL_WBCOLOR_DEFAULT: [i16; NUM_ELEM] = {
+    let mut a = [0x1101i16; NUM_ELEM];
+    a[W_VSLIDE_IDX] = 0x1101 | 0x10; // 0x1111
+    a[W_HSLIDE_IDX] = 0x1101 | 0x10; // 0x1111
+    a
+};
 
 /// `objc_draw`/`ob_draw` recursion depth for the desktop-background composite
 /// (EmuTOS `MAX_DEPTH`, `obdefs.h:30`): deep enough to draw the registered
@@ -136,6 +181,13 @@ struct Window {
     /// default.
     hslide: i16,
     hslsize: i16,
+    /// Per-gadget AES colour words for the topped / untopped states (EmuTOS
+    /// `w_tcolor`/`w_bcolor`, gemlib.h:81-82). Set from the live global defaults
+    /// at [`wind_create`], read/written by `WF_COLOR`. Round-tripped only — the
+    /// procedural [`draw_frame`] renders the fixed TOS4 3D look and does not
+    /// consume these, so they never affect rendering.
+    tcolor: [i16; NUM_ELEM],
+    bcolor: [i16; NUM_ELEM],
 }
 
 impl Window {
@@ -154,6 +206,8 @@ impl Window {
         vslsize: -1,
         hslide: 0,
         hslsize: -1,
+        tcolor: GL_WTCOLOR_DEFAULT,
+        bcolor: GL_WBCOLOR_DEFAULT,
     };
 }
 
@@ -207,12 +261,83 @@ fn bump_z() -> i16 {
     }
 }
 
+// ── wind_update state (P5-005) ───────────────────────────────────────────
+//
+// EmuTOS `wm_update` (gemwmlib.c:1778-1797) maintains two counters: the
+// counting window-tree lock `wind_spb.sy_tas` (BEG/END_UPDATE) and the
+// mouse-control-ownership counter `ml_ocnt` (BEG/END_MCTRL, via `fm_own`,
+// gemfmlib.c:52). Single boot CPU, so plain `Relaxed` atomics suffice.
+
+/// Counting window-tree lock — EmuTOS `wind_spb.sy_tas`. `BEG_UPDATE` takes it
+/// (`tak_flag`), `END_UPDATE` releases it (`unsync`, clamped at 0). Single-
+/// tasking has no contended waiter, so the take always succeeds; the count is
+/// tracked so nested BEG/END pairs and [`wind_new`]'s release stay balanced.
+static UPDATE_LOCK: AtomicI16 = AtomicI16::new(0);
+
+/// Mouse-control-ownership counter — EmuTOS `ml_ocnt`. `BEG_MCTRL` increments,
+/// `END_MCTRL` decrements. While `> 0` the app has taken over the mouse via
+/// `wind_update(BEG_MCTRL)`, so the AES frame interception ([`intercept`])
+/// switches off. This is the counter P4-011's full `fm_own` (menu-tree hold +
+/// control-region transfer) builds on.
+static MCTRL_CNT: AtomicI16 = AtomicI16::new(0);
+
+/// Global default per-gadget colour words (`WF_DCOLOR`): the topped/untopped
+/// defaults new windows inherit (EmuTOS `gl_wtcolor`/`gl_wbcolor`,
+/// gemwmlib.c:138-139). Mutable so `wind_set(WF_DCOLOR)` can change them; single
+/// boot CPU, so an `UnsafeCell` with a hand-rolled `Sync`, like [`TABLE`].
+struct WinColors {
+    tcolor: UnsafeCell<[i16; NUM_ELEM]>,
+    bcolor: UnsafeCell<[i16; NUM_ELEM]>,
+}
+// SAFETY: only the single boot CPU touches the AES; no concurrent access.
+unsafe impl Sync for WinColors {}
+
+static GL_WCOLORS: WinColors = WinColors {
+    tcolor: UnsafeCell::new(GL_WTCOLOR_DEFAULT),
+    bcolor: UnsafeCell::new(GL_WBCOLOR_DEFAULT),
+};
+
+#[allow(clippy::mut_from_ref)]
+fn gl_wtcolor() -> &'static mut [i16; NUM_ELEM] {
+    // SAFETY: single-CPU AES; exclusive logical owner.
+    unsafe { &mut *GL_WCOLORS.tcolor.get() }
+}
+
+#[allow(clippy::mut_from_ref)]
+fn gl_wbcolor() -> &'static mut [i16; NUM_ELEM] {
+    // SAFETY: single-CPU AES; exclusive logical owner.
+    unsafe { &mut *GL_WCOLORS.bcolor.get() }
+}
+
+/// Clamp a `WF_COLOR`/`WF_DCOLOR` gadget number to a valid array index. EmuTOS
+/// indexes `w_tcolor`/`w_bcolor` with the raw `pinwds[0]` unchecked
+/// (gemwmlib.c:1568); we bound it so a bogus gadget can't index out of range and
+/// panic (fatal in `no_std`).
+fn gadget_index(g: i16) -> usize {
+    g.clamp(0, NUM_ELEM as i16 - 1) as usize
+}
+
 /// Handle of the top-most open window (highest `z`), or 0 (desktop).
 fn get_top() -> i16 {
     let mut best = 0i16;
     let mut best_z = i16::MIN;
     for (i, w) in slots().iter().enumerate() {
         if w.in_use && w.open && w.z >= best_z {
+            best_z = w.z;
+            best = (i + 1) as i16;
+        }
+    }
+    best
+}
+
+/// Handle of the bottom-most open window (lowest `z`), or −1 (`NIL`) if none is
+/// open — EmuTOS `W_TREE[ROOT].ob_head`, the first/oldest child of the window
+/// tree root (bottom of the z-order), reported by `WF_OWNER` (gemwmlib.c:1588).
+fn get_bottom() -> i16 {
+    let mut best = -1i16;
+    let mut best_z = i16::MAX;
+    for (i, w) in slots().iter().enumerate() {
+        if w.in_use && w.open && w.z <= best_z {
             best_z = w.z;
             best = (i + 1) as i16;
         }
@@ -1182,6 +1307,11 @@ pub fn wind_create(pb: &Aespb) {
             w.kind = kind;
             w.full = full;
             w.curr = full;
+            // Per-window gadget colours inherit the current global defaults
+            // (EmuTOS `w_setup`, gemwmlib.c:222-226) so a prior WF_DCOLOR change
+            // is reflected in windows created afterwards.
+            w.tcolor = *gl_wtcolor();
+            w.bcolor = *gl_wbcolor();
             pb.set_ret((i + 1) as i16);
             return;
         }
@@ -1339,19 +1469,37 @@ pub fn wind_get(pb: &Aespb) {
         return;
     }
 
-    // WF_SCREEN (17): the menu/alert bb_save buffer address + length. Like
-    // WF_TOP it needs no valid handle (EmuTOS gemwmlib.c:1517-1520). EmuTOS
-    // reports a single *persistent* global menu/alert save buffer
-    // (gl_pmpmlo/gl_mlen). NewTOS's memory-MFDB bb_save (#51) instead
-    // allocates a *transient* per-alert buffer from the heap and frees it on
-    // close (tos_api::vdi::bb_save), so there is no stable address/length to
-    // hand back. Report a null/zero-length buffer honestly (ret=1) rather
-    // than exposing a freed transient pointer; deferred until/unless a
-    // program is found that relies on a persistent buffer here.
+    // WF_SCREEN (17): EmuTOS returns the *persistent* menu/alert screen-save
+    // buffer address + length (`gsx_mret` → `gl_tmp.fd_addr`/`gl_mlen`, allocated
+    // once at AES init, gemgsxif.c:125-129). Needs no valid handle (like WF_TOP,
+    // gemwmlib.c:1517-1520).
+    //
+    // Assessed deliberate deviation (AUD-P5-012): NewTOS's AES has *no* such
+    // persistent buffer. Our menu/alert save-under (`bb_save`, #51) allocates a
+    // *transient* per-alert MFDB from the heap and frees it on close
+    // (`tos_api::vdi::bb_save`), so there is no stable address/length that is
+    // "the menu/alert buffer". Fabricating a screen-sized static region purely to
+    // return an address would waste memory and — worse — misrepresent an unused
+    // scratch region as the menu/alert buffer it is not. Report a null/zero-length
+    // buffer truthfully (ret=1); this is a documented deviation, not a stub (it
+    // reports the real state — no persistent buffer — rather than faking a value).
+    // Revisit only if a program is found that relies on a persistent buffer here.
     if field == WF_SCREEN {
         for i in 1..=4 {
             pb.set_intout(i, 0); // address (hi/lo) + length (hi/lo)
         }
+        pb.set_ret(1);
+        return;
+    }
+
+    // WF_DCOLOR (19): the *global* default gadget colour words. Like WF_TOP /
+    // WF_SCREEN it needs no valid handle (EmuTOS gemwmlib.c:1519,1572-1576).
+    // gadget number = int_in[2] (pinwds[0]); colour words → int_out[2..3]
+    // (poutwds[1..2], D-095), TRUE.
+    if field == WF_DCOLOR {
+        let g = gadget_index(pb.intin(2));
+        pb.set_intout(2, gl_wtcolor()[g]);
+        pb.set_intout(3, gl_wbcolor()[g]);
         pb.set_ret(1);
         return;
     }
@@ -1374,6 +1522,28 @@ pub fn wind_get(pb: &Aespb) {
             WF_VSLIDE => return scalar_out(pb, w.vslide),
             WF_HSLSIZ => return scalar_out(pb, w.hslsize),
             WF_VSLSIZ => return scalar_out(pb, w.vslsize),
+            // WF_COLOR (18): the per-window topped/untopped colour words for
+            // gadget int_in[2] → int_out[2..3] (poutwds[1..2], D-095), TRUE
+            // (EmuTOS wm_get, gemwmlib.c:1567-1571).
+            WF_COLOR => {
+                let g = gadget_index(pb.intin(2));
+                pb.set_intout(2, w.tcolor[g]);
+                pb.set_intout(3, w.bcolor[g]);
+                pb.set_ret(1);
+                return;
+            }
+            // WF_OWNER (20): owner pid, open flag, and the top/bottom window
+            // handles (EmuTOS wm_get, AES_VERSION>=0x330 gemwmlib.c:1579-1588;
+            // our profile is 0x340). poutwds[0..3] → int_out[1..4].
+            WF_OWNER => {
+                let (owner, open) = (w.owner, w.open);
+                pb.set_intout(1, owner);
+                pb.set_intout(2, i16::from(open));
+                pb.set_intout(3, get_top());
+                pb.set_intout(4, get_bottom());
+                pb.set_ret(1);
+                return;
+            }
             // WF_NAME/WF_INFO get: copy the stored title/info out to the
             // caller's buffer (pointer at `&int_in[2]`, caller width —
             // gemlib `wind_get`, `a_wind_get.c:344`; the native `addr_in[0]`
@@ -1437,6 +1607,22 @@ pub fn wind_set(pb: &Aespb) {
         pb.set_ret(1);
         return;
     }
+    // WF_DCOLOR (19) writes the *global* default gadget colour words and needs
+    // no valid handle (EmuTOS wm_set, gemwmlib.c:1632-1636,1727-1734): gadget =
+    // int_in[2], tcolor = int_in[3], bcolor = int_in[4] (−1 = leave unchanged).
+    // No window redraw (EmuTOS sets `gadget = -1` → no w_cpwalk).
+    if field == WF_DCOLOR {
+        let g = gadget_index(pb.intin(2));
+        let (tc, bc) = (pb.intin(3), pb.intin(4));
+        if tc != -1 {
+            gl_wtcolor()[g] = tc;
+        }
+        if bc != -1 {
+            gl_wbcolor()[g] = bc;
+        }
+        pb.set_ret(1);
+        return;
+    }
     if win(handle).is_none() {
         pb.set_ret(0);
         return;
@@ -1495,6 +1681,10 @@ pub fn wind_set(pb: &Aespb) {
             let old_top = get_top();
             top_window(handle);
             if old_top != handle {
+                // The old top loses activation → WM_UNTOPPED to its owner
+                // (EmuTOS `perform_untop`, gemctrl.c:151), then WM_REDRAW to the
+                // newly-topped window for its now-fully-visible work area.
+                post_untopped(old_top, handle);
                 if let Some((kind, curr)) = win(handle).map(|w| (w.kind, w.curr)) {
                     send_redraw(handle, calc(WC_WORK, kind, curr));
                 }
@@ -1526,10 +1716,29 @@ pub fn wind_set(pb: &Aespb) {
             }
             redraw_hslider(handle);
         }
+        // WF_COLOR (18): store the per-window colour words for gadget int_in[2]
+        // — tcolor = int_in[3], bcolor = int_in[4] (−1 = leave unchanged) —
+        // EmuTOS wm_set gemwmlib.c:1719-1726. EmuTOS then redraws the gadget with
+        // the new colours (`do_cpwalk`); our procedural [`draw_frame`] renders the
+        // fixed TOS4 3D look and does not consume these per-gadget words, so the
+        // frame re-emit (like a WF_NAME change) is byte-identical — the words are
+        // pure round-trip state observed via WF_COLOR get.
+        WF_COLOR => {
+            let g = gadget_index(pb.intin(2));
+            let (tc, bc) = (pb.intin(3), pb.intin(4));
+            if let Some(w) = win(handle) {
+                if tc != -1 {
+                    w.tcolor[g] = tc;
+                }
+                if bc != -1 {
+                    w.bcolor[g] = bc;
+                }
+            }
+            redraw_open(handle);
+        }
         // Unknown or unimplemented field → FALSE (EmuTOS wm_set default:
-        // gemwmlib.c:1736). WF_NEWDESK is handled above; WF_COLOR/WF_DCOLOR are
-        // not implemented at this altitude, so they honestly report FALSE rather
-        // than faking success.
+        // gemwmlib.c:1736). WF_NEWDESK/WF_DCOLOR are handled above; WF_OWNER is
+        // get-only (EmuTOS has no wm_set WF_OWNER case) → FALSE here.
         _ => {
             pb.set_ret(0);
             return;
@@ -1567,10 +1776,68 @@ pub fn wind_find(pb: &Aespb) {
     pb.set_ret(find_handle(pb.intin(0), pb.intin(1)));
 }
 
-/// `wind_update` (107) — screen-lock / mouse-ownership begin/end. Batch 1
-/// has no rectangle list to lock, so this is a successful no-op.
+/// `wind_update` (107) — window-tree screen lock (BEG/END_UPDATE) and mouse-
+/// control-ownership transfer (BEG/END_MCTRL).
+///
+/// EmuTOS `wm_update` (gemwmlib.c:1778-1797): mode `< 2` takes/releases the
+/// counting window-tree lock `wind_spb`; mode `>= 2` calls `fm_own(mode - 2)`,
+/// the mouse-control-ownership transfer. `fm_own` (gemfmlib.c:82-107) brackets
+/// with BEG/END_UPDATE and keeps the `ml_ocnt` counter. While a `BEG_MCTRL` is
+/// in effect (`ml_ocnt > 0`) the app has taken over the mouse, so the AES frame
+/// interception ([`intercept`]) switches off. This structure is the foundation
+/// P4-011's full `fm_own` (menu-tree hold + control-region transfer via
+/// `ct_chgown`, the `ml_ocnt == 0` edge body) builds on top of.
 pub fn wind_update(pb: &Aespb) {
+    // EmuTOS `wm_update` (gemwmlib.c:1778-1797): mode `< 2` is the window-tree
+    // lock (0 = END_UPDATE, any non-zero = BEG_UPDATE); mode `>= 2` is
+    // `fm_own(mode - 2)` (non-zero → begin the mouse-control transfer). The two
+    // guard arms reproduce that for out-of-range modes.
+    match pb.intin(0) {
+        END_UPDATE => update_end(),
+        BEG_UPDATE => update_beg(),
+        END_MCTRL => mctrl_own(false),
+        BEG_MCTRL => mctrl_own(true),
+        m if m < 2 => update_beg(), // negative: non-zero, `< 2` → BEG_UPDATE
+        m => mctrl_own(m - 2 != 0), // `> 3`: fm_own(m-2) begins
+    }
     pb.set_ret(1);
+}
+
+/// `tak_flag(&wind_spb)` — take the counting window-tree lock. In single-tasking
+/// the take always succeeds (one AES process, so `sy_owner == rlr`), so this is
+/// a plain increment of `sy_tas` (EmuTOS gemflag.c:71-86).
+fn update_beg() {
+    UPDATE_LOCK.fetch_add(1, Ordering::Relaxed);
+}
+
+/// `unsync(&wind_spb)` — release the counting window-tree lock: decrement, but
+/// never below zero (EmuTOS gemflag.c:105-115: a stray `END_UPDATE` with the
+/// count already 0 is ignored).
+fn update_end() {
+    let v = UPDATE_LOCK.load(Ordering::Relaxed);
+    if v > 0 {
+        UPDATE_LOCK.store(v - 1, Ordering::Relaxed);
+    }
+}
+
+/// `fm_own(begin)` — mouse-control-ownership transfer (EmuTOS gemfmlib.c:82-107).
+/// `begin` brackets with `BEG_UPDATE` then `ml_ocnt++`; `!begin` does `ml_ocnt--`
+/// then `END_UPDATE`. The `ml_ocnt == 0` edge body (park the menu tree, hand the
+/// control region to the app via `ct_chgown`) is P4-011 and builds on this
+/// counter; here we maintain the counter + the update-lock bracketing so
+/// [`intercept`] can already honour the app's mouse takeover.
+fn mctrl_own(begin: bool) {
+    if begin {
+        update_beg(); // fm_own: wm_update(BEG_UPDATE) (gemfmlib.c:86)
+        MCTRL_CNT.fetch_add(1, Ordering::Relaxed);
+    } else {
+        // ml_ocnt-- then wm_update(END_UPDATE) (gemfmlib.c:99,105). EmuTOS
+        // decrements unconditionally; the `intercept` gate (`> 0`) treats any
+        // non-positive count as "app does not own the mouse", so an unbalanced
+        // END_MCTRL cannot wedge interception off.
+        MCTRL_CNT.fetch_sub(1, Ordering::Relaxed);
+        update_end();
+    }
 }
 
 /// `wind_calc` (108) — convert work↔border rect for `kind`.
@@ -1586,13 +1853,20 @@ pub fn wind_calc(pb: &Aespb) {
     pb.set_ret(1);
 }
 
-/// `wind_new` (109) — close + delete every window, reset the manager.
+/// `wind_new` (109) — close + delete every window and clear every lock taken
+/// with `wind_update` (EmuTOS `wm_new`, gemwmlib.c:1875-1893: it drains
+/// `ml_ocnt` via `END_MCTRL` and `wind_spb.sy_tas` via `END_UPDATE` before
+/// deleting the windows). Releasing the locks here is the observable equivalent
+/// of those drain loops (both counters end at 0).
 pub fn wind_new(pb: &Aespb) {
     for w in slots().iter_mut() {
         *w = Window::EMPTY;
     }
     // SAFETY: single-CPU AES.
     unsafe { *TABLE.next_z.get() = 1 };
+    // Release all update / mouse-control locks (gemwmlib.c:1879-1883).
+    MCTRL_CNT.store(0, Ordering::Relaxed);
+    UPDATE_LOCK.store(0, Ordering::Relaxed);
     if let Some(backend) = host().and_then(|h| h.raster()) {
         redraw_all(backend);
     }
@@ -1661,6 +1935,7 @@ const WM_HSLID: i16 = 25;
 const WM_VSLID: i16 = 26;
 const WM_SIZED: i16 = 27;
 const WM_MOVED: i16 = 28;
+const WM_UNTOPPED: i16 = 30;
 
 // WM_ARROWED actions (aesdefs.h:245-253, gemctrl.c:63-74). Line = arrow, page
 // = track click either side of the elevator.
@@ -2043,6 +2318,14 @@ fn find_handle(mx: i16, my: i16) -> i16 {
 /// coalescing) instead of clobbering a message the app has not yet read
 /// (AUD-P2-001). A click in the work area (or on the desktop) is a no-op.
 pub fn intercept() {
+    // While an app holds mouse control via `wind_update(BEG_MCTRL)`
+    // (`ml_ocnt > 0`), the app has taken over the mouse and the AES frame
+    // interception switches off — EmuTOS `fm_own` hands the control region to the
+    // app so `ctlmgr` no longer processes frame clicks (gemfmlib.c:82-107). See
+    // [`wind_update`]; this is the hook P4-011's full `fm_own` extends.
+    if MCTRL_CNT.load(Ordering::Relaxed) > 0 {
+        return;
+    }
     if crate::vdi::mouse_buttons() & 0x01 == 0 {
         return;
     }
@@ -2067,10 +2350,14 @@ pub fn intercept() {
     msg[1] = super::appl::current_pid();
     msg[3] = handle;
 
-    // Click on a non-top window → bring it to the top and tell the owner.
+    // Click on a non-top window → untop the old top, bring this one up, and tell
+    // each owner. EmuTOS `hctl_window` (gemctrl.c:172-180): `perform_untop(gl_wtop)`
+    // sends WM_UNTOPPED to the *old* top's owner, then WM_TOPPED to the new one.
     if handle != get_top() {
+        let old_top = get_top();
         msg[0] = WM_TOPPED;
         wait_release();
+        post_untopped(old_top, handle);
         top_window(handle);
         post_to_owner(owner, &msg);
         return;
@@ -2160,6 +2447,27 @@ fn post_to_owner(owner: i16, msg: &[i16; 8]) {
     // SAFETY: single trap path; `post_msg` hands the message to the live slot.
     unsafe {
         super::pd::post_msg(owner, *msg);
+    }
+}
+
+/// Post `WM_UNTOPPED` (30) to the previously-topped window's owner when the top
+/// changes — EmuTOS `perform_untop` (gemctrl.c:146-155): the old top's owner is
+/// told its window is no longer active (`msg[3]` = old top handle). No message
+/// when `old_top` is the same window being (re-)topped or is not a real window
+/// (0 = desktop / none). Routed through the owner FIFO like every other WM_*
+/// (no `pbuff` bypass, AUD-P2-001).
+fn post_untopped(old_top: i16, new_top: i16) {
+    if old_top == new_top {
+        return;
+    }
+    if let Some(owner) = win(old_top).map(|w| w.owner) {
+        let mut msg = [0i16; 8];
+        msg[0] = WM_UNTOPPED;
+        // `ap_sendmsg` sets msg[1] = sender pid (gemwmlib.c:855); at single-app
+        // this is the running app / control process.
+        msg[1] = super::appl::current_pid();
+        msg[3] = old_top;
+        post_to_owner(owner, &msg);
     }
 }
 
