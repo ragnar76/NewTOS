@@ -21,6 +21,14 @@ const TICKCAL_MS: i16 = 20; // ms per timer-C tick (matches BIOS Tickcal)
 static GCURX: AtomicI16 = AtomicI16::new(0);
 static GCURY: AtomicI16 = AtomicI16::new(0);
 static MOUSE_BT: AtomicU8 = AtomicU8::new(0);
+/// EmuTOS `cur_ms_stat` (`vdi_defs.h:294`): the mouse status bitmap since the
+/// last event, maintained by [`feed_relative`] exactly as `mouse_int`
+/// (`vdi_asm.S:240-328`) and consumed by `gloc_key` (the locator input,
+/// `vdi_mouse.c:195-231`). Bit 0/1 = current left/right button state, bit 5 =
+/// moved, bit 6/7 = left/right button-change flag. Only `v_locator` reads it;
+/// the desktop/AES mouse path (`evnt_multi` → `mouse_buttons`) never does, so
+/// maintaining it does not perturb the normal cursor/desktop behaviour.
+static CUR_MS_STAT: AtomicU8 = AtomicU8::new(0);
 /// Cursor hide depth: 0 = shown, ≥1 = hidden. GEM powers up hidden.
 static HIDE_COUNT: AtomicI16 = AtomicI16::new(1);
 static INIT_DONE: AtomicU8 = AtomicU8::new(0);
@@ -131,12 +139,50 @@ pub fn set_state(x: i16, y: i16, buttons: u8, backend: &dyn RasterBackend) {
 /// `docs/api/vdi/input/_mouse-packet.md`.
 pub fn feed_relative(dx: i16, dy: i16, buttons: u8, backend: &dyn RasterBackend) {
     ensure_init(backend);
+    // Maintain `cur_ms_stat` for the locator input device (`v_locator` /
+    // `gloc_key`), byte-for-byte as EmuTOS `mouse_int` (`vdi_asm.S:240-328`):
+    // the raw deltas decide the motion bit, the button transition sets the
+    // change bits. This touches only `cur_ms_stat`; the cursor draw, `MOUSE_BT`
+    // and `GCURX`/`GCURY` (via `set_state` below) are unchanged, so the normal
+    // cursor/desktop path stays byte-identical.
+    update_ms_stat(dx, dy, buttons);
     let max_x = backend.width() as i16 - 1;
     let max_y = backend.height() as i16 - 1;
     let (cx, cy) = position();
     let nx = (cx + dx).clamp(0, max_x);
     let ny = (cy + dy).clamp(0, max_y);
     set_state(nx, ny, buttons, backend);
+}
+
+/// Update [`CUR_MS_STAT`] from one relative-mouse event, reproducing EmuTOS
+/// `mouse_int` (`vdi_asm.S:240-328`) bit-for-bit. On a button-state change the
+/// byte is rewritten to the new button bits (0/1) with the changed buttons
+/// flagged in bits 6 (left) / 7 (right) — the `eor`/`ror.b #2`/`or` sequence —
+/// which also clears the motion bit; with no button change the byte keeps its
+/// button/change bits. The motion bit (5) is then set if the packet carried
+/// movement (raw `dx`/`dy`, before clipping), else cleared. `buttons` is in VDI
+/// convention (bit 0 = left, bit 1 = right); only bits 0/1 are used, so EmuTOS'
+/// "keep the extended-button bits in MOUSE_BT" reduces to a no-op here.
+fn update_ms_stat(dx: i16, dy: i16, buttons: u8) {
+    let new_btn = buttons & 0x03;
+    let moved = dx != 0 || dy != 0;
+    // Atomic RMW: the feed can race a `gloc_key` consume if it runs from an
+    // IRQ during a `pump_input`.
+    let _ = CUR_MS_STAT.fetch_update(Ordering::Relaxed, Ordering::Relaxed, |prev| {
+        let old_btn = prev & 0x03;
+        let mut stat = if new_btn != old_btn {
+            let delta = (old_btn ^ new_btn) & 0x03;
+            new_btn | delta.rotate_right(2)
+        } else {
+            prev
+        };
+        if moved {
+            stat |= 0x20;
+        } else {
+            stat &= !0x20;
+        }
+        Some(stat)
+    });
 }
 
 /// The current cursor position (for the locator input device).
@@ -162,6 +208,43 @@ pub fn buttons() -> u8 {
     MOUSE_BT.load(Ordering::Relaxed)
 }
 
+/// EmuTOS `gloc_key` button branch (`vdi_mouse.c:203-209`): if a mouse-button
+/// change is pending (bit 6 or 7 of `cur_ms_stat`), consume it and return the
+/// terminator code — 0x20 for the left button (bit 6), 0x21 for the right
+/// (bit 7), left taking precedence. Clears the change bits, keeping the button
+/// and motion bits (`&= 0x23`). `None` when no button change is pending. Used
+/// only by `v_locator`.
+pub fn take_button_terminator() -> Option<i16> {
+    // Test-and-clear bits 6/7 atomically (see `update_ms_stat` on the race);
+    // masking to 0x23 keeps bits 0,1 (buttons) and 5 (motion). When no change
+    // bit is set this matches EmuTOS leaving `cur_ms_stat` untouched, because
+    // the reserved bits 2/3/4 are always zero here.
+    let prev = CUR_MS_STAT.fetch_and(0x23, Ordering::Relaxed);
+    if prev & 0xc0 != 0 {
+        Some(if prev & 0x40 != 0 { 0x20 } else { 0x21 })
+    } else {
+        None
+    }
+}
+
+/// EmuTOS `gloc_key` motion branch (`vdi_mouse.c:221-227`): if the motion bit
+/// (5) of `cur_ms_stat` is set, consume it and report movement — the caller
+/// reads the live [`position`] for the point. Used only by `v_locator`.
+pub fn take_motion() -> bool {
+    (CUR_MS_STAT.fetch_and(!0x20, Ordering::Relaxed) & 0x20) != 0
+}
+
+/// EmuTOS `vdi_v_locator` entry (`vdi_mouse.c:286-287`): set the locator / VDI
+/// cursor position `GCURX`/`GCURY` from the input point, unconditionally in
+/// both request and sample modes. This is the logical position `dis_cur` draws
+/// at and `gloc_key` / `PTSOUT` report; the request-mode `dis_cur`/`hide_cur`
+/// bracket performs the drawing, so this does not itself erase/redraw a shown
+/// sprite (the next `erase` still restores from the last drawn origin).
+pub fn set_locator_pos(x: i16, y: i16) {
+    GCURX.store(x, Ordering::Relaxed);
+    GCURY.store(y, Ordering::Relaxed);
+}
+
 fn shown() -> bool {
     HIDE_COUNT.load(Ordering::Relaxed) <= 0
 }
@@ -178,7 +261,37 @@ fn ensure_init(backend: &dyn RasterBackend) {
     // Park the cursor at the screen centre.
     GCURX.store(backend.width() as i16 / 2, Ordering::Relaxed);
     GCURY.store(backend.height() as i16 / 2, Ordering::Relaxed);
+    // Install the default exchange-vector slots (EmuTOS `vdimouse_init`,
+    // `vdi_mouse.c:585-589`; the `vex_timv` slot `tim_addr`, `vdi_misc.c:128`):
+    // the button / motion / wheel / timer vectors default to the `just_rts`
+    // no-op, the cursor-draw vector to `mov_cur`. NewTOS never *invokes* these
+    // from the cooperative feed path — the default behaviour is already inlined
+    // (`feed_relative` redraws the cursor; buttons/motion are no-ops) — but the
+    // slots must hold a real address so an app that installs its own vector via
+    // `vex_*` gets the genuine previous address back to save/restore, instead
+    // of a spurious NULL (AUD-V6-002).
+    // Cast the fn items through a raw pointer (not a direct fn→int cast) to
+    // take their address as a `u64` sentinel.
+    USER_BUT.store(just_rts as *const () as u64, Ordering::Relaxed);
+    USER_MOT.store(just_rts as *const () as u64, Ordering::Relaxed);
+    USER_CUR.store(mov_cur as *const () as u64, Ordering::Relaxed);
+    USER_WHEEL.store(just_rts as *const () as u64, Ordering::Relaxed);
+    TIM_ADDR.store(just_rts as *const () as u64, Ordering::Relaxed);
 }
+
+/// EmuTOS `just_rts` (`vdi_asm.S`): the default no-op mouse vector shared by
+/// the button / motion / wheel / timer slots. Only its **address** matters —
+/// it is the sentinel the `vex_*` swap returns so an app can save and restore
+/// the default; it is never called from NewTOS' cooperative feed path
+/// (AUD-V6-002, the STOP-split: invoking an app-installed vector would be an
+/// EL1→EL0 upcall, out of scope).
+fn just_rts() {}
+
+/// EmuTOS `mov_cur` (`vdi_asm.S:496`): the default cursor-draw vector. EmuTOS'
+/// `mouse_int` calls it to redraw the sprite after a move; NewTOS redraws the
+/// cursor inline in [`feed_relative`], so this is a pure address sentinel for
+/// the `vex_curv` save/restore contract — never invoked.
+fn mov_cur() {}
 
 /// Initialise the cursor subsystem at workstation-open time (EmuTOS
 /// `vdimouse_init`, `vdi_mouse.c:582-583`): load the default arrow form and

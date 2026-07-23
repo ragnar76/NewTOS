@@ -10,6 +10,7 @@
 
 use core::sync::atomic::{AtomicI16, Ordering};
 
+use super::backend::RasterBackend;
 use super::Vdipb;
 
 // Per-device operating mode in EmuTOS convention (`INTIN[1] − 1`):
@@ -58,18 +59,6 @@ fn is_request(dev: usize) -> bool {
     MODES[dev].load(Ordering::Relaxed) == 0
 }
 
-/// Read one byte (ASCII) from the keyboard, blocking until one arrives, or
-/// `None` if no host console is installed.
-fn read_key() -> Option<u8> {
-    crate::host::host().map(|h| h.console_read_byte_blocking())
-}
-
-/// Non-blocking read of one ASCII byte from the keyboard, or `None` if no
-/// key is pending (or no host).
-fn try_read_key() -> Option<u8> {
-    crate::host::host().and_then(|h| h.console_try_read())
-}
-
 /// Blocking read of one whole key word (`scancode << 8 | ascii`) — the
 /// scancode-carrying source used by `v_string`'s extended (`j < 0`) mode,
 /// mirroring EmuTOS `gchr_key`/`TERM_CH`. `None` if no host.
@@ -83,37 +72,87 @@ fn try_read_key_word() -> Option<u16> {
     crate::host::host().and_then(|h| h.console_try_read_key())
 }
 
-/// Opcode 28 — `v_locator`: report the locator point with a terminator.
-/// The returned point is always the **input** point (`PTSIN[0..1]`), per
-/// EmuTOS `vdi_v_locator` — not the live `GCURX`/`GCURY` (`vdi_mouse.c:277-278`).
+/// Opcode 28 — `v_locator`: report the locator point + terminator (EmuTOS
+/// `vdi_v_locator`, `vdi_mouse.c:280-314`).
 ///
-/// REQUEST blocks until a terminating key and returns it (`CONTRL[2] =
-/// CONTRL[4] = 1`, `PTSOUT` = input point). SAMPLE returns immediately: a
-/// pending key sets `CONTRL[4] = 1` plus `INTOUT[0]`, motion sets `CONTRL[2] =
-/// 1` plus `PTSOUT`; with neither, both counts stay 0 ("no event"). NewTOS has
-/// no mouse-button terminator (the `cur_ms_stat` button bits are not
-/// maintained, K-series), so only keyboard keys terminate; and it maintains no
-/// motion-change bit, so SAMPLE reports no motion (never fabricated).
-pub fn v_locator(pb: &Vdipb) {
-    let (px, py) = (pb.ptsin(0), pb.ptsin(1));
+/// On entry the locator / VDI cursor position `GCURX`/`GCURY` is set from the
+/// input point `PTSIN[0..1]`, unconditionally in both modes (`:286-287`).
+/// REQUEST (`vrq_locator`) brackets the wait with `dis_cur`/`hide_cur` (the
+/// cursor is shown while waiting), loops until a keyboard key **or** a mouse
+/// button press/release (`gloc_key & 1`), then returns the terminator in
+/// `INTOUT[0]`, sets `CONTRL[2] = CONTRL[4] = 1`, and the point in
+/// `PTSOUT[0..1]` = `GCURX`/`GCURY`. SAMPLE (`vsm_locator`) polls `gloc_key`
+/// once: a key/button sets `CONTRL[4]` + `INTOUT[0]`, motion sets `CONTRL[2]` +
+/// `PTSOUT`; with neither, the dispatcher's pre-loaded zero counts report
+/// "no event". Cooperative single-tasking: the REQUEST wait pumps the input
+/// sources (`pump_input`) like the AES event manager, so mouse packets (and
+/// the resulting `cur_ms_stat` button/motion bits) advance while it blocks.
+pub fn v_locator(pb: &Vdipb, backend: &dyn RasterBackend) {
+    // Set the initial locator position from the input point (both modes).
+    super::mouse::set_locator_pos(pb.ptsin(0), pb.ptsin(1));
 
     if is_request(1) {
-        // REQUEST: block for the terminating key; the char is the terminator.
-        let term = read_key().unwrap_or(0);
-        pb.set_intout(0, term as i16);
+        // REQUEST: show the cursor (dis_cur), wait for a key or button, then
+        // hide it again (hide_cur) — the EmuTOS `:290`/`:301` bracket.
+        super::mouse::show(backend);
+        let mut term_ch = 0i16;
+        if let Some(h) = crate::host::host() {
+            loop {
+                let (r, tc) = gloc_key();
+                if r & 1 != 0 {
+                    term_ch = tc;
+                    break;
+                }
+                h.pump_input();
+            }
+        }
+        super::mouse::hide(backend);
+        pb.set_intout(0, term_ch & 0x00ff);
         pb.set_contrl(4, 1);
-        pb.set_ptsout(0, px);
-        pb.set_ptsout(1, py);
         pb.set_contrl(2, 1);
+        let (gx, gy) = super::mouse::position();
+        pb.set_ptsout(0, gx);
+        pb.set_ptsout(1, gy);
     } else {
-        // SAMPLE: a pending key → terminator; no motion source → no point.
-        // The dispatcher pre-loaded CONTRL[2] = CONTRL[4] = 0.
-        if let Some(term) = try_read_key() {
-            // `try_read_key` already yields the ASCII byte (EmuTOS TERM_CH & 0xff).
-            pb.set_intout(0, term as i16);
+        // SAMPLE: one non-blocking poll of the terminator sources. The
+        // dispatcher pre-loaded CONTRL[2] = CONTRL[4] = 0 ("no event").
+        let (i, term_ch) = gloc_key();
+        if i & 1 != 0 {
             pb.set_contrl(4, 1);
+            pb.set_intout(0, term_ch & 0x00ff);
+        }
+        if i & 2 != 0 {
+            pb.set_contrl(2, 1);
+            let (gx, gy) = super::mouse::position();
+            pb.set_ptsout(0, gx);
+            pb.set_ptsout(1, gy);
         }
     }
+}
+
+/// EmuTOS `gloc_key` (`vdi_mouse.c:195-231`): poll the locator terminator
+/// sources once. Returns `(retval, term_ch)`: `retval` bit 0 = a mouse-button
+/// change or a keyboard key occurred (`term_ch` = the 16-bit terminator, 0x20
+/// / 0x21 for the left/right button or `scancode<<8 | ascii` for a key), bit 1
+/// = the mouse moved (the caller reads the live cursor position for the point).
+/// A pending mouse-button change takes precedence over the keyboard, matching
+/// the EmuTOS test order (`cur_ms_stat & 0xc0` before `Bconstat(2)`).
+fn gloc_key() -> (i16, i16) {
+    let mut retval = 0i16;
+    let mut term_ch = 0i16;
+    if let Some(t) = super::mouse::take_button_terminator() {
+        term_ch = t;
+        retval = 1;
+    } else if let Some(w) = try_read_key_word() {
+        // EmuTOS `TERM_CH = (ch>>8)|(ch&0xff)` = scancode<<8 | ascii, exactly
+        // the key word; `v_locator` masks it to the ASCII byte for INTOUT[0].
+        term_ch = w as i16;
+        retval = 1;
+    }
+    if super::mouse::take_motion() {
+        retval += 2;
+    }
+    (retval, term_ch)
 }
 
 /// Opcode 30 — `v_choice`: DRI **dummy** device in both Atari TOS and EmuTOS.
@@ -135,11 +174,9 @@ pub fn v_choice(pb: &Vdipb) {
 pub fn v_string(pb: &Vdipb) {
     let max = pb.intin(0);
     let extended = max < 0;
+    // The length limit `j` is the app-supplied maximum only — EmuTOS imposes no
+    // fixed cap; the caller sizes INTOUT to its requested maximum (AUD-V6-004).
     let limit = max.unsigned_abs() as usize;
-    // Safety cap so a bogus length can't run past the caller's INTOUT; real
-    // callers size INTOUT to their requested maximum.
-    const MAX_STRING: usize = 256;
-    let cap = limit.min(MAX_STRING);
     let encode = |w: u16| -> i16 {
         if extended { w as i16 } else { (w & 0x00ff) as i16 }
     };
@@ -150,7 +187,7 @@ pub fn v_string(pb: &Vdipb) {
         // INTOUT[n] but excluded from the returned count (EmuTOS `--i`).
         let mut term: u16 = 0;
         let mut n = 0usize;
-        while n < cap && (term & 0x00ff) != 0x0d {
+        while n < limit && (term & 0x00ff) != 0x0d {
             term = match read_key_word() {
                 Some(w) => w,
                 None => break, // no host console
@@ -164,15 +201,17 @@ pub fn v_string(pb: &Vdipb) {
         pb.set_contrl(4, n as i16);
     } else {
         // SAMPLE: non-blocking drain of pending keys; CR is an ordinary char
-        // (stored, not a terminator).
+        // (stored, not a terminator). EmuTOS reads the char *before* the limit
+        // check (`while ((gchr_key() != 0) && (i < j))`, `vdi_input.c:101`), so
+        // a char read once the limit is reached is consumed but not stored —
+        // the buffer-consume count matches EmuTOS exactly (AUD-V6-004).
         let mut n = 0usize;
-        while n < cap {
-            match try_read_key_word() {
-                Some(w) => {
-                    pb.set_intout(n, encode(w));
-                    n += 1;
-                }
-                None => break,
+        while let Some(w) = try_read_key_word() {
+            if n < limit {
+                pb.set_intout(n, encode(w));
+                n += 1;
+            } else {
+                break; // char already consumed; not stored (i >= j)
             }
         }
         pb.set_contrl(4, n as i16);

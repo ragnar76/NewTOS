@@ -313,7 +313,7 @@ pub unsafe fn dispatch(vdipb_ptr: u64, abi: Abi) {
                     105 => inquiry::v_get_pixel(&pb, backend),
                     33 => input::vsin_mode(&pb),
                     115 => input::vqin_mode(&pb),
-                    28 => input::v_locator(&pb),
+                    28 => input::v_locator(&pb, backend),
                     30 => input::v_choice(&pb),
                     31 => input::v_string(&pb),
                     // ── mouse cursor + exchange vectors ──
