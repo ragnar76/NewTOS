@@ -1195,6 +1195,14 @@ pub fn wind_open(pb: &Aespb) {
     let handle = pb.intin(0);
     let r = Grect { x: pb.intin(1), y: pb.intin(2), w: pb.intin(3), h: pb.intin(4) };
     if let Some(w) = win(handle) {
+        // Re-opening an already-open window is a no-op returning FALSE — no
+        // re-top, no re-draw (EmuTOS wm_open, gemwmlib.c:1418-1419:
+        // `if (pwin->w_flags & VF_ISOPEN) return FALSE`). The guard sits after
+        // the handle-validity check so an invalid handle keeps its own path.
+        if w.open {
+            pb.set_ret(0);
+            return;
+        }
         w.prev = w.curr;
         w.curr = r;
         w.open = true;
@@ -1228,45 +1236,72 @@ pub fn wind_open(pb: &Aespb) {
 /// here via [`compose`]/[`redraw_clip`] — matching EmuTOS.
 pub fn wind_close(pb: &Aespb) {
     let handle = pb.intin(0);
+    // `wm_close` returns FALSE for an invalid handle *and* for a valid but
+    // not-open window (EmuTOS gemwmlib.c:1444-1447), TRUE only after an actual
+    // uncover. [`close_window`] returns exactly that boolean.
+    let ok = close_window(handle);
+    pb.set_ret(i16::from(ok));
+}
+
+/// Close window `handle` (clear its open flag) and repaint the area it vacated —
+/// the shared body of [`wind_close`] and the implicit close [`wind_delete`]
+/// performs on a still-open window (EmuTOS `wm_close`, gemwmlib.c:1438-1459,
+/// invoked from `wm_delete` :1473-1474). Returns `false` for an invalid handle
+/// or a window that was not open (no damage, no message); `true` after the
+/// uncover.
+fn close_window(handle: i16) -> bool {
     let old_top = get_top();
     let Some((r, was_open)) = win(handle).map(|w| {
         let was = w.open;
         w.open = false;
         (w.curr, was)
     }) else {
+        return false; // invalid handle
+    };
+    if !was_open {
+        return false; // valid but not open — no action (gemwmlib.c:1446-1447)
+    }
+    // Damage region `c`: the vacated rect, plus the new top window's rect
+    // when the closed window was the top one (activates the new top frame).
+    let new_top = get_top();
+    let damage = if handle == old_top {
+        match win(new_top).map(|w| w.curr) {
+            Some(nt) => union_grect(r, nt),
+            None => r,
+        }
+    } else {
+        r
+    };
+    // AES repaints background + remaining frames directly over the damage,
+    redraw_clip(damage.x, damage.y, damage.w, damage.h);
+    // then fans WM_REDRAW out to every window whose visible region grew.
+    broadcast_redraw(damage);
+    true
+}
+
+/// `wind_delete` (103) — free the handle `int_in[0]`.
+///
+/// EmuTOS `wm_delete` (gemwmlib.c:1466-1485) closes a still-open window first
+/// (`if (pwin->w_flags & VF_ISOPEN) wm_close(w_handle)`, :1473-1474) so its
+/// frame + content are uncovered — background and lower windows repaint and the
+/// newly-exposed windows get `WM_REDRAW` — *before* the slot is freed; otherwise
+/// the deleted window would linger on screen as a dead pixel block. An invalid
+/// handle keeps the existing FALSE return.
+pub fn wind_delete(pb: &Aespb) {
+    let handle = pb.intin(0);
+    let Some(was_open) = win(handle).map(|w| w.open) else {
         pb.set_ret(0);
         return;
     };
     if was_open {
-        // Damage region `c`: the vacated rect, plus the new top window's rect
-        // when the closed window was the top one (activates the new top frame).
-        let new_top = get_top();
-        let damage = if handle == old_top {
-            match win(new_top).map(|w| w.curr) {
-                Some(nt) => union_grect(r, nt),
-                None => r,
-            }
-        } else {
-            r
-        };
-        // AES repaints background + remaining frames directly over the damage,
-        redraw_clip(damage.x, damage.y, damage.w, damage.h);
-        // then fans WM_REDRAW out to every window whose visible region grew.
-        broadcast_redraw(damage);
+        // Reuse the established close-uncover path (redraw_clip + broadcast_redraw).
+        close_window(handle);
     }
-    pb.set_ret(1);
-}
-
-/// `wind_delete` (103) — free the handle `int_in[0]`.
-pub fn wind_delete(pb: &Aespb) {
-    let handle = pb.intin(0);
     if let Some(w) = win(handle) {
         w.in_use = false;
         w.open = false;
-        pb.set_ret(1);
-    } else {
-        pb.set_ret(0);
     }
+    pb.set_ret(1);
 }
 
 /// Write a single scalar to `int_out[1]` with `ret = 1` — the common
