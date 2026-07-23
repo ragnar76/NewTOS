@@ -921,6 +921,58 @@ fn draw_frame(w: &Window, istop: bool, backend: &dyn RasterBackend, clip: ClipRe
     }
 }
 
+/// Elevator (thumb) geometry within a scroll track `track_len` px long:
+/// returns `(offset, len)` — the thumb starts `offset` px into the track and
+/// spans `len` px. `slsize` = `WF_?SLSIZ` (per-mille of the track, or **−1** =
+/// "use default size" = one gadget cell), `slpos` = `WF_?SLIDE` (per-mille of
+/// the remaining travel). The single source of truth for the thumb, shared by
+/// the slider draw ([`draw_vslider`]/[`draw_hslider`]) and the frame hit-test /
+/// drag ([`gadget_at`]/[`drag_elevator`]) so the clicked thumb is exactly the
+/// drawn one. Matches EmuTOS `w_bldvbar`/`w_bldhbar` (`gemwmlib.c:634-708`):
+/// `size = gl_hbox` when `w_vslsiz == -1`, else per-mille of the track.
+fn thumb_geom(track_len: i16, slsize: i16, slpos: i16) -> (i16, i16) {
+    let min_thumb = GAD.min(track_len);
+    let len = if slsize == -1 {
+        min_thumb
+    } else {
+        ((track_len as i32 * slsize.clamp(1, 1000) as i32 / 1000) as i16).clamp(min_thumb, track_len)
+    };
+    let travel = track_len - len;
+    let pos = slpos.clamp(0, 1000);
+    let offset = (travel as i32 * pos as i32 / 1000) as i16;
+    (offset, len)
+}
+
+/// The vertical scroll track span `(top, length)` — the region left for the
+/// thumb + paging after the up/down arrows — or `None` if there is no VSLIDE
+/// track. Mirrors [`draw_vslider`]'s arrow-band offsets so the hit-test /
+/// drag ([`gadget_at`]/[`drag_elevator`]) agree pixel-for-pixel with the draw.
+fn vtrack(w: &Window) -> Option<(i16, i16)> {
+    let b = w.curr;
+    let kind = w.kind;
+    if kind & VSLIDE == 0 {
+        return None;
+    }
+    let mut top = b.y + 1;
+    if kind & (NAME | CLOSER | FULLER) != 0 {
+        top += GAD - 1;
+    }
+    if kind & INFO != 0 {
+        top += GAD - 1;
+    }
+    let mut bot = b.y + b.h - 1;
+    if kind & (HGADGETS | SIZER) != 0 {
+        bot -= GAD - 1;
+    }
+    if kind & UPARROW != 0 {
+        top += GAD - 1;
+    }
+    if kind & DNARROW != 0 {
+        bot -= GAD - 1;
+    }
+    (bot > top).then_some((top, bot - top))
+}
+
 /// Draw the right (vertical) scroll bar — up/down arrows, the track, and a
 /// thumb positioned + sized from `w.vslide` / `w.vslsize` (both per-mille).
 /// Shared by `draw_frame` and `wind_set(WF_VSLIDE/WF_VSLSIZ)`; drawing only
@@ -932,7 +984,8 @@ fn draw_vslider(w: &Window, backend: &dyn RasterBackend, clip: ClipRect) {
         return;
     }
     let col_x = b.x + b.w - GAD;
-    // Track top: below the title + info bands.
+    // Arrow positions: top below the title + info bands, bottom above the
+    // sizer/H-bar band (same offsets `vtrack` uses for the track between them).
     let mut sy = b.y + 1;
     if kind & (NAME | CLOSER | FULLER) != 0 {
         sy += GAD - 1;
@@ -946,30 +999,18 @@ fn draw_vslider(w: &Window, backend: &dyn RasterBackend, clip: ClipRect) {
     }
     if kind & UPARROW != 0 {
         gadget(Grect { x: col_x, y: sy, w: GAD, h: GAD }, G_UP, backend, clip);
-        sy += GAD - 1;
     }
     if kind & DNARROW != 0 {
         gadget(Grect { x: col_x, y: send - GAD + 1, w: GAD, h: GAD }, G_DN, backend, clip);
-        send -= GAD - 1;
     }
-    if kind & VSLIDE != 0 && send > sy {
-        let track_h = send - sy;
-        backend.fill_rect(col_x, sy, GAD, track_h, GRAY_LT, clip);
-        rect_outline(Grect { x: col_x, y: sy, w: GAD, h: track_h }, backend, clip);
-        // Thumb: size = vslsize per-mille of the track (min one gadget cell),
-        // position = vslide per-mille of the remaining travel. A stored −1
-        // ("use default size") renders as one gadget cell — EmuTOS `w_bldvbar`
-        // `if (w_vslsiz == -1) size = gl_hbox` (gemwmlib.c:665-667) — never a
+    if let Some((track_y, track_h)) = vtrack(w) {
+        backend.fill_rect(col_x, track_y, GAD, track_h, GRAY_LT, clip);
+        rect_outline(Grect { x: col_x, y: track_y, w: GAD, h: track_h }, backend, clip);
+        // Thumb geometry shared with `gadget_at`/`drag_elevator` (see
+        // [`thumb_geom`]): a stored −1 size renders as one gadget cell, never a
         // zero/negative-height elevator; the stored/returned value stays −1.
-        let min_thumb = GAD.min(track_h);
-        let thumb_h = if w.vslsize == -1 {
-            min_thumb
-        } else {
-            ((track_h as i32 * w.vslsize.clamp(1, 1000) as i32 / 1000) as i16).clamp(min_thumb, track_h)
-        };
-        let travel = track_h - thumb_h;
-        let pos = w.vslide.clamp(0, 1000);
-        let thumb_y = sy + (travel as i32 * pos as i32 / 1000) as i16;
+        let (off, thumb_h) = thumb_geom(track_h, w.vslsize, w.vslide);
+        let thumb_y = track_y + off;
         backend.fill_rect(col_x, thumb_y, GAD, thumb_h, GRAY_LT, clip);
         bevel(Grect { x: col_x, y: thumb_y, w: GAD, h: thumb_h }, true, backend, clip);
     }
@@ -998,6 +1039,29 @@ fn redraw_vslider(handle: i16) {
 /// title/info bands consume the horizontal axis). Shared by `draw_frame` and
 /// `wind_set(WF_HSLIDE/WF_HSLSIZ)`; drawing only the slider row leaves the work
 /// area (content) untouched. The bottom-band fill is done by the caller.
+/// The horizontal scroll track span `(left, length)` — the region left for
+/// the thumb + paging after the left/right arrows — or `None` if there is no
+/// HSLIDE track. Mirror of [`vtrack`] with the axes swapped (x↔y, w↔h).
+fn htrack(w: &Window) -> Option<(i16, i16)> {
+    let b = w.curr;
+    let kind = w.kind;
+    if kind & HSLIDE == 0 {
+        return None;
+    }
+    let mut left = b.x + 1;
+    let mut right = b.x + b.w - 1;
+    if kind & (VGADGETS | SIZER) != 0 {
+        right -= GAD - 1;
+    }
+    if kind & LFARROW != 0 {
+        left += GAD - 1;
+    }
+    if kind & RTARROW != 0 {
+        right -= GAD - 1;
+    }
+    (right > left).then_some((left, right - left))
+}
+
 fn draw_hslider(w: &Window, backend: &dyn RasterBackend, clip: ClipRect) {
     let b = w.curr;
     let kind = w.kind;
@@ -1005,38 +1069,26 @@ fn draw_hslider(w: &Window, backend: &dyn RasterBackend, clip: ClipRect) {
         return;
     }
     let row_y = b.y + b.h - GAD;
-    // Track left: just past the left border (no left-side bands on this axis).
-    let mut sx = b.x + 1;
+    // Arrow positions: left just past the left border, right before the
+    // V-bar/sizer column (same offsets `htrack` uses for the track between).
+    let sx = b.x + 1;
     let mut send = b.x + b.w - 1;
     if kind & (VGADGETS | SIZER) != 0 {
         send -= GAD - 1;
     }
     if kind & LFARROW != 0 {
         gadget(Grect { x: sx, y: row_y, w: GAD, h: GAD }, G_LF, backend, clip);
-        sx += GAD - 1;
     }
     if kind & RTARROW != 0 {
         gadget(Grect { x: send - GAD + 1, y: row_y, w: GAD, h: GAD }, G_RT, backend, clip);
-        send -= GAD - 1;
     }
-    if kind & HSLIDE != 0 && send > sx {
-        let track_w = send - sx;
-        backend.fill_rect(sx, row_y, track_w, GAD, GRAY_LT, clip);
-        rect_outline(Grect { x: sx, y: row_y, w: track_w, h: GAD }, backend, clip);
-        // Thumb: size = hslsize per-mille of the track (min one gadget cell),
-        // position = hslide per-mille of the remaining travel. A stored −1
-        // ("use default size") renders as one gadget cell — EmuTOS `w_bldhbar`
-        // `if (w_hslsiz == -1) size = gl_wbox` (gemwmlib.c:706-708) — never a
-        // zero/negative-width elevator; the stored/returned value stays −1.
-        let min_thumb = GAD.min(track_w);
-        let thumb_w = if w.hslsize == -1 {
-            min_thumb
-        } else {
-            ((track_w as i32 * w.hslsize.clamp(1, 1000) as i32 / 1000) as i16).clamp(min_thumb, track_w)
-        };
-        let travel = track_w - thumb_w;
-        let pos = w.hslide.clamp(0, 1000);
-        let thumb_x = sx + (travel as i32 * pos as i32 / 1000) as i16;
+    if let Some((track_x, track_w)) = htrack(w) {
+        backend.fill_rect(track_x, row_y, track_w, GAD, GRAY_LT, clip);
+        rect_outline(Grect { x: track_x, y: row_y, w: track_w, h: GAD }, backend, clip);
+        // Thumb geometry shared with `gadget_at`/`drag_elevator` (see
+        // [`thumb_geom`]): a stored −1 size renders as one gadget cell.
+        let (off, thumb_w) = thumb_geom(track_w, w.hslsize, w.hslide);
+        let thumb_x = track_x + off;
         backend.fill_rect(thumb_x, row_y, thumb_w, GAD, GRAY_LT, clip);
         bevel(Grect { x: thumb_x, y: row_y, w: thumb_w, h: GAD }, true, backend, clip);
     }
@@ -1570,16 +1622,27 @@ const WM_TOPPED: i16 = 21;
 const WM_CLOSED: i16 = 22;
 const WM_FULLED: i16 = 23;
 const WM_ARROWED: i16 = 24;
+const WM_HSLID: i16 = 25;
+const WM_VSLID: i16 = 26;
 const WM_SIZED: i16 = 27;
 const WM_MOVED: i16 = 28;
 
-// WM_ARROWED actions (aesdefs.h:246-253).
+// WM_ARROWED actions (aesdefs.h:245-253, gemctrl.c:63-74). Line = arrow, page
+// = track click either side of the elevator.
+const WA_UPPAGE: i16 = 0;
+const WA_DNPAGE: i16 = 1;
 const WA_UPLINE: i16 = 2;
 const WA_DNLINE: i16 = 3;
+const WA_LFPAGE: i16 = 4;
+const WA_RTPAGE: i16 = 5;
 const WA_LFLINE: i16 = 6;
 const WA_RTLINE: i16 = 7;
 
-/// Which frame component a point falls in.
+/// Which frame component a point falls in. Beyond the title/sizer/arrow
+/// gadgets, the scroll bars distinguish the elevator **thumb** (drag →
+/// `WM_HSLID`/`WM_VSLID`) from a **page** click in the track either side of it
+/// (→ `WM_ARROWED` with `WA_*PAGE`), mirroring EmuTOS `hctl_window`'s split of
+/// `W_?ELEV` vs `W_?SLIDE` (gemctrl.c:262-306).
 #[derive(PartialEq, Clone, Copy)]
 enum Gadget {
     None,
@@ -1591,6 +1654,12 @@ enum Gadget {
     Dn,
     Lf,
     Rt,
+    VElev,  // vertical elevator thumb (drag)
+    HElev,  // horizontal elevator thumb (drag)
+    VUpPage, // v-track above the thumb (WA_UPPAGE)
+    VDnPage, // v-track below the thumb (WA_DNPAGE)
+    HLfPage, // h-track left of the thumb (WA_LFPAGE)
+    HRtPage, // h-track right of the thumb (WA_RTPAGE)
 }
 
 /// Hit-test a point against `w`'s frame gadgets (mirrors `draw_frame`'s
@@ -1639,6 +1708,19 @@ fn gadget_at(w: &Window, mx: i16, my: i16) -> Gadget {
         if kind & DNARROW != 0 && my >= bot - GAD + 1 {
             return Gadget::Dn;
         }
+        // Elevator thumb (drag) vs. a page click in the track either side of
+        // it (EmuTOS `hctl_window` W_VELEV vs W_VSLIDE split, gemctrl.c:262-306:
+        // `my < elev_y` → up-page, else down-page).
+        if let Some((track_y, track_h)) = vtrack(w) {
+            if my >= track_y && my < track_y + track_h {
+                let (off, len) = thumb_geom(track_h, w.vslsize, w.vslide);
+                let thumb_y = track_y + off;
+                if my >= thumb_y && my < thumb_y + len {
+                    return Gadget::VElev;
+                }
+                return if my < thumb_y { Gadget::VUpPage } else { Gadget::VDnPage };
+            }
+        }
     }
     // Bottom scroll-bar arrows.
     if kind & (HGADGETS | SIZER) != 0 && my >= b.y + b.h - GAD {
@@ -1652,6 +1734,18 @@ fn gadget_at(w: &Window, mx: i16, my: i16) -> Gadget {
         }
         if kind & RTARROW != 0 && mx >= right - GAD {
             return Gadget::Rt;
+        }
+        // Elevator thumb (drag) vs. a page click in the track either side of it
+        // (EmuTOS W_HELEV vs W_HSLIDE split, `mx < elev_x` → left-page).
+        if let Some((track_x, track_w)) = htrack(w) {
+            if mx >= track_x && mx < track_x + track_w {
+                let (off, len) = thumb_geom(track_w, w.hslsize, w.hslide);
+                let thumb_x = track_x + off;
+                if mx >= thumb_x && mx < thumb_x + len {
+                    return Gadget::HElev;
+                }
+                return if mx < thumb_x { Gadget::HLfPage } else { Gadget::HRtPage };
+            }
         }
     }
     Gadget::None
@@ -1817,6 +1911,66 @@ fn drag_size(w: &mut Window, backend: &dyn RasterBackend) -> Grect {
     last
 }
 
+/// Live-drag a scroll-bar elevator (thumb) following the mouse until release;
+/// returns the final position 0..1000, which the caller posts as `WM_VSLID` /
+/// `WM_HSLID` `msg[4]`. Models EmuTOS `gr_slidebox` (`gemgrlib.c:358-410`): the
+/// thumb is dragged within its track, held at a constant grip offset from the
+/// cursor, and the reported position is `mul_div_round(travel_used, 1000,
+/// travel)` (the D-098 slider-creep rounding). Feedback is **thumb-follow**
+/// (the slider is repainted at the new spot each frame, bracketed with the
+/// counting cursor semaphore), matching NewTOS' solid [`drag_move`] rather than
+/// EmuTOS' XOR outline — the same modern-HW choice already made for the mover.
+/// The window's stored slider position is advanced so the thumb tracks the
+/// cursor; the owner then normally confirms it via `wind_set(WF_?SLIDE, pos)`.
+fn drag_elevator(w: &mut Window, vert: bool, backend: &dyn RasterBackend) -> i16 {
+    let (slsize, slpos) = if vert { (w.vslsize, w.vslide) } else { (w.hslsize, w.hslide) };
+    let Some(h) = host() else { return slpos };
+    let Some((track_start, track_len)) = (if vert { vtrack(w) } else { htrack(w) }) else {
+        return slpos;
+    };
+    let (thumb_off, thumb_len) = thumb_geom(track_len, slsize, slpos);
+    let travel = track_len - thumb_len;
+    // Grip: how far the cursor sits from the thumb's leading edge at grab, held
+    // constant so the thumb does not snap its edge to the cursor (EmuTOS
+    // `gr_dragbox` `gr_clamp(sx+1, sy+1, 0, 0)` → `max(mouse - origin, 0)`).
+    let (mx0, my0) = crate::vdi::mouse_position();
+    let thumb_start = track_start + thumb_off;
+    let grip = ((if vert { my0 } else { mx0 }) - thumb_start).max(0);
+    let clip = ClipRect::full(backend.width(), backend.height());
+    // The `loop` always runs at least once, assigning `pos` before it can break,
+    // so a seed value would be a dead store — declare it deferred instead.
+    let mut pos;
+    loop {
+        let (mx, my) = crate::vdi::mouse_position();
+        let m = if vert { my } else { mx };
+        // New thumb leading edge, constrained to the track [start, start+travel].
+        let new_start = (m - grip).clamp(track_start, track_start + travel);
+        let rel = new_start - track_start; // travel used, 0..travel
+        pos = if travel > 0 {
+            super::graf::mul_div_round(rel as i32, 1000, travel as i32) as i16
+        } else {
+            0
+        };
+        if vert {
+            w.vslide = pos;
+        } else {
+            w.hslide = pos;
+        }
+        crate::vdi::cursor_hide(backend);
+        if vert {
+            draw_vslider(w, backend, clip);
+        } else {
+            draw_hslider(w, backend, clip);
+        }
+        crate::vdi::cursor_show(backend);
+        if crate::vdi::mouse_buttons() & 0x01 == 0 {
+            break;
+        }
+        h.pump_input();
+    }
+    pos
+}
+
 /// Block until the left button is released (used after edge-triggered
 /// gadgets like topped/arrowed so one press fires once).
 fn wait_release() {
@@ -1920,15 +2074,41 @@ pub fn intercept() {
             msg[6] = r.w;
             msg[7] = r.h;
         }
-        Gadget::Up | Gadget::Dn | Gadget::Lf | Gadget::Rt => {
+        // Scroll arrows and track-page clicks both post WM_ARROWED with a
+        // WA_* sub-action (EmuTOS `handle_arrow_msg`, gemctrl.c:111-139). Like
+        // the existing arrow arms these fire once per press (our single-tasking
+        // model does not run the cooperative auto-repeat loop; the page click
+        // is edge-triggered, same as the line arrows already are here).
+        Gadget::Up
+        | Gadget::Dn
+        | Gadget::Lf
+        | Gadget::Rt
+        | Gadget::VUpPage
+        | Gadget::VDnPage
+        | Gadget::HLfPage
+        | Gadget::HRtPage => {
             msg[0] = WM_ARROWED;
             msg[4] = match gadget_at(w, mx, my) {
                 Gadget::Up => WA_UPLINE,
                 Gadget::Dn => WA_DNLINE,
                 Gadget::Lf => WA_LFLINE,
-                _ => WA_RTLINE,
+                Gadget::Rt => WA_RTLINE,
+                Gadget::VUpPage => WA_UPPAGE,
+                Gadget::VDnPage => WA_DNPAGE,
+                Gadget::HLfPage => WA_LFPAGE,
+                _ => WA_RTPAGE,
             };
             wait_release();
+        }
+        // Elevator-thumb drag → post the final 0..1000 position as WM_VSLID /
+        // WM_HSLID (EmuTOS `hctl_window` W_?ELEV, gemctrl.c:295-306).
+        Gadget::VElev => {
+            msg[0] = WM_VSLID;
+            msg[4] = drag_elevator(w, true, backend);
+        }
+        Gadget::HElev => {
+            msg[0] = WM_HSLID;
+            msg[4] = drag_elevator(w, false, backend);
         }
         Gadget::None => return,
     }
@@ -1990,6 +2170,12 @@ pub fn gadget_name_at(handle: i16, mx: i16, my: i16) -> &'static str {
             Gadget::Dn => "dn",
             Gadget::Lf => "lf",
             Gadget::Rt => "rt",
+            Gadget::VElev => "velev",
+            Gadget::HElev => "helev",
+            Gadget::VUpPage => "vuppage",
+            Gadget::VDnPage => "vdnpage",
+            Gadget::HLfPage => "hlfpage",
+            Gadget::HRtPage => "hrtpage",
         },
         None => "no-window",
     }

@@ -70,7 +70,7 @@ fn mouse_down() -> bool {
 /// **away from zero** — the D-098 "slider creep" fix (gemgrlib.c:410). Computed
 /// as `((m1·m2·2)/divisor ± 1) >> 1`, matching the m68k `divs.w`/`asr.w`
 /// sequence; done in `i32` so `rel·1000` cannot overflow.
-fn mul_div_round(mult1: i32, mult2: i32, divisor: i32) -> i32 {
+pub(crate) fn mul_div_round(mult1: i32, mult2: i32, divisor: i32) -> i32 {
     if divisor == 0 {
         return 0;
     }
@@ -440,8 +440,12 @@ pub fn graf_slidebox(pb: &Aespb) {
             h.pump_input();
         }
     }
-    pb.set_intout(1, pos);
-    pb.set_ret(1);
+    // EmuTOS `gr_slidebox` returns the position 0..1000 as its function return
+    // value, which the dispatcher (`gemsuper.c:284-285`) stores in `int_out[0]`
+    // (= RET_CODE). The standard AES binding reads `int_out[0]`, so writing the
+    // position anywhere else makes every caller read a constant. Match EmuTOS:
+    // position → `int_out[0]`, nothing in `int_out[1]`.
+    pb.set_ret(pos);
 }
 
 /// `graf_handle` (77) — the AES's VDI workstation handle (`int_out[0]`)
