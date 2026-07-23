@@ -33,6 +33,13 @@ const SHW_EXEC: i16 = 1; // run pcmd next after this app terminates
 const SHW_SHUTDOWN: i16 = 4; // shut the system down (honest-unsupported)
 const SHW_RESCHNG: i16 = 5; // change screen resolution (honest-unsupported)
 
+/// FAT `FA_SUBDIR` attribute bit (a directory, not a deletable file).
+const FA_SUBDIR: u8 = 0x10;
+/// GEMDOS `Fdelete` function id and the GEMDOS trap number, for building the
+/// `TrapArgs` `scrp_clear` hands to [`crate::bdos::fs::file::fdelete`].
+const FDELETE: u16 = 0x41;
+const TRAP_GEMDOS: u16 = 1;
+
 struct State {
     scrap: UnsafeCell<[u8; PATHBUF]>,       // clipboard dir (empty = never set)
     next_cmd: UnsafeCell<[u8; PATHBUF]>,    // shel_write program
@@ -128,11 +135,93 @@ pub fn scrp_write(pb: &Aespb) {
     pb.set_ret(1);
 }
 
-/// `scrp_clear` (82) — PC-GEM extension to delete the `SCRAP.*` files. Not
-/// implemented yet (needs directory-enumerated deletion); honestly reports
-/// 0 rather than faking success.
+/// `scrp_clear` (82) — PC-GEM: delete every `SCRAP.*` file in the current
+/// scrap directory (`sc_clear`, `gemsclib.c:74-107`).
+///
+/// EmuTOS appends the mask `SCRAP.*` to `D.g_scrap` (which is assumed to end
+/// in a path separator), then runs a `dos_sfirst(FA_SUBDIR)`/`dos_snext` loop
+/// calling `dos_delete` on each match, and returns `TRUE`; it returns `FALSE`
+/// only when no scrap directory has been set (`D.g_scrap[0] == '\0'`,
+/// `gemsclib.c:81`). We reproduce the observable contract: with a scrap path
+/// set (from a prior [`scrp_write`]), enumerate `<scrapdir>SCRAP.*` and delete
+/// each file, returning `1`; with no scrap path set, return `0`.
+///
+/// Rather than delete during a live `Fsnext` walk (iterator invalidation), we
+/// snapshot the listing with [`list_dir_ex`](crate::bdos::fs::find::list_dir_ex)
+/// and delete each entry, re-listing until no further deletable file remains —
+/// observably equivalent (all deletable `SCRAP.*` gone) and drains directories
+/// larger than one snapshot buffer while still terminating on undeletable
+/// entries (a sub-directory matching the mask, which `Fdelete` refuses).
 pub fn scrp_clear(pb: &Aespb) {
-    pb.set_ret(0);
+    use crate::bdos::fs::file::fdelete;
+    use crate::bdos::fs::find::{list_dir_ex, DirInfo};
+    use crate::trap::TrapArgs;
+
+    // SAFETY: single-CPU AES; the scrap path is a stable static buffer.
+    let scrap = unsafe { &*S.scrap.get() };
+    let slen = clen(scrap);
+    // No scrap directory ever set → FALSE (gemsclib.c:81-82).
+    if slen == 0 {
+        pb.set_ret(0);
+        return;
+    }
+
+    // Build "<scrapdir>SCRAP.*" (gemsclib.c:88 appends the mask to D.g_scrap).
+    const MASK: &[u8] = b"SCRAP.*";
+    let mut maskbuf = [0u8; PATHBUF + 8];
+    if slen + MASK.len() >= maskbuf.len() {
+        // A pathological over-long scrap path; nothing to enumerate against.
+        pb.set_ret(0);
+        return;
+    }
+    maskbuf[..slen].copy_from_slice(&scrap[..slen]);
+    maskbuf[slen..slen + MASK.len()].copy_from_slice(MASK);
+    let mask = match core::str::from_utf8(&maskbuf[..slen + MASK.len()]) {
+        Ok(s) => s,
+        Err(_) => {
+            pb.set_ret(0);
+            return;
+        }
+    };
+
+    // Delete every SCRAP.* file (gemsclib.c:93-100). Full path = <scrapdir> +
+    // d_fname (gemsclib.c:96), which fdelete reads as a kernel pointer.
+    let mut ents = [DirInfo::default(); 32];
+    loop {
+        let n = list_dir_ex(mask, &mut ents);
+        if n == 0 {
+            break;
+        }
+        let mut deleted_any = false;
+        for e in &ents[..n] {
+            if e.attrib & FA_SUBDIR != 0 {
+                continue; // Fdelete refuses a sub-directory (EACCDN)
+            }
+            let nlen = e.name.iter().position(|&b| b == 0).unwrap_or(e.name.len());
+            let mut full = [0u8; PATHBUF + 16];
+            if slen + nlen + 1 > full.len() {
+                continue;
+            }
+            full[..slen].copy_from_slice(&scrap[..slen]);
+            full[slen..slen + nlen].copy_from_slice(&e.name[..nlen]);
+            // `full[slen + nlen]` stays 0 → NUL-terminated for fdelete.
+            let args = TrapArgs {
+                regs: [full.as_ptr() as u64, 0, 0, 0, 0, 0, 0, 0],
+                func: FDELETE as u64,
+                svc_imm: TRAP_GEMDOS,
+            };
+            if fdelete(&args) == tos_types::error::E_OK {
+                deleted_any = true;
+            }
+        }
+        // Nothing deletable left (only skipped sub-directories) → stop.
+        if !deleted_any {
+            break;
+        }
+    }
+    // Success — a scrap directory was set and its SCRAP.* files were cleared
+    // (gemsclib.c:106, return TRUE).
+    pb.set_ret(1);
 }
 
 // ── Shell Manager ─────────────────────────────────────────────────────────
@@ -140,13 +229,11 @@ pub fn scrp_clear(pb: &Aespb) {
 /// `shel_read` (120) — the command + tail that started this app →
 /// `addr_in[0]`/`addr_in[1]` (`sh_read`, `gemshlib.c:102-106`).
 ///
-/// **Deferred producer (F7).** `launch_cmd`/`launch_tail` are the values the
-/// **loader** must populate when a program is launched through the shell loop
-/// (EmuTOS fills `D.s_cmd`/`ad_stail` in `sh_ldapp` before `dos_exec`,
-/// `gemshlib.c:645`). NewTOS does not yet wire the shell-loop↔`Pexec` launch
-/// path, so no producer writes them and `shel_read` returns the defined-empty
-/// pair. This is an honest gap, not a stub: the read side is correct and the
-/// missing side is the launch wiring (tracked in `docs/STATUS.md` "Blocked").
+/// `launch_cmd`/`launch_tail` are populated by [`set_launch_info`], which the
+/// kernel launcher calls just before the program enters EL0 — the NewTOS
+/// analogue of EmuTOS filling `D.s_cmd`/`ad_stail` in `sh_ldapp` before
+/// `dos_exec` (`gemshlib.c:604-605,645`). A program launched through the
+/// desktop therefore reads back its own start command and command tail.
 ///
 /// **Accepted LOW deviation (F8).** EmuTOS copies a fixed `CMDTAILSIZE = 128`
 /// bytes (`memcpy`, `gemshlib.c:105`); we round-trip the tail as a
@@ -161,6 +248,38 @@ pub fn shel_read(pb: &Aespb) {
         cstr_out(pb.addrin(1) as *mut u8, &*S.launch_tail.get());
     }
     pb.set_ret(1);
+}
+
+/// Record the command + command tail that started the current application so a
+/// later [`shel_read`] returns them (the producer side of `sh_read`,
+/// `gemshlib.c:102-106`). The kernel launcher calls this just before the
+/// program enters EL0, mirroring EmuTOS setting `D.s_cmd` (the program path)
+/// and `ad_stail` (the command tail) before `dos_exec` (`gemshlib.c:604-605`,
+/// via `sh_write`, and `:645`).
+///
+/// `cmd` is the full launch path (`C:\APPS\QED\QED.NAP`); `tail` is the command
+/// tail **characters** (without the leading length byte — the caller strips it,
+/// matching the NUL-terminated round-trip `shel_read`/`shel_write` use, F8).
+/// Both are stored as NUL-terminated strings, truncated to the buffer if longer.
+pub fn set_launch_info(cmd: &[u8], tail: &[u8]) {
+    // SAFETY: single-CPU launcher context; exclusive writer of these buffers.
+    unsafe {
+        store_str(&mut *S.launch_cmd.get(), cmd);
+        store_str(&mut *S.launch_tail.get(), tail);
+    }
+}
+
+/// Copy `src` into `dst` as a zero-padded, NUL-terminated string, stopping at
+/// an embedded NUL in `src` and capping to `dst.len() - 1` bytes.
+fn store_str(dst: &mut [u8], src: &[u8]) {
+    dst.fill(0);
+    let n = src
+        .iter()
+        .position(|&b| b == 0)
+        .unwrap_or(src.len())
+        .min(dst.len() - 1);
+    dst[..n].copy_from_slice(&src[..n]);
+    // `dst` was zero-filled, so byte `n` is the terminating NUL.
 }
 
 /// `shel_write` (121) — the multi-purpose shell selector (`sh_write`,
@@ -252,25 +371,31 @@ pub fn shel_put(pb: &Aespb) {
 /// existing file, rewriting the buffer in place. Returns `1` if found, else
 /// `0` (`sh_find`/`findfile`, `gemshlib.c:406-484`).
 ///
-/// EmuTOS's `findfile` is a four-step search: (1) the **application
-/// directory** (`rlr->p_appdir`), (2) the current directory (spec as given),
-/// (3) the **root of the current drive** (`\` prefix), (4) each path in the
-/// AES `PATH=` environment. NewTOS implements the two search stages it can
-/// today:
+/// EmuTOS's `findfile` is a four-step search, in precedence order:
 ///
-/// * step (2) — the path as given (covers the current directory when the
-///   spec is drive/dir-relative), and
-/// * step (3) — the current drive's root, `<X>:\<name>` where `X` is the
+/// * (1) the **application directory** (`rlr->p_appdir`) — the *filename
+///   portion* of the spec (via `sh_name`) is searched there first
+///   (`gemshlib.c:415-423`); on a hit the buffer is rewritten to the
+///   fully-qualified name. NewTOS uses [`crate::aes::resource::app_dir`] (set
+///   by the kernel launcher, the `rlr->p_appdir` analogue).
+/// * (2) the current directory — the path as given (`gemshlib.c:426-431`).
+/// * (3) the **root of the current drive** — `<X>:\<name>` where `X` is the
 ///   current drive letter (`Dgetdrv()`), replacing the previous hardcoded
-///   `C:\` which ignored the current drive (`gemshlib.c:437-445`).
+///   `C:\` which ignored the current drive (`gemshlib.c:434-442`).
+/// * (4) each path in the AES `PATH=` environment (`gemshlib.c:445-460`).
 ///
-/// **Deferred (F5).** Step (1) needs the process model's `p_appdir` and step
-/// (4) needs a real DOS environment; NewTOS exposes neither yet, so those two
-/// stages are omitted rather than faked (tracked in `docs/STATUS.md`
-/// "Blocked"). **Note:** using `read_file` as an existence probe is fragile
-/// versus a proper `Fsfirst` existence check — it fails a directory match and
+/// **Step (4) skipped (documented, not faked).** NewTOS has no
+/// loader-populated AES `PATH=` environment: `shel_envrn` reads an internal
+/// hardcoded default (`"PATH=C:\;"`), not a real per-process AES environment
+/// (audit P6-010). Iterating that stand-in would only add a redundant `C:\`
+/// search (already covered by step (3)) while building on the faked env, so
+/// step (4) is omitted until a real AES environment exists — rather than
+/// inventing a PATH mechanism. Steps (1)-(3) are implemented in full.
+///
+/// **Note:** using `read_file` as the existence probe (kept from steps 2-3) is
+/// fragile versus a proper `Fsfirst` check — it fails a directory match and
 /// does not honour wildcards, both of which EmuTOS's `dos_sfirst` tolerates;
-/// a switch to `Fsfirst` is the right long-term fix.
+/// a switch to `Fsfirst` is the right long-term fix (out of scope here).
 pub fn shel_find(pb: &Aespb) {
     let p = pb.addrin(0) as *mut u8;
     if p.is_null() {
@@ -282,6 +407,27 @@ pub fn shel_find(pb: &Aespb) {
     let n = clen(&name);
 
     let mut probe = [0u8; 1];
+
+    // (1) The application directory (rlr->p_appdir), searched first with the
+    //     filename portion only (sh_name, gemshlib.c:412-423).
+    let mut appdir = [0u8; 64];
+    let alen = crate::aes::resource::app_dir(&mut appdir);
+    if alen > 0 {
+        let fname = filename_portion(&name[..n]);
+        let mut full = [0u8; PATHBUF];
+        if alen + fname.len() < full.len() {
+            full[..alen].copy_from_slice(&appdir[..alen]);
+            full[alen..alen + fname.len()].copy_from_slice(fname);
+            if let Ok(s) = core::str::from_utf8(&full[..alen + fname.len()]) {
+                if crate::bdos::fs::read_file(s, &mut probe).is_some() {
+                    cstr_out(p, &full);
+                    pb.set_ret(1);
+                    return;
+                }
+            }
+        }
+    }
+
     // (2) The path as given (current directory when drive/dir-relative).
     if let Ok(s) = core::str::from_utf8(&name[..n]) {
         if crate::bdos::fs::read_file(s, &mut probe).is_some() {
@@ -307,7 +453,23 @@ pub fn shel_find(pb: &Aespb) {
             }
         }
     }
+    // (4) AES PATH= — skipped: no loader-populated AES environment (see doc).
     pb.set_ret(0);
+}
+
+/// The filename portion of a path (EmuTOS `sh_name`, `gemshlib.c:305-318`):
+/// strip a leading `X:` drive prefix, then return everything after the last
+/// path separator. `"C:\APPS\QED.NAP"` → `"QED.NAP"`, `"C:QED.NAP"` →
+/// `"QED.NAP"`, `"QED.NAP"` → `"QED.NAP"`.
+fn filename_portion(name: &[u8]) -> &[u8] {
+    let mut s = name;
+    if s.len() >= 2 && s[1] == b':' {
+        s = &s[2..];
+    }
+    match s.iter().rposition(|&c| c == b'\\') {
+        Some(pos) => &s[pos + 1..],
+        None => s,
+    }
 }
 
 /// `shel_envrn` (125) — find the environment variable named by `addr_in[1]`

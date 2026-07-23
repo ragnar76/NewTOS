@@ -87,6 +87,19 @@ pub fn run_program_with_tail(path: &[u8], tail: &[u8]) -> bool {
     // (EmuTOS `pstart` → `p_nameit`, `aes/gempd.c:110-131`), so a later
     // `appl_find(name)` resolves it. The program's AES id is `slot + 1`.
     tos_api::aes::register_process(child.slot, path);
+    // Publish the start command + command tail for `shel_read` (P6-006): EmuTOS
+    // fills `D.s_cmd` (program path) and `ad_stail` (command tail) before
+    // `dos_exec` (`aes/gemshlib.c:604-605,645`). `tail` here is the
+    // length-prefixed p_cmdlin image (`tail[0]` = length, `tail[1..]` = chars);
+    // hand the shell the tail characters (the NUL-terminated round-trip
+    // `shel_read`/`shel_write` use — accepted deviation F8).
+    let tail_chars: &[u8] = if tail.is_empty() {
+        &[]
+    } else {
+        let len = tail[0] as usize;
+        &tail[1..(1 + len).min(tail.len())]
+    };
+    tos_api::aes::shell::set_launch_info(path, tail_chars);
     set_current(s.basepage_kva.load(Ordering::Acquire));
     kprintln!("[launch] EL0: slot {} entry 0x{:x}", child.slot, child.entry_va);
 

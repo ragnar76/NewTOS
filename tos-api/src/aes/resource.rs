@@ -869,6 +869,22 @@ pub fn set_app_dir(path: &[u8]) {
     APP_DIR.len.store(dir_len, Ordering::Release);
 }
 
+/// Copy the launched application's directory (as recorded by [`set_app_dir`],
+/// e.g. `C:\APPS\QED\`, always ending in a path separator) into `out`,
+/// returning the number of bytes written. This is NewTOS's analogue of
+/// EmuTOS's `rlr->p_appdir`, used by `shel_find` to search the application
+/// directory first (`findfile` step 1, `gemshlib.c:415-423`). An empty result
+/// (length 0) means no application directory is set.
+pub fn app_dir(out: &mut [u8]) -> usize {
+    let len = APP_DIR.len.load(Ordering::Acquire).min(out.len());
+    // SAFETY: single-CPU; `len` bytes were written by `set_app_dir`.
+    unsafe {
+        let buf = &*APP_DIR.buf.get();
+        out[..len].copy_from_slice(&buf[..len]);
+    }
+    len
+}
+
 /// `rsrc_load` (110) — load `addr_in[0]` (a `.RSC` filename) from disk.
 /// NewTOS searches the launched app's own directory first (lead directive),
 /// then `C:\GEMSYS\RSC\<name>`, then `C:\<name>`. Returns 1 on success, 0 on
