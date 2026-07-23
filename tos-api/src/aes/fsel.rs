@@ -2,8 +2,12 @@
 //!
 //! Spec: [`docs/api/aes/resource-fileselector.md`]. The selector reuses
 //! the real EmuTOS **FSELECTR** object tree, converted to native form
-//! (`tools/mkrsc.py convert aes/gem.rsc`) and loaded from
-//! `C:\GEMSYS\RSC\GEM.RSC`. We point its directory / selection / file-name
+//! (`tools/mkrsc.py convert references/emutos/aes/gem.rsc`) and **embedded**
+//! in the kernel as the built-in default — like EmuTOS links `gem.rsc` into
+//! ROM (`erd.c`) — so the selector always works on a bare card; a
+//! `C:\GEMSYS\RSC\GEM.RSC` on the drive overrides it when present, so the
+//! resource can be replaced without a kernel rebuild. We point its directory /
+//! selection / file-name
 //! `TEDINFO`s at our own buffers, fill the visible slots from a directory
 //! read ([`bdos::fs::list_dir`], `Fsfirst`/`Fsnext`-style), draw it, and
 //! run a modal loop: a click selects a file, `OK`/`Cancel` exit.
@@ -57,6 +61,29 @@ const MAX_DEPTH: i16 = 16;
 const BLACK_TEXT: i16 = 1 << 8; // te_color giving black ink (bits 8..11)
 
 const GEM_CAP: usize = 8 * 1024;
+
+/// The AES's own file-selector resource (EmuTOS `gem.rsc`), converted to the
+/// native LP64 NRSC format and **compiled into the kernel** — the same way
+/// EmuTOS links `gem.rsc` into ROM (via `erd.c`). Unlike every app resource
+/// (which `rsrc_load`s from disk), the file selector must always be available,
+/// so its resource is embedded rather than read from `C:\GEMSYS\RSC\GEM.RSC`.
+///
+/// The blob is the **pre-relocation** NRSC (internal pointers stored as byte
+/// offsets), byte-identical to what the disk file held; `load_fselectr` copies
+/// it into `SYS.buf` and relocates it in place, exactly as the old disk path
+/// did. Regenerate with:
+///
+/// ```text
+/// python3 tools/mkrsc.py convert references/emutos/aes/gem.rsc \
+///     tos-api/src/aes/gem_fsel.nrsc
+/// ```
+///
+/// (also wired as `cargo xtask gen-fsel-rsc`).
+const GEM_FSEL_RSC: &[u8] = include_bytes!("gem_fsel.nrsc");
+/// Compile-time guarantee that `SYS.buf` can hold the embedded resource
+/// (blob size + relocation is fully in-place). Raise [`GEM_CAP`] if the
+/// converted `gem.rsc` ever outgrows the buffer.
+const _: () = assert!(GEM_CAP >= GEM_FSEL_RSC.len());
 /// Maximum directory entries held for scrolling. EmuTOS sizes this
 /// dynamically from free RAM (`gemfslib.c:655`, "usually thousands"); we
 /// use a large fixed cap in static BSS instead. Dynamic RAM sizing would
@@ -106,7 +133,32 @@ const ED_INIT: i16 = 1;
 const ED_CHAR: i16 = 2;
 const ED_END: i16 = 3;
 
-/// Load + relocate GEM.RSC once; return the FSELECTR tree (or null).
+/// Relocate the NRSC blob already sitting in `SYS.buf`, tag its 3D flags, cache
+/// and return the FSELECTR tree — or null if the header does not validate
+/// (without caching). Shared by the disk-override and embedded-fallback paths.
+fn relocate_and_cache(buf: &mut [u8; GEM_CAP]) -> *mut Object {
+    // SAFETY: buf holds a pre-relocation NRSC blob; relocate validates the
+    // header and rewrites the byte offsets to absolute pointers in place.
+    if unsafe { resource::relocate_blob(buf.as_mut_ptr()) } {
+        let root = unsafe { resource::tree_root(buf.as_mut_ptr(), 0) };
+        set_3d_flags(root);
+        // SAFETY: single-CPU AES.
+        unsafe { *SYS.root.get() = root };
+        return root;
+    }
+    core::ptr::null_mut()
+}
+
+/// Obtain the FSELECTR tree (or null). Tries a disk override first, then falls
+/// back to the built-in resource:
+///
+/// 1. **Disk override** — if `C:\GEMSYS\RSC\GEM.RSC` exists (a native NRSC blob,
+///    same format `mkrsc.py` emits), load and use it. This lets a user replace
+///    the file-selector resource — a different design, more languages — without
+///    rebuilding the kernel. Only accepted if it relocates to a valid tree.
+/// 2. **Embedded fallback** — otherwise use [`GEM_FSEL_RSC`], the `gem.rsc`
+///    compiled into the kernel (EmuTOS links its `gem.rsc` into ROM the same
+///    way). The always-present baseline: the selector works on a bare card.
 fn load_fselectr() -> *mut Object {
     // SAFETY: single-CPU AES.
     let cached = unsafe { *SYS.root.get() };
@@ -115,16 +167,21 @@ fn load_fselectr() -> *mut Object {
     }
     // SAFETY: single-CPU AES; exclusive owner of the buffer.
     let buf = unsafe { &mut *SYS.buf.get() };
+
+    // 1. Disk override.
     if let Some(len) = crate::bdos::fs::read_file("C:\\GEMSYS\\RSC\\GEM.RSC", buf) {
-        // SAFETY: buf now holds GEM.RSC; relocate validates the header.
-        if len > 0 && unsafe { resource::relocate_blob(buf.as_mut_ptr()) } {
-            let root = unsafe { resource::tree_root(buf.as_mut_ptr(), 0) };
-            set_3d_flags(root);
-            unsafe { *SYS.root.get() = root };
-            return root;
+        if len > 0 {
+            let root = relocate_and_cache(buf);
+            if !root.is_null() {
+                return root;
+            }
+            // Present but invalid — fall through to the embedded blob below.
         }
     }
-    core::ptr::null_mut()
+
+    // 2. Embedded fallback. The `const _` assert guarantees the fit.
+    buf[..GEM_FSEL_RSC.len()].copy_from_slice(GEM_FSEL_RSC);
+    relocate_and_cache(buf)
 }
 
 /// Tag the file-selector objects with their 3D flags (EmuTOS `fs_start`):

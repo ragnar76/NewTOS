@@ -28,6 +28,7 @@ fn main() -> ExitCode {
     let result = match cmd.as_str() {
         "build" => cmd_build(&rest),
         "gen-font" => cmd_gen_font(),
+        "gen-fsel-rsc" => cmd_gen_fsel_rsc(),
         "run" => cmd_run(&rest),
         "test" => cmd_test(&rest),
         "help" | "--help" | "-h" => {
@@ -55,6 +56,10 @@ Commands:
   build --board {{rpi4|qemu-virt}} [--release]
   gen-font                       — extract the EmuTOS 6x6/8x8/8x16 ST system
                                    fonts into tos-api/src/vdi/font_data.rs
+  gen-fsel-rsc                   — convert the EmuTOS AES file-selector
+                                   resource (references/emutos/aes/gem.rsc)
+                                   into the embedded native blob
+                                   tos-api/src/aes/gem_fsel.nrsc
   run [--board {{rpi4|qemu-virt}}] [--release] [--window] [--debug]
                                    — boot in QEMU (virt by default, or
                                      raspi4b with --board rpi4); --window
@@ -255,6 +260,32 @@ fn cmd_gen_font() -> Result<(), String> {
     std::fs::write(&out, &s).map_err(|e| format!("write {}: {e}", out.display()))?;
     println!("xtask: wrote {} (6×6 + 8×8 + 8×16 glyphs)", out.display());
     Ok(())
+}
+
+/// Convert the EmuTOS AES file-selector resource into the native NRSC blob
+/// embedded by `tos-api/src/aes/fsel.rs` (`GEM_FSEL_RSC`).
+///
+/// Like [`cmd_gen_font`], this regenerates a committed build artifact from an
+/// EmuTOS reference. The conversion itself is `tools/mkrsc.py convert` (the
+/// classic big-endian `gem.rsc` → little-endian LP64 NRSC with byte-offset
+/// pointers); we only drive it so the regeneration command is reproducible and
+/// discoverable next to the other `gen-*` commands. The kernel then embeds the
+/// resulting blob and relocates it in place — no disk read, exactly as EmuTOS
+/// links `gem.rsc` into ROM.
+fn cmd_gen_fsel_rsc() -> Result<(), String> {
+    let root = workspace_root();
+    let script = root.join("tools").join("mkrsc.py");
+    let src = root.join("references").join("emutos").join("aes").join("gem.rsc");
+    let out = root.join("tos-api").join("src").join("aes").join("gem_fsel.nrsc");
+    let python = env::var_os("PYTHON").unwrap_or_else(|| "python3".into());
+    let mut c = Command::new(python);
+    c.current_dir(&root)
+        .arg(&script)
+        .arg("convert")
+        .arg(&src)
+        .arg(&out);
+    println!("xtask: converting {} -> {}", src.display(), out.display());
+    run(c)
 }
 
 fn build_kernel(board: Board, release: bool) -> Result<(), String> {
