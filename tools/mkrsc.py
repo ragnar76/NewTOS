@@ -123,23 +123,26 @@ def convert(path, out, ilp32=False):
     # marks the OBJECT width (1 = LP64/64-bit ob_spec, 2 = ILP32/32-bit ob_spec)
     # for tooling, but the kernel relocates by the *caller's* ABI.
     # PTR = free-string/free-image pointer-slot width (matches ob_spec).
-    # version 3 = LP64/44-byte header (+frstr/frimg tables), 4 = ILP32/same.
-    # (v1/v2 were the earlier 28-byte header without the tables; the kernel
-    # loader stays backward-compatible with those.)
+    # version 5 = LP64/68-byte header, 6 = ILP32/68-byte header: both carry the
+    # frstr/frimg pointer tables (as v3/v4 did) AND the TEDINFO/ICONBLK/BITBLK
+    # array bases + counts, so rsrc_gaddr/rsrc_saddr resolve the R_TEDINFO/
+    # R_ICONBLK/R_BITBLK family + their sub-pointer aliases (AUD-P6-002). The
+    # kernel loader stays backward-compatible with the earlier headers: v1/v2
+    # (28-byte, no tables), v3/v4 (44-byte, +frstr/frimg tables only).
     if ilp32:
         NAT_OBJ, NAT_TED, NAT_IB, NAT_BB = 24, 28, 36, 16
         OBJ_FMT = "<hhhHHHIhhhh"          # 4-byte ob_spec @ 12
         TED_FMT = "<IIIhhhhhhhh"          # 4-byte te_ptext/te_ptmplt/te_pvalid
         BB_FMT = "<Ihhhhh2x"              # 4-byte bi_pdata, pad to 16
         IB_FMT = "<IIIhhhhhhhhhhh2x"      # 4-byte ib_pmask/ib_pdata/ib_ptext, 36
-        PTR, PTR_FMT, version = 4, "<I", 4
+        PTR, PTR_FMT, version = 4, "<I", 6
     else:
         NAT_OBJ, NAT_TED, NAT_IB, NAT_BB = 32, 40, 48, 24
         OBJ_FMT = "<hhhHHH4xQhhhh"        # 8-byte ob_spec @ 16
         TED_FMT = "<QQQhhhhhhhh"
         BB_FMT = "<Qhhhhh6x"
         IB_FMT = "<QQQhhhhhhhhhhh2x"
-        PTR, PTR_FMT, version = 8, "<Q", 3
+        PTR, PTR_FMT, version = 8, "<Q", 5
 
     d = open(path, "rb").read()
     H = struct.unpack(">18H", d[:36])
@@ -148,10 +151,12 @@ def convert(path, out, ilp32=False):
     if vrsn & 0x0004:
         sys.exit("new-format (CICONBLK) .rsc not supported")
 
-    # Native section base offsets (counts are fixed up front). The v3/v4 header
-    # is 44 bytes and adds a free-string then a free-image pointer table between
-    # the ICONBLKs and the string/image data (each table = count * PTR bytes).
-    HDR = 44
+    # Native section base offsets (counts are fixed up front). The v5/v6 header
+    # is 68 bytes: the v3/v4 fields (through off_frimg/nimg) plus the TEDINFO/
+    # ICONBLK/BITBLK array bases + counts (off_ted/nted, off_ib/nib, off_bb/nbb).
+    # A free-string then a free-image pointer table sits between the ICONBLKs and
+    # the string/image data (each table = count * PTR bytes).
+    HDR = 68
     off_tri = HDR
     off_obj = off_tri + ntree * 4
     off_ted = off_obj + nobs * NAT_OBJ
@@ -276,9 +281,13 @@ def convert(path, out, ilp32=False):
         tri.extend(struct.pack("<I", (toff - p_obj) // CLS_OBJ))
 
     total = off_data + len(data)
+    # v5/v6 header: magic + 16 u32 (68 bytes). Field order MUST match the kernel
+    # `NrscHeader` struct (tos-api/src/aes/resource.rs): the v3/v4 fields, then
+    # off_ted/nted, off_ib/nib, off_bb/nbb (the TEDINFO/ICONBLK/BITBLK bases).
     header = struct.pack(
-        "<4sIIIIIIIIII", b"NRSC", version, ntree, nobs, off_tri, off_obj, total,
-        off_frstr, nstr, off_frimg, nimg)
+        "<4s16I", b"NRSC", version, ntree, nobs, off_tri, off_obj, total,
+        off_frstr, nstr, off_frimg, nimg,
+        off_ted, nted, off_ib, nib, off_bb, nbb)
     blob = header + tri + objs + teds + bbs + ibs + bytes(frstr) + bytes(frimg) + data
     assert len(blob) == total, (len(blob), total)
     open(out, "wb").write(blob)

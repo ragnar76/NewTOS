@@ -20,6 +20,13 @@
 //! * **v3 (LP64) / v4 (ILP32)** — 44-byte header that additionally carries a
 //!   **free-string** and a **free-image** pointer table, so `rsrc_gaddr`'s
 //!   `R_FRSTR`/`R_STRING`/`R_FRIMG`/`R_IMAGEDATA` selectors resolve (D-054).
+//! * **v5 (LP64) / v6 (ILP32)** — 68-byte header that additionally carries the
+//!   **TEDINFO / ICONBLK / BITBLK** array bases + counts, so the remaining
+//!   `rsrc_gaddr`/`rsrc_saddr` selectors (`R_TEDINFO`/`R_ICONBLK`/`R_BITBLK`
+//!   and the `R_OBSPEC`/`R_TEP*`/`R_IBP*`/`R_BIPDATA` sub-pointer aliases)
+//!   resolve to real struct/field addresses (AUD-P6-002). The sub-struct data
+//!   themselves already existed in v3/v4 blobs; v5/v6 only records where they
+//!   are. v1–v4 keep loading (those selectors report "not found").
 //!
 //! ```text
 //!   NrscHeader: magic "NRSC", version, n_trees, n_objects,
@@ -51,33 +58,91 @@ use core::mem::size_of;
 use core::sync::atomic::{AtomicI32, AtomicUsize, Ordering};
 use tos_types::{BasePage, Long, MX_PREFTTRAM};
 
-// Object types whose `ob_spec` is a string pointer (needs relocation).
+// Object base types, classified for `ob_spec` relocation exactly like EmuTOS
+// `fix_objects` (gemrslib.c:620-635): the BOX types carry a literal colour
+// word (never relocated), G_CICON a CICONBLK-table index (special case), the
+// TEDINFO/BITBLK/ICONBLK types a sub-struct pointer (relocated together with
+// their internal pointers), and every other type a plain blob-offset `ob_spec`
+// (the relocation `default:`).
+const G_BOX: u16 = 20;
 const G_TEXT: u16 = 21;
 const G_BOXTEXT: u16 = 22;
 const G_IMAGE: u16 = 23;
-const G_BUTTON: u16 = 26;
-const G_STRING: u16 = 28;
+const G_IBOX: u16 = 25;
+const G_BOXCHAR: u16 = 27;
 const G_FTEXT: u16 = 29;
 const G_FBOXTEXT: u16 = 30;
 const G_ICON: u16 = 31;
-const G_TITLE: u16 = 32;
+const G_CICON: u16 = 33;
 
-// rsrc_gaddr / rsrc_saddr R_* selectors (spec resource-fileselector.md §0).
+// rsrc_gaddr / rsrc_saddr R_* selectors (aesdefs.h:578-594; spec
+// resource-fileselector.md §0). `get_addr` (gemrslib.c:112-176) maps each to a
+// slot address: R_TREE/R_OBJECT and the array types to a record base, the
+// R_*P* aliases to a pointer *field within* the indexed record, and
+// R_STRING/R_IMAGEDATA to the dereferenced free-string / free-image data.
 const R_TREE: i16 = 0;
 const R_OBJECT: i16 = 1;
+/// `&tedinfo[index]` (== `&tedinfo[index].te_ptext`, its first field).
+const R_TEDINFO: i16 = 2;
+/// `&iconblk[index]` (== `&iconblk[index].ib_pmask`, its first field).
+const R_ICONBLK: i16 = 3;
+/// `&bitblk[index]` (== `&bitblk[index].bi_pdata`, its first field).
+const R_BITBLK: i16 = 4;
 /// Free-string **data** pointer `frstr[index]` (dereferenced).
 const R_STRING: i16 = 5;
 /// Free-image **data** pointer `frimg[index]` (dereferenced).
 const R_IMAGEDATA: i16 = 6;
+/// Address of `object[index].ob_spec`.
+const R_OBSPEC: i16 = 7;
+/// Address of `tedinfo[index].te_ptext` (same slot as `R_TEDINFO`).
+const R_TEPTEXT: i16 = 8;
+/// Address of `tedinfo[index].te_ptmplt`.
+const R_TEPTMPLT: i16 = 9;
+/// Address of `tedinfo[index].te_pvalid`.
+const R_TEPVALID: i16 = 10;
+/// Address of `iconblk[index].ib_pmask` (same slot as `R_ICONBLK`).
+const R_IBPMASK: i16 = 11;
+/// Address of `iconblk[index].ib_pdata`.
+const R_IBPDATA: i16 = 12;
+/// Address of `iconblk[index].ib_ptext`.
+const R_IBPTEXT: i16 = 13;
+/// Address of `bitblk[index].bi_pdata` (same slot as `R_BITBLK`).
+const R_BIPDATA: i16 = 14;
 /// Address **of** the free-string pointer slot, `&frstr[index]`.
 const R_FRSTR: i16 = 15;
 /// Address **of** the free-image pointer slot, `&frimg[index]`.
 const R_FRIMG: i16 = 16;
 
+/// Byte offset of `ob_spec` within an OBJECT: 16 (LP64 32-byte record, 4 pad
+/// bytes before the 8-byte pointer) or [`OB_SPEC_OFF_ILP32`] (12) for the
+/// packed ILP32 24-byte record. Used by `R_OBSPEC`.
+const OB_SPEC_OFF_LP64: usize = 16;
+
+/// Native sub-struct record strides for an LP64 caller — the kernel `repr(C)`
+/// sizes (`size_of`): TEDINFO 40, ICONBLK 48, BITBLK 24. An ILP32 caller links
+/// the 4-byte-pointer layout (`mt_gem.h`), so the strides shrink (see below);
+/// both match `mkrsc.py`'s `NAT_TED`/`NAT_IB`/`NAT_BB`.
+const TEDINFO_SIZE: usize = size_of::<TedInfo>();
+const ICONBLK_SIZE: usize = size_of::<IconBlk>();
+const BITBLK_SIZE: usize = size_of::<BitBlk>();
+/// ILP32 sub-struct record strides (`mt_gem.h`: 4-byte `te_p*`/`ib_p*`/
+/// `bi_pdata`): TEDINFO 28, ICONBLK 36, BITBLK 16 (`mkrsc.py` ILP32 layout).
+const TEDINFO_SIZE_ILP32: usize = 28;
+const ICONBLK_SIZE_ILP32: usize = 36;
+const BITBLK_SIZE_ILP32: usize = 16;
+
 /// First NRSC `version` whose header carries the free-string / free-image
 /// pointer tables (44-byte header). v1/v2 have the 28-byte header and no
 /// tables — the loader treats their frstr/frimg counts as 0 (backward compat).
 const NRSC_VER_TABLES: u32 = 3;
+
+/// First NRSC `version` whose header additionally carries the TEDINFO / ICONBLK
+/// / BITBLK array bases + counts (68-byte header: v5 LP64, v6 ILP32), so
+/// `rsrc_gaddr`/`rsrc_saddr` resolve the R_TEDINFO/R_ICONBLK/R_BITBLK family
+/// and their sub-pointer aliases. v1–v4 lack these fields — the loader leaves
+/// the three counts at 0 and those selectors report the documented "not found"
+/// (backward compatible: v1–v4 keep loading unchanged).
+const NRSC_VER_SUBSTRUCTS: u32 = 5;
 
 /// Maximum number of object trees registered from one `.RSC`. A real GEM
 /// app has one tree per dialog/menu: QED's `qed.rsc` declares 32
@@ -87,15 +152,19 @@ const NRSC_VER_TABLES: u32 = 3;
 /// bounds the actual count.
 const MAX_TREES: usize = 64;
 
-/// Native resource-file header. 28 bytes for v1/v2, 44 bytes for v3/v4 (the
-/// last four fields exist only for `version >= NRSC_VER_TABLES`; for older
-/// files those bytes overlap the tree index and MUST NOT be interpreted).
+/// Native resource-file header. 28 bytes for v1/v2, 44 bytes for v3/v4, 68
+/// bytes for v5/v6. Each generation's extra fields exist only for a high
+/// enough `version` (`>= NRSC_VER_TABLES` for the free-string/-image table
+/// fields, `>= NRSC_VER_SUBSTRUCTS` for the TEDINFO/ICONBLK/BITBLK fields);
+/// for an older file those trailing bytes overlap the tree index / objects and
+/// MUST NOT be interpreted (the loader gates on `version`).
 #[repr(C)]
 pub struct NrscHeader {
     /// `b"NRSC"`.
     pub magic: [u8; 4],
     /// Format version: 1 = LP64/28 B, 2 = ILP32/28 B, 3 = LP64/44 B (+tables),
-    /// 4 = ILP32/44 B (+tables).
+    /// 4 = ILP32/44 B (+tables), 5 = LP64/68 B (+substruct bases), 6 = ILP32/
+    /// 68 B (+substruct bases).
     pub version: u32,
     /// Number of object trees.
     pub n_trees: u32,
@@ -107,14 +176,26 @@ pub struct NrscHeader {
     pub off_objects: u32,
     /// Total blob size in bytes.
     pub total_size: u32,
-    /// Offset to the free-string pointer table (v3/v4 only, else undefined).
+    /// Offset to the free-string pointer table (v3+ only, else undefined).
     pub off_frstr: u32,
-    /// Number of free strings (v3/v4 only, else undefined).
+    /// Number of free strings (v3+ only, else undefined).
     pub n_frstr: u32,
-    /// Offset to the free-image pointer table (v3/v4 only, else undefined).
+    /// Offset to the free-image pointer table (v3+ only, else undefined).
     pub off_frimg: u32,
-    /// Number of free images (v3/v4 only, else undefined).
+    /// Number of free images (v3+ only, else undefined).
     pub n_frimg: u32,
+    /// Offset to the `TedInfo` array (v5/v6 only, else undefined).
+    pub off_ted: u32,
+    /// Number of `TedInfo` records (v5/v6 only, else undefined).
+    pub n_ted: u32,
+    /// Offset to the `IconBlk` array (v5/v6 only, else undefined).
+    pub off_ib: u32,
+    /// Number of `IconBlk` records (v5/v6 only, else undefined).
+    pub n_ib: u32,
+    /// Offset to the `BitBlk` array (v5/v6 only, else undefined).
+    pub off_bb: u32,
+    /// Number of `BitBlk` records (v5/v6 only, else undefined).
+    pub n_bb: u32,
 }
 
 /// The loaded resource (single resource per app — NewTOS is single-app).
@@ -149,6 +230,32 @@ struct Loaded {
     n_frimg: UnsafeCell<usize>,
     /// Width of one frstr/frimg pointer slot: 8 (LP64) or 4 (ILP32).
     ptr_size: UnsafeCell<usize>,
+    /// Kernel-reachable alias of `object[0]` (`obj_base` is the app-visible
+    /// target VA). Equals `obj_base` for a direct EL1 caller; the pool block's
+    /// kernel alias for the EL0 path. Used by `rsrc_saddr`
+    /// (R_OBJECT/R_OBSPEC/R_TREE) to write a slot through a kernel VA.
+    obj_access: UnsafeCell<u64>,
+    /// Target VA of `tedinfo[0]` (`R_TEDINFO`/`R_TEP*`), 0 = no table (v1–v4).
+    ted_target: UnsafeCell<u64>,
+    /// Kernel-reachable alias of `tedinfo[0]` (for `rsrc_saddr`).
+    ted_access: UnsafeCell<u64>,
+    n_ted: UnsafeCell<usize>,
+    /// Stride of one TEDINFO record: 40 (LP64) or 28 (ILP32).
+    ted_size: UnsafeCell<usize>,
+    /// Target VA of `iconblk[0]` (`R_ICONBLK`/`R_IBP*`), 0 = no table.
+    ib_target: UnsafeCell<u64>,
+    /// Kernel-reachable alias of `iconblk[0]`.
+    ib_access: UnsafeCell<u64>,
+    n_ib: UnsafeCell<usize>,
+    /// Stride of one ICONBLK record: 48 (LP64) or 36 (ILP32).
+    ib_size: UnsafeCell<usize>,
+    /// Target VA of `bitblk[0]` (`R_BITBLK`/`R_BIPDATA`), 0 = no table.
+    bb_target: UnsafeCell<u64>,
+    /// Kernel-reachable alias of `bitblk[0]`.
+    bb_access: UnsafeCell<u64>,
+    n_bb: UnsafeCell<usize>,
+    /// Stride of one BITBLK record: 24 (LP64) or 16 (ILP32).
+    bb_size: UnsafeCell<usize>,
 }
 // SAFETY: single boot CPU only touches the AES.
 unsafe impl Sync for Loaded {}
@@ -166,6 +273,19 @@ static RSC: Loaded = Loaded {
     frimg_access: UnsafeCell::new(0),
     n_frimg: UnsafeCell::new(0),
     ptr_size: UnsafeCell::new(0),
+    obj_access: UnsafeCell::new(0),
+    ted_target: UnsafeCell::new(0),
+    ted_access: UnsafeCell::new(0),
+    n_ted: UnsafeCell::new(0),
+    ted_size: UnsafeCell::new(0),
+    ib_target: UnsafeCell::new(0),
+    ib_access: UnsafeCell::new(0),
+    n_ib: UnsafeCell::new(0),
+    ib_size: UnsafeCell::new(0),
+    bb_target: UnsafeCell::new(0),
+    bb_access: UnsafeCell::new(0),
+    n_bb: UnsafeCell::new(0),
+    bb_size: UnsafeCell::new(0),
 };
 
 /// ILP32 OBJECT record stride (4-byte `ob_spec` @ +12; see `mt_gem.h`
@@ -229,6 +349,10 @@ unsafe fn relocate_and_register_core(access_base: *mut u8, target_base: u64, abi
         }
         *RSC.n_trees.get() = n;
         *RSC.obj_base.get() = objs_target;
+        // Kernel-reachable alias of the object array, for `rsrc_saddr`'s
+        // R_OBJECT/R_OBSPEC/R_TREE writes (equals `objs_target` for the in-place
+        // EL1 path; the pool block's kernel alias on the EL0 path).
+        *RSC.obj_access.get() = access_base as u64 + h.off_objects as u64;
         *RSC.obj_size.get() = obj_size;
         *RSC.n_objects.get() = h.n_objects as usize;
 
@@ -257,6 +381,46 @@ unsafe fn relocate_and_register_core(access_base: *mut u8, target_base: u64, abi
             *RSC.frimg_target.get() = 0;
             *RSC.frimg_access.get() = 0;
             *RSC.n_frimg.get() = 0;
+        }
+
+        // TEDINFO / ICONBLK / BITBLK array bases (NRSC >= v5), so rsrc_gaddr /
+        // rsrc_saddr resolve R_TEDINFO/R_ICONBLK/R_BITBLK and their sub-pointer
+        // aliases (R_OBSPEC/R_TEP*/R_IBP*/R_BIPDATA). The three arrays already
+        // existed in v3/v4 blobs (the OBJECT walk relocates their internals);
+        // v5/v6 only records their offsets + counts in the 68-byte header. The
+        // strides are the caller-ABI record sizes (mkrsc.py NAT_TED/NAT_IB/
+        // NAT_BB). A v1–v4 file has none of this — the counts stay 0 and those
+        // selectors report the documented "not found" (backward compatible).
+        let (ted_size, ib_size, bb_size) = match abi {
+            Abi::Ilp32 => (TEDINFO_SIZE_ILP32, ICONBLK_SIZE_ILP32, BITBLK_SIZE_ILP32),
+            Abi::Lp64 => (TEDINFO_SIZE, ICONBLK_SIZE, BITBLK_SIZE),
+        };
+        if h.version >= NRSC_VER_SUBSTRUCTS {
+            *RSC.ted_target.get() = target_base + h.off_ted as u64;
+            *RSC.ted_access.get() = access_base as u64 + h.off_ted as u64;
+            *RSC.n_ted.get() = h.n_ted as usize;
+            *RSC.ted_size.get() = ted_size;
+            *RSC.ib_target.get() = target_base + h.off_ib as u64;
+            *RSC.ib_access.get() = access_base as u64 + h.off_ib as u64;
+            *RSC.n_ib.get() = h.n_ib as usize;
+            *RSC.ib_size.get() = ib_size;
+            *RSC.bb_target.get() = target_base + h.off_bb as u64;
+            *RSC.bb_access.get() = access_base as u64 + h.off_bb as u64;
+            *RSC.n_bb.get() = h.n_bb as usize;
+            *RSC.bb_size.get() = bb_size;
+        } else {
+            *RSC.ted_target.get() = 0;
+            *RSC.ted_access.get() = 0;
+            *RSC.n_ted.get() = 0;
+            *RSC.ted_size.get() = 0;
+            *RSC.ib_target.get() = 0;
+            *RSC.ib_access.get() = 0;
+            *RSC.n_ib.get() = 0;
+            *RSC.ib_size.get() = 0;
+            *RSC.bb_target.get() = 0;
+            *RSC.bb_access.get() = 0;
+            *RSC.n_bb.get() = 0;
+            *RSC.bb_size.get() = 0;
         }
     }
     true
@@ -328,13 +492,20 @@ unsafe fn relocate_blob_core_ilp32(access_base: *mut u8, target_base: u64) -> bo
             if spec == 0 {
                 continue;
             }
-            // Classify by the *base* type only (high byte = extended flags),
-            // matching `relocate_blob_core` / `fix_objects`.
+            // Classify by the *base* type only (high byte = extended flags).
+            // Relocation by EXCLUSION (EmuTOS `fix_objects`, gemrslib.c:620-635;
+            // see the LP64 twin `relocate_blob_core` for the full rationale):
+            // BOX types keep their literal word, G_CICON is a CICONBLK-table
+            // index (special case), and every other type's `ob_spec` is a blob
+            // offset relocated with `+= tb`.
             match rd16(obj.add(OB_TYPE_OFF)) & 0x00ff {
-                G_STRING | G_BUTTON | G_TITLE => {
-                    (obj.add(OB_SPEC_OFF_ILP32) as *mut u32)
-                        .write_unaligned(spec.wrapping_add(tb));
-                }
+                // Literal colour/thickness word — never a pointer.
+                G_BOX | G_IBOX | G_BOXCHAR => {}
+                // Colour icon: `ob_spec` indexes the CICONBLK pointer table,
+                // NOT a blob offset — excluded from the `+= tb` relocation
+                // (P6-012). `mkrsc.py` has no CICON data path (it zeroes
+                // G_CICON `ob_spec`, skipped above), so nothing to fix up.
+                G_CICON => {}
                 G_TEXT | G_BOXTEXT | G_FTEXT | G_FBOXTEXT => {
                     let nspec = spec.wrapping_add(tb);
                     (obj.add(OB_SPEC_OFF_ILP32) as *mut u32).write_unaligned(nspec);
@@ -365,8 +536,12 @@ unsafe fn relocate_blob_core_ilp32(access_base: *mut u8, target_base: u64) -> bo
                         reloc32(ib.add(8), tb);
                     }
                 }
-                // G_BOX/G_IBOX/G_BOXCHAR: ob_spec is a literal word.
-                _ => {}
+                // Plain blob-offset `ob_spec` (G_STRING/G_BUTTON/G_TITLE,
+                // G_USERDEF, G_PROGDEF, …) → relocate (EmuTOS `fix_long`).
+                _ => {
+                    (obj.add(OB_SPEC_OFF_ILP32) as *mut u32)
+                        .write_unaligned(spec.wrapping_add(tb));
+                }
             }
         }
         // Free-string / free-image pointer tables (NRSC >= v3, 4-byte slots).
@@ -457,8 +632,24 @@ unsafe fn relocate_blob_core(access_base: *mut u8, target_base: u64) -> bool {
             // an object with the high byte set would miss every arm, its
             // `ob_spec` would keep a raw file offset, and `objc_draw` would
             // dereference a small integer.
+            // Relocation by EXCLUSION, matching EmuTOS `fix_objects`
+            // (gemrslib.c:620-635): the BOX types keep their literal colour
+            // word, G_CICON is a CICONBLK-table index (special case), and every
+            // other type's `ob_spec` is a blob offset relocated with `+= tb`.
+            // (The earlier by-INCLUSION list silently left G_USERDEF and any
+            // other non-listed type unrelocated — AUD-P6-012.)
             match o.ob_type & 0x00ff {
-                G_STRING | G_BUTTON | G_TITLE => o.ob_spec += tb,
+                // Literal colour/thickness word — never a pointer.
+                G_BOX | G_IBOX | G_BOXCHAR => {}
+                // Colour icon: `ob_spec` indexes the CICONBLK pointer table
+                // (EmuTOS `ob_spec = ciconblkptr[ob_spec]`), NOT a blob offset,
+                // so it is excluded from the `+= tb` relocation. The full
+                // CICONBLK fix-up (`fixup_all_ciconblks`/`transform_all_cicons`)
+                // activates once `mkrsc.py` emits a CICON table; today the tool
+                // rejects CICON `.rsc` files and zeroes any G_CICON `ob_spec`
+                // (drawn empty, skipped above by the `ob_spec == 0` guard), so
+                // there is no CICON data path to fix up (AUD-P6-012).
+                G_CICON => {}
                 G_TEXT | G_BOXTEXT | G_FTEXT | G_FBOXTEXT => {
                     o.ob_spec += tb;
                     // Relocate the shared TEDINFO's internal pointers once.
@@ -485,8 +676,9 @@ unsafe fn relocate_blob_core(access_base: *mut u8, target_base: u64) -> bool {
                         reloc(&mut ib.ib_ptext, tb);
                     }
                 }
-                // G_BOX/G_IBOX/G_BOXCHAR: ob_spec is a literal word.
-                _ => {}
+                // Plain blob-offset `ob_spec` (G_STRING/G_BUTTON/G_TITLE,
+                // G_USERDEF, G_PROGDEF, …) → relocate (EmuTOS `fix_long`).
+                _ => o.ob_spec += tb,
             }
         }
         // Free-string / free-image pointer tables (NRSC >= v3, 8-byte slots):
@@ -857,106 +1049,232 @@ pub fn rsrc_free(pb: &Aespb) {
         *RSC.frimg_access.get() = 0;
         *RSC.n_frimg.get() = 0;
         *RSC.ptr_size.get() = 0;
+        *RSC.obj_access.get() = 0;
+        *RSC.ted_target.get() = 0;
+        *RSC.ted_access.get() = 0;
+        *RSC.n_ted.get() = 0;
+        *RSC.ted_size.get() = 0;
+        *RSC.ib_target.get() = 0;
+        *RSC.ib_access.get() = 0;
+        *RSC.n_ib.get() = 0;
+        *RSC.ib_size.get() = 0;
+        *RSC.bb_target.get() = 0;
+        *RSC.bb_access.get() = 0;
+        *RSC.n_bb.get() = 0;
+        *RSC.bb_size.get() = 0;
     }
     pb.set_ret(if was_loaded { 1 } else { 0 });
 }
 
-/// `rsrc_gaddr` (112) — address of resource object `int_in[1]` of `R_*`
-/// type `int_in[0]` → `addr_out[0]`.
-///
-/// Implemented selectors (spec resource-fileselector.md §0): `R_TREE`,
-/// `R_OBJECT`, plus the free-string / free-image family filled in for D-054 —
-/// `R_FRSTR`/`R_FRIMG` return the *address of* the pointer slot
-/// (`&frstr[index]` / `&frimg[index]`), while `R_STRING`/`R_IMAGEDATA` return
-/// the *dereferenced* data pointer (`frstr[index]` / `frimg[index]`). Every
-/// other type code, and any resource without a free-string/-image table (v1/v2
-/// NRSC), yields the documented "not found" (`addr_out[0] = 0`, `int_out[0] =
-/// 0`). Indices are bounds-checked against the resource's counts.
-pub fn rsrc_gaddr(pb: &Aespb) {
-    let rtype = pb.intin(0);
-    let index = pb.intin(1) as usize;
-    // SAFETY: single-CPU AES; the VAs + stride were set by
-    // relocate_and_register (LP64: 32-byte records; ILP32: 24-byte).
-    let addr = unsafe {
-        match rtype {
-            R_TREE => {
-                if index < *RSC.n_trees.get() {
-                    (*RSC.trees.get())[index]
-                } else {
-                    0
-                }
-            }
-            R_OBJECT => {
-                let base = *RSC.obj_base.get();
-                if base != 0 && index < *RSC.n_objects.get() {
-                    base + (index * *RSC.obj_size.get()) as u64
-                } else {
-                    0
-                }
-            }
-            R_FRSTR => {
-                // &frstr[index] — the app-visible address OF the slot.
-                let base = *RSC.frstr_target.get();
-                if base != 0 && index < *RSC.n_frstr.get() {
-                    base + (index * *RSC.ptr_size.get()) as u64
-                } else {
-                    0
-                }
-            }
-            R_FRIMG => {
-                let base = *RSC.frimg_target.get();
-                if base != 0 && index < *RSC.n_frimg.get() {
-                    base + (index * *RSC.ptr_size.get()) as u64
-                } else {
-                    0
-                }
-            }
-            R_STRING => read_slot(
-                *RSC.frstr_access.get(),
-                index,
-                *RSC.n_frstr.get(),
-                *RSC.ptr_size.get(),
-            ),
-            R_IMAGEDATA => read_slot(
-                *RSC.frimg_access.get(),
-                index,
-                *RSC.n_frimg.get(),
-                *RSC.ptr_size.get(),
-            ),
-            _ => 0,
-        }
-    };
-    pb.set_addrout(0, addr);
-    pb.set_ret(if addr != 0 { 1 } else { 0 });
+/// A resolved resource slot: the app-visible address (`target`, returned by
+/// [`rsrc_gaddr`]) and the kernel-reachable alias (`access`, written by
+/// [`rsrc_saddr`] and dereferenced for `R_STRING`/`R_IMAGEDATA`). For a direct
+/// EL1 caller the two coincide; for an EL0-loaded resource they differ by the
+/// blob's target↔access delta (the whole blob is one contiguous region mapped
+/// at both a user VA and a kernel high-half alias).
+#[derive(Clone, Copy)]
+struct Slot {
+    target: u64,
+    access: u64,
 }
 
-/// Dereference the (already relocated) target VA stored in the `index`-th
-/// frstr/frimg pointer slot, read through the kernel-reachable table base
-/// `access_base`. Returns 0 for an empty table, an out-of-range index, or a
-/// NULL slot. This is the `R_STRING`/`R_IMAGEDATA` path: the slot holds an app
-/// VA, but the table itself is read via the kernel alias so EL1 never faults on
-/// an EL0 address.
+/// The (target, access) address of member `off` of the `index`-th record of an
+/// array based at `target_base`/`access_base` with `count` records of `size`
+/// bytes. Returns `None` (EmuTOS would hand back an in-bounds pointer; NewTOS
+/// uses the documented safer bounds check — D-054 / AUD-P6-016) for an absent
+/// table (`target_base == 0`, i.e. a resource without that section) or an
+/// out-of-range index.
+fn array_slot(
+    target_base: u64,
+    access_base: u64,
+    count: usize,
+    size: usize,
+    off: u64,
+    index: usize,
+) -> Option<Slot> {
+    if target_base == 0 || index >= count {
+        return None;
+    }
+    let d = index as u64 * size as u64 + off;
+    Some(Slot { target: target_base + d, access: access_base + d })
+}
+
+/// The slot designated by `R_STRING`/`R_IMAGEDATA`: EmuTOS `get_addr`
+/// dereferences the `index`-th free-string / free-image pointer and returns the
+/// **data** pointer it holds (gemrslib.c:159-162). The value read from the
+/// (already relocated) slot is a target VA into the same blob, so its kernel
+/// alias is `value + (access_base − target_base)` (the blob's target↔access
+/// delta). `None` for an absent table, an out-of-range index, or a NULL slot.
 ///
 /// # Safety
-/// Single-CPU AES. `access_base`, when non-zero, is a kernel-reachable base of
+/// Single-CPU AES; `access_base`, when non-zero, is a kernel-reachable base of
 /// a relocated frstr/frimg table with at least `count` slots of `ptr_size`.
-unsafe fn read_slot(access_base: u64, index: usize, count: usize, ptr_size: usize) -> u64 {
+unsafe fn deref_slot(
+    target_base: u64,
+    access_base: u64,
+    count: usize,
+    ptr_size: usize,
+    index: usize,
+) -> Option<Slot> {
     if access_base == 0 || index >= count {
-        return 0;
+        return None;
     }
     let p = (access_base + (index * ptr_size) as u64) as *const u8;
     // SAFETY: `index < count`; the slot span is live per the caller contract.
-    unsafe {
+    let v = unsafe {
         match ptr_size {
             4 => (p as *const u32).read_unaligned() as u64,
             _ => (p as *const u64).read_unaligned(),
         }
+    };
+    if v == 0 {
+        return None;
+    }
+    let delta = access_base.wrapping_sub(target_base);
+    Some(Slot { target: v, access: v.wrapping_add(delta) })
+}
+
+/// Resolve the slot of resource object `index` of `R_*` type `rtype`, faithful
+/// to EmuTOS `get_addr` (gemrslib.c:112-176) + the R_* table (aesdefs.h:578-594).
+/// Shared by [`rsrc_gaddr`] (which returns `Slot::target`) and [`rsrc_saddr`]
+/// (which writes through `Slot::access`). The sub-pointer aliases resolve to a
+/// pointer field *within* the indexed record at the caller's ABI width:
+/// `ob_spec` @16 (LP64) / @12 (ILP32); the TEDINFO/ICONBLK sub-pointers at
+/// `ptr_size` strides (`te_ptmplt`/`ib_pdata` @`ptr_size`, `te_pvalid`/
+/// `ib_ptext` @`2*ptr_size`). `None` is EmuTOS's `-1L` (unknown type) or
+/// NewTOS's safer not-found (absent table / out-of-range index).
+///
+/// # Safety
+/// Single-CPU AES; every descriptor cell read below was set by
+/// `relocate_and_register` (and cleared by `rsrc_free`).
+unsafe fn get_addr(rtype: i16, index: usize) -> Option<Slot> {
+    // SAFETY: single-CPU AES; the descriptor cells are valid (set at load).
+    unsafe {
+        let ps = *RSC.ptr_size.get() as u64;
+        let obj_t = *RSC.obj_base.get();
+        let obj_a = *RSC.obj_access.get();
+        let n_obj = *RSC.n_objects.get();
+        let obj_sz = *RSC.obj_size.get();
+        match rtype {
+            R_TREE => {
+                if index >= *RSC.n_trees.get() {
+                    return None;
+                }
+                // The tree root lives inside the OBJECT array, so its kernel
+                // alias uses the same blob delta as the object array.
+                let target = (*RSC.trees.get())[index];
+                let delta = obj_a.wrapping_sub(obj_t);
+                Some(Slot { target, access: target.wrapping_add(delta) })
+            }
+            R_OBJECT => array_slot(obj_t, obj_a, n_obj, obj_sz, 0, index),
+            R_OBSPEC => {
+                let off = if obj_sz == OBJECT_SIZE {
+                    OB_SPEC_OFF_LP64 as u64
+                } else {
+                    OB_SPEC_OFF_ILP32 as u64
+                };
+                array_slot(obj_t, obj_a, n_obj, obj_sz, off, index)
+            }
+            R_TEDINFO | R_TEPTEXT => array_slot(
+                *RSC.ted_target.get(), *RSC.ted_access.get(),
+                *RSC.n_ted.get(), *RSC.ted_size.get(), 0, index,
+            ),
+            R_TEPTMPLT => array_slot(
+                *RSC.ted_target.get(), *RSC.ted_access.get(),
+                *RSC.n_ted.get(), *RSC.ted_size.get(), ps, index,
+            ),
+            R_TEPVALID => array_slot(
+                *RSC.ted_target.get(), *RSC.ted_access.get(),
+                *RSC.n_ted.get(), *RSC.ted_size.get(), 2 * ps, index,
+            ),
+            R_ICONBLK | R_IBPMASK => array_slot(
+                *RSC.ib_target.get(), *RSC.ib_access.get(),
+                *RSC.n_ib.get(), *RSC.ib_size.get(), 0, index,
+            ),
+            R_IBPDATA => array_slot(
+                *RSC.ib_target.get(), *RSC.ib_access.get(),
+                *RSC.n_ib.get(), *RSC.ib_size.get(), ps, index,
+            ),
+            R_IBPTEXT => array_slot(
+                *RSC.ib_target.get(), *RSC.ib_access.get(),
+                *RSC.n_ib.get(), *RSC.ib_size.get(), 2 * ps, index,
+            ),
+            R_BITBLK | R_BIPDATA => array_slot(
+                *RSC.bb_target.get(), *RSC.bb_access.get(),
+                *RSC.n_bb.get(), *RSC.bb_size.get(), 0, index,
+            ),
+            R_FRSTR => array_slot(
+                *RSC.frstr_target.get(), *RSC.frstr_access.get(),
+                *RSC.n_frstr.get(), *RSC.ptr_size.get(), 0, index,
+            ),
+            R_FRIMG => array_slot(
+                *RSC.frimg_target.get(), *RSC.frimg_access.get(),
+                *RSC.n_frimg.get(), *RSC.ptr_size.get(), 0, index,
+            ),
+            // SAFETY: reads the frstr/frimg table via its kernel alias.
+            R_STRING => deref_slot(
+                *RSC.frstr_target.get(), *RSC.frstr_access.get(),
+                *RSC.n_frstr.get(), *RSC.ptr_size.get(), index,
+            ),
+            R_IMAGEDATA => deref_slot(
+                *RSC.frimg_target.get(), *RSC.frimg_access.get(),
+                *RSC.n_frimg.get(), *RSC.ptr_size.get(), index,
+            ),
+            _ => None,
+        }
     }
 }
 
-/// `rsrc_saddr` (113) — store an address into the resource table. Batch 2.
+/// `rsrc_gaddr` (112) — address of resource object `int_in[1]` of `R_*` type
+/// `int_in[0]` → `addr_out[0]`. Resolves all 17 EmuTOS `get_addr` selectors
+/// (aesdefs.h:578-594) via [`get_addr`]: `R_TREE`/`R_OBJECT`, the
+/// TEDINFO/ICONBLK/BITBLK array bases (`R_TEDINFO`/`R_ICONBLK`/`R_BITBLK`),
+/// their sub-pointer aliases (`R_OBSPEC`/`R_TEP*`/`R_IBP*`/`R_BIPDATA`), the
+/// free-string / free-image slot addresses (`R_FRSTR`/`R_FRIMG`), and the
+/// dereferenced free data pointers (`R_STRING`/`R_IMAGEDATA`). An unknown type,
+/// or a selector whose table is absent (a v1–v4 resource for the substruct/
+/// free families) / index out of range, yields the documented "not found"
+/// (`addr_out[0] = 0`, `int_out[0] = 0`).
+pub fn rsrc_gaddr(pb: &Aespb) {
+    let rtype = pb.intin(0);
+    let index = pb.intin(1) as usize;
+    // SAFETY: single-CPU AES; the descriptor was set by relocate_and_register.
+    let addr = unsafe { get_addr(rtype, index) }.map_or(0, |s| s.target);
+    pb.set_addrout(0, addr);
+    pb.set_ret(if addr != 0 { 1 } else { 0 });
+}
+
+/// `rsrc_saddr` (113) — store the pointer `addr_in[0]` into the resource slot
+/// designated by `R_*` type `int_in[0]` / index `int_in[1]`. Faithful to
+/// EmuTOS `rs_saddr` (gemrslib.c:728-742): `psub = get_addr(rtype, rindex); if
+/// (psub != -1) { *psub = rsaddr; return TRUE; } return FALSE;`. The store goes
+/// through the slot's kernel-reachable alias at the caller's pointer width (the
+/// slot is pointer-sized in every selector), so an EL0 app's `.RSC` — mapped at
+/// a user VA — is updated without an EL1 access to that user VA. Returns TRUE
+/// for a resolvable slot, FALSE for an unknown type / absent table / out-of-
+/// range index (NewTOS's safer not-found, matching [`get_addr`]).
 pub fn rsrc_saddr(pb: &Aespb) {
-    pb.set_ret(0);
+    let rtype = pb.intin(0);
+    let index = pb.intin(1) as usize;
+    // The pointer to store, read at the caller's ABI width (4 bytes ILP32 /
+    // 8 bytes LP64) — exactly the width of the destination pointer slot.
+    let rsaddr = pb.addrin(0);
+    // SAFETY: single-CPU AES; `slot.access` is a kernel-reachable pointer slot
+    // of `ptr_size` bytes, live until rsrc_free.
+    let ok = unsafe {
+        match get_addr(rtype, index) {
+            Some(slot) => {
+                let p = slot.access as *mut u8;
+                match *RSC.ptr_size.get() {
+                    4 => (p as *mut u32).write_unaligned(rsaddr as u32),
+                    _ => (p as *mut u64).write_unaligned(rsaddr),
+                }
+                true
+            }
+            None => false,
+        }
+    };
+    pb.set_ret(if ok { 1 } else { 0 });
 }
 
 /// `rsrc_obfix` (114) — convert object `int_in[0]`'s packed char-grid
