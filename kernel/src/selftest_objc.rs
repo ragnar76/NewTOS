@@ -697,7 +697,7 @@ pub fn run_two_windows() {
 /// PASS/FAIL lines; it is intentionally not called during normal boot.
 #[allow(unused_assignments)] // the `control = [0; 8]` reset idiom, as elsewhere here
 pub fn run_p5_redraw() {
-    use tos_api::aes::window::{test_clear_msg, test_pending_msg};
+    use tos_api::aes::window::{test_clear_msg, test_msg_count, test_pending_msg};
 
     let mut control = [0i16; 8];
     let mut global = [0i16; 32];
@@ -752,7 +752,9 @@ pub fn run_p5_redraw() {
     aes(bp);
     report_p5("close", test_pending_msg(ap_id), ha, ewx, ewy, eww, ewh);
 
-    // ---- Case 2: re-open B on top, then wind_set(A, WF_TOP) posts WM_REDRAW ----
+    // ---- Case 2: re-open B on top, then wind_set(A, WF_TOP). Since WP6c
+    //      (AUD-P5-011) a top change posts WM_UNTOPPED(30) to the old top (B)
+    //      then WM_REDRAW(20) to the newly-topped window (A). ----
     control = [0; 8]; control[0] = 101; control[1] = 5;
     intin[0] = hb; intin[1] = 230; intin[2] = 170; intin[3] = 360; intin[4] = 250;
     aes(bp);
@@ -760,6 +762,17 @@ pub fn run_p5_redraw() {
     control = [0; 8]; control[0] = 105; control[1] = 2;
     intin[0] = ha; intin[1] = 10; // WF_TOP
     aes(bp);
+    // WP6c (AUD-P5-011) posts WM_UNTOPPED(30) to the old top (B) ahead of the
+    // WM_REDRAW(20) for the newly-topped A. Drain that leading WM_UNTOPPED via
+    // evnt_mesag (opcode 23) so report_p5 checks the WM_REDRAW behind it. Only
+    // drain when the extra message is actually queued (count > 1). The explicit
+    // WM_UNTOPPED payload is verified by the WP6c oracle, not re-checked here.
+    if test_msg_count(ap_id) > 1 {
+        let mut drain = [0i16; 8];
+        control = [0; 8]; control[0] = 23; control[3] = 1; // evnt_mesag, n_addrin=1
+        addrin[0] = drain.as_mut_ptr() as i64;
+        aes(bp);
+    }
     report_p5("top", test_pending_msg(ap_id), ha, ewx, ewy, eww, ewh);
 
     // Leave the window table clean for whatever runs next.
