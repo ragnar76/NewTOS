@@ -3086,6 +3086,16 @@ capability to `vro_cpyfm`/`vrt_cpyfm` that the reference never had.
 **Date:** 2026-07-10
 **Phase 00b spec:** `docs/api/vdi/_escape.md`
 
+> **DECISION (user, 2026-07-23): keep drawing 0xFF — deliberate, documented
+> deviation from EmuTOS.** NewTOS' `v_curtext` (`tos-api/src/vdi/escape.rs`)
+> renders character code `0xFF` directly instead of routing it through the
+> GEMDOS `Crawio` path, so — unlike EmuTOS — the one printable glyph at code
+> 255 is actually emitted. This is a 1-in-256 edge in a single VDI escape and
+> practically irrelevant; the user judged replicating the EmuTOS bug not worth
+> it. Recorded as a conscious deviation (not a bug, not an oversight). If strict
+> 1:1 is ever wanted, routing this one code through the `Crawio` `0xFF`
+> read/write sentinel is a one-line change. Otherwise **no code change.**
+
 **EmuTOS:** `escfn12` (`v_curtext`, VDI opcode 5 sub 12) writes cursor-
 addressable alpha text by looping over the caller's `INTIN[]` character
 array and sending each one through the local `crawio()` wrapper
