@@ -79,6 +79,16 @@ pub(crate) struct ObjTree {
     base: u64,
     /// Caller ABI (pointer / record width).
     abi: Abi,
+    /// Tree origin: `true` for a **kernel-built** tree ([`Self::lp64`] — the
+    /// desktop's `g_screen`, kernel-built alerts/fileselector), `false` for an
+    /// **app-provided** tree ([`Self::new`], reached through the AES trap). This
+    /// is the privilege discriminator for a `G_USERDEF`'s `ub_code` callback:
+    /// a kernel-built tree's callback is an EL1 function at this code's privilege
+    /// (same-privilege call); an app tree's callback lives in the EL0 app and
+    /// must not be up-called from the EL1 AES handler. It is **not** derivable
+    /// from `abi`: a native LP64 app runs at EL0 yet has `abi == Lp64`, so the
+    /// origin must be tracked explicitly (Memory `aes-object-abi-is-tree-abi`).
+    kernel_built: bool,
 }
 
 impl ObjTree {
@@ -91,7 +101,7 @@ impl ObjTree {
     /// `*const Object` + `tree.add(i)` code assumed).
     #[inline]
     pub(crate) fn new(base: *const Object) -> Self {
-        Self { base: base as u64, abi: current_abi() }
+        Self { base: base as u64, abi: current_abi(), kernel_built: false }
     }
 
     /// Build an accessor over a **kernel-built** tree at `base`, forcing the
@@ -110,7 +120,7 @@ impl ObjTree {
     /// passed to a getter/setter is in range.
     #[inline]
     pub(crate) fn lp64(base: *const Object) -> Self {
-        Self { base: base as u64, abi: Abi::Lp64 }
+        Self { base: base as u64, abi: Abi::Lp64, kernel_built: true }
     }
 
     /// The tree's ABI — the width at which its `ob_spec`-pointed sub-structs
@@ -121,6 +131,20 @@ impl ObjTree {
     #[inline]
     pub(crate) fn abi(self) -> Abi {
         self.abi
+    }
+
+    /// `true` iff this is a **kernel-built** tree ([`Self::lp64`]) — the
+    /// privilege discriminator for a `G_USERDEF` callback (see the field doc).
+    #[inline]
+    pub(crate) fn kernel_built(self) -> bool {
+        self.kernel_built
+    }
+
+    /// The tree's OBJECT-array base VA (EmuTOS `OBJECT *tree`), used to fill a
+    /// `PARMBLK`'s `pb_tree` for a `G_USERDEF` callback.
+    #[inline]
+    pub(crate) fn tree_ptr(self) -> u64 {
+        self.base
     }
 
     #[inline]
@@ -252,19 +276,51 @@ impl ObjTree {
         self.wr_i16(i, self.coord_off() + 6, v)
     }
 
-    /// `ob_spec` read at the caller's width: a u64 for LP64, a u32
-    /// zero-extended for ILP32. For a string/box object this is a user VA or a
-    /// packed colour word; for a sub-struct type it is the base VA of the
-    /// TEDINFO/ICONBLK/BITBLK, read at the tree's ABI width by the sub-struct
-    /// readers ([`TedInfo::read_abi`] etc.).
+    /// The raw `ob_spec` field read at the caller's width: a u64 for LP64, a u32
+    /// zero-extended for ILP32. This is the value *before* INDIRECT resolution —
+    /// for an `INDIRECT` object it is a pointer to the cell holding the real
+    /// spec, not the spec itself. All consumers use [`Self::spec`], which
+    /// resolves INDIRECT; this raw reader exists only for that resolution.
     #[inline]
-    pub(crate) fn spec(self, i: i16) -> u64 {
+    fn raw_spec(self, i: i16) -> u64 {
         let p = self.ptr(i, self.spec_off());
         // SAFETY: ObjTree invariant; ob_spec is 8 (LP64) / 4 (ILP32) bytes.
         unsafe {
             match self.abi {
                 Abi::Lp64 => (p as *const u64).read_unaligned(),
                 Abi::Ilp32 => (p as *const u32).read_unaligned() as u64,
+            }
+        }
+    }
+
+    /// `ob_spec` resolved through the `INDIRECT` flag (EmuTOS `ob_sst`,
+    /// gemobjop.c:36-37; `ob_getsp`, gemobed.c:60-62). Normally the raw field:
+    /// a user VA or a packed colour word; for a sub-struct type the base VA of
+    /// the TEDINFO/ICONBLK/BITBLK/USERBLK read at the tree's ABI width by the
+    /// sub-struct readers ([`TedInfo::read_abi`] etc.).
+    ///
+    /// When `ob_flags & INDIRECT` is set the raw `ob_spec` is instead a pointer
+    /// to a cell holding the real spec (`*pspec = *(LONG *)ob_spec` in EmuTOS);
+    /// that cell is read here at the **tree's ABI width** — u64 for an LP64 tree,
+    /// u32 zero-extended for an ILP32 app tree, exactly like a direct `ob_spec`
+    /// read (Memory `aes-object-abi-is-tree-abi`: the indirect read follows the
+    /// tree's ABI, not blanket LP64). Resolving centrally here means every
+    /// consumer (`just_draw`, `change_t`, `edit_field_t`) draws/edits the true
+    /// spec instead of dereferencing the pointer cell as a colour word / wild
+    /// TEDINFO/ICONBLK.
+    #[inline]
+    pub(crate) fn spec(self, i: i16) -> u64 {
+        let raw = self.raw_spec(i);
+        if self.flags(i) & INDIRECT == 0 {
+            return raw;
+        }
+        // INDIRECT: `raw` is the VA of a cell holding the real spec at tree width.
+        // SAFETY: GEM contract — an INDIRECT object's ob_spec points at a
+        // readable spec cell, 8 (LP64) / 4 (ILP32) bytes.
+        unsafe {
+            match self.abi {
+                Abi::Lp64 => (raw as *const u64).read_unaligned(),
+                Abi::Ilp32 => (raw as *const u32).read_unaligned() as u64,
             }
         }
     }
@@ -295,6 +351,8 @@ const G_BOXCHAR: u16 = 27;
 const G_STRING: u16 = 28;
 const G_ICON: u16 = 31;
 const G_TITLE: u16 = 32;
+const G_CICON: u16 = 33; // colour icon: a CICONBLK that begins with a mono ICONBLK
+const G_USERDEF: u16 = 24; // application-drawn object (USERBLK + ub_code callback)
 
 /// `BITBLK` — a raw monochrome raster for a `G_IMAGE` object
 /// (`obdefs.h`). `bi_pdata` is a native pointer to big-endian 16-bit
@@ -528,9 +586,78 @@ impl IconBlk {
     }
 }
 
+/// `USERBLK` (`obdefs.h`) — the descriptor a `G_USERDEF` object's `ob_spec`
+/// points at: a draw/change callback plus one opaque parameter LONG. Both
+/// fields are read at the tree's ABI width (pointer-sized), so a kernel-built
+/// LP64 USERBLK holds a native 64-bit `ub_code`.
+#[derive(Clone, Copy)]
+pub struct UserBlk {
+    /// `WORD (*ub_code)(PARMBLK *)` — the user draw/change routine (native VA).
+    pub ub_code: u64,
+    /// `ub_parm` — an opaque parameter passed straight through in `pb_parm`.
+    pub ub_parm: u64,
+}
+
+impl UserBlk {
+    /// Materialise the USERBLK at `base` at the tree's ABI width: two
+    /// pointer-sized fields (`ub_code` @0, `ub_parm` @`abi_ptr_size`).
+    ///
+    /// # Safety
+    /// `base` is the valid `ob_spec` of a `G_USERDEF` object — a USERBLK packed
+    /// at `abi` width.
+    #[inline]
+    unsafe fn read_abi(base: u64, abi: Abi) -> UserBlk {
+        let ps = abi_ptr_size(abi);
+        // SAFETY: `base` is a valid USERBLK packed at `abi` width (caller's contract).
+        unsafe {
+            UserBlk {
+                ub_code: read_abi_ptr(base, 0, abi),
+                ub_parm: read_abi_ptr(base, ps, abi),
+            }
+        }
+    }
+}
+
+/// `PARMBLK` (`obdefs.h`) — the block passed by pointer to a `G_USERDEF`'s
+/// `ub_code` callback. Native NewTOS layout (`#[repr(C)]`), built on the kernel
+/// stack in [`ob_user`] and handed to a **kernel-built** (same-privilege, EL1)
+/// callback. Field order matches EmuTOS: tree, object, prev/curr state, the
+/// object rect (`pb_x..pb_h`), the current clip rect (`pb_xc..pb_hc`), and the
+/// USERBLK's `ub_parm`.
+#[repr(C)]
+pub struct ParmBlk {
+    /// `pb_tree` — the OBJECT-array base VA.
+    pub pb_tree: u64,
+    /// `pb_obj` — index of the userdef object.
+    pub pb_obj: i16,
+    /// `pb_prevstate` — the object's state before the change.
+    pub pb_prevstate: i16,
+    /// `pb_currstate` — the object's state after the change.
+    pub pb_currstate: i16,
+    /// object rect x (absolute).
+    pub pb_x: i16,
+    /// object rect y (absolute).
+    pub pb_y: i16,
+    /// object rect width.
+    pub pb_w: i16,
+    /// object rect height.
+    pub pb_h: i16,
+    /// clip rect x.
+    pub pb_xc: i16,
+    /// clip rect y.
+    pub pb_yc: i16,
+    /// clip rect width.
+    pub pb_wc: i16,
+    /// clip rect height.
+    pub pb_hc: i16,
+    /// `pb_parm` — the USERBLK's opaque parameter.
+    pub pb_parm: u64,
+}
+
 // Flag / state bits.
 const LASTOB: u16 = 0x0020;
 const HIDETREE: u16 = 0x0080;
+const INDIRECT: u16 = 0x0100; // ob_flags: ob_spec points at a cell holding the real spec
 const SELECTED: u16 = 0x0001;
 const DEFAULT: u16 = 0x0002; // ob_flags: default (heavy-frame) object
 const EXIT: u16 = 0x0004; // ob_flags: EXIT button (thickens the border by 1)
@@ -963,9 +1090,14 @@ pub(crate) fn change_t(t: ObjTree, obj: i16, newstate: u16, redraw: bool) {
     // EmuTOS `ob_change` (gemoblib.c:1263): a `spec == -1` sentinel object
     // is left entirely untouched — no state change, no redraw — so the
     // redraw path never dereferences `-1` as a pointer.
-    if t.spec(obj) == t.spec_none() {
+    let spec = t.spec(obj);
+    if spec == t.spec_none() {
         return;
     }
+    // Capture the old state before overwriting it: a G_USERDEF redraw passes
+    // (prev=curr_state, curr=new_state) to its user routine (EmuTOS `ob_change`,
+    // gemoblib.c:1261/1283). Only read/used on the G_USERDEF path below.
+    let curr_state = t.state(obj);
     t.set_state(obj, newstate);
     if !redraw {
         return;
@@ -973,6 +1105,16 @@ pub(crate) fn change_t(t: ObjTree, obj: i16, newstate: u16, redraw: bool) {
     if let Some(backend) = host().and_then(|h| h.raster()) {
         let clip = ClipRect::full(backend.width(), backend.height());
         let (ox, oy) = abs_offset(t, obj);
+        // AUD-P3-002: EmuTOS `ob_change` redraws a G_USERDEF by calling its user
+        // routine with (prev=curr_state, curr=new_state) and suppresses the
+        // generic object redraw (`redraw = FALSE`, gemoblib.c:1282-1284). The
+        // callback is only invoked for a kernel-built tree (see `ob_user`); an
+        // app tree's EL0 callback is deferred. A null `ob_spec` (no USERBLK) is
+        // left to the generic redraw below so `ob_user` never dereferences null.
+        if t.ob_type(obj) == G_USERDEF && spec != 0 {
+            ob_user(t, obj, ox, oy, t.width(obj), t.height(obj), spec, clip, curr_state, newstate);
+            return;
+        }
         // depth 0 redraws only this object.
         draw_tree(t, obj, 0, ox - t.x(obj), oy - t.y(obj), clip, backend);
     }
@@ -1606,18 +1748,82 @@ fn ob_format(just: i16, raw: &[u8], tmpl: &[u8], out: &mut [u8]) -> usize {
     ptlen
 }
 
+/// EmuTOS `ob_user` (`gemoblib.c:433-448`): load the `USERBLK` from `spec`,
+/// fill a [`ParmBlk`] (tree, object, prev/curr state, the object rect, the clip
+/// rect, `ub_parm`) and invoke the user draw/change callback `ub_code(PARMBLK*)`,
+/// returning its WORD result as the object's new state.
+///
+/// **Privilege split (AUD-P3-002).** The callback is only *invoked* when the
+/// tree is **kernel-built** ([`ObjTree::kernel_built`]) — then `ub_code` is an
+/// EL1 function at this AES code's privilege, so a direct same-privilege call is
+/// sound. For an **app-provided** tree the callback lives in the EL0 app;
+/// calling it from the EL1 AES trap handler is a cross-privilege upcall (EL1→EL0,
+/// re-entrant during the app's `svc`) for which NewTOS has no mechanism yet. In
+/// that case the PARMBLK is fully prepared but the call is **deferred** and the
+/// state returned unchanged — the upcall infrastructure is an open design
+/// decision handed to the lead (same class as the vex-vector upcall).
+#[allow(clippy::too_many_arguments)]
+fn ob_user(
+    t: ObjTree,
+    obj: i16,
+    x: i16,
+    y: i16,
+    w: i16,
+    h: i16,
+    spec: u64,
+    clip: ClipRect,
+    prev_state: u16,
+    new_state: u16,
+) -> u16 {
+    // SAFETY: `spec` is the ob_spec of a G_USERDEF object — a USERBLK packed at
+    // the tree's ABI width (GEM contract).
+    let ub = unsafe { UserBlk::read_abi(spec, t.abi()) };
+    let pb = ParmBlk {
+        pb_tree: t.tree_ptr(),
+        pb_obj: obj,
+        pb_prevstate: prev_state as i16,
+        pb_currstate: new_state as i16,
+        pb_x: x,
+        pb_y: y,
+        pb_w: w,
+        pb_h: h,
+        pb_xc: clip.xmn,
+        pb_yc: clip.ymn,
+        pb_wc: clip.xmx - clip.xmn + 1,
+        pb_hc: clip.ymx - clip.ymn + 1,
+        pb_parm: ub.ub_parm,
+    };
+    if t.kernel_built() && ub.ub_code != 0 {
+        // Same-privilege EL1 callback: `ub_code` is a native
+        // `extern "C" fn(*const ParmBlk) -> WORD`. Go through a data pointer
+        // (not an integer) so no int-to-fn transmute lint fires.
+        let code = ub.ub_code as *const ();
+        // SAFETY: kernel-built USERBLK — `ub_code` is a valid EL1 function
+        // pointer of this exact signature (the kernel/desktop that built the
+        // tree is responsible for that contract).
+        let f: extern "C" fn(*const ParmBlk) -> i16 = unsafe { core::mem::transmute(code) };
+        f(&pb) as u16
+    } else {
+        // EL0 target (app tree): upcall deferred — PARMBLK prepared, state kept.
+        new_state
+    }
+}
+
 fn just_draw(t: ObjTree, obj: i16, x: i16, y: i16, clip: ClipRect, backend: &dyn RasterBackend) {
     // Snapshot the object's fields once at the caller's ABI width; a sub-struct
     // (`ob_spec`-pointed TEDINFO/ICONBLK/BITBLK) is read through its ABI-aware
     // reader (`*::read_abi`) at the same width in the type arms below.
-    let ob_state = t.state(obj);
+    // `ob_state` is `mut`: a G_USERDEF's callback returns the object's new state
+    // (EmuTOS `state = ob_user(...)`, gemoblib.c:793), which then drives the
+    // trailing OUTLINED/SHADOWED/CROSSED/DISABLED decorations. Every other type
+    // leaves it unchanged, so their rendering is byte-identical to before.
+    let mut ob_state = t.state(obj);
     let ob_flags = t.flags(obj);
     let ob_type = t.ob_type(obj);
     let ob_spec = t.spec(obj);
     let ob_width = t.width(obj);
     let ob_height = t.height(obj);
     let selected = ob_state & SELECTED != 0;
-    let disabled = ob_state & DISABLED != 0;
     let d3 = ob_flags & FL3DMASK;
     // D7: the grow and the add_3d_effect bevel key on FL3DOBJ (0x0200), the
     // "indicator OR activator" bit — set on FL3DIND/FL3DACT but CLEAR on
@@ -1895,18 +2101,35 @@ fn just_draw(t: ObjTree, obj: i16, x: i16, y: i16, clip: ClipRect, backend: &dyn
                 blit_image(backend, bi, x, y, col, clip);
             }
         }
-        G_ICON => {
+        G_ICON | G_CICON => {
             // The ICONBLK interior is read at the tree's ABI width (see the
             // *TEXT arm); an LP64 tree reads it byte-identically to before.
+            //
+            // AUD-P3-006: a G_CICON's `ob_spec` is a CICONBLK, which *begins*
+            // with a mono ICONBLK (`obdefs.h` `CICONBLK { ICONBLK monoblk; CICON
+            // *mainlist; }`), so its head is read exactly like a G_ICON and drawn
+            // via the same mono path (EmuTOS `just_draw`, gemoblib.c:780-791,
+            // shares the ICONBLK body). NewTOS draws the MONO version — the
+            // minimum EmuTOS itself renders; the colour `mainlist` chain
+            // (CONF_WITH_COLOUR_ICONS) is a documented later addition, not a stub.
             if ob_spec != 0 {
-                // SAFETY: ob_spec of a G_ICON points at an ICONBLK packed at
-                // the tree's ABI width.
+                // SAFETY: ob_spec of a G_ICON/G_CICON points at an ICONBLK (the
+                // CICONBLK head for G_CICON) packed at the tree's ABI width.
                 let ib = unsafe { IconBlk::read_abi(ob_spec, t.abi()) };
                 draw_icon(backend, &ib, x, y, selected, clip);
             }
         }
-        // Remaining types (TEDINFO text, colour icons, userdef) land in
-        // later batches.
+        // AUD-P3-002: an application-drawn object. Fill a PARMBLK and call its
+        // `ub_code` (EmuTOS `just_draw` G_USERDEF, gemoblib.c:792-794:
+        // `state = ob_user(tree, obj, &t, spec, state, state)`). The returned
+        // state feeds the trailing decorations. `ob_user` only *invokes* the
+        // callback for a kernel-built (same-privilege EL1) tree; an app tree's
+        // EL0 callback is deferred (see `ob_user`). A null `ob_spec` (no USERBLK)
+        // is left to the `_` arm so `ob_user` never dereferences null.
+        G_USERDEF if ob_spec != 0 => {
+            ob_state = ob_user(t, obj, x, y, w, h, ob_spec, clip, ob_state, ob_state);
+        }
+        // Remaining sub-types land in later batches.
         _ => {}
     }
 
@@ -1963,7 +2186,7 @@ fn just_draw(t: ObjTree, obj: i16, x: i16, y: i16, clip: ClipRect, backend: &dyn
 
     // DISABLED: grey the object out with a 50 % transparent dither (EmuTOS
     // `bb_fill(IP_4PATT)`), over the 3D-background colour for a 3D panel.
-    if disabled {
+    if ob_state & DISABLED != 0 {
         let fg = if d3 == FL3DBAK { GRAY_LT } else { WHITE };
         let pat = PatternFill { fg, bg: WHITE, pattern: &STIPPLE_50, mode: WriteMode::Transparent };
         backend.fill_pattern(x, y, w, h, pat, clip);
