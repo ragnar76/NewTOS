@@ -98,11 +98,22 @@ sauber, kein Regress. Selftest wieder aus dem Normal-Boot gegated. **Geflaggt
 (Lead/User, unkritisch):** `os_magic=0` (braucht GEM/AES), `os_date/os_dosdate`
 = 1980-01-01-Platzhalter (kein Build-Stamp gepinnt).
 
-**Offen — restliche BIOS-Fixes:**
-1. **H1** etv_*-Dispatch (etv_term im Pterm-, etv_critic im Rwabs-Fehler-, etv_timer
-   im Tick-Pfad; Boot-Defaults echt-callable).
-2. **M1–M4** Getbpb-FS-Härtung + Rwabs→etv_critic.
-3. **BB2 Memory-Modell** STRAM/TTRAM (fest 8 MB / Rest, rein logisch) — verfeinert
+**Offen — restliche BIOS-Fixes (Sequenz User 2026-07-24: „M2–M4 jetzt, Upcall als eigenes Thema"):**
+1. **JETZT — Getbpb-FS-Härtung (upcall-frei, rein in-kernel):** M2 (`reserved==0`→1),
+   M3 (FAT16 `>65524`-Reject + u16-Truncation), M4 (Validitäts-Guards recsiz/clsizb/
+   FAT-Count), L3 (fatrec/datrec bei num_fats≥3). Alle in `bios/bpb.rs`.
+2. **JETZT/klein — L1** Rwabs physical-mode (RW_NOTRANSLATE Bit 3), **L2** Bconin
+   conterm-Bit3-Fold. **S1–S3** Spec/Doc-Korrekturen (S3 os_version=0x0404 durch B1
+   erledigt; S2 ADR-012/„Zwei-Welten" durch B1 widerlegt → COMPATIBILITY.md +
+   MEMORY.md korrigieren; S1 09-mediach.md stale). Lead-Doc-Arbeit.
+3. **EIGENES THEMA — EL0-Upcall-/Signal-Mechanismus** (EL1→EL0): löst **H1**
+   (etv_*-Dispatch installierter Hooks) + **M1** (Rwabs→installierter etv_critic +
+   CRITIC_RETRY_REQUEST) + **P4-012** (eralert) + **vex** (Maus-ISR→EL0, V6) +
+   **G_USERDEF** (ub_code→EL0, WP3) — vier+ Konsumenten derselben Infra. Sauber
+   designen (gehört zum kooperativen Kern/Signal-Layer, FreeMiNT-extensibel +
+   multi-core-vorbereitet), NICHT eng nur für H1. Default-Verhalten heute schon
+   EmuTOS-treu (no-op timer/term, Fehlercode-critic).
+4. **BB2 Memory-Modell** STRAM/TTRAM (fest 8 MB / Rest, rein logisch) — verfeinert
    OSHEADER `os_beg`/`os_end` + Malloc/Mxalloc-Pools. Separater Task (User-gewünscht).
 
 Danach: kooperativer Kern FreeMiNT-extensibel (references/freemint pinnen) +
