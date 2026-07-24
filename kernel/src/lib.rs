@@ -290,16 +290,12 @@ extern "C" fn kernel_main_rust(dtb_phys: usize) -> ! {
     // boot — the system goes straight to the console. They remain in the
     // `selftest*` modules and can be re-enabled here when debugging
     // (e.g. `selftest_vdi::run_phase12_vdi_demo()` draws the Phase-12
-    // drawing-surface demo verified by QMP screendump, or
-    // `selftest_aes::run_phase13_aes_test()` for the AES lifecycle).
-
-    // B1 — prove the per-process low-memory sysvars/OSHEADER/$5A0 area is
-    // populated in a loaded EL0 TPA (docs/analysis/bios-audit/
-    // b1-lowmem-feasibility.md, Option 1). Loads a throwaway image, checks
-    // _sysbase/os_version/_p_cookies + the Setexc($5A0/4,-1) idiom, then
-    // frees its slot — leaves the system in the no-process state for the
-    // desktop. Cheap, and green output is the B1 landing proof.
-    selftest_sysvars::run();
+    // drawing-surface demo verified by QMP screendump,
+    // `selftest_aes::run_phase13_aes_test()` for the AES lifecycle, or
+    // `selftest_sysvars::run()` to prove the B1 per-process low-memory
+    // sysvars/OSHEADER/$5A0 area — docs/analysis/bios-audit/
+    // b1-lowmem-feasibility.md, Option 1 — is populated in a loaded EL0 TPA:
+    // checks _sysbase/os_version/_p_cookies + the Setexc($5A0/4,-1) idiom).
 
     // Keep the initinfo boot screen visible briefly before the desktop
     // takes over (EmuTOS shows its boot screen the same way).
