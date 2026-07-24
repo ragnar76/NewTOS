@@ -352,6 +352,55 @@ pub fn wake(cond: u64) {
     }
 }
 
+// ─── timer deadline persistence (S2-restart idempotency, §4.3 OPEN) ─────────
+//
+// A timer-bearing wait (`evnt_timer`/`wait_ms`/`evnt_multi`-`MU_TIMER`) computes
+// its deadline as `monotonic_millis() + ms`. Under the S2 restartable block
+// (§4.3) the whole syscall re-executes from the top on resume, so recomputing
+// the deadline at the function head would push it forward by `ms` on every
+// restart — with a live peer it would never converge (irrelevant with one
+// context/no peer, real with step-4 peers). Persisting the deadline per-slot in
+// [`super::Process::syscall_deadline`] makes a restart REUSE the original
+// deadline; first-entry-vs-restart is detected by the field being `0` vs set.
+
+/// Arm (first entry) or reuse (S2 restart) the running slot's timer deadline
+/// (design §4.3). When the slot's [`super::Process::syscall_deadline`] is `0`
+/// (first entry), computes `now + ms`, stores it, and returns it; when it is
+/// already set (an S2 restart re-entered the wait), returns the STORED value
+/// unchanged — so the elapsed time while a peer ran does not move the deadline.
+/// Cleared on completion by [`clear_deadline`].
+///
+/// With no running scheduler slot — the EL1 desktop, whose timer waits run with
+/// [`current`]` == NONE` and never restart (idle-fallback only, §4.4) — there is
+/// nothing to persist, so it just returns `now + ms` (today's behavior).
+pub fn arm_or_get_deadline(now: u64, ms: u64) -> u64 {
+    let cur = current();
+    if cur < MAX_PROCESSES {
+        let field = &PROCESS_TABLE[cur].syscall_deadline;
+        let stored = field.load(Ordering::Acquire);
+        if stored != 0 {
+            return stored; // S2 restart: reuse the original deadline
+        }
+        let deadline = now.saturating_add(ms);
+        field.store(deadline, Ordering::Release);
+        deadline
+    } else {
+        now.saturating_add(ms)
+    }
+}
+
+/// Clear the running slot's persisted timer deadline (design §4.3). Called on
+/// EVERY completion path of a timer-bearing wait — it fires and returns, or
+/// another event (input/message) fires first in `evnt_multi` — so a later,
+/// unrelated timer wait recomputes a fresh deadline via [`arm_or_get_deadline`].
+/// A no-op when no slot is running or no deadline was armed.
+pub fn clear_deadline() {
+    let cur = current();
+    if cur < MAX_PROCESSES {
+        PROCESS_TABLE[cur].syscall_deadline.store(0, Ordering::Release);
+    }
+}
+
 /// The cooperative idle wake-pass (design §5.2): the single point where the
 /// input and timer wake sources are polled and turned into WAITING → READY
 /// transitions — EmuTOS's `schedule()`/`chkkbd` idle, **not** the ISR (the IRQ

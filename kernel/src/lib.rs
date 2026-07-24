@@ -55,6 +55,7 @@ pub mod selftest_sysvars;
 pub mod selftest_upcall;
 pub mod selftest_sleepwake;
 pub mod selftest_sleepwake_switch;
+pub mod selftest_timer_restart;
 pub mod selftest_etv_term;
 pub mod aes_demo;
 pub mod desk;

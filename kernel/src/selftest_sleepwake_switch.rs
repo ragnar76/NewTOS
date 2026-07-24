@@ -19,28 +19,34 @@
 //!     sleep`] returns `Yield`, the handler saves A's frame with the ELR rewound
 //!     to the `svc` (`restartable = true`) and switches to B — so B runs while A
 //!     is WAITING.
-//!   * **Restartable resume (the second S2 delta).** After B enqueues a message
-//!     for A (real `appl_write`) and the resumer **R** yields to A via `Pwait`,
-//!     A's saved frame is restored with `x0 = 200` **preserved** (the
-//!     `restartable` guard skips `apply_switch`'s `gpr[0] = 0`), so the
-//!     re-executed `svc #2` re-enters `evnt_mesag`, finds the message, and
-//!     returns `RET_CODE = 1` with the message copied out. Had `x0` been
-//!     clobbered to 0, the re-entered GEM trap would dispatch nothing and
-//!     `RET_CODE` would stay at its `0x7FFF` sentinel.
+//!   * **`appl_write` wakes the message-waiter (cleanup 1).** B's real
+//!     `appl_write` enqueues A's message through `pd::post_words`, which now
+//!     WAKES A (WAITING → READY) — there is **no** manual `sched::wake` in this
+//!     test anymore, so A's readiness after phase 1 is direct proof that
+//!     `appl_write` did the waking. B does **not** `Pwait` (that would yield to
+//!     the now-runnable A and resume it in phase 1), so A stays merely woken and
+//!     unresumed (its `evnt_mesag` RET_CODE is still the `0x7FFF` sentinel).
+//!   * **Restartable resume (the second S2 delta).** In phase 2 the resumer **R**
+//!     yields to the runnable A via `Pwait`; A's saved frame is restored with
+//!     `x0 = 200` **preserved** (the `restartable` guard skips `apply_switch`'s
+//!     `gpr[0] = 0`), so the re-executed `svc #2` re-enters `evnt_mesag`, finds
+//!     the message (B's, at the FIFO front), and returns `RET_CODE = 1` with the
+//!     message copied out. Had `x0` been clobbered to 0, the re-entered GEM trap
+//!     would dispatch nothing and `RET_CODE` would stay at its `0x7FFF` sentinel.
 //!   * **Deliver-on-resume (§6).** An upcall is pre-posted for A while it is
-//!     blocked; on A's resume `apply_switch` delivers it, A runs the handler at
-//!     EL0 (storing a marker), and then — via `Psigreturn` — the restartable
-//!     `svc` re-executes and A completes with the correct AES result.
+//!     woken-but-unresumed; on A's resume `apply_switch` delivers it, A runs the
+//!     handler at EL0 (storing a marker), and then — via `Psigreturn` — the
+//!     restartable `svc` re-executes and A completes with the correct AES result.
 //!
 //! ## Orchestration
 //!
-//! The peer program (`PEER_ELF`) is loaded into two slots and plays two roles:
-//! as **B** (slot 1) it runs first — `appl_write` enqueues A's message, stores a
-//! "ran" marker, then `Pwait` is a no-op (A is not yet runnable) and it bounces
-//! to EL1 via the shared `svc #0xEC4` sentinel. The kernel then wakes A
-//! ([`sched::wake`]) and pre-posts the upcall. As **R** (slot 2) the same image
-//! runs in phase 2 — its `Pwait` now yields to the (runnable) A, driving the
-//! restartable resume + deliver-on-resume, after which A bounces back to EL1.
+//! Two peer images. **B** (`B_ELF`, slot 1) runs first — `appl_write` enqueues
+//! A's message (and WAKES A) and stores a "ran" marker, then bounces to EL1 via
+//! the `svc #0xEC4` sentinel **without** `Pwait`, leaving A READY but unresumed.
+//! The kernel pre-posts the upcall and drops B from the run-set. **R**
+//! (`PEER_ELF`, slot 2) runs in phase 2 — its `Pwait` yields to the runnable A,
+//! driving the restartable resume + deliver-on-resume, after which A bounces
+//! back to EL1.
 
 use core::sync::atomic::Ordering;
 
@@ -140,7 +146,59 @@ static A_ELF: [u8; 0xA0] = [
     0xC0, 0x03, 0x5F, 0xD6,  // ret
 ];
 
-// ── Program PEER: real `appl_write` (enqueue) + marker + `Pwait` + `svc #0xEC4` ─
+// ── Program B: real `appl_write` (enqueue) + marker + `svc #0xEC4` (NO Pwait) ──
+//
+// The phase-1 poster. Since the cleanup routed `appl_write` through
+// `pd::post_words`, its enqueue now WAKES A (WAITING → READY) — so B must NOT
+// `Pwait` here, or it would yield to the now-runnable A and resume it in phase
+// 1, collapsing the two-phase structure. Instead B bounces straight to EL1,
+// leaving A merely woken (READY) but unresumed for phase 2 to drive.
+//
+//   entry (0x1000):
+//     movz x0, #200        ; AES selector
+//     movz x1, #0x900      ; AESPB (appl_write)
+//     svc  #2              ; appl_write -> enqueue + WAKE A (cleanup 1)
+//     movz x9,  #0x800     ; marker addr
+//     movz x10, #0xB0B     ; marker value
+//     str  x10, [x9]       ; prove this image ran
+//     svc  #0xEC4          ; bounce to EL1 (A left READY, unresumed)
+//     b    .
+#[rustfmt::skip]
+static B_ELF: [u8; 0xA0] = [
+    // ELF64 header (64 bytes)
+    0x7F, b'E', b'L', b'F', 2, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+    0x02, 0x00, 0xB7, 0x00, 0x01, 0x00, 0x00, 0x00,
+    0x00, 0x10, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, // e_entry = 0x1000
+    0x40, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, // e_phoff = 0x40
+    0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, // e_shoff = 0
+    0x00, 0x00, 0x00, 0x00, 0x40, 0x00, 0x38, 0x00,
+    0x01, 0x00, 0x40, 0x00, 0x00, 0x00, 0x00, 0x00,
+    // Program header (56 bytes at 0x40)
+    0x01, 0x00, 0x00, 0x00, 0x05, 0x00, 0x00, 0x00, // PT_LOAD, R|X
+    0x80, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, // p_offset = 0x80
+    0x00, 0x10, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, // p_vaddr  = 0x1000
+    0x00, 0x10, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, // p_paddr  = 0x1000
+    0x20, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, // p_filesz = 0x20
+    0x20, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, // p_memsz  = 0x20
+    0x00, 0x10, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, // p_align  = 0x1000
+    // padding 0x78..0x80
+    0, 0, 0, 0, 0, 0, 0, 0,
+    // code at 0x80 (VA 0x1000), 0x20 bytes
+    0x00, 0x19, 0x80, 0xD2,  // movz x0, #200
+    0x01, 0x20, 0x81, 0xD2,  // movz x1, #0x900
+    0x41, 0x00, 0x00, 0xD4,  // svc  #2            (appl_write -> enqueue + wake A)
+    0x09, 0x00, 0x81, 0xD2,  // movz x9, #0x800
+    0x6A, 0x61, 0x81, 0xD2,  // movz x10, #0xB0B
+    0x2A, 0x01, 0x00, 0xF9,  // str  x10, [x9]
+    0x81, 0xD8, 0x01, 0xD4,  // svc  #0xEC4        (bounce; NO Pwait)
+    0x00, 0x00, 0x00, 0x14,  // b .
+];
+
+// ── Program PEER (R): `appl_write` + marker + `Pwait` + `svc #0xEC4` ───────────
+//
+// The phase-2 resumer. Its `Pwait` yields to the (now-runnable) A, driving the
+// S2 restartable resume + deliver-on-resume. Its own `appl_write` enqueues a
+// second message; A pops the FRONT (B's phase-1 message) on resume.
 //
 //   entry (0x1000):
 //     movz x0, #200        ; AES selector
@@ -150,8 +208,8 @@ static A_ELF: [u8; 0xA0] = [
 //     movz x10, #0xB0B     ; marker value
 //     str  x10, [x9]       ; prove this image ran
 //     mov  x8,  #0x4D      ; GEMDOS Pwait
-//     svc  #1              ; as B: no-op (A not runnable); as R: yield to A
-//     svc  #0xEC4          ; bounce to EL1 (reached only as B)
+//     svc  #1              ; as R: yield to A
+//     svc  #0xEC4          ; bounce to EL1 (reached only if Pwait was a no-op)
 //     b    .
 #[rustfmt::skip]
 static PEER_ELF: [u8; 0xA8] = [
@@ -228,7 +286,7 @@ pub fn run() {
             return;
         }
     };
-    let b = match unsafe { load_to_slot(&PEER_ELF, B_SLOT) } {
+    let b = match unsafe { load_to_slot(&B_ELF, B_SLOT) } {
         Ok(i) => i,
         Err(e) => {
             kprintln!("[sw3b] === FAIL: load B: {:?} ===", e);
@@ -306,8 +364,11 @@ pub fn run() {
     // SAFETY: post-excursion — restore the no-process TTBR0.
     unsafe { restore_boot_ttbr0() };
 
-    // Verify the switch actually happened: B ran (its marker) while A was left
-    // WAITING (runnable == false, wait_cond == WAIT_MESG(A)).
+    // Verify the switch happened AND cleanup 1: B ran (its marker) while A was
+    // blocked, and B's `appl_write` WOKE A (WAITING → READY) via `pd::post_words`
+    // — with the manual `sched::wake` removed, A's readiness is now proof that
+    // `appl_write` did the waking. B does not `Pwait`, so A is woken but NOT yet
+    // resumed: its `evnt_mesag` has not completed (RET_CODE still the sentinel).
     let b_ran = {
         // SAFETY: single-CPU; slot is ours.
         match unsafe { arena::page_bytes_mut(B_SLOT) } {
@@ -315,13 +376,20 @@ pub fn run() {
             None => false,
         }
     };
-    let a_waiting = !PROCESS_TABLE[A_SLOT].runnable.load(Ordering::Acquire)
-        && PROCESS_TABLE[A_SLOT].wait_cond.load(Ordering::Acquire)
-            == sched::wait_mesg(A_PID);
+    let a_woken = PROCESS_TABLE[A_SLOT].runnable.load(Ordering::Acquire)
+        && PROCESS_TABLE[A_SLOT].wait_cond.load(Ordering::Acquire) == 0;
+    let a_phase1_ret = {
+        // SAFETY: single-CPU; slot is ours.
+        match unsafe { arena::page_bytes_mut(A_SLOT) } {
+            Some(p) => rd_i16(p, INTOUT_VA),
+            None => 0,
+        }
+    };
+    let a_not_resumed = a_phase1_ret == INTOUT_SENTINEL;
 
-    // 6. Wake A (its message is now enqueued) and pre-post the deliver-on-resume
-    //    upcall. Drop B from the run-set so only A and R remain runnable.
-    sched::wake(sched::wait_mesg(A_PID));
+    // 6. Pre-post the deliver-on-resume upcall for A (its message is already
+    //    enqueued and A is already woken by `appl_write` — no manual `sched::wake`
+    //    needed anymore). Drop B from the run-set so only A and R remain runnable.
     post_upcall(
         A_SLOT,
         UpcallDesc {
@@ -379,7 +447,10 @@ pub fn run() {
         }
     };
     check(b_ran, "(1) peer B ran while A slept (switch happened)");
-    check(a_waiting, "(1) A was left WAITING(WAIT_MESG) during B's run");
+    check(
+        a_woken && a_not_resumed,
+        "(1) appl_write woke A (READY) without resuming it (RET still sentinel)",
+    );
     check(a_mark == HANDLER_MARK, "(3) deliver-on-resume handler ran at EL0");
     check(
         a_ret == 1,

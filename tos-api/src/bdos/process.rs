@@ -296,6 +296,25 @@ pub struct Process {
     /// [`sched::wait_timer`]: super::process::sched::wait_timer
     pub wait_cond: AtomicU64,
 
+    /// Persisted absolute `monotonic_millis` deadline of a timer-bearing wait
+    /// (`evnt_timer`/`wait_ms`/`evnt_multi`-`MU_TIMER`) — S2-restart idempotency
+    /// (`docs/analysis/coop-kernel/20-sleepwake-substrate-design.md` §4.3 OPEN,
+    /// step-4-prep). `0` = no timer deadline armed. The **first** entry of such a
+    /// wait computes `monotonic_millis() + ms` and stores it here; an **S2
+    /// restart** (the re-executed `svc` re-enters the wait from the top) finds
+    /// the field already set and REUSES it, instead of recomputing `now + ms`
+    /// (which would push the deadline forward by `ms` on every restart with a
+    /// live peer, so it would never converge). Cleared on **every** completion
+    /// path of the wait (it fires and returns — including an input/message event
+    /// firing before the timer in `evnt_multi`) so a later unrelated timer wait
+    /// recomputes a fresh deadline. Armed / reused / cleared via
+    /// [`sched::arm_or_get_deadline`] / [`sched::clear_deadline`]; detection of
+    /// first-entry-vs-restart is exactly this field being `0` vs set.
+    ///
+    /// [`sched::arm_or_get_deadline`]: super::process::sched::arm_or_get_deadline
+    /// [`sched::clear_deadline`]: super::process::sched::clear_deadline
+    pub syscall_deadline: AtomicU64,
+
     // ── cooperative-kernel EL0 upcall / signal delivery (building block 1,
     //    docs/analysis/coop-kernel/10-upcall-signal-design.md §6) ──
     /// Kernel-side stack of interrupted EL0 contexts, one per active
@@ -537,6 +556,7 @@ impl Process {
             runnable: AtomicBool::new(false),
             has_ctx: AtomicBool::new(false),
             wait_cond: AtomicU64::new(0),
+            syscall_deadline: AtomicU64::new(0),
             upcall_ctx: [const { ParentFrame::zeroed() }; MAX_UPCALL_NEST],
             upcall_ctx_mask: [const { AtomicU32::new(0) }; MAX_UPCALL_NEST],
             upcall_ctx_disp: [const { AtomicU64::new(0) }; MAX_UPCALL_NEST],

@@ -27,7 +27,7 @@
 //!    handler redirects to the captured EL1 resume PC.
 //!
 //! 5. The driver validates that:
-//!    - `LoadedImage::entry_va` was the ELF's `e_entry` (`0x100`).
+//!    - `LoadedImage::entry_va` was the ELF's `e_entry` (`0x1000`).
 //!    - The handler reported `SP_EL0 == USER_STACK_TOP_EXCLUSIVE`
 //!      (D6 wiring still works post-D3).
 //!    - The handler reported `ELR_EL1 == entry_va + 4` (the next
@@ -109,8 +109,9 @@ pub static D3_TEST_ELF: [u8; 264] = [
     0xB7, 0x00,              // e_machine: EM_AARCH64
     0x01, 0x00, 0x00, 0x00,  // e_version: EV_CURRENT
 
-    // e_entry = 0x100 (entry point — VA of the SVC instruction)
-    0x00, 0x01, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+    // e_entry = 0x1000 (entry point — VA of the SVC instruction; B1's linker
+    // bump requires segments at/above RESERVED_LOW_END = 0x1000).
+    0x00, 0x10, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
 
     // e_phoff = 0x40 (program header table immediately follows Ehdr)
     0x40, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
@@ -132,10 +133,10 @@ pub static D3_TEST_ELF: [u8; 264] = [
 
     // p_offset = 0x100 (file offset where segment data starts)
     0x00, 0x01, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
-    // p_vaddr  = 0x100 (target VA)
-    0x00, 0x01, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
-    // p_paddr  = 0x100 (we don't differentiate)
-    0x00, 0x01, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+    // p_vaddr  = 0x1000 (target VA; ≥ RESERVED_LOW_END so validate_segment OKs it)
+    0x00, 0x10, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+    // p_paddr  = 0x1000 (we don't differentiate)
+    0x00, 0x10, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
     // p_filesz = 8 bytes of code
     0x08, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
     // p_memsz  = 8 bytes (no BSS)
@@ -175,10 +176,10 @@ pub fn run_d3_elf_loader_test() {
         loaded.slot, loaded.entry_va, loaded.l0_pa,
     );
 
-    // Sanity: the parser must have read e_entry = 0x100.
-    if loaded.entry_va != 0x100 {
+    // Sanity: the parser must have read e_entry = 0x1000.
+    if loaded.entry_va != 0x1000 {
         kprintln!(
-            "[d3] === FAIL: entry_va=0x{:x} expected 0x100 ===",
+            "[d3] === FAIL: entry_va=0x{:x} expected 0x1000 ===",
             loaded.entry_va,
         );
         return;
@@ -265,7 +266,7 @@ pub fn run_d3_elf_loader_test() {
 /// Read the basepage written by [`load_to_slot`] back from the
 /// slot's user page and verify every loader-populated field. Mirror
 /// of the D4 expectations: the test ELF has a single 8-byte text
-/// segment at vaddr=0x100, no data, no BSS, so the data/BSS slots
+/// segment at vaddr=0x1000, no data, no BSS, so the data/BSS slots
 /// must be zero.
 fn validate_basepage(loaded: &LoadedImage) -> bool {
     // SAFETY: pre-test, single-CPU; the slot is exclusively owned
@@ -307,7 +308,7 @@ fn validate_basepage(loaded: &LoadedImage) -> bool {
 
     let lowtpa_ok = p_lowtpa == 0;
     let hitpa_ok = p_hitpa == expected_hitpa;
-    let tbase_ok = p_tbase == 0x100;
+    let tbase_ok = p_tbase == 0x1000;
     let tlen_ok = p_tlen == 8;
     let dbase_ok = p_dbase == 0;
     let dlen_ok = p_dlen == 0;

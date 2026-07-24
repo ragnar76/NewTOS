@@ -330,11 +330,12 @@ pub fn appl_write(pb: &Aespb) {
     let target = pb.intin(0);
     let len_bytes = pb.intin(1).max(0) as usize;
     let buf = pb.addrin(0);
-    // SAFETY: single trap path.
-    let Some(dst) = (unsafe { pd::by_pid(target) }) else {
+    // SAFETY: single trap path. Existence check drops its borrow immediately so
+    // the enqueue below can re-borrow the descriptor through `pd::post_words`.
+    if unsafe { pd::by_pid(target) }.is_none() {
         pb.set_ret(0);
         return;
-    };
+    }
     if buf == 0 {
         pb.set_ret(0);
         return;
@@ -350,9 +351,14 @@ pub fn appl_write(pb: &Aespb) {
             *slot = p.add(i).read();
         }
     }
-    // Enqueue into the target's FIFO (0 if the queue is full — AUD-P1-006, a
-    // separate finding; EmuTOS blocks the sender instead of returning 0).
-    pb.set_ret(dst.queue.push_words(&msg, words) as i16);
+    // Enqueue into the target's FIFO via the centralized poster: it appends the
+    // message (with the standard redraw/arrow coalescing) AND wakes a peer
+    // blocked in `evnt_mesag`/`evnt_multi` on the target's FIFO (WAITING →
+    // READY, design §5.2) — no longer bypassing `pd::post_msg`'s wake. Returns 0
+    // if the queue is full (AUD-P1-006, a separate finding; EmuTOS blocks the
+    // sender instead of returning 0).
+    // SAFETY: single trap path.
+    pb.set_ret(unsafe { pd::post_words(target, &msg, words) } as i16);
 }
 
 /// Opcode 11 — `appl_read`: read a message from the calling application's

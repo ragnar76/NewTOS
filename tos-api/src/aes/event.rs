@@ -327,7 +327,17 @@ pub fn evnt_multi(pb: &Aespb) -> Option<sched::Switch> {
     let mut clicks = 0i16;
 
     if let Some(h) = host() {
-        let deadline = h.monotonic_millis().saturating_add(ms);
+        // Persist the timer deadline per-slot for S2-restart idempotency
+        // (design §4.3 OPEN): the first entry stores `now + ms`, an S2 restart
+        // (this whole loop re-executes from the top on resume) reuses it, and
+        // any completion below clears it. Only meaningful when `MU_TIMER` is
+        // armed; without a timer the value is unused (`cap = None`, no MU_TIMER
+        // check), so it is computed but not persisted.
+        let deadline = if flags & MU_TIMER != 0 {
+            sched::arm_or_get_deadline(h.monotonic_millis(), ms)
+        } else {
+            h.monotonic_millis().saturating_add(ms)
+        };
         loop {
             // AES intercepts a click in the menu bar or a window frame before
             // the app sees the raw button, mirroring the EmuTOS Control Manager
@@ -416,6 +426,11 @@ pub fn evnt_multi(pb: &Aespb) -> Option<sched::Switch> {
         }
     }
 
+    // Completed (an event fired, or no host): clear the persisted timer deadline
+    // so a later timer wait recomputes fresh — any firing path reaches here,
+    // whereas a peer yield above returned early and left the deadline armed for
+    // the restart (S2-restart idempotency, §4.3).
+    sched::clear_deadline();
     fill_rets(pb);
     pb.set_intout(5, key); // EV_KRET
     pb.set_intout(6, clicks); // EV_BRET
@@ -507,8 +522,11 @@ pub fn evnt_timer(pb: &Aespb) -> Option<sched::Switch> {
     let ms = ((hi << 16) | lo) as u64;
 
     if let Some(sw) = wait_ms(ms) {
-        return Some(sw); // yield to a peer (S2); re-checks the deadline on resume
+        return Some(sw); // yield to a peer (S2); reuses the deadline on resume
     }
+    // Completed (deadline reached, or `ms == 0`): clear the persisted deadline
+    // so a later timer wait recomputes fresh (S2-restart idempotency, §4.3).
+    sched::clear_deadline();
     pb.set_ret(1);
     None
 }
@@ -521,16 +539,21 @@ fn wait_ms(ms: u64) -> Option<sched::Switch> {
         return None;
     }
     if let Some(h) = host() {
-        let start = h.monotonic_millis();
-        // Saturating target; `monotonic_millis` is monotonic so a plain
-        // comparison is safe (no wraparound within any realistic uptime).
-        let deadline = start.saturating_add(ms);
+        let now = h.monotonic_millis();
+        // Persist the absolute deadline per-slot so an S2 restart REUSES it
+        // instead of recomputing `now + ms` — which, re-entered from the top on
+        // every restart with a live peer, would creep forward by `ms` and never
+        // converge (design §4.3 OPEN). First entry stores; a restart reuses;
+        // `evnt_timer` clears it on completion. `monotonic_millis` is monotonic
+        // so a plain comparison is safe (no wraparound within any realistic
+        // uptime).
+        let deadline = sched::arm_or_get_deadline(now, ms);
         // Block until the deadline. The idle wake-pass wakes `WAIT_TIMER` once
         // `monotonic_millis >= deadline` (design §5.2); the caller's own
         // deadline check drives the loop in the single-context step-3a case.
         while h.monotonic_millis() < deadline {
             if let sched::SleepOutcome::Yield(sw) = sched::sleep(sched::wait_timer(deadline)) {
-                return Some(sw); // yield to a peer (S2); re-checks the deadline on resume
+                return Some(sw); // yield to a peer (S2); reuses the deadline on resume
             }
         }
     }

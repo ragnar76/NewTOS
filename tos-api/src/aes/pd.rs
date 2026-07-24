@@ -324,13 +324,43 @@ pub unsafe fn post_msg(pid: i16, msg: [i16; MSG_WORDS]) -> bool {
         None => false,
     };
     if posted {
-        // Wake any AES client blocked in `evnt_mesag` on this pid's message FIFO
-        // (WAITING → READY, sleep/wake substrate §5.2). Not load-bearing in step
-        // 3a (single context: the waiter's own idle re-check drains the queue),
-        // but wired now so step 4's real peer switch needs no `event.rs` change.
-        crate::bdos::process::sched::wake(crate::bdos::process::sched::wait_mesg(pid));
+        wake_mesg_waiter(pid);
     }
     posted
+}
+
+/// Post a variable-length message into `pid`'s queue — the `appl_write` /
+/// `ap_rdwr(MU_SDMSG)` path with a caller-supplied byte length (EmuTOS
+/// `doq` memcpys `qpb_cnt` bytes, `aes/gemqueue.c:31-73`). Enqueues the first
+/// `words` WORDs of `src` with the standard redraw/arrow coalescing
+/// ([`MsgQueue::push_words`]) and, on success, wakes an AES client blocked on
+/// `pid`'s FIFO through the **same** centralized wake as [`post_msg`] — so
+/// `appl_write` no longer bypasses it (design §5.2). Returns `false` if `pid`
+/// has no descriptor or the queue is full.
+///
+/// # Safety
+/// Single trap path.
+pub unsafe fn post_words(pid: i16, src: &[i16], words: usize) -> bool {
+    // SAFETY: caller upholds the single-trap-path invariant.
+    let posted = match unsafe { by_pid(pid) } {
+        Some(p) => p.queue.push_words(src, words),
+        None => false,
+    };
+    if posted {
+        wake_mesg_waiter(pid);
+    }
+    posted
+}
+
+/// Wake any AES client blocked in `evnt_mesag`/`evnt_multi` on `pid`'s message
+/// FIFO (WAITING → READY, sleep/wake substrate §5.2). The single wake point for
+/// every message poster ([`post_msg`]/[`post_words`]), matching EmuTOS's
+/// `aqueue`→`azombie`→`signal` (`emutos-cooperative-model.md` §3.3/§4.3). Not
+/// load-bearing in step 3a (single context: the waiter's own idle re-check
+/// drains the queue), but wired now so step 4's real peer switch needs no
+/// `event.rs`/`appl_write` change.
+fn wake_mesg_waiter(pid: i16) {
+    crate::bdos::process::sched::wake(crate::bdos::process::sched::wait_mesg(pid));
 }
 
 /// Look up an application descriptor by pid.
