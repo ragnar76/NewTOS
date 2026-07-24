@@ -135,8 +135,17 @@ cooperative-model, freemint-multitasking-model). FreeMiNT-Referenz vorhanden
    End-to-End-Selftest 6/6 PASS, 0 Delta, Hot-Path-No-Regression grün. **Real-HW-
    Rest: J1/J2** (Trampolin-I-Cache + TTBR0-Upcall-Pfad, QUIRK-001-Klasse) →
    `_hw-test-checklist.md` §J.
-2. **Schritt 2 — erster echter Konsument** an der Syscall-Grenze (kein IRQ):
-   **etv_term/etv_critic (H1/M1)** ODER **G_USERDEF (WP3)** → danach P4-012 eralert.
+2. **✅ Schritt 2 — etv_term (erster echter Konsument, H1-Teil)** (`022c94c`):
+   `Disposition`-Erweiterung (Resume vs. Terminate-after) + etv_term-Dispatch in
+   `handle_pterm` via Upcall (1:1 EmuTOS `xterm`/`protect_v`, argumentlos,
+   vor-Teardown). Developer+Tester: Selftest PASS, Resume-Pfad byte-identisch,
+   Pterm-Hot-Path grün. **Offen von H1:** etv_critic (M1) + etv_timer (IRQ) =
+   spätere Konsumenten.
+   - **Bekannter Cleanup (nicht step-2-verursacht):** `selftest_d3/d6/d7` nutzen
+     Fixture-`p_vaddr=0x100`; seit B1s Linker-Bump verlangt `validate_segment`
+     `>= 0x1000` → diese Selftests würden beim Re-Wiring `SegmentVaOutOfRange`
+     zeigen. Nicht im Boot (kein Laufzeit-Impact); Re-Enable braucht Fixture-vaddr
+     → 0x1000. Niedrige Prio.
 3. **Schritt 3 — sleep/wake-Substrat** (Ready-Queue, `event.rs`-Busy-Poll ersetzen)
    + Deliver-on-Resume für blockierte AES-Clients.
 4. **Schritt 4 — EmuTOS-koop AES (44 Fn)**; **Schritt 5+ deferred/additiv:**
