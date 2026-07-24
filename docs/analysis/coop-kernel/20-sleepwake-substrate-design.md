@@ -321,7 +321,14 @@ Um `evnt_multi` blockieren zu lassen, gibt es zwei Modelle:
   `elr` auf die **`svc`-Instruktion** (`elr − 4`) statt dahinter; beim Resume
   re-executet `eret` den `svc`, `evnt_multi` wird **von vorn** neu betreten,
   prüft neu, und feuert diesmal. Nutzt die vorhandene EL0-Frame-Rewrite-Maschine
-  (`apply_switch`) mit nur einem Delta (ELR-Rewind). **Voraussetzung:** die
+  (`apply_switch`) mit **zwei** kleinen Deltas (**Korrektur, bei der 3b-Umsetzung
+  belegt**): (1) ELR-Rewind beim Save; (2) ein `restartable`-Flag am `Switch`,
+  damit `apply_switch`s Resume-Zweig `gpr[0]` NICHT bedingungslos auf 0 zwingt
+  (`exceptions.rs:472` — das ist der korrekte Pwait-Rückgabewert, aber für S2
+  falsch: der re-executete GEM-`svc #2` braucht den AES-Selektor 200 in `x0`
+  intakt). Beide Deltas klein + Pwait-byte-erhaltend; die ursprüngliche „nur ein
+  Delta"-Behauptung war falsch (S2 bleibt dennoch billiger als S1 — kein
+  Per-Thread-EL1-Stack). **Voraussetzung:** die
   Checks vor dem Block sind read-only/idempotent, und Zustands-Mutation passiert
   **nur** auf der feuernden (zurückkehrenden) Runde.
 
