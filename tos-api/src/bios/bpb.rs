@@ -23,7 +23,8 @@ pub struct Bpb {
     pub rdlen: u16,
     /// FAT size in sectors (one FAT).
     pub fsiz: u16,
-    /// First sector of the last FAT.
+    /// First sector of the default FAT (the 2nd FAT on a 2-FAT disk, the
+    /// sole FAT on a 1-FAT disk), partition-relative.
     pub fatrec: u16,
     /// First data sector.
     pub datrec: u16,
@@ -50,28 +51,107 @@ impl Bpb {
 const B_16: u16 = 0x01;
 const B_1FAT: u16 = 0x02;
 
+// FAT-geometry limits, extracted 1:1 from EmuTOS. These are the
+// architectural FAT constants used by TOS/HDDRIVER; a boot sector outside
+// them is not logged in (see `parse`).
+/// Maximum logical sector size a disk may declare and still be logged in.
+/// This is `pun_info.max_sect_siz` at BPB-build time, which
+/// `references/emutos/bios/blkdev.c:122` sets to `MAX_LOGSEC_SIZE =
+/// MAX_CLUSTER_SIZE / MIN_SECS_PER_CLUS = 32768`
+/// (`references/emutos/bios/blkdev.h:30`).
+const MAX_LOGSEC_SIZE: u16 = 32768;
+/// Maximum cluster size in bytes
+/// (`MAX_CLUSTER_SIZE`, `references/emutos/bios/blkdev.h:27`).
+const MAX_CLUSTER_SIZE: u32 = 32768;
+/// FAT16 upper cluster-count bound; more clusters means FAT32 / unsupported
+/// (`MAX_FAT16_CLUSTERS`, `references/emutos/bios/blkdev.h:26`).
+const MAX_FAT16_CLUSTERS: u32 = 65524;
+/// FAT12/FAT16 split by cluster count
+/// (`MAX_FAT12_CLUSTERS`, `references/emutos/bios/blkdev.h:25`).
+const MAX_FAT12_CLUSTERS: u16 = 4084;
+/// Minimum supported FAT-copy count
+/// (`MIN_FATS`, `references/emutos/bios/blkdev.h:31`).
+const MIN_FATS: u8 = 1;
+/// Maximum supported FAT-copy count
+/// (`MAX_FATS`, `references/emutos/bios/blkdev.h:32`).
+const MAX_FATS: u8 = 2;
+
 struct BpbCell(UnsafeCell<[Bpb; 16]>);
 // SAFETY: written and read only from the single-CPU, IRQ-off trap path.
 unsafe impl Sync for BpbCell {}
 static TABLE: BpbCell = BpbCell(UnsafeCell::new([Bpb::ZERO; 16]));
 
-/// Parse a DOS/FAT boot sector into a [`Bpb`]. `part_sectors` is the
-/// partition length (used when the in-sector total-sector fields are 0).
-fn parse(sec: &[u8; 512], part_sectors: u32) -> Option<Bpb> {
+/// Parse a DOS/FAT boot sector into full [`Geometry`] (the 18-byte ABI
+/// [`Bpb`] plus the normalized `reserved`/`num_fats` the FAT write side
+/// needs). `part_sectors` is the partition length, used only when the
+/// in-sector total-sector fields are both 0.
+///
+/// Guards, normalizations and field arithmetic follow EmuTOS
+/// `blkdev_getbpb` (`references/emutos/bios/blkdev.c:641-756`) 1:1, in the
+/// same order, so a malformed / oversized / FAT32 boot record is rejected
+/// (`None`) exactly as TOS refuses to log the disk in — never fed to
+/// `bdos/fs/fat.rs`, where a wrong `fatrec`/`datrec`/`numcl` corrupts the
+/// filesystem. `CONF_WITH_1FAT_SUPPORT` is enabled in our profile (matches
+/// the existing `B_1FAT` handling), so a single FAT keeps `fatrec` at the
+/// reserved offset rather than skipping a phantom first FAT.
+fn parse(sec: &[u8; 512], part_sectors: u32) -> Option<Geometry> {
     let recsiz = u16::from_le_bytes([sec[0x0B], sec[0x0C]]);
-    let clsiz = sec[0x0D] as u16;
-    let reserved = u16::from_le_bytes([sec[0x0E], sec[0x0F]]);
-    let num_fats = sec[0x10] as u16;
-    let root_entries = u16::from_le_bytes([sec[0x11], sec[0x12]]);
-    let tot16 = u16::from_le_bytes([sec[0x13], sec[0x14]]);
-    let fsiz16 = u16::from_le_bytes([sec[0x16], sec[0x17]]);
-    let tot32 = u32::from_le_bytes([sec[0x20], sec[0x21], sec[0x22], sec[0x23]]);
+    let clsiz = sec[0x0D] as u16; // b->spc, sectors per cluster
+    let reserved_raw = u16::from_le_bytes([sec[0x0E], sec[0x0F]]); // b->res
+    let num_fats_raw = sec[0x10]; // b->fat
+    let root_entries = u16::from_le_bytes([sec[0x11], sec[0x12]]); // b->dir
+    let tot16 = u16::from_le_bytes([sec[0x13], sec[0x14]]); // b->sec
+    let fsiz16 = u16::from_le_bytes([sec[0x16], sec[0x17]]); // b->spf
+    let tot32 = u32::from_le_bytes([sec[0x20], sec[0x21], sec[0x22], sec[0x23]]); // b16->sec2
 
-    // Reject degenerate / FAT32 (16-bit FAT size 0) boot records.
-    if recsiz == 0 || clsiz == 0 || num_fats == 0 || fsiz16 == 0 {
+    // M4 — reject a logical sector size too large to log in (blkdev.c:642-647).
+    // `max_sect_siz` == `MAX_LOGSEC_SIZE` while the BPB is built (blkdev.c:122).
+    if recsiz > MAX_LOGSEC_SIZE {
         return None;
     }
 
+    // M4 — cluster size in bytes must be valid (blkdev.c:650-656). Computed as
+    // a ULONG so `spc * recsiz` cannot wrap before the bound check; this also
+    // rejects a zero `recsiz` or `clsiz` (either makes `clsizb == 0`).
+    let clsizb32 = clsiz as u32 * recsiz as u32;
+    if clsizb32 == 0 || clsizb32 > MAX_CLUSTER_SIZE {
+        return None;
+    }
+
+    // M4 — FAT count: for TOS compatibility accept 0 and assume 2 FATs, then
+    // reject anything outside 1..=2 (blkdev.c:662-670).
+    let num_fats: u8 = if num_fats_raw == 0 { 2 } else { num_fats_raw };
+    if !(MIN_FATS..=MAX_FATS).contains(&num_fats) {
+        return None;
+    }
+
+    // clsizb <= MAX_CLUSTER_SIZE now fits a u16 (blkdev.c:675-677).
+    let clsizb = clsizb32 as u16;
+
+    // Root-directory length in sectors, rounded up (blkdev.c:685-689).
+    // `recsiz != 0` is guaranteed by the `clsizb != 0` guard above.
+    let rdlen = (root_entries as u32 * 32).div_ceil(recsiz as u32) as u16;
+
+    let fsiz = fsiz16; // b->spf (blkdev.c:693)
+
+    // M2 — `reserved == 0` should not happen, but Atari TOS assumes 1; do this
+    // BEFORE computing fatrec/datrec (blkdev.c:702-704).
+    let reserved = if reserved_raw == 0 { 1 } else { reserved_raw };
+
+    // L3 — fatrec = reserved, then with >= 2 FATs skip the first FAT so fatrec
+    // points at the (default) 2nd FAT (blkdev.c:705,711-712). M4 has already
+    // rejected num_fats > 2, so this only ever adds one fsiz. u16 wrapping
+    // matches EmuTOS's UWORD store.
+    let mut fatrec = reserved;
+    if num_fats >= 2 {
+        fatrec = fatrec.wrapping_add(fsiz);
+    }
+    // First data sector (blkdev.c:713).
+    let datrec = fatrec.wrapping_add(fsiz).wrapping_add(rdlen);
+
+    // M3 — cluster count as a ULONG BEFORE narrowing, with the FAT16
+    // upper-bound reject (blkdev.c:718-743). Truncating first (as the old code
+    // did) would wrap a >65535-cluster disk into a small bogus count.
     let total = if tot16 != 0 {
         tot16 as u32
     } else if tot32 != 0 {
@@ -79,27 +159,31 @@ fn parse(sec: &[u8; 512], part_sectors: u32) -> Option<Bpb> {
     } else {
         part_sectors
     };
-
-    let clsizb = recsiz.wrapping_mul(clsiz);
-    let rdlen = (root_entries as u32 * 32).div_ceil(recsiz as u32) as u16;
-    let fsiz = fsiz16;
-    let fatrec = reserved + (num_fats - 1) * fsiz; // first sector of the last FAT
-    let datrec = reserved + num_fats * fsiz + rdlen;
-    let numcl = if total > datrec as u32 {
-        ((total - datrec as u32) / clsiz as u32) as u16
-    } else {
+    let clusters = if total < datrec as u32 {
         0
+    } else {
+        (total - datrec as u32) / clsiz as u32
     };
+    // > 65524 clusters (or a zero FAT size) means FAT32 / invalid: EmuTOS marks
+    // recsiz=0 for XHDI and returns 0; we discard the whole geometry so the
+    // drive is inaccessible, matching the observable "cannot log in" result
+    // (blkdev.c:736-742).
+    if clusters > MAX_FAT16_CLUSTERS || fsiz == 0 {
+        return None;
+    }
+    let numcl = clusters as u16;
 
+    // FAT12 vs FAT16 purely by cluster count (blkdev.c:750-756).
     let mut b_flags = 0;
-    if numcl >= 4085 {
-        b_flags |= B_16; // FAT16 (MS cluster-count threshold)
+    if numcl > MAX_FAT12_CLUSTERS {
+        b_flags |= B_16; // FAT16
     }
-    if num_fats == 1 {
-        b_flags |= B_1FAT;
+    if num_fats < 2 {
+        b_flags |= B_1FAT; // CONF_WITH_1FAT_SUPPORT
     }
 
-    Some(Bpb { recsiz, clsiz, clsizb, rdlen, fsiz, fatrec, datrec, numcl, b_flags })
+    let bpb = Bpb { recsiz, clsiz, clsizb, rdlen, fsiz, fatrec, datrec, numcl, b_flags };
+    Some(Geometry { bpb, reserved, num_fats })
 }
 
 /// Extended FAT geometry: the 18-byte ABI [`Bpb`] plus the raw
@@ -109,8 +193,11 @@ pub struct Geometry {
     /// The ABI BPB.
     pub bpb: Bpb,
     /// Reserved sectors before the first FAT (partition-relative).
+    /// Normalized like the BPB: a raw value of 0 is treated as 1
+    /// (EmuTOS `blkdev.c:702-704`), so it stays consistent with `fatrec`.
     pub reserved: u16,
-    /// Number of FAT copies.
+    /// Number of FAT copies, normalized to match the BPB: a raw value of 0
+    /// is treated as 2 FATs (EmuTOS `blkdev.c:662-665`). Always 1 or 2.
     pub num_fats: u8,
 }
 
@@ -125,12 +212,7 @@ pub fn geometry(drive: u16) -> Option<Geometry> {
     if !blk.read_blocks(part.start_lba as u64, &mut sec) {
         return None;
     }
-    let bpb = parse(&sec, part.count)?;
-    Some(Geometry {
-        bpb,
-        reserved: u16::from_le_bytes([sec[0x0E], sec[0x0F]]),
-        num_fats: sec[0x10],
-    })
+    parse(&sec, part.count)
 }
 
 /// Read a drive's boot sector, parse its BPB, and cache it in the
@@ -146,7 +228,7 @@ pub fn bpb_for(drive: u16) -> Option<Bpb> {
     if !blk.read_blocks(part.start_lba as u64, &mut sec) {
         return None;
     }
-    let bpb = parse(&sec, part.count)?;
+    let bpb = parse(&sec, part.count)?.bpb;
     // SAFETY: single trap path; one BPB slot per drive.
     let table = unsafe { &mut *TABLE.0.get() };
     table[drive as usize] = bpb;
