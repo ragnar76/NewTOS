@@ -8,21 +8,22 @@
 #
 #   * ELFCLASS64, ELFDATA2LSB, ET_EXEC, EM_AARCH64 (0xB7), e_version=1
 #   * one PT_LOAD segment, e_phentsize=56
-#   * segment + entry at VA 0x100 (the loader reserves the first 256 bytes of
-#     the single user page for the BasePage; segments start at >= 0x100)
-#   * whole image fits in one 4 KiB page
+#   * segment + entry at VA 0x1000 (B1 / Option 1: the first page of the TPA
+#     is reserved for the BasePage @0 + classic sysvars/OSHEADER/cookie-jar,
+#     so native segments start at >= 0x1000, matching sdk/newtos.ld)
+#   * whole image fits within the TPA
 #
 # Usage: tools/mk-hello-ncp.py [out-path]   (default: /tmp/HELLO.NCP)
 
 import struct
 import sys
 
-CODE_OFF = 0x100          # entry VA / file offset of the code
-STR_OFF = 0x200           # VA / file offset of the banner string
+CODE_OFF = 0x1000         # entry VA / file offset of the code (B1 base)
+STR_OFF = 0x1100          # VA / file offset of the banner string
 BANNER = b"Hello from a NewTOS .NCP program!\r\n\x00"
 
-# Code at 0x100 (7 instructions, 28 bytes). Little-endian AArch64.
-#   movz x0, #0x200   ; x0 = &banner            (00 40 80 D2)
+# Code at 0x1000 (7 instructions, 28 bytes). Little-endian AArch64.
+#   movz x0, #0x1100  ; x0 = &banner (STR_OFF)   (00 20 82 D2)
 #   movz x8, #0x09    ; Cconws                   (28 01 80 D2)
 #   svc  #1                                       (21 00 00 D4)
 #   movz x0, #0       ; rc = 0                    (00 00 80 D2)
@@ -30,7 +31,7 @@ BANNER = b"Hello from a NewTOS .NCP program!\r\n\x00"
 #   svc  #1                                        (21 00 00 D4)
 #   b    .            ; safety net                (00 00 00 14)
 CODE = bytes([
-    0x00, 0x40, 0x80, 0xD2,
+    0x00, 0x20, 0x82, 0xD2,
     0x28, 0x01, 0x80, 0xD2,
     0x21, 0x00, 0x00, 0xD4,
     0x00, 0x00, 0x80, 0xD2,
@@ -54,7 +55,7 @@ ehdr = struct.pack(
     2,            # e_type    = ET_EXEC
     0xB7,         # e_machine = EM_AARCH64
     1,            # e_version
-    CODE_OFF,     # e_entry   = 0x100
+    CODE_OFF,     # e_entry   = 0x1000
     0x40,         # e_phoff   = 64
     0,            # e_shoff
     0,            # e_flags
@@ -72,9 +73,9 @@ phdr = struct.pack(
     "<IIQQQQQQ",
     1,            # p_type   = PT_LOAD
     5,            # p_flags  = R+X
-    CODE_OFF,     # p_offset = 0x100
-    CODE_OFF,     # p_vaddr  = 0x100
-    CODE_OFF,     # p_paddr  = 0x100
+    CODE_OFF,     # p_offset = 0x1000
+    CODE_OFF,     # p_vaddr  = 0x1000
+    CODE_OFF,     # p_paddr  = 0x1000
     SEG_SIZE,     # p_filesz
     SEG_SIZE,     # p_memsz
     0x1000,       # p_align

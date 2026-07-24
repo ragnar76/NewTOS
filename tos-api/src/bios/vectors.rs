@@ -64,21 +64,103 @@ static VECTORS: [AtomicI64; NVEC] = {
     v
 };
 
+/// Upper bound (exclusive) on the `Setexc` raw sysvar peek/poke: vectors
+/// whose m68k address `4 * num` lands in the reserved low-memory
+/// system-variable region `[0x000, 0x800)` (i.e. `num < 0x200`). Between
+/// [`NVEC`] and this, `Setexc` reads/writes the calling process's EL0-VA
+/// `4 * num` directly, EmuTOS-faithfully — the `Setexc(0x5A0/4 == 0x168, -1)`
+/// cookie-jar idiom (TeraDesk `library/utility/cookie.c:56`) lands here.
+const SYSVAR_NUM_LIMIT: usize = 0x200;
+
 /// `Setexc` (0x05) — get (when `vector == -1`) or set the handler for
 /// exception/hook vector `num`, returning the previous value (EmuTOS
-/// `setexc`). Out-of-range `num` is ignored (returns 0) rather than
-/// corrupting low memory the way m68k TOS does.
+/// `setexc`, `references/emutos/bios/bios.c:1070-1080`).
+///
+/// Three regimes:
+///  * `num < NVEC` — the software m68k **vector shadow** (get/set the entry,
+///    return the old value); NewTOS dispatches the `etv_*` hooks by name.
+///  * `NVEC <= num < SYSVAR_NUM_LIMIT` — the m68k address `4 * num` lands in
+///    the reserved low-memory **sysvar region**: peek/poke the calling
+///    process's EL0-VA `*(LONG*)(4 * num)` directly, exactly like EmuTOS'
+///    unchecked `setexc`. The kernel runs this svc handler with the app's
+///    `TTBR0` active, so an unprivileged word access reaches the app's low
+///    memory (where [`crate::bdos::process::loader`]'s `populate_sysvars`
+///    wrote `p_cookies`@0x5A0 etc.).
+///  * `num >= SYSVAR_NUM_LIMIT` — returns 0. NewTOS deliberately does **not**
+///    emulate the full m68k "poke any address" corruption above the sysvar
+///    region.
 pub fn setexc(args: &TrapArgs) -> i64 {
     let num = args.arg_i16(0) as usize;
     let vector = args.arg_u64(1) as i64;
-    if num >= NVEC {
-        return 0;
+
+    // Named/CPU exception-vector shadow.
+    if num < NVEC {
+        let old = VECTORS[num].load(Ordering::Relaxed);
+        if vector != -1 {
+            VECTORS[num].store(vector, Ordering::Relaxed);
+        }
+        return old;
     }
-    let old = VECTORS[num].load(Ordering::Relaxed);
-    if vector != -1 {
-        VECTORS[num].store(vector, Ordering::Relaxed);
+
+    // Reserved low-memory sysvar region: EmuTOS-faithful raw peek/poke of
+    // the calling process's `*(LONG*)(4 * num)` via unprivileged word
+    // access (checked as EL0, like `Cconws`'s `ldtrb`), bounded to the
+    // sysvar region so it can never corrupt arbitrary memory.
+    if num < SYSVAR_NUM_LIMIT {
+        let addr = (num * 4) as *mut u8;
+        // SAFETY: `4 * num < 0x800` is inside the per-process reserved low
+        // region the loader maps and populates; the unprivileged access is
+        // permission-checked as EL0 under the active app `TTBR0`.
+        let old = unsafe { read_user_long(addr) } as i32 as i64;
+        if vector != -1 {
+            // SAFETY: as above — writable EL0 sysvar cell.
+            unsafe { write_user_long(addr, vector as u32) };
+        }
+        return old;
     }
-    old
+
+    0
+}
+
+/// Read a 32-bit `LONG` from a user (EL0) pointer via an unprivileged load
+/// (`ldtr`), so the access is permission-checked as EL0 — same contract as
+/// `Cconws`'s `ldtrb` (`crate::gemdos::console`).
+///
+/// # Safety
+///
+/// `p` must address a readable EL0 4-byte cell under the active `TTBR0`.
+#[inline]
+unsafe fn read_user_long(p: *const u8) -> u32 {
+    let v: u32;
+    // SAFETY: caller guarantees `p` readable; unprivileged word load.
+    unsafe {
+        core::arch::asm!(
+            "ldtr {v:w}, [{p}]",
+            p = in(reg) p,
+            v = out(reg) v,
+            options(nostack, preserves_flags, readonly),
+        );
+    }
+    v
+}
+
+/// Write a 32-bit `LONG` to a user (EL0) pointer via an unprivileged store
+/// (`sttr`).
+///
+/// # Safety
+///
+/// `p` must address a writable EL0 4-byte cell under the active `TTBR0`.
+#[inline]
+unsafe fn write_user_long(p: *mut u8, v: u32) {
+    // SAFETY: caller guarantees `p` writable; unprivileged word store.
+    unsafe {
+        core::arch::asm!(
+            "sttr {v:w}, [{p}]",
+            p = in(reg) p,
+            v = in(reg) v,
+            options(nostack, preserves_flags),
+        );
+    }
 }
 
 /// The handler currently installed for hook `num`, or 0 if none. NewTOS'

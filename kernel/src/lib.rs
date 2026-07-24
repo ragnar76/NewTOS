@@ -51,6 +51,7 @@ pub mod selftest_bios;
 pub mod selftest_console;
 pub mod selftest_cookie;
 pub mod selftest_objc;
+pub mod selftest_sysvars;
 pub mod aes_demo;
 pub mod desk;
 pub mod launch;
@@ -291,6 +292,14 @@ extern "C" fn kernel_main_rust(dtb_phys: usize) -> ! {
     // (e.g. `selftest_vdi::run_phase12_vdi_demo()` draws the Phase-12
     // drawing-surface demo verified by QMP screendump, or
     // `selftest_aes::run_phase13_aes_test()` for the AES lifecycle).
+
+    // B1 — prove the per-process low-memory sysvars/OSHEADER/$5A0 area is
+    // populated in a loaded EL0 TPA (docs/analysis/bios-audit/
+    // b1-lowmem-feasibility.md, Option 1). Loads a throwaway image, checks
+    // _sysbase/os_version/_p_cookies + the Setexc($5A0/4,-1) idiom, then
+    // frees its slot — leaves the system in the no-process state for the
+    // desktop. Cheap, and green output is the B1 landing proof.
+    selftest_sysvars::run();
 
     // Keep the initinfo boot screen visible briefly before the desktop
     // takes over (EmuTOS shows its boot screen the same way).

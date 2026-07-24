@@ -74,10 +74,11 @@ pub enum LoadError {
     Parse(ParseError),
     /// `slot` is `>= MAX_PROCESSES`.
     InvalidSlot,
-    /// A `PT_LOAD` segment lies below the basepage window. The first
-    /// `sizeof(BasePage)` bytes of the TPA are reserved for the
-    /// basepage; segments must start at `USER_VA_BASE + sizeof(BasePage)`
-    /// or later. Anything below the window produces this error.
+    /// A `PT_LOAD` segment lies below the reserved low region. The first
+    /// page of the TPA is reserved for the basepage and the classic
+    /// low-memory system area (sysvars/OSHEADER/cookie-jar); segments must
+    /// start at `USER_VA_BASE + RESERVED_LOW_END` (= 0x1000) or later.
+    /// Anything below that produces this error (B1 / Option 1).
     SegmentVaOutOfRange,
     /// A `PT_LOAD` segment's `vaddr + mem_size` overruns the usable
     /// TPA image region (`USER_TPA_TOP - USER_STACK_MIN`), i.e. the
@@ -172,13 +173,27 @@ pub const USER_TPA_TOP: u64 = USER_VA_BASE + arena::TPA_SIZE;
 const USER_STACK_MIN: u64 = 0x1_0000;
 
 /// Number of bytes at the start of the TPA reserved for the
-/// [`BasePage`]. ELF `PT_LOAD` segments must place themselves at or
-/// after `USER_VA_BASE + BASEPAGE_RESERVED`.
+/// [`BasePage`].
 const BASEPAGE_RESERVED: u64 = core::mem::size_of::<BasePage>() as u64;
 
-// The image window must leave room for both the basepage and the
+/// End of the per-process reserved low region: the first page (4 KiB) of the
+/// TPA holds the [`BasePage`] (`[0x000, 0x100)`) and the classic TOS
+/// low-memory system area (`[0x400, 0x670)`: sysvars + OSHEADER + cookie jar,
+/// written by [`populate_sysvars`]). ELF `PT_LOAD` segments must place
+/// themselves at or after this address so they never overlap it — the SDK
+/// links native apps here (`sdk/newtos.ld` base `0x1000`). B1 / Option 1,
+/// `docs/analysis/bios-audit/b1-lowmem-feasibility.md` §Option 1.
+const RESERVED_LOW_END: u64 = 0x1000;
+
+// The reserved low region must fit inside the first TPA page (so `page 0`
+// covers the BasePage + sysvar area) and leave the classic sysvar block
+// (`[0x400, 0x800)`) below the image base.
+const _: () = assert!(BASEPAGE_RESERVED <= RESERVED_LOW_END);
+const _: () = assert!(SYSVAR_AREA_END <= RESERVED_LOW_END);
+
+// The image window must leave room for both the reserved low region and the
 // minimum stack reserve inside the TPA.
-const _: () = assert!(BASEPAGE_RESERVED + USER_STACK_MIN < arena::TPA_SIZE);
+const _: () = assert!(RESERVED_LOW_END + USER_STACK_MIN < arena::TPA_SIZE);
 
 /// Where the program image comes from. There is **no** fixed
 /// whole-file staging buffer: only the ELF header + program-header table
@@ -463,6 +478,15 @@ unsafe fn populate_and_map(
     // Write the BasePage into the reserved window at the TPA start.
     populate_basepage(tpa_bytes, img, tail, env_phys);
 
+    // Populate the classic TOS low-memory system area (sysvars + OSHEADER +
+    // cookie jar) in the reserved low region, per-process (B1 / Option 1).
+    // A 1:1-ported TOS app reads `_sysbase`@0x4F2 / `_p_cookies`@0x5A0 / the
+    // OSHEADER directly (e.g. TeraDesk `main.c:56`), so these must be a real,
+    // populated instance in the app's own EL0-VA space. Ordered before the
+    // cache maintenance below so its `dsb ish` makes the writes observable to
+    // EL0 before the process runs.
+    populate_sysvars(tpa_bytes);
+
     // Make the freshly-written program bytes observable to instruction
     // fetch on real hardware (clean D-cache to PoU + invalidate I-cache
     // over the image region only). QEMU has no caches, so this is a
@@ -627,6 +651,189 @@ fn populate_basepage(
     bp.p_cmdlin[n] = 0;
 }
 
+// ── Classic low-memory system area (B1 / Option 1) ──────────────────────
+//
+// Per-process EL0-VA layout of the reserved low region the loader populates
+// so a 1:1-ported TOS app can dereference the classic absolute addresses
+// (`_sysbase`@0x4F2, `_p_cookies`@0x5A0, the OSHEADER). Every value/behaviour
+// replicates EmuTOS 1:1 (`references/emutos/...`), cited at each write.
+// Spec: `docs/analysis/bios-audit/b1-lowmem-feasibility.md` §Option 1,
+// `docs/api/bios/_boot-init.md`, `docs/api/structures/osheader.md`.
+
+/// OSHEADER instance base. `sysbase`@0x4F2 points here. The struct is 48
+/// bytes (`OSHEADER` = 0x30, `docs/api/structures/osheader.md`), so it spans
+/// `[0x5C0, 0x5F0)`, ending exactly at the cookie jar.
+const OSHEADER_VA: u32 = 0x5C0;
+
+/// Cookie-jar base. `p_cookies`@0x5A0 points here.
+const COOKIE_JAR_VA: u32 = 0x5F0;
+
+/// Cookie-jar capacity in `{tag, value}` slots (8 bytes each). The region
+/// `[0x5F0, 0x670)` holds 16 slots and stays below [`RESERVED_LOW_END`].
+const COOKIE_JAR_SLOTS: u32 = 16;
+
+/// Exclusive end of the classic low-memory system area (= jar end, 0x670).
+const SYSVAR_AREA_END: u64 = COOKIE_JAR_VA as u64 + (COOKIE_JAR_SLOTS as u64) * 8;
+
+/// OSHEADER `os_version` (+0x02): Falcon TOS 4.04. EmuTOS' own default is
+/// 0x206 (`config.h:1367-1372`); NewTOS reports 4.04 — user-pinned.
+const OS_VERSION: u16 = 0x0404;
+/// OSHEADER `os_conf` (+0x1C): `(country << 1) | PAL` (`osheader.md`
+/// §os_conf). NewTOS is US/English (`i18n::current_lang == En`, cookie
+/// `_AKP == US`) and ignores PAL → country US(0), PAL 0 → 0.
+const OS_CONF: u16 = 0x0000;
+/// OSHEADER `os_date` (+0x18): OS build date, BCD `MMDDYYYY`. NewTOS pins no
+/// build-date constant; placeholder = the codebase's default epoch
+/// 1980-01-01 (`tos-api/src/gemdos/time.rs:26`). Flagged to the lead.
+const OS_DATE: u32 = 0x0101_1980;
+/// OSHEADER `os_dosdate` (+0x1E): same date, FAT-packed
+/// (`(year-1980)<<9 | month<<5 | day`) → 1980-01-01.
+const OS_DOSDATE: u16 = 0x0021;
+
+/// RAM-config validity magics (`references/emutos/bios/memory.S`), written on
+/// cold boot at the end of `memconf` (memory.S:588-590).
+const MEMVALID_MAGIC: u32 = 0x7520_19F3; // $420 memvalid (memory.S:126,588)
+const MEMVAL2_MAGIC: u32 = 0x2376_98AA; //  $43A memval2  (memory.S:129,589)
+const MEMVAL3_MAGIC: u32 = 0x5555_AAAA; //  $51A memval3  (memory.S:132,590)
+
+/// Write a 32-bit little-endian `LONG` at byte offset `off` (any alignment;
+/// the classic sysvars are 4-byte and not all 4-aligned, e.g. `sysbase`@0x4F2).
+#[inline]
+fn wr_long(buf: &mut [u8], off: usize, v: u32) {
+    buf[off..off + 4].copy_from_slice(&v.to_le_bytes());
+}
+/// Write a 16-bit little-endian `WORD` at byte offset `off` (any alignment).
+#[inline]
+fn wr_word(buf: &mut [u8], off: usize, v: u16) {
+    buf[off..off + 2].copy_from_slice(&v.to_le_bytes());
+}
+
+/// Populate the classic TOS low-memory system area in the reserved low
+/// region of a freshly-loaded TPA (B1 / Option 1).
+///
+/// Writes, per-process and through the kernel high-half alias `tpa`:
+///   * an **OSHEADER instance** at [`OSHEADER_VA`]
+///     (`docs/api/structures/osheader.md`),
+///   * the **classic system variables** at their fixed `$400`-region
+///     addresses (`docs/api/bios/_boot-init.md` §7, EmuTOS `tosvars.ld`),
+///   * a **cookie jar** at [`COOKIE_JAR_VA`], mirroring the kernel jar
+///     ([`crate::cookie`]) in the classic `{tag, value}` array form
+///     (`docs/api/bios/_cookie-jar.md`) so `_p_cookies`@0x5A0 reaches a
+///     well-formed jar.
+///
+/// `tpa` is the whole-TPA byte view; every write lands in the first page,
+/// disjoint from the BasePage (`[0x000, 0x100)`) and the app image
+/// (`>= 0x1000`). Called before the code-cache maintenance in
+/// [`populate_and_map`] so its `dsb ish` makes the writes observable to EL0
+/// before the process runs.
+fn populate_sysvars(tpa: &mut [u8]) {
+    // ── OSHEADER instance (osheader.md; EmuTOS bios/startup.S:73-114
+    //    `_os_header`) ─────────────────────────────────────────────────
+    let oh = OSHEADER_VA as usize;
+    // os_entry (+0x00): m68k `BRA.S reseth` reset-vector opcode — no m68k
+    // reset path on AArch64 (osheader.md §os_entry). Left 0.
+    // os_version (+0x02):
+    wr_word(tpa, oh + 0x02, OS_VERSION);
+    // reseth (+0x04): m68k C reset handler — none on AArch64. Left 0.
+    // os_beg (+0x08) / os_end (+0x0C): EmuTOS = OS-image self-pointer +
+    // end-of-OS-ST-RAM (startup.S:88-91). NewTOS reports the current usable
+    // ST-RAM pool bounds here per the BB1 task decision (the STRAM/TTRAM
+    // 8 MB split is BB2); both fit an Atari LONG (low-2 GiB pool).
+    let (stram_start, stram_end) = crate::bdos::mem::init::stram_range();
+    wr_long(tpa, oh + 0x08, stram_start as u32);
+    wr_long(tpa, oh + 0x0C, stram_end as u32);
+    // os_rsvl (+0x10): reserved; EmuTOS sets 0 (osheader.md §os_rsvl). 0.
+    // os_magic (+0x14): pointer to the GEM_MUPB — populated only once GEM/AES
+    // is reimplemented into a per-process GEM_MUPB (osheader.md §os_magic);
+    // its `gm_init` (AES entry) has no faithful native EL0-VA value yet, so
+    // it is left 0 rather than guessed (flagged to the lead). 0.
+    // os_date (+0x18):
+    wr_long(tpa, oh + 0x18, OS_DATE);
+    // os_conf (+0x1C):
+    wr_word(tpa, oh + 0x1C, OS_CONF);
+    // os_dosdate (+0x1E):
+    wr_word(tpa, oh + 0x1E, OS_DOSDATE);
+    // os_root (+0x20): BDOS quick-pool head (EL1-only). Left 0.
+    // os_kbshift (+0x24): ptr to the kbshift byte (EL1-only). Left 0.
+    // os_run (+0x28): `PD**` → the cell holding the current-PD ptr (EmuTOS
+    // startup.S:110-111, `_boot-init.md` §4). Under NewTOS Option-1
+    // single-tasking the running PD is the BasePage at USER_VA_BASE (0), and
+    // BasePage[0] (`p_lowtpa`) == 0 == that same VA, so pointing os_run at
+    // the BasePage yields the classic `*(os_run) == current-PD` contract.
+    wr_long(tpa, oh + 0x28, USER_VA_BASE as u32);
+    // os_dummy (+0x2C): OS signature. EmuTOS 'ETOS'; NewTOS 'NTOS'
+    // (osheader.md §os_dummy).
+    wr_long(tpa, oh + 0x2C, u32::from_be_bytes(*b"NTOS"));
+
+    // ── Classic system variables ($400 region, _boot-init.md §7; EmuTOS
+    //    tosvars.ld + memory.S) ─────────────────────────────────────────
+    // memvalid/memval2/memval3: RAM-config validity magics (cold-boot sets
+    // them at the end of memconf).
+    wr_long(tpa, 0x420, MEMVALID_MAGIC);
+    wr_long(tpa, 0x43A, MEMVAL2_MAGIC);
+    wr_long(tpa, 0x51A, MEMVAL3_MAGIC);
+    // resvalid/resvector ($426/$42A): warm-reset vector pair — EmuTOS never
+    // sets them (cold-boot value 0, _boot-init.md §5); an app pokes them.
+    wr_long(tpa, 0x426, 0);
+    wr_long(tpa, 0x42A, 0);
+    // phystop ($42E) = physical top of ST-RAM; membot ($432) = start of TPA;
+    // memtop ($436) = end of TPA (biosmem.c:66-72). NewTOS: the ST-RAM pool
+    // bounds (no video-RAM carve-out, so phystop == memtop == pool end).
+    wr_long(tpa, 0x42E, stram_end as u32);
+    wr_long(tpa, 0x432, stram_start as u32);
+    wr_long(tpa, 0x436, stram_end as u32);
+    // bootdev ($446): default boot drive (bios.c:798-799). NewTOS boots from
+    // the first available hard disk (C:), i.e. the lowest set bit in the
+    // drive map (drive.rs FIRST_HD == C: == 2).
+    let drvbits = crate::bios::drive::drvbits();
+    let bootdev = if drvbits != 0 {
+        drvbits.trailing_zeros() as u16
+    } else {
+        crate::bdos::fs::drive::current_drive()
+    };
+    wr_word(tpa, 0x446, bootdev);
+    // _hz_200 ($4BA): 200 Hz system-tick counter. Static snapshot at load
+    // (monotonic ms / 5); the live low-memory writer is a documented
+    // deferral (feasibility §3) — TeraDesk does not poll it live.
+    let hz200 = crate::host::host()
+        .map(|h| (h.monotonic_millis() / 5) as u32)
+        .unwrap_or(0);
+    wr_long(tpa, 0x4BA, hz200);
+    // drvbits ($4C2): physical drive bitmap (Drvmap, blkdev_init).
+    wr_long(tpa, 0x4C2, drvbits);
+    // sysbase ($4F2): pointer to the OSHEADER (bios.c:358) — the field whose
+    // absence crashed TeraDesk (`*(long*)0x4F2`). Adjacent shell_p@0x4F6 is
+    // left 0, so an LP64 8-byte read of $4F2 still yields OSHEADER_VA.
+    wr_long(tpa, 0x4F2, OSHEADER_VA);
+    // p_cookies ($5A0): pointer to the cookie jar (cookie_init, util/cookie.c).
+    wr_long(tpa, 0x5A0, COOKIE_JAR_VA);
+
+    // ── Cookie jar (classic array form, _cookie-jar.md; EmuTOS
+    //    util/cookie.c:26-35) ───────────────────────────────────────────
+    // Mirror the kernel jar (crate::cookie) as `{tag, value}` LONG pairs,
+    // terminated with `{0, capacity}`. Native apps normally use the Ssystem
+    // cookie subset (ADR-012); this is the direct-$5A0 compatibility path.
+    let jar = COOKIE_JAR_VA as usize;
+    let mut slot = 0u32;
+    let n = crate::cookie::count();
+    for i in 1..=n {
+        if slot >= COOKIE_JAR_SLOTS - 1 {
+            break; // leave the last slot for the terminator
+        }
+        if let Some(tag) = crate::cookie::slot_tag(i) {
+            let value = crate::cookie::get(tag).unwrap_or(0);
+            let off = jar + (slot as usize) * 8;
+            wr_long(tpa, off, tag);
+            wr_long(tpa, off + 4, value);
+            slot += 1;
+        }
+    }
+    // Terminator {tag = 0, value = capacity} (EmuTOS cookie_init).
+    let off = jar + (slot as usize) * 8;
+    wr_long(tpa, off, 0);
+    wr_long(tpa, off + 4, COOKIE_JAR_SLOTS);
+}
+
 /// Resolve an [`EnvSpec`] into an optional pool address for `p_env`,
 /// allocating + copying the environment via the BDOS pool. Mirrors
 /// EmuTOS `alloc_env` (`bdos/proc.c:413-431`) plus the `set_owner`
@@ -753,17 +960,21 @@ unsafe fn env_slice_from_phys(penv: Long) -> &'static [u8] {
 /// environments (a handful of `KEY=value` records).
 const ENV_SCAN_LIMIT: usize = 4096;
 
-/// Reject segments that clobber the basepage window or overrun the
+/// Reject segments that clobber the reserved low region or overrun the
 /// usable TPA image region.
 ///
 /// A `PT_LOAD` may now span many pages; it must start at or after the
-/// basepage window (`USER_VA_BASE + sizeof(BasePage)`) and end at or
-/// before `USER_TPA_TOP - USER_STACK_MIN`, leaving the top of the TPA
-/// for the downward-growing stack. The heap occupies whatever is left
+/// reserved low region ([`RESERVED_LOW_END`], the first page above the
+/// BasePage + classic sysvars/OSHEADER/cookie-jar area — B1/Option 1) and
+/// end at or before `USER_TPA_TOP - USER_STACK_MIN`, leaving the top of the
+/// TPA for the downward-growing stack. The heap occupies whatever is left
 /// between the image top and the stack.
 fn validate_segment(seg: &LoadSegment) -> Result<(), LoadError> {
-    // VA must lie within [USER_VA_BASE + sizeof(BasePage), image_top).
-    let min_va = USER_VA_BASE + BASEPAGE_RESERVED;
+    // VA must lie within [RESERVED_LOW_END, image_top). Segments below the
+    // reserved low region would overlap the per-process sysvar/OSHEADER area
+    // `populate_sysvars` writes (sysbase@0x4F2 etc.), so they are rejected —
+    // the SDK links native apps at RESERVED_LOW_END (`sdk/newtos.ld`).
+    let min_va = USER_VA_BASE + RESERVED_LOW_END;
     if seg.vaddr < min_va {
         return Err(LoadError::SegmentVaOutOfRange);
     }
