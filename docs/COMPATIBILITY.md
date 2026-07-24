@@ -77,20 +77,27 @@ unobservable. ("Port `desk/`" wording in older plans means "reimplement the
 
 TOS exposes global variables at fixed low-memory addresses (`$420`, `$44E`,
 `$4BA`, the cookie-jar pointer at `$5A0`, …). NewTOS keeps them
-**compatible in value and semantics, not necessarily at the physical
-address**, because AArch64 + MMU makes m68k low memory meaningless for
-native code:
+**compatible in value and semantics**; how they are *reached* depends on the
+kind of caller:
 
-- **Native AArch64 source ports** read them through the header accessors /
-  BIOS calls (e.g. `Getbpb`, `Drvmap`, cookie-jar lookup, `Ssystem`). Same
-  names, same values, same semantics — just not via a raw `*(LONG*)0x4BA`.
+- **Freshly-written native AArch64 source** reads them through the header
+  accessors / BIOS calls (e.g. `Getbpb`, `Drvmap`, cookie-jar lookup,
+  `Ssystem`). Same names, same values, same semantics.
+- **1:1-compiled TOS ports** (ADR-019) contain the *classic* raw idiom
+  (`*(LONG*)0x4F2`, the `$5A0` cookie-scan, `Setexc($5A0/4,-1)`). **B1
+  (2026-07-24, commit `3d1c1fe`) populates the classic low-memory sysvars +
+  OSHEADER + `$5A0` per-process at their real addresses in each app's EL0 VA**,
+  so these raw accesses work — see `docs/analysis/bios-audit/b1-lowmem-feasibility.md`.
 - **m68k binaries** (Phase 10 emulator) get the variables at their real
-  addresses: the emulator maps the low-memory region, so direct pokes work.
-- Therefore "variable-compatible" = *the variables exist with their
-  documented meaning and value, reachable by the idiom appropriate to each
-  world* — not "the same bytes sit at the same physical address for native
-  code". (ADR: Phase-03 R3 — BIOS variables live in a kernel struct behind
-  BIOS calls; direct `$420` poke is out-of-scope for native source ports.)
+  addresses too: the emulator maps the low-memory region, so direct pokes work.
+
+**Corrected 2026-07-24 (B1):** an earlier version of this section claimed
+native code never uses raw low-memory addresses ("not via a raw `*(LONG*)0x4BA`")
+and framed a strict two-world split (native → API only, m68k → low memory).
+ADR-019 (1:1-compiled ports) + the TeraDesk `$4F2` boot crash refuted that:
+native EL0 ports *do* hit the classic addresses, so NewTOS now provides them
+per-process (B1). The kernel-struct-behind-BIOS-calls path (Phase-03 R3) remains
+the source of truth and the idiom for freshly-written source.
 
 ## Native vs m68k struct variants
 

@@ -260,6 +260,16 @@ primitives draw into *that device's* framebuffer rather than a global
 **Date:** 2026-06-20
 **Status:** **Accepted** (2026-06-20). Unblocks PHASE-08 D5 (spec next).
 **Phase:** PHASE-08 (cookie jar).
+**Amended 2026-07-24 (B1):** the "native apps never touch low memory" premise
+in Context §1 below is **superseded**. Native EL0 apps now get a **per-process
+`$5A0` `_p_cookies`** pointing at a mirror of the kernel-owned jar, plus
+`Setexc($5A0/4,-1)` support, so the classic linear-scan and the cookie idiom
+work for 1:1-ported TOS apps (ADR-019) — see `docs/analysis/bios-audit/
+b1-lowmem-feasibility.md`, commit `3d1c1fe`. The kernel-owned jar (the Decision
+below) **remains the source of truth**; B1 only adds the classic-address
+mirror. `Supexec` is no longer needed to reach it — `$5A0` lives in the app's
+own EL0 low memory (see also ADR-Supexec: still deferred, but not a blocker for
+the cookie jar anymore).
 
 ### Context
 
@@ -275,7 +285,8 @@ supervisor-only low memory, applications elevate via **`Supexec`**
 
 1. `$5A0` is not mapped — Atari low-memory sysvars are not given AArch64
    addresses (same call as the `$420`/`$432` vars: direct poke is out of
-   scope, m68k-emulator-only).
+   scope, m68k-emulator-only). **[Superseded 2026-07-24 by B1 — see the Amended
+   note above: native EL0 apps now get a per-process `$5A0` + sysvar region.]**
 2. `Supexec` is itself deferred (Open-ADR *ADR-Supexec*).
 
 So NewTOS needs its **own** cookie set (the still-meaningful tags + a

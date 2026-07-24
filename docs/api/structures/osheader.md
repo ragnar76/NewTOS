@@ -95,14 +95,18 @@ the three defines a `TOS_VERSION` block, so all three fall through to the
 analysis found **no** `#if TOS_VERSION` branch anywhere in the source
 tree; it only feeds this one field.
 
-**NewTOS target value — OFFEN, not decided.** `docs/analysis/bios-audit/
-00-PLAN.md` names `0x0404` (TOS 4.04/Falcon) as if settled, but the more
-careful config-profile analysis explicitly flags this as unverified:
-*"Zu verifizieren, NICHT raten … ob auch der `TOS_VERSION`-OS-Header-Wert
-(Standard `0x206`) auf den Falcon-TOS4-Wert (`0x0404`?) gehoben werden
-soll."* This spec does not resolve that; the BB1 auditor must cross-check
-against Compendium/Profibuch or real Falcon TOS4 hardware before picking
-a value. Do not implement `0x0404` from this doc alone.
+**NewTOS target value — DECIDED (2026-07-24): `0x0404` (TOS 4.04, Falcon).**
+Per the user's target-profile directive (the reference profile is Falcon030 /
+TOS 4.04 — memory `emutos-target-profile-falcon-tos4`), NewTOS deliberately
+deviates from the EmuTOS-default `0x206` to the Falcon-TOS4 value `0x0404` —
+the **same target-profile deviation** as `GEMDOS_VERSION`→`0x3000` (commit
+`e162c62`). **Implemented in B1:** `loader.rs` `populate_sysvars` writes
+`os_version = 0x0404` into the per-process OSHEADER instance (commit `3d1c1fe`,
+`docs/analysis/bios-audit/b1-lowmem-feasibility.md`). Cosmetic in the sense
+noted above (feeds only this field, no `#if TOS_VERSION` branch), but real
+TOS4 apps read it via `_sysbase->os_version` — this is exactly the access B1
+fixed (TeraDesk's boot-time version check). (Supersedes finding S3; the earlier
+"OFFEN, do not implement from this doc alone" is resolved by the user directive.)
 
 ### `reseth` (0x04)
 
