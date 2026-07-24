@@ -163,6 +163,12 @@ cooperative-model, freemint-multitasking-model). FreeMiNT-Referenz vorhanden
      Selftest 7/7 PASS (echter AES-Pfad, `x0=200`), 3a-Regression + Pwait/Pexec-
      Zyklus grün, 0 Delta. **Real-HW-Rest:** Zwei-Prozess-Switch-Smoke → HW-Checklist §J.
    - **✅ Schritt 3 KOMPLETT** — sleep/wake-Substrat + S2-Switch + Deliver-on-Resume.
+   - **✅ Step-4-Prep-Cleanups** (`d33f0fd`, Developer+Tester): (1) `appl_write`→
+     `pd::post_words` weckt blockierte `evnt_mesag`-Waiter zentral (§5.2); (2) Timer-
+     Deadline S2-restart-idempotent (`Process::syscall_deadline` persistiert, Restart
+     reused statt neu zu rechnen; §4.3-OPEN erledigt); (3) `selftest_d3/d6/d7`-Fixture-
+     vaddr `0x100`→`0x1000` (d3/d6/d7-Stale-Note vom Step-2-Eintrag erledigt). Neue
+     gated `selftest_timer_restart` 7/7; sw3b 7/7 (beweist jetzt den appl_write-Wake).
 4. **Schritt 4 — EmuTOS-koop AES (44 Fn)** (EL1-interne Thread-Slots + TTBR0-Skip +
    Screen-Manager/Accessories); **Schritt 5+ deferred/additiv:** Präemption,
    Mehr-App, vex/IRQ-Pfad, SMP.
