@@ -88,16 +88,22 @@ Bottom-up: der kooperative Kern + praktisch alles sitzt auf der BIOS/Sysvar-Eben
   spätere Phase, Supexec → I via EL1-Trampolin deferred, Kbd-XBIOS → I mit
   Keyboard-Phase, Nvmaccess → A. **Kein neuer XBIOS-Arbeitsanfall jetzt.**
 
-**Offen — BIOS-Fixes (der eigentliche nächste Schritt):**
-1. **B1 BLOCKER-Machbarkeitsanalyse** (vom User „nach dem Audit" terminiert →
-   jetzt): Low-Memory-Sysvars (`$400`–`$5FF`) + OSHEADER (`$4F2`) + Cookie-Jar
-   (`$5A0`) je Prozess in die EL0-VA an klassischen Adressen mappen (App lädt ab
-   ~`0x100`) — **technisch machbar?** Wenn ja → umsetzen; wenn nein → App-Patch
-   notieren (User-Direktive). Liefert TOS-Version 0x0404. `sysvar-osheader-
-   lowmem-gap.md`. Verknüpft mit BB2 (STRAM/TTRAM 8 MB / Rest, rein logisch).
-2. **H1** etv_*-Dispatch (etv_term im Pterm-, etv_critic im Rwabs-Fehler-, etv_timer
+**✅ B1 erledigt** (Commits `3d1c1fe` + `d917637`, Machbarkeit `b1-lowmem-
+feasibility.md` = FEASIBLE, Option 1): Low-Memory-Sysvars (`$400`–`$5FF`) +
+OSHEADER (`$4F2`, `os_version=0x0404`) + Cookie-Jar (`$5A0`) werden per-Prozess in
+die EL0-VA geschrieben; App-Text-Base `0x100`→`0x1000` (Apps neu gelinkt, Quelle
+unangetastet); `setexc` EmuTOS-treu für die Sysvar-Range (fixt B1a). Developer +
+unabhängiger Tester: `[b1] === B1 PASS ===` auf beiden Boards, Desktop-Render
+sauber, kein Regress. Selftest wieder aus dem Normal-Boot gegated. **Geflaggt
+(Lead/User, unkritisch):** `os_magic=0` (braucht GEM/AES), `os_date/os_dosdate`
+= 1980-01-01-Platzhalter (kein Build-Stamp gepinnt).
+
+**Offen — restliche BIOS-Fixes:**
+1. **H1** etv_*-Dispatch (etv_term im Pterm-, etv_critic im Rwabs-Fehler-, etv_timer
    im Tick-Pfad; Boot-Defaults echt-callable).
-3. **M1–M4** Getbpb-FS-Härtung + Rwabs→etv_critic.
+2. **M1–M4** Getbpb-FS-Härtung + Rwabs→etv_critic.
+3. **BB2 Memory-Modell** STRAM/TTRAM (fest 8 MB / Rest, rein logisch) — verfeinert
+   OSHEADER `os_beg`/`os_end` + Malloc/Mxalloc-Pools. Separater Task (User-gewünscht).
 
 Danach: kooperativer Kern FreeMiNT-extensibel (references/freemint pinnen) +
 Multi-Core-Vorbereitung für die SMP-Zukunft.
