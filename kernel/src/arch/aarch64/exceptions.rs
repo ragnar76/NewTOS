@@ -330,6 +330,11 @@ pub extern "C" fn rust_sync_handler(frame: &mut ExceptionFrame) {
         crate::dbg_qedtrace::pre_dispatch(class, &args);
     }
 
+    // A blocking `evnt_*` AES wait may yield to a runnable peer (S2
+    // restartable block, design §4.3 + §8.2 sub-step 3); the AES dispatch
+    // returns the `Switch` to yield to, which is applied after the match below.
+    let mut pending_switch: Option<tos_api::bdos::process::sched::Switch> = None;
+
     // Result is the full 64-bit `x0` value: GEMDOS returns a sign-
     // extended `Long`, but BIOS `Getbpb` returns a native 64-bit pointer.
     let result: i64 = match class {
@@ -347,7 +352,9 @@ pub extern "C" fn rust_sync_handler(frame: &mut ExceptionFrame) {
             match args.regs[0] {
                 // SAFETY: `x1` is the caller-supplied parameter block.
                 115 => unsafe { tos_api::vdi::dispatch(args.regs[1], abi) },
-                200 => unsafe { tos_api::aes::dispatch(args.regs[1], abi) },
+                // SAFETY: `x1` is the caller-supplied parameter block. A
+                // blocking `evnt_*` wait may return a peer Switch (S2).
+                200 => pending_switch = unsafe { tos_api::aes::dispatch(args.regs[1], abi) },
                 _ => {} // unknown selector → no-op (GEM trap is trusted)
             }
             0
@@ -357,6 +364,28 @@ pub extern "C" fn rust_sync_handler(frame: &mut ExceptionFrame) {
         // XBIOS (Trap 14): screen group (Physbase/Logbase/Getrez/...).
         TrapClass::Xbios => tos_api::xbios::dispatch(&args),
     };
+
+    // Mid-syscall cooperative yield (S2 restartable block, design §4.3 + §8.2
+    // sub-step 3): a blocking `evnt_*` wait found a runnable peer and returned
+    // the Switch to yield to. Unlike the leaf `Pwait`, `sleep` sits deep inside
+    // `evnt_multi`, so the yield propagates up here via the AES dispatch return
+    // value. Save this process's frame with the ELR **rewound to the `svc`**
+    // (`save_yield_frame(.., true)`) so the post-handler `eret` re-executes the
+    // `svc` on resume — the syscall re-enters, re-checks its predicate, and this
+    // time fires — then switch to the peer. This returns early, skipping the
+    // result-write + terminate/upcall tails below: nothing is committed for the
+    // (restarting) call, the yield path pumped no input so no Ctrl-C terminate
+    // can be pending, and a pending upcall for *this* process is delivered on
+    // its own resume (deliver-on-resume, §6), not now.
+    if let Some(sw) = pending_switch {
+        let cur = tos_api::bdos::process::sched::current();
+        if cur < tos_api::bdos::process::MAX_PROCESSES {
+            save_yield_frame(cur, frame, true);
+            tos_api::bdos::process::sched::mark_yielded(cur);
+        }
+        apply_switch(frame, &sw);
+        return;
+    }
 
     // TEMPORARY QED syscall tracer (debug tooling): record the completed EL0
     // call. Folds away when `QED_SVC_TRACE` is false.
@@ -398,13 +427,52 @@ pub extern "C" fn rust_sync_handler(frame: &mut ExceptionFrame) {
     }
 }
 
+/// Snapshot `frame` into slot `cur`'s `saved_frame` so the scheduler can
+/// resume it, optionally rewinding `elr` to the `svc` instruction. Shared by
+/// the leaf `Pwait` yield and the mid-syscall `sleep` yield.
+///
+///   * `rewind = false` — the leaf `Pwait`: `saved_frame.elr` is the address
+///     *after* the `svc`, so the resume returns from the syscall (and
+///     `apply_switch` writes the `Pwait` return value `gpr[0] = 0`).
+///   * `rewind = true` — the **S2 restartable block** (design §4.3): the
+///     `saved_frame.elr` is rewound by one instruction (`elr − 4`) so the
+///     post-handler `eret` **re-executes the `svc`** on resume; the syscall
+///     re-enters from the top, re-checks its predicate, and fires.
+///
+/// **S2 needs TWO deltas, not the one the design §4.3 first claimed.** The
+/// ELR-rewind here is the first. The second is on the resume side: a rewound
+/// `svc #2` (the GEM trap) must re-execute with its original `x0` (the VDI/AES
+/// selector), but `apply_switch`'s resume branch would otherwise clobber `x0`
+/// to 0 (the `Pwait` return). This helper records `rewind` as the slot's
+/// restart-kind via [`sched::set_resume_restartable`]; [`apply_switch`] reads
+/// it through [`Switch::restartable`] and skips that clobber when set. The
+/// design doc §4.3 is corrected accordingly.
+///
+/// [`Switch::restartable`]: tos_api::bdos::process::sched::Switch::restartable
+fn save_yield_frame(cur: usize, frame: &ExceptionFrame, rewind: bool) {
+    use core::sync::atomic::Ordering;
+    use tos_api::bdos::process::{sched, PROCESS_TABLE};
+
+    let sf = &PROCESS_TABLE[cur].saved_frame;
+    for i in 0..30 {
+        sf.gpr(i).store(frame.gpr[i], Ordering::Release);
+    }
+    sf.lr().store(frame.lr, Ordering::Release);
+    let elr = if rewind { frame.elr.wrapping_sub(4) } else { frame.elr };
+    sf.elr().store(elr, Ordering::Release);
+    sf.spsr().store(frame.spsr, Ordering::Release);
+    sf.sp_el0().store(frame.sp_el0, Ordering::Release);
+    // Record how this slot yielded so `switch_to` carries it into the resume:
+    // a rewound (restartable) frame must have `x0` preserved on resume.
+    sched::set_resume_restartable(cur, rewind);
+}
+
 /// `Pwait` (GEMDOS 0x4D) — cooperative yield. Snapshot the running peer's
 /// full EL0 context into its slot, then round-robin to the next runnable
 /// peer (a context switch like `Pexec`/`Pterm`, but peer→peer). With no
 /// other runnable peer it is a no-op that returns 0.
 fn handle_pwait(frame: &mut ExceptionFrame) {
-    use core::sync::atomic::Ordering;
-    use tos_api::bdos::process::{sched, MAX_PROCESSES, PROCESS_TABLE};
+    use tos_api::bdos::process::{sched, MAX_PROCESSES};
 
     let cur = sched::current();
     if cur >= MAX_PROCESSES {
@@ -412,15 +480,9 @@ fn handle_pwait(frame: &mut ExceptionFrame) {
         return;
     }
 
-    // Save the running peer's full frame so the round-robin can resume it.
-    let sf = &PROCESS_TABLE[cur].saved_frame;
-    for i in 0..30 {
-        sf.gpr(i).store(frame.gpr[i], Ordering::Release);
-    }
-    sf.lr().store(frame.lr, Ordering::Release);
-    sf.elr().store(frame.elr, Ordering::Release);
-    sf.spsr().store(frame.spsr, Ordering::Release);
-    sf.sp_el0().store(frame.sp_el0, Ordering::Release);
+    // Leaf yield: resume *after* the svc (`rewind = false`), so this is
+    // byte-identical to the previous inline save.
+    save_yield_frame(cur, frame, false);
     sched::mark_yielded(cur);
 
     match sched::on_yield(cur) {
@@ -469,13 +531,37 @@ fn apply_switch(frame: &mut ExceptionFrame, sw: &tos_api::bdos::process::sched::
         frame.elr = sf.elr().load(Ordering::Acquire);
         frame.spsr = sf.spsr().load(Ordering::Acquire);
         frame.sp_el0 = sf.sp_el0().load(Ordering::Acquire);
-        frame.gpr[0] = 0; // the resumed `Pwait` returns 0
+        // The SECOND S2 delta (design §4.3, corrected — see `save_yield_frame`):
+        // a leaf `Pwait` resume returns 0 in `x0`, but a **restartable** resume
+        // re-executes the `svc` and must keep its original `x0` (the GEM-trap
+        // selector, e.g. 200 = AES) or the re-entered trap dispatches nothing.
+        // `switch_to` set `restartable` from the slot's recorded yield kind.
+        if !sw.restartable {
+            frame.gpr[0] = 0; // the resumed `Pwait` returns 0
+        }
     }
 
     let bp = PROCESS_TABLE[sw.slot].basepage_kva.load(Ordering::Acquire);
     tos_api::bdos::process::set_current(bp);
     PROCESS_TABLE[sw.slot].set_state(State::Running);
     sched::set_running(sw.slot);
+
+    // Deliver-on-resume (design §6, §8.2 sub-step 4): a process resumed from a
+    // block may have a pending EL0 upcall — e.g. an event/message for an AES
+    // client that was blocked in `evnt_multi` (the sixth upcall consumer of
+    // `docs/analysis/coop-kernel/10-upcall-signal-design.md` §1/§8). Deliver it
+    // now, *after* `set_current` so `deliver_upcall`'s `slot_for(current())`
+    // resolves to this slot: it snapshots the just-restored (intact — including
+    // the preserved `x0`) block context onto the kernel-side upcall stack and
+    // redirects the `eret` into the EL0 handler, which runs in the
+    // freshly-installed TTBR0. On the handler's `Psigreturn` the block context
+    // resumes and the restartable `svc` re-executes, now seeing its event.
+    // Only on a `!fresh` resume — a fresh process has no prior block context.
+    if !sw.fresh {
+        if let Some(u) = tos_api::bdos::process::take_pending_upcall(sw.slot) {
+            deliver_upcall(frame, u);
+        }
+    }
 }
 
 /// Pterm (GEMDOS 0x4C) / Pterm0 (0x00) handler. Rewrites the trap

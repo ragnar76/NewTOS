@@ -4,18 +4,26 @@
 //! the EmuTOS `include/aesdefs.h` mapping (e.g. `T_LOCOUNT = int_in[0]`,
 //! `RET_CODE = int_out[0]`).
 //!
-//! **Wait model (sleep/wake substrate, cooperative-kernel step 3a):** EmuTOS'
-//! `ev_block` parks the calling AES process and yields to others until an event
-//! fires. Each of the six `evnt_*` waits below re-checks its predicate and, when
-//! it has not fired, blocks on [`sched::sleep`] with the matching wake-class key
-//! ([`sched::wait_input`]/[`sched::wait_mesg`]/[`sched::wait_timer`]) — the
-//! single cooperative block primitive replacing the former per-function
-//! `pump_input` spin (`docs/analysis/coop-kernel/`
-//! `20-sleepwake-substrate-design.md` §5). In step 3a there is exactly one
-//! runnable context, so `sleep` degrades to the idle-fallback (pump + re-check)
-//! and behavior is identical to the old spin; the real peer switch and
-//! deliver-on-resume land in step 3b. The observable `evnt_*` contract (return
-//! values, `MU_*` bits, message dequeue-on-firing) is unchanged.
+//! **Wait model (sleep/wake substrate, cooperative-kernel steps 3a + 3b):**
+//! EmuTOS' `ev_block` parks the calling AES process and yields to others until
+//! an event fires. Each of the six `evnt_*` waits below re-checks its predicate
+//! and, when it has not fired, blocks on [`sched::sleep`] with the matching
+//! wake-class key ([`sched::wait_input`]/[`sched::wait_mesg`]/
+//! [`sched::wait_timer`]) — the single cooperative block primitive replacing the
+//! former per-function `pump_input` spin (`docs/analysis/coop-kernel/`
+//! `20-sleepwake-substrate-design.md` §5).
+//!
+//! `sleep` returns a [`sched::SleepOutcome`]: [`Recheck`](sched::SleepOutcome::
+//! Recheck) (no peer — the step-3 single-context idle-fallback, identical to the
+//! old spin) or [`Yield`](sched::SleepOutcome::Yield)`(Switch)` (a runnable peer
+//! exists — step 3b). On `Yield` the wait **aborts and returns the `Switch`**
+//! ([`Option<sched::Switch>`]) up through [`super::dispatch`] to
+//! `rust_sync_handler`, which saves this process's frame with the ELR rewound to
+//! the `svc` (the S2 restartable block) and switches to the peer; on resume the
+//! re-executed `svc` re-enters the wait, which re-checks and fires. Because the
+//! block path is read-only until the firing pass (design §4.3), an abort commits
+//! nothing. The observable `evnt_*` contract (return values, `MU_*` bits,
+//! message dequeue-on-firing) is unchanged.
 
 use core::sync::atomic::{AtomicI16, Ordering};
 
@@ -135,7 +143,7 @@ fn shift_state() -> i16 {
 /// returns the *actual* click count (1 for a single click, 2 for a double
 /// click within the window). The window counting is factored into the
 /// shared [`count_clicks`] helper, which `evnt_multi` reuses.
-pub fn evnt_button(pb: &Aespb) {
+pub fn evnt_button(pb: &Aespb) -> Option<sched::Switch> {
     let clicks = pb.intin(0);
     let mask = pb.intin(1) as u8;
     let state = pb.intin(2) as u8;
@@ -144,7 +152,9 @@ pub fn evnt_button(pb: &Aespb) {
         let matches = || crate::vdi::mouse_buttons() & mask == state & mask;
         // Wait for the button to reach the requested state (the first click).
         while !matches() {
-            sched::sleep(sched::wait_input());
+            if let sched::SleepOutcome::Yield(sw) = sched::sleep(sched::wait_input()) {
+                return Some(sw); // yield to a peer (S2); re-checks on resume
+            }
         }
         // Count further clicks inside the double-click window. `evnt_button`
         // has no timer source, so counting runs to the full window (no outer
@@ -153,6 +163,7 @@ pub fn evnt_button(pb: &Aespb) {
     }
     fill_rets(pb);
     pb.set_ret(got.max(1));
+    None
 }
 
 /// Double-click intervals per speed index 0..4 (EmuTOS `gl_dcrates`, ms).
@@ -233,7 +244,7 @@ pub(super) fn count_form_clicks(h: &dyn crate::host::Host) -> i16 {
 ///
 /// MOBLK: `int_in[0]` = flags, `int_in[1..4]` = x, y, w, h. The event
 /// fires when `flags != inside` (EmuTOS `in_mrect`).
-pub fn evnt_mouse(pb: &Aespb) {
+pub fn evnt_mouse(pb: &Aespb) -> Option<sched::Switch> {
     let m = MoBlk {
         flags: pb.intin(0),
         x: pb.intin(1),
@@ -243,11 +254,14 @@ pub fn evnt_mouse(pb: &Aespb) {
     };
     if host().is_some() {
         while !rect_event(&m) {
-            sched::sleep(sched::wait_input());
+            if let sched::SleepOutcome::Yield(sw) = sched::sleep(sched::wait_input()) {
+                return Some(sw); // yield to a peer (S2); re-checks on resume
+            }
         }
     }
     fill_rets(pb);
     pb.set_ret(1);
+    None
 }
 
 /// AES double-click speed index (0..4); EmuTOS startup default is 3
@@ -282,7 +296,7 @@ pub fn evnt_dclick(pb: &Aespb) {
 /// count from [`count_clicks`] (1 = single, 2 = double click within the
 /// double-click window), so callers can tell a Select from an Open.
 /// Bring-up limit: single AES application.
-pub fn evnt_multi(pb: &Aespb) {
+pub fn evnt_multi(pb: &Aespb) -> Option<sched::Switch> {
     let flags = (pb.intin(0) as u16) & MU_TOSVALID;
 
     let b_clicks = pb.intin(1);
@@ -392,7 +406,13 @@ pub fn evnt_multi(pb: &Aespb) {
             // `MU_TIMER` deadline is checked by this same loop above. The union
             // of message/timer classes becomes load-bearing at step 4 (§4.1);
             // in step 3a the caller re-checks the full predicate each pass.
-            sched::sleep(sched::wait_input());
+            //
+            // The loop above the block is read-only (a message is popped only on
+            // the `fired |= MU_MESAG` firing pass), so on a peer yield (S2) it is
+            // safe to abort and re-execute from the top on resume (§4.3).
+            if let sched::SleepOutcome::Yield(sw) = sched::sleep(sched::wait_input()) {
+                return Some(sw);
+            }
         }
     }
 
@@ -400,6 +420,7 @@ pub fn evnt_multi(pb: &Aespb) {
     pb.set_intout(5, key); // EV_KRET
     pb.set_intout(6, clicks); // EV_BRET
     pb.set_ret(fired as i16);
+    None
 }
 
 /// `evnt_keybd` (20) — block until a key is pressed; return it in
@@ -409,17 +430,20 @@ pub fn evnt_multi(pb: &Aespb) {
 /// low byte is the ASCII character (0 for keys with none), the high byte
 /// the Atari scancode, so cursor / function keys reach the application.
 /// The GEMDOS console path still reads the ASCII byte only.
-pub fn evnt_keybd(pb: &Aespb) {
+pub fn evnt_keybd(pb: &Aespb) -> Option<sched::Switch> {
     let key = match host() {
         Some(h) => loop {
             if let Some(w) = h.console_try_read_key() {
                 break w as i16; // scancode << 8 | ascii
             }
-            sched::sleep(sched::wait_input());
+            if let sched::SleepOutcome::Yield(sw) = sched::sleep(sched::wait_input()) {
+                return Some(sw); // yield to a peer (S2); re-checks on resume
+            }
         },
         None => 0,
     };
     pb.set_ret(key);
+    None
 }
 
 /// `evnt_mesag` (23) — block until a 16-byte message is in the calling
@@ -432,12 +456,12 @@ pub fn evnt_keybd(pb: &Aespb) {
 /// waiting on a message that no one will post blocks by design — it
 /// asked to wait. Multi-application posting lands with the window/menu
 /// managers (later D-deliverables).
-pub fn evnt_mesag(pb: &Aespb) {
+pub fn evnt_mesag(pb: &Aespb) -> Option<sched::Switch> {
     let dest = pb.addrin(0);
     let pid = super::appl::current_pid();
     if host().is_none() {
         pb.set_ret(1);
-        return;
+        return None;
     }
     loop {
         // SAFETY: single trap path; `by_pid` hands out the live slot.
@@ -445,7 +469,7 @@ pub fn evnt_mesag(pb: &Aespb) {
             // No descriptor (caller never ran appl_init): nothing to
             // wait on; report the message event and bail.
             pb.set_ret(1);
-            return;
+            return None;
         };
         // Pop the FRONT of the FIFO (EmuTOS `ap_rdwr(MU_RDMSG)`→`doq` dequeue,
         // `gemqueue.c:76-81`).
@@ -461,12 +485,15 @@ pub fn evnt_mesag(pb: &Aespb) {
             }
             src.flags |= pd::AP_MESAG;
             pb.set_ret(1);
-            return;
+            return None;
         }
         // No message yet: block until one is posted to this pid's FIFO
-        // (`pd::post_msg` wakes `WAIT_MESG(pid)`, design §5.2). In step 3a the
-        // idle-fallback pumps input and the caller re-checks the queue.
-        sched::sleep(sched::wait_mesg(pid));
+        // (`pd::post_msg` wakes `WAIT_MESG(pid)`, design §5.2). The pop above
+        // runs only when a message is present, so aborting to a peer (S2) and
+        // re-executing on resume never double-pops (§4.3).
+        if let sched::SleepOutcome::Yield(sw) = sched::sleep(sched::wait_mesg(pid)) {
+            return Some(sw);
+        }
     }
 }
 
@@ -474,21 +501,24 @@ pub fn evnt_mesag(pb: &Aespb) {
 ///
 /// `int_in[0]` = low WORD of the millisecond count, `int_in[1]` = high
 /// WORD (`T_LOCOUNT`/`T_HICOUNT`). `RET_CODE` is 1 (the timer event).
-pub fn evnt_timer(pb: &Aespb) {
+pub fn evnt_timer(pb: &Aespb) -> Option<sched::Switch> {
     let lo = pb.intin(0) as u16 as u32;
     let hi = pb.intin(1) as u16 as u32;
     let ms = ((hi << 16) | lo) as u64;
 
-    wait_ms(ms);
+    if let Some(sw) = wait_ms(ms) {
+        return Some(sw); // yield to a peer (S2); re-checks the deadline on resume
+    }
     pb.set_ret(1);
+    None
 }
 
 /// Block for `ms` milliseconds against the host's monotonic clock. A
 /// zero count returns immediately (EmuTOS `ev_timer(0)` semantics). With
 /// no host installed the clock stands still, so this returns at once.
-fn wait_ms(ms: u64) {
+fn wait_ms(ms: u64) -> Option<sched::Switch> {
     if ms == 0 {
-        return;
+        return None;
     }
     if let Some(h) = host() {
         let start = h.monotonic_millis();
@@ -499,7 +529,10 @@ fn wait_ms(ms: u64) {
         // `monotonic_millis >= deadline` (design §5.2); the caller's own
         // deadline check drives the loop in the single-context step-3a case.
         while h.monotonic_millis() < deadline {
-            sched::sleep(sched::wait_timer(deadline));
+            if let sched::SleepOutcome::Yield(sw) = sched::sleep(sched::wait_timer(deadline)) {
+                return Some(sw); // yield to a peer (S2); re-checks the deadline on resume
+            }
         }
     }
+    None
 }

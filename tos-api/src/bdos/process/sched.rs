@@ -20,7 +20,7 @@
 //! [`Process`]: super::Process
 //! [`Process::runnable`]: super::Process::runnable
 
-use core::sync::atomic::{AtomicUsize, Ordering};
+use core::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 
 use super::{MAX_PROCESSES, PROCESS_TABLE};
 use crate::host::host;
@@ -89,6 +89,16 @@ fn wait_arg(cond: u64) -> u64 {
 /// The slot currently on the CPU, or [`NONE`].
 static CURRENT: AtomicUsize = AtomicUsize::new(NONE);
 
+/// Per-slot restart-kind of the saved context (S2 restartable block, design
+/// §4.3): `true` when the slot yielded **mid-syscall** via [`sleep`] with its
+/// `saved_frame.elr` rewound to the `svc` (so `apply_switch` must preserve `x0`
+/// on resume), `false` for a leaf `Pwait` yield. Written by the exception
+/// handler's shared frame-save when a slot yields, read by [`switch_to`] into
+/// [`Switch::restartable`]. Parallel to the `runnable`/`has_ctx` bits; a fresh
+/// slot is `false` (the value is only consulted on a `!fresh` resume).
+static RESUME_RESTARTABLE: [AtomicBool; MAX_PROCESSES] =
+    [const { AtomicBool::new(false) }; MAX_PROCESSES];
+
 /// What the SVC handler must do to switch to the next process. The user
 /// stack top and basepage VA are fixed (`el0::USER_STACK_TOP_EXCLUSIVE`,
 /// `loader::USER_VA_BASE`) — every process maps them in its own address
@@ -114,6 +124,21 @@ pub struct Switch {
     /// `20-sleepwake-substrate-design.md` §2/§7.2) reads it to skip the TTBR0
     /// switch for EL1-internal threads.
     pub el1_internal: bool,
+    /// Restart-kind of the resume (S2 restartable block, design §4.3 + §8.2
+    /// sub-step 3b). Only meaningful when `!fresh` (a resume). `false` = the
+    /// slot yielded via the leaf `Pwait`: its `saved_frame.elr` points *after*
+    /// the `svc`, so `apply_switch` writes `gpr[0] = 0` (the `Pwait` return
+    /// value). `true` = the slot yielded mid-syscall via [`sleep`] with its
+    /// `saved_frame.elr` rewound to the `svc`: the `eret` **re-executes** that
+    /// `svc`, so `apply_switch` must **preserve `x0`** (the GEM-trap selector,
+    /// e.g. 200 = AES) — it skips the `gpr[0] = 0` clobber.
+    ///
+    /// **This is the second S2 delta.** The design §4.3 originally claimed the
+    /// only delta vs. the `Pwait` save was the ELR-rewind; that is incomplete —
+    /// without preserving `x0` the re-executed `svc #2` re-enters the GEM trap
+    /// with `x0 = 0` and dispatches nothing. [`switch_to`] fills this from the
+    /// slot's [`set_resume_restartable`] flag, recorded when the slot yielded.
+    pub restartable: bool,
 }
 
 /// The slot currently running (or [`NONE`]).
@@ -133,6 +158,21 @@ pub fn admit(slot: usize) {
     if slot < MAX_PROCESSES {
         PROCESS_TABLE[slot].has_ctx.store(false, Ordering::Release);
         PROCESS_TABLE[slot].runnable.store(true, Ordering::Release);
+        // A fresh peer has no saved frame; clear any stale restart-kind left by
+        // a previous tenant of this slot so a later resume can't misread it.
+        RESUME_RESTARTABLE[slot].store(false, Ordering::Release);
+    }
+}
+
+/// Record how slot `slot` yielded, for the resume side (S2 restartable block,
+/// design §4.3): `restartable = true` for a mid-syscall [`sleep`] yield (the
+/// `saved_frame.elr` is rewound to the `svc`, so the resume preserves `x0`),
+/// `false` for a leaf `Pwait` yield. Called by the exception handler's shared
+/// frame-save; read by [`switch_to`] into [`Switch::restartable`].
+#[inline]
+pub fn set_resume_restartable(slot: usize, restartable: bool) {
+    if slot < MAX_PROCESSES {
+        RESUME_RESTARTABLE[slot].store(restartable, Ordering::Release);
     }
 }
 
@@ -169,6 +209,9 @@ fn switch_to(slot: usize) -> Switch {
         // Step 3a: every scheduler peer is an EL0 process. EL1-internal-thread
         // classification lands in step 4 (design §2/§7.2).
         el1_internal: false,
+        // How the slot last yielded — consulted only when `!fresh` to decide
+        // whether the resume preserves `x0` (S2) or writes the `Pwait` 0.
+        restartable: RESUME_RESTARTABLE[slot].load(Ordering::Acquire),
     }
 }
 
@@ -199,50 +242,81 @@ pub fn on_exit(cur: usize) -> Option<Switch> {
     }
 }
 
-// ─── sleep / wake (sleep/wake substrate, step 3a) ───────────────────
+// ─── sleep / wake (sleep/wake substrate, steps 3a + 3b) ─────────────
 //
 // The block primitive `sleep(cond)` replaces the six per-`evnt_*` busy-poll
 // loops in `aes/event.rs` (design §5); `wake(cond)` is the FreeMiNT `do_wake`
-// analogue that re-arms matching waiters. **Step 3a implements only the
-// idle-fallback ("Ausgang a", the no-peer path, §4.4):** with exactly one
+// analogue that re-arms matching waiters. `sleep` has the two exits of design
+// §4.4: **Ausgang (a)**, the no-peer idle-fallback (step 3a) — with exactly one
 // runnable context there is no peer to switch to, so `sleep` degrades to
-// exactly today's pump-and-recheck spin. The real switch to a peer
-// ("Ausgang b"), the S2 restartable-block (ELR-rewind) and deliver-on-resume
-// are **step 3b** and are deliberately absent here — `apply_switch` and the
-// trap path are untouched.
+// exactly today's pump-and-recheck spin — and **Ausgang (b)**, the real peer
+// switch (step 3b): when a runnable peer exists, `sleep` returns
+// [`SleepOutcome::Yield`] so the caller aborts its (non-leaf) syscall and the
+// trap handler performs the S2 restartable-block save + `apply_switch`.
+
+/// The outcome of a [`sleep`] call — its two exits (design §4.4).
+#[must_use]
+pub enum SleepOutcome {
+    /// **Ausgang (a).** The idle-fallback ran (no runnable peer — the step-3
+    /// single-context case): host input was pumped and the wake sources polled.
+    /// The caller re-checks its full predicate and re-sleeps if the event has
+    /// not fired.
+    Recheck,
+    /// **Ausgang (b).** A runnable peer exists (step 3b): the caller must
+    /// **abort its syscall** and propagate this `Switch` up to the trap handler,
+    /// which saves the caller's frame with the ELR rewound to the `svc` (S2
+    /// restartable block, §4.3) and switches to the peer. The caller must **not**
+    /// commit any results — the syscall re-executes from the top on resume.
+    Yield(Switch),
+}
 
 /// Block the current context on wake-class key `cond` until its predicate
-/// fires, running the cooperative idle in the meantime (design §4.2/§4.4).
+/// fires (design §4.2/§4.4). Returns one of the two [`SleepOutcome`] exits.
 ///
-/// **Idle-fallback only (step 3a).** One cooperative pass: mark the caller
-/// WAITING(`cond`), pump host input, run the idle wake-pass ([`idle_wake_pass`],
-/// design §5.2), then return READY so the caller re-checks its full predicate
-/// and re-sleeps if the event has not fired (the FreeMiNT "wake → re-check →
-/// re-sleep" loop, §4.1). This is behaviorally identical to the former
-/// per-`evnt_*` `host().pump_input()` spin — the caller's predicate loop is
-/// unchanged; only the wait *mechanism* moves here and the WAITING state +
-/// `wake` wiring are recorded (so step 4 needs no `event.rs` change, §1.3).
+/// Mark the caller WAITING(`cond`) (drop out of the round-robin run-set, §3.1),
+/// then:
+///
+///   * **Ausgang (b)** — if a runnable **peer** exists, return
+///     [`SleepOutcome::Yield`] carrying the [`Switch`] to it. `sleep` sits deep
+///     inside a non-leaf syscall (`evnt_multi`) and does **not** own the trap
+///     frame, so it cannot switch here: the caller propagates the `Yield` up to
+///     `rust_sync_handler`, which does the S2 frame-save (ELR rewound to the
+///     `svc`) + `apply_switch`. The caller left the slot WAITING; on resume the
+///     re-executed `svc` re-enters the syscall, re-checks, and fires.
+///   * **Ausgang (a)** — otherwise (no peer, the step-3 single-context case):
+///     pump host input, run the idle wake-pass ([`idle_wake_pass`], §5.2), mark
+///     the caller READY again, and return [`SleepOutcome::Recheck`]. This is
+///     behaviorally identical to the former per-`evnt_*` `host().pump_input()`
+///     spin — only the wait *mechanism* moves here.
 ///
 /// A no-slot caller — the EL1 desktop, whose `evnt_multi` runs with
-/// [`current`]` == NONE` (it is not a scheduler peer, design §1.2/§8.1.8) —
-/// skips the slot bookkeeping; its wait is driven purely by its own re-check
-/// loop, exactly as today.
+/// [`current`]` == NONE` (it is not a scheduler peer, design §1.2/§8.1.8) — has
+/// no peer and no slot bookkeeping, so it always takes Ausgang (a), exactly as
+/// today.
 ///
 /// `cond` is built with [`wait_input`]/[`wait_mesg`]/[`wait_timer`].
-pub fn sleep(cond: u64) {
+pub fn sleep(cond: u64) -> SleepOutcome {
     let cur = current();
     if cur < MAX_PROCESSES {
         // RUNNING → WAITING(cond): record the wake key and drop out of the
-        // round-robin run-set (§3.1).
+        // round-robin run-set (§3.1). Done before `on_yield` so `pick_next`
+        // skips this slot — a returned `Switch` is therefore always a real peer.
         PROCESS_TABLE[cur].wait_cond.store(cond, Ordering::Release);
         PROCESS_TABLE[cur].runnable.store(false, Ordering::Release);
+
+        // Ausgang (b) — a runnable peer exists (§4.4): yield to it. The handler
+        // performs the S2 frame-save (ELR rewound to the svc) + switch; we do
+        // NOT touch the trap frame here — `sleep` is deep in a non-leaf syscall
+        // and does not own it. In the step-3 single-context production path
+        // there is no peer, so this never fires and Ausgang (a) is taken.
+        if let Some(sw) = on_yield(cur) {
+            return SleepOutcome::Yield(sw);
+        }
     }
 
     // Ausgang (a) — the no-peer idle-fallback (§4.4): EmuTOS `schedule()`-idle.
-    // Pump input, then run the wake sources. The peer-switch path (Ausgang b)
-    // is step 3b, so `on_yield`/`apply_switch` are intentionally not consulted
-    // here: with one runnable context there is no peer, and not switching is
-    // exactly today's behavior.
+    // Pump input, then run the wake sources. Behaviorally identical to today's
+    // per-`evnt_*` pump-and-recheck spin.
     if let Some(h) = host() {
         h.pump_input();
     }
@@ -253,6 +327,7 @@ pub fn sleep(cond: u64) {
         PROCESS_TABLE[cur].wait_cond.store(0, Ordering::Release);
         PROCESS_TABLE[cur].runnable.store(true, Ordering::Release);
     }
+    SleepOutcome::Recheck
 }
 
 /// Wake every context WAITING on exactly `cond` (WAITING → READY, design §4.2):

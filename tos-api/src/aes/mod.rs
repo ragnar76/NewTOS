@@ -160,10 +160,19 @@ impl Aespb {
 /// (the kernel passes [`crate::bdos::process::current_abi`]). Results go
 /// into the parameter-block arrays.
 ///
+/// A blocking `evnt_*` wait that found a runnable peer returns the [`Switch`]
+/// to yield to (S2 restartable block, design §4.3 + §8.2 sub-step 3); the
+/// GEM-trap handler applies it. Every other opcode returns `None`.
+///
+/// [`Switch`]: crate::bdos::process::sched::Switch
+///
 /// # Safety
 /// `aespb_ptr` must be a valid AES parameter block of `abi`'s pointer
 /// width (see [`Aespb`]).
-pub unsafe fn dispatch(aespb_ptr: u64, abi: Abi) {
+pub unsafe fn dispatch(
+    aespb_ptr: u64,
+    abi: Abi,
+) -> Option<crate::bdos::process::sched::Switch> {
     // SAFETY: caller guarantees a valid parameter block of `abi`'s width.
     let pb = unsafe { Aespb::from_raw(aespb_ptr, abi) };
     let opcode = pb.control(C_OPCODE);
@@ -177,12 +186,13 @@ pub unsafe fn dispatch(aespb_ptr: u64, abi: Abi) {
         14 => appl::appl_tplay(&pb),
         15 => appl::appl_trecord(&pb),
         17 => appl::appl_yield(&pb),
-        20 => event::evnt_keybd(&pb),
-        21 => event::evnt_button(&pb),
-        22 => event::evnt_mouse(&pb),
-        23 => event::evnt_mesag(&pb),
-        24 => event::evnt_timer(&pb),
-        25 => event::evnt_multi(&pb),
+        // The six blocking waits may yield to a peer — propagate the `Switch`.
+        20 => return event::evnt_keybd(&pb),
+        21 => return event::evnt_button(&pb),
+        22 => return event::evnt_mouse(&pb),
+        23 => return event::evnt_mesag(&pb),
+        24 => return event::evnt_timer(&pb),
+        25 => return event::evnt_multi(&pb),
         26 => event::evnt_dclick(&pb),
         70 => graf::graf_rubberbox(&pb),
         71 => graf::graf_dragbox(&pb),
@@ -259,6 +269,8 @@ pub unsafe fn dispatch(aespb_ptr: u64, abi: Abi) {
         // D-084); the `-1` return is the contract, so we set it here.
         _ => pb.set_ret(-1),
     }
+    // Non-blocking opcodes (and the six waits' non-yield exits) reach here.
+    None
 }
 
 /// Name a freshly-launched EL0 program's AES process descriptor from its launch
