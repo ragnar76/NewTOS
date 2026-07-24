@@ -230,14 +230,16 @@ latch/reset contract (`Mediach` reads the latch; `Getbpb` clears it). The
 > (`0`/`1`/`2`, `EUNDEV` on invalid drive) is unchanged; only the backing model
 > is pinned here. See `docs/HARDWARE-PROFILE.md` §3.4.
 
-### The SD card is treated as non-removable → always `0`
+### The SD card is treated as non-removable → `0` for a valid drive
 
-`Mediach` (`tos-api/src/bios/mod.rs:120-122`) returns **`0` (`MEDIANOCHANGE`)
-unconditionally** — it ignores its `drv` argument and never probes hardware.
-Rationale: the on-board microSD is a fixed boot card; the boot filesystem does
-not change under the running system, so there is never a media change to report
-(`docs/HARDWARE-PROFILE.md` §3.4, project memory "Mediach treats the card as
-non-removable").
+`Mediach` (`tos-api/src/bios/mod.rs:159-173`) **validates the drive first**
+(`drive::resolve`): an out-of-range / unmounted drive returns `EUNDEV` (-15), a
+valid drive returns **`0` (`MEDIANOCHANGE`)** — it never probes hardware for a
+change. Rationale: the on-board microSD is a fixed boot card; the boot filesystem
+does not change under the running system, so a valid drive never has a media
+change to report (`docs/HARDWARE-PROFILE.md` §3.4, project memory "Mediach treats
+the card as non-removable"). Matches EmuTOS `blkdev.c:789-790` (validate, then
+report no-change).
 
 | Atari reference | Pi-4 model today |
 |-----------------|------------------|
@@ -258,11 +260,11 @@ it is a **divergence from the contract** — flagged below.
 
 ### Divergences vs. the contract (Step-2 candidates)
 
-- **Invalid-drive `EUNDEV` not returned.** The contract requires `EUNDEV` (-15)
-  for a drive outside `0..BLKDEVNUM` / not `DEVICE_VALID`. NewTOS's `Mediach`
-  ignores `drv` entirely and returns `0` for **any** input, including an
-  unmounted or out-of-range letter. This is the one **observable** deviation
-  (a program probing a bogus drive sees "no change" instead of `EUNDEV`).
+- ~~**Invalid-drive `EUNDEV` not returned.**~~ **[Resolved (finding S1) —
+  `mediach` validates `drv` via `drive::resolve` and returns `EUNDEV` (-15) for
+  an out-of-range / unmounted drive, `0` only for a valid one
+  (`mod.rs:159-173`, matching `blkdev.c:789-790`). This was the one observable
+  deviation; it no longer diverges.]**
 - **No `forcechange` after a sector-0 write** (see above; ties to `04-rwabs.md`
   and `07-getbpb.md`'s missing media-state reset).
 - **Latch/reset pair absent.** With `Mediach`≡0 there is no latch for `Getbpb`
