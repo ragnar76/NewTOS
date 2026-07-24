@@ -295,6 +295,13 @@ pub struct Process {
     /// the kernel-side context stack we key it off the nesting depth instead.
     pub upcall_ctx_mask: [AtomicU32; MAX_UPCALL_NEST],
 
+    /// [`Disposition`] each [`Self::upcall_ctx`] level was delivered with
+    /// (cooperative-kernel step 2), encoded per [`Disposition::encode`]. On
+    /// `Psigreturn`, the top level's word decides resume (step-1 default,
+    /// `0`) vs terminate-after (etv_term). A resume level always stores `0`,
+    /// so this array is transparent to the step-1 resume path.
+    pub upcall_ctx_disp: [AtomicU64; MAX_UPCALL_NEST],
+
     /// Current upcall nesting depth (= number of live [`Self::upcall_ctx`]
     /// entries). `deliver_upcall` increments, `Psigreturn` decrements.
     pub upcall_depth: AtomicU8,
@@ -315,15 +322,22 @@ pub struct Process {
 
     /// Mask bit of the pending upcall.
     pub upcall_pending_mask: AtomicU32,
+
+    /// [`Disposition`] of the pending upcall (cooperative-kernel step 2),
+    /// encoded per [`Disposition::encode`]; `0` (= [`Disposition::Resume`])
+    /// for step-1 consumers.
+    pub upcall_pending_disp: AtomicU64,
 }
 
 /// A pending EL0 upcall: the handler VA to jump to, up to four
-/// argument-register values (x0..x3, AAPCS64), and the mask bit identifying
-/// the upcall type (set on delivery, cleared by `Psigreturn`). The
-/// consumers (etv_*, vex, G_USERDEF, eralert, …) supply the handler VA
-/// directly — this is disposition-agnostic, not a POSIX signal number
-/// resolved through a table (design §1). Analogue of a FreeMiNT signal
-/// resolved to its `sa_handler` (`sig_mach.c`).
+/// argument-register values (x0..x3, AAPCS64), the mask bit identifying
+/// the upcall type (set on delivery, cleared by `Psigreturn`), and the
+/// [`Disposition`] on handler return. The consumers (etv_*, vex,
+/// G_USERDEF, eralert, …) supply the handler VA directly — this is
+/// disposition-agnostic in the POSIX sense (no signal-number table,
+/// design §1), but each delivery carries its own resume-vs-terminate
+/// [`Disposition`]. Analogue of a FreeMiNT signal resolved to its
+/// `sa_handler` (`sig_mach.c`).
 #[derive(Copy, Clone)]
 pub struct UpcallDesc {
     /// EL0 VA of the handler the process runs before resuming.
@@ -332,7 +346,76 @@ pub struct UpcallDesc {
     pub args: [u64; 4],
     /// Upcall-type bit (masked while the handler runs).
     pub mask_bit: u32,
+    /// What happens when the handler returns via `Psigreturn`
+    /// (cooperative-kernel step 2). Step-1 consumers use
+    /// [`Disposition::Resume`]; the etv_term consumer uses
+    /// [`Disposition::Terminate`].
+    pub disposition: Disposition,
 }
+
+/// What the kernel does when an EL0 upcall handler returns via `Psigreturn`
+/// (cooperative-kernel step 2, `docs/analysis/coop-kernel/`
+/// `10-upcall-signal-design.md`). Extends the step-1 mechanism, which only
+/// ever resumed the interrupted context, with a "run the handler, then
+/// terminate" disposition — the shape the **etv_term** process-terminate
+/// hook needs (EmuTOS `xterm`, `bdos/proc.c:601-618`: `protect_v(userterm)`
+/// runs the installed handler, then teardown continues to the parent).
+#[derive(Copy, Clone, PartialEq, Eq, Debug)]
+pub enum Disposition {
+    /// Restore the interrupted EL0 context and resume it (step-1 default).
+    Resume,
+    /// After the handler returns, terminate the process instead of resuming:
+    /// route into the standard `Pterm` teardown with exit code `rc` and,
+    /// for `Ptermres`, resident-block reservation (`reserve`). This is the
+    /// etv_term "notify before I die" contract.
+    Terminate {
+        /// Original `Pterm` exit code (UWORD, already masked to 16 bits).
+        rc: i32,
+        /// `true` for `Ptermres` (0x31) — keep the process's owned pool
+        /// blocks resident; `false` for `Pterm`/`Pterm0`.
+        reserve: bool,
+    },
+}
+
+impl Disposition {
+    /// Tag bit marking a [`Disposition::Terminate`] in the `AtomicU64`
+    /// encoding used by the pending / per-nest slots. A `0` word decodes to
+    /// [`Disposition::Resume`], keeping the step-1 default a plain zero.
+    const TERM_TAG: u64 = 1 << 63;
+    /// `reserve` (Ptermres) flag in the `AtomicU64` encoding.
+    const RESERVE_TAG: u64 = 1 << 62;
+
+    /// Encode into the per-nest / pending `AtomicU64`. [`Disposition::Resume`]
+    /// is `0`, so a freshly-zeroed slot means "resume".
+    pub fn encode(self) -> u64 {
+        match self {
+            Disposition::Resume => 0,
+            Disposition::Terminate { rc, reserve } => {
+                Self::TERM_TAG
+                    | if reserve { Self::RESERVE_TAG } else { 0 }
+                    | (rc as u32 as u64)
+            }
+        }
+    }
+
+    /// Decode a word written by [`Self::encode`].
+    pub fn decode(v: u64) -> Self {
+        if v & Self::TERM_TAG == 0 {
+            Disposition::Resume
+        } else {
+            Disposition::Terminate {
+                rc: (v & 0xFFFF_FFFF) as u32 as i32,
+                reserve: v & Self::RESERVE_TAG != 0,
+            }
+        }
+    }
+}
+
+/// Upcall-type mask bit for the **etv_term** process-terminate hook (the
+/// FreeMiNT `p_sigmask` per-consumer bit, `sig_mach.c:291`). Each future
+/// upcall consumer (etv_critic, vex, …) claims its own bit; etv_term is the
+/// first real one.
+pub const UPCALL_MASK_ETV_TERM: u32 = 1 << 0;
 
 // ─── Parent-frame snapshot ──────────────────────────────────────────
 
@@ -437,11 +520,13 @@ impl Process {
             has_ctx: AtomicBool::new(false),
             upcall_ctx: [const { ParentFrame::zeroed() }; MAX_UPCALL_NEST],
             upcall_ctx_mask: [const { AtomicU32::new(0) }; MAX_UPCALL_NEST],
+            upcall_ctx_disp: [const { AtomicU64::new(0) }; MAX_UPCALL_NEST],
             upcall_depth: AtomicU8::new(0),
             upcall_mask: AtomicU32::new(0),
             upcall_pending_handler: AtomicU64::new(0),
             upcall_pending_args: [const { AtomicU64::new(0) }; 4],
             upcall_pending_mask: AtomicU32::new(0),
+            upcall_pending_disp: AtomicU64::new(0),
         }
     }
 
@@ -582,8 +667,10 @@ pub fn post_upcall(slot: usize, desc: UpcallDesc) {
         a.store(desc.args[i], Ordering::Release);
     }
     p.upcall_pending_mask.store(desc.mask_bit, Ordering::Release);
+    p.upcall_pending_disp
+        .store(desc.disposition.encode(), Ordering::Release);
     // Presence sentinel last (release): a `take` that sees it nonzero also
-    // sees the args/mask stored above.
+    // sees the args/mask/disposition stored above.
     p.upcall_pending_handler
         .store(desc.handler_va, Ordering::Release);
 }
@@ -605,10 +692,13 @@ pub fn take_pending_upcall(slot: usize) -> Option<UpcallDesc> {
         args[i] = a.load(Ordering::Acquire);
     }
     let mask_bit = p.upcall_pending_mask.load(Ordering::Acquire);
+    let disposition =
+        Disposition::decode(p.upcall_pending_disp.load(Ordering::Acquire));
     Some(UpcallDesc {
         handler_va,
         args,
         mask_bit,
+        disposition,
     })
 }
 
@@ -677,11 +767,15 @@ pub fn free_slot(idx: usize) {
         a.store(0, Ordering::Release);
     }
     p.upcall_pending_mask.store(0, Ordering::Release);
+    p.upcall_pending_disp.store(0, Ordering::Release);
     for c in p.upcall_ctx.iter() {
         c.clear();
     }
     for m in p.upcall_ctx_mask.iter() {
         m.store(0, Ordering::Release);
+    }
+    for d in p.upcall_ctx_disp.iter() {
+        d.store(0, Ordering::Release);
     }
     // State last so that any concurrent reader sees `Free` only once
     // every other field is observably reset.

@@ -50,7 +50,7 @@ use core::sync::atomic::Ordering;
 use tos_api::bdos::process::arena;
 use tos_api::bdos::process::loader::load_to_slot;
 use tos_api::bdos::process::{
-    post_upcall, set_current, State, UpcallDesc, PROCESS_TABLE,
+    post_upcall, set_current, Disposition, State, UpcallDesc, PROCESS_TABLE,
 };
 
 use crate::arch::aarch64::user_entry::{
@@ -204,6 +204,9 @@ pub fn run() {
             handler_va: HANDLER_VA,
             args: [FLAG_ADDR, FLAG_MARKER, 0, 0],
             mask_bit: MASK_BIT,
+            // Step-1 behaviour: resume the interrupted context after the
+            // handler (cooperative-kernel step 2 disposition).
+            disposition: Disposition::Resume,
         },
     );
     kprintln!(

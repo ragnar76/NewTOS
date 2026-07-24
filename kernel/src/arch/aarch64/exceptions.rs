@@ -507,6 +507,56 @@ fn handle_pterm(frame: &mut ExceptionFrame, func: u16) {
         _ => (frame.gpr[0] & 0xFFFF) as i32,
     };
 
+    // BIOS finding H1 (etv_term): if the app installed a real `etv_term`
+    // process-terminate hook via `Setexc(0x102, handler)`, run it at EL0
+    // FIRST, then terminate — EmuTOS `xterm` calls `protect_v(userterm)` at
+    // the very start of termination, before any teardown, then continues to
+    // `ixterm`/`termuser` (`bdos/proc.c:601-618`). `protect_v` is a bare
+    // `jsr (a0)` with no arguments (`util/miscasm.S:213-220`), and `etv_term`
+    // is `void (*)(void)` (`include/tosvars.h:112`), so the handler receives
+    // NO arguments; termination continues unconditionally after it returns.
+    //
+    // The boot-default is a NON-callable sentinel in NewTOS
+    // (`ETV_DEFAULT_JUST_RTS`, a stable opaque token — not a real `just_rts`
+    // code address), so the sentinel (and `0` = never installed) is treated
+    // as "no handler" and we terminate directly. That is behaviourally
+    // identical to EmuTOS calling `just_rts` (a no-op RTS) and also resolves
+    // H1's "boot-default non-callable sentinel" concern: the sentinel is
+    // never jumped to. Only etv_term is wired here (incremental H1 close);
+    // etv_critic (M1) and etv_timer are later cooperative-kernel steps.
+    //
+    // Guarded on a live process slot: a `Pterm` with no running process
+    // (`current() == null`) falls through to the normal path, which reports
+    // `EINVFN` via `finish_terminate`'s misuse branch (matching the old
+    // behaviour) instead of silently no-op'ing in `deliver_upcall`.
+    let etv = tos_api::bios::vectors::vector(tos_api::bios::vectors::ETV_TERM);
+    let has_slot = tos_api::bdos::process::slot_for(
+        tos_api::bdos::process::current(),
+    )
+    .is_some();
+    if has_slot && etv != 0 && etv != tos_api::bios::vectors::ETV_DEFAULT_JUST_RTS
+    {
+        // The terminate variant that runs *after* the handler is chosen by
+        // `func`: Ptermres (0x31) keeps the process's owned pool blocks
+        // resident, Pterm/Pterm0 free them. The handler runs in the
+        // terminating process's still-mapped EL0 context (TTBR0 unchanged);
+        // on its `Psigreturn` the disposition routes into that teardown.
+        deliver_upcall(
+            frame,
+            tos_api::bdos::process::UpcallDesc {
+                handler_va: etv as u64,
+                args: [0; 4], // etv_term is void(*)(void) — no arguments
+                mask_bit: tos_api::bdos::process::UPCALL_MASK_ETV_TERM,
+                disposition: tos_api::bdos::process::Disposition::Terminate {
+                    rc,
+                    reserve: func == 0x31,
+                },
+            },
+        );
+        return;
+    }
+
+    // No app handler installed → terminate directly (unchanged path).
     // SAFETY: trap-context single-CPU contract; the BDOS giant lock
     // is held implicitly while we execute the handler.
     let result = unsafe {
@@ -687,6 +737,9 @@ fn deliver_upcall(
     ctx.sp_el0().store(frame.sp_el0, Ordering::Release);
     // Record which mask bit this level set so `Psigreturn` clears exactly it.
     p.upcall_ctx_mask[depth].store(desc.mask_bit, Ordering::Release);
+    // Record the disposition (cooperative-kernel step 2): `Psigreturn` reads
+    // it to decide resume (step-1 default) vs terminate-after (etv_term).
+    p.upcall_ctx_disp[depth].store(desc.disposition.encode(), Ordering::Release);
     p.upcall_depth.store((depth + 1) as u8, Ordering::Release);
     // Mark the upcall type active (FreeMiNT `p_sigmask`, `sig_mach.c:291`).
     let m = p.upcall_mask.load(Ordering::Acquire);
@@ -707,17 +760,27 @@ fn deliver_upcall(
 }
 
 /// GEMDOS `Psigreturn` (0x11A) — the EL0 upcall trampoline's return syscall
-/// (design §5). Pop the top saved EL0 context off the running process's
-/// kernel-side upcall stack and restore it over the trap frame (GPRs + lr +
-/// elr + spsr + sp_el0), so the post-handler `eret` resumes the interrupted
-/// EL0 code exactly where the upcall diverted it — including the original
-/// syscall's `x0` (§7.2). Clears the delivered upcall's mask bit and pops the
-/// nesting level. Same restore style as `finish_terminate`. An empty stack is
+/// (design §5). Pops the top saved EL0 context off the running process's
+/// kernel-side upcall stack and acts on its [`Disposition`]
+/// (cooperative-kernel step 2):
+///
+///   * [`Disposition::Resume`] (step-1 default) — restore the saved context
+///     over the trap frame (GPRs + lr + elr + spsr + sp_el0), so the
+///     post-handler `eret` resumes the interrupted EL0 code exactly where the
+///     upcall diverted it — including the original syscall's `x0` (§7.2).
+///   * [`Disposition::Terminate`] (etv_term) — the handler has run its
+///     "notify before I die" course; now terminate the process with the
+///     original `Pterm` exit code instead of resuming, routing into the
+///     standard teardown ([`finish_terminate`], EmuTOS `xterm` continuing
+///     past `protect_v(userterm)`, `bdos/proc.c:609-617`).
+///
+/// Either way the delivered upcall's mask bit is cleared and the nesting
+/// level popped. Same restore style as `finish_terminate`. An empty stack is
 /// caller misuse: leave the frame and report `EINVFN` (like
 /// `finish_terminate`'s misuse branch, §5.2).
 fn handle_psigreturn(frame: &mut ExceptionFrame) {
     use core::sync::atomic::Ordering;
-    use tos_api::bdos::process::{current, slot_for, PROCESS_TABLE};
+    use tos_api::bdos::process::{current, slot_for, Disposition, PROCESS_TABLE};
 
     let slot_idx = match slot_for(current()) {
         Some(i) => i,
@@ -735,6 +798,40 @@ fn handle_psigreturn(frame: &mut ExceptionFrame) {
         return;
     }
     let top = depth - 1;
+    let disp = Disposition::decode(p.upcall_ctx_disp[top].load(Ordering::Acquire));
+
+    // Pop the nesting level bookkeeping first (FreeMiNT `p_sigmask &= ~…`,
+    // `sig_mach.c:291`), so the process state is clean regardless of
+    // disposition. Common to both branches.
+    let bit = p.upcall_ctx_mask[top].load(Ordering::Acquire);
+    let m = p.upcall_mask.load(Ordering::Acquire);
+    p.upcall_mask.store(m & !bit, Ordering::Release);
+    p.upcall_ctx_mask[top].store(0, Ordering::Release);
+    p.upcall_ctx_disp[top].store(0, Ordering::Release);
+    p.upcall_depth.store(top as u8, Ordering::Release);
+
+    if let Disposition::Terminate { rc, reserve } = disp {
+        // Terminate-after (etv_term): the saved context is discarded — the
+        // process dies rather than resuming. Route into the standard Pterm
+        // teardown with the original exit code; `finish_terminate` redirects
+        // the frame to the parent (or the kernel resume, boot-launched).
+        p.upcall_ctx[top].clear();
+        // SAFETY: trap-context single-CPU contract; BDOS giant lock held
+        // implicitly — same contract as `handle_pterm`.
+        let result = unsafe {
+            if reserve {
+                tos_api::bdos::process::pterm::terminate_resident(rc)
+            } else {
+                tos_api::bdos::process::pterm::terminate(rc)
+            }
+        };
+        finish_terminate(frame, rc, result);
+        return;
+    }
+
+    // Resume (step-1 default): restore the interrupted context and scrub the
+    // reused slot. Byte-identical to step 1 apart from clearing the disp word
+    // above (which is `0` for a resume level, so no behavioural change).
     let ctx = &p.upcall_ctx[top];
     for i in 0..30 {
         frame.gpr[i] = ctx.gpr(i).load(Ordering::Acquire);
@@ -743,14 +840,6 @@ fn handle_psigreturn(frame: &mut ExceptionFrame) {
     frame.elr = ctx.elr().load(Ordering::Acquire);
     frame.spsr = ctx.spsr().load(Ordering::Acquire);
     frame.sp_el0 = ctx.sp_el0().load(Ordering::Acquire);
-
-    // Clear the mask bit this level set (FreeMiNT `p_sigmask &= ~…`,
-    // `sig_mach.c:291`), pop the level, and scrub the reused slot.
-    let bit = p.upcall_ctx_mask[top].load(Ordering::Acquire);
-    let m = p.upcall_mask.load(Ordering::Acquire);
-    p.upcall_mask.store(m & !bit, Ordering::Release);
-    p.upcall_ctx_mask[top].store(0, Ordering::Release);
-    p.upcall_depth.store(top as u8, Ordering::Release);
     ctx.clear();
 }
 

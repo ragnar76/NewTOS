@@ -164,9 +164,12 @@ unsafe fn write_user_long(p: *mut u8, v: u32) {
 }
 
 /// The handler currently installed for hook `num`, or 0 if none. NewTOS'
-/// event paths call this to honour a program-installed `etv_*` hook once
-/// the EL0-callback mechanism that invokes such handlers lands.
-#[allow(dead_code)] // consumed as the etv_* hook dispatch is wired
+/// event paths call this to honour a program-installed `etv_*` hook via the
+/// EL0-upcall mechanism (cooperative-kernel step 2). Consumed by the Pterm
+/// path for **etv_term** (`ETV_TERM`) — the kernel reads the installed
+/// handler and, unless it is the non-callable boot sentinel
+/// [`ETV_DEFAULT_JUST_RTS`], delivers it as an EL0 upcall before terminating
+/// (BIOS finding H1). `etv_critic`/`etv_timer` follow in later steps.
 pub fn vector(num: usize) -> i64 {
     if num < NVEC {
         VECTORS[num].load(Ordering::Relaxed)
