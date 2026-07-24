@@ -476,3 +476,22 @@ matches `ILL_NOSEL`/`ILL_MULTSEL`/`ILL_NOWIN`/`BTOPITEM`; Task-#9 items disabled
 (not stubbed); the self-clearing white item-root box erases the old view within
 the `do_wredraw` clip. These are the static/screendump-verified items — the HW
 rows above cover only what needs a live pointer/keyboard.
+
+## J. Cooperative kernel — EL0 upcall/signal path (coop-kernel step 1, commit `ee82ead`)
+
+QEMU-TCG is cache-coherent and blind to the QUIRK-001 class (TTBR0 wedge /
+I-cache-PoU coherence on real Cortex-A72). The upcall path exercises exactly
+that surface, so it needs a **real Pi4** pass before the mechanism counts as
+hardware-solid:
+
+- **J1 — Trampoline I-cache coherence:** the kernel writes the 5-instruction
+  stub at EL0-VA `0x700` at load time (`loader.rs` `write_upcall_trampoline`,
+  in the cache-maintenance window). On real HW the EL0 instruction fetch of
+  `0x700` must see the freshly-written bytes (PoU coherence). QEMU: no-op.
+- **J2 — TTBR0 switch on the upcall/`Psigreturn` path:** `deliver_upcall` +
+  `handle_psigreturn` redirect the frame and resume under the process's TTBR0
+  (log shows "TTBR0 restored"). Validate no QUIRK-001-style wedge on a real
+  handler round-trip — trigger once a real syscall-boundary consumer (etv_term /
+  G_USERDEF, step 2) lands: an app installs a handler, it fires, resumes cleanly.
+- The step-1 selftest (`selftest_upcall`, all 6 checks PASS in QEMU) is
+  synthetic; J1/J2 are the residual HW-only confirmations.

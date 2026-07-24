@@ -121,17 +121,29 @@ sauber, kein Regress. Selftest wieder aus dem Normal-Boot gegated. **Geflaggt
 3. **Deferrt bei App-Bedarf:** VIDEL + GEMDOS `Srealloc` (0x15, VIDEL-gebunden),
    Kbd-XBIOS (Keyboard-Phase), Audio (eigene Phase), Supexec (EL1-Trampolin).
 
-**➡️ NÄCHSTE PHASE — kooperativer Multi-Prozess-Kern (AES-Phase-2b Grundgerüst).**
-Der große Posten: gemasync/gemdisp/gemflag/geminput/gemctrl (44 Fn) + Accessories
-(13) + Desktop-Shell (8). = **derselbe Theme wie die EL0-Upcall-Infra** (Punkt 1).
-**Zwei Vorbedingungen (User 2026-07-24, „BIOS-Rest jetzt, dann Kern"):**
-(a) **FreeMiNT als gepinnte Referenz** `references/freemint` (noch NICHT im Repo,
-[[freemint-extension-direction]]) — Quelle/Version offen (User-Entscheidung).
-(b) **Design-Phase** vor Code: Signal-/Upcall-Modell, kooperativ→preemptiv-fähig,
-Multi-Core-Vorbereitung (RPi4 SMP).
+**➡️ AKTIVE PHASE — kooperativer Multi-Prozess-Kern (AES-Phase-2b Grundgerüst).**
+**Richtung entschieden (User 2026-07-24): Hybrid — EmuTOS-kooperative POLICY auf
+FreeMiNT-förmigen PRIMITIVEN, Start = EL0-Upcall/Signal (1:1 `sendsig`).** Analyse
++ Aufwandsvergleich: `docs/analysis/coop-kernel/` (00-effort-comparison, emutos-
+cooperative-model, freemint-multitasking-model). FreeMiNT-Referenz vorhanden
+(offiz. Clone f906416). Sequenz:
 
-Danach: kooperativer Kern FreeMiNT-extensibel (references/freemint pinnen) +
-Multi-Core-Vorbereitung für die SMP-Zukunft.
+1. **✅ Schritt 1 — generische Upcall-Primitive** (`ee82ead`, Design
+   `coop-kernel/10-upcall-signal-design.md`): `upcall_ctx[]`/`post_upcall`/
+   `take_pending_upcall`, Trampolin @`0x700`, `deliver_upcall`+`handle_psigreturn`
+   (GEMDOS `0x11A`), Delivery-Check am `rust_sync_handler`-Ende. Developer+Tester:
+   End-to-End-Selftest 6/6 PASS, 0 Delta, Hot-Path-No-Regression grün. **Real-HW-
+   Rest: J1/J2** (Trampolin-I-Cache + TTBR0-Upcall-Pfad, QUIRK-001-Klasse) →
+   `_hw-test-checklist.md` §J.
+2. **Schritt 2 — erster echter Konsument** an der Syscall-Grenze (kein IRQ):
+   **etv_term/etv_critic (H1/M1)** ODER **G_USERDEF (WP3)** → danach P4-012 eralert.
+3. **Schritt 3 — sleep/wake-Substrat** (Ready-Queue, `event.rs`-Busy-Poll ersetzen)
+   + Deliver-on-Resume für blockierte AES-Clients.
+4. **Schritt 4 — EmuTOS-koop AES (44 Fn)**; **Schritt 5+ deferred/additiv:**
+   Präemption, Mehr-App, vex/IRQ-Pfad, SMP.
+
+Danach FreeMiNT-Weiterentwicklung (`references/freemint` formal pinnen +
+Multi-Core) — erst wenn die Basis auf dem Pi sauber läuft.
 
 ## 5. Nur-HW-Restverifikation (real Pi4)
 
