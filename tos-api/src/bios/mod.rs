@@ -26,6 +26,15 @@ use crate::trap::TrapArgs;
 
 const SECTOR: usize = 512;
 
+// `Rwabs` read/write flag bits (EmuTOS `bios/disk.h:52-61`).
+/// Bit 0 — write (vs. read); also `RW_WRITE` (`disk.h:54,56`).
+const RW_RW: i16 = 1;
+/// Bit 3 — physical (untranslated) I/O (`disk.h:59`). When set, the
+/// sector argument is an **absolute device sector**: no partition-relative
+/// translation, and the range check is against the whole device rather than
+/// the partition (`blkdev.c:438,483-490`).
+const RW_NOTRANSLATE: i16 = 8;
+
 // BIOS function ids.
 const GETMPB: u16 = 0x00;
 const BCONSTAT: u16 = 0x01;
@@ -95,8 +104,23 @@ fn kbshift(args: &TrapArgs) -> Long {
 
 /// `Rwabs` (0x04) — read/write absolute sectors.
 ///
-/// `x0` = r_w (bit 0: 0 read / 1 write), `x1` = buffer, `x2` = count,
-/// `x3` = first sector (or `-1` ⇒ use `x5`), `x4` = drive, `x5` = lfirst.
+/// `x0` = r_w (bit 0: 0 read / 1 write; bit 3: `RW_NOTRANSLATE`, physical
+/// I/O), `x1` = buffer, `x2` = count, `x3` = first sector (or `-1` ⇒ use
+/// `x5`), `x4` = drive, `x5` = lfirst.
+///
+/// EmuTOS `blkdev.c:438` splits on `RW_NOTRANSLATE` (bit 3): the common
+/// **logical** path translates a partition-relative sector to an absolute
+/// LBA and range-checks against the partition (`blkdev.c:440-466`); the
+/// **physical** path treats the sector as an absolute device sector, with
+/// no partition translation and a range check against the whole device
+/// (`blkdev.c:483-490`). The device is validated up front in both modes.
+///
+/// Deviations from EmuTOS that are out of scope for L1 (HW-adapted or
+/// deferred, unchanged here): the retry loop / `etv_critic` chain
+/// (H1/M1), the `RW_NOMEDIACH` media-change probe (the SD is
+/// non-removable ⇒ `Mediach`≡0), the `RW_NORETRIES` retry count (single
+/// PIO attempt), and `RW_NOBYTESWAP` (AArch64 is little-endian). See
+/// `docs/api/bios/04-rwabs.md` and `docs/analysis/bios-audit/bios-findings.md`.
 fn rwabs(args: &TrapArgs) -> Long {
     let r_w = args.arg_i16(0);
     let adr = args.arg_u64(1);
@@ -105,7 +129,10 @@ fn rwabs(args: &TrapArgs) -> Long {
     let drive = args.arg_u16(4);
     let lfirst = args.arg_i32(5);
 
-    // Resolve the drive to its partition (start LBA + length).
+    // Resolve the drive to its partition (start LBA + length). EmuTOS
+    // validates the device up front in both logical (`blkdev.c:440-441`)
+    // and physical (`blkdev.c:484-485`) mode; on the single-block-device Pi
+    // the drive table stands in for `units[]`.
     let part = match drive::resolve(drive) {
         Some(p) => p,
         None => return EUNDEV,
@@ -122,13 +149,26 @@ fn rwabs(args: &TrapArgs) -> Long {
     } else {
         first as u16 as u64
     };
-    // Partition-relative sector → absolute LBA, with a range check.
-    if sector + numb as u64 > part.count as u64 {
-        return ESECNF;
-    }
-    let lba = part.start_lba as u64 + sector;
+    let lba = if r_w & RW_NOTRANSLATE != 0 {
+        // Physical: the sector is already an absolute device sector — no
+        // partition translation. Range-check against the device's total
+        // sector count (EmuTOS `blkdev.c:488-490`, which uses `>=` and skips
+        // the check when the unit size is unknown/zero).
+        let total = blk.block_count();
+        if total != 0 && sector + numb as u64 >= total {
+            return ESECNF;
+        }
+        sector
+    } else {
+        // Logical: partition-relative sector → absolute LBA, range-checked
+        // against the partition (EmuTOS `blkdev.c:461-466`, which uses `>`).
+        if sector + numb as u64 > part.count as u64 {
+            return ESECNF;
+        }
+        part.start_lba as u64 + sector
+    };
     let len = numb * SECTOR;
-    let write = r_w & 1 != 0;
+    let write = r_w & RW_RW != 0;
 
     // SAFETY: `adr` is the caller's buffer for `len` bytes. EL1 self-test
     // passes kernel memory; EL0 user-pointer handling lands with the
