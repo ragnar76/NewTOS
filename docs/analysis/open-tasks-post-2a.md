@@ -98,27 +98,37 @@ sauber, kein Regress. Selftest wieder aus dem Normal-Boot gegated. **Geflaggt
 (Lead/User, unkritisch):** `os_magic=0` (braucht GEM/AES), `os_date/os_dosdate`
 = 1980-01-01-Platzhalter (kein Build-Stamp gepinnt).
 
-**Offen — restliche BIOS-Fixes (Sequenz User 2026-07-24: „M2–M4 jetzt, Upcall als eigenes Thema"):**
-1. **JETZT — Getbpb-FS-Härtung (upcall-frei, rein in-kernel):** M2 (`reserved==0`→1),
-   M3 (FAT16 `>65524`-Reject + u16-Truncation), M4 (Validitäts-Guards recsiz/clsizb/
-   FAT-Count), L3 (fatrec/datrec bei num_fats≥3). Alle in `bios/bpb.rs`.
-2. **JETZT/klein — L1** Rwabs physical-mode (RW_NOTRANSLATE Bit 3, `bios/mod.rs`
-   `rwabs`). ✅ **S1–S3 erledigt** (Commits `310c00b` S2/S3 + `52adb52` S1):
-   os_version=0x0404, ADR-012/„Zwei-Welten" durch B1 widerlegt+korrigiert,
-   09-mediach.md stale-Text nachgezogen. **L2** (Bconin conterm-Bit3-Fold) →
-   verschoben in die „fehlende Sysvars"-Phase: `conterm@$484` existiert im Code
-   NICHT und muss erst als Sysvar (Default 7) eingeführt werden — ist eine
-   fehlende Sysvar, kein Bug (Default 7 = Bit 3 clear = kein Fold = heute schon
-   EmuTOS-treu).
-3. **EIGENES THEMA — EL0-Upcall-/Signal-Mechanismus** (EL1→EL0): löst **H1**
+**✅ BIOS-Ebene KOMPLETT (Fixes + Sysvars, alle Developer→Tester-PASS):**
+- **Getbpb-FS-Härtung** M2/M3/M4/L3 (`f3f9026`) — bpb.rs 1:1 blkdev.c, normalisierte
+  Geometry; Tester byte-identisch + 6/6 Edge-Cases.
+- **L1** Rwabs physical-mode (RW_NOTRANSLATE, `4d16dbc`) — `>=`/`>`-Eigenheit 1:1;
+  Lead-Mount-Verifikation.
+- **S1/S2/S3** Doc-Korrekturen (`310c00b`+`52adb52`): os_version=0x0404, ADR-012/
+  „Zwei-Welten" durch B1 widerlegt+korrigiert, 09-mediach.md stale.
+- **Statische Sysvars + L2** (`f9cb5e5`): `conterm@$484=7`, `cmdload@$482=0`,
+  `dumpflg@$4EE=-1`, Drucker-Vektoren=0; Bconin conterm&8-Fold (RUN-guarded);
+  Tester Selftest-Gruppe (d) grün + Konsolen-Regression sauber.
+
+**Offen — verbleibende Themen (nicht mehr BIOS-Ebene):**
+1. **EIGENES THEMA — EL0-Upcall-/Signal-Mechanismus** (EL1→EL0): löst **H1**
    (etv_*-Dispatch installierter Hooks) + **M1** (Rwabs→installierter etv_critic +
    CRITIC_RETRY_REQUEST) + **P4-012** (eralert) + **vex** (Maus-ISR→EL0, V6) +
-   **G_USERDEF** (ub_code→EL0, WP3) — vier+ Konsumenten derselben Infra. Sauber
-   designen (gehört zum kooperativen Kern/Signal-Layer, FreeMiNT-extensibel +
-   multi-core-vorbereitet), NICHT eng nur für H1. Default-Verhalten heute schon
-   EmuTOS-treu (no-op timer/term, Fehlercode-critic).
-4. **BB2 Memory-Modell** STRAM/TTRAM (fest 8 MB / Rest, rein logisch) — verfeinert
+   **G_USERDEF** (ub_code→EL0, WP3) — vier+ Konsumenten derselben Infra. **Gehört
+   zum kooperativen Kern/Signal-Layer** (unten), NICHT eng nur für H1. Default-
+   Verhalten heute schon EmuTOS-treu (no-op timer/term, Fehlercode-critic).
+2. **BB2 Memory-Modell** STRAM/TTRAM (fest 8 MB / Rest, rein logisch) — verfeinert
    OSHEADER `os_beg`/`os_end` + Malloc/Mxalloc-Pools. Separater Task (User-gewünscht).
+3. **Deferrt bei App-Bedarf:** VIDEL + GEMDOS `Srealloc` (0x15, VIDEL-gebunden),
+   Kbd-XBIOS (Keyboard-Phase), Audio (eigene Phase), Supexec (EL1-Trampolin).
+
+**➡️ NÄCHSTE PHASE — kooperativer Multi-Prozess-Kern (AES-Phase-2b Grundgerüst).**
+Der große Posten: gemasync/gemdisp/gemflag/geminput/gemctrl (44 Fn) + Accessories
+(13) + Desktop-Shell (8). = **derselbe Theme wie die EL0-Upcall-Infra** (Punkt 1).
+**Zwei Vorbedingungen (User 2026-07-24, „BIOS-Rest jetzt, dann Kern"):**
+(a) **FreeMiNT als gepinnte Referenz** `references/freemint` (noch NICHT im Repo,
+[[freemint-extension-direction]]) — Quelle/Version offen (User-Entscheidung).
+(b) **Design-Phase** vor Code: Signal-/Upcall-Modell, kooperativ→preemptiv-fähig,
+Multi-Core-Vorbereitung (RPi4 SMP).
 
 Danach: kooperativer Kern FreeMiNT-extensibel (references/freemint pinnen) +
 Multi-Core-Vorbereitung für die SMP-Zukunft.
