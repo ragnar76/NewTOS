@@ -146,10 +146,20 @@ cooperative-model, freemint-multitasking-model). FreeMiNT-Referenz vorhanden
      `>= 0x1000` → diese Selftests würden beim Re-Wiring `SegmentVaOutOfRange`
      zeigen. Nicht im Boot (kein Laufzeit-Impact); Re-Enable braucht Fixture-vaddr
      → 0x1000. Niedrige Prio.
-3. **Schritt 3 — sleep/wake-Substrat** (Ready-Queue, `event.rs`-Busy-Poll ersetzen)
-   + Deliver-on-Resume für blockierte AES-Clients.
-4. **Schritt 4 — EmuTOS-koop AES (44 Fn)**; **Schritt 5+ deferred/additiv:**
-   Präemption, Mehr-App, vex/IRQ-Pfad, SMP.
+3. **Schritt 3 — sleep/wake-Substrat** (Design `coop-kernel/20-sleepwake-substrate-
+   design.md`; Entscheidungen: Option B Hybrid EL1-intern/EL0-App, Block-Modell S2
+   restartable). Aufgeteilt 3a/3b:
+   - **✅ 3a — Substrat-Felder + `event.rs`-Refactor (Idle-Fallback, verhaltensgleich)**
+     (`bcf8008`): `wait_cond`+WAITING, `sleep`/`wake`/`idle_wake_pass`, sechs
+     Busy-Polls → `sleep(cond)`, `el1_internal`-Flag am Switch (vorbereitet).
+     Developer+Tester: No-Regression (Desktop-Screendump sauber) + `selftest_sleepwake`
+     7/7 PASS, 0 Delta. `apply_switch` unangetastet.
+   - **3b — S2-Restart + echter Switch + Deliver-on-Resume** (nächster Task):
+     ELR-Rewind-Save, `apply_switch`-Resume-Redirect (schließt den 6. Upcall-
+     Konsumenten: Upcall an blockierten AES-Client), 2-Prozess-Selftest.
+4. **Schritt 4 — EmuTOS-koop AES (44 Fn)** (EL1-interne Thread-Slots + TTBR0-Skip +
+   Screen-Manager/Accessories); **Schritt 5+ deferred/additiv:** Präemption,
+   Mehr-App, vex/IRQ-Pfad, SMP.
 
 Danach FreeMiNT-Weiterentwicklung (`references/freemint` formal pinnen +
 Multi-Core) — erst wenn die Basis auf dem Pi sauber läuft.
