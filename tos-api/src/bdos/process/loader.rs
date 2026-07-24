@@ -696,6 +696,13 @@ const MEMVALID_MAGIC: u32 = 0x7520_19F3; // $420 memvalid (memory.S:126,588)
 const MEMVAL2_MAGIC: u32 = 0x2376_98AA; //  $43A memval2  (memory.S:129,589)
 const MEMVAL3_MAGIC: u32 = 0x5555_AAAA; //  $51A memval3  (memory.S:132,590)
 
+/// `conterm` ($484, BYTE) boot default: keyclick + key-repeat + system-bell
+/// enabled (`references/emutos/bios/ikbd.c:1100` — `conterm = 7`). Bit 3
+/// (`& 8`) requests the `Bconin` keyboard-shift-state fold
+/// (`bios/ikbd.c:279-280`); the default leaves it clear, so `Bconin` keeps
+/// returning bits 24-31 = 0 exactly as before this sysvar was populated.
+const CONTERM_DEFAULT: u8 = 7;
+
 /// Write a 32-bit little-endian `LONG` at byte offset `off` (any alignment;
 /// the classic sysvars are 4-byte and not all 4-aligned, e.g. `sysbase`@0x4F2).
 #[inline]
@@ -792,6 +799,21 @@ fn populate_sysvars(tpa: &mut [u8]) {
         crate::bdos::fs::drive::current_drive()
     };
     wr_word(tpa, 0x446, bootdev);
+    // cmdload ($482): load COMMAND.PRG instead of the ROM shell when != 0;
+    // boot-config flag, default 0 (ROM-shell path, EmuTOS `bios.c:850` gate,
+    // `_boot-init.md` §7c). NewTOS has no COMMAND.PRG override, so 0.
+    wr_word(tpa, 0x482, 0);
+    // conterm ($484, BYTE): console attribute bits, boot default 7 = keyclick
+    // + key-repeat + system-bell on (EmuTOS `bios/ikbd.c:1100`). Bit 3
+    // (`& 8`) is the `Bconin` keyboard-shift-state fold request
+    // (`bios/ikbd.c:279`); read per-process by `pack_console_key`
+    // (`bios/chardev.rs`). Single byte — the surrounding TPA is already
+    // zeroed, so the $485 alignment gap stays 0.
+    tpa[0x484] = CONTERM_DEFAULT;
+    // dumpflg ($4EE): hardcopy/screen-dump-in-progress flag, boot default -1
+    // (EmuTOS `bios/bios.c:357` — `dumpflg = -1;`); consumed by `Scrdmp`
+    // (XBIOS, out of scope). `-1` as a WORD is 0xFFFF.
+    wr_word(tpa, 0x4EE, (-1i16) as u16);
     // _hz_200 ($4BA): 200 Hz system-tick counter. Static snapshot at load
     // (monotonic ms / 5); the live low-memory writer is a documented
     // deferral (feasibility §3) — TeraDesk does not poll it live.
@@ -807,6 +829,14 @@ fn populate_sysvars(tpa: &mut [u8]) {
     wr_long(tpa, 0x4F2, OSHEADER_VA);
     // p_cookies ($5A0): pointer to the cookie jar (cookie_init, util/cookie.c).
     wr_long(tpa, 0x5A0, COOKIE_JAR_VA);
+    // prt_stat ($506) / prt_vec ($50A): printer status/output redirection
+    // vectors. EmuTOS points them at `just_rts` (a no-op RTS stub) in
+    // `chardev_init` (`_boot-init.md` §7c). NewTOS has no printer device and
+    // no m68k vector page to install, so they stay 0 (no redirection =
+    // printer absent) — HW-absence, matching the OSHEADER's m68k-only
+    // os_entry/reseth fields left 0 above.
+    wr_long(tpa, 0x506, 0);
+    wr_long(tpa, 0x50A, 0);
 
     // ── Cookie jar (classic array form, _cookie-jar.md; EmuTOS
     //    util/cookie.c:26-35) ───────────────────────────────────────────

@@ -52,15 +52,95 @@ pub fn bconstat(args: &TrapArgs) -> Long {
     }
 }
 
+/// Per-process `conterm` sysvar address ($484) — the classic TOS
+/// console-attribute byte the loader's `populate_sysvars` writes into every
+/// TPA (default 7, EmuTOS `bios/ikbd.c:1100`).
+const CONTERM_ADDR: usize = 0x484;
+/// `conterm` bit 3: fold the keyboard shift state into `Bconin`'s return
+/// LONG (EmuTOS `bios/ikbd.c:279`).
+const CONTERM_SHIFT_FOLD: u8 = 0x08;
+
 /// Pack an IKBD key word (`scancode << 8 | ascii`) into the console
 /// `Bconin`/`Cconin` return LONG: bits 0-7 = ASCII (0 for non-ASCII keys),
-/// bits 8-15 = 0, bits 16-23 = IKBD scancode, bits 24-31 = 0. Shift state
-/// is *not* folded in — that is a `Kbshift`/`conterm & 8` concern, not this
-/// call's (`docs/api/bios/02-bconin.md`, `docs/api/gemdos/console/01-cconin.md`).
+/// bits 8-15 = 0, bits 16-23 = IKBD scancode. Bits 24-31 carry the keyboard
+/// shift state **iff** the calling process's `conterm` has bit 3 set
+/// (`conterm & 8`), else they are 0.
+///
+/// This mirrors EmuTOS `bconin2` (`references/emutos/bios/bios.c:948-956`
+/// documents the return format; `bios/ikbd.c:279-280` is the fold), which
+/// keeps the IOREC's stored shift byte (bits 24-31, from `kb_last.k.shifty`,
+/// `bios/ikbd.c:900`) only when `conterm & 8` and otherwise masks it out
+/// (`value &= 0x00ffffff`). The default `conterm = 7` (bit 3 clear) leaves
+/// bits 24-31 at 0, byte-identical to a no-fold pack. Every NewTOS caller of
+/// this function is a CON-input path (`Bconin(2)`, `Cconin`/`Cnecin`/
+/// `Crawcin`/`Crawio` — all of which route through `bconin2` under EmuTOS),
+/// so folding here matches EmuTOS for each. See `docs/api/bios/02-bconin.md`,
+/// `docs/api/bios/0b-kbshift.md`, `docs/api/gemdos/console/01-cconin.md`.
 pub fn pack_console_key(word: u16) -> Long {
     let ascii = (word & 0xFF) as Long;
     let scancode = (word >> 8) as Long;
-    (scancode << 16) | ascii
+    (scancode << 16) | ascii | shift_fold()
+}
+
+/// The `conterm & 8` keyboard-shift-state contribution to bits 24-31 of a
+/// console `Bconin`/`Cconin` return LONG (EmuTOS `bconin2`,
+/// `bios/ikbd.c:279-280`). Returns `(kbshift & 0xFF) << 24` when the caller's
+/// `conterm` bit 3 is set, else `0`.
+///
+/// Applied only while an EL0 application is the running process
+/// ([`crate::bdos::process::current`] non-null): the app's `TTBR0` is active
+/// in this BIOS/GEMDOS trap handler, so `$484` (written by the loader's
+/// `populate_sysvars`) is mapped and the unprivileged load reaches it. With
+/// **no active user context** — boot, the desktop, or an EL1 selftest, all of
+/// which run with `RUN == null` and no per-process low-memory area — the fold
+/// is skipped rather than faulting an unprivileged load into the empty
+/// `TTBR0` (`EMPTY_L0`). Gating on `RUN` (a stable atomic) rather than
+/// `SPSR_EL1` keeps the check correct across `console_read_key_blocking`'s
+/// IRQ/`wfi` wait (qemu-virt), which clobbers the saved-PSTATE register but
+/// never touches `RUN` or `TTBR0`.
+#[inline]
+fn shift_fold() -> Long {
+    // No active user context (RUN == null) → no per-process $484; skip
+    // without touching low memory, so an EL1 caller (desktop / boot / a
+    // selftest) never faults an unprivileged load into an empty TTBR0.
+    if crate::bdos::process::current().is_null() {
+        return 0;
+    }
+    // App context: read conterm via an unprivileged byte load, exactly like
+    // `setexc`'s low-memory peek (`bios/vectors.rs`) / `Cconws`'s `ldtrb`.
+    // SAFETY: $484 is inside the per-process reserved low region the loader
+    // maps + populates; the app's TTBR0 is active in this trap and the load
+    // is permission-checked as EL0.
+    let conterm = unsafe { read_user_byte(CONTERM_ADDR as *const u8) };
+    if conterm & CONTERM_SHIFT_FOLD == 0 {
+        return 0; // classic default (conterm = 7): bits 24-31 = 0
+    }
+    // conterm & 8: fold NewTOS's `Kbshift` (BIOS fn 11) state into bits
+    // 24-31, matching EmuTOS's stored `shifty` byte (`bios/ikbd.c:900,279`).
+    let shift = host::host().map_or(0u8, |h| h.keyboard_shift_state());
+    ((shift as u32) << 24) as Long
+}
+
+/// Read one byte from a user (EL0) pointer via an unprivileged load
+/// (`ldtrb`), so the access is permission-checked as EL0 — the same contract
+/// as `bios::vectors`'s `read_user_long` and `Cconws`'s `ldtrb`.
+///
+/// # Safety
+///
+/// `p` must address a readable EL0 byte under the active `TTBR0`.
+#[inline]
+unsafe fn read_user_byte(p: *const u8) -> u8 {
+    let b: u8;
+    // SAFETY: caller guarantees `p` readable; unprivileged byte load.
+    unsafe {
+        core::arch::asm!(
+            "ldtrb {b:w}, [{p}]",
+            p = in(reg) p,
+            b = out(reg) b,
+            options(nostack, preserves_flags, readonly),
+        );
+    }
+    b
 }
 
 /// `Bconin` core keyed by device handle — the value part of `Bconin`

@@ -37,6 +37,9 @@ const B1_TEST_SLOT: usize = 0;
 // sync with `tos_api::bdos::process::loader::populate_sysvars`.
 const SYSBASE_ADDR: usize = 0x4F2; // _sysbase  -> OSHEADER
 const P_COOKIES_ADDR: usize = 0x5A0; // _p_cookies -> jar
+const CONTERM_ADDR: usize = 0x484; // conterm (BYTE) — ikbd.c:1100 default 7
+const CMDLOAD_ADDR: usize = 0x482; // cmdload (WORD) — ROM-shell default 0
+const DUMPFLG_ADDR: usize = 0x4EE; // dumpflg (WORD) — bios.c:357 default -1
 const OSHEADER_VA: u32 = 0x5C0;
 const COOKIE_JAR_VA: u32 = 0x5F0;
 const OS_VERSION_OFF: usize = 0x02; // OSHEADER + 0x02
@@ -206,6 +209,17 @@ pub fn run() {
         jar_tag0 == NTOS_TAG,
         "(b) jar[0].tag == NTOS (kernel jar mirrored)",
     );
+
+    // (d) B2 safe-static sysvars written by populate_sysvars: conterm@0x484
+    //     == 7 (EmuTOS ikbd.c:1100 — the byte Bconin's conterm & 8 fold
+    //     reads), cmdload@0x482 == 0 (ROM-shell default), dumpflg@0x4EE == -1
+    //     (bios.c:357). Read through the kernel high-half alias, like (a)/(b).
+    let conterm = page[CONTERM_ADDR];
+    check(conterm == 7, "(d) conterm@0x484 == 7 (ikbd.c:1100)");
+    let cmdload = rd_word(page, CMDLOAD_ADDR);
+    check(cmdload == 0, "(d) cmdload@0x482 == 0 (ROM-shell default)");
+    let dumpflg = rd_word(page, DUMPFLG_ADDR);
+    check(dumpflg == 0xFFFF, "(d) dumpflg@0x4EE == -1 (bios.c:357)");
 
     // 3. (c) Setexc(0x5A0/4, -1) returns the jar base. Must run with the
     //    loaded process's TTBR0 installed so the `setexc` peek reads the
