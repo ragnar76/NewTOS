@@ -319,10 +319,18 @@ pub unsafe fn open(pid: i16) -> Option<&'static mut Aespd> {
 /// Single trap path.
 pub unsafe fn post_msg(pid: i16, msg: [i16; MSG_WORDS]) -> bool {
     // SAFETY: caller upholds the single-trap-path invariant.
-    match unsafe { by_pid(pid) } {
+    let posted = match unsafe { by_pid(pid) } {
         Some(p) => p.queue.push(msg),
         None => false,
+    };
+    if posted {
+        // Wake any AES client blocked in `evnt_mesag` on this pid's message FIFO
+        // (WAITING → READY, sleep/wake substrate §5.2). Not load-bearing in step
+        // 3a (single context: the waiter's own idle re-check drains the queue),
+        // but wired now so step 4's real peer switch needs no `event.rs` change.
+        crate::bdos::process::sched::wake(crate::bdos::process::sched::wait_mesg(pid));
     }
+    posted
 }
 
 /// Look up an application descriptor by pid.

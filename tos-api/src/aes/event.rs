@@ -4,17 +4,24 @@
 //! the EmuTOS `include/aesdefs.h` mapping (e.g. `T_LOCOUNT = int_in[0]`,
 //! `RET_CODE = int_out[0]`).
 //!
-//! **Bring-up model (single application, no AES scheduler):** EmuTOS'
-//! `ev_block` parks the calling AES process and yields to others until an
-//! event fires. NewTOS has one AES application for now, so each wait is a
-//! cooperative poll-loop over the event sources — the same shape as the
-//! kernel's blocking console read. Multitasking (`appl_yield` between
-//! several AES processes) lands later; the API surface is unchanged.
+//! **Wait model (sleep/wake substrate, cooperative-kernel step 3a):** EmuTOS'
+//! `ev_block` parks the calling AES process and yields to others until an event
+//! fires. Each of the six `evnt_*` waits below re-checks its predicate and, when
+//! it has not fired, blocks on [`sched::sleep`] with the matching wake-class key
+//! ([`sched::wait_input`]/[`sched::wait_mesg`]/[`sched::wait_timer`]) — the
+//! single cooperative block primitive replacing the former per-function
+//! `pump_input` spin (`docs/analysis/coop-kernel/`
+//! `20-sleepwake-substrate-design.md` §5). In step 3a there is exactly one
+//! runnable context, so `sleep` degrades to the idle-fallback (pump + re-check)
+//! and behavior is identical to the old spin; the real peer switch and
+//! deliver-on-resume land in step 3b. The observable `evnt_*` contract (return
+//! values, `MU_*` bits, message dequeue-on-firing) is unchanged.
 
 use core::sync::atomic::{AtomicI16, Ordering};
 
 use super::pd;
 use super::Aespb;
+use crate::bdos::process::sched;
 use crate::host::host;
 
 // Event-type flags (`include/aesdefs.h`), selecting which events a wait
@@ -137,7 +144,7 @@ pub fn evnt_button(pb: &Aespb) {
         let matches = || crate::vdi::mouse_buttons() & mask == state & mask;
         // Wait for the button to reach the requested state (the first click).
         while !matches() {
-            h.pump_input();
+            sched::sleep(sched::wait_input());
         }
         // Count further clicks inside the double-click window. `evnt_button`
         // has no timer source, so counting runs to the full window (no outer
@@ -234,9 +241,9 @@ pub fn evnt_mouse(pb: &Aespb) {
         w: pb.intin(3),
         h: pb.intin(4),
     };
-    if let Some(h) = host() {
+    if host().is_some() {
         while !rect_event(&m) {
-            h.pump_input();
+            sched::sleep(sched::wait_input());
         }
     }
     fill_rets(pb);
@@ -378,7 +385,14 @@ pub fn evnt_multi(pb: &Aespb) {
             if fired != 0 {
                 break;
             }
-            h.pump_input();
+            // Not fired: block until the cooperative idle re-check (design §5).
+            // `WAIT_INPUT` is the multiplexer's general re-check trigger — every
+            // armed source (keyboard/button/mouse, and the menu/window frame
+            // interception that produces `MU_MESAG`) is input-driven, and the
+            // `MU_TIMER` deadline is checked by this same loop above. The union
+            // of message/timer classes becomes load-bearing at step 4 (§4.1);
+            // in step 3a the caller re-checks the full predicate each pass.
+            sched::sleep(sched::wait_input());
         }
     }
 
@@ -401,7 +415,7 @@ pub fn evnt_keybd(pb: &Aespb) {
             if let Some(w) = h.console_try_read_key() {
                 break w as i16; // scancode << 8 | ascii
             }
-            h.pump_input();
+            sched::sleep(sched::wait_input());
         },
         None => 0,
     };
@@ -421,10 +435,10 @@ pub fn evnt_keybd(pb: &Aespb) {
 pub fn evnt_mesag(pb: &Aespb) {
     let dest = pb.addrin(0);
     let pid = super::appl::current_pid();
-    let Some(h) = host() else {
+    if host().is_none() {
         pb.set_ret(1);
         return;
-    };
+    }
     loop {
         // SAFETY: single trap path; `by_pid` hands out the live slot.
         let Some(src) = (unsafe { pd::by_pid(pid) }) else {
@@ -449,7 +463,10 @@ pub fn evnt_mesag(pb: &Aespb) {
             pb.set_ret(1);
             return;
         }
-        h.pump_input();
+        // No message yet: block until one is posted to this pid's FIFO
+        // (`pd::post_msg` wakes `WAIT_MESG(pid)`, design §5.2). In step 3a the
+        // idle-fallback pumps input and the caller re-checks the queue.
+        sched::sleep(sched::wait_mesg(pid));
     }
 }
 
@@ -478,8 +495,11 @@ fn wait_ms(ms: u64) {
         // Saturating target; `monotonic_millis` is monotonic so a plain
         // comparison is safe (no wraparound within any realistic uptime).
         let deadline = start.saturating_add(ms);
+        // Block until the deadline. The idle wake-pass wakes `WAIT_TIMER` once
+        // `monotonic_millis >= deadline` (design §5.2); the caller's own
+        // deadline check drives the loop in the single-context step-3a case.
         while h.monotonic_millis() < deadline {
-            core::hint::spin_loop();
+            sched::sleep(sched::wait_timer(deadline));
         }
     }
 }

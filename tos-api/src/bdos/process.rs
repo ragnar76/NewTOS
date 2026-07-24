@@ -278,6 +278,24 @@ pub struct Process {
     /// yielded). `false` = never entered → start fresh at `entry_va`.
     pub has_ctx: AtomicBool,
 
+    /// Wait-condition key when this process is **WAITING** — cooperative-kernel
+    /// step 3a (sleep/wake substrate, `docs/analysis/coop-kernel/`
+    /// `20-sleepwake-substrate-design.md` §3.1/§3.2/§4.1). `0` = not waiting
+    /// (the process is RUNNING or READY). A nonzero value is a wake-class key
+    /// built by [`sched::wait_input`]/[`sched::wait_mesg`]/[`sched::wait_timer`]
+    /// (class in the high bits, pid/deadline below, §8.1.3): the process sleeps
+    /// in [`sched::sleep`] until [`sched::wake`] — or the idle wake-pass — clears
+    /// it (WAITING → READY). Layered over the existing [`Self::runnable`] bit,
+    /// not a separate list: WAITING is `runnable == false && wait_cond != 0`,
+    /// READY is `runnable == true` (§3.2 "field, not list").
+    ///
+    /// [`sched::sleep`]: super::process::sched::sleep
+    /// [`sched::wake`]: super::process::sched::wake
+    /// [`sched::wait_input`]: super::process::sched::wait_input
+    /// [`sched::wait_mesg`]: super::process::sched::wait_mesg
+    /// [`sched::wait_timer`]: super::process::sched::wait_timer
+    pub wait_cond: AtomicU64,
+
     // ── cooperative-kernel EL0 upcall / signal delivery (building block 1,
     //    docs/analysis/coop-kernel/10-upcall-signal-design.md §6) ──
     /// Kernel-side stack of interrupted EL0 contexts, one per active
@@ -518,6 +536,7 @@ impl Process {
             saved_frame: ParentFrame::zeroed(),
             runnable: AtomicBool::new(false),
             has_ctx: AtomicBool::new(false),
+            wait_cond: AtomicU64::new(0),
             upcall_ctx: [const { ParentFrame::zeroed() }; MAX_UPCALL_NEST],
             upcall_ctx_mask: [const { AtomicU32::new(0) }; MAX_UPCALL_NEST],
             upcall_ctx_disp: [const { AtomicU64::new(0) }; MAX_UPCALL_NEST],
@@ -759,6 +778,9 @@ pub fn free_slot(idx: usize) {
     p.parent_slot.store(NO_PARENT, Ordering::Release);
     p.parent_frame.clear();
     p.parent_l0_pa.store(0, Ordering::Release);
+    // Clear any stale WAITING key so a reused slot does not get spuriously
+    // woken by a `sched::wake` matching a dead process's wait condition.
+    p.wait_cond.store(0, Ordering::Release);
     // Reset the EL0 upcall state so a reused slot starts clean.
     p.upcall_depth.store(0, Ordering::Release);
     p.upcall_mask.store(0, Ordering::Release);
