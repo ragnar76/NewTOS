@@ -154,9 +154,15 @@ cooperative-model, freemint-multitasking-model). FreeMiNT-Referenz vorhanden
      Busy-Polls → `sleep(cond)`, `el1_internal`-Flag am Switch (vorbereitet).
      Developer+Tester: No-Regression (Desktop-Screendump sauber) + `selftest_sleepwake`
      7/7 PASS, 0 Delta. `apply_switch` unangetastet.
-   - **3b — S2-Restart + echter Switch + Deliver-on-Resume** (nächster Task):
-     ELR-Rewind-Save, `apply_switch`-Resume-Redirect (schließt den 6. Upcall-
-     Konsumenten: Upcall an blockierten AES-Client), 2-Prozess-Selftest.
+   - **✅ 3b — S2-Restart + echter Switch + Deliver-on-Resume** (`59b60d4`):
+     Yield-Propagation via `SleepOutcome`/`Option<Switch>` → `rust_sync_handler`;
+     **zwei** S2-Deltas (ELR-Rewind-Save + `restartable`-Flag, damit `apply_switch`s
+     Resume `gpr[0]` nur bei Nicht-S2 nullt — Pwait byte-identisch, S2 erhält `x0`);
+     Deliver-on-Resume im `apply_switch`-`!fresh`-Tail (schließt den **6. Upcall-
+     Konsumenten**: Upcall an blockierten AES-Client). Developer→Tester: `sw3b`-
+     Selftest 7/7 PASS (echter AES-Pfad, `x0=200`), 3a-Regression + Pwait/Pexec-
+     Zyklus grün, 0 Delta. **Real-HW-Rest:** Zwei-Prozess-Switch-Smoke → HW-Checklist §J.
+   - **✅ Schritt 3 KOMPLETT** — sleep/wake-Substrat + S2-Switch + Deliver-on-Resume.
 4. **Schritt 4 — EmuTOS-koop AES (44 Fn)** (EL1-interne Thread-Slots + TTBR0-Skip +
    Screen-Manager/Accessories); **Schritt 5+ deferred/additiv:** Präemption,
    Mehr-App, vex/IRQ-Pfad, SMP.

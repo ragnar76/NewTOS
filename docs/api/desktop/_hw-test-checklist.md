@@ -495,3 +495,12 @@ hardware-solid:
   G_USERDEF, step 2) lands: an app installs a handler, it fires, resumes cleanly.
 - The step-1 selftest (`selftest_upcall`, all 6 checks PASS in QEMU) is
   synthetic; J1/J2 are the residual HW-only confirmations.
+- **J3 — Two-process context switch (coop-kernel step 3b, `59b60d4`):** the S2
+  restartable switch (`apply_switch`/`save_yield_frame`) does a mid-syscall yield
+  deep in `evnt_multi` + a per-process `TTBR0` swap + an ELR-rewound `svc`
+  re-execution + deliver-on-resume. `selftest_sleepwake_switch` passes all 7 checks
+  in QEMU, but that path has only run synthetically. QUIRK-001 is a QEMU-TCG
+  artifact (real PIPT caches don't alias), so QEMU-green is not itself a silicon
+  risk — but as a precaution, do a real-Pi4 smoke of **two interacting GEM
+  processes** (a real `evnt_mesag` block + a peer's reply that wakes it) once step 4
+  makes multiple threads live.
