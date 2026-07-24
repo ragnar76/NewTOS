@@ -102,10 +102,14 @@ sauber, kein Regress. Selftest wieder aus dem Normal-Boot gegated. **Geflaggt
 1. **JETZT — Getbpb-FS-Härtung (upcall-frei, rein in-kernel):** M2 (`reserved==0`→1),
    M3 (FAT16 `>65524`-Reject + u16-Truncation), M4 (Validitäts-Guards recsiz/clsizb/
    FAT-Count), L3 (fatrec/datrec bei num_fats≥3). Alle in `bios/bpb.rs`.
-2. **JETZT/klein — L1** Rwabs physical-mode (RW_NOTRANSLATE Bit 3), **L2** Bconin
-   conterm-Bit3-Fold. **S1–S3** Spec/Doc-Korrekturen (S3 os_version=0x0404 durch B1
-   erledigt; S2 ADR-012/„Zwei-Welten" durch B1 widerlegt → COMPATIBILITY.md +
-   MEMORY.md korrigieren; S1 09-mediach.md stale). Lead-Doc-Arbeit.
+2. **JETZT/klein — L1** Rwabs physical-mode (RW_NOTRANSLATE Bit 3, `bios/mod.rs`
+   `rwabs`). ✅ **S1–S3 erledigt** (Commits `310c00b` S2/S3 + `52adb52` S1):
+   os_version=0x0404, ADR-012/„Zwei-Welten" durch B1 widerlegt+korrigiert,
+   09-mediach.md stale-Text nachgezogen. **L2** (Bconin conterm-Bit3-Fold) →
+   verschoben in die „fehlende Sysvars"-Phase: `conterm@$484` existiert im Code
+   NICHT und muss erst als Sysvar (Default 7) eingeführt werden — ist eine
+   fehlende Sysvar, kein Bug (Default 7 = Bit 3 clear = kein Fold = heute schon
+   EmuTOS-treu).
 3. **EIGENES THEMA — EL0-Upcall-/Signal-Mechanismus** (EL1→EL0): löst **H1**
    (etv_*-Dispatch installierter Hooks) + **M1** (Rwabs→installierter etv_critic +
    CRITIC_RETRY_REQUEST) + **P4-012** (eralert) + **vex** (Maus-ISR→EL0, V6) +
