@@ -487,6 +487,13 @@ unsafe fn populate_and_map(
     // EL0 before the process runs.
     populate_sysvars(tpa_bytes);
 
+    // Write the per-process EL0 upcall trampoline into the reserved
+    // low-memory gap (cooperative-kernel building block 1,
+    // docs/analysis/coop-kernel/10-upcall-signal-design.md §4). Same page-0
+    // region, same pre-cache-maintenance ordering as the sysvars, so the
+    // `sync_code_cache` below makes it observable to the EL0 fetch.
+    write_upcall_trampoline(tpa_bytes);
+
     // Make the freshly-written program bytes observable to instruction
     // fetch on real hardware (clean D-cache to PoU + invalidate I-cache
     // over the image region only). QEMU has no caches, so this is a
@@ -675,6 +682,21 @@ const COOKIE_JAR_SLOTS: u32 = 16;
 /// Exclusive end of the classic low-memory system area (= jar end, 0x670).
 const SYSVAR_AREA_END: u64 = COOKIE_JAR_VA as u64 + (COOKIE_JAR_SLOTS as u64) * 8;
 
+/// EL0 VA of the per-process upcall trampoline (cooperative-kernel building
+/// block 1, `docs/analysis/coop-kernel/10-upcall-signal-design.md` §4.1).
+/// Placed in the reserved low-memory gap `[SYSVAR_AREA_END (0x670),
+/// RESERVED_LOW_END (0x1000))`, inside page 0 (mapped [`PageFlags::UserRwExec`]),
+/// so it is EL0-executable with no extra mapping and collides with nothing
+/// (above the sysvar area, below the app image base). The kernel-side model
+/// of FreeMiNT's per-process `user_things` trampoline (`user_things.S`), at a
+/// fixed VA rather than via `tp_ptr`.
+pub const TRAMPOLINE_VA: u64 = 0x700;
+
+// The trampoline (5 × 4-byte A64 instructions) must sit wholly in the gap
+// between the sysvar area and the app image base.
+const _: () = assert!(TRAMPOLINE_VA >= SYSVAR_AREA_END);
+const _: () = assert!(TRAMPOLINE_VA + 5 * 4 <= RESERVED_LOW_END);
+
 /// OSHEADER `os_version` (+0x02): Falcon TOS 4.04. EmuTOS' own default is
 /// 0x206 (`config.h:1367-1372`); NewTOS reports 4.04 — user-pinned.
 const OS_VERSION: u16 = 0x0404;
@@ -862,6 +884,41 @@ fn populate_sysvars(tpa: &mut [u8]) {
     let off = jar + (slot as usize) * 8;
     wr_long(tpa, off, 0);
     wr_long(tpa, off + 4, COOKIE_JAR_SLOTS);
+}
+
+/// The five AArch64 instructions of the EL0 upcall trampoline (design §4.2),
+/// stored as little-endian words. On handler `ret` (PC = LR =
+/// [`TRAMPOLINE_VA`]) it calls `Psigreturn` (GEMDOS 0x11A) — bit-exact with
+/// FreeMiNT's `move.w #0x011a` (`user_things.S`) — to resume the interrupted
+/// EL0 context; the tail is FreeMiNT's `pc_valid_return` safety net
+/// (`Pterm(-998)`), taken only if `Psigreturn` ever wrongly returns. No EL0
+/// stack push is needed: the handler argument and return address travel in
+/// registers (x0..x3, LR), not on the stack, per AAPCS64 (design §4.2).
+///
+/// Encodings verified with `aarch64-elf-as`:
+/// ```text
+///   d2802348  mov x8, #0x11A   ; Psigreturn function id
+///   d4000021  svc #1           ; GEMDOS trap — does not return
+///   d29f8340  mov x0, #0xFC1A  ; -998 as UWORD exit code
+///   d2800988  mov x8, #0x4C    ; Pterm
+///   d4000021  svc #1
+/// ```
+const TRAMPOLINE_CODE: [u32; 5] =
+    [0xD280_2348, 0xD400_0021, 0xD29F_8340, 0xD280_0988, 0xD400_0021];
+
+/// Write the EL0 upcall trampoline (design §4.2) into the reserved
+/// low-memory gap at [`TRAMPOLINE_VA`], through the kernel high-half alias
+/// `tpa`. Called from [`populate_and_map`] alongside [`populate_sysvars`],
+/// before the code-cache maintenance, so the freshly written instructions
+/// are cleaned to PoU / I-cache-invalidated over the image window
+/// (`image_top >= RESERVED_LOW_END > TRAMPOLINE_VA + 20`) and are visible to
+/// the EL0 instruction fetch on real hardware (QEMU is cache-less).
+fn write_upcall_trampoline(tpa: &mut [u8]) {
+    let base = TRAMPOLINE_VA as usize;
+    for (i, insn) in TRAMPOLINE_CODE.iter().enumerate() {
+        let off = base + i * 4;
+        tpa[off..off + 4].copy_from_slice(&insn.to_le_bytes());
+    }
 }
 
 /// Resolve an [`EnvSpec`] into an optional pool address for `p_env`,

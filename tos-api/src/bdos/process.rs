@@ -62,6 +62,17 @@ pub mod usermem;
 /// running app rarely exceeds five live processes.
 pub const MAX_PROCESSES: usize = 16;
 
+/// Maximum EL0-upcall nesting depth per process (cooperative-kernel
+/// building block 1, `docs/analysis/coop-kernel/10-upcall-signal-design.md`
+/// §6.3). Bounds the per-slot saved-context stack [`Process::upcall_ctx`];
+/// a delivery that would exceed it terminates the process with
+/// `Pterm(-998)` — the FreeMiNT "stack overflow" ALERT analogue
+/// (`references/freemint/sys/arch/sig_mach.c:138`). FreeMiNT instead bounds
+/// nesting by its 16-KiB system stack (~12 B/nest, `sig_mach.c:141-144`);
+/// NewTOS bounds it by this array. Memory: `ParentFrame` × 8 × 16 slots
+/// ≈ 34 KiB BSS (design §6.3).
+pub const MAX_UPCALL_NEST: usize = 8;
+
 /// Sentinel value for `parent_slot` indicating "no parent" (the boot
 /// process loaded by the kernel itself).
 pub const NO_PARENT: u32 = u32::MAX;
@@ -266,6 +277,61 @@ pub struct Process {
     /// `saved_frame` holds a valid context (the process has run and
     /// yielded). `false` = never entered → start fresh at `entry_va`.
     pub has_ctx: AtomicBool,
+
+    // ── cooperative-kernel EL0 upcall / signal delivery (building block 1,
+    //    docs/analysis/coop-kernel/10-upcall-signal-design.md §6) ──
+    /// Kernel-side stack of interrupted EL0 contexts, one per active
+    /// (possibly nested) upcall. `deliver_upcall` pushes the pre-upcall
+    /// frame here (with the syscall result already in `gpr[0]`, §6.2);
+    /// `Psigreturn` (GEMDOS 0x11A) pops + restores it. Bounded by
+    /// [`MAX_UPCALL_NEST`]. Kernel-side rather than on the EL0 stack (design
+    /// §6.1: an EL0 app cannot corrupt the resume context). Styled on
+    /// [`Self::saved_frame`].
+    pub upcall_ctx: [ParentFrame; MAX_UPCALL_NEST],
+
+    /// Mask bit each [`Self::upcall_ctx`] level was delivered with, so
+    /// `Psigreturn` clears exactly the bit its level set. FreeMiNT recovers
+    /// the signal number from the on-stack frame (`sig_mach.c:277,291`); with
+    /// the kernel-side context stack we key it off the nesting depth instead.
+    pub upcall_ctx_mask: [AtomicU32; MAX_UPCALL_NEST],
+
+    /// Current upcall nesting depth (= number of live [`Self::upcall_ctx`]
+    /// entries). `deliver_upcall` increments, `Psigreturn` decrements.
+    pub upcall_depth: AtomicU8,
+
+    /// Set of upcall-type bits currently being handled — the FreeMiNT
+    /// `p_sigmask` analogue (`sig_mach.c:291`). A type stays masked while its
+    /// handler runs and is cleared on the matching `Psigreturn`.
+    pub upcall_mask: AtomicU32,
+
+    /// Pending (posted, not-yet-delivered) upcall handler VA, or `0` for
+    /// none — the presence sentinel of the [`UpcallDesc`] posted by
+    /// [`post_upcall`] and consumed by [`take_pending_upcall`] (the per-slot
+    /// [`request_terminate`]/[`take_pending_terminate`] analogue, design §7.1).
+    pub upcall_pending_handler: AtomicU64,
+
+    /// Argument registers (x0..x3) of the pending upcall.
+    pub upcall_pending_args: [AtomicU64; 4],
+
+    /// Mask bit of the pending upcall.
+    pub upcall_pending_mask: AtomicU32,
+}
+
+/// A pending EL0 upcall: the handler VA to jump to, up to four
+/// argument-register values (x0..x3, AAPCS64), and the mask bit identifying
+/// the upcall type (set on delivery, cleared by `Psigreturn`). The
+/// consumers (etv_*, vex, G_USERDEF, eralert, …) supply the handler VA
+/// directly — this is disposition-agnostic, not a POSIX signal number
+/// resolved through a table (design §1). Analogue of a FreeMiNT signal
+/// resolved to its `sa_handler` (`sig_mach.c`).
+#[derive(Copy, Clone)]
+pub struct UpcallDesc {
+    /// EL0 VA of the handler the process runs before resuming.
+    pub handler_va: u64,
+    /// Handler arguments, delivered in x0..x3.
+    pub args: [u64; 4],
+    /// Upcall-type bit (masked while the handler runs).
+    pub mask_bit: u32,
 }
 
 // ─── Parent-frame snapshot ──────────────────────────────────────────
@@ -369,6 +435,13 @@ impl Process {
             saved_frame: ParentFrame::zeroed(),
             runnable: AtomicBool::new(false),
             has_ctx: AtomicBool::new(false),
+            upcall_ctx: [const { ParentFrame::zeroed() }; MAX_UPCALL_NEST],
+            upcall_ctx_mask: [const { AtomicU32::new(0) }; MAX_UPCALL_NEST],
+            upcall_depth: AtomicU8::new(0),
+            upcall_mask: AtomicU32::new(0),
+            upcall_pending_handler: AtomicU64::new(0),
+            upcall_pending_args: [const { AtomicU64::new(0) }; 4],
+            upcall_pending_mask: AtomicU32::new(0),
         }
     }
 
@@ -485,6 +558,60 @@ pub fn take_pending_terminate() -> Option<i32> {
     }
 }
 
+// ─── Deferred EL0 upcall (cooperative-kernel building block 1) ──────
+//
+// The `request_terminate`/`take_pending_terminate` analogue for the generic
+// EL0→EL1 upcall primitive (design §7.1), but per-slot: a consumer posts a
+// handler + arguments to a target process's slot, and the SVC handler
+// delivers it at that process's next syscall return to EL0. Lock-free over
+// the slot atomics; `upcall_pending_handler` (VA, `0` = none) is the
+// presence sentinel, written last on post and swapped to `0` on take so a
+// reader that observes it set also observes the args/mask stored before it.
+
+/// Post an [`UpcallDesc`] to `slot`, to be delivered at that process's next
+/// syscall return to EL0 (design §7.1). A previously-posted, not-yet-
+/// delivered upcall is overwritten (last writer wins); the current consumers
+/// post at most one pending upcall per delivery point. Out-of-range `slot`
+/// is a no-op.
+pub fn post_upcall(slot: usize, desc: UpcallDesc) {
+    if slot >= MAX_PROCESSES {
+        return;
+    }
+    let p = &PROCESS_TABLE[slot];
+    for (i, a) in p.upcall_pending_args.iter().enumerate() {
+        a.store(desc.args[i], Ordering::Release);
+    }
+    p.upcall_pending_mask.store(desc.mask_bit, Ordering::Release);
+    // Presence sentinel last (release): a `take` that sees it nonzero also
+    // sees the args/mask stored above.
+    p.upcall_pending_handler
+        .store(desc.handler_va, Ordering::Release);
+}
+
+/// Consume a pending upcall for `slot`, if any (design §7.1). Swaps the
+/// `handler_va` sentinel to `0` and, if it was set, reads back the
+/// args/mask posted before it. Out-of-range `slot` yields `None`.
+pub fn take_pending_upcall(slot: usize) -> Option<UpcallDesc> {
+    if slot >= MAX_PROCESSES {
+        return None;
+    }
+    let p = &PROCESS_TABLE[slot];
+    let handler_va = p.upcall_pending_handler.swap(0, Ordering::AcqRel);
+    if handler_va == 0 {
+        return None;
+    }
+    let mut args = [0u64; 4];
+    for (i, a) in p.upcall_pending_args.iter().enumerate() {
+        args[i] = a.load(Ordering::Acquire);
+    }
+    let mask_bit = p.upcall_pending_mask.load(Ordering::Acquire);
+    Some(UpcallDesc {
+        handler_va,
+        args,
+        mask_bit,
+    })
+}
+
 /// The "queued for next eret" basepage, or `null`.
 #[inline]
 pub fn pending() -> *mut BasePage {
@@ -542,6 +669,20 @@ pub fn free_slot(idx: usize) {
     p.parent_slot.store(NO_PARENT, Ordering::Release);
     p.parent_frame.clear();
     p.parent_l0_pa.store(0, Ordering::Release);
+    // Reset the EL0 upcall state so a reused slot starts clean.
+    p.upcall_depth.store(0, Ordering::Release);
+    p.upcall_mask.store(0, Ordering::Release);
+    p.upcall_pending_handler.store(0, Ordering::Release);
+    for a in p.upcall_pending_args.iter() {
+        a.store(0, Ordering::Release);
+    }
+    p.upcall_pending_mask.store(0, Ordering::Release);
+    for c in p.upcall_ctx.iter() {
+        c.clear();
+    }
+    for m in p.upcall_ctx_mask.iter() {
+        m.store(0, Ordering::Release);
+    }
     // State last so that any concurrent reader sees `Free` only once
     // every other field is observably reset.
     p.state.store(State::Free as u8, Ordering::Release);

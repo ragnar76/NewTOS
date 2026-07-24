@@ -52,6 +52,7 @@ pub mod selftest_console;
 pub mod selftest_cookie;
 pub mod selftest_objc;
 pub mod selftest_sysvars;
+pub mod selftest_upcall;
 pub mod aes_demo;
 pub mod desk;
 pub mod launch;

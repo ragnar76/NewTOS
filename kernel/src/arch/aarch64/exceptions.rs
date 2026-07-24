@@ -294,6 +294,15 @@ pub extern "C" fn rust_sync_handler(frame: &mut ExceptionFrame) {
             handle_pwait(frame);
             return;
         }
+        // Psigreturn (0x11A) — the EL0 upcall trampoline's return syscall
+        // (cooperative-kernel building block 1, design §5). Frame-mutating,
+        // so it branches here before the leaf table exactly like
+        // Pexec/Pterm/Pwait; it is also > MAX_FN (0x57) and would otherwise
+        // fall through to `EINVFN`.
+        if func == 0x11A {
+            handle_psigreturn(frame);
+            return;
+        }
     }
 
     let args = TrapArgs {
@@ -368,6 +377,25 @@ pub extern "C" fn rust_sync_handler(frame: &mut ExceptionFrame) {
     // Write the 64-bit result into `x0` (error codes are already
     // sign-extended; `Getbpb` returns a full pointer).
     frame.gpr[0] = result as u64;
+
+    // Deferred EL0 upcall delivery (cooperative-kernel building block 1,
+    // docs/analysis/coop-kernel/10-upcall-signal-design.md §7.1) — the
+    // structural twin of the `take_pending_terminate` hook above. After the
+    // syscall result is in `x0`, and only when this trap returns to EL0
+    // (SPSR.M == EL0t; an EL1 in-kernel caller is never an upcall target),
+    // deliver a pending upcall for the running process: snapshot the frame
+    // (including the result just written, §6.2) and redirect the post-handler
+    // `eret` into the EL0 handler. `take_pending_terminate` keeps priority.
+    if frame.spsr & 0xF == 0 {
+        if let Some(slot_idx) = tos_api::bdos::process::slot_for(
+            tos_api::bdos::process::current(),
+        ) {
+            if let Some(u) = tos_api::bdos::process::take_pending_upcall(slot_idx)
+            {
+                deliver_upcall(frame, u);
+            }
+        }
+    }
 }
 
 /// `Pwait` (GEMDOS 0x4D) — cooperative yield. Snapshot the running peer's
@@ -607,6 +635,123 @@ fn finish_terminate(
             tos_api::bdos::process::mmu::install_ttbr0(resume.parent_l0_pa);
         }
     }
+}
+
+/// Deliver a pending EL0 upcall (cooperative-kernel building block 1,
+/// `docs/analysis/coop-kernel/10-upcall-signal-design.md` §4/§6/§7). Snapshot
+/// the current (already-result-bearing, §6.2) EL0 frame onto the running
+/// process's kernel-side upcall context stack, then redirect the frame so the
+/// post-handler `eret` lands in the EL0 handler — with `args` in `x0..x3`
+/// (AAPCS64) and the EL0 trampoline ([`TRAMPOLINE_VA`], which calls
+/// `Psigreturn`) in the link register. The handler runs on the interrupted
+/// `SP_EL0`, re-aligned to 16 bytes with a red-zone guard (§6.4). Pure frame
+/// mutation, identical in style to `apply_switch`'s resume branch. On nesting
+/// overflow (`> MAX_UPCALL_NEST`) the process is terminated with `Pterm(-998)`
+/// (§6.3).
+fn deliver_upcall(
+    frame: &mut ExceptionFrame,
+    desc: tos_api::bdos::process::UpcallDesc,
+) {
+    use core::sync::atomic::Ordering;
+    use tos_api::bdos::process::{
+        current, loader::TRAMPOLINE_VA, slot_for, MAX_UPCALL_NEST, PROCESS_TABLE,
+    };
+
+    // The caller established a pending upcall for the running slot, so
+    // `current()` is a live process; recompute its slot for the store.
+    let slot_idx = match slot_for(current()) {
+        Some(i) => i,
+        None => return,
+    };
+    let p = &PROCESS_TABLE[slot_idx];
+
+    let depth = p.upcall_depth.load(Ordering::Acquire) as usize;
+    if depth >= MAX_UPCALL_NEST {
+        // Nesting overflow (§6.3): terminate like FreeMiNT's "stack
+        // overflow" ALERT (`sig_mach.c:138`), exit code -998.
+        terminate_and_redirect(frame, -998);
+        return;
+    }
+
+    // Save the interrupted context — all 30 GPRs (the EL0 code is stopped at
+    // an arbitrary point, so any register may be live; §6.2), plus lr / elr /
+    // spsr / sp_el0 — so `Psigreturn` can resume it, including the syscall
+    // result already in `gpr[0]`.
+    let ctx = &p.upcall_ctx[depth];
+    for i in 0..30 {
+        ctx.gpr(i).store(frame.gpr[i], Ordering::Release);
+    }
+    ctx.lr().store(frame.lr, Ordering::Release);
+    ctx.elr().store(frame.elr, Ordering::Release);
+    ctx.spsr().store(frame.spsr, Ordering::Release);
+    ctx.sp_el0().store(frame.sp_el0, Ordering::Release);
+    // Record which mask bit this level set so `Psigreturn` clears exactly it.
+    p.upcall_ctx_mask[depth].store(desc.mask_bit, Ordering::Release);
+    p.upcall_depth.store((depth + 1) as u8, Ordering::Release);
+    // Mark the upcall type active (FreeMiNT `p_sigmask`, `sig_mach.c:291`).
+    let m = p.upcall_mask.load(Ordering::Acquire);
+    p.upcall_mask.store(m | desc.mask_bit, Ordering::Release);
+
+    // Redirect the frame to the EL0 handler.
+    frame.gpr[0] = desc.args[0];
+    frame.gpr[1] = desc.args[1];
+    frame.gpr[2] = desc.args[2];
+    frame.gpr[3] = desc.args[3];
+    frame.elr = desc.handler_va;
+    frame.lr = TRAMPOLINE_VA;
+    // AAPCS64 16-byte alignment (an IRQ boundary may leave `SP_EL0`
+    // unaligned) + a 0x20 red-zone guard below it (§6.4). `- 0x20` keeps the
+    // 16-byte alignment produced by `& !0xF`.
+    frame.sp_el0 = (frame.sp_el0 & !0xF).wrapping_sub(0x20);
+    // `frame.spsr` is left as-is — the handler runs in the same EL0 context.
+}
+
+/// GEMDOS `Psigreturn` (0x11A) — the EL0 upcall trampoline's return syscall
+/// (design §5). Pop the top saved EL0 context off the running process's
+/// kernel-side upcall stack and restore it over the trap frame (GPRs + lr +
+/// elr + spsr + sp_el0), so the post-handler `eret` resumes the interrupted
+/// EL0 code exactly where the upcall diverted it — including the original
+/// syscall's `x0` (§7.2). Clears the delivered upcall's mask bit and pops the
+/// nesting level. Same restore style as `finish_terminate`. An empty stack is
+/// caller misuse: leave the frame and report `EINVFN` (like
+/// `finish_terminate`'s misuse branch, §5.2).
+fn handle_psigreturn(frame: &mut ExceptionFrame) {
+    use core::sync::atomic::Ordering;
+    use tos_api::bdos::process::{current, slot_for, PROCESS_TABLE};
+
+    let slot_idx = match slot_for(current()) {
+        Some(i) => i,
+        None => {
+            frame.gpr[0] = tos_types::error::EINVFN as i64 as u64;
+            return;
+        }
+    };
+    let p = &PROCESS_TABLE[slot_idx];
+
+    let depth = p.upcall_depth.load(Ordering::Acquire) as usize;
+    if depth == 0 {
+        // Misuse: `Psigreturn` with no upcall in flight.
+        frame.gpr[0] = tos_types::error::EINVFN as i64 as u64;
+        return;
+    }
+    let top = depth - 1;
+    let ctx = &p.upcall_ctx[top];
+    for i in 0..30 {
+        frame.gpr[i] = ctx.gpr(i).load(Ordering::Acquire);
+    }
+    frame.lr = ctx.lr().load(Ordering::Acquire);
+    frame.elr = ctx.elr().load(Ordering::Acquire);
+    frame.spsr = ctx.spsr().load(Ordering::Acquire);
+    frame.sp_el0 = ctx.sp_el0().load(Ordering::Acquire);
+
+    // Clear the mask bit this level set (FreeMiNT `p_sigmask &= ~…`,
+    // `sig_mach.c:291`), pop the level, and scrub the reused slot.
+    let bit = p.upcall_ctx_mask[top].load(Ordering::Acquire);
+    let m = p.upcall_mask.load(Ordering::Acquire);
+    p.upcall_mask.store(m & !bit, Ordering::Release);
+    p.upcall_ctx_mask[top].store(0, Ordering::Release);
+    p.upcall_depth.store(top as u8, Ordering::Release);
+    ctx.clear();
 }
 
 /// Read a NUL-terminated string from a user-space VA into `buf` using
