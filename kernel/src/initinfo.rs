@@ -189,7 +189,7 @@ pub fn run() {
     v.gtext(cx, y, b"NewTOS is an independent project - not original Atari software.");
     y += 22;
     v.set_text_color(BLUE);
-    v.gtext(cx, y, b"Booting the desktop...");
+    v.gtext(cx, y, b"Adapted by Ingo Uhlemann with Claude AI...");
 
     v.close();
 }
