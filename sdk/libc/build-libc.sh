@@ -121,7 +121,12 @@ DIRS="stdio stdlib string mintlib unix syscall time misc multibyte signal termio
 #   TOS analog -- pulled by tz/localtime.c's access() call)
 # time/clock.c   -> newtos-arch/clock.c   (clock() over Tgetdate/Tgettime; the
 #   m68k _hz_200 sysvar read via get_sysvar/getsysvar.S has no AArch64 analog)
-EXCLUDE="mintlib/do_fstat.c mintlib/isatty.c mintlib/do_stat.c unix/access.c time/clock.c"
+# mintlib/thread.c: MiNT Pxxx thread-fork (tfork) — builds a child BASEPAGE and
+# treats its fields as native pointers. Incompatible with NewTOS's LP64 256-byte
+# basepage (a 4-byte p_env is not a char*) AND with the single-tasking model; it
+# was already semantically broken on LP64 (376-byte basepage the kernel can't read)
+# and is unreferenced by any built app (QED/TeraDesk link with 0 undef). Excluded.
+EXCLUDE="mintlib/do_fstat.c mintlib/isatty.c mintlib/do_stat.c unix/access.c time/clock.c mintlib/thread.c"
 is_excluded() { case " $EXCLUDE " in *" $1 "*) return 0;; esac; return 1; }
 
 echo "clang : $($CLANG --version | head -1)"

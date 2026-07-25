@@ -377,23 +377,23 @@ __extension__								\
 /*
  * trap_14_wllwwwwwlw -- 9-argument XBIOS (Flopfmt, XBIOS 0x0A). NewTOS reads
  * only EIGHT argument registers (x0..x7; x8 holds the function id), so a 9th
- * argument has no register slot. This is a legacy floppy-format XBIOS call
- * that QED and the Stage-3 libc surface never issue. Rather than silently
- * truncate or fabricate a mapping (forbidden by CLAUDE.md rule 2), we emit a
- * guard that fails LOUDLY at compile time -- but only if the macro is actually
- * instantiated. Wiring an argument-stack tail (via SP_EL0, already captured in
- * the kernel ExceptionFrame) is a kernel-side ABI change and must be a
- * deliberate, spec-backed decision, not a silent SDK hack (STOP and report).
+ * argument has no register slot -- and, more fundamentally, NewTOS has NO
+ * floppy hardware. Per the floppy/DMA stub decision (user 2026-07-23, spec
+ * docs/api/xbios/_floppy-stubs.md), the whole floppy/DMA XBIOS group returns
+ * the contract value EUNDEV (-15) WITHOUT reading its arguments in the kernel,
+ * and Flopfmt is deliberately given NO 9th trap-ABI register slot. So this
+ * binding must NOT issue an svc: a normal 8-register svc would silently
+ * truncate / mis-pass the 9th argument. Instead it evaluates every argument
+ * for its C side-effects (each is a caller expression) and yields EUNDEV (-15)
+ * directly as a long. The macro signature is kept so Flopfmt() at osbind.h:633
+ * still expands correctly through it.
  */
 #define trap_14_wllwwwwwlw(n, a, b, c, d, e, f, g, h, i)		\
 __extension__								\
 ({									\
-	_Static_assert(0,						\
-		"NewTOS: XBIOS trap with 9 args (trap_14_wllwwwwwlw / "	\
-		"Flopfmt) has no register slot for the 9th argument; an "\
-		"argument-stack ABI must be added to the kernel SVC "	\
-		"dispatcher before this binding can be used");		\
-	(long)0;							\
+	(void)(n); (void)(a); (void)(b); (void)(c); (void)(d);		\
+	(void)(e); (void)(f); (void)(g); (void)(h); (void)(i);		\
+	(long)(-15);		/* EUNDEV -- no floppy device on NewTOS */\
 })
 
 
