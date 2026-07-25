@@ -43,33 +43,38 @@ typedef struct
 
 /* Structure used by Fgetdta(), Fsetdta(), Fsfirst(), Fsnext().
  *
- * NewTOS overlay (ADR-020, task #98): AArch64 4-byte-aligns `long`, so the
- * pristine mintlib _DTA would place dta_size at offset 28 / dta_name at 32.
- * The NewTOS kernel DTA writer `makbuf` (tos-api/src/bdos/fs/find.rs) writes
- * the TOS-canonical 44-byte layout with dta_attribute@21, dta_time@22,
- * dta_date@24, dta_size@26, d_fname@30. QED reads the DTA directly after
+ * NewTOS overlay (ADR-020, task #98): the on-wire / kernel DTA is the
+ * TOS-canonical 44-byte layout written by `makbuf`
+ * (tos-api/src/bdos/fs/find.rs): dta_attribute@21, dta_time@22, dta_date@24,
+ * dta_size@26 (a 4-byte LONG), d_fname@30. QED reads the DTA directly after
  * Fsfirst/Fsnext, so this struct MUST match that on-wire layout byte-for-byte.
- * `__attribute__((packed))` removes the alignment pad before dta_size, which on
- * ILP32 (`long` == 4 bytes) yields exactly dta_size@26 / dta_name@30, total 44.
- * The _Static_assert below (ILP32 only) pins those offsets to makbuf. */
+ *
+ * `dta_size` is a FIXED 32-bit type, NOT `long`: the on-wire size field is
+ * 4 bytes regardless of ABI, but a mintlib `long` is 8 bytes on LP64
+ * (AArch64) and would push dta_name to offset 34 / sizeof to 48, shifting
+ * every returned filename by 4 bytes. `__INT32_TYPE__` is exactly 32 bits on
+ * BOTH ILP32 (unchanged: `long` was already 4 bytes there) and LP64, so the
+ * packed struct is dta_size@26 / dta_name@30 / sizeof 44 on both ABIs.
+ * `__attribute__((packed))` removes the alignment pad before dta_size. The
+ * _Static_assert block below pins those offsets to makbuf on every ABI. */
 typedef struct _dta {
     char 	    dta_buf[21];	/* reserved */
     char            dta_attribute;	/* file attribute */
     unsigned short  dta_time;		/* file time stamp */
     unsigned short  dta_date;		/* file date stamp */
-    long            dta_size;		/* file size */
+    __INT32_TYPE__  dta_size;		/* file size (4-byte on-wire LONG) */
     char            dta_name[14];	/* file name */
 } __attribute__((packed)) _DTA;
 
-#if defined(__SIZEOF_LONG__) && (__SIZEOF_LONG__ == 4)
-/* ILP32: verify the packed on-wire offsets match kernel makbuf exactly. */
+/* Verify the packed on-wire offsets match kernel makbuf exactly, on BOTH
+ * ILP32 and LP64: dta_size is now a fixed 32-bit type, so these hold on every
+ * ABI, and a future regression that widens a field fails the build here. */
 _Static_assert(__builtin_offsetof(_DTA, dta_attribute) == 21, "dta_attribute@21");
 _Static_assert(__builtin_offsetof(_DTA, dta_time) == 22, "dta_time@22");
 _Static_assert(__builtin_offsetof(_DTA, dta_date) == 24, "dta_date@24");
 _Static_assert(__builtin_offsetof(_DTA, dta_size) == 26, "dta_size@26");
 _Static_assert(__builtin_offsetof(_DTA, dta_name) == 30, "dta_name@30");
 _Static_assert(sizeof(_DTA) == 44, "sizeof(_DTA) == 44");
-#endif
 
 typedef struct
 {
