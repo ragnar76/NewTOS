@@ -251,6 +251,12 @@ rules here.
 - Body explains **why**, not **what**. The diff shows the what.
 - Reference phase deliverable IDs: `Closes PHASE-02-D3`.
 - Never commit broken builds. Never commit failing tests without `#[ignore]` + reason.
+- **Keep `docs/STATUS.md` in lockstep — required, after every feature, not only
+  at phase ends.** For each landed extension: bump the affected phase row **and**
+  append a dated entry to *Recent Decisions* (what + why + the commit hashes), in
+  the **same** work unit — not "later". A foreign uncommitted change already in
+  `STATUS.md` is **not** an excuse to skip it: `git stash push -- docs/STATUS.md`,
+  add your entry on the clean base, commit, then `git stash pop`.
 
 ---
 
