@@ -225,6 +225,19 @@ pub fn track(tree: *mut Object, backend: &dyn RasterBackend) -> Option<(i16, i16
                     sub_box = NIL;
                     sub_item = NIL;
                 }
+                // Clear the previously-hovered item's SELECTED bit before pulling
+                // the box up, matching EmuTOS `mn_do` (gemmnlib.c:459
+                // `menu_select(tree, last_item, cur_item, FALSE)` →
+                // `do_chg(tree, last_item, SELECTED, FALSE, TRUE, TRUE)`). Without
+                // this the bit persists in the app's gl_mntree, so the menu reopens
+                // pre-highlighted and two items invert at once. `do_chg` runs with
+                // chkdisabled=TRUE, and a DISABLED item was never given SELECTED
+                // (`rehilite` guards on DISABLED, gemmnlib.c:471 does the same), so
+                // guard the clear identically to avoid the spurious redraw
+                // `set_state_bit` (dodraw=true) would emit on a disabled item.
+                if cur_item != NIL && (ObjTree::new(tp).state(cur_item) & DISABLED) == 0 {
+                    object::set_state_bit(tree, cur_item, SELECTED, false);
+                }
                 close_box(tree, cur_title, cur_box, backend);
                 cur_item = NIL;
             }
@@ -287,6 +300,17 @@ pub fn track(tree: *mut Object, backend: &dyn RasterBackend) -> Option<(i16, i16
                 return Some((cur_title, sub_item));
             }
             if sub_tree == 0 && cur_item != NIL {
+                // A DISABLED item is never delivered as a selection. EmuTOS `mn_do`
+                // (gemmnlib.c:493) gates the return on
+                // `do_chg(tree, cur_item, SELECTED, FALSE, FALSE, TRUE)`, which
+                // returns FALSE for a DISABLED item (chkdisabled, gemmnlib.c:159-160),
+                // so `done` stays FALSE and mn_do returns 0 — the menu ABORTS. On
+                // that abort it also un-hilites the title (:510) and pulls the box
+                // up (:492), i.e. exactly the existing no-selection cancel path.
+                if (ObjTree::new(tp).state(cur_item) & DISABLED) != 0 {
+                    close_box(tree, cur_title, cur_box, backend);
+                    return None;
+                }
                 // Clear the item's highlight bit and restore the screen under
                 // the box, cursor hidden so neither smears. The title stays
                 // highlighted: the app un-highlights it via menu_tnormal after
