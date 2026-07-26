@@ -125,6 +125,25 @@ else
   echo "note: sdk/apps/qed/build/{QED.NAP,qed.rsc} not built; C:\\Apps\\QED skipped"
 fi
 
+# TeraDesk 4.08 (GEM desktop replacement) — the second ported GEM application,
+# compiled UNMODIFIED (two overlays: nf_ops.c NatFeats-not-present retarget,
+# window.h WDFLAGS 2-byte fix) as native LP64. Its dist/ is staged by
+# sdk/apps/build-teradesk.sh: DESKTOP.NAP (the GEM program), desktop.rsc
+# (NRSC/LP64 for the kernel rsrc_load), icons.rsc (native-RSHDR for TeraDesk's
+# OWN xrsrc_load parser — NOT kernel-loadable). cicons.rsc is deliberately
+# absent (unsupported new-format CICONBLK; failure = designed mono fallback).
+# Launched by double-clicking DESKTOP.NAP — NEVER from \AUTO\ (ADR-018).
+TERA_DIR="$SCRIPT_DIR/../sdk/apps/teradesk/build/dist"
+if [ -f "$TERA_DIR/DESKTOP.NAP" ] && [ -f "$TERA_DIR/desktop.rsc" ] && [ -f "$TERA_DIR/icons.rsc" ]; then
+  mkdir -p "$V/Apps/TERADESK"
+  cp "$TERA_DIR/DESKTOP.NAP" "$V/Apps/TERADESK/DESKTOP.NAP"
+  cp "$TERA_DIR/desktop.rsc" "$V/Apps/TERADESK/desktop.rsc"
+  cp "$TERA_DIR/icons.rsc"   "$V/Apps/TERADESK/icons.rsc"
+  echo "installed C:\\Apps\\TERADESK\\{DESKTOP.NAP,desktop.rsc,icons.rsc} (ported GEM desktop, LP64)"
+else
+  echo "note: sdk/apps/teradesk/build/dist not staged; C:\\Apps\\TERADESK skipped (run sdk/apps/build-teradesk.sh)"
+fi
+
 # Strip macOS metadata so it does not clutter the directory listing.
 sync
 rm -rf "$V/.Spotlight-V100" "$V/.fseventsd" "$V/.Trashes" "$V/.TemporaryItems" 2>/dev/null || true
