@@ -80,16 +80,27 @@ pub(super) fn release_menu() {
 /// Menu-bar height in pixels (≈ char height + 3, the GEM `gl_hbox`).
 const BAR_H: i16 = 19;
 
-/// The y-coordinate where the desktop work area begins: the bottom edge of the
-/// installed menu bar ([`BAR_H`]), or `0` when no menu bar is installed. The
-/// window manager uses this to bound the desktop pseudo-window's rectangle list
-/// (the desk area = screen minus the menu bar); see `window::desktop_work`.
+/// The y-coordinate where the desktop work area begins: **always** the bottom
+/// edge of the menu-bar row ([`BAR_H`]), whether or not an application has
+/// installed a menu via `menu_bar`.
+///
+/// This mirrors EmuTOS `gl_rfull`, set **once** at `gsx_start` to
+/// `(0, gl_hbox, gl_width, gl_height - gl_hbox)`
+/// (`references/emutos/aes/gemgraf.c:424`), and copied into the desktop
+/// pseudo-window's work rect + owner rectangle list at `w_start`
+/// (`gemwmlib.c:1289,1294`) — before any `menu_bar` call. The AES desktop
+/// unconditionally reserves the top `gl_hbox` pixels for the menu row
+/// (`gl_rmenu = (0,0,gl_width,gl_hbox)`, gemgraf.c:427); the desktop background
+/// is never painted into that row, and windows are never moved above it.
+///
+/// `BAR_H` == `gl_hbox` == `gl_hchar + 3` (gemgraf.c:412); for the 8×16 desktop
+/// font `gl_hchar = 16`, so `gl_hbox = 19`.
+///
+/// The window manager uses this to seed the desktop pseudo-window's work
+/// rectangle and its rectangle list (the desk area = screen minus the menu
+/// row); see `window::desktop_work`.
 pub(super) fn desk_top() -> i16 {
-    if active().is_null() {
-        0
-    } else {
-        BAR_H
-    }
+    BAR_H
 }
 
 // ob_state bits.
