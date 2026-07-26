@@ -123,6 +123,31 @@ impl ObjTree {
         Self { base: base as u64, abi: Abi::Lp64, kernel_built: true }
     }
 
+    /// Build an accessor over an **app-provided** tree at `base`, reading fields
+    /// at an explicitly supplied `abi` width (captured earlier, **not** from the
+    /// current execution context) and with `kernel_built = false`.
+    ///
+    /// This is for a tree an EL0 GEM app hands the AES to draw **later**, when
+    /// the registering app may no longer be the current process — specifically
+    /// the desktop-background tree an app registers via
+    /// `wind_set(DESKWH, WF_NEWDESK, tree)` ([`crate::aes::window`]). Its ABI is
+    /// captured at registration (the app was current then) and replayed here;
+    /// and because the tree lives in EL0 app memory, a `G_USERDEF`'s `ub_code`
+    /// must be treated as an EL0 callback (`kernel_built = false` → deferred by
+    /// [`ob_user`], never called at EL1). [`Self::new`] would instead read
+    /// `current_abi()` at build time (wrong when the app is not current), and
+    /// [`Self::lp64`] would wrongly mark the app tree kernel-built (the
+    /// WF_NEWDESK-background crash: TeraDesk's `ub_bckbox` called at EL1 → PXN
+    /// instruction abort).
+    ///
+    /// # Invariant
+    /// As [`Self::new`]: `base` addresses a valid OBJECT array (at `abi` width)
+    /// and every index passed to a getter/setter is in range.
+    #[inline]
+    pub(crate) fn app_at(base: *const Object, abi: Abi) -> Self {
+        Self { base: base as u64, abi, kernel_built: false }
+    }
+
     /// The tree's ABI — the width at which its `ob_spec`-pointed sub-structs
     /// (TEDINFO/ICONBLK/BITBLK) are also packed. For an app tree ([`Self::new`])
     /// this is `current_abi()`; for a kernel-built tree ([`Self::lp64`]) it is
@@ -541,6 +566,34 @@ unsafe fn read_abi_word(base: u64, off: u64) -> i16 {
     unsafe { ((base + off) as *const i16).read_unaligned() }
 }
 
+/// Write a pointer field at `off` in `base` at the given ABI width (the inverse
+/// of [`read_abi_ptr`]): an 8-byte store for LP64, the low 4 bytes for ILP32.
+///
+/// # Safety
+/// `base + off` addresses a writable pointer field of the sub-struct, sized
+/// 8 (LP64) / 4 (ILP32) bytes.
+#[inline]
+unsafe fn write_abi_ptr(base: u64, off: u64, abi: Abi, v: u64) {
+    let p = (base + off) as *mut u8;
+    // SAFETY: caller's contract — `base + off` is a writable pointer field.
+    unsafe {
+        match abi {
+            Abi::Lp64 => (p as *mut u64).write_unaligned(v),
+            Abi::Ilp32 => (p as *mut u32).write_unaligned(v as u32),
+        }
+    }
+}
+
+/// Write a WORD field at `off` in `base` (the inverse of [`read_abi_word`]).
+///
+/// # Safety
+/// `base + off` addresses a writable 2-byte WORD field of the sub-struct.
+#[inline]
+unsafe fn write_abi_word(base: u64, off: u64, v: i16) {
+    // SAFETY: caller's contract — `base + off` is a writable 2-byte WORD field.
+    unsafe { ((base + off) as *mut i16).write_unaligned(v) }
+}
+
 impl BitBlk {
     /// Materialise the BITBLK at `base` at the tree's ABI width. Layout: one
     /// pointer (`bi_pdata`) @0, then five WORDs at `abi_ptr_size` (@8 LP64 /
@@ -699,6 +752,45 @@ pub struct ParmBlk {
     pub pb_parm: u64,
 }
 
+impl ParmBlk {
+    /// Write this PARMBLK into `dst` (a kernel VA aliasing the EL0 scratch
+    /// region) at the tree's `abi` width, matching the app's C `PARMBLK`
+    /// (`mt_gem.h`): `OBJECT *pb_tree; short pb_obj..pb_hc; long pb_parm;`.
+    /// The pointer fields (`pb_tree`, `pb_parm`) are ABI-width (8 LP64 / 4
+    /// ILP32); the eleven WORDs are ABI-neutral. `pb_parm` follows the WORD
+    /// block at the next pointer-aligned offset — the natural C-struct
+    /// padding (LP64: `pb_parm` @32 in a 40-byte struct; ILP32: @28 in a
+    /// 32-byte struct). Mirror of [`UserBlk::read_abi`] / the `ObjTree`
+    /// field-offset machinery (AES-as-thread design §4).
+    ///
+    /// # Safety
+    /// `dst .. dst + 40` is a writable region (the reserved PARMBLK scratch
+    /// aliased through the kernel high-half); `abi` is the tree's ABI.
+    unsafe fn write_abi(&self, dst: u64, abi: Abi) {
+        let ps = abi_ptr_size(abi); // 8 (LP64) / 4 (ILP32)
+        let w = ps; // first WORD offset (pb_obj), just past the pointer
+        // pb_parm follows the 11 WORDs (22 bytes), pointer-aligned.
+        let parm_off = (w + 22).next_multiple_of(ps);
+        // SAFETY: forwarded to the field writers' contract — `dst` backs the
+        // widest (LP64, 40-byte) layout, so every field offset is in range.
+        unsafe {
+            write_abi_ptr(dst, 0, abi, self.pb_tree);
+            write_abi_word(dst, w, self.pb_obj);
+            write_abi_word(dst, w + 2, self.pb_prevstate);
+            write_abi_word(dst, w + 4, self.pb_currstate);
+            write_abi_word(dst, w + 6, self.pb_x);
+            write_abi_word(dst, w + 8, self.pb_y);
+            write_abi_word(dst, w + 10, self.pb_w);
+            write_abi_word(dst, w + 12, self.pb_h);
+            write_abi_word(dst, w + 14, self.pb_xc);
+            write_abi_word(dst, w + 16, self.pb_yc);
+            write_abi_word(dst, w + 18, self.pb_wc);
+            write_abi_word(dst, w + 20, self.pb_hc);
+            write_abi_ptr(dst, parm_off, abi, self.pb_parm);
+        }
+    }
+}
+
 // Flag / state bits.
 const LASTOB: u16 = 0x0020;
 const HIDETREE: u16 = 0x0080;
@@ -846,6 +938,35 @@ pub unsafe fn render_tree_lp64(
         return;
     }
     render_tree_t(ObjTree::lp64(tree), start, depth, cx, cy, cw, ch, backend);
+}
+
+/// As [`render_tree_lp64`], but for an **app-provided** background tree an EL0
+/// GEM app registered via `wind_set(DESKWH, WF_NEWDESK, tree)`: read the tree at
+/// the `abi` captured at registration and treat it as **not** kernel-built
+/// ([`ObjTree::app_at`]), so a `G_USERDEF`'s `ub_code` is an EL0 callback that
+/// [`ob_user`] defers instead of calling at EL1. This is the WF_NEWDESK-
+/// background counterpart to the ILP32-app `objc_draw`-via-SVC path
+/// ([`ObjTree::new`]): the same privilege guard, but with the ABI recorded at
+/// registration because the composite runs when the app may not be current.
+///
+/// # Safety
+/// `tree` must be a valid `OBJECT` array (at `abi` width) with `start` in range.
+#[allow(clippy::too_many_arguments)]
+pub unsafe fn render_tree_app(
+    tree: *const Object,
+    start: i16,
+    depth: i16,
+    cx: i16,
+    cy: i16,
+    cw: i16,
+    ch: i16,
+    abi: Abi,
+    backend: &dyn RasterBackend,
+) {
+    if tree.is_null() || start < 0 {
+        return;
+    }
+    render_tree_t(ObjTree::app_at(tree, abi), start, depth, cx, cy, cw, ch, backend);
 }
 
 /// Shared body of [`render_tree`]/[`render_tree_lp64`]: draw the subtree rooted
@@ -1960,7 +2081,10 @@ fn ob_user(
         pb_hc: clip.ymx - clip.ymn + 1,
         pb_parm: ub.ub_parm,
     };
-    if t.kernel_built() && ub.ub_code != 0 {
+    if ub.ub_code == 0 {
+        // No USERBLK draw routine — nothing to call; keep the state unchanged.
+        new_state
+    } else if t.kernel_built() {
         // Same-privilege EL1 callback: `ub_code` is a native
         // `extern "C" fn(*const ParmBlk) -> WORD`. Go through a data pointer
         // (not an integer) so no int-to-fn transmute lint fires.
@@ -1971,8 +2095,39 @@ fn ob_user(
         let f: extern "C" fn(*const ParmBlk) -> i16 = unsafe { core::mem::transmute(code) };
         f(&pb) as u16
     } else {
-        // EL0 target (app tree): upcall deferred — PARMBLK prepared, state kept.
-        new_state
+        // App-provided tree: `ub_code` lives in EL0 app memory. Synchronous
+        // `G_USERDEF` callout via the AES fiber (AES-as-thread design §3.4/§5
+        // step 2). Write the PARMBLK into the process's reserved EL0 scratch —
+        // through the kernel high-half alias `basepage_kva + PARMBLK_SCRATCH_VA`,
+        // at the tree's ABI width — then stall the fiber: the kernel runs
+        // `ub_code(parmblk)` at EL0 (no PXN) and resumes us with the WORD result
+        // (EmuTOS `state = ob_user(...)`, gemoblib.c:793). No live process slot
+        // (e.g. an EL1 test caller reaching an app tree) falls back to the old
+        // "keep the state" behaviour rather than dereferencing a null basepage.
+        use crate::bdos::process::loader::{PARMBLK_SCRATCH_VA, USER_VA_BASE};
+        use crate::bdos::process::{current, slot_for, PROCESS_TABLE};
+        match slot_for(current()) {
+            Some(slot) => {
+                let bp = PROCESS_TABLE[slot]
+                    .basepage_kva
+                    .load(Ordering::Acquire) as u64;
+                if bp == 0 {
+                    new_state
+                } else {
+                    // SAFETY: `bp + PARMBLK_SCRATCH_VA` is the kernel high-half
+                    // alias of the reserved scratch in the process's page 0,
+                    // RW-mapped, ≥ 40 bytes; single-CPU under the trap.
+                    unsafe { pb.write_abi(bp + PARMBLK_SCRATCH_VA, t.abi()); }
+                    let parmblk_ptr = USER_VA_BASE + PARMBLK_SCRATCH_VA;
+                    crate::aes::thread::block_for_userdef(
+                        slot,
+                        ub.ub_code,
+                        parmblk_ptr,
+                    ) as u16
+                }
+            }
+            None => new_state,
+        }
     }
 }
 

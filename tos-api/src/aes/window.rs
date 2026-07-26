@@ -17,12 +17,13 @@
 //! `graf_*` are Batch 2+. No save/restore under windows yet (see the
 //! Menu-Manager note); closing erases to the desktop background.
 
-use super::object::{render_tree_lp64, Object};
+use super::object::{render_tree_app, render_tree_lp64, Object};
 use super::Aespb;
+use crate::bdos::process::Abi;
 use crate::host::host;
 use crate::vdi::backend::{ClipRect, Pel, PatternFill, RasterBackend, Rect, WriteMode};
 use core::cell::UnsafeCell;
-use core::sync::atomic::{AtomicI16, AtomicU64, Ordering};
+use core::sync::atomic::{AtomicBool, AtomicI16, AtomicU64, AtomicU8, Ordering};
 
 // ── kind (border widget) bits, aesdefs.h:519-531 ──
 const NAME: u16 = 0x0001;
@@ -371,16 +372,36 @@ fn top_window(handle: i16) {
 /// array, set via `wind_set(DESKWH, WF_NEWDESK, tree, 1, root)`. `0` = none →
 /// [`paint_bg_clip`] draws the AES-internal fallback root instead.
 ///
-/// This is a **native (LP64) `Object` array** — the desktop's `g_screen`, a
-/// kernel-built tree — so [`paint_bg_clip`] reads it via `render_tree_lp64`
-/// (forced 32-byte records), valid even while an ILP32 app is the current
-/// process. It stays stable for the desktop's lifetime (the arena is never
-/// reallocated), so holding the raw pointer across draws is sound.
+/// The registering caller records its origin + ABI in [`NEWDESK_APP`] /
+/// [`NEWDESK_ABI`] so the later background composite reads the tree at the right
+/// record width and treats a `G_USERDEF` callback at the right privilege. The
+/// NewTOS desktop registers its own **native (LP64) kernel-built** `g_screen`
+/// (drawn via `render_tree_lp64`); an EL0 GEM app (TeraDesk) registers an
+/// **app-provided** tree in EL0 memory (drawn via `render_tree_app`). It stays
+/// stable for its owner's lifetime (the arena is never reallocated), so holding
+/// the raw pointer across draws is sound.
 static NEWDESK_TREE: AtomicU64 = AtomicU64::new(0);
 
 /// The object index within [`NEWDESK_TREE`] that the background composite draws
 /// from (EmuTOS `gl_newroot`, `gemwmlib.c:55`; the desktop passes its `DROOT`).
 static NEWDESK_ROOT: AtomicI16 = AtomicI16::new(0);
+
+/// `true` iff the tree in [`NEWDESK_TREE`] was supplied by an **EL0 GEM app**
+/// (e.g. TeraDesk via `wind_set(WF_NEWDESK)`), `false` for the kernel/desktop's
+/// own native `g_screen`. Recorded in [`set_newdesk`] from whether a user
+/// process is running at registration time (`process::current()` non-null).
+/// Drives [`paint_bg_clip`]: an app tree is drawn as **not** kernel-built so a
+/// `G_USERDEF`'s EL0 `ub_code` is deferred by `ob_user` instead of being called
+/// at EL1 (the WF_NEWDESK crash: TeraDesk `ub_bckbox` → PXN instruction abort).
+static NEWDESK_APP: AtomicBool = AtomicBool::new(false);
+
+/// The ABI ([`Abi`] as `u8`) of the caller that registered [`NEWDESK_TREE`],
+/// captured in [`set_newdesk`] via `current_abi()`. The background composite
+/// runs later — possibly when a different (or no) process is current — so the
+/// tree's record width must be replayed from this captured value rather than
+/// re-read from `current_abi()` at draw time. A kernel/desktop registration
+/// records `Lp64`. Only consulted when [`NEWDESK_APP`] is `true`.
+static NEWDESK_ABI: AtomicU8 = AtomicU8::new(Abi::Lp64 as u8);
 
 /// `wind_set(DESKWH, WF_NEWDESK, …)` handler (EmuTOS `wm_set`,
 /// `gemwmlib.c:1685-1689`): register (non-null tree) or un-register (null tree)
@@ -396,6 +417,22 @@ fn set_newdesk(pb: &Aespb) {
     if tree == 0 {
         NEWDESK_TREE.store(0, Ordering::Release);
     } else {
+        // Capture the tree's origin + ABI at registration time; the background
+        // composite runs later, when a different (or no) process may be current.
+        // A running user process (`current()` non-null) means an EL0 GEM app is
+        // registering its own background tree — its `G_USERDEF` `ub_code` lives
+        // in EL0 and must not be up-called from EL1; a null `current()` is the
+        // kernel/desktop registering its native `g_screen`. `current_abi()`
+        // records the record width now (the app is current at this instant).
+        let is_app = !crate::bdos::process::current().is_null();
+        NEWDESK_APP.store(is_app, Ordering::Release);
+        NEWDESK_ABI.store(crate::bdos::process::current_abi() as u8, Ordering::Release);
+        // NEWDESK_ROOT is taken verbatim from caller input (EmuTOS trusts the
+        // desktop's `gl_newroot`/`DROOT` the same way, gemwmlib.c:1685). A
+        // negative index is defused downstream (`render_tree_*` bail on
+        // `start < 0`; `desktop_bg_obspec` clamps to 0); an out-of-range positive
+        // index cannot be validated here without the tree's object count, which
+        // WF_NEWDESK does not carry — left as the caller's contract.
         NEWDESK_ROOT.store(root, Ordering::Release);
         NEWDESK_TREE.store(tree, Ordering::Release);
     }
@@ -540,11 +577,30 @@ fn paint_bg_clip(backend: &dyn RasterBackend, clip: ClipRect) {
     let tree = NEWDESK_TREE.load(Ordering::Acquire);
     if tree != 0 {
         let root = NEWDESK_ROOT.load(Ordering::Acquire);
-        // SAFETY: `tree` is the desktop's `g_screen` base, registered via
-        // WF_NEWDESK; it is a valid native OBJECT array kept stable for the
-        // desktop's lifetime, `root` is in range.
-        unsafe {
-            render_tree_lp64(tree as *const Object, root, MAX_DEPTH, clip.xmn, clip.ymn, cw, ch, backend);
+        if NEWDESK_APP.load(Ordering::Acquire) {
+            // App-supplied background tree (EL0 GEM app, e.g. TeraDesk): read it
+            // at the ABI captured at registration and treat it as NOT
+            // kernel-built, so a `G_USERDEF`'s EL0 `ub_code` is deferred by
+            // `ob_user` rather than called at EL1 (→ PXN instruction abort at
+            // the app callback's VA, the WF_NEWDESK crash). The boxes/images of
+            // the tree still draw; the app userdef simply is not invoked (an
+            // EL0-upcall mechanism is out of scope — the goal is: no crash).
+            let abi = Abi::from_u8(NEWDESK_ABI.load(Ordering::Acquire));
+            // SAFETY: `tree` is the app's registered background-tree base — a
+            // valid OBJECT array (at `abi` width) kept stable for its lifetime;
+            // `root` in range (caller contract, see `set_newdesk`).
+            unsafe {
+                render_tree_app(tree as *const Object, root, MAX_DEPTH, clip.xmn, clip.ymn, cw, ch, abi, backend);
+            }
+        } else {
+            // Kernel/desktop-built native `g_screen` (LP64 records); a
+            // `G_USERDEF` here is a real EL1 callback (`kernel_built = true`).
+            // SAFETY: `tree` is the desktop's `g_screen` base, registered via
+            // WF_NEWDESK; a valid native OBJECT array kept stable for the
+            // desktop's lifetime, `root` in range.
+            unsafe {
+                render_tree_lp64(tree as *const Object, root, MAX_DEPTH, clip.xmn, clip.ymn, cw, ch, backend);
+            }
         }
     } else {
         let fb = fallback_root(backend.width() as i16, backend.height() as i16);

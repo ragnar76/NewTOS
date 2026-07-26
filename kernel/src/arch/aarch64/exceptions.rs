@@ -335,6 +335,11 @@ pub extern "C" fn rust_sync_handler(frame: &mut ExceptionFrame) {
     // returns the `Switch` to yield to, which is applied after the match below.
     let mut pending_switch: Option<tos_api::bdos::process::sched::Switch> = None;
 
+    // A synchronous AES `G_USERDEF` callout may stall the AES fiber mid-draw
+    // (AES-as-thread design §3.4(c)); the dispatch returns a `Stalled`
+    // descriptor, delivered as an EL0 callout after the match below.
+    let mut pending_stall: Option<tos_api::aes::thread::UserdefStall> = None;
+
     // Result is the full 64-bit `x0` value: GEMDOS returns a sign-
     // extended `Long`, but BIOS `Getbpb` returns a native 64-bit pointer.
     let result: i64 = match class {
@@ -353,8 +358,25 @@ pub extern "C" fn rust_sync_handler(frame: &mut ExceptionFrame) {
                 // SAFETY: `x1` is the caller-supplied parameter block.
                 115 => unsafe { tos_api::vdi::dispatch(args.regs[1], abi) },
                 // SAFETY: `x1` is the caller-supplied parameter block. A
-                // blocking `evnt_*` wait may return a peer Switch (S2).
-                200 => pending_switch = unsafe { tos_api::aes::dispatch(args.regs[1], abi) },
+                // blocking `evnt_*` wait may return a peer Switch (S2). The
+                // AES now runs on its dedicated EL1 fiber stack (step 1 of the
+                // AES-as-thread design, docs/analysis/coop-kernel/
+                // 30-aes-thread-design.md §3.4(a)); `call` is a byte-identical
+                // stack move over `dispatch` — no behaviour change in step 1.
+                200 => {
+                    // SAFETY: `x1` is the caller-supplied parameter block.
+                    match unsafe { tos_api::aes::thread::call(args.regs[1], abi) } {
+                        tos_api::aes::thread::AesCallOutcome::Complete(sw) => {
+                            pending_switch = sw;
+                        }
+                        // The draw stalled at an app `G_USERDEF`: run its EL0
+                        // `ub_code` via the callout stub, resume the fiber on
+                        // `Psigreturn` (design §3.4(c)/(e)).
+                        tos_api::aes::thread::AesCallOutcome::Stalled(desc) => {
+                            pending_stall = Some(desc);
+                        }
+                    }
+                }
                 _ => {} // unknown selector → no-op (GEM trap is trusted)
             }
             0
@@ -387,34 +409,46 @@ pub extern "C" fn rust_sync_handler(frame: &mut ExceptionFrame) {
         return;
     }
 
+    // A synchronous AES `G_USERDEF` callout stalled the fiber mid-draw
+    // (AES-as-thread design §3.4(c)): capture the client's origin frame on the
+    // first stall and redirect EL0 into the callout stub. Bails out of the
+    // result-write tail exactly like the `pending_switch` yield — the original
+    // `wind_*` call is not finished; its real result is committed only when the
+    // fiber completes (on the userdef `Psigreturn`, `handle_psigreturn`).
+    if let Some(desc) = pending_stall {
+        deliver_userdef_stall(frame, desc);
+        return;
+    }
+
     // TEMPORARY QED syscall tracer (debug tooling): record the completed EL0
     // call. Folds away when `QED_SVC_TRACE` is false.
     if crate::dbg_qedtrace::QED_SVC_TRACE && dbg_from_el0 {
         crate::dbg_qedtrace::post_dispatch(class, &args, result);
     }
 
-    // A blocking console input function (Cconin / Cnecin / Cconrs) may
-    // have seen a Ctrl-C and recorded a deferred `Pterm(-32)`. A leaf
-    // GEMDOS function returns a value in `x0` and cannot redirect the
-    // trap frame; consume the request here and terminate the process
-    // exactly like an explicit `Pterm`, discarding `result`.
+    complete_call_tail(frame, result);
+}
+
+/// Shared syscall-completion tail (AES-as-thread design §3.4(e), the extracted
+/// `complete_aes_call`). Called by both the ordinary trap path and the
+/// post-userdef-stall AES completion ([`handle_psigreturn`]) so the two share
+/// byte-identical behaviour:
+///
+///  1. A blocking console input (Cconin/Cnecin/Cconrs) may have seen a Ctrl-C
+///     and recorded a deferred `Pterm(-32)`; consume it and terminate exactly
+///     like an explicit `Pterm`, discarding `result`.
+///  2. Write the 64-bit `result` into `x0` (error codes already sign-extended;
+///     `Getbpb` returns a full pointer; a completed AES call passes `0`).
+///  3. On a return to EL0, deliver any pending EL0 upcall for the running
+///     process (deliver-on-return, design §7.1 / building block 1 §6.2).
+fn complete_call_tail(frame: &mut ExceptionFrame, result: i64) {
     if let Some(rc) = tos_api::bdos::process::take_pending_terminate() {
         terminate_and_redirect(frame, rc);
         return;
     }
 
-    // Write the 64-bit result into `x0` (error codes are already
-    // sign-extended; `Getbpb` returns a full pointer).
     frame.gpr[0] = result as u64;
 
-    // Deferred EL0 upcall delivery (cooperative-kernel building block 1,
-    // docs/analysis/coop-kernel/10-upcall-signal-design.md §7.1) — the
-    // structural twin of the `take_pending_terminate` hook above. After the
-    // syscall result is in `x0`, and only when this trap returns to EL0
-    // (SPSR.M == EL0t; an EL1 in-kernel caller is never an upcall target),
-    // deliver a pending upcall for the running process: snapshot the frame
-    // (including the result just written, §6.2) and redirect the post-handler
-    // `eret` into the EL0 handler. `take_pending_terminate` keeps priority.
     if frame.spsr & 0xF == 0 {
         if let Some(slot_idx) = tos_api::bdos::process::slot_for(
             tos_api::bdos::process::current(),
@@ -425,6 +459,112 @@ pub extern "C" fn rust_sync_handler(frame: &mut ExceptionFrame) {
             }
         }
     }
+}
+
+/// First half of an AES userdef callout (AES-as-thread design §3.4(c)): on the
+/// **first** stall of the current AES call — detected by
+/// [`AES_CALL_ORIGIN_SLOT`] still being [`AES_ORIGIN_NONE`] — snapshot the
+/// unchanged client trap frame into [`AES_CALL_ORIGIN`], then deliver the EL0
+/// callout stub. `deliver_userdef_upcall` mutates the frame (redirect), so the
+/// origin is captured first.
+///
+/// [`AES_CALL_ORIGIN`]: tos_api::aes::thread::AES_CALL_ORIGIN
+/// [`AES_CALL_ORIGIN_SLOT`]: tos_api::aes::thread::AES_CALL_ORIGIN_SLOT
+/// [`AES_ORIGIN_NONE`]: tos_api::aes::thread::AES_ORIGIN_NONE
+fn deliver_userdef_stall(
+    frame: &mut ExceptionFrame,
+    desc: tos_api::aes::thread::UserdefStall,
+) {
+    use core::sync::atomic::Ordering;
+
+    if tos_api::aes::thread::AES_CALL_ORIGIN_SLOT.load(Ordering::Acquire)
+        == tos_api::aes::thread::AES_ORIGIN_NONE
+    {
+        let slot = tos_api::bdos::process::slot_for(
+            tos_api::bdos::process::current(),
+        )
+        .unwrap_or(0);
+        save_call_origin(frame, slot);
+    }
+    deliver_userdef_upcall(frame, desc);
+}
+
+/// Redirect the frame into the EL0 `G_USERDEF` callout stub with the app's
+/// `ub_code` / `PARMBLK` VAs as arguments (design §3.4(c)/(e)). Reuses
+/// [`deliver_upcall`] unchanged; the [`Disposition::UserdefReturn`] tells
+/// [`handle_psigreturn`] to resume the AES fiber instead of the interrupted
+/// (stub) context.
+///
+/// [`Disposition::UserdefReturn`]: tos_api::bdos::process::Disposition::UserdefReturn
+fn deliver_userdef_upcall(
+    frame: &mut ExceptionFrame,
+    desc: tos_api::aes::thread::UserdefStall,
+) {
+    deliver_upcall(
+        frame,
+        tos_api::bdos::process::UpcallDesc {
+            handler_va: tos_api::bdos::process::loader::USERDEF_TRAMPOLINE_VA,
+            args: [desc.ub_code_va, desc.parmblk_ptr, 0, 0],
+            mask_bit: tos_api::bdos::process::UPCALL_MASK_AES_USERDEF,
+            disposition: tos_api::bdos::process::Disposition::UserdefReturn,
+        },
+    );
+}
+
+/// Snapshot the client's trap frame into [`AES_CALL_ORIGIN`] and record its
+/// slot (design §3.4(c)). The mirror of [`save_yield_frame`], but into the
+/// global AES-call-origin cell rather than a per-process slot.
+///
+/// [`AES_CALL_ORIGIN`]: tos_api::aes::thread::AES_CALL_ORIGIN
+fn save_call_origin(frame: &ExceptionFrame, slot: usize) {
+    use core::sync::atomic::Ordering;
+
+    let o = &tos_api::aes::thread::AES_CALL_ORIGIN;
+    for i in 0..30 {
+        o.gpr(i).store(frame.gpr[i], Ordering::Release);
+    }
+    o.lr().store(frame.lr, Ordering::Release);
+    o.elr().store(frame.elr, Ordering::Release);
+    o.spsr().store(frame.spsr, Ordering::Release);
+    o.sp_el0().store(frame.sp_el0, Ordering::Release);
+    tos_api::aes::thread::AES_CALL_ORIGIN_SLOT.store(slot, Ordering::Release);
+}
+
+/// Restore the client's trap frame from [`AES_CALL_ORIGIN`] (captured by
+/// [`save_call_origin`]) and clear the origin (design §3.4(e)).
+///
+/// [`AES_CALL_ORIGIN`]: tos_api::aes::thread::AES_CALL_ORIGIN
+fn restore_call_origin(frame: &mut ExceptionFrame) {
+    use core::sync::atomic::Ordering;
+
+    let o = &tos_api::aes::thread::AES_CALL_ORIGIN;
+    for i in 0..30 {
+        frame.gpr[i] = o.gpr(i).load(Ordering::Acquire);
+    }
+    frame.lr = o.lr().load(Ordering::Acquire);
+    frame.elr = o.elr().load(Ordering::Acquire);
+    frame.spsr = o.spsr().load(Ordering::Acquire);
+    frame.sp_el0 = o.sp_el0().load(Ordering::Acquire);
+    o.clear();
+    tos_api::aes::thread::AES_CALL_ORIGIN_SLOT
+        .store(tos_api::aes::thread::AES_ORIGIN_NONE, Ordering::Release);
+}
+
+/// Read the userdef return-WORD the EL0 stub stored in the ret-slot, through
+/// the kernel high-half alias of the running process's page 0 (design §3.4(e)).
+fn read_userdef_ret_slot(slot_idx: usize) -> i16 {
+    use core::sync::atomic::Ordering;
+
+    let bp = tos_api::bdos::process::PROCESS_TABLE[slot_idx]
+        .basepage_kva
+        .load(Ordering::Acquire) as u64;
+    if bp == 0 {
+        return 0;
+    }
+    let va = bp + tos_api::bdos::process::loader::USERDEF_RET_SLOT_VA;
+    // SAFETY: `va` is the kernel alias of the reserved ret-slot in the
+    // process's page 0 (RW), written by the EL0 stub before its `Psigreturn`.
+    unsafe { (va as *const i16).read_unaligned() }
 }
 
 /// Snapshot `frame` into slot `cur`'s `saved_frame` so the scheduler can
@@ -895,6 +1035,31 @@ fn handle_psigreturn(frame: &mut ExceptionFrame) {
     p.upcall_ctx_mask[top].store(0, Ordering::Release);
     p.upcall_ctx_disp[top].store(0, Ordering::Release);
     p.upcall_depth.store(top as u8, Ordering::Release);
+
+    if disp == Disposition::UserdefReturn {
+        // AES `G_USERDEF` callout return (AES-as-thread design §3.4(e)). The
+        // stub's interrupted snapshot is discarded — the AES call is resumed on
+        // the fiber, not this EL0 context. Read the WORD the stub stored, feed
+        // it to the fiber, and either deliver the next userdef (a further stall)
+        // or restore the client's original `wind_*` frame and finish the call.
+        p.upcall_ctx[top].clear();
+        let word = read_userdef_ret_slot(slot_idx);
+        match tos_api::aes::thread::resume(word) {
+            tos_api::aes::thread::AesCallOutcome::Stalled(next) => {
+                deliver_userdef_upcall(frame, next);
+            }
+            tos_api::aes::thread::AesCallOutcome::Complete(_sw) => {
+                // The AES draw finished. Restore the client's captured origin
+                // frame, then the shared completion tail writes `x0 = 0` (GEM
+                // trap convention — the real result is in the app's `intout[]`).
+                // A userdef-stalling draw (`compose`/`paint_bg_clip`) never also
+                // yields a peer `Switch`, so `_sw` is always `None` here.
+                restore_call_origin(frame);
+                complete_call_tail(frame, 0);
+            }
+        }
+        return;
+    }
 
     if let Disposition::Terminate { rc, reserve } = disp {
         // Terminate-after (etv_term): the saved context is discarded — the

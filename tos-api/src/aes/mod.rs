@@ -19,6 +19,7 @@ pub mod menu;
 pub mod object;
 pub mod resource;
 pub mod shell;
+pub mod thread;
 pub mod window;
 mod pd;
 

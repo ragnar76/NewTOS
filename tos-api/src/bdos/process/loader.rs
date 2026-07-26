@@ -494,6 +494,11 @@ unsafe fn populate_and_map(
     // `sync_code_cache` below makes it observable to the EL0 fetch.
     write_upcall_trampoline(tpa_bytes);
 
+    // Write the AES `G_USERDEF` callout stub (AES-as-thread design §4) into the
+    // same reserved low gap, directly above the resume trampoline. Written in
+    // the same window/ordering so the `sync_code_cache` below covers it too.
+    write_userdef_trampoline(tpa_bytes);
+
     // Make the freshly-written program bytes observable to instruction
     // fetch on real hardware (clean D-cache to PoU + invalidate I-cache
     // over the image region only). QEMU has no caches, so this is a
@@ -696,6 +701,44 @@ pub const TRAMPOLINE_VA: u64 = 0x700;
 // between the sysvar area and the app image base.
 const _: () = assert!(TRAMPOLINE_VA >= SYSVAR_AREA_END);
 const _: () = assert!(TRAMPOLINE_VA + 5 * 4 <= RESERVED_LOW_END);
+
+/// EL0 VA of the per-process **AES `G_USERDEF` callout stub** (AES-as-thread
+/// design, `docs/analysis/coop-kernel/30-aes-thread-design.md` §4). Placed in
+/// the same reserved low-memory gap as [`TRAMPOLINE_VA`], directly above it
+/// (`[0x714, 0x730)`, 7 × 4-byte A64 instructions). The kernel delivers this VA
+/// as an upcall handler with `x0 = ub_code`, `x1 = parmblk_ptr`; the stub calls
+/// `ub_code(parmblk_ptr)` at EL0 (user→user, no PXN), stores its WORD result in
+/// [`USERDEF_RET_SLOT_VA`], then issues `Psigreturn` exactly like the resume
+/// trampoline. `ub_code`/`parmblk_ptr` travel as upcall **arguments**, so the
+/// stub is written once at load (like [`write_upcall_trampoline`]), never
+/// re-emitted per call.
+pub const USERDEF_TRAMPOLINE_VA: u64 = 0x714;
+
+/// EL0 VA of the **PARMBLK scratch region** the kernel writes before an AES
+/// `G_USERDEF` callout and the app's `ub_code` reads (design §4). ABI-wide: a
+/// LP64 `PARMBLK` is 40 bytes, an ILP32 one 32 bytes — both fit the reserved
+/// `[0x730, 0x760)` window (48 bytes). Written through the kernel high-half
+/// alias (`basepage_kva + offset`), read by EL0 at this low-half VA.
+pub const PARMBLK_SCRATCH_VA: u64 = 0x730;
+
+/// EL0 VA of the **userdef return-WORD slot** (design §4). The callout stub
+/// stores `ub_code`'s WORD result here (`str w0, [#0x760]`); `Psigreturn` reads
+/// it through the kernel high-half alias to feed `aes::thread::resume`. The
+/// value is baked into the stub as a `mov` immediate, so it must stay `0x760`.
+pub const USERDEF_RET_SLOT_VA: u64 = 0x760;
+
+// The userdef stub (7 × 4-byte A64 instructions = 28 B) sits between the resume
+// trampoline and the PARMBLK scratch; the scratch + ret-slot stay inside the
+// reserved low gap, below the app image base.
+const _: () = assert!(USERDEF_TRAMPOLINE_VA >= TRAMPOLINE_VA + 5 * 4);
+const _: () = assert!(USERDEF_TRAMPOLINE_VA + 7 * 4 <= PARMBLK_SCRATCH_VA);
+// The widest PARMBLK the writer emits is the LP64 layout (40 bytes); it must
+// fit before the ret-slot.
+const _: () = assert!(PARMBLK_SCRATCH_VA + 40 <= USERDEF_RET_SLOT_VA);
+const _: () = assert!(USERDEF_RET_SLOT_VA + 4 <= RESERVED_LOW_END);
+// The ret-slot VA is a `mov` immediate baked into `USERDEF_STUB_CODE`; keep the
+// constant and the encoding in lockstep.
+const _: () = assert!(USERDEF_RET_SLOT_VA == 0x760);
 
 /// OSHEADER `os_version` (+0x02): Falcon TOS 4.04. EmuTOS' own default is
 /// 0x206 (`config.h:1367-1372`); NewTOS reports 4.04 — user-pinned.
@@ -916,6 +959,45 @@ const TRAMPOLINE_CODE: [u32; 5] =
 fn write_upcall_trampoline(tpa: &mut [u8]) {
     let base = TRAMPOLINE_VA as usize;
     for (i, insn) in TRAMPOLINE_CODE.iter().enumerate() {
+        let off = base + i * 4;
+        tpa[off..off + 4].copy_from_slice(&insn.to_le_bytes());
+    }
+}
+
+/// The seven AArch64 instructions of the AES `G_USERDEF` callout stub
+/// (AES-as-thread design §4). Delivered as an EL0 upcall with `x0 = ub_code`,
+/// `x1 = parmblk_ptr` (AAPCS64); it calls `ub_code(parmblk_ptr)` at EL0
+/// (user→user — no PXN, exactly XaAES' `progdef_callout`), stores the WORD
+/// result in the ret-slot, then issues `Psigreturn` (GEMDOS 0x11A) so the kernel
+/// resumes the stalled AES fiber.
+///
+/// Encodings verified with `aarch64-elf-as`:
+/// ```text
+///   aa0003e9  mov x9, x0        ; x9 = ub_code
+///   aa0103e0  mov x0, x1        ; x0 = parmblk_ptr (arg0 to ub_code)
+///   d63f0120  blr x9            ; ub_code(parmblk_ptr) -> WORD in w0
+///   d280ec09  mov x9, #0x760    ; USERDEF_RET_SLOT_VA
+///   b9000120  str w0, [x9]      ; store the userdef WORD result
+///   d2802348  mov x8, #0x11A    ; Psigreturn
+///   d4000021  svc #1            ; GEMDOS trap — resumes the AES fiber
+/// ```
+const USERDEF_STUB_CODE: [u32; 7] = [
+    0xAA00_03E9, 0xAA01_03E0, 0xD63F_0120, 0xD280_EC09, 0xB900_0120, 0xD280_2348,
+    0xD400_0021,
+];
+
+/// Write the AES `G_USERDEF` callout stub (design §4) into the reserved
+/// low-memory gap at [`USERDEF_TRAMPOLINE_VA`], through the kernel high-half
+/// alias `tpa`. Called from [`populate_and_map`] alongside
+/// [`write_upcall_trampoline`], **before** the code-cache maintenance, so the
+/// stub is cleaned to PoU / I-cache-invalidated over the image window
+/// (`image_top >= RESERVED_LOW_END > USERDEF_TRAMPOLINE_VA + 28`) and is visible
+/// to the EL0 instruction fetch on real hardware (QEMU is cache-less). Like the
+/// resume trampoline, this is written once at load — `ub_code`/`parmblk_ptr`
+/// arrive as upcall arguments, not baked constants.
+fn write_userdef_trampoline(tpa: &mut [u8]) {
+    let base = USERDEF_TRAMPOLINE_VA as usize;
+    for (i, insn) in USERDEF_STUB_CODE.iter().enumerate() {
         let off = base + i * 4;
         tpa[off..off + 4].copy_from_slice(&insn.to_le_bytes());
     }

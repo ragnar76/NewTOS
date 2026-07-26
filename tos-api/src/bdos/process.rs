@@ -412,6 +412,15 @@ pub enum Disposition {
         /// blocks resident; `false` for `Pterm`/`Pterm0`.
         reserve: bool,
     },
+    /// The handler was the synchronous AES `G_USERDEF` callout (AES-as-thread
+    /// design, `docs/analysis/coop-kernel/30-aes-thread-design.md` §3.4(e)): the
+    /// EL0 stub ran the app's `ub_code(PARMBLK*)` and stored its WORD result in
+    /// the userdef ret-slot. On `Psigreturn` the kernel reads that WORD, resumes
+    /// the stalled AES fiber (`aes::thread::resume`), and — when the fiber
+    /// finally completes — restores the original client `wind_*` frame from
+    /// `aes::thread::AES_CALL_ORIGIN` instead of the interrupted (stub) context.
+    /// Neither resume-in-place (the stub context is discarded) nor terminate.
+    UserdefReturn,
 }
 
 impl Disposition {
@@ -421,6 +430,10 @@ impl Disposition {
     const TERM_TAG: u64 = 1 << 63;
     /// `reserve` (Ptermres) flag in the `AtomicU64` encoding.
     const RESERVE_TAG: u64 = 1 << 62;
+    /// Tag bit marking a [`Disposition::UserdefReturn`] (AES-as-thread design
+    /// §6.1.6). Distinct from [`Self::TERM_TAG`]; a `0` word still decodes to
+    /// [`Disposition::Resume`], keeping the step-1 default a plain zero.
+    const USERDEF_TAG: u64 = 1 << 61;
 
     /// Encode into the per-nest / pending `AtomicU64`. [`Disposition::Resume`]
     /// is `0`, so a freshly-zeroed slot means "resume".
@@ -432,18 +445,21 @@ impl Disposition {
                     | if reserve { Self::RESERVE_TAG } else { 0 }
                     | (rc as u32 as u64)
             }
+            Disposition::UserdefReturn => Self::USERDEF_TAG,
         }
     }
 
     /// Decode a word written by [`Self::encode`].
     pub fn decode(v: u64) -> Self {
-        if v & Self::TERM_TAG == 0 {
-            Disposition::Resume
-        } else {
+        if v & Self::TERM_TAG != 0 {
             Disposition::Terminate {
                 rc: (v & 0xFFFF_FFFF) as u32 as i32,
                 reserve: v & Self::RESERVE_TAG != 0,
             }
+        } else if v & Self::USERDEF_TAG != 0 {
+            Disposition::UserdefReturn
+        } else {
+            Disposition::Resume
         }
     }
 }
@@ -453,6 +469,12 @@ impl Disposition {
 /// upcall consumer (etv_critic, vex, …) claims its own bit; etv_term is the
 /// first real one.
 pub const UPCALL_MASK_ETV_TERM: u32 = 1 << 0;
+
+/// Upcall-type mask bit for the synchronous AES `G_USERDEF` callout
+/// (AES-as-thread design, `docs/analysis/coop-kernel/30-aes-thread-design.md`
+/// §3.4). Set while the EL0 stub runs the app's `ub_code`, cleared on its
+/// `Psigreturn`. Distinct from [`UPCALL_MASK_ETV_TERM`].
+pub const UPCALL_MASK_AES_USERDEF: u32 = 1 << 1;
 
 // ─── Parent-frame snapshot ──────────────────────────────────────────
 
