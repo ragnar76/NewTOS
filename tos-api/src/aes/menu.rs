@@ -750,12 +750,20 @@ pub fn menu_text(pb: &Aespb) {
     // lives at byte 12 as a u32, not at byte 16 as a u64, so the previous
     // 32-byte-stride read handed back a wild pointer.
     let dst = ObjTree::new(tree).spec(item) as *mut u8;
-    // SAFETY: the item's ob_spec points at a writable text buffer of at least
-    // the original capacity (GEM contract).
+    // SAFETY: the item's ob_spec points at a writable text buffer sized by the
+    // caller to hold the replacement string plus its NUL — the GEM contract,
+    // exactly as EmuTOS's unbounded `strcpy((char *)ob_spec, (char *)MM_PTEXT)`
+    // (gemsuper.c:183) assumes. Copy the full source string INCLUDING the
+    // terminating NUL, with no length cap, so the result is byte-identical to
+    // EmuTOS. A prior 128-byte cap truncated >=128-byte strings AND left the
+    // destination un-terminated (read_cstr then ran past the copy into random
+    // trailing bytes) — a real, if pathological, divergence; and it protected
+    // nothing, since a caller whose buffer is shorter than the new string
+    // overflows identically in both EmuTOS and NewTOS.
     unsafe {
         if !dst.is_null() {
             let mut i = 0;
-            while i < 128 {
+            loop {
                 let c = *src.add(i);
                 *dst.add(i) = c;
                 if c == 0 {
