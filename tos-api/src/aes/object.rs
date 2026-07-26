@@ -1962,21 +1962,32 @@ fn xor_color(c: Pel) -> Pel {
 }
 
 /// Fill `(x,y,w,h)` with the AES inside pattern `ipat` in colour `icol`
-/// (EmuTOS `gr_rect`, `gemgraf.c:547-559`): HOLLOW draws nothing, SOLID a flat
-/// fill, the rest an `icol`-on-white dither.
+/// (EmuTOS `gr_rect`, `gemgraf.c:547-559`): SOLID a flat `icol` fill, the rest
+/// an `icol`-on-white dither, and — crucially — HOLLOW an opaque **white** fill,
+/// NOT a no-op.
 ///
-/// The dither is drawn in **`WriteMode::Replace`** — EmuTOS `gr_rect` always
-/// fills with `MD_REPLACE` (`bb_fill(MD_REPLACE, …)`, `gemgraf.c:558`), so a
-/// pattern's *clear* bits are painted the background colour (white), not left
-/// transparent. This is what makes a patterned box (the desktop `DROOT`
-/// background, `IP_4PATT` green-on-white) an opaque fill that erases whatever it
-/// covers, rather than letting the underlying pixels show through the gaps.
+/// All patterns (HOLLOW included) are drawn in **`WriteMode::Replace`** — EmuTOS
+/// `gr_rect` always fills with `MD_REPLACE` (`bb_fill(MD_REPLACE, FIS_HOLLOW,
+/// pattern=0x0000, …)`, `gemgraf.c:547-559`). For a hollow box that reaches
+/// `vr_recfl`/the REPLACE fill (`vdi_line.c:528-548`) with the all-zero HOLLOW
+/// pattern, `pattern & mask` is 0 for *every* pixel, so every pixel is written
+/// `bgcol = palette[0] = WHITE` (`vdi_line.c:461`). A hollow G_BOX interior is
+/// therefore filled OPAQUE WHITE, not left transparent — the fill colour is the
+/// background (WHITE), INDEPENDENT of `icol`. A dither's *clear* bits are painted
+/// the same white background. This is what makes a patterned box (the desktop
+/// `DROOT` background, `IP_4PATT` green-on-white) or a hollow-white box (a
+/// TeraDesk dropdown, `ob_spec=0x00ff1100` → IP_HOLLOW/WHITE) an opaque fill that
+/// erases whatever it covers, rather than letting the underlying pixels show
+/// through.
 fn gr_rect(backend: &dyn RasterBackend, x: i16, y: i16, w: i16, h: i16, icol: Pel, ipat: u16, clip: ClipRect) {
     if w <= 0 || h <= 0 {
         return;
     }
     match ipat {
-        IP_HOLLOW => {}
+        // HOLLOW = REPLACE-mode fill with the all-zero pattern: every pixel is
+        // painted the background colour WHITE (bgcol = palette[0]), NOT skipped.
+        // The fill colour is the background WHITE, independent of `icol`.
+        IP_HOLLOW => backend.fill_rect(x, y, w, h, WHITE, clip),
         IP_SOLID => backend.fill_rect(x, y, w, h, icol, clip),
         p => {
             let pat = PatternFill {
