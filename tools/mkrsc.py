@@ -94,6 +94,34 @@ CLS_OBJ, CLS_TED, CLS_IB, CLS_BB = 24, 28, 34, 14  # classic struct sizes
 NAT_OBJ, NAT_TED, NAT_IB, NAT_BB = 32, 40, 48, 24  # native struct sizes
 
 
+def swap16_raster(b):
+    """Byte-swap each 16-bit word of a raster copied from a classic `.rsc`.
+
+    Classic Atari icon/image rasters (BITBLK `bi_pdata`, ICONBLK
+    `ib_pmask`/`ib_pdata`) are **big-endian** 16-bit words with the MSB as the
+    leftmost pixel. Our native (NRSC / native-RSHDR) format is little-endian by
+    contract, and the kernel blit reads each raster word as a LITTLE-endian
+    `u16` (`kernel/src/vdi_backend.rs` `blit_mono`: `w & (0x8000 >> (sx & 15))`),
+    matching the built-in host-order `[u16]` set in `kernel/src/desk/icons.rs`.
+    Copying the classic bytes verbatim would swap the two 8-pixel halves of every
+    16-pixel word (scrambled icons), so swap the two bytes of each word here.
+
+    Both raster lengths are word-aligned (BITBLK `wb*hl`, ICONBLK
+    `((wicon+15)//16)*2*hicon`), so an odd trailing byte is not expected; if one
+    ever appears, keep it verbatim (a swap needs a byte pair) and warn rather
+    than corrupt or crash.
+    """
+    n = len(b) & ~1
+    out = bytearray(len(b))
+    out[0:n:2] = b[1:n:2]   # native low byte  <- classic high byte
+    out[1:n:2] = b[0:n:2]   # native high byte <- classic low byte
+    if len(b) & 1:
+        out[-1] = b[-1]
+        print(f"warning: odd-length raster ({len(b)} bytes); trailing byte "
+              f"left unswapped (not word-aligned)", file=sys.stderr)
+    return bytes(out)
+
+
 def obfix(word, axis):
     """Classic char-grid coordinate → pixel (EmuTOS fix_chpos)."""
     word &= 0xFFFF
@@ -187,7 +215,10 @@ def convert(path, out, ilp32=False):
         if key in interned:
             return interned[key]
         nat = off_data + len(data)
-        data.extend(d[coff:coff + length])
+        # Raster bytes only (intern_bytes is called for BITBLK bi_pdata and
+        # ICONBLK ib_pmask/ib_pdata exclusively; strings go through intern_str).
+        # Byte-swap each 16-bit word big-endian classic -> little-endian native.
+        data.extend(swap16_raster(d[coff:coff + length]))
         interned[key] = nat
         return nat
 
@@ -297,18 +328,203 @@ def convert(path, out, ilp32=False):
           f"[{'ILP32/24B-OBJECT' if ilp32 else 'LP64/32B-OBJECT'}]")
 
 
+def convert_rshdr(path, out):
+    """Classic Atari .rsc → native-RSHDR file for an app's OWN RSC loader.
+
+    Target consumer: tho-otto's rsc_load.c (`xrsrc_load`, bundled by TeraDesk),
+    which maps the on-disk bytes directly onto the app's native C structs and
+    then relocates offsets → pointers in `xrsrc_fix`. On m68k that on-disk
+    format IS the classic .rsc; on NewTOS LP64/LE the same parser expects:
+
+      RSHDR   18 × u16 LITTLE-endian, classic field order, rsh_vrsn = 0
+              (no XRSC, no CICON extension); all section offsets are u16
+              byte offsets from file start (hard <64K limit — enforced).
+      OBJECT  32-byte LP64 gemlib layout; ob_x/y/w/h stay RAW char-grid
+              packed words (the parser runs its own rsc_obfix at load —
+              pre-converting here would double-convert).
+      ob_spec non-box types hold the BYTE OFFSET of their target struct /
+              string (xrsrc_fix does `buf + offset` generically for the
+              G_STRING family, G_ICON, G_IMAGE and the TED types alike).
+      TEDINFO/ICONBLK/BITBLK  40/48/24-byte LP64 layouts, pointer fields
+              hold byte offsets (fixed by `+= buf` / `rsc_pointer`).
+      trindex/frstr/frimg  u64 slots (they are pointer arrays on LP64),
+              each holding a byte offset.
+      data    icon/image bitmaps + strings raw, exactly as the NRSC
+              converter emits them (same kernel objc_draw renderer).
+
+    Unsupported inputs (CICON extension, G_PROGDEF/G_CICON objects) abort
+    loudly rather than emit something the parser would mis-relocate.
+    """
+    d = open(path, "rb").read()
+    H = struct.unpack(">18H", d[:36])
+    (vrsn, p_obj, p_ted, p_ib, p_bb, p_frstr, p_str, p_imd, p_frimg,
+     p_tri, nobs, ntree, nted, nib, nbb, nstr, nimg, rssize) = H
+    if vrsn & 0x0004:
+        sys.exit("new-format (CICONBLK) .rsc not supported")
+
+    OBJ_FMT = "<hhhHHH4xQhhhh"        # 8-byte ob_spec @ 16
+    TED_FMT = "<QQQhhhhhhhh"
+    BB_FMT = "<Qhhhhh6x"
+    IB_FMT = "<QQQhhhhhhhhhhh2x"
+
+    # Section layout: header padded to 40 so every u64-bearing struct/table
+    # start is 8-aligned (all native struct sizes are multiples of 8).
+    HDR = 40
+    off_tri = HDR
+    off_obj = off_tri + ntree * 8     # trindex is an OBJECT*[] → u64 slots
+    off_ted = off_obj + nobs * NAT_OBJ
+    off_bb = off_ted + nted * NAT_TED
+    off_ib = off_bb + nbb * NAT_BB
+    off_frstr = off_ib + nib * NAT_IB
+    off_frimg = off_frstr + nstr * 8  # char*[] → u64 slots
+    off_data = off_frimg + nimg * 8   # BITBLK*[] → u64 slots
+
+    data = bytearray()
+    interned = {}
+
+    def intern_str(coff):
+        if coff == 0:
+            return 0
+        if coff in interned:
+            return interned[coff]
+        end = d.index(b"\x00", coff)
+        nat = off_data + len(data)
+        data.extend(d[coff:end + 1])
+        interned[coff] = nat
+        return nat
+
+    def intern_bytes(coff, length):
+        if coff == 0 or length <= 0:
+            return 0
+        key = (coff, length)
+        if key in interned:
+            return interned[key]
+        nat = off_data + len(data)
+        # Raster bytes only (intern_bytes is called for BITBLK bi_pdata and
+        # ICONBLK ib_pmask/ib_pdata exclusively; strings go through intern_str).
+        # Byte-swap each 16-bit word big-endian classic -> little-endian native.
+        data.extend(swap16_raster(d[coff:coff + length]))
+        interned[key] = nat
+        return nat
+
+    def nat_of(coff, base, csize, nbase, nsize):
+        return nbase + ((coff - base) // csize) * nsize
+
+    teds = bytearray()
+    for i in range(nted):
+        o = p_ted + i * CLS_TED
+        (ptext, ptmpl, pvalid, font, j1, just, color, j2, thick, txtlen,
+         tmplen) = struct.unpack(">IIIhhhhhhhh", d[o:o + CLS_TED])
+        teds.extend(struct.pack(
+            TED_FMT, intern_str(ptext), intern_str(ptmpl),
+            intern_str(pvalid), font, j1, just, color, j2, thick, txtlen, tmplen))
+
+    bbs = bytearray()
+    for i in range(nbb):
+        o = p_bb + i * CLS_BB
+        pdata, wb, hl, x, y, col = struct.unpack(">Ihhhhh", d[o:o + CLS_BB])
+        bbs.extend(struct.pack(
+            BB_FMT, intern_bytes(pdata, wb * hl), wb, hl, x, y, col))
+
+    ibs = bytearray()
+    for i in range(nib):
+        o = p_ib + i * CLS_IB
+        f = struct.unpack(">IIIhhhhhhhhhhh", d[o:o + CLS_IB])
+        pmask, pdata, ptext = f[0], f[1], f[2]
+        wicon, hicon = f[8], f[9]
+        rb = ((wicon + 15) // 16) * 2 * hicon
+        ibs.extend(struct.pack(
+            IB_FMT, intern_bytes(pmask, rb), intern_bytes(pdata, rb),
+            intern_str(ptext), *f[3:]))
+
+    objs = bytearray()
+    for i in range(nobs):
+        o = p_obj + i * CLS_OBJ
+        nxt, head, tail, typ, flags, state, spec, x, y, w, h = struct.unpack(
+            ">hhhHHHIhhhh", d[o:o + CLS_OBJ])
+        base_type = typ & 0xFF
+        if base_type in BOX_TYPES:
+            nspec = spec & 0xFFFFFFFF
+        elif base_type in STR_TYPES:
+            nspec = intern_str(spec)
+        elif base_type in TED_TYPES:
+            nspec = nat_of(spec, p_ted, CLS_TED, off_ted, NAT_TED)
+        elif base_type == IMG_TYPE:
+            nspec = nat_of(spec, p_bb, CLS_BB, off_bb, NAT_BB)
+        elif base_type == ICON_TYPE:
+            nspec = nat_of(spec, p_ib, CLS_IB, off_ib, NAT_IB)
+        else:
+            sys.exit(f"object {i}: type {base_type} has no native-RSHDR "
+                     f"relocation (G_PROGDEF/G_CICON unsupported)")
+        # Coordinates stay RAW packed words — the consumer runs rsc_obfix.
+        objs.extend(struct.pack(
+            OBJ_FMT, nxt, head, tail, typ, flags, state, nspec, x, y, w, h))
+
+    frstr = bytearray()
+    for i in range(nstr):
+        coff = struct.unpack(">I", d[p_frstr + i * 4:p_frstr + i * 4 + 4])[0]
+        frstr.extend(struct.pack("<Q", intern_str(coff)))
+
+    frimg = bytearray()
+    for i in range(nimg):
+        coff = struct.unpack(">I", d[p_frimg + i * 4:p_frimg + i * 4 + 4])[0]
+        if coff == 0:
+            nat = 0
+        elif p_bb <= coff < p_bb + nbb * CLS_BB and (coff - p_bb) % CLS_BB == 0:
+            nat = nat_of(coff, p_bb, CLS_BB, off_bb, NAT_BB)
+        else:
+            sys.exit(f"free image {i} at 0x{coff:x} is not a BITBLK; unsupported")
+        frimg.extend(struct.pack("<Q", nat))
+
+    # Tree index: u64 byte offsets of each tree's root OBJECT.
+    tri = bytearray()
+    for t in range(ntree):
+        toff = struct.unpack(">I", d[p_tri + t * 4:p_tri + t * 4 + 4])[0]
+        tri.extend(struct.pack("<Q", off_obj + ((toff - p_obj) // CLS_OBJ) * NAT_OBJ))
+
+    total = off_data + len(data)
+    # Every RSHDR field is u16 — the whole native file must stay below 64K.
+    hdr_fields = (0, off_obj, off_ted, off_ib, off_bb, off_frstr, off_data,
+                  off_data, off_frimg, off_tri, nobs, ntree, nted, nib, nbb,
+                  nstr, nimg, total)
+    for name, v in zip(("vrsn", "object", "tedinfo", "iconblk", "bitblk",
+                        "frstr", "string", "imdata", "frimg", "trindex",
+                        "nobs", "ntree", "nted", "nib", "nbb", "nstring",
+                        "nimages", "rssize"), hdr_fields):
+        if v > 0xFFFF:
+            sys.exit(f"native-RSHDR field rsh_{name}={v} exceeds the u16 "
+                     f"classic-header limit (file too large for this format)")
+    header = struct.pack("<18H", *hdr_fields) + b"\x00" * (HDR - 36)
+    blob = header + tri + objs + teds + bbs + ibs + bytes(frstr) + bytes(frimg) + data
+    assert len(blob) == total, (len(blob), total)
+    open(out, "wb").write(blob)
+    print(f"converted {path} -> {out}: {ntree} trees, {nobs} objects, "
+          f"{nted} tedinfo, {nbb} bitblk, {nib} iconblk, {nstr} frstr, "
+          f"{nimg} frimg ({total} bytes) [native-RSHDR/LP64 for xrsrc_load]")
+
+
 def main():
     if len(sys.argv) >= 2 and sys.argv[1] == "convert":
-        # convert [--ilp32] SRC [OUT]: --ilp32 emits the 24-byte OBJECT / 4-byte
-        # ob_spec layout for GNU-ILP32 apps (QED), else the LP64 32-byte layout.
+        # convert [--ilp32|--rshdr] SRC [OUT]:
+        #   --ilp32  emits the 24-byte OBJECT / 4-byte ob_spec NRSC layout for
+        #            GNU-ILP32 apps (QED), else the LP64 32-byte NRSC layout.
+        #   --rshdr  emits a native-RSHDR file for an app's OWN rsc loader
+        #            (tho-otto rsc_load.c / TeraDesk xrsrc_load), NOT for the
+        #            kernel rsrc_load.
         rest = sys.argv[2:]
-        ilp32 = False
+        ilp32 = rshdr = False
         if rest and rest[0] == "--ilp32":
             ilp32 = True
             rest = rest[1:]
+        elif rest and rest[0] == "--rshdr":
+            rshdr = True
+            rest = rest[1:]
         src = rest[0]
         out = rest[1] if len(rest) > 1 else "OUT.RSC"
-        convert(src, out, ilp32=ilp32)
+        if rshdr:
+            convert_rshdr(src, out)
+        else:
+            convert(src, out, ilp32=ilp32)
         return
     out = sys.argv[1] if len(sys.argv) > 1 else "TEST.RSC"
     blob = build_demo()
