@@ -82,6 +82,10 @@ pub enum SysFontId {
 /// [`SysFontId`] used to fetch its glyph rows. Only the fields the text
 /// path needs are carried (all three fonts have `font_id = 1`, standard
 /// mono format, first/last ade 0/255).
+///
+/// `Copy` so the scaled scratch header EmuTOS keeps in `vwk->scratch_head`
+/// (`vdi_text.c:770-817`) can be produced by value on demand.
+#[derive(Clone, Copy)]
 pub struct SysFont {
     /// Which raster this font's glyphs come from.
     pub id: SysFontId,

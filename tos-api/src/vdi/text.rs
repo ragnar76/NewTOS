@@ -89,7 +89,7 @@ fn resize(init: u16, size: u16, dda_inc: u16, t_sclsts: bool) -> (u16, u16) {
 /// The scaled size of a `size`-unit dimension (EmuTOS `act_siz`, seed
 /// `0x7fff`); the accumulator is discarded (used only for metric fields).
 #[inline]
-fn act_siz(size: u16, dda_inc: u16, t_sclsts: bool) -> u16 {
+pub(crate) fn act_siz(size: u16, dda_inc: u16, t_sclsts: bool) -> u16 {
     resize(0x7fff, size, dda_inc, t_sclsts).0
 }
 
@@ -126,6 +126,41 @@ fn scaled_header(f: &SysFont, dda_inc: u16, t_sclsts: bool) -> SysFont {
         form_height: f.form_height,
         name: f.name,
     }
+}
+
+/// The workstation's effective font header: [`Vwk::cur_font`] as every
+/// EmuTOS consumer of `vwk->cur_font` sees it — the plain ring font, or the
+/// DDA-scaled `make_header` copy of it when the workstation is scaled.
+///
+/// EmuTOS builds that copy once, into `vwk->scratch_head`, and repoints
+/// `vwk->cur_font` at it (`vdi_text.c:815-816`), so `vqt_extent`/
+/// `vqt_width`/`vqt_fontinfo`/`vqt_attributes` and `output_text` all read
+/// the scaled metrics straight off `cur_font`. NewTOS keeps `cur_font` on
+/// the base ring font plus the DDA on the `Vwk` and rebuilds the scaled
+/// header here on demand, which is the same observable header.
+///
+/// The **base** font (`font::font(vwk.cur_font)`) is still needed
+/// alongside it wherever EmuTOS reads through the header's `off_table`
+/// pointer, which `make_header` copies unscaled (`vdi_text.c:810`).
+pub(crate) fn effective_font(vwk: &Vwk) -> SysFont {
+    let base = font::font(vwk.cur_font);
+    if vwk.scaled {
+        scaled_header(base, vwk.dda_inc, vwk.t_sclsts)
+    } else {
+        *base
+    }
+}
+
+/// Height of a text line in the effective font `f` — EmuTOS `calc_height`
+/// (`vdi_text.c:160-170`): `top + bottom + 1` (already the scaled values
+/// for a scaled workstation), plus the pixel outlining adds above and
+/// below.
+pub(crate) fn calc_height(f: &SysFont, vwk: &Vwk) -> i16 {
+    let mut height = f.top + f.bottom + 1;
+    if vwk.style & T_OUTLINE != 0 {
+        height += OUTLINE_THICKNESS * 2;
+    }
+    height
 }
 
 /// A source glyph ready for the effect stage: `h` rows of a monochrome
@@ -481,7 +516,7 @@ fn top_for(f: &SysFont, y: i16, v_align: i16) -> i16 {
 /// (`count * base cell width`), then DDA-scaled as a whole when the
 /// workstation is scaled, plus the once-per-string skew extent (scaled) and
 /// the per-char outline pixels. Thicken adds nothing for a monospace font.
-fn calc_width(base: &SysFont, f: &SysFont, count: i16, vwk: &Vwk) -> i16 {
+pub(crate) fn calc_width(base: &SysFont, f: &SysFont, count: i16, vwk: &Vwk) -> i16 {
     // Monospace: the width scales the total, using the *base* cell width
     // (EmuTOS reads the unscaled `off_table` through the scaled header).
     let mut width = count * base.max_cell_width;

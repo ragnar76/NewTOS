@@ -11,6 +11,7 @@
 use super::backend::RasterBackend;
 use super::font;
 use super::req_col;
+use super::text;
 use super::vwk::{self, Vwk};
 use super::Vdipb;
 
@@ -53,17 +54,24 @@ pub fn vqf_attributes(pb: &Vdipb, vwk: &Vwk) {
 
 /// Opcode 38 — `vqt_attributes`: read back the text attributes + the
 /// current font's cell metrics.
+///
+/// The face id and the four cell metrics come from the workstation's
+/// **effective** font ([`text::effective_font`]) — EmuTOS
+/// `vdi_vqt_attributes` (`vdi_text.c:999-1021`) reads them all off
+/// `vwk->cur_font`, so they follow `vst_font`/`vst_height`/`vst_point`
+/// (including the DDA-scaled header) instead of being the 8×16 defaults.
 pub fn vqt_attributes(pb: &Vdipb, vwk: &Vwk) {
-    pb.set_intout(0, font::FONT_ID);
+    let f = text::effective_font(vwk);
+    pb.set_intout(0, f.font_id);
     pb.set_intout(1, vwk.text_color as i16);
     pb.set_intout(2, vwk.chup);
     pb.set_intout(3, vwk.h_align);
     pb.set_intout(4, vwk.v_align);
     pb.set_intout(5, vwk.wrt_mode + 1);
-    pb.set_ptsout(0, font::MAX_CHAR_WIDTH);
-    pb.set_ptsout(1, font::TOP);
-    pb.set_ptsout(2, font::CELL_W);
-    pb.set_ptsout(3, font::TOP + font::BOTTOM + 1);
+    pb.set_ptsout(0, f.max_char_width);
+    pb.set_ptsout(1, f.top);
+    pb.set_ptsout(2, f.max_cell_width);
+    pb.set_ptsout(3, f.top + f.bottom + 1);
     pb.set_contrl(4, 6);
     pb.set_contrl(2, 2);
 }
@@ -161,10 +169,17 @@ pub fn vq_key_s(pb: &Vdipb) {
 /// Opcode 116 — `vqt_extent`: the bounding box of the `CONTRL[3]`-char
 /// string in `INTIN`, as four corner points in `PTSOUT[0..7]`, rotated
 /// per `chup` (90° snaps).
+///
+/// EmuTOS `vdi_vqt_extent` (`vdi_text.c:1024-1059`) sizes the box with the
+/// same `calc_width`/`calc_height` the render path uses, both reading
+/// `vwk->cur_font` — so the extent tracks the selected face, its DDA
+/// scaling and the active effects, not a fixed 8×16 cell.
 pub fn vqt_extent(pb: &Vdipb, vwk: &Vwk) {
     let count = pb.contrl(3).max(0);
-    let width = count * font::CELL_W;
-    let height = font::TOP + font::BOTTOM + 1; // cell height
+    let base = font::font(vwk.cur_font);
+    let f = text::effective_font(vwk);
+    let width = text::calc_width(base, &f, count, vwk);
+    let height = text::calc_height(&f, vwk);
     for i in 0..8 {
         pb.set_ptsout(i, 0);
     }
@@ -203,6 +218,14 @@ pub fn vqt_extent(pb: &Vdipb, vwk: &Vwk) {
 /// `PTSOUT[0]` = cell width, `PTSOUT[2]`/`[4]` = left/right offsets (0
 /// for the monospace system font).
 ///
+/// All of it is read off `vwk->cur_font` in EmuTOS (`vdi_text.c:1066`):
+/// the ADE range that decides the −1, and the advance width. The advance
+/// is `off_table[k+1] - off_table[k]`, i.e. the **unscaled** cell width
+/// even on a scaled workstation (`make_header` copies the `off_table`
+/// pointer verbatim, `vdi_text.c:810`), which the DDA is then applied to
+/// (`:1082-1087`). No built-in face carries `F_HORZ_OFF`, so the two
+/// offset slots stay at the zeroes EmuTOS pre-writes.
+///
 /// **Only the x components are written.** EmuTOS `vdi_vqt_width`
 /// (`vdi_text.c:1062-1096`) pre-zeroes `PTSOUT[2]`/`PTSOUT[4]` (`:1072-1073`),
 /// assigns `PTSOUT[0]` on the in-range path (`:1081`), and never touches the
@@ -210,15 +233,22 @@ pub fn vqt_extent(pb: &Vdipb, vwk: &Vwk) {
 /// its eight slots first (`:1031`). Writing them would clobber caller memory
 /// the VDI has no claim on; the reference dump leaves them at the poison
 /// pattern (`tosdump/reference/FINDINGS-r2.md` R2-2).
-pub fn vqt_width(pb: &Vdipb, _vwk: &Vwk) {
+pub fn vqt_width(pb: &Vdipb, vwk: &Vwk) {
+    let base = font::font(vwk.cur_font);
+    let f = text::effective_font(vwk);
     let k = pb.intin(0);
     pb.set_ptsout(2, 0);
     pb.set_ptsout(4, 0);
-    if !(font::FIRST_ADE..=font::LAST_ADE).contains(&k) {
+    if !(f.first_ade..=f.last_ade).contains(&k) {
         pb.set_intout(0, -1);
     } else {
         pb.set_intout(0, k);
-        pb.set_ptsout(0, font::CELL_W); // monospace advance
+        // Monospace: every `off_table` delta is the base cell width.
+        let mut w = base.max_cell_width;
+        if vwk.scaled {
+            w = text::act_siz(w.max(0) as u16, vwk.dda_inc, vwk.t_sclsts) as i16;
+        }
+        pb.set_ptsout(0, w);
     }
     pb.set_contrl(4, 1);
     pb.set_contrl(2, 3);
@@ -276,25 +306,31 @@ pub fn vqt_name(pb: &Vdipb) {
 
 /// Opcode 131 — `vqt_fontinfo`: the current font's metrics, with the
 /// thicken/skew slots reflecting the active text `style`.
+///
+/// Every slot is a field of `vwk->cur_font` in EmuTOS
+/// (`vdi_vqt_fontinfo`, `vdi_text.c:1137-1174`), so the report follows the
+/// face `vst_font`/`vst_height`/`vst_point` selected — including the
+/// DDA-scaled scratch header — rather than the 8×16 module constants.
 pub fn vqt_fontinfo(pb: &Vdipb, vwk: &Vwk) {
-    pb.set_intout(0, font::FIRST_ADE);
-    pb.set_intout(1, font::LAST_ADE);
-    pb.set_ptsout(0, font::CELL_W); // max_cell_width
-    pb.set_ptsout(1, font::BOTTOM);
-    pb.set_ptsout(2, if vwk.style & F_THICKEN != 0 { font::THICKEN } else { 0 });
-    pb.set_ptsout(3, font::DESCENT);
+    let f = text::effective_font(vwk);
+    pb.set_intout(0, f.first_ade);
+    pb.set_intout(1, f.last_ade);
+    pb.set_ptsout(0, f.max_cell_width);
+    pb.set_ptsout(1, f.bottom);
+    pb.set_ptsout(2, if vwk.style & F_THICKEN != 0 { f.thicken } else { 0 });
+    pb.set_ptsout(3, f.descent);
     if vwk.style & F_SKEW != 0 {
-        pb.set_ptsout(4, font::LEFT_OFFSET);
-        pb.set_ptsout(5, font::HALF);
-        pb.set_ptsout(6, font::RIGHT_OFFSET);
+        pb.set_ptsout(4, f.left_offset);
+        pb.set_ptsout(5, f.half);
+        pb.set_ptsout(6, f.right_offset);
     } else {
         pb.set_ptsout(4, 0);
-        pb.set_ptsout(5, font::HALF);
+        pb.set_ptsout(5, f.half);
         pb.set_ptsout(6, 0);
     }
-    pb.set_ptsout(7, font::ASCENT);
+    pb.set_ptsout(7, f.ascent);
     pb.set_ptsout(8, 0);
-    pb.set_ptsout(9, font::TOP);
+    pb.set_ptsout(9, f.top);
     pb.set_contrl(4, 2);
     pb.set_contrl(2, 5);
 }

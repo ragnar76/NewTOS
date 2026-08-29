@@ -30,18 +30,16 @@ const FIS_PATTERN: i16 = 2; // interior style: dither pattern
 const PALETTE_PRECISION: i16 = 0;
 
 /// `DEV_TAB` template (45 WORDs), EmuTOS `DEV_TAB_rom`. Indices
-/// `[0],[1],[3],[4],[13],[35],[39]` are patched from the live device by
+/// `[0],[1],[3],[4],[5],[13],[35],[39]` are patched from the live device by
 /// [`init_wk`] (EmuTOS `update_rez_dependent`, `vdi_control.c:203-208`).
 /// `[3]/[4]` (pixel size) carry the ROM's ST-High placeholder 372 here
 /// and are overwritten with [`get_std_pixel_size`] at open time.
 const DEV_TAB_ROM: [i16; 45] = [
     639, 399, 0, 372, 372, // 0..4  res-1 x/y, precision, pixel w/h (patched)
-    // [5] font heights = 3: EmuTOS `text_init` sets DEV_TAB[5] to the number
-    // of system-font (font_id==1) sizes; the Falcon target has three
-    // (6x6/8x8/8x16). VW3-dependent: only 8x16 is present today, so the
-    // value is correct for the target profile but currently over-announces
-    // the installed faces (the 6x6/8x8 faces land in VW3).
-    3, MAX_LINE_STYLE, 0, 6, 8, // 5..9  font heights, line styles, lw flag, marker types/sizes
+    // [5] font heights: EmuTOS `text_init` sets DEV_TAB[5] to the number of
+    // system-font (font_id==1) sizes (`vdi_text.c:661`). Patched below from
+    // `font_ring_fold()`; the ring holds three (6x6/8x8/8x16).
+    0, MAX_LINE_STYLE, 0, 6, 8, // 5..9  font heights, line styles, lw flag, marker types/sizes
     1, MAX_FILL_PATTERN, MAX_FILL_HATCH, 2, 10, // 10..14 fonts, fill pats, hatches, colours, #GDP
     1, 2, 3, 4, 5, 6, 7, 8, 9, 10, // 15..24 GDP ids (bar..justified text)
     3, 0, 3, 3, 3, 0, 3, 0, 3, 2, // 25..34 GDP attribute codes #1..#10
@@ -90,30 +88,45 @@ pub(crate) fn get_std_pixel_size(xres: i16, yres: i16) -> (i16, i16) {
     (width, height)
 }
 
-/// Cell metrics `(max_char_width, top)` of every system font (`font_id ==
-/// 1`), in font-ring order. EmuTOS' `text_init` (`vdi_text.c:598-663`)
-/// folds `SIZ_TAB[0..3]` from the min/max of these over the whole ring.
+/// The `text_init` fold over the font ring (EmuTOS `vdi_text.c:614-661`):
+/// `(min_char_width, min_top, max_char_width, max_top, size_count)` across
+/// every system face (`font_id == 1`) in [`font::RING`]. EmuTOS folds
+/// `SIZ_TAB[0..3]` and counts `DEV_TAB[5]` in that one loop, so both are
+/// taken from here — the ring is the single source, which is what keeps
+/// the reported sizes and the installed faces from drifting apart.
 ///
-/// **VW3-dependent:** only the 8×16 face exists today, so the fold yields
-/// `{7,13,7,13}` (`min_cw=max_cw=7`, `min_top=max_top=13`). Adding the
-/// 6×6 / 8×8 system faces in VW3 extends this array and the fold then
-/// yields EmuTOS' full `{5,4,7,13}` — no change to the folding code below.
-const SYSTEM_FONT_METRICS: &[(i16, i16)] = &[(font::MAX_CHAR_WIDTH, font::TOP)];
+/// For the three built-in faces (6×6, 8×8, 8×16, all `font_id == 1`) this
+/// yields EmuTOS' `{5,4,7,13}` and a size count of 3.
+fn font_ring_fold() -> (i16, i16, i16, i16, i16) {
+    let (mut min_cw, mut min_top, mut max_cw, mut max_top) = (i16::MAX, i16::MAX, 0i16, 0i16);
+    let mut sizes = 0i16;
+    for &id in &font::RING {
+        let f = font::font(id);
+        if f.font_id != font::FONT_ID {
+            continue; // only the system font contributes (`vdi_text.c:632`)
+        }
+        min_cw = min_cw.min(f.max_char_width);
+        min_top = min_top.min(f.top);
+        max_cw = max_cw.max(f.max_char_width);
+        max_top = max_top.max(f.top);
+        sizes += 1;
+    }
+    (min_cw, min_top, max_cw, max_top, sizes)
+}
 
 /// `SIZ_TAB` (12 WORDs) with the character-size fields `[0..3]` filled by
 /// the `text_init` fold (EmuTOS `vdi_text.c:598-642`) rather than left at
 /// the ROM template's placeholder `{0,7,0,7}`. `[4..11]` (line / marker
 /// sizes) keep the ROM values. `[0]` = min char width, `[1]` = min top,
 /// `[2]` = max char width, `[3]` = max top.
+///
+/// `SIZ_TAB[1]` is load-bearing beyond the report: it is the `DEF_CHHT`
+/// that an application passes back to `vst_height` to restore the default
+/// text size, and with the full ring folded in that is the 6×6 face's
+/// `top` = 4, not the 8×16 face's 13.
 fn siz_tab() -> [i16; 12] {
     let mut siz = SIZ_TAB_ROM;
-    let (mut min_cw, mut min_top, mut max_cw, mut max_top) = (i16::MAX, i16::MAX, 0i16, 0i16);
-    for &(cw, top) in SYSTEM_FONT_METRICS {
-        min_cw = min_cw.min(cw);
-        min_top = min_top.min(top);
-        max_cw = max_cw.max(cw);
-        max_top = max_top.max(top);
-    }
+    let (min_cw, min_top, max_cw, max_top, _) = font_ring_fold();
     siz[0] = min_cw;
     siz[1] = min_top;
     siz[2] = max_cw;
@@ -182,6 +195,7 @@ fn init_wk(vwk: &mut Vwk, pb: &Vdipb, backend: &dyn RasterBackend) {
     dev[1] = yres - 1;
     dev[3] = pw; // pixel width  (get_pixel_size)
     dev[4] = ph; // pixel height (get_pixel_size)
+    dev[5] = font_ring_fold().4; // number of system-font sizes (`text_init`)
     dev[13] = ncol as i16;
     dev[35] = if planes == 1 { 0 } else { 1 }; // colour capable? (v_planes==1)
     dev[39] = PALETTE_PRECISION; // DAC RGB-choice count (get_palette): 0 for truecolor
@@ -260,6 +274,7 @@ pub fn vq_extnd(pb: &Vdipb, vwk: &crate::vdi::vwk::Vwk, backend: &dyn RasterBack
         dev[1] = yres - 1;
         dev[3] = pw; // pixel width  (get_pixel_size)
         dev[4] = ph; // pixel height (get_pixel_size)
+        dev[5] = font_ring_fold().4; // number of system-font sizes (`text_init`)
         dev[13] = ncol as i16;
         dev[35] = if planes == 1 { 0 } else { 1 }; // colour capable? (v_planes==1)
         dev[39] = PALETTE_PRECISION; // DAC RGB-choice count (get_palette): 0 for truecolor
