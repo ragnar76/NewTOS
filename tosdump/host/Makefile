@@ -11,7 +11,7 @@ BUILD   := build
 CORE    := ../core
 TESTS   := ../tests
 
-.PHONY: all test clean
+.PHONY: all test run-tests clean
 all: $(BUILD)/tosdiff
 
 $(BUILD):
@@ -52,7 +52,16 @@ $(BUILD)/emit_be: $(BUILD)/emit_record.o $(BUILD)/record_be.o
 $(BUILD)/emit_le: $(BUILD)/emit_record.o $(BUILD)/record_le.o
 	$(CC) $(CFLAGS) $^ -o $@
 
-test: $(BUILD)/test_record $(BUILD)/tosdiff $(BUILD)/mkdump \
+# `make test` always rebuilds from scratch.  The make that ships with macOS
+# compares modification times at one-second resolution, so an edit and a
+# re-run inside the same second silently test the previous object file -- a
+# false green, which is the one failure mode this whole exercise exists to
+# rule out.  The full build takes well under a second; correctness wins.
+test:
+	@$(MAKE) --no-print-directory clean
+	@$(MAKE) --no-print-directory run-tests
+
+run-tests: $(BUILD)/test_record $(BUILD)/tosdiff $(BUILD)/mkdump \
       $(BUILD)/emit_be $(BUILD)/emit_le
 	@echo "== record format"
 	@$(BUILD)/test_record
