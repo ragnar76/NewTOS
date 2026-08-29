@@ -1,5 +1,3 @@
-cargo-features = ["per-package-target"]
-
 [package]
 name = "tos-api"
 version = "0.1.0"
@@ -7,7 +5,10 @@ edition.workspace = true
 license.workspace = true
 authors.workspace = true
 description = "NewTOS TOS-API surface (GEMDOS / BIOS / XBIOS dispatchers and syscalls)"
-forced-target = "aarch64-unknown-none-softfloat"
+# No forced-target: the kernel pins itself to aarch64-unknown-none-softfloat
+# and its dependencies follow, so this crate still builds freestanding there.
+# Leaving it unpinned is what lets `cargo test -p tos-api` build for the host,
+# which is where the reference-dump conformance tests run.
 
 [lib]
 name = "tos_api"

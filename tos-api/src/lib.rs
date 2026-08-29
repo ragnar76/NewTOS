@@ -10,7 +10,11 @@
 //! [`bios::dispatch`] and [`xbios::dispatch`] (the latter two are
 //! introduced in PHASE-07).
 
-#![no_std]
+// `no_std` for every real build; the host test harness needs `std` for its
+// runner, allocator and panic handler. Only `cargo test -p tos-api` sees
+// `std` -- the kernel builds this crate as a dependency, never as a test, so
+// the freestanding build is unaffected.
+#![cfg_attr(not(test), no_std)]
 #![deny(unsafe_op_in_unsafe_fn)]
 #![warn(missing_docs)]
 
