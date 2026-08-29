@@ -79,6 +79,26 @@ of round 1's F2 (the TT has four system fonts to EmuTOS's three).
 Whether to match EmuTOS here is a decision, not a bug report: it changes text
 metrics across the whole system.
 
+**Decision deferred, with the reason on record (2026-08-29, user).** NewTOS
+does not run at TT-medium 640×480 — it targets a Full-HD framebuffer. A 6×6
+system font that is legible on a 640×480 TT screen is not legible at 1920×1080;
+matching EmuTOS's font choice here would make the desktop unreadable on the
+actual target device. So the smaller fonts were deliberately not adopted.
+
+What that leaves open is *how* to express it. The options are not equivalent
+and none is chosen yet: keep NewTOS's 8×16 default and accept that these
+inquiries diverge from the reference for a documented reason; ship EmuTOS's
+font ring and select a larger member as the default, which keeps
+`vqt_name`/`vqt_fontinfo` conformant while the default differs; or scale.
+Until it is decided, the tests that depend on font metrics stay red on
+purpose — they are recording a known, understood divergence, not an unnoticed
+one.
+
+Note that the reference was measured at 640×480 because that is what the TT
+offers. A NewTOS dump at Full HD would differ in every resolution-dependent
+field regardless of fonts, so this decision is entangled with what geometry
+future reference rounds are taken at.
+
 ### R2-5 — `vqin_mode` (115) on the string device
 
     case 51   intout[0]   NewTOS = 0   reference = 1
