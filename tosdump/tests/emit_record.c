@@ -56,7 +56,7 @@ int main(int argc, char **argv)
 	fill16(v.intout, TD_VDI_INTOUT_N, 0xF000u);
 	fill16(v.ptsout, TD_VDI_PTSOUT_N, 0x7FF0u);
 	fill16(before,   TD_VDI_CONTRL_N, 0x00FFu);
-	td_vdi_record_write(vrec, 0x1234u, 0x0006u, &v, before);
+	td_vdi_record_write(vrec, 0x1234u, 0x0006u, -1, &v, before);
 
 	td_poison_aes(&a);
 	fill16(a.contrl,  TD_AES_CONTRL_N, 0x0A0Bu);
@@ -66,7 +66,7 @@ int main(int argc, char **argv)
 	for (i = 0; i < TD_AES_ADDRIN_N; i++)
 		a.addr_in[i] = 0x01020304uL + (uint32_t)i;
 	a.addr_out[0] = 0xFEDCBA98uL;
-	td_aes_record_write(arec, 0x0002u, 0x000Au, &a);
+	td_aes_record_write(arec, 0x0002u, 0x000Au, 0x7FFFFFFFL, &a);
 
 	td_poison_call(&c);
 	for (i = 0; i < TD_CALL_ARGS_N; i++)

@@ -45,7 +45,10 @@ READOBJ="$BIN/llvm-readobj"
 NM="$BIN/llvm-nm"
 [ -x "$LLD" ] || { echo "error: missing rust-lld ($LLD)" >&2; exit 1; }
 
-BUILD_ID="$(cd "$ROOT" && git rev-parse --short=4 HEAD 2>/dev/null || echo '----')"
+# The header's build id field is exactly 4 bytes; git widens --short when 4
+# hex digits are not unique, so cut it to what actually gets stored.
+BUILD_ID="$(cd "$ROOT" && git rev-parse HEAD 2>/dev/null | cut -c1-4)"
+[ -n "$BUILD_ID" ] || BUILD_ID='----'
 
 # AArch64 is little-endian, so the record writer swaps on write. This is the
 # only compile-time difference from the TT build (spec section 2.1).
@@ -61,7 +64,7 @@ echo "build : $BUILD_ID"
 echo
 
 SRC=(core/record.c core/cases.c core/gem.c core/runner.c core/dump.c
-     core/dumpvdi.c abi/newtos_svc.c)
+     core/log.c core/dumpvdi.c abi/newtos_svc.c)
 
 rm -f "$OBJ"/*.o
 for s in "${SRC[@]}"; do

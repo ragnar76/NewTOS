@@ -255,13 +255,13 @@ static void store32_array(uint8_t *dst, const uint32_t *src, int n)
 }
 
 void td_vdi_record_write(uint8_t *rec, uint16_t case_id, uint16_t opcode,
-                         const struct td_vdi_arrays *after,
+                         int32_t ret, const struct td_vdi_arrays *after,
                          const int16_t *contrl_before)
 {
 	memset(rec, 0, TD_VDI_RECORD_SIZE);
 	td_store_be16(rec + TD_VDI_OFF_CASEID, case_id);
 	td_store_be16(rec + TD_VDI_OFF_OPCODE, opcode);
-	td_store_be32(rec + TD_VDI_OFF_RESERVED, 0uL);
+	td_store_be32(rec + TD_VDI_OFF_RET, (uint32_t)ret);
 	store16_array(rec + TD_VDI_OFF_CONTRL, after->contrl, TD_VDI_CONTRL_N);
 	store16_array(rec + TD_VDI_OFF_INTIN,  after->intin,  TD_VDI_INTIN_N);
 	store16_array(rec + TD_VDI_OFF_PTSIN,  after->ptsin,  TD_VDI_PTSIN_N);
@@ -272,7 +272,7 @@ void td_vdi_record_write(uint8_t *rec, uint16_t case_id, uint16_t opcode,
 }
 
 void td_aes_record_write(uint8_t *rec, uint16_t case_id, uint16_t opcode,
-                         const struct td_aes_arrays *after)
+                         int32_t ret, const struct td_aes_arrays *after)
 {
 	memset(rec, 0, TD_AES_RECORD_SIZE);
 	td_store_be16(rec + TD_AES_OFF_CASEID, case_id);
@@ -283,6 +283,7 @@ void td_aes_record_write(uint8_t *rec, uint16_t case_id, uint16_t opcode,
 	store16_array(rec + TD_AES_OFF_INTOUT,  after->int_out, TD_AES_INTOUT_N);
 	store32_array(rec + TD_AES_OFF_ADDRIN,  after->addr_in,  TD_AES_ADDRIN_N);
 	store32_array(rec + TD_AES_OFF_ADDROUT, after->addr_out, TD_AES_ADDROUT_N);
+	td_store_be32(rec + TD_AES_OFF_RET, (uint32_t)ret);
 	/* reserved stays zero from the memset above */
 }
 
@@ -303,6 +304,7 @@ void td_call_record_write(uint8_t *rec, uint16_t case_id, uint16_t opcode,
 /* ------------------------------------------------------------------ */
 
 const struct td_field td_vdi_fields[] = {
+	{ "d0",            TD_VDI_OFF_RET,           1,               4, 1 },
 	{ "contrl",        TD_VDI_OFF_CONTRL,        TD_VDI_CONTRL_N, 2, 1 },
 	{ "intin",         TD_VDI_OFF_INTIN,         TD_VDI_INTIN_N,  2, 1 },
 	{ "ptsin",         TD_VDI_OFF_PTSIN,         TD_VDI_PTSIN_N,  2, 1 },
@@ -313,6 +315,7 @@ const struct td_field td_vdi_fields[] = {
 };
 
 const struct td_field td_aes_fields[] = {
+	{ "d0",       TD_AES_OFF_RET,     1,                4, 1 },
 	{ "contrl",   TD_AES_OFF_CONTRL,  TD_AES_CONTRL_N,  2, 1 },
 	{ "global",   TD_AES_OFF_GLOBAL,  TD_AES_GLOBAL_N,  2, 1 },
 	{ "int_in",   TD_AES_OFF_INTIN,   TD_AES_INTIN_N,   2, 1 },

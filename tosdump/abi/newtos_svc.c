@@ -16,10 +16,12 @@
  * verified there against kernel/src/arch/aarch64/exceptions.rs (the GEM branch
  * of handle_svc dispatches on x0 and passes x1) and tos-api/src/vdi/mod.rs /
  * aes/mod.rs (Vdipb::from_raw / Aespb::from_raw read consecutive native
- * pointers, i.e. the LP64 struct layout below).  The GEM trap returns nothing
- * in a register; every result comes back through the parameter block.  The SVC
- * entry preserves x1..x29 and only overwrites x0, so this clobbers x0 and
- * memory and nothing else.
+ * pointers, i.e. the LP64 struct layout below).  The SVC entry preserves
+ * x1..x29 and only overwrites x0, so this clobbers x0 and memory and nothing
+ * else, and x0 on return is what the kernel left there -- the counterpart of
+ * the m68k trap's d0.  Whether NewTOS produces a flip_y equivalent at all is
+ * an open question in docs/api/vdi/_working-list.md (D-080); the dumper does
+ * not assume an answer, it records what is there.
  */
 #include <stdint.h>
 
@@ -48,8 +50,8 @@ typedef struct {
 	void   **addr_out;
 } AESPB;
 
-void td_abi_vdi(int16_t *contrl, int16_t *intin, int16_t *ptsin,
-                int16_t *intout, int16_t *ptsout)
+int32_t td_abi_vdi(int16_t *contrl, int16_t *intin, int16_t *ptsin,
+                   int16_t *intout, int16_t *ptsout)
 {
 	VDIPB pb;
 	register long x0 __asm__("x0") = 115;      /* VDI selector */
@@ -68,11 +70,11 @@ void td_abi_vdi(int16_t *contrl, int16_t *intin, int16_t *ptsin,
 		: "r"(x1)
 		: "memory", "cc"
 	);
-	(void)x0;
+	return (int32_t)x0;
 }
 
-void td_abi_aes(int16_t *control, int16_t *global, int16_t *int_in,
-                int16_t *int_out, void **addr_in, void **addr_out)
+int32_t td_abi_aes(int16_t *control, int16_t *global, int16_t *int_in,
+                   int16_t *int_out, void **addr_in, void **addr_out)
 {
 	AESPB pb;
 	register long x0 __asm__("x0") = 200;      /* AES selector */
@@ -92,5 +94,5 @@ void td_abi_aes(int16_t *control, int16_t *global, int16_t *int_in,
 		: "r"(x1)
 		: "memory", "cc"
 	);
-	(void)x0;
+	return (int32_t)x0;
 }

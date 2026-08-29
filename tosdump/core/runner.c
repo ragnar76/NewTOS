@@ -119,6 +119,7 @@ int td_run_vdi(const struct td_case_table *ct, const struct td_wk *wk,
                uint8_t *out, size_t out_bytes)
 {
 	uint16_t i;
+	int32_t ret;
 	int j;
 
 	if (out_bytes < (size_t)ct->count * TD_VDI_RECORD_SIZE)
@@ -156,13 +157,14 @@ int td_run_vdi(const struct td_case_table *ct, const struct td_wk *wk,
 			run_before[j] = run_arrays.contrl[j];
 
 		/* 6. the call under measurement */
-		td_abi_vdi(run_arrays.contrl, run_arrays.intin, run_arrays.ptsin,
-		           run_arrays.intout, run_arrays.ptsout);
+		ret = td_abi_vdi(run_arrays.contrl, run_arrays.intin,
+		                 run_arrays.ptsin, run_arrays.intout,
+		                 run_arrays.ptsout);
 
 		/* 7. the record.  The input arrays go in as they stand AFTER the
 		 *    call: a VDI routine is not allowed to modify them, and
 		 *    dumping them afterwards is what makes a violation visible */
-		td_vdi_record_write(rec, c->line, (uint16_t)c->opcode,
+		td_vdi_record_write(rec, c->line, (uint16_t)c->opcode, ret,
 		                    &run_arrays, run_before);
 	}
 

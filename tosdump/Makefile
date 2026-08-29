@@ -10,13 +10,16 @@ CROSS_MINT ?= /opt/cross-mint/bin/m68k-atari-mint-
 M68K_CC    := $(CROSS_MINT)gcc
 
 # 4 bytes of the git hash, ASCII, as the record header carries it.
-BUILD_ID := $(shell git rev-parse --short=4 HEAD 2>/dev/null || echo ----)
+# git widens --short when 4 hex digits are not unique; the header field is
+# exactly 4 bytes, so cut it to what actually gets stored.
+BUILD_ID := $(shell git rev-parse HEAD 2>/dev/null | cut -c1-4 || echo ----)
 
 # The m68k is big-endian, so the record order is the machine order: no swap.
 M68K_CFLAGS := -std=c99 -O2 -Wall -Wextra -Werror -Icore \
                -DTD_BIG_ENDIAN_TARGET=1 -DTD_BUILD_ID='"$(BUILD_ID)"'
 
-CORE_SRC := core/record.c core/cases.c core/gem.c core/runner.c core/dump.c
+CORE_SRC := core/record.c core/cases.c core/gem.c core/runner.c core/dump.c \
+            core/log.c
 VDI_SRC  := $(CORE_SRC) core/dumpvdi.c
 
 BUILD := build

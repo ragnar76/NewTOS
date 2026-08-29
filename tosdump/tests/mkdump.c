@@ -113,7 +113,8 @@ int main(int argc, char **argv)
 			}
 		}
 
-		td_vdi_record_write(rec, cf.line[c], (uint16_t)v.contrl[0], &v, before);
+		td_vdi_record_write(rec, cf.line[c], (uint16_t)v.contrl[0], 1,
+		                    &v, before);
 		if (fwrite(rec, 1, sizeof rec, f) != sizeof rec) {
 			perror("fwrite");
 			fclose(f);
