@@ -1,9 +1,10 @@
 # Makefile -- cross builds of the TOS reference dumper.
 #
 #   make dumpvdi-m68k     DUMPVDI.TOS for TOS 3.06 on the TT
+#   make dumpvdi-newtos   DUMPVDI.NAP for NewTOS on the Pi 4 (AArch64)
 #   make host-test        the host-side suite (same as make -C host test)
 #
-# The NewTOS/AArch64 build lands with task T4.
+# Same core sources for both; only abi/ differs (spec section 2).
 
 CROSS_MINT ?= /opt/cross-mint/bin/m68k-atari-mint-
 M68K_CC    := $(CROSS_MINT)gcc
@@ -20,8 +21,8 @@ VDI_SRC  := $(CORE_SRC) core/dumpvdi.c
 
 BUILD := build
 
-.PHONY: all dumpvdi-m68k host-test clean
-all: dumpvdi-m68k host-test
+.PHONY: all dumpvdi-m68k dumpvdi-newtos host-test clean
+all: dumpvdi-m68k dumpvdi-newtos host-test
 
 $(BUILD):
 	@mkdir -p $(BUILD)
@@ -30,6 +31,12 @@ dumpvdi-m68k: $(BUILD)/DUMPVDI.TOS
 $(BUILD)/DUMPVDI.TOS: $(VDI_SRC) abi/m68k_trap.c $(wildcard core/*.h) | $(BUILD)
 	$(M68K_CC) $(M68K_CFLAGS) $(VDI_SRC) abi/m68k_trap.c -o $@
 	@$(CROSS_MINT)size $@
+
+# The NewTOS half goes through its own script, which reuses the proven client
+# link path of the other native apps (sdk/libc + sdk/newtos.ld).
+dumpvdi-newtos: $(BUILD)/DUMPVDI.NAP
+$(BUILD)/DUMPVDI.NAP: $(VDI_SRC) abi/newtos_svc.c $(wildcard core/*.h) | $(BUILD)
+	./build-dumpvdi-newtos.sh $@
 
 host-test:
 	@$(MAKE) --no-print-directory -C host test
