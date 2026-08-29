@@ -1,0 +1,5 @@
+# fixture case table for the host-side tosdiff tests.
+# opcode	sub	intin	ptsin	comment
+6	0	-	0,0,10,10	v_pline two points
+3	0	-	5,5	v_line placeholder
+4	0	1,2,3	-	v_bar placeholder
