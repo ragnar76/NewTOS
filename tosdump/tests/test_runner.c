@@ -194,9 +194,15 @@ static void check_run(const struct td_wk *wk, const struct td_case_table *ct,
 		                         (TD_VDI_INTIN_N - 1) * 2), 0xDEADu);
 		TD_CHECK_EQ(td_load_be16(rec + TD_VDI_OFF_PTSIN +
 		                         (TD_VDI_PTSIN_N - 1) * 2), 0xDEADu);
-		if (cs->n_intin < TD_VDI_INTIN_N)
+		/* the first slot past the case's own values is still poisoned.
+		 * Index 0 is exempt: it is the one the stub deliberately clobbers
+		 * to prove the dump happens after the call, so for a case with no
+		 * intin values index 1 carries the assertion instead. */
+		if (cs->n_intin > 0 && cs->n_intin < TD_VDI_INTIN_N)
 			TD_CHECK_EQ(td_load_be16(rec + TD_VDI_OFF_INTIN +
 			                         cs->n_intin * 2), 0xDEADu);
+		else if (cs->n_intin == 0)
+			TD_CHECK_EQ(td_load_be16(rec + TD_VDI_OFF_INTIN + 2), 0xDEADu);
 
 		/* outputs the backend wrote, and the poison behind them */
 		TD_CHECK_EQ(td_load_be16(rec + TD_VDI_OFF_INTOUT),

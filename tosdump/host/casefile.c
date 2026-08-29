@@ -1,12 +1,20 @@
 /*
  * casefile.c -- host-side case table reader (spec section 6).
  *
- * The CRC is taken over the raw file bytes.  That is the strictest identity
- * available and it is what the record header carries: two dumps may only be
- * compared if they were produced from the same table, byte for byte.
+ * The comparator needs three things from a case table and no more: its CRC32
+ * (the identity the record header carries), how many cases it holds, and the
+ * comment column so a difference report can name the case.  It deliberately
+ * does not parse the value columns: those differ between the VDI/AES form and
+ * the BIOS/GEMDOS form, and tosdiff has no business caring which it is.
  *
- * A case id is the physical 1-based line number in the table, so inserting a
- * comment shifts ids -- and changes the CRC, which is exactly what makes the
+ * What a line is, and what the comment column is, come from core/cases.c --
+ * one rule in one place, so the reader and the runner cannot disagree about
+ * which physical line a case id refers to.
+ *
+ * The CRC is over the raw file bytes.  That is the strictest identity
+ * available: two dumps may only be compared if they came from the same table,
+ * byte for byte.  A case id is a physical line number, so inserting even a
+ * comment shifts ids -- and changes the CRC, which is what makes the
  * comparator refuse the stale dump instead of comparing nonsense.
  */
 #include <stdio.h>
@@ -14,34 +22,19 @@
 #include <string.h>
 
 #include "casefile.h"
-
-static void take_comment(char *dst, const char *line, size_t len)
-{
-	const char *last_tab = NULL;
-	const char *start;
-	size_t n, i;
-
-	for (i = 0; i < len; i++)
-		if (line[i] == '\t')
-			last_tab = line + i;
-
-	start = last_tab ? last_tab + 1 : line;
-	n = (size_t)(line + len - start);
-	while (n > 0 && (start[n - 1] == '\r' || start[n - 1] == ' '))
-		n--;
-	if (n >= TD_COMMENT_LEN)
-		n = TD_COMMENT_LEN - 1;
-	memcpy(dst, start, n);
-	dst[n] = '\0';
-}
+#include "cases.h"
 
 int td_casefile_read(struct td_casefile *cf, const char *path, const char **why)
 {
+	struct td_line_iter it;
+	const char *line;
+	size_t line_len;
+	uint16_t line_no;
+	int is_case;
 	FILE *f;
 	long size;
-	uint8_t *raw;
-	size_t got, pos;
-	uint16_t line_no = 0;
+	char *raw;
+	size_t got;
 
 	memset(cf, 0, sizeof *cf);
 
@@ -56,7 +49,7 @@ int td_casefile_read(struct td_casefile *cf, const char *path, const char **why)
 		if (why) *why = "cannot seek";
 		return -1;
 	}
-	raw = (uint8_t *)malloc((size_t)size + 1);
+	raw = (char *)malloc((size_t)size + 1);
 	if (!raw) {
 		fclose(f);
 		if (why) *why = "out of memory";
@@ -71,44 +64,21 @@ int td_casefile_read(struct td_casefile *cf, const char *path, const char **why)
 	}
 	raw[got] = '\0';
 
-	cf->crc = td_crc32(raw, got);
+	cf->crc = td_crc32((const uint8_t *)raw, got);
 
-	pos = 0;
-	while (pos <= got) {
-		size_t start = pos, len;
-		const char *line;
-
-		while (pos < got && raw[pos] != '\n')
-			pos++;
-		len = pos - start;
-		line = (const char *)raw + start;
-		pos++;                       /* step over the newline */
-		line_no++;
-
-		/* strip a trailing CR so a table edited on the Atari still parses */
-		if (len > 0 && line[len - 1] == '\r')
-			len--;
-
-		/* blank and comment lines carry no case, but they do consume an id */
-		{
-			size_t i = 0;
-			while (i < len && (line[i] == ' ' || line[i] == '\t'))
-				i++;
-			if (i == len || line[i] == '#')
-				continue;
-		}
-
+	td_line_iter_init(&it, raw, got);
+	while (td_line_iter_next(&it, &line, &line_len, &line_no, &is_case)) {
+		if (!is_case)
+			continue;
 		if (cf->count >= TD_MAX_CASES) {
 			free(raw);
 			if (why) *why = "more cases than TD_MAX_CASES";
 			return -2;
 		}
 		cf->line[cf->count] = line_no;
-		take_comment(cf->comment[cf->count], line, len);
+		td_case_line_comment(line, line_len, cf->comment[cf->count],
+		                     TD_COMMENT_LEN);
 		cf->count++;
-
-		if (start + len >= got && pos > got)
-			break;
 	}
 
 	free(raw);

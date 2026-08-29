@@ -60,6 +60,12 @@ int td_cases_load(struct td_case_table *t, const char *path,
 
 const char *td_case_error_text(int rc);
 
+/* Copies the comment column -- everything from column five on, tabs included
+ * -- of one case line.  Shared so the runner and the host tools name a case
+ * the same way. */
+void td_case_line_comment(const char *line, size_t len, char *dst,
+                          size_t dst_size);
+
 /*
  * Shared line iterator.  One rule for what a line is, used by the parser and
  * by the host-side reader, so the two cannot drift apart.  Returns 0 when the
