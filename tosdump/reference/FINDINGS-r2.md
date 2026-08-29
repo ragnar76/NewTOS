@@ -196,22 +196,85 @@ asserted from tests that do not exist.
 
 ## Reference-side observations, not NewTOS defects
 
-### R2-6 — EmuTOS writes `INTIN[0]` on `v_dspcur` (escape 18)
+### R2-6 — `v_dspcur` (escape 18) clobbers the caller's `INTIN[0]`
 
     case 169   intin[0]   NewTOS = 0xDEAD (untouched)   reference = 0
 
-The case passes no `intin` at all, and EmuTOS wrote a zero into it — it
-modified its caller's input array. NewTOS correctly leaves it alone.
+**OPEN — decision deferred to a later pass (2026-08-30).**
 
-Under the project's 1:1-EmuTOS rule this still needs a decision, because an
-application could in principle observe it. Recorded rather than resolved.
+The case passes no `intin` at all, and the reference came back with a zero in
+it: EmuTOS wrote into its caller's input array.
 
-### R2-7 — `vqt_name` writes one word past its declared count
+Not a quirk worth preserving. `vdi/vdi_esc.c:274-278`:
 
-    case 54   intout[33]   NewTOS = 0xDEAD (untouched)   reference = 0
+```c
+static void escfn18(Vwk * vwk)
+{
+    INTIN[0] = 0;           /* show regardless */
+    vdi_v_show_c(vwk);      /* display the graphics cursor */
+}
+```
 
-The jump table declares `nintout = 33` for opcode 130 (`vdi_main.c`), so
-`INTOUT[0..32]`. The reference has `INTOUT[33]` written as well.
+It sets `INTIN[0]` as an argument for `v_show_c` — and `vdi_v_show_c` does not
+read it. It calls `linea_show_mouse()` and nothing else
+(`vdi/vdi_mouse.c:321-324`). Historically `v_show_c` took a reset flag; this
+implementation dropped it and the assignment stayed behind. The only surviving
+effect is the clobber.
+
+### R2-7 — `vqt_name` (130) writes one word past its declared count
+
+    case 54..57   intout[33]   NewTOS = 0xDEAD (untouched)   reference = 0
+
+**OPEN — decision deferred to a later pass (2026-08-30).**
+
+An off-by-one, not a convention. `vdi/vdi_text.c:1128-1133`:
+
+```c
+*int_out++ = tmp_font->font_id;                        /* INTOUT[0] */
+for (i = 0, name = tmp_font->name; (*int_out++ = *name++); i++)
+    ;
+while (i++ < FONT_NAME_LEN) *int_out++ = 0;
+```
+
+The copy loop writes each character **including the terminating NUL** — the
+assignment happens before the test — but counts only the non-NUL characters in
+`i`. For a name of length L that is `1 + (L+1) + (FONT_NAME_LEN - L)` = **34**
+words with `FONT_NAME_LEN = 32` (`include/fonthdr.h:28`), i.e. `INTOUT[0..33]`.
+The jump table declares `nintout = 33` for opcode 130 (`vdi/vdi_main.c:105`),
+i.e. `INTOUT[0..32]`.
+
+It survived because real GEM applications size `intout` generously — gemlib
+uses fixed maxima and the VDI arrays are conventionally 128 words. An
+application that sized `INTOUT` at exactly 33 words would have the word after
+it overwritten.
+
+### What the decision on R2-6 and R2-7 actually is
+
+Both are EmuTOS writing outside its own contract, into memory the caller owns.
+Reproducing them means:
+
+- **R2-6** — adding an assignment whose only effect is destroying one of the
+  caller's input words.
+- **R2-7** — deliberately writing one word past a declared output count, i.e.
+  overrunning a caller's buffer.
+
+**Recommendation on record, decision not taken:** reproduce neither; keep both
+documented here with the citations, and leave the five tests (54–57, 169) red
+so they stand as a permanent marker of a known and understood divergence.
+
+This is deliberately *not* filed under `docs/MEMORY.md`'s rule against
+rationalising EmuTOS deviations, and the distinction should be checked when
+the decision is made rather than assumed. That rule guards behaviour an
+application can rely on. Neither of these is behaviour: R2-6 is a dead write,
+and R2-7 is a question of whether NewTOS writes past a buffer boundary it
+declared. If the answer is nonetheless "match EmuTOS exactly", each is a
+one-line change.
+
+A third option exists and was deliberately not built: `mkrusttests` could emit
+`#[ignore = "reason"]` for a documented exception list, which would leave the
+suite green with the divergence still visible. It costs the property that
+every red test is an open question, which is worth more right now than a green
+count.
 
 ## Deliberate profile difference
 
