@@ -29,9 +29,19 @@ backend seeds pens 0..15 from EmuTOS' `videl_palette1`. Fixed in the harness,
 and named here because a harness artefact counted as a finding would be worse
 than no finding at all.
 
+> **Corrected 2026-08-29 after implementation.** Three of the entries below
+> were wrong when first written, and the corrections are kept in place rather
+> than edited away, because how the error happened matters more than the
+> tidiness of the record: in each case a claim was made about the reference
+> without reading the reference bytes or the EmuTOS source that produced them.
+> That is the exact failure this whole exercise exists to prevent. See the
+> **Withdrawn** section.
+
 ## Genuine defects
 
-### R2-1 — `vsm_color` (20) does not clamp
+### R2-1 — WITHDRAWN, see below
+
+### R2-1 (as originally written) — `vsm_color` (20) does not clamp
 
     case 89   intout[0]   NewTOS = 99   reference = 1
 
@@ -55,14 +65,30 @@ only the x components and never touches the y ones. NewTOS zeroes them.
 Invisible without poisoning the arrays first, which is exactly why the dumper
 does.
 
-### R2-3 — `vqt_name` (130) appears to ignore its font index
+### R2-3 — `vqt_name` (130) does not walk the font ring — FIXED
 
-    cases 54, 55, 56, 57 (indices 0..3) all produce the same NewTOS output
+    cases 54..57 (indices 0..3): 16 differing fields, now 1
 
-EmuTOS returns a different name per index. NewTOS returns one name for every
-index, and it is the name of a different font besides (see R2-4).
+**The premise as first written was wrong** and is corrected here: the claim
+was "EmuTOS returns a different name per index". It does not. Records 19..22
+of `EMUTOS14-VDI-r2.BIN` are byte-identical, all reporting `font_id = 1` and
+`"6x6 system font"`, and that follows necessarily from the source —
+`vdi_vqt_name` counts *distinct* `font_id`s, and all three built-in faces
+carry `font_id = 1` (`bios/fnt_st_6x6.c:91`, `fnt_st_8x8.c:147`,
+`fnt_st_8x16.c:275`), so element 1 is `fon6x6` and every other index falls
+through the `if (!found)` fallback onto the same font. The four indices
+*cannot* differ without deviating from EmuTOS.
 
-### R2-4 — the default font differs
+The dump that disproves it was in hand when the claim was made. It was not
+read.
+
+There was a real defect underneath, though a different one: NewTOS returned a
+hardcoded font id and name instead of walking the ring at all. Replaced with
+the 1:1 ring walk (`vdi/vdi_text.c:1100-1134`, fallback `:1125-1126`), which
+also closes **AUD-V1-011**. Cases 54..57 now differ only in `intout[33]`
+(= R2-7).
+
+### R2-4 — CORRECTED: the text inquiries ignore `cur_font`
 
     case 52   ptsout[0]   NewTOS = 8    reference = 6     (width of 'A')
     case 58   ptsout[0]   NewTOS = 8    reference = 6
@@ -70,20 +96,36 @@ index, and it is the name of a different font besides (see R2-4).
               ptsout[9]   NewTOS = 13   reference = 4
     case 54   the name reads "8x16 system font" vs "6x6 system font"
 
-NewTOS opens a workstation whose default font is 8×16; EmuTOS on this device
-opens one whose default is 6×6. Everything downstream of font choice —
-`vqt_width`, `vqt_extent`, `vqt_fontinfo`, `vqt_name`, and the AES text that
-sits on them — differs as a consequence. This is the NewTOS-side counterpart
-of round 1's F2 (the TT has four system fonts to EmuTOS's three).
+**The mechanism as first written was wrong.** The claim was "NewTOS opens a
+workstation whose default font is 8×16; EmuTOS opens one whose default is
+6×6". Both open with 8×16: `text_init` picks the default by
+`cell_height = (V_REZ_VT >= 400) ? 16 : 8` (`vdi/vdi_text.c:612`), and at 480
+lines that is the 16-tall face. The reference reports 6×6 because **our own
+reset sequence asks for it** — `td_reset_vdi` issues
+`vst_height(0, SIZ_TAB[1])`, and `SIZ_TAB[1]` on this device is 4
+(`EMUTOS14-VDI-r2.LOG`), so EmuTOS switches `cur_font` to the smallest face
+it has.
 
-Whether to match EmuTOS here is a decision, not a bug report: it changes text
-metrics across the whole system.
+So this is not a default-font question at all, and NewTOS is not missing the
+small face — `FON_6X6` is present in `tos-api/src/vdi/font.rs`. The real
+defect is that `vqt_width`, `vqt_extent` and `vqt_fontinfo` read the 8×16
+module constants instead of `vwk.cur_font`, so they report the same metrics
+whatever font the workstation actually selected. That is a plain conformance
+bug and is fixable without any policy decision.
 
-**Decision deferred, with the reason on record (2026-08-29, user).** NewTOS
-does not run at TT-medium 640×480 — it targets a Full-HD framebuffer. A 6×6
-system font that is legible on a 640×480 TT screen is not legible at 1920×1080;
-matching EmuTOS's font choice here would make the desktop unreadable on the
-actual target device. So the smaller fonts were deliberately not adopted.
+Fixing the inquiries to read `cur_font` is not a policy decision; it is
+required either way.
+
+**The deferred decision was posed on the wrong premise.** It was put to the
+user as "should NewTOS adopt EmuTOS's small default font", and the answer was
+no, with a sound reason: NewTOS targets a Full-HD framebuffer, and a 6×6 face
+that is legible on a 640×480 TT screen is not legible at 1920×1080.
+
+That reasoning stands, but the question does not arise. Both systems open at
+8×16, so the desktop default was never at risk. What the measurement actually
+shows is an application explicitly asking for a 4-pixel height and being given
+the nearest face — which is what `vst_height` is for, and which no Full-HD
+argument bears on.
 
 What that leaves open is *how* to express it. The options are not equivalent
 and none is chosen yet: keep NewTOS's 8×16 default and accept that these
@@ -99,13 +141,44 @@ offers. A NewTOS dump at Full HD would differ in every resolution-dependent
 field regardless of fonts, so this decision is entangled with what geometry
 future reference rounds are taken at.
 
-### R2-5 — `vqin_mode` (115) on the string device
+### R2-5 — WITHDRAWN: not a defect, a measurement artefact
 
     case 51   intout[0]   NewTOS = 0   reference = 1
 
-`vqin_mode` returns the stored mode minus one (`D-VDI-11`, an off-by-one
-EmuTOS reproduces from TOS deliberately). The reset does not set the string
-device's mode, so this compares two initial values, and they differ.
+EmuTOS initialises **all four** input modes to 0 (`vdi/vdi_mouse.c:575-578`),
+so two initial values would both read 0. The reference's 1 is not an initial
+value: the AES's keyboard poll calls `gsx_char()`, which issues
+`vsin_mode(device 4, mode 2)` before any application runs
+(`aes/gemgsxif.c:459-461`), and EmuTOS stores `mode - 1` = 1. `loc_mode`
+stays 0 because its only AES writer runs under `appl_tplay` — which is
+exactly the asymmetry the dump shows (cases 49/50 = 0, case 51 = 1).
+
+The dumper ran as a GEM application under a live AES; the Rust harness has no
+AES. NewTOS reports the untouched 0 correctly. Initialising `str_mode = 1`
+would contradict `vdi_mouse.c:578`.
+
+**Open question for the AES, not the VDI:** does NewTOS's AES keyboard poll go
+through `vsin_mode(4,2)` + `v_string` the way `chkkbd`/`gsx_char` does? If it
+does, the real system agrees with the reference and only the AES-less harness
+differs.
+
+## Withdrawn
+
+**R2-1 (`vsm_color`) is not a defect.** `attributes::vsm_color` already calls
+`validate_color_index`, matching `vdi/vdi_marker.c:72-79`. The difference is
+`numcolors`, not the validation: `DEV_TAB[13] = (v_planes<8) ? (1<<v_planes)
+: 256` (`vdi/vdi_control.c:206`), and the reference log reports 16 on the TT
+against NewTOS's 256, so index 99 is invalid there and valid here. This is
+**R2-8**, the deliberate profile difference, which this document had already
+warned would produce exactly such cases.
+
+The supporting argument was also unfounded. It read "`vsl_color` (17),
+`vsf_color` (25), `vst_color` (22) all pass their out-of-range cases, so this
+is one missing validation". `cases/vdi-r2.tsv` contains **no** out-of-range
+case for 17, 25 or 22 — the only one in the table is line 89. A pattern was
+asserted from tests that do not exist.
+
+**R2-5 is not a defect** — see above.
 
 ## Reference-side observations, not NewTOS defects
 

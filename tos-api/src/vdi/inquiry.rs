@@ -202,13 +202,18 @@ pub fn vqt_extent(pb: &Vdipb, vwk: &Vwk) {
 /// `INTIN[0]`. `INTOUT[0]` = char (or −1 if outside the font range);
 /// `PTSOUT[0]` = cell width, `PTSOUT[2]`/`[4]` = left/right offsets (0
 /// for the monospace system font).
+///
+/// **Only the x components are written.** EmuTOS `vdi_vqt_width`
+/// (`vdi_text.c:1062-1096`) pre-zeroes `PTSOUT[2]`/`PTSOUT[4]` (`:1072-1073`),
+/// assigns `PTSOUT[0]` on the in-range path (`:1081`), and never touches the
+/// y components `PTSOUT[1]`/`[3]`/`[5]` — unlike `vqt_extent`, which bzeroes
+/// its eight slots first (`:1031`). Writing them would clobber caller memory
+/// the VDI has no claim on; the reference dump leaves them at the poison
+/// pattern (`tosdump/reference/FINDINGS-r2.md` R2-2).
 pub fn vqt_width(pb: &Vdipb, _vwk: &Vwk) {
     let k = pb.intin(0);
     pb.set_ptsout(2, 0);
     pb.set_ptsout(4, 0);
-    pb.set_ptsout(1, 0);
-    pb.set_ptsout(3, 0);
-    pb.set_ptsout(5, 0);
     if !(font::FIRST_ADE..=font::LAST_ADE).contains(&k) {
         pb.set_intout(0, -1);
     } else {
@@ -221,17 +226,49 @@ pub fn vqt_width(pb: &Vdipb, _vwk: &Vwk) {
 
 /// Opcode 130 — `vqt_name`: the `INTIN[0]`-th (1-based) font face.
 ///
-/// **VW3-dependent:** EmuTOS `vdi_vqt_name` (`vdi_text.c:1100-1134`) walks
-/// the font ring and returns the element-th face (element 1 = `fon6x6` ⇒
-/// "6X6 system font"). NewTOS ships only the single 8×16 face today, so
-/// every index correctly resolves to it: `INTOUT[0]` = font id,
-/// `INTOUT[1..]` = the name, one char per WORD, padded to `NAME_LEN`. When
-/// the 6×6 / 8×8 faces land in VW3, `INTIN[0]` must index the ring
-/// (AUD-V1-011); until then there is no other face to select.
+/// EmuTOS `vdi_vqt_name` (`vdi_text.c:1100-1134`) walks `font_ring` counting
+/// **distinct `font_id`s** and stops on the `element`-th one; an element that
+/// the walk never reaches — including element ≤ 0 — falls back to the
+/// built-in `fon6x6` (`:1125-1126`). It reports the *ring*, not `cur_font`,
+/// and does not change it (`docs/api/vdi/inquiry/_text.md#vqt_name-130`).
+///
+/// All three built-in system faces carry `font_id = 1`
+/// (`bios/fnt_st_6x6.c:91`, `fnt_st_8x8.c:147`, `fnt_st_8x16.c:275`, mirrored
+/// in [`font::RING`]), so the count reaches 1 on the first ring member and never
+/// advances: element 1 selects `fon6x6` and every other element falls back to
+/// `fon6x6` too. The result is therefore the same for every index — which is
+/// exactly what the reference dump records for `INTIN[0]` = 0..3
+/// (`tosdump/reference/EMUTOS14-VDI-r2.BIN`, cases 54-57). The walk is coded
+/// out rather than short-circuited because a loaded face with a different
+/// `font_id` (`vst_load_fonts`, EmuTOS `font_ring[2]`) would make it bite.
+///
+/// `INTOUT[0]` = the selected face's `font_id`; `INTOUT[1..]` = its name, one
+/// character per WORD, NUL-terminated and zero-padded to `NAME_LEN` (32), for
+/// the 33 output WORDs the jump table declares (`vdi_main.c:105`).
+/// Closes AUD-V1-011.
 pub fn vqt_name(pb: &Vdipb) {
-    pb.set_intout(0, font::FONT_ID);
+    let element = pb.intin(0);
+
+    let mut count: i16 = 0;
+    let mut current_font_id: i16 = -1;
+    let mut found: Option<&'static font::SysFont> = None;
+    for id in font::RING {
+        let f = font::font(id);
+        if f.font_id != current_font_id {
+            current_font_id = f.font_id;
+            count += 1;
+            if count == element {
+                found = Some(f);
+                break;
+            }
+        }
+    }
+    // Out of range → the system font (EmuTOS `tmp_font = &fon6x6`).
+    let f = found.unwrap_or(&font::FON_6X6);
+
+    pb.set_intout(0, f.font_id);
     for i in 0..font::NAME_LEN {
-        let ch = font::NAME.get(i).copied().unwrap_or(0);
+        let ch = f.name.get(i).copied().unwrap_or(0);
         pb.set_intout(1 + i, ch as i16);
     }
     pb.set_contrl(4, 1 + font::NAME_LEN as i16);
