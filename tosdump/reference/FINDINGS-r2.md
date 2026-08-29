@@ -1,6 +1,11 @@
 # Round 2 — NewTOS against the EmuTOS reference
 
-`cargo test -p tos-api --test vdi_reference` → **107 of 120 pass, 13 fail.**
+`cargo test -p tos-api --test vdi_reference` → **112 of 120 pass, 8 fail.**
+
+*(First run: 107/13. The five that closed are recorded under each finding.
+Every genuine NewTOS defect this round found is fixed; the eight that remain
+are two deliberate profile differences, one harness artefact and five
+reference-side observations, each named below.)*
 
 The reference is `EMUTOS14-VDI-r2.BIN`, measured on an Atari TT running
 EmuTOS in 640×480×16, case table `cases/vdi-r2.tsv` (CRC `A0706A6D`, 120
@@ -116,6 +121,15 @@ bug and is fixable without any policy decision.
 Fixing the inquiries to read `cur_font` is not a policy decision; it is
 required either way.
 
+**Fixed (`8b46b8f`), and it was three defects, not one.** The inquiries did
+not read `cur_font` at all. `vst_height` was already correct — it walks the
+ring and returns `FON_6X6` for a requested height of 4 — but was being asked
+the wrong question, because `workstation.rs` folded `SIZ_TAB[0..3]` over a
+one-element list holding only the 8×16 metrics and so reported `{7,13,7,13}`
+where the reference reports `{5,4,7,13}`. The reset therefore asked for
+height 13, not 4. Fixing the inquiries alone would have changed nothing.
+Cases 52, 53, 58, 59 and 60 now pass.
+
 **The deferred decision was posed on the wrong premise.** It was put to the
 user as "should NewTOS adopt EmuTOS's small default font", and the answer was
 no, with a sound reason: NewTOS targets a Full-HD framebuffer, and a 6×6 face
@@ -210,6 +224,20 @@ NewTOS reports a Falcon truecolor workstation: 256 colours over 16 planes
 invalid there and EmuTOS returns −1. This follows from the chosen target
 profile (`docs/MEMORY.md`, Falcon030/TOS4) and is not a defect. Any case
 whose result depends on the colour count will differ for the same reason.
+
+## What the suite does not cover
+
+Worth stating, because a green suite invites the wrong conclusion. `vst_font`
+(opcode 21) is an echo with no effect in NewTOS: EmuTOS sets `cur_font` to the
+face it found and drives the size through `vst_point`/`vst_height` with the
+old `top` (`vdi_text.c:939-986`), while we only write `INTOUT[0]`. That is a
+real behaviour gap, and **no case in `vdi-r2.tsv` catches it** — the table has
+`vst_font` cases, but nothing afterwards reads back a metric that would expose
+the missing effect.
+
+The lesson generalises: a case that only checks a setter's echo proves the
+echo, not the effect. Round 3 should pair state-changing calls with an
+inquiry that reads the state back.
 
 ## Reproducing
 
