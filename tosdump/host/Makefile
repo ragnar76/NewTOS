@@ -12,7 +12,7 @@ CORE    := ../core
 TESTS   := ../tests
 
 .PHONY: all test run-tests clean
-all: $(BUILD)/tosdiff
+all: $(BUILD)/tosdiff $(BUILD)/casecheck
 
 $(BUILD):
 	@mkdir -p $(BUILD)
@@ -58,6 +58,11 @@ $(BUILD)/mkdump.o: $(TESTS)/mkdump.c casefile.h | $(BUILD)
 	$(CC) $(CFLAGS) -c $< -o $@
 $(BUILD)/mkdump: $(BUILD)/mkdump.o $(BUILD)/casefile.o $(BUILD)/record.o \
                  $(BUILD)/cases.o
+	$(CC) $(CFLAGS) $^ -o $@
+
+$(BUILD)/casecheck.o: casecheck.c $(CORE)/cases.h | $(BUILD)
+	$(CC) $(CFLAGS) -c $< -o $@
+$(BUILD)/casecheck: $(BUILD)/casecheck.o $(BUILD)/cases.o $(BUILD)/record.o
 	$(CC) $(CFLAGS) $^ -o $@
 
 $(BUILD)/test_cases.o: $(TESTS)/test_cases.c $(TESTS)/tdtest.h $(CORE)/cases.h | $(BUILD)

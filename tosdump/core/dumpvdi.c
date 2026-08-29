@@ -7,6 +7,10 @@
  * usage: DUMPVDI [CASES.TSV [OUT.BIN]]
  *        defaults: VDI.TSV in the current directory, VDI.BIN beside it.
  *
+ * A human starts this from a desktop on both machines, so it waits for RETURN
+ * before returning -- otherwise the desktop redraws over the only diagnosis
+ * there is.  The wait is after every measurement and cannot influence one.
+ *
  * The case table is read at runtime and never compiled in (spec section 6):
  * it must be provably the same table for both runs, and recompiling between
  * runs makes that unprovable.  Records are buffered in RAM and written once
@@ -27,6 +31,15 @@
 static struct td_case_table table;
 static uint8_t records[(size_t)TD_MAX_CASES * TD_VDI_RECORD_SIZE];
 
+/* Outside the measurement: every case has already been run and recorded. */
+static int finish(int rc)
+{
+	printf("\npress RETURN\n");
+	while (getchar() == EOF)
+		break;
+	return rc;
+}
+
 int main(int argc, char **argv)
 {
 	const char *table_path = (argc > 1) ? argv[1] : "VDI.TSV";
@@ -46,19 +59,19 @@ int main(int argc, char **argv)
 			       err.what ? err.what : "", td_case_error_text(rc));
 		else
 			printf("%s: %s\n", table_path, td_case_error_text(rc));
-		return 1;
+		return finish(1);
 	}
 	printf("%s: %u cases, CRC %08lX\n", table_path, table.count,
 	       (unsigned long)table.crc);
 	if (table.count == 0) {
 		printf("nothing to do\n");
-		return 1;
+		return finish(1);
 	}
 
 	rc = td_gem_open(&wk);
 	if (rc != 0) {
 		printf("%s\n", td_gem_error_text(rc));
-		return 1;
+		return finish(1);
 	}
 	printf("workstation %d on physical handle %d, %dx%d\n",
 	       wk.handle, wk.phys_handle, wk.work_out[0] + 1, wk.work_out[1] + 1);
@@ -68,17 +81,17 @@ int main(int argc, char **argv)
 	td_gem_close(&wk);
 	if (rc != 0) {
 		printf("runner failed (%d)\n", rc);
-		return 1;
+		return finish(1);
 	}
 
 	rc = td_dump_write(out_path, TD_AREA_VDI, table.count, TD_BUILD_ID,
 	                   table.crc, records, bytes);
 	if (rc != 0) {
 		printf("cannot write %s (%d)\n", out_path, rc);
-		return 1;
+		return finish(1);
 	}
 
 	printf("%s: %u records, %lu bytes\n", out_path, table.count,
 	       (unsigned long)(TD_HEADER_SIZE + bytes));
-	return 0;
+	return finish(0);
 }

@@ -1,0 +1,26 @@
+# smoke.tsv -- SMOKE TEST TABLE, NOT the measurement case list.
+#
+# This exists only to prove the dumper runs end to end on a machine: that the
+# case table loads, appl_init/graf_handle/v_opnvwk succeed, the reset and the
+# poison work, and a well-formed VDI.BIN comes out. It is deliberately NOT
+# cases/vdi.tsv: spec section 10 requires the real first case list to come from
+# a trap-dispatcher log of QED under NewTOS, not from a hand-picked selection.
+# Nothing measured with this table is a conformance result.
+#
+# Opcodes and their inputs are taken from the EmuTOS jump table
+# (vdi/vdi_main.c:32-106) and from each handler, not from memory. Only calls
+# with deterministic results are listed: vq_mouse (124) and vq_key_s (128)
+# read live input devices and would differ between two runs on one machine.
+#
+# opcode	sub	intin	ptsin	comment
+35	0	-	-	vql_attributes line attributes after the reset
+36	0	-	-	vqm_attributes marker attributes after the reset
+37	0	-	-	vqf_attributes fill attributes after the reset
+38	0	-	-	vqt_attributes text attributes after the reset
+102	0	0	-	vq_extnd 0 SIZ_TAB and DEV_TAB
+102	0	1	-	vq_extnd 1 clipping and extended info
+115	0	1	-	vqin_mode locator input mode
+6	0	-	0,0,100,100	v_pline one diagonal, two points
+6	0	-	0,100,100,0	v_pline the other diagonal
+9	0	-	10,10,60,10,60,40	v_fillarea a triangle, three points
+105	0	-	5,5	v_get_pixel background pixel after v_clrwk

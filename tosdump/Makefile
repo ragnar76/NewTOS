@@ -1,6 +1,6 @@
 # Makefile -- cross builds of the TOS reference dumper.
 #
-#   make dumpvdi-m68k     DUMPVDI.TOS for TOS 3.06 on the TT
+#   make dumpvdi-m68k     DUMPVDI.PRG for TOS 3.06 on the TT
 #   make dumpvdi-newtos   DUMPVDI.NAP for NewTOS on the Pi 4 (AArch64)
 #   make host-test        the host-side suite (same as make -C host test)
 #
@@ -27,8 +27,10 @@ all: dumpvdi-m68k dumpvdi-newtos host-test
 $(BUILD):
 	@mkdir -p $(BUILD)
 
-dumpvdi-m68k: $(BUILD)/DUMPVDI.TOS
-$(BUILD)/DUMPVDI.TOS: $(VDI_SRC) abi/m68k_trap.c $(wildcard core/*.h) | $(BUILD)
+# .PRG, not .TOS: the dumper is an AES client (appl_init / graf_handle /
+# v_opnvwk), and the desktop only gives a GEM environment to a .PRG.
+dumpvdi-m68k: $(BUILD)/DUMPVDI.PRG
+$(BUILD)/DUMPVDI.PRG: $(VDI_SRC) abi/m68k_trap.c $(wildcard core/*.h) | $(BUILD)
 	$(M68K_CC) $(M68K_CFLAGS) $(VDI_SRC) abi/m68k_trap.c -o $@
 	@$(CROSS_MINT)size $@
 
