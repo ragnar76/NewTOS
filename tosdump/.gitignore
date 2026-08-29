@@ -1,3 +1,7 @@
 build/
 *.o
+
+# Dumps are build output everywhere except in reference/, where they are the
+# measurement the whole project compares against and must be version-tracked.
 *.BIN
+!reference/*.BIN

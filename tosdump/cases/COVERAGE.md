@@ -1,15 +1,18 @@
 # VDI case coverage ledger
 
-What `vdi.tsv` covers, what is still to come, and what is excluded with the
+What `vdi-r1.tsv` covers, what is still to come, and what is excluded with the
 reason. The point is that expanding the table is mechanical: pick the next
 `later` row, write the case, move it to `round 1`.
 
 Opcodes are the complete EmuTOS jump tables (`vdi/vdi_main.c:32-111`); names
 and input arities come from each handler and from `docs/api/vdi/`.
 
-**Appending only.** A case id is the physical line number in `vdi.tsv`, so a
-new case goes at the end. Inserting one renumbers every case below it and
-changes the file CRC, which invalidates every dump taken with the old table.
+**One table per round.** A case id is the physical line number and the file's
+CRC binds every dump to it, so *any* edit -- an appended case included --
+invalidates the dumps already taken. Round 1 is frozen as `vdi-r1.tsv`
+(CRC `FFF2281E`, measured on EmuTOS 1.4 and TOS 3.06); round 2 gets its own
+`vdi-r2.tsv`, so earlier dumps stay valid and comparable forever instead of
+having to be re-measured on every machine each time the table grows.
 
 ## Status
 

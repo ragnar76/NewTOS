@@ -304,7 +304,14 @@ void td_call_record_write(uint8_t *rec, uint16_t case_id, uint16_t opcode,
 /* ------------------------------------------------------------------ */
 
 const struct td_field td_vdi_fields[] = {
-	{ "d0",            TD_VDI_OFF_RET,           1,               4, 1 },
+	/* The VDI returns flip_y as a WORD: vdi_asm.S:124-125 clears d0 with
+	 * `moveq #0,d0` before `move.w _flip_y,d0`.  TOS 3.06 does not clear the
+	 * high half -- measured 0x0111 after the inquiries and setters, 0xFFFF
+	 * after v_pline and v_fillarea -- so comparing the whole long would make
+	 * every case differ on a register leftover that is not part of the
+	 * contract.  The long stays in the record as evidence; the compared
+	 * field is the half the contract defines. */
+	{ "d0",            TD_VDI_OFF_RET + 2,       1,               2, 1 },
 	{ "contrl",        TD_VDI_OFF_CONTRL,        TD_VDI_CONTRL_N, 2, 1 },
 	{ "intin",         TD_VDI_OFF_INTIN,         TD_VDI_INTIN_N,  2, 1 },
 	{ "ptsin",         TD_VDI_OFF_PTSIN,         TD_VDI_PTSIN_N,  2, 1 },
@@ -315,7 +322,7 @@ const struct td_field td_vdi_fields[] = {
 };
 
 const struct td_field td_aes_fields[] = {
-	{ "d0",       TD_AES_OFF_RET,     1,                4, 1 },
+	{ "d0",       TD_AES_OFF_RET + 2, 1,                2, 1 },
 	{ "contrl",   TD_AES_OFF_CONTRL,  TD_AES_CONTRL_N,  2, 1 },
 	{ "global",   TD_AES_OFF_GLOBAL,  TD_AES_GLOBAL_N,  2, 1 },
 	{ "int_in",   TD_AES_OFF_INTIN,   TD_AES_INTIN_N,   2, 1 },

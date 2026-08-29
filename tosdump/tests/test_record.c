@@ -312,11 +312,20 @@ static void test_field_tables(void)
 	TD_CHECK(f != NULL);
 	for (n = 0; f && f[n].name; n++)
 		;
-	/* d0, contrl, intin, ptsin, intout, ptsout, contrl_before */
+	/* d0, contrl, intin, ptsin, intout, ptsout, contrl_before.
+	 *
+	 * d0 is compared as a WORD, not a LONG. The VDI returns flip_y in the
+	 * low half (EmuTOS vdi_asm.S:124-125 does `moveq #0,d0` and only then
+	 * `move.w _flip_y,d0`); TOS 3.06 does not clear the high half, so it
+	 * carries whatever the call path left there -- measured as 0x0111 for
+	 * the inquiries and setters and 0xFFFF after v_pline/v_fillarea. The
+	 * whole long stays in the record as evidence; only the half the
+	 * contract defines is compared. The field descriptor was wrong, not
+	 * the case. */
 	TD_CHECK_EQ(n, 7);
 	TD_CHECK(f && strcmp(f[0].name, "d0") == 0);
-	TD_CHECK(f && f[0].off == TD_VDI_OFF_RET);
-	TD_CHECK(f && f[0].width == 4);
+	TD_CHECK(f && f[0].off == TD_VDI_OFF_RET + 2);
+	TD_CHECK(f && f[0].width == 2);
 	TD_CHECK(f && f[0].count == 1);
 	TD_CHECK(f && strcmp(f[1].name, "contrl") == 0);
 	TD_CHECK(f && f[1].off == TD_VDI_OFF_CONTRL);
@@ -330,6 +339,9 @@ static void test_field_tables(void)
 	for (n = 0; f && f[n].name; n++)
 		;
 	TD_CHECK_EQ(n, 7);
+	TD_CHECK(f && strcmp(f[0].name, "d0") == 0);
+	TD_CHECK(f && f[0].off == TD_AES_OFF_RET + 2);
+	TD_CHECK(f && f[0].width == 2);
 
 	f = td_area_fields(TD_AREA_GEMDOS);
 	TD_CHECK(f != NULL);
