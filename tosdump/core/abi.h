@@ -21,12 +21,19 @@
 
 #include <stdint.h>
 
+/*
+ * Both return what the trap left in its return register -- d0 on the m68k, x0
+ * on AArch64.  For the VDI that is flip_y (docs/api/vdi/_dispatcher.md); it is
+ * an output of the call, so the backend hands it back rather than discarding
+ * it, and the runner records it.
+ */
+
 /* contrl[] must already carry opcode, counts, sub-opcode and handle. */
-void td_abi_vdi(int16_t *contrl, int16_t *intin, int16_t *ptsin,
-                int16_t *intout, int16_t *ptsout);
+int32_t td_abi_vdi(int16_t *contrl, int16_t *intin, int16_t *ptsin,
+                   int16_t *intout, int16_t *ptsout);
 
 /* control[] must already carry opcode and the four parameter counts. */
-void td_abi_aes(int16_t *control, int16_t *global, int16_t *int_in,
-                int16_t *int_out, void **addr_in, void **addr_out);
+int32_t td_abi_aes(int16_t *control, int16_t *global, int16_t *int_in,
+                   int16_t *int_out, void **addr_in, void **addr_out);
 
 #endif /* TOSDUMP_ABI_H */

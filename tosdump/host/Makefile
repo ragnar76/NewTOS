@@ -27,11 +27,13 @@ $(BUILD)/runner.o: $(CORE)/runner.c $(CORE)/runner.h $(CORE)/abi.h | $(BUILD)
 	$(CC) $(CFLAGS) -c $< -o $@
 $(BUILD)/dump.o: $(CORE)/dump.c $(CORE)/dump.h | $(BUILD)
 	$(CC) $(CFLAGS) -c $< -o $@
+$(BUILD)/log.o: $(CORE)/log.c $(CORE)/log.h | $(BUILD)
+	$(CC) $(CFLAGS) -c $< -o $@
 $(BUILD)/stub_abi.o: $(TESTS)/stub_abi.c $(TESTS)/stub_abi.h $(CORE)/abi.h | $(BUILD)
 	$(CC) $(CFLAGS) -c $< -o $@
 
 CORE_OBJ := $(BUILD)/record.o $(BUILD)/cases.o $(BUILD)/gem.o \
-            $(BUILD)/runner.o $(BUILD)/dump.o
+            $(BUILD)/runner.o $(BUILD)/dump.o $(BUILD)/log.o
 
 # The same writer, built for both target configurations (spec section 2.1).
 $(BUILD)/record_be.o: $(CORE)/record.c $(CORE)/record.h $(CORE)/tosdump.h | $(BUILD)
@@ -65,6 +67,11 @@ $(BUILD)/casecheck.o: casecheck.c $(CORE)/cases.h | $(BUILD)
 $(BUILD)/casecheck: $(BUILD)/casecheck.o $(BUILD)/cases.o $(BUILD)/record.o
 	$(CC) $(CFLAGS) $^ -o $@
 
+$(BUILD)/test_log.o: $(TESTS)/test_log.c $(TESTS)/tdtest.h $(CORE)/log.h | $(BUILD)
+	$(CC) $(CFLAGS) -c $< -o $@
+$(BUILD)/test_log: $(BUILD)/test_log.o $(BUILD)/log.o $(BUILD)/record.o
+	$(CC) $(CFLAGS) $^ -o $@
+
 $(BUILD)/test_cases.o: $(TESTS)/test_cases.c $(TESTS)/tdtest.h $(CORE)/cases.h | $(BUILD)
 	$(CC) $(CFLAGS) -c $< -o $@
 $(BUILD)/test_cases: $(BUILD)/test_cases.o $(BUILD)/cases.o $(BUILD)/record.o
@@ -92,12 +99,15 @@ test:
 	@$(MAKE) --no-print-directory clean
 	@$(MAKE) --no-print-directory run-tests
 
-run-tests: $(BUILD)/test_record $(BUILD)/test_cases $(BUILD)/test_runner \
-      $(BUILD)/tosdiff $(BUILD)/mkdump $(BUILD)/emit_be $(BUILD)/emit_le
+run-tests: $(BUILD)/test_record $(BUILD)/test_cases $(BUILD)/test_log \
+      $(BUILD)/test_runner $(BUILD)/tosdiff $(BUILD)/mkdump \
+      $(BUILD)/emit_be $(BUILD)/emit_le
 	@echo "== record format"
 	@$(BUILD)/test_record
 	@echo "== case table"
 	@$(BUILD)/test_cases
+	@echo "== run log"
+	@$(BUILD)/test_log $(BUILD)/test.log
 	@echo "== runner against the stub backend"
 	@$(BUILD)/test_runner $(BUILD)/stub-vdi.bin
 	@$(BUILD)/tosdiff --validate $(BUILD)/stub-vdi.bin | sed 's/^/  /'

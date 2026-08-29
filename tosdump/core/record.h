@@ -81,10 +81,10 @@ void td_poison_call(struct td_call_frame *f);
 
 /* Writers.  `rec` must be at least the area's record size. */
 void td_vdi_record_write(uint8_t *rec, uint16_t case_id, uint16_t opcode,
-                         const struct td_vdi_arrays *after,
+                         int32_t ret, const struct td_vdi_arrays *after,
                          const int16_t *contrl_before);
 void td_aes_record_write(uint8_t *rec, uint16_t case_id, uint16_t opcode,
-                         const struct td_aes_arrays *after);
+                         int32_t ret, const struct td_aes_arrays *after);
 void td_call_record_write(uint8_t *rec, uint16_t case_id, uint16_t opcode,
                           const struct td_call_frame *f);
 

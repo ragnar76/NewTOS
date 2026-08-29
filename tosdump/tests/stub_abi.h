@@ -33,6 +33,9 @@
 #define TD_STUB_PTSOUT_1    0x0222
 #define TD_STUB_N_PTSOUT     1
 #define TD_STUB_N_INTOUT     2
+/* what the stub leaves in the trap's return register, per call kind */
+#define TD_STUB_VDI_D0       1    /* flip_y */
+#define TD_STUB_AES_D0       0
 
 struct td_stub_call {
 	int16_t kind;

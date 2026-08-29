@@ -23,8 +23,8 @@ static struct td_stub_call *log_slot(void)
 	return &overflow;
 }
 
-void td_abi_vdi(int16_t *contrl, int16_t *intin, int16_t *ptsin,
-                int16_t *intout, int16_t *ptsout)
+int32_t td_abi_vdi(int16_t *contrl, int16_t *intin, int16_t *ptsin,
+                   int16_t *intout, int16_t *ptsout)
 {
 	struct td_stub_call *c = log_slot();
 	int i;
@@ -78,10 +78,11 @@ void td_abi_vdi(int16_t *contrl, int16_t *intin, int16_t *ptsin,
 		ptsin[0] = (int16_t)TD_STUB_PTSIN_MARK;
 		break;
 	}
+	return TD_STUB_VDI_D0;
 }
 
-void td_abi_aes(int16_t *control, int16_t *global, int16_t *int_in,
-                int16_t *int_out, void **addr_in, void **addr_out)
+int32_t td_abi_aes(int16_t *control, int16_t *global, int16_t *int_in,
+                   int16_t *int_out, void **addr_in, void **addr_out)
 {
 	struct td_stub_call *c = log_slot();
 
@@ -114,4 +115,5 @@ void td_abi_aes(int16_t *control, int16_t *global, int16_t *int_in,
 		int_out[0] = 0;
 		break;
 	}
+	return TD_STUB_AES_D0;
 }

@@ -63,7 +63,7 @@ static void test_header(void)
 
 	TD_CHECK_MEM(hdr + TD_HDR_OFF_MAGIC, "TDMP", 4);
 	TD_CHECK_EQ(hdr[TD_HDR_OFF_VERSION], 0x00);
-	TD_CHECK_EQ(hdr[TD_HDR_OFF_VERSION + 1], 0x01);
+	TD_CHECK_EQ(hdr[TD_HDR_OFF_VERSION + 1], 0x02);
 	TD_CHECK_EQ(hdr[TD_HDR_OFF_AREA], 0x00);
 	TD_CHECK_EQ(hdr[TD_HDR_OFF_AREA + 1], TD_AREA_VDI);
 	/* 1592 == 0x0638 */
@@ -112,7 +112,7 @@ static void test_header(void)
 		TD_CHECK_EQ(td_header_parse(bad, sizeof bad, &out), TD_ERR_MAGIC);
 
 		memcpy(bad, hdr, sizeof bad);
-		bad[TD_HDR_OFF_VERSION + 1] = 2;
+		bad[TD_HDR_OFF_VERSION + 1] = 1;   /* format 1 had no d0 field */
 		TD_CHECK_EQ(td_header_parse(bad, sizeof bad, &out), TD_ERR_VERSION);
 
 		memcpy(bad, hdr, sizeof bad);
@@ -182,7 +182,6 @@ static void test_vdi_record(void)
 	struct td_vdi_arrays a;
 	int16_t before[TD_VDI_CONTRL_N];
 	uint8_t rec[TD_VDI_RECORD_SIZE];
-	uint8_t zero[TD_VDI_RESERVED_LEN];
 	int i;
 
 	printf("VDI record layout\n");
@@ -199,7 +198,7 @@ static void test_vdi_record(void)
 	a.ptsout[1] = -2;
 
 	memset(rec, 0xFF, sizeof rec);
-	td_vdi_record_write(rec, 42, 6, &a, before);
+	td_vdi_record_write(rec, 42, 6, 1, &a, before);
 
 	/* 42 == 0x002A */
 	TD_CHECK_EQ(rec[TD_VDI_OFF_CASEID], 0x00);
@@ -207,8 +206,8 @@ static void test_vdi_record(void)
 	TD_CHECK_EQ(rec[TD_VDI_OFF_OPCODE], 0x00);
 	TD_CHECK_EQ(rec[TD_VDI_OFF_OPCODE + 1], 0x06);
 
-	memset(zero, 0, sizeof zero);
-	TD_CHECK_MEM(rec + TD_VDI_OFF_RESERVED, zero, TD_VDI_RESERVED_LEN);
+	/* the trap's d0 return, here flip_y = 1 */
+	TD_CHECK_MEM(rec + TD_VDI_OFF_RET, "\x00\x00\x00\x01", 4);
 
 	TD_CHECK_MEM(rec + TD_VDI_OFF_CONTRL, "\x00\x06\x00\x02", 4);
 	TD_CHECK_MEM(rec + TD_VDI_OFF_INTIN, "\x01\x02", 2);
@@ -243,7 +242,7 @@ static void test_aes_record(void)
 	a.addr_out[0] = 0x0009ABCDuL;
 
 	memset(rec, 0xFF, sizeof rec);
-	td_aes_record_write(rec, 3, 10, &a);
+	td_aes_record_write(rec, 3, 10, -1, &a);
 
 	TD_CHECK_MEM(rec + TD_AES_OFF_CASEID, "\x00\x03", 2);
 	TD_CHECK_MEM(rec + TD_AES_OFF_OPCODE, "\x00\x0A", 2);
@@ -255,6 +254,7 @@ static void test_aes_record(void)
 	TD_CHECK_MEM(rec + TD_AES_OFF_ADDRIN + 4, "\xDE\xAD\xDE\xAD", 4);
 	TD_CHECK_MEM(rec + TD_AES_OFF_ADDROUT, "\x00\x09\xAB\xCD", 4);
 
+	TD_CHECK_MEM(rec + TD_AES_OFF_RET, "\xFF\xFF\xFF\xFF", 4);
 	memset(zero, 0, sizeof zero);
 	TD_CHECK_MEM(rec + TD_AES_OFF_RESERVED, zero, TD_AES_RESERVED_LEN);
 	TD_CHECK_EQ(TD_AES_OFF_RESERVED + TD_AES_RESERVED_LEN, TD_AES_RECORD_SIZE);
@@ -312,20 +312,24 @@ static void test_field_tables(void)
 	TD_CHECK(f != NULL);
 	for (n = 0; f && f[n].name; n++)
 		;
-	/* contrl, intin, ptsin, intout, ptsout, contrl_before */
-	TD_CHECK_EQ(n, 6);
-	TD_CHECK(f && strcmp(f[0].name, "contrl") == 0);
-	TD_CHECK(f && f[0].off == TD_VDI_OFF_CONTRL);
-	TD_CHECK(f && strcmp(f[3].name, "intout") == 0);
-	TD_CHECK(f && f[3].off == TD_VDI_OFF_INTOUT);
-	TD_CHECK(f && f[3].count == TD_VDI_INTOUT_N);
-	TD_CHECK(f && f[3].width == 2);
+	/* d0, contrl, intin, ptsin, intout, ptsout, contrl_before */
+	TD_CHECK_EQ(n, 7);
+	TD_CHECK(f && strcmp(f[0].name, "d0") == 0);
+	TD_CHECK(f && f[0].off == TD_VDI_OFF_RET);
+	TD_CHECK(f && f[0].width == 4);
+	TD_CHECK(f && f[0].count == 1);
+	TD_CHECK(f && strcmp(f[1].name, "contrl") == 0);
+	TD_CHECK(f && f[1].off == TD_VDI_OFF_CONTRL);
+	TD_CHECK(f && strcmp(f[4].name, "intout") == 0);
+	TD_CHECK(f && f[4].off == TD_VDI_OFF_INTOUT);
+	TD_CHECK(f && f[4].count == TD_VDI_INTOUT_N);
+	TD_CHECK(f && f[4].width == 2);
 
 	f = td_area_fields(TD_AREA_AES);
 	TD_CHECK(f != NULL);
 	for (n = 0; f && f[n].name; n++)
 		;
-	TD_CHECK_EQ(n, 6);
+	TD_CHECK_EQ(n, 7);
 
 	f = td_area_fields(TD_AREA_GEMDOS);
 	TD_CHECK(f != NULL);

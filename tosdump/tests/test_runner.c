@@ -150,7 +150,9 @@ static void check_run(const struct td_wk *wk, const struct td_case_table *ct,
 		TD_CHECK_EQ(td_load_be16(rec + TD_VDI_OFF_CASEID), cs->line);
 		TD_CHECK_EQ(td_load_be16(rec + TD_VDI_OFF_OPCODE),
 		            (uint16_t)cs->opcode);
-		TD_CHECK_EQ(td_load_be32(rec + TD_VDI_OFF_RESERVED), 0uL);
+		/* the trap's own return value is an output like any other */
+		TD_CHECK_EQ((int32_t)td_load_be32(rec + TD_VDI_OFF_RET),
+		            TD_STUB_VDI_D0);
 
 		/* contrl as it stood immediately before the call */
 		{
