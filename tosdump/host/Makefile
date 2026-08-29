@@ -12,7 +12,7 @@ CORE    := ../core
 TESTS   := ../tests
 
 .PHONY: all test run-tests clean
-all: $(BUILD)/tosdiff $(BUILD)/casecheck
+all: $(BUILD)/tosdiff $(BUILD)/casecheck $(BUILD)/mkrusttests
 
 $(BUILD):
 	@mkdir -p $(BUILD)
@@ -70,6 +70,11 @@ $(BUILD)/casecheck: $(BUILD)/casecheck.o $(BUILD)/cases.o $(BUILD)/record.o
 $(BUILD)/test_log.o: $(TESTS)/test_log.c $(TESTS)/tdtest.h $(CORE)/log.h | $(BUILD)
 	$(CC) $(CFLAGS) -c $< -o $@
 $(BUILD)/test_log: $(BUILD)/test_log.o $(BUILD)/log.o $(BUILD)/record.o
+	$(CC) $(CFLAGS) $^ -o $@
+
+$(BUILD)/mkrusttests.o: mkrusttests.c casefile.h $(CORE)/cases.h | $(BUILD)
+	$(CC) $(CFLAGS) -c $< -o $@
+$(BUILD)/mkrusttests: $(BUILD)/mkrusttests.o $(BUILD)/cases.o $(BUILD)/record.o
 	$(CC) $(CFLAGS) $^ -o $@
 
 $(BUILD)/test_cases.o: $(TESTS)/test_cases.c $(TESTS)/tdtest.h $(CORE)/cases.h | $(BUILD)
