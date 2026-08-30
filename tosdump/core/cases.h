@@ -94,6 +94,11 @@ const char *td_case_error_text(int rc);
 void td_case_line_comment(const char *line, size_t len, char *dst,
                           size_t dst_size);
 
+/* Is this line a prelude rather than a case?  Shared so every reader agrees
+ * on what carries a case id -- a comparator that counted preludes as cases
+ * would index every record wrongly. */
+int td_case_line_is_prelude(const char *line, size_t len);
+
 /*
  * Shared line iterator.  One rule for what a line is, used by the parser and
  * by the host-side reader, so the two cannot drift apart.  Returns 0 when the

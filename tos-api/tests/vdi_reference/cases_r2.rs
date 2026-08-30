@@ -14,13 +14,14 @@
 //!         ../../../tosdump/reference/EMUTOS14-VDI-r2.BIN \\
 //!         tos-api/tests/vdi_reference/cases_r2.rs
 
-use crate::harness::{check, Case};
+use crate::harness::{check, Call, Case};
 
 static DUMP: &[u8] = include_bytes!("../../../tosdump/reference/EMUTOS14-VDI-r2.BIN");
 
 #[test]
 fn case_0033_op003_v_clrwk_clear_the_workstation() {
     check(DUMP, &Case {
+        prelude: &[],
         id: 33,
         rec: 0,
         opcode: 3,
@@ -34,6 +35,7 @@ fn case_0033_op003_v_clrwk_clear_the_workstation() {
 #[test]
 fn case_0034_op004_v_updwk_nop_in_emutos() {
     check(DUMP, &Case {
+        prelude: &[],
         id: 34,
         rec: 1,
         opcode: 4,
@@ -47,6 +49,7 @@ fn case_0034_op004_v_updwk_nop_in_emutos() {
 #[test]
 fn case_0035_op010_v_cellarray_nop() {
     check(DUMP, &Case {
+        prelude: &[],
         id: 35,
         rec: 2,
         opcode: 10,
@@ -60,6 +63,7 @@ fn case_0035_op010_v_cellarray_nop() {
 #[test]
 fn case_0036_op027_vq_cellarray_nop() {
     check(DUMP, &Case {
+        prelude: &[],
         id: 36,
         rec: 3,
         opcode: 27,
@@ -73,6 +77,7 @@ fn case_0036_op027_vq_cellarray_nop() {
 #[test]
 fn case_0037_op029_v_valuator_nop_no_analogue_device_on_the_st() {
     check(DUMP, &Case {
+        prelude: &[],
         id: 37,
         rec: 4,
         opcode: 29,
@@ -86,6 +91,7 @@ fn case_0037_op029_v_valuator_nop_no_analogue_device_on_the_st() {
 #[test]
 fn case_0038_op034_opcode_34_does_not_exist() {
     check(DUMP, &Case {
+        prelude: &[],
         id: 38,
         rec: 5,
         opcode: 34,
@@ -99,6 +105,7 @@ fn case_0038_op034_opcode_34_does_not_exist() {
 #[test]
 fn case_0039_op132_vqt_justified_nop_conf_with_extended_mouse_gated() {
     check(DUMP, &Case {
+        prelude: &[],
         id: 39,
         rec: 6,
         opcode: 132,
@@ -112,6 +119,7 @@ fn case_0039_op132_vqt_justified_nop_conf_with_extended_mouse_gated() {
 #[test]
 fn case_0040_op133_vs_grayoverride_nop_gated() {
     check(DUMP, &Case {
+        prelude: &[],
         id: 40,
         rec: 7,
         opcode: 133,
@@ -125,6 +133,7 @@ fn case_0040_op133_vs_grayoverride_nop_gated() {
 #[test]
 fn case_0043_op026_vq_color_pen_1_requested() {
     check(DUMP, &Case {
+        prelude: &[],
         id: 43,
         rec: 8,
         opcode: 26,
@@ -138,6 +147,7 @@ fn case_0043_op026_vq_color_pen_1_requested() {
 #[test]
 fn case_0044_op026_vq_color_pen_1_realised() {
     check(DUMP, &Case {
+        prelude: &[],
         id: 44,
         rec: 9,
         opcode: 26,
@@ -151,6 +161,7 @@ fn case_0044_op026_vq_color_pen_1_realised() {
 #[test]
 fn case_0045_op026_vq_color_pen_0_requested() {
     check(DUMP, &Case {
+        prelude: &[],
         id: 45,
         rec: 10,
         opcode: 26,
@@ -164,6 +175,7 @@ fn case_0045_op026_vq_color_pen_0_requested() {
 #[test]
 fn case_0046_op026_vq_color_pen_255_requested() {
     check(DUMP, &Case {
+        prelude: &[],
         id: 46,
         rec: 11,
         opcode: 26,
@@ -177,6 +189,7 @@ fn case_0046_op026_vq_color_pen_255_requested() {
 #[test]
 fn case_0047_op026_vq_color_out_of_range() {
     check(DUMP, &Case {
+        prelude: &[],
         id: 47,
         rec: 12,
         opcode: 26,
@@ -190,6 +203,7 @@ fn case_0047_op026_vq_color_out_of_range() {
 #[test]
 fn case_0048_op030_v_choice_d_vdi_10_dummy_returns_1_at_once() {
     check(DUMP, &Case {
+        prelude: &[],
         id: 48,
         rec: 13,
         opcode: 30,
@@ -203,6 +217,7 @@ fn case_0048_op030_v_choice_d_vdi_10_dummy_returns_1_at_once() {
 #[test]
 fn case_0049_op115_vqin_mode_valuator() {
     check(DUMP, &Case {
+        prelude: &[],
         id: 49,
         rec: 14,
         opcode: 115,
@@ -216,6 +231,7 @@ fn case_0049_op115_vqin_mode_valuator() {
 #[test]
 fn case_0050_op115_vqin_mode_choice() {
     check(DUMP, &Case {
+        prelude: &[],
         id: 50,
         rec: 15,
         opcode: 115,
@@ -229,6 +245,7 @@ fn case_0050_op115_vqin_mode_choice() {
 #[test]
 fn case_0051_op115_vqin_mode_string() {
     check(DUMP, &Case {
+        prelude: &[],
         id: 51,
         rec: 16,
         opcode: 115,
@@ -242,6 +259,7 @@ fn case_0051_op115_vqin_mode_string() {
 #[test]
 fn case_0052_op117_vqt_width_character_a() {
     check(DUMP, &Case {
+        prelude: &[],
         id: 52,
         rec: 17,
         opcode: 117,
@@ -255,6 +273,7 @@ fn case_0052_op117_vqt_width_character_a() {
 #[test]
 fn case_0053_op117_vqt_width_space() {
     check(DUMP, &Case {
+        prelude: &[],
         id: 53,
         rec: 18,
         opcode: 117,
@@ -268,6 +287,7 @@ fn case_0053_op117_vqt_width_space() {
 #[test]
 fn case_0054_op130_vqt_name_font_index_0() {
     check(DUMP, &Case {
+        prelude: &[],
         id: 54,
         rec: 19,
         opcode: 130,
@@ -281,6 +301,7 @@ fn case_0054_op130_vqt_name_font_index_0() {
 #[test]
 fn case_0055_op130_vqt_name_font_index_1() {
     check(DUMP, &Case {
+        prelude: &[],
         id: 55,
         rec: 20,
         opcode: 130,
@@ -294,6 +315,7 @@ fn case_0055_op130_vqt_name_font_index_1() {
 #[test]
 fn case_0056_op130_vqt_name_font_index_2() {
     check(DUMP, &Case {
+        prelude: &[],
         id: 56,
         rec: 21,
         opcode: 130,
@@ -307,6 +329,7 @@ fn case_0056_op130_vqt_name_font_index_2() {
 #[test]
 fn case_0057_op130_vqt_name_font_index_3_tos_3_06_has_a_fourth_font() {
     check(DUMP, &Case {
+        prelude: &[],
         id: 57,
         rec: 22,
         opcode: 130,
@@ -320,6 +343,7 @@ fn case_0057_op130_vqt_name_font_index_3_tos_3_06_has_a_fourth_font() {
 #[test]
 fn case_0058_op131_vqt_fontinfo_current_font() {
     check(DUMP, &Case {
+        prelude: &[],
         id: 58,
         rec: 23,
         opcode: 131,
@@ -333,6 +357,7 @@ fn case_0058_op131_vqt_fontinfo_current_font() {
 #[test]
 fn case_0059_op116_vqt_extent_extent_of_abc() {
     check(DUMP, &Case {
+        prelude: &[],
         id: 59,
         rec: 24,
         opcode: 116,
@@ -346,6 +371,7 @@ fn case_0059_op116_vqt_extent_extent_of_abc() {
 #[test]
 fn case_0060_op116_vqt_extent_empty_string() {
     check(DUMP, &Case {
+        prelude: &[],
         id: 60,
         rec: 25,
         opcode: 116,
@@ -359,6 +385,7 @@ fn case_0060_op116_vqt_extent_empty_string() {
 #[test]
 fn case_0063_op015_vsl_type_solid() {
     check(DUMP, &Case {
+        prelude: &[],
         id: 63,
         rec: 26,
         opcode: 15,
@@ -372,6 +399,7 @@ fn case_0063_op015_vsl_type_solid() {
 #[test]
 fn case_0064_op015_vsl_type_user_defined() {
     check(DUMP, &Case {
+        prelude: &[],
         id: 64,
         rec: 27,
         opcode: 15,
@@ -385,6 +413,7 @@ fn case_0064_op015_vsl_type_user_defined() {
 #[test]
 fn case_0065_op015_vsl_type_below_range() {
     check(DUMP, &Case {
+        prelude: &[],
         id: 65,
         rec: 28,
         opcode: 15,
@@ -398,6 +427,7 @@ fn case_0065_op015_vsl_type_below_range() {
 #[test]
 fn case_0066_op016_vsl_width_1() {
     check(DUMP, &Case {
+        prelude: &[],
         id: 66,
         rec: 29,
         opcode: 16,
@@ -411,6 +441,7 @@ fn case_0066_op016_vsl_width_1() {
 #[test]
 fn case_0067_op016_vsl_width_3_odd() {
     check(DUMP, &Case {
+        prelude: &[],
         id: 67,
         rec: 30,
         opcode: 16,
@@ -424,6 +455,7 @@ fn case_0067_op016_vsl_width_3_odd() {
 #[test]
 fn case_0068_op016_vsl_width_4_even_rounded_down() {
     check(DUMP, &Case {
+        prelude: &[],
         id: 68,
         rec: 31,
         opcode: 16,
@@ -437,6 +469,7 @@ fn case_0068_op016_vsl_width_4_even_rounded_down() {
 #[test]
 fn case_0069_op016_vsl_width_at_siz_tab_max() {
     check(DUMP, &Case {
+        prelude: &[],
         id: 69,
         rec: 32,
         opcode: 16,
@@ -450,6 +483,7 @@ fn case_0069_op016_vsl_width_at_siz_tab_max() {
 #[test]
 fn case_0070_op016_vsl_width_above_max() {
     check(DUMP, &Case {
+        prelude: &[],
         id: 70,
         rec: 33,
         opcode: 16,
@@ -463,6 +497,7 @@ fn case_0070_op016_vsl_width_above_max() {
 #[test]
 fn case_0071_op017_vsl_color_pen_0() {
     check(DUMP, &Case {
+        prelude: &[],
         id: 71,
         rec: 34,
         opcode: 17,
@@ -476,6 +511,7 @@ fn case_0071_op017_vsl_color_pen_0() {
 #[test]
 fn case_0072_op017_vsl_color_pen_15() {
     check(DUMP, &Case {
+        prelude: &[],
         id: 72,
         rec: 35,
         opcode: 17,
@@ -489,6 +525,7 @@ fn case_0072_op017_vsl_color_pen_15() {
 #[test]
 fn case_0073_op108_vsl_ends_squared_squared() {
     check(DUMP, &Case {
+        prelude: &[],
         id: 73,
         rec: 36,
         opcode: 108,
@@ -502,6 +539,7 @@ fn case_0073_op108_vsl_ends_squared_squared() {
 #[test]
 fn case_0074_op108_vsl_ends_arrow_rounded() {
     check(DUMP, &Case {
+        prelude: &[],
         id: 74,
         rec: 37,
         opcode: 108,
@@ -515,6 +553,7 @@ fn case_0074_op108_vsl_ends_arrow_rounded() {
 #[test]
 fn case_0075_op108_vsl_ends_rounded_arrow() {
     check(DUMP, &Case {
+        prelude: &[],
         id: 75,
         rec: 38,
         opcode: 108,
@@ -528,6 +567,7 @@ fn case_0075_op108_vsl_ends_rounded_arrow() {
 #[test]
 fn case_0076_op108_vsl_ends_out_of_range() {
     check(DUMP, &Case {
+        prelude: &[],
         id: 76,
         rec: 39,
         opcode: 108,
@@ -541,6 +581,7 @@ fn case_0076_op108_vsl_ends_out_of_range() {
 #[test]
 fn case_0077_op113_vsl_udsty_all_ones() {
     check(DUMP, &Case {
+        prelude: &[],
         id: 77,
         rec: 40,
         opcode: 113,
@@ -554,6 +595,7 @@ fn case_0077_op113_vsl_udsty_all_ones() {
 #[test]
 fn case_0078_op113_vsl_udsty_alternating() {
     check(DUMP, &Case {
+        prelude: &[],
         id: 78,
         rec: 41,
         opcode: 113,
@@ -567,6 +609,7 @@ fn case_0078_op113_vsl_udsty_alternating() {
 #[test]
 fn case_0081_op018_vsm_type_dot() {
     check(DUMP, &Case {
+        prelude: &[],
         id: 81,
         rec: 42,
         opcode: 18,
@@ -580,6 +623,7 @@ fn case_0081_op018_vsm_type_dot() {
 #[test]
 fn case_0082_op018_vsm_type_asterisk_the_emutos_default() {
     check(DUMP, &Case {
+        prelude: &[],
         id: 82,
         rec: 43,
         opcode: 18,
@@ -593,6 +637,7 @@ fn case_0082_op018_vsm_type_asterisk_the_emutos_default() {
 #[test]
 fn case_0083_op018_vsm_type_at_range_top() {
     check(DUMP, &Case {
+        prelude: &[],
         id: 83,
         rec: 44,
         opcode: 18,
@@ -606,6 +651,7 @@ fn case_0083_op018_vsm_type_at_range_top() {
 #[test]
 fn case_0084_op018_vsm_type_out_of_range() {
     check(DUMP, &Case {
+        prelude: &[],
         id: 84,
         rec: 45,
         opcode: 18,
@@ -619,6 +665,7 @@ fn case_0084_op018_vsm_type_out_of_range() {
 #[test]
 fn case_0085_op019_vsm_height_at_siz_tab_minimum() {
     check(DUMP, &Case {
+        prelude: &[],
         id: 85,
         rec: 46,
         opcode: 19,
@@ -632,6 +679,7 @@ fn case_0085_op019_vsm_height_at_siz_tab_minimum() {
 #[test]
 fn case_0086_op019_vsm_height_at_siz_tab_maximum() {
     check(DUMP, &Case {
+        prelude: &[],
         id: 86,
         rec: 47,
         opcode: 19,
@@ -645,6 +693,7 @@ fn case_0086_op019_vsm_height_at_siz_tab_maximum() {
 #[test]
 fn case_0087_op019_vsm_height_above_maximum() {
     check(DUMP, &Case {
+        prelude: &[],
         id: 87,
         rec: 48,
         opcode: 19,
@@ -658,6 +707,7 @@ fn case_0087_op019_vsm_height_above_maximum() {
 #[test]
 fn case_0088_op020_vsm_color_pen_1() {
     check(DUMP, &Case {
+        prelude: &[],
         id: 88,
         rec: 49,
         opcode: 20,
@@ -671,6 +721,7 @@ fn case_0088_op020_vsm_color_pen_1() {
 #[test]
 fn case_0089_op020_vsm_color_out_of_range() {
     check(DUMP, &Case {
+        prelude: &[],
         id: 89,
         rec: 50,
         opcode: 20,
@@ -684,6 +735,7 @@ fn case_0089_op020_vsm_color_out_of_range() {
 #[test]
 fn case_0092_op023_vsf_interior_hollow() {
     check(DUMP, &Case {
+        prelude: &[],
         id: 92,
         rec: 51,
         opcode: 23,
@@ -697,6 +749,7 @@ fn case_0092_op023_vsf_interior_hollow() {
 #[test]
 fn case_0093_op023_vsf_interior_solid() {
     check(DUMP, &Case {
+        prelude: &[],
         id: 93,
         rec: 52,
         opcode: 23,
@@ -710,6 +763,7 @@ fn case_0093_op023_vsf_interior_solid() {
 #[test]
 fn case_0094_op023_vsf_interior_hatch() {
     check(DUMP, &Case {
+        prelude: &[],
         id: 94,
         rec: 53,
         opcode: 23,
@@ -723,6 +777,7 @@ fn case_0094_op023_vsf_interior_hatch() {
 #[test]
 fn case_0095_op023_vsf_interior_user_defined() {
     check(DUMP, &Case {
+        prelude: &[],
         id: 95,
         rec: 54,
         opcode: 23,
@@ -736,6 +791,7 @@ fn case_0095_op023_vsf_interior_user_defined() {
 #[test]
 fn case_0096_op024_vsf_style_index_1_d_vdi_8_setter_is_0_based() {
     check(DUMP, &Case {
+        prelude: &[],
         id: 96,
         rec: 55,
         opcode: 24,
@@ -749,6 +805,7 @@ fn case_0096_op024_vsf_style_index_1_d_vdi_8_setter_is_0_based() {
 #[test]
 fn case_0097_op024_vsf_style_at_pattern_maximum() {
     check(DUMP, &Case {
+        prelude: &[],
         id: 97,
         rec: 56,
         opcode: 24,
@@ -762,6 +819,7 @@ fn case_0097_op024_vsf_style_at_pattern_maximum() {
 #[test]
 fn case_0098_op024_vsf_style_above_pattern_maximum() {
     check(DUMP, &Case {
+        prelude: &[],
         id: 98,
         rec: 57,
         opcode: 24,
@@ -775,6 +833,7 @@ fn case_0098_op024_vsf_style_above_pattern_maximum() {
 #[test]
 fn case_0099_op025_vsf_color_pen_0() {
     check(DUMP, &Case {
+        prelude: &[],
         id: 99,
         rec: 58,
         opcode: 25,
@@ -788,6 +847,7 @@ fn case_0099_op025_vsf_color_pen_0() {
 #[test]
 fn case_0100_op025_vsf_color_pen_15() {
     check(DUMP, &Case {
+        prelude: &[],
         id: 100,
         rec: 59,
         opcode: 25,
@@ -801,6 +861,7 @@ fn case_0100_op025_vsf_color_pen_15() {
 #[test]
 fn case_0101_op104_vsf_perimeter_off() {
     check(DUMP, &Case {
+        prelude: &[],
         id: 101,
         rec: 60,
         opcode: 104,
@@ -814,6 +875,7 @@ fn case_0101_op104_vsf_perimeter_off() {
 #[test]
 fn case_0102_op104_vsf_perimeter_on() {
     check(DUMP, &Case {
+        prelude: &[],
         id: 102,
         rec: 61,
         opcode: 104,
@@ -827,6 +889,7 @@ fn case_0102_op104_vsf_perimeter_on() {
 #[test]
 fn case_0105_op012_vst_height_8_pixels() {
     check(DUMP, &Case {
+        prelude: &[],
         id: 105,
         rec: 62,
         opcode: 12,
@@ -840,6 +903,7 @@ fn case_0105_op012_vst_height_8_pixels() {
 #[test]
 fn case_0106_op012_vst_height_16_pixels() {
     check(DUMP, &Case {
+        prelude: &[],
         id: 106,
         rec: 63,
         opcode: 12,
@@ -853,6 +917,7 @@ fn case_0106_op012_vst_height_16_pixels() {
 #[test]
 fn case_0107_op012_vst_height_26_the_tos_3_06_maximum() {
     check(DUMP, &Case {
+        prelude: &[],
         id: 107,
         rec: 64,
         opcode: 12,
@@ -866,6 +931,7 @@ fn case_0107_op012_vst_height_26_the_tos_3_06_maximum() {
 #[test]
 fn case_0108_op013_vst_rotation_0() {
     check(DUMP, &Case {
+        prelude: &[],
         id: 108,
         rec: 65,
         opcode: 13,
@@ -879,6 +945,7 @@ fn case_0108_op013_vst_rotation_0() {
 #[test]
 fn case_0109_op013_vst_rotation_180_degrees() {
     check(DUMP, &Case {
+        prelude: &[],
         id: 109,
         rec: 66,
         opcode: 13,
@@ -892,6 +959,7 @@ fn case_0109_op013_vst_rotation_180_degrees() {
 #[test]
 fn case_0110_op013_vst_rotation_270_degrees() {
     check(DUMP, &Case {
+        prelude: &[],
         id: 110,
         rec: 67,
         opcode: 13,
@@ -905,6 +973,7 @@ fn case_0110_op013_vst_rotation_270_degrees() {
 #[test]
 fn case_0111_op021_vst_font_1() {
     check(DUMP, &Case {
+        prelude: &[],
         id: 111,
         rec: 68,
         opcode: 21,
@@ -918,6 +987,7 @@ fn case_0111_op021_vst_font_1() {
 #[test]
 fn case_0112_op021_vst_font_2() {
     check(DUMP, &Case {
+        prelude: &[],
         id: 112,
         rec: 69,
         opcode: 21,
@@ -931,6 +1001,7 @@ fn case_0112_op021_vst_font_2() {
 #[test]
 fn case_0113_op021_vst_font_out_of_range() {
     check(DUMP, &Case {
+        prelude: &[],
         id: 113,
         rec: 70,
         opcode: 21,
@@ -944,6 +1015,7 @@ fn case_0113_op021_vst_font_out_of_range() {
 #[test]
 fn case_0114_op022_vst_color_pen_0() {
     check(DUMP, &Case {
+        prelude: &[],
         id: 114,
         rec: 71,
         opcode: 22,
@@ -957,6 +1029,7 @@ fn case_0114_op022_vst_color_pen_0() {
 #[test]
 fn case_0115_op022_vst_color_pen_15() {
     check(DUMP, &Case {
+        prelude: &[],
         id: 115,
         rec: 72,
         opcode: 22,
@@ -970,6 +1043,7 @@ fn case_0115_op022_vst_color_pen_15() {
 #[test]
 fn case_0116_op106_vst_effects_none() {
     check(DUMP, &Case {
+        prelude: &[],
         id: 116,
         rec: 73,
         opcode: 106,
@@ -983,6 +1057,7 @@ fn case_0116_op106_vst_effects_none() {
 #[test]
 fn case_0117_op106_vst_effects_thickened() {
     check(DUMP, &Case {
+        prelude: &[],
         id: 117,
         rec: 74,
         opcode: 106,
@@ -996,6 +1071,7 @@ fn case_0117_op106_vst_effects_thickened() {
 #[test]
 fn case_0118_op107_vst_point_10_point() {
     check(DUMP, &Case {
+        prelude: &[],
         id: 118,
         rec: 75,
         opcode: 107,
@@ -1009,6 +1085,7 @@ fn case_0118_op107_vst_point_10_point() {
 #[test]
 fn case_0119_op107_vst_point_6_point() {
     check(DUMP, &Case {
+        prelude: &[],
         id: 119,
         rec: 76,
         opcode: 107,
@@ -1022,6 +1099,7 @@ fn case_0119_op107_vst_point_6_point() {
 #[test]
 fn case_0120_op039_vst_alignment_left_baseline() {
     check(DUMP, &Case {
+        prelude: &[],
         id: 120,
         rec: 77,
         opcode: 39,
@@ -1035,6 +1113,7 @@ fn case_0120_op039_vst_alignment_left_baseline() {
 #[test]
 fn case_0121_op039_vst_alignment_right_bottom() {
     check(DUMP, &Case {
+        prelude: &[],
         id: 121,
         rec: 78,
         opcode: 39,
@@ -1048,6 +1127,7 @@ fn case_0121_op039_vst_alignment_right_bottom() {
 #[test]
 fn case_0122_op039_vst_alignment_out_of_range() {
     check(DUMP, &Case {
+        prelude: &[],
         id: 122,
         rec: 79,
         opcode: 39,
@@ -1061,6 +1141,7 @@ fn case_0122_op039_vst_alignment_out_of_range() {
 #[test]
 fn case_0125_op032_vswr_mode_replace() {
     check(DUMP, &Case {
+        prelude: &[],
         id: 125,
         rec: 80,
         opcode: 32,
@@ -1074,6 +1155,7 @@ fn case_0125_op032_vswr_mode_replace() {
 #[test]
 fn case_0126_op032_vswr_mode_xor() {
     check(DUMP, &Case {
+        prelude: &[],
         id: 126,
         rec: 81,
         opcode: 32,
@@ -1087,6 +1169,7 @@ fn case_0126_op032_vswr_mode_xor() {
 #[test]
 fn case_0127_op032_vswr_mode_reverse_transparent() {
     check(DUMP, &Case {
+        prelude: &[],
         id: 127,
         rec: 82,
         opcode: 32,
@@ -1100,6 +1183,7 @@ fn case_0127_op032_vswr_mode_reverse_transparent() {
 #[test]
 fn case_0128_op129_vs_clip_on_a_rectangle() {
     check(DUMP, &Case {
+        prelude: &[],
         id: 128,
         rec: 83,
         opcode: 129,
@@ -1113,6 +1197,7 @@ fn case_0128_op129_vs_clip_on_a_rectangle() {
 #[test]
 fn case_0129_op129_vs_clip_off() {
     check(DUMP, &Case {
+        prelude: &[],
         id: 129,
         rec: 84,
         opcode: 129,
@@ -1126,6 +1211,7 @@ fn case_0129_op129_vs_clip_off() {
 #[test]
 fn case_0130_op033_vsin_mode_locator_request() {
     check(DUMP, &Case {
+        prelude: &[],
         id: 130,
         rec: 85,
         opcode: 33,
@@ -1139,6 +1225,7 @@ fn case_0130_op033_vsin_mode_locator_request() {
 #[test]
 fn case_0131_op033_vsin_mode_locator_sample() {
     check(DUMP, &Case {
+        prelude: &[],
         id: 131,
         rec: 86,
         opcode: 33,
@@ -1152,6 +1239,7 @@ fn case_0131_op033_vsin_mode_locator_sample() {
 #[test]
 fn case_0134_op006_v_pline_the_full_diagonal() {
     check(DUMP, &Case {
+        prelude: &[],
         id: 134,
         rec: 87,
         opcode: 6,
@@ -1165,6 +1253,7 @@ fn case_0134_op006_v_pline_the_full_diagonal() {
 #[test]
 fn case_0135_op007_v_pmarker_two_markers_d_vdi_9_forces_clip_on() {
     check(DUMP, &Case {
+        prelude: &[],
         id: 135,
         rec: 88,
         opcode: 7,
@@ -1178,6 +1267,7 @@ fn case_0135_op007_v_pmarker_two_markers_d_vdi_9_forces_clip_on() {
 #[test]
 fn case_0136_op008_v_gtext_abc() {
     check(DUMP, &Case {
+        prelude: &[],
         id: 136,
         rec: 89,
         opcode: 8,
@@ -1191,6 +1281,7 @@ fn case_0136_op008_v_gtext_abc() {
 #[test]
 fn case_0137_op009_v_fillarea_a_rectangle_four_points() {
     check(DUMP, &Case {
+        prelude: &[],
         id: 137,
         rec: 90,
         opcode: 9,
@@ -1204,6 +1295,7 @@ fn case_0137_op009_v_fillarea_a_rectangle_four_points() {
 #[test]
 fn case_0138_op114_vr_recfl_a_filled_rectangle() {
     check(DUMP, &Case {
+        prelude: &[],
         id: 138,
         rec: 91,
         opcode: 114,
@@ -1217,6 +1309,7 @@ fn case_0138_op114_vr_recfl_a_filled_rectangle() {
 #[test]
 fn case_0139_op103_v_contourfill_seed_fill_after_v_clrwk() {
     check(DUMP, &Case {
+        prelude: &[],
         id: 139,
         rec: 92,
         opcode: 103,
@@ -1230,6 +1323,7 @@ fn case_0139_op103_v_contourfill_seed_fill_after_v_clrwk() {
 #[test]
 fn case_0140_op105_v_get_pixel_top_left_corner() {
     check(DUMP, &Case {
+        prelude: &[],
         id: 140,
         rec: 93,
         opcode: 105,
@@ -1243,6 +1337,7 @@ fn case_0140_op105_v_get_pixel_top_left_corner() {
 #[test]
 fn case_0141_op105_v_get_pixel_bottom_right_corner() {
     check(DUMP, &Case {
+        prelude: &[],
         id: 141,
         rec: 94,
         opcode: 105,
@@ -1256,6 +1351,7 @@ fn case_0141_op105_v_get_pixel_bottom_right_corner() {
 #[test]
 fn case_0144_op011_sub1_v_bar() {
     check(DUMP, &Case {
+        prelude: &[],
         id: 144,
         rec: 95,
         opcode: 11,
@@ -1269,6 +1365,7 @@ fn case_0144_op011_sub1_v_bar() {
 #[test]
 fn case_0145_op011_sub2_v_arc_quarter_turn() {
     check(DUMP, &Case {
+        prelude: &[],
         id: 145,
         rec: 96,
         opcode: 11,
@@ -1282,6 +1379,7 @@ fn case_0145_op011_sub2_v_arc_quarter_turn() {
 #[test]
 fn case_0146_op011_sub3_v_pieslice_half_turn() {
     check(DUMP, &Case {
+        prelude: &[],
         id: 146,
         rec: 97,
         opcode: 11,
@@ -1295,6 +1393,7 @@ fn case_0146_op011_sub3_v_pieslice_half_turn() {
 #[test]
 fn case_0147_op011_sub4_v_circle_radius_from_ptsin_4() {
     check(DUMP, &Case {
+        prelude: &[],
         id: 147,
         rec: 98,
         opcode: 11,
@@ -1308,6 +1407,7 @@ fn case_0147_op011_sub4_v_circle_radius_from_ptsin_4() {
 #[test]
 fn case_0148_op011_sub5_v_ellipse() {
     check(DUMP, &Case {
+        prelude: &[],
         id: 148,
         rec: 99,
         opcode: 11,
@@ -1321,6 +1421,7 @@ fn case_0148_op011_sub5_v_ellipse() {
 #[test]
 fn case_0149_op011_sub6_v_ellarc() {
     check(DUMP, &Case {
+        prelude: &[],
         id: 149,
         rec: 100,
         opcode: 11,
@@ -1334,6 +1435,7 @@ fn case_0149_op011_sub6_v_ellarc() {
 #[test]
 fn case_0150_op011_sub7_v_ellpie() {
     check(DUMP, &Case {
+        prelude: &[],
         id: 150,
         rec: 101,
         opcode: 11,
@@ -1347,6 +1449,7 @@ fn case_0150_op011_sub7_v_ellpie() {
 #[test]
 fn case_0151_op011_sub8_v_rbox_rounded_box() {
     check(DUMP, &Case {
+        prelude: &[],
         id: 151,
         rec: 102,
         opcode: 11,
@@ -1360,6 +1463,7 @@ fn case_0151_op011_sub8_v_rbox_rounded_box() {
 #[test]
 fn case_0152_op011_sub9_v_rfbox_rounded_filled_box() {
     check(DUMP, &Case {
+        prelude: &[],
         id: 152,
         rec: 103,
         opcode: 11,
@@ -1373,6 +1477,7 @@ fn case_0152_op011_sub9_v_rfbox_rounded_filled_box() {
 #[test]
 fn case_0155_op005_sub1_vq_chcells_rows_and_columns() {
     check(DUMP, &Case {
+        prelude: &[],
         id: 155,
         rec: 104,
         opcode: 5,
@@ -1386,6 +1491,7 @@ fn case_0155_op005_sub1_vq_chcells_rows_and_columns() {
 #[test]
 fn case_0156_op005_sub4_v_curup() {
     check(DUMP, &Case {
+        prelude: &[],
         id: 156,
         rec: 105,
         opcode: 5,
@@ -1399,6 +1505,7 @@ fn case_0156_op005_sub4_v_curup() {
 #[test]
 fn case_0157_op005_sub5_v_curdown() {
     check(DUMP, &Case {
+        prelude: &[],
         id: 157,
         rec: 106,
         opcode: 5,
@@ -1412,6 +1519,7 @@ fn case_0157_op005_sub5_v_curdown() {
 #[test]
 fn case_0158_op005_sub6_v_curright() {
     check(DUMP, &Case {
+        prelude: &[],
         id: 158,
         rec: 107,
         opcode: 5,
@@ -1425,6 +1533,7 @@ fn case_0158_op005_sub6_v_curright() {
 #[test]
 fn case_0159_op005_sub7_v_curleft() {
     check(DUMP, &Case {
+        prelude: &[],
         id: 159,
         rec: 108,
         opcode: 5,
@@ -1438,6 +1547,7 @@ fn case_0159_op005_sub7_v_curleft() {
 #[test]
 fn case_0160_op005_sub8_v_curhome() {
     check(DUMP, &Case {
+        prelude: &[],
         id: 160,
         rec: 109,
         opcode: 5,
@@ -1451,6 +1561,7 @@ fn case_0160_op005_sub8_v_curhome() {
 #[test]
 fn case_0161_op005_sub9_v_eeos_erase_to_end_of_screen() {
     check(DUMP, &Case {
+        prelude: &[],
         id: 161,
         rec: 110,
         opcode: 5,
@@ -1464,6 +1575,7 @@ fn case_0161_op005_sub9_v_eeos_erase_to_end_of_screen() {
 #[test]
 fn case_0162_op005_sub10_v_eeol_erase_to_end_of_line() {
     check(DUMP, &Case {
+        prelude: &[],
         id: 162,
         rec: 111,
         opcode: 5,
@@ -1477,6 +1589,7 @@ fn case_0162_op005_sub10_v_eeol_erase_to_end_of_line() {
 #[test]
 fn case_0163_op005_sub11_vs_curaddress_row_5_column_10() {
     check(DUMP, &Case {
+        prelude: &[],
         id: 163,
         rec: 112,
         opcode: 5,
@@ -1490,6 +1603,7 @@ fn case_0163_op005_sub11_vs_curaddress_row_5_column_10() {
 #[test]
 fn case_0164_op005_sub12_v_curtext_abc() {
     check(DUMP, &Case {
+        prelude: &[],
         id: 164,
         rec: 113,
         opcode: 5,
@@ -1503,6 +1617,7 @@ fn case_0164_op005_sub12_v_curtext_abc() {
 #[test]
 fn case_0165_op005_sub13_v_rvon() {
     check(DUMP, &Case {
+        prelude: &[],
         id: 165,
         rec: 114,
         opcode: 5,
@@ -1516,6 +1631,7 @@ fn case_0165_op005_sub13_v_rvon() {
 #[test]
 fn case_0166_op005_sub14_v_rvoff() {
     check(DUMP, &Case {
+        prelude: &[],
         id: 166,
         rec: 115,
         opcode: 5,
@@ -1529,6 +1645,7 @@ fn case_0166_op005_sub14_v_rvoff() {
 #[test]
 fn case_0167_op005_sub15_vq_curaddress() {
     check(DUMP, &Case {
+        prelude: &[],
         id: 167,
         rec: 116,
         opcode: 5,
@@ -1542,6 +1659,7 @@ fn case_0167_op005_sub15_vq_curaddress() {
 #[test]
 fn case_0168_op005_sub16_vq_tabstatus_d_vdi_2_returns_1() {
     check(DUMP, &Case {
+        prelude: &[],
         id: 168,
         rec: 117,
         opcode: 5,
@@ -1555,6 +1673,7 @@ fn case_0168_op005_sub16_vq_tabstatus_d_vdi_2_returns_1() {
 #[test]
 fn case_0169_op005_sub18_v_dspcur_show_the_graphics_cursor() {
     check(DUMP, &Case {
+        prelude: &[],
         id: 169,
         rec: 118,
         opcode: 5,
@@ -1568,6 +1687,7 @@ fn case_0169_op005_sub18_v_dspcur_show_the_graphics_cursor() {
 #[test]
 fn case_0170_op005_sub19_v_rmcur_remove_the_graphics_cursor() {
     check(DUMP, &Case {
+        prelude: &[],
         id: 170,
         rec: 119,
         opcode: 5,

@@ -68,7 +68,9 @@ int td_casefile_read(struct td_casefile *cf, const char *path, const char **why)
 
 	td_line_iter_init(&it, raw, got);
 	while (td_line_iter_next(&it, &line, &line_len, &line_no, &is_case)) {
-		if (!is_case)
+		/* A prelude carries no case id; counting one would shift every
+		 * record index in the comparison. */
+		if (!is_case || td_case_line_is_prelude(line, line_len))
 			continue;
 		if (cf->count >= TD_MAX_CASES) {
 			free(raw);

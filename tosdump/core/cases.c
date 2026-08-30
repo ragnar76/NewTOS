@@ -254,7 +254,7 @@ int td_cases_parse(struct td_case_table *t, const char *buf, size_t len,
 			size_t olen = col_len[0];
 
 			trim(&o, &olen);
-			if (olen > 0 && o[0] == '+') {
+			if (td_case_line_is_prelude(line, line_len)) {
 				struct td_prelude *p;
 
 				if (pending >= TD_MAX_PRELUDES ||
@@ -368,6 +368,15 @@ int td_cases_parse(struct td_case_table *t, const char *buf, size_t len,
 	}
 
 	return 0;
+}
+
+int td_case_line_is_prelude(const char *line, size_t len)
+{
+	size_t i = 0;
+
+	while (i < len && (line[i] == ' ' || line[i] == '\t'))
+		i++;
+	return i < len && line[i] == '+';
 }
 
 void td_case_line_comment(const char *line, size_t len, char *dst,

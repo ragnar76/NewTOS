@@ -12,3 +12,6 @@ mod harness;
 
 #[path = "vdi_reference/cases_r2.rs"]
 mod cases_r2;
+
+#[path = "vdi_reference/cases_r3.rs"]
+mod cases_r3;

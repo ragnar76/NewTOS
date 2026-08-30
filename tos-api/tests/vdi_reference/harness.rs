@@ -512,9 +512,21 @@ fn be16(b: &[u8], off: usize) -> i16 {
     (((b[off] as u16) << 8) | b[off + 1] as u16) as i16
 }
 
+/// A call issued before the measured one: it establishes the state the case
+/// measures, runs after the reset so it survives it, and is not recorded.
+/// Without it a setter case can only prove its own echo, since the reset
+/// wipes anything the previous case set.
+pub struct Call {
+    pub opcode: i16,
+    pub sub: i16,
+    pub intin: &'static [i16],
+    pub ptsin: &'static [i16],
+}
+
 /// One case, as the generator emits it. `intin`/`ptsin` are the inputs from
 /// the case table; the expected outputs come from the dump.
 pub struct Case {
+    pub prelude: &'static [Call],
     pub id: u16,
     pub rec: usize,
     pub opcode: i16,
@@ -557,6 +569,20 @@ pub fn check(dump: &[u8], case: &Case) {
     let mut pb = Pb::new();
 
     reset_vdi(&mut pb, wk);
+
+    // The case's preludes, in order, exactly as tosdump/core/runner.c issues
+    // them: after the reset, before the measured call, never recorded.
+    for p in case.prelude {
+        pb.contrl.fill(0);
+        pb.intin[..p.intin.len()].copy_from_slice(p.intin);
+        pb.ptsin[..p.ptsin.len()].copy_from_slice(p.ptsin);
+        pb.contrl[0] = p.opcode;
+        pb.contrl[1] = (p.ptsin.len() / 2) as i16;
+        pb.contrl[3] = p.intin.len() as i16;
+        pb.contrl[5] = p.sub;
+        pb.contrl[6] = wk.handle;
+        pb.call();
+    }
 
     let rec = &dump[HDR_SIZE + case.rec * REC_SIZE..][..REC_SIZE];
     assert_eq!(

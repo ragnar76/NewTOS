@@ -157,7 +157,7 @@ int main(int argc, char **argv)
 "//!         %s \\\\\n"
 "//!         tos-api/tests/vdi_reference/cases_r2.rs\n"
 "\n"
-"use crate::harness::{check, Case};\n"
+"use crate::harness::{check, Call, Case};\n"
 "\n"
 "static DUMP: &[u8] = include_bytes!(\"%s\");\n",
 	        cases_path, dump_path, h.build_id, h.case_crc, h.record_count,
@@ -175,6 +175,23 @@ int main(int argc, char **argv)
 			fprintf(f, "_sub%d", c->sub);
 		fprintf(f, "_%s() {\n", name);
 		fprintf(f, "    check(DUMP, &Case {\n");
+		fprintf(f, "        prelude: &[");
+		{
+			uint16_t k;
+			for (k = 0; k < c->prelude_count; k++) {
+				const struct td_prelude *p =
+					&table.preludes[c->prelude_first + k];
+				fprintf(f, "\n            Call { opcode: %d, sub: %d, intin: ",
+				        p->opcode, p->sub);
+				emit_list(f, p->intin, p->n_intin);
+				fprintf(f, ", ptsin: ");
+				emit_list(f, p->ptsin, p->n_ptsin);
+				fprintf(f, " },");
+			}
+			if (c->prelude_count)
+				fprintf(f, "\n        ");
+		}
+		fprintf(f, "],\n");
 		fprintf(f, "        id: %u,\n        rec: %u,\n", c->line, i);
 		fprintf(f, "        opcode: %d,\n        sub: %d,\n", c->opcode, c->sub);
 		fprintf(f, "        intin: ");
