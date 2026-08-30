@@ -424,6 +424,34 @@ impl RasterBackend for VdiScreen {
         best
     }
 
+    fn clear_screen_word(&self, word: u16) {
+        // EmuTOS clears the whole screen with a single
+        // `memset(v_bas_ad, fill, size)` (`vdi_control.c:599-618`, the memset at
+        // :618) — one bulk store over the framebuffer, not a pixel loop. The
+        // trait's default reproduces the *result* through `put_device_pixel`,
+        // which on this backend is one dynamically-dispatched call, bounds check
+        // and stride multiply per pixel — over two million of them at 1920x1080,
+        // on the boot path (`v_clrwk` from `initinfo`). The framebuffer HAL
+        // already owns a bulk fill, so hand it the whole visible area in one call.
+        //
+        // Same pixels, same values as the default: `Framebuffer::clear` fills
+        // `[0, width) x [0, height)` at `y * stride_px + x` — exactly the
+        // addresses `put_device_pixel` would have written — with the identical
+        // `rgb565_to_device(word)`, so a cleared screen stays bit-for-bit what it
+        // was (both `0xFFFF` and the pseudo-palette's white `0xFFDF` fold to
+        // `0xFFFFFF`, five green bits either way). The pitch padding a VideoCore
+        // line may carry past `width` is left alone, as the default left it; it
+        // is never scanned out.
+        let fb = active_fb();
+        fb.clear(self.rgb565_to_device(word));
+        // Then the flush the default performs, i.e. this backend's normal
+        // post-write cache maintenance: clean the visible area to the point of
+        // coherency for the display controller (a no-op span if the framebuffer
+        // is not up yet).
+        let (w, h) = (self.width(), self.height());
+        self.flush_rect(0, 0, w.saturating_sub(1) as i16, h.saturating_sub(1) as i16);
+    }
+
     fn fill_rect(&self, x: i16, y: i16, w: i16, h: i16, pel: Pel, clip: ClipRect) {
         let fb = active_fb();
         // Intersect the requested rectangle, the clip rectangle and the
