@@ -145,13 +145,49 @@ pub fn vq_color(pb: &Vdipb, vwk: &Vwk, ncol: u16, backend: &dyn RasterBackend) {
 }
 
 /// Opcode 105 — `v_get_pixel`: read the pixel at `PTSIN[0..1]`.
-/// `INTOUT[0]` = pixel value (= PEL on the palette screen),
-/// `INTOUT[1]` = VDI colour index (`REV_MAP_COL`, identity here).
+///
+/// EmuTOS `vdi_v_get_pixel` (`vdi_fill.c:1095-1115`) fetches the pixel with
+/// `pixelread` and then branches on `TRUECOLOR_MODE` (`v_planes > 8`,
+/// `vdi_defs.h:22`) — the same predicate as `vs_color`/`vq_color`, here
+/// `backend.planes() > 8`:
+///
+/// - **Truecolor** (our Falcon profile, `planes == 16`): `pixelread` returns
+///   the raw 16-bit screen word (`vdi_fill.c:677-681`) and the reply is
+///   `INTOUT[0] = 0`, `INTOUT[1] = pel` (`vdi_fill.c:1104-1110`) — a 16-bit
+///   RGB colour, **not** a pen index, and there is no `REV_MAP_COL` lookup
+///   because a truecolor screen holds no palette indices to reverse-map.
+///   NewTOS' framebuffer is 32-bpp XRGB8888 internally
+///   (`docs/COMPATIBILITY.md`), so the app-visible 16-bit word is recovered
+///   with [`device_to_rgb565`](RasterBackend::device_to_rgb565) over
+///   [`get_device_pixel`](RasterBackend::get_device_pixel) — the same
+///   screen→16-bit boundary a memory MFDB crosses. That round-trip is exact:
+///   every VDI draw resolves its PEL through the 5-bit-quantised
+///   pseudo-palette (`(r << 11) | (g << 6) | b`, `vdi_col.c:601-614`), whose
+///   word layout `RRRRRGGGGG0BBBBB` is what `device_to_rgb565` produces.
+///   Reading the stored colour — not `read_pixel`'s nearest-CLUT reverse map
+///   — also keeps pixels that are *not* a pen (a blitted truecolor bitmap)
+///   readable, as on a Falcon.
+/// - **Palette** (`planes <= 8`, a non-truecolor backend): `INTOUT[0] = pel`,
+///   the raw device pixel value, and `INTOUT[1] = REV_MAP_COL[pel]`, the VDI
+///   pen (`vdi_fill.c:1113-1114`) — identity under NewTOS' folded `MAP_COL`
+///   ([`VwkExt`](super::vwk::VwkExt)), so both slots carry the PEL.
 pub fn v_get_pixel(pb: &Vdipb, backend: &dyn RasterBackend) {
-    let pel = backend.read_pixel(pb.ptsin(0), pb.ptsin(1));
+    let x = pb.ptsin(0);
+    let y = pb.ptsin(1);
+    pb.set_contrl(4, 2);
+
+    if backend.planes() > 8 {
+        // TRUECOLOR_MODE: the 16-bit screen word, cast to a WORD exactly as
+        // EmuTOS does (`pel = (WORD)pixelread(x,y)`, `vdi_fill.c:1102`).
+        let pel = backend.device_to_rgb565(backend.get_device_pixel(x, y));
+        pb.set_intout(0, 0);
+        pb.set_intout(1, pel as i16);
+        return;
+    }
+
+    let pel = backend.read_pixel(x, y);
     pb.set_intout(0, pel as i16);
     pb.set_intout(1, pel as i16);
-    pb.set_contrl(4, 2);
 }
 
 /// Opcode 128 — `vq_key_s`: the current keyboard shift-state bitmask

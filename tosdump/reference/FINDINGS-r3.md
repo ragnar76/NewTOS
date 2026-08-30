@@ -44,6 +44,24 @@ INTOUT[1] = REV_MAP_COL[pel];
 `TRUECOLOR_MODE` is `v_planes > 8` (`vdi/vdi_defs.h:22`). NewTOS declares 16
 planes, so it is in truecolor mode and `INTOUT[0]` must be **0**. It returns 1.
 
+**FIXED.** `intout[0]` is now 0 and `intout[1]` carries the raw 16-bit screen
+word, matching `pixelread`'s truecolor path (`vdi_fill.c:670-690`). It reads
+`0x0000` over the black-filled box and `0xFFDF` over the cleared background,
+so it really reads the screen rather than returning a constant — and `0xFFDF`
+is `(31<<11)|(31<<6)|31`, exactly EmuTOS's pseudo-palette white with the green
+LSB clear (`vdi_col.c:601-614`).
+
+**The suite count went DOWN, from 145 passed to 143.** Round-2 cases 140 and
+141 (`v_get_pixel` on the cleared background) had been passing **by
+coincidence**: NewTOS's palette path answered `(0, 0)` and a palette-mode TT
+answers `(0, 0)` too, because `MAP_COL[0]` and `REV_MAP_COL[0]` are both 0.
+On the truecolor path `intout[1]` becomes the screen word, so they now differ.
+They belong in the same category as the two cases below, and they were
+green for the wrong reason.
+
+That is the right outcome, and worth stating plainly: a suite whose number
+only ever rises is a suite being optimised for its number.
+
 **Note what this case is and is not.** It can never "pass": the TT has 4
 planes and is in palette mode, so its 15 is correct *for a TT* and no NewTOS
 answer will equal it. The right NewTOS answer is 0 — neither value in the
@@ -115,6 +133,32 @@ else INQ_TAB[5] = 1;
 NewTOS reports 0 because it has 16 planes, which is exactly what EmuTOS would
 report on the same hardware. Same family as **R2-8**, and `DEV_TAB[13]` in case
 145 likewise.
+
+## Two further defects, found while fixing R3-1 and deliberately left alone
+
+Both are the same family — NewTOS is self-consistent under truecolor but does
+not use EmuTOS's scheme — and both are separate opcodes, so they are separate
+work.
+
+### R3-4 — `v_clrwk` (3) clears to the wrong word
+
+`vdi/vdi_control.c:608-618`: under `TRUECOLOR_MODE` EmuTOS clears with
+`memset(v_bas_ad, 0xff, size)`, i.e. **`0xFFFF`**. NewTOS fills with PEL 0,
+which resolves to `0xFFDF`. The difference is exactly `OVERLAY_BIT` (`0x0020`,
+`vdi_fill.c:26`), the green LSB.
+
+### R3-5 — `v_contourfill` (103) searches through a PEL round trip
+
+EmuTOS has a separate 16-bit seed fill under truecolor that masks the overlay
+bit out of both the search colour and each screen pixel
+(`vdi_fill.c:702,709,726,733`). NewTOS searches via `read_pixel`, which is a
+lossy mapping back to the nearest CLUT index (`backend.rs:162-165`).
+
+**The three fit together.** EmuTOS clears to `0xFFFF`, its pseudo-palette white
+is `0xFFDF`, and the contour fill masks `OVERLAY_BIT` precisely so those two
+compare equal. NewTOS clears to `0xFFDF` and searches by PEL — internally
+consistent, but a different scheme, and it will diverge wherever a program
+mixes the two.
 
 ## A case-design mistake of mine
 
