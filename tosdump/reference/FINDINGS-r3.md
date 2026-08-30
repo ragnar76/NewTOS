@@ -20,6 +20,10 @@ built for.
 
 ## Genuine defects
 
+Only one. Three of the five differences turned out to follow from the colour
+profile or, in R3-2's case, to be correct behaviour that the first reading of
+this document called a defect.
+
 ### R3-1 — `v_get_pixel` (105) takes the palette path in truecolor mode
 
     case 140   intout[0]   NewTOS = 1   reference = 15
@@ -50,16 +54,36 @@ That distinction generalises. Wherever the two systems sit in structurally
 different modes, the comparison cannot say what NewTOS should do, but a
 difference is still worth reading.
 
-### R3-2 — `DEV_TAB[39]` is 0
+### R3-2 — WITHDRAWN: `DEV_TAB[39] = 0` is correct for this profile
 
     case 145   intout[39]   NewTOS = 0   reference = 4096
 
-`vdi/vdi_control.c:208`: `DEV_TAB[39] = get_palette();` — the RGB-precision
-figure, 4096 on a TT. NewTOS reports 0.
+First written as a genuine defect. It is not, and the check that showed it
+was made before briefing the fix — a brief on the first reading would have had
+an agent "repair" correct code.
 
-This confirms by measurement **Mismatch #4**, already flagged by reasoning in
-`docs/api/vdi/workstation/100-v_opnvwk.md`. Worth noting that the flag said
-NewTOS reports the colour count there; it reports 0.
+`vdi/vdi_control.c:208` sets `DEV_TAB[39] = get_palette()`, and
+`bios/screen.c:838-847` says:
+
+```c
+/* we return the same values as Atari TOS 4.04 */
+if (has_videl) {
+    WORD mode = vsetmode(-1);
+    if ((mode&VIDEL_COMPAT) || ((mode&VIDEL_BPPMASK) == VIDEL_4BPP))
+        return 4096;
+    return 0;
+}
+```
+
+On a Falcon `get_palette()` returns **0** unless the mode is compatibility or
+4 bits per plane. The reference's 4096 comes from the separate `sshiftmod`
+path for ST and TT colour modes (`:850-852`). NewTOS presents a 16-bpp
+truecolor Falcon workstation, so 0 is what EmuTOS itself would report.
+
+This also **closes Mismatch #4** in
+`docs/api/vdi/workstation/100-v_opnvwk.md`, which flagged by reasoning that
+NewTOS reported the colour count in that slot. It now reports 0, which is
+right.
 
 ## A decision, not a defect
 
