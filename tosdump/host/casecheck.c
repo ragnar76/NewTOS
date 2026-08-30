@@ -51,9 +51,24 @@ int main(int argc, char **argv)
 		return 1;
 	}
 
-	printf("%s: %u cases, CRC %08X\n", argv[1], table.count, table.crc);
+	printf("%s: %u cases, %u preludes, CRC %08X\n", argv[1], table.count,
+	       table.prelude_count, table.crc);
 	for (i = 0; i < table.count; i++) {
 		const struct td_case *c = &table.cases[i];
+		uint16_t k;
+
+		/* Preludes run after the reset and before the case, unrecorded --
+		 * print them with the case they belong to, since that is the only
+		 * way to see what state the case is actually measuring. */
+		for (k = 0; k < c->prelude_count; k++) {
+			const struct td_prelude *p =
+				&table.preludes[c->prelude_first + k];
+			printf("    prelude: opcode %d  contrl[1]=%u contrl[3]=%u "
+			       "contrl[5]=%d\n",
+			       p->opcode, p->n_ptsin / 2, p->n_intin, p->sub);
+			print_list("intin", p->intin, p->n_intin);
+			print_list("ptsin", p->ptsin, p->n_ptsin);
+		}
 
 		printf("  case %u  opcode %d  contrl[1]=%u contrl[3]=%u contrl[5]=%d"
 		       "  %s\n",

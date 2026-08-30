@@ -218,6 +218,8 @@ int td_cases_parse(struct td_case_table *t, const char *buf, size_t len,
 	const char *line;
 	size_t line_len;
 	uint16_t line_no;
+	uint16_t pending = 0;      /* preludes seen since the last case */
+	uint16_t last_prelude = 0; /* line number of the newest one, for errors */
 	int is_case;
 
 	memset(t, 0, sizeof *t);
@@ -238,20 +240,80 @@ int td_cases_parse(struct td_case_table *t, const char *buf, size_t len,
 		if (!is_case)
 			continue;
 
-		if (t->count >= TD_MAX_CASES) {
-			fail(err, line_no, "more cases than TD_MAX_CASES");
-			return TD_CASE_ERR_TOO_MANY_CASES;
-		}
-
 		ncol = split_columns(line, line_len, col, col_len);
 		if (ncol < TD_CASE_COLUMNS) {
 			fail(err, line_no, "needs five tab separated columns");
 			return TD_CASE_ERR_COLUMNS;
 		}
 
+		/* A '+' opcode marks a prelude: a call issued after the reset and
+		 * before the next case's measured call, and not recorded.  It is
+		 * what lets a case prove an effect rather than only an echo. */
+		{
+			const char *o = col[0];
+			size_t olen = col_len[0];
+
+			trim(&o, &olen);
+			if (olen > 0 && o[0] == '+') {
+				struct td_prelude *p;
+
+				if (pending >= TD_MAX_PRELUDES ||
+				    t->prelude_count >= TD_MAX_PRELUDES) {
+					fail(err, line_no, "more preludes than TD_MAX_PRELUDES");
+					return TD_CASE_ERR_TOO_MANY_PRE;
+				}
+				p = &t->preludes[t->prelude_count + pending];
+				memset(p, 0, sizeof *p);
+
+				rc = parse_value(o + 1, olen - 1, &v);
+				if (rc != 0 || v < 0) {
+					fail(err, line_no, "prelude opcode is not a number");
+					return rc != 0 ? rc : TD_CASE_ERR_RANGE;
+				}
+				p->opcode = v;
+
+				rc = parse_value(col[1], col_len[1], &v);
+				if (rc != 0 || v < 0) {
+					fail(err, line_no, "prelude sub-opcode is not a number");
+					return rc != 0 ? rc : TD_CASE_ERR_RANGE;
+				}
+				p->sub = v;
+
+				rc = parse_list(col[2], col_len[2], p->intin,
+				                TD_PRELUDE_VALUES, &p->n_intin);
+				if (rc != 0) {
+					fail(err, line_no, "prelude intin column");
+					return rc;
+				}
+				rc = parse_list(col[3], col_len[3], p->ptsin,
+				                TD_PRELUDE_VALUES, &p->n_ptsin);
+				if (rc != 0) {
+					fail(err, line_no, "prelude ptsin column");
+					return rc;
+				}
+				if (p->n_ptsin & 1) {
+					fail(err, line_no, "prelude ptsin holds an odd number of "
+					                   "values, so it cannot be a point list");
+					return TD_CASE_ERR_ODD_PTSIN;
+				}
+				pending++;
+				last_prelude = line_no;
+				continue;
+			}
+		}
+
+		if (t->count >= TD_MAX_CASES) {
+			fail(err, line_no, "more cases than TD_MAX_CASES");
+			return TD_CASE_ERR_TOO_MANY_CASES;
+		}
+
 		c = &t->cases[t->count];
 		memset(c, 0, sizeof *c);
 		c->line = line_no;
+		c->prelude_first = t->prelude_count;
+		c->prelude_count = pending;
+		t->prelude_count = (uint16_t)(t->prelude_count + pending);
+		pending = 0;
 
 		rc = parse_value(col[0], col_len[0], &v);
 		if (rc != 0) {
@@ -297,6 +359,12 @@ int td_cases_parse(struct td_case_table *t, const char *buf, size_t len,
 		td_case_line_comment(line, line_len, c->comment, TD_COMMENT_LEN);
 
 		t->count++;
+	}
+
+	/* A prelude with nothing to precede would silently never run. */
+	if (pending > 0) {
+		fail(err, last_prelude, "prelude has no case after it");
+		return TD_CASE_ERR_DANGLING;
 	}
 
 	return 0;
@@ -373,6 +441,8 @@ const char *td_case_error_text(int rc)
 	case TD_CASE_ERR_TOO_MANY_VALUES:return "more values than the array holds";
 	case TD_CASE_ERR_TOO_MANY_CASES: return "more cases than TD_MAX_CASES";
 	case TD_CASE_ERR_IO:             return "the case table could not be read";
+	case TD_CASE_ERR_DANGLING:       return "a prelude has no case after it";
+	case TD_CASE_ERR_TOO_MANY_PRE:   return "more preludes than TD_MAX_PRELUDES";
 	default:                         return "unknown error";
 	}
 }

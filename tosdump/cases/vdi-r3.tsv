@@ -1,0 +1,145 @@
+# vdi-r3.tsv -- VDI reference dumper, round 3: effects, not echoes.
+#
+# Rounds 1 and 2 stay frozen with the dumps already measured. This is a
+# separate table; a case id is a physical line number and the file CRC binds
+# every dump to it.
+#
+# WHY THIS ROUND EXISTS
+#
+# Round 2 reached 112 of 120 green and still missed that vst_font (21) is an
+# echo with no effect in NewTOS. Nothing in that table could have caught it:
+# the runner resets before every case, so a set made in one case is gone by
+# the next, and a case that reads a setter's echo proves only the echo.
+#
+# So this round is built on PRELUDES. A line whose opcode starts with '+' is
+# a call issued after the reset and before the measured call, and is not
+# recorded. Each pair below sets a NON-DEFAULT value and then reads it back
+# through the matching inquiry. A default value would prove nothing, because
+# a setter that does nothing at all leaves the default in place.
+#
+# Every opcode, sub-op and input arity is derived from the EmuTOS handlers,
+# not written from memory: the jump tables (vdi/vdi_main.c:32-111), each
+# handler's own INTIN[n]/PTSIN[n] reads, vsc_form's documented input list
+# (vdi/vdi_mouse.c:502-509), and gdp_justified's INTIN[0]/[1] flags with the
+# string from INTIN[2] and the count from CONTRL[3]-2 (vdi/vdi_text.c:1187).
+#
+# STILL NOT COVERED, and why
+#
+#   14 vs_color, 112 vsf_udpat   A prelude can set them, but the reset cannot
+#                                undo them, so the state would leak into every
+#                                later case. Covering them means extending the
+#                                reset -- and the reset is part of the
+#                                measurement contract: changing it would make
+#                                this round incomparable with rounds 1 and 2
+#                                and break the generated tests for those. It
+#                                needs a versioned reset, which is its own
+#                                task.
+#   1, 2, 101                    Destroy the workstation the run measures
+#                                through. Only 100 is here: it opens an
+#                                ADDITIONAL virtual workstation without
+#                                destroying ours, and returns the full 45-word
+#                                DEV_TAB and 12-word SIZ_TAB -- which is where
+#                                the SIZ_TAB fold bug of round 2 lived.
+#   109, 110, 121                MFDB pointers in contrl[7..10] differ per
+#                                machine; needs a comparison rule first.
+#   118, 119, 120, 125-127, 134  Install vectors or change the global font
+#                                ring; the reset cannot restore them.
+#   124, 128                     Read the live mouse and keyboard. Not
+#                                reproducible between two runs on one machine,
+#                                which is the one thing a reference may not be.
+#
+# Appending only: a new case goes at the end.
+#
+# opcode	sub	intin	ptsin	comment
+
+# --- line attributes: set non-default, read back via vql_attributes (35) 
++15	0	4	-	vsl_type dashed-dotted
+35	0	-	-	vql_attributes after vsl_type dashed-dotted
++15	0	7	-	vsl_type user defined
+35	0	-	-	vql_attributes after vsl_type user defined
++17	0	3	-	vsl_color pen 3
+35	0	-	-	vql_attributes after vsl_color 3
++16	0	-	5,0	vsl_width 5
+35	0	-	-	vql_attributes after vsl_width 5
++32	0	3	-	vswr_mode xor
+35	0	-	-	vql_attributes after vswr_mode xor
+
+# --- marker attributes: read back via vqm_attributes (36) ------------
++18	0	5	-	vsm_type 5
+36	0	-	-	vqm_attributes after vsm_type 5
++20	0	3	-	vsm_color pen 3
+36	0	-	-	vqm_attributes after vsm_color 3
++19	0	-	0,40	vsm_height 40
+36	0	-	-	vqm_attributes after vsm_height 40
+
+# --- fill attributes: read back via vqf_attributes (37) --------------
++23	0	2	-	vsf_interior pattern
+37	0	-	-	vqf_attributes after vsf_interior 2
++24	0	7	-	vsf_style 7
+37	0	-	-	vqf_attributes after vsf_style 7
++25	0	3	-	vsf_color pen 3
+37	0	-	-	vqf_attributes after vsf_color 3
++104	0	0	-	vsf_perimeter off
+37	0	-	-	vqf_attributes after vsf_perimeter off
+
+# --- text attributes: read back via vqt_attributes (38) --------------
++21	0	2	-	vst_font 2
+38	0	-	-	vqt_attributes after vst_font 2 -- the gap round 2 missed
++22	0	3	-	vst_color pen 3
+38	0	-	-	vqt_attributes after vst_color 3
++13	0	900	-	vst_rotation 90
+38	0	-	-	vqt_attributes after vst_rotation 900
++39	0	1,2	-	vst_alignment centred
+38	0	-	-	vqt_attributes after vst_alignment 1,2
++106	0	5	-	vst_effects thicken+skew
+38	0	-	-	vqt_attributes after vst_effects 5
++12	0	-	0,8	vst_height 8
+38	0	-	-	vqt_attributes after vst_height 8
++107	0	6	-	vst_point 6
+38	0	-	-	vqt_attributes after vst_point 6
+
+# --- text metrics follow the selected font ---------------------------
++12	0	-	0,4	vst_height 4 selects the smallest face
+131	0	-	-	vqt_fontinfo after vst_height 4
++12	0	-	0,16	vst_height 16
+131	0	-	-	vqt_fontinfo after vst_height 16
++12	0	-	0,4	vst_height 4
+117	0	65	-	vqt_width A in the smallest face
++12	0	-	0,4	vst_height 4
+116	0	65,66,67	-	vqt_extent ABC in the smallest face
++21	0	2	-	vst_font 2
+117	0	65	-	vqt_width A after vst_font 2
++107	0	6	-	vst_point 6
+131	0	-	-	vqt_fontinfo after vst_point 6
+
+# --- clipping: read back through vq_extnd(1) ptsout[0..3] ------------
++129	0	1	10,20,300,400	vs_clip on
+102	0	1	-	vq_extnd 1 after vs_clip on
++129	0	0	-	vs_clip off
+102	0	1	-	vq_extnd 1 after vs_clip off
+
+# --- input mode: read back through vqin_mode (115) -------------------
++33	0	1,2	-	vsin_mode locator sample
+115	0	1	-	vqin_mode locator after sample
++33	0	4,1	-	vsin_mode string request
+115	0	4	-	vqin_mode string after request
+
+# --- the four opcodes round 2 missed ---------------------------------
+122	0	0	-	v_show_c unconditional
+123	0	-	-	v_hide_c
++123	0	-	-	v_hide_c first
+122	0	1	-	v_show_c conditional after a hide
+111	0	8,8,1,1,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,65535,65535,65535,65535,65535,65535,65535,65535,65535,65535,65535,65535,65535,65535,65535,65535	-	vsc_form user cursor, 37 words
+11	10	0,0,65,66,67	20,60,200,0	v_justified GDP sub-op 10
+
+# --- state a prelude established -------------------------------------
++23	0	1	-	vsf_interior solid
++11	1	-	40,40,140,120	v_bar draws a filled box
+103	0	1	80,80	v_contourfill seeded inside the drawn box
++11	1	-	40,40,140,120	v_bar
+105	0	-	80,80	v_get_pixel inside the drawn box
++6	0	-	0,0,200,200	v_pline a diagonal
+105	0	-	100,100	v_get_pixel on the drawn line
+
+# --- a second virtual workstation: the full DEV_TAB and SIZ_TAB ------
+100	0	1,1,1,1,1,1,1,1,1,1,2	-	v_opnvwk opens an additional workstation

@@ -132,6 +132,28 @@ int td_run_vdi(const struct td_case_table *ct, const struct td_wk *wk,
 		/* 1. reset the device state this case could otherwise inherit */
 		td_reset_vdi(wk);
 
+		/* 1b. the case's preludes: calls that establish the state this case
+		 *     measures, issued after the reset so they survive it, and never
+		 *     recorded.  Without them a setter case could only ever prove
+		 *     its own echo -- see cases.h. */
+		for (j = 0; j < (int)c->prelude_count; j++) {
+			const struct td_prelude *p =
+				&ct->preludes[c->prelude_first + (uint16_t)j];
+			int k;
+
+			memset(rs_contrl, 0, sizeof rs_contrl);
+			for (k = 0; k < (int)p->n_intin; k++)
+				rs_intin[k] = p->intin[k];
+			for (k = 0; k < (int)p->n_ptsin; k++)
+				rs_ptsin[k] = p->ptsin[k];
+			rs_contrl[0] = p->opcode;
+			rs_contrl[1] = (int16_t)(p->n_ptsin / 2);
+			rs_contrl[3] = (int16_t)p->n_intin;
+			rs_contrl[5] = p->sub;
+			rs_contrl[6] = wk->handle;
+			td_abi_vdi(rs_contrl, rs_intin, rs_ptsin, rs_intout, rs_ptsout);
+		}
+
 		/* 2. poison everything (spec section 4) */
 		td_poison_vdi(&run_arrays);
 
