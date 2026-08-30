@@ -11,6 +11,14 @@
  * 1-based line number** and nothing may silently renumber the cases.  The
  * comment column is everything from the fifth column on, tabs included.
  *
+ * A line whose opcode field starts with '+' is a PRELUDE, not a case: a call
+ * issued after the reset and before the next case's measured call, and not
+ * recorded. That is what makes an effect measurable rather than only an echo
+ * -- a setter's echo proves the echo, and only a read-back after a
+ * non-default set proves the effect. Preludes stack; several may precede one
+ * case. A prelude consumes a line number like any other line, and a prelude
+ * with no case after it is an error.
+ *
  * A malformed line is an error, never a skipped case: a table that half-loads
  * would produce a dump that compares against the wrong cases.
  *
@@ -23,8 +31,24 @@
 
 #include "record.h"
 
+/* Values a prelude may carry.  Small on purpose: a prelude sets one piece of
+ * state, and the target holds the whole table in static memory. */
+#define TD_PRELUDE_VALUES  16
+#define TD_MAX_PRELUDES   256
+
+struct td_prelude {
+	int16_t  opcode;
+	int16_t  sub;
+	uint16_t n_intin;
+	uint16_t n_ptsin;
+	int16_t  intin[TD_PRELUDE_VALUES];
+	int16_t  ptsin[TD_PRELUDE_VALUES];
+};
+
 struct td_case {
 	uint16_t line;                     /* physical line number = case id  */
+	uint16_t prelude_first;            /* index into the table's pool     */
+	uint16_t prelude_count;            /* calls issued before this case   */
 	int16_t  opcode;                   /* contrl[0]                       */
 	int16_t  sub;                      /* contrl[5]                       */
 	uint16_t n_intin;                  /* values, becomes contrl[3]       */
@@ -35,9 +59,11 @@ struct td_case {
 };
 
 struct td_case_table {
-	uint32_t       crc;                /* CRC32 over the raw file bytes   */
-	uint16_t       count;
-	struct td_case cases[TD_MAX_CASES];
+	uint32_t          crc;             /* CRC32 over the raw file bytes   */
+	uint16_t          count;
+	uint16_t          prelude_count;
+	struct td_case    cases[TD_MAX_CASES];
+	struct td_prelude preludes[TD_MAX_PRELUDES];
 };
 
 #define TD_CASE_ERR_COLUMNS         (-1)   /* fewer than five columns      */
@@ -47,6 +73,8 @@ struct td_case_table {
 #define TD_CASE_ERR_TOO_MANY_VALUES (-5)   /* more values than the array   */
 #define TD_CASE_ERR_TOO_MANY_CASES  (-6)   /* more than TD_MAX_CASES       */
 #define TD_CASE_ERR_IO              (-7)   /* file could not be read       */
+#define TD_CASE_ERR_DANGLING        (-8)   /* prelude with no case after   */
+#define TD_CASE_ERR_TOO_MANY_PRE    (-9)   /* more than TD_MAX_PRELUDES    */
 
 struct td_case_error {
 	uint16_t    line;                  /* physical line, 0 if not a line  */

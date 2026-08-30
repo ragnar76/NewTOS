@@ -222,6 +222,58 @@ static void check_run(const struct td_wk *wk, const struct td_case_table *ct,
 	}
 }
 
+/*
+ * A prelude runs after the reset and before the measured call, and is not
+ * recorded. Without it a setter case can only ever prove its own echo: the
+ * runner resets before every case, so a set made in the case before is gone.
+ */
+static void check_prelude(const struct td_wk *wk)
+{
+	static struct td_case_table ct;
+	static uint8_t records[4 * TD_VDI_RECORD_SIZE];
+	static const char *text =
+		"+21\t0\t2\t-\tvst_font 2\n"
+		"38\t0\t-\t-\tvqt_attributes reads it back\n";
+	struct td_case_error err;
+	const struct td_stub_call *c;
+	int rc;
+
+	printf("runner: a prelude runs unrecorded between reset and call\n");
+
+	memset(&err, 0, sizeof err);
+	rc = td_cases_parse(&ct, text, strlen(text), &err);
+	TD_CHECK_EQ(rc, 0);
+	TD_CHECK_EQ(ct.count, 1);
+
+	td_stub_reset();
+	rc = td_run_vdi(&ct, wk, records, sizeof records);
+	TD_CHECK_EQ(rc, 0);
+
+	/* reset block, then the prelude, then the measured call */
+	TD_CHECK_EQ(td_stub_ncalls, RESET_N + 2);
+
+	c = &td_stub_calls[RESET_N];
+	TD_CHECK_EQ(c->opcode, 21);
+	TD_CHECK_EQ(c->contrl3, 1);
+	TD_CHECK_EQ(c->intin[0], 2);
+	TD_CHECK_EQ(c->handle, wk->handle);
+
+	c = &td_stub_calls[RESET_N + 1];
+	TD_CHECK_EQ(c->opcode, 38);
+
+	/* the record is the measured call's, never the prelude's */
+	{
+		const uint8_t *rec = records;
+		TD_CHECK_EQ(td_load_be16(rec + TD_VDI_OFF_OPCODE), 38);
+		TD_CHECK_EQ(td_load_be16(rec + TD_VDI_OFF_CONTRL_BEFORE), 38);
+		/* the prelude must not leak into the recorded arrays: the case
+		 * supplies no intin, so intin[0] carries only what the measured
+		 * call itself left there */
+		TD_CHECK_EQ(td_load_be16(rec + TD_VDI_OFF_INTIN),
+		            (uint16_t)TD_STUB_INTIN_MARK);
+	}
+}
+
 static void check_too_small(const struct td_wk *wk,
                             const struct td_case_table *ct, uint8_t *records)
 {
@@ -247,6 +299,7 @@ int main(int argc, char **argv)
 
 	check_open(&wk);
 	check_run(&wk, &ct, records);
+	check_prelude(&wk);
 	check_too_small(&wk, &ct, records);
 
 	/* T2 deliverable: a well-formed dump file, written by the same code the

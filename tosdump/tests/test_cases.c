@@ -175,6 +175,75 @@ static void test_limits(void)
 	TD_CHECK_EQ(parse(&t, buf, &err), TD_CASE_ERR_TOO_MANY_CASES);
 }
 
+static void test_preludes(void)
+{
+	static struct td_case_table t;
+	struct td_case_error err;
+
+	printf("case table: preludes make an effect measurable, not just an echo\n");
+
+	/* A setter's echo proves the echo. Only a read-back after a non-default
+	 * set proves the effect -- and the runner resets before every case, so
+	 * the set has to happen inside the case, as a prelude. */
+	TD_CHECK_EQ(parse(&t,
+	                  "+21\t0\t2\t-\tvst_font 2\n"
+	                  "38\t0\t-\t-\tvqt_attributes reads it back\n"
+	                  "35\t0\t-\t-\tvql_attributes with no prelude\n",
+	                  &err), 0);
+	TD_CHECK_EQ(t.count, 2);
+	TD_CHECK_EQ(t.prelude_count, 1);
+
+	/* the prelude line consumes a line number; the case keeps its own */
+	TD_CHECK_EQ(t.cases[0].line, 2);
+	TD_CHECK_EQ(t.cases[0].opcode, 38);
+	TD_CHECK_EQ(t.cases[0].prelude_count, 1);
+	TD_CHECK_EQ(t.cases[0].prelude_first, 0);
+	TD_CHECK_EQ(t.preludes[0].opcode, 21);
+	TD_CHECK_EQ(t.preludes[0].n_intin, 1);
+	TD_CHECK_EQ(t.preludes[0].intin[0], 2);
+
+	TD_CHECK_EQ(t.cases[1].line, 3);
+	TD_CHECK_EQ(t.cases[1].prelude_count, 0);
+
+	/* preludes stack */
+	TD_CHECK_EQ(parse(&t,
+	                  "+32\t0\t3\t-\tvswr_mode xor\n"
+	                  "+15\t0\t4\t-\tvsl_type\n"
+	                  "35\t0\t-\t-\tvql_attributes reads both back\n",
+	                  &err), 0);
+	TD_CHECK_EQ(t.count, 1);
+	TD_CHECK_EQ(t.prelude_count, 2);
+	TD_CHECK_EQ(t.cases[0].prelude_count, 2);
+	TD_CHECK_EQ(t.preludes[0].opcode, 32);
+	TD_CHECK_EQ(t.preludes[1].opcode, 15);
+
+	/* a prelude carries a sub-opcode and ptsin like any call */
+	TD_CHECK_EQ(parse(&t,
+	                  "+11\t4\t0,3600\t100,100,0,0,30,0\tv_circle\n"
+	                  "105\t0\t-\t100,100\tv_get_pixel inside it\n",
+	                  &err), 0);
+	TD_CHECK_EQ(t.preludes[0].sub, 4);
+	TD_CHECK_EQ(t.preludes[0].n_ptsin, 6);
+	TD_CHECK_EQ(t.preludes[0].ptsin[4], 30);
+
+	/* a prelude with no case after it is an error, not a silent drop */
+	TD_CHECK_EQ(parse(&t, "35\t0\t-\t-\tcase\n+21\t0\t2\t-\tdangling\n",
+	                  &err), TD_CASE_ERR_DANGLING);
+	TD_CHECK_EQ(err.line, 2);
+
+	/* the value cap is enforced rather than overrunning */
+	{
+		static char buf[1024];
+		size_t pos = 0;
+		int i;
+		pos += (size_t)sprintf(buf + pos, "+15\t0\t");
+		for (i = 0; i < TD_PRELUDE_VALUES + 1; i++)
+			pos += (size_t)sprintf(buf + pos, "%s1", i ? "," : "");
+		sprintf(buf + pos, "\t-\ttoo many\n35\t0\t-\t-\tcase\n");
+		TD_CHECK_EQ(parse(&t, buf, &err), TD_CASE_ERR_TOO_MANY_VALUES);
+	}
+}
+
 static void test_crc_identity(void)
 {
 	static struct td_case_table a, b;
@@ -197,6 +266,7 @@ int main(void)
 	test_values();
 	test_rejections();
 	test_limits();
+	test_preludes();
 	test_crc_identity();
 	return TD_TEST_RESULT();
 }
