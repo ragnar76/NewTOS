@@ -115,6 +115,29 @@ fi
 # beside the .NAP): QED.NAP is the GEM program, qed.rsc its native NRSC-v3 (LP64)
 # resource. Launched by double-clicking QED.NAP on the desktop — NEVER from \AUTO\
 # (console-only, ADR-018). Copied in if the LP64 build exists (sdk/apps/build-qed.sh).
+# ── TOSDUMP: the VDI reference dumper (docs/TOS-REFERENCE-DUMPER.md) ─────────
+# DUMPVDI.NAP measures what this machine's VDI does, case by case, so it can be
+# compared against the same measurement taken on an Atari TT (the dumps live in
+# tosdump/reference/). It is a `.NAP` because it calls appl_init/graf_handle/
+# v_opnvwk, so it launches from the desktop -- never from \AUTO\.
+#
+# Both files go in the ROOT of C: on purpose. The dumper reads its case table
+# and writes its output through RELATIVE paths, and the desktop does not set
+# the current directory before launching a program (kernel/src/desk/main.rs,
+# `launch_native` -- no Dsetpath), so the working directory is whatever the
+# boot left it at. The root is the one place that is likely to be.
+TOSDUMP_DIR="$SCRIPT_DIR/../tosdump"
+if [ -f "$TOSDUMP_DIR/build/DUMPVDI.NAP" ] && [ -f "$TOSDUMP_DIR/cases/vdi-r2.tsv" ]; then
+  cp "$TOSDUMP_DIR/build/DUMPVDI.NAP" "$V/DUMPVDI.NAP"
+  # Round 2: 120 cases, the broadest opcode coverage, and the reference the
+  # generated Rust tests are built against. Copied verbatim -- its bytes are
+  # the identity the dump carries, so the CRC must stay A0706A6D.
+  cp "$TOSDUMP_DIR/cases/vdi-r2.tsv" "$V/VDI.TSV"
+  echo "  + C:\\DUMPVDI.NAP + C:\\VDI.TSV (VDI reference dumper, round 2)"
+else
+  echo "  ! tosdump not built (run 'make -C tosdump all'); skipping DUMPVDI"
+fi
+
 QED_DIR="$SCRIPT_DIR/../sdk/apps/qed/build"
 if [ -f "$QED_DIR/QED.NAP" ] && [ -f "$QED_DIR/qed.rsc" ]; then
   mkdir -p "$V/Apps/QED"
