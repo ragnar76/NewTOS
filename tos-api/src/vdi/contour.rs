@@ -33,14 +33,27 @@
 //! monotonically and is bounded by the (finite) clipped device area, the
 //! fill visits each pixel at most once and is **guaranteed to terminate
 //! for every pattern**. The predicate is only ever evaluated on unvisited
-//! pixels, so `read_pixel` always sees the original (pre-fill) colour —
-//! the pattern write can never fool the flood.
+//! pixels, so the screen probe always sees the original (pre-fill) colour
+//! — the pattern write can never fool the flood.
 //!
 //! The bitmap is sized per call to the live clip ∩ device rectangle (no
 //! fixed-resolution assumption), so contourfill works at any framebuffer
 //! geometry; a small clip needs only a few bytes, a full 1920×1080 screen
 //! ~253 KiB, freed on return. Allocation failure aborts the fill early
 //! (nothing drawn), mirroring EmuTOS' queue-overflow abort.
+//!
+//! ## Colour model
+//!
+//! The comparison follows the device's colour model, as EmuTOS' `end_pts`
+//! dispatches on `TRUECOLOR_MODE` (`vdi_fill.c:836-849`):
+//!
+//! - **Truecolor** (`v_planes > 8`): compare **16-bit screen words** with
+//!   `OVERLAY_BIT` masked out of the screen side (`end_pts16`/
+//!   `search_to_right16`/`search_to_left16`, `vdi_fill.c:694-767`). The
+//!   masking is what makes a `v_clrwk`-cleared background (`0xFFFF`) and a
+//!   pen-0 fill (`0xFFDF`, the pseudo-palette's white) the same colour.
+//! - **Palette** (`v_planes <= 8`): compare colour indices, as the planar
+//!   `end_pts` does (`vdi_fill.c:851-866`).
 
 use core::cell::UnsafeCell;
 
@@ -48,8 +61,13 @@ use alloc::alloc::{alloc_zeroed, dealloc, Layout};
 
 use super::backend::{PatternFill, RasterBackend, WriteMode};
 use super::fill_patterns;
-use super::vwk::Vwk;
+use super::vwk::{self, Vwk};
 use super::Vdipb;
+
+/// The Falcon 16-bit overlay bit — bit 5 of the `RRRRRGGGGGOBBBBB` screen
+/// word, i.e. the green LSB the VDI pseudo-palette never sets
+/// (`vdi_fill.c:26`, `vdi_defs.h:156`, `vdi_col.c:599`).
+const OVERLAY_BIT: u16 = 0x0020;
 
 /// Bounded seed stack. Sized for screen-area fills; an overflow simply
 /// truncates the fill rather than recursing unboundedly (like EmuTOS'
@@ -154,16 +172,74 @@ pub fn v_contourfill(pb: &Vdipb, vwk: &Vwk, backend: &dyn RasterBackend) {
         return;
     }
 
-    // Determine the search colour + seed mode.
+    // Under `TRUECOLOR_MODE` (`v_planes > 8`, `vdi_defs.h:22`) the seed
+    // fill works on raw 16-bit screen words, not palette indices —
+    // `end_pts` dispatches to `end_pts16` (`vdi_fill.c:846-849`).
+    let truecolor = backend.planes() > 8;
+
+    // The screen colour at `(x, y)` in the units the comparison uses.
+    //
+    // Truecolor: the 16-bit word with `OVERLAY_BIT` masked off, which is
+    // what `end_pts16` reads (`color = *addr & ~OVERLAY_BIT`,
+    // `vdi_fill.c:755`) and what `search_to_right16`/`search_to_left16`
+    // compare (`:709,733`). NewTOS' framebuffer stores 32-bpp XRGB8888
+    // internally (`docs/COMPATIBILITY.md`), so the app-visible word is
+    // recovered through `device_to_rgb565`, the same screen→16-bit boundary
+    // `v_get_pixel` and a memory MFDB cross — *not* through `read_pixel`,
+    // whose reverse map to the nearest CLUT entry is lossy and would fold
+    // every non-pen colour onto a pen.
+    //
+    // Palette: the colour index, as the planar `end_pts` composes it from
+    // the bit-planes (`vdi_fill.c:857`); no overlay bit exists there.
+    let probe = |x: i16, y: i16| -> u16 {
+        if truecolor {
+            backend.device_to_rgb565(backend.get_device_pixel(x, y)) & !OVERLAY_BIT
+        } else {
+            backend.read_pixel(x, y) as u16
+        }
+    };
+
+    // Determine the search colour + seed mode (`contourfill`,
+    // `vdi_fill.c:968-983`).
     let intin0 = pb.intin(0);
     let (search, seed_type) = if intin0 < 0 {
-        (backend.read_pixel(sx, sy), true) // fill region equal to seed
+        // Fill the region equal to the seed pixel: `search_color =
+        // pixelread(xleft, oldy)` (`vdi_fill.c:970`). Note EmuTOS takes the
+        // **unmasked** word here — `pixelread`'s truecolor branch returns
+        // `*addr` as stored (`:677-681`) — and `end_pts16` then compares it
+        // against a *masked* screen colour (`:763`). So a seed pixel whose
+        // overlay bit is set (a `v_clrwk`-cleared background, `0xFFFF`)
+        // never equals any masked screen word and the fill draws nothing.
+        // That asymmetry is EmuTOS' behaviour, reproduced deliberately: the
+        // mask is applied to the screen side only.
+        let c = if truecolor {
+            backend.device_to_rgb565(backend.get_device_pixel(sx, sy))
+        } else {
+            backend.read_pixel(sx, sy) as u16
+        };
+        (c, true)
     } else {
         // `>= numcolors` guard (silent no-op, `vdi_fill.c:976`).
         if intin0 as u16 >= backend.num_colors() {
             return;
         }
-        (intin0 as u8, false) // fill region bounded by this colour
+        // Convert the VDI pen to a device colour: `search_color =
+        // MAP_COL[search_color]` and, under truecolor, the physical
+        // workstation's pseudo-palette entry — `phys_work.ext->palette[...]`
+        // (`vdi_fill.c:978-984`), the *physical* workstation's table, not the
+        // calling one's. NewTOS folds `MAP_COL` to the identity
+        // (`vwk::VwkExt`), so the pen indexes the pseudo-palette directly.
+        let c = if truecolor {
+            // SAFETY: single trap path, as for the rest of the VDI state.
+            let phys = unsafe { vwk::ext(vwk::PHYS_HANDLE) };
+            let Some(word) = phys.and_then(|e| e.palette.get(intin0 as usize).copied()) else {
+                return; // pen beyond the pseudo-palette → no such colour
+            };
+            word
+        } else {
+            intin0 as u16
+        };
+        (c, false) // fill region bounded by this colour
     };
 
     // HOLLOW is not a no-op: EmuTOS `st_fl_ptr` points `patptr` at the
@@ -178,9 +254,10 @@ pub fn v_contourfill(pb: &Vdipb, vwk: &Vwk, backend: &dyn RasterBackend) {
         mode: WriteMode::from_wrt_mode(vwk.wrt_mode),
     };
 
-    // Seed predicate on a pixel's original colour: fill-while-same for
-    // `seed_type`, else fill-to-boundary.
-    let matches = |p: u8| if seed_type { p == search } else { p != search };
+    // Seed predicate on a pixel's original colour — `end_pts`' verdict
+    // `(color == search_color) ? seed_type : !seed_type` (`vdi_fill.c:763-766`,
+    // `:862-865`): fill-while-same for `seed_type`, else fill-to-boundary.
+    let matches = |p: u16| if seed_type { p == search } else { p != search };
 
     // Visited bitmap sized to the clipped fill rectangle. Allocation
     // failure aborts the fill (nothing drawn), like EmuTOS' queue overflow.
@@ -201,16 +278,16 @@ pub fn v_contourfill(pb: &Vdipb, vwk: &Vwk, backend: &dyn RasterBackend) {
         top -= 1;
         let (x, y) = stack[top];
         // Skip already-filled or non-matching seeds (harmless duplicates).
-        if visited.is_set(x, y) || !matches(backend.read_pixel(x, y)) {
+        if visited.is_set(x, y) || !matches(probe(x, y)) {
             continue;
         }
         // Extend the span left and right over unvisited, matching pixels.
         let mut xl = x;
-        while xl > xmn && !visited.is_set(xl - 1, y) && matches(backend.read_pixel(xl - 1, y)) {
+        while xl > xmn && !visited.is_set(xl - 1, y) && matches(probe(xl - 1, y)) {
             xl -= 1;
         }
         let mut xr = x;
-        while xr < xmx && !visited.is_set(xr + 1, y) && matches(backend.read_pixel(xr + 1, y)) {
+        while xr < xmx && !visited.is_set(xr + 1, y) && matches(probe(xr + 1, y)) {
             xr += 1;
         }
         // Paint the span with the interior pattern, then record it visited
@@ -228,13 +305,13 @@ pub fn v_contourfill(pb: &Vdipb, vwk: &Vwk, backend: &dyn RasterBackend) {
             }
             let mut xx = xl;
             while xx <= xr {
-                if !visited.is_set(xx, ny) && matches(backend.read_pixel(xx, ny)) {
+                if !visited.is_set(xx, ny) && matches(probe(xx, ny)) {
                     // Seed once, then skip to the end of this fillable run.
                     if top < SEED_MAX {
                         stack[top] = (xx, ny);
                         top += 1;
                     }
-                    while xx <= xr && !visited.is_set(xx, ny) && matches(backend.read_pixel(xx, ny)) {
+                    while xx <= xr && !visited.is_set(xx, ny) && matches(probe(xx, ny)) {
                         xx += 1;
                     }
                 } else {

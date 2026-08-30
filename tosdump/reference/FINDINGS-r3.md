@@ -170,3 +170,77 @@ profile differences drown the signal.
 One case should measure one thing. A read-back has to be chosen so that what
 comes back is mostly the thing under test. Round 4 should pair clipping with
 something narrower, or accept that this pair can only ever be read by eye.
+
+## R3-4 and R3-5 fixed, and what verifying it exposed about the method
+
+Both landed. `v_clrwk` clears to `0xFFFF` under truecolor, matching
+`memset(v_bas_ad, 0xff, size)` (`vdi/vdi_control.c:600-618`), and
+`v_contourfill` compares 16-bit screen words with `OVERLAY_BIT` masked instead
+of going through a lossy PEL round trip.
+
+The suite stayed at 143 passed / 15 failed. Two values moved, both inside
+already-failing cases: `cases_r2::case_0140` and `case_0141` read the cleared
+background, whose word is now `0xFFFF` rather than `0xFFDF`.
+
+### The briefing was wrong about the mask, again
+
+The brief said EmuTOS masks `OVERLAY_BIT` "out of both sides". It does not.
+`end_pts16` masks only the screen pixel and then compares it against the
+*unmasked* global `search_color` (`vdi/vdi_fill.c:755,763`); the symmetric
+masking at `:702,709,726,733` lives inside `search_to_right16` and
+`search_to_left16` only. The consequence is real: `v_contourfill` with
+`INTIN[0] < 0` on a freshly cleared truecolor background draws nothing at all.
+
+That was reproduced as the source has it rather than smoothed over. Making the
+mask symmetric would be a one-line change and a deviation from EmuTOS; no case
+distinguishes the two, since both use `INTIN[0] = 1`.
+
+### The two `v_contourfill` cases were never measuring anything
+
+Checked directly in the dumps: for `cases_r2::case_0139` (record 92) and
+`cases_r3::case_0138` (record 34), the reference has `contrl[2] = 0`,
+`contrl[4] = 0` and `intout` and `ptsout` **entirely poison**.
+
+`v_contourfill` writes nothing back into the parameter block. Those cases
+assert only that the call did not corrupt it. They are not "green by
+coincidence" like the round-2 `v_get_pixel` cases — they are structurally
+blind to whether the fill is right at all.
+
+### How much of the suite this affects
+
+Counted across both dumps:
+
+    round 2:  40 of 120 cases produce no parameter-block output
+    round 3:   6 of  38
+
+**46 of 158.** The distinction matters and splits two ways:
+
+- For the **no-ops** — 4, 10, 27, 29, 34, 132, 133 — writing nothing *is* the
+  whole contract, so those cases are fully meaningful.
+- For the **drawing primitives** — 6, 7, 8, 9, 11, 103, 114 — and for
+  state-only setters like 113 and 129, the case proves the parameter block
+  survived and nothing more. Whether a single pixel landed correctly is
+  invisible to it.
+
+So "143 passed" means: 143 cases produced the parameter-block bytes the
+reference produced. For roughly a third of them that is a weaker statement
+than it sounds, and no amount of adding drawing cases will strengthen it.
+
+Two ways forward, neither started: pair a drawing call with a `v_get_pixel`
+read-back through a prelude, which the prelude mechanism already allows and
+which turns a drawing case into a real measurement at a few probe points; or
+extend the record format to carry a screen hash or a small pixel window, which
+would measure the drawing itself but needs a format version and a new
+comparison rule.
+
+### Rendering impact of the `v_clrwk` change
+
+None on either board, and the reason is worth recording: the kernel backend's
+`device_to_rgb565` keeps only five green bits, so `rgb565_to_device(0xFFFF)`
+and `rgb565_to_device(0xFFDF)` are both `0xFFFFFF`. The cleared pixels are
+identical before and after. A difference would appear only if pen 0 were
+redefined, and nothing in the kernel calls `vs_color`.
+
+That folding is itself the second half of R3-4: on real hardware `v_get_pixel`
+after `v_clrwk` still reads back `0xFFDF`, not `0xFFFF`. It belongs with the
+planned VDI truecolor work, not here.

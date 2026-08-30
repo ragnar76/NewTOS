@@ -349,9 +349,30 @@ pub fn v_clsvwk(handle: i16) {
     unsafe { vwk::free_handle(handle) };
 }
 
-/// Opcode 3 — clear the workstation (fill the screen with the
-/// background colour, PEL 0).
+/// Opcode 3 — `v_clrwk`: clear the workstation. EmuTOS `vdi_v_clrwk`
+/// (`vdi_control.c:600-618`) memsets the whole screen from `v_bas_ad`
+/// (the clip rectangle is not consulted), with a fill **byte** that depends
+/// on the colour model:
+///
+/// - **Truecolor** (`TRUECOLOR_MODE`, `v_planes > 8`, `vdi_defs.h:22`):
+///   `fill = 0xff`, so every 16-bit screen word becomes `0xFFFF`
+///   ([`clear_screen_word`](RasterBackend::clear_screen_word)). That word is
+///   *not* pen 0: the pseudo-palette's white is `(31<<11)|(31<<6)|31` =
+///   `0xFFDF`, because `set_color16` never sets the green LSB
+///   (`vdi_col.c:601-614`). The two differ by exactly `OVERLAY_BIT`
+///   (`0x0020`, `vdi_fill.c:26`), which the truecolor seed fill masks out of
+///   the screen word so a cleared background and a pen-0 fill compare equal
+///   (`vdi_fill.c:702,709,726,733`). Clearing through PEL 0 instead would
+///   also make the cleared colour follow the palette, where EmuTOS clears to
+///   this constant however pen 0 has been redefined.
+/// - **Palette** (`v_planes <= 8`): `fill = 0x00`, i.e. every plane bit 0 =
+///   colour index 0, which under NewTOS' folded `MAP_COL`
+///   ([`VwkExt`](super::vwk::VwkExt)) is PEL 0.
 pub fn v_clrwk(backend: &dyn RasterBackend) {
+    if backend.planes() > 8 {
+        backend.clear_screen_word(0xFFFF);
+        return;
+    }
     let (w, h) = (backend.width(), backend.height());
     backend.fill_rect(0, 0, w as i16, h as i16, 0, ClipRect::full(w, h));
 }

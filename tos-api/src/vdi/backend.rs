@@ -160,9 +160,42 @@ pub trait RasterBackend: Sync {
     fn rgb565_to_device(&self, px: u16) -> u32;
 
     /// Read the palette index (PEL) at device pixel `(x, y)`, reverse-
-    /// mapping the stored colour to the nearest CLUT entry (`v_get_pixel`,
-    /// `v_contourfill`). Out-of-bounds → `0`.
+    /// mapping the stored colour to the nearest CLUT entry. Out-of-bounds
+    /// → `0`. Used by the **palette-mode** paths only — under truecolor
+    /// both `v_get_pixel` and `v_contourfill` work on the raw 16-bit screen
+    /// word instead (`vdi_fill.c:670-690,744-767`), because a truecolor
+    /// screen holds no palette indices to reverse-map.
     fn read_pixel(&self, x: i16, y: i16) -> Pel;
+
+    /// Fill the **whole visible screen** with the raw 16-bit VDI pixel word
+    /// `word`, ignoring any clip rectangle — the truecolor half of
+    /// `v_clrwk`, which EmuTOS performs as `memset(v_bas_ad, 0xff, size)`
+    /// over the entire framebuffer (`vdi_control.c:600-618`), i.e. the word
+    /// `0xFFFF`.
+    ///
+    /// This deliberately does **not** go through a PEL. `0xFFFF` is not a
+    /// pen: `set_color16` never sets the green LSB (`vdi_col.c:601-614`), so
+    /// the pseudo-palette's white is `(31<<11)|(31<<6)|31` = `0xFFDF` and the
+    /// cleared screen differs from it by `OVERLAY_BIT` (`0x0020`,
+    /// `vdi_fill.c:26`) — exactly the bit the truecolor seed fill masks out
+    /// of both sides so the two compare equal (`vdi_fill.c:702,709,726,733`).
+    /// Nor does the constant follow the palette: EmuTOS clears to `0xFFFF`
+    /// however pen 0 has been redefined.
+    ///
+    /// The default implementation writes the word's device representation
+    /// ([`rgb565_to_device`](Self::rgb565_to_device)) with
+    /// [`put_device_pixel`](Self::put_device_pixel) and flushes once. A
+    /// backend able to fill in bulk should override it.
+    fn clear_screen_word(&self, word: u16) {
+        let px = self.rgb565_to_device(word);
+        let (w, h) = (self.width(), self.height());
+        for y in 0..h {
+            for x in 0..w {
+                self.put_device_pixel(x as i16, y as i16, px);
+            }
+        }
+        self.flush_rect(0, 0, w.saturating_sub(1) as i16, h.saturating_sub(1) as i16);
+    }
 
     /// Fill the rectangle `[x, x+w) × [y, y+h)` (device coordinates,
     /// origin top-left) with palette colour `pel`. The draw is clipped to
