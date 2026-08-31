@@ -231,12 +231,34 @@ sentinel and the returned pointer are preserved.
   the AltGr override pairs — the EmuTOS `ascii_cnv` (non-DUAL_KEYBOARD)
   selection logic. Ctrl-folding to a control code is done by the caller
   (`ikbd.rs:176-183`).
-- **Step-2 — the XBIOS setter is not wired, and the struct is not exposed.**
-  `Keytbl` (XBIOS `0x10`) is **not in the NewTOS XBIOS dispatcher**
-  (`tos-api/src/xbios/mod.rs`), so a program cannot swap `norm`/`shft`/`caps`
-  or read `&current_keytbl` through it — it returns `EINVFN`. The layout is
-  selectable only at boot (`init_from_disk`), not at run time via `Keytbl`,
-  and the `keymap::Layout` in the kernel is not the 30-byte `struct keytbl`
-  the contract returns (it also carries the AltGr pairs inline rather than as
-  `altnorm`/`altshft`/`altcaps` pointers). Recorded as K-series below.
+- **Wired since 2026-09-01 (desktop-user-space stage S1d).** `Keytbl` is in
+  the NewTOS XBIOS dispatcher (`tos-api/src/xbios/mod.rs`, id `0x10` →
+  `tos-api/src/xbios/keytbl.rs`). Both halves work:
+  - **Get.** The returned `struct keytbl` and the six tables it points at are
+    **materialised into the caller's own address space** on every call: into a
+    running EL0 process's reserved TPA-low region (`KEYTBL_AREA_VA` = `0x768`,
+    `tos-api/src/bdos/process/loader.rs`), written through the kernel high-half
+    alias and returned as the process's **user VA**; into a kernel static, and
+    returned as a kernel VA, when no process is running (the in-kernel desktop
+    / boot path). Same "user VA while a process runs, kernel VA otherwise" rule
+    as `Malloc` (ADR-021). This is what makes EmuTOS' desktop idiom
+    `keytab = (KEYTAB *)Keytbl(-1,-1,-1); keytab->shift[…]`
+    (`desk/deskmain.c:1144-1145`) work from EL0 instead of faulting.
+    Pointer fields are written at the **caller's** ABI width (8 bytes LP64,
+    4 bytes ILP32), so the struct is 58 or 30 bytes respectively.
+    `dead` is `NULL` and `features` `0` — exactly as EmuTOS' own US and German
+    tables end (`bios/keyb_us.h`, `bios/keyb_de.h`: `…, NULL, 0`).
+  - **Set.** A non-sentinel argument really changes the translation: the 128
+    bytes are taken over into the active `keymap::Layout` through
+    `Host::set_key_table`. EmuTOS stores the caller's *pointer* and lets its
+    ACIA ISR read the caller's memory; NewTOS has no such ISR, so it copies
+    the bytes and *additionally* remembers the pointer, which a later
+    `Keytbl(-1,-1,-1)` reports back verbatim as EmuTOS would. **Residual
+    difference:** editing the table in place *after* installing it does not
+    take effect until `Keytbl` is called again.
+  - The AltGr arrays are emitted in EmuTOS' non-`DUAL_KEYBOARD` wire format
+    (zero-terminated `(scancode, ascii)` pairs), which is exactly how
+    `keymap::Layout` already holds them.
+  - Still **not** wired: `Bioskeys` (`0x18`), which would reset the whole
+    struct from the country tables. Recorded as K-series below.
 - **Datasheet.** No peripheral register (software table).

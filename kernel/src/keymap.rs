@@ -16,6 +16,8 @@
 
 use core::cell::UnsafeCell;
 
+use tos_api::host::{KeyTable, KeyTables, ALT_TABLE_LEN};
+
 /// Maximum AltGr `(scancode, ascii)` override pairs per shift level.
 const ALTGR_MAX: usize = 16;
 
@@ -214,6 +216,48 @@ pub fn select_builtin(name: &[u8]) -> bool {
 fn install(lay: Layout) {
     // SAFETY: single-CPU boot context.
     unsafe { *ACTIVE.layout.get() = lay };
+}
+
+/// Snapshot the active layout in the XBIOS `Keytbl` shape (EmuTOS
+/// `struct keytbl`, `bios/ikbd.h:57-86`): the three 128-byte scancode→ASCII
+/// tables plus the three AltGr override arrays, each rendered in EmuTOS'
+/// non-`DUAL_KEYBOARD` wire format — `(scancode, ascii)` pairs terminated by a
+/// zero byte (`keyb_de.h`'s `keytbl_de_altcaps` is the model).
+pub fn snapshot() -> KeyTables {
+    let lay = active();
+    let pack = |pairs: &[(u8, u8); ALTGR_MAX], n: u8| -> [u8; ALT_TABLE_LEN] {
+        let mut out = [0u8; ALT_TABLE_LEN];
+        for (i, p) in pairs[..n as usize].iter().enumerate() {
+            out[i * 2] = p.0;
+            out[i * 2 + 1] = p.1;
+        }
+        // The terminating zero byte is already there (the array starts zeroed
+        // and `2 * ALTGR_MAX < ALT_TABLE_LEN`).
+        out
+    };
+    KeyTables {
+        norm: lay.norm,
+        shft: lay.shft,
+        caps: lay.caps,
+        altnorm: pack(&lay.altnorm, lay.altnorm_n),
+        altshft: pack(&lay.altshft, lay.altshft_n),
+        altcaps: pack(&lay.altcaps, lay.altcaps_n),
+    }
+}
+
+/// Replace one of the three primary scancode→ASCII tables of the active
+/// layout — the set half of XBIOS `Keytbl` (`bios/ikbd.c:124-132`). The AltGr
+/// overrides and the other two tables are untouched, exactly as `Keytbl`
+/// leaves them.
+pub fn set_table(which: KeyTable, table: &[u8; 128]) {
+    // SAFETY: single-CPU cooperative path; the active layout is only mutated
+    // here and during boot init, never concurrently with a decode.
+    let lay = unsafe { &mut *ACTIVE.layout.get() };
+    match which {
+        KeyTable::Norm => lay.norm = *table,
+        KeyTable::Shft => lay.shft = *table,
+        KeyTable::Caps => lay.caps = *table,
+    }
 }
 
 /// Translate a scancode to ASCII against the **active** layout given the

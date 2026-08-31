@@ -284,6 +284,14 @@ impl Host for KernelHost {
         crate::ikbd::set_shift_state(mask);
     }
 
+    fn key_tables(&self) -> Option<tos_api::host::KeyTables> {
+        Some(crate::keymap::snapshot())
+    }
+
+    fn set_key_table(&self, which: tos_api::host::KeyTable, table: &[u8; 128]) {
+        crate::keymap::set_table(which, table);
+    }
+
     #[cfg(feature = "board-rpi4")]
     fn block(&self) -> Option<&dyn tos_api::bios::block::BlockDev> {
         use crate::hal::block::BlockDevice;

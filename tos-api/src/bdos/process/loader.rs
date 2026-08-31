@@ -740,6 +740,25 @@ const _: () = assert!(USERDEF_RET_SLOT_VA + 4 <= RESERVED_LOW_END);
 // constant and the encoding in lockstep.
 const _: () = assert!(USERDEF_RET_SLOT_VA == 0x760);
 
+/// EL0 VA of the **`Keytbl` area**: the `struct keytbl` XBIOS `Keytbl` (0x10)
+/// returns, followed by the three 128-byte scancode→ASCII tables and the three
+/// AltGr override arrays it points at. Placed at the top of the same reserved
+/// low-memory gap as [`TRAMPOLINE_VA`] / [`PARMBLK_SCRATCH_VA`], above the
+/// userdef return slot. Written through the kernel high-half alias
+/// (`basepage_kva + offset`) when `Keytbl` is called by a running EL0 process,
+/// and read back by that process at this low-half VA — EmuTOS' desktop
+/// dereferences the returned pointer directly (`desk/deskmain.c:1144-1145`).
+/// See `crate::xbios::keytbl` for the layout inside the area.
+pub const KEYTBL_AREA_VA: u64 = 0x768;
+
+/// Size of the [`KEYTBL_AREA_VA`] region, in bytes.
+pub const KEYTBL_AREA_SIZE: u64 = 0x238;
+
+// The Keytbl area sits above the userdef return slot and stays inside the
+// reserved low gap, below the app image base.
+const _: () = assert!(KEYTBL_AREA_VA >= USERDEF_RET_SLOT_VA + 4);
+const _: () = assert!(KEYTBL_AREA_VA + KEYTBL_AREA_SIZE <= RESERVED_LOW_END);
+
 /// OSHEADER `os_version` (+0x02): Falcon TOS 4.04. EmuTOS' own default is
 /// 0x206 (`config.h:1367-1372`); NewTOS reports 4.04 — user-pinned.
 const OS_VERSION: u16 = 0x0404;

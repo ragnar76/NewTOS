@@ -171,6 +171,61 @@ pub trait Host: Sync {
     /// backing keyboard simply has nothing to store, exactly as EmuTOS'
     /// `shifty` write is inert with no ACIA present.
     fn set_keyboard_shift_state(&self, _mask: u8) {}
+
+    /// The three primary scancode→ASCII translation tables plus the AltGr
+    /// override arrays of the **active** keyboard layout, in the shape XBIOS
+    /// `Keytbl` publishes them (EmuTOS `struct keytbl`, `bios/ikbd.h:57-86`).
+    /// `None` when the board has no keyboard translator, in which case
+    /// `Keytbl` has nothing to point at. Same swappable boundary as
+    /// [`Host::raster`].
+    fn key_tables(&self) -> Option<KeyTables> {
+        None
+    }
+
+    /// Install a caller-supplied 128-byte scancode→ASCII table as one of the
+    /// three primary tables — the set half of `Keytbl` (EmuTOS
+    /// `bios/ikbd.c:124-132` assigns the pointer; NewTOS's translator owns a
+    /// RAM layout, so the bytes are taken over instead of the pointer). The
+    /// default is a no-op: a board with no keyboard translator has no table
+    /// to replace.
+    fn set_key_table(&self, _which: KeyTable, _table: &[u8; 128]) {}
+}
+
+/// Bytes reserved for one AltGr override array. EmuTOS's non-`DUAL_KEYBOARD`
+/// format is `(scancode, ascii)` pairs terminated by a zero byte
+/// (`bios/ikbd.h:66-71`); NewTOS's translator holds up to 16 pairs per shift
+/// level, so 33 bytes always suffice.
+pub const ALT_TABLE_LEN: usize = 33;
+
+/// Which of the three primary tables [`Host::set_key_table`] replaces.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum KeyTable {
+    /// Unshifted (`norm`).
+    Norm,
+    /// Shifted (`shft`).
+    Shft,
+    /// Caps-locked (`caps`).
+    Caps,
+}
+
+/// A snapshot of the active keyboard layout in `struct keytbl` shape
+/// (`bios/ikbd.h:57-86`). The three primary tables are 128-byte
+/// scancode→ASCII arrays; the three AltGr arrays are zero-terminated
+/// `(scancode, ascii)` pair lists padded to [`ALT_TABLE_LEN`].
+#[derive(Clone, Copy)]
+pub struct KeyTables {
+    /// Unshifted table.
+    pub norm: [u8; 128],
+    /// Shifted table.
+    pub shft: [u8; 128],
+    /// Caps-locked table.
+    pub caps: [u8; 128],
+    /// AltGr overrides for the unshifted level.
+    pub altnorm: [u8; ALT_TABLE_LEN],
+    /// AltGr overrides for the shifted level.
+    pub altshft: [u8; ALT_TABLE_LEN],
+    /// AltGr overrides for the caps-locked level.
+    pub altcaps: [u8; ALT_TABLE_LEN],
 }
 
 /// The hardware framebuffer as the XBIOS screen calls see it.
