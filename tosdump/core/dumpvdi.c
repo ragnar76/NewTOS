@@ -20,9 +20,13 @@
  * after the workstation opens, before any case, so a run that hangs still
  * leaves its setup on disk, and once at the end.
  *
- * A human starts this from a desktop on both machines, so it waits for RETURN
- * before returning.  The wait is after every measurement and cannot influence
- * one.
+ * It does NOT wait for a keypress at the end, and that is deliberate.  An
+ * earlier version did, so an operator could read the output before the
+ * desktop repainted over it.  That predates the log file, which records the
+ * same text on disk on both machines and made the pause redundant.  It also
+ * hung NewTOS outright: the blocking console read waits on the PL011 RX
+ * interrupt, which is never delivered on real Pi 4 hardware (QUIRK-002), so
+ * the machine sat in `wfi` until it was power-cycled.
  */
 #include <stdio.h>
 #include <string.h>
@@ -42,7 +46,8 @@ static uint8_t records[(size_t)TD_MAX_CASES * TD_VDI_RECORD_SIZE];
 
 static const char *log_path = "VDI.LOG";
 
-/* Outside the measurement: every case has already been run and recorded. */
+/* Write the log out.  Outside the measurement: every case has already been
+ * run and recorded. */
 static int finish(int rc)
 {
 	int lr = td_log_write(log_path);
@@ -54,9 +59,6 @@ static int finish(int rc)
 		       (unsigned long)td_log_len(),
 		       td_log_truncated() ? " (truncated)" : "");
 
-	printf("\npress RETURN\n");
-	while (getchar() == EOF)
-		break;
 	return rc;
 }
 
