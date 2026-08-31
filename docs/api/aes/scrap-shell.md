@@ -45,12 +45,26 @@
 > rewrite + `1`/`0` return; the `shel_envrn` "pointer after the match, or NULL"
 > result; the `shel_read` command+`CMDTAILSIZE(128)`-byte tail; the
 > `shel_get`/`shel_put` `SIZE_SHELBUF(4192)`-byte buffer. **Reference (NewTOS
-> reimplements the *how* freely):** the `SHELL sh` struct, `sh_main`'s
-> desktop/console/app launch loop, `sh_chgrf`/`sh_tographic`/`sh_toalpha`
-> alpha↔graphic switching, `aes_run_rom_program`, the `D.g_scrap`/`D.g_shelbuf`/
-> `D.s_cmd`/`ad_stail` storage, and the `dos_sfirst`/`dos_snext` scan internals —
-> these are EmuTOS's cooperative-shell internals NewTOS rebuilds on its Phase-06
-> process model + file system.
+> reimplements the *how* freely):** the `SHELL sh` struct's internal shape,
+> `sh_main`'s desktop/console/app launch loop *control flow*,
+> `sh_chgrf`/`sh_tographic`/`sh_toalpha` alpha↔graphic switching *mechanics*,
+> `aes_run_rom_program`'s nested-`Pexec` trick, the `D.g_scrap`/`D.g_shelbuf`/
+> `D.s_cmd`/`ad_stail` storage, and the `dos_sfirst`/`dos_snext` scan internals.
+>
+> **Correction (2026-09-01, see
+> [`shell-loop.md`](./shell-loop.md)).** The line above previously read "the
+> `SHELL sh` struct, `sh_main`'s … launch loop, … `aes_run_rom_program`, …
+> these are EmuTOS's cooperative-shell internals NewTOS rebuilds … freely" —
+> unqualified, and too broad. **The launch loop's *implementation shape* is
+> reference; the *process-identity numbering it produces is not*.**
+> `sh_ldapp` (`gemshlib.c:592-689`) deliberately reuses **one** persistent
+> AESPD (slot 0, "dos appl") for the desktop and for every application it
+> launches, renaming it in place via `p_nameit`/`p_setappdir` — never
+> allocating a second descriptor. The resulting values (`ap_id == 0`,
+> `ap_private == 0x1143` by default) are measured facts about a real
+> machine (a genuine TT), not implementation choices, and are **contract**:
+> see `shell-loop.md` §4–§5, §11. Any NewTOS reimplementation of this loop —
+> however it is coded — must reproduce those numbers.
 
 ---
 
@@ -487,7 +501,8 @@ returned to the `shel_write` caller — `shel_write` returned `1` when it merely
 
 ---
 
-## The AES↔shell launch loop (reference)
+## The AES↔shell launch loop (reference for the mechanism; see `shell-loop.md`
+## for the process-identity contract)
 
 `shel_write(SHW_NOEXEC)` is how an application **quits to the desktop**: the AES
 records "run the desktop next", and when the app calls `appl_exit`/`Pterm`, the
@@ -495,12 +510,21 @@ shell loop `sh_main` (`gemshlib.c:692-731`) runs whatever `shel_write` selected 
 the desktop (`sh_ldapp` → `aes_run_rom_program(deskstart)`), the console
 (`coma_start`), or a normal app (`dos_exec(PE_LOADGO, D.s_cmd, ad_stail,
 ad_envrn)`). After a normal app exits, the loop defaults back to the desktop.
-This whole loop — the `SHELL` struct, the alpha↔graphic mode switch
-(`sh_chgrf`/`sh_tographic`/`sh_toalpha`), `aes_run_rom_program`, the
-`wind_new`/DTA cleanup — is **reference**: NewTOS reimplements it on its Phase-06
-process model + `Pexec`/`Pterm`. What is **contract** is the observable result:
-`shel_write` records the next program + tail + mode, `shel_read` returns this
-app's launch command + tail, and the desktop is re-run on app exit.
+The loop's *internal shape* — the `SHELL` struct, the alpha↔graphic mode switch
+mechanics (`sh_chgrf`/`sh_tographic`/`sh_toalpha`), `aes_run_rom_program`'s
+nested-`Pexec` trick, the `wind_new`/DTA cleanup call sites — is **reference**:
+NewTOS reimplements it on its Phase-06 process model + `Pexec`/`Pterm`.
+
+**Contract** is broader than just `shel_write`'s recorded state: it also
+includes what `sh_ldapp` does to process identity on every launch —
+**[`docs/api/aes/shell-loop.md`](./shell-loop.md)** is the full extraction
+(AESPD numbering, `p_nameit`/`p_setappdir` applied to the one persistent
+"dos appl" descriptor, the `ap_private`/`gem.rsc` chain, the `#Q`/`#E`/`#Z`
+`EMUDESK.INF` processing, the `app_save`/`app_start` state-handover buffer).
+`shel_write` records the next program + tail + mode; `shel_read` returns this
+app's launch command + tail; the desktop is re-run on app exit; **and** the
+launched app's `appl_init()` observably returns `ap_id == 0` and
+`ap_private == 0x1143` (default) — see `shell-loop.md` for the citations.
 
 ---
 

@@ -90,6 +90,28 @@ Opcode-Range 10..127 + `default`→−1 ist strukturell korrekt abgebildet.
   Desktop und EL0-App, keine Kollision auf 1.
 - Runtime-verify: yes (Desktop-tatsächliche-pid & Reihenfolge nicht statisch belegbar).
 
+> **Korrektur (2026-09-01, S0-Spec-Pass, siehe
+> [`docs/api/aes/shell-loop.md`](../../api/aes/shell-loop.md) §4–§5, §8).**
+> Der oben empfohlene 1:1-Fix „**getrennte Räume für Desktop und EL0-App**"
+> ist für den *gestarteten* Fall **EmuTOS-widrig**, nicht 1:1. `sh_ldapp`
+> (`gemshlib.c:592-689`) legt für die gestartete Anwendung **keine neue
+> AESPD an** — es benennt die eine, dauerhaft bestehende AESPD 0 ("dos appl")
+> per `p_nameit(rlr,…)`/`p_setappdir(rlr,…)` um, exakt wie für den Desktop
+> selbst (`gemshlib.c:604-605` vs. `:634-635`, identischer Aufrufcode auf
+> demselben `rlr`). Das funktioniert konfliktfrei, weil Desktop und
+> Anwendung `rlr` **sequenziell**, nie gleichzeitig belegen — der Desktop
+> terminiert (`Pterm` über `deskstart.S`), bevor `sh_ldapp` die Anwendung
+> per `dos_exec(PE_LOADGO,…)` startet. Der korrekte 1:1-Fix für die
+> Boot/EL1↔erste-EL0-App-Kollision ist daher **ein gemeinsamer, sequenziell
+> umbenannter Deskriptor** (Desktop-Terminierung *vor* App-Start
+> herstellen, dann denselben Slot weiterverwenden) — **nicht** getrennte
+> Deskriptor-Räume. Getrennte Räume wären nur für echtes *Nebeneinander*
+> (Desktop lebt während die App läuft — unser heutiges verschachteltes
+> Modell) eine Rechtfertigung, und das ist laut
+> `docs/analysis/desktop-userspace-plan.md` §2.1 genau das Artefakt, das
+> mit dem User-Space-Umzug verschwindet, nicht etwas, das EmuTOS-treu
+> gefestigt werden soll.
+
 ### AUD-P1-005: `appl_write` — Nachricht auf 16 Byte trunkiert; EmuTOS bis 128 Byte
 - Severity: **MEDIUM**
 - EmuTOS: `gemsuper.c:103-104` `ap_rdwr(MU_SDMSG, ..., AP_LENGTH, AP_PBUFF)`;
