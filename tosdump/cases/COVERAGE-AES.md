@@ -77,17 +77,22 @@ and three were **added** that were not on it:
 | `appl_trecord` (15) | **added** | `while (gl_recd) ev_timer(100L);` (`gemaplib.c:216-217`) — loops until the operator has filled the event buffer. |
 | `appl_read` (11) | **added** | `ap_rdwr(MU_MESAG, …)` → `ev_block` (`gemsuper.c:100-103`, `gemaplib.c:88`); `aqueue` blocks on an empty queue (`gemqueue.c:99`). |
 
-**What the guard does NOT cover, and why.** Three residual hazards, all of
-them outside the three classes as stated, all of them real:
+**What the guard does NOT cover, and why.** Two residual hazards, both
+outside the classes as stated, both real:
 
-- **`CONF_WITH_PCGEM` opcodes** — `appl_yield` (17), `scrp_clear` (82),
-  `shel_rdef` (126), `shel_wdef` (127) (`gemsuper.c:115`, `:315`, `:398`).
-  They are gated by a flag that is *not* in the `AES_VERSION` ladder, so
-  EmuTOS' source does not say whether TOS 3.06 has them — and if it does not,
-  each is a modal alert. They are not in the guard because the rule is
-  "version-gated above AES 3.20", and nothing in `include/config.h` says these
-  are. **Clearance from a primary source is needed before any of them goes in
-  a table.**
+> **Lead decision, after the guard landed:** the four `CONF_WITH_PCGEM`
+> opcodes — `appl_yield` (17), `scrp_clear` (82), `shel_rdef` (126),
+> `shel_wdef` (127) (`gemsuper.c:115`, `:315`, `:398-403`) — **were added to
+> the guard** as a fourth class after this section was first written. The
+> argument for leaving them out was that the stated rule is "version-gated
+> above AES 3.20" and `include/config.h` does not say that about them. True,
+> and beside the point: the flag is absent from the `AES_VERSION` ladder
+> entirely, so EmuTOS cannot say either way, and the cost of being wrong is a
+> hang on the operator's TT that looks exactly like a real defect. Refused
+> until a primary source settles it — Compendium or Profibuch, per `CLAUDE.md`
+> rule 1's secondary cross-references. Removing one from the guard is a
+> deliberate act with a citation, which is the friction we want.
+
 - **`wind_update` (107)** — `wm_update(BEG_UPDATE)` blocks on
   `ev_block(MU_MUTEX, &wind_spb)` when the lock is already held
   (`gemwmlib.c:1786`). Two `BEG_UPDATE` cases in a row would self-deadlock,
@@ -207,7 +212,7 @@ cover (a window's rect comes out of `gl_rfull`, which starts below it).
 | `appl_init` (10) | excluded | the run is *inside* one already (`core/gem.c`); a second one would change the AESGLOBAL every other case is recorded against. Its result is in the run log instead. |
 | `appl_exit` (19) | excluded | ends the application. Every case after it would measure nothing. |
 | `appl_read`/`write`/`find`/`tplay`/`trecord` (11-15) | later | pointer arguments (message buffer, name, event record). |
-| `appl_yield` (17) | later | `#if CONF_WITH_PCGEM`; safe in principle, but an AES without it pops the alert — same clearance as `objc_sysvar` is needed first. |
+| `appl_yield` (17) | **excluded — guarded** | `#if CONF_WITH_PCGEM`; safe in principle, but an AES without it pops the alert. Needs primary-source clearance. |
 | `evnt_keybd`/`button`/`mouse`/`mesag`/`multi` (20-23, 25) | **excluded — blocking** | they wait on the operator. |
 | `menu_*` (30-39) | later | every one takes a tree in `addr_in[0]`. |
 | `objc_*` (40-47) | later | every one takes a tree in `addr_in[0]`; several draw. |
@@ -217,12 +222,12 @@ cover (a window's rect comes out of `gl_rfull`, which starts below it).
 | `graf_growbox`/`shrinkbox` (73, 74) | later | non-blocking but they **draw**, so they change the screen the VDI dump is taken against. |
 | `graf_mouse` (78) | later | changes the cursor shape and, with a custom form, takes a pointer. |
 | `scrp_read`/`write` (80, 81) | later | path pointer, and they touch the filesystem. |
-| `scrp_clear` (82) | later | `#if CONF_WITH_PCGEM`; alert clearance needed. |
+| `scrp_clear` (82) | **excluded — guarded** | `#if CONF_WITH_PCGEM`; alert clearance needed. |
 | `fsel_input`/`exinput` (90, 91) | **excluded — blocking** | modal file selector. |
 | `rsrc_*` (110-114) | later | the whole point of them is `global[]` + a resource file; round 2, and they are the reason `global[]` is recorded after every call. |
 | `shel_write` (121) | **excluded — blocking** | launches a program. |
 | `shel_read`/`get`/`put`/`find`/`envrn` (120, 122-125) | later | pointer arguments. |
-| `shel_rdef`/`wdef` (126, 127) | later | `#if CONF_WITH_PCGEM`; pointers, and alert clearance needed. |
+| `shel_rdef`/`wdef` (126, 127) | **excluded — guarded** | `#if CONF_WITH_PCGEM`; pointers, and alert clearance needed. |
 
 ---
 

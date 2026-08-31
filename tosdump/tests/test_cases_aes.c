@@ -340,6 +340,21 @@ static void test_guard_refuses_opcodes_tos306_does_not_have(void)
 	refused("48\t4\t3\t0\t0\t0,6,0,0\tobjc_sysvar","objc_sysvar (48)");
 }
 
+static void test_guard_refuses_pcgem_opcodes(void)
+{
+	/* Not "gated above 3.20" -- unestablished.  CONF_WITH_PCGEM
+	 * (gemsuper.c:115, :315, :398-403) is absent from the AES_VERSION
+	 * ladder, so EmuTOS cannot say whether TOS 3.06 implements these.  If it
+	 * does not, each one is the modal alert again. */
+	printf("aes cases: PC-GEM opcodes are refused -- EmuTOS cannot say "
+	       "whether TOS 3.06 has them\n");
+
+	refused("17\t0\t1\t0\t0\t-\tappl_yield", "appl_yield (17)");
+	refused("82\t0\t1\t0\t0\t-\tscrp_clear", "scrp_clear (82)");
+	refused("126\t0\t1\t2\t0\t-\tshel_rdef", "shel_rdef (126)");
+	refused("127\t0\t1\t2\t0\t-\tshel_wdef", "shel_wdef (127)");
+}
+
 static void test_guard_refuses_things_that_are_not_opcodes(void)
 {
 	printf("aes cases: an opcode with no arm in crysbind is refused\n");
@@ -380,7 +395,11 @@ static void test_guard_lets_the_safe_ones_through(void)
 	accepted("30\t1\t1\t1\t0\t1\tmenu_bar",       "menu_bar (30)");
 	accepted("107\t1\t1\t0\t0\t1\twind_update",   "wind_update (107)");
 	accepted("112\t2\t1\t0\t1\t0,0\trsrc_gaddr",  "rsrc_gaddr (112)");
-	accepted("127\t0\t1\t2\t0\t-\tshel_wdef",     "shel_wdef (127)");
+	/* shel_wdef (127) used to stand here.  It moved to the PC-GEM refusal
+	 * above: EmuTOS gates it behind CONF_WITH_PCGEM, which is not in the
+	 * AES_VERSION ladder, so the reference cannot say whether TOS 3.06 has
+	 * it -- and if it does not, the run meets the modal alert.  Deliberate
+	 * policy change, not a test bent to fit the code. */
 }
 
 static void test_guard_covers_preludes_too(void)
@@ -433,6 +452,7 @@ int main(void)
 	test_crc_is_over_the_raw_bytes();
 	test_guard_refuses_run_fatal_opcodes();
 	test_guard_refuses_opcodes_tos306_does_not_have();
+	test_guard_refuses_pcgem_opcodes();
 	test_guard_refuses_things_that_are_not_opcodes();
 	test_guard_lets_the_safe_ones_through();
 	test_guard_covers_preludes_too();

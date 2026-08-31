@@ -432,6 +432,17 @@ struct td_aes_opcode {
 /* class 2 */
 #define GATED  "not in TOS 3.06's AES (3.20, config.h:1345-1354); the "        \
                "dispatcher's default arm would pop a modal alert: "
+/* class 2, sub-reason b: EmuTOS does not say whether TOS 3.06 has it.
+ * CONF_WITH_PCGEM gates these four (gemsuper.c:115, :315, :398-403) but does
+ * NOT appear in the AES_VERSION ladder (config.h:1345-1354), so the reference
+ * cannot tell us either way.  If TOS 3.06 lacks them the dispatcher pops the
+ * same modal alert, which on the TT means a run that never finishes and a
+ * hang indistinguishable from a real defect.  Refused until a primary source
+ * settles it -- Compendium or Profibuch, per CLAUDE.md rule 1's secondary
+ * cross-references; EmuTOS alone cannot. */
+#define PCGEM  "PC-GEM function whose presence in TOS 3.06 is unestablished "  \
+               "(#if CONF_WITH_PCGEM, which is not in the AES_VERSION "        \
+               "ladder); if absent, the default arm pops a modal alert: "
 
 static const struct td_aes_opcode aes_opcodes[] = {
 	{  10, NULL },                                   /* appl_init      */
@@ -442,7 +453,7 @@ static const struct td_aes_opcode aes_opcodes[] = {
 	{  14, NULL },                                   /* appl_tplay     */
 	{  15, BLOCKS "appl_trecord loops until the operator has filled the "
 	              "event buffer (gemaplib.c:216-217)" },
-	{  17, NULL },                                   /* appl_yield     */
+	{  17, PCGEM "appl_yield (gemsuper.c:115-119)" },
 	{  19, FATAL  "appl_exit ends the application (gemsuper.c:120-123)" },
 	{  20, BLOCKS "evnt_keybd waits for a key (gemsuper.c:127)" },
 	{  21, BLOCKS "evnt_button waits for a mouse button (gemevlib.c:90)" },
@@ -504,7 +515,7 @@ static const struct td_aes_opcode aes_opcodes[] = {
 	{  79, NULL },                                   /* graf_mkstate   */
 	{  80, NULL },                                   /* scrp_read      */
 	{  81, NULL },                                   /* scrp_write     */
-	{  82, NULL },                                   /* scrp_clear     */
+	{  82, PCGEM "scrp_clear (gemsuper.c:315-319)" },
 	{  90, BLOCKS "fsel_input runs the modal file selector, fs_input -> "
 	              "fm_do (gemfslib.c:718)" },
 	{  91, BLOCKS "fsel_exinput runs the modal file selector, fs_input -> "
@@ -532,8 +543,8 @@ static const struct td_aes_opcode aes_opcodes[] = {
 	{ 123, NULL },                                   /* shel_put       */
 	{ 124, NULL },                                   /* shel_find      */
 	{ 125, NULL },                                   /* shel_envrn     */
-	{ 126, NULL },                                   /* shel_rdef      */
-	{ 127, NULL }                                    /* shel_wdef      */
+	{ 126, PCGEM "shel_rdef (gemsuper.c:398-401)" },
+	{ 127, PCGEM "shel_wdef (gemsuper.c:398, :402-403)" }
 };
 
 #undef BLOCKS
