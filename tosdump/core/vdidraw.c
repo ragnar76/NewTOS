@@ -223,6 +223,7 @@ static void draw_all(void)
 	static const int16_t tri[6]    = { 20,110, 110,110, 65,30 };
 	static const int16_t quad[8]   = { 20,35, 110,35, 110,105, 20,105 };
 	static const int16_t rect[4]   = { 20,35, 110,105 };
+	static const int16_t big[4]    = { 12,30, 182,138 };
 	int n = 0;
 
 	cell(n++, "v_pline horizontal 100");
@@ -268,7 +269,8 @@ static void draw_all(void)
 	cell(n++, "vst_effects 1 thickened");
 	seti(106, 1); text_at(10, 70, "ABCdef 123");
 
-	cell(n++, "vst_effects 8 outlined");
+	/* F_UNDER = 8, F_OUTLINE = 16 (vdi_defs.h:118-123). */
+	cell(n++, "vst_effects 8 underlined");
 	seti(106, 8); text_at(10, 70, "ABCdef 123");
 
 	cell(n++, "vst_rotation 900 up");
@@ -283,8 +285,12 @@ static void draw_all(void)
 	cell(n++, "vsf_interior 0 hollow");
 	seti(23, 0); pts(quad, 4); vdi(9, 0, 4, 0);
 
-	cell(n++, "vsf_interior 2 pattern 8");
-	seti(23, 2); seti(24, 8); pts(quad, 4); vdi(9, 0, 4, 0);
+	/* Pattern 4, not 8: vsf_style stores index-1 (D-VDI-8) and DITHER[7] is
+	 * 0xFFFF four times -- intensity level 16, solid (vdi_fill.c:92-101).
+	 * Style 8 therefore looks like no pattern at all. Style 4 lands on
+	 * DITHER[3] = 0xAAAA/0x5555, a 50% checkerboard you can see. */
+	cell(n++, "vsf_interior 2 dither 4");
+	seti(23, 2); seti(24, 4); pts(quad, 4); vdi(9, 0, 4, 0);
 
 	cell(n++, "vsf_interior 3 hatch 4");
 	seti(23, 3); seti(24, 4); pts(quad, 4); vdi(9, 0, 4, 0);
@@ -321,11 +327,15 @@ static void draw_all(void)
 	pts_clear(8); pt(0, 65, 75); mag(2, 50); mag(3, 30);
 	intin[0] = 0; intin[1] = 1800; vdi(11, 7, 4, 2);
 
+	/* A bigger box on purpose. The corner radius is xres>>6 (EmuTOS
+	 * gdp_rbox), so at 1920 wide it is 30 pixels: on a 90x70 box that
+	 * leaves 10 pixels of straight edge and the shape reads as an ellipse.
+	 * Correct behaviour, unreadable test. */
 	cell(n++, "GDP 8 v_rbox rounded");
-	pts(rect, 2); vdi(11, 8, 2, 0);
+	pts(big, 2); vdi(11, 8, 2, 0);
 
 	cell(n++, "GDP 9 v_rfbox filled");
-	pts(rect, 2); vdi(11, 9, 2, 0);
+	pts(big, 2); vdi(11, 9, 2, 0);
 
 	cell(n++, "GDP 10 v_justified w=110");
 	{
@@ -362,7 +372,13 @@ static void draw_all(void)
 		pts(diag, 2); vdi(6, 0, 2, 0);
 		pts(d2, 2);   vdi(6, 0, 2, 0);
 		seti(129, 0);
-		pts(cl, 2); seti(23, 0); vdi(11, 8, 2, 0); /* show the clip box  */
+		/* Mark the clip region with a plain rectangle: a rounded box
+		 * would round by xres>>6 and blur what is being shown. */
+		{
+			static const int16_t frame[10] = { 30,45, 95,45, 95,95,
+			                                   30,95, 30,45 };
+			pts(frame, 5); vdi(6, 0, 5, 0);
+		}
 	}
 
 	cell(n++, "vswr_mode 3 XOR overlap");
@@ -399,12 +415,16 @@ int main(void)
 	if (rows < 1) rows = 1;
 	td_log("grid %dx%d cells of %dx%d\n", cols, rows, cell_w, cell_h);
 
+	/* Everything that goes to the log also goes to the console, and the
+	 * console draws over the sheet -- so say it all BEFORE the screen is
+	 * cleared, and stay quiet until the hold is over. */
+	td_log("holding for %ld ms after drawing\n", HOLD_MS);
+
 	vdi(3, 0, 0, 0);                 /* v_clrwk, once */
 	draw_all();
 
 	/* Hold the finished sheet.  The desktop repaints the moment this
 	 * returns, so everything readable has to be readable now. */
-	td_log("holding for %ld ms\n", HOLD_MS);
 	wait_ms(HOLD_MS);
 
 	td_gem_close(&wk);
