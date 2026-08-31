@@ -18,6 +18,14 @@
  * operator's. That is the honest division of labour here: the dump measures
  * what can be measured, this shows what can only be seen.
  *
+ * Timing: the whole sheet draws in milliseconds, so without a pause the
+ * desktop repaints over it before anything can be read.  It therefore waits
+ * through `evnt_timer` (AES 24) -- once after each row, so the sheet builds up
+ * where you can watch it, and a long hold at the end.  `evnt_timer` blocks on
+ * a deadline, never on input: a blocking console read hangs real hardware
+ * outright (QUIRK-002), which is the bug that had to be taken back out of the
+ * dumper.
+ *
  * Layout is absolute, computed from the workstation's own reported size, and
  * every primitive is drawn at a fixed offset inside its cell. Building the
  * same source for the m68k would therefore produce a directly comparable
@@ -36,11 +44,41 @@
 
 /* One shared parameter block: this program measures nothing, so there is no
  * poison to preserve and no record to write. */
+/* Millisecond waits.  ROW_MS lets the sheet build up visibly; HOLD_MS is
+ * long enough to read all of it, or photograph it, before the desktop
+ * comes back. */
+#define ROW_MS   1500L
+#define HOLD_MS 60000L
+
 static int16_t contrl[TD_VDI_CONTRL_N];
 static int16_t intin[TD_VDI_INTIN_N];
 static int16_t ptsin[TD_VDI_PTSIN_N];
 static int16_t intout[TD_VDI_INTOUT_N];
 static int16_t ptsout[TD_VDI_PTSOUT_N];
+
+/* AES parameter block, for evnt_timer only. */
+static int16_t aes_control[5];
+static int16_t aes_global[15];
+static int16_t aes_intin[16];
+static int16_t aes_intout[7];
+static void   *aes_addrin[3];
+static void   *aes_addrout[1];
+
+/* Wait `ms` milliseconds through the AES timer event (opcode 24, int_in[0] =
+ * low WORD, int_in[1] = high WORD -- EmuTOS `gemsuper.c:142`,
+ * `MAKE_ULONG(T_HICOUNT, T_LOCOUNT)`). */
+static void wait_ms(long ms)
+{
+	aes_control[0] = 24;
+	aes_control[1] = 2;
+	aes_control[2] = 1;
+	aes_control[3] = 0;
+	aes_control[4] = 0;
+	aes_intin[0] = (int16_t)(ms & 0xFFFFL);
+	aes_intin[1] = (int16_t)((ms >> 16) & 0xFFFFL);
+	td_abi_aes(aes_control, aes_global, aes_intin, aes_intout,
+	           aes_addrin, aes_addrout);
+}
 
 static int16_t g_handle;
 static int16_t cell_w = 200, cell_h = 170;
@@ -122,6 +160,11 @@ static void cell_defaults(void)
 static void cell(int n, const char *caption)
 {
 	char num[8];
+
+	/* A new row is starting: hold the sheet so far, so it builds up at a
+	 * pace a person can follow instead of appearing all at once. */
+	if (n > 0 && (n % cols) == 0)
+		wait_ms(ROW_MS);
 
 	ox = (int16_t)((n % cols) * cell_w + 8);
 	oy = (int16_t)((n / cols) * cell_h + 8);
@@ -311,6 +354,11 @@ int main(void)
 
 	vdi(3, 0, 0, 0);                 /* v_clrwk, once */
 	draw_all();
+
+	/* Hold the finished sheet.  The desktop repaints the moment this
+	 * returns, so everything readable has to be readable now. */
+	td_log("holding for %ld ms\n", HOLD_MS);
+	wait_ms(HOLD_MS);
 
 	td_gem_close(&wk);
 	td_log("drawn\n");
