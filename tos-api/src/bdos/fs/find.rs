@@ -19,9 +19,11 @@
 //!  [10..21] 11-byte FAT search pattern ('?' = wildcard)
 //! ```
 //!
-//! The current-DTA pointer is a global for now (single foreground
-//! caller), matching the global-SFT bring-up choice; it moves into the
-//! per-process `p_xdta` with full process integration.
+//! The current-DTA pointer lives in the **running process's** basepage
+//! (`p_xdta` at offset 0x20), exactly as EmuTOS keeps it in the process
+//! descriptor (`bdos/fsmain.c:396,403-405`; the default `&p_cmdlin` is set
+//! at load time, `bdos/proc.c:375`). See [`cur_dta`] for the one caller
+//! class that has no process descriptor to store it in.
 
 use core::sync::atomic::{AtomicU64, Ordering};
 
@@ -46,22 +48,78 @@ const SLOTS_PER_SECTOR: u32 = 16;
 /// Sentinel for "DTA not initialised / search exhausted".
 const EXHAUSTED: u32 = u32::MAX;
 
-/// Global current-DTA pointer (`p_xdta` stand-in).
-static CUR_DTA: AtomicU64 = AtomicU64::new(0);
+/// **Temporary** current-DTA cell for callers that are not a process.
+///
+/// EmuTOS has no such cell: every `Fsetdta`/`Fgetdta`/`Fsfirst` caller is
+/// `run`, a process descriptor with a `p_xdta` field. NewTOS has exactly one
+/// caller class that is not — the **in-kernel (EL1) desktop**, which calls
+/// `find::fsetdta` directly with a 44-byte DTA on its own kernel stack
+/// (`kernel/src/desk/dir.rs:270`, `kernel/src/desk/model.rs:281`) while
+/// [`crate::bdos::process::current`] is null and there is no basepage to
+/// store into. Such an address is a high-half kernel VA and does not even fit
+/// the 32-bit on-wire `p_xdta` field.
+///
+/// **Removed by:** the desktop's move to EL0 (`docs/analysis/
+/// desktop-userspace-plan.md` stage S8). Once the desktop is a process, every
+/// caller has a `p_xdta` and this cell — and both `is_null()` branches below —
+/// go away.
+static KERNEL_DTA: AtomicU64 = AtomicU64::new(0);
+
+/// The current DTA pointer — EmuTOS `run->p_xdta` (`bdos/fsmain.c:396`).
+///
+/// Falls back to [`KERNEL_DTA`] for the process-less EL1 caller (see there).
+fn cur_dta() -> u64 {
+    let bp = crate::bdos::process::current();
+    if bp.is_null() {
+        return KERNEL_DTA.load(Ordering::Relaxed);
+    }
+    // SAFETY: `current()` is the kernel high-half alias of the running
+    // process's `BasePage` (`Process::basepage_kva`), valid and mapped for
+    // as long as that process runs; we read the single `p_xdta` LONG.
+    // Zero-extended: user VAs live in `[0, TPA_SIZE)`, so the field is a
+    // non-negative 32-bit address.
+    unsafe { (*bp).p_xdta as u32 as u64 }
+}
+
+/// Store the current DTA pointer — EmuTOS `run->p_xdta = addr`
+/// (`bdos/fsmain.c:405`).
+///
+/// `p_xdta` is the on-wire basepage's 32-bit LONG, so the stored value is the
+/// low 32 bits of `addr`. Every process-originated DTA is a user VA below
+/// `USER_TPA_TOP` (4 MiB) or in the EL0 `Malloc` window (ADR-021), all well
+/// inside 32 bits; a kernel DTA can only arrive from the process-less caller
+/// above, which takes the [`KERNEL_DTA`] branch instead.
+fn set_cur_dta(addr: u64) {
+    let bp = crate::bdos::process::current();
+    if bp.is_null() {
+        KERNEL_DTA.store(addr, Ordering::Relaxed);
+        return;
+    }
+    // SAFETY: as in [`cur_dta`] — a valid, writable basepage alias.
+    unsafe { (*bp).p_xdta = addr as u32 as Long };
+}
 
 /// `Fsetdta` (0x1A) — set the current Disk Transfer Address.
+///
+/// EmuTOS `xsetdta` (`bdos/fsmain.c:403-405`) stores the address in the
+/// **running process's** descriptor, so a child started with `Pexec` cannot
+/// disturb its parent's DTA: the child has its own `p_xdta` (defaulted to its
+/// `p_cmdlin`, `bdos/proc.c:375`), and when it terminates `run` reverts to the
+/// parent, whose field was never touched.
 pub fn fsetdta(args: &TrapArgs) -> Long {
-    CUR_DTA.store(args.arg_u64(0), Ordering::Relaxed);
+    set_cur_dta(args.arg_u64(0));
     E_OK
 }
 
-/// `Fgetdta` (0x2F) — return the current DTA pointer.
+/// `Fgetdta` (0x2F) — return the current DTA pointer (EmuTOS `xgetdta`,
+/// `bdos/fsmain.c:394-397`: `return run->p_xdta`).
 ///
-/// Note: the GEMDOS dispatch truncates to `Long` (i32); a user-space DTA
-/// in low VA round-trips correctly, but a high-half kernel DTA does not
-/// (a pre-existing native-ABI limitation shared with `Malloc`).
+/// A process's DTA round-trips exactly: it is stored in, and read back from,
+/// the same 32-bit `p_xdta` field. A DTA set by the process-less EL1 caller is
+/// a high-half kernel VA that a `Long` return cannot carry — that caller keeps
+/// its own pointer and never reads it back (see [`KERNEL_DTA`]).
 pub fn fgetdta(_args: &TrapArgs) -> Long {
-    CUR_DTA.load(Ordering::Relaxed) as Long
+    cur_dta() as Long
 }
 
 /// Expand a `name.ext` pattern (with `*`/`?`) into the 11-byte FAT
@@ -385,7 +443,7 @@ unsafe fn get_state(dta: u64) -> (u32, u32, u8, u8, [u8; 11]) {
 
 /// `Fsfirst` (0x4E) — begin a directory search, filling the current DTA.
 pub fn fsfirst(args: &TrapArgs) -> Long {
-    let dta = CUR_DTA.load(Ordering::Relaxed);
+    let dta = cur_dta();
     if dta == 0 {
         return EFILNF;
     }
@@ -431,7 +489,7 @@ pub fn fsfirst(args: &TrapArgs) -> Long {
 
 /// `Fsnext` (0x4F) — return the next match into the current DTA.
 pub fn fsnext(_args: &TrapArgs) -> Long {
-    let dta = CUR_DTA.load(Ordering::Relaxed);
+    let dta = cur_dta();
     if dta == 0 {
         return ENMFIL;
     }

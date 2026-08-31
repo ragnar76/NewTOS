@@ -92,6 +92,18 @@ else
   echo "note: sdk/build.sh unavailable (no clang/lld?); C:\\BIG.NCP skipped"
 fi
 
+# DTACHILD.NCP is the per-process-DTA proof (S1c): a console program that moves
+# its OWN DTA (Fsetdta(0x2000)) and exits. A parent runs it between its own
+# Fsetdta(buf) and Fgetdta() -- if Fgetdta still returns buf, the DTA really
+# lives in the running process's basepage (p_xdta) and not in a global.
+# Console-only, so it belongs on C: (double-clickable / Pexec-able), never in
+# \AUTO\ as a side effect.
+if "$SCRIPT_DIR/../sdk/build.sh" "$SCRIPT_DIR/../sdk/examples/dtachild.c" "$V/DTACHILD.NCP" >/dev/null 2>&1; then
+  echo "built + installed C:\\DTACHILD.NCP (per-process DTA test child)"
+else
+  echo "note: sdk/build.sh unavailable (no clang/lld?); C:\\DTACHILD.NCP skipped"
+fi
+
 # libc milestone (mintlib port): LIBTEST.NCP is the mintlib-linked proof — real
 # printf(), malloc()/free(), and a stdio file round-trip (fopen/fwrite/fread/
 # fclose), linked against the ported mintlib libc.a by sdk/libc/build-libc.sh.
