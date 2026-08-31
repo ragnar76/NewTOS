@@ -30,8 +30,8 @@ const WM_TOPPED: i16 = 21;
 const WM_CLOSED: i16 = 22;
 const WM_FULLED: i16 = 23;
 const WM_ARROWED: i16 = 24;
-const WM_VSLID: i16 = 25;
-const WM_HSLID: i16 = 26;
+const WM_HSLID: i16 = 25;
+const WM_VSLID: i16 = 26;
 const WM_SIZED: i16 = 27;
 const WM_MOVED: i16 = 28;
 
