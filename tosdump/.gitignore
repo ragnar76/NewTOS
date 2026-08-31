@@ -9,3 +9,4 @@ build/
 # Staging for a hardware run: copies of build output plus a README, all
 # derived. The measurements they produce live in reference/ and are tracked.
 deploy-pi4/
+deploy-tt/
