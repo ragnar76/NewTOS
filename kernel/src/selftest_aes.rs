@@ -23,18 +23,24 @@ fn aes(aespb: u64) {
     }
 }
 
+/// Fill pattern for the `AESGLOBAL` buffer: a word `appl_init` never
+/// produces, so a slot still holding it proves the field was not written.
+const GLOBAL_POISON: i16 = 0x5A5A;
+
 /// Run the Phase 13 AES Application-Manager self-test (dispatcher +
 /// `appl_*` lifecycle + message pipe) through the GEM trap path.
 #[allow(unused_assignments)]
 pub fn run_phase13_aes_test() {
     // AESPB arrays.
     let mut control = [0i16; 8];
-    // AESGLOBAL. gemlib's real array is `short aes_global[16]` = 32 bytes
-    // (indices 0..15). This buffer is deliberately oversized: indices
-    // 16..31 are a canary that appl_init must leave untouched — the fixed
-    // LP64 writer stays inside the 32-byte array (the previous 56-byte
-    // native-struct writer overran it and would trip this canary).
-    let mut global = [0i16; 32];
+    // AESGLOBAL. EmuTOS's `struct aesglobal` (`aes/gemrslib.h:15-27`) and its
+    // own binding array (`desk/gembind.h:27`, `G_SIZE 15`) are **15 WORDs /
+    // 30 bytes**; indices 15.. do not exist for such a caller. This buffer is
+    // deliberately oversized and **poisoned**, so the checks below can assert
+    // two separate things: that `appl_init` writes the six fields
+    // `gemsuper.c:92-98` names, and that every other word — including index
+    // 15 and beyond — is left exactly as the caller had it.
+    let mut global = [GLOBAL_POISON; 32];
     let mut intin = [0i16; 16];
     let mut intout = [0i16; 16];
     let mut addrin = [0i64; 4];
@@ -80,7 +86,7 @@ pub fn run_phase13_aes_test() {
     // wind_set(DESKWH=0, WF_NEWDESK=14, tree=&bg_tree, root=0).
     addrin[0] = bg_tree.as_ptr() as i64;
     control = [0; 8];
-    control[0] = 105; // wind_set
+    control[0] = 105; control[2] = 1; // wind_set
     control[1] = 3; // three intin
     control[3] = 1; // one addrin
     intin[0] = 0; // DESKWH
@@ -98,21 +104,21 @@ pub fn run_phase13_aes_test() {
 
     // ── appl_init (10) ──
     control = [0; 8];
-    control[0] = 10;
+    control[0] = 10; control[2] = 1;
     aes(pb);
     let ap_id = intout[0];
     check(ap_id >= 1, "appl_init returns an application id");
-    // AESGLOBAL, gemlib LP64 layout (this is an in-kernel / EL1 caller →
-    // Abi::Lp64): ap_version @ index 0, ap_count @ 1, ap_id @ 2, ap_private
-    // (LONG @ byte 6 / index 3), ap_ptree/ap_rscmem/ap_rsclen 0 (indices
-    // 4..9), ap_planes @ index 10 (byte 20), ap_3resv (4 bytes @ byte 22 /
-    // index 11). See the tos-api aes::appl module ABI note.
+    // AESGLOBAL, LP64 widths (this is an in-kernel / EL1 caller → Abi::Lp64).
+    // The six fields EmuTOS's APPL_INIT arm writes (`gemsuper.c:92-98`):
+    // ap_version @ index 0, ap_count @ 1, ap_id @ 2, ap_private (LONG @ byte
+    // 6 → indices 3..6 at LP64), ap_planes @ index 10 (byte 20), ap_3resv
+    // (4 bytes @ byte 22 → indices 11..12). See the tos-api aes::appl ABI note.
     check(global[0] == 0x0340, "AESGLOBAL ap_version = 0x0340");
     check(global[1] == 1, "AESGLOBAL ap_count = 1");
     check(global[2] == ap_id, "AESGLOBAL ap_id = returned id");
     // ap_private = the registered desktop-background ROOT ob_spec.
-    // SAFETY: `global` is a 32-byte `short[16]`; the LP64 `ap_private` LONG is
-    // the 8 bytes at &global[3] (byte 6), read here unaligned.
+    // SAFETY: the LP64 `ap_private` LONG is the 8 bytes at &global[3]
+    // (byte 6), read here unaligned; well inside the 32-word buffer.
     let ap_private = unsafe { (global.as_ptr().add(3) as *const u64).read_unaligned() };
     check(
         ap_private == TEST_BG_OBSPEC,
@@ -121,33 +127,35 @@ pub fn run_phase13_aes_test() {
     check(global[10] == expected_planes, "AESGLOBAL ap_planes = screen colour planes");
     check(global[10] >= 1, "AESGLOBAL ap_planes non-zero (LP64 index 10, byte 20)");
     // ap_3resv (4 bytes at byte 22 / index 11) = AES process-table address.
-    // SAFETY: within the 32-byte array; the 4-byte ap_3resv field is at byte 22.
+    // SAFETY: within the buffer; the 4-byte ap_3resv field is at byte 22.
     let ap_3resv = unsafe { (global.as_ptr().add(11) as *const u32).read_unaligned() };
     check(ap_3resv != 0, "AESGLOBAL ap_3resv (byte 22) = AES table addr, non-zero");
+    // The fields EmuTOS's APPL_INIT arm does NOT name must survive untouched
+    // (D-R1-4): ap_rscmem/ap_rsclen (bytes 14..19 → indices 7..9) and
+    // ap_4resv (bytes 26..29 → indices 13..14). `ap_ptree`'s ILP32 slot
+    // (indices 5..6) is not listed: at LP64 those two words are the high half
+    // of the 8-byte `ap_private` gemlib's `*(long*)&aes_global[3]` reads.
     check(
-        (4..10).all(|i| global[i] == 0),
-        "AESGLOBAL ap_ptree/ap_rscmem/ap_rsclen zero (indices 4..9)",
+        (7..10).all(|i| global[i] == GLOBAL_POISON),
+        "AESGLOBAL ap_rscmem/ap_rsclen untouched (indices 7..9)",
     );
-    // ap_maxchar/ap_minchar (indices 13/14) stay 0 as at EmuTOS appl_init
-    // (AES 0x0400+ fields, not reported at version 0x0340) — the 4-byte
-    // ap_3resv must not spill into them.
     check(
-        global[13] == 0 && global[14] == 0,
-        "AESGLOBAL ap_maxchar/ap_minchar zero (0x0340)",
+        global[13] == GLOBAL_POISON && global[14] == GLOBAL_POISON,
+        "AESGLOBAL ap_4resv untouched (indices 13..14)",
     );
-    // No overrun: gemlib's array ends at index 15. The canary past it must
-    // be pristine. The old 56-byte native-struct writer placed ap_planes
-    // at byte 34 = index 17 and reached index 27 — this would fail then.
+    // No overrun: `struct aesglobal` ends at index 14. Everything past it is
+    // memory the caller never offered — the previous writer cleared index 15
+    // (D-R1-4), and the 56-byte native-struct writer before it reached 27.
     check(
-        (16..32).all(|i| global[i] == 0),
-        "AESGLOBAL appl_init does not write past the 32-byte array",
+        (15..32).all(|i| global[i] == GLOBAL_POISON),
+        "AESGLOBAL appl_init writes nothing past word 14 (30 bytes)",
     );
 
     // Un-register the test background tree (it is a stack array; the desktop
     // registers its own tree later during `desk::run`).
     addrin[0] = 0;
     control = [0; 8];
-    control[0] = 105; // wind_set
+    control[0] = 105; control[2] = 1; // wind_set
     control[1] = 3;
     control[3] = 1;
     intin[0] = 0; // DESKWH
@@ -159,7 +167,7 @@ pub fn run_phase13_aes_test() {
     let name = *b"NOSUCH  ";
     addrin[0] = name.as_ptr() as i64;
     control = [0; 8];
-    control[0] = 13;
+    control[0] = 13; control[2] = 1;
     control[3] = 1; // one addrin
     aes(pb);
     check(intout[0] == -1, "appl_find(unknown) = -1");
@@ -170,7 +178,7 @@ pub fn run_phase13_aes_test() {
     msg[3] = 42;
     addrin[0] = msg.as_ptr() as i64;
     control = [0; 8];
-    control[0] = 12; // appl_write
+    control[0] = 12; control[2] = 1; // appl_write
     control[1] = 2; // two intin
     control[3] = 1;
     intin[0] = ap_id; // target = self
@@ -181,7 +189,7 @@ pub fn run_phase13_aes_test() {
     let mut rx = [0i16; 8];
     addrin[0] = rx.as_mut_ptr() as i64;
     control = [0; 8];
-    control[0] = 11; // appl_read
+    control[0] = 11; control[2] = 1; // appl_read
     control[1] = 2;
     control[3] = 1;
     intin[0] = ap_id;
@@ -192,7 +200,7 @@ pub fn run_phase13_aes_test() {
 
     // ── appl_exit (19) ──
     control = [0; 8];
-    control[0] = 19;
+    control[0] = 19; control[2] = 1;
     aes(pb);
     check(intout[0] == 1, "appl_exit returns 1");
 
@@ -239,7 +247,7 @@ pub fn run_phase13_event_test() {
     // ── evnt_timer (24): wait 50 ms, return 1 ──
     let t0 = millis();
     control = [0; 8];
-    control[0] = 24;
+    control[0] = 24; control[2] = 1;
     control[1] = 2; // two intin (lo, hi)
     intin[0] = 50; // T_LOCOUNT
     intin[1] = 0; // T_HICOUNT
@@ -250,7 +258,7 @@ pub fn run_phase13_event_test() {
 
     // ── evnt_timer (24): zero count returns immediately ──
     control = [0; 8];
-    control[0] = 24;
+    control[0] = 24; control[2] = 1;
     control[1] = 2;
     intin[0] = 0;
     intin[1] = 0;
@@ -260,14 +268,14 @@ pub fn run_phase13_event_test() {
 
     // Register the application (for the message pipe below).
     control = [0; 8];
-    control[0] = 10; // appl_init
+    control[0] = 10; control[2] = 1; // appl_init
     aes(pb);
     let ap_id = intout[0];
 
     // ── evnt_keybd (20): a queued key is returned (ASCII in low byte) ──
     crate::console::push_rx(b'A' as u16);
     control = [0; 8];
-    control[0] = 20;
+    control[0] = 20; control[2] = 1;
     intout[0] = 0;
     aes(pb);
     check(intout[0] == 0x41, "evnt_keybd returns the queued key 'A'");
@@ -278,7 +286,7 @@ pub fn run_phase13_event_test() {
     msg[5] = 7;
     addrin[0] = msg.as_ptr() as i64;
     control = [0; 8];
-    control[0] = 12; // appl_write
+    control[0] = 12; control[2] = 1; // appl_write
     control[1] = 2;
     control[3] = 1;
     intin[0] = ap_id; // target = self
@@ -288,7 +296,7 @@ pub fn run_phase13_event_test() {
     let mut rx = [0i16; 8];
     addrin[0] = rx.as_mut_ptr() as i64;
     control = [0; 8];
-    control[0] = 23; // evnt_mesag
+    control[0] = 23; control[2] = 1; // evnt_mesag
     control[3] = 1;
     intout[0] = 0;
     aes(pb);
@@ -297,14 +305,14 @@ pub fn run_phase13_event_test() {
 
     // ── evnt_dclick (26): get default (3), set to 1, get back ──
     control = [0; 8];
-    control[0] = 26;
+    control[0] = 26; control[2] = 1;
     control[1] = 2;
     intin[0] = 0;
     intin[1] = 0; // setit = 0 → get
     intout[0] = 0;
     aes(pb);
     check(intout[0] == 3, "evnt_dclick default index = 3");
-    control[0] = 26;
+    control[0] = 26; control[2] = 1;
     intin[0] = 1;
     intin[1] = 1; // setit = 1 → set to 1
     intout[0] = 0;
@@ -313,7 +321,7 @@ pub fn run_phase13_event_test() {
 
     // ── evnt_button (21): no buttons down, wait for state 0 (immediate) ──
     control = [0; 8];
-    control[0] = 21;
+    control[0] = 21; control[2] = 5;
     control[1] = 3;
     intin[0] = 1; // clicks
     intin[1] = 1; // mask = left
@@ -326,7 +334,7 @@ pub fn run_phase13_event_test() {
 
     // ── evnt_mouse (22): leave an off-screen rect (already outside) ──
     control = [0; 8];
-    control[0] = 22;
+    control[0] = 22; control[2] = 5;
     control[1] = 5;
     intin[0] = 1; // flags = 1 (leave)
     intin[1] = 1000;
@@ -341,7 +349,7 @@ pub fn run_phase13_event_test() {
     crate::console::push_rx(b'B' as u16);
     intin = [0i16; 16];
     control = [0; 8];
-    control[0] = 25;
+    control[0] = 25; control[2] = 7;
     intin[0] = 0x01 | 0x20; // MU_KEYBD | MU_TIMER
     intin[14] = 5000; // 5 s timer (should not win)
     intout = [0; 16];
@@ -353,7 +361,7 @@ pub fn run_phase13_event_test() {
     let t0 = millis();
     intin = [0i16; 16];
     control = [0; 8];
-    control[0] = 25;
+    control[0] = 25; control[2] = 7;
     intin[0] = 0x20; // MU_TIMER only
     intin[14] = 30; // 30 ms
     intout = [0; 16];
@@ -364,7 +372,7 @@ pub fn run_phase13_event_test() {
 
     // Deregister.
     control = [0; 8];
-    control[0] = 19; // appl_exit
+    control[0] = 19; control[2] = 1; // appl_exit
     aes(pb);
 
     if fails == 0 {

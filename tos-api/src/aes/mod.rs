@@ -6,9 +6,12 @@
 //! the AES parameter block (`AESPB`) pointer in `x1`.
 //!
 //! Like the VDI, the AES takes a **parameter block of array pointers**
-//! (six of them) rather than a register ABI. `dispatch` parses the block
-//! and runs the `crysbind`-style opcode switch, leaving the result in
-//! `int_out[0]` (`RET_CODE`).
+//! (six of them) rather than a register ABI. [`dispatch`] is EmuTOS's `xif`
+//! (`aes/gemsuper.c:428-448`): it parses the block, runs the [`crysbind`]
+//! opcode switch against a **local** `int_out[O_SIZE]` — whose slot 0 is
+//! `RET_CODE` — and then copies exactly `control[OUT_LEN]` words of it into
+//! the caller's array. A caller that declares `OUT_LEN 0` gets nothing
+//! written, not even the return code.
 
 mod appl;
 mod event;
@@ -36,7 +39,13 @@ pub(crate) struct Aespb {
     control: *mut i16,
     global: *mut i16,
     intin: *mut i16,
+    /// The **dispatch-local** `int_out[O_SIZE]` every manager writes —
+    /// EmuTOS `xif`'s own stack array (`gemsuper.c:432`). Nothing a manager
+    /// stores here reaches the caller until [`Aespb::copy_intout_back`] runs.
     intout: *mut i16,
+    /// The **caller's** `intout` array. Written by exactly one place,
+    /// [`Aespb::copy_intout_back`], and only `control[OUT_LEN]` words of it.
+    caller_intout: *mut i16,
     /// Base address of the caller's `addrin` LONG array. Element width
     /// tracks [`Self::abi`] (8 bytes LP64, 4 bytes ILP32), so this is
     /// kept as a raw base and indexed at read time, not a typed pointer.
@@ -52,21 +61,30 @@ pub(crate) struct Aespb {
 const C_OPCODE: usize = 0;
 #[allow(dead_code)]
 const C_IN_LEN: usize = 1;
-#[allow(dead_code)]
 const C_OUT_LEN: usize = 2;
 #[allow(dead_code)]
 const C_AIN_LEN: usize = 3;
+
+/// `O_SIZE` — the size of the AES's `int_out` array, 7 WORDs
+/// (`include/aesdefs.h:123`). `xif` builds its results in a local
+/// `WORD int_out[O_SIZE]` (`gemsuper.c:432`); so do we.
+const O_SIZE: usize = 7;
 
 impl Aespb {
     /// Build from the raw `x1` pointer to the six-pointer block, reading
     /// the block pointers at the caller's pointer width (`abi`): 8-byte
     /// LP64 pointers, or 4-byte (zero-extended) ILP32 pointers.
     ///
+    /// `local_intout` is the dispatch-local `int_out[O_SIZE]` the managers
+    /// write into (EmuTOS `gemsuper.c:432`); the caller's own `intout`
+    /// pointer is kept aside for [`Self::copy_intout_back`].
+    ///
     /// # Safety
     /// `ptr` must point at six consecutive valid array pointers of the
     /// caller's width, each to an array large enough for the opcode's
-    /// declared lengths.
-    pub(crate) unsafe fn from_raw(ptr: u64, abi: Abi) -> Self {
+    /// declared lengths. `local_intout` must be a writable `[i16; O_SIZE]`
+    /// that outlives this `Aespb`.
+    pub(crate) unsafe fn from_raw(ptr: u64, abi: Abi, local_intout: *mut i16) -> Self {
         // SAFETY: caller guarantees the six-pointer block is valid and of
         // `abi`'s width; `read_ptr` reads one such pointer per index.
         unsafe {
@@ -74,11 +92,47 @@ impl Aespb {
                 control: abi.read_ptr(ptr, 0) as *mut i16,
                 global: abi.read_ptr(ptr, 1) as *mut i16,
                 intin: abi.read_ptr(ptr, 2) as *mut i16,
-                intout: abi.read_ptr(ptr, 3) as *mut i16,
+                intout: local_intout,
+                caller_intout: abi.read_ptr(ptr, 3) as *mut i16,
                 addrin: abi.read_ptr(ptr, 4),
                 addrout: abi.read_ptr(ptr, 5),
                 abi,
             }
+        }
+    }
+
+    /// `xif`'s copy-back rule (`aes/gemsuper.c:443-444`):
+    ///
+    /// ```c
+    /// if (OUT_LEN)
+    ///     memcpy(pcrys_blk->intout, int_out, OUT_LEN*sizeof(WORD));
+    /// ```
+    ///
+    /// Exactly `control[OUT_LEN]` WORDs reach the caller — **including**
+    /// `RET_CODE`, which is just the local `int_out[0]`
+    /// (`include/aesdefs.h:140`). With `OUT_LEN == 0` nothing is written at
+    /// all, not even the return code; slots past `OUT_LEN` keep whatever the
+    /// caller had there.
+    ///
+    /// **Boundary, and it is ours, not EmuTOS's.** EmuTOS does not clamp
+    /// `OUT_LEN` against `O_SIZE`, so an `OUT_LEN > 7` copies whatever
+    /// follows its 7-WORD stack array — an indeterminate value even on
+    /// EmuTOS, not a behaviour with a value to reproduce, and an
+    /// out-of-bounds read here. The defined range (`OUT_LEN <= O_SIZE`) is
+    /// reproduced exactly; beyond it we copy the 7 words that exist and stop.
+    /// A negative `OUT_LEN` (EmuTOS: `OUT_LEN*sizeof(WORD)` widening to a
+    /// huge `size_t`) copies nothing.
+    ///
+    /// # Safety
+    /// The caller's `intout` must hold at least `min(control[OUT_LEN],
+    /// O_SIZE)` WORDs — the caller's own declaration.
+    unsafe fn copy_intout_back(&self) {
+        let declared = self.control(C_OUT_LEN);
+        let n = if declared <= 0 { 0 } else { (declared as usize).min(O_SIZE) };
+        for i in 0..n {
+            // SAFETY: `i < O_SIZE` bounds the local read; the write is inside
+            // the `OUT_LEN` words the caller declared (this method's contract).
+            unsafe { self.caller_intout.add(i).write(self.intout.add(i).read()) };
         }
     }
 
@@ -92,10 +146,20 @@ impl Aespb {
         // SAFETY: callers index within `control[IN_LEN]` input integers.
         unsafe { self.intin.add(i).read() }
     }
+    /// Store into the dispatch-local `int_out[O_SIZE]` (EmuTOS
+    /// `gemsuper.c:432`). A manager writes freely here; how much of it the
+    /// caller ever sees is decided by [`Self::copy_intout_back`] alone.
+    /// Indices past `O_SIZE` could never reach the caller (the copy-back is
+    /// capped at `O_SIZE`), so they are dropped rather than running off the
+    /// local array — `evnt_multi`'s seven words are the AES maximum.
     #[inline]
     fn set_intout(&self, i: usize, v: i16) {
-        // SAFETY: callers index within `control[OUT_LEN]` output integers.
-        unsafe { self.intout.add(i).write(v) }
+        debug_assert!(i < O_SIZE, "AES int_out index past O_SIZE");
+        if i < O_SIZE {
+            // SAFETY: `intout` is the dispatch-local `[i16; O_SIZE]` and
+            // `i < O_SIZE` was just checked.
+            unsafe { self.intout.add(i).write(v) }
+        }
     }
     /// The function return code (`RET_CODE = int_out[0]`).
     #[inline]
@@ -156,14 +220,29 @@ impl Aespb {
     }
 }
 
-/// AES dispatch entry. `aespb_ptr` is the `x1` value at the GEM trap
-/// (selector 200 in `x0`); `abi` is the calling process's pointer width
-/// (the kernel passes [`crate::bdos::process::current_abi`]). Results go
-/// into the parameter-block arrays.
+/// AES dispatch entry — EmuTOS's `xif` (`aes/gemsuper.c:428-448`).
+///
+/// `aespb_ptr` is the `x1` value at the GEM trap (selector 200 in `x0`);
+/// `abi` is the calling process's pointer width (the kernel passes
+/// [`crate::bdos::process::current_abi`]).
+///
+/// Like `xif`, the opcode switch ([`crysbind`]) runs against a **local**
+/// `int_out[O_SIZE]`; only `control[OUT_LEN]` words of it are copied into the
+/// caller's array afterwards ([`Aespb::copy_intout_back`]). A caller that
+/// declares `OUT_LEN 0` therefore gets nothing written — not even `RET_CODE`
+/// — and slots past its declaration are never touched.
 ///
 /// A blocking `evnt_*` wait that found a runnable peer returns the [`Switch`]
 /// to yield to (S2 restartable block, design §4.3 + §8.2 sub-step 3); the
 /// GEM-trap handler applies it. Every other opcode returns `None`.
+///
+/// That `Switch` is the one exit that does **not** copy back, and the reason
+/// is EmuTOS's own control flow: a blocking wait there does not return from
+/// `crysbind` at all, it calls `dsptch()` and suspends `xif`'s frame *inside*
+/// the wait, so `gemsuper.c:443` has not run yet and only runs once the wait
+/// really completes. Our S2 equivalent aborts the trap and re-executes it on
+/// resume; no result exists yet, and the caller's `int_out` must be left as it
+/// was until the completing pass produces one.
 ///
 /// [`Switch`]: crate::bdos::process::sched::Switch
 ///
@@ -174,91 +253,112 @@ pub unsafe fn dispatch(
     aespb_ptr: u64,
     abi: Abi,
 ) -> Option<crate::bdos::process::sched::Switch> {
-    // SAFETY: caller guarantees a valid parameter block of `abi`'s width.
-    let pb = unsafe { Aespb::from_raw(aespb_ptr, abi) };
+    // `xif`'s `WORD int_out[O_SIZE]` (`gemsuper.c:432`). EmuTOS leaves it
+    // uninitialised — indeterminate C auto storage, i.e. no value to
+    // reproduce; zeroed here so an under-writing handler cannot leak stack
+    // bytes into a caller that declared more words than the handler filled.
+    let mut local_intout = [0i16; O_SIZE];
+    // SAFETY: caller guarantees a valid parameter block of `abi`'s width;
+    // `local_intout` lives until this function returns, outliving `pb`.
+    let pb = unsafe { Aespb::from_raw(aespb_ptr, abi, local_intout.as_mut_ptr()) };
+
+    let sw = crysbind(&pb);
+
+    if sw.is_none() {
+        // The call completed — `xif`'s copy-back (`gemsuper.c:443-444`).
+        // SAFETY: the caller's `intout` holds the `OUT_LEN` words it declared.
+        unsafe { pb.copy_intout_back() };
+    }
+    sw
+}
+
+/// The opcode switch — EmuTOS's `crysbind` (`aes/gemsuper.c:77-421`).
+/// Results go into the dispatch-local `int_out`; the caller's array is
+/// untouched until [`dispatch`] runs the copy-back.
+fn crysbind(pb: &Aespb) -> Option<crate::bdos::process::sched::Switch> {
     let opcode = pb.control(C_OPCODE);
 
     match opcode {
-        10 => appl::appl_init(&pb),
-        19 => appl::appl_exit(&pb),
-        11 => appl::appl_read(&pb),
-        12 => appl::appl_write(&pb),
-        13 => appl::appl_find(&pb),
-        14 => appl::appl_tplay(&pb),
-        15 => appl::appl_trecord(&pb),
-        17 => appl::appl_yield(&pb),
+        10 => appl::appl_init(pb),
+        19 => appl::appl_exit(pb),
+        11 => appl::appl_read(pb),
+        12 => appl::appl_write(pb),
+        13 => appl::appl_find(pb),
+        14 => appl::appl_tplay(pb),
+        15 => appl::appl_trecord(pb),
+        17 => appl::appl_yield(pb),
         // The six blocking waits may yield to a peer — propagate the `Switch`.
-        20 => return event::evnt_keybd(&pb),
-        21 => return event::evnt_button(&pb),
-        22 => return event::evnt_mouse(&pb),
-        23 => return event::evnt_mesag(&pb),
-        24 => return event::evnt_timer(&pb),
-        25 => return event::evnt_multi(&pb),
-        26 => event::evnt_dclick(&pb),
-        70 => graf::graf_rubberbox(&pb),
-        71 => graf::graf_dragbox(&pb),
-        72 => graf::graf_movebox(&pb),
-        73 => graf::graf_growbox(&pb),
-        74 => graf::graf_shrinkbox(&pb),
-        75 => graf::graf_watchbox(&pb),
-        76 => graf::graf_slidebox(&pb),
-        77 => graf::graf_handle(&pb),
-        78 => graf::graf_mouse(&pb),
-        79 => graf::graf_mkstate(&pb),
-        30 => menu::menu_bar(&pb),
-        31 => menu::menu_icheck(&pb),
-        32 => menu::menu_ienable(&pb),
-        33 => menu::menu_tnormal(&pb),
-        34 => menu::menu_text(&pb),
-        35 => menu::menu_register(&pb),
-        36 => menu::menu_popup(&pb),
-        37 => menu::menu_attach(&pb),
-        38 => menu::menu_istart(&pb),
-        39 => menu::menu_settings(&pb),
-        40 => object::objc_add(&pb),
-        41 => object::objc_delete(&pb),
-        42 => object::objc_draw(&pb),
-        43 => object::objc_find(&pb),
-        44 => object::objc_offset(&pb),
-        45 => object::objc_order(&pb),
-        46 => object::objc_edit(&pb),
-        47 => object::objc_change(&pb),
-        48 => object::objc_sysvar(&pb),
-        50 => form::form_do(&pb),
-        51 => form::form_dial(&pb),
-        52 => form::form_alert(&pb),
-        53 => form::form_error(&pb),
-        54 => form::form_center(&pb),
-        55 => form::form_keybd(&pb),
-        56 => form::form_button(&pb),
-        80 => shell::scrp_read(&pb),
-        81 => shell::scrp_write(&pb),
-        82 => shell::scrp_clear(&pb),
-        90 => fsel::fsel_input(&pb),
-        91 => fsel::fsel_exinput(&pb),
-        100 => window::wind_create(&pb),
-        101 => window::wind_open(&pb),
-        102 => window::wind_close(&pb),
-        103 => window::wind_delete(&pb),
-        104 => window::wind_get(&pb),
-        105 => window::wind_set(&pb),
-        106 => window::wind_find(&pb),
-        107 => window::wind_update(&pb),
-        108 => window::wind_calc(&pb),
-        109 => window::wind_new(&pb),
-        110 => resource::rsrc_load(&pb),
-        111 => resource::rsrc_free(&pb),
-        112 => resource::rsrc_gaddr(&pb),
-        113 => resource::rsrc_saddr(&pb),
-        114 => resource::rsrc_obfix(&pb),
-        120 => shell::shel_read(&pb),
-        121 => shell::shel_write(&pb),
-        122 => shell::shel_get(&pb),
-        123 => shell::shel_put(&pb),
-        124 => shell::shel_find(&pb),
-        125 => shell::shel_envrn(&pb),
-        126 => shell::shel_rdef(&pb),
-        127 => shell::shel_wdef(&pb),
+        20 => return event::evnt_keybd(pb),
+        21 => return event::evnt_button(pb),
+        22 => return event::evnt_mouse(pb),
+        23 => return event::evnt_mesag(pb),
+        24 => return event::evnt_timer(pb),
+        25 => return event::evnt_multi(pb),
+        26 => event::evnt_dclick(pb),
+        70 => graf::graf_rubberbox(pb),
+        71 => graf::graf_dragbox(pb),
+        72 => graf::graf_movebox(pb),
+        73 => graf::graf_growbox(pb),
+        74 => graf::graf_shrinkbox(pb),
+        75 => graf::graf_watchbox(pb),
+        76 => graf::graf_slidebox(pb),
+        77 => graf::graf_handle(pb),
+        78 => graf::graf_mouse(pb),
+        79 => graf::graf_mkstate(pb),
+        30 => menu::menu_bar(pb),
+        31 => menu::menu_icheck(pb),
+        32 => menu::menu_ienable(pb),
+        33 => menu::menu_tnormal(pb),
+        34 => menu::menu_text(pb),
+        35 => menu::menu_register(pb),
+        36 => menu::menu_popup(pb),
+        37 => menu::menu_attach(pb),
+        38 => menu::menu_istart(pb),
+        39 => menu::menu_settings(pb),
+        40 => object::objc_add(pb),
+        41 => object::objc_delete(pb),
+        42 => object::objc_draw(pb),
+        43 => object::objc_find(pb),
+        44 => object::objc_offset(pb),
+        45 => object::objc_order(pb),
+        46 => object::objc_edit(pb),
+        47 => object::objc_change(pb),
+        48 => object::objc_sysvar(pb),
+        50 => form::form_do(pb),
+        51 => form::form_dial(pb),
+        52 => form::form_alert(pb),
+        53 => form::form_error(pb),
+        54 => form::form_center(pb),
+        55 => form::form_keybd(pb),
+        56 => form::form_button(pb),
+        80 => shell::scrp_read(pb),
+        81 => shell::scrp_write(pb),
+        82 => shell::scrp_clear(pb),
+        90 => fsel::fsel_input(pb),
+        91 => fsel::fsel_exinput(pb),
+        100 => window::wind_create(pb),
+        101 => window::wind_open(pb),
+        102 => window::wind_close(pb),
+        103 => window::wind_delete(pb),
+        104 => window::wind_get(pb),
+        105 => window::wind_set(pb),
+        106 => window::wind_find(pb),
+        107 => window::wind_update(pb),
+        108 => window::wind_calc(pb),
+        109 => window::wind_new(pb),
+        110 => resource::rsrc_load(pb),
+        111 => resource::rsrc_free(pb),
+        112 => resource::rsrc_gaddr(pb),
+        113 => resource::rsrc_saddr(pb),
+        114 => resource::rsrc_obfix(pb),
+        120 => shell::shel_read(pb),
+        121 => shell::shel_write(pb),
+        122 => shell::shel_get(pb),
+        123 => shell::shel_put(pb),
+        124 => shell::shel_find(pb),
+        125 => shell::shel_envrn(pb),
+        126 => shell::shel_rdef(pb),
+        127 => shell::shel_wdef(pb),
         // Any opcode not matched above — out of range, negative, or a
         // not-compiled-in function — returns the AES unsupported-opcode
         // sentinel `-1` in `int_out[0]` (`RET_CODE`). This mirrors EmuTOS

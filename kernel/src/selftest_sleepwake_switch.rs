@@ -317,6 +317,11 @@ pub fn run() {
         };
         write_aespb_ptrs(pa);
         wr_i16(pa, CONTROL_VA, 23); // evnt_mesag opcode
+        // control[2] = OUT_LEN: the dispatcher copies exactly this many words
+        // back (`aes/gemsuper.c:443-444`), so the one word A wants — RET_CODE —
+        // must be declared. gemlib's binding says the same:
+        // `AES_PARAMS(23,0,1,1,0)` (`a_evnt_mesag.c`).
+        wr_i16(pa, CONTROL_VA + 4, 1);
         wr_u64(pa, ADDRIN_VA, MSG_BUF_VA); // addr_in[0] = output buffer
         wr_i16(pa, INTOUT_VA, INTOUT_SENTINEL); // RET_CODE sentinel
     }
@@ -329,6 +334,7 @@ pub fn run() {
         };
         write_aespb_ptrs(pp);
         wr_i16(pp, CONTROL_VA, 12); // appl_write opcode
+        wr_i16(pp, CONTROL_VA + 4, 1); // OUT_LEN 1 (gemlib `AES_PARAMS(12,2,1,1,0)`)
         wr_i16(pp, INTIN_VA, A_PID); // int_in[0] = target pid (A)
         wr_i16(pp, INTIN_VA + 2, 16); // int_in[1] = byte length (8 words)
         wr_u64(pp, ADDRIN_VA, MSG_BUF_VA); // addr_in[0] = message source

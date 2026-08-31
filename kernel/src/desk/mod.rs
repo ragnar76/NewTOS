@@ -134,11 +134,21 @@ impl Aes {
         }
     }
 
-    /// Trap opcode `op` with `n_int` int-ins and `n_addr` addr-ins.
-    fn call(&mut self, op: i16, n_int: i16, n_addr: i16) {
+    /// Trap opcode `op` with `n_int` int-ins, `n_out` int-outs and `n_addr`
+    /// addr-ins — the four `control[]` words every AES binding lays
+    /// (`AES_CTRL_CODE(op, nintin, nintout, naddrin)`, EmuTOS
+    /// `desk/gembind.c:46-50`).
+    ///
+    /// `n_out` is `OUT_LEN`, and it is not decoration: the dispatcher copies
+    /// **exactly** `control[2]` words of its result back
+    /// (`aes/gemsuper.c:443-444`), so a call that under-declares gets nothing
+    /// — with `n_out == 0` not even `RET_CODE`. Every value passed below is
+    /// the `nintout` EmuTOS's own desktop binding uses for that function.
+    fn call(&mut self, op: i16, n_int: i16, n_out: i16, n_addr: i16) {
         self.control = [0; 8];
         self.control[0] = op;
         self.control[1] = n_int;
+        self.control[2] = n_out;
         self.control[3] = n_addr;
         let block: [u64; 6] = [
             self.control.as_ptr() as u64,
@@ -169,7 +179,7 @@ impl Aes {
 /// other AES call the desktop makes.
 pub(super) fn appl_init() -> i16 {
     let mut a = Aes::new();
-    a.call(OP_APPL_INIT, 0, 0);
+    a.call(OP_APPL_INIT, 0, 1, 0);
     a.intout[0]
 }
 
@@ -178,7 +188,7 @@ pub(super) fn appl_init() -> i16 {
 /// counterpart to [`appl_init`], run on the desktop's shutdown path.
 pub(super) fn appl_exit() {
     let mut a = Aes::new();
-    a.call(OP_APPL_EXIT, 0, 0);
+    a.call(OP_APPL_EXIT, 0, 1, 0);
 }
 
 // ── aesbind wrappers (window manager) ──────────────────────────────────────
@@ -196,7 +206,7 @@ pub(super) fn objc_draw_tree(tree: u64, root: i16, clip: Grect) {
     a.intin[3] = clip.y;
     a.intin[4] = clip.w;
     a.intin[5] = clip.h;
-    a.call(OP_OBJC_DRAW, 6, 1);
+    a.call(OP_OBJC_DRAW, 6, 1, 1);
 }
 
 /// `objc_find` (43) — deepest object of `tree` under `(mx, my)` within `depth`
@@ -209,7 +219,7 @@ pub(super) fn objc_find(tree: u64, start: i16, depth: i16, mx: i16, my: i16) -> 
     a.intin[1] = depth;
     a.intin[2] = mx;
     a.intin[3] = my;
-    a.call(OP_OBJC_FIND, 4, 1);
+    a.call(OP_OBJC_FIND, 4, 1, 1);
     a.intout[0]
 }
 
@@ -220,7 +230,7 @@ pub(super) fn wind_find(mx: i16, my: i16) -> i16 {
     let mut a = Aes::new();
     a.intin[0] = mx;
     a.intin[1] = my;
-    a.call(OP_WIND_FIND, 2, 0);
+    a.call(OP_WIND_FIND, 2, 1, 0);
     a.intout[0]
 }
 
@@ -235,7 +245,7 @@ pub(super) fn wind_get_grect(handle: i16, field: i16) -> Grect {
     let mut a = Aes::new();
     a.intin[0] = handle;
     a.intin[1] = field;
-    a.call(OP_WIND_GET, 2, 0);
+    a.call(OP_WIND_GET, 2, 5, 0);
     Grect { x: a.intout[1], y: a.intout[2], w: a.intout[3], h: a.intout[4] }
 }
 
@@ -255,7 +265,7 @@ pub(super) fn wind_get_top() -> i16 {
     let mut a = Aes::new();
     a.intin[0] = win::DESKWH;
     a.intin[1] = WF_TOP;
-    a.call(OP_WIND_GET, 2, 0);
+    a.call(OP_WIND_GET, 2, 5, 0);
     a.intout[1]
 }
 
@@ -268,7 +278,7 @@ pub(super) fn wind_set_grect(handle: i16, field: i16, r: Grect) {
     a.intin[3] = r.y;
     a.intin[4] = r.w;
     a.intin[5] = r.h;
-    a.call(OP_WIND_SET, 6, 0);
+    a.call(OP_WIND_SET, 6, 1, 0);
 }
 
 /// `wind_set(handle, field, value)` — a scalar field (`WF_TOP` with no value,
@@ -278,7 +288,7 @@ pub(super) fn wind_set_int(handle: i16, field: i16, value: i16) {
     a.intin[0] = handle;
     a.intin[1] = field;
     a.intin[2] = value;
-    a.call(OP_WIND_SET, 5, 0);
+    a.call(OP_WIND_SET, 5, 1, 0);
 }
 
 /// `wind_set(handle, field, ptr)` — a pointer field (`WF_NAME`/`WF_INFO`).
@@ -288,7 +298,7 @@ pub(super) fn wind_set_ptr(handle: i16, field: i16, ptr: u64) {
     a.addrin[0] = ptr as i64;
     a.intin[0] = handle;
     a.intin[1] = field;
-    a.call(OP_WIND_SET, 2, 1);
+    a.call(OP_WIND_SET, 2, 1, 1);
 }
 
 /// `wind_set(DESKWH, WF_NEWDESK, tree, root)` — register (`tree != 0`) or
@@ -306,7 +316,7 @@ pub(super) fn wind_set_newdesk(tree: u64, root: i16) {
     a.intin[0] = win::DESKWH;
     a.intin[1] = WF_NEWDESK;
     a.intin[2] = root;
-    a.call(OP_WIND_SET, 3, 1);
+    a.call(OP_WIND_SET, 3, 1, 1);
 }
 
 /// `wind_create(kind, x, y, w, h)` — reserve a window of border `kind` and max
@@ -318,7 +328,7 @@ pub(super) fn wind_create(kind: i16, r: Grect) -> i16 {
     a.intin[2] = r.y;
     a.intin[3] = r.w;
     a.intin[4] = r.h;
-    a.call(OP_WIND_CREATE, 5, 0);
+    a.call(OP_WIND_CREATE, 5, 1, 0);
     a.intout[0]
 }
 
@@ -330,21 +340,21 @@ pub(super) fn wind_open(handle: i16, r: Grect) {
     a.intin[2] = r.y;
     a.intin[3] = r.w;
     a.intin[4] = r.h;
-    a.call(OP_WIND_OPEN, 5, 0);
+    a.call(OP_WIND_OPEN, 5, 1, 0);
 }
 
 /// `wind_close(handle)` — hide window `handle` (the handle stays valid).
 pub(super) fn wind_close(handle: i16) {
     let mut a = Aes::new();
     a.intin[0] = handle;
-    a.call(OP_WIND_CLOSE, 1, 0);
+    a.call(OP_WIND_CLOSE, 1, 1, 0);
 }
 
 /// `wind_delete(handle)` — free the AES window handle.
 pub(super) fn wind_delete(handle: i16) {
     let mut a = Aes::new();
     a.intin[0] = handle;
-    a.call(OP_WIND_DELETE, 1, 0);
+    a.call(OP_WIND_DELETE, 1, 1, 0);
 }
 
 /// The instantaneous mouse/keyboard state from `graf_mkstate` (79).
@@ -365,7 +375,7 @@ pub(super) struct MouseState {
 /// plain click) — EmuTOS `deskmain.c:968`.
 pub(super) fn graf_mkstate() -> MouseState {
     let mut a = Aes::new();
-    a.call(OP_GRAF_MKSTATE, 0, 0);
+    a.call(OP_GRAF_MKSTATE, 0, 5, 0);
     MouseState { mx: a.intout[1], my: a.intout[2], buttons: a.intout[3], kstate: a.intout[4] }
 }
 
@@ -378,7 +388,7 @@ pub(super) fn graf_rubberbox(x: i16, y: i16, minw: i16, minh: i16) -> (i16, i16)
     a.intin[1] = y;
     a.intin[2] = minw;
     a.intin[3] = minh;
-    a.call(OP_GRAF_RUBBERBOX, 4, 0);
+    a.call(OP_GRAF_RUBBERBOX, 4, 3, 0);
     (a.intout[1], a.intout[2])
 }
 
@@ -397,7 +407,7 @@ pub(super) fn graf_dragbox(w: i16, h: i16, sx: i16, sy: i16, bound: Grect) -> (i
     a.intin[5] = bound.y;
     a.intin[6] = bound.w;
     a.intin[7] = bound.h;
-    a.call(OP_GRAF_DRAGBOX, 8, 0);
+    a.call(OP_GRAF_DRAGBOX, 8, 3, 0);
     (a.intout[1], a.intout[2])
 }
 
@@ -410,7 +420,7 @@ pub(super) fn evnt_button(clicks: i16, mask: i16, state: i16) {
     a.intin[0] = clicks;
     a.intin[1] = mask;
     a.intin[2] = state;
-    a.call(OP_EVNT_BUTTON, 3, 0);
+    a.call(OP_EVNT_BUTTON, 3, 5, 0);
 }
 
 /// `graf_mouse(number)` (78) — hide ([`M_OFF`]) or show ([`M_ON`]) the mouse
@@ -419,7 +429,7 @@ pub(super) fn evnt_button(clicks: i16, mask: i16, state: i16) {
 pub(super) fn graf_mouse(number: i16) {
     let mut a = Aes::new();
     a.intin[0] = number;
-    a.call(OP_GRAF_MOUSE, 1, 0);
+    a.call(OP_GRAF_MOUSE, 1, 1, 0);
 }
 
 /// `wind_calc(WC_WORK, WINDOW_STYLE, desk)` — the work-area width of a
@@ -432,7 +442,7 @@ pub(super) fn wind_calc_work_width(desk: Grect) -> i16 {
     a.intin[3] = desk.y;
     a.intin[4] = desk.w;
     a.intin[5] = desk.h;
-    a.call(OP_WIND_CALC, 6, 0);
+    a.call(OP_WIND_CALC, 6, 5, 0);
     a.intout[3]
 }
 
@@ -443,7 +453,7 @@ pub(super) fn menu_bar(tree: u64, show: i16) {
     let mut a = Aes::new();
     a.addrin[0] = tree as i64;
     a.intin[0] = show;
-    a.call(OP_MENU_BAR, 1, 1);
+    a.call(OP_MENU_BAR, 1, 1, 1);
 }
 
 /// `menu_tnormal(tree, title, normal)` (33) — draw `title` normal (`normal =
@@ -453,7 +463,7 @@ pub(super) fn menu_tnormal(tree: u64, title: i16, normal: bool) {
     a.addrin[0] = tree as i64;
     a.intin[0] = title;
     a.intin[1] = normal as i16;
-    a.call(OP_MENU_TNORMAL, 2, 1);
+    a.call(OP_MENU_TNORMAL, 2, 1, 1);
 }
 
 // ── aesbind wrappers (form manager + event manager) ────────────────────────
@@ -465,7 +475,7 @@ pub(super) fn form_alert(default: i16, text: *const u8) -> i16 {
     let mut a = Aes::new();
     a.addrin[0] = text as i64;
     a.intin[0] = default;
-    a.call(OP_FORM_ALERT, 1, 1);
+    a.call(OP_FORM_ALERT, 1, 1, 1);
     a.intout[0]
 }
 
@@ -478,7 +488,7 @@ pub(super) fn form_do(tree: u64) -> i16 {
     let mut a = Aes::new();
     a.addrin[0] = tree as i64;
     a.intin[0] = 0; // editable-field focus start
-    a.call(OP_FORM_DO, 1, 1);
+    a.call(OP_FORM_DO, 1, 1, 1);
     a.intout[0]
 }
 
@@ -516,7 +526,7 @@ pub(super) fn evnt_multi(flags: u16, msg: &mut [i16; 8]) -> EvntOut {
     a.intin[1] = 2; // bclk: report up to a double click
     a.intin[2] = 1; // bmask: left button
     a.intin[3] = 1; // bstate: down
-    a.call(OP_EVNT_MULTI, 16, 1);
+    a.call(OP_EVNT_MULTI, 16, 7, 1);
     EvntOut {
         which: a.intout[0] as u16,
         mx: a.intout[1],

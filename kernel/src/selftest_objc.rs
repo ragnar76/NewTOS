@@ -86,7 +86,7 @@ pub fn run() {
         addrout.as_mut_ptr() as u64,
     ];
 
-    control[0] = 42; // objc_draw
+    control[0] = 42; control[2] = 1; // objc_draw
     control[3] = 1; // one addrin
     addrin[0] = tree.as_ptr() as i64;
     intin[0] = 0; // drawob = root
@@ -125,7 +125,7 @@ pub fn run_form_alert() {
         addrout.as_mut_ptr() as u64,
     ];
 
-    control[0] = 52; // form_alert
+    control[0] = 52; control[2] = 1; // form_alert
     control[1] = 1; // one intin
     control[3] = 1; // one addrin
     intin[0] = 1; // default button = 1 (OK)
@@ -197,7 +197,7 @@ pub fn run_icons() {
         intin.as_mut_ptr() as u64, intout.as_mut_ptr() as u64,
         addrin.as_mut_ptr() as u64, addrout.as_mut_ptr() as u64,
     ];
-    control[0] = 42; // objc_draw
+    control[0] = 42; control[2] = 1; // objc_draw
     control[3] = 1;
     addrin[0] = tree.as_ptr() as i64;
     intin[0] = 0;
@@ -251,7 +251,7 @@ pub fn run_tedinfo() {
         intin.as_mut_ptr() as u64, intout.as_mut_ptr() as u64,
         addrin.as_mut_ptr() as u64, addrout.as_mut_ptr() as u64,
     ];
-    control[0] = 42; control[3] = 1;
+    control[0] = 42; control[2] = 1; control[3] = 1;
     addrin[0] = tree.as_ptr() as i64;
     intin[0] = 0; intin[1] = 8;
     intin[2] = 0; intin[3] = 0; intin[4] = 640; intin[5] = 480;
@@ -294,14 +294,14 @@ pub fn run_form_do() {
     ];
 
     // objc_draw the dialog
-    control[0] = 42; control[3] = 1;
+    control[0] = 42; control[2] = 1; control[3] = 1;
     addrin[0] = tree.as_ptr() as i64;
     intin[0] = 0; intin[1] = 8; intin[2] = 0; intin[3] = 0; intin[4] = 640; intin[5] = 480;
     aes(block.as_ptr() as u64);
 
     // form_do — modal loop
     control = [0; 8];
-    control[0] = 50; control[1] = 1; control[3] = 1;
+    control[0] = 50; control[2] = 1; control[1] = 1; control[3] = 1;
     intin[0] = 0; // start object
     addrin[0] = tree.as_ptr() as i64;
     aes(block.as_ptr() as u64);
@@ -345,13 +345,13 @@ pub fn run_edit() {
     ];
 
     // objc_draw the dialog
-    control[0] = 42; control[3] = 1;
+    control[0] = 42; control[2] = 1; control[3] = 1;
     addrin[0] = tree.as_ptr() as i64;
     intin[0] = 0; intin[1] = 8; intin[2] = 0; intin[3] = 0; intin[4] = 640; intin[5] = 480;
     aes(block.as_ptr() as u64);
 
     // objc_edit EDINIT (field = object 2)
-    control = [0; 8]; control[0] = 46; control[3] = 1;
+    control = [0; 8]; control[0] = 46; control[2] = 2; control[3] = 1;
     addrin[0] = tree.as_ptr() as i64;
     intin[0] = 2; intin[1] = 0; intin[2] = 0; intin[3] = 1; // EDINIT
     aes(block.as_ptr() as u64);
@@ -359,7 +359,7 @@ pub fn run_edit() {
 
     // type "NewTOS!" via EDCHAR
     for &c in b"NewTOS!" {
-        control = [0; 8]; control[0] = 46; control[3] = 1;
+        control = [0; 8]; control[0] = 46; control[2] = 2; control[3] = 1;
         addrin[0] = tree.as_ptr() as i64;
         intin[0] = 2; intin[1] = c as i16; intin[2] = idx; intin[3] = 2; // EDCHAR
         aes(block.as_ptr() as u64);
@@ -409,12 +409,12 @@ pub fn run_form_edit() {
         addrin.as_mut_ptr() as u64, addrout.as_mut_ptr() as u64,
     ];
 
-    control[0] = 42; control[3] = 1; // objc_draw
+    control[0] = 42; control[2] = 1; control[3] = 1; // objc_draw
     addrin[0] = tree.as_ptr() as i64;
     intin[0] = 0; intin[1] = 8; intin[2] = 0; intin[3] = 0; intin[4] = 640; intin[5] = 480;
     aes(block.as_ptr() as u64);
 
-    control = [0; 8]; control[0] = 50; control[1] = 1; control[3] = 1; // form_do
+    control = [0; 8]; control[0] = 50; control[2] = 1; control[1] = 1; control[3] = 1; // form_do
     intin[0] = 0; addrin[0] = tree.as_ptr() as i64;
     aes(block.as_ptr() as u64);
 
@@ -437,7 +437,7 @@ pub fn run_form_error() {
         intin.as_mut_ptr() as u64, intout.as_mut_ptr() as u64,
         addrin.as_mut_ptr() as u64, addrout.as_mut_ptr() as u64,
     ];
-    control[0] = 53; control[1] = 1; // form_error
+    control[0] = 53; control[2] = 1; control[1] = 1; // form_error
     intin[0] = -33; // EFILNF
     aes(block.as_ptr() as u64);
     kprintln!("[objc] form_error returned button {}", intout[0]);
@@ -481,12 +481,12 @@ pub fn run_menu() {
     ];
 
     // menu_bar(tree, show=1)
-    control[0] = 30; control[1] = 1; control[3] = 1;
+    control[0] = 30; control[2] = 1; control[1] = 1; control[3] = 1;
     intin[0] = 1; addrin[0] = tree.as_ptr() as i64;
     aes(block.as_ptr() as u64);
 
     // menu_tnormal(title=3 "File", normal=0 → highlight)
-    control = [0; 8]; control[0] = 33; control[1] = 2; control[3] = 1;
+    control = [0; 8]; control[0] = 33; control[2] = 1; control[1] = 2; control[3] = 1;
     intin[0] = 3; intin[1] = 0; addrin[0] = tree.as_ptr() as i64;
     aes(block.as_ptr() as u64);
 
@@ -551,7 +551,7 @@ pub fn run_menu_open() {
         addrin.as_mut_ptr() as u64, addrout.as_mut_ptr() as u64,
     ];
     // menu_bar(tree, show=1)
-    control[0] = 30; control[1] = 1; control[3] = 1;
+    control[0] = 30; control[2] = 1; control[1] = 1; control[3] = 1;
     intin[0] = 1; addrin[0] = tree.as_ptr() as i64;
     aes(block.as_ptr() as u64);
 
@@ -581,22 +581,22 @@ pub fn run_window() {
     static INFO: &[u8] = b"Ready.\0";
 
     // wind_create(kind = all gadgets, full extent = screen)
-    control[0] = 100; control[1] = 5; control[3] = 0;
+    control[0] = 100; control[2] = 1; control[1] = 5; control[3] = 0;
     intin[0] = 0x0FFF; intin[1] = 0; intin[2] = 0; intin[3] = 640; intin[4] = 480;
     aes(block.as_ptr() as u64);
     let handle = intout[0];
 
     // wind_set(handle, WF_NAME, "NewTOS Window")
-    control = [0; 8]; control[0] = 105; control[1] = 2; control[3] = 1;
+    control = [0; 8]; control[0] = 105; control[2] = 1; control[1] = 2; control[3] = 1;
     intin[0] = handle; intin[1] = 2; addrin[0] = NAME.as_ptr() as i64;
     aes(block.as_ptr() as u64);
     // wind_set(handle, WF_INFO, "Ready.")
-    control = [0; 8]; control[0] = 105; control[1] = 2; control[3] = 1;
+    control = [0; 8]; control[0] = 105; control[2] = 1; control[1] = 2; control[3] = 1;
     intin[0] = handle; intin[1] = 3; addrin[0] = INFO.as_ptr() as i64;
     aes(block.as_ptr() as u64);
 
     // wind_open(handle, rect)
-    control = [0; 8]; control[0] = 101; control[1] = 5; control[3] = 0;
+    control = [0; 8]; control[0] = 101; control[2] = 1; control[1] = 5; control[3] = 0;
     intin[0] = handle; intin[1] = 80; intin[2] = 60; intin[3] = 440; intin[4] = 320;
     aes(block.as_ptr() as u64);
 
@@ -625,12 +625,12 @@ pub fn run_graf() {
         addrin.as_mut_ptr() as u64, addrout.as_mut_ptr() as u64,
     ];
     // graf_handle (77)
-    control[0] = 77;
+    control[0] = 77; control[2] = 5;
     aes(block.as_ptr() as u64);
     kprintln!("[objc] graf_handle: vdi={} wchar={} hchar={} wbox={} hbox={}",
         intout[0], intout[1], intout[2], intout[3], intout[4]);
     // graf_mkstate (79)
-    control = [0; 8]; control[0] = 79;
+    control = [0; 8]; control[0] = 79; control[2] = 5;
     aes(block.as_ptr() as u64);
     kprintln!("[objc] graf_mkstate: mx={} my={} mstate={} kstate={}",
         intout[1], intout[2], intout[3], intout[4]);
@@ -654,14 +654,14 @@ pub fn run_two_windows() {
     static NAME_B: &[u8] = b"Window B\0";
 
     let mut create = |x, y, w, h, name: &[u8]| -> i16 {
-        control = [0; 8]; control[0] = 100; control[1] = 5;
+        control = [0; 8]; control[0] = 100; control[2] = 1; control[1] = 5;
         intin[0] = 0x0FFF; intin[1] = 0; intin[2] = 0; intin[3] = 640; intin[4] = 480;
         aes(block.as_ptr() as u64);
         let hdl = intout[0];
-        control = [0; 8]; control[0] = 105; control[1] = 2; control[3] = 1;
+        control = [0; 8]; control[0] = 105; control[2] = 1; control[1] = 2; control[3] = 1;
         intin[0] = hdl; intin[1] = 2; addrin[0] = name.as_ptr() as i64;
         aes(block.as_ptr() as u64);
-        control = [0; 8]; control[0] = 101; control[1] = 5;
+        control = [0; 8]; control[0] = 101; control[2] = 1; control[1] = 5;
         intin[0] = hdl; intin[1] = x; intin[2] = y; intin[3] = w; intin[4] = h;
         aes(block.as_ptr() as u64);
         hdl
@@ -672,7 +672,7 @@ pub fn run_two_windows() {
     kprintln!("[objc] two windows: A={} B={} (B on top)", ha, hb);
 
     // Walk A's visible rectangle list (work area minus B).
-    control = [0; 8]; control[0] = 104; control[1] = 2;
+    control = [0; 8]; control[0] = 104; control[2] = 5; control[1] = 2;
     intin[0] = ha; intin[1] = 11; // WF_FIRSTXYWH
     aes(block.as_ptr() as u64);
     let mut piece = 0;
@@ -680,7 +680,7 @@ pub fn run_two_windows() {
         kprintln!("[objc]   A piece {}: x={} y={} w={} h={}",
             piece, intout[1], intout[2], intout[3], intout[4]);
         piece += 1;
-        control = [0; 8]; control[0] = 104; control[1] = 2;
+        control = [0; 8]; control[0] = 104; control[2] = 5; control[1] = 2;
         intin[0] = ha; intin[1] = 12; // WF_NEXTXYWH
         aes(block.as_ptr() as u64);
     }
@@ -713,30 +713,30 @@ pub fn run_p5_redraw() {
     let bp = block.as_ptr() as u64;
 
     // Clean window table, then register the pd so WM_REDRAW has a target queue.
-    control = [0; 8]; control[0] = 109; aes(bp); // wind_new
-    control = [0; 8]; control[0] = 10; aes(bp);  // appl_init
+    control = [0; 8]; control[0] = 109; control[2] = 1; aes(bp); // wind_new
+    control = [0; 8]; control[0] = 10; control[2] = 1; aes(bp);  // appl_init
     let ap_id = intout[0];
 
     // Window A (bottom): create (all gadgets) + open at (60,50,360,250).
-    control = [0; 8]; control[0] = 100; control[1] = 5;
+    control = [0; 8]; control[0] = 100; control[2] = 1; control[1] = 5;
     intin[0] = 0x0FFF; intin[1] = 0; intin[2] = 0; intin[3] = 640; intin[4] = 480;
     aes(bp);
     let ha = intout[0];
-    control = [0; 8]; control[0] = 101; control[1] = 5;
+    control = [0; 8]; control[0] = 101; control[2] = 1; control[1] = 5;
     intin[0] = ha; intin[1] = 60; intin[2] = 50; intin[3] = 360; intin[4] = 250;
     aes(bp);
 
     // Window B (top): create + open at (230,170,360,250) — overlaps A.
-    control = [0; 8]; control[0] = 100; control[1] = 5;
+    control = [0; 8]; control[0] = 100; control[2] = 1; control[1] = 5;
     intin[0] = 0x0FFF; intin[1] = 0; intin[2] = 0; intin[3] = 640; intin[4] = 480;
     aes(bp);
     let hb = intout[0];
-    control = [0; 8]; control[0] = 101; control[1] = 5;
+    control = [0; 8]; control[0] = 101; control[2] = 1; control[1] = 5;
     intin[0] = hb; intin[1] = 230; intin[2] = 170; intin[3] = 360; intin[4] = 250;
     aes(bp);
 
     // Expected redraw rect = A's work area (wind_get WF_WXYWH = field 4).
-    control = [0; 8]; control[0] = 104; control[1] = 2;
+    control = [0; 8]; control[0] = 104; control[2] = 5; control[1] = 2;
     intin[0] = ha; intin[1] = 4;
     aes(bp);
     let (ewx, ewy, eww, ewh) = (intout[1], intout[2], intout[3], intout[4]);
@@ -747,7 +747,7 @@ pub fn run_p5_redraw() {
 
     // ---- Case 1: wind_close(B) must post WM_REDRAW to A ----
     test_clear_msg(ap_id);
-    control = [0; 8]; control[0] = 102; control[1] = 1;
+    control = [0; 8]; control[0] = 102; control[2] = 1; control[1] = 1;
     intin[0] = hb;
     aes(bp);
     report_p5("close", test_pending_msg(ap_id), ha, ewx, ewy, eww, ewh);
@@ -755,11 +755,11 @@ pub fn run_p5_redraw() {
     // ---- Case 2: re-open B on top, then wind_set(A, WF_TOP). Since WP6c
     //      (AUD-P5-011) a top change posts WM_UNTOPPED(30) to the old top (B)
     //      then WM_REDRAW(20) to the newly-topped window (A). ----
-    control = [0; 8]; control[0] = 101; control[1] = 5;
+    control = [0; 8]; control[0] = 101; control[2] = 1; control[1] = 5;
     intin[0] = hb; intin[1] = 230; intin[2] = 170; intin[3] = 360; intin[4] = 250;
     aes(bp);
     test_clear_msg(ap_id);
-    control = [0; 8]; control[0] = 105; control[1] = 2;
+    control = [0; 8]; control[0] = 105; control[2] = 1; control[1] = 2;
     intin[0] = ha; intin[1] = 10; // WF_TOP
     aes(bp);
     // WP6c (AUD-P5-011) posts WM_UNTOPPED(30) to the old top (B) ahead of the
@@ -769,14 +769,14 @@ pub fn run_p5_redraw() {
     // WM_UNTOPPED payload is verified by the WP6c oracle, not re-checked here.
     if test_msg_count(ap_id) > 1 {
         let mut drain = [0i16; 8];
-        control = [0; 8]; control[0] = 23; control[3] = 1; // evnt_mesag, n_addrin=1
+        control = [0; 8]; control[0] = 23; control[2] = 1; control[3] = 1; // evnt_mesag, n_addrin=1
         addrin[0] = drain.as_mut_ptr() as i64;
         aes(bp);
     }
     report_p5("top", test_pending_msg(ap_id), ha, ewx, ewy, eww, ewh);
 
     // Leave the window table clean for whatever runs next.
-    control = [0; 8]; control[0] = 109; aes(bp); // wind_new
+    control = [0; 8]; control[0] = 109; control[2] = 1; aes(bp); // wind_new
 }
 
 /// Print a P5 selftest verdict line: the queued message and whether it is the
@@ -837,8 +837,8 @@ pub fn run_p6_msgqueue() {
     let bp = block.as_ptr() as u64;
 
     // Clean window table + register the pd so the queue has an owner.
-    control = [0; 8]; control[0] = 109; aes(bp); // wind_new
-    control = [0; 8]; control[0] = 10; aes(bp);  // appl_init
+    control = [0; 8]; control[0] = 109; control[2] = 1; aes(bp); // wind_new
+    control = [0; 8]; control[0] = 10; control[2] = 1; aes(bp);  // appl_init
     let ap = intout[0];
 
     // Raw pointers to the parameter-block arrays (Copy), so the two trap
@@ -912,7 +912,7 @@ pub fn run_p6_msgqueue() {
 
     // Leave the window table clean for whatever runs next.
     test_clear_msg(ap);
-    control = [0; 8]; control[0] = 109; aes(bp); // wind_new
+    control = [0; 8]; control[0] = 109; control[2] = 1; aes(bp); // wind_new
 }
 
 /// D7 Batch-1 demo: build a native .RSC blob (string pointers as offsets),
@@ -979,20 +979,20 @@ pub fn run_rsrc() {
     ];
 
     // rsrc_gaddr(R_TREE=0, index=0) → addrout[0] = tree
-    control[0] = 112; control[1] = 2;
+    control[0] = 112; control[2] = 1; control[1] = 2;
     intin[0] = 0; intin[1] = 0;
     aes(block.as_ptr() as u64);
     let tree = addrout[0];
     kprintln!("[objc] rsrc_gaddr R_TREE 0 -> {:#x} (ret {})", tree as u64, intout[0]);
 
     // objc_draw the loaded tree
-    control = [0; 8]; control[0] = 42; control[3] = 1;
+    control = [0; 8]; control[0] = 42; control[2] = 1; control[3] = 1;
     addrin[0] = tree;
     intin[0] = 0; intin[1] = 8; intin[2] = 0; intin[3] = 0; intin[4] = 640; intin[5] = 480;
     aes(block.as_ptr() as u64);
 
     // rsrc_free
-    control = [0; 8]; control[0] = 111;
+    control = [0; 8]; control[0] = 111; control[2] = 1;
     aes(block.as_ptr() as u64);
     kprintln!("[objc] .RSC dialog drawn + freed");
 }
@@ -1013,7 +1013,7 @@ pub fn run_rsrc_file() {
         addrin.as_mut_ptr() as u64, addrout.as_mut_ptr() as u64,
     ];
     // rsrc_load("TEST.RSC")
-    control[0] = 110; control[3] = 1;
+    control[0] = 110; control[2] = 1; control[3] = 1;
     addrin[0] = NAME.as_ptr() as i64;
     aes(block.as_ptr() as u64);
     kprintln!("[objc] rsrc_load(TEST.RSC) -> {}", intout[0]);
@@ -1022,12 +1022,12 @@ pub fn run_rsrc_file() {
         return;
     }
     // rsrc_gaddr(R_TREE 0)
-    control = [0; 8]; control[0] = 112; control[1] = 2;
+    control = [0; 8]; control[0] = 112; control[2] = 1; control[1] = 2;
     intin[0] = 0; intin[1] = 0;
     aes(block.as_ptr() as u64);
     let tree = addrout[0];
     // objc_draw
-    control = [0; 8]; control[0] = 42; control[3] = 1;
+    control = [0; 8]; control[0] = 42; control[2] = 1; control[3] = 1;
     addrin[0] = tree;
     intin[0] = 0; intin[1] = 8; intin[2] = 0; intin[3] = 0; intin[4] = 640; intin[5] = 480;
     aes(block.as_ptr() as u64);
@@ -1050,16 +1050,16 @@ pub fn run_rsrc_gem() {
         intin.as_mut_ptr() as u64, intout.as_mut_ptr() as u64,
         addrin.as_mut_ptr() as u64, addrout.as_mut_ptr() as u64,
     ];
-    control[0] = 110; control[3] = 1;
+    control[0] = 110; control[2] = 1; control[3] = 1;
     addrin[0] = NAME.as_ptr() as i64;
     aes(block.as_ptr() as u64);
     kprintln!("[objc] rsrc_load(GEM.RSC) -> {}", intout[0]);
     if intout[0] == 0 { return; }
-    control = [0; 8]; control[0] = 112; control[1] = 2;
+    control = [0; 8]; control[0] = 112; control[2] = 1; control[1] = 2;
     intin[0] = 0; intin[1] = 0; // R_TREE, tree 0 (FSELECTR)
     aes(block.as_ptr() as u64);
     let tree = addrout[0];
-    control = [0; 8]; control[0] = 42; control[3] = 1;
+    control = [0; 8]; control[0] = 42; control[2] = 1; control[3] = 1;
     addrin[0] = tree;
     intin[0] = 0; intin[1] = 16; intin[2] = 0; intin[3] = 0; intin[4] = 640; intin[5] = 480;
     aes(block.as_ptr() as u64);
@@ -1085,7 +1085,7 @@ pub fn run_fsel() {
         intin.as_mut_ptr() as u64, intout.as_mut_ptr() as u64,
         addrin.as_mut_ptr() as u64, addrout.as_mut_ptr() as u64,
     ];
-    control[0] = 90; control[3] = 2; // fsel_input
+    control[0] = 90; control[2] = 2; control[3] = 2; // fsel_input
     addrin[0] = path.as_mut_ptr() as i64;
     addrin[1] = sel.as_mut_ptr() as i64;
     kprintln!("[objc] opening file selector on C:\\*.*");
@@ -1113,40 +1113,40 @@ pub fn run_d9() {
     let mut buf = [0u8; 64];
 
     // scrp_read (default)
-    control = [0;8]; control[0]=80; control[3]=1; addrin[0]=buf.as_mut_ptr() as i64;
+    control = [0;8]; control[0]=80; control[2]=1; control[3]=1; addrin[0]=buf.as_mut_ptr() as i64;
     aes(block.as_ptr() as u64);
     kprintln!("[objc] scrp_read default = \"{}\"", s(&buf));
 
     // scrp_write then scrp_read
     let mut p = *b"C:\\TMP\\\0\0";
-    control=[0;8]; control[0]=81; control[3]=1; addrin[0]=p.as_mut_ptr() as i64;
+    control=[0;8]; control[0]=81; control[2]=1; control[3]=1; addrin[0]=p.as_mut_ptr() as i64;
     aes(block.as_ptr() as u64);
-    buf=[0;64]; control=[0;8]; control[0]=80; control[3]=1; addrin[0]=buf.as_mut_ptr() as i64;
+    buf=[0;64]; control=[0;8]; control[0]=80; control[2]=1; control[3]=1; addrin[0]=buf.as_mut_ptr() as i64;
     aes(block.as_ptr() as u64);
     kprintln!("[objc] scrp after write = \"{}\"", s(&buf));
 
     // shel_put / shel_get
     let mut data = *b"NewTOS\0";
-    control=[0;8]; control[0]=123; control[1]=1; control[3]=1; intin[0]=7; addrin[0]=data.as_mut_ptr() as i64;
+    control=[0;8]; control[0]=123; control[2]=1; control[1]=1; control[3]=1; intin[0]=7; addrin[0]=data.as_mut_ptr() as i64;
     aes(block.as_ptr() as u64);
-    buf=[0;64]; control=[0;8]; control[0]=122; control[1]=1; control[3]=1; intin[0]=7; addrin[0]=buf.as_mut_ptr() as i64;
+    buf=[0;64]; control=[0;8]; control[0]=122; control[2]=1; control[1]=1; control[3]=1; intin[0]=7; addrin[0]=buf.as_mut_ptr() as i64;
     aes(block.as_ptr() as u64);
     kprintln!("[objc] shel_get = \"{}\"", s(&buf));
 
     // shel_find existing + missing
     let mut f1 = *b"HELLO.PRG\0\0\0\0\0\0";
-    control=[0;8]; control[0]=124; control[3]=1; addrin[0]=f1.as_mut_ptr() as i64;
+    control=[0;8]; control[0]=124; control[2]=1; control[3]=1; addrin[0]=f1.as_mut_ptr() as i64;
     aes(block.as_ptr() as u64);
     kprintln!("[objc] shel_find HELLO.PRG -> {} (\"{}\")", intout[0], s(&f1));
     let mut f2 = *b"NOPE.XXX\0";
-    control=[0;8]; control[0]=124; control[3]=1; addrin[0]=f2.as_mut_ptr() as i64;
+    control=[0;8]; control[0]=124; control[2]=1; control[3]=1; addrin[0]=f2.as_mut_ptr() as i64;
     aes(block.as_ptr() as u64);
     kprintln!("[objc] shel_find NOPE.XXX -> {}", intout[0]);
 
     // shel_envrn PATH=
     let mut val: u64 = 0;
     let mut needle = *b"PATH=\0";
-    control=[0;8]; control[0]=125; control[3]=2;
+    control=[0;8]; control[0]=125; control[2]=1; control[3]=2;
     addrin[0]=&mut val as *mut u64 as i64; addrin[1]=needle.as_mut_ptr() as i64;
     aes(block.as_ptr() as u64);
     let mut ev = [0u8; 32];
@@ -1224,7 +1224,7 @@ pub fn run_button_showcase() {
         intin.as_mut_ptr() as u64, intout.as_mut_ptr() as u64,
         addrin.as_mut_ptr() as u64, addrout.as_mut_ptr() as u64,
     ];
-    control[0] = 42; control[3] = 1; // objc_draw
+    control[0] = 42; control[2] = 1; control[3] = 1; // objc_draw
     addrin[0] = tree.as_ptr() as i64;
     intin[0] = 0; intin[1] = 8; intin[2] = 0; intin[3] = 0; intin[4] = 640; intin[5] = 480;
     aes(block.as_ptr() as u64);
@@ -1266,7 +1266,7 @@ pub fn run_3d() {
         intin.as_mut_ptr() as u64, intout.as_mut_ptr() as u64,
         addrin.as_mut_ptr() as u64, addrout.as_mut_ptr() as u64,
     ];
-    control[0] = 42; control[3] = 1;
+    control[0] = 42; control[2] = 1; control[3] = 1;
     addrin[0] = tree.as_ptr() as i64;
     intin[0] = 0; intin[1] = 8; intin[2] = 0; intin[3] = 0; intin[4] = 640; intin[5] = 480;
     aes(block.as_ptr() as u64);

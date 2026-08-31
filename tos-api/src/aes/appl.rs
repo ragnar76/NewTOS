@@ -6,61 +6,75 @@
 //! `appl_exit` tears it down; `appl_find` looks one up by name;
 //! `appl_yield` is the cooperative scheduler hand-off.
 //!
-//! **ABI note (ADR-020).** `appl_init` fills the caller's `AESGLOBAL` at
-//! the **caller's** pointer width, exactly as the AESPB block pointers and
-//! the `OBJECT` tree do. In **both** ABIs the caller's array is gemlib's
-//! `short aes_global[AES_GLOBMAX]` — `AES_GLOBMAX = 16`, so **exactly 32
-//! bytes** regardless of pointer width (`short` is always 2 bytes;
-//! `globals.c:40`, `mt_gem.h:2471`; confirmed by `nm QED.NAP`:
-//! `aes_global` symbol size `0x20`). gemlib's accessor macros (`gem.h:30`,
-//! `..:72`) carry **no** `__LP64__`/pointer-size conditional, so the
-//! `long`/pointer fields simply widen with the ABI. Field → gem.h reader →
-//! index → byte offset → width (`a_appl_init.c:41` for index 10 =
-//! "number of planes of the VDI workstation"):
+//! **What `appl_init` may write, and how far (D-R1-4).** `AESGLOBAL` is
+//! EmuTOS's `struct aesglobal` (`aes/gemrslib.h:15-27`) — ten fields,
+//! **30 bytes = 15 WORDs** on the m68k. EmuTOS's own AES binding sizes its
+//! array to exactly that: `#define G_SIZE 15` / `UWORD global[G_SIZE]`
+//! (`desk/gembind.h:27`, `desk/gembind.c:66`). There is no index 15.
+//! `appl_init` writes **six** of the ten fields (`aes/gemsuper.c:92-98`) and
+//! leaves the other four alone; NewTOS writes the same six and nothing else,
+//! so a caller of either declared size gets EmuTOS's result and no write
+//! beyond word 14.
 //!
-//!    | field      | gem.h reader              | idx | byte | ILP32 | LP64 |
-//!    |------------|---------------------------|-----|------|-------|------|
-//!    | ap_version | `aes_global[0]`           | 0   | 0    | 2     | 2    |
-//!    | ap_count   | `aes_global[1]`           | 1   | 2    | 2     | 2    |
-//!    | ap_id      | `aes_global[2]`           | 2   | 4    | 2     | 2    |
-//!    | ap_private | `*(long*)&aes_global[3]`  | 3   | 6    | 4     | 8    |
-//!    | ap_ptree   | `*(OBJECT***)&[5]`        | 5   | 10   | 4     | 8    |
-//!    | ap_rscmem  | `*(void**)&aes_global[7]` | 7   | 14   | 4     | 8    |
-//!    | ap_rsclen  | `aes_global[9]`           | 9   | 18   | 2     | 2    |
-//!    | ap_planes  | `aes_global[10]`          | 10  | 20   | 2     | 2    |
-//!    | ap_3resv   | (no gemlib reader)        |11–12| 22   | 4     | 4    |
-//!    | ap_maxchar | `aes_global[13]`          | 13  | 26   | 2     | 2    |
-//!    | ap_minchar | `aes_global[14]`          | 14  | 28   | 2     | 2    |
-//!    | (reserved) | —                         | 15  | 30   | 2     | 2    |
+//! **ABI note (ADR-020).** The six are laid at the **caller's** pointer
+//! width, exactly as the AESPB block pointers and the `OBJECT` tree are.
+//! gemlib's accessor macros (`gem.h:30`, `..:72`) carry **no**
+//! `__LP64__`/pointer-size conditional, so the `long`/pointer fields simply
+//! widen with the ABI while the WORD fields keep their `short`-array index.
+//! Field → gem.h reader → index → byte offset → width (`a_appl_init.c:41`
+//! for index 10 = "number of planes of the VDI workstation"):
+//!
+//!    | field      | gem.h reader              | idx | byte | ILP32 | LP64 | appl_init writes it? |
+//!    |------------|---------------------------|-----|------|-------|------|---|
+//!    | ap_version | `aes_global[0]`           | 0   | 0    | 2     | 2    | yes (`gemsuper.c:92`) |
+//!    | ap_count   | `aes_global[1]`           | 1   | 2    | 2     | 2    | yes (`:93`) |
+//!    | ap_id      | `aes_global[2]`           | 2   | 4    | 2     | 2    | yes (`:94`) |
+//!    | ap_private | `*(long*)&aes_global[3]`  | 3   | 6    | 4     | 8    | yes (`:95-96`) |
+//!    | ap_ptree   | `*(OBJECT***)&[5]`        | 5   | 10   | 4     | 8    | **no** |
+//!    | ap_rscmem  | `*(void**)&aes_global[7]` | 7   | 14   | 4     | 8    | **no** |
+//!    | ap_rsclen  | `aes_global[9]`           | 9   | 18   | 2     | 2    | **no** |
+//!    | ap_planes  | `aes_global[10]`          | 10  | 20   | 2     | 2    | yes (`:97`) |
+//!    | ap_3resv   | (no gemlib reader)        |11–12| 22   | 4     | 4    | yes (`:98`) |
+//!    | ap_4resv   | `[13]`/`[14]` (see below) |13–14| 26   | 4     | 4    | **no** |
+//!
+//!    `ap_ptree`/`ap_rscmem`/`ap_rsclen` belong to `rs_load`/`rs_free`
+//!    (`gemrslib.c`), `ap_4resv` to nobody — EmuTOS's `APPL_INIT` arm never
+//!    names them, so neither do we. They keep whatever the caller had; a
+//!    freshly `.bss`-allocated array therefore still reads 0, which is what
+//!    the EmuTOS reference dump shows for those slots.
+//!    (The last 4 bytes are EmuTOS's `LONG ap_4resv` "reserved for use in AES
+//!    4.00"; gemlib splits the same bytes into two WORD readers
+//!    `ap_maxchar`/`ap_minchar` at indices 13/14. Either way `appl_init` at
+//!    `ap_version 0x0340` does not produce a value for them.)
 //!
 //!    `ap_3resv` is EmuTOS's `LONG ap_3resv` (`gemrslib.h:25`, the AES-internal
 //!    `&D` pointer, `gemsuper.c:98`). It has **no** gemlib accessor (`gem.h`
-//!    defines readers only through `ap_minchar`), so it is a **4-byte** field
-//!    on both ABIs — kept 4 bytes even at LP64 so the app-readable
-//!    `ap_maxchar`/`ap_minchar` (indices 13/14) stay 0 as at EmuTOS
-//!    `appl_init`. On LP64 the 64-bit AES-state pointer is therefore truncated
-//!    to its low 32 bits; harmless, because nothing reads `ap_3resv`
-//!    (no gemlib reader; NewTOS's AES holds its state in kernel statics, not by
-//!    reading this field back — the EmuTOS use of `&D` served here by
+//!    defines readers only through index 14), so it stays the m68k `LONG`'s
+//!    **4 bytes** on both ABIs — which is also what keeps it clear of
+//!    `ap_4resv` at bytes 26–29. On LP64 the 64-bit AES-state pointer is
+//!    therefore truncated to its low 32 bits; harmless, because nothing reads
+//!    `ap_3resv` (NewTOS's AES holds its state in kernel statics, not by
+//!    reading this field back — the EmuTOS use of `&D` is served here by
 //!    [`crate::aes::pd::table_addr`] as a fidelity fill, not a live pointer).
 //!
-//!    On **LP64** the three 8-byte fields at bytes 6/10/14 physically
-//!    *overlap* (6–13, 10–17, 14–21) — a gemlib quirk of its m68k-era
-//!    (4-byte-`long`) macros. `ap_private` is `rs_trees[DESKTOP][ROOT].ob_spec`
-//!    (`gemsuper.c:96`), a ≤32-bit box `gr_crack` word, so its meaningful bits
-//!    live in the **low 4 bytes** (6–9); `ap_ptree` (0) written next clears the
-//!    overlapping high 4 bytes (10–13, already 0 for a box word), so a native
-//!    LP64 reader's `*(long*)&aes_global[3]` reads it back intact. `ap_ptree`
-//!    and `ap_rscmem` are 0 at `appl_init`; `ap_planes` (byte 20–21, the high
-//!    WORD of the zero `ap_rscmem`) is stored last so it survives. Both
+//!    On **LP64** an 8-byte `ap_private` at byte 6 spans bytes 6–13, i.e. it
+//!    reaches into what an ILP32 layout calls `ap_ptree` — a consequence of
+//!    gemlib's m68k-era (4-byte-`long`) index macros having no LP64
+//!    conditional, not of writing a second field: under the LP64 caller ABI
+//!    `*(long*)&aes_global[3]` **is** those eight bytes, and `ap_private`
+//!    (`rs_trees[DESKTOP][ROOT].ob_spec`, `gemsuper.c:96`) is a ≤32-bit box
+//!    `gr_crack` word whose high half is 0. Both
 //!    [`AesGlobalVals::write_ilp32`] and [`AesGlobalVals::write_lp64`] touch
-//!    **no byte past index 31**. The
-//!    previous LP64 writer laid the kernel's own *natural-aligned 56-byte*
-//!    struct here, overrunning the 32-byte array by 24 bytes on every
-//!    `appl_init` — clobbering gemlib's adjacent `vdi_dummy` (`nm
-//!    QED.NAP`: `aes_global` `0x70a36`+`0x20`, `vdi_dummy` `0x70a56`) — and
-//!    also placing `ap_ptree`/`ap_rscmem`/`ap_planes` at the wrong offsets
-//!    for a native LP64 gemlib reader.
+//!    **no byte past index 14** (last byte written = 25).
+//!
+//!    History, so the two earlier defects are not re-introduced: the original
+//!    LP64 writer laid the kernel's own *natural-aligned 56-byte* struct here,
+//!    overrunning a 32-byte array by 24 bytes on every `appl_init` —
+//!    clobbering gemlib's adjacent `vdi_dummy` (`nm QED.NAP`: `aes_global`
+//!    `0x70a36`+`0x20`, `vdi_dummy` `0x70a56`). Its replacement fixed the
+//!    offsets but still wrote all of `aes_global[0..=15]`, i.e. gemlib's
+//!    32-byte `AES_GLOBMAX = 16` array — two bytes past the 30-byte
+//!    `AESGLOBAL` an EmuTOS/Compendium-shaped caller declares (D-R1-4).
 
 use super::pd;
 use super::Aespb;
@@ -69,11 +83,13 @@ use crate::bdos::process::Abi;
 /// AES version reported in `ap_version` (`include/config.h` default).
 const AES_VERSION: i16 = 0x0340;
 
-/// The values `appl_init` reports back through the caller's `AESGLOBAL`,
-/// held ABI-independently. [`Self::write`] lays them into the caller's
-/// gemlib `short aes_global[16]` (32 bytes either way) at the caller's
-/// pointer width: LP64 widens the `long`/pointer fields to 8 bytes
-/// ([`Self::write_lp64`]), ILP32 keeps them 4 bytes ([`Self::write_ilp32`]).
+/// The six fields `appl_init` reports back through the caller's `AESGLOBAL`
+/// (`aes/gemsuper.c:92-98`), held ABI-independently. [`Self::write`] lays
+/// them into the caller's array at the caller's pointer width: LP64 widens
+/// `ap_private` to 8 bytes ([`Self::write_lp64`]), ILP32 keeps it 4
+/// ([`Self::write_ilp32`]). The four fields EmuTOS's `APPL_INIT` arm does
+/// not name (`ap_ptree`, `ap_rscmem`, `ap_rsclen`, `ap_4resv`) have no
+/// representation here — they are not written, so there is nothing to hold.
 struct AesGlobalVals {
     ap_version: i16,
     ap_count: i16,
@@ -81,13 +97,7 @@ struct AesGlobalVals {
     /// LONG global; a native pointer / packed value on LP64, truncated to
     /// 32 bits for an ILP32 caller.
     ap_private: u64,
-    /// Pointer to the loaded resource's tree table (0 at `appl_init`).
-    ap_ptree: u64,
-    /// Pointer to the loaded resource's memory (0 at `appl_init`).
-    ap_rscmem: u64,
-    /// Loaded-resource length (0 at `appl_init`).
-    ap_rsclen: i16,
-    /// VDI workstation plane count (ILP32 index 10, `a_appl_init.c:40`).
+    /// VDI workstation plane count (index 10, `a_appl_init.c:40`).
     ap_planes: i16,
     /// EmuTOS `ap_3resv = (LONG)&D` (`gemsuper.c:98`, `gemrslib.h:25`): a
     /// pointer to the AES global data area. Written as a **4-byte** field at
@@ -100,10 +110,11 @@ impl AesGlobalVals {
     /// Lay the values into the caller's `global` array at `abi`'s width.
     ///
     /// # Safety
-    /// `global` must address a caller-allocated `AESGLOBAL` — gemlib's
-    /// `short aes_global[AES_GLOBMAX]`, ≥ **32 bytes** (`AES_GLOBMAX = 16`
-    /// shorts) for **either** [`Abi`]; only the long/pointer field widths
-    /// differ (see the module-level ABI note).
+    /// `global` must address a caller-allocated `AESGLOBAL` of at least the
+    /// **30 bytes / 15 WORDs** of EmuTOS's `struct aesglobal`
+    /// (`aes/gemrslib.h:15-27`, `desk/gembind.h:27` `G_SIZE 15`) for
+    /// **either** [`Abi`]; only the `ap_private` field width differs (see
+    /// the module-level ABI note). No byte past index 14 is touched.
     unsafe fn write(&self, global: *mut i16, abi: Abi) {
         match abi {
             // SAFETY: forwarded to this method's width contract.
@@ -113,85 +124,62 @@ impl AesGlobalVals {
         }
     }
 
-    /// gemlib's `short aes_global[16]` (32 bytes) at **LP64** widths: the
-    /// `long`/pointer fields are 8 bytes on 16-bit-word boundaries (indices
-    /// 3/5/7 → bytes 6/10/14, none 8-aligned → unaligned stores). gemlib
-    /// has no `__LP64__` conditional (`gem.h:30`, `..:72`), so these are
-    /// exactly `_AESappglobal`/`_AESrscfile`/`_AESrscmem`. On LP64 they
-    /// overlap (bytes 6–13, 10–17, 14–21); `ap_private` is a ≤32-bit box word
-    /// (its meaningful bits in bytes 6–9) and the zero `ap_ptree` written next
-    /// clears the overlapping high bytes (10–13), so storing them in ascending
-    /// order and writing `ap_planes` (byte 20–21) last leaves the array
-    /// correct. `ap_3resv` is a 4-byte field at byte 22 (indices 11–12);
-    /// `ap_maxchar`/`ap_minchar`/reserved (indices 13–15) are cleared so they
-    /// stay 0 as at EmuTOS `appl_init`. Writes stay within the 32-byte array
-    /// (last byte touched = index 31); no overrun.
+    /// The six `APPL_INIT` fields at **LP64** widths: `ap_private` is 8
+    /// bytes at byte 6 (2-byte aligned → unaligned store), because gemlib's
+    /// `*(long*)&aes_global[3]` (`gem.h:30`) has no `__LP64__` conditional
+    /// and therefore *is* eight bytes for an LP64 caller. `ap_version`/
+    /// `ap_count`/`ap_id`/`ap_planes` are `short`-array indices 0/1/2/10 in
+    /// either ABI; `ap_3resv` is the m68k `LONG`'s 4 bytes at byte 22.
+    ///
+    /// `ap_ptree` (byte 10), `ap_rscmem` (14), `ap_rsclen` (18) and
+    /// `ap_4resv` (26) are **not** written — EmuTOS's `APPL_INIT` arm does
+    /// not name them (`gemsuper.c:92-98`). Last byte touched is 25, so a
+    /// 30-byte `AESGLOBAL` caller is never overrun.
     ///
     /// # Safety
-    /// `global` addresses a writable 32-byte `short[16]` array.
+    /// `global` addresses a writable `AESGLOBAL` of ≥ 30 bytes / 15 WORDs.
     unsafe fn write_lp64(&self, global: *mut i16) {
         let base = global as *mut u8;
-        // SAFETY: every access below is within the 32-byte array (max byte
-        // index 31, written at index 15); `base`/`global` are valid and
-        // writable per the contract. The 8-byte fields at bytes 6/10/14 are
-        // only 2-byte aligned, hence `write_unaligned`. Ascending offset
-        // order makes the `ap_planes` short (byte 20) win its overlap with
-        // the high WORD of the zero `ap_rscmem` (bytes 14–21).
+        // SAFETY: every access below is within the 30-byte AESGLOBAL (max
+        // byte touched = 25); `base`/`global` are valid and writable per the
+        // contract. The 8-byte field at byte 6 is only 2-byte aligned, hence
+        // `write_unaligned`.
         unsafe {
             global.add(0).write(self.ap_version); // ap_version [0]    @0
             global.add(1).write(self.ap_count); //   ap_count   [1]    @2
             global.add(2).write(self.ap_id); //       ap_id      [2]    @4
             (base.add(6) as *mut u64).write_unaligned(self.ap_private); // [3–6]  @6
-            (base.add(10) as *mut u64).write_unaligned(self.ap_ptree); // [5–8]  @10
-            (base.add(14) as *mut u64).write_unaligned(self.ap_rscmem); // [7–10] @14
-            global.add(9).write(self.ap_rsclen); //   ap_rsclen  [9]    @18
             global.add(10).write(self.ap_planes); //  ap_planes  [10]   @20
             // ap_3resv [11–12] @22 — EmuTOS `LONG ap_3resv = &D` (`gemsuper.c:98`).
-            // A 4-byte field (no gemlib reader; see the module ABI note) so the
-            // app-readable ap_maxchar/ap_minchar below stay 0; the 64-bit AES
+            // A 4-byte field (no gemlib reader; see the module ABI note), which
+            // also keeps it clear of ap_4resv at bytes 26–29; the 64-bit AES
             // state pointer is truncated to its low 32 bits.
             (base.add(22) as *mut u32).write_unaligned(self.ap_3resv as u32);
-            // ap_maxchar [13] / ap_minchar [14] (AES 0x0400+, not reported at
-            // version 0x0340) and reserved [15]. Cleared so no stale value
-            // leaks — matching EmuTOS's 0 for these at appl_init.
-            for i in 13..16 {
-                global.add(i).write(0);
-            }
         }
     }
 
-    /// gemlib's packed `short aes_global[16]` (32 bytes). Long/pointer
-    /// fields are 4 bytes on 16-bit-word boundaries (indices 3/5/7 →
-    /// bytes 6/10/14, none 4-aligned → unaligned stores), truncated to
-    /// 32 bits. `ap_3resv` is a 4-byte field at byte 22 (indices 11–12);
-    /// `ap_maxchar`/`ap_minchar`/reserved (indices 13–15) are cleared.
-    /// Writes stay within the 32-byte array.
+    /// The six `APPL_INIT` fields at **ILP32** widths — byte for byte the
+    /// m68k `AESGLOBAL` layout (`aes/gemrslib.h:15-27`): `ap_private` is
+    /// 4 bytes at byte 6, `ap_3resv` 4 bytes at byte 22, the WORD fields at
+    /// indices 0/1/2/10. `ap_ptree`/`ap_rscmem`/`ap_rsclen`/`ap_4resv` are
+    /// **not** written (`gemsuper.c:92-98`). Last byte touched is 25.
     ///
     /// # Safety
-    /// `global` addresses a writable 32-byte `short[16]` array.
+    /// `global` addresses a writable `AESGLOBAL` of ≥ 30 bytes / 15 WORDs.
     unsafe fn write_ilp32(&self, global: *mut i16) {
         let base = global as *mut u8;
-        // SAFETY: every access below is within the 32-byte array (max
-        // byte index 31, written at index 15); `base`/`global` are valid
-        // and writable per the contract. The 4-byte fields at bytes
-        // 6/10/14/22 are unaligned, hence `write_unaligned`.
+        // SAFETY: every access below is within the 30-byte AESGLOBAL (max
+        // byte touched = 25); `base`/`global` are valid and writable per the
+        // contract. The 4-byte fields at bytes 6 and 22 are unaligned, hence
+        // `write_unaligned`.
         unsafe {
             global.add(0).write(self.ap_version); // ap_version [0] @0
             global.add(1).write(self.ap_count); //   ap_count   [1] @2
             global.add(2).write(self.ap_id); //       ap_id      [2] @4
             (base.add(6) as *mut u32).write_unaligned(self.ap_private as u32); // [3–4] @6
-            (base.add(10) as *mut u32).write_unaligned(self.ap_ptree as u32); // [5–6] @10
-            (base.add(14) as *mut u32).write_unaligned(self.ap_rscmem as u32); // [7–8] @14
-            global.add(9).write(self.ap_rsclen); //   ap_rsclen  [9] @18
             global.add(10).write(self.ap_planes); //  ap_planes  [10] @20
             // ap_3resv [11–12] @22 — EmuTOS `LONG ap_3resv = &D` (`gemsuper.c:98`).
             (base.add(22) as *mut u32).write_unaligned(self.ap_3resv as u32);
-            // ap_maxchar [13] / ap_minchar [14] (AES 0x0400+, not reported at
-            // version 0x0340) and reserved [15]. Cleared so no stale value
-            // leaks — matching EmuTOS's 0 for these at appl_init.
-            for i in 13..16 {
-                global.add(i).write(0);
-            }
         }
     }
 }
@@ -245,8 +233,10 @@ fn screen_planes() -> i16 {
 ///   NewTOS's nearest equivalent is the AES process-descriptor table address
 ///   ([`pd::table_addr`]).
 ///
-/// `ap_ptree`/`ap_rscmem`/`ap_rsclen` are **not** set by `appl_init` (EmuTOS
-/// leaves them for `rsrc_load`), so they are 0 here.
+/// `ap_ptree`/`ap_rscmem`/`ap_rsclen` (for `rs_load`/`rs_free`) and
+/// `ap_4resv` are **not** named by EmuTOS's `APPL_INIT` arm, so `appl_init`
+/// leaves those bytes exactly as the caller had them — and writes nothing
+/// past word 14 of the 15-WORD `AESGLOBAL` (D-R1-4; see the module ABI note).
 pub fn appl_init(pb: &Aespb) {
     let pid = current_pid();
     // SAFETY: single trap path.
@@ -261,17 +251,15 @@ pub fn appl_init(pb: &Aespb) {
         ap_count: 1,                                    // gemsuper.c:93
         ap_id: pid,                                     // gemsuper.c:94
         ap_private: super::window::desktop_bg_obspec(), // gemsuper.c:95-96
-        ap_ptree: 0,                                    // set later by rsrc_load
-        ap_rscmem: 0,                                   // set later by rsrc_load
-        ap_rsclen: 0,                                   // set later by rsrc_load
         ap_planes: screen_planes(),                     // gemsuper.c:97
         ap_3resv: pd::table_addr(),                     // gemsuper.c:98
     };
 
-    // Fill the caller's AESGLOBAL — gemlib's 32-byte `short aes_global[16]`
-    // either way — at the caller's pointer width: 8-byte long/pointer
-    // fields for an LP64 caller, 4-byte for an ILP32 one (no byte past
-    // index 31 in either case). See the module-level ABI note.
+    // Fill the caller's AESGLOBAL — the 15-WORD / 30-byte `struct aesglobal`
+    // (`gemrslib.h:15-27`, `gembind.h:27`) — with exactly the six fields
+    // `gemsuper.c:92-98` writes, at the caller's pointer width: an 8-byte
+    // `ap_private` for an LP64 caller, 4-byte for an ILP32 one. No byte past
+    // index 14 in either case. See the module-level ABI note.
     // SAFETY: `global` points at a caller-allocated AESGLOBAL of `pb.abi`'s
     // width (the GEM caller's contract; the AESPB was built for that ABI).
     unsafe { vals.write(pb.global_ptr(), pb.abi) };
