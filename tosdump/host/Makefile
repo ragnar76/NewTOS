@@ -75,6 +75,13 @@ $(BUILD)/test_log.o: $(TESTS)/test_log.c $(TESTS)/tdtest.h $(CORE)/log.h | $(BUI
 $(BUILD)/test_log: $(BUILD)/test_log.o $(BUILD)/log.o $(BUILD)/record.o
 	$(CC) $(CFLAGS) $^ -o $@
 
+$(BUILD)/test_casefile.o: $(TESTS)/test_casefile.c $(TESTS)/tdtest.h \
+                          casefile.h | $(BUILD)
+	$(CC) $(CFLAGS) -c $< -o $@
+$(BUILD)/test_casefile: $(BUILD)/test_casefile.o $(BUILD)/casefile.o \
+                        $(BUILD)/cases.o $(BUILD)/record.o
+	$(CC) $(CFLAGS) $^ -o $@
+
 $(BUILD)/mkrusttests.o: mkrusttests.c casefile.h $(CORE)/cases.h | $(BUILD)
 	$(CC) $(CFLAGS) -c $< -o $@
 $(BUILD)/mkrusttests: $(BUILD)/mkrusttests.o $(BUILD)/cases.o $(BUILD)/record.o
@@ -123,7 +130,7 @@ test:
 
 run-tests: $(BUILD)/test_record $(BUILD)/test_cases $(BUILD)/test_log \
       $(BUILD)/test_runner $(BUILD)/test_cases_aes $(BUILD)/test_runner_aes \
-      $(BUILD)/tosdiff $(BUILD)/mkdump \
+      $(BUILD)/test_casefile $(BUILD)/tosdiff $(BUILD)/mkdump \
       $(BUILD)/emit_be $(BUILD)/emit_le
 	@echo "== record format"
 	@$(BUILD)/test_record
@@ -140,6 +147,8 @@ run-tests: $(BUILD)/test_record $(BUILD)/test_cases $(BUILD)/test_log \
 	@$(BUILD)/test_runner_aes $(BUILD)/stub-aes.bin $(BUILD)/stub-aes.tsv
 	@$(BUILD)/tosdiff --validate $(BUILD)/stub-aes.bin $(BUILD)/stub-aes.tsv \
 	    | sed 's/^/  /'
+	@echo "== case table reader, per area"
+	@$(BUILD)/test_casefile $(BUILD)
 	@echo "== byte order: both target configurations emit identical records"
 	@$(BUILD)/emit_be $(BUILD)/be.bin
 	@$(BUILD)/emit_le $(BUILD)/le.bin

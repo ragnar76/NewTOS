@@ -10,7 +10,7 @@ manager and from `docs/api/aes/`.
 **One table per round.** A case id is the physical line number and the file's
 CRC binds every dump to it, so *any* edit — an appended case, a fixed typo in
 a comment — invalidates the dumps already taken. Round 1 is frozen as
-`aes-r1.tsv` (**95 cases, CRC `BC46EACA`**); round 2 gets its own file.
+`aes-r1.tsv` (**95 cases, CRC `33C13C8F`**); round 2 gets its own file.
 
 ---
 
@@ -54,6 +54,50 @@ reset, designed then.
 A fourth line, which is the spec's rather than the AES's: **round 1 is
 pointer-free** — `addr_in`/`addr_out` stay poisoned, which rules out every
 opcode needing a tree, a string or a resource.
+
+### Rules 1 and 2 are enforced, not just written down
+
+`core/cases.c` refuses to load a table — named reason, non-zero return, the
+offending physical line — if any case *or prelude* names an opcode that stops
+the run finishing, one TOS 3.06's AES does not have, or one that is not an AES
+opcode at all. Opcode 0 is the single deliberate exception. The refusal table
+carries a `file:line` citation per opcode. **There is no override**: taking an
+opcode off the list is a source change with a citation, and that friction is
+the point — a data file must not be able to hang a machine in a way that
+cannot be told apart from a defect in the thing being measured.
+
+Two entries were **dropped** from the working list after reading the source,
+and three were **added** that were not on it:
+
+| Opcode | | Why |
+|---|---|---|
+| `graf_mbox` (72) | dropped | `gr_movebox` is `gr_2box`/`gr_xor` only (`gemgrlib.c:287-307`) — a finite XOR animation, no wait. It stays out of *round 1* because it draws, which is this ledger's business, not the guard's. |
+| `evnt_dclick` (26) | dropped | `ev_dclick` is a pure read (`gemevlib.c:300-309`). Out of round 1 as an operator preference, not as a hazard. |
+| `form_button` (56) | **added** | `gr_watchbox` (`gemfmlib.c:251`) and `ev_button` (`:256`) both wait for the button to come up. |
+| `appl_trecord` (15) | **added** | `while (gl_recd) ev_timer(100L);` (`gemaplib.c:216-217`) — loops until the operator has filled the event buffer. |
+| `appl_read` (11) | **added** | `ap_rdwr(MU_MESAG, …)` → `ev_block` (`gemsuper.c:100-103`, `gemaplib.c:88`); `aqueue` blocks on an empty queue (`gemqueue.c:99`). |
+
+**What the guard does NOT cover, and why.** Three residual hazards, all of
+them outside the three classes as stated, all of them real:
+
+- **`CONF_WITH_PCGEM` opcodes** — `appl_yield` (17), `scrp_clear` (82),
+  `shel_rdef` (126), `shel_wdef` (127) (`gemsuper.c:115`, `:315`, `:398`).
+  They are gated by a flag that is *not* in the `AES_VERSION` ladder, so
+  EmuTOS' source does not say whether TOS 3.06 has them — and if it does not,
+  each is a modal alert. They are not in the guard because the rule is
+  "version-gated above AES 3.20", and nothing in `include/config.h` says these
+  are. **Clearance from a primary source is needed before any of them goes in
+  a table.**
+- **`wind_update` (107)** — `wm_update(BEG_UPDATE)` blocks on
+  `ev_block(MU_MUTEX, &wind_spb)` when the lock is already held
+  (`gemwmlib.c:1786`). Two `BEG_UPDATE` cases in a row would self-deadlock,
+  with no operator remedy at all. It is not in the guard because it does not
+  block on the *operator* and because a balanced BEG/END pair is a legitimate
+  round-2 measurement — but a round-2 table must pair them.
+- **`appl_write` (12)** — `aqueue` blocks the event when the receiver's queue
+  has no room (`gemqueue.c:120-124`). With a lone application and a 16-byte
+  message it completes, so it is not a *reliable* hang; it is out of round 1
+  for its pointer argument anyway.
 
 ### What "differs legitimately" means here
 
@@ -182,6 +226,47 @@ cover (a window's rect comes out of `gl_rfull`, which starts below it).
 
 ---
 
+## Predictions this run will test
+
+Three divergences read out of `tos-api/src/aes/window.rs` while the table was
+being written. They are recorded here rather than acted on: the point of the
+dump is to let a *measurement* decide them, and a reading that goes straight
+to a fix is the failure mode this whole exercise exists to break. **Nothing in
+`tos-api/` was touched.** Each names the case in `aes-r1.tsv` that will
+confirm or refute it.
+
+| # | Prediction | Read from | Cases that decide it |
+|---|---|---|---|
+| P-AES-1 | NewTOS answers `wind_get` on **handle 0** for the four rect fields only. Its `win(handle)` returns `None` for handle 0 (`window.rs:905-911`, `handle < 1`), and the desktop is served by a separate `None if handle == 0` arm whose `match` has arms for `WF_WXYWH`/`WF_CXYWH`/`WF_PXYWH`/`WF_FXYWH` and `_ => ret 0`. EmuTOS answers far more, because there handle 0 *is* a window (`VF_INUSE`, `gemwmlib.c:1290`, `205-213`). | `tos-api/src/aes/window.rs:1633-1643` | the nine `wind_get 0` field cases, especially `WF_HSLIDE`/`WF_VSLIDE`/`WF_HSLSIZ`/`WF_VSLSIZ`/`WF_KIND` — a `0` return against EmuTOS' `1` |
+| P-AES-2 | NewTOS's `wind_calc` uses the **non-3D** border arithmetic while the target profile is TOS4/3D. Its own comment says so. If it holds, `MOVER` alone gets no title band and the `SIZER`-only strip-and-force rule is absent. | `tos-api/src/aes/window.rs:915-917` (`"EmuTOS wm_calc, non-3D path"`) | `wind_calc WC_WORK/WC_BORDER MOVER alone` (D-097), `SIZER alone`, `VGADGETS\|SIZER`, `HGADGETS\|SIZER` |
+| P-AES-3 | NewTOS **clamps** an out-of-range gadget index where EmuTOS does not range-check it at all. | `tos-api/src/aes/window.rs:317-319` (`g.clamp(0, NUM_ELEM-1)`) vs `gemwmlib.c:1568`, `:1573` | **none in round 1** — `WF_COLOR`/`WF_DCOLOR` are excluded precisely because measuring this needs a deliberate in-range `IN_LEN 3` case. Round 2. |
+
+A prediction that the dump refutes is worth as much as one it confirms: it
+would mean the reading was wrong, which is exactly what the measurement is for.
+
+## Toolchain trap found while building this
+
+**`uintptr_t` is four bytes in the NewTOS build, with eight-byte pointers.**
+`build-dumpaes-newtos.sh` (and `build-dumpvdi-newtos.sh`, and every other
+client built the same way) compiles with `-nostdinc -I sdk/libc/mintlib/include`
+ahead of clang's own resource include, so mintlib's `stdint.h` — written for
+the 32-bit m68k — wins. Measured with the exact build flags:
+
+| type | size |
+|---|---|
+| `int16_t` | 2 |
+| `int32_t` | 4 |
+| `size_t` | 8 |
+| `void *` | 8 |
+| `unsigned long` | 8 |
+| **`uintptr_t`** | **4** |
+
+The fixed-width types and `size_t` are fine; `uintptr_t` is not, and it fails
+*silently* — a pointer round-tripped through it loses its top half. This is a
+live trap for anything else compiled through that path, not just the dumper.
+`core/runner_aes.c` uses `unsigned long` plus a compile-time size assertion
+instead, and says why at the point of use.
+
 ## Known limitations of round 1
 
 - **`d0` is expected to be 0 in every record.** `super()` returns a hard `0`
@@ -200,11 +285,9 @@ cover (a window's rect comes out of `gl_rfull`, which starts below it).
   `w = 32767` would overflow a `WORD`; a debug-profile NewTOS would panic on
   it rather than wrap, which would abort the run. The table stops at 32000
   and the overflow question is deferred.
-- **`tosdiff`'s per-case header will name an AES case wrongly.**
-  `host/casefile.c` takes the comment with the five-column VDI rule, so for a
-  seven-column table it prints columns 5-7 rather than the comment. Case
-  *identity* is unaffected — the case count, the line numbers and the CRC all
-  come from the shared line iterator — so `--validate` and the byte comparison
-  are correct; only the label is. `core/cases.c` already has
-  `td_case_line_comment_n` for it; wiring the area through
-  `td_casefile_read` is host-side work for the first AES comparison.
+- **The comparator's per-case header is area-aware, but only because it is
+  told.** `td_casefile_read` takes the area and picks the comment column from
+  it (five for the VDI form, seven for the AES form); `tosdiff` passes the
+  area the *dump header* carries, so a mislabelled dump would mislabel a case.
+  Case *identity* is unaffected either way — the count, the line numbers and
+  the CRC come from the shared line iterator, which is area-agnostic.

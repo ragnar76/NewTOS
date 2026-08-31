@@ -92,6 +92,40 @@ grep_out "refusal mentions the CRC" "$TMP/ref1.out" "CRC"
 check "differing area is refused" 2 $?
 grep_out "refusal mentions the area" "$TMP/ref2.out" "area"
 
+# --- an AES dump: the comment column is column SEVEN, not column five ----
+# The stub AES dump and the table it came from are written by test_runner_aes
+# earlier in the suite.  A single patched output word is all that is needed to
+# make tosdiff print a case header, which is the thing under test here: with
+# the five column VDI rule the "comment" would start at the n_addrout column
+# and swallow the int_in values.
+AESBIN="$BUILD/stub-aes.bin"
+AESTSV="$BUILD/stub-aes.tsv"
+if [ -f "$AESBIN" ] && [ -f "$AESTSV" ]; then
+	cp "$AESBIN" "$TMP/aes-b.bin"
+	# record 0, int_out[3]: 32 byte header + offset 76 + 3*2 = 114
+	printf '\377\377' | dd of="$TMP/aes-b.bin" bs=1 seek=114 count=2 \
+	    conv=notrunc >/dev/null 2>&1
+
+	"$TOSDIFF" "$AESTSV" "$AESBIN" "$TMP/aes-b.bin" >"$TMP/aes.out" 2>&1
+	check "an AES difference is reported" 1 $?
+	grep_out "the AES field is named"  "$TMP/aes.out" "int_out\[3\]"
+	grep_out "the AES case is named by id" "$TMP/aes.out" "case 2"
+	grep_out "the AES comment is the comment" "$TMP/aes.out" \
+	    "wind_calc WC_WORK"
+	if grep -q "0x0FEF" "$TMP/aes.out"; then
+		echo "  FAIL the AES case header holds the int_in column, so the"
+		echo "       comment was taken with the five column VDI rule"
+		fails=$((fails + 1))
+	fi
+
+	"$TOSDIFF" --validate "$AESBIN" "$AESTSV" >"$TMP/aesval.out" 2>&1
+	check "validate accepts the AES dump against its table" 0 $?
+	grep_out "validate names the AES area" "$TMP/aesval.out" "AES"
+else
+	echo "  FAIL stub AES dump missing: $AESBIN / $AESTSV"
+	fails=$((fails + 1))
+fi
+
 if [ "$fails" -eq 0 ]; then
 	echo "  ok"
 	exit 0

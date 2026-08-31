@@ -250,6 +250,176 @@ static void test_crc_is_over_the_raw_bytes(void)
 	TD_CHECK(t.crc != u.crc);
 }
 
+
+/* ------------------------------------------------------------------ */
+/* The refusal guard                                                   */
+/* ------------------------------------------------------------------ */
+/*
+ * A typo in a data file must not hang the user's TT. The loader refuses the
+ * whole table -- named reason, non-zero return, the offending line -- if any
+ * case or prelude names an opcode that can stop the run finishing, one that
+ * TOS 3.06's AES does not have, or one that is not an AES opcode at all.
+ * There is no override: taking an opcode off the list is a source change with
+ * a citation, and that friction is the point.
+ */
+
+static void refused(const char *line, const char *what)
+{
+	struct td_case_error err;
+	char text[256];
+	int rc;
+
+	snprintf(text, sizeof text, "%s\n", line);
+	rc = parse(&t, text, &err);
+	if (rc != TD_CASE_ERR_UNSAFE_OPCODE) {
+		printf("  FAIL %s: expected refusal, got %d (%s)\n", what, rc,
+		       td_case_error_text(rc));
+		td_test_failures++;
+		return;
+	}
+	TD_CHECK_EQ(err.line, 1);
+	if (err.what == NULL || err.what[0] == '\0') {
+		printf("  FAIL %s: refusal carries no reason\n", what);
+		td_test_failures++;
+	}
+}
+
+static void accepted(const char *line, const char *what)
+{
+	struct td_case_error err;
+	char text[256];
+	int rc;
+
+	snprintf(text, sizeof text, "%s\n", line);
+	rc = parse(&t, text, &err);
+	if (rc != 0) {
+		printf("  FAIL %s: expected acceptance, got %d (%s)\n", what, rc,
+		       td_case_error_text(rc));
+		td_test_failures++;
+	}
+}
+
+static void test_guard_refuses_run_fatal_opcodes(void)
+{
+	printf("aes cases: opcodes that stop the run finishing are refused\n");
+
+	/* blocks on the operator */
+	refused("11\t2\t1\t3\t0\t0,16\tappl_read",      "appl_read (11)");
+	refused("15\t2\t1\t3\t0\t8,0\tappl_trecord",    "appl_trecord (15)");
+	refused("20\t0\t1\t0\t0\t-\tevnt_keybd",        "evnt_keybd (20)");
+	refused("21\t3\t5\t0\t0\t1,1,0\tevnt_button",   "evnt_button (21)");
+	refused("22\t5\t5\t0\t0\t0,0,0,1,1\tevnt_mouse","evnt_mouse (22)");
+	refused("23\t0\t1\t1\t0\t-\tevnt_mesag",        "evnt_mesag (23)");
+	refused("25\t16\t7\t3\t0\t1\tevnt_multi",       "evnt_multi (25)");
+	refused("50\t1\t1\t1\t0\t0\tform_do",           "form_do (50)");
+	refused("52\t1\t1\t1\t0\t1\tform_alert",        "form_alert (52)");
+	refused("53\t1\t1\t0\t0\t2\tform_error",        "form_error (53)");
+	refused("56\t3\t2\t1\t0\t1,1,1\tform_button",   "form_button (56)");
+	refused("70\t4\t3\t0\t0\t0,0,1,1\tgraf_rubbox", "graf_rubbox (70)");
+	refused("71\t8\t3\t0\t0\t1,1,0,0,0,0,1,1\tgraf_dragbox",
+	        "graf_dragbox (71)");
+	refused("75\t3\t1\t1\t0\t1,0,1\tgraf_watchbox", "graf_watchbox (75)");
+	refused("76\t4\t1\t1\t0\t1,2,1,0\tgraf_slidebox","graf_slidebox (76)");
+	refused("90\t0\t2\t2\t0\t-\tfsel_input",        "fsel_input (90)");
+	refused("91\t0\t2\t3\t0\t-\tfsel_exinput",      "fsel_exinput (91)");
+
+	/* ends or replaces the application: never returns to the run */
+	refused("19\t0\t1\t0\t0\t-\tappl_exit",         "appl_exit (19)");
+	refused("121\t3\t1\t2\t0\t0,0,0\tshel_write",   "shel_write (121)");
+}
+
+static void test_guard_refuses_opcodes_tos306_does_not_have(void)
+{
+	printf("aes cases: opcodes above AES 3.20 are refused -- the modal alert "
+	       "would hang the TT\n");
+
+	refused("36\t2\t1\t2\t0\t0,0\tmenu_popup",     "menu_popup (36)");
+	refused("37\t2\t1\t2\t0\t0,0\tmenu_attach",    "menu_attach (37)");
+	refused("38\t3\t1\t1\t0\t0,0,0\tmenu_istart",  "menu_istart (38)");
+	refused("39\t1\t1\t1\t0\t0\tmenu_settings",    "menu_settings (39)");
+	refused("48\t4\t3\t0\t0\t0,6,0,0\tobjc_sysvar","objc_sysvar (48)");
+}
+
+static void test_guard_refuses_things_that_are_not_opcodes(void)
+{
+	printf("aes cases: an opcode with no arm in crysbind is refused\n");
+
+	refused("16\t0\t1\t0\t0\t-\tgap in the appl range",  "16");
+	refused("18\t0\t1\t0\t0\t-\tappl_search, absent",    "18");
+	refused("27\t0\t1\t0\t0\t-\tgap after evnt_dclick",  "27");
+	refused("49\t0\t1\t0\t0\t-\tgap after objc_sysvar",  "49");
+	refused("57\t0\t1\t0\t0\t-\tgap after form_button",  "57");
+	refused("83\t0\t1\t0\t0\t-\tgap after scrp_clear",   "83");
+	refused("99\t0\t1\t0\t0\t-\tgap before wind_create", "99");
+	refused("115\t0\t1\t0\t0\t-\tgap after rsrc_obfix",  "115");
+	refused("128\t0\t1\t0\t0\t-\tpast the last opcode",  "128");
+	refused("130\t0\t1\t0\t0\t-\tappl_getinfo, absent",  "130");
+	refused("200\t0\t1\t0\t0\t-\tthe selector, not an opcode", "200");
+
+	/* the single deliberate exception */
+	accepted("0\t0\t1\t0\t0\t-\topcode 0 is the one safe unknown opcode",
+	         "opcode 0");
+}
+
+static void test_guard_lets_the_safe_ones_through(void)
+{
+	printf("aes cases: the calls that do not block are still accepted\n");
+
+	accepted("24\t2\t1\t0\t0\t0,0\tevnt_timer",   "evnt_timer (24)");
+	/* evnt_dclick and graf_mbox are NOT in the guard: ev_dclick is a pure
+	 * read (gemevlib.c:300-309) and gr_movebox is a finite XOR animation
+	 * (gemgrlib.c:287-307).  Both are out of round 1 for other reasons,
+	 * which is the ledger's business and not the guard's. */
+	accepted("26\t2\t1\t0\t0\t0,0\tevnt_dclick",  "evnt_dclick (26)");
+	accepted("72\t6\t1\t0\t0\t1,1,0,0,1,1\tgraf_mbox", "graf_mbox (72)");
+	accepted("73\t8\t1\t0\t0\t0,0,1,1,0,0,2,2\tgraf_growbox",
+	         "graf_growbox (73)");
+	accepted("51\t5\t1\t0\t0\t0,0,0,0,0\tform_dial", "form_dial (51)");
+	accepted("55\t4\t3\t1\t0\t0,0,0,0\tform_keybd", "form_keybd (55)");
+	accepted("10\t0\t1\t0\t0\t-\tappl_init",      "appl_init (10)");
+	accepted("30\t1\t1\t1\t0\t1\tmenu_bar",       "menu_bar (30)");
+	accepted("107\t1\t1\t0\t0\t1\twind_update",   "wind_update (107)");
+	accepted("112\t2\t1\t0\t1\t0,0\trsrc_gaddr",  "rsrc_gaddr (112)");
+	accepted("127\t0\t1\t2\t0\t-\tshel_wdef",     "shel_wdef (127)");
+}
+
+static void test_guard_covers_preludes_too(void)
+{
+	struct td_case_error err;
+
+	printf("aes cases: a prelude is guarded exactly like a case\n");
+
+	TD_CHECK_EQ(parse(&t,
+		"+50\t1\t1\t1\t0\t0\tform_do as a prelude\n"
+		"108\t6\t5\t0\t0\t1,0,0,0,0,0\tthe case\n", &err),
+		TD_CASE_ERR_UNSAFE_OPCODE);
+	TD_CHECK_EQ(err.line, 1);
+
+	TD_CHECK_EQ(parse(&t,
+		"+48\t4\t3\t0\t0\t0,6,0,0\tobjc_sysvar as a prelude\n"
+		"108\t6\t5\t0\t0\t1,0,0,0,0,0\tthe case\n", &err),
+		TD_CASE_ERR_UNSAFE_OPCODE);
+	TD_CHECK_EQ(err.line, 1);
+}
+
+static void test_the_shipped_table_still_loads(void)
+{
+	struct td_case_error err;
+	int rc;
+
+	printf("aes cases: the shipped round 1 table passes the guard\n");
+
+	memset(&err, 0, sizeof err);
+	rc = td_aes_cases_load(&t, "../cases/aes-r1.tsv", &err);
+	if (rc != 0) {
+		printf("  FAIL cases/aes-r1.tsv line %u: %s (%s)\n", err.line,
+		       err.what ? err.what : "", td_case_error_text(rc));
+		td_test_failures++;
+		return;
+	}
+	TD_CHECK_EQ(t.count, 95);
+}
+
 int main(void)
 {
 	test_basic();
@@ -261,5 +431,11 @@ int main(void)
 	test_comment_column();
 	test_preludes();
 	test_crc_is_over_the_raw_bytes();
+	test_guard_refuses_run_fatal_opcodes();
+	test_guard_refuses_opcodes_tos306_does_not_have();
+	test_guard_refuses_things_that_are_not_opcodes();
+	test_guard_lets_the_safe_ones_through();
+	test_guard_covers_preludes_too();
+	test_the_shipped_table_still_loads();
 	return TD_TEST_RESULT();
 }

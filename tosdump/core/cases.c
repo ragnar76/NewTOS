@@ -59,8 +59,6 @@ int td_line_iter_next(struct td_line_iter *it, const char **start,
 /* Column and value parsing                                            */
 /* ------------------------------------------------------------------ */
 
-#define TD_CASE_COLUMNS 5
-
 /*
  * Splits into at most `ncols` columns; the last one keeps its tabs.  The
  * count is per area -- five for the VDI form, seven for the AES form -- and
@@ -389,6 +387,183 @@ int td_cases_parse(struct td_case_table *t, const char *buf, size_t len,
  * case lists is what lets a case measure that rule.
  */
 
+/*
+ * ------------------------------------------------------------------
+ * The refusal guard
+ * ------------------------------------------------------------------
+ *
+ * A case table is data.  A typo in it must not hang the machine it is
+ * carried to, and it must not be mistakable for a real defect once it does.
+ * So the loader refuses the whole table -- named reason, non-zero return,
+ * the offending physical line -- when a case or a prelude names an opcode
+ * from one of three classes:
+ *
+ *   1. it stops the run finishing.  Most of these wait on the operator; two
+ *      (appl_exit, shel_write) end or replace the application instead, which
+ *      is the same outcome by a different route.
+ *   2. TOS 3.06's AES does not have it.  EmuTOS' own version ladder records
+ *      TOS 3.06 as AES 3.20 (include/config.h:1345-1354), and an opcode
+ *      compiled out at that level reaches crysbind's default arm, which pops
+ *      fm_show(ALNOFUNC) -- a modal alert waiting for a click
+ *      (gemsuper.c:411-417).
+ *   3. it is not an AES opcode at all.  Same default arm, same alert.
+ *      Opcode 0 is the single exception: gemsuper.c:414 skips the alert for
+ *      it explicitly ("Ignore zero since some PRGs are this call").
+ *
+ * There is no override mechanism, deliberately.  Taking an opcode off this
+ * list is a source change with a citation, and that friction is the point:
+ * the alternative is a data file hanging a machine with no way to tell that
+ * apart from a defect in the thing being measured.
+ *
+ * The table below is also the complete list of opcodes that HAVE an arm in
+ * crysbind (aes/gemsuper.c:87-409, 79 of them); `refusal` is NULL for the
+ * ones a table may issue and the reason otherwise.  Anything absent from it
+ * is class 3.
+ */
+struct td_aes_opcode {
+	int16_t     opcode;
+	const char *refusal;      /* NULL = may be issued */
+};
+
+/* class 1, sub-reason a: waits on the operator */
+#define BLOCKS "blocks on the operator: "
+/* class 1, sub-reason b: the run never gets back here */
+#define FATAL  "never returns to the run: "
+/* class 2 */
+#define GATED  "not in TOS 3.06's AES (3.20, config.h:1345-1354); the "        \
+               "dispatcher's default arm would pop a modal alert: "
+
+static const struct td_aes_opcode aes_opcodes[] = {
+	{  10, NULL },                                   /* appl_init      */
+	{  11, BLOCKS "appl_read waits on an empty message queue "
+	              "(gemsuper.c:100-103, gemaplib.c:88, gemqueue.c:99)" },
+	{  12, NULL },                                   /* appl_write     */
+	{  13, NULL },                                   /* appl_find      */
+	{  14, NULL },                                   /* appl_tplay     */
+	{  15, BLOCKS "appl_trecord loops until the operator has filled the "
+	              "event buffer (gemaplib.c:216-217)" },
+	{  17, NULL },                                   /* appl_yield     */
+	{  19, FATAL  "appl_exit ends the application (gemsuper.c:120-123)" },
+	{  20, BLOCKS "evnt_keybd waits for a key (gemsuper.c:127)" },
+	{  21, BLOCKS "evnt_button waits for a mouse button (gemevlib.c:90)" },
+	{  22, BLOCKS "evnt_mouse waits for the mouse to enter or leave a "
+	              "rectangle (gemevlib.c:123-125)" },
+	{  23, BLOCKS "evnt_mesag waits for a message (gemevlib.c:100-116, "
+	              "gemaplib.c:88)" },
+	{  24, NULL },                                   /* evnt_timer     */
+	{  25, BLOCKS "evnt_multi waits unless a finite timer is among its "
+	              "flags, which the opcode alone cannot guarantee "
+	              "(gemevlib.c:152-155)" },
+	{  26, NULL },                                   /* evnt_dclick    */
+	{  30, NULL },                                   /* menu_bar       */
+	{  31, NULL },                                   /* menu_icheck    */
+	{  32, NULL },                                   /* menu_ienable   */
+	{  33, NULL },                                   /* menu_tnormal   */
+	{  34, NULL },                                   /* menu_text      */
+	{  35, NULL },                                   /* menu_register  */
+	{  36, GATED  "menu_popup is #if CONF_WITH_MENU_EXTENSION, which "
+	              "AES_VERSION needs for 0x0330 (gemsuper.c:188-191)" },
+	{  37, GATED  "menu_attach is #if CONF_WITH_MENU_EXTENSION "
+	              "(gemsuper.c:192-194)" },
+	{  38, GATED  "menu_istart is #if CONF_WITH_MENU_EXTENSION "
+	              "(gemsuper.c:195-197)" },
+	{  39, GATED  "menu_settings is #if CONF_WITH_MENU_EXTENSION "
+	              "(gemsuper.c:198-200)" },
+	{  40, NULL },                                   /* objc_add       */
+	{  41, NULL },                                   /* objc_delete    */
+	{  42, NULL },                                   /* objc_draw      */
+	{  43, NULL },                                   /* objc_find      */
+	{  44, NULL },                                   /* objc_offset    */
+	{  45, NULL },                                   /* objc_order     */
+	{  46, NULL },                                   /* objc_edit      */
+	{  47, NULL },                                   /* objc_change    */
+	{  48, GATED  "objc_sysvar is #if CONF_WITH_3D_OBJECTS, which "
+	              "AES_VERSION needs for 0x0340 (gemsuper.c:232-236)" },
+	{  50, BLOCKS "form_do runs a modal ev_multi(MU_KEYBD|MU_BUTTON) loop "
+	              "with a zero timer (gemfmlib.c:312)" },
+	{  51, NULL },                                   /* form_dial      */
+	{  52, BLOCKS "form_alert ends in fm_do (gemfmalt.c:383)" },
+	{  53, BLOCKS "form_error goes fm_show -> fm_alert -> fm_do "
+	              "(gemfmlib.c:436, :400)" },
+	{  54, NULL },                                   /* form_center    */
+	{  55, NULL },                                   /* form_keybd     */
+	{  56, BLOCKS "form_button waits for the button to come up, through "
+	              "gr_watchbox or ev_button (gemfmlib.c:251, :256)" },
+	{  70, BLOCKS "graf_rubbox tracks the mouse until the button comes up "
+	              "(gemgrlib.c:211-215)" },
+	{  71, BLOCKS "graf_dragbox tracks the mouse until the button comes up "
+	              "(gemgrlib.c:257-263)" },
+	{  72, NULL },                                   /* graf_mbox      */
+	{  73, NULL },                                   /* graf_growbox   */
+	{  74, NULL },                                   /* graf_shrinkbox */
+	{  75, BLOCKS "graf_watchbox loops on gr_stilldn until the button "
+	              "comes up (gemgrlib.c:348-352)" },
+	{  76, BLOCKS "graf_slidebox is gr_dragbox (gemgrlib.c:388)" },
+	{  77, NULL },                                   /* graf_handle    */
+	{  78, NULL },                                   /* graf_mouse     */
+	{  79, NULL },                                   /* graf_mkstate   */
+	{  80, NULL },                                   /* scrp_read      */
+	{  81, NULL },                                   /* scrp_write     */
+	{  82, NULL },                                   /* scrp_clear     */
+	{  90, BLOCKS "fsel_input runs the modal file selector, fs_input -> "
+	              "fm_do (gemfslib.c:718)" },
+	{  91, BLOCKS "fsel_exinput runs the modal file selector, fs_input -> "
+	              "fm_do (gemfslib.c:718)" },
+	{ 100, NULL },                                   /* wind_create    */
+	{ 101, NULL },                                   /* wind_open      */
+	{ 102, NULL },                                   /* wind_close     */
+	{ 103, NULL },                                   /* wind_delete    */
+	{ 104, NULL },                                   /* wind_get       */
+	{ 105, NULL },                                   /* wind_set       */
+	{ 106, NULL },                                   /* wind_find      */
+	{ 107, NULL },                                   /* wind_update    */
+	{ 108, NULL },                                   /* wind_calc      */
+	{ 109, NULL },                                   /* wind_new       */
+	{ 110, NULL },                                   /* rsrc_load      */
+	{ 111, NULL },                                   /* rsrc_free      */
+	{ 112, NULL },                                   /* rsrc_gaddr     */
+	{ 113, NULL },                                   /* rsrc_saddr     */
+	{ 114, NULL },                                   /* rsrc_obfix     */
+	{ 120, NULL },                                   /* shel_read      */
+	{ 121, FATAL  "shel_write sets sh_doexec / sh_nextapp, so the AES "
+	              "launches something else instead of finishing the run "
+	              "(gemshlib.c:157)" },
+	{ 122, NULL },                                   /* shel_get       */
+	{ 123, NULL },                                   /* shel_put       */
+	{ 124, NULL },                                   /* shel_find      */
+	{ 125, NULL },                                   /* shel_envrn     */
+	{ 126, NULL },                                   /* shel_rdef      */
+	{ 127, NULL }                                    /* shel_wdef      */
+};
+
+#undef BLOCKS
+#undef FATAL
+#undef GATED
+
+#define TD_AES_OPCODE_COUNT \
+	((int)(sizeof aes_opcodes / sizeof aes_opcodes[0]))
+
+/*
+ * NULL if this opcode may be issued, otherwise the reason it may not.
+ * Opcode 0 is allowed by name: it is the one unknown opcode the dispatcher
+ * handles silently (gemsuper.c:414).
+ */
+static const char *aes_opcode_refusal(int16_t opcode)
+{
+	int i;
+
+	if (opcode == 0)
+		return NULL;
+
+	for (i = 0; i < TD_AES_OPCODE_COUNT; i++)
+		if (aes_opcodes[i].opcode == opcode)
+			return aes_opcodes[i].refusal;
+
+	return "not an AES opcode: crysbind has no arm for it, so it would "
+	       "reach the default arm and pop a modal alert "
+	       "(gemsuper.c:406-417)";
+}
+
 /* One AES line's payload, shared by the case and the prelude branches so
  * the two cannot drift apart. */
 struct td_aes_line {
@@ -452,6 +627,13 @@ static int parse_aes_columns(const char *opcode_col, size_t opcode_len,
 		return TD_CASE_ERR_RANGE;
 	}
 	out->opcode = v;
+
+	/* The guard, before anything else about the line matters: an opcode
+	 * that would hang the machine is refused whether it is a case or a
+	 * prelude, and whether or not the rest of the line parses. */
+	*what = aes_opcode_refusal(out->opcode);
+	if (*what != NULL)
+		return TD_CASE_ERR_UNSAFE_OPCODE;
 
 	/* the values first: the n_intin column's "-" is derived from them */
 	rc = parse_list(col[5], col_len[5], out->intin, TD_AES_INTIN_N,
@@ -744,6 +926,8 @@ const char *td_case_error_text(int rc)
 	case TD_CASE_ERR_TOO_MANY_PRE:   return "more preludes than TD_MAX_PRELUDES";
 	case TD_CASE_ERR_OUT_LEN:        return "n_intout is larger than the "
 	                                        "intout array";
+	case TD_CASE_ERR_UNSAFE_OPCODE:  return "the table names an opcode that "
+	                                        "may not be issued";
 	default:                         return "unknown error";
 	}
 }

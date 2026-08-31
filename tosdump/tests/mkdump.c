@@ -53,7 +53,10 @@ int main(int argc, char **argv)
 		return 2;
 	}
 
-	if (td_casefile_read(&cf, argv[2], &why) != 0) {
+	/* mkdump only builds VDI records, so the table it is handed is a VDI
+	 * table -- the --area switch forges the HEADER's area code, which is
+	 * what the comparator's refusal tests need, not the table's form. */
+	if (td_casefile_read(&cf, argv[2], TD_AREA_VDI, &why) != 0) {
 		fprintf(stderr, "mkdump: %s: %s\n", argv[2], why ? why : "?");
 		return 1;
 	}

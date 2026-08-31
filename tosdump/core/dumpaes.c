@@ -27,8 +27,11 @@
  * box and waits for a click (fm_show(ALNOFUNC), gemsuper.c:411-417) -- on
  * the TT and on the Pi alike that is a hung run and a power cycle.  Opcode 0
  * is the only unknown opcode that is safe to issue (gemsuper.c:414 skips the
- * alert for it), and the case table may hold no blocking call at all.  See
- * cases/COVERAGE-AES.md for the list and the reasons.
+ * alert for it), and the case table may hold no blocking call at all.  That
+ * is enforced rather than merely documented: td_aes_cases_load refuses a
+ * table naming such an opcode, so the program exits before it ever opens the
+ * workstation.  See the refusal guard in core/cases.c for the per-opcode
+ * citations and cases/COVERAGE-AES.md for what it does not cover.
  */
 #include <stdio.h>
 #include <string.h>

@@ -23,6 +23,13 @@
 # fsel_exinput, graf_rubbox, graf_dragbox, graf_mbox, graf_watchbox,
 # graf_slidebox, shel_write, appl_exit.
 #
+# That rule is ENFORCED, not just written down: core/cases.c refuses to load a
+# table that names a run-fatal opcode, an opcode TOS 3.06's AES does not have,
+# or an opcode that is not an AES opcode at all -- with the reason and the
+# offending line number. There is no override. See the refusal guard there for
+# the per-opcode citations, and cases/COVERAGE-AES.md for what the guard does
+# NOT cover.
+#
 # Two more rules that keep a case honest, both with the same root cause:
 # xif's int_in and int_out are UNINITIALISED stack buffers (gemsuper.c:430-432).
 #   - Never declare more output words than the call actually writes: the

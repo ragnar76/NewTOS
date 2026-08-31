@@ -166,7 +166,7 @@ static int cmd_validate(const char *dump_path, const char *cases_path)
 	}
 
 	if (cases_path) {
-		if (td_casefile_read(&cf, cases_path, &why) != 0) {
+		if (td_casefile_read(&cf, cases_path, d.h.area, &why) != 0) {
 			fprintf(stderr, "tosdiff: %s: %s\n", cases_path,
 			        why ? why : "cannot read");
 			dump_free(&d);
@@ -255,15 +255,20 @@ static int cmd_compare(const char *cases_path, const char *a_path,
 	uint16_t rec, differing = 0;
 	int label_w;
 
-	if (td_casefile_read(&cf, cases_path, &why) != 0) {
-		fprintf(stderr, "tosdiff: %s: %s\n", cases_path,
-		        why ? why : "cannot read");
-		return 2;
-	}
+	/* The dumps come first: the case table's comment column is per area
+	 * (casefile.h), and the area is the dump's to state, not the caller's
+	 * to guess from a file name. */
 	if (dump_load(&a, a_path) != 0)
 		return 2;
 	if (dump_load(&b, b_path) != 0) {
 		dump_free(&a);
+		return 2;
+	}
+	if (td_casefile_read(&cf, cases_path, a.h.area, &why) != 0) {
+		fprintf(stderr, "tosdiff: %s: %s\n", cases_path,
+		        why ? why : "cannot read");
+		dump_free(&a);
+		dump_free(&b);
 		return 2;
 	}
 

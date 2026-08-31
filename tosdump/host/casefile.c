@@ -9,7 +9,9 @@
  *
  * What a line is, and what the comment column is, come from core/cases.c --
  * one rule in one place, so the reader and the runner cannot disagree about
- * which physical line a case id refers to.
+ * which physical line a case id refers to.  The comment's column NUMBER is
+ * per area, which is why the caller has to say which area it is reading; see
+ * casefile.h.
  *
  * The CRC is over the raw file bytes.  That is the strictest identity
  * available: two dumps may only be compared if they came from the same table,
@@ -24,8 +26,20 @@
 #include "casefile.h"
 #include "cases.h"
 
-int td_casefile_read(struct td_casefile *cf, const char *path, const char **why)
+/*
+ * How many tab separated columns a case line of this area has.  Five for the
+ * VDI form and for the BIOS / XBIOS / GEMDOS form (opcode, args, retclass,
+ * capture, comment), seven for the AES form (spec section 6).
+ */
+static int columns_for_area(uint16_t area)
 {
+	return (area == TD_AREA_AES) ? TD_AES_CASE_COLUMNS : TD_CASE_COLUMNS;
+}
+
+int td_casefile_read(struct td_casefile *cf, const char *path, uint16_t area,
+                     const char **why)
+{
+	const int ncols = columns_for_area(area);
 	struct td_line_iter it;
 	const char *line;
 	size_t line_len;
@@ -78,8 +92,8 @@ int td_casefile_read(struct td_casefile *cf, const char *path, const char **why)
 			return -2;
 		}
 		cf->line[cf->count] = line_no;
-		td_case_line_comment(line, line_len, cf->comment[cf->count],
-		                     TD_COMMENT_LEN);
+		td_case_line_comment_n(line, line_len, ncols,
+		                       cf->comment[cf->count], TD_COMMENT_LEN);
 		cf->count++;
 	}
 

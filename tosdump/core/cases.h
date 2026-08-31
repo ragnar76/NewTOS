@@ -31,6 +31,14 @@
 
 #include "record.h"
 
+/*
+ * Tab separated columns of one case line, per table form.  The comment is
+ * everything from the last column on, tabs included, so the count is what
+ * tells a reader where the comment starts -- and it cannot be derived from
+ * a line, because a comment may itself hold tabs.
+ */
+#define TD_CASE_COLUMNS      5   /* VDI form, and the BIOS/GEMDOS form   */
+
 /* Values a prelude may carry.  Small on purpose: a prelude sets one piece of
  * state, and the target holds the whole table in static memory. */
 #define TD_PRELUDE_VALUES  16
@@ -76,6 +84,7 @@ struct td_case_table {
 #define TD_CASE_ERR_DANGLING        (-8)   /* prelude with no case after   */
 #define TD_CASE_ERR_TOO_MANY_PRE    (-9)   /* more than TD_MAX_PRELUDES    */
 #define TD_CASE_ERR_OUT_LEN        (-10)  /* n_intout > the intout array  */
+#define TD_CASE_ERR_UNSAFE_OPCODE  (-11)  /* opcode may not be issued     */
 
 struct td_case_error {
 	uint16_t    line;                  /* physical line, 0 if not a line  */
