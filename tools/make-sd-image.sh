@@ -134,6 +134,14 @@ if [ -f "$TOSDUMP_DIR/build/DUMPVDI.NAP" ] && [ -f "$TOSDUMP_DIR/cases/vdi-r2.ts
   # the identity the dump carries, so the CRC must stay A0706A6D.
   cp "$TOSDUMP_DIR/cases/vdi-r2.tsv" "$V/VDI.TSV"
   echo "  + C:\\DUMPVDI.NAP + C:\\VDI.TSV (VDI reference dumper, round 2)"
+fi
+# VDIDRAW draws every output primitive into a numbered, captioned cell. The
+# dumper cannot see those: the drawing opcodes leave the parameter block
+# empty, so a matching dump proves the block survived, not that a pixel
+# landed where it should. This is the visual half, and it needs no case table.
+if [ -f "$TOSDUMP_DIR/build/VDIDRAW.NAP" ]; then
+  cp "$TOSDUMP_DIR/build/VDIDRAW.NAP" "$V/VDIDRAW.NAP"
+  echo "  + C:\\VDIDRAW.NAP (visual VDI primitive sheet)"
 else
   echo "  ! tosdump not built (run 'make -C tosdump all'); skipping DUMPVDI"
 fi
