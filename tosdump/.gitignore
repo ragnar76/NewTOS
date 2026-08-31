@@ -5,3 +5,7 @@ build/
 # measurement the whole project compares against and must be version-tracked.
 *.BIN
 !reference/*.BIN
+
+# Staging for a hardware run: copies of build output plus a README, all
+# derived. The measurements they produce live in reference/ and are tracked.
+deploy-pi4/
