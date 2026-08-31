@@ -6,14 +6,19 @@
  * values each case produces, and the CRC the dump header will carry -- before
  * carrying it to a machine that has no debugger.
  *
- * usage: casecheck CASES.TSV
+ * usage: casecheck [--aes] CASES.TSV
+ *
+ * --aes reads the seven column AES form instead of the five column VDI one.
+ * The two forms cannot be told apart by looking at a line -- a VDI comment may
+ * hold tabs -- so which one it is has to be said.
  */
 #include <stdio.h>
 #include <string.h>
 
 #include "cases.h"
 
-static struct td_case_table table;
+static struct td_case_table     table;
+static struct td_aes_case_table aes_table;
 
 static void print_list(const char *name, const int16_t *v, uint16_t n)
 {
@@ -29,29 +34,30 @@ static void print_list(const char *name, const int16_t *v, uint16_t n)
 	printf("\n");
 }
 
-int main(int argc, char **argv)
+static void print_error(const char *path, int rc,
+                        const struct td_case_error *err)
+{
+	if (err->line)
+		fprintf(stderr, "%s line %u: %s (%s)\n", path, err->line,
+		        err->what ? err->what : "", td_case_error_text(rc));
+	else
+		fprintf(stderr, "%s: %s\n", path, td_case_error_text(rc));
+}
+
+static int check_vdi(const char *path)
 {
 	struct td_case_error err;
 	uint16_t i;
 	int rc;
 
-	if (argc != 2) {
-		fprintf(stderr, "usage: casecheck CASES.TSV\n");
-		return 2;
-	}
-
 	memset(&err, 0, sizeof err);
-	rc = td_cases_load(&table, argv[1], &err);
+	rc = td_cases_load(&table, path, &err);
 	if (rc != 0) {
-		if (err.line)
-			fprintf(stderr, "%s line %u: %s (%s)\n", argv[1], err.line,
-			        err.what ? err.what : "", td_case_error_text(rc));
-		else
-			fprintf(stderr, "%s: %s\n", argv[1], td_case_error_text(rc));
+		print_error(path, rc, &err);
 		return 1;
 	}
 
-	printf("%s: %u cases, %u preludes, CRC %08X\n", argv[1], table.count,
+	printf("%s: %u cases, %u preludes, CRC %08X\n", path, table.count,
 	       table.prelude_count, table.crc);
 	for (i = 0; i < table.count; i++) {
 		const struct td_case *c = &table.cases[i];
@@ -78,4 +84,51 @@ int main(int argc, char **argv)
 		print_list("ptsin", c->ptsin, c->n_ptsin);
 	}
 	return 0;
+}
+
+static int check_aes(const char *path)
+{
+	struct td_case_error err;
+	uint16_t i;
+	int rc;
+
+	memset(&err, 0, sizeof err);
+	rc = td_aes_cases_load(&aes_table, path, &err);
+	if (rc != 0) {
+		print_error(path, rc, &err);
+		return 1;
+	}
+
+	printf("%s: %u cases, %u preludes, CRC %08X\n", path, aes_table.count,
+	       aes_table.prelude_count, aes_table.crc);
+	for (i = 0; i < aes_table.count; i++) {
+		const struct td_aes_case *c = &aes_table.cases[i];
+		uint16_t k;
+
+		for (k = 0; k < c->prelude_count; k++) {
+			const struct td_aes_prelude *p =
+				&aes_table.preludes[c->prelude_first + k];
+			printf("    prelude: opcode %d  control[1..4]= %d %d %d %d\n",
+			       p->opcode, p->n_intin, p->n_intout, p->n_addrin,
+			       p->n_addrout);
+			print_list("int_in", p->intin, p->n_values);
+		}
+
+		printf("  case %u  opcode %d  control[1..4]= %d %d %d %d  %s\n",
+		       c->line, c->opcode, c->n_intin, c->n_intout, c->n_addrin,
+		       c->n_addrout, c->comment);
+		print_list("int_in", c->intin, c->n_values);
+	}
+	return 0;
+}
+
+int main(int argc, char **argv)
+{
+	if (argc == 3 && strcmp(argv[1], "--aes") == 0)
+		return check_aes(argv[2]);
+	if (argc == 2)
+		return check_vdi(argv[1]);
+
+	fprintf(stderr, "usage: casecheck [--aes] CASES.TSV\n");
+	return 2;
 }

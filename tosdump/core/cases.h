@@ -75,6 +75,7 @@ struct td_case_table {
 #define TD_CASE_ERR_IO              (-7)   /* file could not be read       */
 #define TD_CASE_ERR_DANGLING        (-8)   /* prelude with no case after   */
 #define TD_CASE_ERR_TOO_MANY_PRE    (-9)   /* more than TD_MAX_PRELUDES    */
+#define TD_CASE_ERR_OUT_LEN        (-10)  /* n_intout > the intout array  */
 
 struct td_case_error {
 	uint16_t    line;                  /* physical line, 0 if not a line  */
@@ -90,14 +91,100 @@ const char *td_case_error_text(int rc);
 
 /* Copies the comment column -- everything from column five on, tabs included
  * -- of one case line.  Shared so the runner and the host tools name a case
- * the same way. */
+ * the same way.  This is the FIVE column (VDI) rule; see
+ * td_case_line_comment_n for tables with a different column count. */
 void td_case_line_comment(const char *line, size_t len, char *dst,
                           size_t dst_size);
+
+/*
+ * The same rule for a table with `ncols` columns: the comment is everything
+ * from column `ncols` on, tabs included.  The column count is per area (five
+ * for the VDI form, seven for the AES form), which is why it cannot be
+ * derived from the line: a VDI comment may itself hold tabs, so counting the
+ * tabs on a line does not tell you which form it is.
+ */
+void td_case_line_comment_n(const char *line, size_t len, int ncols,
+                            char *dst, size_t dst_size);
 
 /* Is this line a prelude rather than a case?  Shared so every reader agrees
  * on what carries a case id -- a comparator that counted preludes as cases
  * would index every record wrongly. */
 int td_case_line_is_prelude(const char *line, size_t len);
+
+/* ------------------------------------------------------------------ */
+/* AES case tables (cases/aes-*.tsv)                                   */
+/* ------------------------------------------------------------------ */
+/*
+ * Format, seven tab separated columns:
+ *
+ *   opcode <TAB> n_intin <TAB> n_intout <TAB> n_addrin <TAB> n_addrout
+ *          <TAB> intin values <TAB> comment
+ *
+ * The four count columns become control[1..4] and are stated EXPLICITLY
+ * rather than derived from the value list.  That is the whole point of the
+ * form: in the AES all five control slots are inputs, and IN_LEN / OUT_LEN
+ * being settable independently of the values actually listed is what lets a
+ * case measure the dispatcher's marshalling rule -- xif copies
+ * min(IN_LEN, I_SIZE) words in and exactly OUT_LEN words back out
+ * (EmuTOS aes/gemsuper.c:428-448, include/aesdefs.h:121-134).  A case that
+ * declares fewer output words than the call produces leaves the surplus
+ * slots poisoned, and that absence is the measurement.
+ *
+ * A "-" in the n_intin column means "as many as the value column lists".
+ * In the other three count columns "-" is an ERROR: there is no value list
+ * to derive them from, and 0 is one character away.  Guessing there would
+ * silently change what the call declares.
+ *
+ * n_intout is refused above TD_AES_INTOUT_N.  xif's copy-back is
+ * memcpy(pcrys_blk->intout, int_out, OUT_LEN*sizeof(WORD)) with NO clamp
+ * (gemsuper.c:444-445), so a larger OUT_LEN overruns the caller's own
+ * intout array on the target.  The other three counts are clamped by the
+ * dispatcher (min(IN_LEN,I_SIZE), min(AIN_LEN,AI_SIZE)) or never read at
+ * all (control[4]), so they are only refused when negative.
+ *
+ * Everything else -- physical line number as the case id, "#" comments,
+ * blank lines, the "+" prelude convention, malformed line is an error -- is
+ * identical to the VDI form above, and goes through the same line iterator
+ * and the same value parser so the two cannot drift apart.
+ */
+#define TD_AES_CASE_COLUMNS 7
+
+struct td_aes_prelude {
+	int16_t  opcode;
+	int16_t  n_intin;                  /* control[1], IN_LEN              */
+	int16_t  n_intout;                 /* control[2], OUT_LEN             */
+	int16_t  n_addrin;                 /* control[3], AIN_LEN             */
+	int16_t  n_addrout;                /* control[4]                      */
+	uint16_t n_values;                 /* int_in values actually listed   */
+	int16_t  intin[TD_AES_INTIN_N];
+};
+
+struct td_aes_case {
+	uint16_t line;                     /* physical line number = case id  */
+	uint16_t prelude_first;            /* index into the table's pool     */
+	uint16_t prelude_count;            /* calls issued before this case   */
+	int16_t  opcode;                   /* control[0]                      */
+	int16_t  n_intin;                  /* control[1], IN_LEN              */
+	int16_t  n_intout;                 /* control[2], OUT_LEN             */
+	int16_t  n_addrin;                 /* control[3], AIN_LEN             */
+	int16_t  n_addrout;                /* control[4]                      */
+	uint16_t n_values;                 /* int_in values actually listed   */
+	int16_t  intin[TD_AES_INTIN_N];
+	char     comment[TD_COMMENT_LEN];
+};
+
+struct td_aes_case_table {
+	uint32_t              crc;         /* CRC32 over the raw file bytes   */
+	uint16_t              count;
+	uint16_t              prelude_count;
+	struct td_aes_case    cases[TD_MAX_CASES];
+	struct td_aes_prelude preludes[TD_MAX_PRELUDES];
+};
+
+int td_aes_cases_parse(struct td_aes_case_table *t, const char *buf,
+                       size_t len, struct td_case_error *err);
+int td_aes_cases_load(struct td_aes_case_table *t, const char *path,
+                      struct td_case_error *err);
 
 /*
  * Shared line iterator.  One rule for what a line is, used by the parser and

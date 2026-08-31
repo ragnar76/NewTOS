@@ -2,6 +2,8 @@
 #
 #   make dumpvdi-m68k     DUMPVDI.PRG for TOS 3.06 on the TT
 #   make dumpvdi-newtos   DUMPVDI.NAP for NewTOS on the Pi 4 (AArch64)
+#   make dumpaes-m68k     DUMPAES.PRG for TOS 3.06 on the TT
+#   make dumpaes-newtos   DUMPAES.NAP for NewTOS on the Pi 4 (AArch64)
 #   make host-test        the host-side suite (same as make -C host test)
 #
 # Same core sources for both; only abi/ differs (spec section 2).
@@ -18,14 +20,17 @@ BUILD_ID := $(shell git rev-parse HEAD 2>/dev/null | cut -c1-4 || echo ----)
 M68K_CFLAGS := -std=c99 -O2 -Wall -Wextra -Werror -Icore \
                -DTD_BIG_ENDIAN_TARGET=1 -DTD_BUILD_ID='"$(BUILD_ID)"'
 
-CORE_SRC := core/record.c core/cases.c core/gem.c core/runner.c core/dump.c \
-            core/log.c
-VDI_SRC  := $(CORE_SRC) core/dumpvdi.c
+# Shared by both dumpers.  The per-area runner and main are added on top, so
+# neither binary carries the other area's runner around on a 4 MB TT.
+CORE_SRC := core/record.c core/cases.c core/gem.c core/dump.c core/log.c
+VDI_SRC  := $(CORE_SRC) core/runner.c core/dumpvdi.c
+AES_SRC  := $(CORE_SRC) core/runner_aes.c core/dumpaes.c
 
 BUILD := build
 
-.PHONY: all dumpvdi-m68k dumpvdi-newtos host-test clean
-all: dumpvdi-m68k dumpvdi-newtos host-test
+.PHONY: all dumpvdi-m68k dumpvdi-newtos dumpaes-m68k dumpaes-newtos \
+        host-test clean
+all: dumpvdi-m68k dumpvdi-newtos dumpaes-m68k dumpaes-newtos host-test
 
 $(BUILD):
 	@mkdir -p $(BUILD)
@@ -42,6 +47,17 @@ $(BUILD)/DUMPVDI.PRG: $(VDI_SRC) abi/m68k_trap.c $(wildcard core/*.h) | $(BUILD)
 dumpvdi-newtos: $(BUILD)/DUMPVDI.NAP
 $(BUILD)/DUMPVDI.NAP: $(VDI_SRC) abi/newtos_svc.c $(wildcard core/*.h) | $(BUILD)
 	./build-dumpvdi-newtos.sh $@
+
+# Same .PRG reasoning as DUMPVDI: the dumper is an AES client, and the
+# desktop only gives a GEM environment to a .PRG.
+dumpaes-m68k: $(BUILD)/DUMPAES.PRG
+$(BUILD)/DUMPAES.PRG: $(AES_SRC) abi/m68k_trap.c $(wildcard core/*.h) | $(BUILD)
+	$(M68K_CC) $(M68K_CFLAGS) $(AES_SRC) abi/m68k_trap.c -o $@
+	@$(CROSS_MINT)size $@
+
+dumpaes-newtos: $(BUILD)/DUMPAES.NAP
+$(BUILD)/DUMPAES.NAP: $(AES_SRC) abi/newtos_svc.c $(wildcard core/*.h) | $(BUILD)
+	./build-dumpaes-newtos.sh $@
 
 host-test:
 	@$(MAKE) --no-print-directory -C host test

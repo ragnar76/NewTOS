@@ -1,0 +1,235 @@
+# aes-r1.tsv -- AES round 1: pointer-free, non-blocking, non-mutating.
+#
+# Format (seven tab separated columns):
+#   opcode  n_intin  n_intout  n_addrin  n_addrout  intin values  comment
+#
+# The four count columns are control[1..4] and are stated explicitly, not
+# derived from the values: in the AES ALL FIVE control slots are inputs
+# (EmuTOS aes/gemsuper.c:435 copies control[] onto a local buffer and never
+# writes it back), and the dispatcher's marshalling is driven by the counts
+# alone -- min(IN_LEN, I_SIZE) words in, exactly OUT_LEN words back out
+# (gemsuper.c:436-445). A case that declares fewer output words than the call
+# produces leaves the surplus slots poisoned, and that absence is the
+# measurement. "-" in the n_intin column means "as many as the value column
+# lists"; in the other three count columns it is an error.
+#
+# SAFETY, and this one is not a style rule. An opcode the machine does not
+# implement reaches the dispatcher's default arm, which pops an alert box and
+# WAITS FOR A CLICK (fm_show(ALNOFUNC, &opcode, 1), gemsuper.c:411-417). On
+# the TT and on the Pi alike that is a hung run and a power cycle. Opcode 0 is
+# the only unknown opcode that is safe to issue -- gemsuper.c:414 skips the
+# alert for it. Nothing that blocks may appear in this file: the whole evnt_*
+# family except evnt_timer, form_do, form_alert, form_error, fsel_input,
+# fsel_exinput, graf_rubbox, graf_dragbox, graf_mbox, graf_watchbox,
+# graf_slidebox, shel_write, appl_exit.
+#
+# Two more rules that keep a case honest, both with the same root cause:
+# xif's int_in and int_out are UNINITIALISED stack buffers (gemsuper.c:430-432).
+#   - Never declare more output words than the call actually writes: the
+#     surplus is copied back from stack garbage, and a comparison of garbage
+#     is a difference that means nothing.
+#   - Never declare fewer input words than the call actually reads: the
+#     handler then reads stack garbage as a parameter.
+#
+# There is NO reset between cases (core/runner_aes.h): the AES has no
+# documented default state to restore, so round 1 holds only opcodes that do
+# not mutate state another case reads. What that ruled out, and why, is in
+# cases/COVERAGE-AES.md.
+#
+# A case id is the PHYSICAL LINE NUMBER and the file's CRC binds every dump to
+# this exact file, so ANY edit -- an appended case, a fixed typo in a comment
+# -- invalidates every dump already taken with it. Round 2 gets its own table.
+#
+# opcode\tn_intin\tn_intout\tn_addrin\tn_addrout\tintin\tcomment
+
+# ======================================================================
+# wind_calc (108) -- the geometry contract, and the bulk of round 1
+#
+# wm_calc is a pure function of type, kind and the four box metrics
+# (gemwmlib.c:1807-1867); the spec states it outright: "wind_calc never
+# touches the window list" (docs/api/aes/window-graphics.md, wind_calc).
+# It is void, so int_out[0] is crysbind's ret = TRUE (gemsuper.c:85) rather
+# than anything wm_calc computed. Outputs int_out[1..4], gemlib issues it as
+# AES_PARAMS(108,6,5,0,0) (a_wind_calc.c:52).
+#
+# The rect is 100,100,200,150 throughout the kind sweep so that only `kind`
+# varies. lb never grows, so int_out[1] is 101 (WC_WORK) / 99 (WC_BORDER) in
+# every one of them; the interesting words are y, w and h.
+# ----------------------------------------------------------------------
+# --- WC_WORK (1), one gadget bit at a time --------------------------
+108	6	5	0	0	1,0x0000,100,100,200,150	wind_calc WC_WORK kind 0, no gadgets: 1px all round
+108	6	5	0	0	1,0x0001,100,100,200,150	wind_calc WC_WORK NAME: title band
+108	6	5	0	0	1,0x0002,100,100,200,150	wind_calc WC_WORK CLOSER
+108	6	5	0	0	1,0x0004,100,100,200,150	wind_calc WC_WORK FULLER
+108	6	5	0	0	1,0x0008,100,100,200,150	wind_calc WC_WORK MOVER alone: D-097, TGADGETS vs non-3D
+108	6	5	0	0	1,0x0010,100,100,200,150	wind_calc WC_WORK INFO: the second title band
+108	6	5	0	0	1,0x0020,100,100,200,150	wind_calc WC_WORK SIZER alone: stripped, vertical forced back
+108	6	5	0	0	1,0x0040,100,100,200,150	wind_calc WC_WORK UPARROW
+108	6	5	0	0	1,0x0080,100,100,200,150	wind_calc WC_WORK DNARROW
+108	6	5	0	0	1,0x0100,100,100,200,150	wind_calc WC_WORK VSLIDE
+108	6	5	0	0	1,0x0200,100,100,200,150	wind_calc WC_WORK LFARROW
+108	6	5	0	0	1,0x0400,100,100,200,150	wind_calc WC_WORK RTARROW
+108	6	5	0	0	1,0x0800,100,100,200,150	wind_calc WC_WORK HSLIDE
+108	6	5	0	0	1,0x1000,100,100,200,150	wind_calc WC_WORK HOTCLOSE: PC-GEM bit, no border test reads it
+# --- WC_BORDER (0), the same sweep: the four thicknesses negated -----
+108	6	5	0	0	0,0x0000,100,100,200,150	wind_calc WC_BORDER kind 0
+108	6	5	0	0	0,0x0001,100,100,200,150	wind_calc WC_BORDER NAME
+108	6	5	0	0	0,0x0002,100,100,200,150	wind_calc WC_BORDER CLOSER
+108	6	5	0	0	0,0x0004,100,100,200,150	wind_calc WC_BORDER FULLER
+108	6	5	0	0	0,0x0008,100,100,200,150	wind_calc WC_BORDER MOVER alone: D-097, the other way
+108	6	5	0	0	0,0x0010,100,100,200,150	wind_calc WC_BORDER INFO
+108	6	5	0	0	0,0x0020,100,100,200,150	wind_calc WC_BORDER SIZER alone
+108	6	5	0	0	0,0x0040,100,100,200,150	wind_calc WC_BORDER UPARROW
+108	6	5	0	0	0,0x0080,100,100,200,150	wind_calc WC_BORDER DNARROW
+108	6	5	0	0	0,0x0100,100,100,200,150	wind_calc WC_BORDER VSLIDE
+108	6	5	0	0	0,0x0200,100,100,200,150	wind_calc WC_BORDER LFARROW
+108	6	5	0	0	0,0x0400,100,100,200,150	wind_calc WC_BORDER RTARROW
+108	6	5	0	0	0,0x0800,100,100,200,150	wind_calc WC_BORDER HSLIDE
+108	6	5	0	0	0,0x1000,100,100,200,150	wind_calc WC_BORDER HOTCLOSE
+# --- gadget combinations, WC_WORK -----------------------------------
+108	6	5	0	0	1,0x0007,100,100,200,150	wind_calc NAME|CLOSER|FULLER: one title band, not three
+108	6	5	0	0	1,0x000F,100,100,200,150	wind_calc TGADGETS = NAME|CLOSER|FULLER|MOVER
+108	6	5	0	0	1,0x0011,100,100,200,150	wind_calc NAME|INFO: both title bands stack
+108	6	5	0	0	1,0x01C0,100,100,200,150	wind_calc VGADGETS = UPARROW|DNARROW|VSLIDE
+108	6	5	0	0	1,0x0E00,100,100,200,150	wind_calc HGADGETS = LFARROW|RTARROW|HSLIDE
+108	6	5	0	0	1,0x01E0,100,100,200,150	wind_calc VGADGETS|SIZER: SIZER stripped from both bars
+108	6	5	0	0	1,0x0E20,100,100,200,150	wind_calc HGADGETS|SIZER: mirror of the above
+108	6	5	0	0	1,0x0FE0,100,100,200,150	wind_calc VGADGETS|HGADGETS|SIZER: both bars on merit
+108	6	5	0	0	1,0x0FEF,100,100,200,150	wind_calc 0x0FEF, the classic full window without INFO
+108	6	5	0	0	1,0x0FFF,100,100,200,150	wind_calc every defined gadget bit including INFO
+108	6	5	0	0	1,0xFFFF,100,100,200,150	wind_calc all sixteen bits: do the undefined ones do anything
+108	6	5	0	0	0,0x0FEF,100,100,200,150	wind_calc WC_BORDER 0x0FEF, the round trip partner
+108	6	5	0	0	0,0x0011,100,100,200,150	wind_calc WC_BORDER NAME|INFO
+108	6	5	0	0	0,0x0FE0,100,100,200,150	wind_calc WC_BORDER VGADGETS|HGADGETS|SIZER
+# --- rect variations, kind 0x0FEF -----------------------------------
+108	6	5	0	0	1,0x0FEF,0,0,0,0	wind_calc WC_WORK degenerate rect: work area of nothing
+108	6	5	0	0	0,0x0FEF,0,0,0,0	wind_calc WC_BORDER degenerate rect
+108	6	5	0	0	1,0x0FEF,0,0,640,400	wind_calc WC_WORK a full ST-high screen
+108	6	5	0	0	0,0x0FEF,0,0,640,400	wind_calc WC_BORDER a full ST-high screen
+108	6	5	0	0	1,0x0FEF,5,5,1,1	wind_calc WC_WORK 1x1: the work area goes negative
+108	6	5	0	0	1,0x0FEF,-100,-100,50,50	wind_calc WC_WORK negative origin
+108	6	5	0	0	0,0x0FEF,0,0,32000,32000	wind_calc WC_BORDER a rect that grows but stays inside a WORD
+# --- the type word --------------------------------------------------
+108	6	5	0	0	2,0x0FEF,100,100,200,150	wind_calc type 2: only WC_BORDER negates, so this is WC_WORK
+108	6	5	0	0	-1,0x0FEF,100,100,200,150	wind_calc type -1: same question, from the other side
+
+# ======================================================================
+# wind_calc again -- the marshalling rule (gemsuper.c:428-448)
+#
+# Same call, same values, only the declared counts differ. These are the
+# cases that measure the dispatcher rather than the window manager.
+# ----------------------------------------------------------------------
+108	6	0	0	0	1,0x0FEF,100,100,200,150	OUT_LEN 0: nothing copied back, not even the return code
+108	6	1	0	0	1,0x0FEF,100,100,200,150	OUT_LEN 1: the return code only, a void handler's ret = TRUE
+108	6	3	0	0	1,0x0FEF,100,100,200,150	OUT_LEN 3: x and y arrive, w and h stay poisoned
+108	8	5	0	0	1,0x0FEF,100,100,200,150	IN_LEN 8 with six values: two surplus poison words copied in
+108	16	5	0	0	1,0x0FEF,100,100,200,150	IN_LEN at I_SIZE with six values
+108	20	5	0	0	1,0x0FEF,100,100,200,150	IN_LEN past I_SIZE: min(IN_LEN,I_SIZE) has to clamp it
+108	6	5	3	0	1,0x0FEF,100,100,200,150	AIN_LEN 3, no pointer: wm_calc never reads addr_in
+108	6	5	0	1	1,0x0FEF,100,100,200,150	control[4] set: there is no AOUT_LEN macro in this build
+108	6	5	0	0	1,0x0FEF,100,100	IN_LEN 6, four values: w and h reach wm_calc as 0xDEAD
+
+# ======================================================================
+# wind_get (104) on the desktop handle
+#
+# Handle 0 is the desktop window and is a real window: wm_init calls
+# w_setup(ppd, DESKWH, NONE), which sets VF_INUSE (gemwmlib.c:1290, 205-213),
+# so get_pwin(0) succeeds. Its rects are set at the same place -- CURR and
+# PREV to gl_rscreen, FULL and WORK to gl_rfull (gemwmlib.c:1291-1294), i.e.
+# the whole screen and the screen below the menu bar (gemgraf.c:423-424).
+#
+# OUT_LEN is per field, and it is NOT gemlib's 5: wm_get writes only
+# poutwds[0] for the scalar fields and nothing at all for a field it does not
+# handle (gemwmlib.c:1505-1599), and the rest of the local int_out is stack
+# garbage. gemlib pre-zeroes aes_intout[3] and [4] before the trap for exactly
+# this reason (a_wind_get.c:358). Here the count is cut to what the call
+# actually writes instead.
+# ----------------------------------------------------------------------
+104	2	5	0	0	0,4	wind_get 0 WF_WXYWH: the desktop work area apps start from
+104	2	5	0	0	0,5	wind_get 0 WF_CXYWH: whole screen, menu bar included
+104	2	5	0	0	0,6	wind_get 0 WF_PXYWH: previous rect
+104	2	5	0	0	0,7	wind_get 0 WF_FXYWH: full rect
+104	2	2	0	0	0,8	wind_get 0 WF_HSLIDE: one word, w_setup left it at 0
+104	2	2	0	0	0,9	wind_get 0 WF_VSLIDE: one word
+104	2	2	0	0	0,15	wind_get 0 WF_HSLSIZ: the -1 "use default size" marker
+104	2	2	0	0	0,16	wind_get 0 WF_VSLSIZ: one word
+104	2	2	0	0	0,10	wind_get 0 WF_TOP: no valid handle needed
+104	2	1	0	0	0,1	wind_get 0 WF_KIND: return code only, is it answered at all
+104	2	1	0	0	0,14	wind_get 0 WF_NEWDESK: return code only
+104	2	1	0	0	0,17	wind_get 0 WF_SCREEN: return code only, the address cannot be c
+104	2	1	0	0	0,20	wind_get 0 WF_OWNER: AES 3.30 and later only
+104	2	1	0	0	0,0	wind_get 0 field 0: no handler, FALSE
+104	2	1	0	0	0,13	wind_get 0 field 13: a gap in the WF_ numbering
+104	2	1	0	0	0,21	wind_get 0 field 21: past the last defined field
+# --- the same field, different declared output counts ---------------
+104	2	1	0	0	0,4	wind_get 0 WF_WXYWH, OUT_LEN 1: the rect is thrown away
+104	2	3	0	0	0,4	wind_get 0 WF_WXYWH, OUT_LEN 3: w and h stay poisoned
+# --- handle validation ----------------------------------------------
+104	2	1	0	0	1,4	wind_get handle 1 WF_WXYWH: a window that was never created
+104	2	1	0	0	-1,4	wind_get handle -1 WF_WXYWH: negative handle
+104	2	1	0	0	99,4	wind_get handle 99 WF_WXYWH: past NUM_WIN
+104	2	1	0	0	32767,4	wind_get handle 32767 WF_WXYWH: the largest WORD
+
+# ======================================================================
+# wind_find (106)
+#
+# wm_find is ob_find(gl_wtree, 0, 2, x, y) (gemwmlib.c:1767-1770), a pure
+# read of the window object tree. W_TREE[ROOT] carries the desktop's CURR
+# rect, which wm_init set to gl_rscreen (gemwmlib.c:240, 1291), so a point on
+# the screen belongs to the desktop and a point off it belongs to nobody.
+#
+# Only points whose answer cannot depend on which windows happen to be open
+# are here: the off-screen ones are nobody's on any machine, and (0,0) is the
+# menu bar strip, which no window can cover (a window's rect comes out of
+# gl_rfull, which starts below it).
+# ----------------------------------------------------------------------
+106	2	1	0	0	0,0	wind_find at the top left corner: the desktop, whatever is open
+106	2	1	0	0	-1,-1	wind_find off the top left: nobody
+106	2	1	0	0	0,-1	wind_find one row above the screen
+106	2	1	0	0	-1,0	wind_find one column left of the screen
+106	2	1	0	0	32000,32000	wind_find far off the bottom right: nobody
+
+# ======================================================================
+# graf_handle (77) and graf_mkstate (79)
+#
+# graf_handle returns gl_handle and the four box metrics gl_wchar, gl_hchar,
+# gl_wbox, gl_hbox (gemsuper.c:283-289). Those four ARE the inputs to
+# wm_calc's border arithmetic, so this case is what every wind_calc case
+# above is read against. int_out[0] is the AES's physical VDI workstation
+# handle and, like every handle, may legitimately differ between machines
+# (spec section 5).
+#
+# graf_mkstate is here only as an OUT_LEN 1 case. Its four output words are
+# live input state -- xrat, yrat, button, kstate (gemgrlib.c:458-464) --
+# which is where the operator last left the mouse, not an API behaviour, and
+# with OUT_LEN 5 an unwritten slot is indistinguishable from a written one.
+# What is left, and it is worth measuring, is that a void handler returns
+# crysbind's ret = TRUE.
+# ----------------------------------------------------------------------
+77	0	5	0	0	-	graf_handle: the handle and the four box metrics wm_calc uses
+77	0	1	0	0	-	graf_handle OUT_LEN 1: the metrics stay poisoned
+79	0	1	0	0	-	graf_mkstate return code only: a void handler has to leave TRUE
+
+# ======================================================================
+# evnt_timer (24) -- the one event call that cannot wait on an operator
+#
+# ev_timer(count) is ev_block(MU_TIMER, count/gl_ticktime) (gemevlib.c:134-137)
+# and adelay turns a zero count into ONE tick (geminput.c:500-501), so it
+# returns on its own after a tick and never waits for input. Void handler,
+# so int_out[0] is ret = TRUE again.
+# ----------------------------------------------------------------------
+24	2	1	0	0	0,0	evnt_timer 0 ms: adelay makes that one tick
+24	2	1	0	0	1,0	evnt_timer 1 ms: still under one tick
+
+# ======================================================================
+# opcode 0 -- the only unknown opcode that is safe to issue
+#
+# gemsuper.c:414 skips the alert box for opcode 0 ("Ignore zero since some
+# PRGs are this call") and returns -1 like any other unsupported opcode.
+# With OUT_LEN 0 that -1 never reaches the caller at all, which is the
+# sharpest statement of the copy-back rule there is
+# (docs/api/aes/_dispatcher.md section 3a).
+# ----------------------------------------------------------------------
+0	0	1	0	0	-	opcode 0: the unsupported sentinel -1, and no alert box
+0	0	0	0	0	-	opcode 0 with OUT_LEN 0: the -1 is computed and never delivered
+0	2	1	0	0	1,2	opcode 0 with inputs: they are marshalled in and ignored

@@ -64,6 +64,11 @@ static void vdi_call(int16_t opcode, int16_t n_ptsin, int16_t n_intin,
 	td_abi_vdi(wk_contrl, wk_intin, wk_ptsin, wk_intout, wk_ptsout);
 }
 
+int16_t *td_gem_global(void)
+{
+	return aes_global;
+}
+
 int td_gem_open(struct td_wk *wk)
 {
 	int i;

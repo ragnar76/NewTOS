@@ -61,15 +61,20 @@ int td_line_iter_next(struct td_line_iter *it, const char **start,
 
 #define TD_CASE_COLUMNS 5
 
-/* Splits into at most TD_CASE_COLUMNS columns; the last one keeps its tabs. */
+/*
+ * Splits into at most `ncols` columns; the last one keeps its tabs.  The
+ * count is per area -- five for the VDI form, seven for the AES form -- and
+ * cannot be derived from the line, because the comment column may itself
+ * hold tabs.
+ */
 static int split_columns(const char *line, size_t len,
-                         const char **col, size_t *col_len)
+                         const char **col, size_t *col_len, int ncols)
 {
 	int n = 0;
 	size_t i = 0, start = 0;
 
 	for (;;) {
-		if (n == TD_CASE_COLUMNS - 1) {
+		if (n == ncols - 1) {
 			col[n]     = line + i;
 			col_len[n] = len - i;
 			return n + 1;
@@ -240,7 +245,8 @@ int td_cases_parse(struct td_case_table *t, const char *buf, size_t len,
 		if (!is_case)
 			continue;
 
-		ncol = split_columns(line, line_len, col, col_len);
+		ncol = split_columns(line, line_len, col, col_len,
+		                     TD_CASE_COLUMNS);
 		if (ncol < TD_CASE_COLUMNS) {
 			fail(err, line_no, "needs five tab separated columns");
 			return TD_CASE_ERR_COLUMNS;
@@ -370,6 +376,250 @@ int td_cases_parse(struct td_case_table *t, const char *buf, size_t len,
 	return 0;
 }
 
+/* ------------------------------------------------------------------ */
+/* AES table parsing                                                   */
+/* ------------------------------------------------------------------ */
+/*
+ * Seven columns instead of five, and the four count columns are the
+ * difference that matters: in the AES every control slot is an input
+ * (EmuTOS aes/gemsuper.c:435 copies control[] wholesale onto a local buffer
+ * and never writes it back), and the dispatcher's marshalling is driven by
+ * those counts alone -- min(IN_LEN, I_SIZE) words in, exactly OUT_LEN words
+ * back out (gemsuper.c:436-445).  Stating them separately from the values a
+ * case lists is what lets a case measure that rule.
+ */
+
+/* One AES line's payload, shared by the case and the prelude branches so
+ * the two cannot drift apart. */
+struct td_aes_line {
+	int16_t  opcode;
+	int16_t  n_intin;
+	int16_t  n_intout;
+	int16_t  n_addrin;
+	int16_t  n_addrout;
+	uint16_t n_values;
+	int16_t  intin[TD_AES_INTIN_N];
+};
+
+/*
+ * One count column.  "-" is accepted only where `dash_value` is not
+ * negative -- that is the n_intin column, where it means "as many as the
+ * value column lists".  In the other three there is no list to derive a
+ * count from and "0" is one character away, so guessing there would
+ * silently change what the call declares.
+ */
+static int parse_count(const char *s, size_t len, int dash_value, int16_t *out)
+{
+	const char *p = s;
+	size_t n = len;
+	int16_t v;
+	int rc;
+
+	trim(&p, &n);
+	if (n == 1 && p[0] == '-') {
+		if (dash_value < 0)
+			return TD_CASE_ERR_VALUE;
+		*out = (int16_t)dash_value;
+		return 0;
+	}
+	rc = parse_value(s, len, &v);
+	if (rc != 0)
+		return rc;
+	if (v < 0)
+		return TD_CASE_ERR_RANGE;
+	*out = v;
+	return 0;
+}
+
+/* Columns 1..6 of one AES line.  `opcode_col` already has the '+' of a
+ * prelude stripped by the caller. */
+static int parse_aes_columns(const char *opcode_col, size_t opcode_len,
+                             const char **col, const size_t *col_len,
+                             struct td_aes_line *out, const char **what)
+{
+	int16_t v;
+	int rc;
+
+	memset(out, 0, sizeof *out);
+
+	rc = parse_value(opcode_col, opcode_len, &v);
+	if (rc != 0) {
+		*what = "opcode is not a number";
+		return rc;
+	}
+	if (v < 0) {
+		*what = "opcode is negative";
+		return TD_CASE_ERR_RANGE;
+	}
+	out->opcode = v;
+
+	/* the values first: the n_intin column's "-" is derived from them */
+	rc = parse_list(col[5], col_len[5], out->intin, TD_AES_INTIN_N,
+	                &out->n_values);
+	if (rc != 0) {
+		*what = "int_in value column";
+		return rc;
+	}
+
+	rc = parse_count(col[1], col_len[1], (int)out->n_values, &out->n_intin);
+	if (rc != 0) {
+		*what = "n_intin column";
+		return rc;
+	}
+	rc = parse_count(col[2], col_len[2], -1, &out->n_intout);
+	if (rc != 0) {
+		*what = "n_intout column (\"-\" has nothing to be derived from)";
+		return rc;
+	}
+	/*
+	 * OUT_LEN is the one count the dispatcher does not clamp:
+	 * memcpy(pcrys_blk->intout, int_out, OUT_LEN*sizeof(WORD))
+	 * (gemsuper.c:444-445) writes into the CALLER's array, so a larger
+	 * value overruns it on the target.  Refuse the table instead of
+	 * letting a typo corrupt memory on real hardware.
+	 */
+	if (out->n_intout > TD_AES_INTOUT_N) {
+		*what = "n_intout is larger than the intout array, which the "
+		        "dispatcher's copy-back does not clamp";
+		return TD_CASE_ERR_OUT_LEN;
+	}
+	rc = parse_count(col[3], col_len[3], -1, &out->n_addrin);
+	if (rc != 0) {
+		*what = "n_addrin column (\"-\" has nothing to be derived from)";
+		return rc;
+	}
+	rc = parse_count(col[4], col_len[4], -1, &out->n_addrout);
+	if (rc != 0) {
+		*what = "n_addrout column (\"-\" has nothing to be derived from)";
+		return rc;
+	}
+
+	return 0;
+}
+
+int td_aes_cases_parse(struct td_aes_case_table *t, const char *buf, size_t len,
+                       struct td_case_error *err)
+{
+	struct td_line_iter it;
+	const char *line;
+	size_t line_len;
+	uint16_t line_no;
+	uint16_t pending = 0;      /* preludes seen since the last case */
+	uint16_t last_prelude = 0; /* line number of the newest one, for errors */
+	int is_case;
+
+	memset(t, 0, sizeof *t);
+	t->crc = td_crc32((const uint8_t *)buf, len);
+	if (err) {
+		err->line = 0;
+		err->what = NULL;
+	}
+
+	td_line_iter_init(&it, buf, len);
+	while (td_line_iter_next(&it, &line, &line_len, &line_no, &is_case)) {
+		const char *col[TD_AES_CASE_COLUMNS];
+		size_t col_len[TD_AES_CASE_COLUMNS];
+		struct td_aes_line parsed;
+		const char *what = NULL;
+		const char *opcode_col;
+		size_t opcode_len;
+		int prelude, rc, i;
+
+		if (!is_case)
+			continue;
+
+		if (split_columns(line, line_len, col, col_len,
+		                  TD_AES_CASE_COLUMNS) < TD_AES_CASE_COLUMNS) {
+			fail(err, line_no, "needs seven tab separated columns");
+			return TD_CASE_ERR_COLUMNS;
+		}
+
+		prelude = td_case_line_is_prelude(line, line_len);
+		opcode_col = col[0];
+		opcode_len = col_len[0];
+		trim(&opcode_col, &opcode_len);
+		if (prelude) {                 /* step over the '+' */
+			opcode_col++;
+			opcode_len--;
+		}
+
+		rc = parse_aes_columns(opcode_col, opcode_len, col, col_len,
+		                       &parsed, &what);
+		if (rc != 0) {
+			fail(err, line_no, what);
+			return rc;
+		}
+
+		/*
+		 * A '+' opcode marks a prelude: a call issued before the next
+		 * case's measured call, and not recorded.  Round 1 needs none,
+		 * but the convention is shared with the VDI table and with
+		 * host/casefile.c through td_case_line_is_prelude -- a reader
+		 * that counted preludes as cases would index every record
+		 * wrongly.
+		 */
+		if (prelude) {
+			struct td_aes_prelude *p;
+
+			if (pending >= TD_MAX_PRELUDES ||
+			    t->prelude_count >= TD_MAX_PRELUDES) {
+				fail(err, line_no, "more preludes than TD_MAX_PRELUDES");
+				return TD_CASE_ERR_TOO_MANY_PRE;
+			}
+			p = &t->preludes[t->prelude_count + pending];
+			memset(p, 0, sizeof *p);
+			p->opcode    = parsed.opcode;
+			p->n_intin   = parsed.n_intin;
+			p->n_intout  = parsed.n_intout;
+			p->n_addrin  = parsed.n_addrin;
+			p->n_addrout = parsed.n_addrout;
+			p->n_values  = parsed.n_values;
+			for (i = 0; i < (int)parsed.n_values; i++)
+				p->intin[i] = parsed.intin[i];
+			pending++;
+			last_prelude = line_no;
+			continue;
+		}
+
+		if (t->count >= TD_MAX_CASES) {
+			fail(err, line_no, "more cases than TD_MAX_CASES");
+			return TD_CASE_ERR_TOO_MANY_CASES;
+		}
+
+		{
+			struct td_aes_case *c = &t->cases[t->count];
+
+			memset(c, 0, sizeof *c);
+			c->line          = line_no;
+			c->prelude_first = t->prelude_count;
+			c->prelude_count = pending;
+			t->prelude_count = (uint16_t)(t->prelude_count + pending);
+			pending = 0;
+
+			c->opcode    = parsed.opcode;
+			c->n_intin   = parsed.n_intin;
+			c->n_intout  = parsed.n_intout;
+			c->n_addrin  = parsed.n_addrin;
+			c->n_addrout = parsed.n_addrout;
+			c->n_values  = parsed.n_values;
+			for (i = 0; i < (int)parsed.n_values; i++)
+				c->intin[i] = parsed.intin[i];
+
+			td_case_line_comment_n(line, line_len, TD_AES_CASE_COLUMNS,
+			                       c->comment, TD_COMMENT_LEN);
+			t->count++;
+		}
+	}
+
+	/* A prelude with nothing to precede would silently never run. */
+	if (pending > 0) {
+		fail(err, last_prelude, "prelude has no case after it");
+		return TD_CASE_ERR_DANGLING;
+	}
+
+	return 0;
+}
+
 int td_case_line_is_prelude(const char *line, size_t len)
 {
 	size_t i = 0;
@@ -379,34 +629,42 @@ int td_case_line_is_prelude(const char *line, size_t len)
 	return i < len && line[i] == '+';
 }
 
-void td_case_line_comment(const char *line, size_t len, char *dst,
-                          size_t dst_size)
+void td_case_line_comment_n(const char *line, size_t len, int ncols,
+                            char *dst, size_t dst_size)
 {
-	const char *col[TD_CASE_COLUMNS];
-	size_t col_len[TD_CASE_COLUMNS];
+	const char *col[TD_AES_CASE_COLUMNS];
+	size_t col_len[TD_AES_CASE_COLUMNS];
 	size_t n;
 
 	if (dst_size == 0)
 		return;
-	if (split_columns(line, len, col, col_len) < TD_CASE_COLUMNS) {
+	if (ncols > TD_AES_CASE_COLUMNS ||
+	    split_columns(line, len, col, col_len, ncols) < ncols) {
 		dst[0] = '\0';
 		return;
 	}
-	n = col_len[TD_CASE_COLUMNS - 1];
+	n = col_len[ncols - 1];
 	if (n >= dst_size)
 		n = dst_size - 1;
-	memcpy(dst, col[TD_CASE_COLUMNS - 1], n);
+	memcpy(dst, col[ncols - 1], n);
 	dst[n] = '\0';
 }
 
-int td_cases_load(struct td_case_table *t, const char *path,
-                  struct td_case_error *err)
+void td_case_line_comment(const char *line, size_t len, char *dst,
+                          size_t dst_size)
+{
+	td_case_line_comment_n(line, len, TD_CASE_COLUMNS, dst, dst_size);
+}
+
+/* Slurps a case table.  One reader for both table forms, so a table that
+ * loads for one area cannot fail to load for the other. */
+static int slurp(const char *path, char **raw_out, size_t *len_out,
+                 struct td_case_error *err)
 {
 	FILE *f;
 	long size;
 	char *raw;
 	size_t got;
-	int rc;
 
 	f = fopen(path, "rb");
 	if (!f) {
@@ -434,7 +692,39 @@ int td_cases_load(struct td_case_table *t, const char *path,
 	}
 	raw[got] = '\0';
 
+	*raw_out = raw;
+	*len_out = got;
+	return 0;
+}
+
+int td_cases_load(struct td_case_table *t, const char *path,
+                  struct td_case_error *err)
+{
+	char *raw;
+	size_t got;
+	int rc;
+
+	rc = slurp(path, &raw, &got, err);
+	if (rc != 0)
+		return rc;
+
 	rc = td_cases_parse(t, raw, got, err);
+	free(raw);
+	return rc;
+}
+
+int td_aes_cases_load(struct td_aes_case_table *t, const char *path,
+                      struct td_case_error *err)
+{
+	char *raw;
+	size_t got;
+	int rc;
+
+	rc = slurp(path, &raw, &got, err);
+	if (rc != 0)
+		return rc;
+
+	rc = td_aes_cases_parse(t, raw, got, err);
 	free(raw);
 	return rc;
 }
@@ -452,6 +742,8 @@ const char *td_case_error_text(int rc)
 	case TD_CASE_ERR_IO:             return "the case table could not be read";
 	case TD_CASE_ERR_DANGLING:       return "a prelude has no case after it";
 	case TD_CASE_ERR_TOO_MANY_PRE:   return "more preludes than TD_MAX_PRELUDES";
+	case TD_CASE_ERR_OUT_LEN:        return "n_intout is larger than the "
+	                                        "intout array";
 	default:                         return "unknown error";
 	}
 }

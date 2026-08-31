@@ -32,6 +32,17 @@ struct td_wk {
 int  td_gem_open(struct td_wk *wk);
 void td_gem_close(struct td_wk *wk);
 
+/*
+ * The application's live AESGLOBAL array (TD_AES_GLOBAL_N words).
+ *
+ * appl_init writes it (EmuTOS aes/gemsuper.c:92-98) and rs_load / rs_free /
+ * rs_gaddr / rs_saddr read it back (gemsuper.c:363-373), so it is live AES
+ * state for the whole run and there is exactly one of it -- the same array
+ * appl_init filled.  The AES runner passes it to every call and records it
+ * afterwards; it must never be poisoned or replaced by a copy.
+ */
+int16_t *td_gem_global(void);
+
 const char *td_gem_error_text(int rc);
 
 #endif /* TOSDUMP_GEM_H */

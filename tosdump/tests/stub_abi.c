@@ -85,8 +85,11 @@ int32_t td_abi_aes(int16_t *control, int16_t *global, int16_t *int_in,
                    int16_t *int_out, void **addr_in, void **addr_out)
 {
 	struct td_stub_call *c = log_slot();
+	int16_t local_in[TD_AES_INTIN_N];
+	int16_t local_out[TD_AES_INTOUT_N];
+	int16_t in_len, out_len;
+	int i, n;
 
-	(void)global;
 	(void)addr_in;
 	(void)addr_out;
 
@@ -96,24 +99,79 @@ int32_t td_abi_aes(int16_t *control, int16_t *global, int16_t *int_in,
 	c->contrl3   = control[3];
 	c->intin[0]  = int_in[0];
 	c->intin[1]  = int_in[1];
+	for (i = 0; i < TD_AES_CONTRL_N; i++)
+		c->aes_control[i] = control[i];
+	for (i = 0; i < TD_AES_INTIN_N; i++)
+		c->aes_int_in[i] = int_in[i];
 
+	/* --- marshal in (gemsuper.c:435-439) ---------------------------- */
+	for (i = 0; i < TD_AES_INTIN_N; i++)
+		local_in[i] = (int16_t)TD_STUB_AES_UNWRITTEN;
+	in_len = control[1];
+	if (in_len > 0) {
+		n = (in_len < TD_AES_INTIN_N) ? in_len : TD_AES_INTIN_N;
+		for (i = 0; i < n; i++)
+			local_in[i] = int_in[i];
+	}
+	for (i = 0; i < TD_AES_INTOUT_N; i++)
+		local_out[i] = (int16_t)TD_STUB_AES_UNWRITTEN;
+
+	/* --- the "handler" ---------------------------------------------- */
+	/* crysbind starts with ret = TRUE, so a void handler leaves 1
+	 * (gemsuper.c:85, docs/api/aes/_dispatcher.md section 2). */
+	local_out[0] = 1;
 	switch (control[0]) {
 	case 10:                        /* appl_init */
-		int_out[0] = TD_STUB_AP_ID;
+		local_out[0] = TD_STUB_AP_ID;
+		global[0] = TD_STUB_AP_VERSION;
+		global[1] = TD_STUB_AP_COUNT;
+		global[2] = TD_STUB_AP_ID;
+		global[10] = TD_STUB_AP_PLANES;
 		break;
 	case 19:                        /* appl_exit */
-		int_out[0] = 1;
+		local_out[0] = 1;
+		break;
+	case 24:                        /* evnt_timer -- void handler */
 		break;
 	case 77:                        /* graf_handle */
-		int_out[0] = TD_STUB_PHYS_HANDLE;
-		int_out[1] = 8;
-		int_out[2] = 16;
-		int_out[3] = 8;
-		int_out[4] = 16;
+		local_out[0] = TD_STUB_PHYS_HANDLE;
+		local_out[1] = TD_STUB_WCHAR;
+		local_out[2] = TD_STUB_HCHAR;
+		local_out[3] = TD_STUB_WBOX;
+		local_out[4] = TD_STUB_HBOX;
 		break;
-	default:
-		int_out[0] = 0;
+	case 79:                        /* graf_mkstate -- void handler */
+		break;
+	case 104:                       /* wind_get */
+		local_out[1] = local_in[0];         /* handle */
+		local_out[2] = local_in[1];         /* field  */
+		local_out[3] = TD_STUB_WGET_2;
+		local_out[4] = TD_STUB_WGET_3;
+		break;
+	case 106:                       /* wind_find */
+		local_out[0] = (int16_t)(local_in[0] + local_in[1]);
+		break;
+	case 108:                       /* wind_calc -- void handler */
+		local_out[1] = (int16_t)(local_in[2] + TD_STUB_CALC_DX);
+		local_out[2] = (int16_t)(local_in[3] + TD_STUB_CALC_DY);
+		local_out[3] = (int16_t)(local_in[4] + TD_STUB_CALC_DW);
+		local_out[4] = (int16_t)(local_in[5] + TD_STUB_CALC_DH);
+		break;
+	default:                        /* unsupported opcode, incl. 0 */
+		local_out[0] = TD_STUB_AES_UNSUPPORTED;
 		break;
 	}
+
+	/* the mark that proves the record captured global AFTER the call */
+	global[TD_STUB_GLOBAL_MARK_AT] = (int16_t)TD_STUB_GLOBAL_MARK;
+
+	/* --- marshal out (gemsuper.c:444-445), clamped: see stub_abi.h --- */
+	out_len = control[2];
+	if (out_len > 0) {
+		n = (out_len < TD_AES_INTOUT_N) ? out_len : TD_AES_INTOUT_N;
+		for (i = 0; i < n; i++)
+			int_out[i] = local_out[i];
+	}
+
 	return TD_STUB_AES_D0;
 }
