@@ -41,6 +41,10 @@ const HSLIDE: u16 = 0x0800;
 
 const VGADGETS: u16 = UPARROW | DNARROW | VSLIDE;
 const HGADGETS: u16 = LFARROW | RTARROW | HSLIDE;
+/// Top-row gadgets — EmuTOS `TGADGETS` (gemwmlib.h:16). **Includes `MOVER`**:
+/// in the 3D branch a window with only a `MOVER` still gets a full title band
+/// (the non-3D branch tests `NAME|CLOSER|FULLER` and gives it none).
+const TGADGETS: u16 = NAME | CLOSER | FULLER | MOVER;
 
 // ── WF_* fields, aesdefs.h:534-552 ──
 const WF_KIND: i16 = 1;
@@ -123,12 +127,46 @@ const G_CLOSE: u16 = 0x05;
 const G_SIZE: u16 = 0x06;
 const G_FULL: u16 = 0x07;
 
-/// Gadget cell size (`gl_hbox` = char height + 3; square gadgets). This is
-/// also EmuTOS `gl_wbox`/`gl_hbox`: for the 8×16 system font both are 19
-/// (`gl_hbox = gl_hchar+3 = 19`, `gl_wbox = max(gl_wchar+4, gl_hbox·aspect) =
-/// 19`, `gemgraf.c:412-415`), so `graf::graf_handle` returns this same unit as
-/// its box metric instead of a second magic 19.
-pub(super) const GAD: i16 = 19;
+/// Unadjusted gadget box width — EmuTOS `gl_wbox`
+/// (`gl_wbox = max(gl_wchar+4, gl_hbox·aspect)`, `gemgraf.c:412-415`): 19 for
+/// the 8×16 system font. This is what `graf_handle` reports (`gemsuper.c:287-291`)
+/// and what the *glyph cell* of every window gadget measures — the 3D window
+/// layout inflates the surrounding box ([`adj_wbox`]), never this.
+pub(super) const GL_WBOX: i16 = 19;
+
+/// Unadjusted gadget box height — EmuTOS `gl_hbox` (`gl_hchar + 3`,
+/// `gemgraf.c:412`): 19 for the 8×16 system font. Also the menu-bar height
+/// (`gl_rmenu`, `gemgraf.c:427` → `menu::BAR_H`).
+pub(super) const GL_HBOX: i16 = 19;
+
+/// Standard pixel adjustment for 3D objects — EmuTOS `ADJ3DSTD`
+/// (`obdefs.h:136`). Our target profile is Falcon030/TOS4 with
+/// `CONF_WITH_3D_OBJECTS` on (`config.h:1259`), so every window gadget sits in
+/// a box grown by `2 * ADJ3DSTD` and is inset by `ADJ3DSTD` inside it.
+const ADJ3DSTD: i16 = 2;
+
+/// 3D-adjusted gadget box width — EmuTOS `adj_wbox`, set in `wm_init`
+/// (`gemwmlib.c:1311-1324`): `gl_wbox + 2*ADJ3DSTD`, shrunk by 1 on a screen
+/// narrower than 640 (and by 1 more when such a screen is at least 400 tall) to
+/// mimic TOS4's ST-Low work area. Computed from the live screen instead of
+/// cached at init; for a fixed resolution the value is the same either way.
+fn adj_wbox() -> i16 {
+    let mut a = GL_WBOX + 2 * ADJ3DSTD;
+    let s = screen_rect();
+    if s.w < 640 {
+        a -= 1;
+        if s.h >= 400 {
+            a -= 1;
+        }
+    }
+    a
+}
+
+/// 3D-adjusted gadget box height — EmuTOS `adj_hbox` (`gemwmlib.c:1312`):
+/// `gl_hbox + 2*ADJ3DSTD`, with no resolution-dependent correction.
+const fn adj_hbox() -> i16 {
+    GL_HBOX + 2 * ADJ3DSTD
+}
 
 const WHITE: Pel = 0;
 const BLACK: Pel = 1;
@@ -912,24 +950,56 @@ fn win(handle: i16) -> Option<&'static mut Window> {
 
 // ── geometry ────────────────────────────────────────────────────────────
 
+/// Which scroll bars a `kind` gets after EmuTOS' `SIZER` conflict resolution —
+/// `(havevbar, havehbar)`, `wm_calc`'s 3D branch (`gemwmlib.c:1823-1834`).
+///
+/// A `SIZER` on its own asks for *both* bars; when the window already has real
+/// gadgets on an axis the `SIZER` is stripped from both requests and only the
+/// axes with gadgets keep a bar. If stripping leaves nothing, the vertical bar
+/// is forced back on — TOS4 draws the sizer in a vertical bar when the window
+/// has no other elements. This is the rule the non-3D branch does not have, and
+/// it is why `SIZER|HGADGETS` grows only the bottom border while `SIZER` alone
+/// grows only the right one.
+fn bars(kind: u16) -> (bool, bool) {
+    let mut havevbar = kind & (VGADGETS | SIZER);
+    let mut havehbar = kind & (HGADGETS | SIZER);
+    if havevbar != 0 && havehbar != 0 {
+        havevbar &= !SIZER;
+        havehbar &= !SIZER;
+        if havevbar == 0 && havehbar == 0 {
+            havevbar |= SIZER;
+        }
+    }
+    (havevbar != 0, havehbar != 0)
+}
+
 /// Border thickness contributed by `kind` on each side: `(left, top,
-/// right, bottom)` (EmuTOS `wm_calc`, non-3D path).
+/// right, bottom)` — EmuTOS `wm_calc`, **3D branch** (`gemwmlib.c:1817-1840`),
+/// the branch our Falcon030/TOS4 profile compiles (`CONF_WITH_3D_OBJECTS`,
+/// `config.h:1259`).
+///
+/// Four things differ from the `#else` branch: the title band is
+/// `adj_hbox - 1` (not `gl_hbox - 1`) thick, `MOVER` alone earns that band
+/// (`TGADGETS`), an `INFO` line costs a full `gl_hbox` (not `gl_hbox - 1`), and
+/// the scroll bars are decided by [`bars`]' strip-and-force rule instead of a
+/// plain `SIZER` test on both axes.
 fn borders(kind: u16) -> (i16, i16, i16, i16) {
     let lb = 1;
     let mut tb = 1;
     let mut rb = 1;
     let mut bb = 1;
-    if kind & (NAME | CLOSER | FULLER) != 0 {
-        tb += GAD - 1;
+    if kind & TGADGETS != 0 {
+        tb += adj_hbox() - 1;
     }
     if kind & INFO != 0 {
-        tb += GAD - 1;
+        tb += GL_HBOX;
     }
-    if kind & (VGADGETS | SIZER) != 0 {
-        rb += GAD - 1;
+    let (havevbar, havehbar) = bars(kind);
+    if havevbar {
+        rb += adj_wbox() - 1;
     }
-    if kind & (HGADGETS | SIZER) != 0 {
-        bb += GAD - 1;
+    if havehbar {
+        bb += adj_hbox() - 1;
     }
     (lb, tb, rb, bb)
 }
@@ -1015,35 +1085,45 @@ fn draw_frame(w: &Window, istop: bool, backend: &dyn RasterBackend, clip: ClipRe
     // Outer frame.
     rect_outline(b, backend, clip);
 
+    let ah = adj_hbox();
+    let aw = adj_wbox();
     let mut top = b.y + 1; // running top of the next band
 
-    // Title row (name area + closer + fuller). EmuTOS: white base, the name
-    // area carries a light dither on the *active* window (the classic
-    // move-bar look), plain on the inactive one.
-    if kind & (NAME | CLOSER | FULLER) != 0 {
-        let bar = Grect { x: b.x + 1, y: top, w: b.w - 2, h: GAD - 1 };
+    // Title row (name area + closer + fuller). EmuTOS `w_bldactive`'s 3D branch
+    // (gemwmlib.c:515-560): the title box is `adj_hbox` tall, each gadget is a
+    // `gl_wbox` × `gl_hbox` cell inset by `ADJ3DSTD`, and the closer/fuller
+    // advance the name area by a full `adj_wbox`. `MOVER` alone earns the band
+    // (`TGADGETS`) — the same test [`borders`] uses, so band and work area agree.
+    // Ours: white base, the name area carries a light dither on the *active*
+    // window (the classic move-bar look), plain on the inactive one.
+    if kind & TGADGETS != 0 {
+        let bar = Grect { x: b.x + 1, y: top, w: b.w - 2, h: ah - 1 };
         backend.fill_rect(bar.x, bar.y, bar.w, bar.h, WHITE, clip);
 
-        let mut name_x = bar.x;
-        let mut name_w = bar.w;
+        let gy = b.y + ADJ3DSTD;
+        let mut name_x = b.x;
+        let mut name_w = b.w;
         if kind & CLOSER != 0 {
-            let g = Grect { x: b.x, y: top - 1, w: GAD, h: GAD };
+            let g = Grect { x: b.x + ADJ3DSTD, y: gy, w: GL_WBOX, h: GL_HBOX };
             gadget(g, G_CLOSE, backend, clip);
-            name_x += GAD - 1;
-            name_w -= GAD - 1;
+            name_x += aw;
+            name_w -= aw;
         }
         if kind & FULLER != 0 {
-            let g = Grect { x: b.x + b.w - GAD, y: top - 1, w: GAD, h: GAD };
+            name_w -= aw;
+            let g = Grect { x: name_x + name_w + ADJ3DSTD, y: gy, w: GL_WBOX, h: GL_HBOX };
             gadget(g, G_FULL, backend, clip);
-            name_w -= GAD - 1;
         }
+        // W_NAME sits `ADJ3DSTD` inside what is left (gemwmlib.c:534-537).
+        name_x += ADJ3DSTD;
+        name_w -= 2 * ADJ3DSTD;
         // Active window: the classic move-bar dither behind the name.
         if istop {
             backend.fill_pattern(
                 name_x,
-                top,
+                gy,
                 name_w,
-                GAD - 1,
+                GL_HBOX,
                 PatternFill { fg: BLACK, bg: WHITE, pattern: &TITLE_STIPPLE, mode: WriteMode::Replace },
                 clip,
             );
@@ -1053,21 +1133,22 @@ fn draw_frame(w: &Window, istop: bool, backend: &dyn RasterBackend, clip: ClipRe
         let nlen = name_len(&w.name) as i16 * 8;
         let nx = name_x + ((name_w - nlen) / 2).max(2);
         if istop && nlen > 0 {
-            backend.fill_rect((nx - 3).max(name_x), top, nlen + 6, GAD - 1, WHITE, clip);
+            backend.fill_rect((nx - 3).max(name_x), gy, nlen + 6, GL_HBOX, WHITE, clip);
         }
-        draw_label(nx, top, name_w, &w.name, backend, clip);
+        draw_label(nx, gy, name_w, &w.name, backend, clip);
         // separator under the title row
-        backend.fill_rect(b.x, top + GAD - 1, b.w, 1, BLACK, clip);
-        top += GAD - 1;
+        backend.fill_rect(b.x, top + ah - 1, b.w, 1, BLACK, clip);
+        top += ah - 1;
     }
 
-    // Info line.
+    // Info line — `gl_hbox` tall, *not* adjusted (gemwmlib.c:562-567), which is
+    // why [`borders`] charges a full `gl_hbox` for it.
     if kind & INFO != 0 {
-        let band = Grect { x: b.x + 1, y: top, w: b.w - 2, h: GAD - 1 };
+        let band = Grect { x: b.x + 1, y: top, w: b.w - 2, h: GL_HBOX };
         backend.fill_rect(band.x, band.y, band.w, band.h, GRAY_LT, clip);
         draw_label(band.x + 2, top, band.w - 2, &w.info, backend, clip);
-        backend.fill_rect(b.x, top + GAD - 1, b.w, 1, BLACK, clip);
-        top += GAD - 1;
+        backend.fill_rect(b.x, top + GL_HBOX, b.w, 1, BLACK, clip);
+        top += GL_HBOX;
     }
 
     // Work area (white client region). Its 1 px black frame is drawn by the
@@ -1077,28 +1158,51 @@ fn draw_frame(w: &Window, istop: bool, backend: &dyn RasterBackend, clip: ClipRe
     let work = calc(WC_WORK, kind, b);
     backend.fill_rect(work.x, work.y, work.w, work.h, WHITE, clip);
 
-    // Right scroll bar (arrows + track + thumb).
+    // Right scroll bar (arrows + track + thumb). Fill the bar column first —
+    // its gadgets are `gl_wbox` × `gl_hbox` cells inside an `adj_wbox`-wide
+    // column, so without a background the `ADJ3DSTD` margins around them would
+    // show the desktop through. Stop one column short of the window's right
+    // edge (and one row short of its bottom) so the box border stays black.
+    // Like the bottom band below, the fill lives here and not in
+    // [`draw_vslider`], so the slider-only redraw path never erases the sizer
+    // corner it does not repaint.
+    if let Some(r) = vbar_rect(b, kind) {
+        let h = (r.y + r.h).min(b.y + b.h - 1) - r.y;
+        backend.fill_rect(r.x, r.y, r.w - 1, h, GRAY_LT, clip);
+    }
     draw_vslider(w, backend, clip);
 
     // Bottom scroll bar (arrows + track + thumb). Fill the whole bottom band
-    // first: with a sizer but no horizontal scrollbar the band would otherwise
-    // be left unpainted, showing the desktop through the bottom of the window.
-    // The band fill lives here (not in `draw_hslider`) so the slider-only
-    // redraw path never erases the sizer corner it does not repaint.
-    if kind & (HGADGETS | SIZER) != 0 {
-        let row_y = b.y + b.h - GAD;
-        backend.fill_rect(b.x + 1, row_y, b.w - 2, GAD - 1, GRAY_LT, clip);
+    // first, so the corner cell next to the right bar is painted even when the
+    // band carries no gadgets. The band fill lives here (not in
+    // `draw_hslider`) so the slider-only redraw path never erases the sizer
+    // corner it does not repaint. The band exists exactly when [`borders`]
+    // charged for it — otherwise the work area reaches the bottom edge and a
+    // band fill here would paint over the client's rectangle.
+    let (havevbar, havehbar) = bars(kind);
+    if havehbar {
+        let row_y = b.y + b.h - ah;
+        backend.fill_rect(b.x + 1, row_y, b.w - 2, ah - 1, GRAY_LT, clip);
     }
     draw_hslider(w, backend, clip);
 
-    // Sizer (bottom-right corner).
-    if kind & SIZER != 0 {
-        gadget(
-            Grect { x: b.x + b.w - GAD, y: b.y + b.h - GAD, w: GAD, h: GAD },
-            G_SIZE,
-            backend,
-            clip,
-        );
+    // Corner cell (EmuTOS `W_SIZER`, gemwmlib.c:612-627): drawn whenever the
+    // window has both bars or a `SIZER`, `gl_wbox` × `gl_hbox` inset by
+    // `ADJ3DSTD` from the bottom-right corner of the data area. The sizer
+    // *glyph* is added only for a real `SIZER` (`ob_spec |= 0x06000000`).
+    if (havevbar && havehbar) || kind & SIZER != 0 {
+        let g = Grect {
+            x: b.x + b.w - GL_WBOX - ADJ3DSTD,
+            y: b.y + b.h - GL_HBOX - ADJ3DSTD,
+            w: GL_WBOX,
+            h: GL_HBOX,
+        };
+        if kind & SIZER != 0 {
+            gadget(g, G_SIZE, backend, clip);
+        } else {
+            backend.fill_rect(g.x, g.y, g.w, g.h, GRAY_LT, clip);
+            bevel(g, true, backend, clip);
+        }
     }
 }
 
@@ -1112,7 +1216,7 @@ fn draw_frame(w: &Window, istop: bool, backend: &dyn RasterBackend, clip: ClipRe
 /// drawn one. Matches EmuTOS `w_bldvbar`/`w_bldhbar` (`gemwmlib.c:634-708`):
 /// `size = gl_hbox` when `w_vslsiz == -1`, else per-mille of the track.
 fn thumb_geom(track_len: i16, slsize: i16, slpos: i16) -> (i16, i16) {
-    let min_thumb = GAD.min(track_len);
+    let min_thumb = GL_HBOX.min(track_len);
     let len = if slsize == -1 {
         min_thumb
     } else {
@@ -1124,34 +1228,84 @@ fn thumb_geom(track_len: i16, slsize: i16, slpos: i16) -> (i16, i16) {
     (offset, len)
 }
 
+/// First row of the window's work area — the running band top after the title
+/// and info bands. Identical to `calc(WC_WORK, …).y` by construction (both add
+/// [`borders`]' `tb`), which is what keeps the painted bands and the reported
+/// work rectangle edge-to-edge.
+fn band_top(b: Grect, kind: u16) -> i16 {
+    let mut top = b.y + 1;
+    if kind & TGADGETS != 0 {
+        top += adj_hbox() - 1;
+    }
+    if kind & INFO != 0 {
+        top += GL_HBOX;
+    }
+    top
+}
+
+/// Screen rectangle of the vertical scroll-bar column — EmuTOS `W_VBAR`
+/// (`gemwmlib.c:408`, placed at `gemwmlib.c:606-610`): `adj_wbox` wide against
+/// the window's right edge, from the first work row down to the top of the
+/// horizontal band. `None` when [`bars`] gave the window no vertical bar.
+fn vbar_rect(b: Grect, kind: u16) -> Option<Grect> {
+    let (havevbar, havehbar) = bars(kind);
+    if !havevbar {
+        return None;
+    }
+    let aw = adj_wbox();
+    let top = band_top(b, kind);
+    let bot = b.y + b.h - 1 - if havehbar { adj_hbox() } else { 0 };
+    (bot >= top).then_some(Grect { x: b.x + b.w - aw, y: top, w: aw, h: bot - top + 1 })
+}
+
+/// Screen rectangle of the horizontal scroll-bar band — EmuTOS `W_HBAR`
+/// (`gemwmlib.c:446`, placed at `gemwmlib.c:612-616`): `adj_hbox` tall against
+/// the window's bottom edge, from the left border to the vertical bar column.
+/// `None` when [`bars`] gave the window no horizontal bar.
+fn hbar_rect(b: Grect, kind: u16) -> Option<Grect> {
+    let (havevbar, havehbar) = bars(kind);
+    if !havehbar {
+        return None;
+    }
+    let ah = adj_hbox();
+    let left = b.x + 1;
+    let right = b.x + b.w - 1 - if havevbar { adj_wbox() } else { 0 };
+    (right >= left).then_some(Grect { x: left, y: b.y + b.h - ah, w: right - left + 1, h: ah })
+}
+
 /// The vertical scroll track span `(top, length)` — the region left for the
 /// thumb + paging after the up/down arrows — or `None` if there is no VSLIDE
-/// track. Mirrors [`draw_vslider`]'s arrow-band offsets so the hit-test /
-/// drag ([`gadget_at`]/[`drag_elevator`]) agree pixel-for-pixel with the draw.
+/// track. EmuTOS `w_bldvbar` (3D, `gemwmlib.c:401-436`): each arrow consumes a
+/// full `adj_hbox` of the bar, and what remains is the slide box. Shared with
+/// the hit-test / drag ([`gadget_at`]/[`drag_elevator`]) so they agree
+/// pixel-for-pixel with the draw.
 fn vtrack(w: &Window) -> Option<(i16, i16)> {
-    let b = w.curr;
     let kind = w.kind;
     if kind & VSLIDE == 0 {
         return None;
     }
-    let mut top = b.y + 1;
-    if kind & (NAME | CLOSER | FULLER) != 0 {
-        top += GAD - 1;
+    let bar = vbar_rect(w.curr, kind)?;
+    let ah = adj_hbox();
+    let top = bar.y + if kind & UPARROW != 0 { ah } else { 0 };
+    let len = bar.h
+        - if kind & UPARROW != 0 { ah } else { 0 }
+        - if kind & DNARROW != 0 { ah } else { 0 };
+    (len > 0).then_some((top, len))
+}
+
+/// Screen rectangle of a scroll-bar elevator (thumb) — EmuTOS `W_VELEV` /
+/// `W_HELEV` (`gemwmlib.c:436`, `:474`): inset `ADJ3DSTD` inside the slide box
+/// on the cross axis at `gl_?box`, and `2*ADJ3DSTD + 1` shorter than the slide
+/// length along the drag axis. `track` is the `(start, length)` from
+/// [`vtrack`]/[`htrack`], `bar` the enclosing bar column/band.
+fn elev_rect(bar: Grect, track: (i16, i16), off: i16, len: i16, vert: bool) -> Grect {
+    let (start, _) = track;
+    let thick = (len - 2 * ADJ3DSTD - 1).max(1);
+    if vert {
+        Grect { x: bar.x + ADJ3DSTD, y: start + off + ADJ3DSTD, w: GL_WBOX, h: thick }
+    } else {
+        Grect { x: start + off + ADJ3DSTD, y: bar.y + ADJ3DSTD, w: thick, h: GL_HBOX }
     }
-    if kind & INFO != 0 {
-        top += GAD - 1;
-    }
-    let mut bot = b.y + b.h - 1;
-    if kind & (HGADGETS | SIZER) != 0 {
-        bot -= GAD - 1;
-    }
-    if kind & UPARROW != 0 {
-        top += GAD - 1;
-    }
-    if kind & DNARROW != 0 {
-        bot -= GAD - 1;
-    }
-    (bot > top).then_some((top, bot - top))
 }
 
 /// Draw the right (vertical) scroll bar — up/down arrows, the track, and a
@@ -1159,41 +1313,33 @@ fn vtrack(w: &Window) -> Option<(i16, i16)> {
 /// Shared by `draw_frame` and `wind_set(WF_VSLIDE/WF_VSLSIZ)`; drawing only
 /// the slider column leaves the work area (content) untouched.
 fn draw_vslider(w: &Window, backend: &dyn RasterBackend, clip: ClipRect) {
-    let b = w.curr;
     let kind = w.kind;
-    if kind & (VGADGETS | SIZER) == 0 {
+    let Some(bar) = vbar_rect(w.curr, kind) else {
         return;
-    }
-    let col_x = b.x + b.w - GAD;
-    // Arrow positions: top below the title + info bands, bottom above the
-    // sizer/H-bar band (same offsets `vtrack` uses for the track between them).
-    let mut sy = b.y + 1;
-    if kind & (NAME | CLOSER | FULLER) != 0 {
-        sy += GAD - 1;
-    }
-    if kind & INFO != 0 {
-        sy += GAD - 1;
-    }
-    let mut send = b.y + b.h - 1;
-    if kind & (HGADGETS | SIZER) != 0 {
-        send -= GAD - 1;
-    }
+    };
+    let ah = adj_hbox();
+    // Arrows: a `gl_wbox` × `gl_hbox` cell inset `ADJ3DSTD` into the bar, each
+    // consuming a full `adj_hbox` of it. The down arrow's extra −1 is EmuTOS'
+    // (`y+h+ADJ3DSTD-1`, gemwmlib.c:424).
     if kind & UPARROW != 0 {
-        gadget(Grect { x: col_x, y: sy, w: GAD, h: GAD }, G_UP, backend, clip);
+        let g = Grect { x: bar.x + ADJ3DSTD, y: bar.y + ADJ3DSTD, w: GL_WBOX, h: GL_HBOX };
+        gadget(g, G_UP, backend, clip);
     }
     if kind & DNARROW != 0 {
-        gadget(Grect { x: col_x, y: send - GAD + 1, w: GAD, h: GAD }, G_DN, backend, clip);
+        let g = Grect { x: bar.x + ADJ3DSTD, y: bar.y + bar.h - ah + 1, w: GL_WBOX, h: GL_HBOX };
+        gadget(g, G_DN, backend, clip);
     }
     if let Some((track_y, track_h)) = vtrack(w) {
-        backend.fill_rect(col_x, track_y, GAD, track_h, GRAY_LT, clip);
-        rect_outline(Grect { x: col_x, y: track_y, w: GAD, h: track_h }, backend, clip);
+        let track = Grect { x: bar.x, y: track_y, w: bar.w, h: track_h };
+        backend.fill_rect(track.x, track.y, track.w, track.h, GRAY_LT, clip);
+        rect_outline(track, backend, clip);
         // Thumb geometry shared with `gadget_at`/`drag_elevator` (see
         // [`thumb_geom`]): a stored −1 size renders as one gadget cell, never a
         // zero/negative-height elevator; the stored/returned value stays −1.
         let (off, thumb_h) = thumb_geom(track_h, w.vslsize, w.vslide);
-        let thumb_y = track_y + off;
-        backend.fill_rect(col_x, thumb_y, GAD, thumb_h, GRAY_LT, clip);
-        bevel(Grect { x: col_x, y: thumb_y, w: GAD, h: thumb_h }, true, backend, clip);
+        let e = elev_rect(bar, (track_y, track_h), off, thumb_h, true);
+        backend.fill_rect(e.x, e.y, e.w, e.h, GRAY_LT, clip);
+        bevel(e, true, backend, clip);
     }
 }
 
@@ -1224,54 +1370,46 @@ fn redraw_vslider(handle: i16) {
 /// the thumb + paging after the left/right arrows — or `None` if there is no
 /// HSLIDE track. Mirror of [`vtrack`] with the axes swapped (x↔y, w↔h).
 fn htrack(w: &Window) -> Option<(i16, i16)> {
-    let b = w.curr;
     let kind = w.kind;
     if kind & HSLIDE == 0 {
         return None;
     }
-    let mut left = b.x + 1;
-    let mut right = b.x + b.w - 1;
-    if kind & (VGADGETS | SIZER) != 0 {
-        right -= GAD - 1;
-    }
-    if kind & LFARROW != 0 {
-        left += GAD - 1;
-    }
-    if kind & RTARROW != 0 {
-        right -= GAD - 1;
-    }
-    (right > left).then_some((left, right - left))
+    let bar = hbar_rect(w.curr, kind)?;
+    let aw = adj_wbox();
+    let left = bar.x + if kind & LFARROW != 0 { aw } else { 0 };
+    let len = bar.w
+        - if kind & LFARROW != 0 { aw } else { 0 }
+        - if kind & RTARROW != 0 { aw } else { 0 };
+    (len > 0).then_some((left, len))
 }
 
 fn draw_hslider(w: &Window, backend: &dyn RasterBackend, clip: ClipRect) {
-    let b = w.curr;
     let kind = w.kind;
-    if kind & (HGADGETS | SIZER) == 0 {
+    let Some(bar) = hbar_rect(w.curr, kind) else {
         return;
-    }
-    let row_y = b.y + b.h - GAD;
-    // Arrow positions: left just past the left border, right before the
-    // V-bar/sizer column (same offsets `htrack` uses for the track between).
-    let sx = b.x + 1;
-    let mut send = b.x + b.w - 1;
-    if kind & (VGADGETS | SIZER) != 0 {
-        send -= GAD - 1;
-    }
+    };
+    let aw = adj_wbox();
+    // Arrows: mirror of [`draw_vslider`] — a `gl_wbox` × `gl_hbox` cell inset
+    // `ADJ3DSTD` into the band, each consuming a full `adj_wbox`
+    // (gemwmlib.c:448-462).
     if kind & LFARROW != 0 {
-        gadget(Grect { x: sx, y: row_y, w: GAD, h: GAD }, G_LF, backend, clip);
+        let g = Grect { x: bar.x + ADJ3DSTD, y: bar.y + ADJ3DSTD, w: GL_WBOX, h: GL_HBOX };
+        gadget(g, G_LF, backend, clip);
     }
     if kind & RTARROW != 0 {
-        gadget(Grect { x: send - GAD + 1, y: row_y, w: GAD, h: GAD }, G_RT, backend, clip);
+        let g = Grect { x: bar.x + bar.w - aw + 1, y: bar.y + ADJ3DSTD, w: GL_WBOX, h: GL_HBOX };
+        gadget(g, G_RT, backend, clip);
     }
     if let Some((track_x, track_w)) = htrack(w) {
-        backend.fill_rect(track_x, row_y, track_w, GAD, GRAY_LT, clip);
-        rect_outline(Grect { x: track_x, y: row_y, w: track_w, h: GAD }, backend, clip);
+        let track = Grect { x: track_x, y: bar.y, w: track_w, h: bar.h };
+        backend.fill_rect(track.x, track.y, track.w, track.h, GRAY_LT, clip);
+        rect_outline(track, backend, clip);
         // Thumb geometry shared with `gadget_at`/`drag_elevator` (see
         // [`thumb_geom`]): a stored −1 size renders as one gadget cell.
         let (off, thumb_w) = thumb_geom(track_w, w.hslsize, w.hslide);
-        let thumb_x = track_x + off;
-        backend.fill_rect(thumb_x, row_y, thumb_w, GAD, GRAY_LT, clip);
-        bevel(Grect { x: thumb_x, y: row_y, w: thumb_w, h: GAD }, true, backend, clip);
+        let e = elev_rect(bar, (track_x, track_w), off, thumb_w, false);
+        backend.fill_rect(e.x, e.y, e.w, e.h, GRAY_LT, clip);
+        bevel(e, true, backend, clip);
     }
 }
 
@@ -2059,14 +2197,16 @@ fn gadget_at(w: &Window, mx: i16, my: i16) -> Gadget {
     if !inside(b, mx, my) {
         return Gadget::None;
     }
-    let has_title = kind & (NAME | CLOSER | FULLER) != 0;
+    let ah = adj_hbox();
+    let aw = adj_wbox();
 
-    // Title row.
-    if has_title && my < b.y + GAD {
-        if kind & CLOSER != 0 && mx < b.x + GAD {
+    // Title row — one `adj_hbox` band, `adj_wbox` per gadget cell (the layout
+    // [`draw_frame`] paints).
+    if kind & TGADGETS != 0 && my < b.y + ah {
+        if kind & CLOSER != 0 && mx < b.x + aw {
             return Gadget::Closer;
         }
-        if kind & FULLER != 0 && mx >= b.x + b.w - GAD {
+        if kind & FULLER != 0 && mx >= b.x + b.w - aw {
             return Gadget::Fuller;
         }
         if kind & MOVER != 0 {
@@ -2075,26 +2215,15 @@ fn gadget_at(w: &Window, mx: i16, my: i16) -> Gadget {
         return Gadget::None;
     }
     // Sizer corner.
-    if kind & SIZER != 0 && mx >= b.x + b.w - GAD && my >= b.y + b.h - GAD {
+    if kind & SIZER != 0 && mx >= b.x + b.w - aw && my >= b.y + b.h - ah {
         return Gadget::Sizer;
     }
     // Right scroll-bar arrows.
-    if kind & (VGADGETS | SIZER) != 0 && mx >= b.x + b.w - GAD {
-        let mut top = b.y + 1;
-        if has_title {
-            top += GAD - 1;
-        }
-        if kind & INFO != 0 {
-            top += GAD - 1;
-        }
-        let mut bot = b.y + b.h - 1;
-        if kind & (HGADGETS | SIZER) != 0 {
-            bot -= GAD - 1;
-        }
-        if kind & UPARROW != 0 && my < top + GAD {
+    if let Some(bar) = vbar_rect(b, kind).filter(|_| mx >= b.x + b.w - aw) {
+        if kind & UPARROW != 0 && my < bar.y + ah {
             return Gadget::Up;
         }
-        if kind & DNARROW != 0 && my >= bot - GAD + 1 {
+        if kind & DNARROW != 0 && my >= bar.y + bar.h - ah {
             return Gadget::Dn;
         }
         // Elevator thumb (drag) vs. a page click in the track either side of
@@ -2103,25 +2232,20 @@ fn gadget_at(w: &Window, mx: i16, my: i16) -> Gadget {
         if let Some((track_y, track_h)) = vtrack(w) {
             if my >= track_y && my < track_y + track_h {
                 let (off, len) = thumb_geom(track_h, w.vslsize, w.vslide);
-                let thumb_y = track_y + off;
-                if my >= thumb_y && my < thumb_y + len {
+                let e = elev_rect(bar, (track_y, track_h), off, len, true);
+                if my >= e.y && my < e.y + e.h {
                     return Gadget::VElev;
                 }
-                return if my < thumb_y { Gadget::VUpPage } else { Gadget::VDnPage };
+                return if my < e.y { Gadget::VUpPage } else { Gadget::VDnPage };
             }
         }
     }
     // Bottom scroll-bar arrows.
-    if kind & (HGADGETS | SIZER) != 0 && my >= b.y + b.h - GAD {
-        let left = b.x + 1;
-        let mut right = b.x + b.w - 1;
-        if kind & (VGADGETS | SIZER) != 0 {
-            right -= GAD - 1;
-        }
-        if kind & LFARROW != 0 && mx < left + GAD {
+    if let Some(bar) = hbar_rect(b, kind).filter(|_| my >= b.y + b.h - ah) {
+        if kind & LFARROW != 0 && mx < bar.x + aw {
             return Gadget::Lf;
         }
-        if kind & RTARROW != 0 && mx >= right - GAD {
+        if kind & RTARROW != 0 && mx >= bar.x + bar.w - aw {
             return Gadget::Rt;
         }
         // Elevator thumb (drag) vs. a page click in the track either side of it
@@ -2129,11 +2253,11 @@ fn gadget_at(w: &Window, mx: i16, my: i16) -> Gadget {
         if let Some((track_x, track_w)) = htrack(w) {
             if mx >= track_x && mx < track_x + track_w {
                 let (off, len) = thumb_geom(track_w, w.hslsize, w.hslide);
-                let thumb_x = track_x + off;
-                if mx >= thumb_x && mx < thumb_x + len {
+                let e = elev_rect(bar, (track_x, track_w), off, len, false);
+                if mx >= e.x && mx < e.x + e.w {
                     return Gadget::HElev;
                 }
-                return if mx < thumb_x { Gadget::HLfPage } else { Gadget::HRtPage };
+                return if mx < e.x { Gadget::HLfPage } else { Gadget::HRtPage };
             }
         }
     }
@@ -2141,12 +2265,16 @@ fn gadget_at(w: &Window, mx: i16, my: i16) -> Gadget {
 }
 
 /// The screen rectangle of a title-row gadget (closer/fuller), for the
-/// `watchbox` feedback.
+/// `watchbox` feedback — the `gl_wbox` × `gl_hbox` cell [`draw_frame`] paints,
+/// inset `ADJ3DSTD` inside the `adj_wbox`-wide title cell.
 fn gad_rect(w: &Window, g: Gadget) -> Grect {
     let b = w.curr;
+    let y = b.y + ADJ3DSTD;
     match g {
-        Gadget::Closer => Grect { x: b.x, y: b.y, w: GAD, h: GAD },
-        Gadget::Fuller => Grect { x: b.x + b.w - GAD, y: b.y, w: GAD, h: GAD },
+        Gadget::Closer => Grect { x: b.x + ADJ3DSTD, y, w: GL_WBOX, h: GL_HBOX },
+        Gadget::Fuller => {
+            Grect { x: b.x + b.w - adj_wbox() + ADJ3DSTD, y, w: GL_WBOX, h: GL_HBOX }
+        }
         _ => Grect::default(),
     }
 }
@@ -2262,8 +2390,8 @@ fn repaint_vacated(backend: &dyn RasterBackend, old: Grect, new: Grect) {
 fn drag_size(w: &mut Window, backend: &dyn RasterBackend) -> Grect {
     let Some(h) = host() else { return w.curr };
     let orig = w.curr;
-    let min_w = 3 * GAD;
-    let min_h = 3 * GAD;
+    let min_w = 3 * adj_wbox();
+    let min_h = 3 * adj_hbox();
     let sw = backend.width() as i16;
     let sh = backend.height() as i16;
     let mut last = orig;

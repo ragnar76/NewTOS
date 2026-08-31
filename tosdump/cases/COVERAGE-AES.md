@@ -337,3 +337,78 @@ four fields we no longer write were already zero there. Only `global[11]/[12]`
 (`ap_3resv`, a kernel address) may legitimately move on a relink. Proving fix 2
 from a dump needs a round-2 case that poisons `global[]` before `appl_init`;
 until then its evidence is the selftest and the source review.
+
+---
+
+## Predictions for run 3, part 1 — `wind_calc` on the 3D branch (D-R1-1)
+
+Written **before** the run, as rounds 1 and 2 were. Fix: `borders()` in
+`tos-api/src/aes/window.rs` now computes `wm_calc`'s `#if CONF_WITH_3D_OBJECTS`
+branch (`gemwmlib.c:1817-1840`) — `adj_hbox-1` title band, `TGADGETS` (so
+`MOVER` alone gets one), a full `gl_hbox` for `INFO`, and the `SIZER`
+strip-and-force rule — with `adj_wbox = adj_hbox = gl_?box + 2*ADJ3DSTD = 23`
+on any screen ≥ 640 wide.
+
+`global[]` still differs in every record (D-R1-5/6 open), so each line below is
+again "this case loses every `int_out[…]` line", not "this case turns green".
+
+The predicted value **is** the EmuTOS value already in
+`reference/EMUTOS14-AES.BIN`; `old` is what `reference/NEWTOS-AES.BIN` holds.
+All 53 cases plus the partial 131:
+
+| Case | kind | word | old → predicted |
+|---|---|---|---|
+| 68, 69, 70 | NAME / CLOSER / FULLER | `[2]`,`[4]` | 119→**123**, 130→**126** |
+| 71 | MOVER alone | `[2]`,`[4]` | 101→**123**, 148→**126** |
+| 72 | INFO alone | `[2]`,`[4]` | 119→**120**, 130→**129** |
+| 73 | SIZER alone | `[3]`,`[4]` | 180→**176**, 130→**148** |
+| 74, 75, 76 | UPARROW / DNARROW / VSLIDE | `[3]` | 180→**176** |
+| 77, 78, 79 | LFARROW / RTARROW / HSLIDE | `[4]` | 130→**126** |
+| 83, 84, 85 | WC_BORDER NAME / CLOSER / FULLER | `[2]`,`[4]` | 81→**77**, 170→**174** |
+| 86 | WC_BORDER MOVER | `[2]`,`[4]` | 99→**77**, 152→**174** |
+| 87 | WC_BORDER INFO | `[2]`,`[4]` | 81→**80**, 170→**171** |
+| 88 | WC_BORDER SIZER | `[3]`,`[4]` | 220→**224**, 170→**152** |
+| 89, 90, 91 | WC_BORDER UP/DN/VSLIDE | `[3]` | 220→**224** |
+| 92, 93, 94 | WC_BORDER LF/RT/HSLIDE | `[4]` | 170→**174** |
+| 97, 98 | NAME\|CLOSER\|FULLER, TGADGETS | `[2]`,`[4]` | 119→**123**, 130→**126** |
+| 99 | NAME\|INFO | `[2]`,`[4]` | 137→**142**, 112→**107** |
+| 100 | VGADGETS | `[3]` | 180→**176** |
+| 101 | HGADGETS | `[4]` | 130→**126** |
+| 102 | VGADGETS\|SIZER | `[3]`,`[4]` | 180→**176**, 130→**148** |
+| 103 | HGADGETS\|SIZER | `[3]`,`[4]` | 180→**198**, 130→**126** |
+| 104 | VGADGETS\|HGADGETS\|SIZER | `[3]`,`[4]` | 180→**176**, 130→**126** |
+| 105 | 0x0FEF | `[2]`,`[3]`,`[4]` | 119→**123**, 180→**176**, 112→**104** |
+| 106, 107 | 0x0FFF, 0xFFFF | `[2]`,`[3]`,`[4]` | 137→**142**, 180→**176**, 94→**85** |
+| 108 | WC_BORDER 0x0FEF | `[2]`,`[3]`,`[4]` | 81→**77**, 220→**224**, 188→**196** |
+| 109 | WC_BORDER NAME\|INFO | `[2]`,`[4]` | 63→**58**, 188→**193** |
+| 110 | WC_BORDER 0x0FE0 | `[3]`,`[4]` | 220→**224**, 170→**174** |
+| 112 | 0x0FEF, rect 0,0,0,0 | `[2]`,`[3]`,`[4]` | 19→**23**, −20→**−24**, −38→**−46** |
+| 113 | WC_BORDER, same rect | `[2]`,`[3]`,`[4]` | −19→**−23**, 20→**24**, 38→**46** |
+| 114 | 640×400 | `[2]`,`[3]`,`[4]` | 19→**23**, 620→**616**, 362→**354** |
+| 115 | WC_BORDER 640×400 | `[2]`,`[3]`,`[4]` | −19→**−23**, 660→**664**, 438→**446** |
+| 116 | 1×1 at 5,5 | `[2]`,`[3]`,`[4]` | 24→**28**, −19→**−23**, −37→**−45** |
+| 117 | negative origin | `[2]`,`[3]`,`[4]` | −81→**−77**, 30→**26**, 12→**4** |
+| 118 | 32000×32000 border | `[2]`,`[3]`,`[4]` | −19→**−23**, 32020→**32024**, 32038→**32046** |
+| 120, 121 | wtype 2 / −1 | `[2]`,`[3]`,`[4]` | 119→**123**, 180→**176**, 112→**104** |
+| 132–136 | IN_LEN / AIN_LEN variants | `[2]`,`[3]`,`[4]` | 119→**123**, 180→**176**, 112→**104** |
+| 137 | `w`/`h` arrive poisoned | `[2]`,`[3]`,`[4]` | 119→**123**, −8551→**−8555**, −8569→**−8577** |
+| **131** | OUT_LEN 3 (partial) | `[2]` | 119→**123** — `[3]`/`[4]` stay poisoned from the OUT_LEN fix; **the whole case now matches** |
+
+**Controls — these must NOT move.**
+
+- Case **216** (`graf_handle`) stays MATCH at `[1, 8, 16, 19, 19]`. `graf_handle`
+  reports the *unadjusted* `gl_wbox`/`gl_hbox` (`gemsuper.c:287-291`); if it
+  reported 23 the 3D adjustment has leaked out of the window manager. Confirmed
+  under QEMU: `[objc] graf_handle: … wbox=19 hbox=19`.
+- Cases **67, 80, 82, 95** (kind 0, `HOTCLOSE`) stay MATCH: neither branch adds a
+  border for them.
+- The 21 cases already equal on `int_out` stay equal; `global[]` keeps its six
+  lines in all 95 records.
+
+**Not measurable from this table, and stated so it is not read as a miss:** the
+*drawn* frame moved with the calculation (title band 19→23 px, scroll bars 19→23
+px, gadgets `gl_wbox`×`gl_hbox` inset by `ADJ3DSTD`). Round 1 has no
+`wind_create`/`wind_open`, so no case sees it. Its evidence is the QEMU
+screendump and the kernel AES selftests (`[p5]` reports window A's work area as
+`61,92,336,185` for `kind 0x0FFF` at `60,50,360,250` — exactly `tb=42, rb=23,
+bb=23`).

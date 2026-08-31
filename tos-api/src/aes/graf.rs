@@ -458,9 +458,11 @@ pub fn graf_handle(pb: &Aespb) {
     // gl_wbox / gl_hbox: the gadget box unit. For the 8×16 system font both
     // are 19 — gl_hbox = gl_hchar+3 = 19; gl_wbox = max(gl_wchar+4, gl_hbox·
     // aspect) = 19 (gemgraf.c:412-415, gemsuper.c:290-291). Shared with the
-    // window manager's gadget cell so there is only one `19` in the tree.
-    pb.set_intout(3, super::window::GAD); // gl_wbox
-    pb.set_intout(4, super::window::GAD); // gl_hbox
+    // window manager's *unadjusted* gadget cell so there is only one `19` in
+    // the tree — `graf_handle` reports gl_wbox/gl_hbox, never the 3D-adjusted
+    // adj_wbox/adj_hbox the window frame is built from (gemsuper.c:290-291).
+    pb.set_intout(3, super::window::GL_WBOX); // gl_wbox
+    pb.set_intout(4, super::window::GL_HBOX); // gl_hbox
 }
 
 /// `graf_mouse` (78) — set the mouse cursor: `int_in[0]` = a preset shape

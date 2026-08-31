@@ -55,9 +55,11 @@ pub const MAX_DEPTH: i16 = 8;
 ///
 /// **At 1920×1080 (ADR-017 Stage 1, native boot)** a maximised window's border
 /// rect is the desktop work area `{0, MENU_H, 1920, 1080-MENU_H}`; `wind_calc`
-/// subtracts the `WINDOW_STYLE` borders `(l=1, t=37, r=19, b=19)`
-/// (`tos-api::aes::window::borders`, `GAD=19`) → a work area of `1900 × 1005`.
-/// `win_bldview` then fits `wfit = 1900/108 = 17` cols and `hfit = 1005/52 = 19`
+/// subtracts the `WINDOW_STYLE` borders `(l=1, t=42, r=23, b=23)`
+/// (`tos-api::aes::window::borders`, the 3D branch: `adj_?box = gl_?box + 4 =
+/// 23`, plus a full `gl_hbox = 19` for the INFO line) → a work area of
+/// `1896 × 996`.
+/// `win_bldview` then fits `wfit = 1896/108 = 17` cols and `hfit = 996/52 = 19`
 /// rows; with its deliberate `+1` fringe row (`o_hfit = pnrow+1 = 20`, columns
 /// stay capped at `17` in size-to-fit) the loop places at most
 /// `17 × 20 = 340` cells. The desktop's own drive/trash/printer icons under

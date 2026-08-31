@@ -220,8 +220,8 @@ fn do_alert(defbut: i16, s: &[u8], modal: bool) -> i16 {
     let box_x = (sw - box_w) / 2;
     // Centre BELOW the menu bar (EmuTOS `ob_center`, gemobed.c:78:
     // `yd = gl_hbox + (gl_height - gl_hbox - hd) / 2`), consistent with our own
-    // `form_center`. gl_hbox == window::GAD == 19 px (the menu BAR_H).
-    let bar = super::window::GAD;
+    // `form_center`. gl_hbox == window::GL_HBOX == 19 px (the menu BAR_H).
+    let bar = super::window::GL_HBOX;
     let box_y = bar + (sh - bar - box_h) / 2;
     // Icon position (screen-absolute), vertically centred in the content.
     let icon_x = box_x + padx;
@@ -931,8 +931,8 @@ pub fn form_center(pb: &Aespb) {
     // Centre BELOW the menu bar (EmuTOS ob_center, gemobed.c:76-80:
     // `yd = gl_hbox + (gl_height - gl_hbox - hd) / 2`), so a centred dialog
     // never lands under the menu bar. gl_hbox = gl_hchar + 3 = 19 pixels
-    // (== window::GAD == the menu BAR_H).
-    let bar = super::window::GAD;
+    // (== window::GL_HBOX == the menu BAR_H).
+    let bar = super::window::GL_HBOX;
     let mut yd = bar + (sh - bar - hd) / 2;
     t.set_x(0, xd);
     t.set_y(0, yd);
