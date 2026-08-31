@@ -296,3 +296,44 @@ instead, and says why at the point of use.
   area the *dump header* carries, so a mislabelled dump would mislabel a case.
   Case *identity* is unaffected either way — the count, the line numbers and
   the CRC come from the shared line iterator, which is area-agnostic.
+
+---
+
+## Predictions for run 2 — written before the run, as round 1's were
+
+Fixed in `16a78da`: the dispatcher now honours `OUT_LEN`, and `appl_init` writes
+only the six fields `gemsuper.c:92-98` writes, within fifteen words.
+
+No case can go fully to MATCH while `global[]` is compared in every record
+(D-R1-5 and D-R1-6 are still open), so each prediction below is "this case loses
+every `int_out[…]` line", not "this case turns green".
+
+| Case | Op | `OUT_LEN` | today | predicted |
+|---|---|---|---|---|
+| 129 | 108 | 0 | `int_out[0..4] = 1,101,119,180,112` | all seven words `0xDEAD` |
+| 130 | 108 | 1 | `[1..4] = 101,119,180,112` | `[0]=1`, `[1..6]` poisoned |
+| 166 | 104 | 1 | `[1..4] = 0,0,0,0` | `[0]=1`, `[1..6]` poisoned |
+| 172 | 104 | 1 | `[1..4] = 0,19,1920,1061` | `[0]=1`, `[1..6]` poisoned |
+| 173 | 104 | 3 | `[3]=1920, [4]=1061` | `[0..2]` unchanged, `[3..6]` poisoned |
+| 217 | 77 | 1 | `[1..4] = 8,16,19,19` | `[0]=1`, `[1..6]` poisoned |
+| 218 | 79 | 1 | `[1..4] = 126,342,1,0` | `[0]=1`, `[1..6]` poisoned — the operator's mouse position leaves the record |
+| 241 | 0 | 0 | `[0] = -1` | all poisoned; the -1 is computed and never delivered |
+
+**Case 131 is a deliberate partial.** `int_out[3]`/`[4]` go poisoned, but
+`int_out[2]` stays 119 against EmuTOS's 123 — that is D-R1-1 (`wind_calc` on the
+non-3D branch), a different defect. **If `int_out[2]` also disappears, something
+is wrong**, because this fix has no business touching geometry.
+
+**Controls — these must NOT move.** Case 216 (`graf_handle`, `OUT_LEN 5`) stays
+MATCH at `[1, 8, 16, 19, 19]`, which is what proves the full declared width is
+still copied. The 53 `wind_calc` cases of D-R1-1 stay exactly as they are. The
+21 cases already equal on `int_out` stay equal. `global[]` keeps showing its six
+lines in all 95 records.
+
+**Fix 2 changes nothing in this round**, and that is itself the prediction: the
+log line `global after appl_init 832,1,1,112,0,0,0,0,0,0,16,-32592,17,0,0` must
+come back byte for byte, because the dumper holds `aes_global` in `.bss` and the
+four fields we no longer write were already zero there. Only `global[11]/[12]`
+(`ap_3resv`, a kernel address) may legitimately move on a relink. Proving fix 2
+from a dump needs a round-2 case that poisons `global[]` before `appl_init`;
+until then its evidence is the selftest and the source review.
