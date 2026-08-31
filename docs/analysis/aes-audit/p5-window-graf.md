@@ -166,6 +166,13 @@
 - **Divergenz:** NewTOS implementiert WF_KIND (get). Laut D-053/Open-Question ist das die bevorzugte Richtung (trivial, `w_kind` gespeichert), also **akzeptierte Abweichung** — jedoch: eine App, die auf EmuTOS' FALSE prüft, sieht TRUE. Bewusst dokumentiert.
 - **1:1-Fix:** Keiner nötig, falls die Abweichung bestätigt bleibt; sonst FALSE zurückgeben. (`wind_set(WF_KIND)` fällt korrekt auf FALSE.)
 - **Runtime-verify:** no
+- **ERLEDIGT 2026-08-31:** Abweichung **zurückgenommen**. Der `WF_KIND`-Zweig ist
+  aus `wind_get` entfernt; das Feld fällt jetzt wie in EmuTOS in den
+  `_`-Default (`ret = 0`, kein geschriebenes Wort). Grund: außerhalb der
+  Hardware-Schicht gibt es keine bewussten Abweichungen. Gemessen unter QEMU:
+  `wind_get(0, WF_KIND) → ret=0`, `int_out` bleibt vergiftet. Fall 164 der
+  AES-Tabelle bleibt damit MATCH (vorher nur zufällig, weil Handle 0 keinen
+  Slot hatte).
 
 ### AUD-P5-015: `graf_growbox`/`graf_shrinkbox`-Animation ohne Move-to-Center-Zoom
 - **Severity:** LOW

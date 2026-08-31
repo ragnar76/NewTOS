@@ -412,3 +412,71 @@ px, gadgets `gl_wbox`×`gl_hbox` inset by `ADJ3DSTD`). Round 1 has no
 screendump and the kernel AES selftests (`[p5]` reports window A's work area as
 `61,92,336,185` for `kind 0x0FFF` at `60,50,360,250` — exactly `tb=42, rb=23,
 bb=23`).
+
+---
+
+## Predictions for run 3, part 2 — handle 0 is a real window (D-R1-3)
+
+Written **before** the run. Fix: `tos-api/src/aes/window.rs` gives the desktop
+window a table slot and builds it the way `wm_init` does
+(`gemwmlib.c:1290-1294` + `w_setup`, `:205-218`) — `VF_INUSE`, `kind = NONE`,
+`CURR = PREV = gl_rscreen`, `FULL = WORK = gl_rfull`, `hslide = vslide = 0`,
+`hslsiz = vslsiz = -1`. `win()` is now `get_pwin` (`:1391-1404`): handle 0 is a
+legal handle, so `wm_get` answers it exactly as it answers any window. The
+work rectangle is *stored* (`w_move`, `:1073-1077`) instead of recomputed, which
+is what lets the desktop's `WF_WXYWH` be `gl_rfull` rather than
+`wm_calc(WC_WORK, NONE, screen)`. `wind_find` starts from `NIL` like `ob_find`
+(`gemoblib.c:1044`) and answers 0 only inside the desktop window's `CURR`.
+
+| Case | Field | today | predicted |
+|---|---|---|---|
+| 159 | `wind_get(0, WF_HSLIDE)` | `ret 0`, `[1]` poisoned | `ret 1`, `[1] = 0` → **MATCH** |
+| 160 | `wind_get(0, WF_VSLIDE)` | `ret 0`, `[1]` poisoned | `ret 1`, `[1] = 0` → **MATCH** |
+| 161 | `wind_get(0, WF_HSLSIZ)` | `ret 0`, `[1]` poisoned | `ret 1`, `[1] = −1` → **MATCH** |
+| 162 | `wind_get(0, WF_VSLSIZ)` | `ret 0`, `[1]` poisoned | `ret 1`, `[1] = −1` → **MATCH** |
+| 194 | `wind_find(−1,−1)` | `0` | **−1** → MATCH |
+| 195 | `wind_find(0,−1)` | `0` | **−1** → MATCH |
+| 196 | `wind_find(−1,0)` | `0` | **−1** → MATCH |
+| 197 | `wind_find(32000,32000)` | `0` | **−1** → MATCH |
+| 158 | `wind_get(0, WF_FXYWH)` | `0,0,1920,1080` | `0,**19**,1920,1061` — `int_out[2]` joins EmuTOS' 19 and its diff line disappears; `[3]`/`[4]` stay apart because the screens are 640×480 vs 1920×1080. **Partial by construction, not a miss.** |
+
+**Two cases that must NOT be read as regressions.**
+
+- **167** (`wind_get(0, WF_OWNER)`, `OUT_LEN 1`) **flips from MATCH to
+  differing**: we answer `ret = 1`, the dump answers `0`. Today's match is a
+  coincidence of two different causes (section 0.1 of
+  `docs/analysis/aes-r1-findings.md`) — the TT runs the EmuTOS **1.4 release**,
+  which has no `WF_OWNER` at all, while the pinned reference tree
+  (`VERSION_1_4-71-g1a7484ab`, commit `acb7f3b4`) does. We follow the pinned
+  tree. This is reference-version skew; it resolves by re-dumping on a post-1.4
+  EmuTOS, not by changing our answer.
+- **164** (`wind_get(0, WF_KIND)`, `OUT_LEN 1`) **stays MATCH at `ret = 0`** —
+  but for a new reason. It used to match only because our `WF_KIND` arm was
+  unreachable for handle 0; making handle 0 a window would have exposed it
+  (`ret = 1`). `wm_get` does not handle `WF_KIND` (`gemwmlib.c:1591`,
+  `default: return FALSE`), so the arm was removed rather than kept — the
+  deliberate deviation **D-053 / AUD-P5-014 is retired**. If 164 comes back with
+  `ret = 1`, the removal did not take.
+
+**Unchanged, and each is a control.** 155/156/157 keep exactly their present
+resolution-only differences (`WF_WXYWH`/`WF_CXYWH`/`WF_PXYWH` were already
+right); 163 (`WF_TOP` = 0, EmuTOS `w_top` returns `DESKWH` when nothing is
+topped, `gemwmlib.c:315-318`), 165 (`WF_NEWDESK` → FALSE), 166, 168, 169, 170,
+172, 173 stay as they are; 175–178 (handles 1, −1, 99, 32767) keep `ret = 0` —
+handle 0 became legal, nothing else did; 193 (`wind_find(0,0)` = 0) stays.
+
+**Already measured here, on QEMU raspi4b at 640×480 — the TT's resolution — by
+a temporary probe through the real `svc #2` trap (not committed):**
+
+```
+wind_get(0,WF_WXYWH) ret=1 [0,19,640,461]     wind_get(0,WF_HSLIDE) ret=1 [0]
+wind_get(0,WF_CXYWH) ret=1 [0,0,640,480]      wind_get(0,WF_VSLIDE) ret=1 [0]
+wind_get(0,WF_PXYWH) ret=1 [0,0,640,480]      wind_get(0,WF_HSLSIZ) ret=1 [-1]
+wind_get(0,WF_FXYWH) ret=1 [0,19,640,461]     wind_get(0,WF_VSLSIZ) ret=1 [-1]
+wind_get(0,WF_KIND)  ret=0 (nothing written)  wind_get(0,WF_OWNER)  ret=1
+wind_find(0,0)=0  wind_find(-1,-1)=-1  wind_find(0,-1)=-1  wind_find(-1,0)=-1
+wind_find(32000,32000)=-1
+```
+
+Those are the EmuTOS values of cases 155–158 **to the word**, at the same
+resolution. The Pi run will differ from the TT only where the screen size does.

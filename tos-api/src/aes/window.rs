@@ -47,7 +47,9 @@ const HGADGETS: u16 = LFARROW | RTARROW | HSLIDE;
 const TGADGETS: u16 = NAME | CLOSER | FULLER | MOVER;
 
 // ── WF_* fields, aesdefs.h:534-552 ──
-const WF_KIND: i16 = 1;
+// `WF_KIND` (1) is deliberately absent: `wm_get`/`wm_set` do not handle it in
+// this EmuTOS build (both fall through to `return FALSE`, gemwmlib.c:1591,1745),
+// so there is nothing for the dispatcher to match on.
 const WF_NAME: i16 = 2;
 const WF_INFO: i16 = 3;
 const WF_WXYWH: i16 = 4;
@@ -179,13 +181,25 @@ const GRAY_DK: Pel = 9; // 3D shadow (EmuTOS LBLACK)
 /// the active/inactive cue, matching EmuTOS.
 const TITLE_STIPPLE: [u16; 4] = [0x0000, 0x5555, 0x0000, 0x5555];
 
+/// Number of application window handles (1..=`MAX_WINDOWS`). EmuTOS sizes its
+/// table with `NUM_WIN` (`sysconf.h:26-35`), *including* the desktop window; we
+/// keep the eight application handles this AES has always offered and add the
+/// desktop slot on top, so the count of usable handles does not change.
 const MAX_WINDOWS: usize = 8;
+/// Window-table size — the application handles **plus the desktop window at
+/// handle 0** (EmuTOS `NUM_WIN`, `gemlib.h:136` `WINDOW w_win[NUM_WIN]`).
+const NUM_WIN: usize = MAX_WINDOWS + 1;
 const NAME_CAP: usize = 80;
 
-/// The desktop pseudo-window's AES handle (EmuTOS `DESKWH`) — the bottom of the
-/// window z-order. It has no table slot; its rectangle list is the desk area
-/// (the screen minus the menu bar) minus every open window's border rect.
+/// The desktop window's AES handle (EmuTOS `DESKWH`) — the bottom of the window
+/// z-order, and **a real window**: `wm_init` runs `w_setup(ppd, DESKWH, NONE)`
+/// on it (`gemwmlib.c:1290`), which sets `VF_INUSE`, so `get_pwin(0)` succeeds
+/// and `wm_get` answers every field for it exactly as for any other window. Its
+/// slot is [`slots`]`[0]`, initialised by [`wm_init`].
 const DESKWH: i16 = 0;
+
+/// The desktop window's `kind` — EmuTOS `NONE` (`gemwmlib.c:1290`, no gadgets).
+const NONE: u16 = 0;
 
 /// A rectangle (GEM `GRECT`).
 #[derive(Clone, Copy, Default, PartialEq)]
@@ -207,6 +221,13 @@ struct Window {
     full: Grect, // maximum extent (WF_FXYWH)
     curr: Grect, // current border rect (WF_CXYWH)
     prev: Grect, // previous border rect (WF_PXYWH)
+    /// Work-area rectangle (`WF_WXYWH`) — **stored**, not derived, exactly like
+    /// EmuTOS' `w_work`: `w_move` recomputes it with `wm_calc(WC_WORK, …)` from
+    /// the new `WS_CURR` (`gemwmlib.c:1073-1077`), and `wm_init` sets the
+    /// desktop window's to `gl_rfull` directly (`gemwmlib.c:1294`), which is
+    /// **not** what `wm_calc` would produce for `kind = NONE`. Maintained by
+    /// [`set_curr`].
+    work: Grect,
     name: [u8; NAME_CAP],
     info: [u8; NAME_CAP],
     /// Vertical slider position (`WF_VSLIDE`, 1..1000 per-mille of travel)
@@ -239,6 +260,7 @@ impl Window {
         full: Grect { x: 0, y: 0, w: 0, h: 0 },
         curr: Grect { x: 0, y: 0, w: 0, h: 0 },
         prev: Grect { x: 0, y: 0, w: 0, h: 0 },
+        work: Grect { x: 0, y: 0, w: 0, h: 0 },
         name: [0; NAME_CAP],
         info: [0; NAME_CAP],
         vslide: 0,
@@ -253,14 +275,14 @@ impl Window {
 /// The window table. Single boot CPU only → `UnsafeCell` with a hand-rolled
 /// `Sync`, mirroring the cookie jar and AES process table.
 struct WinTable {
-    slots: UnsafeCell<[Window; MAX_WINDOWS]>,
+    slots: UnsafeCell<[Window; NUM_WIN]>,
     next_z: UnsafeCell<i16>, // monotonically increasing stacking counter
 }
 // SAFETY: only the single boot CPU touches the AES; no concurrent access.
 unsafe impl Sync for WinTable {}
 
 static TABLE: WinTable = WinTable {
-    slots: UnsafeCell::new([Window::EMPTY; MAX_WINDOWS]),
+    slots: UnsafeCell::new([Window::EMPTY; NUM_WIN]),
     next_z: UnsafeCell::new(1),
 };
 
@@ -270,7 +292,7 @@ static TABLE: WinTable = WinTable {
 /// launched GEM app gets a clean window list; [`restore_windows`] copies it back
 /// on the child's `Pterm`. `active` guards a restore with no prior save.
 struct WinSave {
-    slots: UnsafeCell<[Window; MAX_WINDOWS]>,
+    slots: UnsafeCell<[Window; NUM_WIN]>,
     next_z: UnsafeCell<i16>,
     active: UnsafeCell<bool>,
 }
@@ -278,13 +300,56 @@ struct WinSave {
 unsafe impl Sync for WinSave {}
 
 static SAVE: WinSave = WinSave {
-    slots: UnsafeCell::new([Window::EMPTY; MAX_WINDOWS]),
+    slots: UnsafeCell::new([Window::EMPTY; NUM_WIN]),
     next_z: UnsafeCell::new(1),
     active: UnsafeCell::new(false),
 };
 
+/// Set once [`wm_init`] has built the desktop window's slot.
+static WM_READY: AtomicBool = AtomicBool::new(false);
+
+/// EmuTOS `wm_init` (`gemwmlib.c:1287-1294`), reduced to the part that is state
+/// rather than object-tree bookkeeping: make handle 0 a **real** window.
+///
+/// ```c
+/// w_setup(ppd, DESKWH, NONE);                 /* VF_INUSE, sliders 0/0/-1/-1 */
+/// w_setsize(WS_CURR, DESKWH, &gl_rscreen);
+/// w_setsize(WS_PREV, DESKWH, &gl_rscreen);
+/// w_setsize(WS_FULL, DESKWH, &gl_rfull);
+/// w_setsize(WS_WORK, DESKWH, &gl_rfull);
+/// ```
+///
+/// `gl_rscreen` is the whole screen and `gl_rfull` the screen below the menu
+/// row, both fixed at `gsx_start` (`gemgraf.c:423-424`) — i.e. after the
+/// resolution is known. EmuTOS runs `wm_init` at AES start-up for the same
+/// reason; we run it on first use of the table, which is the first AES window
+/// call and therefore equally after the screen is up. `VF_ISOPEN` is *not* set
+/// (the desktop is the tree root, never an open child), so every `in_use &&
+/// open` walk skips it exactly as EmuTOS' `W_TREE` walks do.
+fn wm_init() {
+    // SAFETY: single-CPU AES; exclusive logical owner, no live borrow here.
+    let d = unsafe { &mut (*TABLE.slots.get())[DESKWH as usize] };
+    *d = Window::EMPTY;
+    d.in_use = true; // VF_INUSE
+    d.kind = NONE;
+    d.curr = screen_rect(); // gl_rscreen
+    d.prev = screen_rect();
+    d.full = desktop_work(); // gl_rfull
+    d.work = desktop_work();
+}
+
 #[allow(clippy::mut_from_ref)]
-fn slots() -> &'static mut [Window; MAX_WINDOWS] {
+fn slots() -> &'static mut [Window; NUM_WIN] {
+    // EmuTOS runs `wm_init` after `gsx_start`, i.e. once the resolution is
+    // known; we run it on first use of the table. Latch it only once a raster
+    // backend actually exists — before that [`screen_rect`] would answer with
+    // its 640×480 fallback and freeze the desktop window at the wrong size.
+    if !WM_READY.load(Ordering::Relaxed) {
+        wm_init();
+        if host().and_then(|h| h.raster()).is_some() {
+            WM_READY.store(true, Ordering::Relaxed);
+        }
+    }
     // SAFETY: single-CPU AES; exclusive logical owner.
     unsafe { &mut *TABLE.slots.get() }
 }
@@ -363,7 +428,7 @@ fn get_top() -> i16 {
     for (i, w) in slots().iter().enumerate() {
         if w.in_use && w.open && w.z >= best_z {
             best_z = w.z;
-            best = (i + 1) as i16;
+            best = i as i16;
         }
     }
     best
@@ -378,7 +443,7 @@ fn get_bottom() -> i16 {
     for (i, w) in slots().iter().enumerate() {
         if w.in_use && w.open && w.z <= best_z {
             best_z = w.z;
-            best = (i + 1) as i16;
+            best = i as i16;
         }
     }
     best
@@ -390,7 +455,10 @@ fn get_bottom() -> i16 {
 /// same damage-scope as move/open/close).
 fn top_window(handle: i16) {
     let old_top = get_top(); // current top before the bump (may equal handle)
-    let old_rect = win(old_top).map(|w| w.curr);
+    // `get_top` answers `DESKWH` when no window is topped (EmuTOS `w_top`,
+    // gemwmlib.c:315-318) — the desktop window's rect is the whole screen and
+    // has nothing to un-highlight, so it is not part of the damage.
+    let old_rect = (old_top != DESKWH).then(|| win(old_top).map(|w| w.curr)).flatten();
     if let Some(w) = win(handle) {
         w.z = bump_z();
     }
@@ -561,15 +629,20 @@ pub(crate) fn desktop_bg_obspec() -> u64 {
 /// table with no registered desktop tree draws the white `CLEAR_SCREEN`
 /// fallback root).
 pub fn save_windows() {
+    // Make sure the desktop window's slot exists before it is snapshotted.
+    let live = slots();
     // SAFETY: single-CPU AES; `SAVE` and `TABLE` are disjoint statics and
-    // `[Window; MAX_WINDOWS]` is `Copy`, so these are plain array copies.
+    // `[Window; NUM_WIN]` is `Copy`, so these are plain array copies.
     unsafe {
-        *SAVE.slots.get() = *TABLE.slots.get();
+        *SAVE.slots.get() = *live;
         *SAVE.next_z.get() = *TABLE.next_z.get();
         *SAVE.active.get() = true;
         // Hide every desktop window by resetting the live table (its state is
-        // held in `SAVE`); reset the z counter for the child.
-        *TABLE.slots.get() = [Window::EMPTY; MAX_WINDOWS];
+        // held in `SAVE`); reset the z counter for the child. Slot 0 — the
+        // desktop *window* — is left alone: EmuTOS' `wm_new` likewise deletes
+        // only handles 1.. (`gemwmlib.c:1886`); the desktop window is never
+        // torn down.
+        live[1..].fill(Window::EMPTY);
         *TABLE.next_z.get() = 1;
     }
 }
@@ -683,7 +756,7 @@ fn compose(backend: &dyn RasterBackend, clip: ClipRect) {
     paint_bg_clip(backend, clip);
     let top = get_top();
     // Selection sort by ascending z, drawing each open window once.
-    let mut drawn = [false; MAX_WINDOWS];
+    let mut drawn = [false; NUM_WIN];
     loop {
         let mut pick = usize::MAX;
         let mut pick_z = i16::MAX;
@@ -700,7 +773,7 @@ fn compose(backend: &dyn RasterBackend, clip: ClipRect) {
             break;
         }
         drawn[pick] = true;
-        let istop = (pick as i16 + 1) == top;
+        let istop = pick as i16 == top;
         draw_frame(&slots()[pick], istop, backend, clip);
     }
     crate::vdi::cursor_show(backend);
@@ -803,9 +876,9 @@ fn subtract(list: &mut [Grect; RCAP], n: usize, c: Grect) -> usize {
 /// Compute `handle`'s visible work-area pieces (work rect minus every
 /// higher-z open window) into `RLIST`, cursor reset.
 ///
-/// [`DESKWH`] (the desktop pseudo-window) is treated as the **bottom** of the
-/// z-order: its work area is the desk rectangle ([`desktop_work`], the screen
-/// minus the menu bar) and *every* open window is above it, so the subtraction
+/// [`DESKWH`] (the desktop window) is treated as the **bottom** of the
+/// z-order: its work area is its stored `WS_WORK` (`gl_rfull`, the screen minus
+/// the menu row) and *every* open window is above it, so the subtraction
 /// loop removes each open window's border rect. This is the occlusion-aware
 /// rectangle list EmuTOS's `do_wredraw(DESKWH, …)` walks uniformly with real
 /// windows (`desksupp.c:223`), so the desktop background never reports — and
@@ -817,14 +890,12 @@ fn compute_rlist(handle: i16) {
     };
     *count = 0;
     *cursor = 0;
-    let (work, myz) = if handle == DESKWH {
-        // Desktop: desk area, z below every window (i16::MIN → all subtracted).
-        (desktop_work(), i16::MIN)
-    } else {
-        match win(handle) {
-            Some(w) if w.open => (calc(WC_WORK, w.kind, w.curr), w.z),
-            _ => return,
-        }
+    let (work, myz) = match win(handle) {
+        // Desktop: its stored work rect (`gl_rfull`), z below every window
+        // (i16::MIN → every open window is subtracted from it).
+        Some(w) if handle == DESKWH => (w.work, i16::MIN),
+        Some(w) if w.open => (w.work, w.z),
+        _ => return,
     };
     let mut list = [Grect::default(); RCAP];
     list[0] = work;
@@ -887,7 +958,7 @@ fn send_redraw(handle: i16, rect: Grect) {
 /// disturbing the shared `WF_FIRSTXYWH`/`WF_NEXTXYWH` iterator state ([`RLIST`]).
 fn visible_bound(handle: i16) -> Grect {
     let (work, myz) = match win(handle) {
-        Some(w) if w.open => (calc(WC_WORK, w.kind, w.curr), w.z),
+        Some(w) if w.open => (w.work, w.z),
         _ => return Grect::default(),
     };
     let mut list = [Grect::default(); RCAP];
@@ -931,21 +1002,32 @@ fn send_redraw_in(handle: i16, damage: Grect) {
 /// Redraws for the *same* window coalesce via the queue's rectangle-union
 /// (EmuTOS `doq`, `gemqueue.c:45-56`).
 fn broadcast_redraw(damage: Grect) {
-    for i in 0..MAX_WINDOWS {
-        let handle = (i + 1) as i16;
+    for handle in 1..NUM_WIN as i16 {
         if win(handle).map(|w| w.open).unwrap_or(false) {
             send_redraw_in(handle, damage);
         }
     }
 }
 
-/// Map a window handle (1-based) to a table slot, if valid and in use.
+/// Map a window handle to its table slot, if valid and in use — EmuTOS
+/// `get_pwin` (`gemwmlib.c:1391-1404`): the handle indexes the table directly
+/// and **0 is a legal handle** (the desktop window, `VF_INUSE` since
+/// [`wm_init`]); only a negative handle, one past the table, or a slot without
+/// `VF_INUSE` fails.
 fn win(handle: i16) -> Option<&'static mut Window> {
-    if handle < 1 || handle as usize > MAX_WINDOWS {
+    if handle < 0 || handle as usize >= NUM_WIN {
         return None;
     }
-    let w = &mut slots()[(handle - 1) as usize];
+    let w = &mut slots()[handle as usize];
     w.in_use.then_some(w)
+}
+
+/// Move a window: store the new border rect and recompute the work rect from
+/// it — EmuTOS `w_move` (`gemwmlib.c:1069-1077`), the *only* place besides
+/// `wm_init`/`wm_delete` where `WS_WORK` is written.
+fn set_curr(w: &mut Window, r: Grect) {
+    w.curr = r;
+    w.work = calc(WC_WORK, w.kind, r);
 }
 
 // ── geometry ────────────────────────────────────────────────────────────
@@ -1494,6 +1576,9 @@ fn wf_str_ptr(pb: &Aespb) -> u64 {
 pub fn wind_create(pb: &Aespb) {
     let kind = pb.intin(0) as u16;
     let full = Grect { x: pb.intin(1), y: pb.intin(2), w: pb.intin(3), h: pb.intin(4) };
+    // EmuTOS `wm_create` scans from slot 0 (`gemwmlib.c:1373-1374`); slot 0 is
+    // the desktop window and permanently `VF_INUSE`, so the first free handle
+    // is 1. The handle *is* the slot index.
     for (i, w) in slots().iter_mut().enumerate() {
         if !w.in_use {
             *w = Window::EMPTY;
@@ -1501,12 +1586,13 @@ pub fn wind_create(pb: &Aespb) {
             w.kind = kind;
             w.full = full;
             w.curr = full;
+            w.work = calc(WC_WORK, kind, full);
             // Per-window gadget colours inherit the current global defaults
             // (EmuTOS `w_setup`, gemwmlib.c:222-226) so a prior WF_DCOLOR change
             // is reflected in windows created afterwards.
             w.tcolor = *gl_wtcolor();
             w.bcolor = *gl_wbcolor();
-            pb.set_ret((i + 1) as i16);
+            pb.set_ret(i as i16);
             return;
         }
     }
@@ -1528,7 +1614,7 @@ pub fn wind_open(pb: &Aespb) {
             return;
         }
         w.prev = w.curr;
-        w.curr = r;
+        set_curr(w, r);
         w.open = true;
         w.owner = super::appl::current_pid();
         w.z = bump_z();
@@ -1538,7 +1624,7 @@ pub fn wind_open(pb: &Aespb) {
         // flicker fix, mirroring the move/size damage-scope. This window's content
         // follows via `send_redraw` (WM_REDRAW).
         redraw_clip(r.x, r.y, r.w, r.h);
-        send_redraw(handle, calc(WC_WORK, w.kind, r));
+        send_redraw(handle, w.work);
         pb.set_ret(1);
     } else {
         pb.set_ret(0);
@@ -1589,7 +1675,10 @@ fn close_window(handle: i16) -> bool {
     // when the closed window was the top one (activates the new top frame).
     let new_top = get_top();
     let damage = if handle == old_top {
-        match win(new_top).map(|w| w.curr) {
+        // `get_top` answers `DESKWH` when nothing is left to top (EmuTOS
+        // `w_top`, gemwmlib.c:315-318); there is then no new top frame to
+        // activate, so the damage stays the vacated rect.
+        match (new_top != DESKWH).then(|| win(new_top).map(|w| w.curr)).flatten() {
             Some(nt) => union_grect(r, nt),
             None => r,
         }
@@ -1629,7 +1718,7 @@ pub fn wind_delete(pb: &Aespb) {
 }
 
 /// Write a single scalar to `int_out[1]` with `ret = 1` — the common
-/// `wind_get` scalar-field return (WF_KIND / WF_TOP / the slider fields).
+/// `wind_get` scalar-field return (WF_TOP / the slider fields).
 fn scalar_out(pb: &Aespb, v: i16) {
     pb.set_intout(1, v);
     pb.set_ret(1);
@@ -1700,15 +1789,15 @@ pub fn wind_get(pb: &Aespb) {
 
     let r = match win(handle) {
         Some(w) => match field {
-            WF_WXYWH => calc(WC_WORK, w.kind, w.curr),
+            // The four rectangle fields are plain reads of the stored
+            // `WS_WORK`/`WS_CURR`/`WS_PREV`/`WS_FULL` (EmuTOS `wm_get` →
+            // `w_getsize`, gemwmlib.c:1528-1541,1596-1597). `WF_WXYWH` is
+            // *stored*, not recomputed: for the desktop window `wm_init` puts
+            // `gl_rfull` there, which is not `wm_calc(WC_WORK, NONE, screen)`.
+            WF_WXYWH => w.work,
             WF_CXYWH => w.curr,
             WF_PXYWH => w.prev,
             WF_FXYWH => w.full,
-            WF_KIND => {
-                pb.set_intout(1, w.kind as i16);
-                pb.set_ret(1);
-                return;
-            }
             // Slider position/size scalars → int_out[1] (EmuTOS wm_get,
             // gemwmlib.c:1542-1551). WF_HSLSIZ/WF_VSLSIZ round-trip the −1
             // "use default size" marker unchanged.
@@ -1759,18 +1848,12 @@ pub fn wind_get(pb: &Aespb) {
                 pb.set_ret(1);
                 return;
             }
-            // Any other field on a valid window (COLOR/DCOLOR/OWNER/… — not
-            // implemented at this altitude) → FALSE (EmuTOS default).
-            _ => {
-                pb.set_ret(0);
-                return;
-            }
-        },
-        // Desktop (handle 0): the WORK area sits *under* the menu bar (EmuTOS
-        // gl_rfull); CURR/PREV/FULL are the whole screen (gl_rscreen).
-        None if handle == 0 => match field {
-            WF_WXYWH => desktop_work(),
-            WF_CXYWH | WF_PXYWH | WF_FXYWH => screen_rect(),
+            // Any other field — including `WF_KIND` (1), which `wm_get` does
+            // **not** handle: it falls to `default: return FALSE` and writes
+            // nothing (`gemwmlib.c:1591`). We used to answer it (kind + TRUE);
+            // that was deliberate deviation D-053 / AUD-P5-014 and is now
+            // dropped, because outside the hardware layer NewTOS does not
+            // deviate from EmuTOS on purpose.
             _ => {
                 pb.set_ret(0);
                 return;
@@ -1792,15 +1875,6 @@ pub fn wind_get(pb: &Aespb) {
 pub fn wind_set(pb: &Aespb) {
     let handle = pb.intin(0);
     let field = pb.intin(1);
-    // WF_NEWDESK registers the desktop-background tree on the desktop
-    // pseudo-window (`DESKWH` = 0), which has no window-table slot — handle it
-    // before the `win()` guard (EmuTOS `wm_set` operates on the always-present
-    // `D.w_win[0]` slot, `gemwmlib.c:1685`). Never fails.
-    if field == WF_NEWDESK {
-        set_newdesk(pb);
-        pb.set_ret(1);
-        return;
-    }
     // WF_DCOLOR (19) writes the *global* default gadget colour words and needs
     // no valid handle (EmuTOS wm_set, gemwmlib.c:1632-1636,1727-1734): gadget =
     // int_in[2], tcolor = int_in[3], bcolor = int_in[4] (−1 = leave unchanged).
@@ -1822,6 +1896,16 @@ pub fn wind_set(pb: &Aespb) {
         return;
     }
     match field {
+        // WF_NEWDESK registers the desktop-background tree on the window named
+        // by the handle — in practice the desktop window, `DESKWH` = 0, which
+        // is a real slot since [`wm_init`]. EmuTOS also re-owns that window to
+        // the caller (`pwin->w_owner = rlr`, `gemwmlib.c:1684-1687`).
+        WF_NEWDESK => {
+            if let Some(w) = win(handle) {
+                w.owner = super::appl::current_pid();
+            }
+            set_newdesk(pb);
+        }
         WF_NAME => {
             // The title pointer arrives two ways (see `wf_str_ptr`): the
             // desktop's native `addr_in[0]` (AIN_LEN=1), or the classic-AES
@@ -1844,12 +1928,12 @@ pub fn wind_set(pb: &Aespb) {
         }
         WF_CXYWH => {
             let r = Grect { x: pb.intin(2), y: pb.intin(3), w: pb.intin(4), h: pb.intin(5) };
-            let (kind, prev) = if let Some(w) = win(handle) {
+            let (work, prev) = if let Some(w) = win(handle) {
                 w.prev = w.curr;
-                w.curr = r;
-                (w.kind, w.prev)
+                set_curr(w, r);
+                (w.work, w.prev)
             } else {
-                (0, r)
+                (r, r)
             };
             // Repaint only the union of the old and new border rects — the
             // programmatic move/size path (desktop WM_FULLED, app `wind_set`) —
@@ -1859,7 +1943,7 @@ pub fn wind_set(pb: &Aespb) {
             // damage repaint when it drives this path (`desk::redraw`).
             let d = union_grect(prev, r);
             redraw_clip(d.x, d.y, d.w, d.h);
-            send_redraw(handle, calc(WC_WORK, kind, r));
+            send_redraw(handle, work);
         }
         WF_TOP => {
             // EmuTOS `wm_set(WF_TOP)` tops the window only when it isn't already
@@ -1879,8 +1963,8 @@ pub fn wind_set(pb: &Aespb) {
                 // (EmuTOS `perform_untop`, gemctrl.c:151), then WM_REDRAW to the
                 // newly-topped window for its now-fully-visible work area.
                 post_untopped(old_top, handle);
-                if let Some((kind, curr)) = win(handle).map(|w| (w.kind, w.curr)) {
-                    send_redraw(handle, calc(WC_WORK, kind, curr));
+                if let Some(work) = win(handle).map(|w| w.work) {
+                    send_redraw(handle, work);
                 }
             }
         }
@@ -1965,7 +2049,8 @@ fn redraw_open(handle: i16) {
 }
 
 /// `wind_find` (106) — handle of the window under `(int_in[0], int_in[1])`;
-/// 0 = desktop.
+/// 0 = the desktop window, −1 when the point is on no window at all (off the
+/// screen) — see [`find_handle`].
 pub fn wind_find(pb: &Aespb) {
     pb.set_ret(find_handle(pb.intin(0), pb.intin(1)));
 }
@@ -2076,9 +2161,9 @@ pub fn wind_calc(pb: &Aespb) {
 /// deleting the windows). Releasing the locks here is the observable equivalent
 /// of those drain loops (both counters end at 0).
 pub fn wind_new(pb: &Aespb) {
-    for w in slots().iter_mut() {
-        *w = Window::EMPTY;
-    }
+    // `for (wh = 1; wh < NUM_WIN; wh++)` (gemwmlib.c:1886) — handle 0, the
+    // desktop window, is not one of the windows `wm_new` deletes.
+    slots()[1..].fill(Window::EMPTY);
     // SAFETY: single-CPU AES.
     unsafe { *TABLE.next_z.get() = 1 };
     // Release all update / mouse-control locks (gemwmlib.c:1879-1883).
@@ -2131,10 +2216,10 @@ fn screen_rect() -> Grect {
     }
 }
 
-/// The desktop pseudo-window's work rectangle: the full screen minus the menu
-/// bar at the top (EmuTOS `gl_rscreen` minus the menu-bar owner rect). When no
-/// menu bar is installed it is the whole screen. Seeds [`compute_rlist`]'s
-/// [`DESKWH`] rectangle list.
+/// EmuTOS `gl_rfull` — the full screen minus the menu row at the top
+/// (`gsx_start`, `gemgraf.c:423-424`, set **unconditionally**, whether or not a
+/// menu bar is installed). [`wm_init`] stores it as the desktop window's `FULL`
+/// and `WORK` rectangles, which is where every later reader takes it from.
 fn desktop_work() -> Grect {
     let full = screen_rect();
     let top = super::menu::desk_top();
@@ -2345,7 +2430,7 @@ fn drag_move(w: &mut Window, backend: &dyn RasterBackend) -> Grect {
             );
             repaint_vacated(backend, last, nr);
             crate::vdi::cursor_show(backend);
-            w.curr = nr;
+            set_curr(w, nr);
             last = nr;
         }
         if crate::vdi::mouse_buttons() & 0x01 == 0 {
@@ -2409,7 +2494,7 @@ fn drag_size(w: &mut Window, backend: &dyn RasterBackend) -> Grect {
             // area's content returns on release via the desktop's redraw.
             crate::vdi::cursor_hide(backend);
             paint_bg_clip(backend, rect_clip(orig.x, orig.y, last.w, last.h));
-            w.curr = nr;
+            set_curr(w, nr);
             draw_frame(w, true, backend, ClipRect::full(backend.width(), backend.height()));
             crate::vdi::cursor_show(backend);
             last = nr;
@@ -2499,16 +2584,25 @@ fn wait_release() {
 }
 
 /// Handle of the open window under `(mx,my)`, **top-most first** (the highest
-/// z among the windows whose border rect contains the point); 0 = desktop.
-/// Mirrors EmuTOS `wm_find` = `ob_find(gl_wtree, 0, 2, x, y)`, which walks the
-/// window tree strictly top-to-bottom (gemsuper.c:348-350, gemwmlib.c:1767).
+/// z among the windows whose border rect contains the point); 0 = the desktop
+/// window, **−1 = nobody**.
+///
+/// Mirrors EmuTOS `wm_find` = `ob_find(gl_wtree, 0, 2, x, y)`
+/// (`gemsuper.c:348-350`, `gemwmlib.c:1767-1770`), which walks the window tree
+/// strictly top-to-bottom from the ROOT. `ob_find` starts with
+/// `lastfound = NIL` (`gemoblib.c:1044`, `NIL = -1`, `obdefs.h:21`) and only
+/// assigns a handle once the point is found **inside** an object's rectangle —
+/// and the ROOT of the window tree carries the desktop window's `WS_CURR`, i.e.
+/// `gl_rscreen`. So a point off the screen belongs to no window at all: the
+/// desktop is *not* an unconditional fallback.
 fn find_handle(mx: i16, my: i16) -> i16 {
-    let mut best = 0i16;
+    let desk = slots()[DESKWH as usize].curr;
+    let mut best = if inside(desk, mx, my) { DESKWH } else { -1 };
     let mut best_z = i16::MIN;
     for (i, w) in slots().iter().enumerate() {
         if w.in_use && w.open && inside(w.curr, mx, my) && w.z >= best_z {
             best_z = w.z;
-            best = (i + 1) as i16;
+            best = i as i16;
         }
     }
     best
@@ -2538,7 +2632,9 @@ pub fn intercept() {
     }
     let (mx, my) = crate::vdi::mouse_position();
     let handle = find_handle(mx, my);
-    if handle == 0 {
+    // 0 = the desktop window, −1 = no window at all: neither has a frame to
+    // intercept.
+    if handle <= DESKWH {
         return;
     }
     let Some(backend) = host().and_then(|h| h.raster()) else {
@@ -2664,7 +2760,7 @@ fn post_to_owner(owner: i16, msg: &[i16; 8]) {
 /// (0 = desktop / none). Routed through the owner FIFO like every other WM_*
 /// (no `pbuff` bypass, AUD-P2-001).
 fn post_untopped(old_top: i16, new_top: i16) {
-    if old_top == new_top {
+    if old_top == new_top || old_top == DESKWH {
         return;
     }
     if let Some(owner) = win(old_top).map(|w| w.owner) {
