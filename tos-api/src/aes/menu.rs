@@ -134,9 +134,38 @@ const ADJ3DSTD: i16 = 2;
 
 /// `menu_bar` (30) — install (`int_in[0]`=1) or remove (0) the menu bar
 /// `addr_in[0]` at the top of the screen.
+///
+/// EmuTOS `mn_bar` (`gemmnlib.c:703-732`) branches on `showit` **first** and
+/// never touches `tree` on the hide path — it only drops the tree pointer
+/// (`gl_mntree = NULL`, `:724-728`). `menu_bar(NULL, 0)` is therefore a legal
+/// call, and the one an application makes when it gives its bar back: after a
+/// `Pterm` the AES must not keep a pointer into the dead process's tree.
+///
+/// The **show** path is the only one that dereferences `tree`; a NULL tree
+/// there is a caller bug that faults EmuTOS outright (it has no guard). NewTOS
+/// returns 0 instead of faulting the whole system — the single deviation in
+/// this function, on a path no conforming caller takes.
 pub fn menu_bar(pb: &Aespb) {
     let tree = pb.addrin(0) as *mut Object;
     let show = pb.intin(0);
+
+    if show == 0 {
+        // `gl_mntree = NULL` (`gemmnlib.c:726`) — unconditional, and
+        // independent of the screen: dropping the bar must forget the tree
+        // even with no raster backend up.
+        MNTREE.store(0, Ordering::Relaxed);
+        if let Some(backend) = host().and_then(|h| h.raster()) {
+            let sw = backend.width() as i16;
+            let clip = ClipRect::full(backend.width(), backend.height());
+            // Erase the bar area.
+            backend.fill_rect(0, 0, sw, BAR_H, WHITE, clip);
+        }
+        // `xif` seeds `ret = TRUE` and the `MENU_BAR` arm never changes it
+        // (`gemsuper.c:85,168-170`), so a hide always reports 1.
+        pb.set_ret(1);
+        return;
+    }
+
     if tree.is_null() {
         pb.set_ret(0);
         return;
@@ -148,26 +177,20 @@ pub fn menu_bar(pb: &Aespb) {
     let sw = backend.width() as i16;
     let clip = ClipRect::full(backend.width(), backend.height());
 
-    if show != 0 {
-        // The bar is an opaque white strip. THEBAR (the G_BOX background) is
-        // hollow (`gr_crack(0)` → IP_HOLLOW), so it relies on the strip being
-        // clean underneath; clear it to white first, mirroring the `show == 0`
-        // erase, so drawing the bar always yields a clean strip even when a
-        // full-screen program (e.g. a `.NCP` console) left content there.
-        backend.fill_rect(0, 0, sw, BAR_H, WHITE, clip);
-        // The bar spans the full screen width. THEBAR is object 1; read/write
-        // its geometry at the caller's ABI width (24-byte ILP32 / 32-byte LP64).
-        let t = ObjTree::new(tree);
-        t.set_width(THEBAR, sw - t.x(THEBAR));
-        object::draw_obj(tree as *const Object, THEBAR, MAX_DEPTH, backend);
-        // Separator line under the bar.
-        backend.fill_rect(0, BAR_H - 1, sw, 1, BLACK, clip);
-        MNTREE.store(tree as usize, Ordering::Relaxed);
-    } else {
-        // Erase the bar area.
-        backend.fill_rect(0, 0, sw, BAR_H, WHITE, clip);
-        MNTREE.store(0, Ordering::Relaxed);
-    }
+    // The bar is an opaque white strip. THEBAR (the G_BOX background) is
+    // hollow (`gr_crack(0)` → IP_HOLLOW), so it relies on the strip being
+    // clean underneath; clear it to white first, mirroring the `show == 0`
+    // erase, so drawing the bar always yields a clean strip even when a
+    // full-screen program (e.g. a `.NCP` console) left content there.
+    backend.fill_rect(0, 0, sw, BAR_H, WHITE, clip);
+    // The bar spans the full screen width. THEBAR is object 1; read/write
+    // its geometry at the caller's ABI width (24-byte ILP32 / 32-byte LP64).
+    let t = ObjTree::new(tree);
+    t.set_width(THEBAR, sw - t.x(THEBAR));
+    object::draw_obj(tree as *const Object, THEBAR, MAX_DEPTH, backend);
+    // Separator line under the bar.
+    backend.fill_rect(0, BAR_H - 1, sw, 1, BLACK, clip);
+    MNTREE.store(tree as usize, Ordering::Relaxed);
     pb.set_ret(1);
 }
 
