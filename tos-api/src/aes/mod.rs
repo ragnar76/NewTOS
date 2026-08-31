@@ -18,6 +18,7 @@ mod event;
 pub mod form;
 pub mod fsel;
 mod graf;
+pub mod init;
 pub mod menu;
 pub mod object;
 pub mod resource;

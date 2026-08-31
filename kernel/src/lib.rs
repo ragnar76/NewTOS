@@ -288,6 +288,17 @@ extern "C" fn kernel_main_rust(dtb_phys: usize) -> ! {
         seed_clock_from_kernel_file();
     }
 
+    // AES boot initialisation (EmuTOS `gem_main`/`run_accs_and_desktop`
+    // prologue): read the `.INF` file's `#Q` desktop-background line
+    // (`process_inf1`, geminit.c:343-392), fix up the AES's own built-in
+    // DESKTOP resource for the open workstation (`gem_rsc_fixit` + the
+    // full-screen `ob_height`, geminit.c:715-717) and apply the background
+    // byte (`set_aes_background`, geminit.c:635-641). Must run after the
+    // card is mounted (the `.INF` file lives on C:) and before anything can
+    // call `appl_init`, whose `ap_private` reads that resource
+    // (`gemsuper.c:95-96`).
+    tos_api::aes::init::init();
+
     // Bring up the USB host stack (keyboard/mouse) — PHASE-16. On QEMU-virt
     // this finds the xHCI on the PCIe bus and reports its ports; on real
     // Pi-4 it is a no-op until the VL805 firmware path (D7).

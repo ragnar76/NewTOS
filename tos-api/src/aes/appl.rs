@@ -222,11 +222,14 @@ fn screen_planes() -> i16 {
 /// - `ap_version` (`:92`) = [`AES_VERSION`] (`0x0340`);
 /// - `ap_count` (`:93`) = 1;
 /// - `ap_id` (`:94`) = the caller pid ([`current_pid`]);
-/// - `ap_private` (`:95-96`) = `rs_trees[DESKTOP][ROOT].ob_spec` — the desktop
-///   background pattern/colour word. NewTOS's equivalent is the WF_NEWDESK
-///   registered desktop-background tree's root `ob_spec`, read live via
-///   [`super::window::desktop_bg_obspec`] (see its doc for the pre-registration
-///   fallback);
+/// - `ap_private` (`:95-96`) = `rs_trees[DESKTOP][ROOT].ob_spec` — the ROOT of
+///   the AES's **own** built-in `DESKTOP` tree ([`super::init::desktop_tree`],
+///   transcribed from `gem_rsc.c:550-570`), i.e. `0x1143` unless the `.INF`
+///   file's `#Q` line replaced its low byte at AES init
+///   (`super::init::set_aes_background`). Read live via
+///   [`super::init::desktop_root_obspec`]. This is **not** the tree a desktop
+///   registers with `wind_set(WF_NEWDESK)` — that one lands in `gl_newdesk`
+///   (`gemwmlib.c:1687`) and never reaches `ap_private`;
 /// - `ap_planes` (`:97`) = `gl_nplanes`, the screen colour-plane count
 ///   ([`screen_planes`]);
 /// - `ap_3resv` (`:98`) = `(LONG)&D`, a pointer to the AES global data area —
@@ -250,7 +253,7 @@ pub fn appl_init(pb: &Aespb) {
         ap_version: AES_VERSION,                        // gemsuper.c:92
         ap_count: 1,                                    // gemsuper.c:93
         ap_id: pid,                                     // gemsuper.c:94
-        ap_private: super::window::desktop_bg_obspec(), // gemsuper.c:95-96
+        ap_private: super::init::desktop_root_obspec(), // gemsuper.c:95-96
         ap_planes: screen_planes(),                     // gemsuper.c:97
         ap_3resv: pd::table_addr(),                     // gemsuper.c:98
     };

@@ -1376,7 +1376,7 @@ pub fn rsrc_obfix(pb: &Aespb) {
 /// which EmuTOS applies to `ob_width` only. All arithmetic is done in `i32` and
 /// truncated to `i16`, which is bit-identical to EmuTOS' `WORD` (16-bit) math
 /// for the valid 0..=255 byte inputs (max `255 * 16 + 127`, never overflowing).
-fn fix_chpos(raw: i16, cell: i16, is_width: bool, gl_width: i16) -> i16 {
+pub(super) fn fix_chpos(raw: i16, cell: i16, is_width: bool, gl_width: i16) -> i16 {
     let v = raw as u16;
     let coffset = (v >> 8) as i32; // high byte: signed pixel offset (0..=255)
     let charcnt = (v & 0x00ff) as i32; // low byte: unsigned char count (0..=255)

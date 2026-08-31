@@ -58,25 +58,25 @@ Byte offsets are the m68k layout (`WORD` = 2 bytes; `LONG`/pointer = 4 bytes,
 > spec wrongly attributed the DESKTOP `ob_spec` to `ap_ptree`; the source
 > writes it to `ap_private`.)
 >
-> **NewTOS `ap_private` (D-099, resolved 2026-07-22).** NewTOS now fills
-> `ap_private` **1:1 with EmuTOS**, with the faithful NewTOS equivalent of
-> `rs_trees[DESKTOP][ROOT].ob_spec`: the **WF_NEWDESK-registered desktop-
-> background tree's root `ob_spec`**, read live by
-> `tos-api::aes::window::desktop_bg_obspec()`. NewTOS's AES owns no static
-> `gem.rsc` DESKTOP tree; instead the desktop client registers its background
-> object tree with the AES via `wind_set(DESKWH, WF_NEWDESK, g_screen, DROOT)`
-> (`deskmain.c:2049`), and that tree's root box carries the background
-> pattern/colour word (`g_screen[DROOT].ob_spec = g_patcol.desktop |
-> BORDER_TEXT_COLOURS`) — exactly what EmuTOS keeps in the DESKTOP tree's root
-> `ob_spec` (`set_aes_background`, `geminit.c:635-644`). Real GEM apps (QED)
-> call `appl_init` **after** the desktop is up, so they read this live value.
-> Before the desktop registers WF_NEWDESK — only the desktop's **own** early
-> `appl_init` (`deskmain.c:1953`, run before `:2049`) — no tree is registered,
-> so the AES background genuinely is the internal white `fallback_root`
-> (CLEAR_SCREEN); its `ob_spec` (`0x0070`) is returned. That is the truthful
-> current background word, not a fabricated value (and the desktop's own
-> `appl_init` discards `ap_private` anyway — `desk/mod.rs:170` returns only the
-> id). No AES-layer downward reach into the desktop client is needed.
+> **NewTOS `ap_private` (D-099, closed 2026-09-01, stage S1b).** NewTOS fills
+> `ap_private` from the **same object** EmuTOS does: the ROOT of the AES's own
+> built-in `DESKTOP` tree, transcribed from `aes/gem_rsc.c:550-570` into
+> `tos-api::aes::init` (`desktop_root_obspec()`), read live by `appl_init`.
+> Its compiled-in `ob_spec` is the literal `4419L` = **`0x1143`** — the value a
+> real TT running EmuTOS reports. At AES boot the `.INF` file's `#Q` line is
+> scanned (`process_inf1`, `geminit.c:343-392`) and, if present, its
+> plane-appropriate desktop byte replaces the **low byte only**
+> (`set_aes_background`, `geminit.c:635-641`), so `ap_private` is
+> `0x1100 | patcol`.
+>
+> An earlier NewTOS revision sourced this from the **WF_NEWDESK-registered**
+> desktop-background tree instead. That was wrong: `appl_init` indexes
+> `rs_trees[DESKTOP]`, the AES's own compiled-in `gem.rsc` ensemble, while a
+> `wind_set(WF_NEWDESK)` tree lands in `gl_newdesk` (`gemwmlib.c:1687`) and is
+> read only by `w_drawdesk`/`w_redraw_desktop` — it never reaches `ap_private`.
+> The desktop reads `#Q` a **second**, independent time for its own `g_patcol`
+> (`desk/deskapp.c:953-960`); two readers of one line is the 1:1 design, not a
+> duplication to collapse.
 
 The application's identity is its **AES process id** (`AESPD.p_pid`,
 `aes/struct.h:129`). The AES keeps a per-application process descriptor
@@ -129,10 +129,9 @@ inline) + `aes/gemaplib.c:54-63` (`ap_init` sets the flag and returns the pid).
 - `AP_ID` (`global[2]`) = `rlr->p_pid` (the running process's pid);
 - `AP_PRIVATE` (`global[3]`) = `rs_trees[DESKTOP][ROOT].ob_spec` (the DESKTOP
   resource tree's root `ob_spec`, the desktop background pattern/colour word) —
-  **NewTOS:** the WF_NEWDESK-registered desktop-background tree's root `ob_spec`
-  (`tos-api::aes::window::desktop_bg_obspec()`), with the internal white
-  `fallback_root` `ob_spec` (`0x0070`) before that tree is registered (see the
-  `ap_private` callout above and D-099);
+  **NewTOS:** the same object, from the built-in `DESKTOP` tree in
+  `tos-api::aes::init` (`desktop_root_obspec()`): `0x1143`, or `0x1100 | patcol`
+  after a `#Q` line (see the `ap_private` callout above and D-099);
 - `AP_2RESV1`/`ap_planes` (`global[10]`) = `gl_nplanes` (screen colour planes) —
   **NewTOS:** log2 of the framebuffer colour count (`screen_planes()`);
 - `AP_3RESV`/`ap_3resv` (`global[11]`) = `&D` (address of the AES global area
@@ -360,14 +359,11 @@ returns are pid / 0 / 1 / -1 only.
   (the pid), sets `global[0]` = `AES_VERSION` (0x0340 in the default build),
   `global[1]` = 1, and `global[2]` = the same pid it returned
   (`gemsuper.c:92-99`).
-- **`appl_init` private (EmuTOS reference behaviour):** after `appl_init`,
-  `global[3..4]` (`ap_private`, read via `ULONG_AT(&global[3])`) equals the
-  DESKTOP tree root's `ob_spec` (non-zero on a built resource)
-  (`gemsuper.c:95-96`). **Not satisfiable on NewTOS — documented deviation,
-  not an open bug (D-099):** NewTOS has no DESKTOP resource tree at the AES
-  layer to source this value from, so `ap_private` is `0` on NewTOS by
-  design. A NewTOS-targeted program must not rely on `ap_private` carrying
-  the desktop background `ob_spec`.
+- **`appl_init` private:** after `appl_init`, `global[3..4]` (`ap_private`,
+  read via `ULONG_AT(&global[3])`) equals the DESKTOP tree root's `ob_spec`
+  (`gemsuper.c:95-96`). **Satisfied on NewTOS** since stage S1b: `0x1143`
+  with no `#Q` line in the `.INF` file, `0x1100 | patcol` with one — the high
+  24 bits are the resource constant and never change (D-099, closed).
 - **`appl_find` unknown:** `appl_find` of a name that no application registered
   returns `-1` (`gemaplib.c:106-107`).
 - **`appl_find` NULL:** `appl_find` with `addr_in[0] == NULL` returns `-1`
@@ -501,24 +497,21 @@ returns are pid / 0 / 1 / -1 only.
 
 (Empty during Phase 00.)
 
-- **`ap_private = 0` on NewTOS (D-099, deviation, not a gap).** EmuTOS's
-  `appl_init` writes `rs_trees[DESKTOP][ROOT].ob_spec` into `ap_private`
-  (`gemsuper.c:95-96`) — the desktop background pattern/colour object, sourced
-  from a permanently-resident, in-ROM DESKTOP resource tree that is part of
-  EmuTOS's `rs_trees[]` ensemble. NewTOS's AES has **no** such tree: there is
-  no in-ROM `gem.rsc`, and the only resource the AES ever loads is `GEM.RSC`,
-  loaded **lazily** on first use of the file selector (`resource-fileselector.md`,
-  tree 0 = `FSELECTR`). The desktop background equivalent — `g_patcol` — is
-  private state inside the **desktop client application**, which sits above
-  the AES/syscall boundary; `appl_init`'s dispatch arm (which runs inside the
-  AES kernel) has no path to it. Reporting `0` is therefore the honest value,
-  not a stub: there is nothing at the syscall layer to report, and no
-  NewTOS-targeted program can rely on `ap_private` carrying a desktop
-  `ob_spec` because no such tree exists to source it from. If a future
-  NewTOS revision grows a kernel-side desktop-background hook, this decision
-  should be revisited; until then this is a permanent, documented deviation
-  (see `docs/api/_discrepancies.md` D-099), and the "`appl_init` private"
-  verification criterion above is downgraded accordingly (not an open bug).
+- **`ap_private` — the AES's own built-in `DESKTOP` tree (D-099, closed
+  2026-09-01, stage S1b).** `tos-api::aes::init` carries `rs_trees[DESKTOP]`
+  as a static three-object tree transcribed from `aes/gem_rsc.c:550-570` (ROOT
+  `ob_spec = 4419`, the background box, and the `DTNAME` `G_TEXT` with its
+  `rs_tedinfo[12]`). AES boot (`aes::init::init()`, called from the kernel boot
+  path before anything can `appl_init`) does the three `geminit.c` steps in
+  EmuTOS's order: `process_inf1`'s `#Q` scan of the first `INF_SIZE` = 300 bytes
+  of `C:\NEWDESK.INF` (`geminit.c:343-392`, `:99`), the `gem_rsc_fixit`
+  char-grid→pixel conversion plus `tree[ROOT].ob_height = screen height`
+  (`gem_rsc.c:636-641`, `geminit.c:715-717`), and `set_aes_background`
+  (`geminit.c:635-641`) when a `#Q` line was found. `appl_init` then reads
+  `rs_trees[DESKTOP][ROOT].ob_spec` verbatim (`gemsuper.c:95-96`).
+  The earlier "no DESKTOP tree exists at the AES layer, so report 0" position
+  is withdrawn: the tree is the AES's own resource, not the desktop's, so
+  nothing about it needed the desktop client.
 - **Single-app vs. multi-app (the contract split).** EmuTOS runs the desktop
   plus up to `NUM_ACCS` desk accessories as concurrent AES processes, but
   reports `ap_count = 1`. The **reported value 1** and the **pid-as-ap_id**

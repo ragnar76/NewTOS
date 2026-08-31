@@ -4021,6 +4021,28 @@ architecture (no kernel-side DESKTOP tree), not by oversight. Documented in
   giving the full rationale (no `rs_trees`, `GEM.RSC` lazy-loaded FSELECTR
   only, `g_patcol` lives in the desktop client above the syscall boundary).
 
+**CLOSED 2026-09-01 (desktop-user-space stage S1b) — the deviation is
+withdrawn; NewTOS now matches EmuTOS exactly.** The premise above was wrong on
+one point: `rs_trees[DESKTOP]` is the **AES's own** compiled-in `gem.rsc`
+ensemble (`aes/gem_rsc.c:550-570,574-578`, index 2 per `aes/gem_rsc.h:48`), not
+anything the desktop client owns — so nothing about it ever needed the desktop
+or a downward reach across the syscall boundary. NewTOS carries that three-object
+tree as a static in `tos-api::aes::init`; its ROOT's compiled-in `ob_spec` is the
+literal `4419L` = `0x1143`, and AES boot replaces only its low byte from the
+`.INF` file's `#Q` line (`set_aes_background`, `geminit.c:635-641`, driven by
+`process_inf1`, `:343-392`, `:719-728`). `appl_init` reads it verbatim
+(`gemsuper.c:95-96`). A real TT running EmuTOS was measured at `ap_private =
+0x1143`, which is now what NewTOS reports with no `#Q` line present.
+
+An intermediate revision (2026-07-22) sourced the value from the
+**WF_NEWDESK-registered** desktop tree instead; that was also wrong — such a
+tree lands in `gl_newdesk` (`aes/gemwmlib.c:1687`), is read only by
+`w_drawdesk`/`w_redraw_desktop`, and never reaches `ap_private`. Both the spec
+(`docs/api/aes/application.md`: the `ap_private` callout, the `appl_init`
+field list, the verification criterion and the implementation note) and the
+implementation were corrected in the same change; the removed helper was
+`tos-api::aes::window::desktop_bg_obspec()`.
+
 ---
 
 ## D-100: `resource-fileselector.md` labelled EmuTOS's classic on-disk `.RSC` format as NewTOS "contract" — it contradicts the already-accepted ADR-013 (native format); the GEM.RSC lazy-load fact D-099 forward-referenced was never actually documented there
