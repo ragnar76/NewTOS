@@ -103,7 +103,15 @@ static void seti(int16_t opcode, int16_t v)
 }
 
 /* Points are given cell-relative and translated here, so a cell's drawing
- * code never has to know where the cell sits. */
+ * code never has to know where the cell sits.
+ *
+ * Use this ONLY for slots that are coordinates.  Several ptsin slots are
+ * magnitudes and must not be translated: `v_gdp` takes the circle radius in
+ * PTSIN[4], the arc and pieslice radius in PTSIN[6] and the ellipse radii in
+ * PTSIN[2]/[3] (`vdi/vdi_gdp.c`, `gdp_curve`), and `v_justified` takes the
+ * target width in PTSIN[2] (`vdi/vdi_text.c:1205`).  Translating those
+ * produced shapes with radii the size of the screen -- use `pt`/`mag` for
+ * anything mixed. */
 static void pts(const int16_t *xy, int n_points)
 {
 	int i;
@@ -112,6 +120,29 @@ static void pts(const int16_t *xy, int n_points)
 		ptsin[i]     = (int16_t)(ox + xy[i]);
 		ptsin[i + 1] = (int16_t)(oy + xy[i + 1]);
 	}
+}
+
+/* One translated coordinate pair at point index `i`. */
+static void pt(int i, int16_t x, int16_t y)
+{
+	ptsin[i * 2]     = (int16_t)(ox + x);
+	ptsin[i * 2 + 1] = (int16_t)(oy + y);
+}
+
+/* One raw ptsin word — a magnitude, never translated. */
+static void mag(int slot, int16_t v)
+{
+	ptsin[slot] = v;
+}
+
+/* Zero ptsin up to `words`, so a stale value from the cell before cannot
+ * reach a slot this cell does not set. */
+static void pts_clear(int words)
+{
+	int i;
+
+	for (i = 0; i < words; i++)
+		ptsin[i] = 0;
 }
 
 static void text_at(int16_t x, int16_t y, const char *s)
@@ -192,8 +223,6 @@ static void draw_all(void)
 	static const int16_t tri[6]    = { 20,110, 110,110, 65,30 };
 	static const int16_t quad[8]   = { 20,35, 110,35, 110,105, 20,105 };
 	static const int16_t rect[4]   = { 20,35, 110,105 };
-	static const int16_t circ[10]  = { 65,70, 0,0, 40,0, 0,0, 0,0 };
-	static const int16_t elli[10]  = { 65,70, 50,30, 0,0, 50,0, 0,0 };
 	int n = 0;
 
 	cell(n++, "v_pline horizontal 100");
@@ -266,23 +295,31 @@ static void draw_all(void)
 	cell(n++, "GDP 1 v_bar");
 	pts(rect, 2); vdi(11, 1, 2, 0);
 
+	/* Curve sub-ops: centre is a coordinate, every radius is a magnitude.
+	 * contrl[1] = 4 points so the trap copies through PTSIN[6]. */
 	cell(n++, "GDP 2 v_arc 0-90deg");
-	intin[0] = 0; intin[1] = 900; pts(elli, 5); vdi(11, 2, 5, 2);
+	pts_clear(8); pt(0, 65, 75); mag(6, 40);
+	intin[0] = 0; intin[1] = 900; vdi(11, 2, 4, 2);
 
 	cell(n++, "GDP 3 v_pieslice 0-180");
-	intin[0] = 0; intin[1] = 1800; pts(elli, 5); vdi(11, 3, 5, 2);
+	pts_clear(8); pt(0, 65, 75); mag(6, 40);
+	intin[0] = 0; intin[1] = 1800; vdi(11, 3, 4, 2);
 
 	cell(n++, "GDP 4 v_circle r=40");
-	intin[0] = 0; intin[1] = 3600; pts(circ, 5); vdi(11, 4, 5, 2);
+	pts_clear(8); pt(0, 65, 70); mag(4, 40);
+	intin[0] = 0; intin[1] = 3600; vdi(11, 4, 4, 2);
 
 	cell(n++, "GDP 5 v_ellipse 50x30");
-	intin[0] = 0; intin[1] = 3600; pts(elli, 5); vdi(11, 5, 5, 2);
+	pts_clear(8); pt(0, 65, 70); mag(2, 50); mag(3, 30);
+	intin[0] = 0; intin[1] = 3600; vdi(11, 5, 4, 2);
 
 	cell(n++, "GDP 6 v_ellarc 0-90");
-	intin[0] = 0; intin[1] = 900; pts(elli, 5); vdi(11, 6, 5, 2);
+	pts_clear(8); pt(0, 65, 75); mag(2, 50); mag(3, 30);
+	intin[0] = 0; intin[1] = 900; vdi(11, 6, 4, 2);
 
 	cell(n++, "GDP 7 v_ellpie 0-180");
-	intin[0] = 0; intin[1] = 1800; pts(elli, 5); vdi(11, 7, 5, 2);
+	pts_clear(8); pt(0, 65, 75); mag(2, 50); mag(3, 30);
+	intin[0] = 0; intin[1] = 1800; vdi(11, 7, 4, 2);
 
 	cell(n++, "GDP 8 v_rbox rounded");
 	pts(rect, 2); vdi(11, 8, 2, 0);
@@ -290,21 +327,31 @@ static void draw_all(void)
 	cell(n++, "GDP 9 v_rfbox filled");
 	pts(rect, 2); vdi(11, 9, 2, 0);
 
-	cell(n++, "GDP 10 v_justified");
+	cell(n++, "GDP 10 v_justified w=110");
 	{
-		static const int16_t jp[4] = { 10, 70, 110, 0 };
 		int i; const char *s = "JUSTIFY";
 		intin[0] = 1; intin[1] = 1;
 		for (i = 0; s[i]; i++) intin[2 + i] = (int16_t)(unsigned char)s[i];
-		pts(jp, 2); vdi(11, 10, 2, (int16_t)(2 + 7));
+		pts_clear(4);
+		pt(0, 10, 70);
+		mag(2, 110);          /* target width, NOT a coordinate */
+		vdi(11, 10, 2, (int16_t)(2 + 7));
 	}
 
 	cell(n++, "v_contourfill in circle");
+	/* Clipped to the cell: if the flood escapes its outline it fills this
+	 * cell and stops, which is itself the signal -- without the clip it
+	 * would cover the sheet and hide everything else. */
+	pts_clear(4); pt(0, 4, 18); pt(1, (int16_t)(cell_w - 12),
+	                              (int16_t)(cell_h - 30));
+	intin[0] = 1; vdi(129, 0, 2, 1);
 	seti(23, 0);                                  /* hollow outline first */
-	intin[0] = 0; intin[1] = 3600; pts(circ, 5); vdi(11, 4, 5, 2);
+	pts_clear(8); pt(0, 65, 70); mag(4, 40);
+	intin[0] = 0; intin[1] = 3600; vdi(11, 4, 4, 2);
 	seti(23, 1); seti(25, 1);
-	ptsin[0] = (int16_t)(ox + 65); ptsin[1] = (int16_t)(oy + 70);
+	pts_clear(2); pt(0, 65, 70);
 	intin[0] = 1; vdi(103, 0, 1, 1);
+	seti(129, 0);
 
 	cell(n++, "vs_clip: box clips X");
 	{
