@@ -37,6 +37,16 @@
 # sdk/overlays/<app>/, so they are tracked normally.
 /apps/*/
 
+# ...except apitest, which is OURS rather than vendored. Its T-numbered probes
+# are the acceptance evidence for the desktop-rebuild stages, so losing them to
+# a clean would lose the proof that a stage landed. Sources tracked, built
+# binaries still excluded by the *.NCP rule above.
+!/apps/apitest/
+/apps/apitest/*
+!/apps/apitest/*.c
+!/apps/apitest/*.h
+!/apps/apitest/*.sh
+
 # macOS junk that FAT round-trips create.
 .DS_Store
 ._*
