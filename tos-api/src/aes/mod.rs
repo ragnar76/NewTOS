@@ -278,7 +278,62 @@ pub unsafe fn dispatch(
         unsafe { pb.copy_intout_back() };
     }
     trace::call_end(&pb, t0, sw.is_some());
+    if sw.is_none() {
+        // `super()` runs `xif` and then **falls through** to `dsptch()`
+        // (`aes/gemsuper.c:452-464`) — every completed AES call ends there.
+        // The `Switch` exit is the one case that has not completed: the trap is
+        // aborted and re-executed on resume, and the yield itself *is* the
+        // dispatch (it came out of `sched::sleep`, which already pumped).
+        dsptch();
+    }
     sw
+}
+
+/// EmuTOS `dsptch()` — the dispatch every AES call ends with.
+///
+/// `super()`, the AES trap's supervisor entry, runs the opcode switch and then
+/// falls through to `dsptch()` for **every** AES call (`aes/gemsuper.c:452-464`);
+/// `dsptch` saves the machine state and jumps to `disp` (`aes/gemasm.S:129-167`),
+/// and `disp` ends with
+///
+/// ```text
+/// do {
+///     if (fpcnt)
+///         forker();
+///     schedule();
+/// } while (fpcnt);
+/// ```
+///
+/// (`aes/gemdisp.c:236-242`). `forker()` drains the fork ring — the FPDs the
+/// mouse/keyboard interrupt posted (`aes/gemdisp.c:101-155`) — so `bchange` and
+/// `mchange` run *there* and publish the new `button` / `mclick` / `xrat` /
+/// `yrat` (`aes/geminput.c:333-343`, `:360-373`), and `schedule()` additionally
+/// polls the keyboard through `chkkbd()` (`aes/gemdisp.c:158-177,180-206`).
+///
+/// **Why this is load-bearing and not bookkeeping.** It is the only reason the
+/// input state an application reads is not frozen for the duration of a polling
+/// loop. `gr_mkstate` just hands out the globals — `*pmstat = button`
+/// (`aes/gemgrlib.c:458-464`) — so an app that does nothing but call
+/// `graf_mkstate` in a loop still observes the button change, because each of
+/// its traps ends in this dispatch and the drain updates `button` on the way
+/// out. TeraDesk depends on exactly that: after a **double** click it spins in
+/// `while (xe_button_state()) ;` (`sdk/apps/teradesk/window.c:4406-4412`), and
+/// `xe_button_state` is a bare `graf_mkstate`
+/// (`sdk/apps/teradesk/library/xdialog/xdevent.c:251-258`).
+///
+/// **Our equivalent of the drain.** This kernel has no interrupt-driven
+/// pointer: the IKBD / USB-HID packets are collected by `Host::pump_input`,
+/// which reaches [`crate::vdi::feed_relative`] — our `mouse_int` — and from
+/// there [`user_but`] / [`user_mot`], i.e. the `b_click` + `mchange` work
+/// EmuTOS does in `forker()`, plus the keyboard poll `schedule()` does in
+/// `chkkbd()`. One call is `disp`'s one pass through that loop. It is the same
+/// call the blocking `evnt_*` waits already make; what was missing is that the
+/// *non-blocking* opcodes made it too, which is what `super()`'s fall-through
+/// guarantees in EmuTOS.
+fn dsptch() {
+    if let Some(h) = crate::host::host() {
+        h.pump_input();
+    }
 }
 
 /// The opcode switch — EmuTOS's `crysbind` (`aes/gemsuper.c:77-421`).
