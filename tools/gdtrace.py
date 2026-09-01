@@ -83,9 +83,43 @@ GD_NAME = {
     0x48: "Malloc", 0x49: "Mfree", 0x4A: "Mshrink", 0x4B: "Pexec",
     0x4C: "Pterm", 0x4D: "Pwait", 0x4E: "Fsfirst", 0x4F: "Fsnext",
     0x56: "Frename", 0x57: "Fdatime",
-    0x11A: "Psigreturn",
-    0x150: "Ssystem",
 }
+
+# FreeMiNT extension calls (`references/freemint/sys/syscalls.master`). NewTOS
+# implements only `Ssystem` (0x154) of these; every other id here returns
+# `EINVFN`, which is worth seeing by name — "the application asked for
+# `Fstat64` and did not get it" is a finding, "?0x14b -> -32" is noise.
+MINT_NAME = {
+    0x100: "Fpipe", 0x101: "Ffchown", 0x102: "Ffchmod", 0x103: "Fsync",
+    0x104: "Fcntl", 0x105: "Finstat", 0x106: "Foutstat", 0x107: "Fgetchar",
+    0x108: "Fputchar", 0x109: "Pwait", 0x10A: "Pnice", 0x10B: "Pgetpid",
+    0x10C: "Pgetppid", 0x10D: "Pgetpgrp", 0x10E: "Psetpgrp", 0x10F: "Pgetuid",
+    0x110: "Psetuid", 0x111: "Pkill", 0x112: "Psignal", 0x113: "Pvfork",
+    0x114: "Pgetgid", 0x115: "Psetgid", 0x116: "Psigblock",
+    0x117: "Psigsetmask", 0x118: "Pusrval", 0x119: "Pdomain",
+    0x11A: "Psigreturn", 0x11B: "Pfork", 0x11C: "Pwait3", 0x11D: "Fselect",
+    0x11E: "Prusage", 0x11F: "Psetlimit", 0x120: "Talarm", 0x121: "Pause",
+    0x122: "Sysconf", 0x123: "Psigpending", 0x124: "Dpathconf",
+    0x125: "Pmsg", 0x126: "Fmidipipe", 0x127: "Prenice", 0x128: "Dopendir",
+    0x129: "Dreaddir", 0x12A: "Drewinddir", 0x12B: "Dclosedir",
+    0x12C: "Fxattr", 0x12D: "Flink", 0x12E: "Fsymlink", 0x12F: "Freadlink",
+    0x130: "Dcntl", 0x131: "Fchown", 0x132: "Fchmod", 0x133: "Pumask",
+    0x134: "Psemaphore", 0x135: "Dlock", 0x136: "Psigpause",
+    0x137: "Psigaction", 0x138: "Pgeteuid", 0x139: "Pgetegid",
+    0x13A: "Pwaitpid", 0x13B: "Dgetcwd", 0x13C: "Salert", 0x13D: "Tmalarm",
+    0x13E: "Psigintr", 0x13F: "Suptime", 0x140: "Ptrace", 0x141: "Mvalidate",
+    0x142: "Dxreaddir", 0x143: "Pseteuid", 0x144: "Psetegid",
+    0x145: "Pgetauid", 0x146: "Psetauid", 0x147: "Pgetgroups",
+    0x148: "Psetgroups", 0x149: "Tsetitimer", 0x14A: "Dchroot",
+    0x14B: "Fstat64", 0x14C: "Fseek64", 0x14D: "Dsetkey", 0x14E: "Psetreuid",
+    0x14F: "Psetregid", 0x150: "Sync", 0x151: "Shutdown",
+    0x152: "Dreadlabel", 0x153: "Dwritelabel", 0x154: "Ssystem",
+    0x155: "Tgettimeofday", 0x156: "Tsettimeofday", 0x157: "Tadjtime",
+    0x158: "Pgetpriority", 0x159: "Psetpriority", 0x15A: "Fpoll",
+    0x15B: "Fwritev", 0x15C: "Freadv", 0x15D: "Ffstat64", 0x15E: "Psysctl",
+    0x15F: "Semulation", 0x160: "Fsocket",
+}
+GD_NAME.update(MINT_NAME)
 
 # TOS error codes — `tos-types/src/error.rs`, values matching the Compendium.
 ERR_NAME = {
@@ -370,7 +404,7 @@ def detail(r):
     return s
 
 
-def render(recs, hz, t0, hexdump=False, out=sys.stdout):
+def render(recs, hz, t0, hexdump=False, gaps=True, out=sys.stdout):
     def ms(t):
         return (t - t0) * 1000.0 / hz if hz else 0.0
 
@@ -379,7 +413,7 @@ def render(recs, hz, t0, hexdump=False, out=sys.stdout):
     print("-" * 118, file=out)
     prev_seq = None
     for r in recs:
-        if prev_seq is not None and r.seq != prev_seq + 1:
+        if gaps and prev_seq is not None and r.seq != prev_seq + 1:
             print(f"{'':>7} {'':>11} {'':>9} {'':>3} {'':>5} "
                   f"{'~~~~~~~~~~':<10} {r.seq - prev_seq - 1} records lost "
                   f"here (ring wrapped)", file=out)
@@ -542,6 +576,7 @@ def main():
     print(f"{len(recs)} records, {hz} Hz timer\n")
 
     names = {v.lower(): k for k, v in GD_NAME.items()}
+    filtered = False
     ops = set()
     for o in args.op:
         if o.lower() in names:
@@ -550,21 +585,28 @@ def main():
             ops.add(int(o, 0))
     if ops:
         recs = [r for r in recs if r.op in ops]
+        filtered = True
     if args.slot is not None:
         recs = [r for r in recs if r.slot == args.slot]
+        filtered = True
     if args.errors:
         recs = [r for r in recs if r.kind == KIND_CALL and r.ret < 0]
+        filtered = True
     if args.head:
         recs = recs[:args.head]
     if args.tail:
         recs = recs[-args.tail:]
+        filtered = True
 
     if args.summary:
         summary(recs, hz)
     elif args.files:
         files_report(recs, hz, t0)
     else:
-        render(recs, hz, t0, hexdump=args.hex)
+        # The "records lost" note means the ring wrapped, so it may only be
+        # drawn on an unfiltered view — a filter makes the sequence numbers
+        # jump for a completely different reason.
+        render(recs, hz, t0, hexdump=args.hex, gaps=not filtered)
 
 
 if __name__ == "__main__":
