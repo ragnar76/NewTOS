@@ -144,11 +144,30 @@ const O_SIZE: usize = 7;
 /// | 54 | 1 | `slot` — GEMDOS process slot, `0xFF` = in-kernel caller |
 /// | 55 | 1 | `nin` — `int_in` words in `w` |
 /// | 56 | 1 | `nout` — `int_out` words in `w`, after the `nin` |
-/// | 57 | 1 | `mb_or` — OR of the button byte over all evaluations |
-/// | 58 | 1 | `mb_and` — AND of the button byte over all evaluations |
+/// | 50 | 2 | `start_x` — pointer x at call entry |
+/// | 52 | 1 | `kind` |
+/// | 53 | 1 | `flags` |
+/// | 54 | 1 | `slot` — GEMDOS process slot, `0xFF` = in-kernel caller |
+/// | 55 | 1 | `nin` — `int_in` words in `w` |
+/// | 56 | 1 | `nout` — `int_out` words in `w`, after the `nin` |
+/// | 57 | 1 | `mb_or` — OR of the button byte over all samples |
+/// | 58 | 1 | `mb_and` — AND of the button byte over all samples |
 /// | 59 | 1 | pad |
 /// | 60 | 48 | `w[24]` |
-/// | 108 | 4 | pad |
+/// | 108 | 4 | `travel` — sum of `|dx|+|dy|` over the whole call |
+/// | 112 | 4 | `moves` — samples in which the pointer had moved |
+/// | 116 | 4 | `win_travel` — same, but only inside the double-click window |
+/// | 120 | 4 | `win_passes` — samples taken inside the double-click window |
+/// | 124 | 2 | `start_y` — pointer y at call entry |
+/// | 126 | 1 | `max_step` — largest single-sample `|dx|` or `|dy|`, capped 255 |
+/// | 127 | 1 | `win_max_step` — same, inside the double-click window |
+///
+/// The four `win_*` fields and `max_step` exist to answer one specific
+/// question against EmuTOS `mchange` (`aes/geminput.c:360-370`), which zeroes
+/// a pending button wait when the pointer moves more than ±2: **did the
+/// pointer move during the double-click window, and by how much per step?**
+/// A `win_max_step` above 2 on a window that stayed open is that comparison,
+/// measured rather than argued.
 #[repr(C)]
 #[derive(Clone, Copy)]
 struct Rec {
@@ -163,7 +182,7 @@ struct Rec {
     in_len: i16,
     out_len: i16,
     ain_len: i16,
-    _rsv: i16,
+    start_x: i16,
     kind: u8,
     flags: u8,
     slot: u8,
@@ -173,7 +192,13 @@ struct Rec {
     mb_and: u8,
     _pad0: u8,
     w: [i16; W_LEN],
-    _pad1: [u8; 4],
+    travel: u32,
+    moves: u32,
+    win_travel: u32,
+    win_passes: u32,
+    start_y: i16,
+    max_step: u8,
+    win_max_step: u8,
 }
 
 impl Rec {
@@ -189,7 +214,7 @@ impl Rec {
         in_len: 0,
         out_len: 0,
         ain_len: 0,
-        _rsv: 0,
+        start_x: 0,
         kind: 0,
         flags: 0,
         slot: 0,
@@ -199,19 +224,41 @@ impl Rec {
         mb_and: 0,
         _pad0: 0,
         w: [0; W_LEN],
-        _pad1: [0; 4],
+        travel: 0,
+        moves: 0,
+        win_travel: 0,
+        win_passes: 0,
+        start_y: 0,
+        max_step: 0,
+        win_max_step: 0,
     };
 }
 
 /// On-disk record size. Pinned so the host decoder and the target agree.
-pub const RECORD_SIZE: usize = 112;
+pub const RECORD_SIZE: usize = 128;
 const _: () = assert!(core::mem::size_of::<Rec>() == RECORD_SIZE);
 
-/// Ring capacity in records (`CAPACITY * RECORD_SIZE` = 896 KiB of BSS,
-/// present only with the `aes-trace` feature). Sized so a TeraDesk startup
-/// plus several seconds of interaction fit; when it wraps, the newest
-/// records survive and the header says how many were dropped.
+/// Total records held (`CAPACITY * RECORD_SIZE` = 896 KiB of BSS, present
+/// only with the `aes-trace` feature).
+///
+/// The buffer is **split in two** (see [`PROLOGUE`]): a one-shot prologue
+/// that keeps the *first* records of the run, and a ring that keeps the
+/// *newest*. A trace that overruns therefore loses only the middle, and the
+/// header says exactly how much.
 pub const CAPACITY: usize = 8192;
+
+/// Records reserved for the **prologue**: filled once, from the first AES
+/// call of the run, and never overwritten. The remaining
+/// `CAPACITY - PROLOGUE` records are the ring.
+///
+/// This exists because the obvious answer to "the ring wrapped and we lost
+/// the beginning" — flush on the first wrap — cannot be used here: under the
+/// failure mode being investigated the wrap arrives in the middle of a click
+/// or a hover, which is precisely where a write must never land. Keeping the
+/// opening records instead delivers the same data (how the conversation
+/// started) and defers the write to the next safe moment.
+pub const PROLOGUE: usize = 2048;
+const _: () = assert!(PROLOGUE < CAPACITY);
 
 /// Opaque handle returned by [`call_begin`] and consumed by [`call_end`] —
 /// the `CNTPCT_EL0` value at dispatch entry. Zero-sized information when the
@@ -278,7 +325,9 @@ mod imp {
     #[inline(always)]
     pub(super) fn call_end(_pb: &Aespb, _t0: CallStart, _yielded: bool) {}
     #[inline(always)]
-    pub(super) fn note_eval(_mb: u8) {}
+    pub(super) fn note_eval() {}
+    #[inline(always)]
+    pub(super) fn note_click_window() {}
     #[inline(always)]
     pub(super) fn msg_post(_pid: i16, _src: &[i16], _words: usize, _ok: bool) {}
     #[inline(always)]
@@ -298,17 +347,64 @@ mod imp {
 
     use super::{
         flags, kind, ticks, tick_hz, Aespb, CallStart, Rec, CAPACITY, MAX_IN, O_SIZE,
-        RECORD_SIZE, SLOT_KERNEL, W_LEN,
+        PROLOGUE, RECORD_SIZE, SLOT_KERNEL, W_LEN,
     };
 
-    /// Blocking time (in ticks at 54 MHz / 62.5 MHz — see the note below)
-    /// above which a completed `evnt_*` wait counts as "the user was idle",
-    /// which is the only moment a flush may be requested. Stored as a
-    /// *microsecond* count and scaled by [`tick_hz`] at the comparison, so
-    /// it means the same on both boards. 3 s.
-    const IDLE_FLUSH_US: u64 = 3_000_000;
-    /// Minimum wall-clock gap between two flushes. 20 s.
-    const MIN_FLUSH_GAP_US: u64 = 20_000_000;
+    /// The longest AES double-click window, `gl_dcrates[0]` = 450 ms
+    /// (`aes/gemevlib.c`, mirrored in `event.rs`'s `DCRATES`). **Every**
+    /// flush-trigger quiet threshold below is a multiple of this, because
+    /// "the write never lands inside a gesture" is exactly the statement
+    /// "more time has passed with the mouse untouched than the longest
+    /// window in which two separate presses still count as one gesture".
+    const MAX_DCLICK_US: u64 = 450_000;
+
+    /// No mouse **button edge** for this long before the deliberate
+    /// both-Shift request may fire — 600 ms, **derived** from
+    /// [`MAX_DCLICK_US`] rather than written out, so the "a write can never
+    /// land inside a click, nor between the two presses of a double click"
+    /// property is enforced by construction and cannot drift away from
+    /// `gl_dcrates[0]` in a later edit.
+    const MANUAL_BTN_QUIET_US: u64 = MAX_DCLICK_US * 4 / 3;
+
+    /// No mouse **button edge** for this long before the automatic safety-net
+    /// flush may fire — 11x [`MAX_DCLICK_US`], just under 5 s.
+    const AUTO_BTN_QUIET_US: u64 = MAX_DCLICK_US * 11;
+
+    // Both thresholds must outlast the longest window in which two separate
+    // presses still count as one gesture; that is the whole no-mid-gesture
+    // argument, so it is asserted rather than trusted.
+    const _: () = assert!(MANUAL_BTN_QUIET_US > MAX_DCLICK_US);
+    const _: () = assert!(AUTO_BTN_QUIET_US > MANUAL_BTN_QUIET_US);
+
+    /// Pointer-travel budget, in `|dx|+|dy|` pixels accumulated over one
+    /// [`TRAVEL_BUCKET_US`] window, below which the pointer counts as *not
+    /// being moved*.
+    ///
+    /// This is not a quiet test. The machine under investigation has a mouse
+    /// sensitive enough to register air movement, so the pointer literally
+    /// never stops and "wait for stillness" can never fire. What separates
+    /// that noise from a deliberate hover is **amplitude**: a few pixels of
+    /// jitter per half second versus tens or hundreds when a hand moves the
+    /// mouse. The automatic trigger uses the amplitude; it does not wait for
+    /// zero.
+    const TRAVEL_QUIET_PX: u32 = 12;
+    /// Length of the travel-accumulation window.
+    const TRAVEL_BUCKET_US: u64 = 500_000;
+
+    /// How long both Shift keys must be held down before the manual request
+    /// arms, so a Shift-click or a shifted keystroke cannot trip it.
+    const SHIFT_HOLD_US: u64 = 700_000;
+
+    /// Minimum wall-clock gap between two automatic (safety-net) flushes.
+    const MIN_FLUSH_GAP_US: u64 = 10_000_000;
+
+    /// Minimum gap between two manual (both-Shift) flushes, so holding the
+    /// keys down does not rewrite the file continuously.
+    const MANUAL_FLUSH_GAP_US: u64 = 3_000_000;
+
+    /// `Kbshift` bits for right + left shift (`bios/ikbd.c`, `MODE_RSHIFT` /
+    /// `MODE_LSHIFT`); both together is the manual flush request.
+    const BOTH_SHIFT: u8 = 0x03;
 
     /// The ring buffer plus its cursors. Touched only from the single-CPU,
     /// IRQ-off GEM-trap / `Pterm` path — the same discipline the AES
@@ -357,31 +453,84 @@ mod imp {
     static LAST_FLUSH: AtomicU64 = AtomicU64::new(0);
     /// Flushes completed so far.
     static FLUSHES: AtomicU32 = AtomicU32::new(0);
+    /// `RING.next` at the last completed flush — "is there anything new to
+    /// write" without re-reading the file.
+    static FLUSHED_AT: AtomicU64 = AtomicU64::new(0);
 
-    /// Per-call evaluation accumulators, reset by [`call_begin`] and folded
-    /// into the record by [`call_end`]. They answer "what button byte did the
-    /// wait actually read, on every one of its evaluations" without emitting a
-    /// record per spin.
+    /// Last observed mouse **button** byte, and the `CNTPCT_EL0` at which it
+    /// last changed. This carries the whole no-mid-gesture guarantee: a press
+    /// and its release are both edges, and the two presses of a double click
+    /// are at most [`MAX_DCLICK_US`] apart, so requiring "no button edge for
+    /// longer than [`MAX_DCLICK_US`]" is exactly the statement "we are not
+    /// inside a click, and not inside the window in which a further press
+    /// would still be counted as part of one".
+    static LAST_MB: AtomicU32 = AtomicU32::new(u32::MAX);
+    static LAST_BUTTON_CHANGE: AtomicU64 = AtomicU64::new(0);
+    /// Pointer travel accumulated in the current [`TRAVEL_BUCKET_US`] window,
+    /// the previous window's total, and when the current one started.
+    static TRAVEL_ACC: AtomicU32 = AtomicU32::new(0);
+    static TRAVEL_PREV: AtomicU32 = AtomicU32::new(u32::MAX);
+    static TRAVEL_BUCKET_START: AtomicU64 = AtomicU64::new(0);
+    /// `CNTPCT_EL0` at which both Shift keys most recently became held
+    /// (0 = not currently held).
+    static SHIFT_SINCE: AtomicU64 = AtomicU64::new(0);
+
+    /// Per-call sampling accumulators, reset by [`call_begin`] and folded into
+    /// the record by [`call_end`]. They answer, without emitting a record per
+    /// spin, two questions the call boundary cannot:
+    ///
+    /// * what button byte did the wait actually read, on **every** one of its
+    ///   evaluations (`mb_or` / `mb_and` / `passes`), and
+    /// * did the pointer move while the wait ran, and by how much per step
+    ///   (`travel` / `moves` / `max_step`) — separately for the whole call and
+    ///   for the **double-click window** inside `count_clicks` (`win_*`),
+    ///   which is the interval EmuTOS `mchange` (`aes/geminput.c:360-370`)
+    ///   cancels on a >±2 move.
     ///
     /// **This is the only tracer state on a hot loop** — a blocking
     /// `evnt_multi` re-evaluates its predicate millions of times per second in
     /// the single-process case — so it is deliberately *not* atomic: plain
     /// loads/stores under the same single-CPU, IRQ-off GEM-trap discipline as
-    /// [`Ring`] and the AES `pd`/`window` statics. Three atomic read-modify-
-    /// writes per pass would be the one place this instrument could plausibly
-    /// move the thing it measures; three plain stores are not.
-    struct Eval {
-        passes: UnsafeCell<u32>,
-        mb_or: UnsafeCell<u8>,
-        mb_and: UnsafeCell<u8>,
+    /// [`Ring`] and the AES `pd`/`window` statics. Atomic read-modify-writes
+    /// per pass would be the one place this instrument could plausibly move
+    /// the thing it measures; plain stores through one address are not.
+    #[derive(Clone, Copy)]
+    struct EvalData {
+        passes: u32,
+        win_passes: u32,
+        travel: u32,
+        win_travel: u32,
+        moves: u32,
+        samp_x: i16,
+        samp_y: i16,
+        start_x: i16,
+        start_y: i16,
+        mb_or: u8,
+        mb_and: u8,
+        max_step: u8,
+        win_max_step: u8,
     }
+    impl EvalData {
+        const RESET: EvalData = EvalData {
+            passes: 0,
+            win_passes: 0,
+            travel: 0,
+            win_travel: 0,
+            moves: 0,
+            samp_x: 0,
+            samp_y: 0,
+            start_x: 0,
+            start_y: 0,
+            mb_or: 0,
+            mb_and: 0xFF,
+            max_step: 0,
+            win_max_step: 0,
+        };
+    }
+    struct Eval(UnsafeCell<EvalData>);
     // SAFETY: see the type comment — single-CPU GEM-trap path only.
     unsafe impl Sync for Eval {}
-    static EVAL: Eval = Eval {
-        passes: UnsafeCell::new(0),
-        mb_or: UnsafeCell::new(0),
-        mb_and: UnsafeCell::new(0xFF),
-    };
+    static EVAL: Eval = Eval(UnsafeCell::new(EvalData::RESET));
 
     /// `MU_MESAG` — the `evnt_multi` bit that says a message was delivered
     /// (`include/aesdefs.h`).
@@ -423,18 +572,27 @@ mod imp {
         IN_HOOK.store(false, Ordering::Release);
     }
 
-    /// Append `r` to the ring, stamping its sequence number. Overwrites the
-    /// oldest record once the ring is full; nothing is ever lost silently,
-    /// because the header reports produced-vs-held.
+    /// Append `r`, stamping its sequence number.
+    ///
+    /// The first [`PROLOGUE`] records land in the prologue slots and stay
+    /// there for the whole run; everything after cycles through the ring,
+    /// overwriting the oldest. Nothing is ever lost silently: each record
+    /// carries its `seq`, so the decoder sees the discontinuity, and the
+    /// header reports produced-vs-held.
     fn push(mut r: Rec) {
         let seq = RING.next.fetch_add(1, Ordering::Relaxed);
         if seq == 0 {
             T0.store(r.t_ticks, Ordering::Relaxed);
         }
         r.seq = seq as u32;
-        let idx = (seq % CAPACITY as u64) as usize;
+        let idx = if (seq as usize) < PROLOGUE {
+            seq as usize
+        } else {
+            PROLOGUE + ((seq - PROLOGUE as u64) % (CAPACITY - PROLOGUE) as u64) as usize
+        };
         // SAFETY: single-CPU trap path serialised by `IN_HOOK`; `idx` is
-        // reduced modulo the array length.
+        // either below `PROLOGUE` or reduced modulo the ring length, so it is
+        // inside the record array either way.
         unsafe {
             (*RING.recs.get())[idx] = r;
         }
@@ -465,29 +623,76 @@ mod imp {
 
     pub(super) fn call_begin() -> CallStart {
         let t = ticks();
+        let (x, y) = crate::vdi::mouse_position();
         // SAFETY: single-CPU GEM-trap path (see `Eval`).
         unsafe {
-            *EVAL.passes.get() = 0;
-            *EVAL.mb_or.get() = 0;
-            *EVAL.mb_and.get() = 0xFF;
+            let e = &mut *EVAL.0.get();
+            *e = EvalData::RESET;
+            e.samp_x = x;
+            e.samp_y = y;
+            e.start_x = x;
+            e.start_y = y;
         }
         CallStart(t)
     }
 
-    /// One predicate evaluation inside a blocking `evnt_*` wait, with the
-    /// button byte the wait just read. Folded into the call record as
-    /// `passes` / `mb_or` / `mb_and`. Three plain loads/stores — see [`Eval`]
-    /// for why this is not atomic.
+    /// One sample of the live input state: the mouse button byte and the
+    /// pointer position, folded into the per-call accumulators. `in_window`
+    /// selects the double-click-window set (`count_clicks`) over the general
+    /// wait set. See [`Eval`] for why this is not atomic.
     #[inline(always)]
-    pub(super) fn note_eval(mb: u8) {
-        // SAFETY: single-CPU GEM-trap path (see `Eval`); saturating so a very
-        // long wait cannot wrap the counter into a misleading small number.
+    fn sample(in_window: bool) {
+        let mb = crate::vdi::mouse_buttons();
+        let (x, y) = crate::vdi::mouse_position();
+        // SAFETY: single-CPU GEM-trap path (see `Eval`); every counter
+        // saturates so a very long wait cannot wrap one into a misleadingly
+        // small number.
         unsafe {
-            let p = EVAL.passes.get();
-            *p = (*p).saturating_add(1);
-            *EVAL.mb_or.get() |= mb;
-            *EVAL.mb_and.get() &= mb;
+            let e = &mut *EVAL.0.get();
+            e.mb_or |= mb;
+            e.mb_and &= mb;
+            let dx = (x as i32 - e.samp_x as i32).unsigned_abs();
+            let dy = (y as i32 - e.samp_y as i32).unsigned_abs();
+            e.samp_x = x;
+            e.samp_y = y;
+            let step = dx.max(dy).min(255) as u8;
+            let d = dx.saturating_add(dy);
+            if d != 0 {
+                e.moves = e.moves.saturating_add(1);
+                e.travel = e.travel.saturating_add(d);
+                if step > e.max_step {
+                    e.max_step = step;
+                }
+            }
+            if in_window {
+                e.win_passes = e.win_passes.saturating_add(1);
+                if d != 0 {
+                    e.win_travel = e.win_travel.saturating_add(d);
+                    if step > e.win_max_step {
+                        e.win_max_step = step;
+                    }
+                }
+            } else {
+                e.passes = e.passes.saturating_add(1);
+            }
         }
+    }
+
+    /// One predicate evaluation of a blocking `evnt_*` wait.
+    #[inline(always)]
+    pub(super) fn note_eval() {
+        sample(false);
+    }
+
+    /// One poll inside the **double-click window** (`count_clicks` →
+    /// `wait_until`) — the interval in which a second press still counts as
+    /// part of the first gesture, and the interval EmuTOS `mchange`
+    /// (`aes/geminput.c:360-370`) cancels when the pointer moves more than
+    /// ±2. Recorded separately so the window can be seen opening and closing
+    /// against the movement that should or should not have closed it.
+    #[inline(always)]
+    pub(super) fn note_click_window() {
+        sample(true);
     }
 
     pub(super) fn call_end(pb: &Aespb, t0: CallStart, yielded: bool) {
@@ -517,9 +722,18 @@ mod imp {
         }
         // SAFETY: single-CPU GEM-trap path (see `Eval`).
         unsafe {
-            r.passes = *EVAL.passes.get();
-            r.mb_or = *EVAL.mb_or.get();
-            r.mb_and = *EVAL.mb_and.get();
+            let e = *EVAL.0.get();
+            r.passes = e.passes;
+            r.win_passes = e.win_passes;
+            r.mb_or = e.mb_or;
+            r.mb_and = e.mb_and;
+            r.travel = e.travel;
+            r.win_travel = e.win_travel;
+            r.moves = e.moves;
+            r.max_step = e.max_step;
+            r.win_max_step = e.win_max_step;
+            r.start_x = e.start_x;
+            r.start_y = e.start_y;
         }
 
         // `int_in[0 .. min(in_len, 16)]` — exactly what the caller declared,
@@ -599,7 +813,7 @@ mod imp {
             }
         }
 
-        maybe_request_flush(opcode, r.dur_ticks, t_in);
+        maybe_request_flush(t_in, r.travel);
         leave(t_in);
     }
 
@@ -627,26 +841,105 @@ mod imp {
         leave(t_in);
     }
 
-    /// Request a flush if the just-completed call was a blocking `evnt_*`
-    /// wait that sat idle for at least [`IDLE_FLUSH_US`] — the user's hands
-    /// were off the mouse — and the last flush is at least
-    /// [`MIN_FLUSH_GAP_US`] ago. Never fires inside a click window or a
-    /// hover burst, because those calls return in milliseconds.
-    fn maybe_request_flush(opcode: i16, dur_ticks: u64, now: u64) {
-        if !(20..=25).contains(&opcode) {
-            return; // only the six blocking evnt_* waits
+    // NOTE: the real `maybe_request_flush` follows further down in this
+    // module; this marker line is removed by the next edit.
+    /// Decide, at the end of every AES call, whether this is a safe moment to
+    /// write the trace. `travel` is the pointer movement accumulated during
+    /// the call that just ended.
+    ///
+    /// **Two earlier designs failed here, and both failures shape this one.**
+    ///
+    /// 1. "Did an `evnt_*` wait just block for 3 s?" inferred idleness from
+    ///    the AES having *stopped*. Unusable for the very defect it was built
+    ///    to measure: if `evnt_multi` returns an event immediately on every
+    ///    call, no wait ever blocks, so the instrument never armed — the bug
+    ///    switched off its own measurement.
+    /// 2. "Has the mouse been completely unchanged for 2 s?" assumed quiet
+    ///    exists. On the machine under investigation the mouse is sensitive
+    ///    enough to register air movement, so the pointer never stops and that
+    ///    condition can never be true either.
+    ///
+    /// What is left, and what this uses: the **mouse buttons**, which really
+    /// are quiet between gestures, plus pointer-movement **amplitude** to tell
+    /// jitter from a hand on the mouse.
+    ///
+    /// **Why a write can never land inside a click gesture.**
+    /// [`LAST_BUTTON_CHANGE`] is reset by every button edge — press and
+    /// release alike. Both triggers require `buttons == 0` *now* and no edge
+    /// for longer than [`MAX_DCLICK_US`] (450 ms, `gl_dcrates[0]`, the longest
+    /// interval in which a second press still joins the first gesture). So the
+    /// write cannot occur while a button is down, and cannot occur between the
+    /// two presses of a double click.
+    ///
+    /// **What is *not* mechanically guaranteed, and is procedural instead.**
+    /// Because pointer motion is permanent noise on this hardware, "never
+    /// during pointer movement" is not achievable by waiting. The automatic
+    /// trigger therefore also demands that recent travel stay under
+    /// [`TRAVEL_QUIET_PX`], which excludes a hand moving the mouse but not a
+    /// slow drift; and the primary path is the **manual** both-Shift request,
+    /// which puts the moment entirely under the user's control — they simply
+    /// do not press Shift in the middle of a hover test.
+    fn maybe_request_flush(now: u64, travel: u32) {
+        let mb = crate::vdi::mouse_buttons();
+        if LAST_MB.swap(mb as u32, Ordering::Relaxed) != mb as u32 {
+            LAST_BUTTON_CHANGE.store(now, Ordering::Relaxed);
         }
-        if dur_ticks < us_to_ticks(IDLE_FLUSH_US) {
+        let btn_quiet = now.wrapping_sub(LAST_BUTTON_CHANGE.load(Ordering::Relaxed));
+
+        // Roll the pointer-travel bucket. `TRAVEL_PREV` starts at `u32::MAX`
+        // so no automatic flush can fire before one full window has been
+        // measured.
+        let acc = TRAVEL_ACC.load(Ordering::Relaxed).saturating_add(travel);
+        let bstart = TRAVEL_BUCKET_START.load(Ordering::Relaxed);
+        if bstart == 0 || now.wrapping_sub(bstart) >= us_to_ticks(TRAVEL_BUCKET_US) {
+            TRAVEL_PREV.store(acc, Ordering::Relaxed);
+            TRAVEL_ACC.store(0, Ordering::Relaxed);
+            TRAVEL_BUCKET_START.store(now, Ordering::Relaxed);
+        } else {
+            TRAVEL_ACC.store(acc, Ordering::Relaxed);
+        }
+
+        // Nothing new since the last write? Then there is nothing to gain and
+        // a needless SD write to lose.
+        let produced = RING.next.load(Ordering::Relaxed);
+        if produced == 0 || produced <= FLUSHED_AT.load(Ordering::Relaxed) {
             return;
         }
         let last = LAST_FLUSH.load(Ordering::Relaxed);
-        if last != 0 && now.wrapping_sub(last) < us_to_ticks(MIN_FLUSH_GAP_US) {
-            return;
+        let since_flush = now.wrapping_sub(last);
+
+        // ── Primary: the user asks for it, by holding both Shift keys ──
+        // Deterministic, and the only trigger guaranteed to be reachable on
+        // hardware where the pointer never rests.
+        let shift = crate::host::host()
+            .map(|h| h.keyboard_shift_state())
+            .unwrap_or(0);
+        if shift & BOTH_SHIFT == BOTH_SHIFT {
+            let since = SHIFT_SINCE.load(Ordering::Relaxed);
+            if since == 0 {
+                SHIFT_SINCE.store(now, Ordering::Relaxed);
+            } else if now.wrapping_sub(since) >= us_to_ticks(SHIFT_HOLD_US)
+                && mb == 0
+                && btn_quiet >= us_to_ticks(MANUAL_BTN_QUIET_US)
+                && (last == 0 || since_flush >= us_to_ticks(MANUAL_FLUSH_GAP_US))
+            {
+                FLUSH_REQ.store(true, Ordering::Release);
+                return;
+            }
+        } else {
+            SHIFT_SINCE.store(0, Ordering::Relaxed);
         }
-        if RING.next.load(Ordering::Relaxed) == 0 {
-            return; // nothing to write
+
+        // ── Safety net: no button touched for 5 s and the pointer is only
+        // drifting, not being moved. Gives the user a file even if the
+        // keyboard is unusable or they forget the Shift request.
+        if mb == 0
+            && btn_quiet >= us_to_ticks(AUTO_BTN_QUIET_US)
+            && TRAVEL_PREV.load(Ordering::Relaxed) <= TRAVEL_QUIET_PX
+            && (last == 0 || since_flush >= us_to_ticks(MIN_FLUSH_GAP_US))
+        {
+            FLUSH_REQ.store(true, Ordering::Release);
         }
-        FLUSH_REQ.store(true, Ordering::Release);
     }
 
     pub(super) fn request_flush() {
@@ -665,25 +958,45 @@ mod imp {
     /// process's current drive/directory.
     const PATH: &[u8] = b"C:\\AESTRACE.BIN\0";
 
+    /// Companion status file, written **after** `AESTRACE.BIN` is closed.
+    /// Its whole purpose is to make the card unambiguous without a tool and
+    /// without a console:
+    ///
+    /// * neither file present → the trigger never fired (or `C:` is not
+    ///   writable);
+    /// * `AESTRACE.BIN` but no `AESTRACE.TXT` → the write was interrupted;
+    /// * both present → the trace was written completely, and the `.TXT` says
+    ///   in plain words how many records it holds and whether it wrapped.
+    ///
+    /// It is also readable **at the machine**: it is a short text file in the
+    /// root of `C:`, so re-reading that directory in the application under
+    /// test shows it appear, and its size grows with every flush.
+    const STATUS_PATH: &[u8] = b"C:\\AESTRACE.TXT\0";
+
     /// Header length in bytes — one ASCII line, space-padded, `\n`-terminated.
     /// 256 so every field still fits at its widest (a `produced`/`t0` after a
     /// long session is 12-13 digits); the builder truncates rather than
     /// overflowing, and a truncated header would silently lose `hz`.
     const HDR_LEN: usize = 256;
 
-    /// A tiny fixed-capacity ASCII builder for the header. No `core::fmt`,
-    /// so this is as dumb (and as auditable) as the rest of the path.
-    struct Hdr {
-        buf: [u8; HDR_LEN],
+    /// Bytes reserved for the human-readable status file.
+    const STATUS_LEN: usize = 640;
+
+    /// A tiny fixed-capacity ASCII builder, used for both the binary file's
+    /// header line and the status file. No `core::fmt`, so this stays as dumb
+    /// (and as auditable) as the rest of the path. Appends are silently
+    /// dropped once full — it can never overflow.
+    struct Asc<const N: usize> {
+        buf: [u8; N],
         len: usize,
     }
-    impl Hdr {
-        fn new() -> Self {
-            Hdr { buf: [b' '; HDR_LEN], len: 0 }
+    impl<const N: usize> Asc<N> {
+        fn new(fill: u8) -> Self {
+            Asc { buf: [fill; N], len: 0 }
         }
         fn s(&mut self, s: &[u8]) {
             for &b in s {
-                if self.len < HDR_LEN - 1 {
+                if self.len < N {
                     self.buf[self.len] = b;
                     self.len += 1;
                 }
@@ -703,22 +1016,29 @@ mod imp {
             }
             while n > 0 {
                 n -= 1;
-                if self.len < HDR_LEN - 1 {
+                if self.len < N {
                     self.buf[self.len] = d[n];
                     self.len += 1;
                 }
             }
         }
-        fn finish(&mut self) -> &[u8] {
-            self.buf[HDR_LEN - 1] = b'\n';
+        /// The full fixed-size buffer, with the last byte forced to `\n` —
+        /// the binary file's header is a fixed-width field, not a string.
+        fn fixed(&mut self) -> &[u8] {
+            self.buf[N - 1] = b'\n';
             &self.buf
+        }
+        /// Only the bytes written so far — for the free-form status file.
+        fn written(&self) -> &[u8] {
+            &self.buf[..self.len]
         }
     }
 
-    /// Rewrite `C:\AESTRACE.BIN` with the header and the ring's records in
-    /// chronological order. Runs on the kernel exception stack (never the
-    /// 16 KiB AES fiber stack). Every failure is swallowed — the instrument
-    /// must never hang or fault the machine it is measuring.
+    /// Rewrite `C:\AESTRACE.BIN` with the header and the records in
+    /// chronological order, then write the human-readable `C:\AESTRACE.TXT`.
+    /// Runs on the kernel exception stack (never the 16 KiB AES fiber stack).
+    /// Every failure is swallowed — the instrument must never hang or fault
+    /// the machine it is measuring.
     pub(super) fn flush() {
         if !enter() {
             return;
@@ -728,12 +1048,17 @@ mod imp {
         let produced = RING.next.load(Ordering::Relaxed);
         let held = produced.min(CAPACITY as u64);
         let dropped = produced.saturating_sub(held);
+        // Prologue records actually present, and the ring's share of `held`.
+        let pro = produced.min(PROLOGUE as u64);
+        let ring_held = held - pro;
 
-        let mut h = Hdr::new();
-        h.s(b"NEWTOS-AESTRACE v2 le rec=");
+        let mut h = Asc::<HDR_LEN>::new(b' ');
+        h.s(b"NEWTOS-AESTRACE v3 le rec=");
         h.u(RECORD_SIZE as u64);
         h.s(b" cap=");
         h.u(CAPACITY as u64);
+        h.s(b" pro=");
+        h.u(PROLOGUE as u64);
         h.s(b" n=");
         h.u(held);
         h.s(b" produced=");
@@ -755,30 +1080,47 @@ mod imp {
         h.s(b"/");
         h.u(FLUSHES.load(Ordering::Relaxed) as u64);
 
-        let handle = match create() {
+        let handle = match create(PATH) {
             Some(x) => x,
             None => {
                 leave_flush(t_in);
                 return;
             }
         };
-        let hdr = h.finish();
-        if write(handle, hdr.as_ptr() as u64, hdr.len() as i64) {
-            // Oldest first: with a wrapped ring the oldest record sits at
-            // `produced % CAPACITY`, so the file is always chronological.
-            let start = (produced.wrapping_sub(held) % CAPACITY as u64) as usize;
-            let base = RING.recs.get() as *const Rec;
+        let base = RING.recs.get() as *const Rec;
+        let hdr = h.fixed();
+        let mut ok = write(handle, hdr.as_ptr() as u64, hdr.len() as i64);
+
+        // Prologue first (records 0..pro, already in order), then the ring
+        // oldest-first. Each record carries its own `seq`, so the decoder sees
+        // the gap between the two spans without needing to be told where it is.
+        if ok && pro > 0 {
+            // SAFETY: `pro <= PROLOGUE <= CAPACITY`, so the span lies inside
+            // the record array; `Rec` is `repr(C)` plain data whose every
+            // field (padding included) is written by `Rec::ZERO`, so its bytes
+            // are valid to write out.
+            ok = write(handle, base as u64, (pro as usize * RECORD_SIZE) as i64);
+        }
+        if ok && ring_held > 0 {
+            let ring_len = CAPACITY - PROLOGUE;
+            // Oldest ring record: once wrapped it sits at
+            // `(produced - PROLOGUE) % ring_len`, otherwise at the region start.
+            let start = if produced > CAPACITY as u64 {
+                ((produced - PROLOGUE as u64) % ring_len as u64) as usize
+            } else {
+                0
+            };
             let mut done = 0u64;
-            while done < held {
-                let idx = (start + done as usize) % CAPACITY;
-                // Longest contiguous run from `idx` to the end of the array.
-                let run = (CAPACITY - idx).min((held - done) as usize);
-                // SAFETY: `idx + run <= CAPACITY`, so the span is inside the
-                // record array; `Rec` is `repr(C)` plain data with no padding
-                // holes left uninitialised (every field is written by
-                // `Rec::ZERO`), so its bytes are valid to write out.
-                let ptr = unsafe { base.add(idx) } as u64;
+            while done < ring_held {
+                let idx = (start + done as usize) % ring_len;
+                // Longest contiguous run to the end of the ring region.
+                let run = (ring_len - idx).min((ring_held - done) as usize);
+                // SAFETY: `PROLOGUE + idx + run <= CAPACITY`, so the span lies
+                // inside the record array (see the prologue write above for
+                // why `Rec`'s bytes are valid to write out).
+                let ptr = unsafe { base.add(PROLOGUE + idx) } as u64;
                 if !write(handle, ptr, (run * RECORD_SIZE) as i64) {
+                    ok = false;
                     break;
                 }
                 done += run as u64;
@@ -786,16 +1128,71 @@ mod imp {
         }
         close(handle);
 
-        LAST_FLUSH.store(ticks(), Ordering::Relaxed);
-        FLUSHES.fetch_add(1, Ordering::Relaxed);
+        // A zero-record flush (the tracer proving at boot that it is armed and
+        // that `C:` is writable) must not start the inter-flush timer, or the
+        // first real trace would be needlessly delayed behind it.
+        if produced > 0 {
+            LAST_FLUSH.store(ticks(), Ordering::Relaxed);
+        }
+        FLUSHED_AT.store(produced, Ordering::Relaxed);
+        let nflush = FLUSHES.fetch_add(1, Ordering::Relaxed) + 1;
+        if ok {
+            write_status(nflush, produced, held, dropped, pro);
+        }
         leave_flush(t_in);
     }
 
-    /// `Fcreate(PATH, 0)` through the kernel-internal FS entry point (not a
+    /// Write `C:\AESTRACE.TXT`: the plain-language confirmation that the
+    /// binary file above was written completely. Deliberately the **last**
+    /// thing a flush does, so its presence means the `.BIN` is finished — that
+    /// is what makes an empty card unambiguous instead of a guess between
+    /// "nothing captured", "trigger never fired" and "the write failed".
+    fn write_status(nflush: u32, produced: u64, held: u64, dropped: u64, pro: u64) {
+        let mut a = Asc::<STATUS_LEN>::new(0);
+        a.s(b"NewTOS AES trap trace -- written successfully.\r\n\r\n");
+        a.s(b"flush number : ");
+        a.u(nflush as u64);
+        a.s(b"\r\nrecords held : ");
+        a.u(held);
+        a.s(b" (");
+        a.u(pro);
+        a.s(b" from the start of the run, ");
+        a.u(held - pro);
+        a.s(b" most recent)\r\nrecords made : ");
+        a.u(produced);
+        a.s(b"\r\ndropped      : ");
+        a.u(dropped);
+        if dropped > 0 {
+            a.s(b"  <-- the middle of the run was overwritten");
+        }
+        a.s(b"\r\ntimer clock  : ");
+        a.u(tick_hz());
+        a.s(b" Hz\r\ncapture cost : ");
+        a.u(OVERHEAD.load(Ordering::Relaxed));
+        a.s(b" ticks over ");
+        a.u(HOOKS.load(Ordering::Relaxed));
+        a.s(b" hooks, worst ");
+        a.u(OVERHEAD_MAX.load(Ordering::Relaxed));
+        a.s(b"\r\nwrite cost   : ");
+        a.u(FLUSH_TICKS.load(Ordering::Relaxed));
+        a.s(b" ticks total\r\ndata file    : C:\\AESTRACE.BIN, ");
+        a.u(HDR_LEN as u64 + held * RECORD_SIZE as u64);
+        a.s(b" bytes\r\n\r\nDecode on the development machine with:\r\n");
+        a.s(b"    python3 tools/aestrace.py AESTRACE.BIN --button\r\n");
+        let handle = match create(STATUS_PATH) {
+            Some(x) => x,
+            None => return,
+        };
+        let body = a.written();
+        write(handle, body.as_ptr() as u64, body.len() as i64);
+        close(handle);
+    }
+
+    /// `Fcreate(path, 0)` through the kernel-internal FS entry point (not a
     /// nested `svc`). `None` if C: is not writable.
-    fn create() -> Option<u64> {
+    fn create(path: &[u8]) -> Option<u64> {
         let args = crate::trap::TrapArgs {
-            regs: [PATH.as_ptr() as u64, 0, 0, 0, 0, 0, 0, 0],
+            regs: [path.as_ptr() as u64, 0, 0, 0, 0, 0, 0, 0],
             func: 0x3C,
             svc_imm: 1,
         };
@@ -844,12 +1241,23 @@ pub(super) fn call_end(pb: &Aespb, t0: CallStart, yielded: bool) {
     imp::call_end(pb, t0, yielded)
 }
 
-/// Record one predicate evaluation of a blocking `evnt_*` wait together with
-/// the mouse-button byte it read. Call sites must guard with [`ENABLED`] so
-/// the argument expression folds away in a build without the tracer.
+/// Record one predicate evaluation of a blocking `evnt_*` wait: the mouse
+/// button byte it read and how far the pointer moved since the previous
+/// sample. Call sites guard with [`ENABLED`] so the whole statement folds away
+/// in a build without the tracer.
 #[inline(always)]
-pub(super) fn note_eval(mb: u8) {
-    imp::note_eval(mb)
+pub(super) fn note_eval() {
+    imp::note_eval()
+}
+
+/// Record one poll inside the **double-click window** (`count_clicks` →
+/// `wait_until`). Kept apart from [`note_eval`] so the trace can show whether
+/// the pointer moved while that window stood open, and by how much per step —
+/// the measurement against EmuTOS `mchange` (`aes/geminput.c:360-370`), which
+/// cancels a pending button wait on a move of more than ±2.
+#[inline(always)]
+pub(super) fn note_click_window() {
+    imp::note_click_window()
 }
 
 /// Record a GEM message enqueued into `pid`'s FIFO — the `aqueue`/`doq`

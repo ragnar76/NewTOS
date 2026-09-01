@@ -156,7 +156,7 @@ pub fn evnt_button(pb: &Aespb) -> Option<sched::Switch> {
             // Guarded by the compile-time `ENABLED`, so both the call and the
             // `mouse_buttons()` argument fold away without the feature.
             if super::trace::ENABLED {
-                super::trace::note_eval(crate::vdi::mouse_buttons());
+                super::trace::note_eval();
             }
             if let sched::SleepOutcome::Yield(sw) = sched::sleep(sched::wait_input()) {
                 return Some(sw); // yield to a peer (S2); re-checks on resume
@@ -186,6 +186,17 @@ fn wait_until(h: &dyn crate::host::Host, deadline: u64, cond: impl Fn() -> bool)
     while h.monotonic_millis() < deadline {
         if cond() {
             return true;
+        }
+        // AES trap tracer: this loop *is* the double-click window, so sample
+        // the pointer here separately from the outer wait. That makes it
+        // visible whether the pointer moved while the window stood open, and
+        // by how much per step — the measurement for EmuTOS `mchange`
+        // (`aes/geminput.c:360-370`), which cancels a pending button wait on a
+        // move of more than ±2. Compiled out without the `aes-trace` feature;
+        // negligible beside the `monotonic_millis` + `pump_input` this loop
+        // already does per pass.
+        if super::trace::ENABLED {
+            super::trace::note_click_window();
         }
         h.pump_input();
     }
@@ -350,7 +361,7 @@ pub fn evnt_multi(pb: &Aespb) -> Option<sched::Switch> {
             // `passes`/`mb_or`/`mb_and`. Guarded by the compile-time `ENABLED`
             // so the whole statement folds away without the feature.
             if super::trace::ENABLED {
-                super::trace::note_eval(crate::vdi::mouse_buttons());
+                super::trace::note_eval();
             }
             // AES intercepts a click in the menu bar or a window frame before
             // the app sees the raw button, mirroring the EmuTOS Control Manager

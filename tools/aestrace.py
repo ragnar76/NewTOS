@@ -49,10 +49,10 @@ import argparse
 import struct
 import sys
 
-FORMAT = b"NEWTOS-AESTRACE v2 "
+FORMAT = b"NEWTOS-AESTRACE v3 "
 HDR_LEN = 256
-REC_LEN = 112
-REC_FMT = "<IIQQQQhhhhhhBBBBBBBx" + "24h" + "4x"
+REC_LEN = 128
+REC_FMT = "<IIQQQQhhhhhhBBBBBBBx" + "24h" + "IIIIhBB"
 
 KIND_CALL, KIND_MSG_POST, KIND_MSG_RECV, KIND_MARK = 1, 2, 3, 4
 KIND_NAME = {1: "CALL", 2: "POST", 3: "RECV", 4: "MARK"}
@@ -134,15 +134,20 @@ def bits(v, table):
 class Rec:
     __slots__ = ("seq", "passes", "t", "dur", "ain0", "aout0", "op", "pid",
                  "in_len", "out_len", "ain_len", "kind", "flags", "slot",
-                 "nin", "nout", "mb_or", "mb_and", "w")
+                 "nin", "nout", "mb_or", "mb_and", "w",
+                 "start_x", "start_y", "travel", "moves",
+                 "win_travel", "win_passes", "max_step", "win_max_step")
 
     def __init__(self, raw):
         f = struct.unpack(REC_FMT, raw)
         (self.seq, self.passes, self.t, self.dur, self.ain0, self.aout0,
-         self.op, self.pid, self.in_len, self.out_len, self.ain_len, _rsv,
+         self.op, self.pid, self.in_len, self.out_len, self.ain_len,
+         self.start_x,
          self.kind, self.flags, self.slot, self.nin, self.nout,
          self.mb_or, self.mb_and) = f[:19]
         self.w = list(f[19:43])
+        (self.travel, self.moves, self.win_travel, self.win_passes,
+         self.start_y, self.max_step, self.win_max_step) = f[43:50]
 
     @property
     def i(self):
@@ -305,6 +310,19 @@ def render(recs, hz, t0, out=sys.stdout):
                 # (e.g. evnt_button whose button already matched on entry):
                 # mb_or/mb_and hold no sample, so do not print one.
                 extra += " [evals=0 — fired without a sampled evaluation]"
+            if r.moves:
+                extra += (f" [moved {r.moves}x from ({r.start_x},{r.start_y}) "
+                          f"travel={r.travel}px maxstep={r.max_step}]")
+            if r.win_passes:
+                # The double-click window stood open for `win_passes` polls.
+                # EmuTOS `mchange` (aes/geminput.c:360-370) would have zeroed
+                # a pending button wait once a step exceeded +-2, so a window
+                # that stayed open with maxstep > 2 is the divergence.
+                verdict = ("EmuTOS mchange WOULD have cancelled this window"
+                           if r.win_max_step > 2 else "below EmuTOS +-2")
+                extra += (f" [dclick-window: polls={r.win_passes} "
+                          f"travel={r.win_travel}px maxstep={r.win_max_step} "
+                          f"-> {verdict}]")
             print(f"{r.seq:>7} {t_ms:>11.3f} {dur_us:>9} {sl:>3} {r.pid:>3} "
                   f"{r.op:>4} {name:<14} {counts:<9} {detail(r)}{extra}",
                   file=out)
@@ -397,6 +415,29 @@ def button_report(recs, hz, out=sys.stdout):
           f"EVERY evaluation of the call", file=out)
     print("  (a button event that fires while the button was never pressed "
           "is a level test, not an event)", file=out)
+
+    # ── The EmuTOS `mchange` comparison ──────────────────────────────
+    # `mchange` (aes/geminput.c:360-370) zeroes a pending button wait when the
+    # pointer moves more than +-2 in x or y:
+    #     if (gl_bdely && ((xrat-rx > 2) || (xrat-rx < -2) ||
+    #                      (yrat-ry > 2) || (yrat-ry < -2)))  b_delay(gl_bdely);
+    # We do not implement it. This tallies, per double-click window that
+    # actually opened, whether EmuTOS would have closed it.
+    wins = [r for r in recs if r.kind == KIND_CALL and r.win_passes]
+    print(f"\ndouble-click windows opened: {len(wins)}", file=out)
+    if wins:
+        would_cancel = [r for r in wins if r.win_max_step > 2]
+        print(f"  ... in which the pointer moved by more than EmuTOS's +-2: "
+              f"{len(would_cancel)}", file=out)
+        print(f"  ... i.e. EmuTOS `mchange` would have cancelled "
+              f"{100.0 * len(would_cancel) / len(wins):.1f} % of them; "
+              f"NewTOS cancels none.", file=out)
+        biggest = max(wins, key=lambda r: r.win_max_step)
+        print(f"  worst window: seq={biggest.seq} polls={biggest.win_passes} "
+              f"travel={biggest.win_travel}px maxstep={biggest.win_max_step}",
+              file=out)
+        print("  (measurement only — `mchange` is deliberately NOT "
+              "implemented; see the task notes)", file=out)
 
 
 def t0_of(recs):
