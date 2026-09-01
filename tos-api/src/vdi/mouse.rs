@@ -193,6 +193,12 @@ pub fn feed_relative(dx: i16, dy: i16, buttons: u8, backend: &dyn RasterBackend)
     // and `GCURX`/`GCURY` (via `set_state` below) are unchanged, so the normal
     // cursor/desktop path stays byte-identical.
     update_ms_stat(dx, dy, buttons);
+    // `user_but` — the AES's button-change vector, installed with
+    // `gsx_setmb(far_bcha, …)` (`aes/gemgsxif.c:271`) and called by the VDI
+    // mouse interrupt on a change of the low two button bits, before the
+    // position is touched (`vdi/vdi_asm.S:261-284`). `b_click` itself filters
+    // out non-changes, as `mouse_int` does.
+    crate::aes::user_but(buttons);
     let max_x = backend.width() as i16 - 1;
     let max_y = backend.height() as i16 - 1;
     let (cx, cy) = position();

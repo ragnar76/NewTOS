@@ -180,6 +180,11 @@ fn bclicks(bflgclks: i16) -> i16 {
 /// *actual* click count (1 for a single click, 2 for a double click within the
 /// window). The window counting is factored into the shared [`count_clicks`]
 /// helper, which `evnt_multi` reuses.
+///
+/// Deliberately **not** gated on mouse ownership: `ev_button` blocks in
+/// `ev_block(MU_BUTTON)` → `iasync` → `abutton`, and `abutton` tests the level
+/// unconditionally (`aes/geminput.c:525-528`). Only `ev_multi`'s *quick check*
+/// carries the `rlr == gl_mowner` condition (`aes/gemevlib.c:185`).
 pub fn evnt_button(pb: &Aespb) -> Option<sched::Switch> {
     let bflgclks = pb.intin(0);
     let mask = pb.intin(1) as u8;
@@ -394,6 +399,10 @@ pub fn evnt_multi(pb: &Aespb) -> Option<sched::Switch> {
         } else {
             h.monotonic_millis().saturating_add(ms)
         };
+        // Pass counter: pass 0 is the *entry* evaluation (EmuTOS's `abutton` /
+        // `amouse` level test taken when `ev_multi` arms the event), every later
+        // pass is the "asleep in `mwait`" state. See the MU_BUTTON block below.
+        let mut pass = 0u32;
         loop {
             // AES trap tracer: one sample of the button byte per evaluation of
             // the multiplexer predicate, folded into the call record as
@@ -402,6 +411,15 @@ pub fn evnt_multi(pb: &Aespb) -> Option<sched::Switch> {
             if super::trace::ENABLED {
                 super::trace::note_eval();
             }
+            // The Control Manager's loop opens with `w_setactive()`, which hands
+            // the mouse (back) to the owner of the top window whenever the
+            // buttons are up — `ct_chgown(ppd, &d)` → `set_mown`, and `set_mown`
+            // is a no-op while a button is held (`aes/gemctrl.c:441`,
+            // `aes/gemwmlib.c:326-333`, `aes/gemctrl.c:392-396`,
+            // `aes/geminput.c:220-234`). Our Control Manager is the
+            // `menu_intercept`/`window::intercept` pair below, so its loop top is
+            // here.
+            super::input::w_setactive();
             // AES intercepts a click in the menu bar or a window frame before
             // the app sees the raw button, mirroring the EmuTOS Control Manager
             // process (`gemctrl.c:427`): it owns the mouse over the menu/frame
@@ -423,25 +441,56 @@ pub fn evnt_multi(pb: &Aespb) -> Option<sched::Switch> {
                     fired |= MU_KEYBD;
                 }
             }
-            if flags & MU_BUTTON != 0
-                && downorup(crate::vdi::mouse_buttons(), b_flgclks, b_mask, b_state)
-            {
-                // Resolve the *real* click count (single vs. double) inside the
-                // double-click window — the same counter `evnt_button` uses, so
-                // the desktop can tell Select (1) from Open (2). Cap counting at
-                // the multi-wait deadline when a timer is armed so it never
-                // overruns MU_TIMER (a 0-ms poll timer collapses to a count of
-                // 1, matching the "poll now" contract).
-                let cap = (flags & MU_TIMER != 0).then_some(deadline);
-                clicks = count_clicks(h, b_clicks, cap, || {
-                    downorup(crate::vdi::mouse_buttons(), b_flgclks, b_mask, b_state)
-                });
-                fired |= MU_BUTTON;
+            if flags & MU_BUTTON != 0 {
+                // EmuTOS runs the button/rectangle **quick check** only while
+                // the calling process owns the mouse — `if (rlr == gl_mowner)`
+                // (`aes/gemevlib.c:185`). Without ownership `ev_multi` falls
+                // through to `iasync(MU_BUTTON, buparm)` → `abutton`, which
+                // still tests the level once, unconditionally, and answers
+                // `azombie(e, 1)` — one click (`aes/geminput.c:525-528`). If
+                // that entry test fails the EVB sleeps on `c_bsleep`, and
+                // `post_button` walks **only `gl_mowner`'s** list
+                // (`aes/geminput.c:344,465`), so a non-owning app is not woken
+                // by any later button change until ownership returns.
+                //
+                // Our loop pass 0 is that entry test; every later pass is the
+                // "asleep" state and therefore fires only while we own the
+                // mouse. The click count follows the same split: the quick
+                // check reports the real count (`prets[5] = mclick`,
+                // `gemevlib.c:190-198`), the `abutton` path reports 1.
+                let own = super::input::own_mouse();
+                if (own || pass == 0)
+                    && downorup(crate::vdi::mouse_buttons(), b_flgclks, b_mask, b_state)
+                {
+                    clicks = if own {
+                        // Resolve the *real* click count (single vs. double)
+                        // inside the double-click window — the same counter
+                        // `evnt_button` uses, so the desktop can tell Select (1)
+                        // from Open (2). Cap counting at the multi-wait deadline
+                        // when a timer is armed so it never overruns MU_TIMER (a
+                        // 0-ms poll timer collapses to a count of 1, matching the
+                        // "poll now" contract).
+                        let cap = (flags & MU_TIMER != 0).then_some(deadline);
+                        count_clicks(h, b_clicks, cap, || {
+                            downorup(crate::vdi::mouse_buttons(), b_flgclks, b_mask, b_state)
+                        })
+                    } else {
+                        1 // abutton: azombie(e, 1)
+                    };
+                    fired |= MU_BUTTON;
+                }
             }
-            if flags & MU_M1 != 0 && rect_event(&m1) {
+            // The rectangle quick checks sit inside the same
+            // `if (rlr == gl_mowner)` block as the button one
+            // (`aes/gemevlib.c:200-203`), and the blocking path behaves the same
+            // way: `amouse` tests `in_mrect` once, unconditionally
+            // (`aes/geminput.c:566-570`), then sleeps on `c_msleep`, which only
+            // `post_mouse(gl_mowner, …)` walks (`aes/geminput.c:390,446`).
+            let own_m = super::input::own_mouse() || pass == 0;
+            if own_m && flags & MU_M1 != 0 && rect_event(&m1) {
                 fired |= MU_M1;
             }
-            if flags & MU_M2 != 0 && rect_event(&m2) {
+            if own_m && flags & MU_M2 != 0 && rect_event(&m2) {
                 fired |= MU_M2;
             }
             if flags & MU_MESAG != 0 {
@@ -486,6 +535,7 @@ pub fn evnt_multi(pb: &Aespb) -> Option<sched::Switch> {
             if let sched::SleepOutcome::Yield(sw) = sched::sleep(sched::wait_input()) {
                 return Some(sw);
             }
+            pass = pass.saturating_add(1);
         }
     }
 

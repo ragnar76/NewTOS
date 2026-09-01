@@ -19,6 +19,7 @@ pub mod form;
 pub mod fsel;
 mod graf;
 pub mod init;
+mod input;
 pub mod menu;
 pub mod object;
 pub mod resource;
@@ -395,4 +396,14 @@ pub fn register_process(slot: usize, path: &[u8]) {
     // single-trap-path discipline and the launcher runs on that CPU with no
     // concurrent GEM trap in flight.
     unsafe { pd::register(pid, path) };
+}
+
+/// The AES's `user_but` vector — call it from the VDI mouse interrupt when the
+/// button state changed. EmuTOS installs `far_bcha` here with
+/// `gsx_setmb(far_bcha, far_mcha, &drwaddr)` (`aes/gemgsxif.c:271`, i.e.
+/// `vex_butv`/`vex_motv`), and `far_bcha` calls `b_click`
+/// (`aes/gemdosif.S:306-325`). `buttons` is the new mask in VDI convention
+/// (bit 0 = left), the `d0` the VDI passes (`vdi/vdi_asm.S:270-284`).
+pub fn user_but(buttons: u8) {
+    input::b_click(buttons);
 }

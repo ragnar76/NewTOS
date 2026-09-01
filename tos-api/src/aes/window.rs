@@ -2554,6 +2554,48 @@ fn wait_release() {
 /// and the ROOT of the window tree carries the desktop window's `WS_CURR`, i.e.
 /// `gl_rscreen`. So a point off the screen belongs to no window at all: the
 /// desktop is *not* an unconditional fallback.
+/// EmuTOS `chk_ctrl` (`aes/geminput.c:86-104`) — who owns the part of the
+/// screen the point falls in: `+1` the active process (inside the control
+/// rectangle), `-1` the Control Manager (menu bar, or any window), `0` the
+/// desktop. `chkown` turns that into an `AESPD *` on the button-down edge
+/// (`:310-322`); at single-app `+1` and `0` are both the running application.
+///
+/// The control rectangle is EmuTOS's `ctrl`, which has exactly two sources:
+/// `fm_own` sets it to the whole screen for as long as `ml_ocnt > 0`
+/// (`ct_chgown(rlr, &gl_rscreen)`, `aes/gemfmlib.c:93`), and otherwise the
+/// Control Manager's `w_setactive` keeps it at the **work** area of the top
+/// window (`aes/gemwmlib.c:326-333`). Both are read live here instead of being
+/// mirrored in a `set_ctrl` variable — [`MCTRL_CNT`] is `ml_ocnt` and
+/// [`get_top`] is `w_top`, so the value is the same one `set_ctrl` would hold.
+///
+/// The menu-bar test is `inside(mx, my, &gl_rmenu)`, and `gl_rmenu` is the top
+/// character row of the screen whether or not a menu is installed
+/// (`vdi`-independent, `aes/gemgraf.c:427`) — [`super::menu::desk_top`] is that
+/// row's height, and no window's work area reaches into it because `gl_rfull`
+/// excludes it. `wm_find` is [`find_handle`]; it answers `DESKWH` (0) for the
+/// desktop, which is EmuTOS's `wh == 0` "not a window" case.
+pub(super) fn chk_ctrl(mx: i16, my: i16) -> i16 {
+    let ctrl = if MCTRL_CNT.load(Ordering::Relaxed) > 0 {
+        screen_rect()
+    } else {
+        match win(get_top()) {
+            Some(w) => w.work,
+            None => screen_rect(),
+        }
+    };
+    if inside(ctrl, mx, my) {
+        return 1;
+    }
+    if my < super::menu::desk_top() {
+        return -1;
+    }
+    if find_handle(mx, my) > DESKWH {
+        -1
+    } else {
+        0
+    }
+}
+
 fn find_handle(mx: i16, my: i16) -> i16 {
     let desk = slots()[DESKWH as usize].curr;
     let mut best = if inside(desk, mx, my) { DESKWH } else { -1 };
