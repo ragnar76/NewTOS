@@ -1,0 +1,13 @@
+NewTOS AES trap trace -- written successfully.
+
+flush number : 1
+records held : 8192 (2048 from the start of the run, 6144 most recent)
+records made : 73118
+dropped      : 64926  <-- the middle of the run was overwritten
+timer clock  : 54000000 Hz
+capture cost : 756132 ticks over 73113 hooks, worst 135
+write cost   : 0 ticks total
+data file    : C:\AESTRACE.BIN, 1048832 bytes
+
+Decode on the development machine with:
+    python3 tools/aestrace.py AESTRACE.BIN --button
