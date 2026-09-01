@@ -12,6 +12,8 @@
 //! adds `start_lba` to reach absolute LBAs on the block device. No sector
 //! cache yet (Phase 09 D2) — each access reads through the block device.
 
+use core::cell::UnsafeCell;
+
 use crate::bios::bpb::{self, Bpb};
 use crate::bios::drive;
 
@@ -52,11 +54,62 @@ pub struct Volume {
     fat16: bool,
 }
 
+/// Per-drive logged-in geometry — EmuTOS's `drvtbl[]` / `drvsel`
+/// (`bdos/fsdrive.c:59,94-105`) in the shape this file system needs.
+///
+/// `ckdrv` reads a drive's boot sector through `Getbpb` **once**, when the
+/// drive is not yet in `drvsel`, and keeps the derived media descriptor from
+/// then on; every later BDOS call on a logged-in drive touches no sector to
+/// find its geometry. [`Volume::mount`] is our `ckdrv`, so it caches the same
+/// way. Without this every path-resolving GEMDOS call — `Fsfirst`, each
+/// `Fsnext`, `Fopen`, `Dgetpath`, `Dsetpath` — pays one physical boot-sector
+/// read, which on the Pi 4's single-block PIO SD path is ~512 us apiece
+/// (measured: `tosdump/reference/TERADESK-GDTRACE-r1.BIN`, where `Dgetpath`,
+/// whose only device access is this mount, means 512.5 us while the calls that
+/// touch no device mean 0).
+struct Mounted(UnsafeCell<[Option<Volume>; 16]>);
+// SAFETY: written and read only from the single-CPU, IRQ-off trap path.
+unsafe impl Sync for Mounted {}
+static MOUNTED: Mounted = Mounted(UnsafeCell::new([None; 16]));
+
+/// Log every drive out, so the next [`Volume::mount`] re-reads its boot
+/// sector. EmuTOS clears the drive's `drvsel` bit and frees its `DMD` when the
+/// media changes (`bdos/bdosmain.c:456-482`); NewTOS has one moment with the
+/// same meaning — the BIOS re-scanning the partition table
+/// (`crate::bios::mount`), which can move or replace every partition.
+pub fn log_out_all() {
+    // SAFETY: single trap path; no outstanding borrow of the table.
+    let table = unsafe { &mut *MOUNTED.0.get() };
+    *table = [None; 16];
+}
+
 impl Volume {
     /// Mount the FAT volume on `drive`: resolve its partition and parse
     /// the BPB. Returns `None` for an absent drive or a non-FAT12/16
     /// boot record.
+    ///
+    /// This is EmuTOS `ckdrv` (`bdos/fsdrive.c:77-105`): a drive that is
+    /// already logged in is answered from [`MOUNTED`] without touching the
+    /// block device; only the first call for a drive — and any call for a
+    /// drive that failed to log in, exactly as `ckdrv` retries `Getbpb` while
+    /// the `drvsel` bit stays clear — reads its boot sector.
     pub fn mount(drive: u16) -> Option<Volume> {
+        if drive as usize >= 16 {
+            return None;
+        }
+        // SAFETY: single trap path; no outstanding borrow of the table.
+        let table = unsafe { &mut *MOUNTED.0.get() };
+        if let Some(v) = table[drive as usize] {
+            return Some(v);
+        }
+        let v = Self::log_in(drive)?;
+        table[drive as usize] = Some(v);
+        Some(v)
+    }
+
+    /// Read and parse the drive's boot sector into a [`Volume`] — EmuTOS
+    /// `Getbpb` + `log_media` (`bdos/fsdrive.c:96-104`).
+    fn log_in(drive: u16) -> Option<Volume> {
         let part = drive::resolve(drive)?;
         let geo = bpb::geometry(drive)?;
         let bpb: Bpb = geo.bpb;

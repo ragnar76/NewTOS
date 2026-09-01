@@ -16,7 +16,20 @@ pub mod drive;
 pub mod getmpb;
 pub mod vectors;
 
-pub use drive::mount;
+/// Scan the block device's partition table and (re)build the BIOS drive map
+/// — [`drive::mount`], plus the BDOS-side drive log-out that has to go with
+/// it.
+///
+/// The BDOS caches each drive's FAT geometry once it has logged the drive in
+/// (EmuTOS `ckdrv`/`drvsel`, `bdos/fsdrive.c:94-105`). A fresh partition scan
+/// can move, resize or replace every partition, which is the same situation
+/// EmuTOS handles by clearing `drvsel` and freeing the drive's `DMD`
+/// (`bdos/bdosmain.c:456-482`) — so every drive is logged out here and will
+/// re-read its boot sector on the next access.
+pub fn mount() -> usize {
+    crate::bdos::fs::fat::log_out_all();
+    drive::mount()
+}
 
 use tos_types::error::{EREADF, ESECNF, EUNDEV, EWRITF, E_OK};
 use tos_types::Long;
