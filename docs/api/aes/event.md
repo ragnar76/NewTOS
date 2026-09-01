@@ -104,7 +104,7 @@ report the mouse / keyboard / button state for all of them in one shot.
 | `int_in` | Macro | Meaning |
 |:--------:|-------|---------|
 | 0 | `MU_FLAGS` | event mask (`MU_*` bits; masked with `MU_TOSVALID` = 0x3F) |
-| 1 | `MB_CLICKS` | button: number of clicks to wait for (high bit = enter/leave flag) |
+| 1 | `MB_CLICKS` | button: **low byte** = number of clicks to wait for, **high byte** = enter(0)/leave(1) flag (`bclicks = LOBYTE(HIWORD(p))`, `geminput.c:559`; `flag = (buparm>>24)&0xff`, `:348-357`) |
 | 2 | `MB_MASK` | button: which buttons to test (bitmask; byte) |
 | 3 | `MB_STATE` | button: desired button state (byte) |
 | 4 | `MMO1_FLAGS` | rect 1 `m_out` (0 enter / 1 leave) |
@@ -221,7 +221,7 @@ non-ASCII keys such as the function/cursor keys).
 
 | Slot | Macro | Meaning |
 |------|-------|---------|
-| `int_in[0]` | `B_CLICKS` | number of clicks to wait for; **high bit = enter(0)/leave(1) flag** |
+| `int_in[0]` | `B_CLICKS` | **low byte** = number of clicks to wait for; **high byte** (not bit!) = enter(0)/leave(1) flag. `combine_cms` packs the whole WORD into bits 31..16 of the LONG (`gemevlib.h:34-48`), so `downorup` reads the flag as `(buparm>>24)&0xff` and `abutton` reads the count as `LOBYTE(HIWORD(p))` |
 | `int_in[1]` | `B_MASK` | button bitmask (which buttons to test; byte) |
 | `int_in[2]` | `B_STATE` | desired button state (byte) |
 | `int_out[0]` | `RET_CODE` | **return: the actual click count reached** |
@@ -232,6 +232,12 @@ number of times (or the multi-click delay window closes), and returns how many
 clicks actually occurred. The clicks/mask/state are packed by
 `combine_cms(clicks, mask, state)` into a LONG: **clicks in the high WORD, mask
 in byte 2, state in byte 3** (`gemevlib.h:34-50`), and decoded by
+> **Corrected 2026-09-01.** Two entries in this file previously said "high **bit**"
+> where the source says "high **byte**". They are not the same: TeraDesk asks with
+> `bclicks = 0x102`, whose high *bit* is 0 but whose high *byte* is 1. Implementing
+> the "high bit" reading leaves the button condition inverted — which is exactly the
+> defect measured on hardware and fixed in `2d3865b`. The spec carried the bug.
+
 `downorup(new, buparm)` as `flag = (buparm>>24)&0xff` (the enter/leave bit, from
 the top byte of the clicks word), `mask = (buparm>>8)&0xff`, `val = buparm&0xff`
 (`geminput.c:348-357`). The predicate is
