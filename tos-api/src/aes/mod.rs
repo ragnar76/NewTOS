@@ -407,3 +407,11 @@ pub fn register_process(slot: usize, path: &[u8]) {
 pub fn user_but(buttons: u8) {
     input::b_click(buttons);
 }
+
+/// The AES's `user_mot` vector — call it from the VDI mouse interrupt for a
+/// packet that carried movement, with the **clipped** new position
+/// (`vdi/vdi_asm.S:355-357`). EmuTOS's `far_mcha` forks `mchange`
+/// (`aes/gemdosif.S:327-347`).
+pub fn user_mot(x: i16, y: i16) {
+    input::mchange(x, y);
+}

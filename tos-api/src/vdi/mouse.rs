@@ -204,6 +204,12 @@ pub fn feed_relative(dx: i16, dy: i16, buttons: u8, backend: &dyn RasterBackend)
     let (cx, cy) = position();
     let nx = (cx + dx).clamp(0, max_x);
     let ny = (cy + dy).clamp(0, max_y);
+    // `user_mot` — the AES's motion vector (`far_mcha` → `mchange`), called
+    // only for a packet that carried movement and with the **clipped** new
+    // position (`vdi/vdi_asm.S:305-362`).
+    if dx != 0 || dy != 0 {
+        crate::aes::user_mot(nx, ny);
+    }
     set_state(nx, ny, buttons, backend);
 }
 

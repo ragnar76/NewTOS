@@ -1,30 +1,32 @@
-//! AES input layer — mouse ownership.
+//! AES input layer — mouse ownership and the button-delay window.
 //!
 //! Source: EmuTOS `aes/geminput.c`. This is the small part of that file our
 //! architecture needs: the state the Event Manager consults (`gl_mowner`,
-//! `button`) and the interrupt-side handler that maintains it, `b_click`
-//! (`:110-140`).
+//! `button`, `xrat`/`yrat`, `gl_bdely`) and the two interrupt-side handlers
+//! that maintain it, `b_click` (`:110-140`) and `mchange` (`:360-373`).
 //!
 //! **How EmuTOS gets here.** The AES installs its own handlers into the VDI's
 //! mouse-interrupt vectors — `gsx_setmb(far_bcha, far_mcha, &drwaddr)`
 //! (`aes/gemgsxif.c:271`) is `vex_butv`/`vex_motv`. The VDI's `mouse_int` then
-//! calls `user_but` on a button change (`vdi/vdi_asm.S:271-284`), and
-//! `far_bcha` calls `b_click` (`aes/gemdosif.S:306-325`). Our equivalent of
-//! `mouse_int` is [`crate::vdi::feed_relative`], which calls [`b_click`] at the
-//! same point and with the same argument.
+//! calls `user_but` on a button change and `user_mot` on movement, the latter
+//! with the **clipped** new position (`vdi/vdi_asm.S:271-284` and `:339-362`);
+//! `far_bcha` calls `b_click`, `far_mcha` forks `mchange`
+//! (`aes/gemdosif.S:306-347`). Our equivalent of `mouse_int` is
+//! [`crate::vdi::feed_relative`], which calls [`b_click`] and [`mchange`] at the
+//! same two points and with the same arguments.
 //!
-//! **What is *not* reproduced, and why.** EmuTOS's `bchange` delivers the button
-//! change through the fork queue into a per-process event-block list
+//! **What is *not* reproduced, and why.** EmuTOS's `bchange`/`b_delay` deliver
+//! the button change through the fork queue into a per-process event-block list
 //! (`post_button`, `:462-483`); our Event Manager polls the live VDI button byte
 //! instead, so the delivery half has no counterpart. What *is* observable
-//! through that difference — which process may act on the sampled level — is
-//! exactly what this module keeps.
+//! through that difference — which process may act on the sampled level, and how
+//! long a click window stays open — is exactly what this module keeps.
 //!
-//! Single boot CPU (the AES is entered only from the GEM trap, this hook only
-//! from the IKBD decode path), so plain `Relaxed` atomics suffice, matching the
-//! rest of the AES state.
+//! Single boot CPU (the AES is entered only from the GEM trap, these two hooks
+//! only from the IKBD decode path), so plain `Relaxed` atomics suffice, matching
+//! the rest of the AES state.
 
-use core::sync::atomic::{AtomicBool, AtomicU8, Ordering};
+use core::sync::atomic::{AtomicBool, AtomicI16, AtomicU8, Ordering};
 
 /// EmuTOS `MB_DOWN` (`aes/geminput.c:46`) — the left button, the only state
 /// that moves mouse ownership.
@@ -35,6 +37,13 @@ const MB_DOWN: u8 = 0x01;
 /// `bchange`'s ownership decision inline because our Event Manager has no fork
 /// queue to defer it to.
 static BUTTON: AtomicU8 = AtomicU8::new(0);
+
+/// EmuTOS `xrat`/`yrat` — the **last reported** (clipped) pointer position, the
+/// baseline `mchange` measures its ±2 threshold against (`aes/geminput.c:362`).
+/// Deliberately not `crate::vdi::mouse_position()`: that is the *current*
+/// position, which by the time `mchange` runs is already the new one.
+static XRAT: AtomicI16 = AtomicI16::new(0);
+static YRAT: AtomicI16 = AtomicI16::new(0);
 
 /// EmuTOS `gl_mowner == rlr` — `true` while the running application owns the
 /// mouse, `false` while the Control Manager does.
@@ -47,6 +56,14 @@ static BUTTON: AtomicU8 = AtomicU8::new(0);
 /// observe it (`aes/gemctrl.c:441`), and at single-app that owner is the
 /// application.
 static GL_MOWNER_APP: AtomicBool = AtomicBool::new(true);
+
+/// EmuTOS `gl_bdely != 0` — a button-delay window is open: the interval in
+/// which a further click still joins the current gesture
+/// (`aes/geminput.c:59-60`). EmuTOS counts it down in ticks; our Event Manager
+/// holds the deadline in `count_clicks`, so the shared state is just "open",
+/// and `b_delay(gl_bdely)` — the forced expiry `mchange` performs — is
+/// [`b_delay`] clearing it.
+static GL_BDELY: AtomicBool = AtomicBool::new(false);
 
 // ── the two VDI mouse-interrupt vectors ────────────────────────────────────
 
@@ -84,6 +101,47 @@ pub(crate) fn b_click(new: u8) {
     }
 }
 
+/// `user_mot` — the AES's motion handler, EmuTOS `mchange`
+/// (`aes/geminput.c:360-373`). `rx`/`ry` are the new **clipped** pointer
+/// position, as the VDI passes them (`vdi/vdi_asm.S:355-362`); the VDI calls
+/// this only for a packet that actually carried movement (`:305-320`).
+///
+/// Two things happen, in EmuTOS's order:
+///
+/// 1. *"zero out button wait if mouse moves more than a little"* — a move of
+///    more than ±2 in either axis against the previous reported position forces
+///    the pending button delay to expire immediately, `b_delay(gl_bdely)`
+///    (`:365-368`). The clicks counted so far are delivered at once; a click
+///    after the move starts a new gesture instead of completing a double click.
+/// 2. The pointer entering the menu bar with the buttons up hands the mouse to
+///    the Control Manager (`:387-389`), which is how a hover menu takes over
+///    without a click. `gl_ctwait` is the menu tree's `THEACTIVE` rectangle
+///    (`aes/gemmnlib.c:717`), the menu-bar row — [`menu::desk_top`] here, the
+///    same row [`event::menu_intercept`] tracks.
+// The threshold test is EmuTOS's line for line (`aes/geminput.c:366-367`);
+// folding it into two range checks would read further from the source than it
+// is worth.
+#[allow(clippy::manual_range_contains)]
+pub(crate) fn mchange(rx: i16, ry: i16) {
+    let dx = XRAT.load(Ordering::Relaxed) - rx;
+    let dy = YRAT.load(Ordering::Relaxed) - ry;
+    if bdely_pending() && (dx > 2 || dx < -2 || dy > 2 || dy < -2) {
+        b_delay();
+    }
+
+    // "xrat, yrat hold true" (aes/geminput.c:371)
+    XRAT.store(rx, Ordering::Relaxed);
+    YRAT.store(ry, Ordering::Relaxed);
+
+    if GL_MOWNER_APP.load(Ordering::Relaxed)
+        && BUTTON.load(Ordering::Relaxed) == 0
+        && !super::menu::active().is_null()
+        && ry < super::menu::desk_top()
+    {
+        GL_MOWNER_APP.store(false, Ordering::Relaxed);
+    }
+}
+
 // ── what the Event Manager consults ────────────────────────────────────────
 
 /// EmuTOS `rlr == gl_mowner` (`aes/gemevlib.c:185`) — may this application run
@@ -102,4 +160,31 @@ pub(super) fn w_setactive() {
     if BUTTON.load(Ordering::Relaxed) == 0 {
         GL_MOWNER_APP.store(true, Ordering::Relaxed);
     }
+}
+
+/// Open the button-delay window — EmuTOS `gl_bdely = gl_dclick` in `b_click`
+/// (`aes/geminput.c:140`). EmuTOS opens it only when someone is waiting for
+/// more than one click *and* the change is a press (`if (gl_bpend && state)`,
+/// `:133`); the caller applies both conditions.
+pub(super) fn b_arm() {
+    GL_BDELY.store(true, Ordering::Relaxed);
+}
+
+/// Close the button-delay window normally — the `gl_bdely` countdown reaching
+/// zero (`b_delay`, `aes/geminput.c:155-171`), here the counting loop finishing.
+pub(super) fn b_disarm() {
+    GL_BDELY.store(false, Ordering::Relaxed);
+}
+
+/// Is a button-delay window open? EmuTOS `if (gl_bdely)`
+/// (`aes/geminput.c:117,366`).
+pub(super) fn bdely_pending() -> bool {
+    GL_BDELY.load(Ordering::Relaxed)
+}
+
+/// `b_delay(gl_bdely)` — subtract the whole remaining delay, so it expires now
+/// (`aes/geminput.c:155-171`, called that way from `mchange`, `:368`). The
+/// clicks accumulated so far are what the waiter gets.
+fn b_delay() {
+    GL_BDELY.store(false, Ordering::Relaxed);
 }

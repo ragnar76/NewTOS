@@ -480,3 +480,129 @@ wind_find(32000,32000)=-1
 
 Those are the EmuTOS values of cases 155–158 **to the word**, at the same
 resolution. The Pi run will differ from the TT only where the screen size does.
+
+---
+
+## Predictions for the next hardware trace — the three AES event defects (D-EV-1/2/3)
+
+Written **before** anything was built or run, against
+`tosdump/reference/TERADESK-AESTRACE-r1.BIN` (4734 records, 36.3 s, TeraDesk on
+a real Pi 4) and its `--button` report. The fix is three changes in
+`tos-api/src/aes/` — `event.rs` (`downorup`), the new `input.rs` (mouse
+ownership + the button-delay window) and one call each from
+`vdi/mouse.rs::feed_relative`. The tracer, the trace and `tools/aestrace.py`
+are untouched, so **every number below is produced by the same decoder that
+produced the r1 report** and the two are directly comparable.
+
+### What the r1 trace measured (the baseline these predictions move)
+
+All 153 button-asking calls are `evnt_multi` (25); there is no `evnt_button`
+(21) in the trace. They fall into exactly two request classes:
+
+| class | `bclk` | `bmask` | `bstate` | `flags` | calls | fired | calls that ever sampled a press (`mb_or != 0`) |
+|---|---|---|---|---|---|---|---|
+| **A** — TeraDesk's main loop | `0x0102` | `3` | `0` | `0x13` | 148 | **148** | **8** |
+| **B** — its drag/release wait | `0x0002` | `1` | `0` | `0x22` | 5 | 2 | 5 |
+
+Class A is `bflag = 1` (`(buparm >> 24) & 0xff`, `aes/geminput.c:350`): "tell me
+when a button **is pressed**". Class B is `bflag = 0`, `mask = 1`, `state = 0`:
+a genuine *level* wait for the left button to be **up**, and EmuTOS answers it
+from the level too — class B is **correct today** and must not change.
+
+### D-EV-1 — `downorup` honours the flag byte (`aes/geminput.c:348-357`)
+
+1. **The hit rate collapses from 98.0 %.** With 8 real presses in 36 s the
+   report should print single digits: `(8 + 2) / 153 ≈ 6.5 %` for an identical
+   input sequence. A new session has a different press count, so the *rate* is
+   only indicative — the invariant below is the real test.
+2. **The falsifier, session-independent:** the report's line
+   `of those, N sampled the button as UP (0x00) on EVERY evaluation` must go to
+   **N = 0** — *provided the session contains no class-B call that fires with
+   the button never pressed*. A class-A (`bflag = 1`) call that returns
+   `MU_BUTTON` while `mb_or == 0` is the defect, unfixed. One such call
+   falsifies the fix. (In r1 all 140 came from class A; all 5 class-B calls had
+   `mb_or != 0`.)
+3. `button-returning calls over N s` drops from **4.1 per second** to roughly
+   the operator's real click rate — under 1/s for normal use.
+4. **The report will still print `clicks=258` and still annotate that line
+   `<-- 'button UP' request`.** `button_report` derives that note from
+   `bmask`/`bstate` alone and never looks at the flag byte; it is not corrected
+   by this fix and its persistence is **not** a falsification. Do not read it as
+   one. (The tracer is the instrument; correcting its annotation is a separate
+   change to `tools/aestrace.py`, not part of this work.)
+5. The requested click **count** is now the low byte (`2`), not the raw `258`
+   (`LOBYTE(HIWORD(parm))`, `aes/geminput.c:470,537`). Not directly visible in
+   the report; visible as `bret` (EV_BRET) never exceeding 2 in the full
+   `--events` listing.
+
+### D-EV-2 — the `ev_multi` quick check is gated on mouse ownership (`aes/gemevlib.c:185`)
+
+**Correction to the brief, established from the source before coding:** the gate
+does *not* stop a level-satisfied button from firing. When the app does not own
+the mouse, `ev_multi` falls through to `iasync(MU_BUTTON, buparm)` →
+`abutton`, and `abutton` runs the very same `downorup(button, p)` test with **no
+ownership condition** (`aes/geminput.c:525-528`) — it just answers `1` click
+instead of `mclick`. The real filter is `post_button`, which walks only
+`gl_mowner`'s sleeping list (`aes/geminput.c:344,465`): an app that went to
+sleep unsatisfied is never woken while it does not own the mouse. So the
+implemented rule is: **entry evaluation always tests the level; every later
+evaluation only fires while we own the mouse.** Anyone reading the r1 report's
+docstring ("never gets the level test") should read this paragraph instead.
+
+Nothing in `--button` measures this directly. Its falsifiers are behavioural, in
+the full `--events` listing:
+
+6. A press that lands on a **window frame or a non-top window** produces the
+   Control-Manager `POST` record (`WM_TOPPED` / `WM_MOVED` / `WM_CLOSED` / …)
+   and **no** `evnt_multi` call returning `MU_BUTTON` with `mx`/`my` inside that
+   frame for the duration of that press. A call that returns both is the
+   unfixed double handling.
+7. A press in the **top window's work area** or on the **desktop background**
+   must still return `MU_BUTTON` exactly as before — `chk_ctrl` answers `1`
+   resp. `0` there (`aes/geminput.c:86-104`), i.e. the app owns it. If drive
+   icons or window contents stop responding to clicks, the gate is too wide and
+   the fix is wrong.
+8. `wind_update(BEG_MCTRL)` (mode 3) **grants** ownership to the app
+   (`fm_own` → `ct_chgown(rlr, &gl_rscreen)` → `set_mown`, `aes/gemfmlib.c:93`,
+   `aes/gemctrl.c:392-396`) — it does not take it away. So the 4 BEG/END_MCTRL
+   brackets in r1 mark intervals where the quick check is *unconditionally on*.
+   If a trace shows a button-wait inside such a bracket that does **not** fire
+   on a press, the polarity has been implemented backwards.
+
+### D-EV-3 — `mchange` cancels the pending click window (`aes/geminput.c:360-370`)
+
+9. **`double-click windows opened` collapses from 150 to about the number of
+   real presses** (≈ 10 for an r1-like session). This is D-EV-1's doing, not
+   D-EV-3's: a window is only opened once `MU_BUTTON` has actually fired with
+   more than one click requested. A next trace that still shows ~150 windows
+   means D-EV-1 did not take.
+10. **`... in which the pointer moved by more than EmuTOS's ±2` goes to 0**, and
+    with it the `EmuTOS mchange would have cancelled …` verdict in the per-call
+    listing. The cancel check sits directly after `pump_input()`, so the window
+    ends *before* the poll that would have folded the offending step into
+    `win_max_step`. A window that still reports `maxstep > 2` means the cancel
+    did not fire — with one legitimate exception: a step assembled from several
+    IKBD packets each ≤ 2 px between two polls. EmuTOS does not cancel those
+    either (its test is per *packet*, `xrat-rx` vs the previous **reported**
+    position), so such a window is EmuTOS-conformant, not a miss. At r1's poll
+    density (55.8 M polls over 150 windows, ~370 k polls per window) this should
+    be vanishingly rare.
+11. `worst window: … polls=374055 travel=246px maxstep=75` has no successor: no
+    surviving window should show three-digit travel. Long windows now end on the
+    first move rather than on the full 220 ms `gl_dclick` expiry.
+12. **The window is only armed for a press** (`if (gl_bpend && state)`,
+    `aes/geminput.c:129-141`). A class-B (`state = 0`) call that fires with the
+    button *up* opens an *unarmed* window that movement does **not** cancel —
+    that is EmuTOS (`gl_bdely == 0` → `mchange` does nothing) and must not be
+    read as a missing cancel.
+
+### What cannot be shown here, and by what
+
+Neither QEMU board has USB, so no mouse packet ever reaches `feed_relative` on
+either board: `b_click`/`mchange` never run, the ownership latch never leaves
+"the app owns", and the delay window is never cancelled. **Every one of the 12
+points above is real-Pi-4-only.** What QEMU does prove is the negative: the
+desktop still draws and still answers its own `bmask = 1, bstate = 1` wait
+(screendump), and the kernel AES selftest's `evnt_button` case
+(`bclk = 1, bmask = 1, bstate = 0`, `bflag = 0`) still returns 1 click with no
+buttons down — the `bflag = 0` path is unchanged by construction.

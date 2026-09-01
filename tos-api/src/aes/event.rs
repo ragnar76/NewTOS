@@ -223,9 +223,18 @@ fn dclick_ms() -> u64 {
     DCRATES[DCLICK_INDEX.load(Ordering::Relaxed).clamp(0, 4) as usize]
 }
 
-/// Poll `cond` until it holds or the deadline passes; returns whether it
-/// became true in time.
-fn wait_until(h: &dyn crate::host::Host, deadline: u64, cond: impl Fn() -> bool) -> bool {
+/// Poll `cond` until it holds, the deadline passes, or — when the caller armed
+/// the button-delay window (`armed`) — the pointer moved far enough to force
+/// that window to expire (EmuTOS `mchange` → `b_delay(gl_bdely)`,
+/// `aes/geminput.c:365-368`). Returns whether `cond` became true in time; a
+/// window cut short by movement returns `false`, which ends the counting with
+/// the clicks accumulated so far, exactly as the forced expiry delivers them.
+fn wait_until(
+    h: &dyn crate::host::Host,
+    deadline: u64,
+    armed: bool,
+    cond: impl Fn() -> bool,
+) -> bool {
     while h.monotonic_millis() < deadline {
         if cond() {
             return true;
@@ -242,6 +251,11 @@ fn wait_until(h: &dyn crate::host::Host, deadline: u64, cond: impl Fn() -> bool)
             super::trace::note_click_window();
         }
         h.pump_input();
+        // `pump_input` is where a mouse packet reaches `mchange`, so this is the
+        // first instant the forced expiry can be seen.
+        if armed && !super::input::bdely_pending() {
+            return false;
+        }
     }
     cond()
 }
@@ -274,16 +288,34 @@ fn count_clicks(
 ) -> i16 {
     let win = dclick_ms();
     let mut got = 1i16;
+    // EmuTOS opens the delay window only when someone is waiting for more than
+    // one click **and** the change that opened it is a press:
+    // `if (gl_bpend && state) { … gl_bdely = gl_dclick; }` (`b_click`,
+    // `aes/geminput.c:129-141`). `gl_bpend` is the count of waiters asking for
+    // `bclicks > 1` (`abutton`, `:536-539`) — here, this call asking for more
+    // than one click; `state` is the live button byte. A window opened while the
+    // buttons are up (an app waiting for a *release*) is therefore not armed,
+    // and movement does not cut it short — `gl_bdely == 0`, so `mchange` has
+    // nothing to expire.
+    let armed = max_clicks > 1 && crate::vdi::mouse_buttons() != 0;
+    if armed {
+        super::input::b_arm();
+    }
     while got < max_clicks {
         let mut deadline = h.monotonic_millis().saturating_add(win);
         if let Some(cap) = cap {
             deadline = deadline.min(cap);
         }
         // The button must leave, then re-reach, the state within the window.
-        if !wait_until(h, deadline, || !matches()) || !wait_until(h, deadline, &matches) {
+        if !wait_until(h, deadline, armed, || !matches())
+            || !wait_until(h, deadline, armed, &matches)
+        {
             break;
         }
         got += 1;
+    }
+    if armed {
+        super::input::b_disarm();
     }
     got
 }
