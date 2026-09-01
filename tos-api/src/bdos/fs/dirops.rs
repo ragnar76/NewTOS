@@ -41,6 +41,13 @@ pub fn dcreate(args: &TrapArgs) -> Long {
         // `EPTHNF`, `fsopnclo.c:114`).
         Err(e) => return path::drive_notfound(e, EPTHNF),
     };
+    // `Dcreate` is `xmkdir`, which is `ixcreat(s, FA_SUBDIR)`
+    // (`bdos/fsdir.c:211`), so it inherits `ixcreat`'s guard against a path
+    // with no final component or one starting with a dot
+    // (`bdos/fsopnclo.c:117-118`: `if (!*s || (*s == '.')) return EPTHNF;`).
+    if comp.is_empty() || comp.starts_with('.') {
+        return EPTHNF;
+    }
     // F7: reject illegal characters in the new folder name (EmuTOS
     // `xmkdir`→`ixcreat` `contains_illegal_characters(s)` → `EACCDN`,
     // `fsopnclo.c:121-122`).

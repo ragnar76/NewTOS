@@ -226,6 +226,15 @@ pub fn fcreate(args: &TrapArgs) -> Long {
         // `fsopnclo.c:114`).
         Err(e) => return path::drive_notfound(e, EPTHNF),
     };
+    // A path with no final component (`"C:\\"`, `"C:\\SUB\\"`) or one that
+    // starts with a dot is not a file `Fcreate` can make: EmuTOS `ixcreat`
+    // rejects both right after `findit`, before the illegal-character check
+    // (`bdos/fsopnclo.c:117-118`: `if (!*s || (*s == '.')) return EPTHNF;`).
+    // `findit` itself resolves such a path successfully, so the guard belongs
+    // here and not in `resolve_parent`.
+    if comp.is_empty() || comp.starts_with('.') {
+        return EPTHNF;
+    }
     // F7: reject illegal characters in the new name (EmuTOS `ixcreat`
     // `contains_illegal_characters(s)` → `EACCDN`, `fsopnclo.c:121-122`).
     if path::contains_illegal_characters(comp) {

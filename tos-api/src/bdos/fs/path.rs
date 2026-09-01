@@ -80,11 +80,21 @@ pub fn split_drive(path: &str) -> (u16, &str) {
     }
 }
 
-/// Resolve a path to `(volume, parent-directory-cluster, final-component)`.
+/// Resolve a path to `(volume, parent-directory-cluster, final-component)` —
+/// EmuTOS `findit` with `dflag = 0` (`bdos/fsdir.c:1407-1497`).
+///
 /// Descends through intermediate sub-directories; the final component is
 /// returned **as a string** (so `Fsfirst` can keep its wildcards). An
 /// intermediate component that is missing or is not a directory yields
 /// `EPTHNF`.
+///
+/// The final component may be the **empty string** — for a path that ends in a
+/// separator, or is empty. That is not an error here (`findit` returns the
+/// directory it walked to); the caller decides. `ixsfirst`/`ixopen`/
+/// `ixunlink`/`xchmod` feed it to their `scan`, which cannot match the eleven
+/// blanks `builds("")` produces and so reports `EFILNF`; `ixcreat` (and
+/// `xmkdir` through it) has an explicit `if (!*s || (*s == '.'))` guard and
+/// reports `EPTHNF` (`bdos/fsopnclo.c:117-118`).
 pub fn resolve_parent(path: &str) -> Result<(Volume, u32, &str), Long> {
     let (drive, rest) = split_drive(path);
     let vol = Volume::mount(drive).ok_or(EDRIVE)?;
@@ -99,11 +109,35 @@ pub fn resolve_parent(path: &str) -> Result<(Volume, u32, &str), Long> {
     };
     let s = if absolute { &rest[1..] } else { rest };
 
-    let mut comps = s.split(['/', '\\']).filter(|c| !c.is_empty());
-    let mut comp = comps.next().ok_or(EPTHNF)?;
-    for next in comps {
-        // `comp` is an intermediate component → descend into it.
-        match comp {
+    // EmuTOS `findit` walks the path one element at a time, asking `getpath`
+    // for the characters up to the next `PATHSEP` (`bdos/fsdir.c:1428-1487`,
+    // `getpath` at `:1763-1794`). The walk ends exactly when `getpath` returns
+    // 0, which is the case for
+    //
+    //   * a remainder with no separator in it — that remainder is the name, or
+    //   * a remainder that *starts* with a separator (an empty element).
+    //
+    // Whatever is left then becomes `*sp` (`fsdir.c:1495`), and `*sp` may
+    // legitimately be the **empty string**: for a path ending in a separator
+    // (`"C:\"`, `"C:\SUB\"`) the last `n++` past the separator lands on the
+    // terminating NUL, the next `getpath` returns 0 and the loop breaks with a
+    // valid directory in `p`. `findit` does *not* fail there — so neither may
+    // this function. The caller then hands the empty name to its `scan`, whose
+    // `builds("")` produces eleven blanks (`fsdir.c:737-795`) that no real
+    // directory entry can match, and reports its own not-found code
+    // (`EFILNF` for `ixsfirst`/`ixopen`/`ixunlink`/`xchmod`). Returning
+    // `EPTHNF` from here instead — as this function used to — turns that into
+    // "path not found", a different answer to the application.
+    let mut n = s;
+    while let Some(i) = n.find(['/', '\\']) {
+        if i == 0 {
+            // Empty element (`"\\"` inside the path): `getpath` returns 0 and
+            // `findit` breaks with the remainder — separator included — as the
+            // name (`fsdir.c:1782-1790`).
+            break;
+        }
+        // `n[..i]` is an intermediate component → descend into it.
+        match &n[..i] {
             "." => {} // stay in the current directory
             ".." => {
                 let dotdot = fcb_dotdot();
@@ -112,7 +146,7 @@ pub fn resolve_parent(path: &str) -> Result<(Volume, u32, &str), Long> {
                     None => 0,
                 };
             }
-            _ => {
+            comp => {
                 let name = dir::fcb_name(comp).ok_or(EPTHNF)?;
                 let entry = dir::find_in_dir(&vol, start, &name).ok_or(EPTHNF)?;
                 if entry.attrib & FA_SUBDIR == 0 {
@@ -121,10 +155,10 @@ pub fn resolve_parent(path: &str) -> Result<(Volume, u32, &str), Long> {
                 start = entry.cluster;
             }
         }
-        comp = next;
+        n = &n[i + 1..];
     }
-    // `comp` is now the final component.
-    Ok((vol, start, comp))
+    // `n` is now the final component — possibly empty.
+    Ok((vol, start, n))
 }
 
 /// Resolve a path to `(volume, parent-directory-cluster, final-name)` as
