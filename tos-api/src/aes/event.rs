@@ -129,27 +129,65 @@ fn shift_state() -> i16 {
     host().map(|h| h.keyboard_shift_state()).unwrap_or(0) as i16
 }
 
+/// The button-wait predicate — EmuTOS `downorup` (`aes/geminput.c:348-357`).
+///
+/// `bflgclks` is the **clicks WORD** the caller passed (`B_CLICKS` /
+/// `MB_CLICKS`), which `combine_cms` packs as the high WORD of the `buparm`
+/// LONG (`aes/gemevlib.h:34-48`). It carries two fields: the low byte is the
+/// number of clicks to wait for, the **high byte is `bflag`**, the sense bit.
+/// `downorup` reads it as `flag = (buparm >> 24) & 0xff`, i.e. exactly that
+/// high byte, and returns
+///
+/// ```text
+/// (((mask & (val ^ new)) == 0) != flag)
+/// ```
+///
+/// With `flag = 0` the caller waits to **enter** the masked state, with
+/// `flag = 1` to **leave** it (`ev_button`, `aes/gemevlib.c:74-81`). TeraDesk's
+/// main loop asks with `clicks = 0x0102` (`sdk/apps/teradesk/main.c:1589`), so
+/// `flag = 1`, `mask = 3`, `state = 0`: "tell me when a button **is
+/// pressed**" — the inverse of the plain level match.
+///
+/// The comparison is EmuTOS's literal one: a 0/1 condition compared against the
+/// whole flag byte, so a `flag` above 1 makes the predicate constantly true,
+/// exactly as it does in C.
+fn downorup(new: u8, bflgclks: i16, mask: u8, val: u8) -> bool {
+    let flag = (bflgclks >> 8) & 0x00ff;
+    let cond = i16::from((mask & (val ^ new)) == 0);
+    cond != flag
+}
+
+/// The number of clicks a `bflgclks` WORD asks for — its **low** byte, EmuTOS
+/// `bclicks = LOBYTE(HIWORD(p))` (`abutton`, `aes/geminput.c:537`; the same
+/// extraction bounds the reported count in `post_button`, `:470`). The high
+/// byte belongs to [`downorup`], not to the count: TeraDesk's `0x0102` asks for
+/// **2** clicks, not 258.
+fn bclicks(bflgclks: i16) -> i16 {
+    bflgclks & 0x00ff
+}
+
 /// `evnt_button` (21) — block until the mouse buttons match the
 /// requested state, then return the **actual** click count and fill the
 /// mouse / keyboard return slots.
 ///
-/// `int_in[0]` = clicks to wait for (`B_CLICKS`), `int_in[1]` = button
+/// `int_in[0]` = flag + clicks to wait for (`B_CLICKS`), `int_in[1]` = button
 /// mask (`B_MASK`), `int_in[2]` = desired masked state (`B_STATE`).
 /// `RET_CODE` = clicks reached; `int_out[1..4]` = x, y, buttons, shift.
 ///
-/// Waits for the masked button bits to reach the requested state (the
-/// first click), then counts any further presses that fall inside the
-/// double-click window (`dclick_ms()`) up to the requested maximum, and
-/// returns the *actual* click count (1 for a single click, 2 for a double
-/// click within the window). The window counting is factored into the
-/// shared [`count_clicks`] helper, which `evnt_multi` reuses.
+/// Waits for the masked button bits to satisfy [`downorup`] (the first click),
+/// then counts any further presses that fall inside the double-click window
+/// (`dclick_ms()`) up to the requested maximum ([`bclicks`]), and returns the
+/// *actual* click count (1 for a single click, 2 for a double click within the
+/// window). The window counting is factored into the shared [`count_clicks`]
+/// helper, which `evnt_multi` reuses.
 pub fn evnt_button(pb: &Aespb) -> Option<sched::Switch> {
-    let clicks = pb.intin(0);
+    let bflgclks = pb.intin(0);
     let mask = pb.intin(1) as u8;
     let state = pb.intin(2) as u8;
+    let clicks = bclicks(bflgclks);
     let mut got = 0i16;
     if let Some(h) = host() {
-        let matches = || crate::vdi::mouse_buttons() & mask == state & mask;
+        let matches = || downorup(crate::vdi::mouse_buttons(), bflgclks, mask, state);
         // Wait for the button to reach the requested state (the first click).
         while !matches() {
             // AES trap tracer: record the button byte this evaluation read.
@@ -316,7 +354,8 @@ pub fn evnt_dclick(pb: &Aespb) {
 pub fn evnt_multi(pb: &Aespb) -> Option<sched::Switch> {
     let flags = (pb.intin(0) as u16) & MU_TOSVALID;
 
-    let b_clicks = pb.intin(1);
+    let b_flgclks = pb.intin(1);
+    let b_clicks = bclicks(b_flgclks);
     let b_mask = pb.intin(2) as u8;
     let b_state = pb.intin(3) as u8;
     let m1 = MoBlk {
@@ -385,7 +424,7 @@ pub fn evnt_multi(pb: &Aespb) -> Option<sched::Switch> {
                 }
             }
             if flags & MU_BUTTON != 0
-                && crate::vdi::mouse_buttons() & b_mask == b_state & b_mask
+                && downorup(crate::vdi::mouse_buttons(), b_flgclks, b_mask, b_state)
             {
                 // Resolve the *real* click count (single vs. double) inside the
                 // double-click window — the same counter `evnt_button` uses, so
@@ -395,7 +434,7 @@ pub fn evnt_multi(pb: &Aespb) -> Option<sched::Switch> {
                 // 1, matching the "poll now" contract).
                 let cap = (flags & MU_TIMER != 0).then_some(deadline);
                 clicks = count_clicks(h, b_clicks, cap, || {
-                    crate::vdi::mouse_buttons() & b_mask == b_state & b_mask
+                    downorup(crate::vdi::mouse_buttons(), b_flgclks, b_mask, b_state)
                 });
                 fired |= MU_BUTTON;
             }
