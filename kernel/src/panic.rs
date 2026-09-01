@@ -39,6 +39,11 @@ fn on_panic(info: &PanicInfo) -> ! {
         let _ = writeln!(w, "  writing AES trace to C:\\AESTRACE.BIN …");
         tos_api::aes::trace::flush_on_exit();
     }
+    // GEMDOS trap tracer: same reason, same best-effort contract.
+    if tos_api::gemdos::trace::ENABLED {
+        let _ = writeln!(w, "  writing GEMDOS trace to C:\\GDTRACE.BIN …");
+        tos_api::gemdos::trace::flush_on_exit();
+    }
 
     halt();
 }

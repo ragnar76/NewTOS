@@ -25,6 +25,10 @@ board-qemu-virt = []
 # Pass-through for the AES trap-path tracer (`tos_api::aes::trace`). Off by
 # default; build with `--features aes-trace` to instrument the AES trap path.
 aes-trace = ["tos-api/aes-trace"]
+# Pass-through for the GEMDOS trap-path tracer (`tos_api::gemdos::trace`). Off
+# by default; build with `--features gemdos-trace` to instrument the GEMDOS
+# trap path (what an application actually asks the file system for).
+gemdos-trace = ["tos-api/gemdos-trace"]
 
 [dependencies]
 tos-types = { path = "../tos-types" }

@@ -146,6 +146,10 @@ unsafe fn terminate_inner(reserve: bool) -> Result<PtermResume, PtermError> {
     // path), never the 16 KiB AES fiber stack. Compiled out entirely without
     // the `aes-trace` feature.
     crate::aes::trace::flush_on_exit();
+    // GEMDOS trap tracer: same reason — the file-system conversation is only
+    // complete once the process that had it is gone, and this is the last
+    // moment at which it can still be written.
+    crate::gemdos::trace::flush_on_exit();
 
     let bp = RUN.load(Ordering::Acquire);
     if bp.is_null() {

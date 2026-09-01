@@ -282,6 +282,22 @@ pub extern "C" fn rust_sync_handler(frame: &mut ExceptionFrame) {
     // special-case them here.
     if matches!(class, TrapClass::Gemdos) {
         let func = frame.gpr[8] as u16;
+        // GEMDOS trap tracer: the frame-mutating calls below never reach
+        // `gemdos::dispatch`, so the dispatcher hook cannot see them — and a
+        // file-system trace that hides process creation and exit is missing the
+        // frame around everything else. Recorded here with their arguments but
+        // no result (they return by rewriting the trap frame). The opcode list
+        // must stay exactly the set special-cased below, or every ordinary
+        // GEMDOS call would be recorded twice. Folds away without
+        // `gemdos-trace`. `Pexec` (0x4B) is recorded inside `handle_pexec`
+        // instead, where the program path has already been read out of the
+        // caller's address space.
+        if tos_api::gemdos::trace::ENABLED
+            && matches!(func, 0x4C | 0x00 | 0x31 | 0x4D | 0x11A)
+        {
+            let regs = frame_arg_regs(frame);
+            tos_api::gemdos::trace::note_frame_call(func, &regs, &[], &[]);
+        }
         if func == 0x4C || func == 0x00 || func == 0x31 {
             handle_pterm(frame, func);
             return;
@@ -433,7 +449,30 @@ pub extern "C" fn rust_sync_handler(frame: &mut ExceptionFrame) {
     // out entirely without the `aes-trace` feature.
     tos_api::aes::trace::flush_if_requested();
 
+    // GEMDOS trap tracer: same place, same reason (kernel exception stack, the
+    // dispatch already returned). Deliberately called after *every* trap class,
+    // not only GEMDOS: that is what lets the tracer notice that the application
+    // has gone quiet — a GEM app's idle loop hammers the AES while the file
+    // system does nothing, so a GEMDOS-only tail would never tick.
+    tos_api::gemdos::trace::flush_if_requested();
+
     complete_call_tail(frame, result);
+}
+
+/// The seven GEMDOS argument registers (`x0..x6`) of a trap frame, in the
+/// [`TrapArgs`] order, for the frame-mutating calls that never build a
+/// `TrapArgs` of their own.
+#[inline]
+fn frame_arg_regs(frame: &ExceptionFrame) -> [u64; 7] {
+    [
+        frame.gpr[0],
+        frame.gpr[1],
+        frame.gpr[2],
+        frame.gpr[3],
+        frame.gpr[4],
+        frame.gpr[5],
+        frame.gpr[6],
+    ]
 }
 
 /// Shared syscall-completion tail (AES-as-thread design §3.4(e), the extracted
@@ -1278,6 +1317,16 @@ fn handle_pexec(frame: &mut ExceptionFrame) {
             (&[][..], EnvSpec::None)
         };
 
+    // GEMDOS trap tracer: record the launch *before* it happens — a
+    // `PE_LOADGO` never comes back to this frame, so a post-hook would lose
+    // exactly the interesting case. `path_bytes`/`tail_bytes` were read a few
+    // lines above with this handler's own bounded, EL0-permission-checked
+    // reader, so the tracer performs no caller-memory access of its own.
+    if tos_api::gemdos::trace::ENABLED {
+        let regs = frame_arg_regs(frame);
+        tos_api::gemdos::trace::note_frame_call(0x4B, &regs, path_bytes, tail_bytes);
+    }
+
     // SAFETY: trap context, BDOS giant lock implicit, single-CPU.
     let result = unsafe {
         tos_api::bdos::process::pexec::dispatch(
@@ -1455,6 +1504,9 @@ fn unhandled(frame: &ExceptionFrame, kind: &str) -> ! {
     // never waits on input, QUIRK-002).
     if tos_api::aes::trace::ENABLED {
         tos_api::aes::trace::flush_on_exit();
+    }
+    if tos_api::gemdos::trace::ENABLED {
+        tos_api::gemdos::trace::flush_on_exit();
     }
 
     let ec = esr_ec(frame.esr);

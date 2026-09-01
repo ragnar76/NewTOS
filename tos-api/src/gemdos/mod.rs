@@ -24,6 +24,7 @@ pub mod console;
 pub mod memory;
 pub mod ssystem;
 pub mod time;
+pub mod trace;
 pub mod version;
 
 /// Highest GEMDOS function ID dispatched by NewTOS. Matches EmuTOS
@@ -113,6 +114,26 @@ const fn build_table() -> [Option<GemdosFn>; MAX_FN + 1] {
 ///
 /// Returns the value to load into `x0` on `eret`.
 pub fn dispatch(args: &TrapArgs) -> Long {
+    // GEMDOS trap tracer: this is the funnel `docs/TOS-REFERENCE-DUMPER.md`
+    // §10 wants logged — every file-system request an application makes passes
+    // through it exactly once. The hooks wrap the *whole* body, early returns
+    // included: "the application asked for a function this kernel does not
+    // have" (`EINVFN` above `MAX_FN`) is one of the most informative lines a
+    // dispatcher log can carry, and a hook placed after that check would drop
+    // exactly those. Both hooks have empty bodies (and `t0` folds away)
+    // without the `gemdos-trace` feature, leaving `dispatch_inner` to inline
+    // straight back into this function. The tracer's own file writes call
+    // `bdos::fs::file::*` directly and therefore never re-enter here; see
+    // `trace`'s module docs for the full re-entrancy argument.
+    let t0 = trace::call_begin();
+    let ret = dispatch_inner(args);
+    trace::call_end(args, t0, ret);
+    ret
+}
+
+/// The dispatch itself, unchanged; [`dispatch`] only wraps it in the tracer.
+#[inline]
+fn dispatch_inner(args: &TrapArgs) -> Long {
     if host().is_none() {
         // Misconfiguration: panic-shaped but encoded as a TOS error so
         // the trap path remains reentrant.

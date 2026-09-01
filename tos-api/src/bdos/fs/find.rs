@@ -68,7 +68,12 @@ static KERNEL_DTA: AtomicU64 = AtomicU64::new(0);
 /// The current DTA pointer — EmuTOS `run->p_xdta` (`bdos/fsmain.c:396`).
 ///
 /// Falls back to [`KERNEL_DTA`] for the process-less EL1 caller (see there).
-fn cur_dta() -> u64 {
+///
+/// Visible to the crate (not just this module) so the GEMDOS trap tracer can
+/// capture the DTA **contents** after a successful `Fsfirst`/`Fsnext` — a
+/// captured DTA *address* is worthless in a trace. A plain read of
+/// `run->p_xdta` with no side effect; nothing about the search changes.
+pub(crate) fn cur_dta() -> u64 {
     let bp = crate::bdos::process::current();
     if bp.is_null() {
         return KERNEL_DTA.load(Ordering::Relaxed);
