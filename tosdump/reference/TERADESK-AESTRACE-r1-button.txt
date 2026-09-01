@@ -1,0 +1,32 @@
+NEWTOS-AESTRACE v3 le rec=128 cap=8192 pro=2048 n=8064 produced=8064 COMPLETE drop=0 hz=54000000 t0=182240373 ovh=125249/8059 ovhmax=118 flovh=580760141/3
+*** COMPLETE: all 8064 records produced are in this file.
+*** capture cost: 2319 us over 8059 hooks = 0.29 us/record mean, 2.19 us worst (this is the number that must not perturb timing)
+*** flush cost:   10754.8 ms over 3 flush(es) — runs only while the user is idle
+*** note: a CALL record's t is its ENTRY time and dur its length, so a POST/RECV
+***       emitted inside a call has a LOWER seq but a t inside that call's span.
+
+*** note: header says n=8064, file holds 4734 records (short write / interrupted flush)
+wind_update mouse-ownership calls (BEG_MCTRL=3 / END_MCTRL=2) — EmuTOS gates its level quick-check on this:
+   t=6735 ms  mode=3(BEG_MCTRL)  pid=1
+   t=6750 ms  mode=2(END_MCTRL)  pid=1
+   t=7850 ms  mode=3(BEG_MCTRL)  pid=1
+   t=7860 ms  mode=2(END_MCTRL)  pid=1
+
+evnt_button/evnt_multi calls: 153
+  ... asking for a button event (MU_BUTTON set / evnt_button): 153
+  ... that returned a button event:                            150
+  ... hit rate: 98.0 %
+
+  requested (bmask, bstate, bclicks):
+    mask=0x03 state=0x00 clicks=258: 148 call(s)   <-- 'button UP' request: a LEVEL test matches whenever the button is not pressed
+    mask=0x01 state=0x00 clicks=2: 5 call(s)   <-- 'button UP' request: a LEVEL test matches whenever the button is not pressed
+
+  button-returning calls over 36.27 s = 4.1 per second
+  of those, 140 sampled the button as UP (0x00) on EVERY evaluation of the call
+  (a button event that fires while the button was never pressed is a level test, not an event)
+
+double-click windows opened: 150
+  ... in which the pointer moved by more than EmuTOS's +-2: 15
+  ... i.e. EmuTOS `mchange` would have cancelled 10.0 % of them; NewTOS cancels none.
+  worst window: seq=1723 polls=374055 travel=246px maxstep=75
+  (measurement only — `mchange` is deliberately NOT implemented; see the task notes)
