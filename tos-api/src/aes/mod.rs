@@ -24,6 +24,7 @@ pub mod object;
 pub mod resource;
 pub mod shell;
 pub mod thread;
+pub mod trace;
 pub mod window;
 mod pd;
 
@@ -263,6 +264,11 @@ pub unsafe fn dispatch(
     // `local_intout` lives until this function returns, outliving `pb`.
     let pb = unsafe { Aespb::from_raw(aespb_ptr, abi, local_intout.as_mut_ptr()) };
 
+    // AES trap tracer (`trace`): compiled out entirely without the `aes-trace`
+    // feature, and even with it the capture is a timestamp plus a fixed-size
+    // struct store into a RAM ring — no I/O and no formatting on this path.
+    let t0 = trace::call_begin();
+
     let sw = crysbind(&pb);
 
     if sw.is_none() {
@@ -270,6 +276,7 @@ pub unsafe fn dispatch(
         // SAFETY: the caller's `intout` holds the `OUT_LEN` words it declared.
         unsafe { pb.copy_intout_back() };
     }
+    trace::call_end(&pb, t0, sw.is_some());
     sw
 }
 

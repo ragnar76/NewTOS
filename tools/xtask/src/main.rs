@@ -53,7 +53,7 @@ fn print_usage() {
 Usage: cargo xtask <command> [options]
 
 Commands:
-  build --board {{rpi4|qemu-virt}} [--release]
+  build --board {{rpi4|qemu-virt}} [--release] [--features a,b]
   gen-font                       — extract the EmuTOS 6x6/8x8/8x16 ST system
                                    fonts into tos-api/src/vdi/font_data.rs
   gen-fsel-rsc                   — convert the EmuTOS AES file-selector
@@ -61,10 +61,13 @@ Commands:
                                    into the embedded native blob
                                    tos-api/src/aes/gem_fsel.nrsc
   run [--board {{rpi4|qemu-virt}}] [--release] [--window] [--debug]
+      [--sd <img>] [--features a,b]
                                    — boot in QEMU (virt by default, or
                                      raspi4b with --board rpi4); --window
                                      shows the framebuffer, --debug halts
-                                     at reset with a gdbstub on :1234
+                                     at reset with a gdbstub on :1234;
+                                     --features adds optional kernel
+                                     features (e.g. aes-trace)
   test
   help
 "
@@ -93,9 +96,20 @@ impl Board {
     }
 }
 
-fn parse_board_and_profile(args: &[String]) -> Result<(Option<Board>, bool), String> {
+/// Parsed common build options: board, release profile, and any extra cargo
+/// features (`--features a,b`) to enable on top of the board feature. The
+/// extra list is what turns optional instruments on — e.g. `--features
+/// aes-trace` for the AES trap-path tracer (`tos_api::aes::trace`).
+struct BuildOpts {
+    board: Option<Board>,
+    release: bool,
+    features: Vec<String>,
+}
+
+fn parse_board_and_profile(args: &[String]) -> Result<BuildOpts, String> {
     let mut board = None;
     let mut release = false;
+    let mut features: Vec<String> = Vec::new();
     let mut it = args.iter();
     while let Some(a) = it.next() {
         match a.as_str() {
@@ -104,10 +118,18 @@ fn parse_board_and_profile(args: &[String]) -> Result<(Option<Board>, bool), Str
                 board = Some(Board::from_str(v)?);
             }
             "--release" => release = true,
+            "--features" => {
+                let v = it.next().ok_or("--features requires a value")?;
+                features.extend(
+                    v.split([',', ' '])
+                        .filter(|s| !s.is_empty())
+                        .map(|s| s.to_string()),
+                );
+            }
             other => return Err(format!("unexpected argument: {other}")),
         }
     }
-    Ok((board, release))
+    Ok(BuildOpts { board, release, features })
 }
 
 fn cargo() -> Command {
@@ -133,11 +155,11 @@ fn run(mut cmd: Command) -> Result<(), String> {
 }
 
 fn cmd_build(args: &[String]) -> Result<(), String> {
-    let (board, release) = parse_board_and_profile(args)?;
-    let board = board.ok_or("build: --board {rpi4|qemu-virt} is required")?;
-    build_kernel(board, release)?;
+    let opts = parse_board_and_profile(args)?;
+    let board = opts.board.ok_or("build: --board {rpi4|qemu-virt} is required")?;
+    build_kernel(board, opts.release, &opts.features)?;
     if board == Board::Rpi4 {
-        produce_kernel8_img(release)?;
+        produce_kernel8_img(opts.release)?;
     }
     Ok(())
 }
@@ -288,7 +310,14 @@ fn cmd_gen_fsel_rsc() -> Result<(), String> {
     run(c)
 }
 
-fn build_kernel(board: Board, release: bool) -> Result<(), String> {
+fn build_kernel(board: Board, release: bool, extra: &[String]) -> Result<(), String> {
+    // The board feature is always present; `extra` appends optional ones
+    // (e.g. `aes-trace`) to the same comma-separated `--features` list.
+    let mut feats = board.feature().to_string();
+    for f in extra {
+        feats.push(',');
+        feats.push_str(f);
+    }
     let mut c = cargo();
     c.current_dir(workspace_root());
     c.arg("build")
@@ -296,12 +325,12 @@ fn build_kernel(board: Board, release: bool) -> Result<(), String> {
         .arg("kernel")
         .arg("--no-default-features")
         .arg("--features")
-        .arg(board.feature());
+        .arg(&feats);
     if release {
         c.arg("--release");
     }
     println!("xtask: building kernel for {} ({})",
-        board.feature(),
+        feats,
         if release { "release" } else { "debug" });
     run(c)
 }
@@ -404,11 +433,12 @@ fn cmd_run(args: &[String]) -> Result<(), String> {
         }
         out
     };
-    let (board, release) = parse_board_and_profile(&filtered)?;
-    if board == Some(Board::Rpi4) {
-        return cmd_run_rpi4(release, window, debug, sd.as_deref());
+    let opts = parse_board_and_profile(&filtered)?;
+    let release = opts.release;
+    if opts.board == Some(Board::Rpi4) {
+        return cmd_run_rpi4(release, window, debug, sd.as_deref(), &opts.features);
     }
-    build_kernel(Board::QemuVirt, release)?;
+    build_kernel(Board::QemuVirt, release, &opts.features)?;
     let elf = kernel_elf_path(release);
 
     // QEMU's `-kernel` only sets up the FDT bootloader (DTB pointer in
@@ -486,8 +516,14 @@ fn cmd_run(args: &[String]) -> Result<(), String> {
 /// with a gdbstub on :1234. There is no serial dependency — the kernel's
 /// PL011 is wired to serial0 (`-serial stdio`), but the framebuffer is
 /// the intended output channel on real hardware.
-fn cmd_run_rpi4(release: bool, window: bool, debug: bool, sd: Option<&str>) -> Result<(), String> {
-    build_kernel(Board::Rpi4, release)?;
+fn cmd_run_rpi4(
+    release: bool,
+    window: bool,
+    debug: bool,
+    sd: Option<&str>,
+    features: &[String],
+) -> Result<(), String> {
+    build_kernel(Board::Rpi4, release, features)?;
     produce_kernel8_img(release)?;
     let img = workspace_root().join("kernel8.img");
 

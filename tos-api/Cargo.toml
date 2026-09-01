@@ -14,5 +14,13 @@ description = "NewTOS TOS-API surface (GEMDOS / BIOS / XBIOS dispatchers and sys
 name = "tos_api"
 path = "src/lib.rs"
 
+[features]
+default = []
+# AES trap-path tracer (`src/aes/trace.rs`) — a debugging instrument, off by
+# default. With this off the tracer's hooks have empty bodies and its ring
+# buffer static does not exist, so it costs neither code nor BSS. See the
+# module docs for the capture/flush design.
+aes-trace = []
+
 [dependencies]
 tos-types = { path = "../tos-types" }

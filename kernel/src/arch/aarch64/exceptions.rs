@@ -426,6 +426,13 @@ pub extern "C" fn rust_sync_handler(frame: &mut ExceptionFrame) {
         crate::dbg_qedtrace::post_dispatch(class, &args, result);
     }
 
+    // AES trap tracer: perform a pending trace flush here — on the kernel
+    // exception stack, with the AES dispatch already returned — rather than
+    // inside the AES, whose fiber stack (16 KiB) must not carry the FAT write
+    // path. A no-op (one atomic swap) when nothing is pending, and compiled
+    // out entirely without the `aes-trace` feature.
+    tos_api::aes::trace::flush_if_requested();
+
     complete_call_tail(frame, result);
 }
 
@@ -1440,6 +1447,16 @@ pub extern "C" fn rust_unhandled_handler(frame: &mut ExceptionFrame) {
 }
 
 fn unhandled(frame: &ExceptionFrame, kind: &str) -> ! {
+    // AES trap tracer: an unhandled fault ends the run, so this is the last
+    // chance to get the trace off the machine — the same reason the panic
+    // handler flushes. Runs before the diagnostics so a fault *inside* the
+    // print path cannot lose it. No-op — not even a call — without the
+    // `aes-trace` feature; best-effort otherwise (every FS error swallowed,
+    // never waits on input, QUIRK-002).
+    if tos_api::aes::trace::ENABLED {
+        tos_api::aes::trace::flush_on_exit();
+    }
+
     let ec = esr_ec(frame.esr);
     let far = if is_abort(ec) { Some(read_far_el1()) } else { None };
 

@@ -30,5 +30,15 @@ fn on_panic(info: &PanicInfo) -> ! {
         let _ = writeln!(w, "  at {}:{}:{}", loc.file(), loc.line(), loc.column());
     }
 
+    // AES trap tracer: last chance to get the trace off the machine. Without
+    // this a panic loses the whole ring, which is exactly the case where the
+    // conversation leading up to it is most wanted. Best-effort: the flush
+    // swallows every FS error and cannot block on input (QUIRK-002). This is
+    // a no-op — not even a call — in a build without the `aes-trace` feature.
+    if tos_api::aes::trace::ENABLED {
+        let _ = writeln!(w, "  writing AES trace to C:\\AESTRACE.BIN …");
+        tos_api::aes::trace::flush_on_exit();
+    }
+
     halt();
 }

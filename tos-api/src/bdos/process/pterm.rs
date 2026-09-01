@@ -140,6 +140,13 @@ pub unsafe fn terminate_resident(_rc: i32) -> Result<PtermResume, PtermError> {
 ///
 /// See [`terminate`].
 unsafe fn terminate_inner(reserve: bool) -> Result<PtermResume, PtermError> {
+    // AES trap tracer: write the trace to `C:` before the process is torn
+    // down, so the file survives the application exiting. Runs on the kernel
+    // exception stack (this is called from `rust_sync_handler`'s `Pterm`
+    // path), never the 16 KiB AES fiber stack. Compiled out entirely without
+    // the `aes-trace` feature.
+    crate::aes::trace::flush_on_exit();
+
     let bp = RUN.load(Ordering::Acquire);
     if bp.is_null() {
         return Err(PtermError::NoRunningProcess);

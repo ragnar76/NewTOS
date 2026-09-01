@@ -323,6 +323,9 @@ pub unsafe fn post_msg(pid: i16, msg: [i16; MSG_WORDS]) -> bool {
         Some(p) => p.queue.push(msg),
         None => false,
     };
+    // AES trap tracer: record the enqueue (type, sender, target, and whether
+    // the FIFO took it). No-op without the `aes-trace` feature.
+    super::trace::msg_post(pid, &msg, MSG_WORDS, posted);
     if posted {
         wake_mesg_waiter(pid);
     }
@@ -346,6 +349,8 @@ pub unsafe fn post_words(pid: i16, src: &[i16], words: usize) -> bool {
         Some(p) => p.queue.push_words(src, words),
         None => false,
     };
+    // AES trap tracer, as in `post_msg` (this is the `appl_write` half).
+    super::trace::msg_post(pid, src, words, posted);
     if posted {
         wake_mesg_waiter(pid);
     }

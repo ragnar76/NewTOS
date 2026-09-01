@@ -152,6 +152,12 @@ pub fn evnt_button(pb: &Aespb) -> Option<sched::Switch> {
         let matches = || crate::vdi::mouse_buttons() & mask == state & mask;
         // Wait for the button to reach the requested state (the first click).
         while !matches() {
+            // AES trap tracer: record the button byte this evaluation read.
+            // Guarded by the compile-time `ENABLED`, so both the call and the
+            // `mouse_buttons()` argument fold away without the feature.
+            if super::trace::ENABLED {
+                super::trace::note_eval(crate::vdi::mouse_buttons());
+            }
             if let sched::SleepOutcome::Yield(sw) = sched::sleep(sched::wait_input()) {
                 return Some(sw); // yield to a peer (S2); re-checks on resume
             }
@@ -339,6 +345,13 @@ pub fn evnt_multi(pb: &Aespb) -> Option<sched::Switch> {
             h.monotonic_millis().saturating_add(ms)
         };
         loop {
+            // AES trap tracer: one sample of the button byte per evaluation of
+            // the multiplexer predicate, folded into the call record as
+            // `passes`/`mb_or`/`mb_and`. Guarded by the compile-time `ENABLED`
+            // so the whole statement folds away without the feature.
+            if super::trace::ENABLED {
+                super::trace::note_eval(crate::vdi::mouse_buttons());
+            }
             // AES intercepts a click in the menu bar or a window frame before
             // the app sees the raw button, mirroring the EmuTOS Control Manager
             // process (`gemctrl.c:427`): it owns the mouse over the menu/frame
