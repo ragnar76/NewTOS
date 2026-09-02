@@ -1,0 +1,14 @@
+NewTOS GEMDOS trap trace -- written successfully.
+
+flush number : 4
+records held : 758 (758 from the start of the run, 0 most recent)
+records made : 758
+dropped      : 0
+suppressed   : 0 (re-entrant hook entries; must be 0)
+timer clock  : 54000000 Hz
+capture cost : 11779 ticks over 754 hooks, worst 104
+write cost   : 74655468 ticks total
+data file    : C:\GDTRACE.BIN, 194304 bytes
+
+Decode on the development machine with:
+    python3 tools/gdtrace.py GDTRACE.BIN
