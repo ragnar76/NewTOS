@@ -827,6 +827,64 @@ const TE_LEFT: i16 = 0;
 const TE_RIGHT: i16 = 1;
 const TE_CNTR: i16 = 2;
 
+// AES font ids (`TEDINFO.te_font`, EmuTOS `obdefs.h:62-63`).
+const FONT_IBM: i16 = 3;
+const FONT_SMALL: i16 = 5;
+
+/// The AES's two desktop font sizes. EmuTOS keeps both open at once
+/// (`gsx_start`, `gemgraf.c:405-410`) and every text-drawing site names one:
+/// `gsx_tblt(IBM, …)` / `gr_gtext(…, SMALL, …)`. The cell metrics are
+/// EmuTOS's `gl_wchar`/`gl_hchar` and `gl_wschar`/`gl_hschar`.
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum AesFont {
+    /// Normal desktop font (`IBM` = 3): `gl_wchar` × `gl_hchar` = 8×16.
+    Ibm,
+    /// Small desktop font (`SMALL` = 5): `gl_wschar` × `gl_hschar` = 6×6.
+    /// Icon labels and icon overlay characters are drawn in this size, as
+    /// is any `TEDINFO` whose `te_font` says so.
+    Small,
+}
+
+impl AesFont {
+    /// Map a `TEDINFO.te_font` code.
+    ///
+    /// EmuTOS's `ch_width`/`ch_height` (`gemgraf.c:456-477`) return 0 for any
+    /// code that is neither `IBM` nor `SMALL`, and `gsx_tcalc` immediately
+    /// divides by that height (`gemgraf.c:494`) — so EmuTOS has no defined
+    /// third font here, it has a division by zero. Everything that is not
+    /// `SMALL` is therefore read as `IBM` ([`FONT_IBM`]), the code every GEM
+    /// resource editor writes for the normal font. Deliberately **not**
+    /// asserted: an application resource may legally carry a GDOS font id we
+    /// have no face for, and answering that with a kernel panic would be worse
+    /// than EmuTOS's own undefined behaviour.
+    #[inline]
+    fn from_te_font(te_font: i16) -> AesFont {
+        match te_font {
+            FONT_SMALL => AesFont::Small,
+            FONT_IBM => AesFont::Ibm,
+            _ => AesFont::Ibm,
+        }
+    }
+
+    /// `ch_width` (`gemgraf.c:456-465`) — the cell advance in pixels.
+    #[inline]
+    fn cell_w(self) -> i16 {
+        match self {
+            AesFont::Ibm => crate::vdi::font::CELL_W,
+            AesFont::Small => crate::vdi::font::SMALL_CELL_W,
+        }
+    }
+
+    /// `ch_height` (`gemgraf.c:468-477`) — the cell height in pixels.
+    #[inline]
+    fn cell_h(self) -> i16 {
+        match self {
+            AesFont::Ibm => crate::vdi::font::CELL_H,
+            AesFont::Small => crate::vdi::font::SMALL_CELL_H,
+        }
+    }
+}
+
 // ── dispatch entry points ───────────────────────────────────────────
 
 /// Map an AES `int_in` clip quadruple (`OB_XCLIP..OB_HCLIP`, `int_in[2..5]`:
@@ -2292,17 +2350,42 @@ fn just_draw(t: ObjTree, obj: i16, x: i16, y: i16, clip: ClipRect, backend: &dyn
             deco_th = th;
             // Text colour, xor'd when selected *and* the object changes colour.
             let ink = if selected && changecol { xor_color(tcol) } else { tcol };
-            // `movetext` (EmuTOS): an activator's label sits 1px up-left while
-            // raised and drops to the base position when pressed.
-            let (tx, ty) = if movetext && !selected { (x - 1, y - 1) } else { (x, y) };
             if ob_type == G_BOXCHAR {
+                // A G_BOXCHAR is a TEDINFO-family draw: EmuTOS copies `t`,
+                // insets it by `tmpth`, applies the 3D `movetext` nudge and
+                // calls `gr_gtext(TE_CNTR, IBM, …)` with a one-character string
+                // (gemoblib.c:719-757 — `edblk.te_font = IBM` is forced at :729).
                 let ch = ((ob_spec >> 24) & 0xFF) as u8;
                 if ch != 0 {
-                    draw_text(backend, tx, ty, w, h, &[ch], TE_CNTR, ink, clip);
+                    let (cx, cy) = ted_movetext(movetext, selected, x + inset, y + inset);
+                    gr_gtext(
+                        backend,
+                        TE_CNTR,
+                        AesFont::Ibm,
+                        &[ch],
+                        cx,
+                        cy,
+                        w - 2 * inset,
+                        h - 2 * inset,
+                        ink,
+                        clip,
+                    );
                 }
             } else if ob_type == G_BUTTON {
+                // A G_BUTTON's label is drawn by the shared string block
+                // (gemoblib.c:801-846), **not** by `gr_gtext`: no clamping to
+                // the box, no whole-character truncation, plain `n/2` centring
+                // on the *uninset* rect, and its own `movetext` rule
+                // (`tmpx--; tmpy--` while raised, gemoblib.c:833-836).
                 let s = read_cstr(ob_spec);
-                draw_text(backend, tx, ty, w, h, s, TE_CNTR, ink, clip);
+                let len = s.len() as i16;
+                let mut tmpx = x + (w - len * crate::vdi::font::CELL_W) / 2;
+                let mut tmpy = y + (h - crate::vdi::font::CELL_H) / 2;
+                if movetext && !selected {
+                    tmpx -= 1;
+                    tmpy -= 1;
+                }
+                gsx_tblt(backend, AesFont::Ibm, tmpx, tmpy, s, ink, clip);
             }
         }
         G_STRING => {
@@ -2312,28 +2395,22 @@ fn just_draw(t: ObjTree, obj: i16, x: i16, y: i16, clip: ClipRect, backend: &dyn
                 backend.fill_rect(x, y, w, h, BLACK, clip);
             }
             if ob_state & CHECKED != 0 {
-                // EmuTOS draws the CHECKED mark at `t.g_x+2` — 2 *pixels*, not
-                // 2 cells — over the string's leading blank (gemoblib.c:903-908).
-                // Vertically centred to align with `draw_text`'s baseline
-                // (identical to EmuTOS's `t.g_y` when the cell height equals the
-                // font height, which is the menu-item case).
-                backend.draw_glyph(
-                    x + 2,
-                    y + (h - crate::vdi::font::CELL_H) / 2,
-                    crate::vdi::font::glyph(0x08), // ST-font check mark
-                    ink,
-                    WriteMode::Transparent,
-                    clip,
-                );
+                // EmuTOS draws the CHECKED mark at `t.g_x+2, t.g_y` — 2
+                // *pixels* to the right, no vertical centring — over the
+                // string's leading blank, in the IBM font
+                // (`gsx_tblt(IBM, t.g_x+2, t.g_y, 1)`, gemoblib.c:903-908).
+                gsx_tblt(backend, AesFont::Ibm, x + 2, y, &[0x08], ink, clip);
             }
             let s = read_cstr(ob_spec);
-            // EmuTOS draws a G_STRING at `t.g_x` with no code indent
-            // (gemoblib.c:817, `tmpx = t.g_x`). A menu item's check column comes
-            // from the leading blanks built into its resource string (GEM uses
-            // two leading spaces), not a code-added indent — so plain dialog
-            // labels sit flush at `ob_x` and menu items reserve their column via
-            // the string itself.
-            draw_text(backend, x, y, w, h, s, TE_LEFT, ink, clip);
+            // EmuTOS draws a G_STRING through the shared string block at
+            // `tmpx = t.g_x`, `tmpy = t.g_y + ((t.g_h-gl_hchar)/2)` in the IBM
+            // font, with no clamping and no truncation (gemoblib.c:817-845) —
+            // `gr_gtext`'s clamped/rounded path is *not* used for strings. A
+            // menu item's check column comes from the leading blanks built into
+            // its resource string (GEM uses two leading spaces), not a
+            // code-added indent.
+            let tmpy = y + (h - crate::vdi::font::CELL_H) / 2;
+            gsx_tblt(backend, AesFont::Ibm, x, tmpy, s, ink, clip);
         }
         G_TITLE => {
             // EmuTOS draws a G_TITLE through the shared string block at `t.g_x`
@@ -2350,7 +2427,10 @@ fn just_draw(t: ObjTree, obj: i16, x: i16, y: i16, clip: ClipRect, backend: &dyn
             // dropped so titles sit at `ob_x` like EmuTOS.
             backend.fill_rect(x, y, w, h, fill, clip);
             let s = read_cstr(ob_spec);
-            draw_text(backend, x, y, w, h, s, TE_LEFT, ink, clip);
+            // Same string block as G_STRING: IBM font, `t.g_x`, vertically
+            // centred on `gl_hchar` (gemoblib.c:817-845).
+            let tmpy = y + (h - crate::vdi::font::CELL_H) / 2;
+            gsx_tblt(backend, AesFont::Ibm, x, tmpy, s, ink, clip);
         }
         G_TEXT | G_BOXTEXT | G_FTEXT | G_FBOXTEXT => {
             // The TEDINFO interior is read at the tree's ABI width, so an ILP32
@@ -2410,8 +2490,24 @@ fn just_draw(t: ObjTree, obj: i16, x: i16, y: i16, clip: ClipRect, backend: &dyn
                 };
                 // Text colour from te_color, xor'd when SELECTED (EmuTOS).
                 let ink = if selected { xor_color(tcol) } else { tcol };
-                // Text sits inside the box, shrunk by a positive border only.
-                draw_text(backend, x + inset, y + inset, w - 2 * inset, h - 2 * inset, s, ted.te_just, ink, clip);
+                // EmuTOS: `rc_copy(&t,&c); gr_inside(&c, tmpth);` then the 3D
+                // `movetext` nudge, then `gr_gtext(te_just, te_font, te_ptext,
+                // &c)` (gemoblib.c:735-757) — so the text sits inside a
+                // *positive* border and is drawn in the **TEDINFO's own font**,
+                // which a resource may set to SMALL.
+                let (cx, cy) = ted_movetext(movetext, selected, x + inset, y + inset);
+                gr_gtext(
+                    backend,
+                    ted.te_just,
+                    AesFont::from_te_font(ted.te_font),
+                    s,
+                    cx,
+                    cy,
+                    w - 2 * inset,
+                    h - 2 * inset,
+                    ink,
+                    clip,
+                );
             }
         }
         G_IMAGE => {
@@ -2641,42 +2737,132 @@ fn draw_signed_border(backend: &dyn RasterBackend, x: i16, y: i16, w: i16, h: i1
     }
 }
 
-/// Draw `text` justified inside `(x, y, w, h)`, vertically centred, one
-/// 8×16 glyph per byte.
-fn draw_text(
+/// The 3D text nudge EmuTOS applies to the TEDINFO family — `G_TEXT`,
+/// `G_BOXTEXT`, `G_FTEXT`, `G_FBOXTEXT`, `G_BOXCHAR` (`gemoblib.c:744-752`):
+///
+/// ```text
+/// if (movetext) {
+///     if (state & SELECTED) c.g_x++;   /* pressed: right */
+///     else                  c.g_y--;   /* raised:  up    */
+/// }
+/// ```
+///
+/// Note this is **not** the `G_BUTTON` rule — the string block moves a raised
+/// button's label one pixel up *and* left (`gemoblib.c:833-836`) — so the two
+/// are kept apart, as in EmuTOS.
+#[inline]
+fn ted_movetext(movetext: bool, selected: bool, x: i16, y: i16) -> (i16, i16) {
+    if !movetext {
+        (x, y)
+    } else if selected {
+        (x + 1, y)
+    } else {
+        (x, y - 1)
+    }
+}
+
+/// `gsx_tblt` (EmuTOS `gemgraf.c:500-527`) — blit `text` in `fnt` with the
+/// **cell top** at `(x, y)`.
+///
+/// EmuTOS hands the VDI a *baseline* of `y + gl_hptschar` (IBM) or
+/// `y + gl_hsptschar` (SMALL) and never touches `vst_alignment`, so the VDI
+/// default (left / baseline) applies and the glyph's first raster row lands
+/// at `baseline - top` = `y`. Drawing cell-top-anchored is therefore the same
+/// pixels, without a baseline round trip.
+fn gsx_tblt(
     backend: &dyn RasterBackend,
+    fnt: AesFont,
+    x: i16,
+    y: i16,
+    text: &[u8],
+    fg: Pel,
+    clip: ClipRect,
+) {
+    let cw = fnt.cell_w();
+    for (i, &c) in text.iter().enumerate() {
+        let gx = x + i as i16 * cw;
+        match fnt {
+            AesFont::Ibm => {
+                backend.draw_glyph(gx, y, crate::vdi::font::glyph(c as u16), fg, WriteMode::Transparent, clip)
+            }
+            AesFont::Small => backend.draw_glyph_sized(
+                gx,
+                y,
+                crate::vdi::font::glyph_small(c as u16),
+                crate::vdi::font::SMALL_CELL_W,
+                crate::vdi::font::SMALL_CELL_H,
+                fg,
+                WriteMode::Transparent,
+                clip,
+            ),
+        }
+    }
+}
+
+/// `gr_gtext` (EmuTOS `gemgraf.c:595-605`) — justify `text` inside the box
+/// `(x, y, w, h)` and blit it in `fnt`. Inlines its two helpers:
+///
+/// * `gsx_tcalc` (`gemgraf.c:480-497`) clamps the text extent to the box
+///   (`textw = min(w, len*cw)`, `texth = min(h, ch)`) and then drops **whole
+///   characters** that do not fit (`numchs = min(numchs, textw/cw)`). A box
+///   shorter than one character cell (`texth / ch == 0`) yields `numchs = 0`
+///   — EmuTOS draws *nothing* rather than a vertically cropped line.
+/// * `gr_just` (`gemgraf.c:567-589`) centres vertically and justifies
+///   horizontally, in both axes only when there is slack and rounding the
+///   half-margin **up** (`(n + 1) / 2`).
+///
+/// This is the path every `G_TEXT`/`G_BOXTEXT`/`G_FTEXT`/`G_FBOXTEXT`/
+/// `G_BOXCHAR` object and every icon label takes. `G_STRING`/`G_TITLE`/
+/// `G_BUTTON` do **not** come through here — EmuTOS justifies those inline in
+/// `just_draw` with a different (unclamped, untruncated, `n/2`) formula, which
+/// the call sites reproduce.
+#[allow(clippy::too_many_arguments)]
+fn gr_gtext(
+    backend: &dyn RasterBackend,
+    just: i16,
+    fnt: AesFont,
+    text: &[u8],
     x: i16,
     y: i16,
     w: i16,
     h: i16,
-    text: &[u8],
-    just: i16,
     fg: Pel,
     clip: ClipRect,
 ) {
-    let len = text.len() as i16;
-    let tw = len * crate::vdi::font::CELL_W;
-    let tx = match just {
-        TE_CNTR => x + (w - tw) / 2,
-        TE_RIGHT => x + w - tw,
-        _ => x, // TE_LEFT
-    };
-    let ty = y + (h - crate::vdi::font::CELL_H) / 2;
-    // Confine the glyphs to the object's text box `(x, y, w, h)` by
-    // intersecting the caller's clip with it. EmuTOS `gr_gicon` clips the
-    // icon label to `ib_wtext`; without this a string wider than its box
-    // (e.g. a 12-char 8.3 name in a narrower icon cell) bleeds past the box
-    // into neighbouring objects instead of truncating at the box edge.
-    let box_clip = ClipRect {
-        xmn: clip.xmn.max(x),
-        ymn: clip.ymn.max(y),
-        xmx: clip.xmx.min(x + w - 1),
-        ymx: clip.ymx.min(y + h - 1),
-    };
-    for (i, &c) in text.iter().enumerate() {
-        let gx = tx + i as i16 * crate::vdi::font::CELL_W;
-        backend.draw_glyph(gx, ty, crate::vdi::font::glyph(c as u16), fg, WriteMode::Transparent, box_clip);
+    let cw = fnt.cell_w();
+    let ch = fnt.cell_h();
+
+    // gsx_tcalc — `saturating_mul` only guards the (unreachable, `read_cstr`
+    // caps at 256 chars) i16 overflow EmuTOS would wrap on; the clamp below
+    // makes any saturated value indistinguishable from the exact one.
+    let mut numchs = text.len() as i16;
+    let textw = w.min(numchs.saturating_mul(cw));
+    let texth = h.min(ch);
+    numchs = if texth / ch != 0 { numchs.min(textw / cw) } else { 0 };
+    if numchs <= 0 {
+        return;
     }
+
+    // gr_just
+    let mut ty = y;
+    let slack_h = h - texth;
+    if slack_h > 0 {
+        ty += (slack_h + 1) / 2;
+    }
+    let mut tx = x;
+    let slack_w = w - textw;
+    if slack_w > 0 {
+        match just {
+            TE_CNTR => tx += (slack_w + 1) / 2,
+            TE_RIGHT => tx += slack_w,
+            TE_LEFT => {}
+            // EmuTOS's `if (TE_CNTR) … else if (TE_RIGHT) …` chain leaves any
+            // other `te_just` value at the box origin, like TE_LEFT.
+            _ => {}
+        }
+    }
+
+    gsx_tblt(backend, fnt, tx, ty, &text[..numchs as usize], fg, clip);
 }
 
 /// Read a NUL-terminated C string from a native pointer in `ob_spec`
@@ -2741,14 +2927,21 @@ fn draw_icon(
     blit_plane(backend, ib.ib_pmask, stride, 0, 0, rect, bg, clip);
     blit_plane(backend, ib.ib_pdata, stride, 0, 0, rect, fg, clip);
 
+    // The overlay character (a drive letter, a trash "T", …): EmuTOS draws it
+    // in the **SMALL** font at `ib_xicon + ib_xchar` / `ib_yicon + ib_ychar`,
+    // i.e. `ib_xchar`/`ib_ychar` are relative to the icon *bitmap*, not to the
+    // object (`gsx_tblt(SMALL, ib->ib_xicon+ib->ib_xchar,
+    // ib->ib_yicon+ib->ib_ychar, 1)`, gemgraf.c:800-803 — `ib_xicon`/`ib_yicon`
+    // were already made absolute by `just_draw`, gemoblib.c:784-789).
     let c = (chword & 0xff) as u8;
     if c != 0 {
-        backend.draw_glyph(
-            ox + ib.ib_xchar,
-            oy + ib.ib_ychar,
-            crate::vdi::font::glyph(c as u16),
+        gsx_tblt(
+            backend,
+            AesFont::Small,
+            ox + ib.ib_xicon + ib.ib_xchar,
+            oy + ib.ib_yicon + ib.ib_ychar,
+            &[c],
             fg,
-            WriteMode::Transparent,
             clip,
         );
     }
@@ -2769,14 +2962,22 @@ fn draw_icon(
                 IP_SOLID,
                 clip,
             );
-            draw_text(
+            // The label: `gr_gtext(TE_CNTR, SMALL, ib->ib_ptext, pt)` with
+            // `pt` = the `ib_xtext..ib_htext` rectangle (gemgraf.c:806). The
+            // SMALL font is what makes a resource's label box fit — GEM icon
+            // resources size it for 6×6 (EmuTOS's own `icon.rsc` and
+            // TeraDesk's `icons.rsc` both use `ib_wtext = 12*6 = 72`,
+            // `ib_htext = 6+2 = 8`), so drawing it in the 8×16 font
+            // overflows the box in both axes.
+            gr_gtext(
                 backend,
+                TE_CNTR,
+                AesFont::Small,
+                s,
                 ox + ib.ib_xtext,
                 oy + ib.ib_ytext,
                 ib.ib_wtext,
                 ib.ib_htext,
-                s,
-                TE_CNTR,
                 fg,
                 clip,
             );

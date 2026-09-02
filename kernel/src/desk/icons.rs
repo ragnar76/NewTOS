@@ -17,7 +17,7 @@
 //! the neighbouring column.
 
 use tos_api::aes::object::IconBlk;
-use tos_api::vdi::font::{CELL_H, CELL_W};
+use tos_api::vdi::font::{SMALL_CELL_H, SMALL_CELL_W};
 
 /// Maximum icon-label length in characters (EmuTOS `MAX_ICONTEXT_WIDTH`,
 /// `deskapp.c:74`). A 12-char 8.3 name (`NAME.EXT`) is the worst case.
@@ -35,14 +35,25 @@ pub const IB_HICON: i16 = 32;
 /// grid-metric **formula** everywhere (`app_start`'s `g_wicon`).
 pub const IB_XTEXT: i16 = 2;
 
-/// Gap in pixels between the icon bitmap bottom and the label top (the `+2`
-/// in `g_hicon = ib_hicon + char_h + 2`, `deskapp.c:811`).
-pub const ICON_LABEL_GAP: i16 = 2;
+/// The label box's vertical slack: EmuTOS makes the box **two pixels taller**
+/// than the small font's cell (`ib_htext = gl_hschar + 2`, `deskapp.c:520`)
+/// and the same `+2` shows up in the cell height (`g_hicon = ib_hicon +
+/// gl_hschar + 2`, `deskapp.c:811`). It is *not* a gap above the label — the
+/// box starts flush at the bitmap's bottom edge (`ib_ytext = ih`,
+/// `deskapp.c:518`).
+pub const ICON_LABEL_SLACK: i16 = 2;
 
-/// The fixed label-box width in pixels: `MAX_ICONTEXT_WIDTH * char_w`
-/// (EmuTOS `setup_iconblks` sets `ib_wtext = MAX_ICONTEXT_WIDTH * gl_wschar`,
-/// `deskapp.c:519`). **Never** shrink-to-fit — this is the root D1 fix.
-pub const IB_WTEXT: i16 = MAX_ICONTEXT_WIDTH * CELL_W;
+/// The fixed label-box width in pixels: `MAX_ICONTEXT_WIDTH * gl_wschar`
+/// (EmuTOS `setup_iconblks`, `deskapp.c:519`) — the **small** AES font, which
+/// is what `gr_gicon` draws an icon label with (`gemgraf.c:806`). **Never**
+/// shrink-to-fit — this is the root D1 fix. 12 * 6 = 72, exactly the
+/// `ib_wtext` in EmuTOS's own `desk/icon.rsc` and in TeraDesk's `icons.rsc`.
+pub const IB_WTEXT: i16 = MAX_ICONTEXT_WIDTH * SMALL_CELL_W;
+
+/// The fixed label-box height in pixels: `gl_hschar + 2` (EmuTOS
+/// `setup_iconblks`, `deskapp.c:520`) = 8, again exactly the `ib_htext` both
+/// stock icon resources carry.
+pub const IB_HTEXT: i16 = SMALL_CELL_H + ICON_LABEL_SLACK;
 
 /// Which built-in icon a displayed object uses. NewTOS owns its own index
 /// set (the EmuTOS `IG_*` numbering is internal and not observable).
@@ -235,12 +246,13 @@ const IB_CHAR_BASE: i16 = 0x1000;
 ///   — **never** shrunk to the name (the D1 fix).
 pub fn build_iconblk(kind: IconKind, ptext: u64, letter: u8, g_wicon: i16) -> IconBlk {
     let (data, mask) = rasters(kind);
+    // `ib_xchar`/`ib_ychar` are relative to the icon **bitmap**, not to the
+    // object: `gr_gicon` draws the overlay character at `ib_xicon + ib_xchar`
+    // (EmuTOS `gemgraf.c:802`), so the bitmap's centring offset must NOT be
+    // baked in here — the AES adds it.
     let (ib_char, ib_xchar, ib_ychar) = match (letter, char_spot(kind)) {
         (0, _) | (_, None) => (IB_CHAR_BASE, 0, 0),
-        (c, Some((sx, sy))) => {
-            let ib_xicon = (g_wicon - IB_WICON) / 2;
-            (IB_CHAR_BASE | c as i16, ib_xicon + sx, sy)
-        }
+        (c, Some((sx, sy))) => (IB_CHAR_BASE | c as i16, sx, sy),
     };
     IconBlk {
         ib_pmask: mask.as_ptr() as u64,
@@ -254,8 +266,8 @@ pub fn build_iconblk(kind: IconKind, ptext: u64, letter: u8, g_wicon: i16) -> Ic
         ib_wicon: IB_WICON,
         ib_hicon: IB_HICON,
         ib_xtext: IB_XTEXT,
-        ib_ytext: IB_HICON + ICON_LABEL_GAP,
+        ib_ytext: IB_HICON,
         ib_wtext: IB_WTEXT,
-        ib_htext: CELL_H,
+        ib_htext: IB_HTEXT,
     }
 }

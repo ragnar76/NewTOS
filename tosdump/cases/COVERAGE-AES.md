@@ -606,3 +606,109 @@ desktop still draws and still answers its own `bmask = 1, bstate = 1` wait
 (screendump), and the kernel AES selftest's `evnt_button` case
 (`bclk = 1, bmask = 1, bstate = 0`, `bflag = 0`) still returns 1 click with no
 buttons down — the `bflag = 0` path is unchanged by construction.
+
+## Predictions for the next hardware run — the AES desktop font size (D-FONT-1/2/3)
+
+Written **before** the Pi 4 is booted with the change, against the user's report
+("TeraDesk isn't using the small fonts, so all the icons and the text in the
+windows too are cut off and hard to read") and against the two QEMU screendumps
+taken before and after on `qemu-system-aarch64 -M raspi4b` (640×480, the SD
+image from `tools/make-sd-image.sh`).
+
+### What EmuTOS does, and what NewTOS did
+
+EmuTOS keeps **two** font sizes open at once (`gsx_start`,
+`aes/gemgraf.c:405-410`): the normal one `gl_wchar × gl_hchar` (8×16 on any
+screen with ≥ 400 lines) and a small one `gl_wschar × gl_hschar`, obtained from
+`vst_height(SIZ_TAB[1])` — the smallest `top` in the system face, which is the
+6×6 font's 4, so the small cell is **6×6** (`vdi/vdi_text.c:635,706-713,666-679`).
+
+There are exactly three places in all of EmuTOS that use the small pair
+(`grep gl_wschar\|gl_hschar` over `aes/` + `desk/`):
+
+| # | EmuTOS | what |
+|---|--------|------|
+| 1 | `aes/gemgraf.c:802` | an icon's overlay character (`gsx_tblt(SMALL, …)`) |
+| 2 | `aes/gemgraf.c:806` | an icon's label (`gr_gtext(TE_CNTR, SMALL, …)`) |
+| 3 | `desk/deskapp.c:519-520,810-811` | the icon label box + cell: `ib_wtext = 12*gl_wschar = 72`, `ib_htext = gl_hschar+2 = 8`, `g_wicon`, `g_hicon` |
+
+plus any `TEDINFO` whose `te_font` says `SMALL` (5), which
+`just_draw` passes straight to `gr_gtext` (`aes/gemoblib.c:757`).
+
+NewTOS drew **all** of these in the 8×16 font. That is the whole defect: a GEM
+icon resource sizes its label box for 6×6 — EmuTOS's own `desk/icon.rsc` and
+TeraDesk's `sdk/apps/teradesk/icons.rsc` both carry
+`ib_wtext = 72, ib_htext = 8, ib_xicon = 20` for every one of their 14 resp. 38
+ICONBLKs — so an 8×16 label overflows **both** axes and the old per-object clip
+cut it: vertically to 8 of 16 rows, horizontally to 72 of up to 96 px.
+
+### D-FONT-1 — icon labels and overlay characters (`gr_gicon`)
+
+1. **TeraDesk's directory windows in icon view show complete, readable file
+   names.** A full 12-character 8.3 name (`LYNXBOOT.IMG`, `KEYBOARD.KBD`) is
+   `12 × 6 = 72` px — exactly `ib_wtext`, so it fits with no slack and starts
+   flush at the box's left edge. Names shorter than 12 characters are centred
+   with the half-margin rounded **up** (`gr_just`, `gemgraf.c:578-586`).
+2. **No label is clipped top or bottom.** The 6-row cell is centred in the
+   8-row box at offset `(8-6+1)/2 = 1`, so one blank row above and one below.
+   Any glyph still showing a sliced ascender/descender means the small font did
+   not take.
+3. **Names longer than 12 characters lose whole characters, never half a
+   glyph** (`gsx_tcalc`, `gemgraf.c:494`). On a TOS 8.3 volume this is
+   unobservable; it becomes visible with long names on a VFAT/MiNT volume.
+4. **The drive letter on a drive icon sits inside the 32×32 bitmap.** It is
+   drawn at `ib_xicon + ib_xchar` (`gemgraf.c:802`), i.e. `20 + 13 = 33` px
+   from the object's left edge, `16` px down, in a 6×6 cell — so rows 16..21 of
+   the bitmap. NewTOS previously drew it at `ib_xchar` alone in a 16-row cell
+   (rows 16..31), which for an app-supplied ICONBLK put it 20 px too far left
+   and let it run off the bitmap's bottom edge into the label box. **On
+   TeraDesk this is the visible one**: its `icons.rsc` uses `ib_xicon = 20`
+   (and 12/21/22/23/25 for some entries) throughout.
+
+### D-FONT-2 — the desktop's own icon grid (`app_start`/`setup_iconblks`)
+
+5. **The NewTOS desktop's icon cell shrinks from 100×50 to 76×40 px**
+   (`g_wicon = 12*6 + 2*ib_xtext`, `g_hicon = 32 + 6 + 2`), so a
+   directory window fits **six** icon columns at 640×480 where it fitted four,
+   and the desktop drive/trash icons sit on a denser grid
+   (`g_icw = g_desk.w / xcnt`). Confirmed on the two QEMU screendumps: the
+   before shot shows 4 columns (`ACC APPS AUTO GEMSYS`), the after shot 6
+   (`ACC APPS AUTO GEMSYS SUB BIG.NCP`).
+6. **Clicking an icon still selects it, and clicking its label still selects
+   it.** `desk::act` hit-tests the `ib_xtext..ib_htext` rectangle
+   (`deskact.c:397`), which is now 72×8 rather than 96×16 — a click 10 px below
+   an icon bitmap that used to hit the label now misses it. This is the one
+   place where the change can *look* like a regression and is EmuTOS-correct:
+   EmuTOS's label box is 8 px tall too.
+7. **The drag outline is unaffected** — NewTOS has no `G.g_xyicon`
+   (`deskapp.c:990-1005`) at all yet, so nothing there can move.
+
+### D-FONT-3 — everything in the normal font must be unchanged
+
+8. **The menu bar, the window title, the window info line, dialog buttons,
+   alert text and the file selector are pixel-identical to before.** They are
+   `G_STRING`/`G_TITLE`/`G_BUTTON`/`G_BOXTEXT` with `te_font = IBM`
+   (`gemwmlib.c:156` for `W_NAME`/`W_INFO`; `gem_rsc.c:31-91` for the AES's own
+   trees), i.e. still 8×16. The QEMU tile-diff of the before/after screendumps
+   confirms this on `raspi4b`: **row 0..15 (the whole menu bar) is byte-identical**,
+   as are the window frame, title, info line, scroll bars and the desktop
+   pattern; only the two desktop icon cells and the window's icon area differ.
+9. **A `G_BOXCHAR` gadget character (the window closer/fuller/arrows) stays
+   8×16** — `just_draw` forces `edblk.te_font = IBM` for `G_BOXCHAR`
+   (`gemoblib.c:729`).
+10. **The `CHECKED` mark of a checked menu item does not move.** EmuTOS draws it
+    at `t.g_x+2, t.g_y` with no vertical centring (`gemoblib.c:907`); NewTOS
+    centred it. For a menu item, `ob_height == gl_hchar == 16`, so the two
+    formulas agree exactly and the pixels are unchanged. On an object taller
+    than 16 px the mark now sits at the top, as in EmuTOS.
+
+### What QEMU cannot show, and why
+
+TeraDesk is a GEM app and launches from the desktop, not from `C:\AUTO`
+(`AUTO` is console-only, `.NCP`), and desktop interaction needs both a mouse
+and C: storage, which no QEMU board gives at once. **Points 1, 3, 4 and 6 are
+real-Pi-4-only**; they are the ones that involve TeraDesk's *own* resource
+geometry. What QEMU does prove is points 5, 8 and — through the NewTOS
+desktop's own icons — the *mechanism* of 1 and 2, plus the host test
+`tos-api/tests/aes_object_font.rs`, which renders a stock 72×8 ICONBLK through
+the real `objc_draw` body and compares every pixel against the 6×6 raster.

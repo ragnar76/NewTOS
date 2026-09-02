@@ -65,6 +65,45 @@ pub fn glyph(c: u16) -> &'static [u8; 16] {
     &SYSTEM_FONT_8X16[(c & 0xFF) as usize]
 }
 
+// ── the AES's second desktop font size ("SMALL") ─────────────────────
+//
+// EmuTOS `gsx_start` (gemgraf.c:405-410) keeps **two** cell sizes for the
+// AES to draw with:
+//
+//   gsx_textsize(&gl_wptschar, &gl_hptschar, &gl_wchar, &gl_hchar);
+//   gl_ws.ws_chmaxh = gl_hptschar;            /* the IBM (normal) font */
+//   vst_height(gl_ws.ws_chminh, &gl_wsptschar, &gl_hsptschar,
+//              &gl_wschar, &gl_hschar);       /* the SMALL font       */
+//
+// `ws_chminh` is `SIZ_TAB[1]` from `v_opnwk` — the smallest `top` across
+// the system face (`vdi_text.c:635-636`), which for the ring below is the
+// 6×6 face's `top = 4` (our [`super::workstation::siz_tab`] folds the same
+// ring and reports the same 4). `vst_height(4)` then selects the 6×6 face
+// (`vdi_text.c:706-713`: the largest font whose `top <= 4`) and returns
+// `cell_width = max_cell_width = 6`, `cell_height = top + bottom + 1 = 6`
+// (`setup_width_height`, `vdi_text.c:666-679`).
+//
+// So on every screen where the normal font is 8×16, the AES's SMALL font is
+// the 6×6 face; `CELL_W`/`CELL_H` above are `gl_wchar`/`gl_hchar`, and the
+// two constants below are `gl_wschar`/`gl_hschar`. The unit test at the
+// bottom of this module re-derives both from [`RING`] so they cannot drift.
+
+/// The AES SMALL-font cell width — EmuTOS `gl_wschar` (`gemgraf.c:42`).
+/// Used by `gr_gicon` for an icon's overlay character and its label, and
+/// by any `TEDINFO` whose `te_font` is `SMALL`.
+pub const SMALL_CELL_W: i16 = 6;
+/// The AES SMALL-font cell height — EmuTOS `gl_hschar` (`gemgraf.c:43`).
+pub const SMALL_CELL_H: i16 = 6;
+
+/// The 6-row bitmap for character `c` (low 8 bits select the glyph) in the
+/// AES SMALL font. The 6 pixels are packed into bits 7..2 of each row, the
+/// layout [`super::backend::RasterBackend::draw_glyph_sized`] expects for a
+/// `cell_w` of 6.
+#[inline]
+pub fn glyph_small(c: u16) -> &'static [u8; 6] {
+    &SYSTEM_FONT_6X6[(c & 0xFF) as usize]
+}
+
 /// One of the three built-in system-font sizes. The discriminant is the
 /// ring index (EmuTOS `font_ring[0..2]`, smallest first).
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
@@ -247,5 +286,52 @@ pub fn glyph_row(id: SysFontId, c: u16, row: usize) -> u8 {
         SysFontId::F6x6 => SYSTEM_FONT_6X6[c][row],
         SysFontId::F8x8 => SYSTEM_FONT_8X8[c][row],
         SysFontId::F8x16 => SYSTEM_FONT_8X16[c][row],
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// `SMALL_CELL_W`/`SMALL_CELL_H` must be exactly what EmuTOS's
+    /// `gsx_start` would get back from `vst_height(SIZ_TAB[1])`: fold the
+    /// ring for the minimum `top` (EmuTOS `text_init`, `vdi_text.c:635`),
+    /// run `vst_height`'s "largest font whose `top <= height`" selection
+    /// (`vdi_text.c:706-713`), then read `setup_width_height`'s outputs
+    /// (`max_cell_width`, `top + bottom + 1`).
+    #[test]
+    fn small_font_is_what_vst_height_of_siz_tab_1_selects() {
+        let min_top = RING
+            .iter()
+            .map(|&id| font(id))
+            .filter(|f| f.font_id == FONT_ID)
+            .map(|f| f.top)
+            .min()
+            .unwrap();
+        assert_eq!(min_top, 4, "SIZ_TAB[1] (ws_chminh)");
+
+        // vst_height(min_top): walk the ring, keep the last face whose
+        // `top <= min_top`.
+        let mut sel = font(RING[0]);
+        for &id in &RING {
+            let f = font(id);
+            if f.font_id == FONT_ID && f.top <= min_top {
+                sel = f;
+            }
+        }
+        assert_eq!(sel.top, min_top, "an exact size match, so no DDA scaling");
+        assert_eq!(SMALL_CELL_W, sel.max_cell_width);
+        assert_eq!(SMALL_CELL_H, sel.top + sel.bottom + 1);
+        assert_eq!(sel.form_height, SMALL_CELL_H, "glyph rows == cell height");
+    }
+
+    /// The normal ("IBM") pair is the default face's, i.e. `CELL_W`/`CELL_H`
+    /// are `gl_wchar`/`gl_hchar` for a `V_REZ_VT >= 400` screen.
+    #[test]
+    fn normal_font_is_the_default_face() {
+        let f = font(DEFAULT);
+        assert_eq!(CELL_W, f.max_cell_width);
+        assert_eq!(CELL_H, f.top + f.bottom + 1);
+        assert_eq!(f.form_height, CELL_H);
     }
 }

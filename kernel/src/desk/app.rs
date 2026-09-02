@@ -17,11 +17,11 @@
 
 use tos_api::aes::object::IconBlk;
 use tos_api::bios::drive::drvbits;
-use tos_api::vdi::font::{CELL_H, CELL_W};
+use tos_api::vdi::font::{SMALL_CELL_H, SMALL_CELL_W};
 
 use super::global::{min_wint, DeskState, G_ICON, MIN_HINT, DROOT, NIL};
 use super::icons::{
-    build_iconblk, IconKind, IB_HICON, IB_WTEXT, ICON_LABEL_GAP, MAX_ICONTEXT_WIDTH,
+    build_iconblk, IconKind, IB_HICON, IB_WTEXT, ICON_LABEL_SLACK, MAX_ICONTEXT_WIDTH,
 };
 use super::model::LEN_LABEL;
 
@@ -31,23 +31,25 @@ impl DeskState {
     /// (set by [`DeskState::new`]).
     ///
     /// ```text
-    /// g_wicon = MAX_ICONTEXT_WIDTH * char_w + 2*ib_xtext   (fixed label box!)
-    /// g_hicon = ib_hicon + char_h + 2
+    /// g_wicon = MAX_ICONTEXT_WIDTH * gl_wschar + 2*ib_xtext (fixed label box!)
+    /// g_hicon = ib_hicon + gl_hschar + 2
     /// g_icw   = g_desk.w evenly redistributed over the columns that fit
     /// g_ich   = g_desk.h evenly redistributed over the rows that fit
     /// ```
     ///
-    /// `char_w`/`char_h` are NewTOS's fixed 8×16 font ([`CELL_W`]/[`CELL_H`]),
-    /// which is exactly the per-glyph width the VDI renderer advances by — so
-    /// the metric and the renderer agree (the precondition `_rebuild-plan.md`
-    /// §5 requires the Developer to confirm before wiring D1).
+    /// `char_w`/`char_h` here are the **small** AES font
+    /// ([`SMALL_CELL_W`]/[`SMALL_CELL_H`] = 6×6, EmuTOS `gl_wschar`/
+    /// `gl_hschar`), not the normal 8×16 one: `gr_gicon` draws an icon's
+    /// label and its overlay character in the small font (`gemgraf.c:802,806`),
+    /// so the label box must be measured in the same cell the renderer
+    /// advances by — otherwise a 12-character 8.3 name does not fit its box.
     pub fn app_start(&mut self) {
         // Icon cell: fixed 12-char label box + 2*IB_XTEXT (the D1 root fix).
-        // `IB_WTEXT + 2*IB_XTEXT` is algebraically `MAX_ICONTEXT_WIDTH*char_w
+        // `IB_WTEXT + 2*IB_XTEXT` is algebraically `MAX_ICONTEXT_WIDTH*gl_wschar
         // + 2*ib_xtext`, the deskapp.c:810 formula, made explicit here.
-        debug_assert_eq!(IB_WTEXT, MAX_ICONTEXT_WIDTH * CELL_W);
+        debug_assert_eq!(IB_WTEXT, MAX_ICONTEXT_WIDTH * SMALL_CELL_W);
         self.g_wicon = IB_WTEXT + 2 * super::icons::IB_XTEXT;
-        self.g_hicon = IB_HICON + CELL_H + ICON_LABEL_GAP;
+        self.g_hicon = IB_HICON + SMALL_CELL_H + ICON_LABEL_SLACK;
 
         // Desktop grid pitch: even redistribution over the fitting columns/rows
         // (deskapp.c:813-817). Integer division floors the count, then the
