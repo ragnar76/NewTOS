@@ -20,7 +20,7 @@
 use super::object::{render_tree_app, render_tree_lp64, Object};
 use super::Aespb;
 use crate::bdos::process::Abi;
-use crate::host::host;
+use crate::host::{host, Host};
 use crate::vdi::backend::{ClipRect, Pel, PatternFill, RasterBackend, Rect, WriteMode};
 use core::cell::UnsafeCell;
 use core::sync::atomic::{AtomicBool, AtomicI16, AtomicU64, AtomicU8, Ordering};
@@ -128,6 +128,17 @@ const G_LF: u16 = 0x04;
 const G_CLOSE: u16 = 0x05;
 const G_SIZE: u16 = 0x06;
 const G_FULL: u16 = 0x07;
+
+/// System-font cell width — EmuTOS `gl_wchar` (`gemgraf.c:405-410`): 8 for the
+/// 8×16 desktop font, the value `graf_handle` reports (`aes/graf.rs:456`). Used
+/// as the sizer drag's minimum window width for a gadget-less window
+/// (`hctl_window`, `gemctrl.c:252`).
+const GL_WCHAR: i16 = 8;
+
+/// System-font cell height — EmuTOS `gl_hchar`: 16 for the 8×16 desktop font
+/// (`gl_hbox = gl_hchar + 3 = 19`, `gemgraf.c:412`). The sizer drag's minimum
+/// window height for a window without vertical gadgets (`gemctrl.c:253`).
+const GL_HCHAR: i16 = 16;
 
 /// Unadjusted gadget box width — EmuTOS `gl_wbox`
 /// (`gl_wbox = max(gl_wchar+4, gl_hbox·aspect)`, `gemgraf.c:412-415`): 19 for
@@ -2429,47 +2440,126 @@ fn repaint_vacated(backend: &dyn RasterBackend, old: Grect, new: Grect) {
     }
 }
 
-/// Live-resize the frame (bottom-right corner follows the mouse) until
-/// release; returns the final border rect. Stands in for `gr_rubwind`.
-fn drag_size(w: &mut Window, backend: &dyn RasterBackend) -> Grect {
-    let Some(h) = host() else { return w.curr };
-    let orig = w.curr;
-    let min_w = 3 * adj_wbox();
-    let min_h = 3 * adj_hbox();
-    let sw = backend.width() as i16;
-    let sh = backend.height() as i16;
-    let mut last = orig;
+/// EmuTOS `gr_stilldn` (`aes/gemgrlib.c:47-73`) as the sizer drag uses it:
+/// block until the pointer leaves the 1×1 rectangle at `(x, y)` — i.e. until it
+/// moves at all — or the button comes up. Returns `false` for the button-up
+/// exit (`which & MU_BUTTON`, `:69-70`) and `true` for the `MU_M1` exit.
+///
+/// `gr_wait` passes `gr_stilldn(TRUE, xrat, yrat, 1, 1)` (`:182`), so the
+/// `MOBLK` fires as soon as the pointer is *outside* that one-pixel rectangle;
+/// the button condition is `0x0001ff00` = "all buttons up, one click"
+/// (`:62-66`), which here is simply the release. A key press (`MU_KEYBD`) is
+/// also armed but does not end the drag — it returns without `MU_BUTTON`.
+fn gr_stilldn(x: i16, y: i16, h: &'static dyn Host) -> bool {
     loop {
-        let (mx, my) = crate::vdi::mouse_position();
-        // `.max(min_*)` guards the clamp bounds (origin near the screen edge
-        // could make `max < min`, panicking `i16::clamp` — fatal in no_std).
-        let nw = (mx - orig.x + 1).clamp(min_w, (sw - orig.x).max(min_w));
-        let nh = (my - orig.y + 1).clamp(min_h, (sh - orig.y).max(min_h));
-        let nr = Grect { x: orig.x, y: orig.y, w: nw, h: nh };
-        if nr != last {
-            // Resize reflows the content, so (unlike a move) it cannot blit —
-            // repaint the desktop background over the previous window rect,
-            // then redraw the frame at the new size. No white trail; the work
-            // area's content returns on release via the desktop's redraw.
-            crate::vdi::cursor_hide(backend);
-            paint_bg_clip(backend, rect_clip(orig.x, orig.y, last.w, last.h));
-            set_curr(w, nr);
-            draw_frame(w, true, backend, ClipRect::full(backend.width(), backend.height()));
-            crate::vdi::cursor_show(backend);
-            last = nr;
-        }
         if crate::vdi::mouse_buttons() & 0x01 == 0 {
-            break;
+            return false;
+        }
+        let (mx, my) = crate::vdi::mouse_position();
+        if mx != x || my != y {
+            return true;
         }
         h.pump_input();
     }
-    // Record the pre-resize border rect as the window's previous rect so the
-    // owner (the desktop) can compute the damage region (old ∪ new) for the
-    // settle-overlap repaint on WM_SIZED, exactly as a programmatic WF_CXYWH
-    // set would. The interactive drag mutated `w.curr` directly, bypassing the
-    // `wind_set(WF_CXYWH)` path that normally maintains `prev`.
-    w.prev = orig;
-    last
+}
+
+/// EmuTOS `gr_draw` (`aes/gemgrlib.c:155-166`): the rubber box `o`, plus — when
+/// `poff` is not the zero rectangle (`have2box`) — a second box offset from it
+/// per component. XOR, so the same call draws and erases.
+fn gr_draw(o: Grect, poff: Grect, backend: &dyn RasterBackend, clip: ClipRect) {
+    super::graf::gsx_xbox(o.x, o.y, o.w, o.h, backend, clip);
+    if poff != Grect::default() {
+        super::graf::gsx_xbox(
+            o.x + poff.x,
+            o.y + poff.y,
+            o.w + poff.w,
+            o.h + poff.h,
+            backend,
+            clip,
+        );
+    }
+}
+
+/// EmuTOS `gr_rubwind` (`aes/gemgrlib.c:199-220`) — stretch the free corner of
+/// an XOR box pinned at `(xorigin, yorigin)` until the button comes up, drawing
+/// a second box offset by `poff` alongside it; returns the final `(w, h)`.
+///
+/// The window is **not** resized here and nothing on the screen is repainted:
+/// the only pixels touched are the two XOR outlines, which each `gr_wait`
+/// draws, waits on, and complements away again (`:169-191`). The Control
+/// Manager then posts `WM_SIZED` and the *owner* confirms the new geometry with
+/// `wind_set(WF_CURRXYWH)`, which is what repaints the window and the region it
+/// uncovered (`hctl_window` → `ct_msgup`, `gemctrl.c:258-259,314`).
+///
+/// This replaces the former solid live-resize, which repainted the desktop
+/// background (`w_drawdesk` — background box *and every icon*) over the whole
+/// window rectangle and redrew the frame on top of it, once per drag frame. The
+/// window's area therefore held the background-behind-the-window, icons
+/// included, for the duration of each frame's redraw: the square "holes" that
+/// travel with the drag on a real Pi 4. The mover drag never showed it because
+/// it blits the window to its new place instead of exposing what is under it.
+fn gr_rubwind(
+    h: &'static dyn Host,
+    xorigin: i16,
+    yorigin: i16,
+    wmin: i16,
+    hmin: i16,
+    poff: Grect,
+    backend: &dyn RasterBackend,
+) -> (i16, i16) {
+    update_beg(); // wm_update(BEG_UPDATE)
+    // `gr_setup(BLACK)`: clip to the whole screen, XOR write mode
+    // (`gemgrlib.c:76-80`); the XOR mode lives in `gsx_xbox`.
+    let clip = ClipRect::full(backend.width(), backend.height());
+    let mut o = Grect { x: xorigin, y: yorigin, w: 0, h: 0 };
+    loop {
+        // `gr_clamp` (`gemgrlib.c:83-88`): the free corner follows the pointer,
+        // never closer than (wmin, hmin) — a *signed* max, no upper clamp.
+        let (mx, my) = crate::vdi::mouse_position();
+        o.w = (mx - o.x + 1).max(wmin);
+        o.h = (my - o.y + 1).max(hmin);
+        // `gr_wait` (`gemgrlib.c:169-191`): draw, wait for a change, erase.
+        // The `gsx_moff`/`gsx_mon` brackets are our counted cursor hide/show.
+        crate::vdi::cursor_hide(backend);
+        gr_draw(o, poff, backend, clip);
+        crate::vdi::cursor_show(backend);
+        let down = gr_stilldn(mx, my, h);
+        crate::vdi::cursor_hide(backend);
+        gr_draw(o, poff, backend, clip);
+        crate::vdi::cursor_show(backend);
+        if !down {
+            break;
+        }
+    }
+    update_end(); // wm_update(END_UPDATE)
+    (o.w, o.h)
+}
+
+/// The `W_SIZER` arm of EmuTOS `hctl_window` (`aes/gemctrl.c:241-260`): work out
+/// the second box's offset and the minimum size from the window, run
+/// [`gr_rubwind`], and report the rectangle that goes into the `WM_SIZED`
+/// message (`ct_msgup(message, owner, wh, x, y, w, h)`, `gemctrl.c:314`) — the
+/// **unchanged** border origin with the dragged size.
+fn drag_size(w: &Window, backend: &dyn RasterBackend) -> Grect {
+    let border = w.curr;
+    // No host means no input pump, so there is no drag to run: report the
+    // geometry unchanged rather than inventing one.
+    let Some(h) = host() else { return border };
+    // `t = WS_WORK - WS_CURR`, per component (`gemctrl.c:247-251`) — the second
+    // XOR box is the work area the new size would have.
+    let poff = Grect {
+        x: w.work.x - border.x,
+        y: w.work.y - border.y,
+        w: w.work.w - border.w,
+        h: w.work.h - border.h,
+    };
+    // Minimum size (`gemctrl.c:252-257`): one character cell, widened to four
+    // gadget boxes when the window has top/horizontal gadgets and heightened to
+    // six when it has vertical ones.
+    let wmin = if w.kind & (TGADGETS | HGADGETS) != 0 { GL_WBOX * 4 } else { GL_WCHAR };
+    let hmin = if w.kind & VGADGETS != 0 { GL_HBOX * 6 } else { GL_HCHAR };
+    let (nw, nh) = gr_rubwind(h, border.x, border.y, wmin, hmin, poff, backend);
+    Grect { x: border.x, y: border.y, w: nw, h: nh }
 }
 
 /// Live-drag a scroll-bar elevator (thumb) following the mouse until release;

@@ -62,6 +62,21 @@ fn outline(x: i16, y: i16, w: i16, h: i16, _col: Pel, backend: &dyn RasterBacken
     }
 }
 
+/// EmuTOS `gsx_xbox` (`aes/gemgraf.c:274-278`): complement the 1-pixel outline
+/// of the rectangle `(x, y, w, h)` in XOR write mode. `gsx_bxpts` builds the
+/// five corner points and `gsx_xline` draws the four segments; the write mode
+/// and the screen-wide clip come from `gr_setup`
+/// (`gsx_sclip(&gl_rscreen); gsx_attr(FALSE, MD_XOR, BLACK)`, `gemgrlib.c:76-80`).
+///
+/// Shared with the Control Manager's sizer drag (`window::drag_size`, our
+/// `gr_rubwind`), which draws the same box — one primitive, one behaviour.
+/// (EmuTOS' `gsx_xline` additionally dithers each segment with the
+/// `0x5555`/`0xaaaa` parity masks; [`outline`] draws it solid, as it already
+/// did for every other `graf_*` box.)
+pub(super) fn gsx_xbox(x: i16, y: i16, w: i16, h: i16, backend: &dyn RasterBackend, clip: ClipRect) {
+    outline(x, y, w, h, BLACK, backend, clip);
+}
+
 fn mouse_down() -> bool {
     crate::vdi::mouse_buttons() & 0x01 != 0
 }
