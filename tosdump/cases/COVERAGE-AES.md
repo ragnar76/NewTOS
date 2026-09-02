@@ -712,3 +712,129 @@ geometry. What QEMU does prove is points 5, 8 and — through the NewTOS
 desktop's own icons — the *mechanism* of 1 and 2, plus the host test
 `tos-api/tests/aes_object_font.rs`, which renders a stock 72×8 ICONBLK through
 the real `objc_draw` body and compares every pixel against the 6×6 raster.
+
+---
+
+## Predictions for the next hardware run — the red area in TeraDesk's dialogs (D-OBSPEC-1)
+
+Written before any hardware run, as the earlier prediction blocks were.
+
+### What draws it, and how that was established
+
+The red filled area in the upper right of every TeraDesk dialog is **not**
+drawn by the AES or the VDI. It is drawn by TeraDesk's own `G_USERDEF`
+callback for the dialog "dragbox" ear, `ub_drag`
+(`sdk/apps/teradesk/library/xdialog/xddraw.c:508-568`), which every xdialog
+dialog installs unconditionally (`xd_set_userobjects`, `xddraw.c:1749-1751`;
+the original `ob_spec` is preserved in the XUSERBLK by `xd_xuserdef`,
+`xdutil.c:138`). Its last block draws the fragment of dialog border that
+would show behind the ear:
+
+```c
+b = abs((_WORD) obspec->obspec.framesize);          /* xddraw.c:540 */
+if (b != 0) {
+    udef_vsl_color(xd_vhandle, obspec->obspec.framecol);   /* xddraw.c:546 */
+    for (i = 0; i < b; i++) { ... udef_v_pline(xd_vhandle, 3, pxy); ... }
+}
+```
+
+`OBSPEC.obspec` is gemlib's `BFOBSPEC` bit-field view of `ob_spec`
+(`mt_gem.h:2051-2061`), declared in m68k (big-endian) field order with no
+endianness handling. On a little-endian target a C bit-field is allocated
+from the **least** significant end of its storage unit (AAPCS64,
+"Bit-fields"), so the whole word is mirrored: `character` lands in bits 0..7
+and `interiorcol` in bits 28..31, instead of the GEM layout
+
+```
+31..24 character | 23..16 framesize | 15..12 framecol
+11..8  textcol   | 7 textmode | 6..4 fillpattern | 3..0 interiorcol
+```
+
+which is what the resource file and the AES Object Manager both use
+(EmuTOS `gr_crack`, `aes/gemgraf.c:522-535`; `ob_sst`, `aes/gemobjop.c:54-58`;
+NewTOS `just_draw`, `tos-api/src/aes/object.rs:2283,2002-2010`).
+
+The dragbox of every TeraDesk dialog carries `ob_spec = 0x00029180`
+(measured in `sdk/apps/teradesk/build/dist/desktop.rsc`, tree `INFOBOX`
+object 1 and tree `APPLIKAT` object 2): thickness 2, colour word `0x9180`.
+Read through the mirrored bit-field that is
+
+| field | GEM bits | GEM value | mirrored bits | value read |
+|---|---|---|---|---|
+| `framesize` | 23..16 | `2` | 15..8 (signed) | **-111** |
+| `framecol`  | 15..12 | `9` (LBLACK) | 19..16 | **2 (RED)** |
+
+so the loop runs **111** times in **colour 2** instead of twice in dark grey.
+Each pass draws a horizontal and a vertical segment whose ends walk outwards
+(`pxy[0]++, pxy[1]++, pxy[2]--, pxy[5]--`), so after the eighth pass the
+rectangle inverts and the segments sweep left, right, up and down from the
+16x16 ear.
+
+This is measured, not inferred: `sdk/gemlib/tests/obspec_bits.c` reproduces
+`framesize = -111` / `framecol = 2` against the pristine header, and the
+compiled object `build/obj/library_xdialog_xddraw.o` that produced the
+photographed screen contains
+
+```
+1074: ldr   w8, [x19]           ; ob_spec
+1078: sbfx  w0, w8, #8, #8      ; framesize <- bits 8..15   (GEM: 16..23)
+1088: ldrh  w8, [x19, #0x2]
+1094: and   w1, w8, #0xf        ; framecol  <- bits 16..19  (GEM: 12..15)
+```
+
+### D-OBSPEC-1 — what must change on the photographed dialogs
+
+1. **The red area is gone.** In its place, at the top right of the dialog,
+   sits the 16x16 dragbox ear with a "\" diagonal and a **2-pixel dark grey
+   (LBLACK, pen 9)** partial border along its top and right — the two
+   iterations `framesize = 2` asks for. Nothing red is drawn anywhere by
+   TeraDesk.
+2. **Nothing spills past the dialog rectangle any more.** The overhang past
+   the right and top edges was the outer end of the 111-pass sweep, clipped
+   to the xdialog `drect` (`xd_clip_on(&pb->pb_xc)`, `xddraw.c:521`). With
+   two passes every segment stays inside the ear.
+3. **Objects drawn after the dragbox are unchanged.** All 24 dialog trees in
+   `desktop.rsc` carry a dragbox (23 with `ob_spec = 0x00029180`, one with
+   `0x00029181` — same `framesize`/`framecol`), always at the dialog's
+   top-right corner and always near the front of the root's child list
+   (child #0 in `INFOBOX`, child #1 in 22 of the others, child #8 in
+   `QUITOPT`). That is why the red appeared in *every* dialog, in the same
+   corner, with the rest of the dialog drawn on top of it. Those later
+   objects never read the bit-field and are unaffected.
+4. **The geometry that must match**, if anyone measures the old screens:
+   for the 312x256 `INFOBOX` the sweep covers x `0.64..1.01` and y
+   `-0.01..0.43` of the dialog rectangle — the right ~two fifths of the
+   width, the top ~43 % of the height, one to two pixels past the right and
+   top edges — with a one-column step at its top-left corner where the
+   horizontal-segment triangle meets the vertical-segment one.
+
+### Three more sites the same header fix changes
+
+The bit-field is read or written in three other places in TeraDesk. None was
+visible in the photographs; all three now address the documented bits:
+
+5. **`resource.c:160`** `ob_spec.obspec.fillpattern = 7` on slider background
+   objects wrote bits 25..27 (invisible to the AES, which reads bits 4..6);
+   slider backgrounds therefore stayed hollow instead of solid dark grey.
+   They should now come up **solid**.
+6. **`icon.c:2481-2482`** sets `interiorcol`/`fillpattern` on TeraDesk's
+   desktop background object. These wrote bits 25..31; the desktop colour and
+   pattern chosen in TeraDesk's own preferences had **no effect** and the
+   background stayed at the resource default. It should now follow the
+   setting.
+7. **`window.c:4545`** tests `obj[0].ob_spec.obspec.interiorcol == 0`, which
+   read bits 28..31 and so was true only by accident.
+
+### What is real-Pi-4-only, and why
+
+TeraDesk is a GEM program launched by double-clicking `DESKTOP.NAP` from the
+desktop, and opening a dialog needs a mouse *and* `C:`, which no QEMU board
+offers at once (`raspi4b` has the SD, `virt` has the input). **Every point
+above is real-Pi-4-only.** What QEMU does show is that the *kernel's* own
+dialog path is red-free: a `virt` screendump of the AES `.RSC` dialog and of
+`form_alert` contains **0 pixels** with `r >= 200, g < 80, b < 80`, and the
+desktop behind them is the same green (0,255,0) as in the photographs.
+
+The fix is entirely app-side — `sdk/gemlib/overlay/mt_gem.h.in` plus the
+rebuilt `DESKTOP.NAP`. The kernel image is byte-identical, so no kernel
+screendump can show a before/after of it.
