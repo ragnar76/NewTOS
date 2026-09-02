@@ -13,6 +13,13 @@
 //!   (c) `Setexc(0x5A0/4 == 0x168, -1)` returns that jar base — the
 //!       TeraDesk `library/utility/cookie.c:56` idiom, now EmuTOS-faithful
 //!       in [`tos_api::bios::vectors::setexc`].
+//!   (e) the memory sysvars an app reads to size the machine agree with the
+//!       BDOS pools and with EmuTOS' meaning of each field (BB2,
+//!       `docs/analysis/memory-layout-and-reported-free-memory.md` §8.1):
+//!       `os_beg`/`os_end` bound the **OS**, not the pool; `end_os`/`membot`
+//!       carry the same value at boot (`bios/biosmem.c:66-67`);
+//!       `phystop`/`memtop` the pool end; `ramtop`/`ramvalid` the alt-RAM top
+//!       and its magic (`bios/memory2.c:115-129`).
 //!
 //! (a)/(b) are checked through the kernel high-half alias of the TPA (they
 //! verify what `populate_sysvars` wrote); (c) exercises the real BIOS
@@ -44,6 +51,17 @@ const OSHEADER_VA: u32 = 0x5C0;
 const COOKIE_JAR_VA: u32 = 0x5F0;
 const OS_VERSION_OFF: usize = 0x02; // OSHEADER + 0x02
 const OS_VERSION: u16 = 0x0404; // Falcon TOS 4.04 (user-pinned)
+// (e) BB2 memory sysvars.
+const PHYSTOP_ADDR: usize = 0x42E; // phystop  — top of ST-RAM
+const MEMBOT_ADDR: usize = 0x432; //  membot   — bottom of the TPA region
+const MEMTOP_ADDR: usize = 0x436; //  memtop   — top of the TPA region
+const END_OS_ADDR: usize = 0x4FA; //  end_os   — end of the OS's static ST-RAM
+const RAMTOP_ADDR: usize = 0x5A4; //  ramtop   — top of alt-RAM, or NULL
+const RAMVALID_ADDR: usize = 0x5A8; // ramvalid — validates ramtop
+const OS_BEG_OFF: usize = 0x08; //     OSHEADER + 0x08 — base of the OS
+const OS_END_OFF: usize = 0x0C; //     OSHEADER + 0x0C — end of OS ST-RAM
+/// `ramvalid` magic (`references/emutos/include/tosvars.h:78`).
+const RAMVALID_MAGIC: u32 = 0x1357_BD13;
 /// `NTOS` cookie tag — the kernel jar's identity cookie, first mirrored slot.
 const NTOS_TAG: u32 = u32::from_be_bytes(*b"NTOS");
 
@@ -220,6 +238,57 @@ pub fn run() {
     check(cmdload == 0, "(d) cmdload@0x482 == 0 (ROM-shell default)");
     let dumpflg = rd_word(page, DUMPFLG_ADDR);
     check(dumpflg == 0xFFFF, "(d) dumpflg@0x4EE == -1 (bios.c:357)");
+
+    // (e) BB2 memory sysvars — each against the live pool extents, so the
+    //     test states the *relationship* EmuTOS defines rather than a baked
+    //     constant that would drift with every kernel build.
+    let (stram_start, stram_end) = tos_api::bdos::mem::init::stram_range();
+    let (_ttram_start, ttram_end) = tos_api::bdos::mem::init::ttram_range();
+    // os_beg = the OSHEADER's own address (EmuTOS `_os_header`,
+    // bios/startup.S:88-89) — the same value `_sysbase` holds.
+    check(
+        rd_long(page, OSHEADER_VA as usize + OS_BEG_OFF) == OSHEADER_VA,
+        "(e) OSHEADER.os_beg == OSHEADER VA (startup.S:88-89)",
+    );
+    // os_end / end_os / membot = end of the OS's static ST-RAM = pool start
+    // (EmuTOS `__endvdibss` / `_end_os_stram`, biosmem.c:66-67).
+    check(
+        rd_long(page, OSHEADER_VA as usize + OS_END_OFF) == stram_start as u32,
+        "(e) OSHEADER.os_end == ST-RAM pool start (biosdefs.h:52)",
+    );
+    check(
+        rd_long(page, END_OS_ADDR) == stram_start as u32,
+        "(e) end_os@0x4FA == ST-RAM pool start (biosmem.c:66)",
+    );
+    check(
+        rd_long(page, MEMBOT_ADDR) == stram_start as u32,
+        "(e) membot@0x432 == end_os (biosmem.c:67)",
+    );
+    // phystop / memtop = top of ST-RAM; no video carve-out, so they agree.
+    check(
+        rd_long(page, MEMTOP_ADDR) == stram_end as u32,
+        "(e) memtop@0x436 == ST-RAM pool end (biosmem.c:72)",
+    );
+    check(
+        rd_long(page, PHYSTOP_ADDR) == stram_end as u32,
+        "(e) phystop@0x42E == memtop (no screen carve-out)",
+    );
+    // The classic "free ST-RAM = memtop - os_end" must come out as the pool
+    // size — it read 0 before BB2, because both fields held the pool end.
+    check(
+        rd_long(page, MEMTOP_ADDR).wrapping_sub(rd_long(page, END_OS_ADDR))
+            == (stram_end - stram_start) as u32,
+        "(e) memtop - end_os == ST-RAM pool size",
+    );
+    // ramtop = top of alt-RAM (0 == EmuTOS' NULL), ramvalid always the magic.
+    check(
+        rd_long(page, RAMTOP_ADDR) == ttram_end as u32,
+        "(e) ramtop@0x5A4 == TT-RAM pool end (memory2.c:119)",
+    );
+    check(
+        rd_long(page, RAMVALID_ADDR) == RAMVALID_MAGIC,
+        "(e) ramvalid@0x5A8 == RAMVALID_MAGIC (memory2.c:124)",
+    );
 
     // 3. (c) Setexc(0x5A0/4, -1) returns the jar base. Must run with the
     //    loaded process's TTBR0 installed so the `setexc` peek reads the

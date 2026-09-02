@@ -415,6 +415,19 @@ nachweist.
 Specs mitgezogen: `docs/api/gemdos/memory/44-mxalloc.md`,
 `docs/api/gemdos/memory/48-malloc.md`.
 
+### 8.3 Prüfung
+
+* **§8.1** — der B1-Selftest (`kernel/src/selftest_sysvars.rs`) hat eine
+  Gruppe **(e)** bekommen: neun Checks, die jedes Feld gegen die *lebenden*
+  Pool-Extents prüfen statt gegen einen eingebackenen Wert (der mit jedem
+  Kernel-Build driften würde), inklusive der Rechnung
+  `memtop − end_os == Poolgröße`, die vor BB2 `0` ergab. Lauf auf
+  `qemu-virt`: **18/18 OK, `=== B1 PASS ===`** (der Selftest ist wie gehabt
+  nicht im Boot verdrahtet — er wurde für den Lauf temporär in
+  `kernel/src/lib.rs` aktiviert und danach wieder entfernt).
+* **§8.2** — sechs Host-Tests in `tos-api/src/gemdos/memory.rs` `mod tests`,
+  laufen unter `cargo test -p tos-api --lib`.
+
 ---
 
 ## 9. Der Weg zu „ST-RAM 10 MB, TT-RAM der nutzbare Rest"
