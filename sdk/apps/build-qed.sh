@@ -50,16 +50,18 @@ OUT="$BUILD/QED.NAP"
 mkdir -p "$OBJ"
 
 # --- ensure the three ported libraries are present --------------------------
-if [ ! -f "$LIBC/libc.a" ]; then
-  echo "libc.a absent -- running build-libc.sh first…"
+# Rebuild a library when its archive is missing OR out of date (sdk/lib-stale.sh).
+. "$SDK/lib-stale.sh"
+if lib_stale "$LIBC/libc.a" "$LIBC/overlay" "$LIBC/build-libc.sh"; then
+  echo "libc.a missing or out of date -- running build-libc.sh first…"
   "$LIBC/build-libc.sh" >/dev/null 2>&1 || { echo "error: build-libc.sh failed" >&2; exit 1; }
 fi
-if [ ! -f "$GEM/gemlib.a" ]; then
-  echo "gemlib.a absent -- running build-gemlib.sh first…"
+if lib_stale "$GEM/gemlib.a" "$GEM/overlay" "$GEM/build-gemlib.sh"; then
+  echo "gemlib.a missing or out of date -- running build-gemlib.sh first…"
   "$GEM/build-gemlib.sh" >/dev/null 2>&1 || { echo "error: build-gemlib.sh failed" >&2; exit 1; }
 fi
-if [ ! -f "$CF/cflib.a" ]; then
-  echo "cflib.a absent -- running build-cflib.sh first…"
+if lib_stale "$CF/cflib.a" "$CF/overlay" "$CF/build-cflib.sh"; then
+  echo "cflib.a missing or out of date -- running build-cflib.sh first…"
   "$CF/build-cflib.sh" >/dev/null 2>&1 || { echo "error: build-cflib.sh failed" >&2; exit 1; }
 fi
 MINT="$LIBC/mintlib/include"

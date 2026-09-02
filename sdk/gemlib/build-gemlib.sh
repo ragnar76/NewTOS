@@ -55,8 +55,10 @@ mkdir -p "$OBJ"
 
 # --- ensure the ported mintlib libc is present ------------------------------
 # gemlib is compiled/linked against the already-ported mintlib (headers + libc.a).
-if [ ! -f "$LIBC/libc.a" ]; then
-  echo "libc.a absent -- running build-libc.sh first…"
+# Rebuild a library when its archive is missing OR out of date (sdk/lib-stale.sh).
+. "$SDK/lib-stale.sh"
+if lib_stale "$LIBC/libc.a" "$LIBC/overlay" "$LIBC/build-libc.sh"; then
+  echo "libc.a missing or out of date -- running build-libc.sh first…"
   "$LIBC/build-libc.sh" >/dev/null 2>&1 || { echo "error: build-libc.sh failed" >&2; exit 1; }
 fi
 MINT="$LIBC/mintlib/include"
