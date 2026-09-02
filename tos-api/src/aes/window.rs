@@ -507,7 +507,7 @@ fn top_window(handle: i16) {
     // `:315-318`); the desktop window has no frame to deactivate, and EmuTOS
     // then takes `clrold = TRUE` (`:1125`).
     let clrold = if old_top != DESKWH {
-        draw_frame_pieces(old_top, false, backend);
+        draw_frame_pieces(old_top, false, backend, None);
         // `clrold` is read *after* the rectangle lists were rebuilt with the
         // new order (`:1122`), i.e. with `handle` already above `old_top`.
         !is_broken(old_top)
@@ -517,7 +517,7 @@ fn top_window(handle: i16) {
     // The new top's frame, activated — `w_cpwalk(gl_wtop, 0, MAX_DEPTH, TRUE)`
     // in the clear case (`:1133`), `w_update`'s `w_cpwalk` in the other
     // (`:1029`); both draw the same frame clipped to the same rectangle list.
-    draw_frame_pieces(handle, true, backend);
+    draw_frame_pieces(handle, true, backend, None);
     crate::vdi::cursor_show(backend);
     if !(clrold && wasclr) {
         if let Some(r) = win(handle).map(|w| w.curr) {
@@ -544,41 +544,99 @@ fn is_broken(handle: i16) -> bool {
         .any(|ow| ow.in_use && ow.open && ow.z > myz && intersect_grect(ow.curr, rect).is_some())
 }
 
-/// The visible pieces of `handle`'s **border** rectangle — its rectangle minus
-/// every open window above it. EmuTOS's owner-rectangle list, built by
-/// `newrect` from `WS_TRUE` and broken by each higher window
-/// (`aes/gemwrect.c:163-200`). Returns the piece count; `out[..n]` holds them.
+/// `handle`'s **owner rectangle list** — EmuTOS `D.w_win[wh].w_rlist`: the
+/// window's own `WS_TRUE` rectangle with the rectangle of every window above it
+/// broken out of it, rebuilt by `newrect`/`mkrect`/`brkrct`
+/// (`aes/gemwrect.c:64-205`) at the top of every `draw_change`
+/// (`aes/gemwmlib.c:1129`), i.e. before anything is drawn. Returns the piece
+/// count; `out[..n]` holds them.
 ///
-/// [`compute_rlist`] is the same computation over the **work** rectangle (what
-/// `WF_FIRSTXYWH` reports to the owner); the frame draw needs the border one,
-/// because a frame is drawn outside the work area.
+/// This is *the* list the whole window manager clips against: `do_walk`
+/// ([`walk_rects`]) walks it for both `w_drawdesk` and `w_cpwalk`, and
+/// `WF_FIRSTXYWH` reports it intersected with the work rectangle
+/// ([`compute_rlist`]).
+///
+/// [`DESKWH`] (the desktop window) is the **bottom** of the stack: its own
+/// rectangle is the whole screen (`w_setsize(WS_CURR, DESKWH, &gl_rscreen)`,
+/// `aes/gemwmlib.c:1290`) and every open window is above it (`i16::MIN` z), so
+/// the loop subtracts them all. The menu row is kept out by `do_walk`'s
+/// `gl_rfull` clip, not by this list — exactly as in EmuTOS.
+///
+/// A closed or invalid handle owns nothing (`newrect` returns early for a
+/// zero-size window, `aes/gemwrect.c:189-192`).
 fn border_pieces(handle: i16, out: &mut [Grect; RCAP]) -> usize {
     let (rect, myz) = match win(handle) {
+        Some(w) if handle == DESKWH => (w.curr, i16::MIN),
         Some(w) if w.open => (w.curr, w.z),
         _ => return 0,
     };
-    let mut list = [Grect::default(); RCAP];
-    list[0] = rect;
+    *out = [Grect::default(); RCAP];
+    out[0] = rect;
     let mut n = 1;
     for ow in slots().iter() {
         if ow.in_use && ow.open && ow.z > myz {
-            n = subtract(&mut list, n, ow.curr);
+            n = subtract(out, n, ow.curr);
         }
     }
-    out[..n].copy_from_slice(&list[..n]);
     n
 }
 
-/// Draw `handle`'s frame once per visible piece of its border rectangle —
-/// EmuTOS `w_cpwalk(wh, 0, MAX_DEPTH, TRUE)`→`do_walk` (`gemwmlib.c:363-376`,
-/// `:295-311`), which walks `D.w_win[wh].w_rlist` and `ob_draw`s the window
+/// EmuTOS `do_walk` (`aes/gemwmlib.c:286-312`), reduced to the rectangles it
+/// would `gsx_sclip` and draw in:
+///
+/// ```c
+/// if (pc) rc_intersect(&gl_rfull, pc); else pc = &gl_rfull;
+/// for (po = D.w_win[wh].w_rlist; po; po = po->o_link) {
+///     rc_copy(&po->o_gr, &t);
+///     if (rc_intersect(pc, &t)) { gsx_sclip(&t); ob_draw(tree, obj, depth); }
+/// }
+/// ```
+///
+/// `pc` = `None` is the C `pc == NULL` case (clip to `gl_rfull` alone). Returns
+/// the count; `out[..n]` are the clip rectangles, each of which the caller draws
+/// its tree in once. An empty result means the caller draws nothing at all —
+/// which is the whole point: a window that owns no visible piece, or a desktop
+/// wholly covered by windows, paints nothing.
+fn walk_rects(wh: i16, pc: Option<Grect>, out: &mut [Grect; RCAP]) -> usize {
+    // `rc_intersect(&gl_rfull, pc)` — `gl_rfull` is the screen minus the menu
+    // row (`aes/gemgraf.c:423-424`, set at `gsx_start` whether or not a menu bar
+    // is installed), so no `do_walk` ever touches the menu strip.
+    let full = desktop_work();
+    let pc = match pc {
+        Some(p) => match intersect_grect(p, full) {
+            Some(t) => t,
+            None => return 0,
+        },
+        None => full,
+    };
+    let mut list = [Grect::default(); RCAP];
+    let n = border_pieces(wh, &mut list);
+    let mut m = 0usize;
+    for r in list.iter().take(n) {
+        if let Some(t) = intersect_grect(*r, pc) {
+            out[m] = t;
+            m += 1;
+        }
+    }
+    m
+}
+
+/// Draw `handle`'s frame once per visible piece of its owner rectangle list —
+/// EmuTOS `w_cpwalk(wh, 0, MAX_DEPTH, …)`→`do_walk` (`gemwmlib.c:363-379`,
+/// `:286-312`), which walks `D.w_win[wh].w_rlist` and `ob_draw`s the window
 /// element tree inside each rectangle. Clipping the draw to the rectangle list
 /// is what stops a window that is *below* another one from painting its frame
 /// over it. `istop` selects the activated / deactivated decorations
 /// (`w_bldactive`'s `istop`, `:495-560`).
-fn draw_frame_pieces(handle: i16, istop: bool, backend: &dyn RasterBackend) {
+///
+/// `pc` is `w_cpwalk`'s clip: `Some(damage)` for the `usetrue == FALSE` call
+/// inside `w_update`, which runs under `gsx_sclip(pt)` and picks the current
+/// clip up again with `gsx_gclip` (`:1029-1031,368-374`); `None` for the
+/// `usetrue == TRUE` calls, whose `WS_TRUE` clip is already implied by the
+/// rectangle list (every piece is inside the window).
+fn draw_frame_pieces(handle: i16, istop: bool, backend: &dyn RasterBackend, pc: Option<Grect>) {
     let mut pieces = [Grect::default(); RCAP];
-    let n = border_pieces(handle, &mut pieces);
+    let n = walk_rects(handle, pc, &mut pieces);
     if n == 0 {
         return;
     }
@@ -749,7 +807,45 @@ pub fn restore_windows() {
 }
 
 /// Paint the desktop background within `clip` — NewTOS's `w_drawdesk`
-/// (EmuTOS `gemwmlib.c:340-360`).
+/// (EmuTOS `gemwmlib.c:340-359`), which is a single
+/// `do_walk(DESKWH, tree, root, depth, pc)` (`gemwmlib.c:286-312`):
+///
+/// ```c
+/// if (pc) rc_intersect(&gl_rfull, pc); else pc = &gl_rfull;
+/// for (po = D.w_win[wh].w_rlist; po; po = po->o_link) {
+///     rc_copy(&po->o_gr, &t);
+///     if (rc_intersect(pc, &t)) { gsx_sclip(&t); ob_draw(tree, obj, depth); }
+/// }
+/// ```
+///
+/// So the background is **not** painted over the damage rectangle. It is painted
+/// over the damage rectangle intersected with `gl_rfull` (the screen minus the
+/// menu row) and then with each piece of the **desktop window's owner rectangle
+/// list** — its own rectangle minus every window above it, rebuilt by `newrect`
+/// (`gemwrect.c:165-205`) at the top of `draw_change` (`gemwmlib.c:1129`), i.e.
+/// before anything is drawn. An open window owns its rectangle; the desktop does
+/// not, so `w_drawdesk` can never paint inside one. What a window shows is
+/// restored by its owner in answer to the `WM_REDRAW` that `w_update`/`w_redraw`
+/// post (`gemwmlib.c:1004-1048,887-907`) — the AES does not paint it.
+///
+/// Painting the whole clip instead put the desktop background — box *and* icons —
+/// inside every window a damage rectangle reached across, on `wind_open`,
+/// `wind_close`, `wind_set(WF_CURRXYWH)`, the mover drag and
+/// `form_dial(FMD_FINISH)`, until the owner answered its `WM_REDRAW`.
+///
+/// Runs **inside** `compose`/`redraw_all` (the AES SVC handler), so it must not
+/// re-enter the AES trap: [`draw_desk_tree`] draws straight through the backend.
+fn paint_bg_clip(backend: &dyn RasterBackend, clip: ClipRect) {
+    let mut pieces = [Grect::default(); RCAP];
+    let n = walk_rects(DESKWH, Some(clip_grect(clip)), &mut pieces);
+    for r in pieces.iter().take(n) {
+        draw_desk_tree(backend, rect_clip(r.x, r.y, r.w, r.h));
+    }
+}
+
+/// `ob_draw(tree, obj, depth)` for the desktop background tree, clipped to
+/// `clip` — the body of `w_drawdesk`'s `do_walk` iteration
+/// (`gemwmlib.c:340-359,306-308`).
 ///
 /// If a desktop tree is registered ([`NEWDESK_TREE`] != 0, via
 /// `wind_set(DESKWH, WF_NEWDESK, …)`), draw that tree from its root
@@ -760,10 +856,7 @@ pub fn restore_windows() {
 /// `gl_wtree` at depth 0. Both go through the ordinary object
 /// manager ([`render_tree_lp64`] = the non-trapping `ob_draw` engine), clipped
 /// to `clip` — never a bespoke fill.
-///
-/// Runs **inside** `compose`/`redraw_all` (the AES SVC handler), so it must not
-/// re-enter the AES trap: `render_tree_lp64` draws straight through the backend.
-fn paint_bg_clip(backend: &dyn RasterBackend, clip: ClipRect) {
+fn draw_desk_tree(backend: &dyn RasterBackend, clip: ClipRect) {
     let cw = (clip.xmx - clip.xmn + 1).max(0);
     let ch = (clip.ymx - clip.ymn + 1).max(0);
     if cw == 0 || ch == 0 {
@@ -809,6 +902,18 @@ fn paint_bg_clip(backend: &dyn RasterBackend, clip: ClipRect) {
 /// A `ClipRect` for the rectangle `[x, x+w) × [y, y+h)`.
 fn rect_clip(x: i16, y: i16, w: i16, h: i16) -> ClipRect {
     ClipRect { xmn: x, ymn: y, xmx: x + w - 1, ymx: y + h - 1 }
+}
+
+/// The inverse of [`rect_clip`] — a `ClipRect` (inclusive bounds, the VDI
+/// convention) as a `GRECT` (origin + size, the AES convention), so the
+/// rectangle algebra EmuTOS does on `GRECT`s can be done on a clip.
+fn clip_grect(c: ClipRect) -> Grect {
+    Grect {
+        x: c.xmn,
+        y: c.ymn,
+        w: (c.xmx - c.xmn + 1).max(0),
+        h: (c.ymx - c.ymn + 1).max(0),
+    }
 }
 
 /// Repaint the desktop and every open window back-to-front (painter's
@@ -858,7 +963,12 @@ fn compose(backend: &dyn RasterBackend, clip: ClipRect) {
         }
         drawn[pick] = true;
         let istop = pick as i16 == top;
-        draw_frame(&slots()[pick], istop, backend, clip);
+        // `w_update`'s per-window step: `gsx_sclip(pt); w_cpwalk(top, 0,
+        // MAX_DEPTH, FALSE)` (`gemwmlib.c:1029-1030`) — the frame is drawn once
+        // per piece of *that window's* owner rectangle list inside the damage
+        // rectangle, never over the whole damage rectangle. Without the list a
+        // covered window repainted its frame on top of the window covering it.
+        draw_frame_pieces(pick as i16, istop, backend, Some(clip_grect(clip)));
     }
     crate::vdi::cursor_show(backend);
 }
@@ -957,38 +1067,40 @@ fn subtract(list: &mut [Grect; RCAP], n: usize, c: Grect) -> usize {
     m
 }
 
-/// Compute `handle`'s visible work-area pieces (work rect minus every
-/// higher-z open window) into `RLIST`, cursor reset.
+/// `handle`'s owner rectangle list ([`border_pieces`]) intersected with its work
+/// area — what `wm_get(WF_FIRSTXYWH/WF_NEXTXYWH)` reports. EmuTOS walks the same
+/// list and clips each piece to `WS_WORK` on the way out (`w_owns` against the
+/// window's work rectangle, `gemwmlib.c:1556-1561`, `:1226-1239`).
 ///
-/// [`DESKWH`] (the desktop window) is treated as the **bottom** of the
-/// z-order: its work area is its stored `WS_WORK` (`gl_rfull`, the screen minus
-/// the menu row) and *every* open window is above it, so the subtraction
-/// loop removes each open window's border rect. This is the occlusion-aware
-/// rectangle list EmuTOS's `do_wredraw(DESKWH, …)` walks uniformly with real
-/// windows (`desksupp.c:223`), so the desktop background never reports — and
-/// therefore never repaints over — a piece a window covers.
+/// Returns the piece count; `out[..n]` holds them. Pieces that are pure border
+/// (no work-area overlap) drop out.
+fn work_rects(handle: i16, out: &mut [Grect; RCAP]) -> usize {
+    let Some(work) = win(handle).map(|w| w.work) else {
+        return 0;
+    };
+    let mut list = [Grect::default(); RCAP];
+    let n = border_pieces(handle, &mut list);
+    let mut m = 0usize;
+    for r in list.iter().take(n) {
+        if let Some(t) = intersect_grect(*r, work) {
+            out[m] = t;
+            m += 1;
+        }
+    }
+    m
+}
+
+/// Load `handle`'s [`work_rects`] into `RLIST`, cursor reset — the
+/// `WF_FIRSTXYWH`/`WF_NEXTXYWH` iterator's backing store (EmuTOS keeps the list
+/// itself and a `w_rnext` cursor per window, `gemwmlib.c:1556-1561`).
 fn compute_rlist(handle: i16) {
     // SAFETY: single-CPU AES.
     let (rects, count, cursor) = unsafe {
         (&mut *RLIST.rects.get(), &mut *RLIST.count.get(), &mut *RLIST.cursor.get())
     };
-    *count = 0;
     *cursor = 0;
-    let (work, myz) = match win(handle) {
-        // Desktop: its stored work rect (`gl_rfull`), z below every window
-        // (i16::MIN → every open window is subtracted from it).
-        Some(w) if handle == DESKWH => (w.work, i16::MIN),
-        Some(w) if w.open => (w.work, w.z),
-        _ => return,
-    };
     let mut list = [Grect::default(); RCAP];
-    list[0] = work;
-    let mut n = 1;
-    for ow in slots().iter() {
-        if ow.in_use && ow.open && ow.z > myz {
-            n = subtract(&mut list, n, ow.curr);
-        }
-    }
+    let n = work_rects(handle, &mut list);
     rects[..n].copy_from_slice(&list[..n]);
     *count = n;
 }
@@ -1041,18 +1153,8 @@ fn send_redraw(handle: i16, rect: Grect) {
 /// [`compute_rlist`], but returning only the enclosing rectangle and **without**
 /// disturbing the shared `WF_FIRSTXYWH`/`WF_NEXTXYWH` iterator state ([`RLIST`]).
 fn visible_bound(handle: i16) -> Grect {
-    let (work, myz) = match win(handle) {
-        Some(w) if w.open => (w.work, w.z),
-        _ => return Grect::default(),
-    };
     let mut list = [Grect::default(); RCAP];
-    list[0] = work;
-    let mut n = 1;
-    for ow in slots().iter() {
-        if ow.in_use && ow.open && ow.z > myz {
-            n = subtract(&mut list, n, ow.curr);
-        }
-    }
+    let n = work_rects(handle, &mut list);
     let mut acc: Option<Grect> = None;
     for r in list.iter().take(n) {
         acc = Some(match acc {
@@ -1527,15 +1629,22 @@ fn draw_vslider(w: &Window, backend: &dyn RasterBackend, clip: ClipRect) {
 }
 
 /// Redraw just window `handle`'s vertical slider (no work-area clear), for
-/// `wind_set(WF_VSLIDE/WF_VSLSIZ)`.
+/// `wind_set(WF_VSLIDE/WF_VSLSIZ)` — EmuTOS `wm_set`'s
+/// `w_cpwalk(w_handle, W_VSLIDE, MAX_DEPTH, TRUE)`
+/// (`gemwmlib.c:1704-1717,1739-1754`), so `do_walk` clips it to the window's
+/// own owner rectangle list rather than letting it draw over a window on top.
 fn redraw_vslider(handle: i16) {
     if let (Some(backend), Some(w)) = (host().and_then(|h| h.raster()), win(handle)) {
         if w.open {
+            let mut pieces = [Grect::default(); RCAP];
+            let n = walk_rects(handle, None, &mut pieces);
             // Bracket the slider repaint with the counting cursor semaphore
             // (EmuTOS `w_update` moff/mon) so a cursor over the scroll bar
             // leaves no dropping. See the note in [`compose`].
             crate::vdi::cursor_hide(backend);
-            draw_vslider(w, backend, ClipRect::full(backend.width(), backend.height()));
+            for r in pieces.iter().take(n) {
+                draw_vslider(w, backend, rect_clip(r.x, r.y, r.w, r.h));
+            }
             crate::vdi::cursor_show(backend);
         }
     }
@@ -1597,14 +1706,20 @@ fn draw_hslider(w: &Window, backend: &dyn RasterBackend, clip: ClipRect) {
 }
 
 /// Redraw just window `handle`'s horizontal slider (no work-area clear), for
-/// `wind_set(WF_HSLIDE/WF_HSLSIZ)`.
+/// `wind_set(WF_HSLIDE/WF_HSLSIZ)` — EmuTOS `wm_set`'s
+/// `w_cpwalk(w_handle, W_HSLIDE, MAX_DEPTH, TRUE)`
+/// (`gemwmlib.c:1704-1717,1739-1754`); see [`redraw_vslider`].
 fn redraw_hslider(handle: i16) {
     if let (Some(backend), Some(w)) = (host().and_then(|h| h.raster()), win(handle)) {
         if w.open {
+            let mut pieces = [Grect::default(); RCAP];
+            let n = walk_rects(handle, None, &mut pieces);
             // Counting cursor bracket around the slider repaint — see
             // [`redraw_vslider`] / [`compose`].
             crate::vdi::cursor_hide(backend);
-            draw_hslider(w, backend, ClipRect::full(backend.width(), backend.height()));
+            for r in pieces.iter().take(n) {
+                draw_hslider(w, backend, rect_clip(r.x, r.y, r.w, r.h));
+            }
             crate::vdi::cursor_show(backend);
         }
     }
@@ -2132,14 +2247,18 @@ fn slider_size(v: i16) -> i16 {
     }
 }
 
-/// Redraw just `handle`'s frame if it is open (for name/info changes).
+/// Redraw just `handle`'s frame if it is open (for name/info changes) — EmuTOS
+/// `wm_set`'s `w_cpwalk(w_handle, W_NAME/W_INFO, MAX_DEPTH, TRUE)`
+/// (`gemwmlib.c:1660-1675,1753-1754`), i.e. `do_walk` over the window's own
+/// owner rectangle list: a window that another one covers repaints its title
+/// only where it is actually visible.
 fn redraw_open(handle: i16) {
     if let (Some(backend), Some(w)) = (host().and_then(|h| h.raster()), win(handle)) {
         if w.open {
             // Counting cursor bracket around the single-frame repaint (EmuTOS
             // `w_update` moff/mon) — see [`compose`].
             crate::vdi::cursor_hide(backend);
-            draw_frame(w, handle == get_top(), backend, ClipRect::full(backend.width(), backend.height()));
+            draw_frame_pieces(handle, handle == get_top(), backend, None);
             crate::vdi::cursor_show(backend);
         }
     }
@@ -2518,6 +2637,13 @@ fn drag_move(w: &mut Window, backend: &dyn RasterBackend) -> Grect {
             // the cursor around the blit so its sprite isn't duplicated into
             // the moved region.
             crate::vdi::cursor_hide(backend);
+            // Commit the new geometry **before** anything is painted, exactly
+            // as `draw_change` sets `WS_CURR` and rebuilds every rectangle list
+            // (`everyobj(… newrect …)`) before `w_move`'s blit and the
+            // `w_drawdesk` that follows it (`gemwmlib.c:1101-1106,1129,1177,
+            // 1217-1219`). The vacated region is only the desktop's where the
+            // window at its *new* place — and every other window — leaves it so.
+            set_curr(w, nr);
             backend.copy_rect(
                 Rect { x: last.x, y: last.y, w: last.w, h: last.h },
                 nr.x,
@@ -2527,7 +2653,6 @@ fn drag_move(w: &mut Window, backend: &dyn RasterBackend) -> Grect {
             );
             repaint_vacated(backend, last, nr);
             crate::vdi::cursor_show(backend);
-            set_curr(w, nr);
             last = nr;
         }
         if crate::vdi::mouse_buttons() & 0x01 == 0 {
@@ -2548,6 +2673,13 @@ fn drag_move(w: &mut Window, backend: &dyn RasterBackend) -> Grect {
 /// Up to two rectangles — a full-width horizontal strip for the vertical
 /// motion, plus a vertical strip limited to the overlapping rows (so the
 /// corner is not painted twice, and the still-covered part is never erased).
+///
+/// This is `w_move`'s trailing `w_drawdesk(&c)` (`gemwmlib.c:1217-1219`) with
+/// `c` narrowed to the L instead of the union of the two positions, so
+/// [`paint_bg_clip`] does the `do_walk` clipping: only the part of the L that
+/// the desktop window still owns is painted. Where the L falls inside another
+/// window, that window owns it and gets it back on `WM_REDRAW` — the AES must
+/// not put the desktop background there.
 fn repaint_vacated(backend: &dyn RasterBackend, old: Grect, new: Grect) {
     let dx = new.x - old.x;
     let dy = new.y - old.y;

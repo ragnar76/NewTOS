@@ -1044,3 +1044,124 @@ fallback root. The pixel-level proof of both fixes is the host test, which
 drives the same AES entry points (`wind_set(0, WF_NEWDESK, NULL)` +
 `form_dial(FMD_FINISH)`, and `fsel_input` ended with RETURN) into a framebuffer
 and counts the changed pixels.
+
+---
+
+## Round 5 predictions — the desktop background over-paint (D-DESK-1…4, 2026-09-02)
+
+Written **before** any run of the fixed build.
+
+### What EmuTOS does, and how that was established
+
+`w_drawdesk(pc)` — the AES's one and only desktop-background repaint — is a
+single `do_walk(DESKWH, tree, root, depth, pc)` (`aes/gemwmlib.c:340-359`), and
+`do_walk` (`:286-312`) is two clips, not one:
+
+```c
+if (pc) rc_intersect(&gl_rfull, pc); else pc = &gl_rfull;
+for (po = D.w_win[wh].w_rlist; po; po = po->o_link) {
+    rc_copy(&po->o_gr, &t);
+    if (rc_intersect(pc, &t)) { gsx_sclip(&t); ob_draw(tree, obj, depth); }
+}
+```
+
+1. `gl_rfull` = the screen **minus the menu row**, `r_set(&gl_rfull, 0, gl_hbox,
+   gl_width, gl_height - gl_hbox)` (`aes/gemgraf.c:423-424`), set at `gsx_start`
+   **unconditionally**, menu bar installed or not. So no `do_walk` ever touches
+   the top `gl_hbox` (= 19) rows. Removing a menu bar does not repaint them
+   either — `mn_bar`'s remove arm only drops `gl_mntree` and hands `gl_rmenu` to
+   the control manager (`aes/gemmnlib.c:724-728`).
+2. `D.w_win[DESKWH].w_rlist` = the desktop window's **owner rectangle list**:
+   its own rectangle with every window above it broken out of it, rebuilt by
+   `newrect`/`mkrect`/`brkrct` (`aes/gemwrect.c:64-205`) at the top of every
+   `draw_change` (`aes/gemwmlib.c:1129`) — i.e. with the *new* geometry, before
+   anything is drawn. An open window owns its rectangle, the desktop does not,
+   so `w_drawdesk` cannot paint inside a window. What a window shows comes back
+   from its owner in answer to the `WM_REDRAW` that `w_update`/`w_redraw` post
+   (`:1004-1048,887-907`).
+
+The same `do_walk` is `w_cpwalk`'s body (`:363-379`), so a window's **frame** is
+likewise drawn once per piece of *its own* rectangle list — never over the
+window covering it. That is the second half of the same contract.
+
+Established by reading the EmuTOS sources above, and measured on the host rig
+`tos-api/tests/aes_desk_background.rs`, which drives the real AES entry points
+into a pixel buffer. Against the pre-fix build, all six of its assertions fail:
+
+| entry point | pixels the AES painted where EmuTOS paints none |
+|---|---|
+| `wind_close` (uncovers a lower window) | 101 184 of 101 184 of the lower window's work area |
+| `form_dial(FMD_FINISH)` over a window  | 101 184 of 101 184 |
+| `wind_open` over an existing window    | 69 264 of 71 416 of the *new* window's work area |
+| `wind_set(WF_CURRXYWH)`                | 10 266 of 69 360 |
+| mover drag, one step                   | the whole vacated strip, incl. the half another window owns |
+| any full-screen `form_dial(FMD_FINISH)`| 12 160 = 640 × 19, the menu row |
+
+### D-DESK-1 — the boot desktop is unchanged
+
+QEMU `raspi4b` + the SD image, boot to the desktop with the `C:\` window open.
+
+- **[E]** The screendump is **byte-identical** before and after: 0 of 307 200
+  pixels differ. The desktop paints its background tree over `gl_rfull` and its
+  menu bar over `gl_rmenu`, and with a single window the owner rectangle list is
+  the whole desktop rectangle minus that window — which is exactly the region
+  the old unclipped paint covered *and then* overdrew with the window frame.
+- **[E]** The menu bar is intact. It is drawn by `menu::install_menu_bar`, which
+  `desk::redraw_desktop` runs after the AES composite
+  (`kernel/src/desk/redraw.rs:206-213`) — the same order EmuTOS' desktop uses.
+
+### D-DESK-2 — a window no longer flashes the desktop background (real Pi 4)
+
+Two directory windows open, the lower one showing a listing. Close the top one;
+or dismiss a dialog that covered both; or open a second window over the first.
+
+- **[E]** The window underneath keeps its listing where it is *visible*. Before,
+  the whole damage rectangle — including the parts of the lower window that no
+  window covers — was painted with the desktop background (box **and icons**)
+  and only came back when the owner answered its `WM_REDRAW`. That flash is
+  gone; the AES now paints only the desktop's own pieces.
+- **[E]** The part of the lower window that the *closed* window had covered is
+  still stale until the owner repaints it — that is EmuTOS' behaviour too
+  (`w_redraw` posts a message, it does not paint), and our desktop answers it in
+  the same event turn.
+- **[E]** Desktop icons never appear inside a window, at any moment.
+
+### D-DESK-3 — dragging a window across another one (real Pi 4)
+
+Drag one directory window by its title bar across a second one.
+
+- **[E]** Over bare desktop: unchanged — the vacated L is repainted with the
+  background exactly as before.
+- **[E]** Over the other window: the background (and its icons) no longer
+  appears inside that window during the drag.
+- **[E] Known residue, reported, not fixed here:** NewTOS drags the window
+  *solid* (a `copy_rect` per step) where EmuTOS drags an XOR outline
+  (`gr_dragbox`, `aes/gemgrlib.c`). Each step's blit leaves the moved window's
+  own left/top border column behind inside the covered window, and nothing
+  repaints it until the drag settles — a thin comb trail for the length of the
+  drag, cleared by the `WM_MOVED` repaint on release. EmuTOS has no such state
+  because it moves the window once, at the end. Replacing the solid mover drag
+  with `gr_dragbox` (as the sizer drag was already replaced with `gr_rubwind`)
+  removes it; that is its own work item.
+
+### D-DESK-4 — the menu row is never repainted by the AES
+
+- **[E]** A full-screen `form_dial(FMD_FINISH)` — TeraDesk's `dsk_draw()` on a
+  program launch, `sdk/apps/teradesk/icon.c:241-249` — leaves the top 19 rows
+  exactly as they were, and the launched application's own `menu_bar()` paints
+  them. Before, the AES painted the desktop dither across them first, so the
+  menu bar blinked away and back on every launch and on every dialog dismissal
+  that used the full screen.
+- **[E]** Our desktop is unaffected in the steady state: it reinstalls its menu
+  bar after every whole-screen composite.
+
+### What is real-Pi-4-only, and why
+
+D-DESK-2 and D-DESK-3 need a mouse *and* `C:` at once, which no QEMU board
+offers (`raspi4b` has the SD, `virt` has the input). QEMU's contribution is
+D-DESK-1, the byte-identical no-regression screendump, plus D-DESK-4 which the
+host rig measures exactly. The pixel-level proof of the whole change is
+`tos-api/tests/aes_desk_background.rs` (6 cases), which drives `wind_open`,
+`wind_close`, `wind_set(WF_CURRXYWH)`, `form_dial(FMD_FINISH)` and a scripted
+mover drag into a framebuffer and counts what changed outside the region EmuTOS
+would repaint.

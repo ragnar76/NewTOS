@@ -526,6 +526,17 @@ fn desktop_pen(x: i16, y: i16) -> Pel {
 /// launched application sits on is the green 50 % dither, *not* white: the white
 /// screen is `sh_draw(cmd, TRUE)`'s one-shot `CLEAR_SCREEN`, which swaps the
 /// root's `ob_spec` and puts it straight back (`aes/gemshlib.c:269-286`).
+///
+/// It is the desktop rectangle, not the screen: `w_drawdesk` is one
+/// `do_walk(DESKWH, …)`, which starts with `rc_intersect(&gl_rfull, pc)`
+/// (`aes/gemwmlib.c:294-298`). `gl_rfull` is the screen **minus the menu row**
+/// (`aes/gemgraf.c:423-424`, set at `gsx_start` whether or not a menu bar is
+/// installed), so even a full-screen FMD_FINISH leaves the top `gl_hbox` rows
+/// exactly as they were — removing a menu bar does not repaint them either
+/// (`mn_bar`, `aes/gemmnlib.c:724-728`); installing one does. NewTOS' desktop
+/// repaints that strip with `menu::install_menu_bar` after its own whole-screen
+/// composite (`kernel/src/desk/redraw.rs:206-213`), exactly as EmuTOS' desktop
+/// does with `menu_bar()`.
 #[test]
 fn the_desktop_background_is_the_aes_desktop_tree_not_white() {
     let _guard = SERIAL.lock().unwrap_or_else(|e| e.into_inner());
@@ -547,7 +558,7 @@ fn the_desktop_background_is_the_aes_desktop_tree_not_white() {
 
     let mut wrong = 0usize;
     let mut first = None;
-    for y in 0..SCREEN_H as i16 {
+    for y in GL_HBOX..SCREEN_H as i16 {
         for x in 0..SCREEN_W as i16 {
             let got = host.raster.read_pixel(x, y);
             let want = desktop_pen(x, y);
@@ -567,6 +578,22 @@ fn the_desktop_background_is_the_aes_desktop_tree_not_white() {
          (gemwmlib.c:340-359, 1269-1271); {wrong} px differ, first {:?} \
          (x, y, want_pen, got_pen)",
         first
+    );
+
+    // …and the menu row is left alone: `do_walk` clips to `gl_rfull` first.
+    let mut touched = 0usize;
+    for y in 0..GL_HBOX {
+        for x in 0..SCREEN_W as i16 {
+            if host.raster.get_device_pixel(x, y) != UNPAINTED {
+                touched += 1;
+            }
+        }
+    }
+    assert_eq!(
+        touched, 0,
+        "w_drawdesk must not touch the menu row: do_walk intersects its clip with \
+         gl_rfull, which starts at gl_hbox = {GL_HBOX} \
+         (aes/gemwmlib.c:294-298, aes/gemgraf.c:412,423-424); {touched} px changed"
     );
 }
 
@@ -643,3 +670,8 @@ fn the_file_selector_undraws_itself() {
 }
 
 const WF_NEWDESK: i16 = 14;
+
+/// EmuTOS `gl_hbox` for the 8x16 system font: `gl_hchar + 3`
+/// (`aes/gemgraf.c:412`), hence the menu-bar height and the top edge of
+/// `gl_rfull` (`:423-424,427`).
+const GL_HBOX: i16 = 19;
