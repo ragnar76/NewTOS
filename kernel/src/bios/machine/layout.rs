@@ -61,6 +61,38 @@ pub const STRAM_IO_RESERVE: u64 = 2 * 1024 * 1024;
 /// this upper bound from `Mxalloc(-1, MX_STRAM)`.
 pub const STRAM_POOL_MAX: u64 = STRAM_SLOT_SIZE - STRAM_IO_RESERVE;
 
+/// Largest span of physical memory a single pool can manage.
+///
+/// The frame allocator keeps one statically sized bitmap per pool
+/// (`frames::MAX_FRAMES_PER_POOL` is derived from this constant), so this
+/// is one of the two points at which a truthful "there is more RAM"
+/// answer stops being usable (the other is [`TOS_MD_MAX_END`]).
+/// [`discover`] caps the TT-RAM pool here and records the remainder in
+/// [`MemoryMap::dram_unmanaged`] instead of letting `frames::init` abort
+/// the boot.
+///
+/// 1 GiB → 262 144 frames → 32 KiB of bitmap per pool. Raising it costs
+/// 32 KiB of `.bss` per additional GiB **per pool**; note that BDOS
+/// cannot describe a pool of 2 GiB or more anyway, because a TOS memory
+/// descriptor's length is a signed 32-bit `LONG` (EmuTOS limits its own
+/// alt-RAM detection the same way, `bios/memory2.c:56-59`).
+pub const POOL_MAX_BYTES: u64 = 1024 * 1024 * 1024;
+
+/// Highest exclusive end address a BDOS memory pool may have.
+///
+/// A TOS memory descriptor stores `m_start` and `m_length` as a signed
+/// 32-bit `LONG`, and BDOS computes `m_start + m_length`, so every byte a
+/// pool describes must live below `0x8000_0000`
+/// (`tos-api/src/bdos/mem/init.rs::seed_md` rejects anything else). This
+/// is the ceiling of the API contract, not our limitation: EmuTOS
+/// truncates its own alt-RAM detection for the same reason — *"We
+/// artificially limit TT-RAM detection to positive addresses to avoid
+/// shocking BDOS"* (`references/emutos/bios/memory2.c:56-59`) — and keeps
+/// booting rather than failing. [`discover`] does the same.
+///
+/// 4-KiB-aligned so the truncated pool still ends on a frame boundary.
+pub const TOS_MD_MAX_END: u64 = 0x7FFF_F000;
+
 /// Inclusive-exclusive physical address range.
 #[derive(Clone, Copy, Debug)]
 pub struct PhysRange {
@@ -101,8 +133,18 @@ pub struct MemoryMap {
     /// Logical TT-RAM pool. The rest of the usable DRAM above the
     /// ST-RAM pool, up to `dram.end`.
     pub ttram: PhysRange,
-    /// The full DRAM range as reported by the board.
+    /// The full DRAM range the kernel manages. Equal to what
+    /// [`MemoryMap::dram_source`] reported, minus any tail the TT-RAM
+    /// pool cannot cover (see [`MemoryMap::dram_unmanaged`]).
     pub dram: PhysRange,
+    /// Which authority the DRAM extent came from.
+    pub dram_source: DramSource,
+    /// Bytes of reported DRAM above [`MemoryMap::dram`] that this build
+    /// cannot manage, because the TT-RAM pool is bounded by both
+    /// [`POOL_MAX_BYTES`] (frame bitmap) and [`TOS_MD_MAX_END`] (TOS
+    /// memory-descriptor ABI). Zero on every machine whose report fits.
+    /// Reported on the boot console so the loss is never silent.
+    pub dram_unmanaged: u64,
     /// Stack guard page (Phase 03 D6). One 2-MiB block immediately
     /// below the kernel stack; left invalid in the page tables so a
     /// stack overflow takes a synchronous data abort instead of
@@ -265,31 +307,107 @@ pub fn emerg_stack_top_exclusive() -> u64 {
 // Discovery
 // ─────────────────────────────────────────────────────────────────────
 
+/// Where the DRAM extent in a [`MemoryMap`] came from. Reported on the
+/// boot console so a serial log always says which authority was believed.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum DramSource {
+    /// The board firmware answered a direct query (RPi4: VideoCore
+    /// mailbox property tag `0x0001_0005`, "Get ARM memory").
+    Firmware,
+    /// The `/memory@…` node of the device-tree blob the boot loader
+    /// handed us.
+    DeviceTree,
+    /// Neither authority was available or plausible — the compile-time
+    /// `board::DRAM_SIZE` was used.
+    BoardDefault,
+}
+
+impl DramSource {
+    /// Short label for the boot log.
+    pub const fn label(self) -> &'static str {
+        match self {
+            DramSource::Firmware => "firmware",
+            DramSource::DeviceTree => "device tree",
+            DramSource::BoardDefault => "compiled-in board default",
+        }
+    }
+}
+
+/// A DRAM extent as reported by an outside authority (firmware query or
+/// device tree), before validation against the board's address map.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct DramReport {
+    /// Physical base address of the reported memory.
+    pub start: u64,
+    /// Reported size in bytes.
+    pub size: u64,
+}
+
+/// Accept a reported extent only if it starts where this board's DRAM
+/// starts and is big enough to hold the ST-RAM slot; anything else would
+/// build an inconsistent map (the kernel image, the pools and the MMU
+/// block classification all assume `board::DRAM_START`).
+fn plausible(r: &DramReport) -> bool {
+    r.start == board::DRAM_START && r.size >= STRAM_SLOT_SIZE
+}
+
 /// Build the [`MemoryMap`] for the running board.
 ///
-/// `dtb_phys` is the physical address of the device-tree blob the
-/// firmware (or QEMU) loaded for us, or `None` if we are running
-/// without a DTB (e.g. host-side unit tests). When a valid DTB is
-/// present and contains a `/memory@…` node, its first bank overrides
-/// the compile-time `board::DRAM_END` so the kernel sees the actual
-/// installed RAM (Phase 03 D8). The board constants act as a fallback
-/// for the no-DTB and parse-failure paths.
+/// The DRAM extent is taken from the first authority that answers with a
+/// plausible extent, in this order:
 ///
-/// Pure function of board constants, linker symbols and the parsed
-/// DTB. No allocation, no MMIO.
-pub fn discover(dtb_phys: Option<usize>) -> MemoryMap {
-    // ---- DRAM extent: prefer DTB, fall back to board defaults. ----
+/// 1. `fw` — the board firmware's own answer, obtained by the caller
+///    before the memory map exists (RPi4: VideoCore mailbox, see
+///    [`crate::drivers::bcm2711::mailbox::get_memory`]). This is the only
+///    source that knows where the *ARM-visible* memory ends, i.e. where
+///    the GPU's `gpu_mem` reservation begins — allocating past that point
+///    would hand VideoCore-owned DRAM to `Malloc`.
+/// 2. `dtb_phys` — the `/memory@…` node of the device-tree blob the boot
+///    loader supplied, or `None` when there is none (e.g. host-side unit
+///    tests). Its first bank is used (Phase 03 D8).
+/// 3. The compile-time `board::DRAM_SIZE` constant.
+///
+/// The chosen source is recorded in [`MemoryMap::dram_source`] so the
+/// boot console can report it.
+///
+/// Pure function of board constants, linker symbols, the parsed DTB and
+/// the caller-supplied firmware report. No allocation, no MMIO.
+pub fn discover(dtb_phys: Option<usize>, fw: Option<DramReport>) -> MemoryMap {
+    // ---- DRAM extent: firmware, then DTB, then board default. ----
     let mut dram = PhysRange::new(board::DRAM_START, board::DRAM_END);
-    if let Some(phys) = dtb_phys {
+    let mut dram_source = DramSource::BoardDefault;
+
+    let dtb_report = dtb_phys.and_then(|phys| {
         // SAFETY: caller passes the firmware-supplied DTB pointer; the
         // parser bounds-checks the header before any further reads.
-        if let Some(mem) = unsafe { crate::arch::aarch64::dtb::parse_memory(phys) } {
-            // Only honour the DTB report if it covers the start the
-            // board expects — otherwise we'd build an inconsistent map.
-            if mem.start == board::DRAM_START && mem.size >= STRAM_SLOT_SIZE {
-                dram = PhysRange::new(mem.start, mem.start + mem.size);
-            }
-        }
+        unsafe { crate::arch::aarch64::dtb::parse_memory(phys) }
+            .map(|m| DramReport { start: m.start, size: m.size })
+    });
+
+    if let Some(r) = fw.filter(plausible) {
+        dram = PhysRange::new(r.start, r.start + r.size);
+        dram_source = DramSource::Firmware;
+    } else if let Some(r) = dtb_report.filter(plausible) {
+        dram = PhysRange::new(r.start, r.start + r.size);
+        dram_source = DramSource::DeviceTree;
+    }
+
+    // ---- Cap the TT-RAM pool at what we can actually manage. ----
+    // Two ceilings sit above a truthful "there is more RAM" answer, and
+    // neither may turn it into a boot failure:
+    //   * the frame allocator's per-pool bitmap is statically sized for
+    //     `POOL_MAX_BYTES` (`frames::MAX_FRAMES_PER_POOL`); and
+    //   * a TOS memory descriptor cannot describe a byte at or above
+    //     `TOS_MD_MAX_END` (signed 32-bit `LONG`).
+    // We manage up to the lower ceiling and report the remainder as
+    // unmanaged, instead of aborting in `frames::init` or
+    // `bdos::mem::init`.
+    let ttram_start = dram.start + STRAM_SLOT_SIZE;
+    let ttram_cap_end =
+        ttram_start.saturating_add(POOL_MAX_BYTES).min(TOS_MD_MAX_END);
+    let dram_unmanaged = dram.end.saturating_sub(ttram_cap_end);
+    if dram_unmanaged > 0 {
+        dram = PhysRange::new(dram.start, ttram_cap_end);
     }
 
     let img_start = kernel_image_start();
@@ -328,7 +446,16 @@ pub fn discover(dtb_phys: Option<usize>) -> MemoryMap {
     debug_assert!(guard_start.is_multiple_of(2 * 1024 * 1024));
     let stack_guard = PhysRange::new(guard_start, guard_end);
 
-    MemoryMap { kernel, stram, ttram, dram, stack_guard, mmio: board::MMIO }
+    MemoryMap {
+        kernel,
+        stram,
+        ttram,
+        dram,
+        dram_source,
+        dram_unmanaged,
+        stack_guard,
+        mmio: board::MMIO,
+    }
 }
 
 // ─────────────────────────────────────────────────────────────────────

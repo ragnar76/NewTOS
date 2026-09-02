@@ -181,6 +181,59 @@ size.
 
 ---
 
+## 3a. Memory tags — how much DRAM does the ARM get? — source #4
+
+The same property channel answers the "how much RAM is there" question.
+Two complementary tags, both in the *Hardware* group of the firmware
+*Mailbox property interface* page (source #4):
+
+| Tag id | Name | Request value | Response value |
+|--------|------|---------------|----------------|
+| `0x0001_0005` | Get ARM memory | (none, 0 B) | `u32 base, u32 size` (8 B) |
+| `0x0001_0006` | Get VC memory | (none, 0 B) | `u32 base, u32 size` (8 B) |
+
+Both entries carry the same verbatim footnote in the reference:
+
+> *"Future formats may specify multiple base+size combinations."*
+
+Three consequences, all of them properties of the documented interface,
+not assumptions:
+
+1. **The tag reports the split, not the fitted total.** "ARM memory" is
+   the share the firmware hands to the CPU; "VC memory" is the GPU's
+   share (`gpu_mem` in `config.txt`). The ARM share is exactly what an OS
+   may allocate from — the VC share holds the framebuffer, codec buffers
+   and firmware housekeeping and must never be handed to `Malloc`.
+2. **A response may be longer than 8 bytes.** The tag's code word is
+   `b31 | value length in bytes` (§2), so the response length — not a
+   fixed 8 — says how many `(base, size)` pairs came back. A reader must
+   therefore offer a value buffer sized for several pairs and honour the
+   returned length. (The reference also warns: *"Response length
+   indicates the desired length even when it is longer than the buffer
+   size filled"* — so clamp to the buffer you provided.)
+3. **A single pair cannot describe more than 4 GiB**, both fields being
+   `u32`. On a machine with more RAM than one pair can express, the
+   answer is necessarily either several pairs or a truncated view.
+
+Unanswered tags are how a mailbox that does not implement a tag presents
+itself: *"Unknown tags are ignored (the response bit will not be set)"*
+(§2). Checking the buffer's overall response code is therefore **not**
+enough for a query — the tag's own `b31` must be tested as well.
+
+**Observed on QEMU `raspi4b`** (QEMU 11, `qemu-system-aarch64 -M raspi4b`,
+2026-09-02): one pair, `ARM = 0x0000_0000 + 960 MiB`,
+`VC = 0x3C00_0000 + 64 MiB` — sum exactly 1 GiB — and the answer does
+**not** change when the machine is given `-m 2G`. The emulated firmware
+therefore describes only the legacy low-1-GiB window. Whether the real
+Pi-4 firmware answers the same way on a 4 GB board, or with several
+pairs, is a hardware question; the kernel prints every pair it receives
+(`kernel/src/lib.rs::firmware_dram`) so one serial log settles it.
+
+Driver: `kernel/src/drivers/bcm2711/mailbox.rs::get_memory`, one message
+carrying both tags.
+
+---
+
 ## 4. Framebuffer bus → ARM address conversion
 
 The `allocate` tag returns a **VC bus address**, not an ARM physical

@@ -37,10 +37,19 @@ use crate::sync::SpinMutex;
 /// by [`crate::arch::aarch64::mmu`].
 pub const FRAME_SIZE: u64 = 4096;
 
-/// Hard cap for the number of frames a single pool can manage.
+/// Hard cap for the number of frames a single pool can manage, derived
+/// from [`crate::bios::machine::layout::POOL_MAX_BYTES`] — the single
+/// place that defines how much memory one pool may span.
 /// 1 GiB / 4 KiB = 262_144 frames → 4096 × `u64` = 32 KiB bitmap per
 /// pool, two pools = 64 KiB BSS for the allocator.
-const MAX_FRAMES_PER_POOL: usize = (1024 * 1024 * 1024) / FRAME_SIZE as usize;
+///
+/// [`crate::bios::machine::layout::discover`] already caps `map.ttram` at
+/// the same bound (a machine that reports more RAM keeps booting, with
+/// the remainder reported as unmanaged), so the `assert!` in
+/// [`Bitmap::init`] is a belt-and-braces invariant check, not the
+/// mechanism that handles large machines.
+const MAX_FRAMES_PER_POOL: usize =
+    (crate::bios::machine::layout::POOL_MAX_BYTES / FRAME_SIZE) as usize;
 const BITMAP_WORDS: usize = MAX_FRAMES_PER_POOL / 64;
 
 /// Logical pool identifier. Maps to the `Mxalloc` mode flag (Phase 06).

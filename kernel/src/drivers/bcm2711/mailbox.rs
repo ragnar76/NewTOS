@@ -177,3 +177,145 @@ pub fn notify_xhci_reset(pcie_dev: u32) -> bool {
         call_property(va, pa, 7 * 4)
     }
 }
+
+// ─────────────────────────────────────────────────────────────────────
+// Memory tags: "Get ARM memory" (0x00010005) / "Get VC memory" (0x00010006)
+// ─────────────────────────────────────────────────────────────────────
+
+/// Maximum number of `(base, size)` pairs we accept from a firmware
+/// memory tag.
+///
+/// The documented response is a single pair, but the property-interface
+/// reference explicitly reserves the right to answer with more:
+/// *"Future formats may specify multiple base+size combinations."*
+/// (`docs/hardware/mailbox-framebuffer.md` §3a, from the firmware
+/// *Mailbox property interface* documentation.) We therefore offer a value
+/// buffer sized for eight pairs and let the tag's **response length**
+/// decide how many the firmware actually filled in.
+pub const MAX_MEMORY_REGIONS: usize = 8;
+
+/// One `(base, size)` region as reported by a firmware memory tag.
+/// Both fields are `u32` on the wire; widened here because every caller
+/// works in 64-bit physical addresses.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub struct MemRegion {
+    /// Physical base address of the region, in bytes.
+    pub base: u64,
+    /// Size of the region, in bytes.
+    pub size: u64,
+}
+
+/// The VideoCore firmware's answer to "how is the DRAM split".
+///
+/// `arm` is what the tag calls *ARM memory* — the part of the fitted DRAM
+/// the firmware hands to the CPU, i.e. total minus the `gpu_mem` split
+/// (the complementary `vc` region). It is exactly the extent the kernel
+/// may allocate from; the VideoCore owns `vc` (framebuffer, codecs,
+/// firmware housekeeping) and we must not hand it to `Malloc`.
+#[derive(Clone, Copy, Debug)]
+pub struct MemoryReport {
+    /// ARM-visible regions, `arm_len` of them are valid.
+    pub arm: [MemRegion; MAX_MEMORY_REGIONS],
+    /// Number of valid entries in [`Self::arm`] (0 if the firmware did
+    /// not answer that tag).
+    pub arm_len: usize,
+    /// VideoCore-owned region, if the firmware answered that tag.
+    pub vc: Option<MemRegion>,
+}
+
+// Word indices into `MEMORY_BUF` (see the buffer format in
+// `docs/hardware/mailbox-framebuffer.md` §2).
+const M_ARM_TAG: usize = 2; // tag id
+const M_ARM_LEN: usize = 3; // value buffer size we provide, bytes
+const M_ARM_CODE: usize = 4; // request/response code
+const M_ARM_VAL: usize = 5; // value buffer: MAX_MEMORY_REGIONS × (base, size)
+const M_VC_TAG: usize = M_ARM_VAL + 2 * MAX_MEMORY_REGIONS;
+const M_VC_LEN: usize = M_VC_TAG + 1;
+const M_VC_CODE: usize = M_VC_TAG + 2;
+const M_VC_VAL: usize = M_VC_TAG + 3; // value buffer: (base, size)
+const M_END: usize = M_VC_VAL + 2; // end tag
+/// Buffer length in words: the end tag plus padding, rounded up so the
+/// byte length is a multiple of 16 (the property buffer's alignment unit).
+const MEMORY_BUF_WORDS: usize = (M_END + 1 + 3) & !3;
+
+/// Bit 31 of a tag's code word: set in a response, clear in a request.
+const TAG_RESPONSE: u32 = 0x8000_0000;
+
+/// 16-byte-aligned property buffer for the memory query (the mailbox
+/// write OR's the channel into the low 4 bits, so the address must be
+/// aligned).
+#[repr(C, align(16))]
+struct MemoryBuf {
+    words: [u32; MEMORY_BUF_WORDS],
+}
+static mut MEMORY_BUF: MemoryBuf = MemoryBuf { words: [0; MEMORY_BUF_WORDS] };
+
+/// Ask the VideoCore firmware how the fitted DRAM is split between the
+/// ARM and the GPU — property tags `0x0001_0005` ("Get ARM memory") and
+/// `0x0001_0006` ("Get VC memory"), sent as one two-tag message.
+///
+/// Reference: `docs/hardware/mailbox-framebuffer.md` §3a (tag ids, value
+/// layouts, response-length rule), extracted from the firmware *Mailbox
+/// property interface* documentation. Per CLAUDE.md Rule 6 nothing here
+/// is from memory.
+///
+/// Returns `None` when the transaction fails outright or the firmware
+/// leaves the ARM tag unanswered (an unknown tag comes back with its
+/// response bit clear — that is how a mailbox that does not implement the
+/// tag, e.g. an emulator, presents itself). The caller must then fall
+/// back to another source; it must never treat `None` as "zero memory".
+#[allow(clippy::deref_addrof)]
+pub fn get_memory() -> Option<MemoryReport> {
+    // SAFETY: boot CPU, single-threaded; exclusive use of the static buffer.
+    unsafe {
+        {
+            let b = &mut (*core::ptr::addr_of_mut!(MEMORY_BUF)).words;
+            b.fill(0);
+            b[0] = (MEMORY_BUF_WORDS * 4) as u32; // total size in bytes
+            b[1] = 0; // request code
+            b[M_ARM_TAG] = 0x0001_0005; // PROPTAG_GET_ARM_MEMORY
+            b[M_ARM_LEN] = (MAX_MEMORY_REGIONS * 8) as u32;
+            b[M_ARM_CODE] = 0; // request
+            b[M_VC_TAG] = 0x0001_0006; // PROPTAG_GET_VC_MEMORY
+            b[M_VC_LEN] = 8;
+            b[M_VC_CODE] = 0; // request
+            b[M_END] = 0; // end tag
+        }
+
+        let va = (&raw const MEMORY_BUF) as usize;
+        let pa = crate::arch::aarch64::mmu::va_to_pa(va as u64) as u32;
+        if !call_property(va, pa, MEMORY_BUF_WORDS * 4) {
+            return None;
+        }
+
+        let b = &(*(&raw const MEMORY_BUF)).words;
+
+        // The tag's response code carries the response bit plus the
+        // *value length in bytes*. A firmware that does not know the tag
+        // leaves the bit clear.
+        let arm_code = b[M_ARM_CODE];
+        if arm_code & TAG_RESPONSE == 0 {
+            return None;
+        }
+        let arm_bytes =
+            ((arm_code & !TAG_RESPONSE) as usize).min(MAX_MEMORY_REGIONS * 8);
+        let arm_len = arm_bytes / 8;
+        if arm_len == 0 {
+            return None;
+        }
+        let mut arm = [MemRegion::default(); MAX_MEMORY_REGIONS];
+        for (i, r) in arm.iter_mut().enumerate().take(arm_len) {
+            r.base = b[M_ARM_VAL + 2 * i] as u64;
+            r.size = b[M_ARM_VAL + 2 * i + 1] as u64;
+        }
+
+        let vc_code = b[M_VC_CODE];
+        let vc = if vc_code & TAG_RESPONSE != 0 && (vc_code & !TAG_RESPONSE) >= 8 {
+            Some(MemRegion { base: b[M_VC_VAL] as u64, size: b[M_VC_VAL + 1] as u64 })
+        } else {
+            None
+        };
+
+        Some(MemoryReport { arm, arm_len, vc })
+    }
+}

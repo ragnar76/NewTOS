@@ -533,9 +533,194 @@ Fenster bindet), wohl aber an §7.1 und an der Reihenfolge von §7.2.
 | F3 | EL0-`Mxalloc(-1)` meldete eine um eine Seite zu große, nicht allozierbare Größe | Vertragsbruch | **gefixt** (§8.2) |
 | F4 | TT-RAM-Meldung = Fenster-Rest, nicht Poolgröße; App-Decke 16 MiB | HW-/MMU-Ebene, ADR-021 | offen, §9.2 |
 | F5 | Fenster-Cursor läuft nie zurück; Zahl sinkt monoton, `Mfree` gibt VA nicht frei | HW-/MMU-Ebene, ADR-021 (dort als Deferral notiert) | offen, §9.2 |
-| F6 | Nur die erste DTB-Speicherbank wird gelesen → ≥3 GiB einer 4-GB-Maschine ungenutzt | HW-Ebene | offen, §7.1 |
-| F7 | `frames`-Bitmap-`assert!` bricht den Boot bei Pool > 1 GiB ab | Robustheit | offen, §7.2 — **Vorbedingung für F6** |
+| F6 | Nur die erste DTB-Speicherbank wird gelesen → ≥3 GiB einer 4-GB-Maschine ungenutzt | HW-Ebene | **teilweise** (§12): die Grenze kommt jetzt von der Firmware statt vom DTB und schließt GPU-Speicher aus; mehrere nicht zusammenhängende Bänke weiterhin offen |
+| F7 | `frames`-Bitmap-`assert!` bricht den Boot bei Pool > 1 GiB ab | Robustheit | **gefixt** (§12.5): Pool wird gekappt und der Rest protokolliert; der zweite Deckel (`Long`-ABI) gleich mit |
 | F8 | 8,08 MiB des 14-MiB-ST-RAM-Fensters gehen an das OS, davon 3,66 MiB Padding/Guard; Wert springt in 2-MiB-Stufen | Layout | offen, §9.1 |
 | F9 | Boot-Splash zeigt Pool-Totale; EmuTOS' `initinfo` zeigt `phystop` bzw. `total_alt_ram()` (`bios/initinfo.c:277,279`) | kosmetische EmuTOS-Abweichung | offen, nicht angefasst (Screendump-Referenzen) |
 | F10 | Basepage-TPA ist immer 4 MiB (`bdos/process/arena.rs:52`), unabhängig von der Maschine; EmuTOS' `alloc_tpa` gibt dem Kind den **ganzen** größten freien Block (`bdos/proc.c:460-501`) und lässt es selbst `Mshrink`en | EmuTOS-Abweichung | offen, gehört zu BB2/`Pexec` |
 
+
+---
+
+## 12. Nachtrag 2026-09-02: die Firmware fragen statt dem DTB glauben
+
+> Auftrag: die offene Frage aus §10 („wie viel DRAM meldet der echte Pi 4?")
+> nicht raten, sondern die Raspberry-Pi-Firmware selbst fragen. Umgesetzt in
+> `kernel/src/drivers/bcm2711/mailbox.rs::get_memory` (:268),
+> `kernel/src/lib.rs::firmware_dram` (:373) und
+> `kernel/src/bios/machine/layout.rs::discover` (:373).
+
+### 12.1 Die Primärquelle und was sie sagt
+
+Firmware-Dokumentation *Mailbox property interface* (raspberrypi/firmware
+Wiki, Quelle #4 in `docs/hardware/mailbox-framebuffer.md`; dort neu als
+**§3a** aufgenommen). Wörtlich:
+
+```text
+#### Get ARM memory          #### Get VC memory
+ * Tag: 0x00010005            * Tag: 0x00010006
+ * Request: Length: 0         * Request: Length: 0
+ * Response:                  * Response:
+   * Length: 8                  * Length: 8
+   * Value:                     * Value:
+     * u32: base address          * u32: base address
+     * u32: size in bytes         * u32: size in bytes
+
+Future formats may specify multiple base+size combinations.
+```
+
+Drei Aussagen, die daraus **folgen** (nicht angenommen sind):
+
+1. Der Tag meldet die **Aufteilung**, nicht den bestückten Gesamtspeicher:
+   „ARM memory" ist der Anteil, den die Firmware der CPU gibt, „VC memory"
+   der GPU-Anteil (`gpu_mem`). Genau der ARM-Anteil ist die Zahl, die die
+   Pool-Obergrenze bestimmen darf — der VC-Anteil enthält u. a. den
+   Framebuffer.
+2. Die Antwort kann **länger als 8 Byte** sein; das Längenfeld im
+   Tag-Code-Wort (`b31 | Länge`) sagt, wie viele Paare kamen. Unser Puffer
+   bietet acht Paare an und liest so viele, wie die Firmware füllt.
+3. Ein einzelnes Paar kann wegen der `u32`-Felder **maximal 4 GiB**
+   beschreiben.
+
+Ebenfalls aus derselben Quelle: *„Unknown tags are ignored (the response
+bit will not be set)"* — deshalb prüft `get_memory` das `b31` **des Tags**,
+nicht nur den Gesamt-Antwortcode. Eine Mailbox ohne diesen Tag liefert
+damit sauber `None` statt einer erfundenen Zahl.
+
+### 12.2 Was jetzt die Pool-Grenze bestimmt
+
+`discover` nimmt die erste Auskunft, die plausibel ist (`plausible`,
+layout.rs:348 — Start muss `board::DRAM_START` sein, Größe ≥ 16 MiB):
+
+| Reihenfolge | Quelle | Log-Kennzeichnung |
+|---|---|---|
+| 1 | Firmware-Mailbox (`0x0001_0005`) | `source: firmware` |
+| 2 | DTB `/memory@…`, erste Bank (wie bisher) | `source: device tree` |
+| 3 | Compile-Zeit-Konstante `board::DRAM_SIZE` | `source: compiled-in board default` |
+
+Meldet die Firmware mehrere Bänke, wird eine **direkt anschließende** Bank
+angehängt; eine nicht-zusammenhängende Bank wird protokolliert und bleibt
+ungenutzt (sie bräuchte eine zweite Region im Frame-Allokator, EmuTOS'
+Äquivalent wäre `xmaddalt` — F6, weiterhin offen).
+
+`board-qemu-virt` hat keine VideoCore-Mailbox; dort schreibt der Kernel
+`firmware: no VideoCore mailbox on this board — device tree decides` und
+der DTB-Pfad gilt unverändert (`lib.rs:417`).
+
+### 12.3 Messung: QEMU `raspi4b`
+
+```text
+[mm] firmware: ARM memory bank 0: 0x0000000000000000 + 1006632960 bytes (960 MiB)
+[mm] firmware: VC memory: 0x000000003c000000 + 67108864 bytes (64 MiB)
+[mm] device tree: no usable /memory node (blob invalid or absent)
+[mm]   DRAM  : 0x0000000000000000..0x000000003c000000 (1006632960 bytes) — source: firmware
+[mm]   TT-RAM: 0x0000000001000000..0x000000003c000000 (989855744 bytes)
+```
+
+ARM + VC = **exakt 1 GiB**, und die Antwort ändert sich **nicht**, wenn die
+Maschine mit `-m 2G` läuft. Die emulierte Firmware beschreibt also nur das
+alte 1-GiB-Fenster. Ob die echte Pi-4-Firmware auf einem 4-GB-Board
+genauso antwortet oder mehrere Paare liefert, ist damit **nicht**
+entschieden — aber jede Antwort steht jetzt wörtlich im Bootlog (§12.6).
+
+### 12.4 Der eigentliche Gewinn: wir hatten GPU-Speicher im TT-RAM-Pool
+
+Vorher (HEAD `be955c0`, gleicher QEMU-Lauf) griff auf `raspi4b` der
+1-GiB-Compile-Default, weil der DTB unbrauchbar ist:
+
+```text
+[mm]   TT-RAM: 0x0000000001000000..0x0000000040000000   (vorher)
+[mm]   TT-RAM: 0x0000000001000000..0x000000003c000000   (jetzt)
+```
+
+Der Bereich `0x3c000000..0x40000000`, den der alte Pool mitverwaltete, ist
+**genau der VC-Anteil**, den dieselbe Firmware meldet — und dort liegt der
+Framebuffer: eine temporäre Sonde in `framebuffer.rs` (Ausgabe
+`[fbprobe] bus=0x3c100000 phys=0x3c100000 size=1228800`, Sonde danach
+zurückgebaut) zeigt ihn bei `0x3C10_0000..0x3C23_2800`, also mitten im
+alten Pool. `Malloc` konnte diese Seiten vergeben. Das ist mit der
+Firmware-Auskunft strukturell erledigt, nicht nur zufällig.
+
+Kehrseite auf dem echten Pi: mit `gpu_mem=256` (`boot/rpi4/config.txt:25`)
+ist der ARM-Anteil um 256 MiB kleiner als der bisherige 1-GiB-Default. Das
+ist die korrekte Zahl, kein Verlust — wer den Speicher zurück will, senkt
+`gpu_mem` (Raspberry-Pi-Doku: auf dem Pi 4 ist `76` das empfohlene
+Maximum, weil die 3D-Einheit eine eigene MMU hat und dynamisch aus dem
+OS-Speicher alloziert).
+
+### 12.5 F7 erledigt — und der zweite Deckel gleich mit
+
+§7.2 nennt zwei harte Obergrenzen über einer wahrheitsgemäßen Auskunft.
+Beide brechen jetzt den Boot **nicht** mehr ab, sondern kappen den Pool und
+protokollieren den Rest (`layout.rs:396-410`):
+
+* **Frame-Bitmap**, `POOL_MAX_BYTES` = 1 GiB pro Pool (layout.rs:78; die
+  bisherige Konstante in `frames.rs:51` leitet sich jetzt daraus ab, eine
+  Quelle statt zweier). Der `assert!` in `frames::init` bleibt als
+  Invariantenprüfung stehen, ist aber nicht mehr der Mechanismus.
+* **`Long`-ABI**, `TOS_MD_MAX_END` = `0x7FFF_F000` (layout.rs:93). Ein
+  TOS-`MD` speichert `m_start`/`m_length` als vorzeichenbehaftete 32 Bit
+  (`tos-api/src/bdos/mem/init.rs::seed_md`), also muss der Pool unter
+  `0x8000_0000` enden. **Das ist EmuTOS-Verhalten, kein Notnagel:** EmuTOS
+  bricht seine Alt-RAM-Erkennung aus demselben Grund ab — *„We artificially
+  limit TT-RAM detection to positive addresses to avoid shocking BDOS"*
+  (`references/emutos/bios/memory2.c:56-59`) — und bootet weiter.
+
+Nachweis auf `qemu-virt` mit `-m 2G` (dort ist der DTB die Quelle und
+meldet die vollen 2 GiB):
+
+```text
+vorher:  [PANIC] frames: pool too large for static bitmap
+           at kernel/src/bios/machine/frames.rs:133:9
+jetzt:   [mm]   DRAM  : 0x40000000..0x7ffff000 (1073737728 bytes) — source: device tree
+         [mm]   1073745920 bytes above 0x000000007ffff000 NOT managed
+                (limits: 1073741824 bytes per pool bitmap,
+                 TOS descriptor end < 0x7ffff000)
+         …
+         [desk] desktop up
+```
+
+(Mit nur der Bitmap-Kappung endete der Pool bei `0x8100_0000` und der Boot
+starb eine Stufe später in `bdos::mem::init` mit `AddressOutOfRange` — der
+zweite Deckel ist also nicht theoretisch.)
+
+Der Standardlauf ist unverändert: `qemu-virt -m 272M` liefert weiterhin
+`BDOS pools: ST-RAM 0x40814000+6209536 TT-RAM 0x419e9000+258043904`, exakt
+die Zahlen aus §2.2.
+
+### 12.6 Was der Bootlog auf dem echten Pi zeigen wird
+
+Die fünf Zeilen aus §10 sind durch diese hier ersetzt bzw. ergänzt; sie
+stehen unmittelbar nach `Phase 02 reached.`:
+
+```text
+[mm] DTB at 0x…                       ← oder „no DTB — using compiled-in DRAM size"
+[mm] firmware: ARM memory bank 0: 0x… + N bytes (M MiB)   ← die gesuchte Zahl
+[mm] firmware: ARM memory bank 1: …                        ← nur falls mehrere
+[mm] firmware: VC memory: 0x… + N bytes (M MiB)
+[mm] device tree: /memory first bank: 0x… + N bytes (M MiB)  ← zweite Meinung
+[mm]   DRAM  : 0x…..0x… (N bytes) — source: firmware|device tree|compiled-in board default
+[mm]   … NOT managed (…)              ← nur falls die Antwort größer ist als ein Pool
+[mm]   TT-RAM: 0x01000000..0x…
+```
+
+Damit beantwortet **ein** Lauf drei Fragen auf einmal:
+
+1. Wie groß ist der ARM-Anteil wirklich (erwartet mit `gpu_mem=256`:
+   `0x30000000` = 768 MiB — **Erwartung, nicht Messung**).
+2. Meldet die Firmware auf einem 4-GB-Board mehrere Bänke? Dann steht
+   `bank 1` im Log, und F6 bekommt eine belastbare Grundlage.
+3. Patcht `start4.elf` den DTB tatsächlich (§6.4)? Die `device tree:`-Zeile
+   sagt es direkt.
+
+### 12.7 Was weiterhin offen ist
+
+* **F6 bleibt offen.** Wenn die Firmware nur den ARM-Anteil unterhalb 1 GiB
+  meldet, sind ≥ 3 GB einer 4-GB-Maschine weiter unsichtbar. Der Weg dahin
+  ist nicht „noch eine Konstante", sondern eine **zweite, nicht
+  zusammenhängende Region** im Frame-Allokator plus ein zweites Seed-`MD`
+  (EmuTOS: `xmaddalt`) — und darüber liegt ohnehin `TOS_MD_MAX_END`, d. h.
+  mehr als knapp 2 GiB kann ein TOS-`MD` nie beschreiben.
+* **Die App sieht davon nichts.** Die 16-MiB-EL0-Fenstergrenze (F4/F5,
+  §9.2) ist von dieser Änderung unberührt und bleibt die Zahl, die
+  `Mxalloc(-1, MX_TTRAM)` an eine Anwendung liefert.

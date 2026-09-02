@@ -217,9 +217,17 @@ extern "C" fn kernel_main_rust(dtb_phys: usize) -> ! {
         kprintln!("[mm] no DTB — using compiled-in DRAM size");
     }
 
+    // Ask the board firmware how much DRAM it actually gives us. Runs
+    // before the memory map exists because the answer *is* the map's
+    // upper bound; the Stage-1 boot tables already cover DRAM and MMIO,
+    // so the mailbox is reachable here.
+    let fw_dram = firmware_dram();
+    report_dtb_memory(dtb);
+
     // Discover the physical memory map and dump it for visibility.
-    // Pure function — safe to call this early (no MMIO, no allocation).
-    let map = bios::machine::layout::discover(dtb);
+    // Pure function of the board constants, the DTB and the firmware
+    // answer above (no MMIO, no allocation of its own).
+    let map = bios::machine::layout::discover(dtb, fw_dram);
     print_memory_map(&map);
 
     // Replace the Stage-1 boot tables (1-GiB blocks, both TTBRs
@@ -344,9 +352,110 @@ extern "C" fn kernel_main_rust(dtb_phys: usize) -> ! {
     arch::aarch64::halt();
 }
 
+/// Ask the board firmware how much DRAM it gives the ARM, and log the
+/// raw answer.
+///
+/// RPi4: VideoCore mailbox property tags `0x0001_0005` ("Get ARM
+/// memory") and `0x0001_0006` ("Get VC memory") — see
+/// `docs/hardware/mailbox-framebuffer.md` §3a. The ARM tag reports the
+/// part of the fitted DRAM the firmware hands to the CPU, i.e. the
+/// installed RAM minus the `gpu_mem` split, which is exactly the extent
+/// we may allocate from. The documented response is one `(base, size)`
+/// pair with the reservation that a future firmware may answer with
+/// several, so contiguous further banks extend the extent and
+/// non-contiguous ones are logged and left alone (managing a second,
+/// detached bank needs an `xmaddalt`-style second region — not part of
+/// this change).
+///
+/// Returns `None` when the firmware does not answer; the caller then
+/// falls back to the device tree (`layout::discover`).
+#[cfg(feature = "board-rpi4")]
+fn firmware_dram() -> Option<bios::machine::layout::DramReport> {
+    let report = match drivers::bcm2711::mailbox::get_memory() {
+        Some(r) => r,
+        None => {
+            kprintln!("[mm] firmware: VideoCore did not answer the memory tag");
+            return None;
+        }
+    };
+
+    for (i, r) in report.arm.iter().take(report.arm_len).enumerate() {
+        kprintln!(
+            "[mm] firmware: ARM memory bank {}: 0x{:016x} + {} bytes ({} MiB)",
+            i, r.base, r.size, r.size / (1024 * 1024),
+        );
+    }
+    match report.vc {
+        Some(r) => kprintln!(
+            "[mm] firmware: VC memory: 0x{:016x} + {} bytes ({} MiB)",
+            r.base, r.size, r.size / (1024 * 1024),
+        ),
+        None => kprintln!("[mm] firmware: VC memory: not reported"),
+    }
+
+    let first = report.arm[0];
+    let mut end = first.base + first.size;
+    for r in report.arm.iter().take(report.arm_len).skip(1) {
+        if r.size == 0 {
+            continue;
+        }
+        if r.base == end {
+            end = r.base + r.size;
+        } else {
+            kprintln!(
+                "[mm] firmware: ARM bank at 0x{:016x} is not contiguous — not managed",
+                r.base,
+            );
+        }
+    }
+    Some(bios::machine::layout::DramReport { start: first.base, size: end - first.base })
+}
+
+/// QEMU `virt` has no VideoCore and therefore no firmware to ask — the
+/// device tree QEMU hands us in `x0` is the authority on this board.
+#[cfg(feature = "board-qemu-virt")]
+fn firmware_dram() -> Option<bios::machine::layout::DramReport> {
+    kprintln!("[mm] firmware: no VideoCore mailbox on this board — device tree decides");
+    None
+}
+
+/// Log what the device tree says about memory, whether or not it ends up
+/// being the source used. On a Raspberry Pi this is the second opinion
+/// against the firmware answer (the `.dtb` on the card carries a zero-
+/// sized `/memory@0`; the boot firmware patches the real banks in).
+fn report_dtb_memory(dtb_phys: Option<usize>) {
+    let Some(phys) = dtb_phys else { return };
+    // SAFETY: the firmware/boot loader supplied this pointer; the parser
+    // validates the header before any further read.
+    match unsafe { arch::aarch64::dtb::parse_memory(phys) } {
+        Some(m) => kprintln!(
+            "[mm] device tree: /memory first bank: 0x{:016x} + {} bytes ({} MiB)",
+            m.start, m.size, m.size / (1024 * 1024),
+        ),
+        None => kprintln!("[mm] device tree: no usable /memory node (blob invalid or absent)"),
+    }
+}
+
 /// Pretty-print the physical memory map on the boot console.
 fn print_memory_map(map: &bios::machine::layout::MemoryMap) {
     kprintln!("[mm] memory map:");
+    kprintln!(
+        "[mm]   DRAM  : 0x{:016x}..0x{:016x} ({} bytes) — source: {}",
+        map.dram.start,
+        map.dram.end,
+        map.dram.len(),
+        map.dram_source.label(),
+    );
+    if map.dram_unmanaged != 0 {
+        kprintln!(
+            "[mm]   {} bytes above 0x{:016x} NOT managed \
+             (limits: {} bytes per pool bitmap, TOS descriptor end < 0x{:x})",
+            map.dram_unmanaged,
+            map.dram.end,
+            bios::machine::layout::POOL_MAX_BYTES,
+            bios::machine::layout::TOS_MD_MAX_END,
+        );
+    }
     print_range("kernel", &map.kernel);
     print_range("ST-RAM", &map.stram);
     print_range("TT-RAM", &map.ttram);
