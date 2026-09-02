@@ -938,3 +938,109 @@ work area and the vacated background intact. The pixel-level proof of D-WORK-1
 and D-WORK-2 is the host test, which drives the same AES entry points
 (`wind_set(WF_INFO)`, `wind_set(WF_TOP)`, a `evnt_multi` click on a covered
 window) into a framebuffer and counts the changed pixels.
+
+---
+
+## Round 4 predictions — the two QED undraw defects (2026-09-02)
+
+Written **before** the hardware run, against the change described below. Two
+symptoms reported on a real Pi 4 with QED launched from TeraDesk: QED's
+background is white instead of the desktop background, and the file selector
+stays on screen after a file has been picked. They do **not** share a cause.
+
+### The two mechanisms
+
+**D-BG-1 — `w_drawdesk`'s fallback root was white.** TeraDesk hands the screen
+to a GEM application by un-registering its own background tree and asking the
+AES to repaint the desktop rectangle: `wind_set(0, WF_NEWDESK, NULL, 0)`
+(`sdk/apps/teradesk/startprg.c:264`) followed by `dsk_draw()`
+(`startprg.c:294`), which is nothing but `form_dial(FMD_START)` +
+`form_dial(FMD_FINISH)` over `xd_desk` (`sdk/apps/teradesk/icon.c:241-249`;
+`xd_desk` = `wind_get(0, WF_WORKXYWH)`, `main.c:1145`). EmuTOS answers the
+FMD_FINISH with `w_drawdesk(pt)` (`aes/gemfmlib.c:375-378`), and `w_drawdesk`
+with `gl_newdesk == NULL` draws `gl_wtree[ROOT]` at depth 0
+(`aes/gemwmlib.c:340-359`) — a `G_BOX` whose `ob_spec` `wm_init` copied from the
+AES's own built-in DESKTOP tree, `4419L` = `0x1143`, pattern 4 in colour 3
+(`aes/gemwmlib.c:1268-1271`, `aes/gem_rsc.c:551-556`), with its low byte
+replaced by the `.INF` `#Q` background when there is one
+(`set_aes_background`, `aes/geminit.c:635-641`, run before `wm_start` at
+`:719-730`). We drew a solid **white** box there
+(`tos-api/src/aes/window.rs`, `FALLBACK_ROOT_OBSPEC = 0x0070`). White belongs to
+`sh_draw(cmd, TRUE)`, which swaps the DESKTOP root's `ob_spec` for
+`CLEAR_SCREEN` = `0x0000`, draws once and puts the old spec straight back
+(`aes/gemshlib.c:64,269-286`) — a one-shot, not a state.
+
+**D-FSEL-1 — `fsel_input` never called `fm_dial`.** QED opens a file through
+cflib's `select_file`, which calls `fsel_exinput`/`fsel_input`
+(`sdk/cflib/cflib-21/filesel.c:255-257`). EmuTOS' `fs_input` brackets the whole
+dialog with `fm_dial(FMD_START, &gl_rcenter, &gl_rfs)` before the first
+`ob_draw` and `fm_dial(FMD_FINISH, &gl_rcenter, &gl_rfs)` after the loop
+(`aes/gemfslib.c:707-709,918-919`); the FMD_FINISH is what repaints the desktop
+under the dialog and re-asks every overlapped window for its content. Ours drew
+the tree and returned — `git log -S form_dial -- tos-api/src/aes/fsel.rs` is
+empty, so the call has been missing since the file selector landed (`b469b21`).
+Both defects therefore predate `87e0362`/`fbe8d0e`/`065270b`/`00559c2`.
+
+Measured on the host rig (`tos-api/tests/aes_dialog_undraw.rs`, the real AES
+into a pixel buffer, 640x480): before the fix `form_dial(FMD_FINISH)` with no
+registered desktop tree left **153600 of 307200** pixels wrong — exactly the
+half of the screen the green dither would have covered; `fsel_input` left
+**24735** pixels of the dialog on the screen after it returned. After the fix
+both counts are 0.
+
+### D-BG-1 — the background a launched GEM application sits on
+
+Launch QED (or any `.NAP`) from TeraDesk on the Pi 4.
+
+- **[E]** The area around QED's window shows the **desktop background**, not
+  white: with the shipped placeholder `NEWDESK.INF` (no `#Q` line) that is the
+  AES resource default `0x1143` — the 50 % green/white checkerboard, pixel
+  `(x, y)` green iff `x + y` is even. If the card's `NEWDESK.INF` *does* carry a
+  `#Q` line, the background is that pattern/colour instead, i.e. the same one
+  the TeraDesk desktop itself shows.
+- **[E]** The transition may still flash white: TeraDesk's `close_windows()`
+  and our own desktop's launch path both clear the screen first
+  (`sh_draw(cmd, TRUE)`), and only the following repaint is the pattern.
+- **[E]** Quitting QED gives the TeraDesk desktop back unchanged.
+
+### D-FSEL-1 — the file selector goes away
+
+In QED, `File > Open…`, pick a file, `OK` (or double-click it, or press RETURN).
+
+- **[E]** The selector box disappears the moment the call returns; the file is
+  opened as before.
+- **[E]** What is behind it comes back: the part of `gl_rfs` outside QED's
+  window shows the desktop background, the part inside it is repainted by QED
+  from the `WM_REDRAW` the AES posts (`w_update(DESKWH, gl_rfs, …)`).
+- **[E]** `Cancel` behaves the same way — the selector goes away and nothing is
+  opened.
+- **[E]** The selector now sits **9 px lower** than before (measured on the host
+  rig: its first drawn row moves from `y = 61` to `y = 70`, `x` unchanged at
+  157): it is centred with
+  `ob_center`, which centres **below** the menu bar
+  (`yd = gl_hbox + (gl_height - gl_hbox - hd) / 2`, `aes/gemobed.c:76-80`),
+  where our own `center()` had used the full screen height. Its 3 px `OUTLINED`
+  ring is inside the rectangle that gets repainted, so no frame is left behind.
+- **[E]** The desktop's own file selector (Install Application, etc.) undraws
+  the same way, for the same reason.
+- **Watch for:** a visible flash of the desktop background inside QED's window
+  before QED answers the `WM_REDRAW`. Our compositor paints the background
+  across the whole damage rectangle and lets the frames and the owner paint back
+  over it, where EmuTOS' `do_walk` clips `w_drawdesk` to the desktop window's
+  owner-rectangle list and never touches window interiors
+  (`aes/gemwmlib.c:286-312`). That difference is pre-existing (it is how every
+  `form_dial(FMD_FINISH)` and `wind_close` already repaints) and is **not**
+  changed here; if the flash is objectionable it is its own work item.
+
+### What is real-Pi-4-only, and why
+
+Launching a GEM application needs a mouse *and* `C:`, which no QEMU board
+offers at once (`raspi4b` has the SD, `virt` has the input), so **both** rows
+above are real-Pi-4-only. What QEMU shows is the no-regression evidence: a
+`raspi4b` boot screendump with the `C:\` window open is **byte-identical**
+before and after the change (0 of 307200 pixels differ), because the desktop
+registers its own background tree via `WF_NEWDESK` and so never reaches the
+fallback root. The pixel-level proof of both fixes is the host test, which
+drives the same AES entry points (`wind_set(0, WF_NEWDESK, NULL)` +
+`form_dial(FMD_FINISH)`, and `fsel_input` ended with RETURN) into a framebuffer
+and counts the changed pixels.

@@ -661,20 +661,28 @@ fn set_newdesk(pb: &Aespb) {
     }
 }
 
-/// The AES-internal background fallback root's `ob_spec` word (gr_crack:
-/// border/text WHITE, pattern `IP_SOLID`(7), fill colour WHITE(0), border
-/// thickness 0 → an opaque white rectangle, no frame). This is the AES's
-/// desktop-background box when no desktop tree is registered — the
-/// `CLEAR_SCREEN` white-out (`sh_draw(cmd, TRUE)`, `gemshlib.c:280`).
-const FALLBACK_ROOT_OBSPEC: u64 = 0x0070;
-
-/// Build the AES-internal background **fallback root** (EmuTOS `gl_wtree[ROOT]`,
-/// object *B*): a full-screen drawable `G_BOX` drawn when no desktop tree is
-/// registered ([`NEWDESK_TREE`] == 0). Its `ob_spec` is a solid-white fill
-/// ([`FALLBACK_ROOT_OBSPEC`]) so drawing it erases the clip to white — the
-/// `CLEAR_SCREEN` white-out EmuTOS shows between the desktop and a launching GEM
-/// app (`sh_draw(cmd, TRUE)`, `gemshlib.c:280`). Built fresh per call so it
-/// always spans the current framebuffer.
+/// Build the AES-internal background **fallback root** — EmuTOS
+/// `gl_wtree[ROOT]` (= `W_TREE[ROOT]`), the object `w_drawdesk` draws when no
+/// desktop tree is registered ([`NEWDESK_TREE`] == 0, `gemwmlib.c:340-359`).
+///
+/// `wm_init` builds that root as a `G_BOX` with `NONE` flags and `NORMAL` state
+/// and copies its `ob_spec` **from the AES's own built-in DESKTOP tree**
+/// (`W_TREE[ROOT].ob_spec = rs_trees[DESKTOP]->ob_spec`,
+/// `gemwmlib.c:1268-1271`), i.e. the resource constant `4419L` = `0x1143` —
+/// pattern 4 in colour 3, the classic green dither (`gem_rsc.c:551-556`) — with
+/// its low byte replaced by the `.INF` `#Q` background if there was one
+/// (`set_aes_background`, `geminit.c:635-641`, which runs *before* `wm_start`,
+/// `geminit.c:719-730`). [`super::init::desktop_root_obspec`] holds exactly that
+/// word, so read it here rather than caching a copy.
+///
+/// It is **not** white: the white screen belongs to `sh_draw(cmd, TRUE)`, which
+/// swaps the DESKTOP root's `ob_spec` for `CLEAR_SCREEN`, draws once and puts
+/// the old spec straight back (`gemshlib.c:269-286`) — see
+/// [`super::shell::sh_draw_clear`].
+///
+/// Its geometry is the desktop window's `WS_CURR` = `gl_rscreen`, the whole
+/// screen (`gemwmlib.c:1290`); built fresh per call so it always spans the
+/// current framebuffer.
 fn fallback_root(w: i16, h: i16) -> Object {
     Object {
         ob_next: -1,
@@ -683,7 +691,7 @@ fn fallback_root(w: i16, h: i16) -> Object {
         ob_type: 20, // G_BOX
         ob_flags: 0,
         ob_state: 0,
-        ob_spec: FALLBACK_ROOT_OBSPEC,
+        ob_spec: super::init::desktop_root_obspec(),
         ob_x: 0,
         ob_y: 0,
         ob_width: w,
@@ -701,9 +709,8 @@ fn fallback_root(w: i16, h: i16) -> Object {
 /// This mirrors EmuTOS tearing the desktop's windows (`wm_init`) when a child is
 /// launched. It is called from the desktop's launch path (kernel) together with
 /// the `wind_set(DESKWH, WF_NEWDESK, NULL, …)` un-registration and the menu-bar
-/// removal; the caller then clears the screen (a full composite over the empty
-/// table with no registered desktop tree draws the white `CLEAR_SCREEN`
-/// fallback root).
+/// removal; the caller then clears the screen with
+/// [`super::shell::sh_draw_clear`] (EmuTOS `sh_draw(cmd, TRUE)`).
 pub fn save_windows() {
     // Make sure the desktop window's slot exists before it is snapshotted.
     let live = slots();
@@ -749,7 +756,8 @@ pub fn restore_windows() {
 /// ([`NEWDESK_ROOT`], the desktop's `DROOT`) at **`MAX_DEPTH`** — the `DROOT`
 /// background box **and every icon child** — exactly as EmuTOS draws
 /// `gl_newdesk` at `MAX_DEPTH`. Otherwise draw the AES-internal [`fallback_root`]
-/// (a white `CLEAR_SCREEN` box) at depth 0. Both go through the ordinary object
+/// — the built-in DESKTOP root's own box — at depth 0, exactly as EmuTOS draws
+/// `gl_wtree` at depth 0. Both go through the ordinary object
 /// manager ([`render_tree_lp64`] = the non-trapping `ob_draw` engine), clipped
 /// to `clip` — never a bespoke fill.
 ///

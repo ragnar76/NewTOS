@@ -24,6 +24,7 @@
 //! custom dialog title (`FS_TITLE = addr_in[2]`), else the default
 //! "ITEM SELECTOR", centred in the FSTITLE caption (`gemfslib.c:691-693`).
 
+use super::form::{fm_dial, gl_rcenter, FMD_FINISH, FMD_START};
 use super::object::{self, Object, ObjTree, TedInfo};
 use super::{resource, Aespb};
 use crate::host::host;
@@ -376,11 +377,18 @@ fn run(pb: &Aespb, label: *const u8) {
     // Centre *before* listing so refill draws the box at its final spot.
     let cur = unsafe { (*SYS.dir.get())[0] };
     set_drive_states(tree, cur);
-    center(tree, backend);
+    // `gl_rfs` — the rectangle the dialog occupies, from `ob_center`
+    // (EmuTOS `fs_start`, gemfslib.c:153,158).
+    let gl_rfs = center(tree);
     // EmuTOS `fs_input` sets the dialog title — the caller's custom label or the
     // default "ITEM SELECTOR" — and centres it (gemfslib.c:691-693).
     apply_title(tree, label);
     relist(tree); // read the directory, fill the slots + slider
+    // "set clip and start form fill-in by drawing the form" — EmuTOS
+    // `fm_dial(FMD_START, &gl_rcenter, &gl_rfs)` immediately before the first
+    // `ob_draw` (gemfslib.c:707-709).
+    let gl_rcenter = gl_rcenter();
+    fm_dial(FMD_START, gl_rcenter, gl_rfs);
     // The FSELECTR tree is loaded from GEM.RSC as native (LP64) `Object`s, so it
     // must be read at the LP64 width even when an ILP32 app is current — force
     // the accessor's ABI here rather than reading `current_abi()`.
@@ -394,6 +402,13 @@ fn run(pb: &Aespb, label: *const u8) {
         write_out(path_p, &*SYS.dir.get());
         write_out(sel_p, &*SYS.sel.get());
     }
+    // "start the redraw" — EmuTOS `fm_dial(FMD_FINISH, &gl_rcenter, &gl_rfs)`
+    // (gemfslib.c:918-919), after the caller's buffers are filled and before the
+    // exit button is reported. This is what takes the dialog off the screen:
+    // `w_drawdesk(gl_rfs)` repaints the desktop background under it and
+    // `w_update(DESKWH, gl_rfs, …)` re-asks every overlapped window for its
+    // content. Without it the selector stays visible after the call returns.
+    fm_dial(FMD_FINISH, gl_rcenter, gl_rfs);
     pb.set_intout(1, button);
     pb.set_ret(1);
 }
@@ -648,20 +663,21 @@ pub fn preview() {
         }
     }
     set_drive_states(tree, b'C');
-    center(tree, backend);
+    center(tree);
     relist(tree);
     // LP64 accessor for the kernel-built FSELECTR tree (see `run`).
     object::draw_root(ObjTree::lp64(tree as *const Object), MAX_DEPTH, backend);
 }
 
-/// Centre the FSELECTR root on screen.
-fn center(tree: *mut Object, backend: &dyn RasterBackend) {
-    // SAFETY: valid tree.
-    unsafe {
-        let r = &mut *tree;
-        r.ob_x = ((backend.width() as i16 - r.ob_width) / 2).max(0);
-        r.ob_y = ((backend.height() as i16 - r.ob_height) / 2).max(0);
-    }
+/// Centre the FSELECTR root on screen and return its **outer** rectangle —
+/// EmuTOS `fs_start`: `ob_center(tree, &gl_rfs)` (`gemfslib.c:153,158`). The
+/// returned rect is `gl_rfs`, the area `fm_dial` puts up and takes down again
+/// (`gemfslib.c:707-708,919`); it includes the 3 px `OUTLINED` ring of the
+/// FSELECTR root (`gem_rsc.c:169-173`), which the ROOT box alone does not cover.
+fn center(tree: *mut Object) -> (i16, i16, i16, i16) {
+    // The FSELECTR tree is native (LP64) `Object`s from GEM.RSC — read it at the
+    // LP64 width even while an ILP32 app is current (see `run`).
+    super::form::ob_center(ObjTree::lp64(tree as *const Object)).unwrap_or((0, 0, 0, 0))
 }
 
 /// Set the FSTITLE caption and centre it — EmuTOS `fs_input`

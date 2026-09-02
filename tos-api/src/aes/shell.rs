@@ -594,3 +594,46 @@ pub fn pending_launch() -> Option<PendingLaunch> {
         }
     }
 }
+
+/// `sh_draw(lcmd, TRUE)` — the AES's screen clear before a launched program
+/// takes over (EmuTOS `gemshlib.c:269-286`, called from the shell loop at
+/// `gemshlib.c:719`, "clear the screen").
+///
+/// EmuTOS does not clear the screen with a bespoke fill: it temporarily swaps
+/// the built-in DESKTOP tree ROOT's `ob_spec` for `CLEAR_SCREEN` — `(WHITE<<12)
+/// | (WHITE<<8) | (IP_HOLLOW<<4) | WHITE` = `0x0000` (`gemshlib.c:64`) — draws
+/// that one object over the whole screen (`ob_draw(tree, ROOT, 0)` after
+/// `gsx_sclip(&gl_rscreen)`) and puts the saved `ob_spec` straight back. The
+/// hollow pattern reaches `vr_recfl` in REPLACE mode with an all-zero pattern,
+/// so every pixel is written the background pen — an opaque white rectangle.
+///
+/// The swap-and-restore is what keeps this white-out a **one-shot**: the very
+/// next background repaint (`w_drawdesk`, `gemwmlib.c:340-359`) uses the root's
+/// real `ob_spec` again — the `0x1143` green dither, or the `.INF` `#Q` colour.
+/// That is why this is a separate call and not a state the compositor is left
+/// in; see [`super::window`]'s `fallback_root`.
+pub fn sh_draw_clear() {
+    let Some(backend) = crate::host::host().and_then(|h| h.raster()) else {
+        return;
+    };
+    let tree = super::init::desktop_tree();
+    // SAFETY: single-CPU AES, cooperative trap path; `desktop_tree()` is the
+    // always-initialised three-object static built by `super::init::init`.
+    unsafe {
+        let root = &mut *tree;
+        let specsave = root.ob_spec;
+        root.ob_spec = CLEAR_SCREEN;
+        // The software mouse cursor is a save-under sprite: painting over it
+        // while it is shown would leave its backing store stale (the same
+        // reason `window::compose` brackets its repaint).
+        crate::vdi::cursor_hide(backend);
+        super::object::draw_root(super::object::ObjTree::lp64(tree as *const _), 0, backend);
+        crate::vdi::cursor_show(backend);
+        root.ob_spec = specsave;
+    }
+}
+
+/// `CLEAR_SCREEN` (`gemshlib.c:64`): `(WHITE<<12) | (WHITE<<8) | (IP_HOLLOW<<4)
+/// | WHITE`, with `WHITE` = 0 (`obdefs.h`) and `IP_HOLLOW` = 0
+/// (`obdefs.h:32`) — the all-zero colour word.
+const CLEAR_SCREEN: u64 = 0;

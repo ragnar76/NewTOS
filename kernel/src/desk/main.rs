@@ -506,12 +506,10 @@ fn launch_native(path: &str, name: &str, flavor: ftype::Flavor, tail: &[u8]) {
 ///
 /// * **relinquish** ([`desktop_relinquish`], before the child): remove the
 ///   desktop menu bar (`menu_bar(NULL,0)`), hide the desktop's own windows out
-///   of the shared AES window list (saved, not destroyed), neutralise the
-///   desktop-background painter (so the compositor's background erase is the
-///   white `CLEAR_SCREEN` rather than the desktop's green), and clear the
-///   screen — the child then composites on a clean screen with only its own
-///   windows + menu (fixes symptom #1: green desktop + leftover windows behind
-///   QED);
+///   of the shared AES window list (saved, not destroyed), un-register the
+///   desktop-background tree, and clear the screen with the AES's own
+///   `sh_draw(cmd, TRUE)` — the child then composites on a clean screen with
+///   only its own windows + menu;
 /// * **resume** ([`desktop_resume`], after the child's `Pterm`): restore the
 ///   painter + the saved window set, rebuild the menu bar, and repaint — the
 ///   desktop is exactly as before the launch.
@@ -533,14 +531,18 @@ fn desktop_relinquish() {
     // Hide the desktop's own windows out of the shared AES window list (saved for
     // the resume) and un-register the desktop background tree (EmuTOS
     // `wind_set(DESKWH, WF_NEWDESK, NULL, 0, 0)`, `deskmain.c:2163`) so the AES
-    // `w_drawdesk` falls back to its internal white CLEAR_SCREEN root.
+    // `w_drawdesk` falls back to its own built-in DESKTOP root
+    // (`gemwmlib.c:340-359,1268-1271`).
     tos_api::aes::window::save_windows();
     super::wind_set_newdesk(0, 0);
-    // Clear the screen: with the window list empty and no desktop tree registered,
-    // a full composite paints the whole screen white via the AES fallback root —
-    // EmuTOS's `sh_draw` CLEAR_SCREEN. The child (QED) then draws on this clean
-    // screen.
-    tos_api::aes::window::redraw();
+    // Clear the screen — EmuTOS `sh_draw(D.s_cmd, TRUE)`, the shell loop's step
+    // between the desktop terminating and the child being loaded
+    // (`gemshlib.c:719`): a one-shot white-out drawn from the built-in DESKTOP
+    // tree with its `ob_spec` swapped for `CLEAR_SCREEN` and put straight back.
+    // It does **not** make the background permanently white: a later
+    // `w_drawdesk` — the child's own `form_dial(FMD_FINISH)`, say — repaints it
+    // with the DESKTOP root's real spec, the green dither (`gemwmlib.c:340-359`).
+    tos_api::aes::shell::sh_draw_clear();
 }
 
 /// The **resume** half of [`run_gem_app`]: rebuild the desktop exactly as it was

@@ -899,33 +899,27 @@ fn write_decimal(n: i16, buf: &mut [u8]) -> usize {
 }
 
 // form_dial types (aesbind.h).
-const FMD_START: i16 = 0;
+pub(super) const FMD_START: i16 = 0;
 const FMD_GROW: i16 = 1;
 const FMD_SHRINK: i16 = 2;
-const FMD_FINISH: i16 = 3;
+pub(super) const FMD_FINISH: i16 = 3;
 /// ob_state OUTLINED / SHADOWED bits (obdefs.h).
 const OUTLINED: u16 = 0x0010;
 const SHADOWED: u16 = 0x0020;
 
-/// `form_center` (54) — centre the tree at `addr_in[0]` on screen (EmuTOS
-/// `ob_center`) and report its outer rectangle in `int_out[1..4]`.
-pub fn form_center(pb: &Aespb) {
-    let tree = pb.addrin(0) as *mut Object;
-    if tree.is_null() {
-        pb.set_ret(0);
-        return;
-    }
-    let Some(backend) = host().and_then(|h| h.raster()) else {
-        pb.set_ret(0);
-        return;
-    };
+/// `ob_center` (EmuTOS `gemobed.c:67-106`) — centre `t`'s ROOT on screen and
+/// return the tree's **outer** rectangle: the ROOT box grown by the 3 px
+/// `OUTLINED` ring and by the `SHADOWED` drop shadow, exactly as EmuTOS reports
+/// it in `pt`.
+///
+/// One function, two callers, as in EmuTOS: `form_center` (`gemsuper.c` →
+/// [`form_center`]) and the file selector's `fs_start`/`fs_input`, which keeps
+/// the result as `gl_rfs` and hands it to `fm_dial` (`gemfslib.c:153,158,
+/// 707-708,919`). Returns `None` when there is no raster (no screen geometry to
+/// centre in).
+pub(super) fn ob_center(t: ObjTree) -> Option<(i16, i16, i16, i16)> {
+    let backend = host().and_then(|h| h.raster())?;
     let (sw, sh) = (backend.width() as i16, backend.height() as i16);
-    // App-provided tree at `addr_in[0]`: read/write the ROOT (index 0) through
-    // the caller-ABI `ObjTree` accessor so an ILP32 app's 24-byte OBJECT record
-    // is addressed at its own field offsets, not the native LP64 ones. For an
-    // LP64/kernel caller `current_abi()` is `Lp64`, so the offsets are
-    // byte-identical to the previous `*mut Object` access.
-    let t = ObjTree::new(tree as *const Object);
     let (mut wd, mut hd) = (t.width(0), t.height(0));
     let mut xd = (sw - wd) / 2;
     // Centre BELOW the menu bar (EmuTOS ob_center, gemobed.c:76-80:
@@ -956,6 +950,25 @@ pub fn form_center(pb: &Aespb) {
         wd += s;
         hd += s;
     }
+    Some((xd, yd, wd, hd))
+}
+
+/// `form_center` (54) — centre the tree at `addr_in[0]` on screen (EmuTOS
+/// `ob_center`) and report its outer rectangle in `int_out[1..4]`.
+///
+/// App-provided tree at `addr_in[0]`: read/write the ROOT (index 0) through the
+/// caller-ABI [`ObjTree`] accessor so an ILP32 app's 24-byte OBJECT record is
+/// addressed at its own field offsets, not the native LP64 ones.
+pub fn form_center(pb: &Aespb) {
+    let tree = pb.addrin(0) as *mut Object;
+    if tree.is_null() {
+        pb.set_ret(0);
+        return;
+    }
+    let Some((xd, yd, wd, hd)) = ob_center(ObjTree::new(tree as *const Object)) else {
+        pb.set_ret(0);
+        return;
+    };
     pb.set_intout(1, xd);
     pb.set_intout(2, yd);
     pb.set_intout(3, wd);
@@ -963,13 +976,13 @@ pub fn form_center(pb: &Aespb) {
     pb.set_ret(1);
 }
 
-/// `form_dial` (51) — reserve/animate/release the dialog screen area (EmuTOS
-/// `fm_dial`). `int_in[0]` = type; `int_in[1..4]` = the small rect,
-/// `int_in[5..8]` = the big rect.
-pub fn form_dial(pb: &Aespb) {
-    let fmd = pb.intin(0);
-    let little = (pb.intin(1), pb.intin(2), pb.intin(3), pb.intin(4));
-    let big = (pb.intin(5), pb.intin(6), pb.intin(7), pb.intin(8));
+/// `fm_dial` (EmuTOS `gemfmlib.c:362-381`) — the visual effect of putting a
+/// dialog up (`pi` = the small rectangle) and taking it down again (`pt` = the
+/// big one).
+///
+/// Called from the trap ([`form_dial`]) *and* directly from the file selector,
+/// exactly as in EmuTOS where `gemfslib.c:708,919` calls this same C function.
+pub(super) fn fm_dial(fmd: i16, little: (i16, i16, i16, i16), big: (i16, i16, i16, i16)) {
     match fmd {
         FMD_GROW => super::graf::animate(little, big),
         FMD_SHRINK => super::graf::animate(big, little),
@@ -983,6 +996,29 @@ pub fn form_dial(pb: &Aespb) {
         FMD_START => {}
         _ => {}
     }
+}
+
+/// `gl_rcenter` (EmuTOS `gemgraf.c:426`, set in `gsx_start`) — a `gl_wbox` ×
+/// `gl_hbox` box centred in the screen, the "small rectangle" every AES-internal
+/// `fm_dial` call passes. `FMD_START`/`FMD_FINISH` ignore it; `FMD_GROW`/
+/// `FMD_SHRINK` animate from/to it.
+pub(super) fn gl_rcenter() -> (i16, i16, i16, i16) {
+    let (w, h) = match host().and_then(|h| h.raster()) {
+        Some(b) => (b.width() as i16, b.height() as i16),
+        None => (0, 0),
+    };
+    let (wbox, hbox) = (super::window::GL_WBOX, super::window::GL_HBOX);
+    ((w - wbox) / 2, (h - 2 * hbox) / 2, wbox, hbox)
+}
+
+/// `form_dial` (51) — reserve/animate/release the dialog screen area (EmuTOS
+/// `fm_dial`). `int_in[0]` = type; `int_in[1..4]` = the small rect,
+/// `int_in[5..8]` = the big rect.
+pub fn form_dial(pb: &Aespb) {
+    let fmd = pb.intin(0);
+    let little = (pb.intin(1), pb.intin(2), pb.intin(3), pb.intin(4));
+    let big = (pb.intin(5), pb.intin(6), pb.intin(7), pb.intin(8));
+    fm_dial(fmd, little, big);
     pb.set_ret(1);
 }
 
