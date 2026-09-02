@@ -17,7 +17,7 @@
 
 use std::collections::VecDeque;
 use std::sync::atomic::{AtomicBool, AtomicU64, AtomicUsize, Ordering};
-use std::sync::Mutex;
+use std::sync::{Mutex, OnceLock};
 
 use tos_api::bdos::process::Abi;
 use tos_api::host::Host;
@@ -91,7 +91,43 @@ impl BufBackend {
     fn snapshot(&self) -> Vec<u32> {
         self.px.lock().unwrap().clone()
     }
+
+    /// Stamp `r` with a raw device value, straight into the buffer — stands in
+    /// for the content a window owner has drawn into its work area, so a later
+    /// comparison can tell "the AES left it alone" from "the AES painted over
+    /// it". Not a backend op: it must not show up in the op log.
+    fn paint(&self, r: (i16, i16, i16, i16), v: u32) {
+        let mut px = self.px.lock().unwrap();
+        for y in r.1..r.1 + r.3 {
+            for x in r.0..r.0 + r.2 {
+                if Self::inside(x, y) {
+                    px[Self::idx(x, y)] = v;
+                }
+            }
+        }
+    }
+
+    /// How many pixels of `r` differ from `before`, and the first one found.
+    fn diff_in(&self, before: &[u32], r: (i16, i16, i16, i16)) -> (usize, Option<(i16, i16)>) {
+        let px = self.px.lock().unwrap();
+        let mut n = 0usize;
+        let mut first = None;
+        for y in r.1..r.1 + r.3 {
+            for x in r.0..r.0 + r.2 {
+                if Self::inside(x, y) && px[Self::idx(x, y)] != before[Self::idx(x, y)] {
+                    n += 1;
+                    if first.is_none() {
+                        first = Some((x, y));
+                    }
+                }
+            }
+        }
+        (n, first)
+    }
 }
+
+/// A device value no palette pen maps to, used to stamp window content.
+const MARK: u32 = 0x00FF_00FF;
 
 impl RasterBackend for BufBackend {
     fn width(&self) -> u16 {
@@ -435,6 +471,7 @@ const SIZER: i16 = 0x0020;
 const MU_KEYBD: i16 = 0x0001;
 const MU_BUTTON: i16 = 0x0002;
 const MU_MESAG: i16 = 0x0010;
+const MU_TIMER: i16 = 0x0020;
 
 /// Seed the backend's pseudo-palette the way the VDI dispatcher does before a
 /// colour-sensitive op (`ACTIVE_PALETTE`, `kernel/src/vdi_backend.rs:11-21`):
@@ -545,12 +582,33 @@ const WY: i16 = 80;
 const WW: i16 = 320;
 const WH: i16 = 220;
 
-fn setup(kind: i16) -> Rig {
-    let host: &'static ScriptHost = Box::leak(Box::new(ScriptHost::new(&[])));
-    install(host);
+/// The AES window table, the desktop tree registration and the installed host
+/// are process-wide statics, so the cases in this binary must not run
+/// concurrently (same guard as `aes_desk_background.rs`).
+static SERIAL: Mutex<()> = Mutex::new(());
+static RIG: OnceLock<&'static ScriptHost> = OnceLock::new();
+
+/// The one host for this binary (`install_host` accepts a single install).
+fn rig() -> &'static ScriptHost {
+    RIG.get_or_init(|| {
+        let host: &'static ScriptHost = Box::leak(Box::new(ScriptHost::new(&[])));
+        install(host);
+        seed_palette(&host.raster);
+        host
+    })
+}
+
+/// Fresh AES window state + the registered desktop background tree. `wind_new`
+/// (EmuTOS `wm_new`, `aes/gemwmlib.c:1875-1893`) closes and deletes every
+/// window and drains the update locks, so each case starts from the same table.
+fn fresh() -> (&'static ScriptHost, Aespb) {
+    let host = rig();
     let mut pb = Aespb::new();
     pb.call(10, 0, 1, 0); // appl_init
-    seed_palette(&host.raster);
+    host.script.lock().unwrap().clear();
+    host.film.lock().unwrap().clear();
+    pb.intin.fill(0);
+    pb.call(109, 0, 1, 0); // wind_new
 
     // Register the desktop background tree, then let the AES paint it.
     let tree = desk_tree();
@@ -560,7 +618,13 @@ fn setup(kind: i16) -> Rig {
     pb.intin[2] = 0; // root object
     pb.addrin[0] = tree.as_ptr() as u64;
     pb.call(105, 6, 1, 1); // wind_set
+    pb.addrin[0] = 0;
+    (host, pb)
+}
 
+/// `wind_create` + `wind_open` at `r`, returning the handle. Opening order is
+/// z order: the window opened last ends up on top.
+fn open_window(pb: &mut Aespb, kind: i16, r: (i16, i16, i16, i16)) -> i16 {
     pb.intin.fill(0);
     pb.intin[0] = kind;
     pb.intin[1] = 0;
@@ -573,16 +637,24 @@ fn setup(kind: i16) -> Rig {
 
     pb.intin.fill(0);
     pb.intin[0] = wh;
-    pb.intin[1] = WX;
-    pb.intin[2] = WY;
-    pb.intin[3] = WW;
-    pb.intin[4] = WH;
+    pb.intin[1] = r.0;
+    pb.intin[2] = r.1;
+    pb.intin[3] = r.2;
+    pb.intin[4] = r.3;
     pb.call(101, 5, 1, 0); // wind_open
+    wh
+}
 
+fn mouse_on(pb: &mut Aespb) {
     pb.intin.fill(0);
     pb.intin[0] = 257; // graf_mouse(M_ON)
     pb.call(78, 1, 1, 0);
+}
 
+fn setup(kind: i16) -> Rig {
+    let (host, mut pb) = fresh();
+    let wh = open_window(&mut pb, kind, (WX, WY, WW, WH));
+    mouse_on(&mut pb);
     Rig { host, pb, wh }
 }
 
@@ -595,6 +667,53 @@ fn evnt_multi(pb: &mut Aespb) {
     pb.addrin[0] = 0;
     pb.call(25, 16, 7, 1);
 }
+
+/// The blocking `evnt_multi` the drag runs inside — `MU_BUTTON` armed for
+/// "both buttons up", so the call cannot return while the button is held and
+/// the Control Manager's `intercept` gets to run the drag — but with a real
+/// message buffer, so the `WM_MOVED` it posts is handed back instead of being
+/// dequeued into a null pointer.
+fn evnt_multi_drag(pb: &mut Aespb) -> [i16; 8] {
+    let mut buf = Box::new([0i16; 8]);
+    pb.intin.fill(0);
+    pb.intin[0] = MU_MESAG | MU_BUTTON | MU_KEYBD;
+    pb.intin[1] = 0x0102;
+    pb.intin[2] = 3;
+    pb.intin[3] = 0;
+    pb.addrin[0] = buf.as_mut_ptr() as u64;
+    pb.call(25, 16, 7, 1);
+    pb.addrin[0] = 0;
+    *buf
+}
+
+/// `evnt_multi` with a real message buffer and a **zero-millisecond timer**, so
+/// the call always comes back: `MU_TIMER` fires on the first pass when no
+/// message is queued (`msg[0]` stays 0). Used to read what the AES posted
+/// without arming `MU_BUTTON`, which would block until the button changes.
+fn evnt_multi_msg(pb: &mut Aespb) -> [i16; 8] {
+    let mut buf = Box::new([0i16; 8]);
+    pb.intin.fill(0);
+    pb.intin[0] = MU_MESAG | MU_TIMER;
+    pb.intin[14] = 0; // timer lo
+    pb.intin[15] = 0; // timer hi
+    pb.addrin[0] = buf.as_mut_ptr() as u64;
+    pb.call(25, 16, 7, 1);
+    pb.addrin[0] = 0;
+    *buf
+}
+
+/// Empty the owner FIFO so a later `evnt_multi` reports the message the drag
+/// posted and not a `WM_REDRAW` left over from `wind_open`. Safe with the
+/// button up: `intercept` returns at once (`window.rs` `intercept`, the
+/// `mouse_buttons() & 0x01 == 0` guard).
+fn drain_messages(pb: &mut Aespb) {
+    for _ in 0..16 {
+        if evnt_multi_msg(pb)[0] == 0 {
+            return;
+        }
+    }
+}
+
 
 /// EmuTOS' sizer feedback is two XOR outlines and nothing else: `gr_rubwind`
 /// (`aes/gemgrlib.c:199-220`) loops `gr_clamp` + `gr_wait`, and `gr_wait` draws
@@ -612,6 +731,7 @@ fn evnt_multi(pb: &mut Aespb) {
 /// off the rubber band.
 #[test]
 fn sizer_drag_draws_only_the_rubber_band() {
+    let _guard = SERIAL.lock().unwrap_or_else(|e| e.into_inner());
     let kind = NAME | CLOSER | FULLER | MOVER | SIZER;
     let mut rig = setup(kind);
     let host = rig.host;
@@ -773,4 +893,307 @@ fn report(tag: &str, before: &[u32], film: &[(Vec<u32>, i16, i16)], dd: &Option<
         }
     }
     all_changed
+}
+
+// ── mover ─────────────────────────────────────────────────────────────────
+
+/// EmuTOS `rc_constrain` (`util/rectfunc.c:32-42`) — pull `t` back inside `c`
+/// without changing its size.
+fn rc_constrain(c: (i16, i16, i16, i16), t: (i16, i16, i16, i16)) -> (i16, i16, i16, i16) {
+    let (mut x, mut y, w, h) = t;
+    if x < c.0 {
+        x = c.0;
+    }
+    if y < c.1 {
+        y = c.1;
+    }
+    if x + w > c.0 + c.2 {
+        x = (c.0 + c.2) - w;
+    }
+    if y + h > c.1 + c.3 {
+        y = (c.1 + c.3) - h;
+    }
+    (x, y, w, h)
+}
+
+/// The constraining rectangle `hctl_window`'s `W_NAME` arm builds for
+/// `gr_dragbox`, 3D branch (`aes/gemctrl.c:229-233`):
+/// `r_set(&f, 0, gl_hbox, gl_rscreen.g_w + w - gl_wbox - 6 - 2*ADJ3DSTD, MAX_COORDINATE)`
+/// with `gl_hbox = gl_wbox = 19` (`gemgraf.c:412-415` for the 8×16 font),
+/// `ADJ3DSTD = 2` (`obdefs.h:136`) and `MAX_COORDINATE = 10000`
+/// (`include/sysconf.h:63`).
+fn mover_bounds(win_w: i16) -> (i16, i16, i16, i16) {
+    (0, 19, SCREEN_W as i16 + win_w - 19 - 6 - 2 * 2, 10000)
+}
+
+/// EmuTOS' mover feedback is one XOR outline and nothing else: `gr_dragbox`
+/// (`aes/gemgrlib.c:243-267`) takes the grab offset once with
+/// `gr_clamp(sx+1, sy+1, 0, 0)`, then loops "box origin = mouse − offset,
+/// `rc_constrain`, `gr_wait`". `gr_wait` (`:169-191`) draws the box, waits for
+/// the mouse to move or the button to come up, and complements it away again.
+/// The window is **not** moved: `hctl_window` reports the dragged origin in
+/// `WM_MOVED` (`ct_msgup`, `aes/gemctrl.c:237-238,314`) and the owner applies
+/// it with `wind_set(WF_CURRXYWH)`.
+#[test]
+fn mover_drag_draws_only_the_rubber_band() {
+    let _guard = SERIAL.lock().unwrap_or_else(|e| e.into_inner());
+    let kind = NAME | CLOSER | FULLER | MOVER | SIZER;
+    let mut rig = setup(kind);
+    let host = rig.host;
+    let dd = dump_dir();
+
+    let curr = wind_get_rect(&mut rig.pb, rig.wh, 5);
+    drain_messages(&mut rig.pb);
+
+    // Grab the title bar between the closer and the fuller — `ob_find` there
+    // answers `W_NAME`, the mover (`aes/gemctrl.c:225`).
+    move_to(host, &mut rig.pb, WX + WW / 2, WY + 5, 0);
+    host.push(Packet { dx: 0, dy: 0, buttons: 1 });
+    rig.pb.call(79, 0, 5, 0); // graf_mkstate — observe the press
+
+    let before = host.raster.snapshot();
+    let (start_mx, start_my) = tos_api::vdi::mouse_position();
+    // `gr_clamp(sx+1, sy+1, 0, 0, &offx, &offy)` → `max(mouse − origin, 0)`.
+    let offx = (start_mx - curr.0).max(0);
+    let offy = (start_my - curr.1).max(0);
+    let bounds = mover_bounds(curr.2);
+
+    for _ in 0..6 {
+        host.push(Packet { dx: 12, dy: 10, buttons: 1 });
+    }
+    for _ in 0..6 {
+        host.push(Packet { dx: -8, dy: 6, buttons: 1 });
+    }
+    host.push(Packet { dx: 0, dy: 0, buttons: 0 }); // release
+    for _ in 0..8 {
+        host.push(Packet { dx: 0, dy: 0, buttons: 0 });
+    }
+
+    host.filming.store(true, Ordering::Relaxed);
+    let msg = evnt_multi_drag(&mut rig.pb);
+    host.filming.store(false, Ordering::Relaxed);
+
+    let film: Vec<(Vec<u32>, i16, i16)> = host.film.lock().unwrap().drain(..).collect();
+    eprintln!("== mover drag: {} frames", film.len());
+    let changed = report("move", &before, &film, &dd);
+    assert!(film.len() > 4, "the scripted drag must produce several frames");
+
+    let mut sprite: Vec<(i16, i16)> = vec![(start_mx, start_my)];
+    sprite.extend(film.iter().map(|(_, mx, my)| (*mx, *my)));
+    let mut stray: Vec<(usize, i16, i16)> = Vec::new();
+    for (fi, x, y) in changed {
+        let (mx, my) = (film[fi].1, film[fi].2);
+        let o = rc_constrain(bounds, (mx - offx, my - offy, curr.2, curr.3));
+        let on_band = on_outline(x, y, o.0, o.1, o.2, o.3);
+        let on_cursor =
+            sprite.iter().any(|(sx, sy)| x >= *sx && x < *sx + 16 && y >= *sy && y < *sy + 16);
+        if !on_band && !on_cursor {
+            stray.push((fi, x, y));
+        }
+    }
+    if !stray.is_empty() {
+        for e in stray.iter().take(20) {
+            eprintln!("  stray pixel: frame {} ({},{})", e.0, e.1, e.2);
+        }
+    }
+    assert!(
+        stray.is_empty(),
+        "the mover drag painted {} pixels that are not part of the XOR outline: \
+         EmuTOS `gr_dragbox`/`gr_wait` (aes/gemgrlib.c:169-191,243-267) touches nothing \
+         but that one box — no window blit, no desktop background, no frame",
+        stray.len()
+    );
+
+    // Walk the (now released) pointer back to where it was, so the only thing
+    // that could still differ — the mouse sprite, which `gr_wait`'s `gsx_mon`
+    // legitimately redraws wherever the pointer is — is back on its own start
+    // pixels too. Everything else must be bit-identical.
+    let (end_mx, end_my) = tos_api::vdi::mouse_position();
+    move_to(host, &mut rig.pb, start_mx, start_my, 0);
+    let after = host.raster.snapshot();
+    let diff = after.iter().zip(before.iter()).filter(|(a, b)| a != b).count();
+    assert_eq!(
+        diff, 0,
+        "after the button came up the outline must be fully erased and the screen \
+         unchanged (the window is moved by the owner's wind_set(WF_CURRXYWH) in \
+         answer to WM_MOVED, not by the drag)"
+    );
+
+    let after_curr = wind_get_rect(&mut rig.pb, rig.wh, 5);
+    assert_eq!(
+        after_curr, curr,
+        "gr_dragbox must not move the window (aes/gemgrlib.c:243-267 writes only \
+         *pdx/*pdy); the owner does that on WM_MOVED"
+    );
+
+    // And the reported rectangle is the dragged origin with the *unchanged*
+    // size (`ct_msgup(message, owner, wh, x, y, w, h)`, `aes/gemctrl.c:314`),
+    // taken from where the pointer was when the button came up.
+    let want = rc_constrain(bounds, (end_mx - offx, end_my - offy, curr.2, curr.3));
+    assert_eq!(msg[0], 28, "the drag must post WM_MOVED (28), got {msg:?}");
+    assert_eq!(
+        (msg[3], msg[4], msg[5], msg[6], msg[7]),
+        (rig.wh, want.0, want.1, curr.2, curr.3),
+        "WM_MOVED must carry the constrained drag origin and the original size"
+    );
+}
+
+// Two-window scene: `LOW` is opened first, so it sits below; the window under
+// test starts above it and is dragged straight down across it.
+const LOW: (i16, i16, i16, i16) = (60, 300, 500, 170);
+
+/// The gesture the user reported from the Pi 4: drag a window across another
+/// window. EmuTOS leaves the lower window's pixels alone — the only thing on
+/// the screen during the drag is the XOR outline, which is complemented away
+/// again (`gr_wait`, `aes/gemgrlib.c:169-191`).
+#[test]
+fn mover_drag_across_another_window_never_writes_it() {
+    let _guard = SERIAL.lock().unwrap_or_else(|e| e.into_inner());
+    let kind = NAME | CLOSER | FULLER | MOVER | SIZER;
+    let (host, mut pb) = fresh();
+    let low = open_window(&mut pb, kind, LOW);
+    let wh = open_window(&mut pb, kind, (WX, WY, WW, WH));
+    mouse_on(&mut pb);
+    let dd = dump_dir();
+
+    let curr = wind_get_rect(&mut pb, wh, 5);
+    let low_work = wind_get_rect(&mut pb, low, 4); // WF_WORKXYWH
+    assert!(low_work.2 > 0 && low_work.3 > 0, "the lower window must have a work area");
+    drain_messages(&mut pb);
+
+    move_to(host, &mut pb, WX + WW / 2, WY + 5, 0);
+    host.push(Packet { dx: 0, dy: 0, buttons: 1 });
+    pb.call(79, 0, 5, 0);
+
+    // The lower window's owner has drawn its content; nothing may overwrite it.
+    host.raster.paint(low_work, MARK);
+    let before = host.raster.snapshot();
+    let (start_mx, start_my) = tos_api::vdi::mouse_position();
+    let offx = (start_mx - curr.0).max(0);
+    let offy = (start_my - curr.1).max(0);
+    let bounds = mover_bounds(curr.2);
+
+    // Straight down, deep into the lower window and back up a little.
+    for _ in 0..8 {
+        host.push(Packet { dx: 4, dy: 20, buttons: 1 });
+    }
+    for _ in 0..3 {
+        host.push(Packet { dx: -4, dy: -14, buttons: 1 });
+    }
+    host.push(Packet { dx: 0, dy: 0, buttons: 0 });
+    for _ in 0..8 {
+        host.push(Packet { dx: 0, dy: 0, buttons: 0 });
+    }
+
+    host.filming.store(true, Ordering::Relaxed);
+    evnt_multi(&mut pb);
+    host.filming.store(false, Ordering::Relaxed);
+
+    let film: Vec<(Vec<u32>, i16, i16)> = host.film.lock().unwrap().drain(..).collect();
+    eprintln!("== mover drag across a window: {} frames", film.len());
+    let changed = report("cross", &before, &film, &dd);
+    assert!(film.len() > 4, "the scripted drag must produce several frames");
+
+    let mut sprite: Vec<(i16, i16)> = vec![(start_mx, start_my)];
+    sprite.extend(film.iter().map(|(_, mx, my)| (*mx, *my)));
+    let mut inlow = 0usize;
+    let mut first: Option<(usize, i16, i16)> = None;
+    for (fi, x, y) in changed {
+        let inside_low = x >= low_work.0
+            && x < low_work.0 + low_work.2
+            && y >= low_work.1
+            && y < low_work.1 + low_work.3;
+        if !inside_low {
+            continue;
+        }
+        let (mx, my) = (film[fi].1, film[fi].2);
+        let o = rc_constrain(bounds, (mx - offx, my - offy, curr.2, curr.3));
+        let on_band = on_outline(x, y, o.0, o.1, o.2, o.3);
+        let on_cursor =
+            sprite.iter().any(|(sx, sy)| x >= *sx && x < *sx + 16 && y >= *sy && y < *sy + 16);
+        if !on_band && !on_cursor {
+            inlow += 1;
+            first.get_or_insert((fi, x, y));
+        }
+    }
+    assert_eq!(
+        inlow, 0,
+        "dragging a window across the one below it wrote {inlow} pixels into that \
+         window's work area (first {first:?}). The AES draws the XOR outline and \
+         nothing else while the mouse is down (`gr_dragbox`, aes/gemgrlib.c:243-267); \
+         a window's content is only ever restored by its owner on WM_REDRAW \
+         (w_update/w_redraw, aes/gemwmlib.c:1004-1048,887-907)"
+    );
+
+    let (n, at) = host.raster.diff_in(&before, low_work);
+    assert_eq!(
+        n, 0,
+        "after the button came up {n} pixels of the lower window's work area were \
+         still different (first {at:?}) — `gr_wait`'s second `gr_draw` complements \
+         the outline away, so the screen is exactly what it was"
+    );
+}
+
+/// The settle: the owner answers `WM_MOVED` with `wind_set(WF_CURRXYWH)`, and
+/// **that** is where the screen changes. EmuTOS `wm_set` routes it into
+/// `draw_change` (`aes/gemwmlib.c:1673-1675,1058-1223`), which repaints the
+/// uncovered desktop (`w_drawdesk(&c)`, `:1217-1219`) and then walks every
+/// window with `w_update(start, &c, stop, moved)` (`:1222`), posting a
+/// `WM_REDRAW` to each one the damage rectangle reaches (`w_redraw`,
+/// `:887-907`). Without that fan-out the window the moved one uncovers keeps
+/// showing the moved window's old pixels.
+#[test]
+fn moving_a_window_off_another_redraws_the_one_underneath() {
+    let _guard = SERIAL.lock().unwrap_or_else(|e| e.into_inner());
+    let kind = NAME | CLOSER | FULLER | MOVER | SIZER;
+    let (_host, mut pb) = fresh();
+    // The lower window is opened first and is then *covered* by the upper one.
+    let low = open_window(&mut pb, kind, LOW);
+    let wh = open_window(&mut pb, kind, (WX, 200, WW, 220));
+    mouse_on(&mut pb);
+    let low_work = wind_get_rect(&mut pb, low, 4);
+    let curr = wind_get_rect(&mut pb, wh, 5);
+    // The two really do overlap, else the case proves nothing.
+    assert!(curr.1 + curr.3 > low_work.1, "the windows must overlap");
+    drain_messages(&mut pb);
+
+    // The owner answers WM_MOVED: move the window up and out of the way.
+    let moved = (curr.0, 40, curr.2, curr.3);
+    pb.intin.fill(0);
+    pb.intin[0] = wh;
+    pb.intin[1] = 5; // WF_CURRXYWH
+    pb.intin[2] = moved.0;
+    pb.intin[3] = moved.1;
+    pb.intin[4] = moved.2;
+    pb.intin[5] = moved.3;
+    pb.call(105, 6, 1, 0); // wind_set
+
+    // Collect what the AES posted.
+    let mut msgs: Vec<[i16; 8]> = Vec::new();
+    for _ in 0..16 {
+        let m = evnt_multi_msg(&mut pb);
+        if m[0] == 0 {
+            break;
+        }
+        msgs.push(m);
+    }
+    eprintln!("== after WF_CURRXYWH: {msgs:?}");
+    let for_low: Vec<&[i16; 8]> =
+        msgs.iter().filter(|m| m[0] == 20 && m[3] == low).collect(); // WM_REDRAW
+    assert!(
+        !for_low.is_empty(),
+        "moving a window off the one below it must post WM_REDRAW to the lower \
+         window's owner — EmuTOS `draw_change` ends in `w_update(start, &c, stop, \
+         moved)` (aes/gemwmlib.c:1222), which calls `w_redraw` for every window the \
+         damage rectangle reaches (:887-907). Got {msgs:?}"
+    );
+    // ...covering the part the moved window vacated.
+    let r = for_low[0];
+    let (rx, ry, rw, rh) = (r[4], r[5], r[6], r[7]);
+    let want_y = curr.1.max(low_work.1);
+    assert!(
+        rw > 0 && rh > 0 && ry <= want_y && ry + rh > want_y,
+        "the WM_REDRAW rectangle ({rx},{ry},{rw},{rh}) must cover the uncovered \
+         part of the lower window (from y={want_y})"
+    );
 }

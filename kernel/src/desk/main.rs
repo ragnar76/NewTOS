@@ -1467,9 +1467,10 @@ fn do_xyfix(r: &mut Grect) {
 /// window's screen position for later screen-relative math.
 ///
 /// The window content repaint comes from the AES `send_redraw` that
-/// `wind_set(WF_CXYWH)` queues (drained by the loop into [`redraw::do_wredraw`]);
-/// the vacated region was already restored to the desktop background by the AES
-/// solid-drag. `change = TRUE → cnx_put()` (session save) is a future module.
+/// `wind_set(WF_CXYWH)` queues (drained by the loop into [`redraw::do_wredraw`]),
+/// and so does the repaint of every *other* window the move uncovered — the AES
+/// draws nothing during the drag itself, which is only the `gr_dragbox` XOR
+/// outline. `change = TRUE → cnx_put()` (session save) is a future module.
 fn moved_msg(handle: i16, msg: &[i16; 8]) {
     let Some(slot) = global::with(|g| g.win_slot(handle)).flatten() else {
         return;

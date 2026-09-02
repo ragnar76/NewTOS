@@ -908,17 +908,19 @@ const DB: (i16, i16, i16, i16) = (200, 150, 260, 180);
 /// How far the drag moves B to the right.
 const DRAG: i16 = 40;
 
-/// Dragging a window by its mover repaints the strip it vacated — but only the
+/// Moving a window by its mover repaints the strip it vacated — but only the
 /// part of that strip the desktop still owns.
 ///
-/// EmuTOS' own mover feedback is an XOR outline (`gr_dragbox`,
-/// `aes/gemgrlib.c:224-260`) and the window is moved once, at the end; NewTOS
-/// drags the window solid and repaints the vacated L per drag step. Either way
-/// the repaint is `w_move`'s trailing `w_drawdesk` (`aes/gemwmlib.c:1177,
-/// 1217-1219`), which runs *after* the rectangle lists have been rebuilt for
-/// the new position (`:1129`) and is clipped by `do_walk` to what the desktop
-/// window owns. Half this strip is desktop and gets the background; the other
-/// half is window A's and must be left for A's `WM_REDRAW`.
+/// The mover drag itself paints nothing at all: it is an XOR outline
+/// (`gr_dragbox`, `aes/gemgrlib.c:243-267`) that `gr_wait` complements away
+/// again, and the window is moved **once, at the end**, when the owner answers
+/// `WM_MOVED` with `wind_set(WF_CURRXYWH)` (`hctl_window` → `ct_msgup`,
+/// `aes/gemctrl.c:237-238,314`). That `wm_set` runs `draw_change`
+/// (`aes/gemwmlib.c:1673-1675`), whose `w_drawdesk(&c)` (`:1217-1219`) comes
+/// *after* the rectangle lists were rebuilt for the new position (`:1129`) and
+/// is clipped by `do_walk` to what the desktop window owns. Half this strip is
+/// desktop and gets the background; the other half is window A's and must be
+/// left for A's `WM_REDRAW`.
 #[test]
 fn the_mover_drag_repaints_only_desktop_it_uncovered() {
     let _guard = SERIAL.lock().unwrap_or_else(|e| e.into_inner());
@@ -926,7 +928,7 @@ fn the_mover_drag_repaints_only_desktop_it_uncovered() {
     let b = &host.raster;
     let mut pb = fresh(host);
 
-    let _ha = open_window(&mut pb, KIND, DA);
+    let ha = open_window(&mut pb, KIND, DA);
     let hb = open_window(&mut pb, KIND, DB);
     let work_b = wind_get_rect(&mut pb, hb, WF_WXYWH);
     assert!(
@@ -946,35 +948,64 @@ fn the_mover_drag_repaints_only_desktop_it_uncovered() {
     b.paint(work_b, MARK);
     let before = b.snapshot();
 
-    // One step, not several: a solid drag blits the window to its new place,
-    // and the source region it leaves behind is written by nothing else — so
-    // "unchanged" is exactly measurable. (Several steps would smear the moved
-    // window's own border across the strip, blit by blit.)
     host.push(Packet { dx: DRAG, dy: 0, buttons: 1 });
     host.push(Packet { dx: 0, dy: 0, buttons: 0 }); // release
     for _ in 0..8 {
         host.push(Packet { dx: 0, dy: 0, buttons: 0 });
     }
 
+    // The first call runs the drag (the button is down, so it cannot return
+    // until `intercept` has handled it); the loop then walks past whatever
+    // `wind_open` left in the FIFO to the `WM_MOVED` the drag posted.
+    let mut msg = Box::new([0i16; 8]);
+    for _ in 0..8 {
+        pb.intin.fill(0);
+        pb.intin[0] = MU_MESAG | MU_BUTTON | MU_KEYBD;
+        pb.intin[1] = 0x0102;
+        pb.intin[2] = 3;
+        pb.intin[3] = 0;
+        pb.addrin[0] = msg.as_mut_ptr() as u64;
+        pb.call(OP_EVNT_MULTI, 16, 7, 1);
+        pb.addrin[0] = 0;
+        if msg[0] == 28 {
+            break;
+        }
+    }
+    assert_eq!(msg[0], 28, "the drag must post WM_MOVED (28), got {msg:?}");
+
+    // Nothing may have been painted yet — the drag draws the XOR outline and
+    // erases it again (`gr_wait`, aes/gemgrlib.c:169-191).
+    let (during, at) = b.diff_in(&before, work_b);
+    assert_eq!(
+        during, 0,
+        "the mover drag itself changed {during} pixels of the window's work area \
+         (first {at:?}); `gr_dragbox` moves nothing and paints nothing"
+    );
+
+    // The owner answers WM_MOVED — this is where the screen changes.
     pb.intin.fill(0);
-    pb.intin[0] = MU_MESAG | MU_BUTTON | MU_KEYBD;
-    pb.intin[1] = 0x0102;
-    pb.intin[2] = 3;
-    pb.intin[3] = 0;
-    pb.addrin[0] = 0;
-    pb.call(OP_EVNT_MULTI, 16, 7, 1);
+    pb.intin[0] = hb;
+    pb.intin[1] = WF_CXYWH;
+    pb.intin[2] = msg[4];
+    pb.intin[3] = msg[5];
+    pb.intin[4] = msg[6];
+    pb.intin[5] = msg[7];
+    pb.call(OP_WIND_SET, 6, 1, 0);
 
     // The strip B vacated: the columns left of B's *new* border rectangle,
-    // restricted to B's former work area (its frame travels with the blit).
-    // Left of A's edge it is the desktop's; from A's edge on it is A's.
+    // restricted to B's former work area. Left of A's border it is the
+    // desktop's; from A's *work* area on it is A's. A's border columns belong to
+    // neither half — the AES draws its frame there itself (`w_cpwalk` per window
+    // inside the damage rectangle, `aes/gemwmlib.c:1029-1030`).
+    let work_a = wind_get_rect(&mut pb, ha, WF_WXYWH);
     let desk_strip = (work_b.0, work_b.1, DA.0 - work_b.0, work_b.3);
-    let a_strip = (DA.0, work_b.1, DB.0 + DRAG - DA.0, work_b.3);
+    let a_strip = (work_a.0, work_b.1, DB.0 + DRAG - work_a.0, work_b.3);
     assert!(desk_strip.2 > 0 && a_strip.2 > 0, "both halves of the strip must be non-empty");
 
     let (n, first) = b.diff_in(&before, a_strip);
     assert_eq!(
         n, 0,
-        "the mover drag painted {n} of {} pixels into the half of the vacated strip \
+        "the move painted {n} of {} pixels into the half of the vacated strip \
          that window A owns (first {first:?}). w_drawdesk walks the DESKTOP window's \
          owner rectangle list, which after `newrect` no longer contains anything an \
          open window covers (aes/gemwmlib.c:286-312,340-359; aes/gemwrect.c:136-205); \

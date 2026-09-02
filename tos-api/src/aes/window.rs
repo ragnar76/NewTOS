@@ -21,7 +21,7 @@ use super::object::{render_tree_app, render_tree_lp64, Object};
 use super::Aespb;
 use crate::bdos::process::Abi;
 use crate::host::{host, Host};
-use crate::vdi::backend::{ClipRect, Pel, PatternFill, RasterBackend, Rect, WriteMode};
+use crate::vdi::backend::{ClipRect, Pel, PatternFill, RasterBackend, WriteMode};
 use core::cell::UnsafeCell;
 use core::sync::atomic::{AtomicBool, AtomicI16, AtomicU64, AtomicU8, Ordering};
 
@@ -157,6 +157,11 @@ pub(super) const GL_HBOX: i16 = 19;
 /// `CONF_WITH_3D_OBJECTS` on (`config.h:1259`), so every window gadget sits in
 /// a box grown by `2 * ADJ3DSTD` and is inset by `ADJ3DSTD` inside it.
 const ADJ3DSTD: i16 = 2;
+
+/// EmuTOS `MAX_COORDINATE` (`include/sysconf.h:63`) — the "no limit" extent the
+/// Control Manager gives `gr_dragbox` for the vertical direction, so a window
+/// can be dragged off the bottom of the screen.
+const MAX_COORDINATE: i16 = 10000;
 
 /// 3D-adjusted gadget box width — EmuTOS `adj_wbox`, set in `wm_init`
 /// (`gemwmlib.c:1311-1324`): `gl_wbox + 2*ADJ3DSTD`, shrunk by 1 on a screen
@@ -2152,14 +2157,26 @@ pub fn wind_set(pb: &Aespb) {
                 (r, r)
             };
             // Repaint only the union of the old and new border rects — the
-            // programmatic move/size path (desktop WM_FULLED, app `wind_set`) —
-            // not the whole screen. The frame composite (background + frames) is
-            // damage-scoped here; this window's content follows via `send_redraw`
-            // (WM_REDRAW). Lower windows' content is re-laid by the owner's
-            // damage repaint when it drives this path (`desk::redraw`).
+            // programmatic move/size path (desktop WM_MOVED/WM_SIZED/WM_FULLED,
+            // app `wind_set`) — not the whole screen. This is EmuTOS
+            // `draw_change`'s tail (`gemwmlib.c:1216-1222`): `w_drawdesk(&c)`
+            // over the damage rectangle, then `w_update(start, &c, stop, moved)`.
             let d = union_grect(prev, r);
             redraw_clip(d.x, d.y, d.w, d.h);
+            // This window's content: `w_redraw` for the whole work area, since —
+            // unlike EmuTOS, which blits the top window across in `w_move`
+            // (`:944-987`) and then passes `moved = TRUE` to skip it — nothing
+            // carried its pixels to the new place.
             send_redraw(handle, work);
+            // Every *other* window the damage reaches: `w_update` walks the whole
+            // window list and calls `w_redraw(top, pt)` on each (`:1004-1048`,
+            // `:887-907`), so a window the moved one uncovers is asked for its
+            // content back. Without this the vacated rectangle kept showing the
+            // moved window's old pixels wherever it fell inside another window —
+            // the AES may not paint there itself (`do_walk`, `:286-312`), so the
+            // owner has to. Same-window redraws coalesce in the FIFO, so the
+            // `send_redraw` above is not duplicated.
+            broadcast_redraw(d);
         }
         WF_TOP => {
             // `if (w_handle != gl_wtop) wm_mktop(w_handle)` — EmuTOS `wm_set`
@@ -2604,104 +2621,9 @@ fn watchbox(r: Grect, ch: u16, backend: &dyn RasterBackend) -> bool {
     was_in
 }
 
-/// Live-drag the whole frame following the mouse until release; returns
-/// the final border rect (the frame is left drawn there). Stands in for
-/// EmuTOS `gr_dragbox` (outline drag) at our altitude.
-fn drag_move(w: &mut Window, backend: &dyn RasterBackend) -> Grect {
-    let Some(h) = host() else { return w.curr };
-    let full = ClipRect::full(backend.width(), backend.height());
-    let (sx, sy) = crate::vdi::mouse_position();
-    let orig = w.curr;
-    let sw = backend.width() as i16;
-    let sh = backend.height() as i16;
-    let mut last = orig;
-    loop {
-        let (mx, my) = crate::vdi::mouse_position();
-        // Bound the window's top to the desktop work area — below the menu bar
-        // (`menu::desk_top`, 0 when none is installed). A drag must never push
-        // the window over the menu bar, which the desktop paints once and never
-        // restores (EmuTOS bounds window moves to `gl_rfull` = screen minus the
-        // menu bar). The bottom/left/right still reach the screen edges.
-        // `.max(..)` guards the clamp: a window wider/taller than the available
-        // area would make `max < min` and panic `i16::clamp` (fatal in no_std).
-        let top = super::menu::desk_top();
-        let nx = (orig.x + mx - sx).clamp(0, (sw - orig.w).max(0));
-        let ny = (orig.y + my - sy).clamp(top, (sh - orig.h).max(top));
-        let nr = Grect { x: nx, y: ny, w: orig.w, h: orig.h };
-        if nr != last {
-            // Solid drag (modern HW — no rubber-band outline): blit the
-            // rendered window (frame + content) to the new position via a
-            // fast screen-to-screen copy, then repaint the vacated L-region
-            // with the desktop background. The whole window follows the mouse
-            // over the intact background — no white trail, no re-render. Hide
-            // the cursor around the blit so its sprite isn't duplicated into
-            // the moved region.
-            crate::vdi::cursor_hide(backend);
-            // Commit the new geometry **before** anything is painted, exactly
-            // as `draw_change` sets `WS_CURR` and rebuilds every rectangle list
-            // (`everyobj(… newrect …)`) before `w_move`'s blit and the
-            // `w_drawdesk` that follows it (`gemwmlib.c:1101-1106,1129,1177,
-            // 1217-1219`). The vacated region is only the desktop's where the
-            // window at its *new* place — and every other window — leaves it so.
-            set_curr(w, nr);
-            backend.copy_rect(
-                Rect { x: last.x, y: last.y, w: last.w, h: last.h },
-                nr.x,
-                nr.y,
-                3, // BitBlt replace
-                full,
-            );
-            repaint_vacated(backend, last, nr);
-            crate::vdi::cursor_show(backend);
-            last = nr;
-        }
-        if crate::vdi::mouse_buttons() & 0x01 == 0 {
-            break;
-        }
-        h.pump_input();
-    }
-    // Record the pre-move border rect as the window's previous rect so the owner
-    // (the desktop) can compute the damage region (old ∪ new) for the
-    // settle-overlap repaint on WM_MOVED. The interactive drag mutated `w.curr`
-    // directly, bypassing the `wind_set(WF_CXYWH)` path that maintains `prev`.
-    w.prev = orig;
-    last
-}
-
-/// Repaint the part of `old` not covered by `new` (same size — a window
-/// move) with the desktop background: the vacated L-region of a solid drag.
-/// Up to two rectangles — a full-width horizontal strip for the vertical
-/// motion, plus a vertical strip limited to the overlapping rows (so the
-/// corner is not painted twice, and the still-covered part is never erased).
-///
-/// This is `w_move`'s trailing `w_drawdesk(&c)` (`gemwmlib.c:1217-1219`) with
-/// `c` narrowed to the L instead of the union of the two positions, so
-/// [`paint_bg_clip`] does the `do_walk` clipping: only the part of the L that
-/// the desktop window still owns is painted. Where the L falls inside another
-/// window, that window owns it and gets it back on `WM_REDRAW` — the AES must
-/// not put the desktop background there.
-fn repaint_vacated(backend: &dyn RasterBackend, old: Grect, new: Grect) {
-    let dx = new.x - old.x;
-    let dy = new.y - old.y;
-    if dy > 0 {
-        paint_bg_clip(backend, rect_clip(old.x, old.y, old.w, dy));
-    } else if dy < 0 {
-        paint_bg_clip(backend, rect_clip(old.x, new.y + old.h, old.w, -dy));
-    }
-    let oy = old.y.max(new.y);
-    let oh = (old.y + old.h).min(new.y + old.h) - oy;
-    if oh > 0 {
-        if dx > 0 {
-            paint_bg_clip(backend, rect_clip(old.x, oy, dx, oh));
-        } else if dx < 0 {
-            paint_bg_clip(backend, rect_clip(new.x + old.w, oy, -dx, oh));
-        }
-    }
-}
-
-/// EmuTOS `gr_stilldn` (`aes/gemgrlib.c:47-73`) as the sizer drag uses it:
-/// block until the pointer leaves the 1×1 rectangle at `(x, y)` — i.e. until it
-/// moves at all — or the button comes up. Returns `false` for the button-up
+/// EmuTOS `gr_stilldn` (`aes/gemgrlib.c:47-73`) as the sizer and mover drags use
+/// it: block until the pointer leaves the 1×1 rectangle at `(x, y)` — i.e. until
+/// it moves at all — or the button comes up. Returns `false` for the button-up
 /// exit (`which & MU_BUTTON`, `:69-70`) and `true` for the `MU_M1` exit.
 ///
 /// `gr_wait` passes `gr_stilldn(TRUE, xrat, yrat, 1, 1)` (`:182`), so the
@@ -2821,15 +2743,135 @@ fn drag_size(w: &Window, backend: &dyn RasterBackend) -> Grect {
     Grect { x: border.x, y: border.y, w: nw, h: nh }
 }
 
+/// EmuTOS `rc_constrain` (`util/rectfunc.c:32-42`) — pull `pt` back inside `pc`
+/// without changing its size: each edge that sticks out moves the origin, the
+/// left/top checks first so a `pt` larger than `pc` ends up pinned at `pc`'s
+/// far edge.
+fn rc_constrain(pc: Grect, pt: &mut Grect) {
+    if pt.x < pc.x {
+        pt.x = pc.x;
+    }
+    if pt.y < pc.y {
+        pt.y = pc.y;
+    }
+    if pt.x + pt.w > pc.x + pc.w {
+        pt.x = (pc.x + pc.w) - pt.w;
+    }
+    if pt.y + pt.h > pc.y + pc.h {
+        pt.y = (pc.y + pc.h) - pt.h;
+    }
+}
+
+/// EmuTOS `gr_dragbox` (`aes/gemgrlib.c:243-267`) — drag a fixed-size `w`×`h`
+/// XOR box that keeps its distance to the pointer, constrained to `pc`, until
+/// the button comes up; returns the final origin.
+///
+/// The grab offset is taken **once**, before the loop, with
+/// `gr_clamp(sx+1, sy+1, 0, 0, &offx, &offy)` (`:253`) — which for
+/// `gr_clamp(cursor, origin, min) = max(cursor - origin + 1, min)` is
+/// `max(mouse - box_origin, 0)`, i.e. where inside the box the pointer took
+/// hold; the box then tracks as `origin = mouse - offset` (`:259-260`) so it
+/// does not snap a corner to the pointer.
+///
+/// Like [`gr_rubwind`] this draws **nothing but the outline**: `gr_wait`
+/// (`:169-191`) complements the box, blocks in `gr_stilldn` until the pointer
+/// moves or the button comes up, and complements it away again. The window is
+/// not moved and no pixel underneath it is repainted — the Control Manager
+/// posts `WM_MOVED` and the *owner* applies the new position with
+/// `wind_set(WF_CURRXYWH)` (`hctl_window` → `ct_msgup`, `gemctrl.c:237-238,314`).
+///
+/// This replaces the former solid live-move, which blitted the whole window to
+/// its new place once per drag frame (`copy_rect`) and repainted only the
+/// vacated L-region with the desktop background. Inside a window underneath,
+/// that L is not the desktop's to paint (`do_walk`, `gemwmlib.c:286-312`) and
+/// no `WM_REDRAW` asked its owner for it either, so every drag step left the
+/// moving window's leading edge behind: the comb of one-pixel vertical lines,
+/// one per pointer step, reported from a real Pi 4.
+fn gr_dragbox(
+    h: &'static dyn Host,
+    w: i16,
+    hgt: i16,
+    sx: i16,
+    sy: i16,
+    pc: Grect,
+    backend: &dyn RasterBackend,
+) -> (i16, i16) {
+    update_beg(); // wm_update(BEG_UPDATE)
+    // `gr_setup(BLACK)`: clip to the whole screen, XOR write mode
+    // (`gemgrlib.c:76-80`); the XOR mode lives in `gsx_xbox`.
+    let clip = ClipRect::full(backend.width(), backend.height());
+    let (mx0, my0) = crate::vdi::mouse_position();
+    let offx = (mx0 - sx).max(0);
+    let offy = (my0 - sy).max(0);
+    let mut o = Grect { x: sx, y: sy, w, h: hgt };
+    loop {
+        let (mx, my) = crate::vdi::mouse_position();
+        o.x = mx - offx;
+        o.y = my - offy;
+        rc_constrain(pc, &mut o);
+        // `gr_wait` (`gemgrlib.c:169-191`) with `poff = gl_rzero`, so
+        // `have2box` is FALSE and `gr_draw` emits the single box (`:171,155-166`).
+        // The `gsx_moff`/`gsx_mon` brackets are our counted cursor hide/show.
+        crate::vdi::cursor_hide(backend);
+        gr_draw(o, Grect::default(), backend, clip);
+        crate::vdi::cursor_show(backend);
+        let down = gr_stilldn(mx, my, h);
+        crate::vdi::cursor_hide(backend);
+        gr_draw(o, Grect::default(), backend, clip);
+        crate::vdi::cursor_show(backend);
+        if !down {
+            break;
+        }
+    }
+    update_end(); // wm_update(END_UPDATE)
+    (o.x, o.y)
+}
+
+/// The `W_NAME` arm of EmuTOS `hctl_window` (`aes/gemctrl.c:225-239`): build the
+/// constraining rectangle, run [`gr_dragbox`] over the window's **border** rect,
+/// and report the dragged origin with the *unchanged* size — the rectangle that
+/// goes into the `WM_MOVED` message (`ct_msgup(message, owner, wh, x, y, w, h)`,
+/// `gemctrl.c:314`).
+///
+/// The constraining rectangle is the 3D branch's
+/// `r_set(&f, 0, gl_hbox, gl_rscreen.g_w + w - gl_wbox - 6 - 2*ADJ3DSTD,
+/// MAX_COORDINATE)` (`:230-232`), i.e. "prevent the mover gadget from being
+/// moved completely offscreen": the window may hang off the right edge until
+/// only `gl_wbox + 6 + 2*ADJ3DSTD` pixels of the title band are left, may not
+/// rise above the menu row, and is effectively unbounded downward
+/// (`MAX_COORDINATE` = 10000, `include/sysconf.h:63`). So only two of the four
+/// sides are held: `f.g_x` keeps the left edge at 0 and `f.g_y` the top at the
+/// menu row, while the window may be pushed off the right edge down to
+/// `gl_wbox + 6 + 2*ADJ3DSTD` = 29 pixels of title band, and off the bottom
+/// entirely. The old solid drag pinned all four sides to the screen rectangle;
+/// EmuTOS does not.
+fn drag_move(w: &Window, backend: &dyn RasterBackend) -> Grect {
+    let border = w.curr;
+    // No host means no input pump, so there is no drag to run: report the
+    // geometry unchanged rather than inventing one.
+    let Some(h) = host() else { return border };
+    let screen = screen_rect();
+    let f = Grect {
+        x: 0,
+        y: GL_HBOX,
+        w: screen.w + border.w - GL_WBOX - 6 - 2 * ADJ3DSTD,
+        h: MAX_COORDINATE,
+    };
+    let (nx, ny) = gr_dragbox(h, border.w, border.h, border.x, border.y, f, backend);
+    Grect { x: nx, y: ny, w: border.w, h: border.h }
+}
+
 /// Live-drag a scroll-bar elevator (thumb) following the mouse until release;
 /// returns the final position 0..1000, which the caller posts as `WM_VSLID` /
 /// `WM_HSLID` `msg[4]`. Models EmuTOS `gr_slidebox` (`gemgrlib.c:358-410`): the
 /// thumb is dragged within its track, held at a constant grip offset from the
 /// cursor, and the reported position is `mul_div_round(travel_used, 1000,
-/// travel)` (the D-098 slider-creep rounding). Feedback is **thumb-follow**
-/// (the slider is repainted at the new spot each frame, bracketed with the
-/// counting cursor semaphore), matching NewTOS' solid [`drag_move`] rather than
-/// EmuTOS' XOR outline — the same modern-HW choice already made for the mover.
+/// travel)` (the D-098 slider-creep rounding). Feedback is **thumb-follow** (the
+/// slider is repainted at the new spot each frame, bracketed with the counting
+/// cursor semaphore); EmuTOS instead drags an XOR outline of the elevator inside
+/// its slide box (`gr_slidebox` → `gr_dragbox`, `gemgrlib.c:388`). That is a
+/// remaining deviation, tracked separately — unlike the mover and the sizer it
+/// repaints only the slider gadget, never the window or what is under it.
 /// The window's stored slider position is advanced so the thumb tracks the
 /// cursor; the owner then normally confirms it via `wind_set(WF_?SLIDE, pos)`.
 fn drag_elevator(w: &mut Window, vert: bool, backend: &dyn RasterBackend) -> i16 {

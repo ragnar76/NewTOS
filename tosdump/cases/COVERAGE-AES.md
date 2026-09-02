@@ -1165,3 +1165,148 @@ host rig measures exactly. The pixel-level proof of the whole change is
 `wind_close`, `wind_set(WF_CURRXYWH)`, `form_dial(FMD_FINISH)` and a scripted
 mover drag into a framebuffer and counts what changed outside the region EmuTOS
 would repaint.
+
+---
+
+## Round 6 predictions — the mover drags an outline (D-MOVE-1…5, 2026-09-02)
+
+Written **before** any run of the fixed build.
+
+### What EmuTOS does, and how that was established
+
+`hctl_window`'s `W_NAME` arm is four statements (`aes/gemctrl.c:225-239`,
+3D branch):
+
+```c
+case W_NAME:
+    if (kind & MOVER)
+    {
+        ob_change(gl_awind, gadget, selected, TRUE);
+        /* prevent the mover gadget from being moved completely offscreen */
+        r_set(&f, 0, gl_hbox, gl_rscreen.g_w+w-gl_wbox-6-2*ADJ3DSTD, MAX_COORDINATE);
+        gr_dragbox(w, h, x, y, &f, &x, &y);
+        message = WM_MOVED;
+    }
+    break;
+```
+
+with `x, y, w, h` = `w_getsize(WS_CURR)`, the **border** rectangle (`:203-204`),
+and the message going out as `ct_msgup(message, owner, wh, x, y, w, h)`
+(`:314`) — the dragged origin with the *unchanged* size.
+
+`gr_dragbox` (`aes/gemgrlib.c:243-267`) takes the grab offset once, before the
+loop, with `gr_clamp(sx+1, sy+1, 0, 0, &offx, &offy)` — for
+`gr_clamp(cursor, origin, min) = max(cursor - origin + 1, min)` that is
+`max(mouse - box_origin, 0)`, i.e. where inside the box the pointer took hold —
+and then loops `o.g_x = xrat - offx; o.g_y = yrat - offy; rc_constrain(pc, &o);
+gr_wait(&o, &gl_rzero)`. `gr_wait` (`:169-191`) complements the box, blocks in
+`gr_stilldn` until the pointer moves or the button comes up, and complements it
+away again. **The window is not moved and nothing under it is repainted.** The
+*owner* moves it, on `WM_MOVED`, with `wind_set(WF_CURRXYWH)` — which is
+`wm_set` → `draw_change` (`aes/gemwmlib.c:1673-1675,1058-1223`): `w_drawdesk(&c)`
+over the damage rectangle (`:1217-1219`) and then `w_update(start, &c, stop,
+moved)` (`:1222`), which walks every window and posts a `WM_REDRAW` to each one
+the damage reaches (`w_redraw`, `:887-907`).
+
+The outline itself is `gsx_xbox` = `gsx_bxpts` + `gsx_xline`
+(`aes/gemgraf.c:246-278`), and `gsx_xline` (`:140-163`) dithers each of the four
+segments with the `hztltbl`/`verttbl` parity masks `0x5555`/`0xaaaa` — "a box
+that will look right on a dithered surface". Both tables resolve to the same
+screen-aligned checkerboard (a pixel is on exactly when `x + y` is odd), because
+the horizontal dash is applied at absolute `x` (`vdi/vdi_line.c:2327-2344`) while
+the vertical one rotates one bit per pixel from the segment's start point
+(`:2084-2145`). Each segment is its own two-point `v_pline`, so
+`LSTLIN = TRUE` for all four (`:1106-1108`) and the corners, complemented twice,
+stay unchanged.
+
+### What was measured before the change (host rig, `aes_window_drag.rs`)
+
+A scripted mover drag of a 320×220 window across a second, lower window:
+
+| | before | after |
+|---|---|---|
+| pixels changed per drag frame | 13 920 … 66 181, monotonically growing | 667 |
+| pixels written into the lower window's work area | 353 464 | 0 |
+| screen after the button came up vs. before the press | 45 592 of 69 496 marked pixels destroyed | bit-identical |
+
+With a fine 2-pixel-per-step drag the residue is **exactly one 1-pixel column
+per pointer step, with 1-pixel gaps** — 61 such columns for a 60-step drag —
+confined to the window underneath. Over bare desktop the same drag leaves two
+solid runs (the vacated strip repainted, the newly covered strip): no comb. That
+is the photographed artefact, and it says the band in the photograph lies inside
+the lower window, not on the green desktop.
+
+### D-MOVE-1 — the window no longer follows the pointer (real Pi 4) — **VISIBLE CHANGE**
+
+Drag any directory window by its title bar.
+
+- **[E]** The window **stays where it is** for the whole drag. What follows the
+  pointer is a 1-pixel, 50 %-dithered rectangle of the window's *border* size.
+  The window jumps to the new place when the button is released. This is the
+  same change of feel the sizer got in `fbe8d0e`, and it is EmuTOS' behaviour —
+  it is not a regression and it is worth announcing before someone reports it.
+- **[E]** The outline is grey-looking rather than solid black: it is the
+  checkerboard `gsx_xline` draws, not a solid line.
+- **[E]** The pointer keeps its grip on the spot of the title bar it grabbed —
+  the outline does not snap a corner to the cursor.
+
+### D-MOVE-2 — the comb trail is gone (real Pi 4)
+
+Drag one directory window across a second one, slowly, as in the photographs.
+
+- **[E]** The band of tightly packed 1-pixel vertical lines is **gone**. The
+  lower window's listing is untouched for the whole drag; the only thing that
+  crosses it is the outline, which erases itself.
+- **[E]** On release the moved window appears at its new place, the strip it
+  vacated shows the desktop background where the desktop owns it and the lower
+  window's listing where that window owns it — the latter arriving as the
+  `WM_REDRAW` the AES now fans out.
+- **[E]** Closing the moved window afterwards still restores the lower one
+  cleanly (unchanged from `50c6a48`).
+
+### D-MOVE-3 — the drag bounds change at the screen edges (real Pi 4)
+
+- **[E]** A window can now be dragged **off the bottom** of the screen and far
+  off the **right** edge — until only `gl_wbox + 6 + 2*ADJ3DSTD` = 29 pixels of
+  its title band are left on screen. That is `r_set(&f, 0, gl_hbox,
+  gl_rscreen.g_w+w-gl_wbox-6-2*ADJ3DSTD, MAX_COORDINATE)` (`gemctrl.c:230-232`).
+  The old solid drag pinned all four sides to the screen rectangle; EmuTOS does
+  not.
+- **[E]** It still cannot be dragged **above** the menu row: `f.g_y = gl_hbox`
+  = 19.
+- **[N]** TeraDesk's own `do_xyfix` (`desksupp.c:262-272`) snaps the confirmed
+  `x` to a 16-pixel boundary and clamps `y` below the menu bar, so a desktop
+  window's final position is still grid-aligned. Our desktop does the same
+  (`kernel/src/desk/main.rs` `do_xyfix`).
+
+### D-MOVE-4 — a window uncovered by a move gets its content back (real Pi 4)
+
+Two overlapping windows; move the upper one away from the lower one.
+
+- **[E]** The part of the lower window that the upper one had covered is
+  repainted with its listing, not left showing the moved window's old pixels.
+  `wind_set(WF_CURRXYWH)` now runs `w_update`'s fan-out (`broadcast_redraw`), so
+  the lower window's owner receives a `WM_REDRAW` for the uncovered rectangle.
+  Before this change only the *moved* window got one.
+- **[E]** The same now holds for a **resize** that shrinks a window off another
+  one — the sizer path goes through the same `WF_CURRXYWH`.
+
+### D-MOVE-5 — the dithered outline elsewhere
+
+- **[E]** The sizer's two rubber-band boxes, `graf_rubberbox` (the desktop's
+  rubber-band selection), `graf_dragbox` and `graf_movebox`/`graf_growbox`/
+  `graf_shrinkbox` (the dialog grow/shrink animation) are all 50 % dithered now,
+  not solid. Same primitive, one change.
+- **[E]** Nothing static changes: the QEMU `raspi4b` boot screendump is
+  **byte-identical** before and after (0 of 921 600 bytes differ, measured) —
+  the outline only exists while a button is held or a dialog animates.
+
+### What is real-Pi-4-only, and why
+
+D-MOVE-1…4 need a mouse *and* `C:` at once, which no QEMU board offers
+(`raspi4b` has the SD, `virt` has the input). QEMU's contribution is the
+byte-identical boot screendump in D-MOVE-5. The pixel-level proof is
+`tos-api/tests/aes_window_drag.rs` — four cases that drive the real trap path
+into a framebuffer: the sizer band, the mover band, a mover drag *across a
+second window* asserting its work area is never written, and the `WF_CURRXYWH`
+settle asserting the uncovered window is sent a `WM_REDRAW`.

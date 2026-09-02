@@ -8,12 +8,14 @@
 //! the button is released.
 //!
 //! The interactive outline (rubber-band select, drag-box, move-box) is a
-//! 1-pixel rectangle drawn in **XOR** mode: XOR is self-inverse, so
-//! redrawing the same rectangle erases it and restores the exact pixels
-//! underneath — over the (non-white) desktop pattern, window content and
-//! desktop icons alike. Matches EmuTOS `gr_rubwind` / `gsx_xline`
-//! (`MD_XOR`). (The earlier solid-white erase assumed a white background and
-//! left a white "staircase" trail on the patterned desktop / windows.)
+//! 1-pixel rectangle drawn in **XOR** mode and **50% dithered**: XOR is
+//! self-inverse, so redrawing the same rectangle erases it and restores the
+//! exact pixels underneath — over the (non-white) desktop pattern, window
+//! content and desktop icons alike. Matches EmuTOS `gsx_xbox` → `gsx_xline`
+//! (`aes/gemgraf.c:140-163,271-278`), whose `0x5555`/`0xaaaa` parity masks put
+//! the outline on the screen-aligned checkerboard so it "looks right on a
+//! dithered surface". (The earlier solid-white erase assumed a white background
+//! and left a white "staircase" trail on the patterned desktop / windows.)
 
 use super::object::{self, Object, ObjTree};
 use super::Aespb;
@@ -30,36 +32,71 @@ const M_SAVE: i16 = 258;
 const M_RESTORE: i16 = 259;
 const M_PREVIOUS: i16 = 260;
 
-/// Draw/erase a 1-pixel outline rectangle in **XOR** mode. XOR is
+/// EmuTOS `gsx_bxpts` (`aes/gemgraf.c:246-258`) — the five polyline points of
+/// the box `(x, y, w, h)`, clockwise from the top-left and back to it, so the
+/// four segments are top, right, bottom, left.
+fn gsx_bxpts(x: i16, y: i16, w: i16, h: i16) -> [(i16, i16); 5] {
+    [
+        (x, y),
+        (x + w - 1, y),
+        (x + w - 1, y + h - 1),
+        (x, y + h - 1),
+        (x, y),
+    ]
+}
+
+/// EmuTOS `gsx_xline` (`aes/gemgraf.c:140-163`) — draw a polyline as **50%
+/// dithered** segments, "a box that will look right on a dithered surface"
+/// (`:271-273`). Each segment gets a user line style chosen by the parity of
+/// its start point:
+///
+/// * horizontal (`x0 != x1`): `hztltbl[y & 1]` taken at the *left* endpoint,
+///   `hztltbl = { 0x5555, 0xaaaa }`;
+/// * vertical (`x0 == x1`): `verttbl[(x & 1) | ((y & 1) << 1)]`,
+///   `verttbl = { 0x5555, 0xaaaa, 0xaaaa, 0x5555 }`.
+///
+/// Both tables resolve to the same screen-aligned checkerboard — a pixel is on
+/// exactly when `x + y` is odd — because the horizontal dash is applied at
+/// absolute `x` (`abline`'s `draw_rect_common` path, `vdi/vdi_line.c:2327-2344`)
+/// while the vertical one rotates one bit per pixel from the start point
+/// (`swblit_vertical_line16`, `:2084-2145`). That is what makes two boxes drawn
+/// next to each other line up.
+///
+/// Each segment is its own two-point `v_pline`, so `polyline` sets
+/// `LSTLIN = TRUE` for all of them (`vdi/vdi_line.c:1106-1108`) and the XOR
+/// end-point shortening never applies: the four corners are complemented by two
+/// segments each and therefore stay unchanged. `draw_line` passes `last = true`
+/// for the same reason.
+fn gsx_xline(pts: &[(i16, i16)], backend: &dyn RasterBackend, clip: ClipRect) {
+    const HZTLTBL: [u16; 2] = [0x5555, 0xaaaa];
+    const VERTTBL: [u16; 4] = [0x5555, 0xaaaa, 0xaaaa, 0x5555];
+    for seg in pts.windows(2) {
+        let ((x0, y0), (x1, y1)) = (seg[0], seg[1]);
+        let st = if x0 == x1 {
+            VERTTBL[((x0 & 1) | ((y0 & 1) << 1)) as usize]
+        } else {
+            // `linexy` is the left-hand endpoint of the pair (`gemgraf.c:155`).
+            let ly = if x0 < x1 { y0 } else { y1 };
+            HZTLTBL[(ly & 1) as usize]
+        };
+        backend.draw_line(x0, y0, x1, y1, BLACK, WriteMode::Xor, clip, st);
+    }
+}
+
+/// Draw/erase a 1-pixel outline rectangle in **XOR** mode — EmuTOS `gsx_xbox`
+/// = [`gsx_bxpts`] + [`gsx_xline`] (`aes/gemgraf.c:271-278`). XOR is
 /// self-inverse, so drawing the same rectangle a second time restores the exact
 /// pixels underneath — the rubber-band / drag / move outline leaves no trail
-/// over the desktop pattern, window content or icons (unlike a solid draw, which
-/// would need the original pixels to erase and previously painted white).
+/// over the desktop pattern, window content or icons.
 ///
 /// The `_col` pen is ignored — `WriteMode::Xor` complements the destination
 /// regardless of pen — but the argument is kept so the draw/erase call sites
-/// read symmetrically (`BLACK` to show, `WHITE` to hide). The vertical edges
-/// exclude the corner rows already covered by the horizontal edges, so no pixel
-/// is XOR'd twice within one call (a double XOR would cancel it, leaving gaps).
+/// read symmetrically (`BLACK` to show, `WHITE` to hide).
 fn outline(x: i16, y: i16, w: i16, h: i16, _col: Pel, backend: &dyn RasterBackend, clip: ClipRect) {
     if w <= 0 || h <= 0 {
         return;
     }
-    const SOLID: u16 = 0xFFFF; // dash mask: every pixel on
-    let (xr, yb) = (x + w - 1, y + h - 1);
-    // Top + bottom edges (full width). A 1-row box has only the top edge.
-    backend.draw_line(x, y, xr, y, BLACK, WriteMode::Xor, clip, SOLID);
-    if h > 1 {
-        backend.draw_line(x, yb, xr, yb, BLACK, WriteMode::Xor, clip, SOLID);
-    }
-    // Left + right edges, excluding the corner rows already drawn above so no
-    // pixel is complemented twice. A 1-column box has only the left edge.
-    if h > 2 {
-        backend.draw_line(x, y + 1, x, yb - 1, BLACK, WriteMode::Xor, clip, SOLID);
-        if w > 1 {
-            backend.draw_line(xr, y + 1, xr, yb - 1, BLACK, WriteMode::Xor, clip, SOLID);
-        }
-    }
+    gsx_xline(&gsx_bxpts(x, y, w, h), backend, clip);
 }
 
 /// EmuTOS `gsx_xbox` (`aes/gemgraf.c:274-278`): complement the 1-pixel outline
@@ -68,11 +105,9 @@ fn outline(x: i16, y: i16, w: i16, h: i16, _col: Pel, backend: &dyn RasterBacken
 /// and the screen-wide clip come from `gr_setup`
 /// (`gsx_sclip(&gl_rscreen); gsx_attr(FALSE, MD_XOR, BLACK)`, `gemgrlib.c:76-80`).
 ///
-/// Shared with the Control Manager's sizer drag (`window::drag_size`, our
-/// `gr_rubwind`), which draws the same box — one primitive, one behaviour.
-/// (EmuTOS' `gsx_xline` additionally dithers each segment with the
-/// `0x5555`/`0xaaaa` parity masks; [`outline`] draws it solid, as it already
-/// did for every other `graf_*` box.)
+/// Shared with the Control Manager's sizer and mover drags
+/// (`window::drag_size`/`drag_move`, our `gr_rubwind`/`gr_dragbox`), which draw
+/// the same box — one primitive, one behaviour.
 pub(super) fn gsx_xbox(x: i16, y: i16, w: i16, h: i16, backend: &dyn RasterBackend, clip: ClipRect) {
     outline(x, y, w, h, BLACK, backend, clip);
 }
