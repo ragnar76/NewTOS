@@ -288,10 +288,26 @@ comes from the requested pool — then **maps it into a per-process EL0 heap
 window** (`bdos::process::usermem`, an offset map directly above the 4 MiB TPA,
 16 MiB today) and returns the **user VA** the app can dereference. Blocks are
 handed out with a fresh-VA bump cursor, so no TLBI is needed before the app's
-return `eret` (QUIRK-001). `Mxalloc(-1, mode)` for EL0 reports
-`min(pool-largest-free-for-mode, remaining-window-bytes)` — bounded by what the
-app can actually map, not the ~1 GiB physical pool; the one deliberate,
-documented contract adaptation. **EL1 / kernel callers** (the desktop, the
+return `eret` (QUIRK-001). `Mxalloc(-1, mode)` for EL0 reports the largest block
+this path can actually **hand out** — bounded by what the app can map, not by
+the ~1 GiB physical pool; the one deliberate, documented contract adaptation.
+Concretely (`gemdos::memory::el0_largest_allocatable`):
+
+```text
+min( floor_page(pool-largest-free-for-mode - PAGE), remaining-window-bytes )
+```
+
+The `- PAGE` is not cosmetic. The allocating path over-allocates **one extra
+page** so the page-aligned window base still lies inside the 16-byte-aligned
+pool block, so a request of exactly `pool-largest-free` asks the pool for
+`pool-largest-free + PAGE` and fails. Reporting the raw pool figure would break
+the property the call exists for and that EmuTOS holds: `ffit(-1,…)` returns the
+length of a real free MD and the `ffit(len,…)` on the next line succeeds
+(`bdos/umem.c:246-258`). `remaining-window-bytes`
+(`usermem::window_remaining`) is already floor-paged. A pool with less than two
+pages free therefore reports `0`, which is also `Mxalloc`'s "no block" answer —
+nothing smaller than a page can be mapped into EL0 at all. Host tests:
+`tos-api/src/gemdos/memory.rs` `mod tests`. **EL1 / kernel callers** (the desktop, the
 loader, boot init — which call `bdos::mem::traps` directly, so
 `bdos::process::current()` is null) keep the raw physical address unchanged. The
 EL0-vs-EL1 discrimination is the exact mechanism `aes::resource` uses (non-null

@@ -258,8 +258,10 @@ picks `MX_PREFTTRAM` (when `PF_TTRAMMEM` is set) or `MX_STRAM`, then follows the
 EL0 `Mxalloc` window path (see
 [`44-mxalloc.md`](44-mxalloc.md) "NewTOS EL0 realization"): allocate from the
 real pool, **map into the per-process EL0 heap window**, and return a **user VA**
-rather than a raw pool physical address. `Malloc(-1)` for EL0 is bounded to
-`min(pool-largest-free, remaining-window-bytes)`. **EL1 / kernel callers** keep
+rather than a raw pool physical address. `Malloc(-1)` for EL0 is bounded to the
+largest block that path can actually hand out —
+`min(floor_page(pool-largest-free - PAGE), remaining-window-bytes)`, see
+[`44-mxalloc.md`](44-mxalloc.md) for why the page comes off. **EL1 / kernel callers** keep
 the raw physical address (the kernel sentinel PD keeps the historical
 `MX_PREFTTRAM`). Discrimination: non-null `bdos::process::current()`, mirroring
 `aes::resource`.

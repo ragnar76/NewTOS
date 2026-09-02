@@ -780,6 +780,10 @@ const MEMVALID_MAGIC: u32 = 0x7520_19F3; // $420 memvalid (memory.S:126,588)
 const MEMVAL2_MAGIC: u32 = 0x2376_98AA; //  $43A memval2  (memory.S:129,589)
 const MEMVAL3_MAGIC: u32 = 0x5555_AAAA; //  $51A memval3  (memory.S:132,590)
 
+/// `ramvalid` ($5A8) magic: validates `ramtop` ($5A4)
+/// (`references/emutos/include/tosvars.h:78` — `RAMVALID_MAGIC 0x1357BD13`).
+const RAMVALID_MAGIC: u32 = 0x1357_BD13;
+
 /// `conterm` ($484, BYTE) boot default: keyclick + key-repeat + system-bell
 /// enabled (`references/emutos/bios/ikbd.c:1100` — `conterm = 7`). Bit 3
 /// (`& 8`) requests the `Bconin` keyboard-shift-state fold
@@ -826,13 +830,22 @@ fn populate_sysvars(tpa: &mut [u8]) {
     // os_version (+0x02):
     wr_word(tpa, oh + 0x02, OS_VERSION);
     // reseth (+0x04): m68k C reset handler — none on AArch64. Left 0.
-    // os_beg (+0x08) / os_end (+0x0C): EmuTOS = OS-image self-pointer +
-    // end-of-OS-ST-RAM (startup.S:88-91). NewTOS reports the current usable
-    // ST-RAM pool bounds here per the BB1 task decision (the STRAM/TTRAM
-    // 8 MB split is BB2); both fit an Atari LONG (low-2 GiB pool).
+    // os_beg (+0x08): "base address of the operating system"
+    // (`biosdefs.h:51`). EmuTOS stores the OS-image self-pointer
+    // `_os_header` (startup.S:88-89), which is the very same address
+    // `sysbase`@$4F2 holds — so an app's `hdr->os_beg == hdr` check holds.
+    // NewTOS' OSHEADER instance lives at [`OSHEADER_VA`] in the process's
+    // own EL0 VA, so that is the faithful analogue of `_os_header`.
+    // os_end (+0x0C): "end of ST-RAM statically used by the OS"
+    // (`biosdefs.h:52`; EmuTOS `__endvdibss`, startup.S:90-91 — the same point
+    // `bmem_init` calls `_end_os_stram`, biosmem.c:66). NewTOS' OS ends at
+    // `__kernel_image_end`, which is exactly where the ST-RAM pool begins,
+    // so `os_end == end_os == membot == stram_start`. (Until BB2 both
+    // fields carried the pool *bounds* instead, which made the classic
+    // "free ST-RAM = memtop - os_end" come out as 0.)
     let (stram_start, stram_end) = crate::bdos::mem::init::stram_range();
-    wr_long(tpa, oh + 0x08, stram_start as u32);
-    wr_long(tpa, oh + 0x0C, stram_end as u32);
+    wr_long(tpa, oh + 0x08, OSHEADER_VA);
+    wr_long(tpa, oh + 0x0C, stram_start as u32);
     // os_rsvl (+0x10): reserved; EmuTOS sets 0 (osheader.md §os_rsvl). 0.
     // os_magic (+0x14): pointer to the GEM_MUPB — populated only once GEM/AES
     // is reimplemented into a per-process GEM_MUPB (osheader.md §os_magic);
@@ -911,8 +924,33 @@ fn populate_sysvars(tpa: &mut [u8]) {
     // absence crashed TeraDesk (`*(long*)0x4F2`). Adjacent shell_p@0x4F6 is
     // left 0, so an LP64 8-byte read of $4F2 still yields OSHEADER_VA.
     wr_long(tpa, 0x4F2, OSHEADER_VA);
+    // end_os ($4FA): end of the OS's static ST-RAM. EmuTOS `bmem_init`
+    // sets `end_os = _end_os_stram` and then `membot = end_os`
+    // (biosmem.c:66-67), so the two carry the same value at boot and only
+    // diverge if a later `balloc_stram(bottom)` moves both (biosmem.c:125).
+    // NewTOS has no `balloc_stram`, so this is the ST-RAM pool start.
+    wr_long(tpa, 0x4FA, stram_start as u32);
     // p_cookies ($5A0): pointer to the cookie jar (cookie_init, util/cookie.c).
     wr_long(tpa, 0x5A0, COOKIE_JAR_VA);
+    // ramtop ($5A4) / ramvalid ($5A8): top of the alt-RAM ("TT-RAM") region,
+    // and the magic that validates it. EmuTOS `ttram_detect` sets
+    // `ramtop = TTRAM_START + detected_size` (NULL when there is none) and
+    // *always* stores `ramvalid = RAMVALID_MAGIC`, "even if ramtop == 0,
+    // like TOS 1.6+" (`bios/memory2.c:115-124`, and `:128-129` without TT-RAM). NewTOS' alt-RAM extent is
+    // the boot-seeded `pmdalt` pool, so `ramtop` is its exclusive end (0
+    // when the board has no alt-RAM, which is EmuTOS' `ramtop == NULL`).
+    //
+    // Note for the LP64 app ABI (ADR-020): `ramtop` sits directly above
+    // `p_cookies`, so an app that reads `*(void**)0x5A0` as **eight** bytes
+    // now gets `(ramtop << 32) | jar` instead of the bare jar pointer. That
+    // is the classic-TOS layout, which is 32-bit by construction; the read
+    // width is the app/toolchain's business (mintlib `sysvars.h:60` declares
+    // `ramtop` as `unsigned long *` at $5a4). TeraDesk's live cookie path
+    // reads the jar through `Setexc(0x5A0/4, -1)`
+    // (`library/utility/cookie.c:56`), which is unaffected.
+    let (_ttram_start, ttram_end) = crate::bdos::mem::init::ttram_range();
+    wr_long(tpa, 0x5A4, ttram_end as u32);
+    wr_long(tpa, 0x5A8, RAMVALID_MAGIC);
     // prt_stat ($506) / prt_vec ($50A): printer status/output redirection
     // vectors. EmuTOS points them at `just_rts` (a no-op RTS stub) in
     // `chardev_init` (`_boot-init.md` §7c). NewTOS has no printer device and

@@ -37,12 +37,39 @@ fn page_up(v: u64) -> u64 {
     (v + PAGE - 1) & !(PAGE - 1)
 }
 
+/// The largest `amount` an EL0 `Mxalloc`/`Malloc` can actually satisfy, given
+/// the selected pool's largest free block and the process's remaining heap
+/// window — i.e. the answer the `-1` probe owes its caller.
+///
+/// `Mxalloc(-1)` exists so a program can ask for the biggest block and then
+/// take it; EmuTOS' `ffit(-1,…)` returns the length of a real free MD, and
+/// `ffit(len,…)` on the next line succeeds (`bdos/umem.c:243-278` and
+/// `:305-327`, with the grain round-up in `bdos/iumem.c:35`). The EL0 path
+/// must keep that property,
+/// and it costs two page-granular corrections:
+///
+/// * [`el0_alloc`] over-allocates **one extra page** so the page-aligned
+///   window base still lies inside the 16-byte-aligned pool block, so the
+///   biggest whole-page request the pool can still serve is
+///   `floor_page(pool_free - PAGE)`, not `pool_free`.
+/// * the window is mapped page-by-page, so the window term is already
+///   floor-paged by [`usermem::window_remaining`].
+///
+/// A pool with less than two pages free therefore reports `0` — at EL0
+/// nothing smaller than a page can be handed out at all, and `0` is the
+/// answer `Mxalloc` gives for "no block available" anyway.
+#[inline]
+fn el0_largest_allocatable(pool_free: u64, window_remaining: u64) -> u64 {
+    let pool_bound = pool_free.saturating_sub(PAGE) & !(PAGE - 1);
+    pool_bound.min(window_remaining)
+}
+
 /// Allocate `amount` bytes from the ST/TT pool selected by `mode`, map the
 /// block into `slot`'s EL0 heap window, and return the **user VA** — the ADR-021
 /// EL0 path shared by `Mxalloc` and `Malloc`.
 ///
-/// * `amount == -1` → the largest-free query, bounded by the mappable window:
-///   `min(pool-largest-free-for-mode, window-remaining)` (ADR-021 §4.5.6).
+/// * `amount == -1` → the largest-free query, bounded by what this path can
+///   actually hand out: [`el0_largest_allocatable`] (ADR-021 §4.5.6).
 /// * `amount <= 0` → `0` (NULL), as EmuTOS.
 /// * otherwise → over-allocate one page for alignment, allocate from the
 ///   requested pool (ST/TT preference intact — the block still comes from
@@ -61,7 +88,10 @@ unsafe fn el0_alloc(slot: usize, amount: Long, mode: i16) -> Long {
         if pool_free <= 0 {
             return pool_free; // NULL / unknown mode → pass through
         }
-        let bound = (pool_free as u64).min(usermem::window_remaining(slot));
+        let bound = el0_largest_allocatable(
+            pool_free as u64,
+            usermem::window_remaining(slot),
+        );
         return bound.min(Long::MAX as u64) as Long;
     }
     if amount <= 0 {
@@ -262,4 +292,91 @@ pub fn mshrink(args: &TrapArgs) -> Long {
         .min(Long::MAX as u64) as Long;
     // SAFETY: BDOS lock held; `tb.m_start` is on the allocated list.
     unsafe { traps::mshrink(n, tb.m_start, pool_len) }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// Pool bytes [`el0_alloc`] asks `traps::mxalloc` for when the app
+    /// requests `amount` — the property the `-1` probe has to respect.
+    fn pool_demand(amount: u64) -> u64 {
+        page_up(amount) + PAGE
+    }
+
+    /// Window bytes [`usermem::map`] consumes for the same request.
+    fn window_demand(amount: u64) -> u64 {
+        page_up(amount)
+    }
+
+    /// `Mxalloc(Mxalloc(-1, mode), mode)` must succeed — the whole point of
+    /// the probe. Checked against the two figures a Pi 4 actually produces:
+    /// the ST-RAM pool as seeded at boot (`[mm] BDOS ST-RAM … 6209536`) and
+    /// the heap window a freshly-started TeraDesk has left after its
+    /// `desktop.rsc` (39043 B → 10 pages) is mapped.
+    #[test]
+    fn probe_result_is_allocatable_when_the_pool_is_the_binding_term() {
+        let pool_free = 6_209_536u64; // real ST-RAM pool, page-aligned
+        let window = 16_736_256u64; // 16 MiB window minus desktop.rsc
+        let bound = el0_largest_allocatable(pool_free, window);
+
+        assert!(bound > 0);
+        assert!(pool_demand(bound) <= pool_free, "pool cannot serve the probe");
+        assert!(window_demand(bound) <= window, "window cannot map the probe");
+        // Exactly one page is given up to the alignment slack.
+        assert_eq!(bound, pool_free - PAGE);
+    }
+
+    #[test]
+    fn probe_result_is_allocatable_when_the_window_is_the_binding_term() {
+        let pool_free = 1_054_867_456u64; // real TT-RAM pool at boot
+        let window = 16_736_256u64;
+        let bound = el0_largest_allocatable(pool_free, window);
+
+        assert_eq!(bound, window);
+        assert!(pool_demand(bound) <= pool_free);
+        assert!(window_demand(bound) <= window);
+    }
+
+    /// The pre-fix formula was `min(pool_free, window_remaining)`, which on
+    /// the pool-bound path reported a size the pool provably cannot serve.
+    #[test]
+    fn the_naive_minimum_would_report_an_unallocatable_size() {
+        let pool_free = 6_209_536u64;
+        let window = 16_736_256u64;
+        let naive = pool_free.min(window);
+
+        assert!(pool_demand(naive) > pool_free);
+        assert!(el0_largest_allocatable(pool_free, window) < naive);
+    }
+
+    /// A pool whose largest free MD is not a whole number of pages still has
+    /// to yield a page-aligned, allocatable answer.
+    #[test]
+    fn unaligned_pool_free_is_rounded_down_to_a_mappable_size() {
+        let window = 16 * 1024 * 1024;
+        for extra in [1u64, 16, PAGE - 1] {
+            let pool_free = 6_209_536 + extra;
+            let bound = el0_largest_allocatable(pool_free, window);
+            assert_eq!(bound % PAGE, 0);
+            assert!(pool_demand(bound) <= pool_free);
+        }
+    }
+
+    /// Below two pages there is nothing an EL0 caller could map, so the probe
+    /// answers `0` — the same value `Mxalloc` returns for "no block".
+    #[test]
+    fn a_pool_smaller_than_two_pages_reports_nothing() {
+        let window = 16 * 1024 * 1024;
+        assert_eq!(el0_largest_allocatable(0, window), 0);
+        assert_eq!(el0_largest_allocatable(PAGE, window), 0);
+        assert_eq!(el0_largest_allocatable(2 * PAGE - 1, window), 0);
+        assert_eq!(el0_largest_allocatable(2 * PAGE, window), PAGE);
+    }
+
+    /// An exhausted window reports `0` however much RAM the pool still holds.
+    #[test]
+    fn an_exhausted_window_reports_nothing() {
+        assert_eq!(el0_largest_allocatable(1_054_867_456, 0), 0);
+    }
 }

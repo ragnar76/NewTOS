@@ -92,12 +92,34 @@ static STRAM_START: core::sync::atomic::AtomicI32 =
 static STRAM_END: core::sync::atomic::AtomicI32 =
     core::sync::atomic::AtomicI32::new(0);
 
+/// TT-RAM (alt-RAM) extent recorded at [`init`]. EmuTOS keeps the same
+/// information in the `ramtop` system variable, which `ttram_detect`
+/// sets once from the detected TT-RAM size and which `xmaddalt` never
+/// updates afterwards (`bios/memory2.c:92-127`) — a later `Maddalt`
+/// region therefore does not move it here either.
+static TTRAM_START: core::sync::atomic::AtomicI32 =
+    core::sync::atomic::AtomicI32::new(0);
+static TTRAM_END: core::sync::atomic::AtomicI32 =
+    core::sync::atomic::AtomicI32::new(0);
+
 /// Inclusive start / exclusive end of the ST-RAM pool, in `Long`
 /// (Atari ABI) coordinates. Returns `(0, 0)` before [`init`] runs.
 pub fn stram_range() -> (Long, Long) {
     (
         STRAM_START.load(Ordering::Acquire),
         STRAM_END.load(Ordering::Acquire),
+    )
+}
+
+/// Inclusive start / exclusive end of the TT-RAM (alt-RAM) pool as
+/// seeded at boot, in `Long` (Atari ABI) coordinates. Returns `(0, 0)`
+/// before [`init`] runs and when the board has no alt-RAM — which is
+/// what EmuTOS reports through `ramtop == NULL` for a machine without
+/// TT-RAM (`bios/memory2.c:119-121`).
+pub fn ttram_range() -> (Long, Long) {
+    (
+        TTRAM_START.load(Ordering::Acquire),
+        TTRAM_END.load(Ordering::Acquire),
     )
 }
 
@@ -181,6 +203,15 @@ pub unsafe fn init(
         pmdalt.mp_mfl = md;
         pmdalt.mp_mal = ptr::null_mut();
         pmdalt.mp_rover = ptr::null_mut();
+        // SAFETY: `md` is the seed MD; `seed_md` validated both fields
+        // and their sum against the `Long` ABI.
+        unsafe {
+            TTRAM_START.store((*md).m_start, Ordering::Release);
+            TTRAM_END.store(
+                (*md).m_start + (*md).m_length,
+                Ordering::Release,
+            );
+        }
     }
 
     Ok(())
