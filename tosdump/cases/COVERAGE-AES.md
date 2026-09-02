@@ -838,3 +838,103 @@ desktop behind them is the same green (0,255,0) as in the photographs.
 The fix is entirely app-side — `sdk/gemlib/overlay/mt_gem.h.in` plus the
 rebuilt `DESKTOP.NAP`. The kernel image is byte-identical, so no kernel
 screendump can show a before/after of it.
+
+---
+
+## Predictions for the next hardware run — the window that empties on a click (D-WORK-1/2/3)
+
+The reported defect, on a real Pi 4 with TeraDesk: **clicking a file inside an
+open directory window empties the window** — the listing is gone and does not
+come back. Written before any hardware run of the fix.
+
+### What draws it, and how that was established
+
+Three separate deviations feed the same symptom; all three sit on the window
+**frame** path, which every window redraw goes through.
+
+1. **The AES painted the window's work area.** `draw_frame` filled the client
+   region white on every frame redraw (`tos-api/src/aes/window.rs`, the
+   `fill_rect(work…, WHITE)` that is now gone). EmuTOS never touches it: the
+   frame is the OBJECT tree `gl_awind`, whose `W_BOX`, `W_DATA` and `W_WORK`
+   are `G_IBOX` (`aes/gemwmlib.c:62-69`) and whose `W_DATA`/`W_WORK` carry
+   `ob_spec 0x00001101` — border thickness 0 (`:87-88`). `ob_draw` skips the
+   border of a zero-thickness object and the interior fill of a `G_IBOX`
+   (`aes/gemoblib.c:663-670`). The work area belongs to the application.
+2. **The Control Manager topped the window itself.** `intercept` called
+   `top_window` before sending `WM_TOPPED`. EmuTOS `hctl_window` sends
+   `WM_UNTOPPED` + `WM_TOPPED` and **returns** (`aes/gemctrl.c:170-178`).
+3. **`wind_set(WF_TOP)` ran on the already-top window.** EmuTOS guards it with
+   `if (w_handle != gl_wtop)` (`aes/gemwmlib.c:1676-1680`). Because of (2) the
+   owner's answering `WF_TOP` always found the window already topped, so the
+   repaint it triggered — and with (1) the erase — happened with **no**
+   `WM_REDRAW` behind it.
+
+The reported gesture reaches (1) directly: TeraDesk's `dir_select` →
+`dir_setnws(w, TRUE)` → `dir_info(w)` ends in
+`wind_set_str(w->xw_handle, WF_INFO, w->info)` (`sdk/apps/teradesk/dir.c`,
+`window.c`), i.e. **every** selection change rewrites the info line, and our
+`wind_set(WF_INFO)` redrew the whole frame including the white work fill.
+TeraDesk does not redraw after `dir_info`, so the window stayed blank. Our own
+desktop calls `WF_INFO` only on folder navigation, where it follows with an
+explicit `do_wredraw` — which is why the defect was TeraDesk-only.
+
+Measured on the host rig (`tos-api/tests/aes_window_content.rs`, the real AES
+into a pixel buffer): `wind_set(WF_INFO)` overwrote **65412 of 65412**
+work-area pixels; `wind_set(WF_TOP)` on the already-top window changed
+**71253** screen pixels and queued no message.
+
+### D-WORK-1 — a click on a file keeps the listing
+
+Click any file in an open TeraDesk directory window. The listing must stay on
+screen, complete, with the clicked entry inverted; the info line above it must
+update to the selected-item count/size. Nothing else on the screen changes.
+Before the fix, the whole work area went white and stayed white.
+
+### D-WORK-2 — a click on a window that is not on top
+
+With two TeraDesk windows overlapping, click the lower one.
+
+- Both windows keep the content that was **already visible**; nothing is
+  repainted with the desktop background.
+- The old top's frame redraws with its inactive title (no dither behind the
+  name), the clicked window's with the active one.
+- The clicked window is *not* topped by the AES: it comes to the front only
+  when TeraDesk answers the `WM_TOPPED` with `wind_set(WF_TOP)`
+  (`wd_type_topped`, `sdk/apps/teradesk/window.c:2375-2378`).
+- The part that was covered repaints from the `WM_REDRAW` the AES posts for
+  the whole work area — so no stale pixels of the other window are left behind.
+
+### D-WORK-3 — two frame rows that are new, and correct
+
+The window frame now has a black 1-pixel line **under the title bar** and
+another **under the info line** that were not visible before. They are the
+bottom border rows of EmuTOS's `W_TITLE` (a `G_BOX`, `ob_spec 0x00011101`,
+thickness 1 — `aes/gemwmlib.c:63,84`) and `W_INFO` (a `G_BOXTEXT` whose
+`gl_ainfo` TEDINFO has `te_thickness = 1` — `:153-157`), each on the last row
+of its band, i.e. the row directly above the first row `wm_calc` gives the work
+area (`tb = 1 + (adj_hbox-1) + gl_hbox`, `:1808-1812`). We drew them one row
+too low, *inside* the work area, where the work fill immediately covered them
+again — so they were invisible and the client region lost a row.
+
+Both QEMU boards show exactly this and nothing else: a full-screen diff of the
+desktop with the `C:\` window open is **1116 pixels on 2 rows** on `virt`
+(1920x1080) and **1084 pixels on 2 rows** on `raspi4b` (640x480), at `y=65`
+(was white) and `y=84` (was grey 189). The 20-item listing, icons, labels,
+sliders, menu bar and background are byte-identical.
+
+Still missing, and *not* changed here: EmuTOS's `W_INFO` box border is drawn on
+all four sides, so it also has a black row at the **top** of the info band
+(`y=66` in those dumps), where we still show grey. One pixel row, outside the
+work area, pre-existing.
+
+### What is real-Pi-4-only, and why
+
+TeraDesk is launched by double-clicking `DESKTOP.NAP`, and clicking a file in a
+directory window needs a mouse *and* `C:`, which no QEMU board offers at once
+(`raspi4b` has the SD, `virt` has the input). **D-WORK-1 and D-WORK-2 are
+real-Pi-4-only.** What QEMU does show is D-WORK-3 plus the no-regression
+evidence above, and that a window drag on `virt` leaves the frame, the white
+work area and the vacated background intact. The pixel-level proof of D-WORK-1
+and D-WORK-2 is the host test, which drives the same AES entry points
+(`wind_set(WF_INFO)`, `wind_set(WF_TOP)`, a `evnt_multi` click on a covered
+window) into a framebuffer and counts the changed pixels.

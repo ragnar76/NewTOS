@@ -460,27 +460,133 @@ fn get_bottom() -> i16 {
     best
 }
 
-/// Raise `handle` to the top of the stack and repaint only the union of the
-/// newly-topped window and the previously-top window (which loses its
-/// active-title highlight) — not the whole screen (the topping-flicker fix,
-/// same damage-scope as move/open/close).
+/// Raise `handle` to the top of the stack — EmuTOS `wm_mktop`→`draw_change`,
+/// **top-request branch** (`gemwmlib.c:1600-1611,1112-1136`).
+///
+/// A top request repaints exactly two things and nothing else: the old top's
+/// frame with *deactivated* decorations and the new top's frame with activated
+/// ones, each clipped to its own owner-rectangle list ([`draw_frame_pieces`] =
+/// `w_cpwalk(…, MAX_DEPTH, TRUE)`→`do_walk`, `:363-376,295-311`). In particular
+/// it does **not** repaint the desktop background: `start` stays `w_handle`, so
+/// `draw_change`'s `if (start == DESKWH) w_drawdesk(&c)` never fires
+/// (`:1215-1219`) — and it does not touch any window's client region, because
+/// `W_DATA`/`W_WORK` are borderless `G_IBOX`es that `ob_draw` skips
+/// (`:67-68,87-88`, `aes/gemoblib.c:663-670`). Both windows keep their content.
+///
+/// Whether the newly-topped window is asked to redraw depends on the `VF_BROKEN`
+/// bookkeeping: if the window was unobstructed before the reorder (`wasclr`)
+/// *and* the old top is unobstructed after it (`clrold`), nothing was uncovered
+/// and `draw_change` returns after the two border draws (`:1128-1135`).
+/// Otherwise it falls through to `w_update(start = w_handle, …, stop = DESKWH)`,
+/// whose single loop turn re-draws that one window's border and calls
+/// `w_redraw`, posting one `WM_REDRAW` for `pt ∩ WS_WORK ∩ union(rlist)`
+/// (`:1004-1048,887-907`) — with the window now on top, its whole work area.
 fn top_window(handle: i16) {
     let old_top = get_top(); // current top before the bump (may equal handle)
-    // `get_top` answers `DESKWH` when no window is topped (EmuTOS `w_top`,
-    // gemwmlib.c:315-318) — the desktop window's rect is the whole screen and
-    // has nothing to un-highlight, so it is not part of the damage.
-    let old_rect = (old_top != DESKWH).then(|| win(old_top).map(|w| w.curr)).flatten();
+    // Not a top request at all: `draw_change` returns immediately when the
+    // window is already `W_TREE[ROOT].ob_tail` (`gemwmlib.c:1117-1119`).
+    if old_top == handle {
+        return;
+    }
+    // `wasclr` is read *before* the reorder, from the `VF_BROKEN` flag the
+    // previous `newrect` pass left (`gemwmlib.c:1066`).
+    let wasclr = !is_broken(handle);
     if let Some(w) = win(handle) {
         w.z = bump_z();
     }
-    let new_rect = win(handle).map(|w| w.curr);
-    let damage = match (new_rect, old_rect) {
-        (Some(n), Some(o)) => Some(union_grect(n, o)),
-        (Some(n), None) => Some(n),
-        _ => None,
+    let Some(backend) = host().and_then(|h| h.raster()) else {
+        return;
     };
-    if let Some(d) = damage {
-        redraw_clip(d.x, d.y, d.w, d.h);
+    // Counting cursor bracket around the frame repaints — our cursor is a
+    // save-under sprite, so painting under a shown sprite would leave its
+    // backing store stale (see [`compose`]; EmuTOS has the same `gsx_moff`
+    // bracket inside `w_update`, `gemwmlib.c:1011/1047`).
+    crate::vdi::cursor_hide(backend);
+    // "draw oldtop covered with deactivated borders" (`gemwmlib.c:1120-1126`).
+    // `get_top` answers `DESKWH` when no window was topped (EmuTOS `w_top`,
+    // `:315-318`); the desktop window has no frame to deactivate, and EmuTOS
+    // then takes `clrold = TRUE` (`:1125`).
+    let clrold = if old_top != DESKWH {
+        draw_frame_pieces(old_top, false, backend);
+        // `clrold` is read *after* the rectangle lists were rebuilt with the
+        // new order (`:1122`), i.e. with `handle` already above `old_top`.
+        !is_broken(old_top)
+    } else {
+        true
+    };
+    // The new top's frame, activated — `w_cpwalk(gl_wtop, 0, MAX_DEPTH, TRUE)`
+    // in the clear case (`:1133`), `w_update`'s `w_cpwalk` in the other
+    // (`:1029`); both draw the same frame clipped to the same rectangle list.
+    draw_frame_pieces(handle, true, backend);
+    crate::vdi::cursor_show(backend);
+    if !(clrold && wasclr) {
+        if let Some(r) = win(handle).map(|w| w.curr) {
+            send_redraw_in(handle, r);
+        }
+    }
+}
+
+/// `VF_BROKEN` (`aes/gemlib.h:62`) — "the window is overlapped, can't be
+/// blitted": `newrect`/`mkrect`/`brkrct` set the flag on a window whenever a
+/// window **above** it breaks one of its owner rectangles
+/// (`aes/gemwrect.c:100-160,163-200`), and `draw_change` clears + rebuilds the
+/// whole set with `everyobj(gl_wtree, ROOT, NIL, newrect, …)` (`gemwmlib.c:1088`)
+/// before reading it. Since the flag is a pure function of the current z-order
+/// and geometry, it is computed on demand here instead of being cached: a
+/// window is broken exactly when some open window above it overlaps its border
+/// rectangle.
+fn is_broken(handle: i16) -> bool {
+    let Some((rect, myz)) = win(handle).filter(|w| w.open).map(|w| (w.curr, w.z)) else {
+        return false;
+    };
+    slots()
+        .iter()
+        .any(|ow| ow.in_use && ow.open && ow.z > myz && intersect_grect(ow.curr, rect).is_some())
+}
+
+/// The visible pieces of `handle`'s **border** rectangle — its rectangle minus
+/// every open window above it. EmuTOS's owner-rectangle list, built by
+/// `newrect` from `WS_TRUE` and broken by each higher window
+/// (`aes/gemwrect.c:163-200`). Returns the piece count; `out[..n]` holds them.
+///
+/// [`compute_rlist`] is the same computation over the **work** rectangle (what
+/// `WF_FIRSTXYWH` reports to the owner); the frame draw needs the border one,
+/// because a frame is drawn outside the work area.
+fn border_pieces(handle: i16, out: &mut [Grect; RCAP]) -> usize {
+    let (rect, myz) = match win(handle) {
+        Some(w) if w.open => (w.curr, w.z),
+        _ => return 0,
+    };
+    let mut list = [Grect::default(); RCAP];
+    list[0] = rect;
+    let mut n = 1;
+    for ow in slots().iter() {
+        if ow.in_use && ow.open && ow.z > myz {
+            n = subtract(&mut list, n, ow.curr);
+        }
+    }
+    out[..n].copy_from_slice(&list[..n]);
+    n
+}
+
+/// Draw `handle`'s frame once per visible piece of its border rectangle —
+/// EmuTOS `w_cpwalk(wh, 0, MAX_DEPTH, TRUE)`→`do_walk` (`gemwmlib.c:363-376`,
+/// `:295-311`), which walks `D.w_win[wh].w_rlist` and `ob_draw`s the window
+/// element tree inside each rectangle. Clipping the draw to the rectangle list
+/// is what stops a window that is *below* another one from painting its frame
+/// over it. `istop` selects the activated / deactivated decorations
+/// (`w_bldactive`'s `istop`, `:495-560`).
+fn draw_frame_pieces(handle: i16, istop: bool, backend: &dyn RasterBackend) {
+    let mut pieces = [Grect::default(); RCAP];
+    let n = border_pieces(handle, &mut pieces);
+    if n == 0 {
+        return;
+    }
+    let Some(w) = win(handle) else {
+        return;
+    };
+    for r in pieces.iter().take(n) {
+        draw_frame(w, istop, backend, rect_clip(r.x, r.y, r.w, r.h));
     }
 }
 
@@ -1188,8 +1294,14 @@ fn draw_frame(w: &Window, istop: bool, backend: &dyn RasterBackend, clip: ClipRe
             backend.fill_rect((nx - 3).max(name_x), gy, nlen + 6, GL_HBOX, WHITE, clip);
         }
         draw_label(nx, gy, name_w, &w.name, backend, clip);
-        // separator under the title row
-        backend.fill_rect(b.x, top + ah - 1, b.w, 1, BLACK, clip);
+        // The title box's own bottom border row. `W_TITLE` is a `G_BOX` with
+        // `ob_spec 0x00011101` — border thickness 1 (`gemwmlib.c:63,84`) — and
+        // `w_bldactive` gives it `y = 0, h = adj_hbox` inside `W_BOX`
+        // (`:514-517`), so that border's bottom row is `b.y + adj_hbox - 1`:
+        // exactly one row **above** the first row `wm_calc` hands to the work
+        // area (`tb = 1 + (adj_hbox - 1)`, `:1808-1810`). Drawing it a row lower
+        // put frame ink inside the client region on every frame redraw.
+        backend.fill_rect(b.x, b.y + ah - 1, b.w, 1, BLACK, clip);
         top += ah - 1;
     }
 
@@ -1199,16 +1311,27 @@ fn draw_frame(w: &Window, istop: bool, backend: &dyn RasterBackend, clip: ClipRe
         let band = Grect { x: b.x + 1, y: top, w: b.w - 2, h: GL_HBOX };
         backend.fill_rect(band.x, band.y, band.w, band.h, GRAY_LT, clip);
         draw_label(band.x + 2, top, band.w - 2, &w.info, backend, clip);
-        backend.fill_rect(b.x, top + GL_HBOX, b.w, 1, BLACK, clip);
+        // Same rule as the title band: `W_INFO` is `gl_hbox` tall starting at
+        // `b.y + adj_hbox` (`w_bldactive`, `gemwmlib.c:561-567`) and its
+        // `gl_ainfo` TEDINFO has `te_thickness = 1` (`:153-157`), so its bottom
+        // border row is the band's last row — `wm_calc`'s work area starts on
+        // the row after it (`tb += gl_hbox`, `:1811-1812`).
+        backend.fill_rect(b.x, top + GL_HBOX - 1, b.w, 1, BLACK, clip);
         top += GL_HBOX;
     }
 
-    // Work area (white client region). Its 1 px black frame is drawn by the
-    // content owner *after* the content (the desktop's `draw_dir_listing`),
-    // because the app clears the work area on every content redraw and would
-    // otherwise overdraw a border painted here.
-    let work = calc(WC_WORK, kind, b);
-    backend.fill_rect(work.x, work.y, work.w, work.h, WHITE, clip);
+    // The work area is deliberately **not** painted here. In EmuTOS the window
+    // frame is an OBJECT tree (`gl_awind`) in which `W_BOX`, `W_DATA` and
+    // `W_WORK` all have the type `G_IBOX` (`aes/gemwmlib.c:62-69`), and
+    // `W_DATA`/`W_WORK` carry `ob_spec == 0x00001101` — border thickness 0
+    // (`:87-88`). `ob_draw` skips the border of a zero-thickness object
+    // (`if (th != 0) gr_box(...)`) and the interior fill of a `G_IBOX`
+    // (`if (obtype != G_IBOX) gr_inside(...)`), `aes/gemoblib.c:663-670`. So a
+    // frame redraw — a topping, a `WF_NAME`/`WF_INFO` change, a composite —
+    // never touches one pixel of the client region: it belongs to the owner,
+    // which repaints it on `WM_REDRAW`. Filling it white here erased the
+    // content of every window whose info line was rewritten (TeraDesk's
+    // `dir_info` does that on every selection change) or that was topped.
 
     // Right scroll bar (arrows + track + thumb). Fill the bar column first —
     // its gadgets are `gl_wbox` × `gl_hbox` cells inside an `adj_wbox`-wide
@@ -1916,26 +2039,22 @@ pub fn wind_set(pb: &Aespb) {
             send_redraw(handle, work);
         }
         WF_TOP => {
-            // EmuTOS `wm_set(WF_TOP)` tops the window only when it isn't already
-            // on top (`if (w_handle != gl_wtop) wm_mktop(...)`,
-            // `gemwmlib.c:1679-1683`), and the resulting `draw_change`→`w_update`
-            // posts a `WM_REDRAW` to just the newly-topped window for its
-            // now-fully-visible work area (`:1004-1048` walks bottom=top=w_handle;
-            // `w_redraw` at `:887-907`). Topping only *exposes* the topped window,
-            // so no other window's visible region grows — none else is redrawn.
-            // The send lives here (not in [`top_window`], which the interactive
-            // `intercept` path shares) so the click-to-top WM_TOPPED message it
-            // writes to `pbuff` is not clobbered by a queued WM_REDRAW.
-            let old_top = get_top();
-            top_window(handle);
-            if old_top != handle {
-                // The old top loses activation → WM_UNTOPPED to its owner
-                // (EmuTOS `perform_untop`, gemctrl.c:151), then WM_REDRAW to the
-                // newly-topped window for its now-fully-visible work area.
-                post_untopped(old_top, handle);
-                if let Some(work) = win(handle).map(|w| w.work) {
-                    send_redraw(handle, work);
-                }
+            // `if (w_handle != gl_wtop) wm_mktop(w_handle)` — EmuTOS `wm_set`
+            // (`gemwmlib.c:1676-1680`). A `WF_TOP` on the window that is
+            // *already* on top does nothing whatsoever: no repaint, no message.
+            // (Topping it anyway used to run the whole composite over the
+            // window's rectangle, which erased its content; TeraDesk answers
+            // every `WM_TOPPED` with a `wind_set(WF_TOP)`, so this ran on every
+            // click on a window.)
+            //
+            // [`top_window`] *is* `wm_mktop`→`draw_change`'s top branch,
+            // including the conditional `w_redraw` — whether a `WM_REDRAW` is
+            // due depends on the `VF_BROKEN` state only that function knows.
+            // No `WM_UNTOPPED` here: EmuTOS sends it solely from the Control
+            // Manager's `perform_untop` on the click (`aes/gemctrl.c:146-153,
+            // 174,344`), which is [`intercept`]'s job.
+            if handle != get_top() {
+                top_window(handle);
             }
         }
         // Slider positions clamp to 1..1000; sizes clamp to 1..1000 but let −1
@@ -2744,15 +2863,26 @@ pub fn intercept() {
     msg[1] = super::appl::current_pid();
     msg[3] = handle;
 
-    // Click on a non-top window → untop the old top, bring this one up, and tell
-    // each owner. EmuTOS `hctl_window` (gemctrl.c:172-180): `perform_untop(gl_wtop)`
-    // sends WM_UNTOPPED to the *old* top's owner, then WM_TOPPED to the new one.
+    // Click on a non-top window → tell the old top's owner it lost the top spot
+    // and the clicked window's owner to bring itself up, then **return without
+    // topping anything**. EmuTOS `hctl_window` (`aes/gemctrl.c:170-178`):
+    //
+    //     if (w_handle != gl_wtop) {
+    //         perform_untop(gl_wtop);
+    //         ct_msgup(WM_TOPPED, pwin->w_owner, w_handle, 0, 0, 0, 0);
+    //         return;
+    //     }
+    //
+    // The topping is the *owner's* to request with `wind_set(WF_TOP)` (TeraDesk
+    // `wd_type_topped`, `sdk/apps/teradesk/window.c:2375-2378`; our desktop's
+    // `top_msg`, `kernel/src/desk/main.rs:1396-1406`). Doing it here as well
+    // made the owner's `WF_TOP` a no-op on an already-topped window — and the
+    // repaint it triggered took the window's content with it.
     if handle != get_top() {
         let old_top = get_top();
         msg[0] = WM_TOPPED;
         wait_release();
         post_untopped(old_top, handle);
-        top_window(handle);
         post_to_owner(owner, &msg);
         return;
     }
