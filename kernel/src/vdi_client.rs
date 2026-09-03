@@ -116,6 +116,17 @@ impl Vdi {
         self.call();
     }
 
+    /// Set the writing (raster) mode (vswr_mode, opcode 32): `1` replace,
+    /// `2` transparent, `3` XOR, `4` reverse-transparent
+    /// (`tos_api::vdi::attributes::vswr_mode`).
+    ///
+    /// Replace is the workstation default and paints a glyph's *clear* pixels
+    /// with pen 0, so text over a filled panel needs transparent mode to keep
+    /// the panel visible behind the glyph cells.
+    pub fn set_write_mode(&mut self, mode: i16) {
+        self.set1(32, mode);
+    }
+
     /// Set the fill colour (vsf_color).
     pub fn set_fill_color(&mut self, color: i16) {
         self.set1(25, color);

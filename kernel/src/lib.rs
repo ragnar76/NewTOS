@@ -313,7 +313,16 @@ extern "C" fn kernel_main_rust(dtb_phys: usize) -> ! {
     // Pi-4 it is a no-op until the VL805 firmware path (D7).
     drivers::usb::init(dtb_phys);
 
-    initinfo::run();
+    // `initinfo(&shiftbits)` (EmuTOS `biosmain`, `bios/bios.c:809`; the
+    // `bootdev` half of its return value has no NewTOS counterpart, see
+    // `initinfo::wait_for_user`): show the welcome screen, hold it, and come
+    // back with the modifier keys the user was holding while it was up.
+    // The hold itself — its duration, the any-key skip
+    // and the Shift pause — lives in `initinfo::wait_for_user`
+    // (`bios/initinfo.c:376-442`); it replaced a fixed 2 s `delay_ms`, which
+    // was too short for an HDMI monitor still locking its mode and could not
+    // be skipped or extended by the user.
+    let shiftbits = initinfo::run();
 
     // Development self-tests are no longer invoked during the normal
     // boot — the system goes straight to the console. They remain in the
@@ -326,9 +335,10 @@ extern "C" fn kernel_main_rust(dtb_phys: usize) -> ! {
     // b1-lowmem-feasibility.md, Option 1 — is populated in a loaded EL0 TPA:
     // checks _sysbase/os_version/_p_cookies + the Setexc($5A0/4,-1) idiom).
 
-    // Keep the initinfo boot screen visible briefly before the desktop
-    // takes over (EmuTOS shows its boot screen the same way).
-    arch::aarch64::delay_ms(2000);
+    // "if (shiftbits & MODE_CTRL) bootflags |= BOOTFLAG_SKIP_AUTO_ACC;"
+    // (EmuTOS `biosmain`, `bios/bios.c:816-820`) — the modifiers held on the
+    // welcome screen become boot flags, read by `run_auto_folder` below.
+    launch::set_bootflags_from_shiftbits(shiftbits);
 
     // Switch the screen to the framebuffer console first, so any boot /
     // AUTO-program console output (Cconws) is visible on HDMI — EmuTOS shows

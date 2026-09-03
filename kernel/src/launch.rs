@@ -143,10 +143,52 @@ pub fn run_program_with_tail_rc(path: &[u8], tail: &[u8]) -> i32 {
     tos_types::error::E_OK
 }
 
+/// `MODE_CTRL` (`references/emutos/include/biosdefs.h:92`) — the Control bit of
+/// the `Kbshift` modifier byte.
+const MODE_CTRL: u8 = 0x04;
+
+/// EmuTOS' `bootflags` (`references/emutos/bios/bios.c:104`), reduced to the
+/// one flag NewTOS has a consumer for: `BOOTFLAG_SKIP_AUTO_ACC`
+/// (`include/biosext.h:42`), read by [`run_auto_folder`] below exactly as
+/// EmuTOS' `autoexec` reads it (`bios/bios.c:702-704`).
+///
+/// `BOOTFLAG_SKIP_HDD_BOOT` and `BOOTFLAG_EARLY_CLI` are not represented — see
+/// the hint-line comment in [`crate::initinfo::run`] for why neither has a
+/// consumer here.
+static SKIP_AUTO_ACC: core::sync::atomic::AtomicBool =
+    core::sync::atomic::AtomicBool::new(false);
+
+/// Turn the modifier keys held on the boot screen into boot flags — EmuTOS
+/// `biosmain` (`references/emutos/bios/bios.c:816-820`):
+///
+/// ```c
+/// if (shiftbits & MODE_ALT)  bootflags |= BOOTFLAG_SKIP_HDD_BOOT;
+/// if (shiftbits & MODE_CTRL) bootflags |= BOOTFLAG_SKIP_AUTO_ACC;
+/// ```
+///
+/// `shiftbits` is what [`crate::initinfo::run`] returned. Only the Control arm
+/// is reproduced (see [`SKIP_AUTO_ACC`]).
+///
+/// EmuTOS' `BOOTFLAG_SKIP_AUTO_ACC` is broader than the `\AUTO\` folder: it
+/// also suppresses loading desk accessories (`aes/geminit.c:268-270`), user
+/// cursors (`geminit.c:529-532`), user icons (`desk/deskapp.c:541-543`) and
+/// even the `EMUDESK.INF` read itself (`geminit.c:766-769`). NewTOS honours
+/// only the `\AUTO\` part today: accessories and loadable cursors/icons are not
+/// implemented at all, and our `.INF` read happens in `aes::init::init()`
+/// *before* the boot screen is shown, so the flag does not exist yet at that
+/// point. Reordering the boot to fix that is a separate change.
+pub fn set_bootflags_from_shiftbits(shiftbits: u8) {
+    SKIP_AUTO_ACC.store(shiftbits & MODE_CTRL != 0, Ordering::Relaxed);
+}
+
 /// Run every auto-run program in `\AUTO\` on the boot drive (C:) in directory
 /// order, before the desktop — EmuTOS' `autoexec` (`bios/bios.c:697`). Each
 /// runs to its `Pterm`, then the next. AUTO programs are typically drivers /
 /// TSRs that set something up at boot. Absent `\AUTO\` folder → no-op.
+///
+/// Skipped entirely when the user held Control on the boot screen — EmuTOS'
+/// first act in `autoexec` (`bios/bios.c:702-704`, "check if the user does not
+/// want to run AUTO programs"); see [`set_bootflags_from_shiftbits`].
 ///
 /// Runs **only** the native NewTOS extensions `.NAP` / `.NCP` (ADR-018). Classic
 /// Atari `.PRG` / `.TOS` are m68k and cannot load without the (unavailable)
@@ -157,6 +199,12 @@ pub fn run_program_with_tail_rc(path: &[u8], tail: &[u8]) -> i32 {
 pub fn run_auto_folder() {
     use crate::desk::ftype::{classify, FileType, Flavor};
     use tos_api::bdos::fs::find::{list_dir_ex, DirInfo};
+
+    // `if (bootflags & BOOTFLAG_SKIP_AUTO_ACC) return;` (`bios/bios.c:702-704`)
+    if SKIP_AUTO_ACC.load(Ordering::Relaxed) {
+        kprintln!("[auto] skipped (Control held on the boot screen)");
+        return;
+    }
 
     let mut ents = [DirInfo::default(); 32];
     let n = list_dir_ex("C:\\AUTO\\*.*", &mut ents);
