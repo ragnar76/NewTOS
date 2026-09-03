@@ -109,6 +109,33 @@ pub enum PexecError {
     LoadFailed(LoadError),
 }
 
+impl PexecError {
+    /// The GEMDOS error code `Pexec` reports for this failure — the value a
+    /// caller of `Pexec` (or of the shell loop's `dos_exec`) gets back.
+    ///
+    /// A *memory/size* shortfall maps to `ENSMEM` (EmuTOS `bdos/proc.c:295-300`:
+    /// no TPA → `ENSMEM`); a malformed image / bad header maps to `EPLFMT`
+    /// (`bdos/kpgmld.c:47-63`). `ProgramTooLarge` is the image+BSS overrunning
+    /// the TPA image region — a size shortfall, so `ENSMEM`. A failed TPA pool
+    /// allocation (`NoTpaMemory`) and the env allocation shortfall
+    /// (`alloc_env`, `proc.c:284-288`) are likewise `ENSMEM`.
+    pub const fn errno(self) -> i32 {
+        use tos_types::error;
+        match self {
+            PexecError::UnknownMode | PexecError::UnsupportedMode => error::EINVFN,
+            PexecError::NotFound => error::EFILNF,
+            PexecError::NoSlot => error::ENSMEM,
+            PexecError::BadHandle => error::EIMBA,
+            PexecError::LoadFailed(le) => match le {
+                LoadError::ProgramTooLarge
+                | LoadError::NoEnvMemory
+                | LoadError::NoTpaMemory => error::ENSMEM,
+                _ => error::EPLFMT,
+            },
+        }
+    }
+}
+
 // ─── Mode dispatch ──────────────────────────────────────────────────
 
 /// `Pexec(mode, path, tail, env)` — the GEMDOS-side dispatch.

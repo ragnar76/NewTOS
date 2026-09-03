@@ -60,6 +60,7 @@ pub mod selftest_etv_term;
 pub mod aes_demo;
 pub mod desk;
 pub mod launch;
+pub mod shell_loop;
 pub mod selftest_ikbd;
 pub mod selftest_vdi;
 pub mod selftest_raster;
@@ -329,12 +330,6 @@ extern "C" fn kernel_main_rust(dtb_phys: usize) -> ! {
     // takes over (EmuTOS shows its boot screen the same way).
     arch::aarch64::delay_ms(2000);
 
-    // Start the GEM desktop on the HDMI framebuffer (EmuTOS deskmain): it
-    // draws the menu bar, drive/trash/printer icons and the grey desktop,
-    // then dispatches AES events. Mouse interaction works once the IKBD
-    // mouse is wired (UART2); in QEMU it renders and waits. The time-driven
-    // AES `aes_demo::showcase()` and the serial `shell::run()` remain
-    // available for debugging.
     // Switch the screen to the framebuffer console first, so any boot /
     // AUTO-program console output (Cconws) is visible on HDMI — EmuTOS shows
     // its AUTO programs on the console before the GUI.
@@ -345,10 +340,29 @@ extern "C" fn kernel_main_rust(dtb_phys: usize) -> ! {
     // invalid/empty .PRG fails the load gracefully (no fault).
     launch::run_auto_folder();
 
-    desk::run();
+    // `sh_tographic()` (EmuTOS `run_accs_and_desktop`, `geminit.c:700`) — go
+    // into graphic mode now that the character-screen part of the boot (the
+    // initinfo screen and the \AUTO\ programs) is done, and before the shell
+    // loop starts anything. On a board without a raster backend this is a
+    // no-op and the loop's first `sh_chgrf` falls back to alpha mode.
+    shell_loop::go_graphic();
 
-    // The desktop loop returns only on Shutdown.
-    kprintln!("[desk] shutdown — halting");
+    // `process_inf2` (EmuTOS `geminit.c:734`) — the second `.INF` pass, run
+    // after the AES's own init and immediately before the shell loop: it sets
+    // the double-click speed from the `#E` line and reads the `#Z` autorun
+    // line into the SHELL's `sh_desk`/`sh_cdir` pair, telling us whether a
+    // program is configured to run instead of the built-in desktop.
+    let (isauto, isgem) = tos_api::aes::init::process_inf2();
+
+    // The AES shell loop (EmuTOS `sh_main`, `geminit.c:739`): it decides which
+    // program runs — the `#Z` program, the built-in desktop, or the console —
+    // starts it, and starts the next one when it terminates. This is what
+    // replaced the hardcoded `desk::run()` call: the desktop is now a
+    // configuration choice, not a compiled-in one.
+    shell_loop::sh_main(isauto, isgem);
+
+    // `sh_main` returns only on `shel_write(SHW_SHUTDOWN, …)`.
+    kprintln!("[shell] shutdown — halting");
     arch::aarch64::halt();
 }
 

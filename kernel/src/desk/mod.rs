@@ -91,6 +91,9 @@ const WC_WORK: i16 = 1;
 // graf_mouse cursor-control numbers (`aesdefs.h`): hide / show around a paint.
 pub(super) const M_OFF: i16 = 256;
 pub(super) const M_ON: i16 = 257;
+/// `graf_mouse` shape number (`aesdefs.h`): the plain arrow, which
+/// `desk_busy_off` restores (`desk/desksupp.c:1849-1852`).
+pub(super) const ARROW: i16 = 0;
 
 // evnt_multi event-class bits (`aesdefs.h`).
 pub(super) const MU_KEYBD: u16 = 0x0001;
@@ -613,6 +616,14 @@ pub fn run() {
     // cursor-init note; positioning the pointer here is a faithful GEM startup
     // action, not a workaround for a menu-semantics gap.
     tos_api::vdi::mouse::display_at(backend.width() as i16 / 2, backend.height() as i16 / 2, backend);
+
+    // `desk_busy_off()` (`deskmain.c:2071`, `desksupp.c:1849-1852` =
+    // `graf_mouse(ARROW, NULL)`) — "menu is initialised - display menu bar &
+    // set mouse to arrow". The AES handed the desktop an hourglass when it
+    // switched into graphics mode (`sh_tographic`'s
+    // `set_mouse_to_hourglass()`, `aes/gemshlib.c:237`); the desktop drops it
+    // once it is ready for input.
+    graf_mouse(ARROW);
 
     kprintln!(
         "[desk] desktop up ({} drives)",

@@ -342,7 +342,11 @@ static WM_READY: AtomicBool = AtomicBool::new(false);
 /// call and therefore equally after the screen is up. `VF_ISOPEN` is *not* set
 /// (the desktop is the tree root, never an open child), so every `in_use &&
 /// open` walk skips it exactly as EmuTOS' `W_TREE` walks do.
-fn wm_init() {
+///
+/// This is the desktop-window half of EmuTOS's `wm_init`; the public
+/// [`wm_init`] runs it together with the window sweep and the `gl_newdesk`
+/// reset, which is the whole of `gemwmlib.c:1247-1310` that is observable here.
+fn init_desk_window() {
     // SAFETY: single-CPU AES; exclusive logical owner, no live borrow here.
     let d = unsafe { &mut (*TABLE.slots.get())[DESKWH as usize] };
     *d = Window::EMPTY;
@@ -361,7 +365,7 @@ fn slots() -> &'static mut [Window; NUM_WIN] {
     // backend actually exists — before that [`screen_rect`] would answer with
     // its 640×480 fallback and freeze the desktop window at the wrong size.
     if !WM_READY.load(Ordering::Relaxed) {
-        wm_init();
+        init_desk_window();
         if host().and_then(|h| h.raster()).is_some() {
             WM_READY.store(true, Ordering::Relaxed);
         }
@@ -2394,6 +2398,24 @@ pub fn wind_calc(pb: &Aespb) {
 /// deleting the windows). Releasing the locks here is the observable equivalent
 /// of those drain loops (both counters end at 0).
 pub fn wind_new(pb: &Aespb) {
+    wm_new();
+    if let Some(backend) = host().and_then(|h| h.raster()) {
+        redraw_all(backend);
+    }
+    pb.set_ret(1);
+}
+
+/// `wm_new` (`gemwmlib.c:1875-1893`) — the internal window sweep behind
+/// [`wind_new`]: drain the outstanding `wind_update` mouse-control and
+/// screen-sync locks, then close and delete every window still in use.
+///
+/// The shell loop calls it after a launched program terminates
+/// (`gemshlib.c:677`) and after an abnormal desktop exit (`:609`), so the
+/// windows the previous occupant left open are swept before the next program
+/// starts. It **draws nothing** — EmuTOS's `wm_new` only closes/deletes; the
+/// repaint belongs to the `wind_new` *opcode* (which an application calls
+/// expecting its screen back).
+pub fn wm_new() {
     // `for (wh = 1; wh < NUM_WIN; wh++)` (gemwmlib.c:1886) — handle 0, the
     // desktop window, is not one of the windows `wm_new` deletes.
     slots()[1..].fill(Window::EMPTY);
@@ -2402,10 +2424,35 @@ pub fn wind_new(pb: &Aespb) {
     // Release all update / mouse-control locks (gemwmlib.c:1879-1883).
     MCTRL_CNT.store(0, Ordering::Relaxed);
     UPDATE_LOCK.store(0, Ordering::Relaxed);
-    if let Some(backend) = host().and_then(|h| h.raster()) {
-        redraw_all(backend);
-    }
-    pb.set_ret(1);
+}
+
+/// `wm_init` (`gemwmlib.c:1247-1310`) — re-initialise the Window Manager
+/// before each program the shell loop starts (`gemshlib.c:717`). EmuTOS
+/// rebuilds the whole window-extent/element object arena; the observable
+/// part for us is that **every window is gone**, the desktop window (handle
+/// 0) spans the screen again, and `gl_newdesk` is reset to NULL
+/// (`gemwmlib.c:1300`) so a tree the previous program registered with
+/// `wind_set(WF_NEWDESK)` cannot leak into the next one.
+///
+/// Resetting `gl_newdesk` is what makes it safe for the shell loop to run
+/// after an EL0 application: the tree pointer that application registered
+/// lived in its own (now unmapped) address space.
+///
+/// Like `wm_new` it draws nothing; `sh_draw(clear)` does the painting
+/// immediately afterwards (`gemshlib.c:719`).
+pub fn wm_init() {
+    wm_new();
+    // `w_setup(ppd, DESKWH, NONE)` + the four `w_setsize` calls
+    // (`gemwmlib.c:1290-1294`).
+    init_desk_window();
+    // `gl_newdesk = NULL;` (gemwmlib.c:1300)
+    NEWDESK_TREE.store(0, Ordering::Release);
+    NEWDESK_ROOT.store(0, Ordering::Release);
+    NEWDESK_APP.store(false, Ordering::Release);
+    // Any saved desktop window set belongs to a desktop instance that is
+    // over; `wm_init` leaves no window state behind (`:1263-1268`).
+    // SAFETY: single-CPU AES.
+    unsafe { *SAVE.active.get() = false };
 }
 
 fn inside(r: Grect, x: i16, y: i16) -> bool {

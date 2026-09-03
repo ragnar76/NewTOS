@@ -51,6 +51,19 @@ pub fn run_program(path: &[u8]) -> bool {
 /// behind the desktop's document→application association (`deskins`/`do_aopen`):
 /// the associated application receives the document path as its command tail.
 pub fn run_program_with_tail(path: &[u8], tail: &[u8]) -> bool {
+    run_program_with_tail_rc(path, tail) == tos_types::error::E_OK
+}
+
+/// [`run_program_with_tail`] reporting the **GEMDOS return code** rather than a
+/// bool — EmuTOS's `dos_exec(PE_LOADGO, D.s_cmd, ad_stail, ad_envrn)`
+/// (`aes/gemshlib.c:645`), whose negative result `sh_ldapp` returns to
+/// `sh_main`, which turns it into an `fm_error` alert (`:722-723`).
+///
+/// Returns `E_OK` (0) when the program ran to its `Pterm`, otherwise the load
+/// failure's GEMDOS code ([`tos_api::bdos::process::pexec::PexecError::errno`],
+/// e.g. `EFILNF` for a missing file, `EPLFMT` for a non-ELF, `ENSMEM` when the
+/// TPA cannot be allocated).
+pub fn run_program_with_tail_rc(path: &[u8], tail: &[u8]) -> i32 {
     // Busy cursor while loading from disk (the desktop is still on screen).
     busy_cursor(true);
     // Load from the registry or the FAT16 file system into a fresh slot.
@@ -69,14 +82,14 @@ pub fn run_program_with_tail(path: &[u8], tail: &[u8]) -> bool {
         Err(e) => {
             kprintln!("[launch] load failed: {:?}", e);
             busy_cursor(false);
-            return false;
+            return e.errno();
         }
     };
     busy_cursor(false);
 
     let s = match slot(child.slot) {
         Some(s) => s,
-        None => return false,
+        None => return tos_types::error::ENSMEM,
     };
     s.set_state(State::Running);
     // Record the program's own directory so a GEM app's `rsrc_load` finds its
@@ -119,7 +132,15 @@ pub fn run_program_with_tail(path: &[u8], tail: &[u8]) -> bool {
     }
 
     kprintln!("[launch] returned (program Pterm'd)");
-    true
+
+    // `sh_ldapp`'s `AP_OPEN` cleanup (`aes/gemshlib.c:650-657`), at exactly
+    // the point EmuTOS runs it — immediately after `dos_exec(PE_LOADGO, …)`
+    // returns. If the program called `appl_init()` without a matching
+    // `appl_exit()` (a crashed or sloppy GEM app), do the important parts for
+    // it, so the AES descriptor the next program reuses is clean.
+    tos_api::aes::close_client_if_open(tos_api::aes::pid_of_slot(child.slot));
+
+    tos_types::error::E_OK
 }
 
 /// Run every auto-run program in `\AUTO\` on the boot drive (C:) in directory

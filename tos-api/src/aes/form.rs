@@ -817,12 +817,16 @@ fn press(tree: *mut Object, obj: i16) {
 /// `(button != 1)` — so dismissing the (single-button) alert yields `FALSE`(0).
 /// `n > 63` is out of range: return `FALSE` without drawing anything.
 pub fn form_error(pb: &Aespb) {
-    let n = pb.intin(0);
+    pb.set_ret(fm_error(pb.intin(0)));
+}
 
+/// `fm_error` (`gemfmlib.c:436-472`) — the internal alert behind
+/// [`form_error`]. Also called by the shell loop for the return code of the
+/// previous program (`gemshlib.c:722-723`). Returns `(button != 1)`.
+pub fn fm_error(n: i16) -> i16 {
     // EmuTOS `if (n > 63) return FALSE;` — no alert for an out-of-range code.
     if n > 63 {
-        pb.set_ret(0);
-        return;
+        return 0;
     }
 
     use crate::i18n::ErrAlert;
@@ -848,7 +852,7 @@ pub fn form_error(pb: &Aespb) {
     };
 
     // EmuTOS `return (ret != 1)`: clicking button 1 yields FALSE(0).
-    pb.set_ret(i16::from(button != 1));
+    i16::from(button != 1)
 }
 
 /// Substitute the first `%u`/`%d` in the alert template `tmpl` with `n` in

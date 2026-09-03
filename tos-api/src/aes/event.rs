@@ -360,15 +360,23 @@ pub fn evnt_mouse(pb: &Aespb) -> Option<sched::Switch> {
 /// (`geminit.c:708`, `ev_dclick(3, TRUE)`).
 static DCLICK_INDEX: AtomicI16 = AtomicI16::new(3);
 
+/// `ev_dclick` (`aes/gemevlib.c`) — the internal getter/setter behind
+/// [`evnt_dclick`]. Also called at AES boot with `ev_dclick(3, TRUE)`
+/// (`geminit.c:708`) and by `process_inf2` from the `.INF` `#E` line's low
+/// three bits (`geminit.c:426`).
+pub(crate) fn ev_dclick(rate: i16, setit: bool) -> i16 {
+    if setit {
+        DCLICK_INDEX.store(rate, Ordering::Relaxed);
+    }
+    DCLICK_INDEX.load(Ordering::Relaxed)
+}
+
 /// `evnt_dclick` (26) — get (`int_in[1]` = 0) or set (`int_in[1]` != 0)
 /// the double-click speed index `int_in[0]`. Returns the current index.
 pub fn evnt_dclick(pb: &Aespb) {
     let rate = pb.intin(0); // EV_DCRATE
     let setit = pb.intin(1); // EV_DCSETIT
-    if setit != 0 {
-        DCLICK_INDEX.store(rate, Ordering::Relaxed);
-    }
-    pb.set_ret(DCLICK_INDEX.load(Ordering::Relaxed));
+    pb.set_ret(ev_dclick(rate, setit != 0));
 }
 
 /// `evnt_multi` (25) — the central event multiplexer. Block until **any**

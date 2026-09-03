@@ -136,6 +136,14 @@ static DESKTOP: DesktopTree = DesktopTree(UnsafeCell::new([
     },
 ]));
 
+/// `infbuf` (`geminit.c:110`) — the first [`INF_SIZE`] bytes of the `.INF`
+/// file, read **once** in `gem_main` (`:766-773`) and used by both
+/// [`process_inf1_q`] (`:776`) and [`process_inf2`] (`:734`).
+struct InfBuf(UnsafeCell<[u8; INF_SIZE + 1]>);
+// SAFETY: as [`DesktopTree`] — single boot CPU, cooperative trap path.
+unsafe impl Sync for InfBuf {}
+static INFBUF: InfBuf = InfBuf(UnsafeCell::new([0; INF_SIZE + 1]));
+
 /// `rs_tedinfo[12]`, the `TEDINFO` `DTNAME` points at (`gem_rsc.c:88-91`).
 struct DtNameTed(UnsafeCell<TedInfo>);
 // SAFETY: as [`DesktopTree`] — single CPU, cooperative trap path.
@@ -159,6 +167,14 @@ static DTNAME_TED: DtNameTed = DtNameTed(UnsafeCell::new(TedInfo {
 #[inline]
 pub(crate) fn desktop_tree() -> *mut Object {
     DESKTOP.0.get() as *mut Object
+}
+
+/// Point `DTNAME`'s `TEDINFO.te_ptext` at `p` — `sh_draw(lcmd, FALSE)`'s
+/// `ted->te_ptext = (char *)lcmd` (`gemshlib.c:284-285`), the program name
+/// shown while a program starts.
+pub(crate) fn set_dtname_text(p: u64) {
+    // SAFETY: single-CPU AES; `DTNAME_TED` is an always-initialised static.
+    unsafe { (*DTNAME_TED.0.get()).te_ptext = p };
 }
 
 /// `rs_trees[DESKTOP][ROOT].ob_spec` — the word `appl_init` hands back as
@@ -245,8 +261,12 @@ fn process_inf1_q(buf: &[u8]) -> Option<[i16; 3]> {
 pub fn init() {
     // ── 1. `process_inf1` — read the first INF_SIZE bytes and look for `#Q`.
     //    A missing/unreadable file is EmuTOS's `n < 0 → n = 0` case
-    //    (`geminit.c:771-773`): no `#Q`, so `bgfound` stays FALSE.
-    let mut infbuf = [0u8; INF_SIZE + 1];
+    //    (`geminit.c:771-773`): no `#Q`, so `bgfound` stays FALSE. The buffer
+    //    is the shared `infbuf` static (`geminit.c:110`), read **once** —
+    //    `process_inf2` reads the same bytes later in the boot.
+    // SAFETY: single-CPU boot path; exclusive access to the static here.
+    let infbuf = unsafe { &mut *INFBUF.0.get() };
+    infbuf.fill(0);
     let n = crate::bdos::fs::read_file(INF_PATH, &mut infbuf[..INF_SIZE]).unwrap_or(0);
     infbuf[n] = 0; // `infbuf[n] = '\0'` (geminit.c:773)
     let bg = process_inf1_q(&infbuf[..=n]);
@@ -292,4 +312,105 @@ pub fn init() {
         let idx = if planes > 2 { 2 } else { (planes - 1).max(0) } as usize;
         set_aes_background((bg[idx] & 0xff) as u8);
     }
+}
+
+/// `process_inf2` (`geminit.c:407-464`) — the **second** `.INF` pass, run
+/// after the AES's own init and before the shell loop (`geminit.c:734`,
+/// inside `run_accs_and_desktop`). It reads two lines of the buffer
+/// [`init`] filled:
+///
+/// * **`#E`** (`:421-436`) — `ev_dclick(env & 0x07, TRUE)` sets the
+///   double-click speed from the low three bits of the first byte
+///   ([`super::event::ev_dclick`]). EmuTOS then reads further bytes on the
+///   same line for the blitter (`Blitmode`, `#if CONF_WITH_BLITTER`) and the
+///   68030 cache (`set_cache`, `#if CONF_WITH_CACHE_CONTROL`). Both are
+///   **m68k hardware** with no BCM2711 equivalent — the hardware-layer
+///   carve-out of `docs/COMPATIBILITY.md`. The bytes are still consumed so
+///   the scan cursor advances exactly as EmuTOS's does; only the two
+///   hardware actions are absent.
+/// * **`#Z`** (`:438-460`), format `#Z <isgem-byte> <path>@` — the autorun
+///   entry. `scan_2` reads the flag byte (`00` = character mode, else GEM),
+///   the path up to `@` is split by `sh_name` into a directory and a bare
+///   program name, and the pair goes to [`super::shell::sh_wdef`] with
+///   `isauto = TRUE`.
+///
+/// Returns `(isauto, isgem)`; `isgem` is EmuTOS's return value
+/// `(*isauto && !isgem) ? FALSE : TRUE` (`:463`), i.e. character mode only
+/// when an autorun entry exists *and* its flag byte is `00`. Both are passed
+/// straight into `sh_main(isauto, isgem)` (`geminit.c:739`).
+///
+/// **Only the first [`INF_SIZE`] (300) bytes are visible**, because that is
+/// all `gem_main` reads (`geminit.c:769`). EmuTOS states the resulting
+/// constraint on the file itself: "the `#Z` and `#E` lines must be completely
+/// contained within the first INF_SIZE (currently 300) bytes of EMUDESK.INF"
+/// (`desk/deskapp.c:161-162`), which is why the desktop's writer emits `#Z`
+/// between `#R` and `#E` (`deskapp.c:1128-1133`). A `#Z` line placed after the
+/// `#W`/ANODE bulk is invisible to the AES.
+///
+/// **`BOOTFLAG_SKIP_AUTO_ACC` (`geminit.c:452`) is not reproduced**: NewTOS
+/// has no boot-time modifier-key scan (EmuTOS sets the flag when Control is
+/// held on the initinfo screen, `bios/bios.c:819-820`), so there is no such
+/// flag to test. Nothing is faked — the guard is simply absent, and the
+/// autorun entry is always honoured.
+pub fn process_inf2() -> (bool, bool) {
+    // SAFETY: single-CPU boot path; the static was filled by `init`.
+    let buf = unsafe { &*INFBUF.0.get() };
+    let mut isauto = false;
+    let mut isgem: i16 = 1; // `WORD env, isgem = TRUE;` (:409)
+
+    let mut i = 0usize;
+    // `for (pcurr = infbuf; *pcurr; )` with the `'#'` + tag lookahead (:415-419)
+    while i < buf.len() && buf[i] != 0 {
+        if buf[i] != b'#' {
+            i += 1;
+            continue;
+        }
+        i += 1;
+        if i >= buf.len() {
+            break;
+        }
+        let tag = buf[i];
+        if tag == b'E' {
+            // `pcurr += 2` — skip the tag and the following blank (:423).
+            i += 2;
+            let (env, used) = scan_2(&buf[i.min(buf.len())..]);
+            i = (i + used).min(buf.len());
+            super::event::ev_dclick(env & 0x07, true); // (:425)
+            // The blitter byte (:426) and, with CONF_WITH_CACHE_CONTROL, the
+            // two video bytes plus the cache byte (:431-434). Consumed to
+            // keep the cursor in step; no RPi4 equivalent to act on.
+            for _ in 0..4 {
+                let (_v, used) = scan_2(&buf[i.min(buf.len())..]);
+                i = (i + used).min(buf.len());
+            }
+        } else if tag == b'Z' {
+            // `pcurr += 2; scan_2(pcurr, &isgem); pcurr += 3;` (:441-444) —
+            // note `scan_2`'s return is discarded here, the cursor advances
+            // by a fixed three bytes (two hex digits + one blank).
+            i += 2;
+            let (v, _used) = scan_2(&buf[i.min(buf.len())..]);
+            isgem = v;
+            i = (i + 3).min(buf.len());
+            // `while (*pcurr && *pcurr != '@') ++pcurr; *pcurr = 0;` (:445-447)
+            let start = i;
+            while i < buf.len() && buf[i] != 0 && buf[i] != b'@' {
+                i += 1;
+            }
+            let path = &buf[start..i];
+            // `tmpptr2 = sh_name(tmpptr1); *(tmpptr2-1) = 0;` (:448-449) —
+            // split the one string into (directory, program) by writing a NUL
+            // over the byte before the filename. When the filename starts at
+            // offset 0 there is no such byte inside the path, so the
+            // directory is empty.
+            let off = path.len() - super::shell::sh_name(path).len();
+            let dir: &[u8] = if off > 0 { &path[..off - 1] } else { &[] };
+            let prog = &path[off..];
+            super::shell::sh_wdef(prog, dir); // (:455)
+            isauto = true; // (:456)
+            i += 1; // `++pcurr;` (:458)
+        }
+    }
+
+    // `return (*isauto && !isgem) ? FALSE : TRUE;` (:463)
+    (isauto, !(isauto && isgem == 0))
 }

@@ -438,15 +438,32 @@ fn crysbind(pb: &Aespb) -> Option<crate::bdos::process::sched::Switch> {
     None
 }
 
+/// `sh_ldapp`'s `AP_OPEN` cleanup (`aes/gemshlib.c:650-657`) for the program
+/// that has just terminated — see `pd::close_if_open`. Called from the
+/// program launcher at the point EmuTOS calls it: immediately after
+/// `dos_exec(PE_LOADGO, …)` returns.
+pub fn close_client_if_open(pid: i16) {
+    // SAFETY: single-CPU launcher context; the AES pd table follows the
+    // single-trap-path discipline and the launcher runs on that CPU with no
+    // concurrent GEM trap in flight.
+    unsafe { pd::close_if_open(pid) };
+}
+
+/// The AES id (pid) NewTOS gives the program in GEMDOS process-table slot
+/// `slot` — `slot + 1`, the value that program reports at `appl_init`
+/// (`appl::current_pid`).
+pub fn pid_of_slot(slot: usize) -> i16 {
+    slot as i16 + 1
+}
+
 /// Name a freshly-launched EL0 program's AES process descriptor from its launch
 /// `path`, so a later `appl_find(name)` can locate it — the reimplementation of
 /// EmuTOS naming a process at start (`pstart` → `p_nameit`, `aes/gempd.c:110-131`).
 /// `slot` is the GEMDOS process-table slot the loader placed the program in; its
-/// AES id (pid) is `slot + 1`, the same value the app reports at `appl_init`
-/// (`appl::current_pid`). Called by the kernel launcher before the program
-/// enters EL0, alongside [`resource::set_app_dir`].
+/// AES id (pid) is [`pid_of_slot`]. Called by the kernel launcher before the
+/// program enters EL0, alongside [`resource::set_app_dir`].
 pub fn register_process(slot: usize, path: &[u8]) {
-    let pid = slot as i16 + 1;
+    let pid = pid_of_slot(slot);
     // SAFETY: single-CPU launcher context; the AES pd table follows the
     // single-trap-path discipline and the launcher runs on that CPU with no
     // concurrent GEM trap in flight.

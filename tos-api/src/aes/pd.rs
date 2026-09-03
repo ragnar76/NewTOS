@@ -403,6 +403,41 @@ pub unsafe fn close(pid: i16) {
     }
 }
 
+/// `sh_ldapp`'s `AP_OPEN` cleanup (`aes/gemshlib.c:650-657`) — the program
+/// that has just terminated called `appl_init()` but never `appl_exit()`:
+///
+/// ```c
+/// if (rlr->p_flags & AP_OPEN) {
+///     mn_cleanup();
+///     if (rlr->p_qindex) ap_rdwr(MU_MESAG, rlr, rlr->p_qindex, (WORD *)D.g_valstr);
+///     rlr->p_flags &= ~AP_OPEN;
+/// }
+/// ```
+///
+/// EmuTOS does "the important parts of `appl_exit`" on the program's behalf,
+/// because `rlr` (its single AESPD 0) is about to be reused by the next
+/// program and a stale `AP_OPEN` plus an undrained queue would corrupt that
+/// program's state. `mn_cleanup` (`gemmnlib.c:740-758`) sends `AC_CLOSE` to
+/// every registered desk accessory and frees the submenu buffer — NewTOS has
+/// neither, so what remains observable is exactly what `appl_exit` does to the
+/// descriptor, which is what [`close`] performs.
+///
+/// A descriptor without `AP_OPEN` (the program did call `appl_exit`, or never
+/// called `appl_init`) is left alone, as EmuTOS's `if` leaves it alone.
+///
+/// # Safety
+/// Single trap path.
+pub unsafe fn close_if_open(pid: i16) {
+    // SAFETY: single trap path.
+    let t = unsafe { table() };
+    if let Some(slot) = t
+        .iter_mut()
+        .find(|s| s.in_use && s.pid == pid && (s.flags & AP_OPEN) != 0)
+    {
+        *slot = Aespd::EMPTY;
+    }
+}
+
 /// The 8-char `p_name` length (EmuTOS `aes/struct.h:111`, `AP_NAMELEN`).
 const AP_NAMELEN: usize = 8;
 

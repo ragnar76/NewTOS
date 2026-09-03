@@ -227,6 +227,12 @@ struct InfData {
     patcol: [(u8, u8); 3],
     /// `#Z` autorun program path (empty = none).
     autorun: String,
+    /// `#Z` flag byte — EmuTOS writes `pa->a_flags & AF_ISCRYS`
+    /// (`deskapp.c:1133`), i.e. `01` for a GEM application and `00` for a
+    /// character-mode one. The AES reads it back as `isgem` in `process_inf2`
+    /// (`geminit.c:443`) and it decides whether the autorun program starts in
+    /// graphics or alpha mode, so it must survive a load/save round trip.
+    autorun_gem: u8,
     /// `#W` saved window geometries, in file order.
     windows: Vec<InfWindow>,
     /// Every `ANODE` line, in file order.
@@ -241,6 +247,7 @@ impl Default for InfData {
             e5: INF_E5_DEFAULT,
             patcol: [(0x41, 0x40), (0x43, 0x40), (0x43, 0x40)],
             autorun: String::new(),
+            autorun_gem: 0,
             windows: Vec::new(),
             anodes: Vec::new(),
         }
@@ -365,7 +372,9 @@ fn parse_inf(bytes: &[u8]) -> InfData {
             }
             b'Z' => {
                 c.skip_spaces();
-                let _cc = scan_2(&mut c); // AF_ISCRYS byte — write-only, discarded
+                // `AF_ISCRYS` (`deskapp.h:28`) — kept so `serialize` writes the
+                // same byte back; the AES reads it as `isgem` (`geminit.c:443`).
+                d.autorun_gem = scan_2(&mut c);
                 d.autorun = scan_str(&mut c);
             }
             b'E' => {
@@ -485,9 +494,14 @@ impl InfData {
         // #R — always written at the current revision level (2).
         out.extend_from_slice(b"#R 02\r\n");
 
-        // #Z — only when an autorun program is set.
+        // #Z — only when an autorun program is set. The flag byte is
+        // `pa->a_flags & AF_ISCRYS` (`deskapp.c:1133`), round-tripped from the
+        // file so a Save does not silently downgrade a GEM autorun program to
+        // character mode.
         if !self.autorun.is_empty() {
-            out.extend_from_slice(b"#Z 00 ");
+            out.extend_from_slice(b"#Z ");
+            push_hex2(&mut out, self.autorun_gem);
+            out.push(b' ');
             out.extend_from_slice(self.autorun.as_bytes());
             out.extend_from_slice(b"@\r\n");
         }
@@ -796,6 +810,7 @@ fn build_from_state() -> InfData {
             [(p[0], p[1]), (p[2], p[3]), (p[4], p[5])]
         },
         autorun: base.autorun,
+        autorun_gem: base.autorun_gem,
         windows: collect_open_windows(),
         anodes,
     }

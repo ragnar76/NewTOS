@@ -47,6 +47,15 @@
 !/apps/apitest/*.h
 !/apps/apitest/*.sh
 
+# ...and chaintest, likewise OURS: the .NAP that proves the AES shell loop
+# actually executes a `shel_write` launch (stage S3 acceptance, audit finding
+# P6-005). Same reasoning as apitest — it is the evidence a stage landed, so it
+# must not be lost to a clean. Built binaries stay excluded by the *.NAP rule.
+!/apps/chaintest/
+/apps/chaintest/*
+!/apps/chaintest/*.c
+!/apps/chaintest/*.sh
+
 # macOS junk that FAT round-trips create.
 .DS_Store
 ._*

@@ -54,6 +54,14 @@ pub fn activate() {
     ACTIVE.store(true, Ordering::Relaxed);
 }
 
+/// Stop directing console output to the screen, leaving the pixels alone —
+/// the AES's `sh_tographic` step out of alpha mode (`aes/gemshlib.c:223-239`),
+/// after which the VDI/AES own the screen and the next
+/// [`activate`] starts from a cleared one.
+pub fn deactivate() {
+    ACTIVE.store(false, Ordering::Relaxed);
+}
+
 /// Whether the framebuffer console is receiving output.
 pub fn is_active() -> bool {
     ACTIVE.load(Ordering::Relaxed)
