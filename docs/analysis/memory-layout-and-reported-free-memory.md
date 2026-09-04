@@ -962,3 +962,174 @@ Kosten/Nutzen: +4,08 MiB ST-RAM und — wichtiger — eine Zahl, die nicht mehr
 mit jedem Kernel-Build wandert. Berührte Dateien: beide Linkerskripte,
 `boot.s`, `frames.rs`, `layout.rs`, `mmu.rs`, `drivers/usb/mod.rs`.
 **Vorgelegt, nicht umgesetzt.**
+
+---
+
+## 14. Nachtrag 2026-09-04 (zweite Runde): die Aufteilung, wie ein TOS-System sie braucht
+
+> Entscheidung des Users nach §13: **erst** E1/E2 (nichts Fremdes im
+> TT-RAM-Pool), **dann** der feste ST-RAM mit **10 MB**. Beides ist
+> umgesetzt; F9 wird am Ende beantwortet.
+
+### 14.1 Das Ergebnis, beide Boards
+
+```text
+board-rpi4 (physisch)                    board-qemu-virt = +0x4000_0000
+──────────────────────────────────────────────────────────────────────
+0x000000..0x080000    512 KiB  Pre-MMU-Boot-Stack
+0x080000..0x260000   ~1,9 MiB  .text .rodata .data .bss
+0x261000..0x262000      4 KiB  Stack-Guard  (L3-Seite, ungemappt)
+0x262000..0x276000     80 KiB  Kernel-Stack 64K + Notfall-Stack 16K
+0x276000..0x400000   1,54 MiB  Reserve — Überschreitung = LINKER-FEHLER
+────────────────────────────────────────── membot = STRAM_OS_RESERVE = 4 MiB
+0x400000..0xE00000     10 MiB  ST-RAM-Pool  ← KONSTANT
+────────────────────────────────────────── memtop = phystop = 14 MiB
+0xE00000..0x1000000     2 MiB  .dma  (Atari-$E00000-Registerfenster)
+────────────────────────────────────────── TTRAM_START = 16 MiB
+0x1000000..pool_top            TT-RAM-Pool
+pool_top..dram.end             OS-Reserve: Kernel-Heap 2 MiB [+ ramfb]
+```
+
+Gemessen (QEMU, Release):
+
+| | vorher | nachher |
+|---|---:|---:|
+| Kernel-Abbild (rpi4) | 7 946 240 B | **2 056 192 B** |
+| ST-RAM-Pool | 6 209 536 B (schwankend) | **10 485 760 B (konstant)** |
+| TT-RAM-Pool-Extent (virt) | 268 435 456 B | 258 043 904 B |
+| BDOS-TT-RAM-Start (virt) | `0x419e9000` | **`0x41000000` = TTRAM_START** |
+| Boot-Schirm ST-RAM | „5 MiB" / „3 MiB" | **„10 MB"** |
+
+### 14.2 E1/E2 — Framebuffer und Heap oben abgeschnitten, nicht aus dem Pool
+
+`layout::discover` nimmt jetzt **vor** der Pool-Bildung eine OS-Reserve vom
+oberen Ende von `dram` (`MemoryMap::os_reserve` → `kernel_heap` +
+`framebuffer`). Das ist EmuTOS' `balloc_stram(size, TRUE)`: es senkt
+`memtop` unter `phystop`, und `getmpb` veröffentlicht nur `[membot, memtop)`
+(`bios/biosmem.c:88-131,134-151`) — der Bildschirmspeicher liegt im RAM der
+Maschine, aber nie im Pool und nie in einer `Malloc`-Antwort.
+
+Die Reserve bleibt **innerhalb** `map.dram`, wird also weiter Normal-Cacheable
+gemappt; sie ist nur kein Poolbestandteil mehr. `heap::init(map)` und
+`ramfb::init(map)` nehmen ihre Bereiche aus der Karte statt
+`alloc_frames_contig` zu rufen. Zwei `const`-Assertions koppeln
+`heap::HEAP_BYTES` an `layout::KERNEL_HEAP_RESERVE` und `ramfb::FB_BYTES`
+an `layout::FRAMEBUFFER_RESERVE`, damit die Seiten nicht auseinanderlaufen.
+
+Auf `board-rpi4` ist `FRAMEBUFFER_RESERVE = 0` — der VideoCore besitzt den
+Framebuffer und nimmt ihn aus **seinem** SDRAM-Anteil, der laut
+BCM2711-Datenblatt §1.2.3 *„mapped in from `0x0_4000_0000` downwards"* liegt
+und von `gpu_mem` bemessen wird. Damit ist E3 **primärquellenbelegt** und
+nicht mehr nur aus der 752-MiB-Anzeige gerechnet (§13.5).
+
+Nebenwirkung, ausdrücklich gewollt: der TT-RAM-**Pool** beginnt jetzt exakt
+bei `TTRAM_START = 0x0100_0000`, wie EmuTOS' `altram_init`
+(`bios/memory2.c:147-150`, `include/tosvars.h:77`) — vorher lag er 2 MiB
+höher, weil der Heap davorstand.
+
+### 14.3 Der feste ST-RAM: `membot` ist eine Konstante
+
+`STRAM_OS_RESERVE = 4 MiB`, `stram = [DRAM_START + 4 MiB, DRAM_START + 14 MiB)`,
+also `STRAM_POOL_BYTES = 10 MiB` — unabhängig von Build-Profil, Kernel-Größe
+und angeschlossener Peripherie. Damit das aufgeht, mussten drei Dinge aus dem
+unteren 4-MiB-Budget:
+
+**`.dma` (2 MiB) → `$E00000..$FFFFFF`.** Das ist `STRAM_IO_RESERVE`, das
+Atari-Hardware-Register-Fenster, das ohnehin aus **beiden** Pools ausgespart
+ist. Ein dauerhaft gehaltener Hardware-Puffer gehört genau dorthin, und es
+kostet den 10-MiB-Pool nichts. Der Block verlässt `.bss`, deshalb löscht ihn
+der Boot-Stub jetzt über ein zweites `__dma_phys_*`-Paar; die Zusicherung
+„jedes nullinitialisierte Static ist null, bevor Rust läuft" bleibt exakt
+erhalten.
+
+**Der Stack-Guard wird eine Seite statt eines 2-MiB-Blocks.** Der
+Kernel-Mapping bestand ausschließlich aus 2-MiB-L2-Blöcken, und ein
+ungemapptes Loch kann nicht feiner sein als die Deskriptor-Granularität —
+das war der *ganze* Grund für den 2-MiB-Guard und, zusammen mit dem
+2-MiB-ausgerichteten Stack, für über 4 MiB Verbrauch im 14-MiB-Fenster.
+`mmu::refine_stack_block` gibt genau dem **einen** Block, der den Guard
+enthält, eine L3-Tabelle (ein Static, 4 KiB) und stanzt eine Seite aus.
+`remap_l2_attrs` weigert sich seither, einen Table-Deskriptor zu
+überschreiben — sonst könnte ein späterer Remap den Kernel-Stack
+abhängen.
+
+**Der Kernel-Stack** folgt direkt auf `.bss` und passt damit unter das Budget.
+
+**Überschreiten ist ein Linker-Fehler, keine stille Verkleinerung.** Beide
+Skripte haben
+`ASSERT(__kernel_image_end - VA_OFFSET <= STRAM_OS_RESERVE_PHYS, …)`.
+Mit einer Scratch-Änderung auf 2 MiB geprüft:
+
+```text
+rust-lld: error: kernel image + stack overruns STRAM_OS_RESERVE (membot)
+          -- see bios/machine/layout.rs
+```
+
+Aktuelle Reserve: Release `0x400000 − 0x276000` = **1,54 MiB**,
+Debug **1,43 MiB**.
+
+### 14.4 Die Datenblattfrage zu `.dma` — und warum daraus kein Rateschluss wurde
+
+Das BCM2711-Datenblatt (`references/datasheets/RP-008248-DS-1`) dokumentiert
+**kein** PCIe-Inbound-Fenster: null Treffer für `RC_BAR`, `inbound`,
+`root complex`, `SCB0`, `0xFD50`. Es beschreibt nur die *ausgehende*
+PCIe-Range in der Adresskarte (§1.2.1/§1.2.2, `0x6_0000_0000`, „covers 8GB").
+
+Die erreichbare Region ist deshalb keine feste Hardware-Eigenschaft, sondern
+das, was **unser eigener Treiber** in RC_BAR2 programmiert:
+CPU-physisch `[0, rc_size)`, wobei `rc_size` die auf eine Zweierpotenz
+gerundete DTB-`dma-ranges`-Größe ist, bzw. 1 GiB, wenn `dma-ranges` fehlt
+(`kernel/src/drivers/usb/pcie_rpi4.rs:22,476-490`). Alt (`0x600000`) und neu
+(`0xE00000`) liegen im selben, lückenlosen Fenster.
+
+Statt das anzunehmen, **prüft der Treiber es jetzt**: `pcie_rpi4` vergleicht
+die gelinkte `.dma`-Ausdehnung mit dem gerade programmierten Fenster,
+protokolliert das Ergebnis und schaltet USB ab, statt in unerreichbaren
+Speicher zu DMAen. Damit bleibt keine Annahme übrig — die Maschine sagt es.
+
+### 14.5 Nachweise
+
+* **Guard wirklich page-granular:** Scratch-Sonde, ein `read_volatile` auf
+  `__stack_guard_start` nach `exceptions::init()`:
+  `ESR=0x96000007` → EC=0x25 Data Abort, **DFSC=0b000111 = Translation
+  Fault Level 3**, `FAR=0xffff00004025d000` = `__stack_guard_start`. Genau
+  der L3-Seitenfehler, den die Verfeinerung erzeugen soll. Sonde danach von
+  Hand entfernt.
+* **`.dma` am neuen Ort funktioniert:** auf `qemu-virt` enumeriert der
+  xHCI-Stack Tastatur und Maus (`HID configured: slot 1/2`) — das verlangt
+  genullte DCBAA-, Command- und Event-Ringe im verschobenen Block.
+* **Beide Boards booten bis zum Desktop:** raspi4b mit gemountetem C: (20
+  Einträge im Fenster), virt mit Tastatur+Maus. 0 PANIC. Debug-Build
+  ebenfalls (dort greifen die neuen `debug_assert!`s: Poolgröße, Guard-Größe,
+  `img_end <= membot`, kein Table-Deskriptor im Remap).
+* **Abbildgröße:** `kernel8.img` bleibt 770 600 Byte — der NOLOAD-`.dma` bei
+  hoher LMA bläht das Rohabbild nicht auf.
+
+### 14.6 F9 — was davon übrig bleibt
+
+Der **Schaden** von F9 ist weg: die ST-RAM-Zahl auf dem Boot-Schirm ist jetzt
+eine Konstante, die sich weder mit dem Kernel noch mit der Peripherie ändert,
+und weil 10 MiB ein exaktes MiB-Vielfaches ist, druckt EmuTOS'
+`cprintf_bytesize`-Regel sie sauber als **„10 MB"**.
+
+Der **nominelle** Unterschied bleibt: EmuTOS zeigt `phystop` (= die ST-RAM-Größe
+der Maschine, bei uns 14 MB), wir zeigen den Pool (10 MB). Beides sind jetzt
+Konstanten. Meine Einschätzung: der Pool ist die nützlichere Zahl — 14 MB
+würde 4 MB bewerben, die kein Programm bekommt —, aber es ist eine sichtbare
+Produktentscheidung und keine Mechanik, deshalb steht sie hier statt im Code.
+**Dem Lead vorgelegt, nicht im Alleingang entschieden.**
+
+### 14.7 Was ohne echten Pi-4-Boot offen bleibt
+
+* Der **Device-nGnRnE-Remap des verschobenen `.dma`-Blocks**
+  (`usb::map_dma_coherent` → `mmu::remap_device_ngnrne(0xE00000, 2 MiB)`)
+  läuft nur, wenn ein VL805 gefunden wird — QEMU `raspi4b` modelliert keinen.
+  Der Pfad ist also **real-Pi-4-only**. Block-Index-Arithmetik geprüft
+  (i=0, j=7; der verfeinerte Guard-Block ist j=1, also kein Konflikt), und
+  der neue `is_table`-Schutz in `remap_l2_attrs` würde eine Verwechslung
+  fangen.
+* Die neue `[pcie] .dma block … inside the …-byte inbound window`-Zeile
+  erscheint erst auf echter Hardware; sie ist Konsolenausgabe (der User hat
+  keine serielle Leitung), also ein Tester-/Lead-Nachweis, kein User-Nachweis.
+* F6 (≥3 GB einer 4-GB-Maschine unverwaltet) ist unverändert offen; §13.5
+  und §14.2 haben nur die *Zahl* geklärt (768 MiB ARM-Anteil).
