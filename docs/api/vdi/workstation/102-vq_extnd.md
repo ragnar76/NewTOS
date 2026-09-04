@@ -89,7 +89,7 @@ by `update_rez_dependent`:
 | 11 | text alignment flag | 1 | — |
 | 12 | inking capability | 0 | — |
 | 13 | rubber banding | 0 | — |
-| 14 | max vertices | `MAX_VERTICES` (512/1024) | — |
+| 14 | max vertices | `MAX_VERTICES` (1024; 512 on the small ROM targets) | — |
 | 15 | max `INTIN` (−1 = unbounded) | −1 | — |
 | 16 | # mouse buttons | 1 | — |
 | 17 | styles for wide lines | 0 | — |
@@ -165,13 +165,11 @@ dispatcher before `vq_extnd` runs.)
 ## NewTOS implementation notes (Phase 12)
 
 - `INQ_TAB` is per **physical device** (ADR-011): each screen device
-  reports its own planes/colours/resolution. The screen bring-up profile
-  reports a palette-class device; `[14]` (max vertices) and `[15]` (max
-  intin) bound the array sizes the handlers accept.
+  reports its own planes/colours/resolution. `[14]` (max vertices) and
+  `[15]` (max intin) bound the array sizes the handlers accept.
 - Index 19 must reflect the **queried** `Vwk`'s clip flag, not a global.
-- **Open question:** confirm `INQ_TAB[4]` (# planes) and `[5]` (video
-  lookup table) for the NewTOS 640×480×16-colour framebuffer (4 planes;
-  `[5]` = 1 for a colour LUT) — `_discrepancies.md` D-VDI-7.
+- `INQ_TAB[4]`/`[5]`: **resolved 2026-09-04** — see the section below.
+  NewTOS is a Falcon truecolor workstation, so `[4] = 16` and `[5] = 0`.
 
 ---
 
@@ -191,32 +189,50 @@ dispatcher before `vq_extnd` runs.)
 > resolution change (1920×1080 default / 1280×800 switchable) — this
 > spec's own "1080p later" note below already says as much.
 
-### Open question resolved — `INQ_TAB[4]`/`[5]` for 640×480×16-colour
+### Open question resolved — `INQ_TAB[4]`/`[5]`/`[14]` (2026-09-04)
 
-Confirmed from the code (`tos-api/src/vdi/workstation.rs:155-160`):
+`INQ_TAB[4]` and `[5]` are not free values: EmuTOS derives both from
+`v_planes` in `update_rez_dependent` (`vdi/vdi_control.c:210-213`), so the
+NewTOS answer is whatever that formula gives on the NewTOS workstation.
+NewTOS' screen is a **Falcon truecolor workstation** — 16 planes, 256
+colours (`kernel/src/vdi_backend.rs`, [`ADR-0xx truecolor VDI`]) — not the
+640×480×16-colour bring-up screen an earlier revision of this section
+assumed:
 
-| Idx | Meaning | NewTOS value | Source |
-|-----|---------|--------------|--------|
-| 4 | # planes | **4** | `ncol.trailing_zeros()` = `log2(16)` (`workstation.rs:158`) |
-| 5 | video lookup table | **1** | `ncol>2 → 1` (`workstation.rs:159`) |
-| 14 | max vertices | **256** | `MAX_VERTICES` (`workstation.rs:42`) |
-| 19 | clip flag | live `vwk.clip` | per-query (`workstation.rs:160`) |
-| 16 | # mouse buttons | 1 | ROM template (`workstation.rs:49-56`) |
+| Idx | Meaning | EmuTOS rule | NewTOS value | TT reference |
+|-----|---------|-------------|--------------|--------------|
+| 4 | # planes | `INQ_TAB[4] = v_planes` (`vdi_control.c:210`) | **16** | 4 |
+| 5 | video lookup table | `(v_planes == 16 \|\| MON_MONO) ? 0 : 1` (`vdi_control.c:211-213`) | **0** | 1 |
+| 14 | max vertices | `MAX_VERTICES` | **1024** | 1024 |
+| 19 | clip flag | live `vwk->clip` (`vdi_control.c:651`) | live `vwk.clip` | — |
+| 16 | # mouse buttons | ROM template | 1 | 1 |
 
-So `INQ_TAB[4] = 4` (four planes for 16 colours) and `[5] = 1` (colour
-LUT present) — exactly the values the D-VDI-7 open question predicted.
-Mode-0 returns the same `DEV_TAB`/`SIZ_TAB` as
-[`100-v_opnvwk`](100-v_opnvwk.md#pi--bcm2711-binding) (`[0]=639`,
-`[1]=479`, `[13]=16`, `[35]=1`, `[39]=16`).
+Implementation: `tos-api/src/vdi/workstation.rs`, `vq_extnd` — `inq[4] =
+planes`, `inq[5] = if planes == 16 { 0 } else { 1 }`, `inq[19] = vwk.clip`.
+`[4]` and `[5]` are therefore *machine-dependent by EmuTOS' own definition*
+and cannot be byte-compared against a four-plane reference machine; the
+conformance harness excludes exactly those two slots by name and checks the
+formula instead (`tos-api/tests/vdi_reference/harness.rs`,
+`MACHINE_EXCLUDED`).
 
-### Mismatch flagged (Step-2)
+### `INQ_TAB[14]` — max vertices = 1024 (resolved 2026-09-04)
 
-- **`INQ_TAB[14]` max vertices = 256, not 512/1024.** This spec's table
-  row 14 lists "MAX_VERTICES (512/1024)". NewTOS reports **256**
-  (`workstation.rs:42`, `primitives.rs:115`) — the smaller NewTOS profile
-  (same as the handle-count reduction in `100-v_opnvwk`). Not a contract
-  violation (the cap is device-reported), but the spec text should read
-  256 for NewTOS.
+`MAX_VERTICES` is **1024** for NewTOS. `config.h` overrides it to 512 only
+inside the `TARGET_192` / `TARGET_256` / `TARGET_CART` / `TARGET_FLOPPY`
+blocks (`include/config.h:388-390,445-447,548-550,560-562`). The reference
+profile — EmuTOS `make 512`, Falcon030/TOS4 — defines `TARGET_512`
+(`Makefile:561`), but **`config.h` never tests `TARGET_512`**, so that build
+takes the default `#define MAX_VERTICES 1024` (`include/config.h:1652-1655`,
+*"TOS2 allows 512 vertices, TOS3/TOS4 allow 1024"*). The measured EmuTOS 1.4
+reference on a TT reports 1024 in `INQ_TAB[14]`
+(`tosdump/reference/EMUTOS14-VDI-r3.BIN`, cases 117/119).
+
+NewTOS therefore reports **1024** and clamps `CONTRL[1]` at 1024
+(`tos-api/src/vdi/primitives.rs`, `MAX_VERTS`). An earlier revision of this
+section recorded 256 and argued it was "not a contract violation (the cap is
+device-reported)" — that reasoning is withdrawn: the number a program reads
+out of `INQ_TAB[14]` is the number of vertices it may pass, so reporting a
+figure the reference profile does not report is a divergence, not a choice.
 
 ### Pixel-size / resolution `INQ_TAB` fields
 

@@ -131,9 +131,20 @@ Before calling `screen()`, `_GSX_ENTRY`:
 
 So a program passing more than `MAX_VERTICES` vertices has the excess
 silently dropped; `CONTRL[1]` is transiently clamped during the call and
-restored on exit. `MAX_VERTICES` is **512** on the small/STe-class target
-profile and **1024** by default (`config.h:388-390,1653-1655`) — a
-build-config value, see the open question below.
+restored on exit.
+
+`MAX_VERTICES` is **1024** for NewTOS. `config.h` overrides it to 512 only
+inside the `TARGET_192` / `TARGET_256` / `TARGET_CART` / `TARGET_FLOPPY`
+blocks (`include/config.h:388-390,445-447,548-550,560-562`). The reference
+profile — EmuTOS `make 512`, Falcon030/TOS4 — defines `TARGET_512`
+(`Makefile:561`), but **`config.h` never tests `TARGET_512`**, so that build
+takes the default `#define MAX_VERTICES 1024` (`include/config.h:1652-1655`,
+*"TOS2 allows 512 vertices, TOS3/TOS4 allow 1024"*).
+
+NewTOS therefore clamps at **1024** (`tos-api/src/vdi/primitives.rs`,
+`MAX_VERTS`) and reports the same number in `INQ_TAB[14]`. Resolved
+2026-09-04; the reference dump measured on a TT reports 1024 as well
+(`tosdump/reference/EMUTOS14-VDI-r3.BIN`, cases 117/119).
 
 ---
 
@@ -379,8 +390,9 @@ and in `_discrepancies.md` D-VDI-3.)
   origin top-left — matches the framebuffer directly. `work_in[10]`
   (`xfm_mode`) NDC scaling is a later refinement (see
   [`workstation/100-v_opnvwk.md`](workstation/100-v_opnvwk.md)).
-- **`MAX_VERTICES` / `NUM_VDI_HANDLES`.** Pick the target profile
-  explicitly (open question, `_discrepancies.md` D-VDI-3/D-VDI-7); the
-  `PTSIN` clamp and the handle-range checks must use the chosen values.
+- **`MAX_VERTICES`.** Resolved 2026-09-04: **1024**, the default profile
+  value (see the `PTSIN` vertex clamp above). **`NUM_VDI_HANDLES`** is
+  still open (`_discrepancies.md` D-VDI-3); the handle-range checks must
+  use the chosen value.
 - **Per-function specs** land in `docs/api/vdi/<group>/*.md`; tracking in
   [`_working-list.md`](_working-list.md).

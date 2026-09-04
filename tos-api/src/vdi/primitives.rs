@@ -5,6 +5,8 @@
 //! the actual pixels go through the [`RasterBackend`]. Coordinates are
 //! raster (RC, origin top-left), matching the screen workstation.
 
+use core::cell::UnsafeCell;
+
 use super::backend::{ClipRect, PatternFill, Pel, RasterBackend, WriteMode};
 use super::fill_patterns;
 use super::vwk::Vwk;
@@ -557,10 +559,49 @@ pub fn vr_recfl(pb: &Vdipb, vwk: &Vwk, backend: &dyn RasterBackend) {
 }
 
 /// Maximum polygon vertices / scanline edge crossings handled by the
-/// fixed-size fill buffers. This is EmuTOS' `MAX_VERTICES` (`config.h`,
-/// make-512 profile = 512); it is also advertised as `INQ_TAB[14]` (see
-/// [`super::workstation`], which references this same constant).
-pub(super) const MAX_VERTS: usize = 512;
+/// shared fill buffers. This is EmuTOS' `MAX_VERTICES`, and it is the same
+/// number that is advertised as `INQ_TAB[14]` (see [`super::workstation`],
+/// which references this constant) and that bounds the `CONTRL[1]` vertex
+/// count.
+///
+/// **1024, the default.** `config.h` only overrides `MAX_VERTICES` to 512
+/// inside the `TARGET_192` / `TARGET_256` / `TARGET_CART` / `TARGET_FLOPPY`
+/// blocks (`include/config.h:388-390,445-447,548-550,560-562`). The
+/// Falcon030/TOS4 reference build — `make 512` — defines `TARGET_512`
+/// (`Makefile:561`), but **`config.h` never tests `TARGET_512`**, so that
+/// build takes the default `#define MAX_VERTICES 1024`
+/// (`include/config.h:1652-1655`, *"TOS2 allows 512 vertices, TOS3/TOS4
+/// allow 1024"*). The measured EmuTOS 1.4 reference on a TT reports 1024 in
+/// `INQ_TAB[14]` (`tosdump/reference/EMUTOS14-VDI-r3.BIN`, cases 117/119),
+/// which is the same value from the other direction.
+pub(super) const MAX_VERTS: usize = 1024;
+
+/// The VDI's shared polygon work area — NewTOS' equivalent of EmuTOS'
+/// `VDISHARE.main` (`include/vdiext.h:47-51`), which likewise holds
+/// `local_ptsin[2*MAX_VERTICES]` and `fill_buffer[MAX_VERTICES]` in one
+/// static area instead of on the stack. At `MAX_VERTS = 1024` the two are
+/// 4 KiB + 2 KiB; VDI traps from EL0 run on the 16 KiB `SP_EL1` exception
+/// stack (`kernel/src/arch/aarch64/exception_vectors.s:80-84`), which is
+/// not the place for them.
+struct PolyScratch {
+    /// The caller's `PTSIN` vertices, copied out because `wideline`/`arrow`
+    /// need random access and mutate them (EmuTOS `local_ptsin`).
+    pts: UnsafeCell<[(i16, i16); MAX_VERTS]>,
+    /// `clc_flit`'s edge crossings for one scan line (EmuTOS `fill_buffer`).
+    xs: UnsafeCell<[i16; MAX_VERTS]>,
+}
+
+// SAFETY: accessed only from the single-CPU, IRQ-off VDI trap path, like the
+// rest of the VDI's mutable state (see `vwk::TABLE` and `contour::SEEDS`).
+// `pts` and `xs` are distinct cells, so `v_fillarea` holding `pts` while
+// `fill_polygon` holds `xs` is not aliasing; neither buffer is used by two
+// live borrows, because no VDI entry point that takes one calls another.
+unsafe impl Sync for PolyScratch {}
+
+static POLY: PolyScratch = PolyScratch {
+    pts: UnsafeCell::new([(0, 0); MAX_VERTS]),
+    xs: UnsafeCell::new([0; MAX_VERTS]),
+};
 
 /// Scan-convert and fill the closed polygon `v[0..n]` with `fill`,
 /// clipped to `clip`, reproducing EmuTOS `polygon` + `clc_flit`
@@ -597,7 +638,10 @@ pub(super) fn fill_polygon(
     if fmax > clip.ymx {
         fmax = clip.ymx;
     }
-    let mut xs = [0i16; MAX_VERTS];
+    // `clc_flit`'s crossings buffer, out of the shared work area.
+    // SAFETY: see [`PolyScratch`] — single trap path, and no caller of
+    // `fill_polygon` holds `POLY.xs` at the same time.
+    let xs = unsafe { &mut *POLY.xs.get() };
     // `clc_flit`: `for (y = fmax; y > fmin; y--)` (`vdi_fill.c:441`) — the
     // topmost vertex scan line (`fmin`) is deliberately skipped, so the
     // filled band is the half-open `(fmin, fmax]`. We iterate upward over
@@ -666,7 +710,9 @@ pub fn v_fillarea(pb: &Vdipb, vwk: &Vwk, backend: &dyn RasterBackend) {
         return;
     }
     let n = n.min(MAX_VERTS);
-    let mut v = [(0i16, 0i16); MAX_VERTS];
+    // SAFETY: see [`PolyScratch`]. `fill_polygon` below borrows `POLY.xs`,
+    // a different cell, so the two do not alias.
+    let v = unsafe { &mut *POLY.pts.get() };
     for (i, slot) in v[..n].iter_mut().enumerate() {
         *slot = (pb.ptsin(2 * i), pb.ptsin(2 * i + 1));
     }
@@ -681,7 +727,7 @@ pub fn v_fillarea(pb: &Vdipb, vwk: &Vwk, backend: &dyn RasterBackend) {
         pattern: fill_patterns::select(vwk),
         mode,
     };
-    fill_polygon(backend, n, &v, fill, clip);
+    fill_polygon(backend, n, v, fill, clip);
     if vwk.fill_per {
         // Outline: the polygon closed back to the first vertex, in the
         // fill colour and the workstation writing mode (EmuTOS `polygon`
@@ -703,7 +749,10 @@ pub fn v_pline(pb: &Vdipb, vwk: &Vwk, backend: &dyn RasterBackend) {
     let count = (raw as usize).min(MAX_VERTS);
     // Read the vertices into a local array: `wideline`/`arrow` mutate them
     // (the arrow shortening), and `wideline` needs random access.
-    let mut pts = [(0i16, 0i16); MAX_VERTS];
+    // SAFETY: see [`PolyScratch`]. `v_pline` and `v_fillarea` are separate
+    // VDI entry points; neither calls the other, so `POLY.pts` has one
+    // live borrow.
+    let pts = unsafe { &mut *POLY.pts.get() };
     for (i, slot) in pts[..count].iter_mut().enumerate() {
         *slot = (pb.ptsin(2 * i), pb.ptsin(2 * i + 1));
     }
@@ -715,11 +764,11 @@ pub fn v_pline(pb: &Vdipb, vwk: &Vwk, backend: &dyn RasterBackend) {
         polyline(backend, count, |i| pts[i], color, mode, clip, line_mask(vwk));
         if (vwk.line_beg | vwk.line_end) & ARROWED != 0 {
             let (xsize, ysize) = pixel_aspect(backend);
-            arrow(backend, &mut pts, count, vwk.line_beg, vwk.line_end, vwk.line_width, color, mode, clip, xsize, ysize);
+            arrow(backend, pts, count, vwk.line_beg, vwk.line_end, vwk.line_width, color, mode, clip, xsize, ysize);
         }
     } else {
         let (xsize, ysize) = pixel_aspect(backend);
-        wideline(backend, &mut pts, count, vwk.line_width, vwk.line_beg, vwk.line_end, color, mode, clip, xsize, ysize);
+        wideline(backend, pts, count, vwk.line_width, vwk.line_beg, vwk.line_end, color, mode, clip, xsize, ysize);
     }
 }
 

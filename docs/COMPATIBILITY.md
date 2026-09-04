@@ -81,6 +81,24 @@ this: it is a screen line, not an interface — `Sysconf`, `Malloc(-1)` and the
 memory-descriptor chain are untouched and stay EmuTOS-faithful.
 
 
+**The AES does not leave the VDI string device in SAMPLE mode** — open
+divergence, recorded 2026-09-04, **not** a decision to keep it. EmuTOS' AES
+reads a keystroke through `gsx_char()`, which issues `vsin_mode(4, 2)` before
+every `v_string` (`references/emutos/aes/gemgsxif.c:459-463`), and `chkkbd()`
+calls it from the dispatcher's scheduler on every pass
+(`aes/gemdisp.c:157-177`). Consequence: on any EmuTOS machine `vqin_mode(4)`
+reports **1** (SAMPLE) from the first AES tick onward — measured twice on the
+reference TT (`tosdump/reference/EMUTOS14-VDI-r2.BIN` case 51,
+`EMUTOS14-VDI-all.BIN` case 77). NewTOS' AES polls the keyboard through the
+host (`tos-api/src/aes/mod.rs`, `dsptch` → `Host::pump_input`), never through
+`v_string`, so `str_mode` keeps its `vdimouse_init` default of 0
+(`vdi/vdi_mouse.c:575-578`). The **VDI** side is EmuTOS-faithful — the
+default, and the `vsin_mode`/`vqin_mode` round trip, are verified
+(`tos-api/tests/vdi_reference`, cases 49/50/123/125). The gap is in the AES
+keyboard path and is listed here so it is not mistaken for a VDI defect; it
+should be closed when the AES keyboard poll is revisited.
+
+
 ## EmuTOS is the reference, not the template
 
 CLAUDE.md Rule 1 says EmuTOS source *is* the spec. Through this charter that

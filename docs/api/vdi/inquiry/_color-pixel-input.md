@@ -107,6 +107,19 @@ holds whatever the caller left there. See
 [`../_state.md`](../_state.md#input-mode-set-by-vsin_mode-33-read-by-vqin_mode-115)
 for the mode globals and [`../input/_input.md`](../input/_input.md).
 
+> **The string device is never in its default state under the AES.** The
+> mode globals default to `0` (REQUEST) in `vdimouse_init`
+> (`vdi_mouse.c:575-578`), but the EmuTOS **AES** issues
+> `vsin_mode(4, 2)` — SAMPLE on the string device — on *every* keyboard
+> poll: `gsx_char()` (`aes/gemgsxif.c:459-463`) sets it before each
+> `v_string`, and `chkkbd()` calls `gsx_char()` from the dispatcher's
+> scheduler on every pass (`aes/gemdisp.c:157-177`). So on any machine
+> where the AES has run, `vqin_mode(4)` answers **1**, not 0 — which is
+> what the measured EmuTOS 1.4 reference on a TT reports
+> (`tosdump/reference/EMUTOS14-VDI-r2.BIN`, case 51, and
+> `EMUTOS14-VDI-all.BIN`, case 77). The other three devices stay 0. This
+> is AES-side state, not a VDI default; a VDI-only harness measures 0.
+
 ## `vq_key_s` (128) — inquire shift-key state
 
 Source: `vdi_input.c:110-113`, `gshift_s` at `:185-188`.

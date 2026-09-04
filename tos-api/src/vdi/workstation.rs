@@ -58,8 +58,9 @@ const SIZ_TAB_ROM: [i16; 12] = [
 ];
 
 /// Maximum polygon vertices (`INQ_TAB[14]`), EmuTOS `MAX_VERTICES`. Shares
-/// the one definition with the real polygon cap in [`super::primitives`]
-/// (`config.h` make-512 profile = 512).
+/// the one definition with the real polygon cap in [`super::primitives`],
+/// so the number advertised here is the number a program may actually
+/// pass. See [`super::primitives::MAX_VERTS`] for why it is 1024.
 const MAX_VERTICES: i16 = super::primitives::MAX_VERTS as i16;
 
 /// `INQ_TAB` template (45 WORDs), EmuTOS `INQ_TAB_rom` — the extended

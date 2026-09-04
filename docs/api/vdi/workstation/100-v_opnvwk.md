@@ -323,9 +323,9 @@ and return with no `Vwk` allocated:
 
 ## Configuration / version notes
 
-- `NUM_VDI_HANDLES` = 64 (small/STe target) or 128 (default);
-  `MAX_VERTICES` = 512 or 1024 — build-config, see
-  [`../_dispatcher.md`](../_dispatcher.md).
+- `NUM_VDI_HANDLES` = 64 (small/STe target) or 128 (default) — build-config,
+  see [`../_dispatcher.md`](../_dispatcher.md). `MAX_VERTICES` is **1024**
+  for the NewTOS profile (resolved 2026-09-04, same file).
 - `CONF_WITH_VDI_16BIT` (TrueColor) enlarges the allocation and builds a
   pseudo-palette — out of NewTOS bring-up scope.
 
@@ -412,10 +412,13 @@ entries — they come straight from the template.
   NewTOS profile, **not** the EmuTOS 64/128. The spec's "no free handle"
   cap and the exhaustion criterion are therefore at **16**, not
   `NUM_VDI_HANDLES = 64/128` — see the mismatch note.
-- **`MAX_VERTICES` → 256.** Polygon vertex cap is `256`
-  (`tos-api/src/vdi/workstation.rs:42`, matching `primitives.rs:115`),
-  used in `INQ_TAB[14]` (`vq_extnd`). Again smaller than the EmuTOS
-  512/1024.
+- **`MAX_VERTICES` → 1024** (resolved 2026-09-04, was 256 then 512).
+  Polygon vertex cap and `INQ_TAB[14]` share one constant
+  (`tos-api/src/vdi/primitives.rs`, `MAX_VERTS`, referenced from
+  `workstation.rs`). 1024 is the EmuTOS default profile value —
+  `config.h` never tests `TARGET_512`, so the `make 512` reference build
+  takes `include/config.h:1652-1655` — and it is what the measured TT
+  reference reports. See [`../_dispatcher.md`](../_dispatcher.md).
 
 ### Mismatches flagged (Step-2 candidates)
 

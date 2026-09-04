@@ -38,8 +38,12 @@
 //!   and `rows`.
 //! * **`v_opnvwk`/`vq_extnd` colour and plane counts.** `DEV_TAB[13]` and
 //!   `INQ_TAB[4]`: the TT is a 16-colour 4-plane workstation, NewTOS a
-//!   Falcon truecolor one. That difference is a profile decision and is
-//!   *not* neutralised here — see [`MemBackend::num_colors`].
+//!   Falcon truecolor one. Depth is *not* neutralised here — see
+//!   [`MemBackend::num_colors`] — so the handful of answers EmuTOS itself
+//!   derives from `v_planes` / `numcolors` cannot be byte-compared. They are
+//!   named in [`MACHINE_EXCLUDED`] and each is checked instead by EmuTOS'
+//!   own formula evaluated on this workstation ([`substitute`]). Nothing is
+//!   skipped silently and no case is `#[ignore]`d.
 //!
 //! **Serialisation.** The VDI keeps device-global state (handle table, `Vwk`
 //! slots, palette). Cargo runs tests on parallel threads, so every case takes
@@ -84,6 +88,21 @@ const VIDEL_PALETTE1: [(u16, u16, u16); 16] = [
 ];
 
 impl MemBackend {
+    /// The 16-bit screen word at `(x, y)`, read straight out of the pixel
+    /// vector and converted here rather than through
+    /// [`RasterBackend::get_device_pixel`] / `device_to_rgb565`. Used by the
+    /// `v_get_pixel` substitute check so that the expected value does not come
+    /// back out of the same two trait methods the implementation calls.
+    /// Outside the screen it reads 0, as `read_pixel` does.
+    pub fn screen_word(&self, x: i16, y: i16) -> u16 {
+        if !Self::inside(x, y) {
+            return 0;
+        }
+        let v = self.px.lock().unwrap()[Self::idx(x, y)];
+        let (r, g, b) = ((v >> 16) & 0xFF, (v >> 8) & 0xFF, v & 0xFF);
+        (((r >> 3) << 11) | ((g >> 2) << 5) | (b >> 3)) as u16
+    }
+
     fn new() -> Self {
         let mut req = [(0u16, 0u16, 0u16); 256];
         req[..16].copy_from_slice(&VIDEL_PALETTE1);
@@ -566,8 +585,190 @@ struct Diff {
     want: i16,
 }
 
+// ── fields the reference cannot decide, and what is checked instead ──────
+
+/// The plane count this harness's workstation reports, and the one the
+/// reference machine reported. Everything in [`MACHINE_EXCLUDED`] follows
+/// from the pair: the TT was a four-plane palette screen, NewTOS is a
+/// sixteen-plane Falcon truecolor one, and several VDI answers are — in
+/// EmuTOS's own source — a function of exactly that number.
+pub const PLANES: i16 = 16; // `MemBackend::planes`
+/// The reference machine's plane count, for the record; the TT ran TT-medium.
+pub const REF_PLANES: i16 = 4; // `INQ_TAB[4]`, `EMUTOS14-VDI-r3` cases 117/119
+/// `numcolors` = `DEV_TAB[13]` (`vdi_defs.h:98`) here and on the TT.
+pub const NUM_COLORS: i16 = 256; // `MemBackend::num_colors`
+pub const REF_NUM_COLORS: i16 = 16; // `DEV_TAB` in `EMUTOS14-VDI-r2.LOG`
+
+/// One `INTOUT` slot that must **not** be byte-compared against the dump,
+/// because EmuTOS itself computes it from a property of the machine that the
+/// two workstations do not share. Every entry is checked instead by
+/// [`substitute`], which asserts the EmuTOS *formula* evaluated on this
+/// workstation — so the rule is tested even though the number cannot be.
+///
+/// Nothing is skipped silently: an entry here is a claim that running EmuTOS
+/// unchanged on NewTOS's workstation would produce NewTOS's number, and the
+/// list below carries, for each one, the `vdi/…:line` that says so.
+///
+/// * **`v_opnwk`/`v_opnvwk` `INTOUT[13]` — `DEV_TAB[13]`, the colour count.**
+///   `DEV_TAB[13] = (v_planes<8) ? (1 << v_planes) : 256`
+///   (`vdi_control.c:207`). Sixteen planes → 256; the TT's four → 16.
+/// * **`v_opnwk`/`v_opnvwk` `INTOUT[39]` — `DEV_TAB[39]`, the DAC's RGB
+///   choice count.** `DEV_TAB[39] = get_palette()` (`vdi_control.c:208`).
+///   On VIDEL, a mode that is neither ST-compatible nor 4bpp returns **0**;
+///   the TT's shifter path returns 4096 (`bios/screen.c:836-864`).
+/// * **`vq_extnd(1)` `INTOUT[4]` — `INQ_TAB[4]`.** Literally `v_planes`
+///   (`vdi_control.c:210`).
+/// * **`vq_extnd(1)` `INTOUT[5]` — `INQ_TAB[5]`, "video lookup table".**
+///   `(v_planes == 16 || monitor == MON_MONO) ? 0 : 1`
+///   (`vdi_control.c:211-213`).
+/// * **`vq_color` `INTOUT[0]` and `vsm_color` `INTOUT[0]`, for a pen the two
+///   machines disagree about.** Both range-check against `numcolors`
+///   (`vdi_col.c:854-859`; `validate_color_index`, `vdi_control.c:224-230`).
+///   A pen in `16..256` is *valid here and invalid on the TT*, so the TT
+///   answers with its out-of-range reply (`-1`, resp. the default pen 1) and
+///   this workstation answers with the pen. Pens below 16 are valid on both
+///   and stay compared (cases 43/44/45, 88); a pen ≥ 256 is invalid on both
+///   and stays compared (case 47).
+/// * **`v_get_pixel` `INTOUT[0]` and `INTOUT[1]`.** EmuTOS branches the whole
+///   reply on `TRUECOLOR_MODE` (`v_planes > 8`, `vdi_defs.h:22`): truecolor
+///   answers `INTOUT[0] = 0` with the raw 16-bit screen word in `INTOUT[1]`,
+///   palette answers the pixel value and `REV_MAP_COL[pel]`
+///   (`vdi_fill.c:1104-1114`). The TT took the palette arm, this workstation
+///   takes the truecolor arm, and the two arms share no value.
+/// * **`vqin_mode(4)` `INTOUT[0]` with no prelude — the string device's
+///   mode.** This one is not about planes. `str_mode` defaults to 0
+///   (REQUEST) in `vdimouse_init` (`vdi_mouse.c:575-578`) and is written
+///   only by `vsin_mode` (`vdi_input.c:139`) — but the EmuTOS **AES** calls
+///   `vsin_mode(4, 2)` on every keyboard poll, in `gsx_char()`
+///   (`aes/gemgsxif.c:459-463`), which `chkkbd()` runs from the dispatcher's
+///   scheduler on every pass (`aes/gemdisp.c:157-177`). By the time any GEM
+///   program runs on an EmuTOS machine, `str_mode` is therefore 1, which is
+///   what the TT reported. This harness runs no AES (see [`workstation`]),
+///   so it measures the untouched default. NewTOS's AES polls the keyboard
+///   through the host rather than through `v_string`, so it does not set the
+///   flag either — a real divergence, in the AES and not in the VDI, tracked
+///   in `docs/COMPATIBILITY.md`. The VDI half — the default, and the
+///   set/read round trip — is checked below and by cases 123 and 125.
+pub const MACHINE_EXCLUDED: &[Excluded] = &[
+    Excluded { opcode: 1, index: 13, when: None },
+    Excluded { opcode: 100, index: 13, when: None },
+    Excluded { opcode: 1, index: 39, when: None },
+    Excluded { opcode: 100, index: 39, when: None },
+    Excluded { opcode: 102, index: 4, when: Some(extnd_mode1) },
+    Excluded { opcode: 102, index: 5, when: Some(extnd_mode1) },
+    Excluded { opcode: 26, index: 0, when: Some(pen_only_we_accept) },
+    Excluded { opcode: 20, index: 0, when: Some(pen_only_we_accept) },
+    Excluded { opcode: 105, index: 0, when: None },
+    Excluded { opcode: 105, index: 1, when: None },
+    Excluded { opcode: 115, index: 0, when: Some(untouched_string_device) },
+];
+
+/// An `INTOUT` slot excluded from the byte comparison for [`MACHINE_EXCLUDED`]'s
+/// reasons, optionally only for the cases matching `when`.
+pub struct Excluded {
+    pub opcode: i16,
+    pub index: usize,
+    pub when: Option<fn(&Case) -> bool>,
+}
+
+/// `vq_extnd` mode ≠ 0, the arm that returns `INQ_TAB` (`vdi_control.c:645-658`).
+fn extnd_mode1(case: &Case) -> bool {
+    case.intin.first().copied().unwrap_or(0) != 0
+}
+
+/// A pen this workstation accepts and the reference machine did not:
+/// `REF_NUM_COLORS <= pen < NUM_COLORS`.
+fn pen_only_we_accept(case: &Case) -> bool {
+    let pen = case.intin.first().copied().unwrap_or(0);
+    (REF_NUM_COLORS..NUM_COLORS).contains(&pen)
+}
+
+/// `vqin_mode(4)` on a VDI that nobody has called `vsin_mode(4, …)` on.
+fn untouched_string_device(case: &Case) -> bool {
+    case.prelude.is_empty() && case.intin.first().copied() == Some(4)
+}
+
+/// Field name marking a [`substitute`] result, so the failure message says
+/// what the right-hand column is: the EmuTOS formula, not the dump.
+const SUBST: &str = "intout (substitute)";
+
+fn is_excluded(case: &Case, field: &str, index: usize) -> bool {
+    field == "intout"
+        && MACHINE_EXCLUDED.iter().any(|e| {
+            e.opcode == case.opcode && e.index == index && e.when.is_none_or(|f| f(case))
+        })
+}
+
+/// What is checked *in place of* each excluded field: EmuTOS's own formula,
+/// evaluated on this workstation. Failures land in the same diff list as the
+/// byte comparisons, so an excluded field is still a way for a case to fail —
+/// it is just no longer the reference's number that decides.
+fn substitute(out: &mut Vec<Diff>, case: &Case, intout: &[i16], ptsin: &[i16]) {
+    for e in MACHINE_EXCLUDED {
+        if e.opcode != case.opcode || !e.when.is_none_or(|f| f(case)) {
+            continue;
+        }
+        let got = intout[e.index];
+        let expect = match (case.opcode, e.index) {
+            // DEV_TAB[13] = (v_planes<8) ? (1<<v_planes) : 256
+            (1 | 100, 13) => {
+                if PLANES < 8 {
+                    1 << PLANES
+                } else {
+                    256
+                }
+            }
+            // DEV_TAB[39] = get_palette(): 0 for a VIDEL truecolor mode,
+            // 4096 for the VIDEL 4bpp / ST-compatible modes.
+            (1 | 100, 39) => {
+                if PLANES > 8 {
+                    0
+                } else {
+                    4096
+                }
+            }
+            (102, 4) => PLANES,                                       // INQ_TAB[4] = v_planes
+            (102, 5) => i16::from(PLANES != 16),                      // INQ_TAB[5]
+            // vq_color: in range → the pen itself, else -1 (`vdi_col.c:854-859`).
+            (26, 0) => {
+                let pen = case.intin[0];
+                if (0..NUM_COLORS).contains(&pen) {
+                    pen
+                } else {
+                    -1
+                }
+            }
+            // vsm_color: `validate_color_index` (`vdi_control.c:224-230`).
+            (20, 0) => {
+                let pen = case.intin[0];
+                if (0..NUM_COLORS).contains(&pen) {
+                    pen
+                } else {
+                    1
+                }
+            }
+            // v_get_pixel under TRUECOLOR_MODE (`vdi_fill.c:1104-1108`):
+            // INTOUT[0] = 0, INTOUT[1] = the raw 16-bit screen word. The
+            // word is read out of the backend's pixel vector here, not
+            // through the two trait methods the implementation uses.
+            (105, 0) => 0,
+            (105, 1) => {
+                let backend = &HOST_CELL.get().expect("workstation() not opened").raster;
+                backend.screen_word(ptsin[0], ptsin[1]) as i16
+            }
+            // vqin_mode: the `vdimouse_init` default (`vdi_mouse.c:575-578`).
+            (115, 0) => 0,
+            _ => unreachable!("no substitute for opcode {} INTOUT[{}]", case.opcode, e.index),
+        };
+        if got != expect {
+            out.push(Diff { field: SUBST, index: e.index, got, want: expect });
+        }
+    }
+}
+
 fn cmp_field(
     out: &mut Vec<Diff>,
+    case: &Case,
     field: &'static str,
     got: &[i16],
     rec: &[u8],
@@ -575,6 +776,9 @@ fn cmp_field(
     count: usize,
 ) {
     for i in 0..count {
+        if is_excluded(case, field, i) {
+            continue; // checked by `substitute` instead
+        }
         let want = be16(rec, off + i * 2);
         if got[i] != want {
             out.push(Diff { field, index: i, got: got[i], want });
@@ -649,12 +853,15 @@ pub fn check(dump: &[u8], case: &Case) {
     // half (`moveq #0,d0`), Atari TOS 3.06 does not, so the LONG carries a
     // register leftover that is not part of the contract. Same rule as
     // `tosdump/host` uses (`core/record.c`, field `d0` at `OFF_RET + 2`).
-    cmp_field(&mut diffs, "d0", &[flip_y], rec, OFF_RET + 2, 1);
-    cmp_field(&mut diffs, "contrl", &pb.contrl[..], rec, OFF_CONTRL, CONTRL_N);
-    cmp_field(&mut diffs, "intin", &pb.intin[..], rec, OFF_INTIN, INTIN_N);
-    cmp_field(&mut diffs, "ptsin", &pb.ptsin[..], rec, OFF_PTSIN, PTSIN_N);
-    cmp_field(&mut diffs, "intout", &pb.intout[..], rec, OFF_INTOUT, INTOUT_N);
-    cmp_field(&mut diffs, "ptsout", &pb.ptsout[..], rec, OFF_PTSOUT, PTSOUT_N);
+    cmp_field(&mut diffs, case, "d0", &[flip_y], rec, OFF_RET + 2, 1);
+    cmp_field(&mut diffs, case, "contrl", &pb.contrl[..], rec, OFF_CONTRL, CONTRL_N);
+    cmp_field(&mut diffs, case, "intin", &pb.intin[..], rec, OFF_INTIN, INTIN_N);
+    cmp_field(&mut diffs, case, "ptsin", &pb.ptsin[..], rec, OFF_PTSIN, PTSIN_N);
+    cmp_field(&mut diffs, case, "intout", &pb.intout[..], rec, OFF_INTOUT, INTOUT_N);
+    cmp_field(&mut diffs, case, "ptsout", &pb.ptsout[..], rec, OFF_PTSOUT, PTSOUT_N);
+    // The named exclusions, checked by the EmuTOS formula instead of by the
+    // reference's number (see `MACHINE_EXCLUDED`).
+    substitute(&mut diffs, case, &pb.intout[..], case.ptsin);
 
     if !diffs.is_empty() {
         let mut msg = format!(
@@ -667,9 +874,13 @@ pub fn check(dump: &[u8], case: &Case) {
             diffs.len()
         );
         for d in diffs.iter().take(24) {
+            // For a substitute the right-hand column is EmuTOS' formula
+            // evaluated on this workstation, not the dump -- say so, or the
+            // message claims the reference decided something it cannot.
+            let source = if d.field == SUBST { "EmuTOS formula" } else { "reference" };
             msg += &format!(
-                "    {}[{}]  NewTOS = 0x{:04X} ({})   reference = 0x{:04X} ({})\n",
-                d.field, d.index, d.got as u16, d.got, d.want as u16, d.want
+                "    {}[{}]  NewTOS = 0x{:04X} ({})   {} = 0x{:04X} ({})\n",
+                d.field, d.index, d.got as u16, d.got, source, d.want as u16, d.want
             );
         }
         if diffs.len() > 24 {
