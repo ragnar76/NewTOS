@@ -13,6 +13,47 @@ use crate::hal::uart::Uart;
 /// Singleton host installed into `tos-api` during boot.
 pub struct KernelHost;
 
+impl KernelHost {
+    /// Give the **polled** console input source a turn before the key queue is
+    /// observed, so a non-blocking TOS status/read call reports input that
+    /// arrived while its caller was looping.
+    ///
+    /// EmuTOS fills the IKBD queue from the keyboard *interrupt*
+    /// (`bios/ikbd.c:157-173`, `ikbdiorec` fed by the ACIA ISR), so
+    /// `bconstat2` — and with it `Bconstat(2)`, `Cconis` and the non-blocking
+    /// `Crawio(0xFF)` — is a true status read: the classic TOS idiom
+    /// `while (!Bconstat(2)) ;` terminates because the queue keeps filling
+    /// underneath the loop.
+    ///
+    /// NewTOS' console input on `board-rpi4` is the USB-HID keyboard, which
+    /// has no interrupt path: a report only reaches the queue when somebody
+    /// runs [`crate::drivers::usb::poll`], and its only callers are
+    /// [`Host::pump_input`] (AES event manager, cooperative idle pass) and the
+    /// two blocking reads. Without pumping here, a program that polls
+    /// `Bconstat(2)` and calls nothing else spins forever — nothing can make
+    /// the queue non-empty. TeraDesk's "wait after a TOS program" is exactly
+    /// that loop (`sdk/apps/teradesk/startprg.c:320-327`:
+    /// `while (Bconstat(2)) Bconin(2); while (!Bconstat(2) && …) ;`).
+    /// Pumping here is the polled stand-in for EmuTOS' interrupt.
+    ///
+    /// Only pumps while the queue is empty, so a key that is already waiting
+    /// is reported without touching the hardware and queue order is kept.
+    ///
+    /// Deliberately **not** applied to `console_peek_key`: that is the
+    /// output-side `conbrk` check, run once per character written by
+    /// `Cconout`/`Cconws`, and pumping there would drive the mouse decoder
+    /// (and its cursor redraw) in the middle of console output. The
+    /// consequence — Ctrl-C during a long print is not seen on `board-rpi4` —
+    /// is the same defect class and is recorded in `docs/STATUS.md`.
+    #[inline]
+    fn fill_from_device(&self) {
+        if crate::console::rx_has_input() {
+            return;
+        }
+        self.pump_input();
+    }
+}
+
 impl Host for KernelHost {
     fn console_write_byte(&self, byte: u8) {
         CONSOLE.write_byte(byte);
@@ -27,10 +68,12 @@ impl Host for KernelHost {
     }
 
     fn console_try_read(&self) -> Option<u8> {
+        self.fill_from_device();
         crate::console::rx_pop()
     }
 
     fn console_try_read_key(&self) -> Option<u16> {
+        self.fill_from_device();
         crate::console::rx_pop_key()
     }
 
@@ -77,6 +120,7 @@ impl Host for KernelHost {
     }
 
     fn console_has_input(&self) -> bool {
+        self.fill_from_device();
         crate::console::rx_has_input()
     }
 
