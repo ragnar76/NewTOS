@@ -32,6 +32,27 @@ CoreMark 1.0 : 7380.085101 / clang 21.0.0 (clang-2100.1.1.101)
 The four fields CoreMark requires for a reportable result — score, compiler,
 compiler flags, memory location — are in the quoted line above.
 
+## Validation run — same hardware, same session
+
+CoreMark requires a second run with the other seed set. Done, `COREVAL.NCP`:
+
+| field | value |
+|---|---|
+| Iterations/Sec | 2942.266366 |
+| Iterations | 40000 |
+| Total time | 13.595029 s |
+| Total ticks | 2719 |
+| seedcrc | 0x18f2 |
+| crclist / crcmatrix / crcstate | 0xe3c1 / 0x0747 / 0x8d84 |
+| crcfinal | 0xbe81 |
+
+`Correct operation validated.`
+
+The first four CRCs are byte-identical to the QEMU control run of the same
+binary (`crcfinal` differs there only because that run did 110000 iterations
+against 40000 here). **With this, the result is complete under CoreMark's
+reporting rules** — a performance run and a validation run, both validated.
+
 ## Cross-check: the algorithm CRCs match other machines
 
 `seedcrc`, `crclist`, `crcmatrix` and `crcstate` are **identical** on every
@@ -98,8 +119,6 @@ paints over the result.
 
 ## Still open
 
-- The **validation run has not been done on hardware yet** — the result above
-  is complete only once `COREVAL.NCP` has also run.
 - Console programs launched by double-click **from TeraDesk** print nothing
   (the built-in desktop and `\AUTO\` are fine). Under investigation; that is
   why the run above went through the built-in desktop.
