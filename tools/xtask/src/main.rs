@@ -68,7 +68,9 @@ Commands:
                                      at reset with a gdbstub on :1234;
                                      --features adds optional kernel
                                      features (e.g. aes-trace)
-  test
+  test                           — run every host-runnable test in the
+                                   workspace (tos-api, tos-types, xtask);
+                                   the kernel is not host-linkable
   help
 "
     );
@@ -556,6 +558,17 @@ fn cmd_run_rpi4(
     run(c)
 }
 
+/// The workspace packages whose tests can run on the host.
+///
+/// `kernel` is not one of them and cannot become one: it is `#![no_std]`,
+/// pinned to `aarch64-unknown-none-softfloat` and linked against a board
+/// linker script, so `cargo test -p kernel` fails in its build script before
+/// it ever compiles a test. Everything else in the workspace is listed here —
+/// leaving `tos-api` out (as this command did until 2026-09-04) meant the
+/// command ran the two packages that have no tests at all and reported
+/// success without executing a single one.
+const HOST_TEST_PACKAGES: [&str; 3] = ["tos-api", "tos-types", "xtask"];
+
 fn cmd_test(args: &[String]) -> Result<(), String> {
     if !args.is_empty() {
         return Err(format!("test: unexpected arguments: {args:?}"));
@@ -563,6 +576,9 @@ fn cmd_test(args: &[String]) -> Result<(), String> {
     // Host-runnable tests only: kernel cannot be linked for the host.
     let mut c = cargo();
     c.current_dir(workspace_root());
-    c.args(["test", "--package", "tos-types", "--package", "xtask"]);
+    c.arg("test");
+    for p in HOST_TEST_PACKAGES {
+        c.args(["--package", p]);
+    }
     run(c)
 }
