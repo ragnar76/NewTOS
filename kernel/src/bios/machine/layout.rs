@@ -93,6 +93,31 @@ pub const POOL_MAX_BYTES: u64 = 1024 * 1024 * 1024;
 /// 4-KiB-aligned so the truncated pool still ends on a frame boundary.
 pub const TOS_MD_MAX_END: u64 = 0x7FFF_F000;
 
+/// Bytes reserved for the **kernel heap**, taken off the top of DRAM
+/// before the pools are formed.
+///
+/// EmuTOS reserves OS buffers the same way: `balloc_stram(size, TRUE)`
+/// lowers `memtop` below `phystop` and hands `getmpb` only what is left
+/// (`references/emutos/bios/biosmem.c:88-131,134-151`), so the screen
+/// buffer and the other BIOS allocations are never part of a pool and
+/// never appear in a `Malloc` answer. NewTOS does the same for the two
+/// buffers it needs on this machine: the kernel heap and — on
+/// `board-qemu-virt`, where the framebuffer is ordinary DRAM — the
+/// framebuffer.
+///
+/// Must be a multiple of `frames::FRAME_SIZE` so the pool below it stays
+/// frame-aligned. 512 frames = 2 MiB, matching
+/// [`crate::bios::machine::heap::HEAP_BYTES`] (asserted there).
+pub const KERNEL_HEAP_RESERVE: u64 = 2 * 1024 * 1024;
+
+/// Bytes reserved for the framebuffer store on this board. Non-zero only
+/// where the framebuffer is ordinary ARM DRAM (`board-qemu-virt`); on the
+/// Pi 4 the VideoCore owns it and the reservation is zero.
+pub const FRAMEBUFFER_RESERVE: u64 = board::FRAMEBUFFER_RESERVE;
+
+/// Total bytes taken off the top of DRAM for kernel-owned buffers.
+pub const OS_RESERVE_BYTES: u64 = KERNEL_HEAP_RESERVE + FRAMEBUFFER_RESERVE;
+
 /// Inclusive-exclusive physical address range.
 #[derive(Clone, Copy, Debug)]
 pub struct PhysRange {
@@ -130,9 +155,23 @@ pub struct MemoryMap {
     /// Logical ST-RAM pool. Up to `STRAM_POOL_MAX`, immediately above
     /// the kernel image. Empty if total DRAM is too small.
     pub stram: PhysRange,
-    /// Logical TT-RAM pool. The rest of the usable DRAM above the
-    /// ST-RAM pool, up to `dram.end`.
+    /// Logical TT-RAM pool. The DRAM above the ST-RAM slot, up to the
+    /// start of [`MemoryMap::os_reserve`] — kernel-owned buffers are
+    /// **not** part of it.
     pub ttram: PhysRange,
+    /// Kernel-owned buffers, carved off the **top** of DRAM before the
+    /// pools are formed, so they are outside ST-RAM and TT-RAM alike.
+    /// The NewTOS equivalent of EmuTOS' `balloc_stram(size, TRUE)`
+    /// lowering `memtop` below `phystop`
+    /// (`references/emutos/bios/biosmem.c:88-131`). Contains
+    /// [`MemoryMap::kernel_heap`] and [`MemoryMap::framebuffer`].
+    pub os_reserve: PhysRange,
+    /// Arena for the kernel heap, the low part of
+    /// [`MemoryMap::os_reserve`].
+    pub kernel_heap: PhysRange,
+    /// Framebuffer store, the high part of [`MemoryMap::os_reserve`].
+    /// Empty on `board-rpi4`, where the VideoCore owns the framebuffer.
+    pub framebuffer: PhysRange,
     /// The full DRAM range the kernel manages. Equal to what
     /// [`MemoryMap::dram_source`] reported, minus any tail the TT-RAM
     /// pool cannot cover (see [`MemoryMap::dram_unmanaged`]).
@@ -181,6 +220,23 @@ mod board {
     pub const DRAM_SIZE: u64 = STRAM_SLOT_SIZE + TTRAM_SLOT_SIZE;
     pub const DRAM_END: u64 = DRAM_START + DRAM_SIZE;
 
+    /// Bytes reserved for the **ramfb framebuffer**, off the top of DRAM.
+    ///
+    /// On QEMU `virt` the framebuffer is ordinary DRAM that the device
+    /// model scans out (`-device ramfb`), so it has to come from
+    /// somewhere. Taking it out of the pool — as this reservation does —
+    /// is the only placement that keeps the promise "no framebuffer in
+    /// ST-RAM or TT-RAM"; allocating it *from* `Pool::Ttram` (what NewTOS
+    /// did until 2026-09-04) left a framebuffer sitting inside the TT-RAM
+    /// pool extent and inside the number the boot screen reports.
+    ///
+    /// Sized for the boot geometry, rounded up to a whole 4-KiB frame.
+    /// `ramfb` asserts at compile time that its buffer fits here.
+    pub const FRAMEBUFFER_RESERVE: u64 = {
+        let bytes = (crate::drivers::BOOT_WIDTH as u64) * (crate::drivers::BOOT_HEIGHT as u64) * 4;
+        (bytes + 4095) & !4095
+    };
+
     /// MMIO regions we touch in Phase 02. More entries (RTC, PCIe,
     /// virtio-mmio) will be added in later phases.
     pub static MMIO: &[PhysRange] = &[
@@ -211,6 +267,14 @@ mod board {
     /// the firmware. For D1 we hard-cap conservatively.
     pub const DRAM_SIZE: u64 = 1024 * 1024 * 1024;
     pub const DRAM_END: u64 = DRAM_START + DRAM_SIZE;
+
+    /// No framebuffer reservation on the Pi 4: the VideoCore owns the
+    /// framebuffer and allocates it from **its** share of SDRAM, which is
+    /// mapped in from `0x0_4000_0000` downwards and sized by `gpu_mem`
+    /// (BCM2711 ARM Peripherals §1.2.3). The firmware's "Get ARM memory"
+    /// answer already ends below it, so the framebuffer is outside
+    /// `dram` — and therefore outside both pools — by construction.
+    pub const FRAMEBUFFER_RESERVE: u64 = 0;
 
     /// MMIO regions. Sources: BCM2711 ARM Peripherals §1.2 (low
     /// peripherals at 0xFE00_0000) and §6 (ARM-local + GIC at
@@ -348,7 +412,10 @@ pub struct DramReport {
 /// build an inconsistent map (the kernel image, the pools and the MMU
 /// block classification all assume `board::DRAM_START`).
 fn plausible(r: &DramReport) -> bool {
-    r.start == board::DRAM_START && r.size >= STRAM_SLOT_SIZE
+    // Room for the ST-RAM slot *and* the kernel-owned buffers taken off
+    // the top ([`OS_RESERVE_BYTES`]) — otherwise the reported extent
+    // cannot host a memory map at all.
+    r.start == board::DRAM_START && r.size >= STRAM_SLOT_SIZE + OS_RESERVE_BYTES
 }
 
 /// Build the [`MemoryMap`] for the running board.
@@ -430,10 +497,31 @@ pub fn discover(dtb_phys: Option<usize>, fw: Option<DramReport>) -> MemoryMap {
     debug_assert!(img_end <= stram_pool_end, "kernel image overruns ST-RAM pool");
     let stram = PhysRange::new(img_end, stram_pool_end);
 
-    // TT-RAM slot: everything from the end of the ST-RAM slot to the
-    // end of DRAM. On `board-qemu-virt` this is exactly 256 MiB; on
-    // `board-rpi4` it is `DRAM_SIZE - 16 MiB`.
-    let ttram = PhysRange::new(stram_slot_end, dram.end);
+    // Kernel-owned buffers, off the **top** of DRAM, before either pool
+    // is formed — EmuTOS' `balloc_stram(size, TRUE)`, which lowers
+    // `memtop` below `phystop` so `getmpb` never sees those bytes
+    // (`references/emutos/bios/biosmem.c:88-131,134-151`). They stay
+    // inside `dram`, so the MMU still maps them Normal-Cacheable; they
+    // are simply not part of a pool, not reachable through `Malloc`, and
+    // not counted in the ST-RAM/TT-RAM figures the boot screen reports.
+    //
+    // `dram.end` is frame-aligned (every source is at worst MiB-granular,
+    // and `TOS_MD_MAX_END` is 4-KiB-aligned) and `OS_RESERVE_BYTES` is a
+    // whole number of frames, so `pool_top` is frame-aligned too.
+    debug_assert!(dram.end.is_multiple_of(4096));
+    debug_assert!(OS_RESERVE_BYTES.is_multiple_of(4096));
+    let pool_top = dram.end.saturating_sub(OS_RESERVE_BYTES).max(stram_slot_end);
+    let os_reserve = PhysRange::new(pool_top, dram.end);
+    let kernel_heap =
+        PhysRange::new(pool_top, pool_top.saturating_add(KERNEL_HEAP_RESERVE));
+    let framebuffer = PhysRange::new(
+        kernel_heap.end,
+        kernel_heap.end.saturating_add(FRAMEBUFFER_RESERVE),
+    );
+    debug_assert!(framebuffer.end <= dram.end, "OS reserve overruns DRAM");
+
+    // TT-RAM slot: from the end of the ST-RAM slot up to the OS reserve.
+    let ttram = PhysRange::new(stram_slot_end, pool_top);
 
     // Stack guard: one 2-MiB block whose start address is provided by
     // the linker. Lives inside the kernel image, so it sits in DRAM
@@ -450,6 +538,9 @@ pub fn discover(dtb_phys: Option<usize>, fw: Option<DramReport>) -> MemoryMap {
         kernel,
         stram,
         ttram,
+        os_reserve,
+        kernel_heap,
+        framebuffer,
         dram,
         dram_source,
         dram_unmanaged,

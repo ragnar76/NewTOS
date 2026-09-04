@@ -252,7 +252,7 @@ extern "C" fn kernel_main_rust(dtb_phys: usize) -> ! {
     // Bring up the kernel heap on top of the frame allocator
     // (Phase 03 D5). After this point `alloc::{Box, Vec, String}` is
     // legal kernel-side.
-    bios::machine::heap::init();
+    bios::machine::heap::init(&map);
     print_heap_stats("after init");
     smoke_test_heap();
     print_heap_stats("after smoke");
@@ -260,7 +260,7 @@ extern "C" fn kernel_main_rust(dtb_phys: usize) -> ! {
     // Bring up the framebuffer (if any). Done before the BDOS pools
     // claim the remaining frames so the framebuffer's contiguous run is
     // reserved up front. The screen is drawn later via the VDI.
-    init_framebuffer();
+    init_framebuffer(&map);
 
     // Bring up the BDOS memory pools (Phase 04 D6). The two MPBs
     // are seeded with whatever frames remain free in each pool
@@ -502,6 +502,13 @@ fn print_memory_map(map: &bios::machine::layout::MemoryMap) {
     print_range("kernel", &map.kernel);
     print_range("ST-RAM", &map.stram);
     print_range("TT-RAM", &map.ttram);
+    // Kernel-owned buffers, off the top of DRAM and outside both pools —
+    // EmuTOS' `balloc_stram(size, TRUE)` / lowered `memtop`.
+    print_range("OSrsvd", &map.os_reserve);
+    print_range("  heap", &map.kernel_heap);
+    if !map.framebuffer.is_empty() {
+        print_range("  fb", &map.framebuffer);
+    }
     for (i, r) in map.mmio.iter().enumerate() {
         kprintln!(
             "[mm]   MMIO {:02}: 0x{:016x}..0x{:016x}",
@@ -522,10 +529,11 @@ fn print_range(label: &str, r: &bios::machine::layout::PhysRange) {
 /// linear buffer published so [`hal::framebuffer`] / the VDI backend can
 /// use it.
 #[cfg(feature = "board-qemu-virt")]
-fn init_framebuffer() {
+fn init_framebuffer(map: &bios::machine::layout::MemoryMap) {
     use crate::hal::framebuffer::Framebuffer;
-    // SAFETY: boot CPU, single-threaded, frame allocator is up.
-    let up = unsafe { drivers::qemu_virt::ramfb::init() };
+    // SAFETY: boot CPU, single-threaded; the map's framebuffer reserve is
+    // outside both pools, so nothing else can own those bytes.
+    let up = unsafe { drivers::qemu_virt::ramfb::init(map) };
     if !up {
         kprintln!("[fb] ramfb unavailable (pass `-device ramfb`) — no graphics");
         return;
@@ -538,7 +546,11 @@ fn init_framebuffer() {
 /// docs/hardware/mailbox-framebuffer.md). On real hardware the later VDI
 /// drawing is the first life sign (no serial).
 #[cfg(feature = "board-rpi4")]
-fn init_framebuffer() {
+fn init_framebuffer(map: &bios::machine::layout::MemoryMap) {
+    // The VideoCore owns the framebuffer on this board, so the memory map
+    // reserves nothing for it (BCM2711 §1.2.3: the VC's SDRAM is mapped in
+    // from 0x0_4000_0000 downwards, below which `dram` already ends).
+    debug_assert!(map.framebuffer.is_empty());
     use crate::hal::framebuffer::Framebuffer;
     // SAFETY: boot CPU, single-threaded, MMU + heap are up.
     let up = unsafe { drivers::bcm2711::framebuffer::init() };

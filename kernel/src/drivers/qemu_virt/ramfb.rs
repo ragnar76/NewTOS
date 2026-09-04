@@ -21,7 +21,7 @@
 use core::sync::atomic::{AtomicU32, AtomicU64, Ordering};
 
 use crate::arch::aarch64::mmu::{va_to_pa, VA_OFFSET};
-use crate::bios::machine::frames::{alloc_frames_contig, Pool, FRAME_SIZE};
+use crate::bios::machine::layout::MemoryMap;
 use crate::hal::framebuffer::Framebuffer;
 
 const FWCFG_BASE: usize = crate::drivers::mmio_va(0x0902_0000);
@@ -79,6 +79,16 @@ static mut CFG: RamFbCfg = RamFbCfg {
 /// captures it at the same size.
 const WIDTH: u32 = crate::drivers::BOOT_WIDTH;
 const HEIGHT: u32 = crate::drivers::BOOT_HEIGHT;
+
+/// Bytes the pixel store needs.
+const FB_BYTES: u64 = (WIDTH as u64) * (HEIGHT as u64) * 4;
+
+// The store comes from the memory map's reservation, not from a pool, so
+// the reservation has to be big enough for this geometry.
+const _: () = assert!(
+    FB_BYTES <= crate::bios::machine::layout::FRAMEBUFFER_RESERVE,
+    "ramfb: layout::FRAMEBUFFER_RESERVE is smaller than WIDTH*HEIGHT*4"
+);
 
 /// Issue one fw_cfg DMA op via the static [`DMA`] block.
 ///
@@ -146,15 +156,18 @@ impl Framebuffer for RamFb {
 ///
 /// Boot CPU, single-threaded, after the frame allocator is up.
 #[allow(clippy::deref_addrof)] // see `fwcfg_dma`.
-pub unsafe fn init() -> bool {
-    // 1. Allocate a contiguous XRGB8888 buffer.
-    let bytes = (WIDTH * HEIGHT * 4) as u64;
-    let frames = bytes.div_ceil(FRAME_SIZE) as usize;
-    let fb = match alloc_frames_contig(Pool::Ttram, frames) {
-        Some(f) => f,
-        None => return false,
-    };
-    let fb_pa = fb.pa();
+pub unsafe fn init(map: &MemoryMap) -> bool {
+    // 1. Take the XRGB8888 pixel store from the memory map's reservation.
+    //    It was carved off the top of DRAM *before* the pools were formed
+    //    (`layout::discover`), the way EmuTOS' `balloc_stram(size, TRUE)`
+    //    lowers `memtop` for the screen buffer
+    //    (`references/emutos/bios/biosmem.c:88-131`) — so the framebuffer
+    //    is not inside ST-RAM or TT-RAM, is never `Malloc`-able, and does
+    //    not inflate the figures the boot screen shows.
+    if map.framebuffer.len() < FB_BYTES {
+        return false;
+    }
+    let fb_pa = map.framebuffer.start;
     let fb_va = fb_pa + VA_OFFSET; // write through the high half
 
     // 2. Read the fw_cfg file directory and find "etc/ramfb".

@@ -44,15 +44,24 @@
 use core::alloc::{GlobalAlloc, Layout};
 use core::ptr::{self, NonNull};
 
-use super::frames::{self, FRAME_SIZE, Pool};
+use super::frames::FRAME_SIZE;
+use super::layout::MemoryMap;
 use crate::sync::SpinMutex;
 
-/// Number of 4-KiB frames carved out of TT-RAM for the kernel heap.
+/// Number of 4-KiB frames the kernel heap arena spans.
 /// 512 frames = 2 MiB. Sized for the kernel's working set through
 /// Phase 06; revisit when filesystem caches (Phase 05) land.
 pub const HEAP_FRAMES: usize = 512;
 /// Total heap arena size in bytes.
 pub const HEAP_BYTES: u64 = (HEAP_FRAMES as u64) * FRAME_SIZE;
+
+// The arena comes out of the memory map's OS reserve, not out of a pool,
+// so the two sizes must agree. A mismatch would either waste reserved
+// DRAM or install a heap larger than what was reserved.
+const _: () = assert!(
+    HEAP_BYTES == super::layout::KERNEL_HEAP_RESERVE,
+    "heap: HEAP_BYTES must equal layout::KERNEL_HEAP_RESERVE"
+);
 
 /// Allocation alignment. 16 covers every primitive type we emit
 /// (`u128`, AArch64 NEON values). Stricter requests are handled by
@@ -317,22 +326,35 @@ unsafe fn next_ptr_slot(h: *mut Header) -> *mut *mut Header {
 
 static HEAP: SpinMutex<Heap> = SpinMutex::new(Heap::new());
 
-/// Initialise the kernel heap. Must run after [`frames::init`] and
-/// before any allocation through the global allocator.
-pub fn init() {
-    let frame = frames::alloc_frames_contig(Pool::Ttram, HEAP_FRAMES)
-        .expect("heap: failed to reserve initial arena from TT-RAM");
+/// Initialise the kernel heap from the memory map's reserved arena.
+///
+/// The arena is [`MemoryMap::kernel_heap`], carved off the top of DRAM by
+/// [`layout::discover`][super::layout::discover] **before** either pool
+/// exists — the same shape as EmuTOS' `balloc_stram(size, TRUE)`, which
+/// lowers `memtop` so the BIOS' own buffers are never part of the pool
+/// `getmpb` publishes (`references/emutos/bios/biosmem.c:88-131`). The
+/// heap therefore no longer occupies TT-RAM the boot screen counts and
+/// `Mxalloc` reports.
+///
+/// Must run before any allocation through the global allocator.
+pub fn init(map: &MemoryMap) {
+    let arena = map.kernel_heap;
+    assert!(
+        arena.len() >= HEAP_BYTES,
+        "heap: reserved arena smaller than HEAP_BYTES"
+    );
     // ADR-010: address the arena through its **high-half** VA
     // (`pa + VA_OFFSET`, served by the kernel TTBR1 mapping, EL1-only),
     // never the raw physical / low-half identity address. TTBR0 is the
     // shared user address space; the kernel must not depend on it for
     // its own data. All heap pointers derive from `start`, so this one
     // conversion keeps the whole heap in the high half.
-    let start = (frame.pa() + crate::arch::aarch64::mmu::VA_OFFSET) as usize;
+    let start = (arena.start + crate::arch::aarch64::mmu::VA_OFFSET) as usize;
     let size = HEAP_BYTES as usize;
-    // SAFETY: we own this region exclusively (just allocated above);
-    // the high-half alias is writable Normal memory mapped EL1-only by
-    // the Stage-2 kernel tables (Phase 05, DRAM mapping).
+    // SAFETY: the map reserved this region for the heap alone and no
+    // pool covers it; the high-half alias is writable Normal memory
+    // mapped EL1-only by the Stage-2 kernel tables (Phase 05, DRAM
+    // mapping) because the reserve stays inside `map.dram`.
     unsafe { HEAP.lock().install(start, size) };
 }
 
