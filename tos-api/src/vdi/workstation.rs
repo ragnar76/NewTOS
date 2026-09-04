@@ -244,15 +244,25 @@ fn init_wk(vwk: &mut Vwk, pb: &Vdipb, backend: &dyn RasterBackend) {
 }
 
 /// Opcode 100 — open a virtual workstation.
-pub fn v_opnvwk(pb: &Vdipb, backend: &dyn RasterBackend) {
+///
+/// Returns whether `init_wk` ran, i.e. whether the workstation was actually
+/// opened. EmuTOS `vdi_v_opnvwk` bails out before `init_wk` when no handle
+/// (`vdi_control.c:425-427`) or no memory (`:444-446`) is left, and it is
+/// `init_wk` that raises `flip_y` (`:379`) — so the trap's `d0` is 1 only on
+/// the successful path (see [`crate::vdi::FLIP_Y_MAGNITUDES`]).
+pub fn v_opnvwk(pb: &Vdipb, backend: &dyn RasterBackend) -> bool {
     // SAFETY: single trap path.
     match unsafe { vwk::alloc_handle() } {
         Some(vwk) => {
             let handle = vwk.handle;
             init_wk(vwk, pb, backend);
             pb.set_contrl(6, handle);
+            true
         }
-        None => pb.set_contrl(6, 0), // no free handle → fail (VDI: no error code)
+        None => {
+            pb.set_contrl(6, 0); // no free handle → fail (VDI: no error code)
+            false
+        }
     }
 }
 

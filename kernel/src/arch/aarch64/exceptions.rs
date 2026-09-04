@@ -362,7 +362,9 @@ pub extern "C" fn rust_sync_handler(frame: &mut ExceptionFrame) {
         TrapClass::Gemdos => tos_api::gemdos::dispatch(&args) as i64,
         // GEM trap (#2): shared by the VDI and the AES. `x0` is the
         // selector (115 = VDI, 200 = AES), `x1` the parameter block.
-        // Neither returns a value in a register, so leave `x0 = 0`.
+        // The VDI returns `flip_y` in `x0` — EmuTOS `vdi_asm.S:124-125`
+        // zero-extends the WORD into `d0`; the AES returns a hard 0
+        // (`aes/gemsuper.c:454-466`), its contract return being `int_out[0]`.
         //
         // The running process's ABI (ADR-020) tells the readers whether
         // `x1` addresses a block of 4-byte (ILP32) or 8-byte (LP64)
@@ -372,7 +374,7 @@ pub extern "C" fn rust_sync_handler(frame: &mut ExceptionFrame) {
             let abi = tos_api::bdos::process::current_abi();
             match args.regs[0] {
                 // SAFETY: `x1` is the caller-supplied parameter block.
-                115 => unsafe { tos_api::vdi::dispatch(args.regs[1], abi) },
+                115 => i64::from(unsafe { tos_api::vdi::dispatch(args.regs[1], abi) }),
                 // SAFETY: `x1` is the caller-supplied parameter block. A
                 // blocking `evnt_*` wait may return a peer Switch (S2). The
                 // AES now runs on its dedicated EL1 fiber stack (step 1 of the
@@ -392,10 +394,10 @@ pub extern "C" fn rust_sync_handler(frame: &mut ExceptionFrame) {
                             pending_stall = Some(desc);
                         }
                     }
+                    0
                 }
-                _ => {} // unknown selector → no-op (GEM trap is trusted)
+                _ => 0, // unknown selector → no-op (GEM trap is trusted)
             }
-            0
         }
         // BIOS (Trap 13): block-device + console functions.
         TrapClass::Bios => tos_api::bios::dispatch(&args),

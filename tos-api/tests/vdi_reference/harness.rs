@@ -20,6 +20,27 @@
 //! is not the kernel's rasterizer, and these tests are not a statement about
 //! the kernel's rasterizer.
 //!
+//! **What matching the geometry buys, named rather than left implicit.**
+//! Some VDI answers are *derived from the screen*, so two workstations of
+//! different size must give different numbers and a byte comparison across
+//! machines would be meaningless. Running the harness at the reference's own
+//! 640×480 turns those cases back into real comparisons — of the *formula*,
+//! which is the part that is contract. The cases this applies to:
+//!
+//! * **`vq_chcells` (escape sub-op 1), case 155.** EmuTOS returns
+//!   `v_cel_my + 1` rows and `v_cel_mx + 1` columns (`vdi/vdi_esc.c:62-67`),
+//!   i.e. screen height/cell height and width/cell width. At 640×480 with
+//!   the 8×16 cell that is 30 and 80, which is what the TT reported and what
+//!   this harness checks. On the Pi 4's 1920×1080 the same formula gives 67
+//!   and 240, and the full-machine dump comparison
+//!   (`tosdump/reference/NEWTOS-VDI-all.BIN`, case 173) differs there **by
+//!   arithmetic, not by defect** — see `tos-api/src/vdi/escape.rs`, `cols`
+//!   and `rows`.
+//! * **`v_opnvwk`/`vq_extnd` colour and plane counts.** `DEV_TAB[13]` and
+//!   `INQ_TAB[4]`: the TT is a 16-colour 4-plane workstation, NewTOS a
+//!   Falcon truecolor one. That difference is a profile decision and is
+//!   *not* neutralised here — see [`MemBackend::num_colors`].
+//!
 //! **Serialisation.** The VDI keeps device-global state (handle table, `Vwk`
 //! slots, palette). Cargo runs tests on parallel threads, so every case takes
 //! [`VDI_LOCK`] and the workstation is opened once behind it.
@@ -378,8 +399,10 @@ impl Pb {
     }
 
     /// Issue the call. Mirrors what the trap does: the caller has already
-    /// filled `contrl`, and everything comes back through the arrays.
-    pub fn call(&mut self) {
+    /// filled `contrl`, everything comes back through the arrays, and the
+    /// return value is the trap's `d0` (`flip_y`, `vdi/vdi_asm.S:124-125`),
+    /// which the record carries at [`OFF_RET`] and [`check`] compares.
+    pub fn call(&mut self) -> i16 {
         // SAFETY: `block` holds five live pointers to arrays owned by `self`
         // and large enough for every opcode under test.
         unsafe { tos_api::vdi::dispatch(self.block.as_ptr() as u64, ABI) }
@@ -604,7 +627,7 @@ pub fn check(dump: &[u8], case: &Case) {
     pb.contrl[6] = wk.handle;
 
     let before: Vec<i16> = pb.contrl.to_vec();
-    pb.call();
+    let flip_y = pb.call();
 
     // The reference must have gone in with the same contrl we did; if not,
     // the case table and the dump are out of step and nothing below means
@@ -621,6 +644,12 @@ pub fn check(dump: &[u8], case: &Case) {
     }
 
     let mut diffs = Vec::new();
+    // The trap's `d0` = `flip_y` (`vdi/vdi_asm.S:124-125`). Compared as the
+    // WORD the contract defines, not the whole LONG: EmuTOS clears the high
+    // half (`moveq #0,d0`), Atari TOS 3.06 does not, so the LONG carries a
+    // register leftover that is not part of the contract. Same rule as
+    // `tosdump/host` uses (`core/record.c`, field `d0` at `OFF_RET + 2`).
+    cmp_field(&mut diffs, "d0", &[flip_y], rec, OFF_RET + 2, 1);
     cmp_field(&mut diffs, "contrl", &pb.contrl[..], rec, OFF_CONTRL, CONTRL_N);
     cmp_field(&mut diffs, "intin", &pb.intin[..], rec, OFF_INTIN, INTIN_N);
     cmp_field(&mut diffs, "ptsin", &pb.ptsin[..], rec, OFF_PTSIN, PTSIN_N);
@@ -646,10 +675,6 @@ pub fn check(dump: &[u8], case: &Case) {
         if diffs.len() > 24 {
             msg += &format!("    ... and {} more\n", diffs.len() - 24);
         }
-        // The trap's d0 (flip_y) is not observable through this entry point:
-        // `tos_api::vdi::dispatch` returns `()`. Recorded in the dump at
-        // offset 4, compared by tosdiff, out of reach here.
-        let _ = OFF_RET;
         let _ = OFF_OPCODE;
         panic!("{}", msg);
     }

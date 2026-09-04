@@ -274,8 +274,14 @@ pub fn v_escape(pb: &Vdipb, backend: &dyn RasterBackend) {
         }
         17 => {} // v_hardcopy: no printer device → documented no-op
         // v_dspcur: EmuTOS escfn18 ignores the PTSIN coordinates and force-shows
-        // the cursor at its current position (v_show_c with INTIN[0]=0).
-        18 => mouse::force_show(backend),
+        // the cursor at its current position (`vdi_esc.c:274-278`). It says
+        // "show regardless" by storing `INTIN[0] = 0` into the *caller's*
+        // input array and delegating to `vdi_v_show_c`; the write is visible
+        // to the caller and the TT reference records it, so it is reproduced.
+        18 => {
+            pb.set_intin(0, 0);
+            mouse::force_show(backend);
+        }
         // v_rmcur: EmuTOS escfn19 = vdi_v_hide_c → increments the hide count
         // (not an absolute hide), so it balances against a matching show.
         19 => mouse::v_hide_c(backend),

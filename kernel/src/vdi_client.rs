@@ -68,7 +68,9 @@ impl Vdi {
         ];
         let pb = block.as_ptr() as u64;
         // SAFETY: GEM trap (svc #2) with selector 115 (VDI) in x0 and the
-        // parameter block in x1.
+        // parameter block in x1. `x0` comes back as the VDI's `flip_y`
+        // (`tos_api::vdi::FLIP_Y_MAGNITUDES`); dropped here, as gemlib's
+        // `vdi()` binding drops it too.
         unsafe {
             core::arch::asm!(
                 "svc #2",

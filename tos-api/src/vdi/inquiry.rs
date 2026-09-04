@@ -333,9 +333,29 @@ pub fn vqt_name(pb: &Vdipb) {
     let f = found.unwrap_or(&font::FON_6X6);
 
     pb.set_intout(0, f.font_id);
-    for i in 0..font::NAME_LEN {
+    // EmuTOS writes the name one WORD per character *including* its NUL and
+    // then pads to `FONT_NAME_LEN` counting only the characters it copied
+    // (`vdi_text.c:1130-1133`), so the last slot it touches is always
+    // `INTOUT[33]` — one WORD past the 33 the jump table declares
+    // (`vdi_main.c:105`). The extra WORD is deterministically 0 and the TT
+    // reference records it (`tosdump/reference/EMUTOS14-VDI-all.BIN`, cases
+    // 80-83, `intout[33] = 0`), so it is reproduced rather than rounded off;
+    // every GEM `intout` is the standard 45 WORDs, so the slot exists.
+    let mut out = 1usize;
+    let mut i = 0usize;
+    loop {
         let ch = f.name.get(i).copied().unwrap_or(0);
-        pb.set_intout(1 + i, ch as i16);
+        pb.set_intout(out, ch as i16);
+        out += 1;
+        if ch == 0 {
+            break;
+        }
+        i += 1;
+    }
+    while i < font::NAME_LEN {
+        pb.set_intout(out, 0);
+        out += 1;
+        i += 1;
     }
     pb.set_contrl(4, 1 + font::NAME_LEN as i16);
 }

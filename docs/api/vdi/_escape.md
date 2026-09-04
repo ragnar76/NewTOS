@@ -262,7 +262,12 @@ single-fixed-640×480 bring-up profile, see `D-076`/`D-077`/`D-078`).
   the graphics cursor should appear. **EmuTOS, like Atari TOS, ignores
   these** — it forces `INTIN[0] = 0` ("show regardless") and calls
   `vdi_v_show_c()` (VDI opcode 122). So the passed coordinates have no
-  effect. **No output.**
+  effect. **No `INTOUT`/`PTSOUT`** — but the `INTIN[0] = 0` store is
+  **written into the caller's own `INTIN` array** and is therefore an
+  observable output of the call, the only VDI handler that modifies an
+  input array. Measured: `tosdump/reference/EMUTOS14-VDI-all.BIN` case 187
+  records `intin[0] = 0` where the un-written poison would have been
+  `0xDEAD`. NewTOS reproduces it (`tos-api/src/vdi/escape.rs`, sub-op 18).
 
 ### 19 — `v_rmcur` (`escfn19`, `vdi_esc.c:284-287`)
 

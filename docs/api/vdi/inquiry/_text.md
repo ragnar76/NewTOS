@@ -85,10 +85,25 @@ Out of range → the built-in system font `fon6x6` (`:1125-1126`).
 | Slot | Value |
 |------|-------|
 | `INTOUT[0]` | the selected face's `font_id` |
-| `INTOUT[1..]` | face name, **one character per WORD**, NUL-terminated then zero-padded to `FONT_NAME_LEN` (32) |
+| `INTOUT[1..32]` | face name, **one character per WORD**, NUL-terminated then zero-padded to `FONT_NAME_LEN` (32) |
+| `INTOUT[33]` | **`0` — one WORD past the declared count**, see below |
 
-So `INTOUT[0]` + 32 name WORDs = 33 output WORDs (matches the jump-table
-`nintout = 33`). Does **not** change `cur_font`; does not set `flip_y`.
+Does **not** change `cur_font`; does not set `flip_y`.
+
+**`vqt_name` writes 34 WORDs but declares 33.** The copy loop
+(`vdi_text.c:1130-1131`) writes the name *including* its NUL terminator and
+leaves `i` at the character count `L`; the pad loop (`:1132-1133`) then runs
+`while (i++ < FONT_NAME_LEN)`, i.e. `32 − L` more times. Total written:
+`1 + (L+1) + (32−L)` = **34** WORDs, `INTOUT[0..33]`, independent of `L`.
+The jump table declares `nintout = 33` (`vdi_main.c:105`), so the last WORD
+always lands one slot past the declared output — always a `0`.
+
+This is **contract, not an internal**: the WORD lands in the caller's own
+`INTOUT` (a standard GEM parameter block reserves 45 WORDs, so nothing is
+corrupted) and it is directly measurable. Confirmed on hardware — EmuTOS 1.4
+on an Atari TT, `tosdump/reference/EMUTOS14-VDI-all.BIN` cases 80–83, all
+four `intout[33] = 0` where the un-written poison would have been `0xDEAD`.
+NewTOS reproduces it (`tos-api/src/vdi/inquiry.rs`, `vqt_name`).
 
 ## `vqt_fontinfo` (131) — current-font metrics
 

@@ -12,7 +12,9 @@ use crate::kprintln;
 /// `x0` and the parameter-block pointer in `x1`.
 #[inline(always)]
 fn vdi(pb_ptr: u64) {
-    // SAFETY: GEM trap; the VDI returns nothing in a register.
+    // SAFETY: GEM trap. `x0` comes back as the VDI's `flip_y`
+    // (`tos_api::vdi::FLIP_Y_MAGNITUDES`); this client has no use for it and
+    // drops it, exactly as gemlib's `vdi()` binding does.
     unsafe {
         core::arch::asm!(
             "svc #2",

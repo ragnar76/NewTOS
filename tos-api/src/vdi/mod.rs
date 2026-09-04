@@ -183,6 +183,20 @@ impl Vdipb {
         // SAFETY: callers index within `contrl[1]*2` input coordinates.
         unsafe { self.ptsin.add(i).read() }
     }
+    /// Write back into the caller's INTIN array.
+    ///
+    /// INTIN is an *input* array and a VDI routine normally must not touch
+    /// it. Exactly one EmuTOS handler does: `escfn18` (`v_dspcur`) stores
+    /// `INTIN[0] = 0` before delegating to `vdi_v_show_c`, because that is
+    /// how it says "show regardless of the hide count"
+    /// (`vdi/vdi_esc.c:274-278`). The write lands in the caller's block and
+    /// the TT reference records it, so it is reproduced rather than
+    /// rounded off — see [`escape::v_escape`](super::escape::v_escape).
+    #[inline]
+    pub fn set_intin(&self, i: usize, v: i16) {
+        // SAFETY: callers index within `contrl[3]` input integers.
+        unsafe { self.intin.add(i).write(v) }
+    }
     #[inline]
     pub fn set_intout(&self, i: usize, v: i16) {
         // SAFETY: callers index within `contrl[4]` output integers.
@@ -195,6 +209,28 @@ impl Vdipb {
     }
 }
 
+/// The VDI trap's `d0` return value: **coordinates**.
+///
+/// EmuTOS keeps this as the global `flip_y` (`vdi/vdi_main.c:20`,
+/// *"True if magnitudes being returned"*), clears it on entry to `screen()`
+/// (`:135`) and returns it, zero-extended, as the trap's `d0`
+/// (`vdi/vdi_asm.S:124-125`) — the documented dispatcher return
+/// (`docs/api/vdi/_dispatcher.md`, "Return `d0` = `flip_y` (0/1)").
+///
+/// Its meaning is the NDC→RC contract: a handler that reports *sizes*
+/// (a width, a height, a text extent) rather than screen *positions* raises
+/// the flag so a coordinate-converting caller knows not to y-flip the
+/// PTSOUT values it just got.
+pub const FLIP_Y_COORDINATES: i16 = 0;
+/// The VDI trap's `d0` return value: **magnitudes** — see
+/// [`FLIP_Y_COORDINATES`]. EmuTOS raises it in exactly nine places:
+/// `init_wk` (`vdi_control.c:379`), `vq_extnd` (`:631`), `vsm_height`
+/// (`vdi_marker.c:49`), `vqm_attributes` (`:178`), `setup_width_height`
+/// (`vdi_text.c:678`, reached from `vst_height`/`vst_point` and hence from
+/// `vst_font`), `vqt_attributes` (`:1020`), `vqt_extent` (`:1058`),
+/// `vqt_width` (`:1095`) and `vqt_fontinfo` (`:1173`).
+pub const FLIP_Y_MAGNITUDES: i16 = 1;
+
 // CONTRL indices with fixed meaning (see dispatcher spec).
 const C_OPCODE: usize = 0;
 const C_NPTSOUT: usize = 2;
@@ -204,13 +240,22 @@ const C_HANDLE: usize = 6;
 /// VDI dispatch entry. `vdipb_ptr` is the `x1` value at the `svc #2`
 /// trap (selector 115 in `x0`); `abi` is the calling process's pointer
 /// width (the kernel passes [`crate::bdos::process::current_abi`]). The
-/// VDI returns nothing in a register — all results go into the
-/// parameter-block arrays — so this returns `()`.
+/// results go into the parameter-block arrays; the **return value is the
+/// trap's `d0`** — EmuTOS' `flip_y`, [`FLIP_Y_COORDINATES`] or
+/// [`FLIP_Y_MAGNITUDES`] (`vdi/vdi_asm.S:124-125`).
+///
+/// `flip_y` is not state here: EmuTOS clears it on entry to `screen()`
+/// and each handler that reports magnitudes raises it unconditionally, so
+/// it is exactly a function of *which handler ran to completion*. Every
+/// path that reaches no handler — no raster backend, an unknown handle
+/// (EmuTOS `vdi_main.c:139-148`), an unrouted opcode, a `v_opnvwk` that
+/// found no free slot (`vdi_control.c:425-427,444-446`) — yields
+/// [`FLIP_Y_COORDINATES`], the value `screen()` leaves in place.
 ///
 /// # Safety
 /// `vdipb_ptr` must be a valid VDI parameter block of `abi`'s pointer
 /// width (see [`Vdipb`]).
-pub unsafe fn dispatch(vdipb_ptr: u64, abi: Abi) {
+pub unsafe fn dispatch(vdipb_ptr: u64, abi: Abi) -> i16 {
     // SAFETY: caller guarantees a valid parameter block of `abi`'s width.
     let pb = unsafe { Vdipb::from_raw(vdipb_ptr, abi) };
 
@@ -223,17 +268,22 @@ pub unsafe fn dispatch(vdipb_ptr: u64, abi: Abi) {
     // installed (hostless test, no framebuffer) the VDI is inert.
     let backend = match host::host().and_then(|h| h.raster()) {
         Some(b) => b,
-        None => return,
+        None => return FLIP_Y_COORDINATES,
     };
 
     // ── workstation open (no handle on input; must NOT reset multifill) ──
+    // Both run `init_wk`, which raises `flip_y` (`vdi_control.c:379`); for
+    // `v_opnvwk` only when a slot was actually allocated (`:457`).
     if opcode == 1 {
         workstation::v_opnwk(&pb, backend);
-        return;
+        return FLIP_Y_MAGNITUDES;
     }
     if opcode == 100 {
-        workstation::v_opnvwk(&pb, backend);
-        return;
+        return if workstation::v_opnvwk(&pb, backend) {
+            FLIP_Y_MAGNITUDES
+        } else {
+            FLIP_Y_COORDINATES
+        };
     }
 
     // Every other op needs a valid, open workstation (EmuTOS
@@ -249,7 +299,7 @@ pub unsafe fn dispatch(vdipb_ptr: u64, abi: Abi) {
                 vwk.multifill = false;
             }
         }
-        None => return, // no such open workstation → VDI no-op
+        None => return FLIP_Y_COORDINATES, // no such open workstation → VDI no-op
     }
 
     // Point the backend's PEL resolution at THIS workstation's private
@@ -352,5 +402,15 @@ pub unsafe fn dispatch(vdipb_ptr: u64, abi: Abi) {
                 }
             }
         }
+    }
+
+    // The trap's `d0`. `flip_y` is a pure function of *which* handler ran,
+    // and these are EmuTOS' nine assignment sites listed by opcode — see
+    // [`FLIP_Y_MAGNITUDES`] for the file:line of each. Control only reaches
+    // here after a handler ran: every earlier exit already returned
+    // [`FLIP_Y_COORDINATES`], the value `screen()` leaves in place.
+    match opcode {
+        12 | 19 | 21 | 36 | 38 | 102 | 107 | 116 | 117 | 131 => FLIP_Y_MAGNITUDES,
+        _ => FLIP_Y_COORDINATES,
     }
 }
