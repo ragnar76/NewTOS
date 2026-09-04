@@ -56,10 +56,36 @@ pub const STRAM_SLOT_SIZE: u64 = 16 * 1024 * 1024;
 /// size matches the 14 MiB a real Atari TT could expose.
 pub const STRAM_IO_RESERVE: u64 = 2 * 1024 * 1024;
 
-/// Hard cap for the ST-RAM pool. Matches the Atari TT/Falcon maximum
-/// (`STRAM_SLOT_SIZE - STRAM_IO_RESERVE` = 14 MiB). Programs expect
-/// this upper bound from `Mxalloc(-1, MX_STRAM)`.
+/// Top of the ST-RAM window: `phystop` / `memtop`
+/// (`STRAM_SLOT_SIZE - STRAM_IO_RESERVE` = 14 MiB above `DRAM_START`),
+/// matching the Atari TT/Falcon maximum.
 pub const STRAM_POOL_MAX: u64 = STRAM_SLOT_SIZE - STRAM_IO_RESERVE;
+
+/// The OS's fixed budget at the bottom of the ST-RAM window: everything
+/// below `DRAM_START + STRAM_OS_RESERVE` belongs to the kernel, and the
+/// GEMDOS ST-RAM pool starts exactly there. This is `membot` / `end_os`
+/// (`references/emutos/bios/biosmem.c:66-68`) — but as a **constant**,
+/// not as "wherever the image happens to end".
+///
+/// Why constant: the pool used to begin at `__kernel_image_end`, so its
+/// size moved with the kernel. Two `ALIGN(2M)` in the linker scripts
+/// quantised that, and one reachable 2-MiB static was enough to take
+/// 2 MiB away from every program (the 5 MiB → 3 MiB drop of 2026-09-04,
+/// `docs/analysis/memory-layout-and-reported-free-memory.md` §13). A
+/// program cannot build on a number like that.
+///
+/// The budget holds the pre-MMU boot stack (512 KiB), the kernel image
+/// (`.text`/`.rodata`/`.data`/`.bss`) and the kernel stack with its guard
+/// page. The `.dma` block and the kernel heap live outside it — in the
+/// `$E00000` hardware window and in the top-of-DRAM OS reserve. The
+/// linker scripts `ASSERT` that the image fits, so outgrowing the budget
+/// is a **link error**, never a quietly smaller ST-RAM.
+pub const STRAM_OS_RESERVE: u64 = 4 * 1024 * 1024;
+
+/// Size of the GEMDOS ST-RAM pool. Constant by construction:
+/// `memtop - membot` = 14 MiB - 4 MiB = **10 MiB**, on every board and
+/// every build.
+pub const STRAM_POOL_BYTES: u64 = STRAM_POOL_MAX - STRAM_OS_RESERVE;
 
 /// Largest span of physical memory a single pool can manage.
 ///
@@ -184,10 +210,15 @@ pub struct MemoryMap {
     /// memory-descriptor ABI). Zero on every machine whose report fits.
     /// Reported on the boot console so the loss is never silent.
     pub dram_unmanaged: u64,
-    /// Stack guard page (Phase 03 D6). One 2-MiB block immediately
-    /// below the kernel stack; left invalid in the page tables so a
-    /// stack overflow takes a synchronous data abort instead of
-    /// silently corrupting memory below the stack.
+    /// Stack guard (Phase 03 D6). One 4-KiB page immediately below the
+    /// kernel stack, left invalid in the page tables so a stack overflow
+    /// takes a synchronous data abort instead of silently corrupting the
+    /// memory below the stack.
+    ///
+    /// One *page*, not one 2-MiB block: `mmu::refine_stack_block` gives
+    /// the containing block an L3 table so the hole can be page-sized.
+    /// That is what lets the kernel stack fit inside
+    /// [`STRAM_OS_RESERVE`] and the ST-RAM pool have a fixed size.
     pub stack_guard: PhysRange,
     /// Memory-mapped I/O regions. Marked Device-nGnRnE in the page
     /// tables (Phase 03 D2).
@@ -488,14 +519,25 @@ pub fn discover(dtb_phys: Option<usize>, fw: Option<DramReport>) -> MemoryMap {
     debug_assert!(img_end.is_multiple_of(4096));
 
     // ST-RAM slot: fixed 16 MiB at DRAM_START. The pool is
-    // [kernel_end, DRAM_START + (STRAM_SLOT_SIZE - STRAM_IO_RESERVE))
-    // — i.e. the Atari `$000000–$DFFFFF` window minus the kernel
-    // image. The top 2 MiB of the slot are intentionally left out
-    // (Atari hardware-register reserve).
+    // [membot, memtop) = [DRAM_START + STRAM_OS_RESERVE,
+    // DRAM_START + STRAM_POOL_MAX) — the Atari `$000000–$DFFFFF` window
+    // minus the OS's fixed budget at the bottom. The top 2 MiB of the
+    // slot stay out (Atari hardware-register reserve, `$E00000–$FFFFFF`),
+    // and that is where `.dma` lives.
+    //
+    // Both edges are constants, so the pool is exactly `STRAM_POOL_BYTES`
+    // on every build. The linker scripts `ASSERT` that the image and the
+    // kernel stack fit below `membot`; the check here is the runtime
+    // mirror of that link-time guarantee.
     let stram_slot_end = dram.start + STRAM_SLOT_SIZE;
-    let stram_pool_end = dram.start + (STRAM_SLOT_SIZE - STRAM_IO_RESERVE);
-    debug_assert!(img_end <= stram_pool_end, "kernel image overruns ST-RAM pool");
-    let stram = PhysRange::new(img_end, stram_pool_end);
+    let stram_pool_end = dram.start + STRAM_POOL_MAX;
+    let membot = dram.start + STRAM_OS_RESERVE;
+    debug_assert!(
+        img_end <= membot,
+        "kernel image + stack overruns the ST-RAM OS reserve"
+    );
+    let stram = PhysRange::new(membot, stram_pool_end);
+    debug_assert!(stram.len() == STRAM_POOL_BYTES);
 
     // Kernel-owned buffers, off the **top** of DRAM, before either pool
     // is formed — EmuTOS' `balloc_stram(size, TRUE)`, which lowers
@@ -530,8 +572,8 @@ pub fn discover(dtb_phys: Option<usize>, fw: Option<DramReport>) -> MemoryMap {
     // to invalid.
     let guard_start = stack_guard_start();
     let guard_end = stack_guard_end();
-    debug_assert!(guard_end - guard_start == 2 * 1024 * 1024);
-    debug_assert!(guard_start.is_multiple_of(2 * 1024 * 1024));
+    debug_assert!(guard_end - guard_start == 4096, "stack guard is one page");
+    debug_assert!(guard_start.is_multiple_of(4096));
     let stack_guard = PhysRange::new(guard_start, guard_end);
 
     MemoryMap {

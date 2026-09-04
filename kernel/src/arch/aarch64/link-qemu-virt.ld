@@ -29,6 +29,25 @@
 VA_OFFSET   = 0xFFFF000000000000;
 KERNEL_PHYS = 0x40080000;
 
+/* ─── Fixed ST-RAM geometry (see bios/machine/layout.rs) ─────────────
+ *
+ * The GEMDOS ST-RAM pool must be a size a program can rely on, not the
+ * remainder behind a kernel image that moves with every build. So the
+ * OS gets a fixed budget at the bottom of the ST-RAM window and the pool
+ * starts at a constant `membot`:
+ *
+ *   DRAM_START            .. +4 MiB   OS: boot stack, image, kernel stack
+ *   membot = +4 MiB       .. +14 MiB  ST-RAM pool — exactly 10 MiB, always
+ *   memtop = phystop = +14 MiB
+ *   +14 MiB .. +16 MiB               .dma (Atari $E00000 register window)
+ *   TTRAM_START = +16 MiB            TT-RAM pool
+ *
+ * `ASSERT` below turns "the kernel outgrew its budget" into a link
+ * error instead of a silently smaller ST-RAM.
+ */
+STRAM_OS_RESERVE_PHYS = 0x40400000;   /* membot */
+DMA_PHYS              = 0x40E00000;   /* $E00000 window, 2 MiB */
+
 ENTRY(_start_phys)
 
 PHDRS
@@ -70,13 +89,6 @@ SECTIONS
         __bss_start = .;
         *(.bss .bss.*)
         *(COMMON)
-        /* DMA block — see link-rpi4.ld. On QEMU (coherent) it stays cached;
-         * the section just has to exist so the `.dma` statics link. */
-        . = ALIGN(2M);
-        __dma_start = .;
-        *(.dma .dma.*)
-        . = ALIGN(2M);
-        __dma_end = .;
         . = ALIGN(16);
         __bss_end_exclusive = .;
     } :segment_data
@@ -98,10 +110,11 @@ SECTIONS
      * of our identity page tables (we have only L0/L1/L2, no L3).
      * Section is NOLOAD so the ELF stays small (segment is RW).
      */
-    .stack (NOLOAD) : ALIGN(2M)
+    .stack (NOLOAD) : ALIGN(4K)
     {
         __stack_guard_start = .;
-        . = . + 2M;
+        . = . + 4K;
+        __stack_guard_end = .;
         __stack_bottom_inclusive = .;
         . = . + 64K;
         __stack_top_exclusive = .;
@@ -113,6 +126,33 @@ SECTIONS
 
     . = ALIGN(4096);
     __kernel_image_end = .;
+
+    ASSERT(__kernel_image_end - VA_OFFSET <= STRAM_OS_RESERVE_PHYS,
+           "kernel image + stack overruns STRAM_OS_RESERVE (membot) -- see bios/machine/layout.rs")
+
+    /* ----- controller DMA block --------------------------------------
+     * A dedicated 2-MiB-aligned, 2-MiB-sized region for all xHCI DMA
+     * structures, so it can be remapped Normal-NC / Device-nGnRnE on the
+     * non-coherent Pi-4 PCIe (PHASE-16 D7) without touching kernel code
+     * or page tables in the same block.
+     *
+     * It sits in the 2 MiB the ST-RAM slot already excludes from every
+     * pool — the Atari hardware-register window `$E00000-$FFFFFF`
+     * (layout.rs::STRAM_IO_RESERVE). That is memory no GEMDOS pool ever
+     * describes, which is exactly what a permanently-owned hardware
+     * buffer needs, and it keeps the 10 MiB ST-RAM pool intact.
+     *
+     * NOLOAD and outside `.bss`, so the boot stub zeroes it through the
+     * separate `__dma_phys_*` pair (arch/aarch64/boot.rs).
+     */
+    . = VA_OFFSET + DMA_PHYS;
+    .dma (NOLOAD) : ALIGN(2M)
+    {
+        __dma_start = .;
+        *(.dma .dma.*)
+        . = ALIGN(2M);
+        __dma_end = .;
+    } :segment_data
 
     /* ─── Phys-address aliases for boot.s pre-MMU access ───────────
      * boot.s uses these to zero BSS and to address its boot page
@@ -126,6 +166,8 @@ SECTIONS
     _start_phys              = _start              - VA_OFFSET;
     __bss_phys_start         = __bss_start         - VA_OFFSET;
     __bss_phys_end_exclusive = __bss_end_exclusive - VA_OFFSET;
+    __dma_phys_start         = __dma_start         - VA_OFFSET;
+    __dma_phys_end           = __dma_end           - VA_OFFSET;
 
     /* Phase 05 D2 — phys aliases for the Stage-1 boot page tables.
      * `__BOOT_L0` and `__BOOT_L1` are `#[no_mangle]` Rust statics in

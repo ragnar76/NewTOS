@@ -331,6 +331,23 @@ pub unsafe extern "C" fn _start() -> ! {
         "b      1b",
         "2:",
 
+        // The controller DMA block is a separate NOLOAD section outside
+        // `.bss` (it lives in the Atari `$E00000` window so the ST-RAM pool
+        // can keep its fixed 10 MiB — see the linker scripts), so it needs
+        // its own clear. Its statics are zero-initialised Rust statics; they
+        // must be zero before any Rust code runs, exactly as if they were
+        // still in `.bss`. On the Pi 4 these zeros are also what
+        // `usb::map_dma_coherent` cleans to RAM before switching the block
+        // to Device-nGnRnE.
+        "ldr    x1, ={dma_phys_start}",
+        "ldr    x2, ={dma_phys_end}",
+        "3:",
+        "cmp    x1, x2",
+        "b.hs   4f",
+        "stp    xzr, xzr, [x1], #16",
+        "b      3b",
+        "4:",
+
         // ───── Stage-1 page tables ───────────────────────────────
         //
         // L0[0] := phys(__BOOT_L1) | TABLE | VALID. L1 is already
@@ -385,6 +402,8 @@ pub unsafe extern "C" fn _start() -> ! {
         stack_end       = sym __boot_core_stack_end_exclusive,
         bss_phys_start  = sym __bss_phys_start,
         bss_phys_end    = sym __bss_phys_end_exclusive,
+        dma_phys_start  = sym __dma_phys_start,
+        dma_phys_end    = sym __dma_phys_end,
         boot_l0_phys    = sym __boot_l0_phys,
         boot_l1_phys    = sym __boot_l1_phys,
         mair_value      = const MAIR_VALUE,
@@ -406,6 +425,8 @@ unsafe extern "C" {
     static __boot_core_stack_end_exclusive: u8;
     static __bss_phys_start: u8;
     static __bss_phys_end_exclusive: u8;
+    static __dma_phys_start: u8;
+    static __dma_phys_end: u8;
     static __boot_l0_phys: u8;
     static __boot_l1_phys: u8;
 }

@@ -490,6 +490,34 @@ pub fn find_xhci(dtb_phys: usize) -> Option<u64> {
         }
     };
 
+    // The inbound window maps CPU-physical `[0, rc_size)` onto PCIe
+    // `[rc_offset, rc_offset + rc_size)`, so every DMA structure the
+    // controller is told about must live below `rc_size`. The `.dma` block
+    // is placed by the linker (in the Atari `$E00000` window, so the ST-RAM
+    // pool keeps its fixed size), and the BCM2711 datasheet documents no
+    // inbound window at all — it describes only the outbound PCIe range in
+    // its address map (RP-008248-DS-1 §1.2.1/§1.2.2). So rather than assume
+    // the placement is reachable, check it against the window we just
+    // programmed and say so on the console.
+    unsafe extern "C" {
+        static __dma_start: u8;
+        static __dma_end: u8;
+    }
+    let dma_lo = mmu::va_to_pa((&raw const __dma_start) as u64);
+    let dma_hi = mmu::va_to_pa((&raw const __dma_end) as u64);
+    if dma_hi > rc_size {
+        crate::kprintln!(
+            "[pcie] .dma block {:#x}..{:#x} is OUTSIDE the {:#x}-byte inbound \
+             window — the controller cannot reach it; USB disabled",
+            dma_lo, dma_hi, rc_size,
+        );
+        return None;
+    }
+    crate::kprintln!(
+        "[pcie] .dma block {:#x}..{:#x} inside the {:#x}-byte inbound window",
+        dma_lo, dma_hi, rc_size,
+    );
+
     // The same PCIe-bus offset applies to every DMA address we hand the xHCI
     // controller (its inbound window is based at `rc_offset`, not 0).
     super::xhci::set_dma_bus_offset(rc_offset);

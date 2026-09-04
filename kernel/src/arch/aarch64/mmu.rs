@@ -70,6 +70,8 @@ const VALID: u64 = 1 << 0;
 const TABLE: u64 = 1 << 1;
 /// Descriptor[1]: at L2 with 4-KiB granule, 0 = 2-MiB block.
 const BLOCK_L2: u64 = 0 << 1;
+/// Descriptor[1]: at L3 with 4-KiB granule, 1 = page (and 0 is invalid).
+const PAGE_L3: u64 = 1 << 1;
 /// Descriptor[4:2]: AttrIndx — index into MAIR_EL1.
 const ATTRIDX_NORMAL: u64 = 0 << 2;
 const ATTRIDX_DEVICE: u64 = 1 << 2;
@@ -97,6 +99,8 @@ const UXN: u64 = 1 << 54;
 // ─────────────────────────────────────────────────────────────────────
 
 const ENTRIES: usize = 512;
+/// 4-KiB translation granule — the L3 page size.
+const PAGE_SIZE: u64 = 4096;
 const L2_BLOCK_SIZE: u64 = 2 * 1024 * 1024;
 const L1_BLOCK_SIZE: u64 = 1024 * 1024 * 1024;
 const NUM_L2: usize = 4; // 4 GiB total coverage
@@ -111,6 +115,23 @@ static mut L0: PageTable = PageTable([0; ENTRIES]);
 static mut L1: PageTable = PageTable([0; ENTRIES]);
 static mut L2: [PageTable; NUM_L2] =
     [const { PageTable([0; ENTRIES]) }; NUM_L2];
+
+/// One L3 table refining the single 2-MiB block that holds the kernel
+/// stack and its guard.
+///
+/// Everything else in the kernel mapping is 2-MiB L2 blocks, and that is
+/// what used to force the stack guard to be a whole 2-MiB block: an
+/// unmapped hole can be no finer than the descriptor granularity. A
+/// 2-MiB guard plus the 2-MiB-aligned stack cost over 4 MiB of the
+/// 14-MiB ST-RAM window, which is why the pool could not have a fixed
+/// size. Refining exactly one block down to 4-KiB pages makes the guard
+/// one page, so the stack fits inside the OS budget below `membot` and
+/// the ST-RAM pool becomes a constant 10 MiB.
+///
+/// One table, 4 KiB of `.bss`. The block is chosen at build time by the
+/// linker (`.stack` follows `.bss`), and [`build`] refines whichever
+/// block ends up containing [`MemoryMap::stack_guard`].
+static mut L3_STACK: PageTable = PageTable([0; ENTRIES]);
 
 /// One extra L2 table for a Device MMIO region **above** the build-time
 /// 4-GiB Stage-2 coverage — see [`map_device_high`]. (The QEMU `virt` high
@@ -150,12 +171,9 @@ pub fn empty_l0_pa() -> u64 {
 /// `None` if the block is unmapped (either outside DRAM/MMIO or
 /// deliberately left invalid as a stack guard, Phase 03 D6).
 fn classify_block(map: &MemoryMap, pa: u64) -> Option<u64> {
-    // The stack guard wins over DRAM containment: it sits inside DRAM
-    // by construction, but must remain unmapped so a stack overflow
-    // takes a synchronous data abort.
-    if pa == map.stack_guard.start {
-        return None;
-    }
+    // The stack guard is *not* handled here any more: it is a single
+    // 4-KiB page, so it is punched out at L3 by [`refine_stack_block`],
+    // which replaces this block's descriptor with a table descriptor.
     if range_contains_block(&map.dram, pa, L2_BLOCK_SIZE) {
         // Normal RAM. Code from .text lives here, so do not set PXN.
         Some(VALID | BLOCK_L2 | AF | AP_RW_EL1 | ATTRIDX_NORMAL | SH_INNER | UXN)
@@ -208,6 +226,9 @@ fn build(map: &MemoryMap) {
         }
     }
 
+    // Refine the one block holding the stack guard down to 4-KiB pages.
+    refine_stack_block(map, l2_mut);
+
     // Fill L1: one table descriptor per L2 we built. Iterate L2 by
     // reference so the addresses come straight from the slice
     // pointers — no `L2[i]` indexing is needed.
@@ -227,6 +248,50 @@ fn build(map: &MemoryMap) {
     let l1_pa = va_to_pa((&raw const L1) as u64);
     let l0_mut: &mut PageTable = unsafe { &mut *(&raw mut L0) };
     l0_mut.0[0] = l1_pa | VALID | TABLE;
+}
+
+/// Replace the L2 block descriptor covering the kernel stack guard with a
+/// table descriptor to [`L3_STACK`], and fill that L3 with 4-KiB pages —
+/// Normal everywhere except the guard, which stays invalid.
+///
+/// This is what makes the guard cost one page instead of a whole 2-MiB
+/// block, which in turn is what lets the kernel stack fit under the fixed
+/// `membot` and the ST-RAM pool have a constant size
+/// (`bios::machine::layout::STRAM_OS_RESERVE`).
+///
+/// Runs pre-MMU from [`build`], on the boot CPU, with exclusive access to
+/// the static tables.
+#[allow(clippy::deref_addrof)]
+fn refine_stack_block(map: &MemoryMap, l2: &mut [PageTable; NUM_L2]) {
+    let block = map.stack_guard.start & !(L2_BLOCK_SIZE - 1);
+    debug_assert!(
+        map.stack_guard.end <= block + L2_BLOCK_SIZE,
+        "stack guard must not straddle a 2-MiB block"
+    );
+
+    // SAFETY: pre-MMU, single-threaded boot path (see `build`).
+    let l3 = unsafe { &mut *(&raw mut L3_STACK) };
+    for (k, slot) in l3.0.iter_mut().enumerate() {
+        let pa = block + (k as u64) * PAGE_SIZE;
+        *slot = if map.stack_guard.contains(pa) {
+            // The guard: left invalid so a stack overflow takes a
+            // synchronous data abort instead of silently corrupting the
+            // memory below the stack (Phase 03 D6).
+            0
+        } else if range_contains_block(&map.dram, pa, PAGE_SIZE) {
+            // Same attributes `classify_block` gives Normal DRAM, at page
+            // granularity. PXN stays clear: this block may hold code.
+            pa | VALID | PAGE_L3 | AF | AP_RW_EL1 | ATTRIDX_NORMAL | SH_INNER | UXN
+        } else {
+            0
+        };
+    }
+
+    let i = (block / L1_BLOCK_SIZE) as usize;
+    let j = ((block % L1_BLOCK_SIZE) / L2_BLOCK_SIZE) as usize;
+    debug_assert!(i < NUM_L2, "stack guard outside the static L2 coverage");
+    let l3_pa = va_to_pa((l3 as *const PageTable) as u64);
+    l2[i].0[j] = l3_pa | VALID | TABLE;
 }
 
 // ─────────────────────────────────────────────────────────────────────
@@ -400,7 +465,13 @@ unsafe fn remap_l2_attrs(va: u64, len: u64, attrs: u64) {
             // Never touch a Device block (MMIO), which is never a target.
             let is_device =
                 old & VALID != 0 && (old & ATTRIDX_MASK) == ATTRIDX_DEVICE;
-            if !is_device {
+            // A *table* descriptor (the one block refined to 4-KiB pages
+            // for the stack guard) must never be overwritten with a block
+            // descriptor — that would unmap the kernel stack. No caller
+            // targets it; the check makes that structural.
+            let is_table = old & VALID != 0 && old & TABLE != 0;
+            debug_assert!(!is_table, "remap_l2_attrs would clobber the stack L3 table");
+            if !is_device && !is_table {
                 // Break-before-make for this block (ARM ARM K11.5). For a
                 // previously-invalid block the zero-write is a harmless
                 // no-op; the TLBI drops any stale (or speculatively cached
