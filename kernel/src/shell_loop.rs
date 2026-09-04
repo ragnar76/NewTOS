@@ -145,13 +145,16 @@ fn have_graphics() -> bool {
 ///
 /// On NewTOS the "workstation" is the framebuffer the VDI draws into and it is
 /// never closed, so `gsx_graphic(TRUE)`/`gsx_malloc()` have no counterpart to
-/// perform; what is observable — leaving the VT52 text console
-/// ([`crate::fbcon`]), an active mouse and the hourglass shape — is done here.
-/// `retake()` restores the critical-error handler and the AES trap vector,
-/// neither of which a NewTOS program can displace (the trap vector is the
-/// exception table, not a writable low-memory long).
+/// perform; what is observable — an active mouse and the hourglass shape — is
+/// done here. `retake()` restores the critical-error handler and the AES trap
+/// vector, neither of which a NewTOS program can displace (the trap vector is
+/// the exception table, not a writable low-memory long).
+///
+/// Going graphic does **not** silence the character console: EmuTOS'
+/// `bconout2` writes into screen memory whichever mode the AES thinks it is
+/// in, so a program that prints here paints over the GEM screen, on TOS as on
+/// NewTOS. See [`crate::fbcon`].
 fn sh_tographic() {
-    crate::fbcon::deactivate();
     ratinit(); // `ratinit()` (:236)
     if let Some(b) = tos_api::host::host().and_then(|h| h.raster()) {
         // `set_mouse_to_hourglass()` (:237) — AES preset shape 2.
@@ -172,7 +175,7 @@ fn sh_toalpha() {
         // `ratexit()` (:256) — `gsx_moff()`, hide the cursor.
         tos_api::vdi::mouse::hide(b);
     }
-    crate::fbcon::activate();
+    crate::fbcon::clear_and_home();
 }
 
 /// `ratinit` (`aes/gemgsxif.c:205-209`) — `gsx_1code(SHOW_CUR, 0); gl_moff = 0;`

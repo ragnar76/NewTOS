@@ -359,10 +359,10 @@ extern "C" fn kernel_main_rust(dtb_phys: usize) -> ! {
     // welcome screen become boot flags, read by `run_auto_folder` below.
     launch::set_bootflags_from_shiftbits(shiftbits);
 
-    // Switch the screen to the framebuffer console first, so any boot /
-    // AUTO-program console output (Cconws) is visible on HDMI — EmuTOS shows
-    // its AUTO programs on the console before the GUI.
-    fbcon::activate();
+    // Give the character console a clean screen with the cursor homed, so the
+    // boot / AUTO-program console output (Cconws) starts at the top left —
+    // EmuTOS shows its AUTO programs on the console before the GUI.
+    fbcon::clear_and_home();
 
     // Run the AUTO folder (\AUTO\*.PRG) before the GUI — EmuTOS' autoexec.
     // No-op until the boot drive has an \AUTO\ folder with programs; an

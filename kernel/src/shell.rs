@@ -14,7 +14,7 @@ const LINE_MAX: usize = 128;
 /// This is the EmuCON-style console launched from the desktop ("Execute
 /// EmuCON"); on return the caller redraws the desktop.
 pub fn run_console() {
-    crate::fbcon::activate();
+    crate::fbcon::clear_and_home();
     puts(b"NewTOS console (EmuCON) - 'help' for commands, 'exit' to return.\r\n\r\n");
 
     let mut line = [0u8; LINE_MAX];
@@ -83,7 +83,7 @@ fn execute(line: &mut [u8; LINE_MAX], n: usize) -> bool {
         b"exit" | b"quit" => return true,
         b"help" => cmd_help(),
         b"ver" => puts(b"NewTOS 0.1 - clean-room TOS for AArch64\r\n"),
-        b"cls" => crate::fbcon::activate(),
+        b"cls" => crate::fbcon::clear_and_home(),
         b"pwd" => cmd_pwd(),
         b"cd" => cmd_cd(line, arg_start, n),
         b"dir" | b"ls" => cmd_dir(line, arg_start, n),

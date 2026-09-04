@@ -24,6 +24,14 @@ pub mod backend;
 mod attributes;
 mod contour;
 mod escape;
+/// The machine's one **alpha (text) screen**: the cursor, reverse-video flag
+/// and cell rendering that the VDI escape sub-functions *and* the BIOS
+/// `Bconout(2, …)` console share. EmuTOS keeps that state in the BIOS VT-52
+/// console and lets the escapes write to it through `Bconout`/`Crawio`
+/// (`vdi/vdi_esc.c:29-42`); NewTOS keeps it here and lets the kernel's
+/// console adapter (`kernel::fbcon`) write to it, which is the same single
+/// state with the call direction inverted.
+pub use escape::{clear_home as alpha_clear_home, conout as alpha_conout};
 mod fill_patterns;
 pub mod font;
 mod font_data;

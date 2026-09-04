@@ -26,7 +26,7 @@ pub enum Flavor {
     /// desktop, so the launcher runs it with no special screen setup.
     App,
     /// `.NCP` — native console program; runs on a VT52 text screen
-    /// (`fbcon::activate` before, desktop restore after).
+    /// (`fbcon::clear_and_home` before, desktop restore after).
     Console,
     /// `.NTP` — native program that takes a command tail (prompted for before
     /// launch; the tail dialog is a Stage-3 follow-on).

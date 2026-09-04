@@ -446,10 +446,12 @@ fn native_path(p_spec: &str, name: &[u8]) -> String {
 ///
 /// * [`ftype::Flavor::App`] (`.NAP`) — run directly; the app draws its own AES
 ///   UI over the desktop, so nothing special is needed around the call.
-/// * [`ftype::Flavor::Console`] (`.NCP`) — switch to the VT52 text screen
-///   (`fbcon::activate`) so the program's console output is visible, run it,
-///   then repaint the desktop over the text below — mirroring
-///   [`crate::shell::run_console`]'s enter/restore. `run_program` is kept pure
+/// * [`ftype::Flavor::Console`] (`.NCP`) — clear the screen and home the
+///   cursor (`fbcon::clear_and_home`), the same `ESC E` a GEM program's
+///   `v_enter_cur` sends before it runs a TOS program, so the child's output
+///   starts at the top left; run it, then repaint the desktop over the text
+///   below — mirroring [`crate::shell::run_console`]'s enter/restore.
+///   `run_program` is kept pure
 ///   (no console/redraw coupling); the enter is done here and the restore is
 ///   the trailing [`redraw::redraw_desktop`] (whole-screen recovery — the
 ///   console cleared the screen).
@@ -480,7 +482,7 @@ fn launch_native(path: &str, name: &str, flavor: ftype::Flavor, tail: &[u8]) {
         ftype::Flavor::Console => {
             // Console (`.NCP`): its own VT52 text-screen enter/restore, NOT the
             // GEM screen handoff — left exactly as before.
-            crate::fbcon::activate();
+            crate::fbcon::clear_and_home();
             let ran = crate::launch::run_program_with_tail(path.as_bytes(), tail);
             // Classic TOS keeps the console up until the user acknowledges, so
             // the program's final output stays readable before the desktop

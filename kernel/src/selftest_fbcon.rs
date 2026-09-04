@@ -7,12 +7,12 @@
 //! unprivileged `ldtrb` load and therefore needs an EL0-accessible
 //! pointer — a kernel string would fault).
 
-/// Activate the framebuffer console and render a banner via `Cconout`.
+/// Clear the framebuffer console and render a banner via `Cconout`.
 pub fn run() {
     if !crate::vdi_backend::available() {
         return;
     }
-    crate::fbcon::activate();
+    crate::fbcon::clear_and_home();
     puts(b"NewTOS - framebuffer console (VT52)\r\n");
     puts(b"-----------------------------------\r\n");
     puts(b"GEMDOS Cconout now renders on HDMI.\r\n");

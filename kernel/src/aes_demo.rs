@@ -33,7 +33,7 @@ fn show(label: &str, f: impl FnOnce()) {
 
 /// Run the showcase loop forever.
 pub fn showcase() -> ! {
-    crate::fbcon::activate();
+    crate::fbcon::clear_and_home();
     kprintln!("[demo] NewTOS AES showcase — time-driven, ~5 s per screen");
 
     // Non-visual managers: round-trip once to the serial log.

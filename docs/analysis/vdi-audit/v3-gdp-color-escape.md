@@ -87,8 +87,10 @@
 - EmuTOS: liest echten HW-Wert zurück, DAC-quantisiert (Videl 500→502) (vdi_col.c:897). NewTOS: `backend.query_color` gibt last-requested unquantisiert (backend.rs:97). Klein fürs Falcon-Ziel, aber Contract. Quant. liegt im Backend (teilw. OOS).
 
 ### AUD-V3-011: Alpha-Layer privat statt geteilte BIOS-VT-52-Konsole
-- Severity: LOW-MED · PLAUSIBLE
-- EmuTOS: alle Alpha-Escapes treiben die eine BIOS-Konsole (geteilter Cursor/Reverse). NewTOS: eigene CUR_X/CUR_Y/REVERSE-Statics auf RasterBackend (escape.rs:19), entkoppelt. Bewusste Architektur (escape.rs:5-8); bei gemischter Konsole+Alpha inkonsistent.
+- Severity: LOW-MED · **BEHOBEN 2026-09-04** (war: PLAUSIBLE)
+- EmuTOS: alle Alpha-Escapes treiben die eine BIOS-Konsole (geteilter Cursor/Reverse). NewTOS hatte eigene CUR_X/CUR_Y/REVERSE-Statics auf RasterBackend (escape.rs:19), entkoppelt von `kernel::fbcon`.
+- **Die vorhergesagte Inkonsistenz ist real eingetreten:** ein aus einem GEM-Programm klassisch gestartetes TOS-Programm (`v_enter_cur` + `Pexec`, so macht es TeraDesk) druckte auf echter Pi-4-HW **nichts** — `v_enter_cur` loeschte den Bildschirm auf dieser Ebene, die Konsolenausgabe ging auf die andere (und war dort zusaetzlich durch ein NewTOS-eigenes `ACTIVE`-Gate abgeschaltet).
+- **Fix:** `escape.rs` ist jetzt die **eine** Alpha-Ebene; `kernel::fbcon` (das `Bconout(2,…)`-Geraet) rendert ueber `tos_api::vdi::alpha_conout` durch dieselben Statics, ohne Gate. Rest-Abweichung: kein gezeichneter Block-Cursor (`ESC e`/`ESC f`), siehe Modul-Doku.
 
 ### AUD-V3-012: `v_enter_cur` setzt Reverse-Video zurück; EmuTOS nicht
 - Severity: LOW · CONFIRMED

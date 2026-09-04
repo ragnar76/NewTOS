@@ -2,22 +2,26 @@
 //! cursor controls and a few inquiries. Spec: `docs/api/vdi/_escape.md`.
 //! The sub-function is in `CONTRL[5]`; `> 19` is a no-op.
 //!
-//! NewTOS drives a **self-contained** alpha layer directly over the
-//! [`RasterBackend`] using the 8×16 system [`font`], with its own cursor
-//! row/column and reverse-video state.
+//! NewTOS drives the alpha layer directly over the [`RasterBackend`] using
+//! the 8×16 system [`font`], with a cursor row/column and a reverse-video
+//! flag.
 //!
-//! This is a deliberate architecture deviation from EmuTOS (AUD-V3-011):
-//! EmuTOS routes every alpha escape through the *single shared* BIOS VT-52
-//! console (`vdi_esc.c`, `bios_conws`/`crawio`), so its alpha cursor,
-//! reverse-video flag and scroll are the same state GEMDOS/BIOS console
-//! output uses. NewTOS keeps the two apart — the VDI alpha layer here and
-//! the kernel's framebuffer console for GEMDOS/BIOS. The alpha cursor is
-//! **logical only** (position tracking); no visible block cursor is drawn,
-//! so EmuTOS' VT-52 cursor hide/show sequences (`ESC f`/`ESC e`, emitted by
-//! `v_exit_cur`/`v_enter_cur`) have no rendered counterpart here. Building
-//! the shared BIOS-console redirect is a large, separate change and is left
-//! as this documented deviation; the escape fixes below all operate cleanly
-//! on the private [`RasterBackend`] layer.
+//! **This layer is the machine's one alpha screen.** In EmuTOS every alpha
+//! escape is a write to the *single* BIOS VT-52 console: `bios_conws` is
+//! literally `while (*s) Bconout(2, *s++)` and `v_curtext` feeds each
+//! character to `Crawio` (`vdi_esc.c:29-42,83,95,205`), so the alpha cursor,
+//! the reverse-video flag, the scroll and the screen the escapes touch are
+//! the same ones BIOS/GEMDOS console output touches. NewTOS keeps that
+//! single state — here — and the kernel's framebuffer console
+//! (`kernel::fbcon`, the `Bconout(2, …)` device) renders *through* it via
+//! [`conout`]. Only the direction is inverted relative to EmuTOS (there the
+//! escapes call the console; here both call this layer), because the cell
+//! rendering lives in the VDI crate.
+//!
+//! The remaining, deliberate sub-deviation: the alpha cursor is **logical
+//! only** (position tracking); no visible block cursor is drawn, so EmuTOS'
+//! VT-52 cursor hide/show sequences (`ESC f`/`ESC e`, emitted by
+//! `v_exit_cur`/`v_enter_cur`) have no rendered counterpart.
 
 use core::sync::atomic::{AtomicBool, AtomicI16, Ordering};
 
@@ -104,6 +108,76 @@ fn erase_cells(backend: &dyn RasterBackend, row: i16, col0: i16, col1: i16) {
         BG,
         clip,
     );
+}
+
+/// Clear the alpha screen and home the cursor from **outside** the escape
+/// dispatcher — the `ESC E` (`\033E`) both `v_exit_cur` and `v_enter_cur`
+/// send to the console (`vdi_esc.c:83,95`), which is also what closing and
+/// re-opening the workstation leaves behind. The kernel calls this when it
+/// hands the screen to the character console.
+pub fn clear_home(backend: &dyn RasterBackend) {
+    clear_and_home(backend);
+}
+
+/// Write one character to the alpha screen — the VT-52 console output
+/// EmuTOS reaches with `Bconout(2, ch)` (`vdi_esc.c:39-42`, `bios/conout.c`).
+///
+/// This is the *same* cursor, reverse-video flag and screen the escape
+/// sub-functions above drive, which is the point: a `v_enter_cur` that
+/// clears and homes is followed by console output starting at the home
+/// position, exactly as on TOS. The kernel's `Bconout(2, …)` device
+/// (`kernel::fbcon`) is a thin adapter onto this function.
+///
+/// Handled controls: `CR` (column 0), `LF` (next line, scrolling at the
+/// bottom), `BS` (back one cell and erase it) and `TAB` (next multiple of
+/// eight columns). Codes `0x20..=0xFF` print; other control codes are
+/// ignored — NewTOS' VT-52 console does not parse `ESC` sequences from the
+/// character stream (the escapes arrive through `v_escape` instead).
+pub fn conout(backend: &dyn RasterBackend, ch: u8) {
+    let (mx, my) = (cols(backend) - 1, rows(backend) - 1);
+    match ch {
+        b'\r' => CUR_X.store(0, Ordering::Relaxed),
+        b'\n' => newline(backend, mx, my),
+        0x08 => {
+            // Backspace: step back and erase the cell.
+            let x = CUR_X.load(Ordering::Relaxed);
+            if x > 0 {
+                CUR_X.store(x - 1, Ordering::Relaxed);
+                erase_cells(backend, CUR_Y.load(Ordering::Relaxed), x - 1, x - 1);
+            }
+        }
+        0x09 => {
+            // Tab to the next multiple of eight columns.
+            let n = ((CUR_X.load(Ordering::Relaxed) & !7) + 8).min(mx + 1);
+            CUR_X.store(n, Ordering::Relaxed);
+            if n > mx {
+                newline(backend, mx, my);
+            }
+        }
+        0x20..=0xFF => {
+            let (x, y) = (CUR_X.load(Ordering::Relaxed), CUR_Y.load(Ordering::Relaxed));
+            put_cell(backend, x, y, ch as u16);
+            if x + 1 > mx {
+                newline(backend, mx, my);
+            } else {
+                CUR_X.store(x + 1, Ordering::Relaxed);
+            }
+        }
+        _ => {} // other control characters: ignored
+    }
+}
+
+/// Column 0 of the next line, scrolling the alpha screen when the cursor
+/// would leave the last row.
+fn newline(backend: &dyn RasterBackend, mx: i16, my: i16) {
+    CUR_X.store(0, Ordering::Relaxed);
+    let y = CUR_Y.load(Ordering::Relaxed) + 1;
+    if y > my {
+        scroll_up(backend, mx, my);
+        CUR_Y.store(my, Ordering::Relaxed);
+    } else {
+        CUR_Y.store(y, Ordering::Relaxed);
+    }
 }
 
 /// Opcode 5 — `v_escape`: dispatch on `CONTRL[5]`.
