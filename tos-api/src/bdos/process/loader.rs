@@ -838,9 +838,11 @@ fn populate_sysvars(tpa: &mut [u8]) {
     // own EL0 VA, so that is the faithful analogue of `_os_header`.
     // os_end (+0x0C): "end of ST-RAM statically used by the OS"
     // (`biosdefs.h:52`; EmuTOS `__endvdibss`, startup.S:90-91 — the same point
-    // `bmem_init` calls `_end_os_stram`, biosmem.c:66). NewTOS' OS ends at
-    // `__kernel_image_end`, which is exactly where the ST-RAM pool begins,
-    // so `os_end == end_os == membot == stram_start`. (Until BB2 both
+    // `bmem_init` calls `_end_os_stram`, biosmem.c:66). NewTOS' OS budget in
+    // the ST-RAM window ends at the fixed `membot`
+    // (`kernel::bios::machine::layout::STRAM_OS_RESERVE`), which is exactly
+    // where the ST-RAM pool begins, so
+    // `os_end == end_os == membot == stram_start`. (Until BB2 both
     // fields carried the pool *bounds* instead, which made the classic
     // "free ST-RAM = memtop - os_end" come out as 0.)
     let (stram_start, stram_end) = crate::bdos::mem::init::stram_range();

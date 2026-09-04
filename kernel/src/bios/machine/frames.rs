@@ -22,11 +22,21 @@
 //!
 //! # Reservations
 //!
-//! The pool extents (`map.stram`, `map.ttram` from
-//! [`layout::discover`][crate::bios::machine::layout::discover]) start
-//! **above** `__kernel_image_end`, so the kernel image, page tables
-//! (in BSS) and boot stack are all outside both pools by
-//! construction — no explicit reservation step is required.
+//! No explicit reservation step is required: the pool extents
+//! (`map.stram`, `map.ttram` from
+//! [`layout::discover`][crate::bios::machine::layout::discover]) are
+//! constructed so that nothing kernel-owned falls inside them.
+//!
+//! * The ST-RAM pool starts at the fixed `membot`
+//!   ([`layout::STRAM_OS_RESERVE`][crate::bios::machine::layout::STRAM_OS_RESERVE]),
+//!   above the boot stack, the kernel image, the page tables (in BSS) and
+//!   the kernel stack — a linker `ASSERT` keeps them below it.
+//! * `.dma` sits in the 2 MiB the ST-RAM slot excludes anyway
+//!   ([`STRAM_IO_RESERVE`][crate::bios::machine::layout::STRAM_IO_RESERVE],
+//!   the Atari `$E00000` window), between the two pools.
+//! * The kernel heap and (on `board-qemu-virt`) the framebuffer come out
+//!   of [`MemoryMap::os_reserve`][crate::bios::machine::layout::MemoryMap],
+//!   carved off the top of DRAM before the pools are formed.
 
 #![allow(dead_code)] // consumed by heap (D5) and Mxalloc (D6).
 
