@@ -1636,6 +1636,42 @@ To re-diagnose, dump `IGROUPR`/`ISPENDR`/`IPRIORITYR` at the GICD
 (`0xFF841000`) and PL011 `RIS`/`MIS` (`0xFE201000`) while a key sits
 undrained in the FIFO.
 
+### Correction 2026-09-04 — "never delivered" is not established
+
+The 2026-09-04 boot-screen measurement on real hardware (no keyboard, no
+mouse, no serial adapter attached) found **one key word already queued in
+the IKBD ring before the boot screen was drawn**, value `0x0000`, and the
+PL011 in the state a completed drain leaves behind: `FR = 0x0091`
+(`RXFE` = FIFO empty), `RIS = 0x0020` (no `RXRIS`/`RTRIS`, and no
+`FE`/`PE`/`BE`/`OE` — so the received character was a clean `0x00` frame,
+not a line break). Two independent readings of that:
+
+* Only two functions can advance that ring: `console::pl011_rx_drain`
+  (the INTID-153 IRQ) and `console::push_rx` (the IKBD decoder). The IKBD
+  decoder is reachable only through `drivers::usb::poll`, which runs only
+  from `Host::pump_input` / the blocking console reads — **none of which
+  execute before `initinfo`'s wait loop takes that snapshot**
+  (`kernel_main_rust` calls `usb::init` and then `initinfo::run`, whose
+  drawing path makes no input call). So the drain ran.
+* Had no drain ever run, the received character would still be in the RX
+  FIFO (`RXFE` = 0) and `RTRIS` would still be raised — nothing else
+  clears either. Both are clear, so the FIFO was drained.
+
+⇒ **INTID 153 was delivered to the kernel at least once on this
+machine+firmware.** The `IGROUPR[153] = 0` reading above does not refute
+this: `GICD_IGROUPR` is RAZ from Non-secure state, so that read carries no
+information — the "Group 0 ⇒ never delivered" step was an inference, not a
+measurement, and the original symptom (typed serial bytes not arriving)
+has other candidate causes (e.g. RXD0 wiring / the cleared pull on GPIO 15).
+Treat "the PL011 RX IRQ is not delivered on real RPi4" as **unproven**
+until re-measured directly. The consequence that mattered: `c6e4bfb` left
+the IRQ→CON path in place *because* of this claim, and that path delivered
+a phantom keystroke into CON on every boot (fixed — see STATUS 2026-09-04,
+`console::serial_rx_byte`).
+
+Also stale above: `console::pl011_rx_poll` no longer exists (deleted in
+`c6e4bfb`); on real Pi-4 CON is the USB-HID keyboard alone.
+
 ### Source
 
 BCM2711 ARM Peripherals §6 (GIC-400); ARM IHI 0048B §1.4 (GICv2 security,
