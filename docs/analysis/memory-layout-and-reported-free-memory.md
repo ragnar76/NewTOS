@@ -885,7 +885,10 @@ Der eine Rest an Unsicherheit: jede Quelle mit `dram.end` innerhalb von
 1 MiB oberhalb `0x30000000` ergäbe dieselbe Anzeige. `0x30000000` ist der
 einzige Wert in diesem Fenster, der eine Bedeutung hat.
 
-### 13.6 Was 2026-09-04 geändert wurde — und was ausdrücklich nicht
+### 13.6 Was in der ersten Runde des 2026-09-04 geändert wurde
+
+> **Nachtrag:** die drei hier als offen gelisteten Punkte sind noch am
+> selben Tag entschieden und umgesetzt worden — siehe §14.
 
 **Geändert:**
 
@@ -914,7 +917,7 @@ einzige Wert in diesem Fenster, der eine Bedeutung hat.
 * **Der eigentliche Wunsch „ST-RAM fest auf 10 MB".** Er ist mit dem heutigen
   Layout nicht erreichbar, siehe §13.7.
 
-### 13.7 Warum „ST-RAM = feste 10 MB" eine ADR-Entscheidung ist
+### 13.7 Der Weg zum festen 10-MB-ST-RAM — Vorlage, umgesetzt in §14
 
 Nach dem Fix aus §13.6 ist der ST-RAM-Pool wieder 5,92 MiB — aber immer noch
 **ein Rest, kein Wert**. Er hängt an `__kernel_image_end`, und der springt in
