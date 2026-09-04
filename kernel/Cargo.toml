@@ -25,6 +25,13 @@ board-qemu-virt = []
 # Pass-through for the AES trap-path tracer (`tos_api::aes::trace`). Off by
 # default; build with `--features aes-trace` to instrument the AES trap path.
 aes-trace = ["tos-api/aes-trace"]
+# Boot-screen (initinfo) diagnostic build: records what EmuTOS' initinfo wait
+# loop actually saw on the machine (clock, key ring, modifier state, iteration
+# count, exit reason) and, instead of continuing the boot, shows it on screen
+# and stops. Off by default; a temporary instrument for the real-Pi-4
+# "boot screen not held" investigation, built with
+# `cargo xtask build --board rpi4 --release --features initinfo-diag`.
+initinfo-diag = []
 # Pass-through for the GEMDOS trap-path tracer (`tos_api::gemdos::trace`). Off
 # by default; build with `--features gemdos-trace` to instrument the GEMDOS
 # trap path (what an application actually asks the file system for).

@@ -204,6 +204,10 @@ unsafe extern "C" {
 /// Phase 03 D8: the DTB pointer feeds `bios::machine::layout::discover` so the
 /// memory map reflects the actual installed DRAM rather than the
 /// compile-time board default.
+// The `initinfo-diag` build ends the boot inside `initinfo::diag::show()`
+// (a `-> !`), which makes the rest of this function unreachable — that is the
+// point of that build, not a defect.
+#[cfg_attr(feature = "initinfo-diag", allow(unreachable_code))]
 extern "C" fn kernel_main_rust(dtb_phys: usize) -> ! {
     use crate::hal::uart::Uart;
 
@@ -323,6 +327,12 @@ extern "C" fn kernel_main_rust(dtb_phys: usize) -> ! {
     // was too short for an HDMI monitor still locking its mode and could not
     // be skipped or extended by the user.
     let shiftbits = initinfo::run();
+
+    // Diagnostic build only: report what the wait loop actually saw and stop
+    // the boot there, so nothing can overwrite the report (this machine has no
+    // serial line). See `initinfo::diag`.
+    #[cfg(feature = "initinfo-diag")]
+    initinfo::diag::show(shiftbits);
 
     // Development self-tests are no longer invoked during the normal
     // boot — the system goes straight to the console. They remain in the
