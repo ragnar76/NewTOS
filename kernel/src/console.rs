@@ -3,13 +3,16 @@
 //! `CONSOLE` resolves to the PL011 driver instance for the active board so
 //! callers can `use kernel::console::CONSOLE;` without per-board `cfg`s.
 //!
-//! The RX ringbuffer holds key **words** (`scancode << 8 | ascii`). On
-//! real Pi-4 it is filled by the IKBD decoder ([`push_rx`], fed from the
-//! USB-HID keyboard); on qemu-virt it is filled from the PL011 RX IRQ
-//! handler ([`pl011_rx_drain`], serial console — a plain ASCII byte with
-//! scancode 0). It is consumed by the TOS-API host (`host_env.rs`).
-//! PHASE-02 D5 keeps the buffer small (128 entries); a typing burst that
-//! overflows simply drops keys — the GEMDOS console functions are
+//! The RX ringbuffer is the **IKBD queue** — EmuTOS' `ikbdiorec`
+//! (`bios/ikbd.c:157-173`), the queue `bconstat2`/`bconin2` read. It holds
+//! key **words** (`scancode << 8 | ascii`) and is consumed by the TOS-API
+//! host (`host_env.rs`). Who may fill it is a per-board decision that
+//! mirrors EmuTOS' `CONF_SERIAL_CONSOLE` switch — see [`serial_rx_byte`]:
+//! on real Pi-4 only the IKBD decoder ([`push_rx`], fed from the USB-HID
+//! keyboard); on qemu-virt additionally the PL011 RX IRQ handler
+//! ([`pl011_rx_drain`], serial console — a plain ASCII byte with scancode
+//! 0). PHASE-02 D5 keeps the buffer small (128 entries); a typing burst
+//! that overflows simply drops keys — the GEMDOS console functions are
 //! stateless w.r.t. lost input.
 
 use core::sync::atomic::{AtomicUsize, Ordering};
@@ -108,14 +111,59 @@ impl RxRing {
 
 static RX_RING: RxRing = RxRing::new();
 
-/// Drain the PL011 RX FIFO into the ringbuffer and acknowledge the
-/// RX-side interrupt sources. Called from the GIC IRQ handler when the
-/// PL011 INTID is signalled.
+/// Drain the PL011 RX FIFO and acknowledge the RX-side interrupt sources.
+/// Called from the GIC IRQ handler when the PL011 INTID is signalled.
+/// Where the received bytes go is the board's console profile —
+/// [`serial_rx_byte`].
 pub fn pl011_rx_drain() {
     while let Some(b) = CONSOLE.read_byte() {
-        RX_RING.push(b as u16); // serial byte → key word (scancode 0)
+        serial_rx_byte(b);
     }
     CONSOLE.clear_rx_interrupt();
+}
+
+/// Route one byte received on the serial line — the board's EmuTOS console
+/// profile decides where it goes.
+///
+/// qemu-virt has no other console input device, so it is the
+/// `CONF_SERIAL_CONSOLE = 1` profile: *"use exclusively the serial port
+/// input for console input"* (`references/emutos/include/config.h:1422-1429`).
+/// There EmuTOS' RS-232 receive interrupt calls `push_ascii_ikbdiorec`, i.e.
+/// the byte enters the **IKBD** queue (`bios/serport.c:352-357`), which is
+/// exactly what happens here: it becomes a key word with scancode 0.
+#[cfg(feature = "board-qemu-virt")]
+fn serial_rx_byte(b: u8) {
+    #[cfg(feature = "initinfo-diag")]
+    crate::initinfo::diag::note_push(crate::initinfo::diag::PUSH_SRC_SERIAL, b as u16);
+    RX_RING.push(b as u16);
+}
+
+/// Real Pi-4 has its own screen and its own keyboard (USB-HID), so it is
+/// EmuTOS' default `CONF_SERIAL_CONSOLE = 0` profile
+/// (`references/emutos/include/config.h:1427-1429`) — the one every machine
+/// with a console of its own is built with. There the RS-232 receiver pushes
+/// into `iorec1`, the **RS-232 device** (BIOS handle 1,
+/// `bios/serport.c:331-343` `push_serial_iorec`), and *never* into the IKBD
+/// queue; `push_ascii_ikbdiorec` is not even compiled (`bios/ikbd.c:175,231`).
+/// NewTOS' device profile declares handle 1 (AUX) absent with EmuTOS'
+/// `char_dummy` semantics — status 0, input 0 (`tos_api::bios::chardev`) — so
+/// the byte has no destination and is dropped here.
+///
+/// This is not cosmetic. UART0 is the debug console; on this board CON is the
+/// USB-HID keyboard alone (STATUS 2026-07-03 K1, `c6e4bfb`), and that commit
+/// left the IRQ path feeding CON only because the PL011 RX interrupt was
+/// believed to be undeliverable here (`docs/MEMORY.md` QUIRK-002). The
+/// 2026-09-04 boot-screen measurement disproves that: with no serial adapter
+/// attached, GPIO 15 (RXD0) is an input with **no pull**
+/// (`bcm2711::pl011::configure_uart0_pins`) and clocked in one spurious
+/// `0x00` character — the same effect `docs/hardware/ikbd-uart.md:104` records
+/// for a floating RXD2 — which arrived in this queue as a key word `0x0000`
+/// before the boot screen was even drawn, and was eaten by the first
+/// `Bconstat(2)`/`Bconin(2)` of the boot.
+#[cfg(not(feature = "board-qemu-virt"))]
+fn serial_rx_byte(_b: u8) {
+    #[cfg(feature = "initinfo-diag")]
+    crate::initinfo::diag::note_serial_drop(_b);
 }
 
 /// Push a key **word** into the RX ringbuffer from the IKBD decoder:
@@ -123,6 +171,8 @@ pub fn pl011_rx_drain() {
 /// arrow / function keys). ASCII readers (`rx_pop`) take the low byte;
 /// the AES event manager reads the whole word via [`rx_pop_key`].
 pub fn push_rx(word: u16) {
+    #[cfg(feature = "initinfo-diag")]
+    crate::initinfo::diag::note_push(crate::initinfo::diag::PUSH_SRC_IKBD, word);
     RX_RING.push(word);
 }
 
@@ -160,4 +210,17 @@ pub fn rx_peek_key() -> Option<u16> {
 /// `true` if the RX ringbuffer holds at least one byte.
 pub fn rx_has_input() -> bool {
     !RX_RING.is_empty()
+}
+
+/// The RX ringbuffer's raw producer/consumer indices — `(head, tail)`.
+///
+/// Diagnostic accessor for the `initinfo-diag` build: the boot-screen wait
+/// loop's "a key is waiting" test is `head != tail`, so the two raw indices
+/// say both *whether* something was queued and *how much* ever arrived.
+#[cfg(feature = "initinfo-diag")]
+pub fn rx_indices() -> (usize, usize) {
+    (
+        RX_RING.head.load(Ordering::Acquire),
+        RX_RING.tail.load(Ordering::Acquire),
+    )
 }

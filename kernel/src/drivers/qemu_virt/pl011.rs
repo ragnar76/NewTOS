@@ -63,11 +63,27 @@ impl Uart for Pl011 {
         // SAFETY: PL011 MMIO is valid on the QEMU virt machine.
         unsafe {
             self.reg(UART_CR).write_volatile(0);
+            // The kernel owns `IMSC` from here on rather than inheriting
+            // whatever the previous stage left unmasked;
+            // `enable_rx_interrupt` re-unmasks the RX sources.
+            self.reg(UART_IMSC).write_volatile(0);
             self.reg(UART_ICR).write_volatile(0x7FF);
             self.reg(UART_IBRD).write_volatile(13);
             self.reg(UART_FBRD).write_volatile(1);
             self.reg(UART_LCRH).write_volatile(LCRH_FEN | LCRH_WLEN_8);
             self.reg(UART_CR).write_volatile(CR_UARTEN | CR_TXE | CR_RXE);
+            // Start from an empty RX FIFO: on this board a byte left in it
+            // would be delivered as a *keystroke* (serial console profile,
+            // `console::serial_rx_byte`). Bounded at twice the FIFO depth.
+            for _ in 0..64 {
+                if self.reg(UART_FR).read_volatile() & FR_RXFE != 0 {
+                    break;
+                }
+                let _dr = self.reg(UART_DR).read_volatile();
+                #[cfg(feature = "initinfo-diag")]
+                crate::initinfo::diag::note_uart_flush(_dr as u8);
+            }
+            self.reg(UART_ICR).write_volatile(0x7FF);
         }
     }
 

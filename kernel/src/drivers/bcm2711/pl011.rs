@@ -121,6 +121,14 @@ impl Uart for Pl011 {
             // Disable UART before changing baud rate / line settings.
             self.reg(UART_CR).write_volatile(0);
 
+            // Mask every interrupt source. The kernel owns `IMSC` from here
+            // on; without this we inherit whatever the firmware left
+            // unmasked (it drives this UART itself when `enable_uart=1`),
+            // and the GIC would deliver an interrupt nobody asked for.
+            // `enable_rx_interrupt` re-unmasks the RX sources when a board
+            // actually consumes serial input.
+            self.reg(UART_IMSC).write_volatile(0);
+
             // Clear all pending interrupts.
             self.reg(UART_ICR).write_volatile(0x7FF);
 
@@ -133,6 +141,24 @@ impl Uart for Pl011 {
 
             // Enable UART, TX, RX.
             self.reg(UART_CR).write_volatile(CR_UARTEN | CR_TXE | CR_RXE);
+
+            // Discard anything already sitting in the RX FIFO — the
+            // firmware's own use of this UART, or a start bit clocked in
+            // while `configure_uart0_pins` switched GPIO 15 to ALT0. Reading
+            // `DR` pops one entry, `FR.RXFE` says when the FIFO is empty
+            // (datasheet §11.5). Bounded at twice the 32-entry FIFO depth so
+            // a genuinely noisy line cannot hold the boot here. Without the
+            // flush the kernel inherits those bytes and the first RX
+            // interrupt delivers them as console input.
+            for _ in 0..64 {
+                if self.reg(UART_FR).read_volatile() & FR_RXFE != 0 {
+                    break;
+                }
+                let _dr = self.reg(UART_DR).read_volatile();
+                #[cfg(feature = "initinfo-diag")]
+                crate::initinfo::diag::note_uart_flush(_dr as u8);
+            }
+            self.reg(UART_ICR).write_volatile(0x7FF);
         }
     }
 
