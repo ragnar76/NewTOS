@@ -136,6 +136,41 @@ else
   echo "note: sdk/libc/build/clocktest.NCP not built; C:\\CLOCKTST.NCP skipped"
 fi
 
+# CoreMark 1.0 (EEMBC) — the CPU benchmark, built UNMODIFIED apart from its own
+# porting layer (sdk/overlays/coremark/newtos/), which is what CoreMark's run
+# rules put under the porter's control. Two executables, because NewTOS has no
+# way to pass a program seeds on a command line: CORE.NCP is the performance run
+# (seeds 0,0,0x66 — this is the one whose "CoreMark 1.0 : …" line is the
+# reportable score), COREVAL.NCP the validation run (0x3415,0x3415,0x66) that the
+# run rules also require to pass. Built by sdk/apps/build-coremark.sh.
+#
+# They go into their own folder C:\COREMARK\ and are started by DOUBLE-CLICKING
+# CORE.NCP on the desktop: `.NCP` gets the VT52 text screen AND the desktop's
+# "[ Press any key to return to the desktop ]" pause afterwards, so the result
+# stays readable on a machine whose only output is its monitor. A run takes
+# ~30 s during which the screen is empty by design (the benchmark must run for
+# at least 10 s uninterrupted); the program prints a banner saying so first.
+#
+# NOT in \AUTO\ by default: an AUTO run finishes before the AES starts and the
+# desktop then paints over the result. Set SD_COREMARK_AUTO=1 to place it there
+# anyway — that is the only way to drive it under QEMU raspi4b, which emulates
+# the SD controller but no keyboard/mouse, so nothing can be double-clicked; the
+# report then has to be read off the serial log.
+CM_DIR="$SCRIPT_DIR/../sdk/apps/coremark/build"
+if [ -f "$CM_DIR/CORE.NCP" ] && [ -f "$CM_DIR/COREVAL.NCP" ]; then
+  mkdir -p "$V/COREMARK"
+  cp "$CM_DIR/CORE.NCP"    "$V/COREMARK/CORE.NCP"
+  cp "$CM_DIR/COREVAL.NCP" "$V/COREMARK/COREVAL.NCP"
+  echo "installed C:\\COREMARK\\{CORE,COREVAL}.NCP (EEMBC CoreMark 1.0)"
+  if [ "${SD_COREMARK_AUTO:-0}" = "1" ]; then
+    cp "$CM_DIR/CORE.NCP"    "$V/AUTO/CORE.NCP"
+    cp "$CM_DIR/COREVAL.NCP" "$V/AUTO/COREVAL.NCP"
+    echo "  + \\AUTO\\{CORE,COREVAL}.NCP (both run at boot; ~1 min extra)"
+  fi
+else
+  echo "note: sdk/apps/coremark/build/{CORE,COREVAL}.NCP not built; C:\\COREMARK skipped (run sdk/apps/build-coremark.sh)"
+fi
+
 # QED (Atari GEM editor) — the first ported GEM application, compiled UNMODIFIED
 # for NewTOS/AArch64 as **native LP64** (the app-ABI pivot: apps match the
 # kernel's native 64-bit ABI, so the app<->kernel width mismatch vanishes). Its

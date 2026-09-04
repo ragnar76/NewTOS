@@ -1,0 +1,46 @@
+# CoreMark 1.0 -- provenance of the vendored source tree, and the MD5
+# fingerprints of the files whose modification the run rules forbid.
+#
+# PROVENANCE (sdk/apps/coremark/ is untracked, per sdk/.gitignore `/apps/*/`;
+# this file is how it is re-obtained and re-verified):
+#
+#     git clone https://github.com/czietz/coremark.git sdk/apps/coremark
+#     git -C sdk/apps/coremark checkout b546802
+#
+# commit b546802 = b54680215e981456ad80fb143d096c28c4b03e11 ("Fix a few
+# typos"), Christian Zietz' fork of https://github.com/eembc/coremark carrying
+# the Atari/TOS port in atari/. Our own port directory is NOT in that tree --
+# it lives at sdk/overlays/coremark/newtos/ and is compiled from there.
+#
+# WHY THIS FILE AND NOT `make check`
+# CoreMark ships a coremark.md5 and a `make check` target for exactly this
+# purpose, but the shipped list is stale upstream metadata: it still carries
+# the pre-2018 MD5s of core_list_join.c / core_main.c / core_state.c, so
+# `make check` mismatches even on a completely untouched tree. (eembc's own
+# HEAD fails it too, for coremark.h.) So the fingerprints below were pinned
+# after comparing the vendored tree against eembc/coremark HEAD on 2026-09-04:
+#
+#   core_main.c, core_matrix.c, core_state.c, core_util.c -- byte-identical to
+#     eembc HEAD, and their MD5s equal the values in eembc's own coremark.md5.
+#   coremark.h -- equal to the value in BOTH coremark.md5 files; eembc's HEAD
+#     file has since changed without their coremark.md5 being regenerated.
+#   core_list_join.c -- one upstream revision older than eembc HEAD. The whole
+#     textual delta is at core_bench_list():
+#         eembc HEAD  :  list_data  info = {0};
+#         this tree   :  list_data  info;
+#     Both fields of `info` are assigned before any read (info.idx at the top of
+#     the function, info.data16 as the first statement of the find loop, which
+#     runs find_num = seed3 = 0x66 > 0 times), so the initializer is a
+#     warning-cleanup with no reachable effect on the CRCs or the score.
+#
+# sdk/apps/build-coremark.sh verifies every line below before it compiles
+# anything and refuses to build on a mismatch, so "we only touched the port
+# directory" is a checked fact.
+#
+# Format: <md5>  <path relative to sdk/apps/coremark/>
+761e73db06e1e9fbc7c322784f5def4c  core_list_join.c
+4a9e6dadce1ac3866381021fbe843fc9  core_main.c
+5fa21a0f7c3964167c9691db531ca652  core_matrix.c
+fb49e7605c125306575a83f14f5798ac  core_state.c
+45540ba2145adea1ec7ea2c72a1fbbcb  core_util.c
+8ca974c013b380dc7f0d6d1afb76eb2d  coremark.h
