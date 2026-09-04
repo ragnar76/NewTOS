@@ -6,11 +6,12 @@
 # (gemlib.a). TeraDesk bundles its own dialog/utility libraries
 # (library/xdialog + library/utility), so it does NOT need cflib -- unlike QED.
 #
-# This is the LP64 successor of build-teradesk-ilp32.sh (the ILP32 path was the
-# corruption cause; recompiled GEM apps now run as native 64-bit). It is a
-# second, independent EL0 GEM-app validator of the app-facing AES/VDI/GEMDOS
-# svc path besides QED: if TeraDesk renders correctly, AES/VDI is sound; if it
-# breaks like QED did, the bug is in the kernel svc path, not in any one app.
+# LP64 is the only app ABI: the earlier ILP32 build path (ADR-020) was the
+# corruption cause, recompiled GEM apps now run as native 64-bit, and the ILP32
+# build scripts were retired on 2026-09-04. This script is a second, independent
+# EL0 GEM-app validator of the app-facing AES/VDI/GEMDOS svc path besides QED: if
+# TeraDesk renders correctly, AES/VDI is sound; if it breaks like QED did, the
+# bug is in the kernel svc path, not in any one app.
 #
 # OVERLAY mechanism (same spirit as build-qed.sh, extended to HEADERS): a file
 # under sdk/overlays/teradesk/ with the same RELATIVE path (e.g.

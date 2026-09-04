@@ -8,7 +8,7 @@
 # type 0x06 = FAT16). The partition is populated with a handful of sample
 # files and folders so the desktop shows a `C:` drive with content — including
 # the ported GEM editor QED under `C:\Apps\QED\` (double-click to launch), if
-# its ILP32 build is present.
+# its LP64 build is present.
 #
 # macOS only (uses hdiutil / diskutil / newfs_msdos). Runs without sudo — the
 # raw disk image is attached as a user-owned device.

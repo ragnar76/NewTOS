@@ -12,6 +12,12 @@
  * Built for ILP32 by build-gemlib-ilp32.sh (pass this file as the client) and
  * auto-run from C:\AUTO\ so its output appears on the serial console before the
  * desktop starts. printf() comes from the ported ILP32 mintlib.
+ *
+ * HISTORICAL, 2026-09-04: the ILP32 build path was retired (ADR-020 addendum in
+ * docs/MEMORY.md), so build-gemlib-ilp32.sh no longer exists and this file has
+ * no builder. Kept as the Stage-3 evidence it is; it is NOT an LP64 test -- its
+ * output strings assert an ILP32 result. Retarget or delete it together with
+ * the runtime ABI switch (Abi::Ilp32), not before.
  */
 #include "gem.h"
 #include <stdio.h>

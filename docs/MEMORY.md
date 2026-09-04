@@ -1175,7 +1175,10 @@ structs today).
 ## ADR-020: App ABI is ILP32 (32-bit pointers) for Atari-compat programs; LP64 native deferred
 
 **Date:** 2026-07-19
-**Status:** **Accepted** (user decision 2026-07-19) — implementation staged
+**Status:** **Superseded** by the LP64 app-ABI pivot of 2026-07-21 (STATUS
+2026-07-21 ★★ APP-ABI-PIVOT). The ILP32 **build path** was retired on
+2026-09-04 — see the addendum at the end of this ADR. The **runtime** ABI
+switch deliberately stays.
 **Phase:** cross-cutting (SDK toolchain + kernel loader/AES/VDI ABI boundary)
 
 ### Context
@@ -1226,6 +1229,57 @@ ADR-019 (the LP64 toolchain this pivots — not wasted; the trap retarget, port
 structure, and the crt0/loader/AES-rsrc fixes carry over), ADR-018 (the `.NAP`
 family gains an ILP32/LP64 distinction by ELF class), and the app-ABI memory
 [[native-64bit-abi-future]].
+
+### Addendum 2026-09-04 — ILP32 *build path* retired, *runtime* switch kept
+
+**Decision (user, 2026-09-04):** "den 32bit zweig stillegen weil eh nicht
+läuft". This retires the ILP32 **toolchain**, not the kernel's ABI plumbing.
+
+**Why now.** The app ABI pivoted to LP64 on 2026-07-21 (recompiled GEM apps run
+as native 64-bit; ILP32 was the *cause* of the QED menu corruption, not the
+cure). Since then nothing in the tree consumed an ILP32 artifact, but every SDK
+change still had to be carried in **two** parallel build scripts — the 200 Hz
+tick work of 2026-09-04 had to add `newtos-arch/getsysvar.c` to
+`build-libc.sh` *and* `build-libc-ilp32.sh`. Double maintenance for a path with
+no consumer.
+
+**Removed (tracked, 7 files):** `sdk/build-ilp32.sh`,
+`sdk/libc/build-libc-ilp32.sh`, `sdk/libc/crt0-ilp32.S`,
+`sdk/gemlib/build-gemlib-ilp32.sh`, `sdk/cflib/build-cflib-ilp32.sh`,
+`sdk/apps/build-qed-ilp32.sh`, `sdk/apps/build-teradesk-ilp32.sh`. The matching
+`sdk/.gitignore` entries went with them; the extracted `*-ilp32/` source trees,
+`build-ilp32/` object dirs and `*-ilp32.a` archives were never tracked (local
+build output) and were deleted from the working tree. There is now no way to
+produce an ELFCLASS32 `.NCP`/`.NAP` from this repository.
+
+**Deliberately kept, and why.** The **runtime** ABI switch stays untouched:
+`Abi::Ilp32` / `Abi::read_ptr` / `Abi::write_ptr` (`tos-api/src/bdos/process.rs`)
+and the ~65 `current_abi()` / `Abi::Ilp32` sites across 17 files (mostly
+`tos-api/src/aes/{object,window,form,resource,fsel,menu,graf,appl}.rs`, plus
+`vdi/`, `bdos/process/`, `xbios/keytbl.rs`, `kernel/src/dbg_qedtrace.rs`), and
+with them the ELF32 parse path in `tos-api/src/bdos/process/elf.rs`. Three
+reasons:
+
+1. It is the same code that reads **LP64** parameter blocks — `read_ptr` is one
+   function with two arms, not an ILP32-only subsystem. This is the code that
+   draws TeraDesk and QED today.
+2. `Abi::Ilp32` is set from exactly one place — the ELF class at load time
+   (`loader.rs`, `img.is_ilp32()`). With no ILP32 toolchain the arm is
+   **unreachable in practice**, not wrong. Removing it is a separate,
+   mechanical change with its own regression risk.
+3. It is the reserved substrate for the **WoW64-style thunk for real m68k
+   binaries** (`[[native-64bit-abi-future]]`) — the only remaining use case for
+   32-bit pointers, since anything recompilable is now built LP64.
+
+**For whoever removes the runtime switch later:** the load-time setter in
+`loader.rs` is the single root; delete that and `Abi` collapses to a constant,
+after which the ~65 sites fold mechanically. Two producers outside the kernel
+would follow: `tools/mkrsc.py convert --ilp32` (emits the 24-byte-OBJECT NRSC
+layout; its consumer is `relocate_blob_ilp32` in `aes/resource.rs`, and the NRSC
+header `version` values 2/4/6 mark ILP32 width — see ADR-013), and the tracked
+test source `sdk/gemlib/tests/gemtest_verify.c`, whose only builder was
+`build-gemlib-ilp32.sh`. Both were left in place on 2026-09-04 as out of scope
+for a build-path retirement.
 
 ### Template for new ADRs
 
