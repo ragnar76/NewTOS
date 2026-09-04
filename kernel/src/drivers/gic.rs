@@ -129,6 +129,36 @@ impl GicV2 {
         }
     }
 
+    /// Enable a Private Peripheral Interrupt (PPI, INTID 16..=31) on this
+    /// CPU interface and give it the same priority as the SPIs above.
+    ///
+    /// For INTIDs 0..31 the Distributor's `GICD_ISENABLER0` and
+    /// `GICD_IPRIORITYR` are banked per CPU interface (ARM IHI 0048B §4.3),
+    /// so writing them here configures the calling core — which is what a
+    /// *private* peripheral interrupt needs. Unlike [`Self::enable_spi`]
+    /// this writes neither `GICD_ITARGETSR` (a PPI is by definition wired to
+    /// its own core; there is nothing to route) nor `GICD_ICFGR` (the
+    /// generic timer asserts a level, and the PPI configuration is fixed by
+    /// the implementation).
+    pub fn enable_ppi(&self, intid: u32) {
+        let byte = (intid & 0x3) as usize;
+        let pri_reg = (intid >> 2) as usize;
+
+        // SAFETY: see `init`.
+        unsafe {
+            // Priority 0xA0, as for the SPIs — well below the PMR (0xFF).
+            let p_addr = (self.gicd + GICD_IPRIORITYR + pri_reg * 4) as *mut u32;
+            let mut p = p_addr.read_volatile();
+            p &= !(0xFFu32 << (byte * 8));
+            p |= 0xA0u32 << (byte * 8);
+            p_addr.write_volatile(p);
+
+            // ISENABLER is write-one-to-set: no read-modify-write.
+            let en_addr = (self.gicd + GICD_ISENABLER) as *mut u32;
+            en_addr.write_volatile(1u32 << (intid & 0x1F));
+        }
+    }
+
     /// Disable a Shared Peripheral Interrupt.
     #[allow(dead_code)]
     pub fn disable_spi(&self, intid: u32) {
@@ -174,6 +204,9 @@ pub extern "C" fn rust_irq_handler(_frame: &mut crate::arch::aarch64::exceptions
     if intid == BOARD_PL011_INTID {
         // Drain the PL011 RX FIFO into the console ringbuffer.
         crate::console::pl011_rx_drain();
+    } else if intid == crate::drivers::timer::TIMER_INTID {
+        // 200 Hz system tick — re-arm and advance `_hz_200`.
+        crate::drivers::timer::handle_irq();
     }
     // Unknown / unrouted interrupts are silently EOIed; PHASE-03 will
     // add a registration table for future peripherals.

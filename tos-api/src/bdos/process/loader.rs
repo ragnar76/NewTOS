@@ -911,13 +911,11 @@ fn populate_sysvars(tpa: &mut [u8]) {
     // (EmuTOS `bios/bios.c:357` — `dumpflg = -1;`); consumed by `Scrdmp`
     // (XBIOS, out of scope). `-1` as a WORD is 0xFFFF.
     wr_word(tpa, 0x4EE, (-1i16) as u16);
-    // _hz_200 ($4BA): 200 Hz system-tick counter. Static snapshot at load
-    // (monotonic ms / 5); the live low-memory writer is a documented
-    // deferral (feasibility §3) — TeraDesk does not poll it live.
-    let hz200 = crate::host::host()
-        .map(|h| (h.monotonic_millis() / 5) as u32)
-        .unwrap_or(0);
-    wr_long(tpa, 0x4BA, hz200);
+    // _hz_200 ($4BA): 200 Hz system-tick counter (EmuTOS `bios/vectors.S:503`).
+    // Seeded here from the live kernel counter so the cell is already correct
+    // before the process runs; from then on the 200 Hz timer interrupt keeps
+    // the *running* process's copy fresh (`bios::tick::advance` → `publish`).
+    wr_long(tpa, crate::bios::tick::HZ_200_ADDR, crate::bios::tick::hz_200());
     // drvbits ($4C2): physical drive bitmap (Drvmap, blkdev_init).
     wr_long(tpa, 0x4C2, drvbits);
     // sysbase ($4F2): pointer to the OSHEADER (bios.c:358) — the field whose

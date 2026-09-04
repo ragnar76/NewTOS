@@ -118,6 +118,24 @@ else
   echo "note: sdk/libc/build/libtest.NCP not built; C:\\LIBTEST.NCP skipped (run sdk/libc/build-libc.sh)"
 fi
 
+# 200 Hz system-tick proof: CLOCKTST.NCP measures mintlib's own clock() (which
+# reads the `_hz_200` sysvar at $4ba) against GEMDOS Tgettime and prints the
+# error in ticks — see sdk/libc/tests/clocktest.c. Copied in if already built
+# (`sdk/libc/build-libc.sh sdk/libc/tests/clocktest.c`). Installed on C: only;
+# set SD_CLOCKTEST_AUTO=1 to also drop it into \AUTO\ so it runs and prints
+# its verdict on the console at every boot (costs ~12 s of boot time).
+CLOCKTST_NCP="$SCRIPT_DIR/../sdk/libc/build/clocktest.NCP"
+if [ -f "$CLOCKTST_NCP" ]; then
+  cp "$CLOCKTST_NCP" "$V/CLOCKTST.NCP"
+  echo "installed C:\\CLOCKTST.NCP (200 Hz tick / _hz_200 proof)"
+  if [ "${SD_CLOCKTEST_AUTO:-0}" = "1" ]; then
+    cp "$CLOCKTST_NCP" "$V/AUTO/CLOCKTST.NCP"
+    echo "  + \\AUTO\\CLOCKTST.NCP (runs at boot)"
+  fi
+else
+  echo "note: sdk/libc/build/clocktest.NCP not built; C:\\CLOCKTST.NCP skipped"
+fi
+
 # QED (Atari GEM editor) — the first ported GEM application, compiled UNMODIFIED
 # for NewTOS/AArch64 as **native LP64** (the app-ABI pivot: apps match the
 # kernel's native 64-bit ABI, so the app<->kernel width mismatch vanishes). Its

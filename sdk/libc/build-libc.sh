@@ -119,14 +119,12 @@ DIRS="stdio stdlib string mintlib unix syscall time misc multibyte signal termio
 # unix/access.c -> newtos-arch/access.c  (lean access; drops the Unix passwd/
 #   group DB tail getgroups->getpwuid/getgrent/setgrent/endgrent, which has no
 #   TOS analog -- pulled by tz/localtime.c's access() call)
-# time/clock.c   -> newtos-arch/clock.c   (clock() over Tgetdate/Tgettime; the
-#   m68k _hz_200 sysvar read via get_sysvar/getsysvar.S has no AArch64 analog)
 # mintlib/thread.c: MiNT Pxxx thread-fork (tfork) — builds a child BASEPAGE and
 # treats its fields as native pointers. Incompatible with NewTOS's LP64 256-byte
 # basepage (a 4-byte p_env is not a char*) AND with the single-tasking model; it
 # was already semantically broken on LP64 (376-byte basepage the kernel can't read)
 # and is unreferenced by any built app (QED/TeraDesk link with 0 undef). Excluded.
-EXCLUDE="mintlib/do_fstat.c mintlib/isatty.c mintlib/do_stat.c unix/access.c time/clock.c mintlib/thread.c"
+EXCLUDE="mintlib/do_fstat.c mintlib/isatty.c mintlib/do_stat.c unix/access.c mintlib/thread.c"
 is_excluded() { case " $EXCLUDE " in *" $1 "*) return 0;; esac; return 1; }
 
 echo "clang : $($CLANG --version | head -1)"
@@ -180,12 +178,16 @@ done
     -c "$LIBC/newtos-arch/do_stat.c"   -o "$OBJ/arch__do_stat.o"  || exit 1
 "$CLANG" "${CFLAGS[@]}" "${INCS[@]}" \
     -c "$LIBC/newtos-arch/getcookie.c" -o "$OBJ/arch__getcookie.o" || exit 1
-# clock() over Tgetdate/Tgettime (replaces time/clock.c + m68k get_sysvar),
-# lean access() without the Unix passwd/group tail (replaces unix/access.c),
-# and the __extenddftf2 f64->f128 compiler-rt builtin the AArch64 long-double
-# ABI needs (pulled by strtold via sscanf/vfscanf).
+# get_sysvar() -- the AArch64 replacement for the m68k mintlib/getsysvar.S
+# (never assembled here). With it, mintlib's OWN time/clock.c compiles and
+# links unchanged: it reads the 200 Hz tick _hz_200 (0x4ba) out of the
+# process's low-memory sysvar area, which the kernel's 200 Hz timer interrupt
+# keeps live (tos-api/src/bios/tick.rs). Also: lean access() without the Unix
+# passwd/group tail (replaces unix/access.c), and the __extenddftf2 f64->f128
+# compiler-rt builtin the AArch64 long-double ABI needs (pulled by strtold via
+# sscanf/vfscanf).
 "$CLANG" "${CFLAGS[@]}" "${INCS[@]}" \
-    -c "$LIBC/newtos-arch/clock.c"     -o "$OBJ/arch__clock.o"     || exit 1
+    -c "$LIBC/newtos-arch/getsysvar.c" -o "$OBJ/arch__getsysvar.o" || exit 1
 "$CLANG" "${CFLAGS[@]}" "${INCS[@]}" \
     -c "$LIBC/newtos-arch/access.c"    -o "$OBJ/arch__access.o"    || exit 1
 "$CLANG" "${CFLAGS[@]}" "${INCS[@]}" \

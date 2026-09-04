@@ -283,6 +283,15 @@ extern "C" fn kernel_main_rust(dtb_phys: usize) -> ! {
     // Bring up the GIC, enable the PL011 RX interrupt, and unmask IRQs.
     drivers::gic::init();
     console::CONSOLE.enable_rx_interrupt();
+
+    // Start the 200 Hz system tick — EmuTOS' `init_system_timer()`
+    // (`bios/mfp.c:193`, called from `bios_init` right before interrupts are
+    // enabled, `bios/bios.c:384`). It drives `_hz_200` (`$4BA`), the counter
+    // programs read for elapsed time.
+    if !drivers::timer::init() {
+        kprintln!("[timer] no usable CNTFRQ_EL0 — 200 Hz system tick is OFF");
+    }
+
     drivers::gic::enable_irqs();
 
     // Bring up the microSD card and mount its partitions before the boot

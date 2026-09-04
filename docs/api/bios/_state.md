@@ -287,7 +287,7 @@ BIOS/XBIOS calls, not a poke:
 | Sysvar (contract) | Pi backing | Access | Source |
 |-------------------|------------|--------|--------|
 | `drvbits` (`0x4c2`) | mounted-partition bitmap from the SD MBR | `Drvmap` (0x0A) | `tos-api/src/bios/drive.rs` (see `0a-drvmap.md`) |
-| `hz_200` (`0x4ba`) | **not materialised** — derived on demand from `CNTPCT/CNTFRQ` | (no direct reader; `Random` uses the frame clock) | `kernel/src/host_env.rs` (see `06-tickcal.md`) |
+| `hz_200` (`0x4ba`) | **live 200 Hz counter** — ARM generic timer IRQ (PPI INTID 30) advances it and mirrors it into the running process's `$4BA` | direct read at `$4BA` from EL0 (mintlib `get_sysvar(_hz_200)`); `bios::tick::hz_200()` in-kernel | `kernel/src/drivers/timer.rs`, `tos-api/src/bios/tick.rs` (see `06-tickcal.md`) |
 | `etv_timer/critic/term` (`$0400/04/08`) | software vector shadow `VECTORS[0x100/0x101/0x102]` | `Setexc` (0x05) | `tos-api/src/bios/vectors.rs:22,27-29` (see `05-setexc.md`) |
 | `shifty` / `os_kbshift` | IKBD-decoder modifier byte from USB-HID | `host().keyboard_shift_state()` (EL1); `Kbshift` trap **not exposed** | `kernel/src/ikbd.rs`, `host_env.rs:231-233` (see `0b-kbshift.md`) |
 | `membot`/`memtop`/`phystop` | ST-RAM pool extent from the AArch64 memory map | (allocator internal; `Getmpb` vestigial) | `kernel/src/bios/machine/layout.rs` (see `00-getmpb.md`) |
@@ -299,12 +299,15 @@ BIOS/XBIOS calls, not a poke:
 |-----------------|------------------|
 | Program pokes `4*num` / `$4c2` / `$4ba` directly in low RAM | reached by name/call; no address is exposed to EL0 |
 | Overwriting a `bcon*_vec` slot installs a driver | native char-device registration (deferred); table not at a fixed VA |
-| `hz_200` free-running at 200 Hz | no counter — elapsed time is `CNTPCT`-derived |
+| `hz_200` free-running at 200 Hz | free-running at 200 Hz, driven by a real periodic interrupt; readable at its classic address `$4BA` in the process's own low memory |
 
 ### Gaps vs. the contract (Step-2 candidates)
 
-- **`hz_200` has no incrementing counter** (see `06-tickcal.md`): programs
-  reading a `hz_200` equivalent for elapsed time have no backing.
+- ~~**`hz_200` has no incrementing counter**~~ — **closed 2026-09-04**: a
+  200 Hz timer interrupt now advances it and publishes it at `$4BA`
+  (`06-tickcal.md` §"The 200 Hz tick"). What remains open is the **50 Hz half**
+  of EmuTOS' timer-C sieve (`bios/vectors.S:521`): key repeat, `dosound` and
+  the `etv_timer` dispatch are still not run.
 - **`etv_*` hooks stored but never invoked** (see `05-setexc.md`).
 - **`dumpflg` / `Scrdmp` unwired** (Screen S2) — nothing resets the flag because
   the call does not exist.

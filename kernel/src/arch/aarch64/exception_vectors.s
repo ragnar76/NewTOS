@@ -105,7 +105,14 @@ __exception_vectors:
     // Lower EL using AArch64 — used once user processes (PHASE-06) exist.
     b   __vec_sync                   // 0x400 sync
     .balign 0x80
-    b   __vec_unhandled              // 0x480 IRQ
+    // IRQ taken while an EL0 program runs. Programs are entered with
+    // SPSR.DAIF = 0 (`user_entry.rs`), so every interrupt that arrives
+    // during a program — the 200 Hz system tick, and the PL011 RX IRQ —
+    // lands here; it must go to the same handler as an EL1 IRQ, not to the
+    // halting catch-all. (The frame save/restore in EXC_BODY is EL-agnostic:
+    // exceptions from EL0 run on SP_EL1 and the eret returns to EL0 with the
+    // program's own SP_EL0 and TTBR0 untouched.)
+    b   __vec_irq                    // 0x480 IRQ
     .balign 0x80
     b   __vec_unhandled              // 0x500 FIQ
     .balign 0x80

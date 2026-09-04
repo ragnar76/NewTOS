@@ -41,6 +41,16 @@ fn cntpct() -> u64 {
     c
 }
 
+#[inline(always)]
+fn cntfrq() -> u64 {
+    let f: u64;
+    // SAFETY: read-only system-register read.
+    unsafe {
+        core::arch::asm!("mrs {}, cntfrq_el0", out(reg) f, options(nomem, nostack, preserves_flags));
+    }
+    f
+}
+
 fn sversion() -> i64 {
     svc0(0x30)
 }
@@ -122,6 +132,41 @@ pub fn run_phase07_time_test() {
         c2.wrapping_sub(c1),
         if tick_ok { "OK" } else { "FAIL" },
     );
+
+    // The 200 Hz system tick (`_hz_200`, `$4BA`) counts, and counts at the
+    // right rate. EmuTOS `bios/vectors.S:503` increments it once per timer-C
+    // interrupt; NewTOS drives it from the ARM generic timer PPI
+    // (`drivers::timer`). Measured against `CNTPCT_EL0`, which is the same
+    // clock but read directly, so this checks the *interrupt path*, not the
+    // counter source: 200 ticks per second, i.e. one per 5 ms.
+    let frq = cntfrq();
+    let hz_ok = if frq == 0 {
+        kprintln!("[time]   hz_200: CNTFRQ_EL0 = 0 — cannot measure  FAIL");
+        false
+    } else {
+        let want_ms = 500u64;
+        let span = frq * want_ms / 1000;
+        let t0 = cntpct();
+        let h0 = tos_api::bios::tick::hz_200();
+        while cntpct().wrapping_sub(t0) < span {
+            core::hint::spin_loop();
+        }
+        let elapsed = cntpct().wrapping_sub(t0);
+        let got = tos_api::bios::tick::hz_200().wrapping_sub(h0);
+        // Expected ticks for the interval actually spun, ±2 for the partial
+        // periods at both ends.
+        let want = (elapsed * 200 / frq) as u32;
+        let good = got + 2 >= want && got <= want + 2;
+        kprintln!(
+            "[time]   hz_200 advanced +{} in {} ms (expected {})  {}",
+            got,
+            elapsed * 1000 / frq,
+            want,
+            if good { "OK" } else { "FAIL" },
+        );
+        good
+    };
+    ok &= hz_ok;
 
     if ok {
         kprintln!("[time] === Phase 07 time PASS ===");

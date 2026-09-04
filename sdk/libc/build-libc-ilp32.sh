@@ -43,7 +43,7 @@
 #     (__HAVE_GNU_LD etc.).
 #   - newtos-arch/*  KEPT. Honest trap-backed OS-boundary shims
 #     (memops/proc/heap_init/getcookie/do_fstat/do_stat/isatty/ioctl/access/
-#     clock) replacing m68k asm; ABI-agnostic.
+#     get_sysvar) replacing m68k asm; ABI-agnostic.
 #   - -D__NO_LONG_DOUBLE_MATH + newtos-arch/softfloat.c (__extenddftf2)  KEPT.
 #     `aarch64-elf-gcc -mabi=ilp32` keeps `long double` == 128-bit IEEE quad
 #     (sizeof == 16), so the float printf/scanf engine would still emit quad
@@ -129,7 +129,7 @@ DIRS="stdio stdlib string mintlib unix syscall time misc multibyte signal termio
 
 # mintlib .c files replaced by lean NewTOS glue in newtos-arch/ (identical set to
 # the LP64 build; see build-libc.sh for the per-file rationale).
-EXCLUDE="mintlib/do_fstat.c mintlib/isatty.c mintlib/do_stat.c unix/access.c time/clock.c"
+EXCLUDE="mintlib/do_fstat.c mintlib/isatty.c mintlib/do_stat.c unix/access.c"
 is_excluded() { case " $EXCLUDE " in *" $1 "*) return 0;; esac; return 1; }
 
 echo "gcc : $("$GCC" -mabi=ilp32 --version 2>/dev/null | head -1)"
@@ -177,7 +177,7 @@ done
 "$GCC" "${CFLAGS[@]}" "${INCS[@]}" \
     -c "$LIBC/newtos-arch/getcookie.c" -o "$OBJ/arch__getcookie.o" || exit 1
 "$GCC" "${CFLAGS[@]}" "${INCS[@]}" \
-    -c "$LIBC/newtos-arch/clock.c"     -o "$OBJ/arch__clock.o"     || exit 1
+    -c "$LIBC/newtos-arch/getsysvar.c" -o "$OBJ/arch__getsysvar.o" || exit 1
 "$GCC" "${CFLAGS[@]}" "${INCS[@]}" \
     -c "$LIBC/newtos-arch/access.c"    -o "$OBJ/arch__access.o"    || exit 1
 "$GCC" "${CFLAGS[@]}" "${INCS[@]}" \

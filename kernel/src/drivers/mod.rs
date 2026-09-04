@@ -40,6 +40,11 @@ pub mod qemu_virt;
 
 pub mod gic;
 
+/// ARM generic timer — the 200 Hz system tick behind `_hz_200` (`$4BA`).
+/// Board-independent: the EL1 physical timer's PPI is INTID 30 on both
+/// targets (see the module docs for the per-board sources).
+pub mod timer;
+
 /// USB host stack — keyboard + mouse input (PHASE-16). Board-independent
 /// trait + types here; the concrete xHCI controller lands per D1.
 pub mod usb;

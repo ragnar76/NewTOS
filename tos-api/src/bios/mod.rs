@@ -14,6 +14,7 @@ pub mod bpb;
 pub mod chardev;
 pub mod drive;
 pub mod getmpb;
+pub mod tick;
 pub mod vectors;
 
 /// Scan the block device's partition table and (re)build the BIOS drive map

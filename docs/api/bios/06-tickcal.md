@@ -190,24 +190,42 @@ typically 54 MHz, but the code never assumes it).
 | Rate | Value | How NewTOS models it |
 |------|------:|----------------------|
 | `Tickcal` (GEMDOS/AES tick period) | **20 ms** (50 Hz) | constant (`mod.rs:41`) |
-| `_hz_200` (200 Hz free-running counter) | 5 ms/tick | **not materialised** — no counter is incremented; elapsed time is computed on demand as `CNTPCT/CNTFRQ` (see the gap below) |
+| `_hz_200` (200 Hz free-running counter) | 5 ms/tick | **materialised** — a real 200 Hz interrupt (ARM generic timer, EL1 physical timer, PPI INTID 30) increments the counter and mirrors it into the running process's `$4BA` (`kernel/src/drivers/timer.rs`, `tos-api/src/bios/tick.rs`) |
 | Frame clock (`Vsync`, ~60 Hz) | `CNTPCT*60/CNTFRQ` | `host_env.rs:191-206` |
 | Millisecond clock (AES `evnt_timer`) | `CNTPCT*1000/CNTFRQ` | `host_env.rs:168-189` |
 
 | Atari reference | Pi-4 model today |
 |-----------------|------------------|
-| MFP timer-C fires 200 Hz IRQ; the ISR runs 50 Hz "tick" work and advances `_hz_200` | **no periodic timer IRQ** — the generic timer is read on demand; there is no ISR, no `_hz_200` increment, no `etv_timer` dispatch |
+| MFP timer-C fires 200 Hz IRQ; the ISR runs 50 Hz "tick" work and advances `_hz_200` | ARM generic timer (EL1 physical, PPI INTID 30) fires a 200 Hz IRQ; the ISR advances `_hz_200` — but the 50 Hz half of the sieve (key repeat, `dosound`, `etv_timer`) is still not run |
 | `Tickcal` = 20 (constant, unrelated to the timer) | `Tickcal` = 20 (constant) — identical |
+
+### The 200 Hz tick (implemented 2026-09-04)
+
+`kernel/src/drivers/timer.rs` programs the **ARM generic timer's EL1 physical
+timer** (`CNTP_CVAL_EL0` / `CNTP_CTL_EL0`) to a 5 ms period; its interrupt is
+the non-secure physical timer PPI, **INTID 30** on both boards (BCM2711
+datasheet §6.3 Figure 7 "Core n PNS timer IRQ — PPI ID 30"; QEMU `virt`'s own
+device tree `/timer` = `GIC_PPI 14` → 16 + 14 = 30). `drivers::gic` unmasks it
+via `enable_ppi` and dispatches it from `rust_irq_handler`; the lower-EL IRQ
+vector (`0x480`) now routes to the same handler, so the tick (and the PL011 RX
+IRQ) is delivered while an EL0 program runs instead of hitting the halting
+catch-all.
+
+`tos_api::bios::tick` holds the counter and mirrors it into the **running**
+process's `$4BA` cell in its per-process low-memory sysvar area, so
+`*(volatile long *)0x4ba` is live for an app. Two deliberate deviations from
+EmuTOS, both documented in that module: the handler credits *every* elapsed
+5 ms period (so a late interrupt — IRQs are masked inside the synchronous SVC
+handler — cannot lose time, where m68k timer C does), and the **50 Hz half of
+the `timer_c_sieve`** (`bios/vectors.S:521`: key repeat, `dosound`,
+`etv_timer`) is still not run.
 
 ### Gaps vs. the contract (Step-2 candidates)
 
-- **No 200 Hz tick IRQ / no `_hz_200` counter.** `_hz_200` (the 200 Hz
-  free-running counter programs read for elapsed time) is **not incremented** by
-  any handler; there is no periodic timer interrupt (`exceptions.rs` has only a
-  catch-all IRQ path, no timer channel). Consumers that need elapsed time use
-  the derived `CNTPCT`-based clocks instead. A program that reads a `_hz_200`
-  equivalent, or installs an `etv_timer` hook expecting 20 ms callbacks, gets
-  **nothing** — see the `05-setexc.md` binding (etv_timer never fires).
-  `Tickcal` itself is unaffected (it is a constant).
-- **`Random`'s `hz_200` auto-seed** falls back to the frame clock instead
-  (`hz_200` does not exist) — see `docs/api/xbios/11-random.md`.
+- **No 50 Hz tick processing.** EmuTOS' timer-C ISR runs `kb_timerc_int`,
+  `sndirq` and the `etv_timer` hook on every 4th interrupt. NewTOS has no
+  equivalent of the first two and never dispatches the third, so a program that
+  installs an `etv_timer` hook expecting 20 ms callbacks still gets **nothing**
+  — see the `05-setexc.md` binding.
+- **`Random`'s `hz_200` auto-seed** still falls back to the frame clock,
+  although `hz_200` now exists — see `docs/api/xbios/11-random.md`.
