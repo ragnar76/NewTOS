@@ -5,41 +5,127 @@
 //! (`CNTPCT_EL0` / `CNTFRQ_EL0`), and prints MB/s via GEMDOS `Cconout`.
 //!
 //! Note: in QEMU this reflects the TCG emulation speed, not hardware
-//! bandwidth; on a real Pi 4 it reports the actual figures. The buffer is
+//! bandwidth; on a real Pi 4 it reports the actual figures. The buffers are
 //! sized to exceed the Cortex-A72's 1 MiB L2 cache so the numbers reflect
 //! main memory rather than cache.
+//!
+//! # Why the buffers are allocated, not static
+//!
+//! The kernel image — `.text`, `.data` and **`.bss`** — lives at the bottom
+//! of the Atari ST-RAM window (`$000000–$DFFFFF`), and the GEMDOS ST-RAM
+//! pool is what is left above it, exactly as EmuTOS' `membot = end_os`
+//! (`references/emutos/bios/biosmem.c:66-72`). Two 2-MiB scratch buffers in
+//! `.bss` therefore cost every program 4 MiB of `Malloc`-able ST-RAM for as
+//! long as the machine runs — and, because the linker script pads the image
+//! to `ALIGN(2M)` twice, crossing a 2-MiB boundary moves `.dma` and the
+//! kernel stack up and takes a further 2 MiB with it. A diagnostic scratch
+//! buffer does not belong there, so both buffers come from the **TT-RAM**
+//! pool while the command runs and go back on return.
+//!
+//! That also makes the measurement honest. As statics, `SRC` was provably
+//! all-zero for the whole program, so the optimiser folded every load of it
+//! to `0`, deleted the read loop entirely (the disassembly had two adjacent
+//! `mrs CNTPCT_EL0` where 64 passes should have been) and collapsed the
+//! 64-pass copy into a single `memset`. Pool memory reached through an
+//! opaque allocator call cannot be constant-folded, so all three loops now
+//! survive optimisation.
 
-use core::cell::UnsafeCell;
 use core::hint::black_box;
 
-/// Per-buffer size (2 MiB > A72 L2). Two buffers → 4 MiB of BSS.
+use tos_api::bdos::mem::traps::{mfree, mxalloc};
+use tos_types::{Long, MX_TTRAM};
+
+use crate::arch::aarch64::mmu::VA_OFFSET;
+
+/// Per-buffer size (2 MiB > A72 L2). Two buffers → 4 MiB of TT-RAM,
+/// held only while the command runs.
 const SIZE: usize = 2 * 1024 * 1024;
 const WORDS: usize = SIZE / 8;
 /// Passes per test, so the total transfer is large enough to time well.
 const ITERS: u64 = 64;
+/// Pattern written into the source buffer before the read/copy passes, so
+/// the timed loops move real data rather than whatever the pool held.
+const FILL: u64 = 0x0F1E_2D3C_4B5A_6978;
 
-// 8-byte-aligned word buffers (a `[u8; SIZE]` cast to `*const u64` would
-// fault the alignment check).
-struct Buf(UnsafeCell<[u64; WORDS]>);
-// SAFETY: accessed only from the single-CPU shell command path.
-unsafe impl Sync for Buf {}
-static SRC: Buf = Buf(UnsafeCell::new([0u64; WORDS]));
-static DST: Buf = Buf(UnsafeCell::new([0u64; WORDS]));
+/// One TT-RAM pool block, addressed through its kernel high-half alias and
+/// released on drop.
+///
+/// The pool hands out **physical** addresses (`tos-api/src/bdos/mem`), and
+/// EL1 code must reach DRAM through `pa + VA_OFFSET` (ADR-010/ADR-014) —
+/// the same conversion `aes::resource` does for its `Mxalloc`ed blocks.
+struct PoolBuf {
+    /// The address `Mfree` expects back: the pool's own `m_start`.
+    raw: Long,
+    /// Kernel high-half alias of `raw`, valid for [`WORDS`] `u64`s.
+    words: *mut u64,
+}
+
+impl PoolBuf {
+    /// Take one [`SIZE`]-byte block from the TT-RAM pool.
+    ///
+    /// `MX_TTRAM` is deliberate rather than `MX_PREFTTRAM`: falling back to
+    /// ST-RAM would put the scratch buffer back into the window this whole
+    /// arrangement keeps it out of. Returns `None` if the pool cannot serve
+    /// the request.
+    fn alloc() -> Option<Self> {
+        // SAFETY: kernel context on the boot CPU; the shell command runs
+        // with the implicit BDOS lock held, like the `Mxalloc` calls in
+        // `aes::resource::rsrc_load` and the D6 selftests.
+        let raw = unsafe { mxalloc(SIZE as Long, MX_TTRAM) };
+        if raw <= 0 {
+            return None;
+        }
+        // Pool blocks are 16-byte aligned (`PoolConfig::AARCH64`), so the
+        // `u64` view is aligned. Every pool address is below
+        // `TOS_MD_MAX_END`, i.e. a positive `Long`, so the widening is
+        // value-preserving.
+        let words = ((raw as u64) + VA_OFFSET) as *mut u64;
+        Some(Self { raw, words })
+    }
+
+    /// The block as a `u64` slice.
+    ///
+    /// # Safety
+    ///
+    /// The caller must not hold two overlapping borrows; each [`PoolBuf`]
+    /// owns a distinct pool block, so distinct buffers never alias.
+    unsafe fn as_mut(&mut self) -> &mut [u64] {
+        // SAFETY: `words` aliases `SIZE` live, exclusively owned pool bytes
+        // mapped Normal-Cacheable by the kernel DRAM mapping.
+        unsafe { core::slice::from_raw_parts_mut(self.words, WORDS) }
+    }
+}
+
+impl Drop for PoolBuf {
+    fn drop(&mut self) {
+        // SAFETY: `raw` is on the pool's allocated list; see `alloc`.
+        unsafe { mfree(self.raw) };
+    }
+}
 
 /// Run all three benchmarks and print the results.
 pub fn run() {
     puts(b"Memory benchmark (2 MiB buffer, 64 passes = 128 MiB each)\r\n");
     puts(b"  (QEMU shows emulation speed; real HW shows true bandwidth)\r\n\r\n");
 
-    // SAFETY: single-threaded shell context; the two buffers are distinct.
-    let src_w = unsafe { &*SRC.0.get() };
-    let dst_w = unsafe { &mut *DST.0.get() };
+    let (Some(mut src), Some(mut dst)) = (PoolBuf::alloc(), PoolBuf::alloc()) else {
+        puts(b"  needs 2 x 2 MiB of free TT-RAM - not available\r\n");
+        return;
+    };
+    // SAFETY: `src` and `dst` own distinct pool blocks, so the two
+    // borrows do not alias.
+    let src_w = unsafe { src.as_mut() };
+    // SAFETY: see above.
+    let dst_w = unsafe { dst.as_mut() };
 
-    // Warm the buffers (fault in / prime caches once) before timing.
+    // Fill both buffers once (fault in / prime caches, and give the read
+    // and copy passes real data) before timing.
+    for w in src_w.iter_mut() {
+        *w = FILL;
+    }
     for w in dst_w.iter_mut() {
         *w = 0;
     }
-    black_box(src_w[0]);
 
     let total = SIZE as u64 * ITERS;
 

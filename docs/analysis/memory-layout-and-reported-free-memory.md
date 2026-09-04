@@ -724,3 +724,241 @@ Damit beantwortet **ein** Lauf drei Fragen auf einmal:
 * **Die App sieht davon nichts.** Die 16-MiB-EL0-Fenstergrenze (F4/F5,
   §9.2) ist von dieser Änderung unberührt und bleibt die Zahl, die
   `Mxalloc(-1, MX_TTRAM)` an eine Anwendung liefert.
+
+---
+
+## 13. Nachtrag 2026-09-04: warum der Boot-Schirm erst 5 MiB und dann 3 MiB meldete
+
+> Auslöser: zwei Läufe auf der echten Pi 4 am selben Tag melden **5 MiB**
+> bzw. **3 MiB** ST-RAM bei unverändert 752 MiB TT-RAM. Der User vermutete,
+> „irgendwas ist in ST-RAM und TT-RAM eingeblendet". Die Vermutung ist für
+> `board-rpi4` widerlegt und für `board-qemu-virt` bestätigt (§13.4).
+
+### 13.1 Was die Zahl auf dem Boot-Schirm wirklich ist
+
+`kernel/src/initinfo.rs:225-227` zeigt
+`frames::stats(pool).total_bytes()` — also `PoolStats.total × 4096`
+(`kernel/src/bios/machine/frames.rs:97-99`). Das ist
+
+* die **Gesamtgröße des Pool-Extents**, nicht der freie Anteil,
+* **einmalig** in `frames::init` aus `layout::discover` gesetzt und danach
+  unveränderlich (`frames.rs:268-271`) — kein Laufzeit-Schnappschuss,
+* **inklusive** allem, was der Kernel selbst schon daraus genommen hat: der
+  2-MiB-Heap (`heap.rs:323`) und auf `qemu-virt` der 7,91-MiB-Framebuffer
+  (`ramfb.rs:153`) liegen **innerhalb** dieser Zahl, sind aber für kein
+  Programm allozierbar.
+
+Damit ist auch beantwortet, ob die **Zahl der USB-Geräte** etwas damit zu tun
+hat: nein. `total` ändert sich nie, nur `used` — und die xHCI-Puffer sind
+ohnehin `#[link_section = ".dma"]`-Statics im Kernel-Abbild
+(`kernel/src/drivers/usb/xhci/mod.rs:83,144,158,160`), also weder Pool noch
+laufzeitabhängig. 1 oder 4 Geräte kosten exakt dasselbe.
+
+**EmuTOS zeigt an dieser Stelle etwas anderes:** `stramsize = (long)phystop`
+und `altramsize = total_alt_ram()`
+(`references/emutos/bios/initinfo.c:277,279`, gedruckt `:337-342`) — also die
+**ST-RAM-Größe der Maschine** (eine Konstante) und die Summe aller Alt-RAM-`MD`s
+(`bdos/umem.c:520-538`). Unsere Zahl ist der Pool, EmuTOS' Zahl ist `phystop`.
+Diese Abweichung bleibt offen (F9, §13.6) — sie ist eine sichtbare
+Produktentscheidung, keine Mechanik.
+
+### 13.2 Die Rundung log — und ist gefixt
+
+`size_str` rundete mit `bytes >> 20` **ab**. `6 209 536` wurde „5 MiB",
+`4 112 384` wurde „3 MiB"; in Wahrheit sind das 5,92 und 3,92 MiB. Der
+Sprung sah dadurch nach 2 MiB **und** einer krummen Grenze aus.
+
+EmuTOS' `cprintf_bytesize` (`bios/initinfo.c:243-260`) rundet nicht ab: **MB
+nur bei exaktem MiB-Vielfachen, sonst KB.** `size_str` ist darauf angeglichen
+(2026-09-04). Der Boot-Schirm meldet jetzt `6064 KB` bzw. `944 MB` statt
+`5 MiB` / `944 MiB` — die beiden Läufe des Users hätten damit `6064 KB` und
+`4016 KB` gezeigt, also die Änderung sofort sichtbar gemacht.
+
+### 13.3 Die Ursache des Sprungs: `bench::DST` schob die BSS über `ALIGN(2M)`
+
+Gemessen, nicht vermutet. Für jeden Kandidatenstand wurde
+`cargo build -p kernel --no-default-features --features board-rpi4 --release`
+in einem separaten Worktree gebaut und `rust-nm` / `rust-objcopy` ausgewertet:
+
+| Commit | Zeit | `kernel8.img` | `__dma_start` | `__kernel_image_end` | ST-RAM-Pool | Schirm (alte Rundung) |
+|---|---|---:|---|---|---:|---|
+| `d39a091` | 09-02 08:57 | 733 300 | `0x400000` | `0x814000` | 6 209 536 | 5 MiB |
+| `afe0bf4` | 09-02 17:33 | **733 464** | `0x400000` | `0x814000` | 6 209 536 | **5 MiB** |
+| `0883613` | 09-02 20:08 | **733 464** | `0x400000` | `0x814000` | 6 209 536 | **5 MiB** |
+| `be955c0` | 09-02 20:53 | **733 464** | `0x400000` | `0x814000` | 6 209 536 | **5 MiB** |
+| `c063980` | 09-02 21:37 | 741 704 | `0x400000` | `0x814000` | 6 209 536 | 5 MiB |
+| **`49c3938`** | **09-03 23:54** | 766 504 | **`0x600000`** | **`0xa14000`** | **4 112 384** | **3 MiB** |
+| `3c85c52`…`4d5e031` | 09-04 00:46…11:47 | 766 504 | `0x600000` | `0xa14000` | 4 112 384 | 3 MiB |
+| `04aaf16`…`4deb146` | 09-04 16:52…18:27 | **770 600** | `0x600000` | `0xa14000` | 4 112 384 | **3 MiB** |
+
+Die beiden vom User genannten Abbildgrößen sind **auf das Byte** eindeutig:
+733 464 → ein Stand aus `afe0bf4`…`be955c0`, 770 600 → `04aaf16`…`4deb146`
+(die Datei `kernel8.img` im Arbeitsbaum war exakt diese 770 600 Byte).
+Der ST-RAM-Pool ist in beiden Fällen `0xE00000 − __kernel_image_end`.
+
+**Die Stufe liegt bei `49c3938`** („feat(aes): run the AES shell loop,
+launching the desktop via #Z"). Der BSS-Symbolvergleich `c063980` → `49c3938`
+(Summe aller BSS-Symbolgrößen 1 475 693 → 3 573 275) zeigt genau **ein** neues
+Symbol von Belang:
+
+```text
++ 0x200000 (2 MiB)  kernel::bench::DST
+```
+
+Der Rest der Differenz sind 430 Byte AES-/Shell-Kleinkram. Der Grund, warum
+`DST` neu ist, obwohl `kernel/src/bench.rs` seit `a3c4329` (2026-06-19)
+existiert: in `c063980` enthält das ELF **kein einziges** `kernel::shell`-
+oder `kernel::bench`-Symbol — der ganze Konsolen-Zweig war unerreichbar und
+wurde weggeräumt. `49c3938` legte `kernel/src/shell_loop.rs` an, das
+`shell::run_console` ruft; damit wurde `bench::run` erreichbar und sein
+2-MiB-Puffer nicht mehr entfernbar.
+
+Weil `link-rpi4.ld:70,73,81` zweimal `ALIGN(2M)` erzwingt, kostet das nicht
+2 MiB BSS, sondern verschiebt `.dma` und `.stack` um eine volle 2-MiB-Stufe:
+`__kernel_image_end` `0x814000` → `0xa14000`, ST-RAM-Pool −2 097 152 Byte.
+Das ist §6.1 in freier Wildbahn.
+
+> **Nebenbefund im selben Code, mit gemessen:** weil `SRC` nie geschrieben
+> wurde, konnte der Optimierer alle Lesezugriffe zu `0` falten, `SRC` ganz
+> entfernen und die 64 Kopierdurchläufe zu einem `memset` zusammenziehen. Das
+> Disassemblat von `bench::run` (Release, `4deb146`) hatte für den Lesetest
+> zwei **direkt aufeinanderfolgende** `mrs CNTPCT_EL0` — die gemeldete
+> Lese- und Kopierbandbreite war erfunden. Mit den Laufzeitpuffern laufen
+> alle drei Schleifen wieder.
+
+### 13.4 Die Einblendungs-Hypothese, Fund für Fund
+
+| # | Fund | Board | Im Pool? | Beleg |
+|---|---|---|---|---|
+| E1 | **ramfb-Framebuffer 1920×1080×4 = 8 294 400 B aus `Pool::Ttram`** | `qemu-virt` | **ja** — `0x41200000..0x419E9000` | `kernel/src/drivers/qemu_virt/ramfb.rs:153` |
+| E2 | Kernel-Heap 2 MiB aus `Pool::Ttram` | beide | **ja** — `0x41000000..0x41200000` (virt) / `0x01000000..0x01200000` (rpi4) | `kernel/src/bios/machine/heap.rs:323` |
+| E3 | VideoCore-Framebuffer | `rpi4` | **nein** (§13.5) | `drivers/bcm2711/framebuffer.rs:276`, `layout.rs:388-392` |
+| E4 | `.dma`, 2 MiB (xHCI, Device-nGnRnE) | beide | nein, aber **im ST-RAM-Fenster** `0x400000..0x600000` | `link-rpi4.ld:70-77`, `drivers/usb/mod.rs:84-99` |
+| E5 | Stack-Guard 2 MiB + Kernel-Stack 64 K + Notfall-Stack 16 K | beide | nein, aber im ST-RAM-Fenster `0x600000..0x814000` | `link-rpi4.ld:81-93` |
+| E6 | `bench::DST`, 2 MiB BSS | beide | nein, aber im ST-RAM-Fenster | **behoben 2026-09-04** |
+| E7 | Alignment-Padding zwischen BSS-Ende und `.dma` | beide | nein, aber im ST-RAM-Fenster (nach E6: 1,63 MiB) | `link-rpi4.ld:70` |
+| E8 | Pre-MMU-Boot-Stack 512 KiB unterhalb des Abbilds | beide | nein | `link-rpi4.ld:38-44` |
+
+Ein **Laufzeit**-Verbraucher des ST-RAM-Pools existiert nicht: die einzigen
+Aufrufer von `frames::alloc_frame`/`alloc_frames_contig` im ganzen Baum sind
+`lib.rs:575` (Smoke-Test, gibt sofort zurück), `lib.rs:644`
+(`bring_up_bdos_pools`), `ramfb.rs:153` und `heap.rs:323` — die letzten beiden
+ausschließlich aus `Pool::Ttram`. Der Grep des Users war vollständig.
+
+E1 ist die Bestätigung seiner Vermutung, aber nur auf `qemu-virt`: dort liegt
+ein Framebuffer **im TT-RAM-Pool**. Er ist zwar dauerhaft als `used` markiert
+und damit nicht `Malloc`-bar, zählt aber in der Boot-Schirm-Zahl mit und
+verletzt die Vorgabe „im TT-RAM darf kein Framebuffer sein" wörtlich.
+EmuTOS' eigenes Vorgehen wäre `balloc_stram(size, TRUE)` — Bildschirmspeicher
+**oben** vom RAM abziehen und `memtop` senken, damit er nie Teil des Pools
+wird (`bios/biosmem.c:88-131`). Umsetzung: §13.6, Entscheidung offen.
+
+### 13.5 Wie viel DRAM die echte Pi 4 meldet — aus dem Boot-Schirm des Users abgeleitet
+
+§10 und §12.6 hatten das als offen geführt (Konsolenzeilen, die der User ohne
+serielle Leitung nicht sehen kann). Die auf **seinem Schirm** stehende
+TT-RAM-Zahl reicht aber:
+
+```text
+TT-RAM-Extent = [DRAM_START + 16 MiB, dram.end)
+angezeigt (alte Abrundung) 752 MiB  ⇒  len ∈ [788 529 152, 789 577 728)
+                                    ⇒  dram.end ∈ [0x30000000, 0x30100000)
+```
+
+Von den drei möglichen Quellen passt genau eine:
+
+| Quelle | `dram.end` | TT-RAM-Extent | angezeigt |
+|---|---|---:|---|
+| Firmware `0x0001_0005`, `gpu_mem=256` → ARM = 768 MiB | `0x30000000` | 788 529 152 | **752 MiB** ✓ |
+| DTB, erste Bank einer 4-GB-Pi (typ. `0x3b400000`) | `0x3b400000` | 976 175 104 | 930 MiB ✗ |
+| Compile-Default `board::DRAM_SIZE` = 1 GiB | `0x40000000` | 1 056 964 608 | 1008 MiB ✗ |
+
+**Also:** die echte Pi 4 nimmt den Firmware-Zweig, die Firmware meldet
+**768 MiB ARM-Speicher** (= 1024 − `gpu_mem=256`, `boot/rpi4/config.txt:25`),
+und der VideoCore-Anteil `0x30000000..0x40000000` — in dem der Framebuffer
+liegt — ist **außerhalb** beider Pools. Das ist genau die Wirkung von
+`c063980`. Damit ist E3 belegt und F6 in der Zahl beantwortet: auf einer
+4-GB-Maschine verwalten wir heute 768 MiB; die restlichen ~3,25 GB sind
+unsichtbar (weiterhin offen, §12.7).
+
+Der eine Rest an Unsicherheit: jede Quelle mit `dram.end` innerhalb von
+1 MiB oberhalb `0x30000000` ergäbe dieselbe Anzeige. `0x30000000` ist der
+einzige Wert in diesem Fenster, der eine Bedeutung hat.
+
+### 13.6 Was 2026-09-04 geändert wurde — und was ausdrücklich nicht
+
+**Geändert:**
+
+1. `kernel/src/bench.rs` — die beiden 2-MiB-Puffer kommen nicht mehr aus der
+   Kernel-BSS (und damit aus dem ST-RAM-Fenster), sondern zur Laufzeit aus dem
+   **TT-RAM**-Pool (`Mxalloc(SIZE, MX_TTRAM)` / `Mfree` über
+   `bdos::mem::traps`, Kernel-Alias `pa + VA_OFFSET` wie in
+   `aes::resource::rsrc_load`). `__kernel_image_end` fällt damit zurück auf
+   `0x814000`, der ST-RAM-Pool auf **6 209 536 Byte**. Auf beiden Boards
+   verifiziert.
+2. `kernel/src/initinfo.rs::size_str` — EmuTOS' `cprintf_bytesize`-Regel
+   (§13.2).
+
+**Nicht geändert, bewusst — das sind Lead-/ADR-Entscheidungen:**
+
+* **F9 / die Bedeutung der Zahl** (Pool-Extent statt `phystop` +
+  `total_alt_ram()`). Auf `phystop` umzustellen macht die ST-RAM-Zeile zu
+  einer Konstanten (14 MB) — EmuTOS-treu und „fest", aber sie verschweigt
+  dann, dass davon nur 5,92 MiB frei sind. Das ist eine sichtbare
+  Produktentscheidung, keine Mechanik.
+* **E1 (Framebuffer im TT-RAM-Pool auf `qemu-virt`)** und **E2 (Heap im
+  TT-RAM-Pool)**. Der EmuTOS-förmige Weg ist, beides *vor* der Pool-Bildung
+  oben aus `dram` herauszuschneiden (`balloc_stram(…, TRUE)`-Äquivalent) statt
+  es aus dem Pool zu allozieren. Das ist ein Eingriff in `layout::discover` +
+  die Reihenfolge der Boot-Bring-up-Schritte.
+* **Der eigentliche Wunsch „ST-RAM fest auf 10 MB".** Er ist mit dem heutigen
+  Layout nicht erreichbar, siehe §13.7.
+
+### 13.7 Warum „ST-RAM = feste 10 MB" eine ADR-Entscheidung ist
+
+Nach dem Fix aus §13.6 ist der ST-RAM-Pool wieder 5,92 MiB — aber immer noch
+**ein Rest, kein Wert**. Er hängt an `__kernel_image_end`, und der springt in
+2-MiB-Stufen. Aktueller Abstand zur nächsten Stufe: BSS-Inhalt endet bei
+`0x25f598`, die Grenze liegt bei `0x400000` → **1,63 MiB Luft**.
+
+Damit `Mxalloc(-1, MX_STRAM)` verlässlich 10 MB liefert, muss `membot` eine
+**Konstante** werden — bei `phystop = 0xE00000` also `membot = 0x400000`. Was
+heute unterhalb `0x400000` liegen müsste, tut es nicht:
+
+```text
+0x080000..0x13d000   756 KiB  .text/.rodata/.data
+0x13d000..0x25f598  1,13 MiB  .bss (nach dem bench-Fix)
+0x25f598..0x400000  1,63 MiB  ALIGN(2M)-Padding
+0x400000..0x600000     2 MiB  .dma          ← muss raus
+0x600000..0x800000     2 MiB  Stack-Guard   ← muss raus
+0x800000..0x814000    80 KiB  Stacks        ← muss raus
+```
+
+Ohne `.dma` und `.stack` endet das Abbild bei ~`0x260000` und passt mit
+1,6 MiB Reserve unter eine feste `membot = 0x400000` — ST-RAM wäre dann
+**exakt 10 MiB, immer**. Die drei offenen Punkte sind aber echte
+Entscheidungen, keine Konstantendreher:
+
+1. **Wohin mit `.dma` (2 MiB)?** Naheliegend wäre das ohnehin ausgesparte
+   Atari-Hardware-Register-Fenster `0xE00000..0x1000000` (`STRAM_IO_RESERVE`,
+   `layout.rs:60-62`): exakt 2 MiB, 2-MiB-ausgerichtet, gehört keinem Pool.
+   Ob die VL805-/BCM2711-PCIe-Inbound-Fenster eine Lagebeschränkung haben, ist
+   eine **Datenblattfrage** — nicht raten (Projektregel 6).
+2. **Wohin mit Guard + Stack (2,08 MiB)?** Über die 16-MiB-Grenze. Dann
+   brauchen sowohl der Frame-Allokator einen echten **Reservierungsschritt**
+   (heute gibt es keinen: die Pools beginnen einfach hinter
+   `__kernel_image_end`, `frames.rs:23-29`) als auch `boot.s` ein angepasstes
+   `__bss_phys_start/end`.
+   *Oder*: der 2-MiB-Guard schrumpft auf eine Seite — dafür müsste das
+   TTBR1-Fenster im unteren Bereich eine **L3-Tabelle** bekommen, denn der
+   Kernel bildet DRAM heute ausschließlich in 2-MiB-L2-Blöcken ab
+   (`mmu.rs:100,159-165`). Genau das ist die „MMU-Herausforderung", an die
+   sich der User erinnert.
+3. **Was ist dann `phystop`?** Bleibt `0xE00000` (14 MiB); die 10 MB sind
+   `memtop − membot`. Das ist EmuTOS-Form: `phystop` = Maschine,
+   `[membot, memtop)` = Pool (`bios/biosmem.c:66-72`).
+
+Kosten/Nutzen: +4,08 MiB ST-RAM und — wichtiger — eine Zahl, die nicht mehr
+mit jedem Kernel-Build wandert. Berührte Dateien: beide Linkerskripte,
+`boot.s`, `frames.rs`, `layout.rs`, `mmu.rs`, `drivers/usb/mod.rs`.
+**Vorgelegt, nicht umgesetzt.**

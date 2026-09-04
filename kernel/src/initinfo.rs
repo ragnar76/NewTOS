@@ -101,12 +101,26 @@ fn drives_str() -> alloc::string::String {
     s
 }
 
-/// Format a byte count as a human-readable size string.
+/// Format a byte count the way EmuTOS' `initinfo` does — its
+/// `cprintf_bytesize` (`references/emutos/bios/initinfo.c:243-260`):
+///
+/// ```c
+/// if (bytes % (1024UL * 1024UL) == 0) { unit = _("MB"); value = bytes / (1024UL*1024UL); }
+/// else                                { unit = _("KB"); value = bytes / 1024UL; }
+/// ```
+///
+/// i.e. **MB only for an exact multiple of a MiB, KB otherwise** — never a
+/// truncated MB. That distinction matters here: our ST-RAM figure is rarely
+/// a round MiB (it starts at the end of the kernel image), and the previous
+/// `bytes >> 20` silently threw away up to 1 MiB, so a real 2-MiB change in
+/// the pool showed up as "5 MiB → 3 MiB" while the true values were 5.92 and
+/// 3.92 MiB. EmuTOS' rule reports both exactly, as `6064 KB` / `4016 KB`.
 fn size_str(bytes: u64) -> alloc::string::String {
-    if bytes >= 1 << 20 {
-        format!("{} MiB", bytes >> 20)
+    const MIB: u64 = 1024 * 1024;
+    if bytes.is_multiple_of(MIB) {
+        format!("{} MB", bytes / MIB)
     } else {
-        format!("{} KiB", bytes >> 10)
+        format!("{} KB", bytes / 1024)
     }
 }
 
