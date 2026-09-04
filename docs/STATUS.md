@@ -336,6 +336,22 @@ Phasenbeginn entschieden sein (siehe `docs/api/_phase00-completion.md`):
   `Cconrs`-EL0-Zeileneditor-E2E-Test.
   (Die früher hier genannten ~13 Phase-03-Clippy-Lints sind behoben —
   `cargo clippy` ist auf beiden Boards clean, verifiziert 2026-06-20.)
+- **USB: die Maus funktioniert nur an einem der vier Ports (echte Pi 4,
+  beobachtet 2026-09-04 vom User).** Nicht analysiert, keine Ursache benannt.
+  Zwei Beobachtungen aus der Phantomtasten-Analyse desselben Tages liegen in
+  der Nähe, erklären es aber **nicht** — sie sind Startpunkte, keine Diagnose:
+  (a) [`drivers/usb/mod.rs`](../kernel/src/drivers/usb/mod.rs) `poll()`
+  behandelt **jedes** Gerät mit `protocol != 1` als *Maus* — auch Hub-Slots
+  (Protokoll 9) und Slots, deren Enumeration scheiterte (Protokoll 0);
+  (b) `xhci::poll_interrupt` ordnet ein Transfer-Event allein über die Slot-ID
+  zu, ohne Completion-Code und ohne Endpoint-Prüfung. Dazu der Messwert vom
+  Diag-Boot: mit **abgezogener** Tastatur und Maus meldet der Boot-Schirm
+  `Port 1: HID device 2109:3431` — Hersteller-ID 2109 gehört VIA Labs, dem
+  Hersteller des VL805, also sehr wahrscheinlich der controllereigene Hub, den
+  wir als HID-Gerät führen. **Nur auf echter HW untersuchbar:** QEMU `raspi4b`
+  modelliert den VL805/PCIe-xHCI überhaupt nicht
+  ([`api/usb/pcie-rpi4.md:17`](api/usb/pcie-rpi4.md)), der USB-Pfad der echten
+  Maschine hat dort kein Gegenstück.
 
 ## Recent Decisions
 
