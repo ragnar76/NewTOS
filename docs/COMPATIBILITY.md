@@ -63,6 +63,24 @@ performance; a conforming program cannot observe them:
 > Rule of thumb: if a program can read it, time it, or depend on it through
 > a documented interface, it is **contract**. Otherwise it is **free**.
 
+### Sanctioned deviations, one by one
+
+Not everything outside the contract is invisible. Where NewTOS deliberately
+shows or does something EmuTOS does not, it is listed here — named, dated and
+attributed, so that nobody later mistakes it for drift. The standing rule is
+still *match EmuTOS*; an entry here means a human decided otherwise and said so.
+
+**The boot screen reports the ST-RAM pool, not `phystop`** — user decision,
+2026-09-04 (*"10Mb ist vollkommen OK"*). EmuTOS' `initinfo` prints
+`stramsize = (long)phystop`, the machine's ST-RAM size
+(`references/emutos/bios/initinfo.c:277`); on NewTOS that would be **14 MB**.
+We print the **10 MiB pool** instead — what a program can actually be given.
+Both are constants since `29a4581`; they differ by the 4 MiB the OS occupies
+below `membot` and the `.dma` block above `memtop`. No program can observe
+this: it is a screen line, not an interface — `Sysconf`, `Malloc(-1)` and the
+memory-descriptor chain are untouched and stay EmuTOS-faithful.
+
+
 ## EmuTOS is the reference, not the template
 
 CLAUDE.md Rule 1 says EmuTOS source *is* the spec. Through this charter that
