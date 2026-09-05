@@ -33,13 +33,25 @@
 //! ## Block table
 //!
 //! Each process slot owns a small table of [`Block`]s
-//! (`{ user_va, m_start, map_pa, size, kind }`) plus the window cursor.
+//! (`{ user_va, m_start, map_pa, size, kind, prot }`) plus the window cursor.
 //! **Entry 0 is seeded with the TPA** at load ([`seed_tpa`]), so
 //! `Mshrink(basepage @ user VA 0)` / `Mfree(0)` translate to the TPA's pool
 //! block instead of failing `EIMBA` (the latent bug ADR-021 also fixes).
 //! GEMDOS `Malloc` is called rarely with large sizes (a libc `malloc` grabs
 //! big chunks and sub-allocates in user space), so a few dozen entries
 //! suffice — [`MAX_USER_BLOCKS`].
+//!
+//! ## Publishing kernel structures (ADR-023)
+//!
+//! The same window also carries the other direction of the same problem: a
+//! syscall that returns a *pointer into the kernel* (BIOS `Getbpb`,
+//! `Getmpb`) hands an EL0 program a high-half address it cannot read.
+//! [`expose`] maps such a `'static` kernel object into the calling process's
+//! window under a FreeMiNT protection mode
+//! ([`tos_types::ProtMode`], `references/freemint/sys/mint/mem.h:130-134`) —
+//! `PROT_PR` for structures a program only reads — and returns the user VA.
+//! These blocks are [`Kind::Shared`]: the process may read them but never
+//! owns, shrinks or frees them.
 //!
 //! ## Concurrency
 //!
@@ -49,7 +61,7 @@
 
 use core::cell::UnsafeCell;
 
-use tos_types::Long;
+use tos_types::{Long, ProtMode};
 
 use super::mmu::{self, PageFlags};
 use super::MAX_PROCESSES;
@@ -91,6 +103,11 @@ pub enum Kind {
     /// The AES resource (`.RSC`) blob (mapped user RW, non-executable — it is
     /// data). Folds the task-#99 RSC window into this table.
     Rsc,
+    /// A **kernel** structure published into this process so the program can
+    /// read what a syscall handed it a pointer to ([`expose`], ADR-023). Not
+    /// a pool block: the process neither owns nor may free it, so `Mfree` /
+    /// `Mshrink` refuse it and `Block::m_start` is `0`.
+    Shared,
 }
 
 /// One tracked per-process user block: the app-visible window VA, the pool
@@ -101,6 +118,7 @@ struct Block {
     /// App-visible low-half VA (page-aligned; `0` for the TPA).
     user_va: u64,
     /// Pool block start (`Mxalloc` `m_start`) — the free/shrink key.
+    /// `0` for a [`Kind::Shared`] block, which has no pool block behind it.
     m_start: Long,
     /// Page-aligned physical address that `user_va` maps to. `>= m_start`
     /// by the alignment slack (0..one page).
@@ -109,6 +127,10 @@ struct Block {
     size: u64,
     /// Block role.
     kind: Kind,
+    /// Protection the block was published with — `Some` only for
+    /// [`Kind::Shared`] ([`expose`]); pool-backed blocks take their page
+    /// flags from [`Kind`] alone.
+    prot: Option<ProtMode>,
 }
 
 /// One process slot's user-memory state: the block table and the bump cursor
@@ -159,6 +181,19 @@ fn page_round_up(v: u64) -> u64 {
     (v + PAGE_SIZE - 1) & !(PAGE_SIZE - 1)
 }
 
+/// High-half kernel VA offset — the whole of DRAM is mapped at
+/// `phys + VA_OFFSET` for EL1 (`kernel::arch::aarch64::mmu`,
+/// `kernel/src/arch/aarch64/link-rpi4.ld:24`). Mirrored here the same way
+/// [`super::arena`] and [`super::loader`] mirror it.
+const VA_OFFSET: u64 = 0xFFFF_0000_0000_0000;
+
+/// Physical address behind a kernel high-half VA. Inverse of the mapping
+/// the kernel image is linked and mapped with.
+#[inline]
+const fn kva_to_pa(kva: u64) -> u64 {
+    kva.wrapping_sub(VA_OFFSET)
+}
+
 /// Reset `slot`'s user-memory table + window cursor and install the **TPA as
 /// block 0** (`user_va = 0`, pool key `raw_start`, page-aligned PA `base_pa`,
 /// span `size`). Called by the loader once the TPA is mapped, so an EL0
@@ -182,6 +217,7 @@ pub unsafe fn seed_tpa(slot: usize, raw_start: Long, base_pa: u64, size: u64) {
         map_pa: base_pa,
         size,
         kind: Kind::Tpa,
+        prot: None,
     });
 }
 
@@ -194,6 +230,7 @@ pub unsafe fn seed_tpa(slot: usize, raw_start: Long, base_pa: u64, size: u64) {
 ///   block (`m_start` is 16-byte-aligned, not page-aligned).
 /// * `size` — bytes to map (rounded up to whole pages).
 /// * `kind` — [`Kind::Heap`] (user RW-exec) or [`Kind::Rsc`] (user RW-NX).
+///   [`Kind::Shared`] belongs to [`expose`] and is rejected here.
 ///
 /// Returns `None` — mapping nothing — when the block table is full or the
 /// window is exhausted (an honest `ENSMEM`-style failure); the caller then
@@ -230,6 +267,10 @@ pub unsafe fn map(slot: usize, m_start: Long, size: u64, kind: Kind) -> Option<u
     let flags = match kind {
         Kind::Rsc => PageFlags::UserRwNx,
         Kind::Tpa | Kind::Heap => PageFlags::UserRwExec,
+        // A kernel structure is published by `expose`, which owns the
+        // protection choice; it is never a pool block, so it cannot be
+        // mapped through this path.
+        Kind::Shared => return None,
     };
     let mut off = 0u64;
     while off < map_len {
@@ -254,6 +295,7 @@ pub unsafe fn map(slot: usize, m_start: Long, size: u64, kind: Kind) -> Option<u
         map_pa: base_pa,
         size: map_len,
         kind,
+        prot: None,
     });
     sm.cursor += map_len;
     Some(user_va)
@@ -273,10 +315,122 @@ pub unsafe fn publish() {
     unsafe { mmu::publish_user_mappings() };
 }
 
+/// Publish a **kernel** structure into `slot`'s EL0 window and return the
+/// user VA the process must dereference (ADR-023).
+///
+/// This is the counterpart of [`map`] for memory the kernel owns and keeps:
+/// a syscall that hands an application a pointer to one of its own
+/// structures (BIOS `Getbpb` → the drive's BPB, `Getmpb` → the memory
+/// descriptor) must hand back an address the *caller* can read. The kernel
+/// is linked high-half (`0xFFFF_0000_0000_0000 + phys`), and those pages are
+/// EL1-only, so the raw `&'static` is useless at EL0.
+///
+/// * `kernel_va` — address of the structure inside the kernel image. Its
+///   physical page is what gets mapped; the intra-page offset is preserved,
+///   so the returned VA points at the same field layout.
+/// * `len` — bytes of the structure that must be readable.
+/// * `prot` — FreeMiNT protection mode
+///   (`references/freemint/sys/mint/mem.h:130-134`):
+///   [`ProtMode::Pr`] (`PROT_PR`, read-only) and [`ProtMode::G`]
+///   (`PROT_G`, read/write) produce a user mapping; [`ProtMode::P`],
+///   [`ProtMode::S`] and [`ProtMode::I`] mean "not reachable from the user"
+///   and therefore yield `None` — no mapping is made.
+///
+/// **Idempotent per physical page.** A second `expose` of anything on an
+/// already-published page returns a VA in the same window mapping instead of
+/// consuming more window: `Getbpb` is called once per drive and would
+/// otherwise leak a page of window per call. The re-use requires the
+/// existing entry to already cover the requested span and to have been
+/// published with the same protection, otherwise a fresh mapping is made.
+///
+/// Returns `None` when the block table is full, the window is exhausted, or
+/// `prot` grants the user nothing. Callers then keep whatever fallback their
+/// contract prescribes (the BIOS functions return the kernel pointer to
+/// their in-kernel callers and `0`/NULL to a user they cannot serve).
+///
+/// # Safety
+///
+/// Caller holds the BDOS giant lock. `kernel_va .. kernel_va + len` must lie
+/// inside the kernel's high-half image mapping and stay valid for as long as
+/// the process may hold the returned pointer — i.e. it must be a `'static`
+/// kernel object, not a stack or heap temporary. The whole physical page(s)
+/// covering it become readable (and, with [`ProtMode::G`], writable) to the
+/// process, so the object must own its page(s).
+pub unsafe fn expose(
+    slot: usize,
+    kernel_va: *const u8,
+    len: usize,
+    prot: ProtMode,
+) -> Option<u64> {
+    if slot >= MAX_PROCESSES || len == 0 {
+        return None;
+    }
+    // PROT_P / PROT_S / PROT_I give the user no access at all — there is
+    // nothing to map, which is a legitimate answer, not a failure.
+    let flags = match prot {
+        ProtMode::Pr => PageFlags::UserRoNx,
+        ProtMode::G => PageFlags::UserRwNx,
+        ProtMode::P | ProtMode::S | ProtMode::I => return None,
+    };
+
+    let pa = kva_to_pa(kernel_va as u64);
+    let base_pa = pa & !(PAGE_SIZE - 1);
+    let offset = pa - base_pa;
+    let span = page_round_up(offset + len as u64);
+
+    // SAFETY: caller's lock contract; exclusive access to this slot.
+    let sm = unsafe { &mut (*USER_MEM.0.get())[slot] };
+
+    // Already published? Re-use the same window VA (see "Idempotent").
+    if let Some(b) = sm.blocks.iter().flatten().find(|b| {
+        b.kind == Kind::Shared && b.map_pa == base_pa && b.size >= span && b.prot == Some(prot)
+    }) {
+        return Some(b.user_va + offset);
+    }
+
+    let idx = sm.blocks.iter().position(Option::is_none)?;
+    if span > WINDOW_SIZE - sm.cursor {
+        return None; // window exhausted
+    }
+    let user_va = WINDOW_BASE + sm.cursor;
+
+    let mut off = 0u64;
+    while off < span {
+        // SAFETY: slot bounds-checked; the VA is in-window and page-aligned,
+        // the PA is the page-aligned physical address of a kernel page.
+        if unsafe { mmu::map_page(slot, user_va + off, base_pa + off, flags) }.is_err() {
+            // Only unreachable validation errors land here; the window VAs
+            // were never handed out, so the partial descriptors are dead.
+            return None;
+        }
+        off += PAGE_SIZE;
+    }
+    // Publish the PTEs before the app can walk them. The window VAs were
+    // invalid, so no stale TLB entry exists → no TLBI (QUIRK-001).
+    // SAFETY: barrier-only, permitted at EL1.
+    unsafe { mmu::publish_user_mappings() };
+
+    sm.blocks[idx] = Some(Block {
+        user_va,
+        m_start: 0,
+        map_pa: base_pa,
+        size: span,
+        kind: Kind::Shared,
+        prot: Some(prot),
+    });
+    sm.cursor += span;
+    Some(user_va + offset)
+}
+
 /// Look up the block whose window/TPA user VA is exactly `user_va`, for
 /// `Mshrink` (needs the pool key + alignment prefix). Returns `None`
 /// (→ `EIMBA`) if no block *starts* at `user_va`, matching EmuTOS's "address
 /// not on `mp_mal`" error.
+///
+/// [`Kind::Shared`] blocks are invisible here: the process does not own the
+/// kernel structure published into its window, so `Mshrink` on that VA is
+/// `EIMBA` — exactly what EmuTOS answers for an address that is not on the
+/// allocated list.
 pub fn translate(slot: usize, user_va: u64) -> Option<TransBlock> {
     if slot >= MAX_PROCESSES {
         return None;
@@ -286,7 +440,7 @@ pub fn translate(slot: usize, user_va: u64) -> Option<TransBlock> {
     sm.blocks
         .iter()
         .flatten()
-        .find(|b| b.user_va == user_va)
+        .find(|b| b.user_va == user_va && b.kind != Kind::Shared)
         .map(|b| TransBlock {
             m_start: b.m_start,
             prefix: b.map_pa - b.m_start as u64,
@@ -317,8 +471,9 @@ pub fn free(slot: usize, user_va: u64) -> Option<Long> {
     let pos = blocks
         .iter()
         .position(|b| matches!(b, Some(bl) if bl.user_va == user_va))?;
-    // RSC blocks are freed via `rsrc_free`, not `Mfree` (reads `kind`).
-    if matches!(&blocks[pos], Some(bl) if bl.kind == Kind::Rsc) {
+    // RSC blocks are freed via `rsrc_free`, not `Mfree`; Shared blocks are
+    // kernel structures the process never owned and must not release.
+    if matches!(&blocks[pos], Some(bl) if bl.kind == Kind::Rsc || bl.kind == Kind::Shared) {
         return None;
     }
     blocks[pos].take().map(|bl| bl.m_start)
@@ -337,7 +492,7 @@ pub fn free_by_mstart(slot: usize, m_start: Long) -> bool {
     let blocks = unsafe { &mut (*USER_MEM.0.get())[slot].blocks };
     match blocks
         .iter()
-        .position(|b| matches!(b, Some(bl) if bl.m_start == m_start))
+        .position(|b| matches!(b, Some(bl) if bl.m_start == m_start && bl.kind != Kind::Shared))
     {
         Some(pos) => {
             blocks[pos] = None;

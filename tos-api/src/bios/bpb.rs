@@ -6,7 +6,10 @@
 
 use core::cell::UnsafeCell;
 
+use tos_types::ProtMode;
+
 use super::drive;
+use crate::bdos::process::{self, usermem};
 use crate::host;
 
 /// BIOS Parameter Block (fixed Atari ABI, 18 bytes).
@@ -76,10 +79,34 @@ const MIN_FATS: u8 = 1;
 /// (`MAX_FATS`, `references/emutos/bios/blkdev.h:32`).
 const MAX_FATS: u8 = 2;
 
-struct BpbCell(UnsafeCell<[Bpb; 16]>);
+/// The per-drive BPB table, in a page of its own.
+///
+/// `Getbpb` publishes this table **read-only into the calling process's
+/// address space** (ADR-023), and the smallest thing an AArch64 translation
+/// table can grant is a whole 4-KiB page. Padding the table to exactly one
+/// page — and aligning it to one — guarantees that the page an EL0 program
+/// can read contains the BPBs and nothing else of the kernel's.
+#[repr(C, align(4096))]
+struct BpbTable {
+    /// One BPB per drive letter A..P.
+    entries: [Bpb; 16],
+    /// Fill to a whole page so no other kernel datum shares it.
+    _pad: [u8; 4096 - 16 * core::mem::size_of::<Bpb>()],
+}
+
+const _: () = assert!(core::mem::size_of::<Bpb>() == 18, "BPB ABI is 18 bytes");
+const _: () = assert!(
+    core::mem::size_of::<BpbTable>() == 4096,
+    "the BPB table must own exactly one page — see `getbpb`'s EL0 publish",
+);
+
+struct BpbCell(UnsafeCell<BpbTable>);
 // SAFETY: written and read only from the single-CPU, IRQ-off trap path.
 unsafe impl Sync for BpbCell {}
-static TABLE: BpbCell = BpbCell(UnsafeCell::new([Bpb::ZERO; 16]));
+static TABLE: BpbCell = BpbCell(UnsafeCell::new(BpbTable {
+    entries: [Bpb::ZERO; 16],
+    _pad: [0; 4096 - 16 * core::mem::size_of::<Bpb>()],
+}));
 
 /// Parse a DOS/FAT boot sector into full [`Geometry`] (the 18-byte ABI
 /// [`Bpb`] plus the normalized `reserved`/`num_fats` the FAT write side
@@ -231,7 +258,7 @@ pub fn bpb_for(drive: u16) -> Option<Bpb> {
     let bpb = parse(&sec, part.count)?.bpb;
     // SAFETY: single trap path; one BPB slot per drive.
     let table = unsafe { &mut *TABLE.0.get() };
-    table[drive as usize] = bpb;
+    table.entries[drive as usize] = bpb;
     Some(bpb)
 }
 
@@ -239,11 +266,39 @@ pub fn bpb_for(drive: u16) -> Option<Bpb> {
 /// the per-drive static, and return a pointer to it (`0` on failure).
 /// The return is a **native 64-bit pointer** (the BIOS dispatch carries
 /// `i64`).
+///
+/// The contract is "a pointer to the drive's BPB", and the *caller* reads
+/// it — so the address has to be one the caller can dereference (spec
+/// `docs/api/bios/07-getbpb.md` §Outputs):
+///
+/// * **In-kernel (EL1) caller** — the FAT mount, the desktop, the boot
+///   self-tests: the kernel VA of the table entry is exactly that address.
+/// * **EL0 caller** — the kernel is linked high-half and those pages are
+///   EL1-only, so the table is published read-only (FreeMiNT `PROT_PR`,
+///   `references/freemint/sys/mint/mem.h:133`) into the calling process's
+///   address space and the corresponding **user VA** is returned (ADR-023).
+///   All 16 entries share one page, so a program that walks every drive
+///   costs a single mapping. If the process's window cannot take the
+///   mapping the answer is `0` — the contract's "no BPB for this drive" —
+///   because a pointer the caller would fault on is not an answer.
 pub fn getbpb(drive: u16) -> i64 {
     if bpb_for(drive).is_none() {
         return 0;
     }
     // SAFETY: single trap path; the slot was just written by `bpb_for`.
-    let table = unsafe { &mut *TABLE.0.get() };
-    &table[drive as usize] as *const Bpb as i64
+    let table = unsafe { &*TABLE.0.get() };
+    let kva = &table.entries[drive as usize] as *const Bpb;
+
+    let Some(slot) = process::slot_for(process::current()) else {
+        return kva as i64; // EL1 caller: the kernel VA is readable.
+    };
+    // SAFETY: BDOS lock held (single-CPU SVC context); `TABLE` is a
+    // `'static` that owns its page, so publishing it read-only exposes
+    // nothing else and it outlives every process that holds the pointer.
+    match unsafe {
+        usermem::expose(slot, kva.cast(), core::mem::size_of::<Bpb>(), ProtMode::Pr)
+    } {
+        Some(user_va) => user_va as i64,
+        None => 0,
+    }
 }

@@ -140,3 +140,80 @@ pub const MX_PREFSTRAM: i16 = 2;
 pub const MX_PREFTTRAM: i16 = 3;
 /// Mask of supported `Mxalloc` mode bits. EmuTOS clears the rest.
 pub const MX_MODEMASK: i16 = 0x03;
+
+// ─── Memory-protection modes (FreeMiNT model) ───────────────────────
+//
+// NewTOS adopts FreeMiNT's protection model rather than inventing one, so
+// FreeMiNT's full per-process protection can later be built on top of these
+// same names and values instead of replacing them (user decision 2026-09-05,
+// ADR-023). Values are verbatim from `references/freemint/sys/mint/mem.h`.
+//
+// FreeMiNT carries the mode in two encodings and NewTOS keeps both:
+//
+//   * `F_PROT_*` — the *external* encoding: the protection nibble inside an
+//     `Mxalloc` mode word and inside a program's `PRGFLAGS`
+//     (`sys/mint/mem.h:120-126`). EmuTOS ignores these bits and NewTOS still
+//     masks them off in `Mxalloc` (`mode &= MX_MODEMASK`, ADR-021) — they are
+//     defined here so the later protection work has the ABI already fixed.
+//   * `PROT_*` / [`ProtMode`] — the *internal* encoding: the small integer
+//     FreeMiNT passes to `alloc_region()` / `mark_region()`
+//     (`sys/mint/mem.h:130-136`). This is what NewTOS's kernel-side publisher
+//     (`tos-api::bdos::process::usermem::expose`) takes today.
+//
+// The two are related by FreeMiNT's own expression
+// `(mode & F_PROTMODE) >> F_PROTSHIFT`; no decoder is defined here yet
+// because nothing decodes an `Mxalloc` mode word today (ADR-021 keeps
+// EmuTOS's `mode &= MX_MODEMASK`), and untested unused logic is worse than
+// none.
+
+/// Mask of the protection-mode bits in an `Mxalloc` mode word / `PRGFLAGS`
+/// (`F_PROTMODE`, `references/freemint/sys/mint/mem.h:120`).
+pub const F_PROTMODE: i16 = 0xf0;
+/// Private — no read or write for anyone but the owner
+/// (`F_PROT_P`, `sys/mint/mem.h:121`). FreeMiNT's default.
+pub const F_PROT_P: i16 = 0x00;
+/// Global — any access is OK (`F_PROT_G`, `sys/mint/mem.h:122`).
+pub const F_PROT_G: i16 = 0x10;
+/// Supervisor — any supervisor access is OK (`F_PROT_S`, `sys/mint/mem.h:123`).
+pub const F_PROT_S: i16 = 0x20;
+/// Read-only — any read is OK, no write (`F_PROT_PR`, `sys/mint/mem.h:124`).
+pub const F_PROT_PR: i16 = 0x30;
+/// Invalid page (`F_PROT_I`, `sys/mint/mem.h:125`).
+pub const F_PROT_I: i16 = 0x40;
+/// Bit position of the protection nibble (`F_PROTSHIFT`, `sys/mint/mem.h:127`).
+pub const F_PROTSHIFT: u32 = 4;
+
+/// Internal protection value — private (`PROT_P`, `sys/mint/mem.h:130`).
+pub const PROT_P: u8 = 0;
+/// Internal protection value — global (`PROT_G`, `sys/mint/mem.h:131`).
+pub const PROT_G: u8 = 1;
+/// Internal protection value — supervisor (`PROT_S`, `sys/mint/mem.h:132`).
+pub const PROT_S: u8 = 2;
+/// Internal protection value — read-only (`PROT_PR`, `sys/mint/mem.h:133`).
+pub const PROT_PR: u8 = 3;
+/// Internal protection value — invalid page (`PROT_I`, `sys/mint/mem.h:134`).
+pub const PROT_I: u8 = 4;
+/// Highest defined internal protection value
+/// (`PROT_MAX_MODE`, `sys/mint/mem.h:135`).
+pub const PROT_MAX_MODE: u8 = 4;
+/// Mask of the internal protection value
+/// (`PROT_PROTMODE`, `sys/mint/mem.h:136`).
+pub const PROT_PROTMODE: u8 = 0xf;
+
+/// Typed form of FreeMiNT's internal `PROT_*` values — the access a process
+/// is granted to a region. Discriminants are the `PROT_*` constants above, so
+/// `mode as u8` is exactly what FreeMiNT passes to `alloc_region()`.
+#[derive(Copy, Clone, Debug, Eq, PartialEq)]
+#[repr(u8)]
+pub enum ProtMode {
+    /// `PROT_P` — no read or write (private to the owner).
+    P = 0,
+    /// `PROT_G` — any access OK.
+    G = 1,
+    /// `PROT_S` — any supervisor access OK; nothing for the user.
+    S = 2,
+    /// `PROT_PR` — any read OK, no write.
+    Pr = 3,
+    /// `PROT_I` — invalid page.
+    I = 4,
+}

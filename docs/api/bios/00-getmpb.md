@@ -280,13 +280,24 @@ to `bdos::mem::init::init`. GEMDOS never calls `Getmpb` to learn the free region
   allocator state" quirk stays rejected. Measured from EL0 on QEMU `raspi4b`:
   `mp_mal == NULL`, `mp_rover` untouched, `mp_mfl` non-NULL (`APITEST` checks
   BS03..BS05 PASS).
-- **`mp_mfl` points at a kernel address an EL0 program cannot read —
-  MEASURED 2026-09-05, open.** The MD the free-list head points to is the
-  kernel static `THEMD` (`getmpb.rs`), at a high-half VA
+- **`mp_mfl` pointed at a kernel address an EL0 program could not read —
+  MEASURED 2026-09-05, CLOSED the same day (ADR-023).** The MD the free-list
+  head points to is the kernel static `THEMD` (`getmpb.rs`), at a high-half VA
   (`0xFFFF_0000_0000_0000 + physical`,
   `kernel/src/arch/aarch64/link-rpi4.ld:24`) whose pages are EL1-only. An
-  application therefore gets a free-list head it cannot dereference: measured
-  `mp_mfl == 0xFFFF00000026D8B8` (`APITEST` check BS06 FAIL; the MD field
-  checks BS07..BS10 are unrunnable from EL0). Same class of defect as the
-  `Getbpb` pointer (`docs/api/bios/07-getbpb.md`); the fix is a design
-  decision and is **not** taken here.
+  application therefore got a free-list head it could not dereference:
+  measured `mp_mfl == 0xFFFF00000026D8B8` (`APITEST` check BS06 FAIL; the MD
+  field checks BS07..BS10 unrunnable from EL0).
+
+  **Now:** `THEMD` occupies a page of its own and is published into the
+  calling process's EL0 window read-only — FreeMiNT `PROT_PR`
+  (`references/freemint/sys/mint/mem.h:133`) — via
+  `bdos::process::usermem::expose`; `mp_mfl` carries the resulting **user
+  VA** (ADR-023, same mechanism as `Getbpb`,
+  `docs/api/bios/07-getbpb.md`). An in-kernel (EL1) caller still gets the
+  kernel VA. If the process's window cannot take the mapping, `mp_mfl` is
+  left NULL — an empty free list, which this contract already defines —
+  rather than a pointer the caller would fault on. Measured after the change
+  on QEMU `raspi4b`: `mp_mfl = 0x00402000`, `APITEST` BS03..BS10 all PASS
+  (`m_link == NULL`, `m_own == NULL`, `m_start == membot $432 == 0x400000`,
+  `m_length == memtop-membot == 0xA00000`).

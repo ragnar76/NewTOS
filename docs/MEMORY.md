@@ -1543,6 +1543,156 @@ app** (an EL0 GEM client), enabling an AUTO-folder / alternate desktop. In-kerne
 
 ---
 
+## ADR-023: What the kernel hands out, the caller must be able to reach — publish kernel structures into the process under FreeMiNT's `PROT_*` modes
+
+**Date:** 2026-09-05
+**Status:** Accepted
+**Phase:** cross-cutting (BIOS/XBIOS pointer returns + process MMU)
+
+### Context
+
+Several TOS calls do not return a *value*, they return a **pointer to a
+structure the caller then reads**: BIOS `Getbpb` (the drive's BPB), BIOS
+`Getmpb` (the memory-descriptor free list), XBIOS `Physbase`/`Logbase`,
+`Keytbl`, `Kbdvbase`, `Iorec`. On a flat, unprotected Atari every such
+pointer is dereferenceable by definition. NewTOS runs applications at **EL0**
+behind `TTBR0_EL1` and links its kernel high-half at
+`0xFFFF_0000_0000_0000 + phys` (`kernel/src/arch/aarch64/link-rpi4.ld:24`),
+where the pages are EL1-only. A returned `&'static` therefore satisfies the
+letter of the contract ("a pointer to the BPB") and violates its substance:
+the caller cannot read it.
+
+This was **measured**, not deduced. `sdk/apps/apitest/apitest.c` (an EL0
+`.NCP` console program) got `Getbpb(2) = 0xFFFF00000026D8F4` and
+`Getmpb → mp_mfl = 0xFFFF00000026D8B8` on QEMU `raspi4b` *and* on real Pi-4
+hardware; the test deliberately range-checked instead of dereferencing, so it
+reported the defect rather than faulting the machine. The nine BPB field
+checks and the four MD field checks behind those two pointers were
+consequently unrunnable. The gap had never surfaced because every previous
+caller — the FAT mount, the desktop, the boot self-tests — runs at EL1, where
+the kernel VA *is* the readable address.
+
+The situation is the mirror image of ADR-021. There the kernel handed an app
+a *pool* address it could not reach and the answer was: map the block into a
+per-process EL0 window and return the user VA. Here the kernel hands an app
+one of *its own* structures. The mechanism should be the same one, not a
+second one.
+
+Sources consulted: EmuTOS (`bios/blkdev.c:589-756` `blkdev_getbpb`,
+`bios/biosmem.c:134-144` `getmpb`/`themd`, `bios/ikbd.c:122-134` `keytbl`) for
+what the contract is; **FreeMiNT** (`references/freemint/`, the project's
+sanctioned MiNT-extension source) for the protection model; NewTOS current
+code (`tos-api/src/bdos/process/{usermem,mmu}.rs`, `tos-api/src/bios/`).
+
+### Decision
+
+**Adopt FreeMiNT's protection model — its names and its values — instead of
+inventing a NewTOS one** (user decision, 2026-09-05: *"wir müssen das Rad
+nicht neu erfinden sondern können das verwenden"*). The constants are taken
+verbatim from `references/freemint/sys/mint/mem.h:120-136` into
+`tos-types::memory`: the external `F_PROTMODE`/`F_PROT_P`/`F_PROT_G`/
+`F_PROT_S`/`F_PROT_PR`/`F_PROT_I`/`F_PROTSHIFT` nibble of an `Mxalloc` mode
+word, and the internal `PROT_P`/`PROT_G`/`PROT_S`/`PROT_PR`/`PROT_I` values
+FreeMiNT passes to `alloc_region()`, typed as `tos_types::ProtMode`. Later
+work can therefore *extend* FreeMiNT's model rather than replace ours.
+
+On that vocabulary, add **one** new primitive, inside the ADR-021 window:
+`bdos::process::usermem::expose(slot, kernel_va, len, prot) -> Option<u64>` —
+map the physical page(s) of a `'static` kernel object into the calling
+process's EL0 window under a `PROT_*` mode and return the **user VA**. It is
+idempotent per physical page (a `Getbpb` loop over 16 drives costs one
+mapping), and the published block is `Kind::Shared`: the process may read it
+but can never `Mfree`/`Mshrink` it.
+
+Assignment for the two measured cases: structures a program only **reads**
+get `PROT_PR` (read-only, `UserRoNx`). `Getbpb` and `Getmpb` use it. Each
+published structure is padded and aligned to own its page, so the page a
+program can read holds exactly the published data and no other kernel datum.
+EL1 callers are unchanged: with no running process the kernel VA is returned.
+
+**Explicitly out of scope, and deliberately so: FreeMiNT's full memory
+protection** — processes that cannot read one another, enforced `Mxalloc`
+`F_PROT*` modes, killing a process on trespass. ADR-021 deferred that and it
+stays deferred; this ADR takes only the small half: *what we hand out, the
+recipient must be able to reach.* The large half remains its own project, and
+it now has our vocabulary already aligned to build on.
+
+### Rationale
+
+- **One mechanism, not two.** `expose` is 60 lines in the module that already
+  owns the process's low-half VA space, reuses its bump cursor (fresh VAs ⇒ no
+  TLBI ⇒ QUIRK-001 stays avoided), its block table and its teardown.
+- **Their names, so their code can follow.** Writing `PROT_PR` where FreeMiNT
+  writes `PROT_PR` means the eventual protection work is an extension, not a
+  migration. Inventing `NewTosAccess::ReadOnly` would have guaranteed a
+  rename later.
+- **Page-owning statics.** The MMU's granule is a page; without padding,
+  publishing an 18-byte table would also publish ~4 KiB of neighbouring
+  kernel BSS. Two `const _: () = assert!(size == 4096)` make that structural
+  rather than hopeful.
+- **Failure is NULL, not a bad pointer.** If the window cannot take the
+  mapping, `Getbpb` returns `0` and `Getmpb` leaves `mp_mfl` NULL — both are
+  values the contract already defines. Returning an address the caller would
+  fault on is never an answer.
+
+### Consequences
+
+- **Positive:** the `Getbpb`/`Getmpb` contract is now satisfied for EL0, which
+  is the only kind of caller a real application is. Measured: `APITEST`
+  BB18/BS06 pass and the 14 field checks behind them now run and match the
+  boot sector and the `membot`/`memtop` sysvars — 66 PASS / 2 FAIL / 7 SKIP
+  became **82 PASS / 0 FAIL / 5 SKIP** (the 5 residual SKIPs are the
+  interactive keyboard checks, structurally impossible under QEMU `raspi4b`).
+  The `PROT_*` vocabulary is in place for the multitasking phase.
+- **Negative:** one 4-KiB page of kernel BSS per published structure, one
+  window page per publishing process, and one more thing to remember when a
+  syscall returns a pointer. The rest of the class is **not** fixed by this
+  ADR — see the survey in `docs/api/bios/07-getbpb.md` and the STATUS entry.
+- **Neutral:** a published pointer is no longer the kernel's own address, so
+  two callers at different privilege levels legitimately see different
+  numbers for the same structure. That is invisible to a conforming program,
+  which only ever compares a pointer with the one it was given.
+
+### Alternatives considered
+
+- **Copy the structure into the caller's reserved low memory** (the other
+  option `docs/api/bios/07-getbpb.md` had named). This is what `Keytbl`
+  already does — it materialises `struct keytbl` plus its six tables at
+  `KEYTBL_AREA_VA = 0x768` inside the process's own page 0
+  (`tos-api/src/xbios/keytbl.rs:217-234`), which is why `Keytbl` never had
+  this defect. Rejected here because a copy cannot be `PROT_PR`: page 0 is the
+  program's own read/write TPA page, so the app could scribble on its BPB;
+  and the reserved low region is 2.4 KiB of a shared page, too small to grow
+  into. The precedent is acknowledged, not extended.
+- **Return the physical address** (classic-TOS-style flat pointer). The app
+  has no identity mapping; a PA is as unreachable as the kernel VA.
+- **Map the whole kernel image read-only into every process.** Fixes every
+  case at once and gives every app a full read of kernel memory — a protection
+  model going backwards, and it makes `PROT_*` meaningless.
+- **Adopt FreeMiNT's full protection model now.** Same answer as ADR-021: it
+  presupposes multitasking and relocatable binaries. Its *vocabulary* is
+  adopted now precisely so its *mechanism* can be adopted later.
+
+### References
+
+- FreeMiNT `references/freemint/sys/mint/mem.h:120-136` (the constants, taken
+  verbatim); `sys/memory.c`, `sys/arch/mprot030.c` (the model this prepares
+  for).
+- EmuTOS `bios/blkdev.c:589-756`, `bios/biosmem.c:134-144`, `bios/ikbd.c:122-134`.
+- Specs `docs/api/bios/07-getbpb.md`, `docs/api/bios/00-getmpb.md` (both had
+  the gap recorded as "open, a design decision, not taken here" — now closed).
+- Code: `tos-types/src/memory.rs` (`ProtMode`, `F_PROT_*`, `PROT_*`),
+  `tos-api/src/bdos/process/usermem.rs` (`expose`, `Kind::Shared`),
+  `tos-api/src/bdos/process/mmu.rs` (`PageFlags::UserRoNx`),
+  `tos-api/src/bios/bpb.rs`, `tos-api/src/bios/getmpb.rs`.
+- Measurement: `sdk/apps/apitest/apitest.c` checks BB17..BB28, BS03..BS10.
+- ADR-021 (the window this extends; deferred `F_PROTMODE` — partially lifted
+  here for the publish direction only), ADR-010, QUIRK-001.
+- Notes [[el0-app-memory-must-be-mapped]], [[freemint-extension-direction]],
+  [[framebuffer-outside-st-tt-ram]] (why `Physbase` is the hard remainder).
+
+---
+
 ## Quirks Discovered
 
 Format: `QUIRK-NNN`, dated, with severity (low / medium / high / critical).

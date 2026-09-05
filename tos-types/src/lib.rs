@@ -17,7 +17,11 @@ pub mod memory;
 pub use basepage::{
     BasePage, NUMCURDIR, NUMSTD, PDCLSIZE, PF_FASTLOAD, PF_STANDARD, PF_TTRAMLOAD, PF_TTRAMMEM,
 };
-pub use memory::{MD, MPB, MX_MODEMASK, MX_PREFSTRAM, MX_PREFTTRAM, MX_STRAM, MX_TTRAM};
+pub use memory::{
+    ProtMode, F_PROTMODE, F_PROTSHIFT, F_PROT_G, F_PROT_I, F_PROT_P, F_PROT_PR, F_PROT_S, MD,
+    MPB, MX_MODEMASK, MX_PREFSTRAM, MX_PREFTTRAM, MX_STRAM, MX_TTRAM, PROT_G, PROT_I, PROT_P,
+    PROT_PR, PROT_PROTMODE, PROT_MAX_MODE, PROT_S,
+};
 
 /// 16-bit signed integer, equivalent to TOS `WORD`.
 pub type Word = i16;

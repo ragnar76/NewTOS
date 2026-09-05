@@ -151,6 +151,13 @@ pub enum PageFlags {
     UserRoExec,
     /// User Read/Write, **not** executable. Data, BSS, stack.
     UserRwNx,
+    /// User Read-Only, **not** executable. The AArch64 spelling of
+    /// FreeMiNT's [`tos_types::ProtMode::Pr`] (`PROT_PR`, "any read
+    /// OK, no write"): what
+    /// [`super::usermem::expose`] uses to publish a kernel structure
+    /// a program only *reads* (the `Getbpb` BPB, the `Getmpb` memory
+    /// descriptor) into that program's address space.
+    UserRoNx,
 }
 
 impl PageFlags {
@@ -160,6 +167,7 @@ impl PageFlags {
             Self::UserRwExec => core | D_AP_USER_RW,
             Self::UserRoExec => core | D_AP_USER_RO,
             Self::UserRwNx => core | D_AP_USER_RW | D_UXN,
+            Self::UserRoNx => core | D_AP_USER_RO | D_UXN,
         }
     }
 }

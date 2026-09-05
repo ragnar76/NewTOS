@@ -503,21 +503,39 @@ static int is_extended_type(unsigned int t)
 }
 
 /*
+ * Exclusive top of the low-half VA range a NewTOS process can have mapped.
+ * The per-process page tables provision USER_L3_COUNT (= 10) leaf tables of
+ * 2 MiB each -> 20 MiB (tos-api/src/bdos/process/mmu.rs, USER_L3_COUNT /
+ * USER_TPA_MAX_VA): the 4 MiB TPA at the bottom, the per-process window
+ * above it. Nothing the kernel hands this process can lie beyond it.
+ */
+#define NEWTOS_USER_VA_TOP 0x01400000UL
+
+/*
  * Can `p` be dereferenced from EL0?
  *
- * NewTOS maps only the calling process's TPA into TTBR0 (user VA 0 ..
- * p_hitpa); the kernel's own statics are linked at 0xFFFF_0000_0000_0000 +
- * physical (kernel/src/arch/aarch64/link-rpi4.ld:24) and are EL1-only. A
- * BIOS call that hands back a pointer into kernel memory therefore gives an
- * application an address it CANNOT read -- and dereferencing it here would
- * fault the machine instead of reporting the defect. So every returned
- * pointer is range-checked before it is followed.
+ * The kernel's own statics are linked at 0xFFFF_0000_0000_0000 + physical
+ * (kernel/src/arch/aarch64/link-rpi4.ld:24) and are EL1-only. A call that
+ * hands back a pointer into kernel memory therefore gives an application an
+ * address it CANNOT read -- and dereferencing it here would fault the
+ * machine instead of reporting the defect. So every returned pointer is
+ * range-checked before it is followed.
+ *
+ * A process's own low half is TWO ranges, not one: its TPA, [0x100,
+ * p_hitpa), plus the per-process window above p_hitpa into which the kernel
+ * maps everything it hands out -- GEMDOS Malloc/Mxalloc blocks (T18/T19
+ * below write and read exactly such a VA, and it is > p_hitpa) and, per
+ * ADR-023, the BIOS structures Getbpb/Getmpb point at. An earlier revision
+ * of this helper tested `p < p_hitpa` alone, which is why it also rejected
+ * the (perfectly readable) Malloc range; the bound is the window top.
  */
 static int el0_readable(unsigned long p)
 {
 	unsigned long hitpa = (unsigned long)RD_U32(0x04UL);   /* BasePage p_hitpa */
 	if (hitpa == 0) return 0;
-	return p >= 0x100UL && p < hitpa;
+	if (p < 0x100UL) return 0;
+	if (p < hitpa) return 1;                 /* inside our own TPA */
+	return p < NEWTOS_USER_VA_TOP;           /* inside the per-process window */
 }
 
 /*
