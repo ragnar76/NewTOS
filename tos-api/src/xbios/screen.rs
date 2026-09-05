@@ -28,9 +28,10 @@
 
 use core::sync::atomic::{AtomicU64, AtomicU8, Ordering};
 
+use crate::bdos::process::{self, usermem};
 use crate::host;
 use crate::trap::TrapArgs;
-use tos_types::Long;
+use tos_types::{Long, ProtMode};
 
 /// Atari resolution code `TT_MEDIUM` (`bios/screen.h`): 640×480, 16
 /// colours — the classic code whose colour depth matches NewTOS's native
@@ -44,9 +45,61 @@ const TT_MEDIUM: i64 = 4;
 static LOGBASE: AtomicU64 = AtomicU64::new(0);
 static PHYSBASE: AtomicU64 = AtomicU64::new(0);
 
-/// Live hardware framebuffer base, or `0` if no display is up.
+/// The live hardware framebuffer, expressed **in the calling process's
+/// address space** — or `0` if no display is up.
+///
+/// The framebuffer is mapped for EL1 at `phys + VA_OFFSET`, high-half and
+/// EL1-only, so returning that pointer to an EL0 program satisfies the letter
+/// of `Physbase`'s contract ("a pointer to the screen") and violates its
+/// substance: the program faults on the first store. ADR-023 settles the
+/// class — what the kernel hands out, the caller must be able to reach — so
+/// an EL0 caller gets the framebuffer published into its own window
+/// ([`usermem::expose_attr`]) and the **user VA** back. An EL1 caller (the
+/// desktop, the boot self-tests, the VDI) gets the kernel VA, which is what
+/// it can reach.
+///
+/// Two decisions are attached to that mapping and neither is the program's
+/// business:
+///
+/// * **`PROT_G`, not `PROT_PR`.** `Physbase`/`Logbase` exist so a program can
+///   *write* pixels; a read-only screen would be a pointer that still cannot
+///   be used for its purpose. `PROT_G` is FreeMiNT's "global — any access
+///   OK" mode (`references/freemint/sys/mint/mem.h:130-134`).
+/// * **Normal Non-Cacheable** ([`usermem::MemAttr::Uncached`]). The pixels
+///   are read out by the VideoCore display engine, a DMA master that scans
+///   DRAM from outside the ARM caches
+///   (`docs/hardware/mailbox-framebuffer.md` §6). The kernel's own alias is
+///   Write-Back and the VDI cleans every drawn rectangle to the point of
+///   coherency itself; an EL0 program has no such hook, and requiring one
+///   would mean inventing a cache-maintenance call the TOS API does not
+///   have. Uncached pages make a plain store land in DRAM — the program
+///   writes pixels and they appear, exactly as on the flat machine the API
+///   was written for.
+///
+/// Returns `0` when no display is up, or when the process window cannot take
+/// the mapping — the same value the call already produces on a display-less
+/// machine, and never an address the caller would fault on.
 fn fb_base() -> u64 {
-    host::host().and_then(|h| h.screen()).map_or(0, |s| s.base)
+    let Some(info) = host::host().and_then(|h| h.screen()) else {
+        return 0;
+    };
+    match process::slot_for(process::current()) {
+        // EL1 caller: the kernel high-half VA *is* the reachable address.
+        None => info.base,
+        // SAFETY: BDOS lock held (single-CPU SVC context). The framebuffer
+        // is a permanently-mapped high-half region that outlives every
+        // process, and `size_bytes` is the extent of its pixel store.
+        Some(slot) => unsafe {
+            usermem::expose_attr(
+                slot,
+                info.base as *const u8,
+                info.size_bytes as usize,
+                ProtMode::G,
+                usermem::MemAttr::Uncached,
+            )
+        }
+        .unwrap_or(0),
+    }
 }
 
 /// `Physbase` (0x02) — physical (displayed) screen base.
@@ -63,6 +116,21 @@ pub fn logbase() -> i64 {
         0 => fb_base() as i64,
         l => l as i64,
     }
+}
+
+/// Is a process currently holding a direct, uncached mapping of the
+/// framebuffer handed out by [`physbase`] / [`logbase`]?
+///
+/// The kernel's drawing backend asks once per primitive: while the answer is
+/// `true`, the same physical pixels are reachable through two aliases with
+/// **mismatched cacheability** — the VDI's Write-Back one and the program's
+/// Non-Cacheable one — and the architecture only guarantees coherency if
+/// software keeps the region out of the caches. The backend therefore cleans
+/// *and invalidates* each drawn rectangle instead of merely cleaning it, so
+/// no line of the framebuffer survives a primitive to be written back later
+/// over the program's own stores (`kernel/src/vdi_backend.rs`).
+pub fn direct_screen_active() -> bool {
+    usermem::uncached_shared_active()
 }
 
 /// `Getrez` (0x04) — current resolution code.

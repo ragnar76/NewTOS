@@ -335,6 +335,37 @@ pub unsafe fn clean_dcache_range(va: usize, len: usize) {
     unsafe { core::arch::asm!("dsb sy", options(nostack, preserves_flags)) };
 }
 
+/// Clean **and invalidate** the cache lines covering `[va, va + len)` to the
+/// point of coherency: afterwards no copy of that physical memory is held in
+/// this PE's caches, dirty or clean.
+///
+/// Used instead of [`clean_dcache_range`] while an EL0 process holds a
+/// **Normal Non-Cacheable** alias of the same framebuffer pages
+/// (`Physbase`/`Logbase`, ADR-023). Mismatched cacheability attributes are
+/// only coherent if software keeps the region out of the caches (ARM ARM,
+/// section "Mismatched memory attributes"): a clean-only maintenance leaves
+/// the line valid, and a later partial write to it would write the whole
+/// line back — silently undoing the stores the program made through its
+/// uncached alias in the meantime.
+///
+/// # Safety
+/// `va`/`len` must describe a mapped, readable region.
+pub unsafe fn clean_invalidate_dcache_range(va: usize, len: usize) {
+    if len == 0 {
+        return;
+    }
+    const LINE: usize = 64;
+    let mut p = va & !(LINE - 1);
+    let end = va + len;
+    while p < end {
+        // SAFETY: `dc civac` on a mapped VA is well-defined.
+        unsafe { core::arch::asm!("dc civac, {}", in(reg) p, options(nostack, preserves_flags)) };
+        p += LINE;
+    }
+    // SAFETY: ordering barrier; no memory effect of its own.
+    unsafe { core::arch::asm!("dsb sy", options(nostack, preserves_flags)) };
+}
+
 /// Convert a high-half kernel VA to the corresponding physical
 /// address. Valid only for symbols inside the kernel image (where
 /// VA = LMA + VA_OFFSET); do not use for arbitrary mappings.

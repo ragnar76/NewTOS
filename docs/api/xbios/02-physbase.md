@@ -199,13 +199,48 @@ aligns the two on the next vblank.
 > framebuffer).
 
 - **What the base *is*.** The single VideoCore-allocated framebuffer, one
-  buffer for both physical and logical (no hardware page flip). The value
-  returned is the **CPU-visible high-half VA** of the pixel store, not the
-  VC bus address: the mailbox reply's bus address is masked to an ARM
-  physical address and offset into the high half
-  (`kernel/src/drivers/bcm2711/framebuffer.rs:178-179`), and that VA is
-  what `screen()`/`Physbase` hand back
-  (`kernel/src/vdi_backend.rs:405-407`, `kernel/src/host_env.rs:218-229`).
+  buffer for both physical and logical (no hardware page flip). The mailbox
+  reply's bus address is masked to an ARM physical address and offset into
+  the kernel high half (`kernel/src/drivers/bcm2711/framebuffer.rs`), and
+  that region is what `screen()`/`Physbase` describe
+  (`kernel/src/vdi_backend.rs`, `kernel/src/host_env.rs`).
+
+### Address space and cacheability (NewTOS, 2026-09-05)
+
+- **The returned pointer is in the caller's address space** (ADR-023). An
+  **EL1** caller — the desktop, the VDI, a boot self-test — gets the kernel
+  high-half VA, which is what it can reach. An **EL0** caller gets the
+  framebuffer published into its own per-process window
+  (`usermem::expose_attr`) and the **user VA** back; the kernel VA is
+  EL1-only and a program that followed it would take a permission fault, so
+  handing it out satisfied the letter of "a pointer to the screen" and not
+  its substance. Measured on QEMU `raspi4b`: `Physbase() = 0x00400000` from
+  an EL0 `.NCP`, previously `0xFFFF0000…`.
+- **The mapping is `PROT_G`** (FreeMiNT "global — any access OK",
+  `references/freemint/sys/mint/mem.h:130-134`), not `PROT_PR`: the point of
+  `Physbase` is that the program *writes* pixels.
+- **The mapping is Normal Non-Cacheable** (MAIR AttrIdx 2). The pixels are
+  read out by the VideoCore display engine, a DMA master that scans DRAM
+  from outside the ARM caches (`docs/hardware/mailbox-framebuffer.md` §6).
+  The kernel's own alias is Write-Back and the VDI cleans each drawn
+  rectangle to the point of coherency itself; an EL0 program has no such
+  hook and the TOS API has no cache-maintenance call, so the pages it is
+  handed are the ones where a plain store lands in DRAM unaided. While such
+  a mapping is live the VDI backend cleans **and invalidates** its
+  rectangles instead of merely cleaning them, so the two aliases with
+  mismatched cacheability stay coherent (`kernel/src/vdi_backend.rs`,
+  `tos-api/src/bdos/process/usermem.rs`).
+- **The published span** is `stride_bytes × height` — the whole pixel store,
+  1.17 MiB at 640×480 and 7.91 MiB at 1920×1080. It is taken from the
+  process's 16-MiB EL0 window, so a 1080p program keeps ≈ 7.7 MiB of window
+  for `Malloc`.
+- **Format.** Linear XRGB8888 (`0xFF_RR_GG_BB`), *not* Atari bitplanes.
+  Shifter-format direct-screen writers are a project non-goal (CLAUDE.md
+  "Non-goals") and belong to the later m68k emulator; a program written for
+  NewTOS gets the linear buffer.
+- **Proof.** `sdk/examples/physbase.c` (`PHYSBASE.NCP`) calls `Physbase`,
+  stores three colour bands through the returned pointer with no cache
+  maintenance of any kind, and blocks; the QMP screendump shows the bands.
 - **How it is read.** `physbase()` returns the `PHYSBASE` shadow, or the
   live framebuffer base when the shadow is `0`
   (`tos-api/src/xbios/screen.rs:41-46`); the live base comes from
@@ -215,12 +250,16 @@ aligns the two on the next vblank.
   (`framebuffer.rs:23-25`; `virt:` `qemu_virt/ramfb.rs:75-76`). Buffer
   size ≈ `pitch × 480`; the VC-reported pitch is 640 × 4 = 2560 B/line for
   this mode.
-- **Setscreen interaction.** `Setscreen(-1, phys, -1)` only writes the
-  `PHYSBASE` shadow — the VideoCore scan-out is **not** re-pointed
-  (`tos-api/src/xbios/screen.rs:75-77` and the module note at `:9-14`), so
-  the displayed pixels do not change even though `Physbase` reports the new
-  value. Full page-flipping (a second buffer + a mailbox set-virtual-offset
-  flip) is deferred with the 1080p work.
+- **Setscreen interaction — verified 2026-09-05, still a shadow only.**
+  `Setscreen(-1, phys, -1)` writes the `PHYSBASE` shadow and nothing else:
+  the shadows are read by `physbase()`/`logbase()` and by no other code in
+  the tree — the raster backend always draws into, and the VideoCore always
+  scans out, the live framebuffer (`kernel/src/vdi_backend.rs`,
+  `active_fb()`). So `Physbase` reports the new value while the display and
+  the drawing target are unchanged, and there is **no double buffering**.
+  Full page-flipping (a double-height virtual buffer + a mailbox
+  set-virtual-offset flip, plus a user-VA → physical translation for the
+  caller-supplied base) is a separate work item.
 - **Datasheet.** Mailbox property transport: BCM2711 peripherals datasheet
   §1.3 (`references/datasheets/RP-008248-DS-1-bcm2711-peripherals.pdf`);
   the framebuffer allocate/get-pitch tags are firmware-property tags, not

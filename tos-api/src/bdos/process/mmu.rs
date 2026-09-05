@@ -85,7 +85,18 @@ const D_AF: u64 = 1 << 10;
 const D_AP_USER_RW: u64 = 0b01 << 6; // EL1 + EL0 R/W
 const D_AP_USER_RO: u64 = 0b11 << 6; // EL1 + EL0 RO
 const D_SH_INNER: u64 = 0b11 << 8;
+/// Non-shareable. Only used with [`D_ATTRIDX_NC`]: Normal Non-cacheable
+/// memory is architecturally treated as Outer Shareable whatever the SH
+/// field says, so this mirrors the kernel's own Non-Cacheable framebuffer
+/// mapping (`kernel::arch::aarch64::mmu::remap_normal_nc`) rather than
+/// inventing a second spelling for the same thing.
+const D_SH_NON: u64 = 0b00 << 8;
 const D_ATTRIDX_NORMAL: u64 = 0 << 2;
+/// AttrIdx 2 = Normal **Non-Cacheable** (MAIR `0x44`, programmed once by
+/// the boot stub — `kernel::arch::aarch64::boot::MAIR_VALUE`). The
+/// attribute the framebuffer carries for memory shared with a DMA master
+/// the ARM caches are not coherent with.
+const D_ATTRIDX_NC: u64 = 2 << 2;
 const D_PXN: u64 = 1 << 53; // EL1 must not execute
 const D_UXN: u64 = 1 << 54; // EL0 must not execute
 
@@ -133,9 +144,11 @@ static mut __USER_TABLES: [UserTables; MAX_PROCESSES] =
 // ─── Public API ─────────────────────────────────────────────────────
 
 /// Page-flag preset — selects what the page descriptor's AP / PXN /
-/// UXN / AttrIdx bits resolve to. All presets share the
-/// `VALID | PAGE | AF | SH_INNER | ATTRIDX_NORMAL | PXN` core; only
-/// the per-EL0-permission bits change.
+/// UXN / AttrIdx bits resolve to. The cacheable presets share the
+/// `VALID | PAGE | AF | SH_INNER | ATTRIDX_NORMAL | PXN` core and differ
+/// only in the per-EL0-permission bits; the `*Uncached` presets swap that
+/// core for `SH_NON | ATTRIDX_NC` (Normal Non-Cacheable) because the
+/// region behind them is shared with a non-coherent DMA master.
 ///
 /// `PXN = 1` is set on every preset because the kernel never
 /// executes from user pages — even if a user maps a region readable
@@ -158,16 +171,33 @@ pub enum PageFlags {
     /// a program only *reads* (the `Getbpb` BPB, the `Getmpb` memory
     /// descriptor) into that program's address space.
     UserRoNx,
+    /// User Read/Write, **not** executable, **Normal Non-Cacheable**
+    /// (AttrIdx 2). For memory the CPU shares with a DMA master it is not
+    /// cache-coherent with — the VideoCore framebuffer, whose display
+    /// engine scans DRAM out from beyond the ARM caches
+    /// (`docs/hardware/mailbox-framebuffer.md` §6). An EL0 program cannot
+    /// be asked to clean the D-cache after every store, so the pages it is
+    /// handed by `Physbase`/`Logbase` carry the attribute that makes its
+    /// writes reach DRAM unaided ([`super::usermem::MemAttr::Uncached`]).
+    UserRwNxUncached,
+    /// User Read-Only, **not** executable, **Normal Non-Cacheable**
+    /// (AttrIdx 2). The read-only counterpart of
+    /// [`Self::UserRwNxUncached`], for a DMA-shared region a program is
+    /// only allowed to read.
+    UserRoNxUncached,
 }
 
 impl PageFlags {
     fn descriptor_bits(self) -> u64 {
         let core = D_VALID | D_PAGE_L3 | D_AF | D_SH_INNER | D_ATTRIDX_NORMAL | D_PXN;
+        let nc_core = D_VALID | D_PAGE_L3 | D_AF | D_SH_NON | D_ATTRIDX_NC | D_PXN;
         match self {
             Self::UserRwExec => core | D_AP_USER_RW,
             Self::UserRoExec => core | D_AP_USER_RO,
             Self::UserRwNx => core | D_AP_USER_RW | D_UXN,
             Self::UserRoNx => core | D_AP_USER_RO | D_UXN,
+            Self::UserRwNxUncached => nc_core | D_AP_USER_RW | D_UXN,
+            Self::UserRoNxUncached => nc_core | D_AP_USER_RO | D_UXN,
         }
     }
 }
@@ -445,6 +475,59 @@ pub unsafe fn sync_code_cache(va: usize, len: usize) {
     // SAFETY: barrier + context synchronisation after I-cache maintenance.
     unsafe {
         core::arch::asm!("dsb ish", "isb", options(nostack, preserves_flags));
+    }
+}
+
+/// Clean **and invalidate** the D-cache lines covering `[va, va + len)` to
+/// the point of coherency, so that afterwards no cached copy of that
+/// physical memory exists in this PE's caches — neither a dirty one that
+/// could later be written back over somebody else's data, nor a clean one
+/// that could satisfy a stale read.
+///
+/// This is the maintenance the ARM ARM requires before the same physical
+/// memory is also accessed through an alias with **mismatched cacheability**
+/// attributes (ARM ARM, section "Mismatched memory attributes"): the loss
+/// of coherency such a mismatch permits is avoided by ensuring the region
+/// is not held in any cache across the mismatched accesses.
+///
+/// [`super::usermem::expose_attr`] calls it when it publishes a region as
+/// Normal Non-Cacheable to EL0 while the kernel keeps a Write-Back alias of
+/// the same pages — the framebuffer.
+///
+/// `va` is a currently-mapped VA aliasing the region's physical address; the
+/// Cortex-A72 caches are PIPT, so by-VA maintenance through any alias hits
+/// the correct physical lines.
+///
+/// # Safety
+///
+/// `[va, va + len)` must be a mapped range in the active EL1 translation
+/// regime.
+pub unsafe fn clean_invalidate_dcache_range(va: usize, len: usize) {
+    if len == 0 {
+        return;
+    }
+    // D-cache minimum line size from CTR_EL0.DminLine: log2 of the line
+    // size in 32-bit words, so bytes = 4 << field (ARM ARM CTR_EL0).
+    let ctr: u64;
+    // SAFETY: CTR_EL0 is read-only and readable at EL1.
+    unsafe {
+        core::arch::asm!("mrs {}, ctr_el0", out(reg) ctr,
+            options(nomem, nostack, preserves_flags));
+    }
+    let line = 4usize << ((ctr >> 16) & 0xF);
+    let end = va + len;
+    let mut a = va & !(line - 1);
+    while a < end {
+        // SAFETY: `a` is within the mapped range; DC CIVAC is permitted at EL1.
+        unsafe {
+            core::arch::asm!("dc civac, {}", in(reg) a, options(nostack, preserves_flags));
+        }
+        a += line;
+    }
+    // SAFETY: barrier-only. `sy` because the other observer is a DMA master
+    // outside the Inner-Shareable domain, not just another PE.
+    unsafe {
+        core::arch::asm!("dsb sy", options(nostack, preserves_flags));
     }
 }
 

@@ -92,6 +92,19 @@ else
   echo "note: sdk/build.sh unavailable (no clang/lld?); C:\\BIG.NCP skipped"
 fi
 
+# PHYSBASE.NCP is the direct-screen-access proof: it calls XBIOS Physbase
+# (0x02) / Logbase (0x03), prints both addresses, and stores three colour
+# bands straight through the returned pointer with NO cache maintenance --
+# which only works because those pages are published Normal Non-Cacheable
+# into the process (ADR-023 amendment). Run it via
+# run_program(b"C:\\PHYSBASE.NCP"); it blocks on a key so the bands stay up
+# for a screendump. Deliberately NOT in AUTO: it would stop every boot.
+if "$SCRIPT_DIR/../sdk/build.sh" "$SCRIPT_DIR/../sdk/examples/physbase.c" "$V/PHYSBASE.NCP" >/dev/null 2>&1; then
+  echo "built + installed C:\\PHYSBASE.NCP (Physbase direct-screen proof)"
+else
+  echo "note: sdk/build.sh unavailable (no clang/lld?); C:\\PHYSBASE.NCP skipped"
+fi
+
 # DTACHILD.NCP is the per-process-DTA proof (S1c): a console program that moves
 # its OWN DTA (Fsetdta(0x2000)) and exits. A parent runs it between its own
 # Fsetdta(buf) and Fgetdta() -- if Fgetdta still returns buf, the DTA really

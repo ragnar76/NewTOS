@@ -115,6 +115,17 @@ static inline NLONG bios2(NLONG fn, NLONG a0, NLONG a1)
     return r0;
 }
 
+static inline NLONG xbios0(NLONG fn)
+{
+    register NLONG x8 __asm__("x8") = fn;
+    register NLONG r0 __asm__("x0");
+    __asm__ volatile("svc #14"
+                     : "=r"(r0)
+                     : "r"(x8)
+                     : "memory");
+    return r0;
+}
+
 static inline NLONG xbios1(NLONG fn, NLONG a0)
 {
     register NLONG x8 __asm__("x8") = fn;

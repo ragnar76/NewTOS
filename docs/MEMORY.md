@@ -1691,6 +1691,71 @@ it now has our vocabulary already aligned to build on.
 - Notes [[el0-app-memory-must-be-mapped]], [[freemint-extension-direction]],
   [[framebuffer-outside-st-tt-ram]] (why `Physbase` is the hard remainder).
 
+### Amendment, 2026-09-05 — `Physbase`/`Logbase`, and the cacheability half of a published mapping
+
+The "hard remainder" is closed. XBIOS `Physbase` (0x02) and `Logbase` (0x03)
+now publish the framebuffer into the calling process's window and return the
+**user VA**; an EL1 caller still gets the kernel VA. Two things had to be
+decided that `Getbpb`/`Getmpb` did not raise:
+
+**Mode: `PROT_G`, not `PROT_PR`.** These calls exist so a program can *write*
+pixels. A read-only screen pointer would be reachable and still useless.
+
+**Memory type: Normal Non-Cacheable.** `expose` grew a second axis —
+`usermem::MemAttr` (`Cacheable` / `Uncached`) — because protection alone does
+not decide whether a store *arrives*. The framebuffer's consumer is the
+VideoCore display engine, a DMA master that scans DRAM from outside the ARM
+caches (`docs/hardware/mailbox-framebuffer.md` §6; the same fact that made
+the kernel's own alias first Non-Cacheable and later Write-Back-plus-clean,
+`kernel/src/drivers/bcm2711/framebuffer.rs`). The kernel can clean after every
+drawn rectangle; an EL0 program cannot, and the TOS API has no
+cache-maintenance call to give it — inventing one would push a machine detail
+into every direct-drawing program. So the published pages are AttrIdx 2
+(Normal Non-Cacheable, MAIR `0x44`): a plain `*p = colour` reaches DRAM, and
+the VideoCore reads it. **The decision belongs to the mapping, not to the
+program.**
+
+That leaves the kernel's Write-Back alias and the program's Non-Cacheable one
+pointing at the same physical pages — **mismatched memory attributes**, where
+the architecture only guarantees coherency if software keeps the region out
+of the caches. Two measures, both kernel-side:
+
+1. `expose_attr` cleans **and invalidates** the whole published span through
+   the kernel alias when it creates an `Uncached` mapping, so no line
+   (dirty *or* clean) survives from whatever drew there before.
+2. While any process holds such a mapping
+   (`usermem::uncached_shared_active`, a slot bitmask cleared on
+   `release_slot`), the VDI backend's per-primitive flush becomes
+   `dc civac` instead of `dc cvac` (`kernel/src/vdi_backend.rs`). Without
+   this, a later *partial* kernel write to a retained line would write the
+   whole 64-byte line back and silently undo the program's own stores. The
+   cost is paid only while a program is actually drawing into the screen
+   itself; the desktop's path is untouched.
+
+Measured (QEMU `raspi4b`, `PHYSBASE.NCP` from `C:\AUTO\`): `Physbase() =
+Logbase() = 0x00400000` — the process's window base, previously
+`0xFFFF0000…`. The program stores three colour bands with **no cache
+maintenance of any kind** and the QMP screendump shows them; a subsequent
+`Cconws` renders over them correctly, which is the mixed cached/uncached case.
+
+**Not done here, deliberately:** `Setscreen` (0x05) still only writes the
+`PHYSBASE`/`LOGBASE` shadows — verified 2026-09-05 by reading every reader of
+those two atomics: the raster backend draws into, and the VideoCore scans out,
+the live framebuffer regardless. There is therefore no double buffering. Real
+flipping needs a double-height virtual buffer at allocation time, the mailbox
+set-virtual-offset tag, and a user-VA → physical translation for a
+caller-supplied base — its own work item.
+
+Code: `tos-api/src/xbios/screen.rs` (`fb_base`, `direct_screen_active`),
+`tos-api/src/bdos/process/usermem.rs` (`MemAttr`, `expose_attr`,
+`uncached_shared_active`, `clear_uncached`),
+`tos-api/src/bdos/process/mmu.rs` (`PageFlags::UserRwNxUncached` /
+`UserRoNxUncached`, `clean_invalidate_dcache_range`),
+`kernel/src/arch/aarch64/mmu.rs` (`clean_invalidate_dcache_range`),
+`kernel/src/vdi_backend.rs`, `kernel/src/host_env.rs`,
+`tos-api/src/host.rs` (`ScreenInfo::stride_bytes` / `size_bytes`),
+`sdk/examples/physbase.c`.
+
 ---
 
 ## Quirks Discovered

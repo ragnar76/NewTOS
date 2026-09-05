@@ -212,6 +212,12 @@ unsafe fn terminate_inner(reserve: bool) -> Result<PtermResume, PtermError> {
 /// Caller must hold the BDOS giant lock and must have already
 /// consumed the slot's `parent_frame` snapshot.
 pub unsafe fn release_slot(slot_idx: usize) {
+    // The slot's EL0 window mappings die with it. Drop the record that this
+    // process held an uncached published mapping (a `Physbase`/`Logbase`
+    // framebuffer alias), so the VDI's per-primitive flush returns to the
+    // cheaper clean-only form once no program is drawing into the screen
+    // itself (`super::usermem::uncached_shared_active`).
+    super::usermem::clear_uncached(slot_idx);
     free_slot(slot_idx);
 }
 

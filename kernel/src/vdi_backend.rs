@@ -249,8 +249,22 @@ impl VdiScreen {
         let base = fb.pixels() as usize;
         let start = base + (y0 as usize * stride + x0 as usize) * 4;
         let end = base + (y1 as usize * stride + x1 as usize) * 4 + 4;
-        // SAFETY: the span lies within the framebuffer's pixel store.
-        unsafe { crate::arch::aarch64::mmu::clean_dcache_range(start, end - start) };
+        if tos_api::xbios::screen::direct_screen_active() {
+            // A process holds a Normal Non-Cacheable EL0 alias of these very
+            // pixels (`Physbase`/`Logbase`, ADR-023). Leaving *any* line of
+            // the rectangle in this cacheable alias would break the pair: a
+            // later partial write to a stale line writes the whole 64-byte
+            // line back and would undo the program's own stores. Clean **and
+            // invalidate**, so nothing of the framebuffer survives a
+            // primitive (ARM ARM, "Mismatched memory attributes").
+            // SAFETY: the span lies within the framebuffer's pixel store.
+            unsafe {
+                crate::arch::aarch64::mmu::clean_invalidate_dcache_range(start, end - start)
+            };
+        } else {
+            // SAFETY: the span lies within the framebuffer's pixel store.
+            unsafe { crate::arch::aarch64::mmu::clean_dcache_range(start, end - start) };
+        }
     }
 
     /// Combine one candidate pixel into the framebuffer per the VDI
@@ -834,4 +848,19 @@ pub fn dims() -> (u16, u16) {
 /// CPU-visible framebuffer base address (for the XBIOS screen group).
 pub fn base_addr() -> u64 {
     active_fb().pixels() as u64
+}
+
+/// Bytes per scan line of the live framebuffer — the hardware pitch, which
+/// may exceed `width * 4` when the display controller pads lines (the
+/// VideoCore reports it via the mailbox `get pitch` tag). Feeds
+/// [`tos_api::host::ScreenInfo::stride_bytes`].
+pub fn stride_bytes() -> u32 {
+    active_fb().stride_px() * 4
+}
+
+/// Byte size of the CPU-visible pixel store (`stride_bytes * height`).
+/// Feeds [`tos_api::host::ScreenInfo::size_bytes`] — the span the XBIOS
+/// screen group publishes into a process that draws into the screen itself.
+pub fn size_bytes() -> u32 {
+    stride_bytes().saturating_mul(active_fb().height())
 }

@@ -317,6 +317,8 @@ impl Host for KernelHost {
             width,
             height,
             bpp: 32,
+            stride_bytes: crate::vdi_backend::stride_bytes(),
+            size_bytes: crate::vdi_backend::size_bytes(),
         })
     }
 

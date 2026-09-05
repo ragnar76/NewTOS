@@ -60,6 +60,7 @@
 //! and the AES resource loader use.
 
 use core::cell::UnsafeCell;
+use core::sync::atomic::{AtomicU32, Ordering};
 
 use tos_types::{Long, ProtMode};
 
@@ -110,6 +111,29 @@ pub enum Kind {
     Shared,
 }
 
+/// Memory type a published mapping carries — the *cacheability* half of a
+/// page descriptor, orthogonal to the [`ProtMode`] permission half.
+///
+/// Almost everything the kernel publishes is ordinary DRAM that only the CPU
+/// touches, so it is mapped Normal Cacheable Write-Back like the rest of the
+/// process. The framebuffer is not: its pixels are read out by the VideoCore
+/// display engine, a DMA master that scans DRAM from outside the ARM caches
+/// (`docs/hardware/mailbox-framebuffer.md` §6, and the mapping note in
+/// `kernel/src/drivers/bcm2711/framebuffer.rs`). The kernel keeps its own
+/// Write-Back alias and cleans every drawn rectangle to the point of
+/// coherency itself; an EL0 program cannot be asked to do that after every
+/// store, so the pages it is handed are mapped [`MemAttr::Uncached`], where
+/// a plain store lands in DRAM with no maintenance at all.
+#[derive(Copy, Clone, Debug, Eq, PartialEq)]
+pub enum MemAttr {
+    /// Normal Cacheable Write-Back, Inner Shareable (MAIR AttrIdx 0) — the
+    /// attribute every other user mapping uses.
+    Cacheable,
+    /// Normal Non-Cacheable (MAIR AttrIdx 2) — memory shared with a DMA
+    /// master the ARM caches are not coherent with.
+    Uncached,
+}
+
 /// One tracked per-process user block: the app-visible window VA, the pool
 /// key (`Mxalloc`'s `m_start`, used to free/shrink), the page-aligned PA the
 /// window VA maps to, the mapped byte span, and its [`Kind`].
@@ -131,6 +155,9 @@ struct Block {
     /// [`Kind::Shared`] ([`expose`]); pool-backed blocks take their page
     /// flags from [`Kind`] alone.
     prot: Option<ProtMode>,
+    /// Memory type the block was mapped with. Pool-backed blocks are always
+    /// [`MemAttr::Cacheable`]; only [`expose_attr`] can choose otherwise.
+    attr: MemAttr,
 }
 
 /// One process slot's user-memory state: the block table and the bump cursor
@@ -157,6 +184,37 @@ unsafe impl Sync for UserMem {}
 
 static USER_MEM: UserMem =
     UserMem(UnsafeCell::new([const { SlotMem::new() }; MAX_PROCESSES]));
+
+/// Bitmask of the slots that currently hold at least one
+/// [`MemAttr::Uncached`] published mapping — today only the framebuffer
+/// handed out by `Physbase`/`Logbase`.
+///
+/// The kernel's own drawing path reads it through
+/// [`uncached_shared_active`]: while such a mapping exists, the same
+/// physical pixels are reachable through two aliases with mismatched
+/// cacheability, and the cacheable one (the VDI's) must not retain a single
+/// line of them across a primitive. It is a plain global rather than a scan
+/// of the block tables because the VDI asks once per drawn primitive.
+static UNCACHED_SLOTS: AtomicU32 = AtomicU32::new(0);
+
+// The bitmask must have a bit per process slot.
+const _: () = assert!(MAX_PROCESSES <= u32::BITS as usize);
+
+/// Does *any* process currently hold an [`MemAttr::Uncached`] published
+/// mapping? See [`UNCACHED_SLOTS`].
+pub fn uncached_shared_active() -> bool {
+    UNCACHED_SLOTS.load(Ordering::Relaxed) != 0
+}
+
+/// Forget that `slot` holds an uncached published mapping. Called when the
+/// slot is released ([`super::pterm::release_slot`]) and when it is re-seeded
+/// for a new tenant ([`seed_tpa`]) — at both points the old process's window
+/// mappings are dead, so the cacheable/uncacheable alias pair is gone with it.
+pub fn clear_uncached(slot: usize) {
+    if slot < MAX_PROCESSES {
+        UNCACHED_SLOTS.fetch_and(!(1u32 << slot), Ordering::Relaxed);
+    }
+}
 
 /// The result of an address lookup ([`translate`]): the pool key, the
 /// alignment `prefix` (`map_pa − m_start`) a `Mshrink` must add to a
@@ -208,6 +266,7 @@ pub unsafe fn seed_tpa(slot: usize, raw_start: Long, base_pa: u64, size: u64) {
     if slot >= MAX_PROCESSES {
         return;
     }
+    clear_uncached(slot);
     // SAFETY: caller's lock contract; exclusive access to this slot.
     let sm = unsafe { &mut (*USER_MEM.0.get())[slot] };
     *sm = SlotMem::new();
@@ -218,6 +277,7 @@ pub unsafe fn seed_tpa(slot: usize, raw_start: Long, base_pa: u64, size: u64) {
         size,
         kind: Kind::Tpa,
         prot: None,
+        attr: MemAttr::Cacheable,
     });
 }
 
@@ -296,6 +356,7 @@ pub unsafe fn map(slot: usize, m_start: Long, size: u64, kind: Kind) -> Option<u
         size: map_len,
         kind,
         prot: None,
+        attr: MemAttr::Cacheable,
     });
     sm.cursor += map_len;
     Some(user_va)
@@ -351,9 +412,11 @@ pub unsafe fn publish() {
 /// # Safety
 ///
 /// Caller holds the BDOS giant lock. `kernel_va .. kernel_va + len` must lie
-/// inside the kernel's high-half image mapping and stay valid for as long as
-/// the process may hold the returned pointer — i.e. it must be a `'static`
-/// kernel object, not a stack or heap temporary. The whole physical page(s)
+/// inside the kernel's high-half mapping (`phys + VA_OFFSET` — the kernel
+/// image or another region mapped there, such as the VideoCore framebuffer)
+/// and stay valid for as long as the process may hold the returned pointer —
+/// i.e. it must be a `'static` kernel object or a permanently-mapped device
+/// buffer, not a stack or heap temporary. The whole physical page(s)
 /// covering it become readable (and, with [`ProtMode::G`], writable) to the
 /// process, so the object must own its page(s).
 pub unsafe fn expose(
@@ -362,15 +425,45 @@ pub unsafe fn expose(
     len: usize,
     prot: ProtMode,
 ) -> Option<u64> {
+    // SAFETY: the caller's contract is exactly `expose_attr`'s.
+    unsafe { expose_attr(slot, kernel_va, len, prot, MemAttr::Cacheable) }
+}
+
+/// [`expose`], plus an explicit choice of memory type ([`MemAttr`]).
+///
+/// Publishing a region as [`MemAttr::Uncached`] while the kernel keeps its
+/// own Write-Back alias of the same physical pages is a **mismatched-
+/// attribute** situation in the ARM ARM's sense. The architecture permits a
+/// loss of coherency there unless software guarantees that no cached copy of
+/// the region survives, so this function cleans **and invalidates** the whole
+/// published span through the kernel alias before it returns: no dirty line
+/// can later be written back over what the program stores, and no clean line
+/// can satisfy a stale kernel read of what the program stored.
+///
+/// # Safety
+///
+/// As [`expose`]. Additionally, for [`MemAttr::Uncached`] the caller must
+/// accept that the kernel's cached copies of `[kernel_va, kernel_va + len)`
+/// are discarded — the region must not be holding un-written-back state the
+/// kernel still needs beyond what this call writes back.
+pub unsafe fn expose_attr(
+    slot: usize,
+    kernel_va: *const u8,
+    len: usize,
+    prot: ProtMode,
+    attr: MemAttr,
+) -> Option<u64> {
     if slot >= MAX_PROCESSES || len == 0 {
         return None;
     }
     // PROT_P / PROT_S / PROT_I give the user no access at all — there is
     // nothing to map, which is a legitimate answer, not a failure.
-    let flags = match prot {
-        ProtMode::Pr => PageFlags::UserRoNx,
-        ProtMode::G => PageFlags::UserRwNx,
-        ProtMode::P | ProtMode::S | ProtMode::I => return None,
+    let flags = match (prot, attr) {
+        (ProtMode::Pr, MemAttr::Cacheable) => PageFlags::UserRoNx,
+        (ProtMode::G, MemAttr::Cacheable) => PageFlags::UserRwNx,
+        (ProtMode::Pr, MemAttr::Uncached) => PageFlags::UserRoNxUncached,
+        (ProtMode::G, MemAttr::Uncached) => PageFlags::UserRwNxUncached,
+        (ProtMode::P | ProtMode::S | ProtMode::I, _) => return None,
     };
 
     let pa = kva_to_pa(kernel_va as u64);
@@ -383,7 +476,11 @@ pub unsafe fn expose(
 
     // Already published? Re-use the same window VA (see "Idempotent").
     if let Some(b) = sm.blocks.iter().flatten().find(|b| {
-        b.kind == Kind::Shared && b.map_pa == base_pa && b.size >= span && b.prot == Some(prot)
+        b.kind == Kind::Shared
+            && b.map_pa == base_pa
+            && b.size >= span
+            && b.prot == Some(prot)
+            && b.attr == attr
     }) {
         return Some(b.user_va + offset);
     }
@@ -405,6 +502,16 @@ pub unsafe fn expose(
         }
         off += PAGE_SIZE;
     }
+    // A Non-Cacheable user alias next to the kernel's Write-Back one is a
+    // mismatched-attribute pair: drop every cached copy of the span so
+    // neither a dirty line can be written back over the program's stores nor
+    // a clean line satisfy a stale read of them (ARM ARM, "Mismatched memory
+    // attributes").
+    if attr == MemAttr::Uncached {
+        // SAFETY: the caller guarantees `[kernel_va, +len)` is mapped and
+        // readable at EL1; maintenance is by VA over exactly that span.
+        unsafe { mmu::clean_invalidate_dcache_range(kernel_va as usize, len) };
+    }
     // Publish the PTEs before the app can walk them. The window VAs were
     // invalid, so no stale TLB entry exists → no TLBI (QUIRK-001).
     // SAFETY: barrier-only, permitted at EL1.
@@ -417,7 +524,11 @@ pub unsafe fn expose(
         size: span,
         kind: Kind::Shared,
         prot: Some(prot),
+        attr,
     });
+    if attr == MemAttr::Uncached {
+        UNCACHED_SLOTS.fetch_or(1u32 << slot, Ordering::Relaxed);
+    }
     sm.cursor += span;
     Some(user_va + offset)
 }

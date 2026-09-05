@@ -239,6 +239,13 @@ pub struct ScreenInfo {
     pub height: u16,
     /// Bits per pixel (32 for our XRGB8888 framebuffer).
     pub bpp: u16,
+    /// Bytes per scan line (the hardware pitch). May exceed
+    /// `width * bpp / 8` when the display controller pads lines.
+    pub stride_bytes: u32,
+    /// Byte size of the CPU-visible pixel store (`stride_bytes * height`) —
+    /// the span `Physbase`/`Logbase` must make reachable for a caller that
+    /// draws into the screen directly.
+    pub size_bytes: u32,
 }
 
 // `&'static dyn Host` is `Sync + 'static`; we store it as a raw

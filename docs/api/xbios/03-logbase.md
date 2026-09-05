@@ -174,11 +174,13 @@ PHASE-08: `Logbase` returns the current "draw" framebuffer in the swap chain;
 
 - **`v_bas_ad` maps to the framebuffer base.** NewTOS keeps no low-memory
   `0x44E` cell; `Logbase` returns the `LOGBASE` shadow, or the live
-  framebuffer base when the shadow is `0`
-  (`tos-api/src/xbios/screen.rs:49-54`). The live base is the
-  CPU-visible high-half VA of the VideoCore pixel store
-  (`kernel/src/vdi_backend.rs:405-407`, `host_env.rs:218-229`) — the
-  same value `Physbase` returns on this single-buffer profile.
+  framebuffer base when the shadow is `0` (`tos-api/src/xbios/screen.rs`,
+  `fb_base`). The live base is **expressed in the caller's address space**
+  (see `02-physbase.md` §"Address space and cacheability"): the kernel
+  high-half VA of the VideoCore pixel store for an EL1 caller, and a
+  `PROT_G`, Normal Non-Cacheable mapping of the same physical pages in the
+  process's own EL0 window for an EL0 caller — the same value `Physbase`
+  returns on this single-buffer profile.
 - **Single buffer.** With one VideoCore framebuffer and no page flip,
   `Logbase() == Physbase()` until double-buffering lands. The VDI, the VT52
   framebuffer console (`fbcon`), and the mouse sprite all draw through the
