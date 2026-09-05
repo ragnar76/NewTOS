@@ -3,7 +3,7 @@
 > Phase 00 spec (full-contract template). Source: EmuTOS @ `1a7484ab`.
 > Verified against `bios/biosmem.c:134` (`getmpb`).
 
-## NewTOS status: **decision deferred** (see NewTOS implementation notes)
+## NewTOS status: **wired at BIOS 0x00** (read-only report; see NewTOS implementation notes)
 
 Historically called exactly once, by GEMDOS init, to discover the ST-RAM
 extent. NewTOS initialises its allocator directly from the AArch64 memory
@@ -269,14 +269,24 @@ to `bdos::mem::init::init`. GEMDOS never calls `Getmpb` to learn the free region
 | `themd` single static MD over `[membot, memtop)` | the `pmd` MPB's seed MD, plus a separate `pmdalt` for TT-RAM (`Getmpb` never reported TT-RAM) |
 | GEMDOS `osinit` calls `Getmpb` once | GEMDOS pools seeded from the AArch64 map before any trap runs |
 
-### Current-code gap (Step-2 candidate)
+### Current-code gaps (Step-2 candidates)
 
-- **`Getmpb` (BIOS 0x00) is not wired in the BIOS dispatcher.**
-  `tos-api/src/bios/mod.rs` has no `0x00` entry, so a call hits the BIOS
-  catch-all (`_ => EINVFN`, `mod.rs:58`). This is harmless — `Getmpb` is
-  vestigial — but a program that calls it gets `EINVFN`, not a filled MPB.
-  **Decision deferred** (see status banner): if exposed, it must be a
-  **read-only** report of the ST-RAM pool (`pmd`) that does **not** rewrite the
-  live free list (EmuTOS's "second call destroys your allocator state" quirk is
-  explicitly rejected for NewTOS). Recommend leaving it unwired until a program
-  needs it.
+- **Wired since — correction (2026-09-05).** An earlier revision of this
+  section said "`Getmpb` (BIOS 0x00) is not wired in the BIOS dispatcher …
+  a call hits the BIOS catch-all". That is no longer true: `mod.rs` dispatches
+  `GETMPB => getmpb::getmpb(args)` and `tos-api/src/bios/getmpb.rs` fills the
+  caller's MPB as a **read-only** report of the ST-RAM pool extent — it does
+  *not* rewrite the live free list, so EmuTOS's "second call destroys your
+  allocator state" quirk stays rejected. Measured from EL0 on QEMU `raspi4b`:
+  `mp_mal == NULL`, `mp_rover` untouched, `mp_mfl` non-NULL (`APITEST` checks
+  BS03..BS05 PASS).
+- **`mp_mfl` points at a kernel address an EL0 program cannot read —
+  MEASURED 2026-09-05, open.** The MD the free-list head points to is the
+  kernel static `THEMD` (`getmpb.rs`), at a high-half VA
+  (`0xFFFF_0000_0000_0000 + physical`,
+  `kernel/src/arch/aarch64/link-rpi4.ld:24`) whose pages are EL1-only. An
+  application therefore gets a free-list head it cannot dereference: measured
+  `mp_mfl == 0xFFFF00000026D8B8` (`APITEST` check BS06 FAIL; the MD field
+  checks BS07..BS10 are unrunnable from EL0). Same class of defect as the
+  `Getbpb` pointer (`docs/api/bios/07-getbpb.md`); the fix is a design
+  decision and is **not** taken here.

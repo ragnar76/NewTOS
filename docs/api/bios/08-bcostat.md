@@ -225,15 +225,22 @@ No distinct error code — `0L` means both "busy" and "unavailable/invalid".
 | 2 | CON / screen | **framebuffer VT52** | `-1` (always ready) |
 | 3 | **IKBD TX** (swapped) | **absent** | `0` |
 | 4 | **MIDI TX** (swapped) | **absent** | `0` |
-| 5 | raw screen | framebuffer | `-1` (always ready) |
+| 5 | raw screen | **`char_dummy` slot** | `0` (busy) |
 | 6,7 | unused / Bconmap | absent | `0` |
 
-- **CON output always ready.** The framebuffer VT52 console never blocks — a
-  glyph is composited synchronously — so console-output handles (2 CON, 5
-  raw) return `-1` (`tos-api/src/bios/chardev.rs:76-82` →
-  `is_console_out`). This matches the Atari `bcostat2 == -1` "screen always
-  ready". No hardware TX FIFO to poll (unlike the Shifter-era screen, which
-  was also always ready).
+- **CON output always ready — handle 2 only.** The framebuffer VT52 console
+  never blocks — a glyph is composited synchronously — so **CON (handle 2)**
+  returns `-1` (`tos-api/src/bios/chardev.rs` `bcostat`). This matches the
+  Atari `bcostat2 == -1` "screen always ready". No hardware TX FIFO to poll
+  (unlike the Shifter-era screen, which was also always ready).
+
+  **Correction (2026-09-05):** an earlier revision of the table above gave
+  handle 5 (raw screen) `-1` as well, i.e. the same handle set as `Bconout`.
+  That is wrong: `bcostat_init[5]` is `char_dummy`
+  (`references/emutos/bios/chardev.c:38-41`), so `Bcostat(5)` is `0` even
+  though `Bconout(5, …)` writes and returns `1`. The asymmetry is part of the
+  contract, not a NewTOS shortcut; the code implements it. Measured by
+  `APITEST` checks BC12 (`Bconout(5) → 1`) and BC20 (`Bcostat(5) → 0`).
 - **The MIDI/IKBD swap on the Pi.** The swap is a property of the *handle→
   routine* table on Atari; on the Pi both MIDI and IKBD-TX are **absent**
   (§3.9 — no MIDI ACIA, no outbound IKBD command channel), so handles 3 and

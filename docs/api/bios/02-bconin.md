@@ -277,9 +277,13 @@ first when the distinction matters.
 > CON (handle 2) the **scancode in bits 16-23, ASCII in bits 0-7** packing.
 > Peripheral + driver: see `docs/HARDWARE-PROFILE.md` §2, §3.2, §3.3.
 
-- **Device-handle map:** as in `01-bconstat.md` — CON (2) and IKBD (4) read
-  the console key ring fed by the USB-HID keyboard; AUX (1)/PRT (0)/MIDI
-  (3)/5..7 return `0`.
+- **Device-handle map:** as in `01-bconstat.md` — **CON (2) alone** reads the
+  console key ring fed by the USB-HID keyboard; PRT (0)/AUX (1)/MIDI (3)/
+  **IKBD (4)**/5..7 are `char_dummy` and return `0` without blocking
+  (EmuTOS `bconin_init[4] = char_dummy`,
+  `references/emutos/bios/chardev.c:34-36`). An earlier revision of this
+  section listed handle 4 as a second console-input handle; that was wrong
+  and made `Bconin(4)` hang. Measured by `APITEST` check BC09.
 - **How a byte is read.** Console-input handles block via
   `Host::console_read_byte_blocking` (`tos-api/src/bios/chardev.rs:49-55`),
   which spins/`wfi` until the RX ring delivers a byte
@@ -296,12 +300,21 @@ first when the distinction matters.
   (`tos-api/src/bios/chardev.rs`). So non-ASCII keys are visible to `Bconin(2)`
   and ASCII keys carry their scancode. The earlier K2 finding ("scancode
   dropped") no longer holds. Shift-state folding into bits 24-31 (the
-  `conterm & 8` behaviour) is still not implemented — see the shift-state
-  note above.
-- **CON input is USB-HID, not the UART (policy).** Same K1 finding as
-  `Bconstat`: the blocking read also polls the PL011 UART0 on real Pi-4
-  (`host_env.rs:112` `pl011_rx_poll`, `:120` `usb::poll`), so `Bconin(2)`
-  returns UART bytes when the console policy says it should read only the
-  USB-HID keyboard. Recorded as K1.
+  `conterm & 8` behaviour) **is** implemented as well: `chardev::shift_fold`
+  reads the calling process's `conterm` (`$484`) with an unprivileged load and
+  ORs `(kbshift & 0xFF) << 24` into the result only when bit 3 is set, so the
+  boot default `conterm = 7` yields bits 24-31 = 0. (An earlier revision of
+  this bullet said the fold was missing.) Measured by `APITEST` check BC28.
+- **CON input is USB-HID, not the UART — K1 is closed on `board-rpi4`.** The
+  blocking read drains USB-HID only (`crate::drivers::usb::poll` in
+  `kernel/src/host_env.rs`); there is no `pl011_rx_poll` (an earlier revision
+  of this bullet named one). On `board-rpi4` a byte arriving on UART0 is
+  **dropped** rather than queued for CON (`kernel/src/console.rs`
+  `serial_rx_byte` under `#[cfg(not(feature = "board-qemu-virt"))]`), because
+  this board is EmuTOS' `CONF_SERIAL_CONSOLE = 0` profile. `board-qemu-virt`
+  is the `CONF_SERIAL_CONSOLE = 1` profile and does push serial bytes into
+  the key ring. **Consequence for testing:** QEMU's `raspi4b` has no emulated
+  USB-HID keyboard, so `Bconin(2)`/`Cconin` cannot be satisfied there at all
+  — the interactive `Bconin` checks are real-hardware-only.
 - **Datasheet.** Keyboard transport = VL805 xHCI (§2); AUX = PL011 UART0
   (datasheet §11).

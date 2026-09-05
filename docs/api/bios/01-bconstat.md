@@ -251,16 +251,25 @@ returns 0" guard is EmuTOS-specific and invisible to normal applications
 | 1 | AUX / RS-232 | PL011 UART0 (debug) | UART RX (see caveat) |
 | 2 | CON | framebuffer VT52 + **USB-HID keyboard** | console RX ring |
 | 3 | MIDI in | **absent** → always `0` | no MIDI ACIA (§3.9) |
-| 4 | IKBD in (historical) | aliased to the console keyboard ring | console RX ring |
+| 4 | IKBD in (historical) | **absent** → always `0` | `char_dummy` |
 | 5..7 | unused / Bconmap | absent → `0` | — |
 
-- **What "ready" tests on the Pi.** For console-input handles (2 CON, 4
-  IKBD) `bconstat` returns `-1` iff the console RX ring is non-empty
-  (`tos-api/src/bios/chardev.rs:37-43` → `Host::console_has_input` →
-  `console::rx_has_input`, `kernel/src/console.rs:136-138`). This is the
-  queue/flag test the contract calls for — never a physical key scan. Absent
-  devices (0/1-as-dummy/3/5..7) return `0` (`chardev.rs:25-32,40-42`), the
-  `char_dummy` equivalent. The boot-guard (`CHARDEV_AVAILABLE`) maps to the
+- **What "ready" tests on the Pi.** For **CON (handle 2 — the only
+  console-input handle)** `bconstat` returns `-1` iff the console RX ring is
+  non-empty (`tos-api/src/bios/chardev.rs` `is_console_in` →
+  `Host::console_has_input` → `console::rx_has_input`,
+  `kernel/src/console.rs`). This is the queue/flag test the contract calls
+  for — never a physical key scan. Absent devices (0/1-as-dummy/3/**4**/5..7)
+  return `0`, the `char_dummy` equivalent.
+
+  **Correction (2026-09-05):** an earlier revision of this section claimed
+  handle 4 (IKBD-in) was "aliased to the console keyboard ring". It is not,
+  and must not be: EmuTOS' status table is
+  `bconstat_init[4] = char_dummy` (`references/emutos/bios/chardev.c:30-32`) —
+  handle 4 is the keyboard-controller **TX** channel, whose *input* slot is a
+  dummy. Treating it as console input made `Bconin(4)` block forever waiting
+  for a key that never routes there. The code returns `0` for handle 4;
+  measured by `APITEST` checks BC05 / BC09. The boot-guard (`CHARDEV_AVAILABLE`) maps to the
   "is a host installed" check (`host::host()` → `0` before it is).
 - **CON input is USB-HID, not the UART (policy).** Handle 2's ready-test
   reads the console RX ring, which is fed by the USB-HID keyboard decoder

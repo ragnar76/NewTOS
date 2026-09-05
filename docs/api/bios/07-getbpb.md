@@ -315,3 +315,17 @@ exFAT is a Phase-09 goal (`docs/HARDWARE-PROFILE.md` §3.4).
 - **`Geometry` extension:** NewTOS additionally exposes `reserved`+`num_fats`
   raw (`bpb.rs:105-134`) for the FAT write path — a NewTOS-native superset, not
   part of the Atari ABI BPB.
+- **The returned `BPB *` is a kernel address an EL0 program cannot read —
+  MEASURED 2026-09-05, open.** `getbpb` returns `&TABLE[drive]`
+  (`tos-api/src/bios/bpb.rs`), i.e. a pointer into a kernel static. The kernel
+  is linked at `0xFFFF_0000_0000_0000 + physical`
+  (`kernel/src/arch/aarch64/link-rpi4.ld:24`) and those pages are EL1-only, so
+  an application that follows the pointer takes a permission fault instead of
+  reading its BPB. Measured on QEMU `raspi4b`: `Getbpb(2)` returned
+  `0xFFFF00000026D8F4` (`APITEST` check BB18 FAIL; the nine field checks
+  BB19..BB27 are consequently unrunnable from EL0). The contract
+  (§Outputs "the caller must not free or write it" — but *does* read it) is
+  therefore not satisfied for EL0 callers; only the in-kernel callers
+  (`bdos::fs::fat` via `bpb_for`, the desktop at EL1) can use it today. Any fix
+  is a design decision — copy the BPB into the caller's low memory, or publish
+  a per-process read-only alias — and is **not** taken here.

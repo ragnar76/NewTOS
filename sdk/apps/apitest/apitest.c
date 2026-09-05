@@ -28,8 +28,25 @@
  * failing probe aborts the run: each is independent and unguarded probes
  * only READ (a stale/zero read is the headline result, not a fault).
  *
- * At the end it blocks on Cconin() ("press a key") so the trace stays
- * readable before C:\AUTO returns and the desktop clears the screen.
+ * The run ends with a COMPACT SUMMARY: pass/fail/skip per group, then the
+ * names of every failed and skipped check, paged (20 lines, "press a key")
+ * so it never scrolls away. After it, the program blocks on Cconin()
+ * ("press a key") so the verdict stays readable before C:\AUTO returns and
+ * the desktop clears the screen. That summary is the deliverable on a real
+ * Pi-4, where there is no serial line and the screen is the only output.
+ *
+ * Groups: GEMDOS (file / DTA round-trips), BIOS-CHR (Bconstat / Bconin /
+ * Bconout / Bcostat), BIOS-BLK (Drvmap / Mediach / Rwabs / Getbpb),
+ * BIOS-SYS (Tickcal / Getmpb / Setexc / Kbshift), AES. Every BIOS function
+ * id the trap-13 dispatcher wires (tos-api/src/bios/mod.rs, 0x00..0x0B) is
+ * exercised against docs/api/bios/<id>-<name>.md -- both the documented
+ * return value for documented input and the documented error code for a
+ * documented error case.
+ *
+ * THE BIOS GROUP IS READ-ONLY. Rwabs can write; this program never sets the
+ * write bit, on any drive, in any mode. It runs from the user's real SD
+ * card. Nor does it install anything into a live exception vector: Setexc
+ * only QUERIES the etv_* hooks and set/restores a shadow-only slot.
  *
  * Deliberately LOW dependency: it uses only the <mint/osbind.h> trap macros
  * (header-only inline SVC) plus hand-rolled string/format helpers -- NO
@@ -160,6 +177,112 @@ static void b_verdict(long rc)
 	}
 }
 
+/* ------------------------------------------------------------------ *
+ *  check registry -- the compact end-of-run verdict                   *
+ * ------------------------------------------------------------------ *
+ *
+ * Every probe with a documented expected value records its verdict here.
+ * The per-check trace line is still emitted (and committed to the log) as
+ * the check runs; the registry exists so the run can END with a one-screen
+ * summary, because on real hardware there is no serial line and the trace
+ * has long scrolled off the framebuffer by the time the last check runs.
+ *
+ * A check is PASS, FAIL, or SKIP. SKIP is used ONLY where the precondition
+ * for a documented case is genuinely absent on this machine (no drive
+ * mounted, no key pressed within the window, a pointer that cannot be
+ * dereferenced from EL0) -- never to hide a wrong result.
+ */
+#define MAX_CHECKS 160
+#define V_PASS 0
+#define V_FAIL 1
+#define V_SKIP 2
+
+#define G_GEMDOS 0
+#define G_BCHR   1
+#define G_BBLK   2
+#define G_BSYS   3
+#define G_AES    4
+#define N_GROUPS 5
+
+static const char *const GROUP_NAME[N_GROUPS] = {
+	"GEMDOS  ", "BIOS-CHR", "BIOS-BLK", "BIOS-SYS", "AES     "
+};
+
+static const char   *chk_name[MAX_CHECKS];
+static const char   *chk_why[MAX_CHECKS];
+static unsigned char chk_group[MAX_CHECKS];
+static unsigned char chk_state[MAX_CHECKS];
+static int           chk_count;
+static int           chk_lost;      /* checks that did not fit the registry */
+
+static void chk_add(int grp, const char *name, int state, const char *why)
+{
+	if (chk_count >= MAX_CHECKS) { chk_lost++; return; }
+	chk_name[chk_count]  = name;
+	chk_why[chk_count]   = why;
+	chk_group[chk_count] = (unsigned char)grp;
+	chk_state[chk_count] = (unsigned char)state;
+	chk_count++;
+}
+
+/* Trace tail shared by the ck_* helpers. */
+static void ck_tail(int ok)
+{
+	b_str(ok ? "  [OK]" : "  [FAIL]");
+	b_nl();
+	b_emit();
+}
+
+/* Check "got must equal want", decimal trace (return/error codes). */
+static void ck_eq(int grp, const char *name, long got, long want)
+{
+	int ok = (got == want);
+	chk_add(grp, name, ok ? V_PASS : V_FAIL, 0);
+	b_reset();
+	b_str(name);
+	b_str("  got=");
+	b_dec(got);
+	b_str(" want=");
+	b_dec(want);
+	ck_tail(ok);
+}
+
+/* Check "got must equal want", hex trace (bitmaps, pointers, packed words). */
+static void ck_hex(int grp, const char *name, unsigned long got, unsigned long want)
+{
+	int ok = (got == want);
+	chk_add(grp, name, ok ? V_PASS : V_FAIL, 0);
+	b_reset();
+	b_str(name);
+	b_str("  got=");
+	b_hex(got, 2);
+	b_str(" want=");
+	b_hex(want, 2);
+	ck_tail(ok);
+}
+
+/* Check a condition the name states in full (no value pair to print). */
+static void ck_bool(int grp, const char *name, int ok)
+{
+	chk_add(grp, name, ok ? V_PASS : V_FAIL, 0);
+	b_reset();
+	b_str(name);
+	ck_tail(ok);
+}
+
+/* Record a check that could not be performed, with the reason. */
+static void ck_skip(int grp, const char *name, const char *why)
+{
+	chk_add(grp, name, V_SKIP, why);
+	b_reset();
+	b_str(name);
+	b_str("  [SKIP: ");
+	b_str(why);
+	b_str("]");
+	b_nl();
+	b_emit();
+}
+
 /* BEFORE-line for a probe (constant text, ends with " ...\r\n"). */
 static void before(const char *s)
 {
@@ -271,6 +394,258 @@ typedef struct {
 	const unsigned char *const *dead;
 	short features;
 } KEYTBL;
+
+/* ------------------------------------------------------------------ *
+ *  BIOS (trap 13) probe support                                       *
+ * ------------------------------------------------------------------ */
+
+/*
+ * The 18-byte BIOS Parameter Block `Getbpb` points at -- nine UWORDs, the
+ * fixed Atari ABI layout (docs/api/structures/bpb.md, tos-api/src/bios/bpb.rs).
+ * Unlike most TOS structs this one has NO pointers, so it is byte-identical
+ * on m68k and on LP64 AArch64.
+ */
+typedef struct {
+	unsigned short recsiz;   /* bytes per sector                */
+	unsigned short clsiz;    /* sectors per cluster             */
+	unsigned short clsizb;   /* bytes per cluster               */
+	unsigned short rdlen;    /* root directory length, sectors  */
+	unsigned short fsiz;     /* FAT size, sectors               */
+	unsigned short fatrec;   /* first sector of the default FAT */
+	unsigned short datrec;   /* first data sector               */
+	unsigned short numcl;    /* number of data clusters         */
+	unsigned short b_flags;  /* B_16 = 0x01, B_1FAT = 0x02      */
+} BPB18;
+
+#define B_16   0x01
+#define B_1FAT 0x02
+
+/*
+ * MD / MPB as the NewTOS kernel writes them. The Atari field ORDER is kept,
+ * but the sizes are AArch64-natural: 8-byte pointers, 4-byte LONGs
+ * (tos-types/src/memory.rs -- MD is 24 bytes, MPB is 3 pointers = 24). A C
+ * `long` is 8 bytes here, so m_start / m_length must be `unsigned int`.
+ */
+typedef struct MDX {
+	struct MDX   *m_link;    /* +0,  8 */
+	unsigned int  m_start;   /* +8,  4 */
+	unsigned int  m_length;  /* +12, 4 */
+	void         *m_own;     /* +16, 8 */
+} MDX;
+
+typedef struct {
+	MDX *mp_mfl;             /* +0,  free list head      */
+	MDX *mp_mal;             /* +8,  allocated list head */
+	MDX *mp_rover;           /* +16, roving pointer      */
+} MPBX;
+
+/* Layout drift here would silently invalidate every Getmpb check below. */
+typedef char apitest_assert_mdx[(sizeof(MDX)  == 24) ? 1 : -1];
+typedef char apitest_assert_mpb[(sizeof(MPBX) == 24) ? 1 : -1];
+
+/* TOS error codes the BIOS contract names (tos-types::error). */
+#define E_OK    0L
+#define ESECNF  (-8L)
+#define EUNDEV  (-15L)
+
+/* Rwabs r_w flag bits (docs/api/bios/04-rwabs.md, EmuTOS bios/disk.h:53-61). */
+#define RW_READ        0x00
+#define RW_NOTRANSLATE 0x08
+
+/* Low-memory system variables this group cross-checks against. */
+#define SV_MEMBOT   0x432UL   /* LONG, bottom of the TPA / ST-RAM pool */
+#define SV_MEMTOP   0x436UL   /* LONG, top of same                     */
+#define SV_HZ200    0x4BAUL   /* LONG, 200 Hz tick counter             */
+#define SV_DRVBITS  0x4C2UL   /* LONG, physical drive bitmap           */
+#define SV_PCOOKIES 0x5A0UL   /* LONG, cookie-jar pointer              */
+
+/*
+ * `Setexc` as a plain LONG-returning call. mintlib's Setexc() macro casts its
+ * result to `void (*)(void)`; the NewTOS vector shadow holds 64-bit values and
+ * a check wants the number, so go through the header's own trap helper. Same
+ * trap, same function id, same argument registers -- only the result cast
+ * differs.
+ */
+#define SETEXC(num, vec) \
+	((long)trap_13_wwl((short)(0x05), (short)(num), (long)(vec)))
+
+/*
+ * A pure vector-shadow slot for the Setexc set/restore probe: m68k vector
+ * 0x20 is TRAP #0, which NewTOS shadows but never dispatches
+ * (tos-api/src/bios/vectors.rs) -- so installing a value there cannot make
+ * the kernel jump anywhere. The live etv_* hooks (0x100..0x102) are only ever
+ * QUERIED here (vector == -1), never written: etv_term is delivered as an EL0
+ * upcall by Pterm, so writing a bogus handler would crash this program on exit.
+ */
+#define SHADOW_VEC   0x20
+#define SHADOW_MAGIC 0x12345678L
+
+/* Kbshift `shifty` bits used below (docs/api/bios/0b-kbshift.md). */
+#define MODE_CTRL 0x04
+
+/* Little-endian field readers for a raw 512-byte sector. */
+static unsigned int le16(const unsigned char *p)
+{
+	return (unsigned int)p[0] | ((unsigned int)p[1] << 8);
+}
+
+static unsigned long le32(const unsigned char *p)
+{
+	return (unsigned long)p[0] | ((unsigned long)p[1] << 8)
+	     | ((unsigned long)p[2] << 16) | ((unsigned long)p[3] << 24);
+}
+
+/* MBR partition types that are containers, not mountable volumes
+ * (tos-api/src/bios/drive.rs `is_extended`). */
+static int is_extended_type(unsigned int t)
+{
+	return t == 0x05 || t == 0x0F || t == 0x85;
+}
+
+/*
+ * Can `p` be dereferenced from EL0?
+ *
+ * NewTOS maps only the calling process's TPA into TTBR0 (user VA 0 ..
+ * p_hitpa); the kernel's own statics are linked at 0xFFFF_0000_0000_0000 +
+ * physical (kernel/src/arch/aarch64/link-rpi4.ld:24) and are EL1-only. A
+ * BIOS call that hands back a pointer into kernel memory therefore gives an
+ * application an address it CANNOT read -- and dereferencing it here would
+ * fault the machine instead of reporting the defect. So every returned
+ * pointer is range-checked before it is followed.
+ */
+static int el0_readable(unsigned long p)
+{
+	unsigned long hitpa = (unsigned long)RD_U32(0x04UL);   /* BasePage p_hitpa */
+	if (hitpa == 0) return 0;
+	return p >= 0x100UL && p < hitpa;
+}
+
+/*
+ * Bounded wait for console input. Returns 1 as soon as Bconstat(2) reports a
+ * byte ready, 0 on timeout. The window is measured on the 200 Hz `_hz_200`
+ * sysvar; a spin bound is the backstop, so the loop terminates even if the
+ * system tick is dead. An unattended run must never leave the machine hanging.
+ */
+static int wait_input(unsigned int ticks)
+{
+	unsigned int t0 = RD_U32(SV_HZ200);
+	unsigned long spins;
+	for (spins = 0; ; spins++) {
+		unsigned int now;
+		if (Bconstat(2)) return 1;
+		now = RD_U32(SV_HZ200);
+		if ((unsigned int)(now - t0) >= ticks) return 0;
+		/* Backstop: if the counter has not moved at all after this many
+		 * polls it is not running, and the tick-based timeout would never
+		 * fire. Give up instead of spinning forever. While the counter
+		 * IS moving the loop is bounded by `ticks` by construction. */
+		if (spins >= 200000UL && now == t0) return 0;
+	}
+}
+
+/* ------------------------------------------------------------------ *
+ *  paged summary output                                               *
+ * ------------------------------------------------------------------ */
+
+/* Lines per page. The framebuffer console is far taller than this on both
+ * boards, but a 25-line screen must stay readable too. */
+#define PAGE_LINES 20
+
+static int page_used;
+
+/* Flush the line buffer as one summary line; hold for a key every page. */
+static void page_emit(void)
+{
+	b_emit();
+	if (++page_used >= PAGE_LINES) {
+		page_used = 0;
+		emit("-- more -- press any key --\r\n");
+		(void)Cconin();
+	}
+}
+
+/* Right-pad a decimal to `w` columns so the summary table lines up. */
+static void b_dec_w(long v, int w)
+{
+	int before_len = LP;
+	b_dec(v);
+	while (LP - before_len < w) b_ch(' ');
+}
+
+/* The end-of-run verdict: one line per group, then the names of every
+ * failed and skipped check. Paged, so it never scrolls away unread. */
+static void summary(void)
+{
+	int pass[N_GROUPS], fail[N_GROUPS], skip[N_GROUPS];
+	int tp = 0, tf = 0, ts = 0;
+	int g, i, n;
+
+	for (g = 0; g < N_GROUPS; g++) { pass[g] = fail[g] = skip[g] = 0; }
+	for (i = 0; i < chk_count; i++) {
+		g = chk_group[i];
+		if (g >= N_GROUPS) continue;
+		if      (chk_state[i] == V_PASS) { pass[g]++; tp++; }
+		else if (chk_state[i] == V_FAIL) { fail[g]++; tf++; }
+		else                             { skip[g]++; ts++; }
+	}
+
+	page_used = 0;
+	b_reset(); b_str("=== APITEST SUMMARY ==="); b_nl(); page_emit();
+	b_reset(); b_str("GROUP      PASS  FAIL  SKIP"); b_nl(); page_emit();
+	for (g = 0; g < N_GROUPS; g++) {
+		b_reset();
+		b_str(GROUP_NAME[g]);
+		b_str("   ");
+		b_dec_w(pass[g], 6);
+		b_dec_w(fail[g], 6);
+		b_dec_w(skip[g], 6);
+		b_nl();
+		page_emit();
+	}
+	b_reset();
+	b_str("TOTAL      ");
+	b_dec_w(tp, 6);
+	b_dec_w(tf, 6);
+	b_dec_w(ts, 6);
+	b_nl();
+	page_emit();
+
+	if (chk_lost) {
+		b_reset();
+		b_str("WARNING: ");
+		b_dec(chk_lost);
+		b_str(" checks did not fit the registry (raise MAX_CHECKS)");
+		b_nl();
+		page_emit();
+	}
+
+	b_reset(); b_str("-- FAILED --"); b_nl(); page_emit();
+	n = 0;
+	for (i = 0; i < chk_count; i++) {
+		if (chk_state[i] != V_FAIL) continue;
+		n++;
+		b_reset();
+		b_str("  ");
+		b_str(chk_name[i]);
+		b_nl();
+		page_emit();
+	}
+	if (n == 0) { b_reset(); b_str("  (none)"); b_nl(); page_emit(); }
+
+	b_reset(); b_str("-- SKIPPED --"); b_nl(); page_emit();
+	n = 0;
+	for (i = 0; i < chk_count; i++) {
+		if (chk_state[i] != V_SKIP) continue;
+		n++;
+		b_reset();
+		b_str("  ");
+		b_str(chk_name[i]);
+		if (chk_why[i]) { b_str(" : "); b_str(chk_why[i]); }
+		b_nl();
+		page_emit();
+	}
+	if (n == 0) { b_reset(); b_str("  (none)"); b_nl(); page_emit(); }
+}
 
 /* ------------------------------------------------------------------ */
 
@@ -590,6 +965,8 @@ int main(void)
 		}
 		b_nl();
 		b_emit();
+		ck_bool(G_GEMDOS, "T16 file round-trip payload matches",
+			rh >= 0 && rd == (long)plen && mcmp(rbuf, PAYLOAD, plen) == 0);
 
 		before("T17 Fdelete C:\\APITST.TMP");
 		{
@@ -826,6 +1203,8 @@ int main(void)
 			b_str("  [FAIL: high 24 bits are not 0x1100]");
 		b_nl();
 		b_emit();
+		ck_bool(G_AES, "T28 appl_init ap_private high 24 bits == 0x1100",
+			(apriv & 0xFFFFFF00UL) == 0x1100UL);
 	}
 
 	/* ---- T29 (S1c): the DTA lives in the running process's basepage
@@ -848,6 +1227,7 @@ int main(void)
 		if (got0 == want) b_str("  [OK]"); else b_str("  [FAIL]");
 		b_nl();
 		b_emit();
+		ck_bool(G_GEMDOS, "T29.1 Fsetdta/Fgetdta round-trip", got0 == want);
 
 		prc = Pexec(0, "C:\\DTACHILD.NCP", "", 0L);
 		b_reset();
@@ -871,6 +1251,12 @@ int main(void)
 		}
 		b_nl();
 		b_emit();
+		if (prc < 0)
+			ck_skip(G_GEMDOS, "T29.3 Pexec child cannot move the parent DTA",
+				"child did not run");
+		else
+			ck_bool(G_GEMDOS, "T29.3 Pexec child cannot move the parent DTA",
+				got1 == want);
 	}
 
 	/* ---- T30 (S1d): Keytbl(-1,-1,-1) returns a struct keytbl the caller
@@ -904,6 +1290,12 @@ int main(void)
 		}
 		b_nl();
 		b_emit();
+		if (k == 0)
+			ck_skip(G_AES, "T30.2 Keytbl shft[0x1E] == 'A'",
+				"no keyboard translator on this board");
+		else
+			ck_bool(G_AES, "T30.2 Keytbl shft[0x1E] == 'A'",
+				k->shft[0x1E] == 'A');
 	}
 
 	/* ---- T31 (S1a): menu_bar(NULL, 0) must be a legal call -- EmuTOS's
@@ -924,6 +1316,7 @@ int main(void)
 		else b_str("  [FAIL: expected 1]");
 		b_nl();
 		b_emit();
+		ck_bool(G_AES, "T31.1 menu_bar(NULL,0) returns 1", r0 == 1);
 
 		aes_addrin[0] = (long)(void *)mbar_tree;
 		aes_intin[0]  = 1;                /* show */
@@ -935,14 +1328,466 @@ int main(void)
 		if (r1 == 1) b_str("  [OK]"); else b_str("  [FAIL: expected 1]");
 		b_nl();
 		b_emit();
+		ck_bool(G_AES, "T31.2 menu_bar(tree,1) returns 1", r1 == 1);
+	}
+
+	/* ================================================================ *
+	 *  BIOS group -- trap 13, function ids 0x00..0x0B.                 *
+	 *                                                                  *
+	 *  Contract source: docs/api/bios/ (one .md per function),         *
+	 *  section "Verification criteria" + "Error conditions", with the  *
+	 *  NewTOS device/drive map from each file's "Pi / BCM2711 binding" *
+	 *  section. Every function id the dispatcher wires                 *
+	 *  (tos-api/src/bios/mod.rs) is exercised.                         *
+	 *                                                                  *
+	 *  READ-ONLY BY DESIGN: not one probe below writes to a disk. The  *
+	 *  Rwabs write path (r_w bit 0) is deliberately NOT exercised --   *
+	 *  this program runs from the user's real SD card.                 *
+	 * ================================================================ */
+
+	/* ---- B1: character I/O -- Bconstat / Bconin / Bconout / Bcostat ----
+	 *
+	 * Handle map per docs/api/bios/{01,02,03,08}-*.md "Pi / BCM2711
+	 * binding": CON (2) is the only input device; CON (2) and raw-CON (5)
+	 * are the output devices; PRT (0), AUX (1), MIDI (3), IKBD-TX (4) and
+	 * 6/7 are absent and follow EmuTOS' char_dummy / charout_dummy slots.
+	 * Bcostat is deliberately NOT symmetric with Bconout: bcostat_init[5]
+	 * is char_dummy (references/emutos/bios/chardev.c:38-41), so handle 5
+	 * writes (returns 1) but reports busy (returns 0).
+	 *
+	 * Bconin is only ever called on handles the source proves cannot
+	 * block (the char_dummy slots), plus handle 2 guarded by Bconstat.
+	 * Handle 1 (AUX) is left out on purpose: EmuTOS' bconin1 blocks on the
+	 * RS-232 receiver, and probing a handle whose EmuTOS-side routine
+	 * blocks is not worth the risk of hanging the machine. */
+	before("B1 BIOS character I/O (Bconstat/Bconin/Bconout/Bcostat)");
+	{
+		int i;
+		long k;
+
+		/* Drain type-ahead so "no data queued" is a defined state. Bconin
+		 * runs only after Bconstat has just reported a byte, so it cannot
+		 * block; the loop is bounded regardless. */
+		for (i = 0; i < 256 && Bconstat(2); i++)
+			(void)Bconin(2);
+
+		ck_eq(G_BCHR, "BC01 Bconstat(2) CON drained ->0",  Bconstat(2), 0);
+		ck_eq(G_BCHR, "BC02 Bconstat(0) PRT ->0",          Bconstat(0), 0);
+		ck_eq(G_BCHR, "BC03 Bconstat(1) AUX ->0",          Bconstat(1), 0);
+		ck_eq(G_BCHR, "BC04 Bconstat(3) MIDI ->0",         Bconstat(3), 0);
+		ck_eq(G_BCHR, "BC05 Bconstat(4) dummy ->0",        Bconstat(4), 0);
+		ck_eq(G_BCHR, "BC06 Bconstat(9) invalid ->0",      Bconstat(9), 0);
+
+		ck_eq(G_BCHR, "BC07 Bconin(0) PRT ->0",            Bconin(0), 0);
+		ck_eq(G_BCHR, "BC08 Bconin(3) MIDI ->0",           Bconin(3), 0);
+		ck_eq(G_BCHR, "BC09 Bconin(4) dummy ->0",          Bconin(4), 0);
+		ck_eq(G_BCHR, "BC10 Bconin(9) invalid ->0",        Bconin(9), 0);
+
+		/* The console-output handles really put their character on the
+		 * screen. All eight calls run back to back, so the marker line
+		 * ends up showing exactly the bytes the BIOS accepted: "CR" from
+		 * handles 2 and 5, nothing from the six absent devices. */
+		b_reset();
+		b_str("B1    Bconout(0..7) write here -> ");
+		b_emit();
+		{
+			long o2 = Bconout(2, 'C');
+			long o5 = Bconout(5, 'R');
+			long o0 = Bconout(0, '*');
+			long o1 = Bconout(1, '*');
+			long o3 = Bconout(3, '*');
+			long o4 = Bconout(4, '*');
+			long o6 = Bconout(6, '*');
+			long o7 = Bconout(7, '*');
+			emit("\r\n");
+			ck_eq(G_BCHR, "BC11 Bconout(2,'C') CON ->1",   o2, 1);
+			ck_eq(G_BCHR, "BC12 Bconout(5,'R') raw ->1",   o5, 1);
+			ck_eq(G_BCHR, "BC13 Bconout(0,'*') PRT ->0",   o0, 0);
+			ck_eq(G_BCHR, "BC14 Bconout(1,'*') AUX ->0",   o1, 0);
+			ck_eq(G_BCHR, "BC15 Bconout(3,'*') MIDI ->0",  o3, 0);
+			ck_eq(G_BCHR, "BC16 Bconout(4,'*') IKBD ->0",  o4, 0);
+			ck_eq(G_BCHR, "BC17 Bconout(6,'*') dummy ->0", o6, 0);
+			ck_eq(G_BCHR, "BC18 Bconout(7,'*') dummy ->0", o7, 0);
+		}
+
+		ck_eq(G_BCHR, "BC19 Bcostat(2) CON ->-1",      Bcostat(2), -1);
+		ck_eq(G_BCHR, "BC20 Bcostat(5) dummy ->0",     Bcostat(5), 0);
+		ck_eq(G_BCHR, "BC21 Bcostat(0) PRT ->0",       Bcostat(0), 0);
+		ck_eq(G_BCHR, "BC22 Bcostat(1) AUX ->0",       Bcostat(1), 0);
+		ck_eq(G_BCHR, "BC23 Bcostat(3) IKBD-TX ->0",   Bcostat(3), 0);
+		ck_eq(G_BCHR, "BC24 Bcostat(4) MIDI-TX ->0",   Bcostat(4), 0);
+		ck_eq(G_BCHR, "BC25 Bcostat(9) invalid ->0",   Bcostat(9), 0);
+
+		/* Bconin(2): the packed-LONG contract (docs/api/bios/02-bconin.md
+		 * "Return value") can only be checked against a real key. Bounded
+		 * wait -> no key means SKIP, never a hang. Tap ONE key: holding it
+		 * lets the auto-repeat queue more and BC30 then legitimately fails. */
+		emit("B1    tap one key within 10 s to test Bconin(2) (or wait) ...\r\n");
+		if (wait_input(10 * 200)) {
+			/* Captured back to back: no console or file I/O may run
+			 * between them, or a second keystroke would decide BC30. */
+			long s1 = Bconstat(2);
+			long s2 = Bconstat(2);
+			long s3;
+			k  = Bconin(2);
+			s3 = Bconstat(2);
+
+			b_reset();
+			b_str("B1    Bconin(2) = ");
+			b_hex((unsigned long)k, 8);
+			b_str("  (scancode ");
+			b_hex((k >> 16) & 0xFF, 2);
+			b_str(", ascii ");
+			b_hex(k & 0xFF, 2);
+			b_str(")");
+			b_nl();
+			b_emit();
+
+			ck_bool(G_BCHR, "BC26 Bconstat(2) ready, non-destructive",
+				s1 == -1 && s2 == -1);
+			ck_eq(G_BCHR, "BC27 Bconin(2) bits 8-15 zero",  (k >> 8) & 0xFF, 0);
+			ck_eq(G_BCHR, "BC28 Bconin(2) bits 24-31 zero", (k >> 24) & 0xFF, 0);
+			ck_bool(G_BCHR, "BC29 Bconin(2) ascii or scancode set",
+				(k & 0xFF) != 0 || ((k >> 16) & 0xFF) != 0);
+			ck_eq(G_BCHR, "BC30 Bconstat(2)==0 after Bconin", s3, 0);
+		} else {
+			ck_skip(G_BCHR, "BC26 Bconstat(2) ready, non-destructive", "no key pressed");
+			ck_skip(G_BCHR, "BC27 Bconin(2) bits 8-15 zero",  "no key pressed");
+			ck_skip(G_BCHR, "BC28 Bconin(2) bits 24-31 zero", "no key pressed");
+			ck_skip(G_BCHR, "BC29 Bconin(2) ascii or scancode set", "no key pressed");
+			ck_skip(G_BCHR, "BC30 Bconstat(2)==0 after Bconin", "no key pressed");
+		}
+	}
+
+	/* ---- B2: block devices -- Drvmap / Mediach / Rwabs / Getbpb ----
+	 *
+	 * docs/api/bios/{0a,09,04,07}-*.md. Reads only. */
+	before("B2 BIOS block devices (Drvmap/Mediach/Rwabs/Getbpb)");
+	{
+		static unsigned char boot[512];    /* logical sector 0 of the drive */
+		static unsigned char mbr[512];     /* physical sector 0             */
+		static unsigned char again[512];   /* physical sector at part start */
+		static unsigned char guard[512];   /* numb==0 no-transfer sentinel  */
+		unsigned long dm = (unsigned long)Drvmap();
+		int bdrv = -1, udrv = -1;
+		int d, i, ok;
+		long r;
+
+		for (d = 0; d < 16; d++) {
+			if ((dm >> d) & 1UL) { if (bdrv < 0) bdrv = d; }
+			else                 { if (udrv < 0) udrv = d; }
+		}
+
+		b_reset();
+		b_str("B2    Drvmap=");
+		b_hex(dm, 8);
+		b_str(" first mounted drive=");
+		b_dec(bdrv);
+		b_nl();
+		b_emit();
+
+		ck_bool(G_BBLK, "BB01 Drvmap() has at least one drive", dm != 0);
+		ck_hex(G_BBLK, "BB02 Drvmap() bits 16-31 zero", dm >> 16, 0);
+		ck_hex(G_BBLK, "BB03 Drvmap() == drvbits $4C2",
+		       dm, (unsigned long)RD_U32(SV_DRVBITS));
+
+		/* Mediach: 0 for every mounted drive (the SD is non-removable),
+		 * EUNDEV for every unmounted one -- and stable across calls, since
+		 * nothing here arms a media change. */
+		{
+			int okm = 1, okv = 1, okl = 1;
+			for (d = 0; d < 16; d++) {
+				long m1 = Mediach(d);
+				long m2 = Mediach(d);
+				if (m1 != m2) okl = 0;
+				if ((dm >> d) & 1UL) { if (m1 != 0)      okm = 0; }
+				else                 { if (m1 != EUNDEV) okv = 0; }
+			}
+			ck_bool(G_BBLK, "BB04 Mediach(mounted)==0 for all", okm);
+			ck_bool(G_BBLK, "BB05 Mediach(absent)==EUNDEV for all", okv);
+			ck_bool(G_BBLK, "BB06 Mediach latched (2 calls equal)", okl);
+		}
+
+		if (bdrv < 0) {
+			ck_skip(G_BBLK, "BB07..BB29 Rwabs/Getbpb", "no drive mounted");
+		} else {
+			/* Logical read of sector 0 -- the drive's FAT boot sector. */
+			for (i = 0; i < 512; i++) boot[i] = 0;
+			r = Rwabs(RW_READ, boot, 1, 0, bdrv);
+			ck_eq(G_BBLK, "BB07 Rwabs read logical sector 0", r, E_OK);
+			ck_bool(G_BBLK, "BB08 logical sector 0 has 0x55AA",
+				boot[510] == 0x55 && boot[511] == 0xAA);
+
+			/* numb == 0: no transfer, E_OK -- the source has no EBADRQ
+			 * branch (docs/api/bios/04-rwabs.md "Error conditions"). */
+			for (i = 0; i < 512; i++) guard[i] = 0xA5;
+			r = Rwabs(RW_READ, guard, 0, 0, bdrv);
+			ck_eq(G_BBLK, "BB09 Rwabs numb=0 -> E_OK", r, E_OK);
+			ok = 1;
+			for (i = 0; i < 512; i++) if (guard[i] != 0xA5) ok = 0;
+			ck_bool(G_BBLK, "BB10 Rwabs numb=0 transferred nothing", ok);
+
+			/* Documented error cases. */
+			if (udrv < 0) {
+				ck_skip(G_BBLK, "BB11 Rwabs absent drive -> EUNDEV",
+					"all 16 drives mounted");
+			} else {
+				r = Rwabs(RW_READ, guard, 1, 0, udrv);
+				ck_eq(G_BBLK, "BB11 Rwabs absent drive -> EUNDEV", r, EUNDEV);
+			}
+			/* Beyond the partition: the 16-bit `first` cannot reach past a
+			 * multi-megabyte partition, so use the AHDI long-sector form. */
+			r = Lrwabs(RW_READ, guard, 1, 0x7FFFFFFFL, bdrv);
+			ck_eq(G_BBLK, "BB12 Rwabs sector past partition -> ESECNF", r, ESECNF);
+
+			/* Physical mode: `first` is an absolute device sector, no
+			 * partition translation, range-checked against the device. */
+			for (i = 0; i < 512; i++) mbr[i] = 0;
+			r = Rwabs(RW_NOTRANSLATE, mbr, 1, 0, bdrv);
+			ck_eq(G_BBLK, "BB13 Rwabs physical sector 0 -> E_OK", r, E_OK);
+			ck_bool(G_BBLK, "BB14 physical sector 0 is the MBR (0x55AA)",
+				mbr[510] == 0x55 && mbr[511] == 0xAA);
+			r = Lrwabs(RW_NOTRANSLATE, guard, 1, 0x7FFFFFFFL, bdrv);
+			ck_eq(G_BBLK, "BB15 Rwabs physical past device -> ESECNF", r, ESECNF);
+
+			/* Translation proof: find the MBR entry the kernel's drive
+			 * table assigns to `bdrv` (primaries in MBR order from C:=2,
+			 * skipping empty and container entries -- drive.rs `mount`),
+			 * then read that absolute sector physically. It must be the
+			 * same 512 bytes the logical read of sector 0 returned. */
+			{
+				int letter = 2, found = -1;
+				unsigned long pstart = 0;
+				for (i = 0; i < 4; i++) {
+					unsigned int  kind  = mbr[0x1BE + i * 16 + 4];
+					unsigned long start = le32(&mbr[0x1BE + i * 16 + 8]);
+					unsigned long count = le32(&mbr[0x1BE + i * 16 + 12]);
+					if (kind == 0 || count == 0) continue;
+					if (is_extended_type(kind)) continue;
+					if (letter == bdrv) { found = i; pstart = start; break; }
+					letter++;
+				}
+				if (found < 0 || pstart == 0) {
+					ck_skip(G_BBLK, "BB16 physical(part start) == logical sector 0",
+						"drive is not an MBR primary partition");
+				} else {
+					for (i = 0; i < 512; i++) again[i] = 0;
+					r = Lrwabs(RW_NOTRANSLATE, again, 1, (long)pstart, bdrv);
+					ck_bool(G_BBLK, "BB16 physical(part start) == logical sector 0",
+						r == E_OK
+						&& mcmp((const char *)again, (const char *)boot, 512) == 0);
+				}
+			}
+
+			/* Getbpb: the returned pointer, then every field against the
+			 * boot sector we just read (EmuTOS blkdev_getbpb arithmetic). */
+			{
+				BPB18 *bp = (BPB18 *)Getbpb(bdrv);
+				unsigned int  raw_recsiz = le16(&boot[0x0B]);
+				unsigned int  raw_clsiz  = boot[0x0D];
+				unsigned int  raw_res    = le16(&boot[0x0E]);
+				unsigned int  raw_nfat   = boot[0x10];
+				unsigned int  raw_rootent= le16(&boot[0x11]);
+				unsigned int  raw_fsiz   = le16(&boot[0x16]);
+				unsigned int  nfat = (raw_nfat == 0) ? 2 : raw_nfat;
+				unsigned int  res  = (raw_res  == 0) ? 1 : raw_res;
+				unsigned int  rdlen, fatrec, datrec;
+
+				b_reset();
+				b_str("B2    Getbpb(");
+				b_dec(bdrv);
+				b_str(") = ");
+				b_hex((unsigned long)(void *)bp, 8);
+				b_nl();
+				b_emit();
+
+				ck_bool(G_BBLK, "BB17 Getbpb(mounted) != NULL", bp != 0);
+				/* The contract is "pointer to the drive's BPB" -- i.e. the
+				 * CALLER reads it. A pointer an EL0 program cannot
+				 * dereference does not satisfy that. */
+				ck_bool(G_BBLK, "BB18 Getbpb pointer is EL0-readable",
+					bp != 0 && el0_readable((unsigned long)(void *)bp));
+
+				if (bp == 0 || !el0_readable((unsigned long)(void *)bp)) {
+					ck_skip(G_BBLK, "BB19..BB28 BPB fields",
+						"BPB pointer not readable from EL0");
+				} else {
+					rdlen  = (raw_recsiz == 0) ? 0
+					       : (raw_rootent * 32u + raw_recsiz - 1u) / raw_recsiz;
+					fatrec = res + ((nfat >= 2) ? raw_fsiz : 0u);
+					datrec = fatrec + raw_fsiz + rdlen;
+
+					ck_eq(G_BBLK, "BB19 BPB recsiz == 512", bp->recsiz, 512);
+					ck_eq(G_BBLK, "BB20 BPB recsiz == bootsec[0x0B]",
+					      bp->recsiz, (long)raw_recsiz);
+					ck_eq(G_BBLK, "BB21 BPB clsiz == bootsec[0x0D]",
+					      bp->clsiz, (long)raw_clsiz);
+					ck_eq(G_BBLK, "BB22 BPB clsizb == recsiz*clsiz",
+					      bp->clsizb, (long)bp->recsiz * (long)bp->clsiz);
+					ck_eq(G_BBLK, "BB23 BPB fsiz == bootsec[0x16]",
+					      bp->fsiz, (long)raw_fsiz);
+					ck_eq(G_BBLK, "BB24 BPB rdlen == ceil(rootent*32/recsiz)",
+					      bp->rdlen, (long)rdlen);
+					ck_eq(G_BBLK, "BB25 BPB fatrec == res+(nfat>1?fsiz:0)",
+					      bp->fatrec, (long)(unsigned short)fatrec);
+					ck_eq(G_BBLK, "BB26 BPB datrec == fatrec+fsiz+rdlen",
+					      bp->datrec, (long)(unsigned short)datrec);
+					ck_bool(G_BBLK, "BB27 BPB B_16 set iff numcl > 4084",
+						((bp->b_flags & B_16) != 0) == (bp->numcl > 4084));
+					ck_bool(G_BBLK, "BB28 BPB B_1FAT set iff one FAT",
+						((bp->b_flags & B_1FAT) != 0) == (nfat < 2));
+				}
+			}
+
+			if (udrv < 0) {
+				ck_skip(G_BBLK, "BB29 Getbpb(absent) == NULL",
+					"all 16 drives mounted");
+			} else {
+				ck_bool(G_BBLK, "BB29 Getbpb(absent) == NULL",
+					Getbpb(udrv) == 0);
+			}
+		}
+	}
+
+	/* ---- B3: system calls -- Tickcal / Getmpb / Setexc / Kbshift ----
+	 *
+	 * docs/api/bios/{06,00,05,0b}-*.md. */
+	before("B3 BIOS system calls (Tickcal/Getmpb/Setexc/Kbshift)");
+	{
+		static MPBX mpb;
+		MDX *md;
+		unsigned int t0, t1;
+		unsigned long spins;
+		long q1, q2, old, prev, back;
+
+		/* Tickcal is a pure constant 20 (ms per system tick). */
+		ck_eq(G_BSYS, "BS01 Tickcal() == 20", Tickcal(), 20);
+
+		/* Its counterpart, the 200 Hz counter the contract's tick derives
+		 * from -- also the clock the Bconin wait above is bounded on. */
+		t0 = RD_U32(SV_HZ200);
+		t1 = t0;
+		for (spins = 0; spins < 100000000UL && t1 == t0; spins++)
+			t1 = RD_U32(SV_HZ200);
+		ck_bool(G_BSYS, "BS02 _hz_200 $4BA advances", t1 != t0);
+
+		/* Getmpb: mp_mfl / mp_mal written, mp_rover left alone. */
+		mpb.mp_mfl   = (MDX *)0x1111UL;
+		mpb.mp_mal   = (MDX *)0x2222UL;
+		mpb.mp_rover = (MDX *)0xDEADUL;
+		Getmpb(&mpb);
+		md = mpb.mp_mfl;
+		b_reset();
+		b_str("B3    Getmpb: mp_mfl=");
+		b_hex((unsigned long)(void *)md, 8);
+		b_str(" mp_mal=");
+		b_hex((unsigned long)(void *)mpb.mp_mal, 2);
+		b_nl();
+		b_emit();
+		ck_bool(G_BSYS, "BS03 Getmpb leaves mp_rover untouched",
+			mpb.mp_rover == (MDX *)0xDEADUL);
+		ck_bool(G_BSYS, "BS04 Getmpb mp_mal == NULL", mpb.mp_mal == 0);
+		ck_bool(G_BSYS, "BS05 Getmpb mp_mfl != NULL", md != 0);
+		/* Same reasoning as Getbpb: the contract is that the caller walks
+		 * the free list, which requires a readable pointer. */
+		ck_bool(G_BSYS, "BS06 Getmpb mp_mfl is EL0-readable",
+			md != 0 && el0_readable((unsigned long)(void *)md));
+		if (md == 0 || !el0_readable((unsigned long)(void *)md)) {
+			ck_skip(G_BSYS, "BS07..BS10 MD fields",
+				"MD pointer not readable from EL0");
+		} else {
+			unsigned int membot = RD_U32(SV_MEMBOT);
+			unsigned int memtop = RD_U32(SV_MEMTOP);
+			ck_bool(G_BSYS, "BS07 MD m_link == NULL", md->m_link == 0);
+			ck_bool(G_BSYS, "BS08 MD m_own == NULL",  md->m_own  == 0);
+			ck_hex(G_BSYS, "BS09 MD m_start == membot $432",
+			       (unsigned long)md->m_start, (unsigned long)membot);
+			ck_hex(G_BSYS, "BS10 MD m_length == memtop-membot",
+			       (unsigned long)md->m_length,
+			       (unsigned long)(memtop - membot));
+		}
+
+		/* Setexc, query form: the etv_* hooks carry a non-NULL boot default
+		 * so the `old = Setexc(n,-1)` chain idiom always has something to
+		 * chain to, and a query must not change the value. Read-only: the
+		 * live hooks are never written here. */
+		q1 = SETEXC(0x102, -1L);      /* etv_term */
+		q2 = SETEXC(0x102, -1L);
+		b_reset();
+		b_str("B3    Setexc(etv_term,-1) = ");
+		b_hex((unsigned long)q1, 8);
+		b_nl();
+		b_emit();
+		ck_bool(G_BSYS, "BS11 Setexc(etv_term,-1) != 0", q1 != 0);
+		ck_bool(G_BSYS, "BS12 Setexc query does not change it", q1 == q2);
+
+		/* Setexc, set form, on a shadow-only vector (see SHADOW_VEC). */
+		old  = SETEXC(SHADOW_VEC, -1L);
+		prev = SETEXC(SHADOW_VEC, SHADOW_MAGIC);
+		ck_bool(G_BSYS, "BS13 Setexc(set) returns the previous value",
+			prev == old);
+		ck_hex(G_BSYS, "BS14 Setexc(query) reads the new value",
+		       (unsigned long)SETEXC(SHADOW_VEC, -1L),
+		       (unsigned long)SHADOW_MAGIC);
+		(void)SETEXC(SHADOW_VEC, old);
+		back = SETEXC(SHADOW_VEC, -1L);
+		ck_bool(G_BSYS, "BS15 Setexc restored the old value", back == old);
+
+		/* The cookie-jar idiom: Setexc(0x5A0/4, -1) peeks the sysvar. */
+		ck_hex(G_BSYS, "BS16 Setexc($5A0/4,-1) == *(long*)$5A0",
+		       (unsigned long)SETEXC(SV_PCOOKIES / 4, -1L),
+		       (unsigned long)RD_U32(SV_PCOOKIES));
+
+		/* Kbshift: query is side-effect free, set returns the previous
+		 * value, only the low byte of the argument is stored. The whole
+		 * sequence runs back to back -- `shifty` is live keyboard state,
+		 * so any console or file I/O in between could let a real modifier
+		 * key change it under the probe. The original value is put back
+		 * before anything else runs. */
+		{
+			long k0 = Kbshift(-1);
+			long k1 = Kbshift(-1);
+			long kprev = Kbshift(0x0100 | MODE_CTRL);
+			long kset  = Kbshift(-1);
+			long kres  = Kbshift((short)k0);
+			long kback = Kbshift(-1);
+
+			ck_bool(G_BSYS, "BS17 Kbshift(-1) query is stable", k0 == k1);
+			ck_hex(G_BSYS, "BS18 Kbshift(-1) bits 8-31 zero",
+			       ((unsigned long)k0) >> 8, 0);
+			ck_bool(G_BSYS, "BS19 Kbshift(set) returns the previous value",
+				kprev == k1);
+			ck_hex(G_BSYS, "BS20 Kbshift stores only the low byte",
+			       (unsigned long)kset, (unsigned long)MODE_CTRL);
+			ck_bool(G_BSYS, "BS21 Kbshift restored the old state",
+				kres == MODE_CTRL && kback == k0);
+		}
 	}
 
 	/* ---- done: the DONE marker is committed per-line like every other line
 	 *      (no trailing Fclose to lose). Then pause so the screen stays
 	 *      readable before C:\AUTO returns and the desktop clears it. ---- */
 	emit("\r\n=== APITEST DONE ===\r\n");
+
+	/* Push the trace off the screen so the verdict stands alone. The
+	 * framebuffer console has no ESC-sequence parser (kernel/src/fbcon.rs),
+	 * so a screenful of blank lines is the portable "clear"; 30 lines is the
+	 * height of the 640x480 8x16 console. Screen only -- Cconws directly,
+	 * not emit(), so the blanks never reach the log file. */
+	{
+		int blank;
+		for (blank = 0; blank < 30; blank++)
+			Cconws("\r\n");
+	}
+
+	/* The compact verdict, printed LAST and paged. On the real machine this
+	 * is the only output the user gets to read: there is no serial line, the
+	 * trace above has scrolled off, and the desktop clears the screen the
+	 * moment C:\AUTO returns. It is still teed to C:\APITEST.LOG. */
+	summary();
+
 	g_log_ok = 0;                /* stop teeing to file: prompt is screen-only */
-	emit("Press any key to continue (then the desktop starts)...\r\n");
+	emit("\r\nPress any key to continue (then the desktop starts)...\r\n");
 	(void)Cconin();              /* blocks; USB-HID/IKBD from AUTO */
 
 	Pterm(0);                    /* GEMDOS 0x4C -- does not return */
