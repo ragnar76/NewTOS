@@ -57,6 +57,7 @@ static mut MBOX_BUF: MboxBuf = MboxBuf { words: [0; 36] };
 /// Indices into [`MBOX_BUF`] for the response fields we read back.
 const I_PHYS_W: usize = 5; // set-physical width (echoed/adjusted)
 const I_PHYS_H: usize = 6; // set-physical height
+const I_VIRT_H: usize = 11; // set-virtual height (echoed — may be clamped)
 const I_FB_BASE: usize = 23; // allocate → base (bus address)
 const I_FB_SIZE: usize = 24; // allocate → size
 const I_PITCH: usize = 28; // get-pitch → bytes per line
@@ -70,19 +71,58 @@ const Q_H: usize = 6; // response: physical height
 
 /// The installed framebuffer.
 pub struct VcFb {
-    pixels: AtomicU64, // high-half VA of the pixel store
+    /// High-half VA of page 0 of the allocated screen memory.
+    mem: AtomicU64,
+    /// High-half VA drawing goes to (EmuTOS `v_bas_ad`). Equals [`Self::mem`]
+    /// until `Setscreen` moves it.
+    draw: AtomicU64,
+    /// High-half VA the VideoCore is currently scanning out. Equals
+    /// [`Self::mem`] until `Setscreen` flips a page.
+    scanout: AtomicU64,
     width: AtomicU32,
     height: AtomicU32,
     stride_px: AtomicU32,
+    /// Number of full screens the allocated buffer holds (virtual height /
+    /// physical height, as the VideoCore actually granted it).
+    pages: AtomicU32,
 }
 
 /// Board-selected framebuffer instance.
 pub static FRAMEBUFFER: VcFb = VcFb {
-    pixels: AtomicU64::new(0),
+    mem: AtomicU64::new(0),
+    draw: AtomicU64::new(0),
+    scanout: AtomicU64::new(0),
     width: AtomicU32::new(0),
     height: AtomicU32::new(0),
     stride_px: AtomicU32::new(0),
+    pages: AtomicU32::new(1),
 };
+
+impl VcFb {
+    /// Bytes one full screen occupies (`stride_bytes * height`).
+    fn page_bytes(&self) -> u64 {
+        (self.stride_px.load(Ordering::Acquire) as u64)
+            * 4
+            * (self.height.load(Ordering::Acquire) as u64)
+    }
+
+    /// Offset of `va` from page 0, if `va` starts a whole screen page inside
+    /// the allocated screen memory. `None` for anything else — an address
+    /// outside the buffer or not on a page boundary is not a screen this
+    /// display can show or draw into.
+    fn page_offset(&self, va: u64) -> Option<u64> {
+        let mem = self.mem.load(Ordering::Acquire);
+        let page = self.page_bytes();
+        if mem == 0 || page == 0 || va < mem {
+            return None;
+        }
+        let off = va - mem;
+        if !off.is_multiple_of(page) || off / page >= self.pages.load(Ordering::Acquire) as u64 {
+            return None;
+        }
+        Some(off)
+    }
+}
 
 impl Framebuffer for VcFb {
     fn width(&self) -> u32 {
@@ -95,18 +135,58 @@ impl Framebuffer for VcFb {
         self.stride_px.load(Ordering::Acquire)
     }
     fn pixels(&self) -> *mut u32 {
-        self.pixels.load(Ordering::Acquire) as *mut u32
+        self.draw.load(Ordering::Acquire) as *mut u32
+    }
+    fn mem_base(&self) -> *mut u32 {
+        self.mem.load(Ordering::Acquire) as *mut u32
+    }
+    fn pages(&self) -> u32 {
+        self.pages.load(Ordering::Acquire)
+    }
+    fn set_draw_base(&self, va: u64) -> bool {
+        if self.page_offset(va).is_none() {
+            return false;
+        }
+        self.draw.store(va, Ordering::Release);
+        true
+    }
+    fn scanout_base(&self) -> u64 {
+        self.scanout.load(Ordering::Acquire)
+    }
+    fn set_scanout_base(&self, va: u64) -> bool {
+        let Some(off) = self.page_offset(va) else {
+            return false;
+        };
+        if va == self.scanout.load(Ordering::Acquire) {
+            return true; // already there — no mailbox round trip
+        }
+        let stride = self.stride_px.load(Ordering::Acquire) as u64 * 4;
+        let y = (off / stride) as u32;
+        // SAFETY: single-CPU; the boot-time framebuffer bring-up has long
+        // finished, so `MBOX_BUF` is free (see `set_virtual_offset`).
+        if !unsafe { set_virtual_offset(0, y) } {
+            return false;
+        }
+        self.scanout.store(va, Ordering::Release);
+        true
     }
 }
 
 /// Fill the property buffer with the framebuffer-allocate tag sequence for
 /// the given physical geometry `w`×`h` (the detected-or-fallback size, see
-/// [`init`]). Virtual size is set equal to physical (non-scrolled FB).
+/// [`init`]) and `pages` stacked screens of virtual height.
+///
+/// `pages = 1` is the classic single, non-scrolled framebuffer. `pages = 2`
+/// asks the VideoCore for a buffer of **double virtual height** — two whole
+/// screens, one shown while the other is drawn into — which is what makes the
+/// set-virtual-offset tag ([`set_virtual_offset`]) a page flip and therefore
+/// what makes XBIOS `Setscreen` able to move the physical base at all.
+/// Reference: `docs/hardware/mailbox-framebuffer.md` §3/§3b.
 ///
 /// # Safety
 /// Single-CPU boot; `MBOX_BUF` is a BSS static.
 #[allow(clippy::deref_addrof)] // see `ramfb::fwcfg_dma` for the static-mut idiom.
-unsafe fn build_request(w: u32, h: u32) {
+unsafe fn build_request(w: u32, h: u32, pages: u32) {
     // SAFETY: single-CPU boot context, exclusive access to the static.
     let b = unsafe { &mut (*(&raw mut MBOX_BUF)).words };
 
@@ -121,11 +201,13 @@ unsafe fn build_request(w: u32, h: u32) {
     b[6] = h;
 
     // set virtual (buffer) width/height — tag 0x00048004, value 8B.
+    // `pages` screens stacked vertically: the visible window stays `h` tall
+    // and the extra rows are the off-screen page(s).
     b[7] = 0x0004_8004;
     b[8] = 8;
     b[9] = 0;
     b[10] = w;
-    b[11] = h;
+    b[11] = h * pages;
 
     // set depth — tag 0x00048005, value 4B.
     b[12] = 0x0004_8005;
@@ -222,6 +304,73 @@ unsafe fn query_physical_size() -> Option<(u32, u32)> {
     }
 }
 
+/// Property-buffer indices for the standalone set-virtual-offset message
+/// (see [`set_virtual_offset`]).
+const O_TAG: usize = 2; // set-virtual-offset tag id
+const O_X: usize = 5; // request/response: X offset in pixels
+const O_Y: usize = 6; // request/response: Y offset in pixels
+
+/// Move the visible window inside the (taller-than-visible) framebuffer to
+/// pixel offset `(x, y)` — property tag `0x0004_8009`
+/// **SET_VIRTUAL_OFFSET**, request and response value `u32 nOffsetX,
+/// u32 nOffsetY` (8 bytes).
+///
+/// This is the BCM2711's page flip: with a virtual height of `pages × h`
+/// (see [`build_request`]), `y = page × h` selects which of the stacked
+/// screens the display engine scans out. It is the hardware underneath
+/// XBIOS `Setscreen`'s `physLoc`, the VideoCore's stand-in for the Atari
+/// video-base register EmuTOS' `atari_setphys` writes
+/// (`references/emutos/bios/screen.c:939-947`).
+///
+/// Tag id and value layout: `docs/hardware/mailbox-framebuffer.md` §3b,
+/// sourced from `references/circle/include/circle/bcmpropertytags.h:65`
+/// (`PROPTAG_SET_VIRTUAL_OFFSET`) + `include/circle/bcmpropertytags.h:282`
+/// (`TPropertyTagVirtualOffset { u32 nOffsetX; u32 nOffsetY; }`) and
+/// corroborated by `references/circle/addon/linux/raspberrypi-firmware.h:103`.
+/// Per CLAUDE.md Rule 6 nothing here is from memory.
+///
+/// Returns `true` only when the transaction succeeded **and** the firmware
+/// echoed back the offsets we asked for — Circle applies the same check
+/// (`references/circle/lib/bcmframebuffer.cpp:386-399`), because a firmware
+/// that cannot honour the offset answers with the one it kept.
+///
+/// # Safety
+/// Single-CPU, exclusive use of [`MBOX_BUF`]. Boot-time bring-up
+/// ([`init`]) has finished by the time a trap can call this, and traps are
+/// serialised by the BDOS giant lock, so the two never overlap.
+#[allow(clippy::deref_addrof)]
+unsafe fn set_virtual_offset(x: u32, y: u32) -> bool {
+    // SAFETY: caller's contract — exclusive use of the static buffer.
+    unsafe {
+        {
+            let b = &mut (*(&raw mut MBOX_BUF)).words;
+            b[1] = 0x0000_0000; // request
+            b[O_TAG] = 0x0004_8009; // PROPTAG_SET_VIRTUAL_OFFSET
+            b[O_TAG + 1] = 8; // value buffer size
+            b[O_TAG + 2] = 8; // request parameter size
+            b[O_X] = x;
+            b[O_Y] = y;
+            b[7] = 0x0000_0000; // end tag
+            b[0] = 8 * 4; // total message size (header + 1 tag + end)
+        }
+
+        let buf_va = (&raw const MBOX_BUF) as usize;
+        let buf_pa = va_to_pa(buf_va as u64) as u32;
+        if !mailbox::call_property(buf_va, buf_pa, core::mem::size_of::<MboxBuf>()) {
+            return false;
+        }
+        let b = &(*(&raw const MBOX_BUF)).words;
+        b[O_X] == x && b[O_Y] == y
+    }
+}
+
+/// How many whole screens we ask the VideoCore to allocate: two, so XBIOS
+/// `Setscreen` can show one while a program draws into the other. The
+/// firmware may grant fewer (it echoes the virtual height it accepted), and
+/// [`init`] falls back to a single page if the double-height allocation
+/// fails outright — a display that boots is worth more than one that flips.
+const WANTED_PAGES: u32 = 2;
+
 /// Bring up the VideoCore framebuffer. Returns `false` if the mailbox
 /// transaction fails or returns an implausible buffer — the caller then
 /// skips graphics (never a stubbed success).
@@ -250,28 +399,42 @@ pub unsafe fn init() -> bool {
             }
         };
 
-        build_request(w, h);
+        // Ask for `WANTED_PAGES` stacked screens so `Setscreen` can flip
+        // between them; if that allocation fails, retry with the classic
+        // single screen. A booting display beats a flippable one that isn't
+        // there.
+        let mut wanted = WANTED_PAGES;
+        let (fb_bus, fb_size, pitch, w, h, virt_h) = loop {
+            build_request(w, h, wanted);
 
-        let buf_va = (&raw const MBOX_BUF) as usize;
-        let buf_pa = va_to_pa(buf_va as u64) as u32;
-        let len = core::mem::size_of::<MboxBuf>();
+            let buf_va = (&raw const MBOX_BUF) as usize;
+            let buf_pa = va_to_pa(buf_va as u64) as u32;
+            let len = core::mem::size_of::<MboxBuf>();
 
-        if !mailbox::call_property(buf_va, buf_pa, len) {
-            return false;
-        }
+            let ok = mailbox::call_property(buf_va, buf_pa, len);
+            let b = &(*(&raw const MBOX_BUF)).words;
+            let got = (b[I_FB_BASE], b[I_FB_SIZE], b[I_PITCH], b[I_PHYS_W], b[I_PHYS_H], b[I_VIRT_H]);
+            // A zero base / pitch means the VC did not allocate (e.g. the
+            // emulated path is incomplete) — bail out cleanly.
+            if ok && got.0 != 0 && got.1 != 0 && got.2 != 0 {
+                break got;
+            }
+            if wanted == 1 {
+                return false;
+            }
+            crate::kprintln!(
+                "[fb] double-height allocation refused; retrying single-page",
+            );
+            wanted = 1;
+        };
 
-        let b = &(*(&raw const MBOX_BUF)).words;
-        let fb_bus = b[I_FB_BASE];
-        let fb_size = b[I_FB_SIZE];
-        let pitch = b[I_PITCH];
-        let w = b[I_PHYS_W];
-        let h = b[I_PHYS_H];
-
-        // A zero base / pitch means the VC did not allocate (e.g. the
-        // emulated path is incomplete) — bail out cleanly.
-        if fb_bus == 0 || fb_size == 0 || pitch == 0 {
-            return false;
-        }
+        // How many whole screens did we actually get? Believe the two figures
+        // the firmware returned — the echoed virtual height and the allocated
+        // byte size — not the number we asked for.
+        let page_bytes = (pitch as u64) * (h as u64);
+        let pages = (virt_h / h.max(1))
+            .min((fb_size as u64 / page_bytes.max(1)) as u32)
+            .max(1);
 
         let fb_phys = (fb_bus & BUS_TO_PHYS) as u64;
         let fb_va = fb_phys + VA_OFFSET; // draw through the high half
@@ -292,10 +455,22 @@ pub unsafe fn init() -> bool {
         // holds no executing code or the active stack.
         crate::arch::aarch64::mmu::remap_normal_wb(fb_va, fb_size as u64);
 
-        FRAMEBUFFER.pixels.store(fb_va, Ordering::Release);
+        FRAMEBUFFER.mem.store(fb_va, Ordering::Release);
+        FRAMEBUFFER.draw.store(fb_va, Ordering::Release);
+        FRAMEBUFFER.scanout.store(fb_va, Ordering::Release);
         FRAMEBUFFER.width.store(w, Ordering::Release);
         FRAMEBUFFER.height.store(h, Ordering::Release);
         FRAMEBUFFER.stride_px.store(pitch / 4, Ordering::Release);
+        FRAMEBUFFER.pages.store(pages, Ordering::Release);
+        crate::kprintln!(
+            "[fb] {}x{} pitch {} virtual height {} -> {} screen page(s), {} KiB",
+            w,
+            h,
+            pitch,
+            virt_h,
+            pages,
+            fb_size / 1024,
+        );
         true
     }
 }

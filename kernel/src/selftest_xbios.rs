@@ -139,17 +139,47 @@ pub fn run() {
         phys0, log0, rez,
     );
 
-    // Setscreen: redirect the logical base to a fake buffer, leave phys.
-    let fake = 0x4200_0000u64;
-    let r = setscreen(fake as i64, -1, -1);
-    let log1 = logbase();
-    let phys1 = physbase();
+    // Setscreen now moves the *real* bases, so the self-test exercises what
+    // the display can actually do: how many whole screens its memory holds,
+    // and whether the logical base really lands on the second one.
+    let page = crate::vdi_backend::size_bytes() as u64;
+    let pages = crate::vdi_backend::mem_bytes() as u64 / page.max(1);
     kprintln!(
-        "[xbios] Setscreen(log=0x{:x}) ret={} -> Logbase=0x{:x} (==fake) Physbase=0x{:x} (unchanged)",
-        fake, r, log1, phys1,
+        "[xbios] screen memory: {} page(s) of {} bytes (expect 2 on the VideoCore, 1 on ramfb)",
+        pages, page,
     );
-    // Restore the logical base to the hardware framebuffer.
-    setscreen(log0, -1, -1);
+
+    if pages > 1 {
+        // Draw into the hidden page: Logbase moves, Physbase does not.
+        let hidden = log0 + page as i64;
+        let r = setscreen(hidden, -1, -1);
+        let log1 = logbase();
+        let phys1 = physbase();
+        kprintln!(
+            "[xbios] Setscreen(log=0x{:x}) ret={} -> Logbase=0x{:x} (==log+page) Physbase=0x{:x} (unchanged 0x{:x})",
+            hidden, r, log1, phys1, phys0,
+        );
+        // Show it, then put both back where the console expects them.
+        setscreen(-1, hidden, -1);
+        kprintln!(
+            "[xbios] Setscreen(phys=0x{:x}) -> Physbase=0x{:x} (==phys+page)",
+            hidden,
+            physbase(),
+        );
+        setscreen(log0, phys0, -1);
+    }
+
+    // A base the display cannot show is refused, and the read-back keeps
+    // telling the truth rather than echoing the request (EmuTOS `physbase()`
+    // likewise reads the hardware, `bios/screen.c:1030`).
+    let fake = 0x4200_0000u64;
+    setscreen(fake as i64, fake as i64, -1);
+    kprintln!(
+        "[xbios] Setscreen(0x{:x}) off-screen -> Logbase=0x{:x} Physbase=0x{:x} (both unchanged)",
+        fake,
+        logbase(),
+        physbase(),
+    );
 
     // Setscreen rez is accepted-but-ignored (no in-system switch, ADR-017 rev 2).
     let bad = setscreen(-1, -1, 9);

@@ -25,6 +25,7 @@
 | 2 | raspberrypi/firmware wiki — [Mailboxes](https://github.com/raspberrypi/firmware/wiki/Mailboxes) | register offsets |
 | 3 | raspberrypi/firmware wiki — [Accessing mailboxes](https://github.com/raspberrypi/firmware/wiki/Accessing-mailboxes) | status bits, read/write procedure, channel encoding |
 | 4 | raspberrypi/firmware wiki — [Mailbox property interface](https://github.com/raspberrypi/firmware/wiki/Mailbox-property-interface) | channel 8 protocol, buffer format, tag IDs + value layouts |
+| 5 | `references/circle` (in-tree, pinned) — `include/circle/bcmpropertytags.h`, `lib/bcmframebuffer.cpp`, `lib/2dgraphics.cpp`, `addon/linux/raspberrypi-firmware.h` | virtual-offset + vsync tag ids and value layouts, the double-buffer sequence (§3b) |
 
 Cross-ref (verified-pattern, tertiary): rpi bare-metal FB tutorials
 (valvers part 5), circle. **Linux is cross-reference only**, not
@@ -178,6 +179,71 @@ get pitch                  -> bytes_per_line
 For `allocate`, pass the alignment (e.g. 16 or a page = 4096) in the
 request value; the VC returns the **bus base address** and the byte
 size.
+
+---
+
+## 3b. Virtual offset — the page flip — and the vsync tag
+
+The framebuffer's **virtual** size (tag `0x0004_8004`) may be larger than
+its **physical** (displayed) size (tag `0x0004_8003`). The display engine
+then scans out a `physical`-sized window inside the larger buffer, and a
+second tag moves that window:
+
+| Tag id | Name | Request value | Response value |
+|--------|------|---------------|----------------|
+| `0x0004_8009` | set virtual offset | `u32 offset_x, u32 offset_y` (8 B) | same, echoed (8 B) |
+| `0x0004_0009` | get virtual offset | (none, 0 B) | `u32 offset_x, u32 offset_y` (8 B) |
+| `0x0004_800E` | wait for vsync | (none, 0 B) | (none) |
+
+**Source (in-tree, verifiable):** `references/circle` — a bare-metal RPi
+library that drives exactly this interface:
+
+- `references/circle/include/circle/bcmpropertytags.h:65`
+  `#define PROPTAG_SET_VIRTUAL_OFFSET 0x00048009`
+- `references/circle/include/circle/bcmpropertytags.h:282-288`
+  `struct TPropertyTagVirtualOffset { TPropertyTag Tag; u32 nOffsetX; u32 nOffsetY; } PACKED;`
+- `references/circle/lib/bcmframebuffer.cpp:33` — the init-tag table entry
+  `{{PROPTAG_SET_VIRTUAL_OFFSET, 8, 8}, 0, 0}`, i.e. **value buffer 8 bytes,
+  request length 8 bytes**
+- `references/circle/lib/bcmframebuffer.cpp:386-399` — `SetVirtualOffset`,
+  which sends the tag and then **checks the firmware echoed the offsets
+  back**; a firmware that could not honour the request answers with the
+  offsets it kept
+- `references/circle/include/circle/bcmpropertytags.h:67`
+  `#define PROPTAG_WAIT_FOR_VSYNC 0x0004800E`, used by
+  `CBcmFrameBuffer::WaitForVerticalSync` (`lib/bcmframebuffer.cpp:405-410`)
+  with an empty value buffer
+- Corroboration from a second in-tree copy of the firmware's own header:
+  `references/circle/addon/linux/raspberrypi-firmware.h:83,103` —
+  `RPI_FIRMWARE_FRAMEBUFFER_GET_VIRTUAL_OFFSET = 0x00040009`,
+  `RPI_FIRMWARE_FRAMEBUFFER_SET_VIRTUAL_OFFSET = 0x00048009`
+
+**How double buffering is built from it** (`references/circle/lib/
+2dgraphics.cpp:540-552`): allocate with `virtual height = 2 × physical
+height`, draw into the half that is not shown, then
+`SetVirtualOffset(0, swapped ? height : 0)`. Circle calls
+`WaitForVerticalSync()` immediately before the swap.
+
+**NewTOS use.** `kernel/src/drivers/bcm2711/framebuffer.rs` asks for
+`virtual height = 2 × physical` at boot (`build_request(w, h, pages)`) and
+implements the flip as `set_virtual_offset(0, page × height)`. That is the
+hardware underneath XBIOS `Setscreen`'s `physLoc` — the VideoCore's
+stand-in for the Atari video-base register EmuTOS' `atari_setphys` writes
+(`references/emutos/bios/screen.c:939-947`). The firmware may refuse the
+larger allocation (it echoes the virtual height it accepted, and the
+allocate tag reports the byte size it granted), so the driver believes those
+two numbers rather than the number it asked for, and falls back to a
+single-page framebuffer if the double-height allocation fails outright.
+
+**Observed on QEMU `raspi4b`** (QEMU 11, 2026-09-05): the emulated
+VideoCore accepts `virtual 640×960` for a `physical 640×480` display,
+returns pitch 2560 and a 2400 KiB buffer (= exactly two screens), and
+`0x0004_8009` moves the scan-out — verified by a QMP screendump pair around
+an XBIOS `Setscreen` from an EL0 program.
+
+`0x0004_800E` (wait for vsync) is **documented here but not yet used**:
+NewTOS' `Vsync` (XBIOS 0x25) paces on the ARM generic timer instead, see
+`docs/api/xbios/25-vsync.md`.
 
 ---
 

@@ -196,11 +196,27 @@ masked interrupts.
   number off the generic timer, the NewTOS analogue of `frclock`. It is
   **not** tied to the display's actual scan-out, so `Vsync` paces at ~60 Hz
   regardless of the HDMI refresh.
+- **It does block, and it paces at ~60 Hz — measured, 2026-09-05.** An EL0
+  program (`sdk/examples/scrflip.c`) called `Vsync` 600 times between two
+  serial markers on QEMU `raspi4b`; the markers were 9.9 s apart, i.e.
+  **60.6 Hz ± 1.5 %** (the sampling resolution of the measurement). So
+  `Vsync` is a real wait, not a no-op, and a `Vsync`-paced loop runs at the
+  frame rate a program expects.
 - **Always terminates.** Because the counter is driven by the always-
   running generic timer (not a maskable VBL IRQ), the spin cannot hang even
   if the caller had interrupts masked — satisfying the contract's "enables
   VBL even if masked / must terminate" criterion. No SR manipulation is
   needed on AArch64.
+- **A real VideoCore vblank exists and is not used yet.** The firmware
+  property interface has a **wait-for-vsync** tag, `0x0004_800E`, with an
+  empty value buffer (`docs/hardware/mailbox-framebuffer.md` §3b, from
+  `references/circle/include/circle/bcmpropertytags.h:67` +
+  `lib/bcmframebuffer.cpp:405-410`). Circle waits on it immediately before
+  a set-virtual-offset page flip. Binding NewTOS' `Vsync` to it would make
+  `Setscreen` page flips exactly tear-free instead of approximately so;
+  deliberately **not** done in the page-flip work item, because it turns a
+  free-running timer read into a blocking mailbox round trip in the trap
+  path and wants its own measurement.
 - **Not tear-free against real scan-out (Step-2 candidate).** Since the
   frame clock is a timer approximation, `Vsync` does not guarantee
   alignment to the VideoCore vertical blank, so page-flip / palette-swap

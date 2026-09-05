@@ -858,9 +858,47 @@ pub fn stride_bytes() -> u32 {
     active_fb().stride_px() * 4
 }
 
-/// Byte size of the CPU-visible pixel store (`stride_bytes * height`).
-/// Feeds [`tos_api::host::ScreenInfo::size_bytes`] — the span the XBIOS
-/// screen group publishes into a process that draws into the screen itself.
+/// Byte size of **one** screen (`stride_bytes * height`).
+/// Feeds [`tos_api::host::ScreenInfo::size_bytes`].
 pub fn size_bytes() -> u32 {
     stride_bytes().saturating_mul(active_fb().height())
+}
+
+/// CPU-visible base of the whole screen memory — page 0 of the allocated
+/// buffer, which is where [`mem_bytes`] bytes of screen start. Feeds
+/// [`tos_api::host::ScreenInfo::mem_base`].
+pub fn mem_base_addr() -> u64 {
+    active_fb().mem_base() as u64
+}
+
+/// Byte size of the whole screen memory: [`size_bytes`] × the number of
+/// screen pages the display holds. This is the span the XBIOS screen group
+/// publishes into a process that draws into the screen itself, so a program
+/// handed `Logbase()` can reach the page it draws into *and* the page it
+/// flips to. Feeds [`tos_api::host::ScreenInfo::mem_bytes`].
+pub fn mem_bytes() -> u32 {
+    size_bytes().saturating_mul(active_fb().pages())
+}
+
+/// CPU-visible base of the screen the display engine is currently scanning
+/// out (EmuTOS `physbase()`, read back from the hardware rather than from a
+/// shadow). Feeds [`tos_api::host::ScreenInfo::phys_base`].
+pub fn scanout_addr() -> u64 {
+    active_fb().scanout_base()
+}
+
+/// Move the **logical** screen — where drawing goes (EmuTOS `v_bas_ad`) — to
+/// the screen page starting at CPU-visible address `va`. `false` if that is
+/// not the base of a page of this display's screen memory, in which case
+/// nothing moved.
+pub fn set_draw_base(va: u64) -> bool {
+    active_fb().set_draw_base(va)
+}
+
+/// Move the **physical** screen — what the display engine scans out (EmuTOS
+/// `setphys`) — to the screen page starting at CPU-visible address `va`.
+/// `false` if the hardware cannot show that address, in which case the
+/// scan-out is untouched.
+pub fn set_scanout_base(va: u64) -> bool {
+    active_fb().set_scanout_base(va)
 }

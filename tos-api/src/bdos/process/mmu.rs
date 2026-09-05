@@ -29,9 +29,10 @@
 //! heap and a proper stack), each slot provisions [`USER_L3_COUNT`]
 //! contiguous L3 tables wired under `L2[0..USER_L3_COUNT]`, so the
 //! per-process low-half mapping capacity is
-//! [`USER_TPA_MAX_VA`] = `USER_L3_COUNT × 2 MiB` (20 MiB today: a 4-MiB
-//! TPA plus a 16-MiB EL0 heap window into which GEMDOS `Malloc` blocks
-//! and the AES `.RSC` blob are mapped per process — see
+//! [`USER_TPA_MAX_VA`] = `USER_L3_COUNT × 2 MiB` (32 MiB today: a 4-MiB
+//! TPA plus a 28-MiB EL0 heap window into which GEMDOS `Malloc` blocks,
+//! the AES `.RSC` blob and the published screen memory are mapped per
+//! process — see
 //! [`USER_L3_COUNT`] and [`super::usermem`]). The
 //! loader maps every 4-KiB page of the TPA individually (all at
 //! 4-KiB granularity — the basepage/text/data at the bottom need it),
@@ -62,12 +63,21 @@ use super::MAX_PROCESSES;
 /// user-dereferenceable pointers — it cannot read the kernel high-half
 /// VAs the desktop/selftest path uses.
 ///
-/// `10` L3s ⇒ `20 MiB` mappable VA: the 4-MiB TPA plus a **16-MiB heap
+/// `16` L3s ⇒ `32 MiB` mappable VA: the 4-MiB TPA plus a **28-MiB heap
 /// window**, a real `malloc` arena for a compiled app. Bump this to
 /// enlarge the window; the BSS cost is
-/// `MAX_PROCESSES × (3 + USER_L3_COUNT) × 4 KiB` (= 832 KiB here — the
+/// `MAX_PROCESSES × (3 + USER_L3_COUNT) × 4 KiB` (= 1216 KiB here — the
 /// same order as the kernel heap pre-allocation).
-pub const USER_L3_COUNT: usize = 10;
+///
+/// It was `10` (a 16-MiB window) until XBIOS `Setscreen` gained real page
+/// flipping. `Physbase`/`Logbase` now publish the display's **whole** screen
+/// memory — both stacked screens, so a program can compute the hidden page
+/// and hand it back to `Setscreen` (`crate::xbios::screen`) — and at
+/// 1920×1080×4 that is 15.8 MiB of the window in one block. With 10 L3s a
+/// program that took the screen address had ~184 KiB of window left for
+/// `Malloc`; 16 leaves it ~12 MiB. The screen mapping is a real user of the
+/// window, so the window has to be sized for it.
+pub const USER_L3_COUNT: usize = 16;
 
 /// Low-half VA span covered by one L3 table (2 MiB).
 const L3_SPAN: u64 = 512 * 4096;

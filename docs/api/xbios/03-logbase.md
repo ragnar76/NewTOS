@@ -173,24 +173,27 @@ PHASE-08: `Logbase` returns the current "draw" framebuffer in the swap chain;
 > driver: see `docs/HARDWARE-PROFILE.md` §2 (Screen / framebuffer).
 
 - **`v_bas_ad` maps to the framebuffer base.** NewTOS keeps no low-memory
-  `0x44E` cell; `Logbase` returns the `LOGBASE` shadow, or the live
-  framebuffer base when the shadow is `0` (`tos-api/src/xbios/screen.rs`,
-  `fb_base`). The live base is **expressed in the caller's address space**
+  `0x44E` cell and (rev 2026-09-05) no shadow either: `Logbase` returns
+  `Host::screen().base` — the display's own draw pointer, the one the VDI
+  raster backend actually renders through, which is exactly what `v_bas_ad`
+  is (`bios/screen.c:1071`). The base is **expressed in the caller's address
+  space**
   (see `02-physbase.md` §"Address space and cacheability"): the kernel
   high-half VA of the VideoCore pixel store for an EL1 caller, and a
   `PROT_G`, Normal Non-Cacheable mapping of the same physical pages in the
   process's own EL0 window for an EL0 caller — the same value `Physbase`
   returns on this single-buffer profile.
-- **Single buffer.** With one VideoCore framebuffer and no page flip,
-  `Logbase() == Physbase()` until double-buffering lands. The VDI, the VT52
-  framebuffer console (`fbcon`), and the mouse sprite all draw through the
-  `RasterBackend` into this one buffer.
-- **Setscreen interaction.** `Setscreen(log, -1, -1)` writes the `LOGBASE`
-  shadow (`tos-api/src/xbios/screen.rs:72-74`); a subsequent `Logbase`
-  returns that pointer. But the NewTOS drawing path (the `RasterBackend`)
-  always renders into the *live* framebuffer, not into a caller-supplied
-  `log` buffer — so retargeting the logical base does not actually redirect
-  VDI/console drawing yet (a Step-2 concern; see the profile note on
-  deferred double-buffering).
+- **Two screen pages on `board-rpi4` (rev 2026-09-05).** The VideoCore
+  framebuffer is allocated with double virtual height, so the screen memory
+  holds two whole screens. `Logbase() == Physbase()` after boot, and differs
+  exactly while a program is drawing into the page it cannot see.
+  `board-qemu-virt` (ramfb) has a single page and the two always coincide.
+- **Setscreen interaction — real since 2026-09-05.** `Setscreen(log, -1, -1,
+  -1)` moves the display's draw pointer, so the VDI, the VT52 framebuffer
+  console (`fbcon`) and the mouse sprite all render into the named page from
+  then on. A `log` the display cannot draw into (outside its screen memory,
+  or not on a page boundary) is not applied, and `Logbase` keeps reporting
+  where drawing really goes. See `docs/api/xbios/05-setscreen.md`
+  §"Page flipping".
 - **1080p later.** Base is for the fixed 640×480 mode; a mode-sized base
   follows the HDMI-query phase.

@@ -1756,6 +1756,94 @@ Code: `tos-api/src/xbios/screen.rs` (`fb_base`, `direct_screen_active`),
 `tos-api/src/host.rs` (`ScreenInfo::stride_bytes` / `size_bytes`),
 `sdk/examples/physbase.c`.
 
+### Amendment 2, 2026-09-05 — `Setscreen` really switches: two screen pages and the VideoCore virtual offset
+
+Amendment 1 closed with *"`Setscreen` (0x05) still only writes the
+`PHYSBASE`/`LOGBASE` shadows … there is therefore no double buffering"*.
+That is now closed too, and the shadows are gone with it.
+
+**Both bases live where EmuTOS keeps them, not in a shadow.** The logical
+base *is* the display's draw pointer — the one the VDI raster backend
+renders through, which is what `v_bas_ad` is (`bios/screen.c:1071`) — and
+the physical base is read back **from the hardware**, the way EmuTOS'
+`physbase()` reconstructs it from the video-base registers
+(`bios/screen.c:1030`, `atari_physbase`). Deleting the two shadows removed a
+second source of truth: a program that asks after a `Setscreen` is now told
+what the machine is doing, not what it requested.
+
+**The hardware.** The VideoCore framebuffer is allocated with **double
+virtual height** (`0x0004_8004` with `h × 2`), so its screen memory holds two
+whole screens, and the physical base moves with the **set-virtual-offset**
+property tag `0x0004_8009` (`u32 offset_x, u32 offset_y`). Tag id and value
+layout are taken from `references/circle`
+(`include/circle/bcmpropertytags.h:65,282`, `lib/bcmframebuffer.cpp:33,386`,
+corroborated by `addon/linux/raspberrypi-firmware.h:103`) and written up in
+`docs/hardware/mailbox-framebuffer.md` §3b — CLAUDE.md Rule 6, nothing from
+memory. The driver believes the virtual height the firmware **echoes** and
+the byte size the allocate tag **granted**, not the numbers it asked for,
+and falls back to a single-page framebuffer if the double-height allocation
+fails: a display that boots is worth more than one that flips.
+
+**A base the display cannot use is not applied — and the read-back says so.**
+Only a whole screen page inside the VideoCore's own screen memory can be
+scanned out; NewTOS cannot make an arbitrary caller-allocated buffer the
+physical screen, and that is a property of the display, not a shortcut. The
+answer is neither an invented error code nor a silent lie: the base stays
+where it was, exactly as a plain ST's video-base register cannot represent
+the low byte of an address and silently drops it (`atari_setphys`,
+`bios/screen.c:939-947`), and `Physbase`/`Logbase` — which read the hardware
+— tell the caller the truth. EmuTOS has no error return for a bad base, so
+inventing one would have been the deviation.
+
+**Three consequences worth remembering.**
+
+1. **`Physbase`/`Logbase` publish the *whole* screen memory** (both pages)
+   into the calling process as one `PROT_G` Normal-Non-Cacheable block, not
+   just the visible screen. A program double-buffers by computing
+   `Logbase() + page_size` and handing that back to `Setscreen`; that
+   arithmetic is only valid in the process's own address space if the pages
+   are one mapping.
+2. **The EL0 heap window had to grow** (`USER_L3_COUNT` 10 → 16, 16 MiB →
+   28 MiB). At 1920×1080×4 the published screen memory is 15.8 MiB; with the
+   old 16-MiB window a program that took the screen address had ~184 KiB
+   left for `Malloc`. The screen mapping is a real user of the window, so
+   the window has to be sized for it. Cost: +384 KiB of kernel BSS, against
+   1.4 MiB of headroom below `STRAM_OS_RESERVE` (the linker `ASSERT` guards
+   it).
+3. **A syscall that takes a pointer back needs the inverse of ADR-023.**
+   `expose` answers "where in the process can this kernel object be reached";
+   `usermem::resolve_kva` answers the other direction, by containment and
+   including `Kind::Shared` blocks. `Setscreen` is the first caller and will
+   not be the last.
+
+**Measured** (QEMU `raspi4b`, `SCRFLIP.NCP` from `C:\AUTO\`): the firmware
+grants `virtual 640×960` for a `physical 640×480` display, 2400 KiB =
+2 screen pages; the program finds page 1 purely through the
+`Setscreen`/`Logbase` contract at offset `0x12C000`, paints it while
+invisible (screendump: console text only), flips it in (screendump: three
+full-screen colour bands, nothing copied), and restores both bases so the
+boot goes on to the desktop. `Vsync` was measured in the same run: 600 calls
+in 9.9 s = 60.6 Hz, so it is a real wait.
+
+**Not done, deliberately:** binding `Vsync` to the firmware's own
+wait-for-vsync tag `0x0004_800E` (documented, unused — it would turn a
+timer read into a blocking mailbox round trip in the trap path); a second
+ramfb page on `board-qemu-virt` (its pixel store is a fixed reservation off
+the top of DRAM, so a second page shrinks the ST/TT-RAM pools — a
+pool-layout decision, not part of this); and **any way for a program to
+learn the screen page size other than probing** — see the open question in
+`docs/STATUS.md`.
+
+Code: `kernel/src/hal/framebuffer.rs` (`mem_base`/`pages`/`set_draw_base`/
+`scanout_base`/`set_scanout_base`),
+`kernel/src/drivers/bcm2711/framebuffer.rs` (`WANTED_PAGES`,
+`set_virtual_offset`), `kernel/src/vdi_backend.rs`, `kernel/src/host_env.rs`,
+`tos-api/src/host.rs` (`ScreenInfo::{phys_base,mem_base,mem_bytes}`,
+`set_screen_logical`/`set_screen_physical`),
+`tos-api/src/xbios/screen.rs`, `tos-api/src/bdos/process/usermem.rs`
+(`resolve_kva`), `tos-api/src/bdos/process/mmu.rs` (`USER_L3_COUNT`),
+`sdk/examples/scrflip.c`, `docs/hardware/mailbox-framebuffer.md` §3b.
+
 ---
 
 ## Quirks Discovered

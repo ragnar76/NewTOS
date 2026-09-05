@@ -241,25 +241,29 @@ aligns the two on the next vblank.
 - **Proof.** `sdk/examples/physbase.c` (`PHYSBASE.NCP`) calls `Physbase`,
   stores three colour bands through the returned pointer with no cache
   maintenance of any kind, and blocks; the QMP screendump shows the bands.
-- **How it is read.** `physbase()` returns the `PHYSBASE` shadow, or the
-  live framebuffer base when the shadow is `0`
-  (`tos-api/src/xbios/screen.rs:41-46`); the live base comes from
-  `Host::screen().base` (`tos-api/src/xbios/screen.rs:36-38`). Before the
+- **How it is read (rev 2026-09-05).** `physbase()` returns
+  `Host::screen().phys_base` — the address the **display engine is really
+  scanning out**, read back from the display rather than from a shadow, the
+  way EmuTOS' `physbase()` reconstructs the address from the video-base
+  registers (`bios/screen.c:1030`, `atari_physbase()`). Before the
   framebuffer is up, `screen()` returns `None` and `Physbase` yields `0`.
-- **Geometry (current):** 640 × 480, 32 bpp XRGB8888, single buffer
-  (`framebuffer.rs:23-25`; `virt:` `qemu_virt/ramfb.rs:75-76`). Buffer
-  size ≈ `pitch × 480`; the VC-reported pitch is 640 × 4 = 2560 B/line for
-  this mode.
-- **Setscreen interaction — verified 2026-09-05, still a shadow only.**
-  `Setscreen(-1, phys, -1)` writes the `PHYSBASE` shadow and nothing else:
-  the shadows are read by `physbase()`/`logbase()` and by no other code in
-  the tree — the raster backend always draws into, and the VideoCore always
-  scans out, the live framebuffer (`kernel/src/vdi_backend.rs`,
-  `active_fb()`). So `Physbase` reports the new value while the display and
-  the drawing target are unchanged, and there is **no double buffering**.
-  Full page-flipping (a double-height virtual buffer + a mailbox
-  set-virtual-offset flip, plus a user-VA → physical translation for the
-  caller-supplied base) is a separate work item.
+- **Geometry:** config.txt-driven, 32 bpp XRGB8888. On `board-rpi4` the
+  screen memory holds **two** whole screens (double virtual height, see
+  `docs/hardware/mailbox-framebuffer.md` §3b); on `board-qemu-virt` (ramfb)
+  one. Observed on QEMU `raspi4b`: 640 × 480, pitch 2560 B/line, buffer
+  2400 KiB = 2 × 1 228 800 B.
+- **Setscreen interaction — real since 2026-09-05.** `Setscreen(-1, phys,
+  -1, -1)` moves the VideoCore scan-out (mailbox set-virtual-offset tag
+  `0x0004_8009`) and `Physbase` then reports the new page; a base the
+  display cannot show is not applied and `Physbase` keeps reporting where
+  the display really is. See `docs/api/xbios/05-setscreen.md`
+  §"Page flipping".
+- **What is published to EL0.** `Physbase`/`Logbase` map the display's
+  **whole** screen memory (all pages) into the calling process's window as
+  one `PROT_G`, Normal-Non-Cacheable block, and return the address of the
+  physical / logical page inside it. Publishing the pages as one block is
+  what lets a program compute the hidden page as `Logbase() + page_size` and
+  hand it back to `Setscreen`.
 - **Datasheet.** Mailbox property transport: BCM2711 peripherals datasheet
   §1.3 (`references/datasheets/RP-008248-DS-1-bcm2711-peripherals.pdf`);
   the framebuffer allocate/get-pitch tags are firmware-property tags, not

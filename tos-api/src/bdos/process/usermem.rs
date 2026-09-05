@@ -559,6 +559,39 @@ pub fn translate(slot: usize, user_va: u64) -> Option<TransBlock> {
         })
 }
 
+/// Reverse the window mapping: the **kernel high-half VA** the process VA
+/// `user_va` refers to, or `None` if the process has nothing mapped there.
+///
+/// [`map`] and [`expose`] answer "where in the process can this kernel object
+/// be reached"; this answers the other direction, which a syscall needs the
+/// moment an EL0 program hands a pointer *back*. XBIOS `Setscreen` is the
+/// first such call: an application obtained its screen address from
+/// `Physbase`/`Logbase` — a window VA (ADR-023) — and passes it in as
+/// `logLoc`/`physLoc`, but the kernel has to decide which *physical* screen
+/// page that is.
+///
+/// Unlike [`translate`] the match is by **containment**, not by block start
+/// (a screen address is `base + page * size`, rarely a block base), and
+/// [`Kind::Shared`] blocks are explicitly included — the framebuffer the
+/// process was handed is a shared block, and it is exactly the one that has
+/// to be resolvable here.
+///
+/// The result is `map_pa + offset + VA_OFFSET`, i.e. directly comparable
+/// with the addresses [`crate::host::ScreenInfo`] reports, because the whole
+/// of DRAM is mapped for EL1 at `phys + VA_OFFSET`.
+pub fn resolve_kva(slot: usize, user_va: u64) -> Option<u64> {
+    if slot >= MAX_PROCESSES {
+        return None;
+    }
+    // SAFETY: single-CPU under the BDOS lock; shared read.
+    let sm = unsafe { &(*USER_MEM.0.get())[slot] };
+    sm.blocks
+        .iter()
+        .flatten()
+        .find(|b| user_va >= b.user_va && user_va - b.user_va < b.size)
+        .map(|b| b.map_pa + (user_va - b.user_va) + VA_OFFSET)
+}
+
 /// Remove the block starting at `user_va` from `slot`'s table and return its
 /// pool key (`m_start`) so the caller frees it via
 /// [`crate::bdos::mem::traps::mfree`]. Returns `None` (→ `EIMBA`) if no block

@@ -6,12 +6,15 @@
 //! Spec: `docs/api/xbios/{02-physbase,03-logbase,04-getrez,05-setscreen,
 //! 06-setpalette,07-setcolor}.md`.
 //!
-//! The logical / physical screen base is kept as a software shadow
-//! (EmuTOS' `v_bas_ad`). A shadow base of `0` means "use the live
-//! hardware framebuffer". Setting the physical base only updates the
-//! shadow — re-pointing the VideoCore scan-out at an arbitrary buffer is
-//! a later refinement; software that double-buffers by drawing into its
-//! own buffer and reading `Logbase` works.
+//! The logical and physical screen bases are **not** software shadows: they
+//! live where EmuTOS keeps them — the logical one in the display's own
+//! `v_bas_ad` (our framebuffer's draw pointer, which the VDI backend
+//! actually draws through) and the physical one in the hardware, read back
+//! from it (`bios/screen.c:939-952,1030,1058-1071`). `Setscreen` moves them
+//! for real: the VideoCore's screen memory holds two whole screens and the
+//! set-virtual-offset mailbox tag selects which one is scanned out
+//! (`docs/hardware/mailbox-framebuffer.md` §3b), so a program can draw into
+//! the page it cannot see and then show it.
 //!
 //! Resolution is **not** a shadow: per ADR-017 rev 2 (config.txt-driven,
 //! no in-system switch), `Getrez` reports a fixed honest code and
@@ -26,7 +29,7 @@
 //!
 //! [`RasterBackend`]: crate::vdi::backend::RasterBackend
 
-use core::sync::atomic::{AtomicU64, AtomicU8, Ordering};
+use core::sync::atomic::{AtomicU8, Ordering};
 
 use crate::bdos::process::{self, usermem};
 use crate::host;
@@ -41,12 +44,13 @@ use tos_types::{Long, ProtMode};
 /// coarse code (ADR-017 rev 2).
 const TT_MEDIUM: i64 = 4;
 
-/// Shadow logical / physical screen base (`0` = use the live FB).
-static LOGBASE: AtomicU64 = AtomicU64::new(0);
-static PHYSBASE: AtomicU64 = AtomicU64::new(0);
+/// High-half kernel VA offset — the whole of DRAM is mapped at
+/// `phys + VA_OFFSET` for EL1. Mirrored here the way
+/// [`crate::bdos::process::arena`], `loader` and `usermem` mirror it.
+const VA_OFFSET: u64 = 0xFFFF_0000_0000_0000;
 
-/// The live hardware framebuffer, expressed **in the calling process's
-/// address space** — or `0` if no display is up.
+/// The whole screen memory, expressed **in the calling process's address
+/// space**, plus the caller-space address of `kva` inside it.
 ///
 /// The framebuffer is mapped for EL1 at `phys + VA_OFFSET`, high-half and
 /// EL1-only, so returning that pointer to an EL0 program satisfies the letter
@@ -57,6 +61,13 @@ static PHYSBASE: AtomicU64 = AtomicU64::new(0);
 /// ([`usermem::expose_attr`]) and the **user VA** back. An EL1 caller (the
 /// desktop, the boot self-tests, the VDI) gets the kernel VA, which is what
 /// it can reach.
+///
+/// **The whole screen memory is published, not just the visible screen.**
+/// The VideoCore buffer holds [`host::ScreenInfo::mem_bytes`] bytes — two
+/// stacked screens — and a program that wants to double-buffer has to reach
+/// both: it computes the hidden page as `Logbase() + size_bytes` and hands
+/// that back to `Setscreen`. Publishing the pair as **one** mapping is what
+/// makes that arithmetic valid in the process's own address space.
 ///
 /// Two decisions are attached to that mapping and neither is the program's
 /// business:
@@ -76,46 +87,55 @@ static PHYSBASE: AtomicU64 = AtomicU64::new(0);
 ///   writes pixels and they appear, exactly as on the flat machine the API
 ///   was written for.
 ///
-/// Returns `0` when no display is up, or when the process window cannot take
-/// the mapping — the same value the call already produces on a display-less
-/// machine, and never an address the caller would fault on.
-fn fb_base() -> u64 {
-    let Some(info) = host::host().and_then(|h| h.screen()) else {
-        return 0;
-    };
+/// Returns `0` when the process window cannot take the mapping — the same
+/// value the call already produces on a display-less machine, and never an
+/// address the caller would fault on.
+fn caller_view(info: &host::ScreenInfo, kva: u64) -> u64 {
     match process::slot_for(process::current()) {
         // EL1 caller: the kernel high-half VA *is* the reachable address.
-        None => info.base,
+        None => kva,
         // SAFETY: BDOS lock held (single-CPU SVC context). The framebuffer
         // is a permanently-mapped high-half region that outlives every
-        // process, and `size_bytes` is the extent of its pixel store.
-        Some(slot) => unsafe {
+        // process, and `mem_bytes` is the extent of its pixel store.
+        Some(slot) => match unsafe {
             usermem::expose_attr(
                 slot,
-                info.base as *const u8,
-                info.size_bytes as usize,
+                info.mem_base as *const u8,
+                info.mem_bytes as usize,
                 ProtMode::G,
                 usermem::MemAttr::Uncached,
             )
-        }
-        .unwrap_or(0),
+        } {
+            Some(window) => window + (kva - info.mem_base),
+            None => 0,
+        },
     }
 }
 
 /// `Physbase` (0x02) — physical (displayed) screen base.
+///
+/// Reads the **hardware** back, as EmuTOS' `physbase()` does
+/// (`bios/screen.c:1030` → `atari_physbase()`, which reconstructs the address
+/// from the video-base registers rather than from a variable), so the value
+/// a program gets is where the display engine is really scanning from — not
+/// where it was last asked to scan from.
 pub fn physbase() -> i64 {
-    match PHYSBASE.load(Ordering::Relaxed) {
-        0 => fb_base() as i64,
-        p => p as i64,
-    }
+    let Some(info) = host::host().and_then(|h| h.screen()) else {
+        return 0;
+    };
+    caller_view(&info, info.phys_base) as i64
 }
 
 /// `Logbase` (0x03) — logical screen base (where drawing goes).
+///
+/// EmuTOS returns `v_bas_ad` (`bios/screen.c:1071`). Ours lives in the
+/// display itself — it is the pointer the VDI raster backend draws through —
+/// so this reports the address that is genuinely the drawing target.
 pub fn logbase() -> i64 {
-    match LOGBASE.load(Ordering::Relaxed) {
-        0 => fb_base() as i64,
-        l => l as i64,
-    }
+    let Some(info) = host::host().and_then(|h| h.screen()) else {
+        return 0;
+    };
+    caller_view(&info, info.base) as i64
 }
 
 /// Is a process currently holding a direct, uncached mapping of the
@@ -146,27 +166,73 @@ pub fn getrez() -> i64 {
     TT_MEDIUM
 }
 
+/// Translate a screen base as the **caller** wrote it into the kernel
+/// high-half VA the display speaks.
+///
+/// An EL0 program can only have got a screen address from `Physbase` /
+/// `Logbase`, i.e. a VA in its own window (ADR-023), possibly plus a whole
+/// number of screens — so the process's own block table is the authority
+/// ([`usermem::resolve_kva`]). An EL1 caller holds kernel VAs; a value below
+/// [`VA_OFFSET`] from EL1 is read as a physical address, which is the other
+/// spelling of the same DRAM.
+///
+/// `None` means "the caller named memory this process has no mapping for",
+/// which is neither a screen page nor anything the kernel may dereference.
+fn caller_base_to_kva(addr: u64) -> Option<u64> {
+    match process::slot_for(process::current()) {
+        None if addr >= VA_OFFSET => Some(addr),
+        None => Some(addr.wrapping_add(VA_OFFSET)),
+        Some(slot) => usermem::resolve_kva(slot, addr),
+    }
+}
+
 /// `Setscreen` (0x05) — set logical/physical base; `rez` is
 /// accepted-but-ignored.
 /// `x0` = logLoc, `x1` = physLoc (each `> 0` to apply), `x2` = rez,
 /// `x3` = videlmode (ignored — no Falcon).
 ///
+/// Each base is applied only when strictly **positive** — `0` and any
+/// negative value mean "leave it alone", the convention EmuTOS spells as
+/// `if ((LONG)logLoc > 0)` / `if ((LONG)physLoc > 0)`
+/// (`bios/screen.c:1106,1110`).
+///
+/// **Both moves are real.** `logLoc` becomes the drawing target (EmuTOS
+/// `v_bas_ad = logLoc`): the VDI raster backend, the VT52 console and the
+/// desktop all draw through the display's draw pointer, so after this call
+/// they draw into the named screen. `physLoc` goes to the display engine
+/// (EmuTOS `setphys(physLoc)`): on the BCM2711 that is the mailbox
+/// set-virtual-offset tag selecting which of the stacked screens the
+/// VideoCore scans out (`docs/hardware/mailbox-framebuffer.md` §3b).
+///
+/// A base the display cannot use — outside its screen memory, or not on a
+/// screen-page boundary — leaves that base where it was. The hardware simply
+/// has no way to represent it, exactly as a plain ST's video-base register
+/// cannot represent the low byte of an address and silently drops it
+/// (`atari_setphys`, `bios/screen.c:939-947`); and, as there, the following
+/// `Physbase`/`Logbase` reports what the hardware really does, so a program
+/// that checks is told the truth rather than its own request echoed back.
+///
 /// There is no in-system resolution switch (ADR-017 rev 2: the firmware
 /// `config.txt` owns the HDMI mode). The `rez` parameter is therefore
 /// accepted for *any* value and ignored — no `REZ` shadow, no out-of-range
 /// rejection — mirroring EmuTOS silently ignoring a hardware-unsupported
-/// mode (`bios/screen.c:990-1013`). The logical/physical base handling is a
-/// separate concern and is unchanged: each base is stored only when `> 0`
-/// (`screen.c:1106,1110`). Always returns `0` (E_OK).
+/// mode (`bios/screen.c:990-1013`). Always returns `0` (E_OK).
 pub fn setscreen(args: &TrapArgs) -> i64 {
     let log = args.arg_u64(0);
     let phys = args.arg_u64(1);
+    let Some(host) = host::host() else {
+        return 0;
+    };
 
     if (log as i64) > 0 {
-        LOGBASE.store(log, Ordering::Relaxed);
+        if let Some(kva) = caller_base_to_kva(log) {
+            host.set_screen_logical(kva);
+        }
     }
     if (phys as i64) > 0 {
-        PHYSBASE.store(phys, Ordering::Relaxed);
+        if let Some(kva) = caller_base_to_kva(phys) {
+            host.set_screen_physical(kva);
+        }
     }
     0
 }

@@ -105,6 +105,23 @@ else
   echo "note: sdk/build.sh unavailable (no clang/lld?); C:\\PHYSBASE.NCP skipped"
 fi
 
+# SCRFLIP.NCP is the double-buffering proof: it finds the second screen page
+# through the Setscreen/Logbase contract, paints it while it is invisible,
+# waits ~10 s, makes it the physical screen with Setscreen (the VideoCore
+# set-virtual-offset tag underneath), waits ~10 s again and puts both bases
+# back, so the boot carries on into the desktop. Two screendumps around those
+# windows are the proof. It restores everything and exits, so unlike
+# PHYSBASE.NCP it is safe in \AUTO\ -- set SD_SCRFLIP_AUTO=1 for that.
+if "$SCRIPT_DIR/../sdk/build.sh" "$SCRIPT_DIR/../sdk/examples/scrflip.c" "$V/SCRFLIP.NCP" >/dev/null 2>&1; then
+  echo "built + installed C:\\SCRFLIP.NCP (Setscreen page-flip proof)"
+  if [ "${SD_SCRFLIP_AUTO:-0}" = "1" ]; then
+    cp "$V/SCRFLIP.NCP" "$V/AUTO/SCRFLIP.NCP"
+    echo "  + \\AUTO\\SCRFLIP.NCP (runs at boot; adds ~20 s)"
+  fi
+else
+  echo "note: sdk/build.sh unavailable (no clang/lld?); C:\\SCRFLIP.NCP skipped"
+fi
+
 # DTACHILD.NCP is the per-process-DTA proof (S1c): a console program that moves
 # its OWN DTA (Fsetdta(0x2000)) and exits. A parent runs it between its own
 # Fsetdta(buf) and Fgetdta() -- if Fgetdta still returns buf, the DTA really

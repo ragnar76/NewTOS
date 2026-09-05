@@ -314,12 +314,23 @@ impl Host for KernelHost {
         let (width, height) = crate::vdi_backend::dims();
         Some(tos_api::host::ScreenInfo {
             base: crate::vdi_backend::base_addr(),
+            phys_base: crate::vdi_backend::scanout_addr(),
+            mem_base: crate::vdi_backend::mem_base_addr(),
+            mem_bytes: crate::vdi_backend::mem_bytes(),
             width,
             height,
             bpp: 32,
             stride_bytes: crate::vdi_backend::stride_bytes(),
             size_bytes: crate::vdi_backend::size_bytes(),
         })
+    }
+
+    fn set_screen_logical(&self, base: u64) -> bool {
+        crate::vdi_backend::set_draw_base(base)
+    }
+
+    fn set_screen_physical(&self, base: u64) -> bool {
+        crate::vdi_backend::set_scanout_base(base)
     }
 
     fn keyboard_shift_state(&self) -> u8 {

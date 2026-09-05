@@ -152,6 +152,30 @@ pub trait Host: Sync {
         None
     }
 
+    /// Move the **logical** screen — where drawing goes, EmuTOS `v_bas_ad`
+    /// (`bios/screen.c:1106-1107`) — to the screen page whose CPU-visible
+    /// base is `base`. Returns `false` when `base` is not the base of a page
+    /// of this display's screen memory, in which case nothing moved.
+    ///
+    /// The default `false` is the honest answer of a host with no display:
+    /// there is no screen to move. It is *not* a "silently accepted" no-op —
+    /// the caller learns the move did not happen and
+    /// [`Host::screen`]`().base` keeps reporting where drawing really goes.
+    fn set_screen_logical(&self, _base: u64) -> bool {
+        false
+    }
+
+    /// Move the **physical** screen — what the display engine scans out,
+    /// EmuTOS `setphys()` (`bios/screen.c:1110-1111`) — to the screen page
+    /// whose CPU-visible base is `base`. Returns `false` when the hardware
+    /// cannot show that address; the scan-out is then left exactly where it
+    /// was and [`Host::screen`]`().phys_base` keeps reporting the truth, the
+    /// same way EmuTOS' `physbase()` reads the video-base register back
+    /// rather than a shadow.
+    fn set_screen_physical(&self, _base: u64) -> bool {
+        false
+    }
+
     /// The current keyboard shift-state bitmask (`MODE_*` bits: `0x01`
     /// right-shift, `0x02` left-shift, `0x04` ctrl, `0x08` alt, `0x10`
     /// caps), as BIOS `Kbshift` and VDI `vq_key_s` report it. The kernel
@@ -229,10 +253,33 @@ pub struct KeyTables {
 }
 
 /// The hardware framebuffer as the XBIOS screen calls see it.
+///
+/// Three addresses, because a display whose screen memory holds more than one
+/// screen has three (EmuTOS `bios/screen.c`):
+///
+/// * [`Self::mem_base`] / [`Self::mem_bytes`] — the whole allocated screen
+///   memory, `mem_bytes / size_bytes` screen pages of it. This is the extent
+///   a program that draws into the screen must be able to reach, and the
+///   extent `Setscreen` may point the two bases into.
+/// * [`Self::base`] — the **logical** screen: where drawing goes
+///   (`v_bas_ad`).
+/// * [`Self::phys_base`] — the **physical** screen: what the display engine
+///   scans out (`physbase()`, read back from the hardware).
+///
+/// On a single-page display all three coincide.
 #[derive(Clone, Copy)]
 pub struct ScreenInfo {
-    /// CPU-visible base address of the framebuffer (the drawing target).
+    /// CPU-visible base address of the **logical** screen — the drawing
+    /// target, EmuTOS `v_bas_ad`.
     pub base: u64,
+    /// CPU-visible base address of the **physical** screen — the page the
+    /// display engine is currently scanning out.
+    pub phys_base: u64,
+    /// CPU-visible base of the whole screen memory (page 0).
+    pub mem_base: u64,
+    /// Byte size of the whole screen memory, `size_bytes` × the number of
+    /// screen pages it holds.
+    pub mem_bytes: u32,
     /// Visible width in pixels.
     pub width: u16,
     /// Visible height in pixels.
@@ -242,9 +289,8 @@ pub struct ScreenInfo {
     /// Bytes per scan line (the hardware pitch). May exceed
     /// `width * bpp / 8` when the display controller pads lines.
     pub stride_bytes: u32,
-    /// Byte size of the CPU-visible pixel store (`stride_bytes * height`) —
-    /// the span `Physbase`/`Logbase` must make reachable for a caller that
-    /// draws into the screen directly.
+    /// Byte size of **one** screen (`stride_bytes * height`) — the distance
+    /// between two screen pages inside [`Self::mem_bytes`].
     pub size_bytes: u32,
 }
 

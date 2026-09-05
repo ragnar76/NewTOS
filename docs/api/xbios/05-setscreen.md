@@ -286,14 +286,8 @@ Implemented in `tos-api/src/xbios/screen.rs`:
 > `config.txt` owns the mode. This rev 2 **settles** the previously-open
 > `Setscreen`-`rez` question: `rez` is accepted-but-ignored (see below).
 
-- **Base re-pointing is unaffected by this policy** (separate concern).
-  `setscreen()` stores `log`/`phys` into shadows when each is `> 0`
-  (`tos-api/src/xbios/screen.rs`, the `> 0` / `NULL-or-negative-ignored`
-  rule matching `screen.c:1106,1110`), but does **not** program the
-  VideoCore scan-out or retarget the `RasterBackend`. `Physbase`/`Logbase`
-  report the shadow values while the display keeps showing the live
-  framebuffer. Real page-flipping (a second VC buffer + set-virtual-offset)
-  remains deferred, orthogonal to this ADR.
+- **Base re-pointing is unaffected by this policy** (separate concern), and
+  since 2026-09-05 it is **real** — see "Page flipping" below.
 - **Settled: `rez` is accepted-but-ignored for *any* value; the call always
   returns `0`.** There is **no** `Setscreen`-driven mode reconfigure — the
   1920×1080/1280×800/… choice is `config.txt`-driven and applied at boot,
@@ -314,3 +308,58 @@ Implemented in `tos-api/src/xbios/screen.rs`:
 - **`deskrez` (desktop resolution dialog) is out of scope** under rev 2 (the
   in-menu runtime switch is dropped; resolution is `config.txt`-driven) —
   see ADR-017 rev 2 in `docs/MEMORY.md`.
+
+### Page flipping — how `logLoc` / `physLoc` are honoured (2026-09-05)
+
+**Both bases move for real.** They are not shadows:
+
+- `logLoc > 0` → the display's *draw* pointer (EmuTOS `v_bas_ad`). The VDI
+  raster backend, the VT52 console and the desktop all draw through it, so
+  after the call they draw into the named screen.
+  (`Host::set_screen_logical` → `vdi_backend::set_draw_base` →
+  `Framebuffer::set_draw_base`.)
+- `physLoc > 0` → the display engine's scan-out base (EmuTOS `setphys`). On
+  the BCM2711 that is the mailbox **set-virtual-offset** tag `0x0004_8009`
+  selecting one of the stacked screens
+  (`docs/hardware/mailbox-framebuffer.md` §3b).
+  (`Host::set_screen_physical` → `vdi_backend::set_scanout_base` →
+  `Framebuffer::set_scanout_base`.)
+- `≤ 0` (including `0`) → that base is left alone, exactly as
+  `if ((LONG)logLoc > 0)` / `if ((LONG)physLoc > 0)` (`screen.c:1106,1110`).
+- `rez == -1`, or any other `rez` → no resolution change, return `0` (see the
+  rev-2 policy above).
+- **Return value: always `0`.** (The `-1`-on-invalid-rez branch is dropped by
+  the rev-2 policy; there is no other error branch in EmuTOS for the bases.)
+
+**Where a base may point.** The VideoCore allocates the screen memory and
+only it can be scanned out, so a base must be the start of a whole screen
+page inside that memory. A base outside it — or not on a page boundary — is
+**not applied**: the display has no way to represent it, the same way a plain
+ST's video-base register cannot represent the low byte of an address and
+silently drops it (`atari_setphys`, `screen.c:939-947`). Nothing is echoed
+back: the following `Physbase`/`Logbase` reports what the hardware really
+does, because (like EmuTOS' `physbase()`, `screen.c:1030`) it reads the
+hardware rather than a shadow. A program that checks is therefore told the
+truth. **NewTOS cannot make an arbitrary caller-allocated buffer the
+physical screen** — that is the one substantive divergence from the Atari,
+and it is a property of the display hardware, not a shortcut.
+
+**Address translation.** An EL0 caller passes the window VA it got from
+`Physbase`/`Logbase` (ADR-023), not a physical address; `setscreen` resolves
+it through the calling process's own block table
+(`bdos::process::usermem::resolve_kva`). An EL1 caller passes a kernel
+high-half VA (or a physical address, which is read as the same DRAM).
+
+**Screen pages available.** `board-rpi4`: **2** — the VideoCore framebuffer
+is allocated with double virtual height at boot
+(`kernel/src/drivers/bcm2711/framebuffer.rs`, `WANTED_PAGES`), with a
+single-page fallback if the firmware refuses. `board-qemu-virt` (ramfb): **1**
+— the pixel store is a fixed reservation off the top of DRAM, so a second
+page would shrink the ST/TT-RAM pools; `Setscreen` there accepts only the
+page already in use and refuses any move.
+
+**Proof.** `sdk/examples/scrflip.c` (`SCRFLIP.NCP`): finds the second page
+through this contract (it walks offsets and watches `Logbase()`), paints it
+while invisible, flips it in, and restores both bases. Verified on QEMU
+`raspi4b` 2026-09-05 by a QMP screendump pair: console text before, three
+full-screen colour bands after, with nothing copied.

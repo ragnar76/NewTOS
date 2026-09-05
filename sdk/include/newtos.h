@@ -137,6 +137,20 @@ static inline NLONG xbios1(NLONG fn, NLONG a0)
     return r0;
 }
 
+static inline NLONG xbios4(NLONG fn, NLONG a0, NLONG a1, NLONG a2, NLONG a3)
+{
+    register NLONG x8 __asm__("x8") = fn;
+    register NLONG r0 __asm__("x0") = a0;
+    register NLONG r1 __asm__("x1") = a1;
+    register NLONG r2 __asm__("x2") = a2;
+    register NLONG r3 __asm__("x3") = a3;
+    __asm__ volatile("svc #14"
+                     : "+r"(r0)
+                     : "r"(x8), "r"(r1), "r"(r2), "r"(r3)
+                     : "memory");
+    return r0;
+}
+
 /* ------------------------------------------------------------------------- */
 /* Named GEMDOS wrappers (Stage 1).                                          */
 /* ------------------------------------------------------------------------- */
