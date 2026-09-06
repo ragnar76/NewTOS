@@ -414,3 +414,57 @@ pub fn process_inf2() -> (bool, bool) {
     // `return (*isauto && !isgem) ? FALSE : TRUE;` (:463)
     (isauto, !(isauto && isgem == 0))
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// Where `appl_init`'s `ap_private` comes from, end to end bar the file
+    /// read: the built-in `DESKTOP` root's `ob_spec` with the `.INF` `#Q`
+    /// background byte ORed into its low byte
+    /// (`gemsuper.c:95-96` ← `geminit.c:719-728` ← `:635-641` ← `:384-388`).
+    ///
+    /// This is what the two round-2 reference runs disagree about, and the
+    /// disagreement is **data, not code**: the reference TT reported
+    /// `ap_private = 4419` (`0x1143`) because EmuTOS's shipped
+    /// `#Q 41 40 43 40 43 40` (`desk/deskapp.c:175`) puts `0x43` — the same
+    /// byte the resource constant already carries — into the >2-plane bucket;
+    /// the Pi's `NEWDESK.INF` had `0x7B` there (pattern 7, colour 11, a value
+    /// the desktop's Set-Background dialog writes), giving `0x117B` = 4475.
+    #[test]
+    fn ap_private_is_the_desktop_root_obspec_with_the_inf_background_byte() {
+        // The compiled-in resource constant, before any `#Q` is applied.
+        assert_eq!(DESKTOP_ROOT_OBSPEC, 0x1143);
+
+        // No `#Q` line at all → `bgfound` FALSE → `set_aes_background` is
+        // never called (`geminit.c:724`).
+        assert_eq!(process_inf1_q(b"#E 3A 11 FF 02\r\n#R 00\r\n\0"), None);
+        assert_eq!(process_inf1_q(b"newdesk placeholder\r\n\0"), None);
+
+        // EmuTOS's own default line: three (desktop, window) pairs, only the
+        // desktop byte of each taken (`geminit.c:384-388`).
+        assert_eq!(
+            process_inf1_q(b"#Q 41 40 43 40 43 40\r\n\0"),
+            Some([0x41, 0x43, 0x43])
+        );
+        // A desktop that saved a changed background writes the same line with
+        // the >2-plane pair replaced.
+        assert_eq!(
+            process_inf1_q(b"#E 3A 11\r\n#Q 41 40 43 40 7B 40\r\n#W 00 00\r\n\0"),
+            Some([0x41, 0x43, 0x7B])
+        );
+
+        // `n = (gl_nplanes > 2) ? 2 : gl_nplanes-1` picks bg[2] on both a
+        // 4-plane TT and a 16-plane Pi, so the two runs differ only in the
+        // byte their `.INF` file carried.
+        let saved = desktop_root_obspec();
+        set_aes_background(0x43);
+        assert_eq!(desktop_root_obspec(), 4419);
+        set_aes_background(0x7B);
+        assert_eq!(desktop_root_obspec(), 4475);
+        // Only the low byte is ever replaced (`geminit.c:639-640`).
+        set_aes_background(0x00);
+        assert_eq!(desktop_root_obspec() & 0xffff_ff00, 0x1100);
+        set_aes_background((saved & 0xff) as u8);
+    }
+}

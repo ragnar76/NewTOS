@@ -13,6 +13,203 @@ mod harness;
 #[path = "aes_reference/cases_r1.rs"]
 mod cases_r1;
 
+// ── round 2: the window manager, measured with a real reset ──────────────
+
+/// The round-2 window dump, `tosdump/cases/aes-r2-wind.tsv` (78 cases, CRC
+/// `AFB11C9F`) as an Atari TT running EmuTOS 1.4 answered it. Every case in
+/// that table is preceded by the AES's own `wind_new` reset
+/// (`aes/gemwmlib.c:1875-1893`), which is what makes handle allocation and
+/// window geometry reproducible from case to case.
+static DUMP_R2W: &[u8] = include_bytes!("../../tosdump/reference/EMUTOS14-AES-r2wind.BIN");
+
+/// `int_out[0..7]` of the record whose case id is `id`, big-endian out of the
+/// AES record form: 32-byte header, 120-byte records, case id at offset 0 and
+/// `int_out[7]` at offset 76 (`tosdump/core/tosdump.h:105-121`).
+fn r2w_intout(id: u16) -> [i16; harness::INTOUT_N] {
+    let n = (DUMP_R2W.len() - harness::HDR_SIZE) / harness::REC_SIZE;
+    let be16 = |r: &[u8], o: usize| (((r[o] as u16) << 8) | r[o + 1] as u16) as i16;
+    for i in 0..n {
+        let r = &DUMP_R2W[harness::HDR_SIZE + i * harness::REC_SIZE..][..harness::REC_SIZE];
+        if be16(r, 0) as u16 == id {
+            let mut out = [0i16; harness::INTOUT_N];
+            for (k, v) in out.iter_mut().enumerate() {
+                *v = be16(r, 76 + k * 2);
+            }
+            return out;
+        }
+    }
+    panic!("case {id} is not in EMUTOS14-AES-r2wind.BIN");
+}
+
+/// One AES call, laid exactly as `tosdump/core/runner_aes.c` lays a prelude or
+/// a measured call: poison everything but `global`, then the declared counts.
+struct R2Call {
+    opcode: i16,
+    in_len: i16,
+    out_len: i16,
+    intin: &'static [i16],
+}
+
+/// Replay one round-2 case — the table's `!reset wind_new` first, then the
+/// preludes, then the measured call — and hand back `int_out` as it stands.
+fn r2w_replay(pb: &mut harness::Pb, prelude: &[R2Call], call: &R2Call) -> [i16; harness::INTOUT_N] {
+    // `td_reset_aes(TD_AES_RESET_WIND_NEW, …)`: `wind_new` with all four
+    // counts zero, poisoned like any other call (`core/runner_aes.c:126-134`).
+    pb.poison();
+    pb.call(109, 0, 0, 0, 0);
+    for c in prelude {
+        pb.poison();
+        pb.intin[..c.intin.len()].copy_from_slice(c.intin);
+        pb.call(c.opcode, c.in_len, c.out_len, 0, 0);
+    }
+    pb.poison();
+    pb.intin[..call.intin.len()].copy_from_slice(call.intin);
+    pb.call(call.opcode, call.in_len, call.out_len, 0, 0);
+    *pb.intout
+}
+
+/// `wind_create` on a window table sized like the AES version we advertise.
+///
+/// EmuTOS ties `NUM_WIN` to `AES_VERSION`: **16** above 0x0320, 8 below
+/// (`include/sysconf.h:26-35`), and handle 0 — the desktop window — is one of
+/// the sixteen (`wm_init`, `aes/gemwmlib.c:1290`). Both machines report
+/// `ap_version 0x0340`, so fifteen application handles must be available and
+/// the sixteenth `wind_create` must fail. Measured: case 154 (the ninth
+/// create) and case 170 (the sixteenth).
+#[test]
+fn wind_create_hands_out_fifteen_application_handles() {
+    let _guard = harness::AES_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+    harness::context();
+    let mut pb = harness::Pb::new();
+
+    const CREATE: R2Call =
+        R2Call { opcode: 100, in_len: 5, out_len: 1, intin: &[0x0FEF, 0, 20, 320, 200] };
+    let fill = [CREATE, CREATE, CREATE, CREATE, CREATE, CREATE, CREATE, CREATE];
+
+    // Case 154: eight windows already created, the ninth create still succeeds.
+    assert_eq!(r2w_replay(&mut pb, &fill, &CREATE), r2w_intout(154), "case 154");
+
+    // Case 170: fifteen created, the sixteenth has no slot left.
+    let mut fill15 = Vec::new();
+    for _ in 0..15 {
+        fill15.push(CREATE);
+    }
+    assert_eq!(r2w_replay(&mut pb, &fill15, &CREATE), r2w_intout(170), "case 170");
+
+    pb.poison();
+    pb.call(109, 0, 0, 0, 0); // leave the table as the reset left it
+}
+
+/// What `wind_create` and `wind_open` store in the four window rectangles.
+///
+/// `wm_create` puts the caller's rectangle in **WS_FULL only** and zeroes the
+/// current and previous ones — `w_setsize(WS_CURR, i, &gl_rzero)`,
+/// `w_setsize(WS_PREV, i, &gl_rzero)`, `w_setsize(WS_FULL, i, pt)`
+/// (`aes/gemwmlib.c:1377-1380`). `wm_open` then lets `draw_change` shift the
+/// old current rect into PREV and install the open rect as current
+/// (`:1069-1077`), and *afterwards* overwrites PREV with the open rect as well
+/// (`:1426`) — so an opened window reports the same rectangle for `WF_CXYWH`
+/// and `WF_PXYWH`, and neither of them is the one `wind_create` was given.
+///
+/// Measured: cases 228/230/232 (created only) and 250/253/259 (after the open).
+#[test]
+fn window_rectangles_after_create_and_open_match_the_tt() {
+    let _guard = harness::AES_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+    harness::context();
+    let mut pb = harness::Pb::new();
+
+    const CREATE: R2Call =
+        R2Call { opcode: 100, in_len: 5, out_len: 1, intin: &[0x0FEF, 10, 20, 300, 200] };
+    const OPEN: R2Call =
+        R2Call { opcode: 101, in_len: 5, out_len: 1, intin: &[1, 30, 40, 320, 240] };
+    // `wind_get(1, field)` with OUT_LEN 5 — the rect arms write poutwds[0..3],
+    // i.e. int_out[1..4] behind the return code (`aes/gemsuper.c:343`).
+    let get = |field: i16| R2Call {
+        opcode: 104,
+        in_len: 2,
+        out_len: 5,
+        intin: if field == 7 {
+            &[1, 7]
+        } else if field == 6 {
+            &[1, 6]
+        } else {
+            &[1, 5]
+        },
+    };
+
+    for (id, field, prelude) in [
+        (228u16, 7i16, &[CREATE][..]),   // WF_FXYWH: the create rect
+        (230, 5, &[CREATE][..]),         // WF_CXYWH: gl_rzero
+        (232, 6, &[CREATE][..]),         // WF_PXYWH: gl_rzero
+        (250, 5, &[CREATE, OPEN][..]),   // WF_CXYWH: the open rect
+        (253, 6, &[CREATE, OPEN][..]),   // WF_PXYWH: the open rect too
+        (259, 7, &[CREATE, OPEN][..]),   // WF_FXYWH: untouched by the open
+    ] {
+        assert_eq!(
+            r2w_replay(&mut pb, prelude, &get(field)),
+            r2w_intout(id),
+            "case {id} (wind_get field {field})"
+        );
+    }
+
+    pb.poison();
+    pb.call(109, 0, 0, 0, 0);
+}
+
+/// `wind_get(WF_OWNER)` — the one round-2 field the reference cannot arbitrate.
+///
+/// `WF_OWNER` (20) **did not exist** in EmuTOS 1.4, the build the reference TT
+/// runs: it was added on 2025-08-23 (`acb7f3b4`, "Add partial implementation
+/// of WF_OWNER to wind_get"), after the `VERSION_1_4` tag of 2025-06-07. On
+/// that machine field 20 reaches `wm_get`'s `default: return FALSE`, so the
+/// record carries `int_out[0] = 0` and — because `xif` copies `OUT_LEN` words
+/// out of an **uninitialised local** `int_out` (`aes/gemsuper.c:429,444-445`)
+/// — four words of stack garbage behind it, identical in both cases (244 and
+/// 247 both recorded `0, -1, 0, 0, 0`). The same version delta is already
+/// recorded for round 1's case 167 (`harness::DELTAS`).
+///
+/// So the oracle here is the pinned source (`references/emutos`, `1a7484ab`),
+/// `aes/gemwmlib.c:1578-1589` under `#if AES_VERSION >= 0x330`:
+/// `poutwds[0] = pwin->w_owner->p_pid` — the process that **created** the
+/// window (`w_setup`, `:210`), which `wm_open` does not change —
+/// `poutwds[1] = (w_flags & VF_ISOPEN) != 0`, `poutwds[2] = gl_wtop` (the raw
+/// variable: `NIL` when nothing is open, `wm_init` `:1297`, `draw_change`
+/// `:1093`) and `poutwds[3] = W_TREE[ROOT].ob_head`, the bottom-most open
+/// window.
+#[test]
+fn wf_owner_answers_what_the_pinned_emutos_source_mandates() {
+    let _guard = harness::AES_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+    let ctx = harness::context();
+    let mut pb = harness::Pb::new();
+
+    const CREATE: R2Call =
+        R2Call { opcode: 100, in_len: 5, out_len: 1, intin: &[0x0FEF, 10, 20, 300, 200] };
+    const OPEN: R2Call =
+        R2Call { opcode: 101, in_len: 5, out_len: 1, intin: &[1, 30, 40, 320, 240] };
+    const OWNER: R2Call = R2Call { opcode: 104, in_len: 2, out_len: 5, intin: &[1, 20] };
+
+    // EmuTOS 1.4 answered FALSE plus garbage; both cases recorded the same.
+    assert_eq!(r2w_intout(244)[0], 0, "EmuTOS 1.4 refuses WF_OWNER");
+    assert_eq!(r2w_intout(247)[0], 0, "EmuTOS 1.4 refuses WF_OWNER");
+
+    // Case 244: created, never opened. Nothing is open, so gl_wtop is NIL and
+    // the window tree root has no children.
+    let got = r2w_replay(&mut pb, &[CREATE], &OWNER);
+    assert_eq!(
+        &got[..5],
+        &[1, ctx.ap_id, 0, -1, -1],
+        "WF_OWNER of a created, unopened window"
+    );
+
+    // Case 247: the same window, opened. It is the only window, so it is both
+    // the top and the bottom of the tree.
+    let got = r2w_replay(&mut pb, &[CREATE, OPEN], &OWNER);
+    assert_eq!(&got[..5], &[1, ctx.ap_id, 1, 1, 1], "WF_OWNER of an open window");
+
+    pb.poison();
+    pb.call(109, 0, 0, 0, 0);
+}
+
 /// The AES leaves the VDI's **string** input device in SAMPLE mode.
 ///
 /// EmuTOS' scheduler polls the keyboard on every dispatcher pass — `chkkbd()`

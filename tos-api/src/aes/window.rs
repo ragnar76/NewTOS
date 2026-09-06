@@ -197,11 +197,17 @@ const GRAY_DK: Pel = 9; // 3D shadow (EmuTOS LBLACK)
 /// the active/inactive cue, matching EmuTOS.
 const TITLE_STIPPLE: [u16; 4] = [0x0000, 0x5555, 0x0000, 0x5555];
 
-/// Number of application window handles (1..=`MAX_WINDOWS`). EmuTOS sizes its
-/// table with `NUM_WIN` (`sysconf.h:26-35`), *including* the desktop window; we
-/// keep the eight application handles this AES has always offered and add the
-/// desktop slot on top, so the count of usable handles does not change.
-const MAX_WINDOWS: usize = 8;
+/// Number of application window handles (1..=`MAX_WINDOWS`). EmuTOS ties the
+/// table size to the AES version it advertises: `NUM_WIN` is **16** for
+/// `AES_VERSION > 0x0320` and 8 below it (`include/sysconf.h:26-35`), and the
+/// desktop window at handle 0 is one of those slots. NewTOS reports
+/// `ap_version 0x0340` (`super::appl`), so the contract is the 16-slot table —
+/// fifteen application handles, 1..=15.
+///
+/// Measured: `tosdump/cases/aes-r2-wind.tsv` case 154 (the ninth
+/// `wind_create` after the `wind_new` reset) recorded **9** on the reference
+/// TT and **−1** here while this was 8.
+const MAX_WINDOWS: usize = 15;
 /// Window-table size — the application handles **plus the desktop window at
 /// handle 0** (EmuTOS `NUM_WIN`, `gemlib.h:136` `WINDOW w_win[NUM_WIN]`).
 const NUM_WIN: usize = MAX_WINDOWS + 1;
@@ -213,6 +219,9 @@ const NAME_CAP: usize = 80;
 /// and `wm_get` answers every field for it exactly as for any other window. Its
 /// slot is [`slots`]`[0]`, initialised by [`wm_init`].
 const DESKWH: i16 = 0;
+
+/// `NIL` — "no object / no window" (`include/obdefs.h:21`).
+const NIL: i16 = -1;
 
 /// The desktop window's `kind` — EmuTOS `NONE` (`gemwmlib.c:1290`, no gadgets).
 const NONE: u16 = 0;
@@ -439,6 +448,21 @@ fn gl_wbcolor() -> &'static mut [i16; NUM_ELEM] {
 /// panic (fatal in `no_std`).
 fn gadget_index(g: i16) -> usize {
     g.clamp(0, NUM_ELEM as i16 - 1) as usize
+}
+
+/// EmuTOS `gl_wtop` itself — the handle of the top-most open window, or `NIL`
+/// (−1) when none is open. `wm_init` sets it to `NIL` (`gemwmlib.c:1297`) and
+/// `draw_change` re-derives it as `W_TREE[ROOT].ob_tail` (`:1093`), which is
+/// `NIL` again once the last window is closed. `WF_OWNER` reports this raw
+/// value (`:1587`), unlike `WF_TOP`, which reports `w_top()` — the same value
+/// with `NIL` folded to `DESKWH` (`:315-318`).
+fn gl_wtop() -> i16 {
+    let t = get_top();
+    if t == DESKWH {
+        NIL
+    } else {
+        t
+    }
 }
 
 /// Handle of the top-most open window (highest `z`), or 0 (desktop).
@@ -1809,8 +1833,19 @@ pub fn wind_create(pb: &Aespb) {
             *w = Window::EMPTY;
             w.in_use = true;
             w.kind = kind;
+            // `w_setup(rlr, i, kind)` (`gemwmlib.c:1376`, `:205-215`) records
+            // the *creating* process as `w_owner`; `wm_open` never touches it.
+            // Reported by `WF_OWNER` (`:1580`).
+            w.owner = super::appl::current_pid();
+            // EmuTOS `wm_create` stores the caller's rectangle in WS_FULL only
+            // and zeroes the current/previous ones — `w_setsize(WS_CURR, i,
+            // &gl_rzero)` / `w_setsize(WS_PREV, i, &gl_rzero)`, then
+            // `w_setsize(WS_FULL, i, pt)` (`gemwmlib.c:1377-1380`). A created
+            // but unopened window therefore answers `WF_CXYWH`/`WF_PXYWH` with
+            // an all-zero rect (measured: `aes-r2-wind.tsv` cases 230, 232).
             w.full = full;
-            w.curr = full;
+            w.curr = Grect::default();
+            w.prev = Grect::default();
             w.work = calc(WC_WORK, kind, full);
             // Per-window gadget colours inherit the current global defaults
             // (EmuTOS `w_setup`, gemwmlib.c:222-226) so a prior WF_DCOLOR change
@@ -1825,7 +1860,8 @@ pub fn wind_create(pb: &Aespb) {
 }
 
 /// `wind_open` (101) — display window `int_in[0]` at rect `int_in[1..4]`,
-/// on top of the stack. Owned by the calling process.
+/// on top of the stack. The owner is the process that *created* the window
+/// (`w_setup`, `gemwmlib.c:210`); `wm_open` does not re-own it.
 pub fn wind_open(pb: &Aespb) {
     let handle = pb.intin(0);
     let r = Grect { x: pb.intin(1), y: pb.intin(2), w: pb.intin(3), h: pb.intin(4) };
@@ -1838,10 +1874,15 @@ pub fn wind_open(pb: &Aespb) {
             pb.set_ret(0);
             return;
         }
+        // `draw_change` first shifts the old current rect down into PREV and
+        // installs `pt` as the new current one (`gemwmlib.c:1069-1077`) — then
+        // `wm_open` overwrites PREV with `pt` as well (`:1426`), so an opened
+        // window answers `WF_PXYWH` with the rect the *open* was given, not the
+        // one `wind_create` stored (measured: `aes-r2-wind.tsv` case 253).
         w.prev = w.curr;
         set_curr(w, r);
         w.open = true;
-        w.owner = super::appl::current_pid();
+        w.prev = r;
         w.z = bump_z();
         // The new window is topmost and covers exactly its own rect `r`; nothing
         // outside `r` changes. Repaint only `r` (background + frames, this window
@@ -2047,7 +2088,9 @@ pub fn wind_get(pb: &Aespb) {
                 let (owner, open) = (w.owner, w.open);
                 pb.set_intout(1, owner);
                 pb.set_intout(2, i16::from(open));
-                pb.set_intout(3, get_top());
+                // `poutwds[2] = gl_wtop` — the raw variable, so `NIL` when
+                // nothing is open, *not* `w_top()`'s `DESKWH` fold.
+                pb.set_intout(3, gl_wtop());
                 pb.set_intout(4, get_bottom());
                 pb.set_ret(1);
                 return;
@@ -2153,13 +2196,23 @@ pub fn wind_set(pb: &Aespb) {
         }
         WF_CXYWH => {
             let r = Grect { x: pb.intin(2), y: pb.intin(3), w: pb.intin(4), h: pb.intin(5) };
-            let (work, prev) = if let Some(w) = win(handle) {
+            let (work, prev, open) = if let Some(w) = win(handle) {
                 w.prev = w.curr;
                 set_curr(w, r);
-                (w.work, w.prev)
+                (w.work, w.prev, w.open)
             } else {
-                (r, r)
+                (r, r, false)
             };
+            // `draw_change` stores the new geometry and then bails out before
+            // touching the window tree when the window is created but not open
+            // (`gemwmlib.c:1079-1085`) — no repaint, no `WM_REDRAW`. Since
+            // `wm_create` leaves the current rect at `gl_rzero`, repainting
+            // here would smear the union with an all-zero rectangle across the
+            // top-left of the screen.
+            if !open {
+                pb.set_ret(1);
+                return;
+            }
             // Repaint only the union of the old and new border rects — the
             // programmatic move/size path (desktop WM_MOVED/WM_SIZED/WM_FULLED,
             // app `wind_set`) — not the whole screen. This is EmuTOS
