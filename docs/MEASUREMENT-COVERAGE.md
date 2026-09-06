@@ -125,6 +125,17 @@ against 1920×1080 with 16. Matching the TT there would make us *wrong*.
 
 ---
 
+3. **`vro_cpyfm` anchors an oversized destination rectangle differently** —
+   `D-VDI-25`, measured as raster case 157. EmuTOS takes `PTSIN[6..7]`
+   literally and starts a backwards copy there; we anchor at the destination's
+   upper left. **Decision 2026-09-06 (user): documented and deferred.** Worst
+   case is a drawing fault, not a crash — the copy size always comes from the
+   source and both machines stay inside their form, so a block lands in the
+   wrong place. No well-formed caller is affected, which is why the other 25
+   pixel cases match bit-exactly. The route, if taken up: the anchoring is
+   reproducible, the address comparison is not, and the screen-MFDB paths must
+   be measured first.
+
 ## To do
 
 Ordered by what closes the most risk per unit of work. Items marked **TT**
