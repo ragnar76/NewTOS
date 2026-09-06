@@ -2,12 +2,16 @@
 //!
 //! These tests replay measured TOS behaviour against `tos_api::aes`. The
 //! reference is a dump taken by `tosdump/` on real hardware — **EmuTOS 1.4 on
-//! an Atari TT**, `tosdump/reference/EMUTOS14-AES.BIN`, produced by `DUMPAES`
-//! from `tosdump/cases/aes-r1.tsv` — and `docs/api/aes/` was extracted from
-//! that same EmuTOS source, so a difference here normally has exactly one
-//! reading: NewTOS is wrong. The two exceptions (an EmuTOS *version* delta and
-//! the fields that are a property of the machine rather than of the AES) are
-//! named below and in [`GLOBAL_EXCLUDED`]; nothing is skipped silently.
+//! an Atari TT**, produced by `DUMPAES`: round 1,
+//! `tosdump/reference/EMUTOS14-AES.BIN` from `tosdump/cases/aes-r1.tsv` (95
+//! cases, CRC `33C13C8F`), and round 2, the window manager,
+//! `tosdump/reference/EMUTOS14-AES-r2wind.BIN` from
+//! `tosdump/cases/aes-r2-wind.tsv` (78 cases, CRC `AFB11C9F`) — and
+//! `docs/api/aes/` was extracted from that same EmuTOS source, so a difference
+//! here normally has exactly one reading: NewTOS is wrong. The two exceptions (EmuTOS *version* deltas,
+//! [`DELTAS`], and the fields that are a property of the machine rather than
+//! of the AES, [`GLOBAL_EXCLUDED`]) are named there with a reason and a
+//! `file:line`; nothing is skipped silently and no case is `#[ignore]`d.
 //!
 //! **What these tests cover.** The record holds the six AES parameter-block
 //! arrays as they stood *after* the call — `control`, `global`, `int_in`,
@@ -23,15 +27,35 @@
 //! field cannot be compared from here — the same limitation the VDI harness
 //! has, and for the same reason. `tosdump/host/build/tosdiff` compares it.
 //!
-//! **No reset between cases, and why the order does not matter.** The dumper
-//! runs the table top to bottom in one process and resets nothing between
-//! cases: the AES has no documented default state to restore
-//! (`tosdump/core/runner_aes.h`). Round 1 was therefore built out of opcodes
+//! **The reset, and why the order does not matter.** Which reset runs before
+//! a case is the case *table's* to declare, on its `!reset` directive line,
+//! and the runner issues it before every case out of `ct->reset`
+//! (`tosdump/core/cases.h`, `tosdump/core/runner_aes.c:150-154`). Round 1
+//! declares none — the AES has no documented default state to restore
+//! (`tosdump/core/runner_aes.h`) — and was therefore built out of opcodes
 //! that do not mutate state another case reads (`tosdump/cases/aes-r1.tsv`
-//! header). That is what makes it legitimate for cargo to run these tests in
-//! an arbitrary order — but only one at a time, since the AES window table,
-//! the process descriptors and the installed host are process-wide statics;
-//! hence [`AES_LOCK`].
+//! header). Round 2 declares `wind_new`, the AES's own reset
+//! (`aes/gemwmlib.c:1875-1893`), which is what makes handle allocation and
+//! window geometry reproducible from case to case. [`Reset`] runs it, and
+//! [`Table`] is what carries the declaration from the generated module to
+//! here, so the replay cannot measure something the dump did not.
+//!
+//! A declared reset is issued **after** the case as well as before it. The
+//! dumper needs no such thing — the next case's leading reset sweeps whatever
+//! the previous one left, and it runs one last one after the last case
+//! (`runner_aes.c:218-227`) — but here round 1 and round 2 share one test
+//! binary in an arbitrary order, and round 1 has cases that read exactly what
+//! round 2 leaves behind: `wind_get(1, WF_WXYWH)` on "a window that was never
+//! created", `wind_get(0, WF_TOP)`, `wind_find`. So the trailing reset is what
+//! keeps cargo's ordering irrelevant — measured, not assumed: with it removed,
+//! `cargo test -- -Zunstable-options --shuffle --test-threads=1` turns round 1's
+//! case 163 (`wind_get(0, WF_TOP)`) red, reading the handle 2 a round-2 case
+//! left open. It runs even when the case is about to fail, or one red case
+//! would turn every round-1 case that follows it red too.
+//!
+//! Cases run one at a time whatever the order: the AES window table, the
+//! process descriptors and the installed host are process-wide statics; hence
+//! [`AES_LOCK`].
 //!
 //! **Why the screen is 640×480 at four planes.** The reference was measured
 //! in TT-medium. Several outputs are a function of the screen — `wind_get`'s
@@ -544,6 +568,66 @@ fn be32(b: &[u8], off: usize) -> u32 {
         | b[off + 3] as u32
 }
 
+// ── the case table ───────────────────────────────────────────────────────
+
+/// The state reset a case table declares on its `!reset` directive line.
+///
+/// Which one runs is the **table's** to say and not the program's: the dumper
+/// is double-clicked on the TT with no arguments and always reads `AES.TSV`,
+/// so the file is the only thing that can tell two rounds apart, and the
+/// file's CRC is what the dump header carries (`tosdump/core/cases.h`). The
+/// sequence itself lives in one place so both machines run the identical one
+/// (`tosdump/core/runner_aes.c`, `td_reset_aes`).
+#[derive(Copy, Clone, PartialEq, Eq, Debug)]
+pub enum Reset {
+    /// `!reset none`, or no directive at all. Round 1's table is frozen and
+    /// its dumps are taken; any other default would silently change what
+    /// re-running it measures.
+    None,
+    /// `!reset wind_new`. The AES's own reset: `wm_new` closes and deletes
+    /// every window with a handle ≥ 1 and drains the `wind_update` mouse
+    /// control and screen sync locks (`aes/gemwmlib.c:1875-1893`). EmuTOS
+    /// issues it itself after every graphics-mode program the shell runs
+    /// (`aes/gemshlib.c:676-677`).
+    WindNew,
+}
+
+impl Reset {
+    /// Issue it exactly as `td_reset_aes` does: poisoned like any other call
+    /// the runner issues, and laid as gemlib lays it — `AES_PARAMS(109,0,0,0,0)`
+    /// (`a_wind_new.c:25`). `OUT_LEN` 0 is not cosmetic: `xif` copies
+    /// `OUT_LEN` words back out of an **uninitialised** stack buffer
+    /// (`aes/gemsuper.c:430-432,444-445`), so a reset that declared output
+    /// words would write stack garbage over the caller's array before the
+    /// case it precedes even starts.
+    fn run(self, pb: &mut Pb) {
+        match self {
+            Reset::None => {}
+            Reset::WindNew => {
+                pb.poison();
+                pb.call(109, 0, 0, 0, 0);
+            }
+        }
+    }
+}
+
+/// One case table and the dump taken from it — what a generated case module
+/// declares once and every one of its cases is checked against.
+///
+/// `name` is load-bearing, not decoration: a case id is the **physical line
+/// number** of the table it came from, so two tables reuse ids —
+/// `tosdump/cases/aes-r1.tsv` and `tosdump/cases/aes-r2-wind.tsv` both have a
+/// case 228, and they are different calls. Anything keyed on a case id
+/// ([`DELTAS`]) is therefore keyed on the table as well.
+pub struct Table {
+    /// The case table's path from the repository root.
+    pub name: &'static str,
+    /// The dump produced from it, embedded by the generated module.
+    pub dump: &'static [u8],
+    /// The reset its `!reset` directive line declares.
+    pub reset: Reset,
+}
+
 // ── the case ─────────────────────────────────────────────────────────────
 
 /// A call issued before the measured one: it establishes the state the case
@@ -581,17 +665,106 @@ struct Diff {
     got: i64,
     want: i64,
     hex_width: usize,
+    /// True when `want` is not the reference's number but a substitute — the
+    /// message has to say so, or it claims the dump decided something it
+    /// cannot.
+    substitute: bool,
 }
 
 fn push_diff(out: &mut Vec<Diff>, field: &'static str, index: usize, got: i64, want: i64, w: usize) {
     if got != want {
-        out.push(Diff { field, index, got, want, hex_width: w });
+        out.push(Diff { field, index, got, want, hex_width: w, substitute: false });
     }
 }
 
-fn cmp_words(out: &mut Vec<Diff>, field: &'static str, got: &[i16], rec: &[u8], off: usize) {
+fn push_subst(out: &mut Vec<Diff>, field: &'static str, index: usize, got: i64, want: i64, w: usize) {
+    if got != want {
+        out.push(Diff { field, index, got, want, hex_width: w, substitute: true });
+    }
+}
+
+/// Everything one comparison needs that is not in the record: which table and
+/// case it belongs to (a [`Delta`] is keyed on both, because a case id is only
+/// a line number and two tables reuse them), the application id this machine's
+/// `appl_init` handed out ([`Expected::ApId`]), and which [`DELTAS`] entries
+/// the comparison actually consulted.
+struct Oracle {
+    table: &'static str,
+    case: u16,
+    ap_id: i16,
+    /// One flag per [`DELTAS`] entry, set when [`Oracle::want`] used it. An
+    /// entry naming a field or an index no comparison visits would otherwise
+    /// be a silent skip; [`Oracle::finish`] refuses that.
+    used: [bool; DELTAS.len()],
+}
+
+impl Oracle {
+    fn new(table: &'static str, case: u16, ap_id: i16) -> Oracle {
+        Oracle { table, case, ap_id, used: [false; DELTAS.len()] }
+    }
+
+    /// What one recorded word is compared against: normally the record's own
+    /// word, and where a [`Delta`] covers the field the value the pinned
+    /// EmuTOS source mandates instead.
+    ///
+    /// This is a **substitution**, not a filter over differences that already
+    /// exist. An expectation applied only after the recorded value had been
+    /// contradicted would let NewTOS answer exactly what the older EmuTOS
+    /// answered and still pass — which is the one regression a [`Delta`]
+    /// exists to catch.
+    fn want(&mut self, field: &'static str, index: usize, rec: &[u8], off: usize) -> (i64, bool) {
+        let recorded = be16(rec, off + index * 2) as i64;
+        for (k, d) in DELTAS.iter().enumerate() {
+            if d.table != self.table || d.case != self.case || d.field != field || d.index != index
+            {
+                continue;
+            }
+            // The entry states what the older EmuTOS wrote. If the dump no
+            // longer says that, the delta describes a measurement that no
+            // longer exists and must be re-stated rather than silently
+            // overriding a record it does not match.
+            assert_eq!(
+                recorded, d.recorded,
+                "{} case {}: the DELTAS entry for {}[{}] claims the reference recorded \
+                 {}, but the dump holds {} -- re-state or remove the entry",
+                self.table, self.case, field, index, d.recorded, recorded
+            );
+            self.used[k] = true;
+            return (d.expected.value(self.ap_id), true);
+        }
+        (recorded, false)
+    }
+
+    /// Every [`Delta`] that names this table and case must have been used.
+    fn finish(&self) {
+        for (k, d) in DELTAS.iter().enumerate() {
+            if d.table == self.table && d.case == self.case && !self.used[k] {
+                panic!(
+                    "{} case {}: the DELTAS entry for {}[{}] was never consulted -- it \
+                     names a field or an index this comparison does not visit, so it \
+                     is an exception that excepts nothing",
+                    self.table, self.case, d.field, d.index
+                );
+            }
+        }
+    }
+}
+
+fn cmp_words(
+    out: &mut Vec<Diff>,
+    or: &mut Oracle,
+    field: &'static str,
+    got: &[i16],
+    rec: &[u8],
+    off: usize,
+) {
     for (i, &g) in got.iter().enumerate() {
-        push_diff(out, field, i, g as i64, be16(rec, off + i * 2) as i64, 4);
+        let (want, subst) = or.want(field, i, rec, off);
+        if subst {
+            push_subst(out, field, i, g as i64, want, 4);
+        } else {
+            push_diff(out, field, i, g as i64, want, 4);
+        }
     }
 }
 
@@ -631,6 +804,32 @@ fn cmp_words(out: &mut Vec<Diff>, field: &'static str, got: &[i16], rec: &[u8], 
 /// `gemsuper.c:94` — so "the two agree" holds on any machine), and `ap_3resv`
 /// must be non-zero exactly when the reference's is, i.e. `appl_init` must
 /// have put *an* address there.
+///
+/// **These three are the only ones, and the other three `global` words the two
+/// reference runs disagree about are compared as they stand.** `tosdiff`
+/// reports six differing words in all 78 round-2 records
+/// (`tosdump/reference/*-AES-r2wind.LOG`): `ap_id` (2), the `ap_private` LONG
+/// (3–4), `ap_planes` (10) and the `ap_3resv` LONG (11–12). Two of the four
+/// fields are excluded above; the remaining two are compared, and pass, for
+/// reasons that are worth stating because they are conditions on the harness
+/// rather than luck:
+///
+/// * **`ap_planes`** — TT 4, Pi 16. It is the workstation's plane count, and
+///   this harness supplies a workstation shaped like the TT's (see the module
+///   header). A harness that opened a 16-plane screen would have to exclude
+///   it; this one measures it.
+/// * **`ap_private`** — TT 4419 (`0x1143`), Pi 4475 (`0x117B`). Both are
+///   `rs_trees[DESKTOP][ROOT].ob_spec` (`aes/gemsuper.c:95-96`), i.e. `0x1100`
+///   with the `.INF` `#Q` background byte ORed into the low byte
+///   (`aes/geminit.c:635-641,719-728`). That low byte is **data, not code**:
+///   EmuTOS ships `#Q 41 40 43 40 43 40` (`desk/deskapp.c:175`) and the Pi's
+///   card carried `7B` there. The host replay reads no `NEWDESK.INF` at all,
+///   so `bgfound` is FALSE, `set_aes_background` never runs and the
+///   compiled-in `DESKTOP_ROOT_OBSPEC` stands — which is the same `0x1143` the
+///   TT's shipped file produced. So the value **is** comparable here, and it
+///   is compared. The chain from `#Q` line to `ap_private` is pinned
+///   separately by `tos-api/src/aes/init.rs`'s
+///   `ap_private_is_the_desktop_root_obspec_with_the_inf_background_byte`.
 pub const GLOBAL_EXCLUDED: [usize; 3] = [2, 11, 12];
 
 /// Compare the caller's `AESGLOBAL` against the record.
@@ -657,11 +856,11 @@ pub const GLOBAL_EXCLUDED: [usize; 3] = [2, 11, 12];
 fn cmp_global(out: &mut Vec<Diff>, got: &[i16; GLOBAL_N], rec: &[u8], ap_id: i16) {
     // The excluded fields, checked by the property that does not depend on
     // the machine (see [`GLOBAL_EXCLUDED`]).
-    push_diff(out, "ap_id == appl_init ret", 0, got[2] as i64, ap_id as i64, 4);
+    push_subst(out, "ap_id == appl_init ret", 0, got[2] as i64, ap_id as i64, 4);
     let ref_3resv = ((be16(rec, OFF_GLOBAL + 11 * 2) as u16 as u32) << 16)
         | be16(rec, OFF_GLOBAL + 12 * 2) as u16 as u32;
     let my_3resv = ((got[11] as u16 as u32) as u64) | ((got[12] as u16 as u32) as u64) << 16;
-    push_diff(
+    push_subst(
         out,
         "ap_3resv is an address",
         0,
@@ -689,114 +888,280 @@ fn cmp_global(out: &mut Vec<Diff>, got: &[i16; GLOBAL_N], rec: &[u8], ap_id: i16
 
 // ── where the recorded reference is not the oracle ───────────────────────
 
+/// What a [`Delta`] says the pinned EmuTOS source mandates in place of the
+/// recorded value.
+#[derive(Copy, Clone, Debug)]
+pub enum Expected {
+    /// A literal, when the pinned source computes one.
+    Value(i64),
+    /// This application's own id, whatever `appl_init` answered on the machine
+    /// the test runs on.
+    ///
+    /// The **number** is a property of the process model and not of the AES —
+    /// the reference TT reported 0, the Pi 4 run 2 and this host binary 1, and
+    /// [`GLOBAL_EXCLUDED`] gives the reason — so a literal here would pin the
+    /// wrong thing. What *is* contract is that the AES answers **this**
+    /// application's id, which is the same machine-independent claim
+    /// `cmp_global` makes about `ap_id`, applied to a window's owner.
+    ApId,
+}
+
+impl Expected {
+    fn value(self, ap_id: i16) -> i64 {
+        match self {
+            Expected::Value(v) => v,
+            Expected::ApId => ap_id as i64,
+        }
+    }
+}
+
 /// One field of one case where **EmuTOS 1.4 — the build the dump was taken
 /// from — is older than the EmuTOS source this project implements against**
-/// (`references/emutos`, pinned at `1a7484ab`, 2026-04-14). The record is
-/// still compared; only the value it is compared *against* changes, and the
-/// entry has to say exactly why. Nothing is skipped: if NewTOS stops
-/// producing [`expected`](Self::expected) the test fails, and it fails with
-/// both numbers in the message.
+/// (`references/emutos`, pinned at `1a7484ab`, 2026-04-14). The field is still
+/// compared; only the value it is compared *against* changes, and the entry
+/// has to say exactly why. Nothing is skipped:
 ///
-/// [`Self::expected`]: Delta::expected
+/// * the recorded value is asserted, so an entry cannot describe a
+///   measurement the dump does not hold ([`Oracle::want`]);
+/// * the expectation is *substituted*, not applied as an afterthought, so
+///   NewTOS producing the old EmuTOS's answer fails ([`Oracle::want`]);
+/// * an entry the comparison never reaches is refused ([`Oracle::finish`]).
 pub struct Delta {
-    /// Case id = the physical line number in `tosdump/cases/aes-r1.tsv`.
+    /// The case table this entry belongs to, by the name its [`Table`]
+    /// carries. A case id alone is ambiguous: it is a physical line number,
+    /// and round 1 and round 2 both have a case 228.
+    pub table: &'static str,
+    /// Case id = the physical line number in that table.
     pub case: u16,
     pub field: &'static str,
     pub index: usize,
     /// What the TT running EmuTOS 1.4 actually wrote.
     pub recorded: i64,
     /// What the pinned EmuTOS source mandates, i.e. what NewTOS must produce.
-    pub expected: i64,
+    pub expected: Expected,
     pub why: &'static str,
 }
 
-/// The one such field in round 1.
+/// The whole list, and it has exactly one subject: `WF_OWNER`.
 ///
-/// `wind_get(0, WF_OWNER)`: `WF_OWNER` (20) **did not exist** in EmuTOS 1.4.
-/// It is absent from `include/aesdefs.h` (which ends at `WF_COLOR` 18) and
-/// `wm_get` has no arm for it, so field 20 reaches `default: return FALSE`
-/// and the AES answers `RET_CODE = 0` — which is what the TT recorded.
-/// It was added on 2025-08-23 (`acb7f3b4`, "Add partial implementation of
-/// WF_OWNER to wind_get"), after the `VERSION_1_4` tag of 2025-06-07, and the
-/// pinned source now has it at `aes/gemwmlib.c:1578-1589` under
-/// `#if AES_VERSION >= 0x330`, returning TRUE with the owner pid, the open
-/// flag and the top/bottom handles in `poutwds[0..3]`. Both machines report
-/// `ap_version 0x0340`, so 1.4 was answering FALSE for a field its own
-/// advertised AES version has; NewTOS implements the pinned source
-/// (`tos-api/src/aes/window.rs`, the `WF_OWNER` arm) and returns TRUE.
+/// `WF_OWNER` (20) **did not exist** in EmuTOS 1.4. It is absent from
+/// `include/aesdefs.h` (which ends at `WF_COLOR` 18) and `wm_get` has no arm
+/// for it, so field 20 reaches `default: return FALSE` and the AES answers
+/// `RET_CODE = 0` — which is what the TT recorded. It was added on 2025-08-23
+/// (`acb7f3b4`, "Add partial implementation of WF_OWNER to wind_get"), after
+/// the `VERSION_1_4` tag of 2025-06-07, and the pinned source now has it at
+/// `aes/gemwmlib.c:1578-1589` under `#if AES_VERSION >= 0x330`:
 ///
-/// Only `int_out[0]` is affected: the case declares `OUT_LEN 1`, so the four
+/// ```text
+/// poutwds[0] = pwin->w_owner->p_pid;                  int_out[1]
+/// poutwds[1] = (pwin->w_flags & VF_ISOPEN) != 0;      int_out[2]
+/// poutwds[2] = gl_wtop;                               int_out[3]
+/// poutwds[3] = W_TREE[ROOT].ob_head;                  int_out[4]
+/// ```
+///
+/// (`poutwds` is `&int_out[1]`: `wm_get(WM_HANDLE, WM_WFIELD, &WM_OX, &WM_IX)`
+/// with `WM_OX = int_out[1]`, and `RET_CODE = int_out[0]`,
+/// `aes/gemsuper.c:343,441`.) Both machines report `ap_version 0x0340`, so 1.4
+/// was answering FALSE for a field its own advertised AES version has; NewTOS
+/// implements the pinned source (`tos-api/src/aes/window.rs`, the `WF_OWNER`
+/// arm) and returns TRUE.
+///
+/// **Round 1, case 167** — `wind_get(0, WF_OWNER)`, `OUT_LEN 1`. Only
+/// `int_out[0]` is affected: the case declares one output word, so the four
 /// words the handler writes into the dispatcher's local `int_out` are never
 /// copied back and stay poisoned on both machines.
-pub const DELTAS: &[Delta] = &[Delta {
-    case: 167,
-    field: "int_out",
-    index: 0,
-    recorded: 0,
-    expected: 1,
-    why: "WF_OWNER did not exist in EmuTOS 1.4 (added 2025-08-23, acb7f3b4); \
-          the pinned source implements it at aes/gemwmlib.c:1578-1589",
-}];
+///
+/// **Round 2, cases 244 and 247** — `wind_get(1, WF_OWNER)`, `OUT_LEN 5`, on a
+/// window that really exists: 244 created but never opened, 247 created and
+/// opened. Here all five words come back, and on the TT the four behind the
+/// return code are whatever `xif`'s **uninitialised** local `int_out` held
+/// (`aes/gemsuper.c:429,444-445`) — both cases recorded the identical
+/// `0, -1, 0, 0, 0`, which is stack, not an answer. So the reference cannot
+/// arbitrate any of the five, and every one of them is stated here rather than
+/// letting three of them pass against garbage that happens to agree.
+///
+/// The expectations are read off the pinned source above, for the two states
+/// the cases establish:
+///
+/// * the **owner** is the process that ran `wind_create` (`w_setup` sets
+///   `w_owner = rlr`, `aes/gemwmlib.c:210`), and `wm_open` does not change it,
+///   so both cases expect this application's own id — [`Expected::ApId`],
+///   because the number itself is not contract;
+/// * `VF_ISOPEN` is 0 for 244 and 1 for 247;
+/// * `gl_wtop` is the **raw** variable, `NIL` (−1) while nothing is open
+///   (`wm_init`, `:1297`; `draw_change`, `:1093`) — not `w_top()`'s `DESKWH`
+///   fold (`:315-318`) — so −1 for 244 and the only open handle, 1, for 247;
+/// * `W_TREE[ROOT].ob_head` is `NIL` on a root with no children and the
+///   bottom-most open window otherwise: −1 for 244, 1 for 247.
+pub const DELTAS: &[Delta] = &[
+    Delta {
+        table: "tosdump/cases/aes-r1.tsv",
+        case: 167,
+        field: "int_out",
+        index: 0,
+        recorded: 0,
+        expected: Expected::Value(1),
+        why: "WF_OWNER did not exist in EmuTOS 1.4 (added 2025-08-23, acb7f3b4); \
+              the pinned source implements it at aes/gemwmlib.c:1578-1589",
+    },
+    // Round 2, case 244: `wind_create` only. RET_CODE, then the four poutwds.
+    Delta {
+        table: "tosdump/cases/aes-r2-wind.tsv",
+        case: 244,
+        field: "int_out",
+        index: 0,
+        recorded: 0,
+        expected: Expected::Value(1),
+        why: "RET_CODE: wm_get's default arm answered FALSE in EmuTOS 1.4; the \
+              pinned source has a WF_OWNER arm and returns TRUE \
+              (aes/gemwmlib.c:1578-1589)",
+    },
+    Delta {
+        table: "tosdump/cases/aes-r2-wind.tsv",
+        case: 244,
+        field: "int_out",
+        index: 1,
+        recorded: -1,
+        expected: Expected::ApId,
+        why: "poutwds[0] = pwin->w_owner->p_pid, the process that CREATED the \
+              window (w_setup, aes/gemwmlib.c:210); EmuTOS 1.4 left xif's \
+              uninitialised stack here",
+    },
+    Delta {
+        table: "tosdump/cases/aes-r2-wind.tsv",
+        case: 244,
+        field: "int_out",
+        index: 2,
+        recorded: 0,
+        expected: Expected::Value(0),
+        why: "poutwds[1] = (w_flags & VF_ISOPEN) != 0; the window was created \
+              and never opened. EmuTOS 1.4 left stack here that happens to \
+              agree, which is not the reference deciding it",
+    },
+    Delta {
+        table: "tosdump/cases/aes-r2-wind.tsv",
+        case: 244,
+        field: "int_out",
+        index: 3,
+        recorded: 0,
+        expected: Expected::Value(-1),
+        why: "poutwds[2] = gl_wtop, the raw variable: NIL while nothing is open \
+              (wm_init aes/gemwmlib.c:1297, draw_change :1093), not w_top()'s \
+              DESKWH fold (:315-318)",
+    },
+    Delta {
+        table: "tosdump/cases/aes-r2-wind.tsv",
+        case: 244,
+        field: "int_out",
+        index: 4,
+        recorded: 0,
+        expected: Expected::Value(-1),
+        why: "poutwds[3] = W_TREE[ROOT].ob_head; nothing is open, so the window \
+              tree root has no children",
+    },
+    // Round 2, case 247: the same window after `wind_open`.
+    Delta {
+        table: "tosdump/cases/aes-r2-wind.tsv",
+        case: 247,
+        field: "int_out",
+        index: 0,
+        recorded: 0,
+        expected: Expected::Value(1),
+        why: "RET_CODE: wm_get's default arm answered FALSE in EmuTOS 1.4; the \
+              pinned source has a WF_OWNER arm and returns TRUE \
+              (aes/gemwmlib.c:1578-1589)",
+    },
+    Delta {
+        table: "tosdump/cases/aes-r2-wind.tsv",
+        case: 247,
+        field: "int_out",
+        index: 1,
+        recorded: -1,
+        expected: Expected::ApId,
+        why: "poutwds[0] = pwin->w_owner->p_pid; wm_open does not change the \
+              owner w_setup established (aes/gemwmlib.c:210)",
+    },
+    Delta {
+        table: "tosdump/cases/aes-r2-wind.tsv",
+        case: 247,
+        field: "int_out",
+        index: 2,
+        recorded: 0,
+        expected: Expected::Value(1),
+        why: "poutwds[1] = (w_flags & VF_ISOPEN) != 0; the prelude opened it",
+    },
+    Delta {
+        table: "tosdump/cases/aes-r2-wind.tsv",
+        case: 247,
+        field: "int_out",
+        index: 3,
+        recorded: 0,
+        expected: Expected::Value(1),
+        why: "poutwds[2] = gl_wtop; handle 1 is the only open window, so it is \
+              the top one",
+    },
+    Delta {
+        table: "tosdump/cases/aes-r2-wind.tsv",
+        case: 247,
+        field: "int_out",
+        index: 4,
+        recorded: 0,
+        expected: Expected::Value(1),
+        why: "poutwds[3] = W_TREE[ROOT].ob_head; handle 1 is the only open \
+              window, so it is the bottom one too",
+    },
+];
 
-/// Re-point the diffs a [`Delta`] covers at the value the pinned EmuTOS
-/// source mandates, and drop the ones that then agree.
-fn apply_deltas(diffs: &mut Vec<Diff>, case: u16) {
-    diffs.retain_mut(|d| {
-        match DELTAS
-            .iter()
-            .find(|x| x.case == case && x.field == d.field && x.index == d.index)
-        {
-            Some(x) if d.got == x.expected => false,
-            Some(x) => {
-                d.want = x.expected;
-                true
-            }
-            None => true,
-        }
-    });
-}
-
-/// Replay one case and compare every array against the reference.
-pub fn check(dump: &[u8], case: &Case) {
+/// Replay one case of `table` and compare every array against the reference.
+pub fn check(table: &Table, case: &Case) {
     let _guard = AES_LOCK.lock().unwrap_or_else(|e| e.into_inner());
     let ctx = context();
     let mut pb = Pb::new();
 
-    // The case's preludes, in order, exactly as `tosdump/core/runner_aes.c`
-    // issues them: each poisoned and laid like a measured call, none recorded.
+    // 0. the reset the table declares (`tosdump/core/runner_aes.c:150-154`),
+    //    ahead of the preludes, so a prelude establishes state on top of a
+    //    known one rather than on top of whatever ran before it.
+    table.reset.run(&mut pb);
+
+    // 1. the case's preludes, in order, exactly as `runner_aes.c` issues
+    //    them: each poisoned and laid like a measured call, none recorded.
     for p in case.prelude {
         pb.poison();
         pb.intin[..p.intin.len()].copy_from_slice(p.intin);
         pb.call(p.opcode, p.in_len, p.out_len, p.ain_len, p.aout_len);
     }
 
-    let rec = &dump[HDR_SIZE + case.rec * REC_SIZE..][..REC_SIZE];
+    let rec = &table.dump[HDR_SIZE + case.rec * REC_SIZE..][..REC_SIZE];
     assert_eq!(
         be16(rec, OFF_CASEID) as u16,
         case.id,
-        "record {} is case {}, expected case {} -- dump and generated tests disagree",
+        "record {} is case {}, expected case {} -- {} and generated tests disagree",
         case.rec,
         be16(rec, OFF_CASEID),
-        case.id
+        case.id,
+        table.name
     );
     assert_eq!(
         be16(rec, OFF_OPCODE),
         case.opcode,
-        "case {}: record opcode {} vs case opcode {}",
+        "{} case {}: record opcode {} vs case opcode {}",
+        table.name,
         case.id,
         be16(rec, OFF_OPCODE),
         case.opcode
     );
 
+    // 2. poison; 3. lay the case's int_in values over it; 4. the call.
     pb.poison();
     pb.intin[..case.intin.len()].copy_from_slice(case.intin);
     pb.call(case.opcode, case.in_len, case.out_len, case.ain_len, case.aout_len);
 
+    let mut or = Oracle::new(table.name, case.id, ctx.ap_id);
     let mut diffs = Vec::new();
-    cmp_words(&mut diffs, "contrl", &pb.contrl[..], rec, OFF_CONTRL);
+    cmp_words(&mut diffs, &mut or, "contrl", &pb.contrl[..], rec, OFF_CONTRL);
     cmp_global(&mut diffs, pb.global(), rec, ctx.ap_id);
-    cmp_words(&mut diffs, "int_in", &pb.intin[..], rec, OFF_INTIN);
-    cmp_words(&mut diffs, "int_out", &pb.intout[..], rec, OFF_INTOUT);
+    cmp_words(&mut diffs, &mut or, "int_in", &pb.intin[..], rec, OFF_INTIN);
+    cmp_words(&mut diffs, &mut or, "int_out", &pb.intout[..], rec, OFF_INTOUT);
     // The record carries the low 32 bits of each address slot, because the
     // format's slots are 32 bit while the block's are the target's pointer
     // width (`tosdump/core/runner_aes.c`).
@@ -806,24 +1171,40 @@ pub fn check(dump: &[u8], case: &Case) {
     for (i, &a) in pb.addrout.iter().enumerate() {
         push_diff(&mut diffs, "addr_out", i, a as u32 as i64, be32(rec, OFF_ADDROUT + i * 4) as i64, 8);
     }
-    apply_deltas(&mut diffs, case.id);
+
+    // 5. the declared reset again, BEFORE anything below can panic: a red case
+    //    that left a window open would turn every round-1 case cargo happens
+    //    to run after it red as well, and the first failure is the only one
+    //    worth reading.
+    table.reset.run(&mut pb);
+    or.finish();
 
     if !diffs.is_empty() {
         let mut msg = format!(
-            "case {} (opcode {}) -- {}\n  {} field(s) differ from the EmuTOS \
+            "{} case {} (opcode {}) -- {}\n  {} field(s) differ from the EmuTOS \
              1.4 reference:\n",
+            table.name,
             case.id,
             case.opcode,
             case.comment,
             diffs.len()
         );
-        for d in diffs.iter().take(24) {
+        for d in DELTAS.iter().filter(|d| d.table == table.name && d.case == case.id) {
             msg += &format!(
-                "    {}[{}]  NewTOS = 0x{:0w$X} ({})   reference = 0x{:0w$X} ({})\n",
+                "  note: `{}[{}]` is compared against what the pinned EmuTOS source \
+                 mandates, not against the dump (which holds {}):\n        {}\n",
+                d.field, d.index, d.recorded, d.why
+            );
+        }
+        for d in diffs.iter().take(24) {
+            let source = if d.substitute { "expected" } else { "reference" };
+            msg += &format!(
+                "    {}[{}]  NewTOS = 0x{:0w$X} ({})   {} = 0x{:0w$X} ({})\n",
                 d.field,
                 d.index,
                 d.got & ((1i64 << (d.hex_width * 4)) - 1),
                 d.got,
+                source,
                 d.want & ((1i64 << (d.hex_width * 4)) - 1),
                 d.want,
                 w = d.hex_width
