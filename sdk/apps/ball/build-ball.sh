@@ -9,9 +9,11 @@
 # the libc-aware crt0, the ported mintlib (libc.a) and gemlib (gemlib.a),
 # linked with sdk/newtos.ld.
 #
-#   ball.c         the machine-independent demo (physics, palette, sprite,
-#                  dirty rectangles, main loop) -- compiled unchanged for a
-#                  future m68k/TT build
+#   ball.c         the machine-independent demo (physics, palette, the sphere
+#                  map and its renderer, dirty rectangles, main loop) --
+#                  compiled unchanged for a future m68k/TT build
+#   ball-tex.c     the ball's texture: the NTX1 file reader and, when there is
+#                  no file, the generator -- machine-independent too
 #   plat-newtos.c  the Pi-4 half: VDI geometry, the pitch measurement, the
 #                  screen pages, the index->XRGB blit
 #
@@ -36,7 +38,7 @@ GEMTOP="$GEM/gemlib-0.44.0"
 BUILD="$HERE/build"
 mkdir -p "$BUILD"
 
-for s in ball.c plat-newtos.c ball.h; do
+for s in ball.c ball-tex.c plat-newtos.c ball.h ball-tex.h; do
     [ -f "$HERE/$s" ] || { echo "error: $HERE/$s missing" >&2; exit 1; }
 done
 
@@ -72,12 +74,12 @@ INCS=(-I"$HERE" -I"$GEMTOP" -I"$MINT" -isystem "$RES")
 
 echo "clang: $($CLANG --version | head -1)"
 echo "abi  : LP64 (8-byte long/pointer, ELF64 AArch64)"
-echo "src  : ball.c + plat-newtos.c"
+echo "src  : ball.c + ball-tex.c + plat-newtos.c"
 echo "out  : $OUT"
 echo
 
 rm -f "$BUILD"/*.o
-for s in ball.c plat-newtos.c; do
+for s in ball.c ball-tex.c plat-newtos.c; do
     o="$BUILD/${s%.c}.o"
     if ! "$CLANG" "${CFLAGS[@]}" "${INCS[@]}" -c "$HERE/$s" -o "$o" 2>"$BUILD/${s%.c}.err"; then
         echo "COMPILE FAILED ($s):"
@@ -94,7 +96,8 @@ done
 rm -f "$OUT"
 "$LLD" -flavor gnu -T "$SDK/newtos.ld" -no-pie -z max-page-size=0x1000 \
     --build-id=none --why-extract="$BUILD/why.txt" \
-    "$BUILD/crt0.o" "$BUILD/ball.o" "$BUILD/plat-newtos.o" \
+    "$BUILD/crt0.o" "$BUILD/ball.o" "$BUILD/ball-tex.o" \
+    "$BUILD/plat-newtos.o" \
     --start-group "$GEM/gemlib.a" "$LIBC/libc.a" --end-group \
     -o "$OUT" 2>"$BUILD/link.err"
 lr=$?

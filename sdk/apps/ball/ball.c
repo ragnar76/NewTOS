@@ -1,14 +1,18 @@
 /*
- * ball.c -- BALL.NAP, the NewTOS bouncing-ball demo, milestone 1.
+ * ball.c -- BALL.NAP, the NewTOS bouncing-ball demo, milestone 2a.
  *
  * A ball falls, bounces, rolls along the floor and off the side walls, and
- * casts a shadow that shrinks and fades as it rises. It is drawn as a shaded
- * sphere -- one light, a diffuse term and a specular highlight -- which is
- * where the three-dimensional impression comes from. Milestone 1 deliberately
- * stops there: no texture on the ball, no wireframe room, no reflection, no
- * status readout, and exactly ONE ball (the illustration's trail of
- * half-transparent spheres is the illustrator's way of drawing motion, not
- * something the program does).
+ * casts a shadow that shrinks and fades as it rises. Milestone 2a replaces
+ * milestone 1's flat shaded sphere with a TEXTURED one: an equirectangular
+ * texture is wrapped onto the sphere, the sphere spins about its polar axis
+ * at the rate the ball is rolling, and one light -- a diffuse term and a
+ * specular highlight -- shades the result. Where the texture comes from is
+ * ball-tex.c's business; this file only maps it.
+ *
+ * Still exactly ONE ball, and still no motion trail: the illustration's row
+ * of half-transparent spheres is the illustrator's way of drawing movement,
+ * not something the program does. The wireframe room, the floor reflection
+ * and the status readout are milestone 2b and are not here.
  *
  * ---------------------------------------------------------------------------
  * How it draws, and why it draws that way
@@ -37,10 +41,13 @@
  * read out of cache while the platform layer converts. Everything about the
  * pixel format lives in plat-newtos.c; see ball.h for the seam.
  *
- * The ball is not shaded per frame. Its size and lighting never change, so
- * the sphere is rendered once at start-up into a sprite with a per-row
- * coverage run, and each frame copies rows of it. That also keeps the square
- * root -- there is no libm here -- out of the frame loop entirely.
+ * The ball is not projected per frame either. Its size, its shading and the
+ * texel every one of its pixels samples at rest are all fixed, so they are
+ * worked out once at start-up into a SPHERE MAP (build_sphere_map below) with
+ * a per-row coverage run. What is left for the frame loop is the spin, and
+ * the spin turns out to be one addition per pixel -- see the sphere map's own
+ * commentary for why. That keeps the square root and the arc sine -- there is
+ * no libm here; both are in this file -- out of the frame loop entirely.
  *
  * Every size is derived from the screen the VDI reports: the ball's diameter
  * is 16 % of the screen width, the floor and horizon are fractions of the
@@ -56,26 +63,138 @@
 #include <string.h>
 
 #include "ball.h"
+#include "ball-tex.h"
 
 /* ------------------------------------------------------------------------ */
-/* Palette layout                                                            */
+/* Palette layout -- the split, in one place, for the whole demo             */
 /*                                                                           */
-/* 256 entries, spent where the picture needs them:                          */
-/*   0 .. 63    backdrop, 64 bands from the top of the screen to the horizon */
-/*  64 ..191    floor, 16 bands x 8 shadow levels (level 0 = no shadow), so   */
-/*              a shadowed floor pixel is simply "floor band + level"        */
-/* 192 ..255    the ball, 64 shades from silhouette-dark to specular white   */
+/*    0 ..  23   backdrop: 24 bands from the top of the screen to the horizon */
+/*   24 ..  95   floor: 12 bands x 6 shadow levels (level 0 = no shadow), so  */
+/*               a shadowed floor pixel is simply "floor band + level"       */
+/*   96 .. 127   RESERVED. Milestone 2b's grid room, floor reflection and HUD */
+/*               get these 32 entries. They are set to black here and used by */
+/*               nothing, on purpose: a palette that has to be re-cut in 2b   */
+/*               invalidates the texture, the sphere map and every pre-shaded */
+/*               thing built from it, so the room is left now.               */
+/*  128 .. 255   the ball: TEX_MAT_MAX hues, split UNEVENLY into shade ramps  */
+/*               (see hue_len). A big white sphere shows every step of its    */
+/*               gradient and gets the most; the two hues that only appear as */
+/*               small marks on the texture get the fewest.                  */
 /*                                                                           */
-/* This is the layout an 8-bit palette machine forces, so it is the layout    */
-/* both targets use.                                                         */
+/* Milestone 1 spent 64 entries on one ball colour. A textured ball needs a   */
+/* ramp per hue, and the four cost 128; the backdrop and the floor pay for it */
+/* with coarser gradients and get the difference back by being ORDERED        */
+/* DITHERED (build_dither below) -- 24 dithered steps read smoother than 64   */
+/* undithered ones. This is the layout an 8-bit palette machine forces, so it */
+/* is the layout both targets use.                                           */
 /* ------------------------------------------------------------------------ */
-#define SKY_N		64
+#define SKY_N		24
 #define SKY_BASE	0
-#define FLOOR_N		16
-#define SHADOW_N	8
-#define FLOOR_BASE	64
-#define BALL_N		64
-#define BALL_BASE	192
+#define FLOOR_N		12
+#define SHADOW_N	6
+#define FLOOR_BASE	24
+#define RSVD_BASE	96	/* milestone 2b's 32 entries		     */
+#define RSVD_N		32
+#define BALL_BASE	128
+#define BALL_N		128	/* 128 .. 255				     */
+
+/*
+ * Shading is a LOOKUP, never a multiply. Scaling a palette index by a light
+ * factor is meaningless, and doing the arithmetic in RGB would make the Pi and
+ * the Atari do different work per pixel -- which would ruin the one thing this
+ * demo is also meant to be, a like-for-like measurement of the two machines.
+ * So the renderer works in BALL_LEVELS light levels, the texture names a hue,
+ * and the two meet in a table:
+ *
+ *      screen index = shade_lut[level * TEX_MAT_MAX + hue]
+ *
+ * The table is 192 bytes and lives in L1 on anything. It also decouples the
+ * palette layout from the renderer completely: hue_len below can be re-cut,
+ * or milestone 2b can move the whole ball slice, without draw_ball changing
+ * by a line.
+ *
+ * BALL_LEVELS is the LONGEST ramp, not the average, so the hue that needs the
+ * resolution actually gets it; a shorter ramp is sampled out of the same
+ * levels and simply repeats entries.
+ */
+#define BALL_LEVELS	48
+static const unsigned char hue_len[TEX_MAT_MAX] = { 48, 40, 20, 20 };
+/* The four blocks above must tile 0..255 exactly, and the ramps must fill the
+ * ball's block exactly. Getting either wrong produces a picture rather than a
+ * crash, which is the worst kind of bug to find, so the first half is a
+ * compile error and the second is checked where the ramps are laid out. */
+typedef char ball_palette_tiles_256[
+	(SKY_BASE + SKY_N == FLOOR_BASE &&
+	 FLOOR_BASE + FLOOR_N * SHADOW_N == RSVD_BASE &&
+	 RSVD_BASE + RSVD_N == BALL_BASE &&
+	 BALL_BASE + BALL_N == BALL_PAL_N) ? 1 : -1];
+static unsigned char hue_base[TEX_MAT_MAX];
+static unsigned char shade_lut[BALL_LEVELS * TEX_MAT_MAX];
+
+/*
+ * THE light. There is one, it is fixed in the VIEWER's frame, and everything
+ * it does comes from this vector and nothing else: the diffuse term, the
+ * specular highlight, which way the shadow is thrown and how far, and how the
+ * shadow is stretched. Two lights that disagree is the first thing an eye
+ * notices in a picture, so there is only one to disagree with.
+ *
+ * Axes as everywhere in this file: x to the right, y DOWNWARDS, z towards the
+ * viewer. So this light is up, to the left, and a little in front.
+ *
+ * Being fixed in the viewer's frame is also what makes the sphere map
+ * possible: the ball spins about its own polar axis, so turning it moves the
+ * texture across the shading and never the shading across the ball.
+ */
+#define LIGHT_X		-0.45f
+#define LIGHT_Y		-0.60f
+#define LIGHT_Z		 0.66f
+
+/*
+ * A shade index runs from unlit to blown-out. The bottom LIT_TOP of the ramp
+ * scales the hue's own colour, which is the diffuse term; the rest blends to
+ * white, which is the specular. A hue therefore keeps its colour right up to
+ * the highlight and loses it only inside it, the way a glossy painted surface
+ * does.
+ */
+#define LIT_AMB		0.12f	/* how lit the terminator still is	     */
+#define LIT_TOP		0.85f	/* share of the ramp the diffuse term owns   */
+#define LIT_SPEC	0.15f	/* share the specular owns		     */
+
+/*
+ * Which way the ball's surface travels across its face while the ball is
+ * moving to the RIGHT. (1, -1) is from the lower left to the upper right; y
+ * points down, so a negative y is up. (1, 0) is the plain horizontal spin of
+ * a globe. Negating the pair mirrors the diagonal.
+ *
+ * This is not a per-frame cost: tilting the spin tilts the sphere's polar
+ * axis, and turning the whole projection by a fixed angle about the VIEWING
+ * axis is a rotation of the (x, y) the sphere map is built from -- it leaves
+ * z, and therefore the front hemisphere and the arc-sine shortcut that
+ * depends on it, exactly as they were. The frame loop is still one addition
+ * per pixel.
+ */
+#define SPIN_DIR_X	 1.0f
+#define SPIN_DIR_Y	-1.0f
+
+/*
+ * The shadow, in the flat little world the floor implies. The floor is drawn
+ * as a gradient rather than projected, so the one thing that says how deep it
+ * is is the shadow itself: milestone 1 drew the ball's shadow 1.20 radii wide
+ * and 0.30 radii tall, and the ratio of those two IS this floor's
+ * foreshortening. It is written down here as such and everything else is
+ * derived from it, so the shadow's shape and its travel cannot disagree.
+ *
+ * SHADOW_THROW scales the distance the light throws the shadow. 1.0 is the
+ * true throw for this light -- at the top of its arc the ball would cast its
+ * shadow three radii to the side, which is correct and reads as two separate
+ * objects. It is the one number here that is a judgement rather than a
+ * derivation, which is why it is alone.
+ */
+#define SHADOW_R	1.20f	/* shadow radius on the floor, in ball radii */
+#define FLOOR_SQUASH	0.25f	/* a step into the picture, as a step up it  */
+#define SHADOW_THROW	0.45f
+
+#define B_PI		3.14159265358979323846f
 
 /* ------------------------------------------------------------------------ */
 /* Shape and motion, all as fractions of the screen the VDI reported          */
@@ -118,8 +237,11 @@ static float floor_y;			/* the ball's contact line	     */
 /* ---- buffers (all from Mxalloc, TT-RAM preferred) ----------------------- */
 static unsigned char *idx;		/* W*H palette indices		     */
 static unsigned char *bg_row;		/* H, the background index per row   */
-static unsigned char *sprite;		/* D*D, the pre-shaded ball	     */
-static short *run0, *run1;		/* D each, the sprite's row coverage */
+static unsigned short *map_off;		/* D*D, texel offset before the spin */
+static unsigned char *map_shade;	/* D*D, BALL_BASE + shade	     */
+static short *run0, *run1;		/* D each, the disc's row coverage   */
+static unsigned char *tex_buf;		/* TEX_MAX_BYTES, the texture	     */
+static ball_tex tex;
 
 /* ---- the ball ----------------------------------------------------------- */
 static int R, D;			/* radius / diameter in pixels	     */
@@ -129,11 +251,22 @@ static float vx, vy;			/* pixels per second		     */
 static float gravity;
 static float v_launch, v_min;		/* serve / re-serve speeds	     */
 static float vx0, vx_min;
+static float spin_u;			/* spin, in texture columns	     */
 
 /* ---- derived per frame -------------------------------------------------- */
-static int b_left, b_top;		/* sprite origin on screen	     */
-static float sh_cx, sh_cy, sh_a, sh_b, sh_al;	/* the shadow ellipse	     */
+static int b_left, b_top;		/* the disc's origin on screen	     */
+static int tex_du;			/* texture columns the spin adds     */
+static float sh_cx, sh_cy, sh_al;	/* the shadow: centre and darkness   */
+static float sh_ia, sh_ib;		/* 1 / its two floor semi-axes	     */
+static float sh_a_bb, sh_b_bb;		/* half its extent on the screen     */
 static int sh_x0, sh_y0, sh_x1, sh_y1;
+
+/* The one light, normalised, and what it does to the shadow. All of it is
+ * derived once by light_init() from LIGHT_X/Y/Z above. */
+static float lgt_x, lgt_y, lgt_z;
+static float sh_ex, sh_ez;		/* the light's heading across the floor */
+static float sh_stretch;		/* how much it stretches the ellipse */
+static float sh_throw_x, sh_throw_z;	/* floor units per pixel of height   */
 
 static ball_rgb pal[BALL_PAL_N];
 static rect prev_rect[2];		/* what each screen page still shows */
@@ -144,8 +277,8 @@ static rect prev_rect[2];		/* what each screen page still shows */
 
 /*
  * Square root. There is no libm here and none is wanted: this is called while
- * the sprite is built and to work out the two serve speeds, never inside the
- * frame loop. The seed halves the IEEE-754 exponent (binary32 on both
+ * the sphere map is built and to work out the two serve speeds, never inside
+ * the frame loop. The seed halves the IEEE-754 exponent (binary32 on both
  * targets), which is accurate to a few percent, and four Newton steps take it
  * to full single precision.
  */
@@ -171,6 +304,113 @@ static float b_sqrt(float x)
 static float b_abs(float x)
 {
 	return x < 0.0f ? -x : x;
+}
+
+/*
+ * Arc sine, single precision, no libm.
+ *
+ *      asin(x) = SUM c_n x^(2n+1) / (2n+1),   c_0 = 1, c_n = c_(n-1)(2n-1)/2n
+ *
+ * The series is only useful well inside the unit circle, so anything above a
+ * half is folded down first with asin(x) = pi/2 - 2 asin(sqrt((1-x)/2)), which
+ * maps (0.5, 1] onto (0, 0.5]. Fifteen terms then leave the error below single
+ * precision -- the last one is around 1e-11 at x = 0.5.
+ *
+ * The coefficients are NOT a table of numbers copied from somewhere: asin_init
+ * derives them from the recurrence above, once, at start-up. asin itself is
+ * called about once per pixel of the ball while the sphere map is built, and
+ * never inside the frame loop.
+ */
+#define ASIN_TERMS	15
+static float asin_c[ASIN_TERMS];
+
+static void asin_init(void)
+{
+	float c = 1.0f;
+	int n;
+
+	asin_c[0] = 1.0f;
+	for (n = 1; n < ASIN_TERMS; n++) {
+		c *= (float)(2 * n - 1) / (float)(2 * n);
+		asin_c[n] = c / (float)(2 * n + 1);
+	}
+}
+
+static float b_asin(float x)
+{
+	float a = b_abs(x), r, a2, p, sum;
+	int n, folded = 0;
+
+	if (a >= 1.0f)
+		return x < 0.0f ? -0.5f * B_PI : 0.5f * B_PI;
+	if (a > 0.5f) {
+		a = b_sqrt(0.5f * (1.0f - a));
+		folded = 1;
+	}
+	a2 = a * a;
+	p = a;
+	sum = a;
+	for (n = 1; n < ASIN_TERMS; n++) {
+		p *= a2;
+		sum += asin_c[n] * p;
+	}
+	r = folded ? 0.5f * B_PI - 2.0f * sum : sum;
+	return x < 0.0f ? -r : r;
+}
+
+/* ------------------------------------------------------------------------ */
+/* Ordered dithering                                                         */
+/*                                                                           */
+/* Every gradient here is quantised harder than milestone 1's was, because    */
+/* the textured ball took half the palette. Dithering buys the difference     */
+/* back: instead of rounding a value to the nearest palette step, round it up */
+/* or down against a threshold that varies with position, so the error        */
+/* averages out across a few pixels instead of collecting into a visible      */
+/* band. It costs nothing where it is used -- the ball's thresholds are baked */
+/* into the sphere map at start-up, and the background's are applied once per */
+/* row.                                                                      */
+/*                                                                           */
+/* The matrix is not typed in from a book either: it is built from the        */
+/* recurrence that defines it, M(n+1) = [[4M, 4M+2], [4M+3, 4M+1]] from       */
+/* M(0) = [[0]]. The 4x4 matrix is then the 8x8's top-left quarter over four, */
+/* which is the same recurrence read backwards.                              */
+/* ------------------------------------------------------------------------ */
+static float dith8[8][8];		/* the ball's shading		     */
+static float dith4[4][4];		/* the shadow			     */
+static float dith1[8];			/* gradients that only vary in y     */
+
+static void build_dither(void)
+{
+	unsigned char m8[8][8];
+	int n, x, y;
+
+	m8[0][0] = 0;
+	for (n = 1; n <= 3; n++) {
+		int m = 1 << (n - 1);
+
+		for (y = 0; y < m; y++)
+			for (x = 0; x < m; x++) {
+				int v = 4 * (int)m8[y][x];
+
+				m8[y][x] = (unsigned char)v;
+				m8[y][x + m] = (unsigned char)(v + 2);
+				m8[y + m][x] = (unsigned char)(v + 3);
+				m8[y + m][x + m] = (unsigned char)(v + 1);
+			}
+	}
+	for (y = 0; y < 8; y++)
+		for (x = 0; x < 8; x++)
+			dith8[y][x] = ((float)m8[y][x] + 0.5f) / 64.0f;
+	for (y = 0; y < 4; y++)
+		for (x = 0; x < 4; x++)
+			dith4[y][x] = ((float)(m8[y][x] >> 2) + 0.5f) / 16.0f;
+	/* One dimension, eight deep: the three-bit reversal of the row number,
+	 * {0,4,2,6,1,5,3,7}, which spreads a band edge over eight rows. */
+	for (y = 0; y < 8; y++) {
+		int b = ((y & 1) << 2) | (y & 2) | ((y >> 2) & 1);
+
+		dith1[y] = ((float)b + 0.5f) / 8.0f;
+	}
 }
 
 static int mixc(int a, int b, float t)
@@ -254,6 +494,11 @@ static void o_fix2(double v)
 /* because nothing sets the current directory before a program is launched.   */
 /* ------------------------------------------------------------------------ */
 #define LOGPATH		"C:\\BALL.LOG"
+/* The texture, if there is one. An absolute path for the same reason the log
+ * has one: nothing sets a current directory before a program is launched, and
+ * the demo is meant to be one double-click away in the root of C:. When the
+ * file is not there the texture is generated instead -- see ball-tex.c. */
+#define TEXPATH		"C:\\BALL.NTX"
 #define LOG_SECS	5
 #define LOG_EVERY	(LOG_SECS * PHYS_HZ)
 
@@ -305,11 +550,73 @@ static void o_flush(void)
 }
 
 /* ------------------------------------------------------------------------ */
+/* The light, and everything that follows from it                            */
+/*                                                                           */
+/* The shading needs it as a direction. The shadow needs three more things,   */
+/* and all three are read straight off the same vector:                      */
+/*                                                                           */
+/*   where it falls   -- a ball h above the floor casts along the ray -L, so  */
+/*                       the shadow lands h * (Lx / Ly) to the side and       */
+/*                       h * (-Lz / Ly) further into the picture. Straight    */
+/*                       down when the light is straight up, which is what    */
+/*                       milestone 1 drew.                                    */
+/*   which way it is  -- along the light's heading across the floor, which is */
+/*      stretched        the horizontal part of -L.                          */
+/*   how much          -- 1 / cos(angle from vertical). A sphere lit from     */
+/*                       overhead casts a circle; lit obliquely it casts an   */
+/*                       ellipse that long.                                   */
+/*                                                                           */
+/* A light too close to the horizon would throw the shadow to infinity, so    */
+/* the stretch is capped -- not to fake anything, but because a shadow the    */
+/* length of the screen is not a shadow.                                     */
+/* ------------------------------------------------------------------------ */
+#define SH_STRETCH_MAX	2.5f
+
+static void light_init(void)
+{
+	float n, hx, hz;
+
+	n = b_sqrt(LIGHT_X * LIGHT_X + LIGHT_Y * LIGHT_Y + LIGHT_Z * LIGHT_Z);
+	if (n <= 0.0f)
+		n = 1.0f;
+	lgt_x = LIGHT_X / n;
+	lgt_y = LIGHT_Y / n;
+	lgt_z = LIGHT_Z / n;
+
+	/* Its heading across the floor: the horizontal part of -L, with the
+	 * floor's second axis running INTO the picture. */
+	hx = -lgt_x;
+	hz = lgt_z;
+	n = b_sqrt(hx * hx + hz * hz);
+	if (n > 0.0001f) {
+		sh_ex = hx / n;
+		sh_ez = hz / n;
+	} else {
+		sh_ex = 1.0f;		/* light straight overhead */
+		sh_ez = 0.0f;
+	}
+
+	/* -lgt_y is the cosine of the light's angle from vertical, because the
+	 * vector is a unit one and y is the vertical axis. */
+	sh_stretch = (-lgt_y > 0.0001f) ? 1.0f / -lgt_y : SH_STRETCH_MAX;
+	if (sh_stretch > SH_STRETCH_MAX)
+		sh_stretch = SH_STRETCH_MAX;
+
+	if (lgt_y < -0.0001f) {
+		sh_throw_x = (lgt_x / lgt_y) * SHADOW_THROW;
+		sh_throw_z = (-lgt_z / lgt_y) * SHADOW_THROW;
+	} else {
+		sh_throw_x = 0.0f;	/* a light at or below the horizon */
+		sh_throw_z = 0.0f;
+	}
+}
+
+/* ------------------------------------------------------------------------ */
 /* Palette                                                                   */
 /* ------------------------------------------------------------------------ */
 static void build_palette(void)
 {
-	int i, band, lv, r, g, b;
+	int i, m, band, lv, r, g, b, base;
 	float t;
 
 	/* Backdrop: near-black at the top, lifting slightly into the horizon,
@@ -340,40 +647,96 @@ static void build_palette(void)
 		}
 	}
 
-	/* The ball: Atari red, black at the silhouette, blowing out to white
-	 * in the specular highlight. */
-	for (i = 0; i < BALL_N; i++) {
-		t = (float)i / (float)(BALL_N - 1);
-		if (t <= 0.72f) {
-			float k = t / 0.72f;
-			r = mixc(0, 222, k);
-			g = mixc(0, 40, k);
-			b = mixc(0, 34, k);
-		} else {
-			float u = (t - 0.72f) / 0.28f;
-			r = mixc(222, 255, u);
-			g = mixc(40, 255, u);
-			b = mixc(34, 255, u);
-		}
-		pal[BALL_BASE + i].r = (unsigned char)r;
-		pal[BALL_BASE + i].g = (unsigned char)g;
-		pal[BALL_BASE + i].b = (unsigned char)b;
+	/* Milestone 2b's block. Black, and touched by nothing until it has an
+	 * owner -- an entry left at a plausible-looking colour is an entry
+	 * somebody eventually draws with by accident. */
+	for (i = 0; i < RSVD_N; i++) {
+		pal[RSVD_BASE + i].r = 0;
+		pal[RSVD_BASE + i].g = 0;
+		pal[RSVD_BASE + i].b = 0;
 	}
+
+	/* The ball: one ramp per hue the texture is made of, each black at the
+	 * silhouette, the hue's own colour where the light is full on, and
+	 * blowing out to white inside the specular highlight. The texture
+	 * decides the colours; the palette only shades them. The ramps are
+	 * different LENGTHS -- see hue_len -- so lay them out end to end and
+	 * remember where each one starts. */
+	base = BALL_BASE;
+	for (m = 0; m < TEX_MAT_MAX; m++) {
+		int mr = tex.rgb[m][0];
+		int mg = tex.rgb[m][1];
+		int mb = tex.rgb[m][2];
+		int n = hue_len[m];
+
+		if (base + n > BALL_PAL_N)	/* hue_len edited wrong */
+			n = BALL_PAL_N - base;
+		if (n < 2)
+			break;
+		hue_base[m] = (unsigned char)base;
+		for (i = 0; i < n; i++) {
+			int k = base + i;
+
+			t = (float)i / (float)(n - 1);
+			if (t <= LIT_TOP) {
+				float u = t / LIT_TOP;
+				r = mixc(0, mr, u);
+				g = mixc(0, mg, u);
+				b = mixc(0, mb, u);
+			} else {
+				float u = (t - LIT_TOP) / (1.0f - LIT_TOP);
+				r = mixc(mr, 255, u);
+				g = mixc(mg, 255, u);
+				b = mixc(mb, 255, u);
+			}
+			pal[k].r = (unsigned char)r;
+			pal[k].g = (unsigned char)g;
+			pal[k].b = (unsigned char)b;
+		}
+		base += n;
+	}
+
+	/* And the table that turns (light level, hue) into one of those
+	 * entries. A ramp shorter than BALL_LEVELS is sampled out of the same
+	 * levels, so every hue answers to the same light level and the
+	 * renderer never needs to know how long any ramp is. */
+	for (i = 0; i < BALL_LEVELS; i++)
+		for (m = 0; m < TEX_MAT_MAX; m++) {
+			int n = hue_len[m] - 1;
+			int e = (i * n + (BALL_LEVELS - 1) / 2) /
+				(BALL_LEVELS - 1);
+
+			shade_lut[i * TEX_MAT_MAX + m] =
+				(unsigned char)(hue_base[m] + e);
+		}
 }
 
+/*
+ * One palette index per screen row: the backdrop above the horizon, the floor
+ * below it. Both gradients are dithered DOWN the screen -- a row's band is
+ * rounded up or down against a threshold taken from the row number -- so a
+ * band edge becomes four alternating rows instead of one hard line. A row is
+ * a single index, so this costs nothing per pixel and leaves the background
+ * fill a memset.
+ */
 static void build_bg_rows(void)
 {
 	int y;
 
 	for (y = 0; y < H; y++) {
+		float d = dith1[y & 7];
+		int band;
+
 		if (y < horizon) {
-			int band = (int)((long)y * SKY_N / (long)horizon);
+			band = (int)((float)y * (float)(SKY_N - 1) /
+				     (float)horizon + d);
 			if (band > SKY_N - 1)
 				band = SKY_N - 1;
 			bg_row[y] = (unsigned char)(SKY_BASE + band);
 		} else {
-			int band = (int)((long)(y - horizon) * FLOOR_N /
-					 (long)(H - horizon));
+			band = (int)((float)(y - horizon) *
+				     (float)(FLOOR_N - 1) /
+				     (float)(H - horizon) + d);
 			if (band > FLOOR_N - 1)
 				band = FLOOR_N - 1;
 			bg_row[y] = (unsigned char)(FLOOR_BASE +
@@ -383,18 +746,57 @@ static void build_bg_rows(void)
 }
 
 /* ------------------------------------------------------------------------ */
-/* The ball sprite: shaded once, copied ever after                           */
+/* The sphere map: everything about the ball that never changes              */
+/*                                                                           */
+/* For every pixel of the ball's bounding square that falls inside the        */
+/* circle, take the surface normal (nx, ny, nz) of the sphere it belongs to   */
+/* and work out the two things that are the same in every frame the demo will */
+/* ever draw:                                                                */
+/*                                                                           */
+/*   - the texel it samples when the ball is not turned. The normal is first  */
+/*     expressed in the SPHERE's frame -- the viewer's, turned about the      */
+/*     viewing axis until the pole lies across the direction the surface is   */
+/*     to travel (SPIN_DIR_*). That turn leaves z alone, so the front         */
+/*     hemisphere stays the front hemisphere. Then latitude comes from the    */
+/*     turned y alone, and longitude is atan2(gx, gz) -- which, because gz is */
+/*     never negative on the half of the sphere one can see and gx*gx + gz*gz */
+/*     is 1 - gy*gy, is exactly asin(gx / sqrt(1 - gy*gy)). One inverse       */
+/*     function instead of two, and the row and the column are packed into    */
+/*     ONE offset into the texture.                                          */
+/*   - its shade, because the light is fixed in the viewer's frame while the  */
+/*     spin is about the sphere's polar axis, so turning the ball moves the   */
+/*     texture across the shading and never the shading across the ball. The  */
+/*     shading is computed from the UNTURNED normal, which is why tilting the */
+/*     spin costs nothing and does not move the highlight.                   */
+/*                                                                           */
+/* What is left for the frame loop is the spin, and the spin is ONE ADDITION. */
+/* Turning the surface vector by an angle about the polar axis and then       */
+/* taking atan2 of it gives atan2 plus that angle, exactly -- so however far  */
+/* the ball has rolled, the texel every pixel samples is its resting texel    */
+/* plus the same column offset. Drawing the ball is therefore a table lookup, */
+/* an add, a second lookup and a store per pixel; no trigonometry, no square  */
+/* root, no divide.                                                          */
+/*                                                                           */
+/* The shade is dithered here, not when it is used: the pattern depends on    */
+/* the pixel's place in the ball's own square, which never changes, so it is  */
+/* free.                                                                     */
+/*                                                                           */
+/* Cost, for the record: a ball 16 % of a 1920-pixel screen wide covers about */
+/* 73 000 pixels, and each costs three square roots, two arc sines and two    */
+/* dot products. It is measured (map_ticks) and reported in the log rather    */
+/* than estimated.                                                           */
 /* ------------------------------------------------------------------------ */
-static void build_sprite(void)
+static long map_ticks;			/* what building it cost, in ticks   */
+static long map_px;			/* pixels it covers		     */
+
+static void build_sphere_map(void)
 {
-	float lx = -0.45f, ly = -0.60f, lz = 0.66f;
-	float hx, hy, hz, n;
+	float lx = lgt_x, ly = lgt_y, lz = lgt_z;
+	float hx, hy, hz, n, tlx, tly;
+	long t0 = get_sysvar(_hz_200);
 	int sx, sy;
 
-	n = b_sqrt(lx * lx + ly * ly + lz * lz);
-	lx /= n;
-	ly /= n;
-	lz /= n;
+	map_px = 0;
 
 	/* Blinn-Phong halfway vector, the viewer looking straight down +z. */
 	hx = lx;
@@ -405,21 +807,74 @@ static void build_sprite(void)
 	hy /= n;
 	hz /= n;
 
+	/* The tilt of the sphere's polar axis, as the direction the surface is
+	 * to travel in. Turning the projection by this much about the viewing
+	 * axis puts the pole where it belongs; z is untouched, so the front
+	 * hemisphere -- and the arc-sine shortcut below, which needs it -- is
+	 * exactly as it was. */
+	tlx = SPIN_DIR_X;
+	tly = SPIN_DIR_Y;
+	n = b_sqrt(tlx * tlx + tly * tly);
+	if (n <= 0.0001f) {
+		tlx = 1.0f;
+		tly = 0.0f;
+	} else {
+		tlx /= n;
+		tly /= n;
+	}
+
 	for (sy = 0; sy < D; sy++) {
 		float fy = ((float)sy + 0.5f - Rf) / Rf;
 		int first = -1, last = -1;
 
+		run0[sy] = 0;
+		run1[sy] = 0;
+
 		for (sx = 0; sx < D; sx++) {
 			float fx = ((float)sx + 0.5f - Rf) / Rf;
 			float q = fx * fx + fy * fy;
-			float nz, dif, sp, lit;
-			int s;
+			float nz, gx, gy, cos_lat, p, u, v, dif, sp, lit;
+			int u0, ty, sh;
+			long texrow;
 
 			if (q > 1.0f)
 				continue;
 
 			/* The sphere's surface normal at this pixel. */
 			nz = b_sqrt(1.0f - q);
+
+			/* The same normal in the SPHERE's frame, which is the
+			 * viewer's turned about z until the pole lies across
+			 * the direction the surface is to travel. */
+			gx = fx * tlx + fy * tly;
+			gy = fy * tlx - fx * tly;
+
+			/* Latitude -> texture row. gy = -1 is the sphere's
+			 * north pole, which is row 0 of the texture. */
+			v = 0.5f + b_asin(gy) / B_PI;
+			ty = (int)(v * (float)tex.h);
+			if (ty < 0)
+				ty = 0;
+			if (ty > tex.h - 1)
+				ty = tex.h - 1;
+			texrow = (long)ty * (long)tex.stride;
+
+			/* Longitude -> texture column. atan2(gx, gz) with a
+			 * front-facing gz is asin(gx / sqrt(1 - gy*gy)). */
+			cos_lat = b_sqrt(1.0f - gy * gy);
+			p = (cos_lat > 0.0001f) ? gx / cos_lat : 0.0f;
+			if (p < -1.0f)
+				p = -1.0f;
+			if (p > 1.0f)
+				p = 1.0f;
+			u = 0.5f + b_asin(p) / (2.0f * B_PI);
+			u0 = (int)(u * (float)tex.w);
+			if (u0 < 0)
+				u0 = 0;
+			if (u0 > tex.w - 1)
+				u0 = tex.w - 1;
+			map_off[(long)sy * D + sx] =
+				(unsigned short)(texrow + u0);
 
 			dif = fx * lx + fy * ly + nz * lz;
 			if (dif < 0.0f)
@@ -435,28 +890,37 @@ static void build_sprite(void)
 			sp *= sp;	/* ^32 */
 			sp *= sp;	/* ^64 -- a tight, glossy highlight */
 
-			lit = 0.10f + 0.80f * dif + 0.80f * sp;
+			lit = LIT_TOP * (LIT_AMB + (1.0f - LIT_AMB) * dif)
+			      + LIT_SPEC * sp;
 			if (lit > 1.0f)
 				lit = 1.0f;
 
-			s = (int)(lit * (float)(BALL_N - 1) + 0.5f);
-			if (s < 0)
-				s = 0;
-			if (s > BALL_N - 1)
-				s = BALL_N - 1;
+			sh = (int)(lit * (float)(BALL_LEVELS - 1) +
+				   dith8[sy & 7][sx & 7]);
+			if (sh < 0)
+				sh = 0;
+			if (sh > BALL_LEVELS - 1)
+				sh = BALL_LEVELS - 1;
+			/* Stored as the ROW of the shade table, not the level:
+			 * the frame loop then adds the texel and reads the
+			 * palette index straight out. 47 * 4 + 3 = 191, so it
+			 * still fits in the byte. */
+			map_shade[(long)sy * D + sx] =
+				(unsigned char)(sh * TEX_MAT_MAX);
 
-			sprite[(long)sy * D + sx] =
-				(unsigned char)(BALL_BASE + s);
 			if (first < 0)
 				first = sx;
 			last = sx;
+			map_px++;
 		}
 
 		/* A circle covers one contiguous run per row, which is what
-		 * lets the frame loop copy rows instead of testing a mask. */
+		 * lets the frame loop walk rows instead of testing a mask. */
 		run0[sy] = (short)(first < 0 ? 0 : first);
 		run1[sy] = (short)(first < 0 ? 0 : last + 1);
 	}
+
+	map_ticks = get_sysvar(_hz_200) - t0;
 }
 
 /* ------------------------------------------------------------------------ */
@@ -489,6 +953,17 @@ static void physics_step(void)
 
 	if (b_abs(vx) < vx_min)
 		vx = (vx < 0.0f) ? -vx0 : vx0;
+
+	/* The ball rolls, so it turns: one radian of spin per radius of
+	 * travel, straight out of the horizontal speed. It is accumulated in
+	 * TEXTURE COLUMNS rather than radians because that is the only unit
+	 * the renderer ever wants it in, and kept inside one turn so it stays
+	 * exact however long the demo runs. */
+	spin_u += vx * (PHYS_DT / Rf) * (float)tex.w / (2.0f * B_PI);
+	while (spin_u >= (float)tex.w)
+		spin_u -= (float)tex.w;
+	while (spin_u < 0.0f)
+		spin_u += (float)tex.w;
 }
 
 /* ------------------------------------------------------------------------ */
@@ -501,6 +976,14 @@ static void update_shape(void)
 	b_left = (int)(bx - Rf);
 	b_top = (int)(by - Rf);
 
+	/* Sampling a column further ALONG the texture puts that column's
+	 * content further to the LEFT on the ball, so the offset runs against
+	 * the spin: a ball travelling right shows its face travelling right,
+	 * the way a rolling ball reads. */
+	tex_du = (int)((float)tex.w - spin_u);
+	if (tex_du >= tex.w)
+		tex_du -= tex.w;
+
 	/* How high the ball is flying, normalised. The shadow shrinks and
 	 * fades with it -- the cheapest depth cue there is. */
 	hgt = floor_y - (by + Rf);
@@ -512,15 +995,40 @@ static void update_shape(void)
 
 	sz = 1.0f / (1.0f + 1.15f * k);
 	sh_al = 1.0f / (1.0f + 2.60f * k);
-	sh_a = Rf * 1.20f * sz;
-	sh_b = Rf * 0.30f * sz;
-	sh_cx = bx;
-	sh_cy = floor_y + sh_b * 0.20f;
 
-	sh_x0 = (int)(sh_cx - sh_a);
-	sh_x1 = (int)(sh_cx + sh_a) + 1;
-	sh_y0 = (int)(sh_cy - sh_b);
-	sh_y1 = (int)(sh_cy + sh_b) + 1;
+	/* The shadow on the floor: a circle the ball's size, stretched along
+	 * the light's heading because the light is not overhead, and thrown
+	 * away from the light by as much as the ball is high. Both come from
+	 * the same vector the sphere is shaded with; see light_init(). */
+	{
+		float r0 = Rf * SHADOW_R * sz;
+		float a = r0 * sh_stretch;	/* along the light's heading */
+		float b = r0;			/* across it		     */
+		float ax, az, bx2, bz;
+
+		sh_ia = 1.0f / a;
+		sh_ib = 1.0f / b;
+
+		sh_cx = bx + hgt * sh_throw_x;
+		sh_cy = floor_y + b * FLOOR_SQUASH * 0.20f
+			- hgt * sh_throw_z * FLOOR_SQUASH;
+
+		/* The ellipse lies on the floor and the floor is seen
+		 * edge-on, so what reaches the screen is the ellipse with its
+		 * depth squashed. Its bounding box is the two semi-axes
+		 * projected and added in quadrature. */
+		ax = a * sh_ex;
+		az = a * sh_ez;
+		bx2 = -b * sh_ez;
+		bz = b * sh_ex;
+		sh_a_bb = b_sqrt(ax * ax + bx2 * bx2);
+		sh_b_bb = FLOOR_SQUASH * b_sqrt(az * az + bz * bz);
+	}
+
+	sh_x0 = (int)(sh_cx - sh_a_bb);
+	sh_x1 = (int)(sh_cx + sh_a_bb) + 1;
+	sh_y0 = (int)(sh_cy - sh_b_bb);
+	sh_y1 = (int)(sh_cy + sh_b_bb) + 1;
 	if (sh_x0 < 0)
 		sh_x0 = 0;
 	if (sh_y0 < horizon)
@@ -603,23 +1111,32 @@ static void draw_shadow(rect r)
 	for (y = y0; y < y1; y++) {
 		unsigned char *row = idx + (long)y * W;
 		unsigned char base = bg_row[y];
-		float dy = ((float)y + 0.5f - sh_cy) / sh_b;
-		float ry = dy * dy;
+		const float *dr = dith4[y & 3];
+		/* Back onto the floor: undo the foreshortening, then the row's
+		 * fixed contribution to the two ellipse axes. */
+		float fz = ((float)y + 0.5f - sh_cy) * (1.0f / FLOOR_SQUASH);
+		float ra = fz * sh_ez;
+		float rb = fz * sh_ex;
 
-		if (ry >= 1.0f)
-			continue;
 		for (x = x0; x < x1; x++) {
-			float dx = ((float)x + 0.5f - sh_cx) / sh_a;
-			float q = dx * dx + ry;
+			float fx = (float)x + 0.5f - sh_cx;
+			float da = (fx * sh_ex + ra) * sh_ia;
+			float db = (rb - fx * sh_ez) * sh_ib;
+			float q = da * da + db * db;
 			int lv;
 
 			if (q >= 1.0f)
 				continue;
 			/* 1 - q^2 keeps the middle of the shadow flat and lets
 			 * the rim fall off softly, which is what a real
-			 * penumbra looks like at this size. */
+			 * penumbra looks like at this size. Six levels would
+			 * contour that falloff into rings, so the level is
+			 * dithered rather than rounded -- the shadow already
+			 * costs a per-pixel float here, and this is one add
+			 * more. */
 			q = 1.0f - q * q;
-			lv = (int)(sh_al * (float)(SHADOW_N - 1) * q + 0.5f);
+			lv = (int)(sh_al * (float)(SHADOW_N - 1) * q +
+				   dr[x & 3]);
 			if (lv <= 0)
 				continue;
 			if (lv > SHADOW_N - 1)
@@ -629,13 +1146,29 @@ static void draw_shadow(rect r)
 	}
 }
 
+/*
+ * The whole of the sphere renderer, per pixel: fetch the resting texel offset,
+ * add the spin, fetch the texel -- a hue -- add the pre-computed, pre-dithered
+ * shade table row, and read the palette index out of the shade table. Four
+ * loads, two adds, a store; no multiply, no divide, nothing about angles, and
+ * nothing that can address outside the ball's palette slice.
+ *
+ * The rows of the texture are stored twice end to end (ball-tex.h), so adding
+ * the spin never has to wrap.
+ */
 static void draw_ball(rect r)
 {
+	const unsigned char *tp = tex.px;
+	const unsigned char *lut = shade_lut;
+	unsigned du = (unsigned)tex_du;
 	int sy;
 
 	for (sy = 0; sy < D; sy++) {
 		int y = b_top + sy;
-		int a, b;
+		int a, b, n;
+		const unsigned short *op;
+		const unsigned char *shp;
+		unsigned char *dp;
 
 		if (y < r.y0 || y >= r.y1)
 			continue;
@@ -647,9 +1180,14 @@ static void draw_ball(rect r)
 			b = r.x1;
 		if (b <= a)
 			continue;
-		memcpy(idx + (long)y * W + a,
-		       sprite + (long)sy * D + (a - b_left),
-		       (size_t)(b - a));
+
+		n = a - b_left;
+		op = map_off + (long)sy * D + n;
+		shp = map_shade + (long)sy * D + n;
+		dp = idx + (long)y * W + a;
+		n = b - a;
+		while (n-- > 0)
+			*dp++ = lut[*shp++ + tp[(unsigned)*op++ + du]];
 	}
 }
 
@@ -802,20 +1340,31 @@ int main(void)
 
 	idx = (unsigned char *)b_alloc((long)W * H);
 	bg_row = (unsigned char *)b_alloc((long)H);
-	sprite = (unsigned char *)b_alloc((long)D * D);
+	map_off = (unsigned short *)b_alloc((long)D * D *
+					    (long)sizeof(unsigned short));
+	map_shade = (unsigned char *)b_alloc((long)D * D);
 	run0 = (short *)b_alloc((long)D * (long)sizeof(short));
 	run1 = (short *)b_alloc((long)D * (long)sizeof(short));
-	if (!idx || !bg_row || !sprite || !run0 || !run1) {
+	tex_buf = (unsigned char *)b_alloc((long)TEX_MAX_BYTES);
+	if (!idx || !bg_row || !map_off || !map_shade || !run0 || !run1 ||
+	    !tex_buf) {
 		plat_close();
 		Cconws("BALL: out of memory\r\n");
 		rc = 1;
 		goto done;
 	}
 
+	/* Order matters here: the palette is one shade ramp per material of
+	 * the texture, so the texture has to exist before the palette does,
+	 * and the sphere map samples both. */
+	build_dither();
+	asin_init();
+	light_init();
+	tex_build(&tex, tex_buf, TEXPATH);
 	build_palette();
 	plat_palette(pal);
 	build_bg_rows();
-	build_sprite();
+	build_sphere_map();
 
 	/* Serve speeds. The apex is as high as the ball can go and still be
 	 * fully on screen, with a little headroom. */
@@ -883,6 +1432,27 @@ int main(void)
 	o_str(" px, apex=");
 	o_dec(apex);
 	o_str(" px");
+	o_out(0);
+
+	o_str("BALL: texture ");
+	o_dec((long)tex.w);
+	o_ch('x');
+	o_dec((long)tex.h);
+	o_str(", ");
+	o_dec((long)tex.nmat);
+	o_str(" hues, from ");
+	o_str(tex.source);
+	o_out(0);
+
+	o_str("BALL: sphere map ");
+	o_dec(map_px);
+	o_str(" px in ");
+	o_fix2((double)map_ticks * 1000.0 / (double)PHYS_HZ);
+	o_str(" ms (");
+	o_dec(map_ticks);
+	o_str(" ticks of ");
+	o_dec((long)PHYS_HZ);
+	o_str(" Hz)");
 	o_out(0);
 
 	o_str("BALL: headroom ");
@@ -982,9 +1552,11 @@ int main(void)
 	o_flush();
 
 done:
+	b_free(tex_buf);
 	b_free(run1);
 	b_free(run0);
-	b_free(sprite);
+	b_free(map_shade);
+	b_free(map_off);
 	b_free(bg_row);
 	b_free(idx);
 	return rc;
