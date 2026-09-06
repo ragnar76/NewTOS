@@ -66,6 +66,13 @@ const OP_REPLACE: u8 = 3;
 /// plane-equality gate for `vro_cpyfm` (`vdi_raster.c:963,1360`, AUD-V5-004).
 const CHUNKY_PLANES: i16 = 16;
 
+/// The largest plane count EmuTOS still handles on its **palette** BitBlt
+/// path. `cpy_raster` dispatches to the truecolor `vro_cpyfm16` /
+/// `vrt_cpyfm16` routines for `plane_ct > 8` (`vdi_raster.c:1363-1368,
+/// 1432-1437`), and those two re-read `INTIN[0]` unstripped — which is why
+/// the threshold is observable and not just an internal detail.
+const PALETTE_PLANES_MAX: i16 = 8;
+
 /// Memory Form Definition Block (fixed ABI; native pointer in `addr`).
 /// `stand`/`nplanes` are parsed for completeness (they describe the form
 /// but the pixel walk only needs `addr`/`w`/`h`/`wdwidth`).
@@ -391,16 +398,14 @@ pub fn vro_cpyfm(pb: &Vdipb, vwk: &Vwk, backend: &dyn RasterBackend) {
     let (src, dst) = unsafe {
         (Mfdb::from_ptr(pb.contrl_ptr(0), abi), Mfdb::from_ptr(pb.contrl_ptr(1), abi))
     };
-    // `INTIN[0]` carries the raster op in the low 4 bits, `PAT_FLAG`
-    // (bit 4, 0x10) in bit 4, and is invalid if anything above bit 4 is
-    // set (`cpy_raster:1341-1349`). Strip `PAT_FLAG` before dispatch — per
-    // D-082 it never enables a pattern here — and pass the 16-entry op.
-    let mut mode = pb.intin(0);
-    if mode & !0x1F != 0 {
+    // `INTIN[0]` carries the raster op in the low 4 bits and `PAT_FLAG`
+    // (bit 4, 0x10); anything above bit 4 makes the mode invalid
+    // (`cpy_raster:1341-1342`). The `PAT_FLAG` decision itself depends on
+    // the plane count and is therefore taken below, after the plane gates.
+    let raw_mode = pb.intin(0);
+    if raw_mode & !0x1F != 0 {
         return; // bits above PAT_FLAG set → invalid, no-op
     }
-    mode &= !0x10; // strip PAT_FLAG (bit 4); D-082: never blits a pattern
-    let op = (mode & 0x0F) as u8;
 
     // Opaque-copy plane gate (AUD-V5-004), EmuTOS `setup_info` +
     // `cpy_raster:1360`: the destination plane count must be ≤ 16
@@ -413,6 +418,24 @@ pub fn vro_cpyfm(pb: &Vdipb, vwk: &Vwk, backend: &dyn RasterBackend) {
     if dp > CHUNKY_PLANES || sp != dp {
         return;
     }
+
+    // `PAT_FLAG` (bit 4) on the **truecolor** path is not merely stripped —
+    // it kills the copy. `cpy_raster` strips it into its own local `mode`
+    // (`vdi_raster.c:1347`) but then hands the truecolor branch nothing:
+    // `vro_cpyfm16` re-reads the *unstripped* `INTIN[0]`
+    // (`vdi_raster.c:980`), so a mode with bit 4 set (0x10..0x1F) matches
+    // no arm of its 16-entry switch — which has no `default:`
+    // (`vdi_raster.c:1008-1219`) — and the destination is left untouched.
+    // Only the palette path (`plane_ct <= 8`, `bit_blt`) sees the stripped
+    // mode, which is D-082's strip-only contract. Measured on a real Atari
+    // TT running EmuTOS 1.4 with `CONF_WITH_VDI_16BIT`: `tosdump` case 144
+    // (`INTIN[0] = 0x13`, 16-plane forms) leaves the destination buffer
+    // bit-identical to its fill, while case 127 (`INTIN[0] = 3`, same
+    // geometry) copies 64 words.
+    if dp > PALETTE_PLANES_MAX && raw_mode & 0x10 != 0 {
+        return; // PAT_FLAG on the truecolor path → nothing is copied
+    }
+    let op = (raw_mode & 0x0F) as u8;
 
     let s = rect_from_ptsin(pb, 0); // source rect (extent)
     let d = rect_from_ptsin(pb, 4); // destination upper-left

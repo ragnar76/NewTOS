@@ -15,11 +15,10 @@
 > (`fd_addr`, `fd_w`, `fd_h`, `fd_wdwidth`, `fd_stand`, `fd_nplanes`, three
 > reserved WORDs); the MFDB pointer slots in `CONTRL[7..10]`; the source/
 > destination rectangle `PTSIN` layout; the **16-entry logic-op table**
-> (`INTIN[0]`, esp. 3 = replace, 6 = XOR, 7 = OR) + the `PAT_FLAG` (bit 5,
-> which is read and stripped from `mode` but — per **D-082** — never
-> actually enables a pattern fill through this opcode in EmuTOS; the
-> contract is the strip-only behaviour, not a pattern) and `mode & ~0x1f`
-> invalid rule; the `vrt_cpyfm` `MD_*` codes and its
+> (`INTIN[0]`, esp. 3 = replace, 6 = XOR, 7 = OR) + the `PAT_FLAG` (bit 5:
+> never a pattern fill — per **D-082** on the palette path it is merely
+> stripped, and per **D-VDI-23** on the truecolor path it makes the whole
+> call a silent no-op) and the `mode & ~0x1f` invalid rule; the `vrt_cpyfm` `MD_*` codes and its
 > fg/bg colours; the standard↔device form transform direction (`vr_trnfm`
 > toggles `fd_stand` per the source). **Reference:** the BitBlt pixel
 > loops, skew/endmask machinery, the blitter register programming, the
@@ -129,14 +128,43 @@ bit above bit 5 set (`mode & ~0x1f`) is invalid → silent no-op**
 > test (`vdi_blit.S:1055-1056`, `tst.l P_ADDR(a6) / jeq next_plane`)
 > therefore always takes the "no pattern" branch, and the C `bit_blt`/
 > `do_blit()` fallback (`:588-773`, `424-565`) never references the
-> pattern fields at all. **Net effect: setting `PAT_FLAG` on `vro_cpyfm`/
-> `vrt_cpyfm`/line-A raster copy is observably identical to leaving it
-> clear** (bit 5 is stripped, the low 4 bits are interpreted the same,
-> no pattern is ever blitted) — a genuine EmuTOS source-level gap
-> (regression from the Line-A-raster refactor in `d7ac3170`, which moved
-> the `p_addr = vwk->patptr` assignment out of `setup_pattern` without
+> pattern fields at all. **Net effect on the palette path
+> (`plane_ct <= 8`): setting `PAT_FLAG` on `vro_cpyfm`/`vrt_cpyfm`/line-A
+> raster copy is observably identical to leaving it clear** (bit 5 is
+> stripped, the low 4 bits are interpreted the same, no pattern is ever
+> blitted) — a genuine EmuTOS source-level gap (regression from the
+> Line-A-raster refactor in `d7ac3170`, which moved the
+> `p_addr = vwk->patptr` assignment out of `setup_pattern` without
 > replacing it), not a spec-reading error. See global discrepancy log
 > **D-082**.
+
+> **On the truecolor path (`plane_ct > 8`, `CONF_WITH_VDI_16BIT`)
+> `PAT_FLAG` is not benign — it silently kills the whole copy
+> (measured, `D-VDI-23`).** `cpy_raster` strips bit 5 into its *own local*
+> `mode` (`vdi_raster.c:1347`) and then dispatches to the truecolor
+> routine **without passing it** (`:1363-1368`, `:1432-1437`). Both
+> truecolor routines re-read the raw, **unstripped** `INTIN[0]`
+> (`vro_cpyfm16:980`, `vrt_cpyfm16:1236`), so a mode of `0x10..0x1F`
+> matches no arm: `vro_cpyfm16`'s 16-entry switch has no `default:`
+> (`:1008-1219`) and falls straight out, `vrt_cpyfm16`'s has an explicit
+> `default: return` (`:1325-1326`). Either way the destination is left
+> untouched. This is the same class of gap as D-082 (a stripped value
+> computed and then not used) but a **different, stronger** observable:
+> not "the flag does nothing", but "the call does nothing".
+>
+> **Measured** on a real Atari TT running EmuTOS 1.4 whose build has
+> `CONF_WITH_VDI_16BIT` enabled (`tosdump/reference/EMUTOS14-RASTER.BIN`,
+> 2026-09-06): case 144 (`INTIN[0] = 0x13`, 16-plane memory forms) leaves
+> the destination buffer bit-identical to its fill, while case 127
+> (`INTIN[0] = 3`, identical geometry) copies 64 words. Since a NewTOS
+> workstation is *always* truecolor (`v_planes = 16`, memory MFDBs stamped
+> 16 planes), the truecolor rule is the one NewTOS reproduces
+> (`tos-api/src/vdi/raster.rs::vro_cpyfm`). **Unmeasured twin:**
+> `vrt_cpyfm16` cannot be measured on the user's TT at all — it
+> dereferences `CUR_WORK->ext->palette` (`:1233`), and `vwk->ext` is NULL
+> outside a truecolor mode (`vdi_control.c:450-452`), so a 4-plane TT
+> would fault. NewTOS' `vrt_cpyfm` therefore still follows the
+> strip-only rule; **open**, see `D-VDI-23`.
 
 ## Source / destination rectangle — `PTSIN` layout
 
@@ -150,10 +178,44 @@ Both rectangles are `arb_corner`-sorted to `(min,max)` order before use
 | `PTSIN[4]`, `PTSIN[5]` | destination upper-left `(x1, y1)` |
 | `PTSIN[6]`, `PTSIN[7]` | destination lower-right `(x2, y2)` |
 
-The blit copies a source rectangle of size `(x2−x1+1)×(y2−y1+1)` to the
-destination upper-left; the destination extent is derived from the source
-size, not from `PTSIN[6..7]` directly (`dont_clip`,
+The blit copies a source rectangle of size `(x2−x1+1)×(y2−y1+1)`; the
+**size** of the copy always comes from the source rectangle, never from
+`PTSIN[6..7]` (`dont_clip` sets `b_wd`/`b_ht` from `s_x/ymax − s_x/ymin`,
 `vdi_raster.c:882-900`).
+
+> **But `PTSIN[6..7]` is not ignored — it anchors the reverse-direction
+> copy (measured, `D-VDI-25`).** `dont_clip` copies `PTSIN[6]`/`PTSIN[7]`
+> into `info->d_xmax`/`d_ymax` **literally** (`:897-898`), and the
+> overlap-safe backwards path starts there:
+> `vro_cpyfm16` uses both (`:995-999`), the palette `bit_blt` recomputes
+> `d_xmax` from `d_xmin + b_wd − 1` (`:607`) but still takes `d_ymax` from
+> `PTSIN[7]` (`:672-674`). A caller whose destination lower-right is
+> **consistent** with the source size (`d_xmax = d_xmin + b_wd − 1`,
+> `d_ymax = d_ymin + b_ht − 1`) sees no difference between the forward and
+> backward path — that is every well-formed caller. A caller that passes an
+> **oversized** `PTSIN[6..7]` lands the block at the *lower-right* anchor
+> when the backward path is taken. Which path is taken is decided by
+> comparing the two computed **start addresses** (`src < dst`,
+> `vdi_raster.c:993`; `s_addr < d_addr`, `:668-669`), i.e. by where the two
+> forms happen to sit in memory — so for two *distinct* forms the outcome
+> is address-layout-dependent and not portable. Measured: `tosdump` case
+> 157 (src rect `(0,0)-(7,7)`, dest `(0,0)-(31,15)`, 16-plane forms, form A
+> below form B) lands EmuTOS' 8×8 block at rows 8..15 / cols 24..31 and
+> NewTOS' at rows 0..7 / cols 0..7.
+
+**`arb_corner` does *not* write back into the caller's `PTSIN`
+(measured, `D-VDI-24`).** The m68k VDI trap glue copies the caller's
+`PTSIN` into the VDI's own `lcl_ptsin` before dispatch and never copies
+it back (`vdi/vdi_asm.S:79-81,99-108`); `CONTRL`, `INTIN`, `INTOUT` and
+`PTSOUT` do point at the caller's arrays, `PTSIN` alone does not. So the
+in-place `arb_corner((Rect*)PTSIN)` in `cpy_raster` sorts a copy: after
+the call the caller's reversed corners are still reversed, and the blit
+still landed at the sorted rectangle. Measured on a real TT: `tosdump`
+cases 147 (`PTSIN = 7,7,0,0,…`) and 148 (`…,15,15,8,8`) come back with
+`PTSIN` **unchanged** on both machines while both blit to the same 64
+words. An implementation that sorts into locals (NewTOS
+`raster.rs::rect_from_ptsin`) is therefore the *correct* reproduction of
+the observable contract, not a deviation.
 
 ---
 
@@ -164,10 +226,13 @@ Source: `vdi_vro_cpyfm` (`vdi_raster.c:1470-1483`) → `cpy_raster`
 
 1. `arb_corner` both rectangles; `mode = INTIN[0]`. If `mode & ~0x1f` →
    **no-op** (`:1341-1342`).
-2. If bit 5 (`PAT_FLAG`) set, strip it and call `setup_pattern`, which
-   fills `p_nxpl`/`p_nxln`/`p_mask` — but the pattern pointer itself is
-   always `NULL` at this point and stays `NULL` (`:1345-1349`), so no
-   pattern is actually applied (D-082, see above).
+2. If bit 5 (`PAT_FLAG`) set, strip it **into `cpy_raster`'s own local
+   `mode`** and call `setup_pattern`, which fills `p_nxpl`/`p_nxln`/
+   `p_mask` — but the pattern pointer itself is always `NULL` at this
+   point and stays `NULL` (`:1345-1349`), so no pattern is ever applied
+   (D-082, see above). On the **truecolor** path the stripped `mode` is
+   then discarded: `vro_cpyfm16` re-reads the raw `INTIN[0]` and
+   `0x10..0x1F` copies nothing at all (`D-VDI-23`, boxed note above).
 3. `setup_info` fills the blit frame from both MFDBs (screen substitution
    for `fd_addr == NULL`); returns "nothing to do" if the plane count is
    invalid (`> 8`, or `> 16` under `CONF_WITH_VDI_16BIT`) or clipping took
@@ -317,6 +382,18 @@ No `INTOUT`/`PTSOUT`.
    (`vdi_blit.S:1055-1056`), and the C `bit_blt`/`do_blit` fallback used
    for the hardware blitter / ColdFire never references the pattern
    fields at all. See **D-082** (global discrepancy log).
+10. **On the truecolor path `PAT_FLAG` makes the whole call a no-op**
+   (`plane_ct > 8` + `CONF_WITH_VDI_16BIT`): `vro_cpyfm16`/`vrt_cpyfm16`
+   re-read the unstripped `INTIN[0]` (`:980`, `:1236`) and `0x10..0x1F`
+   matches no switch arm. Measured on a real TT (case 144). `D-VDI-23`.
+11. **The caller's `PTSIN` is never modified.** `arb_corner` sorts the
+   VDI's *local* copy (`vdi_asm.S:79-81`), so reversed corners come back
+   reversed. Measured (cases 147/148). `D-VDI-24`.
+12. **`PTSIN[6..7]` anchors the backwards copy.** The *size* is always the
+   source's, but the reverse-direction start corner is taken literally
+   from `PTSIN[6..7]` (`dont_clip:897-898`, used at `:995-999`); a
+   well-formed caller cannot observe it, an oversized destination
+   rectangle can. Measured (case 157). `D-VDI-25`.
 
 ## Dependencies
 
@@ -357,6 +434,22 @@ No `INTOUT`/`PTSOUT`.
   EmuTOS across its whole history back to the source's initial DRI
   import; no comparison possible without ROM disassembly).
 
+### Discrepancies found by the first raster measurement (2026-09-06)
+
+First-ever measured run of this group: `tosdump/cases/vdi-raster.tsv`
+(59 cases, CRC `702EEA7D`) against a real Atari TT running EmuTOS 1.4
+(`reference/EMUTOS14-RASTER.BIN`) and a real Raspberry Pi 4 running
+NewTOS (`reference/NEWTOS-RASTER.BIN`).
+
+- **D-VDI-23** — `PAT_FLAG` on the truecolor path aborts the copy
+  (case 144). Spec corrected, NewTOS `vro_cpyfm` fixed.
+- **D-VDI-24** — `arb_corner` does **not** write the sorted rectangle back
+  into the caller's `PTSIN`; the trap glue works on a local copy
+  (cases 147/148). Spec corrected; NewTOS was already right.
+- **D-VDI-25** — `PTSIN[6..7]` anchors the reverse-direction copy (case
+  157). Spec corrected; NewTOS deviates, **open** — see the discrepancy
+  log for why a faithful reproduction is address-layout-dependent.
+
 ### Discrepancies found in this re-validation (2026-07-10)
 - **D-082** (global log) — `PAT_FLAG` (bit 5 of `vro_cpyfm`/`vrt_cpyfm`/
   line-A raster copy's mode byte) never applies a pattern; see the boxed
@@ -390,6 +483,14 @@ No `INTOUT`/`PTSOUT`.
   means treating `PAT_FLAG` as a no-op flag, not building pattern
   support into `vro_cpyfm`/`vrt_cpyfm`. (Pattern-fill for *fill* opcodes,
   e.g. `v_fillarea`/`vr_recfl`, is unrelated and out of this doc's scope.)
+- **…but on the truecolor path `PAT_FLAG` must abort the call**
+  (`D-VDI-23`, measured case 144). A NewTOS workstation is always
+  truecolor (`v_planes = 16`; memory MFDBs stamped 16 planes), so
+  `vro_cpyfm` gates on the *destination* plane count exactly as
+  `cpy_raster` does: `plane_ct > 8` **and** bit 4 set ⇒ return without
+  touching the destination; `plane_ct <= 8` keeps the strip-only rule.
+  Implemented in `tos-api/src/vdi/raster.rs::vro_cpyfm`
+  (`PALETTE_PLANES_MAX`).
 - `vr_trnfm` matters for unpacking icon/image data authored in standard
   form; keep both directions and the source-driven `fd_stand` toggle.
 - The MFDB is a **fixed ABI** parsed by ported programs — match the field
