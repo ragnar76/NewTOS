@@ -210,8 +210,17 @@ pub fn v_contourfill(pb: &Vdipb, vwk: &Vwk, backend: &dyn RasterBackend) {
         // against a *masked* screen colour (`:763`). So a seed pixel whose
         // overlay bit is set (a `v_clrwk`-cleared background, `0xFFFF`)
         // never equals any masked screen word and the fill draws nothing.
-        // That asymmetry is EmuTOS' behaviour, reproduced deliberately: the
-        // mask is applied to the screen side only.
+        // The mask is therefore applied to the screen side only, as EmuTOS
+        // does.
+        //
+        // **The asymmetry is however not observable on NewTOS today**
+        // (2026-09-06, VDI-OVL-001): the 24-bit device pixel cannot store
+        // `OVERLAY_BIT`, so `device_to_rgb565` never yields a word with it
+        // set. Measured on `board-qemu-virt`, a `v_clrwk`-cleared background
+        // and a pen-0 fill are the same framebuffer word (`0xFFFFFFFF`) and
+        // both read back as `0xFFDF`, so a seed-mode fill on the cleared
+        // background *fills* here where EmuTOS draws nothing. See
+        // `docs/STATUS.md` (2026-09-06).
         let c = if truecolor {
             backend.device_to_rgb565(backend.get_device_pixel(sx, sy))
         } else {

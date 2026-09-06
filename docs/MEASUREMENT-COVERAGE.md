@@ -95,11 +95,25 @@ against 1920×1080 with 16. Matching the TT there would make us *wrong*.
    itself, which is where EmuTOS' `vdimouse_init` resets all four devices
    (`vdi/vdi_control.c:563`), so 0 is the right answer for that sequence; the
    reset is now implemented too (`v_opnwk`, `tos-api/src/vdi/workstation.rs`).
-2. **Green is quantised to 5 bits in the device round-trip** — `v_get_pixel`
-   after `v_clrwk` reports `0xFFDF` where a real Falcon reports `0xFFFF`
-   (`kernel/src/vdi_backend.rs`, `device_to_rgb565`). RGB565 has 6 green bits.
-   Affects **every drawn colour**, not just this readback. The TT could not show
-   it — it ran 4-plane. **Touches the whole colour path; plan it.**
+2. **`v_get_pixel` after `v_clrwk` reports `0xFFDF` where a Falcon reports
+   `0xFFFF`** (`kernel/src/vdi_backend.rs`, `device_to_rgb565`). The TT could
+   not show it — it ran 4-plane.
+
+   **Cause corrected 2026-09-06 (VDI-OVL-001).** This item previously read
+   "green is quantised to 5 bits, RGB565 has 6". That diagnosis is **wrong**:
+   EmuTOS' truecolor colour model *has* five green bits — `set_color16` packs
+   `(r<<11)|(g<<6)|b` from 5-bit guns (`vdi_col.c:601-614`) and `vq_color16`
+   reads green back as `(rgb>>6)&0x1f` (`vdi_col.c:802-838`). Bit 5 is
+   `OVERLAY_BIT` (`vdi_fill.c:26`), not a green LSB, and our 5-bit
+   quantisation is faithful. What is actually lost is the overlay bit itself,
+   which `v_clrwk`'s `memset(…, 0xff, …)` sets and a 24-bit device pixel
+   cannot hold. Measured on `board-qemu-virt`: a cleared screen and a pen-0
+   fill are the *same* framebuffer word `0xFFFFFFFF`. It affects three
+   observable paths (`v_get_pixel`, `vro_cpyfm` Screen→Memory, and
+   `v_contourfill` seeded on the cleared background), **not** every drawn
+   colour. Diagnosis, blast radius, fix options and the open Falcon/VIDEL
+   spec question: `docs/STATUS.md`, Recent Decisions 2026-09-06.
+   **Still to be planned, not started.**
 
 ---
 

@@ -94,6 +94,17 @@ impl MemBackend {
     /// `v_get_pixel` substitute check so that the expected value does not come
     /// back out of the same two trait methods the implementation calls.
     /// Outside the screen it reads 0, as `read_pixel` does.
+    ///
+    /// **Note (2026-09-06, VDI-OVL-001):** this double's colour model is a
+    /// true 6-bit-green RGB565 (`(g >> 2) << 5` here, and the matching
+    /// expansion in [`RasterBackend::rgb565_to_device`] below), *not* the
+    /// kernel backend's — and not EmuTOS' either, whose truecolor model is
+    /// 5-bit guns plus `OVERLAY_BIT` at bit 5 (`vdi_col.c:601-614,802-838`,
+    /// `vdi_fill.c:26`). The double is internally consistent, so these tests
+    /// pass; the side effect is that they cannot see the kernel backend's
+    /// dropped overlay bit. Do **not** "harmonise" this with
+    /// `kernel/src/vdi_backend.rs` — that would hide the gap rather than
+    /// close it. See `docs/STATUS.md` (2026-09-06).
     pub fn screen_word(&self, x: i16, y: i16) -> u16 {
         if !Self::inside(x, y) {
             return 0;

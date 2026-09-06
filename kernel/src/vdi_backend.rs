@@ -395,9 +395,21 @@ impl RasterBackend for VdiScreen {
     }
 
     fn device_to_rgb565(&self, argb: u32) -> u16 {
-        // XRGB8888 → RGB555-in-565: keep the top 5 bits of each 8-bit gun
-        // (bit 5 / green LSB stays 0 by construction). The framebuffer is
-        // 5-bit-quantised, so this recovers the exact stored value.
+        // XRGB8888 → RGB555-in-565: keep the top 5 bits of each 8-bit gun.
+        // Five bits per gun is the *EmuTOS* truecolor colour model, not a
+        // reduction of it: `set_color16` packs `(r<<11)|(g<<6)|b` from 5-bit
+        // guns and `vq_color16` reads green back as `(rgb>>6)&0x1f`
+        // (`vdi_col.c:601-614,802-838`). Bit 5 is `OVERLAY_BIT`
+        // (`vdi_fill.c:26`), not a green LSB. The framebuffer is
+        // 5-bit-quantised, so this recovers the exact stored colour.
+        //
+        // **VDI-OVL-001 (2026-09-06).** What it cannot recover is
+        // `OVERLAY_BIT` itself: it carries no colour, so the 24-bit device
+        // pixel has nowhere to keep it, and the only producer of an
+        // overlay-set word — `v_clrwk`'s `memset(…, 0xff, …)`
+        // (`vdi_control.c:600-618`) — lands on the same `0xFFFFFFFF` as a
+        // pen-0 fill (measured, `board-qemu-virt`). Observable consequences
+        // and the fix options are in `docs/STATUS.md` (2026-09-06).
         let r5 = ((argb >> 19) & 0x1f) as u16;
         let g5 = ((argb >> 11) & 0x1f) as u16;
         let b5 = ((argb >> 3) & 0x1f) as u16;
@@ -451,11 +463,19 @@ impl RasterBackend for VdiScreen {
         // Same pixels, same values as the default: `Framebuffer::clear` fills
         // `[0, width) x [0, height)` at `y * stride_px + x` — exactly the
         // addresses `put_device_pixel` would have written — with the identical
-        // `rgb565_to_device(word)`, so a cleared screen stays bit-for-bit what it
-        // was (both `0xFFFF` and the pseudo-palette's white `0xFFDF` fold to
-        // `0xFFFFFF`, five green bits either way). The pitch padding a VideoCore
-        // line may carry past `width` is left alone, as the default left it; it
-        // is never scanned out.
+        // `rgb565_to_device(word)`, so a cleared screen stays bit-for-bit what
+        // this backend's own default would have written. The pitch padding a
+        // VideoCore line may carry past `width` is left alone, as the default
+        // left it; it is never scanned out.
+        //
+        // **VDI-OVL-001 (2026-09-06).** Both this override and the default lose
+        // `OVERLAY_BIT`: `0xFFFF` (the cleared screen) and `0xFFDF` (the
+        // pseudo-palette's white) both fold to `0xFFFFFF`, because the bit
+        // carries no colour and the 24-bit device pixel has nowhere to keep it.
+        // A Falcon keeps the two words apart; NewTOS does not. This is a
+        // property of `rgb565_to_device`, not of the bulk fill — see
+        // [`RasterBackend::device_to_rgb565`] and `docs/STATUS.md`
+        // (2026-09-06).
         let fb = active_fb();
         fb.clear(self.rgb565_to_device(word));
         // Then the flush the default performs, i.e. this backend's normal
