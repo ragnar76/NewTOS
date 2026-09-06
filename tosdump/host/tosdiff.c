@@ -317,7 +317,8 @@ static int cmd_compare(const char *cases_path, const char *a_path,
 		        a.h.area);
 		goto refuse;
 	}
-	if (a.h.area != TD_AREA_VDI && a.h.area != TD_AREA_AES) {
+	if (a.h.area != TD_AREA_VDI && a.h.area != TD_AREA_AES &&
+	    a.h.area != TD_AREA_RASTER) {
 		fprintf(stderr,
 		        "tosdiff: comparing area %s needs the retclass and capture "
 		        "columns of the case table, which land with task T7; "
@@ -352,6 +353,14 @@ static int cmd_compare(const char *cases_path, const char *a_path,
 		for (fi = 0; fields[fi].name; fi++) {
 			const struct td_field *f = &fields[fi];
 			uint16_t idx;
+
+			/* Recorded but not comparable: a field whose two values
+			 * cannot be equal by construction, so a difference there
+			 * would measure the linker rather than the API.  Today
+			 * only the MFDB pointer slots inside a raster contrl;
+			 * see record.h. */
+			if (!f->compare)
+				continue;
 
 			for (idx = 0; idx < f->count; idx++) {
 				uint32_t va = field_get(ra, f, idx);

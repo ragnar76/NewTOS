@@ -126,6 +126,42 @@ else
 	fails=$((fails + 1))
 fi
 
+# --- the raster area: a field that is recorded and never compared --------
+#
+# contrl[7..14] hold the two MFDB pointers, at the target's own pointer width
+# and pointing at the dumper's own buffers.  They cannot be equal across the
+# two machines, so a difference there would measure the linker; the field
+# descriptor marks them compare = 0.  Prove it end to end: poke one word of a
+# compared field and one word of a not-compared field into the same record,
+# and only the first may be reported.
+RASTBIN="$BUILD/stub-raster.bin"
+RASTTSV="$BUILD/stub-raster.tsv"
+if [ -f "$RASTBIN" ] && [ -f "$RASTTSV" ]; then
+	# buf_a[0] is at record offset 1636; contrl[7] is at 8 + 7*2 = 22.
+	cp "$RASTBIN" "$TMP/r_a.bin"
+	cp "$RASTBIN" "$TMP/r_b.bin"
+	printf '\125\125' | dd of="$TMP/r_b.bin" bs=1 seek=$((32 + 1636)) \
+	    conv=notrunc status=none
+	printf '\052\052' | dd of="$TMP/r_b.bin" bs=1 seek=$((32 + 22)) \
+	    conv=notrunc status=none
+
+	"$TOSDIFF" "$RASTTSV" "$TMP/r_a.bin" "$TMP/r_b.bin" >"$TMP/rast.out" 2>&1
+	check "the raster dumps differ" 1 $?
+	grep_out "the compared buffer word is reported" "$TMP/rast.out" "buf_a\\[0\\]"
+	if grep -q "contrl_mfdb" "$TMP/rast.out"; then
+		echo "  FAIL the MFDB pointer slots were compared; they are"
+		echo "       recorded evidence, not a comparable field"
+		fails=$((fails + 1))
+	fi
+
+	"$TOSDIFF" --validate "$RASTBIN" >"$TMP/rastval.out" 2>&1
+	check "validate accepts the raster dump" 0 $?
+	grep_out "validate names the raster area" "$TMP/rastval.out" "VDI-RASTER"
+else
+	echo "  FAIL stub raster dump missing: $RASTBIN / $RASTTSV"
+	fails=$((fails + 1))
+fi
+
 if [ "$fails" -eq 0 ]; then
 	echo "  ok"
 	exit 0

@@ -23,6 +23,43 @@ static struct td_stub_call *log_slot(void)
 	return &overflow;
 }
 
+/*
+ * The stub's MFDB.  Same layout rule as the runner's: the struct the
+ * target's own compiler produces IS the ABI, because a real VDI reads the
+ * caller's struct.
+ */
+struct td_stub_mfdb {
+	void   *fd_addr;
+	int16_t fd_w;
+	int16_t fd_h;
+	int16_t fd_wdwidth;
+	int16_t fd_stand;
+	int16_t fd_nplanes;
+	int16_t fd_r1;
+	int16_t fd_r2;
+	int16_t fd_r3;
+};
+
+/* Read pointer n back out of contrl, exactly where a GEM binding puts it. */
+static void *stub_contrl_ptr(const int16_t *contrl, int n)
+{
+	const int nptrints = (int)(sizeof(void *) / sizeof(int16_t));
+	void *p;
+
+	memcpy(&p, &contrl[7 + n * nptrints], sizeof p);
+	return p;
+}
+
+static void stub_raster(const int16_t *contrl)
+{
+	struct td_stub_mfdb *dst = (struct td_stub_mfdb *)stub_contrl_ptr(contrl, 1);
+
+	if (!dst || !dst->fd_addr)
+		return;
+	dst->fd_stand = (int16_t)TD_STUB_RAST_STAND;
+	((int16_t *)dst->fd_addr)[0] = (int16_t)TD_STUB_RAST_PIXEL;
+}
+
 int32_t td_abi_vdi(int16_t *contrl, int16_t *intin, int16_t *ptsin,
                    int16_t *intout, int16_t *ptsout)
 {
@@ -41,6 +78,16 @@ int32_t td_abi_vdi(int16_t *contrl, int16_t *intin, int16_t *ptsin,
 	c->ptsin[1] = ptsin[1];
 
 	switch (contrl[0]) {
+	case 109:                       /* vro_cpyfm */
+	case 110:                       /* vr_trnfm  */
+	case 121:                       /* vrt_cpyfm */
+		stub_raster(contrl);
+		contrl[2] = 0;              /* no PTSOUT, no INTOUT */
+		contrl[4] = 0;
+		/* a real VDI may not do this -- see stub_abi.h */
+		intin[0] = (int16_t)TD_STUB_INTIN_MARK;
+		ptsin[0] = (int16_t)TD_STUB_PTSIN_MARK;
+		break;
 	case 100:                       /* v_opnvwk */
 		contrl[6] = TD_STUB_VWK_HANDLE;
 		for (i = 0; i < 45; i++)

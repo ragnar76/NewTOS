@@ -922,6 +922,299 @@ int td_aes_cases_load(struct td_aes_case_table *t, const char *path,
 	return rc;
 }
 
+/* ------------------------------------------------------------------ */
+/* VDI raster table parsing                                            */
+/* ------------------------------------------------------------------ */
+/*
+ * The guard is documented in cases.h.  Its job is not to be clever: it is to
+ * make it impossible to state a case that walks off a buffer on a machine
+ * whose VDI does no bounds checking of its own.
+ */
+
+/* One MFDB column: buffer, fd_w, fd_h, fd_wdwidth, fd_stand, fd_nplanes. */
+static int parse_mfdb(const char *s, size_t len, struct td_rast_mfdb *out,
+                      const char **what)
+{
+	int16_t v[6];
+	uint16_t n = 0;
+	int rc;
+
+	rc = parse_list(s, len, v, 6, &n);
+	if (rc != 0) {
+		*what = "MFDB column is not a list of numbers";
+		return rc;
+	}
+	if (n != 6) {
+		*what = "an MFDB column needs six values: buffer, fd_w, fd_h, "
+		        "fd_wdwidth, fd_stand, fd_nplanes";
+		return TD_CASE_ERR_COLUMNS;
+	}
+
+	out->buffer  = v[0];
+	out->w       = v[1];
+	out->h       = v[2];
+	out->wdwidth = v[3];
+	out->stand   = v[4];
+	out->nplanes = v[5];
+
+	if (out->buffer != TD_RAST_BUF_A && out->buffer != TD_RAST_BUF_B) {
+		*what = "the buffer field of an MFDB is 0 (A) or 1 (B); there is no "
+		        "screen MFDB in this table -- the two machines' screens "
+		        "differ in size and depth, so nothing measured against one "
+		        "could be compared";
+		return TD_CASE_ERR_GEOMETRY;
+	}
+	if (out->w <= 0 || out->h <= 0 || out->wdwidth <= 0 || out->nplanes <= 0) {
+		*what = "fd_w, fd_h, fd_wdwidth and fd_nplanes must all be positive";
+		return TD_CASE_ERR_GEOMETRY;
+	}
+	if (out->stand != 0 && out->stand != 1) {
+		*what = "fd_stand is 0 (device form) or 1 (standard form)";
+		return TD_CASE_ERR_GEOMETRY;
+	}
+	if (out->nplanes > 16) {
+		*what = "fd_nplanes above 16 is past the plane cap the VDI itself "
+		        "applies (vdi_raster.c:963), so the call could only ever be "
+		        "a no-op -- and the geometry bound below assumes 16";
+		return TD_CASE_ERR_GEOMETRY;
+	}
+	if (out->w > (int16_t)(out->wdwidth * 16)) {
+		*what = "fd_w is wider than fd_wdwidth describes; fd_wdwidth is "
+		        "(fd_w + 15) / 16";
+		return TD_CASE_ERR_GEOMETRY;
+	}
+	/* The bound that makes a mistyped digit harmless: sixteen WORDs per
+	 * sixteen pixels covers the TT's planar reading (fd_nplanes <= 16
+	 * interleaved WORDs) and NewTOS' chunky one (one WORD per pixel)
+	 * alike.  32-bit arithmetic so the product cannot wrap. */
+	if ((int32_t)out->h * (int32_t)out->wdwidth * 16L >
+	    (int32_t)TD_RAST_BUF_WORDS) {
+		*what = "the form does not fit the dumper's buffer: "
+		        "fd_h * fd_wdwidth * 16 must be at most TD_RAST_BUF_WORDS";
+		return TD_CASE_ERR_GEOMETRY;
+	}
+	return 0;
+}
+
+/* arb_corner (vdi_raster.c:116-124): the VDI sorts both rectangles into
+ * (min,max) order before it uses them, so the guard must check what the VDI
+ * will actually address, not what the table happens to spell. */
+static void sort_rect(const int16_t *in, int16_t *x1, int16_t *y1,
+                      int16_t *x2, int16_t *y2)
+{
+	*x1 = in[0] < in[2] ? in[0] : in[2];
+	*x2 = in[0] < in[2] ? in[2] : in[0];
+	*y1 = in[1] < in[3] ? in[1] : in[3];
+	*y2 = in[1] < in[3] ? in[3] : in[1];
+}
+
+static int check_rect(const int16_t *pts, const struct td_rast_mfdb *m,
+                      int16_t ext_w, int16_t ext_h, const char **what)
+{
+	int16_t x1, y1, x2, y2;
+
+	sort_rect(pts, &x1, &y1, &x2, &y2);
+	if (ext_w > 0) {                   /* destination: extent comes from src */
+		x2 = (int16_t)(x1 + ext_w - 1);
+		y2 = (int16_t)(y1 + ext_h - 1);
+	}
+	if (x1 < 0 || y1 < 0 || x2 >= m->w || y2 >= m->h) {
+		*what = "the rectangle leaves the form it addresses; EmuTOS does "
+		        "not bounds-check a memory MFDB (vdi_raster.c:915-950), so "
+		        "the blit would scribble over the machine";
+		return TD_CASE_ERR_GEOMETRY;
+	}
+	return 0;
+}
+
+static int parse_rast_line(const char **col, const size_t *col_len,
+                           struct td_rast_case *c, const char **what)
+{
+	int16_t fill[2], v;
+	uint16_t nfill = 0;
+	int rc;
+
+	rc = parse_value(col[0], col_len[0], &v);
+	if (rc != 0) {
+		*what = "opcode is not a number";
+		return rc;
+	}
+	/* The opcode guard, before anything else about the line matters. */
+	if (v != 109 && v != 110 && v != 121) {
+		*what = "only the three raster opcodes belong in this table: "
+		        "109 vro_cpyfm, 110 vr_trnfm, 121 vrt_cpyfm";
+		return TD_CASE_ERR_UNSAFE_OPCODE;
+	}
+	c->opcode = v;
+
+	rc = parse_list(col[1], col_len[1], c->intin, TD_RAST_INTIN_N,
+	                &c->n_intin);
+	if (rc != 0) {
+		*what = "intin column";
+		return rc;
+	}
+	rc = parse_list(col[2], col_len[2], c->ptsin, TD_RAST_PTSIN_N,
+	                &c->n_ptsin);
+	if (rc != 0) {
+		*what = "ptsin column";
+		return rc;
+	}
+	if (c->n_ptsin & 1) {
+		*what = "ptsin holds an odd number of values, so it cannot be a "
+		        "list of x,y points";
+		return TD_CASE_ERR_ODD_PTSIN;
+	}
+
+	rc = parse_mfdb(col[3], col_len[3], &c->src, what);
+	if (rc != 0)
+		return rc;
+	rc = parse_mfdb(col[4], col_len[4], &c->dst, what);
+	if (rc != 0)
+		return rc;
+
+	rc = parse_list(col[5], col_len[5], fill, 2, &nfill);
+	if (rc != 0) {
+		*what = "fill column";
+		return rc;
+	}
+	if (nfill != 2) {
+		*what = "the fill column is two seeds: buffer A, buffer B";
+		return TD_CASE_ERR_COLUMNS;
+	}
+	c->seed_a = (uint16_t)fill[0];
+	c->seed_b = (uint16_t)fill[1];
+
+	/*
+	 * The rectangles.  vro_cpyfm and vrt_cpyfm read PTSIN[0..7]; vr_trnfm
+	 * reads none.  A short PTSIN would leave the rest at the 0xDEAD poison,
+	 * which is -8531 -- a coordinate the VDI would happily blit to.
+	 */
+	if (c->opcode == 110) {
+		if (c->n_ptsin != 0) {
+			*what = "vr_trnfm reads no rectangle; leave ptsin empty";
+			return TD_CASE_ERR_GEOMETRY;
+		}
+		/*
+		 * vr_trnfm walks fd_nplanes planes of fd_h * fd_wdwidth WORDs,
+		 * both taken from the SOURCE MFDB (vdi_raster.c:298-300), and
+		 * writes as many into the destination buffer.  No extra bound is
+		 * needed: fd_nplanes is capped at 16 and parse_mfdb already
+		 * required fd_h * fd_wdwidth * 16 to fit, so the transformed
+		 * form fits either buffer by construction.
+		 */
+		return 0;
+	}
+
+	if (c->n_ptsin != 8) {
+		*what = "vro_cpyfm and vrt_cpyfm read PTSIN[0..7]; state all eight "
+		        "values, or the rest stays poisoned and the blit goes wild";
+		return TD_CASE_ERR_GEOMETRY;
+	}
+	{
+		int16_t x1, y1, x2, y2;
+
+		rc = check_rect(c->ptsin, &c->src, 0, 0, what);
+		if (rc != 0)
+			return rc;
+		/* The destination extent is the SOURCE extent, not PTSIN[6..7]
+		 * (dont_clip, vdi_raster.c:882-900) -- so that is what the copy
+		 * addresses and what has to fit. */
+		sort_rect(c->ptsin, &x1, &y1, &x2, &y2);
+		rc = check_rect(c->ptsin + 4, &c->dst, (int16_t)(x2 - x1 + 1),
+		                (int16_t)(y2 - y1 + 1), what);
+		if (rc != 0)
+			return rc;
+		/* PTSIN[6..7] as WRITTEN has to fit as well, even though the copy
+		 * extent does not come from it: the overlap-reversal path starts
+		 * from d_xmax/d_ymax, which dont_clip takes literally out of those
+		 * two slots (vdi_raster.c:895-898, used at :995-999). */
+		rc = check_rect(c->ptsin + 4, &c->dst, 0, 0, what);
+		if (rc != 0)
+			return rc;
+	}
+	return 0;
+}
+
+int td_rast_cases_parse(struct td_rast_case_table *t, const char *buf,
+                        size_t len, struct td_case_error *err)
+{
+	struct td_line_iter it;
+	const char *line;
+	size_t line_len;
+	uint16_t line_no;
+	int is_case;
+
+	memset(t, 0, sizeof *t);
+	t->crc = td_crc32((const uint8_t *)buf, len);
+	if (err) {
+		err->line = 0;
+		err->what = NULL;
+	}
+
+	td_line_iter_init(&it, buf, len);
+	while (td_line_iter_next(&it, &line, &line_len, &line_no, &is_case)) {
+		const char *col[TD_RAST_CASE_COLUMNS];
+		size_t col_len[TD_RAST_CASE_COLUMNS];
+		const char *what = NULL;
+		struct td_rast_case *c;
+		int rc;
+
+		if (!is_case)
+			continue;
+
+		/* No preludes here: the raster opcodes read no attribute the reset
+		 * does not already set.  Refused rather than mis-parsed, because
+		 * host/casefile.c would skip such a line and the runner would not,
+		 * and the two must agree on which line carries which case id. */
+		if (td_case_line_is_prelude(line, line_len)) {
+			fail(err, line_no, "the raster table has no preludes");
+			return TD_CASE_ERR_UNSAFE_OPCODE;
+		}
+
+		if (split_columns(line, line_len, col, col_len,
+		                  TD_RAST_CASE_COLUMNS) < TD_RAST_CASE_COLUMNS) {
+			fail(err, line_no, "needs seven tab separated columns");
+			return TD_CASE_ERR_COLUMNS;
+		}
+		if (t->count >= TD_RAST_MAX_CASES) {
+			fail(err, line_no, "more cases than TD_RAST_MAX_CASES");
+			return TD_CASE_ERR_TOO_MANY_CASES;
+		}
+
+		c = &t->cases[t->count];
+		memset(c, 0, sizeof *c);
+		c->line = line_no;
+
+		rc = parse_rast_line(col, col_len, c, &what);
+		if (rc != 0) {
+			fail(err, line_no, what);
+			return rc;
+		}
+
+		td_case_line_comment_n(line, line_len, TD_RAST_CASE_COLUMNS,
+		                       c->comment, TD_COMMENT_LEN);
+		t->count++;
+	}
+
+	return 0;
+}
+
+int td_rast_cases_load(struct td_rast_case_table *t, const char *path,
+                       struct td_case_error *err)
+{
+	char *raw;
+	size_t got;
+	int rc;
+
+	rc = slurp(path, &raw, &got, err);
+	if (rc != 0)
+		return rc;
+
+	rc = td_rast_cases_parse(t, raw, got, err);
+	free(raw);
+	return rc;
+}
+
 const char *td_case_error_text(int rc)
 {
 	switch (rc) {
@@ -939,6 +1232,8 @@ const char *td_case_error_text(int rc)
 	                                        "intout array";
 	case TD_CASE_ERR_UNSAFE_OPCODE:  return "the table names an opcode that "
 	                                        "may not be issued";
+	case TD_CASE_ERR_GEOMETRY:       return "a form or a rectangle would "
+	                                        "leave the dumper's buffer";
 	default:                         return "unknown error";
 	}
 }

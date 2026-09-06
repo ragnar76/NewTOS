@@ -29,11 +29,16 @@
 /*
  * How many tab separated columns a case line of this area has.  Five for the
  * VDI form and for the BIOS / XBIOS / GEMDOS form (opcode, args, retclass,
- * capture, comment), seven for the AES form (spec section 6).
+ * capture, comment), seven for the AES form (spec section 6) and seven for
+ * the VDI raster form (cases.h).
  */
 static int columns_for_area(uint16_t area)
 {
-	return (area == TD_AREA_AES) ? TD_AES_CASE_COLUMNS : TD_CASE_COLUMNS;
+	switch (area) {
+	case TD_AREA_AES:    return TD_AES_CASE_COLUMNS;
+	case TD_AREA_RASTER: return TD_RAST_CASE_COLUMNS;
+	default:             return TD_CASE_COLUMNS;
+	}
 }
 
 int td_casefile_read(struct td_casefile *cf, const char *path, uint16_t area,

@@ -74,10 +74,44 @@ struct td_call_frame {
 	uint8_t  capture[TD_CALL_CAPTURE_LEN];
 };
 
+/*
+ * The raster frame.  Fifteen CONTRL words rather than twelve, because an
+ * AArch64 caller packs the destination MFDB pointer at CONTRL[11..14]
+ * (gemlib gem_vdiP.h:177,204; VDI_CNTRLMAX = 15, mt_gem.h:3508), and two
+ * pixel buffers, which are what a raster call actually produces.
+ */
+struct td_raster_arrays {
+	int16_t contrl[TD_RAST_CONTRL_N];
+	int16_t intin[TD_RAST_INTIN_N];
+	int16_t ptsin[TD_RAST_PTSIN_N];
+	int16_t intout[TD_RAST_INTOUT_N];
+	int16_t ptsout[TD_RAST_PTSOUT_N];
+	int16_t buf_a[TD_RAST_BUF_WORDS];
+	int16_t buf_b[TD_RAST_BUF_WORDS];
+};
+
 /* Fill every array and the capture buffer with the 0xDEAD pattern. */
 void td_poison_vdi(struct td_vdi_arrays *a);
 void td_poison_aes(struct td_aes_arrays *a);
 void td_poison_call(struct td_call_frame *f);
+
+/*
+ * Poison the parameter arrays of a raster frame -- but NOT the two pixel
+ * buffers.  Those are the operand of the call, and a copy out of an all-
+ * 0xDEAD source proves nothing about where the bits went; they are laid
+ * with td_rast_fill instead, which gives every word a different value so
+ * that a permutation, an off-by-one row or an untouched region is visible.
+ */
+void td_poison_raster(struct td_raster_arrays *a);
+
+/*
+ * The buffer pattern.  A pure function of (seed, index) in fixed-width
+ * arithmetic, so both builds lay down the identical words without the case
+ * table having to spell 512 of them out.  Two different seeds give a source
+ * and a destination that no logic op can confuse with one another.
+ */
+uint16_t td_rast_fill_word(uint16_t seed, uint16_t index);
+void     td_rast_fill(int16_t *buf, uint16_t words, uint16_t seed);
 
 /* Writers.  `rec` must be at least the area's record size. */
 void td_vdi_record_write(uint8_t *rec, uint16_t case_id, uint16_t opcode,
@@ -87,6 +121,12 @@ void td_aes_record_write(uint8_t *rec, uint16_t case_id, uint16_t opcode,
                          int32_t ret, const struct td_aes_arrays *after);
 void td_call_record_write(uint8_t *rec, uint16_t case_id, uint16_t opcode,
                           const struct td_call_frame *f);
+/* `src_mfdb` / `dst_mfdb` are the TD_RAST_MFDB_N WORD fields that follow
+ * fd_addr, read back out of the two MFDBs after the call. */
+void td_raster_record_write(uint8_t *rec, uint16_t case_id, uint16_t opcode,
+                            int32_t ret, const struct td_raster_arrays *after,
+                            const int16_t *contrl_before,
+                            const int16_t *src_mfdb, const int16_t *dst_mfdb);
 
 /* ---- field descriptors (used by the comparator to name a difference) --- */
 
@@ -96,12 +136,24 @@ struct td_field {
 	uint16_t    count;  /* element count                          */
 	uint8_t     width;  /* element width in bytes: 2 or 4         */
 	uint8_t     is_signed;
+	/*
+	 * 0 = recorded but never compared.  Reserved for a field that CANNOT
+	 * be equal across the two machines by construction and whose
+	 * inequality therefore measures nothing -- today only the MFDB
+	 * pointer slots inside a raster CONTRL, which hold the address of one
+	 * of the dumper's own buffers at the target's own pointer width.
+	 * This is NOT a per-case exception mechanism (spec section 6 forbids
+	 * one): it is a property of the field, the same for every case, and
+	 * the data still lands in the dump.
+	 */
+	uint8_t     compare;
 };
 
 /* NULL-name-terminated tables. */
 extern const struct td_field td_vdi_fields[];
 extern const struct td_field td_aes_fields[];
 extern const struct td_field td_call_fields[];
+extern const struct td_field td_raster_fields[];
 
 const struct td_field *td_area_fields(uint16_t area);
 

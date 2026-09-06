@@ -41,6 +41,7 @@
 #define TD_AREA_GEMDOS      3
 #define TD_AREA_VDI         4
 #define TD_AREA_AES         5
+#define TD_AREA_RASTER      6
 
 /* ------------------------------------------------------------------ */
 /* Case tables (spec section 6)                                        */
@@ -122,6 +123,102 @@
 #define TD_AES_OFF_RET       106   /* i32, the trap's d0 return           */
 #define TD_AES_OFF_RESERVED  110   /* 10 bytes, zero                      */
 #define TD_AES_RESERVED_LEN   10
+
+/* ------------------------------------------------------------------ */
+/* VDI raster record -- 3696 bytes                                     */
+/* ------------------------------------------------------------------ */
+/*
+ * The raster opcodes (109 vro_cpyfm, 110 vr_trnfm, 121 vrt_cpyfm) do not fit
+ * the VDI record, and not because they are bigger: their result is MEMORY,
+ * not a number in INTOUT.  Three things follow, and each of them is a field
+ * the VDI record has no room for.
+ *
+ *   1. The forms are described by two MFDBs whose pointers live in CONTRL,
+ *      packed at 7 + n * (sizeof(void*) / sizeof(WORD)) (gemlib
+ *      gem_vdiP.h:177,204).  On the m68k that is CONTRL[7..8] and [9..10];
+ *      on AArch64 it is CONTRL[7..10] and [11..14].  A twelve WORD CONTRL
+ *      cannot hold the AArch64 form at all, so this record carries fifteen
+ *      (gemlib's own VDI_CNTRLMAX, mt_gem.h:3508).
+ *   2. The MFDB itself is an output: vr_trnfm OVERWRITES the destination's
+ *      fd_stand (vdi_raster.c:303-314).  The eight WORD fields of both MFDBs
+ *      are therefore recorded after the call.
+ *   3. The pixel data is the result.  Two fixed buffers are recorded whole,
+ *      as WORDS through td_store_be16, so that the comparison is word for
+ *      word and not byte for byte -- the two machines differ in byte order
+ *      and only the word values mean the same thing on both.
+ *
+ * WHAT IS AND IS NOT COMPARABLE, because it decides what a case may do:
+ *
+ *   Comparable.  vr_trnfm in either direction with fd_nplanes <= 8: both
+ *   machines run the same plane-permutation (EmuTOS vdi_vr_trnfm
+ *   vdi_raster.c:295-350; NewTOS tos-api/src/vdi/raster.rs vr_trnfm), and
+ *   the standard form is machine-independent BY DEFINITION -- it is what
+ *   fd_stand = 1 means.  Also comparable for every opcode: the rules and the
+ *   coordinates (which calls are silent no-ops, what CONTRL echoes, that
+ *   INTIN/PTSIN come back unmodified, that INTOUT/PTSOUT stay poisoned) and
+ *   the untouched parts of a destination buffer.
+ *
+ *   NOT comparable.  Pixels in DEVICE form below nine planes.  The TT stores
+ *   a 4-plane form word-interleaved (s_nxwd = fd_nplanes * 2,
+ *   vdi_raster.c:922); NewTOS stores every memory MFDB as one 16-bit RGB565
+ *   word per pixel (raster.rs, Mfdb::mem_stride_px).  The same bytes mean
+ *   different pixels, so a copy of them is not a measurement of anything.
+ *   A 16-plane form is the one exception -- EmuTOS' own vro_cpyfm16
+ *   (vdi_raster.c:975-1221) is the identical chunky UWORD loop -- but only
+ *   where CONF_WITH_VDI_16BIT is on in the ROM being measured, which the
+ *   table cannot know and therefore measures instead.
+ */
+
+#define TD_RAST_CONTRL_N    15   /* gemlib VDI_CNTRLMAX, mt_gem.h:3508    */
+#define TD_RAST_INTIN_N    128
+#define TD_RAST_PTSIN_N    256
+#define TD_RAST_INTOUT_N   128
+#define TD_RAST_PTSOUT_N   256
+
+/* The eight WORD fields of an MFDB after fd_addr: fd_w, fd_h, fd_wdwidth,
+ * fd_stand, fd_nplanes, fd_r1, fd_r2, fd_r3 (EmuTOS include/gsxdefs.h:65-76).
+ * fd_addr itself is a pointer and is not recorded: it is the address of one
+ * of the two buffers below, chosen by the linker, and carries nothing about
+ * the API. */
+#define TD_RAST_MFDB_N       8
+
+/*
+ * The two pixel buffers, A and B, in WORDS.  Every access either machine can
+ * make is bounded by the loader's geometry gate (cases.c): a form of fd_h
+ * rows and fd_wdwidth words is at most fd_h * fd_wdwidth * 16 words under
+ * EITHER reading -- planar with fd_nplanes <= 16, or chunky with one word per
+ * pixel -- so requiring that product to fit here bounds both.  512 words
+ * leaves room for a 32x16 form (fd_wdwidth 2) and for 16 planes of it.
+ */
+#define TD_RAST_BUF_WORDS  512
+
+/* Fewer than the other areas on purpose: a record is 3696 bytes and the
+ * program holds every record in RAM until the end (spec section 7). */
+#define TD_RAST_MAX_CASES   64
+
+#define TD_RAST_RECORD_SIZE      3696
+#define TD_RAST_OFF_CASEID          0   /* u16                            */
+#define TD_RAST_OFF_OPCODE          2   /* u16                            */
+#define TD_RAST_OFF_RET             4   /* i32, the trap's d0 return      */
+#define TD_RAST_OFF_CONTRL          8   /* contrl[15] after the call      */
+#define TD_RAST_OFF_CONTRL_BEFORE  38   /* contrl[15] before the call     */
+#define TD_RAST_OFF_INTIN          68   /* intin[128]  after the call     */
+#define TD_RAST_OFF_PTSIN         324   /* ptsin[256]  after the call     */
+#define TD_RAST_OFF_INTOUT        836   /* intout[128] after the call     */
+#define TD_RAST_OFF_PTSOUT       1092   /* ptsout[256] after the call     */
+#define TD_RAST_OFF_SRC_MFDB     1604   /* source MFDB WORDs after        */
+#define TD_RAST_OFF_DST_MFDB     1620   /* dest MFDB WORDs after          */
+#define TD_RAST_OFF_BUF_A        1636   /* buffer A[512] after            */
+#define TD_RAST_OFF_BUF_B        2660   /* buffer B[512] after            */
+#define TD_RAST_OFF_RESERVED     3684   /* 12 bytes, zero                 */
+#define TD_RAST_RESERVED_LEN       12
+
+/* The two pointer slots inside CONTRL: contrl[7..14].  Recorded, never
+ * compared -- they hold the address of one of the two buffers, at the
+ * target's own pointer width, so they cannot be equal across the two
+ * machines and a difference there measures the linker, not the VDI. */
+#define TD_RAST_CONTRL_PTR_FIRST    7
+#define TD_RAST_CONTRL_PTR_N        8
 
 /* ------------------------------------------------------------------ */
 /* BIOS / XBIOS / GEMDOS record -- 320 bytes                           */

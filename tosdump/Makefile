@@ -4,6 +4,8 @@
 #   make dumpvdi-newtos   DUMPVDI.NAP for NewTOS on the Pi 4 (AArch64)
 #   make dumpaes-m68k     DUMPAES.PRG for TOS 3.06 on the TT
 #   make dumpaes-newtos   DUMPAES.NAP for NewTOS on the Pi 4 (AArch64)
+#   make dumprast-m68k    DUMPRAST.PRG for TOS/EmuTOS on the TT
+#   make dumprast-newtos  DUMPRAST.NAP for NewTOS on the Pi 4 (AArch64)
 #   make host-test        the host-side suite (same as make -C host test)
 #
 # Same core sources for both; only abi/ differs (spec section 2).
@@ -25,12 +27,17 @@ M68K_CFLAGS := -std=c99 -O2 -Wall -Wextra -Werror -Icore \
 CORE_SRC := core/record.c core/cases.c core/gem.c core/dump.c core/log.c
 VDI_SRC  := $(CORE_SRC) core/runner.c core/dumpvdi.c
 AES_SRC  := $(CORE_SRC) core/runner_aes.c core/dumpaes.c
+# The raster dumper reuses runner.c for td_reset_vdi: the reset before every
+# case is the same sequence, and stating it twice is how two runs stop being
+# comparable.
+RAST_SRC := $(CORE_SRC) core/runner.c core/runner_rast.c core/dumprast.c
 
 BUILD := build
 
 .PHONY: all dumpvdi-m68k dumpvdi-newtos dumpaes-m68k dumpaes-newtos \
-        host-test clean
-all: dumpvdi-m68k dumpvdi-newtos dumpaes-m68k dumpaes-newtos host-test
+        dumprast-m68k dumprast-newtos host-test clean
+all: dumpvdi-m68k dumpvdi-newtos dumpaes-m68k dumpaes-newtos \
+     dumprast-m68k dumprast-newtos host-test
 
 $(BUILD):
 	@mkdir -p $(BUILD)
@@ -58,6 +65,15 @@ $(BUILD)/DUMPAES.PRG: $(AES_SRC) abi/m68k_trap.c $(wildcard core/*.h) | $(BUILD)
 dumpaes-newtos: $(BUILD)/DUMPAES.NAP
 $(BUILD)/DUMPAES.NAP: $(AES_SRC) abi/newtos_svc.c $(wildcard core/*.h) | $(BUILD)
 	./build-dumpaes-newtos.sh $@
+
+dumprast-m68k: $(BUILD)/DUMPRAST.PRG
+$(BUILD)/DUMPRAST.PRG: $(RAST_SRC) abi/m68k_trap.c $(wildcard core/*.h) | $(BUILD)
+	$(M68K_CC) $(M68K_CFLAGS) $(RAST_SRC) abi/m68k_trap.c -o $@
+	@$(CROSS_MINT)size $@
+
+dumprast-newtos: $(BUILD)/DUMPRAST.NAP
+$(BUILD)/DUMPRAST.NAP: $(RAST_SRC) abi/newtos_svc.c $(wildcard core/*.h) | $(BUILD)
+	./build-dumprast-newtos.sh $@
 
 host-test:
 	@$(MAKE) --no-print-directory -C host test

@@ -136,8 +136,9 @@ static void test_header(void)
 	TD_CHECK_EQ(td_area_record_size(TD_AREA_BIOS), TD_CALL_RECORD_SIZE);
 	TD_CHECK_EQ(td_area_record_size(TD_AREA_XBIOS), TD_CALL_RECORD_SIZE);
 	TD_CHECK_EQ(td_area_record_size(TD_AREA_GEMDOS), TD_CALL_RECORD_SIZE);
+	TD_CHECK_EQ(td_area_record_size(TD_AREA_RASTER), TD_RAST_RECORD_SIZE);
 	TD_CHECK_EQ(td_area_record_size(0), 0);
-	TD_CHECK_EQ(td_area_record_size(6), 0);
+	TD_CHECK_EQ(td_area_record_size(7), 0);
 }
 
 static void test_poison(void)
@@ -348,6 +349,113 @@ static void test_field_tables(void)
 	TD_CHECK(td_area_fields(TD_AREA_BIOS) == f);
 	TD_CHECK(td_area_fields(TD_AREA_XBIOS) == f);
 	TD_CHECK(td_area_fields(0) == NULL);
+
+	/*
+	 * The raster area.  Two of its fields are recorded and never compared:
+	 * contrl[7..14] hold the two MFDB pointers, at the target's own pointer
+	 * width and pointing at the dumper's own buffers, so they cannot be
+	 * equal across the two machines and a difference there would measure
+	 * the linker.  Every other field is compared like any other.
+	 */
+	f = td_area_fields(TD_AREA_RASTER);
+	TD_CHECK(f != NULL);
+	for (n = 0; f && f[n].name; n++) {
+		int is_ptr = strstr(f[n].name, "mfdb") != NULL &&
+		             strncmp(f[n].name, "contrl", 6) == 0;
+		TD_CHECK_EQ(f[n].compare, is_ptr ? 0 : 1);
+	}
+	TD_CHECK_EQ(n, 13);
+	TD_CHECK(f && strcmp(f[0].name, "d0") == 0);
+	TD_CHECK(f && f[1].count == 7);      /* contrl[0..6] only */
+	TD_CHECK(f && f[2].off == TD_RAST_OFF_CONTRL + 14);
+	TD_CHECK(f && f[2].count == TD_RAST_CONTRL_PTR_N);
+
+	/* every existing area still compares every field it records */
+	for (n = 0; td_vdi_fields[n].name; n++)
+		TD_CHECK_EQ(td_vdi_fields[n].compare, 1);
+	for (n = 0; td_aes_fields[n].name; n++)
+		TD_CHECK_EQ(td_aes_fields[n].compare, 1);
+	for (n = 0; td_call_fields[n].name; n++)
+		TD_CHECK_EQ(td_call_fields[n].compare, 1);
+}
+
+/*
+ * The raster record.  Its offsets are stated here, not read from tosdump.h:
+ * a record layout that agreed with itself would prove nothing, and the two
+ * machines only agree because both compile the same numbers.
+ */
+static void test_raster_record(void)
+{
+	struct td_raster_arrays a;
+	int16_t before[TD_RAST_CONTRL_N];
+	int16_t src[TD_RAST_MFDB_N], dst[TD_RAST_MFDB_N];
+	uint8_t rec[TD_RAST_RECORD_SIZE];
+	int i;
+
+	printf("VDI raster record layout\n");
+
+	TD_CHECK_EQ(TD_RAST_RECORD_SIZE, 3696);
+	TD_CHECK_EQ(TD_RAST_OFF_CONTRL, 8);
+	TD_CHECK_EQ(TD_RAST_OFF_CONTRL_BEFORE, 8 + TD_RAST_CONTRL_N * 2);
+	TD_CHECK_EQ(TD_RAST_OFF_INTIN, 38 + TD_RAST_CONTRL_N * 2);
+	TD_CHECK_EQ(TD_RAST_OFF_PTSIN, TD_RAST_OFF_INTIN + TD_RAST_INTIN_N * 2);
+	TD_CHECK_EQ(TD_RAST_OFF_INTOUT, TD_RAST_OFF_PTSIN + TD_RAST_PTSIN_N * 2);
+	TD_CHECK_EQ(TD_RAST_OFF_PTSOUT, TD_RAST_OFF_INTOUT + TD_RAST_INTOUT_N * 2);
+	TD_CHECK_EQ(TD_RAST_OFF_SRC_MFDB,
+	            TD_RAST_OFF_PTSOUT + TD_RAST_PTSOUT_N * 2);
+	TD_CHECK_EQ(TD_RAST_OFF_DST_MFDB,
+	            TD_RAST_OFF_SRC_MFDB + TD_RAST_MFDB_N * 2);
+	TD_CHECK_EQ(TD_RAST_OFF_BUF_A,
+	            TD_RAST_OFF_DST_MFDB + TD_RAST_MFDB_N * 2);
+	TD_CHECK_EQ(TD_RAST_OFF_BUF_B,
+	            TD_RAST_OFF_BUF_A + TD_RAST_BUF_WORDS * 2);
+	TD_CHECK_EQ(TD_RAST_OFF_RESERVED,
+	            TD_RAST_OFF_BUF_B + TD_RAST_BUF_WORDS * 2);
+	TD_CHECK_EQ(TD_RAST_OFF_RESERVED + TD_RAST_RESERVED_LEN,
+	            TD_RAST_RECORD_SIZE);
+	/* an AArch64 caller packs the second MFDB pointer at contrl[11..14] */
+	TD_CHECK(TD_RAST_CONTRL_N >= 7 + 2 * 4);
+
+	td_poison_raster(&a);
+	/* the parameter arrays are poisoned ... */
+	TD_CHECK_EQ((uint16_t)a.contrl[TD_RAST_CONTRL_N - 1],
+	            (uint16_t)TD_POISON16);
+	TD_CHECK_EQ((uint16_t)a.intout[0], (uint16_t)TD_POISON16);
+	TD_CHECK_EQ((uint16_t)a.ptsout[TD_RAST_PTSOUT_N - 1],
+	            (uint16_t)TD_POISON16);
+
+	/* ... the pixel buffers are not: they are laid with a per-seed
+	 * pattern, because a copy out of an all-0xDEAD source proves nothing
+	 * about where the bits went */
+	td_rast_fill(a.buf_a, TD_RAST_BUF_WORDS, 1);
+	td_rast_fill(a.buf_b, TD_RAST_BUF_WORDS, 2);
+	TD_CHECK(a.buf_a[0] != a.buf_a[1]);
+	TD_CHECK(a.buf_a[0] != a.buf_b[0]);
+	TD_CHECK_EQ((uint16_t)a.buf_a[5], td_rast_fill_word(1, 5));
+
+	for (i = 0; i < TD_RAST_CONTRL_N; i++) {
+		a.contrl[i] = (int16_t)(0x100 + i);
+		before[i]   = (int16_t)(0x200 + i);
+	}
+	for (i = 0; i < TD_RAST_MFDB_N; i++) {
+		src[i] = (int16_t)(0x300 + i);
+		dst[i] = (int16_t)(0x400 + i);
+	}
+	td_raster_record_write(rec, 42, 109, -1, &a, before, src, dst);
+
+	TD_CHECK_EQ(td_load_be16(rec + TD_RAST_OFF_CASEID), 42);
+	TD_CHECK_EQ(td_load_be16(rec + TD_RAST_OFF_OPCODE), 109);
+	TD_CHECK_EQ(td_load_be32(rec + TD_RAST_OFF_RET), 0xFFFFFFFFuL);
+	TD_CHECK_EQ(td_load_be16(rec + TD_RAST_OFF_CONTRL + 28), 0x10E);
+	TD_CHECK_EQ(td_load_be16(rec + TD_RAST_OFF_CONTRL_BEFORE), 0x200);
+	TD_CHECK_EQ(td_load_be16(rec + TD_RAST_OFF_SRC_MFDB + 6), 0x303);
+	TD_CHECK_EQ(td_load_be16(rec + TD_RAST_OFF_DST_MFDB + 6), 0x403);
+	TD_CHECK_EQ(td_load_be16(rec + TD_RAST_OFF_BUF_A + 10),
+	            td_rast_fill_word(1, 5));
+	TD_CHECK_EQ(td_load_be16(rec + TD_RAST_OFF_BUF_B + 10),
+	            td_rast_fill_word(2, 5));
+	for (i = 0; i < TD_RAST_RESERVED_LEN; i++)
+		TD_CHECK_EQ(rec[TD_RAST_OFF_RESERVED + i], 0);
 }
 
 int main(void)
@@ -359,6 +467,7 @@ int main(void)
 	test_aes_record();
 	test_call_record();
 	test_crc32();
+	test_raster_record();
 	test_field_tables();
 	return TD_TEST_RESULT();
 }

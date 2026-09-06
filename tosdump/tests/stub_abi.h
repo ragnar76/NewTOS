@@ -83,6 +83,18 @@
 /* wind_get: int_out[1..4] = handle, field, and these two */
 #define TD_STUB_WGET_2       0x0303
 #define TD_STUB_WGET_3       0x0404
+/* Raster side ------------------------------------------------------------
+ * The three raster opcodes get their own arm, because the whole point of
+ * the raster runner is WHERE it puts the two MFDB pointers: at
+ * contrl[7 + n * N_PTRINTS] (gemlib gem_vdiP.h:177,204).  The stub reads
+ * them back out of exactly those slots, stamps the destination MFDB's
+ * fd_stand and the first word of the destination buffer, and leaves the
+ * source alone -- so a test can prove the runner packed the pointers where
+ * a real VDI looks for them and that the record captured both after the
+ * call.  A stub that only logged the opcode would prove neither. */
+#define TD_STUB_RAST_STAND   0x0707  /* stamped into dst->fd_stand      */
+#define TD_STUB_RAST_PIXEL   0x0BB0  /* stamped into dst buffer word 0  */
+
 /* the unsupported-opcode sentinel every AES returns (gemsuper.c:411-417) */
 #define TD_STUB_AES_UNSUPPORTED (-1)
 

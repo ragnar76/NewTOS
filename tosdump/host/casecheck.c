@@ -6,19 +6,21 @@
  * values each case produces, and the CRC the dump header will carry -- before
  * carrying it to a machine that has no debugger.
  *
- * usage: casecheck [--aes] CASES.TSV
+ * usage: casecheck [--aes|--raster] CASES.TSV
  *
- * --aes reads the seven column AES form instead of the five column VDI one.
- * The two forms cannot be told apart by looking at a line -- a VDI comment may
- * hold tabs -- so which one it is has to be said.
+ * --aes reads the seven column AES form and --raster the seven column VDI
+ * raster form, instead of the five column VDI one.  The forms cannot be told
+ * apart by looking at a line -- a VDI comment may hold tabs -- so which one
+ * it is has to be said.
  */
 #include <stdio.h>
 #include <string.h>
 
 #include "cases.h"
 
-static struct td_case_table     table;
-static struct td_aes_case_table aes_table;
+static struct td_case_table      table;
+static struct td_aes_case_table  aes_table;
+static struct td_rast_case_table rast_table;
 
 static void print_list(const char *name, const int16_t *v, uint16_t n)
 {
@@ -122,13 +124,52 @@ static int check_aes(const char *path)
 	return 0;
 }
 
+static void print_mfdb(const char *name, const struct td_rast_mfdb *m)
+{
+	printf("      %s buffer %c  fd_w %d fd_h %d fd_wdwidth %d fd_stand %d "
+	       "fd_nplanes %d\n",
+	       name, m->buffer == TD_RAST_BUF_B ? 'B' : 'A',
+	       m->w, m->h, m->wdwidth, m->stand, m->nplanes);
+}
+
+static int check_raster(const char *path)
+{
+	struct td_case_error err;
+	uint16_t i;
+	int rc;
+
+	memset(&err, 0, sizeof err);
+	rc = td_rast_cases_load(&rast_table, path, &err);
+	if (rc != 0) {
+		print_error(path, rc, &err);
+		return 1;
+	}
+
+	printf("%s: %u cases, CRC %08X\n", path, rast_table.count,
+	       rast_table.crc);
+	for (i = 0; i < rast_table.count; i++) {
+		const struct td_rast_case *c = &rast_table.cases[i];
+
+		printf("  case %u  opcode %d  contrl[1]=%u contrl[3]=%u  %s\n",
+		       c->line, c->opcode, c->n_ptsin / 2, c->n_intin, c->comment);
+		print_list("intin", c->intin, c->n_intin);
+		print_list("ptsin", c->ptsin, c->n_ptsin);
+		print_mfdb("src", &c->src);
+		print_mfdb("dst", &c->dst);
+		printf("      fill  A seed %u, B seed %u\n", c->seed_a, c->seed_b);
+	}
+	return 0;
+}
+
 int main(int argc, char **argv)
 {
 	if (argc == 3 && strcmp(argv[1], "--aes") == 0)
 		return check_aes(argv[2]);
+	if (argc == 3 && strcmp(argv[1], "--raster") == 0)
+		return check_raster(argv[2]);
 	if (argc == 2)
 		return check_vdi(argv[1]);
 
-	fprintf(stderr, "usage: casecheck [--aes] CASES.TSV\n");
+	fprintf(stderr, "usage: casecheck [--aes|--raster] CASES.TSV\n");
 	return 2;
 }

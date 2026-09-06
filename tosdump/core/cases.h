@@ -85,6 +85,7 @@ struct td_case_table {
 #define TD_CASE_ERR_TOO_MANY_PRE    (-9)   /* more than TD_MAX_PRELUDES    */
 #define TD_CASE_ERR_OUT_LEN        (-10)  /* n_intout > the intout array  */
 #define TD_CASE_ERR_UNSAFE_OPCODE  (-11)  /* opcode may not be issued     */
+#define TD_CASE_ERR_GEOMETRY       (-12)  /* a form or rect leaves the buf*/
 
 struct td_case_error {
 	uint16_t    line;                  /* physical line, 0 if not a line  */
@@ -194,6 +195,116 @@ int td_aes_cases_parse(struct td_aes_case_table *t, const char *buf,
                        size_t len, struct td_case_error *err);
 int td_aes_cases_load(struct td_aes_case_table *t, const char *path,
                       struct td_case_error *err);
+
+/* ------------------------------------------------------------------ */
+/* VDI raster case tables (cases/vdi-raster.tsv)                       */
+/* ------------------------------------------------------------------ */
+/*
+ * Format, seven tab separated columns:
+ *
+ *   opcode <TAB> intin <TAB> ptsin <TAB> src <TAB> dst <TAB> fill <TAB> comment
+ *
+ * `src` and `dst` each describe one MFDB, as six comma separated values:
+ *
+ *   buffer , fd_w , fd_h , fd_wdwidth , fd_stand , fd_nplanes
+ *
+ * `buffer` is 0 for buffer A and 1 for buffer B -- the two fixed pixel
+ * buffers the dumper owns.  fd_addr is not in the table because it cannot
+ * be: it is an address, and the whole point of the table is that it is the
+ * same file on two machines.  Naming a buffer instead of an address is also
+ * what lets both MFDBs name the SAME buffer, which is how the in-place
+ * vr_trnfm cases are stated.
+ *
+ * `fill` is two values, the seeds the two buffers are laid with before the
+ * call (td_rast_fill).  Two different seeds give a source and a destination
+ * that no logic op can confuse.
+ *
+ * There is no sub-opcode column: none of the three raster opcodes is an
+ * escape.  There are no preludes: the raster opcodes read no attribute the
+ * reset does not already set, and a '+' line is refused rather than silently
+ * treated as a case.
+ *
+ * ------------------------------------------------------------------
+ * THE GUARD
+ * ------------------------------------------------------------------
+ *
+ * The AES loader refuses opcodes that would hang the machine (see above).
+ * The raster loader has the same duty for a different hazard: EmuTOS does
+ * NOT bounds-check a memory MFDB.  setup_info takes fd_addr, fd_wdwidth and
+ * fd_nplanes at face value (vdi_raster.c:915-950) and bit_blt then walks
+ * whatever they describe; vdi_vr_trnfm does not even check fd_addr for NULL
+ * (vdi_raster.c:295-297).  A mistyped digit in this file would therefore
+ * scribble over a running TT, and the damage would look like a defect in
+ * the thing being measured.
+ *
+ * So the loader refuses the whole table -- named reason, non-zero return,
+ * the offending line -- unless every case satisfies all of:
+ *
+ *   1. the opcode is one of 109, 110, 121.  Nothing else belongs in a
+ *      table whose record carries two MFDBs and two pixel buffers.
+ *   2. both MFDBs name a real buffer.  A NULL MFDB pointer, or an MFDB with
+ *      fd_addr == 0 (the screen), is not expressible here at all: EmuTOS
+ *      dereferences the MFDB pointer unconditionally, and the screen is a
+ *      different size and depth on the two machines, so nothing measured
+ *      against it could be compared anyway.
+ *   3. the form fits the buffer under EITHER machine's reading of it:
+ *      fd_h * fd_wdwidth * 16 <= TD_RAST_BUF_WORDS.  Sixteen, not
+ *      fd_nplanes, because NewTOS reads a memory MFDB as one WORD per pixel
+ *      (raster.rs) and the TT reads it as fd_nplanes interleaved planes
+ *      (s_nxwd = fd_nplanes * 2, vdi_raster.c:922); sixteen words per
+ *      sixteen pixels bounds both, and fd_nplanes is separately capped at
+ *      16 (the CONF_WITH_VDI_16BIT plane limit, vdi_raster.c:963).
+ *   4. fd_w <= fd_wdwidth * 16, fd_stand is 0 or 1, and all of fd_w, fd_h,
+ *      fd_wdwidth, fd_nplanes are positive.
+ *   5. for 109 and 121, PTSIN holds exactly eight values.  Fewer would
+ *      leave the rest of the rectangle poisoned -- 0xDEAD is -8531, and a
+ *      blit to it is exactly the scribble this guard exists to prevent.
+ *      Both rectangles, after the arb_corner sort the VDI itself applies
+ *      (vdi_raster.c:1336-1337), must lie inside the form they address.
+ *   6. for 110, PTSIN is empty: vr_trnfm reads no rectangle.
+ *
+ * As in the AES table there is no override.  A case that cannot pass is a
+ * case that is wrong.
+ */
+#define TD_RAST_CASE_COLUMNS 7
+
+/* Which of the two buffers an MFDB addresses. */
+#define TD_RAST_BUF_A 0
+#define TD_RAST_BUF_B 1
+
+struct td_rast_mfdb {
+	int16_t buffer;                    /* TD_RAST_BUF_A / _B              */
+	int16_t w;                         /* fd_w                            */
+	int16_t h;                         /* fd_h                            */
+	int16_t wdwidth;                   /* fd_wdwidth                      */
+	int16_t stand;                     /* fd_stand                        */
+	int16_t nplanes;                   /* fd_nplanes                      */
+};
+
+struct td_rast_case {
+	uint16_t line;                     /* physical line number = case id  */
+	int16_t  opcode;                   /* contrl[0]: 109, 110 or 121      */
+	uint16_t n_intin;                  /* values, becomes contrl[3]       */
+	uint16_t n_ptsin;                  /* values; contrl[1] = n_ptsin / 2 */
+	int16_t  intin[TD_RAST_INTIN_N];
+	int16_t  ptsin[TD_RAST_PTSIN_N];
+	struct td_rast_mfdb src;
+	struct td_rast_mfdb dst;
+	uint16_t seed_a;                   /* buffer A fill seed              */
+	uint16_t seed_b;                   /* buffer B fill seed              */
+	char     comment[TD_COMMENT_LEN];
+};
+
+struct td_rast_case_table {
+	uint32_t            crc;           /* CRC32 over the raw file bytes   */
+	uint16_t            count;
+	struct td_rast_case cases[TD_RAST_MAX_CASES];
+};
+
+int td_rast_cases_parse(struct td_rast_case_table *t, const char *buf,
+                        size_t len, struct td_case_error *err);
+int td_rast_cases_load(struct td_rast_case_table *t, const char *path,
+                       struct td_case_error *err);
 
 /*
  * Shared line iterator.  One rule for what a line is, used by the parser and

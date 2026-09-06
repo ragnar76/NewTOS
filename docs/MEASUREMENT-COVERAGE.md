@@ -92,14 +92,41 @@ need the physical Atari and a measurement session; the rest are desk work.
 
 ### Measurement
 
-- [ ] **TT — raster group.** Add `vro_cpyfm`, `vrt_cpyfm`, `vr_trnfm` to the
-      case table and measure. Three opcodes, highest call volume in the VDI,
-      zero coverage. Needs MFDB fixtures, so the case format may need widening.
+- [x] ~~**TT — raster group harness.**~~ Built 2026-09-06: `DUMPRAST`
+      (`tosdump/core/dumprast.c`), a separate area 6 with a 3696-byte record
+      carrying two MFDBs and two pixel buffers, a 15-word CONTRL (an LP64
+      caller packs the second MFDB pointer at `contrl[11..14]`), and a
+      geometry guard in the loader — EmuTOS does not bounds-check a memory
+      MFDB, so a typo in the table would scribble over the TT.
+      `tosdump/cases/vdi-raster.tsv`, 59 cases, CRC `702EEA7D`.
+- [ ] **TT — raster group measurement.** Not taken yet. What the table can
+      settle: `vr_trnfm` at 8 planes or fewer is fully comparable (same plane
+      permutation on both machines, and standard form is machine-independent
+      by definition); the no-op rules of `vro_cpyfm`/`vrt_cpyfm` are
+      comparable whatever a plane means; `vro_cpyfm` pixels at 16 planes are
+      pixel-exact iff the ROM has `CONF_WITH_VDI_16BIT`, which the table
+      measures rather than assumes. What it cannot: device-form pixels below
+      nine planes (TT word-interleaved planes vs NewTOS one 16-bit word per
+      pixel), any `vrt_cpyfm` that actually expands (the result is a colour),
+      and `vr_trnfm` above 8 planes (`TRUECOLOR_MODE = v_planes > 8` splits
+      the two machines on video mode, not on the VDI).
 - [ ] **TT — AES round 2.** Trees, menus, resources, windows. Blocked on a state
       reset the harness does not have; designing that reset is the real work and
       can be done before the TT session.
 - [ ] **TT — the remaining 15 VDI opcodes** (mouse/input/vector group). Lower
-      volume, cheaper once the harness is out anyway.
+      volume, cheaper once the harness is out anyway. Triaged 2026-09-06
+      against the EmuTOS source, not yet turned into cases: **safe to add**
+      `vsf_udpat` (112), `vst_load_fonts`/`vst_unload_fonts` (119/120),
+      `vq_key_s` (128, deterministic only while nobody holds a modifier);
+      **must not be added** `v_clswk` (2, tears the AES down under the
+      running program), `v_clsvwk` (101, every later case would carry a dead
+      handle and `td_gem_close` would close it twice), the five `vex_*`
+      vector installs (118/125/126/127/134 — they hand a C function to an
+      interrupt path and return a machine-dependent old vector);
+      **undecided, needs a source check before it is written** `v_locator`
+      (28) and `v_string` (31), which block in request mode, `vq_mouse`
+      (124), whose position is not comparable, and `vs_color` (14), which
+      changes the device palette for the rest of the session.
 - [ ] Fold the AES round-1 dump comparison into CI-visible form the way
       `vdi_reference` and `aes_reference` already are, for whatever round 2 adds.
 
