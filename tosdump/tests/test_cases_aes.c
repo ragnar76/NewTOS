@@ -439,6 +439,343 @@ static void test_the_shipped_table_still_loads(void)
 	TD_CHECK_EQ(t.count, 95);
 }
 
+
+/* ------------------------------------------------------------------ */
+/* Round 2: the reset directive and the state guard                     */
+/* ------------------------------------------------------------------ */
+
+/*
+ * A table declares its own reset, on a '!' directive line.  It has to be the
+ * table's rather than the program's: the dumper is double-clicked on the TT
+ * with no arguments and always reads AES.TSV, so the only thing that can tell
+ * the two rounds apart -- and the only thing whose identity the dump header's
+ * CRC covers -- is the file itself.
+ */
+static void test_reset_directive(void)
+{
+	struct td_case_error err;
+
+	printf("aes cases: a table declares its own reset on a '!' line\n");
+
+	/* absent = the round 1 behaviour, and nothing else may change */
+	TD_CHECK_EQ(parse(&t, "77\t0\t5\t0\t0\t-\tgraf_handle\n", &err), 0);
+	TD_CHECK_EQ(t.reset, TD_AES_RESET_NONE);
+	TD_CHECK_EQ(t.count, 1);
+
+	/* declared, and a directive line consumes a case id like any other */
+	TD_CHECK_EQ(parse(&t,
+		"# round 2\n"
+		"!reset\twind_new\n"
+		"77\t0\t5\t0\t0\t-\tgraf_handle\n", &err), 0);
+	TD_CHECK_EQ(t.reset, TD_AES_RESET_WIND_NEW);
+	TD_CHECK_EQ(t.count, 1);
+	TD_CHECK_EQ(t.cases[0].line, 3);
+
+	/* "none" is spellable, so a table may say what it means */
+	TD_CHECK_EQ(parse(&t,
+		"!reset\tnone\n"
+		"77\t0\t5\t0\t0\t-\tgraf_handle\n", &err), 0);
+	TD_CHECK_EQ(t.reset, TD_AES_RESET_NONE);
+}
+
+static void test_reset_directive_is_refused_when_wrong(void)
+{
+	struct td_case_error err;
+
+	printf("aes cases: a directive that cannot be honoured stops the load\n");
+
+	/* an unknown directive name */
+	TD_CHECK_EQ(parse(&t, "!clrwk\twind_new\n77\t0\t5\t0\t0\t-\tx\n", &err),
+	            TD_CASE_ERR_DIRECTIVE);
+	TD_CHECK_EQ(err.line, 1);
+
+	/* an unknown reset name -- guessing here would silently run round 1 */
+	TD_CHECK_EQ(parse(&t, "!reset\tmenu_bar\n77\t0\t5\t0\t0\t-\tx\n", &err),
+	            TD_CASE_ERR_DIRECTIVE);
+	TD_CHECK_EQ(err.line, 1);
+
+	/* twice: which one wins is not something a reader should have to know */
+	TD_CHECK_EQ(parse(&t,
+		"!reset\twind_new\n"
+		"!reset\tnone\n"
+		"77\t0\t5\t0\t0\t-\tx\n", &err), TD_CASE_ERR_DIRECTIVE);
+	TD_CHECK_EQ(err.line, 2);
+
+	/* after a case: the cases before it would have run unreset */
+	TD_CHECK_EQ(parse(&t,
+		"77\t0\t5\t0\t0\t-\tx\n"
+		"!reset\twind_new\n", &err), TD_CASE_ERR_DIRECTIVE);
+	TD_CHECK_EQ(err.line, 2);
+
+	/* no value at all */
+	TD_CHECK_EQ(parse(&t, "!reset\n77\t0\t5\t0\t0\t-\tx\n", &err),
+	            TD_CASE_ERR_DIRECTIVE);
+}
+
+/*
+ * wind_get / wind_set fields that must not be issued from a pointer-free
+ * table.  Two mechanisms, both fatal on real hardware:
+ *
+ *  - WF_NAME (2) and WF_INFO (3) carry a STRING POINTER in int_in[2..3]
+ *    (gemlib a_wind_get.c:344-347, a_wind_set.c:314-322).  EmuTOS' wm_get
+ *    has no arm for them and returns FALSE (gemwmlib.c:1592), but NewTOS
+ *    copies the title out through that pointer
+ *    (tos-api/src/aes/window.rs:2061-2062) -- a write to 0xDEADDEAD.
+ *    wm_set stores it in gl_aname.te_ptext and the next frame draw
+ *    dereferences it (gemwmlib.c:1657-1666).
+ *  - WF_COLOR (18) and WF_DCOLOR (19) index w_tcolor[]/gl_wtcolor[] with
+ *    int_in[2] and EmuTOS does NOT range-check it (gemwmlib.c:1567-1576,
+ *    :1714-1727).  Poison is -8531.
+ *  - WF_NEWDESK (14) on wind_set stores a tree POINTER in gl_newdesk
+ *    (gemwmlib.c:1683), which w_drawdesk then walks (gemwmlib.c:340-350),
+ *    and wm_new does not clear it -- only wm_init does.
+ */
+static void test_guard_refuses_pointer_and_unchecked_fields(void)
+{
+	struct td_case_error err;
+
+	printf("aes cases: the guard refuses window fields that take a pointer "
+	       "or an unchecked index\n");
+
+	TD_CHECK_EQ(parse(&t, "104\t4\t1\t0\t0\t0,2\twind_get WF_NAME\n", &err),
+	            TD_CASE_ERR_UNSAFE_FIELD);
+	TD_CHECK_EQ(err.line, 1);
+	TD_CHECK_EQ(parse(&t, "104\t4\t1\t0\t0\t0,3\twind_get WF_INFO\n", &err),
+	            TD_CASE_ERR_UNSAFE_FIELD);
+	TD_CHECK_EQ(parse(&t, "104\t3\t3\t0\t0\t0,18,0\twind_get WF_COLOR\n", &err),
+	            TD_CASE_ERR_UNSAFE_FIELD);
+	TD_CHECK_EQ(parse(&t, "104\t3\t3\t0\t0\t0,19,0\twind_get WF_DCOLOR\n", &err),
+	            TD_CASE_ERR_UNSAFE_FIELD);
+	TD_CHECK_EQ(parse(&t, "105\t6\t1\t0\t0\t0,2,0,0,0,0\twind_set WF_NAME\n",
+	                  &err), TD_CASE_ERR_UNSAFE_FIELD);
+	TD_CHECK_EQ(parse(&t, "105\t6\t1\t0\t0\t0,14,0,1,0,0\twind_set WF_NEWDESK\n",
+	                  &err), TD_CASE_ERR_UNSAFE_FIELD);
+	TD_CHECK_EQ(parse(&t, "105\t6\t1\t0\t0\t0,19,0,1,1,0\twind_set WF_DCOLOR\n",
+	                  &err), TD_CASE_ERR_UNSAFE_FIELD);
+
+	/* the field is int_in[1], so a case that does not state it hides it */
+	TD_CHECK_EQ(parse(&t, "104\t2\t5\t0\t0\t0\twind_get, no field stated\n",
+	                  &err), TD_CASE_ERR_UNSAFE_FIELD);
+
+	/* WF_NEWDESK on wind_get is a different call: EmuTOS has no arm for it
+	 * and returns FALSE without touching a pointer, and round 1 measures
+	 * exactly that (aes-r1.tsv) */
+	TD_CHECK_EQ(parse(&t, "104\t2\t1\t0\t0\t0,14\twind_get WF_NEWDESK\n",
+	                  &err), 0);
+	/* and the ordinary rect fields stay usable */
+	TD_CHECK_EQ(parse(&t, "104\t2\t5\t0\t0\t0,4\twind_get WF_WXYWH\n", &err), 0);
+}
+
+/*
+ * The message-queue bound.  Every wind_open sends the owner one WM_REDRAW
+ * (gemwmlib.c:887-908, reached from draw_change -> w_update), the dumper is
+ * that owner, and it never reads its queue -- there is no non-blocking AES
+ * call that drains one.  doq unions successive WM_REDRAWs for the SAME
+ * handle (gemqueue.c:45-56), so what accumulates is one message per DISTINCT
+ * handle; p_queue is QUEUE_SIZE = 128 bytes = eight 16-byte messages
+ * (struct.h:56,152) and aqueue BLOCKS the sender when the next one does not
+ * fit (gemqueue.c:96,124).  Blocking here is a hang with no operator remedy:
+ * the process waiting for room is the process that would have made room.
+ *
+ * The reset frees every handle, so wm_create hands out handle 1 again
+ * (gemwmlib.c:1369-1378) and the distinct-handle count over the whole run is
+ * the largest number of handles any one case opens.  The guard counts the
+ * handles the table names literally in int_in[0] of every wind_open.
+ */
+static void test_guard_bounds_the_open_windows(void)
+{
+	struct td_case_error err;
+
+	printf("aes cases: the guard bounds how many window handles are opened\n");
+
+	/* four distinct handles is the documented ceiling */
+	TD_CHECK_EQ(parse(&t,
+		"+101\t5\t1\t0\t0\t1,0,0,100,100\topen 1\n"
+		"+101\t5\t1\t0\t0\t2,0,0,100,100\topen 2\n"
+		"+101\t5\t1\t0\t0\t3,0,0,100,100\topen 3\n"
+		"101\t5\t1\t0\t0\t4,0,0,100,100\topen 4\n", &err), 0);
+
+	/* five is not */
+	TD_CHECK_EQ(parse(&t,
+		"+101\t5\t1\t0\t0\t1,0,0,100,100\topen 1\n"
+		"+101\t5\t1\t0\t0\t2,0,0,100,100\topen 2\n"
+		"+101\t5\t1\t0\t0\t3,0,0,100,100\topen 3\n"
+		"+101\t5\t1\t0\t0\t4,0,0,100,100\topen 4\n"
+		"101\t5\t1\t0\t0\t5,0,0,100,100\topen 5\n", &err),
+		TD_CASE_ERR_UNSAFE_STATE);
+	TD_CHECK_EQ(err.line, 5);
+
+	/* the same handle again is one message, not two, so it does not count */
+	TD_CHECK_EQ(parse(&t,
+		"+101\t5\t1\t0\t0\t1,0,0,100,100\topen 1\n"
+		"+101\t5\t1\t0\t0\t1,0,0,120,120\topen 1 again\n"
+		"+101\t5\t1\t0\t0\t2,0,0,100,100\topen 2\n"
+		"+101\t5\t1\t0\t0\t3,0,0,100,100\topen 3\n"
+		"101\t5\t1\t0\t0\t4,0,0,100,100\topen 4\n", &err), 0);
+
+	/* the handle is int_in[0]; a wind_open that does not state one hides it */
+	TD_CHECK_EQ(parse(&t, "101\t5\t1\t0\t0\t-\twind_open, no handle\n", &err),
+	            TD_CASE_ERR_UNSAFE_STATE);
+}
+
+/*
+ * Handle 0 is the desktop window, and two of the four window-list calls
+ * would take it away for the rest of the run:
+ *
+ *   wind_open(0) runs w_obadd(W_TREE, ROOT, ROOT) (gemwmlib.c:1421 with
+ *     w_handle 0, and :186-202), which sets W_TREE[0].ob_head = 0 -- the
+ *     root becomes its own child, and the next everyobj/ob_find walk never
+ *     terminates.  That is a hang, not a wrong answer.
+ *   wind_delete(0) clears VF_INUSE on it (gemwmlib.c:1477-1481), so
+ *     get_pwin(0) fails from then on and wm_create hands handle 0 to the
+ *     next caller.  wm_new sweeps handles >= 1 only (:1886), so the reset
+ *     does not bring it back.
+ *
+ * wind_close(0) is safe and stays measurable: get_pwin(0) succeeds but
+ * VF_ISOPEN is never set on the desktop window (w_setup at :1290 sets
+ * VF_INUSE alone), so it returns FALSE without touching anything.
+ */
+static void test_guard_protects_the_desktop_window(void)
+{
+	struct td_case_error err;
+
+	printf("aes cases: the guard refuses the two calls that would take the "
+	       "desktop window away\n");
+
+	TD_CHECK_EQ(parse(&t, "101\t5\t1\t0\t0\t0,0,0,100,100\twind_open 0\n",
+	                  &err), TD_CASE_ERR_UNSAFE_STATE);
+	TD_CHECK_EQ(err.line, 1);
+	TD_CHECK_EQ(parse(&t, "103\t1\t1\t0\t0\t0\twind_delete 0\n", &err),
+	            TD_CASE_ERR_UNSAFE_STATE);
+	TD_CHECK_EQ(parse(&t, "103\t1\t1\t0\t0\t-\twind_delete, no handle\n",
+	                  &err), TD_CASE_ERR_UNSAFE_STATE);
+
+	/* wind_set on it is refused for a third reason: it changes the desktop
+	 * window's own fields, and wm_new sweeps handles >= 1 only
+	 * (gemwmlib.c:1886), so the reset does not undo it */
+	TD_CHECK_EQ(parse(&t, "105\t6\t1\t0\t0\t0,8,500,0,0,0\twind_set 0\n",
+	                  &err), TD_CASE_ERR_UNSAFE_STATE);
+
+	/* and the ones that stay usable */
+	TD_CHECK_EQ(parse(&t, "102\t1\t1\t0\t0\t0\twind_close 0\n", &err), 0);
+	TD_CHECK_EQ(parse(&t, "104\t2\t2\t0\t0\t0,10\twind_get 0 WF_TOP\n",
+	                  &err), 0);
+	TD_CHECK_EQ(parse(&t, "103\t1\t1\t0\t0\t1\twind_delete 1\n", &err), 0);
+	TD_CHECK_EQ(parse(&t, "101\t5\t1\t0\t0\t1,0,0,100,100\twind_open 1\n",
+	                  &err), 0);
+}
+
+/*
+ * wind_update's mouse-control half does not self-heal.  END_MCTRL is mode 2
+ * and BEG_MCTRL is mode 3 (aesdefs.h:559-562); wm_update subtracts 2 and
+ * passes the rest to fm_own (gemwmlib.c:1789-1795), so mode 2 is fm_own(0),
+ * which decrements ml_ocnt unconditionally (gemfmlib.c:99).  One
+ * without a matching BEG_MCTRL drives it to -1, and wm_new only drains it
+ * `while (ml_ocnt > 0)` (gemwmlib.c:1880).  From then on every BEG/END pair
+ * is off by one: the BEG that should have saved gl_mntree and the mouse
+ * owner does not, and the END that should have restored them does -- with
+ * whatever ml_mnhold and ml_pmown last held.  The screen-sync half (modes 0
+ * and 1) does self-heal, because unsync returns early at sy_tas <= 0
+ * (gemflag.c:104-108).
+ */
+static void test_guard_refuses_unbalanced_mouse_control(void)
+{
+	struct td_case_error err;
+
+	printf("aes cases: the guard refuses an unpaired wind_update END_MCTRL\n");
+
+	TD_CHECK_EQ(parse(&t, "107\t1\t1\t0\t0\t2\twind_update END_MCTRL alone\n",
+	                  &err), TD_CASE_ERR_UNSAFE_STATE);
+	TD_CHECK_EQ(err.line, 1);
+
+	/* paired inside one case is fine */
+	TD_CHECK_EQ(parse(&t,
+		"+107\t1\t1\t0\t0\t3\tBEG_MCTRL\n"
+		"107\t1\t1\t0\t0\t2\tEND_MCTRL\n", &err), 0);
+
+	/* a lone BEG_MCTRL is fine: wm_new drains ml_ocnt > 0 */
+	TD_CHECK_EQ(parse(&t, "107\t1\t1\t0\t0\t3\tBEG_MCTRL alone\n", &err), 0);
+
+	/* the balance does not carry over from the previous case: the reset
+	 * ran in between, so a later END is still unpaired */
+	TD_CHECK_EQ(parse(&t,
+		"107\t1\t1\t0\t0\t3\tBEG_MCTRL\n"
+		"107\t1\t1\t0\t0\t2\tEND_MCTRL, but a case later\n", &err),
+		TD_CASE_ERR_UNSAFE_STATE);
+	TD_CHECK_EQ(err.line, 2);
+
+	/* a wind_new between them drains ml_ocnt, so the END is unpaired again */
+	TD_CHECK_EQ(parse(&t,
+		"+107\t1\t1\t0\t0\t3\tBEG_MCTRL\n"
+		"+109\t0\t0\t0\t0\t-\twind_new drains ml_ocnt\n"
+		"107\t1\t1\t0\t0\t2\tEND_MCTRL\n", &err),
+		TD_CASE_ERR_UNSAFE_STATE);
+
+	/* the screen-sync half is unconstrained, both ways round */
+	TD_CHECK_EQ(parse(&t, "107\t1\t1\t0\t0\t0\tEND_UPDATE alone\n", &err), 0);
+	TD_CHECK_EQ(parse(&t, "107\t1\t1\t0\t0\t1\tBEG_UPDATE alone\n", &err), 0);
+
+	/* the mode is int_in[0] and must be stated */
+	TD_CHECK_EQ(parse(&t, "107\t1\t1\t0\t0\t-\twind_update, no mode\n", &err),
+	            TD_CASE_ERR_UNSAFE_STATE);
+}
+
+/*
+ * A rectangle that reaches the screen.  wind_open and wind_set(WF_CXYWH)
+ * both go through draw_change, which does WORD arithmetic on x+w and y+h
+ * throughout (rc_intersect, rc_union, mkpiece in gemwrect.c:63-95) and hands
+ * the result to gsx_sclip unsorted (gemwmlib.c:1028).  A negative extent or
+ * a sum that wraps is a table typo whose damage looks like a defect in the
+ * thing being measured, which is the one thing this harness may not produce.
+ * wind_create is NOT covered: it only stores the rect (gemwmlib.c:1369-1378)
+ * and draws nothing, so a marshalling case may state fewer values there.
+ */
+static void test_guard_bounds_rectangles_that_get_drawn(void)
+{
+	struct td_case_error err;
+
+	printf("aes cases: the guard bounds the rectangles that reach the screen\n");
+
+	TD_CHECK_EQ(parse(&t, "101\t5\t1\t0\t0\t1,0,0,640,400\twind_open\n", &err), 0);
+	TD_CHECK_EQ(parse(&t, "101\t5\t1\t0\t0\t1,0,0,0,0\twind_open, zero rect\n",
+	                  &err), 0);
+	TD_CHECK_EQ(parse(&t, "101\t5\t1\t0\t0\t1,0,0,-1,100\tnegative width\n",
+	                  &err), TD_CASE_ERR_GEOMETRY);
+	TD_CHECK_EQ(parse(&t, "101\t5\t1\t0\t0\t1,-1,0,100,100\tnegative x\n",
+	                  &err), TD_CASE_ERR_GEOMETRY);
+	TD_CHECK_EQ(parse(&t, "101\t5\t1\t0\t0\t1,32000,0,1000,100\tx+w wraps\n",
+	                  &err), TD_CASE_ERR_GEOMETRY);
+	TD_CHECK_EQ(parse(&t, "101\t5\t1\t0\t0\t1,0,0,100\tfour values only\n",
+	                  &err), TD_CASE_ERR_GEOMETRY);
+
+	TD_CHECK_EQ(parse(&t, "105\t6\t1\t0\t0\t1,5,0,0,640,400\tWF_CXYWH\n",
+	                  &err), 0);
+	TD_CHECK_EQ(parse(&t, "105\t6\t1\t0\t0\t1,5,0,0,-4,400\tWF_CXYWH negative\n",
+	                  &err), TD_CASE_ERR_GEOMETRY);
+
+	/* wind_create stores and does not draw */
+	TD_CHECK_EQ(parse(&t, "100\t5\t1\t0\t0\t0x0FEF\tkind only\n", &err), 0);
+}
+
+static void test_the_shipped_round2_table_loads(void)
+{
+	struct td_case_error err;
+	int rc;
+
+	printf("aes cases: the shipped round 2 window table passes the guard\n");
+
+	memset(&err, 0, sizeof err);
+	rc = td_aes_cases_load(&t, "../cases/aes-r2-wind.tsv", &err);
+	if (rc != 0) {
+		printf("  FAIL cases/aes-r2-wind.tsv line %u: %s (%s)\n", err.line,
+		       err.what ? err.what : "", td_case_error_text(rc));
+		td_test_failures++;
+		return;
+	}
+	TD_CHECK_EQ(t.reset, TD_AES_RESET_WIND_NEW);
+	TD_CHECK(t.count > 0);
+}
+
 int main(void)
 {
 	test_basic();
@@ -457,5 +794,13 @@ int main(void)
 	test_guard_lets_the_safe_ones_through();
 	test_guard_covers_preludes_too();
 	test_the_shipped_table_still_loads();
+	test_reset_directive();
+	test_reset_directive_is_refused_when_wrong();
+	test_guard_refuses_pointer_and_unchecked_fields();
+	test_guard_bounds_the_open_windows();
+	test_guard_protects_the_desktop_window();
+	test_guard_refuses_unbalanced_mouse_control();
+	test_guard_bounds_rectangles_that_get_drawn();
+	test_the_shipped_round2_table_loads();
 	return TD_TEST_RESULT();
 }

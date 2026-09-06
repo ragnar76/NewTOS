@@ -94,6 +94,45 @@ static int32_t aes_call(int16_t opcode, int16_t n_intin, int16_t n_intout,
 	                  run_arrays.int_out, run_addr_in, run_addr_out);
 }
 
+/* ------------------------------------------------------------------ */
+/* Reset (spec section 5)                                              */
+/* ------------------------------------------------------------------ */
+/*
+ * "Before every case, reset the state the call could depend on."  For the
+ * VDI that is v_clrwk plus the attribute defaults; for the AES there is no
+ * such documented default set (runner_aes.h), and round 1 lives without one.
+ *
+ * The window manager does have one, and it is the AES' own: wm_new closes
+ * and deletes every window with a handle >= 1 and drains the wind_update
+ * mouse-control and screen-sync locks (gemwmlib.c:1875-1893).  EmuTOS runs
+ * it itself after every graphics-mode program the shell starts
+ * (gemshlib.c:676-677), so issuing it inside a run leaves the machine in a
+ * state the shell would have produced anyway -- which is what makes it safe
+ * to issue unattended.
+ *
+ * Laid exactly as gemlib lays it: AES_PARAMS(109,0,0,0,0) (a_wind_new.c:25).
+ * OUT_LEN 0 matters -- xif copies OUT_LEN words back out of an
+ * UNINITIALISED stack buffer (gemsuper.c:430-432, :444-445), so a reset
+ * that declared output words would write stack garbage over the caller's
+ * array before the case that is about to be measured even starts.
+ *
+ * Which reset runs comes from the TABLE, not from this file and not from a
+ * command line: see cases.h.  The sequence itself lives here, so both
+ * targets run the identical one.
+ */
+static void td_reset_aes(int16_t reset, int16_t *global)
+{
+	if (reset != TD_AES_RESET_WIND_NEW)
+		return;
+
+	/* poisoned like every other call the runner issues, so the reset
+	 * cannot carry the previous case's values into the AES */
+	td_poison_aes(&run_arrays);
+	poison_ptrs(run_addr_in, TD_AES_ADDRIN_N);
+	poison_ptrs(run_addr_out, TD_AES_ADDROUT_N);
+	aes_call(109, 0, 0, 0, 0, global);
+}
+
 int td_run_aes(const struct td_aes_case_table *ct, int16_t *global,
                uint8_t *out, size_t out_bytes)
 {
@@ -107,6 +146,12 @@ int td_run_aes(const struct td_aes_case_table *ct, int16_t *global,
 	for (i = 0; i < ct->count; i++) {
 		const struct td_aes_case *c = &ct->cases[i];
 		uint8_t *rec = out + (size_t)i * TD_AES_RECORD_SIZE;
+
+		/* 0. the reset the table declares (spec section 5).  Ahead of
+		 *    the preludes, so a prelude establishes state on top of a
+		 *    known one rather than on top of the previous case's
+		 *    leftovers. */
+		td_reset_aes(ct->reset, global);
 
 		/* 1. the case's preludes: calls that establish what this case
 		 *    measures, and never recorded.  Each is poisoned and laid
@@ -169,6 +214,17 @@ int td_run_aes(const struct td_aes_case_table *ct, int16_t *global,
 		td_aes_record_write(rec, c->line, (uint16_t)c->opcode, ret,
 		                    &run_arrays);
 	}
+
+	/*
+	 * One last reset, after the last case and outside the measurement.
+	 * The per-case reset runs BEFORE a case, so without this the run would
+	 * end holding whatever the last case left -- an open window, a taken
+	 * update lock, a raised ml_ocnt.  On the TT the shell would sweep it
+	 * (gemshlib.c:668-677); relying on that would make the harness' claim
+	 * that it leaves nothing behind true on one machine and unverified on
+	 * the other.
+	 */
+	td_reset_aes(ct->reset, global);
 
 	return 0;
 }

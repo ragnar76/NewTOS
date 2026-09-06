@@ -14,6 +14,12 @@ touched, and which it never has. Counts come from the dispatch tables
 | VDI | 65 | 47 | **18** |
 | AES | 79 | 6 | **73** |
 
+The AES row is the *measured* state. Round 2 (`cases/aes-r2-wind.tsv`, 78
+cases) is written and built for both machines but **not yet run**; when it is,
+it moves seven window opcodes — `wind_create`, `wind_open`, `wind_close`,
+`wind_delete`, `wind_set`, `wind_update`, `wind_new` — out of the never-column,
+and re-measures `wind_get`/`wind_find` against windows that really exist.
+
 A function being unmeasured does not mean it is broken. It means nobody knows.
 Everything measured so far came back with two real deviations in total, so the
 prior is good — but the two worst finds of 2026-09-05 (a return value the
@@ -48,8 +54,12 @@ Round 1 was deliberately narrow — only calls that take no pointer, block on
 nothing and change no state another case reads. That left 6 functions measured
 (`evnt_timer`, `graf_handle`, `graf_mkstate`, `wind_get`, `wind_find`,
 `wind_calc`), 60 of the 95 cases being `wind_calc` alone. Everything with a
-tree, a menu, a resource or a window needs a state reset the harness does not
-have yet — that is round 2, and it has never happened.
+tree, a menu, a resource or a window needs a state reset the harness did not
+have. For **windows** it now has one — `wind_new`, declared by the table and
+issued before every case (`cases/aes-r2-wind.tsv`, 78 cases, written
+2026-09-06, **not yet run**). For **trees, menus and resources** it is still
+blocked, and not on the reset: they take an `addr_in[0]` the case-table format
+has no column for.
 
 | Manager | Never measured |
 |---|---|
@@ -61,7 +71,7 @@ have yet — that is round 2, and it has never happened.
 | Graphics | `graf_rubberbox`(70) `graf_dragbox`(71) `graf_movebox`(72) `graf_growbox`(73) `graf_shrinkbox`(74) `graf_watchbox`(75) `graf_slidebox`(76) `graf_mouse`(78) |
 | Scrap | `scrp_read`(80) `scrp_write`(81) `scrp_clear`(82) |
 | File selector | `fsel_input`(90) `fsel_exinput`(91) |
-| Window | `wind_create`(100) `wind_open`(101) `wind_close`(102) `wind_delete`(103) `wind_set`(105) `wind_update`(107) `wind_new`(109) |
+| Window | `wind_create`(100) `wind_open`(101) `wind_close`(102) `wind_delete`(103) `wind_set`(105) `wind_update`(107) `wind_new`(109) — **all seven are in round 2's table, awaiting the run** |
 | Resource | `rsrc_load`(110) `rsrc_free`(111) `rsrc_gaddr`(112) `rsrc_saddr`(113) `rsrc_obfix`(114) |
 | Shell | `shel_read`(120) `shel_write`(121) `shel_get`(122) `shel_put`(123) `shel_find`(124) `shel_envrn`(125) `shel_rdef`(126) `shel_wdef`(127) |
 
@@ -110,9 +120,31 @@ need the physical Atari and a measurement session; the rest are desk work.
       pixel), any `vrt_cpyfm` that actually expands (the result is a colour),
       and `vr_trnfm` above 8 planes (`TRUECOLOR_MODE = v_planes > 8` splits
       the two machines on video mode, not on the VDI).
-- [ ] **TT — AES round 2.** Trees, menus, resources, windows. Blocked on a state
-      reset the harness does not have; designing that reset is the real work and
-      can be done before the TT session.
+- [x] ~~**AES round 2 — the state reset.**~~ Designed and built 2026-09-06.
+      The AES has no attribute set to restore the way the VDI does, but the
+      **window manager has the AES' own reset**: `wind_new` → `wm_new`
+      (`aes/gemwmlib.c:1875-1893`) closes and deletes every window with a
+      handle ≥ 1 and drains the `wind_update` mouse-control and screen-sync
+      locks, and EmuTOS issues it itself after every graphics-mode program
+      the shell runs (`aes/gemshlib.c:676-677`) — so a run that issues it
+      leaves nothing the shell would not have swept. The table declares
+      which reset runs, on a `!reset` directive line
+      (`tosdump/core/cases.h`), because the dumper is double-clicked with no
+      arguments and the file's CRC is the only thing a dump carries;
+      absent means round 1's `none`, so `aes-r1.tsv` stays reproducible.
+      `tosdump/cases/aes-r2-wind.tsv`, **78 cases, 126 preludes, CRC
+      `AFB11C9F`**, closing the seven never-measured window opcodes.
+- [ ] **TT — AES round 2 measurement.** Not taken yet. Deployed to
+      `tosdump/deploy-tt/` and `tosdump/deploy-pi4/`.
+- [ ] **TT — AES round 3: trees, menus, resources.** Still blocked, and not
+      on the reset. `menu_bar`, `objc_*`, `rsrc_*`, `form_*` all take an
+      `addr_in[0]` the case table has no column for, and an OBJECT built by
+      the dumper is 24 bytes on the m68k and wider under the LP64 NewTOS
+      build. That needs a *fixture* mechanism — the table names a tree the
+      way `cases/vdi-raster.tsv` names a buffer — not another reset. The
+      menu manager additionally needs its own reset (`menu_bar(tree, 0)`
+      clears `gl_mntree`, `aes/gemmnlib.c:724-728`), which `wm_new` does
+      not do.
 - [ ] **TT — the remaining 15 VDI opcodes** (mouse/input/vector group). Lower
       volume, cheaper once the harness is out anyway. Triaged 2026-09-06
       against the EmuTOS source, not yet turned into cases: **safe to add**

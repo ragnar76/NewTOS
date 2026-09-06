@@ -43,6 +43,26 @@ Declaring *more* input words than the case lists is also fine: the surplus is
 copied from the caller's own poisoned array, so it is `0xDEAD` and
 deterministic.
 
+> **Round 2 landed 2026-09-06** and rule 3 no longer applies to the window
+> manager. `cases/aes-r2-wind.tsv` (**78 cases, 126 preludes, CRC
+> `AFB11C9F`**) declares `!reset wind_new` on its own directive line, and
+> `core/runner_aes.c` issues opcode 109 before every case and once after the
+> last. `wm_new` closes and deletes every window with a handle ≥ 1 and drains
+> the `wind_update` mouse-control and screen-sync locks
+> (`gemwmlib.c:1875-1893`); EmuTOS issues it itself after every graphics-mode
+> program the shell starts (`gemshlib.c:676-677`), which is what makes it safe
+> unattended. The reset is declared by the *table* rather than by the program
+> because the dumper is double-clicked with no arguments and always reads
+> `AES.TSV`, so the file — whose CRC the dump header carries — is the only
+> thing that can tell two rounds apart; **absent means `none`**, so
+> `aes-r1.tsv` and its dumps stay exactly reproducible. What the reset does
+> *not* restore, and what is therefore refused rather than measured, is listed
+> at the head of `aes-r2-wind.tsv`: `gl_newdesk`, `gl_aname`/`gl_ainfo`,
+> `gl_wtcolor`/`gl_wbcolor`, and `D.w_win[0]`. Rounds 3+ (trees, menus,
+> resources) are **not** blocked on a reset any more — they are blocked on an
+> `addr_in` column the table format does not have, and the menu manager on its
+> own reset (`menu_bar(tree, 0)`, `gemmnlib.c:724-728`).
+
 **3. Nothing that mutates state another case reads,** because there is no
 reset (`core/runner_aes.c`). The VDI reset restores the attribute defaults
 `init_wk` establishes, which `docs/api/vdi/_state.md` documents as a defined
@@ -95,10 +115,27 @@ outside the classes as stated, both real:
 
 - **`wind_update` (107)** — `wm_update(BEG_UPDATE)` blocks on
   `ev_block(MU_MUTEX, &wind_spb)` when the lock is already held
-  (`gemwmlib.c:1786`). Two `BEG_UPDATE` cases in a row would self-deadlock,
-  with no operator remedy at all. It is not in the guard because it does not
-  block on the *operator* and because a balanced BEG/END pair is a legitimate
-  round-2 measurement — but a round-2 table must pair them.
+  (`gemwmlib.c:1786`). It is not in the guard because it does not block on the
+  *operator*.
+  > **Corrected 2026-09-06 while building round 2.** "Two `BEG_UPDATE` cases
+  > in a row would self-deadlock" is **wrong for a single application**:
+  > `tak_flag` counts up and returns TRUE whenever `sy_owner == rlr`
+  > (`gemflag.c:69-83`), so a second `BEG_UPDATE` from the same process does
+  > not wait. A block is only possible while *another* process holds the lock
+  > — in practice the control manager between its `BEG_UPDATE` at
+  > `gemctrl.c:463` and its `END_UPDATE` at `:484`, which is bounded by the
+  > operator releasing the mouse button, not unbounded. And `wm_new` drains
+  > `wind_spb` outright (`gemwmlib.c:1882-1883`), so with the round-2 reset a
+  > lone `BEG_UPDATE` case is safe.
+  >
+  > The half that genuinely does **not** heal is the *mouse-control* one:
+  > `END_MCTRL` is mode **2** and `BEG_MCTRL` mode **3** (`aesdefs.h:559-562`;
+  > `wm_update` subtracts 2 and passes the rest to `fm_own`,
+  > `gemwmlib.c:1789-1795`), and `fm_own(0)` decrements `ml_ocnt`
+  > unconditionally (`gemfmlib.c:99`) while `wm_new` only drains it
+  > *downwards* (`:1880`). An unpaired `END_MCTRL` drives it to −1 and every
+  > later BEG/END pair is off by one — so the loader refuses one, per case,
+  > and treats a `wind_new` inside a case as zeroing the count.
 - **`appl_write` (12)** — `aqueue` blocks the event when the receiver's queue
   has no room (`gemqueue.c:120-124`). With a lone application and a 16-byte
   message it completes, so it is not a *reliable* hang; it is out of round 1
@@ -207,8 +244,8 @@ cover (a window's rect comes out of `gl_rfull`, which starts below it).
 | `wind_get` `WF_COLOR` (18) / `WF_DCOLOR` (19) | excluded | `gadget = pinwds[0]` is `int_in[2]` and is **not range-checked** before indexing `pwin->w_tcolor[]` (`gemwmlib.c:1567-1576`), so a wrong `IN_LEN` in the table is an out-of-bounds read on real hardware. `poutwds[0]` is also left unwritten, so `OUT_LEN ≥ 2` samples stack garbage. |
 | `wind_get` `WF_NAME` (2) / `WF_INFO` (3) | excluded | the classic binding passes a **destination pointer** in `int_in[2..3]` and declares `IN_LEN 4` (`a_wind_get.c:344-347`). An AES that implements the field writes through it — with a pointer-free round 1 that is a write to `0xDEADDEAD`. Round 2, with a real buffer. |
 | `wind_get` `WF_SCREEN` (17), full form | reduced to `OUT_LEN` 1 | `gsx_mret` returns the menu/alert save buffer **address** and length (`gemwmlib.c:1564`); an address cannot be compared between a TT and a Pi. The return code can. |
-| `wind_create` (100) … `wind_new` (109) | later | all mutate the window list. They need the round-2 reset. |
-| `wind_set` (105) | later | mutates by definition; needs a prelude and a reset. |
+| `wind_create` (100) … `wind_new` (109) | **done, round 2** | all mutate the window list; `wind_new` is the reset that makes them measurable. `cases/aes-r2-wind.tsv`. |
+| `wind_set` (105) | **done, round 2** | mutates by definition; measured through a prelude that sets and a case that reads back. `WF_NAME`/`WF_INFO`/`WF_NEWDESK`/`WF_COLOR`/`WF_DCOLOR` stay out — pointers and unchecked indices, refused by the loader. |
 | `appl_init` (10) | excluded | the run is *inside* one already (`core/gem.c`); a second one would change the AESGLOBAL every other case is recorded against. Its result is in the run log instead. |
 | `appl_exit` (19) | excluded | ends the application. Every case after it would measure nothing. |
 | `appl_read`/`write`/`find`/`tplay`/`trecord` (11-15) | later | pointer arguments (message buffer, name, event record). |

@@ -96,7 +96,8 @@ static void check_run(struct td_wk *wk)
 	                (size_t)ct.count * TD_AES_RECORD_SIZE);
 	TD_CHECK_EQ(rc, 0);
 
-	/* no reset block: one call per case and not a single call more */
+	/* the table declares no reset, so still one call per case and not a
+	 * single call more -- including after the last one */
 	TD_CHECK_EQ(td_stub_ncalls, (int)ct.count);
 
 	for (c = 0; c < (int)ct.count; c++) {
@@ -283,6 +284,83 @@ static void check_too_small(void)
 	TD_CHECK_EQ(td_stub_ncalls, 0);
 }
 
+
+/*
+ * The reset (spec section 5), as round 2 declares it.
+ *
+ * The AES has no attribute set to restore the way the VDI does, but it has
+ * something better for the window manager: wind_new IS the AES' own reset.
+ * wm_new closes and deletes every window with a handle >= 1, drains ml_ocnt
+ * through END_MCTRL and wind_spb through END_UPDATE (gemwmlib.c:1875-1893),
+ * and EmuTOS itself issues it after every graphics-mode program the shell
+ * runs (gemshlib.c:676-677) -- so a run that issues it leaves the machine in
+ * a state the shell would have produced anyway.
+ *
+ * What the runner owes:
+ *   - one reset call before EVERY case, ahead of that case's preludes, so a
+ *     prelude establishes state on top of a known one rather than on top of
+ *     the previous case's leftovers;
+ *   - the reset laid exactly as gemlib lays it -- AES_PARAMS(109,0,0,0,0),
+ *     a_wind_new.c:25 -- because a reset that declared output words would
+ *     copy stack garbage back over the caller's array;
+ *   - the reset's arrays poisoned like any other call, so it cannot carry
+ *     the previous case's values into the AES;
+ *   - nothing recorded for it: the record count stays the case count.
+ */
+static const char *reset_table_text =
+	"!reset\twind_new\n"
+	"+107\t1\t1\t0\t0\t1\tprelude: BEG_UPDATE\n"
+	"104\t2\t5\t0\t0\t0,4\twind_get 0 WF_WXYWH\n"
+	"108\t6\t5\t0\t0\t1,0x0FEF,10,20,30,40\twind_calc\n";
+
+static struct td_aes_case_table reset_ct;
+static uint8_t reset_records[8 * TD_AES_RECORD_SIZE];
+
+static void check_reset(void)
+{
+	struct td_case_error err;
+	int i;
+
+	printf("aes runner: a declared reset runs before every case\n");
+
+	memset(&err, 0, sizeof err);
+	TD_CHECK_EQ(td_aes_cases_parse(&reset_ct, reset_table_text,
+	                               strlen(reset_table_text), &err), 0);
+	TD_CHECK_EQ(reset_ct.reset, TD_AES_RESET_WIND_NEW);
+	TD_CHECK_EQ(reset_ct.count, 2);
+
+	td_stub_reset();
+	TD_CHECK_EQ(td_run_aes(&reset_ct, td_gem_global(), reset_records,
+	                       (size_t)reset_ct.count * TD_AES_RECORD_SIZE), 0);
+
+	/* reset, prelude, case | reset, case | reset.  The last one is what
+	 * makes "the run leaves nothing behind" true without relying on the
+	 * shell to sweep after it (gemshlib.c:668-677). */
+	TD_CHECK_EQ(td_stub_ncalls, 6);
+	TD_CHECK_EQ(td_stub_calls[0].opcode, 109);
+	TD_CHECK_EQ(td_stub_calls[1].opcode, 107);
+	TD_CHECK_EQ(td_stub_calls[2].opcode, 104);
+	TD_CHECK_EQ(td_stub_calls[3].opcode, 109);
+	TD_CHECK_EQ(td_stub_calls[4].opcode, 108);
+	TD_CHECK_EQ(td_stub_calls[5].opcode, 109);
+
+	/* laid exactly as gemlib lays wind_new (a_wind_new.c:25) */
+	TD_CHECK_EQ(td_stub_calls[0].aes_control[1], 0);
+	TD_CHECK_EQ(td_stub_calls[0].aes_control[2], 0);
+	TD_CHECK_EQ(td_stub_calls[0].aes_control[3], 0);
+	TD_CHECK_EQ(td_stub_calls[0].aes_control[4], 0);
+
+	/* poisoned like any other call: no case's values reach the reset */
+	for (i = 0; i < TD_AES_INTIN_N; i++)
+		TD_CHECK_EQ((uint16_t)td_stub_calls[3].aes_int_in[i], 0xDEADu);
+
+	/* and nothing of it is recorded: the ids are still the case lines */
+	TD_CHECK_EQ(td_load_be16(REC_AT(reset_records, 0) + TD_AES_OFF_CASEID),
+	            reset_ct.cases[0].line);
+	TD_CHECK_EQ(td_load_be16(REC_AT(reset_records, 0) + TD_AES_OFF_OPCODE), 104);
+	TD_CHECK_EQ(td_load_be16(REC_AT(reset_records, 1) + TD_AES_OFF_OPCODE), 108);
+}
+
 int main(int argc, char **argv)
 {
 	struct td_case_error err;
@@ -297,6 +375,7 @@ int main(int argc, char **argv)
 	check_out_len_zero();
 	check_prelude();
 	check_too_small();
+	check_reset();
 
 	/*
 	 * A well-formed dump file, written by the same code the target uses,

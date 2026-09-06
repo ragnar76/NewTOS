@@ -86,6 +86,9 @@ struct td_case_table {
 #define TD_CASE_ERR_OUT_LEN        (-10)  /* n_intout > the intout array  */
 #define TD_CASE_ERR_UNSAFE_OPCODE  (-11)  /* opcode may not be issued     */
 #define TD_CASE_ERR_GEOMETRY       (-12)  /* a form or rect leaves the buf*/
+#define TD_CASE_ERR_DIRECTIVE      (-13)  /* a '!' line cannot be honoured*/
+#define TD_CASE_ERR_UNSAFE_FIELD   (-14)  /* a field may not be issued    */
+#define TD_CASE_ERR_UNSAFE_STATE   (-15)  /* the run could not finish     */
 
 struct td_case_error {
 	uint16_t    line;                  /* physical line, 0 if not a line  */
@@ -120,6 +123,11 @@ void td_case_line_comment_n(const char *line, size_t len, int ncols,
  * on what carries a case id -- a comparator that counted preludes as cases
  * would index every record wrongly. */
 int td_case_line_is_prelude(const char *line, size_t len);
+
+/* Is this line a '!' directive?  A directive carries no call at all, so the
+ * shared line iterator already reports it as not-a-case; this is how the
+ * parser that owns the directive picks it back out. */
+int td_case_line_is_directive(const char *line, size_t len);
 
 /* ------------------------------------------------------------------ */
 /* AES case tables (cases/aes-*.tsv)                                   */
@@ -159,6 +167,70 @@ int td_case_line_is_prelude(const char *line, size_t len);
  */
 #define TD_AES_CASE_COLUMNS 7
 
+/* ------------------------------------------------------------------ */
+/* The reset directive (spec section 5, for the AES)                   */
+/* ------------------------------------------------------------------ */
+/*
+ * A line whose first non-blank character is '!' is a DIRECTIVE: it carries
+ * no case and no call, but it does consume a line number like every other
+ * line, so case ids stay the physical line numbers.  One directive exists:
+ *
+ *   !reset <TAB> none | wind_new
+ *
+ * It must appear before the first case or prelude, at most once, and its
+ * value must be one of the names below -- an unknown name is refused rather
+ * than defaulting, because defaulting would silently run a round-2 table
+ * with round 1's absent reset.
+ *
+ * WHY THE TABLE DECLARES IT AND NOT THE PROGRAM.  Spec section 5 puts the
+ * reset sequence in core/ so both targets run the identical one, and it is
+ * in core/ here too -- td_reset_aes(), one fixed call.  What the table
+ * chooses is only WHICH named reset runs, and that has to be the table's:
+ * the dumper is double-clicked on the TT with no arguments and always reads
+ * AES.TSV, so the file is the only thing that can tell two rounds apart, and
+ * the file's CRC is what the dump header carries.  A reset selected by a
+ * command line or a rebuild would not be provable from the dump.
+ *
+ * ABSENT MEANS `none`, and that is deliberate rather than lazy: round 1's
+ * table (cases/aes-r1.tsv, CRC 33C13C8F) is frozen and its dumps are taken.
+ * Any other default would silently change what re-running it measures, and
+ * the comparator would then compare a reset run against an unreset reference
+ * and call the difference a defect.
+ *
+ * `wind_new` issues opcode 109 with control[1..4] = 0, exactly as gemlib
+ * lays it (a_wind_new.c:25).  It is the AES' OWN reset: wm_new closes and
+ * deletes every window with a handle >= 1 and drains the wind_update mouse
+ * and screen locks (gemwmlib.c:1875-1893).  EmuTOS issues it itself after
+ * every graphics-mode program the shell runs (gemshlib.c:676-677), so a run
+ * that issues it leaves nothing behind that the shell would not have swept
+ * anyway.
+ */
+#define TD_AES_RESET_NONE      0
+#define TD_AES_RESET_WIND_NEW  1
+
+/*
+ * How many DISTINCT window handles one table may open.  This is a hang
+ * bound, not a style limit.
+ *
+ * Every wind_open sends the window's owner one WM_REDRAW (w_redraw,
+ * gemwmlib.c:887-908, reached through draw_change -> w_update), and the
+ * dumper is that owner.  It never reads its own message queue: every AES
+ * call that would drain one blocks on an empty queue, so there is no
+ * non-blocking drain to put in the reset.  doq unions successive WM_REDRAWs
+ * for the same handle (gemqueue.c:45-56), so what accumulates is one message
+ * per distinct handle; p_queue holds QUEUE_SIZE = 128 bytes = eight 16-byte
+ * messages (struct.h:56, :152), and aqueue BLOCKS the sender when the next
+ * message does not fit (gemqueue.c:96, :124).  Here the sender and the
+ * receiver are the same process, so that block never ends.
+ *
+ * The reset frees every handle, so wm_create hands out handle 1 again
+ * (gemwmlib.c:1369-1378) and the distinct-handle count over a whole run is
+ * the largest number any single case opens.  Four leaves half the queue
+ * free for the control manager's own messages, which an operator touching
+ * the mouse during the run would generate.
+ */
+#define TD_AES_MAX_OPEN_WINDOWS 4
+
 struct td_aes_prelude {
 	int16_t  opcode;
 	int16_t  n_intin;                  /* control[1], IN_LEN              */
@@ -185,6 +257,7 @@ struct td_aes_case {
 
 struct td_aes_case_table {
 	uint32_t              crc;         /* CRC32 over the raw file bytes   */
+	int16_t               reset;       /* TD_AES_RESET_*, from "!reset"   */
 	uint16_t              count;
 	uint16_t              prelude_count;
 	struct td_aes_case    cases[TD_MAX_CASES];
