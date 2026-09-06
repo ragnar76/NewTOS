@@ -241,6 +241,38 @@ else
   echo "  ! tosdump not built (run 'make -C tosdump all'); skipping DUMPVDI"
 fi
 
+# ── BALL.NAP: the bouncing-ball demo ────────────────────────────────────────
+# The October demo (Applications/Demo-bouncing-Ball/), milestone 1: one ball,
+# gravity, bounce, shadow, drawn as a shaded sphere. It is a `.NAP` because it
+# reads the screen geometry from a VDI workstation (appl_init / graf_handle /
+# v_opnvwk), so it is launched by DOUBLE-CLICKING it on the desktop -- never
+# from \AUTO\, which runs console programs only. It quits on any key and puts
+# both screen bases back, so the desktop comes straight back afterwards.
+#
+# It goes in the ROOT of C: so it is one double-click away, and so the `#Z`
+# autorun line below can name it.
+#
+# QEMU raspi4b emulates the SD controller but no keyboard or mouse, so nothing
+# can be double-clicked there. For a headless run set SD_BALL_AUTORUN=1: that
+# writes the EmuTOS `#Z` autorun line into C:\NEWDESK.INF, which the AES reads
+# in process_inf2 and which makes the shell loop start the demo INSTEAD of the
+# built-in desktop -- the real mechanism, not a test hook. A key typed on the
+# serial console quits it and the desktop appears.
+BALL_NAP="$SCRIPT_DIR/../sdk/apps/ball/BALL.NAP"
+if [ ! -f "$BALL_NAP" ]; then
+  "$SCRIPT_DIR/../sdk/apps/ball/build-ball.sh" >/dev/null 2>&1 || true
+fi
+if [ -f "$BALL_NAP" ]; then
+  cp "$BALL_NAP" "$V/BALL.NAP"
+  echo "installed C:\\BALL.NAP (bouncing-ball demo, LP64 GEM app)"
+  if [ "${SD_BALL_AUTORUN:-0}" = "1" ]; then
+    printf '#Z 01 C:\\BALL.NAP@\r\n' > "$V/NEWDESK.INF"
+    echo "  + C:\\NEWDESK.INF '#Z 01 C:\\BALL.NAP' (runs instead of the desktop)"
+  fi
+else
+  echo "note: sdk/apps/ball/BALL.NAP not built; C:\\BALL.NAP skipped (run sdk/apps/ball/build-ball.sh)"
+fi
+
 QED_DIR="$SCRIPT_DIR/../sdk/apps/qed/build"
 if [ -f "$QED_DIR/QED.NAP" ] && [ -f "$QED_DIR/qed.rsc" ]; then
   mkdir -p "$V/Apps/QED"

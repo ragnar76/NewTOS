@@ -504,3 +504,32 @@ hardware-solid:
   risk — but as a precaution, do a real-Pi4 smoke of **two interacting GEM
   processes** (a real `evnt_mesag` block + a peer's reply that wakes it) once step 4
   makes multiple threads live.
+
+---
+
+## Section K — BALL.NAP, the October demo (milestone 1)
+
+`sdk/apps/ball/` is a native LP64 GEM application that takes the whole screen,
+double-buffers through `Setscreen`, and quits on a key. Everything about the
+picture and the frame rate was verified in QEMU `raspi4b` (screendumps, and
+`C:\BALL.LOG`: 60.00 fps, 0 dropped frames, 0.21–0.22 ms/frame of headroom at
+640×480). Two things QEMU cannot reach, both because `raspi4b` has no input
+path at all — a serial byte is deliberately dropped on this board
+(`kernel/src/console.rs:163`, CON is the USB-HID keyboard):
+
+- **K1 — Launch by double-click.** Boot with the card, double-click
+  `C:\BALL.NAP` on the desktop. Expect: the desktop disappears, the ball
+  demo owns the screen. (QEMU exercised the same launch through the AES shell's
+  `#Z` autorun line, which is the other real mechanism, not a test hook.)
+- **K2 — Quit by key, screen left clean.** Press any key. Expect: the demo
+  stops, the mouse pointer is back, the desktop is repainted whole, and the
+  serial log shows `exited with rc=0`. In QEMU this was driven with a
+  temporary frame counter in place of the key press, so the `plat_close`
+  sequence itself (`Vsync` → `Setscreen(page0, page0)` → `graf_mouse(M_ON)` →
+  `v_clsvwk` → `appl_exit`) *is* verified; only the key that triggers it is not.
+- **K3 — The frame rate on real silicon.** Read `C:\BALL.LOG` afterwards. The
+  QEMU numbers say nothing about the Pi: QEMU has no cache model, emulates the
+  CPU slower, and turns the non-cacheable framebuffer into ordinary host memory
+  — which is exactly the cost that matters here. Expect 1920×1080 (not the
+  640×480 QEMU reports), a ball diameter of ~307 px, and a headroom figure from
+  the demo's own start-up self-benchmark.

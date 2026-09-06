@@ -45,6 +45,17 @@
 !/apps/chaintest/*.c
 !/apps/chaintest/*.sh
 
+# ...and ball, likewise OURS: the bouncing-ball demo (Applications/
+# Demo-bouncing-Ball/). It is written as ONE source for two machines -- NewTOS
+# on the Pi 4 and, later, TOS on an Atari TT with a NOVA card -- with the
+# machine-dependent half isolated in plat-*.c, so the sources and the build
+# script are the deliverable. Built binaries stay excluded by the *.NAP rule.
+!/apps/ball/
+/apps/ball/*
+!/apps/ball/*.c
+!/apps/ball/*.h
+!/apps/ball/*.sh
+
 # macOS junk that FAT round-trips create.
 .DS_Store
 ._*
