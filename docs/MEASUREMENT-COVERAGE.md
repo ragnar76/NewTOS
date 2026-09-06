@@ -113,7 +113,15 @@ against 1920×1080 with 16. Matching the TT there would make us *wrong*.
    `v_contourfill` seeded on the cleared background), **not** every drawn
    colour. Diagnosis, blast radius, fix options and the open Falcon/VIDEL
    spec question: `docs/STATUS.md`, Recent Decisions 2026-09-06.
-   **Still to be planned, not started.**
+   **PARKED 2026-09-06 — User-Entscheidung.** Alle drei Reparaturvarianten
+   sind invasiv, und die Frage, die zwischen ihnen entscheidet — zeigt das
+   Falcon-VIDEL Bit 5 an? — hat **keine Quelle im Baum und keine Maschine**,
+   auf der sie sich messen liesse. Keine bekannte Anwendung beruehrt es.
+   Wortlaut des Users: *„wir sollten uns an solchen dingen nicht festhalten,
+   wenn etwas kaputt ist dann merken wir das dann bei echten anwendungen“*.
+   Das ist ein **geparkter diagnostizierter Defekt**, ausdruecklich **keine**
+   bewusste Abweichung — er gehoert deshalb nicht in `COMPATIBILITY.md` und
+   kommt zurueck, sobald eine echte Anwendung ihn zeigt.
 
 ---
 
