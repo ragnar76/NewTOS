@@ -37,6 +37,12 @@ pub mod font;
 mod font_data;
 mod gdp;
 mod input;
+/// The AES's `SET_INPUT_MODE` entry point. EmuTOS' AES sets a logical input
+/// device's mode through the VDI trap — `gsx_ncode(SET_INPUT_MODE, 0, 2)` in
+/// `gsx_char()` (`aes/gemgsxif.c:459-463`) — and the four mode variables are
+/// VDI globals (`vdi/vdi_defs.h:258`), so the AES's write lands in the same
+/// state `vsin_mode`/`vqin_mode` read.
+pub(crate) use input::{set_input_mode, DEV_STRING, MODE_SAMPLE};
 mod inquiry;
 pub mod mouse;
 /// Input-subsystem entry point + queries: feed a relative-mouse event

@@ -478,7 +478,7 @@ fn open_workstation(phys: i16) -> i16 {
 /// leaked deliberately: the AES filled it at `appl_init` and every case is
 /// measured against it afterwards, exactly as the dumper's file-scope
 /// `aes_global[15]` lives for the whole run.
-fn context() -> &'static Context {
+pub fn context() -> &'static Context {
     CTX.get_or_init(|| {
         let host: &'static TestHost = HOST_CELL.get_or_init(|| {
             Box::leak(Box::new(TestHost {

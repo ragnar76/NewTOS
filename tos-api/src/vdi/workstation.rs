@@ -321,11 +321,21 @@ pub fn vq_extnd(pb: &Vdipb, vwk: &crate::vdi::vwk::Vwk, backend: &dyn RasterBack
 }
 
 /// Opcode 1 — open the physical workstation (the screen device).
+///
+/// Unlike `v_opnvwk` this also runs `vdimouse_init()`
+/// (`vdi/vdi_control.c:563`), whose first act is to put all four logical
+/// input devices back into REQUEST mode (`vdi/vdi_mouse.c:575-578`). That
+/// reset is observable through `vqin_mode`, and it matters because the AES
+/// leaves the string device in SAMPLE mode on every keyboard poll
+/// (`input::set_input_mode`): a program that opens the physical
+/// workstation itself sees 0 again, one that opens only a virtual
+/// workstation on the AES's physical handle sees the AES's 1.
 pub fn v_opnwk(pb: &Vdipb, backend: &dyn RasterBackend) {
     // SAFETY: single trap path.
     let vwk = unsafe { vwk::open_physical() };
     let handle = vwk.handle;
     init_wk(vwk, pb, backend);
+    super::input::reset_input_modes();
     pb.set_contrl(6, handle);
 }
 

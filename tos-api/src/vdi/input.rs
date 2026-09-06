@@ -19,6 +19,47 @@ use super::Vdipb;
 // matching `vdimouse_init` (`vdi_mouse.c:575-578`).
 static MODES: [AtomicI16; 5] = [const { AtomicI16::new(0) }; 5];
 
+/// The four logical input devices, in the VDI's own `INTIN[0]` numbering
+/// (`vdi_input.c:122-141`). Only the string device is named here — it is the
+/// one the AES writes (see [`set_input_mode`]).
+pub(crate) const DEV_STRING: i16 = 4;
+
+/// `INTIN[1]` operating modes as a caller passes them (the stored value is
+/// this minus one): 1 = REQUEST (block until input), 2 = SAMPLE (return at
+/// once). Only SAMPLE is named here — it is the one the AES writes.
+pub(crate) const MODE_SAMPLE: i16 = 2;
+
+/// The state half of [`vsin_mode`]: store `mode − 1` for device `dev`,
+/// exactly as `vdi_vsin_mode`'s `switch` does (`vdi/vdi_input.c:122-141`).
+/// A device selector outside 1..=4 stores nothing (the C `switch` has no
+/// `default` arm); the mode itself is not range-checked, EmuTOS stores it
+/// verbatim.
+///
+/// Split out of the opcode because the **AES** performs this same write, and
+/// on EmuTOS it reaches it through the VDI trap: `gsx_char()` issues
+/// `gsx_ncode(SET_INPUT_MODE, 0, 2)` with `intin = {4, 2}` before every
+/// `v_string` (`aes/gemgsxif.c:459-463`). The four mode variables are
+/// file-scope VDI globals, not per-workstation fields
+/// (`vdi/vdi_defs.h:258`), so both writers must land in this one state —
+/// which is why an AES keyboard poll is observable to an unrelated
+/// application through `vqin_mode`.
+pub(crate) fn set_input_mode(dev: i16, mode: i16) {
+    if (1..=4).contains(&dev) {
+        MODES[dev as usize].store(mode - 1, Ordering::Relaxed);
+    }
+}
+
+/// The `vdimouse_init` defaults: all four devices back to REQUEST
+/// (`vdi/vdi_mouse.c:575-578`). EmuTOS runs `vdimouse_init()` from
+/// `vdi_v_opnwk` alone (`vdi/vdi_control.c:563`), so opening the **physical**
+/// workstation clears a mode an earlier caller — the AES included — had set,
+/// while `v_opnvwk` leaves it standing.
+pub(crate) fn reset_input_modes() {
+    for m in &MODES {
+        m.store(0, Ordering::Relaxed);
+    }
+}
+
 /// Opcode 33 — `vsin_mode`: set the input mode of device `INTIN[0]`
 /// (1..=4) to `INTIN[1]` (1 request / 2 sample). **Echoes the raw mode**
 /// `INTIN[1]` in `INTOUT[0]`, not the device id (EmuTOS `vdi_vsin_mode`,
@@ -30,12 +71,7 @@ pub fn vsin_mode(pb: &Vdipb) {
     // out-of-range device.
     pb.set_intout(0, mode);
     pb.set_contrl(4, 1);
-    // Store `mode − 1` (0 = request, 1 = sample). A device selector outside
-    // 1..4 stores nothing (the C `switch` has no default). No range check on
-    // the mode value — EmuTOS stores it verbatim.
-    if (1..=4).contains(&dev) {
-        MODES[dev as usize].store(mode - 1, Ordering::Relaxed);
-    }
+    set_input_mode(dev, mode);
 }
 
 /// Opcode 115 — `vqin_mode`: report the input mode of device `INTIN[0]`.

@@ -177,8 +177,18 @@ programs the DAC with a `[0,1000]`-clamped copy; `vq_color` (op 26) reads
 | `str_mode` | string | `0` = request, `1` = sample |
 
 Each holds `mode − 1` (`vdi_input.c:122-141`); all default to `0`
-(request) at `vdimouse_init` (`vdi_mouse.c:575-578`). See
+(request) at `vdimouse_init` (`vdi_mouse.c:575-578`), which
+`vdi_v_opnwk` runs (`vdi_control.c:563`) and `vdi_v_opnvwk` does not. See
 [`input/_input.md`](input/_input.md).
+
+**The AES writes `str_mode` too.** `gsx_char()` issues `vsin_mode(4, 2)`
+before every `v_string` (`aes/gemgsxif.c:459-463`), and `chkkbd()` calls it
+from the dispatcher's scheduler on every pass (`aes/gemdisp.c:157-177`), so
+once the AES has ticked, `vqin_mode(4)` reports **1** on any EmuTOS machine
+until the next `v_opnwk`. `loc_mode` has a second writer for the same reason
+— `gsx_setmousexy()` (`aes/gemgsxif.c:484-488`), reached from `appl_tplay`
+alone. Measured on the reference TT: `EMUTOS14-VDI-all.BIN` records 40
+(device 4 → 1) and 6/38/39 (devices 1/2/3 → 0).
 
 ### Mouse position / buttons / cursor visibility
 

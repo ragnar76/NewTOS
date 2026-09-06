@@ -636,19 +636,31 @@ pub const REF_NUM_COLORS: i16 = 16; // `DEV_TAB` in `EMUTOS14-VDI-r2.LOG`
 ///   (`vdi_fill.c:1104-1114`). The TT took the palette arm, this workstation
 ///   takes the truecolor arm, and the two arms share no value.
 /// * **`vqin_mode(4)` `INTOUT[0]` with no prelude — the string device's
-///   mode.** This one is not about planes. `str_mode` defaults to 0
-///   (REQUEST) in `vdimouse_init` (`vdi_mouse.c:575-578`) and is written
-///   only by `vsin_mode` (`vdi_input.c:139`) — but the EmuTOS **AES** calls
-///   `vsin_mode(4, 2)` on every keyboard poll, in `gsx_char()`
+///   mode.** This one is not about planes; it is about the AES that was
+///   running on the reference machine and is not running here. `str_mode`
+///   defaults to 0 (REQUEST) in `vdimouse_init` (`vdi_mouse.c:575-578`) and
+///   is written only by `vsin_mode` (`vdi_input.c:139`) — but the EmuTOS
+///   **AES** calls `vsin_mode(4, 2)` on every keyboard poll, in `gsx_char()`
 ///   (`aes/gemgsxif.c:459-463`), which `chkkbd()` runs from the dispatcher's
-///   scheduler on every pass (`aes/gemdisp.c:157-177`). By the time any GEM
-///   program runs on an EmuTOS machine, `str_mode` is therefore 1, which is
-///   what the TT reported. This harness runs no AES (see [`workstation`]),
-///   so it measures the untouched default. NewTOS's AES polls the keyboard
-///   through the host rather than through `v_string`, so it does not set the
-///   flag either — a real divergence, in the AES and not in the VDI, tracked
-///   in `docs/COMPATIBILITY.md`. The VDI half — the default, and the
-///   set/read round trip — is checked below and by cases 123 and 125.
+///   scheduler on every pass (`aes/gemdisp.c:157-177`). On the TT that
+///   scheduler was ticking behind the dumper, so `str_mode` was 1 and the
+///   dump says 1.
+///
+///   Two things make this harness's 0 the right answer for *this*
+///   workstation rather than a NewTOS defect. It runs no AES at all (see
+///   [`workstation`]), so nothing performs that write; and it opens the
+///   **physical** workstation itself, which is exactly where EmuTOS runs
+///   `vdimouse_init` (`vdi_control.c:563`) and resets all four devices to
+///   REQUEST — `v_opnvwk`, the call the dumper made, does not. So the
+///   sequence replayed here ends at 0 on an EmuTOS VDI too; what cannot be
+///   replayed is the AES scheduler ticking concurrently afterwards.
+///
+///   NewTOS's AES does perform the write: `dsptch()` calls `chkkbd()`
+///   (`tos-api/src/aes/mod.rs`), and `tests/aes_reference.rs`'s
+///   `aes_dispatch_leaves_the_string_device_in_sample_mode` checks the
+///   result against these very dump records (r2 record 16, all record 40)
+///   in a binary that *does* run the AES. The VDI half — the default, and
+///   the set/read round trip — is checked below and by cases 123 and 125.
 pub const MACHINE_EXCLUDED: &[Excluded] = &[
     Excluded { opcode: 1, index: 13, when: None },
     Excluded { opcode: 100, index: 13, when: None },
@@ -756,7 +768,8 @@ fn substitute(out: &mut Vec<Diff>, case: &Case, intout: &[i16], ptsin: &[i16]) {
                 let backend = &HOST_CELL.get().expect("workstation() not opened").raster;
                 backend.screen_word(ptsin[0], ptsin[1]) as i16
             }
-            // vqin_mode: the `vdimouse_init` default (`vdi_mouse.c:575-578`).
+            // vqin_mode: the `vdimouse_init` default (`vdi_mouse.c:575-578`),
+            // which this harness's own `v_opnwk` restored (`vdi_control.c:563`).
             (115, 0) => 0,
             _ => unreachable!("no substitute for opcode {} INTOUT[{}]", case.opcode, e.index),
         };

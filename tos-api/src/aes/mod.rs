@@ -331,9 +331,60 @@ pub unsafe fn dispatch(
 /// *non-blocking* opcodes made it too, which is what `super()`'s fall-through
 /// guarantees in EmuTOS.
 fn dsptch() {
+    // `schedule()`'s keyboard poll, `chkkbd()` — first thing in every pass of
+    // the scheduler loop (`aes/gemdisp.c:180-184`), and it precedes the read
+    // because that is where `gsx_char` puts it.
+    chkkbd();
     if let Some(h) = crate::host::host() {
         h.pump_input();
     }
+}
+
+/// EmuTOS `chkkbd()` (`aes/gemdisp.c:157-177`) — the keyboard poll the
+/// scheduler runs on every dispatcher pass.
+///
+/// EmuTOS reads the key with `gsx_char()`, and `gsx_char` opens with
+///
+/// ```text
+/// intin[0] = 4;
+/// intin[1] = 2;
+/// gsx_ncode(SET_INPUT_MODE, 0, 2);    /* vsin_mode(4, 2): string, SAMPLE */
+/// ```
+///
+/// (`aes/gemgsxif.c:459-463`) before issuing the `STRING_INPUT`, because a
+/// polling AES must not block inside the VDI: REQUEST mode makes `v_string`
+/// wait for a key (`vdi/vdi_input.c:88-97`), SAMPLE makes it drain what is
+/// pending and return (`:98-105`).
+///
+/// **Why the mode write belongs here and not only in the VDI.** The four
+/// device modes are file-scope VDI globals, not per-workstation fields
+/// (`vdi/vdi_defs.h:258`), so the AES's `vsin_mode(4, 2)` is visible to every
+/// application through `vqin_mode(4)` — and nothing ever writes it back:
+/// `vsin_mode` is the only writer (`vdi_input.c:118-142`), the AES's one
+/// other call site sets the *locator* (`gsx_setmousexy`,
+/// `aes/gemgsxif.c:484-488`, reached from `appl_tplay` alone), and the only
+/// reset is `vdimouse_init` at `v_opnwk` (`vdi/vdi_control.c:563`,
+/// `vdi/vdi_mouse.c:575-578`). On any EmuTOS machine `vqin_mode(4)` therefore
+/// reports **1** from the first dispatcher pass onward, while devices 1, 2
+/// and 3 stay at their default 0. Measured on the reference TT (EmuTOS 1.4):
+/// `tosdump/reference/EMUTOS14-VDI-r2.BIN` record 16 and
+/// `EMUTOS14-VDI-all.BIN` record 40 both read `INTOUT[0] = 1` for
+/// `vqin_mode(4)`; records 6, 38 and 39 of the latter read 0 for devices 1,
+/// 2 and 3.
+///
+/// **What of `chkkbd` this is, and what it is not.** The mode write is
+/// reproduced; the key *read* is not routed through `v_string`. EmuTOS'
+/// `chkkbd` pulls the key out of the VDI and forks it into the mouse owner's
+/// per-process key queue (`forkq(kchange, …)`, `:172-176`); NewTOS' AES has
+/// no such queue and leaves the key in the IKBD ring until an `evnt_keybd` /
+/// form / dialog consumer takes it — the same delivery difference
+/// [`input`](self::input) already documents for the button side. EmuTOS'
+/// two guards on the read (`gl_play`, and the owner's queue being full) have
+/// no counterpart for that reason; neither ever *clears* the mode, so they
+/// can at most delay the first write, and on a normal boot both are false at
+/// the first pass.
+fn chkkbd() {
+    crate::vdi::set_input_mode(crate::vdi::DEV_STRING, crate::vdi::MODE_SAMPLE);
 }
 
 /// The opcode switch — EmuTOS's `crysbind` (`aes/gemsuper.c:77-421`).

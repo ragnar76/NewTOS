@@ -77,16 +77,24 @@ has no column for.
 
 ---
 
-## The two known real deviations
+## The known real deviations
 
 Everything else that differs between the TT and NewTOS is EmuTOS' own formula
 producing a different value on different hardware — 640×480 with 4 planes
 against 1920×1080 with 16. Matching the TT there would make us *wrong*.
 
-1. **`vqin_mode(4)` returns 0, EmuTOS returns 1** — case 77. EmuTOS' AES issues
-   `vsin_mode(4,2)` before every keyboard poll (`aes/gemgsxif.c:459-463`, called
-   from `chkkbd`, `aes/gemdisp.c:157-177`); ours never does. The VDI side is
-   correct. Already recorded in `docs/COMPATIBILITY.md`. **Small.**
+1. ~~**`vqin_mode(4)` returns 0, EmuTOS returns 1** — case 77.~~ **Closed
+   2026-09-06.** EmuTOS' AES issues `vsin_mode(4,2)` before every keyboard poll
+   (`gsx_char`, `aes/gemgsxif.c:459-463`, called from `chkkbd`,
+   `aes/gemdisp.c:157-177`); NewTOS' `dsptch()` now calls a `chkkbd()` that
+   performs the same write (`tos-api/src/aes/mod.rs`). Verified against the
+   dump, not asserted: `tests/aes_reference.rs`'s
+   `aes_dispatch_leaves_the_string_device_in_sample_mode` decodes r2 record 16
+   and all record 40 and compares. The `vdi_reference` case 51 keeps its
+   exclusion — that binary runs no AES *and* opens the physical workstation
+   itself, which is where EmuTOS' `vdimouse_init` resets all four devices
+   (`vdi/vdi_control.c:563`), so 0 is the right answer for that sequence; the
+   reset is now implemented too (`v_opnwk`, `tos-api/src/vdi/workstation.rs`).
 2. **Green is quantised to 5 bits in the device round-trip** — `v_get_pixel`
    after `v_clrwk` reports `0xFFDF` where a real Falcon reports `0xFFFF`
    (`kernel/src/vdi_backend.rs`, `device_to_rgb565`). RGB565 has 6 green bits.
@@ -164,8 +172,11 @@ need the physical Atari and a measurement session; the rest are desk work.
 
 ### Repair
 
-- [ ] **`vqin_mode` / `vsin_mode(4,2)` before keyboard polls.** Small, isolated,
-      EmuTOS-sourced. Do this one first.
+- [x] ~~**`vqin_mode` / `vsin_mode(4,2)` before keyboard polls.**~~ Done
+      2026-09-06: `dsptch()` → `chkkbd()` → `vdi::set_input_mode(4, 2)`, plus
+      the `vdimouse_init` reset in `v_opnwk` that `str_mode != 0` made
+      observable. One new test, `aes_dispatch_leaves_the_string_device_in_
+      sample_mode`.
 - [ ] **6-bit green in the device round-trip.** Plan first: it changes every
       colour, the MFDB round-trip and possibly stored screendump baselines.
 

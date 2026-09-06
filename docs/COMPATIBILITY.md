@@ -81,22 +81,37 @@ this: it is a screen line, not an interface — `Sysconf`, `Malloc(-1)` and the
 memory-descriptor chain are untouched and stay EmuTOS-faithful.
 
 
-**The AES does not leave the VDI string device in SAMPLE mode** — open
-divergence, recorded 2026-09-04, **not** a decision to keep it. EmuTOS' AES
-reads a keystroke through `gsx_char()`, which issues `vsin_mode(4, 2)` before
-every `v_string` (`references/emutos/aes/gemgsxif.c:459-463`), and `chkkbd()`
-calls it from the dispatcher's scheduler on every pass
-(`aes/gemdisp.c:157-177`). Consequence: on any EmuTOS machine `vqin_mode(4)`
-reports **1** (SAMPLE) from the first AES tick onward — measured twice on the
-reference TT (`tosdump/reference/EMUTOS14-VDI-r2.BIN` case 51,
-`EMUTOS14-VDI-all.BIN` case 77). NewTOS' AES polls the keyboard through the
-host (`tos-api/src/aes/mod.rs`, `dsptch` → `Host::pump_input`), never through
-`v_string`, so `str_mode` keeps its `vdimouse_init` default of 0
-(`vdi/vdi_mouse.c:575-578`). The **VDI** side is EmuTOS-faithful — the
-default, and the `vsin_mode`/`vqin_mode` round trip, are verified
-(`tos-api/tests/vdi_reference`, cases 49/50/123/125). The gap is in the AES
-keyboard path and is listed here so it is not mistaken for a VDI defect; it
-should be closed when the AES keyboard poll is revisited.
+**The AES's keyboard poll does not read through `v_string`** — sanctioned
+2026-09-06, and it is the *remainder* of a divergence that was open here from
+2026-09-04 to 2026-09-06. What was open: EmuTOS' AES reads a keystroke through
+`gsx_char()`, which issues `vsin_mode(4, 2)` before every `v_string`
+(`references/emutos/aes/gemgsxif.c:459-463`), and `chkkbd()` calls it from the
+dispatcher's scheduler on every pass (`aes/gemdisp.c:157-177`), so on any
+EmuTOS machine `vqin_mode(4)` reports **1** (SAMPLE) from the first AES tick
+onward — measured twice on the reference TT
+(`tosdump/reference/EMUTOS14-VDI-r2.BIN` record 16 / case 51,
+`EMUTOS14-VDI-all.BIN` record 40 / case 77; devices 1, 2 and 3 read 0 in
+records 6, 38, 39). NewTOS reported 0.
+
+**That half is fixed.** `dsptch()` now calls `chkkbd()`, which performs the
+same `vsin_mode(4, 2)` write into the same VDI-global state
+(`tos-api/src/aes/mod.rs`, `tos-api/src/vdi/input.rs`); `v_opnwk` performs the
+`vdimouse_init` reset that goes with it (`vdi/vdi_control.c:563`,
+`vdi/vdi_mouse.c:575-578`). Checked against the dump itself by
+`tos-api/tests/aes_reference.rs`'s
+`aes_dispatch_leaves_the_string_device_in_sample_mode`.
+
+**What stays deliberately different:** the *read*. EmuTOS' `chkkbd` pulls the
+key out of the VDI with `v_string` and forks it into the mouse owner's
+per-process AES key queue (`forkq(kchange, …)`, `aes/gemdisp.c:172-176`).
+NewTOS' AES has no such queue — `evnt_keybd`, the form manager and the file
+selector take the key straight from the IKBD ring — which is the same delivery
+difference already recorded for the button side in
+`tos-api/src/aes/input.rs`. Observable consequence: inside a running GEM
+application the AES has *not* already consumed pending keystrokes, so a
+`Bconin(2)` from that application still sees them. Closing it means giving the
+AES a per-process key queue and is a scheduler change, not an input-mode one.
+The mode half — the only part any measured case reaches — now matches.
 
 
 ## EmuTOS is the reference, not the template
