@@ -13,6 +13,12 @@
 /gemlib/gemlib-0.44.0/
 /gemlib/build/
 /gemlib/gemlib.a
+# ...and the same three for the m68k (real Atari) build of gemlib, which uses
+# the PRISTINE source -- no NewTOS overlay -- because on m68k gemlib's own
+# `trap #2` primitive is already the right one. See build-gemlib-m68k.sh.
+/gemlib/gemlib-0.44.0-m68k/
+/gemlib/build-m68k/
+/gemlib/gemlib-m68k.a
 /cflib/cflib-21/
 /cflib/build/
 /cflib/cflib.a
@@ -55,6 +61,9 @@
 !/apps/ball/*.c
 !/apps/ball/*.h
 !/apps/ball/*.sh
+# ...including the note that says what the TT half still has to have confirmed
+# on the real machine before anyone trusts it.
+!/apps/ball/*.md
 
 # macOS junk that FAT round-trips create.
 .DS_Store
