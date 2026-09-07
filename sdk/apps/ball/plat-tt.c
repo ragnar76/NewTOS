@@ -104,6 +104,13 @@
 
 #include "ball.h"
 
+/* This half of the seam is written for a PALETTE picture: it is handed
+ * indices and it owns the colour table. Building it against a truecolour
+ * core would compile and then draw nonsense, so say so here instead. */
+#if BALL_TRUECOLOR
+#error "plat-tt.c serves BALL_TRUECOLOR 0 only"
+#endif
+
 #ifndef MX_PREFTTRAM
 #define MX_PREFTTRAM	3	/* TT-RAM preferred, ST-RAM if there is none */
 #endif
@@ -493,7 +500,7 @@ void plat_palette(const ball_rgb *pal)
 	}
 }
 
-void plat_blit(const unsigned char *src, long src_pitch,
+void plat_blit(const ball_px *src, long src_pitch,
 	       int x, int y, int w, int h)
 {
 	int par = x & 1;		/* keep the two sides the same parity  */

@@ -43,6 +43,13 @@
 
 #include "ball.h"
 
+/* This half of the seam is written for a PALETTE picture: it is handed
+ * indices and it owns the colour table. Building it against a truecolour
+ * core would compile and then draw nonsense, so say so here instead. */
+#if BALL_TRUECOLOR
+#error "plat-newtos.c serves BALL_TRUECOLOR 0 only"
+#endif
+
 /* Largest line padding, in pixels, the pitch measurement looks for. A display
  * controller pads a line to its own alignment; a whole extra 1024 pixels is
  * far more than any of them use, and bounding the search means a failure is
@@ -188,7 +195,7 @@ void plat_palette(const ball_rgb *pal)
 			 | (unsigned int)pal[i].b;
 }
 
-void plat_blit(const unsigned char *src, long src_pitch,
+void plat_blit(const ball_px *src, long src_pitch,
 	       int x, int y, int w, int h)
 {
 	unsigned char *dst = draw_base + (long)y * pitch + (long)x * 4L;

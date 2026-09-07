@@ -135,7 +135,7 @@ typedef char ball_palette_tiles_256[
 	 RSVD_BASE + RSVD_N == BALL_BASE &&
 	 BALL_BASE + BALL_N == BALL_PAL_N) ? 1 : -1];
 static unsigned char hue_base[TEX_MAT_MAX];
-static unsigned char shade_lut[BALL_LEVELS * TEX_MAT_MAX];
+static ball_px shade_lut[BALL_LEVELS * TEX_MAT_MAX];
 
 /*
  * THE light. There is one, it is fixed in the VIEWER's frame, and everything
@@ -488,7 +488,7 @@ static int horizon;			/* first floor row		     */
 static float floor_y;			/* the ball's contact line	     */
 
 /* ---- buffers (all from Mxalloc, TT-RAM preferred) ----------------------- */
-static unsigned char *idx;		/* W*H palette indices		     */
+static ball_px *idx;			/* W*H composition pixels	     */
 /*
  * The room, painted once, W*H bytes of it.
  *
@@ -512,8 +512,8 @@ static unsigned char *idx;		/* W*H palette indices		     */
  * It costs W*H bytes: 2.0 MB at 1920x1080 and 300 KB at 640x480, next to the
  * same again for the composition buffer. Both machines have it.
  */
-static unsigned char *bg;		/* W*H, the room with nothing in it  */
-static unsigned char *bg_row;		/* H, the background index per row   */
+static ball_px *bg;		/* W*H, the room with nothing in it  */
+static ball_px *bg_row;			/* H, the background pixel per row   */
 static unsigned short *map_off;		/* D*D, texel offset before the spin */
 static unsigned char *map_shade;	/* D*D, BALL_BASE + shade	     */
 static short *run0, *run1;		/* D each, the disc's row coverage   */
@@ -548,7 +548,7 @@ static int rm_k;			/* rows of cells on the walls	     */
 static float line_core, line_soft, line_glow_r;
 
 /* ---- the reflection ----------------------------------------------------- */
-static unsigned char refl_lut[REFL_LUT_N][BALL_LEVELS * TEX_MAT_MAX];
+static ball_px refl_lut[REFL_LUT_N][BALL_LEVELS * TEX_MAT_MAX];
 static int fl_i;			/* the contact line, as a row	     */
 static float refl_inv;			/* 1 / the fade length		     */
 static int rf_top;			/* where the mirrored disc starts    */
@@ -1089,6 +1089,122 @@ static void light_init(void)
 }
 
 /* ------------------------------------------------------------------------ */
+/* The composition pixel                                                     */
+/*                                                                           */
+/* Everything the renderer writes goes through the handful of operations     */
+/* below, and each of them is stated twice: once for a machine whose picture */
+/* is 256 designed colours, once for a machine whose picture is RGB. The     */
+/* renderer itself reads the same either way -- that is the point of naming  */
+/* them -- and the build script says which half is compiled (see ball.h).    */
+/*                                                                           */
+/* WHAT THE PALETTE LAYOUT WAS DOING, and how the wide pixel does it. The    */
+/* 256-entry design is not only a set of colours, it also ENCODES two facts  */
+/* about every background pixel, and the renderer reads them straight out of */
+/* the index:                                                                */
+/*                                                                           */
+/*   "the shadow may darken this"  -- true exactly for the floor bands,      */
+/*                                    i.e. FLOOR_BASE <= i < GRID_BASE, and  */
+/*                                    darkening is then an ADDITION because  */
+/*                                    each band is stored SHADOW_N times     */
+/*   "this is a grid line, at      -- i - GRID_BASE + 1, which is what lets  */
+/*    level L"                        the scrim take a line down to a        */
+/*                                    quarter of itself without redrawing it */
+/*                                                                           */
+/* An RGB pixel says neither. It does not have to: 0x00RRGGBB leaves the top */
+/* byte unused, and that is where both answers go. They cost nothing -- they */
+/* ride in a pixel that was going to be copied anyway -- and the screen      */
+/* never sees them, because the composition pixel is handed to plat_blit()   */
+/* and it is the platform that decides what reaches the card. The renderer   */
+/* asks the same two questions on both machines; only the answer's hiding    */
+/* place differs.                                                            */
+/* ------------------------------------------------------------------------ */
+#if BALL_TRUECOLOR
+
+#define PX_RGB_MASK	0x00FFFFFFu
+#define PX_GRID_SHIFT	24		/* grid level + 1, 0 = not a line    */
+#define PX_GRID_MASK	0x1Fu		/* GRID_N is 24, so five bits	     */
+#define PX_NOSHADE	0x20000000u	/* the floor shadow must skip this   */
+
+#define px_pack(r, g, b) \
+	((ball_px)(((unsigned)(r) << 16) | ((unsigned)(g) << 8) | \
+		   (unsigned)(b)))
+
+/* A designed colour, carrying whatever its place in the design implies. */
+static ball_px px_of(int i)
+{
+	ball_px p = px_pack(pal[i].r, pal[i].g, pal[i].b);
+
+	if (i >= GRID_BASE && i < GRID_BASE + GRID_N)
+		return p | PX_NOSHADE |
+		       ((ball_px)(i - GRID_BASE + 1) << PX_GRID_SHIFT);
+	if (i >= FLOOR_BASE && i < GRID_BASE)
+		return p;		/* plain floor: shadeable	     */
+	return p | PX_NOSHADE;
+}
+
+#define px_shadeable(p)		(((p) & PX_NOSHADE) == 0)
+#define px_grid_level(p)	((int)(((p) >> PX_GRID_SHIFT) & PX_GRID_MASK))
+#define px_lum(p)		(2 * (int)(((p) >> 16) & 0xFFu) + \
+				 5 * (int)(((p) >> 8) & 0xFFu) + \
+				 (int)((p) & 0xFFu))
+
+/*
+ * The floor shadow. On the palette machine this is one addition, because the
+ * design stores every floor band SHADOW_N times over; here it is the same
+ * darkening done to the colour itself, through a table so that it is still
+ * three lookups and no multiply.
+ */
+static unsigned char shade_tab[SHADOW_N][256];
+
+static void px_shade_init(void)
+{
+	int lv, v;
+
+	for (lv = 0; lv < SHADOW_N; lv++) {
+		float d = 1.0f - 0.88f * (float)lv / (float)(SHADOW_N - 1);
+
+		for (v = 0; v < 256; v++)
+			shade_tab[lv][v] =
+				(unsigned char)((float)v * d + 0.5f);
+	}
+}
+
+static ball_px px_shade(ball_px p, int lv)
+{
+	const unsigned char *t = shade_tab[lv];
+
+	return (p & ~PX_RGB_MASK) |
+	       px_pack(t[(p >> 16) & 0xFFu], t[(p >> 8) & 0xFFu], t[p & 0xFFu]);
+}
+
+static void px_fill(ball_px *row, ball_px p, long n)
+{
+	while (n-- > 0)
+		*row++ = p;
+}
+
+#else	/* the 256-entry design: the index IS the answer */
+
+/* Luminance, near enough: the classic 2:5:1 weighting, in integers. */
+static int pal_lum(int i)
+{
+	return 2 * (int)pal[i].r + 5 * (int)pal[i].g + (int)pal[i].b;
+}
+
+#define px_of(i)		((ball_px)(i))
+#define px_shadeable(p)		((p) >= FLOOR_BASE && (p) < GRID_BASE)
+#define px_grid_level(p)	((int)(p) - GRID_BASE + 1)
+#define px_lum(p)		pal_lum((int)(p))
+#define px_shade(p, lv)		((ball_px)((int)(p) + (lv)))
+#define px_shade_init()		((void)0)
+#define px_fill(row, p, n)	memset((row), (int)(p), (size_t)(n))
+
+#endif
+
+#define px_copy(dst, src, n) \
+	memcpy((dst), (src), (size_t)(n) * sizeof(ball_px))
+
+/* ------------------------------------------------------------------------ */
 /* Palette                                                                   */
 /* ------------------------------------------------------------------------ */
 static void build_palette(void)
@@ -1187,18 +1303,55 @@ static void build_palette(void)
 		base += n;
 	}
 
-	/* And the table that turns (light level, hue) into one of those
-	 * entries. A ramp shorter than BALL_LEVELS is sampled out of the same
-	 * levels, so every hue answers to the same light level and the
-	 * renderer never needs to know how long any ramp is. */
+	/* And the table that turns (light level, hue) into a pixel.
+	 *
+	 * On a palette machine that is one of the entries just laid out: a
+	 * ramp shorter than BALL_LEVELS is sampled out of the same levels, so
+	 * every hue answers to the same light level and the renderer never
+	 * needs to know how long any ramp is. A hue whose ramp is 20 entries
+	 * long therefore shows 20 steps where the light asks for 48, and on a
+	 * big sphere that is visible as banding -- the price of 256 colours,
+	 * paid where it is least avoidable.
+	 *
+	 * A truecolour machine is not asked to pay it. The ramp is the same
+	 * ramp, from the same two knees, evaluated at the level ITSELF rather
+	 * than at the nearest entry of a shortened copy of it. Same table,
+	 * same size in entries, same lookup in the inner loop; the hue_len
+	 * quantisation simply does not happen. That is the whole of what this
+	 * build gets for free, and it is deliberately the only thing changed:
+	 * every other colour in the picture is still the designed one, so the
+	 * two builds can be compared. */
 	for (i = 0; i < BALL_LEVELS; i++)
 		for (m = 0; m < TEX_MAT_MAX; m++) {
+#if BALL_TRUECOLOR
+			int mr = tex.rgb[m][0];
+			int mg = tex.rgb[m][1];
+			int mb = tex.rgb[m][2];
+
+			t = (float)i / (float)(BALL_LEVELS - 1);
+			if (t <= LIT_TOP) {
+				float u = t / LIT_TOP;
+
+				r = mixc(0, mr, u);
+				g = mixc(0, mg, u);
+				b = mixc(0, mb, u);
+			} else {
+				float u = (t - LIT_TOP) / (1.0f - LIT_TOP);
+
+				r = mixc(mr, 255, u);
+				g = mixc(mg, 255, u);
+				b = mixc(mb, 255, u);
+			}
+			shade_lut[i * TEX_MAT_MAX + m] =
+				px_pack(r, g, b) | PX_NOSHADE;
+#else
 			int n = hue_len[m] - 1;
 			int e = (i * n + (BALL_LEVELS - 1) / 2) /
 				(BALL_LEVELS - 1);
 
 			shade_lut[i * TEX_MAT_MAX + m] =
-				(unsigned char)(hue_base[m] + e);
+				px_of(hue_base[m] + e);
+#endif
 		}
 }
 
@@ -1250,15 +1403,14 @@ static void build_bg_rows(void)
 				     (float)horizon + d);
 			if (band > SKY_N - 1)
 				band = SKY_N - 1;
-			bg_row[y] = (unsigned char)(SKY_BASE + band);
+			bg_row[y] = px_of(SKY_BASE + band);
 		} else {
 			band = (int)((float)(y - horizon) *
 				     (float)(FLOOR_N - 1) /
 				     (float)(H - horizon) + d);
 			if (band > FLOOR_N - 1)
 				band = FLOOR_N - 1;
-			bg_row[y] = (unsigned char)(FLOOR_BASE +
-						    band * SHADOW_N);
+			bg_row[y] = px_of(FLOOR_BASE + band * SHADOW_N);
 		}
 	}
 }
@@ -1291,7 +1443,7 @@ static int text_span(int n)
 	return n > 0 ? n * (GLYPH_W + 1) * txt_sc - txt_sc : 0;
 }
 
-static void text_pass(int x, int y, const char *v, int col, rect r,
+static void text_pass(int x, int y, const char *v, ball_px col, rect r,
 		      int ox, int oy)
 {
 	int gx, gy, sx, sy;
@@ -1307,7 +1459,7 @@ static void text_pass(int x, int y, const char *v, int col, rect r,
 					continue;
 				for (sy = 0; sy < txt_sc; sy++) {
 					int py = y + oy + gy * txt_sc + sy;
-					unsigned char *row;
+					ball_px *row;
 
 					if (py < r.y0 || py >= r.y1)
 						continue;
@@ -1318,7 +1470,7 @@ static void text_pass(int x, int y, const char *v, int col, rect r,
 
 						if (px < r.x0 || px >= r.x1)
 							continue;
-						row[px] = (unsigned char)col;
+						row[px] = col;
 					}
 				}
 			}
@@ -1327,7 +1479,7 @@ static void text_pass(int x, int y, const char *v, int col, rect r,
 	}
 }
 
-static void text_draw(int x, int y, const char *v, int col, rect r)
+static void text_draw(int x, int y, const char *v, ball_px col, rect r)
 {
 	static const signed char off[4][2] = {
 		{ -1, 0 }, { 1, 0 }, { 0, -1 }, { 0, 1 }
@@ -1335,7 +1487,7 @@ static void text_draw(int x, int y, const char *v, int col, rect r)
 	int i;
 
 	for (i = 0; i < 4; i++)
-		text_pass(x, y, v, TXT_HALO_IDX, r,
+		text_pass(x, y, v, px_of(TXT_HALO_IDX), r,
 			  off[i][0] * txt_halo, off[i][1] * txt_halo);
 	text_pass(x, y, v, col, r, 0, 0);
 }
@@ -1354,7 +1506,7 @@ static void text_draw(int x, int y, const char *v, int col, rect r)
  */
 typedef struct {
 	int x, y, w, h;
-	int col;
+	ball_px col;
 	const char *s;
 } ov_item;
 
@@ -1362,7 +1514,7 @@ typedef struct {
 static ov_item ov[OV_MAX];
 static int ov_n;
 
-static void ov_add(int x, int y, int chars, int col, const char *v)
+static void ov_add(int x, int y, int chars, ball_px col, const char *v)
 {
 	ov_item *o;
 
@@ -1460,7 +1612,7 @@ static void text_layout(void)
 
 		s_cpy(hud_line[i], hud_label[i]);
 		ov_add(hud_x, ly, HUD_CHARS,
-		       i == 2 ? TXT_DIM : TXT_BRIGHT, hud_line[i]);
+		       px_of(i == 2 ? TXT_DIM : TXT_BRIGHT), hud_line[i]);
 
 		/* The part of the line a new value can change: from the end
 		 * of the label to the end of the block, and one halo wider
@@ -1494,10 +1646,10 @@ static void text_layout(void)
 				wl = text_span(nl);
 			if (text_span(nr) > wr)
 				wr = text_span(nr);
-			ov_add(bx0, by0 + i * hud_lh, nl, TXT_DIM,
+			ov_add(bx0, by0 + i * hud_lh, nl, px_of(TXT_DIM),
 			       corner_l[i]);
 			ov_add(W - mx - text_span(nr), by0 + i * hud_lh, nr,
-			       TXT_DIM, corner_r[i]);
+			       px_of(TXT_DIM), corner_r[i]);
 		}
 		scrim_add(bx0 - hud_cw, by0 - txt_sc,
 			  bx0 + wl + hud_cw, by0 + 2 * hud_lh);
@@ -1545,19 +1697,13 @@ static void hud_values(void)
 /* The room, painted once into its own image                                 */
 /* ------------------------------------------------------------------------ */
 
-/* Luminance, near enough: the classic 2:5:1 weighting, in integers. */
-static int pal_lum(int i)
-{
-	return 2 * (int)pal[i].r + 5 * (int)pal[i].g + (int)pal[i].b;
-}
-
 /*
  * What the room's bare surface is at (x, y). Above the horizon everything is
  * backdrop; below it, the floor is what lies between the two side walls, and
  * the wedges outside them are wall -- flat at the backdrop's brightest, which
  * is where the backdrop's own gradient had got to by the horizon.
  */
-static unsigned char room_fill(int x, int y)
+static ball_px room_fill(int x, int y)
 {
 	float t;
 
@@ -1565,7 +1711,7 @@ static unsigned char room_fill(int x, int y)
 		return bg_row[y];
 	t = ((float)y + 0.5f - vp_y) * rm_slope;
 	if ((float)x + 0.5f < vp_x - t || (float)x + 0.5f > vp_x + t)
-		return (unsigned char)(SKY_BASE + SKY_N - 1);
+		return px_of(SKY_BASE + SKY_N - 1);
 	return bg_row[y];
 }
 
@@ -1580,8 +1726,9 @@ static unsigned char room_fill(int x, int y)
  */
 static void room_px(int x, int y, float v)
 {
-	int lv, e;
-	unsigned char *q;
+	int lv;
+	ball_px e;
+	ball_px *q;
 
 	if (v <= 0.0f || x < 0 || y < 0 || x >= W || y >= H)
 		return;
@@ -1590,11 +1737,11 @@ static void room_px(int x, int y, float v)
 		return;
 	if (lv > GRID_N)
 		lv = GRID_N;
-	e = GRID_BASE + lv - 1;
+	e = px_of(GRID_BASE + lv - 1);
 	q = bg + (long)y * W + x;
-	if (pal_lum(e) <= pal_lum((int)*q))
+	if (px_lum(e) <= px_lum(*q))
 		return;
-	*q = (unsigned char)e;
+	*q = e;
 }
 
 /* Flat core, soft shoulder, wide faint halo -- as a function of the
@@ -1796,18 +1943,17 @@ static void build_room(void)
 
 	/* --- the bare surfaces ---------------------------------------- */
 	for (y = 0; y < H; y++) {
-		unsigned char *row = bg + (long)y * W;
+		ball_px *row = bg + (long)y * W;
 
 		if (y < horizon) {
-			memset(row, bg_row[y], (size_t)W);
+			px_fill(row, bg_row[y], (long)W);
 			continue;
 		}
 		{
 			float t = ((float)y + 0.5f - vp_y) * rm_slope;
 			int xl = (int)(vp_x - t + 0.5f);
 			int xr = (int)(vp_x + t + 0.5f);
-			unsigned char wc =
-				(unsigned char)(SKY_BASE + SKY_N - 1);
+			ball_px wc = px_of(SKY_BASE + SKY_N - 1);
 
 			if (xl < 0)
 				xl = 0;
@@ -1816,11 +1962,11 @@ static void build_room(void)
 			if (xr < xl)
 				xr = xl;
 			if (xl > 0)
-				memset(row, wc, (size_t)xl);
+				px_fill(row, wc, (long)xl);
 			if (xr > xl)
-				memset(row + xl, bg_row[y], (size_t)(xr - xl));
+				px_fill(row + xl, bg_row[y], (long)(xr - xl));
 			if (xr < W)
-				memset(row + xr, wc, (size_t)(W - xr));
+				px_fill(row + xr, wc, (long)(W - xr));
 		}
 	}
 
@@ -1880,17 +2026,17 @@ static void build_room(void)
 	 * have been simpler and would have left three holes in the room. */
 	for (i = 0; i < scrim_n; i++) {
 		for (y = scrim[i].y0; y < scrim[i].y1; y++) {
-			unsigned char *row = bg + (long)y * W;
+			ball_px *row = bg + (long)y * W;
 
 			for (x = scrim[i].x0; x < scrim[i].x1; x++) {
-				int lv = (int)row[x] - GRID_BASE + 1;
+				int lv = px_grid_level(row[x]);
 
 				if (lv < 1 || lv > GRID_N)
 					continue;
 				lv = lv * HUD_SCRIM_NUM / HUD_SCRIM_DEN;
 				row[x] = lv < 1
 					 ? room_fill(x, y)
-					 : (unsigned char)(GRID_BASE + lv - 1);
+					 : px_of(GRID_BASE + lv - 1);
 			}
 		}
 	}
@@ -2403,7 +2549,7 @@ static rect rect_union(rect a, rect b)
 static void draw_shadow(rect r)
 {
 	int x0 = sh_x0, x1 = sh_x1, y0 = sh_y0, y1 = sh_y1;
-	int x, y, base;
+	int x, y;
 
 	if (x0 < r.x0)
 		x0 = r.x0;
@@ -2415,8 +2561,8 @@ static void draw_shadow(rect r)
 		y1 = r.y1;
 
 	for (y = y0; y < y1; y++) {
-		unsigned char *row = idx + (long)y * W;
-		const unsigned char *src = bg + (long)y * W;
+		ball_px *row = idx + (long)y * W;
+		const ball_px *src = bg + (long)y * W;
 		const float *dr = dith4[y & 3];
 		/* Back onto the floor: undo the foreshortening, then the row's
 		 * fixed contribution to the two ellipse axes. */
@@ -2429,6 +2575,7 @@ static void draw_shadow(rect r)
 			float da = (fx * sh_ex + ra) * sh_ia;
 			float db = (rb - fx * sh_ez) * sh_ib;
 			float q = da * da + db * db;
+			ball_px base;
 			int lv;
 
 			if (q >= 1.0f)
@@ -2448,15 +2595,16 @@ static void draw_shadow(rect r)
 			if (lv > SHADOW_N - 1)
 				lv = SHADOW_N - 1;
 			/* Whatever is shaded is read from the ROOM, not from
-			 * what is already on the row: a floor band, always at
-			 * level 0, so the level is still an addition -- and
-			 * the room's own lines are skipped by the same test,
-			 * because a glowing line is not dimmed by a shadow
-			 * falling across it. */
-			base = (int)src[x];
-			if (base < FLOOR_BASE || base >= GRID_BASE)
+			 * what is already on the row -- a floor surface, and
+			 * only a floor surface. The room's own lines are
+			 * skipped by the same test, because a glowing line is
+			 * not dimmed by a shadow falling across it. Both the
+			 * test and the darkening are one question each of the
+			 * composition pixel; see "The composition pixel". */
+			base = src[x];
+			if (!px_shadeable(base))
 				continue;
-			row[x] = (unsigned char)(base + lv);
+			row[x] = px_shade(base, lv);
 		}
 	}
 }
@@ -2474,7 +2622,7 @@ static void draw_shadow(rect r)
 static void draw_ball(rect r)
 {
 	const unsigned char *tp = tex.px;
-	const unsigned char *lut = shade_lut;
+	const ball_px *lut = shade_lut;
 	unsigned du = (unsigned)tex_du;
 	int sy;
 
@@ -2483,7 +2631,7 @@ static void draw_ball(rect r)
 		int a, b, n;
 		const unsigned short *op;
 		const unsigned char *shp;
-		unsigned char *dp;
+		ball_px *dp;
 
 		if (y < r.y0 || y >= r.y1)
 			continue;
@@ -2535,11 +2683,11 @@ static void draw_reflect(rect r)
 
 	for (y = y0; y < y1; y++) {
 		int msy = D - 1 - (y - rf_top);
-		const unsigned char *lut;
+		const ball_px *lut;
 		const float *dr;
 		const unsigned short *op;
 		const unsigned char *shp;
-		unsigned char *dp;
+		ball_px *dp;
 		float cov;
 		int a, b, n, x;
 
@@ -2600,8 +2748,8 @@ static void compose(rect r)
 	int y;
 
 	for (y = r.y0; y < r.y1; y++) {
-		unsigned char *row = idx + (long)y * W;
-		const unsigned char *src = bg + (long)y * W;
+		ball_px *row = idx + (long)y * W;
+		const ball_px *src = bg + (long)y * W;
 		int sy = y - b_top;
 		int a = r.x0, b = r.x0;
 
@@ -2615,13 +2763,11 @@ static void compose(rect r)
 		}
 		if (b > a) {
 			if (a > r.x0)
-				memcpy(row + r.x0, src + r.x0,
-				       (size_t)(a - r.x0));
+				px_copy(row + r.x0, src + r.x0, a - r.x0);
 			if (r.x1 > b)
-				memcpy(row + b, src + b, (size_t)(r.x1 - b));
+				px_copy(row + b, src + b, r.x1 - b);
 		} else {
-			memcpy(row + r.x0, src + r.x0,
-			       (size_t)(r.x1 - r.x0));
+			px_copy(row + r.x0, src + r.x0, r.x1 - r.x0);
 		}
 	}
 
@@ -2899,9 +3045,9 @@ int main(void)
 	D = 2 * R;
 	Rf = (float)R;
 
-	idx = (unsigned char *)b_alloc((long)W * H);
-	bg = (unsigned char *)b_alloc((long)W * H);
-	bg_row = (unsigned char *)b_alloc((long)H);
+	idx = (ball_px *)b_alloc((long)W * H * (long)sizeof(ball_px));
+	bg = (ball_px *)b_alloc((long)W * H * (long)sizeof(ball_px));
+	bg_row = (ball_px *)b_alloc((long)H * (long)sizeof(ball_px));
 	map_off = (unsigned short *)b_alloc((long)D * D *
 					    (long)sizeof(unsigned short));
 	map_shade = (unsigned char *)b_alloc((long)D * D);
@@ -2927,7 +3073,10 @@ int main(void)
 	tex_build(&tex, tex_buf, TEXPATH);
 	build_palette();
 	build_refl_lut();
+#if !BALL_TRUECOLOR
 	plat_palette(pal);
+#endif
+	px_shade_init();
 	build_bg_rows();
 	build_sphere_map();
 
