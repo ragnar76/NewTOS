@@ -1,0 +1,27 @@
+BALL: screen 640x480, 1 page(s), ball d=102 px, apex=303 px
+BALL: texture 256x128, 4 hues, from generated
+BALL: room 10x10 floor cells, wall 10x6, 24 palette entries, background image 307200 bytes painted in 90.00 ms; reflection fades over 48 rows
+BALL: sphere map 8184 px in 25.00 ms (5 ticks of 200 Hz)
+BALL: bounce 326 ticks, traverse 1090 ticks, roll 197.61 px/s; elastic, no decay; path holds 32 traverses (174.40 s) before coming within 3 % of retracing
+BALL: wind 15.81 px/s peak (8 % of the roll), 3 sines, periods 2.64 / 4.27 / 6.90 s, seed 1592637969
+BALL: headroom 52 frames in 0.20 s free-running = 260.00 fps, 3.85 ms/frame
+BALL: t=5.01 s  252 frames  50.25 fps  0 dropped
+BALL: t=10.02 s  249 frames  49.80 fps  1 dropped
+BALL: t=15.02 s  249 frames  49.75 fps  7 dropped
+BALL: t=20.02 s  249 frames  49.80 fps  1 dropped
+BALL: t=25.02 s  249 frames  49.80 fps  1 dropped
+BALL: t=30.02 s  249 frames  49.80 fps  2 dropped
+BALL: t=35.03 s  249 frames  49.75 fps  12 dropped
+BALL: t=40.03 s  249 frames  49.80 fps  1 dropped
+BALL: t=45.03 s  249 frames  49.80 fps  1 dropped
+BALL: t=50.03 s  249 frames  49.75 fps  13 dropped
+BALL: t=55.03 s  249 frames  49.80 fps  1 dropped
+BALL: t=60.03 s  249 frames  49.80 fps  1 dropped
+BALL: t=65.04 s  249 frames  49.75 fps  7 dropped
+BALL: t=70.04 s  249 frames  49.80 fps  1 dropped
+BALL: t=75.04 s  249 frames  49.80 fps  1 dropped
+BALL: t=80.04 s  249 frames  49.80 fps  1 dropped
+BALL: t=85.04 s  249 frames  49.75 fps  11 dropped
+BALL: t=90.04 s  249 frames  49.80 fps  1 dropped
+BALL: TT/NOVA screen 640x480x8, pixel format MEASURED packed-8, fd_wdwidth = pixels/16, pen map MEASURED, VBL running (Vsync used)
+BALL: 4523 frames in 90.84 s = 49.79 fps presented, 64 dropped, 56 bounces
