@@ -1,0 +1,17 @@
+BALL: screen 1920x1080, 2 page(s), ball d=306 px, apex=612 px
+BALL: texture 256x128, 4 hues, from generated
+BALL: sphere map 73568 px in 20.00 ms (4 ticks of 200 Hz)
+BALL: headroom 136 frames in 0.20 s free-running = 680.00 fps, 1.47 ms/frame
+BALL: t=5.01 s  302 frames  60.28 fps  0 dropped
+BALL: t=10.01 s  300 frames  60.00 fps  0 dropped
+BALL: t=15.01 s  300 frames  60.00 fps  0 dropped
+BALL: t=20.01 s  300 frames  60.00 fps  0 dropped
+BALL: t=25.01 s  300 frames  60.00 fps  0 dropped
+BALL: t=30.01 s  300 frames  60.00 fps  0 dropped
+BALL: t=35.01 s  300 frames  60.00 fps  0 dropped
+BALL: t=40.01 s  300 frames  60.00 fps  0 dropped
+BALL: t=45.01 s  300 frames  60.00 fps  0 dropped
+BALL: t=50.01 s  300 frames  60.00 fps  0 dropped
+BALL: t=55.01 s  300 frames  60.00 fps  0 dropped
+BALL: t=60.01 s  300 frames  60.00 fps  0 dropped
+BALL: 3605 frames in 60.08 s = 60.01 fps presented, 0 dropped
