@@ -64,6 +64,16 @@
 # ...including the note that says what the TT half still has to have confirmed
 # on the real machine before anyone trusts it.
 !/apps/ball/*.md
+# The host simulation is source too, and is source of the same demo: it
+# #includes ball.c rather than copying it, so what it measures is what ships.
+# Its two binaries are built, and stay out.
+!/apps/ball/hostsim/
+/apps/ball/hostsim/*
+!/apps/ball/hostsim/*.c
+!/apps/ball/hostsim/*.sh
+!/apps/ball/hostsim/mint/
+/apps/ball/hostsim/mint/*
+!/apps/ball/hostsim/mint/*.h
 
 # macOS junk that FAT round-trips create.
 .DS_Store
