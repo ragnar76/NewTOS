@@ -925,6 +925,28 @@ static void s_cpy(char *d, const char *v)
 #define LOG_EVERY	(LOG_SECS * PHYS_HZ)
 
 static int log_ok;
+/*
+ * The lines are HELD IN MEMORY and committed in one go, and that is a
+ * measurement decision rather than a tidiness one. A commit is
+ * Fopen -> Fseek -> Fwrite -> Fclose: a directory search, a sector
+ * read-modify-write and a directory update. On the Atari that is longer than
+ * a whole 50 Hz frame, so a commit inside the frame loop lets exactly one
+ * retrace go by, once every LOG_SECS seconds, for ever -- the demo hitching
+ * on its own instrument. (It shows up in the two PiStorm logs as a floor of
+ * one dropped frame in every five-second interval, in every interval of both
+ * runs, and in the very first interval of a run -- the one whose log line is
+ * written after the interval closes -- as none at all.)
+ *
+ * What that trades away is the old behaviour of a log that was valid after
+ * every single line, so a run killed by the power switch still read back.
+ * The header block is still committed on its own before the frame loop
+ * starts, so an interrupted run still says which machine it was and what the
+ * screen was; the per-interval lines arrive when the demo is asked to stop,
+ * or whenever the buffer fills, whichever comes first.
+ */
+#define LOG_BUF_MAX	32768L		/* ~9 minutes of interval lines	     */
+static char *log_buf;			/* b_alloc'd in main()		     */
+static long log_len;
 
 static void log_open(void)
 {
@@ -932,15 +954,18 @@ static void log_open(void)
 
 	if (fd >= 0) {
 		Fclose((short)fd);
-		log_ok = 1;
+		if (log_buf)
+			log_ok = 1;
 	}
 }
 
-static void log_line(const char *s)
+/* The only thing in this file that touches the disk. Never called from
+ * inside the frame loop unless the buffer has actually filled up. */
+static void log_commit(void)
 {
-	long fd, n = 0;
+	long fd;
 
-	if (!log_ok)
+	if (!log_ok || log_len <= 0)
 		return;
 	fd = Fopen(LOGPATH, 2);			/* read/write */
 	if (fd < 0)
@@ -949,10 +974,25 @@ static void log_line(const char *s)
 		(void)Fclose((short)fd);
 		return;
 	}
+	(void)Fwrite((short)fd, log_len, log_buf);
+	(void)Fclose((short)fd);		/* commits the directory entry */
+	log_len = 0;
+}
+
+static void log_line(const char *s)
+{
+	long n = 0;
+
+	if (!log_ok)
+		return;
 	while (s[n])
 		n++;
-	(void)Fwrite((short)fd, n, s);
-	(void)Fclose((short)fd);		/* commits the directory entry */
+	if (log_len + n > LOG_BUF_MAX)
+		log_commit();
+	if (log_len + n > LOG_BUF_MAX)		/* one line longer than the lot */
+		return;
+	memcpy(log_buf + log_len, s, (size_t)n);
+	log_len += n;
 }
 
 /* Emit the built line to the log, and to the console as well when the screen
@@ -2628,6 +2668,111 @@ static void bench(void)
 }
 
 /* ------------------------------------------------------------------------ */
+/* Where the frame went                                                      */
+/*                                                                           */
+/* One number per frame -- "was it late" -- cannot say WHERE a frame went,   */
+/* and on this demo that is the whole question: composing happens in this    */
+/* file, blitting happens on the other side of plat_blit(), and the two are  */
+/* not the same machine's problem. So the loop is timed in four parts:       */
+/*                                                                          */
+/*   step     the physics, the readout's strings and the frame's geometry    */
+/*   compose  building the dirty rectangle in the index buffer -- ours       */
+/*   blit     handing those rectangles to the platform -- theirs             */
+/*   wait     what was left, i.e. the retrace                                */
+/*                                                                          */
+/* The 200 Hz clock cannot resolve ONE frame: a frame here is a fraction of  */
+/* a tick, and worse, a retrace-locked frame starts at a fixed phase of the  */
+/* tick, so a per-frame subtraction can read a flat zero however much work   */
+/* it is doing. Nothing here pretends otherwise. Each section's tick         */
+/* difference is ACCUMULATED over the whole logging interval, and the sum of */
+/* a few hundred truncated differences is the number of tick edges that fell */
+/* inside that section -- which over 250 frames is the section's real total  */
+/* to within a tick. Coarse arithmetic done honestly, not a fine clock       */
+/* invented.                                                                 */
+/*                                                                           */
+/* The same interval also keeps the RAW material the dropped-frame count is  */
+/* derived from: a histogram of the ticks each frame consumed. That cannot   */
+/* mislead the way a threshold can. A display whose retrace period is a      */
+/* whole number of ticks -- 50 Hz on a 200 Hz clock is exactly 4 -- puts the */
+/* nominal frame right on the threshold, so a frame that merely sampled the  */
+/* clock a hair late reads as one tick long; a LOST retrace cannot hide,     */
+/* because it costs a whole extra retrace period and lands two bins further  */
+/* along. If the two ever disagree, the histogram is the one that is true.   */
+/*                                                                           */
+/* What this CANNOT do, and the log has to be read knowing it: a section     */
+/* shorter than one tick is only seen when it happens to straddle a tick     */
+/* edge, so its estimate is unbiased only if the frame's phase within the    */
+/* tick moves. A display whose retrace period is an exact whole number of    */
+/* ticks does not move it at all, and one whose period is 4.0012 ticks --    */
+/* which is what a 50 Hz screen measures against a 200 Hz clock -- moves it  */
+/* about a third of a tick in a five-second interval. So the SUB-TICK        */
+/* per-interval figures are noisy, and the run totals in the closing summary */
+/* -- taken over a phase that has gone round many times -- are the ones to   */
+/* trust. What is not affected either way is the thing this is here to       */
+/* catch: a section costing a whole tick or more shows up frame by frame,    */
+/* and worst_blit records it exactly.                                        */
+/*                                                                           */
+/* It costs three extra reads of the system clock per frame, and on TOS a    */
+/* clock read is a trap, not a load. What that costs is not guessed either:  */
+/* clock_cost() measures it and the log says so.                             */
+/* ------------------------------------------------------------------------ */
+#define STEP_BINS	12		/* last bin is "this many or more"   */
+
+static long acc_step, acc_compose, acc_blit, acc_wait;
+static long tot_step, tot_compose, tot_blit, tot_wait;
+static long step_hist[STEP_BINS];
+static long worst_blit, worst_compose, worst_frame;
+static rect worst_rect;
+
+static void budget_reset(void)
+{
+	int i;
+
+	tot_step += acc_step;
+	tot_compose += acc_compose;
+	tot_blit += acc_blit;
+	tot_wait += acc_wait;
+	acc_step = 0;
+	acc_compose = 0;
+	acc_blit = 0;
+	acc_wait = 0;
+	worst_blit = 0;
+	worst_compose = 0;
+	worst_frame = 0;
+	worst_rect.x0 = 0;
+	worst_rect.y0 = 0;
+	worst_rect.x1 = 0;
+	worst_rect.y1 = 0;
+	for (i = 0; i < STEP_BINS; i++)
+		step_hist[i] = 0;
+}
+
+/*
+ * What one reading of the system clock costs, in nanoseconds. Measured the
+ * only way a 200 Hz clock can measure something far below its own resolution:
+ * do it until enough ticks have passed to divide by.
+ */
+#define CLOCK_COST_TICKS	40L	/* 0.2 s				*/
+#define CLOCK_COST_MAX		2000000L
+
+static long clock_ns;			/* per get_sysvar() call		*/
+
+static void clock_cost(void)
+{
+	long t0 = get_sysvar(_hz_200);
+	long n = 0, d;
+
+	do {
+		n++;
+		d = get_sysvar(_hz_200) - t0;
+	} while (d < CLOCK_COST_TICKS && n < CLOCK_COST_MAX);
+	/* d ticks over n calls, in nanoseconds; the multiply is done in
+	 * floating point because d * 1000000000 does not fit a long. */
+	clock_ns = n > 0 ? (long)((double)d * 1e9 /
+				  ((double)PHYS_HZ * (double)n) + 0.5) : 0;
+}
+
+/* ------------------------------------------------------------------------ */
 /* Memory                                                                    */
 /* ------------------------------------------------------------------------ */
 
@@ -2660,6 +2805,7 @@ int main(void)
 	long t_last, t_start, t_end, frames = 0, dropped = 0;
 	long t_mark = 0, f_mark = 0, d_mark = 0;
 	long t_fps = 0, f_fps = 0;
+	long t_b1_prev = 0;		/* where the last frame's blitting ended */
 	double secs;
 
 	if (plat_open(&scr) < 0) {
@@ -2695,8 +2841,9 @@ int main(void)
 	run0 = (short *)b_alloc((long)D * (long)sizeof(short));
 	run1 = (short *)b_alloc((long)D * (long)sizeof(short));
 	tex_buf = (unsigned char *)b_alloc((long)TEX_MAX_BYTES);
+	log_buf = (char *)b_alloc(LOG_BUF_MAX);
 	if (!idx || !bg || !bg_row || !map_off || !map_shade || !run0 ||
-	    !run1 || !tex_buf) {
+	    !run1 || !tex_buf || !log_buf) {
 		plat_close();
 		Cconws("BALL: out of memory\r\n");
 		rc = 1;
@@ -2763,6 +2910,7 @@ int main(void)
 		if (++page >= scr.pages)
 			page = 0;
 	}
+	clock_cost();
 	{
 		float sx = bx, sy = by, svx = vx, svy = vy;
 		bench();
@@ -2896,6 +3044,19 @@ int main(void)
 	o_str(" ms/frame");
 	o_out(0);
 
+	o_str("BALL: clock read ");
+	o_dec(clock_ns);
+	o_str(" ns; the frame budget is split with 3 extra reads a frame = ");
+	o_fix2((double)clock_ns * 3.0 / 1e7);
+	o_str(" % of a 20 ms frame");
+	o_out(0);
+
+	/* The header block, committed before the loop starts, where a disk
+	 * write costs nothing. From here on the log is held in memory --
+	 * see the LOGPATH commentary for why. */
+	log_commit();
+
+	budget_reset();
 	t_start = get_sysvar(_hz_200);
 	t_last = t_start;
 	t_mark = t_start;
@@ -2903,9 +3064,17 @@ int main(void)
 	f_fps = 0;
 
 	for (;;) {
-		long now;
-		int steps;
+		long now, t_c0, t_c1, t_b1;
+		int steps, nd = 0;
+		int hud_d[HUD_LINES];
 		rect cur, dirty;
+
+		/* The clock first, the keyboard second: the wait for the
+		 * retrace ends where this read is, so anything before it
+		 * would be charged to the retrace instead of to the frame. */
+		now = get_sysvar(_hz_200);
+		if (t_b1_prev)
+			acc_wait += now - t_b1_prev;
 
 		/* Quit on any key. Bconstat is the non-blocking half of the
 		 * console: a blocking read is what hangs real hardware. */
@@ -2914,9 +3083,10 @@ int main(void)
 			break;
 		}
 
-		now = get_sysvar(_hz_200);
 		steps = (int)(now - t_last);
 		t_last = now;
+		step_hist[steps < 0 ? 0 :
+			  (steps >= STEP_BINS ? STEP_BINS - 1 : steps)]++;
 		/* At 60 frames a second the clock advances 3 or 4 ticks per
 		 * frame. More than that means a retrace went by unused --
 		 * a dropped frame, and the one performance figure a 200 Hz
@@ -2950,22 +3120,51 @@ int main(void)
 		update_shape();
 		cur = shape_rect();
 		dirty = rect_union(cur, prev_rect[page]);
-		compose(dirty);
-		blit(dirty);
 
 		/* Only the numbers that changed, and only their own little
 		 * rectangles. Tracked per page, because on a two-page display
 		 * a number written to one page has not been written to the
 		 * other; compose() puts the ball back into the rectangle it
 		 * re-draws, so a number changing under the ball costs nothing
-		 * but its own area. */
+		 * but its own area.
+		 *
+		 * Composing is done for all of them before any of them is
+		 * blitted. The picture is the same either way -- compose()
+		 * writes the index buffer, blit() reads it, and compose(dirty)
+		 * already re-letters the readout where the two overlap -- and
+		 * it is what lets the two halves be timed apart with one clock
+		 * read between them instead of one per rectangle. */
+		t_c0 = get_sysvar(_hz_200);
+		acc_step += t_c0 - now;
+		compose(dirty);
 		for (i = HUD_FIRST_VAL; i < HUD_LINES; i++) {
 			if (s_eq(hud_line[i], hud_page[page][i]))
 				continue;
 			compose(hud_vr[i]);
-			blit(hud_vr[i]);
-			s_cpy(hud_page[page][i], hud_line[i]);
+			hud_d[nd++] = i;
 		}
+
+		t_c1 = get_sysvar(_hz_200);
+		acc_compose += t_c1 - t_c0;
+		blit(dirty);
+		for (i = 0; i < nd; i++) {
+			blit(hud_vr[hud_d[i]]);
+			s_cpy(hud_page[page][hud_d[i]], hud_line[hud_d[i]]);
+		}
+
+		t_b1 = get_sysvar(_hz_200);
+		acc_blit += t_b1 - t_c1;
+		t_b1_prev = t_b1;		/* the retrace starts here    */
+		/* The dearest blit of the interval, and the rectangle that
+		 * bought it: a driver with a slow path takes it for a SHAPE,
+		 * so the shape is what gets recorded, not just the cost. */
+		if (t_b1 - t_c1 > worst_blit) {
+			worst_blit = t_b1 - t_c1;
+			worst_rect = dirty;
+			worst_frame = frames;
+		}
+		if (t_c1 - t_c0 > worst_compose)
+			worst_compose = t_c1 - t_c0;
 
 		prev_rect[page] = cur;
 		plat_present();
@@ -2991,6 +3190,73 @@ int main(void)
 			o_str(" dropped");
 			o_out(0);
 
+			/* Where those frames went. ms per frame, from ticks
+			 * accumulated over the whole interval -- see "Where
+			 * the frame went" for why it cannot be done per
+			 * frame on a 200 Hz clock. */
+			{
+				double per = df > 0 ? 1000.0 /
+					((double)PHYS_HZ * (double)df) : 0.0;
+				int bi;
+
+				o_str("BALL:   step ");
+				o_fix2((double)acc_step * per);
+				o_str(" ms  compose ");
+				o_fix2((double)acc_compose * per);
+				o_str(" ms  blit ");
+				o_fix2((double)acc_blit * per);
+				o_str(" ms  wait ");
+				o_fix2((double)acc_wait * per);
+				o_str(" ms");
+				o_out(0);
+
+				/* The ticks each frame consumed, unreduced:
+				 * the raw material "dropped" is derived from,
+				 * and the only figure here that cannot be
+				 * fooled by where the clock was sampled. */
+				o_str("BALL:   frame ticks");
+				for (bi = 0; bi < STEP_BINS; bi++) {
+					if (!step_hist[bi])
+						continue;
+					o_ch(' ');
+					o_dec((long)bi);
+					if (bi == STEP_BINS - 1)
+						o_ch('+');
+					o_ch(':');
+					o_dec(step_hist[bi]);
+				}
+				o_out(0);
+
+				/* The dearest blit of the interval and the
+				 * rectangle that bought it: a driver with a
+				 * slow path takes it for a SHAPE, so the
+				 * shape is what is recorded. */
+				o_str("BALL:   worst blit ");
+				o_fix2((double)worst_blit * 1000.0 /
+				       (double)PHYS_HZ);
+				o_str(" ms f");
+				o_dec(worst_frame);
+				o_str(" ");
+				o_dec((long)(worst_rect.x1 - worst_rect.x0));
+				o_ch('x');
+				o_dec((long)(worst_rect.y1 - worst_rect.y0));
+				o_str(" at ");
+				o_dec((long)worst_rect.x0);
+				o_ch(',');
+				o_dec((long)worst_rect.y0);
+				o_str(" xodd ");
+				o_dec((long)(worst_rect.x0 & 1));
+				o_str(" wodd ");
+				o_dec((long)((worst_rect.x1 - worst_rect.x0)
+					     & 1));
+				o_str("; worst compose ");
+				o_fix2((double)worst_compose * 1000.0 /
+				       (double)PHYS_HZ);
+				o_str(" ms");
+				o_out(0);
+			}
+
+			budget_reset();
 			t_mark = now;
 			f_mark = frames;
 			d_mark = dropped;
@@ -3014,9 +3280,31 @@ int main(void)
 	o_str(" dropped, ");
 	o_dec(bounces);
 	o_str(" bounces");
-	o_flush();
+	o_out(1);
+
+	/* The whole run's budget. Over this many frames the frame's phase
+	 * within the 200 Hz tick has gone round many times, so unlike the
+	 * per-interval figures these are not biased by where it sat. */
+	budget_reset();				/* fold the last interval in   */
+	{
+		double per = frames > 0 ? 1000.0 /
+			((double)PHYS_HZ * (double)frames) : 0.0;
+
+		o_str("BALL: whole run per frame: step ");
+		o_fix2((double)tot_step * per);
+		o_str(" ms  compose ");
+		o_fix2((double)tot_compose * per);
+		o_str(" ms  blit ");
+		o_fix2((double)tot_blit * per);
+		o_str(" ms  wait ");
+		o_fix2((double)tot_wait * per);
+		o_str(" ms");
+		o_flush();
+	}
+	log_commit();
 
 done:
+	b_free(log_buf);
 	b_free(tex_buf);
 	b_free(run1);
 	b_free(run0);
