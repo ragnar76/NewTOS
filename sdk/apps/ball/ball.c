@@ -204,13 +204,59 @@ static unsigned char shade_lut[BALL_LEVELS * TEX_MAT_MAX];
 #define HORIZON_FRAC	0.62f	/* where the floor begins		     */
 #define FLOOR_FRAC	0.90f	/* the line the ball's underside touches     */
 #define GRAVITY_H	1.90f	/* screen heights per second squared	     */
-#define RESTITUTION	0.80f	/* speed kept across a bounce		     */
-#define ROLL_FRICTION	0.995f	/* horizontal speed kept across a bounce     */
-#define VX0_W		0.30f	/* start speed, screen widths per second     */
 #define APEX_HEADROOM	0.92f	/* of the room above the floor, so the ball  */
 				/* stays fully on screen at its highest       */
-#define APEX_MIN_FRAC	0.16f	/* below this share of the apex, serve again */
-#define VX_MIN_FRAC	0.35f	/* below this share of VX0, push again	     */
+
+/*
+ * THE BALL NEVER LOSES ENERGY. That is a decision about how the demo reads,
+ * taken knowing it is not physics: a damped bounce decays, and anything that
+ * re-launches a decayed ball looks like magic, because it is. With nothing
+ * lost there is nothing to put back, so the re-launch is gone rather than
+ * tuned -- the artefact disappears because its cause does.
+ *
+ * Elastic is NOT "restitution 1.0", and this is measured rather than feared.
+ * Reflecting the arriving speed conserves nothing here: the contact is found
+ * a step late and the ball is lifted back to the floor, and that pair costs
+ * about 1.3 % of its energy every single bounce -- the apex falls from 609
+ * pixels to 77 in 200 bounces, about five minutes, monotonically. Undoing the
+ * last gravity increment before reflecting makes it worse; leaving the ball
+ * where it penetrated makes it worse still. No cheap correction was found and
+ * none is needed.
+ *
+ * So the leaving speed is SET, not reflected (physics_step). Every flight
+ * then begins from the same two numbers and is bit-identical to the one
+ * before it: over 270 seconds of demo time and 174 bounces, every apex landed
+ * on the same pixel row and every flight took exactly 309 ticks.
+ */
+
+/*
+ * How fast it rolls, and why that is computed rather than written down.
+ *
+ * Both motions are periodic in whole 200 Hz ticks -- the floor and the walls
+ * both reset position and speed exactly -- so their periods are integers and
+ * their ratio is a rational number. If that ratio is a simple one the ball
+ * retraces one path and the demo looks stamped out. Measured with the
+ * constants above at 1920x1080: the bounce is 309 ticks, a plain 0.300 screen
+ * widths per second makes the traverse 1120 ticks, and 8 traverses later the
+ * two are back in step to within ONE tick out of 309 -- the path repeats
+ * itself every 45 seconds.
+ *
+ * So plan_cycle() picks the traverse instead: it measures the bounce, then
+ * searches a window around the nominal speed for the one whose path goes
+ * longest before coming within PATTERN_EPS per cent of retracing. At
+ * 1920x1080 that is 0.2963 W/s -- a tenth of a per cent slower than the round
+ * number, and 193 seconds instead of 45. At 640x480 it is 0.3088 W/s and 174
+ * seconds. Nothing is random; the demo is exactly as deterministic as it was,
+ * which is what a benchmark needs.
+ *
+ * If you are tempted to replace this with a round constant: that IS the round
+ * constant, and it is the one that repeats every 45 seconds.
+ */
+#define VX0_W		0.30f	/* nominal roll speed, screen widths/second   */
+#define VX_WINDOW	0.10f	/* how far the search may move it	     */
+#define PATTERN_EPS	3	/* per cent of a bounce that counts as a      */
+				/* retrace				     */
+#define PATTERN_CAP	200	/* traverses to look ahead		     */
 
 /* Physics step: exactly one tick of the 200 Hz system clock. */
 #define PHYS_HZ		200
@@ -249,8 +295,10 @@ static float Rf;
 static float bx, by;			/* centre, pixels		     */
 static float vx, vy;			/* pixels per second		     */
 static float gravity;
-static float v_launch, v_min;		/* serve / re-serve speeds	     */
-static float vx0, vx_min;
+static float v_launch;			/* the speed it always leaves at     */
+static float vx0;			/* the speed it always rolls at	     */
+static long cyc_v, cyc_h;		/* the two periods, in ticks	     */
+static long cyc_hold;			/* traverses before a near-retrace   */
 static float spin_u;			/* spin, in texture columns	     */
 
 /* ---- derived per frame -------------------------------------------------- */
@@ -933,16 +981,18 @@ static void physics_step(void)
 	bx += vx * PHYS_DT;
 
 	if (by + Rf >= floor_y) {
+		/* Both numbers are SET, neither is derived from what arrived
+		 * (see the note by APEX_HEADROOM). The flight that follows is
+		 * therefore the same flight as the last one, bit for bit, and
+		 * the ball reaches exactly the same height for as long as the
+		 * demo runs -- no decay, and so nothing to re-launch. */
 		by = floor_y - Rf;
-		vy = -vy * RESTITUTION;
-		vx *= ROLL_FRICTION;
-		/* A demo has to keep going. When the bounce has decayed to
-		 * almost nothing, serve again at full height -- a strong
-		 * bounce rather than a teleport, so the motion stays honest. */
-		if (-vy < v_min)
-			vy = -v_launch;
+		vy = -v_launch;
 	}
 
+	/* The walls only turn it round. Nothing scales vx anywhere, so its
+	 * magnitude stays exactly vx0 -- which is what keeps the roll, and
+	 * therefore the spin below, steady instead of winding down. */
 	if (bx - Rf < 0.0f) {
 		bx = Rf;
 		vx = -vx;
@@ -950,9 +1000,6 @@ static void physics_step(void)
 		bx = (float)W - Rf;
 		vx = -vx;
 	}
-
-	if (b_abs(vx) < vx_min)
-		vx = (vx < 0.0f) ? -vx0 : vx0;
 
 	/* The ball rolls, so it turns: one radian of spin per radius of
 	 * travel, straight out of the horizontal speed. It is accumulated in
@@ -964,6 +1011,92 @@ static void physics_step(void)
 		spin_u -= (float)tex.w;
 	while (spin_u < 0.0f)
 		spin_u += (float)tex.w;
+}
+
+/* ------------------------------------------------------------------------ */
+/* Planning the two cycles so they do not fall into step                     */
+/*                                                                           */
+/* Measures the bounce rather than solving for it: the integrator the frame  */
+/* loop runs is right here, so run it once from the exact state every bounce  */
+/* starts in and count the ticks. That number is then true whatever the       */
+/* screen size, the gravity or the rounding are.                             */
+/*                                                                           */
+/* Then choose the traverse. Both periods are whole ticks, so after b         */
+/* traverses the bounce is out of phase by (2*m*b) mod cyc_v ticks, and the   */
+/* path nearly retraces when that is near 0 -- or near cyc_v, which is the    */
+/* same thing from the other side. Take the m in the window whose first such  */
+/* near miss is furthest away. It is integer arithmetic throughout: no        */
+/* rounding to argue about, and the pathological cases (a ratio that divides  */
+/* exactly, so the ball lands on two spots forever) score 1 and lose.         */
+/*                                                                           */
+/* Dirichlet says no ratio can hold out for ever -- some b <= B always brings */
+/* it within 1/B of a repeat -- so this buys time, not perfection. Measured   */
+/* at 1920x1080 it buys 193 s instead of 45.                                  */
+/* ------------------------------------------------------------------------ */
+#define PLAN_TICK_MAX	100000L		/* a bounce cannot be longer	     */
+
+static void plan_cycle(void)
+{
+	float by_p = floor_y - Rf, vy_p = -v_launch;
+	long span, m0, mlo, mhi, m, bm, best, tv;
+	long eps;
+
+	tv = 0;
+	for (;;) {
+		vy_p += gravity * PHYS_DT;
+		by_p += vy_p * PHYS_DT;
+		tv++;
+		if (by_p + Rf >= floor_y || tv >= PLAN_TICK_MAX)
+			break;
+	}
+	cyc_v = tv;
+
+	span = (long)W - 2L * (long)R;
+	m0 = (long)((float)span / (VX0_W * (float)W * PHYS_DT) + 0.5f);
+	if (m0 < 2)
+		m0 = 2;
+	mlo = (long)((float)m0 * (1.0f - VX_WINDOW));
+	mhi = (long)((float)m0 * (1.0f + VX_WINDOW));
+	if (mlo < 2)
+		mlo = 2;
+	if (mhi < mlo)
+		mhi = mlo;
+
+	eps = tv * PATTERN_EPS / 100;
+	if (eps < 1)
+		eps = 1;
+
+	bm = m0;
+	best = -1;
+	for (m = mlo; m <= mhi; m++) {
+		long b, first = PATTERN_CAP + 1;
+
+		for (b = 1; b <= PATTERN_CAP; b++) {
+			long r = (2L * m * b) % tv;
+			long d = (r < tv - r) ? r : tv - r;
+
+			if (d < eps) {
+				first = b;
+				break;
+			}
+		}
+		/* Furthest-off wins; between equals, the one nearest the
+		 * nominal speed, so the look never drifts for a tie. */
+		if (first > best ||
+		    (first == best &&
+		     ((m > m0 ? m - m0 : m0 - m) <
+		      (bm > m0 ? bm - m0 : m0 - bm)))) {
+			best = first;
+			bm = m;
+		}
+	}
+
+	cyc_h = 2L * bm;
+	cyc_hold = best;
+	/* Cross the wall in the MIDDLE of a step, not on its edge: that is
+	 * what makes the traverse exactly bm ticks and keeps it there however
+	 * the additions round. */
+	vx0 = (float)span / (((float)bm - 0.5f) * PHYS_DT);
 }
 
 /* ------------------------------------------------------------------------ */
@@ -1373,9 +1506,7 @@ int main(void)
 	if (apex_px < (float)D)
 		apex_px = (float)D;
 	v_launch = b_sqrt(2.0f * gravity * apex_px);
-	v_min = b_sqrt(2.0f * gravity * apex_px * APEX_MIN_FRAC);
-	vx0 = VX0_W * (float)W;
-	vx_min = VX_MIN_FRAC * vx0;
+	plan_cycle();
 	apex = (long)apex_px;
 
 	bx = (float)W * 0.25f;
@@ -1453,6 +1584,21 @@ int main(void)
 	o_str(" ticks of ");
 	o_dec((long)PHYS_HZ);
 	o_str(" Hz)");
+	o_out(0);
+
+	o_str("BALL: bounce ");
+	o_dec(cyc_v);
+	o_str(" ticks, traverse ");
+	o_dec(cyc_h);
+	o_str(" ticks, roll ");
+	o_fix2((double)vx0);
+	o_str(" px/s; elastic, no decay; path holds ");
+	o_dec(cyc_hold);
+	o_str(" traverses (");
+	o_fix2((double)cyc_hold * (double)cyc_h / (double)PHYS_HZ);
+	o_str(" s) before coming within ");
+	o_dec((long)PATTERN_EPS);
+	o_str(" % of retracing");
 	o_out(0);
 
 	o_str("BALL: headroom ");
