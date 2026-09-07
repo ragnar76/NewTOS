@@ -71,11 +71,14 @@
 /*    0 ..  23   backdrop: 24 bands from the top of the screen to the horizon */
 /*   24 ..  95   floor: 12 bands x 6 shadow levels (level 0 = no shadow), so  */
 /*               a shadowed floor pixel is simply "floor band + level"       */
-/*   96 .. 127   RESERVED. Milestone 2b's grid room, floor reflection and HUD */
-/*               get these 32 entries. They are set to black here and used by */
-/*               nothing, on purpose: a palette that has to be re-cut in 2b   */
-/*               invalidates the texture, the sphere map and every pre-shaded */
-/*               thing built from it, so the room is left now.               */
+/*   96 .. 119   the room: ONE ramp, from just above the brightest backdrop   */
+/*               to a blue-white, and it does three jobs. It is the grid's    */
+/*               glow (a line's brightness IS its coverage times its depth    */
+/*               fade, so the room is anti-aliased for nothing), it is the    */
+/*               lettering, and it is what lets a line be composited by       */
+/*               BRIGHTNESS rather than by blending -- a glowing line may     */
+/*               only ever lighten what is under it, whatever that is.       */
+/*  120 .. 127   still reserved, still black, still used by nothing          */
 /*  128 .. 255   the ball: TEX_MAT_MAX hues, split UNEVENLY into shade ramps  */
 /*               (see hue_len). A big white sphere shows every step of its    */
 /*               gradient and gets the most; the two hues that only appear as */
@@ -93,8 +96,10 @@
 #define FLOOR_N		12
 #define SHADOW_N	6
 #define FLOOR_BASE	24
-#define RSVD_BASE	96	/* milestone 2b's 32 entries		     */
-#define RSVD_N		32
+#define GRID_BASE	96	/* the room's lines and the lettering	     */
+#define GRID_N		24
+#define RSVD_BASE	120	/* what milestone 2b did not need	     */
+#define RSVD_N		8
 #define BALL_BASE	128
 #define BALL_N		128	/* 128 .. 255				     */
 
@@ -125,7 +130,8 @@ static const unsigned char hue_len[TEX_MAT_MAX] = { 48, 40, 20, 20 };
  * compile error and the second is checked where the ramps are laid out. */
 typedef char ball_palette_tiles_256[
 	(SKY_BASE + SKY_N == FLOOR_BASE &&
-	 FLOOR_BASE + FLOOR_N * SHADOW_N == RSVD_BASE &&
+	 FLOOR_BASE + FLOOR_N * SHADOW_N == GRID_BASE &&
+	 GRID_BASE + GRID_N == RSVD_BASE &&
 	 RSVD_BASE + RSVD_N == BALL_BASE &&
 	 BALL_BASE + BALL_N == BALL_PAL_N) ? 1 : -1];
 static unsigned char hue_base[TEX_MAT_MAX];
@@ -330,6 +336,132 @@ static unsigned char shade_lut[BALL_LEVELS * TEX_MAT_MAX];
  * unused. Derived, not guessed -- a 50 Hz machine would want 5. */
 #define DROP_STEPS	((PHYS_HZ / 60) + 1)
 
+/* ------------------------------------------------------------------------ */
+/* The room                                                                  */
+/*                                                                           */
+/* A wireframe box seen from inside it, in ONE-POINT perspective: a back wall */
+/* square to the screen, a floor, and the two side walls. There is no         */
+/* ceiling -- the walls are tall enough to leave the top of the frame, so the */
+/* room reads as one that continues upwards rather than one with a lid.       */
+/*                                                                           */
+/* All of it comes from a vanishing point and a far rectangle, and the whole  */
+/* projection is then ONE number per depth. Write                             */
+/*                                                                           */
+/*      m = (y - vp_y) / drop                                                 */
+/*                                                                           */
+/* for a floor row -- drop being how far the far wall's foot sits below the   */
+/* vanishing point -- and every point of the far rectangle at that depth is   */
+/*                                                                           */
+/*      screen = vp + m * (far_point - vp)                                    */
+/*                                                                           */
+/* so the floor's transverse line, the two side walls' uprights and the       */
+/* ceiling line that would go with them all fall out of the same m and line   */
+/* up at the corners by construction rather than by tuning.                   */
+/*                                                                           */
+/* A grid whose cells are the same size in the ROOM has                       */
+/* 1/(y - vp_y) evenly spaced -- depth is what is uniform, not screen         */
+/* distance -- so the depths are m_i = 1 / (1 - i*e), with e chosen to put    */
+/* the last one exactly on the bottom row of the screen. That is the only     */
+/* place perspective arithmetic appears in this file, and it runs once.       */
+/*                                                                           */
+/* WHERE THE ROOM IS PINNED. The floor meets the back wall on the horizon     */
+/* row the backdrop gradient already had (HORIZON_FRAC), so the room needs no */
+/* new gradient and no new palette: above that line the backdrop is the       */
+/* walls' haze, below it the floor's is the floor's. Only the two thin        */
+/* wedges where a side wall passes BELOW the horizon are new, and they take   */
+/* the backdrop's colour instead of the floor's -- which is what makes the    */
+/* wall look like a wall there and not like a bright triangle of floor.       */
+/*                                                                           */
+/* The numbers below are read off the reference render, converted into these  */
+/* units: its vanishing point sits 0.15 screen heights above the floor's      */
+/* junction with the wall, the wall is about 3.2 of those drops to each side  */
+/* and 2.5 of them tall above the vanishing point, and the floor is ten cells */
+/* wide and ten deep. The half-width is capped as a share of the screen so    */
+/* that on a 4:3 display -- where the same vertical setup would make the wall */
+/* nearly as wide as the picture -- both side walls still show.               */
+/* ------------------------------------------------------------------------ */
+#define ROOM_DROP_FRAC	0.155f	/* horizon - vanishing point, over H	     */
+#define ROOM_HW_U	3.60f	/* far wall half-width, in drops	     */
+#define ROOM_HW_MAX	0.36f	/* ... but never more than this much of W    */
+#define ROOM_UP_U	2.50f	/* far wall top above the VP, in drops	     */
+#define ROOM_M		10	/* cells across the room		     */
+#define ROOM_N		10	/* cells from the wall to the bottom row     */
+#define ROOM_K_MAX	16	/* ceiling on the wall's own row count	     */
+#define ROOM_FADE_FAR	0.55f	/* how bright a line is at the back wall     */
+
+/*
+ * A line is not one pixel wide: it has a flat core, a soft shoulder and a
+ * wide, faint halo, and all three are evaluated as a function of the pixel's
+ * PERPENDICULAR distance from the segment. That is what makes the converging
+ * floor lines smooth instead of stepped, and it is free -- the room is drawn
+ * once into its own image and never again.
+ *
+ * The core and the shoulder scale with the screen so the room looks the same
+ * at 640x480 as at 1920x1080; the minimum keeps a line visible when the
+ * scaling would make it thinner than a pixel.
+ */
+#define LINE_CORE_FRAC	0.00042f
+#define LINE_CORE_MIN	0.35f
+#define LINE_SOFT_FRAC	0.00071f
+#define LINE_SOFT_MIN	0.90f
+#define LINE_GLOW	0.16f	/* the halo, as a share of the core	     */
+#define LINE_GLOW_MUL	3.0f	/* ... and how far out it reaches	     */
+
+/* ------------------------------------------------------------------------ */
+/* The floor reflection                                                      */
+/*                                                                           */
+/* The floor is a mirror, so what stands on it is drawn again upside down.    */
+/* In this picture that is exact rather than approximate: the floor's depth   */
+/* is foreshortened (FLOOR_SQUASH) but its height is not, so a point h above  */
+/* the contact line reflects to h BELOW it, at the same column -- the mirror  */
+/* is a mirror in screen space too. Turning the ball's sprite upside down     */
+/* also turns its shading and its texture upside down, which is precisely     */
+/* what a mirror does to them, so the reflection is the sphere map read with  */
+/* the rows reversed and costs not one new pixel of set-up.                   */
+/*                                                                           */
+/* It is DARKENED without a single new palette entry. Every hue's ramp        */
+/* already runs from black through its own colour to the highlight, so a      */
+/* darker copy of the ball is the same ramp read at a lower LIGHT LEVEL --    */
+/* refl_lut is shade_lut with the level scaled, and the inner loop is the     */
+/* ball's inner loop with a different table. Spending 128 more entries on a   */
+/* dimmed duplicate would have had to come out of the sphere's own ramps.     */
+/*                                                                           */
+/* It fades with distance below the contact line in two ways at once, because */
+/* an 8-bit palette cannot blend: the level scale falls (REFL_LUT_N steps of  */
+/* it), and the pixel is only written when the ordered dither threshold lets  */
+/* it through, so the floor -- grid lines and all -- shows through more and   */
+/* more of it. That is also what makes the reflection recede as the ball      */
+/* rises: its top edge is exactly as far below the contact line as the ball   */
+/* is above it, so it dims and slides off the bottom of the screen by itself. */
+/* ------------------------------------------------------------------------ */
+#define REFL_DARK	0.72f	/* level scale where it touches the ball     */
+#define REFL_TAIL	0.40f	/* ... and at the far end of the fade	     */
+#define REFL_LUT_N	8	/* steps between the two		     */
+
+/* ------------------------------------------------------------------------ */
+/* The readout                                                               */
+/*                                                                           */
+/* Top right, in the demo's own font -- the SAME 5x7 block font the ball's    */
+/* panels are lettered with (ball-tex.h). There is no second font here and    */
+/* there is not going to be one.                                             */
+/*                                                                           */
+/* It is part of the scene, not a layer over it: compose() draws it last      */
+/* inside whatever rectangle it was given, so a rectangle restored for the    */
+/* ball also restores the lettering that crosses it, and the ball passes      */
+/* BEHIND the readout instead of erasing it. Only the four numbers change, so */
+/* only their four little rectangles are redrawn and blitted -- the titles,   */
+/* the rule and the labels are never written to the screen again after the    */
+/* first paint unless the ball flies through them.                            */
+/* ------------------------------------------------------------------------ */
+#define HUD_CHARS	20	/* the block's width, in characters	     */
+#define HUD_LINES	7
+#define HUD_FIRST_VAL	3	/* the first line with a number in it	     */
+#define HUD_MARGIN	0.020f	/* off the screen edge, as a share of it     */
+#define HUD_SCRIM_NUM	1	/* the room is dimmed to a quarter behind    */
+#define HUD_SCRIM_DEN	4	/* the block, so the numbers stay readable   */
+#define TXT_MAX		32
+#define FPS_EVERY	(PHYS_HZ / 2)	/* how often the rate is re-measured */
+
 typedef struct {
 	int x0, y0, x1, y1;	/* x1 / y1 exclusive */
 } rect;
@@ -342,6 +474,30 @@ static float floor_y;			/* the ball's contact line	     */
 
 /* ---- buffers (all from Mxalloc, TT-RAM preferred) ----------------------- */
 static unsigned char *idx;		/* W*H palette indices		     */
+/*
+ * The room, painted once, W*H bytes of it.
+ *
+ * Milestone 2a restored the background under the ball from ONE index per row
+ * (bg_row), which made the restore a memset. A grid room is not uniform along
+ * a row, so that is over: the choice is between re-drawing the room's lines
+ * clipped to the dirty rectangle every frame and keeping a picture of the
+ * room to copy from. The picture wins, and not because it is simpler:
+ *
+ *   - it is what makes the room ANTI-ALIASED AND GLOWING FOR NOTHING. The
+ *     rasteriser runs once at start-up, so it can afford a perpendicular
+ *     distance, a soft shoulder and a halo per pixel. A per-frame line
+ *     re-draw would have to be cheap, and cheap lines at 640x480 are stepped
+ *     ones.
+ *   - the shadow needs to know whether the pixel it is about to darken is
+ *     floor or a glowing line, and the reflection needs the clean floor
+ *     underneath it. Both read this image; neither needs a second answer.
+ *   - the cost is a memcpy where there was a memset, over the dirty rectangle
+ *     only. It is the same work on both machines, which is the point.
+ *
+ * It costs W*H bytes: 2.0 MB at 1920x1080 and 300 KB at 640x480, next to the
+ * same again for the composition buffer. Both machines have it.
+ */
+static unsigned char *bg;		/* W*H, the room with nothing in it  */
 static unsigned char *bg_row;		/* H, the background index per row   */
 static unsigned short *map_off;		/* D*D, texel offset before the spin */
 static unsigned char *map_shade;	/* D*D, BALL_BASE + shade	     */
@@ -365,6 +521,35 @@ static float wind_w[WIND_TERMS];	/* radians per tick		     */
 static float wind_p[WIND_TERMS];	/* running phases		     */
 static float wind_v;			/* what the wind adds right now	     */
 static float spin_u;			/* spin, in texture columns	     */
+
+/* ---- the room ----------------------------------------------------------- */
+static float vp_x, vp_y;		/* the vanishing point		     */
+static float rm_drop;			/* horizon - vp_y, in pixels	     */
+static float rm_hw;			/* far wall half-width		     */
+static float rm_up;			/* far wall top above vp_y	     */
+static float rm_mn;			/* m on the bottom row of the screen */
+static float rm_slope;			/* rm_hw / rm_drop, the wedge's edge */
+static int rm_k;			/* rows of cells on the walls	     */
+static float line_core, line_soft, line_glow_r;
+
+/* ---- the reflection ----------------------------------------------------- */
+static unsigned char refl_lut[REFL_LUT_N][BALL_LEVELS * TEX_MAT_MAX];
+static int fl_i;			/* the contact line, as a row	     */
+static float refl_inv;			/* 1 / the fade length		     */
+static int rf_top;			/* where the mirrored disc starts    */
+static int rf_y0, rf_y1;		/* ... and the rows of it on screen  */
+
+/* ---- the readout -------------------------------------------------------- */
+static int txt_sc;			/* one scale for all the lettering   */
+static int txt_halo;			/* the dark outline, in pixels	     */
+static int hud_x, hud_y, hud_cw, hud_lh;
+static rect scrim[3];		/* readout, and the two corner blocks  */
+static int scrim_n;
+static rect hud_vr[HUD_LINES];		/* the part of a line that changes   */
+static char hud_line[HUD_LINES][TXT_MAX];
+static char hud_page[2][HUD_LINES][TXT_MAX];
+static long bounces;
+static double hud_fps;
 
 /* ---- derived per frame -------------------------------------------------- */
 static int b_left, b_top;		/* the disc's origin on screen	     */
@@ -645,6 +830,80 @@ static void o_fix2(double v)
 	o_ch((char)('0' + (int)(q % 10)));
 }
 
+/*
+ * The readout builds its lines the same way, but into its own buffer and
+ * without a log to flush: each of these appends and hands back the new end,
+ * and the caller terminates. Three of them, plus a length and a compare, is
+ * everything the demo needs of a string library -- which is why it has none.
+ */
+static char *f_str(char *p, const char *v)
+{
+	while (*v)
+		*p++ = *v++;
+	return p;
+}
+
+static char *f_dec(char *p, long v)
+{
+	char t[24];
+	int n = 0;
+	unsigned long u;
+
+	if (v < 0) {
+		*p++ = '-';
+		u = (unsigned long)(-v);
+	} else {
+		u = (unsigned long)v;
+	}
+	if (u == 0)
+		t[n++] = '0';
+	while (u) {
+		t[n++] = (char)('0' + (int)(u % 10UL));
+		u /= 10UL;
+	}
+	while (n)
+		*p++ = t[--n];
+	return p;
+}
+
+/* One decimal, which is as much as a frame rate deserves. */
+static char *f_fix1(char *p, double v)
+{
+	long q;
+
+	if (v < 0.0)
+		v = 0.0;
+	q = (long)(v * 10.0 + 0.5);
+	p = f_dec(p, q / 10);
+	*p++ = '.';
+	*p++ = (char)('0' + (int)(q % 10));
+	return p;
+}
+
+static int s_len(const char *a)
+{
+	int n = 0;
+
+	while (a[n])
+		n++;
+	return n;
+}
+
+static int s_eq(const char *a, const char *b)
+{
+	while (*a && *a == *b) {
+		a++;
+		b++;
+	}
+	return *a == *b;
+}
+
+static void s_cpy(char *d, const char *v)
+{
+	while ((*d++ = *v++) != 0)
+		;
+}
+
 /* ------------------------------------------------------------------------ */
 /* C:\BALL.LOG -- the performance record                                     */
 /*                                                                           */
@@ -810,9 +1069,23 @@ static void build_palette(void)
 		}
 	}
 
-	/* Milestone 2b's block. Black, and touched by nothing until it has an
-	 * owner -- an entry left at a plausible-looking colour is an entry
-	 * somebody eventually draws with by accident. */
+	/* The room's one ramp. Its BOTTOM matters as much as its top: it
+	 * starts a shade above the brightest thing the backdrop and the floor
+	 * can be, so that the faintest pixel of an anti-aliased line is still
+	 * at least as bright as whatever it landed on -- a line here is a
+	 * glowing line, and a glowing line that darkens the floor it crosses
+	 * is a drawing mistake nobody can un-see. The top is a blue-white
+	 * rather than a white: the room is lit by its own grid. */
+	for (i = 0; i < GRID_N; i++) {
+		t = (float)i / (float)(GRID_N - 1);
+		pal[GRID_BASE + i].r = (unsigned char)mixc(44, 232, t);
+		pal[GRID_BASE + i].g = (unsigned char)mixc(62, 246, t);
+		pal[GRID_BASE + i].b = (unsigned char)mixc(96, 255, t);
+	}
+
+	/* What milestone 2b did not need. Black, and touched by nothing until
+	 * it has an owner -- an entry left at a plausible-looking colour is an
+	 * entry somebody eventually draws with by accident. */
 	for (i = 0; i < RSVD_N; i++) {
 		pal[RSVD_BASE + i].r = 0;
 		pal[RSVD_BASE + i].g = 0;
@@ -875,6 +1148,33 @@ static void build_palette(void)
 }
 
 /*
+ * The reflection's tables: the ball's own shade table, read at a lower light
+ * level. Table 0 is the far, faint end of the fade and REFL_LUT_N-1 the end
+ * that touches the ball. 1536 bytes for all of them, so the whole set is in
+ * L1 on either machine, and the reflection's inner loop is the sphere's inner
+ * loop with a different pointer. No palette entry is spent.
+ */
+static void build_refl_lut(void)
+{
+	int k, i, m;
+
+	for (k = 0; k < REFL_LUT_N; k++) {
+		float f = REFL_DARK * (REFL_TAIL + (1.0f - REFL_TAIL) *
+				       (float)k / (float)(REFL_LUT_N - 1));
+
+		for (i = 0; i < BALL_LEVELS; i++) {
+			int lv = (int)((float)i * f + 0.5f);
+
+			if (lv > BALL_LEVELS - 1)
+				lv = BALL_LEVELS - 1;
+			for (m = 0; m < TEX_MAT_MAX; m++)
+				refl_lut[k][i * TEX_MAT_MAX + m] =
+					shade_lut[lv * TEX_MAT_MAX + m];
+		}
+	}
+}
+
+/*
  * One palette index per screen row: the backdrop above the horizon, the floor
  * below it. Both gradients are dithered DOWN the screen -- a row's band is
  * rounded up or down against a threshold taken from the row number -- so a
@@ -906,6 +1206,641 @@ static void build_bg_rows(void)
 						    band * SHADOW_N);
 		}
 	}
+}
+
+/* ------------------------------------------------------------------------ */
+/* The lettering                                                             */
+/*                                                                           */
+/* One renderer, one font. The glyphs are ball-tex.c's -- the same table the  */
+/* ball's own panels are lettered from -- and only the destination differs:   */
+/* there it is a texture of material indices, here it is the screen's index   */
+/* buffer. Every string is drawn CLIPPED TO A RECTANGLE, because that is what */
+/* lets the readout be part of the composed frame instead of a layer painted  */
+/* over it afterwards.                                                        */
+/*                                                                           */
+/* Each string is drawn five times: four one-pixel offsets in the darkest     */
+/* backdrop colour, then the string itself. That outline is what keeps a      */
+/* number readable where a glowing grid line runs behind it, and it costs     */
+/* nothing that matters -- the four numbers are the only text redrawn per     */
+/* frame, and they are eleven characters between them.                        */
+/* ------------------------------------------------------------------------ */
+#define TXT_BRIGHT	(GRID_BASE + GRID_N - 4)
+/* The quiet lettering has to win against a grid line the scrim has left
+ * behind it, so it is defined from the scrim rather than picked. */
+#define TXT_DIM		(GRID_BASE + GRID_N * HUD_SCRIM_NUM / HUD_SCRIM_DEN + 3)
+#define TXT_HALO_IDX	(SKY_BASE)
+
+/* Pixels a string of `n` characters occupies at the current scale. */
+static int text_span(int n)
+{
+	return n > 0 ? n * (GLYPH_W + 1) * txt_sc - txt_sc : 0;
+}
+
+static void text_pass(int x, int y, const char *v, int col, rect r,
+		      int ox, int oy)
+{
+	int gx, gy, sx, sy;
+
+	for (; *v; v++) {
+		const unsigned char *g = font_glyph(*v);
+
+		for (gy = 0; gy < GLYPH_H; gy++) {
+			unsigned bits = g[gy];
+
+			for (gx = 0; gx < GLYPH_W; gx++) {
+				if (!(bits & (1u << (GLYPH_W - 1 - gx))))
+					continue;
+				for (sy = 0; sy < txt_sc; sy++) {
+					int py = y + oy + gy * txt_sc + sy;
+					unsigned char *row;
+
+					if (py < r.y0 || py >= r.y1)
+						continue;
+					row = idx + (long)py * W;
+					for (sx = 0; sx < txt_sc; sx++) {
+						int px = x + ox +
+							 gx * txt_sc + sx;
+
+						if (px < r.x0 || px >= r.x1)
+							continue;
+						row[px] = (unsigned char)col;
+					}
+				}
+			}
+		}
+		x += (GLYPH_W + 1) * txt_sc;
+	}
+}
+
+static void text_draw(int x, int y, const char *v, int col, rect r)
+{
+	static const signed char off[4][2] = {
+		{ -1, 0 }, { 1, 0 }, { 0, -1 }, { 0, 1 }
+	};
+	int i;
+
+	for (i = 0; i < 4; i++)
+		text_pass(x, y, v, TXT_HALO_IDX, r,
+			  off[i][0] * txt_halo, off[i][1] * txt_halo);
+	text_pass(x, y, v, col, r, 0, 0);
+}
+
+/*
+ * Everything written in words: the readout's seven lines and the four in the
+ * bottom corners. compose() walks this list last, so a rectangle composed for
+ * any reason comes out with the lettering that crosses it already on it --
+ * which is the whole trick that lets the ball pass BEHIND the readout without
+ * a single test in the ball's own loop.
+ *
+ * `s` for a readout line points at hud_line[], which is rewritten in place,
+ * so the list never has to be rebuilt; `w` reserves the block's full width
+ * rather than the current string's, so a number that grows a digit does not
+ * grow past its own rectangle.
+ */
+typedef struct {
+	int x, y, w, h;
+	int col;
+	const char *s;
+} ov_item;
+
+#define OV_MAX		16
+static ov_item ov[OV_MAX];
+static int ov_n;
+
+static void ov_add(int x, int y, int chars, int col, const char *v)
+{
+	ov_item *o;
+
+	if (ov_n >= OV_MAX)
+		return;
+	o = &ov[ov_n++];
+	o->x = x - txt_halo;
+	o->y = y - txt_halo;
+	o->w = text_span(chars) + 2 * txt_halo;
+	o->h = GLYPH_H * txt_sc + 2 * txt_halo;
+	o->col = col;
+	o->s = v;
+}
+
+static void ov_draw(rect r)
+{
+	int i;
+
+	for (i = 0; i < ov_n; i++) {
+		const ov_item *o = &ov[i];
+
+		if (o->x >= r.x1 || o->x + o->w <= r.x0 ||
+		    o->y >= r.y1 || o->y + o->h <= r.y0)
+			continue;
+		text_draw(o->x + txt_halo, o->y + txt_halo, o->s, o->col, r);
+	}
+}
+
+/*
+ * Where the words go. The readout is a block HUD_CHARS wide in the top right
+ * corner; the two pairs of corner lines are the demo's own -- what it is and
+ * what it runs on. The reference render's third line there claims a
+ * partnership between two companies that does not exist, and is not
+ * reproduced; neither are anybody's trademarks, here or on the ball.
+ *
+ * Sizes are in CHARACTERS and the scale comes off the screen width, so the
+ * block is the same fraction of the picture at 640x480 as at 1920x1080.
+ */
+static const char *const hud_label[HUD_LINES] = {
+	"NEWTOS DEMO",
+	"BOUNCING BALL",
+	"--------------------",
+	"FPS: ",
+	"POS: ",
+	"VEL: ",
+	"BOUNCES: "
+};
+
+static const char *const corner_l[2] = { "SMALL SYSTEMS.", "BIG IDEAS." };
+static const char *const corner_r[2] = { "NEWTOS.", "POWERED BY CURIOSITY." };
+
+/* One rectangle of the room to be taken down behind lettering. */
+static void scrim_add(int x0, int y0, int x1, int y1)
+{
+	rect *r;
+
+	if (scrim_n >= (int)(sizeof scrim / sizeof scrim[0]))
+		return;
+	r = &scrim[scrim_n++];
+	r->x0 = x0 < 0 ? 0 : x0;
+	r->y0 = y0 < 0 ? 0 : y0;
+	r->x1 = x1 > W ? W : x1;
+	r->y1 = y1 > H ? H : y1;
+}
+
+static void text_layout(void)
+{
+	int i, mx, my, bx0, by0;
+
+	txt_sc = W / 640;
+	if (txt_sc < 1)
+		txt_sc = 1;
+	txt_halo = txt_sc / 2;
+	if (txt_halo < 1)
+		txt_halo = 1;
+	hud_cw = (GLYPH_W + 1) * txt_sc;
+	hud_lh = (GLYPH_H + 2) * txt_sc;
+
+	mx = (int)(HUD_MARGIN * (float)W);
+	my = (int)(HUD_MARGIN * (float)H);
+
+	hud_x = W - mx - HUD_CHARS * hud_cw;
+	if (hud_x < 0)
+		hud_x = 0;
+	hud_y = my;
+
+	scrim_n = 0;
+	scrim_add(hud_x - hud_cw, hud_y - txt_sc,
+		  hud_x + (HUD_CHARS + 1) * hud_cw, hud_y + HUD_LINES * hud_lh);
+
+	ov_n = 0;
+	for (i = 0; i < HUD_LINES; i++) {
+		int ly = hud_y + i * hud_lh;
+		int lab = s_len(hud_label[i]);
+
+		s_cpy(hud_line[i], hud_label[i]);
+		ov_add(hud_x, ly, HUD_CHARS,
+		       i == 2 ? TXT_DIM : TXT_BRIGHT, hud_line[i]);
+
+		/* The part of the line a new value can change: from the end
+		 * of the label to the end of the block, and one halo wider
+		 * all round so the outline is restored with it. */
+		hud_vr[i].x0 = hud_x + text_span(lab + 1) - hud_cw - txt_halo;
+		hud_vr[i].x1 = hud_x + HUD_CHARS * hud_cw + txt_halo;
+		hud_vr[i].y0 = ly - txt_halo;
+		hud_vr[i].y1 = ly + GLYPH_H * txt_sc + txt_halo;
+		if (hud_vr[i].x0 < 0)
+			hud_vr[i].x0 = 0;
+		if (hud_vr[i].y0 < 0)
+			hud_vr[i].y0 = 0;
+		if (hud_vr[i].x1 > W)
+			hud_vr[i].x1 = W;
+		if (hud_vr[i].y1 > H)
+			hud_vr[i].y1 = H;
+	}
+
+	/* The two corner pairs, and a scrim for each: they sit on the near
+	 * floor, where the grid is at its brightest, and a line crossing a
+	 * word at full strength is a word nobody reads. */
+	by0 = H - my - 2 * hud_lh;
+	bx0 = mx;
+	{
+		int wl = 0, wr = 0;
+
+		for (i = 0; i < 2; i++) {
+			int nl = s_len(corner_l[i]), nr = s_len(corner_r[i]);
+
+			if (text_span(nl) > wl)
+				wl = text_span(nl);
+			if (text_span(nr) > wr)
+				wr = text_span(nr);
+			ov_add(bx0, by0 + i * hud_lh, nl, TXT_DIM,
+			       corner_l[i]);
+			ov_add(W - mx - text_span(nr), by0 + i * hud_lh, nr,
+			       TXT_DIM, corner_r[i]);
+		}
+		scrim_add(bx0 - hud_cw, by0 - txt_sc,
+			  bx0 + wl + hud_cw, by0 + 2 * hud_lh);
+		scrim_add(W - mx - wr - hud_cw, by0 - txt_sc,
+			  W - mx + hud_cw, by0 + 2 * hud_lh);
+	}
+}
+
+/*
+ * The four numbers, rebuilt into their lines. Position and velocity are the
+ * ball's own, in screen pixels and in pixels per second -- the units the rest
+ * of the program is written in, so what the readout says can be checked
+ * against what the picture does.
+ */
+static void hud_values(void)
+{
+	char *q;
+
+	q = f_str(hud_line[3], hud_label[3]);
+	q = f_fix1(q, hud_fps);
+	*q = 0;
+
+	q = f_str(hud_line[4], hud_label[4]);
+	*q++ = '(';
+	q = f_dec(q, (long)(bx + 0.5f));
+	*q++ = ',';
+	q = f_dec(q, (long)(by + 0.5f));
+	*q++ = ')';
+	*q = 0;
+
+	q = f_str(hud_line[5], hud_label[5]);
+	*q++ = '(';
+	q = f_dec(q, (long)vx);
+	*q++ = ',';
+	q = f_dec(q, (long)vy);
+	*q++ = ')';
+	*q = 0;
+
+	q = f_str(hud_line[6], hud_label[6]);
+	q = f_dec(q, bounces);
+	*q = 0;
+}
+
+/* ------------------------------------------------------------------------ */
+/* The room, painted once into its own image                                 */
+/* ------------------------------------------------------------------------ */
+
+/* Luminance, near enough: the classic 2:5:1 weighting, in integers. */
+static int pal_lum(int i)
+{
+	return 2 * (int)pal[i].r + 5 * (int)pal[i].g + (int)pal[i].b;
+}
+
+/*
+ * What the room's bare surface is at (x, y). Above the horizon everything is
+ * backdrop; below it, the floor is what lies between the two side walls, and
+ * the wedges outside them are wall -- flat at the backdrop's brightest, which
+ * is where the backdrop's own gradient had got to by the horizon.
+ */
+static unsigned char room_fill(int x, int y)
+{
+	float t;
+
+	if (y < horizon)
+		return bg_row[y];
+	t = ((float)y + 0.5f - vp_y) * rm_slope;
+	if ((float)x + 0.5f < vp_x - t || (float)x + 0.5f > vp_x + t)
+		return (unsigned char)(SKY_BASE + SKY_N - 1);
+	return bg_row[y];
+}
+
+/*
+ * One pixel of a line, at brightness `v` in [0, 1].
+ *
+ * The level is ordered-dithered, so the halo falls off smoothly through 24
+ * entries instead of banding into rings. And it is composited by BRIGHTNESS:
+ * a line may lighten what is under it and never darken it, which is what a
+ * glowing line does and what removes the whole question of blending a cyan
+ * ramp with whichever of two gradients it happened to land on.
+ */
+static void room_px(int x, int y, float v)
+{
+	int lv, e;
+	unsigned char *q;
+
+	if (v <= 0.0f || x < 0 || y < 0 || x >= W || y >= H)
+		return;
+	lv = (int)(v * (float)GRID_N + dith8[y & 7][x & 7]);
+	if (lv <= 0)
+		return;
+	if (lv > GRID_N)
+		lv = GRID_N;
+	e = GRID_BASE + lv - 1;
+	q = bg + (long)y * W + x;
+	if (pal_lum(e) <= pal_lum((int)*q))
+		return;
+	*q = (unsigned char)e;
+}
+
+/* Flat core, soft shoulder, wide faint halo -- as a function of the
+ * perpendicular distance from the segment, in pixels. */
+static float line_prof(float d)
+{
+	float v;
+
+	if (d <= line_core)
+		v = 1.0f;
+	else if (d < line_core + line_soft)
+		v = 1.0f - (d - line_core) / line_soft;
+	else
+		v = 0.0f;
+	if (d < line_glow_r) {
+		float g = LINE_GLOW * (1.0f - d / line_glow_r);
+
+		if (g > v)
+			v = g;
+	}
+	return v;
+}
+
+/*
+ * A segment, brightness b0 at one end and b1 at the other. It walks the major
+ * axis and covers the minor one out to the halo's reach, converting the
+ * distance it steps into the PERPENDICULAR distance the profile wants with
+ * the segment's own cosine -- so a line at 30 degrees is exactly as thick as
+ * one at 0.
+ */
+static void room_line(float x0, float y0, float x1, float y1,
+		      float b0, float b1)
+{
+	float dx = x1 - x0, dy = y1 - y0;
+	float rad = line_core + line_soft;
+	float t;
+	int i, j;
+
+	if (line_glow_r > rad)
+		rad = line_glow_r;
+
+	if (b_abs(dx) >= b_abs(dy)) {
+		float sl, cs, rv;
+		int ia, ib;
+
+		if (dx < 0.0f) {
+			t = x0; x0 = x1; x1 = t;
+			t = y0; y0 = y1; y1 = t;
+			t = b0; b0 = b1; b1 = t;
+			dx = -dx;
+			dy = -dy;
+		}
+		if (dx < 0.001f)
+			return;
+		sl = dy / dx;
+		cs = 1.0f / b_sqrt(1.0f + sl * sl);
+		rv = rad / cs;
+		ia = (int)(x0 + 0.5f);
+		ib = (int)(x1 + 0.5f);
+		if (ia < 0)
+			ia = 0;
+		if (ib > W - 1)
+			ib = W - 1;
+		for (i = ia; i <= ib; i++) {
+			float fx = (float)i + 0.5f;
+			float yc = y0 + (fx - x0) * sl;
+			float u = (fx - x0) / dx;
+			float bri;
+			int j0, j1;
+
+			if (u < 0.0f)
+				u = 0.0f;
+			if (u > 1.0f)
+				u = 1.0f;
+			bri = b0 + (b1 - b0) * u;
+			j0 = (int)(yc - rv);
+			j1 = (int)(yc + rv) + 1;
+			if (j0 < 0)
+				j0 = 0;
+			if (j1 > H)
+				j1 = H;
+			for (j = j0; j < j1; j++)
+				room_px(i, j,
+					line_prof(b_abs((float)j + 0.5f - yc)
+						  * cs) * bri);
+		}
+	} else {
+		float sl, cs, rh;
+		int ja, jb;
+
+		if (dy < 0.0f) {
+			t = x0; x0 = x1; x1 = t;
+			t = y0; y0 = y1; y1 = t;
+			t = b0; b0 = b1; b1 = t;
+			dx = -dx;
+			dy = -dy;
+		}
+		if (dy < 0.001f)
+			return;
+		sl = dx / dy;
+		cs = 1.0f / b_sqrt(1.0f + sl * sl);
+		rh = rad / cs;
+		ja = (int)(y0 + 0.5f);
+		jb = (int)(y1 + 0.5f);
+		if (ja < 0)
+			ja = 0;
+		if (jb > H - 1)
+			jb = H - 1;
+		for (j = ja; j <= jb; j++) {
+			float fy = (float)j + 0.5f;
+			float xc = x0 + (fy - y0) * sl;
+			float u = (fy - y0) / dy;
+			float bri;
+			int i0, i1;
+
+			if (u < 0.0f)
+				u = 0.0f;
+			if (u > 1.0f)
+				u = 1.0f;
+			bri = b0 + (b1 - b0) * u;
+			i0 = (int)(xc - rh);
+			i1 = (int)(xc + rh) + 1;
+			if (i0 < 0)
+				i0 = 0;
+			if (i1 > W)
+				i1 = W;
+			for (i = i0; i < i1; i++)
+				room_px(i, j,
+					line_prof(b_abs((float)i + 0.5f - xc)
+						  * cs) * bri);
+		}
+	}
+}
+
+/* Bright near the viewer, dim at the back wall -- the one depth cue the room
+ * has, and the reason the far end of it reads as far away at all. */
+static float room_fade(float m)
+{
+	float t = (m - 1.0f) / (rm_mn - 1.0f);
+
+	if (t < 0.0f)
+		t = 0.0f;
+	if (t > 1.0f)
+		t = 1.0f;
+	return ROOM_FADE_FAR + (1.0f - ROOM_FADE_FAR) * t;
+}
+
+static long room_ticks;			/* what painting it cost, in ticks   */
+
+static void build_room(void)
+{
+	float mi[ROOM_N + 1];
+	float e, cellw, wallh, f1, fn;
+	long t0 = get_sysvar(_hz_200);
+	int i, j, k, x, y;
+
+	/* --- the projection, once ------------------------------------- */
+	vp_x = 0.5f * (float)W;
+	rm_drop = ROOM_DROP_FRAC * (float)H;
+	if (rm_drop < 1.0f)
+		rm_drop = 1.0f;
+	vp_y = (float)horizon - rm_drop;
+	rm_hw = ROOM_HW_U * rm_drop;
+	if (rm_hw > ROOM_HW_MAX * (float)W)
+		rm_hw = ROOM_HW_MAX * (float)W;
+	rm_up = ROOM_UP_U * rm_drop;
+	rm_slope = rm_hw / rm_drop;
+	rm_mn = ((float)H - vp_y) / rm_drop;
+	if (rm_mn < 1.5f)
+		rm_mn = 1.5f;
+
+	line_core = LINE_CORE_FRAC * (float)W;
+	if (line_core < LINE_CORE_MIN)
+		line_core = LINE_CORE_MIN;
+	line_soft = LINE_SOFT_FRAC * (float)W;
+	if (line_soft < LINE_SOFT_MIN)
+		line_soft = LINE_SOFT_MIN;
+	line_glow_r = LINE_GLOW_MUL * (line_core + line_soft);
+
+	/* Depth is what is evenly spaced, not screen distance: 1/(y - vp_y)
+	 * steps by a constant, and the constant is the one that lands the
+	 * last division exactly on the bottom row of the screen. */
+	e = (1.0f - 1.0f / rm_mn) / (float)ROOM_N;
+	for (i = 0; i <= ROOM_N; i++)
+		mi[i] = 1.0f / (1.0f - (float)i * e);
+
+	/* Rows of cells on the walls, chosen so a cell on the back wall is
+	 * square rather than so it is a round number. */
+	cellw = 2.0f * rm_hw / (float)ROOM_M;
+	wallh = rm_drop + rm_up;
+	rm_k = (int)(wallh / cellw + 0.5f);
+	if (rm_k < 2)
+		rm_k = 2;
+	if (rm_k > ROOM_K_MAX)
+		rm_k = ROOM_K_MAX;
+
+	f1 = room_fade(1.0f);
+	fn = room_fade(rm_mn);
+
+	/* --- the bare surfaces ---------------------------------------- */
+	for (y = 0; y < H; y++) {
+		unsigned char *row = bg + (long)y * W;
+
+		if (y < horizon) {
+			memset(row, bg_row[y], (size_t)W);
+			continue;
+		}
+		{
+			float t = ((float)y + 0.5f - vp_y) * rm_slope;
+			int xl = (int)(vp_x - t + 0.5f);
+			int xr = (int)(vp_x + t + 0.5f);
+			unsigned char wc =
+				(unsigned char)(SKY_BASE + SKY_N - 1);
+
+			if (xl < 0)
+				xl = 0;
+			if (xr > W)
+				xr = W;
+			if (xr < xl)
+				xr = xl;
+			if (xl > 0)
+				memset(row, wc, (size_t)xl);
+			if (xr > xl)
+				memset(row + xl, bg_row[y], (size_t)(xr - xl));
+			if (xr < W)
+				memset(row + xr, wc, (size_t)(W - xr));
+		}
+	}
+
+	/* --- the floor ------------------------------------------------- */
+	for (i = 0; i <= ROOM_N; i++) {		/* across, one per depth */
+		float m = mi[i], f = room_fade(m);
+
+		room_line(vp_x - m * rm_hw, vp_y + m * rm_drop,
+			  vp_x + m * rm_hw, vp_y + m * rm_drop, f, f);
+	}
+	for (j = 0; j <= ROOM_M; j++) {		/* away, one per cell    */
+		float xf = vp_x + (2.0f * (float)j / (float)ROOM_M - 1.0f)
+			   * rm_hw;
+
+		room_line(xf, vp_y + rm_drop,
+			  vp_x + rm_mn * (xf - vp_x), vp_y + rm_mn * rm_drop,
+			  f1, fn);
+	}
+
+	/* --- the back wall, square to the screen ----------------------- */
+	for (j = 0; j <= ROOM_M; j++) {
+		float xf = vp_x + (2.0f * (float)j / (float)ROOM_M - 1.0f)
+			   * rm_hw;
+
+		room_line(xf, vp_y - rm_up, xf, vp_y + rm_drop, f1, f1);
+	}
+	for (k = 0; k < rm_k; k++) {		/* k == rm_k is the floor */
+		float yf = vp_y - rm_up + (float)k * wallh / (float)rm_k;
+
+		room_line(vp_x - rm_hw, yf, vp_x + rm_hw, yf, f1, f1);
+	}
+
+	/* --- the two side walls, off the same depths ------------------- */
+	for (i = 1; i <= ROOM_N; i++) {		/* i == 0 is the wall's edge */
+		float m = mi[i], f = room_fade(m);
+
+		room_line(vp_x - m * rm_hw, vp_y - m * rm_up,
+			  vp_x - m * rm_hw, vp_y + m * rm_drop, f, f);
+		room_line(vp_x + m * rm_hw, vp_y - m * rm_up,
+			  vp_x + m * rm_hw, vp_y + m * rm_drop, f, f);
+	}
+	for (k = 0; k < rm_k; k++) {		/* k == rm_k is the floor */
+		float yf = vp_y - rm_up + (float)k * wallh / (float)rm_k;
+		float dyf = yf - vp_y;
+
+		room_line(vp_x - rm_hw, yf,
+			  vp_x - rm_mn * rm_hw, vp_y + rm_mn * dyf, f1, fn);
+		room_line(vp_x + rm_hw, yf,
+			  vp_x + rm_mn * rm_hw, vp_y + rm_mn * dyf, f1, fn);
+	}
+
+	/* --- the scrims behind the lettering --------------------------- */
+	/* The room does not stop where a word starts, it recedes behind it:
+	 * every line inside one of these rectangles is taken down to a
+	 * quarter of its brightness, and a line too faint to survive that
+	 * gives its pixel back to the surface. Clearing the rectangles would
+	 * have been simpler and would have left three holes in the room. */
+	for (i = 0; i < scrim_n; i++) {
+		for (y = scrim[i].y0; y < scrim[i].y1; y++) {
+			unsigned char *row = bg + (long)y * W;
+
+			for (x = scrim[i].x0; x < scrim[i].x1; x++) {
+				int lv = (int)row[x] - GRID_BASE + 1;
+
+				if (lv < 1 || lv > GRID_N)
+					continue;
+				lv = lv * HUD_SCRIM_NUM / HUD_SCRIM_DEN;
+				row[x] = lv < 1
+					 ? room_fill(x, y)
+					 : (unsigned char)(GRID_BASE + lv - 1);
+			}
+		}
+	}
+
+	room_ticks = get_sysvar(_hz_200) - t0;
 }
 
 /* ------------------------------------------------------------------------ */
@@ -1334,6 +2269,19 @@ static void update_shape(void)
 		sh_x1 = W;
 	if (sh_y1 > H)
 		sh_y1 = H;
+
+	/* The reflection. The ball's underside is `hgt` above the contact
+	 * line, so its mirror image begins exactly `hgt` below it -- which is
+	 * why nothing here needs a special case for a ball in the air: as it
+	 * rises its reflection slides down the floor, fades, and leaves the
+	 * bottom of the screen on its own. Same columns as the ball. */
+	rf_top = (int)(2.0f * floor_y - by - Rf);
+	rf_y0 = rf_top < fl_i ? fl_i : rf_top;
+	rf_y1 = rf_top + D;
+	if (rf_y1 > H)
+		rf_y1 = H;
+	if (rf_y1 < rf_y0)
+		rf_y1 = rf_y0;
 }
 
 static rect shape_rect(void)
@@ -1355,6 +2303,12 @@ static rect shape_rect(void)
 		if (sh_y1 > r.y1)
 			r.y1 = sh_y1;
 	}
+
+	/* The reflection occupies the ball's own columns, so it can only ever
+	 * push the rectangle DOWNWARDS -- and only while the ball is low
+	 * enough for the mirror image to still be on the screen. */
+	if (rf_y1 > rf_y0 && rf_y1 > r.y1)
+		r.y1 = rf_y1;
 
 	if (r.x0 < 0)
 		r.x0 = 0;
@@ -1394,7 +2348,7 @@ static rect rect_union(rect a, rect b)
 static void draw_shadow(rect r)
 {
 	int x0 = sh_x0, x1 = sh_x1, y0 = sh_y0, y1 = sh_y1;
-	int x, y;
+	int x, y, base;
 
 	if (x0 < r.x0)
 		x0 = r.x0;
@@ -1407,7 +2361,7 @@ static void draw_shadow(rect r)
 
 	for (y = y0; y < y1; y++) {
 		unsigned char *row = idx + (long)y * W;
-		unsigned char base = bg_row[y];
+		const unsigned char *src = bg + (long)y * W;
 		const float *dr = dith4[y & 3];
 		/* Back onto the floor: undo the foreshortening, then the row's
 		 * fixed contribution to the two ellipse axes. */
@@ -1438,6 +2392,15 @@ static void draw_shadow(rect r)
 				continue;
 			if (lv > SHADOW_N - 1)
 				lv = SHADOW_N - 1;
+			/* Whatever is shaded is read from the ROOM, not from
+			 * what is already on the row: a floor band, always at
+			 * level 0, so the level is still an addition -- and
+			 * the room's own lines are skipped by the same test,
+			 * because a glowing line is not dimmed by a shadow
+			 * falling across it. */
+			base = (int)src[x];
+			if (base < FLOOR_BASE || base >= GRID_BASE)
+				continue;
 			row[x] = (unsigned char)(base + lv);
 		}
 	}
@@ -1489,10 +2452,93 @@ static void draw_ball(rect r)
 }
 
 /*
- * Compose rectangle `r`: background, then shadow, then ball. The background
- * is not painted underneath the ball's own run -- the ball covers it whole --
- * which is why one pass over the rectangle is enough and no separate
- * background restore is needed anywhere in this program.
+ * The same loop again, upside down and darker.
+ *
+ * The sphere map is read from the BOTTOM row up (D - 1 - sy), which turns the
+ * ball, its shading and its texture over together -- exactly what the mirror
+ * does to all three. The spin is unchanged: a mirror in the floor does not
+ * reverse a horizontal rotation.
+ *
+ * Two things fade it with distance below the contact line. The shade table is
+ * one of REFL_LUT_N progressively darker copies, and the pixel is only
+ * written where the ordered dither threshold is under the coverage -- so the
+ * floor beneath, grid lines included, comes through more and more of it. Per
+ * pixel that is the ball's four loads and two adds plus one threshold and one
+ * compare.
+ */
+static void draw_reflect(rect r)
+{
+	const unsigned char *tp = tex.px;
+	unsigned du = (unsigned)tex_du;
+	int y0 = rf_y0, y1 = rf_y1;
+	int y;
+
+	if (y0 < r.y0)
+		y0 = r.y0;
+	if (y1 > r.y1)
+		y1 = r.y1;
+
+	for (y = y0; y < y1; y++) {
+		int msy = D - 1 - (y - rf_top);
+		const unsigned char *lut;
+		const float *dr;
+		const unsigned short *op;
+		const unsigned char *shp;
+		unsigned char *dp;
+		float cov;
+		int a, b, n, x;
+
+		if (msy < 0 || msy >= D)
+			continue;
+		cov = 1.0f - (float)(y - fl_i) * refl_inv;
+		if (cov <= 0.0f)
+			continue;
+		if (cov > 1.0f)
+			cov = 1.0f;
+		lut = refl_lut[(int)(cov * (float)(REFL_LUT_N - 1) + 0.5f)];
+		/* The shade table dims linearly with distance, but the screen
+		 * door opens with the SQUARE ROOT of it: a reflection that
+		 * loses both at the same rate is gone before it has been seen.
+		 * Both still reach nothing at the same place, the bottom row
+		 * of the floor, so nothing is cut off there either. */
+		cov = b_sqrt(cov);
+		dr = dith8[y & 7];
+
+		a = b_left + run0[msy];
+		b = b_left + run1[msy];
+		if (a < r.x0)
+			a = r.x0;
+		if (b > r.x1)
+			b = r.x1;
+		if (b <= a)
+			continue;
+
+		n = a - b_left;
+		op = map_off + (long)msy * D + n;
+		shp = map_shade + (long)msy * D + n;
+		dp = idx + (long)y * W + a;
+		for (x = a; x < b; x++) {
+			if (dr[x & 7] < cov)
+				*dp = lut[*shp + tp[(unsigned)*op + du]];
+			dp++;
+			op++;
+			shp++;
+		}
+	}
+}
+
+/*
+ * Compose rectangle `r`: the room, then the shadow, then the reflection, then
+ * the ball, then the lettering. The room is not copied underneath the ball's
+ * own run -- the ball covers it whole -- which is why one pass over the
+ * rectangle is enough and no separate background restore is needed anywhere
+ * in this program.
+ *
+ * The order is what puts the picture together: the shadow darkens the floor
+ * the reflection then lies on and shows through, and the lettering goes on
+ * last so that a rectangle restored for the ball comes back with the words
+ * that cross it -- the ball passes behind the readout and behind the corner
+ * lines without either of them costing a test in the ball's loop.
  */
 static void compose(rect r)
 {
@@ -1500,7 +2546,7 @@ static void compose(rect r)
 
 	for (y = r.y0; y < r.y1; y++) {
 		unsigned char *row = idx + (long)y * W;
-		unsigned char c = bg_row[y];
+		const unsigned char *src = bg + (long)y * W;
 		int sy = y - b_top;
 		int a = r.x0, b = r.x0;
 
@@ -1514,16 +2560,20 @@ static void compose(rect r)
 		}
 		if (b > a) {
 			if (a > r.x0)
-				memset(row + r.x0, c, (size_t)(a - r.x0));
+				memcpy(row + r.x0, src + r.x0,
+				       (size_t)(a - r.x0));
 			if (r.x1 > b)
-				memset(row + b, c, (size_t)(r.x1 - b));
+				memcpy(row + b, src + b, (size_t)(r.x1 - b));
 		} else {
-			memset(row + r.x0, c, (size_t)(r.x1 - r.x0));
+			memcpy(row + r.x0, src + r.x0,
+			       (size_t)(r.x1 - r.x0));
 		}
 	}
 
 	draw_shadow(r);
+	draw_reflect(r);
 	draw_ball(r);
+	ov_draw(r);
 }
 
 static void blit(rect r)
@@ -1609,6 +2659,7 @@ int main(void)
 	int page, i, rc = 0;
 	long t_last, t_start, t_end, frames = 0, dropped = 0;
 	long t_mark = 0, f_mark = 0, d_mark = 0;
+	long t_fps = 0, f_fps = 0;
 	double secs;
 
 	if (plat_open(&scr) < 0) {
@@ -1636,6 +2687,7 @@ int main(void)
 	Rf = (float)R;
 
 	idx = (unsigned char *)b_alloc((long)W * H);
+	bg = (unsigned char *)b_alloc((long)W * H);
 	bg_row = (unsigned char *)b_alloc((long)H);
 	map_off = (unsigned short *)b_alloc((long)D * D *
 					    (long)sizeof(unsigned short));
@@ -1643,8 +2695,8 @@ int main(void)
 	run0 = (short *)b_alloc((long)D * (long)sizeof(short));
 	run1 = (short *)b_alloc((long)D * (long)sizeof(short));
 	tex_buf = (unsigned char *)b_alloc((long)TEX_MAX_BYTES);
-	if (!idx || !bg_row || !map_off || !map_shade || !run0 || !run1 ||
-	    !tex_buf) {
+	if (!idx || !bg || !bg_row || !map_off || !map_shade || !run0 ||
+	    !run1 || !tex_buf) {
 		plat_close();
 		Cconws("BALL: out of memory\r\n");
 		rc = 1;
@@ -1660,9 +2712,29 @@ int main(void)
 	light_init();
 	tex_build(&tex, tex_buf, TEXPATH);
 	build_palette();
+	build_refl_lut();
 	plat_palette(pal);
 	build_bg_rows();
 	build_sphere_map();
+
+	/* The contact line as a row, and the length over which the reflection
+	 * fades: the whole of the floor that is visible below it, so it runs
+	 * out exactly at the bottom of the screen instead of being cut off
+	 * there. */
+	fl_i = (int)floor_y;
+	{
+		float rl = (float)H - floor_y;
+
+		if (rl < 1.0f)
+			rl = 1.0f;
+		refl_inv = 1.0f / rl;
+	}
+
+	/* The readout has to be laid out before the room is painted: the room
+	 * dims itself behind the block, and it can only do that once it knows
+	 * where the block is. */
+	text_layout();
+	build_room();
 
 	/* Serve speeds. The apex is as high as the ball can go and still be
 	 * fully on screen, with a little headroom. */
@@ -1699,6 +2771,10 @@ int main(void)
 		vx = svx;
 		vy = svy;
 	}
+
+	/* The numbers, so the first picture already carries them rather than
+	 * a line of zeroes. */
+	hud_values();
 
 	/* The one and only full-screen paint: every page has to be given the
 	 * background once. From here on nothing outside a dirty rectangle is
@@ -1740,6 +2816,25 @@ int main(void)
 	o_dec((long)tex.nmat);
 	o_str(" hues, from ");
 	o_str(tex.source);
+	o_out(0);
+
+	o_str("BALL: room ");
+	o_dec((long)ROOM_M);
+	o_ch('x');
+	o_dec((long)ROOM_N);
+	o_str(" floor cells, wall ");
+	o_dec((long)ROOM_M);
+	o_ch('x');
+	o_dec((long)rm_k);
+	o_str(", ");
+	o_dec((long)GRID_N);
+	o_str(" palette entries, background image ");
+	o_dec((long)W * (long)H);
+	o_str(" bytes painted in ");
+	o_fix2((double)room_ticks * 1000.0 / (double)PHYS_HZ);
+	o_str(" ms; reflection fades over ");
+	o_dec((long)(H - fl_i));
+	o_str(" rows");
 	o_out(0);
 
 	o_str("BALL: sphere map ");
@@ -1804,6 +2899,8 @@ int main(void)
 	t_start = get_sysvar(_hz_200);
 	t_last = t_start;
 	t_mark = t_start;
+	t_fps = t_start;
+	f_fps = 0;
 
 	for (;;) {
 		long now;
@@ -1828,14 +2925,47 @@ int main(void)
 			dropped++;
 		if (steps > MAX_STEPS)
 			steps = MAX_STEPS;
-		while (steps-- > 0)
+		while (steps-- > 0) {
+			float pvy = vy;
+
 			physics_step();
+			/* A bounce is where the ball stops falling and starts
+			 * rising, counted OUTSIDE physics_step so the step
+			 * itself stays exactly the step it was. */
+			if (pvy > 0.0f && vy < 0.0f)
+				bounces++;
+		}
+
+		/* The rate the readout shows, re-measured twice a second: an
+		 * interval short enough to react and long enough that a 200 Hz
+		 * clock can divide by it. */
+		if (now - t_fps >= FPS_EVERY) {
+			hud_fps = (double)(frames - f_fps) * (double)PHYS_HZ /
+				  (double)(now - t_fps);
+			t_fps = now;
+			f_fps = frames;
+		}
+		hud_values();
 
 		update_shape();
 		cur = shape_rect();
 		dirty = rect_union(cur, prev_rect[page]);
 		compose(dirty);
 		blit(dirty);
+
+		/* Only the numbers that changed, and only their own little
+		 * rectangles. Tracked per page, because on a two-page display
+		 * a number written to one page has not been written to the
+		 * other; compose() puts the ball back into the rectangle it
+		 * re-draws, so a number changing under the ball costs nothing
+		 * but its own area. */
+		for (i = HUD_FIRST_VAL; i < HUD_LINES; i++) {
+			if (s_eq(hud_line[i], hud_page[page][i]))
+				continue;
+			compose(hud_vr[i]);
+			blit(hud_vr[i]);
+			s_cpy(hud_page[page][i], hud_line[i]);
+		}
 
 		prev_rect[page] = cur;
 		plat_present();
@@ -1881,7 +3011,9 @@ int main(void)
 	o_fix2(secs > 0.0 ? (double)frames / secs : 0.0);
 	o_str(" fps presented, ");
 	o_dec(dropped);
-	o_str(" dropped");
+	o_str(" dropped, ");
+	o_dec(bounces);
+	o_str(" bounces");
 	o_flush();
 
 done:
@@ -1891,6 +3023,7 @@ done:
 	b_free(map_shade);
 	b_free(map_off);
 	b_free(bg_row);
+	b_free(bg);
 	b_free(idx);
 	return rc;
 }

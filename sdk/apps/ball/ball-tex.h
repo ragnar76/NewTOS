@@ -41,11 +41,16 @@
  *
  *      0 ..  23   backdrop
  *     24 ..  95   floor and its shadow
- *     96 .. 127   RESERVED for milestone 2b (grid room, floor reflection, HUD)
+ *     96 .. 119   the grid room's glowing lines, and the lettering drawn with
+ *                 them: milestone 2b spent 24 of the 32 entries reserved for
+ *                 it here
+ *    120 .. 127   still reserved, still black, still used by nothing
  *    128 .. 255   the ball: TEX_MAT_MAX hues, unevenly split into shades
  *
- * The reserved block is why 2b will not have to re-quantise this texture, or
- * anything else pre-computed from this palette.
+ * The reserved block is why 2b did not have to re-quantise this texture, or
+ * anything else pre-computed from this palette -- and why the floor
+ * reflection, which needs the ball DARKENED, spends no entry at all: it reads
+ * the same ramps at a lower light level (ball.c, build_refl_lut).
  *
  * ---------------------------------------------------------------------------
  * Rows are stored TWICE
@@ -87,6 +92,25 @@
  */
 #ifndef BALL_TEX_H
 #define BALL_TEX_H
+
+/* ------------------------------------------------------------------------ */
+/* The 5x7 block font                                                        */
+/*                                                                           */
+/* One font for the whole demo: the lettering on the ball's panels and the    */
+/* room's corner lines and status readout are the same glyphs. The table is   */
+/* contiguous ASCII from space to underscore, so a character is its own       */
+/* index; font_glyph() does the range check and answers '?' outside it.      */
+/* ------------------------------------------------------------------------ */
+#define GLYPH_W		5
+#define GLYPH_H		7
+#define FONT_FIRST	0x20
+#define FONT_LAST	0x5F
+#define FONT_GLYPHS	(FONT_LAST - FONT_FIRST + 1)
+
+extern const unsigned char font_bits[FONT_GLYPHS][GLYPH_H];
+
+/* The seven rows of `c`, or of '?' when the font has no such character. */
+const unsigned char *font_glyph(char c);
 
 /* Hues the screen palette can hold a shade ramp for. Four, because four ramps
  * long enough to shade a 300-pixel sphere without banding is what half a
