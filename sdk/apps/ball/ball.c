@@ -331,10 +331,25 @@ static unsigned char shade_lut[BALL_LEVELS * TEX_MAT_MAX];
  * the backlog is dropped instead of chased, which is what keeps a slow frame
  * from turning into a spiral of slower ones. */
 #define MAX_STEPS	40
-/* Physics steps a frame may consume before it counts as dropped: at 60 Hz on
- * a 200 Hz clock a frame is 3 or 4 ticks, so 5 means a retrace went by
- * unused. Derived, not guessed -- a 50 Hz machine would want 5. */
-#define DROP_STEPS	((PHYS_HZ / 60) + 1)
+/*
+ * Ticks a frame may consume before a retrace went by unused. It is derived
+ * from the retrace the demo MEASURED (measure_retrace below), not from an
+ * assumed refresh rate, and the difference is not academic: at 60 Hz a frame
+ * is 3.33 ticks of a 200 Hz clock and a threshold of 4 sits two thirds of a
+ * tick clear of it, but at 50 Hz a frame is 4.00 ticks EXACTLY and the same
+ * threshold sits on top of the nominal value. Everything that then jogs the
+ * sampling by one tick -- and the two clocks are independent crystals, so
+ * the phase between them walks all day -- reads as a dropped frame that
+ * never happened. That is precisely what the PiStorm logs of 2026-09-07
+ * show: bursts of 7 to 13 "dropped" frames in intervals that presented the
+ * same 249 frames in the same 1000 ticks as the quiet ones.
+ *
+ * A frame that really did let a retrace go by cost two retrace periods, so
+ * one and a half is the line between the two, wherever the retrace happens
+ * to be. Below it is the clock's own quantisation and nothing else.
+ */
+#define DROP_FRAC_NUM	3	/* one and a half retraces ... */
+#define DROP_FRAC_DEN	2
 
 /* ------------------------------------------------------------------------ */
 /* The room                                                                  */
@@ -2747,6 +2762,58 @@ static void budget_reset(void)
 		step_hist[i] = 0;
 }
 
+/* ------------------------------------------------------------------------ */
+/* The retrace, measured rather than assumed                                 */
+/*                                                                           */
+/* Everything the demo says about dropped frames rests on how long a retrace */
+/* is, and that is not a number a program may assume: this one runs on a     */
+/* 60 Hz Pi, a 50 Hz PiStorm screen, a 71 Hz Atari mono monitor and whatever */
+/* the benchmark plan points it at next. So it is asked, once, of the        */
+/* machine -- wait for a run of retraces and see how many ticks went by.     */
+/*                                                                           */
+/* It runs AFTER the first full-screen paint, so every page already holds    */
+/* the picture and the flipping is invisible; it hands back how many times   */
+/* it presented, because on a two-page display the caller's idea of which    */
+/* page is being drawn has to follow.                                        */
+/*                                                                           */
+/* A platform with no retrace to wait for (plat_present() returns at once)   */
+/* measures zero, and says so: there is nothing there to drop, and the log   */
+/* prints what the threshold means instead of implying a retrace that is not */
+/* running.                                                                  */
+/* ------------------------------------------------------------------------ */
+#define RETRACE_N	32L		/* 0.64 s at 50 Hz, +-0.8 %	     */
+
+static long retrace_q8;			/* retrace period, 1/256 of a tick   */
+static int drop_steps;			/* ... as the test the loop applies  */
+
+static long measure_retrace(void)
+{
+	long t0, t1, i;
+
+	plat_present();			/* land on one before timing any     */
+	t0 = get_sysvar(_hz_200);
+	for (i = 0; i < RETRACE_N; i++)
+		plat_present();
+	t1 = get_sysvar(_hz_200);
+
+	retrace_q8 = ((t1 - t0) * 256L) / RETRACE_N;
+	if (retrace_q8 < 256L)
+		retrace_q8 = 0;		/* under one tick: nothing waited    */
+
+	if (retrace_q8) {
+		drop_steps = (int)((retrace_q8 * DROP_FRAC_NUM) /
+				   (256L * DROP_FRAC_DEN));
+		if (drop_steps < 2)
+			drop_steps = 2;
+	} else {
+		/* Free-running: a frame cannot miss what is not there, so the
+		 * only thing left worth counting is a stall, and MAX_STEPS is
+		 * already this program's definition of one. */
+		drop_steps = MAX_STEPS;
+	}
+	return RETRACE_N + 1L;
+}
+
 /*
  * What one reading of the system clock costs, in nanoseconds. Measured the
  * only way a 200 Hz clock can measure something far below its own resolution:
@@ -2942,6 +3009,16 @@ int main(void)
 			page = 0;
 	}
 
+	/* How long a retrace is, asked of the machine now that both pages
+	 * hold the picture and the flipping cannot be seen. It presents a
+	 * number of times, so the page being drawn moves with it. */
+	{
+		long np = measure_retrace();
+
+		if (scr.pages > 1)
+			page = (int)((page + np) % (long)scr.pages);
+	}
+
 	o_reset();
 	o_str("BALL: screen ");
 	o_dec((long)W);
@@ -3044,6 +3121,24 @@ int main(void)
 	o_str(" ms/frame");
 	o_out(0);
 
+	if (retrace_q8) {
+		o_str("BALL: retrace ");
+		o_fix2(256.0 * (double)PHYS_HZ / (double)retrace_q8);
+		o_str(" Hz measured (");
+		o_fix2((double)retrace_q8 / 256.0);
+		o_str(" ticks of ");
+		o_dec((long)PHYS_HZ);
+		o_str(" Hz); a frame counts as dropped above ");
+		o_dec((long)drop_steps);
+		o_str(" ticks");
+	} else {
+		o_str("BALL: no retrace to wait for; nothing to drop, so a "
+		      "frame is only counted above ");
+		o_dec((long)drop_steps);
+		o_str(" ticks, which is a stall");
+	}
+	o_out(0);
+
 	o_str("BALL: clock read ");
 	o_dec(clock_ns);
 	o_str(" ns; the frame budget is split with 3 extra reads a frame = ");
@@ -3091,7 +3186,7 @@ int main(void)
 		 * frame. More than that means a retrace went by unused --
 		 * a dropped frame, and the one performance figure a 200 Hz
 		 * clock can honestly resolve here. */
-		if (steps > DROP_STEPS)
+		if (steps > drop_steps)
 			dropped++;
 		if (steps > MAX_STEPS)
 			steps = MAX_STEPS;
