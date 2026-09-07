@@ -2810,6 +2810,25 @@ static void bench(void)
 {
 	rect prev, cur, dirty;
 	long t0;
+	/* The benchmark advances the physics to have something to draw, and
+	 * how far it gets depends on how fast the machine is. It must
+	 * therefore put the demo back EXACTLY where it found it, or the run
+	 * that follows starts from a state the machine chose -- and this
+	 * program is meant to be a benchmark, where the same demo has to be
+	 * the same workload on every machine it is pointed at. All of the
+	 * state, not just the obvious half: the wind's three running phases
+	 * and the spin are integrated by physics_step() as surely as the
+	 * position is, and leaving them where the benchmark stopped is what
+	 * made two runs on one machine differ (the PiStorm logs of
+	 * 2026-09-07 measured 50 and 52 benchmark frames, so their winds
+	 * were 10 ms out of step with each other). */
+	float sbx = bx, sby = by, svx = vx, svy = vy;
+	float sspin = spin_u, swind = wind_v;
+	float sph[WIND_TERMS];
+	int sdir = roll_dir, i;
+
+	for (i = 0; i < WIND_TERMS; i++)
+		sph[i] = wind_p[i];
 
 	update_shape();
 	prev = shape_rect();
@@ -2826,6 +2845,17 @@ static void bench(void)
 		bench_frames++;
 		bench_ticks = get_sysvar(_hz_200) - t0;
 	} while (bench_ticks < BENCH_TICKS && bench_frames < BENCH_MAX);
+
+	bx = sbx;
+	by = sby;
+	vx = svx;
+	vy = svy;
+	spin_u = sspin;
+	wind_v = swind;
+	roll_dir = sdir;
+	for (i = 0; i < WIND_TERMS; i++)
+		wind_p[i] = sph[i];
+	update_shape();			/* the geometry follows the state */
 }
 
 /* ------------------------------------------------------------------------ */
@@ -3127,14 +3157,7 @@ int main(void)
 			page = 0;
 	}
 	clock_cost();
-	{
-		float sx = bx, sy = by, svx = vx, svy = vy;
-		bench();
-		bx = sx;
-		by = sy;
-		vx = svx;
-		vy = svy;
-	}
+	bench();			/* leaves the demo exactly as it was */
 
 	/* The numbers, so the first picture already carries them rather than
 	 * a line of zeroes. */
