@@ -273,6 +273,35 @@ else
   echo "note: sdk/apps/ball/BALL.NAP not built; C:\\BALL.NAP skipped (run sdk/apps/ball/build-ball.sh)"
 fi
 
+# ── BALL.NTX: the demo's texture ────────────────────────────────────────────
+# The ball's skin, reduced from the artwork once on the host by
+# tools/png2ntx.py (see sdk/apps/ball/build-ball-tex.sh, which records which
+# PNG and at which size). It carries hue indices AND the palette they belong
+# to, so neither the Pi nor an Atari TT quantises anything at run time.
+#
+# It is OPTIONAL by design, and that is a property worth keeping: the demo
+# looks for C:\BALL.NTX, and when it is not there it draws its own texture
+# from geometry instead and says so in C:\BALL.LOG. So a card without it is
+# not a broken card -- leaving this file out is how the generated texture gets
+# exercised.
+#
+# Built on demand, exactly the way BALL.NAP above is: the .NTX is a build
+# product of the artwork, and the artwork itself lives OUTSIDE this repo
+# (/Applications/ is ignored -- see .gitignore). On a machine without the
+# PNG the reduction simply does not happen and the demo falls back, which
+# is the documented behaviour and not a failure.
+BALL_NTX="$SCRIPT_DIR/../sdk/apps/ball/BALL.NTX"
+if [ ! -f "$BALL_NTX" ]; then
+  "$SCRIPT_DIR/../sdk/apps/ball/build-ball-tex.sh" >/dev/null 2>&1 || true
+fi
+if [ -f "$BALL_NTX" ]; then
+  cp "$BALL_NTX" "$V/BALL.NTX"
+  echo "installed C:\\BALL.NTX (ball texture, $(wc -c < "$BALL_NTX" | tr -d ' ') bytes)"
+else
+  echo "note: no C:\\BALL.NTX (artwork not present); the demo draws its own"
+  echo "      generated texture instead -- see sdk/apps/ball/build-ball-tex.sh"
+fi
+
 QED_DIR="$SCRIPT_DIR/../sdk/apps/qed/build"
 if [ -f "$QED_DIR/QED.NAP" ] && [ -f "$QED_DIR/qed.rsc" ]; then
   mkdir -p "$V/Apps/QED"
