@@ -133,6 +133,20 @@ static void clock_advance(void)
 }
 
 long host_hz200(void) { clock_advance(); return (long)now_f; }
+
+/*
+ * The sysvars ball.c reads. Only the clock actually drives anything here; the
+ * two memory tops are answered with a plausible Atari layout so that the
+ * memory report has something to classify against. Host pointers are far
+ * above any of it, so the simulation reports "alt" -- which is honest: it is
+ * not an Atari and its answer to that question means nothing.
+ */
+long host_sysvar(const void *v)
+{
+	if (v == (const void *)0x42eL) return 0x00400000L;	/* phystop */
+	if (v == (const void *)0x5a4L) return 0x05000000L;	/* ramtop  */
+	return host_hz200();
+}
 void host_cconws(const char *s) { fputs(s, stderr); }
 int host_bconstat(int d) { (void)d; return quit_now; }
 long host_bconin(int d) { (void)d; return 13; }

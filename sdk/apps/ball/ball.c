@@ -859,6 +859,17 @@ static void o_dec(long v)
 		o_ch(t[--n]);
 }
 
+/* Eight hex digits. Addresses are what the memory report is about, and a
+ * decimal address on an Atari tells nobody anything. */
+static void o_hex(unsigned long v)
+{
+	static const char d[] = "0123456789ABCDEF";
+	int i;
+
+	for (i = 28; i >= 0; i -= 4)
+		o_ch(d[(int)((v >> i) & 0xFUL)]);
+}
+
 /* Two decimals, computed in floating point so no intermediate overflows. */
 static void o_fix2(double v)
 {
@@ -2922,7 +2933,44 @@ static void dirty_from(dirty_set *s, const rect *cur, const rect *prev)
 
 /* ------------------------------------------------------------------------ */
 /* Composing one frame into the index buffer                                 */
+/*                                                                           */
+/* Where compose() goes, part by part, because one number for the whole of it */
+/* cannot settle which part to work on. The five are separated the way the    */
+/* function already is: the room copied back in, then the shadow, the         */
+/* reflection, the ball and the lettering.                                    */
+/*                                                                           */
+/* Timed by ACCUMULATING tick differences across the whole logging interval,  */
+/* the same way the frame budget is, and for the same reason: a 200 Hz clock  */
+/* cannot resolve one part of one frame, but the sum of a few hundred         */
+/* truncated differences is the number of tick edges that fell inside that    */
+/* part, which over an interval is its real total to within a tick.           */
+/*                                                                           */
+/* The alternative -- timing each part once per frame over the whole set,     */
+/* which would need five readings instead of five per RECTANGLE -- was        */
+/* rejected: it would mean running the five parts across all the rectangles   */
+/* instead of all the parts across each rectangle, and that reorders writes   */
+/* to the index buffer. The order is provably equivalent only if every part   */
+/* is idempotent, and the lettering composites by brightness, so it is not a   */
+/* question to answer casually while measuring something else. Measuring must */
+/* not change what is being measured.                                         */
+/*                                                                           */
+/* What it costs is therefore counted rather than waved away: cp_reads is the */
+/* number of extra clock readings the split itself took, and the log prints   */
+/* what they cost at the measured price of a reading. On the TT that is six   */
+/* readings per rectangle, about four rectangles a frame, 0.5 % of the frame. */
+/* If that share ever stops being negligible the log will say so before any   */
+/* conclusion is drawn from the numbers beside it.                            */
 /* ------------------------------------------------------------------------ */
+enum { CP_BG, CP_SHADOW, CP_REFLECT, CP_BALL, CP_TEXT, CP_N };
+
+static const char *const cp_name[CP_N] = {
+	"room", "shadow", "reflect", "ball", "text"
+};
+
+static long acc_cp[CP_N];		/* ticks this interval		     */
+static double tot_cp[CP_N];		/* ... and over the whole run	     */
+static long cp_reads, tot_cp_reads;
+
 static void draw_shadow(rect r)
 {
 	int x0 = sh_x0, x1 = sh_x1, y0 = sh_y0, y1 = sh_y1;
@@ -3122,8 +3170,10 @@ static void draw_reflect(rect r)
  */
 static void compose(rect r)
 {
+	long t0, t1;
 	int y;
 
+	t0 = get_sysvar(_hz_200);
 	for (y = r.y0; y < r.y1; y++) {
 		ball_px *row = idx + (long)y * W;
 		const ball_px *src = bg + (long)y * W;
@@ -3148,10 +3198,30 @@ static void compose(rect r)
 		}
 	}
 
+	t1 = get_sysvar(_hz_200);
+	acc_cp[CP_BG] += t1 - t0;
+	t0 = t1;
+
 	draw_shadow(r);
+	t1 = get_sysvar(_hz_200);
+	acc_cp[CP_SHADOW] += t1 - t0;
+	t0 = t1;
+
 	draw_reflect(r);
+	t1 = get_sysvar(_hz_200);
+	acc_cp[CP_REFLECT] += t1 - t0;
+	t0 = t1;
+
 	draw_ball(r);
+	t1 = get_sysvar(_hz_200);
+	acc_cp[CP_BALL] += t1 - t0;
+	t0 = t1;
+
 	ov_draw(r);
+	t1 = get_sysvar(_hz_200);
+	acc_cp[CP_TEXT] += t1 - t0;
+
+	cp_reads += (long)CP_N + 1L;
 }
 
 static void blit(rect r)
@@ -3453,6 +3523,12 @@ static void budget_reset(void)
 	tot_wait += acc_wait;
 	tot_px += (double)acc_px;
 	tot_rects += acc_rects;
+	for (i = 0; i < CP_N; i++) {
+		tot_cp[i] += (double)acc_cp[i];
+		acc_cp[i] = 0;
+	}
+	tot_cp_reads += cp_reads;
+	cp_reads = 0;
 	acc_step = 0;
 	acc_compose = 0;
 	acc_blit = 0;
@@ -3775,6 +3851,44 @@ static void beam_check(const out_list *o)
  */
 #define MX_PREFTTRAM 3
 
+/* ------------------------------------------------------------------------ */
+/* Which memory the buffers actually landed in                               */
+/*                                                                           */
+/* MX_PREFTTRAM is a PREFERENCE, not a promise: asked for alternate RAM and  */
+/* refused, Mxalloc hands back ST-RAM and says nothing about it. The         */
+/* difference is not a detail. ST-RAM on a TT is a 16-bit bus shared with    */
+/* the video shifter; alternate RAM is 32 bits wide and nobody else is on    */
+/* it. Every per-pixel number in this log means a different thing depending  */
+/* on which one the composition buffer is sitting in, so the answer is READ  */
+/* BACK from the pointers rather than assumed from the request.              */
+/*                                                                           */
+/* The test is the machine's own: phystop ($42E) is the top of ST-RAM, so an */
+/* address below it is ST-RAM and an address above it is not. ramtop ($5A4)  */
+/* is printed beside it rather than used, because a program that has been    */
+/* handed a pointer does not need to re-derive where alternate RAM begins --  */
+/* it needs to know which side of the line it is on.                         */
+/* ------------------------------------------------------------------------ */
+#define BUF_N 9
+
+static const char *const buf_name[BUF_N] = {
+	"idx", "bg", "bgrow", "map_off", "map_shd", "run0", "run1",
+	"tex", "log"
+};
+static void *buf_ptr[BUF_N];
+static long buf_size[BUF_N];
+static unsigned long st_top, alt_top;
+
+static const char *ram_of(const void *p)
+{
+	unsigned long a = (unsigned long)p;
+
+	if (!p)
+		return "-";
+	if (!st_top)
+		return "?";		/* the sysvar could not be read */
+	return a < st_top ? "ST" : "alt";
+}
+
 static void *b_alloc(long n)
 {
 	return (void *)Mxalloc(n, MX_PREFTTRAM);
@@ -3842,6 +3956,20 @@ int main(void)
 	run1 = (short *)b_alloc((long)D * (long)sizeof(short));
 	tex_buf = (unsigned char *)b_alloc((long)TEX_MAX_BYTES);
 	log_buf = (char *)b_alloc(LOG_BUF_MAX);
+	/* Where they actually went, recorded before anything can be concluded
+	 * from how fast they are. */
+	st_top = (unsigned long)get_sysvar(phystop);
+	alt_top = (unsigned long)get_sysvar(ramtop);
+	buf_ptr[0] = idx;       buf_size[0] = (long)W * H * (long)sizeof(ball_px);
+	buf_ptr[1] = bg;        buf_size[1] = buf_size[0];
+	buf_ptr[2] = bg_row;    buf_size[2] = (long)H * (long)sizeof(ball_px);
+	buf_ptr[3] = map_off;   buf_size[3] = (long)D * D * 2L;
+	buf_ptr[4] = map_shade; buf_size[4] = (long)D * D;
+	buf_ptr[5] = run0;      buf_size[5] = (long)D * 2L;
+	buf_ptr[6] = run1;      buf_size[6] = (long)D * 2L;
+	buf_ptr[7] = tex_buf;   buf_size[7] = (long)TEX_MAX_BYTES;
+	buf_ptr[8] = log_buf;   buf_size[8] = LOG_BUF_MAX;
+
 	if (!idx || !bg || !bg_row || !map_off || !map_shade || !run0 ||
 	    !run1 || !tex_buf || !log_buf) {
 		plat_close();
@@ -3999,6 +4127,31 @@ int main(void)
 		o_str(" line(s) ignored");
 	}
 	o_out(0);
+
+	/* Which memory the work is actually being done in. Printed before the
+	 * timings, because it decides what they mean. */
+	o_str("BALL: ST-RAM top 0x");
+	o_hex(st_top);
+	o_str(", ramtop 0x");
+	o_hex(alt_top);
+	o_str("; buffers asked for alternate RAM (MX_PREFTTRAM)");
+	o_out(0);
+
+	{
+		int bi;
+
+		o_str("BALL: buffers");
+		for (bi = 0; bi < BUF_N; bi++) {
+			o_ch(' ');
+			o_str(buf_name[bi]);
+			o_ch('=');
+			o_dec(buf_size[bi] >> 10);
+			o_ch('K');
+			o_ch('/');
+			o_str(ram_of(buf_ptr[bi]));
+		}
+		o_out(0);
+	}
 
 	o_str("BALL: texture ");
 	o_dec((long)tex.w);
@@ -4161,6 +4314,13 @@ int main(void)
 	log_commit();
 
 	pending.n = 0;
+	/* Throw away what the full-screen paint and the benchmark put in the
+	 * per-part accumulators. They composed whole screens, which is not the
+	 * workload this is here to describe, and budget_reset() would fold
+	 * them into the run total rather than drop them. */
+	for (i = 0; i < CP_N; i++)
+		acc_cp[i] = 0;
+	cp_reads = 0;
 	budget_reset();
 	t_start = get_sysvar(_hz_200);
 	t_last = t_start;
@@ -4361,6 +4521,37 @@ int main(void)
 				o_str(" ms");
 				o_out(0);
 
+				/* And where the compose half of that went.
+				 * The five parts sum to the compose figure
+				 * above, instrument included, so the two
+				 * lines can be checked against each other. */
+				{
+					int ci;
+
+					o_str("BALL:   compose");
+					for (ci = 0; ci < CP_N; ci++) {
+						o_ch(' ');
+						o_str(cp_name[ci]);
+						o_ch(' ');
+						o_fix2((double)acc_cp[ci] *
+						       per);
+					}
+					o_str(" ms");
+					o_out(0);
+
+					/* What the split itself cost, so it
+					 * is never mistaken for signal. */
+					o_str("BALL:   split cost ");
+					o_dec(df > 0 ? cp_reads / df : 0);
+					o_str(" clock reads/frame = ");
+					o_fix2(df > 0 ? (double)cp_reads *
+							(double)clock_ns /
+							(1e6 * (double)df)
+						      : 0.0);
+					o_str(" ms/frame");
+					o_out(0);
+				}
+
 				/* The ticks each frame consumed, unreduced:
 				 * the raw material "dropped" is derived from,
 				 * and the only figure here that cannot be
@@ -4504,6 +4695,27 @@ int main(void)
 			o_str("x at its worst, ");
 			o_dec(beam_late_tot);
 			o_str(" rect(s) the beam would reach first");
+			o_out(0);
+		}
+
+		{
+			int ci;
+
+			o_str("BALL: whole run compose");
+			for (ci = 0; ci < CP_N; ci++) {
+				o_ch(' ');
+				o_str(cp_name[ci]);
+				o_ch(' ');
+				o_fix2(tot_cp[ci] * per);
+			}
+			o_str(" ms");
+			o_out(0);
+
+			o_str("BALL: whole run split cost ");
+			o_fix2(frames > 0 ? (double)tot_cp_reads *
+					    (double)clock_ns /
+					    (1e6 * (double)frames) : 0.0);
+			o_str(" ms/frame in clock reads");
 			o_out(0);
 		}
 
