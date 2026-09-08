@@ -12,6 +12,13 @@
 # copy of it -- so what is measured here is what ships. See sim.c for what the
 # virtual clock does and why.
 #
+# These two binaries carry the HOST's floating point, which is the Pi's and
+# not the Atari's -- arm64 clang contracts a*b+c into an FMA, and the m68k
+# compiler evaluates every float expression at 80 bits. sim.c's header has the
+# one-line recipe for an exact m68k arithmetic model (clang -arch x86_64
+# -ffp-eval-method=extended); use it before blaming an Atari-only difference
+# on arithmetic.
+#
 #   output : sdk/apps/ball/hostsim/sim8, sim32
 #
 # Usage:  sdk/apps/ball/hostsim/build-hostsim.sh

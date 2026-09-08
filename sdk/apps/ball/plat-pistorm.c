@@ -110,6 +110,7 @@ static void *stage_raw;
 static unsigned char *stage;		/* aligned start of the form	     */
 static long stage_stride;		/* bytes per staged row		     */
 static int stage_w;			/* form width in pixels (padded)     */
+static int blit_widen;			/* may plat_blit widen? see there      */
 static MFDB stage_mfdb;
 static MFDB screen_mfdb;		/* all zero: fd_addr == 0 is "screen" */
 
@@ -444,6 +445,13 @@ int plat_open(ball_screen *scr)
 	scr->pages = 1;			/* as plat-tt.c: one page, and
 					 * plat_present() is the only place a
 					 * second one would change anything  */
+
+	/* ... and plat_blit(), which widens its rectangle out of the
+	 * composition buffer -- sound only while that buffer is a complete,
+	 * current picture, which is only true on a single-page display. The
+	 * full argument is in plat-tt.c. Derived rather than written as 1 so
+	 * that adding a page disables the widening instead of corrupting it. */
+	blit_widen = (scr->pages == 1);
 	opened = 1;
 	err = "";
 	return 0;
@@ -460,23 +468,50 @@ int plat_open(ball_screen *scr)
  * channel at a time, which is three stores instead of one and is why the
  * order was measured rather than assumed.
  */
+/*
+ * The rectangle is widened in x to a 16-pixel boundary, and the columns that
+ * adds are staged from the composition buffer rather than left stale. The
+ * reasoning is the same as plat-tt.c's and is written out in full there: the
+ * form outside the rectangle just staged holds an older picture, so a driver
+ * that rounds the span out to its own blit unit would put that older picture
+ * on the screen. Staging at form column 0 with a destination on a 16-pixel
+ * boundary gives the two sides one alignment; staging the added columns from
+ * ball.c's composition buffer -- a complete, current picture everywhere --
+ * means even a rounded-out span moves nothing but the truth.
+ *
+ * This half had no alignment at all before: the destination x was taken as it
+ * came. At four bytes a pixel a long-word blitter was safe by accident and
+ * anything wider was not.
+ */
+#define BLIT_ALIGN	16
+
 void plat_blit(const ball_px *src, long src_pitch,
 	       int x, int y, int w, int h)
 {
+	int xd = x, lead = 0, wd = w;
 	unsigned char *dst = stage;
 	short pxy[8];
 	int row, i;
 
+	if (blit_widen) {
+		xd = x & ~(BLIT_ALIGN - 1);	/* left edge, down to a block */
+		lead = x - xd;			/* real columns added left    */
+		wd = (lead + w + BLIT_ALIGN - 1) & ~(BLIT_ALIGN - 1);
+		if (xd + wd > scr_w)
+			wd = scr_w - xd;
+	}
+
+	src -= lead;
 	for (row = 0; row < h; row++) {
 		if (fast_xrgb) {
 			unsigned int *d = (unsigned int *)(void *)dst;
 
-			for (i = 0; i < w; i++)
+			for (i = 0; i < wd; i++)
 				d[i] = (unsigned int)src[i] & 0x00FFFFFFu;
 		} else {
 			unsigned char *d = dst;
 
-			for (i = 0; i < w; i++) {
+			for (i = 0; i < wd; i++) {
 				unsigned int p = (unsigned int)src[i];
 
 				d[0] = 0;
@@ -495,11 +530,11 @@ void plat_blit(const ball_px *src, long src_pitch,
 
 	pxy[0] = 0;
 	pxy[1] = 0;
-	pxy[2] = (short)(w - 1);
+	pxy[2] = (short)(wd - 1);
 	pxy[3] = (short)(h - 1);
-	pxy[4] = (short)x;
+	pxy[4] = (short)xd;
 	pxy[5] = (short)y;
-	pxy[6] = (short)(x + w - 1);
+	pxy[6] = (short)(xd + wd - 1);
 	pxy[7] = (short)(y + h - 1);
 	vro_cpyfm(vdi_handle, S_ONLY, pxy, &stage_mfdb, &screen_mfdb);
 }

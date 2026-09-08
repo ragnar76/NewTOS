@@ -622,6 +622,38 @@ static rect cur_part[DP_N];		/* ... and where the parts are now   */
  * the frame loop. The seed halves the IEEE-754 exponent (binary32 on both
  * targets), which is accurate to a few percent, and four Newton steps take it
  * to full single precision.
+ *
+ * ---------------------------------------------------------------------------
+ * Why this is still a Newton iteration, and what replacing it would take
+ * ---------------------------------------------------------------------------
+ * Start-up costs 18.7 s on a TT030 -- 13.34 s for the room and 5.33 s for the
+ * sphere map -- and this function is a large part of the second figure: four
+ * DIVIDES per call, on the most expensive instruction the 68882 has, two
+ * calls per sphere-map pixel and up to two more inside b_asin. The shipped
+ * m68k object contains 123 fdivx and not one fsqrt.
+ *
+ * Two levers were measured and are NOT built, deliberately: they change the
+ * picture, and until the artefact the TT and the PiStorm show is understood
+ * nothing here may move. What the measurements established, so that the next
+ * round does not derive it again:
+ *
+ *   __builtin_sqrtf with -fno-math-errno emits exactly ONE instruction and
+ *   pulls in no libm: `fsqrt.s' on -m68020-60, `fsqrt s0, s0' on AArch64.
+ *   Without that flag both compilers wrap the instruction in a call to
+ *   sqrtf to set EDOM -- a link error on the Pi, which is -nostdlib.
+ *   Both compilers define __NO_MATH_ERRNO__ when the flag is in effect, so
+ *   the fallback can be selected honestly rather than assumed. The guard
+ *   `x <= 0 -> 0' has to stay: cos_lat's argument can round just below zero.
+ *
+ *   `long double' is the 68882's REGISTER format, so extended variables move
+ *   without conversion and live in fp0..fp7 instead of being shuttled through
+ *   the data registers (1354 fmove against 624 compute instructions in this
+ *   object). It cannot simply be applied everywhere: on AArch64 long double
+ *   is IEEE binary128 in SOFTWARE -- __builtin_sqrtl there is `bl sqrtl' --
+ *   so it has to be a per-machine typedef, extended where __M68881__ is
+ *   defined and float everywhere else. And it must not reach the physics:
+ *   the two machines are meant to bounce the same bounce, which is what
+ *   single precision on both of them buys.
  */
 static float b_sqrt(float x)
 {
@@ -2524,6 +2556,31 @@ static void build_sphere_map(void)
 			if (lit > 1.0f)
 				lit = 1.0f;
 
+			/* MEASURED, and left as it is on purpose -- but
+			 * written down, because nobody chose it. Below the
+			 * terminator `dif' is clamped to zero and `sp' with
+			 * it, so `lit' is CONSTANT over the whole unlit
+			 * underside; the Bayer dither of one constant value
+			 * is a regular lattice rather than a stipple that
+			 * averages out. Measured over the covered pixels of
+			 * the lower hemisphere, 640x480: about 19 % of them
+			 * alternate with period two in x, whole Bayer rows
+			 * stay uniform between them, and the luminance step
+			 * of that alternation swings between 3.8 and 12.2
+			 * (of 255) with the spin -- a factor of three --
+			 * because the spin decides which hue's ramp the two
+			 * adjacent shade levels land in. It reads as a
+			 * coarse grid on the shaded underside, it does not
+			 * turn with the ball, and it comes and goes.
+			 *
+			 * It is NOT the artefact the TT and the PiStorm show:
+			 * this is identical arithmetic on all three machines
+			 * and the Pi has it too (verified pixel for pixel,
+			 * see hostsim/sim.c on the arithmetic models). If it
+			 * is ever to be removed, the lever is the terminator,
+			 * not the dither -- give the ambient region a
+			 * gradient to dither, or quantise `lit' before the
+			 * dither is added so a constant stays constant. */
 			sh = (int)(lit * (float)(BALL_LEVELS - 1) +
 				   dith8[sy & 7][sx & 7]);
 			if (sh < 0)

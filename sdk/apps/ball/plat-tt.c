@@ -150,6 +150,7 @@ static void *stage_raw;			/* what Mxalloc gave, for Mfree()      */
 static unsigned char *stage;		/* aligned start of the form	       */
 static long stage_stride;		/* bytes per staged row		       */
 static int stage_w;			/* form width in pixels (padded)       */
+static int blit_widen;			/* may plat_blit widen? see there      */
 static MFDB stage_mfdb;
 static MFDB screen_mfdb;		/* all zero: fd_addr == 0 is "screen"  */
 
@@ -477,6 +478,18 @@ int plat_open(ball_screen *scr)
 	 * second page anyway; plat_present() is written so that adding one
 	 * changes that function and nothing else. */
 	scr->pages = 1;
+
+	/* ... and one thing more, which is why this is not written as a bare
+	 * 1: plat_blit() widens its rectangle and stages the added columns
+	 * out of the composition buffer, and that buffer is a complete,
+	 * current picture ONLY on a single-page display. With two pages a
+	 * frame composes the union of where the parts are now and where the
+	 * page being drawn still shows them -- so the buffer can still hold
+	 * the ball at the position the OTHER page shows, and widening would
+	 * put that stale ball on the screen. Derived from scr->pages so the
+	 * two cannot drift apart. The host simulator's blit model is what
+	 * caught this: it fails 119 of 597 frames at -p 2 with widening on. */
+	blit_widen = (scr->pages == 1);
 	opened = 1;
 	err = "";
 	return 0;
@@ -500,27 +513,88 @@ void plat_palette(const ball_rgb *pal)
 	}
 }
 
+/* ------------------------------------------------------------------------ */
+/* The blit, and why its rectangle is widened to a 16-pixel boundary         */
+/*                                                                          */
+/* Nothing here reaches the screen directly. The rectangle is copied into a  */
+/* persistent staging FORM first and the form is what vro_cpyfm() is given,  */
+/* because a VDI blit needs an MFDB and the composition buffer is not one.   */
+/* The form is a whole screen wide, so everything OUTSIDE the rectangle just */
+/* staged is whatever an earlier blit left lying in it.                      */
+/*                                                                          */
+/* That is only safe if the driver reads exactly the source rectangle it was */
+/* handed. A blitter that works in words, longs or bursts need not: where    */
+/* the source and the destination do not share its alignment it either takes */
+/* a slow path or rounds the span out to its own unit -- and a rounded-out   */
+/* span reads the form's STALE columns and puts them on the screen, as       */
+/* blocks of an older picture beside the rectangle. This file cannot see the */
+/* driver and must not assume it, so it removes the question instead of      */
+/* answering it:                                                            */
+/*                                                                          */
+/*   - the destination's left edge is taken DOWN to a multiple of 16 and its */
+/*     width UP to one, and the source is staged at form column 0. The       */
+/*     form's rows are 16-byte aligned by construction (stage is aligned and */
+/*     stage_stride is a multiple of 16), so source and destination now      */
+/*     agree modulo 16 whatever unit the driver picks below that.            */
+/*   - the columns widening adds are staged from the COMPOSITION BUFFER, not */
+/*     left stale. They are real pixels: ball.c paints the whole screen once */
+/*     and from then on nothing outside a dirty rectangle is ever written    */
+/*     again -- see "The one and only full-screen paint" there -- so the     */
+/*     composition buffer is a complete and current picture everywhere.      */
+/*     Widening therefore writes the very pixels the screen already holds.   */
+/*                                                                          */
+/* This replaces a parity trick that staged at x & 1: that bought alignment  */
+/* for a 16-bit blitter and for nothing wider.                               */
+/*                                                                          */
+/* It costs at most 15 columns on each side of a rectangle, about 2 % of the */
+/* pixels moved at the sizes this demo produces. ball.c prices a blit per    */
+/* REQUESTED pixel, so the widening lands in the measured price of a pixel   */
+/* rather than hiding; the beam margin it reports is optimistic by that 2 %. */
+/*                                                                          */
+/* At the right-hand edge of the screen the width cannot be rounded up       */
+/* without leaving the picture, so it is clamped and the last block is       */
+/* partial. A driver that rounds THAT span out reads stale form columns --   */
+/* but it writes them at or beyond scr_w, off the raster, where the VDI's    */
+/* own clipping drops them. No pixel that can be seen is ever at risk.       */
+/*                                                                          */
+/* Widening in x only. A row-oriented blitter has no reason to round the     */
+/* vertical span, and the form's first row is row 0.                         */
+/* ------------------------------------------------------------------------ */
+#define BLIT_ALIGN	16
+
 void plat_blit(const ball_px *src, long src_pitch,
 	       int x, int y, int w, int h)
 {
-	int par = x & 1;		/* keep the two sides the same parity  */
-	unsigned char *dst = stage + par;
+	int xd = x, lead = 0, wd = w;
+	unsigned char *dst = stage;
 	short pxy[8];
 	int row;
 
+	if (blit_widen) {
+		xd = x & ~(BLIT_ALIGN - 1);	/* left edge, down to a block */
+		lead = x - xd;			/* real columns added left    */
+		wd = (lead + w + BLIT_ALIGN - 1) & ~(BLIT_ALIGN - 1);
+		/* Never past the right-hand edge of the picture. ball.c clips
+		 * every rectangle to the screen, so x + w <= scr_w and this
+		 * can only drop columns widening added, never composed ones. */
+		if (xd + wd > scr_w)
+			wd = scr_w - xd;
+	}
+
+	src -= lead;
 	for (row = 0; row < h; row++) {
-		memcpy(dst, src, (size_t)w);
+		memcpy(dst, src, (size_t)wd);
 		src += src_pitch;
 		dst += stage_stride;
 	}
 
-	pxy[0] = (short)par;
+	pxy[0] = 0;
 	pxy[1] = 0;
-	pxy[2] = (short)(par + w - 1);
+	pxy[2] = (short)(wd - 1);
 	pxy[3] = (short)(h - 1);
-	pxy[4] = (short)x;
+	pxy[4] = (short)xd;
 	pxy[5] = (short)y;
-	pxy[6] = (short)(x + w - 1);
+	pxy[6] = (short)(xd + wd - 1);
 	pxy[7] = (short)(y + h - 1);
 	vro_cpyfm(vdi_handle, S_ONLY, pxy, &stage_mfdb, &screen_mfdb);
 }

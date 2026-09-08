@@ -72,6 +72,49 @@
  *   -p N     ... and how many pages it has, 1 or 2 (default 1)
  *   -V N     from frame N on, check every presented page against a full
  *            repaint of the same state (see verify_page)
+ *   -G N     model the m68k platform layer's staging blit: the driver moves
+ *            spans rounded out to N pixels (default 1 = a faithful copy, and
+ *            the control)
+ *   -w N     ... with the platform widening the rectangle to N pixels and
+ *            staging the added columns for real. The default follows what
+ *            the platform files actually do: 16 with one screen page, none
+ *            with more (see "The staging form")
+ *   -g N     ... or, instead, staging it at form column x & (N-1) with no
+ *            widening, which is what the two files did before
+ *            See "The staging form" below for what any of that is for.
+ *
+ * ---------------------------------------------------------------------------
+ * WHICH MACHINE'S ARITHMETIC THIS IS -- read before comparing with an Atari
+ * ---------------------------------------------------------------------------
+ * This simulator models the Pi's floating point, not the Atari's, and nothing
+ * about the way it is built says so. Anyone who has compared its output
+ * against a TT has been comparing against the wrong machine.
+ *
+ * Three models are in play and all three are different:
+ *
+ *   the Pi        aarch64 clang. FLT_EVAL_METHOD 0, but clang contracts
+ *                 a*b + c into an FMA by default, so a multiply-add is
+ *                 rounded ONCE.
+ *   this sim      arm64 clang on the host: the same, which is why it is the
+ *                 Pi's reference and a good one. Built with
+ *                 -ffp-contract=off it becomes plain IEEE single and its
+ *                 output changes -- verified, all 400 frames.
+ *   the TT and    m68k-atari-mint-gcc has __FLT_EVAL_METHOD__ == 2: every
+ *   the PiStorm   float expression is evaluated at 80 bits in the 68882 and
+ *                 rounded to 32 only when it is ASSIGNED. Neither of the
+ *                 other two does that.
+ *
+ * The m68k model can be reached exactly, and cheaply, without an Atari:
+ *
+ *     clang -arch x86_64 -ffp-eval-method=extended -O2 -std=c99 -Wno-format  *           -I hostsim -I . -DBALL_TRUECOLOR=0 -o sim8-m68k  *           hostsim/sim.c ball-tex.c
+ *
+ * That gives FLT_EVAL_METHOD 2 with a 64-bit mantissa and emits real x87
+ * (fmuls/faddp/fstps) -- the same evaluation model and the same rounding as
+ * fmul.x/fadd.x/fmove.s on the 68882. It runs under Rosetta. Use it before
+ * blaming an Atari-only artefact on arithmetic; when that was done for the
+ * blocky underside artefact the answer was that at an identical ball state
+ * the m68k model and the Pi model produce a BIT-IDENTICAL 640x480 picture,
+ * 0 of 307200 pixels apart, which is what took arithmetic off the list.
  *
  * Build with build-hostsim.sh, which builds it at both composition depths.
  */
@@ -258,11 +301,147 @@ void plat_close(void) { }
 
 static double blit_host_ns;		/* the model's own copy, not the demo's */
 
+/* ------------------------------------------------------------------------ */
+/* The staging form -- the one thing between the demo and the screen that    */
+/* this simulator did not model, and the only part of the picture that       */
+/* differs between the three machines                                        */
+/*                                                                          */
+/* plat-newtos.c writes the Pi's framebuffer directly, pixel by pixel, out   */
+/* of the composition buffer. plat-tt.c and plat-pistorm.c cannot: a VDI     */
+/* blit needs an MFDB, so both copy the rectangle into a persistent staging  */
+/* FORM and hand THAT to vro_cpyfm(). The form is a whole screen wide, and   */
+/* everything outside the rectangle just staged is whatever an earlier blit  */
+/* left in it. If the driver reads even slightly outside the source span it  */
+/* was given -- which is what a word-, long- or burst-oriented blitter does  */
+/* when the two sides do not share its alignment -- that stale content goes  */
+/* on the screen.                                                            */
+/*                                                                          */
+/* verify_page() cannot see any of this: it compares the composed page with  */
+/* a full repaint, and both sides are innocent. Twelve configurations called */
+/* every presented frame exact while two of the three machines were showing  */
+/* an artefact. This models the missing half, so that the class of defect is */
+/* at least ASKABLE here:                                                    */
+/*                                                                          */
+/*   -G N   the driver's horizontal blit unit, in pixels. It rounds the      */
+/*          span it moves outward to a multiple of N. N = 1 is a faithful    */
+/*          copy and is the DEFAULT: with it this file behaves exactly as it */
+/*          did before the model existed, which is the control that makes    */
+/*          any other reading mean something. Check it, do not assume it:    */
+/*          a -G 1 run must produce hashes identical to the shipped sim.     */
+/*   -w N   the platform layer WIDENS the rectangle to a multiple of N and   */
+/*          stages the added columns from the composition buffer. This is    */
+/*          what plat-tt.c and plat-pistorm.c do today, with N = 16, and     */
+/*          the default here follows them: 16 on a single-page display and   */
+/*          none with more. Its whole point is that a rounded-out span then  */
+/*          reads real pixels rather than an older picture.                  */
+/*                                                                          */
+/*          Why the page count matters, and this model is what found it:     */
+/*          widening stages columns the core never asked for out of the      */
+/*          composition buffer, and that buffer is a complete current        */
+/*          picture only while there is one page. With two, a frame composes */
+/*          the union of where the parts are and where THIS page still shows */
+/*          them, so the buffer can still hold the ball where the OTHER page */
+/*          shows it. -p 2 -w 16 puts that stale ball on the screen and this */
+/*          verifier fails 119 of 597 frames on it. Both platform files      */
+/*          therefore derive their widening from scr->pages.                 */
+/*   -g N   INSTEAD of widening: the platform stages the rectangle at form   */
+/*          column x & (N-1) and hands over exactly its own width. This is   */
+/*          what the two files did BEFORE -- N = 2 on the TT (a parity trick */
+/*          for a 16-bit blitter), N = 1 on the PiStorm (no alignment at     */
+/*          all). Use -w 0 -g 2 -G 16 to reproduce the old behaviour against */
+/*          a 16-pixel driver; that combination is what first made the       */
+/*          verifier fail, on 564 of 596 presented frames.                    */
+/*                                                                          */
+/* The form is allocated once and never cleared, because that is the point:  */
+/* its staleness is the thing being modelled.                                */
+/* ------------------------------------------------------------------------ */
+static int stage_gran = 1;		/* -G: the driver's blit unit	     */
+static int stage_widen = -1;		/* -w: -1 = follow the platform rule */
+static int stage_off = 1;		/* -g: ... or stages at this offset  */
+static ball_px *stage_form;
+static int stage_form_w;
+
+static void stage_blit(const ball_px *src, long pitch, int x, int y,
+		       int w, int h)
+{
+	int xd, sx, sw, lo, hi, dx, n, r, c, wid;
+
+	if (!stage_form) {
+		/* One screen wide, padded to 16 pixels -- the same form both
+		 * platform files allocate. */
+		stage_form_w = ((sim_w + 1 + 15) / 16) * 16;
+		stage_form = calloc((size_t)stage_form_w * (size_t)sim_h,
+				    sizeof(ball_px));
+		if (!stage_form) {		/* no model, say so loudly */
+			fprintf(stderr, "sim: no memory for the staging form,"
+					" blit model disabled\n");
+			stage_gran = 1;
+			return;
+		}
+	}
+
+	/* By default the model follows the platform's own rule: widen to 16
+	 * on a single-page display and not at all with more, because the
+	 * composition buffer is a complete current picture only where one
+	 * page means one dirty set. -w forces the question either way, and
+	 * -p 2 -w 16 is how the unsoundness was found: 119 of 597 frames. */
+	wid = stage_widen >= 0 ? stage_widen : (sim_pages == 1 ? 16 : 0);
+
+	if (wid > 1) {
+		xd = x & ~(wid - 1);
+		sx = 0;
+		sw = (x - xd + w + wid - 1) & ~(wid - 1);
+		if (xd + sw > sim_w)
+			sw = sim_w - xd;
+		src -= x - xd;
+	} else {
+		xd = x;
+		sx = stage_off > 1 ? (x & (stage_off - 1)) : 0;
+		sw = w;
+	}
+
+	for (r = 0; r < h; r++)
+		memcpy(stage_form + (long)r * stage_form_w + sx,
+		       src + (long)r * pitch, (size_t)sw * sizeof(ball_px));
+
+	/* What the driver actually moves: the span, rounded out to its unit. */
+	lo = sx & ~(stage_gran - 1);
+	hi = ((sx + sw - 1) | (stage_gran - 1)) + 1;
+	if (hi > stage_form_w)
+		hi = stage_form_w;
+	dx = xd - (sx - lo);
+	n = hi - lo;
+	if (dx < 0) {			/* the raster clips the left edge */
+		lo -= dx;
+		n += dx;
+		dx = 0;
+	}
+	if (dx + n > sim_w)		/* ... and the right one	  */
+		n = sim_w - dx;
+
+	for (r = 0; r < h && n > 0; r++) {
+		ball_px *d = page_buf[draw_page] + (long)(y + r) * sim_w + dx;
+		const ball_px *s = stage_form + (long)r * stage_form_w + lo;
+
+		for (c = 0; c < n; c++)
+			d[c] = s[c];
+	}
+}
+
 void plat_blit(const ball_px *src, long pitch, int x, int y, int w, int h)
 {
 	ball_px *dst = page_buf[draw_page] + (long)y * sim_w + x;
 	double t0 = host_ns();
 	int r;
+
+	if (stage_gran > 1) {
+		stage_blit(src, pitch, x, y, w, h);
+		blit_host_ns += host_ns() - t0;
+		frame_area += (long)w * (long)h;
+		frame_blits++;
+		now_f += (double)w * (double)h * K_PX + K_CALL;
+		return;
+	}
 
 	for (r = 0; r < h; r++) {
 		memcpy(dst, src, (size_t)w * sizeof(ball_px));
@@ -500,6 +679,9 @@ int main(int argc, char **argv)
 		else if (!strcmp(argv[i], "-Y") && i + 1 < argc) sim_h = atoi(argv[++i]);
 		else if (!strcmp(argv[i], "-p") && i + 1 < argc) sim_pages = atoi(argv[++i]);
 		else if (!strcmp(argv[i], "-V") && i + 1 < argc) verify_from = atol(argv[++i]);
+		else if (!strcmp(argv[i], "-G") && i + 1 < argc) stage_gran = atoi(argv[++i]);
+		else if (!strcmp(argv[i], "-w") && i + 1 < argc) stage_widen = atoi(argv[++i]);
+		else if (!strcmp(argv[i], "-g") && i + 1 < argc) stage_off = atoi(argv[++i]);
 		else if (!strcmp(argv[i], "-C") && i + 1 < argc) cfgname = argv[++i];
 	}
 	csv = fopen(out, "w");
