@@ -377,6 +377,42 @@ static void verify_page(void)
 	memcpy(idx, ref_buf, (size_t)np * sizeof(ball_px));
 }
 
+/*
+ * How much of the shadow's bounding box the ellipse actually covers.
+ *
+ * draw_shadow walks a RECTANGLE and rejects the pixels outside the ellipse,
+ * and with the forward difference a rejected pixel now costs two additions
+ * and a compare instead of a chain of floating point -- but it still costs
+ * them, and it still costs the loop. If the rejected share is large there is
+ * a second lever in tighter per-row bounds, the way the ball already has
+ * run0/run1. This measures the share; it does not build the lever.
+ *
+ * Done here rather than in ball.c on purpose: it is a question about the
+ * geometry, asked once per frame off to the side, and the shipped inner loop
+ * should not carry two counters for the rest of its life to answer it.
+ */
+static double cov_in, cov_box;
+
+static void coverage_sample(void)
+{
+	int x, y;
+
+	for (y = sh_y0; y < sh_y1; y++) {
+		float fz = ((float)y + 0.5f - sh_cy) * (1.0f / FLOOR_SQUASH);
+		float ra = fz * sh_ez, rb = fz * sh_ex;
+
+		for (x = sh_x0; x < sh_x1; x++) {
+			float fx = (float)x + 0.5f - sh_cx;
+			float da = (fx * sh_ex + ra) * sh_ia;
+			float db = (rb - fx * sh_ez) * sh_ib;
+
+			cov_box += 1.0;
+			if (da * da + db * db < 1.0f)
+				cov_in += 1.0;
+		}
+	}
+}
+
 /* An FNV hash of one page. What the viewer would see, not what the demo has
  * lying about in its composition buffer. */
 static unsigned long sim_hash(const ball_px *b)
@@ -399,6 +435,7 @@ void plat_present(void)
 	double hgt = (double)floor_y - ((double)by + (double)Rf);
 	long tick_in = (long)frame_start_f;
 
+	coverage_sample();
 	if (verify_from >= 0 && frame_no >= verify_from)
 		verify_page();
 	if (sumf)
@@ -473,6 +510,10 @@ int main(int argc, char **argv)
 	if (csv) fclose(csv);
 	fprintf(stderr, "sim: bench_frames=%ld bench_ticks=%ld cyc_v=%ld cyc_h=%ld frames=%ld\n",
 		bench_frames, bench_ticks, cyc_v, cyc_h, frame_no);
+	if (cov_box > 0.0)
+		fprintf(stderr, "sim: shadow ellipse covers %.1f %% of its "
+			"bounding box (%.0f of %.0f px)\n",
+			100.0 * cov_in / cov_box, cov_in, cov_box);
 	if (verify_checked)
 		fprintf(stderr, "sim: verify %ld frames checked against a full "
 			"repaint, %ld differ%s\n", verify_checked, verify_bad,

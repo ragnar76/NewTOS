@@ -766,8 +766,32 @@ static float b_sin(float x)
 /* M(0) = [[0]]. The 4x4 matrix is then the 8x8's top-left quarter over four, */
 /* which is the same recurrence read backwards.                              */
 /* ------------------------------------------------------------------------ */
+/*
+ * The two fixed-point formats draw_shadow works in. Its inner loop carries no
+ * floating point at all -- see the commentary there -- and these say with how
+ * many fraction bits.
+ *
+ *   SH_Q     q, its first difference and its second. q reaches about 2 inside
+ *            the ellipse's bounding box and the step can reach a few units on
+ *            a shadow only pixels across, so 24 bits of fraction leaves two
+ *            orders of magnitude of headroom in a signed 32-bit long while
+ *            still resolving q to 6e-8 -- four decades finer than the rim
+ *            needs.
+ *   SH_LV_Q  the darkness level and its dither threshold, which only has to
+ *            separate six levels and a sixteenth of one.
+ */
+#define SH_Q		24
+#define SH_ONE		(1L << SH_Q)
+#define SH_LV_Q		13
+#define SH_LV_ONE	(1L << SH_LV_Q)
+
 static float dith8[8][8];		/* the ball's shading		     */
 static float dith4[4][4];		/* the shadow			     */
+/* The shadow's again, as Q13 fixed point. draw_shadow does its whole inner
+ * loop in integers (see there), and a float table would put back the very
+ * conversion the loop exists to avoid. Built from the same numbers, so the
+ * two cannot drift apart. */
+static long dith4i[4][4];
 static float dith1[8];			/* gradients that only vary in y     */
 
 static void build_dither(void)
@@ -793,8 +817,11 @@ static void build_dither(void)
 		for (x = 0; x < 8; x++)
 			dith8[y][x] = ((float)m8[y][x] + 0.5f) / 64.0f;
 	for (y = 0; y < 4; y++)
-		for (x = 0; x < 4; x++)
+		for (x = 0; x < 4; x++) {
 			dith4[y][x] = ((float)(m8[y][x] >> 2) + 0.5f) / 16.0f;
+			dith4i[y][x] = (long)(dith4[y][x] * (float)SH_LV_ONE +
+					      0.5f);
+		}
 	/* One dimension, eight deep: the three-bit reversal of the row number,
 	 * {0,4,2,6,1,5,3,7}, which spreads a band edge over eight rows. */
 	for (y = 0; y < 8; y++) {
@@ -1134,6 +1161,25 @@ static void o_flush(void)
 
 static char cfg_buf[CFG_MAX];
 static float cfg_ball = DIA_FRAC;	/* what was asked for		     */
+/*
+ * The readout: OFF unless the file turns it on. It costs 11.39 ms of a
+ * 140.35 ms composition on the TT -- measured, and the third largest item in
+ * it after the shadow and the ball -- which at that machine's frame rate is
+ * worth more than the numbers are. It is a switch rather than a deletion
+ * because a demonstration that shows its own frame rate is making a point
+ * with it, so on a machine that can afford the readout one line brings it
+ * back.
+ *
+ * Why it costs that much is NOT diagnosed here and the observation is left
+ * where the next person will find it: text_pass has no floating point in it
+ * at all, so whatever is expensive there is a different cause from the
+ * shadow's, and the likely one is that ov_draw redraws a WHOLE line -- twenty
+ * characters, five passes for the halo -- for any rectangle that touches the
+ * line's box, clipping per destination pixel inside the innermost loop
+ * instead of skipping characters that fall outside. With the feature off that
+ * is not worth a deadline's attention.
+ */
+static int cfg_hud;
 static float cfg_ball_used = DIA_FRAC;	/* ... and what the geometry allowed */
 static const char *cfg_from = "built-in default";
 static int cfg_ignored;			/* lines that said nothing usable    */
@@ -1190,6 +1236,17 @@ static int c_num(const char *p, float *out)
 	return i;
 }
 
+/* Does the word at cfg_buf[start], klen long, spell `k`? */
+static int c_key(int start, int klen, const char *k)
+{
+	int i;
+
+	for (i = 0; i < klen; i++)
+		if (!k[i] || cfg_buf[start + i] != k[i])
+			return 0;
+	return k[klen] == '\0';
+}
+
 /* Read the settings. Always succeeds; cfg_from says which way. */
 static void cfg_read(void)
 {
@@ -1232,11 +1289,11 @@ static void cfg_read(void)
 			i++;
 
 		used = c_num(cfg_buf + i, &v);
-		if (klen == 4 && cfg_buf[start] == 'b' &&
-		    cfg_buf[start + 1] == 'a' && cfg_buf[start + 2] == 'l' &&
-		    cfg_buf[start + 3] == 'l' && used > 0 &&
+		if (used > 0 && c_key(start, klen, "ball") &&
 		    v >= BALL_FRAC_MIN)
 			cfg_ball = v;
+		else if (used > 0 && c_key(start, klen, "hud"))
+			cfg_hud = v >= 0.5f;
 		else
 			cfg_ignored++;
 
@@ -1859,15 +1916,31 @@ static void text_layout(void)
 	hud_y = my;
 
 	scrim_n = 0;
-	scrim_add(hud_x - hud_cw, hud_y - txt_sc,
-		  hud_x + (HUD_CHARS + 1) * hud_cw, hud_y + HUD_LINES * hud_lh);
-
 	ov_n = 0;
+
+	/* The readout, if it is wanted. Off, nothing about it reaches the
+	 * picture: no lettering, no dimmed panel behind it -- a scrim with
+	 * nothing written on it is just a stain -- and no rectangles for the
+	 * frame loop to redraw. The corner titles below are NOT part of this;
+	 * they are the demo's name, they are static, and they cost nothing
+	 * until the ball flies through them. */
+	if (cfg_hud)
+		scrim_add(hud_x - hud_cw, hud_y - txt_sc,
+			  hud_x + (HUD_CHARS + 1) * hud_cw,
+			  hud_y + HUD_LINES * hud_lh);
+
 	for (i = 0; i < HUD_LINES; i++) {
 		int ly = hud_y + i * hud_lh;
 		int lab = s_len(hud_label[i]);
 
 		s_cpy(hud_line[i], hud_label[i]);
+		if (!cfg_hud) {
+			hud_vr[i].x0 = 0;
+			hud_vr[i].y0 = 0;
+			hud_vr[i].x1 = 0;
+			hud_vr[i].y1 = 0;
+			continue;
+		}
 		ov_add(hud_x, ly, HUD_CHARS,
 		       px_of(i == 2 ? TXT_DIM : TXT_BRIGHT), hud_line[i]);
 
@@ -2985,51 +3058,91 @@ static void draw_shadow(rect r)
 	if (y1 > r.y1)
 		y1 = r.y1;
 
-	for (y = y0; y < y1; y++) {
-		ball_px *row = idx + (long)y * W;
-		const ball_px *src = bg + (long)y * W;
-		const float *dr = dith4[y & 3];
-		/* Back onto the floor: undo the foreshortening, then the row's
-		 * fixed contribution to the two ellipse axes. */
-		float fz = ((float)y + 0.5f - sh_cy) * (1.0f / FLOOR_SQUASH);
-		float ra = fz * sh_ez;
-		float rb = fz * sh_ex;
+	/* Two steps that do not change along a row: how far da and db move
+	 * when x moves by one. Both are affine in x, so q = da^2 + db^2 is a
+	 * QUADRATIC in x -- which is the whole of why the loop below has no
+	 * multiplications in it. */
+	{
+		float A = sh_ex * sh_ia;
+		float B = -sh_ez * sh_ib;
+		float cf = 2.0f * (A * A + B * B);
+		long c = (long)(cf * (float)SH_ONE);
+		long lv_k = (long)(sh_al * (float)(SHADOW_N - 1) *
+				   (float)SH_LV_ONE);
 
-		for (x = x0; x < x1; x++) {
-			float fx = (float)x + 0.5f - sh_cx;
+		for (y = y0; y < y1; y++) {
+			ball_px *row = idx + (long)y * W;
+			const ball_px *src = bg + (long)y * W;
+			const long *dri = dith4i[y & 3];
+			/* Back onto the floor: undo the foreshortening, then
+			 * the row's fixed contribution to the two axes. */
+			float fz = ((float)y + 0.5f - sh_cy) *
+				   (1.0f / FLOOR_SQUASH);
+			float ra = fz * sh_ez;
+			float rb = fz * sh_ex;
+			/* Anchored at the SHADOW's own left edge, never at
+			 * the rectangle's. A running sum carries the rounding
+			 * of where it started, so anchoring it to the dirty
+			 * rectangle would make a pixel's darkness depend on
+			 * which rectangle happened to cover it -- two
+			 * rectangles meeting over the rim would disagree, and
+			 * the rim would shimmer as the rectangles moved. It
+			 * showed up as two frames in three hundred failing
+			 * the full-repaint check, which is exactly what that
+			 * check is for. Anchoring here makes the answer a
+			 * property of the frame alone. */
+			float fx = (float)sh_x0 + 0.5f - sh_cx;
 			float da = (fx * sh_ex + ra) * sh_ia;
 			float db = (rb - fx * sh_ez) * sh_ib;
-			float q = da * da + db * db;
-			ball_px base;
-			int lv;
+			long q = (long)((da * da + db * db) * (float)SH_ONE);
+			long d = (long)((2.0f * (A * da + B * db) +
+					 0.5f * cf) * (float)SH_ONE);
+			int xs;
 
-			if (q >= 1.0f)
-				continue;
-			/* 1 - q^2 keeps the middle of the shadow flat and lets
-			 * the rim fall off softly, which is what a real
-			 * penumbra looks like at this size. Six levels would
-			 * contour that falloff into rings, so the level is
-			 * dithered rather than rounded -- the shadow already
-			 * costs a per-pixel float here, and this is one add
-			 * more. */
-			q = 1.0f - q * q;
-			lv = (int)(sh_al * (float)(SHADOW_N - 1) * q +
-				   dr[x & 3]);
-			if (lv <= 0)
-				continue;
-			if (lv > SHADOW_N - 1)
-				lv = SHADOW_N - 1;
-			/* Whatever is shaded is read from the ROOM, not from
-			 * what is already on the row -- a floor surface, and
-			 * only a floor surface. The room's own lines are
-			 * skipped by the same test, because a glowing line is
-			 * not dimmed by a shadow falling across it. Both the
-			 * test and the darkening are one question each of the
-			 * composition pixel; see "The composition pixel". */
-			base = src[x];
-			if (!px_shadeable(base))
-				continue;
-			row[x] = px_shade(base, lv);
+			/* Forward to where this rectangle starts. Normally
+			 * nothing to do: the shadow travels as its own
+			 * rectangle, so the two edges are the same edge. */
+			for (xs = sh_x0; xs < x0; xs++) {
+				q += d;
+				d += c;
+			}
+
+			for (x = x0; x < x1; x++, q += d, d += c) {
+				long qs, val;
+				ball_px base;
+				int lv;
+
+				if (q >= SH_ONE)
+					continue;
+				/* 1 - q^2 keeps the middle of the shadow flat
+				 * and lets the rim fall off softly, which is
+				 * what a real penumbra looks like at this
+				 * size. Six levels would contour that falloff
+				 * into rings, so the level is dithered rather
+				 * than rounded. */
+				qs = q >> (SH_Q - SH_LV_Q);
+				val = (lv_k * (SH_LV_ONE -
+					       ((qs * qs) >> SH_LV_Q))) >>
+				      SH_LV_Q;
+				lv = (int)((val + dri[x & 3]) >> SH_LV_Q);
+				if (lv <= 0)
+					continue;
+				if (lv > SHADOW_N - 1)
+					lv = SHADOW_N - 1;
+				/* Whatever is shaded is read from the ROOM,
+				 * not from what is already on the row -- a
+				 * floor surface, and only a floor surface.
+				 * The room's own lines are skipped by the
+				 * same test, because a glowing line is not
+				 * dimmed by a shadow falling across it. Both
+				 * the test and the darkening are one question
+				 * each of the composition pixel; see "The
+				 * composition pixel". */
+				base = src[x];
+				if (!px_shadeable(base))
+					continue;
+				row[x] = px_shade(base, lv);
+			}
 		}
 	}
 }
@@ -4050,7 +4163,8 @@ int main(void)
 
 	/* The numbers, so the first picture already carries them rather than
 	 * a line of zeroes. */
-	hud_values();
+	if (cfg_hud)
+		hud_values();
 
 	/* The one and only full-screen paint: every page has to be given the
 	 * background once. From here on nothing outside a dirty rectangle is
@@ -4119,6 +4233,8 @@ int main(void)
 		o_fix4((double)cfg_ball_used);
 		o_str(" by the room)");
 	}
+	o_str("; readout ");
+	o_str(cfg_hud ? "on" : "off (set `hud 1' to show it)");
 	o_str(", from ");
 	o_str(cfg_from);
 	if (cfg_ignored) {
@@ -4408,7 +4524,8 @@ int main(void)
 			t_fps = now;
 			f_fps = frames;
 		}
-		hud_values();
+		if (cfg_hud)
+			hud_values();
 
 		update_shape();
 		shape_parts(cur_part);
@@ -4432,7 +4549,7 @@ int main(void)
 		t_c0 = get_sysvar(_hz_200);
 		acc_step += t_c0 - t_b;
 		compose_set(&dirty);
-		for (i = HUD_FIRST_VAL; i < HUD_LINES; i++) {
+		for (i = HUD_FIRST_VAL; cfg_hud && i < HUD_LINES; i++) {
 			if (s_eq(hud_line[i], hud_page[page][i]))
 				continue;
 			compose(hud_vr[i]);
