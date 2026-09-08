@@ -596,6 +596,19 @@ typedef struct {
 	rect r[DP_N];
 } dirty_set;
 
+/*
+ * Everything one frame writes to the screen: the moving parts, and whichever
+ * readout numbers changed. It is a list rather than two loops because the
+ * ORDER matters on a single-buffered display -- see out_sort().
+ */
+#define OUT_MAX		(DP_N + HUD_LINES)
+
+typedef struct {
+	int n;
+	rect r[OUT_MAX];
+	signed char hud[OUT_MAX];	/* the readout line, or -1	     */
+} out_list;
+
 static rect prev_part[2][DP_N];		/* what each page still shows	     */
 static rect cur_part[DP_N];		/* ... and where the parts are now   */
 
@@ -3184,6 +3197,103 @@ static long set_area(const dirty_set *s)
 	return a;
 }
 
+/*
+ * Everything this frame has to write: the moving parts, then whichever
+ * readout numbers changed, gathered into one list.
+ */
+static void out_build(out_list *o, const dirty_set *s, const int *hud,
+		      int nhud)
+{
+	int i;
+
+	o->n = 0;
+	for (i = 0; i < s->n && o->n < OUT_MAX; i++) {
+		o->r[o->n] = s->r[i];
+		o->hud[o->n] = -1;
+		o->n++;
+	}
+	for (i = 0; i < nhud && o->n < OUT_MAX; i++) {
+		o->r[o->n] = hud_vr[hud[i]];
+		o->hud[o->n] = (signed char)hud[i];
+		o->n++;
+	}
+}
+
+/*
+ * Put them in the order the beam makes best: the rectangle whose LAST ROW the
+ * scanout will reach soonest goes first.
+ *
+ * On a single-buffered display the rectangles are written one after another
+ * into the picture the viewer is looking at, so each one has a deadline -- the
+ * moment the beam arrives at its bottom row -- and they all share one machine
+ * to be written by. That is the oldest scheduling problem there is, and
+ * earliest deadline first is the answer to it: if any order meets every
+ * deadline then this order does, so the demo can never tear for want of a
+ * better one.
+ *
+ * It is not a refinement. The readout sits at the TOP of the screen and its
+ * numbers are small, so written last they are written twenty milliseconds
+ * after the beam went past them and they tear every single frame; written
+ * first they cost a few hundred microseconds and are never caught. The moving
+ * parts come out top-to-bottom by themselves -- the ball is above its shadow
+ * whenever the two are separate rectangles -- but that is geometry the sort
+ * does not have to be told and does not rely on.
+ *
+ * On a display that flips there is no beam to race and the order is
+ * irrelevant, which is why sorting is done here and not thought about again.
+ */
+static void out_sort(out_list *o)
+{
+	int i, j;
+
+	for (i = 1; i < o->n; i++) {
+		rect r = o->r[i];
+		signed char h = o->hud[i];
+
+		for (j = i; j > 0 && o->r[j - 1].y1 > r.y1; j--) {
+			o->r[j] = o->r[j - 1];
+			o->hud[j] = o->hud[j - 1];
+		}
+		o->r[j] = r;
+		o->hud[j] = h;
+	}
+}
+
+static long out_area(const out_list *o)
+{
+	long a = 0;
+	int i;
+
+	for (i = 0; i < o->n; i++)
+		a += rect_area(o->r[i]);
+	return a;
+}
+
+/*
+ * Write a composed frame out, and record what the page now holds. One
+ * function because it happens in two places -- straight after composing on a
+ * display that flips, and a whole frame later, at the retrace, on one that
+ * does not -- and the two must not be allowed to drift apart.
+ *
+ * `parts` is what the frame's shape was, and it becomes what this page still
+ * shows. hud_line[] is still holding the very strings that were composed when
+ * this is called, in both orders, because hud_values() runs after it and not
+ * before.
+ */
+static void present_frame(const out_list *o, const rect *parts, int page)
+{
+	int i;
+
+	for (i = 0; i < o->n; i++) {
+		blit(o->r[i]);
+		if (o->hud[i] >= 0)
+			s_cpy(hud_page[page][o->hud[i]],
+			      hud_line[o->hud[i]]);
+	}
+	for (i = 0; i < DP_N; i++)
+		prev_part[page][i] = parts[i];
+}
+
 /* ------------------------------------------------------------------------ */
 /* Self-benchmark: how fast could this machine draw?                         */
 /*                                                                           */
@@ -3322,7 +3432,16 @@ static double tot_px;
 static long tot_rects;
 static long step_hist[STEP_BINS];
 static long worst_blit, worst_compose, worst_frame;
-static dirty_set worst_set;
+static out_list worst_set;
+/* How close the blit came to being caught by the scanout: the worst margin of
+ * the interval in 1/256ths, and the number of rectangles the beam would have
+ * reached first. -1 is "there was nothing to judge it by". They are interval
+ * statistics like the ones above, which is why they are declared here; what
+ * they mean is under "Outrunning the scanout". */
+static long beam_margin_q8 = -1;
+static long beam_late;
+static long beam_worst_q8 = -1;
+static long beam_late_tot;
 
 static void budget_reset(void)
 {
@@ -3340,6 +3459,12 @@ static void budget_reset(void)
 	acc_wait = 0;
 	acc_px = 0;
 	acc_rects = 0;
+	if (beam_margin_q8 >= 0 &&
+	    (beam_worst_q8 < 0 || beam_margin_q8 < beam_worst_q8))
+		beam_worst_q8 = beam_margin_q8;
+	beam_late_tot += beam_late;
+	beam_margin_q8 = -1;
+	beam_late = 0;
 	worst_blit = 0;
 	worst_compose = 0;
 	worst_frame = 0;
@@ -3463,6 +3588,10 @@ static void clock_cost(void)
 
 static long blit_px_ps;			/* picoseconds per blitted pixel     */
 static long blit_call_ns;		/* ... and nanoseconds per call	     */
+/* The same per-pixel figure unrounded. The beam check below multiplies it by
+ * a hundred thousand pixels, where a picosecond of rounding is a microsecond
+ * of answer. */
+static double blit_px_ns;
 
 static long blit_probe(int w, int h)
 {
@@ -3512,6 +3641,7 @@ static void blit_cost(void)
 	if (ns_big <= ns_small) {
 		blit_px_ps = 0;
 		blit_call_ns = ns_small;
+		blit_px_ns = 0.0;
 		slack_px = 0;
 		return;
 	}
@@ -3523,6 +3653,7 @@ static void blit_cost(void)
 
 	blit_px_ps = (long)(px_ns * 1000.0 + 0.5);
 	blit_call_ns = (long)(call_ns + 0.5);
+	blit_px_ns = px_ns;
 
 	/* A call worth more than a whole screen of pixels can never be worth
 	 * paying to split, so that is where the number stops. */
@@ -3530,6 +3661,102 @@ static void blit_cost(void)
 		slack_px = (long)W * (long)H;
 	else
 		slack_px = (long)(call_ns / px_ns + 0.5);
+}
+
+/* ------------------------------------------------------------------------ */
+/* Outrunning the scanout                                                    */
+/*                                                                           */
+/* On a display with two pages the flip IS the presentation: it happens at    */
+/* the retrace, whole, and nothing the blit does can ever be seen half done.  */
+/* The blit may sit anywhere in the frame, and it sits where it always did.   */
+/*                                                                           */
+/* On a SINGLE-BUFFERED display there is no flip, so the blit is the          */
+/* presentation and where it sits in the frame is the whole question. The     */
+/* demo used to blit wherever composing happened to finish, which is a        */
+/* fraction of a frame after the retrace and therefore a scanline somewhere   */
+/* in the middle of the screen. If the beam is standing INSIDE a rectangle    */
+/* when that rectangle starts being written, the rows above the beam are      */
+/* refreshed after it has already passed them and the rows below it before:   */
+/* one image above the join, the other below, which is the ball seen twice.   */
+/* That is the artefact, and it is not the beam overtaking the blit -- it     */
+/* never did that, on either machine measured.                                */
+/*                                                                           */
+/* So the blit is moved to immediately after the retrace. It then starts at   */
+/* scanline zero, ABOVE every rectangle it is going to write, and the only    */
+/* question left is whether it can stay ahead. The demo composes frame N      */
+/* during the visible period and puts it on the screen at the start of frame  */
+/* N+1: one frame of latency, which nothing in a demo can see, against a seam */
+/* that everything can.                                                       */
+/*                                                                           */
+/* ---------------------------------------------------------------------------*/
+/* The condition, and why it is checked rather than assumed                   */
+/* ---------------------------------------------------------------------------*/
+/* The construction only holds if the writing stays ahead of the beam, and    */
+/* that is a property of the MACHINE, not of the idea. The ST's card is       */
+/* written over a fast bus; a TT writes a NOVA across VME at a few megabytes  */
+/* a second, and a screen that takes longer to write than to scan cannot      */
+/* outrun anything. So it is stated as an inequality in quantities this       */
+/* program already measures, and it is evaluated every frame.                 */
+/*                                                                           */
+/* The rectangles are blitted in order. Writing rectangle k is finished at    */
+/*                                                                           */
+/*     t_k = SUM over j <= k of ( call cost + per-pixel cost * area_j )       */
+/*                                                                           */
+/* counted from the retrace, and blit_cost() measured both of those costs on  */
+/* this machine. The beam reaches that rectangle's LAST row at               */
+/*                                                                           */
+/*     b_k = y1_k * (retrace period / screen height)                          */
+/*                                                                           */
+/* and measure_retrace() measured the period. The rectangle is safe when the  */
+/* writing got there first:                                                   */
+/*                                                                           */
+/*     t_k  <  b_k     for every rectangle k of the frame                     */
+/*                                                                           */
+/* The bottom row is the worst row of a rectangle because the beam has the    */
+/* whole screen to cross and the blit only that rectangle, so a rectangle     */
+/* that is safe at its bottom row is safe at every row of it.                 */
+/*                                                                           */
+/* The margin b_k / t_k is what gets reported: above 1 the frame cannot tear, */
+/* below 1 the beam gets to some rectangle first and the demo SAYS SO in the  */
+/* log instead of claiming a guarantee it has not got. Two assumptions are    */
+/* made and both are the pessimistic ones: that the beam is already at row 0  */
+/* when plat_present() returns, when in truth it is still in the vertical     */
+/* blanking interval and the demo has that whole interval in hand; and that   */
+/* blit_cost()'s straight line holds for rectangles of every shape.           */
+/* ------------------------------------------------------------------------ */
+
+static int defer_blit;			/* is the blit the presentation?     */
+static double beam_row_ns;		/* what one scanline of beam costs   */
+
+/*
+ * Judge one frame's blit against the beam it is racing. Called with the set
+ * about to be written, at the moment the retrace ends.
+ */
+static void beam_check(const out_list *o)
+{
+	double t = 0.0;
+	int i;
+
+	/* No retrace to start from, or no cost model to predict with: there is
+	 * nothing here that could be honestly answered. */
+	if (beam_row_ns <= 0.0 || blit_px_ns <= 0.0)
+		return;
+
+	for (i = 0; i < o->n; i++) {
+		double b;
+		long m;
+
+		t += (double)blit_call_ns +
+		     blit_px_ns * (double)rect_area(o->r[i]);
+		if (t <= 0.0)
+			continue;
+		b = beam_row_ns * (double)o->r[i].y1;
+		if (b < t)
+			beam_late++;
+		m = (long)(b * 256.0 / t);
+		if (beam_margin_q8 < 0 || m < beam_margin_q8)
+			beam_margin_q8 = m;
+	}
 }
 
 /* ------------------------------------------------------------------------ */
@@ -3565,7 +3792,17 @@ int main(void)
 	long t_last, t_start, t_end, frames = 0, dropped = 0;
 	long t_mark = 0, f_mark = 0, d_mark = 0;
 	long t_fps = 0, f_fps = 0;
-	long t_b1_prev = 0;		/* where the last frame's blitting ended */
+	long t_end_prev = 0;		/* where the last frame's work ended   */
+	/* The frame that has been composed but is not on the screen yet. Only
+	 * a deferred blit ever carries one; with a page to flip to it stays
+	 * empty and the frame is written out where it always was. */
+	out_list pending;
+	/* Whether there IS one. It matters on the very first turn of the loop,
+	 * where the screen has just had its full-screen paint and cur_part
+	 * does not describe anything yet: writing out an empty frame there
+	 * would tell the page it holds nothing, and the ball painted by that
+	 * first paint would then never be taken down. */
+	int pend_have = 0;
 	double secs;
 
 	if (plat_open(&scr) < 0) {
@@ -3709,6 +3946,19 @@ int main(void)
 		if (scr.pages > 1)
 			page = (int)((page + np) % (long)scr.pages);
 	}
+
+	/* What one scanline of beam costs, and therefore whether the blit can
+	 * be raced against it at all. Both of these need the retrace, so this
+	 * is the first moment either can be settled.
+	 *
+	 * The blit is deferred only where deferring it does something: on a
+	 * single-buffered display, where the blit is the presentation. With a
+	 * page to flip to, the flip is the presentation and it is already
+	 * atomic -- deferring would buy a frame of latency and nothing else. */
+	if (retrace_q8 > 0 && H > 0)
+		beam_row_ns = ((double)retrace_q8 / 256.0) * 1e9 /
+			      ((double)PHYS_HZ * (double)H);
+	defer_blit = (scr.pages == 1 && retrace_q8 > 0);
 
 	o_reset();
 	o_str("BALL: screen ");
@@ -3858,6 +4108,28 @@ int main(void)
 	o_str(" % of a 20 ms frame");
 	o_out(0);
 
+	/* Where the blit sits in the frame, and why. This is the line to read
+	 * first on a machine that tears: it says whether the demo is racing
+	 * the beam at all, and the interval lines then say whether it won. */
+	if (defer_blit) {
+		o_str("BALL: one page and no flip, so the BLIT is the "
+		      "presentation: it is deferred to just after the "
+		      "retrace, one frame behind composing. Beam ");
+		o_fix2(beam_row_ns > 0.0 ? 1e6 / beam_row_ns : 0.0);
+		o_str(" rows/ms");
+	} else if (scr.pages > 1) {
+		o_str("BALL: ");
+		o_dec((long)scr.pages);
+		o_str(" pages, so the FLIP is the presentation and is already "
+		      "whole: the blit stays where it was composed and cannot "
+		      "be seen half done");
+	} else {
+		o_str("BALL: one page and NO RETRACE to start from, so the "
+		      "blit cannot be placed against the beam at all -- "
+		      "tearing is not preventable on this machine");
+	}
+	o_out(0);
+
 	/* What this machine says a rectangle is worth. slack_px is the whole
 	 * of the split's policy: 0 means every part of the picture travels
 	 * on its own, a whole screen means the demo keeps the one rectangle
@@ -3878,6 +4150,7 @@ int main(void)
 	 * see the LOGPATH commentary for why. */
 	log_commit();
 
+	pending.n = 0;
 	budget_reset();
 	t_start = get_sysvar(_hz_200);
 	t_last = t_start;
@@ -3886,17 +4159,45 @@ int main(void)
 	f_fps = 0;
 
 	for (;;) {
-		long now, t_c0, t_c1, t_b1;
+		long now, t_b, t_c0, t_c1;
 		int steps, nd = 0;
 		int hud_d[HUD_LINES];
 		dirty_set dirty;
+
+		/*
+		 * The retrace, and then -- on a display that cannot flip --
+		 * the frame that was composed last time, written out starting
+		 * at scanline zero and racing the beam down the screen. See
+		 * "Outrunning the scanout".
+		 *
+		 * cur_part still holds THAT frame's shape at this point:
+		 * shape_parts() has not run yet this time round, so what it
+		 * describes is the picture now going onto the screen, which is
+		 * exactly what present_frame() has to record.
+		 */
+		if (defer_blit)
+			plat_present();
 
 		/* The clock first, the keyboard second: the wait for the
 		 * retrace ends where this read is, so anything before it
 		 * would be charged to the retrace instead of to the frame. */
 		now = get_sysvar(_hz_200);
-		if (t_b1_prev)
-			acc_wait += now - t_b1_prev;
+		if (t_end_prev)
+			acc_wait += now - t_end_prev;
+
+		t_b = now;
+		if (defer_blit && pend_have) {
+			beam_check(&pending);
+			present_frame(&pending, cur_part, page);
+			t_b = get_sysvar(_hz_200);
+			acc_blit += t_b - now;
+			if (t_b - now > worst_blit) {
+				worst_blit = t_b - now;
+				worst_set = pending;
+				worst_frame = frames;
+			}
+			pend_have = 0;
+		}
 
 		/* Quit on any key. Bconstat is the non-blocking half of the
 		 * console: a blocking read is what hangs real hardware. */
@@ -3959,7 +4260,7 @@ int main(void)
 		 * it is what lets the two halves be timed apart with one clock
 		 * read between them instead of one per rectangle. */
 		t_c0 = get_sysvar(_hz_200);
-		acc_step += t_c0 - now;
+		acc_step += t_c0 - t_b;
 		compose_set(&dirty);
 		for (i = HUD_FIRST_VAL; i < HUD_LINES; i++) {
 			if (s_eq(hud_line[i], hud_page[page][i]))
@@ -3970,29 +4271,44 @@ int main(void)
 
 		t_c1 = get_sysvar(_hz_200);
 		acc_compose += t_c1 - t_c0;
-		blit_set(&dirty);
-		for (i = 0; i < nd; i++) {
-			blit(hud_vr[hud_d[i]]);
-			s_cpy(hud_page[page][hud_d[i]], hud_line[hud_d[i]]);
-		}
-
-		t_b1 = get_sysvar(_hz_200);
-		acc_blit += t_b1 - t_c1;
-		t_b1_prev = t_b1;		/* the retrace starts here    */
-		/* The dearest blit of the interval, and the rectangle that
-		 * bought it: a driver with a slow path takes it for a SHAPE,
-		 * so the shape is what gets recorded, not just the cost. */
-		if (t_b1 - t_c1 > worst_blit) {
-			worst_blit = t_b1 - t_c1;
-			worst_set = dirty;
-			worst_frame = frames;
-		}
 		if (t_c1 - t_c0 > worst_compose)
 			worst_compose = t_c1 - t_c0;
 
-		for (i = 0; i < DP_N; i++)
-			prev_part[page][i] = cur_part[i];
-		plat_present();
+		{
+			out_list out;
+
+			out_build(&out, &dirty, hud_d, nd);
+			out_sort(&out);
+
+			if (defer_blit) {
+				/* Hold it for the next retrace. Nothing
+				 * writes the index buffer between here and
+				 * there, so the pixels these rectangles point
+				 * at are still these pixels. */
+				pending = out;
+				pend_have = 1;
+				t_end_prev = t_c1;	/* the retrace	     */
+			} else {
+				long t_b1;
+
+				present_frame(&out, cur_part, page);
+				t_b1 = get_sysvar(_hz_200);
+				acc_blit += t_b1 - t_c1;
+				t_end_prev = t_b1;	/* the retrace	     */
+				/* The dearest blit of the interval and the
+				 * rectangles that bought it: a driver with a
+				 * slow path takes it for a SHAPE, so the
+				 * shapes are what get recorded, not just the
+				 * cost. */
+				if (t_b1 - t_c1 > worst_blit) {
+					worst_blit = t_b1 - t_c1;
+					worst_set = out;
+					worst_frame = frames;
+				}
+				plat_present();
+			}
+		}
+
 		if (++page >= scr.pages)
 			page = 0;
 		frames++;
@@ -4070,6 +4386,24 @@ int main(void)
 				o_str(" % of the screen)");
 				o_out(0);
 
+				/* How close the writing came to being caught
+				 * by the scanout. Above 1.00 the frame
+				 * cannot tear; below it, the beam got to a
+				 * rectangle first and this says how often. */
+				if (defer_blit && beam_margin_q8 >= 0) {
+					o_str("BALL:   beam margin ");
+					o_fix2((double)beam_margin_q8 / 256.0);
+					o_str("x worst, ");
+					o_dec(beam_late);
+					o_str(" rect(s) the beam would reach "
+					      "first");
+					if (beam_late)
+						o_str(" -- THIS MACHINE "
+						      "CANNOT OUTRUN ITS OWN "
+						      "SCANOUT");
+					o_out(0);
+				}
+
 				o_str("BALL:   worst blit ");
 				o_fix2((double)worst_blit * 1000.0 /
 				       (double)PHYS_HZ);
@@ -4104,7 +4438,7 @@ int main(void)
 					o_ch(')');
 				}
 				o_str(" = ");
-				o_dec(set_area(&worst_set));
+				o_dec(out_area(&worst_set));
 				o_str(" px");
 				o_out(0);
 			}
@@ -4153,6 +4487,15 @@ int main(void)
 		o_fix2((double)tot_wait * per);
 		o_str(" ms");
 		o_out(1);
+
+		if (defer_blit && beam_worst_q8 >= 0) {
+			o_str("BALL: whole run beam margin ");
+			o_fix2((double)beam_worst_q8 / 256.0);
+			o_str("x at its worst, ");
+			o_dec(beam_late_tot);
+			o_str(" rect(s) the beam would reach first");
+			o_out(0);
+		}
 
 		o_str("BALL: whole run redrew ");
 		o_fix2(frames > 0 ? tot_px / (double)frames : 0.0);

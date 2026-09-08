@@ -286,16 +286,31 @@ void plat_blit(const ball_px *src, long pitch, int x, int y, int w, int h)
  * legitimately a frame ahead of it there. Every other pixel -- room,
  * lettering, ball, shadow, reflection -- must match.
  */
-static ball_px *ref_buf;
+static ball_px *ref_buf;		/* idx, put aside while the repaint runs */
+static ball_px *ref_prev;		/* the repaint from the previous call    */
+static int ref_prev_valid;
 static unsigned char *skip_mask;
 static long verify_from = -1;
 static long verify_bad, verify_first = -1, verify_checked;
 static int vb_x, vb_y;
 
+/*
+ * One subtlety, and it is the demo's rather than the instrument's: on a
+ * single-buffered display the blit is deferred to the retrace, so the frame
+ * being composed now is not the frame on the screen now -- it goes up one
+ * retrace later. The reference therefore has to be delayed by exactly as much
+ * as the picture is. So the repaint of the state seen at THIS call is kept,
+ * and the page seen at the NEXT call is compared against it.
+ *
+ * That keeps the check absolute either way: the page presented is compared
+ * with a full repaint of the state it was actually composed from, and nothing
+ * about how it got there is trusted.
+ */
 static void verify_page(void)
 {
 	long np = (long)W * (long)H;
 	rect full;
+	const ball_px *want;
 	long k;
 	int bad = 0;
 
@@ -303,8 +318,9 @@ static void verify_page(void)
 		int i, x, y;
 
 		ref_buf = malloc((size_t)np * sizeof(ball_px));
+		ref_prev = malloc((size_t)np * sizeof(ball_px));
 		skip_mask = calloc((size_t)np, 1);
-		if (!ref_buf || !skip_mask) { verify_from = -1; return; }
+		if (!ref_buf || !ref_prev || !skip_mask) { verify_from = -1; return; }
 		for (i = HUD_FIRST_VAL; i < HUD_LINES; i++)
 			for (y = hud_vr[i].y0; y < hud_vr[i].y1; y++)
 				for (x = hud_vr[i].x0; x < hud_vr[i].x1; x++)
@@ -313,25 +329,38 @@ static void verify_page(void)
 
 	memcpy(ref_buf, idx, (size_t)np * sizeof(ball_px));
 	full.x0 = 0; full.y0 = 0; full.x1 = W; full.y1 = H;
-	compose(full);
-	for (k = 0; k < np; k++) {
-		if (skip_mask[k])
-			continue;
-		if (page_buf[draw_page][k] != idx[k]) {
-			bad = 1;
-			vb_x = (int)(k % W);
-			vb_y = (int)(k / W);
-			break;
+	compose(full);				/* idx := the repaint	     */
+
+	if (defer_blit) {
+		want = ref_prev_valid ? ref_prev : NULL;
+	} else {
+		want = idx;
+	}
+
+	if (want) {
+		for (k = 0; k < np; k++) {
+			if (skip_mask[k])
+				continue;
+			if (page_buf[draw_page][k] != want[k]) {
+				bad = 1;
+				vb_x = (int)(k % W);
+				vb_y = (int)(k / W);
+				break;
+			}
+		}
+		verify_checked++;
+		if (bad) {
+			verify_bad++;
+			if (verify_first < 0)
+				verify_first = frame_no;
 		}
 	}
-	memcpy(idx, ref_buf, (size_t)np * sizeof(ball_px));
 
-	verify_checked++;
-	if (bad) {
-		verify_bad++;
-		if (verify_first < 0)
-			verify_first = frame_no;
+	if (defer_blit) {
+		memcpy(ref_prev, idx, (size_t)np * sizeof(ball_px));
+		ref_prev_valid = 1;
 	}
+	memcpy(idx, ref_buf, (size_t)np * sizeof(ball_px));
 }
 
 /* An FNV hash of one page. What the viewer would see, not what the demo has
