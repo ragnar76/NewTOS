@@ -3530,6 +3530,11 @@ static long measure_retrace(void)
  * only way a 200 Hz clock can measure something far below its own resolution:
  * do it until enough ticks have passed to divide by.
  */
+/* What a frame is taken to be when the instrument's own overhead is quoted as
+ * a share of one: 20 ms, a 50 Hz frame. Nominal on purpose -- the machine's
+ * real frame is measured elsewhere and printed there. */
+#define NOMINAL_FRAME_NS	20000000.0
+
 #define CLOCK_COST_TICKS	40L	/* 0.2 s				*/
 #define CLOCK_COST_MAX		2000000L
 
@@ -4104,7 +4109,12 @@ int main(void)
 	o_str("BALL: clock read ");
 	o_dec(clock_ns);
 	o_str(" ns; the frame budget is split with 3 extra reads a frame = ");
-	o_fix2((double)clock_ns * 3.0 / 1e7);
+	/* A percentage is (part * 100) / whole, and it is written that way on
+	 * purpose: this line used to fold the 100 and the frame length into
+	 * one literal, got it wrong by a factor of fifty, and reported 0.01 %
+	 * where the truth was 0.44 %. An instrument that misstates its own
+	 * cost puts every other number beside it in doubt. */
+	o_fix2((double)clock_ns * 3.0 * 100.0 / NOMINAL_FRAME_NS);
 	o_str(" % of a 20 ms frame");
 	o_out(0);
 
