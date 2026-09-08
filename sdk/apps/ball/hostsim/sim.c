@@ -53,16 +53,25 @@
  * ---------------------------------------------------------------------------
  *   -n N     stop after N presented frames
  *   -o FILE  per-frame CSV: tick, work, dirty area, blits, ball state, the
- *            dirty rectangle, and the host CPU time of the frame body
+ *            first dirty rectangle, the host CPU time of the frame body, and
+ *            that time with the model's own screen copy taken out again --
+ *            which is the demo composing, and nothing else of consequence
  *   -S FILE  an FNV hash of the whole composed picture, one line per frame.
  *            This is how a change is shown to draw the same picture as the
  *            revision before it.
  *   -D N -P FILE   dump frame N as a PPM, to look at
  *   -L FILE  where the demo's own log goes (it thinks it is C:\BALL.LOG)
+ *   -C FILE  ... and where its settings come from (C:\BALL.CFG). Without
+ *            this the file is absent, which is the demo's other case.
  *   -r HZ    the retrace to lock to          (default 50)
  *   -s F     virtual seconds per host second (default 120; 0 = deterministic)
  *   -k T     ticks per blitted pixel         (default 2.5e-5)
  *   -c T     ticks per blit call             (default 0.02)
+ *   -W N     the screen width plat_open() reports  (default 640)
+ *   -Y N     ... and its height                    (default 480)
+ *   -p N     ... and how many pages it has, 1 or 2 (default 1)
+ *   -V N     from frame N on, check every presented page against a full
+ *            repaint of the same state (see verify_page)
  *
  * Build with build-hostsim.sh, which builds it at both composition depths.
  */
@@ -96,6 +105,8 @@ static double frame_ns;
 static double frame_start_f;
 static long frame_area;
 static int fr_x0, fr_y0, fr_x1, fr_y1, fr_have;
+static int fr_maxh, fr_maxa_h;
+static long fr_maxa;
 static int frame_blits;
 static FILE *csv;
 static FILE *sumf;
@@ -127,12 +138,20 @@ int host_bconstat(int d) { (void)d; return quit_now; }
 long host_bconin(int d) { (void)d; return 13; }
 static FILE *hf[8];
 static const char *logname = "BALL.LOG";
+static const char *cfgname;		/* -C: stand in for C:\BALL.CFG */
 long host_fopen(const char *p, int m)
 {
 	int i;
 	(void)m;
 	for (i = 1; i < 8; i++) if (!hf[i]) break;
 	if (i == 8) return -35;
+	/* The settings file, when one has been supplied. Without -C it is
+	 * absent, which is the demo's other documented case. */
+	if (strstr(p, "BALL.CFG")) {
+		if (!cfgname) return -33;
+		hf[i] = fopen(cfgname, "rb");
+		return hf[i] ? i : -33;
+	}
 	if (!strstr(p, "BALL.LOG")) return -33;	/* generated texture, as on the ST */
 	hf[i] = fopen(logname, "r+b");
 	return hf[i] ? i : -33;
@@ -158,9 +177,36 @@ void *host_malloc(long n) { return calloc(1, (size_t)n); }
 void host_free(void *p) { free(p); }
 void host_vsync(void) { }
 
+/*
+ * The screen, modelled rather than assumed away.
+ *
+ * The demo composes into a buffer of its own and writes only the dirty
+ * rectangles out, so the composition buffer is NOT the picture: everything
+ * outside a dirty rectangle still holds whatever frame last wrote it. Hashing
+ * that buffer therefore answers "did the two revisions dirty the same area",
+ * which is precisely the question a change to the dirty-rectangle policy is
+ * allowed to answer differently. The question that must NOT change is what
+ * the viewer sees, so the screen is kept here, one buffer per page,
+ * plat_blit() writes into the page being drawn and plat_present() shows it --
+ * and the hash is of the page being SHOWN. That is what makes the one-page
+ * and two-page runs comparable frame for frame.
+ */
+static int sim_w = 640, sim_h = 480, sim_pages = 1;
+static ball_px *page_buf[2];
+static int draw_page;
+
 int plat_open(ball_screen *s)
 {
-	s->w = 640; s->h = 480; s->pages = 1;
+	int i;
+
+	if (sim_pages < 1) sim_pages = 1;
+	if (sim_pages > 2) sim_pages = 2;
+	for (i = 0; i < sim_pages; i++) {
+		page_buf[i] = calloc((size_t)sim_w * (size_t)sim_h,
+				     sizeof(ball_px));
+		if (!page_buf[i]) return -1;
+	}
+	s->w = sim_w; s->h = sim_h; s->pages = sim_pages;
 	return 0;
 }
 #if !BALL_TRUECOLOR
@@ -180,7 +226,7 @@ static void dump_ppm(void)
 	fprintf(f, "P6\n%d %d\n255\n", W, H);
 	for (y = 0; y < H; y++)
 		for (x = 0; x < W; x++) {
-			ball_px p = idx[y * (long)W + x];
+			ball_px p = page_buf[draw_page][y * (long)W + x];
 			unsigned char c[3];
 #if BALL_TRUECOLOR
 			c[0] = (unsigned char)((p >> 16) & 0xFF);
@@ -196,13 +242,107 @@ static void dump_ppm(void)
 const char *plat_error(void) { return ""; }
 void plat_close(void) { }
 
+static double blit_host_ns;		/* the model's own copy, not the demo's */
+
 void plat_blit(const ball_px *src, long pitch, int x, int y, int w, int h)
 {
-	(void)src; (void)pitch; (void)x; (void)y;
+	ball_px *dst = page_buf[draw_page] + (long)y * sim_w + x;
+	double t0 = host_ns();
+	int r;
+
+	for (r = 0; r < h; r++) {
+		memcpy(dst, src, (size_t)w * sizeof(ball_px));
+		src += pitch;
+		dst += sim_w;
+	}
+	blit_host_ns += host_ns() - t0;
 	if (!fr_have) { fr_x0 = x; fr_y0 = y; fr_x1 = x + w; fr_y1 = y + h; fr_have = 1; }
+	/* The tallest rectangle of the frame and its area: on a single-buffered
+	 * screen the blit is the presentation, so how many ROWS the biggest
+	 * piece spans, and how long writing it takes, is what decides whether
+	 * the scanout can cross it. */
+	if (h > fr_maxh) { fr_maxh = h; }
+	if ((long)w * h > fr_maxa) { fr_maxa = (long)w * h; fr_maxa_h = h; }
 	frame_area += (long)w * (long)h;
 	frame_blits++;
 	now_f += (double)w * (double)h * K_PX + K_CALL;
+}
+
+/*
+ * The definitive check on a dirty-rectangle policy: is the page about to be
+ * SHOWN exactly the page a full repaint would have produced?
+ *
+ * Nothing about how the demo arrived there is trusted. The composition
+ * buffer is put aside, compose() is asked for the whole screen from the very
+ * state this frame was drawn with, and the result is compared pixel for pixel
+ * with what the demo actually blitted onto this page. A rectangle that was
+ * left out, a rectangle carried on the wrong page, an old ball not taken
+ * down: all of them show up here as a mismatching pixel, and none of them
+ * needs a previous revision to compare against.
+ *
+ * The readout's four value rectangles are excluded, and only they. Those are
+ * tracked PER PAGE by design (hud_page[]), so on a two-page display a number
+ * reaches the second page one frame after the first and a full repaint is
+ * legitimately a frame ahead of it there. Every other pixel -- room,
+ * lettering, ball, shadow, reflection -- must match.
+ */
+static ball_px *ref_buf;
+static unsigned char *skip_mask;
+static long verify_from = -1;
+static long verify_bad, verify_first = -1, verify_checked;
+static int vb_x, vb_y;
+
+static void verify_page(void)
+{
+	long np = (long)W * (long)H;
+	rect full;
+	long k;
+	int bad = 0;
+
+	if (!ref_buf) {
+		int i, x, y;
+
+		ref_buf = malloc((size_t)np * sizeof(ball_px));
+		skip_mask = calloc((size_t)np, 1);
+		if (!ref_buf || !skip_mask) { verify_from = -1; return; }
+		for (i = HUD_FIRST_VAL; i < HUD_LINES; i++)
+			for (y = hud_vr[i].y0; y < hud_vr[i].y1; y++)
+				for (x = hud_vr[i].x0; x < hud_vr[i].x1; x++)
+					skip_mask[(long)y * W + x] = 1;
+	}
+
+	memcpy(ref_buf, idx, (size_t)np * sizeof(ball_px));
+	full.x0 = 0; full.y0 = 0; full.x1 = W; full.y1 = H;
+	compose(full);
+	for (k = 0; k < np; k++) {
+		if (skip_mask[k])
+			continue;
+		if (page_buf[draw_page][k] != idx[k]) {
+			bad = 1;
+			vb_x = (int)(k % W);
+			vb_y = (int)(k / W);
+			break;
+		}
+	}
+	memcpy(idx, ref_buf, (size_t)np * sizeof(ball_px));
+
+	verify_checked++;
+	if (bad) {
+		verify_bad++;
+		if (verify_first < 0)
+			verify_first = frame_no;
+	}
+}
+
+/* An FNV hash of one page. What the viewer would see, not what the demo has
+ * lying about in its composition buffer. */
+static unsigned long sim_hash(const ball_px *b)
+{
+	unsigned long h = 2166136261UL;
+	long k, np = (long)W * (long)H;
+
+	for (k = 0; k < np; k++) { h ^= b[k]; h *= 16777619UL; }
+	return h & 0xffffffffUL;
 }
 
 void plat_present(void)
@@ -216,21 +356,25 @@ void plat_present(void)
 	double hgt = (double)floor_y - ((double)by + (double)Rf);
 	long tick_in = (long)frame_start_f;
 
-	{
-		unsigned long h = 2166136261UL;
-		long k, np = (long)W * (long)H;
-		for (k = 0; k < np; k++) { h ^= idx[k]; h *= 16777619UL; }
-		if (sumf) fprintf(sumf, "%ld %08lx\n", frame_no, h & 0xffffffffUL);
-	}
+	if (verify_from >= 0 && frame_no >= verify_from)
+		verify_page();
+	if (sumf)
+		fprintf(sumf, "%ld %08lx\n", frame_no,
+			sim_hash(page_buf[draw_page]));
 	if (frame_no == dump_at)
 		dump_ppm();
 	if (csv)
 		fprintf(csv,
-			"%ld,%ld,%.6f,%.6f,%ld,%d,%.3f,%.3f,%.3f,%.3f,%.4f,%.3f,%d,%d,%d,%d,%d,%d,%d\n",
+			"%ld,%ld,%.6f,%.6f,%ld,%d,%.3f,%.3f,%.3f,%.3f,%.4f,%.3f,%.3f,%ld,%ld,%ld,%ld,%ld,%ld,%d,%d,%d,%d,%d,%d,%d\n",
 			frame_no, tick_in, frame_start_f, work,
 			frame_area, frame_blits,
 			(double)bx, (double)by, hgt, (double)vy,
 			(double)wind_v, frame_ns / 1000.0,
+			(frame_ns - blit_host_ns) / 1000.0,
+			rect_area(cur_part[DP_BALL]),
+			rect_area(cur_part[DP_SHADOW]),
+			rect_area(cur_part[DP_REFLECT]),
+			fr_maxa, (long)fr_maxa_h, (long)fr_maxh,
 			fr_x0, fr_y0, fr_x1, fr_y1, b_left, b_top,
 			(b_left < scrim[0].x1 && b_left + D > scrim[0].x0 &&
 			 b_top < scrim[0].y1 && b_top + D > scrim[0].y0) ? 1 : 0);
@@ -240,11 +384,17 @@ void plat_present(void)
 		vbl_f += VBL_PERIOD;
 	now_f = vbl_f;
 
+	if (++draw_page >= sim_pages)
+		draw_page = 0;
 	frame_no++;
 	frame_start_f = now_f;
 	frame_t0_ns = host_ns();
 	frame_area = 0;
 	frame_blits = 0;
+	blit_host_ns = 0.0;
+	fr_maxh = 0;
+	fr_maxa = 0;
+	fr_maxa_h = 0;
 	fr_have = 0;
 	if (frame_no >= sim_frames_max)
 		quit_now = 1;
@@ -266,22 +416,26 @@ int main(int argc, char **argv)
 		else if (!strcmp(argv[i], "-S") && i + 1 < argc) sumf = fopen(argv[++i], "w");
 		else if (!strcmp(argv[i], "-D") && i + 1 < argc) dump_at = atol(argv[++i]);
 		else if (!strcmp(argv[i], "-P") && i + 1 < argc) dump_name = argv[++i];
+		else if (!strcmp(argv[i], "-W") && i + 1 < argc) sim_w = atoi(argv[++i]);
+		else if (!strcmp(argv[i], "-Y") && i + 1 < argc) sim_h = atoi(argv[++i]);
+		else if (!strcmp(argv[i], "-p") && i + 1 < argc) sim_pages = atoi(argv[++i]);
+		else if (!strcmp(argv[i], "-V") && i + 1 < argc) verify_from = atol(argv[++i]);
+		else if (!strcmp(argv[i], "-C") && i + 1 < argc) cfgname = argv[++i];
 	}
 	csv = fopen(out, "w");
-	{
-		unsigned long h = 2166136261UL;
-		long k, np = (long)W * (long)H;
-		for (k = 0; k < np; k++) { h ^= idx[k]; h *= 16777619UL; }
-		if (sumf) fprintf(sumf, "%ld %08lx\n", frame_no, h & 0xffffffffUL);
-	}
-	if (frame_no == dump_at)
-		dump_ppm();
 	if (csv)
-		fprintf(csv, "frame,tick,tick_f,work,area,blits,bx,by,hgt,vy,wind,cpu_us,x0,y0,x1,y1,bl,bt,hudhit\n");
+		fprintf(csv, "frame,tick,tick_f,work,area,blits,bx,by,hgt,vy,wind,cpu_us,comp_us,ballA,shadA,reflA,maxa,maxa_h,maxh,x0,y0,x1,y1,bl,bt,hudhit\n");
 	frame_t0_ns = host_ns();
 	ball_main();
 	if (csv) fclose(csv);
 	fprintf(stderr, "sim: bench_frames=%ld bench_ticks=%ld cyc_v=%ld cyc_h=%ld frames=%ld\n",
 		bench_frames, bench_ticks, cyc_v, cyc_h, frame_no);
+	if (verify_checked)
+		fprintf(stderr, "sim: verify %ld frames checked against a full "
+			"repaint, %ld differ%s\n", verify_checked, verify_bad,
+			verify_bad ? "" : " -- every presented page exact");
+	if (verify_bad)
+		fprintf(stderr, "sim: first mismatch at frame %ld, pixel %d,%d\n",
+			verify_first, vb_x, vb_y);
 	return 0;
 }

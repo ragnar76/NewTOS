@@ -582,7 +582,22 @@ static float sh_stretch;		/* how much it stretches the ellipse */
 static float sh_throw_x, sh_throw_z;	/* floor units per pixel of height   */
 
 static ball_rgb pal[BALL_PAL_N];
-static rect prev_rect[2];		/* what each screen page still shows */
+
+/*
+ * The three things that move, and therefore the three rectangles that can be
+ * dirty. What each screen page still shows is kept PER PART and PER PAGE:
+ * a part's dirty rectangle is where it is now together with where it was when
+ * this page was last drawn, and nothing else. See "The dirty rectangles".
+ */
+enum { DP_BALL, DP_SHADOW, DP_REFLECT, DP_N };
+
+typedef struct {
+	int n;
+	rect r[DP_N];
+} dirty_set;
+
+static rect prev_part[2][DP_N];		/* what each page still shows	     */
+static rect cur_part[DP_N];		/* ... and where the parts are now   */
 
 /* ------------------------------------------------------------------------ */
 /* Small helpers: no libm, no printf                                         */
@@ -845,6 +860,22 @@ static void o_fix2(double v)
 	o_ch((char)('0' + (int)(q % 10)));
 }
 
+/* Four decimals, for a setting rather than a measurement: 0.16 and 0.1625
+ * are different balls and two places cannot tell them apart. */
+static void o_fix4(double v)
+{
+	long q;
+	int i;
+
+	if (v < 0.0)
+		v = 0.0;
+	q = (long)(v * 10000.0 + 0.5);
+	o_dec(q / 10000);
+	o_ch('.');
+	for (i = 1000; i >= 1; i /= 10)
+		o_ch((char)('0' + (int)((q / (long)i) % 10)));
+}
+
 /*
  * The readout builds its lines the same way, but into its own buffer and
  * without a log to flush: each of these appends and hands back the new end,
@@ -936,6 +967,11 @@ static void s_cpy(char *d, const char *v)
  * the demo is meant to be one double-click away in the root of C:. When the
  * file is not there the texture is generated instead -- see ball-tex.c. */
 #define TEXPATH		"C:\\BALL.NTX"
+/* The settings, if there are any. Same reasoning as the two paths above: an
+ * absolute one in the root of C:, because nothing sets a current directory
+ * before a program is launched and the demo is meant to be one double-click
+ * away. */
+#define CFGPATH		"C:\\BALL.CFG"
 #define LOG_SECS	5
 #define LOG_EVERY	(LOG_SECS * PHYS_HZ)
 
@@ -1024,6 +1060,203 @@ static void o_out(int console)
 static void o_flush(void)
 {
 	o_out(1);
+}
+
+/* ------------------------------------------------------------------------ */
+/* Settings                                                                  */
+/*                                                                           */
+/* One number can only be decided in front of the screen, and it is how big   */
+/* the ball is. It sets what the demo looks like, and -- since the ST's       */
+/* display is single-buffered and its driver cannot page-flip, so the blit IS */
+/* the presentation -- it also sets how long the blit takes and therefore     */
+/* how much of the frame the scanout can catch. Those two pull against each   */
+/* other, the trade is a judgement, and a judgement needs the picture. So it  */
+/* comes out of the program: C:\BALL.CFG, beside the texture and the log.     */
+/*                                                                           */
+/* It is a FRACTION OF THE SCREEN WIDTH and not a pixel count, because that   */
+/* is the property the whole demo is built on -- every size here is a         */
+/* fraction of the screen the VDI reported, so the picture is the same        */
+/* picture at 640x480 and at 1920x1080. A pixel count would be right on one   */
+/* machine and wrong on the next, and the machine at the meeting is not ours  */
+/* to choose. The log says the fraction AND the diameter it came to, so a log */
+/* on its own still says what was run.                                        */
+/*                                                                           */
+/* The parser is total on purpose, and it fails the way the texture loader    */
+/* fails: no file, a line it cannot read, a key it does not know, a value out */
+/* of range -- none of them stop the demo, all of them leave the built-in     */
+/* default in place, and every one of them is COUNTED AND REPORTED. A         */
+/* configuration file that goes silently unread is worse than none at all,    */
+/* because the run then measures something other than what was asked for.     */
+/*                                                                           */
+/* Format, in full: one `key value` per line, `#` to end of line is a         */
+/* comment, blank lines are ignored, both line endings are accepted. One key  */
+/* is known:                                                                  */
+/*                                                                            */
+/*   ball  F    the ball's diameter as a fraction of the screen width.        */
+/*              Default DIA_FRAC; the demo's own geometry ceiling             */
+/*              (DIA_MAX_FRAC, and a third of the room's height) still        */
+/*              applies and a value above it is clamped and said so.          */
+/*                                                                            */
+/* Nothing else is exposed, and that is a decision rather than an oversight.  */
+/* The next candidate is the shadow's radius (SHADOW_R): it is the second     */
+/* biggest rectangle the frame redraws, about a sixth of the dirty area       */
+/* against the ball's two thirds, so it is the only other number that moves   */
+/* both the look and the blit. It is not here because the ball is where the   */
+/* lever is and a settings file that grows without a reason becomes its own   */
+/* problem.                                                                   */
+/* ------------------------------------------------------------------------ */
+#define CFG_MAX		512	/* more than the one key needs, and bounded  */
+#define BALL_FRAC_MIN	0.02f	/* below this there is nothing to look at    */
+
+static char cfg_buf[CFG_MAX];
+static float cfg_ball = DIA_FRAC;	/* what was asked for		     */
+static float cfg_ball_used = DIA_FRAC;	/* ... and what the geometry allowed */
+static const char *cfg_from = "built-in default";
+static int cfg_ignored;			/* lines that said nothing usable    */
+static int cfg_clamped;
+
+static int c_space(char c)
+{
+	return c == ' ' || c == '\t' || c == '\r';
+}
+
+/*
+ * A decimal fraction, and nothing else: no exponent, no hexadecimal, no
+ * locale. Returns the number of characters consumed, or 0 if the text is not
+ * a number -- which is what makes the caller able to ignore a line instead of
+ * believing a zero.
+ */
+static int c_num(const char *p, float *out)
+{
+	float v = 0.0f, scale = 0.1f;
+	int i = 0, digits = 0, neg = 0;
+
+	/* Written on every path, including every failing one, so that a
+	 * caller cannot hold an uninitialised value even by misreading the
+	 * return. */
+	*out = 0.0f;
+
+	if (p[i] == '-') {
+		neg = 1;
+		i++;
+	} else if (p[i] == '+') {
+		i++;
+	}
+	while (p[i] >= '0' && p[i] <= '9') {
+		v = v * 10.0f + (float)(p[i] - '0');
+		digits++;
+		i++;
+	}
+	if (p[i] == '.') {
+		i++;
+		while (p[i] >= '0' && p[i] <= '9') {
+			v += (float)(p[i] - '0') * scale;
+			scale *= 0.1f;
+			digits++;
+			i++;
+		}
+	}
+	if (!digits)
+		return 0;
+	/* Trailing rubbish on the value makes the line a mistake, not a
+	 * number followed by a comment: `ball 0.12x` is not 0.12. */
+	if (p[i] && !c_space(p[i]) && p[i] != '\n' && p[i] != '#')
+		return 0;
+	*out = neg ? -v : v;
+	return i;
+}
+
+/* Read the settings. Always succeeds; cfg_from says which way. */
+static void cfg_read(void)
+{
+	long fd = Fopen(CFGPATH, 0);
+	long n;
+	int i = 0;
+
+	if (fd < 0)
+		return;
+	n = Fread((short)fd, (long)CFG_MAX, cfg_buf);
+	(void)Fclose((short)fd);
+	if (n < 0)
+		n = 0;
+	if (n >= CFG_MAX)
+		n = CFG_MAX - 1;
+	cfg_buf[n] = '\0';
+	cfg_from = CFGPATH;
+
+	while (i < (int)n) {
+		int start, klen, used;
+		float v;
+
+		while (i < (int)n && (c_space(cfg_buf[i]) ||
+				      cfg_buf[i] == '\n'))
+			i++;
+		if (i >= (int)n)
+			break;
+		if (cfg_buf[i] == '#') {
+			while (i < (int)n && cfg_buf[i] != '\n')
+				i++;
+			continue;
+		}
+
+		start = i;
+		while (i < (int)n && !c_space(cfg_buf[i]) &&
+		       cfg_buf[i] != '\n')
+			i++;
+		klen = i - start;
+		while (i < (int)n && c_space(cfg_buf[i]))
+			i++;
+
+		used = c_num(cfg_buf + i, &v);
+		if (klen == 4 && cfg_buf[start] == 'b' &&
+		    cfg_buf[start + 1] == 'a' && cfg_buf[start + 2] == 'l' &&
+		    cfg_buf[start + 3] == 'l' && used > 0 &&
+		    v >= BALL_FRAC_MIN)
+			cfg_ball = v;
+		else
+			cfg_ignored++;
+
+		while (i < (int)n && cfg_buf[i] != '\n')
+			i++;
+	}
+}
+
+/*
+ * The ball's radius in pixels, from its diameter as a fraction of the screen
+ * width, with the demo's own geometry as the ceiling: never wider than
+ * DIA_MAX_FRAC of the screen and never more than a third of the room it has
+ * to bounce in.
+ *
+ * It is a function of the fraction and of nothing else on purpose. A later
+ * milestone wants the ball to move in DEPTH -- towards and away from the
+ * viewer, inside a room that is already drawn in perspective -- and its
+ * on-screen radius would then vary continuously, which means a SET of sphere
+ * maps at stepped radii instead of the one built here. Every step of that
+ * would call this, once per step, and this is the part that would not have to
+ * change. The rest would: build_sphere_map() writes one pair of tables and
+ * one coverage run for the single D that draw_ball(), draw_reflect() and
+ * compose() all index by, so a set means choosing among them per frame.
+ * That is the depth milestone and it is not built here.
+ */
+static int radius_of(float frac)
+{
+	int r = (int)((float)W * frac * 0.5f);
+	int wmax = (int)((float)W * DIA_MAX_FRAC * 0.5f);
+	int hmax = (int)(floor_y * 0.30f);
+
+	if (r > wmax) {
+		r = wmax;
+		cfg_clamped = 1;
+	}
+	if (r > hmax) {
+		r = hmax;
+		cfg_clamped = 1;
+	}
+	if (r < 4) {
+		r = 4;
+		cfg_clamped = 1;
+	}
+	return r;
 }
 
 /* ------------------------------------------------------------------------ */
@@ -2485,46 +2718,63 @@ static void update_shape(void)
 		rf_y1 = rf_y0;
 }
 
-static rect shape_rect(void)
-{
-	rect r;
+/* ------------------------------------------------------------------------ */
+/* The dirty rectangles                                                      */
+/*                                                                           */
+/* Three things move: the ball, its shadow on the floor, and its reflection  */
+/* in the floor. They are nowhere near each other. A ball 306 pixels across  */
+/* flying 600 pixels above its own shadow put into ONE bounding box gives a  */
+/* rectangle 874 rows tall -- measured, on the ST with PiStorm at 1920x1072  */
+/* -- of which the ball is a third and the rest is room that did not change. */
+/*                                                                           */
+/* That box was what the demo handed over every frame, and it cost twice:    */
+/*                                                                           */
+/*   - compose and blit both scale with it. 14.91 ms and 7.94 ms per frame   */
+/*     against a 16.6 ms retrace is 30 fps on a 60 Hz screen, and that is    */
+/*     exactly what that machine measured.                                   */
+/*   - the ST's screen is SINGLE-BUFFERED and its driver cannot page-flip,   */
+/*     so the blit is not a copy to a hidden page, it IS the presentation.   */
+/*     A blit that runs for half a refresh is overtaken by the scanout part  */
+/*     way down the rectangle and the viewer sees the ball twice, torn       */
+/*     across the join. Without a flip the only cure is a blit short enough  */
+/*     that the beam cannot catch it, so the height of that rectangle is not */
+/*     a performance detail -- it is whether the picture holds together.     */
+/*                                                                           */
+/* So each part carries its own rectangle, and the frame hands over a SET.   */
+/*                                                                           */
+/* What makes that safe is that compose() rebuilds a rectangle from the room */
+/* upwards -- background, shadow, reflection, ball, lettering -- so it       */
+/* depends on nothing but the rectangle and the frame's state. It is         */
+/* therefore idempotent and order-free: the set need not be disjoint, no     */
+/* rectangle need know about any other, and the picture is right as long as  */
+/* the set covers everywhere a part IS and everywhere it WAS on this page.   */
+/* Which is what a per-part, per-page previous rectangle gives.              */
+/*                                                                           */
+/* Where splitting stops paying is MEASURED, not assumed, because it differs */
+/* by an order of magnitude between the three machines this runs on. Two     */
+/* rectangles are two blits, and a blit has a fixed price as well as a       */
+/* per-pixel one: on the Atari it is a VDI vro_cpyfm call, on the Pi it is a */
+/* function call. blit_cost() times both on the machine it finds itself on   */
+/* and states the fixed one AS A NUMBER OF PIXELS (slack_px). Two            */
+/* rectangles are then merged when their bounding box costs no more than the */
+/* two of them plus that number -- so on a machine where a blit call is dear */
+/* the demo keeps the single rectangle it always had, and on one where it is */
+/* cheap it splits. Two overlapping rectangles usually have a bounding box   */
+/* smaller than their two areas added, so the same rule merges them without  */
+/* needing to know that they overlap, and no pixel is composed twice for     */
+/* want of a special case.                                                   */
+/*                                                                           */
+/* slack_px is deliberately the CONSERVATIVE form of that price. The pixels  */
+/* a merge adds are paid for twice over -- once composing them and once      */
+/* blitting them -- while the call it saves is a blit call only, so the true */
+/* break-even is a smaller number of pixels than this one. Erring this way   */
+/* splits less readily than the optimum and never more readily, and it needs */
+/* one measurement instead of two.                                           */
+/* ------------------------------------------------------------------------ */
 
-	r.x0 = b_left;
-	r.y0 = b_top;
-	r.x1 = b_left + D;
-	r.y1 = b_top + D;
-
-	if (sh_x1 > sh_x0 && sh_y1 > sh_y0) {
-		if (sh_x0 < r.x0)
-			r.x0 = sh_x0;
-		if (sh_y0 < r.y0)
-			r.y0 = sh_y0;
-		if (sh_x1 > r.x1)
-			r.x1 = sh_x1;
-		if (sh_y1 > r.y1)
-			r.y1 = sh_y1;
-	}
-
-	/* The reflection occupies the ball's own columns, so it can only ever
-	 * push the rectangle DOWNWARDS -- and only while the ball is low
-	 * enough for the mirror image to still be on the screen. */
-	if (rf_y1 > rf_y0 && rf_y1 > r.y1)
-		r.y1 = rf_y1;
-
-	if (r.x0 < 0)
-		r.x0 = 0;
-	if (r.y0 < 0)
-		r.y0 = 0;
-	if (r.x1 > W)
-		r.x1 = W;
-	if (r.y1 > H)
-		r.y1 = H;
-	if (r.x1 < r.x0)
-		r.x1 = r.x0;
-	if (r.y1 < r.y0)
-		r.y1 = r.y0;
-	return r;
-}
+/* The fixed cost of one blit, in pixels of that same blit. Measured by
+ * blit_cost() before the first frame; until then nothing splits. */
+static long slack_px;
 
 static rect rect_union(rect a, rect b)
 {
@@ -2541,6 +2791,120 @@ static rect rect_union(rect a, rect b)
 	if (b.y1 > a.y1)
 		a.y1 = b.y1;
 	return a;
+}
+
+static long rect_area(rect r)
+{
+	if (r.x1 <= r.x0 || r.y1 <= r.y0)
+		return 0;
+	return (long)(r.x1 - r.x0) * (long)(r.y1 - r.y0);
+}
+
+/* Onto the screen, with anything left over normalised to the one empty
+ * rectangle so that area and union both read it the same way. */
+static rect rect_clip(rect r)
+{
+	if (r.x0 < 0)
+		r.x0 = 0;
+	if (r.y0 < 0)
+		r.y0 = 0;
+	if (r.x1 > W)
+		r.x1 = W;
+	if (r.y1 > H)
+		r.y1 = H;
+	if (r.x1 <= r.x0 || r.y1 <= r.y0) {
+		r.x0 = 0;
+		r.y0 = 0;
+		r.x1 = 0;
+		r.y1 = 0;
+	}
+	return r;
+}
+
+/*
+ * Where the three moving parts are this frame, one rectangle each.
+ *
+ * The reflection is drawn in the ball's own columns, so its rectangle shares
+ * the ball's x range exactly. It cannot reach ABOVE the ball either: its top
+ * row is 2*floor_y - by - Rf, which is below the ball's top row b_top by
+ * twice the ball's height above the contact line, and the ball is never below
+ * that line. So the union of these three is the single rectangle the demo
+ * used to compose -- the same pixels, differently grouped.
+ */
+static void shape_parts(rect *p)
+{
+	rect r;
+
+	r.x0 = b_left;
+	r.y0 = b_top;
+	r.x1 = b_left + D;
+	r.y1 = b_top + D;
+	p[DP_BALL] = rect_clip(r);
+
+	/* update_shape() has already put the shadow on the screen and on the
+	 * floor; clipping again only normalises an empty one. */
+	r.x0 = sh_x0;
+	r.y0 = sh_y0;
+	r.x1 = sh_x1;
+	r.y1 = sh_y1;
+	p[DP_SHADOW] = rect_clip(r);
+
+	r.x0 = b_left;
+	r.x1 = b_left + D;
+	r.y0 = rf_y0;
+	r.y1 = rf_y1;
+	p[DP_REFLECT] = rect_clip(r);
+}
+
+/*
+ * Merge the pair that gains most, until the best pair on offer costs more
+ * than a blit call is worth. With three rectangles that is three comparisons
+ * a round and at most two rounds, so the loop is written for clarity rather
+ * than for a count that could ever matter.
+ */
+static void dirty_merge(dirty_set *s)
+{
+	for (;;) {
+		long best = 0;
+		int bi = -1, bj = -1, i, j;
+
+		for (i = 0; i < s->n; i++)
+			for (j = i + 1; j < s->n; j++) {
+				long d = rect_area(rect_union(s->r[i],
+							      s->r[j])) -
+					 rect_area(s->r[i]) -
+					 rect_area(s->r[j]);
+
+				if (bi < 0 || d < best) {
+					best = d;
+					bi = i;
+					bj = j;
+				}
+			}
+		if (bi < 0 || best > slack_px)
+			return;
+		s->r[bi] = rect_union(s->r[bi], s->r[bj]);
+		s->r[bj] = s->r[--s->n];
+	}
+}
+
+/*
+ * The set this frame has to redraw: for every part, where it is now together
+ * with where it was when THIS page was last drawn, merged where merging is
+ * cheaper than not.
+ */
+static void dirty_from(dirty_set *s, const rect *cur, const rect *prev)
+{
+	int i;
+
+	s->n = 0;
+	for (i = 0; i < DP_N; i++) {
+		rect d = rect_union(cur[i], prev[i]);
+
+		if (d.x1 > d.x0 && d.y1 > d.y0)
+			s->r[s->n++] = d;
+	}
+	dirty_merge(s);
 }
 
 /* ------------------------------------------------------------------------ */
@@ -2785,6 +3149,41 @@ static void blit(rect r)
 		  r.x0, r.y0, r.x1 - r.x0, r.y1 - r.y0);
 }
 
+/*
+ * The set, composed and then blitted -- in that order and not interleaved,
+ * for the reason the frame loop already had: composing writes the index
+ * buffer and blitting reads it, so doing all of one and then all of the other
+ * lets the two halves be timed apart with a single clock read between them
+ * instead of one per rectangle. It also puts the whole frame on the screen in
+ * one uninterrupted run of blits, which is what a single-buffered display
+ * needs if the beam is not to arrive in the middle of the picture.
+ */
+static void compose_set(const dirty_set *s)
+{
+	int i;
+
+	for (i = 0; i < s->n; i++)
+		compose(s->r[i]);
+}
+
+static void blit_set(const dirty_set *s)
+{
+	int i;
+
+	for (i = 0; i < s->n; i++)
+		blit(s->r[i]);
+}
+
+static long set_area(const dirty_set *s)
+{
+	long a = 0;
+	int i;
+
+	for (i = 0; i < s->n; i++)
+		a += rect_area(s->r[i]);
+	return a;
+}
+
 /* ------------------------------------------------------------------------ */
 /* Self-benchmark: how fast could this machine draw?                         */
 /*                                                                           */
@@ -2808,7 +3207,8 @@ static long bench_ticks;
 
 static void bench(void)
 {
-	rect prev, cur, dirty;
+	rect prev[DP_N], cur[DP_N];
+	dirty_set ds;
 	long t0;
 	/* The benchmark advances the physics to have something to draw, and
 	 * how far it gets depends on how fast the machine is. It must
@@ -2831,17 +3231,18 @@ static void bench(void)
 		sph[i] = wind_p[i];
 
 	update_shape();
-	prev = shape_rect();
+	shape_parts(prev);
 	bench_frames = 0;
 	t0 = get_sysvar(_hz_200);
 	do {
 		physics_step();
 		update_shape();
-		cur = shape_rect();
-		dirty = rect_union(cur, prev);
-		compose(dirty);
-		blit(dirty);
-		prev = cur;
+		shape_parts(cur);
+		dirty_from(&ds, cur, prev);
+		compose_set(&ds);
+		blit_set(&ds);
+		for (i = 0; i < DP_N; i++)
+			prev[i] = cur[i];
 		bench_frames++;
 		bench_ticks = get_sysvar(_hz_200) - t0;
 	} while (bench_ticks < BENCH_TICKS && bench_frames < BENCH_MAX);
@@ -2911,9 +3312,17 @@ static void bench(void)
 
 static long acc_step, acc_compose, acc_blit, acc_wait;
 static long tot_step, tot_compose, tot_blit, tot_wait;
+/* How much of the screen the frame actually redrew, and in how many pieces.
+ * The pixel count is the one figure that says whether the split is doing its
+ * job, and unlike the tick sums it is exact per frame. Per interval it is a
+ * long; over a whole run it would not fit one on a 32-bit machine, so the run
+ * total is a double. */
+static long acc_px, acc_rects;
+static double tot_px;
+static long tot_rects;
 static long step_hist[STEP_BINS];
 static long worst_blit, worst_compose, worst_frame;
-static rect worst_rect;
+static dirty_set worst_set;
 
 static void budget_reset(void)
 {
@@ -2923,17 +3332,18 @@ static void budget_reset(void)
 	tot_compose += acc_compose;
 	tot_blit += acc_blit;
 	tot_wait += acc_wait;
+	tot_px += (double)acc_px;
+	tot_rects += acc_rects;
 	acc_step = 0;
 	acc_compose = 0;
 	acc_blit = 0;
 	acc_wait = 0;
+	acc_px = 0;
+	acc_rects = 0;
 	worst_blit = 0;
 	worst_compose = 0;
 	worst_frame = 0;
-	worst_rect.x0 = 0;
-	worst_rect.y0 = 0;
-	worst_rect.x1 = 0;
-	worst_rect.y1 = 0;
+	worst_set.n = 0;
 	for (i = 0; i < STEP_BINS; i++)
 		step_hist[i] = 0;
 }
@@ -3016,6 +3426,113 @@ static void clock_cost(void)
 }
 
 /* ------------------------------------------------------------------------ */
+/* What one more rectangle costs                                             */
+/*                                                                           */
+/* The frame is split into as many rectangles as it is worth splitting into, */
+/* and "worth" is a property of the machine, not of the demo. A blit costs   */
+/* something per pixel and something per call, and the ratio between the two */
+/* is what decides whether two rectangles far apart are cheaper than the box */
+/* around them. On the Pi a blit call is a function call; on the Atari it is */
+/* a VDI vro_cpyfm, which on the ST's fVDI driver is a single host call that */
+/* does all of the work at once -- so the fixed half is not something this   */
+/* program can reason about from first principles, and it does not try.      */
+/*                                                                           */
+/* It times two blits of very different sizes and solves the straight line   */
+/* through them: the slope is the per-pixel cost and the intercept is the    */
+/* per-call one. The answer that matters is the intercept expressed in the   */
+/* slope's units -- how many pixels a call is worth -- because that is       */
+/* exactly the number dirty_merge() needs.                                   */
+/*                                                                           */
+/* Three details make it honest rather than approximately right:             */
+/*                                                                           */
+/*   - it blits from the ROOM, which build_room() has already painted, so    */
+/*     what appears during the probe is a corner of the picture rather than  */
+/*     uninitialised memory. It runs before the first full-screen paint, so  */
+/*     nothing of it survives into the demo.                                 */
+/*   - the small blit can be quicker than a reading of the system clock, so  */
+/*     the clock is read once per batch and the readings are SUBTRACTED,     */
+/*     using the cost clock_cost() has just measured. Without that, on a     */
+/*     machine with a fast blit, this would mostly measure the trap.         */
+/*   - if the two probes cannot be told apart the demo says the call is      */
+/*     free rather than inventing a slope, and splits freely.                */
+/* ------------------------------------------------------------------------ */
+#define BCOST_TICKS	20L		/* 0.1 s per probe		     */
+#define BCOST_MAX	2000000L
+#define BCOST_BATCH	32L		/* blits between two clock readings  */
+#define BCOST_SMALL	8		/* the small probe's side	     */
+
+static long blit_px_ps;			/* picoseconds per blitted pixel     */
+static long blit_call_ns;		/* ... and nanoseconds per call	     */
+
+static long blit_probe(int w, int h)
+{
+	long t0 = get_sysvar(_hz_200);
+	long n = 0, reads = 0, d;
+	double ns;
+
+	do {
+		long k;
+
+		for (k = 0; k < BCOST_BATCH; k++)
+			plat_blit(bg, (long)W, 0, 0, w, h);
+		n += BCOST_BATCH;
+		reads++;
+		d = get_sysvar(_hz_200) - t0;
+	} while (d < BCOST_TICKS && n < BCOST_MAX);
+
+	ns = (double)d * 1e9 / (double)PHYS_HZ -
+	     (double)reads * (double)clock_ns;
+	if (ns < 0.0)
+		ns = 0.0;
+	return (long)(ns / (double)n + 0.5);
+}
+
+static void blit_cost(void)
+{
+	long ns_big, ns_small, a_big, a_small;
+	double px_ns, call_ns;
+	int wb = D, hb = D;
+
+	if (wb > W)
+		wb = W;
+	if (hb > H)
+		hb = H;
+	/* Nothing to fit a line through: split freely and say nothing. */
+	if (wb < 4 * BCOST_SMALL || hb < 4 * BCOST_SMALL) {
+		slack_px = 0;
+		return;
+	}
+
+	a_big = (long)wb * (long)hb;
+	a_small = (long)BCOST_SMALL * (long)BCOST_SMALL;
+
+	ns_small = blit_probe(BCOST_SMALL, BCOST_SMALL);
+	ns_big = blit_probe(wb, hb);
+
+	if (ns_big <= ns_small) {
+		blit_px_ps = 0;
+		blit_call_ns = ns_small;
+		slack_px = 0;
+		return;
+	}
+
+	px_ns = (double)(ns_big - ns_small) / (double)(a_big - a_small);
+	call_ns = (double)ns_small - px_ns * (double)a_small;
+	if (call_ns < 0.0)
+		call_ns = 0.0;
+
+	blit_px_ps = (long)(px_ns * 1000.0 + 0.5);
+	blit_call_ns = (long)(call_ns + 0.5);
+
+	/* A call worth more than a whole screen of pixels can never be worth
+	 * paying to split, so that is where the number stops. */
+	if (px_ns <= 0.0 || call_ns / px_ns > (double)W * (double)H)
+		slack_px = (long)W * (long)H;
+	else
+		slack_px = (long)(call_ns / px_ns + 0.5);
+}
+
+/* ------------------------------------------------------------------------ */
 /* Memory                                                                    */
 /* ------------------------------------------------------------------------ */
 
@@ -3063,17 +3580,15 @@ int main(void)
 	horizon = (int)((float)H * HORIZON_FRAC);
 	floor_y = (float)H * FLOOR_FRAC;
 
-	/* 16 % of the screen width, capped at 18 %, and never taller than the
-	 * room it has to bounce in. */
-	R = (int)((float)W * DIA_FRAC * 0.5f);
-	if (R > (int)((float)W * DIA_MAX_FRAC * 0.5f))
-		R = (int)((float)W * DIA_MAX_FRAC * 0.5f);
-	if (R > (int)(floor_y * 0.30f))
-		R = (int)(floor_y * 0.30f);
-	if (R < 4)
-		R = 4;
+	/* How big the ball is: 16 % of the screen width unless C:\BALL.CFG
+	 * says otherwise, capped at 18 % and never taller than a third of the
+	 * room it has to bounce in. Read here because everything after this
+	 * point is sized from R. */
+	cfg_read();
+	R = radius_of(cfg_ball);
 	D = 2 * R;
 	Rf = (float)R;
+	cfg_ball_used = 2.0f * (float)R / (float)W;
 
 	idx = (ball_px *)b_alloc((long)W * H * (long)sizeof(ball_px));
 	bg = (ball_px *)b_alloc((long)W * H * (long)sizeof(ball_px));
@@ -3157,6 +3672,10 @@ int main(void)
 			page = 0;
 	}
 	clock_cost();
+	/* Before bench(), because bench() has to measure the headroom under
+	 * the very policy the run will use, and dirty_merge() has no policy
+	 * until this has run. */
+	blit_cost();
 	bench();			/* leaves the demo exactly as it was */
 
 	/* The numbers, so the first picture already carries them rather than
@@ -3175,7 +3694,7 @@ int main(void)
 		update_shape();
 		compose(full);
 		blit(full);
-		prev_rect[page] = shape_rect();
+		shape_parts(prev_part[page]);
 		plat_present();
 		if (++page >= scr.pages)
 			page = 0;
@@ -3203,6 +3722,27 @@ int main(void)
 	o_str(" px, apex=");
 	o_dec(apex);
 	o_str(" px");
+	o_out(0);
+
+	/* What size ball this actually ran, where the number came from, and
+	 * everything that was not taken at face value on the way. */
+	o_str("BALL: ball ");
+	o_fix4((double)cfg_ball);
+	o_str(" of screen width = ");
+	o_dec((long)D);
+	o_str(" px");
+	if (cfg_clamped) {
+		o_str(" (clamped to ");
+		o_fix4((double)cfg_ball_used);
+		o_str(" by the room)");
+	}
+	o_str(", from ");
+	o_str(cfg_from);
+	if (cfg_ignored) {
+		o_str("; ");
+		o_dec((long)cfg_ignored);
+		o_str(" line(s) ignored");
+	}
 	o_out(0);
 
 	o_str("BALL: texture ");
@@ -3318,6 +3858,21 @@ int main(void)
 	o_str(" % of a 20 ms frame");
 	o_out(0);
 
+	/* What this machine says a rectangle is worth. slack_px is the whole
+	 * of the split's policy: 0 means every part of the picture travels
+	 * on its own, a whole screen means the demo keeps the one rectangle
+	 * it used to hand over. */
+	o_str("BALL: blit ");
+	o_fix2((double)blit_px_ps / 1000.0);
+	o_str(" ns/px + ");
+	o_fix2((double)blit_call_ns / 1000.0);
+	o_str(" us/call, so one more rectangle is worth ");
+	o_dec(slack_px);
+	o_str(" px; the frame splits up to ");
+	o_dec((long)DP_N);
+	o_str(" ways");
+	o_out(0);
+
 	/* The header block, committed before the loop starts, where a disk
 	 * write costs nothing. From here on the log is held in memory --
 	 * see the LOGPATH commentary for why. */
@@ -3334,7 +3889,7 @@ int main(void)
 		long now, t_c0, t_c1, t_b1;
 		int steps, nd = 0;
 		int hud_d[HUD_LINES];
-		rect cur, dirty;
+		dirty_set dirty;
 
 		/* The clock first, the keyboard second: the wait for the
 		 * retrace ends where this read is, so anything before it
@@ -3385,8 +3940,10 @@ int main(void)
 		hud_values();
 
 		update_shape();
-		cur = shape_rect();
-		dirty = rect_union(cur, prev_rect[page]);
+		shape_parts(cur_part);
+		dirty_from(&dirty, cur_part, prev_part[page]);
+		acc_px += set_area(&dirty);
+		acc_rects += dirty.n;
 
 		/* Only the numbers that changed, and only their own little
 		 * rectangles. Tracked per page, because on a two-page display
@@ -3403,7 +3960,7 @@ int main(void)
 		 * read between them instead of one per rectangle. */
 		t_c0 = get_sysvar(_hz_200);
 		acc_step += t_c0 - now;
-		compose(dirty);
+		compose_set(&dirty);
 		for (i = HUD_FIRST_VAL; i < HUD_LINES; i++) {
 			if (s_eq(hud_line[i], hud_page[page][i]))
 				continue;
@@ -3413,7 +3970,7 @@ int main(void)
 
 		t_c1 = get_sysvar(_hz_200);
 		acc_compose += t_c1 - t_c0;
-		blit(dirty);
+		blit_set(&dirty);
 		for (i = 0; i < nd; i++) {
 			blit(hud_vr[hud_d[i]]);
 			s_cpy(hud_page[page][hud_d[i]], hud_line[hud_d[i]]);
@@ -3427,13 +3984,14 @@ int main(void)
 		 * so the shape is what gets recorded, not just the cost. */
 		if (t_b1 - t_c1 > worst_blit) {
 			worst_blit = t_b1 - t_c1;
-			worst_rect = dirty;
+			worst_set = dirty;
 			worst_frame = frames;
 		}
 		if (t_c1 - t_c0 > worst_compose)
 			worst_compose = t_c1 - t_c0;
 
-		prev_rect[page] = cur;
+		for (i = 0; i < DP_N; i++)
+			prev_part[page][i] = cur_part[i];
 		plat_present();
 		if (++page >= scr.pages)
 			page = 0;
@@ -3494,32 +4052,60 @@ int main(void)
 				}
 				o_out(0);
 
-				/* The dearest blit of the interval and the
-				 * rectangle that bought it: a driver with a
-				 * slow path takes it for a SHAPE, so the
-				 * shape is what is recorded. */
+				/* What the frame actually redrew: the pixels
+				 * and the pieces they came in. This is the
+				 * figure the rectangle split exists to move,
+				 * and unlike the tick sums above it is exact.
+				 */
+				o_str("BALL:   redrew ");
+				o_fix2(df > 0 ? (double)acc_px / (double)df
+					      : 0.0);
+				o_str(" px in ");
+				o_fix2(df > 0 ? (double)acc_rects / (double)df
+					      : 0.0);
+				o_str(" rect/frame (");
+				o_fix2((double)acc_px * 100.0 /
+				       ((double)W * (double)H *
+					(df > 0 ? (double)df : 1.0)));
+				o_str(" % of the screen)");
+				o_out(0);
+
 				o_str("BALL:   worst blit ");
 				o_fix2((double)worst_blit * 1000.0 /
 				       (double)PHYS_HZ);
 				o_str(" ms f");
 				o_dec(worst_frame);
-				o_str(" ");
-				o_dec((long)(worst_rect.x1 - worst_rect.x0));
-				o_ch('x');
-				o_dec((long)(worst_rect.y1 - worst_rect.y0));
-				o_str(" at ");
-				o_dec((long)worst_rect.x0);
-				o_ch(',');
-				o_dec((long)worst_rect.y0);
-				o_str(" xodd ");
-				o_dec((long)(worst_rect.x0 & 1));
-				o_str(" wodd ");
-				o_dec((long)((worst_rect.x1 - worst_rect.x0)
-					     & 1));
 				o_str("; worst compose ");
 				o_fix2((double)worst_compose * 1000.0 /
 				       (double)PHYS_HZ);
 				o_str(" ms");
+				o_out(0);
+
+				/* And the rectangles that bought that blit: a
+				 * driver with a slow path takes it for a
+				 * SHAPE, so the shapes are what is recorded,
+				 * odd origin and odd width included. */
+				o_str("BALL:   worst rects");
+				for (bi = 0; bi < worst_set.n; bi++) {
+					rect wr = worst_set.r[bi];
+
+					o_ch(' ');
+					o_dec((long)(wr.x1 - wr.x0));
+					o_ch('x');
+					o_dec((long)(wr.y1 - wr.y0));
+					o_ch('@');
+					o_dec((long)wr.x0);
+					o_ch(',');
+					o_dec((long)wr.y0);
+					o_ch('(');
+					o_dec((long)(wr.x0 & 1));
+					o_ch(',');
+					o_dec((long)((wr.x1 - wr.x0) & 1));
+					o_ch(')');
+				}
+				o_str(" = ");
+				o_dec(set_area(&worst_set));
+				o_str(" px");
 				o_out(0);
 			}
 
@@ -3566,6 +4152,17 @@ int main(void)
 		o_str(" ms  wait ");
 		o_fix2((double)tot_wait * per);
 		o_str(" ms");
+		o_out(1);
+
+		o_str("BALL: whole run redrew ");
+		o_fix2(frames > 0 ? tot_px / (double)frames : 0.0);
+		o_str(" px in ");
+		o_fix2(frames > 0 ? (double)tot_rects / (double)frames : 0.0);
+		o_str(" rect/frame = ");
+		o_fix2(frames > 0 ? tot_px * 100.0 /
+				    ((double)W * (double)H * (double)frames)
+				  : 0.0);
+		o_str(" % of the screen");
 		o_flush();
 	}
 	log_commit();
