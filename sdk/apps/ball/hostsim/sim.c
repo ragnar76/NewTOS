@@ -75,13 +75,12 @@
  *   -G N     model the m68k platform layer's staging blit: the driver moves
  *            spans rounded out to N pixels (default 1 = a faithful copy, and
  *            the control)
- *   -w N     ... with the platform widening the rectangle to N pixels and
- *            staging the added columns for real. The default follows what
- *            the platform files actually do: 16 with one screen page, none
- *            with more (see "The staging form")
- *   -g N     ... or, instead, staging it at form column x & (N-1) with no
- *            widening, which is what the two files did before
- *            See "The staging form" below for what any of that is for.
+ *   -g N     ... with the platform staging at form column x & (N-1), which
+ *            is what it does: N = 2 is the TT, N = 1 the PiStorm (default)
+ *   -w N     ... or a platform that widens the rectangle to N pixels and
+ *            stages the added columns for real. Default 0: that was tried
+ *            on hardware and reverted -- see "The staging form" below,
+ *            which also says what it cost and what it did prove.
  *
  * ---------------------------------------------------------------------------
  * WHICH MACHINE'S ARITHMETIC THIS IS -- read before comparing with an Atari
@@ -328,36 +327,49 @@ static double blit_host_ns;		/* the model's own copy, not the demo's */
 /*          did before the model existed, which is the control that makes    */
 /*          any other reading mean something. Check it, do not assume it:    */
 /*          a -G 1 run must produce hashes identical to the shipped sim.     */
-/*   -w N   the platform layer WIDENS the rectangle to a multiple of N and   */
-/*          stages the added columns from the composition buffer. This is    */
-/*          what plat-tt.c and plat-pistorm.c do today, with N = 16, and     */
-/*          the default here follows them: 16 on a single-page display and   */
-/*          none with more. Its whole point is that a rounded-out span then  */
-/*          reads real pixels rather than an older picture.                  */
+/*   -g N   what the platform layer DOES: it stages the rectangle at form    */
+/*          column x & (N-1) and hands over exactly its own width. That is   */
+/*          the shipping behaviour and the default -- N = 2 on the TT (a     */
+/*          parity trick, alignment for a 16-bit blitter and nothing wider), */
+/*          N = 1 on the PiStorm, which aligns nothing at all. -g 2 -G 16    */
+/*          is the TT against a 16-pixel driver and fails 564 of 596         */
+/*          presented frames.                                                */
+/*   -w N   a platform that instead WIDENS the rectangle to a multiple of N  */
+/*          and stages the added columns from the composition buffer, so     */
+/*          that a rounded-out span reads real pixels. Default 0, off,       */
+/*          because no platform does this.                                   */
 /*                                                                          */
-/*          Why the page count matters, and this model is what found it:     */
-/*          widening stages columns the core never asked for out of the      */
-/*          composition buffer, and that buffer is a complete current        */
-/*          picture only while there is one page. With two, a frame composes */
-/*          the union of where the parts are and where THIS page still shows */
-/*          them, so the buffer can still hold the ball where the OTHER page */
-/*          shows it. -p 2 -w 16 puts that stale ball on the screen and this */
-/*          verifier fails 119 of 597 frames on it. Both platform files      */
-/*          therefore derive their widening from scr->pages.                 */
-/*   -g N   INSTEAD of widening: the platform stages the rectangle at form   */
-/*          column x & (N-1) and hands over exactly its own width. This is   */
-/*          what the two files did BEFORE -- N = 2 on the TT (a parity trick */
-/*          for a 16-bit blitter), N = 1 on the PiStorm (no alignment at     */
-/*          all). Use -w 0 -g 2 -G 16 to reproduce the old behaviour against */
-/*          a 16-pixel driver; that combination is what first made the       */
-/*          verifier fail, on 564 of 596 presented frames.                    */
+/*          It was built and shipped for one revision (c84c0ee, 2026-09-09), */
+/*          on the theory that the artefact the TT and the PiStorm show came */
+/*          from a driver over-reading the form. HARDWARE SAID NO: the       */
+/*          squares stayed and the widening ADDED a tearing band in the      */
+/*          upper third. It moves more pixels than it asks for -- a cost     */
+/*          proportional to the rectangle's HEIGHT, which a fit of           */
+/*          (per-call + per-pixel) cannot represent -- so ball.c's blit      */
+/*          prediction ran low, and at a worst beam margin of 1.03x there is */
+/*          no room to run low. Measured: blit 6.19 -> 6.61 ms. Reverted.    */
+/*          The knob stays because the model is worth keeping and because it */
+/*          is the only way to re-ask the question cheaply.                  */
+/*                                                                          */
+/*          Two things it did establish, both worth keeping:                 */
+/*          - against a driver of unit 2/4/8/16 it makes the model exact,    */
+/*            0 of 596 -- so the mechanism is real even though it is not     */
+/*            THIS defect. A unit above 16 is still exposed (-G 32: 563).    */
+/*          - it is UNSOUND with more than one screen page, and this model   */
+/*            is what found that. Widening stages columns the core never     */
+/*            asked for out of the composition buffer, and that buffer is a  */
+/*            complete current picture only while there is one page. With    */
+/*            two, a frame composes the union of where the parts are and     */
+/*            where THIS page still shows them, so the buffer can still hold */
+/*            the ball where the OTHER page shows it. -p 2 -w 16 puts that   */
+/*            stale ball on the screen: 119 of 597 frames.                   */
 /*                                                                          */
 /* The form is allocated once and never cleared, because that is the point:  */
 /* its staleness is the thing being modelled.                                */
 /* ------------------------------------------------------------------------ */
 static int stage_gran = 1;		/* -G: the driver's blit unit	     */
-static int stage_widen = -1;		/* -w: -1 = follow the platform rule */
-static int stage_off = 1;		/* -g: ... or stages at this offset  */
+static int stage_off = 1;		/* -g: what the platform aligns to   */
+static int stage_widen;			/* -w: off; no platform widens	     */
 static ball_px *stage_form;
 static int stage_form_w;
 
@@ -380,12 +392,10 @@ static void stage_blit(const ball_px *src, long pitch, int x, int y,
 		}
 	}
 
-	/* By default the model follows the platform's own rule: widen to 16
-	 * on a single-page display and not at all with more, because the
-	 * composition buffer is a complete current picture only where one
-	 * page means one dirty set. -w forces the question either way, and
-	 * -p 2 -w 16 is how the unsoundness was found: 119 of 597 frames. */
-	wid = stage_widen >= 0 ? stage_widen : (sim_pages == 1 ? 16 : 0);
+	/* Off by default: the platform stages the rectangle as it is, which
+	 * is what -g models. See the widening's own entry above for what it
+	 * cost when it was tried, and for why it is unsound with two pages. */
+	wid = stage_widen;
 
 	if (wid > 1) {
 		xd = x & ~(wid - 1);
