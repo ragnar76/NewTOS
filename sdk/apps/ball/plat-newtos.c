@@ -239,9 +239,38 @@ void plat_present(void)
 		return;
 	}
 
-	/* Flip on a frame boundary: wait for the retrace, show the page just
+	/*
+	 * Flip on a frame boundary: wait for the retrace, show the page just
 	 * drawn, then point both the scan-out's partner and the system's
-	 * drawing base at the other one. */
+	 * drawing base at the other one.
+	 *
+	 * OBSERVED DEFECT, and it is NewTOS's rather than this file's: the
+	 * flip is NOT atomic and this sequence cannot make it so. Setscreen's
+	 * physical base is applied the moment it is asked for -- the call
+	 * reaches a synchronous VideoCore mailbox property write
+	 * (tos-api/src/xbios/screen.rs:220 -> kernel/src/vdi_backend.rs
+	 * set_scanout_base -> kernel/src/drivers/bcm2711/framebuffer.rs:156,
+	 * tag 0x0004_8009) and nothing anywhere holds it back until the next
+	 * vertical blank. Vsync() only says the blank has STARTED; what is
+	 * left of it is short and the mailbox round trip is not bounded
+	 * inside it, so the scan-out address changes part-way down the
+	 * picture and the frame is shown half from one page and half from the
+	 * other. A seam.
+	 *
+	 * Seen on a Pi 4 with the F2 diagnostic build (ball held still, only
+	 * the texture turning): the changed region is then a fixed rectangle,
+	 * so the seam stands still and is plain to see. In the running demo
+	 * the same seam travels with the dirty rectangle every frame, which
+	 * is why it went unremarked for so long.
+	 *
+	 * No application can work around this. A program that wants a whole
+	 * frame needs the kernel to remember a PENDING base and let the
+	 * retrace interrupt install it; that is an XBIOS/kernel change and it
+	 * is written up at the Setscreen implementation cited above. Until it
+	 * exists, this file does the best a program can do -- flip as close
+	 * to the blank as it can get -- and says so rather than claiming a
+	 * guarantee it has not got.
+	 */
 	Vsync();
 	Setscreen(-1L, (long)draw_base, -1);
 	draw_page ^= 1;

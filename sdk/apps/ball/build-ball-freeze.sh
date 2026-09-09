@@ -15,6 +15,17 @@
 #   F2   ball STILL, texture TURNING   only the surface moves
 #   F3   ball FLYING, texture STILL    only the position moves
 #
+# Measured on a Pi 4: F1 no, F2 no (but it exposed a page-flip seam that is
+# NewTOS's, not the demo's -- see plat-newtos.c), F3 YES. So it is the travel.
+# Two more ask what about the travel, both about the ball's ordered dither:
+#
+#   F4   no dither on the ball at all  it will band; that is expected
+#   F5   the same dither, indexed in SCREEN space, not in the sphere map's
+#
+# F5 is the more valuable: F4 alone cannot tell "dithering is the problem"
+# from "dithering that travels with the object is the problem". It costs the
+# ball's inner loop 10 -> 18 m68k instructions a pixel and D*D*2 bytes.
+#
 # Run them back to back on one machine and say for each: is the artefact
 # there, yes or no. One should be yes and two should be no; that says which
 # half of the motion it lives in. There is nothing to read off, no number to
@@ -33,18 +44,18 @@
 # the switch existed, checked by comparing generated assembly on both
 # architectures at both composition depths.
 #
-# Usage:  sdk/apps/ball/build-ball-freeze.sh [1|2|3 ...]      (default: all)
+# Usage:  sdk/apps/ball/build-ball-freeze.sh [1..5 ...]       (default: all)
 set -uo pipefail
 
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 LEVELS=("$@")
-[ ${#LEVELS[@]} -eq 0 ] && LEVELS=(1 2 3)
+[ ${#LEVELS[@]} -eq 0 ] && LEVELS=(1 2 3 4 5)
 
 rc=0
 for f in "${LEVELS[@]}"; do
     case "$f" in
-      1|2|3) ;;
-      *) echo "error: freeze level must be 1, 2 or 3 (got '$f')" >&2; exit 1 ;;
+      1|2|3|4|5) ;;
+      *) echo "error: freeze level must be 1..5 (got '$f')" >&2; exit 1 ;;
     esac
 
     echo "==================== F$f ===================="

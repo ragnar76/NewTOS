@@ -90,6 +90,34 @@
 /*                   moves. Anything visible here is the ball's own travel   */
 /*                   across the screen.                                      */
 /*                                                                          */
+/* F1 no, F2 no (but see the seam below), F3 YES, measured on a Pi 4. So it  */
+/* is the TRAVEL. Two more builds ask what about the travel, both about the  */
+/* ordered dither that shades the sphere:                                    */
+/*                                                                          */
+/*   BALL_FREEZE 4   F4: no dither on the ball at all, the shade level       */
+/*                   rounded instead. If the artefact goes, the dither is    */
+/*                   in it. This WILL band the gradient visibly -- that is   */
+/*                   expected and does not disqualify the answer.            */
+/*   BALL_FREEZE 5   F5: the same dither, indexed in SCREEN space instead of */
+/*                   in the sphere map's own. If the artefact goes here too, */
+/*                   the cause is specifically that the pattern travels WITH */
+/*                   the ball, and the repair is where the matrix is indexed */
+/*                   rather than whether it exists at all.                   */
+/*                                                                          */
+/* F5 is the more valuable of the two: F4 alone cannot tell "dithering is    */
+/* the problem" from "dithering that moves with the object is the problem",  */
+/* and those want very different repairs.                                    */
+/*                                                                          */
+/* A PREDICTION, written down before the runs so it can be wrong in public:  */
+/* with the spin frozen the ball is a RIGID BITMAP -- map_shade, map_off,    */
+/* run0/run1 and tex_du are all fixed, so draw_ball writes the same pixels   */
+/* at a new origin and nothing inside the sprite changes shape. A pattern    */
+/* glued to sphere-map coordinates therefore travels with the ball exactly   */
+/* as the ball's own texture does, and cannot crawl relative to it. If that  */
+/* reasoning holds, F4 and F5 will both still show it -- which is worth one  */
+/* hardware round anyway, because it would retire the whole dither family at */
+/* once.                                                                     */
+/*                                                                          */
 /* One of the three shows it and two do not, and that says which half to     */
 /* look in. It is a separation, not a measurement: nothing here is tuned and */
 /* there is nothing to read off but "yes" or "no".                           */
@@ -108,13 +136,27 @@
 #define BALL_FREEZE 0
 #endif
 
-#if BALL_FREEZE < 0 || BALL_FREEZE > 3
-#error "BALL_FREEZE must be 0 (the demo), or 1, 2 or 3 -- see ball.c"
+#if BALL_FREEZE < 0 || BALL_FREEZE > 5
+#error "BALL_FREEZE must be 0 (the demo), or 1..5 -- see ball.c"
 #endif
 
-/* Which half of the motion this build integrates. */
+/* Which half of the motion this build integrates. F4 and F5 are rendering
+ * diagnostics, not motion ones: they move and spin like the demo. */
 #define BALL_MOVES	(BALL_FREEZE != 1 && BALL_FREEZE != 2)
 #define BALL_SPINS	(BALL_FREEZE != 1 && BALL_FREEZE != 3)
+
+/* What this build calls itself, in its own log and on the console. */
+#if BALL_FREEZE == 1
+#define BALL_FREEZE_NAME	"F1 -- ball STILL, texture STILL"
+#elif BALL_FREEZE == 2
+#define BALL_FREEZE_NAME	"F2 -- ball STILL, texture TURNING"
+#elif BALL_FREEZE == 3
+#define BALL_FREEZE_NAME	"F3 -- ball FLYING, texture STILL"
+#elif BALL_FREEZE == 4
+#define BALL_FREEZE_NAME	"F4 -- no dither on the ball (it will band)"
+#elif BALL_FREEZE == 5
+#define BALL_FREEZE_NAME	"F5 -- ball dither indexed in SCREEN space"
+#endif
 
 /* ------------------------------------------------------------------------ */
 /* Palette layout -- the split, in one place, for the whole demo             */
@@ -567,6 +609,12 @@ static ball_px *bg;		/* W*H, the room with nothing in it  */
 static ball_px *bg_row;			/* H, the background pixel per row   */
 static unsigned short *map_off;		/* D*D, texel offset before the spin */
 static unsigned char *map_shade;	/* D*D, BALL_BASE + shade	     */
+#if BALL_FREEZE == 5
+/* F5 only: the shade level BEFORE any dither, Q8, so that draw_ball can
+ * apply the dither in screen space instead of it being baked in the sphere
+ * map's own coordinates. Two bytes a pixel of the ball's square. */
+static unsigned short *map_lit;
+#endif
 static short *run0, *run1;		/* D each, the disc's row coverage   */
 static unsigned char *tex_buf;		/* TEX_MAX_BYTES, the texture	     */
 static ball_tex tex;
@@ -875,6 +923,11 @@ static float dith4[4][4];		/* the shadow			     */
  * conversion the loop exists to avoid. Built from the same numbers, so the
  * two cannot drift apart. */
 static long dith4i[4][4];
+#if BALL_FREEZE == 5
+/* F5 only: the ball's 8x8 threshold as Q8 integers, because draw_ball's
+ * inner loop must not acquire a float. */
+static int dith8q[8][8];
+#endif
 static float dith1[8];			/* gradients that only vary in y     */
 
 static void build_dither(void)
@@ -899,6 +952,11 @@ static void build_dither(void)
 	for (y = 0; y < 8; y++)
 		for (x = 0; x < 8; x++)
 			dith8[y][x] = ((float)m8[y][x] + 0.5f) / 64.0f;
+#if BALL_FREEZE == 5
+	for (y = 0; y < 8; y++)
+		for (x = 0; x < 8; x++)
+			dith8q[y][x] = (int)(dith8[y][x] * 256.0f);
+#endif
 	for (y = 0; y < 4; y++)
 		for (x = 0; x < 4; x++) {
 			dith4[y][x] = ((float)(m8[y][x] >> 2) + 0.5f) / 16.0f;
@@ -2632,8 +2690,24 @@ static void build_sphere_map(void)
 			 * not the dither -- give the ambient region a
 			 * gradient to dither, or quantise `lit' before the
 			 * dither is added so a constant stays constant. */
+#if BALL_FREEZE == 4
+			/* F4: no dither at all, the level rounded. */
+			sh = (int)(lit * (float)(BALL_LEVELS - 1) + 0.5f);
+#elif BALL_FREEZE == 5
+			/* F5: carry the level undithered, at Q8, and let
+			 * draw_ball dither it against SCREEN coordinates.
+			 * map_shade still gets the rounded level, because
+			 * draw_reflect reads it and the reflection is not
+			 * what is being asked about. */
+			map_lit[(long)sy * D + sx] =
+				(unsigned short)(lit *
+						 (float)(BALL_LEVELS - 1) *
+						 256.0f);
+			sh = (int)(lit * (float)(BALL_LEVELS - 1) + 0.5f);
+#else
 			sh = (int)(lit * (float)(BALL_LEVELS - 1) +
 				   dith8[sy & 7][sx & 7]);
+#endif
 			if (sh < 0)
 				sh = 0;
 			if (sh > BALL_LEVELS - 1)
@@ -3311,7 +3385,13 @@ static void draw_ball(rect r)
 		int y = b_top + sy;
 		int a, b, n;
 		const unsigned short *op;
+#if BALL_FREEZE == 5
+		const unsigned short *mlp;
+		const int *dq;
+		int xx;
+#else
 		const unsigned char *shp;
+#endif
 		ball_px *dp;
 
 		if (y < r.y0 || y >= r.y1)
@@ -3327,11 +3407,31 @@ static void draw_ball(rect r)
 
 		n = a - b_left;
 		op = map_off + (long)sy * D + n;
+#if BALL_FREEZE == 5
+		mlp = map_lit + (long)sy * D + n;
+		dq = dith8q[y & 7];
+		xx = a;
+#else
 		shp = map_shade + (long)sy * D + n;
+#endif
 		dp = idx + (long)y * W + a;
 		n = b - a;
+#if BALL_FREEZE == 5
+		/* F5: the same threshold matrix, read at the pixel's place on
+		 * the SCREEN rather than at its place in the sphere map. No
+		 * clamp is needed and none is paid for: lit is already held to
+		 * [0, 1], so the Q8 level is at most 47*256 and the threshold
+		 * under 256, and the sum shifts down to at most 47. */
+		while (n-- > 0) {
+			int lv = ((int)*mlp++ + dq[xx++ & 7]) >> 8;
+
+			*dp++ = lut[lv * TEX_MAT_MAX +
+				    tp[(unsigned)*op++ + du]];
+		}
+#else
 		while (n-- > 0)
 			*dp++ = lut[*shp++ + tp[(unsigned)*op++ + du]];
+#endif
 	}
 }
 
@@ -4208,6 +4308,10 @@ int main(void)
 	map_off = (unsigned short *)b_alloc((long)D * D *
 					    (long)sizeof(unsigned short));
 	map_shade = (unsigned char *)b_alloc((long)D * D);
+#if BALL_FREEZE == 5
+	map_lit = (unsigned short *)b_alloc((long)D * D *
+					    (long)sizeof(unsigned short));
+#endif
 	run0 = (short *)b_alloc((long)D * (long)sizeof(short));
 	run1 = (short *)b_alloc((long)D * (long)sizeof(short));
 	tex_buf = (unsigned char *)b_alloc((long)TEX_MAX_BYTES);
@@ -4354,12 +4458,8 @@ int main(void)
 #if BALL_FREEZE
 	/* Three of these get run back to back on one machine; without this
 	 * line nobody can tell afterwards which log came from which. */
-	o_str("BALL: *** DIAGNOSTIC BUILD F");
-	o_dec((long)BALL_FREEZE);
-	o_str(" -- ball ");
-	o_str(BALL_MOVES ? "FLYING" : "STILL");
-	o_str(", texture ");
-	o_str(BALL_SPINS ? "TURNING" : "STILL");
+	o_str("BALL: *** DIAGNOSTIC BUILD ");
+	o_str(BALL_FREEZE_NAME);
 	o_str(". THIS IS NOT THE DEMO. ***");
 	o_out(1);
 #endif
@@ -4554,9 +4654,11 @@ int main(void)
 	} else if (scr.pages > 1) {
 		o_str("BALL: ");
 		o_dec((long)scr.pages);
-		o_str(" pages, so the FLIP is the presentation and is already "
-		      "whole: the blit stays where it was composed and cannot "
-		      "be seen half done");
+		o_str(" pages, so the FLIP is the presentation: the blit "
+		      "stays where it was composed and this program never "
+		      "writes a page that is being shown. Whether the flip "
+		      "ITSELF is whole is the platform's answer, not this "
+		      "program's -- on NewTOS it is not (see plat-newtos.c)");
 	} else {
 		o_str("BALL: one page and NO RETRACE to start from, so the "
 		      "blit cannot be placed against the beam at all -- "

@@ -217,6 +217,60 @@ fn caller_base_to_kva(addr: u64) -> Option<u64> {
 /// accepted for *any* value and ignored — no `REZ` shadow, no out-of-range
 /// rejection — mirroring EmuTOS silently ignoring a hardware-unsupported
 /// mode (`bios/screen.c:990-1013`). Always returns `0` (E_OK).
+///
+/// # KNOWN DEFECT — the physical base is applied at once, never latched
+///
+/// **A page flip through this call is not atomic, and no application can
+/// work around it.** `physLoc` takes effect the moment it is asked for:
+/// `set_screen_physical` reaches `vdi_backend::set_scanout_base`, which
+/// reaches `drivers::bcm2711::framebuffer::set_scanout_base` and issues a
+/// *synchronous* VideoCore mailbox property write (`set_virtual_offset`,
+/// tag `0x0004_8009`). Nothing anywhere holds the new base back until the
+/// next vertical blank — there is no pending-base register and no retrace
+/// interrupt to install one.
+///
+/// The consequence is structural rather than intermittent. `Vsync` only
+/// reports that the blank has *started*; what remains of it is short, and
+/// the mailbox round trip is not bounded inside it. So the scan-out address
+/// changes part-way down the visible picture and the frame is shown half
+/// from one page and half from the other. Note that this does not depend on
+/// the mailbox being slow: **even a free write applied immediately would
+/// tear**, because there is no latch at all. The latency only decides how
+/// far down the seam falls.
+///
+/// Observed on real hardware (Raspberry Pi 4, 2026-09-09) with the
+/// bouncing-ball demo's `F2` diagnostic build, which holds the ball still
+/// and turns only its texture: the changed region is then a fixed rectangle,
+/// so the seam stands still and is unmistakable. With the ball travelling
+/// the seam moves with the dirty rectangle every frame, which is why it went
+/// unremarked. The demo's platform half documents the same finding from the
+/// caller's side (`sdk/apps/ball/plat-newtos.c`, `plat_present`), and its log
+/// no longer claims a whole flip.
+///
+/// # What a repair needs, and what must be settled first
+///
+/// The shape is clear: remember the requested base and let the retrace
+/// install it, so `Setscreen` queues rather than applies. That is a
+/// kernel/XBIOS change — a pending-base slot, a vertical-blank interrupt
+/// that writes it, and a decision about what `Physbase` reports between the
+/// request and the blank.
+///
+/// Two things must come from the reference rather than from this symptom,
+/// and are deliberately **not** decided here:
+///
+/// 1. The exact timing contract TOS offers. On Atari hardware the video base
+///    registers are read by the shifter once per frame, which is what makes
+///    ST double buffering whole; the precise latching rule, and what
+///    `Physbase` is required to return while a flip is pending, must be
+///    taken from EmuTOS (`bios/screen.c`, `atari_setphys`) and the spec
+///    under `docs/api/xbios/05-setscreen.md`, not inferred from this bug.
+/// 2. Whether the BCM2711 can latch a scan-out change at the blank at all
+///    through the mailbox interface, or whether it needs the VideoCore's own
+///    vsync tag. That is a `docs/hardware/mailbox-framebuffer.md` question.
+///
+/// Nothing about the behaviour below is changed by this note; it records
+/// what the call does so the next person starts from the defect rather than
+/// from the symptom.
 pub fn setscreen(args: &TrapArgs) -> i64 {
     let log = args.arg_u64(0);
     let phys = args.arg_u64(1);
