@@ -110,8 +110,9 @@ fi
 # -DBALL_TRUECOLOR=1 is the one flag that separates this build from the TT's.
 # -funsigned-char matches the AArch64 build, so that ball.c's arithmetic on
 # texels means the same thing on both machines.
+# EXTRA_CFLAGS: see build-ball-tt.sh.
 CFLAGS=(-m68020-60 -O2 -fomit-frame-pointer -funsigned-char
-        -std=c99 -Wall -Wextra -DBALL_TRUECOLOR=1)
+        -std=c99 -Wall -Wextra -DBALL_TRUECOLOR=1 ${EXTRA_CFLAGS:-})
 INCS=(-I"$HERE" -I"$GEMTOP")
 
 echo "gcc  : $("$XCC" --version | head -1)"

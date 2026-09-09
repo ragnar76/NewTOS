@@ -66,10 +66,11 @@ READOBJ="$BIN/llvm-readobj"
 NM="$BIN/llvm-nm"
 [ -x "$LLD" ] || { echo "error: missing rust-lld ($LLD)" >&2; exit 1; }
 
+# EXTRA_CFLAGS: see build-ball-tt.sh.
 CFLAGS=(-target aarch64-unknown-none-elf -ffreestanding -nostdlib -O2
         -fomit-frame-pointer -fno-pic -fno-builtin -nostdinc -funsigned-char
         -std=c99 -Wall -Wextra -Werror
-        -D__NEWTOS__ -D_TOS_ONLY -Wno-macro-redefined)
+        -D__NEWTOS__ -D_TOS_ONLY -Wno-macro-redefined ${EXTRA_CFLAGS:-})
 INCS=(-I"$HERE" -I"$GEMTOP" -I"$MINT" -isystem "$RES")
 
 echo "clang: $($CLANG --version | head -1)"

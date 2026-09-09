@@ -109,8 +109,11 @@ fi
 # --- flags --------------------------------------------------------------------
 # -funsigned-char matches the AArch64 build, so that ball.c's arithmetic on
 # palette indices and texels means the same thing on both machines.
+# EXTRA_CFLAGS lets a caller add a compile-time switch without editing this
+# script -- build-ball-freeze.sh uses it for -DBALL_FREEZE. Empty by default,
+# and an empty expansion adds no argument at all.
 CFLAGS=(-m68020-60 -O2 -fomit-frame-pointer -funsigned-char
-        -std=c99 -Wall -Wextra)
+        -std=c99 -Wall -Wextra ${EXTRA_CFLAGS:-})
 INCS=(-I"$HERE" -I"$GEMTOP")
 
 echo "gcc  : $("$XCC" --version | head -1)"

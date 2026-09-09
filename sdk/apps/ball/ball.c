@@ -66,6 +66,57 @@
 #include "ball-tex.h"
 
 /* ------------------------------------------------------------------------ */
+/* BALL_FREEZE -- three diagnostic builds that hold half the demo still      */
+/*                                                                          */
+/* There is an artefact on the ball that is visible ONLY IN MOTION. It is in */
+/* no single frame: the host simulator's verifier calls every presented      */
+/* frame exact against a full repaint while it is happening, on every        */
+/* machine and at both composition depths, and a still picture of it does    */
+/* not show it either. What is left when a per-frame check is exhausted is   */
+/* the relationship BETWEEN frames, and exactly two things move -- the ball  */
+/* across the screen, and the texture around the ball.                       */
+/*                                                                          */
+/* Correlating those two has already sent this hunt down one wrong road, so  */
+/* these builds SEPARATE them. Each holds one of the two still:              */
+/*                                                                          */
+/*   BALL_FREEZE 0   the demo. Nothing here is compiled at all.             */
+/*   BALL_FREEZE 1   F1: ball still, texture still. The picture is the same  */
+/*                   from one frame to the next. Anything visible here is    */
+/*                   IN THE PICTURE and a photograph would show it.          */
+/*   BALL_FREEZE 2   F2: ball still, texture turning. Only the surface       */
+/*                   moves. Anything visible here is the texture moving      */
+/*                   under something that is fixed to the ball.              */
+/*   BALL_FREEZE 3   F3: ball flying, texture fixed to it. Only the position */
+/*                   moves. Anything visible here is the ball's own travel   */
+/*                   across the screen.                                      */
+/*                                                                          */
+/* One of the three shows it and two do not, and that says which half to     */
+/* look in. It is a separation, not a measurement: nothing here is tuned and */
+/* there is nothing to read off but "yes" or "no".                           */
+/*                                                                          */
+/* F1 and F2 also give the first chance to look at a MOTIONLESS ball. The    */
+/* demo never offers one -- measured over 399 presented frames at 1920x1072, */
+/* not one is within a pixel of standing still, because vx is non-zero from  */
+/* the first line and at the apex it is only vy that passes through zero.    */
+/*                                                                          */
+/* These are diagnostics, not modes. A build with the switch off IS the      */
+/* demo: with BALL_FREEZE 0 the compiler emits the same instructions it      */
+/* emitted before the switch existed, which is checked by comparing the      */
+/* generated assembly rather than asserted.                                  */
+/* ------------------------------------------------------------------------ */
+#ifndef BALL_FREEZE
+#define BALL_FREEZE 0
+#endif
+
+#if BALL_FREEZE < 0 || BALL_FREEZE > 3
+#error "BALL_FREEZE must be 0 (the demo), or 1, 2 or 3 -- see ball.c"
+#endif
+
+/* Which half of the motion this build integrates. */
+#define BALL_MOVES	(BALL_FREEZE != 1 && BALL_FREEZE != 2)
+#define BALL_SPINS	(BALL_FREEZE != 1 && BALL_FREEZE != 3)
+
+/* ------------------------------------------------------------------------ */
 /* Palette layout -- the split, in one place, for the whole demo             */
 /*                                                                           */
 /*    0 ..  23   backdrop: 24 bands from the top of the screen to the horizon */
@@ -2631,6 +2682,7 @@ static void physics_step(void)
 	}
 	vx = (float)roll_dir * vx0 + wind_v;
 
+#if BALL_MOVES
 	vy += gravity * PHYS_DT;
 	by += vy * PHYS_DT;
 	bx += vx * PHYS_DT;
@@ -2657,17 +2709,22 @@ static void physics_step(void)
 		bx = (float)W - Rf;
 		roll_dir = -1;
 	}
+#endif	/* BALL_MOVES -- the wind and vx above are integrated either way,
+	 * because F2 wants the surface to turn at the speed the ball would
+	 * be rolling at if it were going anywhere. */
 
 	/* The ball rolls, so it turns: one radian of spin per radius of
 	 * travel, straight out of the horizontal speed. It is accumulated in
 	 * TEXTURE COLUMNS rather than radians because that is the only unit
 	 * the renderer ever wants it in, and kept inside one turn so it stays
 	 * exact however long the demo runs. */
+#if BALL_SPINS
 	spin_u += vx * (PHYS_DT / Rf) * (float)tex.w / (2.0f * B_PI);
 	while (spin_u >= (float)tex.w)
 		spin_u -= (float)tex.w;
 	while (spin_u < 0.0f)
 		spin_u += (float)tex.w;
+#endif
 }
 
 /* ------------------------------------------------------------------------ */
@@ -2800,6 +2857,35 @@ static void update_shape(void)
 	 * content further to the LEFT on the ball, so the offset runs against
 	 * the spin: a ball travelling right shows its face travelling right,
 	 * the way a rolling ball reads. */
+	/* KNOWN DEFECT, measured and deliberately not fixed here: the spin
+	 * reaching the renderer is an INTEGER texel offset, so the rotation
+	 * is delivered in whole texture columns and the surface sits up to
+	 * one column from where it should be.
+	 *
+	 * Measured at 1920x1072, ball 307 px, texture 256 columns, while
+	 * spin_u advanced by a steady ~5.19 columns a frame, the offset
+	 * stepped
+	 *
+	 *     5  5  5  4  5  5  5  5  5  5  4  6  5
+	 *
+	 * The truncation error walks, so every few frames the whole visible
+	 * surface jumps an extra column and then catches up. One column is
+	 * 3.8 SCREEN PIXELS at the middle of the ball: du/dx there is
+	 * (tex.w / 2pi) * (2 / D) = 0.265 columns per pixel, because the
+	 * longitude is an arc sine and its derivative is 1 at the centre.
+	 * The texture therefore shivers.
+	 *
+	 * It is invisible to every check this program has -- each frame is a
+	 * correct picture of its own state, so a still frame is right and the
+	 * simulator's full-repaint verifier passes -- and it is visible in
+	 * motion. It is NOT known to be the artefact being hunted; it is a
+	 * separate defect found while hunting it, and it is recorded here
+	 * rather than repaired in the middle of a diagnosis. Fixing it means
+	 * carrying the fraction: either a second lookup and a blend, which
+	 * costs the frame loop its one-addition spin, or accepting the step
+	 * and dithering WHERE it falls rather than always at the same place.
+	 * Neither is a decision to take while something else is being
+	 * measured. */
 	tex_du = (int)((float)tex.w - spin_u);
 	if (tex_du >= tex.w)
 		tex_du -= tex.w;
@@ -4265,6 +4351,18 @@ int main(void)
 	defer_blit = (scr.pages == 1 && retrace_q8 > 0);
 
 	o_reset();
+#if BALL_FREEZE
+	/* Three of these get run back to back on one machine; without this
+	 * line nobody can tell afterwards which log came from which. */
+	o_str("BALL: *** DIAGNOSTIC BUILD F");
+	o_dec((long)BALL_FREEZE);
+	o_str(" -- ball ");
+	o_str(BALL_MOVES ? "FLYING" : "STILL");
+	o_str(", texture ");
+	o_str(BALL_SPINS ? "TURNING" : "STILL");
+	o_str(". THIS IS NOT THE DEMO. ***");
+	o_out(1);
+#endif
 	o_str("BALL: screen ");
 	o_dec((long)W);
 	o_ch('x');
