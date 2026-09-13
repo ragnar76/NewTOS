@@ -1,0 +1,101 @@
+M05 -- the addr_in column: a case table can hand an AES call a POINTER.
+Taken 2026-09-12.  MEASUREMENT ONLY: this directory states what ran and what
+came back.  The reading of the differences belongs to whoever builds the big
+table this capability is for.
+
+WHAT WAS ADDED
+  An optional EIGHTH column for AES case tables, declared per table with
+  "!columns 8", which names one of the DUMPER'S OWN BUFFERS by number instead
+  of an address -- the way cases/vdi-raster.tsv already names its two pixel
+  buffers.  Format, buffers and the record rule: docs/TOS-REFERENCE-DUMPER.md
+  section 6 and tosdump/core/cases.h.
+
+TABLE
+  file        tosdump/cases/aes-m05-addrin.tsv
+  cases       5
+  preludes    5
+  columns     8
+  CRC32       215A9E48
+  SHA-256     2673c8c095716974f588630cbb932eaafec7d32500f2bc0622aef93681dad0b9
+  size        6251 bytes, 109 lines, pure LF, ASCII
+  reset       !reset wind_new
+  checked by  tosdump/host/build/casecheck --aes  -> exit 0, accepted
+  dump size   32 byte header + 5 x 120 = 632 bytes
+
+  Written once.  The case id is the physical line number and the CRC binds
+  both dumps below to this exact file; any later edit invalidates them.
+
+SOURCE OF TRUTH
+  references/emutos @ 1a7484aba1bfba23e2c0899e243b6d8177fe41df
+  NewTOS work tree  @ 70caee212078b11ffa0a70afa1279bdd82532959
+                      (plus the uncommitted strands in the tree, including
+                       the A54 change to wind_get(WF_SCREEN) -- see
+                       BACKCOMPAT.TXT, which is where it shows)
+
+RUN A -- EmuTOS 1.4 on an Atari TT, via Hatari
+  emulator    /Users/ingouhlemann/Downloads/hatari-2.6.1_macos/Hatari.app/Contents/MacOS/Hatari (2.6.1)
+  ROM         etos512de.img, SHA-256 5805c0a4834f8935c427454785d32c59e796b11ad6802101052b84fb1eb7a745
+  command     SDL_VIDEODRIVER=dummy Hatari --machine tt --tos etos512de.img \
+                --tos-res ttmed --monitor vga --sound off --fast-forward on \
+                --run-vbls 20000 --conout 2 -d <workdir> --gemdos-drive C \
+                --auto 'C:\DUMPAES.PRG'
+  dumper      tosdump/build/DUMPAES.PRG, build id 70ca
+  dumper SHA  c0780abc04ef2021a824db0406509b892bae407fc49a6cdf2b7dcc9379baa552
+  speed       371.8 VBL/s (20000 VBL in 53.8 s wall)
+  log         "AES.TSV: 5 cases, CRC 215A9E48" / "all 5 cases ran" /
+              "AES.BIN: 5 records, 632 bytes"
+  appl_init   id 0, graf_handle 1, v_opnvwk 2, ap_version 0340, ap_planes 4
+  validate    tosdiff --validate ... -> accepted
+  artefacts   emutos14-tt-hatari/EMUTOS14-AES-m05.{BIN,LOG}, HATARI-STDOUT.txt
+
+RUN B -- NewTOS on QEMU raspi4b, headless, 640x480
+  kernel      kernel8.img, built fresh for this run (dev profile)
+  kernel SHA  5f4355b55b9998e6658b67f6ade1bb32406cda92289858fcfb291d057e8dcc2e
+  dumper      tosdump/build/DUMPAES.NAP, build id 70ca
+  dumper SHA  ac44fbf7814edfd9909ec8fa601dc9425b8dca680a38df7923ed7ffc2c562764
+  card        FAT16 image from tools/make-sd-image.sh <img> 64, with
+              C:\DUMPAES.NAP, C:\AES.TSV (a byte-identical copy of the table)
+              and C:\NEWDESK.INF = "#Z 01 C:\DUMPAES.NAP@"
+  command     qemu-system-aarch64 -M raspi4b -no-reboot -display none \
+                -serial file:<log> -kernel kernel8.img \
+                -drive file=<img>,if=sd,format=raw
+  log         "AES.TSV: 5 cases, CRC 215A9E48" / "all 5 cases ran" /
+              "AES.BIN: 5 records, 632 bytes"
+  appl_init   id 1, graf_handle 1, v_opnvwk 2, ap_version 0340, ap_planes 16
+  boot log    no panic, no fault, no exception; rc=0 from the shell
+  validate    tosdiff --validate ... -> accepted
+  artefacts   newtos-qemu-raspi4b/NEWTOS-AES-m05.{BIN,LOG}, BOOT-SERIAL.txt
+
+NEITHER RUN BLOCKED.  No alert box, no key wait, no hang, no panic.  No QEMU
+and no Hatari process was left running (pgrep after each: empty).
+
+WHAT CAME BACK -- numbers only
+  tosdiff -> DIFF-emutos-vs-newtos-640x480.txt, "5 of 5 cases differ"
+
+  Every case differs in global[] alone -- ap_id, ap_private, ap_planes and the
+  two LONG halves around them, the same six words that differ in every case of
+  every round so far.  Exactly ONE case differs anywhere else:
+
+    case 102  wind_get WF_NAME on a window that HAS a title
+              int_out[0]  EmuTOS 0   NewTOS 1
+
+  That is TASK/A42.md, reached by measurement for the first time.  The
+  companion case 109 -- the same call on a window with NO title -- answers 0 on
+  both, so the difference is the WF_NAME arm and not the window.
+
+  The two appl_find cases (93, 94) answer -1 on both machines and record the
+  buffer token B0FF0000 / B0FF0001 in addr_in[0], with addr_in[1..2] still
+  0xDEADDEAD.  That pair is the proof that the pointer really arrived: with a
+  poisoned one the TT's strncmp would not have come back.
+
+THE POINTER WALL THAT REMAINS
+  * A measured case can only carry a pointer in addr_in.  The classic binding
+    packs it into the int_in WORDS, whose footprint is two WORDs on the m68k
+    and four on AArch64 -- and int_in is recorded.  Such a plant is therefore
+    a PRELUDE-only form (which is how case 102's title gets set).
+  * The 120 byte AES record has no room for a buffer's CONTENTS.  A call whose
+    only effect is what it wrote into the buffer is still measurable only
+    through its return code.  Recording the buffer means a bigger record, and
+    a bigger record invalidates every dump already taken.
+  * Nothing here changes what the opcode guard refuses (core/cases.c).  The
+    only guard arm the buffer re-opens is WF_NAME / WF_INFO.

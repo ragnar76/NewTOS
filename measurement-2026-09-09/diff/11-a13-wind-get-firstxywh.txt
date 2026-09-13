@@ -1,0 +1,532 @@
+======================================================================
+11-a13-wind-get-firstxywh.txt -- TASK/A13, wind_get WF_FIRSTXYWH
+======================================================================
+Erzeugt 2026-09-10. Nur lesende Auswertung; keine eingefrorene Datei
+angefasst, keine .rs-Datei im Baum geaendert.
+
+Erzeugende Befehle
+------------------
+  $ ./tosdump/host/build/tosdiff --validate \
+        measurement-2026-09-09/run3-pi4-rlist/AES.BIN \
+        tosdump/cases/aes-r2b-rlist.tsv
+  $ ./tosdump/host/build/tosdiff --validate \
+        tosdump/reference/EMUTOS14-AES-r2brlist.BIN \
+        tosdump/cases/aes-r2b-rlist.tsv
+  $ shasum -a 256 <BIN/LOG/TSV, siehe unten>
+  $ python3 <eigener, rein lesender Recordleser im Scratch>   # Rohwoerter
+  $ cargo test -p tos-api --test zz_audit_a13_tmp -- --nocapture --test-threads=1
+        # temporaerer Testaufsatz, nach der Auswertung geloescht
+
+Quellen
+-------
+  EmuTOS gepinnt: references/emutos @ 1a7484aba1bfba23e2c0899e243b6d8177fe41df
+                  = git describe VERSION_1_4-71-g1a7484ab
+                  git diff VERSION_1_4..1a7484ab -- aes/gemwmlib.c aes/gemwrect.c
+                  aes/gemsuper.c aes/gemgraf.c util/rectfunc.c
+                  => nur ein Zusatz: der WF_OWNER-Arm gemwmlib.c:1578-1590.
+                  Alles, was A13 braucht (w_owns, w_setup, wm_get-Kopf,
+                  newrect/mkrect/brkrct/mkpiece, xif, gl_rfull, rc_intersect),
+                  ist gegenueber der gemessenen 1.4 unveraendert.
+  Spezifikation:  docs/api/aes/window-graphics.md
+  Umsetzung:      tos-api/src/aes/window.rs, tos-api/src/aes/mod.rs
+
+Validierung
+-----------
+  AES.BIN: area AES, 15 records of 120 bytes, build 70ca, case CRC B4CC4A5A
+  AES.BIN: matches aes-r2b-rlist.tsv (15 cases)
+  AES.BIN: accepted
+  EMUTOS14-AES-r2brlist.BIN: area AES, 15 records of 120 bytes, build c911, case CRC B4CC4A5A
+  EMUTOS14-AES-r2brlist.BIN: matches aes-r2b-rlist.tsv (15 cases)
+  EMUTOS14-AES-r2brlist.BIN: accepted
+
+SHA-256
+-------
+  e0280b7de761d38228fbeb3dd3c1f898ff2485e35ddb3cc41fe91658396580d6  measurement-2026-09-09/run3-pi4-rlist/AES.BIN
+  9dd6c3a14d67d8350bf7417bc5c96dd87bdc4a27a0a335c6920d8bfd112dd69d  measurement-2026-09-09/run3-pi4-rlist/AES.LOG
+  e7ef0a275eccc95207673434a2e9a3fa150bf4c28d0ee4f79cbdb44055da0f72  tosdump/reference/EMUTOS14-AES-r2brlist.BIN
+  2a4b1b7cc24f5b0ac4a1b4678be2182c58d1afaa9af63f184793d71d9e2ac92e  tosdump/reference/EMUTOS14-AES-r2brlist.LOG
+  e7ef0a275eccc95207673434a2e9a3fa150bf4c28d0ee4f79cbdb44055da0f72  measurement-2026-09-09/reference-tt/EMUTOS14-AES-r2brlist.BIN
+  a81a7a6cd5fc4b95cd88b969e573e24ac726ed24e747e409b83c8f57d5a2ea2a  tosdump/cases/aes-r2b-rlist.tsv
+  a81a7a6cd5fc4b95cd88b969e573e24ac726ed24e747e409b83c8f57d5a2ea2a  measurement-2026-09-09/cases/aes-r2b-rlist.tsv
+
+  Tabelle in tosdump/cases/ und Laufkopie in measurement-2026-09-09/cases/
+  sind identisch (a81a7a6c...); die TT-Referenz und ihre Arbeitskopie
+  ebenfalls (e7ef0a27...).
+
+Laufkoepfe
+----------
+  Pi   DUMPAES build 70ca, record format 2
+  Pi   AES.TSV: 15 cases, CRC B4CC4A5A
+  Pi   appl_init id 2, graf_handle 1, v_opnvwk handle 3
+  Pi   global after appl_init 832,1,2,4475,0,0,0,0,0,0,16,13120,18,0,0
+  Pi   ap_version 0340, ap_count 1, ap_id 2, ap_planes 16
+  Pi   running 15 cases
+  Pi   all 15 cases ran
+  Pi   AES.BIN: 15 records, 1832 bytes
+  TT   DUMPAES build c911, record format 2
+  TT   AES.TSV: 15 cases, CRC B4CC4A5A
+  TT   appl_init id 0, graf_handle 1, v_opnvwk handle 2
+  TT   global after appl_init 832,1,0,0,4419,0,0,0,0,0,4,0,-16892,0,0
+  TT   ap_version 0340, ap_count 1, ap_id 0, ap_planes 4
+  TT   running 15 cases
+  TT   all 15 cases ran
+  TT   AES.BIN: 15 records, 1832 bytes
+
+======================================================================
+Fallzuordnung der eingefrorenen Tabelle (Fall-ID = physische Zeile)
+======================================================================
+  FIRST (WF_FIRSTXYWH, int_in[1] = 11)  -> A13:  122 144 159 189 201 208 226 230
+  NEXT  (WF_NEXTXYWH,  int_in[1] = 12)  -> A14/A15: 127 133 166 174 183 204 213
+
+  Von den zehn in 07-aes-r2brlist-ohne-globals.txt abweichenden Faellen
+  (127 133 144 166 174 183 201 204 208 213) sind FIRST-Faelle und damit
+  A13: 144, 201, 208. Die uebrigen sieben bleiben hier unbewertet.
+
+======================================================================
+Istwerte feldweise
+======================================================================
+field-by-field, the eight FIRST cases (int_out[0] = ret, [1..4] = g_x,g_y,g_w,g_h)
+
+ case      in  OUT | machine     ret     g_x     g_y     g_w     g_h     [5]     [6]
+  122    1,11    5 | TT             1      31      63     296     194  POISON  POISON
+  122    1,11    5 | Pi 4           1      31      63     296     194  POISON  POISON
+                   | byte diffs total=10, outside global[]=[]
+
+  144    1,11    5 | TT             1      31      63       0       0  POISON  POISON
+  144    1,11    5 | Pi 4           1       0       0       0       0  POISON  POISON
+                   | byte diffs total=12, outside global[]=[79, 81]
+
+  159    1,11    5 | TT             1      31      63     296      17  POISON  POISON
+  159    1,11    5 | Pi 4           1      31      63     296      17  POISON  POISON
+                   | byte diffs total=10, outside global[]=[]
+
+  189    2,11    5 | TT             1      61     103     176     114  POISON  POISON
+  189    2,11    5 | Pi 4           1      61     103     176     114  POISON  POISON
+                   | byte diffs total=10, outside global[]=[]
+
+  201    0,11    5 | TT             1       0      19     640     461  POISON  POISON
+  201    0,11    5 | Pi 4           1       0      19    1920    1061  POISON  POISON
+                   | byte diffs total=13, outside global[]=[82, 84, 85]
+
+  208    0,11    5 | TT             1       0      19     640      21  POISON  POISON
+  208    0,11    5 | Pi 4           1       0      19    1920      21  POISON  POISON
+                   | byte diffs total=11, outside global[]=[82]
+
+  226    1,11    1 | TT             1  POISON  POISON  POISON  POISON  POISON  POISON
+  226    1,11    1 | Pi 4           1  POISON  POISON  POISON  POISON  POISON  POISON
+                   | byte diffs total=10, outside global[]=[]
+
+  230    1,11    3 | TT             1      31      63  POISON  POISON  POISON  POISON
+  230    1,11    3 | Pi 4           1      31      63  POISON  POISON  POISON  POISON
+                   | byte diffs total=10, outside global[]=[]
+
+all fifteen records, int_out[0..4], for context (NEXT cases belong to A14/A15)
+
+ case      in  OUT | TT                                 | Pi 4                              
+  122    1,11    5 |      1     31     63    296    194 |      1     31     63    296    194  FIRST
+  127    1,12    5 |      1     31     63      0      0 |      1      0      0      0      0  next 
+  133    1,12    5 |      1     31     63      0      0 |      1      0      0      0      0  next 
+  144    1,11    5 |      1     31     63      0      0 |      1      0      0      0      0  FIRST
+  159    1,11    5 |      1     31     63    296     17 |      1     31     63    296     17  FIRST
+  166    1,12    5 |      1     31     80     29    162 |      1     31    240    296     17  next 
+  174    1,12    5 |      1    262     80     65    162 |      1     31     80     29    160  next 
+  183    1,12    5 |      1     31    242    296     15 |      1    260     80     67    160  next 
+  189    2,11    5 |      1     61    103    176    114 |      1     61    103    176    114  FIRST
+  201    0,11    5 |      1      0     19    640    461 |      1      0     19   1920   1061  FIRST
+  204    0,12    5 |      1      0     19      0      0 |      1      0      0      0      0  next 
+  208    0,11    5 |      1      0     19    640     21 |      1      0     19   1920     21  FIRST
+  213    0,12    5 |      1      0     40     30    242 |      1      0    280   1920    800  next 
+  226    1,11    1 |      1 POISON POISON POISON POISON |      1 POISON POISON POISON POISON  FIRST
+  230    1,11    3 |      1     31     63 POISON POISON |      1     31     63 POISON POISON  FIRST
+
+======================================================================
+Soll je Fall, mit EmuTOS-Beleg
+======================================================================
+
+Der Pfad, einmal vollstaendig:
+
+  gemsuper.c:342-344   WIND_GET -> wm_get(WM_HANDLE, WM_WFIELD, &WM_OX, &WM_IX)
+                       poutwds == &int_out[1] (aesdefs.h)
+  gemwmlib.c:1505-1524 wm_get-Kopf: pwin = get_pwin(handle); nur WF_TOP,
+                       WF_SCREEN und WF_DCOLOR ueberspringen die Pruefung,
+                       jedes andere Feld faellt in
+                         default: if (!pwin) return FALSE;      (:1521-1523)
+  gemwmlib.c:1556-1562 der FIRST/NEXT-Arm:
+                         w_getsize(WS_WORK, w_handle, &t);
+                         po = (w_field == WF_FIRSTXYWH) ? pwin->w_rlist
+                                                        : pwin->w_rnext;
+                         w_owns(pwin, po, &t, (GRECT *)poutwds);
+  gemwmlib.c:1230-1241 w_owns: while (po) { rc_copy(&po->o_gr, poutwds);
+                       pwin->w_rnext = po = po->o_link;
+                       if (rc_intersect(pt, poutwds)) return; }
+                       poutwds->g_w = poutwds->g_h = 0;          (:1240)
+  util/rectfunc.c:63-78 rc_intersect schreibt ALLE VIER Woerter von p2, auch
+                       wenn es FALSE liefert (:72-75)
+  gemsuper.c:428-448   xif: WORD int_out[O_SIZE] ist eine NICHT INITIALISIERTE
+                       lokale Variable (:432); zurueckkopiert werden genau
+                       OUT_LEN Woerter (:444-445); RET_CODE == int_out[0]
+                       (include/aesdefs.h:140), O_SIZE == 7 (:123)
+
+Daraus folgt die Regel, die A13 zu pruefen hatte:
+  * Am Listenende schreibt w_owns ZWEI Woerter, nicht vier. g_x und g_y
+    behalten, was der lokale Stapelpuffer von xif enthielt -- also einen
+    unbestimmten Wert, KEINEN nachbildbaren.
+  * Welches Rechteck FIRST liefert, ist die Reihenfolge der Eigenrechteck-
+    liste: mkpiece TOP=0, LEFT=1, RIGHT=2, BOTTOM=3 (gemwrect.c:30-33,
+    64-98), eingehaengt in genau dieser Reihenfolge (gemwrect.c:118-122
+    ueber den Pseudoknoten p = &pwin->w_rlist, :147-148).
+  * Das brechende Rechteck ist WS_TRUE, also curr + DROP_SHADOW_SIZE
+    (gemwrect.c:190 und :203, w_getsize gemwmlib.c:254-262,
+    DROP_SHADOW_SIZE == 2 gemwmlib.c:49).
+
+Fall 122 -- FIRST, offenes unverdecktes Fenster
+  Zustand: EIN Rechteck. newrect legt fuer das gerade geoeffnete Fenster
+  genau ein ORECT an (gemwrect.c:200-204).
+  Soll: WS_WORK des Fensters. wm_calc(WC_WORK, 0x0FEF, 30,40,320,240) mit
+  3D-Objekten: lb=1, tb=bb=rb=adj_hbox bzw. adj_wbox = 23
+  (gemwmlib.c:1815-1840, adj_* = gl_?box + 2*ADJ3DSTD, :1311-1312,
+  ADJ3DSTD=2 include/obdefs.h:136) -> 31,63,296,194.
+  Ist: TT 1,31,63,296,194 -- Pi 1,31,63,296,194. GLEICH.
+  Klasse: font- und aspektabhaengig, aber auf beiden Maschinen identisch
+  (gl_hbox = gl_hchar+3 = 19, gemgraf.c:412; gl_wbox = 19, :413-415).
+  Gleichheit war gefordert und liegt vor.
+
+Fall 144 -- FIRST, erzeugtes aber nie geoeffnetes Fenster
+  Zustand: LEERE Liste. Der Reset wind_new ruft wm_close+wm_delete
+  (gemwmlib.c:1875-1893); wm_delete ruft newrect (:1476), dort ist
+  WS_TRUE bereits 0,0,0,0, also greift der Fruehausstieg
+  (gemwrect.c:189-192) und w_rlist bleibt NULL (:184). wm_create setzt
+  w_rlist nicht (w_setup :205-228, wm_create :1370-1385).
+  Soll: ret TRUE, g_w = g_h = 0, g_x und g_y UNGESCHRIEBEN und damit
+  unbestimmt (gemwmlib.c:1240 + gemsuper.c:432).
+  Ist: TT 1,31,63,0,0 -- Pi 1,0,0,0,0.
+  Die 31,63 des TT sind der Stapelrest des vorangehenden AES-Aufrufs; das
+  ist ueber alle fuenfzehn Records widerspruchsfrei: 127 und 133 tragen
+  die 31,63 des FIRST-Preludes, 204 die 0,19 des Desktop-FIRST-Preludes.
+  Bewertung: die drei bestimmten Woerter (ret, g_w, g_h) sind gleich. Fuer
+  g_x/g_y gibt es kein Soll, also nichts nachzubilden -- hinnehmbare
+  Abweichung, KEIN Defekt. Ausdruecklich nicht "die 0 ist auch richtig",
+  sondern: EmuTOS legt hier keinen Wert fest.
+
+Fall 159 -- FIRST, unteres Fenster teilweise verdeckt
+  Zustand: VIER Stuecke; FIRST liefert das erste.
+  Soll: TOP-Stueck. mkpiece(TOP): g_x=30, g_w=322 (mit Schatten), g_y=40,
+  g_h = new.y-old.y = 40 -> (30,40,322,40); geschnitten mit
+  WS_WORK 31,63,296,194 -> 31,63,296,17.
+  Ist: TT 1,31,63,296,17 -- Pi 1,31,63,296,17. GLEICH.
+  Wichtig und ehrlich: die Gleichheit ist hier UNABHAENGIG von den beiden
+  unten belegten Defekten. Das TOP-Stueck steht in beiden Reihenfolgen
+  vorn, und der Schatten liegt rechts und unten, beruehrt das TOP-Stueck
+  also nicht. Der Fall belegt daher nicht, dass die Zerlegung stimmt.
+
+Fall 189 -- FIRST, oberstes Fenster
+  Zustand: EIN Rechteck (nichts liegt darueber).
+  Soll: WS_WORK von Fenster 2, wm_calc(WC_WORK, 0x0FEF, 60,80,200,160)
+  -> 61,103,176,114.
+  Ist: TT 1,61,103,176,114 -- Pi 1,61,103,176,114. GLEICH.
+
+Fall 201 -- FIRST des Desktops, nichts offen
+  Zustand: EIN Rechteck.
+  Soll: gl_rfull = (0, gl_hbox, gl_width, gl_height-gl_hbox)
+  (gemgraf.c:424). WS_WORK des Desktopfensters ist gl_rfull
+  (gemwmlib.c:1294), das Desktoprechteck selbst gl_rscreen
+  (:1291); der Schnitt ist gl_rfull.
+  Ist: TT 1,0,19,640,461 -- Pi 1,0,19,1920,1061.
+  Klasse: GERAETEPARAMETER, und zwar genau in gl_width/gl_height.
+  gl_hbox = 19 ist eine Fontmetrik und auf beiden Maschinen gleich, was
+  die Messung an g_y=19 beidseitig bestaetigt.
+  Nachgefahren, nicht nur behauptet: unsere Umsetzung liefert im
+  Hostharness bei 640x480/4 Planes exakt 1,0,19,640,461 -- also den
+  TT-Wert. Die 1920/1061 sind mithin der korrekt mitskalierte Wert
+  desselben Ausdrucks, keine Abweichung.
+
+Fall 208 -- FIRST des Desktops mit einem offenen Fenster
+  Zustand: MEHRERE Stuecke; FIRST liefert das erste.
+  Soll: TOP-Stueck des Desktoprechtecks, gebrochen mit WS_TRUE von
+  Fenster 1 (30,40,322,242): g_y = 19 bzw. 0 je nachdem, ob die Liste
+  noch die gl_rfull-Fassung aus wm_init (:1287-1289) ist oder von
+  newrect aus gl_rscreen+Schatten neu gebaut wurde -- everyobj laeuft ab
+  ROOT und trifft Handle 0 mit (gemobjop.c:76-100, Aufruf
+  gemwmlib.c:1089). Beide Lesarten ergeben nach dem Schnitt mit
+  WS_WORK(0) = gl_rfull dasselbe: (0, 19, gl_width, 40-19).
+  Ist: TT 1,0,19,640,21 -- Pi 1,0,19,1920,21.
+  Klasse: GERAETEPARAMETER in g_w. g_h = 21 = 40-19 ist aus dem Argument
+  des Preludes abgeleitet und beidseitig gleich.
+  Nachgefahren: Hostharness bei 640x480 liefert 1,0,19,640,21.
+
+Fall 226 -- FIRST mit OUT_LEN 1
+  Soll: xif kopiert genau ein Wort zurueck (gemsuper.c:444-445), das
+  Rechteck bleibt beim Aufrufer Poison.
+  Ist: TT 1,POISON,POISON,POISON,POISON -- Pi identisch. GLEICH.
+
+Fall 230 -- FIRST mit OUT_LEN 3
+  Soll: drei Woerter, also ret + g_x + g_y; g_w und g_h bleiben Poison.
+  Ist: TT 1,31,63,POISON,POISON -- Pi identisch. GLEICH.
+
+======================================================================
+Hostlauf: gefahrene Grenzfaelle (640x480 / 4 Planes, wie der TT)
+======================================================================
+Wichtig: fuer diese Eingaben gibt es KEINEN TT-Record. Der Istwert ist
+gemessen (unsere Umsetzung), das Soll ist aus der Quelle abgeleitet.
+  running 2 tests
+  test a13_first_adversarial ... A invalid handle 1 FIRST                                   ret=1 rect=(0, 0, 0, 0) tail=(POISON, POISON)
+  A invalid handle 3 FIRST                                   ret=1 rect=(0, 0, 0, 0) tail=(POISON, POISON)
+  A invalid handle 15 FIRST                                  ret=1 rect=(0, 0, 0, 0) tail=(POISON, POISON)
+  A invalid handle 16 FIRST                                  ret=1 rect=(0, 0, 0, 0) tail=(POISON, POISON)
+  A invalid handle 99 FIRST                                  ret=1 rect=(0, 0, 0, 0) tail=(POISON, POISON)
+  A invalid handle 32767 FIRST                               ret=1 rect=(0, 0, 0, 0) tail=(POISON, POISON)
+  A invalid handle -1 FIRST                                  ret=1 rect=(0, 0, 0, 0) tail=(POISON, POISON)
+  A invalid handle -32768 FIRST                              ret=1 rect=(0, 0, 0, 0) tail=(POISON, POISON)
+  B FIRST after wind_close (in use, not open)                ret=1 rect=(0, 0, 0, 0) tail=(POISON, POISON)
+  C FIRST fully covered window                               ret=1 rect=(0, 0, 0, 0) tail=(POISON, POISON)
+  D FIRST covered exactly on the work area                   ret=1 rect=(0, 0, 0, 0) tail=(POISON, POISON)
+  E FIRST desktop fully covered                              ret=1 rect=(0, 0, 0, 0) tail=(POISON, POISON)
+  F FIRST kind NONE                                          ret=1 rect=(31, 41, 318, 238) tail=(POISON, POISON)
+  G FIRST OUT_LEN 0                                          ret=POISON rect=(POISON, POISON, POISON, POISON) tail=(POISON, POISON)
+  G FIRST OUT_LEN 1                                          ret=1 rect=(POISON, POISON, POISON, POISON) tail=(POISON, POISON)
+  G FIRST OUT_LEN 2                                          ret=1 rect=(31, POISON, POISON, POISON) tail=(POISON, POISON)
+  G FIRST OUT_LEN 3                                          ret=1 rect=(31, 63, POISON, POISON) tail=(POISON, POISON)
+  G FIRST OUT_LEN 4                                          ret=1 rect=(31, 63, 296, POISON) tail=(POISON, POISON)
+  G FIRST OUT_LEN 5                                          ret=1 rect=(31, 63, 296, 194) tail=(POISON, POISON)
+  G FIRST OUT_LEN 6                                          ret=1 rect=(31, 63, 296, 194) tail=(0, POISON)
+  G FIRST OUT_LEN 7                                          ret=1 rect=(31, 63, 296, 194) tail=(0, 0)
+  H FIRST IN_LEN 0                                           ret=1 rect=(31, 63, 296, 194) tail=(POISON, POISON)
+  H FIRST IN_LEN 1                                           ret=1 rect=(31, 63, 296, 194) tail=(POISON, POISON)
+  I FIRST repeated, round 0                                  ret=1 rect=(31, 63, 296, 17) tail=(POISON, POISON)
+  I FIRST repeated, round 1                                  ret=1 rect=(31, 63, 296, 17) tail=(POISON, POISON)
+  J FIRST on window 2 in between                             ret=1 rect=(61, 103, 176, 114) tail=(POISON, POISON)
+  J FIRST on window 1 again                                  ret=1 rect=(31, 63, 296, 17) tail=(POISON, POISON)
+  K1 FIRST no TOP piece (EmuTOS: RIGHT = 232,63,95,79)       ret=1 rect=(31, 140, 296, 117) tail=(POISON, POISON)
+  K2 FIRST only RIGHT piece (EmuTOS: 202,63,125,194)         ret=1 rect=(200, 63, 127, 194) tail=(POISON, POISON)
+  K3 FIRST desktop, window top-left (EmuTOS: 322,19,318,242) ret=1 rect=(0, 259, 640, 221) tail=(POISON, POISON)
+  ok
+  test a13_first_cases_against_tt ... 122 FIRST open unobstructed                                ret=1 rect=(31, 63, 296, 194) tail=(POISON, POISON)
+  122 TT                                                     [1, 31, 63, 296, 194, -8531, -8531]
+  144 FIRST created-not-opened                               ret=1 rect=(0, 0, 0, 0) tail=(POISON, POISON)
+  144 TT                                                     [1, 31, 63, 0, 0, -8531, -8531]
+  159 FIRST lower window, partly covered                     ret=1 rect=(31, 63, 296, 17) tail=(POISON, POISON)
+  159 TT                                                     [1, 31, 63, 296, 17, -8531, -8531]
+  189 FIRST top window                                       ret=1 rect=(61, 103, 176, 114) tail=(POISON, POISON)
+  189 TT                                                     [1, 61, 103, 176, 114, -8531, -8531]
+  201 FIRST desktop, nothing open                            ret=1 rect=(0, 19, 640, 461) tail=(POISON, POISON)
+  201 TT                                                     [1, 0, 19, 640, 461, -8531, -8531]
+  208 FIRST desktop with one window open                     ret=1 rect=(0, 19, 640, 21) tail=(POISON, POISON)
+  208 TT                                                     [1, 0, 19, 640, 21, -8531, -8531]
+  226 FIRST OUT_LEN 1                                        ret=1 rect=(POISON, POISON, POISON, POISON) tail=(POISON, POISON)
+  226 TT                                                     [1, -8531, -8531, -8531, -8531, -8531, -8531]
+  230 FIRST OUT_LEN 3                                        ret=1 rect=(31, 63, POISON, POISON) tail=(POISON, POISON)
+  230 TT                                                     [1, 31, 63, -8531, -8531, -8531, -8531]
+  ok
+  
+  test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.12s
+  
+
+======================================================================
+Befunde, nach Schwere
+======================================================================
+
+D-A13-1  FIRST liefert TRUE fuer ein ungueltiges Handle          BELEGT
+---------------------------------------------------------------------
+  EmuTOS: aes/gemwmlib.c:1513 pwin = get_pwin(w_handle) (:1391-1404,
+          NULL wenn Handle ausserhalb 0..NUM_WIN-1 oder ohne VF_INUSE),
+          :1515-1524 nur WF_TOP/WF_SCREEN/WF_DCOLOR ueberspringen die
+          Pruefung, WF_FIRSTXYWH (11) faellt in
+          default: if (!pwin) return FALSE;  (:1521-1523).
+          poutwds bleibt dabei unberuehrt.
+  NewTOS: tos-api/src/aes/window.rs:1999-2010. Der FIRST/NEXT-Arm steht
+          VOR jeder Handlepruefung; compute_rlist -> work_rects
+          (:1110-1113) liefert bei win(handle)==None die Stueckzahl 0,
+          rlist_next (:1142-1155) gibt Grect::default() zuruck, und
+          :2004-2008 schreibt vier Nullen und ret = 1.
+  Spec:   docs/api/aes/window-graphics.md:327-329 sagt bereits das
+          Richtige ("every other field returns FALSE if the handle is
+          invalid"). Die Spezifikation ist hier nicht schuld.
+  Fehlerfall: wind_get(3, WF_FIRSTXYWH) auf ein nie erzeugtes Handle
+          -> NewTOS int_out[0] = 1, EmuTOS = 0. Gemessen fuer alle
+          getesteten Handles 1, 3, 15, 16, 99, 32767, -1, -32768.
+  Messlage: fuer FIRST gibt es keinen TT-Record. Die identische
+          Schutzklausel ist aber fuer ein Nachbarfeld auf dem TT
+          gemessen: aes-r1.tsv Faelle 175-178 (WF_WXYWH mit Handle 1,
+          -1, 99, 32767) liefern in EMUTOS14-AES.BIN durchweg
+          int_out[0] = 0. Unsere Umsetzung liefert dort ebenfalls 0 --
+          der Fehler betrifft ausschliesslich den vorgezogenen
+          FIRST/NEXT-Arm.
+  Einordnung: DEFEKT. int_out[0] von wind_get ist ein vertraglich
+          festgelegter Rueckgabewert (docs/COMPATIBILITY.md, feste
+          Flaeche "Rueckgabe-/Fehlercodes").
+
+D-A13-2  Erstes Stueck falsch, wenn es nicht das TOP-Stueck ist  BELEGT
+---------------------------------------------------------------------
+  EmuTOS: die Reihenfolge der Eigenrechteckliste ist mkpiece
+          TOP=0, LEFT=1, RIGHT=2, BOTTOM=3 (aes/gemwrect.c:30-33,
+          64-98), eingehaengt in dieser Reihenfolge ueber den
+          Pseudoknoten p = (ORECT *)&pwin->w_rlist (:147-148, :118-122).
+          w_owns liefert das erste Stueck mit nichtleerem Schnitt
+          (gemwmlib.c:1230-1241).
+  NewTOS: tos-api/src/aes/window.rs:1075-1101 (subtract) erzeugt in der
+          Reihenfolge TOP (:1084), BOTTOM (:1087), LEFT (:1092),
+          RIGHT (:1095). BOTTOM steht also vor LEFT und RIGHT.
+  Messbeleg fuer die EmuTOS-Reihenfolge: Fall 159/166/174/183 derselben
+          eingefrorenen Tabelle. TT: 159 TOP, 166 LEFT (31,80,29,162),
+          174 RIGHT (262,80,65,162), 183 BOTTOM (31,242,296,15).
+          Pi: 166 BOTTOM (31,240,296,17), 174 LEFT (31,80,29,160),
+          183 RIGHT (260,80,67,160). Die Reihenfolge ist damit
+          gemessen, nicht nur gelesen. (Die vier NEXT-Faelle selbst
+          gehoeren zu A14 und werden hier nicht bewertet.)
+  Fehlerfall im FIRST-Ergebnis, gefahren als K1: Fenster 1 offen bei
+          30,40,320,240, Fenster 2 darueber bei 30,40,200,100. Damit
+          gibt es kein TOP- und kein LEFT-Stueck.
+            EmuTOS (aus der Quelle abgeleitet): RIGHT (232,40,120,102),
+              geschnitten mit WS_WORK 31,63,296,194 -> 232,63,95,79
+            NewTOS (gemessen):                  31,140,296,117
+          Es ist nicht dasselbe Rechteck, nicht nur eine andere
+          Reihenfolge: FIRST ist EIN Wert, und der ist falsch.
+  Auswirkung auf eine echte Anwendung: QED entscheidet mit
+          free_for_draw (sdk/apps/qed/src/window.c:267-276) anhand von
+          rc_first (:224-237) genau an w->work.g_w == draw.g_w &&
+          w->work.g_h == draw.g_h, ob es direkt zeichnet. Bei K1
+          weichen g_w und g_h ab.
+  Einordnung: DEFEKT, nicht hinnehmbare Abweichung.
+
+D-A13-3  Verdeckendes Rechteck ohne DROP_SHADOW_SIZE             BELEGT
+---------------------------------------------------------------------
+  EmuTOS: newrect bricht mit gl_mkrect.o_gr = w_getsize(WS_TRUE, wh)
+          (aes/gemwrect.c:190) und legt auch das eigene Rechteck als
+          WS_TRUE ab (:203); w_getsize addiert fuer WS_TRUE
+          DROP_SHADOW_SIZE auf g_w und g_h (gemwmlib.c:254-262),
+          DROP_SHADOW_SIZE == 2 (:49).
+  NewTOS: tos-api/src/aes/window.rs:600-615 subtrahiert ow.curr (:611),
+          also ohne Schattenzuschlag.
+  Messbeleg: dieselben Faelle 166/174. TT LEFT-Hoehe 162 gegen Pi 160,
+          TT RIGHT-x 262 gegen Pi 260 -- beide Male genau 2.
+  Fehlerfall im FIRST-Ergebnis, gefahren als K2: Fenster 2 bei
+          20,30,180,300 laesst von Fenster 1 nur ein RIGHT-Stueck
+          uebrig, die Reihenfolge spielt also keine Rolle.
+            EmuTOS (abgeleitet): 202,63,125,194
+            NewTOS (gemessen):   200,63,127,194
+          Eine Anwendung, die in ihr FIRST-Stueck zeichnet, malt damit
+          zwei Spalten, die EmuTOS dem Schlagschatten des darueber
+          liegenden Fensters vorbehaelt.
+  Gefahren als K3 (Desktop, Fenster oben links bei 0,19,320,240):
+            EmuTOS (abgeleitet): 322,19,318,242   (RIGHT-Stueck)
+            NewTOS (gemessen):   0,259,640,221    (BOTTOM-Stueck)
+          Hier wirken D-A13-2 und D-A13-3 zusammen.
+  Einordnung: DEFEKT.
+
+Hinnehmbare Abweichungen (kein Defekt)
+--------------------------------------
+  * Fall 144 und die Grenzfaelle B, C, E: am Listenende bzw. bei leerer
+    Liste schreibt w_owns nur g_w und g_h (gemwmlib.c:1240); g_x und g_y
+    kommen aus dem nicht initialisierten lokalen int_out von xif
+    (gemsuper.c:432) und haben kein Soll. Unsere Null ist nicht "auch
+    richtig", sondern trifft eine Stelle, die EmuTOS offenlaesst.
+    Gilt in dieser Form nur, solange g_w und g_h stimmen -- sie tun es.
+  * OUT_LEN 6 und 7 auf FIRST (Hostlauf G): die Ueberschusswoerter
+    kommen bei uns als 0, bei EmuTOS als Stapelrest. Gleiche Klasse,
+    und in der eingefrorenen Tabelle nicht gemessen (dort nur OUT_LEN
+    1, 3, 5).
+
+Randfall mit definiertem EmuTOS-Wert, aber ohne Anwendungswirkung
+-----------------------------------------------------------------
+  Grenzfall D (Fenster 2 deckt exakt die Arbeitsflaeche von Fenster 1
+  ab): die Liste ist NICHT leer, aber kein Stueck schneidet die
+  Arbeitsflaeche. rc_intersect schreibt trotz FALSE alle vier Woerter
+  (util/rectfunc.c:72-75), also bleibt nach der Schleife g_x/g_y des
+  letzten fehlgeschlagenen Schnitts stehen:
+    EmuTOS (abgeleitet): 1, 31, 259, 0, 0
+    NewTOS (gemessen):   1,  0,   0, 0, 0
+  Hier hat EmuTOS anders als bei Fall 144 einen BESTIMMTEN Wert. Ein
+  Redraw nach Vorschrift (Abbruch bei w==0 && h==0, so auch QEDs
+  rc_first) liest g_x/g_y dann nie. Deshalb hier nicht als Defekt
+  gefuehrt, sondern als benannte Restabweichung -- mit dem Hinweis,
+  dass sie mit dem Fix zu D-A13-2/3 ohnehin verschwindet, wenn dabei
+  auf w_owns' Zwei-Wort-Regel umgestellt wird.
+
+Spezifikationslücken (an den Researcher, nicht von mir geaendert)
+-----------------------------------------------------------------
+  S1  docs/api/aes/window-graphics.md:341 und :848-851 sagen "the walk
+      terminates with a w=h=0 rect" bzw. "returns a rect with w=h=0".
+      Beides verschweigt, dass w_owns nur ZWEI Woerter schreibt
+      (gemwmlib.c:1240) und dass g_x/g_y unbestimmt bleiben. Die
+      jetzige Formulierung legt genau die Umsetzung nahe, die wir
+      haben (vier Nullen).
+  S2  docs/api/aes/window-graphics.md:354-358 erklaert die Zerlegung
+      ausdruecklich zur Referenz: "NewTOS may compute the visible-region
+      decomposition any way it likes as long as WF_FIRSTXYWH/
+      WF_NEXTXYWH yield the same set of pieces." Die Messung widerlegt
+      die Freiheit zweimal: die Reihenfolge ist beobachtbar (FIRST ist
+      genau ein Rechteck) und die Stueckmenge selbst haengt am
+      Schattenzuschlag. Der Satz lizenziert D-A13-2 und D-A13-3.
+  S3  :807-811 nennt "up-to-four non-overlapping pieces", aber weder
+      die Reihenfolge TOP/LEFT/RIGHT/BOTTOM noch WS_TRUE als
+      brechendes Rechteck.
+
+Minimaler Fix (benannt, NICHT umgesetzt)
+----------------------------------------
+  F1 zu D-A13-1: tos-api/src/aes/window.rs:1999 -- den FIRST/NEXT-Arm
+     erst nach der Handlepruefung ausfuehren, also den Block
+     :1999-2010 mit einem
+       let Some(_) = win(handle) else { pb.set_ret(0); return; }
+     vorschalten (oder ihn in den bestehenden match win(handle)-Arm
+     :2056-2129 verschieben). Handle 0 traegt VF_INUSE und bleibt
+     gueltig (EmuTOS gemwmlib.c:1290 ueber w_setup :213).
+  F2 zu D-A13-2: tos-api/src/aes/window.rs:1084-1097 -- die
+     Erzeugungsreihenfolge in subtract auf TOP, LEFT, RIGHT, BOTTOM
+     umstellen, mit den Kantenformeln aus mkpiece
+     (aes/gemwrect.c:72-95): LEFT und RIGHT tragen
+     g_y = max(old.y, new.y) und g_h = min(old.y+old.h,
+     new.y+new.h) - g_y, was unsere oy/oh bereits leisten.
+  F3 zu D-A13-3: tos-api/src/aes/window.rs:611 -- statt ow.curr das
+     WS_TRUE-Rechteck subtrahieren, also curr mit w+2/h+2, und zwar
+     nur wenn w und h beide ungleich 0 sind (gemwmlib.c:257-261).
+     Das eigene Rechteck out[0] (:607) bekommt denselben Zuschlag
+     (gemwrect.c:203); fuer FIRST bleibt es folgenlos, weil der
+     Schnitt mit WS_WORK ihn wieder abschneidet, aber es haelt die
+     Liste identisch zur Referenz.
+
+Vorgeschlagener Regressionstest
+-------------------------------
+  R1 Die eingefrorene Tabelle dauerhaft binden: mit
+     tosdump/host/build/mkrusttests aus tosdump/cases/aes-r2b-rlist.tsv
+     ein Modul tos-api/tests/aes_reference/cases_r2b_rlist.rs erzeugen
+     und in tos-api/tests/aes_reference.rs einhaengen, wie cases_r1 und
+     cases_r2_wind. Damit sind alle fuenfzehn Records gebunden, nicht
+     nur die acht FIRST-Faelle. Heute deckt KEIN dauerhafter Test
+     WF_FIRSTXYWH ab (Suche nach FIRSTXYWH in tos-api/tests: kein
+     Treffer).
+  R2 Drei gezielte Faelle in tos-api/tests/aes_reference.rs, je einer
+     pro Defekt, mit dem Sollwert aus der Quelle:
+       a) wind_get(3, WF_FIRSTXYWH) auf ein nie erzeugtes Handle
+          -> int_out[0] == 0                                  (D-A13-1)
+       b) K1: open 1 bei 30,40,320,240, open 2 bei 30,40,200,100,
+          FIRST auf 1 -> 232,63,95,79                         (D-A13-2)
+       c) K2: open 1 bei 30,40,320,240, open 2 bei 20,30,180,300,
+          FIRST auf 1 -> 202,63,125,194                       (D-A13-3)
+     b) und c) haben keinen TT-Record; sie sind quellenbelegt. Wenn
+     eine echte Gegenmessung gewuenscht ist, gehoeren sie in eine NEUE
+     Falltabelle (die eingefrorene darf nicht wachsen).
+
+Offen
+-----
+  * Reale Gegenmessung auf dem Atari TT fuer die Grenzfaelle A/D/K1/K2/K3
+    fehlt; sie sind gegen die Quelle belegt, nicht gegen eine Messung.
+  * Nicht bewertet, weil ausserhalb A13: die NEXT-Faelle 127, 133, 166,
+    174, 183, 204, 213 (A14/A15) und die global[]-Abweichung (A06-A09).
+  * Praezisierung zu K1: dort wirken beide Defekte. Die Reihenfolge
+    entscheidet, WELCHES Stueck FIRST liefert (BOTTOM statt RIGHT), der
+    Schattenzuschlag entscheidet ueber die genauen Kanten. Nur mit F2
+    allein kaeme 230,63,97,77 heraus, nicht 232,63,95,79. K2 isoliert
+    den Schatten (dort gibt es nur ein Stueck).
+  * Die vier Kantenformeln in subtract (window.rs:1084-1097) stimmen
+    Wort fuer Wort mit mkpiece (gemwrect.c:72-95) ueberein, inklusive
+    des oy/oh-Bandes fuer LEFT und RIGHT. Abweichend ist AUSSCHLIESSLICH
+    die Reihenfolge. F2 ist damit ein reines Umsortieren.
+  * NICHT GEPRUEFT, offen: bei DREI oder mehr sich ueberlappenden
+    Fenstern ist der Weg selbst verschieden. NewTOS subtrahiert in
+    subtract iterativ ueber alle hoeheren Fenster in Handlereihenfolge
+    (window.rs:609-613); EmuTOS baut jede Liste in newrect neu auf und
+    bricht die Listen der anderen Fenster ueber everyobj in
+    Objektbaumreihenfolge (gemwrect.c:165-205, gemwmlib.c:1089). Ob das
+    bei drei Fenstern dieselbe Stueckmenge ergibt, ist hier weder
+    gemessen noch bewiesen. Die eingefrorene Tabelle oeffnet nur zwei
+    Fenster. Braucht eine eigene Messung; ich habe es nicht verfolgt.

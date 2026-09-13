@@ -137,7 +137,7 @@ violation visible.
 | 14 | 30 | `global[15]` after |
 | 44 | 32 | `int_in[16]` after |
 | 76 | 14 | `int_out[7]` after |
-| 90 | 12 | `addr_in[3]` after |
+| 90 | 12 | `addr_in[3]` after — or the buffer token, see section 6 |
 | 102 | 4 | `addr_out[1]` after |
 | 106 | 14 | reserved, zero |
 
@@ -200,6 +200,161 @@ opcode <TAB> sub <TAB> intin values (comma separated) <TAB> ptsin values <TAB> c
 
 Comparison is exact for every byte of these two areas. No exception mechanism —
 if you find yourself wanting one, the case is wrong, not the comparator.
+
+The AES form has grown two columns since (the four control counts stated
+explicitly) and one optional one; `core/cases.h` is the authority for it. The
+optional one is the point of the next section.
+
+### The `addr_in` column — naming a buffer instead of an address
+
+A dozen AES opcodes do all of their work behind a pointer: the object manager,
+the menu manager, the scrap manager, `appl_find`, `rsrc_load`, the shell's path
+calls, `wind_get`/`wind_set` with `WF_NAME` or `WF_INFO`. None of them could be
+stated here, because a case table is **one file carried to two machines** and an
+address is different on each. Until 2026-09-12 the runner simply poisoned the
+address array and the tables stayed away from those opcodes.
+
+The way out is the one `cases/vdi-raster.tsv` already uses for its two pixel
+buffers: **the table names a buffer by NUMBER and the dumper fills in its own
+address.** An AES table opts in with a directive, so that every table written
+before it keeps its meaning byte for byte:
+
+```
+!columns <TAB> 8
+
+opcode <TAB> n_intin <TAB> n_intout <TAB> n_addrin <TAB> n_addrout
+       <TAB> intin values <TAB> addr_in <TAB> comment
+```
+
+The `addr_in` column is `-`, or a comma separated list of `<where>=<buffer>`:
+
+- `aN=B` — buffer `B` into `addr_in[N]`. Only where the case declares
+  `AIN_LEN > N`; the dispatcher copies `min(AIN_LEN, AI_SIZE)` slots onto its
+  local buffer (`gemsuper.c:439`) and a plant past it never reaches the handler.
+- `iN=B` — buffer `B` as a pointer packed into the `int_in` WORDs at word `N`,
+  at the **target's own pointer width**. That is the classic GEM binding
+  (gemlib `a_wind_set_str.c:25`) and the only place EmuTOS' `wm_set` looks for a
+  `WF_NAME` string (`gemwmlib.c:1661`). **Preludes only**: a packed pointer
+  occupies two WORDs on the m68k and four on AArch64, and `int_in` is recorded,
+  so on a measured case the record would differ by the target's pointer width
+  and not by anything the AES did. `IN_LEN` must cover the wider of the two.
+
+The buffers are the runner's own statics: `TD_AES_BUF_N` of them,
+`TD_AES_BUF_BYTES` each, laid **before every call** with eight printable
+characters, a NUL and a canary of the same pattern (`td_aes_buf_fill`). A bounded
+string and not the raster's word fill, because half of the calls this unlocks
+read a C string through the pointer and neither AES bounds-checks one.
+
+**A planted `addr_in` slot records the buffer's TOKEN, not its address** —
+`TD_AES_ADDR_TOKEN(n)` = `0xB0FF0000 + n`. The address differs between the two
+machines by construction, so recording it would fabricate a difference in every
+case that uses one, exactly as a byte-pattern poison would. A slot the call
+modified records the modified value instead, which is the difference it should
+be. A slot no case planted still records the poison, which is what keeps a table
+without the column producing the bytes it always did.
+
+What the column does **not** buy: the 120-byte AES record has no room for a
+buffer's CONTENTS, so a call whose only effect is what it wrote into the buffer
+is still only measurable through its return code. Recording the buffer would
+mean a different record size, and a different record size invalidates every dump
+already taken.
+
+### The refusal guard, and where a MEASURED question gets answered
+
+A case table is data, and a typo in it must not hang the machine it is carried
+to. So the AES loader refuses a whole table -- named reason, offending line --
+when it names an opcode that would block on the operator, end the application,
+or reach the dispatcher's default arm (`fm_show(ALNOFUNC)`, a modal alert with
+nobody to click it: `gemsuper.c:406-417`). `core/cases.c` holds the per-opcode
+citations.
+
+Five opcodes do not belong there, and that is the point of this section.
+`objc_sysvar` (48) is `#if CONF_WITH_3D_OBJECTS`; `menu_popup`/`attach`/
+`istart`/`settings` (36-39) are `#if CONF_WITH_MENU_EXTENSION`. Whether a given
+machine has them is not a property of the TABLE — it is a property of the
+MACHINE, and EmuTOS' own `AES_VERSION` ladder (`include/config.h:1345-1354`)
+reads it off a number the machine hands out: `ap_version`, which `appl_init`
+writes into the AESGLOBAL (`gemsuper.c:92`).
+
+Until 2026-09-13 the loader refused all five, reasoning "TOS 3.06 = AES 3.20".
+That locked out functions the reference EmuTOS measurably **has** — it reports
+`ap_version 0340`, and the ladder makes 0x0340 mean all four `CONF_WITH_*` are
+on. So the question is now split at the only line where it can be split:
+
+| asked by | when | what it can answer |
+|---|---|---|
+| the loader (`td_aes_cases_parse`) | host or machine, before anything runs | is this opcode issuable at all — and which capabilities does the table need (`features`) |
+| the machine (`td_aes_cases_version_refusal`) | after `appl_init`, before the first case or prelude | does THIS AES have them |
+
+A machine that does not have them refuses the **whole** table, so a dump has
+`count` records or there is no dump — the shape of a dump stays a property of
+its table alone, which is what the CRC binding and the comparator assume.
+`td_run_aes` asks the same function itself, so a program that runs cases cannot
+forget to ask.
+
+The version test is **membership, not `>=`**: 0x0340 is the only rung that
+requires `CONF_WITH_3D_OBJECTS`, 0x0330 and 0x0340 the two that require
+`CONF_WITH_MENU_EXTENSION`. The implication runs one way — a rung tells you
+which flags were on, not the reverse — and a number the ladder never produces
+establishes nothing. Refusing there costs a table that could perhaps have run;
+issuing there costs a hung machine.
+
+`CONF_WITH_PCGEM` (`appl_yield` 17, `scrp_clear` 82, `shel_rdef` 126,
+`shel_wdef` 127) is **not** in the ladder, so `ap_version` cannot settle it
+either way and those four stay refused by the loader. `CONF_WITH_WINDOW_COLOURS`
+and `CONF_WITH_GRAF_MOUSE_EXTENSION` remove no opcode at all — they gate fields
+and modes inside opcodes that exist either way. That is a per-parameter
+question, but it is not the parameter guard's either: "does this build have
+window colours" is still a measured property of the machine, so measuring those
+needs a third shape — a per-case, per-feature refusal on the machine side. Not
+built.
+
+`casecheck` runs on a host with no machine, so it does not refuse such a table:
+it prints what the table needs, and enforces it only against a version the
+caller states (`casecheck --aes --aes-version 0320 TABLE`).
+
+### The parameter guard: what the VALUES decide (added 2026-09-13, M07)
+
+The guard above judges a NUMBER. For a dozen opcodes there is no such judgement
+to make, because the same opcode is a poll or a hang, a read of the dumper's own
+buffer or a write through `0xDEADDEAD`, depending on one WORD of `int_in` or on
+whether the `addr_in` column named a buffer. An opcode-level verdict on those is
+wrong in both directions at once — it refuses the harmless arm and it waves the
+dangerous one through — so a second question, *"with THESE values?"*, is
+answered per line in `aes_line_parameter_refusal` (`core/cases.c`), for preludes
+exactly as for cases:
+
+| opcode | what the values have to say |
+|---|---|
+| `wind_get`/`wind_set` (104, 105) | the field, the handle, the geometry; `WF_NAME`/`WF_INFO` re-opened by a plant (M05) |
+| `wind_open`/`delete`/`update` (101, 103, 107) | the handle, the message-queue bound, the mouse-control balance |
+| `evnt_multi` (25) | `MU_TIMER` with a zero `MT_LOCOUNT`/`MT_HICOUNT` is the one arm that returns before `mwait` (`gemevlib.c:216-220` against `:232-262`); `MU_MESAG` needs a planted `MME_PBUFF` |
+| `form_error` (53) | `n > 63` is the one arm that returns before `fm_show` (`gemfmlib.c:440-441`) |
+| `form_keybd` (55) | the tree must be planted AND `FM_ICHAR` must not send `find_obj` walking it (`:167-190`, `:135-148`) |
+| `objc_delete` (41) | `ROOT` is the one object that returns before the tree is read (`gemoblib.c:1154-1157`) |
+| `scrp_read`/`scrp_write` (80, 81) | a `strcpy` each way through `addr_in[0]`, so the slot must be planted (`gemsclib.c:40-45`, `:57-62`) |
+
+**All of it is decided from one line, so it lives in the LOADER** and not in
+`td_aes_cases_version_refusal`: the flags, the field, the error number, the
+character, the object index and the plants are all columns of the line. Nothing
+here needs a measured quantity, so a table can still be checked on the host
+before it is carried anywhere. Same seam as the version guard, taken from the
+other side.
+
+**The shape rule**, and why it is not tidiness: where the guard reads an
+`int_in` WORD, the case must state it AND declare `IN_LEN` past it. `xif`'s
+`int_in` is a LOCAL array copied into only as far as `min(IN_LEN, I_SIZE)`
+(`gemsuper.c:428-438`), so a WORD outside `IN_LEN` is uninitialised stack, not
+the number the table wrote.
+
+**The asymmetry it exists for.** A table is written on a host, tried on NewTOS,
+and then carried to a TT with no memory protection. Where the two AESs disagree
+about whether a parameter is fatal, trying it on one proves nothing about the
+other: `objc_delete(-1)` answers 0 on NewTOS (`tos-api/src/aes/object.rs`) and
+reads `tree[-1].ob_next` through the poison on the TT. The guard therefore
+refuses the UNION of what either machine would find fatal, never the
+intersection — which is also why `form_keybd`'s character test covers both
+EmuTOS' whole-WORD compare and NewTOS' byte-wise one.
 
 ### `cases/bios.tsv` and `cases/gemdos.tsv`
 

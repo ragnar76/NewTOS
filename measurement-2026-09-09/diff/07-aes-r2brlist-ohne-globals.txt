@@ -1,0 +1,48 @@
+   $ tosdiff cases/aes-r2b-rlist.tsv reference-tt/EMUTOS14-AES-r2brlist.BIN run3-pi4-rlist/AES.BIN
+   ohne die sechs global[]-Woerter aus appl_init (2,3,4,10,11,12)
+
+EMUTOS14-AES-r2brlist.BIN vs AES.BIN -- area AES, 15 cases from aes-r2b-rlist.tsv
+
+case 127  opcode 104  WF_NEXTXYWH at the end: g_w/g_h are 0, g_x/g_y are NOT written
+    int_out[1]             EMUTOS14-AES-r2brlist.BIN = 0x001F (31)   AES.BIN                   = 0x0000 (0)
+    int_out[2]             EMUTOS14-AES-r2brlist.BIN = 0x003F (63)   AES.BIN                   = 0x0000 (0)
+
+case 133  opcode 104  WF_NEXTXYWH past the end: po is NULL, the loop is not entered a
+    int_out[1]             EMUTOS14-AES-r2brlist.BIN = 0x001F (31)   AES.BIN                   = 0x0000 (0)
+    int_out[2]             EMUTOS14-AES-r2brlist.BIN = 0x003F (63)   AES.BIN                   = 0x0000 (0)
+
+case 144  opcode 104  WF_FIRSTXYWH of a created, unopened window: empty list
+    int_out[1]             EMUTOS14-AES-r2brlist.BIN = 0x001F (31)   AES.BIN                   = 0x0000 (0)
+    int_out[2]             EMUTOS14-AES-r2brlist.BIN = 0x003F (63)   AES.BIN                   = 0x0000 (0)
+
+case 166  opcode 104  WF_NEXTXYWH: the second visible piece -- how brkrct cut it
+    int_out[2]             EMUTOS14-AES-r2brlist.BIN = 0x0050 (80)   AES.BIN                   = 0x00F0 (240)
+    int_out[3]             EMUTOS14-AES-r2brlist.BIN = 0x001D (29)   AES.BIN                   = 0x0128 (296)
+    int_out[4]             EMUTOS14-AES-r2brlist.BIN = 0x00A2 (162)   AES.BIN                   = 0x0011 (17)
+
+case 174  opcode 104  the third piece, if the decomposition has one
+    int_out[1]             EMUTOS14-AES-r2brlist.BIN = 0x0106 (262)   AES.BIN                   = 0x001F (31)
+    int_out[3]             EMUTOS14-AES-r2brlist.BIN = 0x0041 (65)   AES.BIN                   = 0x001D (29)
+    int_out[4]             EMUTOS14-AES-r2brlist.BIN = 0x00A2 (162)   AES.BIN                   = 0x00A0 (160)
+
+case 183  opcode 104  the fourth: how many pieces there are is the measurement
+    int_out[1]             EMUTOS14-AES-r2brlist.BIN = 0x001F (31)   AES.BIN                   = 0x0104 (260)
+    int_out[2]             EMUTOS14-AES-r2brlist.BIN = 0x00F2 (242)   AES.BIN                   = 0x0050 (80)
+    int_out[3]             EMUTOS14-AES-r2brlist.BIN = 0x0128 (296)   AES.BIN                   = 0x0043 (67)
+    int_out[4]             EMUTOS14-AES-r2brlist.BIN = 0x000F (15)   AES.BIN                   = 0x00A0 (160)
+
+case 201  opcode 104  WF_FIRSTXYWH of the desktop, nothing open: the whole desktop
+    int_out[3]             EMUTOS14-AES-r2brlist.BIN = 0x0280 (640)   AES.BIN                   = 0x0780 (1920)
+    int_out[4]             EMUTOS14-AES-r2brlist.BIN = 0x01CD (461)   AES.BIN                   = 0x0425 (1061)
+
+case 204  opcode 104  WF_NEXTXYWH on the desktop at the end
+    int_out[2]             EMUTOS14-AES-r2brlist.BIN = 0x0013 (19)   AES.BIN                   = 0x0000 (0)
+
+case 208  opcode 104  WF_FIRSTXYWH of the desktop with one window open: the remainder
+    int_out[3]             EMUTOS14-AES-r2brlist.BIN = 0x0280 (640)   AES.BIN                   = 0x0780 (1920)
+
+case 213  opcode 104  WF_NEXTXYWH: the next piece of the desktop remainder
+    int_out[2]             EMUTOS14-AES-r2brlist.BIN = 0x0028 (40)   AES.BIN                   = 0x0118 (280)
+    int_out[3]             EMUTOS14-AES-r2brlist.BIN = 0x001E (30)   AES.BIN                   = 0x0780 (1920)
+    int_out[4]             EMUTOS14-AES-r2brlist.BIN = 0x00F2 (242)   AES.BIN                   = 0x0320 (800)
+15 of 15 cases differ

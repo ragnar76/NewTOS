@@ -1,0 +1,130 @@
+EMUTOS14-AES-r2brlist.BIN vs AES.BIN -- area AES, 15 cases from aes-r2b-rlist.tsv
+
+case 122  opcode 104  WF_FIRSTXYWH of an open, unobstructed window: its work area
+    global[2]              EMUTOS14-AES-r2brlist.BIN = 0x0000 (0)   AES.BIN                   = 0x0001 (1)
+    global[3]              EMUTOS14-AES-r2brlist.BIN = 0x0000 (0)   AES.BIN                   = 0x1143 (4419)
+    global[4]              EMUTOS14-AES-r2brlist.BIN = 0x1143 (4419)   AES.BIN                   = 0x0000 (0)
+    global[10]              EMUTOS14-AES-r2brlist.BIN = 0x0004 (4)   AES.BIN                   = 0x0010 (16)
+    global[11]              EMUTOS14-AES-r2brlist.BIN = 0x0000 (0)   AES.BIN                   = 0x4460 (17504)
+    global[12]              EMUTOS14-AES-r2brlist.BIN = 0xBE04 (-16892)   AES.BIN                   = 0x0012 (18)
+
+case 127  opcode 104  WF_NEXTXYWH at the end: g_w/g_h are 0, g_x/g_y are NOT written
+    global[2]              EMUTOS14-AES-r2brlist.BIN = 0x0000 (0)   AES.BIN                   = 0x0001 (1)
+    global[3]              EMUTOS14-AES-r2brlist.BIN = 0x0000 (0)   AES.BIN                   = 0x1143 (4419)
+    global[4]              EMUTOS14-AES-r2brlist.BIN = 0x1143 (4419)   AES.BIN                   = 0x0000 (0)
+    global[10]              EMUTOS14-AES-r2brlist.BIN = 0x0004 (4)   AES.BIN                   = 0x0010 (16)
+    global[11]              EMUTOS14-AES-r2brlist.BIN = 0x0000 (0)   AES.BIN                   = 0x4460 (17504)
+    global[12]              EMUTOS14-AES-r2brlist.BIN = 0xBE04 (-16892)   AES.BIN                   = 0x0012 (18)
+    int_out[1]             EMUTOS14-AES-r2brlist.BIN = 0x001F (31)   AES.BIN                   = 0x0000 (0)
+    int_out[2]             EMUTOS14-AES-r2brlist.BIN = 0x003F (63)   AES.BIN                   = 0x0000 (0)
+
+case 133  opcode 104  WF_NEXTXYWH past the end: po is NULL, the loop is not entered a
+    global[2]              EMUTOS14-AES-r2brlist.BIN = 0x0000 (0)   AES.BIN                   = 0x0001 (1)
+    global[3]              EMUTOS14-AES-r2brlist.BIN = 0x0000 (0)   AES.BIN                   = 0x1143 (4419)
+    global[4]              EMUTOS14-AES-r2brlist.BIN = 0x1143 (4419)   AES.BIN                   = 0x0000 (0)
+    global[10]              EMUTOS14-AES-r2brlist.BIN = 0x0004 (4)   AES.BIN                   = 0x0010 (16)
+    global[11]              EMUTOS14-AES-r2brlist.BIN = 0x0000 (0)   AES.BIN                   = 0x4460 (17504)
+    global[12]              EMUTOS14-AES-r2brlist.BIN = 0xBE04 (-16892)   AES.BIN                   = 0x0012 (18)
+    int_out[1]             EMUTOS14-AES-r2brlist.BIN = 0x001F (31)   AES.BIN                   = 0x0000 (0)
+    int_out[2]             EMUTOS14-AES-r2brlist.BIN = 0x003F (63)   AES.BIN                   = 0x0000 (0)
+
+case 144  opcode 104  WF_FIRSTXYWH of a created, unopened window: empty list
+    global[2]              EMUTOS14-AES-r2brlist.BIN = 0x0000 (0)   AES.BIN                   = 0x0001 (1)
+    global[3]              EMUTOS14-AES-r2brlist.BIN = 0x0000 (0)   AES.BIN                   = 0x1143 (4419)
+    global[4]              EMUTOS14-AES-r2brlist.BIN = 0x1143 (4419)   AES.BIN                   = 0x0000 (0)
+    global[10]              EMUTOS14-AES-r2brlist.BIN = 0x0004 (4)   AES.BIN                   = 0x0010 (16)
+    global[11]              EMUTOS14-AES-r2brlist.BIN = 0x0000 (0)   AES.BIN                   = 0x4460 (17504)
+    global[12]              EMUTOS14-AES-r2brlist.BIN = 0xBE04 (-16892)   AES.BIN                   = 0x0012 (18)
+    int_out[1]             EMUTOS14-AES-r2brlist.BIN = 0x001F (31)   AES.BIN                   = 0x0000 (0)
+    int_out[2]             EMUTOS14-AES-r2brlist.BIN = 0x003F (63)   AES.BIN                   = 0x0000 (0)
+
+case 159  opcode 104  WF_FIRSTXYWH of the covered window: the first visible piece
+    global[2]              EMUTOS14-AES-r2brlist.BIN = 0x0000 (0)   AES.BIN                   = 0x0001 (1)
+    global[3]              EMUTOS14-AES-r2brlist.BIN = 0x0000 (0)   AES.BIN                   = 0x1143 (4419)
+    global[4]              EMUTOS14-AES-r2brlist.BIN = 0x1143 (4419)   AES.BIN                   = 0x0000 (0)
+    global[10]              EMUTOS14-AES-r2brlist.BIN = 0x0004 (4)   AES.BIN                   = 0x0010 (16)
+    global[11]              EMUTOS14-AES-r2brlist.BIN = 0x0000 (0)   AES.BIN                   = 0x4460 (17504)
+    global[12]              EMUTOS14-AES-r2brlist.BIN = 0xBE04 (-16892)   AES.BIN                   = 0x0012 (18)
+
+case 166  opcode 104  WF_NEXTXYWH: the second visible piece -- how brkrct cut it
+    global[2]              EMUTOS14-AES-r2brlist.BIN = 0x0000 (0)   AES.BIN                   = 0x0001 (1)
+    global[3]              EMUTOS14-AES-r2brlist.BIN = 0x0000 (0)   AES.BIN                   = 0x1143 (4419)
+    global[4]              EMUTOS14-AES-r2brlist.BIN = 0x1143 (4419)   AES.BIN                   = 0x0000 (0)
+    global[10]              EMUTOS14-AES-r2brlist.BIN = 0x0004 (4)   AES.BIN                   = 0x0010 (16)
+    global[11]              EMUTOS14-AES-r2brlist.BIN = 0x0000 (0)   AES.BIN                   = 0x4460 (17504)
+    global[12]              EMUTOS14-AES-r2brlist.BIN = 0xBE04 (-16892)   AES.BIN                   = 0x0012 (18)
+
+case 174  opcode 104  the third piece, if the decomposition has one
+    global[2]              EMUTOS14-AES-r2brlist.BIN = 0x0000 (0)   AES.BIN                   = 0x0001 (1)
+    global[3]              EMUTOS14-AES-r2brlist.BIN = 0x0000 (0)   AES.BIN                   = 0x1143 (4419)
+    global[4]              EMUTOS14-AES-r2brlist.BIN = 0x1143 (4419)   AES.BIN                   = 0x0000 (0)
+    global[10]              EMUTOS14-AES-r2brlist.BIN = 0x0004 (4)   AES.BIN                   = 0x0010 (16)
+    global[11]              EMUTOS14-AES-r2brlist.BIN = 0x0000 (0)   AES.BIN                   = 0x4460 (17504)
+    global[12]              EMUTOS14-AES-r2brlist.BIN = 0xBE04 (-16892)   AES.BIN                   = 0x0012 (18)
+
+case 183  opcode 104  the fourth: how many pieces there are is the measurement
+    global[2]              EMUTOS14-AES-r2brlist.BIN = 0x0000 (0)   AES.BIN                   = 0x0001 (1)
+    global[3]              EMUTOS14-AES-r2brlist.BIN = 0x0000 (0)   AES.BIN                   = 0x1143 (4419)
+    global[4]              EMUTOS14-AES-r2brlist.BIN = 0x1143 (4419)   AES.BIN                   = 0x0000 (0)
+    global[10]              EMUTOS14-AES-r2brlist.BIN = 0x0004 (4)   AES.BIN                   = 0x0010 (16)
+    global[11]              EMUTOS14-AES-r2brlist.BIN = 0x0000 (0)   AES.BIN                   = 0x4460 (17504)
+    global[12]              EMUTOS14-AES-r2brlist.BIN = 0xBE04 (-16892)   AES.BIN                   = 0x0012 (18)
+
+case 189  opcode 104  WF_FIRSTXYWH of the TOP window: nothing covers it, one piece
+    global[2]              EMUTOS14-AES-r2brlist.BIN = 0x0000 (0)   AES.BIN                   = 0x0001 (1)
+    global[3]              EMUTOS14-AES-r2brlist.BIN = 0x0000 (0)   AES.BIN                   = 0x1143 (4419)
+    global[4]              EMUTOS14-AES-r2brlist.BIN = 0x1143 (4419)   AES.BIN                   = 0x0000 (0)
+    global[10]              EMUTOS14-AES-r2brlist.BIN = 0x0004 (4)   AES.BIN                   = 0x0010 (16)
+    global[11]              EMUTOS14-AES-r2brlist.BIN = 0x0000 (0)   AES.BIN                   = 0x4460 (17504)
+    global[12]              EMUTOS14-AES-r2brlist.BIN = 0xBE04 (-16892)   AES.BIN                   = 0x0012 (18)
+
+case 201  opcode 104  WF_FIRSTXYWH of the desktop, nothing open: the whole desktop
+    global[2]              EMUTOS14-AES-r2brlist.BIN = 0x0000 (0)   AES.BIN                   = 0x0001 (1)
+    global[3]              EMUTOS14-AES-r2brlist.BIN = 0x0000 (0)   AES.BIN                   = 0x1143 (4419)
+    global[4]              EMUTOS14-AES-r2brlist.BIN = 0x1143 (4419)   AES.BIN                   = 0x0000 (0)
+    global[10]              EMUTOS14-AES-r2brlist.BIN = 0x0004 (4)   AES.BIN                   = 0x0010 (16)
+    global[11]              EMUTOS14-AES-r2brlist.BIN = 0x0000 (0)   AES.BIN                   = 0x4460 (17504)
+    global[12]              EMUTOS14-AES-r2brlist.BIN = 0xBE04 (-16892)   AES.BIN                   = 0x0012 (18)
+
+case 204  opcode 104  WF_NEXTXYWH on the desktop at the end
+    global[2]              EMUTOS14-AES-r2brlist.BIN = 0x0000 (0)   AES.BIN                   = 0x0001 (1)
+    global[3]              EMUTOS14-AES-r2brlist.BIN = 0x0000 (0)   AES.BIN                   = 0x1143 (4419)
+    global[4]              EMUTOS14-AES-r2brlist.BIN = 0x1143 (4419)   AES.BIN                   = 0x0000 (0)
+    global[10]              EMUTOS14-AES-r2brlist.BIN = 0x0004 (4)   AES.BIN                   = 0x0010 (16)
+    global[11]              EMUTOS14-AES-r2brlist.BIN = 0x0000 (0)   AES.BIN                   = 0x4460 (17504)
+    global[12]              EMUTOS14-AES-r2brlist.BIN = 0xBE04 (-16892)   AES.BIN                   = 0x0012 (18)
+    int_out[2]             EMUTOS14-AES-r2brlist.BIN = 0x0013 (19)   AES.BIN                   = 0x0000 (0)
+
+case 208  opcode 104  WF_FIRSTXYWH of the desktop with one window open: the remainder
+    global[2]              EMUTOS14-AES-r2brlist.BIN = 0x0000 (0)   AES.BIN                   = 0x0001 (1)
+    global[3]              EMUTOS14-AES-r2brlist.BIN = 0x0000 (0)   AES.BIN                   = 0x1143 (4419)
+    global[4]              EMUTOS14-AES-r2brlist.BIN = 0x1143 (4419)   AES.BIN                   = 0x0000 (0)
+    global[10]              EMUTOS14-AES-r2brlist.BIN = 0x0004 (4)   AES.BIN                   = 0x0010 (16)
+    global[11]              EMUTOS14-AES-r2brlist.BIN = 0x0000 (0)   AES.BIN                   = 0x4460 (17504)
+    global[12]              EMUTOS14-AES-r2brlist.BIN = 0xBE04 (-16892)   AES.BIN                   = 0x0012 (18)
+
+case 213  opcode 104  WF_NEXTXYWH: the next piece of the desktop remainder
+    global[2]              EMUTOS14-AES-r2brlist.BIN = 0x0000 (0)   AES.BIN                   = 0x0001 (1)
+    global[3]              EMUTOS14-AES-r2brlist.BIN = 0x0000 (0)   AES.BIN                   = 0x1143 (4419)
+    global[4]              EMUTOS14-AES-r2brlist.BIN = 0x1143 (4419)   AES.BIN                   = 0x0000 (0)
+    global[10]              EMUTOS14-AES-r2brlist.BIN = 0x0004 (4)   AES.BIN                   = 0x0010 (16)
+    global[11]              EMUTOS14-AES-r2brlist.BIN = 0x0000 (0)   AES.BIN                   = 0x4460 (17504)
+    global[12]              EMUTOS14-AES-r2brlist.BIN = 0xBE04 (-16892)   AES.BIN                   = 0x0012 (18)
+
+case 226  opcode 104  WF_FIRSTXYWH, OUT_LEN 1: the return code only, the rect stays p
+    global[2]              EMUTOS14-AES-r2brlist.BIN = 0x0000 (0)   AES.BIN                   = 0x0001 (1)
+    global[3]              EMUTOS14-AES-r2brlist.BIN = 0x0000 (0)   AES.BIN                   = 0x1143 (4419)
+    global[4]              EMUTOS14-AES-r2brlist.BIN = 0x1143 (4419)   AES.BIN                   = 0x0000 (0)
+    global[10]              EMUTOS14-AES-r2brlist.BIN = 0x0004 (4)   AES.BIN                   = 0x0010 (16)
+    global[11]              EMUTOS14-AES-r2brlist.BIN = 0x0000 (0)   AES.BIN                   = 0x4460 (17504)
+    global[12]              EMUTOS14-AES-r2brlist.BIN = 0xBE04 (-16892)   AES.BIN                   = 0x0012 (18)
+
+case 230  opcode 104  WF_FIRSTXYWH, OUT_LEN 3: x and y arrive, w and h stay poisoned
+    global[2]              EMUTOS14-AES-r2brlist.BIN = 0x0000 (0)   AES.BIN                   = 0x0001 (1)
+    global[3]              EMUTOS14-AES-r2brlist.BIN = 0x0000 (0)   AES.BIN                   = 0x1143 (4419)
+    global[4]              EMUTOS14-AES-r2brlist.BIN = 0x1143 (4419)   AES.BIN                   = 0x0000 (0)
+    global[10]              EMUTOS14-AES-r2brlist.BIN = 0x0004 (4)   AES.BIN                   = 0x0010 (16)
+    global[11]              EMUTOS14-AES-r2brlist.BIN = 0x0000 (0)   AES.BIN                   = 0x4460 (17504)
+    global[12]              EMUTOS14-AES-r2brlist.BIN = 0xBE04 (-16892)   AES.BIN                   = 0x0012 (18)
+
+15 of 15 cases differ

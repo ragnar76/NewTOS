@@ -1,0 +1,102 @@
+NewTOS -- Messrunde 2026-09-09, Raspberry Pi 4
+==============================================
+
+Zweck: ein frischer Satz Dumps vom HEUTIGEN Kernel. Die bisherigen
+NewTOS-Dumps stammen vom 31.08. und 06.09.; ein Vergleich gegen den
+falschen der beiden hat schon einmal fuenf Abweichungsklassen erzeugt,
+die es nicht mehr gibt.
+
+Auf der Karte liegt jetzt:
+
+  kernel8.img              Release-Build vom 09.09. 21:06, OHNE usb-diag
+  kernel8.usbdiag-0909.img der vorherige Kernel (usb-diag), als Rueckweg
+  DUMPAES.NAP              neu gebaut 09.09. 21:07
+  DUMPVDI.NAP              neu gebaut 09.09. 21:07
+  DUMPRAST.NAP             neu gebaut 09.09. 21:07
+  AES.TSV                  = aes-r1.tsv,        95 Faelle, CRC 33C13C8F
+  AES-R2.TSV               = aes-r2-wind.tsv,   78 Faelle, CRC AFB11C9F
+  AES-R2B.TSV              = aes-r2b-rlist.tsv, 15 Faelle, CRC B4CC4A5A  (NEU)
+  RUNINFO.TXT              Lauf-Metadaten: Commit, SHA-256 aller Binaerdateien,
+                           Tabellen-CRCs. Gehoert mit den Dumps ins Archiv.
+  VDI.TSV                  182 Faelle, CRC D135ADAF
+  RASTER.TSV               59 Faelle, CRC 702EEA7D
+
+Die alten AES/VDI/RASTER .BIN und .LOG sind von der Karte entfernt --
+alle sechs liegen bitgleich in tosdump/reference/. Was nach dem Lauf hier
+steht, ist damit garantiert neu.
+
+
+DURCHGANG 1 -- drei Programme, ein Boot
+---------------------------------------
+Vom Desktop starten, in beliebiger Reihenfolge, jedes einzeln:
+
+  DUMPVDI.NAP    -> VDI.BIN    erwartet 182 Datensaetze, 289776 Bytes
+                    VDI.LOG
+  DUMPRAST.NAP   -> RASTER.BIN erwartet  59 Datensaetze
+                    RASTER.LOG
+  DUMPAES.NAP    -> AES.BIN    erwartet  95 Datensaetze, 11432 Bytes
+                    AES.LOG
+
+Keines wartet auf eine Taste (QUIRK-002: die blockierende Konsolenlesung
+haengt auf echter Hardware). Alles, was sie ausgeben, steht im .LOG.
+
+DUMPAES zeichnet sichtbar: Fenster gehen auf, wandern und schliessen
+sich waehrend des Laufs. Das ist der Lauf, nicht ein Fehler.
+
+Danach: Karte an den Mac. Die sechs Dateien werden abgeholt und
+gesichert, BEVOR Durchgang 2 laeuft -- Durchgang 2 ueberschreibt AES.BIN
+und AES.LOG.
+
+
+DURCHGANG 2 -- nur die Fensterrunde
+-----------------------------------
+Am Mac: AES.TSV durch AES-R2.TSV ersetzen (die Programme lesen ihre
+Tabelle unter festem Namen, deshalb zwei Boots statt einem).
+
+  DUMPAES.NAP    -> AES.BIN    erwartet 78 Datensaetze, 9392 Bytes
+                    AES.LOG
+
+VORHERGESAGT abweichend, in AES-R2.TSV markiert: die beiden
+NUM_WIN-Randfaelle. EmuTOS gibt auf dem TT 16 Fensterplaetze (AES 3.40),
+dieser Kernel neun -- der neunte wind_create scheitert hier und gelingt
+dort.
+
+
+DURCHGANG 3 -- die Rechteckliste (NEU, noch nie gemessen)
+---------------------------------------------------------
+Am Mac: AES.TSV durch AES-R2B.TSV ersetzen.
+
+  DUMPAES.NAP    -> AES.BIN    erwartet 15 Datensaetze, 1880 Bytes
+                    AES.LOG
+
+Das ist WF_FIRSTXYWH / WF_NEXTXYWH -- die Rechteckliste, die jede
+GEM-Anwendung beim Neuzeichnen ablaeuft, und an der QED entscheidet, ob
+es direkt zeichnet (free_for_draw, sdk/apps/qed/src/window.c:267). Bisher
+in keiner Falltabelle enthalten.
+
+Worauf besonders zu achten ist: EmuTOS' w_owns (gemwmlib.c:1229-1240)
+setzt am Ende der Liste NUR g_w und g_h auf 0 -- g_x und g_y bleiben
+unberuehrt. Sichtbar wird das allein durch die Vergiftung der Puffer.
+
+DIESE TABELLE MUSS AUCH AUF DEM TT LAUFEN. Fuer sie gibt es noch keinen
+EmuTOS-Dump; ohne den TT-Lauf gibt es nichts zu vergleichen.
+
+
+TT-SEITE
+--------
+Fuer die Durchgaenge 1 und 2 ist KEIN neuer TT-Lauf noetig: diese vier
+Falltabellen sind unveraendert, also bleiben die vorhandenen
+EmuTOS-Dumps gueltig und vergleichbar:
+
+  EMUTOS14-AES.BIN        gegen AES.TSV      (r1)
+  EMUTOS14-AES-r2wind.BIN gegen AES-R2.TSV
+  EMUTOS14-VDI-all.BIN    gegen VDI.TSV
+  EMUTOS14-RASTER.BIN     gegen RASTER.TSV
+
+Der Vergleicher lehnt zwei Dumps mit verschiedener Tabellen-CRC ab -- das
+ist die Bindung, die hier zaehlt.
+
+Fuer Durchgang 3 (AES-R2B.TSV) MUSS der TT laufen. Dieselbe Datei --
+byteweise dieselbe, die CRC bindet sie -- auf die TT-Karte, DUMPAES.PRG
+starten, AES.BIN und AES.LOG zurueckbringen. Ohne diesen Lauf gibt es zu
+den 15 Faellen keinen Referenzwert und der Pi-Dump steht allein da.

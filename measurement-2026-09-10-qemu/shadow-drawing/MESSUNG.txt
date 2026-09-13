@@ -1,0 +1,25 @@
+Schlagschatten, Zeichenseite — Messung am Screendump
+=====================================================
+
+Bild: desktop-window-640x480.png (QEMU raspi4b, 640x480, Kernel mit Stufen 1-4,
+DROP_SHADOW_SIZE = 2). Aufgenommen per QMP screendump, headless.
+
+Gezaehlt wurden schwarze Pixel quer ueber die jeweilige Fensterkante:
+
+  linke Kante   (y=400, x=42..51)    1   = nur Rahmen
+  obere Kante   (x=300, y=14..23)    1   = nur Rahmen
+  rechte Kante  (y=400, x=589..596)  3   = Rahmen + 2 px Schatten
+  untere Kante  (x=300, y=440..447)  3   = Rahmen + 2 px Schatten
+
+Der Rahmen ist 1 px. Die Asymmetrie rechts/unten gegen links/oben ist genau die
+eines Schlagschattens, die Breite genau DROP_SHADOW_SIZE.
+
+Belegt damit: der Schatten wird wirklich gezeichnet (EmuTOS
+W_ACTIVE[ROOT].ob_state = SHADOWED, aes/gemwmlib.c:1284), nicht nur in der
+Geometrie beruecksichtigt. Das war der Punkt, an dem ein Fix allein an der
+Rechteckliste einen sichtbaren Fehler erzeugt haette.
+
+NICHT belegt, weil in QEMU nicht einzufangen: stehengebliebenes Band nach
+Close/Move und Schatten ueber dem Inhalt eines darunterliegenden Fensters. Der
+Dumperlauf zeichnet seine Fenster in Millisekunden; Abtasten alle 150 ms trifft
+das nicht. Beides braucht ein Szenario, das stehen bleibt.

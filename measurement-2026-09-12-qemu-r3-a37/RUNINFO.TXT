@@ -1,0 +1,68 @@
+A37 counter-measurement -- fix_tedinfo_std: recompute te_txtlen/te_tmplen.
+
+Taken 2026-09-12 after the fix in tos-api/src/aes/resource.rs and
+tos-api/src/aes/object.rs:
+
+  (a) new `fix_tedinfo_std` / `fix_tedinfo_std_ilp32`
+      (EmuTOS aes/gemrslib.c:655-669, called from rs_readit :798):
+      after the offsets have become pointers, every relocated TEDINFO's
+      te_txtlen = strlen(te_ptext)+1 and te_tmplen = strlen(te_ptmplt)+1.
+      Called from `relocate_and_register_core` only -- the rs_readit path.
+      `relocate_blob` (the embedded GEM.RSC, EmuTOS `gem_rsc_init`,
+      aes/gem_rsc.c) deliberately does NOT run it: `erd` reserves the full
+      te_txtlen bytes per TEDINFO there (tools/erd.c:3007).
+  (b) `ins_char` clamps a negative insert position (aes/object.rs).
+      te_txtlen == 1 drives `ob_edit`'s field-full branch (gemobed.c:407-413)
+      to idx == -1.  EmuTOS edits a scratch copy (D.g_rawstr, gemobed.c:349)
+      and only then does strcpy(te_ptext, D.g_rawstr) (:438), so its str[-1]
+      store is invisible; NewTOS edits te_ptext in place, where the same index
+      would write one byte BEFORE the resource buffer.  Clamping reproduces
+      EmuTOS' observable result (character dropped, field unchanged).
+
+This run is a NO-REGRESSION check, not a positive proof: the dumper does not
+call rsrc_load, and the file selector uses `relocate_blob`, which is untouched.
+The positive proof is the host test tos-api/tests/aes_rsrc_tedinfo_txtlen.rs.
+
+Machine   : QEMU raspi4b, headless, 640x480 (the TT-medium profile), no card
+            handling, no click.  NewTOS debug build of the working tree at that
+            moment (cargo run -p xtask -- build --board rpi4; kernel8.img
+            rebuilt fresh for this board immediately before the run, with
+            kernel/src/lib.rs + tos-api/src/lib.rs touched first so the shared
+            target directory could not report "up to date").
+Dumper    : tosdump/build/DUMPAES.NAP, build id 70ca, record format 2.
+Table     : tosdump/cases/aes-r3-wind-state.tsv, 39 cases, CRC 979FAC60
+            (the card's C:\AES.TSV is a copy; the artefact is untouched).
+Autostart : NEWDESK.INF with "#Z 01 C:\DUMPAES.NAP@" on a FAT16 image built by
+            tools/make-sd-image.sh.
+Reference : tosdump/reference/EMUTOS14-AES-r3.BIN (EmuTOS 1.4, via Hatari).
+Diff      : tosdump/host/build/tosdiff cases/aes-r3-wind-state.tsv \
+              reference/EMUTOS14-AES-r3.BIN AES.BIN
+
+Result, against measurement-2026-09-12-qemu-r3-a33/ (same table, same profile,
+the run before this fix):
+
+  cases differing in int_out : 261, 280, 400, 481, 494, 574, 588   -- IDENTICAL
+  int_out difference lines   : 14 before, 14 after                 -- IDENTICAL
+  global[] difference lines  : 234 before, 234 after               -- IDENTICAL
+
+  Diffing the two DIFF reports line by line leaves exactly 78 changed lines,
+  ALL of them global[11] (0xC1E8 -> 0xC290).  global[10..12] is the known
+  ap_planes + pointer-split delta; global[11] is the low half of a kernel
+  address and moves with every build.  No other line differs anywhere:
+
+      diff a33/DIFF... a37/DIFF... | grep '^[<>]' | grep -vc 'global\[11\]'
+      0
+
+END STATE HELD.  The only int_out payload still differing is the seven
+dispatcher-stack-residue cases -- 261, 280, 400, 481, 494, 574, 588, each in
+int_out[1..2] -- EmuTOS' uninitialised output words (aes/gemsuper.c:430-432,
+444-445).  No case and no other int_out field differs anywhere in the table.
+
+Boot log: clean, no fault/panic.  "AES.TSV: 39 cases, CRC 979FAC60",
+"all 39 cases ran", "AES.BIN: 39 records, 4712 bytes", and the desktop came up
+afterwards ("[desk] desktop up (1 drives)").
+
+Note on the first attempt: the card initially had no C:\AES.TSV, so the dumper
+reported "the case table could not be read" and wrote a 78-byte AES.LOG.  That
+run was discarded; the table was copied in and the boot repeated.  Only the
+repeated run is archived here.

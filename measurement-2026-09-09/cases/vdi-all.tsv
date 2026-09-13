@@ -1,0 +1,274 @@
+# vdi-all.tsv -- every VDI case in one table, for a single run.
+#
+# Rounds 1, 2 and 3 concatenated verbatim, in that order, so one pass on a
+# machine measures everything instead of three passes with three tables.
+#
+# WHAT THIS COSTS, and it is not free: a case id is the PHYSICAL LINE NUMBER
+# and the file CRC binds every dump to the file it was taken with. Every case
+# here therefore has a DIFFERENT id from the same case in vdi-r1/r2/r3.tsv,
+# and the dumps already taken with those tables cannot be compared against
+# this one. They stay valid against their own tables; this table needs its
+# own measurement on every machine.
+#
+# The round tables stay in the tree unchanged. Nothing already measured is
+# invalidated -- it simply does not answer to this file.
+#
+# Overlap between the rounds is kept rather than deduplicated: round 1 and
+# round 2 cover some of the same opcodes with different values, and deciding
+# which variant to drop would be a judgement call with nothing to gain. A
+# case measured twice costs a few milliseconds.
+#
+# Appending only, as always.
+#
+# opcode\tsub\tintin\tptsin\tcomment
+
+# ======================================================================
+# round 1 (cases/vdi-r1.tsv)
+# ======================================================================
+# --- inquiries: report state, change nothing ------------------------
+35	0	-	-	vql_attributes line attributes after the reset
+36	0	-	-	vqm_attributes marker attributes after the reset
+37	0	-	-	vqf_attributes fill attributes after the reset
+38	0	-	-	vqt_attributes text attributes after the reset
+102	0	0	-	vq_extnd 0 SIZ_TAB and DEV_TAB
+102	0	1	-	vq_extnd 1 clipping and extended info
+115	0	1	-	vqin_mode locator input mode
+# --- attribute setters: echo the value they actually accepted -------
+32	0	2	-	vswr_mode transparent, echoes the accepted mode
+32	0	99	-	vswr_mode out of range, echoes the default instead
+15	0	3	-	vsl_type dashed
+15	0	99	-	vsl_type out of range, echoes the default
+17	0	1	-	vsl_color pen 1
+17	0	99	-	vsl_color out of range
+23	0	2	-	vsf_interior pattern
+23	0	99	-	vsf_interior out of range
+24	0	5	-	vsf_style pattern index 5
+13	0	900	-	vst_rotation 90 degrees
+13	0	123	-	vst_rotation not a multiple of 900
+106	0	31	-	vst_effects every effect bit
+39	0	1,2	-	vst_alignment centred, half line
+# --- output primitives ----------------------------------------------
+6	0	-	0,0,100,100	v_pline one diagonal, two points
+6	0	-	0,100,100,0	v_pline the other diagonal
+9	0	-	10,10,60,10,60,40	v_fillarea a triangle, three points
+105	0	-	5,5	v_get_pixel background pixel after v_clrwk
+
+# ======================================================================
+# round 2 (cases/vdi-r2.tsv)
+# ======================================================================
+# --- no-ops: an unimplemented opcode is observable behaviour too -------
+3	0	-	-	v_clrwk clear the workstation
+4	0	-	-	v_updwk nop in EmuTOS
+10	0	-	-	v_cellarray nop
+27	0	-	-	vq_cellarray nop
+29	0	-	-	v_valuator nop, no analogue device on the ST
+34	0	-	-	opcode 34 does not exist
+132	0	-	-	vqt_justified nop, CONF_WITH_EXTENDED_MOUSE gated
+133	0	-	-	vs_grayoverride nop, gated
+# --- inquiries ---------------------------------------------------------
+26	0	1,0	-	vq_color pen 1 requested
+26	0	1,1	-	vq_color pen 1 realised
+26	0	0,0	-	vq_color pen 0 requested
+26	0	255,0	-	vq_color pen 255 requested
+26	0	999,0	-	vq_color out of range
+30	0	1	-	v_choice D-VDI-10 dummy, returns 1 at once
+115	0	2	-	vqin_mode valuator
+115	0	3	-	vqin_mode choice
+115	0	4	-	vqin_mode string
+117	0	65	-	vqt_width character A
+117	0	32	-	vqt_width space
+130	0	0	-	vqt_name font index 0
+130	0	1	-	vqt_name font index 1
+130	0	2	-	vqt_name font index 2
+130	0	3	-	vqt_name font index 3, TOS 3.06 has a fourth font
+131	0	-	-	vqt_fontinfo current font
+116	0	65,66,67	-	vqt_extent extent of ABC
+116	0	-	-	vqt_extent empty string
+# --- line attributes ---------------------------------------------------
+15	0	1	-	vsl_type solid
+15	0	7	-	vsl_type user defined
+15	0	0	-	vsl_type below range
+16	0	-	1,0	vsl_width 1
+16	0	-	3,0	vsl_width 3, odd
+16	0	-	4,0	vsl_width 4, even -> rounded down
+16	0	-	40,0	vsl_width at SIZ_TAB max
+16	0	-	999,0	vsl_width above max
+17	0	0	-	vsl_color pen 0
+17	0	15	-	vsl_color pen 15
+108	0	0,0	-	vsl_ends squared, squared
+108	0	1,2	-	vsl_ends arrow, rounded
+108	0	2,1	-	vsl_ends rounded, arrow
+108	0	9,9	-	vsl_ends out of range
+113	0	0xFFFF	-	vsl_udsty all ones
+113	0	0xAAAA	-	vsl_udsty alternating
+# --- marker attributes -------------------------------------------------
+18	0	1	-	vsm_type dot
+18	0	3	-	vsm_type asterisk, the EmuTOS default
+18	0	6	-	vsm_type at range top
+18	0	99	-	vsm_type out of range
+19	0	-	0,11	vsm_height at SIZ_TAB minimum
+19	0	-	0,88	vsm_height at SIZ_TAB maximum
+19	0	-	0,200	vsm_height above maximum
+20	0	1	-	vsm_color pen 1
+20	0	99	-	vsm_color out of range
+# --- fill attributes ---------------------------------------------------
+23	0	0	-	vsf_interior hollow
+23	0	1	-	vsf_interior solid
+23	0	3	-	vsf_interior hatch
+23	0	4	-	vsf_interior user defined
+24	0	1	-	vsf_style index 1, D-VDI-8 setter is 0-based
+24	0	24	-	vsf_style at pattern maximum
+24	0	25	-	vsf_style above pattern maximum
+25	0	0	-	vsf_color pen 0
+25	0	15	-	vsf_color pen 15
+104	0	0	-	vsf_perimeter off
+104	0	1	-	vsf_perimeter on
+# --- text attributes ---------------------------------------------------
+12	0	-	0,8	vst_height 8 pixels
+12	0	-	0,16	vst_height 16 pixels
+12	0	-	0,26	vst_height 26, the TOS 3.06 maximum
+13	0	0	-	vst_rotation 0
+13	0	1800	-	vst_rotation 180 degrees
+13	0	2700	-	vst_rotation 270 degrees
+21	0	1	-	vst_font 1
+21	0	2	-	vst_font 2
+21	0	99	-	vst_font out of range
+22	0	0	-	vst_color pen 0
+22	0	15	-	vst_color pen 15
+106	0	0	-	vst_effects none
+106	0	1	-	vst_effects thickened
+107	0	10	-	vst_point 10 point
+107	0	6	-	vst_point 6 point
+39	0	0,0	-	vst_alignment left, baseline
+39	0	2,5	-	vst_alignment right, bottom
+39	0	9,9	-	vst_alignment out of range
+# --- mode and clipping -------------------------------------------------
+32	0	1	-	vswr_mode replace
+32	0	3	-	vswr_mode xor
+32	0	4	-	vswr_mode reverse transparent
+129	0	1	10,10,100,100	vs_clip on, a rectangle
+129	0	0	-	vs_clip off
+33	0	1,1	-	vsin_mode locator request
+33	0	1,2	-	vsin_mode locator sample
+# --- output primitives -------------------------------------------------
+6	0	-	0,0,639,479	v_pline the full diagonal
+7	0	-	100,100,120,120	v_pmarker two markers, D-VDI-9 forces clip on
+8	0	65,66,67	20,40	v_gtext ABC
+9	0	-	10,10,60,10,60,40,10,40	v_fillarea a rectangle, four points
+114	0	-	10,10,60,40	vr_recfl a filled rectangle
+103	0	1	50,50	v_contourfill seed fill after v_clrwk
+105	0	-	0,0	v_get_pixel top left corner
+105	0	-	639,479	v_get_pixel bottom right corner
+# --- GDP sub-ops (opcode 11, contrl[5] selects) ------------------------
+11	1	-	10,10,60,40	v_bar
+11	2	0,900	100,100,40,30,0,0,40,0	v_arc quarter turn
+11	3	0,1800	100,100,40,30,0,0,40,0	v_pieslice half turn
+11	4	0,3600	100,100,0,0,30,0,0,0	v_circle radius from PTSIN[4]
+11	5	0,3600	100,100,50,25,0,0,50,0	v_ellipse
+11	6	0,900	100,100,50,25,0,0,50,0	v_ellarc
+11	7	0,1800	100,100,50,25,0,0,50,0	v_ellpie
+11	8	-	10,10,60,40	v_rbox rounded box
+11	9	-	10,10,60,40	v_rfbox rounded filled box
+# --- escape sub-ops (opcode 5, contrl[5] selects) ----------------------
+5	1	-	-	vq_chcells rows and columns
+5	4	-	-	v_curup
+5	5	-	-	v_curdown
+5	6	-	-	v_curright
+5	7	-	-	v_curleft
+5	8	-	-	v_curhome
+5	9	-	-	v_eeos erase to end of screen
+5	10	-	-	v_eeol erase to end of line
+5	11	5,10	-	vs_curaddress row 5 column 10
+5	12	65,66,67	-	v_curtext ABC
+5	13	-	-	v_rvon
+5	14	-	-	v_rvoff
+5	15	-	-	vq_curaddress
+5	16	-	-	vq_tabstatus D-VDI-2 returns 1
+5	18	-	100,100	v_dspcur show the graphics cursor
+5	19	-	-	v_rmcur remove the graphics cursor
+
+# ======================================================================
+# round 3 (cases/vdi-r3.tsv)
+# ======================================================================
+# --- line attributes: set non-default, read back via vql_attributes (35) 
++15	0	4	-	vsl_type dashed-dotted
+35	0	-	-	vql_attributes after vsl_type dashed-dotted
++15	0	7	-	vsl_type user defined
+35	0	-	-	vql_attributes after vsl_type user defined
++17	0	3	-	vsl_color pen 3
+35	0	-	-	vql_attributes after vsl_color 3
++16	0	-	5,0	vsl_width 5
+35	0	-	-	vql_attributes after vsl_width 5
++32	0	3	-	vswr_mode xor
+35	0	-	-	vql_attributes after vswr_mode xor
+# --- marker attributes: read back via vqm_attributes (36) ------------
++18	0	5	-	vsm_type 5
+36	0	-	-	vqm_attributes after vsm_type 5
++20	0	3	-	vsm_color pen 3
+36	0	-	-	vqm_attributes after vsm_color 3
++19	0	-	0,40	vsm_height 40
+36	0	-	-	vqm_attributes after vsm_height 40
+# --- fill attributes: read back via vqf_attributes (37) --------------
++23	0	2	-	vsf_interior pattern
+37	0	-	-	vqf_attributes after vsf_interior 2
++24	0	7	-	vsf_style 7
+37	0	-	-	vqf_attributes after vsf_style 7
++25	0	3	-	vsf_color pen 3
+37	0	-	-	vqf_attributes after vsf_color 3
++104	0	0	-	vsf_perimeter off
+37	0	-	-	vqf_attributes after vsf_perimeter off
+# --- text attributes: read back via vqt_attributes (38) --------------
++21	0	2	-	vst_font 2
+38	0	-	-	vqt_attributes after vst_font 2 -- the gap round 2 missed
++22	0	3	-	vst_color pen 3
+38	0	-	-	vqt_attributes after vst_color 3
++13	0	900	-	vst_rotation 90
+38	0	-	-	vqt_attributes after vst_rotation 900
++39	0	1,2	-	vst_alignment centred
+38	0	-	-	vqt_attributes after vst_alignment 1,2
++106	0	5	-	vst_effects thicken+skew
+38	0	-	-	vqt_attributes after vst_effects 5
++12	0	-	0,8	vst_height 8
+38	0	-	-	vqt_attributes after vst_height 8
++107	0	6	-	vst_point 6
+38	0	-	-	vqt_attributes after vst_point 6
+# --- text metrics follow the selected font ---------------------------
++12	0	-	0,4	vst_height 4 selects the smallest face
+131	0	-	-	vqt_fontinfo after vst_height 4
++12	0	-	0,16	vst_height 16
+131	0	-	-	vqt_fontinfo after vst_height 16
++12	0	-	0,4	vst_height 4
+117	0	65	-	vqt_width A in the smallest face
++12	0	-	0,4	vst_height 4
+116	0	65,66,67	-	vqt_extent ABC in the smallest face
++21	0	2	-	vst_font 2
+117	0	65	-	vqt_width A after vst_font 2
++107	0	6	-	vst_point 6
+131	0	-	-	vqt_fontinfo after vst_point 6
+# --- clipping: read back through vq_extnd(1) ptsout[0..3] ------------
++129	0	1	10,20,300,400	vs_clip on
+102	0	1	-	vq_extnd 1 after vs_clip on
++129	0	0	-	vs_clip off
+102	0	1	-	vq_extnd 1 after vs_clip off
+# --- input mode: read back through vqin_mode (115) -------------------
++33	0	1,2	-	vsin_mode locator sample
+115	0	1	-	vqin_mode locator after sample
++33	0	4,1	-	vsin_mode string request
+115	0	4	-	vqin_mode string after request
+# --- the four opcodes round 2 missed ---------------------------------
+122	0	0	-	v_show_c unconditional
+123	0	-	-	v_hide_c
++123	0	-	-	v_hide_c first
+122	0	1	-	v_show_c conditional after a hide
+111	0	8,8,1,1,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,65535,65535,65535,65535,65535,65535,65535,65535,65535,65535,65535,65535,65535,65535,65535,65535	-	vsc_form user cursor, 37 words
+11	10	0,0,65,66,67	20,60,200,0	v_justified GDP sub-op 10
+# --- state a prelude established -------------------------------------
++23	0	1	-	vsf_interior solid
++11	1	-	40,40,140,120	v_bar draws a filled box
+103	0	1	80,80	v_contourfill seeded inside the drawn box
++11	1	-	40,40,140,120	v_bar
+105	0	-	80,80	v_get_pixel inside the drawn box
++6	0	-	0,0,200,200	v_pline a diagonal
+105	0	-	100,100	v_get_pixel on the drawn line
+# --- a second virtual workstation: the full DEV_TAB and SIZ_TAB ------
+100	0	1,1,1,1,1,1,1,1,1,1,2	-	v_opnvwk opens an additional workstation

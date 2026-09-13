@@ -1,0 +1,9 @@
+case 42  opcode 102  vq_extnd 0
+    intout        [ 13]  EMU=0x0010 (    16)   NEW=0x0100 (   256)
+    intout        [ 39]  EMU=0x1000 (  4096)   NEW=0x0000 (     0)
+
+case 43  opcode 102  vq_extnd 1
+    intout        [  4]  EMU=0x0004 (     4)   NEW=0x0010 (    16)
+    intout        [  5]  EMU=0x0001 (     1)   NEW=0x0000 (     0)
+
+2 of 36 cases differ

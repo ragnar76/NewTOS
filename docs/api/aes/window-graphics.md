@@ -345,17 +345,199 @@ This is the heart of the window-redraw protocol and the most bug-prone part.
   **piece of the window's work area not covered by any higher window**, so
   drawing clipped to each piece never paints over an overlapping window.
 - The owner rectangle list itself is built by `newrect`/`mkrect`/`brkrct`
-  (`gemwrect.c`, reference): when window geometry changes, each window's rect is
+  (`gemwrect.c:64-205`): when window geometry changes, each window's rect is
   broken against every higher window's true rect into up to four
-  (TOP/LEFT/RIGHT/BOTTOM) non-overlapping pieces (`mkpiece`); a window that got
-  broken is flagged `VF_BROKEN` (can't be block-moved). The list therefore
-  always describes the **visible, non-overlapping** portions.
+  (TOP/LEFT/RIGHT/BOTTOM) non-overlapping pieces (`mkpiece`, `gemwrect.c:64-98`);
+  a window that got broken is flagged `VF_BROKEN` (can't be block-moved). The
+  list therefore always describes the **visible, non-overlapping** portions.
+  `w_getxptr`/`w_getsize` (`gemwmlib.c:231-260`) show that the cutting rect for
+  a break is the window's **`WS_TRUE`** size — its `WS_CURR` border rect with
+  `DROP_SHADOW_SIZE` (2 px, `gemwmlib.c:49`) added to width and height — while
+  the final clip in `w_owns` is against `WS_WORK` (the inset work rect); the
+  drop shadow therefore participates in *cutting other windows' lists* but is
+  clipped away again in what a redraw handler actually receives.
 
-> **Contract:** the *sequence of visible pieces* a redraw handler receives —
-> non-overlapping, clipped to the work area, terminated by an empty rect. The
-> `ORECT` free-list, the four-way split, and `VF_BROKEN` are **reference**;
-> NewTOS may compute the visible-region decomposition any way it likes as long
-> as `WF_FIRSTXYWH`/`WF_NEXTXYWH` yield the same set of pieces.
+> **Correction, 2026-09-12 — the "any way it likes" freedom below did not
+> exist and has been struck.** Until this date this section read:
+>
+> > **Contract:** the *sequence of visible pieces* a redraw handler receives —
+> > non-overlapping, clipped to the work area, terminated by an empty rect. The
+> > `ORECT` free-list, the four-way split, and `VF_BROKEN` are **reference**;
+> > NewTOS **may compute the visible-region decomposition any way it likes as
+> > long as** `WF_FIRSTXYWH`/`WF_NEXTXYWH` **yield the same set of pieces**.
+>
+> A measurement against the pinned EmuTOS build
+> (`docs/analysis/aes-r3-wind-state-einordnung-2026-09-12.md`, Befund C;
+> `tosdump/cases/aes-r3-wind-state.tsv` cases 439–588) falsifies the premise
+> that a "same set of pieces" independent of subtraction order exists at all:
+> for **the same three window rects**, opened in a different order, EmuTOS
+> itself returns **four** pieces in one ordering and **five** in the other
+> (worked out from source below, and confirmed digit-for-digit against the
+> EmuTOS dump). There is no order-independent decomposition to converge on —
+> the piece count and boundaries are a deterministic function of the order in
+> which covering windows are subtracted, and that order is exactly the thing
+> the struck sentence declared free. This paragraph was the license under
+> which a real defect was built (NewTOS subtracts covering windows in handle/
+> slot order instead of ascending z-order — Befund C, `tos-api/src/aes/
+> window.rs:788-792`); the code is out of scope for this correction, only the
+> spec is fixed here.
+
+#### The subtraction order is normative — ascending z, not handle order
+
+`draw_change` rebuilds **every** window's rectangle list on any geometry
+change with one traversal:
+
+```c
+everyobj(gl_wtree, ROOT, NIL, (EVERYOBJ_CALLBACK)newrect, 0, 0, MAX_DEPTH);
+```
+— `gemwmlib.c:1089`, followed by `gl_wtop = W_TREE[ROOT].ob_tail;` at `:1093`.
+
+`everyobj` (`gemobjop.c:76-131`) walks the `W_TREE` sibling chain from
+`ob_head` to `ob_tail` (the `child`/`sibling` traversal, abort conditions at
+`gemobjop.c:93` and `:121`). A window's position in that chain **is** its
+z-order: `w_obadd` (`gemwmlib.c:186-201`) — called from `wm_open`
+(`gemwmlib.c:1425`) whenever a window is opened — always appends the new
+child at `ob_tail`, and `wm_mktop` (`gemwmlib.c:1605-1610`) moves a topped
+window to `ob_tail` via `ob_order(gl_wtree, w_handle, NIL)` (`NIL` = append
+after the current tail, `gemoblib.c:1201-1240`, esp. the `new_pos == NIL`
+branch). So **`ob_head` → `ob_tail` is bottom-to-top**, and `gl_wtop` (the
+topmost window) is always the tail.
+
+For each window `wh` visited in that ascending-z sweep, `newrect(tree, wh)`
+(`gemwrect.c:165-205`) does two things in order:
+
+1. Discards `wh`'s own current rectangle list and rebuilds it as **one
+   unbroken node** covering `wh`'s own `WS_TRUE` rect (`:172-195`, `:200-204`)
+   — at this point `wh` is treated as if nothing covers it yet.
+2. Calls `everyobj(tree, ROOT, wh, mkrect, …)` (`:198`) — traverses the
+   **same** `ob_head`→`ob_tail` chain, calling `mkrect(tree, ow)`
+   (`gemwrect.c:136-162`) for every window `ow` visited **before** reaching
+   `wh` (the `this == last` / `tmp1 == last` aborts in `everyobj` stop the
+   walk exactly at `wh`, never processing `wh` itself). Because the chain is
+   ascending z, "visited before `wh`" means **every window with lower z than
+   `wh`** — i.e. every window `wh` could be covering. `mkrect` then calls
+   `brkrct(new=wh's rect, r, p)` (`gemwrect.c:101-132`) against `ow`'s
+   *existing* rectangle list, replacing each surviving piece `r` that
+   overlaps `wh`'s rect **in place** with up to four (TOP/LEFT/RIGHT/BOTTOM,
+   `mkpiece`, `:64-98`) sub-pieces, in that fixed order.
+
+Net effect, read across the whole `draw_change` sweep: window `W`'s final
+owner-rectangle list is `W`'s own true rect, cut **once per window above it,
+one window at a time, in ascending z order of those covering windows** —
+never in handle order, slot-array order, or any other order. This is exactly
+what `w_obadd`/`ob_order` guarantee by always appending at the tail: the
+processing order **is** the z order by construction.
+
+**Why the order changes both the count and the boundaries, not just which
+piece is called "first".** `brkrct` replaces a *surviving* piece with its
+sub-pieces at the moment it is cut; a piece already removed by an earlier cut
+is never revisited by a later one, and a piece that survives a cut is
+individually re-split by every subsequent one. Cutting with window `A` first
+and then `B` therefore does not, in general, produce the same fragments as
+cutting with `B` first and then `A` — even though both orders remove exactly
+the union `A ∪ B` from `W`'s area. The worked example below is the proof: the
+same three rects, opened in a different order, yield four pieces in one case
+and five in the other.
+
+> **Contract (corrected).** The window's owner-rectangle list is **not** free
+> to compute "any way that yields the same set of pieces" — no such
+> order-independent set exists. What is contract is the **algorithm's
+> observable result**: for a given window and a given set of open, higher
+> windows in a given z-order, `WF_FIRSTXYWH`/`WF_NEXTXYWH` must walk the
+> **exact ordered sequence of non-overlapping, work-clipped pieces** that
+> results from subtracting each covering window's true rect **one at a time,
+> in ascending z-order**, terminated by an empty (`w=h=0`) rect. NewTOS is
+> free to reach that result with any internal data structure or algorithm
+> (a `Vec`-backed region list, a rectangle-difference routine, etc. — the
+> `ORECT` free-list allocator `or_start`/`get_orect`, `gemwrect.c:40-61`, and
+> the `VF_BROKEN` block-move-optimisation flag remain **reference**, being
+> unobservable through any `wind_get`/`wind_set` field) — but the **subtraction
+> order (ascending z, never handle/slot order) and the resulting piece
+> boundaries/count are contract**, because they are what a conforming redraw
+> handler actually walks.
+
+#### Worked example — the two orderings of the same three windows (measured)
+
+From `tosdump/cases/aes-r3-wind-state.tsv` §D (cases 404–588), re-derived by
+hand from the source above and confirmed **digit-for-digit** against the
+EmuTOS reference dump. All three windows are created with `wind_create(kind =
+0x0FEF, …)` — every gadget bit except `INFO` (`0x0FEF` has no `0x0010` bit) —
+then opened at:
+
+| Window | Border rect (`x,y,w,h`) | `WS_TRUE` rect (+`DROP_SHADOW_SIZE`=2) |
+|---|---|---|
+| 1 | `30,40,320,240` | `30,40,322,242` |
+| 2 | `60,80,200,160` | `60,80,202,162` |
+| 3 | `180,160,200,160` | `180,160,202,162` |
+
+Window 1's `WS_WORK` rect is `31,63,296,194` (the border thicknesses this
+implies — `lb=1, tb=rb=bb=23` — are **backed out algebraically** from matching
+the measured pieces below, consistent with the `wind_calc` border formulas
+above for `CONF_WITH_3D_OBJECTS`, but not independently re-derived from
+`gl_hbox`/`gl_wbox`'s system-font pixel values in this session; the
+**border-thickness formulas** are the ones cited under `wind_calc` (108)
+above and are not affected by this correction).
+
+**Group I — opened 1, 2, 3** (ascending z: 1, 2, 3 — window 1 is broken by 2,
+then by 3):
+
+Breaking window 1's true rect by window 2's true rect (all four
+`have_piece[]` true, `gemwrect.c:113-116`) gives, in `mkpiece` order
+TOP/LEFT/RIGHT/BOTTOM: `30,40,322,40` · `30,80,30,162` · `262,80,90,162` ·
+`30,242,322,40`. Breaking that list again by window 3's true rect: the TOP
+and LEFT pieces don't overlap window 3 and survive unchanged; RIGHT
+(`262,80,90,162`) is replaced by its TOP-only sub-piece `262,80,90,80` (window
+3 extends past `RIGHT`'s right and bottom edges, so only `have_piece[TOP]` is
+true); BOTTOM (`30,242,322,40`) is replaced by its LEFT-only sub-piece
+`30,242,150,40` (window 3's left edge, `180`, is right of `BOTTOM`'s left
+edge, `30`, so `have_piece[LEFT]` is true; window 3 extends past `BOTTOM` on
+the other three sides, so `TOP`/`RIGHT`/`BOTTOM` are false). Clipping the
+resulting four-node list to `WS_WORK` (`31,63,296,194`) in `w_owns`:
+
+| Piece | Raw (true-rect space) | Clipped to `WS_WORK` (what the app sees) | Case |
+|---|---|---|---|
+| 1 | `30,40,322,40` | **`31,63,296,17`** | 439 |
+| 2 | `30,80,30,162` | **`31,80,29,162`** | 448 |
+| 3 | `262,80,90,80` | **`262,80,65,80`** | 458 |
+| 4 | `30,242,150,40` | **`31,242,149,15`** | 469 |
+| — | *(list ends)* | `w=h=0` | 481 |
+
+**Four** pieces. Matches the measured EmuTOS dump exactly.
+
+**Group II — opened 1, 3, 2** (ascending z: 1, 3, 2 — window 1 is broken by
+3, then by 2):
+
+Breaking window 1's true rect by window 3's true rect first: `have_piece[TOP]`
+and `have_piece[LEFT]` are true, `RIGHT`/`BOTTOM` false (window 3 extends past
+window 1's true rect on the right and bottom) → list = `30,40,322,120` (TOP),
+`30,160,150,122` (LEFT). Breaking **both** of those by window 2's true rect:
+the TOP piece (`30,40,322,120`) overlaps and splits into **three**
+(TOP/LEFT/RIGHT, `BOTTOM` false): `30,40,322,40` · `30,80,30,80` ·
+`262,80,90,80`; the LEFT piece (`30,160,150,122`) overlaps and splits into
+**two** (LEFT/BOTTOM, `TOP`/`RIGHT` false): `30,160,30,82` · `30,242,150,40`.
+Concatenated, the five-node raw list, clipped to the same `WS_WORK`:
+
+| Piece | Raw (true-rect space) | Clipped to `WS_WORK` (what the app sees) | Case |
+|---|---|---|---|
+| 1 | `30,40,322,40` | **`31,63,296,17`** | 519 |
+| 2 | `30,80,30,80` | **`31,80,29,80`** | **528** |
+| 3 | `262,80,90,80` | **`262,80,65,80`** | 538 |
+| 4 | `30,160,30,82` | **`31,160,29,82`** | **549** |
+| 5 | `30,242,150,40` | **`31,242,149,15`** | **561** |
+| — | *(list ends)* | `w=h=0` | 574 |
+
+**Five** pieces. Matches the measured EmuTOS dump exactly, including the
+bolded cases (528/549/561) where NewTOS's handle-order implementation
+diverges: NewTOS returns Group I's four-piece list for **both** openings,
+because it does not know which covering window is "higher" — it iterates its
+window-slot array in slot order, not ascending z.
+
+Both groups remove the identical union of area (window 2 ∪ window 3, clipped
+to window 1) from window 1 — the *visible area* is identical — but the
+**piece count differs (4 vs. 5)** and two of the surviving pieces have
+different heights (`…,29,162` in Group I where Group II has `…,29,80` **and**
+a fifth piece `…,29,82` that Group I has no equivalent for at all). This is
+the concrete evidence that no order-independent "same set of pieces" exists.
 
 ---
 
@@ -945,8 +1127,11 @@ build does not support it** (discrepancy D-053).
   record: `w_flags` (`VF_INUSE`/`VF_ISOPEN`/`VF_BROKEN`, `gemlib.h:60-63`),
   `w_owner`, `w_kind`, `w_pname`/`w_pinfo`, the FULL/WORK/PREV/CURR rects,
   `w_hslide`/`w_vslide`/`w_hslsiz`/`w_vslsiz`, and the rectangle-list pointers
-  `w_rlist`/`w_rnext`. **Reference** — NewTOS reimplements the storage; the
-  *observable* fields are the ones `wind_get`/`wind_set` expose.
+  `w_rlist`/`w_rnext`. **Reference** — NewTOS reimplements the storage (linked
+  `ORECT` nodes vs. any other structure); **not** reference is the sequence of
+  values that storage must yield through `wind_get(WF_FIRSTXYWH/NEXTXYWH)` —
+  see the corrected contract and worked example under "`wind_get` (104)" §
+  "The rectangle-list iteration" above (2026-09-12).
 - **`ORECT`** (`struct.h`, free-listed by `gemwrect.c`, `NUM_ORECT = NUM_WIN·10`)
   — a link + `GRECT` node in the owner rectangle list. **Reference.**
 - **Window-kind bit table** / **`WF_*` field-number table** / **`WM_*` message
@@ -1029,13 +1214,28 @@ build does not support it** (discrepancy D-053).
 
 (Empty during Phase 00.)
 
-- **The rectangle list is the core invariant to get right.** A redraw handler
-  walks `WF_FIRSTXYWH`/`WF_NEXTXYWH` and clips every VDI draw to each visible
-  piece; if the decomposition is wrong, windows paint over each other — the
-  classic redraw bug. NewTOS may compute the visible region however it likes
-  (e.g. a proper region/rectangle-difference algorithm) but **must** yield the
-  same set of non-overlapping, work-clipped pieces terminated by an empty rect.
-  The EmuTOS four-way split (`gemwrect.c`) is reference, not contract.
+- **The rectangle list is the core invariant to get right, and there is no
+  free-form region algorithm that gets it right by construction (corrected
+  2026-09-12).** A redraw handler walks `WF_FIRSTXYWH`/`WF_NEXTXYWH` and clips
+  every VDI draw to each visible piece; if the decomposition is wrong, windows
+  paint over each other — the classic redraw bug. This is **not** merely "any
+  decomposition of the same visible area": EmuTOS's own algorithm produces a
+  **different piece count** for the same three overlapping windows depending
+  on the order they were opened in (four pieces vs. five — worked out from
+  source under "`wind_get` (104)" § "The rectangle-list iteration" /
+  "Worked example" above, measured cases 528/549/561). NewTOS must reproduce,
+  for a given window and a given set of higher windows in a given z-order, the
+  exact ordered piece sequence that results from subtracting each covering
+  window's true rect **one at a time, in ascending z-order** (never handle/
+  slot-array order) — with up to four TOP/LEFT/RIGHT/BOTTOM sub-pieces per cut,
+  in that order. NewTOS is free to implement this with any internal data
+  structure (a `Vec`-backed region list, a proper rectangle-difference
+  algorithm, …) — the EmuTOS `ORECT` free-list allocator itself
+  (`or_start`/`get_orect`, `gemwrect.c:40-61`) is reference — as long as the
+  *algorithm's result* (subtraction order and resulting boundaries/count)
+  matches. `tos-api/src/aes/window.rs:788-792` currently subtracts covering
+  windows in window-slot order, not ascending `z`; fixing that is a Developer
+  task, not covered by this spec correction.
 - **The frame drawing + rubber-band mechanics are reference** (NewTOS
   reimplements `w_bldactive` and the XOR trackers over its own framebuffer XOR
   primitive fed by IKBD/USB-HID mouse position, [[keyboard-via-atari-ikbd]]).

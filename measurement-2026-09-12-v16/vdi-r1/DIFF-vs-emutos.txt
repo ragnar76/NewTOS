@@ -1,0 +1,17 @@
+EMUTOS14-VDI.BIN vs VDI.BIN -- area VDI, 24 cases from vdi-r1.tsv
+
+case 36  opcode 102  vq_extnd 0 SIZ_TAB and DEV_TAB
+    intout[13]              EMUTOS14-VDI.BIN = 0x0010 (16)   VDI.BIN          = 0x0100 (256)
+    intout[39]              EMUTOS14-VDI.BIN = 0x1000 (4096)   VDI.BIN          = 0x0000 (0)
+
+case 37  opcode 102  vq_extnd 1 clipping and extended info
+    intout[4]              EMUTOS14-VDI.BIN = 0x0004 (4)   VDI.BIN          = 0x0010 (16)
+    intout[5]              EMUTOS14-VDI.BIN = 0x0001 (1)   VDI.BIN          = 0x0000 (0)
+
+case 46  opcode 17  vsl_color out of range
+    intout[0]              EMUTOS14-VDI.BIN = 0x0001 (1)   VDI.BIN          = 0x0063 (99)
+
+case 59  opcode 105  v_get_pixel background pixel after v_clrwk
+    intout[1]              EMUTOS14-VDI.BIN = 0x0000 (0)   VDI.BIN          = 0xFFDF (-33)
+
+4 of 24 cases differ

@@ -43,8 +43,8 @@
 > Per ADR-013 (`docs/MEMORY.md`), NewTOS defines its own **native** `.RSC`
 > (`NrscHeader`, magic `"NRSC"`, little-endian, 64-bit `ob_spec`, offsets
 > from blob base, coordinates already in pixels — `tos-api/src/aes/resource.rs`);
-> `rsrc_load` searches a **hardcoded** `C:\GEMSYS\RSC\<name>` then `C:\<name>`
-> (not `sh_find`'s shell-path search), and `rsrc_obfix` is an **identity** (no
+> `rsrc_load` resolves its filename through `sh_find` exactly as EmuTOS does
+> (see the `rsrc_load (110)` callout), and `rsrc_obfix` is an **identity** (no
 > char→pixel fix — native resources are already in pixels). The `rsrc_gaddr`/
 > `rsrc_saddr` ABI slots, the `R_*` type semantics, and the 1/0 return
 > convention remain contract; the on-disk byte layout, `sh_find`, and the
@@ -185,17 +185,44 @@ failure; `1` on success. Only **one** resource is loaded per application at a
 time — a second `rsrc_load` overwrites `ap_rscmem` without freeing the first
 (the app must `rsrc_free` between loads).
 
-> **NewTOS status (deviation, ADR-013/D-100).** NewTOS's `rsrc_load`
-> (`tos-api/src/aes/resource.rs::rsrc_load`) does none of the above at the
-> byte level: it copies the bare filename from `addr_in[0]`, tries
-> `C:\GEMSYS\RSC\<name>` then `C:\<name>` (a **fixed two-entry search**, not
-> `sh_find`), reads the file into a static 64 KiB buffer
-> (`crate::bdos::fs::read_file`), and — if the header magic is `"NRSC"` —
-> relocates the **native** offset table in place (`relocate_and_register`).
-> There is no classic `RSHDR`, no big-endian header, no `NEW_FORMAT_RSC`/CICON
-> path, and no separate coordinate-fix pass (coordinates are already pixels;
-> see `rsrc_obfix` below). The `int_out[0] = 1`/`0` success contract is
-> preserved.
+> **NewTOS status (deviation, ADR-013/D-100).** The **lookup** matches EmuTOS
+> since 2026-09-11: `rsrc_load` (`tos-api/src/aes/resource.rs::rsrc_load`)
+> copies `addr_in[0]` into a `MAXPATHLEN` scratch and runs
+> `aes::shell::sh_find` on it — `findfile`'s stages (1) application directory
+> + name portion, (2) the spec **unchanged**, (3) `\<name>` on the **current**
+> drive; stage (4), the AES `PATH=`, is documented-absent for want of a
+> loader-populated AES environment (see `sh_find` in
+> [`scrap-shell.md`](./scrap-shell.md)). The previous fixed
+> `C:\GEMSYS\RSC\<name>` / `C:\<name>` search — which could not resolve a
+> qualified path at all — is gone; `C:\GEMSYS\RSC\` had no EmuTOS counterpart
+> and no caller.
+>
+> What still deviates is the **byte level**: the file is read into a static
+> 64 KiB buffer (`crate::bdos::fs::read_file`) and — if the header magic is
+> `"NRSC"` — the **native** offset table is relocated in place
+> (`relocate_and_register`). There is no classic `RSHDR`, no big-endian header,
+> no `NEW_FORMAT_RSC`/CICON path, and no separate coordinate-fix pass
+> (coordinates are already pixels; see `rsrc_obfix` below). The
+> `int_out[0] = 1`/`0` success contract is preserved.
+>
+> **The relocation walk matches §0 steps 3-5 since 2026-09-13 (A36).** The
+> TEDINFO / ICONBLK / BITBLK pointers are relocated **array-wise**, over the
+> `n_ted`/`n_ib`/`n_bb` counts of the native header — the counterpart of
+> `rsh_nted`/`rsh_nib`/`rsh_nbb` — so a record no OBJECT references (a free
+> image, a spare TEDINFO) is a pointer afterwards too, and `te_txtlen`/
+> `te_tmplen` are recomputed for it as well. The earlier walk followed
+> `ob_spec` and reached only the referenced records. A native header older than
+> v5 declares no such arrays; such a file loads only if it holds no
+> text/icon/image object, and is refused otherwise (`rs_readit`'s FALSE), since
+> its records could not be relocated by count.
+>
+> **Not yet done (A35):** NewTOS writes **none** of `ap_rscmem`/`ap_rsclen`/
+> `ap_ptree` into the caller's `AESGLOBAL`; it holds the descriptor in a kernel
+> static instead. For an LP64 caller gemlib's `aes_global[]` index macros place
+> three 8-byte pointer fields inside the 14 bytes between `ap_private` and
+> `ap_planes`, so no placement can hold all of them — the LP64 `AESGLOBAL`
+> layout is an open project decision. Red tests:
+> `tos-api/tests/aes_rsrc_global_fields.rs`.
 
 ### `rsrc_free` (111) — `rs_free`
 
@@ -465,11 +492,11 @@ as success — an empty list, not an error (`gemfslib.c:330-336,733-754`).
 > **EmuTOS source** (the primary specification, per CLAUDE.md Rule 1). The
 > `rsrc_obfix` coordinate-fix criterion now **holds against NewTOS** (D-101):
 > `rsrc_obfix` performs the real char→pixel conversion on the named inline
-> object. The one criterion that still differs is the `sh_find`-based "not
-> found" mechanism in the `rsrc_load` criterion (NewTOS fails to find a file
-> via its own app-dir + fixed `C:\GEMSYS\RSC\`/`C:\` search instead — the
-> `int_out[0] = 0` outcome and the "leaves the loaded resource unchanged"
-> behaviour still hold, just via a different lookup). Note the split from
+> object. The `sh_find`-based "not found" mechanism in the `rsrc_load`
+> criterion now holds too (2026-09-11): `rsrc_load` runs the real `sh_find`,
+> so the `int_out[0] = 0` outcome comes from the same four-stage search — bar
+> stage (4), the AES `PATH=`, which NewTOS has no environment for. Note the
+> split from
 > EmuTOS: because `mkrsc.py` pre-converts a **loaded** `.RSC` to pixels,
 > `rsrc_load`/relocation does **not** call `ob_fix`; only a program's own
 > **inline** `rs_object[]` reaches `rsrc_obfix`. See the "NewTOS status"
@@ -625,9 +652,10 @@ as success — an empty list, not an error (`gemfslib.c:330-336,733-754`).
   defines and loads its own **native** format (`NrscHeader`, magic `"NRSC"`,
   little-endian, 64-bit `ob_spec`, pixel coordinates —
   `tos-api/src/aes/resource.rs`), built from a classic `.rsc` by the host
-  tool `tools/mkrsc.py convert`. Consequently: `rsrc_load` does **not** call
-  `sh_find` — it tries a fixed `C:\GEMSYS\RSC\<name>` then `C:\<name>`;
-  `rsrc_obfix` is an **identity** (no char→pixel fix — see the callouts under
+  tool `tools/mkrsc.py convert`. Consequently: `rsrc_load` does **not** read
+  the classic on-disk layout — it *does* call `sh_find` to locate the file
+  (2026-09-11); `rsrc_obfix` is an **identity** (no char→pixel fix — see the
+  callouts under
   `rsrc_load (110)` and `rsrc_obfix (114)` above). What **is** preserved
   exactly: the offset→pointer relocation *shape* (byte offsets from blob
   base → absolute pointers, type-aware for `ob_spec` per object type), the
@@ -635,7 +663,8 @@ as success — an empty list, not an error (`gemfslib.c:330-336,733-754`).
   `rsrc_saddr` ABI slots, the `R_*` type semantics, and the `1`/`0` return
   convention. A classic-Atari-`.RSC` loader (the `RSHDR` byte layout, `-1L`
   sentinel, big-endian swap, char→pixel `rs_obfix`, `sh_find` lookup — all
-  accurately extracted in §0–§3 above) remains a candidate for a future
+  accurately extracted in §0–§3 above; the `sh_find` lookup is implemented)
+  remains a candidate for a future
   m68k-emulator compatibility phase, per ADR-013's own "alternatives
   rejected" note; it is not implemented today.
 - **`R_*` type coverage (D-054, task #108).** `rsrc_gaddr`

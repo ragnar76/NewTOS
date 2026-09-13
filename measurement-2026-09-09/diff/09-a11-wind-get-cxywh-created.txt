@@ -1,0 +1,156 @@
+A11 — wind_get(1, WF_CXYWH) auf einem erzeugten, ungeoeffneten Fenster
+Fall 230 der eingefrorenen Tabelle tosdump/cases/aes-r2-wind.tsv (CRC AFB11C9F)
+
+Erzeugende Befehle (aus dem Repo-Wurzelverzeichnis):
+
+  $ ./tosdump/host/build/tosdiff --validate \
+        measurement-2026-09-09/run2-pi4-r2wind/AES.BIN tosdump/cases/aes-r2-wind.tsv
+  $ ./tosdump/host/build/tosdiff --validate \
+        tosdump/reference/EMUTOS14-AES-r2wind.BIN tosdump/cases/aes-r2-wind.tsv
+  $ shasum -a 256 tosdump/cases/aes-r2-wind.tsv \
+        measurement-2026-09-09/cases/aes-r2-wind.tsv \
+        measurement-2026-09-09/run2-pi4-r2wind/AES.BIN \
+        tosdump/reference/EMUTOS14-AES-r2wind.BIN
+  $ python3 <eigener, rein lesender Recordleser> \
+        <BIN> 228 230 232 250 253
+    Layout tosdump/core/tosdump.h:104-125, Woerter big-endian
+    (tosdump/core/record.c:42-56); 0xDEAD = nicht geschrieben (tosdump.h:78).
+  $ cargo test -p tos-api --test aes_reference \
+        window_rectangles_after_create_and_open_match_the_tt
+  $ cargo test -p tos-api --test zz_audit_a11_tmp -- --nocapture
+    (temporaerer Pruefaufsatz, nach der Auswertung geloescht)
+
+== 1. Bindung der Artefakte ==
+AES.BIN: area AES, 78 records of 120 bytes, build 70ca, case CRC AFB11C9F
+AES.BIN: matches aes-r2-wind.tsv (78 cases)
+AES.BIN: accepted
+EMUTOS14-AES-r2wind.BIN: area AES, 78 records of 120 bytes, build c911, case CRC AFB11C9F
+EMUTOS14-AES-r2wind.BIN: matches aes-r2-wind.tsv (78 cases)
+EMUTOS14-AES-r2wind.BIN: accepted
+
+5419a70944ac78b82144936773c3e6e9a0a338202a1b91f9fd15f05679f31908  tosdump/cases/aes-r2-wind.tsv
+5419a70944ac78b82144936773c3e6e9a0a338202a1b91f9fd15f05679f31908  measurement-2026-09-09/cases/aes-r2-wind.tsv
+680c03b9719af741ce6781c8f9b6bdf891e625ccbadeb3fc6190f002bafd2de6  measurement-2026-09-09/run2-pi4-r2wind/AES.BIN
+aa87d29a49b3a023208ae16d188f9929e8e39fac84484b61687e53f3d572f2c5  tosdump/reference/EMUTOS14-AES-r2wind.BIN
+
+== 2. Fall 230, Rohwoerter aus beiden BINs (eigener Leser) ==
+-- Pi 4, run2-pi4-r2wind (build 70ca) --
+== measurement-2026-09-09/run2-pi4-r2wind/AES.BIN
+   ver=2 area=5 recsize=120 count=78 build=70ca caseCRC=AFB11C9F
+  case 230: opcode=104
+    contrl   = [104, 2, 5, 0, 0]
+    global   = [832, 1, 2, 4475, 0, 0, 0, 0, 0, 0, 16, 13120, 18, 0, 0]
+    int_in   = [1, 5, POISON, POISON, POISON, POISON, POISON, POISON, POISON, POISON, POISON, POISON, POISON, POISON, POISON, POISON]
+    int_out  = [1, 0, 0, 0, 0, POISON, POISON]
+    addr_in  = [0xDEADDEAD, 0xDEADDEAD, 0xDEADDEAD]
+    addr_out = 0xDEADDEAD
+    ret      = 0
+-- Atari TT, EmuTOS 1.4 (build c911) --
+== tosdump/reference/EMUTOS14-AES-r2wind.BIN
+   ver=2 area=5 recsize=120 count=78 build=c911 caseCRC=AFB11C9F
+  case 230: opcode=104
+    contrl   = [104, 2, 5, 0, 0]
+    global   = [832, 1, 0, 0, 4419, 0, 0, 0, 0, 0, 4, 0, -16892, 0, 0]
+    int_in   = [1, 5, POISON, POISON, POISON, POISON, POISON, POISON, POISON, POISON, POISON, POISON, POISON, POISON, POISON, POISON]
+    int_out  = [1, 0, 0, 0, 0, POISON, POISON]
+    addr_in  = [0xDEADDEAD, 0xDEADDEAD, 0xDEADDEAD]
+    addr_out = 0xDEADDEAD
+    ret      = 0
+
+== 3. Anker: 228 (WF_FXYWH) und 232 (WF_PXYWH) desselben Zustands ==
+-- Pi 4 --
+== measurement-2026-09-09/run2-pi4-r2wind/AES.BIN
+   ver=2 area=5 recsize=120 count=78 build=70ca caseCRC=AFB11C9F
+  case 228: opcode=104
+    contrl   = [104, 2, 5, 0, 0]
+    global   = [832, 1, 2, 4475, 0, 0, 0, 0, 0, 0, 16, 13120, 18, 0, 0]
+    int_in   = [1, 7, POISON, POISON, POISON, POISON, POISON, POISON, POISON, POISON, POISON, POISON, POISON, POISON, POISON, POISON]
+    int_out  = [1, 10, 20, 300, 200, POISON, POISON]
+    addr_in  = [0xDEADDEAD, 0xDEADDEAD, 0xDEADDEAD]
+    addr_out = 0xDEADDEAD
+    ret      = 0
+  case 232: opcode=104
+    contrl   = [104, 2, 5, 0, 0]
+    global   = [832, 1, 2, 4475, 0, 0, 0, 0, 0, 0, 16, 13120, 18, 0, 0]
+    int_in   = [1, 6, POISON, POISON, POISON, POISON, POISON, POISON, POISON, POISON, POISON, POISON, POISON, POISON, POISON, POISON]
+    int_out  = [1, 0, 0, 0, 0, POISON, POISON]
+    addr_in  = [0xDEADDEAD, 0xDEADDEAD, 0xDEADDEAD]
+    addr_out = 0xDEADDEAD
+    ret      = 0
+-- TT --
+== tosdump/reference/EMUTOS14-AES-r2wind.BIN
+   ver=2 area=5 recsize=120 count=78 build=c911 caseCRC=AFB11C9F
+  case 228: opcode=104
+    contrl   = [104, 2, 5, 0, 0]
+    global   = [832, 1, 0, 0, 4419, 0, 0, 0, 0, 0, 4, 0, -16892, 0, 0]
+    int_in   = [1, 7, POISON, POISON, POISON, POISON, POISON, POISON, POISON, POISON, POISON, POISON, POISON, POISON, POISON, POISON]
+    int_out  = [1, 10, 20, 300, 200, POISON, POISON]
+    addr_in  = [0xDEADDEAD, 0xDEADDEAD, 0xDEADDEAD]
+    addr_out = 0xDEADDEAD
+    ret      = 0
+  case 232: opcode=104
+    contrl   = [104, 2, 5, 0, 0]
+    global   = [832, 1, 0, 0, 4419, 0, 0, 0, 0, 0, 4, 0, -16892, 0, 0]
+    int_in   = [1, 6, POISON, POISON, POISON, POISON, POISON, POISON, POISON, POISON, POISON, POISON, POISON, POISON, POISON, POISON]
+    int_out  = [1, 0, 0, 0, 0, POISON, POISON]
+    addr_in  = [0xDEADDEAD, 0xDEADDEAD, 0xDEADDEAD]
+    addr_out = 0xDEADDEAD
+    ret      = 0
+
+== 4. Ergebnis von Fall 230 ==
+
+  Pi 4  int_out = 1, 0, 0, 0, 0, POISON, POISON   contrl = 104,2,5,0,0   ret = 0
+  TT    int_out = 1, 0, 0, 0, 0, POISON, POISON   contrl = 104,2,5,0,0   ret = 0
+
+  Bitgleich in contrl, int_in, int_out, addr_in, addr_out und Trap-Rueckgabe.
+  Abweichend nur global[2,3,4,10,11,12] — Klasse A06..A09, hier nicht bewertet.
+  Deshalb erscheint Fall 230 auch nicht in
+  diff/05-aes-r2wind-ohne-globals.txt (dort nur 244 und 247).
+
+  Soll: 1 und 0,0,0,0. Belege in der gepinnten Quelle references/emutos
+  @1a7484ab:
+    aes/gemwmlib.c:1378   wm_create: w_setsize(WS_CURR, i, &gl_rzero)
+    aes/gemgraf.c:425     r_set(&gl_rzero, 0, 0, 0, 0)
+    aes/gemwmlib.c:1532-1533, 1595-1596  wm_get WF_CXYWH -> w_getsize(WS_CURR)
+    aes/gemwmlib.c:1513-1524, :1598      gueltiges Handle (get_pwin :1391-1404)
+                                         -> int_out[0] = TRUE
+    aes/gemsuper.c:443-444               genau OUT_LEN=5 Woerter zurueck
+  gl_rzero ist die Konstante 0,0,0,0 und keine Bildschirmgroesse. Der Fall ist
+  damit geraeteunabhaengig: Pi (1920x1080, 16 Planes) und TT (640x480,
+  4 Planes) MUESSEN hier denselben Wert liefern, und tun es.
+
+== 5. Zusaetzlich gefahrene Grenzfaelle (Host, temporaerer Aufsatz) ==
+
+  Alle mit dem Tabellenreset wind_new davor, wie der Dumper es tut.
+
+  A  Fall 230 wortgleich nachgespielt        1, 0,0,0,0, POISON, POISON   = TT und = Pi
+  C  Handle 2 (zweites erzeugtes Fenster)    1, 0,0,0,0, POISON, POISON
+  D  Slot 1 nach open+delete neu erzeugt     1, 0,0,0,0, POISON, POISON   (kein Altrechteck)
+  E  OUT_LEN 1                               1, POISON x6                 (nur RET_CODE)
+  F  OUT_LEN 0                               POISON x7                    (nichts geliefert)
+  G  OUT_LEN 7                               1, 0,0,0,0, 0, 0             (siehe Hinweis)
+  H  Handle nach wind_delete                 0, ...                       (FALSE)
+  I  Handle nie erzeugt                      0, ...                       (FALSE)
+  J  create(-5,-7,0,0)                       1, 0,0,0,0, POISON, POISON
+  L  Handle 15                               1, 0,0,0,0, POISON, POISON
+
+  Hinweis zu G/H/I: EmuTOS fuellt bei OUT_LEN > geschriebene Woerter bzw. bei
+  einem FALSE-Rueckgang mit dem Inhalt seines UNINITIALISIERTEN lokalen
+  int_out (gemsuper.c:429, 443-444) — auf dem TT nachweisbar an den Faellen
+  244/247 (0, -1, 0, 0, 0). Wir liefern dort 0 (tos-api/src/aes/mod.rs:263).
+  Das ist ein bereits dokumentierter, wertloser Unterschied gegen einen auf der
+  Referenzseite unbestimmten Wert, kein Teil von Fall 230 (dessen Arm alle
+  fuenf Woerter selbst schreibt).
+
+== 6. Randbeobachtung, NICHT Teil von A11 ==
+
+  Derselbe Aufruf nach wind_close (create, open 30,40,320,240, close):
+    unser Wert   WF_CXYWH = 1, 30, 40, 320, 240
+    EmuTOS-Soll  WF_CXYWH = 1, 0, 0, 0, 0
+  Beleg: wm_close ruft draw_change(w_handle, &gl_rzero) (gemwmlib.c:1449,
+  :1453), und draw_change setzt WS_PREV = altes WS_CURR und WS_CURR = pt
+  (:1069-1073) — auch fuer ein nicht offenes Fenster, der Rueckweg
+  liegt danach (:1085-1086). Unser close_window (tos-api/src/aes/window.rs:1928-1958)
+  schreibt weder curr noch prev. Die eingefrorene Tabelle hat fuer diesen
+  Uebergang keinen Fall; A11 ist ausdruecklich auf das Anfangsrechteck vor
+  wind_open begrenzt. Gehoert in einen eigenen Task, hier nur festgehalten.

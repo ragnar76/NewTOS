@@ -1,0 +1,2335 @@
+[
+  {
+    "id": "M01",
+    "title": "Aktuellen Pi-Fensterlauf archivieren",
+    "kind": "Hardwaremessung",
+    "priority": "P1",
+    "scope": "Nur aes-r2-wind.tsv auf dem aktuellen Pi messen; vorhandene r1-Dateien vorher unter neuer Laufkennung sichern. Keine Fensterreparatur.",
+    "accept": "78 Records, CRC AFB11C9F; BIN und LOG validiert, Kernelidentität/Startkontext protokolliert; Vergleich gegen EMUTOS14-AES-r2wind.BIN gespeichert.",
+    "refs": [
+      "measurement-2026-09-09/cases/aes-r2-wind.tsv",
+      "tosdump/reference/EMUTOS14-AES-r2wind.BIN"
+    ],
+    "area": null,
+    "cases": [],
+    "deps": [],
+    "status": "ERLEDIGT",
+    "extra": ""
+  },
+  {
+    "id": "M02",
+    "title": "Rechtecklisten-Referenz auf Atari TT aufnehmen",
+    "kind": "Hardwaremessung",
+    "priority": "P1",
+    "scope": "Nur die vorhandene aes-r2b-rlist.tsv mit dem passenden AES-Dumper auf dem TT ausführen. Keine Änderung der eingefrorenen Tabelle.",
+    "accept": "15 Records, CRC B4CC4A5A, BIN/LOG und EmuTOS-Version archiviert; jeder NEXT-Fall behält seinen FIRST-Vorlauf.",
+    "refs": [
+      "measurement-2026-09-09/cases/aes-r2b-rlist.tsv"
+    ],
+    "area": null,
+    "cases": [],
+    "deps": [],
+    "status": "ERLEDIGT",
+    "extra": ""
+  },
+  {
+    "id": "M03",
+    "title": "Rechtecklisten auf aktuellem Pi aufnehmen",
+    "kind": "Hardwaremessung",
+    "priority": "P1",
+    "scope": "Dieselbe Tabelle wie M02 auf dem aktuellen Pi ausführen; separat von M01/r1 archivieren.",
+    "accept": "15 Records, CRC B4CC4A5A; BIN/LOG mit Build-Zuordnung validiert.",
+    "refs": [
+      "measurement-2026-09-09/cases/aes-r2b-rlist.tsv"
+    ],
+    "area": null,
+    "cases": [],
+    "deps": [],
+    "status": "ERLEDIGT",
+    "extra": ""
+  },
+  {
+    "id": "M04",
+    "title": "Laufmanifest und gemessenes Kernelabbild eindeutig verbinden",
+    "kind": "Messverfahren",
+    "priority": "P2",
+    "scope": "Nur die Zuordnung des tatsächlich gestarteten Kernels zum Messlauf entwerfen: Abbild-Hash, Build mit Dirty-State, Dumper-Hash, Tabelle, Boot-Kontext. Kein neues Cookie ohne Prüfung des bestehenden Vertrags.",
+    "accept": "Ein kurzes Format-/Transportkonzept benennt, welche Identität der laufende Kernel selbst liefern kann. Der aktuelle Zeitstempelbeleg bleibt ausdrücklich ein Indiz. Implementierung erst als eigener Nachfolgetask.",
+    "refs": [
+      "measurement-2026-09-09/RUNINFO.TXT",
+      "measurement-2026-09-09/README.md"
+    ],
+    "area": null,
+    "cases": [],
+    "deps": [],
+    "status": "ERLEDIGT",
+    "extra": ""
+  },
+  {
+    "id": "A01",
+    "title": "wind_get(0, WF_WXYWH): geräteabhängige Geometrie absichern",
+    "kind": "Geräteunterschied / Test",
+    "priority": "P2",
+    "scope": "Nur WF_WXYWH auf Handle 0 prüfen. Erwartung aus Gerätemaßen: (0, Menüleistenhöhe, W, H − Menüleistenhöhe). Bestehende Tests zuerst prüfen; nur fehlende Eigenschaft ergänzen. Keine Änderung auf TT-Konstanten.",
+    "accept": "Beide Profile 640×480 und 1920×1080 erfüllen die Regel; ein falscher W/H-Wert wird erkannt. Keine zusätzliche Hardwareauflösung implementiert.",
+    "refs": [
+      "docs/api/aes/window-graphics.md",
+      "tos-api/tests/aes_reference/harness.rs"
+    ],
+    "area": "aes",
+    "cases": [
+      155
+    ],
+    "deps": [],
+    "status": "OFFEN",
+    "extra": ""
+  },
+  {
+    "id": "A02",
+    "title": "wind_get(0, WF_CXYWH): geräteabhängige Geometrie absichern",
+    "kind": "Geräteunterschied / Test",
+    "priority": "P2",
+    "scope": "Nur WF_CXYWH auf Handle 0 prüfen. Erwartung aus Gerätemaßen: (0, 0, W, H). Bestehende Tests zuerst prüfen; nur fehlende Eigenschaft ergänzen. Keine Änderung auf TT-Konstanten.",
+    "accept": "Beide Profile 640×480 und 1920×1080 erfüllen die Regel; ein falscher W/H-Wert wird erkannt. Keine zusätzliche Hardwareauflösung implementiert.",
+    "refs": [
+      "docs/api/aes/window-graphics.md",
+      "tos-api/tests/aes_reference/harness.rs"
+    ],
+    "area": "aes",
+    "cases": [
+      156
+    ],
+    "deps": [],
+    "status": "OFFEN",
+    "extra": ""
+  },
+  {
+    "id": "A03",
+    "title": "wind_get(0, WF_PXYWH): geräteabhängige Geometrie absichern",
+    "kind": "Geräteunterschied / Test",
+    "priority": "P2",
+    "scope": "Nur WF_PXYWH auf Handle 0 prüfen. Erwartung aus Gerätemaßen: das für Handle 0 spezifizierte vorherige Vollbildrechteck; im gemessenen Anfangszustand (0, 0, W, H). Bestehende Tests zuerst prüfen; nur fehlende Eigenschaft ergänzen. Keine Änderung auf TT-Konstanten.",
+    "accept": "Beide Profile 640×480 und 1920×1080 erfüllen die Regel; ein falscher W/H-Wert wird erkannt. Keine zusätzliche Hardwareauflösung implementiert.",
+    "refs": [
+      "docs/api/aes/window-graphics.md",
+      "tos-api/tests/aes_reference/harness.rs"
+    ],
+    "area": "aes",
+    "cases": [
+      157
+    ],
+    "deps": [],
+    "status": "OFFEN",
+    "extra": ""
+  },
+  {
+    "id": "A04",
+    "title": "wind_get(0, WF_FXYWH): geräteabhängige Geometrie absichern",
+    "kind": "Geräteunterschied / Test",
+    "priority": "P2",
+    "scope": "Nur WF_FXYWH auf Handle 0 prüfen. Erwartung aus Gerätemaßen: (0, Menüleistenhöhe, W, H − Menüleistenhöhe). Bestehende Tests zuerst prüfen; nur fehlende Eigenschaft ergänzen. Keine Änderung auf TT-Konstanten.",
+    "accept": "Beide Profile 640×480 und 1920×1080 erfüllen die Regel; ein falscher W/H-Wert wird erkannt. Keine zusätzliche Hardwareauflösung implementiert.",
+    "refs": [
+      "docs/api/aes/window-graphics.md",
+      "tos-api/tests/aes_reference/harness.rs"
+    ],
+    "area": "aes",
+    "cases": [
+      158
+    ],
+    "deps": [],
+    "status": "OFFEN",
+    "extra": ""
+  },
+  {
+    "id": "A05",
+    "title": "wind_get WF_OWNER: Versionsabweichung belegen",
+    "kind": "Versionsprüfung",
+    "priority": "P2",
+    "scope": "Nur Feld 20 und Fall 167 beurteilen: EmuTOS 1.4 und gepinnte neuere Quelle getrennt lesen. Vorhandene DELTAS-Regel überprüfen, nicht durch ret=0 ersetzen.",
+    "accept": "Quell-/Versionsbeleg und alternative Erwartung dokumentiert; bestehender WF_OWNER-Test bleibt wirksam. Der Fall ist als Versionsunterschied abgeschlossen oder es entsteht ein begründeter kleiner Reparaturtask.",
+    "refs": [
+      "docs/api/aes/window-graphics.md",
+      "tos-api/tests/aes_reference/harness.rs"
+    ],
+    "area": "aes",
+    "cases": [
+      167
+    ],
+    "deps": [],
+    "status": "OFFEN",
+    "extra": ""
+  },
+  {
+    "id": "A06",
+    "title": "appl_init: ap_id",
+    "kind": "Global-Feldprüfung",
+    "priority": "P2",
+    "scope": "Nur global[2] mit appl_init-Rückgabe und dokumentiertem Prozessmodell vergleichen.",
+    "accept": "Pi LOG id=2 und global[2]=2; Gleichheit auch im Regressionstest geprüft, keine feste TT-ID 0.",
+    "refs": [
+      "docs/api/aes/application.md",
+      "tos-api/tests/aes_reference/harness.rs"
+    ],
+    "area": null,
+    "cases": [],
+    "deps": [],
+    "status": "ERLEDIGT",
+    "extra": "Werte aus evidence/aes-full.txt und measurement-2026-09-09/run1-pi4/AES.LOG; diese Globals sind in allen 95 Records enthalten, keine 95 unabhängigen Defekte."
+  },
+  {
+    "id": "A07",
+    "title": "appl_init: ap_private",
+    "kind": "Global-Feldprüfung",
+    "priority": "P2",
+    "scope": "Nur global[3..4] als ABI-/Endian-korrektes LONG dekodieren; TT 0x1143 und Pi 0x117B gegen Desktop-ROOT/#Q-Konfiguration prüfen.",
+    "accept": "Wortreihenfolge ist erklärt; 0x38 Wertdifferenz nur mit Konfigurationsbeleg freigegeben. Falls die damalige INF fehlt: offen lassen, nicht wegfiltern.",
+    "refs": [
+      "docs/api/aes/application.md",
+      "tos-api/tests/aes_reference/harness.rs"
+    ],
+    "area": null,
+    "cases": [],
+    "deps": [],
+    "status": "OFFEN",
+    "extra": "Werte aus evidence/aes-full.txt und measurement-2026-09-09/run1-pi4/AES.LOG; diese Globals sind in allen 95 Records enthalten, keine 95 unabhängigen Defekte."
+  },
+  {
+    "id": "A08",
+    "title": "appl_init: ap_planes",
+    "kind": "Global-Feldprüfung",
+    "priority": "P2",
+    "scope": "Nur global[10] gegen die tatsächlich geöffnete Workstation prüfen.",
+    "accept": "TT=4, Pi=16; Ableitung aus Backend statt festem 16-Wert, Test mit beiden Profilen.",
+    "refs": [
+      "docs/api/aes/application.md",
+      "tos-api/tests/aes_reference/harness.rs"
+    ],
+    "area": null,
+    "cases": [],
+    "deps": [],
+    "status": "ERLEDIGT",
+    "extra": "Werte aus evidence/aes-full.txt und measurement-2026-09-09/run1-pi4/AES.LOG; diese Globals sind in allen 95 Records enthalten, keine 95 unabhängigen Defekte."
+  },
+  {
+    "id": "A09",
+    "title": "appl_init: ap_3resv",
+    "kind": "Global-Feldprüfung",
+    "priority": "P2",
+    "scope": "Nur global[11..12] als adressartiges Feld beurteilen; ABI-Breite und zugesicherte Semantik prüfen.",
+    "accept": "Unterschiedliche Adressen nicht gleichgesetzt; vorhandene Nichtnull-Prüfung und ihre begrenzte Aussage dokumentiert, keine unbelegte Dereferenzierbarkeit behauptet.",
+    "refs": [
+      "docs/api/aes/application.md",
+      "tos-api/tests/aes_reference/harness.rs"
+    ],
+    "area": null,
+    "cases": [],
+    "deps": [],
+    "status": "ERLEDIGT",
+    "extra": "Werte aus evidence/aes-full.txt und measurement-2026-09-09/run1-pi4/AES.LOG; diese Globals sind in allen 95 Records enthalten, keine 95 unabhängigen Defekte."
+  },
+  {
+    "id": "A10",
+    "title": "wind_create: Kapazitätsgrenze",
+    "kind": "Nachmessung auswerten",
+    "priority": "P1",
+    "scope": "Nur neuntes Fenster und Grenze des konfigurierten Fensterpools; alten Fall 154 nicht als aktuellen Defekt voraussetzen.",
+    "accept": "M01-Vergleich zeigt aktuellen Istwert. Bei Gleichheit Task ohne Codeänderung schließen; bei Abweichung genau diesen Übergang mit Referenzbeleg und Regressionstest korrigieren.",
+    "refs": [
+      "docs/api/aes/window-graphics.md",
+      "tosdump/reference/EMUTOS14-AES-r2wind.BIN"
+    ],
+    "area": null,
+    "cases": [],
+    "deps": [
+      "M01"
+    ],
+    "status": "ERLEDIGT",
+    "extra": ""
+  },
+  {
+    "id": "A11",
+    "title": "wind_get WF_CXYWH: erzeugtes ungeöffnetes Fenster",
+    "kind": "Nachmessung auswerten",
+    "priority": "P1",
+    "scope": "Nur Anfangsrechteck nach wind_create, vor wind_open; alter Fall 230.",
+    "accept": "M01-Vergleich zeigt aktuellen Istwert. Bei Gleichheit Task ohne Codeänderung schließen; bei Abweichung genau diesen Übergang mit Referenzbeleg und Regressionstest korrigieren.",
+    "refs": [
+      "docs/api/aes/window-graphics.md",
+      "tosdump/reference/EMUTOS14-AES-r2wind.BIN"
+    ],
+    "area": null,
+    "cases": [],
+    "deps": [
+      "M01"
+    ],
+    "status": "ERLEDIGT",
+    "extra": ""
+  },
+  {
+    "id": "A12",
+    "title": "wind_get WF_PXYWH: Zustand nach wind_open",
+    "kind": "Nachmessung auswerten",
+    "priority": "P1",
+    "scope": "Nur Aktualisierung des vorherigen Rechtecks beim Öffnen; alter Fall 253.",
+    "accept": "M01-Vergleich zeigt aktuellen Istwert. Bei Gleichheit Task ohne Codeänderung schließen; bei Abweichung genau diesen Übergang mit Referenzbeleg und Regressionstest korrigieren.",
+    "refs": [
+      "docs/api/aes/window-graphics.md",
+      "tosdump/reference/EMUTOS14-AES-r2wind.BIN"
+    ],
+    "area": null,
+    "cases": [],
+    "deps": [
+      "M01"
+    ],
+    "status": "ERLEDIGT",
+    "extra": ""
+  },
+  {
+    "id": "A13",
+    "title": "wind_get WF_FIRSTXYWH: erstes sichtbares Rechteck",
+    "kind": "Messlücke / bedingte Reparatur",
+    "priority": "P1",
+    "scope": "Nur FIRST-Ergebnis einschließlich leerer/verdeckter und teilweise sichtbarer Fenster.",
+    "accept": "M02/M03 Fall für Fall ausgewertet. Ein belegter Unterschied bekommt genau einen Regressionstest und lokalen Fix; bei Gleichheit Messlücke schließen. Erwartung aus EmuTOS w_owns und Trap-Kopierpfad.",
+    "refs": [
+      "docs/api/aes/window-graphics.md",
+      "measurement-2026-09-09/cases/aes-r2b-rlist.tsv"
+    ],
+    "area": null,
+    "cases": [],
+    "deps": [
+      "M02",
+      "M03"
+    ],
+    "status": "OFFEN",
+    "extra": ""
+  },
+  {
+    "id": "A14",
+    "title": "wind_get WF_NEXTXYWH: Iteratorfortschritt",
+    "kind": "Messlücke / bedingte Reparatur",
+    "priority": "P1",
+    "scope": "Nur NEXT nach initialisierendem FIRST, Reihenfolge, disjunkte sichtbare Flächen und Ende.",
+    "accept": "M02/M03 Fall für Fall ausgewertet. Ein belegter Unterschied bekommt genau einen Regressionstest und lokalen Fix; bei Gleichheit Messlücke schließen. Erwartung aus EmuTOS w_owns und Trap-Kopierpfad.",
+    "refs": [
+      "docs/api/aes/window-graphics.md",
+      "measurement-2026-09-09/cases/aes-r2b-rlist.tsv"
+    ],
+    "area": null,
+    "cases": [],
+    "deps": [
+      "M02",
+      "M03"
+    ],
+    "status": "OFFEN",
+    "extra": ""
+  },
+  {
+    "id": "A15",
+    "title": "wind_get: geschriebene Felder am Listenende",
+    "kind": "Messlücke / bedingte Reparatur",
+    "priority": "P1",
+    "scope": "Nur welche x/y/w/h-Wörter beim Listenende geändert bzw. erhalten werden. Nicht pauschal alle vier Wörter nullen; interne und kopierte Ausgabepuffer unterscheiden.",
+    "accept": "M02/M03 Fall für Fall ausgewertet. Ein belegter Unterschied bekommt genau einen Regressionstest und lokalen Fix; bei Gleichheit Messlücke schließen. Erwartung aus EmuTOS w_owns und Trap-Kopierpfad.",
+    "refs": [
+      "docs/api/aes/window-graphics.md",
+      "measurement-2026-09-09/cases/aes-r2b-rlist.tsv"
+    ],
+    "area": null,
+    "cases": [],
+    "deps": [
+      "M02",
+      "M03"
+    ],
+    "status": "OFFEN",
+    "extra": ""
+  },
+  {
+    "id": "V01",
+    "title": "vq_extnd(0): Bildschirmgrenzen",
+    "kind": "Geräteunterschied / Test",
+    "priority": "P2",
+    "scope": "Nur INTOUT[0..1]=W−1/H−1; vorhandene Ersatzprüfungen gegen beide Profile kontrollieren.",
+    "accept": "639/479 gegen 1919/1079 erklärbar; falsche Randkoordinate schlägt im Test fehl.",
+    "refs": [
+      "tos-api/tests/vdi_reference/harness.rs",
+      "docs/api/vdi/workstation/102-vq_extnd.md"
+    ],
+    "area": "vdi",
+    "cases": [
+      33
+    ],
+    "deps": [],
+    "status": "OFFEN",
+    "extra": ""
+  },
+  {
+    "id": "V02",
+    "title": "vq_extnd(0): Farbanzahl",
+    "kind": "Geräteunterschied / Test",
+    "priority": "P2",
+    "scope": "Nur INTOUT[13] nach EmuTOS numcolors-Regel prüfen. 256 logische Stifte sind nicht die physische Farbtiefe.",
+    "accept": "4 Planes → 16 Stifte, 16 Planes → 256 Stifte; keine Reduktion des Pi auf 16 Stifte.",
+    "refs": [
+      "tos-api/tests/vdi_reference/harness.rs",
+      "docs/api/vdi/workstation/102-vq_extnd.md"
+    ],
+    "area": "vdi",
+    "cases": [
+      33
+    ],
+    "deps": [],
+    "status": "OFFEN",
+    "extra": ""
+  },
+  {
+    "id": "V03",
+    "title": "vq_extnd(0): Palettenpräzision",
+    "kind": "Geräteunterschied / Quellenprüfung",
+    "priority": "P2",
+    "scope": "Nur INTOUT[39], TT 4096 gegen Pi 0. Rückgabe für Truecolor aus get_palette-Vertrag prüfen.",
+    "accept": "Geräteabhängige Erwartung belegt und getestet; weder 4096 noch 0 global fest verdrahten.",
+    "refs": [
+      "tos-api/tests/vdi_reference/harness.rs",
+      "docs/api/vdi/workstation/102-vq_extnd.md"
+    ],
+    "area": "vdi",
+    "cases": [
+      33
+    ],
+    "deps": [],
+    "status": "OFFEN",
+    "extra": ""
+  },
+  {
+    "id": "V04",
+    "title": "vq_extnd(1): Planes",
+    "kind": "Geräteunterschied / Test",
+    "priority": "P2",
+    "scope": "Nur INTOUT[4] auf Übereinstimmung mit Backend und AES ap_planes prüfen.",
+    "accept": "4/16 sind für die jeweiligen Profile belegt; plattformübergreifende Konsistenzprüfung.",
+    "refs": [
+      "tos-api/tests/vdi_reference/harness.rs",
+      "docs/api/vdi/workstation/102-vq_extnd.md"
+    ],
+    "area": "vdi",
+    "cases": [
+      34,
+      250,
+      252
+    ],
+    "deps": [],
+    "status": "OFFEN",
+    "extra": ""
+  },
+  {
+    "id": "V05",
+    "title": "vq_extnd(1): Video-Lookup-Tabelle",
+    "kind": "Geräteunterschied / Test",
+    "priority": "P2",
+    "scope": "Nur INTOUT[5], EmuTOS-Regel für Truecolor/Mono/Palette prüfen.",
+    "accept": "TT 1 / Pi 0 nach Geräteprofil erklärt; Test deckt die Regel statt einen festen Rückgabewert ab.",
+    "refs": [
+      "tos-api/tests/vdi_reference/harness.rs",
+      "docs/api/vdi/workstation/102-vq_extnd.md"
+    ],
+    "area": "vdi",
+    "cases": [
+      34,
+      250,
+      252
+    ],
+    "deps": [],
+    "status": "OFFEN",
+    "extra": ""
+  },
+  {
+    "id": "V06",
+    "title": "vq_extnd(1): Clip-Rechteck nach Ein/Aus",
+    "kind": "Geräteunterschied / Test",
+    "priority": "P1",
+    "scope": "Nur PTSOUT-Clip-Rechteck vor, mit und ohne Clipping prüfen; dimensionsabhängige Vollbildgrenze versus explizites Clip-Rechteck.",
+    "accept": "Fälle 34/250/252 einschließlich bereits gleicher Wörter geprüft; ein ignorierter vs_clip-Aufruf wird erkannt.",
+    "refs": [
+      "tos-api/tests/vdi_reference/harness.rs",
+      "docs/api/vdi/workstation/102-vq_extnd.md"
+    ],
+    "area": "vdi",
+    "cases": [
+      34,
+      250,
+      252
+    ],
+    "deps": [],
+    "status": "OFFEN",
+    "extra": ""
+  },
+  {
+    "id": "V07",
+    "title": "vsl_color: Bereichsgrenze aus numcolors",
+    "kind": "Geräteunterschied / Test",
+    "priority": "P2",
+    "scope": "Nur vsl_color für Stift 99 und echte Grenzwerte prüfen; derselbe Input ist auf TT ungültig und Pi gültig.",
+    "accept": "Gemessen TT 1, Pi 99. Grenzfälle -1, letzter gültiger Stift und erster ungültiger Stift werden pro Profil geprüft; vorhandene Tests wiederverwenden.",
+    "refs": [
+      "tos-api/tests/vdi_reference/harness.rs",
+      "docs/api/vdi/inquiry/_color-pixel-input.md"
+    ],
+    "area": "vdi",
+    "cases": [
+      42
+    ],
+    "deps": [],
+    "status": "OFFEN",
+    "extra": ""
+  },
+  {
+    "id": "V08",
+    "title": "vsm_color: Bereichsgrenze aus numcolors",
+    "kind": "Geräteunterschied / Test",
+    "priority": "P2",
+    "scope": "Nur vsm_color für Stift 99 und echte Grenzwerte prüfen; derselbe Input ist auf TT ungültig und Pi gültig.",
+    "accept": "Gemessen TT 1, Pi 99. Grenzfälle -1, letzter gültiger Stift und erster ungültiger Stift werden pro Profil geprüft; vorhandene Tests wiederverwenden.",
+    "refs": [
+      "tos-api/tests/vdi_reference/harness.rs",
+      "docs/api/vdi/inquiry/_color-pixel-input.md"
+    ],
+    "area": "vdi",
+    "cases": [
+      113
+    ],
+    "deps": [],
+    "status": "OFFEN",
+    "extra": ""
+  },
+  {
+    "id": "V09",
+    "title": "vq_color: Bereichsgrenze aus numcolors",
+    "kind": "Geräteunterschied / Test",
+    "priority": "P2",
+    "scope": "Nur vq_color für Stift 255 und echte Grenzwerte prüfen; derselbe Input ist auf TT ungültig und Pi gültig.",
+    "accept": "Gemessen TT -1, Pi 255. Grenzfälle -1, letzter gültiger Stift und erster ungültiger Stift werden pro Profil geprüft; vorhandene Tests wiederverwenden.",
+    "refs": [
+      "tos-api/tests/vdi_reference/harness.rs",
+      "docs/api/vdi/inquiry/_color-pixel-input.md"
+    ],
+    "area": "vdi",
+    "cases": [
+      72
+    ],
+    "deps": [],
+    "status": "OFFEN",
+    "extra": ""
+  },
+  {
+    "id": "V10",
+    "title": "v_get_pixel: Rückgabeformat Palette gegen Truecolor",
+    "kind": "Geräteunterschied / Test",
+    "priority": "P1",
+    "scope": "Nur Bedeutung von INTOUT[0]/[1] bestimmen: Pixelindex/Mapping bei Palette, Null plus Rohwort bei Truecolor. Schwarz-Fälle 270/272 nicht allein wegen 15/1 gegen 0/0 als Fehler behandeln.",
+    "accept": "Format beider Profile belegt; Schwarzprüfung getrennt von Weiß-/Overlayproblem V11.",
+    "refs": [
+      "tos-api/tests/vdi_reference/harness.rs",
+      "docs/api/vdi/inquiry/_color-pixel-input.md"
+    ],
+    "area": "vdi",
+    "cases": [
+      270,
+      272
+    ],
+    "deps": [],
+    "status": "OFFEN",
+    "extra": ""
+  },
+  {
+    "id": "V11",
+    "title": "v_get_pixel: Weiß und OVERLAY_BIT isolieren",
+    "kind": "Diagnose eines bekannten Defekts",
+    "priority": "P1",
+    "scope": "Nur Weiß-Rohwort 0xFFDF und Bit 5 untersuchen. TT-Palettenwert 0 ist keine Truecolor-Sollfarbe. Bestehenden VDI-OVL-001-Befund gegen Produktions-Backend und Spezifikation abgleichen.",
+    "accept": "Reproduzierbarer Test trennt gespeichertes Pixelwort, Schreibkonvertierung und Readback. Erwartetes Truecolor-Weiß mit Quellenbeleg; betroffene Funktionen und minimaler Eingriff für V12 benannt.",
+    "refs": [
+      "docs/api/vdi/inquiry/_color-pixel-input.md",
+      "docs/MEASUREMENT-COVERAGE.md",
+      "kernel/src/vdi_backend.rs"
+    ],
+    "area": "vdi",
+    "cases": [
+      54,
+      160,
+      161
+    ],
+    "deps": [],
+    "status": "OFFEN",
+    "extra": ""
+  },
+  {
+    "id": "V12",
+    "title": "Weiß-/Overlayfehler lokal korrigieren",
+    "kind": "Bedingte Implementierung",
+    "priority": "P1",
+    "scope": "Nur den in V11 belegten Produzenten oder Leser korrigieren. Keine pauschale ODER-Maske auf alle v_get_pixel-Ergebnisse und keine globale Farbengine-Neufassung.",
+    "accept": "V11-Test vorher rot/nachher grün; Schwarz, Weiß, Bit-5-Kantenwerte und bereits funktionierende Farben bleiben korrekt. Neue Pi-Messung belegt Wirkung; ohne Beleg bleibt der Task offen.",
+    "refs": [
+      "docs/api/vdi/inquiry/_color-pixel-input.md",
+      "kernel/src/vdi_backend.rs"
+    ],
+    "area": null,
+    "cases": [],
+    "deps": [
+      "V11"
+    ],
+    "status": "OFFEN",
+    "extra": ""
+  },
+  {
+    "id": "V13",
+    "title": "vq_chcells: Textzellen aus Bildschirm und Font",
+    "kind": "Geräteunterschied / Test",
+    "priority": "P2",
+    "scope": "Nur v_escape Unterfunktion 1: Zeilen/Spalten aus aktuellen Zellmaßen ableiten.",
+    "accept": "30×80 beim TT / 67×240 beim Pi gemäß Ganzzahldivision durch Zellhöhe/-breite; zweites Hostprofil ohne neue Hardwareauflösung.",
+    "refs": [
+      "tos-api/tests/vdi_reference/harness.rs",
+      "docs/api/vdi/_escape.md"
+    ],
+    "area": "vdi",
+    "cases": [
+      173
+    ],
+    "deps": [],
+    "status": "OFFEN",
+    "extra": ""
+  },
+  {
+    "id": "V14",
+    "title": "v_opnvwk: ausgegebene Gerätemetriken",
+    "kind": "Geräteunterschied / Test",
+    "priority": "P2",
+    "scope": "Nur Ausgabe der zusätzlichen Workstation (Fall 274) gegen vq_extnd und Gerätekonfiguration vergleichen; Implementierung gemeinsamer Metriken nicht duplizieren.",
+    "accept": "W/H, Stiftanzahl und Präzision stimmen mit V01–V03-Regeln überein, Workstation ist anschließend korrekt geschlossen.",
+    "refs": [
+      "tos-api/tests/vdi_reference/harness.rs",
+      "docs/api/vdi/workstation/100-v_opnvwk.md"
+    ],
+    "area": "vdi",
+    "cases": [
+      274
+    ],
+    "deps": [
+      "V01",
+      "V02",
+      "V03"
+    ],
+    "status": "OFFEN",
+    "extra": ""
+  },
+  {
+    "id": "V15",
+    "title": "v_opnvwk: Handle-Identität statt Zahlenvergleich",
+    "kind": "Messauswertung",
+    "priority": "P2",
+    "scope": "Nur contrl[6]/contrl_before[6] bewerten; erwartete Gleichheit innerhalb eines Calls sowie Lebensdauer prüfen, absolute TT/Pi-Zahl nicht erzwingen.",
+    "accept": "Alle 182 VDI- und 59 Raster-Handlepaare separat erfasst; zusätzliche Workstation nicht versehentlich auf Haupthandle normalisiert. Rohdaten unverändert.",
+    "refs": [
+      "tos-api/tests/vdi_reference/harness.rs",
+      "docs/api/vdi/workstation/100-v_opnvwk.md"
+    ],
+    "area": null,
+    "cases": [],
+    "deps": [],
+    "status": "OFFEN",
+    "extra": ""
+  },
+  {
+    "id": "R01",
+    "title": "vro_cpyfm: oversized destination, D-VDI-25",
+    "kind": "Zurückgestellte Vertragsabweichung",
+    "priority": "P3",
+    "scope": "Nur Rasterfall 157. Bestehenden Benutzerentscheid vom 06.09. (dokumentiert/vertagt) beibehalten. Keine Änderung durch bloßen Dump-Abgleich. Nach Screen-Messungen kann ein gesonderter Vorschlag zu Anker und Kopierrichtung entstehen.",
+    "accept": "128 abweichende Zielwörter als bekannte Abweichung verlinkt; vorhandener DEVIATIONS-Test verifiziert. Reaktivierung braucht konkrete Vertragsentscheidung, keinen automatischen Fix.",
+    "refs": [
+      "docs/api/vdi/raster/_raster.md",
+      "docs/api/vdi/_discrepancies.md",
+      "tos-api/tests/vdi_raster_reference/harness.rs"
+    ],
+    "area": "raster",
+    "cases": [
+      157
+    ],
+    "deps": [],
+    "status": "ZURÜCKGESTELLT",
+    "extra": ""
+  },
+  {
+    "id": "R02",
+    "title": "vro_cpyfm: Screen → Memory messen",
+    "kind": "Messlücke / Messdesign",
+    "priority": "P1",
+    "scope": "Nur fd_addr=NULL als Quelle; begrenztes bekanntes Bildschirmrechteck in Speicher lesen. Zuerst einen kleinen, auf beiden Geräten definierten Messfall entwerfen; keine Kopierlogik gleichzeitig ändern.",
+    "accept": "Eigene neue Falltabelle bzw. klar begrenztes Runner-Delta spezifiziert, Masken/semantische Pixelerwartungen belegt. Screen-Pfad tatsächlich gelesen, nicht nur Parameter verglichen; Hardwarelauf separat protokollieren.",
+    "refs": [
+      "docs/api/vdi/raster/_raster.md",
+      "tosdump/core/runner_rast.c",
+      "tosdump/cases/vdi-raster.tsv"
+    ],
+    "area": null,
+    "cases": [],
+    "deps": [],
+    "status": "OFFEN",
+    "extra": ""
+  },
+  {
+    "id": "R03",
+    "title": "vro_cpyfm: Memory → Screen messen",
+    "kind": "Messlücke / Messdesign",
+    "priority": "P1",
+    "scope": "Nur Speicherquelle auf ein begrenztes Bildschirmrechteck schreiben; vorherigen Bildinhalt sichern/wiederherstellen. Zuerst einen kleinen, auf beiden Geräten definierten Messfall entwerfen; keine Kopierlogik gleichzeitig ändern.",
+    "accept": "Eigene neue Falltabelle bzw. klar begrenztes Runner-Delta spezifiziert, Masken/semantische Pixelerwartungen belegt. Screen-Pfad tatsächlich gelesen, nicht nur Parameter verglichen; Hardwarelauf separat protokollieren.",
+    "refs": [
+      "docs/api/vdi/raster/_raster.md",
+      "tosdump/core/runner_rast.c",
+      "tosdump/cases/vdi-raster.tsv"
+    ],
+    "area": null,
+    "cases": [],
+    "deps": [],
+    "status": "OFFEN",
+    "extra": ""
+  },
+  {
+    "id": "R04",
+    "title": "vro_cpyfm: überlappende Screen-Kopie messen",
+    "kind": "Messlücke / Messdesign",
+    "priority": "P1",
+    "scope": "Nur Screen → Screen mit Überlappung; Richtungen getrennte Fälle derselben Funktion, begrenzte Fläche und Wiederherstellung. Zuerst einen kleinen, auf beiden Geräten definierten Messfall entwerfen; keine Kopierlogik gleichzeitig ändern.",
+    "accept": "Eigene neue Falltabelle bzw. klar begrenztes Runner-Delta spezifiziert, Masken/semantische Pixelerwartungen belegt. Screen-Pfad tatsächlich gelesen, nicht nur Parameter verglichen; Hardwarelauf separat protokollieren.",
+    "refs": [
+      "docs/api/vdi/raster/_raster.md",
+      "tosdump/core/runner_rast.c",
+      "tosdump/cases/vdi-raster.tsv"
+    ],
+    "area": null,
+    "cases": [],
+    "deps": [],
+    "status": "OFFEN",
+    "extra": ""
+  },
+  {
+    "id": "R05",
+    "title": "vrt_cpyfm: monochrome Expansion auf Screen messen",
+    "kind": "Messlücke / Messdesign",
+    "priority": "P1",
+    "scope": "Nur Monoquelle und Screenziel mit einem wohldefinierten Schreibmodus; Palette/Truecolor nicht als rohe identische Worte erwarten. Zuerst einen kleinen, auf beiden Geräten definierten Messfall entwerfen; keine Kopierlogik gleichzeitig ändern.",
+    "accept": "Eigene neue Falltabelle bzw. klar begrenztes Runner-Delta spezifiziert, Masken/semantische Pixelerwartungen belegt. Screen-Pfad tatsächlich gelesen, nicht nur Parameter verglichen; Hardwarelauf separat protokollieren.",
+    "refs": [
+      "docs/api/vdi/raster/_raster.md",
+      "tosdump/core/runner_rast.c",
+      "tosdump/cases/vdi-raster.tsv"
+    ],
+    "area": null,
+    "cases": [],
+    "deps": [],
+    "status": "OFFEN",
+    "extra": ""
+  },
+  {
+    "id": "Q01",
+    "title": "v_gtext: sichtbares einzelnes a messen",
+    "kind": "Pixel-Messlücke",
+    "priority": "P1",
+    "scope": "Nur ein a mit explizitem Font, Farbe, Modus und Clip-Rechteck rendern. Neues isoliertes Messbild/-programm; QED-Quelltext nicht ändern.",
+    "accept": "Pixelwirkung innerhalb des Zielrechtecks und unveränderte Umgebung überprüfbar; Font-/Formatunterschiede benannt. Kein Schluss aus bloß unverändertem Parameterblock.",
+    "refs": [
+      "docs/api/vdi/output/_text.md",
+      "tos-api/src/vdi/text.rs"
+    ],
+    "area": null,
+    "cases": [],
+    "deps": [],
+    "status": "OFFEN",
+    "extra": ""
+  },
+  {
+    "id": "Q02",
+    "title": "vs_clip: Text am Clip-Rand messen",
+    "kind": "Pixel-Messlücke",
+    "priority": "P1",
+    "scope": "Nur Clipping eines bekannten Textglyphen innen/außen/an der Grenze prüfen.",
+    "accept": "Q01-Glyphe wird ausschließlich im Clip gezeichnet; zwei Hostgrößen, Real-Pi-Gegenprobe.",
+    "refs": [
+      "docs/api/vdi/attributes/_mode-clip-color.md"
+    ],
+    "area": null,
+    "cases": [],
+    "deps": [
+      "Q01"
+    ],
+    "status": "OFFEN",
+    "extra": ""
+  },
+  {
+    "id": "Q03",
+    "title": "vr_recfl: XOR-Cursor zweimal zeichnen",
+    "kind": "Pixel-Messlücke",
+    "priority": "P1",
+    "scope": "Nur das QED-Cursorrechteck im XOR-Modus zweimal über bekanntem Text zeichnen; vswr_mode explizit setzen und restaurieren.",
+    "accept": "Nach zweimaligem XOR ist der gesamte Zielausschnitt einschließlich Text bytegleich zum Ausgang; außerhalb keine Änderung.",
+    "refs": [
+      "docs/api/vdi/output/_fill.md",
+      "docs/analysis/qed-typing-redraw/findings.md"
+    ],
+    "area": null,
+    "cases": [],
+    "deps": [
+      "Q01"
+    ],
+    "status": "OFFEN",
+    "extra": ""
+  },
+  {
+    "id": "Q04",
+    "title": "evnt_multi: ein Tastaturereignis vermessen",
+    "kind": "Interaktive Messlücke",
+    "priority": "P1",
+    "scope": "Nur MU_KEYBD für eine vorgegebene Taste: Maske, Keywort, Modifier und einmalige Auslieferung erfassen. Kein allgemeiner Event-Audit.",
+    "accept": "Reproduzierbarer bedienter Ablauf auf Pi und TT; vorhandener QED-Wert 0x1e61 dokumentiert, Folgeereignisse getrennt. Kein blockierender Fall in unbeaufsichtigte Tabelle aufgenommen.",
+    "refs": [
+      "docs/api/aes/event.md",
+      "docs/analysis/qed-typing-redraw/findings.md"
+    ],
+    "area": null,
+    "cases": [],
+    "deps": [],
+    "status": "OFFEN",
+    "extra": ""
+  },
+  {
+    "id": "Q05",
+    "title": "graf_mouse: Hide/Show um Textausgabe",
+    "kind": "Interaktive Pixel-Messlücke",
+    "priority": "P1",
+    "scope": "Nur M_OFF/M_ON-Klammer über bekannter Textfläche beobachten. Andere Cursorformen/SAVE/RESTORE bleiben eigene spätere Arbeiten.",
+    "accept": "Cursor verdeckt/verliert keine Textpixel nach Show/Hide; Zustand vor/nach dem Fall reproduzierbar restauriert.",
+    "refs": [
+      "docs/api/aes/window-graphics.md"
+    ],
+    "area": null,
+    "cases": [],
+    "deps": [
+      "Q01"
+    ],
+    "status": "OFFEN",
+    "extra": ""
+  },
+  {
+    "id": "Q06",
+    "title": "QED restore_edit: abgebrochene Verzweigung bestimmen",
+    "kind": "Anwendungsdiagnose",
+    "priority": "P1",
+    "scope": "Nur feststellen, ob chg_anz, chg_links, window, c_anz und Fensterflags zum Textpfad führen. Vorhandenen Trace auf Vollständigkeit prüfen; AES-Trace allein erfasst kein v_gtext. Keine spekulative AES-Reparatur.",
+    "accept": "Ein Tastendruck hat eine eindeutige letzte erreichte Verzweigung und dazu den AES/VDI-Aufrufpfad. Temporäre Instrumentierung separat und rückbaubar; Resultat eröffnet erst einen konkreten Reparaturtask.",
+    "refs": [
+      "docs/analysis/qed-typing-redraw/findings.md",
+      "sdk/apps/qed/src/edit.c",
+      "kernel/src/dbg_qedtrace.rs"
+    ],
+    "area": null,
+    "cases": [],
+    "deps": [],
+    "status": "OFFEN",
+    "extra": ""
+  },
+  {
+    "id": "G-AES-011",
+    "title": "appl_read (AES 11): kleinsten Messfall entwerfen",
+    "kind": "Funktionsweise ungemessen / Messdesign",
+    "priority": "P3",
+    "scope": "Nur appl_read, Opcode 11. Die aktuelle Runde enthält keinen gemessenen Record für diese Funktion. Zuerst Eingang/Ausgang, Seiteneffekt, Referenz-Build-Verfügbarkeit und Reset aus der Spezifikation erheben; genau einen Normalfall entwerfen. Keine pauschale Funktionsimplementierung und keine Änderung der Sperrliste ohne Quellenbeleg.",
+    "accept": "Eine funktionsspezifische Fallskizze mit exakten Parametern, erwarteten Feldern/Pixeln und Rückbau des Zustands liegt vor. Wenn blockierend, zeigerabhängig oder auf TT nicht verfügbar: benötigte Voraussetzung konkret benennen; keinen unsicheren Lauf ausführen. Runner-Erweiterung, TT-/Pi-Aufnahme und etwaige Reparatur als getrennte Nachfolgetasks anlegen.",
+    "refs": [
+      "tosdump/cases/COVERAGE-AES.md",
+      "docs/api/aes/_dispatcher.md",
+      "docs/api/aes/application.md"
+    ],
+    "area": null,
+    "cases": [],
+    "deps": [],
+    "status": "BACKLOG",
+    "extra": ""
+  },
+  {
+    "id": "G-AES-012",
+    "title": "appl_write (AES 12): kleinsten Messfall entwerfen",
+    "kind": "Funktionsweise ungemessen / Messdesign",
+    "priority": "P3",
+    "scope": "Nur appl_write, Opcode 12. Die aktuelle Runde enthält keinen gemessenen Record für diese Funktion. Zuerst Eingang/Ausgang, Seiteneffekt, Referenz-Build-Verfügbarkeit und Reset aus der Spezifikation erheben; genau einen Normalfall entwerfen. Keine pauschale Funktionsimplementierung und keine Änderung der Sperrliste ohne Quellenbeleg.",
+    "accept": "Eine funktionsspezifische Fallskizze mit exakten Parametern, erwarteten Feldern/Pixeln und Rückbau des Zustands liegt vor. Wenn blockierend, zeigerabhängig oder auf TT nicht verfügbar: benötigte Voraussetzung konkret benennen; keinen unsicheren Lauf ausführen. Runner-Erweiterung, TT-/Pi-Aufnahme und etwaige Reparatur als getrennte Nachfolgetasks anlegen.",
+    "refs": [
+      "tosdump/cases/COVERAGE-AES.md",
+      "docs/api/aes/_dispatcher.md",
+      "docs/api/aes/application.md"
+    ],
+    "area": null,
+    "cases": [],
+    "deps": [],
+    "status": "BACKLOG",
+    "extra": ""
+  },
+  {
+    "id": "G-AES-013",
+    "title": "appl_find (AES 13): kleinsten Messfall entwerfen",
+    "kind": "Funktionsweise ungemessen / Messdesign",
+    "priority": "P3",
+    "scope": "Nur appl_find, Opcode 13. Die aktuelle Runde enthält keinen gemessenen Record für diese Funktion. Zuerst Eingang/Ausgang, Seiteneffekt, Referenz-Build-Verfügbarkeit und Reset aus der Spezifikation erheben; genau einen Normalfall entwerfen. Keine pauschale Funktionsimplementierung und keine Änderung der Sperrliste ohne Quellenbeleg.",
+    "accept": "Eine funktionsspezifische Fallskizze mit exakten Parametern, erwarteten Feldern/Pixeln und Rückbau des Zustands liegt vor. Wenn blockierend, zeigerabhängig oder auf TT nicht verfügbar: benötigte Voraussetzung konkret benennen; keinen unsicheren Lauf ausführen. Runner-Erweiterung, TT-/Pi-Aufnahme und etwaige Reparatur als getrennte Nachfolgetasks anlegen.",
+    "refs": [
+      "tosdump/cases/COVERAGE-AES.md",
+      "docs/api/aes/_dispatcher.md",
+      "docs/api/aes/application.md"
+    ],
+    "area": null,
+    "cases": [],
+    "deps": [],
+    "status": "BACKLOG",
+    "extra": ""
+  },
+  {
+    "id": "G-AES-014",
+    "title": "appl_tplay (AES 14): kleinsten Messfall entwerfen",
+    "kind": "Funktionsweise ungemessen / Messdesign",
+    "priority": "P3",
+    "scope": "Nur appl_tplay, Opcode 14. Die aktuelle Runde enthält keinen gemessenen Record für diese Funktion. Zuerst Eingang/Ausgang, Seiteneffekt, Referenz-Build-Verfügbarkeit und Reset aus der Spezifikation erheben; genau einen Normalfall entwerfen. Keine pauschale Funktionsimplementierung und keine Änderung der Sperrliste ohne Quellenbeleg.",
+    "accept": "Eine funktionsspezifische Fallskizze mit exakten Parametern, erwarteten Feldern/Pixeln und Rückbau des Zustands liegt vor. Wenn blockierend, zeigerabhängig oder auf TT nicht verfügbar: benötigte Voraussetzung konkret benennen; keinen unsicheren Lauf ausführen. Runner-Erweiterung, TT-/Pi-Aufnahme und etwaige Reparatur als getrennte Nachfolgetasks anlegen.",
+    "refs": [
+      "tosdump/cases/COVERAGE-AES.md",
+      "docs/api/aes/_dispatcher.md",
+      "docs/api/aes/application.md"
+    ],
+    "area": null,
+    "cases": [],
+    "deps": [],
+    "status": "BACKLOG",
+    "extra": ""
+  },
+  {
+    "id": "G-AES-015",
+    "title": "appl_trecord (AES 15): kleinsten Messfall entwerfen",
+    "kind": "Funktionsweise ungemessen / Messdesign",
+    "priority": "P3",
+    "scope": "Nur appl_trecord, Opcode 15. Die aktuelle Runde enthält keinen gemessenen Record für diese Funktion. Zuerst Eingang/Ausgang, Seiteneffekt, Referenz-Build-Verfügbarkeit und Reset aus der Spezifikation erheben; genau einen Normalfall entwerfen. Keine pauschale Funktionsimplementierung und keine Änderung der Sperrliste ohne Quellenbeleg.",
+    "accept": "Eine funktionsspezifische Fallskizze mit exakten Parametern, erwarteten Feldern/Pixeln und Rückbau des Zustands liegt vor. Wenn blockierend, zeigerabhängig oder auf TT nicht verfügbar: benötigte Voraussetzung konkret benennen; keinen unsicheren Lauf ausführen. Runner-Erweiterung, TT-/Pi-Aufnahme und etwaige Reparatur als getrennte Nachfolgetasks anlegen.",
+    "refs": [
+      "tosdump/cases/COVERAGE-AES.md",
+      "docs/api/aes/_dispatcher.md",
+      "docs/api/aes/application.md"
+    ],
+    "area": null,
+    "cases": [],
+    "deps": [],
+    "status": "BACKLOG",
+    "extra": ""
+  },
+  {
+    "id": "G-AES-017",
+    "title": "appl_yield (AES 17): kleinsten Messfall entwerfen",
+    "kind": "Funktionsweise ungemessen / Messdesign",
+    "priority": "P3",
+    "scope": "Nur appl_yield, Opcode 17. Die aktuelle Runde enthält keinen gemessenen Record für diese Funktion. Zuerst Eingang/Ausgang, Seiteneffekt, Referenz-Build-Verfügbarkeit und Reset aus der Spezifikation erheben; genau einen Normalfall entwerfen. Keine pauschale Funktionsimplementierung und keine Änderung der Sperrliste ohne Quellenbeleg.",
+    "accept": "Eine funktionsspezifische Fallskizze mit exakten Parametern, erwarteten Feldern/Pixeln und Rückbau des Zustands liegt vor. Wenn blockierend, zeigerabhängig oder auf TT nicht verfügbar: benötigte Voraussetzung konkret benennen; keinen unsicheren Lauf ausführen. Runner-Erweiterung, TT-/Pi-Aufnahme und etwaige Reparatur als getrennte Nachfolgetasks anlegen.",
+    "refs": [
+      "tosdump/cases/COVERAGE-AES.md",
+      "docs/api/aes/_dispatcher.md",
+      "docs/api/aes/application.md"
+    ],
+    "area": null,
+    "cases": [],
+    "deps": [],
+    "status": "BACKLOG",
+    "extra": ""
+  },
+  {
+    "id": "G-AES-019",
+    "title": "appl_exit (AES 19): kleinsten Messfall entwerfen",
+    "kind": "Funktionsweise ungemessen / Messdesign",
+    "priority": "P3",
+    "scope": "Nur appl_exit, Opcode 19. Die aktuelle Runde enthält keinen gemessenen Record für diese Funktion. Zuerst Eingang/Ausgang, Seiteneffekt, Referenz-Build-Verfügbarkeit und Reset aus der Spezifikation erheben; genau einen Normalfall entwerfen. Keine pauschale Funktionsimplementierung und keine Änderung der Sperrliste ohne Quellenbeleg.",
+    "accept": "Eine funktionsspezifische Fallskizze mit exakten Parametern, erwarteten Feldern/Pixeln und Rückbau des Zustands liegt vor. Wenn blockierend, zeigerabhängig oder auf TT nicht verfügbar: benötigte Voraussetzung konkret benennen; keinen unsicheren Lauf ausführen. Runner-Erweiterung, TT-/Pi-Aufnahme und etwaige Reparatur als getrennte Nachfolgetasks anlegen.",
+    "refs": [
+      "tosdump/cases/COVERAGE-AES.md",
+      "docs/api/aes/_dispatcher.md",
+      "docs/api/aes/application.md"
+    ],
+    "area": null,
+    "cases": [],
+    "deps": [],
+    "status": "BACKLOG",
+    "extra": ""
+  },
+  {
+    "id": "G-AES-020",
+    "title": "evnt_keybd (AES 20): kleinsten Messfall entwerfen",
+    "kind": "Funktionsweise ungemessen / Messdesign",
+    "priority": "P3",
+    "scope": "Nur evnt_keybd, Opcode 20. Die aktuelle Runde enthält keinen gemessenen Record für diese Funktion. Zuerst Eingang/Ausgang, Seiteneffekt, Referenz-Build-Verfügbarkeit und Reset aus der Spezifikation erheben; genau einen Normalfall entwerfen. Keine pauschale Funktionsimplementierung und keine Änderung der Sperrliste ohne Quellenbeleg.",
+    "accept": "Eine funktionsspezifische Fallskizze mit exakten Parametern, erwarteten Feldern/Pixeln und Rückbau des Zustands liegt vor. Wenn blockierend, zeigerabhängig oder auf TT nicht verfügbar: benötigte Voraussetzung konkret benennen; keinen unsicheren Lauf ausführen. Runner-Erweiterung, TT-/Pi-Aufnahme und etwaige Reparatur als getrennte Nachfolgetasks anlegen.",
+    "refs": [
+      "tosdump/cases/COVERAGE-AES.md",
+      "docs/api/aes/_dispatcher.md",
+      "docs/api/aes/event.md"
+    ],
+    "area": null,
+    "cases": [],
+    "deps": [],
+    "status": "BACKLOG",
+    "extra": ""
+  },
+  {
+    "id": "G-AES-021",
+    "title": "evnt_button (AES 21): kleinsten Messfall entwerfen",
+    "kind": "Funktionsweise ungemessen / Messdesign",
+    "priority": "P3",
+    "scope": "Nur evnt_button, Opcode 21. Die aktuelle Runde enthält keinen gemessenen Record für diese Funktion. Zuerst Eingang/Ausgang, Seiteneffekt, Referenz-Build-Verfügbarkeit und Reset aus der Spezifikation erheben; genau einen Normalfall entwerfen. Keine pauschale Funktionsimplementierung und keine Änderung der Sperrliste ohne Quellenbeleg.",
+    "accept": "Eine funktionsspezifische Fallskizze mit exakten Parametern, erwarteten Feldern/Pixeln und Rückbau des Zustands liegt vor. Wenn blockierend, zeigerabhängig oder auf TT nicht verfügbar: benötigte Voraussetzung konkret benennen; keinen unsicheren Lauf ausführen. Runner-Erweiterung, TT-/Pi-Aufnahme und etwaige Reparatur als getrennte Nachfolgetasks anlegen.",
+    "refs": [
+      "tosdump/cases/COVERAGE-AES.md",
+      "docs/api/aes/_dispatcher.md",
+      "docs/api/aes/event.md"
+    ],
+    "area": null,
+    "cases": [],
+    "deps": [],
+    "status": "BACKLOG",
+    "extra": ""
+  },
+  {
+    "id": "G-AES-022",
+    "title": "evnt_mouse (AES 22): kleinsten Messfall entwerfen",
+    "kind": "Funktionsweise ungemessen / Messdesign",
+    "priority": "P3",
+    "scope": "Nur evnt_mouse, Opcode 22. Die aktuelle Runde enthält keinen gemessenen Record für diese Funktion. Zuerst Eingang/Ausgang, Seiteneffekt, Referenz-Build-Verfügbarkeit und Reset aus der Spezifikation erheben; genau einen Normalfall entwerfen. Keine pauschale Funktionsimplementierung und keine Änderung der Sperrliste ohne Quellenbeleg.",
+    "accept": "Eine funktionsspezifische Fallskizze mit exakten Parametern, erwarteten Feldern/Pixeln und Rückbau des Zustands liegt vor. Wenn blockierend, zeigerabhängig oder auf TT nicht verfügbar: benötigte Voraussetzung konkret benennen; keinen unsicheren Lauf ausführen. Runner-Erweiterung, TT-/Pi-Aufnahme und etwaige Reparatur als getrennte Nachfolgetasks anlegen.",
+    "refs": [
+      "tosdump/cases/COVERAGE-AES.md",
+      "docs/api/aes/_dispatcher.md",
+      "docs/api/aes/event.md"
+    ],
+    "area": null,
+    "cases": [],
+    "deps": [],
+    "status": "BACKLOG",
+    "extra": ""
+  },
+  {
+    "id": "G-AES-023",
+    "title": "evnt_mesag (AES 23): kleinsten Messfall entwerfen",
+    "kind": "Funktionsweise ungemessen / Messdesign",
+    "priority": "P3",
+    "scope": "Nur evnt_mesag, Opcode 23. Die aktuelle Runde enthält keinen gemessenen Record für diese Funktion. Zuerst Eingang/Ausgang, Seiteneffekt, Referenz-Build-Verfügbarkeit und Reset aus der Spezifikation erheben; genau einen Normalfall entwerfen. Keine pauschale Funktionsimplementierung und keine Änderung der Sperrliste ohne Quellenbeleg.",
+    "accept": "Eine funktionsspezifische Fallskizze mit exakten Parametern, erwarteten Feldern/Pixeln und Rückbau des Zustands liegt vor. Wenn blockierend, zeigerabhängig oder auf TT nicht verfügbar: benötigte Voraussetzung konkret benennen; keinen unsicheren Lauf ausführen. Runner-Erweiterung, TT-/Pi-Aufnahme und etwaige Reparatur als getrennte Nachfolgetasks anlegen.",
+    "refs": [
+      "tosdump/cases/COVERAGE-AES.md",
+      "docs/api/aes/_dispatcher.md",
+      "docs/api/aes/event.md"
+    ],
+    "area": null,
+    "cases": [],
+    "deps": [],
+    "status": "BACKLOG",
+    "extra": ""
+  },
+  {
+    "id": "G-AES-026",
+    "title": "evnt_dclick (AES 26): kleinsten Messfall entwerfen",
+    "kind": "Funktionsweise ungemessen / Messdesign",
+    "priority": "P3",
+    "scope": "Nur evnt_dclick, Opcode 26. Die aktuelle Runde enthält keinen gemessenen Record für diese Funktion. Zuerst Eingang/Ausgang, Seiteneffekt, Referenz-Build-Verfügbarkeit und Reset aus der Spezifikation erheben; genau einen Normalfall entwerfen. Keine pauschale Funktionsimplementierung und keine Änderung der Sperrliste ohne Quellenbeleg.",
+    "accept": "Eine funktionsspezifische Fallskizze mit exakten Parametern, erwarteten Feldern/Pixeln und Rückbau des Zustands liegt vor. Wenn blockierend, zeigerabhängig oder auf TT nicht verfügbar: benötigte Voraussetzung konkret benennen; keinen unsicheren Lauf ausführen. Runner-Erweiterung, TT-/Pi-Aufnahme und etwaige Reparatur als getrennte Nachfolgetasks anlegen.",
+    "refs": [
+      "tosdump/cases/COVERAGE-AES.md",
+      "docs/api/aes/_dispatcher.md",
+      "docs/api/aes/event.md"
+    ],
+    "area": null,
+    "cases": [],
+    "deps": [],
+    "status": "BACKLOG",
+    "extra": ""
+  },
+  {
+    "id": "G-AES-030",
+    "title": "menu_bar (AES 30): kleinsten Messfall entwerfen",
+    "kind": "Funktionsweise ungemessen / Messdesign",
+    "priority": "P3",
+    "scope": "Nur menu_bar, Opcode 30. Die aktuelle Runde enthält keinen gemessenen Record für diese Funktion. Zuerst Eingang/Ausgang, Seiteneffekt, Referenz-Build-Verfügbarkeit und Reset aus der Spezifikation erheben; genau einen Normalfall entwerfen. Keine pauschale Funktionsimplementierung und keine Änderung der Sperrliste ohne Quellenbeleg.",
+    "accept": "Eine funktionsspezifische Fallskizze mit exakten Parametern, erwarteten Feldern/Pixeln und Rückbau des Zustands liegt vor. Wenn blockierend, zeigerabhängig oder auf TT nicht verfügbar: benötigte Voraussetzung konkret benennen; keinen unsicheren Lauf ausführen. Runner-Erweiterung, TT-/Pi-Aufnahme und etwaige Reparatur als getrennte Nachfolgetasks anlegen.",
+    "refs": [
+      "tosdump/cases/COVERAGE-AES.md",
+      "docs/api/aes/_dispatcher.md",
+      "docs/api/aes/menu.md"
+    ],
+    "area": null,
+    "cases": [],
+    "deps": [],
+    "status": "BACKLOG",
+    "extra": ""
+  },
+  {
+    "id": "G-AES-031",
+    "title": "menu_icheck (AES 31): kleinsten Messfall entwerfen",
+    "kind": "Funktionsweise ungemessen / Messdesign",
+    "priority": "P3",
+    "scope": "Nur menu_icheck, Opcode 31. Die aktuelle Runde enthält keinen gemessenen Record für diese Funktion. Zuerst Eingang/Ausgang, Seiteneffekt, Referenz-Build-Verfügbarkeit und Reset aus der Spezifikation erheben; genau einen Normalfall entwerfen. Keine pauschale Funktionsimplementierung und keine Änderung der Sperrliste ohne Quellenbeleg.",
+    "accept": "Eine funktionsspezifische Fallskizze mit exakten Parametern, erwarteten Feldern/Pixeln und Rückbau des Zustands liegt vor. Wenn blockierend, zeigerabhängig oder auf TT nicht verfügbar: benötigte Voraussetzung konkret benennen; keinen unsicheren Lauf ausführen. Runner-Erweiterung, TT-/Pi-Aufnahme und etwaige Reparatur als getrennte Nachfolgetasks anlegen.",
+    "refs": [
+      "tosdump/cases/COVERAGE-AES.md",
+      "docs/api/aes/_dispatcher.md",
+      "docs/api/aes/menu.md"
+    ],
+    "area": null,
+    "cases": [],
+    "deps": [],
+    "status": "BACKLOG",
+    "extra": ""
+  },
+  {
+    "id": "G-AES-032",
+    "title": "menu_ienable (AES 32): kleinsten Messfall entwerfen",
+    "kind": "Funktionsweise ungemessen / Messdesign",
+    "priority": "P3",
+    "scope": "Nur menu_ienable, Opcode 32. Die aktuelle Runde enthält keinen gemessenen Record für diese Funktion. Zuerst Eingang/Ausgang, Seiteneffekt, Referenz-Build-Verfügbarkeit und Reset aus der Spezifikation erheben; genau einen Normalfall entwerfen. Keine pauschale Funktionsimplementierung und keine Änderung der Sperrliste ohne Quellenbeleg.",
+    "accept": "Eine funktionsspezifische Fallskizze mit exakten Parametern, erwarteten Feldern/Pixeln und Rückbau des Zustands liegt vor. Wenn blockierend, zeigerabhängig oder auf TT nicht verfügbar: benötigte Voraussetzung konkret benennen; keinen unsicheren Lauf ausführen. Runner-Erweiterung, TT-/Pi-Aufnahme und etwaige Reparatur als getrennte Nachfolgetasks anlegen.",
+    "refs": [
+      "tosdump/cases/COVERAGE-AES.md",
+      "docs/api/aes/_dispatcher.md",
+      "docs/api/aes/menu.md"
+    ],
+    "area": null,
+    "cases": [],
+    "deps": [],
+    "status": "BACKLOG",
+    "extra": ""
+  },
+  {
+    "id": "G-AES-033",
+    "title": "menu_tnormal (AES 33): kleinsten Messfall entwerfen",
+    "kind": "Funktionsweise ungemessen / Messdesign",
+    "priority": "P3",
+    "scope": "Nur menu_tnormal, Opcode 33. Die aktuelle Runde enthält keinen gemessenen Record für diese Funktion. Zuerst Eingang/Ausgang, Seiteneffekt, Referenz-Build-Verfügbarkeit und Reset aus der Spezifikation erheben; genau einen Normalfall entwerfen. Keine pauschale Funktionsimplementierung und keine Änderung der Sperrliste ohne Quellenbeleg.",
+    "accept": "Eine funktionsspezifische Fallskizze mit exakten Parametern, erwarteten Feldern/Pixeln und Rückbau des Zustands liegt vor. Wenn blockierend, zeigerabhängig oder auf TT nicht verfügbar: benötigte Voraussetzung konkret benennen; keinen unsicheren Lauf ausführen. Runner-Erweiterung, TT-/Pi-Aufnahme und etwaige Reparatur als getrennte Nachfolgetasks anlegen.",
+    "refs": [
+      "tosdump/cases/COVERAGE-AES.md",
+      "docs/api/aes/_dispatcher.md",
+      "docs/api/aes/menu.md"
+    ],
+    "area": null,
+    "cases": [],
+    "deps": [],
+    "status": "BACKLOG",
+    "extra": ""
+  },
+  {
+    "id": "G-AES-034",
+    "title": "menu_text (AES 34): kleinsten Messfall entwerfen",
+    "kind": "Funktionsweise ungemessen / Messdesign",
+    "priority": "P3",
+    "scope": "Nur menu_text, Opcode 34. Die aktuelle Runde enthält keinen gemessenen Record für diese Funktion. Zuerst Eingang/Ausgang, Seiteneffekt, Referenz-Build-Verfügbarkeit und Reset aus der Spezifikation erheben; genau einen Normalfall entwerfen. Keine pauschale Funktionsimplementierung und keine Änderung der Sperrliste ohne Quellenbeleg.",
+    "accept": "Eine funktionsspezifische Fallskizze mit exakten Parametern, erwarteten Feldern/Pixeln und Rückbau des Zustands liegt vor. Wenn blockierend, zeigerabhängig oder auf TT nicht verfügbar: benötigte Voraussetzung konkret benennen; keinen unsicheren Lauf ausführen. Runner-Erweiterung, TT-/Pi-Aufnahme und etwaige Reparatur als getrennte Nachfolgetasks anlegen.",
+    "refs": [
+      "tosdump/cases/COVERAGE-AES.md",
+      "docs/api/aes/_dispatcher.md",
+      "docs/api/aes/menu.md"
+    ],
+    "area": null,
+    "cases": [],
+    "deps": [],
+    "status": "BACKLOG",
+    "extra": ""
+  },
+  {
+    "id": "G-AES-035",
+    "title": "menu_register (AES 35): kleinsten Messfall entwerfen",
+    "kind": "Funktionsweise ungemessen / Messdesign",
+    "priority": "P3",
+    "scope": "Nur menu_register, Opcode 35. Die aktuelle Runde enthält keinen gemessenen Record für diese Funktion. Zuerst Eingang/Ausgang, Seiteneffekt, Referenz-Build-Verfügbarkeit und Reset aus der Spezifikation erheben; genau einen Normalfall entwerfen. Keine pauschale Funktionsimplementierung und keine Änderung der Sperrliste ohne Quellenbeleg.",
+    "accept": "Eine funktionsspezifische Fallskizze mit exakten Parametern, erwarteten Feldern/Pixeln und Rückbau des Zustands liegt vor. Wenn blockierend, zeigerabhängig oder auf TT nicht verfügbar: benötigte Voraussetzung konkret benennen; keinen unsicheren Lauf ausführen. Runner-Erweiterung, TT-/Pi-Aufnahme und etwaige Reparatur als getrennte Nachfolgetasks anlegen.",
+    "refs": [
+      "tosdump/cases/COVERAGE-AES.md",
+      "docs/api/aes/_dispatcher.md",
+      "docs/api/aes/menu.md"
+    ],
+    "area": null,
+    "cases": [],
+    "deps": [],
+    "status": "BACKLOG",
+    "extra": ""
+  },
+  {
+    "id": "G-AES-036",
+    "title": "menu_popup (AES 36): kleinsten Messfall entwerfen",
+    "kind": "Funktionsweise ungemessen / Messdesign",
+    "priority": "P3",
+    "scope": "Nur menu_popup, Opcode 36. Die aktuelle Runde enthält keinen gemessenen Record für diese Funktion. Zuerst Eingang/Ausgang, Seiteneffekt, Referenz-Build-Verfügbarkeit und Reset aus der Spezifikation erheben; genau einen Normalfall entwerfen. Keine pauschale Funktionsimplementierung und keine Änderung der Sperrliste ohne Quellenbeleg.",
+    "accept": "Eine funktionsspezifische Fallskizze mit exakten Parametern, erwarteten Feldern/Pixeln und Rückbau des Zustands liegt vor. Wenn blockierend, zeigerabhängig oder auf TT nicht verfügbar: benötigte Voraussetzung konkret benennen; keinen unsicheren Lauf ausführen. Runner-Erweiterung, TT-/Pi-Aufnahme und etwaige Reparatur als getrennte Nachfolgetasks anlegen.",
+    "refs": [
+      "tosdump/cases/COVERAGE-AES.md",
+      "docs/api/aes/_dispatcher.md",
+      "docs/api/aes/menu.md"
+    ],
+    "area": null,
+    "cases": [],
+    "deps": [],
+    "status": "BACKLOG",
+    "extra": ""
+  },
+  {
+    "id": "G-AES-037",
+    "title": "menu_attach (AES 37): kleinsten Messfall entwerfen",
+    "kind": "Funktionsweise ungemessen / Messdesign",
+    "priority": "P3",
+    "scope": "Nur menu_attach, Opcode 37. Die aktuelle Runde enthält keinen gemessenen Record für diese Funktion. Zuerst Eingang/Ausgang, Seiteneffekt, Referenz-Build-Verfügbarkeit und Reset aus der Spezifikation erheben; genau einen Normalfall entwerfen. Keine pauschale Funktionsimplementierung und keine Änderung der Sperrliste ohne Quellenbeleg.",
+    "accept": "Eine funktionsspezifische Fallskizze mit exakten Parametern, erwarteten Feldern/Pixeln und Rückbau des Zustands liegt vor. Wenn blockierend, zeigerabhängig oder auf TT nicht verfügbar: benötigte Voraussetzung konkret benennen; keinen unsicheren Lauf ausführen. Runner-Erweiterung, TT-/Pi-Aufnahme und etwaige Reparatur als getrennte Nachfolgetasks anlegen.",
+    "refs": [
+      "tosdump/cases/COVERAGE-AES.md",
+      "docs/api/aes/_dispatcher.md",
+      "docs/api/aes/menu.md"
+    ],
+    "area": null,
+    "cases": [],
+    "deps": [],
+    "status": "BACKLOG",
+    "extra": ""
+  },
+  {
+    "id": "G-AES-038",
+    "title": "menu_istart (AES 38): kleinsten Messfall entwerfen",
+    "kind": "Funktionsweise ungemessen / Messdesign",
+    "priority": "P3",
+    "scope": "Nur menu_istart, Opcode 38. Die aktuelle Runde enthält keinen gemessenen Record für diese Funktion. Zuerst Eingang/Ausgang, Seiteneffekt, Referenz-Build-Verfügbarkeit und Reset aus der Spezifikation erheben; genau einen Normalfall entwerfen. Keine pauschale Funktionsimplementierung und keine Änderung der Sperrliste ohne Quellenbeleg.",
+    "accept": "Eine funktionsspezifische Fallskizze mit exakten Parametern, erwarteten Feldern/Pixeln und Rückbau des Zustands liegt vor. Wenn blockierend, zeigerabhängig oder auf TT nicht verfügbar: benötigte Voraussetzung konkret benennen; keinen unsicheren Lauf ausführen. Runner-Erweiterung, TT-/Pi-Aufnahme und etwaige Reparatur als getrennte Nachfolgetasks anlegen.",
+    "refs": [
+      "tosdump/cases/COVERAGE-AES.md",
+      "docs/api/aes/_dispatcher.md",
+      "docs/api/aes/menu.md"
+    ],
+    "area": null,
+    "cases": [],
+    "deps": [],
+    "status": "BACKLOG",
+    "extra": ""
+  },
+  {
+    "id": "G-AES-039",
+    "title": "menu_settings (AES 39): kleinsten Messfall entwerfen",
+    "kind": "Funktionsweise ungemessen / Messdesign",
+    "priority": "P3",
+    "scope": "Nur menu_settings, Opcode 39. Die aktuelle Runde enthält keinen gemessenen Record für diese Funktion. Zuerst Eingang/Ausgang, Seiteneffekt, Referenz-Build-Verfügbarkeit und Reset aus der Spezifikation erheben; genau einen Normalfall entwerfen. Keine pauschale Funktionsimplementierung und keine Änderung der Sperrliste ohne Quellenbeleg.",
+    "accept": "Eine funktionsspezifische Fallskizze mit exakten Parametern, erwarteten Feldern/Pixeln und Rückbau des Zustands liegt vor. Wenn blockierend, zeigerabhängig oder auf TT nicht verfügbar: benötigte Voraussetzung konkret benennen; keinen unsicheren Lauf ausführen. Runner-Erweiterung, TT-/Pi-Aufnahme und etwaige Reparatur als getrennte Nachfolgetasks anlegen.",
+    "refs": [
+      "tosdump/cases/COVERAGE-AES.md",
+      "docs/api/aes/_dispatcher.md",
+      "docs/api/aes/menu.md"
+    ],
+    "area": null,
+    "cases": [],
+    "deps": [],
+    "status": "BACKLOG",
+    "extra": ""
+  },
+  {
+    "id": "G-AES-040",
+    "title": "objc_add (AES 40): kleinsten Messfall entwerfen",
+    "kind": "Funktionsweise ungemessen / Messdesign",
+    "priority": "P3",
+    "scope": "Nur objc_add, Opcode 40. Die aktuelle Runde enthält keinen gemessenen Record für diese Funktion. Zuerst Eingang/Ausgang, Seiteneffekt, Referenz-Build-Verfügbarkeit und Reset aus der Spezifikation erheben; genau einen Normalfall entwerfen. Keine pauschale Funktionsimplementierung und keine Änderung der Sperrliste ohne Quellenbeleg.",
+    "accept": "Eine funktionsspezifische Fallskizze mit exakten Parametern, erwarteten Feldern/Pixeln und Rückbau des Zustands liegt vor. Wenn blockierend, zeigerabhängig oder auf TT nicht verfügbar: benötigte Voraussetzung konkret benennen; keinen unsicheren Lauf ausführen. Runner-Erweiterung, TT-/Pi-Aufnahme und etwaige Reparatur als getrennte Nachfolgetasks anlegen.",
+    "refs": [
+      "tosdump/cases/COVERAGE-AES.md",
+      "docs/api/aes/_dispatcher.md",
+      "docs/api/aes/object-form.md"
+    ],
+    "area": null,
+    "cases": [],
+    "deps": [],
+    "status": "BACKLOG",
+    "extra": ""
+  },
+  {
+    "id": "G-AES-041",
+    "title": "objc_delete (AES 41): kleinsten Messfall entwerfen",
+    "kind": "Funktionsweise ungemessen / Messdesign",
+    "priority": "P3",
+    "scope": "Nur objc_delete, Opcode 41. Die aktuelle Runde enthält keinen gemessenen Record für diese Funktion. Zuerst Eingang/Ausgang, Seiteneffekt, Referenz-Build-Verfügbarkeit und Reset aus der Spezifikation erheben; genau einen Normalfall entwerfen. Keine pauschale Funktionsimplementierung und keine Änderung der Sperrliste ohne Quellenbeleg.",
+    "accept": "Eine funktionsspezifische Fallskizze mit exakten Parametern, erwarteten Feldern/Pixeln und Rückbau des Zustands liegt vor. Wenn blockierend, zeigerabhängig oder auf TT nicht verfügbar: benötigte Voraussetzung konkret benennen; keinen unsicheren Lauf ausführen. Runner-Erweiterung, TT-/Pi-Aufnahme und etwaige Reparatur als getrennte Nachfolgetasks anlegen.",
+    "refs": [
+      "tosdump/cases/COVERAGE-AES.md",
+      "docs/api/aes/_dispatcher.md",
+      "docs/api/aes/object-form.md"
+    ],
+    "area": null,
+    "cases": [],
+    "deps": [],
+    "status": "BACKLOG",
+    "extra": ""
+  },
+  {
+    "id": "G-AES-042",
+    "title": "objc_draw (AES 42): kleinsten Messfall entwerfen",
+    "kind": "Funktionsweise ungemessen / Messdesign",
+    "priority": "P3",
+    "scope": "Nur objc_draw, Opcode 42. Die aktuelle Runde enthält keinen gemessenen Record für diese Funktion. Zuerst Eingang/Ausgang, Seiteneffekt, Referenz-Build-Verfügbarkeit und Reset aus der Spezifikation erheben; genau einen Normalfall entwerfen. Keine pauschale Funktionsimplementierung und keine Änderung der Sperrliste ohne Quellenbeleg.",
+    "accept": "Eine funktionsspezifische Fallskizze mit exakten Parametern, erwarteten Feldern/Pixeln und Rückbau des Zustands liegt vor. Wenn blockierend, zeigerabhängig oder auf TT nicht verfügbar: benötigte Voraussetzung konkret benennen; keinen unsicheren Lauf ausführen. Runner-Erweiterung, TT-/Pi-Aufnahme und etwaige Reparatur als getrennte Nachfolgetasks anlegen.",
+    "refs": [
+      "tosdump/cases/COVERAGE-AES.md",
+      "docs/api/aes/_dispatcher.md",
+      "docs/api/aes/object-form.md"
+    ],
+    "area": null,
+    "cases": [],
+    "deps": [],
+    "status": "BACKLOG",
+    "extra": ""
+  },
+  {
+    "id": "G-AES-043",
+    "title": "objc_find (AES 43): kleinsten Messfall entwerfen",
+    "kind": "Funktionsweise ungemessen / Messdesign",
+    "priority": "P3",
+    "scope": "Nur objc_find, Opcode 43. Die aktuelle Runde enthält keinen gemessenen Record für diese Funktion. Zuerst Eingang/Ausgang, Seiteneffekt, Referenz-Build-Verfügbarkeit und Reset aus der Spezifikation erheben; genau einen Normalfall entwerfen. Keine pauschale Funktionsimplementierung und keine Änderung der Sperrliste ohne Quellenbeleg.",
+    "accept": "Eine funktionsspezifische Fallskizze mit exakten Parametern, erwarteten Feldern/Pixeln und Rückbau des Zustands liegt vor. Wenn blockierend, zeigerabhängig oder auf TT nicht verfügbar: benötigte Voraussetzung konkret benennen; keinen unsicheren Lauf ausführen. Runner-Erweiterung, TT-/Pi-Aufnahme und etwaige Reparatur als getrennte Nachfolgetasks anlegen.",
+    "refs": [
+      "tosdump/cases/COVERAGE-AES.md",
+      "docs/api/aes/_dispatcher.md",
+      "docs/api/aes/object-form.md"
+    ],
+    "area": null,
+    "cases": [],
+    "deps": [],
+    "status": "BACKLOG",
+    "extra": ""
+  },
+  {
+    "id": "G-AES-044",
+    "title": "objc_offset (AES 44): kleinsten Messfall entwerfen",
+    "kind": "Funktionsweise ungemessen / Messdesign",
+    "priority": "P3",
+    "scope": "Nur objc_offset, Opcode 44. Die aktuelle Runde enthält keinen gemessenen Record für diese Funktion. Zuerst Eingang/Ausgang, Seiteneffekt, Referenz-Build-Verfügbarkeit und Reset aus der Spezifikation erheben; genau einen Normalfall entwerfen. Keine pauschale Funktionsimplementierung und keine Änderung der Sperrliste ohne Quellenbeleg.",
+    "accept": "Eine funktionsspezifische Fallskizze mit exakten Parametern, erwarteten Feldern/Pixeln und Rückbau des Zustands liegt vor. Wenn blockierend, zeigerabhängig oder auf TT nicht verfügbar: benötigte Voraussetzung konkret benennen; keinen unsicheren Lauf ausführen. Runner-Erweiterung, TT-/Pi-Aufnahme und etwaige Reparatur als getrennte Nachfolgetasks anlegen.",
+    "refs": [
+      "tosdump/cases/COVERAGE-AES.md",
+      "docs/api/aes/_dispatcher.md",
+      "docs/api/aes/object-form.md"
+    ],
+    "area": null,
+    "cases": [],
+    "deps": [],
+    "status": "BACKLOG",
+    "extra": ""
+  },
+  {
+    "id": "G-AES-045",
+    "title": "objc_order (AES 45): kleinsten Messfall entwerfen",
+    "kind": "Funktionsweise ungemessen / Messdesign",
+    "priority": "P3",
+    "scope": "Nur objc_order, Opcode 45. Die aktuelle Runde enthält keinen gemessenen Record für diese Funktion. Zuerst Eingang/Ausgang, Seiteneffekt, Referenz-Build-Verfügbarkeit und Reset aus der Spezifikation erheben; genau einen Normalfall entwerfen. Keine pauschale Funktionsimplementierung und keine Änderung der Sperrliste ohne Quellenbeleg.",
+    "accept": "Eine funktionsspezifische Fallskizze mit exakten Parametern, erwarteten Feldern/Pixeln und Rückbau des Zustands liegt vor. Wenn blockierend, zeigerabhängig oder auf TT nicht verfügbar: benötigte Voraussetzung konkret benennen; keinen unsicheren Lauf ausführen. Runner-Erweiterung, TT-/Pi-Aufnahme und etwaige Reparatur als getrennte Nachfolgetasks anlegen.",
+    "refs": [
+      "tosdump/cases/COVERAGE-AES.md",
+      "docs/api/aes/_dispatcher.md",
+      "docs/api/aes/object-form.md"
+    ],
+    "area": null,
+    "cases": [],
+    "deps": [],
+    "status": "BACKLOG",
+    "extra": ""
+  },
+  {
+    "id": "G-AES-046",
+    "title": "objc_edit (AES 46): kleinsten Messfall entwerfen",
+    "kind": "Funktionsweise ungemessen / Messdesign",
+    "priority": "P3",
+    "scope": "Nur objc_edit, Opcode 46. Die aktuelle Runde enthält keinen gemessenen Record für diese Funktion. Zuerst Eingang/Ausgang, Seiteneffekt, Referenz-Build-Verfügbarkeit und Reset aus der Spezifikation erheben; genau einen Normalfall entwerfen. Keine pauschale Funktionsimplementierung und keine Änderung der Sperrliste ohne Quellenbeleg.",
+    "accept": "Eine funktionsspezifische Fallskizze mit exakten Parametern, erwarteten Feldern/Pixeln und Rückbau des Zustands liegt vor. Wenn blockierend, zeigerabhängig oder auf TT nicht verfügbar: benötigte Voraussetzung konkret benennen; keinen unsicheren Lauf ausführen. Runner-Erweiterung, TT-/Pi-Aufnahme und etwaige Reparatur als getrennte Nachfolgetasks anlegen.",
+    "refs": [
+      "tosdump/cases/COVERAGE-AES.md",
+      "docs/api/aes/_dispatcher.md",
+      "docs/api/aes/object-form.md"
+    ],
+    "area": null,
+    "cases": [],
+    "deps": [],
+    "status": "BACKLOG",
+    "extra": ""
+  },
+  {
+    "id": "G-AES-047",
+    "title": "objc_change (AES 47): kleinsten Messfall entwerfen",
+    "kind": "Funktionsweise ungemessen / Messdesign",
+    "priority": "P3",
+    "scope": "Nur objc_change, Opcode 47. Die aktuelle Runde enthält keinen gemessenen Record für diese Funktion. Zuerst Eingang/Ausgang, Seiteneffekt, Referenz-Build-Verfügbarkeit und Reset aus der Spezifikation erheben; genau einen Normalfall entwerfen. Keine pauschale Funktionsimplementierung und keine Änderung der Sperrliste ohne Quellenbeleg.",
+    "accept": "Eine funktionsspezifische Fallskizze mit exakten Parametern, erwarteten Feldern/Pixeln und Rückbau des Zustands liegt vor. Wenn blockierend, zeigerabhängig oder auf TT nicht verfügbar: benötigte Voraussetzung konkret benennen; keinen unsicheren Lauf ausführen. Runner-Erweiterung, TT-/Pi-Aufnahme und etwaige Reparatur als getrennte Nachfolgetasks anlegen.",
+    "refs": [
+      "tosdump/cases/COVERAGE-AES.md",
+      "docs/api/aes/_dispatcher.md",
+      "docs/api/aes/object-form.md"
+    ],
+    "area": null,
+    "cases": [],
+    "deps": [],
+    "status": "BACKLOG",
+    "extra": ""
+  },
+  {
+    "id": "G-AES-048",
+    "title": "objc_sysvar (AES 48): kleinsten Messfall entwerfen",
+    "kind": "Funktionsweise ungemessen / Messdesign",
+    "priority": "P3",
+    "scope": "Nur objc_sysvar, Opcode 48. Die aktuelle Runde enthält keinen gemessenen Record für diese Funktion. Zuerst Eingang/Ausgang, Seiteneffekt, Referenz-Build-Verfügbarkeit und Reset aus der Spezifikation erheben; genau einen Normalfall entwerfen. Keine pauschale Funktionsimplementierung und keine Änderung der Sperrliste ohne Quellenbeleg.",
+    "accept": "Eine funktionsspezifische Fallskizze mit exakten Parametern, erwarteten Feldern/Pixeln und Rückbau des Zustands liegt vor. Wenn blockierend, zeigerabhängig oder auf TT nicht verfügbar: benötigte Voraussetzung konkret benennen; keinen unsicheren Lauf ausführen. Runner-Erweiterung, TT-/Pi-Aufnahme und etwaige Reparatur als getrennte Nachfolgetasks anlegen.",
+    "refs": [
+      "tosdump/cases/COVERAGE-AES.md",
+      "docs/api/aes/_dispatcher.md",
+      "docs/api/aes/object-form.md"
+    ],
+    "area": null,
+    "cases": [],
+    "deps": [],
+    "status": "BACKLOG",
+    "extra": ""
+  },
+  {
+    "id": "G-AES-050",
+    "title": "form_do (AES 50): kleinsten Messfall entwerfen",
+    "kind": "Funktionsweise ungemessen / Messdesign",
+    "priority": "P3",
+    "scope": "Nur form_do, Opcode 50. Die aktuelle Runde enthält keinen gemessenen Record für diese Funktion. Zuerst Eingang/Ausgang, Seiteneffekt, Referenz-Build-Verfügbarkeit und Reset aus der Spezifikation erheben; genau einen Normalfall entwerfen. Keine pauschale Funktionsimplementierung und keine Änderung der Sperrliste ohne Quellenbeleg.",
+    "accept": "Eine funktionsspezifische Fallskizze mit exakten Parametern, erwarteten Feldern/Pixeln und Rückbau des Zustands liegt vor. Wenn blockierend, zeigerabhängig oder auf TT nicht verfügbar: benötigte Voraussetzung konkret benennen; keinen unsicheren Lauf ausführen. Runner-Erweiterung, TT-/Pi-Aufnahme und etwaige Reparatur als getrennte Nachfolgetasks anlegen.",
+    "refs": [
+      "tosdump/cases/COVERAGE-AES.md",
+      "docs/api/aes/_dispatcher.md",
+      "docs/api/aes/object-form.md"
+    ],
+    "area": null,
+    "cases": [],
+    "deps": [],
+    "status": "BACKLOG",
+    "extra": ""
+  },
+  {
+    "id": "G-AES-051",
+    "title": "form_dial (AES 51): kleinsten Messfall entwerfen",
+    "kind": "Funktionsweise ungemessen / Messdesign",
+    "priority": "P3",
+    "scope": "Nur form_dial, Opcode 51. Die aktuelle Runde enthält keinen gemessenen Record für diese Funktion. Zuerst Eingang/Ausgang, Seiteneffekt, Referenz-Build-Verfügbarkeit und Reset aus der Spezifikation erheben; genau einen Normalfall entwerfen. Keine pauschale Funktionsimplementierung und keine Änderung der Sperrliste ohne Quellenbeleg.",
+    "accept": "Eine funktionsspezifische Fallskizze mit exakten Parametern, erwarteten Feldern/Pixeln und Rückbau des Zustands liegt vor. Wenn blockierend, zeigerabhängig oder auf TT nicht verfügbar: benötigte Voraussetzung konkret benennen; keinen unsicheren Lauf ausführen. Runner-Erweiterung, TT-/Pi-Aufnahme und etwaige Reparatur als getrennte Nachfolgetasks anlegen.",
+    "refs": [
+      "tosdump/cases/COVERAGE-AES.md",
+      "docs/api/aes/_dispatcher.md",
+      "docs/api/aes/object-form.md"
+    ],
+    "area": null,
+    "cases": [],
+    "deps": [],
+    "status": "BACKLOG",
+    "extra": ""
+  },
+  {
+    "id": "G-AES-052",
+    "title": "form_alert (AES 52): kleinsten Messfall entwerfen",
+    "kind": "Funktionsweise ungemessen / Messdesign",
+    "priority": "P3",
+    "scope": "Nur form_alert, Opcode 52. Die aktuelle Runde enthält keinen gemessenen Record für diese Funktion. Zuerst Eingang/Ausgang, Seiteneffekt, Referenz-Build-Verfügbarkeit und Reset aus der Spezifikation erheben; genau einen Normalfall entwerfen. Keine pauschale Funktionsimplementierung und keine Änderung der Sperrliste ohne Quellenbeleg.",
+    "accept": "Eine funktionsspezifische Fallskizze mit exakten Parametern, erwarteten Feldern/Pixeln und Rückbau des Zustands liegt vor. Wenn blockierend, zeigerabhängig oder auf TT nicht verfügbar: benötigte Voraussetzung konkret benennen; keinen unsicheren Lauf ausführen. Runner-Erweiterung, TT-/Pi-Aufnahme und etwaige Reparatur als getrennte Nachfolgetasks anlegen.",
+    "refs": [
+      "tosdump/cases/COVERAGE-AES.md",
+      "docs/api/aes/_dispatcher.md",
+      "docs/api/aes/object-form.md"
+    ],
+    "area": null,
+    "cases": [],
+    "deps": [],
+    "status": "BACKLOG",
+    "extra": ""
+  },
+  {
+    "id": "G-AES-053",
+    "title": "form_error (AES 53): kleinsten Messfall entwerfen",
+    "kind": "Funktionsweise ungemessen / Messdesign",
+    "priority": "P3",
+    "scope": "Nur form_error, Opcode 53. Die aktuelle Runde enthält keinen gemessenen Record für diese Funktion. Zuerst Eingang/Ausgang, Seiteneffekt, Referenz-Build-Verfügbarkeit und Reset aus der Spezifikation erheben; genau einen Normalfall entwerfen. Keine pauschale Funktionsimplementierung und keine Änderung der Sperrliste ohne Quellenbeleg.",
+    "accept": "Eine funktionsspezifische Fallskizze mit exakten Parametern, erwarteten Feldern/Pixeln und Rückbau des Zustands liegt vor. Wenn blockierend, zeigerabhängig oder auf TT nicht verfügbar: benötigte Voraussetzung konkret benennen; keinen unsicheren Lauf ausführen. Runner-Erweiterung, TT-/Pi-Aufnahme und etwaige Reparatur als getrennte Nachfolgetasks anlegen.",
+    "refs": [
+      "tosdump/cases/COVERAGE-AES.md",
+      "docs/api/aes/_dispatcher.md",
+      "docs/api/aes/object-form.md"
+    ],
+    "area": null,
+    "cases": [],
+    "deps": [],
+    "status": "BACKLOG",
+    "extra": ""
+  },
+  {
+    "id": "G-AES-054",
+    "title": "form_center (AES 54): kleinsten Messfall entwerfen",
+    "kind": "Funktionsweise ungemessen / Messdesign",
+    "priority": "P3",
+    "scope": "Nur form_center, Opcode 54. Die aktuelle Runde enthält keinen gemessenen Record für diese Funktion. Zuerst Eingang/Ausgang, Seiteneffekt, Referenz-Build-Verfügbarkeit und Reset aus der Spezifikation erheben; genau einen Normalfall entwerfen. Keine pauschale Funktionsimplementierung und keine Änderung der Sperrliste ohne Quellenbeleg.",
+    "accept": "Eine funktionsspezifische Fallskizze mit exakten Parametern, erwarteten Feldern/Pixeln und Rückbau des Zustands liegt vor. Wenn blockierend, zeigerabhängig oder auf TT nicht verfügbar: benötigte Voraussetzung konkret benennen; keinen unsicheren Lauf ausführen. Runner-Erweiterung, TT-/Pi-Aufnahme und etwaige Reparatur als getrennte Nachfolgetasks anlegen.",
+    "refs": [
+      "tosdump/cases/COVERAGE-AES.md",
+      "docs/api/aes/_dispatcher.md",
+      "docs/api/aes/object-form.md"
+    ],
+    "area": null,
+    "cases": [],
+    "deps": [],
+    "status": "BACKLOG",
+    "extra": ""
+  },
+  {
+    "id": "G-AES-055",
+    "title": "form_keybd (AES 55): kleinsten Messfall entwerfen",
+    "kind": "Funktionsweise ungemessen / Messdesign",
+    "priority": "P3",
+    "scope": "Nur form_keybd, Opcode 55. Die aktuelle Runde enthält keinen gemessenen Record für diese Funktion. Zuerst Eingang/Ausgang, Seiteneffekt, Referenz-Build-Verfügbarkeit und Reset aus der Spezifikation erheben; genau einen Normalfall entwerfen. Keine pauschale Funktionsimplementierung und keine Änderung der Sperrliste ohne Quellenbeleg.",
+    "accept": "Eine funktionsspezifische Fallskizze mit exakten Parametern, erwarteten Feldern/Pixeln und Rückbau des Zustands liegt vor. Wenn blockierend, zeigerabhängig oder auf TT nicht verfügbar: benötigte Voraussetzung konkret benennen; keinen unsicheren Lauf ausführen. Runner-Erweiterung, TT-/Pi-Aufnahme und etwaige Reparatur als getrennte Nachfolgetasks anlegen.",
+    "refs": [
+      "tosdump/cases/COVERAGE-AES.md",
+      "docs/api/aes/_dispatcher.md",
+      "docs/api/aes/object-form.md"
+    ],
+    "area": null,
+    "cases": [],
+    "deps": [],
+    "status": "BACKLOG",
+    "extra": ""
+  },
+  {
+    "id": "G-AES-056",
+    "title": "form_button (AES 56): kleinsten Messfall entwerfen",
+    "kind": "Funktionsweise ungemessen / Messdesign",
+    "priority": "P3",
+    "scope": "Nur form_button, Opcode 56. Die aktuelle Runde enthält keinen gemessenen Record für diese Funktion. Zuerst Eingang/Ausgang, Seiteneffekt, Referenz-Build-Verfügbarkeit und Reset aus der Spezifikation erheben; genau einen Normalfall entwerfen. Keine pauschale Funktionsimplementierung und keine Änderung der Sperrliste ohne Quellenbeleg.",
+    "accept": "Eine funktionsspezifische Fallskizze mit exakten Parametern, erwarteten Feldern/Pixeln und Rückbau des Zustands liegt vor. Wenn blockierend, zeigerabhängig oder auf TT nicht verfügbar: benötigte Voraussetzung konkret benennen; keinen unsicheren Lauf ausführen. Runner-Erweiterung, TT-/Pi-Aufnahme und etwaige Reparatur als getrennte Nachfolgetasks anlegen.",
+    "refs": [
+      "tosdump/cases/COVERAGE-AES.md",
+      "docs/api/aes/_dispatcher.md",
+      "docs/api/aes/object-form.md"
+    ],
+    "area": null,
+    "cases": [],
+    "deps": [],
+    "status": "BACKLOG",
+    "extra": ""
+  },
+  {
+    "id": "G-AES-070",
+    "title": "graf_rubbox (AES 70): kleinsten Messfall entwerfen",
+    "kind": "Funktionsweise ungemessen / Messdesign",
+    "priority": "P3",
+    "scope": "Nur graf_rubbox, Opcode 70. Die aktuelle Runde enthält keinen gemessenen Record für diese Funktion. Zuerst Eingang/Ausgang, Seiteneffekt, Referenz-Build-Verfügbarkeit und Reset aus der Spezifikation erheben; genau einen Normalfall entwerfen. Keine pauschale Funktionsimplementierung und keine Änderung der Sperrliste ohne Quellenbeleg.",
+    "accept": "Eine funktionsspezifische Fallskizze mit exakten Parametern, erwarteten Feldern/Pixeln und Rückbau des Zustands liegt vor. Wenn blockierend, zeigerabhängig oder auf TT nicht verfügbar: benötigte Voraussetzung konkret benennen; keinen unsicheren Lauf ausführen. Runner-Erweiterung, TT-/Pi-Aufnahme und etwaige Reparatur als getrennte Nachfolgetasks anlegen.",
+    "refs": [
+      "tosdump/cases/COVERAGE-AES.md",
+      "docs/api/aes/_dispatcher.md",
+      "docs/api/aes/window-graphics.md"
+    ],
+    "area": null,
+    "cases": [],
+    "deps": [],
+    "status": "BACKLOG",
+    "extra": ""
+  },
+  {
+    "id": "G-AES-071",
+    "title": "graf_dragbox (AES 71): kleinsten Messfall entwerfen",
+    "kind": "Funktionsweise ungemessen / Messdesign",
+    "priority": "P3",
+    "scope": "Nur graf_dragbox, Opcode 71. Die aktuelle Runde enthält keinen gemessenen Record für diese Funktion. Zuerst Eingang/Ausgang, Seiteneffekt, Referenz-Build-Verfügbarkeit und Reset aus der Spezifikation erheben; genau einen Normalfall entwerfen. Keine pauschale Funktionsimplementierung und keine Änderung der Sperrliste ohne Quellenbeleg.",
+    "accept": "Eine funktionsspezifische Fallskizze mit exakten Parametern, erwarteten Feldern/Pixeln und Rückbau des Zustands liegt vor. Wenn blockierend, zeigerabhängig oder auf TT nicht verfügbar: benötigte Voraussetzung konkret benennen; keinen unsicheren Lauf ausführen. Runner-Erweiterung, TT-/Pi-Aufnahme und etwaige Reparatur als getrennte Nachfolgetasks anlegen.",
+    "refs": [
+      "tosdump/cases/COVERAGE-AES.md",
+      "docs/api/aes/_dispatcher.md",
+      "docs/api/aes/window-graphics.md"
+    ],
+    "area": null,
+    "cases": [],
+    "deps": [],
+    "status": "BACKLOG",
+    "extra": ""
+  },
+  {
+    "id": "G-AES-072",
+    "title": "graf_mbox (AES 72): kleinsten Messfall entwerfen",
+    "kind": "Funktionsweise ungemessen / Messdesign",
+    "priority": "P3",
+    "scope": "Nur graf_mbox, Opcode 72. Die aktuelle Runde enthält keinen gemessenen Record für diese Funktion. Zuerst Eingang/Ausgang, Seiteneffekt, Referenz-Build-Verfügbarkeit und Reset aus der Spezifikation erheben; genau einen Normalfall entwerfen. Keine pauschale Funktionsimplementierung und keine Änderung der Sperrliste ohne Quellenbeleg.",
+    "accept": "Eine funktionsspezifische Fallskizze mit exakten Parametern, erwarteten Feldern/Pixeln und Rückbau des Zustands liegt vor. Wenn blockierend, zeigerabhängig oder auf TT nicht verfügbar: benötigte Voraussetzung konkret benennen; keinen unsicheren Lauf ausführen. Runner-Erweiterung, TT-/Pi-Aufnahme und etwaige Reparatur als getrennte Nachfolgetasks anlegen.",
+    "refs": [
+      "tosdump/cases/COVERAGE-AES.md",
+      "docs/api/aes/_dispatcher.md",
+      "docs/api/aes/window-graphics.md"
+    ],
+    "area": null,
+    "cases": [],
+    "deps": [],
+    "status": "BACKLOG",
+    "extra": ""
+  },
+  {
+    "id": "G-AES-073",
+    "title": "graf_growbox (AES 73): kleinsten Messfall entwerfen",
+    "kind": "Funktionsweise ungemessen / Messdesign",
+    "priority": "P3",
+    "scope": "Nur graf_growbox, Opcode 73. Die aktuelle Runde enthält keinen gemessenen Record für diese Funktion. Zuerst Eingang/Ausgang, Seiteneffekt, Referenz-Build-Verfügbarkeit und Reset aus der Spezifikation erheben; genau einen Normalfall entwerfen. Keine pauschale Funktionsimplementierung und keine Änderung der Sperrliste ohne Quellenbeleg.",
+    "accept": "Eine funktionsspezifische Fallskizze mit exakten Parametern, erwarteten Feldern/Pixeln und Rückbau des Zustands liegt vor. Wenn blockierend, zeigerabhängig oder auf TT nicht verfügbar: benötigte Voraussetzung konkret benennen; keinen unsicheren Lauf ausführen. Runner-Erweiterung, TT-/Pi-Aufnahme und etwaige Reparatur als getrennte Nachfolgetasks anlegen.",
+    "refs": [
+      "tosdump/cases/COVERAGE-AES.md",
+      "docs/api/aes/_dispatcher.md",
+      "docs/api/aes/window-graphics.md"
+    ],
+    "area": null,
+    "cases": [],
+    "deps": [],
+    "status": "BACKLOG",
+    "extra": ""
+  },
+  {
+    "id": "G-AES-074",
+    "title": "graf_shrinkbox (AES 74): kleinsten Messfall entwerfen",
+    "kind": "Funktionsweise ungemessen / Messdesign",
+    "priority": "P3",
+    "scope": "Nur graf_shrinkbox, Opcode 74. Die aktuelle Runde enthält keinen gemessenen Record für diese Funktion. Zuerst Eingang/Ausgang, Seiteneffekt, Referenz-Build-Verfügbarkeit und Reset aus der Spezifikation erheben; genau einen Normalfall entwerfen. Keine pauschale Funktionsimplementierung und keine Änderung der Sperrliste ohne Quellenbeleg.",
+    "accept": "Eine funktionsspezifische Fallskizze mit exakten Parametern, erwarteten Feldern/Pixeln und Rückbau des Zustands liegt vor. Wenn blockierend, zeigerabhängig oder auf TT nicht verfügbar: benötigte Voraussetzung konkret benennen; keinen unsicheren Lauf ausführen. Runner-Erweiterung, TT-/Pi-Aufnahme und etwaige Reparatur als getrennte Nachfolgetasks anlegen.",
+    "refs": [
+      "tosdump/cases/COVERAGE-AES.md",
+      "docs/api/aes/_dispatcher.md",
+      "docs/api/aes/window-graphics.md"
+    ],
+    "area": null,
+    "cases": [],
+    "deps": [],
+    "status": "BACKLOG",
+    "extra": ""
+  },
+  {
+    "id": "G-AES-075",
+    "title": "graf_watchbox (AES 75): kleinsten Messfall entwerfen",
+    "kind": "Funktionsweise ungemessen / Messdesign",
+    "priority": "P3",
+    "scope": "Nur graf_watchbox, Opcode 75. Die aktuelle Runde enthält keinen gemessenen Record für diese Funktion. Zuerst Eingang/Ausgang, Seiteneffekt, Referenz-Build-Verfügbarkeit und Reset aus der Spezifikation erheben; genau einen Normalfall entwerfen. Keine pauschale Funktionsimplementierung und keine Änderung der Sperrliste ohne Quellenbeleg.",
+    "accept": "Eine funktionsspezifische Fallskizze mit exakten Parametern, erwarteten Feldern/Pixeln und Rückbau des Zustands liegt vor. Wenn blockierend, zeigerabhängig oder auf TT nicht verfügbar: benötigte Voraussetzung konkret benennen; keinen unsicheren Lauf ausführen. Runner-Erweiterung, TT-/Pi-Aufnahme und etwaige Reparatur als getrennte Nachfolgetasks anlegen.",
+    "refs": [
+      "tosdump/cases/COVERAGE-AES.md",
+      "docs/api/aes/_dispatcher.md",
+      "docs/api/aes/window-graphics.md"
+    ],
+    "area": null,
+    "cases": [],
+    "deps": [],
+    "status": "BACKLOG",
+    "extra": ""
+  },
+  {
+    "id": "G-AES-076",
+    "title": "graf_slidebox (AES 76): kleinsten Messfall entwerfen",
+    "kind": "Funktionsweise ungemessen / Messdesign",
+    "priority": "P3",
+    "scope": "Nur graf_slidebox, Opcode 76. Die aktuelle Runde enthält keinen gemessenen Record für diese Funktion. Zuerst Eingang/Ausgang, Seiteneffekt, Referenz-Build-Verfügbarkeit und Reset aus der Spezifikation erheben; genau einen Normalfall entwerfen. Keine pauschale Funktionsimplementierung und keine Änderung der Sperrliste ohne Quellenbeleg.",
+    "accept": "Eine funktionsspezifische Fallskizze mit exakten Parametern, erwarteten Feldern/Pixeln und Rückbau des Zustands liegt vor. Wenn blockierend, zeigerabhängig oder auf TT nicht verfügbar: benötigte Voraussetzung konkret benennen; keinen unsicheren Lauf ausführen. Runner-Erweiterung, TT-/Pi-Aufnahme und etwaige Reparatur als getrennte Nachfolgetasks anlegen.",
+    "refs": [
+      "tosdump/cases/COVERAGE-AES.md",
+      "docs/api/aes/_dispatcher.md",
+      "docs/api/aes/window-graphics.md"
+    ],
+    "area": null,
+    "cases": [],
+    "deps": [],
+    "status": "BACKLOG",
+    "extra": ""
+  },
+  {
+    "id": "G-AES-080",
+    "title": "scrp_read (AES 80): kleinsten Messfall entwerfen",
+    "kind": "Funktionsweise ungemessen / Messdesign",
+    "priority": "P3",
+    "scope": "Nur scrp_read, Opcode 80. Die aktuelle Runde enthält keinen gemessenen Record für diese Funktion. Zuerst Eingang/Ausgang, Seiteneffekt, Referenz-Build-Verfügbarkeit und Reset aus der Spezifikation erheben; genau einen Normalfall entwerfen. Keine pauschale Funktionsimplementierung und keine Änderung der Sperrliste ohne Quellenbeleg.",
+    "accept": "Eine funktionsspezifische Fallskizze mit exakten Parametern, erwarteten Feldern/Pixeln und Rückbau des Zustands liegt vor. Wenn blockierend, zeigerabhängig oder auf TT nicht verfügbar: benötigte Voraussetzung konkret benennen; keinen unsicheren Lauf ausführen. Runner-Erweiterung, TT-/Pi-Aufnahme und etwaige Reparatur als getrennte Nachfolgetasks anlegen.",
+    "refs": [
+      "tosdump/cases/COVERAGE-AES.md",
+      "docs/api/aes/_dispatcher.md",
+      "docs/api/aes/scrap-shell.md"
+    ],
+    "area": null,
+    "cases": [],
+    "deps": [],
+    "status": "BACKLOG",
+    "extra": ""
+  },
+  {
+    "id": "G-AES-081",
+    "title": "scrp_write (AES 81): kleinsten Messfall entwerfen",
+    "kind": "Funktionsweise ungemessen / Messdesign",
+    "priority": "P3",
+    "scope": "Nur scrp_write, Opcode 81. Die aktuelle Runde enthält keinen gemessenen Record für diese Funktion. Zuerst Eingang/Ausgang, Seiteneffekt, Referenz-Build-Verfügbarkeit und Reset aus der Spezifikation erheben; genau einen Normalfall entwerfen. Keine pauschale Funktionsimplementierung und keine Änderung der Sperrliste ohne Quellenbeleg.",
+    "accept": "Eine funktionsspezifische Fallskizze mit exakten Parametern, erwarteten Feldern/Pixeln und Rückbau des Zustands liegt vor. Wenn blockierend, zeigerabhängig oder auf TT nicht verfügbar: benötigte Voraussetzung konkret benennen; keinen unsicheren Lauf ausführen. Runner-Erweiterung, TT-/Pi-Aufnahme und etwaige Reparatur als getrennte Nachfolgetasks anlegen.",
+    "refs": [
+      "tosdump/cases/COVERAGE-AES.md",
+      "docs/api/aes/_dispatcher.md",
+      "docs/api/aes/scrap-shell.md"
+    ],
+    "area": null,
+    "cases": [],
+    "deps": [],
+    "status": "BACKLOG",
+    "extra": ""
+  },
+  {
+    "id": "G-AES-082",
+    "title": "scrp_clear (AES 82): kleinsten Messfall entwerfen",
+    "kind": "Funktionsweise ungemessen / Messdesign",
+    "priority": "P3",
+    "scope": "Nur scrp_clear, Opcode 82. Die aktuelle Runde enthält keinen gemessenen Record für diese Funktion. Zuerst Eingang/Ausgang, Seiteneffekt, Referenz-Build-Verfügbarkeit und Reset aus der Spezifikation erheben; genau einen Normalfall entwerfen. Keine pauschale Funktionsimplementierung und keine Änderung der Sperrliste ohne Quellenbeleg.",
+    "accept": "Eine funktionsspezifische Fallskizze mit exakten Parametern, erwarteten Feldern/Pixeln und Rückbau des Zustands liegt vor. Wenn blockierend, zeigerabhängig oder auf TT nicht verfügbar: benötigte Voraussetzung konkret benennen; keinen unsicheren Lauf ausführen. Runner-Erweiterung, TT-/Pi-Aufnahme und etwaige Reparatur als getrennte Nachfolgetasks anlegen.",
+    "refs": [
+      "tosdump/cases/COVERAGE-AES.md",
+      "docs/api/aes/_dispatcher.md",
+      "docs/api/aes/scrap-shell.md"
+    ],
+    "area": null,
+    "cases": [],
+    "deps": [],
+    "status": "BACKLOG",
+    "extra": ""
+  },
+  {
+    "id": "G-AES-090",
+    "title": "fsel_input (AES 90): kleinsten Messfall entwerfen",
+    "kind": "Funktionsweise ungemessen / Messdesign",
+    "priority": "P3",
+    "scope": "Nur fsel_input, Opcode 90. Die aktuelle Runde enthält keinen gemessenen Record für diese Funktion. Zuerst Eingang/Ausgang, Seiteneffekt, Referenz-Build-Verfügbarkeit und Reset aus der Spezifikation erheben; genau einen Normalfall entwerfen. Keine pauschale Funktionsimplementierung und keine Änderung der Sperrliste ohne Quellenbeleg.",
+    "accept": "Eine funktionsspezifische Fallskizze mit exakten Parametern, erwarteten Feldern/Pixeln und Rückbau des Zustands liegt vor. Wenn blockierend, zeigerabhängig oder auf TT nicht verfügbar: benötigte Voraussetzung konkret benennen; keinen unsicheren Lauf ausführen. Runner-Erweiterung, TT-/Pi-Aufnahme und etwaige Reparatur als getrennte Nachfolgetasks anlegen.",
+    "refs": [
+      "tosdump/cases/COVERAGE-AES.md",
+      "docs/api/aes/_dispatcher.md",
+      "docs/api/aes/resource-fileselector.md"
+    ],
+    "area": null,
+    "cases": [],
+    "deps": [],
+    "status": "BACKLOG",
+    "extra": ""
+  },
+  {
+    "id": "G-AES-091",
+    "title": "fsel_exinput (AES 91): kleinsten Messfall entwerfen",
+    "kind": "Funktionsweise ungemessen / Messdesign",
+    "priority": "P3",
+    "scope": "Nur fsel_exinput, Opcode 91. Die aktuelle Runde enthält keinen gemessenen Record für diese Funktion. Zuerst Eingang/Ausgang, Seiteneffekt, Referenz-Build-Verfügbarkeit und Reset aus der Spezifikation erheben; genau einen Normalfall entwerfen. Keine pauschale Funktionsimplementierung und keine Änderung der Sperrliste ohne Quellenbeleg.",
+    "accept": "Eine funktionsspezifische Fallskizze mit exakten Parametern, erwarteten Feldern/Pixeln und Rückbau des Zustands liegt vor. Wenn blockierend, zeigerabhängig oder auf TT nicht verfügbar: benötigte Voraussetzung konkret benennen; keinen unsicheren Lauf ausführen. Runner-Erweiterung, TT-/Pi-Aufnahme und etwaige Reparatur als getrennte Nachfolgetasks anlegen.",
+    "refs": [
+      "tosdump/cases/COVERAGE-AES.md",
+      "docs/api/aes/_dispatcher.md",
+      "docs/api/aes/resource-fileselector.md"
+    ],
+    "area": null,
+    "cases": [],
+    "deps": [],
+    "status": "BACKLOG",
+    "extra": ""
+  },
+  {
+    "id": "G-AES-107",
+    "title": "wind_update (AES 107): kleinsten Messfall entwerfen",
+    "kind": "Funktionsweise ungemessen / Messdesign",
+    "priority": "P3",
+    "scope": "Nur wind_update, Opcode 107. Die aktuelle Runde enthält keinen gemessenen Record für diese Funktion. Zuerst Eingang/Ausgang, Seiteneffekt, Referenz-Build-Verfügbarkeit und Reset aus der Spezifikation erheben; genau einen Normalfall entwerfen. Keine pauschale Funktionsimplementierung und keine Änderung der Sperrliste ohne Quellenbeleg.",
+    "accept": "Eine funktionsspezifische Fallskizze mit exakten Parametern, erwarteten Feldern/Pixeln und Rückbau des Zustands liegt vor. Wenn blockierend, zeigerabhängig oder auf TT nicht verfügbar: benötigte Voraussetzung konkret benennen; keinen unsicheren Lauf ausführen. Runner-Erweiterung, TT-/Pi-Aufnahme und etwaige Reparatur als getrennte Nachfolgetasks anlegen.",
+    "refs": [
+      "tosdump/cases/COVERAGE-AES.md",
+      "docs/api/aes/_dispatcher.md",
+      "docs/api/aes/window-graphics.md"
+    ],
+    "area": null,
+    "cases": [],
+    "deps": [],
+    "status": "BACKLOG",
+    "extra": ""
+  },
+  {
+    "id": "G-AES-110",
+    "title": "rsrc_load (AES 110): kleinsten Messfall entwerfen",
+    "kind": "Funktionsweise ungemessen / Messdesign",
+    "priority": "P3",
+    "scope": "Nur rsrc_load, Opcode 110. Die aktuelle Runde enthält keinen gemessenen Record für diese Funktion. Zuerst Eingang/Ausgang, Seiteneffekt, Referenz-Build-Verfügbarkeit und Reset aus der Spezifikation erheben; genau einen Normalfall entwerfen. Keine pauschale Funktionsimplementierung und keine Änderung der Sperrliste ohne Quellenbeleg.",
+    "accept": "Eine funktionsspezifische Fallskizze mit exakten Parametern, erwarteten Feldern/Pixeln und Rückbau des Zustands liegt vor. Wenn blockierend, zeigerabhängig oder auf TT nicht verfügbar: benötigte Voraussetzung konkret benennen; keinen unsicheren Lauf ausführen. Runner-Erweiterung, TT-/Pi-Aufnahme und etwaige Reparatur als getrennte Nachfolgetasks anlegen.",
+    "refs": [
+      "tosdump/cases/COVERAGE-AES.md",
+      "docs/api/aes/_dispatcher.md",
+      "docs/api/aes/resource-fileselector.md"
+    ],
+    "area": null,
+    "cases": [],
+    "deps": [],
+    "status": "BACKLOG",
+    "extra": ""
+  },
+  {
+    "id": "G-AES-111",
+    "title": "rsrc_free (AES 111): kleinsten Messfall entwerfen",
+    "kind": "Funktionsweise ungemessen / Messdesign",
+    "priority": "P3",
+    "scope": "Nur rsrc_free, Opcode 111. Die aktuelle Runde enthält keinen gemessenen Record für diese Funktion. Zuerst Eingang/Ausgang, Seiteneffekt, Referenz-Build-Verfügbarkeit und Reset aus der Spezifikation erheben; genau einen Normalfall entwerfen. Keine pauschale Funktionsimplementierung und keine Änderung der Sperrliste ohne Quellenbeleg.",
+    "accept": "Eine funktionsspezifische Fallskizze mit exakten Parametern, erwarteten Feldern/Pixeln und Rückbau des Zustands liegt vor. Wenn blockierend, zeigerabhängig oder auf TT nicht verfügbar: benötigte Voraussetzung konkret benennen; keinen unsicheren Lauf ausführen. Runner-Erweiterung, TT-/Pi-Aufnahme und etwaige Reparatur als getrennte Nachfolgetasks anlegen.",
+    "refs": [
+      "tosdump/cases/COVERAGE-AES.md",
+      "docs/api/aes/_dispatcher.md",
+      "docs/api/aes/resource-fileselector.md"
+    ],
+    "area": null,
+    "cases": [],
+    "deps": [],
+    "status": "BACKLOG",
+    "extra": ""
+  },
+  {
+    "id": "G-AES-112",
+    "title": "rsrc_gaddr (AES 112): kleinsten Messfall entwerfen",
+    "kind": "Funktionsweise ungemessen / Messdesign",
+    "priority": "P3",
+    "scope": "Nur rsrc_gaddr, Opcode 112. Die aktuelle Runde enthält keinen gemessenen Record für diese Funktion. Zuerst Eingang/Ausgang, Seiteneffekt, Referenz-Build-Verfügbarkeit und Reset aus der Spezifikation erheben; genau einen Normalfall entwerfen. Keine pauschale Funktionsimplementierung und keine Änderung der Sperrliste ohne Quellenbeleg.",
+    "accept": "Eine funktionsspezifische Fallskizze mit exakten Parametern, erwarteten Feldern/Pixeln und Rückbau des Zustands liegt vor. Wenn blockierend, zeigerabhängig oder auf TT nicht verfügbar: benötigte Voraussetzung konkret benennen; keinen unsicheren Lauf ausführen. Runner-Erweiterung, TT-/Pi-Aufnahme und etwaige Reparatur als getrennte Nachfolgetasks anlegen.",
+    "refs": [
+      "tosdump/cases/COVERAGE-AES.md",
+      "docs/api/aes/_dispatcher.md",
+      "docs/api/aes/resource-fileselector.md"
+    ],
+    "area": null,
+    "cases": [],
+    "deps": [],
+    "status": "BACKLOG",
+    "extra": ""
+  },
+  {
+    "id": "G-AES-113",
+    "title": "rsrc_saddr (AES 113): kleinsten Messfall entwerfen",
+    "kind": "Funktionsweise ungemessen / Messdesign",
+    "priority": "P3",
+    "scope": "Nur rsrc_saddr, Opcode 113. Die aktuelle Runde enthält keinen gemessenen Record für diese Funktion. Zuerst Eingang/Ausgang, Seiteneffekt, Referenz-Build-Verfügbarkeit und Reset aus der Spezifikation erheben; genau einen Normalfall entwerfen. Keine pauschale Funktionsimplementierung und keine Änderung der Sperrliste ohne Quellenbeleg.",
+    "accept": "Eine funktionsspezifische Fallskizze mit exakten Parametern, erwarteten Feldern/Pixeln und Rückbau des Zustands liegt vor. Wenn blockierend, zeigerabhängig oder auf TT nicht verfügbar: benötigte Voraussetzung konkret benennen; keinen unsicheren Lauf ausführen. Runner-Erweiterung, TT-/Pi-Aufnahme und etwaige Reparatur als getrennte Nachfolgetasks anlegen.",
+    "refs": [
+      "tosdump/cases/COVERAGE-AES.md",
+      "docs/api/aes/_dispatcher.md",
+      "docs/api/aes/resource-fileselector.md"
+    ],
+    "area": null,
+    "cases": [],
+    "deps": [],
+    "status": "BACKLOG",
+    "extra": ""
+  },
+  {
+    "id": "G-AES-114",
+    "title": "rsrc_obfix (AES 114): kleinsten Messfall entwerfen",
+    "kind": "Funktionsweise ungemessen / Messdesign",
+    "priority": "P3",
+    "scope": "Nur rsrc_obfix, Opcode 114. Die aktuelle Runde enthält keinen gemessenen Record für diese Funktion. Zuerst Eingang/Ausgang, Seiteneffekt, Referenz-Build-Verfügbarkeit und Reset aus der Spezifikation erheben; genau einen Normalfall entwerfen. Keine pauschale Funktionsimplementierung und keine Änderung der Sperrliste ohne Quellenbeleg.",
+    "accept": "Eine funktionsspezifische Fallskizze mit exakten Parametern, erwarteten Feldern/Pixeln und Rückbau des Zustands liegt vor. Wenn blockierend, zeigerabhängig oder auf TT nicht verfügbar: benötigte Voraussetzung konkret benennen; keinen unsicheren Lauf ausführen. Runner-Erweiterung, TT-/Pi-Aufnahme und etwaige Reparatur als getrennte Nachfolgetasks anlegen.",
+    "refs": [
+      "tosdump/cases/COVERAGE-AES.md",
+      "docs/api/aes/_dispatcher.md",
+      "docs/api/aes/resource-fileselector.md"
+    ],
+    "area": null,
+    "cases": [],
+    "deps": [],
+    "status": "BACKLOG",
+    "extra": ""
+  },
+  {
+    "id": "G-AES-120",
+    "title": "shel_read (AES 120): kleinsten Messfall entwerfen",
+    "kind": "Funktionsweise ungemessen / Messdesign",
+    "priority": "P3",
+    "scope": "Nur shel_read, Opcode 120. Die aktuelle Runde enthält keinen gemessenen Record für diese Funktion. Zuerst Eingang/Ausgang, Seiteneffekt, Referenz-Build-Verfügbarkeit und Reset aus der Spezifikation erheben; genau einen Normalfall entwerfen. Keine pauschale Funktionsimplementierung und keine Änderung der Sperrliste ohne Quellenbeleg.",
+    "accept": "Eine funktionsspezifische Fallskizze mit exakten Parametern, erwarteten Feldern/Pixeln und Rückbau des Zustands liegt vor. Wenn blockierend, zeigerabhängig oder auf TT nicht verfügbar: benötigte Voraussetzung konkret benennen; keinen unsicheren Lauf ausführen. Runner-Erweiterung, TT-/Pi-Aufnahme und etwaige Reparatur als getrennte Nachfolgetasks anlegen.",
+    "refs": [
+      "tosdump/cases/COVERAGE-AES.md",
+      "docs/api/aes/_dispatcher.md",
+      "docs/api/aes/scrap-shell.md"
+    ],
+    "area": null,
+    "cases": [],
+    "deps": [],
+    "status": "BACKLOG",
+    "extra": ""
+  },
+  {
+    "id": "G-AES-121",
+    "title": "shel_write (AES 121): kleinsten Messfall entwerfen",
+    "kind": "Funktionsweise ungemessen / Messdesign",
+    "priority": "P3",
+    "scope": "Nur shel_write, Opcode 121. Die aktuelle Runde enthält keinen gemessenen Record für diese Funktion. Zuerst Eingang/Ausgang, Seiteneffekt, Referenz-Build-Verfügbarkeit und Reset aus der Spezifikation erheben; genau einen Normalfall entwerfen. Keine pauschale Funktionsimplementierung und keine Änderung der Sperrliste ohne Quellenbeleg.",
+    "accept": "Eine funktionsspezifische Fallskizze mit exakten Parametern, erwarteten Feldern/Pixeln und Rückbau des Zustands liegt vor. Wenn blockierend, zeigerabhängig oder auf TT nicht verfügbar: benötigte Voraussetzung konkret benennen; keinen unsicheren Lauf ausführen. Runner-Erweiterung, TT-/Pi-Aufnahme und etwaige Reparatur als getrennte Nachfolgetasks anlegen.",
+    "refs": [
+      "tosdump/cases/COVERAGE-AES.md",
+      "docs/api/aes/_dispatcher.md",
+      "docs/api/aes/scrap-shell.md"
+    ],
+    "area": null,
+    "cases": [],
+    "deps": [],
+    "status": "BACKLOG",
+    "extra": ""
+  },
+  {
+    "id": "G-AES-122",
+    "title": "shel_get (AES 122): kleinsten Messfall entwerfen",
+    "kind": "Funktionsweise ungemessen / Messdesign",
+    "priority": "P3",
+    "scope": "Nur shel_get, Opcode 122. Die aktuelle Runde enthält keinen gemessenen Record für diese Funktion. Zuerst Eingang/Ausgang, Seiteneffekt, Referenz-Build-Verfügbarkeit und Reset aus der Spezifikation erheben; genau einen Normalfall entwerfen. Keine pauschale Funktionsimplementierung und keine Änderung der Sperrliste ohne Quellenbeleg.",
+    "accept": "Eine funktionsspezifische Fallskizze mit exakten Parametern, erwarteten Feldern/Pixeln und Rückbau des Zustands liegt vor. Wenn blockierend, zeigerabhängig oder auf TT nicht verfügbar: benötigte Voraussetzung konkret benennen; keinen unsicheren Lauf ausführen. Runner-Erweiterung, TT-/Pi-Aufnahme und etwaige Reparatur als getrennte Nachfolgetasks anlegen.",
+    "refs": [
+      "tosdump/cases/COVERAGE-AES.md",
+      "docs/api/aes/_dispatcher.md",
+      "docs/api/aes/scrap-shell.md"
+    ],
+    "area": null,
+    "cases": [],
+    "deps": [],
+    "status": "BACKLOG",
+    "extra": ""
+  },
+  {
+    "id": "G-AES-123",
+    "title": "shel_put (AES 123): kleinsten Messfall entwerfen",
+    "kind": "Funktionsweise ungemessen / Messdesign",
+    "priority": "P3",
+    "scope": "Nur shel_put, Opcode 123. Die aktuelle Runde enthält keinen gemessenen Record für diese Funktion. Zuerst Eingang/Ausgang, Seiteneffekt, Referenz-Build-Verfügbarkeit und Reset aus der Spezifikation erheben; genau einen Normalfall entwerfen. Keine pauschale Funktionsimplementierung und keine Änderung der Sperrliste ohne Quellenbeleg.",
+    "accept": "Eine funktionsspezifische Fallskizze mit exakten Parametern, erwarteten Feldern/Pixeln und Rückbau des Zustands liegt vor. Wenn blockierend, zeigerabhängig oder auf TT nicht verfügbar: benötigte Voraussetzung konkret benennen; keinen unsicheren Lauf ausführen. Runner-Erweiterung, TT-/Pi-Aufnahme und etwaige Reparatur als getrennte Nachfolgetasks anlegen.",
+    "refs": [
+      "tosdump/cases/COVERAGE-AES.md",
+      "docs/api/aes/_dispatcher.md",
+      "docs/api/aes/scrap-shell.md"
+    ],
+    "area": null,
+    "cases": [],
+    "deps": [],
+    "status": "BACKLOG",
+    "extra": ""
+  },
+  {
+    "id": "G-AES-124",
+    "title": "shel_find (AES 124): kleinsten Messfall entwerfen",
+    "kind": "Funktionsweise ungemessen / Messdesign",
+    "priority": "P3",
+    "scope": "Nur shel_find, Opcode 124. Die aktuelle Runde enthält keinen gemessenen Record für diese Funktion. Zuerst Eingang/Ausgang, Seiteneffekt, Referenz-Build-Verfügbarkeit und Reset aus der Spezifikation erheben; genau einen Normalfall entwerfen. Keine pauschale Funktionsimplementierung und keine Änderung der Sperrliste ohne Quellenbeleg.",
+    "accept": "Eine funktionsspezifische Fallskizze mit exakten Parametern, erwarteten Feldern/Pixeln und Rückbau des Zustands liegt vor. Wenn blockierend, zeigerabhängig oder auf TT nicht verfügbar: benötigte Voraussetzung konkret benennen; keinen unsicheren Lauf ausführen. Runner-Erweiterung, TT-/Pi-Aufnahme und etwaige Reparatur als getrennte Nachfolgetasks anlegen.",
+    "refs": [
+      "tosdump/cases/COVERAGE-AES.md",
+      "docs/api/aes/_dispatcher.md",
+      "docs/api/aes/scrap-shell.md"
+    ],
+    "area": null,
+    "cases": [],
+    "deps": [],
+    "status": "BACKLOG",
+    "extra": ""
+  },
+  {
+    "id": "G-AES-125",
+    "title": "shel_envrn (AES 125): kleinsten Messfall entwerfen",
+    "kind": "Funktionsweise ungemessen / Messdesign",
+    "priority": "P3",
+    "scope": "Nur shel_envrn, Opcode 125. Die aktuelle Runde enthält keinen gemessenen Record für diese Funktion. Zuerst Eingang/Ausgang, Seiteneffekt, Referenz-Build-Verfügbarkeit und Reset aus der Spezifikation erheben; genau einen Normalfall entwerfen. Keine pauschale Funktionsimplementierung und keine Änderung der Sperrliste ohne Quellenbeleg.",
+    "accept": "Eine funktionsspezifische Fallskizze mit exakten Parametern, erwarteten Feldern/Pixeln und Rückbau des Zustands liegt vor. Wenn blockierend, zeigerabhängig oder auf TT nicht verfügbar: benötigte Voraussetzung konkret benennen; keinen unsicheren Lauf ausführen. Runner-Erweiterung, TT-/Pi-Aufnahme und etwaige Reparatur als getrennte Nachfolgetasks anlegen.",
+    "refs": [
+      "tosdump/cases/COVERAGE-AES.md",
+      "docs/api/aes/_dispatcher.md",
+      "docs/api/aes/scrap-shell.md"
+    ],
+    "area": null,
+    "cases": [],
+    "deps": [],
+    "status": "BACKLOG",
+    "extra": ""
+  },
+  {
+    "id": "G-AES-126",
+    "title": "shel_rdef (AES 126): kleinsten Messfall entwerfen",
+    "kind": "Funktionsweise ungemessen / Messdesign",
+    "priority": "P3",
+    "scope": "Nur shel_rdef, Opcode 126. Die aktuelle Runde enthält keinen gemessenen Record für diese Funktion. Zuerst Eingang/Ausgang, Seiteneffekt, Referenz-Build-Verfügbarkeit und Reset aus der Spezifikation erheben; genau einen Normalfall entwerfen. Keine pauschale Funktionsimplementierung und keine Änderung der Sperrliste ohne Quellenbeleg.",
+    "accept": "Eine funktionsspezifische Fallskizze mit exakten Parametern, erwarteten Feldern/Pixeln und Rückbau des Zustands liegt vor. Wenn blockierend, zeigerabhängig oder auf TT nicht verfügbar: benötigte Voraussetzung konkret benennen; keinen unsicheren Lauf ausführen. Runner-Erweiterung, TT-/Pi-Aufnahme und etwaige Reparatur als getrennte Nachfolgetasks anlegen.",
+    "refs": [
+      "tosdump/cases/COVERAGE-AES.md",
+      "docs/api/aes/_dispatcher.md",
+      "docs/api/aes/scrap-shell.md"
+    ],
+    "area": null,
+    "cases": [],
+    "deps": [],
+    "status": "BACKLOG",
+    "extra": ""
+  },
+  {
+    "id": "G-AES-127",
+    "title": "shel_wdef (AES 127): kleinsten Messfall entwerfen",
+    "kind": "Funktionsweise ungemessen / Messdesign",
+    "priority": "P3",
+    "scope": "Nur shel_wdef, Opcode 127. Die aktuelle Runde enthält keinen gemessenen Record für diese Funktion. Zuerst Eingang/Ausgang, Seiteneffekt, Referenz-Build-Verfügbarkeit und Reset aus der Spezifikation erheben; genau einen Normalfall entwerfen. Keine pauschale Funktionsimplementierung und keine Änderung der Sperrliste ohne Quellenbeleg.",
+    "accept": "Eine funktionsspezifische Fallskizze mit exakten Parametern, erwarteten Feldern/Pixeln und Rückbau des Zustands liegt vor. Wenn blockierend, zeigerabhängig oder auf TT nicht verfügbar: benötigte Voraussetzung konkret benennen; keinen unsicheren Lauf ausführen. Runner-Erweiterung, TT-/Pi-Aufnahme und etwaige Reparatur als getrennte Nachfolgetasks anlegen.",
+    "refs": [
+      "tosdump/cases/COVERAGE-AES.md",
+      "docs/api/aes/_dispatcher.md",
+      "docs/api/aes/scrap-shell.md"
+    ],
+    "area": null,
+    "cases": [],
+    "deps": [],
+    "status": "BACKLOG",
+    "extra": ""
+  },
+  {
+    "id": "G-VDI-001",
+    "title": "v_opnwk (VDI 1): kleinsten Messfall entwerfen",
+    "kind": "Funktionsweise ungemessen / Messdesign",
+    "priority": "P3",
+    "scope": "Nur v_opnwk, Opcode 1. Die aktuelle Runde enthält keinen gemessenen Record für diese Funktion. Zuerst Eingang/Ausgang, Seiteneffekt, Referenz-Build-Verfügbarkeit und Reset aus der Spezifikation erheben; genau einen Normalfall entwerfen. Keine pauschale Funktionsimplementierung und keine Änderung der Sperrliste ohne Quellenbeleg.",
+    "accept": "Eine funktionsspezifische Fallskizze mit exakten Parametern, erwarteten Feldern/Pixeln und Rückbau des Zustands liegt vor. Wenn blockierend, zeigerabhängig oder auf TT nicht verfügbar: benötigte Voraussetzung konkret benennen; keinen unsicheren Lauf ausführen. Runner-Erweiterung, TT-/Pi-Aufnahme und etwaige Reparatur als getrennte Nachfolgetasks anlegen.",
+    "refs": [
+      "tosdump/cases/COVERAGE.md",
+      "docs/api/vdi/_dispatcher.md"
+    ],
+    "area": null,
+    "cases": [],
+    "deps": [],
+    "status": "BACKLOG",
+    "extra": ""
+  },
+  {
+    "id": "G-VDI-002",
+    "title": "v_clswk (VDI 2): kleinsten Messfall entwerfen",
+    "kind": "Funktionsweise ungemessen / Messdesign",
+    "priority": "P3",
+    "scope": "Nur v_clswk, Opcode 2. Die aktuelle Runde enthält keinen gemessenen Record für diese Funktion. Zuerst Eingang/Ausgang, Seiteneffekt, Referenz-Build-Verfügbarkeit und Reset aus der Spezifikation erheben; genau einen Normalfall entwerfen. Keine pauschale Funktionsimplementierung und keine Änderung der Sperrliste ohne Quellenbeleg.",
+    "accept": "Eine funktionsspezifische Fallskizze mit exakten Parametern, erwarteten Feldern/Pixeln und Rückbau des Zustands liegt vor. Wenn blockierend, zeigerabhängig oder auf TT nicht verfügbar: benötigte Voraussetzung konkret benennen; keinen unsicheren Lauf ausführen. Runner-Erweiterung, TT-/Pi-Aufnahme und etwaige Reparatur als getrennte Nachfolgetasks anlegen.",
+    "refs": [
+      "tosdump/cases/COVERAGE.md",
+      "docs/api/vdi/_dispatcher.md"
+    ],
+    "area": null,
+    "cases": [],
+    "deps": [],
+    "status": "BACKLOG",
+    "extra": ""
+  },
+  {
+    "id": "G-VDI-014",
+    "title": "vs_color (VDI 14): kleinsten Messfall entwerfen",
+    "kind": "Funktionsweise ungemessen / Messdesign",
+    "priority": "P3",
+    "scope": "Nur vs_color, Opcode 14. Die aktuelle Runde enthält keinen gemessenen Record für diese Funktion. Zuerst Eingang/Ausgang, Seiteneffekt, Referenz-Build-Verfügbarkeit und Reset aus der Spezifikation erheben; genau einen Normalfall entwerfen. Keine pauschale Funktionsimplementierung und keine Änderung der Sperrliste ohne Quellenbeleg.",
+    "accept": "Eine funktionsspezifische Fallskizze mit exakten Parametern, erwarteten Feldern/Pixeln und Rückbau des Zustands liegt vor. Wenn blockierend, zeigerabhängig oder auf TT nicht verfügbar: benötigte Voraussetzung konkret benennen; keinen unsicheren Lauf ausführen. Runner-Erweiterung, TT-/Pi-Aufnahme und etwaige Reparatur als getrennte Nachfolgetasks anlegen.",
+    "refs": [
+      "tosdump/cases/COVERAGE.md",
+      "docs/api/vdi/_dispatcher.md"
+    ],
+    "area": null,
+    "cases": [],
+    "deps": [],
+    "status": "BACKLOG",
+    "extra": ""
+  },
+  {
+    "id": "G-VDI-028",
+    "title": "v_locator (VDI 28): kleinsten Messfall entwerfen",
+    "kind": "Funktionsweise ungemessen / Messdesign",
+    "priority": "P3",
+    "scope": "Nur v_locator, Opcode 28. Die aktuelle Runde enthält keinen gemessenen Record für diese Funktion. Zuerst Eingang/Ausgang, Seiteneffekt, Referenz-Build-Verfügbarkeit und Reset aus der Spezifikation erheben; genau einen Normalfall entwerfen. Keine pauschale Funktionsimplementierung und keine Änderung der Sperrliste ohne Quellenbeleg.",
+    "accept": "Eine funktionsspezifische Fallskizze mit exakten Parametern, erwarteten Feldern/Pixeln und Rückbau des Zustands liegt vor. Wenn blockierend, zeigerabhängig oder auf TT nicht verfügbar: benötigte Voraussetzung konkret benennen; keinen unsicheren Lauf ausführen. Runner-Erweiterung, TT-/Pi-Aufnahme und etwaige Reparatur als getrennte Nachfolgetasks anlegen.",
+    "refs": [
+      "tosdump/cases/COVERAGE.md",
+      "docs/api/vdi/_dispatcher.md"
+    ],
+    "area": null,
+    "cases": [],
+    "deps": [],
+    "status": "BACKLOG",
+    "extra": ""
+  },
+  {
+    "id": "G-VDI-031",
+    "title": "v_string (VDI 31): kleinsten Messfall entwerfen",
+    "kind": "Funktionsweise ungemessen / Messdesign",
+    "priority": "P3",
+    "scope": "Nur v_string, Opcode 31. Die aktuelle Runde enthält keinen gemessenen Record für diese Funktion. Zuerst Eingang/Ausgang, Seiteneffekt, Referenz-Build-Verfügbarkeit und Reset aus der Spezifikation erheben; genau einen Normalfall entwerfen. Keine pauschale Funktionsimplementierung und keine Änderung der Sperrliste ohne Quellenbeleg.",
+    "accept": "Eine funktionsspezifische Fallskizze mit exakten Parametern, erwarteten Feldern/Pixeln und Rückbau des Zustands liegt vor. Wenn blockierend, zeigerabhängig oder auf TT nicht verfügbar: benötigte Voraussetzung konkret benennen; keinen unsicheren Lauf ausführen. Runner-Erweiterung, TT-/Pi-Aufnahme und etwaige Reparatur als getrennte Nachfolgetasks anlegen.",
+    "refs": [
+      "tosdump/cases/COVERAGE.md",
+      "docs/api/vdi/_dispatcher.md"
+    ],
+    "area": null,
+    "cases": [],
+    "deps": [],
+    "status": "BACKLOG",
+    "extra": ""
+  },
+  {
+    "id": "G-VDI-101",
+    "title": "v_clsvwk (VDI 101): kleinsten Messfall entwerfen",
+    "kind": "Funktionsweise ungemessen / Messdesign",
+    "priority": "P3",
+    "scope": "Nur v_clsvwk, Opcode 101. Die aktuelle Runde enthält keinen gemessenen Record für diese Funktion. Zuerst Eingang/Ausgang, Seiteneffekt, Referenz-Build-Verfügbarkeit und Reset aus der Spezifikation erheben; genau einen Normalfall entwerfen. Keine pauschale Funktionsimplementierung und keine Änderung der Sperrliste ohne Quellenbeleg.",
+    "accept": "Eine funktionsspezifische Fallskizze mit exakten Parametern, erwarteten Feldern/Pixeln und Rückbau des Zustands liegt vor. Wenn blockierend, zeigerabhängig oder auf TT nicht verfügbar: benötigte Voraussetzung konkret benennen; keinen unsicheren Lauf ausführen. Runner-Erweiterung, TT-/Pi-Aufnahme und etwaige Reparatur als getrennte Nachfolgetasks anlegen.",
+    "refs": [
+      "tosdump/cases/COVERAGE.md",
+      "docs/api/vdi/_dispatcher.md"
+    ],
+    "area": null,
+    "cases": [],
+    "deps": [],
+    "status": "BACKLOG",
+    "extra": ""
+  },
+  {
+    "id": "G-VDI-112",
+    "title": "vsf_udpat (VDI 112): kleinsten Messfall entwerfen",
+    "kind": "Funktionsweise ungemessen / Messdesign",
+    "priority": "P3",
+    "scope": "Nur vsf_udpat, Opcode 112. Die aktuelle Runde enthält keinen gemessenen Record für diese Funktion. Zuerst Eingang/Ausgang, Seiteneffekt, Referenz-Build-Verfügbarkeit und Reset aus der Spezifikation erheben; genau einen Normalfall entwerfen. Keine pauschale Funktionsimplementierung und keine Änderung der Sperrliste ohne Quellenbeleg.",
+    "accept": "Eine funktionsspezifische Fallskizze mit exakten Parametern, erwarteten Feldern/Pixeln und Rückbau des Zustands liegt vor. Wenn blockierend, zeigerabhängig oder auf TT nicht verfügbar: benötigte Voraussetzung konkret benennen; keinen unsicheren Lauf ausführen. Runner-Erweiterung, TT-/Pi-Aufnahme und etwaige Reparatur als getrennte Nachfolgetasks anlegen.",
+    "refs": [
+      "tosdump/cases/COVERAGE.md",
+      "docs/api/vdi/_dispatcher.md"
+    ],
+    "area": null,
+    "cases": [],
+    "deps": [],
+    "status": "BACKLOG",
+    "extra": ""
+  },
+  {
+    "id": "G-VDI-118",
+    "title": "vex_timv (VDI 118): kleinsten Messfall entwerfen",
+    "kind": "Funktionsweise ungemessen / Messdesign",
+    "priority": "P3",
+    "scope": "Nur vex_timv, Opcode 118. Die aktuelle Runde enthält keinen gemessenen Record für diese Funktion. Zuerst Eingang/Ausgang, Seiteneffekt, Referenz-Build-Verfügbarkeit und Reset aus der Spezifikation erheben; genau einen Normalfall entwerfen. Keine pauschale Funktionsimplementierung und keine Änderung der Sperrliste ohne Quellenbeleg.",
+    "accept": "Eine funktionsspezifische Fallskizze mit exakten Parametern, erwarteten Feldern/Pixeln und Rückbau des Zustands liegt vor. Wenn blockierend, zeigerabhängig oder auf TT nicht verfügbar: benötigte Voraussetzung konkret benennen; keinen unsicheren Lauf ausführen. Runner-Erweiterung, TT-/Pi-Aufnahme und etwaige Reparatur als getrennte Nachfolgetasks anlegen.",
+    "refs": [
+      "tosdump/cases/COVERAGE.md",
+      "docs/api/vdi/_dispatcher.md"
+    ],
+    "area": null,
+    "cases": [],
+    "deps": [],
+    "status": "BACKLOG",
+    "extra": ""
+  },
+  {
+    "id": "G-VDI-119",
+    "title": "vst_load_fonts (VDI 119): kleinsten Messfall entwerfen",
+    "kind": "Funktionsweise ungemessen / Messdesign",
+    "priority": "P3",
+    "scope": "Nur vst_load_fonts, Opcode 119. Die aktuelle Runde enthält keinen gemessenen Record für diese Funktion. Zuerst Eingang/Ausgang, Seiteneffekt, Referenz-Build-Verfügbarkeit und Reset aus der Spezifikation erheben; genau einen Normalfall entwerfen. Keine pauschale Funktionsimplementierung und keine Änderung der Sperrliste ohne Quellenbeleg.",
+    "accept": "Eine funktionsspezifische Fallskizze mit exakten Parametern, erwarteten Feldern/Pixeln und Rückbau des Zustands liegt vor. Wenn blockierend, zeigerabhängig oder auf TT nicht verfügbar: benötigte Voraussetzung konkret benennen; keinen unsicheren Lauf ausführen. Runner-Erweiterung, TT-/Pi-Aufnahme und etwaige Reparatur als getrennte Nachfolgetasks anlegen.",
+    "refs": [
+      "tosdump/cases/COVERAGE.md",
+      "docs/api/vdi/_dispatcher.md"
+    ],
+    "area": null,
+    "cases": [],
+    "deps": [],
+    "status": "BACKLOG",
+    "extra": ""
+  },
+  {
+    "id": "G-VDI-120",
+    "title": "vst_unload_fonts (VDI 120): kleinsten Messfall entwerfen",
+    "kind": "Funktionsweise ungemessen / Messdesign",
+    "priority": "P3",
+    "scope": "Nur vst_unload_fonts, Opcode 120. Die aktuelle Runde enthält keinen gemessenen Record für diese Funktion. Zuerst Eingang/Ausgang, Seiteneffekt, Referenz-Build-Verfügbarkeit und Reset aus der Spezifikation erheben; genau einen Normalfall entwerfen. Keine pauschale Funktionsimplementierung und keine Änderung der Sperrliste ohne Quellenbeleg.",
+    "accept": "Eine funktionsspezifische Fallskizze mit exakten Parametern, erwarteten Feldern/Pixeln und Rückbau des Zustands liegt vor. Wenn blockierend, zeigerabhängig oder auf TT nicht verfügbar: benötigte Voraussetzung konkret benennen; keinen unsicheren Lauf ausführen. Runner-Erweiterung, TT-/Pi-Aufnahme und etwaige Reparatur als getrennte Nachfolgetasks anlegen.",
+    "refs": [
+      "tosdump/cases/COVERAGE.md",
+      "docs/api/vdi/_dispatcher.md"
+    ],
+    "area": null,
+    "cases": [],
+    "deps": [],
+    "status": "BACKLOG",
+    "extra": ""
+  },
+  {
+    "id": "G-VDI-124",
+    "title": "vq_mouse (VDI 124): kleinsten Messfall entwerfen",
+    "kind": "Funktionsweise ungemessen / Messdesign",
+    "priority": "P3",
+    "scope": "Nur vq_mouse, Opcode 124. Die aktuelle Runde enthält keinen gemessenen Record für diese Funktion. Zuerst Eingang/Ausgang, Seiteneffekt, Referenz-Build-Verfügbarkeit und Reset aus der Spezifikation erheben; genau einen Normalfall entwerfen. Keine pauschale Funktionsimplementierung und keine Änderung der Sperrliste ohne Quellenbeleg.",
+    "accept": "Eine funktionsspezifische Fallskizze mit exakten Parametern, erwarteten Feldern/Pixeln und Rückbau des Zustands liegt vor. Wenn blockierend, zeigerabhängig oder auf TT nicht verfügbar: benötigte Voraussetzung konkret benennen; keinen unsicheren Lauf ausführen. Runner-Erweiterung, TT-/Pi-Aufnahme und etwaige Reparatur als getrennte Nachfolgetasks anlegen.",
+    "refs": [
+      "tosdump/cases/COVERAGE.md",
+      "docs/api/vdi/_dispatcher.md"
+    ],
+    "area": null,
+    "cases": [],
+    "deps": [],
+    "status": "BACKLOG",
+    "extra": ""
+  },
+  {
+    "id": "G-VDI-125",
+    "title": "vex_butv (VDI 125): kleinsten Messfall entwerfen",
+    "kind": "Funktionsweise ungemessen / Messdesign",
+    "priority": "P3",
+    "scope": "Nur vex_butv, Opcode 125. Die aktuelle Runde enthält keinen gemessenen Record für diese Funktion. Zuerst Eingang/Ausgang, Seiteneffekt, Referenz-Build-Verfügbarkeit und Reset aus der Spezifikation erheben; genau einen Normalfall entwerfen. Keine pauschale Funktionsimplementierung und keine Änderung der Sperrliste ohne Quellenbeleg.",
+    "accept": "Eine funktionsspezifische Fallskizze mit exakten Parametern, erwarteten Feldern/Pixeln und Rückbau des Zustands liegt vor. Wenn blockierend, zeigerabhängig oder auf TT nicht verfügbar: benötigte Voraussetzung konkret benennen; keinen unsicheren Lauf ausführen. Runner-Erweiterung, TT-/Pi-Aufnahme und etwaige Reparatur als getrennte Nachfolgetasks anlegen.",
+    "refs": [
+      "tosdump/cases/COVERAGE.md",
+      "docs/api/vdi/_dispatcher.md"
+    ],
+    "area": null,
+    "cases": [],
+    "deps": [],
+    "status": "BACKLOG",
+    "extra": ""
+  },
+  {
+    "id": "G-VDI-126",
+    "title": "vex_motv (VDI 126): kleinsten Messfall entwerfen",
+    "kind": "Funktionsweise ungemessen / Messdesign",
+    "priority": "P3",
+    "scope": "Nur vex_motv, Opcode 126. Die aktuelle Runde enthält keinen gemessenen Record für diese Funktion. Zuerst Eingang/Ausgang, Seiteneffekt, Referenz-Build-Verfügbarkeit und Reset aus der Spezifikation erheben; genau einen Normalfall entwerfen. Keine pauschale Funktionsimplementierung und keine Änderung der Sperrliste ohne Quellenbeleg.",
+    "accept": "Eine funktionsspezifische Fallskizze mit exakten Parametern, erwarteten Feldern/Pixeln und Rückbau des Zustands liegt vor. Wenn blockierend, zeigerabhängig oder auf TT nicht verfügbar: benötigte Voraussetzung konkret benennen; keinen unsicheren Lauf ausführen. Runner-Erweiterung, TT-/Pi-Aufnahme und etwaige Reparatur als getrennte Nachfolgetasks anlegen.",
+    "refs": [
+      "tosdump/cases/COVERAGE.md",
+      "docs/api/vdi/_dispatcher.md"
+    ],
+    "area": null,
+    "cases": [],
+    "deps": [],
+    "status": "BACKLOG",
+    "extra": ""
+  },
+  {
+    "id": "G-VDI-127",
+    "title": "vex_curv (VDI 127): kleinsten Messfall entwerfen",
+    "kind": "Funktionsweise ungemessen / Messdesign",
+    "priority": "P3",
+    "scope": "Nur vex_curv, Opcode 127. Die aktuelle Runde enthält keinen gemessenen Record für diese Funktion. Zuerst Eingang/Ausgang, Seiteneffekt, Referenz-Build-Verfügbarkeit und Reset aus der Spezifikation erheben; genau einen Normalfall entwerfen. Keine pauschale Funktionsimplementierung und keine Änderung der Sperrliste ohne Quellenbeleg.",
+    "accept": "Eine funktionsspezifische Fallskizze mit exakten Parametern, erwarteten Feldern/Pixeln und Rückbau des Zustands liegt vor. Wenn blockierend, zeigerabhängig oder auf TT nicht verfügbar: benötigte Voraussetzung konkret benennen; keinen unsicheren Lauf ausführen. Runner-Erweiterung, TT-/Pi-Aufnahme und etwaige Reparatur als getrennte Nachfolgetasks anlegen.",
+    "refs": [
+      "tosdump/cases/COVERAGE.md",
+      "docs/api/vdi/_dispatcher.md"
+    ],
+    "area": null,
+    "cases": [],
+    "deps": [],
+    "status": "BACKLOG",
+    "extra": ""
+  },
+  {
+    "id": "G-VDI-128",
+    "title": "vq_key_s (VDI 128): kleinsten Messfall entwerfen",
+    "kind": "Funktionsweise ungemessen / Messdesign",
+    "priority": "P3",
+    "scope": "Nur vq_key_s, Opcode 128. Die aktuelle Runde enthält keinen gemessenen Record für diese Funktion. Zuerst Eingang/Ausgang, Seiteneffekt, Referenz-Build-Verfügbarkeit und Reset aus der Spezifikation erheben; genau einen Normalfall entwerfen. Keine pauschale Funktionsimplementierung und keine Änderung der Sperrliste ohne Quellenbeleg.",
+    "accept": "Eine funktionsspezifische Fallskizze mit exakten Parametern, erwarteten Feldern/Pixeln und Rückbau des Zustands liegt vor. Wenn blockierend, zeigerabhängig oder auf TT nicht verfügbar: benötigte Voraussetzung konkret benennen; keinen unsicheren Lauf ausführen. Runner-Erweiterung, TT-/Pi-Aufnahme und etwaige Reparatur als getrennte Nachfolgetasks anlegen.",
+    "refs": [
+      "tosdump/cases/COVERAGE.md",
+      "docs/api/vdi/_dispatcher.md"
+    ],
+    "area": null,
+    "cases": [],
+    "deps": [],
+    "status": "BACKLOG",
+    "extra": ""
+  },
+  {
+    "id": "G-VDI-134",
+    "title": "vex_wheelv (VDI 134): kleinsten Messfall entwerfen",
+    "kind": "Funktionsweise ungemessen / Messdesign",
+    "priority": "P3",
+    "scope": "Nur vex_wheelv, Opcode 134. Die aktuelle Runde enthält keinen gemessenen Record für diese Funktion. Zuerst Eingang/Ausgang, Seiteneffekt, Referenz-Build-Verfügbarkeit und Reset aus der Spezifikation erheben; genau einen Normalfall entwerfen. Keine pauschale Funktionsimplementierung und keine Änderung der Sperrliste ohne Quellenbeleg.",
+    "accept": "Eine funktionsspezifische Fallskizze mit exakten Parametern, erwarteten Feldern/Pixeln und Rückbau des Zustands liegt vor. Wenn blockierend, zeigerabhängig oder auf TT nicht verfügbar: benötigte Voraussetzung konkret benennen; keinen unsicheren Lauf ausführen. Runner-Erweiterung, TT-/Pi-Aufnahme und etwaige Reparatur als getrennte Nachfolgetasks anlegen.",
+    "refs": [
+      "tosdump/cases/COVERAGE.md",
+      "docs/api/vdi/_dispatcher.md"
+    ],
+    "area": null,
+    "cases": [],
+    "deps": [],
+    "status": "BACKLOG",
+    "extra": ""
+  },
+  {
+    "id": "A25",
+    "title": "appl_init: Wiederaufruf erhält Nachrichten und Flags",
+    "status": "IMPLEMENTIERT — HW OFFEN",
+    "kind": "Bestätigter Zustandsfehler",
+    "priority": "P1",
+    "deps": [],
+    "refs": [
+      "tos-api/tests/aes_appl_init.rs",
+      "tos-api/src/aes/pd.rs",
+      "docs/api/aes/application.md"
+    ]
+  },
+  {
+    "id": "A21",
+    "title": "A21 — Rechteckliste verwirft Stücke jenseits von 16 stillschweigend",
+    "status": "OFFEN",
+    "source": "TASK/A21.md"
+  },
+  {
+    "id": "A20",
+    "title": "A20 — Menüleistenhöhe ist konstant 19 statt aus der Fontmetrik abgeleitet",
+    "status": "OFFEN",
+    "source": "TASK/A20.md"
+  },
+  {
+    "id": "A24",
+    "title": "A24 — Messlücke: verschachtelte FIRST/NEXT-Abfragen über zwei Fenster",
+    "status": "OFFEN",
+    "source": "TASK/A24.md"
+  },
+  {
+    "id": "A23",
+    "title": "A23 — Kompensationsanalyse vor dem Fix-Durchgang",
+    "status": "OFFEN",
+    "source": "TASK/A23.md"
+  },
+  {
+    "id": "A17",
+    "title": "A17 — wind_open: PREV-Rechteck im Soll nachtragen, Zeilenbelege richtigstellen",
+    "status": "OFFEN",
+    "source": "TASK/A17.md"
+  },
+  {
+    "id": "A22",
+    "title": "A22 — Messlücke: drei und mehr überlappende Fenster",
+    "status": "OFFEN",
+    "source": "TASK/A22.md"
+  },
+  {
+    "id": "A16",
+    "title": "A16 — wind_close: WS_CURR / WS_PREV / WS_WORK bleiben unaktualisiert",
+    "status": "OFFEN",
+    "source": "TASK/A16.md"
+  },
+  {
+    "id": "A19",
+    "title": "A19 — AES-Dispatcher: int_in ohne IN_LEN-Klammer gelesen",
+    "status": "OFFEN",
+    "source": "TASK/A19.md"
+  },
+  {
+    "id": "A18",
+    "title": "A18 — Rechteckliste: Soll in der Spec nachtragen statt lizenzieren",
+    "status": "OFFEN",
+    "source": "TASK/A18.md"
+  }
+]

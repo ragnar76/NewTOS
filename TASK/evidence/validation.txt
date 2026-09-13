@@ -1,0 +1,29 @@
+$ tosdump/host/build/tosdiff --validate tosdump/reference/EMUTOS14-AES.BIN measurement-2026-09-09/cases/aes-r1.tsv
+EMUTOS14-AES.BIN: area AES, 95 records of 120 bytes, build b59e, case CRC 33C13C8F
+EMUTOS14-AES.BIN: matches aes-r1.tsv (95 cases)
+EMUTOS14-AES.BIN: accepted
+
+$ tosdump/host/build/tosdiff --validate measurement-2026-09-09/run1-pi4/AES.BIN measurement-2026-09-09/cases/aes-r1.tsv
+AES.BIN: area AES, 95 records of 120 bytes, build 70ca, case CRC 33C13C8F
+AES.BIN: matches aes-r1.tsv (95 cases)
+AES.BIN: accepted
+
+$ tosdump/host/build/tosdiff --validate tosdump/reference/EMUTOS14-VDI-all.BIN measurement-2026-09-09/cases/vdi-all.tsv
+EMUTOS14-VDI-all.BIN: area VDI, 182 records of 1592 bytes, build 19b7, case CRC D135ADAF
+EMUTOS14-VDI-all.BIN: matches vdi-all.tsv (182 cases)
+EMUTOS14-VDI-all.BIN: accepted
+
+$ tosdump/host/build/tosdiff --validate measurement-2026-09-09/run1-pi4/VDI.BIN measurement-2026-09-09/cases/vdi-all.tsv
+VDI.BIN: area VDI, 182 records of 1592 bytes, build 70ca, case CRC D135ADAF
+VDI.BIN: matches vdi-all.tsv (182 cases)
+VDI.BIN: accepted
+
+$ tosdump/host/build/tosdiff --validate tosdump/reference/EMUTOS14-RASTER.BIN measurement-2026-09-09/cases/vdi-raster.tsv
+EMUTOS14-RASTER.BIN: area VDI-RASTER, 59 records of 3696 bytes, build fdf8, case CRC 702EEA7D
+EMUTOS14-RASTER.BIN: matches vdi-raster.tsv (59 cases)
+EMUTOS14-RASTER.BIN: accepted
+
+$ tosdump/host/build/tosdiff --validate measurement-2026-09-09/run1-pi4/RASTER.BIN measurement-2026-09-09/cases/vdi-raster.tsv
+RASTER.BIN: area VDI-RASTER, 59 records of 3696 bytes, build 70ca, case CRC 702EEA7D
+RASTER.BIN: matches vdi-raster.tsv (59 cases)
+RASTER.BIN: accepted

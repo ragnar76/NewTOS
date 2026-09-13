@@ -1,0 +1,432 @@
+$ tosdump/host/build/tosdiff tosdump/cases/vdi-raster.tsv tosdump/reference/EMUTOS14-RASTER.BIN tosdump/reference/NEWTOS-RASTER.BIN
+EMUTOS14-RASTER.BIN vs NEWTOS-RASTER.BIN -- area VDI-RASTER, 59 cases from vdi-raster.tsv
+
+case 73  opcode 110  vr_trnfm standard to device, 4 planes
+    contrl[6]              EMUTOS14-RASTER.BIN = 0x0002 (2)   NEWTOS-RASTER.BIN   = 0x0003 (3)
+    contrl_before[6]       EMUTOS14-RASTER.BIN = 0x0002 (2)   NEWTOS-RASTER.BIN   = 0x0003 (3)
+
+case 74  opcode 110  vr_trnfm device to standard, 4 planes
+    contrl[6]              EMUTOS14-RASTER.BIN = 0x0002 (2)   NEWTOS-RASTER.BIN   = 0x0003 (3)
+    contrl_before[6]       EMUTOS14-RASTER.BIN = 0x0002 (2)   NEWTOS-RASTER.BIN   = 0x0003 (3)
+
+case 75  opcode 110  vr_trnfm standard to device, 2 planes
+    contrl[6]              EMUTOS14-RASTER.BIN = 0x0002 (2)   NEWTOS-RASTER.BIN   = 0x0003 (3)
+    contrl_before[6]       EMUTOS14-RASTER.BIN = 0x0002 (2)   NEWTOS-RASTER.BIN   = 0x0003 (3)
+
+case 76  opcode 110  vr_trnfm device to standard, 2 planes
+    contrl[6]              EMUTOS14-RASTER.BIN = 0x0002 (2)   NEWTOS-RASTER.BIN   = 0x0003 (3)
+    contrl_before[6]       EMUTOS14-RASTER.BIN = 0x0002 (2)   NEWTOS-RASTER.BIN   = 0x0003 (3)
+
+case 77  opcode 110  vr_trnfm standard to device, 8 planes
+    contrl[6]              EMUTOS14-RASTER.BIN = 0x0002 (2)   NEWTOS-RASTER.BIN   = 0x0003 (3)
+    contrl_before[6]       EMUTOS14-RASTER.BIN = 0x0002 (2)   NEWTOS-RASTER.BIN   = 0x0003 (3)
+
+case 78  opcode 110  vr_trnfm device to standard, 8 planes
+    contrl[6]              EMUTOS14-RASTER.BIN = 0x0002 (2)   NEWTOS-RASTER.BIN   = 0x0003 (3)
+    contrl_before[6]       EMUTOS14-RASTER.BIN = 0x0002 (2)   NEWTOS-RASTER.BIN   = 0x0003 (3)
+
+case 81  opcode 110  vr_trnfm standard to device, 1 plane
+    contrl[6]              EMUTOS14-RASTER.BIN = 0x0002 (2)   NEWTOS-RASTER.BIN   = 0x0003 (3)
+    contrl_before[6]       EMUTOS14-RASTER.BIN = 0x0002 (2)   NEWTOS-RASTER.BIN   = 0x0003 (3)
+
+case 82  opcode 110  vr_trnfm device to standard, 1 plane
+    contrl[6]              EMUTOS14-RASTER.BIN = 0x0002 (2)   NEWTOS-RASTER.BIN   = 0x0003 (3)
+    contrl_before[6]       EMUTOS14-RASTER.BIN = 0x0002 (2)   NEWTOS-RASTER.BIN   = 0x0003 (3)
+
+case 84  opcode 110  vr_trnfm 32x16 standard to device
+    contrl[6]              EMUTOS14-RASTER.BIN = 0x0002 (2)   NEWTOS-RASTER.BIN   = 0x0003 (3)
+    contrl_before[6]       EMUTOS14-RASTER.BIN = 0x0002 (2)   NEWTOS-RASTER.BIN   = 0x0003 (3)
+
+case 85  opcode 110  vr_trnfm 32x16 device to standard
+    contrl[6]              EMUTOS14-RASTER.BIN = 0x0002 (2)   NEWTOS-RASTER.BIN   = 0x0003 (3)
+    contrl_before[6]       EMUTOS14-RASTER.BIN = 0x0002 (2)   NEWTOS-RASTER.BIN   = 0x0003 (3)
+
+case 88  opcode 110  vr_trnfm dest already says standard
+    contrl[6]              EMUTOS14-RASTER.BIN = 0x0002 (2)   NEWTOS-RASTER.BIN   = 0x0003 (3)
+    contrl_before[6]       EMUTOS14-RASTER.BIN = 0x0002 (2)   NEWTOS-RASTER.BIN   = 0x0003 (3)
+
+case 89  opcode 110  vr_trnfm dest already says device
+    contrl[6]              EMUTOS14-RASTER.BIN = 0x0002 (2)   NEWTOS-RASTER.BIN   = 0x0003 (3)
+    contrl_before[6]       EMUTOS14-RASTER.BIN = 0x0002 (2)   NEWTOS-RASTER.BIN   = 0x0003 (3)
+
+case 91  opcode 110  vr_trnfm in place, 4 planes, std to dev
+    contrl[6]              EMUTOS14-RASTER.BIN = 0x0002 (2)   NEWTOS-RASTER.BIN   = 0x0003 (3)
+    contrl_before[6]       EMUTOS14-RASTER.BIN = 0x0002 (2)   NEWTOS-RASTER.BIN   = 0x0003 (3)
+
+case 92  opcode 110  vr_trnfm in place, 4 planes, dev to std
+    contrl[6]              EMUTOS14-RASTER.BIN = 0x0002 (2)   NEWTOS-RASTER.BIN   = 0x0003 (3)
+    contrl_before[6]       EMUTOS14-RASTER.BIN = 0x0002 (2)   NEWTOS-RASTER.BIN   = 0x0003 (3)
+
+case 93  opcode 110  vr_trnfm in place, 2 planes
+    contrl[6]              EMUTOS14-RASTER.BIN = 0x0002 (2)   NEWTOS-RASTER.BIN   = 0x0003 (3)
+    contrl_before[6]       EMUTOS14-RASTER.BIN = 0x0002 (2)   NEWTOS-RASTER.BIN   = 0x0003 (3)
+
+case 96  opcode 110  vr_trnfm in place, 1 plane, early return
+    contrl[6]              EMUTOS14-RASTER.BIN = 0x0002 (2)   NEWTOS-RASTER.BIN   = 0x0003 (3)
+    contrl_before[6]       EMUTOS14-RASTER.BIN = 0x0002 (2)   NEWTOS-RASTER.BIN   = 0x0003 (3)
+
+case 98  opcode 110  vr_trnfm in place, one row, dev to std
+    contrl[6]              EMUTOS14-RASTER.BIN = 0x0002 (2)   NEWTOS-RASTER.BIN   = 0x0003 (3)
+    contrl_before[6]       EMUTOS14-RASTER.BIN = 0x0002 (2)   NEWTOS-RASTER.BIN   = 0x0003 (3)
+
+case 106  opcode 109  mode above bit 5 is invalid, no-op
+    contrl[6]              EMUTOS14-RASTER.BIN = 0x0002 (2)   NEWTOS-RASTER.BIN   = 0x0003 (3)
+    contrl_before[6]       EMUTOS14-RASTER.BIN = 0x0002 (2)   NEWTOS-RASTER.BIN   = 0x0003 (3)
+
+case 107  opcode 109  mode 0x7FFF invalid, no-op
+    contrl[6]              EMUTOS14-RASTER.BIN = 0x0002 (2)   NEWTOS-RASTER.BIN   = 0x0003 (3)
+    contrl_before[6]       EMUTOS14-RASTER.BIN = 0x0002 (2)   NEWTOS-RASTER.BIN   = 0x0003 (3)
+
+case 108  opcode 109  no intin at all: INTIN[0] is the poison
+    contrl[6]              EMUTOS14-RASTER.BIN = 0x0002 (2)   NEWTOS-RASTER.BIN   = 0x0003 (3)
+    contrl_before[6]       EMUTOS14-RASTER.BIN = 0x0002 (2)   NEWTOS-RASTER.BIN   = 0x0003 (3)
+
+case 109  opcode 109  op 5 D_ONLY writes the destination back
+    contrl[6]              EMUTOS14-RASTER.BIN = 0x0002 (2)   NEWTOS-RASTER.BIN   = 0x0003 (3)
+    contrl_before[6]       EMUTOS14-RASTER.BIN = 0x0002 (2)   NEWTOS-RASTER.BIN   = 0x0003 (3)
+
+case 110  opcode 109  PAT_FLAG|5 (0x15): stripped, still D_ONLY
+    contrl[6]              EMUTOS14-RASTER.BIN = 0x0002 (2)   NEWTOS-RASTER.BIN   = 0x0003 (3)
+    contrl_before[6]       EMUTOS14-RASTER.BIN = 0x0002 (2)   NEWTOS-RASTER.BIN   = 0x0003 (3)
+
+case 111  opcode 109  plane mismatch 4 to 2, no-op
+    contrl[6]              EMUTOS14-RASTER.BIN = 0x0002 (2)   NEWTOS-RASTER.BIN   = 0x0003 (3)
+    contrl_before[6]       EMUTOS14-RASTER.BIN = 0x0002 (2)   NEWTOS-RASTER.BIN   = 0x0003 (3)
+
+case 112  opcode 109  plane mismatch 4 to 1, no-op
+    contrl[6]              EMUTOS14-RASTER.BIN = 0x0002 (2)   NEWTOS-RASTER.BIN   = 0x0003 (3)
+    contrl_before[6]       EMUTOS14-RASTER.BIN = 0x0002 (2)   NEWTOS-RASTER.BIN   = 0x0003 (3)
+
+case 113  opcode 109  plane mismatch 1 to 4, no-op
+    contrl[6]              EMUTOS14-RASTER.BIN = 0x0002 (2)   NEWTOS-RASTER.BIN   = 0x0003 (3)
+    contrl_before[6]       EMUTOS14-RASTER.BIN = 0x0002 (2)   NEWTOS-RASTER.BIN   = 0x0003 (3)
+
+case 124  opcode 109  op 0 ALL_WHITE D=0
+    contrl[6]              EMUTOS14-RASTER.BIN = 0x0002 (2)   NEWTOS-RASTER.BIN   = 0x0003 (3)
+    contrl_before[6]       EMUTOS14-RASTER.BIN = 0x0002 (2)   NEWTOS-RASTER.BIN   = 0x0003 (3)
+
+case 125  opcode 109  op 1 S_AND_D
+    contrl[6]              EMUTOS14-RASTER.BIN = 0x0002 (2)   NEWTOS-RASTER.BIN   = 0x0003 (3)
+    contrl_before[6]       EMUTOS14-RASTER.BIN = 0x0002 (2)   NEWTOS-RASTER.BIN   = 0x0003 (3)
+
+case 126  opcode 109  op 2 S_AND_NOTD
+    contrl[6]              EMUTOS14-RASTER.BIN = 0x0002 (2)   NEWTOS-RASTER.BIN   = 0x0003 (3)
+    contrl_before[6]       EMUTOS14-RASTER.BIN = 0x0002 (2)   NEWTOS-RASTER.BIN   = 0x0003 (3)
+
+case 127  opcode 109  op 3 S_ONLY replace
+    contrl[6]              EMUTOS14-RASTER.BIN = 0x0002 (2)   NEWTOS-RASTER.BIN   = 0x0003 (3)
+    contrl_before[6]       EMUTOS14-RASTER.BIN = 0x0002 (2)   NEWTOS-RASTER.BIN   = 0x0003 (3)
+
+case 128  opcode 109  op 4 NOTS_AND_D
+    contrl[6]              EMUTOS14-RASTER.BIN = 0x0002 (2)   NEWTOS-RASTER.BIN   = 0x0003 (3)
+    contrl_before[6]       EMUTOS14-RASTER.BIN = 0x0002 (2)   NEWTOS-RASTER.BIN   = 0x0003 (3)
+
+case 129  opcode 109  op 5 D_ONLY
+    contrl[6]              EMUTOS14-RASTER.BIN = 0x0002 (2)   NEWTOS-RASTER.BIN   = 0x0003 (3)
+    contrl_before[6]       EMUTOS14-RASTER.BIN = 0x0002 (2)   NEWTOS-RASTER.BIN   = 0x0003 (3)
+
+case 130  opcode 109  op 6 S_XOR_D
+    contrl[6]              EMUTOS14-RASTER.BIN = 0x0002 (2)   NEWTOS-RASTER.BIN   = 0x0003 (3)
+    contrl_before[6]       EMUTOS14-RASTER.BIN = 0x0002 (2)   NEWTOS-RASTER.BIN   = 0x0003 (3)
+
+case 131  opcode 109  op 7 S_OR_D
+    contrl[6]              EMUTOS14-RASTER.BIN = 0x0002 (2)   NEWTOS-RASTER.BIN   = 0x0003 (3)
+    contrl_before[6]       EMUTOS14-RASTER.BIN = 0x0002 (2)   NEWTOS-RASTER.BIN   = 0x0003 (3)
+
+case 132  opcode 109  op 8 NOT_SORD
+    contrl[6]              EMUTOS14-RASTER.BIN = 0x0002 (2)   NEWTOS-RASTER.BIN   = 0x0003 (3)
+    contrl_before[6]       EMUTOS14-RASTER.BIN = 0x0002 (2)   NEWTOS-RASTER.BIN   = 0x0003 (3)
+
+case 133  opcode 109  op 9 NOT_SXORD
+    contrl[6]              EMUTOS14-RASTER.BIN = 0x0002 (2)   NEWTOS-RASTER.BIN   = 0x0003 (3)
+    contrl_before[6]       EMUTOS14-RASTER.BIN = 0x0002 (2)   NEWTOS-RASTER.BIN   = 0x0003 (3)
+
+case 134  opcode 109  op 10 NOT_D
+    contrl[6]              EMUTOS14-RASTER.BIN = 0x0002 (2)   NEWTOS-RASTER.BIN   = 0x0003 (3)
+    contrl_before[6]       EMUTOS14-RASTER.BIN = 0x0002 (2)   NEWTOS-RASTER.BIN   = 0x0003 (3)
+
+case 135  opcode 109  op 11 S_OR_NOTD
+    contrl[6]              EMUTOS14-RASTER.BIN = 0x0002 (2)   NEWTOS-RASTER.BIN   = 0x0003 (3)
+    contrl_before[6]       EMUTOS14-RASTER.BIN = 0x0002 (2)   NEWTOS-RASTER.BIN   = 0x0003 (3)
+
+case 136  opcode 109  op 12 NOT_S
+    contrl[6]              EMUTOS14-RASTER.BIN = 0x0002 (2)   NEWTOS-RASTER.BIN   = 0x0003 (3)
+    contrl_before[6]       EMUTOS14-RASTER.BIN = 0x0002 (2)   NEWTOS-RASTER.BIN   = 0x0003 (3)
+
+case 137  opcode 109  op 13 NOTS_OR_D
+    contrl[6]              EMUTOS14-RASTER.BIN = 0x0002 (2)   NEWTOS-RASTER.BIN   = 0x0003 (3)
+    contrl_before[6]       EMUTOS14-RASTER.BIN = 0x0002 (2)   NEWTOS-RASTER.BIN   = 0x0003 (3)
+
+case 138  opcode 109  op 14 NOT_SANDD
+    contrl[6]              EMUTOS14-RASTER.BIN = 0x0002 (2)   NEWTOS-RASTER.BIN   = 0x0003 (3)
+    contrl_before[6]       EMUTOS14-RASTER.BIN = 0x0002 (2)   NEWTOS-RASTER.BIN   = 0x0003 (3)
+
+case 139  opcode 109  op 15 ALL_BLACK D=1
+    contrl[6]              EMUTOS14-RASTER.BIN = 0x0002 (2)   NEWTOS-RASTER.BIN   = 0x0003 (3)
+    contrl_before[6]       EMUTOS14-RASTER.BIN = 0x0002 (2)   NEWTOS-RASTER.BIN   = 0x0003 (3)
+
+case 144  opcode 109  PAT_FLAG|3 on the 16-bit path
+    contrl[6]              EMUTOS14-RASTER.BIN = 0x0002 (2)   NEWTOS-RASTER.BIN   = 0x0003 (3)
+    contrl_before[6]       EMUTOS14-RASTER.BIN = 0x0002 (2)   NEWTOS-RASTER.BIN   = 0x0003 (3)
+    buf_b[264]               EMUTOS14-RASTER.BIN = 0x2D5A   NEWTOS-RASTER.BIN   = 0x8B15
+    buf_b[265]               EMUTOS14-RASTER.BIN = 0x809F   NEWTOS-RASTER.BIN   = 0xEE8F
+    buf_b[266]               EMUTOS14-RASTER.BIN = 0x1D99   NEWTOS-RASTER.BIN   = 0xD321
+    buf_b[267]               EMUTOS14-RASTER.BIN = 0xE25E   NEWTOS-RASTER.BIN   = 0x4F5D
+    buf_b[268]               EMUTOS14-RASTER.BIN = 0x1555   NEWTOS-RASTER.BIN   = 0x2C84
+    buf_b[269]               EMUTOS14-RASTER.BIN = 0xBF68   NEWTOS-RASTER.BIN   = 0x7B51
+    buf_b[270]               EMUTOS14-RASTER.BIN = 0xBF3D   NEWTOS-RASTER.BIN   = 0x10B4
+    buf_b[271]               EMUTOS14-RASTER.BIN = 0x3D96   NEWTOS-RASTER.BIN   = 0xC399
+    buf_b[296]               EMUTOS14-RASTER.BIN = 0x91C3   NEWTOS-RASTER.BIN   = 0x231B
+    buf_b[297]               EMUTOS14-RASTER.BIN = 0x1B65   NEWTOS-RASTER.BIN   = 0x1050
+    buf_b[298]               EMUTOS14-RASTER.BIN = 0x346D   NEWTOS-RASTER.BIN   = 0x402A
+    buf_b[299]               EMUTOS14-RASTER.BIN = 0xAA04   NEWTOS-RASTER.BIN   = 0x2028
+    buf_b[300]               EMUTOS14-RASTER.BIN = 0x13C2   NEWTOS-RASTER.BIN   = 0x463F
+    buf_b[301]               EMUTOS14-RASTER.BIN = 0xBBDB   NEWTOS-RASTER.BIN   = 0x8F6F
+    buf_b[302]               EMUTOS14-RASTER.BIN = 0xBC38   NEWTOS-RASTER.BIN   = 0x0494
+    buf_b[303]               EMUTOS14-RASTER.BIN = 0xA5A3   NEWTOS-RASTER.BIN   = 0xD62C
+    buf_b[328]               EMUTOS14-RASTER.BIN = 0x6AF6   NEWTOS-RASTER.BIN   = 0x1936
+    buf_b[329]               EMUTOS14-RASTER.BIN = 0x02CA   NEWTOS-RASTER.BIN   = 0x9310
+    buf_b[330]               EMUTOS14-RASTER.BIN = 0x6A90   NEWTOS-RASTER.BIN   = 0xA682
+    buf_b[331]               EMUTOS14-RASTER.BIN = 0xFB0C   NEWTOS-RASTER.BIN   = 0x3D8F
+    buf_b[332]               EMUTOS14-RASTER.BIN = 0xCE90   NEWTOS-RASTER.BIN   = 0x7947
+    buf_b[333]               EMUTOS14-RASTER.BIN = 0xBBE7   NEWTOS-RASTER.BIN   = 0xEC2F
+    buf_b[334]               EMUTOS14-RASTER.BIN = 0xC9A1   NEWTOS-RASTER.BIN   = 0x98A2
+    buf_b[335]               EMUTOS14-RASTER.BIN = 0x26E7   NEWTOS-RASTER.BIN   = 0x72F7
+    buf_b[360]               EMUTOS14-RASTER.BIN = 0x28B2   NEWTOS-RASTER.BIN   = 0x8562
+    buf_b[361]               EMUTOS14-RASTER.BIN = 0x3F3F   NEWTOS-RASTER.BIN   = 0x925A
+    buf_b[362]               EMUTOS14-RASTER.BIN = 0x7CF1   NEWTOS-RASTER.BIN   = 0x1FB9
+    buf_b[363]               EMUTOS14-RASTER.BIN = 0x0843   NEWTOS-RASTER.BIN   = 0xC1FB
+    buf_b[364]               EMUTOS14-RASTER.BIN = 0x8061   NEWTOS-RASTER.BIN   = 0x7FE8
+    buf_b[365]               EMUTOS14-RASTER.BIN = 0x0C3F   NEWTOS-RASTER.BIN   = 0x7B08
+    buf_b[366]               EMUTOS14-RASTER.BIN = 0x0DF8   NEWTOS-RASTER.BIN   = 0x5F81
+    buf_b[367]               EMUTOS14-RASTER.BIN = 0x468D   NEWTOS-RASTER.BIN   = 0x724D
+    buf_b[392]               EMUTOS14-RASTER.BIN = 0xCDBD   NEWTOS-RASTER.BIN   = 0x19FE
+    buf_b[393]               EMUTOS14-RASTER.BIN = 0xC4B3   NEWTOS-RASTER.BIN   = 0x0DF4
+    buf_b[394]               EMUTOS14-RASTER.BIN = 0x0FEA   NEWTOS-RASTER.BIN   = 0x7E65
+    buf_b[395]               EMUTOS14-RASTER.BIN = 0x2EC5   NEWTOS-RASTER.BIN   = 0x5A08
+    buf_b[396]               EMUTOS14-RASTER.BIN = 0x5D7B   NEWTOS-RASTER.BIN   = 0x24D8
+    buf_b[397]               EMUTOS14-RASTER.BIN = 0x51E7   NEWTOS-RASTER.BIN   = 0xD0D0
+    buf_b[398]               EMUTOS14-RASTER.BIN = 0x3ABE   NEWTOS-RASTER.BIN   = 0x0D97
+    buf_b[399]               EMUTOS14-RASTER.BIN = 0xD1B8   NEWTOS-RASTER.BIN   = 0xE8D7
+    buf_b[424]               EMUTOS14-RASTER.BIN = 0x871F   NEWTOS-RASTER.BIN   = 0x91D8
+    buf_b[425]               EMUTOS14-RASTER.BIN = 0x9A77   NEWTOS-RASTER.BIN   = 0x8D43
+    buf_b[426]               EMUTOS14-RASTER.BIN = 0xD363   NEWTOS-RASTER.BIN   = 0x88FE
+    buf_b[427]               EMUTOS14-RASTER.BIN = 0x8DBF   NEWTOS-RASTER.BIN   = 0xAC13
+    buf_b[428]               EMUTOS14-RASTER.BIN = 0x82BC   NEWTOS-RASTER.BIN   = 0x5319
+    buf_b[429]               EMUTOS14-RASTER.BIN = 0x4D2E   NEWTOS-RASTER.BIN   = 0x318B
+    buf_b[430]               EMUTOS14-RASTER.BIN = 0x5BE9   NEWTOS-RASTER.BIN   = 0x4086
+    buf_b[431]               EMUTOS14-RASTER.BIN = 0xD6EF   NEWTOS-RASTER.BIN   = 0x4746
+    buf_b[456]               EMUTOS14-RASTER.BIN = 0x7712   NEWTOS-RASTER.BIN   = 0x5230
+    buf_b[457]               EMUTOS14-RASTER.BIN = 0xF907   NEWTOS-RASTER.BIN   = 0x7443
+    buf_b[458]               EMUTOS14-RASTER.BIN = 0xE799   NEWTOS-RASTER.BIN   = 0x0E23
+    buf_b[459]               EMUTOS14-RASTER.BIN = 0x17B2   NEWTOS-RASTER.BIN   = 0x1E8F
+    buf_b[460]               EMUTOS14-RASTER.BIN = 0x6F60   NEWTOS-RASTER.BIN   = 0xC9DC
+    buf_b[461]               EMUTOS14-RASTER.BIN = 0x2372   NEWTOS-RASTER.BIN   = 0x7786
+    buf_b[462]               EMUTOS14-RASTER.BIN = 0x51F1   NEWTOS-RASTER.BIN   = 0xA51A
+    buf_b[463]               EMUTOS14-RASTER.BIN = 0x54B7   NEWTOS-RASTER.BIN   = 0x9585
+    buf_b[488]               EMUTOS14-RASTER.BIN = 0xF8DD   NEWTOS-RASTER.BIN   = 0x275F
+    buf_b[489]               EMUTOS14-RASTER.BIN = 0x7282   NEWTOS-RASTER.BIN   = 0x5672
+    buf_b[490]               EMUTOS14-RASTER.BIN = 0x463A   NEWTOS-RASTER.BIN   = 0xD021
+    buf_b[491]               EMUTOS14-RASTER.BIN = 0x04C6   NEWTOS-RASTER.BIN   = 0x060E
+    buf_b[492]               EMUTOS14-RASTER.BIN = 0x056C   NEWTOS-RASTER.BIN   = 0xCC39
+    buf_b[493]               EMUTOS14-RASTER.BIN = 0xEFC3   NEWTOS-RASTER.BIN   = 0x717B
+    buf_b[494]               EMUTOS14-RASTER.BIN = 0x0C78   NEWTOS-RASTER.BIN   = 0x468D
+    buf_b[495]               EMUTOS14-RASTER.BIN = 0x8004   NEWTOS-RASTER.BIN   = 0x4DE6
+
+case 146  opcode 109  one pixel, a degenerate rectangle
+    contrl[6]              EMUTOS14-RASTER.BIN = 0x0002 (2)   NEWTOS-RASTER.BIN   = 0x0003 (3)
+    contrl_before[6]       EMUTOS14-RASTER.BIN = 0x0002 (2)   NEWTOS-RASTER.BIN   = 0x0003 (3)
+
+case 147  opcode 109  reversed source corners: arb_corner sorts
+    contrl[6]              EMUTOS14-RASTER.BIN = 0x0002 (2)   NEWTOS-RASTER.BIN   = 0x0003 (3)
+    contrl_before[6]       EMUTOS14-RASTER.BIN = 0x0002 (2)   NEWTOS-RASTER.BIN   = 0x0003 (3)
+
+case 148  opcode 109  reversed destination corners
+    contrl[6]              EMUTOS14-RASTER.BIN = 0x0002 (2)   NEWTOS-RASTER.BIN   = 0x0003 (3)
+    contrl_before[6]       EMUTOS14-RASTER.BIN = 0x0002 (2)   NEWTOS-RASTER.BIN   = 0x0003 (3)
+
+case 149  opcode 109  a rectangle at the far corner of the form
+    contrl[6]              EMUTOS14-RASTER.BIN = 0x0002 (2)   NEWTOS-RASTER.BIN   = 0x0003 (3)
+    contrl_before[6]       EMUTOS14-RASTER.BIN = 0x0002 (2)   NEWTOS-RASTER.BIN   = 0x0003 (3)
+
+case 150  opcode 109  the whole form
+    contrl[6]              EMUTOS14-RASTER.BIN = 0x0002 (2)   NEWTOS-RASTER.BIN   = 0x0003 (3)
+    contrl_before[6]       EMUTOS14-RASTER.BIN = 0x0002 (2)   NEWTOS-RASTER.BIN   = 0x0003 (3)
+
+case 157  opcode 109  PTSIN[6..7] too big: the extent is the source's
+    contrl[6]              EMUTOS14-RASTER.BIN = 0x0002 (2)   NEWTOS-RASTER.BIN   = 0x0003 (3)
+    contrl_before[6]       EMUTOS14-RASTER.BIN = 0x0002 (2)   NEWTOS-RASTER.BIN   = 0x0003 (3)
+    buf_b[0]               EMUTOS14-RASTER.BIN = 0x774B   NEWTOS-RASTER.BIN   = 0x445B
+    buf_b[1]               EMUTOS14-RASTER.BIN = 0xD684   NEWTOS-RASTER.BIN   = 0x2F3F
+    buf_b[2]               EMUTOS14-RASTER.BIN = 0x6D96   NEWTOS-RASTER.BIN   = 0x6BF3
+    buf_b[3]               EMUTOS14-RASTER.BIN = 0x34B0   NEWTOS-RASTER.BIN   = 0xA857
+    buf_b[4]               EMUTOS14-RASTER.BIN = 0xA54A   NEWTOS-RASTER.BIN   = 0xBF93
+    buf_b[5]               EMUTOS14-RASTER.BIN = 0xD621   NEWTOS-RASTER.BIN   = 0x59F6
+    buf_b[6]               EMUTOS14-RASTER.BIN = 0x9E72   NEWTOS-RASTER.BIN   = 0x0504
+    buf_b[7]               EMUTOS14-RASTER.BIN = 0x5D65   NEWTOS-RASTER.BIN   = 0x1C63
+    buf_b[32]               EMUTOS14-RASTER.BIN = 0x8428   NEWTOS-RASTER.BIN   = 0xC502
+    buf_b[33]               EMUTOS14-RASTER.BIN = 0x783C   NEWTOS-RASTER.BIN   = 0x1FB1
+    buf_b[34]               EMUTOS14-RASTER.BIN = 0x09BD   NEWTOS-RASTER.BIN   = 0x286E
+    buf_b[35]               EMUTOS14-RASTER.BIN = 0x35A4   NEWTOS-RASTER.BIN   = 0xF14F
+    buf_b[36]               EMUTOS14-RASTER.BIN = 0xC892   NEWTOS-RASTER.BIN   = 0x0447
+    buf_b[37]               EMUTOS14-RASTER.BIN = 0xFEBE   NEWTOS-RASTER.BIN   = 0x2794
+    buf_b[38]               EMUTOS14-RASTER.BIN = 0x5764   NEWTOS-RASTER.BIN   = 0x3046
+    buf_b[39]               EMUTOS14-RASTER.BIN = 0x4E7A   NEWTOS-RASTER.BIN   = 0x5A06
+    buf_b[64]               EMUTOS14-RASTER.BIN = 0xDBD2   NEWTOS-RASTER.BIN   = 0x5510
+    buf_b[65]               EMUTOS14-RASTER.BIN = 0x3863   NEWTOS-RASTER.BIN   = 0x6D36
+    buf_b[66]               EMUTOS14-RASTER.BIN = 0x3215   NEWTOS-RASTER.BIN   = 0xF2B0
+    buf_b[67]               EMUTOS14-RASTER.BIN = 0x4719   NEWTOS-RASTER.BIN   = 0x56BF
+    buf_b[68]               EMUTOS14-RASTER.BIN = 0x4D43   NEWTOS-RASTER.BIN   = 0x358E
+    buf_b[69]               EMUTOS14-RASTER.BIN = 0x79B6   NEWTOS-RASTER.BIN   = 0x1A7E
+    buf_b[70]               EMUTOS14-RASTER.BIN = 0xBD9D   NEWTOS-RASTER.BIN   = 0x72B4
+    buf_b[71]               EMUTOS14-RASTER.BIN = 0xCCF0   NEWTOS-RASTER.BIN   = 0xBA4E
+    buf_b[96]               EMUTOS14-RASTER.BIN = 0x6094   NEWTOS-RASTER.BIN   = 0x900B
+    buf_b[97]               EMUTOS14-RASTER.BIN = 0x889F   NEWTOS-RASTER.BIN   = 0x1086
+    buf_b[98]               EMUTOS14-RASTER.BIN = 0xF8E9   NEWTOS-RASTER.BIN   = 0x1EE5
+    buf_b[99]               EMUTOS14-RASTER.BIN = 0x3C38   NEWTOS-RASTER.BIN   = 0x3659
+    buf_b[100]               EMUTOS14-RASTER.BIN = 0x3281   NEWTOS-RASTER.BIN   = 0xA2E2
+    buf_b[101]               EMUTOS14-RASTER.BIN = 0x5327   NEWTOS-RASTER.BIN   = 0x18CC
+    buf_b[102]               EMUTOS14-RASTER.BIN = 0x044B   NEWTOS-RASTER.BIN   = 0xE40F
+    buf_b[103]               EMUTOS14-RASTER.BIN = 0x6C18   NEWTOS-RASTER.BIN   = 0xE5EA
+    buf_b[128]               EMUTOS14-RASTER.BIN = 0x70ED   NEWTOS-RASTER.BIN   = 0x7A2C
+    buf_b[129]               EMUTOS14-RASTER.BIN = 0xB280   NEWTOS-RASTER.BIN   = 0x0602
+    buf_b[130]               EMUTOS14-RASTER.BIN = 0x4C14   NEWTOS-RASTER.BIN   = 0x66EE
+    buf_b[131]               EMUTOS14-RASTER.BIN = 0xD677   NEWTOS-RASTER.BIN   = 0x66DB
+    buf_b[132]               EMUTOS14-RASTER.BIN = 0x000C   NEWTOS-RASTER.BIN   = 0x7ED3
+    buf_b[133]               EMUTOS14-RASTER.BIN = 0x1662   NEWTOS-RASTER.BIN   = 0x983E
+    buf_b[134]               EMUTOS14-RASTER.BIN = 0x1B65   NEWTOS-RASTER.BIN   = 0x61AC
+    buf_b[135]               EMUTOS14-RASTER.BIN = 0xF637   NEWTOS-RASTER.BIN   = 0xBB0E
+    buf_b[160]               EMUTOS14-RASTER.BIN = 0x27C4   NEWTOS-RASTER.BIN   = 0xFBF0
+    buf_b[161]               EMUTOS14-RASTER.BIN = 0x1E73   NEWTOS-RASTER.BIN   = 0xCA56
+    buf_b[162]               EMUTOS14-RASTER.BIN = 0x409D   NEWTOS-RASTER.BIN   = 0xB7FA
+    buf_b[163]               EMUTOS14-RASTER.BIN = 0x4C1C   NEWTOS-RASTER.BIN   = 0x8E04
+    buf_b[164]               EMUTOS14-RASTER.BIN = 0x0E93   NEWTOS-RASTER.BIN   = 0xB05E
+    buf_b[165]               EMUTOS14-RASTER.BIN = 0x4E78   NEWTOS-RASTER.BIN   = 0x03D5
+    buf_b[166]               EMUTOS14-RASTER.BIN = 0xAF1E   NEWTOS-RASTER.BIN   = 0x57BD
+    buf_b[167]               EMUTOS14-RASTER.BIN = 0xDC9A   NEWTOS-RASTER.BIN   = 0x5638
+    buf_b[192]               EMUTOS14-RASTER.BIN = 0xD6FC   NEWTOS-RASTER.BIN   = 0xDA5C
+    buf_b[193]               EMUTOS14-RASTER.BIN = 0x2B76   NEWTOS-RASTER.BIN   = 0x9DDC
+    buf_b[194]               EMUTOS14-RASTER.BIN = 0x4A36   NEWTOS-RASTER.BIN   = 0x3E82
+    buf_b[195]               EMUTOS14-RASTER.BIN = 0xD798   NEWTOS-RASTER.BIN   = 0x13A9
+    buf_b[196]               EMUTOS14-RASTER.BIN = 0x077C   NEWTOS-RASTER.BIN   = 0x364F
+    buf_b[197]               EMUTOS14-RASTER.BIN = 0xE7CE   NEWTOS-RASTER.BIN   = 0x4393
+    buf_b[198]               EMUTOS14-RASTER.BIN = 0x0B35   NEWTOS-RASTER.BIN   = 0x4854
+    buf_b[199]               EMUTOS14-RASTER.BIN = 0x6C73   NEWTOS-RASTER.BIN   = 0xC1B7
+    buf_b[224]               EMUTOS14-RASTER.BIN = 0x3DFF   NEWTOS-RASTER.BIN   = 0xB811
+    buf_b[225]               EMUTOS14-RASTER.BIN = 0x946F   NEWTOS-RASTER.BIN   = 0x9505
+    buf_b[226]               EMUTOS14-RASTER.BIN = 0xFAB1   NEWTOS-RASTER.BIN   = 0x70FC
+    buf_b[227]               EMUTOS14-RASTER.BIN = 0x4609   NEWTOS-RASTER.BIN   = 0x12DD
+    buf_b[228]               EMUTOS14-RASTER.BIN = 0xA18F   NEWTOS-RASTER.BIN   = 0x49E5
+    buf_b[229]               EMUTOS14-RASTER.BIN = 0x42CB   NEWTOS-RASTER.BIN   = 0x23D1
+    buf_b[230]               EMUTOS14-RASTER.BIN = 0xC93D   NEWTOS-RASTER.BIN   = 0xBD0B
+    buf_b[231]               EMUTOS14-RASTER.BIN = 0xE8BB   NEWTOS-RASTER.BIN   = 0xD0E7
+    buf_b[280]               EMUTOS14-RASTER.BIN = 0x445B   NEWTOS-RASTER.BIN   = 0x61BF
+    buf_b[281]               EMUTOS14-RASTER.BIN = 0x2F3F   NEWTOS-RASTER.BIN   = 0x44FD
+    buf_b[282]               EMUTOS14-RASTER.BIN = 0x6BF3   NEWTOS-RASTER.BIN   = 0x2857
+    buf_b[283]               EMUTOS14-RASTER.BIN = 0xA857   NEWTOS-RASTER.BIN   = 0xFE0E
+    buf_b[284]               EMUTOS14-RASTER.BIN = 0xBF93   NEWTOS-RASTER.BIN   = 0xA497
+    buf_b[285]               EMUTOS14-RASTER.BIN = 0x59F6   NEWTOS-RASTER.BIN   = 0x2943
+    buf_b[286]               EMUTOS14-RASTER.BIN = 0x0504   NEWTOS-RASTER.BIN   = 0x9D8F
+    buf_b[287]               EMUTOS14-RASTER.BIN = 0x1C63   NEWTOS-RASTER.BIN   = 0xF4C8
+    buf_b[312]               EMUTOS14-RASTER.BIN = 0xC502   NEWTOS-RASTER.BIN   = 0xD7BE
+    buf_b[313]               EMUTOS14-RASTER.BIN = 0x1FB1   NEWTOS-RASTER.BIN   = 0x1D62
+    buf_b[314]               EMUTOS14-RASTER.BIN = 0x286E   NEWTOS-RASTER.BIN   = 0xF7B6
+    buf_b[315]               EMUTOS14-RASTER.BIN = 0xF14F   NEWTOS-RASTER.BIN   = 0x0F4D
+    buf_b[316]               EMUTOS14-RASTER.BIN = 0x0447   NEWTOS-RASTER.BIN   = 0x25BB
+    buf_b[317]               EMUTOS14-RASTER.BIN = 0x2794   NEWTOS-RASTER.BIN   = 0x559E
+    buf_b[318]               EMUTOS14-RASTER.BIN = 0x3046   NEWTOS-RASTER.BIN   = 0xFC3B
+    buf_b[319]               EMUTOS14-RASTER.BIN = 0x5A06   NEWTOS-RASTER.BIN   = 0x50FF
+    buf_b[344]               EMUTOS14-RASTER.BIN = 0x5510   NEWTOS-RASTER.BIN   = 0x99D6
+    buf_b[345]               EMUTOS14-RASTER.BIN = 0x6D36   NEWTOS-RASTER.BIN   = 0x2394
+    buf_b[346]               EMUTOS14-RASTER.BIN = 0xF2B0   NEWTOS-RASTER.BIN   = 0x1142
+    buf_b[347]               EMUTOS14-RASTER.BIN = 0x56BF   NEWTOS-RASTER.BIN   = 0x7BBA
+    buf_b[348]               EMUTOS14-RASTER.BIN = 0x358E   NEWTOS-RASTER.BIN   = 0x1A47
+    buf_b[349]               EMUTOS14-RASTER.BIN = 0x1A7E   NEWTOS-RASTER.BIN   = 0xCB48
+    buf_b[350]               EMUTOS14-RASTER.BIN = 0x72B4   NEWTOS-RASTER.BIN   = 0x350F
+    buf_b[351]               EMUTOS14-RASTER.BIN = 0xBA4E   NEWTOS-RASTER.BIN   = 0xB4B3
+    buf_b[376]               EMUTOS14-RASTER.BIN = 0x900B   NEWTOS-RASTER.BIN   = 0x773D
+    buf_b[377]               EMUTOS14-RASTER.BIN = 0x1086   NEWTOS-RASTER.BIN   = 0x0809
+    buf_b[378]               EMUTOS14-RASTER.BIN = 0x1EE5   NEWTOS-RASTER.BIN   = 0x8745
+    buf_b[379]               EMUTOS14-RASTER.BIN = 0x3659   NEWTOS-RASTER.BIN   = 0xC774
+    buf_b[380]               EMUTOS14-RASTER.BIN = 0xA2E2   NEWTOS-RASTER.BIN   = 0x85A2
+    buf_b[381]               EMUTOS14-RASTER.BIN = 0x18CC   NEWTOS-RASTER.BIN   = 0xB118
+    buf_b[382]               EMUTOS14-RASTER.BIN = 0xE40F   NEWTOS-RASTER.BIN   = 0x2525
+    buf_b[383]               EMUTOS14-RASTER.BIN = 0xE5EA   NEWTOS-RASTER.BIN   = 0xC1DA
+    buf_b[408]               EMUTOS14-RASTER.BIN = 0x7A2C   NEWTOS-RASTER.BIN   = 0xAD22
+    buf_b[409]               EMUTOS14-RASTER.BIN = 0x0602   NEWTOS-RASTER.BIN   = 0x1F43
+    buf_b[410]               EMUTOS14-RASTER.BIN = 0x66EE   NEWTOS-RASTER.BIN   = 0x7579
+    buf_b[411]               EMUTOS14-RASTER.BIN = 0x66DB   NEWTOS-RASTER.BIN   = 0xEE02
+    buf_b[412]               EMUTOS14-RASTER.BIN = 0x7ED3   NEWTOS-RASTER.BIN   = 0x42EA
+    buf_b[413]               EMUTOS14-RASTER.BIN = 0x983E   NEWTOS-RASTER.BIN   = 0x4444
+    buf_b[414]               EMUTOS14-RASTER.BIN = 0x61AC   NEWTOS-RASTER.BIN   = 0x6E20
+    buf_b[415]               EMUTOS14-RASTER.BIN = 0xBB0E   NEWTOS-RASTER.BIN   = 0x144D
+    buf_b[440]               EMUTOS14-RASTER.BIN = 0xFBF0   NEWTOS-RASTER.BIN   = 0xCC81
+    buf_b[441]               EMUTOS14-RASTER.BIN = 0xCA56   NEWTOS-RASTER.BIN   = 0x88BF
+    buf_b[442]               EMUTOS14-RASTER.BIN = 0xB7FA   NEWTOS-RASTER.BIN   = 0xFD9C
+    buf_b[443]               EMUTOS14-RASTER.BIN = 0x8E04   NEWTOS-RASTER.BIN   = 0x81FB
+    buf_b[444]               EMUTOS14-RASTER.BIN = 0xB05E   NEWTOS-RASTER.BIN   = 0x44EE
+    buf_b[445]               EMUTOS14-RASTER.BIN = 0x03D5   NEWTOS-RASTER.BIN   = 0xFDF9
+    buf_b[446]               EMUTOS14-RASTER.BIN = 0x57BD   NEWTOS-RASTER.BIN   = 0x14BB
+    buf_b[447]               EMUTOS14-RASTER.BIN = 0x5638   NEWTOS-RASTER.BIN   = 0x63A1
+    buf_b[472]               EMUTOS14-RASTER.BIN = 0xDA5C   NEWTOS-RASTER.BIN   = 0x054E
+    buf_b[473]               EMUTOS14-RASTER.BIN = 0x9DDC   NEWTOS-RASTER.BIN   = 0x684B
+    buf_b[474]               EMUTOS14-RASTER.BIN = 0x3E82   NEWTOS-RASTER.BIN   = 0x3F7D
+    buf_b[475]               EMUTOS14-RASTER.BIN = 0x13A9   NEWTOS-RASTER.BIN   = 0x571C
+    buf_b[476]               EMUTOS14-RASTER.BIN = 0x364F   NEWTOS-RASTER.BIN   = 0x7CA5
+    buf_b[477]               EMUTOS14-RASTER.BIN = 0x4393   NEWTOS-RASTER.BIN   = 0x20F3
+    buf_b[478]               EMUTOS14-RASTER.BIN = 0x4854   NEWTOS-RASTER.BIN   = 0xC36B
+    buf_b[479]               EMUTOS14-RASTER.BIN = 0xC1B7   NEWTOS-RASTER.BIN   = 0x3A99
+    buf_b[504]               EMUTOS14-RASTER.BIN = 0xB811   NEWTOS-RASTER.BIN   = 0x8568
+    buf_b[505]               EMUTOS14-RASTER.BIN = 0x9505   NEWTOS-RASTER.BIN   = 0xD638
+    buf_b[506]               EMUTOS14-RASTER.BIN = 0x70FC   NEWTOS-RASTER.BIN   = 0xA674
+    buf_b[507]               EMUTOS14-RASTER.BIN = 0x12DD   NEWTOS-RASTER.BIN   = 0x83A6
+    buf_b[508]               EMUTOS14-RASTER.BIN = 0x49E5   NEWTOS-RASTER.BIN   = 0xE36D
+    buf_b[509]               EMUTOS14-RASTER.BIN = 0x23D1   NEWTOS-RASTER.BIN   = 0x05B9
+    buf_b[510]               EMUTOS14-RASTER.BIN = 0xBD0B   NEWTOS-RASTER.BIN   = 0x5FDD
+    buf_b[511]               EMUTOS14-RASTER.BIN = 0xD0E7   NEWTOS-RASTER.BIN   = 0x158E
+
+case 164  opcode 109  overlap, destination down and right
+    contrl[6]              EMUTOS14-RASTER.BIN = 0x0002 (2)   NEWTOS-RASTER.BIN   = 0x0003 (3)
+    contrl_before[6]       EMUTOS14-RASTER.BIN = 0x0002 (2)   NEWTOS-RASTER.BIN   = 0x0003 (3)
+
+case 165  opcode 109  overlap, destination up and left
+    contrl[6]              EMUTOS14-RASTER.BIN = 0x0002 (2)   NEWTOS-RASTER.BIN   = 0x0003 (3)
+    contrl_before[6]       EMUTOS14-RASTER.BIN = 0x0002 (2)   NEWTOS-RASTER.BIN   = 0x0003 (3)
+
+case 166  opcode 109  XOR inside one buffer, no overlap
+    contrl[6]              EMUTOS14-RASTER.BIN = 0x0002 (2)   NEWTOS-RASTER.BIN   = 0x0003 (3)
+    contrl_before[6]       EMUTOS14-RASTER.BIN = 0x0002 (2)   NEWTOS-RASTER.BIN   = 0x0003 (3)
+
+case 174  opcode 121  mode above bit 5 is invalid, no-op
+    contrl[6]              EMUTOS14-RASTER.BIN = 0x0002 (2)   NEWTOS-RASTER.BIN   = 0x0003 (3)
+    contrl_before[6]       EMUTOS14-RASTER.BIN = 0x0002 (2)   NEWTOS-RASTER.BIN   = 0x0003 (3)
+
+case 175  opcode 121  mode 0 is not an MD_ code, no-op
+    contrl[6]              EMUTOS14-RASTER.BIN = 0x0002 (2)   NEWTOS-RASTER.BIN   = 0x0003 (3)
+    contrl_before[6]       EMUTOS14-RASTER.BIN = 0x0002 (2)   NEWTOS-RASTER.BIN   = 0x0003 (3)
+
+case 176  opcode 121  mode 5 is not an MD_ code, no-op
+    contrl[6]              EMUTOS14-RASTER.BIN = 0x0002 (2)   NEWTOS-RASTER.BIN   = 0x0003 (3)
+    contrl_before[6]       EMUTOS14-RASTER.BIN = 0x0002 (2)   NEWTOS-RASTER.BIN   = 0x0003 (3)
+
+case 177  opcode 121  no intin at all: INTIN[0] is the poison
+    contrl[6]              EMUTOS14-RASTER.BIN = 0x0002 (2)   NEWTOS-RASTER.BIN   = 0x0003 (3)
+    contrl_before[6]       EMUTOS14-RASTER.BIN = 0x0002 (2)   NEWTOS-RASTER.BIN   = 0x0003 (3)
+
+case 178  opcode 121  PAT_FLAG|5 (0x15): stripped, still no MD_ code
+    contrl[6]              EMUTOS14-RASTER.BIN = 0x0002 (2)   NEWTOS-RASTER.BIN   = 0x0003 (3)
+    contrl_before[6]       EMUTOS14-RASTER.BIN = 0x0002 (2)   NEWTOS-RASTER.BIN   = 0x0003 (3)
+
+case 179  opcode 121  source is 4 planes, not mono: no-op
+    contrl[6]              EMUTOS14-RASTER.BIN = 0x0002 (2)   NEWTOS-RASTER.BIN   = 0x0003 (3)
+    contrl_before[6]       EMUTOS14-RASTER.BIN = 0x0002 (2)   NEWTOS-RASTER.BIN   = 0x0003 (3)
+
+case 180  opcode 121  source is 2 planes, not mono: no-op
+    contrl[6]              EMUTOS14-RASTER.BIN = 0x0002 (2)   NEWTOS-RASTER.BIN   = 0x0003 (3)
+    contrl_before[6]       EMUTOS14-RASTER.BIN = 0x0002 (2)   NEWTOS-RASTER.BIN   = 0x0003 (3)
+
+case 181  opcode 121  source is 8 planes, not mono: no-op
+    contrl[6]              EMUTOS14-RASTER.BIN = 0x0002 (2)   NEWTOS-RASTER.BIN   = 0x0003 (3)
+    contrl_before[6]       EMUTOS14-RASTER.BIN = 0x0002 (2)   NEWTOS-RASTER.BIN   = 0x0003 (3)
+
+59 of 59 cases differ

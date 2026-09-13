@@ -1,0 +1,183 @@
+AES.BIN vs AES.BIN -- area AES, 20 cases from aes-m07-parameter.tsv
+
+case 63  opcode 25  MU_TIMER alone, tmcount 0: the quick check timer, nothing else 
+    global[2]              AES.BIN = 0x0000 (0)   AES.BIN = 0x0001 (1)
+    global[3]              AES.BIN = 0x0000 (0)   AES.BIN = 0x1143 (4419)
+    global[4]              AES.BIN = 0x1143 (4419)   AES.BIN = 0x0000 (0)
+    global[10]              AES.BIN = 0x0004 (4)   AES.BIN = 0x0010 (16)
+    global[11]              AES.BIN = 0x0000 (0)   AES.BIN = 0xC9D8 (-13864)
+    global[12]              AES.BIN = 0xBE04 (-16892)   AES.BIN = 0x0015 (21)
+    int_out[1]             AES.BIN = 0x013F (319)   AES.BIN = 0x0140 (320)
+    int_out[2]             AES.BIN = 0x00EF (239)   AES.BIN = 0x00F0 (240)
+
+case 64  opcode 25  MU_KEYBD|MU_TIMER: the keyboard quick check runs first and find
+    global[2]              AES.BIN = 0x0000 (0)   AES.BIN = 0x0001 (1)
+    global[3]              AES.BIN = 0x0000 (0)   AES.BIN = 0x1143 (4419)
+    global[4]              AES.BIN = 0x1143 (4419)   AES.BIN = 0x0000 (0)
+    global[10]              AES.BIN = 0x0004 (4)   AES.BIN = 0x0010 (16)
+    global[11]              AES.BIN = 0x0000 (0)   AES.BIN = 0xC9D8 (-13864)
+    global[12]              AES.BIN = 0xBE04 (-16892)   AES.BIN = 0x0015 (21)
+    int_out[1]             AES.BIN = 0x013F (319)   AES.BIN = 0x0140 (320)
+    int_out[2]             AES.BIN = 0x00EF (239)   AES.BIN = 0x00F0 (240)
+
+case 65  opcode 25  MU_BUTTON|MU_TIMER, clicks/mask/state all 0
+    global[2]              AES.BIN = 0x0000 (0)   AES.BIN = 0x0001 (1)
+    global[3]              AES.BIN = 0x0000 (0)   AES.BIN = 0x1143 (4419)
+    global[4]              AES.BIN = 0x1143 (4419)   AES.BIN = 0x0000 (0)
+    global[10]              AES.BIN = 0x0004 (4)   AES.BIN = 0x0010 (16)
+    global[11]              AES.BIN = 0x0000 (0)   AES.BIN = 0xC9D8 (-13864)
+    global[12]              AES.BIN = 0xBE04 (-16892)   AES.BIN = 0x0015 (21)
+    int_out[1]             AES.BIN = 0x013F (319)   AES.BIN = 0x0140 (320)
+    int_out[2]             AES.BIN = 0x00EF (239)   AES.BIN = 0x00F0 (240)
+
+case 66  opcode 25  MU_M1|MU_TIMER, MOBLK 1 all zero: in_mrect on a degenerate rect
+    global[2]              AES.BIN = 0x0000 (0)   AES.BIN = 0x0001 (1)
+    global[3]              AES.BIN = 0x0000 (0)   AES.BIN = 0x1143 (4419)
+    global[4]              AES.BIN = 0x1143 (4419)   AES.BIN = 0x0000 (0)
+    global[10]              AES.BIN = 0x0004 (4)   AES.BIN = 0x0010 (16)
+    global[11]              AES.BIN = 0x0000 (0)   AES.BIN = 0xC9D8 (-13864)
+    global[12]              AES.BIN = 0xBE04 (-16892)   AES.BIN = 0x0015 (21)
+    int_out[1]             AES.BIN = 0x013F (319)   AES.BIN = 0x0140 (320)
+    int_out[2]             AES.BIN = 0x00EF (239)   AES.BIN = 0x00F0 (240)
+
+case 67  opcode 25  MU_M2|MU_TIMER, MOBLK 2 all zero
+    global[2]              AES.BIN = 0x0000 (0)   AES.BIN = 0x0001 (1)
+    global[3]              AES.BIN = 0x0000 (0)   AES.BIN = 0x1143 (4419)
+    global[4]              AES.BIN = 0x1143 (4419)   AES.BIN = 0x0000 (0)
+    global[10]              AES.BIN = 0x0004 (4)   AES.BIN = 0x0010 (16)
+    global[11]              AES.BIN = 0x0000 (0)   AES.BIN = 0xC9D8 (-13864)
+    global[12]              AES.BIN = 0xBE04 (-16892)   AES.BIN = 0x0015 (21)
+    int_out[1]             AES.BIN = 0x013F (319)   AES.BIN = 0x0140 (320)
+    int_out[2]             AES.BIN = 0x00EF (239)   AES.BIN = 0x00F0 (240)
+
+case 68  opcode 25  MU_M1 with m_out 0 over the whole screen: the mouse is already 
+    global[2]              AES.BIN = 0x0000 (0)   AES.BIN = 0x0001 (1)
+    global[3]              AES.BIN = 0x0000 (0)   AES.BIN = 0x1143 (4419)
+    global[4]              AES.BIN = 0x1143 (4419)   AES.BIN = 0x0000 (0)
+    global[10]              AES.BIN = 0x0004 (4)   AES.BIN = 0x0010 (16)
+    global[11]              AES.BIN = 0x0000 (0)   AES.BIN = 0xC9D8 (-13864)
+    global[12]              AES.BIN = 0xBE04 (-16892)   AES.BIN = 0x0015 (21)
+    int_out[1]             AES.BIN = 0x013F (319)   AES.BIN = 0x0140 (320)
+    int_out[2]             AES.BIN = 0x00EF (239)   AES.BIN = 0x00F0 (240)
+
+case 69  opcode 25  MU_MESAG|MU_TIMER with a planted MME_PBUFF: ev_mesag would writ
+    global[2]              AES.BIN = 0x0000 (0)   AES.BIN = 0x0001 (1)
+    global[3]              AES.BIN = 0x0000 (0)   AES.BIN = 0x1143 (4419)
+    global[4]              AES.BIN = 0x1143 (4419)   AES.BIN = 0x0000 (0)
+    global[10]              AES.BIN = 0x0004 (4)   AES.BIN = 0x0010 (16)
+    global[11]              AES.BIN = 0x0000 (0)   AES.BIN = 0xC9D8 (-13864)
+    global[12]              AES.BIN = 0xBE04 (-16892)   AES.BIN = 0x0015 (21)
+    int_out[1]             AES.BIN = 0x013F (319)   AES.BIN = 0x0140 (320)
+    int_out[2]             AES.BIN = 0x00EF (239)   AES.BIN = 0x00F0 (240)
+
+case 70  opcode 25  every MU_TOSVALID bit at once, buffer planted for the MU_MESAG 
+    global[2]              AES.BIN = 0x0000 (0)   AES.BIN = 0x0001 (1)
+    global[3]              AES.BIN = 0x0000 (0)   AES.BIN = 0x1143 (4419)
+    global[4]              AES.BIN = 0x1143 (4419)   AES.BIN = 0x0000 (0)
+    global[10]              AES.BIN = 0x0004 (4)   AES.BIN = 0x0010 (16)
+    global[11]              AES.BIN = 0x0000 (0)   AES.BIN = 0xC9D8 (-13864)
+    global[12]              AES.BIN = 0xBE04 (-16892)   AES.BIN = 0x0015 (21)
+    int_out[1]             AES.BIN = 0x013F (319)   AES.BIN = 0x0140 (320)
+    int_out[2]             AES.BIN = 0x00EF (239)   AES.BIN = 0x00F0 (240)
+
+case 71  opcode 25  flags 0x8020: MU_TIMER plus a bit outside MU_TOSVALID, which ge
+    global[2]              AES.BIN = 0x0000 (0)   AES.BIN = 0x0001 (1)
+    global[3]              AES.BIN = 0x0000 (0)   AES.BIN = 0x1143 (4419)
+    global[4]              AES.BIN = 0x1143 (4419)   AES.BIN = 0x0000 (0)
+    global[10]              AES.BIN = 0x0004 (4)   AES.BIN = 0x0010 (16)
+    global[11]              AES.BIN = 0x0000 (0)   AES.BIN = 0xC9D8 (-13864)
+    global[12]              AES.BIN = 0xBE04 (-16892)   AES.BIN = 0x0015 (21)
+    int_out[1]             AES.BIN = 0x013F (319)   AES.BIN = 0x0140 (320)
+    int_out[2]             AES.BIN = 0x00EF (239)   AES.BIN = 0x00F0 (240)
+
+case 72  opcode 25  OUT_LEN 1: only RET_CODE is delivered, ev_rets' four stay behin
+    global[2]              AES.BIN = 0x0000 (0)   AES.BIN = 0x0001 (1)
+    global[3]              AES.BIN = 0x0000 (0)   AES.BIN = 0x1143 (4419)
+    global[4]              AES.BIN = 0x1143 (4419)   AES.BIN = 0x0000 (0)
+    global[10]              AES.BIN = 0x0004 (4)   AES.BIN = 0x0010 (16)
+    global[11]              AES.BIN = 0x0000 (0)   AES.BIN = 0xC9D8 (-13864)
+    global[12]              AES.BIN = 0xBE04 (-16892)   AES.BIN = 0x0015 (21)
+
+case 73  opcode 25  OUT_LEN 0: xif skips the copy-back entirely, so not even the fi
+    global[2]              AES.BIN = 0x0000 (0)   AES.BIN = 0x0001 (1)
+    global[3]              AES.BIN = 0x0000 (0)   AES.BIN = 0x1143 (4419)
+    global[4]              AES.BIN = 0x1143 (4419)   AES.BIN = 0x0000 (0)
+    global[10]              AES.BIN = 0x0004 (4)   AES.BIN = 0x0010 (16)
+    global[11]              AES.BIN = 0x0000 (0)   AES.BIN = 0xC9D8 (-13864)
+    global[12]              AES.BIN = 0xBE04 (-16892)   AES.BIN = 0x0015 (21)
+
+case 74  opcode 25  AIN_LEN 3 with nothing planted: three poisoned slots handed ove
+    global[2]              AES.BIN = 0x0000 (0)   AES.BIN = 0x0001 (1)
+    global[3]              AES.BIN = 0x0000 (0)   AES.BIN = 0x1143 (4419)
+    global[4]              AES.BIN = 0x1143 (4419)   AES.BIN = 0x0000 (0)
+    global[10]              AES.BIN = 0x0004 (4)   AES.BIN = 0x0010 (16)
+    global[11]              AES.BIN = 0x0000 (0)   AES.BIN = 0xC9D8 (-13864)
+    global[12]              AES.BIN = 0xBE04 (-16892)   AES.BIN = 0x0015 (21)
+    int_out[1]             AES.BIN = 0x013F (319)   AES.BIN = 0x0140 (320)
+    int_out[2]             AES.BIN = 0x00EF (239)   AES.BIN = 0x00F0 (240)
+
+case 80  opcode 53  n = 64, the first value past the arm
+    global[2]              AES.BIN = 0x0000 (0)   AES.BIN = 0x0001 (1)
+    global[3]              AES.BIN = 0x0000 (0)   AES.BIN = 0x1143 (4419)
+    global[4]              AES.BIN = 0x1143 (4419)   AES.BIN = 0x0000 (0)
+    global[10]              AES.BIN = 0x0004 (4)   AES.BIN = 0x0010 (16)
+    global[11]              AES.BIN = 0x0000 (0)   AES.BIN = 0xC9D8 (-13864)
+    global[12]              AES.BIN = 0xBE04 (-16892)   AES.BIN = 0x0015 (21)
+
+case 81  opcode 53  n = 65
+    global[2]              AES.BIN = 0x0000 (0)   AES.BIN = 0x0001 (1)
+    global[3]              AES.BIN = 0x0000 (0)   AES.BIN = 0x1143 (4419)
+    global[4]              AES.BIN = 0x1143 (4419)   AES.BIN = 0x0000 (0)
+    global[10]              AES.BIN = 0x0004 (4)   AES.BIN = 0x0010 (16)
+    global[11]              AES.BIN = 0x0000 (0)   AES.BIN = 0xC9D8 (-13864)
+    global[12]              AES.BIN = 0xBE04 (-16892)   AES.BIN = 0x0015 (21)
+
+case 82  opcode 53  n = 100, well past it
+    global[2]              AES.BIN = 0x0000 (0)   AES.BIN = 0x0001 (1)
+    global[3]              AES.BIN = 0x0000 (0)   AES.BIN = 0x1143 (4419)
+    global[4]              AES.BIN = 0x1143 (4419)   AES.BIN = 0x0000 (0)
+    global[10]              AES.BIN = 0x0004 (4)   AES.BIN = 0x0010 (16)
+    global[11]              AES.BIN = 0x0000 (0)   AES.BIN = 0xC9D8 (-13864)
+    global[12]              AES.BIN = 0xBE04 (-16892)   AES.BIN = 0x0015 (21)
+
+case 83  opcode 53  n = 1000
+    global[2]              AES.BIN = 0x0000 (0)   AES.BIN = 0x0001 (1)
+    global[3]              AES.BIN = 0x0000 (0)   AES.BIN = 0x1143 (4419)
+    global[4]              AES.BIN = 0x1143 (4419)   AES.BIN = 0x0000 (0)
+    global[10]              AES.BIN = 0x0004 (4)   AES.BIN = 0x0010 (16)
+    global[11]              AES.BIN = 0x0000 (0)   AES.BIN = 0xC9D8 (-13864)
+    global[12]              AES.BIN = 0xBE04 (-16892)   AES.BIN = 0x0015 (21)
+
+case 84  opcode 53  n = 32767, the largest WORD
+    global[2]              AES.BIN = 0x0000 (0)   AES.BIN = 0x0001 (1)
+    global[3]              AES.BIN = 0x0000 (0)   AES.BIN = 0x1143 (4419)
+    global[4]              AES.BIN = 0x1143 (4419)   AES.BIN = 0x0000 (0)
+    global[10]              AES.BIN = 0x0004 (4)   AES.BIN = 0x0010 (16)
+    global[11]              AES.BIN = 0x0000 (0)   AES.BIN = 0xC9D8 (-13864)
+    global[12]              AES.BIN = 0xBE04 (-16892)   AES.BIN = 0x0015 (21)
+
+case 85  opcode 53  IN_LEN 2 with one value stated: the second WORD stays poisoned 
+    global[2]              AES.BIN = 0x0000 (0)   AES.BIN = 0x0001 (1)
+    global[3]              AES.BIN = 0x0000 (0)   AES.BIN = 0x1143 (4419)
+    global[4]              AES.BIN = 0x1143 (4419)   AES.BIN = 0x0000 (0)
+    global[10]              AES.BIN = 0x0004 (4)   AES.BIN = 0x0010 (16)
+    global[11]              AES.BIN = 0x0000 (0)   AES.BIN = 0xC9D8 (-13864)
+    global[12]              AES.BIN = 0xBE04 (-16892)   AES.BIN = 0x0015 (21)
+
+case 86  opcode 53  OUT_LEN 0: the FALSE is computed and never delivered
+    global[2]              AES.BIN = 0x0000 (0)   AES.BIN = 0x0001 (1)
+    global[3]              AES.BIN = 0x0000 (0)   AES.BIN = 0x1143 (4419)
+    global[4]              AES.BIN = 0x1143 (4419)   AES.BIN = 0x0000 (0)
+    global[10]              AES.BIN = 0x0004 (4)   AES.BIN = 0x0010 (16)
+    global[11]              AES.BIN = 0x0000 (0)   AES.BIN = 0xC9D8 (-13864)
+    global[12]              AES.BIN = 0xBE04 (-16892)   AES.BIN = 0x0015 (21)
+
+case 87  opcode 53  AIN_LEN 1, nothing planted: form_error takes no address, so the
+    global[2]              AES.BIN = 0x0000 (0)   AES.BIN = 0x0001 (1)
+    global[3]              AES.BIN = 0x0000 (0)   AES.BIN = 0x1143 (4419)
+    global[4]              AES.BIN = 0x1143 (4419)   AES.BIN = 0x0000 (0)
+    global[10]              AES.BIN = 0x0004 (4)   AES.BIN = 0x0010 (16)
+    global[11]              AES.BIN = 0x0000 (0)   AES.BIN = 0xC9D8 (-13864)
+    global[12]              AES.BIN = 0xBE04 (-16892)   AES.BIN = 0x0015 (21)
+
+20 of 20 cases differ

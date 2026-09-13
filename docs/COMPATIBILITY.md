@@ -114,6 +114,73 @@ AES a per-process key queue and is a scheduler change, not an input-mode one.
 The mode half — the only part any measured case reaches — now matches.
 
 
+**GEM trap selector −1 answers `0`, not a dispatcher address** — sanctioned
+2026-09-12 with the V16 repair, and recorded here because it was previously
+nowhere (audit finding F-2,
+`docs/analysis/vdi-r2-improvement-traced-2026-09-12.md`). EmuTOS' `_vditrap`
+treats `d0 = -1` (`cmp.w #0xffff,d0`) as *"give me the jsr-able address of the
+VDI dispatcher"* and answers `move.l #_GSX_ENTRY,d0`
+(`references/emutos/vdi/vdi_asm.S:40,51-52`); the extracted spec carries it
+(`docs/api/vdi/_dispatcher.md`, "`d0` special values"). NewTOS has no such
+entry point: the VDI is reachable **only** through `svc #2`, and the dispatcher
+is EL1 kernel code that an EL0 caller can neither branch to nor read, so there
+is no address that would answer the question truthfully. We return `0` — "no
+jsr-able address" — which is the value a conforming caller tests for before
+using the result, and the value NewTOS has always returned here
+(`kernel/src/arch/aarch64/exceptions.rs`, arm `GEM_SEL_ADDR_QUERY`). It is
+spelled out as its own trap arm so it cannot silently inherit the neighbouring
+"leave `x0` alone" rule, which would hand back `-1` — a value that *looks* like
+an address. Handing out a real kernel code address instead would be both
+useless (EL0 cannot execute it) and a kernel-address leak. Covered by
+`kernel/src/selftest_gemtrap.rs`.
+
+**Not** a sanctioned deviation, and repaired in the same change: selector `-2`
+(and every other unknown selector). There EmuTOS leaves `d0` untouched, and so
+does NewTOS now — `vq_gdos()` reports *no* GDOS and `vq_vgdos()` returns `-2`,
+as on Atari TOS.
+
+
+**`wind_get(WF_SCREEN)` answers FALSE — NewTOS has no menu/alert buffer** —
+sanctioned 2026-09-12 with the A54 repair, and listed here because the absence
+is real and has to be *visible* rather than dressed up. EmuTOS' field 17 hands
+out the AES' menu/alert screen-save buffer: `gsx_malloc` takes it once at AES
+start (`references/emutos/aes/gemgsxif.c:108-114`, from `sh_main`,
+`aes/gemshlib.c:236`), `gsx_mret` reports its address in `poutwds[0..1]` and its
+length in `poutwds[2..3]` (`:125-129`), and `wm_get` returns TRUE
+(`aes/gemwmlib.c:1563-1565`). Measured on the reference TT running the 1.4 ROM:
+address `0x01000218`, length `40960` (`measurement-2026-09-12-aes-r4/`, cases
+331, 332 and 439 of `tosdump/cases/aes-r4-subfunctions.tsv`).
+
+NewTOS has no such region, and this is a statement about the code, not an
+intention: the modal alert allocates a fresh buffer per alert and drops it on
+close (`tos-api/src/aes/form.rs`, `BbSave::capture`), the menu keeps **two**
+independent drop-down backings that are cleared and regrown to whatever box is
+opening and start at capacity zero (`tos-api/src/aes/menu.rs`, `MBACK` /
+`SMBACK` / `save_under`), and nothing anywhere is the `gsx_malloc` counterpart.
+There is also no address NewTOS *could* hand out: those buffers live in the
+kernel heap, which is mapped `AP_RW_EL1` — R/W at EL1, **no EL0 access**
+(`kernel/src/arch/aarch64/mmu.rs:82,178-179,283-284`) — so an application
+writing through a WF_SCREEN pointer, which is the whole point of the field,
+would fault on the first store.
+
+What NewTOS did until A54 was worse than the gap: four zero words and `ret = 1`.
+A caller cannot tell that apart from "here is a buffer, it starts at 0" — it
+reads the return code, believes it, and scribbles on the null page. It now
+answers **FALSE and writes nothing**, which is `wm_get`'s own idiom for a field
+this AES does not implement (`default: return FALSE`, `aes/gemwmlib.c:1590-1591`)
+and the same repair AUD-P5-014 got for `WF_KIND`. A conforming caller tests the
+return code before using the address, so FALSE is the one answer that cannot be
+misread.
+
+This entry is a **gap that is answered honestly, not a permanent decision**: it
+goes away the day the AES gets a real persistent scratch buffer in
+EL0-reachable memory, used by the alert save-under *and* the menu save-under —
+a memory-pool and mapping question, not a `wind_get` one. Covered by
+`tos-api/tests/aes_window_screen_buffer.rs`; round-1 reference case 166 is held
+against it by name in `tos-api/tests/aes_reference/harness.rs` (`SANCTIONED`),
+so NewTOS drifting back to `ret = 1` turns that case red again.
+
+
 ## EmuTOS is the reference, not the template
 
 CLAUDE.md Rule 1 says EmuTOS source *is* the spec. Through this charter that
@@ -200,6 +267,22 @@ Each such divergence is recorded here with its reason and reference.
   (`references/freemint/sys/dosdir.c:998-1002`). SET on a folder stays rejected
   (`EACCDN`) — stricter than FreeMiNT — so a directory entry is never mutated
   (the #38 corruption guard). Spec: `docs/api/gemdos/file/43-fattrib.md`.
+
+  **Both spellings, with and without a trailing separator** (2026-09-12, Q07).
+  cflib's `make_normalpath` appends a separator to every path before it probes
+  (`sdk/cflib/cflib-21/fsnorm.c:85-92`), so the caller this extension exists for
+  always asks `Fattrib("C:\CLIPBRD\", 0, 0)`. Until 2026-09-12 that spelling
+  still answered `EFILNF` and the stated purpose of the deviation was not met.
+  FreeMiNT answers it with the folder's attributes (`relpath2cookie` peels the
+  empty component, `sys/filesys.c:986-1010`; `fatfs_lookup` resolves the empty
+  name as `"."`, `sys/fatfs.c:5753-5764`). The lift is confined to `Fattrib`
+  GET and to paths that name a **directory**: a trailing separator on a file
+  keeps `EPTHNF` (FreeMiNT's ENOTDIR is the same `-34`), on a missing name keeps
+  `EPTHNF`, and the bare drive root `"C:\"` keeps `EFILNF` — FreeMiNT would
+  synthesize `FA_DIR` there, NewTOS deliberately does not, and that remains an
+  open question rather than a decided one. `Fsfirst`, `Fopen` and `Dcreate` on a
+  path ending in a separator are **unchanged** and stay EmuTOS-faithful
+  (measured identical on EmuTOS 1.4 and Atari TOS 3.06).
 
 ## Deferred optimisations (Phase 2)
 

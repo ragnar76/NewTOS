@@ -1,0 +1,156 @@
+EMUTOS14-AES-m06.BIN vs AES.BIN -- area AES, 19 cases from aes-m06-sysvar.tsv
+
+case 90  opcode 48  get LK3DIND: indtxtmove, indcolchange -- defaults 0, 1
+    global[2]              EMUTOS14-AES-m06.BIN = 0x0000 (0)   AES.BIN              = 0x0001 (1)
+    global[3]              EMUTOS14-AES-m06.BIN = 0x0000 (0)   AES.BIN              = 0x1143 (4419)
+    global[4]              EMUTOS14-AES-m06.BIN = 0x1143 (4419)   AES.BIN              = 0x0000 (0)
+    global[10]              EMUTOS14-AES-m06.BIN = 0x0004 (4)   AES.BIN              = 0x0010 (16)
+    global[11]              EMUTOS14-AES-m06.BIN = 0x0000 (0)   AES.BIN              = 0x4460 (17504)
+    global[12]              EMUTOS14-AES-m06.BIN = 0xBE04 (-16892)   AES.BIN              = 0x0012 (18)
+
+case 91  opcode 48  get LK3DACT: acttxtmove, actcolchange -- defaults 1, 0
+    global[2]              EMUTOS14-AES-m06.BIN = 0x0000 (0)   AES.BIN              = 0x0001 (1)
+    global[3]              EMUTOS14-AES-m06.BIN = 0x0000 (0)   AES.BIN              = 0x1143 (4419)
+    global[4]              EMUTOS14-AES-m06.BIN = 0x1143 (4419)   AES.BIN              = 0x0000 (0)
+    global[10]              EMUTOS14-AES-m06.BIN = 0x0004 (4)   AES.BIN              = 0x0010 (16)
+    global[11]              EMUTOS14-AES-m06.BIN = 0x0000 (0)   AES.BIN              = 0x4460 (17504)
+    global[12]              EMUTOS14-AES-m06.BIN = 0xBE04 (-16892)   AES.BIN              = 0x0012 (18)
+
+case 92  opcode 48  get INDBUTCOL: LWHITE(8) where the palette has more than 8 colo
+    global[2]              EMUTOS14-AES-m06.BIN = 0x0000 (0)   AES.BIN              = 0x0001 (1)
+    global[3]              EMUTOS14-AES-m06.BIN = 0x0000 (0)   AES.BIN              = 0x1143 (4419)
+    global[4]              EMUTOS14-AES-m06.BIN = 0x1143 (4419)   AES.BIN              = 0x0000 (0)
+    global[10]              EMUTOS14-AES-m06.BIN = 0x0004 (4)   AES.BIN              = 0x0010 (16)
+    global[11]              EMUTOS14-AES-m06.BIN = 0x0000 (0)   AES.BIN              = 0x4460 (17504)
+    global[12]              EMUTOS14-AES-m06.BIN = 0xBE04 (-16892)   AES.BIN              = 0x0012 (18)
+
+case 93  opcode 48  get ACTBUTCOL: same default, separate variable
+    global[2]              EMUTOS14-AES-m06.BIN = 0x0000 (0)   AES.BIN              = 0x0001 (1)
+    global[3]              EMUTOS14-AES-m06.BIN = 0x0000 (0)   AES.BIN              = 0x1143 (4419)
+    global[4]              EMUTOS14-AES-m06.BIN = 0x1143 (4419)   AES.BIN              = 0x0000 (0)
+    global[10]              EMUTOS14-AES-m06.BIN = 0x0004 (4)   AES.BIN              = 0x0010 (16)
+    global[11]              EMUTOS14-AES-m06.BIN = 0x0000 (0)   AES.BIN              = 0x4460 (17504)
+    global[12]              EMUTOS14-AES-m06.BIN = 0xBE04 (-16892)   AES.BIN              = 0x0012 (18)
+
+case 94  opcode 48  get BACKGRCOL: same default; fm_alert reads this one too
+    global[2]              EMUTOS14-AES-m06.BIN = 0x0000 (0)   AES.BIN              = 0x0001 (1)
+    global[3]              EMUTOS14-AES-m06.BIN = 0x0000 (0)   AES.BIN              = 0x1143 (4419)
+    global[4]              EMUTOS14-AES-m06.BIN = 0x1143 (4419)   AES.BIN              = 0x0000 (0)
+    global[10]              EMUTOS14-AES-m06.BIN = 0x0004 (4)   AES.BIN              = 0x0010 (16)
+    global[11]              EMUTOS14-AES-m06.BIN = 0x0000 (0)   AES.BIN              = 0x4460 (17504)
+    global[12]              EMUTOS14-AES-m06.BIN = 0xBE04 (-16892)   AES.BIN              = 0x0012 (18)
+
+case 95  opcode 48  get AD3DVALUE: ADJ3DSTD twice, a constant, get only
+    global[2]              EMUTOS14-AES-m06.BIN = 0x0000 (0)   AES.BIN              = 0x0001 (1)
+    global[3]              EMUTOS14-AES-m06.BIN = 0x0000 (0)   AES.BIN              = 0x1143 (4419)
+    global[4]              EMUTOS14-AES-m06.BIN = 0x1143 (4419)   AES.BIN              = 0x0000 (0)
+    global[10]              EMUTOS14-AES-m06.BIN = 0x0004 (4)   AES.BIN              = 0x0010 (16)
+    global[11]              EMUTOS14-AES-m06.BIN = 0x0000 (0)   AES.BIN              = 0x4460 (17504)
+    global[12]              EMUTOS14-AES-m06.BIN = 0xBE04 (-16892)   AES.BIN              = 0x0012 (18)
+
+case 96  opcode 48  get which 0, one below LK3DIND: the get default arm, 0
+    global[2]              EMUTOS14-AES-m06.BIN = 0x0000 (0)   AES.BIN              = 0x0001 (1)
+    global[3]              EMUTOS14-AES-m06.BIN = 0x0000 (0)   AES.BIN              = 0x1143 (4419)
+    global[4]              EMUTOS14-AES-m06.BIN = 0x1143 (4419)   AES.BIN              = 0x0000 (0)
+    global[10]              EMUTOS14-AES-m06.BIN = 0x0004 (4)   AES.BIN              = 0x0010 (16)
+    global[11]              EMUTOS14-AES-m06.BIN = 0x0000 (0)   AES.BIN              = 0x4460 (17504)
+    global[12]              EMUTOS14-AES-m06.BIN = 0xBE04 (-16892)   AES.BIN              = 0x0012 (18)
+
+case 97  opcode 48  get which 7, one above AD3DVALUE: the same arm
+    global[2]              EMUTOS14-AES-m06.BIN = 0x0000 (0)   AES.BIN              = 0x0001 (1)
+    global[3]              EMUTOS14-AES-m06.BIN = 0x0000 (0)   AES.BIN              = 0x1143 (4419)
+    global[4]              EMUTOS14-AES-m06.BIN = 0x1143 (4419)   AES.BIN              = 0x0000 (0)
+    global[10]              EMUTOS14-AES-m06.BIN = 0x0004 (4)   AES.BIN              = 0x0010 (16)
+    global[11]              EMUTOS14-AES-m06.BIN = 0x0000 (0)   AES.BIN              = 0x4460 (17504)
+    global[12]              EMUTOS14-AES-m06.BIN = 0xBE04 (-16892)   AES.BIN              = 0x0012 (18)
+
+case 98  opcode 48  get which 99, far outside: the same arm again
+    global[2]              EMUTOS14-AES-m06.BIN = 0x0000 (0)   AES.BIN              = 0x0001 (1)
+    global[3]              EMUTOS14-AES-m06.BIN = 0x0000 (0)   AES.BIN              = 0x1143 (4419)
+    global[4]              EMUTOS14-AES-m06.BIN = 0x1143 (4419)   AES.BIN              = 0x0000 (0)
+    global[10]              EMUTOS14-AES-m06.BIN = 0x0004 (4)   AES.BIN              = 0x0010 (16)
+    global[11]              EMUTOS14-AES-m06.BIN = 0x0000 (0)   AES.BIN              = 0x4460 (17504)
+    global[12]              EMUTOS14-AES-m06.BIN = 0xBE04 (-16892)   AES.BIN              = 0x0012 (18)
+
+case 107  opcode 48  set LK3DIND to 1,0 -- both away from the default
+    global[2]              EMUTOS14-AES-m06.BIN = 0x0000 (0)   AES.BIN              = 0x0001 (1)
+    global[3]              EMUTOS14-AES-m06.BIN = 0x0000 (0)   AES.BIN              = 0x1143 (4419)
+    global[4]              EMUTOS14-AES-m06.BIN = 0x1143 (4419)   AES.BIN              = 0x0000 (0)
+    global[10]              EMUTOS14-AES-m06.BIN = 0x0004 (4)   AES.BIN              = 0x0010 (16)
+    global[11]              EMUTOS14-AES-m06.BIN = 0x0000 (0)   AES.BIN              = 0x4460 (17504)
+    global[12]              EMUTOS14-AES-m06.BIN = 0xBE04 (-16892)   AES.BIN              = 0x0012 (18)
+
+case 109  opcode 48  get LK3DIND after the set: 1, 0 and not 0, 1
+    global[2]              EMUTOS14-AES-m06.BIN = 0x0000 (0)   AES.BIN              = 0x0001 (1)
+    global[3]              EMUTOS14-AES-m06.BIN = 0x0000 (0)   AES.BIN              = 0x1143 (4419)
+    global[4]              EMUTOS14-AES-m06.BIN = 0x1143 (4419)   AES.BIN              = 0x0000 (0)
+    global[10]              EMUTOS14-AES-m06.BIN = 0x0004 (4)   AES.BIN              = 0x0010 (16)
+    global[11]              EMUTOS14-AES-m06.BIN = 0x0000 (0)   AES.BIN              = 0x4460 (17504)
+    global[12]              EMUTOS14-AES-m06.BIN = 0xBE04 (-16892)   AES.BIN              = 0x0012 (18)
+
+case 111  opcode 48  get LK3DACT: acttxtmove still 1, actcolchange now 1
+    global[2]              EMUTOS14-AES-m06.BIN = 0x0000 (0)   AES.BIN              = 0x0001 (1)
+    global[3]              EMUTOS14-AES-m06.BIN = 0x0000 (0)   AES.BIN              = 0x1143 (4419)
+    global[4]              EMUTOS14-AES-m06.BIN = 0x1143 (4419)   AES.BIN              = 0x0000 (0)
+    global[10]              EMUTOS14-AES-m06.BIN = 0x0004 (4)   AES.BIN              = 0x0010 (16)
+    global[11]              EMUTOS14-AES-m06.BIN = 0x0000 (0)   AES.BIN              = 0x4460 (17504)
+    global[12]              EMUTOS14-AES-m06.BIN = 0xBE04 (-16892)   AES.BIN              = 0x0012 (18)
+
+case 112  opcode 48  set INDBUTCOL to colour 1, inside every palette
+    global[2]              EMUTOS14-AES-m06.BIN = 0x0000 (0)   AES.BIN              = 0x0001 (1)
+    global[3]              EMUTOS14-AES-m06.BIN = 0x0000 (0)   AES.BIN              = 0x1143 (4419)
+    global[4]              EMUTOS14-AES-m06.BIN = 0x1143 (4419)   AES.BIN              = 0x0000 (0)
+    global[10]              EMUTOS14-AES-m06.BIN = 0x0004 (4)   AES.BIN              = 0x0010 (16)
+    global[11]              EMUTOS14-AES-m06.BIN = 0x0000 (0)   AES.BIN              = 0x4460 (17504)
+    global[12]              EMUTOS14-AES-m06.BIN = 0xBE04 (-16892)   AES.BIN              = 0x0012 (18)
+
+case 114  opcode 48  get INDBUTCOL after the set: 1
+    global[2]              EMUTOS14-AES-m06.BIN = 0x0000 (0)   AES.BIN              = 0x0001 (1)
+    global[3]              EMUTOS14-AES-m06.BIN = 0x0000 (0)   AES.BIN              = 0x1143 (4419)
+    global[4]              EMUTOS14-AES-m06.BIN = 0x1143 (4419)   AES.BIN              = 0x0000 (0)
+    global[10]              EMUTOS14-AES-m06.BIN = 0x0004 (4)   AES.BIN              = 0x0010 (16)
+    global[11]              EMUTOS14-AES-m06.BIN = 0x0000 (0)   AES.BIN              = 0x4460 (17504)
+    global[12]              EMUTOS14-AES-m06.BIN = 0xBE04 (-16892)   AES.BIN              = 0x0012 (18)
+
+case 115  opcode 48  set BACKGRCOL to 32767: past ws_ncolors on any machine, 0
+    global[2]              EMUTOS14-AES-m06.BIN = 0x0000 (0)   AES.BIN              = 0x0001 (1)
+    global[3]              EMUTOS14-AES-m06.BIN = 0x0000 (0)   AES.BIN              = 0x1143 (4419)
+    global[4]              EMUTOS14-AES-m06.BIN = 0x1143 (4419)   AES.BIN              = 0x0000 (0)
+    global[10]              EMUTOS14-AES-m06.BIN = 0x0004 (4)   AES.BIN              = 0x0010 (16)
+    global[11]              EMUTOS14-AES-m06.BIN = 0x0000 (0)   AES.BIN              = 0x4460 (17504)
+    global[12]              EMUTOS14-AES-m06.BIN = 0xBE04 (-16892)   AES.BIN              = 0x0012 (18)
+
+case 116  opcode 48  get BACKGRCOL: the refused set changed nothing
+    global[2]              EMUTOS14-AES-m06.BIN = 0x0000 (0)   AES.BIN              = 0x0001 (1)
+    global[3]              EMUTOS14-AES-m06.BIN = 0x0000 (0)   AES.BIN              = 0x1143 (4419)
+    global[4]              EMUTOS14-AES-m06.BIN = 0x1143 (4419)   AES.BIN              = 0x0000 (0)
+    global[10]              EMUTOS14-AES-m06.BIN = 0x0004 (4)   AES.BIN              = 0x0010 (16)
+    global[11]              EMUTOS14-AES-m06.BIN = 0x0000 (0)   AES.BIN              = 0x4460 (17504)
+    global[12]              EMUTOS14-AES-m06.BIN = 0xBE04 (-16892)   AES.BIN              = 0x0012 (18)
+
+case 117  opcode 48  set AD3DVALUE: get only, so the set default arm, 0
+    global[2]              EMUTOS14-AES-m06.BIN = 0x0000 (0)   AES.BIN              = 0x0001 (1)
+    global[3]              EMUTOS14-AES-m06.BIN = 0x0000 (0)   AES.BIN              = 0x1143 (4419)
+    global[4]              EMUTOS14-AES-m06.BIN = 0x1143 (4419)   AES.BIN              = 0x0000 (0)
+    global[10]              EMUTOS14-AES-m06.BIN = 0x0004 (4)   AES.BIN              = 0x0010 (16)
+    global[11]              EMUTOS14-AES-m06.BIN = 0x0000 (0)   AES.BIN              = 0x4460 (17504)
+    global[12]              EMUTOS14-AES-m06.BIN = 0xBE04 (-16892)   AES.BIN              = 0x0012 (18)
+
+case 118  opcode 48  set which 99: the set default arm, 0
+    global[2]              EMUTOS14-AES-m06.BIN = 0x0000 (0)   AES.BIN              = 0x0001 (1)
+    global[3]              EMUTOS14-AES-m06.BIN = 0x0000 (0)   AES.BIN              = 0x1143 (4419)
+    global[4]              EMUTOS14-AES-m06.BIN = 0x1143 (4419)   AES.BIN              = 0x0000 (0)
+    global[10]              EMUTOS14-AES-m06.BIN = 0x0004 (4)   AES.BIN              = 0x0010 (16)
+    global[11]              EMUTOS14-AES-m06.BIN = 0x0000 (0)   AES.BIN              = 0x4460 (17504)
+    global[12]              EMUTOS14-AES-m06.BIN = 0xBE04 (-16892)   AES.BIN              = 0x0012 (18)
+
+case 119  opcode 48  set ACTBUTCOL to colour 20: inside 256, outside 16 -- the decla
+    global[2]              EMUTOS14-AES-m06.BIN = 0x0000 (0)   AES.BIN              = 0x0001 (1)
+    global[3]              EMUTOS14-AES-m06.BIN = 0x0000 (0)   AES.BIN              = 0x1143 (4419)
+    global[4]              EMUTOS14-AES-m06.BIN = 0x1143 (4419)   AES.BIN              = 0x0000 (0)
+    global[10]              EMUTOS14-AES-m06.BIN = 0x0004 (4)   AES.BIN              = 0x0010 (16)
+    global[11]              EMUTOS14-AES-m06.BIN = 0x0000 (0)   AES.BIN              = 0x4460 (17504)
+    global[12]              EMUTOS14-AES-m06.BIN = 0xBE04 (-16892)   AES.BIN              = 0x0012 (18)
+    int_out[0]             EMUTOS14-AES-m06.BIN = 0x0000 (0)   AES.BIN              = 0x0001 (1)
+
+19 of 19 cases differ

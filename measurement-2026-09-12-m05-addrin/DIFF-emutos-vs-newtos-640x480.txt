@@ -1,0 +1,44 @@
+EMUTOS14-AES-m05.BIN vs NEWTOS-AES-m05.BIN -- area AES, 5 cases from aes-m05-addrin.tsv
+
+case 88  opcode 77  graf_handle, an ordinary case in the new form
+    global[2]              EMUTOS14-AES-m05.BIN = 0x0000 (0)   NEWTOS-AES-m05.BIN   = 0x0001 (1)
+    global[3]              EMUTOS14-AES-m05.BIN = 0x0000 (0)   NEWTOS-AES-m05.BIN   = 0x1143 (4419)
+    global[4]              EMUTOS14-AES-m05.BIN = 0x1143 (4419)   NEWTOS-AES-m05.BIN   = 0x0000 (0)
+    global[10]              EMUTOS14-AES-m05.BIN = 0x0004 (4)   NEWTOS-AES-m05.BIN   = 0x0010 (16)
+    global[11]              EMUTOS14-AES-m05.BIN = 0x0000 (0)   NEWTOS-AES-m05.BIN   = 0xC9D8 (-13864)
+    global[12]              EMUTOS14-AES-m05.BIN = 0xBE04 (-16892)   NEWTOS-AES-m05.BIN   = 0x0015 (21)
+
+case 93  opcode 13  appl_find "ABCDEFGH": no process has that name
+    global[2]              EMUTOS14-AES-m05.BIN = 0x0000 (0)   NEWTOS-AES-m05.BIN   = 0x0001 (1)
+    global[3]              EMUTOS14-AES-m05.BIN = 0x0000 (0)   NEWTOS-AES-m05.BIN   = 0x1143 (4419)
+    global[4]              EMUTOS14-AES-m05.BIN = 0x1143 (4419)   NEWTOS-AES-m05.BIN   = 0x0000 (0)
+    global[10]              EMUTOS14-AES-m05.BIN = 0x0004 (4)   NEWTOS-AES-m05.BIN   = 0x0010 (16)
+    global[11]              EMUTOS14-AES-m05.BIN = 0x0000 (0)   NEWTOS-AES-m05.BIN   = 0xC9D8 (-13864)
+    global[12]              EMUTOS14-AES-m05.BIN = 0xBE04 (-16892)   NEWTOS-AES-m05.BIN   = 0x0015 (21)
+
+case 94  opcode 13  appl_find "HIJKLMNO": likewise
+    global[2]              EMUTOS14-AES-m05.BIN = 0x0000 (0)   NEWTOS-AES-m05.BIN   = 0x0001 (1)
+    global[3]              EMUTOS14-AES-m05.BIN = 0x0000 (0)   NEWTOS-AES-m05.BIN   = 0x1143 (4419)
+    global[4]              EMUTOS14-AES-m05.BIN = 0x1143 (4419)   NEWTOS-AES-m05.BIN   = 0x0000 (0)
+    global[10]              EMUTOS14-AES-m05.BIN = 0x0004 (4)   NEWTOS-AES-m05.BIN   = 0x0010 (16)
+    global[11]              EMUTOS14-AES-m05.BIN = 0x0000 (0)   NEWTOS-AES-m05.BIN   = 0xC9D8 (-13864)
+    global[12]              EMUTOS14-AES-m05.BIN = 0xBE04 (-16892)   NEWTOS-AES-m05.BIN   = 0x0015 (21)
+
+case 102  opcode 104  wind_get WF_NAME into buffer 0
+    global[2]              EMUTOS14-AES-m05.BIN = 0x0000 (0)   NEWTOS-AES-m05.BIN   = 0x0001 (1)
+    global[3]              EMUTOS14-AES-m05.BIN = 0x0000 (0)   NEWTOS-AES-m05.BIN   = 0x1143 (4419)
+    global[4]              EMUTOS14-AES-m05.BIN = 0x1143 (4419)   NEWTOS-AES-m05.BIN   = 0x0000 (0)
+    global[10]              EMUTOS14-AES-m05.BIN = 0x0004 (4)   NEWTOS-AES-m05.BIN   = 0x0010 (16)
+    global[11]              EMUTOS14-AES-m05.BIN = 0x0000 (0)   NEWTOS-AES-m05.BIN   = 0xC9D8 (-13864)
+    global[12]              EMUTOS14-AES-m05.BIN = 0xBE04 (-16892)   NEWTOS-AES-m05.BIN   = 0x0015 (21)
+    int_out[0]             EMUTOS14-AES-m05.BIN = 0x0000 (0)   NEWTOS-AES-m05.BIN   = 0x0001 (1)
+
+case 109  opcode 104  wind_get WF_NAME with no title set
+    global[2]              EMUTOS14-AES-m05.BIN = 0x0000 (0)   NEWTOS-AES-m05.BIN   = 0x0001 (1)
+    global[3]              EMUTOS14-AES-m05.BIN = 0x0000 (0)   NEWTOS-AES-m05.BIN   = 0x1143 (4419)
+    global[4]              EMUTOS14-AES-m05.BIN = 0x1143 (4419)   NEWTOS-AES-m05.BIN   = 0x0000 (0)
+    global[10]              EMUTOS14-AES-m05.BIN = 0x0004 (4)   NEWTOS-AES-m05.BIN   = 0x0010 (16)
+    global[11]              EMUTOS14-AES-m05.BIN = 0x0000 (0)   NEWTOS-AES-m05.BIN   = 0xC9D8 (-13864)
+    global[12]              EMUTOS14-AES-m05.BIN = 0xBE04 (-16892)   NEWTOS-AES-m05.BIN   = 0x0015 (21)
+
+5 of 5 cases differ

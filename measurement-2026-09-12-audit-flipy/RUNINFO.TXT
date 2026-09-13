@@ -1,0 +1,49 @@
+Auditor-Nachmessung 2026-09-12 -- Ursache der vdi-r2-Verbesserung
+=================================================================
+
+Zweck      : Die 22 geaenderten Felder zwischen dem 31.-August-Vorstand
+             (tosdump/reference/NEWTOS-VDI-r2.BIN) und dem Lauf vom
+             2026-09-12 zurueckverfolgen, und pruefen, ob die Ursache einen
+             zweiten, noch stehenden Fehler hinterlassen hat.
+
+Neue Falltabelle : vdi-audit-flipy.tsv, 36 Faelle, CRC F8B45495.
+             NICHT Teil des eingefrorenen Messbestands; treibt gezielt die
+             Fehler- und Rueckfallarme der Handler, die EmuTOS' flip_y
+             setzen, plus die drei Felder, die 675e311 / 1eb4e68 geaendert
+             haben. Die bestehenden Tabellen unter tosdump/cases/ und alle
+             .BIN/.LOG unter tosdump/reference/ wurden NICHT angefasst.
+
+EmuTOS-Lauf: Hatari 2.6.1, --machine tt --tos etos512de.img --tos-res ttmed
+             --monitor vga --run-vbls 8000, GEMDOS-Laufwerk C,
+             --auto C:\DUMPVDI.PRG (tosdump/deploy-tt/DUMPVDI.PRG, build 19b7).
+             640x480, DEV_TAB/SIZ_TAB im .LOG.
+             -> EMUTOS14-VDI-auditflipy.BIN/.LOG
+
+NewTOS-Lauf: QEMU 11.0.2, -M raspi4b -display none, kernel8.img
+             SHA-256 42e5b8ee1d87e9764a247911648c1bb6bad525ff3f03a784116cd60ab21434b2
+             (bitgleich mit dem Kernel der Gesamtgegenmessung, RUNINFO.TXT
+             dort). SD-Abbild: 16 MiB MBR+FAT16, rein in Python erzeugt
+             (kein hdiutil/diskutil), mit DUMPVDI.NAP (build 70ca, aus
+             tosdump/deploy-pi4/), VDI.TSV und NEWDESK.INF
+             "#Z 01 C:\DUMPVDI.NAP@". 640x480.
+             -> NEWTOS-VDI-auditflipy.BIN/.LOG, BOOT-SERIAL-newtos.txt
+
+Ergebnis   : DIFF-emutos-vs-newtos.txt -- 2 von 36 Faellen unterscheiden
+             sich, beide in der bereits dokumentierten vq_extnd-Konstanten-
+             familie (Farbzahl 16/256, Planes 4/16). d0 stimmt in ALLEN 36
+             Faellen ueberein, einschliesslich jedes Fehler- und
+             Rueckfallarms.
+
+GEMTRAP-SELECTOR-PROBE.txt
+           : Ergebnis einer temporaeren Kernel-Sonde (svc #2 mit den
+             Selektoren -2, -1 und 999). Die Sonde lag waehrend des Laufs in
+             kernel/src/lib.rs und wurde danach von Hand wieder entfernt;
+             kernel/src/lib.rs ist byte-identisch zum Ausgangsstand
+             (SHA-256 be478726452b55fd2d949f2026d270b3175b3bba56ee918659392c97f5886cc5)
+             und kernel8.img wurde aus der bereinigten Quelle neu gebaut und
+             ist wieder bitgleich 42e5b8ee...
+
+Kein QEMU- und kein Hatari-Prozess blieb zurueck (pgrep nach jedem Lauf).
+Keine physische Karte wurde beschrieben oder ausgehaengt.
+
+Bericht: docs/analysis/vdi-r2-improvement-traced-2026-09-12.md

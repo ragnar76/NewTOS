@@ -1,0 +1,94 @@
+A54 counter-measurement -- wind_get(WF_SCREEN) must not claim a buffer that
+does not exist.
+
+Taken 2026-09-12, after the fix in tos-api/src/aes/window.rs: the WF_SCREEN arm
+of wind_get no longer writes four zero words and returns 1; it returns 0 and
+writes nothing, the way wm_get's own default arm refuses a field this AES does
+not implement (references/emutos/aes/gemwmlib.c:1590-1591).  The absence itself
+is registered in docs/COMPATIBILITY.md.
+
+MEASUREMENT ONLY.  The reading is in TASK/A54-STATUS-DONE.MD.
+
+MACHINE
+  QEMU raspi4b, headless, 640x480 (the TT-medium profile), FAT16 card, no
+  click.  NewTOS dev build of the working tree at that moment.
+    touch kernel/src/lib.rs tos-api/src/lib.rs
+    cargo run -p xtask -- build --board rpi4
+  kernel8.img SHA-256
+    5f4355b55b9998e6658b67f6ade1bb32406cda92289858fcfb291d057e8dcc2e
+  qemu-system-aarch64 -M raspi4b -no-reboot -display none \
+    -serial file:<log> -kernel kernel8.img -drive file=<img>,if=sd,format=raw
+
+DUMPER
+  tosdump/build/DUMPAES.NAP, build id 70ca, record format 2
+  SHA-256 5889e9bbef18d4b80a7a0432438d1779ea9966310fec5607c028d3b57a0a158d
+  -- byte-identical to the dumper of measurement-2026-09-12-aes-r4/, so the
+  kernel is the only variable between that run and this one.
+
+CARD
+  tools/make-sd-image.sh <img> 64, then C:\DUMPAES.NAP, C:\AES.TSV (a
+  byte-identical copy of the table under test) and
+  C:\NEWDESK.INF = "#Z 01 C:\DUMPAES.NAP@".
+
+RUN 1 -- the r4 sub-function table (the table that found the defect)
+  table     tosdump/cases/aes-r4-subfunctions.tsv, 181 cases, CRC 227422B2
+            SHA-256 e88fa2d3b81a9ccde98862af17f6db726700ddaf09639fdac9610466ec744095
+            (verified on the card after copying)
+  log       "AES.TSV: 181 cases, CRC 227422B2" / "all 181 cases ran" /
+            "AES.BIN: 181 records, 21752 bytes"
+  appl_init id 1, graf_handle 1, v_opnvwk 2, ap_version 0340, ap_planes 16
+  global    832,1,1,4419,0,0,0,0,0,0,16,-13864,21,0,0
+            -- word for word what measurement-2026-09-12-aes-r4/ recorded
+  boot      no panic, no fault, no exception; the desktop came up after the
+            dumper exited ("[desk] desktop up (1 drives)")
+  artefacts AES-r4.{BIN,LOG}, BOOT-SERIAL-r4.txt
+  diff      tosdump/host/build/tosdiff cases/aes-r4-subfunctions.tsv \
+              measurement-2026-09-12-aes-r4/emutos14-tt-hatari/EMUTOS14-AES-r4.BIN \
+              AES-r4.BIN
+            -> DIFF-r4-emutos-vs-newtos-640x480.txt, "181 of 181 cases differ"
+
+  Against the pre-fix run
+  (measurement-2026-09-12-aes-r4/newtos-qemu-raspi4b/NEWTOS-AES-r4.BIN, same
+  table, same profile, same dumper), per case set of differing fields:
+
+    cases whose differing-field set changed : 3
+      case 331  op 104  started differing: int_out[0]
+      case 332  op 104  started differing: int_out[0]
+      case 439  op 104  started differing: int_out[0]
+    cases whose differing-field set is unchanged : 178
+
+    cases differing outside global[]  : 64 before, 64 after, same case ids
+    cases differing only in global[]  : 117 before, 117 after, same case ids
+
+  The three cases, after:
+
+    case  EmuTOS 1.4 (TT)                       NewTOS (after)
+     331  int_out[0..4] = 1, 0x0100,0x0218,0,0xA000   0, 0,0,0,0
+     332  int_out[0..4] = 1, 0x0100,0x0218,0,0xA000   0, 0,0,0,0
+     439  int_out[0..4] = 1, 0x0100,0x0218,0,0xA000   0, 0,0,0,0
+
+  i.e. address 0x01000218 / length 40960 / TRUE on the TT against an honest
+  FALSE here.  The four words behind the return code are the dispatcher's
+  zeroed local int_out (aes/gemsuper.c:432), not an answer: the WF_SCREEN arm
+  writes nothing at all now.  int_out[3] agreed before and still agrees (both
+  zero) -- that is the high word of EmuTOS' length, not a NewTOS value.
+
+RUN 2 -- the r3 window-state table (regression guard)
+  table     tosdump/cases/aes-r3-wind-state.tsv, 39 cases, CRC 979FAC60
+  log       "AES.TSV: 39 cases, CRC 979FAC60" / "all 39 cases ran" /
+            "AES.BIN: 39 records, 4712 bytes"
+  artefacts AES-r3.{BIN,LOG}, BOOT-SERIAL-r3.txt
+  diff      tosdump/host/build/tosdiff cases/aes-r3-wind-state.tsv \
+              tosdump/reference/EMUTOS14-AES-r3.BIN AES-r3.BIN
+            -> DIFF-r3-emutos-vs-newtos-640x480.txt
+
+  cases with any int_out difference : 261, 280, 400, 481, 494, 574, 588
+  cases with any addr_out difference: none
+
+  That is exactly the end state A33/A34 left behind -- the seven dispatcher
+  stack residues of EmuTOS' uninitialised output words
+  (aes/gemsuper.c:430-432,444-445), for which there is no soll.  Nothing else
+  moved; no rectangle-list group broke up.
+
+NO EMULATOR LEFT RUNNING.  pgrep -f 'qemu-system-aarch64|Hatari' after each run
+reported nothing.  No hardware was touched, nothing was flashed or ejected.

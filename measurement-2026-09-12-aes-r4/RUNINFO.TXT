@@ -1,0 +1,105 @@
+AES round 4 -- the full opcode / sub-function case table, driven on both
+machines.  Taken 2026-09-12.  MEASUREMENT ONLY: this directory states what
+ran and what came back.  The reading of the differences is a separate task
+and is deliberately NOT in here.
+
+TABLE
+  file        tosdump/cases/aes-r4-subfunctions.tsv
+  cases       181
+  preludes    93
+  CRC32       227422B2
+  SHA-256     e88fa2d3b81a9ccde98862af17f6db726700ddaf09639fdac9610466ec744095
+  size        40264 bytes, 676 lines, pure LF, ASCII
+  reset       !reset wind_new (line 259)
+  checked by  tosdump/host/build/casecheck --aes  -> exit 0, accepted
+  dump size   32 byte header + 181 x 120 = 21752 bytes
+
+  Written once.  The case id is the physical line number and the CRC binds
+  both dumps below to this exact file; any later edit invalidates them.
+
+SOURCE OF TRUTH
+  references/emutos @ 1a7484aba1bfba23e2c0899e243b6d8177fe41df
+  NewTOS work tree  @ 70caee212078b11ffa0a70afa1279bdd82532959 (plus the uncommitted strands in the tree)
+
+VERSION DELTA DECLARED IN THE TABLE HEADER, BEFORE MEASURING
+  acb7f3b4 (2025-08-23) WF_OWNER in wm_get   -- absent from the 1.4 ROM
+  4b0d9518 (2025-08-20) nicelines len > 3    -- objc_draw only, not issued here
+  These are the only two AES commits between VERSION_1_4 and the pin.
+
+RUN A -- EmuTOS 1.4 on an Atari TT, via Hatari
+  emulator    /Users/ingouhlemann/Downloads/hatari-2.6.1_macos/Hatari.app/Contents/MacOS/Hatari (Hatari 2.6.1)
+  ROM         /Users/ingouhlemann/Downloads/hatari-2.6.1_macos/etos512de.img
+  ROM SHA-256 5805c0a4834f8935c427454785d32c59e796b11ad6802101052b84fb1eb7a745
+  command     SDL_VIDEODRIVER=dummy Hatari --machine tt --tos etos512de.img \
+                --tos-res ttmed --monitor vga --sound off --fast-forward on \
+                --run-vbls 40000 --conout 2 -d <workdir> --gemdos-drive C \
+                --auto 'C:\DUMPAES.PRG'
+  dumper      tosdump/deploy-tt/DUMPAES.PRG, build id c911
+  dumper SHA  282bf1a9f8adc579a5b94a538accaf6eb9c1f4af020e89246cc8d8500df1980d
+  speed       378.0 VBL/s (40000 VBL in 105.8 s wall)
+  log         "AES.TSV: 181 cases, CRC 227422B2" / "all 181 cases ran" /
+              "AES.BIN: 181 records, 21752 bytes"
+  appl_init   id 0, graf_handle 1, v_opnvwk 2, ap_version 0340, ap_planes 4
+  global      832,1,0,0,4419,0,0,0,0,0,4,0,-16892,0,0
+              (ap_ptree == 0 and ap_rscmem == 0 -- the precondition section 4
+               of the table rests on)
+  validate    tosdiff --validate ... -> accepted
+  artefacts   emutos14-tt-hatari/EMUTOS14-AES-r4.{BIN,LOG}, HATARI-STDOUT.txt
+
+RUN B -- NewTOS on QEMU raspi4b, headless, 640x480
+  kernel      kernel8.img, built fresh for this run
+              (touch kernel/src/lib.rs tos-api/src/lib.rs;
+               cargo run -p xtask -- build --board rpi4   [dev profile])
+  kernel SHA  4a67184108a65c33988699f6ff13dbda9155686fb97e40cf8e82bb6ca83a3b20
+  dumper      tosdump/build/DUMPAES.NAP, build id 70ca
+  dumper SHA  5889e9bbef18d4b80a7a0432438d1779ea9966310fec5607c028d3b57a0a158d
+  card        FAT16 image from tools/make-sd-image.sh <img> 64, with
+              C:\DUMPAES.NAP, C:\AES.TSV (a byte-identical copy of the
+              table) and C:\NEWDESK.INF = "#Z 01 C:\DUMPAES.NAP@"
+  command     qemu-system-aarch64 -M raspi4b -no-reboot -display none \
+                -serial file:<log> -kernel kernel8.img \
+                -drive file=<img>,if=sd,format=raw
+  log         "AES.TSV: 181 cases, CRC 227422B2" / "all 181 cases ran" /
+              "AES.BIN: 181 records, 21752 bytes"
+  appl_init   id 1, graf_handle 1, v_opnvwk 2, ap_version 0340, ap_planes 16
+  global      832,1,1,4419,0,0,0,0,0,0,16,-13864,21,0,0
+              (ap_ptree == 0 and ap_rscmem == 0, as on the TT)
+  boot log    no panic, no fault, no exception; the desktop came up after the
+              dumper exited ("[desk] desktop up (1 drives)")
+  validate    tosdiff --validate ... -> accepted
+  artefacts   newtos-qemu-raspi4b/NEWTOS-AES-r4.{BIN,LOG}, BOOT-SERIAL.txt
+
+NEITHER RUN BLOCKED.  No alert box, no key wait, no hang, no panic.  No QEMU
+and no Hatari process was left running.
+
+RAW DIFFERENCE COUNT -- NUMBERS ONLY, NO READING
+  tosdump/host/build/tosdiff cases/aes-r4-subfunctions.tsv \
+      emutos14-tt-hatari/EMUTOS14-AES-r4.BIN \
+      newtos-qemu-raspi4b/NEWTOS-AES-r4.BIN
+  -> DIFF-emutos-vs-newtos-640x480.txt, "181 of 181 cases differ"
+
+  cases with any difference            181 of 181
+  cases differing only in global[]     117
+  cases differing outside global[]      64
+  difference lines by field    global[] 1086 / int_out[] 105 / addr_out[] 28
+
+  the 64 cases that differ outside global[], by opcode:
+     0   1 case   275
+    10   1 case   644
+    26   2 cases  343 344
+    40   3 cases  550 551 552
+    46   7 cases  568-574
+    77   1 case   283
+    79   1 case   286
+   104  20 cases  331-336 397 400 415 418 421 427 430 433 436 439 442 445 448 452
+   112  28 cases  598-614 616-621 623-627
+
+WHAT THE TABLE COULD NOT ASK -- see the table's own header for the citations
+  * every free opcode number (16, 18, 27-29, 49, 57-69, 83-89, 92-99,
+    115-119): the loader refuses them AND the ALNOFUNC alert blocks.
+  * objc_sysvar 48, appl_yield 17, evnt_multi 25 (MU_TIMER/tmcount 0),
+    form_error 53 (n > 63): refused by core/cases.c's TOS-3.06 premise,
+    although the measured ROM reports ap_version 0340.
+  * rsrc_saddr over the 17 valid R_* types: it would store the 0xDEAD poison
+    through a low-memory address derived from a NULL resource header.
+  * every opcode whose work is behind an addr_in pointer.

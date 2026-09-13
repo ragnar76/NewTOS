@@ -17,6 +17,72 @@ Root-Cause mit Evidenz VOR dem Fix.
 
 ## A. AKTIV / als Nächstes
 
+### A0 — TeraDesk verliert seinen Zustand, wenn ein gestartetes Programm zurückkehrt — gemeldet 2026-09-09, nicht untersucht
+
+**Funktion und Umfang:** der Rückweg aus einem aus TeraDesk gestarteten Programm.
+Betrifft `Pexec` (GEMDOS 0x4B) und/oder `shel_write` (AES 121) plus die
+Shell-Schleife, die TeraDesk per `#Z` startet.
+
+**Beleg:** Beobachtung des Users auf realer Pi 4, Wortlaut: *„wenn man etwas aus
+teradesk heraus startet und man kehrt wieder zurück dann ist es so als ob der
+teradesk neu gestartet worden ist, das sollte eigentlich nicht so sein."*
+Keine Messung, kein Trace, kein Screendump — **eine Beobachtung, sonst nichts.**
+
+**Was TeraDesks Quelle dazu sagt** (gelesen, nicht vermutet). `startprg.c:583`
+entscheidet selbst, welchen Weg es nimmt:
+
+```c
+stask = (single && magx) || (_AESnumapps != -1 && !magx);
+...
+if (stask || background)   /* :632 */
+    error = x_exec(0, fname, &cl, buildenv);   /* just Pexec, :660-662 */
+else                       /* :682 "AES is multitasking, use shel_write()" */
+    error = shel_write(mode, appl_type, wiscr, p, cmdl);   /* :742 */
+```
+
+`_AESnumapps` ist `aes_global[1]` = `ap_count` (`sdk/gemlib/gemlib-0.44.0/gem.h:34`).
+Unser AES meldet `ap_count 1` (gemessen, `tosdump/reference/NEWTOS-AES-r2.LOG`),
+und ohne MagiC ist `magx` falsch — also ist `stask` bei uns **TRUE** und TeraDesk
+nimmt den **Pexec-Weg**. Auf diesem Weg bleibt TeraDesk im Speicher und muss nach
+der Rückkehr genau dort weitermachen, wo es war: offene Fenster, Verzeichnisse,
+Auswahl, Positionen.
+
+**Einordnung: noch ungeklärt.** Zwei Hypothesen, beide ungeprüft, keine bevorzugt:
+
+1. Der Pexec-Rückweg setzt den Elternprozess nicht fort, sondern lädt ihn neu.
+   Dann liegt es in `tos-api/src/bdos/process/` (Pexec/Pterm-Eltern-Resume).
+2. Die Shell-Schleife, die TeraDesk per `#Z` gestartet hat, reagiert auf die
+   Terminierung des **Kindes** so, wie sie auf die Terminierung von TeraDesk
+   reagieren müsste, und startet TeraDesk neu. Dann liegt es in der Shell-Schleife,
+   nicht im Prozessmodell.
+
+Ein dritter Fall ist erst auszuschließen, bevor überhaupt von einem Fehler geredet
+wird: dass TeraDesk seinen Zustand von sich aus verwirft und aus `DESKTOP.INF`
+neu aufbaut. Dann sähe „neu gestartet" genauso aus und wäre keine Abweichung.
+
+**Arbeit:**
+1. Feststellen, welcher der beiden Startwege tatsächlich genommen wird — `stask`
+   ist aus der Quelle hergeleitet, nicht beobachtet. Ein GEMDOS-/AES-Trace über
+   den Startvorgang zeigt es: `Pexec` oder `shel_write`.
+2. Wenn Pexec: prüfen, ob TeraDesks Basepage nach der Rückkehr dieselbe ist —
+   dann lebt der Prozess weiter und der Zustandsverlust ist TeraDesk-intern; ist
+   sie eine andere, wurde neu geladen.
+3. Referenz dagegenhalten: was ein echtes TOS an dieser Stelle tut, und was
+   EmuTOS' `sh_ldapp`/`Pexec`-Paar dem Aufrufer garantiert.
+4. Erst danach reparieren, in der Schicht, die der Befund benennt.
+
+**Abnahme:** aus TeraDesk ein Programm starten, das sichtbar etwas tut, beenden,
+und prüfen, dass danach dieselben Fenster mit denselben Verzeichnissen, derselben
+Auswahl und denselben Positionen stehen wie vorher. Dazu ein Regressionstest auf
+der Ebene, die der Befund trifft — bei (1) ein Selftest, der über `Pexec` ein
+Kind startet und nach dessen `Pterm` die Basepage-Adresse und einen Speicherwert
+des Elternprozesses wiederfindet; bei (2) ein Test der Shell-Schleife, der zeigt,
+dass sie auf ein Kind-`Pterm` nicht mit einem Neustart der Anwendung antwortet.
+
+**Bezug:** Memory `start-teradesk-via-real-emutos-mechanism`,
+`teradesk-is-the-desktop`, `singletasking-app-owns-full-screen`.
+
+
 ### A1 — #127 Queue-Unification (Bypass raus) — NICHT gestartet, User-greenlit
 **Problem:** NewTOS hat zwei Message-Pfade. WM_REDRAW geht über die Queue
 (`post_msg` → per-app FIFO), aber **WM_MOVED / WM_TOPPED / WM_SIZED / Menü**

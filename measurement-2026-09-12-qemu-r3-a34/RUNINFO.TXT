@@ -1,0 +1,60 @@
+A34 counter-measurement -- wind_create must not write WS_WORK.
+
+Taken 2026-09-12 after the fix in tos-api/src/aes/window.rs (wind_create: the
+line `w.work = calc(WC_WORK, kind, full);` removed; wm_create writes WS_CURR,
+WS_PREV and WS_FULL only, aes/gemwmlib.c:1370-1385).
+
+Machine   : QEMU raspi4b, headless, 640x480 (the TT-medium profile), no card,
+            no click.  NewTOS debug build of the working tree at that moment
+            (cargo run -p xtask -- build --board rpi4).
+Dumper    : tosdump/build/DUMPAES.NAP, build id 70ca, record format 2.
+Table     : tosdump/cases/aes-r3-wind-state.tsv, 39 cases, CRC 979FAC60.
+Autostart : NEWDESK.INF with "#Z 01 C:\DUMPAES.NAP@" on a FAT16 image built
+            by tools/make-sd-image.sh.
+Reference : tosdump/reference/EMUTOS14-AES-r3.BIN (EmuTOS 1.4, via Hatari).
+Diff      : tosdump/host/build/tosdiff aes-r3-wind-state.tsv EMUTOS14-AES-r3.BIN AES.BIN
+
+Result, against measurement-2026-09-12-qemu-r3-a22/AES.BIN (same table, same
+profile, the run before this fix):
+
+  fields that stopped differing : 340 int_out[1..4]
+                                  344 int_out[1..4]
+  fields that started differing : 340 int_out[2..4]
+                                  344 int_out[2..4]
+
+  case  EmuTOS          NewTOS before    NewTOS after
+   340  0,19,640,461    11,43,276,154    0,0,0,0      improved, NOT yet equal
+   344  0,19,640,461    11,43,276,154    0,0,0,0      improved, NOT yet equal
+
+The derived rectangle is gone: the answer no longer depends on `kind` or on the
+maximum extent, and int_out[1] now agrees.  The remaining three words are NOT
+A34's.  EmuTOS answers gl_rfull here because the reset the table declares is
+wind_new -> wm_new -> wm_delete, and wm_delete writes
+`w_setsize(WS_WORK, w_handle, &gl_rfull)` (aes/gemwmlib.c:1480) into the slot it
+frees, which nothing in the create path then overwrites.  NewTOS' wind_delete
+and wm_new write no rectangle at all -- they reset the slot to zero.  That is
+ticket A33 (wind_delete setzt die Fensterrechtecke nicht zurueck), measured
+here for the first time.
+
+Confirmed, not assumed: with a scratch patch that (a) made wm_new write
+WS_WORK = gl_rfull for every slot it frees and (b) stopped wind_create's slot
+reset from clearing WS_WORK, the host test
+tos-api/tests/aes_window_create_work.rs ::
+created_after_a_sweep_answers_gl_rfull_like_the_dump (normally #[ignore]d,
+blocked on A33) passes with 0,19,640,461.  The patch was reverted by hand
+before this run was archived; the file is byte-identical to its pre-experiment
+copy.  BOTH halves are needed: A33 alone would stay invisible because
+wind_create's `*w = Window::EMPTY` clears the field again.
+
+Unchanged in both directions:
+  * the seven P1 cases 261, 280, 400, 481, 494, 574, 588 -- EmuTOS'
+    uninitialised dispatcher output words (aes/gemsuper.c:430-432,444-445),
+    not a soll.
+  * the A22 rectangle lists: 431, 439, 448, 458, 469, 502, 511, 519, 528, 538,
+    549, 561 all still agree word for word -- no group broke up.
+  * every one of the 39 cases still shows the same six global[] differences
+    (global[2..4] ap_id/ap_private LP64 split, global[10..12] ap_planes and the
+    pointer split).  Known AES-global ABI deltas, identical in both runs.
+
+int_out difference lines: 22 before, 20 after.  No case, and no field, started
+differing that was not already differing.

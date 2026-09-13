@@ -1,0 +1,51 @@
+Erzeugende Befehle:
+  # Pi 4, echte Hardware, Autorun ueber NEWDESK.INF (#Z 01 C:\DUMPAES.NAP@)
+  tosdiff --validate run1-rlist-fixed/AES.BIN cases/aes-r2b-rlist.tsv
+  tosdiff cases/aes-r2b-rlist.tsv reference/EMUTOS14-AES-r2brlist.BIN run1-rlist-fixed/AES.BIN
+  tosdiff cases/aes-r2b-rlist.tsv measurement-2026-09-10-qemu/run3-qemu-rlist-all6/AES.BIN run1-rlist-fixed/AES.BIN
+
+Kernel 3c6d7a4a... (FIX-01..FIX-06 + A16), DROP_SHADOW_SIZE = 2, Pi 1920x1080, 16 Planes.
+Vor der Reparatur (2026-09-09, run3-pi4-rlist): 10 abweichende Faelle.
+
+########## A: gegen die TT-Referenz (640x480) ##########
+Es bleiben sechs: vier P1-Stapelfaelle ohne Soll, zwei echte Geraeteparameter.
+Die vier Zerlegungsfaelle 166/174/183/213 sind bitgleich zum TT.
+
+EMUTOS14-AES-r2brlist.BIN vs AES.BIN -- area AES, 15 cases from aes-r2b-rlist.tsv
+
+case 127  opcode 104  WF_NEXTXYWH at the end: g_w/g_h are 0, g_x/g_y are NOT written
+    int_out[1]             EMUTOS14-AES-r2brlist.BIN = 0x001F (31)   AES.BIN                   = 0x0000 (0)
+    int_out[2]             EMUTOS14-AES-r2brlist.BIN = 0x003F (63)   AES.BIN                   = 0x0000 (0)
+
+case 133  opcode 104  WF_NEXTXYWH past the end: po is NULL, the loop is not entered a
+    int_out[1]             EMUTOS14-AES-r2brlist.BIN = 0x001F (31)   AES.BIN                   = 0x0000 (0)
+    int_out[2]             EMUTOS14-AES-r2brlist.BIN = 0x003F (63)   AES.BIN                   = 0x0000 (0)
+
+case 144  opcode 104  WF_FIRSTXYWH of a created, unopened window: empty list
+    int_out[1]             EMUTOS14-AES-r2brlist.BIN = 0x001F (31)   AES.BIN                   = 0x0000 (0)
+    int_out[2]             EMUTOS14-AES-r2brlist.BIN = 0x003F (63)   AES.BIN                   = 0x0000 (0)
+
+case 201  opcode 104  WF_FIRSTXYWH of the desktop, nothing open: the whole desktop
+    int_out[3]             EMUTOS14-AES-r2brlist.BIN = 0x0280 (640)   AES.BIN                   = 0x0780 (1920)
+    int_out[4]             EMUTOS14-AES-r2brlist.BIN = 0x01CD (461)   AES.BIN                   = 0x0425 (1061)
+
+case 204  opcode 104  WF_NEXTXYWH on the desktop at the end
+    int_out[2]             EMUTOS14-AES-r2brlist.BIN = 0x0013 (19)   AES.BIN                   = 0x0000 (0)
+
+case 208  opcode 104  WF_FIRSTXYWH of the desktop with one window open: the remainder
+    int_out[3]             EMUTOS14-AES-r2brlist.BIN = 0x0280 (640)   AES.BIN                   = 0x0780 (1920)
+15 of 15 cases differ
+
+########## B: gegen den QEMU-Lauf desselben Kernels (640x480) ##########
+Identisch bis auf 201/208 — genau die aufloesungsabhaengigen Faelle.
+Damit ist belegt, dass die QEMU-Messung die echte Hardware trifft.
+
+AES.BIN vs AES.BIN -- area AES, 15 cases from aes-r2b-rlist.tsv
+
+case 201  opcode 104  WF_FIRSTXYWH of the desktop, nothing open: the whole desktop
+    int_out[3]             AES.BIN = 0x0280 (640)   AES.BIN = 0x0780 (1920)
+    int_out[4]             AES.BIN = 0x01CD (461)   AES.BIN = 0x0425 (1061)
+
+case 208  opcode 104  WF_FIRSTXYWH of the desktop with one window open: the remainder
+    int_out[3]             AES.BIN = 0x0280 (640)   AES.BIN = 0x0780 (1920)
+15 of 15 cases differ

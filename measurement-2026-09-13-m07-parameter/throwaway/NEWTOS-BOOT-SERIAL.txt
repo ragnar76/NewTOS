@@ -1,0 +1,54 @@
+RB2
+NewTOS booting on rpi4
+Phase 02 reached.
+[mm] DTB at 0x0000000000000100
+[mm] firmware: ARM memory bank 0: 0x0000000000000000 + 1006632960 bytes (960 MiB)
+[mm] firmware: VC memory: 0x000000003c000000 + 67108864 bytes (64 MiB)
+[mm] device tree: no usable /memory node (blob invalid or absent)
+[mm] memory map:
+[mm]   DRAM  : 0x0000000000000000..0x000000003c000000 (1006632960 bytes) — source: firmware
+[mm]   kernel: 0x0000000000080000..0x00000000002fd000 (2609152 bytes)
+[mm]   ST-RAM: 0x0000000000400000..0x0000000000e00000 (10485760 bytes)
+[mm]   TT-RAM: 0x0000000001000000..0x000000003be00000 (987758592 bytes)
+[mm]   OSrsvd: 0x000000003be00000..0x000000003c000000 (2097152 bytes)
+[mm]     heap: 0x000000003be00000..0x000000003c000000 (2097152 bytes)
+[mm]   MMIO 00: 0x00000000fd500000..0x00000000fd510000
+[mm]   MMIO 01: 0x00000000fe000000..0x00000000ff000000
+[mm]   MMIO 02: 0x00000000ff800000..0x0000000100000000
+[mm] MMU reinstalled (high-half via TTBR1, TTBR0 deferred to Phase 06).
+[mm] frames ST-RAM: total=2560 used=0 free=2560 (10485760 B free)
+[mm] frames TT-RAM: total=241152 used=0 free=241152 (987758592 B free)
+[mm] alloc ST-RAM frame -> 0x0000000000400000
+[mm] alloc TT-RAM frame -> 0x0000000001000000
+[mm] heap after init: total=2097152 used=0 free=2097152 largest=2097152 blocks=1
+[mm] heap smoke OK
+[mm] heap after smoke: total=2097152 used=0 free=2097152 largest=2097152 blocks=1
+[fb] VideoCore display geometry detected: 640x480
+[fb] 640x480 pitch 2560 virtual height 960 -> 2 screen page(s), 2400 KiB
+[fb] VideoCore fb up: 640x480 stride 640px
+[mm] BDOS pools: ST-RAM 0x00400000+10485760 TT-RAM 0x01000000+987758592
+[mm] BDOS ST-RAM after init: total=10485760 free=10485760 used=0 largest_free=10485760 (free_mds=1 alloc_mds=0)
+[mm] BDOS TT-RAM after init: total=987758592 free=987758592 used=0 largest_free=987758592 (free_mds=1 alloc_mds=0)
+[emmc] SD card on controller @ 0xffff0000fe300000
+[clock] seeded from kernel8.img: 2026-09-13 11:07:26
+[pcie] RC not present (no response at RC_BASE); USB disabled
+[auto] running C:\AUTO\HELLO.NCP
+[launch] EL0: slot 0 entry 0x1000
+Hello from a NewTOS .NCP program!
+[launch] returned (program Pterm'd)
+[auto] 1 AUTO program(s) run
+[shell] sh_ldapp: starting C:\DUMPAES.NAP, sh_nextapp=2, sh_isgem=1
+[launch] EL0: slot 0 entry 0x1000
+DUMPAES build 70ca, record format 2
+AES.TSV: 4 cases, CRC 937E2EBD
+appl_init id 1, graf_handle 1, v_opnvwk handle 2
+global after appl_init 832,1,1,4419,0,0,0,0,0,0,16,-13864,21,0,0
+ap_version 0340, ap_count 1, ap_id 1, ap_planes 16
+running 4 cases
+all 4 cases ran
+AES.BIN: 4 records, 512 bytes
+AES.LOG: 294 bytes
+[launch] returned (program Pterm'd)
+[shell] sh_ldapp: 'C:\DUMPAES.NAP' exited with rc=0
+[shell] sh_ldapp: starting NEWDESK, sh_nextapp=3, sh_isgem=1
+[desk] desktop up (1 drives)

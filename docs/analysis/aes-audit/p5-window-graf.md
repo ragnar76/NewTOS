@@ -150,6 +150,33 @@
 - **Divergenz:** Stub-artiger Konstant-Return (0-Adresse/0-Länge). NewTOS' `bb_save` allokiert transient pro-Alert, daher gibt es keinen stabilen Puffer. Dokumentiert/deferred; beobachtbar für Apps, die WF_SCREEN als Scratch-Buffer verwenden (selten). Grenzfall zwischen ehrlichem 0-Return und No-Stub-Verstoß.
 - **1:1-Fix:** Persistenten Menü/Alert-Save-Buffer bereitstellen und dessen Adresse+Länge melden, oder als bewusst nicht-unterstützt dokumentieren.
 - **Runtime-verify:** no
+- **BEWERTUNG KORRIGIERT, TEILWEISE ERLEDIGT 2026-09-12 (A54):** Die frühere
+  Einstufung als *bewusste Abweichung* („null/zero-length buffer truthfully,
+  `ret=1`", Kommentar in `window.rs`) **ist zurückgenommen**. Sie hielt nicht
+  stand: der Wert ist über die dokumentierte API messbar, und er *wurde*
+  gemessen — Fälle 331/332/439 von `tosdump/cases/aes-r4-subfunctions.tsv`
+  (CRC `227422B2`), EmuTOS 1.4 auf dem TT liefert Adresse `0x01000218`, Länge
+  `40960`, `ret=1` (`measurement-2026-09-12-aes-r4/`). Eine Begründung ist
+  keine Unbeobachtbarkeit. Vor allem aber war `ret=1` mit Adresse 0 die eine
+  Antwort, die ein Aufrufer *nicht* von „hier ist ein Puffer, er liegt bei 0"
+  unterscheiden kann.
+  **Erledigt ist die Hälfte, die ohne Architekturentscheidung geht:**
+  `wind_get(WF_SCREEN)` antwortet jetzt **FALSE und schreibt nichts** —
+  `wm_get`s eigene Redensart für ein Feld, das diese AES nicht beantwortet
+  (`default: return FALSE`, `aes/gemwmlib.c:1590-1591`), dieselbe Reparatur wie
+  bei AUD-P5-014/`WF_KIND`. **Offen bleibt der Puffer selbst**, und er ist
+  keine `wind_get`-Frage: NewTOS hat keinen persistenten Menü-/Alarmpuffer
+  (`form.rs` `BbSave` = frischer `Vec` je Alarm, verworfen beim Schließen;
+  `menu.rs` `MBACK`/`SMBACK` = zwei Ablagen, je Dropdown geleert und neu
+  gewachsen, beim Start Kapazität 0), und es gibt auch keine Adresse, die man
+  herausgeben *könnte*: diese Puffer liegen im Kernel-Heap, der `AP_RW_EL1`
+  abgebildet ist — **kein EL0-Zugriff**
+  (`kernel/src/arch/aarch64/mmu.rs:82,178-179,283-284`) —, und genau darauf zu
+  schreiben ist der Zweck des Feldes. Ein echter persistenter AES-Kratzpuffer
+  in EL0-erreichbarem Speicher ist eine Speicherpool- und Abbildungsfrage.
+  Registriert als *sanctioned deviation* in `docs/COMPATIBILITY.md`; Dauertests
+  `tos-api/tests/aes_window_screen_buffer.rs`, Referenzfall 166 der r1-Tabelle
+  über `SANCTIONED` in `tos-api/tests/aes_reference/harness.rs`.
 
 ### AUD-P5-013: `wind_calc`/Frame verwendet non-3D-Rahmendicken statt 3D/TOS4-Default
 - **Severity:** MEDIUM

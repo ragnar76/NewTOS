@@ -1,0 +1,54 @@
+NewTOS -- Gegenmessung zur Reparatur V16 (GEM-Trap: x0 bei unbekanntem Selektor)
+================================================================================
+
+Datum       : 2026-09-12
+Git HEAD    : 70caee212078b11ffa0a70afa1279bdd82532959 (Branch desk-rebuild)
+Arbeitsbaum : geteilter Baum mit mehreren fremden uncommitteten Straengen;
+              eigene Aenderung = kernel/src/arch/aarch64/exceptions.rs (der
+              GEM-Trap-Arm), kernel/src/selftest_gemtrap.rs (neu),
+              kernel/src/lib.rs (eine pub-mod-Zeile), docs/COMPATIBILITY.md,
+              docs/STATUS.md, sdk/gemlib/overlay/_gc_vq_gdos.c und
+              _gc_vq_vgdos.c (nur Kommentare). Nichts committet.
+kernel8.img : 42a030c8e1a3d055b1d232b13288017abfc4fd70c6d569f47cd9f1f13e4b476b
+              (frisch gebaut: cargo run -p xtask -- build --board rpi4, dev-Profil)
+DUMPVDI.NAP : c30587cf77c20b6681e4de06d3d7ddaaa84b2b70ddcd4c57e4eca3b7ee3dd5c4 (build 70ca)
+DUMPAES.NAP : 5889e9bbef18d4b80a7a0432438d1779ea9966310fec5607c028d3b57a0a158d (build 70ca)
+
+Die Dumper wurden NICHT neu gebaut; ihre SHA-256 sind bitgleich mit denen der
+Gesamtgegenmessung measurement-2026-09-12-full-regression/RUNINFO.TXT.
+
+Maschine    : QEMU raspi4b, headless (-display none), 640x480 (TT-Profil),
+              Autostart ueber NEWDESK.INF "#Z 01 C:\<NAME>@", kein Klick,
+              keine physische Karte. Das SD-Abbild (16 MiB MBR+FAT16) wurde
+              rein in Python erzeugt und wieder ausgelesen -- kein hdiutil,
+              kein diskutil. Jede Tabelle lief in einem eigenen, frischen Boot.
+
+Vergleichsbasis
+              : measurement-2026-09-12-full-regression/<Tabelle>/ (640x480,
+              derselbe Tag, vor V16) -- DIFF-vs-baseline-2026-09-12.txt
+              EmuTOS-Referenzen aus tosdump/reference/ -- DIFF-vs-emutos.txt
+
+Ergebnis    : vdi-r1  0 von 24 Faellen anders als der Vorstand  (gegen EmuTOS 4, wie vorher)
+              vdi-r2  0 von 120                                  (gegen EmuTOS 4, wie vorher)
+              vdi-r3  0 von 38                                   (gegen EmuTOS 5, wie vorher)
+              vdi-all 0 von 182                                  (gegen EmuTOS 13, wie vorher)
+              aes-r3-wind-state 0 von 39                         (gegen EmuTOS weiterhin nur
+                    die sieben Dispatcher-Stapelreste 261/280/400/481/494/574/588
+                    in int_out -- Fallmenge nachgerechnet, unveraendert)
+              Alle fuenf Laeufe: "all N cases ran", tosdiff --validate akzeptiert
+              die Tabellen-CRC, Bootlog frei von [EXC]/PANIC, Desktop kam hoch.
+
+SELFTEST-GEMTRAP-before-fix.txt / -after-fix.txt
+            : serieller Mitschnitt zweier QEMU-raspi4b-Boots mit
+              kernel/src/selftest_gemtrap.rs voruebergehend aus lib.rs
+              aufgerufen -- vor dem Fix 4 von 5 Pruefungen FAIL, danach 5 von 5
+              OK. Der Aufruf wurde danach von Hand wieder entfernt (kein
+              git checkout/restore/stash); kernel/src/lib.rs unterscheidet sich
+              vom Ausgangsstand nur noch um die Zeile "pub mod selftest_gemtrap;".
+
+Kein QEMU- und kein Hatari-Prozess blieb nach einem Lauf zurueck
+(pgrep -f 'qemu-system-aarch64|Hatari' nach jedem Lauf geprueft). Scratch lag
+ausschliesslich im Job-tmp. Keine physische Karte beschrieben oder ausgehaengt.
+
+Ticket: TASK/V16.md -- Quittung: TASK/V16-STATUS-DONE.MD
+Herleitung: docs/analysis/vdi-r2-improvement-traced-2026-09-12.md, F-1/F-2

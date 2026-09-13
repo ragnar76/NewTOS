@@ -1,0 +1,8 @@
+# THROWAWAY -- the leaky direction, WITHOUT plants.  Every line must be
+# refused by name, with its physical line number.  Not a measurement.
+!reset	none
+!columns	8
+80	0	1	1	0	-	-	scrp_read through the poison
+81	0	1	1	0	-	-	scrp_write through the poison
+55	3	3	1	0	0,16706,0	-	form_keybd with a poisoned tree
+41	1	1	1	0	-1	-	objc_delete(-1): the lived case

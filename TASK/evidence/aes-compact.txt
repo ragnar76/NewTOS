@@ -1,0 +1,20 @@
+Nur Globals bzw. Handle-Slots separat ausgeblendet; keine automatische Fehlerbewertung.
+
+case 155  opcode 104  wind_get 0 WF_WXYWH: the desktop work area apps start from
+    int_out[3]             EMUTOS14-AES.BIN = 0x0280 (640)   AES.BIN          = 0x0780 (1920)
+    int_out[4]             EMUTOS14-AES.BIN = 0x01CD (461)   AES.BIN          = 0x0425 (1061)
+
+case 156  opcode 104  wind_get 0 WF_CXYWH: whole screen, menu bar included
+    int_out[3]             EMUTOS14-AES.BIN = 0x0280 (640)   AES.BIN          = 0x0780 (1920)
+    int_out[4]             EMUTOS14-AES.BIN = 0x01E0 (480)   AES.BIN          = 0x0438 (1080)
+
+case 157  opcode 104  wind_get 0 WF_PXYWH: previous rect
+    int_out[3]             EMUTOS14-AES.BIN = 0x0280 (640)   AES.BIN          = 0x0780 (1920)
+    int_out[4]             EMUTOS14-AES.BIN = 0x01E0 (480)   AES.BIN          = 0x0438 (1080)
+
+case 158  opcode 104  wind_get 0 WF_FXYWH: full rect
+    int_out[3]             EMUTOS14-AES.BIN = 0x0280 (640)   AES.BIN          = 0x0780 (1920)
+    int_out[4]             EMUTOS14-AES.BIN = 0x01CD (461)   AES.BIN          = 0x0425 (1061)
+
+case 167  opcode 104  wind_get 0 WF_OWNER: AES 3.30 and later only
+    int_out[0]             EMUTOS14-AES.BIN = 0x0000 (0)   AES.BIN          = 0x0001 (1)

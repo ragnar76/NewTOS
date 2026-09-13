@@ -1,0 +1,731 @@
+VDI.BIN vs VDI.BIN -- area VDI, 182 cases from vdi-all.tsv
+
+case 29  opcode 35  vql_attributes line attributes after the reset
+    contrl[6]              VDI.BIN = 0x0005 (5)   VDI.BIN = 0x0002 (2)
+    contrl_before[6]       VDI.BIN = 0x0005 (5)   VDI.BIN = 0x0002 (2)
+
+case 30  opcode 36  vqm_attributes marker attributes after the reset
+    contrl[6]              VDI.BIN = 0x0005 (5)   VDI.BIN = 0x0002 (2)
+    contrl_before[6]       VDI.BIN = 0x0005 (5)   VDI.BIN = 0x0002 (2)
+
+case 31  opcode 37  vqf_attributes fill attributes after the reset
+    contrl[6]              VDI.BIN = 0x0005 (5)   VDI.BIN = 0x0002 (2)
+    contrl_before[6]       VDI.BIN = 0x0005 (5)   VDI.BIN = 0x0002 (2)
+
+case 32  opcode 38  vqt_attributes text attributes after the reset
+    contrl[6]              VDI.BIN = 0x0005 (5)   VDI.BIN = 0x0002 (2)
+    contrl_before[6]       VDI.BIN = 0x0005 (5)   VDI.BIN = 0x0002 (2)
+
+case 33  opcode 102  vq_extnd 0 SIZ_TAB and DEV_TAB
+    contrl[6]              VDI.BIN = 0x0005 (5)   VDI.BIN = 0x0002 (2)
+    contrl_before[6]       VDI.BIN = 0x0005 (5)   VDI.BIN = 0x0002 (2)
+
+case 34  opcode 102  vq_extnd 1 clipping and extended info
+    contrl[6]              VDI.BIN = 0x0005 (5)   VDI.BIN = 0x0002 (2)
+    contrl_before[6]       VDI.BIN = 0x0005 (5)   VDI.BIN = 0x0002 (2)
+
+case 35  opcode 115  vqin_mode locator input mode
+    contrl[6]              VDI.BIN = 0x0005 (5)   VDI.BIN = 0x0002 (2)
+    contrl_before[6]       VDI.BIN = 0x0005 (5)   VDI.BIN = 0x0002 (2)
+
+case 37  opcode 32  vswr_mode transparent, echoes the accepted mode
+    contrl[6]              VDI.BIN = 0x0005 (5)   VDI.BIN = 0x0002 (2)
+    contrl_before[6]       VDI.BIN = 0x0005 (5)   VDI.BIN = 0x0002 (2)
+
+case 38  opcode 32  vswr_mode out of range, echoes the default instead
+    contrl[6]              VDI.BIN = 0x0005 (5)   VDI.BIN = 0x0002 (2)
+    contrl_before[6]       VDI.BIN = 0x0005 (5)   VDI.BIN = 0x0002 (2)
+
+case 39  opcode 15  vsl_type dashed
+    contrl[6]              VDI.BIN = 0x0005 (5)   VDI.BIN = 0x0002 (2)
+    contrl_before[6]       VDI.BIN = 0x0005 (5)   VDI.BIN = 0x0002 (2)
+
+case 40  opcode 15  vsl_type out of range, echoes the default
+    contrl[6]              VDI.BIN = 0x0005 (5)   VDI.BIN = 0x0002 (2)
+    contrl_before[6]       VDI.BIN = 0x0005 (5)   VDI.BIN = 0x0002 (2)
+
+case 41  opcode 17  vsl_color pen 1
+    contrl[6]              VDI.BIN = 0x0005 (5)   VDI.BIN = 0x0002 (2)
+    contrl_before[6]       VDI.BIN = 0x0005 (5)   VDI.BIN = 0x0002 (2)
+
+case 42  opcode 17  vsl_color out of range
+    contrl[6]              VDI.BIN = 0x0005 (5)   VDI.BIN = 0x0002 (2)
+    contrl_before[6]       VDI.BIN = 0x0005 (5)   VDI.BIN = 0x0002 (2)
+
+case 43  opcode 23  vsf_interior pattern
+    contrl[6]              VDI.BIN = 0x0005 (5)   VDI.BIN = 0x0002 (2)
+    contrl_before[6]       VDI.BIN = 0x0005 (5)   VDI.BIN = 0x0002 (2)
+
+case 44  opcode 23  vsf_interior out of range
+    contrl[6]              VDI.BIN = 0x0005 (5)   VDI.BIN = 0x0002 (2)
+    contrl_before[6]       VDI.BIN = 0x0005 (5)   VDI.BIN = 0x0002 (2)
+
+case 45  opcode 24  vsf_style pattern index 5
+    contrl[6]              VDI.BIN = 0x0005 (5)   VDI.BIN = 0x0002 (2)
+    contrl_before[6]       VDI.BIN = 0x0005 (5)   VDI.BIN = 0x0002 (2)
+
+case 46  opcode 13  vst_rotation 90 degrees
+    contrl[6]              VDI.BIN = 0x0005 (5)   VDI.BIN = 0x0002 (2)
+    contrl_before[6]       VDI.BIN = 0x0005 (5)   VDI.BIN = 0x0002 (2)
+
+case 47  opcode 13  vst_rotation not a multiple of 900
+    contrl[6]              VDI.BIN = 0x0005 (5)   VDI.BIN = 0x0002 (2)
+    contrl_before[6]       VDI.BIN = 0x0005 (5)   VDI.BIN = 0x0002 (2)
+
+case 48  opcode 106  vst_effects every effect bit
+    contrl[6]              VDI.BIN = 0x0005 (5)   VDI.BIN = 0x0002 (2)
+    contrl_before[6]       VDI.BIN = 0x0005 (5)   VDI.BIN = 0x0002 (2)
+
+case 49  opcode 39  vst_alignment centred, half line
+    contrl[6]              VDI.BIN = 0x0005 (5)   VDI.BIN = 0x0002 (2)
+    contrl_before[6]       VDI.BIN = 0x0005 (5)   VDI.BIN = 0x0002 (2)
+
+case 51  opcode 6  v_pline one diagonal, two points
+    contrl[6]              VDI.BIN = 0x0005 (5)   VDI.BIN = 0x0002 (2)
+    contrl_before[6]       VDI.BIN = 0x0005 (5)   VDI.BIN = 0x0002 (2)
+
+case 52  opcode 6  v_pline the other diagonal
+    contrl[6]              VDI.BIN = 0x0005 (5)   VDI.BIN = 0x0002 (2)
+    contrl_before[6]       VDI.BIN = 0x0005 (5)   VDI.BIN = 0x0002 (2)
+
+case 53  opcode 9  v_fillarea a triangle, three points
+    contrl[6]              VDI.BIN = 0x0005 (5)   VDI.BIN = 0x0002 (2)
+    contrl_before[6]       VDI.BIN = 0x0005 (5)   VDI.BIN = 0x0002 (2)
+
+case 54  opcode 105  v_get_pixel background pixel after v_clrwk
+    contrl[6]              VDI.BIN = 0x0005 (5)   VDI.BIN = 0x0002 (2)
+    contrl_before[6]       VDI.BIN = 0x0005 (5)   VDI.BIN = 0x0002 (2)
+
+case 60  opcode 3  v_clrwk clear the workstation
+    contrl[6]              VDI.BIN = 0x0005 (5)   VDI.BIN = 0x0002 (2)
+    contrl_before[6]       VDI.BIN = 0x0005 (5)   VDI.BIN = 0x0002 (2)
+
+case 61  opcode 4  v_updwk nop in EmuTOS
+    contrl[6]              VDI.BIN = 0x0005 (5)   VDI.BIN = 0x0002 (2)
+    contrl_before[6]       VDI.BIN = 0x0005 (5)   VDI.BIN = 0x0002 (2)
+
+case 62  opcode 10  v_cellarray nop
+    contrl[6]              VDI.BIN = 0x0005 (5)   VDI.BIN = 0x0002 (2)
+    contrl_before[6]       VDI.BIN = 0x0005 (5)   VDI.BIN = 0x0002 (2)
+
+case 63  opcode 27  vq_cellarray nop
+    contrl[6]              VDI.BIN = 0x0005 (5)   VDI.BIN = 0x0002 (2)
+    contrl_before[6]       VDI.BIN = 0x0005 (5)   VDI.BIN = 0x0002 (2)
+
+case 64  opcode 29  v_valuator nop, no analogue device on the ST
+    contrl[6]              VDI.BIN = 0x0005 (5)   VDI.BIN = 0x0002 (2)
+    contrl_before[6]       VDI.BIN = 0x0005 (5)   VDI.BIN = 0x0002 (2)
+
+case 65  opcode 34  opcode 34 does not exist
+    contrl[6]              VDI.BIN = 0x0005 (5)   VDI.BIN = 0x0002 (2)
+    contrl_before[6]       VDI.BIN = 0x0005 (5)   VDI.BIN = 0x0002 (2)
+
+case 66  opcode 132  vqt_justified nop, CONF_WITH_EXTENDED_MOUSE gated
+    contrl[6]              VDI.BIN = 0x0005 (5)   VDI.BIN = 0x0002 (2)
+    contrl_before[6]       VDI.BIN = 0x0005 (5)   VDI.BIN = 0x0002 (2)
+
+case 67  opcode 133  vs_grayoverride nop, gated
+    contrl[6]              VDI.BIN = 0x0005 (5)   VDI.BIN = 0x0002 (2)
+    contrl_before[6]       VDI.BIN = 0x0005 (5)   VDI.BIN = 0x0002 (2)
+
+case 69  opcode 26  vq_color pen 1 requested
+    contrl[6]              VDI.BIN = 0x0005 (5)   VDI.BIN = 0x0002 (2)
+    contrl_before[6]       VDI.BIN = 0x0005 (5)   VDI.BIN = 0x0002 (2)
+
+case 70  opcode 26  vq_color pen 1 realised
+    contrl[6]              VDI.BIN = 0x0005 (5)   VDI.BIN = 0x0002 (2)
+    contrl_before[6]       VDI.BIN = 0x0005 (5)   VDI.BIN = 0x0002 (2)
+
+case 71  opcode 26  vq_color pen 0 requested
+    contrl[6]              VDI.BIN = 0x0005 (5)   VDI.BIN = 0x0002 (2)
+    contrl_before[6]       VDI.BIN = 0x0005 (5)   VDI.BIN = 0x0002 (2)
+
+case 72  opcode 26  vq_color pen 255 requested
+    contrl[6]              VDI.BIN = 0x0005 (5)   VDI.BIN = 0x0002 (2)
+    contrl_before[6]       VDI.BIN = 0x0005 (5)   VDI.BIN = 0x0002 (2)
+
+case 73  opcode 26  vq_color out of range
+    contrl[6]              VDI.BIN = 0x0005 (5)   VDI.BIN = 0x0002 (2)
+    contrl_before[6]       VDI.BIN = 0x0005 (5)   VDI.BIN = 0x0002 (2)
+
+case 74  opcode 30  v_choice D-VDI-10 dummy, returns 1 at once
+    contrl[6]              VDI.BIN = 0x0005 (5)   VDI.BIN = 0x0002 (2)
+    contrl_before[6]       VDI.BIN = 0x0005 (5)   VDI.BIN = 0x0002 (2)
+
+case 75  opcode 115  vqin_mode valuator
+    contrl[6]              VDI.BIN = 0x0005 (5)   VDI.BIN = 0x0002 (2)
+    contrl_before[6]       VDI.BIN = 0x0005 (5)   VDI.BIN = 0x0002 (2)
+
+case 76  opcode 115  vqin_mode choice
+    contrl[6]              VDI.BIN = 0x0005 (5)   VDI.BIN = 0x0002 (2)
+    contrl_before[6]       VDI.BIN = 0x0005 (5)   VDI.BIN = 0x0002 (2)
+
+case 77  opcode 115  vqin_mode string
+    contrl[6]              VDI.BIN = 0x0005 (5)   VDI.BIN = 0x0002 (2)
+    contrl_before[6]       VDI.BIN = 0x0005 (5)   VDI.BIN = 0x0002 (2)
+
+case 78  opcode 117  vqt_width character A
+    contrl[6]              VDI.BIN = 0x0005 (5)   VDI.BIN = 0x0002 (2)
+    contrl_before[6]       VDI.BIN = 0x0005 (5)   VDI.BIN = 0x0002 (2)
+
+case 79  opcode 117  vqt_width space
+    contrl[6]              VDI.BIN = 0x0005 (5)   VDI.BIN = 0x0002 (2)
+    contrl_before[6]       VDI.BIN = 0x0005 (5)   VDI.BIN = 0x0002 (2)
+
+case 80  opcode 130  vqt_name font index 0
+    contrl[6]              VDI.BIN = 0x0005 (5)   VDI.BIN = 0x0002 (2)
+    contrl_before[6]       VDI.BIN = 0x0005 (5)   VDI.BIN = 0x0002 (2)
+
+case 81  opcode 130  vqt_name font index 1
+    contrl[6]              VDI.BIN = 0x0005 (5)   VDI.BIN = 0x0002 (2)
+    contrl_before[6]       VDI.BIN = 0x0005 (5)   VDI.BIN = 0x0002 (2)
+
+case 82  opcode 130  vqt_name font index 2
+    contrl[6]              VDI.BIN = 0x0005 (5)   VDI.BIN = 0x0002 (2)
+    contrl_before[6]       VDI.BIN = 0x0005 (5)   VDI.BIN = 0x0002 (2)
+
+case 83  opcode 130  vqt_name font index 3, TOS 3.06 has a fourth font
+    contrl[6]              VDI.BIN = 0x0005 (5)   VDI.BIN = 0x0002 (2)
+    contrl_before[6]       VDI.BIN = 0x0005 (5)   VDI.BIN = 0x0002 (2)
+
+case 84  opcode 131  vqt_fontinfo current font
+    contrl[6]              VDI.BIN = 0x0005 (5)   VDI.BIN = 0x0002 (2)
+    contrl_before[6]       VDI.BIN = 0x0005 (5)   VDI.BIN = 0x0002 (2)
+
+case 85  opcode 116  vqt_extent extent of ABC
+    contrl[6]              VDI.BIN = 0x0005 (5)   VDI.BIN = 0x0002 (2)
+    contrl_before[6]       VDI.BIN = 0x0005 (5)   VDI.BIN = 0x0002 (2)
+
+case 86  opcode 116  vqt_extent empty string
+    contrl[6]              VDI.BIN = 0x0005 (5)   VDI.BIN = 0x0002 (2)
+    contrl_before[6]       VDI.BIN = 0x0005 (5)   VDI.BIN = 0x0002 (2)
+
+case 88  opcode 15  vsl_type solid
+    contrl[6]              VDI.BIN = 0x0005 (5)   VDI.BIN = 0x0002 (2)
+    contrl_before[6]       VDI.BIN = 0x0005 (5)   VDI.BIN = 0x0002 (2)
+
+case 89  opcode 15  vsl_type user defined
+    contrl[6]              VDI.BIN = 0x0005 (5)   VDI.BIN = 0x0002 (2)
+    contrl_before[6]       VDI.BIN = 0x0005 (5)   VDI.BIN = 0x0002 (2)
+
+case 90  opcode 15  vsl_type below range
+    contrl[6]              VDI.BIN = 0x0005 (5)   VDI.BIN = 0x0002 (2)
+    contrl_before[6]       VDI.BIN = 0x0005 (5)   VDI.BIN = 0x0002 (2)
+
+case 91  opcode 16  vsl_width 1
+    contrl[6]              VDI.BIN = 0x0005 (5)   VDI.BIN = 0x0002 (2)
+    contrl_before[6]       VDI.BIN = 0x0005 (5)   VDI.BIN = 0x0002 (2)
+
+case 92  opcode 16  vsl_width 3, odd
+    contrl[6]              VDI.BIN = 0x0005 (5)   VDI.BIN = 0x0002 (2)
+    contrl_before[6]       VDI.BIN = 0x0005 (5)   VDI.BIN = 0x0002 (2)
+
+case 93  opcode 16  vsl_width 4, even -> rounded down
+    contrl[6]              VDI.BIN = 0x0005 (5)   VDI.BIN = 0x0002 (2)
+    contrl_before[6]       VDI.BIN = 0x0005 (5)   VDI.BIN = 0x0002 (2)
+
+case 94  opcode 16  vsl_width at SIZ_TAB max
+    contrl[6]              VDI.BIN = 0x0005 (5)   VDI.BIN = 0x0002 (2)
+    contrl_before[6]       VDI.BIN = 0x0005 (5)   VDI.BIN = 0x0002 (2)
+
+case 95  opcode 16  vsl_width above max
+    contrl[6]              VDI.BIN = 0x0005 (5)   VDI.BIN = 0x0002 (2)
+    contrl_before[6]       VDI.BIN = 0x0005 (5)   VDI.BIN = 0x0002 (2)
+
+case 96  opcode 17  vsl_color pen 0
+    contrl[6]              VDI.BIN = 0x0005 (5)   VDI.BIN = 0x0002 (2)
+    contrl_before[6]       VDI.BIN = 0x0005 (5)   VDI.BIN = 0x0002 (2)
+
+case 97  opcode 17  vsl_color pen 15
+    contrl[6]              VDI.BIN = 0x0005 (5)   VDI.BIN = 0x0002 (2)
+    contrl_before[6]       VDI.BIN = 0x0005 (5)   VDI.BIN = 0x0002 (2)
+
+case 98  opcode 108  vsl_ends squared, squared
+    contrl[6]              VDI.BIN = 0x0005 (5)   VDI.BIN = 0x0002 (2)
+    contrl_before[6]       VDI.BIN = 0x0005 (5)   VDI.BIN = 0x0002 (2)
+
+case 99  opcode 108  vsl_ends arrow, rounded
+    contrl[6]              VDI.BIN = 0x0005 (5)   VDI.BIN = 0x0002 (2)
+    contrl_before[6]       VDI.BIN = 0x0005 (5)   VDI.BIN = 0x0002 (2)
+
+case 100  opcode 108  vsl_ends rounded, arrow
+    contrl[6]              VDI.BIN = 0x0005 (5)   VDI.BIN = 0x0002 (2)
+    contrl_before[6]       VDI.BIN = 0x0005 (5)   VDI.BIN = 0x0002 (2)
+
+case 101  opcode 108  vsl_ends out of range
+    contrl[6]              VDI.BIN = 0x0005 (5)   VDI.BIN = 0x0002 (2)
+    contrl_before[6]       VDI.BIN = 0x0005 (5)   VDI.BIN = 0x0002 (2)
+
+case 102  opcode 113  vsl_udsty all ones
+    contrl[6]              VDI.BIN = 0x0005 (5)   VDI.BIN = 0x0002 (2)
+    contrl_before[6]       VDI.BIN = 0x0005 (5)   VDI.BIN = 0x0002 (2)
+
+case 103  opcode 113  vsl_udsty alternating
+    contrl[6]              VDI.BIN = 0x0005 (5)   VDI.BIN = 0x0002 (2)
+    contrl_before[6]       VDI.BIN = 0x0005 (5)   VDI.BIN = 0x0002 (2)
+
+case 105  opcode 18  vsm_type dot
+    contrl[6]              VDI.BIN = 0x0005 (5)   VDI.BIN = 0x0002 (2)
+    contrl_before[6]       VDI.BIN = 0x0005 (5)   VDI.BIN = 0x0002 (2)
+
+case 106  opcode 18  vsm_type asterisk, the EmuTOS default
+    contrl[6]              VDI.BIN = 0x0005 (5)   VDI.BIN = 0x0002 (2)
+    contrl_before[6]       VDI.BIN = 0x0005 (5)   VDI.BIN = 0x0002 (2)
+
+case 107  opcode 18  vsm_type at range top
+    contrl[6]              VDI.BIN = 0x0005 (5)   VDI.BIN = 0x0002 (2)
+    contrl_before[6]       VDI.BIN = 0x0005 (5)   VDI.BIN = 0x0002 (2)
+
+case 108  opcode 18  vsm_type out of range
+    contrl[6]              VDI.BIN = 0x0005 (5)   VDI.BIN = 0x0002 (2)
+    contrl_before[6]       VDI.BIN = 0x0005 (5)   VDI.BIN = 0x0002 (2)
+
+case 109  opcode 19  vsm_height at SIZ_TAB minimum
+    contrl[6]              VDI.BIN = 0x0005 (5)   VDI.BIN = 0x0002 (2)
+    contrl_before[6]       VDI.BIN = 0x0005 (5)   VDI.BIN = 0x0002 (2)
+
+case 110  opcode 19  vsm_height at SIZ_TAB maximum
+    contrl[6]              VDI.BIN = 0x0005 (5)   VDI.BIN = 0x0002 (2)
+    contrl_before[6]       VDI.BIN = 0x0005 (5)   VDI.BIN = 0x0002 (2)
+
+case 111  opcode 19  vsm_height above maximum
+    contrl[6]              VDI.BIN = 0x0005 (5)   VDI.BIN = 0x0002 (2)
+    contrl_before[6]       VDI.BIN = 0x0005 (5)   VDI.BIN = 0x0002 (2)
+
+case 112  opcode 20  vsm_color pen 1
+    contrl[6]              VDI.BIN = 0x0005 (5)   VDI.BIN = 0x0002 (2)
+    contrl_before[6]       VDI.BIN = 0x0005 (5)   VDI.BIN = 0x0002 (2)
+
+case 113  opcode 20  vsm_color out of range
+    contrl[6]              VDI.BIN = 0x0005 (5)   VDI.BIN = 0x0002 (2)
+    contrl_before[6]       VDI.BIN = 0x0005 (5)   VDI.BIN = 0x0002 (2)
+
+case 115  opcode 23  vsf_interior hollow
+    contrl[6]              VDI.BIN = 0x0005 (5)   VDI.BIN = 0x0002 (2)
+    contrl_before[6]       VDI.BIN = 0x0005 (5)   VDI.BIN = 0x0002 (2)
+
+case 116  opcode 23  vsf_interior solid
+    contrl[6]              VDI.BIN = 0x0005 (5)   VDI.BIN = 0x0002 (2)
+    contrl_before[6]       VDI.BIN = 0x0005 (5)   VDI.BIN = 0x0002 (2)
+
+case 117  opcode 23  vsf_interior hatch
+    contrl[6]              VDI.BIN = 0x0005 (5)   VDI.BIN = 0x0002 (2)
+    contrl_before[6]       VDI.BIN = 0x0005 (5)   VDI.BIN = 0x0002 (2)
+
+case 118  opcode 23  vsf_interior user defined
+    contrl[6]              VDI.BIN = 0x0005 (5)   VDI.BIN = 0x0002 (2)
+    contrl_before[6]       VDI.BIN = 0x0005 (5)   VDI.BIN = 0x0002 (2)
+
+case 119  opcode 24  vsf_style index 1, D-VDI-8 setter is 0-based
+    contrl[6]              VDI.BIN = 0x0005 (5)   VDI.BIN = 0x0002 (2)
+    contrl_before[6]       VDI.BIN = 0x0005 (5)   VDI.BIN = 0x0002 (2)
+
+case 120  opcode 24  vsf_style at pattern maximum
+    contrl[6]              VDI.BIN = 0x0005 (5)   VDI.BIN = 0x0002 (2)
+    contrl_before[6]       VDI.BIN = 0x0005 (5)   VDI.BIN = 0x0002 (2)
+
+case 121  opcode 24  vsf_style above pattern maximum
+    contrl[6]              VDI.BIN = 0x0005 (5)   VDI.BIN = 0x0002 (2)
+    contrl_before[6]       VDI.BIN = 0x0005 (5)   VDI.BIN = 0x0002 (2)
+
+case 122  opcode 25  vsf_color pen 0
+    contrl[6]              VDI.BIN = 0x0005 (5)   VDI.BIN = 0x0002 (2)
+    contrl_before[6]       VDI.BIN = 0x0005 (5)   VDI.BIN = 0x0002 (2)
+
+case 123  opcode 25  vsf_color pen 15
+    contrl[6]              VDI.BIN = 0x0005 (5)   VDI.BIN = 0x0002 (2)
+    contrl_before[6]       VDI.BIN = 0x0005 (5)   VDI.BIN = 0x0002 (2)
+
+case 124  opcode 104  vsf_perimeter off
+    contrl[6]              VDI.BIN = 0x0005 (5)   VDI.BIN = 0x0002 (2)
+    contrl_before[6]       VDI.BIN = 0x0005 (5)   VDI.BIN = 0x0002 (2)
+
+case 125  opcode 104  vsf_perimeter on
+    contrl[6]              VDI.BIN = 0x0005 (5)   VDI.BIN = 0x0002 (2)
+    contrl_before[6]       VDI.BIN = 0x0005 (5)   VDI.BIN = 0x0002 (2)
+
+case 127  opcode 12  vst_height 8 pixels
+    contrl[6]              VDI.BIN = 0x0005 (5)   VDI.BIN = 0x0002 (2)
+    contrl_before[6]       VDI.BIN = 0x0005 (5)   VDI.BIN = 0x0002 (2)
+
+case 128  opcode 12  vst_height 16 pixels
+    contrl[6]              VDI.BIN = 0x0005 (5)   VDI.BIN = 0x0002 (2)
+    contrl_before[6]       VDI.BIN = 0x0005 (5)   VDI.BIN = 0x0002 (2)
+
+case 129  opcode 12  vst_height 26, the TOS 3.06 maximum
+    contrl[6]              VDI.BIN = 0x0005 (5)   VDI.BIN = 0x0002 (2)
+    contrl_before[6]       VDI.BIN = 0x0005 (5)   VDI.BIN = 0x0002 (2)
+
+case 130  opcode 13  vst_rotation 0
+    contrl[6]              VDI.BIN = 0x0005 (5)   VDI.BIN = 0x0002 (2)
+    contrl_before[6]       VDI.BIN = 0x0005 (5)   VDI.BIN = 0x0002 (2)
+
+case 131  opcode 13  vst_rotation 180 degrees
+    contrl[6]              VDI.BIN = 0x0005 (5)   VDI.BIN = 0x0002 (2)
+    contrl_before[6]       VDI.BIN = 0x0005 (5)   VDI.BIN = 0x0002 (2)
+
+case 132  opcode 13  vst_rotation 270 degrees
+    contrl[6]              VDI.BIN = 0x0005 (5)   VDI.BIN = 0x0002 (2)
+    contrl_before[6]       VDI.BIN = 0x0005 (5)   VDI.BIN = 0x0002 (2)
+
+case 133  opcode 21  vst_font 1
+    contrl[6]              VDI.BIN = 0x0005 (5)   VDI.BIN = 0x0002 (2)
+    contrl_before[6]       VDI.BIN = 0x0005 (5)   VDI.BIN = 0x0002 (2)
+
+case 134  opcode 21  vst_font 2
+    contrl[6]              VDI.BIN = 0x0005 (5)   VDI.BIN = 0x0002 (2)
+    contrl_before[6]       VDI.BIN = 0x0005 (5)   VDI.BIN = 0x0002 (2)
+
+case 135  opcode 21  vst_font out of range
+    contrl[6]              VDI.BIN = 0x0005 (5)   VDI.BIN = 0x0002 (2)
+    contrl_before[6]       VDI.BIN = 0x0005 (5)   VDI.BIN = 0x0002 (2)
+
+case 136  opcode 22  vst_color pen 0
+    contrl[6]              VDI.BIN = 0x0005 (5)   VDI.BIN = 0x0002 (2)
+    contrl_before[6]       VDI.BIN = 0x0005 (5)   VDI.BIN = 0x0002 (2)
+
+case 137  opcode 22  vst_color pen 15
+    contrl[6]              VDI.BIN = 0x0005 (5)   VDI.BIN = 0x0002 (2)
+    contrl_before[6]       VDI.BIN = 0x0005 (5)   VDI.BIN = 0x0002 (2)
+
+case 138  opcode 106  vst_effects none
+    contrl[6]              VDI.BIN = 0x0005 (5)   VDI.BIN = 0x0002 (2)
+    contrl_before[6]       VDI.BIN = 0x0005 (5)   VDI.BIN = 0x0002 (2)
+
+case 139  opcode 106  vst_effects thickened
+    contrl[6]              VDI.BIN = 0x0005 (5)   VDI.BIN = 0x0002 (2)
+    contrl_before[6]       VDI.BIN = 0x0005 (5)   VDI.BIN = 0x0002 (2)
+
+case 140  opcode 107  vst_point 10 point
+    contrl[6]              VDI.BIN = 0x0005 (5)   VDI.BIN = 0x0002 (2)
+    contrl_before[6]       VDI.BIN = 0x0005 (5)   VDI.BIN = 0x0002 (2)
+
+case 141  opcode 107  vst_point 6 point
+    contrl[6]              VDI.BIN = 0x0005 (5)   VDI.BIN = 0x0002 (2)
+    contrl_before[6]       VDI.BIN = 0x0005 (5)   VDI.BIN = 0x0002 (2)
+
+case 142  opcode 39  vst_alignment left, baseline
+    contrl[6]              VDI.BIN = 0x0005 (5)   VDI.BIN = 0x0002 (2)
+    contrl_before[6]       VDI.BIN = 0x0005 (5)   VDI.BIN = 0x0002 (2)
+
+case 143  opcode 39  vst_alignment right, bottom
+    contrl[6]              VDI.BIN = 0x0005 (5)   VDI.BIN = 0x0002 (2)
+    contrl_before[6]       VDI.BIN = 0x0005 (5)   VDI.BIN = 0x0002 (2)
+
+case 144  opcode 39  vst_alignment out of range
+    contrl[6]              VDI.BIN = 0x0005 (5)   VDI.BIN = 0x0002 (2)
+    contrl_before[6]       VDI.BIN = 0x0005 (5)   VDI.BIN = 0x0002 (2)
+
+case 146  opcode 32  vswr_mode replace
+    contrl[6]              VDI.BIN = 0x0005 (5)   VDI.BIN = 0x0002 (2)
+    contrl_before[6]       VDI.BIN = 0x0005 (5)   VDI.BIN = 0x0002 (2)
+
+case 147  opcode 32  vswr_mode xor
+    contrl[6]              VDI.BIN = 0x0005 (5)   VDI.BIN = 0x0002 (2)
+    contrl_before[6]       VDI.BIN = 0x0005 (5)   VDI.BIN = 0x0002 (2)
+
+case 148  opcode 32  vswr_mode reverse transparent
+    contrl[6]              VDI.BIN = 0x0005 (5)   VDI.BIN = 0x0002 (2)
+    contrl_before[6]       VDI.BIN = 0x0005 (5)   VDI.BIN = 0x0002 (2)
+
+case 149  opcode 129  vs_clip on, a rectangle
+    contrl[6]              VDI.BIN = 0x0005 (5)   VDI.BIN = 0x0002 (2)
+    contrl_before[6]       VDI.BIN = 0x0005 (5)   VDI.BIN = 0x0002 (2)
+
+case 150  opcode 129  vs_clip off
+    contrl[6]              VDI.BIN = 0x0005 (5)   VDI.BIN = 0x0002 (2)
+    contrl_before[6]       VDI.BIN = 0x0005 (5)   VDI.BIN = 0x0002 (2)
+
+case 151  opcode 33  vsin_mode locator request
+    contrl[6]              VDI.BIN = 0x0005 (5)   VDI.BIN = 0x0002 (2)
+    contrl_before[6]       VDI.BIN = 0x0005 (5)   VDI.BIN = 0x0002 (2)
+
+case 152  opcode 33  vsin_mode locator sample
+    contrl[6]              VDI.BIN = 0x0005 (5)   VDI.BIN = 0x0002 (2)
+    contrl_before[6]       VDI.BIN = 0x0005 (5)   VDI.BIN = 0x0002 (2)
+
+case 154  opcode 6  v_pline the full diagonal
+    contrl[6]              VDI.BIN = 0x0005 (5)   VDI.BIN = 0x0002 (2)
+    contrl_before[6]       VDI.BIN = 0x0005 (5)   VDI.BIN = 0x0002 (2)
+
+case 155  opcode 7  v_pmarker two markers, D-VDI-9 forces clip on
+    contrl[6]              VDI.BIN = 0x0005 (5)   VDI.BIN = 0x0002 (2)
+    contrl_before[6]       VDI.BIN = 0x0005 (5)   VDI.BIN = 0x0002 (2)
+
+case 156  opcode 8  v_gtext ABC
+    contrl[6]              VDI.BIN = 0x0005 (5)   VDI.BIN = 0x0002 (2)
+    contrl_before[6]       VDI.BIN = 0x0005 (5)   VDI.BIN = 0x0002 (2)
+
+case 157  opcode 9  v_fillarea a rectangle, four points
+    contrl[6]              VDI.BIN = 0x0005 (5)   VDI.BIN = 0x0002 (2)
+    contrl_before[6]       VDI.BIN = 0x0005 (5)   VDI.BIN = 0x0002 (2)
+
+case 158  opcode 114  vr_recfl a filled rectangle
+    contrl[6]              VDI.BIN = 0x0005 (5)   VDI.BIN = 0x0002 (2)
+    contrl_before[6]       VDI.BIN = 0x0005 (5)   VDI.BIN = 0x0002 (2)
+
+case 159  opcode 103  v_contourfill seed fill after v_clrwk
+    contrl[6]              VDI.BIN = 0x0005 (5)   VDI.BIN = 0x0002 (2)
+    contrl_before[6]       VDI.BIN = 0x0005 (5)   VDI.BIN = 0x0002 (2)
+
+case 160  opcode 105  v_get_pixel top left corner
+    contrl[6]              VDI.BIN = 0x0005 (5)   VDI.BIN = 0x0002 (2)
+    contrl_before[6]       VDI.BIN = 0x0005 (5)   VDI.BIN = 0x0002 (2)
+
+case 161  opcode 105  v_get_pixel bottom right corner
+    contrl[6]              VDI.BIN = 0x0005 (5)   VDI.BIN = 0x0002 (2)
+    contrl_before[6]       VDI.BIN = 0x0005 (5)   VDI.BIN = 0x0002 (2)
+
+case 163  opcode 11  v_bar
+    contrl[6]              VDI.BIN = 0x0005 (5)   VDI.BIN = 0x0002 (2)
+    contrl_before[6]       VDI.BIN = 0x0005 (5)   VDI.BIN = 0x0002 (2)
+
+case 164  opcode 11  v_arc quarter turn
+    contrl[6]              VDI.BIN = 0x0005 (5)   VDI.BIN = 0x0002 (2)
+    contrl_before[6]       VDI.BIN = 0x0005 (5)   VDI.BIN = 0x0002 (2)
+
+case 165  opcode 11  v_pieslice half turn
+    contrl[6]              VDI.BIN = 0x0005 (5)   VDI.BIN = 0x0002 (2)
+    contrl_before[6]       VDI.BIN = 0x0005 (5)   VDI.BIN = 0x0002 (2)
+
+case 166  opcode 11  v_circle radius from PTSIN[4]
+    contrl[6]              VDI.BIN = 0x0005 (5)   VDI.BIN = 0x0002 (2)
+    contrl_before[6]       VDI.BIN = 0x0005 (5)   VDI.BIN = 0x0002 (2)
+
+case 167  opcode 11  v_ellipse
+    contrl[6]              VDI.BIN = 0x0005 (5)   VDI.BIN = 0x0002 (2)
+    contrl_before[6]       VDI.BIN = 0x0005 (5)   VDI.BIN = 0x0002 (2)
+
+case 168  opcode 11  v_ellarc
+    contrl[6]              VDI.BIN = 0x0005 (5)   VDI.BIN = 0x0002 (2)
+    contrl_before[6]       VDI.BIN = 0x0005 (5)   VDI.BIN = 0x0002 (2)
+
+case 169  opcode 11  v_ellpie
+    contrl[6]              VDI.BIN = 0x0005 (5)   VDI.BIN = 0x0002 (2)
+    contrl_before[6]       VDI.BIN = 0x0005 (5)   VDI.BIN = 0x0002 (2)
+
+case 170  opcode 11  v_rbox rounded box
+    contrl[6]              VDI.BIN = 0x0005 (5)   VDI.BIN = 0x0002 (2)
+    contrl_before[6]       VDI.BIN = 0x0005 (5)   VDI.BIN = 0x0002 (2)
+
+case 171  opcode 11  v_rfbox rounded filled box
+    contrl[6]              VDI.BIN = 0x0005 (5)   VDI.BIN = 0x0002 (2)
+    contrl_before[6]       VDI.BIN = 0x0005 (5)   VDI.BIN = 0x0002 (2)
+
+case 173  opcode 5  vq_chcells rows and columns
+    contrl[6]              VDI.BIN = 0x0005 (5)   VDI.BIN = 0x0002 (2)
+    contrl_before[6]       VDI.BIN = 0x0005 (5)   VDI.BIN = 0x0002 (2)
+
+case 174  opcode 5  v_curup
+    contrl[6]              VDI.BIN = 0x0005 (5)   VDI.BIN = 0x0002 (2)
+    contrl_before[6]       VDI.BIN = 0x0005 (5)   VDI.BIN = 0x0002 (2)
+
+case 175  opcode 5  v_curdown
+    contrl[6]              VDI.BIN = 0x0005 (5)   VDI.BIN = 0x0002 (2)
+    contrl_before[6]       VDI.BIN = 0x0005 (5)   VDI.BIN = 0x0002 (2)
+
+case 176  opcode 5  v_curright
+    contrl[6]              VDI.BIN = 0x0005 (5)   VDI.BIN = 0x0002 (2)
+    contrl_before[6]       VDI.BIN = 0x0005 (5)   VDI.BIN = 0x0002 (2)
+
+case 177  opcode 5  v_curleft
+    contrl[6]              VDI.BIN = 0x0005 (5)   VDI.BIN = 0x0002 (2)
+    contrl_before[6]       VDI.BIN = 0x0005 (5)   VDI.BIN = 0x0002 (2)
+
+case 178  opcode 5  v_curhome
+    contrl[6]              VDI.BIN = 0x0005 (5)   VDI.BIN = 0x0002 (2)
+    contrl_before[6]       VDI.BIN = 0x0005 (5)   VDI.BIN = 0x0002 (2)
+
+case 179  opcode 5  v_eeos erase to end of screen
+    contrl[6]              VDI.BIN = 0x0005 (5)   VDI.BIN = 0x0002 (2)
+    contrl_before[6]       VDI.BIN = 0x0005 (5)   VDI.BIN = 0x0002 (2)
+
+case 180  opcode 5  v_eeol erase to end of line
+    contrl[6]              VDI.BIN = 0x0005 (5)   VDI.BIN = 0x0002 (2)
+    contrl_before[6]       VDI.BIN = 0x0005 (5)   VDI.BIN = 0x0002 (2)
+
+case 181  opcode 5  vs_curaddress row 5 column 10
+    contrl[6]              VDI.BIN = 0x0005 (5)   VDI.BIN = 0x0002 (2)
+    contrl_before[6]       VDI.BIN = 0x0005 (5)   VDI.BIN = 0x0002 (2)
+
+case 182  opcode 5  v_curtext ABC
+    contrl[6]              VDI.BIN = 0x0005 (5)   VDI.BIN = 0x0002 (2)
+    contrl_before[6]       VDI.BIN = 0x0005 (5)   VDI.BIN = 0x0002 (2)
+
+case 183  opcode 5  v_rvon
+    contrl[6]              VDI.BIN = 0x0005 (5)   VDI.BIN = 0x0002 (2)
+    contrl_before[6]       VDI.BIN = 0x0005 (5)   VDI.BIN = 0x0002 (2)
+
+case 184  opcode 5  v_rvoff
+    contrl[6]              VDI.BIN = 0x0005 (5)   VDI.BIN = 0x0002 (2)
+    contrl_before[6]       VDI.BIN = 0x0005 (5)   VDI.BIN = 0x0002 (2)
+
+case 185  opcode 5  vq_curaddress
+    contrl[6]              VDI.BIN = 0x0005 (5)   VDI.BIN = 0x0002 (2)
+    contrl_before[6]       VDI.BIN = 0x0005 (5)   VDI.BIN = 0x0002 (2)
+
+case 186  opcode 5  vq_tabstatus D-VDI-2 returns 1
+    contrl[6]              VDI.BIN = 0x0005 (5)   VDI.BIN = 0x0002 (2)
+    contrl_before[6]       VDI.BIN = 0x0005 (5)   VDI.BIN = 0x0002 (2)
+
+case 187  opcode 5  v_dspcur show the graphics cursor
+    contrl[6]              VDI.BIN = 0x0005 (5)   VDI.BIN = 0x0002 (2)
+    contrl_before[6]       VDI.BIN = 0x0005 (5)   VDI.BIN = 0x0002 (2)
+
+case 188  opcode 5  v_rmcur remove the graphics cursor
+    contrl[6]              VDI.BIN = 0x0005 (5)   VDI.BIN = 0x0002 (2)
+    contrl_before[6]       VDI.BIN = 0x0005 (5)   VDI.BIN = 0x0002 (2)
+
+case 195  opcode 35  vql_attributes after vsl_type dashed-dotted
+    contrl[6]              VDI.BIN = 0x0005 (5)   VDI.BIN = 0x0002 (2)
+    contrl_before[6]       VDI.BIN = 0x0005 (5)   VDI.BIN = 0x0002 (2)
+
+case 197  opcode 35  vql_attributes after vsl_type user defined
+    contrl[6]              VDI.BIN = 0x0005 (5)   VDI.BIN = 0x0002 (2)
+    contrl_before[6]       VDI.BIN = 0x0005 (5)   VDI.BIN = 0x0002 (2)
+
+case 199  opcode 35  vql_attributes after vsl_color 3
+    contrl[6]              VDI.BIN = 0x0005 (5)   VDI.BIN = 0x0002 (2)
+    contrl_before[6]       VDI.BIN = 0x0005 (5)   VDI.BIN = 0x0002 (2)
+
+case 201  opcode 35  vql_attributes after vsl_width 5
+    contrl[6]              VDI.BIN = 0x0005 (5)   VDI.BIN = 0x0002 (2)
+    contrl_before[6]       VDI.BIN = 0x0005 (5)   VDI.BIN = 0x0002 (2)
+
+case 203  opcode 35  vql_attributes after vswr_mode xor
+    contrl[6]              VDI.BIN = 0x0005 (5)   VDI.BIN = 0x0002 (2)
+    contrl_before[6]       VDI.BIN = 0x0005 (5)   VDI.BIN = 0x0002 (2)
+
+case 206  opcode 36  vqm_attributes after vsm_type 5
+    contrl[6]              VDI.BIN = 0x0005 (5)   VDI.BIN = 0x0002 (2)
+    contrl_before[6]       VDI.BIN = 0x0005 (5)   VDI.BIN = 0x0002 (2)
+
+case 208  opcode 36  vqm_attributes after vsm_color 3
+    contrl[6]              VDI.BIN = 0x0005 (5)   VDI.BIN = 0x0002 (2)
+    contrl_before[6]       VDI.BIN = 0x0005 (5)   VDI.BIN = 0x0002 (2)
+
+case 210  opcode 36  vqm_attributes after vsm_height 40
+    contrl[6]              VDI.BIN = 0x0005 (5)   VDI.BIN = 0x0002 (2)
+    contrl_before[6]       VDI.BIN = 0x0005 (5)   VDI.BIN = 0x0002 (2)
+
+case 213  opcode 37  vqf_attributes after vsf_interior 2
+    contrl[6]              VDI.BIN = 0x0005 (5)   VDI.BIN = 0x0002 (2)
+    contrl_before[6]       VDI.BIN = 0x0005 (5)   VDI.BIN = 0x0002 (2)
+
+case 215  opcode 37  vqf_attributes after vsf_style 7
+    contrl[6]              VDI.BIN = 0x0005 (5)   VDI.BIN = 0x0002 (2)
+    contrl_before[6]       VDI.BIN = 0x0005 (5)   VDI.BIN = 0x0002 (2)
+
+case 217  opcode 37  vqf_attributes after vsf_color 3
+    contrl[6]              VDI.BIN = 0x0005 (5)   VDI.BIN = 0x0002 (2)
+    contrl_before[6]       VDI.BIN = 0x0005 (5)   VDI.BIN = 0x0002 (2)
+
+case 219  opcode 37  vqf_attributes after vsf_perimeter off
+    contrl[6]              VDI.BIN = 0x0005 (5)   VDI.BIN = 0x0002 (2)
+    contrl_before[6]       VDI.BIN = 0x0005 (5)   VDI.BIN = 0x0002 (2)
+
+case 222  opcode 38  vqt_attributes after vst_font 2 -- the gap round 2 missed
+    contrl[6]              VDI.BIN = 0x0005 (5)   VDI.BIN = 0x0002 (2)
+    contrl_before[6]       VDI.BIN = 0x0005 (5)   VDI.BIN = 0x0002 (2)
+
+case 224  opcode 38  vqt_attributes after vst_color 3
+    contrl[6]              VDI.BIN = 0x0005 (5)   VDI.BIN = 0x0002 (2)
+    contrl_before[6]       VDI.BIN = 0x0005 (5)   VDI.BIN = 0x0002 (2)
+
+case 226  opcode 38  vqt_attributes after vst_rotation 900
+    contrl[6]              VDI.BIN = 0x0005 (5)   VDI.BIN = 0x0002 (2)
+    contrl_before[6]       VDI.BIN = 0x0005 (5)   VDI.BIN = 0x0002 (2)
+
+case 228  opcode 38  vqt_attributes after vst_alignment 1,2
+    contrl[6]              VDI.BIN = 0x0005 (5)   VDI.BIN = 0x0002 (2)
+    contrl_before[6]       VDI.BIN = 0x0005 (5)   VDI.BIN = 0x0002 (2)
+
+case 230  opcode 38  vqt_attributes after vst_effects 5
+    contrl[6]              VDI.BIN = 0x0005 (5)   VDI.BIN = 0x0002 (2)
+    contrl_before[6]       VDI.BIN = 0x0005 (5)   VDI.BIN = 0x0002 (2)
+
+case 232  opcode 38  vqt_attributes after vst_height 8
+    contrl[6]              VDI.BIN = 0x0005 (5)   VDI.BIN = 0x0002 (2)
+    contrl_before[6]       VDI.BIN = 0x0005 (5)   VDI.BIN = 0x0002 (2)
+
+case 234  opcode 38  vqt_attributes after vst_point 6
+    contrl[6]              VDI.BIN = 0x0005 (5)   VDI.BIN = 0x0002 (2)
+    contrl_before[6]       VDI.BIN = 0x0005 (5)   VDI.BIN = 0x0002 (2)
+
+case 237  opcode 131  vqt_fontinfo after vst_height 4
+    contrl[6]              VDI.BIN = 0x0005 (5)   VDI.BIN = 0x0002 (2)
+    contrl_before[6]       VDI.BIN = 0x0005 (5)   VDI.BIN = 0x0002 (2)
+
+case 239  opcode 131  vqt_fontinfo after vst_height 16
+    contrl[6]              VDI.BIN = 0x0005 (5)   VDI.BIN = 0x0002 (2)
+    contrl_before[6]       VDI.BIN = 0x0005 (5)   VDI.BIN = 0x0002 (2)
+
+case 241  opcode 117  vqt_width A in the smallest face
+    contrl[6]              VDI.BIN = 0x0005 (5)   VDI.BIN = 0x0002 (2)
+    contrl_before[6]       VDI.BIN = 0x0005 (5)   VDI.BIN = 0x0002 (2)
+
+case 243  opcode 116  vqt_extent ABC in the smallest face
+    contrl[6]              VDI.BIN = 0x0005 (5)   VDI.BIN = 0x0002 (2)
+    contrl_before[6]       VDI.BIN = 0x0005 (5)   VDI.BIN = 0x0002 (2)
+
+case 245  opcode 117  vqt_width A after vst_font 2
+    contrl[6]              VDI.BIN = 0x0005 (5)   VDI.BIN = 0x0002 (2)
+    contrl_before[6]       VDI.BIN = 0x0005 (5)   VDI.BIN = 0x0002 (2)
+
+case 247  opcode 131  vqt_fontinfo after vst_point 6
+    contrl[6]              VDI.BIN = 0x0005 (5)   VDI.BIN = 0x0002 (2)
+    contrl_before[6]       VDI.BIN = 0x0005 (5)   VDI.BIN = 0x0002 (2)
+
+case 250  opcode 102  vq_extnd 1 after vs_clip on
+    contrl[6]              VDI.BIN = 0x0005 (5)   VDI.BIN = 0x0002 (2)
+    contrl_before[6]       VDI.BIN = 0x0005 (5)   VDI.BIN = 0x0002 (2)
+
+case 252  opcode 102  vq_extnd 1 after vs_clip off
+    contrl[6]              VDI.BIN = 0x0005 (5)   VDI.BIN = 0x0002 (2)
+    contrl_before[6]       VDI.BIN = 0x0005 (5)   VDI.BIN = 0x0002 (2)
+
+case 255  opcode 115  vqin_mode locator after sample
+    contrl[6]              VDI.BIN = 0x0005 (5)   VDI.BIN = 0x0002 (2)
+    contrl_before[6]       VDI.BIN = 0x0005 (5)   VDI.BIN = 0x0002 (2)
+
+case 257  opcode 115  vqin_mode string after request
+    contrl[6]              VDI.BIN = 0x0005 (5)   VDI.BIN = 0x0002 (2)
+    contrl_before[6]       VDI.BIN = 0x0005 (5)   VDI.BIN = 0x0002 (2)
+
+case 259  opcode 122  v_show_c unconditional
+    contrl[6]              VDI.BIN = 0x0005 (5)   VDI.BIN = 0x0002 (2)
+    contrl_before[6]       VDI.BIN = 0x0005 (5)   VDI.BIN = 0x0002 (2)
+
+case 260  opcode 123  v_hide_c
+    contrl[6]              VDI.BIN = 0x0005 (5)   VDI.BIN = 0x0002 (2)
+    contrl_before[6]       VDI.BIN = 0x0005 (5)   VDI.BIN = 0x0002 (2)
+
+case 262  opcode 122  v_show_c conditional after a hide
+    contrl[6]              VDI.BIN = 0x0005 (5)   VDI.BIN = 0x0002 (2)
+    contrl_before[6]       VDI.BIN = 0x0005 (5)   VDI.BIN = 0x0002 (2)
+
+case 263  opcode 111  vsc_form user cursor, 37 words
+    contrl[6]              VDI.BIN = 0x0005 (5)   VDI.BIN = 0x0002 (2)
+    contrl_before[6]       VDI.BIN = 0x0005 (5)   VDI.BIN = 0x0002 (2)
+
+case 264  opcode 11  v_justified GDP sub-op 10
+    contrl[6]              VDI.BIN = 0x0005 (5)   VDI.BIN = 0x0002 (2)
+    contrl_before[6]       VDI.BIN = 0x0005 (5)   VDI.BIN = 0x0002 (2)
+
+case 268  opcode 103  v_contourfill seeded inside the drawn box
+    contrl[6]              VDI.BIN = 0x0005 (5)   VDI.BIN = 0x0002 (2)
+    contrl_before[6]       VDI.BIN = 0x0005 (5)   VDI.BIN = 0x0002 (2)
+
+case 270  opcode 105  v_get_pixel inside the drawn box
+    contrl[6]              VDI.BIN = 0x0005 (5)   VDI.BIN = 0x0002 (2)
+    contrl_before[6]       VDI.BIN = 0x0005 (5)   VDI.BIN = 0x0002 (2)
+
+case 272  opcode 105  v_get_pixel on the drawn line
+    contrl[6]              VDI.BIN = 0x0005 (5)   VDI.BIN = 0x0002 (2)
+    contrl_before[6]       VDI.BIN = 0x0005 (5)   VDI.BIN = 0x0002 (2)
+
+case 274  opcode 100  v_opnvwk opens an additional workstation
+    contrl[6]              VDI.BIN = 0x0006 (6)   VDI.BIN = 0x0003 (3)
+    contrl_before[6]       VDI.BIN = 0x0005 (5)   VDI.BIN = 0x0002 (2)
+
+182 of 182 cases differ

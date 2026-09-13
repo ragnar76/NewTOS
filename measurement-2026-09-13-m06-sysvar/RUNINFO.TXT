@@ -1,0 +1,154 @@
+M06 -- the refusal guard now decides on the MEASURED AES version, and the
+first thing it lets through: objc_sysvar (48).  Taken 2026-09-13.
+MEASUREMENT ONLY: this directory states what ran and what came back.
+
+WHAT WAS WRONG
+  tosdump/core/cases.c refused five opcodes outright, reasoning "TOS 3.06 =
+  AES 3.20" (include/config.h:1345-1354).  True of TOS 3.06, and beside the
+  point: both machines these dumps are taken on report ap_version 0340, and
+  the same ladder makes 0x0340 mean CONF_WITH_3D_OBJECTS &&
+  CONF_WITH_MENU_EXTENSION && CONF_WITH_WINDOW_COLOURS &&
+  CONF_WITH_GRAF_MOUSE_EXTENSION.  The guard was locking out functions the
+  reference ROM measurably HAS.  TASK/M06.md.
+
+WHAT CHANGED
+  The question was split at the only line where it can be split.  The LOADER
+  -- which runs on the host with no machine in the room -- still answers "is
+  this opcode issuable at all" and now also records WHICH capability the
+  table needs.  The MACHINE answers "do I have it", once, after appl_init
+  (which is what writes ap_version, gemsuper.c:92) and before the first case
+  or prelude, in td_aes_cases_version_refusal().  A machine that does not
+  have it refuses the WHOLE table by name and runs nothing, so a dump has
+  `count` records or there is no dump.  Details: tosdump/core/cases.h, the
+  version guard.
+
+  Opened by this: objc_sysvar (48) and menu_popup/attach/istart/settings
+  (36-39).  NOT opened: the four CONF_WITH_PCGEM opcodes (appl_yield 17,
+  scrp_clear 82, shel_rdef 126, shel_wdef 127) -- that flag is not in the
+  ladder, so ap_version cannot settle them and they stay refused.
+
+TABLE
+  file        tosdump/cases/aes-m06-sysvar.tsv
+  cases       19
+  preludes    3
+  columns     7
+  CRC32       458748F2
+  SHA-256     f26aa0708fd11b517cc4b084df5f6b9d181c34411f6a76be750d8dac68c439e0
+  size        6960 bytes, 119 lines, pure LF, ASCII
+  reset       !reset none
+  needs       3D objects (CONF_WITH_3D_OBJECTS, AES 0x0340)
+  checked by  tosdump/host/build/casecheck --aes  -> exit 0, accepted
+              casecheck --aes --aes-version 0320 -> exit 1, REFUSED by name
+  dump size   32 byte header + 19 x 120 = 2312 bytes
+
+  Written once.  The case id is the physical line number and the CRC binds
+  both dumps below to this exact file; any later edit invalidates them.
+
+  Deliberately SMALL.  It exists to show that the guard now decides on the
+  machine and that the opcode it unlocked really runs on both, not to cover
+  objc_sysvar exhaustively.
+
+SOURCE OF TRUTH
+  references/emutos @ 1a7484aba1bfba23e2c0899e243b6d8177fe41df
+  NewTOS work tree  @ 70caee212078b11ffa0a70afa1279bdd82532959
+                      (plus the uncommitted strands in the tree)
+  ob_sysvar and init_3d (aes/gemoblib.c) are BYTE IDENTICAL between the
+  EmuTOS VERSION_1_4 tag -- which is what the measured ROM is -- and the
+  pinned tree, and so are the OBJC_SYSVAR arm (gemsuper.c:232-236) and the
+  AES_VERSION ladder.  There is no version delta on anything measured here.
+
+RUN A -- EmuTOS 1.4 on an Atari TT, via Hatari
+  emulator    /Users/ingouhlemann/Downloads/hatari-2.6.1_macos/Hatari.app/Contents/MacOS/Hatari (2.6.1)
+  ROM         etos512de.img, SHA-256 5805c0a4834f8935c427454785d32c59e796b11ad6802101052b84fb1eb7a745
+  command     SDL_VIDEODRIVER=dummy Hatari --machine tt --tos etos512de.img \
+                --tos-res ttmed --monitor vga --sound off --fast-forward on \
+                --run-vbls 20000 --conout 2 -d <workdir> --gemdos-drive C \
+                --auto 'C:\DUMPAES.PRG'
+  dumper      tosdump/build/DUMPAES.PRG, build id 70ca
+  dumper SHA  55263d82bcc01fb00ac7296d5f9f96d667dfd4ac1b30fb647b5d68587b59b515
+              NOT reproducible byte for byte: m68k-atari-mint-gcc embeds its
+              temporary object file names ("/T//ccXXXXXX.o") in the PRG symbol
+              table, so a rebuild from the identical sources differs in ~47
+              bytes THERE and nowhere else.  Verified against this run's
+              binary: header, TEXT (131472 bytes), DATA (1588) and the
+              relocation table are byte identical; every differing byte lies
+              inside the 30270 byte symbol table.  The AArch64 build IS
+              reproducible (SHA below unchanged across a clean rebuild).
+  log         "AES.TSV: 19 cases, CRC 458748F2" /
+              "AES.TSV needs 3D objects (CONF_WITH_3D_OBJECTS, AES 0x0340)" /
+              "all 19 cases ran" / "AES.BIN: 19 records, 2312 bytes"
+  appl_init   id 0, graf_handle 1, v_opnvwk 2, ap_version 0340, ap_planes 4
+  validate    tosdiff --validate ... -> accepted
+  artefacts   emutos14-tt-hatari/EMUTOS14-AES-m06.{BIN,LOG}, HATARI-STDOUT.txt
+
+RUN B -- NewTOS on QEMU raspi4b, headless, 640x480
+  kernel      kernel8.img, built fresh for this run (dev profile)
+  kernel SHA  5f4355b55b9998e6658b67f6ade1bb32406cda92289858fcfb291d057e8dcc2e
+  dumper      tosdump/build/DUMPAES.NAP, build id 70ca
+  dumper SHA  9fea30e20085d10eb97578c252568a82b60967d7a10cd79dfe893dbbd15214ca
+  card        FAT16 image from tools/make-sd-image.sh <img> 64, with
+              C:\DUMPAES.NAP, C:\AES.TSV (a byte-identical copy of the table)
+              and C:\NEWDESK.INF = "#Z 01 C:\DUMPAES.NAP@"
+  command     qemu-system-aarch64 -M raspi4b -no-reboot -display none \
+                -serial file:<log> -kernel kernel8.img \
+                -drive file=<img>,if=sd,format=raw
+  log         same three lines, "all 19 cases ran", 2312 bytes
+  appl_init   id 1, graf_handle 1, v_opnvwk 2, ap_version 0340, ap_planes 16
+  boot log    no panic, no fault, no exception; rc=0 from the shell
+  validate    tosdiff --validate ... -> accepted
+  artefacts   newtos-qemu-raspi4b/NEWTOS-AES-m06.{BIN,LOG}, BOOT-SERIAL.txt
+
+NEITHER RUN BLOCKED.  No alert box, no key wait, no hang, no panic.  No QEMU
+and no Hatari process was left running (pgrep after each: empty).
+
+WHAT CAME BACK -- numbers only
+  tosdiff -> DIFF-emutos-vs-newtos-640x480.txt, "19 of 19 cases differ".
+  All 19 differ in global[] alone -- ap_id, ap_private, ap_planes and the
+  words around them, the same six that differ in every case of every round.
+
+  EXACTLY ONE case differs anywhere else, and it is the one the table
+  declares in advance:
+
+    case 119  objc_sysvar set ACTBUTCOL to colour 20
+              int_out[0]  EmuTOS 0   NewTOS 1
+              ob_sysvar refuses a colour >= gl_ws.ws_ncolors
+              (gemoblib.c:1358-1372) and ws_ncolors is 16 on the TT at 4
+              planes and 256 on NewTOS (DEV_TAB[13], the Falcon truecolor
+              pen count).  The workstation, not the function.
+
+  The other 18 agree word for word, including the six get arms at their
+  init_3d defaults, the three bad-which fallbacks in each direction, the
+  "in1 == -1 leaves it alone" arm, and all three read-backs after a set:
+
+    case  mode which  OUT_LEN   both machines int_out[0..2]
+     90   get   1       3        1  0  1      indtxtmove 0, indcolchange 1
+     91   get   2       3        1  1  0      acttxtmove 1, actcolchange 0
+     92   get   3       2        1  8         indbutcol  = LWHITE
+     93   get   4       2        1  8         actbutcol  = LWHITE
+     94   get   5       2        1  8         backgrcol  = LWHITE
+     95   get   6       3        1  2  2      ADJ3DSTD twice
+     96   get   0       1        0            below LK3DIND -> default arm
+     97   get   7       1        0            above AD3DVALUE -> same arm
+     98   get   99      1        0            far outside -> same arm
+    107   set   1       1        1            set LK3DIND 1,0
+    109   get   1       3        1  1  0      the set took
+    111   get   2       3        1  1  1      in1 == -1 left acttxtmove at 1
+    112   set   3       1        1            set INDBUTCOL to 1
+    114   get   3       2        1  1         the set took
+    115   set   5       1        0            BACKGRCOL 32767 refused
+    116   get   5       2        1  8         and it changed nothing
+    117   set   6       1        0            AD3DVALUE is get only
+    118   set   99      1        0            set default arm
+
+  NOT A FINDING OF THIS RUN, BUT VISIBLE FROM THE SOURCE: EmuTOS' get arm
+  writes *out2 only for LK3DIND, LK3DACT and AD3DVALUE; NewTOS writes
+  int_out[2] for every get.  This table declares OUT_LEN 2 for the three
+  colour selectors on purpose, because OUT_LEN 3 there would deliver the
+  TT's UNINITIALISED xif stack (gemsuper.c:429-432, :444-445) and measure
+  the stack rather than the AES.  A table that wants to measure that
+  difference needs a different instrument, not a bigger OUT_LEN.
+
+  THE TABLE LEAVES STATE BEHIND, BY CONSTRUCTION: the 3D variables are set
+  once by init_3d and nothing inside a run resets them, so this table has to
+  be run on a freshly started AES and ends with indtxtmove, indcolchange,
+  actcolchange and indbutcol changed.  Both runs above boot fresh.

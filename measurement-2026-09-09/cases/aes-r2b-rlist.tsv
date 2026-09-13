@@ -1,0 +1,230 @@
+# aes-r2b-rlist.tsv -- AES round 2b: the window rectangle list.
+#
+# Format (seven tab separated columns):
+#   opcode  n_intin  n_intout  n_addrin  n_addrout  intin values  comment
+# as cases/aes-r1.tsv and cases/aes-r2-wind.tsv, and read by the same
+# loader.  A '+' opcode is a PRELUDE: issued after the reset and before the
+# measured call, never recorded.  A case id is the PHYSICAL LINE NUMBER and
+# this file's CRC binds every dump to it, so ANY edit -- an appended case, a
+# fixed typo in a comment -- invalidates every dump already taken with it.
+#
+# ======================================================================
+# WHY THIS FILE EXISTS SEPARATELY FROM aes-r2-wind.tsv
+# ======================================================================
+#
+# That table names WF_FIRSTXYWH / WF_NEXTXYWH as unmeasurable, and its
+# reason is correct as far as it goes:
+#
+#   "w_owns WRITES pwin->w_rnext (gemwmlib.c:1235), so the pair is an
+#    iterator: the answer depends on how many times it has been asked,
+#    which a single measured call per case cannot state."
+#
+# A single *measured* call cannot -- but a case is not a single call.  The
+# reset runs before every case, and the preludes then put the iterator in a
+# stated position, exactly the way the wind_set cases put a slider in one.
+# "How many times it has been asked" is therefore part of the case, and the
+# measured call is reproducible.  What that costs is one rule, below.
+#
+# The pair is worth measuring because it is the rectangle list every GEM
+# application walks to redraw itself, and because one real application
+# already turns on it: QED decides between drawing directly and deferring
+# by comparing WF_FIRSTXYWH against its own work rectangle
+# (`free_for_draw`, sdk/apps/qed/src/window.c:267).
+#
+# ======================================================================
+# THE ONE RULE: NEXT IS NEVER MEASURED WITHOUT A FIRST BEFORE IT
+# ======================================================================
+#
+# w_setup (gemwmlib.c:205-228) initialises w_owner, w_flags, w_kind,
+# w_pname, w_pinfo and the four slider fields.  It does NOT initialise
+# w_rnext, and w_rnext is written in exactly one place in the whole AES:
+# w_owns (:1235).  So on a freshly created window w_rnext still holds
+# whatever the slot's previous life left there -- an ORECT pointer that
+# newrect has since handed back to the free list (gemwrect.c:184,204).
+#
+# A measured WF_NEXTXYWH with no WF_FIRSTXYWH before it would therefore
+# dereference a freed pointer and follow its o_link.  That is not merely
+# unreproducible, it is unsafe on a machine nobody is watching.  **Every
+# NEXT case in this file carries a FIRST as its prelude**, including the
+# ones on handle 0: wm_new sweeps handles >= 1 only (:1886), so the
+# desktop's w_rnext survives the reset and is no better defined.
+#
+# ======================================================================
+# WHAT THE MEASUREMENT IS ACTUALLY FOR
+# ======================================================================
+#
+# w_owns, in full (gemwmlib.c:1229-1240):
+#
+#     while (po) {
+#         rc_copy(&po->o_gr, poutwds);
+#         pwin->w_rnext = po = po->o_link;
+#         if (rc_intersect(pt, poutwds))
+#             return;
+#     }
+#     poutwds->g_w = poutwds->g_h = 0;
+#
+# Three things a dump can settle that reading cannot:
+#
+#   1. **The end of the list writes two words, not four.**  When the walk
+#      runs out, only g_w and g_h are set to 0; g_x and g_y keep whatever
+#      the last rc_copy left, and if the list was empty from the start they
+#      keep whatever the caller's buffer held.  The poison is what makes
+#      that visible, which is the whole reason the arrays are poisoned.
+#   2. **The decomposition under an overlapping window.**  Section C opens
+#      a second window across the first and walks the lower one's list.
+#      How the visible remainder is cut into rectangles, and in which
+#      order, is newrect/brkrct (gemwrect.c:101-205) -- the part of the
+#      redraw path no source reading has ever pinned down against a real
+#      machine.
+#   3. **Clipping against the work area.**  w_owns intersects every
+#      rectangle with w_getsize(WS_WORK), so the answers carry the border
+#      arithmetic too, on a window that really exists.
+#
+# ======================================================================
+# SAFETY
+# ======================================================================
+#
+# Every rule enforced by core/cases.c holds here unchanged.  In addition,
+# this file obeys the two limits aes-r2-wind.tsv set for itself and proved
+# on both machines:
+#
+#   * only handles 1 and 2 are ever opened, and every rectangle lies
+#     inside 640x400, so nothing is clipped on one machine and not the
+#     other.  The two-window geometry is the one aes-r2-wind.tsv already
+#     ran (open 1 at 30,40,320,240 and 2 at 60,80,200,160).
+#   * no unpaired END_MCTRL, no wind_set on handle 0, no wind_open(0).
+#
+# Nothing here draws anything aes-r2-wind.tsv did not already draw: the
+# preludes are its preludes, and wind_get itself writes no pixels.
+#
+# ======================================================================
+# WHAT IS EXPECTED TO DIFFER, AND IS STILL WORTH MEASURING
+# ======================================================================
+#
+#   * The work-area arithmetic inside every answer: gl_wbox / gl_hbox are
+#     font metrics, the same dependency round 1 measured through
+#     wind_calc.  Recorded, not compared away.
+#   * WF_OWNER-style process ids do not appear here at all.
+#
+# opcode\tn_intin\tn_intout\tn_addrin\tn_addrout\tintin\tcomment
+
+!reset	wind_new
+
+# ====================================================================
+# A. One window, open and unobstructed
+#
+# The list of a window nothing overlaps is a single ORECT, so FIRST
+# answers the work area and the very next NEXT is already the end.
+# ====================================================================
+
++100	5	1	0	0	0x0FEF,10,20,300,200	create 1
++101	5	1	0	0	1,30,40,320,240	open 1 at 30,40,320,240
+104	2	5	0	0	1,11	WF_FIRSTXYWH of an open, unobstructed window: its work area
+
++100	5	1	0	0	0x0FEF,10,20,300,200	create 1
++101	5	1	0	0	1,30,40,320,240	open 1
++104	2	5	0	0	1,11	walk the iterator to the single rectangle
+104	2	5	0	0	1,12	WF_NEXTXYWH at the end: g_w/g_h are 0, g_x/g_y are NOT written
+
++100	5	1	0	0	0x0FEF,10,20,300,200	create 1
++101	5	1	0	0	1,30,40,320,240	open 1
++104	2	5	0	0	1,11	first
++104	2	5	0	0	1,12	end
+104	2	5	0	0	1,12	WF_NEXTXYWH past the end: po is NULL, the loop is not entered at all
+
+# ====================================================================
+# B. A window that exists but was never opened
+#
+# wm_new leaves w_rlist NULL (gemwrect.c:184 gives the ORECTs back and
+# newrect rebuilds only for open windows), so the walk never starts.
+# Safe: po is NULL, nothing is dereferenced.
+# ====================================================================
+
++100	5	1	0	0	0x0FEF,10,20,300,200	create 1, do not open it
+104	2	5	0	0	1,11	WF_FIRSTXYWH of a created, unopened window: empty list
+
+# ====================================================================
+# C. Two windows, the lower one partly covered
+#
+# The geometry is the one aes-r2-wind.tsv already ran on both machines:
+# window 1 at 30,40,320,240 and window 2 at 60,80,200,160 on top of it.
+# Window 2 covers the middle of window 1, so window 1's visible remainder
+# is more than one rectangle and the iterator has something to iterate.
+# ====================================================================
+
++100	5	1	0	0	0x0FEF,10,20,300,200	create 1
++100	5	1	0	0	0x0FEF,10,20,300,200	create 2
++101	5	1	0	0	1,30,40,320,240	open 1
++101	5	1	0	0	2,60,80,200,160	open 2, which tops it
+104	2	5	0	0	1,11	WF_FIRSTXYWH of the covered window: the first visible piece
+
++100	5	1	0	0	0x0FEF,10,20,300,200	create 1
++100	5	1	0	0	0x0FEF,10,20,300,200	create 2
++101	5	1	0	0	1,30,40,320,240	open 1
++101	5	1	0	0	2,60,80,200,160	open 2
++104	2	5	0	0	1,11	first piece
+104	2	5	0	0	1,12	WF_NEXTXYWH: the second visible piece -- how brkrct cut it
+
++100	5	1	0	0	0x0FEF,10,20,300,200	create 1
++100	5	1	0	0	0x0FEF,10,20,300,200	create 2
++101	5	1	0	0	1,30,40,320,240	open 1
++101	5	1	0	0	2,60,80,200,160	open 2
++104	2	5	0	0	1,11	first
++104	2	5	0	0	1,12	second
+104	2	5	0	0	1,12	the third piece, if the decomposition has one
+
++100	5	1	0	0	0x0FEF,10,20,300,200	create 1
++100	5	1	0	0	0x0FEF,10,20,300,200	create 2
++101	5	1	0	0	1,30,40,320,240	open 1
++101	5	1	0	0	2,60,80,200,160	open 2
++104	2	5	0	0	1,11	first
++104	2	5	0	0	1,12	second
++104	2	5	0	0	1,12	third
+104	2	5	0	0	1,12	the fourth: how many pieces there are is the measurement
+
++100	5	1	0	0	0x0FEF,10,20,300,200	create 1
++100	5	1	0	0	0x0FEF,10,20,300,200	create 2
++101	5	1	0	0	1,30,40,320,240	open 1
++101	5	1	0	0	2,60,80,200,160	open 2
+104	2	5	0	0	2,11	WF_FIRSTXYWH of the TOP window: nothing covers it, one piece
+
+# ====================================================================
+# D. The desktop's own list, handle 0
+#
+# D.w_win[0] is outside wm_new's sweep, but newrect rebuilds every
+# window's list from geometry on each open and close (gemwrect.c:160-205),
+# so with no window open the desktop owns one rectangle, and with one open
+# it owns the remainder around it.  Its w_rnext still survives the reset,
+# which is why these two cases carry a FIRST prelude like all the others.
+# ====================================================================
+
+104	2	5	0	0	0,11	WF_FIRSTXYWH of the desktop, nothing open: the whole desktop
+
++104	2	5	0	0	0,11	walk the desktop iterator to its single rectangle
+104	2	5	0	0	0,12	WF_NEXTXYWH on the desktop at the end
+
++100	5	1	0	0	0x0FEF,10,20,300,200	create 1
++101	5	1	0	0	1,30,40,320,240	open 1
+104	2	5	0	0	0,11	WF_FIRSTXYWH of the desktop with one window open: the remainder
+
++100	5	1	0	0	0x0FEF,10,20,300,200	create 1
++101	5	1	0	0	1,30,40,320,240	open 1
++104	2	5	0	0	0,11	first piece of the remainder
+104	2	5	0	0	0,12	WF_NEXTXYWH: the next piece of the desktop remainder
+
+# ====================================================================
+# E. OUT_LEN on a rectangle field
+#
+# xif copies control[OUT_LEN] words back and no more (gemsuper.c:430-432);
+# the arm itself writes poutwds[0..3] through w_owns.  These two say
+# whether the copy-back honours the declaration on a field whose handler
+# writes four words.
+# ====================================================================
+
++100	5	1	0	0	0x0FEF,10,20,300,200	create 1
++101	5	1	0	0	1,30,40,320,240	open 1
+104	2	1	0	0	1,11	WF_FIRSTXYWH, OUT_LEN 1: the return code only, the rect stays poisoned
+
++100	5	1	0	0	0x0FEF,10,20,300,200	create 1
++101	5	1	0	0	1,30,40,320,240	open 1
+104	2	3	0	0	1,11	WF_FIRSTXYWH, OUT_LEN 3: x and y arrive, w and h stay poisoned

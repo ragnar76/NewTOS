@@ -1,0 +1,209 @@
+M07 -- the refusal guard now decides per PARAMETER, and the two arms it was
+wrongly locking out really run on both machines.  Taken 2026-09-13.
+MEASUREMENT ONLY: this directory states what ran and what came back.
+
+WHAT WAS WRONG
+  tosdump/core/cases.c judged a case by its OPCODE.  For six opcodes there is
+  no such judgement to make, because the same opcode is a poll or a hang, a
+  read of the dumper's own buffer or a write through 0xDEADDEAD, depending on
+  one WORD of int_in or on whether the addr_in column named a buffer.  So the
+  guard was wrong in both directions at once:
+
+  TOO COARSE -- refused, though one arm is guaranteed safe:
+    evnt_multi (25).  MU_TIMER with a zero MT_LOCOUNT/MT_HICOUNT sets `what`
+      at gemevlib.c:216-220, BEFORE the `if (what == 0)` block that arms the
+      events and calls mwait (:232-262).  It is the one call to evnt_multi
+      that is guaranteed to return, and it was exactly the one missing.
+    form_error (53).  n > 63 returns FALSE before fm_show (gemfmlib.c:440-441).
+
+  TOO LEAKY -- issuable, though the parameter can be fatal:
+    scrp_read (80)   strcpy(pscrap, D.g_scrap), gemsclib.c:40-45: a WRITE of
+                     up to 114 bytes through addr_in[0].
+    scrp_write (81)  strcpy(D.g_scrap, pscrap), :57-62: an unbounded READ.
+    form_keybd (55)  find_obj walks the tree as an OBJECT array bounded only
+                     by LASTOB (gemfmlib.c:135-148), reached for
+                     RETURN/ENTER/ARROW_UP/TAB/ARROW_DOWN (:167-190).
+    objc_delete (41) ob_delete tests `obj == ROOT` and nothing else
+                     (gemoblib.c:1154-1157); obj < 0 reads tree[-1].ob_next
+                     below the tree base and then WRITES through get_par.
+
+  THE LIVED CASE, and why this is not pedantry: the first draft of the r4
+  table contained objc_delete(-1).  NewTOS answers 0 for obj < 0
+  (tos-api/src/aes/object.rs) and would have come through clean; the TT would
+  have died.  Caught by hand before the run, not by the guard.
+
+WHAT CHANGED
+  A second question -- "with THESE values?" -- is now answered per line, next
+  to the round-2 window guard and in the same function
+  (aes_line_parameter_refusal, core/cases.c).  It runs for preludes exactly
+  as for cases.
+
+  IN THE LOADER, NOT ON THE MACHINE, and that is checked rather than assumed:
+  every quantity it reads -- the flags, the timer count, the error number, the
+  character, the object index, the plants -- is a column of the line.  Nothing
+  needs a measured value, so nothing needs a machine.  M06 split the refusal
+  at the seam "decidable from the table" / "needs the machine"; M07 lands
+  entirely on the loader side of it, which is what the M06 report predicted
+  for these two arms.
+
+  What opens: evnt_multi with MU_TIMER and a zero count (and a planted
+  MME_PBUFF when MU_MESAG is among the flags); form_error with n > 63; and
+  scrp_read/scrp_write/form_keybd WITH a planted buffer.
+  What closes: those three without a plant, form_keybd with a navigating key
+  (a planted string buffer is not an OBJECT tree, so the plant does not make
+  that arm safe), objc_delete with any object but ROOT, and evnt_multi in
+  every other shape -- mask 0 most sharply of all, because mwait(0) tests
+  `!(0 & p_evflg)`, sets WAITIN and dsptch()es with nothing that can ever
+  wake it (gemasync.c:117-125).
+
+  The shape rule that makes it total: where the guard reads an int_in WORD,
+  the case must state it AND declare IN_LEN past it.  xif's int_in is a LOCAL
+  array copied into only as far as min(IN_LEN, I_SIZE) (gemsuper.c:428-438),
+  so a WORD outside IN_LEN is uninitialised stack, not the number the table
+  wrote.
+
+TABLE
+  file        tosdump/cases/aes-m07-parameter.tsv
+  cases       20  (12 x evnt_multi, 8 x form_error)
+  preludes    0
+  columns     8
+  CRC32       0F46665B
+  SHA-256     35ca5bcab9e069d09f80db3da72aeba3626b576f6bf9da225e2e4cd92047d67c
+  size        5501 bytes, 87 lines, pure LF, ASCII
+  reset       !reset none
+  needs       nothing of the machine (features == 0)
+  checked by  tosdump/host/build/casecheck --aes -> exit 0, accepted
+  dump size   32 byte header + 20 x 120 = 2432 bytes
+
+  Written once.  The case id is the physical line number and the CRC binds
+  both dumps below to this exact file; any later edit invalidates them.
+
+  OUT_LEN IS 5 ON EVERY evnt_multi AND 1 ON EVERY form_error, deliberately.
+  A call with `what != 0` skips the block that writes EV_KRET and EV_BRET, so
+  int_out[5..6] would be the TT's uninitialised xif stack; fm_error writes
+  RET_CODE and nothing else.  A larger OUT_LEN would measure the stack.  Same
+  reasoning as aes-m06-sysvar.tsv's OUT_LEN 2.
+
+SOURCE OF TRUTH
+  references/emutos @ 1a7484aba1bfba23e2c0899e243b6d8177fe41df
+  NewTOS work tree  @ 70caee212078b11ffa0a70afa1279bdd82532959
+                      (plus the uncommitted strands in the tree)
+
+RUN A -- EmuTOS 1.4 on an Atari TT, via Hatari
+  emulator    /Users/ingouhlemann/Downloads/hatari-2.6.1_macos/Hatari.app/Contents/MacOS/Hatari (2.6.1)
+  ROM         etos512de.img, SHA-256 5805c0a4834f8935c427454785d32c59e796b11ad6802101052b84fb1eb7a745
+  command     SDL_VIDEODRIVER=dummy Hatari --machine tt --tos etos512de.img \
+                --tos-res ttmed --monitor vga --sound off --fast-forward on \
+                --run-vbls 20000 --conout 2 -d <workdir> --gemdos-drive C \
+                --auto 'C:\DUMPAES.PRG'
+  dumper      tosdump/build/DUMPAES.PRG, build id 70ca
+  dumper SHA  16ee79275ae8c02ac43683c05f87971cf53d72667c0b223c22cc8619222f453a
+              NOT reproducible byte for byte: m68k-atari-mint-gcc embeds its
+              temporary object file names in the PRG symbol table.  Measured
+              again here against a clean rebuild from the identical sources:
+              same 169709 bytes, header, TEXT (134568), DATA (1588) and the
+              relocation table byte identical, and all 46 differing bytes
+              inside the 31180 byte symbol table.  The AArch64 build IS
+              reproducible (the .NAP SHA below is unchanged across a clean
+              rebuild).
+  log         "AES.TSV: 20 cases, CRC 0F46665B" / "all 20 cases ran" /
+              "AES.BIN: 20 records, 2432 bytes"
+  appl_init   id 0, graf_handle 1, v_opnvwk 2, ap_version 0340, ap_planes 4
+  validate    tosdiff --validate ... -> accepted
+  artefacts   emutos14-tt-hatari/EMUTOS14-AES-m07.{BIN,LOG}, HATARI-STDOUT.txt
+
+RUN B -- NewTOS on QEMU raspi4b, headless, 640x480
+  kernel      kernel8.img, built fresh for this run (dev profile)
+  kernel SHA  5f4355b55b9998e6658b67f6ade1bb32406cda92289858fcfb291d057e8dcc2e
+              (identical to M06's: M07 changes no Rust at all)
+  dumper      tosdump/build/DUMPAES.NAP, build id 70ca
+  dumper SHA  1b84a0cbd97469b2a8b7ae5d45055fe3785c3d93397898ebc404b5aa65e200cf
+  card        FAT16 image from tools/make-sd-image.sh <img> 64, with
+              C:\DUMPAES.NAP, C:\AES.TSV (a byte-identical copy of the table)
+              and C:\NEWDESK.INF = "#Z 01 C:\DUMPAES.NAP@"
+  command     qemu-system-aarch64 -M raspi4b -no-reboot -display none \
+                -serial file:<log> -kernel kernel8.img \
+                -drive file=<img>,if=sd,format=raw
+  log         same lines, "all 20 cases ran", 2432 bytes
+  appl_init   id 1, graf_handle 1, v_opnvwk 2, ap_version 0340, ap_planes 16
+  boot log    no panic, no fault, no exception; rc=0 from the shell, and the
+              desktop came up behind it
+  validate    tosdiff --validate ... -> accepted
+  artefacts   newtos-qemu-raspi4b/NEWTOS-AES-m07.{BIN,LOG}, BOOT-SERIAL.txt
+
+NEITHER RUN BLOCKED.  No alert box, no key wait, no hang, no panic.  No QEMU
+and no Hatari process was left running (pgrep after each: empty).
+
+WHAT CAME BACK -- numbers only
+  tosdiff -> DIFF-emutos-vs-newtos-640x480.txt, "20 of 20 cases differ".
+  All 20 differ in global[] alone -- ap_id, ap_private, ap_planes and the
+  words around them, the same six that differ in every case of every round.
+  Twelve of them ALSO differ in int_out[1..2], the mouse position: the TT
+  reports 319,239 and NewTOS 320,240, which is the centre of a 640x480 screen
+  read off by one against the other.  Not a finding about evnt_multi.
+
+  int_out[0] -- WHICH events the multiplexer reports, and what fm_error
+  returns -- AGREES ON ALL TWENTY:
+
+    case  flags              both machines int_out[0]
+     63   MU_TIMER                32   the quick check timer alone
+     64   MU_KEYBD|MU_TIMER       32   no key was ready, so only the timer
+     65   MU_BUTTON|MU_TIMER      34   the button quick check fires too:
+                                       downorup(0,0,0) is TRUE by construction
+                                       (geminput.c:348-357)
+     66   MU_M1|MU_TIMER          32   MOBLK all zero, m_out 0: in_mrect false
+     67   MU_M2|MU_TIMER          32   the same, on the second rectangle
+     68   MU_M1|MU_TIMER          36   m_out 0 over the whole screen: the mouse
+                                       is already inside, so MU_M1 fires
+     69   MU_MESAG|MU_TIMER       32   nothing queued, so ev_mesag is not
+                                       reached and the planted buffer is not
+                                       written
+     70   all six MU_TOSVALID     34   timer + button; no key, degenerate
+                                       rectangles, empty queue
+     71   0x8020                  32   the bit outside MU_TOSVALID is masked
+                                       off -- gemsuper.c:153 on the TT, and
+                                       NewTOS masks identically
+     72   MU_TIMER, OUT_LEN 1     32   only RET_CODE delivered, int_out[1..4]
+                                       stay poisoned on both
+     73   MU_TIMER, OUT_LEN 0    -8531 xif skips the copy-back entirely, so
+                                       even RET_CODE stays poisoned, on both
+     74   MU_TIMER, AIN_LEN 3     32   three poisoned address slots handed
+                                       over and never read
+
+     80-87  form_error n = 64, 65, 100, 1000, 32767, and the IN_LEN 2 /
+            OUT_LEN 0 / AIN_LEN 1 variants: int_out[0] = 0 (FALSE) on both,
+            except case 86 (OUT_LEN 0) where the FALSE is computed and never
+            delivered, leaving the poison on both.
+
+  So: the two arms the opcode guard was locking out not only run, they AGREE
+  between EmuTOS and NewTOS in every measured word.
+
+THE OTHER DIRECTION -- throwaway/, not a measurement
+  throwaway/unplanted.tsv and throwaway/planted.tsv are the same four calls
+  written twice, once with the addr_in column empty and once with a buffer.
+  They are NOT frozen and nothing is bound to them; they exist to show the
+  guard answering per parameter.
+
+  UNPLANTED -> refused by name and by line, casecheck exit 1.  Each line
+  checked on its own:
+    scrp_read   "strcpy(pscrap, D.g_scrap) (gemsclib.c:40-45): it WRITES up
+                 to LEN_ZPATH = 114 bytes through SC_PATH = addr_in[0] ..."
+    scrp_write  "strcpy(D.g_scrap, pscrap) (gemsclib.c:57-62): it READS a NUL
+                 terminated string through SC_PATH = addr_in[0] ..."
+    form_keybd  "takes its tree from FM_FORM = addr_in[0] (gemsuper.c:258) ..."
+    objc_delete "ob_delete returns before touching the tree only for
+                 OB_DELOB == ROOT (gemoblib.c:1154-1155) ... which NewTOS
+                 answers 0 for and the TT does not, so testing on one machine
+                 proves nothing about the other"
+
+  PLANTED -> accepted, and RUN ON BOTH MACHINES: "all 4 cases ran" each,
+  tosdiff --validate accepted each, no hang and no fault.  Every recorded
+  word agrees between the two:
+    case 5  scrp_write   int_out[0] = 1, addr_in[0] = B0FF0000 (buffer 0)
+    case 6  scrp_read    int_out[0] = 1, addr_in[0] = B0FF0001 (buffer 1)
+    case 7  form_keybd   int_out[0] = 1, FM_ONXTOB = 0, FM_OCHAR = 16706 --
+                         the key word passed through untouched, which is what
+                         direction == -1 means (gemfmlib.c:185)
+    case 8  objc_delete  int_out[0] = 0, "can't delete the root object"
+  artefacts throwaway/{EMUTOS14,NEWTOS}-AES-planted.{BIN,LOG},
+            throwaway/NEWTOS-BOOT-SERIAL.txt

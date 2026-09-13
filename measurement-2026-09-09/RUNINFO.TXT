@@ -1,0 +1,39 @@
+NewTOS -- Lauf-Metadaten, erzeugt beim Bestuecken der Karte
+==========================================================
+
+Datum          : 2026-09-09 21:30 CEST
+Git HEAD       : 70caee212078b11ffa0a70afa1279bdd82532959
+Dumper BUILD_ID: 70ca   (erste 4 Zeichen von HEAD, so setzt es build-dump*-newtos.sh)
+Arbeitsbaum    : 50 geaenderte/ungetrackte Pfade gegenueber HEAD
+
+ACHTUNG zur Build-ID: sie benennt den COMMIT, nicht den Arbeitsbaum.
+Bei 50 offenen Pfaden -- darunter der USB-Fix in kernel/src/drivers/usb/ --
+ist der gemessene Kernel NICHT durch den Commit allein beschrieben. Die
+SHA-256 unten identifizieren die Binaerdateien eindeutig.
+
+Im Kernel ABGESCHALTET, geprueft am Abbild (strings), nicht angenommen:
+  QED_SVC_TRACE  = false (dbg_qedtrace.rs:47) -- 0 Treffer auf 'QEDTRACE'
+  usb-diag       nicht gebaut (default = []) -- 0 Treffer auf 'USBDIAG',
+                 'Supported-Protocol', 'PORTSC'; bootlog.rs nicht uebersetzt
+  gemdos-trace / aes-trace / initinfo-diag  nicht gebaut
+Enthalten und gewollt: der USB-Fix im Normalbuild (Hub-Reset nach
+FreeMiNT hub.c:225) samt seiner Enumerations-Meldungen beim Boot.
+
+kernel8.img    : 2fbf84626cd0b6fa6b44cecf6e8f8fadfe7e9272a938e779de34cc7d4c6b098f
+                 778960 Bytes
+DUMPAES.NAP    : 5889e9bbef18d4b80a7a0432438d1779ea9966310fec5607c028d3b57a0a158d
+DUMPVDI.NAP    : c30587cf77c20b6681e4de06d3d7ddaaa84b2b70ddcd4c57e4eca3b7ee3dd5c4
+DUMPRAST.NAP   : fa3c9c3a92da2b9211d3782d631b512d523eadb375b0892a22cdbc771cbe4953
+
+Falltabellen auf der Karte
+--------------------------
+AES.TSV      = aes-r1.tsv        95 cases, 0 preludes, CRC 33C13C8F
+AES-R2.TSV   = aes-r2-wind.tsv   78 cases, 126 preludes, CRC AFB11C9F
+AES-R2B.TSV  = aes-r2b-rlist.tsv 15 cases, 46 preludes, CRC B4CC4A5A
+VDI.TSV      = vdi-all.tsv       182 cases, 34 preludes, CRC D135ADAF
+RASTER.TSV   = vdi-raster.tsv    59 cases, CRC 702EEA7D
+
+Geraeteangaben traegt jeder Lauf selbst im .LOG:
+  VDI/RASTER : DEV_TAB (Aufloesung [0],[1]; Farbanzahl [13]) und SIZ_TAB
+  AES        : ap_version, ap_planes
+  alle       : Dumper-BUILD_ID, Tabellenname, Fallzahl, Tabellen-CRC

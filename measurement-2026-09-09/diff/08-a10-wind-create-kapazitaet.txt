@@ -1,0 +1,113 @@
+A10 -- wind_create: Kapazitaetsgrenze.  Rohwerte je Fall aus Lauf 2 (Pi 4,
+build 70ca) und der TT-Referenz (EmuTOS 1.4, build c911), Falltabelle
+tosdump/cases/aes-r2-wind.tsv, CRC AFB11C9F.  Erzeugt 2026-09-10.
+
+Erzeugende Befehle (aus dem Repo-Wurzelverzeichnis):
+
+  $ shasum -a 256 tosdump/cases/aes-r2-wind.tsv \
+        measurement-2026-09-09/run2-pi4-r2wind/AES.BIN \
+        tosdump/reference/EMUTOS14-AES-r2wind.BIN
+  $ ./tosdump/host/build/tosdiff --validate \
+        measurement-2026-09-09/run2-pi4-r2wind/AES.BIN tosdump/cases/aes-r2-wind.tsv
+  $ ./tosdump/host/build/tosdiff --validate \
+        tosdump/reference/EMUTOS14-AES-r2wind.BIN tosdump/cases/aes-r2-wind.tsv
+  $ python3 <scratch>/a10-audit/aesread-a10.py 131,154,170 \
+        measurement-2026-09-09/run2-pi4-r2wind/AES.BIN \
+        tosdump/reference/EMUTOS14-AES-r2wind.BIN
+  $ ./tosdump/host/build/tosdiff tosdump/cases/aes-r2-wind.tsv \
+        tosdump/reference/EMUTOS14-AES-r2wind.BIN \
+        measurement-2026-09-09/run2-pi4-r2wind/AES.BIN    (Auszug: Faelle 131/154/170)
+
+aesread-a10.py ist ein rein lesendes Auditwerkzeug; das Recordlayout stammt aus
+tosdump/core/tosdump.h:104-125, Woerter big-endian (tosdump/core/record.c:42-56).
+0xDEAD = Poison (tosdump/core/tosdump.h:78), also ein Feld, das niemand
+beschrieben hat.
+
+=== SHA-256 der beteiligten Dateien ===
+5419a70944ac78b82144936773c3e6e9a0a338202a1b91f9fd15f05679f31908  tosdump/cases/aes-r2-wind.tsv
+680c03b9719af741ce6781c8f9b6bdf891e625ccbadeb3fc6190f002bafd2de6  measurement-2026-09-09/run2-pi4-r2wind/AES.BIN
+aa87d29a49b3a023208ae16d188f9929e8e39fac84484b61687e53f3d572f2c5  tosdump/reference/EMUTOS14-AES-r2wind.BIN
+
+=== validate ===
+AES.BIN: area AES, 78 records of 120 bytes, build 70ca, case CRC AFB11C9F
+AES.BIN: matches aes-r2-wind.tsv (78 cases)
+AES.BIN: accepted
+EMUTOS14-AES-r2wind.BIN: area AES, 78 records of 120 bytes, build c911, case CRC AFB11C9F
+EMUTOS14-AES-r2wind.BIN: matches aes-r2-wind.tsv (78 cases)
+EMUTOS14-AES-r2wind.BIN: accepted
+
+=== Rohwerte der A10-Faelle ===
+== measurement-2026-09-09/run2-pi4-r2wind/AES.BIN  build 70ca  caseCRC AFB11C9F  records 78
+   case 131  opcode 100  trap-ret 0
+      contrl  = 0x0064(100) 0x0005(5) 0x0001(1) 0x0000(0) 0x0000(0)
+      int_in  = 0x0FEF(4079) 0x0000(0) 0x0014(20) 0x0140(320) 0x00C8(200) 0xDEAD(-8531)
+      int_out = 0x0001(1) 0xDEAD(-8531) 0xDEAD(-8531) 0xDEAD(-8531) 0xDEAD(-8531) 0xDEAD(-8531) 0xDEAD(-8531)
+      global  = 0x0340(832) 0x0001(1) 0x0002(2) 0x117B(4475) 0x0000(0) 0x0000(0) 0x0000(0) 0x0000(0) 0x0000(0) 0x0000(0) 0x0010(16) 0x3340(13120) 0x0012(18) 0x0000(0) 0x0000(0)
+   case 154  opcode 100  trap-ret 0
+      contrl  = 0x0064(100) 0x0005(5) 0x0001(1) 0x0000(0) 0x0000(0)
+      int_in  = 0x0FEF(4079) 0x0000(0) 0x0014(20) 0x0140(320) 0x00C8(200) 0xDEAD(-8531)
+      int_out = 0x0009(9) 0xDEAD(-8531) 0xDEAD(-8531) 0xDEAD(-8531) 0xDEAD(-8531) 0xDEAD(-8531) 0xDEAD(-8531)
+      global  = 0x0340(832) 0x0001(1) 0x0002(2) 0x117B(4475) 0x0000(0) 0x0000(0) 0x0000(0) 0x0000(0) 0x0000(0) 0x0000(0) 0x0010(16) 0x3340(13120) 0x0012(18) 0x0000(0) 0x0000(0)
+   case 170  opcode 100  trap-ret 0
+      contrl  = 0x0064(100) 0x0005(5) 0x0001(1) 0x0000(0) 0x0000(0)
+      int_in  = 0x0FEF(4079) 0x0000(0) 0x0014(20) 0x0140(320) 0x00C8(200) 0xDEAD(-8531)
+      int_out = 0xFFFF(-1) 0xDEAD(-8531) 0xDEAD(-8531) 0xDEAD(-8531) 0xDEAD(-8531) 0xDEAD(-8531) 0xDEAD(-8531)
+      global  = 0x0340(832) 0x0001(1) 0x0002(2) 0x117B(4475) 0x0000(0) 0x0000(0) 0x0000(0) 0x0000(0) 0x0000(0) 0x0000(0) 0x0010(16) 0x3340(13120) 0x0012(18) 0x0000(0) 0x0000(0)
+== tosdump/reference/EMUTOS14-AES-r2wind.BIN  build c911  caseCRC AFB11C9F  records 78
+   case 131  opcode 100  trap-ret 0
+      contrl  = 0x0064(100) 0x0005(5) 0x0001(1) 0x0000(0) 0x0000(0)
+      int_in  = 0x0FEF(4079) 0x0000(0) 0x0014(20) 0x0140(320) 0x00C8(200) 0xDEAD(-8531)
+      int_out = 0x0001(1) 0xDEAD(-8531) 0xDEAD(-8531) 0xDEAD(-8531) 0xDEAD(-8531) 0xDEAD(-8531) 0xDEAD(-8531)
+      global  = 0x0340(832) 0x0001(1) 0x0000(0) 0x0000(0) 0x1143(4419) 0x0000(0) 0x0000(0) 0x0000(0) 0x0000(0) 0x0000(0) 0x0004(4) 0x0000(0) 0xBE04(-16892) 0x0000(0) 0x0000(0)
+   case 154  opcode 100  trap-ret 0
+      contrl  = 0x0064(100) 0x0005(5) 0x0001(1) 0x0000(0) 0x0000(0)
+      int_in  = 0x0FEF(4079) 0x0000(0) 0x0014(20) 0x0140(320) 0x00C8(200) 0xDEAD(-8531)
+      int_out = 0x0009(9) 0xDEAD(-8531) 0xDEAD(-8531) 0xDEAD(-8531) 0xDEAD(-8531) 0xDEAD(-8531) 0xDEAD(-8531)
+      global  = 0x0340(832) 0x0001(1) 0x0000(0) 0x0000(0) 0x1143(4419) 0x0000(0) 0x0000(0) 0x0000(0) 0x0000(0) 0x0000(0) 0x0004(4) 0x0000(0) 0xBE04(-16892) 0x0000(0) 0x0000(0)
+   case 170  opcode 100  trap-ret 0
+      contrl  = 0x0064(100) 0x0005(5) 0x0001(1) 0x0000(0) 0x0000(0)
+      int_in  = 0x0FEF(4079) 0x0000(0) 0x0014(20) 0x0140(320) 0x00C8(200) 0xDEAD(-8531)
+      int_out = 0xFFFF(-1) 0xDEAD(-8531) 0xDEAD(-8531) 0xDEAD(-8531) 0xDEAD(-8531) 0xDEAD(-8531) 0xDEAD(-8531)
+      global  = 0x0340(832) 0x0001(1) 0x0000(0) 0x0000(0) 0x1143(4419) 0x0000(0) 0x0000(0) 0x0000(0) 0x0000(0) 0x0000(0) 0x0004(4) 0x0000(0) 0xBE04(-16892) 0x0000(0) 0x0000(0)
+
+=== tosdiff-Auszug: was an diesen Faellen ueberhaupt abweicht ===
+case 131  opcode 100  wind_create: the first free handle after the reset
+    global[2]              EMUTOS14-AES-r2wind.BIN = 0x0000 (0)   AES.BIN                 = 0x0002 (2)
+    global[3]              EMUTOS14-AES-r2wind.BIN = 0x0000 (0)   AES.BIN                 = 0x117B (4475)
+    global[4]              EMUTOS14-AES-r2wind.BIN = 0x1143 (4419)   AES.BIN                 = 0x0000 (0)
+    global[10]              EMUTOS14-AES-r2wind.BIN = 0x0004 (4)   AES.BIN                 = 0x0010 (16)
+    global[11]              EMUTOS14-AES-r2wind.BIN = 0x0000 (0)   AES.BIN                 = 0x3340 (13120)
+    global[12]              EMUTOS14-AES-r2wind.BIN = 0xBE04 (-16892)   AES.BIN                 = 0x0012 (18)
+
+case 154  opcode 100  wind_create, the ninth: NUM_WIN edge
+    global[2]              EMUTOS14-AES-r2wind.BIN = 0x0000 (0)   AES.BIN                 = 0x0002 (2)
+    global[3]              EMUTOS14-AES-r2wind.BIN = 0x0000 (0)   AES.BIN                 = 0x117B (4475)
+    global[4]              EMUTOS14-AES-r2wind.BIN = 0x1143 (4419)   AES.BIN                 = 0x0000 (0)
+    global[10]              EMUTOS14-AES-r2wind.BIN = 0x0004 (4)   AES.BIN                 = 0x0010 (16)
+    global[11]              EMUTOS14-AES-r2wind.BIN = 0x0000 (0)   AES.BIN                 = 0x3340 (13120)
+    global[12]              EMUTOS14-AES-r2wind.BIN = 0xBE04 (-16892)   AES.BIN                 = 0x0012 (18)
+
+case 170  opcode 100  wind_create, the sixteenth: NUM_WIN edge
+    global[2]              EMUTOS14-AES-r2wind.BIN = 0x0000 (0)   AES.BIN                 = 0x0002 (2)
+    global[3]              EMUTOS14-AES-r2wind.BIN = 0x0000 (0)   AES.BIN                 = 0x117B (4475)
+    global[4]              EMUTOS14-AES-r2wind.BIN = 0x1143 (4419)   AES.BIN                 = 0x0000 (0)
+    global[10]              EMUTOS14-AES-r2wind.BIN = 0x0004 (4)   AES.BIN                 = 0x0010 (16)
+    global[11]              EMUTOS14-AES-r2wind.BIN = 0x0000 (0)   AES.BIN                 = 0x3340 (13120)
+    global[12]              EMUTOS14-AES-r2wind.BIN = 0xBE04 (-16892)   AES.BIN                 = 0x0012 (18)
+
+=== Befund ===
+
+Fall 131  wind_create, erster freier Handle       Pi int_out[0] = 1    TT = 1
+Fall 154  wind_create, der neunte                 Pi int_out[0] = 9    TT = 9
+Fall 170  wind_create, der sechzehnte             Pi int_out[0] = -1   TT = -1
+
+An allen drei Faellen weichen ausschliesslich die sechs global[]-Woerter
+(Indizes 2,3,4,10,11,12) ab; contrl, int_in, int_out und der Trap-Rueckgabewert
+sind bitgleich.  Die global[]-Abweichung gehoert zu A06-A09 und wird hier nicht
+bewertet.
+
+Fall 170 belegt die Grenze zusaetzlich von der anderen Seite: haette einer der
+fuenfzehn Vorlaeufe (Preludes, Zeilen 155-169 der Tabelle) einen Handle NICHT
+bekommen, waere beim sechzehnten Aufruf noch ein Platz frei gewesen und der
+Aufruf haette diesen Handle geliefert statt -1.  -1 heisst also: genau fuenfzehn
+Anwendungshandles wurden vergeben, so wie auf dem TT.

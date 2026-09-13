@@ -1,0 +1,8 @@
+# THROWAWAY -- the same four calls WITH the buffers the addr_in column can
+# name (M05).  Accepted by the loader and runnable on both machines.
+!reset	none
+!columns	8
+81	0	1	1	0	-	a0=0	scrp_write: strcpy(D.g_scrap, buffer 0) -- gemsclib.c:57-62
+80	0	1	1	0	-	a0=1	scrp_read: strcpy(buffer 1, D.g_scrap) -- gemsclib.c:40-45
+55	3	3	1	0	0,16706,0	a0=2	form_keybd, key word 0x4142: direction stays -1, the tree is never read
+41	1	1	1	0	0	a0=3	objc_delete(ROOT): returns before the tree is read

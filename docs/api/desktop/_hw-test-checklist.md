@@ -194,11 +194,14 @@ is unticked and still needs a live run.
 - [ ] **D1 — View → Show as text** → the top window switches to the text list
   (indicator / NAME.EXT / size / date / time columns); **no stale icons left
   behind (residue)**. Switch back to icons — same, clean.
-- [ ] **D2 — (residue, the headline symptom) Two overlapping windows, switch
+- [x] **D2 — (residue, the headline symptom) Two overlapping windows, switch
   View→text then View→icons** → **neither** window shows leftover pixels from
   the previous view in its own work area, and the covered part of the lower
   window is **not** repainted over the upper window. *This is the D2/R2 residue
   case that must be structurally gone.*
+  **PASSED on real Pi 4, 2026-09-11** (1920×1080, kernel with FIX-01…06):
+  overlapping windows, focus switched between them, moved over each other —
+  no residue, no overpainting, no error. Logged in `docs/HW-TEST-LOG.md`.
 - [ ] **D3 — Sort by size** → files listed **largest first**; folders always
   precede files. (On the test SD: LYNXBOOT.IMG / KERNEL8.IMG should lead the
   files.)
@@ -507,29 +510,25 @@ hardware-solid:
 
 ---
 
-## Section K — BALL.NAP, the October demo (milestone 1)
+## Section K — full-screen application launch and return
 
-`sdk/apps/ball/` is a native LP64 GEM application that takes the whole screen,
-double-buffers through `Setscreen`, and quits on a key. Everything about the
-picture and the frame rate was verified in QEMU `raspi4b` (screendumps, and
-`C:\BALL.LOG`: 60.00 fps, 0 dropped frames, 0.21–0.22 ms/frame of headroom at
-640×480). Two things QEMU cannot reach, both because `raspi4b` has no input
-path at all — a serial byte is deliberately dropped on this board
-(`kernel/src/console.rs:163`, CON is the USB-HID keyboard):
+K1/K2 used to be driven by the bouncing-ball demo, a full-screen LP64 `.NAP`
+that took the whole screen and quit on a key. The demo left this tree on
+2026-09-09 (`/Volumes/Daten/Development/ball-demo/`), and with it the only
+application that exercised this path end to end. **The two desktop checks it
+carried are still open and still belong here:**
 
-- **K1 — Launch by double-click.** Boot with the card, double-click
-  `C:\BALL.NAP` on the desktop. Expect: the desktop disappears, the ball
-  demo owns the screen. (QEMU exercised the same launch through the AES shell's
-  `#Z` autorun line, which is the other real mechanism, not a test hook.)
-- **K2 — Quit by key, screen left clean.** Press any key. Expect: the demo
-  stops, the mouse pointer is back, the desktop is repainted whole, and the
-  serial log shows `exited with rc=0`. In QEMU this was driven with a
-  temporary frame counter in place of the key press, so the `plat_close`
-  sequence itself (`Vsync` → `Setscreen(page0, page0)` → `graf_mouse(M_ON)` →
-  `v_clsvwk` → `appl_exit`) *is* verified; only the key that triggers it is not.
-- **K3 — The frame rate on real silicon.** Read `C:\BALL.LOG` afterwards. The
-  QEMU numbers say nothing about the Pi: QEMU has no cache model, emulates the
-  CPU slower, and turns the non-cacheable framebuffer into ordinary host memory
-  — which is exactly the cost that matters here. Expect 1920×1080 (not the
-  640×480 QEMU reports), a ball diameter of ~307 px, and a headroom figure from
-  the demo's own start-up self-benchmark.
+- **K1 — Launch by double-click.** Double-click a full-screen `.NAP` on the
+  desktop. Expect: the desktop disappears, the application owns the screen.
+  (The AES shell's `#Z` autorun line is the other real mechanism, not a test
+  hook.)
+- **K2 — Quit, screen left clean.** Expect: the mouse pointer is back, the
+  desktop is repainted whole, and the serial log shows `exited with rc=0`.
+  The `plat_close`-shaped sequence a GEM program runs on the way out
+  (`Vsync` → `Setscreen(page0, page0)` → `graf_mouse(M_ON)` → `v_clsvwk` →
+  `appl_exit`) is what has to leave the screen usable.
+
+Neither can run in QEMU `raspi4b`: it has no input path at all — a serial
+byte is deliberately dropped on this board (`kernel/src/console.rs:163`, CON
+is the USB-HID keyboard). Pick a replacement full-screen application (QED and
+TeraDesk are in the tree) or rebuild the demo from its new home.

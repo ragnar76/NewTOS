@@ -1,0 +1,52 @@
+A22 counter-measurement -- the rectangle-list subtraction order.
+
+Taken 2026-09-12 after the fix in tos-api/src/aes/window.rs (border_pieces:
+subtract the covering windows in ascending z-order instead of slot order).
+
+Machine   : QEMU raspi4b, headless, 640x480 (the TT-medium profile), no card,
+            no click.  NewTOS debug build of the working tree at that moment
+            (cargo run -p xtask -- build --board rpi4).
+Dumper    : tosdump/build/DUMPAES.NAP, build id 70ca, record format 2.
+Table     : tosdump/cases/aes-r3-wind-state.tsv, 39 cases, CRC 979FAC60.
+Autostart : NEWDESK.INF with "#Z 01 C:\DUMPAES.NAP@" on a FAT16 image built
+            by tools/make-sd-image.sh.
+Reference : tosdump/reference/EMUTOS14-AES-r3.BIN (EmuTOS 1.4, via Hatari).
+Diff      : tosdump/host/build/tosdiff aes-r3-wind-state.tsv EMUTOS14-AES-r3.BIN AES.BIN
+
+Result, against measurement-2026-09-11-qemu-r3/AES.BIN (same table, same
+profile, before the fix):
+
+  fields that stopped differing : 528 int_out[4]
+                                  549 int_out[2..4]
+                                  561 int_out[1..4]
+  fields that started differing : none
+
+  case  EmuTOS                 NewTOS before          NewTOS after
+   431  31,63,296,194          31,63,296,194          31,63,296,194   match
+   439  31,63,296,17           31,63,296,17           31,63,296,17    match
+   448  31,80,29,162           31,80,29,162           31,80,29,162    match
+   458  262,80,65,80           262,80,65,80           262,80,65,80    match
+   469  31,242,149,15          31,242,149,15          31,242,149,15   match
+   481  31,242,0,0             0,0,0,0                0,0,0,0         P1, no soll
+   494  31,242,0,0             0,0,0,0                0,0,0,0         P1, no soll
+   502  61,103,176,57          61,103,176,57          61,103,176,57   match
+   511  61,160,119,57          61,160,119,57          61,160,119,57   match
+   519  31,63,296,17           31,63,296,17           31,63,296,17    match
+   528  31,80,29,80            31,80,29,162           31,80,29,80     FIXED
+   538  262,80,65,80           262,80,65,80           262,80,65,80    match
+   549  31,160,29,82           31,242,149,15          31,160,29,82    FIXED
+   561  31,242,149,15          0,0,0,0                31,242,149,15   FIXED
+   574  31,242,0,0             0,0,0,0                0,0,0,0         P1, no soll
+   588  31,242,0,0             0,0,0,0                0,0,0,0         P1, no soll
+
+The seven P1 cases (261, 280, 400, 481, 494, 574, 588) are unchanged in both
+directions.  They are not a soll: w_owns' empty-list end writes only g_w/g_h
+(aes/gemwmlib.c:1240), so EmuTOS' g_x/g_y are its dispatcher's uninitialised
+stack array (aes/gemsuper.c:430-432,444-445), not window state.
+
+Cases 340 and 344 are the separate wind_create/WS_WORK ticket (A34) and are
+untouched by this run, before and after.
+
+Every one of the 39 cases still shows global[] differences (ap_private,
+ap_planes, the LP64 pointer split).  Those are the known AES-global ABI
+deltas and are unrelated to this fix; they stand identically in both runs.

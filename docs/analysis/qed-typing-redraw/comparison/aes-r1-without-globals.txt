@@ -1,0 +1,310 @@
+68  opcode 108  wind_calc WC_WORK NAME: title band
+int_out[2]             EMUTOS14-AES.BIN = 0x007B (123)   NEWTOS-AES.BIN   = 0x0077 (119)
+int_out[4]             EMUTOS14-AES.BIN = 0x007E (126)   NEWTOS-AES.BIN   = 0x0082 (130)
+
+69  opcode 108  wind_calc WC_WORK CLOSER
+int_out[2]             EMUTOS14-AES.BIN = 0x007B (123)   NEWTOS-AES.BIN   = 0x0077 (119)
+int_out[4]             EMUTOS14-AES.BIN = 0x007E (126)   NEWTOS-AES.BIN   = 0x0082 (130)
+
+70  opcode 108  wind_calc WC_WORK FULLER
+int_out[2]             EMUTOS14-AES.BIN = 0x007B (123)   NEWTOS-AES.BIN   = 0x0077 (119)
+int_out[4]             EMUTOS14-AES.BIN = 0x007E (126)   NEWTOS-AES.BIN   = 0x0082 (130)
+
+71  opcode 108  wind_calc WC_WORK MOVER alone: D-097, TGADGETS vs non-3D
+int_out[2]             EMUTOS14-AES.BIN = 0x007B (123)   NEWTOS-AES.BIN   = 0x0065 (101)
+int_out[4]             EMUTOS14-AES.BIN = 0x007E (126)   NEWTOS-AES.BIN   = 0x0094 (148)
+
+72  opcode 108  wind_calc WC_WORK INFO: the second title band
+int_out[2]             EMUTOS14-AES.BIN = 0x0078 (120)   NEWTOS-AES.BIN   = 0x0077 (119)
+int_out[4]             EMUTOS14-AES.BIN = 0x0081 (129)   NEWTOS-AES.BIN   = 0x0082 (130)
+
+73  opcode 108  wind_calc WC_WORK SIZER alone: stripped, vertical forced back
+int_out[3]             EMUTOS14-AES.BIN = 0x00B0 (176)   NEWTOS-AES.BIN   = 0x00B4 (180)
+int_out[4]             EMUTOS14-AES.BIN = 0x0094 (148)   NEWTOS-AES.BIN   = 0x0082 (130)
+
+74  opcode 108  wind_calc WC_WORK UPARROW
+int_out[3]             EMUTOS14-AES.BIN = 0x00B0 (176)   NEWTOS-AES.BIN   = 0x00B4 (180)
+
+75  opcode 108  wind_calc WC_WORK DNARROW
+int_out[3]             EMUTOS14-AES.BIN = 0x00B0 (176)   NEWTOS-AES.BIN   = 0x00B4 (180)
+
+76  opcode 108  wind_calc WC_WORK VSLIDE
+int_out[3]             EMUTOS14-AES.BIN = 0x00B0 (176)   NEWTOS-AES.BIN   = 0x00B4 (180)
+
+77  opcode 108  wind_calc WC_WORK LFARROW
+int_out[4]             EMUTOS14-AES.BIN = 0x007E (126)   NEWTOS-AES.BIN   = 0x0082 (130)
+
+78  opcode 108  wind_calc WC_WORK RTARROW
+int_out[4]             EMUTOS14-AES.BIN = 0x007E (126)   NEWTOS-AES.BIN   = 0x0082 (130)
+
+79  opcode 108  wind_calc WC_WORK HSLIDE
+int_out[4]             EMUTOS14-AES.BIN = 0x007E (126)   NEWTOS-AES.BIN   = 0x0082 (130)
+
+83  opcode 108  wind_calc WC_BORDER NAME
+int_out[2]             EMUTOS14-AES.BIN = 0x004D (77)   NEWTOS-AES.BIN   = 0x0051 (81)
+int_out[4]             EMUTOS14-AES.BIN = 0x00AE (174)   NEWTOS-AES.BIN   = 0x00AA (170)
+
+84  opcode 108  wind_calc WC_BORDER CLOSER
+int_out[2]             EMUTOS14-AES.BIN = 0x004D (77)   NEWTOS-AES.BIN   = 0x0051 (81)
+int_out[4]             EMUTOS14-AES.BIN = 0x00AE (174)   NEWTOS-AES.BIN   = 0x00AA (170)
+
+85  opcode 108  wind_calc WC_BORDER FULLER
+int_out[2]             EMUTOS14-AES.BIN = 0x004D (77)   NEWTOS-AES.BIN   = 0x0051 (81)
+int_out[4]             EMUTOS14-AES.BIN = 0x00AE (174)   NEWTOS-AES.BIN   = 0x00AA (170)
+
+86  opcode 108  wind_calc WC_BORDER MOVER alone: D-097, the other way
+int_out[2]             EMUTOS14-AES.BIN = 0x004D (77)   NEWTOS-AES.BIN   = 0x0063 (99)
+int_out[4]             EMUTOS14-AES.BIN = 0x00AE (174)   NEWTOS-AES.BIN   = 0x0098 (152)
+
+87  opcode 108  wind_calc WC_BORDER INFO
+int_out[2]             EMUTOS14-AES.BIN = 0x0050 (80)   NEWTOS-AES.BIN   = 0x0051 (81)
+int_out[4]             EMUTOS14-AES.BIN = 0x00AB (171)   NEWTOS-AES.BIN   = 0x00AA (170)
+
+88  opcode 108  wind_calc WC_BORDER SIZER alone
+int_out[3]             EMUTOS14-AES.BIN = 0x00E0 (224)   NEWTOS-AES.BIN   = 0x00DC (220)
+int_out[4]             EMUTOS14-AES.BIN = 0x0098 (152)   NEWTOS-AES.BIN   = 0x00AA (170)
+
+89  opcode 108  wind_calc WC_BORDER UPARROW
+int_out[3]             EMUTOS14-AES.BIN = 0x00E0 (224)   NEWTOS-AES.BIN   = 0x00DC (220)
+
+90  opcode 108  wind_calc WC_BORDER DNARROW
+int_out[3]             EMUTOS14-AES.BIN = 0x00E0 (224)   NEWTOS-AES.BIN   = 0x00DC (220)
+
+91  opcode 108  wind_calc WC_BORDER VSLIDE
+int_out[3]             EMUTOS14-AES.BIN = 0x00E0 (224)   NEWTOS-AES.BIN   = 0x00DC (220)
+
+92  opcode 108  wind_calc WC_BORDER LFARROW
+int_out[4]             EMUTOS14-AES.BIN = 0x00AE (174)   NEWTOS-AES.BIN   = 0x00AA (170)
+
+93  opcode 108  wind_calc WC_BORDER RTARROW
+int_out[4]             EMUTOS14-AES.BIN = 0x00AE (174)   NEWTOS-AES.BIN   = 0x00AA (170)
+
+94  opcode 108  wind_calc WC_BORDER HSLIDE
+int_out[4]             EMUTOS14-AES.BIN = 0x00AE (174)   NEWTOS-AES.BIN   = 0x00AA (170)
+
+97  opcode 108  wind_calc NAME|CLOSER|FULLER: one title band, not three
+int_out[2]             EMUTOS14-AES.BIN = 0x007B (123)   NEWTOS-AES.BIN   = 0x0077 (119)
+int_out[4]             EMUTOS14-AES.BIN = 0x007E (126)   NEWTOS-AES.BIN   = 0x0082 (130)
+
+98  opcode 108  wind_calc TGADGETS = NAME|CLOSER|FULLER|MOVER
+int_out[2]             EMUTOS14-AES.BIN = 0x007B (123)   NEWTOS-AES.BIN   = 0x0077 (119)
+int_out[4]             EMUTOS14-AES.BIN = 0x007E (126)   NEWTOS-AES.BIN   = 0x0082 (130)
+
+99  opcode 108  wind_calc NAME|INFO: both title bands stack
+int_out[2]             EMUTOS14-AES.BIN = 0x008E (142)   NEWTOS-AES.BIN   = 0x0089 (137)
+int_out[4]             EMUTOS14-AES.BIN = 0x006B (107)   NEWTOS-AES.BIN   = 0x0070 (112)
+
+100  opcode 108  wind_calc VGADGETS = UPARROW|DNARROW|VSLIDE
+int_out[3]             EMUTOS14-AES.BIN = 0x00B0 (176)   NEWTOS-AES.BIN   = 0x00B4 (180)
+
+101  opcode 108  wind_calc HGADGETS = LFARROW|RTARROW|HSLIDE
+int_out[4]             EMUTOS14-AES.BIN = 0x007E (126)   NEWTOS-AES.BIN   = 0x0082 (130)
+
+102  opcode 108  wind_calc VGADGETS|SIZER: SIZER stripped from both bars
+int_out[3]             EMUTOS14-AES.BIN = 0x00B0 (176)   NEWTOS-AES.BIN   = 0x00B4 (180)
+int_out[4]             EMUTOS14-AES.BIN = 0x0094 (148)   NEWTOS-AES.BIN   = 0x0082 (130)
+
+103  opcode 108  wind_calc HGADGETS|SIZER: mirror of the above
+int_out[3]             EMUTOS14-AES.BIN = 0x00C6 (198)   NEWTOS-AES.BIN   = 0x00B4 (180)
+int_out[4]             EMUTOS14-AES.BIN = 0x007E (126)   NEWTOS-AES.BIN   = 0x0082 (130)
+
+104  opcode 108  wind_calc VGADGETS|HGADGETS|SIZER: both bars on merit
+int_out[3]             EMUTOS14-AES.BIN = 0x00B0 (176)   NEWTOS-AES.BIN   = 0x00B4 (180)
+int_out[4]             EMUTOS14-AES.BIN = 0x007E (126)   NEWTOS-AES.BIN   = 0x0082 (130)
+
+105  opcode 108  wind_calc 0x0FEF, the classic full window without INFO
+int_out[2]             EMUTOS14-AES.BIN = 0x007B (123)   NEWTOS-AES.BIN   = 0x0077 (119)
+int_out[3]             EMUTOS14-AES.BIN = 0x00B0 (176)   NEWTOS-AES.BIN   = 0x00B4 (180)
+int_out[4]             EMUTOS14-AES.BIN = 0x0068 (104)   NEWTOS-AES.BIN   = 0x0070 (112)
+
+106  opcode 108  wind_calc every defined gadget bit including INFO
+int_out[2]             EMUTOS14-AES.BIN = 0x008E (142)   NEWTOS-AES.BIN   = 0x0089 (137)
+int_out[3]             EMUTOS14-AES.BIN = 0x00B0 (176)   NEWTOS-AES.BIN   = 0x00B4 (180)
+int_out[4]             EMUTOS14-AES.BIN = 0x0055 (85)   NEWTOS-AES.BIN   = 0x005E (94)
+
+107  opcode 108  wind_calc all sixteen bits: do the undefined ones do anything
+int_out[2]             EMUTOS14-AES.BIN = 0x008E (142)   NEWTOS-AES.BIN   = 0x0089 (137)
+int_out[3]             EMUTOS14-AES.BIN = 0x00B0 (176)   NEWTOS-AES.BIN   = 0x00B4 (180)
+int_out[4]             EMUTOS14-AES.BIN = 0x0055 (85)   NEWTOS-AES.BIN   = 0x005E (94)
+
+108  opcode 108  wind_calc WC_BORDER 0x0FEF, the round trip partner
+int_out[2]             EMUTOS14-AES.BIN = 0x004D (77)   NEWTOS-AES.BIN   = 0x0051 (81)
+int_out[3]             EMUTOS14-AES.BIN = 0x00E0 (224)   NEWTOS-AES.BIN   = 0x00DC (220)
+int_out[4]             EMUTOS14-AES.BIN = 0x00C4 (196)   NEWTOS-AES.BIN   = 0x00BC (188)
+
+109  opcode 108  wind_calc WC_BORDER NAME|INFO
+int_out[2]             EMUTOS14-AES.BIN = 0x003A (58)   NEWTOS-AES.BIN   = 0x003F (63)
+int_out[4]             EMUTOS14-AES.BIN = 0x00C1 (193)   NEWTOS-AES.BIN   = 0x00BC (188)
+
+110  opcode 108  wind_calc WC_BORDER VGADGETS|HGADGETS|SIZER
+int_out[3]             EMUTOS14-AES.BIN = 0x00E0 (224)   NEWTOS-AES.BIN   = 0x00DC (220)
+int_out[4]             EMUTOS14-AES.BIN = 0x00AE (174)   NEWTOS-AES.BIN   = 0x00AA (170)
+
+112  opcode 108  wind_calc WC_WORK degenerate rect: work area of nothing
+int_out[2]             EMUTOS14-AES.BIN = 0x0017 (23)   NEWTOS-AES.BIN   = 0x0013 (19)
+int_out[3]             EMUTOS14-AES.BIN = 0xFFE8 (-24)   NEWTOS-AES.BIN   = 0xFFEC (-20)
+int_out[4]             EMUTOS14-AES.BIN = 0xFFD2 (-46)   NEWTOS-AES.BIN   = 0xFFDA (-38)
+
+113  opcode 108  wind_calc WC_BORDER degenerate rect
+int_out[2]             EMUTOS14-AES.BIN = 0xFFE9 (-23)   NEWTOS-AES.BIN   = 0xFFED (-19)
+int_out[3]             EMUTOS14-AES.BIN = 0x0018 (24)   NEWTOS-AES.BIN   = 0x0014 (20)
+int_out[4]             EMUTOS14-AES.BIN = 0x002E (46)   NEWTOS-AES.BIN   = 0x0026 (38)
+
+114  opcode 108  wind_calc WC_WORK a full ST-high screen
+int_out[2]             EMUTOS14-AES.BIN = 0x0017 (23)   NEWTOS-AES.BIN   = 0x0013 (19)
+int_out[3]             EMUTOS14-AES.BIN = 0x0268 (616)   NEWTOS-AES.BIN   = 0x026C (620)
+int_out[4]             EMUTOS14-AES.BIN = 0x0162 (354)   NEWTOS-AES.BIN   = 0x016A (362)
+
+115  opcode 108  wind_calc WC_BORDER a full ST-high screen
+int_out[2]             EMUTOS14-AES.BIN = 0xFFE9 (-23)   NEWTOS-AES.BIN   = 0xFFED (-19)
+int_out[3]             EMUTOS14-AES.BIN = 0x0298 (664)   NEWTOS-AES.BIN   = 0x0294 (660)
+int_out[4]             EMUTOS14-AES.BIN = 0x01BE (446)   NEWTOS-AES.BIN   = 0x01B6 (438)
+
+116  opcode 108  wind_calc WC_WORK 1x1: the work area goes negative
+int_out[2]             EMUTOS14-AES.BIN = 0x001C (28)   NEWTOS-AES.BIN   = 0x0018 (24)
+int_out[3]             EMUTOS14-AES.BIN = 0xFFE9 (-23)   NEWTOS-AES.BIN   = 0xFFED (-19)
+int_out[4]             EMUTOS14-AES.BIN = 0xFFD3 (-45)   NEWTOS-AES.BIN   = 0xFFDB (-37)
+
+117  opcode 108  wind_calc WC_WORK negative origin
+int_out[2]             EMUTOS14-AES.BIN = 0xFFB3 (-77)   NEWTOS-AES.BIN   = 0xFFAF (-81)
+int_out[3]             EMUTOS14-AES.BIN = 0x001A (26)   NEWTOS-AES.BIN   = 0x001E (30)
+int_out[4]             EMUTOS14-AES.BIN = 0x0004 (4)   NEWTOS-AES.BIN   = 0x000C (12)
+
+118  opcode 108  wind_calc WC_BORDER a rect that grows but stays inside a WORD
+int_out[2]             EMUTOS14-AES.BIN = 0xFFE9 (-23)   NEWTOS-AES.BIN   = 0xFFED (-19)
+int_out[3]             EMUTOS14-AES.BIN = 0x7D18 (32024)   NEWTOS-AES.BIN   = 0x7D14 (32020)
+int_out[4]             EMUTOS14-AES.BIN = 0x7D2E (32046)   NEWTOS-AES.BIN   = 0x7D26 (32038)
+
+120  opcode 108  wind_calc type 2: only WC_BORDER negates, so this is WC_WORK
+int_out[2]             EMUTOS14-AES.BIN = 0x007B (123)   NEWTOS-AES.BIN   = 0x0077 (119)
+int_out[3]             EMUTOS14-AES.BIN = 0x00B0 (176)   NEWTOS-AES.BIN   = 0x00B4 (180)
+int_out[4]             EMUTOS14-AES.BIN = 0x0068 (104)   NEWTOS-AES.BIN   = 0x0070 (112)
+
+121  opcode 108  wind_calc type -1: same question, from the other side
+int_out[2]             EMUTOS14-AES.BIN = 0x007B (123)   NEWTOS-AES.BIN   = 0x0077 (119)
+int_out[3]             EMUTOS14-AES.BIN = 0x00B0 (176)   NEWTOS-AES.BIN   = 0x00B4 (180)
+int_out[4]             EMUTOS14-AES.BIN = 0x0068 (104)   NEWTOS-AES.BIN   = 0x0070 (112)
+
+129  opcode 108  OUT_LEN 0: nothing copied back, not even the return code
+int_out[0]             EMUTOS14-AES.BIN = 0xDEAD (-8531)   NEWTOS-AES.BIN   = 0x0001 (1)
+int_out[1]             EMUTOS14-AES.BIN = 0xDEAD (-8531)   NEWTOS-AES.BIN   = 0x0065 (101)
+int_out[2]             EMUTOS14-AES.BIN = 0xDEAD (-8531)   NEWTOS-AES.BIN   = 0x0077 (119)
+int_out[3]             EMUTOS14-AES.BIN = 0xDEAD (-8531)   NEWTOS-AES.BIN   = 0x00B4 (180)
+int_out[4]             EMUTOS14-AES.BIN = 0xDEAD (-8531)   NEWTOS-AES.BIN   = 0x0070 (112)
+
+130  opcode 108  OUT_LEN 1: the return code only, a void handler's ret = TRUE
+int_out[1]             EMUTOS14-AES.BIN = 0xDEAD (-8531)   NEWTOS-AES.BIN   = 0x0065 (101)
+int_out[2]             EMUTOS14-AES.BIN = 0xDEAD (-8531)   NEWTOS-AES.BIN   = 0x0077 (119)
+int_out[3]             EMUTOS14-AES.BIN = 0xDEAD (-8531)   NEWTOS-AES.BIN   = 0x00B4 (180)
+int_out[4]             EMUTOS14-AES.BIN = 0xDEAD (-8531)   NEWTOS-AES.BIN   = 0x0070 (112)
+
+131  opcode 108  OUT_LEN 3: x and y arrive, w and h stay poisoned
+int_out[2]             EMUTOS14-AES.BIN = 0x007B (123)   NEWTOS-AES.BIN   = 0x0077 (119)
+int_out[3]             EMUTOS14-AES.BIN = 0xDEAD (-8531)   NEWTOS-AES.BIN   = 0x00B4 (180)
+int_out[4]             EMUTOS14-AES.BIN = 0xDEAD (-8531)   NEWTOS-AES.BIN   = 0x0070 (112)
+
+132  opcode 108  IN_LEN 8 with six values: two surplus poison words copied in
+int_out[2]             EMUTOS14-AES.BIN = 0x007B (123)   NEWTOS-AES.BIN   = 0x0077 (119)
+int_out[3]             EMUTOS14-AES.BIN = 0x00B0 (176)   NEWTOS-AES.BIN   = 0x00B4 (180)
+int_out[4]             EMUTOS14-AES.BIN = 0x0068 (104)   NEWTOS-AES.BIN   = 0x0070 (112)
+
+133  opcode 108  IN_LEN at I_SIZE with six values
+int_out[2]             EMUTOS14-AES.BIN = 0x007B (123)   NEWTOS-AES.BIN   = 0x0077 (119)
+int_out[3]             EMUTOS14-AES.BIN = 0x00B0 (176)   NEWTOS-AES.BIN   = 0x00B4 (180)
+int_out[4]             EMUTOS14-AES.BIN = 0x0068 (104)   NEWTOS-AES.BIN   = 0x0070 (112)
+
+134  opcode 108  IN_LEN past I_SIZE: min(IN_LEN,I_SIZE) has to clamp it
+int_out[2]             EMUTOS14-AES.BIN = 0x007B (123)   NEWTOS-AES.BIN   = 0x0077 (119)
+int_out[3]             EMUTOS14-AES.BIN = 0x00B0 (176)   NEWTOS-AES.BIN   = 0x00B4 (180)
+int_out[4]             EMUTOS14-AES.BIN = 0x0068 (104)   NEWTOS-AES.BIN   = 0x0070 (112)
+
+135  opcode 108  AIN_LEN 3, no pointer: wm_calc never reads addr_in
+int_out[2]             EMUTOS14-AES.BIN = 0x007B (123)   NEWTOS-AES.BIN   = 0x0077 (119)
+int_out[3]             EMUTOS14-AES.BIN = 0x00B0 (176)   NEWTOS-AES.BIN   = 0x00B4 (180)
+int_out[4]             EMUTOS14-AES.BIN = 0x0068 (104)   NEWTOS-AES.BIN   = 0x0070 (112)
+
+136  opcode 108  control[4] set: there is no AOUT_LEN macro in this build
+int_out[2]             EMUTOS14-AES.BIN = 0x007B (123)   NEWTOS-AES.BIN   = 0x0077 (119)
+int_out[3]             EMUTOS14-AES.BIN = 0x00B0 (176)   NEWTOS-AES.BIN   = 0x00B4 (180)
+int_out[4]             EMUTOS14-AES.BIN = 0x0068 (104)   NEWTOS-AES.BIN   = 0x0070 (112)
+
+137  opcode 108  IN_LEN 6, four values: w and h reach wm_calc as 0xDEAD
+int_out[2]             EMUTOS14-AES.BIN = 0x007B (123)   NEWTOS-AES.BIN   = 0x0077 (119)
+int_out[3]             EMUTOS14-AES.BIN = 0xDE95 (-8555)   NEWTOS-AES.BIN   = 0xDE99 (-8551)
+int_out[4]             EMUTOS14-AES.BIN = 0xDE7F (-8577)   NEWTOS-AES.BIN   = 0xDE87 (-8569)
+
+155  opcode 104  wind_get 0 WF_WXYWH: the desktop work area apps start from
+int_out[3]             EMUTOS14-AES.BIN = 0x0280 (640)   NEWTOS-AES.BIN   = 0x0780 (1920)
+int_out[4]             EMUTOS14-AES.BIN = 0x01CD (461)   NEWTOS-AES.BIN   = 0x0425 (1061)
+
+156  opcode 104  wind_get 0 WF_CXYWH: whole screen, menu bar included
+int_out[3]             EMUTOS14-AES.BIN = 0x0280 (640)   NEWTOS-AES.BIN   = 0x0780 (1920)
+int_out[4]             EMUTOS14-AES.BIN = 0x01E0 (480)   NEWTOS-AES.BIN   = 0x0438 (1080)
+
+157  opcode 104  wind_get 0 WF_PXYWH: previous rect
+int_out[3]             EMUTOS14-AES.BIN = 0x0280 (640)   NEWTOS-AES.BIN   = 0x0780 (1920)
+int_out[4]             EMUTOS14-AES.BIN = 0x01E0 (480)   NEWTOS-AES.BIN   = 0x0438 (1080)
+
+158  opcode 104  wind_get 0 WF_FXYWH: full rect
+int_out[2]             EMUTOS14-AES.BIN = 0x0013 (19)   NEWTOS-AES.BIN   = 0x0000 (0)
+int_out[3]             EMUTOS14-AES.BIN = 0x0280 (640)   NEWTOS-AES.BIN   = 0x0780 (1920)
+int_out[4]             EMUTOS14-AES.BIN = 0x01CD (461)   NEWTOS-AES.BIN   = 0x0438 (1080)
+
+159  opcode 104  wind_get 0 WF_HSLIDE: one word, w_setup left it at 0
+int_out[0]             EMUTOS14-AES.BIN = 0x0001 (1)   NEWTOS-AES.BIN   = 0x0000 (0)
+int_out[1]             EMUTOS14-AES.BIN = 0x0000 (0)   NEWTOS-AES.BIN   = 0xDEAD (-8531)
+
+160  opcode 104  wind_get 0 WF_VSLIDE: one word
+int_out[0]             EMUTOS14-AES.BIN = 0x0001 (1)   NEWTOS-AES.BIN   = 0x0000 (0)
+int_out[1]             EMUTOS14-AES.BIN = 0x0000 (0)   NEWTOS-AES.BIN   = 0xDEAD (-8531)
+
+161  opcode 104  wind_get 0 WF_HSLSIZ: the -1 "use default size" marker
+int_out[0]             EMUTOS14-AES.BIN = 0x0001 (1)   NEWTOS-AES.BIN   = 0x0000 (0)
+int_out[1]             EMUTOS14-AES.BIN = 0xFFFF (-1)   NEWTOS-AES.BIN   = 0xDEAD (-8531)
+
+162  opcode 104  wind_get 0 WF_VSLSIZ: one word
+int_out[0]             EMUTOS14-AES.BIN = 0x0001 (1)   NEWTOS-AES.BIN   = 0x0000 (0)
+int_out[1]             EMUTOS14-AES.BIN = 0xFFFF (-1)   NEWTOS-AES.BIN   = 0xDEAD (-8531)
+
+166  opcode 104  wind_get 0 WF_SCREEN: return code only, the address cannot be c
+int_out[1]             EMUTOS14-AES.BIN = 0xDEAD (-8531)   NEWTOS-AES.BIN   = 0x0000 (0)
+int_out[2]             EMUTOS14-AES.BIN = 0xDEAD (-8531)   NEWTOS-AES.BIN   = 0x0000 (0)
+int_out[3]             EMUTOS14-AES.BIN = 0xDEAD (-8531)   NEWTOS-AES.BIN   = 0x0000 (0)
+int_out[4]             EMUTOS14-AES.BIN = 0xDEAD (-8531)   NEWTOS-AES.BIN   = 0x0000 (0)
+
+172  opcode 104  wind_get 0 WF_WXYWH, OUT_LEN 1: the rect is thrown away
+int_out[1]             EMUTOS14-AES.BIN = 0xDEAD (-8531)   NEWTOS-AES.BIN   = 0x0000 (0)
+int_out[2]             EMUTOS14-AES.BIN = 0xDEAD (-8531)   NEWTOS-AES.BIN   = 0x0013 (19)
+int_out[3]             EMUTOS14-AES.BIN = 0xDEAD (-8531)   NEWTOS-AES.BIN   = 0x0780 (1920)
+int_out[4]             EMUTOS14-AES.BIN = 0xDEAD (-8531)   NEWTOS-AES.BIN   = 0x0425 (1061)
+
+173  opcode 104  wind_get 0 WF_WXYWH, OUT_LEN 3: w and h stay poisoned
+int_out[3]             EMUTOS14-AES.BIN = 0xDEAD (-8531)   NEWTOS-AES.BIN   = 0x0780 (1920)
+int_out[4]             EMUTOS14-AES.BIN = 0xDEAD (-8531)   NEWTOS-AES.BIN   = 0x0425 (1061)
+
+194  opcode 106  wind_find off the top left: nobody
+int_out[0]             EMUTOS14-AES.BIN = 0xFFFF (-1)   NEWTOS-AES.BIN   = 0x0000 (0)
+
+195  opcode 106  wind_find one row above the screen
+int_out[0]             EMUTOS14-AES.BIN = 0xFFFF (-1)   NEWTOS-AES.BIN   = 0x0000 (0)
+
+196  opcode 106  wind_find one column left of the screen
+int_out[0]             EMUTOS14-AES.BIN = 0xFFFF (-1)   NEWTOS-AES.BIN   = 0x0000 (0)
+
+197  opcode 106  wind_find far off the bottom right: nobody
+int_out[0]             EMUTOS14-AES.BIN = 0xFFFF (-1)   NEWTOS-AES.BIN   = 0x0000 (0)
+
+217  opcode 77  graf_handle OUT_LEN 1: the metrics stay poisoned
+int_out[1]             EMUTOS14-AES.BIN = 0xDEAD (-8531)   NEWTOS-AES.BIN   = 0x0008 (8)
+int_out[2]             EMUTOS14-AES.BIN = 0xDEAD (-8531)   NEWTOS-AES.BIN   = 0x0010 (16)
+int_out[3]             EMUTOS14-AES.BIN = 0xDEAD (-8531)   NEWTOS-AES.BIN   = 0x0013 (19)
+int_out[4]             EMUTOS14-AES.BIN = 0xDEAD (-8531)   NEWTOS-AES.BIN   = 0x0013 (19)
+
+218  opcode 79  graf_mkstate return code only: a void handler has to leave TRUE
+int_out[1]             EMUTOS14-AES.BIN = 0xDEAD (-8531)   NEWTOS-AES.BIN   = 0x007E (126)
+int_out[2]             EMUTOS14-AES.BIN = 0xDEAD (-8531)   NEWTOS-AES.BIN   = 0x0156 (342)
+int_out[3]             EMUTOS14-AES.BIN = 0xDEAD (-8531)   NEWTOS-AES.BIN   = 0x0001 (1)
+int_out[4]             EMUTOS14-AES.BIN = 0xDEAD (-8531)   NEWTOS-AES.BIN   = 0x0000 (0)
+
+241  opcode 0  opcode 0 with OUT_LEN 0: the -1 is computed and never delivered
+int_out[0]             EMUTOS14-AES.BIN = 0xDEAD (-8531)   NEWTOS-AES.BIN   = 0xFFFF (-1)

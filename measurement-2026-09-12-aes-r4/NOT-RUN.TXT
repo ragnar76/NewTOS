@@ -1,0 +1,180 @@
+AES round 4 -- the companion list: everything the inventory names that
+aes-r4-subfunctions.tsv does NOT measure, by name, with the reason.
+Nothing below is an oversight; each line is a decision with a citation.
+
+Legend for the reason column:
+  ALERT   the dispatcher's default arm pops fm_show(ALNOFUNC), a modal alert
+          around fm_do's while(cont) ev_multi(MU_KEYBD|MU_BUTTON) loop
+          (gemsuper.c:411-417, gemfmlib.c:389-400, gemfmalt.c:383,
+          gemfmlib.c:300-313).  Unattended = hang.
+  GUARD   core/cases.c's aes_opcodes[] refuses the opcode, so the LOADER
+          rejects the whole table and nothing runs at all.
+  PTR     the arm needs a real pointer in addr_in, which a table that has to
+          be byte-identical on two machines cannot carry (core/runner_aes.c
+          poisons addr_in with 0xDEAD).
+  BLOCK   the call itself waits for the operator.
+  FATAL   the call ends, replaces or damages the run.
+  DRAW    the effect is pixels, not a return value -- needs a screendump.
+
+--------------------------------------------------------------------------
+1. FREE OPCODE NUMBERS -- 16, 18, 27, 28, 29, 49, 57..69, 83..89, 92..99,
+   115..119                                             ALERT + GUARD
+   Both, independently.  Verified: casecheck --aes on a one-line probe with
+   opcode 16 exits 1, "not an AES opcode: crysbind has no arm for it".
+   Opcode 0 is the one exception and IS measured (cases 273, 274, 275).
+
+--------------------------------------------------------------------------
+2. REFUSED BY THE LOADER ALTHOUGH THE MEASURED ROM HAS THEM
+   Both machines log ap_version 0340, and config.h:1345-1354 makes 0x0340
+   mean CONF_WITH_3D_OBJECTS && CONF_WITH_MENU_EXTENSION &&
+   CONF_WITH_WINDOW_COLOURS && CONF_WITH_GRAF_MOUSE_EXTENSION.  The guard's
+   GATED reason names TOS 3.06 / AES 3.20, which is not what was measured.
+
+   48  objc_sysvar        GUARD  11 sub-function values (LK3DIND, LK3DACT,
+                                 INDBUTCOL, ACTBUTCOL, BACKGRCOL, AD3DVALUE,
+                                 each get and set bar the AD3DVALUE set arm)
+                                 plus 2 fallback classes.  The largest single
+                                 hole in the table.
+   17  appl_yield         GUARD  dsptch(), no parameters, provably harmless.
+   82  scrp_clear         GUARD  (and FATAL: it deletes files.)
+  126  shel_rdef          GUARD  (and PTR.)
+  127  shel_wdef          GUARD  (and PTR.)
+   36  menu_popup         GUARD  (and BLOCK, and PTR.)
+   37  menu_attach        GUARD  (and PTR.)  3 ME_* values + 1 fallback
+   38  menu_istart        GUARD  (and PTR.)  2 values + 1 fallback
+   39  menu_settings      GUARD  (and PTR.)  2 values + 1 fallback
+
+3. REFUSED AT OPCODE GRANULARITY, THOUGH ONE ARM IS PROVABLY NON-BLOCKING
+   25  evnt_multi         GUARD  MU_TIMER with tmcount == 0 takes the "quick
+                                 check timer" arm and returns without ever
+                                 reaching mwait (gemevlib.c:222-226).  The
+                                 guard cannot express "this opcode with these
+                                 flags".  6 usable MU_* bits + the bflgclks
+                                 high-byte classes + MOBLK.m_out lost.
+   53  form_error         GUARD  n > 63 returns FALSE before fm_show
+                                 (gemfmlib.c:441-443).  7 classes lost.
+
+--------------------------------------------------------------------------
+4. BLOCKS ON THE OPERATOR -- correctly refused, correctly absent
+   11  appl_read      BLOCK  empty queue (gemaplib.c:88, gemqueue.c:99)
+   15  appl_trecord   BLOCK  waits for the event buffer to fill (:216-217)
+   20  evnt_keybd     BLOCK  waits for a key
+   21  evnt_button    BLOCK  waits for a button (gemevlib.c:90)
+   22  evnt_mouse     BLOCK  waits for the rectangle (gemevlib.c:123-125)
+   23  evnt_mesag     BLOCK  waits for a message
+   50  form_do        BLOCK  modal ev_multi loop (gemfmlib.c:312)
+   52  form_alert     BLOCK  ends in fm_do (gemfmalt.c:383)
+   56  form_button    BLOCK  gr_watchbox / ev_button (gemfmlib.c:251,:256)
+   70  graf_rubbox    BLOCK  tracks until the button comes up
+   71  graf_dragbox   BLOCK  tracks until the button comes up
+   75  graf_watchbox  BLOCK  gr_stilldn loop (gemgrlib.c:348-352)
+   76  graf_slidebox  BLOCK  is gr_dragbox (gemgrlib.c:388)
+   90  fsel_input     BLOCK  the modal file selector (gemfslib.c:718)
+   91  fsel_exinput   BLOCK  likewise
+
+   evnt_multi with mask 0 is the worst of these and is named separately:
+   ev_multi registers nothing and falls into mwait(0), which tests
+   !(0 & p_evflg) -- always true -- sets WAITIN and calls dsptch()
+   (gemasync.c:117-127).  The process is never woken.  It is NOT a
+   measurable case, it is a permanent hang.
+
+--------------------------------------------------------------------------
+5. ENDS, REPLACES OR DAMAGES THE RUN
+   19  appl_exit                    FATAL  ends the application
+  121  shel_write, every doex       FATAL  0 returns to the desktop, 1 starts
+                                           another program, 4 SHW_SHUTDOWN,
+                                           5 SHW_RESCHNG.  2 and 3 are no-ops
+                                           with TRUE and would be safe, but
+                                           the opcode is refused as a whole.
+   82  scrp_clear                   FATAL  deletes files
+  113  rsrc_saddr, types 0..16      FATAL  *psubstruct = rsaddr
+                                           (gemrslib.c:734) with psubstruct
+                                           computed from a NULL rs_hdr and
+                                           rsaddr = 0xDEAD poison: a store
+                                           into the m68k vector table.  Only
+                                           the unknown-type arm is measured
+                                           (cases 632, 633).
+  110  rsrc_load                    PTR    filename in addr_in[0]
+  111  rsrc_free                    -- IS measured; with nothing loaded it is
+                                           a clean rc = 0 (cases 359, 360).
+
+--------------------------------------------------------------------------
+6. NEEDS A REAL POINTER IN addr_in -- the pointer wall
+   12  appl_write        PTR   AP_PBUFF; and the target AESPD comes from
+                               int_in[0], whose meaning differs per machine
+                               (TT ap_id 0, NewTOS ap_id 1)
+   13  appl_find         PTR   AP_PNAME, a string
+   14  appl_tplay        PTR   -- but length 0 IS measured (case 347)
+   30  menu_bar          PTR   -- but show 0 IS measured (case 652)
+   31  menu_icheck       PTR   MM_ITREE, do_chg dereferences it
+   32  menu_ienable      PTR   likewise; 4 sub-function values lost
+   33  menu_tnormal      PTR   likewise
+   34  menu_text         PTR   strcpy through two pointers
+   35  menu_register     PTR   -- but pid < 0 IS measured (cases 350, 351)
+   40  objc_add          PTR   -- but the NIL guard IS measured (550-552)
+   41  objc_delete       PTR   -- ROOT only (555, 556).  objc_delete(-1) is
+                               deliberately absent: ob_delete has no guard
+                               for a negative object and would read tree[-1]
+                               through the poison, a supervisor bus error.
+   42  objc_draw         PTR   -- and this is where the nicelines version
+                               delta would have been visible
+   43  objc_find         PTR   dereferences tree+currobj immediately
+   44  objc_offset       PTR
+   45  objc_order        PTR   -- but the ROOT guard IS measured (559-561).
+                               The three newpos classes on a real tree are
+                               NOT measured.
+   46  objc_edit         PTR   -- all five kind classes ARE measured through
+                               the obj <= 0 arm (568-575).  The EDCHAR
+                               in_char classes on a real TEDINFO are NOT.
+   47  objc_change       PTR
+   54  form_center       PTR   ob_center dereferences the tree
+   55  form_keybd        PTR   fm_keybd dereferences the tree.  NOTE: the
+                               loader lets 55 through -- it is kept out by
+                               the table, not by the guard.
+   78  graf_mouse 255    PTR   USER_DEF is the one mode that reads addr_in.
+                               The other 13 modes ARE measured (657-676).
+   80  scrp_read         PTR   strcpy(pscrap, ...) WRITES through the poison
+                               (gemsclib.c).  The loader lets 80 through --
+                               kept out by the table, not by the guard.
+   81  scrp_write        PTR   strcpy(..., pscrap) reads through it.  Same.
+  114  rsrc_obfix        PTR   dereferences the tree
+  120  shel_read         PTR   writes into two caller buffers
+  122  shel_get          PTR   -- but length 0 IS measured (354, 355)
+  123  shel_put          PTR   -- but length 0 IS measured (356)
+  124  shel_find         PTR   reads and writes the path buffer
+  125  shel_envrn        PTR   writes *path
+  104  wind_get  WF_NAME 2, WF_INFO 3            PTR (loader-refused)
+  105  wind_set  WF_NAME 2, WF_INFO 3,
+                 WF_NEWDESK 14                  PTR (loader-refused)
+  104/105 WF_COLOR 18, WF_DCOLOR 19             unchecked gadget index
+                                                (loader-refused); EmuTOS
+                                                indexes w_tcolor[] with no
+                                                range check at all
+                                                (gemwmlib.c:1567-1576)
+
+--------------------------------------------------------------------------
+7. VISIBLE, NOT RETURNABLE -- needs a screendump, not a dump record
+   78  graf_mouse, every shape      DRAW  the return code is 1 for every mode
+                                          on both machines; only the cursor
+                                          bitmap differs
+   42  objc_draw nicelines          DRAW  (and PTR)
+   51  form_dial 1/2/3              DRAW  the animation; the return code IS
+                                          measured (583-585)
+   30  menu_bar show 1              DRAW  (and PTR)
+       every dodraw flag            DRAW
+
+--------------------------------------------------------------------------
+8. WHAT THE DUMPER WOULD NEED TO CLOSE THE BIGGEST HOLES
+   a) An addr_in column that names a dumper-owned BUFFER by number, the way
+      cases/vdi-raster.tsv already names its two pixel buffers instead of
+      their addresses.  That single change would unlock the whole of block 6
+      -- the object manager, the menu manager, the scrap manager, rsrc_load
+      and with it the 17 real R_* types of rsrc_gaddr/rsrc_saddr.
+   b) A resource the dumper loads itself before the run, so section 4 asks
+      its questions against a real RSHDR instead of a NULL one.
+   c) A per-parameter arm in the refusal guard, so "evnt_multi, but only
+      with MU_TIMER and tmcount 0" and "form_error, but only n > 63" can be
+      stated.
+   d) The guard's version premise corrected from TOS 3.06 / AES 3.20 to the
+      profile actually measured (ap_version 0340), which would unlock
+      objc_sysvar 48 and appl_yield 17 without any format change.

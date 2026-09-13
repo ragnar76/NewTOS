@@ -1,0 +1,69 @@
+NEWTOS-VDI-r2.BIN vs VDI.BIN -- area VDI, 120 cases from vdi-r2.tsv
+
+case 51  opcode 115  vqin_mode string
+    intout[0]              NEWTOS-VDI-r2.BIN = 0x0000 (0)   VDI.BIN           = 0x0001 (1)
+
+case 52  opcode 117  vqt_width character A
+    d0[0]                  NEWTOS-VDI-r2.BIN = 0x0000 (0)   VDI.BIN           = 0x0001 (1)
+
+case 53  opcode 117  vqt_width space
+    d0[0]                  NEWTOS-VDI-r2.BIN = 0x0000 (0)   VDI.BIN           = 0x0001 (1)
+
+case 54  opcode 130  vqt_name font index 0
+    intout[33]              NEWTOS-VDI-r2.BIN = 0xDEAD (-8531)   VDI.BIN           = 0x0000 (0)
+
+case 55  opcode 130  vqt_name font index 1
+    intout[33]              NEWTOS-VDI-r2.BIN = 0xDEAD (-8531)   VDI.BIN           = 0x0000 (0)
+
+case 56  opcode 130  vqt_name font index 2
+    intout[33]              NEWTOS-VDI-r2.BIN = 0xDEAD (-8531)   VDI.BIN           = 0x0000 (0)
+
+case 57  opcode 130  vqt_name font index 3, TOS 3.06 has a fourth font
+    intout[33]              NEWTOS-VDI-r2.BIN = 0xDEAD (-8531)   VDI.BIN           = 0x0000 (0)
+
+case 58  opcode 131  vqt_fontinfo current font
+    d0[0]                  NEWTOS-VDI-r2.BIN = 0x0000 (0)   VDI.BIN           = 0x0001 (1)
+
+case 59  opcode 116  vqt_extent extent of ABC
+    d0[0]                  NEWTOS-VDI-r2.BIN = 0x0000 (0)   VDI.BIN           = 0x0001 (1)
+
+case 60  opcode 116  vqt_extent empty string
+    d0[0]                  NEWTOS-VDI-r2.BIN = 0x0000 (0)   VDI.BIN           = 0x0001 (1)
+
+case 85  opcode 19  vsm_height at SIZ_TAB minimum
+    d0[0]                  NEWTOS-VDI-r2.BIN = 0x0000 (0)   VDI.BIN           = 0x0001 (1)
+
+case 86  opcode 19  vsm_height at SIZ_TAB maximum
+    d0[0]                  NEWTOS-VDI-r2.BIN = 0x0000 (0)   VDI.BIN           = 0x0001 (1)
+
+case 87  opcode 19  vsm_height above maximum
+    d0[0]                  NEWTOS-VDI-r2.BIN = 0x0000 (0)   VDI.BIN           = 0x0001 (1)
+
+case 105  opcode 12  vst_height 8 pixels
+    d0[0]                  NEWTOS-VDI-r2.BIN = 0x0000 (0)   VDI.BIN           = 0x0001 (1)
+
+case 106  opcode 12  vst_height 16 pixels
+    d0[0]                  NEWTOS-VDI-r2.BIN = 0x0000 (0)   VDI.BIN           = 0x0001 (1)
+
+case 107  opcode 12  vst_height 26, the TOS 3.06 maximum
+    d0[0]                  NEWTOS-VDI-r2.BIN = 0x0000 (0)   VDI.BIN           = 0x0001 (1)
+
+case 111  opcode 21  vst_font 1
+    d0[0]                  NEWTOS-VDI-r2.BIN = 0x0000 (0)   VDI.BIN           = 0x0001 (1)
+
+case 112  opcode 21  vst_font 2
+    d0[0]                  NEWTOS-VDI-r2.BIN = 0x0000 (0)   VDI.BIN           = 0x0001 (1)
+
+case 113  opcode 21  vst_font out of range
+    d0[0]                  NEWTOS-VDI-r2.BIN = 0x0000 (0)   VDI.BIN           = 0x0001 (1)
+
+case 118  opcode 107  vst_point 10 point
+    d0[0]                  NEWTOS-VDI-r2.BIN = 0x0000 (0)   VDI.BIN           = 0x0001 (1)
+
+case 119  opcode 107  vst_point 6 point
+    d0[0]                  NEWTOS-VDI-r2.BIN = 0x0000 (0)   VDI.BIN           = 0x0001 (1)
+
+case 169  opcode 5  v_dspcur show the graphics cursor
+    intin[0]               NEWTOS-VDI-r2.BIN = 0xDEAD (-8531)   VDI.BIN           = 0x0000 (0)
+
+22 of 120 cases differ

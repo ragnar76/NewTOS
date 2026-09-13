@@ -1,0 +1,593 @@
+================================================================================
+13-a15-wind-get-listend-words.txt
+A15 -- wind_get: welche x/y/w/h-Woerter am Listenende geschrieben werden
+Auditor, 2026-09-10.  Nur Faelle 127, 133, 204.  Keine .rs-Datei im Baum
+geaendert; der temporaere Testaufsatz ist nach dem Lauf geloescht worden.
+================================================================================
+
+ERZEUGENDE BEFEHLE
+------------------
+
+  $ shasum -a 256 tosdump/cases/aes-r2b-rlist.tsv \
+        measurement-2026-09-09/run3-pi4-rlist/AES.BIN \
+        tosdump/reference/EMUTOS14-AES-r2brlist.BIN
+
+  $ ./tosdump/host/build/tosdiff --validate \
+        measurement-2026-09-09/run3-pi4-rlist/AES.BIN tosdump/cases/aes-r2b-rlist.tsv
+  $ ./tosdump/host/build/tosdiff --validate \
+        tosdump/reference/EMUTOS14-AES-r2brlist.BIN tosdump/cases/aes-r2b-rlist.tsv
+
+  # eigener, rein lesender Recordleser (Scratch, nicht im Baum):
+  #   Layout tosdump/core/tosdump.h:114-125, Woerter big-endian nach
+  #   tosdump/core/record.c:43-54, Poison 0xDEAD nach tosdump.h:78
+  $ python3 read15.py tosdump/reference/EMUTOS14-AES-r2brlist.BIN \
+                      measurement-2026-09-09/run3-pi4-rlist/AES.BIN
+  $ python3 cmp15.py read15.py
+
+  # temporaerer Testaufsatz tos-api/tests/zz_audit_a15_tmp.rs (danach per rm geloescht)
+  $ A15_PROFILE=pi cargo test -p tos-api --test zz_audit_a15_tmp -- --nocapture --test-threads=1
+  $ A15_PROFILE=tt cargo test -p tos-api --test zz_audit_a15_tmp -- --nocapture --test-threads=1
+
+  # gepinnte Quelle
+  $ cd references/emutos && git rev-parse HEAD && git describe --tags
+
+
+0. IDENTITAET DER EINGANGSDATEN
+--------------------------------
+a81a7a6cd5fc4b95cd88b969e573e24ac726ed24e747e409b83c8f57d5a2ea2a  tosdump/cases/aes-r2b-rlist.tsv
+e0280b7de761d38228fbeb3dd3c1f898ff2485e35ddb3cc41fe91658396580d6  measurement-2026-09-09/run3-pi4-rlist/AES.BIN
+e7ef0a275eccc95207673434a2e9a3fa150bf4c28d0ee4f79cbdb44055da0f72  tosdump/reference/EMUTOS14-AES-r2brlist.BIN
+
+  references/emutos @ 1a7484aba1bfba23e2c0899e243b6d8177fe41df
+                       (git describe: VERSION_1_4-71-g1a7484ab)
+
+EMUTOS14-AES-r2brlist.BIN: area AES, 15 records of 120 bytes, build c911, case CRC B4CC4A5A
+EMUTOS14-AES-r2brlist.BIN: matches aes-r2b-rlist.tsv (15 cases)
+EMUTOS14-AES-r2brlist.BIN: accepted
+AES.BIN: area AES, 15 records of 120 bytes, build 70ca, case CRC B4CC4A5A
+AES.BIN: matches aes-r2b-rlist.tsv (15 cases)
+AES.BIN: accepted
+
+
+1. FALLZUORDNUNG
+----------------
+
+Fall-ID = physische Zeilennummer in tosdump/cases/aes-r2b-rlist.tsv.
+A15 sind die drei Faelle, in denen der GEMESSENE Aufruf am Listenende steht:
+
+  127  tsv:120-127  reset(wind_new) . create 1 . open 1 30,40,320,240
+                    . +FIRST(1,11)  ->  MESS: NEXT(1,12), OUT_LEN 5
+  133  tsv:129-133  reset . create 1 . open 1
+                    . +FIRST(1,11) . +NEXT(1,12)  ->  MESS: NEXT(1,12), OUT_LEN 5
+  204  tsv:203-204  reset . +FIRST(0,11)  ->  MESS: NEXT(0,12), OUT_LEN 5
+
+Nicht meine: 144 (A13), 166/174/183/213 (A14), 122/159/189/201/208/226/230
+(A13 bzw. Geraeteparameter).  Ich bewerte sie nicht; 144, 122 und 201 werden
+weiter unten NUR als Beleg fuer den Mechanismus herangezogen.
+
+
+2. ROHWERTE, FELDWEISE, AUS BEIDEN BIN GELESEN
+-----------------------------------------------
+
+  POISON = 0xDEAD = das Wort wurde NICHT geschrieben.
+  Alles andere = geschrieben, auch eine 0.
+
+=== per-word ledger at int_out[1..4], all 15 records ===
+  POISON = 0xDEAD = not written; anything else = written
+  case 122     OUT_LEN 5  listend(TT)=False  TT[x,y,w,h]=31, 63, 296, 194         Pi[x,y,w,h]=31, 63, 296, 194
+  case 127 <<< OUT_LEN 5  listend(TT)=True   TT[x,y,w,h]=31, 63, 0, 0             Pi[x,y,w,h]=0, 0, 0, 0
+  case 133 <<< OUT_LEN 5  listend(TT)=True   TT[x,y,w,h]=31, 63, 0, 0             Pi[x,y,w,h]=0, 0, 0, 0
+  case 144     OUT_LEN 5  listend(TT)=True   TT[x,y,w,h]=31, 63, 0, 0             Pi[x,y,w,h]=0, 0, 0, 0
+  case 159     OUT_LEN 5  listend(TT)=False  TT[x,y,w,h]=31, 63, 296, 17          Pi[x,y,w,h]=31, 63, 296, 17
+  case 166     OUT_LEN 5  listend(TT)=False  TT[x,y,w,h]=31, 80, 29, 162          Pi[x,y,w,h]=31, 240, 296, 17
+  case 174     OUT_LEN 5  listend(TT)=False  TT[x,y,w,h]=262, 80, 65, 162         Pi[x,y,w,h]=31, 80, 29, 160
+  case 183     OUT_LEN 5  listend(TT)=False  TT[x,y,w,h]=31, 242, 296, 15         Pi[x,y,w,h]=260, 80, 67, 160
+  case 189     OUT_LEN 5  listend(TT)=False  TT[x,y,w,h]=61, 103, 176, 114        Pi[x,y,w,h]=61, 103, 176, 114
+  case 201     OUT_LEN 5  listend(TT)=False  TT[x,y,w,h]=0, 19, 640, 461          Pi[x,y,w,h]=0, 19, 1920, 1061
+  case 204 <<< OUT_LEN 5  listend(TT)=True   TT[x,y,w,h]=0, 19, 0, 0              Pi[x,y,w,h]=0, 0, 0, 0
+  case 208     OUT_LEN 5  listend(TT)=False  TT[x,y,w,h]=0, 19, 640, 21           Pi[x,y,w,h]=0, 19, 1920, 21
+  case 213     OUT_LEN 5  listend(TT)=False  TT[x,y,w,h]=0, 40, 30, 242           Pi[x,y,w,h]=0, 280, 1920, 800
+  case 226     OUT_LEN 1  listend(TT)=False  TT[x,y,w,h]=POISON, POISON, POISON, POISON Pi[x,y,w,h]=POISON, POISON, POISON, POISON
+  case 230     OUT_LEN 3  listend(TT)=False  TT[x,y,w,h]=31, 63, POISON, POISON   Pi[x,y,w,h]=31, 63, POISON, POISON
+
+  Beide Maschinen: int_out[0] = 1 (ret), int_out[5] und int_out[6] = POISON
+  in allen dreizehn OUT_LEN-5-Faellen.  Kein Wort innerhalb OUT_LEN ist auf
+  einer der beiden Maschinen POISON geblieben -- jedes der fuenf wurde also
+  aus dem dispatch-lokalen Puffer in das Array des Aufrufers kopiert.
+
+=== byte-wise comparison, A15 cases only (TT c911 vs Pi 70ca) ===
+-- case 127 --
+   off  18  global[2]          TT      0 (0x0000)   Pi      2 (0x0002)
+   off  20  global[3]          TT      0 (0x0000)   Pi   4475 (0x117B)
+   off  22  global[4]          TT   4419 (0x1143)   Pi      0 (0x0000)
+   off  34  global[10]         TT      4 (0x0004)   Pi     16 (0x0010)
+   off  36  global[11]         TT      0 (0x0000)   Pi  13120 (0x3340)
+   off  38  global[12]         TT -16892 (0xBE04)   Pi     18 (0x0012)
+   off  78  int_out[1] g_x     TT     31 (0x001F)   Pi      0 (0x0000)
+   off  80  int_out[2] g_y     TT     63 (0x003F)   Pi      0 (0x0000)
+-- case 133 --
+   off  18  global[2]          TT      0 (0x0000)   Pi      2 (0x0002)
+   off  20  global[3]          TT      0 (0x0000)   Pi   4475 (0x117B)
+   off  22  global[4]          TT   4419 (0x1143)   Pi      0 (0x0000)
+   off  34  global[10]         TT      4 (0x0004)   Pi     16 (0x0010)
+   off  36  global[11]         TT      0 (0x0000)   Pi  13120 (0x3340)
+   off  38  global[12]         TT -16892 (0xBE04)   Pi     18 (0x0012)
+   off  78  int_out[1] g_x     TT     31 (0x001F)   Pi      0 (0x0000)
+   off  80  int_out[2] g_y     TT     63 (0x003F)   Pi      0 (0x0000)
+-- case 204 --
+   off  18  global[2]          TT      0 (0x0000)   Pi      2 (0x0002)
+   off  20  global[3]          TT      0 (0x0000)   Pi   4475 (0x117B)
+   off  22  global[4]          TT   4419 (0x1143)   Pi      0 (0x0000)
+   off  34  global[10]         TT      4 (0x0004)   Pi     16 (0x0010)
+   off  36  global[11]         TT      0 (0x0000)   Pi  13120 (0x3340)
+   off  38  global[12]         TT -16892 (0xBE04)   Pi     18 (0x0012)
+   off  80  int_out[2] g_y     TT     19 (0x0013)   Pi      0 (0x0000)
+
+  global[2..4] und global[10..12] sind ap_id / ap_private / ap_planes /
+  ap_3resv -- A06-A09, hier nicht bewertet.
+  Ausserhalb global[] unterscheidet sich in 127 und 133 GENAU int_out[1]
+  und int_out[2]; in 204 GENAU int_out[2].  int_out[1] stimmt in 204 nur
+  zufaellig ueberein (TT-Restwert 0, NewTOS-Schreibwert 0).
+
+
+3. DAS SOLL AUS DER QUELLE (nicht aus der Spec -- die ist hier luecken-
+   haft, siehe Abschnitt 8)
+-----------------------------------------------------------------------
+
+w_owns, aes/gemwmlib.c:1230-1241:
+
+    static void w_owns(WINDOW *pwin, ORECT *po, GRECT *pt, GRECT *poutwds)
+    {
+        while (po) {
+            rc_copy(&po->o_gr, poutwds);            /* :1234 schreibt 4 Woerter */
+            pwin->w_rnext = po = po->o_link;        /* :1235 */
+            if (rc_intersect(pt, poutwds))          /* :1236 schreibt 4 Woerter */
+                return;
+        }
+        poutwds->g_w = poutwds->g_h = 0;            /* :1240 schreibt 2 Woerter */
+    }
+
+Aufgerufen aus wm_get, gemwmlib.c:1556-1562, mit
+poutwds = (GRECT *)poutwds, und poutwds ist &WM_OX = &int_out[1]
+(gemsuper.c:343, include/aesdefs.h:509-512).
+
+Daraus folgen ZWEI verschiedene Listenende-Pfade, und genau deren
+Unterscheidung ist der Auftrag:
+
+  P1  Die Schleife wird GAR NICHT betreten (po == NULL beim Eintritt).
+      Dann schreibt w_owns ausschliesslich g_w und g_h.  g_x und g_y
+      behalten den Inhalt des Puffers, auf den poutwds zeigt -- und das
+      ist NICHT der Puffer des Aufrufers, sondern das dispatch-lokale
+      WORD int_out[O_SIZE] aus xif (gemsuper.c:432), eine
+      UNINITIALISIERTE auto-Variable auf dem Supervisorstack des Prozesses
+      (rlr->p_uda->u_super, gemsuper.c:484).
+
+  P2  Die Schleife wird betreten, aber kein rc_intersect gelingt.
+      Dann sind alle vier Woerter geschrieben: rc_copy legt das ORECT ab,
+      rc_intersect ueberschreibt danach ALLE VIER Woerter -- auch wenn es
+      FALSE liefert (util/rectfunc.c:72-75 schreibt p2->g_x/g_y/g_w/g_h vor
+      dem return).  Am Schleifenende setzt :1240 g_w/g_h auf 0; uebrig
+      bleiben in g_x/g_y die tx/ty des LETZTEN fehlgeschlagenen
+      rc_intersect, also echte Geometrie.
+
+Der Kopierpfad zum Aufrufer, gemsuper.c:444-445:
+
+    if (OUT_LEN)
+        memcpy(pcrys_blk->intout, int_out, OUT_LEN*sizeof(WORD));
+
+Unbedingt, alle OUT_LEN Woerter.  "Erhalten" heisst bei EmuTOS deshalb
+NIEMALS "was der Aufrufer vorher drin hatte", solange der Index < OUT_LEN
+ist.  Der Aufrufer bekommt in P1 zwangslaeufig Stapelinhalt geliefert.
+
+
+4. WELCHER PFAD IN 127, 133 UND 204 GREIFT -- UND WOMIT ICH DAS BELEGE
+-----------------------------------------------------------------------
+
+Behauptung: in allen drei Faellen greift P1, nicht P2.
+
+(a) Quellenbeleg, dass die Schleife nicht betreten werden KANN.
+    newrect (gemwrect.c:200-204) legt fuer ein Fenster genau EIN ORECT an
+    (w_getsize(WS_TRUE)); gebrochen wird es nur durch ANDERE Fenster
+    (everyobj, :198).  In 127/133 ist nur Fenster 1 offen, in 204 gar
+    keines -- die Liste hat je genau ein Element.
+    w_owns setzt pwin->w_rnext = po->o_link VOR dem Intersect-Test
+    (:1235).  Der FIRST-Prelude verbraucht das einzige Element und
+    hinterlaesst w_rnext = NULL.  Der gemessene NEXT liest po = w_rnext
+    = NULL (:1559) -> while(po) ist sofort falsch.
+
+(b) Messbeleg fuer dieselbe Sache, aus dem Lauf selbst.
+    TT-Fall 122 (gleiche Vorgeschichte, gemessener FIRST) liefert
+    31, 63, 296, 194 -- die VOLLE Arbeitsflaeche, also ein ungebrochenes
+    Rechteck.  TT-Fall 201 liefert 0, 19, 640, 461 -- die volle
+    Desktop-Arbeitsflaeche.  Beide Listen haben ein Element.
+
+(c) Der entscheidende Beleg, dass w_owns genau ZWEI der vier Woerter
+    schreibt -- innerhalb EINES Records, ohne Modell:
+    In TT-Fall 127 haette der Restwert aus dem vorangehenden Aufruf
+    31, 63, 296, 194 gelautet.  Gemessen sind 31, 63, 0, 0.
+    g_w/g_h wurden also ueberschrieben (296 -> 0, 194 -> 0), g_x/g_y
+    nicht (31 und 63 stehen unveraendert).  Zwei verschiedene Schicksale
+    in einem Record sind nur mit der Zwei-Wort-Regel von :1240 vereinbar.
+    TT-Fall 204 wiederholt es: Restwert 0, 19, 640, 461, gemessen
+    0, 19, 0, 0.
+    TT-Fall 133 kann das NICHT zeigen (dort war der Restwert an [3]/[4]
+    schon 0, 0) -- das haelt dieser Bericht ausdruecklich fest.
+
+(d) Woher der Restwert stammt: aus dem dispatch-lokalen int_out des
+    VORANGEHENDEN AES-Aufrufs, nicht aus einem rc_copy dieses Aufrufs.
+    Der Ablauf je Fall ist runner_aes.c:146-191: reset, Preludes, Poison,
+    Messaufruf; ein Aufruf = ein trap #2 (tosdump/abi/m68k_trap.c:84-92),
+    dazwischen kein weiterer AES-Aufruf.  Das dispatch-lokale int_out
+    liegt bei jedem AES-Aufruf desselben Prozesses an derselben
+    Stapeladresse (gleiche Aufruftiefe, prozesseigener Supervisorstack).
+
+      Fall  letzter Aufruf davor    dessen int_out[1],[2]   TT-Messung [1],[2]
+      ----  ----------------------  ----------------------  ------------------
+      127   +FIRST(1,11) == Fall 122            31, 63              31, 63
+      133   +NEXT(1,12)  == Fall 127            31, 63              31, 63
+      204   +FIRST(0,11) == Fall 201             0, 19               0, 19
+
+    Die Preludes sind Aufruf fuer Aufruf identisch mit den jeweils
+    genannten gemessenen Faellen, aus derselben Ausgangslage -- ich
+    brauche also kein Modell, sondern nur Records aus demselben Lauf.
+    Zwei VERSCHIEDENE Wertepaare (31,63 gegen 0,19) schliessen eine
+    Konstante aus; der Restwert folgt dem jeweiligen Prelude.
+
+(e) Gegenprobe ueber alle 15 Records, wie verlangt.
+    Genau vier Records stehen am Listenende (g_w == g_h == 0 auf dem TT):
+    127, 133, 144, 204.  Alle elf anderen liefern echte Stuecke.
+    Fall 144 (nicht meiner, hier nur als Beleg) ist der staerkste
+    Einzelbeleg: seine Preludes sind reset(wind_new, OUT_LEN 0) und
+    wind_create (OUT_LEN 1).  crysbind schreibt bei WIND_NEW gar kein
+    int_out und bei WIND_CREATE nur RET_CODE (gemsuper.c:358-359, :330-331,
+    aesdefs.h:140).  Der Restwert 31, 63 in Fall 144 kann daher nur aus
+    dem VORHERGEHENDEN FALL (133) stammen -- er ueberlebt eine
+    Fallgrenze und einen Reset.  Kein Mechanismus innerhalb des Aufrufs
+    kann das erzeugen.
+    Zusatzprobe: in Fall 144 war Fenster 1 bei 10,20,300,200 erzeugt und
+    NIE geoeffnet; 31, 63 ist die Arbeitsflaechen-Ecke des bei 30,40
+    geoeffneten Fensters aus Fall 133.  Der Wert gehoert nicht zum
+    Zustand, den der Fall aufbaut.
+
+(f) Ausgeschlossen: "der Aufrufer behaelt seinen Wert".
+    Der Runner vergiftet int_out unmittelbar vor dem Messaufruf mit
+    0xDEAD (runner_aes.c:178 -> record.c:224).  Der TT meldet an [1]/[2]
+    31/63 bzw. 0/19, also NICHT 0xDEAD.  Der Puffer des Aufrufers wurde
+    ueberschrieben.  Damit ist die Formulierung im Kopfkommentar der
+    eingefrorenen Tabelle ("if the list was empty from the start they keep
+    whatever the caller's buffer held", tsv:70-72) durch die Messung
+    widerlegt, die sie begruendet hat.  Die eingefrorene Datei bleibt
+    unveraendert; der Punkt ist hier festgehalten.
+    Zweite Ungenauigkeit derselben Stelle (tsv:69): "g_x and g_y keep
+    whatever the last rc_copy left".  Nach rc_copy laeuft rc_intersect
+    und schreibt g_x/g_y neu (rectfunc.c:72-73), auch bei FALSE.  Im
+    Beispiel aus Abschnitt 6 macht das den Unterschied 30 gegen 31.
+
+ERGEBNIS Abschnitt 4: In 127, 133 und 204 greift P1.  g_w und g_h sind
+GESCHRIEBEN (0), g_x und g_y sind NICHT geschrieben; was beim Aufrufer
+ankommt, ist der uninitialisierte dispatch-lokale Puffer.  P2 greift in
+keinem der drei Faelle, und in keinem der 15 Records dieser Tabelle.
+
+
+5. WAS NEWTOS TUT
+-----------------
+
+tos-api/src/aes/window.rs:1999-2010 (der FIRST/NEXT-Arm):
+
+    let r = rlist_next();          // :2003
+    pb.set_intout(1, r.x);         // :2004
+    pb.set_intout(2, r.y);         // :2005
+    pb.set_intout(3, r.w);         // :2006
+    pb.set_intout(4, r.h);         // :2007
+
+rlist_next (:1142-1155) liefert bei erschoepfter Liste Grect::default(),
+also 0,0,0,0 (:1152).  Der Arm schreibt daher am Listenende ALLE VIER
+Woerter -- genau das, was der Auftrag mit "nicht pauschal alle vier
+Woerter nullen" benennt.
+
+Zweite, unabhaengige Stelle mit derselben Wirkung:
+tos-api/src/aes/mod.rs:263 --  let mut local_intout = [0i16; O_SIZE];
+Der dispatch-lokale Puffer wird bei uns GENULLT; EmuTOS laesst ihn
+uninitialisiert (dort im Kommentar :259-262 bereits als bewusste
+Abweichung festgehalten).
+
+Der Kopierpfad selbst stimmt: mod.rs:132-140 kopiert genau
+control[OUT_LEN] Woerter, gekappt auf O_SIZE.
+
+Gefahren (temporaerer Testaufsatz, Profil pi = 1920x1080/16 Planes und
+Profil tt = 640x480/4 Planes -- beide liefern am Listenende dasselbe):
+
+  ---- A: the three frozen cases ----
+  case 127 prelude FIRST : 1, 31, 63, 296, 194
+  case 127 MEASURED NEXT : 1, 0, 0, 0, 0
+  case 133 prelude NEXT  : 1, 0, 0, 0, 0
+  case 133 MEASURED NEXT : 1, 0, 0, 0, 0
+  case 204 prelude FIRST : 1, 0, 19, 1920, 1061
+  case 204 MEASURED NEXT : 1, 0, 0, 0, 0
+  case 201 (reference)   : 1, 0, 19, 1920, 1061
+  case 122 (reference)   : 1, 31, 63, 296, 194
+  ---- B: OUT_LEN matrix at the list end ----
+  OUT_LEN 0: poisoned -> [POISON, POISON, POISON, POISON, POISON, POISON, POISON]
+  OUT_LEN 0: MARKed   -> [MARK, MARK, MARK, MARK, MARK, MARK, MARK]
+  OUT_LEN 1: poisoned -> [1, POISON, POISON, POISON, POISON, POISON, POISON]
+  OUT_LEN 1: MARKed   -> [1, MARK, MARK, MARK, MARK, MARK, MARK]
+  OUT_LEN 2: poisoned -> [1, 0, POISON, POISON, POISON, POISON, POISON]
+  OUT_LEN 2: MARKed   -> [1, 0, MARK, MARK, MARK, MARK, MARK]
+  OUT_LEN 3: poisoned -> [1, 0, 0, POISON, POISON, POISON, POISON]
+  OUT_LEN 3: MARKed   -> [1, 0, 0, MARK, MARK, MARK, MARK]
+  OUT_LEN 4: poisoned -> [1, 0, 0, 0, POISON, POISON, POISON]
+  OUT_LEN 4: MARKed   -> [1, 0, 0, 0, MARK, MARK, MARK]
+  OUT_LEN 5: poisoned -> [1, 0, 0, 0, 0, POISON, POISON]
+  OUT_LEN 5: MARKed   -> [1, 0, 0, 0, 0, MARK, MARK]
+  OUT_LEN 6: poisoned -> [1, 0, 0, 0, 0, 0, POISON]
+  OUT_LEN 6: MARKed   -> [1, 0, 0, 0, 0, 0, MARK]
+  OUT_LEN 7: poisoned -> [1, 0, 0, 0, 0, 0, 0]
+  OUT_LEN 7: MARKed   -> [1, 0, 0, 0, 0, 0, 0]
+
+  Teil A eicht den Aufsatz: die drei gemessenen Faelle kommen Wort fuer
+  Wort so heraus wie im Pi-Record (127/133/204 je 1, 0, 0, 0, 0), ebenso
+  die Referenzfaelle 122 und 201.
+
+  Teil B ist die Unterscheidung "interner gegen kopierter Puffer".  Der
+  Aufsatz laeuft jede OUT_LEN zweimal: einmal mit vergiftetem Array des
+  Aufrufers, einmal mit MARK = 0x5A5A vorbelegt.  Ein Wort, das MARK
+  behaelt, wurde nicht geschrieben; ein Wort, das 0 zeigt, wurde
+  geschrieben.  Ergebnis: fuer OUT_LEN n sind die Woerter 0..n-1
+  ausnahmslos geschrieben (MARK weg), n..6 ausnahmslos erhalten (MARK da).
+  Also auch bei uns: der Aufrufer behaelt NUR jenseits von OUT_LEN etwas.
+  Das deckt sich mit den TT-Records 226 (OUT_LEN 1) und 230 (OUT_LEN 3),
+  in denen die Woerter jenseits der Deklaration auf beiden Maschinen
+  POISON bleiben.
+  Anmerkung ohne Soll: bei OUT_LEN 6/7 liefern wir an int_out[5]/[6] die
+  Nullen aus mod.rs:263, EmuTOS dort Stapelinhalt.  Fuer diese OUT_LEN
+  existiert kein TT-Record; EmuTOS hat dort keinen bestimmten Wert.
+
+
+6. DER ZWEITE LISTENENDE-PFAD (P2), GEFAHREN UND HERGELEITET
+-------------------------------------------------------------
+
+P2 kommt in der eingefrorenen Tabelle nicht vor, gehoert aber zur selben
+Frage.  Aufbau: Fenster 1 bei 30,40,320,240 (Arbeitsflaeche 31,63,296,194
+bei 640x480), Fenster 2 so darueber, dass seine WS_TRUE-Flaeche die
+Arbeitsflaeche von Fenster 1 vollstaendig deckt.  Dann bleibt kein Stueck
+von Fenster 1 uebrig, das die Arbeitsflaeche schneidet -- die Liste ist
+aber nicht leer.
+
+EmuTOS, hergeleitet aus der Quelle (NICHT gemessen -- es gibt keinen
+TT-Record dafuer):
+  Fenster 2 mit WS_CURR 31,63,296,194 -> WS_TRUE 31,63,298,196
+  (w_getsize, gemwmlib.c:257-260, DROP_SHADOW_SIZE = 2 bei :49).
+  Fenster 1 WS_TRUE = 30,40,322,242.
+  brkrct (gemwrect.c:107-122) hat alle vier Stuecke, Reihenfolge
+  TOP, LEFT, RIGHT, BOTTOM (:30-33, :118-122), mkpiece :64-98:
+      TOP    30, 40,322, 23
+      LEFT   30, 63,  1,196
+      RIGHT 329, 63, 23,196
+      BOTTOM 30,259,322, 23
+  w_owns mit pt = 31,63,296,194; jeder rc_intersect scheitert und
+  schreibt trotzdem (rectfunc.c:72-75).  Letztes Stueck BOTTOM:
+      tx = max(30,31) = 31 ; ty = max(259,63) = 259
+  -> g_x/g_y = 31, 259, danach :1240 g_w = g_h = 0.
+  EmuTOS-Soll:  1, 31, 259, 0, 0
+
+NewTOS, gefahren:
+  ---- C: list end with the loop entered ----
+  window 1 WS_WORK       : 1, 31, 63, 296, 194
+  window 1 WS_CURR       : 1, 30, 40, 320, 240
+    [curr == work        ] window 2 WS_CURR : 1, 31, 63, 296, 194
+    [curr == work        ] FIRST, MARKed    : 1, 0, 0, 0, 0, MARK, MARK
+    [curr == work        ] NEXT,  MARKed    : 1, 0, 0, 0, 0, MARK, MARK
+    [WS_TRUE == work     ] window 2 WS_CURR : 1, 31, 63, 294, 192
+    [WS_TRUE == work     ] FIRST, MARKed    : 1, 31, 255, 296, 2, MARK, MARK
+    [WS_TRUE == work     ] NEXT,  MARKed    : 1, 325, 63, 2, 192, MARK, MARK
+
+  Zeile [curr == work] ist der Aufbau von oben: NewTOS liefert
+  1, 0, 0, 0, 0 -- alle vier Woerter geschrieben, MARK in allen vier weg.
+  Grund: work_rects (window.rs:1110-1124) verwirft Stuecke ohne
+  Arbeitsflaechen-Schnitt schon beim BAUEN der Liste, so dass "Liste nicht
+  leer, aber nichts schneidet" bei uns von "Liste leer" nicht zu
+  unterscheiden ist.  P2 existiert in unserer Umsetzung gar nicht.
+
+  Zeile [WS_TRUE == work] ist derselbe Aufbau um 2 Pixel kleiner.  Sie
+  zeigt NICHT P2, sondern D-A13-3 (fehlender DROP_SHADOW_SIZE beim
+  brechenden Rechteck): weil wir das verdeckende Fenster ohne Schatten
+  abziehen, bleiben zwei 2 Pixel breite Streifen uebrig, die es auf
+  EmuTOS nicht gibt.  Gehoert zu A13, hier nur als Abgrenzung genannt.
+
+  P2-Bewertung: belegter Unterschied 1, 31, 259, 0, 0 (EmuTOS, quellen-
+  hergeleitet) gegen 1, 0, 0, 0, 0 (NewTOS, gefahren).  Anders als in P1
+  ist der EmuTOS-Wert hier DETERMINISTISCHE GEOMETRIE, kein Stapelrest --
+  es gibt also ein Soll.  Auf realer EmuTOS-Hardware ist dieser Pfad nicht
+  gemessen; das bleibt offen.
+
+
+7. EINORDNUNG JE FALL UND JE WORT
+----------------------------------
+
+  Fall 127 -- NEXT am Ende einer einelementigen Liste (P1)
+    g_x  TT: NICHT geschrieben, ausgeliefert wird 31 aus dem dispatch-
+             lokalen Puffer.  Pi: GESCHRIEBEN, 0.   -> kein Soll
+    g_y  TT: NICHT geschrieben, 63 aus demselben Puffer.
+             Pi: GESCHRIEBEN, 0.                    -> kein Soll
+    g_w  TT: GESCHRIEBEN, 0 (gemwmlib.c:1240).  Pi: GESCHRIEBEN, 0.  gleich
+    g_h  TT: GESCHRIEBEN, 0.                    Pi: GESCHRIEBEN, 0.  gleich
+    Kein Wort ist auf einer der Maschinen POISON (OUT_LEN 5).
+
+  Fall 133 -- NEXT hinter dem Ende, Schleife wieder nicht betreten (P1)
+    identisch zu 127, Wort fuer Wort und Wert fuer Wert.
+    Einschraenkung: 133 allein kann die Zwei-Wort-Regel nicht zeigen,
+    weil der Restwert an [3]/[4] schon 0,0 war.
+
+  Fall 204 -- NEXT am Ende der Desktopliste (P1)
+    g_x  TT: NICHT geschrieben, ausgeliefert wird 0.  Pi: GESCHRIEBEN, 0.
+             Werte stimmen zufaellig ueberein.       -> kein Soll
+    g_y  TT: NICHT geschrieben, 19.  Pi: GESCHRIEBEN, 0. -> kein Soll
+    g_w  TT/Pi: GESCHRIEBEN, 0.  gleich
+    g_h  TT/Pi: GESCHRIEBEN, 0.  gleich
+
+  Warum "kein Soll":
+  - Der Wert stammt aus einer uninitialisierten auto-Variablen
+    (gemsuper.c:432).  C gibt ihr keinen Wert; EmuTOS initialisiert sie
+    an keiner Stelle (crysbind :77-88 setzt nur count/ret).
+  - Er haengt nachweislich von der AUFRUFGESCHICHTE des Aufrufers ab, nicht
+    vom Fensterzustand: er folgt dem jeweiligen Prelude (31,63 gegen 0,19)
+    und ueberlebt in Fall 144 sogar eine Fallgrenze mitsamt Reset in einen
+    Zustand hinein, zu dem er geometrisch nicht passt.
+  - Ueber alle 15 Records geprueft: genau vier Records stehen am
+    Listenende, alle vier sind widerspruchsfrei durch den Restwert des
+    unmittelbar vorangehenden Aufrufs erklaert, und die restlichen elf
+    liefern echte Stuecke, die davon unberuehrt sind.
+  Damit ist der TT-Wert in P1 kein nachzubauendes Soll.  Er waere nur
+  nachbaubar, indem man Stapelmuell nachbildet -- etwa durch einen
+  statischen, zwischen AES-Aufrufen fortgeschriebenen local_intout.  Das
+  traefe zufaellig diese drei Faelle und waere trotzdem falsch, weil auf
+  echter EmuTOS jeder tiefere Handler dazwischen das Muster aendert.
+
+  Gegenprobe zur Anwendungswirkung: das dokumentierte Abbruchkriterium ist
+  w == 0 && h == 0 (spec :342-344, :848-851).  Die einzige Anwendung im
+  Baum, die die Liste laeuft, prueft genau das und liest g_x/g_y danach
+  nie: QED rc_first/rc_next, sdk/apps/qed/src/window.c:224-249
+  (while (r->g_w && r->g_h) ... return FALSE).
+
+  VERDIKT A15, gemessener Teil (127, 133, 204):
+  Die zwei Woerter, um die es geht (g_w, g_h), stimmen auf beiden
+  Maschinen.  Die beiden anderen (g_x, g_y) weichen ab, aber der
+  Referenzwert ist kein Soll.  HINNEHMBARE ABWEICHUNG, kein Fix.
+
+  VERDIKT A15, hergeleiteter Teil (P2):
+  Belegter Unterschied mit Soll, auf realer Hardware nicht gegengemessen.
+  Kein Aufrufer nach Vorschrift liest die beiden Woerter.  Ich stufe das
+  als Abweichung mit Fix-Vorschlag ein, NICHT als hinnehmbar, weil der
+  EmuTOS-Wert dort bestimmt ist.
+
+
+8. SPEZIFIKATIONSLAGE (gemeldet, nicht geaendert -- Researcher / A18)
+---------------------------------------------------------------------
+
+docs/api/aes/window-graphics.md ist fuer genau diese Frage KEINE
+ausreichende Autoritaet:
+  :341     "When the list is exhausted it returns a rect with w=h=0."
+           Sagt "a rect", also vier Woerter, und verschweigt, dass
+           gemwmlib.c:1240 nur zwei schreibt.
+  :848-851 dasselbe noch einmal, ebenfalls ohne die Zwei-Wort-Regel.
+  :354-358 erklaert die Zerlegung zur blossen Referenz -- betrifft A13,
+           hier nur erwaehnt.
+Nachzutragen waere: die Zwei-Wort-Regel, der Unterschied P1/P2, und dass
+der Aufrufer wegen gemsuper.c:444-445 innerhalb OUT_LEN nie seinen eigenen
+Wert behaelt.  Ich lege dafuer keinen Task an; A18 deckt den Bereich ab.
+
+Ausserdem, ohne Aenderung an der eingefrorenen Datei festgehalten: der
+Kopfkommentar von tosdump/cases/aes-r2b-rlist.tsv:69-72 ist an zwei
+Stellen ungenau (Abschnitt 4f).  Er hat die Messung richtig motiviert; die
+Messung hat ihn korrigiert.
+
+
+9. WENN REPARIERT WERDEN SOLL: MINIMALER FIX UND KOMPENSATIONSPRUEFUNG
+-----------------------------------------------------------------------
+
+Fuer P1 (die drei gemessenen Faelle) empfehle ich KEINEN Fix -- siehe
+Verdikt.  Der folgende Fix betrifft ausschliesslich P2.
+
+F-A15-1 (nur bei Entscheidung fuer 1:1 in P2)
+  Datei:   tos-api/src/aes/window.rs:1999-2010
+  Aendern: Der FIRST/NEXT-Arm darf nicht mehr aus einer vorgefilterten
+           Liste lesen, sondern muss w_owns nachbilden: ueber die
+           UNGEFILTERTE Stueckliste (border_pieces, :600-615) laufen, je
+           Schritt gegen die Arbeitsflaeche schneiden wie rc_intersect
+           (rectfunc.c:63-78, also auch bei Fehlschlag x/y/w/h setzen),
+           beim ersten Erfolg zurueckgeben, und beim Erschoepfen NUR
+           int_out[3] und int_out[4] auf 0 setzen.  int_out[1]/[2]
+           bleiben dann stehen, wie gemwmlib.c:1240 es tut.
+  Test:    neuer Regressionstest in tos-api/tests/, Profil 640x480/4:
+           Fenster 1 create(0x0FEF,10,20,300,200) + open(1,30,40,320,240),
+           Fenster 2 create + open(2, 31,63,296,194); dann
+           wind_get(1, WF_FIRSTXYWH, OUT_LEN 5).
+           Erwartung nach EmuTOS: ret 1, int_out[3] = 0, int_out[4] = 0,
+           int_out[1] = 31, int_out[2] = 259.
+
+KOMPENSATIONSPRUEFUNG (das, was bei den Vorgaengern einen lokal richtig
+aussehenden Fix entwertet hat):
+
+  (K1) Ein Fix NUR an window.rs:2004-2005 -- also "x und y am Listenende
+       nicht mehr schreiben" -- aendert BEIM AUFRUFER NICHTS.  Grund:
+       tos-api/src/aes/mod.rs:263 nullt den dispatch-lokalen Puffer vor
+       jedem Aufruf, und mod.rs:132-140 kopiert ihn unbedingt fuer alle
+       OUT_LEN Woerter hinaus.  Der Aufrufer saehe weiterhin 0, 0.
+       Umgekehrt gilt dasselbe: ein Fix NUR an mod.rs:263 wird von
+       window.rs:2004-2005 sofort ueberschrieben.  Die beiden Stellen
+       heben einander auf; jede fuer sich ist wirkungslos.  Deshalb ist
+       F-A15-1 so formuliert, dass er den WERT aendert (31, 259) und nicht
+       nur das Schreiben unterlaesst.
+
+  (K2) work_rects (window.rs:1110-1124) hat ZWEI Leser:
+         - compute_rlist (:1136)  -> wind_get FIRST/NEXT, mein Pfad
+         - visible_bound (:1190)  -> send_redraw_in (:1206) ->
+           broadcast_redraw (:1223), also die WM_REDRAW-Rechtecke
+       Wuerde man P2 dadurch herstellen, dass work_rects die nicht
+       schneidenden Stuecke BEHAELT, waechst die Vereinigung in
+       visible_bound um reine Randstuecke, und wir verschicken zu grosse
+       WM_REDRAW-Rechtecke.  F-A15-1 darf work_rects deshalb NICHT
+       anfassen; er braucht einen eigenen Lauf im wind_get-Arm.
+
+  (K3) border_pieces (window.rs:600-615) hat einen weiteren Leser:
+       walk_rects (:646), benutzt von :672, :873, :1673, :1749 (Zeichen-
+       clip, w_drawdesk/w_cpwalk-Ersatz).  F-A15-1 liest border_pieces
+       nur, aendert es nicht -- kein Ausgleich, aber auch keine Wirkung
+       dorthin.
+
+  (K4) KOPPLUNG AN A13.  Der Erwartungswert 31, 259 setzt voraus, dass
+       das brechende Rechteck MIT DROP_SHADOW_SIZE abgezogen wird
+       (D-A13-3, gemwrect.c:190 + gemwmlib.c:257-260) und dass die
+       Reihenfolge TOP/LEFT/RIGHT/BOTTOM ist (D-A13-2, gemwrect.c:30-33),
+       denn es ist der Wert des LETZTEN Stuecks.  Solange F2/F3 aus A13
+       nicht liegen, ist der Sollwert fuer diesen Testfall nicht fixierbar.
+       F-A15-1 darf deshalb NICHT vor A13 F2/F3 umgesetzt werden.
+       Das ist ein Eingang fuer A23.
+
+  (K5) Sonst erzeugt oder liest niemand diese Groesse: rlist_next
+       (:1142-1155) wird ausschliesslich von window.rs:2003 aufgerufen,
+       compute_rlist ausschliesslich von :2001.  Kein weiterer Ausgleich.
+
+
+10. WAS GEFAHREN WURDE UND WAS OFFEN BLEIBT
+--------------------------------------------
+
+Gefahren:
+  - beide BIN mit tosdiff --validate gegen die eingefrorene Tabelle
+  - alle 15 Records mit einem eigenen Leser roh gelesen, Poison je Wort
+    bestimmt, meine drei Faelle zusaetzlich byteweise verglichen
+  - Restwert-Bilanz ueber alle vier Listenende-Records, mit zwei
+    verschiedenen Wertepaaren und einem Fall, der eine Fallgrenze
+    ueberschreitet
+  - NewTOS-Nachlauf der drei Faelle in zwei Bildschirmprofilen; beide
+    reproduzieren den Pi-Record Wort fuer Wort
+  - OUT_LEN 0 bis 7 am Listenende, je zweimal (vergiftet / MARK), um
+    geschrieben von erhalten zu trennen
+  - P2 in NewTOS gefahren und in EmuTOS aus der Quelle hergeleitet
+  - vollstaendiger Redraw-Lauf mit vorbelegtem Aufruferarray
+
+Nicht verifiziert, ausdruecklich offen:
+  - P2 ist auf realem EmuTOS NICHT gemessen.  Der Wert 1, 31, 259, 0, 0
+    ist quellenhergeleitet.  Eine Gegenmessung braucht eine NEUE
+    Falltabelle; ich habe keine angelegt.
+  - OUT_LEN 0, 2, 4, 6, 7 sind auf dem TT nicht gemessen (nur 1, 3, 5).
+  - Ob der TT-Restwert bei einem tieferen AES-Aufruf dazwischen kippt,
+    ist nicht gemessen.  Die Aussage "uninitialisiert, kein Soll" stuetzt
+    sich auf die Quelle (gemsuper.c:432) und auf die Herkunftsbilanz,
+    nicht auf ein Gegenexperiment.
+  - Nicht bewertet, ausserhalb des Auftrags: 144 (A13), 166/174/183/213
+    (A14), 122/159/189/201/208/226/230, global[] (A06-A09).
+
+11. NEBENBEFUND, GEMELDET, KEIN TASK VON MIR
+---------------------------------------------
+  Bei OUT_LEN 6/7 liefert unser genullter dispatch-lokaler Puffer
+  (mod.rs:263) an int_out[5]/[6] Nullen, wo EmuTOS Stapelinhalt liefert.
+  Gleiche Klasse wie P1, gleiches Verdikt (kein Soll), aber es betrifft
+  JEDEN AES-Aufruf, dessen Handler weniger Woerter schreibt als der
+  Aufrufer deklariert -- unter anderem WF_COLOR/WF_DCOLOR, wo die Spec in
+  D-095 (:312-325) behauptet, int_out[1] lese sich "unchanged" zurueck.
+  Auf EmuTOS ist auch das Stapelinhalt.  Nicht verfolgt.
+
+================================================================================
+Ende 13-a15-wind-get-listend-words.txt
+================================================================================

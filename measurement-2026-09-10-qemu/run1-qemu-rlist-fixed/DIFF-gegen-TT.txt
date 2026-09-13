@@ -1,0 +1,29 @@
+Erzeugende Befehle:
+  tools/make-sd-image.sh <img> 64
+  # dann DUMPAES.NAP + AES.TSV(=aes-r2b-rlist.tsv) ins Image,
+  # NEWDESK.INF = "#Z 01 C:\DUMPAES.NAP@"
+  qemu-system-aarch64 -M raspi4b -no-reboot -display none \
+    -serial file:<log> -kernel kernel8.img -drive file=<img>,if=sd,format=raw
+  tosdiff cases/aes-r2b-rlist.tsv reference/EMUTOS14-AES-r2brlist.BIN run1-qemu-rlist-fixed/AES.BIN
+
+QEMU raspi4b, 640x480 (BOOT-SERIAL.txt Zeile 26-28) — dasselbe Profil wie die TT-Referenz.
+Kernel: mit den Stufen 1-4 (FIX-01..FIX-04), DROP_SHADOW_SIZE = 2, uncommitted.
+Ohne global[]-Woerter:
+
+EMUTOS14-AES-r2brlist.BIN vs AES.BIN -- area AES, 15 cases from aes-r2b-rlist.tsv
+
+case 127  opcode 104  WF_NEXTXYWH at the end: g_w/g_h are 0, g_x/g_y are NOT written
+    int_out[1]             EMUTOS14-AES-r2brlist.BIN = 0x001F (31)   AES.BIN                   = 0x0000 (0)
+    int_out[2]             EMUTOS14-AES-r2brlist.BIN = 0x003F (63)   AES.BIN                   = 0x0000 (0)
+
+case 133  opcode 104  WF_NEXTXYWH past the end: po is NULL, the loop is not entered a
+    int_out[1]             EMUTOS14-AES-r2brlist.BIN = 0x001F (31)   AES.BIN                   = 0x0000 (0)
+    int_out[2]             EMUTOS14-AES-r2brlist.BIN = 0x003F (63)   AES.BIN                   = 0x0000 (0)
+
+case 144  opcode 104  WF_FIRSTXYWH of a created, unopened window: empty list
+    int_out[1]             EMUTOS14-AES-r2brlist.BIN = 0x001F (31)   AES.BIN                   = 0x0000 (0)
+    int_out[2]             EMUTOS14-AES-r2brlist.BIN = 0x003F (63)   AES.BIN                   = 0x0000 (0)
+
+case 204  opcode 104  WF_NEXTXYWH on the desktop at the end
+    int_out[2]             EMUTOS14-AES-r2brlist.BIN = 0x0013 (19)   AES.BIN                   = 0x0000 (0)
+15 of 15 cases differ

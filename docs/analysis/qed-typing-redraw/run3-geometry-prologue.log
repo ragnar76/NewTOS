@@ -1,0 +1,126 @@
+AES    op=104 wind_get     -> 1
+    wind_get(desk, WF_WORKXYWH): xywh=(0,19,1920,1061)
+AES    op=104 wind_get     -> 1
+    wind_get(desk, WF_WORKXYWH): xywh=(0,19,1920,1061)
+AES    op=104 wind_get     -> 1
+    wind_get(desk, WF_WORKXYWH): xywh=(0,19,1920,1061)
+AES    op=104 wind_get     -> 1
+    wind_get(desk, WF_WORKXYWH): xywh=(0,19,1920,1061)
+AES    op=108 wind_calc    -> 1
+    wind_calc: wtype=1 kind=0x4fff in=(0,19,1920,1061) out=(1,61,1896,996)
+AES    op=108 wind_calc    -> 1
+    wind_calc: wtype=1 kind=0x4fef in=(0,19,1920,1061) out=(1,42,1896,1015)
+AES    op=108 wind_calc    -> 1
+    wind_calc: wtype=1 kind=0x4fff in=(0,19,1920,1061) out=(1,61,1896,996)
+AES    op=108 wind_calc    -> 1
+    wind_calc: wtype=1 kind=0x4fef in=(0,19,1920,1061) out=(1,42,1896,1015)
+AES    op=108 wind_calc    -> 1
+    wind_calc: wtype=1 kind=0x4fff in=(0,19,1920,1061) out=(1,61,1896,996)
+AES    op=108 wind_calc    -> 1
+    wind_calc: wtype=1 kind=0x4fef in=(0,19,1920,1061) out=(1,42,1896,1015)
+AES    op=104 wind_get     -> 1
+    wind_get(desk, WF_WORKXYWH): xywh=(0,19,1920,1061)
+AES    op=100 wind_create  -> 1
+    wind_create: kind=0x4fff full=(0,19,1896,992) -> handle 1
+AES    op=108 wind_calc    -> 1
+    wind_calc: wtype=0 kind=0x4fff in=(303,142,824,608) out=(302,100,848,673)
+AES    op=108 wind_calc    -> 1
+    wind_calc: wtype=1 kind=0x4fff in=(303,142,848,673) out=(304,184,824,608)
+AES    op=108 wind_calc    -> 1
+    wind_calc: wtype=1 kind=0x4fff in=(0,19,1920,1061) out=(1,61,1896,996)
+AES    op=108 wind_calc    -> 1
+    wind_calc: wtype=0 kind=0x4fff in=(304,184,824,610) out=(303,142,848,675)
+AES    op=101 wind_open    -> 1
+    wind_open:  handle=1 xywh=(303,142,848,675)
+AES    op=104 wind_get     -> 1
+    wind_get: handle=1 field=4 -> (304,184,824,610)
+AES    op=104 wind_get     -> 1
+    wind_get(desk, WF_WORKXYWH): xywh=(0,19,1920,1061)
+AES    op=108 wind_calc    -> 1
+    wind_calc: wtype=0 kind=0x2009 in=(826,493,268,96) out=(825,470,270,120)
+AES    op=100 wind_create  -> 1
+    wind_create: kind=0x2009 full=(825,490,270,120) -> handle 1
+AES    op=101 wind_open    -> 1
+    wind_open:  handle=1 xywh=(825,490,270,120)
+AES    op=100 wind_create  -> 1
+    wind_create: kind=0x4fff full=(0,19,1920,1061) -> handle 1
+AES    op=108 wind_calc    -> 1
+    wind_calc: wtype=0 kind=0x4fff in=(24,60,640,944) out=(23,18,664,1009)
+AES    op=108 wind_calc    -> 1
+    wind_calc: wtype=1 kind=0x4fff in=(23,19,664,1009) out=(24,61,640,944)
+AES    op=108 wind_calc    -> 1
+    wind_calc: wtype=0 kind=0x4fff in=(24,61,640,944) out=(23,19,664,1009)
+AES    op=101 wind_open    -> 1
+    wind_open:  handle=1 xywh=(23,19,664,1009)
+AES    op=25  evnt_multi   -> 1
+    evnt_multi: fired=0x0001 mx=124 my=129 btn=0x0 ks=0x0 key=0x1e61 clicks=0
+    *** keystroke -- this cycle is the one being hunted ***
+AES    op=107 wind_update  -> 1
+AES    op=79  graf_mkstate -> 1
+AES    op=104 wind_get     -> 1
+    wind_get: handle=1 field=11 -> (24,61,640,944)
+VDI    op=129 vs_clip     
+    vs_clip flag=1 rect=(24,61)-(26,78)
+VDI    op=32  vswr_mode   
+    vswr_mode -> 3 (out 3)
+VDI    op=114 vr_recfl    
+    vr_recfl rect=(24,61)-(26,78)
+VDI    op=32  vswr_mode   
+    vswr_mode -> 2 (out 2)
+AES    op=104 wind_get     -> 1
+    wind_get: handle=1 field=12 -> (0,0,0,0)
+AES    op=107 wind_update  -> 1
+AES    op=78  graf_mouse   -> 1
+AES    op=107 wind_update  -> 1
+AES    op=104 wind_get     -> 1
+    wind_get: handle=1 field=11 -> (24,61,640,944)
+VDI    op=129 vs_clip     
+    vs_clip flag=1 rect=(32,61)-(34,78)
+VDI    op=32  vswr_mode   
+    vswr_mode -> 3 (out 3)
+VDI    op=114 vr_recfl    
+    vr_recfl rect=(32,61)-(34,78)
+VDI    op=32  vswr_mode   
+    vswr_mode -> 2 (out 2)
+AES    op=104 wind_get     -> 1
+    wind_get: handle=1 field=12 -> (0,0,0,0)
+AES    op=107 wind_update  -> 1
+--- cycle boundary (3 more kept) ---
+AES    op=25  evnt_multi   -> 32
+    evnt_multi: fired=0x0020 mx=124 my=129 btn=0x0 ks=0x0 key=0x0000 clicks=0
+AES    op=32  ?            -> 1
+AES    op=32  ?            -> 1
+--- cycle boundary (2 more kept) ---
+AES    op=25  evnt_multi   -> 32
+    evnt_multi: fired=0x0020 mx=124 my=129 btn=0x0 ks=0x0 key=0x0000 clicks=0
+AES    op=107 wind_update  -> 1
+AES    op=104 wind_get     -> 1
+    wind_get: handle=1 field=11 -> (24,61,640,944)
+VDI    op=129 vs_clip     
+    vs_clip flag=1 rect=(32,61)-(34,78)
+VDI    op=32  vswr_mode   
+    vswr_mode -> 3 (out 3)
+VDI    op=114 vr_recfl    
+    vr_recfl rect=(32,61)-(34,78)
+VDI    op=32  vswr_mode   
+    vswr_mode -> 2 (out 2)
+AES    op=104 wind_get     -> 1
+    wind_get: handle=1 field=12 -> (0,0,0,0)
+AES    op=107 wind_update  -> 1
+--- cycle boundary (1 more kept) ---
+AES    op=25  evnt_multi   -> 32
+    evnt_multi: fired=0x0020 mx=124 my=129 btn=0x0 ks=0x0 key=0x0000 clicks=0
+AES    op=107 wind_update  -> 1
+AES    op=104 wind_get     -> 1
+    wind_get: handle=1 field=11 -> (24,61,640,944)
+VDI    op=129 vs_clip     
+    vs_clip flag=1 rect=(32,61)-(34,78)
+VDI    op=32  vswr_mode   
+    vswr_mode -> 3 (out 3)
+VDI    op=114 vr_recfl    
+    vr_recfl rect=(32,61)-(34,78)
+VDI    op=32  vswr_mode   
+    vswr_mode -> 2 (out 2)
+AES    op=104 wind_get     -> 1
+    wind_get: handle=1 field=12 -> (0,0,0,0)
+AES    op=107 wind_update  -> 1

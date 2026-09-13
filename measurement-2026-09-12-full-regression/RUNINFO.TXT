@@ -1,0 +1,40 @@
+NewTOS -- volle Gegenmessung nach sechs Reparaturen (B1, B2, A22, A34, A33, A37)
+================================================================================
+
+Datum       : 2026-09-12
+Git HEAD    : 70caee212078b11ffa0a70afa1279bdd82532959 (Branch desk-rebuild)
+Arbeitsbaum : 109 geaenderte/ungetrackte Pfade gegenueber HEAD (geteilter Baum,
+              mehrere fremde uncommittete Straenge -- siehe git status).
+kernel8.img : 42e5b8ee1d87e9764a247911648c1bb6bad525ff3f03a784116cd60ab21434b2
+              (frisch gebaut: cargo run -p xtask -- build --board rpi4, dev-Profil)
+DUMPAES.NAP : 5889e9bbef18d4b80a7a0432438d1779ea9966310fec5607c028d3b57a0a158d (build 70ca, unveraendert seit 2026-09-09)
+DUMPVDI.NAP : c30587cf77c20b6681e4de06d3d7ddaaa84b2b70ddcd4c57e4eca3b7ee3dd5c4 (build 70ca, unveraendert seit 2026-09-09)
+DUMPRAST.NAP: fa3c9c3a92da2b9211d3782d631b512d523eadb375b0892a22cdbc771cbe4953 (build 70ca, unveraendert seit 2026-09-09)
+
+Die drei Dumper wurden NICHT neu gebaut: sie sind native AArch64/ELF64-Programme
+(LP64), die ILP32-Ladesperre (heute mitgelandet) betrifft sie nicht (geprueft:
+ELF-Byte 4 = 0x02 = ELFCLASS64 in allen drei .NAP). Der svc-Trap-ABI, den sie
+aufrufen, hat sich durch die sechs Reparaturen nicht veraendert.
+
+Maschine    : QEMU raspi4b, headless (-display none), kein SD-Karten-Handling,
+              kein Klick -- Autostart ueber NEWDESK.INF "#Z 01 C:\<NAME>@".
+              9 Laeufe bei 640x480 (TT-Profil, direkt vergleichbar mit den
+              EmuTOS-TT-Referenzen), 5 zusaetzliche Laeufe bei 1920x1080
+              (-global bcm2835-fb.xres/yres) fuer die Tabellen, deren letzter
+              aufgezeichneter NewTOS-Vorstand nur auf echter Pi-4-Hardware bei
+              1920x1080 existiert (aes-r1, aes-r2-wind, vdi-r2, vdi-all,
+              vdi-raster).
+              Jede Tabelle lief in einem EIGENEN, frischen Boot (ein NAP pro
+              Boot -- die klassische NEWDESK.INF kennt nur eine #Z-Zeile).
+
+Aufbewahrung: pro Tabelle ein Unterverzeichnis mit BOOT-SERIAL.txt, dem rohen
+              .BIN/.LOG des heutigen Laufs, DIFF-vs-emutos.txt (heute gegen die
+              EmuTOS-Referenz) und DIFF-vs-baseline-*.txt (heute gegen den
+              letzten aufgezeichneten NewTOS-Vorstand, wo vorhanden).
+
+Kein QEMU-Prozess blieb nach einem Lauf zuruck (pgrep nach jedem Lauf geprueft).
+Scratch/Zwischenabbilder lagen ausschliesslich unter
+$CLAUDE_JOB_DIR/tmp/tester-regress/, keine physische Karte wurde beschrieben
+oder ausgehaengt.
+
+Bericht: docs/analysis/full-regression-2026-09-12.md

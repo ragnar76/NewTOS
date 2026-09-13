@@ -1,0 +1,47 @@
+[
+  {
+    "path": "measurement-2026-09-09/cases/aes-r1.tsv",
+    "bytes": 15274,
+    "sha256": "f7e6c72b7ba45a6e97fd8b3d9cddf625afdc4b6997a4f2610ae3ff39c2a90f39"
+  },
+  {
+    "path": "tosdump/reference/EMUTOS14-AES.BIN",
+    "bytes": 11432,
+    "sha256": "f73db81cb290d05b31749db2fb3b59e84b661d815caeda20bf90f9d6e1c5d540"
+  },
+  {
+    "path": "measurement-2026-09-09/run1-pi4/AES.BIN",
+    "bytes": 11432,
+    "sha256": "bd7318eb81452e83eb67da6d779a31777d9628bab81712274d90c1944d041251"
+  },
+  {
+    "path": "measurement-2026-09-09/cases/vdi-all.tsv",
+    "bytes": 11438,
+    "sha256": "7ca7de7ce52af54e82bfe0dca8dff310b32f75359177068060172a841a764ada"
+  },
+  {
+    "path": "tosdump/reference/EMUTOS14-VDI-all.BIN",
+    "bytes": 289776,
+    "sha256": "119e2bf1361ad37f35e4236191170ebf3d13e3659c33834e8dc8ad38a9e7c8ce"
+  },
+  {
+    "path": "measurement-2026-09-09/run1-pi4/VDI.BIN",
+    "bytes": 289776,
+    "sha256": "58159446fd5b52791bdddb13a85c57b551af8feb653f1265487dee8cdcd95f04"
+  },
+  {
+    "path": "measurement-2026-09-09/cases/vdi-raster.tsv",
+    "bytes": 12344,
+    "sha256": "4b81d3cc17c0c171217a848696cbf2c1d9e4b856f19559028bd44ecb98a64082"
+  },
+  {
+    "path": "tosdump/reference/EMUTOS14-RASTER.BIN",
+    "bytes": 218096,
+    "sha256": "678708866cfb80d3b0adbfbaaa280f8902c348252427263f390124ef4619cade"
+  },
+  {
+    "path": "measurement-2026-09-09/run1-pi4/RASTER.BIN",
+    "bytes": 218096,
+    "sha256": "aa893913d4a9382d3a6efcc766018d4551d475e49868d8b5555c405bfce4ead3"
+  }
+]

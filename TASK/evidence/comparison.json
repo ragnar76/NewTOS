@@ -1,0 +1,2925 @@
+{
+  "aes": {
+    "table": "measurement-2026-09-09/cases/aes-r1.tsv",
+    "ref": "tosdump/reference/EMUTOS14-AES.BIN",
+    "new": "measurement-2026-09-09/run1-pi4/AES.BIN",
+    "blocks": {
+      "67": {
+        "head": "67  opcode 108  wind_calc WC_WORK kind 0, no gadgets: 1px all round",
+        "fields": [
+          "    global[2]              EMUTOS14-AES.BIN = 0x0000 (0)   AES.BIN          = 0x0002 (2)",
+          "    global[3]              EMUTOS14-AES.BIN = 0x0000 (0)   AES.BIN          = 0x117B (4475)",
+          "    global[4]              EMUTOS14-AES.BIN = 0x1143 (4419)   AES.BIN          = 0x0000 (0)",
+          "    global[10]              EMUTOS14-AES.BIN = 0x0004 (4)   AES.BIN          = 0x0010 (16)",
+          "    global[11]              EMUTOS14-AES.BIN = 0x0000 (0)   AES.BIN          = 0x3340 (13120)",
+          "    global[12]              EMUTOS14-AES.BIN = 0xBE04 (-16892)   AES.BIN          = 0x0012 (18)"
+        ]
+      },
+      "68": {
+        "head": "68  opcode 108  wind_calc WC_WORK NAME: title band",
+        "fields": [
+          "    global[2]              EMUTOS14-AES.BIN = 0x0000 (0)   AES.BIN          = 0x0002 (2)",
+          "    global[3]              EMUTOS14-AES.BIN = 0x0000 (0)   AES.BIN          = 0x117B (4475)",
+          "    global[4]              EMUTOS14-AES.BIN = 0x1143 (4419)   AES.BIN          = 0x0000 (0)",
+          "    global[10]              EMUTOS14-AES.BIN = 0x0004 (4)   AES.BIN          = 0x0010 (16)",
+          "    global[11]              EMUTOS14-AES.BIN = 0x0000 (0)   AES.BIN          = 0x3340 (13120)",
+          "    global[12]              EMUTOS14-AES.BIN = 0xBE04 (-16892)   AES.BIN          = 0x0012 (18)"
+        ]
+      },
+      "69": {
+        "head": "69  opcode 108  wind_calc WC_WORK CLOSER",
+        "fields": [
+          "    global[2]              EMUTOS14-AES.BIN = 0x0000 (0)   AES.BIN          = 0x0002 (2)",
+          "    global[3]              EMUTOS14-AES.BIN = 0x0000 (0)   AES.BIN          = 0x117B (4475)",
+          "    global[4]              EMUTOS14-AES.BIN = 0x1143 (4419)   AES.BIN          = 0x0000 (0)",
+          "    global[10]              EMUTOS14-AES.BIN = 0x0004 (4)   AES.BIN          = 0x0010 (16)",
+          "    global[11]              EMUTOS14-AES.BIN = 0x0000 (0)   AES.BIN          = 0x3340 (13120)",
+          "    global[12]              EMUTOS14-AES.BIN = 0xBE04 (-16892)   AES.BIN          = 0x0012 (18)"
+        ]
+      },
+      "70": {
+        "head": "70  opcode 108  wind_calc WC_WORK FULLER",
+        "fields": [
+          "    global[2]              EMUTOS14-AES.BIN = 0x0000 (0)   AES.BIN          = 0x0002 (2)",
+          "    global[3]              EMUTOS14-AES.BIN = 0x0000 (0)   AES.BIN          = 0x117B (4475)",
+          "    global[4]              EMUTOS14-AES.BIN = 0x1143 (4419)   AES.BIN          = 0x0000 (0)",
+          "    global[10]              EMUTOS14-AES.BIN = 0x0004 (4)   AES.BIN          = 0x0010 (16)",
+          "    global[11]              EMUTOS14-AES.BIN = 0x0000 (0)   AES.BIN          = 0x3340 (13120)",
+          "    global[12]              EMUTOS14-AES.BIN = 0xBE04 (-16892)   AES.BIN          = 0x0012 (18)"
+        ]
+      },
+      "71": {
+        "head": "71  opcode 108  wind_calc WC_WORK MOVER alone: D-097, TGADGETS vs non-3D",
+        "fields": [
+          "    global[2]              EMUTOS14-AES.BIN = 0x0000 (0)   AES.BIN          = 0x0002 (2)",
+          "    global[3]              EMUTOS14-AES.BIN = 0x0000 (0)   AES.BIN          = 0x117B (4475)",
+          "    global[4]              EMUTOS14-AES.BIN = 0x1143 (4419)   AES.BIN          = 0x0000 (0)",
+          "    global[10]              EMUTOS14-AES.BIN = 0x0004 (4)   AES.BIN          = 0x0010 (16)",
+          "    global[11]              EMUTOS14-AES.BIN = 0x0000 (0)   AES.BIN          = 0x3340 (13120)",
+          "    global[12]              EMUTOS14-AES.BIN = 0xBE04 (-16892)   AES.BIN          = 0x0012 (18)"
+        ]
+      },
+      "72": {
+        "head": "72  opcode 108  wind_calc WC_WORK INFO: the second title band",
+        "fields": [
+          "    global[2]              EMUTOS14-AES.BIN = 0x0000 (0)   AES.BIN          = 0x0002 (2)",
+          "    global[3]              EMUTOS14-AES.BIN = 0x0000 (0)   AES.BIN          = 0x117B (4475)",
+          "    global[4]              EMUTOS14-AES.BIN = 0x1143 (4419)   AES.BIN          = 0x0000 (0)",
+          "    global[10]              EMUTOS14-AES.BIN = 0x0004 (4)   AES.BIN          = 0x0010 (16)",
+          "    global[11]              EMUTOS14-AES.BIN = 0x0000 (0)   AES.BIN          = 0x3340 (13120)",
+          "    global[12]              EMUTOS14-AES.BIN = 0xBE04 (-16892)   AES.BIN          = 0x0012 (18)"
+        ]
+      },
+      "73": {
+        "head": "73  opcode 108  wind_calc WC_WORK SIZER alone: stripped, vertical forced back",
+        "fields": [
+          "    global[2]              EMUTOS14-AES.BIN = 0x0000 (0)   AES.BIN          = 0x0002 (2)",
+          "    global[3]              EMUTOS14-AES.BIN = 0x0000 (0)   AES.BIN          = 0x117B (4475)",
+          "    global[4]              EMUTOS14-AES.BIN = 0x1143 (4419)   AES.BIN          = 0x0000 (0)",
+          "    global[10]              EMUTOS14-AES.BIN = 0x0004 (4)   AES.BIN          = 0x0010 (16)",
+          "    global[11]              EMUTOS14-AES.BIN = 0x0000 (0)   AES.BIN          = 0x3340 (13120)",
+          "    global[12]              EMUTOS14-AES.BIN = 0xBE04 (-16892)   AES.BIN          = 0x0012 (18)"
+        ]
+      },
+      "74": {
+        "head": "74  opcode 108  wind_calc WC_WORK UPARROW",
+        "fields": [
+          "    global[2]              EMUTOS14-AES.BIN = 0x0000 (0)   AES.BIN          = 0x0002 (2)",
+          "    global[3]              EMUTOS14-AES.BIN = 0x0000 (0)   AES.BIN          = 0x117B (4475)",
+          "    global[4]              EMUTOS14-AES.BIN = 0x1143 (4419)   AES.BIN          = 0x0000 (0)",
+          "    global[10]              EMUTOS14-AES.BIN = 0x0004 (4)   AES.BIN          = 0x0010 (16)",
+          "    global[11]              EMUTOS14-AES.BIN = 0x0000 (0)   AES.BIN          = 0x3340 (13120)",
+          "    global[12]              EMUTOS14-AES.BIN = 0xBE04 (-16892)   AES.BIN          = 0x0012 (18)"
+        ]
+      },
+      "75": {
+        "head": "75  opcode 108  wind_calc WC_WORK DNARROW",
+        "fields": [
+          "    global[2]              EMUTOS14-AES.BIN = 0x0000 (0)   AES.BIN          = 0x0002 (2)",
+          "    global[3]              EMUTOS14-AES.BIN = 0x0000 (0)   AES.BIN          = 0x117B (4475)",
+          "    global[4]              EMUTOS14-AES.BIN = 0x1143 (4419)   AES.BIN          = 0x0000 (0)",
+          "    global[10]              EMUTOS14-AES.BIN = 0x0004 (4)   AES.BIN          = 0x0010 (16)",
+          "    global[11]              EMUTOS14-AES.BIN = 0x0000 (0)   AES.BIN          = 0x3340 (13120)",
+          "    global[12]              EMUTOS14-AES.BIN = 0xBE04 (-16892)   AES.BIN          = 0x0012 (18)"
+        ]
+      },
+      "76": {
+        "head": "76  opcode 108  wind_calc WC_WORK VSLIDE",
+        "fields": [
+          "    global[2]              EMUTOS14-AES.BIN = 0x0000 (0)   AES.BIN          = 0x0002 (2)",
+          "    global[3]              EMUTOS14-AES.BIN = 0x0000 (0)   AES.BIN          = 0x117B (4475)",
+          "    global[4]              EMUTOS14-AES.BIN = 0x1143 (4419)   AES.BIN          = 0x0000 (0)",
+          "    global[10]              EMUTOS14-AES.BIN = 0x0004 (4)   AES.BIN          = 0x0010 (16)",
+          "    global[11]              EMUTOS14-AES.BIN = 0x0000 (0)   AES.BIN          = 0x3340 (13120)",
+          "    global[12]              EMUTOS14-AES.BIN = 0xBE04 (-16892)   AES.BIN          = 0x0012 (18)"
+        ]
+      },
+      "77": {
+        "head": "77  opcode 108  wind_calc WC_WORK LFARROW",
+        "fields": [
+          "    global[2]              EMUTOS14-AES.BIN = 0x0000 (0)   AES.BIN          = 0x0002 (2)",
+          "    global[3]              EMUTOS14-AES.BIN = 0x0000 (0)   AES.BIN          = 0x117B (4475)",
+          "    global[4]              EMUTOS14-AES.BIN = 0x1143 (4419)   AES.BIN          = 0x0000 (0)",
+          "    global[10]              EMUTOS14-AES.BIN = 0x0004 (4)   AES.BIN          = 0x0010 (16)",
+          "    global[11]              EMUTOS14-AES.BIN = 0x0000 (0)   AES.BIN          = 0x3340 (13120)",
+          "    global[12]              EMUTOS14-AES.BIN = 0xBE04 (-16892)   AES.BIN          = 0x0012 (18)"
+        ]
+      },
+      "78": {
+        "head": "78  opcode 108  wind_calc WC_WORK RTARROW",
+        "fields": [
+          "    global[2]              EMUTOS14-AES.BIN = 0x0000 (0)   AES.BIN          = 0x0002 (2)",
+          "    global[3]              EMUTOS14-AES.BIN = 0x0000 (0)   AES.BIN          = 0x117B (4475)",
+          "    global[4]              EMUTOS14-AES.BIN = 0x1143 (4419)   AES.BIN          = 0x0000 (0)",
+          "    global[10]              EMUTOS14-AES.BIN = 0x0004 (4)   AES.BIN          = 0x0010 (16)",
+          "    global[11]              EMUTOS14-AES.BIN = 0x0000 (0)   AES.BIN          = 0x3340 (13120)",
+          "    global[12]              EMUTOS14-AES.BIN = 0xBE04 (-16892)   AES.BIN          = 0x0012 (18)"
+        ]
+      },
+      "79": {
+        "head": "79  opcode 108  wind_calc WC_WORK HSLIDE",
+        "fields": [
+          "    global[2]              EMUTOS14-AES.BIN = 0x0000 (0)   AES.BIN          = 0x0002 (2)",
+          "    global[3]              EMUTOS14-AES.BIN = 0x0000 (0)   AES.BIN          = 0x117B (4475)",
+          "    global[4]              EMUTOS14-AES.BIN = 0x1143 (4419)   AES.BIN          = 0x0000 (0)",
+          "    global[10]              EMUTOS14-AES.BIN = 0x0004 (4)   AES.BIN          = 0x0010 (16)",
+          "    global[11]              EMUTOS14-AES.BIN = 0x0000 (0)   AES.BIN          = 0x3340 (13120)",
+          "    global[12]              EMUTOS14-AES.BIN = 0xBE04 (-16892)   AES.BIN          = 0x0012 (18)"
+        ]
+      },
+      "80": {
+        "head": "80  opcode 108  wind_calc WC_WORK HOTCLOSE: PC-GEM bit, no border test reads it",
+        "fields": [
+          "    global[2]              EMUTOS14-AES.BIN = 0x0000 (0)   AES.BIN          = 0x0002 (2)",
+          "    global[3]              EMUTOS14-AES.BIN = 0x0000 (0)   AES.BIN          = 0x117B (4475)",
+          "    global[4]              EMUTOS14-AES.BIN = 0x1143 (4419)   AES.BIN          = 0x0000 (0)",
+          "    global[10]              EMUTOS14-AES.BIN = 0x0004 (4)   AES.BIN          = 0x0010 (16)",
+          "    global[11]              EMUTOS14-AES.BIN = 0x0000 (0)   AES.BIN          = 0x3340 (13120)",
+          "    global[12]              EMUTOS14-AES.BIN = 0xBE04 (-16892)   AES.BIN          = 0x0012 (18)"
+        ]
+      },
+      "82": {
+        "head": "82  opcode 108  wind_calc WC_BORDER kind 0",
+        "fields": [
+          "    global[2]              EMUTOS14-AES.BIN = 0x0000 (0)   AES.BIN          = 0x0002 (2)",
+          "    global[3]              EMUTOS14-AES.BIN = 0x0000 (0)   AES.BIN          = 0x117B (4475)",
+          "    global[4]              EMUTOS14-AES.BIN = 0x1143 (4419)   AES.BIN          = 0x0000 (0)",
+          "    global[10]              EMUTOS14-AES.BIN = 0x0004 (4)   AES.BIN          = 0x0010 (16)",
+          "    global[11]              EMUTOS14-AES.BIN = 0x0000 (0)   AES.BIN          = 0x3340 (13120)",
+          "    global[12]              EMUTOS14-AES.BIN = 0xBE04 (-16892)   AES.BIN          = 0x0012 (18)"
+        ]
+      },
+      "83": {
+        "head": "83  opcode 108  wind_calc WC_BORDER NAME",
+        "fields": [
+          "    global[2]              EMUTOS14-AES.BIN = 0x0000 (0)   AES.BIN          = 0x0002 (2)",
+          "    global[3]              EMUTOS14-AES.BIN = 0x0000 (0)   AES.BIN          = 0x117B (4475)",
+          "    global[4]              EMUTOS14-AES.BIN = 0x1143 (4419)   AES.BIN          = 0x0000 (0)",
+          "    global[10]              EMUTOS14-AES.BIN = 0x0004 (4)   AES.BIN          = 0x0010 (16)",
+          "    global[11]              EMUTOS14-AES.BIN = 0x0000 (0)   AES.BIN          = 0x3340 (13120)",
+          "    global[12]              EMUTOS14-AES.BIN = 0xBE04 (-16892)   AES.BIN          = 0x0012 (18)"
+        ]
+      },
+      "84": {
+        "head": "84  opcode 108  wind_calc WC_BORDER CLOSER",
+        "fields": [
+          "    global[2]              EMUTOS14-AES.BIN = 0x0000 (0)   AES.BIN          = 0x0002 (2)",
+          "    global[3]              EMUTOS14-AES.BIN = 0x0000 (0)   AES.BIN          = 0x117B (4475)",
+          "    global[4]              EMUTOS14-AES.BIN = 0x1143 (4419)   AES.BIN          = 0x0000 (0)",
+          "    global[10]              EMUTOS14-AES.BIN = 0x0004 (4)   AES.BIN          = 0x0010 (16)",
+          "    global[11]              EMUTOS14-AES.BIN = 0x0000 (0)   AES.BIN          = 0x3340 (13120)",
+          "    global[12]              EMUTOS14-AES.BIN = 0xBE04 (-16892)   AES.BIN          = 0x0012 (18)"
+        ]
+      },
+      "85": {
+        "head": "85  opcode 108  wind_calc WC_BORDER FULLER",
+        "fields": [
+          "    global[2]              EMUTOS14-AES.BIN = 0x0000 (0)   AES.BIN          = 0x0002 (2)",
+          "    global[3]              EMUTOS14-AES.BIN = 0x0000 (0)   AES.BIN          = 0x117B (4475)",
+          "    global[4]              EMUTOS14-AES.BIN = 0x1143 (4419)   AES.BIN          = 0x0000 (0)",
+          "    global[10]              EMUTOS14-AES.BIN = 0x0004 (4)   AES.BIN          = 0x0010 (16)",
+          "    global[11]              EMUTOS14-AES.BIN = 0x0000 (0)   AES.BIN          = 0x3340 (13120)",
+          "    global[12]              EMUTOS14-AES.BIN = 0xBE04 (-16892)   AES.BIN          = 0x0012 (18)"
+        ]
+      },
+      "86": {
+        "head": "86  opcode 108  wind_calc WC_BORDER MOVER alone: D-097, the other way",
+        "fields": [
+          "    global[2]              EMUTOS14-AES.BIN = 0x0000 (0)   AES.BIN          = 0x0002 (2)",
+          "    global[3]              EMUTOS14-AES.BIN = 0x0000 (0)   AES.BIN          = 0x117B (4475)",
+          "    global[4]              EMUTOS14-AES.BIN = 0x1143 (4419)   AES.BIN          = 0x0000 (0)",
+          "    global[10]              EMUTOS14-AES.BIN = 0x0004 (4)   AES.BIN          = 0x0010 (16)",
+          "    global[11]              EMUTOS14-AES.BIN = 0x0000 (0)   AES.BIN          = 0x3340 (13120)",
+          "    global[12]              EMUTOS14-AES.BIN = 0xBE04 (-16892)   AES.BIN          = 0x0012 (18)"
+        ]
+      },
+      "87": {
+        "head": "87  opcode 108  wind_calc WC_BORDER INFO",
+        "fields": [
+          "    global[2]              EMUTOS14-AES.BIN = 0x0000 (0)   AES.BIN          = 0x0002 (2)",
+          "    global[3]              EMUTOS14-AES.BIN = 0x0000 (0)   AES.BIN          = 0x117B (4475)",
+          "    global[4]              EMUTOS14-AES.BIN = 0x1143 (4419)   AES.BIN          = 0x0000 (0)",
+          "    global[10]              EMUTOS14-AES.BIN = 0x0004 (4)   AES.BIN          = 0x0010 (16)",
+          "    global[11]              EMUTOS14-AES.BIN = 0x0000 (0)   AES.BIN          = 0x3340 (13120)",
+          "    global[12]              EMUTOS14-AES.BIN = 0xBE04 (-16892)   AES.BIN          = 0x0012 (18)"
+        ]
+      },
+      "88": {
+        "head": "88  opcode 108  wind_calc WC_BORDER SIZER alone",
+        "fields": [
+          "    global[2]              EMUTOS14-AES.BIN = 0x0000 (0)   AES.BIN          = 0x0002 (2)",
+          "    global[3]              EMUTOS14-AES.BIN = 0x0000 (0)   AES.BIN          = 0x117B (4475)",
+          "    global[4]              EMUTOS14-AES.BIN = 0x1143 (4419)   AES.BIN          = 0x0000 (0)",
+          "    global[10]              EMUTOS14-AES.BIN = 0x0004 (4)   AES.BIN          = 0x0010 (16)",
+          "    global[11]              EMUTOS14-AES.BIN = 0x0000 (0)   AES.BIN          = 0x3340 (13120)",
+          "    global[12]              EMUTOS14-AES.BIN = 0xBE04 (-16892)   AES.BIN          = 0x0012 (18)"
+        ]
+      },
+      "89": {
+        "head": "89  opcode 108  wind_calc WC_BORDER UPARROW",
+        "fields": [
+          "    global[2]              EMUTOS14-AES.BIN = 0x0000 (0)   AES.BIN          = 0x0002 (2)",
+          "    global[3]              EMUTOS14-AES.BIN = 0x0000 (0)   AES.BIN          = 0x117B (4475)",
+          "    global[4]              EMUTOS14-AES.BIN = 0x1143 (4419)   AES.BIN          = 0x0000 (0)",
+          "    global[10]              EMUTOS14-AES.BIN = 0x0004 (4)   AES.BIN          = 0x0010 (16)",
+          "    global[11]              EMUTOS14-AES.BIN = 0x0000 (0)   AES.BIN          = 0x3340 (13120)",
+          "    global[12]              EMUTOS14-AES.BIN = 0xBE04 (-16892)   AES.BIN          = 0x0012 (18)"
+        ]
+      },
+      "90": {
+        "head": "90  opcode 108  wind_calc WC_BORDER DNARROW",
+        "fields": [
+          "    global[2]              EMUTOS14-AES.BIN = 0x0000 (0)   AES.BIN          = 0x0002 (2)",
+          "    global[3]              EMUTOS14-AES.BIN = 0x0000 (0)   AES.BIN          = 0x117B (4475)",
+          "    global[4]              EMUTOS14-AES.BIN = 0x1143 (4419)   AES.BIN          = 0x0000 (0)",
+          "    global[10]              EMUTOS14-AES.BIN = 0x0004 (4)   AES.BIN          = 0x0010 (16)",
+          "    global[11]              EMUTOS14-AES.BIN = 0x0000 (0)   AES.BIN          = 0x3340 (13120)",
+          "    global[12]              EMUTOS14-AES.BIN = 0xBE04 (-16892)   AES.BIN          = 0x0012 (18)"
+        ]
+      },
+      "91": {
+        "head": "91  opcode 108  wind_calc WC_BORDER VSLIDE",
+        "fields": [
+          "    global[2]              EMUTOS14-AES.BIN = 0x0000 (0)   AES.BIN          = 0x0002 (2)",
+          "    global[3]              EMUTOS14-AES.BIN = 0x0000 (0)   AES.BIN          = 0x117B (4475)",
+          "    global[4]              EMUTOS14-AES.BIN = 0x1143 (4419)   AES.BIN          = 0x0000 (0)",
+          "    global[10]              EMUTOS14-AES.BIN = 0x0004 (4)   AES.BIN          = 0x0010 (16)",
+          "    global[11]              EMUTOS14-AES.BIN = 0x0000 (0)   AES.BIN          = 0x3340 (13120)",
+          "    global[12]              EMUTOS14-AES.BIN = 0xBE04 (-16892)   AES.BIN          = 0x0012 (18)"
+        ]
+      },
+      "92": {
+        "head": "92  opcode 108  wind_calc WC_BORDER LFARROW",
+        "fields": [
+          "    global[2]              EMUTOS14-AES.BIN = 0x0000 (0)   AES.BIN          = 0x0002 (2)",
+          "    global[3]              EMUTOS14-AES.BIN = 0x0000 (0)   AES.BIN          = 0x117B (4475)",
+          "    global[4]              EMUTOS14-AES.BIN = 0x1143 (4419)   AES.BIN          = 0x0000 (0)",
+          "    global[10]              EMUTOS14-AES.BIN = 0x0004 (4)   AES.BIN          = 0x0010 (16)",
+          "    global[11]              EMUTOS14-AES.BIN = 0x0000 (0)   AES.BIN          = 0x3340 (13120)",
+          "    global[12]              EMUTOS14-AES.BIN = 0xBE04 (-16892)   AES.BIN          = 0x0012 (18)"
+        ]
+      },
+      "93": {
+        "head": "93  opcode 108  wind_calc WC_BORDER RTARROW",
+        "fields": [
+          "    global[2]              EMUTOS14-AES.BIN = 0x0000 (0)   AES.BIN          = 0x0002 (2)",
+          "    global[3]              EMUTOS14-AES.BIN = 0x0000 (0)   AES.BIN          = 0x117B (4475)",
+          "    global[4]              EMUTOS14-AES.BIN = 0x1143 (4419)   AES.BIN          = 0x0000 (0)",
+          "    global[10]              EMUTOS14-AES.BIN = 0x0004 (4)   AES.BIN          = 0x0010 (16)",
+          "    global[11]              EMUTOS14-AES.BIN = 0x0000 (0)   AES.BIN          = 0x3340 (13120)",
+          "    global[12]              EMUTOS14-AES.BIN = 0xBE04 (-16892)   AES.BIN          = 0x0012 (18)"
+        ]
+      },
+      "94": {
+        "head": "94  opcode 108  wind_calc WC_BORDER HSLIDE",
+        "fields": [
+          "    global[2]              EMUTOS14-AES.BIN = 0x0000 (0)   AES.BIN          = 0x0002 (2)",
+          "    global[3]              EMUTOS14-AES.BIN = 0x0000 (0)   AES.BIN          = 0x117B (4475)",
+          "    global[4]              EMUTOS14-AES.BIN = 0x1143 (4419)   AES.BIN          = 0x0000 (0)",
+          "    global[10]              EMUTOS14-AES.BIN = 0x0004 (4)   AES.BIN          = 0x0010 (16)",
+          "    global[11]              EMUTOS14-AES.BIN = 0x0000 (0)   AES.BIN          = 0x3340 (13120)",
+          "    global[12]              EMUTOS14-AES.BIN = 0xBE04 (-16892)   AES.BIN          = 0x0012 (18)"
+        ]
+      },
+      "95": {
+        "head": "95  opcode 108  wind_calc WC_BORDER HOTCLOSE",
+        "fields": [
+          "    global[2]              EMUTOS14-AES.BIN = 0x0000 (0)   AES.BIN          = 0x0002 (2)",
+          "    global[3]              EMUTOS14-AES.BIN = 0x0000 (0)   AES.BIN          = 0x117B (4475)",
+          "    global[4]              EMUTOS14-AES.BIN = 0x1143 (4419)   AES.BIN          = 0x0000 (0)",
+          "    global[10]              EMUTOS14-AES.BIN = 0x0004 (4)   AES.BIN          = 0x0010 (16)",
+          "    global[11]              EMUTOS14-AES.BIN = 0x0000 (0)   AES.BIN          = 0x3340 (13120)",
+          "    global[12]              EMUTOS14-AES.BIN = 0xBE04 (-16892)   AES.BIN          = 0x0012 (18)"
+        ]
+      },
+      "97": {
+        "head": "97  opcode 108  wind_calc NAME|CLOSER|FULLER: one title band, not three",
+        "fields": [
+          "    global[2]              EMUTOS14-AES.BIN = 0x0000 (0)   AES.BIN          = 0x0002 (2)",
+          "    global[3]              EMUTOS14-AES.BIN = 0x0000 (0)   AES.BIN          = 0x117B (4475)",
+          "    global[4]              EMUTOS14-AES.BIN = 0x1143 (4419)   AES.BIN          = 0x0000 (0)",
+          "    global[10]              EMUTOS14-AES.BIN = 0x0004 (4)   AES.BIN          = 0x0010 (16)",
+          "    global[11]              EMUTOS14-AES.BIN = 0x0000 (0)   AES.BIN          = 0x3340 (13120)",
+          "    global[12]              EMUTOS14-AES.BIN = 0xBE04 (-16892)   AES.BIN          = 0x0012 (18)"
+        ]
+      },
+      "98": {
+        "head": "98  opcode 108  wind_calc TGADGETS = NAME|CLOSER|FULLER|MOVER",
+        "fields": [
+          "    global[2]              EMUTOS14-AES.BIN = 0x0000 (0)   AES.BIN          = 0x0002 (2)",
+          "    global[3]              EMUTOS14-AES.BIN = 0x0000 (0)   AES.BIN          = 0x117B (4475)",
+          "    global[4]              EMUTOS14-AES.BIN = 0x1143 (4419)   AES.BIN          = 0x0000 (0)",
+          "    global[10]              EMUTOS14-AES.BIN = 0x0004 (4)   AES.BIN          = 0x0010 (16)",
+          "    global[11]              EMUTOS14-AES.BIN = 0x0000 (0)   AES.BIN          = 0x3340 (13120)",
+          "    global[12]              EMUTOS14-AES.BIN = 0xBE04 (-16892)   AES.BIN          = 0x0012 (18)"
+        ]
+      },
+      "99": {
+        "head": "99  opcode 108  wind_calc NAME|INFO: both title bands stack",
+        "fields": [
+          "    global[2]              EMUTOS14-AES.BIN = 0x0000 (0)   AES.BIN          = 0x0002 (2)",
+          "    global[3]              EMUTOS14-AES.BIN = 0x0000 (0)   AES.BIN          = 0x117B (4475)",
+          "    global[4]              EMUTOS14-AES.BIN = 0x1143 (4419)   AES.BIN          = 0x0000 (0)",
+          "    global[10]              EMUTOS14-AES.BIN = 0x0004 (4)   AES.BIN          = 0x0010 (16)",
+          "    global[11]              EMUTOS14-AES.BIN = 0x0000 (0)   AES.BIN          = 0x3340 (13120)",
+          "    global[12]              EMUTOS14-AES.BIN = 0xBE04 (-16892)   AES.BIN          = 0x0012 (18)"
+        ]
+      },
+      "100": {
+        "head": "100  opcode 108  wind_calc VGADGETS = UPARROW|DNARROW|VSLIDE",
+        "fields": [
+          "    global[2]              EMUTOS14-AES.BIN = 0x0000 (0)   AES.BIN          = 0x0002 (2)",
+          "    global[3]              EMUTOS14-AES.BIN = 0x0000 (0)   AES.BIN          = 0x117B (4475)",
+          "    global[4]              EMUTOS14-AES.BIN = 0x1143 (4419)   AES.BIN          = 0x0000 (0)",
+          "    global[10]              EMUTOS14-AES.BIN = 0x0004 (4)   AES.BIN          = 0x0010 (16)",
+          "    global[11]              EMUTOS14-AES.BIN = 0x0000 (0)   AES.BIN          = 0x3340 (13120)",
+          "    global[12]              EMUTOS14-AES.BIN = 0xBE04 (-16892)   AES.BIN          = 0x0012 (18)"
+        ]
+      },
+      "101": {
+        "head": "101  opcode 108  wind_calc HGADGETS = LFARROW|RTARROW|HSLIDE",
+        "fields": [
+          "    global[2]              EMUTOS14-AES.BIN = 0x0000 (0)   AES.BIN          = 0x0002 (2)",
+          "    global[3]              EMUTOS14-AES.BIN = 0x0000 (0)   AES.BIN          = 0x117B (4475)",
+          "    global[4]              EMUTOS14-AES.BIN = 0x1143 (4419)   AES.BIN          = 0x0000 (0)",
+          "    global[10]              EMUTOS14-AES.BIN = 0x0004 (4)   AES.BIN          = 0x0010 (16)",
+          "    global[11]              EMUTOS14-AES.BIN = 0x0000 (0)   AES.BIN          = 0x3340 (13120)",
+          "    global[12]              EMUTOS14-AES.BIN = 0xBE04 (-16892)   AES.BIN          = 0x0012 (18)"
+        ]
+      },
+      "102": {
+        "head": "102  opcode 108  wind_calc VGADGETS|SIZER: SIZER stripped from both bars",
+        "fields": [
+          "    global[2]              EMUTOS14-AES.BIN = 0x0000 (0)   AES.BIN          = 0x0002 (2)",
+          "    global[3]              EMUTOS14-AES.BIN = 0x0000 (0)   AES.BIN          = 0x117B (4475)",
+          "    global[4]              EMUTOS14-AES.BIN = 0x1143 (4419)   AES.BIN          = 0x0000 (0)",
+          "    global[10]              EMUTOS14-AES.BIN = 0x0004 (4)   AES.BIN          = 0x0010 (16)",
+          "    global[11]              EMUTOS14-AES.BIN = 0x0000 (0)   AES.BIN          = 0x3340 (13120)",
+          "    global[12]              EMUTOS14-AES.BIN = 0xBE04 (-16892)   AES.BIN          = 0x0012 (18)"
+        ]
+      },
+      "103": {
+        "head": "103  opcode 108  wind_calc HGADGETS|SIZER: mirror of the above",
+        "fields": [
+          "    global[2]              EMUTOS14-AES.BIN = 0x0000 (0)   AES.BIN          = 0x0002 (2)",
+          "    global[3]              EMUTOS14-AES.BIN = 0x0000 (0)   AES.BIN          = 0x117B (4475)",
+          "    global[4]              EMUTOS14-AES.BIN = 0x1143 (4419)   AES.BIN          = 0x0000 (0)",
+          "    global[10]              EMUTOS14-AES.BIN = 0x0004 (4)   AES.BIN          = 0x0010 (16)",
+          "    global[11]              EMUTOS14-AES.BIN = 0x0000 (0)   AES.BIN          = 0x3340 (13120)",
+          "    global[12]              EMUTOS14-AES.BIN = 0xBE04 (-16892)   AES.BIN          = 0x0012 (18)"
+        ]
+      },
+      "104": {
+        "head": "104  opcode 108  wind_calc VGADGETS|HGADGETS|SIZER: both bars on merit",
+        "fields": [
+          "    global[2]              EMUTOS14-AES.BIN = 0x0000 (0)   AES.BIN          = 0x0002 (2)",
+          "    global[3]              EMUTOS14-AES.BIN = 0x0000 (0)   AES.BIN          = 0x117B (4475)",
+          "    global[4]              EMUTOS14-AES.BIN = 0x1143 (4419)   AES.BIN          = 0x0000 (0)",
+          "    global[10]              EMUTOS14-AES.BIN = 0x0004 (4)   AES.BIN          = 0x0010 (16)",
+          "    global[11]              EMUTOS14-AES.BIN = 0x0000 (0)   AES.BIN          = 0x3340 (13120)",
+          "    global[12]              EMUTOS14-AES.BIN = 0xBE04 (-16892)   AES.BIN          = 0x0012 (18)"
+        ]
+      },
+      "105": {
+        "head": "105  opcode 108  wind_calc 0x0FEF, the classic full window without INFO",
+        "fields": [
+          "    global[2]              EMUTOS14-AES.BIN = 0x0000 (0)   AES.BIN          = 0x0002 (2)",
+          "    global[3]              EMUTOS14-AES.BIN = 0x0000 (0)   AES.BIN          = 0x117B (4475)",
+          "    global[4]              EMUTOS14-AES.BIN = 0x1143 (4419)   AES.BIN          = 0x0000 (0)",
+          "    global[10]              EMUTOS14-AES.BIN = 0x0004 (4)   AES.BIN          = 0x0010 (16)",
+          "    global[11]              EMUTOS14-AES.BIN = 0x0000 (0)   AES.BIN          = 0x3340 (13120)",
+          "    global[12]              EMUTOS14-AES.BIN = 0xBE04 (-16892)   AES.BIN          = 0x0012 (18)"
+        ]
+      },
+      "106": {
+        "head": "106  opcode 108  wind_calc every defined gadget bit including INFO",
+        "fields": [
+          "    global[2]              EMUTOS14-AES.BIN = 0x0000 (0)   AES.BIN          = 0x0002 (2)",
+          "    global[3]              EMUTOS14-AES.BIN = 0x0000 (0)   AES.BIN          = 0x117B (4475)",
+          "    global[4]              EMUTOS14-AES.BIN = 0x1143 (4419)   AES.BIN          = 0x0000 (0)",
+          "    global[10]              EMUTOS14-AES.BIN = 0x0004 (4)   AES.BIN          = 0x0010 (16)",
+          "    global[11]              EMUTOS14-AES.BIN = 0x0000 (0)   AES.BIN          = 0x3340 (13120)",
+          "    global[12]              EMUTOS14-AES.BIN = 0xBE04 (-16892)   AES.BIN          = 0x0012 (18)"
+        ]
+      },
+      "107": {
+        "head": "107  opcode 108  wind_calc all sixteen bits: do the undefined ones do anything",
+        "fields": [
+          "    global[2]              EMUTOS14-AES.BIN = 0x0000 (0)   AES.BIN          = 0x0002 (2)",
+          "    global[3]              EMUTOS14-AES.BIN = 0x0000 (0)   AES.BIN          = 0x117B (4475)",
+          "    global[4]              EMUTOS14-AES.BIN = 0x1143 (4419)   AES.BIN          = 0x0000 (0)",
+          "    global[10]              EMUTOS14-AES.BIN = 0x0004 (4)   AES.BIN          = 0x0010 (16)",
+          "    global[11]              EMUTOS14-AES.BIN = 0x0000 (0)   AES.BIN          = 0x3340 (13120)",
+          "    global[12]              EMUTOS14-AES.BIN = 0xBE04 (-16892)   AES.BIN          = 0x0012 (18)"
+        ]
+      },
+      "108": {
+        "head": "108  opcode 108  wind_calc WC_BORDER 0x0FEF, the round trip partner",
+        "fields": [
+          "    global[2]              EMUTOS14-AES.BIN = 0x0000 (0)   AES.BIN          = 0x0002 (2)",
+          "    global[3]              EMUTOS14-AES.BIN = 0x0000 (0)   AES.BIN          = 0x117B (4475)",
+          "    global[4]              EMUTOS14-AES.BIN = 0x1143 (4419)   AES.BIN          = 0x0000 (0)",
+          "    global[10]              EMUTOS14-AES.BIN = 0x0004 (4)   AES.BIN          = 0x0010 (16)",
+          "    global[11]              EMUTOS14-AES.BIN = 0x0000 (0)   AES.BIN          = 0x3340 (13120)",
+          "    global[12]              EMUTOS14-AES.BIN = 0xBE04 (-16892)   AES.BIN          = 0x0012 (18)"
+        ]
+      },
+      "109": {
+        "head": "109  opcode 108  wind_calc WC_BORDER NAME|INFO",
+        "fields": [
+          "    global[2]              EMUTOS14-AES.BIN = 0x0000 (0)   AES.BIN          = 0x0002 (2)",
+          "    global[3]              EMUTOS14-AES.BIN = 0x0000 (0)   AES.BIN          = 0x117B (4475)",
+          "    global[4]              EMUTOS14-AES.BIN = 0x1143 (4419)   AES.BIN          = 0x0000 (0)",
+          "    global[10]              EMUTOS14-AES.BIN = 0x0004 (4)   AES.BIN          = 0x0010 (16)",
+          "    global[11]              EMUTOS14-AES.BIN = 0x0000 (0)   AES.BIN          = 0x3340 (13120)",
+          "    global[12]              EMUTOS14-AES.BIN = 0xBE04 (-16892)   AES.BIN          = 0x0012 (18)"
+        ]
+      },
+      "110": {
+        "head": "110  opcode 108  wind_calc WC_BORDER VGADGETS|HGADGETS|SIZER",
+        "fields": [
+          "    global[2]              EMUTOS14-AES.BIN = 0x0000 (0)   AES.BIN          = 0x0002 (2)",
+          "    global[3]              EMUTOS14-AES.BIN = 0x0000 (0)   AES.BIN          = 0x117B (4475)",
+          "    global[4]              EMUTOS14-AES.BIN = 0x1143 (4419)   AES.BIN          = 0x0000 (0)",
+          "    global[10]              EMUTOS14-AES.BIN = 0x0004 (4)   AES.BIN          = 0x0010 (16)",
+          "    global[11]              EMUTOS14-AES.BIN = 0x0000 (0)   AES.BIN          = 0x3340 (13120)",
+          "    global[12]              EMUTOS14-AES.BIN = 0xBE04 (-16892)   AES.BIN          = 0x0012 (18)"
+        ]
+      },
+      "112": {
+        "head": "112  opcode 108  wind_calc WC_WORK degenerate rect: work area of nothing",
+        "fields": [
+          "    global[2]              EMUTOS14-AES.BIN = 0x0000 (0)   AES.BIN          = 0x0002 (2)",
+          "    global[3]              EMUTOS14-AES.BIN = 0x0000 (0)   AES.BIN          = 0x117B (4475)",
+          "    global[4]              EMUTOS14-AES.BIN = 0x1143 (4419)   AES.BIN          = 0x0000 (0)",
+          "    global[10]              EMUTOS14-AES.BIN = 0x0004 (4)   AES.BIN          = 0x0010 (16)",
+          "    global[11]              EMUTOS14-AES.BIN = 0x0000 (0)   AES.BIN          = 0x3340 (13120)",
+          "    global[12]              EMUTOS14-AES.BIN = 0xBE04 (-16892)   AES.BIN          = 0x0012 (18)"
+        ]
+      },
+      "113": {
+        "head": "113  opcode 108  wind_calc WC_BORDER degenerate rect",
+        "fields": [
+          "    global[2]              EMUTOS14-AES.BIN = 0x0000 (0)   AES.BIN          = 0x0002 (2)",
+          "    global[3]              EMUTOS14-AES.BIN = 0x0000 (0)   AES.BIN          = 0x117B (4475)",
+          "    global[4]              EMUTOS14-AES.BIN = 0x1143 (4419)   AES.BIN          = 0x0000 (0)",
+          "    global[10]              EMUTOS14-AES.BIN = 0x0004 (4)   AES.BIN          = 0x0010 (16)",
+          "    global[11]              EMUTOS14-AES.BIN = 0x0000 (0)   AES.BIN          = 0x3340 (13120)",
+          "    global[12]              EMUTOS14-AES.BIN = 0xBE04 (-16892)   AES.BIN          = 0x0012 (18)"
+        ]
+      },
+      "114": {
+        "head": "114  opcode 108  wind_calc WC_WORK a full ST-high screen",
+        "fields": [
+          "    global[2]              EMUTOS14-AES.BIN = 0x0000 (0)   AES.BIN          = 0x0002 (2)",
+          "    global[3]              EMUTOS14-AES.BIN = 0x0000 (0)   AES.BIN          = 0x117B (4475)",
+          "    global[4]              EMUTOS14-AES.BIN = 0x1143 (4419)   AES.BIN          = 0x0000 (0)",
+          "    global[10]              EMUTOS14-AES.BIN = 0x0004 (4)   AES.BIN          = 0x0010 (16)",
+          "    global[11]              EMUTOS14-AES.BIN = 0x0000 (0)   AES.BIN          = 0x3340 (13120)",
+          "    global[12]              EMUTOS14-AES.BIN = 0xBE04 (-16892)   AES.BIN          = 0x0012 (18)"
+        ]
+      },
+      "115": {
+        "head": "115  opcode 108  wind_calc WC_BORDER a full ST-high screen",
+        "fields": [
+          "    global[2]              EMUTOS14-AES.BIN = 0x0000 (0)   AES.BIN          = 0x0002 (2)",
+          "    global[3]              EMUTOS14-AES.BIN = 0x0000 (0)   AES.BIN          = 0x117B (4475)",
+          "    global[4]              EMUTOS14-AES.BIN = 0x1143 (4419)   AES.BIN          = 0x0000 (0)",
+          "    global[10]              EMUTOS14-AES.BIN = 0x0004 (4)   AES.BIN          = 0x0010 (16)",
+          "    global[11]              EMUTOS14-AES.BIN = 0x0000 (0)   AES.BIN          = 0x3340 (13120)",
+          "    global[12]              EMUTOS14-AES.BIN = 0xBE04 (-16892)   AES.BIN          = 0x0012 (18)"
+        ]
+      },
+      "116": {
+        "head": "116  opcode 108  wind_calc WC_WORK 1x1: the work area goes negative",
+        "fields": [
+          "    global[2]              EMUTOS14-AES.BIN = 0x0000 (0)   AES.BIN          = 0x0002 (2)",
+          "    global[3]              EMUTOS14-AES.BIN = 0x0000 (0)   AES.BIN          = 0x117B (4475)",
+          "    global[4]              EMUTOS14-AES.BIN = 0x1143 (4419)   AES.BIN          = 0x0000 (0)",
+          "    global[10]              EMUTOS14-AES.BIN = 0x0004 (4)   AES.BIN          = 0x0010 (16)",
+          "    global[11]              EMUTOS14-AES.BIN = 0x0000 (0)   AES.BIN          = 0x3340 (13120)",
+          "    global[12]              EMUTOS14-AES.BIN = 0xBE04 (-16892)   AES.BIN          = 0x0012 (18)"
+        ]
+      },
+      "117": {
+        "head": "117  opcode 108  wind_calc WC_WORK negative origin",
+        "fields": [
+          "    global[2]              EMUTOS14-AES.BIN = 0x0000 (0)   AES.BIN          = 0x0002 (2)",
+          "    global[3]              EMUTOS14-AES.BIN = 0x0000 (0)   AES.BIN          = 0x117B (4475)",
+          "    global[4]              EMUTOS14-AES.BIN = 0x1143 (4419)   AES.BIN          = 0x0000 (0)",
+          "    global[10]              EMUTOS14-AES.BIN = 0x0004 (4)   AES.BIN          = 0x0010 (16)",
+          "    global[11]              EMUTOS14-AES.BIN = 0x0000 (0)   AES.BIN          = 0x3340 (13120)",
+          "    global[12]              EMUTOS14-AES.BIN = 0xBE04 (-16892)   AES.BIN          = 0x0012 (18)"
+        ]
+      },
+      "118": {
+        "head": "118  opcode 108  wind_calc WC_BORDER a rect that grows but stays inside a WORD",
+        "fields": [
+          "    global[2]              EMUTOS14-AES.BIN = 0x0000 (0)   AES.BIN          = 0x0002 (2)",
+          "    global[3]              EMUTOS14-AES.BIN = 0x0000 (0)   AES.BIN          = 0x117B (4475)",
+          "    global[4]              EMUTOS14-AES.BIN = 0x1143 (4419)   AES.BIN          = 0x0000 (0)",
+          "    global[10]              EMUTOS14-AES.BIN = 0x0004 (4)   AES.BIN          = 0x0010 (16)",
+          "    global[11]              EMUTOS14-AES.BIN = 0x0000 (0)   AES.BIN          = 0x3340 (13120)",
+          "    global[12]              EMUTOS14-AES.BIN = 0xBE04 (-16892)   AES.BIN          = 0x0012 (18)"
+        ]
+      },
+      "120": {
+        "head": "120  opcode 108  wind_calc type 2: only WC_BORDER negates, so this is WC_WORK",
+        "fields": [
+          "    global[2]              EMUTOS14-AES.BIN = 0x0000 (0)   AES.BIN          = 0x0002 (2)",
+          "    global[3]              EMUTOS14-AES.BIN = 0x0000 (0)   AES.BIN          = 0x117B (4475)",
+          "    global[4]              EMUTOS14-AES.BIN = 0x1143 (4419)   AES.BIN          = 0x0000 (0)",
+          "    global[10]              EMUTOS14-AES.BIN = 0x0004 (4)   AES.BIN          = 0x0010 (16)",
+          "    global[11]              EMUTOS14-AES.BIN = 0x0000 (0)   AES.BIN          = 0x3340 (13120)",
+          "    global[12]              EMUTOS14-AES.BIN = 0xBE04 (-16892)   AES.BIN          = 0x0012 (18)"
+        ]
+      },
+      "121": {
+        "head": "121  opcode 108  wind_calc type -1: same question, from the other side",
+        "fields": [
+          "    global[2]              EMUTOS14-AES.BIN = 0x0000 (0)   AES.BIN          = 0x0002 (2)",
+          "    global[3]              EMUTOS14-AES.BIN = 0x0000 (0)   AES.BIN          = 0x117B (4475)",
+          "    global[4]              EMUTOS14-AES.BIN = 0x1143 (4419)   AES.BIN          = 0x0000 (0)",
+          "    global[10]              EMUTOS14-AES.BIN = 0x0004 (4)   AES.BIN          = 0x0010 (16)",
+          "    global[11]              EMUTOS14-AES.BIN = 0x0000 (0)   AES.BIN          = 0x3340 (13120)",
+          "    global[12]              EMUTOS14-AES.BIN = 0xBE04 (-16892)   AES.BIN          = 0x0012 (18)"
+        ]
+      },
+      "129": {
+        "head": "129  opcode 108  OUT_LEN 0: nothing copied back, not even the return code",
+        "fields": [
+          "    global[2]              EMUTOS14-AES.BIN = 0x0000 (0)   AES.BIN          = 0x0002 (2)",
+          "    global[3]              EMUTOS14-AES.BIN = 0x0000 (0)   AES.BIN          = 0x117B (4475)",
+          "    global[4]              EMUTOS14-AES.BIN = 0x1143 (4419)   AES.BIN          = 0x0000 (0)",
+          "    global[10]              EMUTOS14-AES.BIN = 0x0004 (4)   AES.BIN          = 0x0010 (16)",
+          "    global[11]              EMUTOS14-AES.BIN = 0x0000 (0)   AES.BIN          = 0x3340 (13120)",
+          "    global[12]              EMUTOS14-AES.BIN = 0xBE04 (-16892)   AES.BIN          = 0x0012 (18)"
+        ]
+      },
+      "130": {
+        "head": "130  opcode 108  OUT_LEN 1: the return code only, a void handler's ret = TRUE",
+        "fields": [
+          "    global[2]              EMUTOS14-AES.BIN = 0x0000 (0)   AES.BIN          = 0x0002 (2)",
+          "    global[3]              EMUTOS14-AES.BIN = 0x0000 (0)   AES.BIN          = 0x117B (4475)",
+          "    global[4]              EMUTOS14-AES.BIN = 0x1143 (4419)   AES.BIN          = 0x0000 (0)",
+          "    global[10]              EMUTOS14-AES.BIN = 0x0004 (4)   AES.BIN          = 0x0010 (16)",
+          "    global[11]              EMUTOS14-AES.BIN = 0x0000 (0)   AES.BIN          = 0x3340 (13120)",
+          "    global[12]              EMUTOS14-AES.BIN = 0xBE04 (-16892)   AES.BIN          = 0x0012 (18)"
+        ]
+      },
+      "131": {
+        "head": "131  opcode 108  OUT_LEN 3: x and y arrive, w and h stay poisoned",
+        "fields": [
+          "    global[2]              EMUTOS14-AES.BIN = 0x0000 (0)   AES.BIN          = 0x0002 (2)",
+          "    global[3]              EMUTOS14-AES.BIN = 0x0000 (0)   AES.BIN          = 0x117B (4475)",
+          "    global[4]              EMUTOS14-AES.BIN = 0x1143 (4419)   AES.BIN          = 0x0000 (0)",
+          "    global[10]              EMUTOS14-AES.BIN = 0x0004 (4)   AES.BIN          = 0x0010 (16)",
+          "    global[11]              EMUTOS14-AES.BIN = 0x0000 (0)   AES.BIN          = 0x3340 (13120)",
+          "    global[12]              EMUTOS14-AES.BIN = 0xBE04 (-16892)   AES.BIN          = 0x0012 (18)"
+        ]
+      },
+      "132": {
+        "head": "132  opcode 108  IN_LEN 8 with six values: two surplus poison words copied in",
+        "fields": [
+          "    global[2]              EMUTOS14-AES.BIN = 0x0000 (0)   AES.BIN          = 0x0002 (2)",
+          "    global[3]              EMUTOS14-AES.BIN = 0x0000 (0)   AES.BIN          = 0x117B (4475)",
+          "    global[4]              EMUTOS14-AES.BIN = 0x1143 (4419)   AES.BIN          = 0x0000 (0)",
+          "    global[10]              EMUTOS14-AES.BIN = 0x0004 (4)   AES.BIN          = 0x0010 (16)",
+          "    global[11]              EMUTOS14-AES.BIN = 0x0000 (0)   AES.BIN          = 0x3340 (13120)",
+          "    global[12]              EMUTOS14-AES.BIN = 0xBE04 (-16892)   AES.BIN          = 0x0012 (18)"
+        ]
+      },
+      "133": {
+        "head": "133  opcode 108  IN_LEN at I_SIZE with six values",
+        "fields": [
+          "    global[2]              EMUTOS14-AES.BIN = 0x0000 (0)   AES.BIN          = 0x0002 (2)",
+          "    global[3]              EMUTOS14-AES.BIN = 0x0000 (0)   AES.BIN          = 0x117B (4475)",
+          "    global[4]              EMUTOS14-AES.BIN = 0x1143 (4419)   AES.BIN          = 0x0000 (0)",
+          "    global[10]              EMUTOS14-AES.BIN = 0x0004 (4)   AES.BIN          = 0x0010 (16)",
+          "    global[11]              EMUTOS14-AES.BIN = 0x0000 (0)   AES.BIN          = 0x3340 (13120)",
+          "    global[12]              EMUTOS14-AES.BIN = 0xBE04 (-16892)   AES.BIN          = 0x0012 (18)"
+        ]
+      },
+      "134": {
+        "head": "134  opcode 108  IN_LEN past I_SIZE: min(IN_LEN,I_SIZE) has to clamp it",
+        "fields": [
+          "    global[2]              EMUTOS14-AES.BIN = 0x0000 (0)   AES.BIN          = 0x0002 (2)",
+          "    global[3]              EMUTOS14-AES.BIN = 0x0000 (0)   AES.BIN          = 0x117B (4475)",
+          "    global[4]              EMUTOS14-AES.BIN = 0x1143 (4419)   AES.BIN          = 0x0000 (0)",
+          "    global[10]              EMUTOS14-AES.BIN = 0x0004 (4)   AES.BIN          = 0x0010 (16)",
+          "    global[11]              EMUTOS14-AES.BIN = 0x0000 (0)   AES.BIN          = 0x3340 (13120)",
+          "    global[12]              EMUTOS14-AES.BIN = 0xBE04 (-16892)   AES.BIN          = 0x0012 (18)"
+        ]
+      },
+      "135": {
+        "head": "135  opcode 108  AIN_LEN 3, no pointer: wm_calc never reads addr_in",
+        "fields": [
+          "    global[2]              EMUTOS14-AES.BIN = 0x0000 (0)   AES.BIN          = 0x0002 (2)",
+          "    global[3]              EMUTOS14-AES.BIN = 0x0000 (0)   AES.BIN          = 0x117B (4475)",
+          "    global[4]              EMUTOS14-AES.BIN = 0x1143 (4419)   AES.BIN          = 0x0000 (0)",
+          "    global[10]              EMUTOS14-AES.BIN = 0x0004 (4)   AES.BIN          = 0x0010 (16)",
+          "    global[11]              EMUTOS14-AES.BIN = 0x0000 (0)   AES.BIN          = 0x3340 (13120)",
+          "    global[12]              EMUTOS14-AES.BIN = 0xBE04 (-16892)   AES.BIN          = 0x0012 (18)"
+        ]
+      },
+      "136": {
+        "head": "136  opcode 108  control[4] set: there is no AOUT_LEN macro in this build",
+        "fields": [
+          "    global[2]              EMUTOS14-AES.BIN = 0x0000 (0)   AES.BIN          = 0x0002 (2)",
+          "    global[3]              EMUTOS14-AES.BIN = 0x0000 (0)   AES.BIN          = 0x117B (4475)",
+          "    global[4]              EMUTOS14-AES.BIN = 0x1143 (4419)   AES.BIN          = 0x0000 (0)",
+          "    global[10]              EMUTOS14-AES.BIN = 0x0004 (4)   AES.BIN          = 0x0010 (16)",
+          "    global[11]              EMUTOS14-AES.BIN = 0x0000 (0)   AES.BIN          = 0x3340 (13120)",
+          "    global[12]              EMUTOS14-AES.BIN = 0xBE04 (-16892)   AES.BIN          = 0x0012 (18)"
+        ]
+      },
+      "137": {
+        "head": "137  opcode 108  IN_LEN 6, four values: w and h reach wm_calc as 0xDEAD",
+        "fields": [
+          "    global[2]              EMUTOS14-AES.BIN = 0x0000 (0)   AES.BIN          = 0x0002 (2)",
+          "    global[3]              EMUTOS14-AES.BIN = 0x0000 (0)   AES.BIN          = 0x117B (4475)",
+          "    global[4]              EMUTOS14-AES.BIN = 0x1143 (4419)   AES.BIN          = 0x0000 (0)",
+          "    global[10]              EMUTOS14-AES.BIN = 0x0004 (4)   AES.BIN          = 0x0010 (16)",
+          "    global[11]              EMUTOS14-AES.BIN = 0x0000 (0)   AES.BIN          = 0x3340 (13120)",
+          "    global[12]              EMUTOS14-AES.BIN = 0xBE04 (-16892)   AES.BIN          = 0x0012 (18)"
+        ]
+      },
+      "155": {
+        "head": "155  opcode 104  wind_get 0 WF_WXYWH: the desktop work area apps start from",
+        "fields": [
+          "    global[2]              EMUTOS14-AES.BIN = 0x0000 (0)   AES.BIN          = 0x0002 (2)",
+          "    global[3]              EMUTOS14-AES.BIN = 0x0000 (0)   AES.BIN          = 0x117B (4475)",
+          "    global[4]              EMUTOS14-AES.BIN = 0x1143 (4419)   AES.BIN          = 0x0000 (0)",
+          "    global[10]              EMUTOS14-AES.BIN = 0x0004 (4)   AES.BIN          = 0x0010 (16)",
+          "    global[11]              EMUTOS14-AES.BIN = 0x0000 (0)   AES.BIN          = 0x3340 (13120)",
+          "    global[12]              EMUTOS14-AES.BIN = 0xBE04 (-16892)   AES.BIN          = 0x0012 (18)",
+          "    int_out[3]             EMUTOS14-AES.BIN = 0x0280 (640)   AES.BIN          = 0x0780 (1920)",
+          "    int_out[4]             EMUTOS14-AES.BIN = 0x01CD (461)   AES.BIN          = 0x0425 (1061)"
+        ]
+      },
+      "156": {
+        "head": "156  opcode 104  wind_get 0 WF_CXYWH: whole screen, menu bar included",
+        "fields": [
+          "    global[2]              EMUTOS14-AES.BIN = 0x0000 (0)   AES.BIN          = 0x0002 (2)",
+          "    global[3]              EMUTOS14-AES.BIN = 0x0000 (0)   AES.BIN          = 0x117B (4475)",
+          "    global[4]              EMUTOS14-AES.BIN = 0x1143 (4419)   AES.BIN          = 0x0000 (0)",
+          "    global[10]              EMUTOS14-AES.BIN = 0x0004 (4)   AES.BIN          = 0x0010 (16)",
+          "    global[11]              EMUTOS14-AES.BIN = 0x0000 (0)   AES.BIN          = 0x3340 (13120)",
+          "    global[12]              EMUTOS14-AES.BIN = 0xBE04 (-16892)   AES.BIN          = 0x0012 (18)",
+          "    int_out[3]             EMUTOS14-AES.BIN = 0x0280 (640)   AES.BIN          = 0x0780 (1920)",
+          "    int_out[4]             EMUTOS14-AES.BIN = 0x01E0 (480)   AES.BIN          = 0x0438 (1080)"
+        ]
+      },
+      "157": {
+        "head": "157  opcode 104  wind_get 0 WF_PXYWH: previous rect",
+        "fields": [
+          "    global[2]              EMUTOS14-AES.BIN = 0x0000 (0)   AES.BIN          = 0x0002 (2)",
+          "    global[3]              EMUTOS14-AES.BIN = 0x0000 (0)   AES.BIN          = 0x117B (4475)",
+          "    global[4]              EMUTOS14-AES.BIN = 0x1143 (4419)   AES.BIN          = 0x0000 (0)",
+          "    global[10]              EMUTOS14-AES.BIN = 0x0004 (4)   AES.BIN          = 0x0010 (16)",
+          "    global[11]              EMUTOS14-AES.BIN = 0x0000 (0)   AES.BIN          = 0x3340 (13120)",
+          "    global[12]              EMUTOS14-AES.BIN = 0xBE04 (-16892)   AES.BIN          = 0x0012 (18)",
+          "    int_out[3]             EMUTOS14-AES.BIN = 0x0280 (640)   AES.BIN          = 0x0780 (1920)",
+          "    int_out[4]             EMUTOS14-AES.BIN = 0x01E0 (480)   AES.BIN          = 0x0438 (1080)"
+        ]
+      },
+      "158": {
+        "head": "158  opcode 104  wind_get 0 WF_FXYWH: full rect",
+        "fields": [
+          "    global[2]              EMUTOS14-AES.BIN = 0x0000 (0)   AES.BIN          = 0x0002 (2)",
+          "    global[3]              EMUTOS14-AES.BIN = 0x0000 (0)   AES.BIN          = 0x117B (4475)",
+          "    global[4]              EMUTOS14-AES.BIN = 0x1143 (4419)   AES.BIN          = 0x0000 (0)",
+          "    global[10]              EMUTOS14-AES.BIN = 0x0004 (4)   AES.BIN          = 0x0010 (16)",
+          "    global[11]              EMUTOS14-AES.BIN = 0x0000 (0)   AES.BIN          = 0x3340 (13120)",
+          "    global[12]              EMUTOS14-AES.BIN = 0xBE04 (-16892)   AES.BIN          = 0x0012 (18)",
+          "    int_out[3]             EMUTOS14-AES.BIN = 0x0280 (640)   AES.BIN          = 0x0780 (1920)",
+          "    int_out[4]             EMUTOS14-AES.BIN = 0x01CD (461)   AES.BIN          = 0x0425 (1061)"
+        ]
+      },
+      "159": {
+        "head": "159  opcode 104  wind_get 0 WF_HSLIDE: one word, w_setup left it at 0",
+        "fields": [
+          "    global[2]              EMUTOS14-AES.BIN = 0x0000 (0)   AES.BIN          = 0x0002 (2)",
+          "    global[3]              EMUTOS14-AES.BIN = 0x0000 (0)   AES.BIN          = 0x117B (4475)",
+          "    global[4]              EMUTOS14-AES.BIN = 0x1143 (4419)   AES.BIN          = 0x0000 (0)",
+          "    global[10]              EMUTOS14-AES.BIN = 0x0004 (4)   AES.BIN          = 0x0010 (16)",
+          "    global[11]              EMUTOS14-AES.BIN = 0x0000 (0)   AES.BIN          = 0x3340 (13120)",
+          "    global[12]              EMUTOS14-AES.BIN = 0xBE04 (-16892)   AES.BIN          = 0x0012 (18)"
+        ]
+      },
+      "160": {
+        "head": "160  opcode 104  wind_get 0 WF_VSLIDE: one word",
+        "fields": [
+          "    global[2]              EMUTOS14-AES.BIN = 0x0000 (0)   AES.BIN          = 0x0002 (2)",
+          "    global[3]              EMUTOS14-AES.BIN = 0x0000 (0)   AES.BIN          = 0x117B (4475)",
+          "    global[4]              EMUTOS14-AES.BIN = 0x1143 (4419)   AES.BIN          = 0x0000 (0)",
+          "    global[10]              EMUTOS14-AES.BIN = 0x0004 (4)   AES.BIN          = 0x0010 (16)",
+          "    global[11]              EMUTOS14-AES.BIN = 0x0000 (0)   AES.BIN          = 0x3340 (13120)",
+          "    global[12]              EMUTOS14-AES.BIN = 0xBE04 (-16892)   AES.BIN          = 0x0012 (18)"
+        ]
+      },
+      "161": {
+        "head": "161  opcode 104  wind_get 0 WF_HSLSIZ: the -1 \"use default size\" marker",
+        "fields": [
+          "    global[2]              EMUTOS14-AES.BIN = 0x0000 (0)   AES.BIN          = 0x0002 (2)",
+          "    global[3]              EMUTOS14-AES.BIN = 0x0000 (0)   AES.BIN          = 0x117B (4475)",
+          "    global[4]              EMUTOS14-AES.BIN = 0x1143 (4419)   AES.BIN          = 0x0000 (0)",
+          "    global[10]              EMUTOS14-AES.BIN = 0x0004 (4)   AES.BIN          = 0x0010 (16)",
+          "    global[11]              EMUTOS14-AES.BIN = 0x0000 (0)   AES.BIN          = 0x3340 (13120)",
+          "    global[12]              EMUTOS14-AES.BIN = 0xBE04 (-16892)   AES.BIN          = 0x0012 (18)"
+        ]
+      },
+      "162": {
+        "head": "162  opcode 104  wind_get 0 WF_VSLSIZ: one word",
+        "fields": [
+          "    global[2]              EMUTOS14-AES.BIN = 0x0000 (0)   AES.BIN          = 0x0002 (2)",
+          "    global[3]              EMUTOS14-AES.BIN = 0x0000 (0)   AES.BIN          = 0x117B (4475)",
+          "    global[4]              EMUTOS14-AES.BIN = 0x1143 (4419)   AES.BIN          = 0x0000 (0)",
+          "    global[10]              EMUTOS14-AES.BIN = 0x0004 (4)   AES.BIN          = 0x0010 (16)",
+          "    global[11]              EMUTOS14-AES.BIN = 0x0000 (0)   AES.BIN          = 0x3340 (13120)",
+          "    global[12]              EMUTOS14-AES.BIN = 0xBE04 (-16892)   AES.BIN          = 0x0012 (18)"
+        ]
+      },
+      "163": {
+        "head": "163  opcode 104  wind_get 0 WF_TOP: no valid handle needed",
+        "fields": [
+          "    global[2]              EMUTOS14-AES.BIN = 0x0000 (0)   AES.BIN          = 0x0002 (2)",
+          "    global[3]              EMUTOS14-AES.BIN = 0x0000 (0)   AES.BIN          = 0x117B (4475)",
+          "    global[4]              EMUTOS14-AES.BIN = 0x1143 (4419)   AES.BIN          = 0x0000 (0)",
+          "    global[10]              EMUTOS14-AES.BIN = 0x0004 (4)   AES.BIN          = 0x0010 (16)",
+          "    global[11]              EMUTOS14-AES.BIN = 0x0000 (0)   AES.BIN          = 0x3340 (13120)",
+          "    global[12]              EMUTOS14-AES.BIN = 0xBE04 (-16892)   AES.BIN          = 0x0012 (18)"
+        ]
+      },
+      "164": {
+        "head": "164  opcode 104  wind_get 0 WF_KIND: return code only, is it answered at all",
+        "fields": [
+          "    global[2]              EMUTOS14-AES.BIN = 0x0000 (0)   AES.BIN          = 0x0002 (2)",
+          "    global[3]              EMUTOS14-AES.BIN = 0x0000 (0)   AES.BIN          = 0x117B (4475)",
+          "    global[4]              EMUTOS14-AES.BIN = 0x1143 (4419)   AES.BIN          = 0x0000 (0)",
+          "    global[10]              EMUTOS14-AES.BIN = 0x0004 (4)   AES.BIN          = 0x0010 (16)",
+          "    global[11]              EMUTOS14-AES.BIN = 0x0000 (0)   AES.BIN          = 0x3340 (13120)",
+          "    global[12]              EMUTOS14-AES.BIN = 0xBE04 (-16892)   AES.BIN          = 0x0012 (18)"
+        ]
+      },
+      "165": {
+        "head": "165  opcode 104  wind_get 0 WF_NEWDESK: return code only",
+        "fields": [
+          "    global[2]              EMUTOS14-AES.BIN = 0x0000 (0)   AES.BIN          = 0x0002 (2)",
+          "    global[3]              EMUTOS14-AES.BIN = 0x0000 (0)   AES.BIN          = 0x117B (4475)",
+          "    global[4]              EMUTOS14-AES.BIN = 0x1143 (4419)   AES.BIN          = 0x0000 (0)",
+          "    global[10]              EMUTOS14-AES.BIN = 0x0004 (4)   AES.BIN          = 0x0010 (16)",
+          "    global[11]              EMUTOS14-AES.BIN = 0x0000 (0)   AES.BIN          = 0x3340 (13120)",
+          "    global[12]              EMUTOS14-AES.BIN = 0xBE04 (-16892)   AES.BIN          = 0x0012 (18)"
+        ]
+      },
+      "166": {
+        "head": "166  opcode 104  wind_get 0 WF_SCREEN: return code only, the address cannot be c",
+        "fields": [
+          "    global[2]              EMUTOS14-AES.BIN = 0x0000 (0)   AES.BIN          = 0x0002 (2)",
+          "    global[3]              EMUTOS14-AES.BIN = 0x0000 (0)   AES.BIN          = 0x117B (4475)",
+          "    global[4]              EMUTOS14-AES.BIN = 0x1143 (4419)   AES.BIN          = 0x0000 (0)",
+          "    global[10]              EMUTOS14-AES.BIN = 0x0004 (4)   AES.BIN          = 0x0010 (16)",
+          "    global[11]              EMUTOS14-AES.BIN = 0x0000 (0)   AES.BIN          = 0x3340 (13120)",
+          "    global[12]              EMUTOS14-AES.BIN = 0xBE04 (-16892)   AES.BIN          = 0x0012 (18)"
+        ]
+      },
+      "167": {
+        "head": "167  opcode 104  wind_get 0 WF_OWNER: AES 3.30 and later only",
+        "fields": [
+          "    global[2]              EMUTOS14-AES.BIN = 0x0000 (0)   AES.BIN          = 0x0002 (2)",
+          "    global[3]              EMUTOS14-AES.BIN = 0x0000 (0)   AES.BIN          = 0x117B (4475)",
+          "    global[4]              EMUTOS14-AES.BIN = 0x1143 (4419)   AES.BIN          = 0x0000 (0)",
+          "    global[10]              EMUTOS14-AES.BIN = 0x0004 (4)   AES.BIN          = 0x0010 (16)",
+          "    global[11]              EMUTOS14-AES.BIN = 0x0000 (0)   AES.BIN          = 0x3340 (13120)",
+          "    global[12]              EMUTOS14-AES.BIN = 0xBE04 (-16892)   AES.BIN          = 0x0012 (18)",
+          "    int_out[0]             EMUTOS14-AES.BIN = 0x0000 (0)   AES.BIN          = 0x0001 (1)"
+        ]
+      },
+      "168": {
+        "head": "168  opcode 104  wind_get 0 field 0: no handler, FALSE",
+        "fields": [
+          "    global[2]              EMUTOS14-AES.BIN = 0x0000 (0)   AES.BIN          = 0x0002 (2)",
+          "    global[3]              EMUTOS14-AES.BIN = 0x0000 (0)   AES.BIN          = 0x117B (4475)",
+          "    global[4]              EMUTOS14-AES.BIN = 0x1143 (4419)   AES.BIN          = 0x0000 (0)",
+          "    global[10]              EMUTOS14-AES.BIN = 0x0004 (4)   AES.BIN          = 0x0010 (16)",
+          "    global[11]              EMUTOS14-AES.BIN = 0x0000 (0)   AES.BIN          = 0x3340 (13120)",
+          "    global[12]              EMUTOS14-AES.BIN = 0xBE04 (-16892)   AES.BIN          = 0x0012 (18)"
+        ]
+      },
+      "169": {
+        "head": "169  opcode 104  wind_get 0 field 13: a gap in the WF_ numbering",
+        "fields": [
+          "    global[2]              EMUTOS14-AES.BIN = 0x0000 (0)   AES.BIN          = 0x0002 (2)",
+          "    global[3]              EMUTOS14-AES.BIN = 0x0000 (0)   AES.BIN          = 0x117B (4475)",
+          "    global[4]              EMUTOS14-AES.BIN = 0x1143 (4419)   AES.BIN          = 0x0000 (0)",
+          "    global[10]              EMUTOS14-AES.BIN = 0x0004 (4)   AES.BIN          = 0x0010 (16)",
+          "    global[11]              EMUTOS14-AES.BIN = 0x0000 (0)   AES.BIN          = 0x3340 (13120)",
+          "    global[12]              EMUTOS14-AES.BIN = 0xBE04 (-16892)   AES.BIN          = 0x0012 (18)"
+        ]
+      },
+      "170": {
+        "head": "170  opcode 104  wind_get 0 field 21: past the last defined field",
+        "fields": [
+          "    global[2]              EMUTOS14-AES.BIN = 0x0000 (0)   AES.BIN          = 0x0002 (2)",
+          "    global[3]              EMUTOS14-AES.BIN = 0x0000 (0)   AES.BIN          = 0x117B (4475)",
+          "    global[4]              EMUTOS14-AES.BIN = 0x1143 (4419)   AES.BIN          = 0x0000 (0)",
+          "    global[10]              EMUTOS14-AES.BIN = 0x0004 (4)   AES.BIN          = 0x0010 (16)",
+          "    global[11]              EMUTOS14-AES.BIN = 0x0000 (0)   AES.BIN          = 0x3340 (13120)",
+          "    global[12]              EMUTOS14-AES.BIN = 0xBE04 (-16892)   AES.BIN          = 0x0012 (18)"
+        ]
+      },
+      "172": {
+        "head": "172  opcode 104  wind_get 0 WF_WXYWH, OUT_LEN 1: the rect is thrown away",
+        "fields": [
+          "    global[2]              EMUTOS14-AES.BIN = 0x0000 (0)   AES.BIN          = 0x0002 (2)",
+          "    global[3]              EMUTOS14-AES.BIN = 0x0000 (0)   AES.BIN          = 0x117B (4475)",
+          "    global[4]              EMUTOS14-AES.BIN = 0x1143 (4419)   AES.BIN          = 0x0000 (0)",
+          "    global[10]              EMUTOS14-AES.BIN = 0x0004 (4)   AES.BIN          = 0x0010 (16)",
+          "    global[11]              EMUTOS14-AES.BIN = 0x0000 (0)   AES.BIN          = 0x3340 (13120)",
+          "    global[12]              EMUTOS14-AES.BIN = 0xBE04 (-16892)   AES.BIN          = 0x0012 (18)"
+        ]
+      },
+      "173": {
+        "head": "173  opcode 104  wind_get 0 WF_WXYWH, OUT_LEN 3: w and h stay poisoned",
+        "fields": [
+          "    global[2]              EMUTOS14-AES.BIN = 0x0000 (0)   AES.BIN          = 0x0002 (2)",
+          "    global[3]              EMUTOS14-AES.BIN = 0x0000 (0)   AES.BIN          = 0x117B (4475)",
+          "    global[4]              EMUTOS14-AES.BIN = 0x1143 (4419)   AES.BIN          = 0x0000 (0)",
+          "    global[10]              EMUTOS14-AES.BIN = 0x0004 (4)   AES.BIN          = 0x0010 (16)",
+          "    global[11]              EMUTOS14-AES.BIN = 0x0000 (0)   AES.BIN          = 0x3340 (13120)",
+          "    global[12]              EMUTOS14-AES.BIN = 0xBE04 (-16892)   AES.BIN          = 0x0012 (18)"
+        ]
+      },
+      "175": {
+        "head": "175  opcode 104  wind_get handle 1 WF_WXYWH: a window that was never created",
+        "fields": [
+          "    global[2]              EMUTOS14-AES.BIN = 0x0000 (0)   AES.BIN          = 0x0002 (2)",
+          "    global[3]              EMUTOS14-AES.BIN = 0x0000 (0)   AES.BIN          = 0x117B (4475)",
+          "    global[4]              EMUTOS14-AES.BIN = 0x1143 (4419)   AES.BIN          = 0x0000 (0)",
+          "    global[10]              EMUTOS14-AES.BIN = 0x0004 (4)   AES.BIN          = 0x0010 (16)",
+          "    global[11]              EMUTOS14-AES.BIN = 0x0000 (0)   AES.BIN          = 0x3340 (13120)",
+          "    global[12]              EMUTOS14-AES.BIN = 0xBE04 (-16892)   AES.BIN          = 0x0012 (18)"
+        ]
+      },
+      "176": {
+        "head": "176  opcode 104  wind_get handle -1 WF_WXYWH: negative handle",
+        "fields": [
+          "    global[2]              EMUTOS14-AES.BIN = 0x0000 (0)   AES.BIN          = 0x0002 (2)",
+          "    global[3]              EMUTOS14-AES.BIN = 0x0000 (0)   AES.BIN          = 0x117B (4475)",
+          "    global[4]              EMUTOS14-AES.BIN = 0x1143 (4419)   AES.BIN          = 0x0000 (0)",
+          "    global[10]              EMUTOS14-AES.BIN = 0x0004 (4)   AES.BIN          = 0x0010 (16)",
+          "    global[11]              EMUTOS14-AES.BIN = 0x0000 (0)   AES.BIN          = 0x3340 (13120)",
+          "    global[12]              EMUTOS14-AES.BIN = 0xBE04 (-16892)   AES.BIN          = 0x0012 (18)"
+        ]
+      },
+      "177": {
+        "head": "177  opcode 104  wind_get handle 99 WF_WXYWH: past NUM_WIN",
+        "fields": [
+          "    global[2]              EMUTOS14-AES.BIN = 0x0000 (0)   AES.BIN          = 0x0002 (2)",
+          "    global[3]              EMUTOS14-AES.BIN = 0x0000 (0)   AES.BIN          = 0x117B (4475)",
+          "    global[4]              EMUTOS14-AES.BIN = 0x1143 (4419)   AES.BIN          = 0x0000 (0)",
+          "    global[10]              EMUTOS14-AES.BIN = 0x0004 (4)   AES.BIN          = 0x0010 (16)",
+          "    global[11]              EMUTOS14-AES.BIN = 0x0000 (0)   AES.BIN          = 0x3340 (13120)",
+          "    global[12]              EMUTOS14-AES.BIN = 0xBE04 (-16892)   AES.BIN          = 0x0012 (18)"
+        ]
+      },
+      "178": {
+        "head": "178  opcode 104  wind_get handle 32767 WF_WXYWH: the largest WORD",
+        "fields": [
+          "    global[2]              EMUTOS14-AES.BIN = 0x0000 (0)   AES.BIN          = 0x0002 (2)",
+          "    global[3]              EMUTOS14-AES.BIN = 0x0000 (0)   AES.BIN          = 0x117B (4475)",
+          "    global[4]              EMUTOS14-AES.BIN = 0x1143 (4419)   AES.BIN          = 0x0000 (0)",
+          "    global[10]              EMUTOS14-AES.BIN = 0x0004 (4)   AES.BIN          = 0x0010 (16)",
+          "    global[11]              EMUTOS14-AES.BIN = 0x0000 (0)   AES.BIN          = 0x3340 (13120)",
+          "    global[12]              EMUTOS14-AES.BIN = 0xBE04 (-16892)   AES.BIN          = 0x0012 (18)"
+        ]
+      },
+      "193": {
+        "head": "193  opcode 106  wind_find at the top left corner: the desktop, whatever is open",
+        "fields": [
+          "    global[2]              EMUTOS14-AES.BIN = 0x0000 (0)   AES.BIN          = 0x0002 (2)",
+          "    global[3]              EMUTOS14-AES.BIN = 0x0000 (0)   AES.BIN          = 0x117B (4475)",
+          "    global[4]              EMUTOS14-AES.BIN = 0x1143 (4419)   AES.BIN          = 0x0000 (0)",
+          "    global[10]              EMUTOS14-AES.BIN = 0x0004 (4)   AES.BIN          = 0x0010 (16)",
+          "    global[11]              EMUTOS14-AES.BIN = 0x0000 (0)   AES.BIN          = 0x3340 (13120)",
+          "    global[12]              EMUTOS14-AES.BIN = 0xBE04 (-16892)   AES.BIN          = 0x0012 (18)"
+        ]
+      },
+      "194": {
+        "head": "194  opcode 106  wind_find off the top left: nobody",
+        "fields": [
+          "    global[2]              EMUTOS14-AES.BIN = 0x0000 (0)   AES.BIN          = 0x0002 (2)",
+          "    global[3]              EMUTOS14-AES.BIN = 0x0000 (0)   AES.BIN          = 0x117B (4475)",
+          "    global[4]              EMUTOS14-AES.BIN = 0x1143 (4419)   AES.BIN          = 0x0000 (0)",
+          "    global[10]              EMUTOS14-AES.BIN = 0x0004 (4)   AES.BIN          = 0x0010 (16)",
+          "    global[11]              EMUTOS14-AES.BIN = 0x0000 (0)   AES.BIN          = 0x3340 (13120)",
+          "    global[12]              EMUTOS14-AES.BIN = 0xBE04 (-16892)   AES.BIN          = 0x0012 (18)"
+        ]
+      },
+      "195": {
+        "head": "195  opcode 106  wind_find one row above the screen",
+        "fields": [
+          "    global[2]              EMUTOS14-AES.BIN = 0x0000 (0)   AES.BIN          = 0x0002 (2)",
+          "    global[3]              EMUTOS14-AES.BIN = 0x0000 (0)   AES.BIN          = 0x117B (4475)",
+          "    global[4]              EMUTOS14-AES.BIN = 0x1143 (4419)   AES.BIN          = 0x0000 (0)",
+          "    global[10]              EMUTOS14-AES.BIN = 0x0004 (4)   AES.BIN          = 0x0010 (16)",
+          "    global[11]              EMUTOS14-AES.BIN = 0x0000 (0)   AES.BIN          = 0x3340 (13120)",
+          "    global[12]              EMUTOS14-AES.BIN = 0xBE04 (-16892)   AES.BIN          = 0x0012 (18)"
+        ]
+      },
+      "196": {
+        "head": "196  opcode 106  wind_find one column left of the screen",
+        "fields": [
+          "    global[2]              EMUTOS14-AES.BIN = 0x0000 (0)   AES.BIN          = 0x0002 (2)",
+          "    global[3]              EMUTOS14-AES.BIN = 0x0000 (0)   AES.BIN          = 0x117B (4475)",
+          "    global[4]              EMUTOS14-AES.BIN = 0x1143 (4419)   AES.BIN          = 0x0000 (0)",
+          "    global[10]              EMUTOS14-AES.BIN = 0x0004 (4)   AES.BIN          = 0x0010 (16)",
+          "    global[11]              EMUTOS14-AES.BIN = 0x0000 (0)   AES.BIN          = 0x3340 (13120)",
+          "    global[12]              EMUTOS14-AES.BIN = 0xBE04 (-16892)   AES.BIN          = 0x0012 (18)"
+        ]
+      },
+      "197": {
+        "head": "197  opcode 106  wind_find far off the bottom right: nobody",
+        "fields": [
+          "    global[2]              EMUTOS14-AES.BIN = 0x0000 (0)   AES.BIN          = 0x0002 (2)",
+          "    global[3]              EMUTOS14-AES.BIN = 0x0000 (0)   AES.BIN          = 0x117B (4475)",
+          "    global[4]              EMUTOS14-AES.BIN = 0x1143 (4419)   AES.BIN          = 0x0000 (0)",
+          "    global[10]              EMUTOS14-AES.BIN = 0x0004 (4)   AES.BIN          = 0x0010 (16)",
+          "    global[11]              EMUTOS14-AES.BIN = 0x0000 (0)   AES.BIN          = 0x3340 (13120)",
+          "    global[12]              EMUTOS14-AES.BIN = 0xBE04 (-16892)   AES.BIN          = 0x0012 (18)"
+        ]
+      },
+      "216": {
+        "head": "216  opcode 77  graf_handle: the handle and the four box metrics wm_calc uses",
+        "fields": [
+          "    global[2]              EMUTOS14-AES.BIN = 0x0000 (0)   AES.BIN          = 0x0002 (2)",
+          "    global[3]              EMUTOS14-AES.BIN = 0x0000 (0)   AES.BIN          = 0x117B (4475)",
+          "    global[4]              EMUTOS14-AES.BIN = 0x1143 (4419)   AES.BIN          = 0x0000 (0)",
+          "    global[10]              EMUTOS14-AES.BIN = 0x0004 (4)   AES.BIN          = 0x0010 (16)",
+          "    global[11]              EMUTOS14-AES.BIN = 0x0000 (0)   AES.BIN          = 0x3340 (13120)",
+          "    global[12]              EMUTOS14-AES.BIN = 0xBE04 (-16892)   AES.BIN          = 0x0012 (18)"
+        ]
+      },
+      "217": {
+        "head": "217  opcode 77  graf_handle OUT_LEN 1: the metrics stay poisoned",
+        "fields": [
+          "    global[2]              EMUTOS14-AES.BIN = 0x0000 (0)   AES.BIN          = 0x0002 (2)",
+          "    global[3]              EMUTOS14-AES.BIN = 0x0000 (0)   AES.BIN          = 0x117B (4475)",
+          "    global[4]              EMUTOS14-AES.BIN = 0x1143 (4419)   AES.BIN          = 0x0000 (0)",
+          "    global[10]              EMUTOS14-AES.BIN = 0x0004 (4)   AES.BIN          = 0x0010 (16)",
+          "    global[11]              EMUTOS14-AES.BIN = 0x0000 (0)   AES.BIN          = 0x3340 (13120)",
+          "    global[12]              EMUTOS14-AES.BIN = 0xBE04 (-16892)   AES.BIN          = 0x0012 (18)"
+        ]
+      },
+      "218": {
+        "head": "218  opcode 79  graf_mkstate return code only: a void handler has to leave TRUE",
+        "fields": [
+          "    global[2]              EMUTOS14-AES.BIN = 0x0000 (0)   AES.BIN          = 0x0002 (2)",
+          "    global[3]              EMUTOS14-AES.BIN = 0x0000 (0)   AES.BIN          = 0x117B (4475)",
+          "    global[4]              EMUTOS14-AES.BIN = 0x1143 (4419)   AES.BIN          = 0x0000 (0)",
+          "    global[10]              EMUTOS14-AES.BIN = 0x0004 (4)   AES.BIN          = 0x0010 (16)",
+          "    global[11]              EMUTOS14-AES.BIN = 0x0000 (0)   AES.BIN          = 0x3340 (13120)",
+          "    global[12]              EMUTOS14-AES.BIN = 0xBE04 (-16892)   AES.BIN          = 0x0012 (18)"
+        ]
+      },
+      "228": {
+        "head": "228  opcode 24  evnt_timer 0 ms: adelay makes that one tick",
+        "fields": [
+          "    global[2]              EMUTOS14-AES.BIN = 0x0000 (0)   AES.BIN          = 0x0002 (2)",
+          "    global[3]              EMUTOS14-AES.BIN = 0x0000 (0)   AES.BIN          = 0x117B (4475)",
+          "    global[4]              EMUTOS14-AES.BIN = 0x1143 (4419)   AES.BIN          = 0x0000 (0)",
+          "    global[10]              EMUTOS14-AES.BIN = 0x0004 (4)   AES.BIN          = 0x0010 (16)",
+          "    global[11]              EMUTOS14-AES.BIN = 0x0000 (0)   AES.BIN          = 0x3340 (13120)",
+          "    global[12]              EMUTOS14-AES.BIN = 0xBE04 (-16892)   AES.BIN          = 0x0012 (18)"
+        ]
+      },
+      "229": {
+        "head": "229  opcode 24  evnt_timer 1 ms: still under one tick",
+        "fields": [
+          "    global[2]              EMUTOS14-AES.BIN = 0x0000 (0)   AES.BIN          = 0x0002 (2)",
+          "    global[3]              EMUTOS14-AES.BIN = 0x0000 (0)   AES.BIN          = 0x117B (4475)",
+          "    global[4]              EMUTOS14-AES.BIN = 0x1143 (4419)   AES.BIN          = 0x0000 (0)",
+          "    global[10]              EMUTOS14-AES.BIN = 0x0004 (4)   AES.BIN          = 0x0010 (16)",
+          "    global[11]              EMUTOS14-AES.BIN = 0x0000 (0)   AES.BIN          = 0x3340 (13120)",
+          "    global[12]              EMUTOS14-AES.BIN = 0xBE04 (-16892)   AES.BIN          = 0x0012 (18)"
+        ]
+      },
+      "240": {
+        "head": "240  opcode 0  opcode 0: the unsupported sentinel -1, and no alert box",
+        "fields": [
+          "    global[2]              EMUTOS14-AES.BIN = 0x0000 (0)   AES.BIN          = 0x0002 (2)",
+          "    global[3]              EMUTOS14-AES.BIN = 0x0000 (0)   AES.BIN          = 0x117B (4475)",
+          "    global[4]              EMUTOS14-AES.BIN = 0x1143 (4419)   AES.BIN          = 0x0000 (0)",
+          "    global[10]              EMUTOS14-AES.BIN = 0x0004 (4)   AES.BIN          = 0x0010 (16)",
+          "    global[11]              EMUTOS14-AES.BIN = 0x0000 (0)   AES.BIN          = 0x3340 (13120)",
+          "    global[12]              EMUTOS14-AES.BIN = 0xBE04 (-16892)   AES.BIN          = 0x0012 (18)"
+        ]
+      },
+      "241": {
+        "head": "241  opcode 0  opcode 0 with OUT_LEN 0: the -1 is computed and never delivered",
+        "fields": [
+          "    global[2]              EMUTOS14-AES.BIN = 0x0000 (0)   AES.BIN          = 0x0002 (2)",
+          "    global[3]              EMUTOS14-AES.BIN = 0x0000 (0)   AES.BIN          = 0x117B (4475)",
+          "    global[4]              EMUTOS14-AES.BIN = 0x1143 (4419)   AES.BIN          = 0x0000 (0)",
+          "    global[10]              EMUTOS14-AES.BIN = 0x0004 (4)   AES.BIN          = 0x0010 (16)",
+          "    global[11]              EMUTOS14-AES.BIN = 0x0000 (0)   AES.BIN          = 0x3340 (13120)",
+          "    global[12]              EMUTOS14-AES.BIN = 0xBE04 (-16892)   AES.BIN          = 0x0012 (18)"
+        ]
+      },
+      "242": {
+        "head": "242  opcode 0  opcode 0 with inputs: they are marshalled in and ignored",
+        "fields": [
+          "    global[2]              EMUTOS14-AES.BIN = 0x0000 (0)   AES.BIN          = 0x0002 (2)",
+          "    global[3]              EMUTOS14-AES.BIN = 0x0000 (0)   AES.BIN          = 0x117B (4475)",
+          "    global[4]              EMUTOS14-AES.BIN = 0x1143 (4419)   AES.BIN          = 0x0000 (0)",
+          "    global[10]              EMUTOS14-AES.BIN = 0x0004 (4)   AES.BIN          = 0x0010 (16)",
+          "    global[11]              EMUTOS14-AES.BIN = 0x0000 (0)   AES.BIN          = 0x3340 (13120)",
+          "    global[12]              EMUTOS14-AES.BIN = 0xBE04 (-16892)   AES.BIN          = 0x0012 (18)"
+        ]
+      }
+    },
+    "summary": "95 of 95 cases differ"
+  },
+  "vdi": {
+    "table": "measurement-2026-09-09/cases/vdi-all.tsv",
+    "ref": "tosdump/reference/EMUTOS14-VDI-all.BIN",
+    "new": "measurement-2026-09-09/run1-pi4/VDI.BIN",
+    "blocks": {
+      "29": {
+        "head": "29  opcode 35  vql_attributes line attributes after the reset",
+        "fields": [
+          "    contrl[6]              EMUTOS14-VDI-all.BIN = 0x0002 (2)   VDI.BIN              = 0x0005 (5)",
+          "    contrl_before[6]       EMUTOS14-VDI-all.BIN = 0x0002 (2)   VDI.BIN              = 0x0005 (5)"
+        ]
+      },
+      "30": {
+        "head": "30  opcode 36  vqm_attributes marker attributes after the reset",
+        "fields": [
+          "    contrl[6]              EMUTOS14-VDI-all.BIN = 0x0002 (2)   VDI.BIN              = 0x0005 (5)",
+          "    contrl_before[6]       EMUTOS14-VDI-all.BIN = 0x0002 (2)   VDI.BIN              = 0x0005 (5)"
+        ]
+      },
+      "31": {
+        "head": "31  opcode 37  vqf_attributes fill attributes after the reset",
+        "fields": [
+          "    contrl[6]              EMUTOS14-VDI-all.BIN = 0x0002 (2)   VDI.BIN              = 0x0005 (5)",
+          "    contrl_before[6]       EMUTOS14-VDI-all.BIN = 0x0002 (2)   VDI.BIN              = 0x0005 (5)"
+        ]
+      },
+      "32": {
+        "head": "32  opcode 38  vqt_attributes text attributes after the reset",
+        "fields": [
+          "    contrl[6]              EMUTOS14-VDI-all.BIN = 0x0002 (2)   VDI.BIN              = 0x0005 (5)",
+          "    contrl_before[6]       EMUTOS14-VDI-all.BIN = 0x0002 (2)   VDI.BIN              = 0x0005 (5)"
+        ]
+      },
+      "33": {
+        "head": "33  opcode 102  vq_extnd 0 SIZ_TAB and DEV_TAB",
+        "fields": [
+          "    contrl[6]              EMUTOS14-VDI-all.BIN = 0x0002 (2)   VDI.BIN              = 0x0005 (5)",
+          "    intout[0]              EMUTOS14-VDI-all.BIN = 0x027F (639)   VDI.BIN              = 0x077F (1919)",
+          "    intout[1]              EMUTOS14-VDI-all.BIN = 0x01DF (479)   VDI.BIN              = 0x0437 (1079)",
+          "    intout[13]              EMUTOS14-VDI-all.BIN = 0x0010 (16)   VDI.BIN              = 0x0100 (256)",
+          "    intout[39]              EMUTOS14-VDI-all.BIN = 0x1000 (4096)   VDI.BIN              = 0x0000 (0)",
+          "    contrl_before[6]       EMUTOS14-VDI-all.BIN = 0x0002 (2)   VDI.BIN              = 0x0005 (5)"
+        ]
+      },
+      "34": {
+        "head": "34  opcode 102  vq_extnd 1 clipping and extended info",
+        "fields": [
+          "    contrl[6]              EMUTOS14-VDI-all.BIN = 0x0002 (2)   VDI.BIN              = 0x0005 (5)",
+          "    intout[4]              EMUTOS14-VDI-all.BIN = 0x0004 (4)   VDI.BIN              = 0x0010 (16)",
+          "    intout[5]              EMUTOS14-VDI-all.BIN = 0x0001 (1)   VDI.BIN              = 0x0000 (0)",
+          "    ptsout[2]              EMUTOS14-VDI-all.BIN = 0x027F (639)   VDI.BIN              = 0x077F (1919)",
+          "    ptsout[3]              EMUTOS14-VDI-all.BIN = 0x01DF (479)   VDI.BIN              = 0x0437 (1079)",
+          "    contrl_before[6]       EMUTOS14-VDI-all.BIN = 0x0002 (2)   VDI.BIN              = 0x0005 (5)"
+        ]
+      },
+      "35": {
+        "head": "35  opcode 115  vqin_mode locator input mode",
+        "fields": [
+          "    contrl[6]              EMUTOS14-VDI-all.BIN = 0x0002 (2)   VDI.BIN              = 0x0005 (5)",
+          "    contrl_before[6]       EMUTOS14-VDI-all.BIN = 0x0002 (2)   VDI.BIN              = 0x0005 (5)"
+        ]
+      },
+      "37": {
+        "head": "37  opcode 32  vswr_mode transparent, echoes the accepted mode",
+        "fields": [
+          "    contrl[6]              EMUTOS14-VDI-all.BIN = 0x0002 (2)   VDI.BIN              = 0x0005 (5)",
+          "    contrl_before[6]       EMUTOS14-VDI-all.BIN = 0x0002 (2)   VDI.BIN              = 0x0005 (5)"
+        ]
+      },
+      "38": {
+        "head": "38  opcode 32  vswr_mode out of range, echoes the default instead",
+        "fields": [
+          "    contrl[6]              EMUTOS14-VDI-all.BIN = 0x0002 (2)   VDI.BIN              = 0x0005 (5)",
+          "    contrl_before[6]       EMUTOS14-VDI-all.BIN = 0x0002 (2)   VDI.BIN              = 0x0005 (5)"
+        ]
+      },
+      "39": {
+        "head": "39  opcode 15  vsl_type dashed",
+        "fields": [
+          "    contrl[6]              EMUTOS14-VDI-all.BIN = 0x0002 (2)   VDI.BIN              = 0x0005 (5)",
+          "    contrl_before[6]       EMUTOS14-VDI-all.BIN = 0x0002 (2)   VDI.BIN              = 0x0005 (5)"
+        ]
+      },
+      "40": {
+        "head": "40  opcode 15  vsl_type out of range, echoes the default",
+        "fields": [
+          "    contrl[6]              EMUTOS14-VDI-all.BIN = 0x0002 (2)   VDI.BIN              = 0x0005 (5)",
+          "    contrl_before[6]       EMUTOS14-VDI-all.BIN = 0x0002 (2)   VDI.BIN              = 0x0005 (5)"
+        ]
+      },
+      "41": {
+        "head": "41  opcode 17  vsl_color pen 1",
+        "fields": [
+          "    contrl[6]              EMUTOS14-VDI-all.BIN = 0x0002 (2)   VDI.BIN              = 0x0005 (5)",
+          "    contrl_before[6]       EMUTOS14-VDI-all.BIN = 0x0002 (2)   VDI.BIN              = 0x0005 (5)"
+        ]
+      },
+      "42": {
+        "head": "42  opcode 17  vsl_color out of range",
+        "fields": [
+          "    contrl[6]              EMUTOS14-VDI-all.BIN = 0x0002 (2)   VDI.BIN              = 0x0005 (5)",
+          "    intout[0]              EMUTOS14-VDI-all.BIN = 0x0001 (1)   VDI.BIN              = 0x0063 (99)",
+          "    contrl_before[6]       EMUTOS14-VDI-all.BIN = 0x0002 (2)   VDI.BIN              = 0x0005 (5)"
+        ]
+      },
+      "43": {
+        "head": "43  opcode 23  vsf_interior pattern",
+        "fields": [
+          "    contrl[6]              EMUTOS14-VDI-all.BIN = 0x0002 (2)   VDI.BIN              = 0x0005 (5)",
+          "    contrl_before[6]       EMUTOS14-VDI-all.BIN = 0x0002 (2)   VDI.BIN              = 0x0005 (5)"
+        ]
+      },
+      "44": {
+        "head": "44  opcode 23  vsf_interior out of range",
+        "fields": [
+          "    contrl[6]              EMUTOS14-VDI-all.BIN = 0x0002 (2)   VDI.BIN              = 0x0005 (5)",
+          "    contrl_before[6]       EMUTOS14-VDI-all.BIN = 0x0002 (2)   VDI.BIN              = 0x0005 (5)"
+        ]
+      },
+      "45": {
+        "head": "45  opcode 24  vsf_style pattern index 5",
+        "fields": [
+          "    contrl[6]              EMUTOS14-VDI-all.BIN = 0x0002 (2)   VDI.BIN              = 0x0005 (5)",
+          "    contrl_before[6]       EMUTOS14-VDI-all.BIN = 0x0002 (2)   VDI.BIN              = 0x0005 (5)"
+        ]
+      },
+      "46": {
+        "head": "46  opcode 13  vst_rotation 90 degrees",
+        "fields": [
+          "    contrl[6]              EMUTOS14-VDI-all.BIN = 0x0002 (2)   VDI.BIN              = 0x0005 (5)",
+          "    contrl_before[6]       EMUTOS14-VDI-all.BIN = 0x0002 (2)   VDI.BIN              = 0x0005 (5)"
+        ]
+      },
+      "47": {
+        "head": "47  opcode 13  vst_rotation not a multiple of 900",
+        "fields": [
+          "    contrl[6]              EMUTOS14-VDI-all.BIN = 0x0002 (2)   VDI.BIN              = 0x0005 (5)",
+          "    contrl_before[6]       EMUTOS14-VDI-all.BIN = 0x0002 (2)   VDI.BIN              = 0x0005 (5)"
+        ]
+      },
+      "48": {
+        "head": "48  opcode 106  vst_effects every effect bit",
+        "fields": [
+          "    contrl[6]              EMUTOS14-VDI-all.BIN = 0x0002 (2)   VDI.BIN              = 0x0005 (5)",
+          "    contrl_before[6]       EMUTOS14-VDI-all.BIN = 0x0002 (2)   VDI.BIN              = 0x0005 (5)"
+        ]
+      },
+      "49": {
+        "head": "49  opcode 39  vst_alignment centred, half line",
+        "fields": [
+          "    contrl[6]              EMUTOS14-VDI-all.BIN = 0x0002 (2)   VDI.BIN              = 0x0005 (5)",
+          "    contrl_before[6]       EMUTOS14-VDI-all.BIN = 0x0002 (2)   VDI.BIN              = 0x0005 (5)"
+        ]
+      },
+      "51": {
+        "head": "51  opcode 6  v_pline one diagonal, two points",
+        "fields": [
+          "    contrl[6]              EMUTOS14-VDI-all.BIN = 0x0002 (2)   VDI.BIN              = 0x0005 (5)",
+          "    contrl_before[6]       EMUTOS14-VDI-all.BIN = 0x0002 (2)   VDI.BIN              = 0x0005 (5)"
+        ]
+      },
+      "52": {
+        "head": "52  opcode 6  v_pline the other diagonal",
+        "fields": [
+          "    contrl[6]              EMUTOS14-VDI-all.BIN = 0x0002 (2)   VDI.BIN              = 0x0005 (5)",
+          "    contrl_before[6]       EMUTOS14-VDI-all.BIN = 0x0002 (2)   VDI.BIN              = 0x0005 (5)"
+        ]
+      },
+      "53": {
+        "head": "53  opcode 9  v_fillarea a triangle, three points",
+        "fields": [
+          "    contrl[6]              EMUTOS14-VDI-all.BIN = 0x0002 (2)   VDI.BIN              = 0x0005 (5)",
+          "    contrl_before[6]       EMUTOS14-VDI-all.BIN = 0x0002 (2)   VDI.BIN              = 0x0005 (5)"
+        ]
+      },
+      "54": {
+        "head": "54  opcode 105  v_get_pixel background pixel after v_clrwk",
+        "fields": [
+          "    contrl[6]              EMUTOS14-VDI-all.BIN = 0x0002 (2)   VDI.BIN              = 0x0005 (5)",
+          "    intout[1]              EMUTOS14-VDI-all.BIN = 0x0000 (0)   VDI.BIN              = 0xFFDF (-33)",
+          "    contrl_before[6]       EMUTOS14-VDI-all.BIN = 0x0002 (2)   VDI.BIN              = 0x0005 (5)"
+        ]
+      },
+      "60": {
+        "head": "60  opcode 3  v_clrwk clear the workstation",
+        "fields": [
+          "    contrl[6]              EMUTOS14-VDI-all.BIN = 0x0002 (2)   VDI.BIN              = 0x0005 (5)",
+          "    contrl_before[6]       EMUTOS14-VDI-all.BIN = 0x0002 (2)   VDI.BIN              = 0x0005 (5)"
+        ]
+      },
+      "61": {
+        "head": "61  opcode 4  v_updwk nop in EmuTOS",
+        "fields": [
+          "    contrl[6]              EMUTOS14-VDI-all.BIN = 0x0002 (2)   VDI.BIN              = 0x0005 (5)",
+          "    contrl_before[6]       EMUTOS14-VDI-all.BIN = 0x0002 (2)   VDI.BIN              = 0x0005 (5)"
+        ]
+      },
+      "62": {
+        "head": "62  opcode 10  v_cellarray nop",
+        "fields": [
+          "    contrl[6]              EMUTOS14-VDI-all.BIN = 0x0002 (2)   VDI.BIN              = 0x0005 (5)",
+          "    contrl_before[6]       EMUTOS14-VDI-all.BIN = 0x0002 (2)   VDI.BIN              = 0x0005 (5)"
+        ]
+      },
+      "63": {
+        "head": "63  opcode 27  vq_cellarray nop",
+        "fields": [
+          "    contrl[6]              EMUTOS14-VDI-all.BIN = 0x0002 (2)   VDI.BIN              = 0x0005 (5)",
+          "    contrl_before[6]       EMUTOS14-VDI-all.BIN = 0x0002 (2)   VDI.BIN              = 0x0005 (5)"
+        ]
+      },
+      "64": {
+        "head": "64  opcode 29  v_valuator nop, no analogue device on the ST",
+        "fields": [
+          "    contrl[6]              EMUTOS14-VDI-all.BIN = 0x0002 (2)   VDI.BIN              = 0x0005 (5)",
+          "    contrl_before[6]       EMUTOS14-VDI-all.BIN = 0x0002 (2)   VDI.BIN              = 0x0005 (5)"
+        ]
+      },
+      "65": {
+        "head": "65  opcode 34  opcode 34 does not exist",
+        "fields": [
+          "    contrl[6]              EMUTOS14-VDI-all.BIN = 0x0002 (2)   VDI.BIN              = 0x0005 (5)",
+          "    contrl_before[6]       EMUTOS14-VDI-all.BIN = 0x0002 (2)   VDI.BIN              = 0x0005 (5)"
+        ]
+      },
+      "66": {
+        "head": "66  opcode 132  vqt_justified nop, CONF_WITH_EXTENDED_MOUSE gated",
+        "fields": [
+          "    contrl[6]              EMUTOS14-VDI-all.BIN = 0x0002 (2)   VDI.BIN              = 0x0005 (5)",
+          "    contrl_before[6]       EMUTOS14-VDI-all.BIN = 0x0002 (2)   VDI.BIN              = 0x0005 (5)"
+        ]
+      },
+      "67": {
+        "head": "67  opcode 133  vs_grayoverride nop, gated",
+        "fields": [
+          "    contrl[6]              EMUTOS14-VDI-all.BIN = 0x0002 (2)   VDI.BIN              = 0x0005 (5)",
+          "    contrl_before[6]       EMUTOS14-VDI-all.BIN = 0x0002 (2)   VDI.BIN              = 0x0005 (5)"
+        ]
+      },
+      "69": {
+        "head": "69  opcode 26  vq_color pen 1 requested",
+        "fields": [
+          "    contrl[6]              EMUTOS14-VDI-all.BIN = 0x0002 (2)   VDI.BIN              = 0x0005 (5)",
+          "    contrl_before[6]       EMUTOS14-VDI-all.BIN = 0x0002 (2)   VDI.BIN              = 0x0005 (5)"
+        ]
+      },
+      "70": {
+        "head": "70  opcode 26  vq_color pen 1 realised",
+        "fields": [
+          "    contrl[6]              EMUTOS14-VDI-all.BIN = 0x0002 (2)   VDI.BIN              = 0x0005 (5)",
+          "    contrl_before[6]       EMUTOS14-VDI-all.BIN = 0x0002 (2)   VDI.BIN              = 0x0005 (5)"
+        ]
+      },
+      "71": {
+        "head": "71  opcode 26  vq_color pen 0 requested",
+        "fields": [
+          "    contrl[6]              EMUTOS14-VDI-all.BIN = 0x0002 (2)   VDI.BIN              = 0x0005 (5)",
+          "    contrl_before[6]       EMUTOS14-VDI-all.BIN = 0x0002 (2)   VDI.BIN              = 0x0005 (5)"
+        ]
+      },
+      "72": {
+        "head": "72  opcode 26  vq_color pen 255 requested",
+        "fields": [
+          "    contrl[6]              EMUTOS14-VDI-all.BIN = 0x0002 (2)   VDI.BIN              = 0x0005 (5)",
+          "    intout[0]              EMUTOS14-VDI-all.BIN = 0xFFFF (-1)   VDI.BIN              = 0x00FF (255)",
+          "    contrl_before[6]       EMUTOS14-VDI-all.BIN = 0x0002 (2)   VDI.BIN              = 0x0005 (5)"
+        ]
+      },
+      "73": {
+        "head": "73  opcode 26  vq_color out of range",
+        "fields": [
+          "    contrl[6]              EMUTOS14-VDI-all.BIN = 0x0002 (2)   VDI.BIN              = 0x0005 (5)",
+          "    contrl_before[6]       EMUTOS14-VDI-all.BIN = 0x0002 (2)   VDI.BIN              = 0x0005 (5)"
+        ]
+      },
+      "74": {
+        "head": "74  opcode 30  v_choice D-VDI-10 dummy, returns 1 at once",
+        "fields": [
+          "    contrl[6]              EMUTOS14-VDI-all.BIN = 0x0002 (2)   VDI.BIN              = 0x0005 (5)",
+          "    contrl_before[6]       EMUTOS14-VDI-all.BIN = 0x0002 (2)   VDI.BIN              = 0x0005 (5)"
+        ]
+      },
+      "75": {
+        "head": "75  opcode 115  vqin_mode valuator",
+        "fields": [
+          "    contrl[6]              EMUTOS14-VDI-all.BIN = 0x0002 (2)   VDI.BIN              = 0x0005 (5)",
+          "    contrl_before[6]       EMUTOS14-VDI-all.BIN = 0x0002 (2)   VDI.BIN              = 0x0005 (5)"
+        ]
+      },
+      "76": {
+        "head": "76  opcode 115  vqin_mode choice",
+        "fields": [
+          "    contrl[6]              EMUTOS14-VDI-all.BIN = 0x0002 (2)   VDI.BIN              = 0x0005 (5)",
+          "    contrl_before[6]       EMUTOS14-VDI-all.BIN = 0x0002 (2)   VDI.BIN              = 0x0005 (5)"
+        ]
+      },
+      "77": {
+        "head": "77  opcode 115  vqin_mode string",
+        "fields": [
+          "    contrl[6]              EMUTOS14-VDI-all.BIN = 0x0002 (2)   VDI.BIN              = 0x0005 (5)",
+          "    contrl_before[6]       EMUTOS14-VDI-all.BIN = 0x0002 (2)   VDI.BIN              = 0x0005 (5)"
+        ]
+      },
+      "78": {
+        "head": "78  opcode 117  vqt_width character A",
+        "fields": [
+          "    contrl[6]              EMUTOS14-VDI-all.BIN = 0x0002 (2)   VDI.BIN              = 0x0005 (5)",
+          "    contrl_before[6]       EMUTOS14-VDI-all.BIN = 0x0002 (2)   VDI.BIN              = 0x0005 (5)"
+        ]
+      },
+      "79": {
+        "head": "79  opcode 117  vqt_width space",
+        "fields": [
+          "    contrl[6]              EMUTOS14-VDI-all.BIN = 0x0002 (2)   VDI.BIN              = 0x0005 (5)",
+          "    contrl_before[6]       EMUTOS14-VDI-all.BIN = 0x0002 (2)   VDI.BIN              = 0x0005 (5)"
+        ]
+      },
+      "80": {
+        "head": "80  opcode 130  vqt_name font index 0",
+        "fields": [
+          "    contrl[6]              EMUTOS14-VDI-all.BIN = 0x0002 (2)   VDI.BIN              = 0x0005 (5)",
+          "    contrl_before[6]       EMUTOS14-VDI-all.BIN = 0x0002 (2)   VDI.BIN              = 0x0005 (5)"
+        ]
+      },
+      "81": {
+        "head": "81  opcode 130  vqt_name font index 1",
+        "fields": [
+          "    contrl[6]              EMUTOS14-VDI-all.BIN = 0x0002 (2)   VDI.BIN              = 0x0005 (5)",
+          "    contrl_before[6]       EMUTOS14-VDI-all.BIN = 0x0002 (2)   VDI.BIN              = 0x0005 (5)"
+        ]
+      },
+      "82": {
+        "head": "82  opcode 130  vqt_name font index 2",
+        "fields": [
+          "    contrl[6]              EMUTOS14-VDI-all.BIN = 0x0002 (2)   VDI.BIN              = 0x0005 (5)",
+          "    contrl_before[6]       EMUTOS14-VDI-all.BIN = 0x0002 (2)   VDI.BIN              = 0x0005 (5)"
+        ]
+      },
+      "83": {
+        "head": "83  opcode 130  vqt_name font index 3, TOS 3.06 has a fourth font",
+        "fields": [
+          "    contrl[6]              EMUTOS14-VDI-all.BIN = 0x0002 (2)   VDI.BIN              = 0x0005 (5)",
+          "    contrl_before[6]       EMUTOS14-VDI-all.BIN = 0x0002 (2)   VDI.BIN              = 0x0005 (5)"
+        ]
+      },
+      "84": {
+        "head": "84  opcode 131  vqt_fontinfo current font",
+        "fields": [
+          "    contrl[6]              EMUTOS14-VDI-all.BIN = 0x0002 (2)   VDI.BIN              = 0x0005 (5)",
+          "    contrl_before[6]       EMUTOS14-VDI-all.BIN = 0x0002 (2)   VDI.BIN              = 0x0005 (5)"
+        ]
+      },
+      "85": {
+        "head": "85  opcode 116  vqt_extent extent of ABC",
+        "fields": [
+          "    contrl[6]              EMUTOS14-VDI-all.BIN = 0x0002 (2)   VDI.BIN              = 0x0005 (5)",
+          "    contrl_before[6]       EMUTOS14-VDI-all.BIN = 0x0002 (2)   VDI.BIN              = 0x0005 (5)"
+        ]
+      },
+      "86": {
+        "head": "86  opcode 116  vqt_extent empty string",
+        "fields": [
+          "    contrl[6]              EMUTOS14-VDI-all.BIN = 0x0002 (2)   VDI.BIN              = 0x0005 (5)",
+          "    contrl_before[6]       EMUTOS14-VDI-all.BIN = 0x0002 (2)   VDI.BIN              = 0x0005 (5)"
+        ]
+      },
+      "88": {
+        "head": "88  opcode 15  vsl_type solid",
+        "fields": [
+          "    contrl[6]              EMUTOS14-VDI-all.BIN = 0x0002 (2)   VDI.BIN              = 0x0005 (5)",
+          "    contrl_before[6]       EMUTOS14-VDI-all.BIN = 0x0002 (2)   VDI.BIN              = 0x0005 (5)"
+        ]
+      },
+      "89": {
+        "head": "89  opcode 15  vsl_type user defined",
+        "fields": [
+          "    contrl[6]              EMUTOS14-VDI-all.BIN = 0x0002 (2)   VDI.BIN              = 0x0005 (5)",
+          "    contrl_before[6]       EMUTOS14-VDI-all.BIN = 0x0002 (2)   VDI.BIN              = 0x0005 (5)"
+        ]
+      },
+      "90": {
+        "head": "90  opcode 15  vsl_type below range",
+        "fields": [
+          "    contrl[6]              EMUTOS14-VDI-all.BIN = 0x0002 (2)   VDI.BIN              = 0x0005 (5)",
+          "    contrl_before[6]       EMUTOS14-VDI-all.BIN = 0x0002 (2)   VDI.BIN              = 0x0005 (5)"
+        ]
+      },
+      "91": {
+        "head": "91  opcode 16  vsl_width 1",
+        "fields": [
+          "    contrl[6]              EMUTOS14-VDI-all.BIN = 0x0002 (2)   VDI.BIN              = 0x0005 (5)",
+          "    contrl_before[6]       EMUTOS14-VDI-all.BIN = 0x0002 (2)   VDI.BIN              = 0x0005 (5)"
+        ]
+      },
+      "92": {
+        "head": "92  opcode 16  vsl_width 3, odd",
+        "fields": [
+          "    contrl[6]              EMUTOS14-VDI-all.BIN = 0x0002 (2)   VDI.BIN              = 0x0005 (5)",
+          "    contrl_before[6]       EMUTOS14-VDI-all.BIN = 0x0002 (2)   VDI.BIN              = 0x0005 (5)"
+        ]
+      },
+      "93": {
+        "head": "93  opcode 16  vsl_width 4, even -> rounded down",
+        "fields": [
+          "    contrl[6]              EMUTOS14-VDI-all.BIN = 0x0002 (2)   VDI.BIN              = 0x0005 (5)",
+          "    contrl_before[6]       EMUTOS14-VDI-all.BIN = 0x0002 (2)   VDI.BIN              = 0x0005 (5)"
+        ]
+      },
+      "94": {
+        "head": "94  opcode 16  vsl_width at SIZ_TAB max",
+        "fields": [
+          "    contrl[6]              EMUTOS14-VDI-all.BIN = 0x0002 (2)   VDI.BIN              = 0x0005 (5)",
+          "    contrl_before[6]       EMUTOS14-VDI-all.BIN = 0x0002 (2)   VDI.BIN              = 0x0005 (5)"
+        ]
+      },
+      "95": {
+        "head": "95  opcode 16  vsl_width above max",
+        "fields": [
+          "    contrl[6]              EMUTOS14-VDI-all.BIN = 0x0002 (2)   VDI.BIN              = 0x0005 (5)",
+          "    contrl_before[6]       EMUTOS14-VDI-all.BIN = 0x0002 (2)   VDI.BIN              = 0x0005 (5)"
+        ]
+      },
+      "96": {
+        "head": "96  opcode 17  vsl_color pen 0",
+        "fields": [
+          "    contrl[6]              EMUTOS14-VDI-all.BIN = 0x0002 (2)   VDI.BIN              = 0x0005 (5)",
+          "    contrl_before[6]       EMUTOS14-VDI-all.BIN = 0x0002 (2)   VDI.BIN              = 0x0005 (5)"
+        ]
+      },
+      "97": {
+        "head": "97  opcode 17  vsl_color pen 15",
+        "fields": [
+          "    contrl[6]              EMUTOS14-VDI-all.BIN = 0x0002 (2)   VDI.BIN              = 0x0005 (5)",
+          "    contrl_before[6]       EMUTOS14-VDI-all.BIN = 0x0002 (2)   VDI.BIN              = 0x0005 (5)"
+        ]
+      },
+      "98": {
+        "head": "98  opcode 108  vsl_ends squared, squared",
+        "fields": [
+          "    contrl[6]              EMUTOS14-VDI-all.BIN = 0x0002 (2)   VDI.BIN              = 0x0005 (5)",
+          "    contrl_before[6]       EMUTOS14-VDI-all.BIN = 0x0002 (2)   VDI.BIN              = 0x0005 (5)"
+        ]
+      },
+      "99": {
+        "head": "99  opcode 108  vsl_ends arrow, rounded",
+        "fields": [
+          "    contrl[6]              EMUTOS14-VDI-all.BIN = 0x0002 (2)   VDI.BIN              = 0x0005 (5)",
+          "    contrl_before[6]       EMUTOS14-VDI-all.BIN = 0x0002 (2)   VDI.BIN              = 0x0005 (5)"
+        ]
+      },
+      "100": {
+        "head": "100  opcode 108  vsl_ends rounded, arrow",
+        "fields": [
+          "    contrl[6]              EMUTOS14-VDI-all.BIN = 0x0002 (2)   VDI.BIN              = 0x0005 (5)",
+          "    contrl_before[6]       EMUTOS14-VDI-all.BIN = 0x0002 (2)   VDI.BIN              = 0x0005 (5)"
+        ]
+      },
+      "101": {
+        "head": "101  opcode 108  vsl_ends out of range",
+        "fields": [
+          "    contrl[6]              EMUTOS14-VDI-all.BIN = 0x0002 (2)   VDI.BIN              = 0x0005 (5)",
+          "    contrl_before[6]       EMUTOS14-VDI-all.BIN = 0x0002 (2)   VDI.BIN              = 0x0005 (5)"
+        ]
+      },
+      "102": {
+        "head": "102  opcode 113  vsl_udsty all ones",
+        "fields": [
+          "    contrl[6]              EMUTOS14-VDI-all.BIN = 0x0002 (2)   VDI.BIN              = 0x0005 (5)",
+          "    contrl_before[6]       EMUTOS14-VDI-all.BIN = 0x0002 (2)   VDI.BIN              = 0x0005 (5)"
+        ]
+      },
+      "103": {
+        "head": "103  opcode 113  vsl_udsty alternating",
+        "fields": [
+          "    contrl[6]              EMUTOS14-VDI-all.BIN = 0x0002 (2)   VDI.BIN              = 0x0005 (5)",
+          "    contrl_before[6]       EMUTOS14-VDI-all.BIN = 0x0002 (2)   VDI.BIN              = 0x0005 (5)"
+        ]
+      },
+      "105": {
+        "head": "105  opcode 18  vsm_type dot",
+        "fields": [
+          "    contrl[6]              EMUTOS14-VDI-all.BIN = 0x0002 (2)   VDI.BIN              = 0x0005 (5)",
+          "    contrl_before[6]       EMUTOS14-VDI-all.BIN = 0x0002 (2)   VDI.BIN              = 0x0005 (5)"
+        ]
+      },
+      "106": {
+        "head": "106  opcode 18  vsm_type asterisk, the EmuTOS default",
+        "fields": [
+          "    contrl[6]              EMUTOS14-VDI-all.BIN = 0x0002 (2)   VDI.BIN              = 0x0005 (5)",
+          "    contrl_before[6]       EMUTOS14-VDI-all.BIN = 0x0002 (2)   VDI.BIN              = 0x0005 (5)"
+        ]
+      },
+      "107": {
+        "head": "107  opcode 18  vsm_type at range top",
+        "fields": [
+          "    contrl[6]              EMUTOS14-VDI-all.BIN = 0x0002 (2)   VDI.BIN              = 0x0005 (5)",
+          "    contrl_before[6]       EMUTOS14-VDI-all.BIN = 0x0002 (2)   VDI.BIN              = 0x0005 (5)"
+        ]
+      },
+      "108": {
+        "head": "108  opcode 18  vsm_type out of range",
+        "fields": [
+          "    contrl[6]              EMUTOS14-VDI-all.BIN = 0x0002 (2)   VDI.BIN              = 0x0005 (5)",
+          "    contrl_before[6]       EMUTOS14-VDI-all.BIN = 0x0002 (2)   VDI.BIN              = 0x0005 (5)"
+        ]
+      },
+      "109": {
+        "head": "109  opcode 19  vsm_height at SIZ_TAB minimum",
+        "fields": [
+          "    contrl[6]              EMUTOS14-VDI-all.BIN = 0x0002 (2)   VDI.BIN              = 0x0005 (5)",
+          "    contrl_before[6]       EMUTOS14-VDI-all.BIN = 0x0002 (2)   VDI.BIN              = 0x0005 (5)"
+        ]
+      },
+      "110": {
+        "head": "110  opcode 19  vsm_height at SIZ_TAB maximum",
+        "fields": [
+          "    contrl[6]              EMUTOS14-VDI-all.BIN = 0x0002 (2)   VDI.BIN              = 0x0005 (5)",
+          "    contrl_before[6]       EMUTOS14-VDI-all.BIN = 0x0002 (2)   VDI.BIN              = 0x0005 (5)"
+        ]
+      },
+      "111": {
+        "head": "111  opcode 19  vsm_height above maximum",
+        "fields": [
+          "    contrl[6]              EMUTOS14-VDI-all.BIN = 0x0002 (2)   VDI.BIN              = 0x0005 (5)",
+          "    contrl_before[6]       EMUTOS14-VDI-all.BIN = 0x0002 (2)   VDI.BIN              = 0x0005 (5)"
+        ]
+      },
+      "112": {
+        "head": "112  opcode 20  vsm_color pen 1",
+        "fields": [
+          "    contrl[6]              EMUTOS14-VDI-all.BIN = 0x0002 (2)   VDI.BIN              = 0x0005 (5)",
+          "    contrl_before[6]       EMUTOS14-VDI-all.BIN = 0x0002 (2)   VDI.BIN              = 0x0005 (5)"
+        ]
+      },
+      "113": {
+        "head": "113  opcode 20  vsm_color out of range",
+        "fields": [
+          "    contrl[6]              EMUTOS14-VDI-all.BIN = 0x0002 (2)   VDI.BIN              = 0x0005 (5)",
+          "    intout[0]              EMUTOS14-VDI-all.BIN = 0x0001 (1)   VDI.BIN              = 0x0063 (99)",
+          "    contrl_before[6]       EMUTOS14-VDI-all.BIN = 0x0002 (2)   VDI.BIN              = 0x0005 (5)"
+        ]
+      },
+      "115": {
+        "head": "115  opcode 23  vsf_interior hollow",
+        "fields": [
+          "    contrl[6]              EMUTOS14-VDI-all.BIN = 0x0002 (2)   VDI.BIN              = 0x0005 (5)",
+          "    contrl_before[6]       EMUTOS14-VDI-all.BIN = 0x0002 (2)   VDI.BIN              = 0x0005 (5)"
+        ]
+      },
+      "116": {
+        "head": "116  opcode 23  vsf_interior solid",
+        "fields": [
+          "    contrl[6]              EMUTOS14-VDI-all.BIN = 0x0002 (2)   VDI.BIN              = 0x0005 (5)",
+          "    contrl_before[6]       EMUTOS14-VDI-all.BIN = 0x0002 (2)   VDI.BIN              = 0x0005 (5)"
+        ]
+      },
+      "117": {
+        "head": "117  opcode 23  vsf_interior hatch",
+        "fields": [
+          "    contrl[6]              EMUTOS14-VDI-all.BIN = 0x0002 (2)   VDI.BIN              = 0x0005 (5)",
+          "    contrl_before[6]       EMUTOS14-VDI-all.BIN = 0x0002 (2)   VDI.BIN              = 0x0005 (5)"
+        ]
+      },
+      "118": {
+        "head": "118  opcode 23  vsf_interior user defined",
+        "fields": [
+          "    contrl[6]              EMUTOS14-VDI-all.BIN = 0x0002 (2)   VDI.BIN              = 0x0005 (5)",
+          "    contrl_before[6]       EMUTOS14-VDI-all.BIN = 0x0002 (2)   VDI.BIN              = 0x0005 (5)"
+        ]
+      },
+      "119": {
+        "head": "119  opcode 24  vsf_style index 1, D-VDI-8 setter is 0-based",
+        "fields": [
+          "    contrl[6]              EMUTOS14-VDI-all.BIN = 0x0002 (2)   VDI.BIN              = 0x0005 (5)",
+          "    contrl_before[6]       EMUTOS14-VDI-all.BIN = 0x0002 (2)   VDI.BIN              = 0x0005 (5)"
+        ]
+      },
+      "120": {
+        "head": "120  opcode 24  vsf_style at pattern maximum",
+        "fields": [
+          "    contrl[6]              EMUTOS14-VDI-all.BIN = 0x0002 (2)   VDI.BIN              = 0x0005 (5)",
+          "    contrl_before[6]       EMUTOS14-VDI-all.BIN = 0x0002 (2)   VDI.BIN              = 0x0005 (5)"
+        ]
+      },
+      "121": {
+        "head": "121  opcode 24  vsf_style above pattern maximum",
+        "fields": [
+          "    contrl[6]              EMUTOS14-VDI-all.BIN = 0x0002 (2)   VDI.BIN              = 0x0005 (5)",
+          "    contrl_before[6]       EMUTOS14-VDI-all.BIN = 0x0002 (2)   VDI.BIN              = 0x0005 (5)"
+        ]
+      },
+      "122": {
+        "head": "122  opcode 25  vsf_color pen 0",
+        "fields": [
+          "    contrl[6]              EMUTOS14-VDI-all.BIN = 0x0002 (2)   VDI.BIN              = 0x0005 (5)",
+          "    contrl_before[6]       EMUTOS14-VDI-all.BIN = 0x0002 (2)   VDI.BIN              = 0x0005 (5)"
+        ]
+      },
+      "123": {
+        "head": "123  opcode 25  vsf_color pen 15",
+        "fields": [
+          "    contrl[6]              EMUTOS14-VDI-all.BIN = 0x0002 (2)   VDI.BIN              = 0x0005 (5)",
+          "    contrl_before[6]       EMUTOS14-VDI-all.BIN = 0x0002 (2)   VDI.BIN              = 0x0005 (5)"
+        ]
+      },
+      "124": {
+        "head": "124  opcode 104  vsf_perimeter off",
+        "fields": [
+          "    contrl[6]              EMUTOS14-VDI-all.BIN = 0x0002 (2)   VDI.BIN              = 0x0005 (5)",
+          "    contrl_before[6]       EMUTOS14-VDI-all.BIN = 0x0002 (2)   VDI.BIN              = 0x0005 (5)"
+        ]
+      },
+      "125": {
+        "head": "125  opcode 104  vsf_perimeter on",
+        "fields": [
+          "    contrl[6]              EMUTOS14-VDI-all.BIN = 0x0002 (2)   VDI.BIN              = 0x0005 (5)",
+          "    contrl_before[6]       EMUTOS14-VDI-all.BIN = 0x0002 (2)   VDI.BIN              = 0x0005 (5)"
+        ]
+      },
+      "127": {
+        "head": "127  opcode 12  vst_height 8 pixels",
+        "fields": [
+          "    contrl[6]              EMUTOS14-VDI-all.BIN = 0x0002 (2)   VDI.BIN              = 0x0005 (5)",
+          "    contrl_before[6]       EMUTOS14-VDI-all.BIN = 0x0002 (2)   VDI.BIN              = 0x0005 (5)"
+        ]
+      },
+      "128": {
+        "head": "128  opcode 12  vst_height 16 pixels",
+        "fields": [
+          "    contrl[6]              EMUTOS14-VDI-all.BIN = 0x0002 (2)   VDI.BIN              = 0x0005 (5)",
+          "    contrl_before[6]       EMUTOS14-VDI-all.BIN = 0x0002 (2)   VDI.BIN              = 0x0005 (5)"
+        ]
+      },
+      "129": {
+        "head": "129  opcode 12  vst_height 26, the TOS 3.06 maximum",
+        "fields": [
+          "    contrl[6]              EMUTOS14-VDI-all.BIN = 0x0002 (2)   VDI.BIN              = 0x0005 (5)",
+          "    contrl_before[6]       EMUTOS14-VDI-all.BIN = 0x0002 (2)   VDI.BIN              = 0x0005 (5)"
+        ]
+      },
+      "130": {
+        "head": "130  opcode 13  vst_rotation 0",
+        "fields": [
+          "    contrl[6]              EMUTOS14-VDI-all.BIN = 0x0002 (2)   VDI.BIN              = 0x0005 (5)",
+          "    contrl_before[6]       EMUTOS14-VDI-all.BIN = 0x0002 (2)   VDI.BIN              = 0x0005 (5)"
+        ]
+      },
+      "131": {
+        "head": "131  opcode 13  vst_rotation 180 degrees",
+        "fields": [
+          "    contrl[6]              EMUTOS14-VDI-all.BIN = 0x0002 (2)   VDI.BIN              = 0x0005 (5)",
+          "    contrl_before[6]       EMUTOS14-VDI-all.BIN = 0x0002 (2)   VDI.BIN              = 0x0005 (5)"
+        ]
+      },
+      "132": {
+        "head": "132  opcode 13  vst_rotation 270 degrees",
+        "fields": [
+          "    contrl[6]              EMUTOS14-VDI-all.BIN = 0x0002 (2)   VDI.BIN              = 0x0005 (5)",
+          "    contrl_before[6]       EMUTOS14-VDI-all.BIN = 0x0002 (2)   VDI.BIN              = 0x0005 (5)"
+        ]
+      },
+      "133": {
+        "head": "133  opcode 21  vst_font 1",
+        "fields": [
+          "    contrl[6]              EMUTOS14-VDI-all.BIN = 0x0002 (2)   VDI.BIN              = 0x0005 (5)",
+          "    contrl_before[6]       EMUTOS14-VDI-all.BIN = 0x0002 (2)   VDI.BIN              = 0x0005 (5)"
+        ]
+      },
+      "134": {
+        "head": "134  opcode 21  vst_font 2",
+        "fields": [
+          "    contrl[6]              EMUTOS14-VDI-all.BIN = 0x0002 (2)   VDI.BIN              = 0x0005 (5)",
+          "    contrl_before[6]       EMUTOS14-VDI-all.BIN = 0x0002 (2)   VDI.BIN              = 0x0005 (5)"
+        ]
+      },
+      "135": {
+        "head": "135  opcode 21  vst_font out of range",
+        "fields": [
+          "    contrl[6]              EMUTOS14-VDI-all.BIN = 0x0002 (2)   VDI.BIN              = 0x0005 (5)",
+          "    contrl_before[6]       EMUTOS14-VDI-all.BIN = 0x0002 (2)   VDI.BIN              = 0x0005 (5)"
+        ]
+      },
+      "136": {
+        "head": "136  opcode 22  vst_color pen 0",
+        "fields": [
+          "    contrl[6]              EMUTOS14-VDI-all.BIN = 0x0002 (2)   VDI.BIN              = 0x0005 (5)",
+          "    contrl_before[6]       EMUTOS14-VDI-all.BIN = 0x0002 (2)   VDI.BIN              = 0x0005 (5)"
+        ]
+      },
+      "137": {
+        "head": "137  opcode 22  vst_color pen 15",
+        "fields": [
+          "    contrl[6]              EMUTOS14-VDI-all.BIN = 0x0002 (2)   VDI.BIN              = 0x0005 (5)",
+          "    contrl_before[6]       EMUTOS14-VDI-all.BIN = 0x0002 (2)   VDI.BIN              = 0x0005 (5)"
+        ]
+      },
+      "138": {
+        "head": "138  opcode 106  vst_effects none",
+        "fields": [
+          "    contrl[6]              EMUTOS14-VDI-all.BIN = 0x0002 (2)   VDI.BIN              = 0x0005 (5)",
+          "    contrl_before[6]       EMUTOS14-VDI-all.BIN = 0x0002 (2)   VDI.BIN              = 0x0005 (5)"
+        ]
+      },
+      "139": {
+        "head": "139  opcode 106  vst_effects thickened",
+        "fields": [
+          "    contrl[6]              EMUTOS14-VDI-all.BIN = 0x0002 (2)   VDI.BIN              = 0x0005 (5)",
+          "    contrl_before[6]       EMUTOS14-VDI-all.BIN = 0x0002 (2)   VDI.BIN              = 0x0005 (5)"
+        ]
+      },
+      "140": {
+        "head": "140  opcode 107  vst_point 10 point",
+        "fields": [
+          "    contrl[6]              EMUTOS14-VDI-all.BIN = 0x0002 (2)   VDI.BIN              = 0x0005 (5)",
+          "    contrl_before[6]       EMUTOS14-VDI-all.BIN = 0x0002 (2)   VDI.BIN              = 0x0005 (5)"
+        ]
+      },
+      "141": {
+        "head": "141  opcode 107  vst_point 6 point",
+        "fields": [
+          "    contrl[6]              EMUTOS14-VDI-all.BIN = 0x0002 (2)   VDI.BIN              = 0x0005 (5)",
+          "    contrl_before[6]       EMUTOS14-VDI-all.BIN = 0x0002 (2)   VDI.BIN              = 0x0005 (5)"
+        ]
+      },
+      "142": {
+        "head": "142  opcode 39  vst_alignment left, baseline",
+        "fields": [
+          "    contrl[6]              EMUTOS14-VDI-all.BIN = 0x0002 (2)   VDI.BIN              = 0x0005 (5)",
+          "    contrl_before[6]       EMUTOS14-VDI-all.BIN = 0x0002 (2)   VDI.BIN              = 0x0005 (5)"
+        ]
+      },
+      "143": {
+        "head": "143  opcode 39  vst_alignment right, bottom",
+        "fields": [
+          "    contrl[6]              EMUTOS14-VDI-all.BIN = 0x0002 (2)   VDI.BIN              = 0x0005 (5)",
+          "    contrl_before[6]       EMUTOS14-VDI-all.BIN = 0x0002 (2)   VDI.BIN              = 0x0005 (5)"
+        ]
+      },
+      "144": {
+        "head": "144  opcode 39  vst_alignment out of range",
+        "fields": [
+          "    contrl[6]              EMUTOS14-VDI-all.BIN = 0x0002 (2)   VDI.BIN              = 0x0005 (5)",
+          "    contrl_before[6]       EMUTOS14-VDI-all.BIN = 0x0002 (2)   VDI.BIN              = 0x0005 (5)"
+        ]
+      },
+      "146": {
+        "head": "146  opcode 32  vswr_mode replace",
+        "fields": [
+          "    contrl[6]              EMUTOS14-VDI-all.BIN = 0x0002 (2)   VDI.BIN              = 0x0005 (5)",
+          "    contrl_before[6]       EMUTOS14-VDI-all.BIN = 0x0002 (2)   VDI.BIN              = 0x0005 (5)"
+        ]
+      },
+      "147": {
+        "head": "147  opcode 32  vswr_mode xor",
+        "fields": [
+          "    contrl[6]              EMUTOS14-VDI-all.BIN = 0x0002 (2)   VDI.BIN              = 0x0005 (5)",
+          "    contrl_before[6]       EMUTOS14-VDI-all.BIN = 0x0002 (2)   VDI.BIN              = 0x0005 (5)"
+        ]
+      },
+      "148": {
+        "head": "148  opcode 32  vswr_mode reverse transparent",
+        "fields": [
+          "    contrl[6]              EMUTOS14-VDI-all.BIN = 0x0002 (2)   VDI.BIN              = 0x0005 (5)",
+          "    contrl_before[6]       EMUTOS14-VDI-all.BIN = 0x0002 (2)   VDI.BIN              = 0x0005 (5)"
+        ]
+      },
+      "149": {
+        "head": "149  opcode 129  vs_clip on, a rectangle",
+        "fields": [
+          "    contrl[6]              EMUTOS14-VDI-all.BIN = 0x0002 (2)   VDI.BIN              = 0x0005 (5)",
+          "    contrl_before[6]       EMUTOS14-VDI-all.BIN = 0x0002 (2)   VDI.BIN              = 0x0005 (5)"
+        ]
+      },
+      "150": {
+        "head": "150  opcode 129  vs_clip off",
+        "fields": [
+          "    contrl[6]              EMUTOS14-VDI-all.BIN = 0x0002 (2)   VDI.BIN              = 0x0005 (5)",
+          "    contrl_before[6]       EMUTOS14-VDI-all.BIN = 0x0002 (2)   VDI.BIN              = 0x0005 (5)"
+        ]
+      },
+      "151": {
+        "head": "151  opcode 33  vsin_mode locator request",
+        "fields": [
+          "    contrl[6]              EMUTOS14-VDI-all.BIN = 0x0002 (2)   VDI.BIN              = 0x0005 (5)",
+          "    contrl_before[6]       EMUTOS14-VDI-all.BIN = 0x0002 (2)   VDI.BIN              = 0x0005 (5)"
+        ]
+      },
+      "152": {
+        "head": "152  opcode 33  vsin_mode locator sample",
+        "fields": [
+          "    contrl[6]              EMUTOS14-VDI-all.BIN = 0x0002 (2)   VDI.BIN              = 0x0005 (5)",
+          "    contrl_before[6]       EMUTOS14-VDI-all.BIN = 0x0002 (2)   VDI.BIN              = 0x0005 (5)"
+        ]
+      },
+      "154": {
+        "head": "154  opcode 6  v_pline the full diagonal",
+        "fields": [
+          "    contrl[6]              EMUTOS14-VDI-all.BIN = 0x0002 (2)   VDI.BIN              = 0x0005 (5)",
+          "    contrl_before[6]       EMUTOS14-VDI-all.BIN = 0x0002 (2)   VDI.BIN              = 0x0005 (5)"
+        ]
+      },
+      "155": {
+        "head": "155  opcode 7  v_pmarker two markers, D-VDI-9 forces clip on",
+        "fields": [
+          "    contrl[6]              EMUTOS14-VDI-all.BIN = 0x0002 (2)   VDI.BIN              = 0x0005 (5)",
+          "    contrl_before[6]       EMUTOS14-VDI-all.BIN = 0x0002 (2)   VDI.BIN              = 0x0005 (5)"
+        ]
+      },
+      "156": {
+        "head": "156  opcode 8  v_gtext ABC",
+        "fields": [
+          "    contrl[6]              EMUTOS14-VDI-all.BIN = 0x0002 (2)   VDI.BIN              = 0x0005 (5)",
+          "    contrl_before[6]       EMUTOS14-VDI-all.BIN = 0x0002 (2)   VDI.BIN              = 0x0005 (5)"
+        ]
+      },
+      "157": {
+        "head": "157  opcode 9  v_fillarea a rectangle, four points",
+        "fields": [
+          "    contrl[6]              EMUTOS14-VDI-all.BIN = 0x0002 (2)   VDI.BIN              = 0x0005 (5)",
+          "    contrl_before[6]       EMUTOS14-VDI-all.BIN = 0x0002 (2)   VDI.BIN              = 0x0005 (5)"
+        ]
+      },
+      "158": {
+        "head": "158  opcode 114  vr_recfl a filled rectangle",
+        "fields": [
+          "    contrl[6]              EMUTOS14-VDI-all.BIN = 0x0002 (2)   VDI.BIN              = 0x0005 (5)",
+          "    contrl_before[6]       EMUTOS14-VDI-all.BIN = 0x0002 (2)   VDI.BIN              = 0x0005 (5)"
+        ]
+      },
+      "159": {
+        "head": "159  opcode 103  v_contourfill seed fill after v_clrwk",
+        "fields": [
+          "    contrl[6]              EMUTOS14-VDI-all.BIN = 0x0002 (2)   VDI.BIN              = 0x0005 (5)",
+          "    contrl_before[6]       EMUTOS14-VDI-all.BIN = 0x0002 (2)   VDI.BIN              = 0x0005 (5)"
+        ]
+      },
+      "160": {
+        "head": "160  opcode 105  v_get_pixel top left corner",
+        "fields": [
+          "    contrl[6]              EMUTOS14-VDI-all.BIN = 0x0002 (2)   VDI.BIN              = 0x0005 (5)",
+          "    intout[1]              EMUTOS14-VDI-all.BIN = 0x0000 (0)   VDI.BIN              = 0xFFDF (-33)",
+          "    contrl_before[6]       EMUTOS14-VDI-all.BIN = 0x0002 (2)   VDI.BIN              = 0x0005 (5)"
+        ]
+      },
+      "161": {
+        "head": "161  opcode 105  v_get_pixel bottom right corner",
+        "fields": [
+          "    contrl[6]              EMUTOS14-VDI-all.BIN = 0x0002 (2)   VDI.BIN              = 0x0005 (5)",
+          "    intout[1]              EMUTOS14-VDI-all.BIN = 0x0000 (0)   VDI.BIN              = 0xFFDF (-33)",
+          "    contrl_before[6]       EMUTOS14-VDI-all.BIN = 0x0002 (2)   VDI.BIN              = 0x0005 (5)"
+        ]
+      },
+      "163": {
+        "head": "163  opcode 11  v_bar",
+        "fields": [
+          "    contrl[6]              EMUTOS14-VDI-all.BIN = 0x0002 (2)   VDI.BIN              = 0x0005 (5)",
+          "    contrl_before[6]       EMUTOS14-VDI-all.BIN = 0x0002 (2)   VDI.BIN              = 0x0005 (5)"
+        ]
+      },
+      "164": {
+        "head": "164  opcode 11  v_arc quarter turn",
+        "fields": [
+          "    contrl[6]              EMUTOS14-VDI-all.BIN = 0x0002 (2)   VDI.BIN              = 0x0005 (5)",
+          "    contrl_before[6]       EMUTOS14-VDI-all.BIN = 0x0002 (2)   VDI.BIN              = 0x0005 (5)"
+        ]
+      },
+      "165": {
+        "head": "165  opcode 11  v_pieslice half turn",
+        "fields": [
+          "    contrl[6]              EMUTOS14-VDI-all.BIN = 0x0002 (2)   VDI.BIN              = 0x0005 (5)",
+          "    contrl_before[6]       EMUTOS14-VDI-all.BIN = 0x0002 (2)   VDI.BIN              = 0x0005 (5)"
+        ]
+      },
+      "166": {
+        "head": "166  opcode 11  v_circle radius from PTSIN[4]",
+        "fields": [
+          "    contrl[6]              EMUTOS14-VDI-all.BIN = 0x0002 (2)   VDI.BIN              = 0x0005 (5)",
+          "    contrl_before[6]       EMUTOS14-VDI-all.BIN = 0x0002 (2)   VDI.BIN              = 0x0005 (5)"
+        ]
+      },
+      "167": {
+        "head": "167  opcode 11  v_ellipse",
+        "fields": [
+          "    contrl[6]              EMUTOS14-VDI-all.BIN = 0x0002 (2)   VDI.BIN              = 0x0005 (5)",
+          "    contrl_before[6]       EMUTOS14-VDI-all.BIN = 0x0002 (2)   VDI.BIN              = 0x0005 (5)"
+        ]
+      },
+      "168": {
+        "head": "168  opcode 11  v_ellarc",
+        "fields": [
+          "    contrl[6]              EMUTOS14-VDI-all.BIN = 0x0002 (2)   VDI.BIN              = 0x0005 (5)",
+          "    contrl_before[6]       EMUTOS14-VDI-all.BIN = 0x0002 (2)   VDI.BIN              = 0x0005 (5)"
+        ]
+      },
+      "169": {
+        "head": "169  opcode 11  v_ellpie",
+        "fields": [
+          "    contrl[6]              EMUTOS14-VDI-all.BIN = 0x0002 (2)   VDI.BIN              = 0x0005 (5)",
+          "    contrl_before[6]       EMUTOS14-VDI-all.BIN = 0x0002 (2)   VDI.BIN              = 0x0005 (5)"
+        ]
+      },
+      "170": {
+        "head": "170  opcode 11  v_rbox rounded box",
+        "fields": [
+          "    contrl[6]              EMUTOS14-VDI-all.BIN = 0x0002 (2)   VDI.BIN              = 0x0005 (5)",
+          "    contrl_before[6]       EMUTOS14-VDI-all.BIN = 0x0002 (2)   VDI.BIN              = 0x0005 (5)"
+        ]
+      },
+      "171": {
+        "head": "171  opcode 11  v_rfbox rounded filled box",
+        "fields": [
+          "    contrl[6]              EMUTOS14-VDI-all.BIN = 0x0002 (2)   VDI.BIN              = 0x0005 (5)",
+          "    contrl_before[6]       EMUTOS14-VDI-all.BIN = 0x0002 (2)   VDI.BIN              = 0x0005 (5)"
+        ]
+      },
+      "173": {
+        "head": "173  opcode 5  vq_chcells rows and columns",
+        "fields": [
+          "    contrl[6]              EMUTOS14-VDI-all.BIN = 0x0002 (2)   VDI.BIN              = 0x0005 (5)",
+          "    intout[0]              EMUTOS14-VDI-all.BIN = 0x001E (30)   VDI.BIN              = 0x0043 (67)",
+          "    intout[1]              EMUTOS14-VDI-all.BIN = 0x0050 (80)   VDI.BIN              = 0x00F0 (240)",
+          "    contrl_before[6]       EMUTOS14-VDI-all.BIN = 0x0002 (2)   VDI.BIN              = 0x0005 (5)"
+        ]
+      },
+      "174": {
+        "head": "174  opcode 5  v_curup",
+        "fields": [
+          "    contrl[6]              EMUTOS14-VDI-all.BIN = 0x0002 (2)   VDI.BIN              = 0x0005 (5)",
+          "    contrl_before[6]       EMUTOS14-VDI-all.BIN = 0x0002 (2)   VDI.BIN              = 0x0005 (5)"
+        ]
+      },
+      "175": {
+        "head": "175  opcode 5  v_curdown",
+        "fields": [
+          "    contrl[6]              EMUTOS14-VDI-all.BIN = 0x0002 (2)   VDI.BIN              = 0x0005 (5)",
+          "    contrl_before[6]       EMUTOS14-VDI-all.BIN = 0x0002 (2)   VDI.BIN              = 0x0005 (5)"
+        ]
+      },
+      "176": {
+        "head": "176  opcode 5  v_curright",
+        "fields": [
+          "    contrl[6]              EMUTOS14-VDI-all.BIN = 0x0002 (2)   VDI.BIN              = 0x0005 (5)",
+          "    contrl_before[6]       EMUTOS14-VDI-all.BIN = 0x0002 (2)   VDI.BIN              = 0x0005 (5)"
+        ]
+      },
+      "177": {
+        "head": "177  opcode 5  v_curleft",
+        "fields": [
+          "    contrl[6]              EMUTOS14-VDI-all.BIN = 0x0002 (2)   VDI.BIN              = 0x0005 (5)",
+          "    contrl_before[6]       EMUTOS14-VDI-all.BIN = 0x0002 (2)   VDI.BIN              = 0x0005 (5)"
+        ]
+      },
+      "178": {
+        "head": "178  opcode 5  v_curhome",
+        "fields": [
+          "    contrl[6]              EMUTOS14-VDI-all.BIN = 0x0002 (2)   VDI.BIN              = 0x0005 (5)",
+          "    contrl_before[6]       EMUTOS14-VDI-all.BIN = 0x0002 (2)   VDI.BIN              = 0x0005 (5)"
+        ]
+      },
+      "179": {
+        "head": "179  opcode 5  v_eeos erase to end of screen",
+        "fields": [
+          "    contrl[6]              EMUTOS14-VDI-all.BIN = 0x0002 (2)   VDI.BIN              = 0x0005 (5)",
+          "    contrl_before[6]       EMUTOS14-VDI-all.BIN = 0x0002 (2)   VDI.BIN              = 0x0005 (5)"
+        ]
+      },
+      "180": {
+        "head": "180  opcode 5  v_eeol erase to end of line",
+        "fields": [
+          "    contrl[6]              EMUTOS14-VDI-all.BIN = 0x0002 (2)   VDI.BIN              = 0x0005 (5)",
+          "    contrl_before[6]       EMUTOS14-VDI-all.BIN = 0x0002 (2)   VDI.BIN              = 0x0005 (5)"
+        ]
+      },
+      "181": {
+        "head": "181  opcode 5  vs_curaddress row 5 column 10",
+        "fields": [
+          "    contrl[6]              EMUTOS14-VDI-all.BIN = 0x0002 (2)   VDI.BIN              = 0x0005 (5)",
+          "    contrl_before[6]       EMUTOS14-VDI-all.BIN = 0x0002 (2)   VDI.BIN              = 0x0005 (5)"
+        ]
+      },
+      "182": {
+        "head": "182  opcode 5  v_curtext ABC",
+        "fields": [
+          "    contrl[6]              EMUTOS14-VDI-all.BIN = 0x0002 (2)   VDI.BIN              = 0x0005 (5)",
+          "    contrl_before[6]       EMUTOS14-VDI-all.BIN = 0x0002 (2)   VDI.BIN              = 0x0005 (5)"
+        ]
+      },
+      "183": {
+        "head": "183  opcode 5  v_rvon",
+        "fields": [
+          "    contrl[6]              EMUTOS14-VDI-all.BIN = 0x0002 (2)   VDI.BIN              = 0x0005 (5)",
+          "    contrl_before[6]       EMUTOS14-VDI-all.BIN = 0x0002 (2)   VDI.BIN              = 0x0005 (5)"
+        ]
+      },
+      "184": {
+        "head": "184  opcode 5  v_rvoff",
+        "fields": [
+          "    contrl[6]              EMUTOS14-VDI-all.BIN = 0x0002 (2)   VDI.BIN              = 0x0005 (5)",
+          "    contrl_before[6]       EMUTOS14-VDI-all.BIN = 0x0002 (2)   VDI.BIN              = 0x0005 (5)"
+        ]
+      },
+      "185": {
+        "head": "185  opcode 5  vq_curaddress",
+        "fields": [
+          "    contrl[6]              EMUTOS14-VDI-all.BIN = 0x0002 (2)   VDI.BIN              = 0x0005 (5)",
+          "    contrl_before[6]       EMUTOS14-VDI-all.BIN = 0x0002 (2)   VDI.BIN              = 0x0005 (5)"
+        ]
+      },
+      "186": {
+        "head": "186  opcode 5  vq_tabstatus D-VDI-2 returns 1",
+        "fields": [
+          "    contrl[6]              EMUTOS14-VDI-all.BIN = 0x0002 (2)   VDI.BIN              = 0x0005 (5)",
+          "    contrl_before[6]       EMUTOS14-VDI-all.BIN = 0x0002 (2)   VDI.BIN              = 0x0005 (5)"
+        ]
+      },
+      "187": {
+        "head": "187  opcode 5  v_dspcur show the graphics cursor",
+        "fields": [
+          "    contrl[6]              EMUTOS14-VDI-all.BIN = 0x0002 (2)   VDI.BIN              = 0x0005 (5)",
+          "    contrl_before[6]       EMUTOS14-VDI-all.BIN = 0x0002 (2)   VDI.BIN              = 0x0005 (5)"
+        ]
+      },
+      "188": {
+        "head": "188  opcode 5  v_rmcur remove the graphics cursor",
+        "fields": [
+          "    contrl[6]              EMUTOS14-VDI-all.BIN = 0x0002 (2)   VDI.BIN              = 0x0005 (5)",
+          "    contrl_before[6]       EMUTOS14-VDI-all.BIN = 0x0002 (2)   VDI.BIN              = 0x0005 (5)"
+        ]
+      },
+      "195": {
+        "head": "195  opcode 35  vql_attributes after vsl_type dashed-dotted",
+        "fields": [
+          "    contrl[6]              EMUTOS14-VDI-all.BIN = 0x0002 (2)   VDI.BIN              = 0x0005 (5)",
+          "    contrl_before[6]       EMUTOS14-VDI-all.BIN = 0x0002 (2)   VDI.BIN              = 0x0005 (5)"
+        ]
+      },
+      "197": {
+        "head": "197  opcode 35  vql_attributes after vsl_type user defined",
+        "fields": [
+          "    contrl[6]              EMUTOS14-VDI-all.BIN = 0x0002 (2)   VDI.BIN              = 0x0005 (5)",
+          "    contrl_before[6]       EMUTOS14-VDI-all.BIN = 0x0002 (2)   VDI.BIN              = 0x0005 (5)"
+        ]
+      },
+      "199": {
+        "head": "199  opcode 35  vql_attributes after vsl_color 3",
+        "fields": [
+          "    contrl[6]              EMUTOS14-VDI-all.BIN = 0x0002 (2)   VDI.BIN              = 0x0005 (5)",
+          "    contrl_before[6]       EMUTOS14-VDI-all.BIN = 0x0002 (2)   VDI.BIN              = 0x0005 (5)"
+        ]
+      },
+      "201": {
+        "head": "201  opcode 35  vql_attributes after vsl_width 5",
+        "fields": [
+          "    contrl[6]              EMUTOS14-VDI-all.BIN = 0x0002 (2)   VDI.BIN              = 0x0005 (5)",
+          "    contrl_before[6]       EMUTOS14-VDI-all.BIN = 0x0002 (2)   VDI.BIN              = 0x0005 (5)"
+        ]
+      },
+      "203": {
+        "head": "203  opcode 35  vql_attributes after vswr_mode xor",
+        "fields": [
+          "    contrl[6]              EMUTOS14-VDI-all.BIN = 0x0002 (2)   VDI.BIN              = 0x0005 (5)",
+          "    contrl_before[6]       EMUTOS14-VDI-all.BIN = 0x0002 (2)   VDI.BIN              = 0x0005 (5)"
+        ]
+      },
+      "206": {
+        "head": "206  opcode 36  vqm_attributes after vsm_type 5",
+        "fields": [
+          "    contrl[6]              EMUTOS14-VDI-all.BIN = 0x0002 (2)   VDI.BIN              = 0x0005 (5)",
+          "    contrl_before[6]       EMUTOS14-VDI-all.BIN = 0x0002 (2)   VDI.BIN              = 0x0005 (5)"
+        ]
+      },
+      "208": {
+        "head": "208  opcode 36  vqm_attributes after vsm_color 3",
+        "fields": [
+          "    contrl[6]              EMUTOS14-VDI-all.BIN = 0x0002 (2)   VDI.BIN              = 0x0005 (5)",
+          "    contrl_before[6]       EMUTOS14-VDI-all.BIN = 0x0002 (2)   VDI.BIN              = 0x0005 (5)"
+        ]
+      },
+      "210": {
+        "head": "210  opcode 36  vqm_attributes after vsm_height 40",
+        "fields": [
+          "    contrl[6]              EMUTOS14-VDI-all.BIN = 0x0002 (2)   VDI.BIN              = 0x0005 (5)",
+          "    contrl_before[6]       EMUTOS14-VDI-all.BIN = 0x0002 (2)   VDI.BIN              = 0x0005 (5)"
+        ]
+      },
+      "213": {
+        "head": "213  opcode 37  vqf_attributes after vsf_interior 2",
+        "fields": [
+          "    contrl[6]              EMUTOS14-VDI-all.BIN = 0x0002 (2)   VDI.BIN              = 0x0005 (5)",
+          "    contrl_before[6]       EMUTOS14-VDI-all.BIN = 0x0002 (2)   VDI.BIN              = 0x0005 (5)"
+        ]
+      },
+      "215": {
+        "head": "215  opcode 37  vqf_attributes after vsf_style 7",
+        "fields": [
+          "    contrl[6]              EMUTOS14-VDI-all.BIN = 0x0002 (2)   VDI.BIN              = 0x0005 (5)",
+          "    contrl_before[6]       EMUTOS14-VDI-all.BIN = 0x0002 (2)   VDI.BIN              = 0x0005 (5)"
+        ]
+      },
+      "217": {
+        "head": "217  opcode 37  vqf_attributes after vsf_color 3",
+        "fields": [
+          "    contrl[6]              EMUTOS14-VDI-all.BIN = 0x0002 (2)   VDI.BIN              = 0x0005 (5)",
+          "    contrl_before[6]       EMUTOS14-VDI-all.BIN = 0x0002 (2)   VDI.BIN              = 0x0005 (5)"
+        ]
+      },
+      "219": {
+        "head": "219  opcode 37  vqf_attributes after vsf_perimeter off",
+        "fields": [
+          "    contrl[6]              EMUTOS14-VDI-all.BIN = 0x0002 (2)   VDI.BIN              = 0x0005 (5)",
+          "    contrl_before[6]       EMUTOS14-VDI-all.BIN = 0x0002 (2)   VDI.BIN              = 0x0005 (5)"
+        ]
+      },
+      "222": {
+        "head": "222  opcode 38  vqt_attributes after vst_font 2 -- the gap round 2 missed",
+        "fields": [
+          "    contrl[6]              EMUTOS14-VDI-all.BIN = 0x0002 (2)   VDI.BIN              = 0x0005 (5)",
+          "    contrl_before[6]       EMUTOS14-VDI-all.BIN = 0x0002 (2)   VDI.BIN              = 0x0005 (5)"
+        ]
+      },
+      "224": {
+        "head": "224  opcode 38  vqt_attributes after vst_color 3",
+        "fields": [
+          "    contrl[6]              EMUTOS14-VDI-all.BIN = 0x0002 (2)   VDI.BIN              = 0x0005 (5)",
+          "    contrl_before[6]       EMUTOS14-VDI-all.BIN = 0x0002 (2)   VDI.BIN              = 0x0005 (5)"
+        ]
+      },
+      "226": {
+        "head": "226  opcode 38  vqt_attributes after vst_rotation 900",
+        "fields": [
+          "    contrl[6]              EMUTOS14-VDI-all.BIN = 0x0002 (2)   VDI.BIN              = 0x0005 (5)",
+          "    contrl_before[6]       EMUTOS14-VDI-all.BIN = 0x0002 (2)   VDI.BIN              = 0x0005 (5)"
+        ]
+      },
+      "228": {
+        "head": "228  opcode 38  vqt_attributes after vst_alignment 1,2",
+        "fields": [
+          "    contrl[6]              EMUTOS14-VDI-all.BIN = 0x0002 (2)   VDI.BIN              = 0x0005 (5)",
+          "    contrl_before[6]       EMUTOS14-VDI-all.BIN = 0x0002 (2)   VDI.BIN              = 0x0005 (5)"
+        ]
+      },
+      "230": {
+        "head": "230  opcode 38  vqt_attributes after vst_effects 5",
+        "fields": [
+          "    contrl[6]              EMUTOS14-VDI-all.BIN = 0x0002 (2)   VDI.BIN              = 0x0005 (5)",
+          "    contrl_before[6]       EMUTOS14-VDI-all.BIN = 0x0002 (2)   VDI.BIN              = 0x0005 (5)"
+        ]
+      },
+      "232": {
+        "head": "232  opcode 38  vqt_attributes after vst_height 8",
+        "fields": [
+          "    contrl[6]              EMUTOS14-VDI-all.BIN = 0x0002 (2)   VDI.BIN              = 0x0005 (5)",
+          "    contrl_before[6]       EMUTOS14-VDI-all.BIN = 0x0002 (2)   VDI.BIN              = 0x0005 (5)"
+        ]
+      },
+      "234": {
+        "head": "234  opcode 38  vqt_attributes after vst_point 6",
+        "fields": [
+          "    contrl[6]              EMUTOS14-VDI-all.BIN = 0x0002 (2)   VDI.BIN              = 0x0005 (5)",
+          "    contrl_before[6]       EMUTOS14-VDI-all.BIN = 0x0002 (2)   VDI.BIN              = 0x0005 (5)"
+        ]
+      },
+      "237": {
+        "head": "237  opcode 131  vqt_fontinfo after vst_height 4",
+        "fields": [
+          "    contrl[6]              EMUTOS14-VDI-all.BIN = 0x0002 (2)   VDI.BIN              = 0x0005 (5)",
+          "    contrl_before[6]       EMUTOS14-VDI-all.BIN = 0x0002 (2)   VDI.BIN              = 0x0005 (5)"
+        ]
+      },
+      "239": {
+        "head": "239  opcode 131  vqt_fontinfo after vst_height 16",
+        "fields": [
+          "    contrl[6]              EMUTOS14-VDI-all.BIN = 0x0002 (2)   VDI.BIN              = 0x0005 (5)",
+          "    contrl_before[6]       EMUTOS14-VDI-all.BIN = 0x0002 (2)   VDI.BIN              = 0x0005 (5)"
+        ]
+      },
+      "241": {
+        "head": "241  opcode 117  vqt_width A in the smallest face",
+        "fields": [
+          "    contrl[6]              EMUTOS14-VDI-all.BIN = 0x0002 (2)   VDI.BIN              = 0x0005 (5)",
+          "    contrl_before[6]       EMUTOS14-VDI-all.BIN = 0x0002 (2)   VDI.BIN              = 0x0005 (5)"
+        ]
+      },
+      "243": {
+        "head": "243  opcode 116  vqt_extent ABC in the smallest face",
+        "fields": [
+          "    contrl[6]              EMUTOS14-VDI-all.BIN = 0x0002 (2)   VDI.BIN              = 0x0005 (5)",
+          "    contrl_before[6]       EMUTOS14-VDI-all.BIN = 0x0002 (2)   VDI.BIN              = 0x0005 (5)"
+        ]
+      },
+      "245": {
+        "head": "245  opcode 117  vqt_width A after vst_font 2",
+        "fields": [
+          "    contrl[6]              EMUTOS14-VDI-all.BIN = 0x0002 (2)   VDI.BIN              = 0x0005 (5)",
+          "    contrl_before[6]       EMUTOS14-VDI-all.BIN = 0x0002 (2)   VDI.BIN              = 0x0005 (5)"
+        ]
+      },
+      "247": {
+        "head": "247  opcode 131  vqt_fontinfo after vst_point 6",
+        "fields": [
+          "    contrl[6]              EMUTOS14-VDI-all.BIN = 0x0002 (2)   VDI.BIN              = 0x0005 (5)",
+          "    contrl_before[6]       EMUTOS14-VDI-all.BIN = 0x0002 (2)   VDI.BIN              = 0x0005 (5)"
+        ]
+      },
+      "250": {
+        "head": "250  opcode 102  vq_extnd 1 after vs_clip on",
+        "fields": [
+          "    contrl[6]              EMUTOS14-VDI-all.BIN = 0x0002 (2)   VDI.BIN              = 0x0005 (5)",
+          "    intout[4]              EMUTOS14-VDI-all.BIN = 0x0004 (4)   VDI.BIN              = 0x0010 (16)",
+          "    intout[5]              EMUTOS14-VDI-all.BIN = 0x0001 (1)   VDI.BIN              = 0x0000 (0)",
+          "    contrl_before[6]       EMUTOS14-VDI-all.BIN = 0x0002 (2)   VDI.BIN              = 0x0005 (5)"
+        ]
+      },
+      "252": {
+        "head": "252  opcode 102  vq_extnd 1 after vs_clip off",
+        "fields": [
+          "    contrl[6]              EMUTOS14-VDI-all.BIN = 0x0002 (2)   VDI.BIN              = 0x0005 (5)",
+          "    intout[4]              EMUTOS14-VDI-all.BIN = 0x0004 (4)   VDI.BIN              = 0x0010 (16)",
+          "    intout[5]              EMUTOS14-VDI-all.BIN = 0x0001 (1)   VDI.BIN              = 0x0000 (0)",
+          "    ptsout[2]              EMUTOS14-VDI-all.BIN = 0x027F (639)   VDI.BIN              = 0x077F (1919)",
+          "    ptsout[3]              EMUTOS14-VDI-all.BIN = 0x01DF (479)   VDI.BIN              = 0x0437 (1079)",
+          "    contrl_before[6]       EMUTOS14-VDI-all.BIN = 0x0002 (2)   VDI.BIN              = 0x0005 (5)"
+        ]
+      },
+      "255": {
+        "head": "255  opcode 115  vqin_mode locator after sample",
+        "fields": [
+          "    contrl[6]              EMUTOS14-VDI-all.BIN = 0x0002 (2)   VDI.BIN              = 0x0005 (5)",
+          "    contrl_before[6]       EMUTOS14-VDI-all.BIN = 0x0002 (2)   VDI.BIN              = 0x0005 (5)"
+        ]
+      },
+      "257": {
+        "head": "257  opcode 115  vqin_mode string after request",
+        "fields": [
+          "    contrl[6]              EMUTOS14-VDI-all.BIN = 0x0002 (2)   VDI.BIN              = 0x0005 (5)",
+          "    contrl_before[6]       EMUTOS14-VDI-all.BIN = 0x0002 (2)   VDI.BIN              = 0x0005 (5)"
+        ]
+      },
+      "259": {
+        "head": "259  opcode 122  v_show_c unconditional",
+        "fields": [
+          "    contrl[6]              EMUTOS14-VDI-all.BIN = 0x0002 (2)   VDI.BIN              = 0x0005 (5)",
+          "    contrl_before[6]       EMUTOS14-VDI-all.BIN = 0x0002 (2)   VDI.BIN              = 0x0005 (5)"
+        ]
+      },
+      "260": {
+        "head": "260  opcode 123  v_hide_c",
+        "fields": [
+          "    contrl[6]              EMUTOS14-VDI-all.BIN = 0x0002 (2)   VDI.BIN              = 0x0005 (5)",
+          "    contrl_before[6]       EMUTOS14-VDI-all.BIN = 0x0002 (2)   VDI.BIN              = 0x0005 (5)"
+        ]
+      },
+      "262": {
+        "head": "262  opcode 122  v_show_c conditional after a hide",
+        "fields": [
+          "    contrl[6]              EMUTOS14-VDI-all.BIN = 0x0002 (2)   VDI.BIN              = 0x0005 (5)",
+          "    contrl_before[6]       EMUTOS14-VDI-all.BIN = 0x0002 (2)   VDI.BIN              = 0x0005 (5)"
+        ]
+      },
+      "263": {
+        "head": "263  opcode 111  vsc_form user cursor, 37 words",
+        "fields": [
+          "    contrl[6]              EMUTOS14-VDI-all.BIN = 0x0002 (2)   VDI.BIN              = 0x0005 (5)",
+          "    contrl_before[6]       EMUTOS14-VDI-all.BIN = 0x0002 (2)   VDI.BIN              = 0x0005 (5)"
+        ]
+      },
+      "264": {
+        "head": "264  opcode 11  v_justified GDP sub-op 10",
+        "fields": [
+          "    contrl[6]              EMUTOS14-VDI-all.BIN = 0x0002 (2)   VDI.BIN              = 0x0005 (5)",
+          "    contrl_before[6]       EMUTOS14-VDI-all.BIN = 0x0002 (2)   VDI.BIN              = 0x0005 (5)"
+        ]
+      },
+      "268": {
+        "head": "268  opcode 103  v_contourfill seeded inside the drawn box",
+        "fields": [
+          "    contrl[6]              EMUTOS14-VDI-all.BIN = 0x0002 (2)   VDI.BIN              = 0x0005 (5)",
+          "    contrl_before[6]       EMUTOS14-VDI-all.BIN = 0x0002 (2)   VDI.BIN              = 0x0005 (5)"
+        ]
+      },
+      "270": {
+        "head": "270  opcode 105  v_get_pixel inside the drawn box",
+        "fields": [
+          "    contrl[6]              EMUTOS14-VDI-all.BIN = 0x0002 (2)   VDI.BIN              = 0x0005 (5)",
+          "    intout[0]              EMUTOS14-VDI-all.BIN = 0x000F (15)   VDI.BIN              = 0x0000 (0)",
+          "    intout[1]              EMUTOS14-VDI-all.BIN = 0x0001 (1)   VDI.BIN              = 0x0000 (0)",
+          "    contrl_before[6]       EMUTOS14-VDI-all.BIN = 0x0002 (2)   VDI.BIN              = 0x0005 (5)"
+        ]
+      },
+      "272": {
+        "head": "272  opcode 105  v_get_pixel on the drawn line",
+        "fields": [
+          "    contrl[6]              EMUTOS14-VDI-all.BIN = 0x0002 (2)   VDI.BIN              = 0x0005 (5)",
+          "    intout[0]              EMUTOS14-VDI-all.BIN = 0x000F (15)   VDI.BIN              = 0x0000 (0)",
+          "    intout[1]              EMUTOS14-VDI-all.BIN = 0x0001 (1)   VDI.BIN              = 0x0000 (0)",
+          "    contrl_before[6]       EMUTOS14-VDI-all.BIN = 0x0002 (2)   VDI.BIN              = 0x0005 (5)"
+        ]
+      },
+      "274": {
+        "head": "274  opcode 100  v_opnvwk opens an additional workstation",
+        "fields": [
+          "    contrl[6]              EMUTOS14-VDI-all.BIN = 0x0003 (3)   VDI.BIN              = 0x0006 (6)",
+          "    intout[0]              EMUTOS14-VDI-all.BIN = 0x027F (639)   VDI.BIN              = 0x077F (1919)",
+          "    intout[1]              EMUTOS14-VDI-all.BIN = 0x01DF (479)   VDI.BIN              = 0x0437 (1079)",
+          "    intout[13]              EMUTOS14-VDI-all.BIN = 0x0010 (16)   VDI.BIN              = 0x0100 (256)",
+          "    intout[39]              EMUTOS14-VDI-all.BIN = 0x1000 (4096)   VDI.BIN              = 0x0000 (0)",
+          "    contrl_before[6]       EMUTOS14-VDI-all.BIN = 0x0002 (2)   VDI.BIN              = 0x0005 (5)"
+        ]
+      }
+    },
+    "summary": "182 of 182 cases differ"
+  },
+  "raster": {
+    "table": "measurement-2026-09-09/cases/vdi-raster.tsv",
+    "ref": "tosdump/reference/EMUTOS14-RASTER.BIN",
+    "new": "measurement-2026-09-09/run1-pi4/RASTER.BIN",
+    "blocks": {
+      "73": {
+        "head": "73  opcode 110  vr_trnfm standard to device, 4 planes",
+        "fields": [
+          "    contrl[6]              EMUTOS14-RASTER.BIN = 0x0002 (2)   RASTER.BIN          = 0x0004 (4)",
+          "    contrl_before[6]       EMUTOS14-RASTER.BIN = 0x0002 (2)   RASTER.BIN          = 0x0004 (4)"
+        ]
+      },
+      "74": {
+        "head": "74  opcode 110  vr_trnfm device to standard, 4 planes",
+        "fields": [
+          "    contrl[6]              EMUTOS14-RASTER.BIN = 0x0002 (2)   RASTER.BIN          = 0x0004 (4)",
+          "    contrl_before[6]       EMUTOS14-RASTER.BIN = 0x0002 (2)   RASTER.BIN          = 0x0004 (4)"
+        ]
+      },
+      "75": {
+        "head": "75  opcode 110  vr_trnfm standard to device, 2 planes",
+        "fields": [
+          "    contrl[6]              EMUTOS14-RASTER.BIN = 0x0002 (2)   RASTER.BIN          = 0x0004 (4)",
+          "    contrl_before[6]       EMUTOS14-RASTER.BIN = 0x0002 (2)   RASTER.BIN          = 0x0004 (4)"
+        ]
+      },
+      "76": {
+        "head": "76  opcode 110  vr_trnfm device to standard, 2 planes",
+        "fields": [
+          "    contrl[6]              EMUTOS14-RASTER.BIN = 0x0002 (2)   RASTER.BIN          = 0x0004 (4)",
+          "    contrl_before[6]       EMUTOS14-RASTER.BIN = 0x0002 (2)   RASTER.BIN          = 0x0004 (4)"
+        ]
+      },
+      "77": {
+        "head": "77  opcode 110  vr_trnfm standard to device, 8 planes",
+        "fields": [
+          "    contrl[6]              EMUTOS14-RASTER.BIN = 0x0002 (2)   RASTER.BIN          = 0x0004 (4)",
+          "    contrl_before[6]       EMUTOS14-RASTER.BIN = 0x0002 (2)   RASTER.BIN          = 0x0004 (4)"
+        ]
+      },
+      "78": {
+        "head": "78  opcode 110  vr_trnfm device to standard, 8 planes",
+        "fields": [
+          "    contrl[6]              EMUTOS14-RASTER.BIN = 0x0002 (2)   RASTER.BIN          = 0x0004 (4)",
+          "    contrl_before[6]       EMUTOS14-RASTER.BIN = 0x0002 (2)   RASTER.BIN          = 0x0004 (4)"
+        ]
+      },
+      "81": {
+        "head": "81  opcode 110  vr_trnfm standard to device, 1 plane",
+        "fields": [
+          "    contrl[6]              EMUTOS14-RASTER.BIN = 0x0002 (2)   RASTER.BIN          = 0x0004 (4)",
+          "    contrl_before[6]       EMUTOS14-RASTER.BIN = 0x0002 (2)   RASTER.BIN          = 0x0004 (4)"
+        ]
+      },
+      "82": {
+        "head": "82  opcode 110  vr_trnfm device to standard, 1 plane",
+        "fields": [
+          "    contrl[6]              EMUTOS14-RASTER.BIN = 0x0002 (2)   RASTER.BIN          = 0x0004 (4)",
+          "    contrl_before[6]       EMUTOS14-RASTER.BIN = 0x0002 (2)   RASTER.BIN          = 0x0004 (4)"
+        ]
+      },
+      "84": {
+        "head": "84  opcode 110  vr_trnfm 32x16 standard to device",
+        "fields": [
+          "    contrl[6]              EMUTOS14-RASTER.BIN = 0x0002 (2)   RASTER.BIN          = 0x0004 (4)",
+          "    contrl_before[6]       EMUTOS14-RASTER.BIN = 0x0002 (2)   RASTER.BIN          = 0x0004 (4)"
+        ]
+      },
+      "85": {
+        "head": "85  opcode 110  vr_trnfm 32x16 device to standard",
+        "fields": [
+          "    contrl[6]              EMUTOS14-RASTER.BIN = 0x0002 (2)   RASTER.BIN          = 0x0004 (4)",
+          "    contrl_before[6]       EMUTOS14-RASTER.BIN = 0x0002 (2)   RASTER.BIN          = 0x0004 (4)"
+        ]
+      },
+      "88": {
+        "head": "88  opcode 110  vr_trnfm dest already says standard",
+        "fields": [
+          "    contrl[6]              EMUTOS14-RASTER.BIN = 0x0002 (2)   RASTER.BIN          = 0x0004 (4)",
+          "    contrl_before[6]       EMUTOS14-RASTER.BIN = 0x0002 (2)   RASTER.BIN          = 0x0004 (4)"
+        ]
+      },
+      "89": {
+        "head": "89  opcode 110  vr_trnfm dest already says device",
+        "fields": [
+          "    contrl[6]              EMUTOS14-RASTER.BIN = 0x0002 (2)   RASTER.BIN          = 0x0004 (4)",
+          "    contrl_before[6]       EMUTOS14-RASTER.BIN = 0x0002 (2)   RASTER.BIN          = 0x0004 (4)"
+        ]
+      },
+      "91": {
+        "head": "91  opcode 110  vr_trnfm in place, 4 planes, std to dev",
+        "fields": [
+          "    contrl[6]              EMUTOS14-RASTER.BIN = 0x0002 (2)   RASTER.BIN          = 0x0004 (4)",
+          "    contrl_before[6]       EMUTOS14-RASTER.BIN = 0x0002 (2)   RASTER.BIN          = 0x0004 (4)"
+        ]
+      },
+      "92": {
+        "head": "92  opcode 110  vr_trnfm in place, 4 planes, dev to std",
+        "fields": [
+          "    contrl[6]              EMUTOS14-RASTER.BIN = 0x0002 (2)   RASTER.BIN          = 0x0004 (4)",
+          "    contrl_before[6]       EMUTOS14-RASTER.BIN = 0x0002 (2)   RASTER.BIN          = 0x0004 (4)"
+        ]
+      },
+      "93": {
+        "head": "93  opcode 110  vr_trnfm in place, 2 planes",
+        "fields": [
+          "    contrl[6]              EMUTOS14-RASTER.BIN = 0x0002 (2)   RASTER.BIN          = 0x0004 (4)",
+          "    contrl_before[6]       EMUTOS14-RASTER.BIN = 0x0002 (2)   RASTER.BIN          = 0x0004 (4)"
+        ]
+      },
+      "96": {
+        "head": "96  opcode 110  vr_trnfm in place, 1 plane, early return",
+        "fields": [
+          "    contrl[6]              EMUTOS14-RASTER.BIN = 0x0002 (2)   RASTER.BIN          = 0x0004 (4)",
+          "    contrl_before[6]       EMUTOS14-RASTER.BIN = 0x0002 (2)   RASTER.BIN          = 0x0004 (4)"
+        ]
+      },
+      "98": {
+        "head": "98  opcode 110  vr_trnfm in place, one row, dev to std",
+        "fields": [
+          "    contrl[6]              EMUTOS14-RASTER.BIN = 0x0002 (2)   RASTER.BIN          = 0x0004 (4)",
+          "    contrl_before[6]       EMUTOS14-RASTER.BIN = 0x0002 (2)   RASTER.BIN          = 0x0004 (4)"
+        ]
+      },
+      "106": {
+        "head": "106  opcode 109  mode above bit 5 is invalid, no-op",
+        "fields": [
+          "    contrl[6]              EMUTOS14-RASTER.BIN = 0x0002 (2)   RASTER.BIN          = 0x0004 (4)",
+          "    contrl_before[6]       EMUTOS14-RASTER.BIN = 0x0002 (2)   RASTER.BIN          = 0x0004 (4)"
+        ]
+      },
+      "107": {
+        "head": "107  opcode 109  mode 0x7FFF invalid, no-op",
+        "fields": [
+          "    contrl[6]              EMUTOS14-RASTER.BIN = 0x0002 (2)   RASTER.BIN          = 0x0004 (4)",
+          "    contrl_before[6]       EMUTOS14-RASTER.BIN = 0x0002 (2)   RASTER.BIN          = 0x0004 (4)"
+        ]
+      },
+      "108": {
+        "head": "108  opcode 109  no intin at all: INTIN[0] is the poison",
+        "fields": [
+          "    contrl[6]              EMUTOS14-RASTER.BIN = 0x0002 (2)   RASTER.BIN          = 0x0004 (4)",
+          "    contrl_before[6]       EMUTOS14-RASTER.BIN = 0x0002 (2)   RASTER.BIN          = 0x0004 (4)"
+        ]
+      },
+      "109": {
+        "head": "109  opcode 109  op 5 D_ONLY writes the destination back",
+        "fields": [
+          "    contrl[6]              EMUTOS14-RASTER.BIN = 0x0002 (2)   RASTER.BIN          = 0x0004 (4)",
+          "    contrl_before[6]       EMUTOS14-RASTER.BIN = 0x0002 (2)   RASTER.BIN          = 0x0004 (4)"
+        ]
+      },
+      "110": {
+        "head": "110  opcode 109  PAT_FLAG|5 (0x15): stripped, still D_ONLY",
+        "fields": [
+          "    contrl[6]              EMUTOS14-RASTER.BIN = 0x0002 (2)   RASTER.BIN          = 0x0004 (4)",
+          "    contrl_before[6]       EMUTOS14-RASTER.BIN = 0x0002 (2)   RASTER.BIN          = 0x0004 (4)"
+        ]
+      },
+      "111": {
+        "head": "111  opcode 109  plane mismatch 4 to 2, no-op",
+        "fields": [
+          "    contrl[6]              EMUTOS14-RASTER.BIN = 0x0002 (2)   RASTER.BIN          = 0x0004 (4)",
+          "    contrl_before[6]       EMUTOS14-RASTER.BIN = 0x0002 (2)   RASTER.BIN          = 0x0004 (4)"
+        ]
+      },
+      "112": {
+        "head": "112  opcode 109  plane mismatch 4 to 1, no-op",
+        "fields": [
+          "    contrl[6]              EMUTOS14-RASTER.BIN = 0x0002 (2)   RASTER.BIN          = 0x0004 (4)",
+          "    contrl_before[6]       EMUTOS14-RASTER.BIN = 0x0002 (2)   RASTER.BIN          = 0x0004 (4)"
+        ]
+      },
+      "113": {
+        "head": "113  opcode 109  plane mismatch 1 to 4, no-op",
+        "fields": [
+          "    contrl[6]              EMUTOS14-RASTER.BIN = 0x0002 (2)   RASTER.BIN          = 0x0004 (4)",
+          "    contrl_before[6]       EMUTOS14-RASTER.BIN = 0x0002 (2)   RASTER.BIN          = 0x0004 (4)"
+        ]
+      },
+      "124": {
+        "head": "124  opcode 109  op 0 ALL_WHITE D=0",
+        "fields": [
+          "    contrl[6]              EMUTOS14-RASTER.BIN = 0x0002 (2)   RASTER.BIN          = 0x0004 (4)",
+          "    contrl_before[6]       EMUTOS14-RASTER.BIN = 0x0002 (2)   RASTER.BIN          = 0x0004 (4)"
+        ]
+      },
+      "125": {
+        "head": "125  opcode 109  op 1 S_AND_D",
+        "fields": [
+          "    contrl[6]              EMUTOS14-RASTER.BIN = 0x0002 (2)   RASTER.BIN          = 0x0004 (4)",
+          "    contrl_before[6]       EMUTOS14-RASTER.BIN = 0x0002 (2)   RASTER.BIN          = 0x0004 (4)"
+        ]
+      },
+      "126": {
+        "head": "126  opcode 109  op 2 S_AND_NOTD",
+        "fields": [
+          "    contrl[6]              EMUTOS14-RASTER.BIN = 0x0002 (2)   RASTER.BIN          = 0x0004 (4)",
+          "    contrl_before[6]       EMUTOS14-RASTER.BIN = 0x0002 (2)   RASTER.BIN          = 0x0004 (4)"
+        ]
+      },
+      "127": {
+        "head": "127  opcode 109  op 3 S_ONLY replace",
+        "fields": [
+          "    contrl[6]              EMUTOS14-RASTER.BIN = 0x0002 (2)   RASTER.BIN          = 0x0004 (4)",
+          "    contrl_before[6]       EMUTOS14-RASTER.BIN = 0x0002 (2)   RASTER.BIN          = 0x0004 (4)"
+        ]
+      },
+      "128": {
+        "head": "128  opcode 109  op 4 NOTS_AND_D",
+        "fields": [
+          "    contrl[6]              EMUTOS14-RASTER.BIN = 0x0002 (2)   RASTER.BIN          = 0x0004 (4)",
+          "    contrl_before[6]       EMUTOS14-RASTER.BIN = 0x0002 (2)   RASTER.BIN          = 0x0004 (4)"
+        ]
+      },
+      "129": {
+        "head": "129  opcode 109  op 5 D_ONLY",
+        "fields": [
+          "    contrl[6]              EMUTOS14-RASTER.BIN = 0x0002 (2)   RASTER.BIN          = 0x0004 (4)",
+          "    contrl_before[6]       EMUTOS14-RASTER.BIN = 0x0002 (2)   RASTER.BIN          = 0x0004 (4)"
+        ]
+      },
+      "130": {
+        "head": "130  opcode 109  op 6 S_XOR_D",
+        "fields": [
+          "    contrl[6]              EMUTOS14-RASTER.BIN = 0x0002 (2)   RASTER.BIN          = 0x0004 (4)",
+          "    contrl_before[6]       EMUTOS14-RASTER.BIN = 0x0002 (2)   RASTER.BIN          = 0x0004 (4)"
+        ]
+      },
+      "131": {
+        "head": "131  opcode 109  op 7 S_OR_D",
+        "fields": [
+          "    contrl[6]              EMUTOS14-RASTER.BIN = 0x0002 (2)   RASTER.BIN          = 0x0004 (4)",
+          "    contrl_before[6]       EMUTOS14-RASTER.BIN = 0x0002 (2)   RASTER.BIN          = 0x0004 (4)"
+        ]
+      },
+      "132": {
+        "head": "132  opcode 109  op 8 NOT_SORD",
+        "fields": [
+          "    contrl[6]              EMUTOS14-RASTER.BIN = 0x0002 (2)   RASTER.BIN          = 0x0004 (4)",
+          "    contrl_before[6]       EMUTOS14-RASTER.BIN = 0x0002 (2)   RASTER.BIN          = 0x0004 (4)"
+        ]
+      },
+      "133": {
+        "head": "133  opcode 109  op 9 NOT_SXORD",
+        "fields": [
+          "    contrl[6]              EMUTOS14-RASTER.BIN = 0x0002 (2)   RASTER.BIN          = 0x0004 (4)",
+          "    contrl_before[6]       EMUTOS14-RASTER.BIN = 0x0002 (2)   RASTER.BIN          = 0x0004 (4)"
+        ]
+      },
+      "134": {
+        "head": "134  opcode 109  op 10 NOT_D",
+        "fields": [
+          "    contrl[6]              EMUTOS14-RASTER.BIN = 0x0002 (2)   RASTER.BIN          = 0x0004 (4)",
+          "    contrl_before[6]       EMUTOS14-RASTER.BIN = 0x0002 (2)   RASTER.BIN          = 0x0004 (4)"
+        ]
+      },
+      "135": {
+        "head": "135  opcode 109  op 11 S_OR_NOTD",
+        "fields": [
+          "    contrl[6]              EMUTOS14-RASTER.BIN = 0x0002 (2)   RASTER.BIN          = 0x0004 (4)",
+          "    contrl_before[6]       EMUTOS14-RASTER.BIN = 0x0002 (2)   RASTER.BIN          = 0x0004 (4)"
+        ]
+      },
+      "136": {
+        "head": "136  opcode 109  op 12 NOT_S",
+        "fields": [
+          "    contrl[6]              EMUTOS14-RASTER.BIN = 0x0002 (2)   RASTER.BIN          = 0x0004 (4)",
+          "    contrl_before[6]       EMUTOS14-RASTER.BIN = 0x0002 (2)   RASTER.BIN          = 0x0004 (4)"
+        ]
+      },
+      "137": {
+        "head": "137  opcode 109  op 13 NOTS_OR_D",
+        "fields": [
+          "    contrl[6]              EMUTOS14-RASTER.BIN = 0x0002 (2)   RASTER.BIN          = 0x0004 (4)",
+          "    contrl_before[6]       EMUTOS14-RASTER.BIN = 0x0002 (2)   RASTER.BIN          = 0x0004 (4)"
+        ]
+      },
+      "138": {
+        "head": "138  opcode 109  op 14 NOT_SANDD",
+        "fields": [
+          "    contrl[6]              EMUTOS14-RASTER.BIN = 0x0002 (2)   RASTER.BIN          = 0x0004 (4)",
+          "    contrl_before[6]       EMUTOS14-RASTER.BIN = 0x0002 (2)   RASTER.BIN          = 0x0004 (4)"
+        ]
+      },
+      "139": {
+        "head": "139  opcode 109  op 15 ALL_BLACK D=1",
+        "fields": [
+          "    contrl[6]              EMUTOS14-RASTER.BIN = 0x0002 (2)   RASTER.BIN          = 0x0004 (4)",
+          "    contrl_before[6]       EMUTOS14-RASTER.BIN = 0x0002 (2)   RASTER.BIN          = 0x0004 (4)"
+        ]
+      },
+      "144": {
+        "head": "144  opcode 109  PAT_FLAG|3 on the 16-bit path",
+        "fields": [
+          "    contrl[6]              EMUTOS14-RASTER.BIN = 0x0002 (2)   RASTER.BIN          = 0x0004 (4)",
+          "    contrl_before[6]       EMUTOS14-RASTER.BIN = 0x0002 (2)   RASTER.BIN          = 0x0004 (4)"
+        ]
+      },
+      "146": {
+        "head": "146  opcode 109  one pixel, a degenerate rectangle",
+        "fields": [
+          "    contrl[6]              EMUTOS14-RASTER.BIN = 0x0002 (2)   RASTER.BIN          = 0x0004 (4)",
+          "    contrl_before[6]       EMUTOS14-RASTER.BIN = 0x0002 (2)   RASTER.BIN          = 0x0004 (4)"
+        ]
+      },
+      "147": {
+        "head": "147  opcode 109  reversed source corners: arb_corner sorts",
+        "fields": [
+          "    contrl[6]              EMUTOS14-RASTER.BIN = 0x0002 (2)   RASTER.BIN          = 0x0004 (4)",
+          "    contrl_before[6]       EMUTOS14-RASTER.BIN = 0x0002 (2)   RASTER.BIN          = 0x0004 (4)"
+        ]
+      },
+      "148": {
+        "head": "148  opcode 109  reversed destination corners",
+        "fields": [
+          "    contrl[6]              EMUTOS14-RASTER.BIN = 0x0002 (2)   RASTER.BIN          = 0x0004 (4)",
+          "    contrl_before[6]       EMUTOS14-RASTER.BIN = 0x0002 (2)   RASTER.BIN          = 0x0004 (4)"
+        ]
+      },
+      "149": {
+        "head": "149  opcode 109  a rectangle at the far corner of the form",
+        "fields": [
+          "    contrl[6]              EMUTOS14-RASTER.BIN = 0x0002 (2)   RASTER.BIN          = 0x0004 (4)",
+          "    contrl_before[6]       EMUTOS14-RASTER.BIN = 0x0002 (2)   RASTER.BIN          = 0x0004 (4)"
+        ]
+      },
+      "150": {
+        "head": "150  opcode 109  the whole form",
+        "fields": [
+          "    contrl[6]              EMUTOS14-RASTER.BIN = 0x0002 (2)   RASTER.BIN          = 0x0004 (4)",
+          "    contrl_before[6]       EMUTOS14-RASTER.BIN = 0x0002 (2)   RASTER.BIN          = 0x0004 (4)"
+        ]
+      },
+      "157": {
+        "head": "157  opcode 109  PTSIN[6..7] too big: the extent is the source's",
+        "fields": [
+          "    contrl[6]              EMUTOS14-RASTER.BIN = 0x0002 (2)   RASTER.BIN          = 0x0004 (4)",
+          "    contrl_before[6]       EMUTOS14-RASTER.BIN = 0x0002 (2)   RASTER.BIN          = 0x0004 (4)",
+          "    buf_b[0]               EMUTOS14-RASTER.BIN = 0x774B   RASTER.BIN          = 0x445B",
+          "    buf_b[1]               EMUTOS14-RASTER.BIN = 0xD684   RASTER.BIN          = 0x2F3F",
+          "    buf_b[2]               EMUTOS14-RASTER.BIN = 0x6D96   RASTER.BIN          = 0x6BF3",
+          "    buf_b[3]               EMUTOS14-RASTER.BIN = 0x34B0   RASTER.BIN          = 0xA857",
+          "    buf_b[4]               EMUTOS14-RASTER.BIN = 0xA54A   RASTER.BIN          = 0xBF93",
+          "    buf_b[5]               EMUTOS14-RASTER.BIN = 0xD621   RASTER.BIN          = 0x59F6",
+          "    buf_b[6]               EMUTOS14-RASTER.BIN = 0x9E72   RASTER.BIN          = 0x0504",
+          "    buf_b[7]               EMUTOS14-RASTER.BIN = 0x5D65   RASTER.BIN          = 0x1C63",
+          "    buf_b[32]               EMUTOS14-RASTER.BIN = 0x8428   RASTER.BIN          = 0xC502",
+          "    buf_b[33]               EMUTOS14-RASTER.BIN = 0x783C   RASTER.BIN          = 0x1FB1",
+          "    buf_b[34]               EMUTOS14-RASTER.BIN = 0x09BD   RASTER.BIN          = 0x286E",
+          "    buf_b[35]               EMUTOS14-RASTER.BIN = 0x35A4   RASTER.BIN          = 0xF14F",
+          "    buf_b[36]               EMUTOS14-RASTER.BIN = 0xC892   RASTER.BIN          = 0x0447",
+          "    buf_b[37]               EMUTOS14-RASTER.BIN = 0xFEBE   RASTER.BIN          = 0x2794",
+          "    buf_b[38]               EMUTOS14-RASTER.BIN = 0x5764   RASTER.BIN          = 0x3046",
+          "    buf_b[39]               EMUTOS14-RASTER.BIN = 0x4E7A   RASTER.BIN          = 0x5A06",
+          "    buf_b[64]               EMUTOS14-RASTER.BIN = 0xDBD2   RASTER.BIN          = 0x5510",
+          "    buf_b[65]               EMUTOS14-RASTER.BIN = 0x3863   RASTER.BIN          = 0x6D36",
+          "    buf_b[66]               EMUTOS14-RASTER.BIN = 0x3215   RASTER.BIN          = 0xF2B0",
+          "    buf_b[67]               EMUTOS14-RASTER.BIN = 0x4719   RASTER.BIN          = 0x56BF",
+          "    buf_b[68]               EMUTOS14-RASTER.BIN = 0x4D43   RASTER.BIN          = 0x358E",
+          "    buf_b[69]               EMUTOS14-RASTER.BIN = 0x79B6   RASTER.BIN          = 0x1A7E",
+          "    buf_b[70]               EMUTOS14-RASTER.BIN = 0xBD9D   RASTER.BIN          = 0x72B4",
+          "    buf_b[71]               EMUTOS14-RASTER.BIN = 0xCCF0   RASTER.BIN          = 0xBA4E",
+          "    buf_b[96]               EMUTOS14-RASTER.BIN = 0x6094   RASTER.BIN          = 0x900B",
+          "    buf_b[97]               EMUTOS14-RASTER.BIN = 0x889F   RASTER.BIN          = 0x1086",
+          "    buf_b[98]               EMUTOS14-RASTER.BIN = 0xF8E9   RASTER.BIN          = 0x1EE5",
+          "    buf_b[99]               EMUTOS14-RASTER.BIN = 0x3C38   RASTER.BIN          = 0x3659",
+          "    buf_b[100]               EMUTOS14-RASTER.BIN = 0x3281   RASTER.BIN          = 0xA2E2",
+          "    buf_b[101]               EMUTOS14-RASTER.BIN = 0x5327   RASTER.BIN          = 0x18CC",
+          "    buf_b[102]               EMUTOS14-RASTER.BIN = 0x044B   RASTER.BIN          = 0xE40F",
+          "    buf_b[103]               EMUTOS14-RASTER.BIN = 0x6C18   RASTER.BIN          = 0xE5EA",
+          "    buf_b[128]               EMUTOS14-RASTER.BIN = 0x70ED   RASTER.BIN          = 0x7A2C",
+          "    buf_b[129]               EMUTOS14-RASTER.BIN = 0xB280   RASTER.BIN          = 0x0602",
+          "    buf_b[130]               EMUTOS14-RASTER.BIN = 0x4C14   RASTER.BIN          = 0x66EE",
+          "    buf_b[131]               EMUTOS14-RASTER.BIN = 0xD677   RASTER.BIN          = 0x66DB",
+          "    buf_b[132]               EMUTOS14-RASTER.BIN = 0x000C   RASTER.BIN          = 0x7ED3",
+          "    buf_b[133]               EMUTOS14-RASTER.BIN = 0x1662   RASTER.BIN          = 0x983E",
+          "    buf_b[134]               EMUTOS14-RASTER.BIN = 0x1B65   RASTER.BIN          = 0x61AC",
+          "    buf_b[135]               EMUTOS14-RASTER.BIN = 0xF637   RASTER.BIN          = 0xBB0E",
+          "    buf_b[160]               EMUTOS14-RASTER.BIN = 0x27C4   RASTER.BIN          = 0xFBF0",
+          "    buf_b[161]               EMUTOS14-RASTER.BIN = 0x1E73   RASTER.BIN          = 0xCA56",
+          "    buf_b[162]               EMUTOS14-RASTER.BIN = 0x409D   RASTER.BIN          = 0xB7FA",
+          "    buf_b[163]               EMUTOS14-RASTER.BIN = 0x4C1C   RASTER.BIN          = 0x8E04",
+          "    buf_b[164]               EMUTOS14-RASTER.BIN = 0x0E93   RASTER.BIN          = 0xB05E",
+          "    buf_b[165]               EMUTOS14-RASTER.BIN = 0x4E78   RASTER.BIN          = 0x03D5",
+          "    buf_b[166]               EMUTOS14-RASTER.BIN = 0xAF1E   RASTER.BIN          = 0x57BD",
+          "    buf_b[167]               EMUTOS14-RASTER.BIN = 0xDC9A   RASTER.BIN          = 0x5638",
+          "    buf_b[192]               EMUTOS14-RASTER.BIN = 0xD6FC   RASTER.BIN          = 0xDA5C",
+          "    buf_b[193]               EMUTOS14-RASTER.BIN = 0x2B76   RASTER.BIN          = 0x9DDC",
+          "    buf_b[194]               EMUTOS14-RASTER.BIN = 0x4A36   RASTER.BIN          = 0x3E82",
+          "    buf_b[195]               EMUTOS14-RASTER.BIN = 0xD798   RASTER.BIN          = 0x13A9",
+          "    buf_b[196]               EMUTOS14-RASTER.BIN = 0x077C   RASTER.BIN          = 0x364F",
+          "    buf_b[197]               EMUTOS14-RASTER.BIN = 0xE7CE   RASTER.BIN          = 0x4393",
+          "    buf_b[198]               EMUTOS14-RASTER.BIN = 0x0B35   RASTER.BIN          = 0x4854",
+          "    buf_b[199]               EMUTOS14-RASTER.BIN = 0x6C73   RASTER.BIN          = 0xC1B7",
+          "    buf_b[224]               EMUTOS14-RASTER.BIN = 0x3DFF   RASTER.BIN          = 0xB811",
+          "    buf_b[225]               EMUTOS14-RASTER.BIN = 0x946F   RASTER.BIN          = 0x9505",
+          "    buf_b[226]               EMUTOS14-RASTER.BIN = 0xFAB1   RASTER.BIN          = 0x70FC",
+          "    buf_b[227]               EMUTOS14-RASTER.BIN = 0x4609   RASTER.BIN          = 0x12DD",
+          "    buf_b[228]               EMUTOS14-RASTER.BIN = 0xA18F   RASTER.BIN          = 0x49E5",
+          "    buf_b[229]               EMUTOS14-RASTER.BIN = 0x42CB   RASTER.BIN          = 0x23D1",
+          "    buf_b[230]               EMUTOS14-RASTER.BIN = 0xC93D   RASTER.BIN          = 0xBD0B",
+          "    buf_b[231]               EMUTOS14-RASTER.BIN = 0xE8BB   RASTER.BIN          = 0xD0E7",
+          "    buf_b[280]               EMUTOS14-RASTER.BIN = 0x445B   RASTER.BIN          = 0x61BF",
+          "    buf_b[281]               EMUTOS14-RASTER.BIN = 0x2F3F   RASTER.BIN          = 0x44FD",
+          "    buf_b[282]               EMUTOS14-RASTER.BIN = 0x6BF3   RASTER.BIN          = 0x2857",
+          "    buf_b[283]               EMUTOS14-RASTER.BIN = 0xA857   RASTER.BIN          = 0xFE0E",
+          "    buf_b[284]               EMUTOS14-RASTER.BIN = 0xBF93   RASTER.BIN          = 0xA497",
+          "    buf_b[285]               EMUTOS14-RASTER.BIN = 0x59F6   RASTER.BIN          = 0x2943",
+          "    buf_b[286]               EMUTOS14-RASTER.BIN = 0x0504   RASTER.BIN          = 0x9D8F",
+          "    buf_b[287]               EMUTOS14-RASTER.BIN = 0x1C63   RASTER.BIN          = 0xF4C8",
+          "    buf_b[312]               EMUTOS14-RASTER.BIN = 0xC502   RASTER.BIN          = 0xD7BE",
+          "    buf_b[313]               EMUTOS14-RASTER.BIN = 0x1FB1   RASTER.BIN          = 0x1D62",
+          "    buf_b[314]               EMUTOS14-RASTER.BIN = 0x286E   RASTER.BIN          = 0xF7B6",
+          "    buf_b[315]               EMUTOS14-RASTER.BIN = 0xF14F   RASTER.BIN          = 0x0F4D",
+          "    buf_b[316]               EMUTOS14-RASTER.BIN = 0x0447   RASTER.BIN          = 0x25BB",
+          "    buf_b[317]               EMUTOS14-RASTER.BIN = 0x2794   RASTER.BIN          = 0x559E",
+          "    buf_b[318]               EMUTOS14-RASTER.BIN = 0x3046   RASTER.BIN          = 0xFC3B",
+          "    buf_b[319]               EMUTOS14-RASTER.BIN = 0x5A06   RASTER.BIN          = 0x50FF",
+          "    buf_b[344]               EMUTOS14-RASTER.BIN = 0x5510   RASTER.BIN          = 0x99D6",
+          "    buf_b[345]               EMUTOS14-RASTER.BIN = 0x6D36   RASTER.BIN          = 0x2394",
+          "    buf_b[346]               EMUTOS14-RASTER.BIN = 0xF2B0   RASTER.BIN          = 0x1142",
+          "    buf_b[347]               EMUTOS14-RASTER.BIN = 0x56BF   RASTER.BIN          = 0x7BBA",
+          "    buf_b[348]               EMUTOS14-RASTER.BIN = 0x358E   RASTER.BIN          = 0x1A47",
+          "    buf_b[349]               EMUTOS14-RASTER.BIN = 0x1A7E   RASTER.BIN          = 0xCB48",
+          "    buf_b[350]               EMUTOS14-RASTER.BIN = 0x72B4   RASTER.BIN          = 0x350F",
+          "    buf_b[351]               EMUTOS14-RASTER.BIN = 0xBA4E   RASTER.BIN          = 0xB4B3",
+          "    buf_b[376]               EMUTOS14-RASTER.BIN = 0x900B   RASTER.BIN          = 0x773D",
+          "    buf_b[377]               EMUTOS14-RASTER.BIN = 0x1086   RASTER.BIN          = 0x0809",
+          "    buf_b[378]               EMUTOS14-RASTER.BIN = 0x1EE5   RASTER.BIN          = 0x8745",
+          "    buf_b[379]               EMUTOS14-RASTER.BIN = 0x3659   RASTER.BIN          = 0xC774",
+          "    buf_b[380]               EMUTOS14-RASTER.BIN = 0xA2E2   RASTER.BIN          = 0x85A2",
+          "    buf_b[381]               EMUTOS14-RASTER.BIN = 0x18CC   RASTER.BIN          = 0xB118",
+          "    buf_b[382]               EMUTOS14-RASTER.BIN = 0xE40F   RASTER.BIN          = 0x2525",
+          "    buf_b[383]               EMUTOS14-RASTER.BIN = 0xE5EA   RASTER.BIN          = 0xC1DA",
+          "    buf_b[408]               EMUTOS14-RASTER.BIN = 0x7A2C   RASTER.BIN          = 0xAD22",
+          "    buf_b[409]               EMUTOS14-RASTER.BIN = 0x0602   RASTER.BIN          = 0x1F43",
+          "    buf_b[410]               EMUTOS14-RASTER.BIN = 0x66EE   RASTER.BIN          = 0x7579",
+          "    buf_b[411]               EMUTOS14-RASTER.BIN = 0x66DB   RASTER.BIN          = 0xEE02",
+          "    buf_b[412]               EMUTOS14-RASTER.BIN = 0x7ED3   RASTER.BIN          = 0x42EA",
+          "    buf_b[413]               EMUTOS14-RASTER.BIN = 0x983E   RASTER.BIN          = 0x4444",
+          "    buf_b[414]               EMUTOS14-RASTER.BIN = 0x61AC   RASTER.BIN          = 0x6E20",
+          "    buf_b[415]               EMUTOS14-RASTER.BIN = 0xBB0E   RASTER.BIN          = 0x144D",
+          "    buf_b[440]               EMUTOS14-RASTER.BIN = 0xFBF0   RASTER.BIN          = 0xCC81",
+          "    buf_b[441]               EMUTOS14-RASTER.BIN = 0xCA56   RASTER.BIN          = 0x88BF",
+          "    buf_b[442]               EMUTOS14-RASTER.BIN = 0xB7FA   RASTER.BIN          = 0xFD9C",
+          "    buf_b[443]               EMUTOS14-RASTER.BIN = 0x8E04   RASTER.BIN          = 0x81FB",
+          "    buf_b[444]               EMUTOS14-RASTER.BIN = 0xB05E   RASTER.BIN          = 0x44EE",
+          "    buf_b[445]               EMUTOS14-RASTER.BIN = 0x03D5   RASTER.BIN          = 0xFDF9",
+          "    buf_b[446]               EMUTOS14-RASTER.BIN = 0x57BD   RASTER.BIN          = 0x14BB",
+          "    buf_b[447]               EMUTOS14-RASTER.BIN = 0x5638   RASTER.BIN          = 0x63A1",
+          "    buf_b[472]               EMUTOS14-RASTER.BIN = 0xDA5C   RASTER.BIN          = 0x054E",
+          "    buf_b[473]               EMUTOS14-RASTER.BIN = 0x9DDC   RASTER.BIN          = 0x684B",
+          "    buf_b[474]               EMUTOS14-RASTER.BIN = 0x3E82   RASTER.BIN          = 0x3F7D",
+          "    buf_b[475]               EMUTOS14-RASTER.BIN = 0x13A9   RASTER.BIN          = 0x571C",
+          "    buf_b[476]               EMUTOS14-RASTER.BIN = 0x364F   RASTER.BIN          = 0x7CA5",
+          "    buf_b[477]               EMUTOS14-RASTER.BIN = 0x4393   RASTER.BIN          = 0x20F3",
+          "    buf_b[478]               EMUTOS14-RASTER.BIN = 0x4854   RASTER.BIN          = 0xC36B",
+          "    buf_b[479]               EMUTOS14-RASTER.BIN = 0xC1B7   RASTER.BIN          = 0x3A99",
+          "    buf_b[504]               EMUTOS14-RASTER.BIN = 0xB811   RASTER.BIN          = 0x8568",
+          "    buf_b[505]               EMUTOS14-RASTER.BIN = 0x9505   RASTER.BIN          = 0xD638",
+          "    buf_b[506]               EMUTOS14-RASTER.BIN = 0x70FC   RASTER.BIN          = 0xA674",
+          "    buf_b[507]               EMUTOS14-RASTER.BIN = 0x12DD   RASTER.BIN          = 0x83A6",
+          "    buf_b[508]               EMUTOS14-RASTER.BIN = 0x49E5   RASTER.BIN          = 0xE36D",
+          "    buf_b[509]               EMUTOS14-RASTER.BIN = 0x23D1   RASTER.BIN          = 0x05B9",
+          "    buf_b[510]               EMUTOS14-RASTER.BIN = 0xBD0B   RASTER.BIN          = 0x5FDD",
+          "    buf_b[511]               EMUTOS14-RASTER.BIN = 0xD0E7   RASTER.BIN          = 0x158E"
+        ]
+      },
+      "164": {
+        "head": "164  opcode 109  overlap, destination down and right",
+        "fields": [
+          "    contrl[6]              EMUTOS14-RASTER.BIN = 0x0002 (2)   RASTER.BIN          = 0x0004 (4)",
+          "    contrl_before[6]       EMUTOS14-RASTER.BIN = 0x0002 (2)   RASTER.BIN          = 0x0004 (4)"
+        ]
+      },
+      "165": {
+        "head": "165  opcode 109  overlap, destination up and left",
+        "fields": [
+          "    contrl[6]              EMUTOS14-RASTER.BIN = 0x0002 (2)   RASTER.BIN          = 0x0004 (4)",
+          "    contrl_before[6]       EMUTOS14-RASTER.BIN = 0x0002 (2)   RASTER.BIN          = 0x0004 (4)"
+        ]
+      },
+      "166": {
+        "head": "166  opcode 109  XOR inside one buffer, no overlap",
+        "fields": [
+          "    contrl[6]              EMUTOS14-RASTER.BIN = 0x0002 (2)   RASTER.BIN          = 0x0004 (4)",
+          "    contrl_before[6]       EMUTOS14-RASTER.BIN = 0x0002 (2)   RASTER.BIN          = 0x0004 (4)"
+        ]
+      },
+      "174": {
+        "head": "174  opcode 121  mode above bit 5 is invalid, no-op",
+        "fields": [
+          "    contrl[6]              EMUTOS14-RASTER.BIN = 0x0002 (2)   RASTER.BIN          = 0x0004 (4)",
+          "    contrl_before[6]       EMUTOS14-RASTER.BIN = 0x0002 (2)   RASTER.BIN          = 0x0004 (4)"
+        ]
+      },
+      "175": {
+        "head": "175  opcode 121  mode 0 is not an MD_ code, no-op",
+        "fields": [
+          "    contrl[6]              EMUTOS14-RASTER.BIN = 0x0002 (2)   RASTER.BIN          = 0x0004 (4)",
+          "    contrl_before[6]       EMUTOS14-RASTER.BIN = 0x0002 (2)   RASTER.BIN          = 0x0004 (4)"
+        ]
+      },
+      "176": {
+        "head": "176  opcode 121  mode 5 is not an MD_ code, no-op",
+        "fields": [
+          "    contrl[6]              EMUTOS14-RASTER.BIN = 0x0002 (2)   RASTER.BIN          = 0x0004 (4)",
+          "    contrl_before[6]       EMUTOS14-RASTER.BIN = 0x0002 (2)   RASTER.BIN          = 0x0004 (4)"
+        ]
+      },
+      "177": {
+        "head": "177  opcode 121  no intin at all: INTIN[0] is the poison",
+        "fields": [
+          "    contrl[6]              EMUTOS14-RASTER.BIN = 0x0002 (2)   RASTER.BIN          = 0x0004 (4)",
+          "    contrl_before[6]       EMUTOS14-RASTER.BIN = 0x0002 (2)   RASTER.BIN          = 0x0004 (4)"
+        ]
+      },
+      "178": {
+        "head": "178  opcode 121  PAT_FLAG|5 (0x15): stripped, still no MD_ code",
+        "fields": [
+          "    contrl[6]              EMUTOS14-RASTER.BIN = 0x0002 (2)   RASTER.BIN          = 0x0004 (4)",
+          "    contrl_before[6]       EMUTOS14-RASTER.BIN = 0x0002 (2)   RASTER.BIN          = 0x0004 (4)"
+        ]
+      },
+      "179": {
+        "head": "179  opcode 121  source is 4 planes, not mono: no-op",
+        "fields": [
+          "    contrl[6]              EMUTOS14-RASTER.BIN = 0x0002 (2)   RASTER.BIN          = 0x0004 (4)",
+          "    contrl_before[6]       EMUTOS14-RASTER.BIN = 0x0002 (2)   RASTER.BIN          = 0x0004 (4)"
+        ]
+      },
+      "180": {
+        "head": "180  opcode 121  source is 2 planes, not mono: no-op",
+        "fields": [
+          "    contrl[6]              EMUTOS14-RASTER.BIN = 0x0002 (2)   RASTER.BIN          = 0x0004 (4)",
+          "    contrl_before[6]       EMUTOS14-RASTER.BIN = 0x0002 (2)   RASTER.BIN          = 0x0004 (4)"
+        ]
+      },
+      "181": {
+        "head": "181  opcode 121  source is 8 planes, not mono: no-op",
+        "fields": [
+          "    contrl[6]              EMUTOS14-RASTER.BIN = 0x0002 (2)   RASTER.BIN          = 0x0004 (4)",
+          "    contrl_before[6]       EMUTOS14-RASTER.BIN = 0x0002 (2)   RASTER.BIN          = 0x0004 (4)"
+        ]
+      }
+    },
+    "summary": "59 of 59 cases differ"
+  }
+}

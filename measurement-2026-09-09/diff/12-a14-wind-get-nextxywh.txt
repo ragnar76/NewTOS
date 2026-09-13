@@ -1,0 +1,608 @@
+======================================================================
+12-a14-wind-get-nextxywh.txt -- TASK/A14, wind_get WF_NEXTXYWH
+======================================================================
+Erzeugt 2026-09-10. Nur lesende Auswertung der eingefrorenen Artefakte;
+keine eingefrorene Datei angefasst, keine .rs-Datei im Baum geaendert.
+
+Erzeugende Befehle
+------------------
+  $ ./tosdump/host/build/tosdiff --validate \
+        measurement-2026-09-09/run3-pi4-rlist/AES.BIN \
+        tosdump/cases/aes-r2b-rlist.tsv
+  $ ./tosdump/host/build/tosdiff --validate \
+        tosdump/reference/EMUTOS14-AES-r2brlist.BIN \
+        tosdump/cases/aes-r2b-rlist.tsv
+  $ shasum -a 256 <BIN/LOG/TSV, siehe unten>
+  $ python3 <eigener, rein lesender Recordleser im Scratch>      # Rohwoerter
+  $ python3 <eigener Byte-Vergleich je Record im Scratch>        # Feldliste
+  $ python3 <eigenes EmuTOS-Modell im Scratch: emusim.py>        # Soll
+  $ python3 <Variantenmodell im Scratch: variants.py>            # Ursachen
+  $ A14_PROFILE=tt cargo test -p tos-api --test zz_audit_a14_tmp \
+        -- --nocapture --test-threads=1
+  $ A14_PROFILE=pi cargo test -p tos-api --test zz_audit_a14_tmp \
+        -- --nocapture --test-threads=1
+        # temporaerer Testaufsatz, nach der Auswertung geloescht
+
+Quellen
+-------
+  EmuTOS gepinnt: references/emutos @ 1a7484aba1bfba23e2c0899e243b6d8177fe41df
+                  = git describe VERSION_1_4-71-g1a7484ab
+                  git diff --stat VERSION_1_4 1a7484ab -- aes/gemwmlib.c
+                  aes/gemwrect.c aes/gemsuper.c aes/gemgraf.c aes/gemobjop.c
+                  aes/gemlib.h util/rectfunc.c
+                  => aes/gemwmlib.c | 13 +++  (nur der WF_OWNER-Arm :1578-1590,
+                  Gegenstand von A05). Alles, was A14 braucht -- w_owns,
+                  wm_get-Kopf, w_getsize/WS_TRUE, newrect/mkrect/brkrct/mkpiece,
+                  everyobj, rc_intersect, die WINDOW-Struktur -- ist gegenueber
+                  der auf dem TT gemessenen 1.4 unveraendert.
+  Spezifikation:  docs/api/aes/window-graphics.md
+  Umsetzung:      tos-api/src/aes/window.rs, tos-api/src/aes/mod.rs
+
+Identitaet der Eingaben (selbst nachgerechnet)
+----------------------------------------------
+  a81a7a6cd5fc4b95cd88b969e573e24ac726ed24e747e409b83c8f57d5a2ea2a
+      tosdump/cases/aes-r2b-rlist.tsv
+  e0280b7de761d38228fbeb3dd3c1f898ff2485e35ddb3cc41fe91658396580d6
+      measurement-2026-09-09/run3-pi4-rlist/AES.BIN
+  9dd6c3a14d67d8350bf7417bc5c96dd87bdc4a27a0a335c6920d8bfd112dd69d
+      measurement-2026-09-09/run3-pi4-rlist/AES.LOG
+  e7ef0a275eccc95207673434a2e9a3fa150bf4c28d0ee4f79cbdb44055da0f72
+      tosdump/reference/EMUTOS14-AES-r2brlist.BIN
+  2a4b1b7cc24f5b0ac4a1b4678be2182c58d1afaa9af63f184793d71d9e2ac92e
+      tosdump/reference/EMUTOS14-AES-r2brlist.LOG
+
+  tosdiff --validate, beide BIN: area AES, 15 records of 120 bytes,
+  case CRC B4CC4A5A, accepted. build 70ca (Pi 4) bzw. c911 (TT).
+
+Fallzuordnung
+-------------
+  Fall-ID = physische Zeilennummer in der eingefrorenen Tabelle.
+  int_in[1] = 12 (WF_NEXTXYWH) und damit A14:  127, 133, 166, 174, 183,
+                                               204, 213   -- sieben Faelle
+  int_in[1] = 11 (WF_FIRSTXYWH), A13, erledigt: 122, 144, 159, 189, 201,
+                                               208, 226, 230
+  Jeder der sieben traegt laut Tabellenkopf (:35-50) einen FIRST-Vorlauf;
+  im Prelude-Block jedes Falles nachgeprueft, das stimmt fuer alle sieben.
+
+  Die Tabelle enthaelt KEINEN Fall, der zwei Fenster verschachtelt abfragt
+  (Abschnitt C misst 159/166/174/183 durchgehend auf Handle 1 und 189 als
+  einzelnen FIRST auf Handle 2). Der Iteratorcursor selbst ist damit
+  NICHT gemessen -- siehe D-A14-1 und die Messluecke unten.
+
+======================================================================
+1. ISTWERTE, feldweise, aus beiden BIN gelesen
+======================================================================
+
+Bytevergleich je Record: ausserhalb von global[] unterscheiden sich in
+allen sieben Faellen ausschliesslich int_out-Woerter. contrl[0..4],
+int_in[0..15], addr_in[0..2], addr_out, ret (= 0) und die 10 Reservebytes
+(= 0) sind byteweise gleich. int_out[0] (RET_CODE) ist auf beiden
+Maschinen 1. Alle sieben Faelle haben OUT_LEN 5, int_out[5] und [6]
+bleiben deshalb auf beiden Maschinen 0xDEAD = POISON.
+
+  Fall  int_out[0..4]  Pi 4 (70ca)              TT/EmuTOS 1.4 (c911)
+  ----  --------------------------------------  ------------------------
+  127   1,   0,   0,    0,   0                   1,  31,  63,   0,   0
+  133   1,   0,   0,    0,   0                   1,  31,  63,   0,   0
+  166   1,  31, 240,  296,  17                   1,  31,  80,  29, 162
+  174   1,  31,  80,   29, 160                   1, 262,  80,  65, 162
+  183   1, 260,  80,   67, 160                   1,  31, 242, 296,  15
+  204   1,   0,   0,    0,   0                   1,   0,  19,   0,   0
+  213   1,   0, 280, 1920, 800                   1,   0,  40,  30, 242
+        ^    ^    ^     ^    ^
+        ret  g_x  g_y   g_w  g_h
+
+  int_out[5], int_out[6]: POISON auf beiden Maschinen, in allen sieben.
+
+  Abweichende Felder je Fall (ohne global[]):
+    127  int_out[1], int_out[2]
+    133  int_out[1], int_out[2]
+    166  int_out[2], int_out[3], int_out[4]
+    174  int_out[1], int_out[3], int_out[4]
+    183  int_out[1], int_out[2], int_out[3], int_out[4]
+    204  int_out[2]
+    213  int_out[2], int_out[3], int_out[4]
+
+  global[] weicht in jedem Record an [2],[3],[4],[10],[11],[12] ab -- das
+  sind A06 bis A09, hier nicht bewertet.
+
+  Bezugsgroessen, auf beiden Maschinen GLEICH gemessen (also keine
+  Geraeteparameter):
+    Fenster 1 CURR 30,40,320,240   WORK 31,63,296,194   (Fall 122)
+    Fenster 2 CURR 60,80,200,160   WORK 61,103,176,114  (Fall 189)
+  Geraeteabhaengig sind nur die Desktopmasse:
+    Desktop WORK  TT 0,19,640,461  Pi 0,19,1920,1061    (Fall 201)
+
+======================================================================
+2. SOLL, aus der gepinnten EmuTOS-Quelle -- und am TT verifiziert
+======================================================================
+
+Der Pfad, Zeile fuer Zeile:
+
+  wm_get, FIRST/NEXT-Arm          aes/gemwmlib.c:1556-1562
+      w_getsize(WS_WORK, w_handle, &t);
+      po = (w_field == WF_FIRSTXYWH) ? pwin->w_rlist : pwin->w_rnext;
+      w_owns(pwin, po, &t, (GRECT *)poutwds);
+  w_owns                          aes/gemwmlib.c:1230-1241
+  Handlepflicht (default-Arm)     aes/gemwmlib.c:1521-1523, get_pwin :1391-1404
+  w_getsize / WS_TRUE + Schatten  aes/gemwmlib.c:254-262, DROP_SHADOW_SIZE 2 :49
+  newrect                         aes/gemwrect.c:165-205
+      :190  w_getsize(WS_TRUE, wh, &gl_mkrect.o_gr)   -- das BRECHENDE Rechteck
+      :198  everyobj(tree, ROOT, wh, mkrect, ...)
+      :203  w_getsize(WS_TRUE, wh, &new->o_gr)        -- das EIGENE Rechteck
+  mkrect / brkrct / mkpiece       aes/gemwrect.c:136-162 / :101-132 / :64-98
+      Reihenfolge TOP, LEFT, RIGHT, BOTTOM             :30-33 und Schleife :118-122
+  everyobj                        aes/gemobjop.c:76-120  (ROOT, dann ob_head..
+      ob_tail = unten..oben; gl_wtop = W_TREE[ROOT].ob_tail, gemwmlib.c:1093)
+  rc_intersect                    util/rectfunc.c:63-78
+  w_rnext liegt PRO FENSTER       aes/gemlib.h:85  (Feld der WINDOW-Struktur)
+  gl_rscreen / gl_rfull           aes/gemgraf.c:423-424
+  Dispatcher-Kopierpfad xif       aes/gemsuper.c:342-344, :428-448
+      (OUT_LEN Woerter zurueck, RET_CODE == int_out[0], aesdefs.h:140)
+
+Dieser Pfad wurde als Modell nachgebaut (Scratch, emusim.py) und GEGEN DIE
+TT-MESSUNG geprueft. Er trifft ALLE zwoelf Faelle der eingefrorenen Tabelle,
+die er ueberhaupt modelliert, exakt:
+
+  Fall 122 FIRST  (31,63,296,194)   = TT
+  Fall 127 NEXT   (31,63,0,0)       = TT
+  Fall 133 NEXT   (31,63,0,0)       = TT
+  Fall 159 FIRST  (31,63,296,17)    = TT
+  Fall 166 NEXT   (31,80,29,162)    = TT
+  Fall 174 NEXT   (262,80,65,162)   = TT
+  Fall 183 NEXT   (31,242,296,15)   = TT
+  Fall 189 FIRST  (61,103,176,114)  = TT
+  Fall 201 FIRST  (0,19,640,461)    = TT
+  Fall 204 NEXT   (0,19,0,0)        = TT
+  Fall 208 FIRST  (0,19,640,21)     = TT
+  Fall 213 NEXT   (0,40,30,242)     = TT
+
+(144 modelliert es nicht -- erzeugtes, nie geoeffnetes Fenster; 226/230 sind
+OUT_LEN-Varianten von 122.)
+
+Dasselbe Modell mit dem Pi-Profil 1920x1080, gl_hbox 19 -- das SOLL fuer die
+gemessene Maschine:
+
+  Fall  Soll (EmuTOS-Pfad, Pi-Profil)   geraeteabhaengig?
+  ----  ------------------------------  -----------------------------------
+  127   1, 31,  63,   0,   0            nein (Fenstergeometrie)
+  133   1, 31,  63,   0,   0            nein
+  166   1, 31,  80,  29, 162            nein
+  174   1, 262, 80,  65, 162            nein
+  183   1, 31, 242, 296,  15            nein
+  204   1,  0,  19,   0,   0            g_y = gl_hbox (Menuezeile, A20)
+  213   1,  0,  40,  30, 242            nein
+
+  Bemerkenswert und ausdruecklich geprueft: 166, 174, 183 und 213 haengen
+  NICHT von der Bildschirmgroesse ab. Fuer 166/174/183 liegen alle Kanten in
+  der Arbeitsflaeche von Fenster 1, die auf beiden Maschinen gleich gemessen
+  wurde. Fuer 213 ist das LEFT-Stueck durch x=0, w=30-0, y=40, h=242 allein
+  aus der Geometrie von Fenster 1 bestimmt; im Modell liefert das Pi-Profil
+  denselben Wert wie das TT-Profil. Das Soll fuer den Pi ist also nicht
+  "TT-Wert plus Geraeteumrechnung", sondern der TT-Wert selbst.
+
+  Bei 204 ist nur g_x/g_y betroffen (0,19) -- das ist der Rest des letzten
+  rc_copy und damit der Gegenstand von A15, nicht von A14. g_w/g_h = 0,0
+  stimmt auf beiden Maschinen ueberein.
+
+======================================================================
+3. EINORDNUNG JE FALL
+======================================================================
+
+  127  GLEICH im A14-Teil, ABWEICHEND im A15-Teil.
+       g_w/g_h = 0,0 auf beiden -- das Listenende wird erkannt, der
+       Iterator steht nach genau einem Stueck am Ende. Das ist der Teil,
+       den A14 abnimmt: er stimmt.
+       g_x/g_y: TT 31,63 (Rest des letzten rc_copy, w_owns schreibt am
+       Listenende nur g_w und g_h, gemwmlib.c:1240), Pi 0,0. Das ist
+       A15 ("geschriebene Felder am Listenende"). NICHT hier bewertet.
+
+  133  wie 127. Zusaetzlich belegt: ein zweiter NEXT hinter dem Ende
+       aendert nichts -- beide Maschinen liefern denselben Wert wie 127.
+       Der Iterator laeuft am Ende nicht weiter und nicht zurueck.
+
+  166  ABWEICHEND. Pi liefert das BOTTOM-Stueck ohne Schatten
+       (31,240,296,17), Soll ist das LEFT-Stueck mit Schatten
+       (31,80,29,162).
+  174  ABWEICHEND. Pi LEFT ohne Schatten (31,80,29,160), Soll RIGHT mit
+       Schatten (262,80,65,162).
+  183  ABWEICHEND. Pi RIGHT ohne Schatten (260,80,67,160), Soll BOTTOM
+       mit Schatten (31,242,296,15).
+  213  ABWEICHEND. Pi BOTTOM ohne Schatten (0,280,1920,800), Soll LEFT
+       (0,40,30,242).
+
+  204  GLEICH im A14-Teil (g_w/g_h = 0,0 auf beiden), ABWEICHEND im
+       A15-Teil (g_y 19 gegen 0). Der Desktop-Iterator erkennt sein
+       Listenende. A15.
+
+  Die vier abweichenden Faelle sind 166, 174, 183, 213. Sie bestaetigen
+  die Vermutung aus dem A13-Lauf.
+
+======================================================================
+4. URSACHENTRENNUNG -- nicht behauptet, mechanisch getrennt
+======================================================================
+
+Vier Modelle derselben Zerlegung, gerechnet in variants.py:
+
+  E     EmuTOS wie geschrieben:  Reihenfolge TOP,LEFT,RIGHT,BOTTOM;
+                                 eigenes und brechendes Rechteck = WS_TRUE
+  N     NewTOS wie geschrieben:  Reihenfolge TOP,BOTTOM,LEFT,RIGHT;
+                                 eigenes und brechendes Rechteck = WS_CURR
+  N+O   NewTOS, NUR Reihenfolge korrigiert
+  N+S   NewTOS, NUR Schatten korrigiert
+  N+S*  NewTOS, Schatten NUR am brechenden Rechteck korrigiert
+  N+O+S beides korrigiert
+
+Ergebnis fuer Fenster 1 unter Fenster 2, Pi-Profil (Fall 159/166/174/183):
+
+  E      159=(31,63,296,17) 166=(31,80,29,162) 174=(262,80,65,162) 183=(31,242,296,15)
+  N      159=(31,63,296,17) 166=(31,240,296,17) 174=(31,80,29,160) 183=(260,80,67,160)
+  N+O    159=(31,63,296,17) 166=(31,80,29,160) 174=(260,80,67,160) 183=(31,240,296,17)
+  N+S    159=(31,63,296,17) 166=(31,242,296,15) 174=(31,80,29,162) 183=(262,80,65,162)
+  N+S*   identisch mit N+S
+  N+O+S  identisch mit E
+
+und fuer den Desktop mit Fenster 1 offen, Pi-Profil (Fall 208/213):
+
+  E      208=(0,19,1920,21) 213=(0,40,30,242)  +1=(352,40,1568,242) +2=(0,282,1920,798)
+  N      208=(0,19,1920,21) 213=(0,280,1920,800) +1=(0,40,30,240)   +2=(350,40,1570,240)
+  N+O    208=(0,19,1920,21) 213=(0,40,30,240)
+  N+S    208=(0,19,1920,21) 213=(0,282,1920,798)
+  N+O+S  identisch mit E
+
+Vier Aussagen folgen daraus, und keine davon ist geraten:
+
+  (a) Modell N trifft die REALE Pi-Messung in 166/174/183/213 exakt, Modell
+      E die REALE TT-Messung. Beide Modelle sind an Hardware geeicht.
+  (b) N+O+S ist auf beiden Profilen Wert fuer Wert gleich E. Es gibt also
+      neben Reihenfolge und Schatten KEINE dritte Ursache in diesen vier
+      Faellen.
+  (c) Weder N+O noch N+S allein trifft E. Die beiden Fehler gleichen
+      einander NICHT aus, aber sie heben sich auch nicht gegenseitig auf --
+      ein einzelner Fix laesst jeden der vier Faelle abweichend.
+  (d) N+S* ist Wert fuer Wert gleich N+S. Der fehlende Schatten am EIGENEN
+      Rechteck (window.rs:607) ist durch WF_FIRST/NEXTXYWH nicht sichtbar,
+      weil w_owns jedes Stueck mit WS_WORK schneidet und WS_WORK immer
+      innerhalb von WS_CURR liegt. Das ist gerechnet, nicht behauptet.
+
+Damit sind 166, 174, 183 und 213 vollstaendig auf die beiden im A13-Lauf
+schon benannten Defekte zurueckgefuehrt:
+
+  D-A13-2  Zerlegungsreihenfolge TOP,BOTTOM,LEFT,RIGHT statt
+           TOP,LEFT,RIGHT,BOTTOM
+           tos-api/src/aes/window.rs:1084-1097 gegen aes/gemwrect.c:30-33
+           und die Schleife :118-122
+  D-A13-3  Das brechende Rechteck ist WS_CURR statt WS_TRUE, also ohne
+           DROP_SHADOW_SIZE = 2
+           tos-api/src/aes/window.rs:611 gegen aes/gemwrect.c:190 mit
+           aes/gemwmlib.c:254-262 und :49
+
+A14 rollt sie nicht neu auf. Sie werden hier nur als Ursache der vier
+NEXT-Abweichungen belegt und in die Kompensationspruefung (Abschnitt 6)
+aufgenommen.
+
+Nebenrechnung zur Flaechenbilanz, weil "dieselbe Stueckmenge" im Soll
+steht (window-graphics.md:354-358): unsere vier Stuecke bedecken in der
+Arbeitsflaeche von Fenster 1 zusammen 25424 Pixel, die von EmuTOS 24700.
+Die Differenz von 724 ist genau der Schattenstreifen von Fenster 2
+(2 x 162 rechts + 200 x 2 unten = 324 + 400). Wir melden also 724 Pixel
+als sichtbar, die EmuTOS als verdeckt meldet. Innerhalb des jeweils
+eigenen Modells sind beide Zerlegungen disjunkt und vollstaendig -- das
+ist nachgerechnet. Die von A14 abzunehmende Eigenschaft "disjunkte
+sichtbare Flaechen" ist also erfuellt; die Flaeche selbst ist es nicht.
+
+======================================================================
+5. D-A14-1 -- DER EIGENTLICHE A14-BEFUND: der Cursor ist global
+======================================================================
+
+Quelle. w_rnext ist ein Feld der WINDOW-Struktur, aes/gemlib.h:85:
+
+      ORECT *w_rlist;             /* owner rectangle list */
+      ORECT *w_rnext;             /* used for search first, search next */
+
+Es gibt also einen Cursor PRO FENSTER. wm_get holt pwin = get_pwin(
+w_handle) (gemwmlib.c:1513) und waehlt dann pwin->w_rlist bzw.
+pwin->w_rnext (:1559); w_owns schreibt pwin->w_rnext (:1235). Eine
+Abfrage auf Fenster B beruehrt den Cursor von Fenster A nicht.
+
+Die Spezifikation sagt dasselbe, richtig und ausdruecklich:
+docs/api/aes/window-graphics.md:335-337 -- "`WF_NEXTXYWH` continues from
+the saved cursor `pwin->w_rnext`".
+
+Umsetzung. tos-api/src/aes/window.rs:1054-1064 haelt EINEN statischen
+RLIST { rects, count, cursor } fuer die gesamte AES. wind_get ruft
+compute_rlist(handle) nur im FIRST-Arm (:2000-2002) und danach
+rlist_next() (:2003) -- rlist_next nimmt kein Handle entgegen
+(:1142-1155). Der Cursor ist damit global und der NEXT-Arm liest das
+Handle ueberhaupt nicht.
+
+Gefahren, Hostlauf, beide Profile, identisches Ergebnis:
+
+  FIRST(1)  ->  1, 31, 63, 296, 17     (TOP-Stueck von Fenster 1)
+  FIRST(2)  ->  1, 61, 103, 176, 114   (setzt den globalen Cursor um)
+  NEXT(1)   ->  1, 0, 0, 0, 0          <-- Listenende gemeldet
+  NEXT(1)   ->  1, 0, 0, 0, 0
+  NEXT(1)   ->  1, 0, 0, 0, 0
+
+  Soll nach EmuTOS: NEXT(1) muesste (31,80,29,162) liefern, dann
+  (262,80,65,162), dann (31,242,296,15).
+
+  Und in der anderen Richtung:
+  FIRST(1) -> (31,63,296,17); NEXT(1) -> (31,240,296,17);
+  FIRST(2) -> (61,103,176,114); NEXT(2) -> (0,0,0,0);
+  NEXT(1)  -> (0,0,0,0)                <-- Fenster 1 hat noch zwei Stuecke
+
+Schadensbild. Ein Programm, das nach dem im Soll beschriebenen Idiom
+(window-graphics.md:342-346) zwei Fenster in einem Durchgang neu zeichnet
+-- oder dessen Schleife von einem Accessory unterbrochen wird, das
+seinerseits WF_FIRSTXYWH stellt -- bekommt fuer das erste Fenster nach dem
+ersten Stueck sofort das Listenende gemeldet und laesst drei Viertel
+seiner Arbeitsflaeche stehen. Genau der Befund, den ein GEM-Programm als
+"Fenster bleibt halb leer" zeigt.
+
+Verdikt: CONFIRMED, quellen- UND spezifikationswidrig. Gefahren wurde er
+im Hostlauf; eine MESSUNG existiert dafuer nicht, weil die eingefrorene
+Tabelle keinen verschachtelten Fall enthaelt. Er ist damit quellenbelegt,
+nicht messbelegt.
+
+======================================================================
+6. D-A14-2 -- NEXT prueft sein Handle nicht
+======================================================================
+
+Dieselbe Codestelle, andere Wirkung. Weil rlist_next() kein Handle nimmt,
+antwortet NEXT auf jedes Handle aus der Liste des zuletzt per FIRST
+abgefragten Fensters -- auch auf ein Handle, das es nicht gibt.
+
+Gefahren, Hostlauf, beide Profile, nach FIRST(1) und zwei NEXT(1):
+
+  NEXT(7)   -> 1, 31, 80, 29, 160     Handle 7 existiert nicht
+  NEXT(-1)  -> 1, 260, 80, 67, 160    negatives Handle
+  NEXT(99)  -> 1, 0, 0, 0, 0          jenseits der Tabelle
+  FIRST(7)  -> 1, 0, 0, 0, 0          (der schon aus A13 bekannte Fall)
+
+  Soll: get_pwin liefert fuer ein negatives, ein zu grosses oder ein nicht
+  benutztes Handle NULL (gemwmlib.c:1395-1401); WF_NEXTXYWH faellt in den
+  default-Arm der ersten switch und wm_get liefert FALSE (:1521-1523).
+  int_out[0] muss also 0 sein und int_out[1..4] unberuehrt bleiben.
+
+Das ist die NEXT-Haelfte von D-A13-1 (A13 hat sie fuer FIRST belegt); der
+Ort ist derselbe, window.rs:1999-2010 steht vor jeder Handlepruefung. Neu
+gegenueber A13 ist, dass NEXT sein Handle auch dann nicht liest, wenn es
+gueltig ist -- das ist D-A14-1.
+
+Verdikt: CONFIRMED, quellenwidrig. Nicht messbelegt (kein TT-Record fuer
+ungueltige Handles in dieser Tabelle).
+
+======================================================================
+7. Was zusaetzlich gefahren wurde und GLEICH ist
+======================================================================
+
+  * Rueckgabewert am Listenende. Beide Maschinen liefern int_out[0] = 1
+    (TRUE), nicht FALSE. wm_get faellt nach dem FIRST/NEXT-Arm auf
+    "return TRUE" durch (gemwmlib.c:1598); w_owns hat keinen Fehlerausgang.
+    Gemessen in 127, 133, 204. GLEICH.
+  * Kein Weiterlaufen hinter dem Ende (Fall 133): der zweite und dritte
+    NEXT liefern denselben Wert wie der erste. Auf beiden Maschinen.
+  * OUT_LEN-Klammer auf einem NEXT, das am Listenende steht. Gefahren mit
+    OUT_LEN 0,1,2,3,5,7:
+        0 -> nichts geschrieben, alles POISON
+        1 -> nur int_out[0]
+        2 -> int_out[0..1]
+        3 -> int_out[0..2]
+        5 -> int_out[0..4]
+        7 -> int_out[0..6], die beiden letzten 0
+    Das ist xif's Kopie von genau OUT_LEN Woertern (gemsuper.c:430-432,
+    :443-444) einschliesslich RET_CODE = int_out[0] (aesdefs.h:140).
+    Fuer FIRST hat A13 dasselbe an den Faellen 226 und 230 gemessen; fuer
+    NEXT ist es hier nur quellenbelegt.
+  * Stueckzahl. Beide Maschinen liefern in Abschnitt C genau vier Stuecke
+    und melden beim fuenften Aufruf das Ende. Modell E und Modell N sind
+    sich darin einig; die Zahl steht bei 166/174/183 implizit in der
+    Messung (der vierte Aufruf liefert noch ein Stueck).
+
+======================================================================
+8. Was NICHT geprueft werden konnte -- Messluecken, ausdruecklich
+======================================================================
+
+  L1  Verschachtelte Iteration ueber zwei Fenster. Die eingefrorene
+      Tabelle hat keinen solchen Fall (Abschnitt C misst durchgehend
+      Handle 1, Abschnitt D durchgehend Handle 0). D-A14-1 ist deshalb
+      quellenbelegt und hostgefahren, aber nicht messbelegt. Eine echte
+      Gegenmessung braucht eine NEUE Falltabelle mit der Folge
+      FIRST(1), FIRST(2), NEXT(1). Ich habe keine angelegt.
+  L2  NEXT auf einem Fenster ohne vorangehendes FIRST. Der Tabellenkopf
+      (:35-50) verbietet das mit Grund: w_setup initialisiert w_rnext
+      nicht (gemwmlib.c:205-228), das Feld zeigt auf einen an rul
+      zurueckgegebenen ORECT. EmuTOS hat dort KEIN definiertes Verhalten,
+      also gibt es dafuer auch kein Soll. Unser Verhalten (Antwort aus der
+      Liste eines anderen Fensters) ist ein Symptom von D-A14-1, kein
+      eigener Vergleich.
+  L3  NEXT ueber eine Geometrieaenderung hinweg. Gefahren: FIRST(1),
+      wind_close(2), NEXT(1) liefert bei uns weiter den beim FIRST
+      genommenen Schnappschuss (31,240,296,17). EmuTOS wuerde newrect die
+      ORECTs zurueckgeben lassen (gemwrect.c:177-181) und dann ueber
+      w_rnext in die Freiliste zeigen -- undefiniert. Kein Soll, kein
+      Vergleich, KEIN Defektbefund. Nur festgehalten.
+  L4  Drei und mehr ueberlappende Fenster. Unsere Reihenfolge der
+      brechenden Fenster ist die Handle-Reihenfolge (window.rs:609-613),
+      EmuTOS' die Baumreihenfolge unten->oben (gemwrect.c:198 mit
+      everyobj). Bei genau einem brechenden Fenster ist das gleich; ab
+      zwei nicht notwendig. Nicht verfolgt -- dafuer existiert bereits
+      TASK/A22.
+  L5  Reale Gegenmessung fuer alles in Abschnitt 5, 6 und 7, das nicht in
+      der Tabelle steht. Der Hostlauf mit dem Pi-Profil reproduziert alle
+      sieben gemessenen NEXT-Faelle Wort fuer Wort; das macht den Harness
+      glaubwuerdig, ersetzt aber keine Messung fuer NEUE Eingaben.
+
+======================================================================
+9. Kompensationspruefung fuer A23
+======================================================================
+
+Zwei Groessen sind betroffen. Fuer jede: wo sie erzeugt und wo sie gelesen
+wird, und ob eine Stelle den Fehler ausgleicht.
+
+GROESSE 1 -- der Cursor des Rechtecklisten-Iterators.
+  Erzeugt/geschrieben:
+    tos-api/src/aes/window.rs:1134  compute_rlist setzt *cursor = 0
+    tos-api/src/aes/window.rs:1149  rlist_next erhoeht *cursor
+  Gelesen:
+    tos-api/src/aes/window.rs:1147  rlist_next
+  Aufrufer: NUR wind_get, window.rs:2000-2003. Nachgeschlagen: RLIST
+    steht in window.rs an genau fuenf Codezeilen -- :1060 (Definition),
+    :1132 (compute_rlist), :1145, :1146, :1148 (rlist_next); alle
+    weiteren Treffer (:590, :1126, :1141, :1187) sind Doc-Kommentare.
+    compute_rlist wird ausschliesslich an :2001 gerufen, rlist_next
+    ausschliesslich an :2003. visible_bound (:1188) geht ueber
+    work_rects und beruehrt den Cursor NICHT.
+  Ausgleich: KEINER. Es gibt keine zweite Stelle, die den Cursor pro
+    Fenster nachfuehren wuerde. Ein Fix, der den Cursor (und die Liste)
+    in die Window-Struktur legt, kann daher keine andere Stelle brechen,
+    solange die alte Liste vollstaendig entfaellt.
+
+GROESSE 2 -- das brechende Rechteck, mit oder ohne DROP_SHADOW_SIZE.
+  In EmuTOS wird der Schatten an SECHS Stellen aufgeschlagen:
+    aes/gemwmlib.c:257-261  w_getsize(WS_TRUE)  -- speist newrect
+    aes/gemwmlib.c:373-374  w_cpwalk, Clip ohne WS_TRUE
+    aes/gemwmlib.c:946-947  w_move, Quellrechteck
+    aes/gemwmlib.c:1153-1154 draw_change, Aktualisierungsrechteck beim Move
+    aes/gemwmlib.c:1214-1215 draw_change, Aktualisierungsrechteck generell
+    und indirekt gemwrect.c:190 und :203 ueber w_getsize(WS_TRUE)
+  In NewTOS existiert DROP_SHADOW_SIZE ueberhaupt nicht: grep ueber
+    tos-api/src/aes/ findet keinen Treffer. Die entsprechenden Stellen:
+    window.rs:607   out[0] = rect          -- eigenes Rechteck, ohne Schatten
+    window.rs:611   subtract(.., ow.curr)  -- brechendes Rechteck, ohne
+    window.rs:577   Ueberdeckungstest mit ow.curr, ohne
+  Gelesen wird border_pieces von DREI Seiten -- alle drei nachgeschlagen:
+    window.rs:646   walk_rects   -> die Cliprechtecke beim ZEICHNEN
+    window.rs:1115  work_rects   -> davon wiederum zwei Verbraucher:
+      window.rs:1136  compute_rlist -> wind_get WF_FIRST/NEXTXYWH (A13/A14)
+      window.rs:1190  visible_bound -> send_redraw_in (:1205) ->
+                      broadcast_redraw (:1223) -> die Rechtecke IN DEN
+                      WM_REDRAW-Nachrichten, die andere Fenster bekommen
+    (visible_bound benutzt work_rects, NICHT RLIST -- der Iteratorzustand
+     bleibt davon unberuehrt, window.rs:1186-1190. Fuer Groesse 1 aendert
+     das nichts, fuer Groesse 2 ist es der dritte Leser.)
+  Ausgleich: KEINER, und das ist der Punkt fuer A23. Weil NewTOS den
+    Schatten nirgends aufschlaegt, ist der Zustand heute in sich
+    konsistent: die Fenster zeichnen keinen Schlagschatten (draw_frame,
+    window.rs:1382-1387, malt ausschliesslich innerhalb w.curr), und die
+    Stueckliste laesst folgerichtig auch keinen Platz dafuer.
+    Wird D-A13-3 NUR an window.rs:611 repariert, schrumpfen die Stuecke
+    der darunterliegenden Fenster und des Desktops um 2 Pixel rechts und
+    unten an jedem Fenster -- und zwar in ALLEN DREI Lesern gleichzeitig:
+    im Zeichenclip (walk_rects), in der Antwort von wind_get und in den
+    WM_REDRAW-Rechtecken (visible_bound). Diese 2 Pixel malt dann NIEMAND
+    mehr: der Desktop nicht (nicht mehr in seiner Liste), das Fenster
+    nicht (draw_frame, window.rs:1382-1387, malt ausschliesslich
+    innerhalb w.curr und keinen Schlagschatten), und die Anwendung nicht
+    (ihr WM_REDRAW deckt sie nicht mehr ab). Ergebnis waere ein 2 Pixel
+    breiter Streifen alter Pixel an jedem Fensterrand. Das ist der von
+    A23 gesuchte Fall "lokaler Fix erzeugt neuen Fehler", konkret benannt.
+    Der Fix muss deshalb entweder (a) den Schlagschatten mitzeichnen, wie
+    EmuTOS ihn zeichnet, oder (b) zusammen mit den Aktualisierungs-
+    rechtecken angefasst werden, oder (c) bewusst unterbleiben.
+    window.rs:607 dagegen ist nachweislich (Abschnitt 4d) durch
+    WF_FIRST/NEXTXYWH nicht beobachtbar, weil WS_WORK immer innerhalb
+    WS_CURR liegt; ueber walk_rects habe ich das NICHT gefahren.
+  Ausserdem: die Reihenfolge (D-A13-2) wird an genau EINER Stelle
+    erzeugt, window.rs:1084-1097 in subtract, und von denselben drei
+    Lesern benutzt. walk_rects ist gegen die Reihenfolge unempfindlich
+    (es zeichnet in jedes Stueck), visible_bound ebenfalls (es vereinigt
+    alle Stuecke), wind_get ist es nicht. Ein Reihenfolgen-Fix kann daher
+    nur wind_get aendern -- er ist der risikoaermere der beiden und
+    braucht keine Kompensation.
+
+======================================================================
+10. Benannte minimale Fixes -- NICHT umgesetzt
+======================================================================
+
+F4 (D-A14-1, der A14-eigene Defekt)
+  Den Iterator pro Fenster halten, wie EmuTOS ihn haelt.
+  tos-api/src/aes/window.rs:1054-1064: den statischen RLIST entfernen und
+  die drei Felder (rects, count, cursor) in die Window-Struktur legen --
+  das Gegenstueck zu w_rlist/w_rnext in aes/gemlib.h:84-85.
+  tos-api/src/aes/window.rs:1129-1139: compute_rlist(handle) schreibt in
+  den Slot von handle.
+  tos-api/src/aes/window.rs:1142-1155: rlist_next(handle) liest und
+  erhoeht den Cursor DIESES Slots.
+  tos-api/src/aes/window.rs:2003: rlist_next(handle).
+  Kein weiterer Aufrufer ist betroffen (Abschnitt 9, Groesse 1).
+
+F5 (D-A14-2 / NEXT-Haelfte von D-A13-1)
+  tos-api/src/aes/window.rs:1999: den FIRST/NEXT-Arm HINTER die
+  Handlepruefung ziehen, also erst win(handle) (window.rs:1236-1242,
+  unser get_pwin) und bei None int_out[0] = 0 und sonst nichts schreiben
+  -- gemwmlib.c:1521-1523 mit :1591-1592. Das ist derselbe Eingriff, den
+  A13 als F1 fuer FIRST benannt hat; ein gemeinsamer Fix genuegt.
+
+Regressionstests
+
+  R3  wind_get-Iterator, zwei Fenster verschachtelt.
+      Aufbau wie Abschnitt C der eingefrorenen Tabelle: wind_create/
+      wind_open 1 bei 30,40,320,240 und 2 bei 60,80,200,160.
+      Folge und Erwartung (EmuTOS-Soll, geraeteunabhaengig):
+        FIRST(1) = 1, 31,  63, 296,  17
+        FIRST(2) = 1, 61, 103, 176, 114
+        NEXT(1)  = 1, 31,  80,  29, 162
+        NEXT(1)  = 1, 262, 80,  65, 162
+        NEXT(1)  = 1, 31, 242, 296,  15
+        NEXT(1)  = 1,  ?,   ?,   0,   0   (nur g_w/g_h gepruefte 0; g_x/g_y
+                                           gehoert A15 und bleibt hier offen)
+        NEXT(2)  = 1,  ?,   ?,   0,   0
+      Der Test schlaegt heute an der dritten Zeile fehl. ACHTUNG: die
+      Werte 162/262/65/242/15 setzen F2 und F3 aus A13 voraus. Ohne die
+      lauten die drei mittleren Zeilen (31,80,29,160), (260,80,67,160),
+      (31,240,296,17) -- der Test muss deshalb entweder NACH A13/F2/F3
+      gruen werden oder zunaechst nur die REIHENFOLGE der Stuecke pruefen
+      (also: NEXT(1) liefert nicht das Listenende). Ich empfehle die
+      zweite Form, weil sie F4 isoliert prueft, und die erste Form nach
+      dem A23-Durchgang.
+  R4  wind_get(WF_NEXTXYWH) auf ungueltigem Handle.
+      Nach einem gueltigen FIRST(1): NEXT(-1), NEXT(7), NEXT(99) liefern
+      int_out[0] = 0 und lassen int_out[1..4] unveraendert. Schlaegt
+      heute fehl (int_out[0] = 1 und ein fremdes Rechteck).
+
+Beide Tests gehoeren nach tos-api/tests/; einen Testfall fuer diese
+Tabelle gibt es dort bisher nicht (grep FIRSTXYWH/NEXTXYWH in
+tos-api/tests: kein Treffer).
+
+======================================================================
+11. Spezifikationslage
+======================================================================
+
+  RICHTIG und ausreichend fuer D-A14-1:
+    window-graphics.md:335-337 nennt pwin->w_rnext als Cursor pro Fenster.
+  RICHTIG, aber im naechsten Absatz wieder aufgehoben:
+    :347-352 nennt sowohl das "true rect" des hoeheren Fensters als auch
+    die Reihenfolge TOP/LEFT/RIGHT/BOTTOM -- also genau das Soll von
+    D-A13-2 und D-A13-3. :354-358 erklaert beides dann zur blossen
+    Referenz und gibt die Zerlegung frei. Dieser Widerspruch ist bereits
+    als TASK/A18 erfasst; ich lege keinen neuen an. Anzumerken bleibt:
+    selbst die freigebende Lesart verlangt "the same set of pieces", und
+    die Flaechenbilanz in Abschnitt 4 zeigt, dass unsere Stueckmenge um
+    724 Pixel groesser ist -- D-A13-3 ist also auch unter der Freigabe
+    eine Abweichung.
+  UNVOLLSTAENDIG, zu A15 gehoerig:
+    :341 und :848-851 sagen "returns a rect with w=h=0" und verschweigen,
+    dass w_owns am Listenende NUR zwei Woerter schreibt. A13 hat das
+    bereits gemeldet.
+
+======================================================================
+12. Ergebnis
+======================================================================
+
+  Sieben NEXT-Faelle ausgewertet.
+  Drei (127, 133, 204) sind im A14-Teil GLEICH: das Listenende wird auf
+  beiden Maschinen erkannt und mit g_w = g_h = 0 gemeldet, der Iterator
+  steht nach der richtigen Zahl von Stuecken. Ihre Abweichung liegt
+  ausschliesslich in g_x/g_y und gehoert A15.
+  Vier (166, 174, 183, 213) weichen ab und sind vollstaendig und
+  mechanisch auf D-A13-2 und D-A13-3 zurueckgefuehrt -- keine dritte
+  Ursache, kein Geraeteparameter, und keiner der beiden Fehler gleicht
+  den anderen aus.
+  Der A14-eigene Befund ist NICHT in diesen sieben Faellen, sondern in
+  der Messluecke daneben: D-A14-1, der globale Cursor, und D-A14-2, das
+  ungeprueft gelassene Handle. Beide CONFIRMED gegen die Quelle und im
+  Hostlauf gefahren, beide ohne TT-Record.
+
+  A14 ist ohne Codeaenderung NICHT schliessbar -> UNFINISHED.

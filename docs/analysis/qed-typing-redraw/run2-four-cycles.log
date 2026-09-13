@@ -1,0 +1,57 @@
+AES    op=25  evnt_multi   -> 1
+    evnt_multi: fired=0x0001 mx=200 my=206 btn=0x0 ks=0x0 key=0x1e61 clicks=0
+    *** keystroke -- this cycle is the one being hunted ***
+AES    op=78  graf_mouse   -> 1
+AES    op=107 wind_update  -> 1
+AES    op=104 wind_get     -> 1
+    wind_get: handle=1 field=11 -> (24,61,640,944)
+VDI    op=129 vs_clip     
+    vs_clip flag=1 rect=(32,61)-(34,78)
+VDI    op=32  vswr_mode   
+    vswr_mode -> 3 (out 3)
+VDI    op=114 vr_recfl    
+    vr_recfl rect=(32,61)-(34,78)
+VDI    op=32  vswr_mode   
+    vswr_mode -> 2 (out 2)
+AES    op=104 wind_get     -> 1
+    wind_get: handle=1 field=12 -> (0,0,0,0)
+AES    op=107 wind_update  -> 1
+--- cycle boundary (3 more kept) ---
+AES    op=25  evnt_multi   -> 32
+    evnt_multi: fired=0x0020 mx=200 my=206 btn=0x0 ks=0x0 key=0x0000 clicks=0
+AES    op=32  ?            -> 1
+AES    op=32  ?            -> 1
+--- cycle boundary (2 more kept) ---
+AES    op=25  evnt_multi   -> 32
+    evnt_multi: fired=0x0020 mx=200 my=206 btn=0x0 ks=0x0 key=0x0000 clicks=0
+AES    op=107 wind_update  -> 1
+AES    op=104 wind_get     -> 1
+    wind_get: handle=1 field=11 -> (24,61,640,944)
+VDI    op=129 vs_clip     
+    vs_clip flag=1 rect=(32,61)-(34,78)
+VDI    op=32  vswr_mode   
+    vswr_mode -> 3 (out 3)
+VDI    op=114 vr_recfl    
+    vr_recfl rect=(32,61)-(34,78)
+VDI    op=32  vswr_mode   
+    vswr_mode -> 2 (out 2)
+AES    op=104 wind_get     -> 1
+    wind_get: handle=1 field=12 -> (0,0,0,0)
+AES    op=107 wind_update  -> 1
+--- cycle boundary (1 more kept) ---
+AES    op=25  evnt_multi   -> 32
+    evnt_multi: fired=0x0020 mx=200 my=206 btn=0x0 ks=0x0 key=0x0000 clicks=0
+AES    op=107 wind_update  -> 1
+AES    op=104 wind_get     -> 1
+    wind_get: handle=1 field=11 -> (24,61,640,944)
+VDI    op=129 vs_clip     
+    vs_clip flag=1 rect=(32,61)-(34,78)
+VDI    op=32  vswr_mode   
+    vswr_mode -> 3 (out 3)
+VDI    op=114 vr_recfl    
+    vr_recfl rect=(32,61)-(34,78)
+VDI    op=32  vswr_mode   
+    vswr_mode -> 2 (out 2)
+AES    op=104 wind_get     -> 1
+    wind_get: handle=1 field=12 -> (0,0,0,0)
+AES    op=107 wind_update  -> 1

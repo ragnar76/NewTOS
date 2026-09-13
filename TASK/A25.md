@@ -1,0 +1,40 @@
+# A25 — appl_init: Wiederaufruf erhält Nachrichten und Flags
+
+Status: **IMPLEMENTIERT — HW OFFEN** · Priorität: **P1** · Typ: bestätigter Zustandsfehler
+
+Abhängigkeiten: Keine. Gehört ausschließlich zu Opcode 10; nicht zum noch ungeprüften appl_read/appl_write-Vertrag.
+
+## Befund und Soll
+
+EmuTOS `aes/gemaplib.c:54-63` tut nur `p_flags |= AP_OPEN` und liefert denselben PID. Der Dispatcher aktualisiert die sechs AESGLOBAL-Felder. Bei wiederholtem appl_init bleibt die vorhandene Nachrichtenwarteschlange bestehen.
+
+NewTOS `tos-api/src/aes/pd.rs::open` verwendete bei jedem Aufruf `slot.flags = AP_OPEN` und `slot.queue.clear()`, auch bei bereits registrierter PID. Nur `appl_init` ruft diese Funktion auf. Ein neuer Slot wird schon getrennt über `Aespd::EMPTY` initialisiert.
+
+## Umsetzung — 2026-09-10
+
+Nur Wiederregistrierung geändert: `slot.flags |= AP_OPEN`, kein Queue-Reset. Neue Slots bleiben leer initialisiert. Spezifikation um den Wiederaufruf ergänzt; veraltete Aussage `log2(num_colors)` korrigiert (der Code verwendete bereits korrekt `planes()`). Kein QED-/Fensterpatch.
+
+## Abnahme
+
+- [x] Integrationstest über den realen LP64-AES-Dispatcher: appl_init → Nachricht an eigene PID → appl_init → Nachricht unverändert lesen.
+- [x] Test scheitert vor dem Fix mit Rückgabe 0 statt 1 beim Lesen; nachher grün.
+- [x] Profile 640×480/4 Planes/16 Stifte und 1920×1080/16 Planes/256 Stifte; sechs Global-Ausgaben, unveränderte Nichtausgabefelder, Canaries um 15-WORD-Puffer und OUT_LEN 0/1 geprüft.
+- [x] Unit-Test: AP_MESAG, Name und Nachricht bleiben erhalten; vorhandene PID lässt sich auch bei vollem Pool wieder öffnen; neue PID wird dort abgelehnt.
+- [x] Gesamte Host-Suite und AArch64-tos-api-Build erfolgreich.
+- [ ] Physischer Pi-Lauf mit neuem Kernel und gezieltem Wiederaufruffall; vorhandene Dumps enthalten diesen Nachrichtenzustand nicht.
+
+Die Nachricht wird im Hosttest über appl_write/appl_read transportiert, ohne den gesamten Vertrag dieser Funktionen als geprüft zu erklären. Der Test ist kein Beleg für eine Ursache des QED-Tippfehlers.
+
+## Hardware-Gegenprobe als kleiner Folgeschritt
+
+Ein gesondertes Diagnoseprogramm mit eigenem Ergebnis-LOG: appl_init, 16-Byte-Nachricht an eigene PID senden, erneut appl_init, Nachricht lesen/vergleichen, appl_exit. Auf dem TT zuerst per Quellprüfung absichern und nur bei vorher bestätigtem Sendeerfolg lesen; auf einem fehlerhaften System kann die Leseoperation blockieren. Ein Timeout-Konzept bzw. nichtblockierende Beobachtung muss vor Aufnahme in einen unbeaufsichtigten Dumper feststehen. Die eingefrorenen Tabellen bleiben unverändert. Kernel-/Dumperidentität und Konfiguration archivieren.
+
+## Artefakte
+
+- [Integrationstest](../tos-api/tests/aes_appl_init.rs)
+- [Implementierung und Unit-Test](../tos-api/src/aes/pd.rs)
+- [Spezifikation](../docs/api/aes/application.md)
+- [Vorher rot](evidence/appl-init-before.txt)
+- [Nachher und Gesamtabnahme](evidence/appl-init-after.txt)
+
+Arbeitsbaumänderung, noch nicht committed oder auf die Pi ausgerollt. Abschluss erst mit tatsächlich ausgeführter Hardware-Gegenprobe; kein implizites DONE.

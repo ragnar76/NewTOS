@@ -1,0 +1,122 @@
+M06 -- the proof that nothing already measured moved.  2026-09-13.
+
+Every dump ever taken is bound to its case table by the table's CRC32, which
+the dump header carries.  A change that made an existing table parse
+differently, or that changed one byte of the records a re-run produces, would
+invalidate the lot -- including the irreplaceable real-TT references under
+tosdump/reference/.  M06 moves a REFUSAL from the loader to the machine; the
+claim is that nothing which was accepted before is accepted differently now,
+and that the bytes are unchanged.  Checked four ways.
+
+--------------------------------------------------------------------------
+1. THE CRC OF EVERY SHIPPED TABLE, BEFORE AND AFTER
+--------------------------------------------------------------------------
+CRC32 over the raw file bytes, which is what td_crc32 and the dump header
+use.  Not one table was edited, so not one CRC moved.  Eleven tables now
+(the ten of the M05 list plus aes-m05-addrin.tsv, which M05 added):
+
+  table                          CRC before   CRC after   bytes
+  cases/aes-m05-addrin.tsv        215A9E48     215A9E48    6251
+  cases/aes-r1.tsv                33C13C8F     33C13C8F   15274
+  cases/aes-r2-wind.tsv           AFB11C9F     AFB11C9F   21343
+  cases/aes-r2b-rlist.tsv         B4CC4A5A     B4CC4A5A   10742
+  cases/aes-r3-wind-state.tsv     979FAC60     979FAC60   30935
+  cases/aes-r4-subfunctions.tsv   227422B2     227422B2   40264
+  cases/vdi-all.tsv               D135ADAF     D135ADAF   11438
+  cases/vdi-r1.tsv                FFF2281E     FFF2281E    2836
+  cases/vdi-r2.tsv                A0706A6D     A0706A6D    6636
+  cases/vdi-r3.tsv                0C06A9C7     0C06A9C7    6618
+  cases/vdi-raster.tsv            702EEA7D     702EEA7D   12344
+
+  cases/aes-m06-sysvar.tsv        --           458748F2    6960   (new)
+
+  Re-check:
+    python3 -c "import zlib,glob;[print('%-30s %08X'%(f,zlib.crc32(open(f,'rb').read())&0xffffffff)) for f in sorted(glob.glob('tosdump/cases/*.tsv'))]"
+
+  All eleven still LOAD, with the same case, prelude and column counts as
+  before.  None of the six AES tables reports needing anything of the
+  machine (features == 0), so none of them can be version-refused; the five
+  VDI/raster tables have no AES version dimension at all:
+    aes-m05-addrin.tsv        5 cases,   5 preludes, 8 columns, CRC 215A9E48
+    aes-r1.tsv               95 cases,   0 preludes, 7 columns, CRC 33C13C8F
+    aes-r2-wind.tsv          78 cases, 126 preludes, 7 columns, CRC AFB11C9F
+    aes-r2b-rlist.tsv        15 cases,  46 preludes, 7 columns, CRC B4CC4A5A
+    aes-r3-wind-state.tsv    39 cases, 223 preludes, 7 columns, CRC 979FAC60
+    aes-r4-subfunctions.tsv 181 cases,  93 preludes, 7 columns, CRC 227422B2
+    vdi-r1.tsv               24 cases,   0 preludes, CRC FFF2281E
+    vdi-r2.tsv              120 cases,   0 preludes, CRC A0706A6D
+    vdi-r3.tsv               38 cases,  34 preludes, CRC 0C06A9C7
+    vdi-all.tsv             182 cases,  34 preludes, CRC D135ADAF
+    vdi-raster.tsv           59 cases,              CRC 702EEA7D
+
+--------------------------------------------------------------------------
+2. THE RECORD BYTES, OLD CODE AGAINST NEW, ON THE HOST
+--------------------------------------------------------------------------
+The sharpest of the four, because it isolates the change and nothing else.
+Two builds of the AES runner -- the pristine tosdump/core/ as it stood before
+M06 and the changed one -- driven against the SAME test double
+(tests/stub_abi.c from before M06, byte-identical to the one in the tree, so
+the double is not a variable), over all six existing AES tables, 413 cases:
+
+  table                          records   old vs new
+  aes-r1.tsv                        95     IDENTICAL (11400 bytes)
+  aes-r2-wind.tsv                   78     IDENTICAL  (9360 bytes)
+  aes-r2b-rlist.tsv                 15     IDENTICAL  (1800 bytes)
+  aes-r3-wind-state.tsv             39     IDENTICAL  (4680 bytes)
+  aes-r4-subfunctions.tsv          181     IDENTICAL (21720 bytes)
+  aes-m05-addrin.tsv                 5     IDENTICAL   (600 bytes)
+
+(The stub's appl_init reports TD_STUB_AP_VERSION 0x0340, so the new
+version check runs on every one of these and refuses none: they need
+nothing.)
+
+--------------------------------------------------------------------------
+3. A REPEATED OLD RUN, ON BOTH REAL TARGETS
+--------------------------------------------------------------------------
+cases/aes-r4-subfunctions.tsv, re-run today with the M06 dumper on both
+machines.  Both builds carry the same git hash as the M05 repeat (70ca), so
+the header is comparable too:
+
+EmuTOS 1.4 / TT via Hatari  --  backcompat/EMUTOS14-AES-r4-REPEAT2.BIN
+  "all 181 cases ran", 21752 bytes.
+  Against the M05 repeat EMUTOS14-AES-r4-REPEAT.BIN: BYTE IDENTICAL, header
+  included -- zero differing bytes.
+  Against the frozen measurement-2026-09-12-aes-r4 dump: 4 bytes differ, at
+  offsets 12..15, which is the header's BUILD ID field ("c911" then, "70ca"
+  now).  All 21720 RECORD bytes identical.  Same delta M05 recorded.
+
+NewTOS / QEMU raspi4b  --  backcompat/NEWTOS-AES-r4-REPEAT2.BIN
+  "all 181 cases ran", 21752 bytes.
+  Against the M05 repeat NEWTOS-AES-r4-REPEAT.BIN: BYTE IDENTICAL -- zero
+  differing bytes.
+  Against the frozen measurement-2026-09-12-aes-r4 dump: 3 bytes differ, at
+  offsets 3949, 4069 and 8629 -- int_out[0] of records 32, 33 and 71, cases
+  331/332/439, all three wind_get(WF_SCREEN).  That is the A54 change to
+  tos-api/src/aes/window.rs, which M05 already accounted for.
+
+  So: of 21752 bytes, M06 accounts for ZERO on either machine.
+
+The run LOG of a table that needs nothing is also unchanged: the new
+"<table> needs ..." line is emitted only when features != 0, so every
+existing table's log has exactly the lines it had before.  Verified on both
+r4 repeats.
+
+--------------------------------------------------------------------------
+4. THE COMPARATOR STILL ACCEPTS EVERY DUMP IN THE TREE
+--------------------------------------------------------------------------
+tosdiff --validate over every *.BIN under tosdump/reference/ and every
+measurement-* directory, with the OLD tosdiff (built from the pre-M06
+sources) and the NEW one, verdict compared file by file:
+
+  71 files examined
+  67 accepted by both -- every TDMP dump in the tree, the real-TT references
+     included
+   4 rejected by both: tosdump/reference/TERADESK-{AES,GD}TRACE-r{1,2}.BIN,
+     which are not TDMP dumps at all (they begin "NEWTOS-A..."; they come
+     from tools/aestrace.py, a different instrument).  Pre-existing and
+     untouched by M06.
+   0 files whose verdict changed.
+
+  Re-check:
+    for f in $(find tosdump/reference measurement-* -name '*.BIN'); do \
+      tosdump/host/build/tosdiff --validate "$f" | tail -1; done

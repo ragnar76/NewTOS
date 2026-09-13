@@ -1,0 +1,406 @@
+# aes-r2-wind.tsv -- AES round 2: the window manager, with a real reset.
+#
+# Format (seven tab separated columns):
+#   opcode  n_intin  n_intout  n_addrin  n_addrout  intin values  comment
+# as cases/aes-r1.tsv, and read by the same loader.  A '+' opcode is a
+# PRELUDE: issued after the reset and before the measured call, never
+# recorded.  A case id is the PHYSICAL LINE NUMBER and this file's CRC binds
+# every dump to it, so ANY edit -- an appended case, a fixed typo in a
+# comment -- invalidates every dump already taken with it.
+#
+# ======================================================================
+# WHAT MAKES THIS ROUND POSSIBLE: THE RESET
+# ======================================================================
+#
+# Round 1 held only calls that change no state another case reads, because
+# there was no way back to a known state.  The window manager does have one,
+# and it is the AES' own:
+#
+#   !reset  wind_new
+#
+# declared on the directive line below and issued by core/runner_aes.c
+# before EVERY case, ahead of that case's preludes.  wm_new closes and
+# deletes every window with a handle >= 1 and drains the wind_update
+# mouse-control and screen-sync locks (gemwmlib.c:1875-1893).  EmuTOS runs
+# it itself after every graphics-mode program the shell starts
+# (gemshlib.c:676-677), which is what makes it safe to issue on a machine
+# nobody is watching: the run leaves nothing the shell would not have swept
+# on its own.
+#
+# What the reset restores, and how that is known (all gemwmlib.c):
+#   D.w_win[1..]  wm_delete sets w_flags = 0 and w_owner = NULL (:1477-1481)
+#                 and wm_create re-runs w_setup on the next create, which
+#                 re-lays kind, name, info, sliders and colours (:205-228).
+#                 So handle allocation starts at 1 again for every case.
+#   W_TREE        wm_close does ob_delete (:1450), so ROOT has no children.
+#   gl_wtop       draw_change sets it from W_TREE[ROOT].ob_tail (:1093), so
+#                 it is NIL once the last window is closed -- and w_top()
+#                 then answers DESKWH (:315-318).
+#   w_rlist       newrect gives the ORECTs back and rebuilds every window's
+#                 list from geometry (gemwrect.c:160-200).
+#   wind_spb      drained through END_UPDATE (:1882-1883).
+#   ml_ocnt       drained through END_MCTRL (:1879-1881).
+#
+# What the reset does NOT restore, which is why none of it is in this file:
+#   gl_newdesk    only wm_init clears it (:1300).  wind_set(WF_NEWDESK) is
+#                 refused by the loader.
+#   gl_aname / gl_ainfo te_ptext -- wind_set(WF_NAME/WF_INFO) is refused,
+#                 and it takes a pointer this pointer-free table cannot lay.
+#   gl_wtcolor / gl_wbcolor -- only wm_start sets them (:1541-1552).
+#                 wind_set(WF_DCOLOR) is refused.
+#   D.w_win[0]    wm_new sweeps handles >= 1 only (:1886).  wind_set on
+#                 handle 0 is refused; wind_get on it is not, because it
+#                 writes nothing.
+#
+# ======================================================================
+# SAFETY -- the machine runs unattended
+# ======================================================================
+#
+# Every rule below is ENFORCED by core/cases.c, with the citation, and
+# there is no override.  Listed here so a reader of the table knows what
+# the table is not allowed to say:
+#
+#   * no opcode that blocks, that TOS 3.06's AES may not have, or that is
+#     not an AES opcode -- the round 1 guard, unchanged.
+#   * no wind_get/wind_set field that carries a pointer (WF_NAME, WF_INFO,
+#     WF_NEWDESK) or an unchecked array index (WF_COLOR, WF_DCOLOR).
+#   * no wind_open(0): w_obadd(W_TREE, ROOT, ROOT) makes the root its own
+#     child and the next tree walk never returns.
+#   * no wind_delete(0) and no wind_set on handle 0: the desktop window is
+#     outside wm_new's sweep.
+#   * at most four distinct wind_open handles in the whole file.  Every
+#     wind_open sends this program one WM_REDRAW (gemwmlib.c:887-908), the
+#     program never reads its own queue -- every AES call that would drain
+#     one blocks on an empty queue -- and doq unions successive redraws for
+#     the same handle (gemqueue.c:45-56).  p_queue holds eight messages
+#     (struct.h:56,152) and aqueue BLOCKS the sender when the next one does
+#     not fit (:96,:124).  Here sender and receiver are the same process, so
+#     that block would never end.  This file uses handles 1 and 2.
+#   * no unpaired wind_update END_MCTRL (mode 2): fm_own(0) decrements
+#     ml_ocnt unconditionally (gemfmlib.c:99) and wm_new only drains it
+#     downwards (gemwmlib.c:1880).
+#   * every rectangle that reaches the screen is non-negative and does not
+#     wrap a WORD.  All of them here fit inside 640x400, so they are inside
+#     both machines' screens and nothing is clipped on one but not the other.
+#
+# ======================================================================
+# WHAT CANNOT BE MEASURED HERE, AND WHY
+# ======================================================================
+#
+#   * anything whose result is a drawn window.  wind_open, wind_close and
+#     wind_set(WF_CXYWH) all draw; the record carries numbers only, and the
+#     pixels are not comparable between a 4-plane TT and a 16-plane Pi.
+#   * WF_FIRSTXYWH / WF_NEXTXYWH.  w_owns WRITES pwin->w_rnext
+#     (gemwmlib.c:1235), so the pair is an iterator: the answer depends on
+#     how many times it has been asked, which a single measured call per
+#     case cannot state.
+#   * the window NAME and INFO text: pointer arguments (see above).
+#   * WF_SCREEN's address and length (gemwmlib.c:1564) -- an address.
+#   * everything the operator owns: where the mouse is, which key is down.
+#
+# ======================================================================
+# WHAT IS EXPECTED TO DIFFER, AND IS STILL WORTH MEASURING
+# ======================================================================
+#
+#   * NUM_WIN.  EmuTOS ties it to the AES version: 16 for AES > 0x0320, 8
+#     otherwise (sysconf.h:26-35).  The round 1 run log records the TT at
+#     ap_version 0340, so it should hand out handles 1..15; NewTOS has
+#     MAX_WINDOWS = 8 (tos-api/src/aes/window.rs:204), so handles 1..8.
+#     Two cases below sit exactly on each edge.
+#   * WF_WXYWH.  wm_calc's border arithmetic runs on gl_wbox / gl_hbox /
+#     adj_wbox / adj_hbox, which are font metrics -- the same dependency
+#     round 1 measured through wind_calc, cross-checked here on a window
+#     that really exists.
+#   * WF_OWNER's process id: appl_init handed the TT ap_id 0 and NewTOS
+#     ap_id 1 in round 1.  Recorded, not compared away.
+#
+# opcode\tn_intin\tn_intout\tn_addrin\tn_addrout\tintin\tcomment
+
+!reset	wind_new
+
+# ====================================================================
+# A. wind_create (100) -- the handle allocator and what it stores
+#
+# wm_create walks D.w_win for the first slot without VF_INUSE and runs
+# w_setup on it (gemwmlib.c:1369-1382).  Handle 0 is the desktop and is
+# always in use (wm_init, :1290), so the first free handle is 1 -- and
+# the reset is what makes that true for every case rather than for the
+# first one only.
+# ====================================================================
+
+100	5	1	0	0	0x0FEF,0,20,320,200	wind_create: the first free handle after the reset
++100	5	1	0	0	0x0FEF,0,20,320,200	one window already created
+100	5	1	0	0	0x0FEF,0,20,320,200	wind_create twice: the second handle
++100	5	1	0	0	0x0FEF,0,20,320,200	one
++100	5	1	0	0	0x0FEF,0,20,320,200	two
+100	5	1	0	0	0x0FEF,0,20,320,200	wind_create three times: the third handle
+100	5	0	0	0	0x0FEF,0,20,320,200	wind_create OUT_LEN 0: the handle is computed, never delivered
+100	5	1	0	0	0,0,20,320,200	wind_create kind NONE: no gadget at all
+100	5	1	0	0	0xFFFF,0,20,320,200	wind_create kind 0xFFFF: every bit, defined or not
+100	1	1	0	0	0x0FEF	wind_create IN_LEN 1: wm_create only stores the rect, it draws nothing
+
+# The NUM_WIN edge.  EmuTOS: 16 for AES > 0x0320 (sysconf.h:26-35), so
+# handles 1..15 and the sixteenth create fails.  NewTOS: MAX_WINDOWS 8,
+# so the ninth fails.  Creates draw nothing and send no message, which is
+# what makes an exhaustion case safe to state at all.
++100	5	1	0	0	0x0FEF,0,20,320,200	fill handle 1
++100	5	1	0	0	0x0FEF,0,20,320,200	fill handle 2
++100	5	1	0	0	0x0FEF,0,20,320,200	fill handle 3
++100	5	1	0	0	0x0FEF,0,20,320,200	fill handle 4
++100	5	1	0	0	0x0FEF,0,20,320,200	fill handle 5
++100	5	1	0	0	0x0FEF,0,20,320,200	fill handle 6
++100	5	1	0	0	0x0FEF,0,20,320,200	fill handle 7
++100	5	1	0	0	0x0FEF,0,20,320,200	fill handle 8
+100	5	1	0	0	0x0FEF,0,20,320,200	wind_create, the ninth: NUM_WIN edge
++100	5	1	0	0	0x0FEF,0,20,320,200	fill handle 1
++100	5	1	0	0	0x0FEF,0,20,320,200	fill handle 2
++100	5	1	0	0	0x0FEF,0,20,320,200	fill handle 3
++100	5	1	0	0	0x0FEF,0,20,320,200	fill handle 4
++100	5	1	0	0	0x0FEF,0,20,320,200	fill handle 5
++100	5	1	0	0	0x0FEF,0,20,320,200	fill handle 6
++100	5	1	0	0	0x0FEF,0,20,320,200	fill handle 7
++100	5	1	0	0	0x0FEF,0,20,320,200	fill handle 8
++100	5	1	0	0	0x0FEF,0,20,320,200	fill handle 9
++100	5	1	0	0	0x0FEF,0,20,320,200	fill handle 10
++100	5	1	0	0	0x0FEF,0,20,320,200	fill handle 11
++100	5	1	0	0	0x0FEF,0,20,320,200	fill handle 12
++100	5	1	0	0	0x0FEF,0,20,320,200	fill handle 13
++100	5	1	0	0	0x0FEF,0,20,320,200	fill handle 14
++100	5	1	0	0	0x0FEF,0,20,320,200	fill handle 15
+100	5	1	0	0	0x0FEF,0,20,320,200	wind_create, the sixteenth: NUM_WIN edge
+
+# ====================================================================
+# B. wind_open (101) / wind_close (102) / wind_delete (103)
+#
+# get_pwin refuses a handle outside 0..NUM_WIN-1 and one without
+# VF_INUSE (gemwmlib.c:1391-1404); wm_open additionally refuses one that
+# is already open (:1417-1418), and wm_close one that is not open
+# (:1444-1445).  wm_delete closes first if it has to (:1466-1467).
+# Only handles 1 and 2 are ever opened -- see the message-queue bound.
+# ====================================================================
+
+101	5	1	0	0	1,0,20,320,200	wind_open a handle that was never created
++100	5	1	0	0	0x0FEF,0,20,320,200	create it first
+101	5	1	0	0	1,0,20,320,200	wind_open a created window
++100	5	1	0	0	0x0FEF,0,20,320,200	create
++101	5	1	0	0	1,0,20,320,200	open
+101	5	1	0	0	1,0,20,320,200	wind_open a window that is already open
+102	1	1	0	0	1	wind_close a handle that was never created
++100	5	1	0	0	0x0FEF,0,20,320,200	create only
+102	1	1	0	0	1	wind_close a created window that was never opened
++100	5	1	0	0	0x0FEF,0,20,320,200	create
++101	5	1	0	0	1,0,20,320,200	open
+102	1	1	0	0	1	wind_close an open window
+102	1	1	0	0	0	wind_close 0: the desktop window is INUSE but never ISOPEN
+103	1	1	0	0	1	wind_delete a handle that was never created
++100	5	1	0	0	0x0FEF,0,20,320,200	create only
+103	1	1	0	0	1	wind_delete a created window
++100	5	1	0	0	0x0FEF,0,20,320,200	create
++101	5	1	0	0	1,0,20,320,200	open
+103	1	1	0	0	1	wind_delete an open window: wm_close runs first
+103	1	1	0	0	99	wind_delete 99: past NUM_WIN on either machine
+103	1	1	0	0	-1	wind_delete -1: a negative handle
++100	5	1	0	0	0x0FEF,0,20,320,200	create
++101	5	1	0	0	1,0,20,320,200	open
++102	1	1	0	0	1	close
+101	5	1	0	0	1,0,20,320,200	wind_open again after a close: the handle is still INUSE
++100	5	1	0	0	0x0FEF,0,20,320,200	create
++103	1	1	0	0	1	delete
+101	5	1	0	0	1,0,20,320,200	wind_open after a delete: the handle is gone
++100	5	1	0	0	0x0FEF,0,20,320,200	create 1
++103	1	1	0	0	1	delete 1
+100	5	1	0	0	0x0FEF,0,20,320,200	wind_create after a delete: the freed handle comes back
+
+# ====================================================================
+# C. wind_get (104) on a window that really exists
+#
+# Round 1 could only ask handle 0 and handles that were never created.
+# With the reset a case can create one, put it in a stated state and
+# read it back.  OUT_LEN is never larger than the arm actually writes:
+# xif copies OUT_LEN words back out of an uninitialised stack buffer
+# (gemsuper.c:430-432, :444-445), so a surplus word would be garbage.
+# The rect arms write poutwds[0..3] through w_getsize (:1594-1595), the
+# slider arms write poutwds[0] alone (:1540-1551), and a field with no
+# arm writes nothing at all (:1592).
+# ====================================================================
+
++100	5	1	0	0	0x0FEF,10,20,300,200	create at 10,20,300,200
+104	2	5	0	0	1,7	WF_FXYWH of a created window: the rect wind_create was given
++100	5	1	0	0	0x0FEF,10,20,300,200	create
+104	2	5	0	0	1,5	WF_CXYWH of a created, unopened window: wm_create set it to gl_rzero
++100	5	1	0	0	0x0FEF,10,20,300,200	create
+104	2	5	0	0	1,6	WF_PXYWH of a created, unopened window
++100	5	1	0	0	0x0FEF,10,20,300,200	create
+104	2	2	0	0	1,8	WF_HSLIDE of a fresh window: w_setup leaves the slider at the left
++100	5	1	0	0	0x0FEF,10,20,300,200	create
+104	2	2	0	0	1,9	WF_VSLIDE of a fresh window
++100	5	1	0	0	0x0FEF,10,20,300,200	create
+104	2	2	0	0	1,15	WF_HSLSIZ of a fresh window: the -1 use-default marker
++100	5	1	0	0	0x0FEF,10,20,300,200	create
+104	2	2	0	0	1,16	WF_VSLSIZ of a fresh window
++100	5	1	0	0	0x0FEF,10,20,300,200	create
+104	2	1	0	0	1,1	WF_KIND on a real window: wm_get has no arm for it
++100	5	1	0	0	0x0FEF,10,20,300,200	create
+104	2	5	0	0	1,20	WF_OWNER of a created window: pid, is-open, gl_wtop, bottom-most
++100	5	1	0	0	0x0FEF,10,20,300,200	create
++101	5	1	0	0	1,30,40,320,240	open at 30,40,320,240
+104	2	5	0	0	1,20	WF_OWNER of an open window: the is-open word changes
++100	5	1	0	0	0x0FEF,10,20,300,200	create
++101	5	1	0	0	1,30,40,320,240	open
+104	2	5	0	0	1,5	WF_CXYWH after wind_open: the rect the open was given, verbatim
++100	5	1	0	0	0x0FEF,10,20,300,200	create
++101	5	1	0	0	1,30,40,320,240	open
+104	2	5	0	0	1,6	WF_PXYWH after wind_open: wm_open sets PREV to the same rect
++100	5	1	0	0	0x0FEF,10,20,300,200	create
++101	5	1	0	0	1,30,40,320,240	open
+104	2	5	0	0	1,4	WF_WXYWH after wind_open: wm_calc(WC_WORK) on the box metrics
++100	5	1	0	0	0x0FEF,10,20,300,200	create
++101	5	1	0	0	1,30,40,320,240	open
+104	2	5	0	0	1,7	WF_FXYWH after wind_open: unchanged by the open
++100	5	1	0	0	0,30,40,320,240	create with no gadgets
++101	5	1	0	0	1,30,40,320,240	open
+104	2	5	0	0	1,4	WF_WXYWH of a NONE window: work area is the border area less one
+104	2	2	0	0	0,10	WF_TOP with nothing open: the reset proves itself
++100	5	1	0	0	0x0FEF,10,20,300,200	create
++101	5	1	0	0	1,30,40,320,240	open
+104	2	2	0	0	0,10	WF_TOP with one window open
+
+# ====================================================================
+# D. wind_set (105), and the read-back that proves the set
+#
+# A setter's own return code proves only the echo.  What proves the
+# effect is a wind_get after a wind_set that moved the value off its
+# default -- which is what preludes are for.  wm_set clamps the four
+# slider fields to 1..1000 before the switch, with -1 let through for
+# the two SIZ fields (gemwmlib.c:1641-1653); the clamp is the
+# measurement in half of these.
+# ====================================================================
+
++100	5	1	0	0	0x0FEF,10,20,300,200	create
++105	6	1	0	0	1,8,500,0,0,0	set WF_HSLIDE 500
+104	2	2	0	0	1,8	WF_HSLIDE read back after a set of 500
++100	5	1	0	0	0x0FEF,10,20,300,200	create
++105	6	1	0	0	1,8,0,0,0,0	set WF_HSLIDE 0
+104	2	2	0	0	1,8	WF_HSLIDE after a set of 0: clamped up to 1
++100	5	1	0	0	0x0FEF,10,20,300,200	create
++105	6	1	0	0	1,8,2000,0,0,0	set WF_HSLIDE 2000
+104	2	2	0	0	1,8	WF_HSLIDE after a set of 2000: clamped down to 1000
++100	5	1	0	0	0x0FEF,10,20,300,200	create
++105	6	1	0	0	1,9,1000,0,0,0	set WF_VSLIDE 1000
+104	2	2	0	0	1,9	WF_VSLIDE after a set of 1000: exactly on the ceiling
++100	5	1	0	0	0x0FEF,10,20,300,200	create
++105	6	1	0	0	1,15,-1,0,0,0	set WF_HSLSIZ -1
+104	2	2	0	0	1,15	WF_HSLSIZ after a set of -1: the use-default escape is let through
++100	5	1	0	0	0x0FEF,10,20,300,200	create
++105	6	1	0	0	1,15,0,0,0,0	set WF_HSLSIZ 0
+104	2	2	0	0	1,15	WF_HSLSIZ after a set of 0: clamped up to 1
++100	5	1	0	0	0x0FEF,10,20,300,200	create
++105	6	1	0	0	1,16,1001,0,0,0	set WF_VSLSIZ 1001
+104	2	2	0	0	1,16	WF_VSLSIZ after a set of 1001: clamped down to 1000
++100	5	1	0	0	0x0FEF,10,20,300,200	create
+105	6	1	0	0	1,8,500,0,0,0	wind_set WF_HSLIDE: the setter's own return code
+105	6	1	0	0	1,8,500,0,0,0	wind_set on a handle that was never created
++100	5	1	0	0	0x0FEF,10,20,300,200	create
+105	6	1	0	0	1,21,0,0,0,0	wind_set field 21: past the last defined field
++100	5	1	0	0	0x0FEF,10,20,300,200	create
+105	6	1	0	0	1,1,0,0,0,0	wind_set WF_KIND: readable in some AESes, settable in none
++100	5	1	0	0	0x0FEF,10,20,300,200	create
+105	6	1	0	0	-1,8,500,0,0,0	wind_set on a negative handle
++100	5	1	0	0	0x0FEF,10,20,300,200	create
+105	6	1	0	0	99,8,500,0,0,0	wind_set past NUM_WIN on either machine
++100	5	1	0	0	0x0FEF,10,20,300,200	create
++101	5	1	0	0	1,30,40,320,240	open
+105	6	1	0	0	1,5,60,80,200,160	wind_set WF_CXYWH: the setter's return code
++100	5	1	0	0	0x0FEF,10,20,300,200	create
++101	5	1	0	0	1,30,40,320,240	open
++105	6	1	0	0	1,5,60,80,200,160	move and shrink it
+104	2	5	0	0	1,5	WF_CXYWH after a WF_CXYWH set: the new rect
++100	5	1	0	0	0x0FEF,10,20,300,200	create
++101	5	1	0	0	1,30,40,320,240	open
++105	6	1	0	0	1,5,60,80,200,160	move and shrink it
+104	2	5	0	0	1,6	WF_PXYWH after a WF_CXYWH set: draw_change kept the rect before it
++100	5	1	0	0	0x0FEF,10,20,300,200	create
++101	5	1	0	0	1,30,40,320,240	open
+105	6	1	0	0	1,10,0,0,0,0	wind_set WF_TOP on the only open window: already topped
++100	5	1	0	0	0x0FEF,10,20,300,200	create 1
++100	5	1	0	0	0x0FEF,10,20,300,200	create 2
++101	5	1	0	0	1,30,40,320,240	open 1
++101	5	1	0	0	2,60,80,200,160	open 2, which tops it
+104	2	2	0	0	0,10	WF_TOP with two windows open: the later open is on top
++100	5	1	0	0	0x0FEF,10,20,300,200	create 1
++100	5	1	0	0	0x0FEF,10,20,300,200	create 2
++101	5	1	0	0	1,30,40,320,240	open 1
++101	5	1	0	0	2,60,80,200,160	open 2
++105	6	1	0	0	1,10,0,0,0,0	top window 1 again
+104	2	2	0	0	0,10	WF_TOP after a WF_CXYWH-free re-top of the lower window
+
+# ====================================================================
+# E. wind_update (107) -- the two locks the reset drains
+#
+# Modes 0 and 1 are the screen sync, 2 and 3 the mouse control
+# (aesdefs.h:559-562); wm_update subtracts 2 and hands the rest to
+# fm_own (gemwmlib.c:1789-1795).  A lone BEG is safe because wm_new
+# drains both (:1879-1883).  A lone END_MCTRL is not, and the loader
+# refuses it.  crysbind's arm is void, so int_out[0] is its ret = TRUE
+# (gemsuper.c:85) rather than anything wm_update computed.
+# ====================================================================
+
+107	1	1	0	0	1	wind_update BEG_UPDATE: the reset drains the lock afterwards
+107	1	1	0	0	0	wind_update END_UPDATE with no lock held: unsync returns early
++107	1	1	0	0	1	BEG_UPDATE
+107	1	1	0	0	0	wind_update END_UPDATE after a BEG: the balanced pair
++107	1	1	0	0	1	BEG_UPDATE
++107	1	1	0	0	1	BEG_UPDATE again: tak_flag counts up for the same owner
+107	1	1	0	0	0	wind_update END_UPDATE after two BEGs: the count, not the flag
+107	1	1	0	0	3	wind_update BEG_MCTRL: the reset drains ml_ocnt afterwards
++107	1	1	0	0	3	BEG_MCTRL
+107	1	1	0	0	2	wind_update END_MCTRL after a BEG_MCTRL: the balanced pair
+107	1	0	0	0	1	wind_update BEG_UPDATE, OUT_LEN 0: the ret is computed, never delivered
+
+# ====================================================================
+# F. wind_find (106) with a window that is actually open
+#
+# wm_find is ob_find(gl_wtree, 0, 2, x, y) (gemwmlib.c:1767-1770), so it
+# answers out of the window tree the opens built.  Round 1 could only
+# ask it with nothing open.  Every point below is inside 640x400, so it
+# means the same place on both screens.
+# ====================================================================
+
+106	2	1	0	0	150,150	wind_find with nothing open: the desktop
++100	5	1	0	0	0x0FEF,10,20,300,200	create
++101	5	1	0	0	1,100,100,200,200	open at 100,100,200,200
+106	2	1	0	0	150,150	wind_find on a point inside the open window
++100	5	1	0	0	0x0FEF,10,20,300,200	create
++101	5	1	0	0	1,100,100,200,200	open
+106	2	1	0	0	400,300	wind_find on a point outside it but on the desktop
++100	5	1	0	0	0x0FEF,10,20,300,200	create
++101	5	1	0	0	1,100,100,200,200	open
+106	2	1	0	0	100,100	wind_find exactly on the window's top left corner
++100	5	1	0	0	0x0FEF,10,20,300,200	create
++101	5	1	0	0	1,100,100,200,200	open
+106	2	1	0	0	300,300	wind_find one past the bottom right corner
+
+# ====================================================================
+# G. wind_new (109) -- the reset, measured as a call
+#
+# The reset itself has to be measured, or the rest of this file rests on
+# an assumption.  wm_new is void, so int_out[0] is crysbind's ret = TRUE.
+# ====================================================================
+
+109	0	1	0	0	-	wind_new: a void handler leaves ret = TRUE
+109	0	0	0	0	-	wind_new OUT_LEN 0, as gemlib issues it: nothing delivered
++100	5	1	0	0	0x0FEF,10,20,300,200	create
++101	5	1	0	0	1,30,40,320,240	open
++109	0	0	0	0	-	wind_new
+104	2	1	0	0	1,7	after wind_new the handle is no longer in use
++100	5	1	0	0	0x0FEF,10,20,300,200	create
++101	5	1	0	0	1,30,40,320,240	open
++109	0	0	0	0	-	wind_new
+104	2	2	0	0	0,10	after wind_new nothing is topped
++100	5	1	0	0	0x0FEF,10,20,300,200	create
++101	5	1	0	0	1,30,40,320,240	open
++109	0	0	0	0	-	wind_new
+100	5	1	0	0	0x0FEF,10,20,300,200	wind_create after wind_new: handle allocation starts at 1 again
++107	1	1	0	0	3	BEG_MCTRL
++109	0	0	0	0	-	wind_new, which drains ml_ocnt
+104	2	2	0	0	0,10	wind_new after a BEG_MCTRL: the run carries on

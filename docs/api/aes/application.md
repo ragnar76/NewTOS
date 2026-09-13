@@ -27,7 +27,7 @@
 
 `aes/gemrslib.h:15-27` (struct) + `include/aesdefs.h:147-157` (the `AP_*`
 `global[]` slot macros used by the dispatcher). The `global` pointer of the
-AESPB points at this array; `appl_init` fills the first five (public) fields.
+AESPB points at this array; `appl_init` writes the six fields marked below.
 Byte offsets are the m68k layout (`WORD` = 2 bytes; `LONG`/pointer = 4 bytes,
 2-byte-aligned — no padding):
 
@@ -133,7 +133,9 @@ inline) + `aes/gemaplib.c:54-63` (`ap_init` sets the flag and returns the pid).
   `tos-api::aes::init` (`desktop_root_obspec()`): `0x1143`, or `0x1100 | patcol`
   after a `#Q` line (see the `ap_private` callout above and D-099);
 - `AP_2RESV1`/`ap_planes` (`global[10]`) = `gl_nplanes` (screen colour planes) —
-  **NewTOS:** log2 of the framebuffer colour count (`screen_planes()`);
+  **NewTOS:** the raster backend's `planes()` (`screen_planes()`), matching
+  VDI `INQ_TAB[4]`. This is not `log2(num_colors)`: the current truecolor
+  backend has 16 planes but reports 256 logical colour pens.
 - `AP_3RESV`/`ap_3resv` (`global[11]`) = `&D` (address of the AES global area
   `THEGLO`, an internal pointer) — **NewTOS:** the AES process-descriptor table
   address (`tos-api::aes::pd::table_addr()`), the process-management core of our
@@ -144,6 +146,13 @@ inline) + `aes/gemaplib.c:54-63` (`ap_init` sets the flag and returns the pid).
 
 Then `ap_init()` (`gemaplib.c:54`) sets `rlr->p_flags |= AP_OPEN` and returns
 `rlr->p_pid`. That pid becomes `RET_CODE` (`int_out[0]`).
+
+**Repeated calls:** `ap_init` only ORs `AP_OPEN` into the existing descriptor.
+It does not clear other flags, the application name, or queued messages
+(`gemaplib.c:54-63`). A repeated `appl_init` therefore returns the same id
+and refreshes the six global fields while preserving pending messages.
+NewTOS must initialise a newly allocated descriptor separately from reopening
+an existing one; reopening is not a queue reset.
 
 `rlr` = "run-list root" = the currently running AES process descriptor
 (`aes/aesvars.h`; see [`_state.md`](./_state.md)).

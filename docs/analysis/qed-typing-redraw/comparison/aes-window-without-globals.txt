@@ -1,0 +1,26 @@
+154  opcode 100  wind_create, the ninth: NUM_WIN edge
+int_out[0]             EMUTOS14-AES-r2wind.BIN = 0x0009 (9)   NEWTOS-AES-r2wind.BIN   = 0xFFFF (-1)
+
+230  opcode 104  WF_CXYWH of a created, unopened window: wm_create set it to gl_
+int_out[1]             EMUTOS14-AES-r2wind.BIN = 0x0000 (0)   NEWTOS-AES-r2wind.BIN   = 0x000A (10)
+int_out[2]             EMUTOS14-AES-r2wind.BIN = 0x0000 (0)   NEWTOS-AES-r2wind.BIN   = 0x0014 (20)
+int_out[3]             EMUTOS14-AES-r2wind.BIN = 0x0000 (0)   NEWTOS-AES-r2wind.BIN   = 0x012C (300)
+int_out[4]             EMUTOS14-AES-r2wind.BIN = 0x0000 (0)   NEWTOS-AES-r2wind.BIN   = 0x00C8 (200)
+
+244  opcode 104  WF_OWNER of a created window: pid, is-open, gl_wtop, bottom-mos
+int_out[0]             EMUTOS14-AES-r2wind.BIN = 0x0000 (0)   NEWTOS-AES-r2wind.BIN   = 0x0001 (1)
+int_out[1]             EMUTOS14-AES-r2wind.BIN = 0xFFFF (-1)   NEWTOS-AES-r2wind.BIN   = 0x0000 (0)
+int_out[4]             EMUTOS14-AES-r2wind.BIN = 0x0000 (0)   NEWTOS-AES-r2wind.BIN   = 0xFFFF (-1)
+
+247  opcode 104  WF_OWNER of an open window: the is-open word changes
+int_out[0]             EMUTOS14-AES-r2wind.BIN = 0x0000 (0)   NEWTOS-AES-r2wind.BIN   = 0x0001 (1)
+int_out[1]             EMUTOS14-AES-r2wind.BIN = 0xFFFF (-1)   NEWTOS-AES-r2wind.BIN   = 0x0002 (2)
+int_out[2]             EMUTOS14-AES-r2wind.BIN = 0x0000 (0)   NEWTOS-AES-r2wind.BIN   = 0x0001 (1)
+int_out[3]             EMUTOS14-AES-r2wind.BIN = 0x0000 (0)   NEWTOS-AES-r2wind.BIN   = 0x0001 (1)
+int_out[4]             EMUTOS14-AES-r2wind.BIN = 0x0000 (0)   NEWTOS-AES-r2wind.BIN   = 0x0001 (1)
+
+253  opcode 104  WF_PXYWH after wind_open: wm_open sets PREV to the same rect
+int_out[1]             EMUTOS14-AES-r2wind.BIN = 0x001E (30)   NEWTOS-AES-r2wind.BIN   = 0x000A (10)
+int_out[2]             EMUTOS14-AES-r2wind.BIN = 0x0028 (40)   NEWTOS-AES-r2wind.BIN   = 0x0014 (20)
+int_out[3]             EMUTOS14-AES-r2wind.BIN = 0x0140 (320)   NEWTOS-AES-r2wind.BIN   = 0x012C (300)
+int_out[4]             EMUTOS14-AES-r2wind.BIN = 0x00F0 (240)   NEWTOS-AES-r2wind.BIN   = 0x00C8 (200)

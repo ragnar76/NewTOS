@@ -59,6 +59,21 @@ folders, which EmuTOS deliberately does not.
 > (`sdk/cflib/cflib-21/fsexists.c:41`, `Fattrib(path,0,0) >= 0 && (attr &
 > FA_DIR)`), i.e. QED's clipboard init and every FreeMiNT/cflib app.
 >
+> The same GET path also accepts the **trailing-separator spelling**
+> `Fattrib("C:\SUBDIR\", 0, 0)`, because that is the only spelling cflib ever
+> passes: `make_normalpath` appends a separator to every path before it probes
+> (`sdk/cflib/cflib-21/fsnorm.c:85-92`). FreeMiNT answers it with the folder's
+> attributes — `relpath2cookie` peels an empty final component
+> (`sys/filesys.c:986-1010`) and `fatfs_lookup` resolves the empty name **as
+> `"."`** (`sys/fatfs.c:5753-5764`). The lift is strictly additive: only a path
+> that names an existing **directory** after the separators are dropped answers
+> differently than EmuTOS. A trailing separator on a **file** keeps `EPTHNF`
+> (EmuTOS' answer, and FreeMiNT's ENOTDIR is the same `-34`,
+> `sys/mint/errno.h:277`), a trailing separator on a **missing** name keeps
+> `EPTHNF`, and the bare **drive root** `"C:\"` keeps `EFILNF` — there is no
+> directory entry there whose attribute byte could be read, and synthesizing
+> `FA_DIR` as FreeMiNT does is a separate decision that has **not** been taken.
+>
 > The **SET** path stays *stricter* than FreeMiNT: NewTOS rejects any set on a
 > folder or volume label with `EACCDN`, so a directory's attribute byte can
 > never be rewritten (the #38 corruption guard). FreeMiNT only forbids toggling
@@ -146,7 +161,9 @@ attribute is at FCB offset 11, so `32 - 11 = 21`.
 | Path (directory portion) not found | `bdos/fsdir.c:410-411` | `EPTHNF` (-34) |
 | Name not found (neither a file nor a folder) | `bdos/fsdir.c:415-416` | `EFILNF` (-33) |
 | **EmuTOS only:** name is a folder/label | `bdos/fsdir.c:415-416` | `EFILNF` (-33) |
-| **NewTOS:** GET on a folder | (extension) | attribute byte, `FA_SUBDIR` (0x10) set, `>= 0` |
+| **NewTOS:** GET on a folder, with or without a trailing separator | (extension) | attribute byte, `FA_SUBDIR` (0x10) set, `>= 0` |
+| **NewTOS:** GET on a *file* with a trailing separator (`"C:\F.TXT\"`) | `path::resolve_parent` (not a directory) | `EPTHNF` (-34) |
+| **NewTOS:** GET on the bare drive root (`"C:\"`) | no entry to read | `EFILNF` (-33) |
 | **NewTOS:** SET on a folder/label | (corruption guard) | `EACCDN` (-36) |
 | Set requested with a bit outside `FA_NORM` (`mod & ~0x27`) | `bdos/fsdir.c:421-422` | `EACCDN` (-36) |
 
@@ -164,8 +181,16 @@ attribute is at FCB offset 11, so `32 - 11 = 21`.
 - **Set invalid bit:** `Fattrib("C:\\F.TXT", 1, FA_SUBDIR)` returns `EACCDN`.
 - **Folder GET (NewTOS/TOS4):** `Fattrib("C:\\SUBDIR", 0, 0)` returns the folder's
   attribute byte with `FA_SUBDIR` (0x10) set — a value `>= 0`, **not** `EFILNF`.
-  The trailing-backslash form `Fattrib("C:\\SUBDIR\\", 0, 0)` resolves to the same
-  directory. (EmuTOS/TOS 1-3 return `EFILNF` here.)
+  (EmuTOS/TOS 1-3 return `EFILNF` here.)
+- **Folder GET, trailing-separator spelling (NewTOS/FreeMiNT):**
+  `Fattrib("C:\\SUBDIR\\", 0, 0)` returns the **same** value as the spelling
+  without the separator. This is the spelling cflib passes
+  (`fsnorm.c:85-92`); measured on QEMU `raspi4b`, `16` for a plain folder.
+- **Trailing separator elsewhere is unchanged:**
+  `Fattrib("C:\\F.TXT\\", 0, 0)` = `EPTHNF` (-34),
+  `Fattrib("C:\\NOSUCH\\", 0, 0)` = `EPTHNF` (-34),
+  `Fattrib("C:\\", 0, 0)` = `EFILNF` (-33) — the drive root is deliberately
+  **not** lifted.
 - **Folder SET (NewTOS):** `Fattrib("C:\\SUBDIR", 1, 0)` returns `EACCDN` (-36) —
   a folder's attribute byte is never mutated (corruption guard).
 - **Bad path:** `Fattrib("C:\\NODIR\\F", 0, 0)` returns `EPTHNF` (-34).
@@ -180,6 +205,14 @@ attribute is at FCB offset 11, so `32 - 11 = 21`.
    the GET path (`Fattrib(dir, 0, 0)` returns the folder attribute, `FA_SUBDIR`
    set), matching FreeMiNT `sys_f_attrib` (`sys/dosdir.c:998-1002`); the SET path
    still rejects folders/labels with `EACCDN`.
+
+   The GET extension covers the **trailing-separator** spelling as well — that
+   is the only one cflib ever produces (`fsnorm.c:85-92`) — and nothing else: an
+   empty final component still answers the way EmuTOS answers it for every other
+   caller (`Fsfirst`/`Fopen` → `EFILNF` through `scan(builds(""))`,
+   `bdos/fsdir.c:737-795`; `Dcreate` → `EPTHNF` through `ixcreat`'s own guard,
+   `bdos/fsopnclo.c:117-118`), and inside `Fattrib` GET it still answers that way
+   for a file, a missing name and the bare drive root.
 
 2. **Settable bits limited to `FA_NORM`.** `mod & ~FA_NORM` on a set → `EACCDN`;
    `FA_VOL`/`FA_SUBDIR` cannot be toggled here (`bdos/fsdir.c:421-422`).
@@ -240,7 +273,8 @@ attribute is at FCB offset 11, so `32 - 11 = 21`.
 
 - EmuTOS behaves as Atari TOS 1-3 (files only). `FA_NORM = 0x27`.
 - NewTOS is a TOS4/FreeMiNT superset: GET works on folders too (returns the
-  folder attribute with `FA_SUBDIR` set); SET on a folder stays rejected.
+  folder attribute with `FA_SUBDIR` set), in both the plain and the
+  trailing-separator spelling; SET on a folder stays rejected.
 
 ---
 
@@ -255,9 +289,7 @@ PHASE-05: keep the TOS 1-3 files-only behaviour so programs that rely on
 `fattrib`. GET (`wrt == 0`) now resolves files **and** directories via the
 subdir-aware `dir::find_in_dir` (instead of `dir::find_file_in_dir`), so
 `Fattrib(dir, 0, 0)` returns the directory entry's attribute byte with
-`FA_SUBDIR` (0x10) set. Both `"C:\\CLIPBRD"` and the trailing-backslash form
-`"C:\\CLIPBRD\\"` resolve to the same directory (`path::findit` drops the empty
-trailing component). SET (`wrt == 1`) resolves with `find_in_dir` too and
+`FA_SUBDIR` (0x10) set. SET (`wrt == 1`) resolves with `find_in_dir` too and
 rejects any folder/label with `EACCDN` before the settable-bit check, so a
 directory entry is never rewritten (the #38 corruption guard). File GET/SET,
 `EPTHNF`/`EFILNF` and the `mod & 0x18` reject are byte-for-byte unchanged.
@@ -268,4 +300,28 @@ folder with `Fattrib(path, 0, 0) >= 0 && (attr & FA_DIR)`; without this QED's
 NOSCRAP alert. Reference: FreeMiNT `sys_f_attrib` (`references/freemint/sys/
 dosdir.c:946-1002`), EmuTOS `xchmod` + TOS4 note (`bdos/fsdir.c:382-436`,
 `391-400`). Selftest: `kernel/src/selftest_emmc.rs` `fmeta_test` (dir-GET
-assertions a-d, verified on QEMU raspi4b).
+assertions a-d) — note that this module is **not wired into any boot path**, so
+those assertions do not run in a normal boot and, as written, print `true`/
+`false` instead of failing (recorded in `TASK/A53.md`).
+
+2026-09-12 (Q07 — the trailing-separator spelling): the 2026-07-21 entry above
+claimed that `"C:\\CLIPBRD"` and `"C:\\CLIPBRD\\"` "resolve to the same
+directory (`path::findit` drops the empty trailing component)", and the
+verification criteria repeated it. **That was wrong.** `path::findit` does not
+drop the empty trailing component — it hands it to `dir::fcb_name`, which turns
+it into eleven blanks no directory entry can carry, so `find_in_dir` failed and
+`Fattrib("C:\\CLIPBRD\\", 0, 0)` answered `EFILNF` (measured: `-33`). Since
+cflib appends a separator to *every* path before it probes
+(`sdk/cflib/cflib-21/fsnorm.c:85-92`), the one caller the 2026-07-21 extension
+was made for never benefited from it: QED's clipboard init still fell through to
+`Dcreate` → `EACCDN` → NOSCRAP alert on every run after the first, and cflib's
+`app_init` (`appinit.c:104-107`) discarded `gl_appdir` and fell back to the
+current directory. Fix in `tos-api/src/bdos/fs/file.rs`: the GET branch first
+probes the separator-stripped spelling (`without_trailing_seps` +
+`subdir_attrib`) and accepts it **only if it names a directory**; everything
+else falls through to the unchanged code, so the lift is purely additive.
+Measured on QEMU `raspi4b` with an EL0 probe over all 18 cases of the Q07
+diagnosis plus the two `app_init` paths: exactly one value moved,
+`Fattrib("C:\\CLIPBRD\\",0,0)` from `-33` to `16`. `Fattrib("C:\\",0,0)` stays
+`-33`; `Fsfirst`/`Fopen`/`Dcreate` on a path ending in a separator are
+untouched. Host tests: `tos-api/tests/gemdos_fattrib_dir.rs`.

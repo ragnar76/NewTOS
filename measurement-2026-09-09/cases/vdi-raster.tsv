@@ -1,0 +1,181 @@
+# vdi-raster.tsv -- the VDI raster group, measured against a real machine.
+#
+# Read by DUMPRAST (core/dumprast.c), area 6, record 3696 bytes.  Loader,
+# column format and the geometry guard: core/cases.h.  Spec for the opcodes:
+# docs/api/vdi/raster/_raster.md.
+#
+#   opcode <TAB> intin <TAB> ptsin <TAB> src <TAB> dst <TAB> fill <TAB> comment
+#
+# src/dst = buffer,fd_w,fd_h,fd_wdwidth,fd_stand,fd_nplanes.  Buffer 0 is A
+# and 1 is B; both are TD_RAST_BUF_WORDS (512) WORDs and are laid before every
+# case with the two seeds in the fill column.  There is no screen MFDB here on
+# purpose: the two machines' screens differ in size and depth, so nothing
+# measured against one could be compared.
+#
+# WHAT THIS TABLE CAN AND CANNOT SETTLE
+#
+# The result of a raster call is memory.  The TT stores a form of N planes
+# word-interleaved (s_nxwd = fd_nplanes * 2, vdi_raster.c:922); NewTOS stores
+# every memory MFDB as one 16-bit RGB565 word per pixel (tos-api/src/vdi/
+# raster.rs).  Below nine planes the same bytes therefore mean different
+# pixels, and copying them is not a measurement of anything.  So:
+#
+#   SECTION A  vr_trnfm, fd_nplanes <= 8.  Fully comparable.  Both machines
+#              run the same plane permutation, and standard form is
+#              machine-independent by definition -- that is what fd_stand = 1
+#              means.  This is the part of the raster group that answers
+#              without a caveat.
+#   SECTION B  vro_cpyfm rules.  Every case here must leave the destination
+#              buffer exactly as the fill laid it, so the buffers compare
+#              whatever the pixel format is.  What is measured is the no-op
+#              conditions and the array hygiene.
+#   SECTION C  vro_cpyfm pixels at fd_nplanes = 16.  EmuTOS' own vro_cpyfm16
+#              (vdi_raster.c:975-1221) is the identical chunky UWORD loop
+#              NewTOS runs, so these ARE pixel-exact -- but only if the ROM
+#              being measured was built with CONF_WITH_VDI_16BIT.  If the
+#              whole of section C comes back with the TT's destination
+#              untouched, that is the answer to that question and not a
+#              defect: setup_info returns "nothing to do" for plane_ct > 8
+#              when the flag is off (vdi_raster.c:963-967).
+#   SECTION D  vrt_cpyfm rules.  Same shape as B.
+#
+# DELIBERATELY ABSENT, and why -- each of these would produce a difference
+# that measures the machine rather than the VDI:
+#
+#   * vrt_cpyfm with a destination of more than 8 planes.  vrt_cpyfm16 reads
+#     CUR_WORK->ext->palette (vdi_raster.c:1233), and vwk->ext is NULL unless
+#     the workstation is in a Truecolor mode (vdi_control.c:450-452).  On a
+#     4-plane TT that is a null dereference.  Not measured on a machine that
+#     has to survive it.
+#   * vrt_cpyfm cases that actually expand.  The destination pixels are
+#     colours, and the two machines' colour words differ by construction.
+#   * vro_cpyfm / vrt_cpyfm below nine planes that actually copy: device form,
+#     see above.
+#   * vr_trnfm with fd_nplanes > 8.  The direction is chosen by TRUECOLOR_MODE
+#     = (v_planes > 8) (vdi_defs.h:22), which is false on a 4-plane TT and
+#     true on NewTOS.  The two would run different algorithms for a reason
+#     that is the video mode, not the VDI.
+#
+# A PREDICTION, made before the run: EmuTOS sorts both rectangles IN PLACE
+# with arb_corner (vdi_raster.c:1336-1337, vdi_misc.c:30-45), which writes
+# back into PTSIN.  NewTOS sorts into locals and leaves PTSIN alone
+# (raster.rs, rect_from_ptsin).  Every case below whose corners are already
+# in (min,max) order must therefore show no PTSIN difference, and the two
+# reversed-corner cases must show one.  If it comes out the other way round,
+# the reading of one of the two implementations is wrong.
+
+# ======================================================================
+# SECTION A -- vr_trnfm (110).  Fully comparable.
+# ======================================================================
+# Form 16x16, fd_wdwidth 1: a plane is 16 WORDs.  fd_stand of the SOURCE
+# picks the direction and the destination's is overwritten with the
+# opposite (vdi_raster.c:303-314).
+110	-	-	0,16,16,1,1,4	1,16,16,1,0,4	1,2	vr_trnfm standard to device, 4 planes
+110	-	-	0,16,16,1,0,4	1,16,16,1,1,4	3,4	vr_trnfm device to standard, 4 planes
+110	-	-	0,16,16,1,1,2	1,16,16,1,0,2	5,6	vr_trnfm standard to device, 2 planes
+110	-	-	0,16,16,1,0,2	1,16,16,1,1,2	7,8	vr_trnfm device to standard, 2 planes
+110	-	-	0,16,16,1,1,8	1,16,16,1,0,8	9,10	vr_trnfm standard to device, 8 planes
+110	-	-	0,16,16,1,0,8	1,16,16,1,1,8	11,12	vr_trnfm device to standard, 8 planes
+# mono: standard and device layouts are identical, so the WORDs move
+# unchanged -- but fd_stand still toggles.
+110	-	-	0,16,16,1,1,1	1,16,16,1,0,1	13,14	vr_trnfm standard to device, 1 plane
+110	-	-	0,16,16,1,0,1	1,16,16,1,1,1	15,16	vr_trnfm device to standard, 1 plane
+# a wider form: 32x16, fd_wdwidth 2, so a plane is 32 WORDs
+110	-	-	0,32,16,2,1,4	1,32,16,2,0,4	17,18	vr_trnfm 32x16 standard to device
+110	-	-	0,32,16,2,0,4	1,32,16,2,1,4	19,20	vr_trnfm 32x16 device to standard
+# the destination's own fd_stand cannot force a direction: the VDI
+# overwrites it from the source's (edge case 6).
+110	-	-	0,16,16,1,1,4	1,16,16,1,1,4	21,22	vr_trnfm dest already says standard
+110	-	-	0,16,16,1,0,4	1,16,16,1,0,4	23,24	vr_trnfm dest already says device
+# in place (both MFDBs name buffer A): the slow rotation
+110	-	-	0,16,16,1,1,4	0,16,16,1,0,4	25,26	vr_trnfm in place, 4 planes, std to dev
+110	-	-	0,16,16,1,0,4	0,16,16,1,1,4	27,28	vr_trnfm in place, 4 planes, dev to std
+110	-	-	0,16,16,1,1,2	0,16,16,1,0,2	29,30	vr_trnfm in place, 2 planes
+# in place, mono: no difference between the two forms, so an early
+# return -- but fd_stand is written before it (vdi_raster.c:303,329).
+110	-	-	0,16,16,1,1,1	0,16,16,1,0,1	31,32	vr_trnfm in place, 1 plane, early return
+# in place with an outer loop of one: also an early return (:333)
+110	-	-	0,16,1,1,0,4	0,16,1,1,1,4	33,34	vr_trnfm in place, one row, dev to std
+
+# ======================================================================
+# SECTION B -- vro_cpyfm (109) rules.  The destination must not change.
+# ======================================================================
+# 4-plane device forms, 32x16.  Every case here is a documented no-op, so
+# buffer B must come back exactly as the fill laid it on both machines --
+# which is comparable whatever a plane means on either.
+109	0x20	0,0,7,7,0,0,7,7	0,32,16,2,0,4	1,32,16,2,0,4	40,41	mode above bit 5 is invalid, no-op
+109	0x7FFF	0,0,7,7,0,0,7,7	0,32,16,2,0,4	1,32,16,2,0,4	42,43	mode 0x7FFF invalid, no-op
+109	-	0,0,7,7,0,0,7,7	0,32,16,2,0,4	1,32,16,2,0,4	44,45	no intin at all: INTIN[0] is the poison
+109	5	0,0,7,7,0,0,7,7	0,32,16,2,0,4	1,32,16,2,0,4	46,47	op 5 D_ONLY writes the destination back
+109	0x15	0,0,7,7,0,0,7,7	0,32,16,2,0,4	1,32,16,2,0,4	48,49	PAT_FLAG|5 (0x15): stripped, still D_ONLY
+109	3	0,0,7,7,0,0,7,7	0,32,16,2,0,4	1,32,16,2,0,2	50,51	plane mismatch 4 to 2, no-op
+109	3	0,0,7,7,0,0,7,7	0,32,16,2,0,4	1,32,16,2,0,1	52,53	plane mismatch 4 to 1, no-op
+109	3	0,0,7,7,0,0,7,7	0,32,16,2,0,1	1,32,16,2,0,4	54,55	plane mismatch 1 to 4, no-op
+
+# ======================================================================
+# SECTION C -- vro_cpyfm (109) pixels, fd_nplanes = 16.
+# ======================================================================
+# 32x16 at 16 planes is 512 WORDs: the whole buffer, both of them.
+# EmuTOS runs vro_cpyfm16 here, which is the same chunky UWORD loop
+# NewTOS runs -- IF the ROM has CONF_WITH_VDI_16BIT.  If it has not,
+# every case in this section shows the TT's buffer B untouched, and
+# that is the measurement, not a defect.
+# the 16 logic ops, 8x8 from (0,0) to (8,8)
+109	0	0,0,7,7,8,8,15,15	0,32,16,2,0,16	1,32,16,2,0,16	60,61	op 0 ALL_WHITE D=0
+109	1	0,0,7,7,8,8,15,15	0,32,16,2,0,16	1,32,16,2,0,16	62,63	op 1 S_AND_D
+109	2	0,0,7,7,8,8,15,15	0,32,16,2,0,16	1,32,16,2,0,16	64,65	op 2 S_AND_NOTD
+109	3	0,0,7,7,8,8,15,15	0,32,16,2,0,16	1,32,16,2,0,16	66,67	op 3 S_ONLY replace
+109	4	0,0,7,7,8,8,15,15	0,32,16,2,0,16	1,32,16,2,0,16	68,69	op 4 NOTS_AND_D
+109	5	0,0,7,7,8,8,15,15	0,32,16,2,0,16	1,32,16,2,0,16	70,71	op 5 D_ONLY
+109	6	0,0,7,7,8,8,15,15	0,32,16,2,0,16	1,32,16,2,0,16	72,73	op 6 S_XOR_D
+109	7	0,0,7,7,8,8,15,15	0,32,16,2,0,16	1,32,16,2,0,16	74,75	op 7 S_OR_D
+109	8	0,0,7,7,8,8,15,15	0,32,16,2,0,16	1,32,16,2,0,16	76,77	op 8 NOT_SORD
+109	9	0,0,7,7,8,8,15,15	0,32,16,2,0,16	1,32,16,2,0,16	78,79	op 9 NOT_SXORD
+109	10	0,0,7,7,8,8,15,15	0,32,16,2,0,16	1,32,16,2,0,16	80,81	op 10 NOT_D
+109	11	0,0,7,7,8,8,15,15	0,32,16,2,0,16	1,32,16,2,0,16	82,83	op 11 S_OR_NOTD
+109	12	0,0,7,7,8,8,15,15	0,32,16,2,0,16	1,32,16,2,0,16	84,85	op 12 NOT_S
+109	13	0,0,7,7,8,8,15,15	0,32,16,2,0,16	1,32,16,2,0,16	86,87	op 13 NOTS_OR_D
+109	14	0,0,7,7,8,8,15,15	0,32,16,2,0,16	1,32,16,2,0,16	88,89	op 14 NOT_SANDD
+109	15	0,0,7,7,8,8,15,15	0,32,16,2,0,16	1,32,16,2,0,16	90,91	op 15 ALL_BLACK D=1
+# PAT_FLAG on the 16-bit path: vro_cpyfm16 re-reads INTIN[0] WITHOUT
+# stripping PAT_FLAG (0x10) (vdi_raster.c:980), so 0x13 matches no arm of
+# its switch and nothing is copied.  NewTOS strips it first and copies.
+# Predicted to differ; that is the point of the case.
+109	0x13	0,0,7,7,8,8,15,15	0,32,16,2,0,16	1,32,16,2,0,16	92,93	PAT_FLAG|3 on the 16-bit path
+# geometry
+109	3	0,0,0,0,5,5,5,5	0,32,16,2,0,16	1,32,16,2,0,16	94,95	one pixel, a degenerate rectangle
+109	3	7,7,0,0,8,8,15,15	0,32,16,2,0,16	1,32,16,2,0,16	96,97	reversed source corners: arb_corner sorts
+109	3	0,0,7,7,15,15,8,8	0,32,16,2,0,16	1,32,16,2,0,16	98,99	reversed destination corners
+109	3	24,8,31,15,0,0,7,7	0,32,16,2,0,16	1,32,16,2,0,16	100,101	a rectangle at the far corner of the form
+109	3	0,0,31,15,0,0,31,15	0,32,16,2,0,16	1,32,16,2,0,16	102,103	the whole form
+# PREDICTED DIFFERENCE.  The copy extent comes from the SOURCE rectangle
+# (dont_clip, vdi_raster.c:882-900), but the reverse-direction path -- which
+# an A to B copy always takes, see above -- starts from d_xmax/d_ymax, and
+# dont_clip takes those LITERALLY out of PTSIN[6..7] (:895-898, used at
+# :995-999).  So EmuTOS lands the 8x8 block at (24..31, 8..15) and NewTOS,
+# which never reads PTSIN[6..7], lands it at (0..7, 0..7).
+109	3	0,0,7,7,0,0,31,15	0,32,16,2,0,16	1,32,16,2,0,16	104,105	PTSIN[6..7] too big: the extent is the source's
+# Overlap inside one buffer: the copy direction has to be chosen so the copy
+# does not eat itself (edge case 5).  EmuTOS chooses it by comparing the two
+# START ADDRESSES (vdi_raster.c:993), NewTOS by comparing the coordinates of
+# two MFDBs that share a buffer (raster.rs, mem_to_mem) -- these agree here,
+# and for A to B they agree too, because buffer A precedes buffer B inside
+# one struct and a struct's members ascend on every C implementation.
+109	3	0,0,15,7,8,8,23,15	0,32,16,2,0,16	0,32,16,2,0,16	106,107	overlap, destination down and right
+109	3	8,8,23,15,0,0,15,7	0,32,16,2,0,16	0,32,16,2,0,16	108,109	overlap, destination up and left
+109	6	0,0,15,7,0,8,15,15	0,32,16,2,0,16	0,32,16,2,0,16	110,111	XOR inside one buffer, no overlap
+
+# ======================================================================
+# SECTION D -- vrt_cpyfm (121) rules.  The destination must not change.
+# ======================================================================
+# A 1-plane source is the one thing both machines read identically: a
+# WORD per 16 pixels, MSB first.  What it expands INTO is a colour, and
+# colours are not comparable -- so only the no-op rules are measured.
+121	0x20,1,0	0,0,7,7,0,0,7,7	0,32,16,2,0,1	1,32,16,2,0,4	120,121	mode above bit 5 is invalid, no-op
+121	0,1,0	0,0,7,7,0,0,7,7	0,32,16,2,0,1	1,32,16,2,0,4	122,123	mode 0 is not an MD_ code, no-op
+121	5,1,0	0,0,7,7,0,0,7,7	0,32,16,2,0,1	1,32,16,2,0,4	124,125	mode 5 is not an MD_ code, no-op
+121	-	0,0,7,7,0,0,7,7	0,32,16,2,0,1	1,32,16,2,0,4	126,127	no intin at all: INTIN[0] is the poison
+121	0x15,1,0	0,0,7,7,0,0,7,7	0,32,16,2,0,1	1,32,16,2,0,4	128,129	PAT_FLAG|5 (0x15): stripped, still no MD_ code
+121	1,1,0	0,0,7,7,0,0,7,7	0,32,16,2,0,4	1,32,16,2,0,4	130,131	source is 4 planes, not mono: no-op
+121	1,1,0	0,0,7,7,0,0,7,7	0,32,16,2,0,2	1,32,16,2,0,4	132,133	source is 2 planes, not mono: no-op
+121	1,1,0	0,0,7,7,0,0,7,7	0,32,16,2,0,8	1,32,16,2,0,4	134,135	source is 8 planes, not mono: no-op

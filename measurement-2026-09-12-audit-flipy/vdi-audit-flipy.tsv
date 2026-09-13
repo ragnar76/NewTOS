@@ -1,0 +1,64 @@
+# vdi-audit-flipy.tsv -- AUDITOR table, 2026-09-12.
+#
+# Not part of the frozen measurement set.  Written for one question: is the
+# VDI dispatcher's d0 (EmuTOS' flip_y, vdi/vdi_asm.S:124-125) right on the
+# paths the four frozen tables do NOT reach -- the error and fallback arms of
+# the handlers that raise the flag, plus the three fields commit 675e311 and
+# 1eb4e68 changed (vqt_name's 34th INTOUT word, v_dspcur's INTIN[0] write,
+# vqin_mode's device modes).
+#
+# EmuTOS raises flip_y at nine sites (grep flip_y, pinned tree
+# 1a7484ab): vdi_control.c:379 init_wk (opcodes 1, 100), :631 vq_extnd (102),
+# vdi_marker.c:49 vsm_height (19), :178 vqm_attributes (36),
+# vdi_text.c:678 setup_width_height (12, 107, and 21 via vst_font),
+# :1020 vqt_attributes (38), :1058 vqt_extent (116), :1095 vqt_width (117),
+# :1173 vqt_fontinfo (131).  NewTOS returns the flag by OPCODE
+# (tos-api/src/vdi/mod.rs:413-420), so every handler arm that returns EARLY,
+# or that falls back to a default, is a place where the two could disagree.
+# That is what this table drives.
+#
+# Excluded for the same reasons as the frozen tables: 1, 2, 100, 101 (would
+# destroy the workstation the run measures through), 28/31 in REQUEST mode
+# (block on the operator), 124/128 (live mouse and keyboard), 109/110/121
+# (need MFDB pointers), escape sub 2/3/17 (mode switch / printer).
+#
+# opcode	sub	intin	ptsin	comment
+117	0	1	-	vqt_width char 1, the low end of the font
+117	0	300	-	vqt_width char 300, above last_ade: the INTOUT[0]=-1 arm
+117	0	-1	-	vqt_width char -1, below first_ade: the same arm
+116	0	65,66,67,68,69,70,71,72	-	vqt_extent eight characters
+21	0	-1	-	vst_font face -1, no such face: the fon6x6 fallback
+21	0	0	-	vst_font face 0, no such face
++107	0	10	-	prelude: vst_point 10 sets pts_mode
+21	0	1	-	vst_font after vst_point: the vdi_vst_point arm of vst_font
+12	0	-	0,0	vst_height zero
+12	0	-	0,-1	vst_height -1, read as UWORD 65535
+107	0	0	-	vst_point zero
+107	0	-3	-	vst_point negative
+19	0	-	0,-5	vsm_height negative, clamped to DEF_MKHT
+19	0	-	0,32767	vsm_height at the WORD maximum, clamped to MAX_MKHT
+36	0	-	-	vqm_attributes
+38	0	-	-	vqt_attributes
+102	0	0	-	vq_extnd 0
+102	0	1	-	vq_extnd 1
+130	0	9	-	vqt_name element 9, out of bounds: the fon6x6 fallback
+130	0	-1	-	vqt_name element -1
+130	0	0	-	vqt_name element 0, not an element either
+131	0	-	-	vqt_fontinfo
++12	0	-	0,13	prelude: vst_height 13 scales the font
+131	0	-	-	vqt_fontinfo on a scaled font
++12	0	-	0,13	prelude: vst_height 13 scales the font
+117	0	65	-	vqt_width A on a scaled font: the act_siz arm
+115	0	0	-	vqin_mode device 0: INTOUT[0] must stay untouched
+115	0	5	-	vqin_mode device 5, out of range
+115	0	4	-	vqin_mode string, as the AES left it
+33	0	4,1	-	vsin_mode string back to REQUEST
+115	0	4	-	vqin_mode string after the REQUEST write
+33	0	4,2	-	vsin_mode string to SAMPLE
+115	0	4	-	vqin_mode string after the SAMPLE write
+33	0	9,2	-	vsin_mode device 9, out of range: stores nothing
+115	0	1	-	vqin_mode locator
+5	18	-	-	v_dspcur with no coordinates: writes INTIN[0]=0
+5	19	-	-	v_rmcur: must NOT write INTIN[0]
+5	20	-	-	escape sub 20, past ldri_escape
+3	0	-	-	v_clrwk, the no-flip control case

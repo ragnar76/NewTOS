@@ -1,0 +1,14 @@
+$ tosdiff --validate run2-pi4-r2wind/AES.BIN cases/aes-r2-wind.tsv
+AES.BIN: area AES, 78 records of 120 bytes, build 70ca, case CRC AFB11C9F
+AES.BIN: matches aes-r2-wind.tsv (78 cases)
+AES.BIN: accepted
+
+$ tosdiff --validate ../tosdump/reference/EMUTOS14-AES-r2wind.BIN cases/aes-r2-wind.tsv
+EMUTOS14-AES-r2wind.BIN: area AES, 78 records of 120 bytes, build c911, case CRC AFB11C9F
+EMUTOS14-AES-r2wind.BIN: matches aes-r2-wind.tsv (78 cases)
+EMUTOS14-AES-r2wind.BIN: accepted
+
+$ tosdiff --validate reference-tt/EMUTOS14-AES-r2brlist.BIN cases/aes-r2b-rlist.tsv
+EMUTOS14-AES-r2brlist.BIN: area AES, 15 records of 120 bytes, build c911, case CRC B4CC4A5A
+EMUTOS14-AES-r2brlist.BIN: matches aes-r2b-rlist.tsv (15 cases)
+EMUTOS14-AES-r2brlist.BIN: accepted

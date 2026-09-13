@@ -1,0 +1,239 @@
+RASTER.BIN vs RASTER.BIN -- area VDI-RASTER, 59 cases from vdi-raster.tsv
+
+case 73  opcode 110  vr_trnfm standard to device, 4 planes
+    contrl[6]              RASTER.BIN = 0x0004 (4)   RASTER.BIN = 0x0002 (2)
+    contrl_before[6]       RASTER.BIN = 0x0004 (4)   RASTER.BIN = 0x0002 (2)
+
+case 74  opcode 110  vr_trnfm device to standard, 4 planes
+    contrl[6]              RASTER.BIN = 0x0004 (4)   RASTER.BIN = 0x0002 (2)
+    contrl_before[6]       RASTER.BIN = 0x0004 (4)   RASTER.BIN = 0x0002 (2)
+
+case 75  opcode 110  vr_trnfm standard to device, 2 planes
+    contrl[6]              RASTER.BIN = 0x0004 (4)   RASTER.BIN = 0x0002 (2)
+    contrl_before[6]       RASTER.BIN = 0x0004 (4)   RASTER.BIN = 0x0002 (2)
+
+case 76  opcode 110  vr_trnfm device to standard, 2 planes
+    contrl[6]              RASTER.BIN = 0x0004 (4)   RASTER.BIN = 0x0002 (2)
+    contrl_before[6]       RASTER.BIN = 0x0004 (4)   RASTER.BIN = 0x0002 (2)
+
+case 77  opcode 110  vr_trnfm standard to device, 8 planes
+    contrl[6]              RASTER.BIN = 0x0004 (4)   RASTER.BIN = 0x0002 (2)
+    contrl_before[6]       RASTER.BIN = 0x0004 (4)   RASTER.BIN = 0x0002 (2)
+
+case 78  opcode 110  vr_trnfm device to standard, 8 planes
+    contrl[6]              RASTER.BIN = 0x0004 (4)   RASTER.BIN = 0x0002 (2)
+    contrl_before[6]       RASTER.BIN = 0x0004 (4)   RASTER.BIN = 0x0002 (2)
+
+case 81  opcode 110  vr_trnfm standard to device, 1 plane
+    contrl[6]              RASTER.BIN = 0x0004 (4)   RASTER.BIN = 0x0002 (2)
+    contrl_before[6]       RASTER.BIN = 0x0004 (4)   RASTER.BIN = 0x0002 (2)
+
+case 82  opcode 110  vr_trnfm device to standard, 1 plane
+    contrl[6]              RASTER.BIN = 0x0004 (4)   RASTER.BIN = 0x0002 (2)
+    contrl_before[6]       RASTER.BIN = 0x0004 (4)   RASTER.BIN = 0x0002 (2)
+
+case 84  opcode 110  vr_trnfm 32x16 standard to device
+    contrl[6]              RASTER.BIN = 0x0004 (4)   RASTER.BIN = 0x0002 (2)
+    contrl_before[6]       RASTER.BIN = 0x0004 (4)   RASTER.BIN = 0x0002 (2)
+
+case 85  opcode 110  vr_trnfm 32x16 device to standard
+    contrl[6]              RASTER.BIN = 0x0004 (4)   RASTER.BIN = 0x0002 (2)
+    contrl_before[6]       RASTER.BIN = 0x0004 (4)   RASTER.BIN = 0x0002 (2)
+
+case 88  opcode 110  vr_trnfm dest already says standard
+    contrl[6]              RASTER.BIN = 0x0004 (4)   RASTER.BIN = 0x0002 (2)
+    contrl_before[6]       RASTER.BIN = 0x0004 (4)   RASTER.BIN = 0x0002 (2)
+
+case 89  opcode 110  vr_trnfm dest already says device
+    contrl[6]              RASTER.BIN = 0x0004 (4)   RASTER.BIN = 0x0002 (2)
+    contrl_before[6]       RASTER.BIN = 0x0004 (4)   RASTER.BIN = 0x0002 (2)
+
+case 91  opcode 110  vr_trnfm in place, 4 planes, std to dev
+    contrl[6]              RASTER.BIN = 0x0004 (4)   RASTER.BIN = 0x0002 (2)
+    contrl_before[6]       RASTER.BIN = 0x0004 (4)   RASTER.BIN = 0x0002 (2)
+
+case 92  opcode 110  vr_trnfm in place, 4 planes, dev to std
+    contrl[6]              RASTER.BIN = 0x0004 (4)   RASTER.BIN = 0x0002 (2)
+    contrl_before[6]       RASTER.BIN = 0x0004 (4)   RASTER.BIN = 0x0002 (2)
+
+case 93  opcode 110  vr_trnfm in place, 2 planes
+    contrl[6]              RASTER.BIN = 0x0004 (4)   RASTER.BIN = 0x0002 (2)
+    contrl_before[6]       RASTER.BIN = 0x0004 (4)   RASTER.BIN = 0x0002 (2)
+
+case 96  opcode 110  vr_trnfm in place, 1 plane, early return
+    contrl[6]              RASTER.BIN = 0x0004 (4)   RASTER.BIN = 0x0002 (2)
+    contrl_before[6]       RASTER.BIN = 0x0004 (4)   RASTER.BIN = 0x0002 (2)
+
+case 98  opcode 110  vr_trnfm in place, one row, dev to std
+    contrl[6]              RASTER.BIN = 0x0004 (4)   RASTER.BIN = 0x0002 (2)
+    contrl_before[6]       RASTER.BIN = 0x0004 (4)   RASTER.BIN = 0x0002 (2)
+
+case 106  opcode 109  mode above bit 5 is invalid, no-op
+    contrl[6]              RASTER.BIN = 0x0004 (4)   RASTER.BIN = 0x0002 (2)
+    contrl_before[6]       RASTER.BIN = 0x0004 (4)   RASTER.BIN = 0x0002 (2)
+
+case 107  opcode 109  mode 0x7FFF invalid, no-op
+    contrl[6]              RASTER.BIN = 0x0004 (4)   RASTER.BIN = 0x0002 (2)
+    contrl_before[6]       RASTER.BIN = 0x0004 (4)   RASTER.BIN = 0x0002 (2)
+
+case 108  opcode 109  no intin at all: INTIN[0] is the poison
+    contrl[6]              RASTER.BIN = 0x0004 (4)   RASTER.BIN = 0x0002 (2)
+    contrl_before[6]       RASTER.BIN = 0x0004 (4)   RASTER.BIN = 0x0002 (2)
+
+case 109  opcode 109  op 5 D_ONLY writes the destination back
+    contrl[6]              RASTER.BIN = 0x0004 (4)   RASTER.BIN = 0x0002 (2)
+    contrl_before[6]       RASTER.BIN = 0x0004 (4)   RASTER.BIN = 0x0002 (2)
+
+case 110  opcode 109  PAT_FLAG|5 (0x15): stripped, still D_ONLY
+    contrl[6]              RASTER.BIN = 0x0004 (4)   RASTER.BIN = 0x0002 (2)
+    contrl_before[6]       RASTER.BIN = 0x0004 (4)   RASTER.BIN = 0x0002 (2)
+
+case 111  opcode 109  plane mismatch 4 to 2, no-op
+    contrl[6]              RASTER.BIN = 0x0004 (4)   RASTER.BIN = 0x0002 (2)
+    contrl_before[6]       RASTER.BIN = 0x0004 (4)   RASTER.BIN = 0x0002 (2)
+
+case 112  opcode 109  plane mismatch 4 to 1, no-op
+    contrl[6]              RASTER.BIN = 0x0004 (4)   RASTER.BIN = 0x0002 (2)
+    contrl_before[6]       RASTER.BIN = 0x0004 (4)   RASTER.BIN = 0x0002 (2)
+
+case 113  opcode 109  plane mismatch 1 to 4, no-op
+    contrl[6]              RASTER.BIN = 0x0004 (4)   RASTER.BIN = 0x0002 (2)
+    contrl_before[6]       RASTER.BIN = 0x0004 (4)   RASTER.BIN = 0x0002 (2)
+
+case 124  opcode 109  op 0 ALL_WHITE D=0
+    contrl[6]              RASTER.BIN = 0x0004 (4)   RASTER.BIN = 0x0002 (2)
+    contrl_before[6]       RASTER.BIN = 0x0004 (4)   RASTER.BIN = 0x0002 (2)
+
+case 125  opcode 109  op 1 S_AND_D
+    contrl[6]              RASTER.BIN = 0x0004 (4)   RASTER.BIN = 0x0002 (2)
+    contrl_before[6]       RASTER.BIN = 0x0004 (4)   RASTER.BIN = 0x0002 (2)
+
+case 126  opcode 109  op 2 S_AND_NOTD
+    contrl[6]              RASTER.BIN = 0x0004 (4)   RASTER.BIN = 0x0002 (2)
+    contrl_before[6]       RASTER.BIN = 0x0004 (4)   RASTER.BIN = 0x0002 (2)
+
+case 127  opcode 109  op 3 S_ONLY replace
+    contrl[6]              RASTER.BIN = 0x0004 (4)   RASTER.BIN = 0x0002 (2)
+    contrl_before[6]       RASTER.BIN = 0x0004 (4)   RASTER.BIN = 0x0002 (2)
+
+case 128  opcode 109  op 4 NOTS_AND_D
+    contrl[6]              RASTER.BIN = 0x0004 (4)   RASTER.BIN = 0x0002 (2)
+    contrl_before[6]       RASTER.BIN = 0x0004 (4)   RASTER.BIN = 0x0002 (2)
+
+case 129  opcode 109  op 5 D_ONLY
+    contrl[6]              RASTER.BIN = 0x0004 (4)   RASTER.BIN = 0x0002 (2)
+    contrl_before[6]       RASTER.BIN = 0x0004 (4)   RASTER.BIN = 0x0002 (2)
+
+case 130  opcode 109  op 6 S_XOR_D
+    contrl[6]              RASTER.BIN = 0x0004 (4)   RASTER.BIN = 0x0002 (2)
+    contrl_before[6]       RASTER.BIN = 0x0004 (4)   RASTER.BIN = 0x0002 (2)
+
+case 131  opcode 109  op 7 S_OR_D
+    contrl[6]              RASTER.BIN = 0x0004 (4)   RASTER.BIN = 0x0002 (2)
+    contrl_before[6]       RASTER.BIN = 0x0004 (4)   RASTER.BIN = 0x0002 (2)
+
+case 132  opcode 109  op 8 NOT_SORD
+    contrl[6]              RASTER.BIN = 0x0004 (4)   RASTER.BIN = 0x0002 (2)
+    contrl_before[6]       RASTER.BIN = 0x0004 (4)   RASTER.BIN = 0x0002 (2)
+
+case 133  opcode 109  op 9 NOT_SXORD
+    contrl[6]              RASTER.BIN = 0x0004 (4)   RASTER.BIN = 0x0002 (2)
+    contrl_before[6]       RASTER.BIN = 0x0004 (4)   RASTER.BIN = 0x0002 (2)
+
+case 134  opcode 109  op 10 NOT_D
+    contrl[6]              RASTER.BIN = 0x0004 (4)   RASTER.BIN = 0x0002 (2)
+    contrl_before[6]       RASTER.BIN = 0x0004 (4)   RASTER.BIN = 0x0002 (2)
+
+case 135  opcode 109  op 11 S_OR_NOTD
+    contrl[6]              RASTER.BIN = 0x0004 (4)   RASTER.BIN = 0x0002 (2)
+    contrl_before[6]       RASTER.BIN = 0x0004 (4)   RASTER.BIN = 0x0002 (2)
+
+case 136  opcode 109  op 12 NOT_S
+    contrl[6]              RASTER.BIN = 0x0004 (4)   RASTER.BIN = 0x0002 (2)
+    contrl_before[6]       RASTER.BIN = 0x0004 (4)   RASTER.BIN = 0x0002 (2)
+
+case 137  opcode 109  op 13 NOTS_OR_D
+    contrl[6]              RASTER.BIN = 0x0004 (4)   RASTER.BIN = 0x0002 (2)
+    contrl_before[6]       RASTER.BIN = 0x0004 (4)   RASTER.BIN = 0x0002 (2)
+
+case 138  opcode 109  op 14 NOT_SANDD
+    contrl[6]              RASTER.BIN = 0x0004 (4)   RASTER.BIN = 0x0002 (2)
+    contrl_before[6]       RASTER.BIN = 0x0004 (4)   RASTER.BIN = 0x0002 (2)
+
+case 139  opcode 109  op 15 ALL_BLACK D=1
+    contrl[6]              RASTER.BIN = 0x0004 (4)   RASTER.BIN = 0x0002 (2)
+    contrl_before[6]       RASTER.BIN = 0x0004 (4)   RASTER.BIN = 0x0002 (2)
+
+case 144  opcode 109  PAT_FLAG|3 on the 16-bit path
+    contrl[6]              RASTER.BIN = 0x0004 (4)   RASTER.BIN = 0x0002 (2)
+    contrl_before[6]       RASTER.BIN = 0x0004 (4)   RASTER.BIN = 0x0002 (2)
+
+case 146  opcode 109  one pixel, a degenerate rectangle
+    contrl[6]              RASTER.BIN = 0x0004 (4)   RASTER.BIN = 0x0002 (2)
+    contrl_before[6]       RASTER.BIN = 0x0004 (4)   RASTER.BIN = 0x0002 (2)
+
+case 147  opcode 109  reversed source corners: arb_corner sorts
+    contrl[6]              RASTER.BIN = 0x0004 (4)   RASTER.BIN = 0x0002 (2)
+    contrl_before[6]       RASTER.BIN = 0x0004 (4)   RASTER.BIN = 0x0002 (2)
+
+case 148  opcode 109  reversed destination corners
+    contrl[6]              RASTER.BIN = 0x0004 (4)   RASTER.BIN = 0x0002 (2)
+    contrl_before[6]       RASTER.BIN = 0x0004 (4)   RASTER.BIN = 0x0002 (2)
+
+case 149  opcode 109  a rectangle at the far corner of the form
+    contrl[6]              RASTER.BIN = 0x0004 (4)   RASTER.BIN = 0x0002 (2)
+    contrl_before[6]       RASTER.BIN = 0x0004 (4)   RASTER.BIN = 0x0002 (2)
+
+case 150  opcode 109  the whole form
+    contrl[6]              RASTER.BIN = 0x0004 (4)   RASTER.BIN = 0x0002 (2)
+    contrl_before[6]       RASTER.BIN = 0x0004 (4)   RASTER.BIN = 0x0002 (2)
+
+case 157  opcode 109  PTSIN[6..7] too big: the extent is the source's
+    contrl[6]              RASTER.BIN = 0x0004 (4)   RASTER.BIN = 0x0002 (2)
+    contrl_before[6]       RASTER.BIN = 0x0004 (4)   RASTER.BIN = 0x0002 (2)
+
+case 164  opcode 109  overlap, destination down and right
+    contrl[6]              RASTER.BIN = 0x0004 (4)   RASTER.BIN = 0x0002 (2)
+    contrl_before[6]       RASTER.BIN = 0x0004 (4)   RASTER.BIN = 0x0002 (2)
+
+case 165  opcode 109  overlap, destination up and left
+    contrl[6]              RASTER.BIN = 0x0004 (4)   RASTER.BIN = 0x0002 (2)
+    contrl_before[6]       RASTER.BIN = 0x0004 (4)   RASTER.BIN = 0x0002 (2)
+
+case 166  opcode 109  XOR inside one buffer, no overlap
+    contrl[6]              RASTER.BIN = 0x0004 (4)   RASTER.BIN = 0x0002 (2)
+    contrl_before[6]       RASTER.BIN = 0x0004 (4)   RASTER.BIN = 0x0002 (2)
+
+case 174  opcode 121  mode above bit 5 is invalid, no-op
+    contrl[6]              RASTER.BIN = 0x0004 (4)   RASTER.BIN = 0x0002 (2)
+    contrl_before[6]       RASTER.BIN = 0x0004 (4)   RASTER.BIN = 0x0002 (2)
+
+case 175  opcode 121  mode 0 is not an MD_ code, no-op
+    contrl[6]              RASTER.BIN = 0x0004 (4)   RASTER.BIN = 0x0002 (2)
+    contrl_before[6]       RASTER.BIN = 0x0004 (4)   RASTER.BIN = 0x0002 (2)
+
+case 176  opcode 121  mode 5 is not an MD_ code, no-op
+    contrl[6]              RASTER.BIN = 0x0004 (4)   RASTER.BIN = 0x0002 (2)
+    contrl_before[6]       RASTER.BIN = 0x0004 (4)   RASTER.BIN = 0x0002 (2)
+
+case 177  opcode 121  no intin at all: INTIN[0] is the poison
+    contrl[6]              RASTER.BIN = 0x0004 (4)   RASTER.BIN = 0x0002 (2)
+    contrl_before[6]       RASTER.BIN = 0x0004 (4)   RASTER.BIN = 0x0002 (2)
+
+case 178  opcode 121  PAT_FLAG|5 (0x15): stripped, still no MD_ code
+    contrl[6]              RASTER.BIN = 0x0004 (4)   RASTER.BIN = 0x0002 (2)
+    contrl_before[6]       RASTER.BIN = 0x0004 (4)   RASTER.BIN = 0x0002 (2)
+
+case 179  opcode 121  source is 4 planes, not mono: no-op
+    contrl[6]              RASTER.BIN = 0x0004 (4)   RASTER.BIN = 0x0002 (2)
+    contrl_before[6]       RASTER.BIN = 0x0004 (4)   RASTER.BIN = 0x0002 (2)
+
+case 180  opcode 121  source is 2 planes, not mono: no-op
+    contrl[6]              RASTER.BIN = 0x0004 (4)   RASTER.BIN = 0x0002 (2)
+    contrl_before[6]       RASTER.BIN = 0x0004 (4)   RASTER.BIN = 0x0002 (2)
+
+case 181  opcode 121  source is 8 planes, not mono: no-op
+    contrl[6]              RASTER.BIN = 0x0004 (4)   RASTER.BIN = 0x0002 (2)
+    contrl_before[6]       RASTER.BIN = 0x0004 (4)   RASTER.BIN = 0x0002 (2)
+
+59 of 59 cases differ

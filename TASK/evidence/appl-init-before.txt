@@ -1,0 +1,20 @@
+running 1 test
+test appl_init_preserves_caller_memory_and_pending_messages_on_both_profiles ... FAILED
+
+failures:
+
+---- appl_init_preserves_caller_memory_and_pending_messages_on_both_profiles stdout ----
+
+thread 'appl_init_preserves_caller_memory_and_pending_messages_on_both_profiles' (22469855) panicked at tos-api/tests/aes_appl_init.rs:125:9:
+assertion `left == right` failed: appl_init discarded a pending message
+  left: 0
+ right: 1
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+
+
+failures:
+    appl_init_preserves_caller_memory_and_pending_messages_on_both_profiles
+
+test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+error: test failed, to rerun pass `-p tos-api --test aes_appl_init`
