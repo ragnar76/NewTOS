@@ -406,14 +406,43 @@ int td_cases_parse(struct td_case_table *t, const char *buf, size_t len,
  *   1. it stops the run finishing.  Most of these wait on the operator; two
  *      (appl_exit, shel_write) end or replace the application instead, which
  *      is the same outcome by a different route.
- *   2. TOS 3.06's AES does not have it.  EmuTOS' own version ladder records
- *      TOS 3.06 as AES 3.20 (include/config.h:1345-1354), and an opcode
- *      compiled out at that level reaches crysbind's default arm, which pops
- *      fm_show(ALNOFUNC) -- a modal alert waiting for a click
- *      (gemsuper.c:411-417).
+ *   2. whether the machine has it is UNESTABLISHED and no measurement can
+ *      settle it.  That is the four CONF_WITH_PCGEM opcodes: the flag is
+ *      absent from EmuTOS' AES_VERSION ladder, so ap_version says nothing
+ *      about them, and an opcode the machine lacks reaches crysbind's
+ *      default arm, which pops fm_show(ALNOFUNC) -- a modal alert waiting
+ *      for a click (gemsuper.c:411-417).
  *   3. it is not an AES opcode at all.  Same default arm, same alert.
  *      Opcode 0 is the single exception: gemsuper.c:414 skips the alert for
  *      it explicitly ("Ignore zero since some PRGs are this call").
+ *
+ * WHAT IS NO LONGER HERE, ONE.  menu_popup/attach/istart/settings (36-39)
+ * and objc_sysvar (48) are compiled out of a smaller build too, but
+ * ap_version DOES settle those -- the flags that gate them are the ladder's
+ * own (config.h:1345-1354).  They are therefore not a property of the table
+ * and not the loader's to refuse: the loader records the capability they
+ * need in the table's `features`, and the machine decides, after appl_init,
+ * in td_aes_cases_version_refusal below.  Until 2026-09-13 they were refused
+ * here on the assumption "TOS 3.06 = AES 3.20", which locked out functions
+ * the reference ROM measurably HAS (it reports 0x0340).  See cases.h, the
+ * version guard, and TASK/M06.md.
+ *
+ * WHAT IS NO LONGER HERE, TWO.  evnt_multi (25) and form_error (53) each
+ * have ONE arm that returns before the blocking one, and which arm a call
+ * takes is decided by its PARAMETERS, not by its opcode:
+ *
+ *   ev_multi's quick check timer -- MU_TIMER among the flags with a zero
+ *      MT_LOCOUNT/MT_HICOUNT -- sets `what` before the `if (what == 0)`
+ *      block that arms the events and sleeps (gemevlib.c:216-220 against
+ *      :232-262).
+ *   fm_error returns FALSE for n > 63 before reaching fm_show at all
+ *      (gemfmlib.c:440-441 against :469).
+ *
+ * A guard that can only see the opcode has to refuse both, and refusing the
+ * one non-blocking arm of a function is refusing the only thing about it
+ * that is measurable.  They moved to aes_line_parameter_refusal below, which
+ * sees the values -- and which, in the same move, took over the opposite
+ * duty for four opcodes this list waves through: see its own header.
  *
  * There is no override mechanism, deliberately.  Taking an opcode off this
  * list is a source change with a citation, and that friction is the point:
@@ -422,7 +451,8 @@ int td_cases_parse(struct td_case_table *t, const char *buf, size_t len,
  *
  * The table below is also the complete list of opcodes that HAVE an arm in
  * crysbind (aes/gemsuper.c:87-409, 79 of them); `refusal` is NULL for the
- * ones a table may issue and the reason otherwise.  Anything absent from it
+ * ones a table may issue -- subject, for the five in aes_version_gated[], to
+ * the machine's answer -- and the reason otherwise.  Anything absent from it
  * is class 3.
  */
 struct td_aes_opcode {
@@ -434,17 +464,15 @@ struct td_aes_opcode {
 #define BLOCKS "blocks on the operator: "
 /* class 1, sub-reason b: the run never gets back here */
 #define FATAL  "never returns to the run: "
-/* class 2 */
-#define GATED  "not in TOS 3.06's AES (3.20, config.h:1345-1354); the "        \
-               "dispatcher's default arm would pop a modal alert: "
-/* class 2, sub-reason b: EmuTOS does not say whether TOS 3.06 has it.
- * CONF_WITH_PCGEM gates these four (gemsuper.c:115, :315, :398-403) but does
- * NOT appear in the AES_VERSION ladder (config.h:1345-1354), so the reference
- * cannot tell us either way.  If TOS 3.06 lacks them the dispatcher pops the
- * same modal alert, which on the TT means a run that never finishes and a
- * hang indistinguishable from a real defect.  Refused until a primary source
- * settles it -- Compendium or Profibuch, per CLAUDE.md rule 1's secondary
- * cross-references; EmuTOS alone cannot. */
+/* class 2: EmuTOS does not say whether TOS 3.06 has it, and no measurement
+ * can ask.  CONF_WITH_PCGEM gates these four (gemsuper.c:115, :315,
+ * :398-403) but does NOT appear in the AES_VERSION ladder
+ * (config.h:1345-1354), so ap_version -- the one capability the machine
+ * reports -- cannot tell us either way.  If TOS 3.06 lacks them the
+ * dispatcher pops the modal alert, which on the TT means a run that never
+ * finishes and a hang indistinguishable from a real defect.  Refused until a
+ * primary source settles it -- Compendium or Profibuch, per CLAUDE.md rule
+ * 1's secondary cross-references; EmuTOS alone cannot. */
 #define PCGEM  "PC-GEM function whose presence in TOS 3.06 is unestablished "  \
                "(#if CONF_WITH_PCGEM, which is not in the AES_VERSION "        \
                "ladder); if absent, the default arm pops a modal alert: "
@@ -467,9 +495,7 @@ static const struct td_aes_opcode aes_opcodes[] = {
 	{  23, BLOCKS "evnt_mesag waits for a message (gemevlib.c:100-116, "
 	              "gemaplib.c:88)" },
 	{  24, NULL },                                   /* evnt_timer     */
-	{  25, BLOCKS "evnt_multi waits unless a finite timer is among its "
-	              "flags, which the opcode alone cannot guarantee "
-	              "(gemevlib.c:152-155)" },
+	{  25, NULL },                                   /* evnt_multi *   */
 	{  26, NULL },                                   /* evnt_dclick    */
 	{  30, NULL },                                   /* menu_bar       */
 	{  31, NULL },                                   /* menu_icheck    */
@@ -477,14 +503,10 @@ static const struct td_aes_opcode aes_opcodes[] = {
 	{  33, NULL },                                   /* menu_tnormal   */
 	{  34, NULL },                                   /* menu_text      */
 	{  35, NULL },                                   /* menu_register  */
-	{  36, GATED  "menu_popup is #if CONF_WITH_MENU_EXTENSION, which "
-	              "AES_VERSION needs for 0x0330 (gemsuper.c:188-191)" },
-	{  37, GATED  "menu_attach is #if CONF_WITH_MENU_EXTENSION "
-	              "(gemsuper.c:192-194)" },
-	{  38, GATED  "menu_istart is #if CONF_WITH_MENU_EXTENSION "
-	              "(gemsuper.c:195-197)" },
-	{  39, GATED  "menu_settings is #if CONF_WITH_MENU_EXTENSION "
-	              "(gemsuper.c:198-200)" },
+	{  36, NULL },                                   /* menu_popup     */
+	{  37, NULL },                                   /* menu_attach    */
+	{  38, NULL },                                   /* menu_istart    */
+	{  39, NULL },                                   /* menu_settings  */
 	{  40, NULL },                                   /* objc_add       */
 	{  41, NULL },                                   /* objc_delete    */
 	{  42, NULL },                                   /* objc_draw      */
@@ -493,14 +515,12 @@ static const struct td_aes_opcode aes_opcodes[] = {
 	{  45, NULL },                                   /* objc_order     */
 	{  46, NULL },                                   /* objc_edit      */
 	{  47, NULL },                                   /* objc_change    */
-	{  48, GATED  "objc_sysvar is #if CONF_WITH_3D_OBJECTS, which "
-	              "AES_VERSION needs for 0x0340 (gemsuper.c:232-236)" },
+	{  48, NULL },                                   /* objc_sysvar    */
 	{  50, BLOCKS "form_do runs a modal ev_multi(MU_KEYBD|MU_BUTTON) loop "
 	              "with a zero timer (gemfmlib.c:312)" },
 	{  51, NULL },                                   /* form_dial      */
 	{  52, BLOCKS "form_alert ends in fm_do (gemfmalt.c:383)" },
-	{  53, BLOCKS "form_error goes fm_show -> fm_alert -> fm_do "
-	              "(gemfmlib.c:436, :400)" },
+	{  53, NULL },                                   /* form_error *   */
 	{  54, NULL },                                   /* form_center    */
 	{  55, NULL },                                   /* form_keybd     */
 	{  56, BLOCKS "form_button waits for the button to come up, through "
@@ -554,7 +574,6 @@ static const struct td_aes_opcode aes_opcodes[] = {
 
 #undef BLOCKS
 #undef FATAL
-#undef GATED
 
 #define TD_AES_OPCODE_COUNT \
 	((int)(sizeof aes_opcodes / sizeof aes_opcodes[0]))
@@ -580,6 +599,150 @@ static const char *aes_opcode_refusal(int16_t opcode)
 	       "(gemsuper.c:406-417)";
 }
 
+/*
+ * ------------------------------------------------------------------
+ * The version guard: what the MACHINE reports, not what it is assumed
+ * ------------------------------------------------------------------
+ *
+ * Five of the opcodes above have an arm in crysbind only when a
+ * CONF_WITH_* flag is on, and those two flags ARE in EmuTOS' AES_VERSION
+ * ladder (include/config.h:1345-1354).  So the presence of these five is
+ * readable off a number the machine itself hands out -- ap_version, written
+ * by appl_init (gemsuper.c:92) -- and there is no need to assume anything.
+ *
+ * See cases.h (the version guard) for why the decision is here and not in
+ * the loader, and for why membership rather than ">=".
+ */
+struct td_aes_version_gate {
+	int16_t  opcode;
+	uint16_t feature;
+};
+
+static const struct td_aes_version_gate aes_version_gated[] = {
+	{ 36, TD_AES_FEAT_MENU_EXT },     /* menu_popup, gemsuper.c:188-191   */
+	{ 37, TD_AES_FEAT_MENU_EXT },     /* menu_attach, gemsuper.c:192-194  */
+	{ 38, TD_AES_FEAT_MENU_EXT },     /* menu_istart, gemsuper.c:195-197  */
+	{ 39, TD_AES_FEAT_MENU_EXT },     /* menu_settings, gemsuper.c:198-200*/
+	{ 48, TD_AES_FEAT_3D_OBJECTS }    /* objc_sysvar, gemsuper.c:232-236  */
+};
+
+#define TD_AES_VERSION_GATE_COUNT \
+	((int)(sizeof aes_version_gated / sizeof aes_version_gated[0]))
+
+/* The capability this opcode needs, or 0 for the other 74. */
+static uint16_t aes_opcode_feature(int16_t opcode)
+{
+	int i;
+
+	for (i = 0; i < TD_AES_VERSION_GATE_COUNT; i++)
+		if (aes_version_gated[i].opcode == opcode)
+			return aes_version_gated[i].feature;
+	return 0;
+}
+
+/*
+ * Does an AES reporting `ap_version` have this capability?
+ *
+ * The answer is read off the ladder's own arms and nothing else.  0x0340 is
+ * the only rung that requires CONF_WITH_3D_OBJECTS; 0x0340 and 0x0330 are
+ * the two that require CONF_WITH_MENU_EXTENSION (config.h:1346-1349).  A
+ * number the ladder never produces -- 0x0331, or anything above 0x0340 --
+ * establishes neither: the ladder is the only thing that maps a version onto
+ * a feature set, and it does not map those.  Refusing there costs a table
+ * that could perhaps have run; issuing there costs a hung machine.
+ */
+static int feature_established(uint16_t feature, int16_t ap_version)
+{
+	uint16_t v = (uint16_t)ap_version;
+
+	switch (feature) {
+	case TD_AES_FEAT_3D_OBJECTS:
+		return v == 0x0340;
+	case TD_AES_FEAT_MENU_EXT:
+		return v == 0x0340 || v == 0x0330;
+	default:
+		return 1;
+	}
+}
+
+/* Why an AES reporting this version may not be handed the opcode. */
+static const char *feature_refusal(uint16_t feature)
+{
+	switch (feature) {
+	case TD_AES_FEAT_3D_OBJECTS:
+		return "objc_sysvar is #if CONF_WITH_3D_OBJECTS (gemsuper.c:232-236) "
+		       "and this AES does not report the one version that "
+		       "establishes it, 0x0340 (config.h:1346-1347); the "
+		       "dispatcher's default arm would pop a modal alert";
+	case TD_AES_FEAT_MENU_EXT:
+		return "the menu extension (36-39) is #if CONF_WITH_MENU_EXTENSION "
+		       "(gemsuper.c:188-200) and this AES does not report one of the "
+		       "two versions that establish it, 0x0330 or 0x0340 "
+		       "(config.h:1346-1349); the dispatcher's default arm would pop "
+		       "a modal alert";
+	default:
+		return "an unnamed capability";
+	}
+}
+
+const char *td_aes_features_text(uint16_t features)
+{
+	switch (features & (TD_AES_FEAT_3D_OBJECTS | TD_AES_FEAT_MENU_EXT)) {
+	case TD_AES_FEAT_3D_OBJECTS:
+		return "3D objects (CONF_WITH_3D_OBJECTS, AES 0x0340)";
+	case TD_AES_FEAT_MENU_EXT:
+		return "the menu extension (CONF_WITH_MENU_EXTENSION, "
+		       "AES 0x0330 or 0x0340)";
+	case TD_AES_FEAT_3D_OBJECTS | TD_AES_FEAT_MENU_EXT:
+		return "3D objects (AES 0x0340) and the menu extension "
+		       "(AES 0x0330 or 0x0340)";
+	default:
+		return "nothing this AES could lack";
+	}
+}
+
+int td_aes_cases_version_refusal(const struct td_aes_case_table *t,
+                                 int16_t ap_version,
+                                 struct td_case_error *err)
+{
+	uint16_t i;
+
+	if (err) {
+		err->line = 0;
+		err->what = NULL;
+	}
+
+	/* Every table written before the version guard needs nothing, so
+	 * nothing about the machine can refuse it. */
+	if (t->features == 0)
+		return 0;
+
+	for (i = 0; i < t->count; i++) {
+		const struct td_aes_case *c = &t->cases[i];
+		uint16_t k, feature;
+
+		/* the case's preludes first, in the order the runner issues
+		 * them; a prelude has no line of its own, so the case's line is
+		 * what names it */
+		for (k = 0; k < c->prelude_count; k++) {
+			feature = aes_opcode_feature(
+				t->preludes[c->prelude_first + k].opcode);
+			if (feature && !feature_established(feature, ap_version)) {
+				fail(err, c->line, feature_refusal(feature));
+				return TD_CASE_ERR_AES_VERSION;
+			}
+		}
+
+		feature = aes_opcode_feature(c->opcode);
+		if (feature && !feature_established(feature, ap_version)) {
+			fail(err, c->line, feature_refusal(feature));
+			return TD_CASE_ERR_AES_VERSION;
+		}
+	}
+
+	return 0;
+}
+
 /* One AES line's payload, shared by the case and the prelude branches so
  * the two cannot drift apart. */
 struct td_aes_line {
@@ -589,18 +752,70 @@ struct td_aes_line {
 	int16_t  n_addrin;
 	int16_t  n_addrout;
 	uint16_t n_values;
+	uint16_t n_plants;
 	int16_t  intin[TD_AES_INTIN_N];
+	struct td_aes_plant plant[TD_AES_PLANTS_MAX];
 };
 
 /*
+ * Does this line point `kind`/`where` at a buffer?  The parameter guard asks
+ * it about the places a pointer can arrive, so a refusal can say "not
+ * without a buffer" instead of "never".
+ */
+static int line_plants(const struct td_aes_line *l, int16_t kind,
+                       int16_t where)
+{
+	uint16_t i;
+
+	for (i = 0; i < l->n_plants; i++)
+		if (l->plant[i].kind == kind && l->plant[i].where == where)
+			return 1;
+	return 0;
+}
+
+/*
+ * Does addr_in[slot] REACH the handler holding one of the dumper's buffers?
+ *
+ * Two conditions, and both are needed: the addr_in column has to name a
+ * buffer for that slot, and the case has to declare AIN_LEN past it, because
+ * xif copies min(AIN_LEN, AI_SIZE) slots onto a LOCAL array
+ * (gemsuper.c:428-440) and the handler reads the local one.  A plant the
+ * case does not declare hands the handler uninitialised stack, which is
+ * worse than the poison it replaced: the poison is at least the same number
+ * on both machines.
+ */
+static int line_has_buffer(const struct td_aes_line *l, int16_t slot)
+{
+	return line_plants(l, TD_AES_PLANT_ADDRIN, slot) && l->n_addrin > slot;
+}
+
+/*
  * ------------------------------------------------------------------
- * The window-manager guard (round 2)
+ * The parameter guard
  * ------------------------------------------------------------------
  *
- * The opcode guard above answers "may this call be issued at all".  Three
- * window-manager opcodes need a second question answered -- "with THESE
- * values?" -- because for them the hazard is in the parameters, not in the
- * opcode:
+ * The opcode guard above answers "may this call be issued at all".  For a
+ * dozen opcodes that question has no answer, because the hazard is not in
+ * the opcode but in the VALUES: the same call is a poll or a hang, a read of
+ * the dumper's own buffer or a write through 0xDEADDEAD, depending on one
+ * WORD of int_in or on whether the addr_in column named a buffer.  An
+ * opcode-level verdict on those is wrong in both directions at once -- it
+ * refuses the harmless arm and it waves the dangerous one through -- and
+ * this is where the second question is answered instead.
+ *
+ * Everything here is decided from ONE LINE, which is why it lives in the
+ * loader and not in td_aes_cases_version_refusal: the flags, the field, the
+ * error number, the character, the object index and the plants are all
+ * columns of the line.  Nothing here needs a measured quantity, so nothing
+ * here needs a machine.  (M06 split the refusal at exactly that seam; M07
+ * lands on the loader side of it.  TASK/M06.md, TASK/M07.md.)
+ *
+ * ==================================================================
+ * PART ONE: the window manager (round 2)
+ * ==================================================================
+ *
+ * Three window-manager opcodes need the second question because for them the
+ * hazard is in the parameters, not in the opcode:
  *
  * 1. FIELDS THAT TAKE A POINTER OR AN UNCHECKED INDEX.  wind_get and
  *    wind_set select a field with int_in[1], and four of those fields are
@@ -609,10 +824,12 @@ struct td_aes_line {
  *        pointer in int_in[2..3] (gemlib a_wind_get.c:344-347,
  *        a_wind_set.c:314-322).  EmuTOS' wm_get has no arm for them and
  *        returns FALSE (gemwmlib.c:1592), but NewTOS copies the title out
- *        through that pointer (tos-api/src/aes/window.rs:2055-2064), and
+ *        through that pointer (tos-api/src/aes/window.rs, wf_str_ptr), and
  *        wm_set stores it in gl_aname.te_ptext where the next frame draw
  *        dereferences it (gemwmlib.c:1657-1666).  The pointer would be
- *        0xDEAD-poison.
+ *        0xDEAD-poison -- UNLESS the table's addr_in column plants one of
+ *        the dumper's own buffers there (cases.h).  These two are the one
+ *        pair of fields the plant re-opens; the two below it does not.
  *      WF_COLOR (18), WF_DCOLOR (19) -- gadget = pinwds[0] indexes
  *        w_tcolor[] / gl_wtcolor[] with NO range check (gemwmlib.c:1567-1576
  *        for the get, :1714-1727 for the set).  Poison is -8531.
@@ -646,6 +863,100 @@ struct td_aes_line {
  * to read a value (the field, the handle, the mode), the case must state
  * it.  A case that leaves it poisoned would hide the very thing being
  * checked.
+ *
+ * ==================================================================
+ * PART TWO: the rest, both directions (M07)
+ * ==================================================================
+ *
+ * THE SHAPE RULE IS THE SAME ONE, and it is worth restating with the reason
+ * it is not merely tidiness.  Where the guard reads an int_in WORD, the case
+ * must both STATE it and declare IN_LEN past it.  xif's int_in is a LOCAL
+ * array and it is copied into only as far as min(IN_LEN, I_SIZE)
+ * (gemsuper.c:428-438), so a WORD outside IN_LEN is not "the previous
+ * call's value" -- it is uninitialised stack, and the guard would be
+ * reasoning about a number that does not exist.
+ *
+ * TOO COARSE, AND WHAT OPENS.  Two opcodes used to stand in the opcode list
+ * above with their only measurable arm locked out with them:
+ *
+ *   evnt_multi (25) is a hang for every parameter set but one.  The quick
+ *      check timer -- MU_TIMER among the flags with MT_LOCOUNT/MT_HICOUNT
+ *      zero -- sets `what` at gemevlib.c:216-220, which is BEFORE the
+ *      `if (what == 0)` block that arms the events and calls mwait
+ *      (:232-262).  That is the one guaranteed return.  Everything else
+ *      reaches mwait(flags), and flags == 0 is the sharpest case of it, not
+ *      an exemption: mwait tests `!(mask & rlr->p_evflg)`, which is
+ *      trivially true for 0, sets WAITIN and calls dsptch()
+ *      (gemasync.c:117-125).  No event can ever match an empty mask, so
+ *      nothing wakes the process.  The guard therefore has to be able to say
+ *      both "yes" and "no" about the same opcode.
+ *      MU_MESAG is a separate hazard on the same line: the quick check
+ *      message calls ev_mesag(mebuff) as soon as anything is queued
+ *      (gemevlib.c:221-229), mebuff is MME_PBUFF = addr_in[0], and it writes
+ *      sixteen bytes there.  The dumper never drains the WM_REDRAWs its own
+ *      wind_opens generate (TD_AES_MAX_OPEN_WINDOWS, cases.h), so "anything
+ *      queued" is the normal state, not the exception.  MU_MESAG therefore
+ *      needs a planted buffer even though the timer already guarantees the
+ *      return.
+ *
+ *   form_error (53) returns FALSE for n > 63 before it looks at anything
+ *      else (gemfmlib.c:440-441).  Every other n falls through the switch to
+ *      fm_show -> fm_alert -> fm_do (:469, :400, gemfmalt.c:383), the modal
+ *      alert.  One WORD decides which.
+ *
+ * TOO LEAKY, AND WHAT CLOSES.  Four opcodes the list waves through do all of
+ * their work behind addr_in[0], and until the addr_in column existed (M05)
+ * that pointer could only ever be the poison.  Nothing refused them; only
+ * care in writing the tables kept them out.  0xDEADDEAD is outside every RAM
+ * range of a TT, so each is a bus error or a scribble on a running machine,
+ * and the damage would look like a defect in the thing being measured:
+ *
+ *   scrp_read (80) is strcpy(pscrap, D.g_scrap) (gemsclib.c:40-45) -- a
+ *      WRITE of up to LEN_ZPATH = 114 bytes (sysconf.h:51) through the
+ *      pointer.  scrp_write (81) is strcpy(D.g_scrap, pscrap) (:57-62) --
+ *      an unbounded READ through it, into a 114 byte array.  A planted
+ *      buffer satisfies both by construction: it is 256 bytes, and it holds
+ *      a NUL at TD_AES_BUF_TEXT_LEN so the read is nine bytes long
+ *      (tosdump.h).  With the plant they are ordinary calls; the guard
+ *      therefore says "not without a buffer", not "never".
+ *
+ *   form_keybd (55) needs BOTH halves of the question answered, and it is
+ *      the one that shows why a per-opcode verdict cannot work.  Its arm is
+ *      chosen by the CHARACTER: fm_keybd leaves direction at -1 for anything
+ *      that is not RETURN/ENTER/ARROW_UP/TAB/ARROW_DOWN and returns without
+ *      touching the tree at all (gemfmlib.c:167-190).  A navigation key
+ *      instead calls find_obj, which walks the tree as an OBJECT array with
+ *      no bound but LASTOB in ob_flags (:135-148) -- and one of the dumper's
+ *      buffers is a string of letters, not an object tree, so a plant does
+ *      NOT make that arm safe.  So: the character must be stated and must
+ *      not navigate, AND the tree pointer must be a real buffer.
+ *      The character is compared differently by the two AESs -- EmuTOS
+ *      switches on the whole key WORD (scancode.h:22-32: 0x0f09, 0x1c0d,
+ *      0x720d, 0x4800, 0x5000), NewTOS on the ASCII and scancode bytes
+ *      separately (tos-api/src/aes/form.rs, fm_keybd) -- so the guard
+ *      refuses the UNION of both readings.  A rule that matched only one of
+ *      them would pass a case that is harmless here and fatal there, which
+ *      is precisely the asymmetry below.
+ *
+ *   objc_delete (41) is the asymmetry itself, and it is why this part exists
+ *      at all.  ob_delete tests `obj == ROOT` and nothing else
+ *      (gemoblib.c:1147-1157); for obj < 0 it reads tree[obj].ob_next BELOW
+ *      the tree base and then writes through get_par's result.  NewTOS
+ *      answers 0 for obj < 0 (tos-api/src/aes/object.rs) and would come
+ *      through clean, so a table author testing on NewTOS gets no warning at
+ *      all before the TT run dies.  A planted buffer does not help here
+ *      either -- ob_delete WRITES into the tree -- so the guard allows the
+ *      one arm that returns before any tree access: OB_DELOB == ROOT.
+ *
+ * WHAT IS DELIBERATELY NOT HERE.  objc_add (40), objc_order (45),
+ * objc_edit (46), menu_register (35), rsrc_gaddr/saddr (112, 113),
+ * appl_tplay (14) and shel_get/put (122, 123) reach the same poisoned
+ * addr_in[0] and are issued today, in cases/aes-r4-subfunctions.tsv, on
+ * exactly the same footing objc_delete(ROOT) is: a stated parameter takes a
+ * guard arm that returns first.  Each would need its own arm-by-arm reading
+ * of its own handler, and writing those from the opcode's shape rather than
+ * from the source is how a wrong guard gets written.  They stay as they are
+ * until someone does that reading.
  */
 
 /* wind_get / wind_set field numbers the guard knows by name */
@@ -655,6 +966,49 @@ struct td_aes_line {
 #define WF_NEWDESK 14
 #define WF_COLOR   18
 #define WF_DCOLOR  19
+
+/*
+ * evnt_multi: the two flag bits the guard reads (aesdefs.h:260-261) and the
+ * int_in WORDs the timer count occupies (aesdefs.h:219-220).
+ */
+#define MU_MESAG        0x0010
+#define MU_TIMER        0x0020
+#define MT_LOCOUNT      14
+#define MT_HICOUNT      15
+
+/* fm_error's one non-blocking arm: `if (n > 63) return FALSE` */
+#define FM_ERRNUM_MAX   63
+
+/* ob_delete's one non-blocking arm: `if (obj == ROOT) return 0` */
+#define OB_ROOT         0
+
+/*
+ * Would fm_keybd take a direction for this key word, on EITHER machine?
+ *
+ * EmuTOS compares the whole WORD against TAB 0x0f09, RETURN 0x1c0d, ENTER
+ * 0x720d, ARROW_UP 0x4800 and ARROW_DOWN 0x5000 (gemfmlib.c:169-183,
+ * scancode.h:22-32).  NewTOS splits the word and compares the ASCII byte
+ * against 0x0d / 0x0a / 0x09 and the scancode byte against 0x48 / 0x50
+ * (tos-api/src/aes/form.rs, fm_keybd).  NewTOS' reading is the wider one on
+ * both halves, so testing it alone covers EmuTOS' five constants as well --
+ * 0x0f09 and 0x1c0d and 0x720d all have one of those ASCII bytes, 0x4800 and
+ * 0x5000 both have one of those scancodes.  Stated as the union anyway,
+ * because "the wider one happens to contain the other" is a property of
+ * today's two implementations and not of anything either of them promises.
+ */
+static int fm_keybd_navigates(int16_t c)
+{
+	int ascii = c & 0xFF;
+	int scan  = (c >> 8) & 0xFF;
+
+	if (ascii == 0x09 || ascii == 0x0A || ascii == 0x0D)
+		return 1;                          /* TAB, LF, RETURN/ENTER  */
+	if (scan == 0x48 || scan == 0x50)
+		return 1;                          /* ARROW_UP, ARROW_DOWN   */
+	return (uint16_t)c == 0x0f09u || (uint16_t)c == 0x1c0du ||
+	       (uint16_t)c == 0x720du || (uint16_t)c == 0x4800u ||
+	       (uint16_t)c == 0x5000u;
+}
 
 /*
  * A rectangle a case hands to a call that draws.  wind_open and
@@ -684,13 +1038,13 @@ static int rect_is_drawable(const int16_t *r)
 }
 
 /*
- * The per-line half of the window guard: everything decidable from one line
- * on its own.  Applies to preludes exactly as to cases -- a prelude that
- * scribbled through a poisoned pointer would take the machine down just as
- * thoroughly, and it would do it before the case it was meant to set up.
+ * The per-line half of the guard: everything decidable from one line on its
+ * own.  Applies to preludes exactly as to cases -- a prelude that scribbled
+ * through a poisoned pointer would take the machine down just as thoroughly,
+ * and it would do it before the case it was meant to set up.
  */
-static int aes_line_window_refusal(const struct td_aes_line *l,
-                                   const char **what)
+static int aes_line_parameter_refusal(const struct td_aes_line *l,
+                                      const char **what)
 {
 	int16_t field;
 
@@ -703,11 +1057,45 @@ static int aes_line_window_refusal(const struct td_aes_line *l,
 			return TD_CASE_ERR_UNSAFE_FIELD;
 		}
 		field = l->intin[1];
+		/*
+		 * WF_NAME / WF_INFO carry a string pointer, and the two AESs do
+		 * not read it in the same place.
+		 *
+		 * wind_SET: EmuTOS' wm_set takes it from the int_in WORDs and
+		 * nowhere else -- *(char **)pinwds with pinwds = &int_in[2]
+		 * (gemwmlib.c:1661, :1669, gemsuper.c:346) -- and stores it where
+		 * the next frame draw dereferences it (:501, :737).  An addr_in
+		 * plant would leave that WORD pair poisoned, so the guard demands
+		 * the int_in plant, which is a prelude-only form (cases.h).
+		 *
+		 * wind_GET: EmuTOS has no arm for either field and returns FALSE
+		 * without touching a pointer (gemwmlib.c:1591-1592); NewTOS
+		 * answers and copies the text out through addr_in[0] when
+		 * AIN_LEN >= 1, or through the packed int_in pointer otherwise
+		 * (tos-api/src/aes/window.rs, wf_str_ptr).  Either plant is
+		 * therefore enough -- and one of them is REQUIRED, because
+		 * without one the pointer NewTOS follows would be 0xDEAD poison.
+		 */
 		if (field == WF_NAME || field == WF_INFO) {
-			*what = "WF_NAME/WF_INFO carry a string pointer in "
-			        "int_in[2..3] (a_wind_get.c:344-347) and this table "
-			        "is pointer-free, so it would be 0xDEAD poison";
-			return TD_CASE_ERR_UNSAFE_FIELD;
+			int packed = line_plants(l, TD_AES_PLANT_INTIN, 2);
+			int direct = line_plants(l, TD_AES_PLANT_ADDRIN, 0) &&
+			             l->n_addrin >= 1;
+
+			if (l->opcode == 105 && !packed) {
+				*what = "wind_set(WF_NAME/WF_INFO) takes the string "
+				        "pointer from *(char **)&int_in[2] "
+				        "(gemwmlib.c:1661) and stores it where the next "
+				        "frame draw follows it: the addr_in column must "
+				        "plant a buffer at i2";
+				return TD_CASE_ERR_UNSAFE_FIELD;
+			}
+			if (l->opcode == 104 && !packed && !direct) {
+				*what = "wind_get(WF_NAME/WF_INFO) copies the title out "
+				        "through the caller's pointer (window.rs, "
+				        "wf_str_ptr): the addr_in column must plant a "
+				        "buffer at a0 (with n_addrin >= 1) or at i2";
+				return TD_CASE_ERR_UNSAFE_FIELD;
+			}
 		}
 		if (field == WF_COLOR || field == WF_DCOLOR) {
 			*what = "WF_COLOR/WF_DCOLOR index w_tcolor[]/gl_wtcolor[] "
@@ -776,6 +1164,120 @@ static int aes_line_window_refusal(const struct td_aes_line *l,
 			return TD_CASE_ERR_UNSAFE_STATE;
 		}
 		break;
+	case 25:                                         /* evnt_multi */
+		/*
+		 * The quick check timer is the one arm that returns without
+		 * mwait, so the guard has to read the flags AND the timer count.
+		 * Both live in int_in, so both must be stated and both must be
+		 * inside IN_LEN -- outside it they are xif's uninitialised
+		 * stack, not a number the table chose.
+		 */
+		if (l->n_values <= MT_HICOUNT || l->n_intin <= MT_HICOUNT) {
+			*what = "evnt_multi is issuable only as the quick check "
+			        "timer, so the guard reads MU_FLAGS and "
+			        "MT_LOCOUNT/MT_HICOUNT: state all sixteen int_in "
+			        "words and declare IN_LEN 16, or xif's local int_in "
+			        "leaves the count uninitialised "
+			        "(gemsuper.c:428-438)";
+			return TD_CASE_ERR_UNSAFE_FIELD;
+		}
+		if (!(l->intin[0] & MU_TIMER) || l->intin[MT_LOCOUNT] != 0 ||
+		    l->intin[MT_HICOUNT] != 0) {
+			*what = "evnt_multi returns before mwait only for MU_TIMER "
+			        "with a zero MT_LOCOUNT/MT_HICOUNT "
+			        "(gemevlib.c:216-220 before :232-262); any other "
+			        "flags reach mwait, and a zero mask reaches it too "
+			        "-- mwait(0) sets WAITIN and dsptch()es with nothing "
+			        "that can wake it (gemasync.c:117-125)";
+			return TD_CASE_ERR_UNSAFE_FIELD;
+		}
+		if ((l->intin[0] & MU_MESAG) && !line_has_buffer(l, 0)) {
+			*what = "evnt_multi with MU_MESAG writes sixteen bytes "
+			        "through MME_PBUFF = addr_in[0] as soon as anything "
+			        "is queued (gemevlib.c:221-229), and the dumper "
+			        "never drains the WM_REDRAWs its own wind_opens "
+			        "make: the addr_in column must plant a buffer at a0 "
+			        "(with n_addrin >= 1)";
+			return TD_CASE_ERR_UNSAFE_FIELD;
+		}
+		break;
+	case 41:                                         /* objc_delete */
+		if (l->n_values < 1 || l->n_intin < 1) {
+			*what = "objc_delete names its object in int_in[0], which "
+			        "the guard has to read: state it and declare "
+			        "IN_LEN >= 1";
+			return TD_CASE_ERR_UNSAFE_FIELD;
+		}
+		if (l->intin[0] != OB_ROOT) {
+			*what = "ob_delete returns before touching the tree only for "
+			        "OB_DELOB == ROOT (gemoblib.c:1154-1155); any other "
+			        "object reads tree[obj].ob_next and writes through "
+			        "get_par (:1157-1188), and a negative one reads "
+			        "BELOW the tree base -- which NewTOS answers 0 for "
+			        "and the TT does not, so testing on one machine "
+			        "proves nothing about the other";
+			return TD_CASE_ERR_UNSAFE_FIELD;
+		}
+		break;
+	case 53:                                         /* form_error */
+		if (l->n_values < 1 || l->n_intin < 1) {
+			*what = "form_error is issuable only out of range, so the "
+			        "guard has to read FM_ERRNUM: state int_in[0] and "
+			        "declare IN_LEN >= 1";
+			return TD_CASE_ERR_UNSAFE_FIELD;
+		}
+		if (l->intin[0] <= FM_ERRNUM_MAX) {
+			*what = "fm_error returns FALSE without drawing only for "
+			        "n > 63 (gemfmlib.c:440-441); every other n reaches "
+			        "fm_show -> fm_alert -> fm_do (:469, :400, "
+			        "gemfmalt.c:383), a modal alert waiting for a click";
+			return TD_CASE_ERR_UNSAFE_FIELD;
+		}
+		break;
+	case 55:                                         /* form_keybd */
+		if (l->n_values < 2 || l->n_intin < 2) {
+			*what = "form_keybd's arm is chosen by FM_ICHAR = int_in[1], "
+			        "which the guard has to read: state it and declare "
+			        "IN_LEN >= 2";
+			return TD_CASE_ERR_UNSAFE_FIELD;
+		}
+		if (fm_keybd_navigates(l->intin[1])) {
+			*what = "form_keybd with RETURN/ENTER/ARROW_UP/TAB/"
+			        "ARROW_DOWN calls find_obj, which walks the tree as "
+			        "an OBJECT array bounded only by LASTOB "
+			        "(gemfmlib.c:185-190, :135-148); one of the dumper's "
+			        "buffers is a string of letters and not a tree, so "
+			        "no plant makes that arm safe";
+			return TD_CASE_ERR_UNSAFE_FIELD;
+		}
+		if (!line_has_buffer(l, 0)) {
+			*what = "form_keybd takes its tree from FM_FORM = addr_in[0] "
+			        "(gemsuper.c:258): the addr_in column must plant a "
+			        "buffer at a0 (with n_addrin >= 1) rather than hand "
+			        "the poison to a call that may dereference it";
+			return TD_CASE_ERR_UNSAFE_FIELD;
+		}
+		break;
+	case 80:                                         /* scrp_read */
+		if (!line_has_buffer(l, 0)) {
+			*what = "scrp_read is strcpy(pscrap, D.g_scrap) "
+			        "(gemsclib.c:40-45): it WRITES up to LEN_ZPATH = 114 "
+			        "bytes through SC_PATH = addr_in[0].  The addr_in "
+			        "column must plant a buffer at a0 (with "
+			        "n_addrin >= 1)";
+			return TD_CASE_ERR_UNSAFE_FIELD;
+		}
+		break;
+	case 81:                                         /* scrp_write */
+		if (!line_has_buffer(l, 0)) {
+			*what = "scrp_write is strcpy(D.g_scrap, pscrap) "
+			        "(gemsclib.c:57-62): it READS a NUL terminated "
+			        "string through SC_PATH = addr_in[0].  The addr_in "
+			        "column must plant a buffer at a0 (with "
+			        "n_addrin >= 1)";
+			return TD_CASE_ERR_UNSAFE_FIELD;
+		}
+		break;
 	default:
 		break;
 	}
@@ -838,10 +1340,198 @@ static int parse_count(const char *s, size_t len, int dash_value, int16_t *out)
 	return 0;
 }
 
-/* Columns 1..6 of one AES line.  `opcode_col` already has the '+' of a
- * prelude stripped by the caller. */
+/*
+ * One entry of the addr_in column: "<where>=<buffer>" (cases.h).  Parsed
+ * here and validated in check_plants, which is where the line's counts are
+ * known.
+ */
+static int parse_plant(const char *s, size_t len, struct td_aes_plant *out,
+                       const char **what)
+{
+	size_t eq;
+	int16_t v;
+	int rc;
+
+	trim(&s, &len);
+	if (len < 4) {                     /* "aN=B" is the shortest there is */
+		*what = "a plant is \"aN=B\" (addr_in slot) or \"iN=B\" "
+		        "(a pointer packed at int_in word N)";
+		return TD_CASE_ERR_PLANT;
+	}
+	if (s[0] == 'a')
+		out->kind = TD_AES_PLANT_ADDRIN;
+	else if (s[0] == 'i')
+		out->kind = TD_AES_PLANT_INTIN;
+	else {
+		*what = "a plant names 'a' for an addr_in slot or 'i' for a "
+		        "pointer packed into the int_in WORDs";
+		return TD_CASE_ERR_PLANT;
+	}
+
+	for (eq = 1; eq < len && s[eq] != '='; eq++)
+		;
+	if (eq == 1 || eq + 1 >= len) {
+		*what = "a plant is \"aN=B\" or \"iN=B\": a position, '=', "
+		        "and the buffer number";
+		return TD_CASE_ERR_PLANT;
+	}
+
+	rc = parse_value(s + 1, eq - 1, &v);
+	if (rc != 0 || v < 0) {
+		*what = "a plant's position is not a number";
+		return rc != 0 ? rc : TD_CASE_ERR_PLANT;
+	}
+	out->where = v;
+
+	rc = parse_value(s + eq + 1, len - eq - 1, &v);
+	if (rc != 0 || v < 0) {
+		*what = "a plant's buffer is not a number";
+		return rc != 0 ? rc : TD_CASE_ERR_PLANT;
+	}
+	if (v >= TD_AES_BUF_N) {
+		*what = "the dumper owns TD_AES_BUF_N buffers and the column "
+		        "names one past the last";
+		return TD_CASE_ERR_PLANT;
+	}
+	out->buffer = v;
+	return 0;
+}
+
+/* The whole addr_in column.  "-" means no plant at all, which is what every
+ * line of a seven column table means. */
+static int parse_plant_list(const char *s, size_t len,
+                            struct td_aes_line *out, const char **what)
+{
+	size_t i = 0, start = 0;
+
+	out->n_plants = 0;
+	trim(&s, &len);
+	if (len == 0) {
+		*what = "the addr_in column is empty; \"-\" means no plant";
+		return TD_CASE_ERR_PLANT;
+	}
+	if (len == 1 && s[0] == '-')
+		return 0;
+
+	for (;;) {
+		if (i == len || s[i] == ',') {
+			int rc;
+
+			if (out->n_plants >= TD_AES_PLANTS_MAX) {
+				*what = "more plants than TD_AES_PLANTS_MAX";
+				return TD_CASE_ERR_PLANT;
+			}
+			rc = parse_plant(s + start, i - start,
+			                 &out->plant[out->n_plants], what);
+			if (rc != 0)
+				return rc;
+			out->n_plants++;
+			if (i == len)
+				break;
+			i++;
+			start = i;
+			continue;
+		}
+		i++;
+	}
+	return 0;
+}
+
+/*
+ * What a plant needs from the rest of the line, and why each of these is a
+ * refusal rather than a silent adjustment:
+ *
+ *  - an addr_in plant the case does not declare in AIN_LEN never reaches the
+ *    AES at all: the dispatcher copies min(AIN_LEN, AI_SIZE) slots onto its
+ *    local buffer (gemsuper.c:439) and the handler reads the local one.  The
+ *    case would look like it handed over a buffer and would hand over
+ *    whatever the dispatcher's stack held.
+ *  - an int_in plant is only correct on both targets when IN_LEN covers the
+ *    WIDEST pointer footprint: four WORDs on AArch64, two on the m68k.  The
+ *    table states one number for both machines, so it has to be the wider.
+ *  - an int_in plant on a MEASURED case would put the target's pointer width
+ *    into a recorded array (cases.h).  Preludes are not recorded.
+ *  - a plant over a WORD the case also lists a value for is two statements
+ *    about one WORD.
+ */
+static int check_plants(const struct td_aes_line *l, int prelude,
+                        const char **what)
+{
+	uint16_t i, j;
+
+	for (i = 0; i < l->n_plants; i++) {
+		const struct td_aes_plant *p = &l->plant[i];
+
+		for (j = 0; j < i; j++)
+			if (l->plant[j].kind == p->kind &&
+			    l->plant[j].where == p->where) {
+				*what = "the addr_in column plants the same position "
+				        "twice";
+				return TD_CASE_ERR_PLANT;
+			}
+
+		if (p->kind == TD_AES_PLANT_ADDRIN) {
+			if (p->where >= TD_AES_ADDRIN_N) {
+				*what = "the AES has TD_AES_ADDRIN_N address slots "
+				        "(AI_SIZE, aesdefs.h:124) and the column names "
+				        "one past the last";
+				return TD_CASE_ERR_PLANT;
+			}
+			if (p->where >= l->n_addrin) {
+				*what = "an addr_in plant past AIN_LEN never reaches the "
+				        "handler: xif copies min(AIN_LEN, AI_SIZE) slots "
+				        "(gemsuper.c:439)";
+				return TD_CASE_ERR_PLANT;
+			}
+			continue;
+		}
+
+		/* TD_AES_PLANT_INTIN */
+		if (!prelude) {
+			*what = "a pointer packed into int_in occupies two WORDs on "
+			        "the m68k and four on AArch64, and int_in is "
+			        "recorded: only a prelude, which is not recorded, "
+			        "may carry one";
+			return TD_CASE_ERR_PLANT;
+		}
+		if (p->where + TD_AES_PLANT_PTR_WORDS > TD_AES_INTIN_N) {
+			*what = "a packed pointer would run past int_in[I_SIZE] on "
+			        "the wider target";
+			return TD_CASE_ERR_PLANT;
+		}
+		if (p->where + TD_AES_PLANT_PTR_WORDS > l->n_intin) {
+			*what = "IN_LEN must cover the packed pointer on the WIDER "
+			        "target -- four WORDs -- or the m68k build and the "
+			        "AArch64 build would not be handed the same thing";
+			return TD_CASE_ERR_PLANT;
+		}
+		if (p->where < (int16_t)l->n_values) {
+			*what = "the line states a value for the WORD it also plants "
+			        "a pointer at";
+			return TD_CASE_ERR_PLANT;
+		}
+		for (j = 0; j < i; j++) {
+			const struct td_aes_plant *q = &l->plant[j];
+			if (q->kind != TD_AES_PLANT_INTIN)
+				continue;
+			if (p->where < q->where + TD_AES_PLANT_PTR_WORDS &&
+			    q->where < p->where + TD_AES_PLANT_PTR_WORDS) {
+				*what = "two packed pointers would overlap on the wider "
+				        "target";
+				return TD_CASE_ERR_PLANT;
+			}
+		}
+	}
+	return 0;
+}
+
+/* Columns 1..7 of one AES line.  `opcode_col` already has the '+' of a
+ * prelude stripped by the caller; `ncols` is the table's declared column
+ * count, so the addr_in column is read only where the table says there is
+ * one. */
 static int parse_aes_columns(const char *opcode_col, size_t opcode_len,
                              const char **col, const size_t *col_len,
+                             int ncols, int prelude,
                              struct td_aes_line *out, const char **what)
 {
 	int16_t v;
@@ -908,12 +1598,42 @@ static int parse_aes_columns(const char *opcode_col, size_t opcode_len,
 		return rc;
 	}
 
-	/* the window guard needs the values, so it runs last */
-	return aes_line_window_refusal(out, what);
+	/* the addr_in column, where the table declares one */
+	if (ncols >= TD_AES_CASE_COLUMNS_MAX) {
+		rc = parse_plant_list(col[6], col_len[6], out, what);
+		if (rc != 0)
+			return rc;
+		rc = check_plants(out, prelude, what);
+		if (rc != 0)
+			return rc;
+	}
+
+	/* the parameter guard needs the values and the plants, so it is last */
+	return aes_line_parameter_refusal(out, what);
 }
 
 /*
- * One "!reset <TAB> name" line.  Refused rather than defaulted on anything
+ * The value of a "!columns" line: 7 (today's form) or 8 (with the addr_in
+ * column).  One parser, used by the strict path below and by the pre-scan
+ * td_aes_table_columns, so the host reader and the loader cannot end up
+ * slicing the same file differently.
+ */
+static int parse_columns_value(const char *s, size_t len, int *out)
+{
+	trim(&s, &len);
+	if (len == 1 && s[0] == '7') {
+		*out = TD_AES_CASE_COLUMNS;
+		return 0;
+	}
+	if (len == 1 && s[0] == '8') {
+		*out = TD_AES_CASE_COLUMNS_MAX;
+		return 0;
+	}
+	return TD_CASE_ERR_DIRECTIVE;
+}
+
+/*
+ * One "!name <TAB> value" line.  Refused rather than defaulted on anything
  * it does not recognise: a table that meant to declare a reset and misspelt
  * it would otherwise run round 1's absent one and produce a dump that looks
  * fine and measures the wrong thing.
@@ -926,16 +1646,7 @@ static int parse_aes_directive(const char *line, size_t len,
 	size_t col_len[2];
 	const char *name;
 	size_t name_len;
-
-	if (t->reset >= 0) {
-		*what = "the table declares a reset twice";
-		return TD_CASE_ERR_DIRECTIVE;
-	}
-	if (seen_call) {
-		*what = "the reset must be declared before the first case or "
-		        "prelude; the calls before it would have run unreset";
-		return TD_CASE_ERR_DIRECTIVE;
-	}
+	int is_reset;
 
 	if (split_columns(line, len, col, col_len, 2) < 2) {
 		*what = "a directive is \"!name <TAB> value\"";
@@ -947,14 +1658,45 @@ static int parse_aes_directive(const char *line, size_t len,
 	trim(&name, &name_len);
 	name++;                            /* step over the '!' */
 	name_len--;
-	if (name_len != 5 || memcmp(name, "reset", 5) != 0) {
-		*what = "the only directive is \"!reset\"";
+	if (name_len == 5 && memcmp(name, "reset", 5) == 0)
+		is_reset = 1;
+	else if (name_len == 7 && memcmp(name, "columns", 7) == 0)
+		is_reset = 0;
+	else {
+		*what = "the directives are \"!reset\" and \"!columns\"";
+		return TD_CASE_ERR_DIRECTIVE;
+	}
+
+	if (seen_call) {
+		*what = "a directive must be declared before the first case or "
+		        "prelude; the calls before it would have run without it";
 		return TD_CASE_ERR_DIRECTIVE;
 	}
 
 	name = col[1];
 	name_len = col_len[1];
 	trim(&name, &name_len);
+
+	if (!is_reset) {
+		int n;
+
+		if (t->columns > 0) {
+			*what = "the table declares its column count twice";
+			return TD_CASE_ERR_DIRECTIVE;
+		}
+		if (parse_columns_value(name, name_len, &n) != 0) {
+			*what = "the column count must be 7 (the form without an "
+			        "addr_in column) or 8 (with it)";
+			return TD_CASE_ERR_DIRECTIVE;
+		}
+		t->columns = (int16_t)n;
+		return 0;
+	}
+
+	if (t->reset >= 0) {
+		*what = "the table declares a reset twice";
+		return TD_CASE_ERR_DIRECTIVE;
+	}
 	if (name_len == 4 && memcmp(name, "none", 4) == 0) {
 		t->reset = TD_AES_RESET_NONE;
 		return 0;
@@ -967,6 +1709,44 @@ static int parse_aes_directive(const char *line, size_t len,
 	*what = "the reset must be \"none\" or \"wind_new\"; guessing here "
 	        "would silently run the wrong round";
 	return TD_CASE_ERR_DIRECTIVE;
+}
+
+/*
+ * The column count a table declares, read ahead of everything else -- see
+ * cases.h.  A directive this cannot read answers with the default; the
+ * strict parse above is the one place that reports it, so a malformed
+ * "!columns" is one error and not two.
+ */
+int td_aes_table_columns(const char *buf, size_t len)
+{
+	struct td_line_iter it;
+	const char *line;
+	size_t line_len;
+	uint16_t line_no;
+	int is_case;
+
+	td_line_iter_init(&it, buf, len);
+	while (td_line_iter_next(&it, &line, &line_len, &line_no, &is_case)) {
+		const char *col[2], *name;
+		size_t col_len[2], name_len;
+		int n;
+
+		if (is_case)
+			break;                 /* directives come first (cases.h) */
+		if (!td_case_line_is_directive(line, line_len))
+			continue;
+		if (split_columns(line, line_len, col, col_len, 2) < 2)
+			continue;
+		name = col[0];
+		name_len = col_len[0];
+		trim(&name, &name_len);
+		if (name_len != 8 || memcmp(name, "!columns", 8) != 0)
+			continue;
+		if (parse_columns_value(col[1], col_len[1], &n) == 0)
+			return n;
+		break;
+	}
+	return TD_AES_CASE_COLUMNS;
 }
 
 int td_aes_cases_parse(struct td_aes_case_table *t, const char *buf, size_t len,
@@ -986,6 +1766,9 @@ int td_aes_cases_parse(struct td_aes_case_table *t, const char *buf, size_t len,
 	/* -1 = not declared yet, so a second "!reset" is an error rather than
 	 * an override; it becomes TD_AES_RESET_NONE at the end if absent */
 	t->reset = -1;
+	/* 0 = not declared yet, for the same reason; it becomes
+	 * TD_AES_CASE_COLUMNS at the end if absent */
+	t->columns = 0;
 	t->crc = td_crc32((const uint8_t *)buf, len);
 	if (err) {
 		err->line = 0;
@@ -994,13 +1777,13 @@ int td_aes_cases_parse(struct td_aes_case_table *t, const char *buf, size_t len,
 
 	td_line_iter_init(&it, buf, len);
 	while (td_line_iter_next(&it, &line, &line_len, &line_no, &is_case)) {
-		const char *col[TD_AES_CASE_COLUMNS];
-		size_t col_len[TD_AES_CASE_COLUMNS];
+		const char *col[TD_AES_CASE_COLUMNS_MAX];
+		size_t col_len[TD_AES_CASE_COLUMNS_MAX];
 		struct td_aes_line parsed;
 		const char *what = NULL;
 		const char *opcode_col;
 		size_t opcode_len;
-		int prelude, rc, i;
+		int prelude, rc, i, ncols;
 
 		rc = 0;
 
@@ -1016,9 +1799,18 @@ int td_aes_cases_parse(struct td_aes_case_table *t, const char *buf, size_t len,
 			continue;
 		}
 
-		if (split_columns(line, line_len, col, col_len,
-		                  TD_AES_CASE_COLUMNS) < TD_AES_CASE_COLUMNS) {
-			fail(err, line_no, "needs seven tab separated columns");
+		/* The first case fixes the form: a "!columns" after it is refused
+		 * above, so from here on the count cannot change under us. */
+		if (t->columns <= 0)
+			t->columns = TD_AES_CASE_COLUMNS;
+		ncols = t->columns;
+
+		if (split_columns(line, line_len, col, col_len, ncols) < ncols) {
+			fail(err, line_no,
+			     ncols >= TD_AES_CASE_COLUMNS_MAX
+			         ? "the table declares \"!columns 8\", so every case "
+			           "line needs eight tab separated columns"
+			         : "needs seven tab separated columns");
 			return TD_CASE_ERR_COLUMNS;
 		}
 
@@ -1032,11 +1824,18 @@ int td_aes_cases_parse(struct td_aes_case_table *t, const char *buf, size_t len,
 		}
 
 		rc = parse_aes_columns(opcode_col, opcode_len, col, col_len,
-		                       &parsed, &what);
+		                       ncols, prelude, &parsed, &what);
 		if (rc != 0) {
 			fail(err, line_no, what);
 			return rc;
 		}
+
+		/* What this line needs of the MACHINE, which the loader cannot
+		 * answer and does not try to: it only records it.  Preludes
+		 * count exactly as cases do -- a prelude issuing an opcode the
+		 * AES lacks meets the same modal alert, and it meets it before
+		 * the case it was meant to set up. */
+		t->features |= aes_opcode_feature(parsed.opcode);
 
 		/* The message-queue bound, over the whole table: see
 		 * TD_AES_MAX_OPEN_WINDOWS.  Preludes count -- a prelude that
@@ -1074,8 +1873,11 @@ int td_aes_cases_parse(struct td_aes_case_table *t, const char *buf, size_t len,
 			p->n_addrin  = parsed.n_addrin;
 			p->n_addrout = parsed.n_addrout;
 			p->n_values  = parsed.n_values;
+			p->n_plants  = parsed.n_plants;
 			for (i = 0; i < (int)parsed.n_values; i++)
 				p->intin[i] = parsed.intin[i];
+			for (i = 0; i < (int)parsed.n_plants; i++)
+				p->plant[i] = parsed.plant[i];
 			pending++;
 			last_prelude = line_no;
 			continue;
@@ -1102,10 +1904,13 @@ int td_aes_cases_parse(struct td_aes_case_table *t, const char *buf, size_t len,
 			c->n_addrin  = parsed.n_addrin;
 			c->n_addrout = parsed.n_addrout;
 			c->n_values  = parsed.n_values;
+			c->n_plants  = parsed.n_plants;
 			for (i = 0; i < (int)parsed.n_values; i++)
 				c->intin[i] = parsed.intin[i];
+			for (i = 0; i < (int)parsed.n_plants; i++)
+				c->plant[i] = parsed.plant[i];
 
-			td_case_line_comment_n(line, line_len, TD_AES_CASE_COLUMNS,
+			td_case_line_comment_n(line, line_len, ncols,
 			                       c->comment, TD_COMMENT_LEN);
 
 			/*
@@ -1174,9 +1979,12 @@ int td_aes_cases_parse(struct td_aes_case_table *t, const char *buf, size_t len,
 	}
 
 	/* Absent means round 1's behaviour -- see cases.h for why the default
-	 * may not be anything else. */
+	 * may not be anything else.  The column count is the same argument:
+	 * every table written before the addr_in column has seven. */
 	if (t->reset < 0)
 		t->reset = TD_AES_RESET_NONE;
+	if (t->columns <= 0)
+		t->columns = TD_AES_CASE_COLUMNS;
 
 	return 0;
 }
@@ -1202,13 +2010,13 @@ int td_case_line_is_directive(const char *line, size_t len)
 void td_case_line_comment_n(const char *line, size_t len, int ncols,
                             char *dst, size_t dst_size)
 {
-	const char *col[TD_AES_CASE_COLUMNS];
-	size_t col_len[TD_AES_CASE_COLUMNS];
+	const char *col[TD_AES_CASE_COLUMNS_MAX];
+	size_t col_len[TD_AES_CASE_COLUMNS_MAX];
 	size_t n;
 
 	if (dst_size == 0)
 		return;
-	if (ncols > TD_AES_CASE_COLUMNS ||
+	if (ncols > TD_AES_CASE_COLUMNS_MAX ||
 	    split_columns(line, len, col, col_len, ncols) < ncols) {
 		dst[0] = '\0';
 		return;
@@ -1617,6 +2425,11 @@ const char *td_case_error_text(int rc)
 	                                        "may not be issued";
 	case TD_CASE_ERR_UNSAFE_STATE:   return "the table would leave a state "
 	                                        "the run cannot come back from";
+	case TD_CASE_ERR_PLANT:          return "the addr_in column names a "
+	                                        "buffer the call cannot be given";
+	case TD_CASE_ERR_AES_VERSION:    return "this AES does not report a "
+	                                        "version that establishes an "
+	                                        "opcode the table needs";
 	default:                         return "unknown error";
 	}
 }

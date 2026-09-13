@@ -98,6 +98,28 @@
 /* the unsupported-opcode sentinel every AES returns (gemsuper.c:411-417) */
 #define TD_STUB_AES_UNSUPPORTED (-1)
 
+/* ------------------------------------------------------------------
+ * The two arms that FOLLOW A POINTER
+ * ------------------------------------------------------------------
+ * Everything above answers out of int_in alone.  A case that points a call
+ * at one of the dumper's buffers (core/cases.h, the addr_in column) needs
+ * the double to actually dereference it, or a test could not tell a planted
+ * pointer from a poisoned one.  Two arms do, each reading the pointer where
+ * the real AES reads it:
+ *
+ *   appl_find (13) takes it from addr_in[0] -- AP_PNAME, aesdefs.h:165,
+ *     gemsuper.c:107.  The stub copies AP_NAMELEN bytes from there into the
+ *     call log and answers -1, which is what ap_find answers for a name no
+ *     process has (gemaplib.c:95-108).
+ *   wind_set (105) with WF_NAME takes it from *(char **)&int_in[2] --
+ *     gemwmlib.c:1661 through gemsuper.c:346 -- which is the classic GEM
+ *     binding and the one place an addr_in plant cannot reach.
+ *
+ * Both copy through memcpy: &int_in[2] is only WORD aligned.
+ */
+#define TD_STUB_NAME_LEN      8   /* AP_NAMELEN, aes/struct.h:111 */
+#define TD_STUB_APPL_FIND_RET (-1)
+
 struct td_stub_call {
 	int16_t kind;
 	int16_t opcode;
@@ -112,6 +134,12 @@ struct td_stub_call {
 	 * so neither side has to guess which shape a logged call has. */
 	int16_t aes_control[TD_AES_CONTRL_N];
 	int16_t aes_int_in[TD_AES_INTIN_N];
+	/* AES only: the address array as it arrived, and -- for the two arms
+	 * above -- the first bytes of whatever the pointer they follow points
+	 * at.  aes_name_seen says the arm ran and dereferenced something. */
+	void   *aes_addr_in[TD_AES_ADDRIN_N];
+	char    aes_name[TD_STUB_NAME_LEN + 1];
+	int     aes_name_seen;
 };
 
 extern struct td_stub_call td_stub_calls[TD_STUB_MAX_CALLS];

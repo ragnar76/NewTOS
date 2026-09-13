@@ -1,0 +1,603 @@
+# aes-r3-wind-state.tsv -- AES round 3: what the window manager remembers
+# between calls.
+#
+# Format (seven tab separated columns):
+#   opcode  n_intin  n_intout  n_addrin  n_addrout  intin values  comment
+# as cases/aes-r1.tsv, cases/aes-r2-wind.tsv and cases/aes-r2b-rlist.tsv,
+# and read by the same loader (core/cases.c).  A '+' opcode is a PRELUDE:
+# issued after the reset and before the measured call, never recorded.  A
+# case id is the PHYSICAL LINE NUMBER and this file's CRC binds every dump
+# to it, so ANY edit -- an appended case, a fixed typo in a comment --
+# invalidates every dump already taken with it.  This file is written once;
+# a later question goes into a later table, never into this one.
+#
+# ======================================================================
+# THE FOUR QUESTIONS THIS TABLE ANSWERS
+# ======================================================================
+#
+# Each of the four is settled in the EmuTOS source and unsettled on real
+# hardware: the two frozen tables that could have asked -- aes-r2-wind.tsv
+# (CRC AFB11C9F) and aes-r2b-rlist.tsv (CRC B4CC4A5A) -- have no case for
+# any of them and may not be given one, because their CRCs carry the dumps
+# already taken.  Hence a new table rather than four new cases.
+#
+# A. WHO OWNS THE SEARCH POINTER of WF_FIRSTXYWH / WF_NEXTXYWH?  In EmuTOS
+#    it belongs to the window: ORECT *w_rnext is a field of WINDOW
+#    (aes/gemlib.h:85), picked out by pwin = get_pwin(w_handle) before the
+#    walk (aes/gemwmlib.c:1513, :1559) and written in exactly one place,
+#    w_owns (:1235).  So FIRST(1), FIRST(2), NEXT(1) has to answer window
+#    1's SECOND piece: the FIRST on the other window cannot have moved
+#    window 1's pointer.  An implementation holding ONE pointer for the
+#    whole AES answers the end of window 2's list instead.  This is not an
+#    exotic order -- two GEM programs redrawing at the same time produce
+#    exactly this interleaving, and so does one program with two windows.
+#    Section A.
+#
+# B. WHAT DO THE THREE WINDOW RECTANGLES SAY AFTER wind_close?  wm_close
+#    does not close by clearing a flag.  It calls draw_change(w_handle,
+#    &gl_rzero) (aes/gemwmlib.c:1449, :1453) and drops VF_ISOPEN only
+#    afterwards (:1454), and draw_change writes WS_PREV = the old WS_CURR
+#    (:1069-1070), WS_CURR = the rectangle handed in (:1073) and WS_WORK =
+#    wm_calc(WC_WORK, kind, that rectangle) (:1074-1077) -- all three
+#    BEFORE the "this window isn't open, we're done" shortcut
+#    (:1084-1085).  After a close, therefore: WF_CXYWH is 0,0,0,0
+#    (gl_rzero, aes/gemgraf.c:425), WF_PXYWH is the rectangle the window
+#    had, and WF_WXYWH is the work area of a ZERO rectangle, which for a
+#    window with borders has negative w and h.  The two early returns
+#    (:1444-1447) are the other half of the contract: a window that was
+#    never open must come back untouched, and that is what protects the
+#    desktop window, VF_INUSE but never VF_ISOPEN.  Section B measures each
+#    of the three fields on its own call, before and after, plus the
+#    machine's own wind_calc answer to compare WF_WXYWH against.
+#
+# C. WHICH OF THE FOUR WORDS DOES THE END OF THE LIST WRITE?  w_owns has
+#    TWO ends (aes/gemwmlib.c:1230-1241), and they do not write the same
+#    number of words:
+#
+#        while (po) {
+#            rc_copy(&po->o_gr, poutwds);
+#            pwin->w_rnext = po = po->o_link;
+#            if (rc_intersect(pt, poutwds))
+#                return;
+#        }
+#        poutwds->g_w = poutwds->g_h = 0;
+#
+#    P1, the loop is never entered: :1240 writes g_w and g_h and nothing
+#    else.  P2, the loop runs but no piece survives the clip: all four
+#    words are written, because rc_intersect assigns its four components
+#    even when it returns FALSE (util/rectfunc.c:63-78 -- the four
+#    assignments at :72-75 stand before the return at :77), so g_x and g_y
+#    are those of the LAST piece examined.  aes-r2b-rlist.tsv reached P1
+#    three times and P2 never: it has no case in which a window's list is
+#    non-empty and yet nothing in it meets the work area.  Section C builds
+#    exactly that, and pairs it with the P1 that follows one call later, so
+#    both ends stand in one dump.
+#
+# D. WHAT DOES A THIRD WINDOW DO TO THE DECOMPOSITION?  A window's list is
+#    rebuilt by newrect (aes/gemwrect.c:165-205), which starts from its own
+#    WS_TRUE rectangle and lets every later window break it: w_obadd adds a
+#    newly opened window as the LAST child of the root (gemwmlib.c:186-202)
+#    and newrect's everyobj walk stops at the window being opened
+#    (gemwrect.c:198, everyobj's this == last test at gemobjop.c:93), so a
+#    window's list is broken by the windows opened AFTER it, in the order
+#    they were opened.  brkrct then cuts every SURVIVING piece again
+#    (gemwrect.c:101-132, pieces in the fixed order TOP, LEFT, RIGHT,
+#    BOTTOM, :30-33), so the order in which the two covering windows arrive
+#    decides how many pieces there are and where the cuts fall -- the
+#    visible AREA is the same either way, the decomposition is not.  Two
+#    windows can never show this; aes-r2b-rlist.tsv opens two.  Section D
+#    walks the same bottom window's list under the same three rectangles
+#    twice, differing only in the order the two upper windows were opened.
+#
+# NOT HERE, deliberately: the appl_init re-entry gap.  Its read path is
+# closed -- appl_read blocks on an empty queue (core/cases.c's opcode
+# guard, gemaplib.c:88), and empty is precisely the failing case -- so it
+# needs a measurement design of its own, not a case in this table.
+#
+# ======================================================================
+# THE ONE RULE, UNCHANGED: NEXT IS NEVER MEASURED WITHOUT A FIRST BEFORE IT
+# ======================================================================
+#
+# w_setup (aes/gemwmlib.c:205-228) initialises w_owner, w_flags, w_kind,
+# w_pname, w_pinfo and the four slider fields.  It does NOT initialise
+# w_rnext, and w_rnext is written in exactly one place in the whole AES:
+# w_owns (:1235).  On a freshly created window it therefore still holds
+# whatever the slot's previous life left -- an ORECT pointer newrect has
+# since handed back to the free list (gemwrect.c:174-181).  A measured
+# WF_NEXTXYWH with no WF_FIRSTXYWH before it would dereference that and
+# follow its o_link, which is not merely unreproducible but unsafe on a
+# machine nobody is watching.  Every NEXT in this file -- measured OR
+# prelude -- carries a FIRST on the SAME handle earlier in the same case.
+# The interleaved cases of section A satisfy it per handle, not per case:
+# the NEXT(2) cases carry a FIRST(2), the NEXT(1) cases a FIRST(1).
+#
+# Section B is the one place where a window is closed, and it contains no
+# FIRST and no NEXT at all.  That is on purpose: ob_delete takes the window
+# out of the tree before draw_change rebuilds the lists (gemwmlib.c:1452
+# against gemwrect.c's newrect), so a NEXT carried across a close would
+# walk a list nobody owns any more.  That is a question with no answer in
+# the source, and this table does not ask it.
+#
+# ======================================================================
+# WHAT THE POISON MAKES VISIBLE HERE
+# ======================================================================
+#
+# The runner poisons int_in, int_out, addr_in and addr_out with 0xDEAD
+# before every call, measured and prelude alike (core/runner_aes.c).  In
+# this table it carries three separate pieces of information:
+#
+#   1. THAT NOTHING WAS WRITTEN PAST OUT_LEN.  Every wind_get case here
+#      declares OUT_LEN 5 and the AES record holds seven int_out words, so
+#      int_out[5] and int_out[6] must come back 0xDEAD on both machines.  A
+#      value there is a dispatcher writing past what the caller declared,
+#      not a window-manager answer.
+#   2. THAT NOTHING WAS WRITTEN BACK INTO THE INPUTS.  int_in beyond the
+#      values a case lists, and both address arrays, stay poisoned: the
+#      dispatcher copies control, int_in and addr_in onto local buffers and
+#      never writes them back (aes/gemsuper.c:435-439).
+#   3. IT DOES *NOT* SEPARATE P1 FROM P2 BY ITSELF, and section C does not
+#      ask it to.  xif copies OUT_LEN words back out of a local int_out it
+#      never initialised (aes/gemsuper.c:432, copy-back :444-445), so on a
+#      P1 end the caller's poisoned x and y are overwritten with whatever
+#      that stack buffer held -- not poison, and not reproducible.  A15 has
+#      already traced the 31/63 and 0/19 the TT returned there to the
+#      caller's own history.  What separates the two ends is therefore the
+#      CONTENT of x and y in the P2 case, which is predicted from the
+#      geometry, against the P1 case measured in the same run.
+#
+# ======================================================================
+# SAFETY
+# ======================================================================
+#
+# Every rule core/cases.c enforces holds here unchanged, and this file
+# stays inside the limits the two round 2 tables proved on both machines:
+#
+#   * six opcodes appear, all of them with a NULL refusal in aes_opcodes[]:
+#     wind_create (100), wind_open (101), wind_close (102), wind_get (104),
+#     wind_set (105), wind_calc (108).  Nothing blocks on the operator,
+#     nothing ends or replaces the application, nothing is gated out of TOS
+#     3.06's AES.
+#   * three distinct handles are ever opened -- 1, 2 and 3 -- against the
+#     loader's bound of four.  Each open sends the dumper one WM_REDRAW it
+#     never reads; doq unions them per handle (gemqueue.c:45-56), so three
+#     of the queue's eight slots are the worst case.
+#   * no wind_open(0), no wind_delete at all, no wind_set on handle 0, no
+#     wind_update and therefore no unpaired END_MCTRL, and no wind_get or
+#     wind_set field that carries a pointer (WF_NAME, WF_INFO, WF_NEWDESK)
+#     or an unchecked array index (WF_COLOR, WF_DCOLOR).
+#   * every rectangle that reaches the screen is non-negative and lies
+#     inside 640x400 including its drop shadow, so nothing is clipped on
+#     one machine and not on the other.  The largest is 180,160,200,160,
+#     whose WS_TRUE corner is 382,322.
+#   * the one call that could outlive its own case -- wind_close(0), which
+#     would matter only on a machine that wrongly wrote the desktop's
+#     rectangle, since wm_new sweeps handles >= 1 only (gemwmlib.c:1886) --
+#     is the LAST case in the file, so even that outcome cannot reach
+#     another case.
+#
+# The run draws: windows open, move and close on screen, exactly as the
+# round 2 runs did.  wind_get, wind_calc and wind_close write no pixels of
+# their own.
+#
+# ======================================================================
+# WHAT IS DEVICE DEPENDENT, AND WHY THE CASES STILL COMPARE
+# ======================================================================
+#
+# Every rectangle answer carries the border arithmetic of wm_calc, which
+# runs on gl_wbox / gl_hbox -- font metrics, and a device parameter, the
+# same one round 1 measured through wind_calc.  Two devices are in play:
+# the TT at 640x480 and the Pi at 1920x1080.
+#
+# The cases are built so that what DECIDES each question does not depend on
+# those metrics:
+#
+#   * section A decides on whether a NEXT answers a piece or an end --
+#     w and h non-zero against w and h zero.
+#   * section B decides on gl_rzero (a constant, gemgraf.c:425), on a
+#     rectangle this table itself set, and -- for WF_WXYWH -- on the
+#     machine's OWN wind_calc(WC_WORK, 0x0FEF, 0,0,0,0), which is measured
+#     here as a case so the comparison is made per machine.
+#   * section C's two pieces lie outside window 1's own rectangle entirely
+#     when the drop shadow is applied, and on its last two border pixel
+#     columns and rows when it is not; either way they are border and not
+#     work area on any machine whose right and bottom borders are two
+#     pixels or more, which a window with a sizer and both sliders always
+#     has.  The work area is measured as its own case so the precondition
+#     can be checked on the machine rather than assumed.
+#   * section D decides on how many pieces there are and in which order,
+#     and on whether the two groups differ from each other AT ALL -- a
+#     comparison inside one machine's own run.
+#
+# The absolute coordinates are recorded, not compared away.
+#
+# opcode\tn_intin\tn_intout\tn_addrin\tn_addrout\tintin\tcomment
+
+!reset	wind_new
+
+# ====================================================================
+# A. The search pointer: two windows asked in turn
+#
+# The geometry is the one aes-r2-wind.tsv and aes-r2b-rlist.tsv both ran
+# on both machines: window 1 at 30,40,320,240 and window 2 at 60,80,200,160
+# on top of it.  Window 2 covers the middle of window 1, so window 1's
+# remainder is several rectangles and its pointer has somewhere to go,
+# while window 2 is uncovered and owns exactly one -- which is what makes
+# the mirrored case below a clean yes/no.
+# ====================================================================
+
++100	5	1	0	0	0x0FEF,10,20,300,200	create 1
++100	5	1	0	0	0x0FEF,10,20,300,200	create 2
++101	5	1	0	0	1,30,40,320,240	open 1 at 30,40,320,240
++101	5	1	0	0	2,60,80,200,160	open 2, which tops it
+104	2	5	0	0	1,11	window 1's first piece: the anchor every NEXT is read against
+
++100	5	1	0	0	0x0FEF,10,20,300,200	create 1
++100	5	1	0	0	0x0FEF,10,20,300,200	create 2
++101	5	1	0	0	1,30,40,320,240	open 1 at 30,40,320,240
++101	5	1	0	0	2,60,80,200,160	open 2, which tops it
+104	2	5	0	0	2,11	window 2's only piece: the anchor for the mirrored case
+
++100	5	1	0	0	0x0FEF,10,20,300,200	create 1
++100	5	1	0	0	0x0FEF,10,20,300,200	create 2
++101	5	1	0	0	1,30,40,320,240	open 1 at 30,40,320,240
++101	5	1	0	0	2,60,80,200,160	open 2, which tops it
++104	2	5	0	0	1,11	start window 1's walk
+104	2	5	0	0	1,12	window 1's 2nd piece, nobody asking in between: the control
+
++100	5	1	0	0	0x0FEF,10,20,300,200	create 1
++100	5	1	0	0	0x0FEF,10,20,300,200	create 2
++101	5	1	0	0	1,30,40,320,240	open 1 at 30,40,320,240
++101	5	1	0	0	2,60,80,200,160	open 2, which tops it
++104	2	5	0	0	1,11	start window 1's walk
++104	2	5	0	0	2,11	and window 2's, in between
+104	2	5	0	0	1,12	did a FIRST on window 2 move window 1's search pointer?
+
++100	5	1	0	0	0x0FEF,10,20,300,200	create 1
++100	5	1	0	0	0x0FEF,10,20,300,200	create 2
++101	5	1	0	0	1,30,40,320,240	open 1 at 30,40,320,240
++101	5	1	0	0	2,60,80,200,160	open 2, which tops it
++104	2	5	0	0	2,11	start window 2's walk -- its list holds one piece, so it is now at the end
++104	2	5	0	0	1,11	and window 1's, in between
+104	2	5	0	0	2,12	mirror: window 2 is at its own end, so a piece here is 1's
+
++100	5	1	0	0	0x0FEF,10,20,300,200	create 1
++100	5	1	0	0	0x0FEF,10,20,300,200	create 2
++101	5	1	0	0	1,30,40,320,240	open 1 at 30,40,320,240
++101	5	1	0	0	2,60,80,200,160	open 2, which tops it
++104	2	5	0	0	1,11	first piece of window 1
++104	2	5	0	0	2,11	window 2 asked in between
++104	2	5	0	0	1,12	second piece of window 1
+104	2	5	0	0	1,12	does the interleaved walk resume where it left off, twice?
+
++100	5	1	0	0	0x0FEF,10,20,300,200	create 1
++100	5	1	0	0	0x0FEF,10,20,300,200	create 2
++101	5	1	0	0	1,30,40,320,240	open 1 at 30,40,320,240
++101	5	1	0	0	2,60,80,200,160	open 2, which tops it
++104	2	5	0	0	1,11	first
++104	2	5	0	0	1,12	second
++104	2	5	0	0	1,12	third
++104	2	5	0	0	1,12	fourth
+104	2	5	0	0	1,12	how long window 1's list is: the end, or a fifth piece
+
+# ====================================================================
+# B. The three window rectangles across a wind_close
+#
+# The window is opened at 30,40,320,240 and then MOVED to 70,90,260,180
+# with wind_set(WF_CXYWH) before it is closed.  The move is what gives the
+# section its edge: wm_open overwrites WS_PREV with the opening rectangle
+# afterwards (gemwmlib.c:1427), so without a later move WF_PXYWH would read
+# the same before and after the close and could not tell an implementation
+# that writes the three fields from one that writes nothing at all.
+#
+# Each field is asked on its own call.  WF_FXYWH is asked too, as the
+# control: wm_close has no business touching it -- WS_FULL has exactly
+# three writers, wm_create, wm_delete and wm_init (gemwmlib.c:1380,
+# :1479, :1293), and none of them is on this path.
+# ====================================================================
+
++100	5	1	0	0	0x0FEF,10,20,300,200	create 1
++101	5	1	0	0	1,30,40,320,240	open 1 at 30,40,320,240
++105	6	1	0	0	1,5,70,90,260,180	wind_set WF_CXYWH: move it, so CURR and PREV now differ
+104	2	5	0	0	1,4	work area while still open: what the close has to replace
+
++100	5	1	0	0	0x0FEF,10,20,300,200	create 1
++101	5	1	0	0	1,30,40,320,240	open 1 at 30,40,320,240
++105	6	1	0	0	1,5,70,90,260,180	wind_set WF_CXYWH: move it, so CURR and PREV now differ
+104	2	5	0	0	1,5	current rectangle while still open: the moved 70,90,260,180
+
++100	5	1	0	0	0x0FEF,10,20,300,200	create 1
++101	5	1	0	0	1,30,40,320,240	open 1 at 30,40,320,240
++105	6	1	0	0	1,5,70,90,260,180	wind_set WF_CXYWH: move it, so CURR and PREV now differ
+104	2	5	0	0	1,6	previous rectangle while still open: the open 30,40,320,240
+
++100	5	1	0	0	0x0FEF,10,20,300,200	create 1
++101	5	1	0	0	1,30,40,320,240	open 1 at 30,40,320,240
++105	6	1	0	0	1,5,70,90,260,180	wind_set WF_CXYWH: move it, so CURR and PREV now differ
++102	1	1	0	0	1	close it
+104	2	5	0	0	1,4	after the close: wm_calc(WC_WORK) of gl_rzero, so negative
+
++100	5	1	0	0	0x0FEF,10,20,300,200	create 1
++101	5	1	0	0	1,30,40,320,240	open 1 at 30,40,320,240
++105	6	1	0	0	1,5,70,90,260,180	wind_set WF_CXYWH: move it, so CURR and PREV now differ
++102	1	1	0	0	1	close it
+104	2	5	0	0	1,5	after the close: gl_rzero -- a constant, not a device value
+
++100	5	1	0	0	0x0FEF,10,20,300,200	create 1
++101	5	1	0	0	1,30,40,320,240	open 1 at 30,40,320,240
++105	6	1	0	0	1,5,70,90,260,180	wind_set WF_CXYWH: move it, so CURR and PREV now differ
++102	1	1	0	0	1	close it
+104	2	5	0	0	1,6	after the close: the rectangle the window had, 70,90,260,180
+
++100	5	1	0	0	0x0FEF,10,20,300,200	create 1
++101	5	1	0	0	1,30,40,320,240	open 1 at 30,40,320,240
++105	6	1	0	0	1,5,70,90,260,180	wind_set WF_CXYWH: move it, so CURR and PREV now differ
++102	1	1	0	0	1	close it
+104	2	5	0	0	1,7	control: wm_close writes WS_FULL nowhere, so FULL must stand
+
+108	6	5	0	0	1,0x0FEF,0,0,0,0	this machine's wind_calc(WC_WORK, gl_rzero): B's WXYWH oracle
+
++100	5	1	0	0	0x0FEF,10,20,300,200	create 1
+104	2	5	0	0	1,4	created, never opened: wm_create never writes WORK at all
+
++100	5	1	0	0	0x0FEF,10,20,300,200	create 1
++102	1	1	0	0	1	wind_close a window that was created but never opened
+104	2	5	0	0	1,4	did the close honour its early return, or write anyway?
+
+# ====================================================================
+# C. A list that is not empty and still meets nothing: the P2 end
+#
+# Window 2 sits on the SAME top left corner as window 1 and is two pixels
+# shorter in width and in height.  Two consequences, and the case needs
+# both:
+#
+#   * have_piece[TOP] and have_piece[LEFT] are false (gemwrect.c:113-114),
+#     so what is left of window 1 is a RIGHT piece and a BOTTOM piece and
+#     nothing else -- the list is NOT empty, which is what P1 would be.
+#   * both pieces are two pixels wide or high and sit on window 1's outer
+#     edge: with the drop shadow applied they lie outside window 1's own
+#     rectangle altogether, without it on its last two border rows and
+#     columns.  Either way they are border, never work area, so every
+#     rc_intersect in the walk fails and the walk runs to the end.
+#
+# What must then arrive: ret = 1, w = h = 0 from gemwmlib.c:1240, and x and
+# y WRITTEN -- those of the last piece examined after rc_intersect has
+# clamped them to the work area, i.e. x = max(BOTTOM piece x, work x) and
+# y = window 1's y + window 2's h + the drop shadow.  Four written words,
+# not two.  The work area and both current rectangles are measured here as
+# their own cases so that this can be recomputed on each machine instead of
+# being assumed.
+# ====================================================================
+
++100	5	1	0	0	0x0FEF,10,20,300,200	create 1
++100	5	1	0	0	0x0FEF,10,20,300,200	create 2
++101	5	1	0	0	1,30,40,320,240	open 1 at 30,40,320,240
++101	5	1	0	0	2,30,40,318,238	open 2 on the same corner, 2 px shorter in w and in h
+104	2	5	0	0	1,4	the work area the pieces are clipped against, on the machine
+
++100	5	1	0	0	0x0FEF,10,20,300,200	create 1
++100	5	1	0	0	0x0FEF,10,20,300,200	create 2
++101	5	1	0	0	1,30,40,320,240	open 1 at 30,40,320,240
++101	5	1	0	0	2,30,40,318,238	open 2 on the same corner, 2 px shorter in w and in h
+104	2	5	0	0	1,5	window 1's rectangle: being covered does not move it
+
++100	5	1	0	0	0x0FEF,10,20,300,200	create 1
++100	5	1	0	0	0x0FEF,10,20,300,200	create 2
++101	5	1	0	0	1,30,40,320,240	open 1 at 30,40,320,240
++101	5	1	0	0	2,30,40,318,238	open 2 on the same corner, 2 px shorter in w and in h
+104	2	5	0	0	2,5	the covering rectangle: what it leaves of window 1
+
++100	5	1	0	0	0x0FEF,10,20,300,200	create 1
++100	5	1	0	0	0x0FEF,10,20,300,200	create 2
++101	5	1	0	0	1,30,40,320,240	open 1 at 30,40,320,240
++101	5	1	0	0	2,30,40,318,238	open 2 on the same corner, 2 px shorter in w and in h
+104	2	5	0	0	1,11	the P2 end: a non-empty list that meets nothing, four words
+
++100	5	1	0	0	0x0FEF,10,20,300,200	create 1
++100	5	1	0	0	0x0FEF,10,20,300,200	create 2
++101	5	1	0	0	1,30,40,320,240	open 1 at 30,40,320,240
++101	5	1	0	0	2,30,40,318,238	open 2 on the same corner, 2 px shorter in w and in h
++104	2	5	0	0	1,11	walk window 1 to the end of its list
+104	2	5	0	0	1,12	the P1 end one call later: two words; x and y have no soll
+
+# ====================================================================
+# D. Three windows, and the order they were opened in
+#
+# The same three rectangles in both groups -- 1 at 30,40,320,240, 2 over
+# its top left at 60,80,200,160, 3 over its bottom right at 180,160,200,160
+# so that 3 overlaps both 1 and 2 -- and the same window walked, window 1.
+# The ONLY difference between the two groups is the order 2 and 3 were
+# opened in, and therefore the order in which they broke window 1's list.
+#
+# Group I opens 1, 2, 3: the list is broken by 2 and then by 3.
+# Group II opens 1, 3, 2: the list is broken by 3 and then by 2.
+#
+# The visible area is identical in both.  The decomposition is not: brkrct
+# cuts each surviving piece again, so under this geometry the source
+# predicts four pieces for group I and five for group II, with different
+# cuts.  Nobody has to trust those two numbers for the section to decide
+# something, and that is the point of running both: an implementation that
+# subtracts the covering rectangles in HANDLE order instead of in the order
+# they were opened cannot tell the two groups apart and must answer the
+# same in both.  Group I is also where the middle window is asked -- window
+# 2 is broken by 3 while itself breaking 1, which two windows cannot show.
+# ====================================================================
+
++100	5	1	0	0	0x0FEF,10,20,300,200	create 1
++100	5	1	0	0	0x0FEF,10,20,300,200	create 2
++100	5	1	0	0	0x0FEF,10,20,300,200	create 3
++101	5	1	0	0	1,30,40,320,240	open 1 at 30,40,320,240
++101	5	1	0	0	2,60,80,200,160	open 2 over its top left
++101	5	1	0	0	3,180,160,200,160	open 3 over its bottom right, overlapping 2 as well
+104	2	5	0	0	1,4	group I: the work area the six answers below are clipped to
+
++100	5	1	0	0	0x0FEF,10,20,300,200	create 1
++100	5	1	0	0	0x0FEF,10,20,300,200	create 2
++100	5	1	0	0	0x0FEF,10,20,300,200	create 3
++101	5	1	0	0	1,30,40,320,240	open 1 at 30,40,320,240
++101	5	1	0	0	2,60,80,200,160	open 2 over its top left
++101	5	1	0	0	3,180,160,200,160	open 3 over its bottom right, overlapping 2 as well
+104	2	5	0	0	1,11	group I, piece 1 of the window under both others
+
++100	5	1	0	0	0x0FEF,10,20,300,200	create 1
++100	5	1	0	0	0x0FEF,10,20,300,200	create 2
++100	5	1	0	0	0x0FEF,10,20,300,200	create 3
++101	5	1	0	0	1,30,40,320,240	open 1 at 30,40,320,240
++101	5	1	0	0	2,60,80,200,160	open 2 over its top left
++101	5	1	0	0	3,180,160,200,160	open 3 over its bottom right, overlapping 2 as well
++104	2	5	0	0	1,11	first
+104	2	5	0	0	1,12	group I, piece 2, or the end if the list is shorter
+
++100	5	1	0	0	0x0FEF,10,20,300,200	create 1
++100	5	1	0	0	0x0FEF,10,20,300,200	create 2
++100	5	1	0	0	0x0FEF,10,20,300,200	create 3
++101	5	1	0	0	1,30,40,320,240	open 1 at 30,40,320,240
++101	5	1	0	0	2,60,80,200,160	open 2 over its top left
++101	5	1	0	0	3,180,160,200,160	open 3 over its bottom right, overlapping 2 as well
++104	2	5	0	0	1,11	first
++104	2	5	0	0	1,12	on
+104	2	5	0	0	1,12	group I, piece 3, or the end if the list is shorter
+
++100	5	1	0	0	0x0FEF,10,20,300,200	create 1
++100	5	1	0	0	0x0FEF,10,20,300,200	create 2
++100	5	1	0	0	0x0FEF,10,20,300,200	create 3
++101	5	1	0	0	1,30,40,320,240	open 1 at 30,40,320,240
++101	5	1	0	0	2,60,80,200,160	open 2 over its top left
++101	5	1	0	0	3,180,160,200,160	open 3 over its bottom right, overlapping 2 as well
++104	2	5	0	0	1,11	first
++104	2	5	0	0	1,12	on
++104	2	5	0	0	1,12	on
+104	2	5	0	0	1,12	group I, piece 4, or the end if the list is shorter
+
++100	5	1	0	0	0x0FEF,10,20,300,200	create 1
++100	5	1	0	0	0x0FEF,10,20,300,200	create 2
++100	5	1	0	0	0x0FEF,10,20,300,200	create 3
++101	5	1	0	0	1,30,40,320,240	open 1 at 30,40,320,240
++101	5	1	0	0	2,60,80,200,160	open 2 over its top left
++101	5	1	0	0	3,180,160,200,160	open 3 over its bottom right, overlapping 2 as well
++104	2	5	0	0	1,11	first
++104	2	5	0	0	1,12	on
++104	2	5	0	0	1,12	on
++104	2	5	0	0	1,12	on
+104	2	5	0	0	1,12	group I, piece 5, or the end if the list is shorter
+
++100	5	1	0	0	0x0FEF,10,20,300,200	create 1
++100	5	1	0	0	0x0FEF,10,20,300,200	create 2
++100	5	1	0	0	0x0FEF,10,20,300,200	create 3
++101	5	1	0	0	1,30,40,320,240	open 1 at 30,40,320,240
++101	5	1	0	0	2,60,80,200,160	open 2 over its top left
++101	5	1	0	0	3,180,160,200,160	open 3 over its bottom right, overlapping 2 as well
++104	2	5	0	0	1,11	first
++104	2	5	0	0	1,12	on
++104	2	5	0	0	1,12	on
++104	2	5	0	0	1,12	on
++104	2	5	0	0	1,12	on
+104	2	5	0	0	1,12	group I, piece 6, or the end if the list is shorter
+
++100	5	1	0	0	0x0FEF,10,20,300,200	create 1
++100	5	1	0	0	0x0FEF,10,20,300,200	create 2
++100	5	1	0	0	0x0FEF,10,20,300,200	create 3
++101	5	1	0	0	1,30,40,320,240	open 1 at 30,40,320,240
++101	5	1	0	0	2,60,80,200,160	open 2 over its top left
++101	5	1	0	0	3,180,160,200,160	open 3 over its bottom right, overlapping 2 as well
+104	2	5	0	0	2,11	group I, the middle window: it breaks one list and is broken
+
++100	5	1	0	0	0x0FEF,10,20,300,200	create 1
++100	5	1	0	0	0x0FEF,10,20,300,200	create 2
++100	5	1	0	0	0x0FEF,10,20,300,200	create 3
++101	5	1	0	0	1,30,40,320,240	open 1 at 30,40,320,240
++101	5	1	0	0	2,60,80,200,160	open 2 over its top left
++101	5	1	0	0	3,180,160,200,160	open 3 over its bottom right, overlapping 2 as well
++104	2	5	0	0	2,11	first piece of the middle window
+104	2	5	0	0	2,12	group I, the middle window's piece 2, or its end
+
++100	5	1	0	0	0x0FEF,10,20,300,200	create 1
++100	5	1	0	0	0x0FEF,10,20,300,200	create 2
++100	5	1	0	0	0x0FEF,10,20,300,200	create 3
++101	5	1	0	0	1,30,40,320,240	open 1 at 30,40,320,240
++101	5	1	0	0	3,180,160,200,160	open 3 over its bottom right, overlapping 2 as well
++101	5	1	0	0	2,60,80,200,160	open 2 over its top left
+104	2	5	0	0	1,11	group II, piece 1: same rectangles, 3 opened before 2
+
++100	5	1	0	0	0x0FEF,10,20,300,200	create 1
++100	5	1	0	0	0x0FEF,10,20,300,200	create 2
++100	5	1	0	0	0x0FEF,10,20,300,200	create 3
++101	5	1	0	0	1,30,40,320,240	open 1 at 30,40,320,240
++101	5	1	0	0	3,180,160,200,160	open 3 over its bottom right, overlapping 2 as well
++101	5	1	0	0	2,60,80,200,160	open 2 over its top left
++104	2	5	0	0	1,11	first
+104	2	5	0	0	1,12	group II, piece 2, or the end: only the opening order differs
+
++100	5	1	0	0	0x0FEF,10,20,300,200	create 1
++100	5	1	0	0	0x0FEF,10,20,300,200	create 2
++100	5	1	0	0	0x0FEF,10,20,300,200	create 3
++101	5	1	0	0	1,30,40,320,240	open 1 at 30,40,320,240
++101	5	1	0	0	3,180,160,200,160	open 3 over its bottom right, overlapping 2 as well
++101	5	1	0	0	2,60,80,200,160	open 2 over its top left
++104	2	5	0	0	1,11	first
++104	2	5	0	0	1,12	on
+104	2	5	0	0	1,12	group II, piece 3, or the end: only the opening order differs
+
++100	5	1	0	0	0x0FEF,10,20,300,200	create 1
++100	5	1	0	0	0x0FEF,10,20,300,200	create 2
++100	5	1	0	0	0x0FEF,10,20,300,200	create 3
++101	5	1	0	0	1,30,40,320,240	open 1 at 30,40,320,240
++101	5	1	0	0	3,180,160,200,160	open 3 over its bottom right, overlapping 2 as well
++101	5	1	0	0	2,60,80,200,160	open 2 over its top left
++104	2	5	0	0	1,11	first
++104	2	5	0	0	1,12	on
++104	2	5	0	0	1,12	on
+104	2	5	0	0	1,12	group II, piece 4, or the end: only the opening order differs
+
++100	5	1	0	0	0x0FEF,10,20,300,200	create 1
++100	5	1	0	0	0x0FEF,10,20,300,200	create 2
++100	5	1	0	0	0x0FEF,10,20,300,200	create 3
++101	5	1	0	0	1,30,40,320,240	open 1 at 30,40,320,240
++101	5	1	0	0	3,180,160,200,160	open 3 over its bottom right, overlapping 2 as well
++101	5	1	0	0	2,60,80,200,160	open 2 over its top left
++104	2	5	0	0	1,11	first
++104	2	5	0	0	1,12	on
++104	2	5	0	0	1,12	on
++104	2	5	0	0	1,12	on
+104	2	5	0	0	1,12	group II, piece 5, or the end: only the opening order differs
+
++100	5	1	0	0	0x0FEF,10,20,300,200	create 1
++100	5	1	0	0	0x0FEF,10,20,300,200	create 2
++100	5	1	0	0	0x0FEF,10,20,300,200	create 3
++101	5	1	0	0	1,30,40,320,240	open 1 at 30,40,320,240
++101	5	1	0	0	3,180,160,200,160	open 3 over its bottom right, overlapping 2 as well
++101	5	1	0	0	2,60,80,200,160	open 2 over its top left
++104	2	5	0	0	1,11	first
++104	2	5	0	0	1,12	on
++104	2	5	0	0	1,12	on
++104	2	5	0	0	1,12	on
++104	2	5	0	0	1,12	on
+104	2	5	0	0	1,12	group II, piece 6, or the end: only the opening order differs
+
++100	5	1	0	0	0x0FEF,10,20,300,200	create 1
++100	5	1	0	0	0x0FEF,10,20,300,200	create 2
++100	5	1	0	0	0x0FEF,10,20,300,200	create 3
++101	5	1	0	0	1,30,40,320,240	open 1 at 30,40,320,240
++101	5	1	0	0	3,180,160,200,160	open 3 over its bottom right, overlapping 2 as well
++101	5	1	0	0	2,60,80,200,160	open 2 over its top left
++104	2	5	0	0	1,11	first
++104	2	5	0	0	1,12	on
++104	2	5	0	0	1,12	on
++104	2	5	0	0	1,12	on
++104	2	5	0	0	1,12	on
++104	2	5	0	0	1,12	on
+104	2	5	0	0	1,12	group II, piece 7, or the end: only the opening order differs
+
+# ====================================================================
+# E. The desktop window, and why it is last
+#
+# D.w_win[0] is VF_INUSE from wm_init on but never VF_ISOPEN, so wm_close
+# must turn round at gemwmlib.c:1446-1447 and leave its rectangle alone.
+# If a machine wrote it anyway, WS_CURR would become gl_rzero and every hit
+# test on the desktop would lose its screen -- and wm_new sweeps handles
+# >= 1 only (:1886), so no reset in this run would undo it.  That is the
+# one outcome in this file that could reach another case, which is why this
+# case is the last line of the table.
+# ====================================================================
+
++102	1	1	0	0	0	wind_close 0: the desktop window is INUSE but never ISOPEN
+104	2	5	0	0	0,5	still the whole screen? 0,0,0,0 means the early return failed

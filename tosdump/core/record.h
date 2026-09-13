@@ -113,6 +113,18 @@ void td_poison_raster(struct td_raster_arrays *a);
 uint16_t td_rast_fill_word(uint16_t seed, uint16_t index);
 void     td_rast_fill(int16_t *buf, uint16_t words, uint16_t seed);
 
+/*
+ * Lay one AES pointer buffer (tosdump.h, TD_AES_BUF_N).  A pure function of
+ * the buffer's number, so both builds put the identical bytes there without
+ * the case table having to spell 256 of them out -- and so a case that hands
+ * the AES two different buffers hands it two distinguishable strings.
+ *
+ * The result is a bounded C string followed by a canary: printable ASCII
+ * only, a NUL at TD_AES_BUF_TEXT_LEN, the same printable pattern behind it.
+ * See tosdump.h for why a string and not the raster's word pattern.
+ */
+void td_aes_buf_fill(char *buf, size_t bytes, int index);
+
 /* Writers.  `rec` must be at least the area's record size. */
 void td_vdi_record_write(uint8_t *rec, uint16_t case_id, uint16_t opcode,
                          int32_t ret, const struct td_vdi_arrays *after,

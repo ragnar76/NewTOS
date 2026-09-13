@@ -361,6 +361,135 @@ static void check_reset(void)
 	TD_CHECK_EQ(td_load_be16(REC_AT(reset_records, 1) + TD_AES_OFF_OPCODE), 108);
 }
 
+/* ------------------------------------------------------------------ */
+/* The addr_in column: buffers instead of addresses (core/cases.h)      */
+/* ------------------------------------------------------------------ */
+/*
+ * What the runner owes a case that names a buffer:
+ *   - the buffer is laid before EVERY call, with the bytes core/record.c
+ *     lays -- the same ones on both targets, or the case would measure the
+ *     buffer instead of the function.  Written out here as the literal
+ *     strings rather than read back out of td_aes_buf_fill;
+ *   - an "aN" plant reaches the call in addr_in[N], not the poison;
+ *   - an "iN" plant reaches it as a pointer at the target's own width
+ *     packed at &int_in[N], which is where the classic binding puts it
+ *     (gemlib a_wind_set_str.c:25) and where EmuTOS' wm_set reads it
+ *     (gemwmlib.c:1661);
+ *   - the RECORD carries the buffer's token and not its address, because an
+ *     address is different on the two machines by construction;
+ *   - a slot no case planted still records the poison, which is what keeps
+ *     a table without the column producing the bytes it always did.
+ */
+#define BUF0_TEXT "ABCDEFGH"     /* td_aes_buf_fill(0), the first 8 bytes */
+#define BUF1_TEXT "HIJKLMNO"     /* td_aes_buf_fill(1)                    */
+
+static const char *plant_table_text =
+	"!columns\t8\n"
+	"+105\t6\t1\t0\t0\t1,2\ti2=1\tprelude: wind_set WF_NAME, packed\n"
+	"13\t0\t1\t1\t0\t-\ta0=0\tappl_find through addr_in[0]\n"
+	"77\t0\t5\t0\t0\t-\t-\tgraf_handle, nothing planted\n";
+
+static struct td_aes_case_table plant_ct;
+static uint8_t plant_records[4 * TD_AES_RECORD_SIZE];
+
+static uint32_t addrin_w(const uint8_t *rec, int i)
+{
+	return td_load_be32(rec + TD_AES_OFF_ADDRIN + i * 4);
+}
+
+static void check_plants(void)
+{
+	struct td_case_error err;
+	int i;
+
+	printf("aes runner: a case points a call at one of the dumper's own "
+	       "buffers\n");
+
+	memset(&err, 0, sizeof err);
+	TD_CHECK_EQ(td_aes_cases_parse(&plant_ct, plant_table_text,
+	                               strlen(plant_table_text), &err), 0);
+	TD_CHECK_EQ(plant_ct.columns, TD_AES_CASE_COLUMNS_MAX);
+	TD_CHECK_EQ(plant_ct.count, 2);
+	TD_CHECK_EQ(plant_ct.prelude_count, 1);
+
+	td_stub_reset();
+	TD_CHECK_EQ(td_run_aes(&plant_ct, td_gem_global(), plant_records,
+	                       (size_t)plant_ct.count * TD_AES_RECORD_SIZE), 0);
+	TD_CHECK_EQ(td_stub_ncalls, 3);          /* prelude, case, case */
+
+	/* --- the prelude: a pointer packed into the int_in WORDs -------- */
+	TD_CHECK_EQ(td_stub_calls[0].opcode, 105);
+	TD_CHECK_EQ(td_stub_calls[0].aes_name_seen, 1);
+	TD_CHECK(strcmp(td_stub_calls[0].aes_name, BUF1_TEXT) == 0);
+	/* the address array stayed poisoned: this plant is not an addr_in one */
+	for (i = 0; i < TD_AES_ADDRIN_N; i++)
+		TD_CHECK_EQ((uint32_t)(unsigned long)td_stub_calls[0].aes_addr_in[i],
+		            0xDEADDEADuL);
+
+	/* --- case 1: the addr_in plant ---------------------------------- */
+	TD_CHECK_EQ(td_stub_calls[1].opcode, 13);
+	TD_CHECK_EQ(td_stub_calls[1].aes_name_seen, 1);
+	TD_CHECK(strcmp(td_stub_calls[1].aes_name, BUF0_TEXT) == 0);
+	TD_CHECK(td_stub_calls[1].aes_addr_in[0] != NULL);
+	TD_CHECK((uint32_t)(unsigned long)td_stub_calls[1].aes_addr_in[0] !=
+	         0xDEADDEADuL);
+	/* the slots the case did not name are still poison */
+	for (i = 1; i < TD_AES_ADDRIN_N; i++)
+		TD_CHECK_EQ((uint32_t)(unsigned long)td_stub_calls[1].aes_addr_in[i],
+		            0xDEADDEADuL);
+	/* the prelude's packed pointer did NOT leak into the measured call */
+	for (i = 0; i < TD_AES_INTIN_N; i++)
+		TD_CHECK_EQ((uint16_t)td_stub_calls[1].aes_int_in[i], 0xDEADu);
+
+	/* the record: the buffer's token, not its address */
+	TD_CHECK_EQ(addrin_w(REC_AT(plant_records, 0), 0), TD_AES_ADDR_TOKEN(0));
+	for (i = 1; i < TD_AES_ADDRIN_N; i++)
+		TD_CHECK_EQ(addrin_w(REC_AT(plant_records, 0), i), 0xDEADDEADuL);
+	/* ap_find answers -1 for a name no process has (gemaplib.c:95-108) */
+	TD_CHECK_EQ((int16_t)out_w(REC_AT(plant_records, 0), 0),
+	            TD_STUB_APPL_FIND_RET);
+
+	/* --- case 2: nothing planted, so nothing changes ---------------- */
+	TD_CHECK_EQ(td_stub_calls[2].opcode, 77);
+	for (i = 0; i < TD_AES_ADDRIN_N; i++) {
+		TD_CHECK_EQ((uint32_t)(unsigned long)td_stub_calls[2].aes_addr_in[i],
+		            0xDEADDEADuL);
+		TD_CHECK_EQ(addrin_w(REC_AT(plant_records, 1), i), 0xDEADDEADuL);
+	}
+}
+
+/*
+ * The buffer is laid before every call, not once.  Two cases naming the same
+ * buffer must both be handed the same bytes -- otherwise a case would
+ * measure what the previous one wrote into it.
+ */
+static void check_buffers_are_relaid(void)
+{
+	static struct td_aes_case_table t2;
+	static uint8_t recs[4 * TD_AES_RECORD_SIZE];
+	static const char *text =
+		"!columns\t8\n"
+		"13\t0\t1\t1\t0\t-\ta0=0\tappl_find, first\n"
+		"13\t0\t1\t1\t0\t-\ta0=0\tappl_find, again\n";
+	struct td_case_error err;
+
+	printf("aes runner: every call is handed the same buffer bytes\n");
+
+	memset(&err, 0, sizeof err);
+	TD_CHECK_EQ(td_aes_cases_parse(&t2, text, strlen(text), &err), 0);
+
+	td_stub_reset();
+	TD_CHECK_EQ(td_run_aes(&t2, td_gem_global(), recs, sizeof recs), 0);
+	TD_CHECK_EQ(td_stub_ncalls, 2);
+	TD_CHECK(strcmp(td_stub_calls[0].aes_name, BUF0_TEXT) == 0);
+	TD_CHECK(strcmp(td_stub_calls[1].aes_name, BUF0_TEXT) == 0);
+	/* and both got the SAME buffer, so the same address */
+	TD_CHECK(td_stub_calls[0].aes_addr_in[0] ==
+	         td_stub_calls[1].aes_addr_in[0]);
+	TD_CHECK_EQ(addrin_w(REC_AT(recs, 0), 0), TD_AES_ADDR_TOKEN(0));
+	TD_CHECK_EQ(addrin_w(REC_AT(recs, 1), 0), TD_AES_ADDR_TOKEN(0));
+}
+
 int main(int argc, char **argv)
 {
 	struct td_case_error err;
@@ -376,6 +505,8 @@ int main(int argc, char **argv)
 	check_prelude();
 	check_too_small();
 	check_reset();
+	check_plants();
+	check_buffers_are_relaid();
 
 	/*
 	 * A well-formed dump file, written by the same code the target uses,

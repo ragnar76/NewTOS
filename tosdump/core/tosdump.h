@@ -125,6 +125,55 @@
 #define TD_AES_RESERVED_LEN   10
 
 /* ------------------------------------------------------------------ */
+/* The AES pointer buffers (the "addr_in" column, cases.h)             */
+/* ------------------------------------------------------------------ */
+/*
+ * A dozen AES opcodes do all of their work behind a pointer -- the object
+ * manager, the menu manager, the scrap manager, appl_find, rsrc_load, the
+ * shell's path calls, wind_get/wind_set WF_NAME and WF_INFO.  A case table
+ * cannot name an address: it is one file carried to two machines, and an
+ * address is different on each.  So the table names a BUFFER BY NUMBER and
+ * the dumper puts its own address in, exactly as cases/vdi-raster.tsv names
+ * its two pixel buffers instead of their addresses.
+ *
+ * The buffers are STATICS of the runner: fixed count, fixed size, laid fresh
+ * before every call it issues.  Same size and same bytes on both targets --
+ * a buffer that differed would make the case measure the buffer instead of
+ * the function.
+ *
+ * WHAT IS IN ONE, and why it is not the raster fill.  Half of the calls this
+ * unlocks take a C STRING through the pointer (appl_find's AP_PNAME,
+ * rsrc_load's filename, menu_text, shel_find, the scrap manager's strcpy),
+ * and neither AES bounds-checks one.  A pseudo-random word fill would send
+ * strlen off the end of the buffer.  So every buffer is a bounded string by
+ * construction: TD_AES_BUF_TEXT_LEN printable characters, a NUL, and the
+ * same printable pattern to the end as a canary.  Eight characters because
+ * that is the AES' own name length (EmuTOS aes/struct.h:111, AP_NAMELEN),
+ * which is what fpdnm's strncmp compares (gempd.c:48).
+ */
+#define TD_AES_BUF_N          4    /* buffers a table may name, 0..3      */
+#define TD_AES_BUF_BYTES    256    /* each, on both targets               */
+#define TD_AES_BUF_TEXT_LEN   8    /* printable characters before the NUL */
+
+/*
+ * What the RECORD carries for an addr_in slot a case pointed at a buffer.
+ *
+ * The record's address slots are compared byte for byte between the two
+ * machines (record.c, td_aes_fields).  A buffer's address is different on a
+ * TT and on a Pi by construction, so recording it would fabricate a
+ * difference in every case that uses one -- the same trap the poison pattern
+ * was built to avoid (runner_aes.c, poison_ptrs).  A planted slot therefore
+ * records this TOKEN, which says what the table said: "slot j points at
+ * buffer n".  A slot the call MODIFIED records the modified value instead,
+ * low 32 bits, which is exactly the difference it is.
+ *
+ * A slot no case planted is untouched by all of this and still records the
+ * poison, so a table without an addr_in column produces the same bytes it
+ * always did.
+ */
+#define TD_AES_ADDR_TOKEN(n)  ((uint32_t)0xB0FF0000uL + (uint32_t)(n))
+
+/* ------------------------------------------------------------------ */
 /* VDI raster record -- 3696 bytes                                     */
 /* ------------------------------------------------------------------ */
 /*

@@ -5,10 +5,13 @@
  * holds, and the comment column so a difference report can name a case. The
  * first two are area-agnostic -- they come from the shared line iterator and
  * the shared prelude rule -- but the comment column is NOT: it is column five
- * in the VDI form and column seven in the AES form, and no amount of looking
- * at a line settles which, because a VDI comment may itself hold tabs.
+ * in the VDI form and column seven or eight in the AES form, and no amount of
+ * looking at a line settles WHICH FORM it is, because a VDI comment may itself
+ * hold tabs.
  *
- * So the area is an argument, and this test is what says so.
+ * So the area is an argument, and this test is what says so.  The AES column
+ * count, in contrast, is in the file -- its "!columns" directive -- and the
+ * reader has to honour it; the eight column test below is what says that.
  */
 #include "tdtest.h"
 #include "casefile.h"
@@ -79,6 +82,40 @@ static void check_aes(const char *path)
 	                "wind_get 0 WF_WXYWH\ttabs\tkept") == 0);
 }
 
+/*
+ * An AES table that declares "!columns 8" carries an addr_in column between
+ * the values and the comment (core/cases.h).  The reader has to take the
+ * comment from column EIGHT there -- and it can, because unlike the area the
+ * column count IS in the file.  A reader that assumed seven would name every
+ * case of such a table after its addr_in column.
+ */
+static const char *aes8_text =
+	"!columns\t8\n"
+	"# an AES table with the addr_in column\n"
+	"13\t0\t1\t1\t0\t-\ta0=0\tappl_find through a buffer\n"
+	"+77\t0\t5\t0\t0\t-\t-\tgraf_handle, a prelude\n"
+	"77\t0\t5\t0\t0\t-\t-\tgraf_handle\ttabs\tkept\n";
+
+static void check_aes_eight_columns(const char *path)
+{
+	struct td_casefile cf;
+	const char *why = NULL;
+
+	printf("casefile: an AES table that declares eight columns takes the "
+	       "comment from column eight\n");
+
+	write_file(path, aes8_text);
+	TD_CHECK_EQ(td_casefile_read(&cf, path, TD_AREA_AES, &why), 0);
+
+	TD_CHECK_EQ(cf.count, 2);
+	TD_CHECK_EQ(cf.line[0], 3);
+	TD_CHECK_EQ(cf.line[1], 5);
+	TD_CHECK(strcmp(td_casefile_comment(&cf, 3),
+	                "appl_find through a buffer") == 0);
+	TD_CHECK(strcmp(td_casefile_comment(&cf, 5),
+	                "graf_handle\ttabs\tkept") == 0);
+}
+
 static void check_crc_is_area_independent(const char *vpath, const char *apath)
 {
 	struct td_casefile a, b;
@@ -112,6 +149,7 @@ int main(int argc, char **argv)
 
 	check_vdi(vpath);
 	check_aes(apath);
+	check_aes_eight_columns(apath);
 	check_crc_is_area_independent(vpath, apath);
 
 	return TD_TEST_RESULT();

@@ -29,13 +29,17 @@
 /*
  * How many tab separated columns a case line of this area has.  Five for the
  * VDI form and for the BIOS / XBIOS / GEMDOS form (opcode, args, retclass,
- * capture, comment), seven for the AES form (spec section 6) and seven for
- * the VDI raster form (cases.h).
+ * capture, comment), seven for the VDI raster form (cases.h), and for the
+ * AES form whatever the file's own "!columns" directive says -- seven
+ * without one, eight with the addr_in column.  The AES answer is the only
+ * one that needs the file, which is why this takes the bytes: a reader that
+ * assumed seven would name every case of an eight column table after its
+ * addr_in column instead of its comment.
  */
-static int columns_for_area(uint16_t area)
+static int columns_for_area(uint16_t area, const char *raw, size_t len)
 {
 	switch (area) {
-	case TD_AREA_AES:    return TD_AES_CASE_COLUMNS;
+	case TD_AREA_AES:    return td_aes_table_columns(raw, len);
 	case TD_AREA_RASTER: return TD_RAST_CASE_COLUMNS;
 	default:             return TD_CASE_COLUMNS;
 	}
@@ -44,7 +48,7 @@ static int columns_for_area(uint16_t area)
 int td_casefile_read(struct td_casefile *cf, const char *path, uint16_t area,
                      const char **why)
 {
-	const int ncols = columns_for_area(area);
+	int ncols;
 	struct td_line_iter it;
 	const char *line;
 	size_t line_len;
@@ -84,6 +88,7 @@ int td_casefile_read(struct td_casefile *cf, const char *path, uint16_t area,
 	raw[got] = '\0';
 
 	cf->crc = td_crc32((const uint8_t *)raw, got);
+	ncols = columns_for_area(area, raw, got);
 
 	td_line_iter_init(&it, raw, got);
 	while (td_line_iter_next(&it, &line, &line_len, &line_no, &is_case)) {

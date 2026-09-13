@@ -123,6 +123,31 @@ int main(int argc, char **argv)
 	td_log("ap_version %04X, ap_count %d, ap_id %d, ap_planes %d\n",
 	       (unsigned)(uint16_t)g[0], g[1], g[2], g[10]);
 
+	/*
+	 * The version guard (core/cases.h).  Five AES opcodes exist only in a
+	 * build with the right CONF_WITH_* flag, and issuing one on a machine
+	 * without it pops a modal alert nobody is here to click.  Whether THIS
+	 * machine has them is readable off the ap_version just logged and
+	 * nowhere else, so the question is asked here -- after appl_init, which
+	 * is what writes it, and before the first case or prelude runs.
+	 *
+	 * Refusing the whole table rather than skipping a case keeps the dump's
+	 * shape a property of the table: a dump has `count` records or it does
+	 * not exist.  td_run_aes asks the same function again; that call is the
+	 * guarantee, this one is the report.
+	 */
+	if (table.features != 0) {
+		td_log("%s needs %s\n", table_path,
+		       td_aes_features_text(table.features));
+		rc = td_aes_cases_version_refusal(&table, g[0], &err);
+		if (rc != 0) {
+			td_log("%s line %u: %s (%s)\n", table_path, err.line,
+			       err.what ? err.what : "", td_case_error_text(rc));
+			td_gem_close(&wk);
+			return finish(1);
+		}
+	}
+
 	/* Written before the first case: a run that hangs still leaves this. */
 	td_log("running %u cases\n", table.count);
 	td_log_write(log_path);

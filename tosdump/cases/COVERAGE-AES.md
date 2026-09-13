@@ -86,6 +86,43 @@ opcode off the list is a source change with a citation, and that friction is
 the point — a data file must not be able to hang a machine in a way that
 cannot be told apart from a defect in the thing being measured.
 
+> **Corrected 2026-09-13 (M06).** The middle class above — "one TOS 3.06's AES
+> does not have" — is no longer the LOADER's to decide, and the wording it was
+> written with was the defect. Whether a machine has `objc_sysvar` (48) or
+> `menu_popup`/`attach`/`istart`/`settings` (36-39) is a property of the
+> machine, and `ap_version` in the AESGLOBAL states it: EmuTOS derives
+> `AES_VERSION` from exactly the `CONF_WITH_*` flags that gate those arms
+> (`include/config.h:1345-1354`). Both machines these dumps are taken on report
+> **0340**, which on that ladder means all four flags are on — so the loader
+> was refusing functions the reference ROM measurably has. The loader now only
+> RECORDS which capability a table needs; the machine decides, after
+> `appl_init` and before the first case, and refuses the whole table by name if
+> it lacks it. The four `CONF_WITH_PCGEM` opcodes below are untouched by this:
+> that flag is absent from the ladder, so no measurement can settle them.
+> `TASK/M06.md`, `docs/TOS-REFERENCE-DUMPER.md` section 6,
+> `tosdump/core/cases.h` (the version guard).
+
+> **Corrected 2026-09-13 (M07).** The FIRST class above — "stops the run
+> finishing" — is not a property of an opcode either, for six of them, and the
+> guard was wrong in both directions at once. `evnt_multi` (25) and
+> `form_error` (53) were refused although each has exactly one arm that
+> returns before the blocking one: the quick check timer, `MU_TIMER` with a
+> zero `MT_LOCOUNT`/`MT_HICOUNT` (`gemevlib.c:216-220`, which is *before* the
+> `if (what == 0)` block at `:232-262`), and `n > 63` (`gemfmlib.c:440-441`).
+> In the other direction `scrp_read` (80), `scrp_write` (81), `form_keybd`
+> (55) and `objc_delete` (41) were ISSUABLE although each does its work
+> through `addr_in[0]`, which is `0xDEADDEAD` unless the table's `addr_in`
+> column (M05) plants a buffer: two `strcpy`s, a tree walk bounded only by
+> `LASTOB`, and a `tree[obj].ob_next` read below the tree base for `obj < 0`
+> (`gemsclib.c:40-45`, `:57-62`, `gemfmlib.c:135-148`, `gemoblib.c:1154-1157`).
+> Both directions now go through a second, per-line question — "with THESE
+> values?" — in the LOADER, alongside the round-2 window guard: every quantity
+> it reads is a column of the line, so none of it needs a machine. The two
+> harmless arms are measured on both machines in
+> `cases/aes-m07-parameter.tsv` (CRC `0F46665B`, 20 cases,
+> `measurement-2026-09-13-m07-parameter/`), where `int_out[0]` agrees on all
+> twenty. `TASK/M07.md`, `tosdump/core/cases.h` (the parameter guard).
+
 Two entries were **dropped** from the working list after reading the source,
 and three were **added** that were not on it:
 
@@ -237,7 +274,7 @@ cover (a window's rect comes out of `gl_rfull`, which starts below it).
 
 | Opcode / field | Status | Why |
 |---|---|---|
-| `objc_sysvar` (48) | **excluded — safety** | `#if CONF_WITH_3D_OBJECTS`, and EmuTOS ties that flag to **AES 3.40** (`config.h:1345-1354`). The same table records **TOS 3.06 as AES 3.20**. An AES without the opcode reaches the `default` arm and pops the modal alert — a hung TT. It goes back in only once TOS 3.06's opcode table is established from a primary source. |
+| `objc_sysvar` (48) | ~~excluded — safety~~ **measured 2026-09-13** | *Original reason:* `#if CONF_WITH_3D_OBJECTS`, and EmuTOS ties that flag to **AES 3.40** (`config.h:1345-1354`). The same table records **TOS 3.06 as AES 3.20**. An AES without the opcode reaches the `default` arm and pops the modal alert — a hung TT. *Superseded (M06):* the condition it named was right, the decider was wrong. Both measured machines report `ap_version 0340`, which is the rung that REQUIRES the flag, so both have the opcode. Measured on both in `cases/aes-m06-sysvar.tsv` (CRC `458748F2`, 19 cases, `measurement-2026-09-13-m06-sysvar/`); a machine that reports anything else still refuses the table, by name, before the first case. |
 | `graf_mkstate` (79), full form | reduced to `OUT_LEN` 1 | its four words are `xrat`, `yrat`, `button`, `kstate` (`gemgrlib.c:458-464`) — where the operator last left the mouse, not an API behaviour. With `OUT_LEN` 5 an unwritten slot is indistinguishable from a written one. The return code is kept: it proves a void handler leaves `TRUE`. |
 | `evnt_dclick` (26) | excluded | its only output is `gl_dcindex` (`gemevlib.c:34`, `:308`), a user preference the desktop restores from `DESKTOP.INF`. Comparing it reports the operator's settings. Round 2 measures it properly: a prelude that *sets* a known index, then a read-back — which is what preludes are for. |
 | `wind_get` `WF_FIRSTXYWH` (11) / `WF_NEXTXYWH` (12) | excluded | `w_owns` **writes** `pwin->w_rnext` (`gemwmlib.c:1235`), so `WF_FIRSTXYWH` arms the iteration and `WF_NEXTXYWH` advances it. Order-dependent between cases and between runs — exactly what rule 3 excludes. |
@@ -250,15 +287,17 @@ cover (a window's rect comes out of `gl_rfull`, which starts below it).
 | `appl_exit` (19) | excluded | ends the application. Every case after it would measure nothing. |
 | `appl_read`/`write`/`find`/`tplay`/`trecord` (11-15) | later | pointer arguments (message buffer, name, event record). |
 | `appl_yield` (17) | **excluded — guarded** | `#if CONF_WITH_PCGEM`; safe in principle, but an AES without it pops the alert. Needs primary-source clearance. |
-| `evnt_keybd`/`button`/`mouse`/`mesag`/`multi` (20-23, 25) | **excluded — blocking** | they wait on the operator. |
+| `evnt_keybd`/`button`/`mouse`/`mesag` (20-23) | **excluded — blocking** | they wait on the operator. |
+| `evnt_multi` (25) | ~~excluded — blocking~~ **measured 2026-09-13** | *Original reason:* it waits on the operator. *Superseded (M07):* true of every parameter set but one. `MU_TIMER` with `MT_LOCOUNT`/`MT_HICOUNT` zero takes the quick check timer arm (`gemevlib.c:216-220`) and returns **before** the `if (what == 0)` block that arms the events and calls `mwait` (`:232-262`) — the one guaranteed non-blocking call to it. The loader now refuses every other shape per parameter, mask 0 most sharply (`mwait(0)` sets `WAITIN` and `dsptch()`es with nothing that can wake it, `gemasync.c:117-125`), and demands a planted `MME_PBUFF` when `MU_MESAG` is among the flags. Twelve cases on both machines in `cases/aes-m07-parameter.tsv`; `int_out[0]` agrees on all twelve. |
 | `menu_*` (30-39) | later | every one takes a tree in `addr_in[0]`. |
-| `objc_*` (40-47) | later | every one takes a tree in `addr_in[0]`; several draw. |
-| `form_do`/`alert`/`error` (50, 52, 53) | **excluded — blocking** | modal. |
-| `form_dial`/`center`/`keybd`/`button` (51, 54-56) | later | tree or screen-state arguments. |
+| `objc_*` (40-47) | later | every one takes a tree in `addr_in[0]`; several draw. *(M07, 2026-09-13:* `objc_delete` (41) is now refused for any object but `ROOT`. `ob_delete` tests `obj == ROOT` and nothing else (`gemoblib.c:1154-1157`), so `objc_delete(-1)` reads `tree[-1].ob_next` through the poison on the TT — while NewTOS answers 0 for `obj < 0` and comes through clean. The r4 table's two `objc_delete(ROOT)` cases are exactly the allowed arm and load unchanged. The other six object calls are UNTOUCHED: they reach the same poisoned slot on the same footing, and each needs its own arm-by-arm reading before it gets a rule.*) |
+| `form_do`/`alert` (50, 52) | **excluded — blocking** | modal. |
+| `form_error` (53) | ~~excluded — blocking~~ **measured 2026-09-13** | *Original reason:* modal. *Superseded (M07):* true for every `n <= 63`, false for the one arm that returns FALSE before `fm_show` (`gemfmlib.c:440-441`). The loader now refuses it per parameter; `n > 63` is measured on both machines in `cases/aes-m07-parameter.tsv`, eight cases, `int_out[0] = 0` on both. |
+| `form_dial`/`center`/`keybd`/`button` (51, 54-56) | later | tree or screen-state arguments. *(M07, 2026-09-13:* `form_keybd` (55) is now REFUSED unless the `addr_in` column plants its tree at `a0` **and** `FM_ICHAR` is not one of the five keys that send `find_obj` walking it — a planted buffer is a string of letters, not an OBJECT tree, so the plant alone does not make that arm safe. `gemfmlib.c:167-190`, `:135-148`.*) |
 | `graf_rubbox`/`dragbox`/`mbox`/`watchbox`/`slidebox` (70-72, 75, 76) | **excluded — blocking** | they track the mouse. |
 | `graf_growbox`/`shrinkbox` (73, 74) | later | non-blocking but they **draw**, so they change the screen the VDI dump is taken against. |
 | `graf_mouse` (78) | later | changes the cursor shape and, with a custom form, takes a pointer. |
-| `scrp_read`/`write` (80, 81) | later | path pointer, and they touch the filesystem. |
+| `scrp_read`/`write` (80, 81) | later, and **now guarded** | path pointer, and they touch the filesystem. *(M07, 2026-09-13:* the pointer is no longer merely a reason to wait — the loader REFUSES either one unless the `addr_in` column plants a buffer at `a0`, because `sc_read` writes up to `LEN_ZPATH` bytes through it and `sc_write` reads a string through it, `gemsclib.c:40-45`, `:57-62`. With a plant both run clean on both machines; `measurement-2026-09-13-m07-parameter/throwaway/`.*) |
 | `scrp_clear` (82) | **excluded — guarded** | `#if CONF_WITH_PCGEM`; alert clearance needed. |
 | `fsel_input`/`exinput` (90, 91) | **excluded — blocking** | modal file selector. |
 | `rsrc_*` (110-114) | later | the whole point of them is `global[]` + a resource file; round 2, and they are the reason `global[]` is recorded after every call. |

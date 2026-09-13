@@ -1,0 +1,119 @@
+# aes-m06-sysvar.tsv -- objc_sysvar (48): the first table whose opcode the
+# LOADER is not allowed to decide.
+#
+# Format (seven tab separated columns):
+#   opcode  n_intin  n_intout  n_addrin  n_addrout  intin values  comment
+# as cases/aes-r1.tsv and the rounds after it, read by the same loader
+# (core/cases.c).  A '+' opcode is a PRELUDE: issued before the measured
+# call, never recorded.  A case id is the PHYSICAL LINE NUMBER and this
+# file's CRC binds every dump to it, so ANY edit -- an appended case, a
+# fixed typo in a comment -- invalidates every dump already taken with it.
+# This file is written ONCE.
+#
+# ======================================================================
+# WHY THIS TABLE COULD NOT BE WRITTEN BEFORE 2026-09-13
+# ======================================================================
+#
+# objc_sysvar is #if CONF_WITH_3D_OBJECTS (gemsuper.c:232-236), and the
+# loader used to refuse any table naming it, reasoning "TOS 3.06 = AES
+# 3.20".  That is true of TOS 3.06 and irrelevant here: the machines these
+# dumps are taken on both report ap_version 0340, and EmuTOS' own ladder
+# makes 0x0340 mean CONF_WITH_3D_OBJECTS && CONF_WITH_MENU_EXTENSION &&
+# CONF_WITH_WINDOW_COLOURS && CONF_WITH_GRAF_MOUSE_EXTENSION
+# (include/config.h:1345-1354).  The guard now asks the machine instead of
+# assuming: the loader records that this table needs 3D objects, and the
+# dumper compares that against the ap_version its own appl_init wrote,
+# after appl_init and before the first case.  An AES that does not report
+# 0x0340 refuses the whole table by name and runs nothing.  TASK/M06.md,
+# core/cases.h (the version guard).
+#
+# ======================================================================
+# VERSION DELTA: NONE FOR THIS FUNCTION
+# ======================================================================
+#
+# The EmuTOS side is the 1.4 RELEASE ROM (etos512de.img); the pinned
+# source references/emutos @ 1a7484aba1bfba23e2c0899e243b6d8177fe41df is
+# later.  ob_sysvar and init_3d (aes/gemoblib.c) are BYTE IDENTICAL between
+# VERSION_1_4 and the pinned tree, and so is the OBJC_SYSVAR arm and the
+# ladder in include/config.h.  So nothing measured here is a version delta.
+#
+# ======================================================================
+# OUT_LEN IS EXACTLY WHAT THE CALL WRITES
+# ======================================================================
+#
+# xif copies exactly OUT_LEN words back out of an UNINITIALISED stack
+# buffer (gemsuper.c:429-432, :444-445).  ob_sysvar's get arm writes BOTH
+# out1 and out2 for LK3DIND, LK3DACT and AD3DVALUE, but only out1 for the
+# three colour selectors (gemoblib.c:1391-1414), and its set arm and its
+# two default arms write neither.  So:
+#
+#   OUT_LEN 3  get LK3DIND / LK3DACT / AD3DVALUE   int_out[0..2] all written
+#   OUT_LEN 2  get INDBUTCOL / ACTBUTCOL / BACKGRCOL  int_out[2] would be
+#              the TT's stack, which measures the stack and not the AES
+#   OUT_LEN 1  every set, and both bad-which arms: only the return code
+#
+# What OUT_LEN does not cover stays poisoned on both machines, which is
+# what keeps the two records comparable.
+#
+# ======================================================================
+# ORDER MATTERS, AND THE TABLE LEAVES STATE BEHIND
+# ======================================================================
+#
+# The 3D variables are file-local statics set once by init_3d
+# (gemoblib.c:1327-1344).  NOTHING resets them inside a run: wm_new sweeps
+# windows and locks, not these.  So section A -- which measures the
+# DEFAULTS -- must come before any set, and this table has to be run on a
+# freshly started AES.  It leaves indtxtmove, indcolchange, actcolchange
+# and indbutcol changed when it finishes; the dumper exits immediately
+# after, and the next thing the machine does is the shell.
+#
+# ONE CASE IS EXPECTED TO DIFFER FOR A REASON THAT IS NOT THE FUNCTION.
+# The colour selectors refuse a colour >= gl_ws.ws_ncolors
+# (gemoblib.c:1358-1372), and ws_ncolors is not the same number on the two
+# machines: 16 on the TT at 4 planes, 256 on NewTOS (DEV_TAB[13], the
+# Falcon truecolor pen count).  The last case asks for colour 20 on
+# purpose, so that the boundary is measured rather than guessed; a
+# difference there is the workstation, declared here in advance.  Every
+# other colour this table names is 1 (inside both) or 32767 (outside both).
+#
+# The reset is "none": no case here creates a window, takes a lock or
+# touches anything wm_new sweeps, and a reset that swept nothing would only
+# add 12 unrecorded calls to the run.
+!reset	none
+
+# ======================================================================
+# A -- the six get arms, at the defaults init_3d leaves
+# ======================================================================
+# int_in[2..3] are left poisoned throughout section A: ob_sysvar's get arm
+# does not read in1/in2 at all (gemoblib.c:1389-1420), so a write or a read
+# there would show up as a difference instead of hiding in a stated value.
+48	4	3	0	0	0,1	get LK3DIND: indtxtmove, indcolchange -- defaults 0, 1
+48	4	3	0	0	0,2	get LK3DACT: acttxtmove, actcolchange -- defaults 1, 0
+48	4	2	0	0	0,3	get INDBUTCOL: LWHITE(8) where the palette has more than 8 colours
+48	4	2	0	0	0,4	get ACTBUTCOL: same default, separate variable
+48	4	2	0	0	0,5	get BACKGRCOL: same default; fm_alert reads this one too
+48	4	3	0	0	0,6	get AD3DVALUE: ADJ3DSTD twice, a constant, get only
+48	4	1	0	0	0,0	get which 0, one below LK3DIND: the get default arm, 0
+48	4	1	0	0	0,7	get which 7, one above AD3DVALUE: the same arm
+48	4	1	0	0	0,99	get which 99, far outside: the same arm again
+
+# ======================================================================
+# B -- the set arms, and what the set did
+# ======================================================================
+# A set answers with the return code alone, so each set is measured as a
+# case with OUT_LEN 1; where the EFFECT is the point, the set is a PRELUDE
+# and the case is the get that reads it back.  A setter's echo proves the
+# echo; only a read-back after a non-default set proves the effect.
+48	4	1	0	0	1,1,1,0	set LK3DIND to 1,0 -- both away from the default
++48	4	1	0	0	1,1,1,0	set it again, for the read-back
+48	4	3	0	0	0,1	get LK3DIND after the set: 1, 0 and not 0, 1
++48	4	1	0	0	1,2,-1,1	set LK3DACT with in1 = -1: leave acttxtmove alone
+48	4	3	0	0	0,2	get LK3DACT: acttxtmove still 1, actcolchange now 1
+48	4	1	0	0	1,3,1,-1	set INDBUTCOL to colour 1, inside every palette
++48	4	1	0	0	1,3,1,-1	set it again, for the read-back
+48	4	2	0	0	0,3	get INDBUTCOL after the set: 1
+48	4	1	0	0	1,5,32767,-1	set BACKGRCOL to 32767: past ws_ncolors on any machine, 0
+48	4	2	0	0	0,5	get BACKGRCOL: the refused set changed nothing
+48	4	1	0	0	1,6,1,1	set AD3DVALUE: get only, so the set default arm, 0
+48	4	1	0	0	1,99,1,1	set which 99: the set default arm, 0
+48	4	1	0	0	1,4,20	set ACTBUTCOL to colour 20: inside 256, outside 16 -- the declared difference

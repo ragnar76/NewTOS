@@ -44,11 +44,26 @@
 #include "cases.h"
 
 #define TD_RUN_AES_ERR_BUFFER (-1)   /* the buffer cannot hold every record */
+#define TD_RUN_AES_ERR_VERSION (-2)  /* this AES lacks an opcode the table
+                                      * names (cases.h, the version guard) */
 
 /*
  * `global` is the application's live AESGLOBAL array (TD_AES_GLOBAL_N
  * words), normally td_gem_global().  It is passed to every call and
  * recorded after every call; the runner never clears or poisons it.
+ *
+ * Before the first case, the runner asks td_aes_cases_version_refusal()
+ * whether this AES has the opcodes the table names, reading the MEASURED
+ * ap_version out of global[0] -- the word appl_init wrote
+ * (gemsuper.c:92-98).  It refuses the whole run rather than issue a call
+ * that would pop a modal alert on a machine with nobody to click it.
+ *
+ * The check is HERE and not only in the dumper's main because this is the
+ * one function that issues an AES call: a second program that ran cases
+ * could forget the check, and the failure mode of forgetting it is a hung
+ * machine.  The dumper asks the same function first, with an error struct,
+ * so the log names the capability and the line; this call is the guarantee,
+ * not the report.
  */
 int td_run_aes(const struct td_aes_case_table *ct, int16_t *global,
                uint8_t *out, size_t out_bytes);

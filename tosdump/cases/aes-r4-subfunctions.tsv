@@ -1,0 +1,676 @@
+# aes-r4-subfunctions.tsv -- every AES opcode and every sub-function this
+# harness can put on both machines without stopping the run.
+#
+# Format (seven tab separated columns):
+#   opcode  n_intin  n_intout  n_addrin  n_addrout  intin values  comment
+# as cases/aes-r1.tsv, aes-r2-wind.tsv, aes-r2b-rlist.tsv and
+# aes-r3-wind-state.tsv, read by the same loader (core/cases.c).  A '+'
+# opcode is a PRELUDE: issued after the reset and before the measured call,
+# never recorded.  A case id is the PHYSICAL LINE NUMBER and this file's
+# CRC binds every dump to it, so ANY edit -- an appended case, a fixed typo
+# in a comment -- invalidates every dump already taken with it.  This file
+# is written ONCE.
+#
+# Built from docs/api/aes/_full-function-inventory.md (79 opcodes, 29 with
+# sub-functions, 176 discrete sub-function values, ~15 fallback classes,
+# 2 opcode error classes), against references/emutos @
+# 1a7484aba1bfba23e2c0899e243b6d8177fe41df.
+#
+# ======================================================================
+# VERSION DELTA, DECLARED BEFORE ANYTHING IS MEASURED
+# ======================================================================
+#
+# The EmuTOS side is the 1.4 RELEASE ROM (etos512de.img); the pinned source
+# is LATER.  git log VERSION_1_4..1a7484ab -- aes/ include/aesdefs.h
+# include/obdefs.h include/gemdefs.h yields exactly TWO commits, so this is
+# the complete list of AES differences between the measured ROM and the
+# cited source:
+#
+#   * acb7f3b4 (2025-08-23) -- WF_OWNER (20) in wm_get (gemwmlib.c:1578-1589).
+#     The 1.4 ROM has NO arm for it: field 20 falls into wm_get's
+#     "default: return FALSE" (:1591-1592), so RET_CODE comes back 0 and
+#     int_out[1..4] hold whatever xif's UNINITIALISED stack buffer held
+#     (gemsuper.c:429-432, copy-back :444-445).  Cases 20-1, 20-2 and 20-3
+#     below are therefore a VERSION DELTA on the EmuTOS side, not a defect,
+#     and the four words have no target value at all on that side.
+#   * 4b0d9518 (2025-08-20) -- the "nicelines" heuristic gained && (len > 3)
+#     (gemoblib.c:838).  The 1.4 ROM draws a DISABLED G_STRING of 1 to 3
+#     dashes as a solid line, the pinned source does not.  It affects
+#     objc_draw (42) only, which this table does not issue (it needs a real
+#     OBJECT tree; see THE POINTER WALL below).  Recorded here so nobody
+#     later counts it as missing coverage.
+#
+# Everything else in aes/ is byte-identical between the two.
+#
+# ======================================================================
+# WHY THE FREE OPCODE NUMBERS ARE NOT IN THIS FILE
+# ======================================================================
+#
+# The free numbers 16, 18, 27-29, 49, 57-69, 83-89, 92-99, 115-119 are the
+# first thing an inventory-driven table wants, and they are the one thing it
+# may not have.  TWO independent reasons, both checked rather than assumed:
+#
+#   1. THE ALERT BLOCKS.  crysbind's default arm runs
+#      fm_show(ALNOFUNC, &opcode, 1) for every opcode != 0
+#      (gemsuper.c:411-417).  fm_show -> fm_alert (gemfmlib.c:389-400) ->
+#      fm_do (gemfmalt.c:383), and fm_do is a while(cont) loop around
+#      ev_multi(MU_KEYBD|MU_BUTTON, ...) with NO timer (gemfmlib.c:300-313).
+#      Nothing but a key or a click ends it.  On an unattended run that is a
+#      hang, and a hang is indistinguishable from a defect in the thing
+#      being measured.
+#   2. THE LOADER REFUSES THEM ANYWAY.  aes_opcode_refusal (core/cases.c:566)
+#      returns a reason for every opcode without an arm in crysbind, and
+#      td_aes_cases_load refuses the WHOLE table -- so a file containing one
+#      would not hang, it would simply never run a single case.  Verified:
+#      casecheck --aes on a one-line probe with opcode 16 exits 1 with
+#      "not an AES opcode ... would reach the default arm and pop a modal
+#      alert (gemsuper.c:406-417)".
+#
+# OPCODE 0 IS THE EXCEPTION AND IT IS HERE.  gemsuper.c:414 skips the alert
+# for it by name ("Ignore zero since some PRGs are this call"), and
+# aes_opcode_refusal allows it by name.  Section 1 measures it three ways.
+#
+# ======================================================================
+# THE POINTER WALL -- WHAT THIS HARNESS STRUCTURALLY CANNOT ASK
+# ======================================================================
+#
+# The case table is pointer-free by construction: core/runner_aes.c poisons
+# addr_in[] with the 0xDEAD pattern before every call and there is no column
+# that could hold an address, because the same file has to lie on two
+# machines with different memory maps.  Every opcode whose work is behind an
+# addr_in pointer is therefore either unusable or usable only on the arm
+# that returns BEFORE the pointer is touched.  This table takes every such
+# arm it can prove safe from the source, and no other:
+#
+#   objc_add (40)       parent/child NIL guard, ob_add's
+#                       "if ((parent != NIL) && (child != NIL))"
+#                       (gemoblib.c) -- the tree is never dereferenced.
+#   objc_delete (41)    obj == ROOT -> "return 0" before the first
+#                       tree[obj] (gemoblib.c).  ROOT AND NOTHING ELSE:
+#                       ob_delete has NO guard for a NEGATIVE object, so
+#                       objc_delete(-1) would read tree[-1] through the
+#                       poison and bus-error a TT in supervisor mode.  It is
+#                       deliberately absent.
+#   objc_order (45)     mov_obj == ROOT -> "return FALSE" before
+#                       get_par (gemoblib.c:1208-1209).
+#   objc_edit (46)      "if ((kind == EDSTART) || (obj <= 0)) return TRUE;"
+#                       (gemobed.c:342-343) -- all five kind classes are
+#                       reachable through the obj <= 0 half.
+#   menu_register (35)  pid < 0 -> "return -1" before pstr is stored
+#                       (gemmnlib.c:794,817).
+#   menu_bar (30)       showit == 0 takes the else arm, which never touches
+#                       the tree (gemmnlib.c:724-728).
+#   appl_tplay (14)     length 0 -> the for loop never runs, pbuff never
+#                       dereferenced (gemaplib.c:126).
+#   shel_get/put        len 0 -> memcpy of zero bytes (gemshlib.c).
+#   (122/123)
+#   graf_mouse (78)     every mode except USER_DEF overwrites maddr before
+#                       gsx_mfset (gemgrlib.c:426-449).
+#   rsrc_saddr (113)    an unknown rstype -> get_addr returns (void *)-1L
+#                       and rs_saddr returns FALSE WITHOUT writing
+#                       (gemrslib.c:727-739).  That one arm, and no other.
+#
+# Named and NOT here, because no arm of them is reachable without a real
+# pointer: objc_draw 42, objc_find 43, objc_offset 44, objc_change 47,
+# form_center 54, form_keybd 55, menu_icheck 31, menu_ienable 32,
+# menu_tnormal 33, menu_text 34, appl_find 13, appl_write 12,
+# scrp_read 80, scrp_write 81, rsrc_load 110, rsrc_obfix 114,
+# shel_read 120, shel_find 124, shel_envrn 125, wind_get/set WF_NAME 2 and
+# WF_INFO 3, wind_set WF_NEWDESK 14, graf_mouse USER_DEF 255.
+#
+# scrp_read (80) and scrp_write (81) deserve a sentence of their own: the
+# loader lets them through (core/cases.c's aes_opcodes[] has NULL for both)
+# but sc_read does strcpy(pscrap, D.g_scrap) and sc_write does
+# strcpy(D.g_scrap, pscrap) (gemsclib.c) straight through the poisoned
+# pointer.  On a TT 0xDEADDEAD is outside every RAM bank, so that is a
+# supervisor-mode bus error.  They are kept out by this file, not by the
+# guard.
+#
+# ======================================================================
+# rsrc_gaddr WITHOUT A LOADED RESOURCE -- WHAT IS AND IS NOT DECIDABLE
+# ======================================================================
+#
+# Section 4 walks all 17 R_* types.  It has to do so on a dumper that has
+# NOT loaded a resource, because rsrc_load (110) takes its filename through
+# addr_in[0] and this table has no pointer to give it.  What that means is
+# stated here rather than discovered later:
+#
+#   appl_init does NOT set ap_ptree or ap_rscmem (gemsuper.c:92-98 writes
+#   ap_version, ap_count, ap_id, ap_private, ap_planes, ap_3resv and nothing
+#   else), and the dumper's AESGLOBAL is a zero-initialised static
+#   (core/gem.c).  Both machines have already logged it:
+#   reference/EMUTOS14-AES.LOG and reference/NEWTOS-AES.LOG both show
+#   global[5..8] = 0,0,0,0, i.e. ap_ptree == NULL and ap_rscmem == NULL.
+#
+#   So rs_sglobe sets rs_hdr = NULL (gemrslib.c:677-678) and get_addr
+#   computes (char *)0 + hdr->rsh_xxx + size*index (gemrslib.c:100-105),
+#   reading its offsets out of the m68k exception vector table.  The call
+#   runs in supervisor mode, so nothing faults; but the ADDRESS it hands
+#   back is a function of low memory and has no target value.
+#
+#   WHAT IS STILL DECIDABLE, and is why the section is here anyway:
+#     * the RETURN CODE per type -- rs_gaddr returns (*rsaddr != -1L)
+#       (gemrslib.c:717-722), so every type with a case arm answers TRUE and
+#       only an unknown type answers FALSE.  That is the fallback class.
+#     * THE THREE IDENTITY PAIRS.  R_TEDINFO 2 == R_TEPTEXT 8,
+#       R_ICONBLK 3 == R_IBPMASK 11, R_BITBLK 4 == R_BIPDATA 14 share a
+#       case label in get_addr (gemrslib.c:126-137), so they compute the
+#       SAME expression and must return the SAME addr_out[0] -- a comparison
+#       INSIDE one machine's own run, independent of what that address is.
+#       Measured at index 0 and again at index 1, which also makes the
+#       per-type record stride visible.
+#     * the stride between index 0 and index 1 per type.
+#   WHAT IS NOT: the absolute addr_out[0] value.  It is recorded, not
+#   compared away; a reader must not treat a difference there as a defect.
+#
+# rsrc_saddr (113) is NOT walked over the 17 types, and that is a safety
+# decision with a citation: rs_saddr does *psubstruct = rsaddr
+# (gemrslib.c:734) where psubstruct is the same low-memory address get_addr
+# computed and rsaddr is the 0xDEAD poison.  That writes 0xDEADDEAD into the
+# m68k exception vector table or the OS variables below 0x800.  The run
+# would not finish and the machine would not survive it.  Only the
+# unknown-type arm, which returns before the store, is measured.
+#
+# ======================================================================
+# WHAT THE LOADER REFUSES THAT THE INVENTORY WANTS -- REPORTED, NOT WORKED AROUND
+# ======================================================================
+#
+# core/cases.c's refusal guard is written for "TOS 3.06 = AES 3.20"
+# (its GATED reason cites config.h:1345-1354).  The machines actually
+# measured are not that: both logs show ap_version 0340, and config.h's own
+# ladder makes 0x0340 mean CONF_WITH_3D_OBJECTS && CONF_WITH_MENU_EXTENSION
+# && CONF_WITH_WINDOW_COLOURS && CONF_WITH_GRAF_MOUSE_EXTENSION all set.
+# Four groups are therefore refused by the loader although the reference
+# ROM has them, and they are absent from this table for that reason alone:
+#
+#   objc_sysvar (48)  -- 11 sub-function values (6 which x get/set, minus
+#                        the AD3DVALUE set arm) plus 2 fallback classes.
+#                        The single biggest hole in this table.
+#   appl_yield (17)   -- dsptch(), no parameters, provably non-blocking.
+#   evnt_multi (25)   -- refused at opcode granularity, although
+#                        MU_TIMER with tmcount == 0 takes the "quick check
+#                        timer" arm and returns without ever reaching mwait
+#                        (gemevlib.c:222-226).
+#   form_error (53)   -- refused at opcode granularity, although n > 63
+#                        returns FALSE before fm_show (gemfmlib.c:441-443).
+#
+# Taking an opcode off that list is a source change with a citation, which
+# is the guard's stated design.  This file does not do it; the gap is
+# reported instead.
+#
+# ======================================================================
+# SAFETY -- WHAT WAS CHECKED BEFORE THIS FILE WAS WRITTEN
+# ======================================================================
+#
+#  * No blocking opcode.  Every opcode here has refusal == NULL in
+#    aes_opcodes[], and for the ones whose hazard is in the PARAMETERS the
+#    safe arm is cited above.
+#  * No opcode that ends or replaces the application: no appl_exit 19, no
+#    shel_write 121 in any doex (0 and 1 leave the program, 4 and 5 are
+#    system-wide), no scrp_clear 82.
+#  * TWO distinct wind_open handles over the whole file, 1 and 2, against
+#    the loader's bound of four; each open sends the dumper one WM_REDRAW
+#    it never reads, unioned per handle (gemqueue.c:45-56), so two of the
+#    queue's eight slots are the worst case.
+#  * Every rectangle that reaches the screen is non-negative and lies
+#    inside 640x400 including its drop shadow.
+#  * THE MOUSE-CONTROL LEDGER.  wind_update END_MCTRL (2) drives ml_ocnt to
+#    -1 and wm_new only drains it while (ml_ocnt > 0) (gemwmlib.c:1880), so
+#    the reset does NOT heal it.  The one END_MCTRL case here carries a
+#    BEG_MCTRL prelude.  BEG_MCTRL (3), mode > 3 and mode < 0 all leave a
+#    POSITIVE count, which the reset does drain, so they stand alone.
+#    The screen-sync half (0 and 1) heals either way, because unsync returns
+#    early at sy_tas <= 0 (gemflag.c:104-108).
+#  * THE CURSOR LEDGER.  graf_mouse M_OFF (256) and M_ON (257) are counting
+#    (gsx_moff/gsx_mon, gemgsxif.c), nothing in the reset restores the
+#    count, and there is no postlude in this format.  So M_OFF is the
+#    second-to-last case of the file and M_ON is the last, in that order:
+#    0 -> 1 -> 0 over the whole run, and nothing after them can be
+#    affected.
+#  * evnt_dclick (26) with setit != 0 writes gl_dcindex, which no reset
+#    restores.  The read-back case carries its own set as a PRELUDE rather
+#    than relying on the case before it, so a partial run still measures
+#    what the line says.  rate 3 is inside gl_dcrates[5] (gemevlib.c:33);
+#    EmuTOS does not range-check it and an out-of-range rate has no target
+#    value, so none is issued.
+#  * menu_bar (30) with show 0 clears gl_mntree (gemmnlib.c:726) and nothing
+#    in the run restores it.  It is in the last section, after every case
+#    that could care, and it changes no return value of any of them.
+#  * No wind_open(0), no wind_delete(0), no wind_set on handle 0, and no
+#    wind_get/wind_set field carrying a pointer (2, 3, 14) or an unchecked
+#    gadget index (18, 19) -- the loader refuses all of those and this file
+#    does not try them.
+#
+# ======================================================================
+# WHAT IS DEVICE DEPENDENT
+# ======================================================================
+#
+# The TT runs 640x480, QEMU raspi4b runs 640x480, a real Pi 4 may run
+# 1920x1080.  Every rectangle answer carries wm_calc's border arithmetic on
+# gl_wbox / gl_hbox, and wind_find, WF_SCREEN and graf_handle are device
+# parameters outright.  Those are RECORDED, not compared away.  What the
+# sub-function questions decide on is narrower and device-free: which arm
+# answered (RET_CODE 1 against 0), which words were written against which
+# stayed 0xDEAD, and -- for the rsrc_gaddr identity pairs -- whether two
+# cases of the SAME run agree.
+#
+# opcode\tn_intin\tn_intout\tn_addrin\tn_addrout\tintin\tcomment
+
+!reset	wind_new
+
+# ====================================================================
+# SECTION 1 -- the error paths, and the one free opcode that is safe
+#
+# Opcode 0 is the single unknown opcode crysbind handles silently:
+# unsupported = TRUE, ret = -1, and the fm_show(ALNOFUNC) is skipped by
+# name (gemsuper.c:411-417).  Three shapes, because what the caller
+# DECLARES is half of the measurement: xif copies exactly OUT_LEN words
+# back out of a local int_out it never initialised (gemsuper.c:430-432,
+# :444-445), so OUT_LEN 0 must leave the caller's poison standing and
+# OUT_LEN 1 must deliver the -1.
+# ====================================================================
+
+0	0	1	0	0	-	opcode 0, OUT_LEN 1: the unsupported sentinel -1, and no alert
+0	0	0	0	0	-	opcode 0, OUT_LEN 0: the -1 is computed and never delivered
+0	4	5	3	1	1,2,3,4	opcode 0 with all four counts and four inputs: marshalled in, nothing written back
+
+# ====================================================================
+# SECTION 2 -- pure queries: nothing here changes AES state
+# ====================================================================
+
+# --- graf_handle (77): the four box metrics every wm_calc answer rests on
+77	0	5	0	0	-	graf_handle: handle plus gl_wchar, gl_hchar, gl_wbox, gl_hbox
+77	0	7	0	0	-	graf_handle OUT_LEN 7: two words past what the call writes, from xif's own stack
+
+# --- graf_mkstate (79): mouse x, y, button state, key state
+79	0	5	0	0	-	graf_mkstate: the four words gr_mkstate writes
+79	0	1	0	0	-	graf_mkstate OUT_LEN 1: return code only, the four stay poisoned
+
+# --- wind_find (106): with nothing open every point is the desktop
+106	2	1	0	0	0,0	wind_find at the top left corner
+106	2	1	0	0	-1,-1	wind_find off the top left: negative coordinates
+106	2	1	0	0	32000,32000	wind_find far off the bottom right
+
+# --- wind_calc (108): the two wtype classes and the kind bits
+#
+# wm_calc branches on wtype exactly once -- if (wtype == WC_BORDER)
+# negate (gemwmlib.c:1807-1867) -- so there are two classes, 0 and
+# EVERYTHING else, and WC_WORK is only one member of the second.  99 and
+# -1 are in the table to say so.  The kind bits are walked one at a time
+# and then together; 0x1000 HOTCLOSE is the one bit wm_calc must IGNORE
+# (it is a control-manager gadget only), which is a measurable claim.
+108	6	5	0	0	0,0x0FEF,30,40,320,240	wind_calc WC_BORDER on the standard gadget set
+108	6	5	0	0	1,0x0FEF,30,40,320,240	wind_calc WC_WORK on the standard gadget set
+108	6	5	0	0	0,0x0000,30,40,320,240	wind_calc WC_BORDER with no gadget at all
+108	6	5	0	0	1,0x0000,30,40,320,240	wind_calc WC_WORK with no gadget at all
+108	6	5	0	0	1,0x0001,30,40,320,240	wind_calc WC_WORK, NAME alone
+108	6	5	0	0	1,0x0002,30,40,320,240	wind_calc WC_WORK, CLOSER alone
+108	6	5	0	0	1,0x0004,30,40,320,240	wind_calc WC_WORK, FULLER alone
+108	6	5	0	0	1,0x0008,30,40,320,240	wind_calc WC_WORK, MOVER alone
+108	6	5	0	0	1,0x0010,30,40,320,240	wind_calc WC_WORK, INFO alone
+108	6	5	0	0	1,0x0020,30,40,320,240	wind_calc WC_WORK, SIZER alone: the either-or rule at :1828-1836
+108	6	5	0	0	1,0x0040,30,40,320,240	wind_calc WC_WORK, UPARROW alone
+108	6	5	0	0	1,0x0080,30,40,320,240	wind_calc WC_WORK, DNARROW alone
+108	6	5	0	0	1,0x0100,30,40,320,240	wind_calc WC_WORK, VSLIDE alone
+108	6	5	0	0	1,0x0200,30,40,320,240	wind_calc WC_WORK, LFARROW alone
+108	6	5	0	0	1,0x0400,30,40,320,240	wind_calc WC_WORK, RTARROW alone
+108	6	5	0	0	1,0x0800,30,40,320,240	wind_calc WC_WORK, HSLIDE alone
+108	6	5	0	0	1,0x1000,30,40,320,240	wind_calc WC_WORK, HOTCLOSE alone: a bit wm_calc has no arm for
+108	6	5	0	0	0,0x1000,30,40,320,240	wind_calc WC_BORDER, HOTCLOSE alone
+108	6	5	0	0	1,0x1FEF,30,40,320,240	wind_calc WC_WORK, the standard set plus HOTCLOSE: must equal 0x0FEF
+108	6	5	0	0	1,0xFFFF,30,40,320,240	wind_calc WC_WORK, every bit defined or not
+108	6	5	0	0	99,0x0FEF,30,40,320,240	wind_calc wtype 99: anything but WC_BORDER takes the WC_WORK arm
+108	6	5	0	0	-1,0x0FEF,30,40,320,240	wind_calc wtype -1: the same class, from the other side of zero
+
+# --- wind_get (104) on the desktop handle and on invalid handles
+#
+# WF_TOP, WF_SCREEN and WF_DCOLOR are the three fields wm_get answers
+# WITHOUT a valid handle (gemwmlib.c:1516-1524); WF_DCOLOR is out because
+# its gadget index is unchecked.  aes-r1.tsv (CRC 33C13C8F) already asked
+# these fields with OUT_LEN 1; what it could not ask is what they WRITE.
+104	2	5	0	0	0,17	WF_SCREEN OUT_LEN 5: the two LONGs gsx_mret writes
+104	2	5	0	0	-1,17	WF_SCREEN on an invalid handle: no handle needed, so it must still answer
+104	2	5	0	0	-1,10	WF_TOP on an invalid handle: likewise
+104	2	5	0	0	0,20	WF_OWNER on the desktop handle, OUT_LEN 5 -- VERSION DELTA: absent in 1.4
+104	2	5	0	0	-1,4	WF_WXYWH on an invalid handle: the pre-check must refuse before the switch
+104	2	5	0	0	99,8	WF_HSLIDE on a handle past NUM_WIN
+
+# --- evnt_timer (24): the one event call that cannot wait
+24	2	1	0	0	0,0	evnt_timer 0 ms
+24	2	1	0	0	1,0	evnt_timer 1 ms: still under one tick
+
+# --- evnt_dclick (26), READ half: setit 0 must not store
+26	2	1	0	0	0,0	evnt_dclick read, rate 0: the rate word is ignored when setit is 0
+26	2	1	0	0	4,0	evnt_dclick read, rate 4: same answer, proving the rate was ignored
+
+# --- appl_tplay (14) with length 0: the loop body is never entered
+14	2	1	1	0	0,1	appl_tplay length 0, scale 1: nothing to play, the buffer is never touched
+
+# --- menu_register (35) with a negative pid: the one arm that skips pstr
+35	1	1	1	0	-1	menu_register pid -1: refused before the title pointer is stored
+35	1	1	1	0	-32768	menu_register pid -32768: the most negative WORD
+
+# --- shel_get / shel_put (122/123) with length 0
+122	1	1	1	0	0	shel_get length 0, AIN_LEN 1: a zero-byte copy out of the shell buffer
+122	1	1	0	0	0	shel_get length 0, AIN_LEN 0: the dispatcher copies no addr_in at all
+123	1	1	1	0	0	shel_put length 0: a zero-byte copy into the shell buffer
+
+# --- rsrc_free (111) with no resource loaded: rs_hdr is NULL, so rc = 0
+111	0	1	0	0	-	rsrc_free with nothing loaded: gemrslib.c:702-705 answers 0
+111	0	1	0	0	-	rsrc_free a second time: the same answer, no state to consume
+
+# ====================================================================
+# SECTION 3 -- the window sub-functions, each on a freshly reset AES
+#
+# Geometry throughout: window 1 created 0x0FEF at 10,20,300,200 and
+# opened at 30,40,320,240; window 2, where a second is needed, created
+# the same way and opened at 60,80,200,160 on top of it.  That is the
+# geometry aes-r2-wind.tsv and aes-r2b-rlist.tsv already ran on both
+# machines, so nothing here is a new drawing risk.
+#
+# THE RULE FROM ROUND 3 HOLDS UNCHANGED: WF_NEXTXYWH is never measured
+# without a WF_FIRSTXYWH on the SAME handle earlier in the same case.
+# w_setup does not initialise w_rnext (gemwmlib.c:205-228) and w_owns is
+# its only writer (:1235), so a NEXT without a FIRST would follow a
+# pointer newrect has already handed back to the free list.
+# ====================================================================
+
+# --- wind_create / wind_open / wind_close / wind_delete / wind_new
+100	5	1	0	0	0x0FEF,10,20,300,200	wind_create: the first free handle after the reset
+100	5	1	0	0	0x1FEF,10,20,300,200	wind_create with HOTCLOSE set: a kind bit only the control manager reads
++100	5	1	0	0	0x0FEF,10,20,300,200	create 1
+101	5	1	0	0	1,30,40,320,240	wind_open a created window
++100	5	1	0	0	0x0FEF,10,20,300,200	create 1
++101	5	1	0	0	1,30,40,320,240	open 1 at 30,40,320,240
+102	1	1	0	0	1	wind_close an open window
++100	5	1	0	0	0x0FEF,10,20,300,200	create 1
++101	5	1	0	0	1,30,40,320,240	open 1 at 30,40,320,240
+103	1	1	0	0	1	wind_delete an open window: wm_close runs first
+109	0	1	0	0	-	wind_new measured: a void handler must leave ret = TRUE
+109	0	0	0	0	-	wind_new OUT_LEN 0, exactly as gemlib issues it
+
+# --- wind_get (104), field by field, on an OPEN window
+# Fields 2, 3, 18 and 19 are absent by loader refusal (pointer / unchecked
+# index); 14 has no wm_get arm and is asked here for exactly that reason.
++100	5	1	0	0	0x0FEF,10,20,300,200	create 1
++101	5	1	0	0	1,30,40,320,240	open 1 at 30,40,320,240
+104	2	5	0	0	1,0	wind_get field 0: below the first defined field, must reach default
++100	5	1	0	0	0x0FEF,10,20,300,200	create 1
++101	5	1	0	0	1,30,40,320,240	open 1 at 30,40,320,240
+104	2	5	0	0	1,1	wind_get WF_KIND: defined in the header, answered by neither wm_get nor wm_set
++100	5	1	0	0	0x0FEF,10,20,300,200	create 1
++101	5	1	0	0	1,30,40,320,240	open 1 at 30,40,320,240
+104	2	5	0	0	1,4	wind_get WF_WXYWH: the work area wm_calc(WC_WORK) derives
++100	5	1	0	0	0x0FEF,10,20,300,200	create 1
++101	5	1	0	0	1,30,40,320,240	open 1 at 30,40,320,240
+104	2	5	0	0	1,5	wind_get WF_CXYWH: the rectangle the open was given
++100	5	1	0	0	0x0FEF,10,20,300,200	create 1
++101	5	1	0	0	1,30,40,320,240	open 1 at 30,40,320,240
+104	2	5	0	0	1,6	wind_get WF_PXYWH: wm_open overwrites PREV with the opening rectangle
++100	5	1	0	0	0x0FEF,10,20,300,200	create 1
++101	5	1	0	0	1,30,40,320,240	open 1 at 30,40,320,240
+104	2	5	0	0	1,7	wind_get WF_FXYWH: the full rectangle wind_create stored
++100	5	1	0	0	0x0FEF,10,20,300,200	create 1
++101	5	1	0	0	1,30,40,320,240	open 1 at 30,40,320,240
+104	2	5	0	0	1,8	wind_get WF_HSLIDE: w_setup leaves the slider at the left
++100	5	1	0	0	0x0FEF,10,20,300,200	create 1
++101	5	1	0	0	1,30,40,320,240	open 1 at 30,40,320,240
+104	2	5	0	0	1,9	wind_get WF_VSLIDE
++100	5	1	0	0	0x0FEF,10,20,300,200	create 1
++101	5	1	0	0	1,30,40,320,240	open 1 at 30,40,320,240
+104	2	5	0	0	1,10	wind_get WF_TOP: the one open window is the top one
++100	5	1	0	0	0x0FEF,10,20,300,200	create 1
++101	5	1	0	0	1,30,40,320,240	open 1 at 30,40,320,240
+104	2	5	0	0	1,11	wind_get WF_FIRSTXYWH: the first piece of an unobscured window's list
++100	5	1	0	0	0x0FEF,10,20,300,200	create 1
++101	5	1	0	0	1,30,40,320,240	open 1 at 30,40,320,240
+104	2	5	0	0	1,13	wind_get field 13: the gap in the WF_ numbering
++100	5	1	0	0	0x0FEF,10,20,300,200	create 1
++101	5	1	0	0	1,30,40,320,240	open 1 at 30,40,320,240
+104	2	5	0	0	1,14	wind_get WF_NEWDESK: settable but not gettable -- wm_get has no arm
++100	5	1	0	0	0x0FEF,10,20,300,200	create 1
++101	5	1	0	0	1,30,40,320,240	open 1 at 30,40,320,240
+104	2	5	0	0	1,15	wind_get WF_HSLSIZ
++100	5	1	0	0	0x0FEF,10,20,300,200	create 1
++101	5	1	0	0	1,30,40,320,240	open 1 at 30,40,320,240
+104	2	5	0	0	1,16	wind_get WF_VSLSIZ
++100	5	1	0	0	0x0FEF,10,20,300,200	create 1
++101	5	1	0	0	1,30,40,320,240	open 1 at 30,40,320,240
+104	2	5	0	0	1,17	wind_get WF_SCREEN on a real window: still the menu/alert save buffer
++100	5	1	0	0	0x0FEF,10,20,300,200	create 1
++101	5	1	0	0	1,30,40,320,240	open 1 at 30,40,320,240
+104	2	5	0	0	1,20	wind_get WF_OWNER on an open window -- VERSION DELTA: absent in 1.4
++100	5	1	0	0	0x0FEF,10,20,300,200	create 1
++101	5	1	0	0	1,30,40,320,240	open 1 at 30,40,320,240
+104	2	5	0	0	1,21	wind_get field 21: past the last defined field
++100	5	1	0	0	0x0FEF,10,20,300,200	create 1
++101	5	1	0	0	1,30,40,320,240	open 1 at 30,40,320,240
+104	2	5	0	0	1,99	wind_get field 99: far past it
++100	5	1	0	0	0x0FEF,10,20,300,200	create 1
++101	5	1	0	0	1,30,40,320,240	open 1 at 30,40,320,240
++104	2	5	0	0	1,11	start window 1's walk
+104	2	5	0	0	1,12	wind_get WF_NEXTXYWH after a FIRST on the same handle: the end of a one-piece list
+
+# --- wind_set (105), field by field, on an OPEN window
+# Fields 2, 3, 14, 18 and 19 are absent by loader refusal.  wm_set
+# brackets even its default arm with BEG_UPDATE / END_UPDATE
+# (gemwmlib.c:1637, :1753), so a refused field still takes and gives back
+# the screen lock -- which is why an unbalanced one would be visible in
+# the case after it, and why every one of these is its own case.
++100	5	1	0	0	0x0FEF,10,20,300,200	create 1
++101	5	1	0	0	1,30,40,320,240	open 1 at 30,40,320,240
+105	6	1	0	0	1,0,0,0,0,0	wind_set field 0: below the first defined field
++100	5	1	0	0	0x0FEF,10,20,300,200	create 1
++101	5	1	0	0	1,30,40,320,240	open 1 at 30,40,320,240
+105	6	1	0	0	1,1,0,0,0,0	wind_set WF_KIND: settable in no AES
++100	5	1	0	0	0x0FEF,10,20,300,200	create 1
++101	5	1	0	0	1,30,40,320,240	open 1 at 30,40,320,240
+105	6	1	0	0	1,4,0,0,0,0	wind_set WF_WXYWH: readable, not settable
++100	5	1	0	0	0x0FEF,10,20,300,200	create 1
++101	5	1	0	0	1,30,40,320,240	open 1 at 30,40,320,240
+105	6	1	0	0	1,5,60,80,200,160	wind_set WF_CXYWH: the one geometry setter, draw_change and all
++100	5	1	0	0	0x0FEF,10,20,300,200	create 1
++101	5	1	0	0	1,30,40,320,240	open 1 at 30,40,320,240
+105	6	1	0	0	1,6,0,0,0,0	wind_set WF_PXYWH: readable, not settable
++100	5	1	0	0	0x0FEF,10,20,300,200	create 1
++101	5	1	0	0	1,30,40,320,240	open 1 at 30,40,320,240
+105	6	1	0	0	1,7,0,0,0,0	wind_set WF_FXYWH: readable, not settable
++100	5	1	0	0	0x0FEF,10,20,300,200	create 1
++101	5	1	0	0	1,30,40,320,240	open 1 at 30,40,320,240
+105	6	1	0	0	1,8,500,0,0,0	wind_set WF_HSLIDE 500: inside the 1..1000 clamp
++100	5	1	0	0	0x0FEF,10,20,300,200	create 1
++101	5	1	0	0	1,30,40,320,240	open 1 at 30,40,320,240
+105	6	1	0	0	1,8,0,0,0,0	wind_set WF_HSLIDE 0: clamped up to 1
++100	5	1	0	0	0x0FEF,10,20,300,200	create 1
++101	5	1	0	0	1,30,40,320,240	open 1 at 30,40,320,240
+105	6	1	0	0	1,8,2000,0,0,0	wind_set WF_HSLIDE 2000: clamped down to 1000
++100	5	1	0	0	0x0FEF,10,20,300,200	create 1
++101	5	1	0	0	1,30,40,320,240	open 1 at 30,40,320,240
+105	6	1	0	0	1,9,1000,0,0,0	wind_set WF_VSLIDE 1000: exactly on the ceiling
++100	5	1	0	0	0x0FEF,10,20,300,200	create 1
++101	5	1	0	0	1,30,40,320,240	open 1 at 30,40,320,240
+105	6	1	0	0	1,11,0,0,0,0	wind_set WF_FIRSTXYWH: readable, not settable
++100	5	1	0	0	0x0FEF,10,20,300,200	create 1
++101	5	1	0	0	1,30,40,320,240	open 1 at 30,40,320,240
+105	6	1	0	0	1,12,0,0,0,0	wind_set WF_NEXTXYWH: readable, not settable
++100	5	1	0	0	0x0FEF,10,20,300,200	create 1
++101	5	1	0	0	1,30,40,320,240	open 1 at 30,40,320,240
+105	6	1	0	0	1,15,-1,0,0,0	wind_set WF_HSLSIZ -1: the use-default escape is let through the clamp
++100	5	1	0	0	0x0FEF,10,20,300,200	create 1
++101	5	1	0	0	1,30,40,320,240	open 1 at 30,40,320,240
+105	6	1	0	0	1,15,0,0,0,0	wind_set WF_HSLSIZ 0: clamped up to 1
++100	5	1	0	0	0x0FEF,10,20,300,200	create 1
++101	5	1	0	0	1,30,40,320,240	open 1 at 30,40,320,240
+105	6	1	0	0	1,16,1001,0,0,0	wind_set WF_VSLSIZ 1001: clamped down to 1000
++100	5	1	0	0	0x0FEF,10,20,300,200	create 1
++101	5	1	0	0	1,30,40,320,240	open 1 at 30,40,320,240
+105	6	1	0	0	1,17,0,0,0,0	wind_set WF_SCREEN: readable, not settable
++100	5	1	0	0	0x0FEF,10,20,300,200	create 1
++101	5	1	0	0	1,30,40,320,240	open 1 at 30,40,320,240
+105	6	1	0	0	1,20,0,0,0,0	wind_set WF_OWNER: gettable from AES 3.30, settable in no AES
++100	5	1	0	0	0x0FEF,10,20,300,200	create 1
++101	5	1	0	0	1,30,40,320,240	open 1 at 30,40,320,240
+105	6	1	0	0	1,21,0,0,0,0	wind_set field 21: past the last defined field
++100	5	1	0	0	0x0FEF,10,20,300,200	create 1
++101	5	1	0	0	1,30,40,320,240	open 1 at 30,40,320,240
+105	6	1	0	0	1,99,0,0,0,0	wind_set field 99: far past it
+# WF_TOP needs a second window, or there is nothing to top
++100	5	1	0	0	0x0FEF,10,20,300,200	create 1
++100	5	1	0	0	0x0FEF,10,20,300,200	create 2
++101	5	1	0	0	1,30,40,320,240	open 1
++101	5	1	0	0	2,60,80,200,160	open 2, which tops it
+105	6	1	0	0	1,10,0,0,0,0	wind_set WF_TOP on the lower of two windows: wm_mktop really has work to do
++100	5	1	0	0	0x0FEF,10,20,300,200	create 1
++101	5	1	0	0	1,30,40,320,240	open 1 at 30,40,320,240
+105	6	1	0	0	1,10,0,0,0,0	wind_set WF_TOP on the only open window: already topped, the early exit
+
+# --- wind_update (107): all four modes and both fallback classes
+# wm_update has NO default arm (gemwmlib.c:1778-1797): < 2 is the screen
+# sync, >= 2 is fm_own(mode - 2).  Every value is served, so the two
+# 'fallback' rows below are classes of the arithmetic, not error paths.
+107	1	1	0	0	1	wind_update BEG_UPDATE: tak_flag takes a lock the reset drains afterwards
+107	1	1	0	0	0	wind_update END_UPDATE with no lock held: unsync returns early at sy_tas <= 0
++107	1	1	0	0	1	take the screen lock first
+107	1	1	0	0	0	wind_update END_UPDATE after a BEG: the balanced pair
++107	1	1	0	0	1	take it
++107	1	1	0	0	1	and again: it is a count, not a flag
+107	1	1	0	0	0	wind_update END_UPDATE after two BEGs: one release is not enough
+107	1	1	0	0	3	wind_update BEG_MCTRL: ml_ocnt goes positive, which wm_new does drain
++107	1	1	0	0	3	BEG_MCTRL first -- END_MCTRL alone would drive ml_ocnt to -1, which the reset cannot heal
+107	1	1	0	0	2	wind_update END_MCTRL, paired: fm_own(0)
+107	1	1	0	0	5	wind_update mode 5: mode - 2 = 3, non-zero, so fm_own treats it as a BEGIN
+107	1	1	0	0	-1	wind_update mode -1: below 2 and non-zero, so it is a BEG_UPDATE
+107	1	0	0	0	1	wind_update BEG_UPDATE, OUT_LEN 0: the ret is computed and never delivered
+
+# ====================================================================
+# SECTION 4 -- object, form and resource
+# ====================================================================
+
+# --- objc_add (40): the NIL guard, the only arm reachable without a tree
+40	2	1	1	0	-1,-1	objc_add(NIL, NIL): ob_add's guard refuses before the first tree access
+40	2	1	1	0	-1,0	objc_add(NIL, ROOT): parent NIL alone is enough
+40	2	1	1	0	0,-1	objc_add(ROOT, NIL): child NIL alone is enough
+
+# --- objc_delete (41): the ROOT guard
+41	1	1	1	0	0	objc_delete(ROOT): 'can't delete the root object', before any tree access
+41	1	0	1	0	0	objc_delete(ROOT), OUT_LEN 0: the 0 is computed and never delivered
+
+# --- objc_order (45): the ROOT guard, across all three newpos classes
+45	2	1	1	0	0,0	objc_order(ROOT, 0): refused before get_par, whatever newpos says
+45	2	1	1	0	0,-1	objc_order(ROOT, NIL): the same refusal
+45	2	1	1	0	0,99	objc_order(ROOT, 99): the same refusal
+
+# --- objc_edit (46): all four kinds and the fallthrough, through obj <= 0
+# crysbind copies OB_IDX (int_in[2]) into OB_ODX (int_out[1]) BEFORE the
+# call (gemsuper.c:225-227), so the index the case hands in must come
+# back unchanged on the early-return arm -- that is what int_in[2] = 7 is
+# for, and it is the same question OUT_LEN 1 answers from the other side.
+46	4	3	1	0	1,0,7,0	objc_edit EDSTART on object 1: the kind arm returns first, tree untouched
+46	4	3	1	0	0,0,7,0	objc_edit EDSTART on the ROOT
+46	4	3	1	0	0,0,7,1	objc_edit EDINIT on the ROOT: obj <= 0 returns before the TEDINFO
+46	4	3	1	0	0,65,7,2	objc_edit EDCHAR 'A' on the ROOT
+46	4	3	1	0	0,0,7,3	objc_edit EDEND on the ROOT
+46	4	3	1	0	0,0,7,99	objc_edit kind 99: no case arm, the function falls through to TRUE
+46	4	3	1	0	-1,0,7,1	objc_edit EDINIT on a negative object
+46	4	1	1	0	0,0,7,1	objc_edit EDINIT, OUT_LEN 1: the index is written and never delivered
+
+# --- form_dial (51): all four fmd_type values and the fallthrough
+# fm_dial has no default arm and always returns TRUE (gemfmlib.c:360-383).
+# GROW and SHRINK draw an XOR box between the two rectangles; FINISH
+# redraws the desktop under the big one.  Both rectangles are inside
+# 640x400.
+51	9	1	0	0	0,100,100,40,40,100,100,300,200	form_dial FMD_START: a documented no-op
+51	9	1	0	0	1,100,100,40,40,100,100,300,200	form_dial FMD_GROW: gr_growbox from the small rectangle to the big one
+51	9	1	0	0	2,100,100,40,40,100,100,300,200	form_dial FMD_SHRINK: and back
+51	9	1	0	0	3,100,100,40,40,100,100,300,200	form_dial FMD_FINISH: w_drawdesk plus w_update on the big rectangle
+51	9	1	0	0	99,100,100,40,40,100,100,300,200	form_dial type 99: only the gsx_sclip, and still TRUE
+
+# --- graf_movebox / growbox / shrinkbox (72/73/74): pointer-free by design
+72	6	1	0	0	40,30,100,100,200,150	graf_movebox: a 40x30 box from 100,100 to 200,150
+73	8	1	0	0	100,100,40,40,100,100,300,200	graf_growbox: small to big
+74	8	1	0	0	100,100,40,40,100,100,300,200	graf_shrinkbox: the same two rectangles, the other way round
+
+# --- rsrc_gaddr (112): all seventeen R_* types, index 0
+# addr_out[0] is written by xif for THIS opcode only (gemsuper.c:446-447),
+# unconditionally, so n_addrout 1 is what the call actually uses.  See the
+# header for why the ADDRESS has no target value here and the RETURN CODE
+# and the identity pairs still do.
+112	2	1	0	1	0,0	rsrc_gaddr type 0 index 0 -- R_TREE: ap_ptree[index], and ap_ptree is NULL on both machines
+112	2	1	0	1	1,0	rsrc_gaddr type 1 index 0 -- R_OBJECT
+112	2	1	0	1	2,0	rsrc_gaddr type 2 index 0 -- R_TEDINFO -- identity pair with R_TEPTEXT 8
+112	2	1	0	1	3,0	rsrc_gaddr type 3 index 0 -- R_ICONBLK -- identity pair with R_IBPMASK 11
+112	2	1	0	1	4,0	rsrc_gaddr type 4 index 0 -- R_BITBLK -- identity pair with R_BIPDATA 14
+112	2	1	0	1	5,0	rsrc_gaddr type 5 index 0 -- R_STRING: the one type that dereferences the slot it computes
+112	2	1	0	1	6,0	rsrc_gaddr type 6 index 0 -- R_IMAGEDATA: likewise
+112	2	1	0	1	7,0	rsrc_gaddr type 7 index 0 -- R_OBSPEC: &obj->ob_spec, a sub-pointer of R_OBJECT
+112	2	1	0	1	8,0	rsrc_gaddr type 8 index 0 -- R_TEPTEXT -- must equal R_TEDINFO 2, same case label
+112	2	1	0	1	9,0	rsrc_gaddr type 9 index 0 -- R_TEPTMPLT: &tedinfo->te_ptmplt
+112	2	1	0	1	10,0	rsrc_gaddr type 10 index 0 -- R_TEPVALID: &tedinfo->te_pvalid
+112	2	1	0	1	11,0	rsrc_gaddr type 11 index 0 -- R_IBPMASK -- must equal R_ICONBLK 3, same case label
+112	2	1	0	1	12,0	rsrc_gaddr type 12 index 0 -- R_IBPDATA: &iconblk->ib_pdata
+112	2	1	0	1	13,0	rsrc_gaddr type 13 index 0 -- R_IBPTEXT: &iconblk->ib_ptext
+112	2	1	0	1	14,0	rsrc_gaddr type 14 index 0 -- R_BIPDATA -- must equal R_BITBLK 4, same case label
+112	2	1	0	1	15,0	rsrc_gaddr type 15 index 0 -- R_FRSTR: the free-string POINTER, not the string
+112	2	1	0	1	16,0	rsrc_gaddr type 16 index 0 -- R_FRIMG: the free-image pointer
+# the three identity pairs again at index 1, which also shows the stride
+112	2	1	0	1	2,1	rsrc_gaddr type 2 index 1 -- R_TEDINFO, one record on from index 0
+112	2	1	0	1	8,1	rsrc_gaddr type 8 index 1 -- R_TEPTEXT, one record on from index 0
+112	2	1	0	1	3,1	rsrc_gaddr type 3 index 1 -- R_ICONBLK, one record on from index 0
+112	2	1	0	1	11,1	rsrc_gaddr type 11 index 1 -- R_IBPMASK, one record on from index 0
+112	2	1	0	1	4,1	rsrc_gaddr type 4 index 1 -- R_BITBLK, one record on from index 0
+112	2	1	0	1	14,1	rsrc_gaddr type 14 index 1 -- R_BIPDATA, one record on from index 0
+# and the fallback class: get_addr's default returns (void *)-1L
+112	2	1	0	1	17,0	rsrc_gaddr type 17: one past the last defined R_* type
+112	2	1	0	1	99,0	rsrc_gaddr type 99
+112	2	1	0	1	-1,0	rsrc_gaddr type -1: rstype is a UWORD, so this is 65535
+112	2	1	0	1	1,1000	rsrc_gaddr R_OBJECT index 1000: EmuTOS does not range-check the index
+112	2	1	0	0	1,0	rsrc_gaddr R_OBJECT with n_addrout 0: xif writes addrout[0] regardless
+
+# --- rsrc_saddr (113): the unknown-type arm ONLY
+# Every defined type would make rs_saddr store the 0xDEAD poison through
+# the address get_addr computed from a NULL header -- see the header.
+113	2	1	1	0	17,0	rsrc_saddr type 17: get_addr returns -1L, so rs_saddr refuses before the store
+113	2	1	1	0	99,0	rsrc_saddr type 99: the same arm
+
+# ====================================================================
+# SECTION 5 -- the state changers, last, in the order their state allows
+#
+# Nothing below is undone by the reset, so each case is placed after
+# every case that could have been affected by it, and the two counting
+# graf_mouse modes are the last two lines of the file.
+# ====================================================================
+
+# --- appl_init (10) a second time inside a running application
+10	0	2	0	0	-	appl_init re-entry: ap_init sets AP_OPEN on a process that already has it
+
+# --- evnt_dclick (26), WRITE half: gl_dcindex survives every reset
+26	2	1	0	0	3,1	evnt_dclick set index 3: inside gl_dcrates[5], and the answer is the NEW index
++26	2	1	0	0	3,1	set it in this case's own prelude, so a partial run still measures the read-back
+26	2	1	0	0	0,0	evnt_dclick read back after a set of 3: the rate word is still ignored
+
+# --- menu_bar (30) with show 0: gl_mntree = NULL, and nothing restores it
+30	1	1	1	0	0	menu_bar show 0: the else arm, which never touches the tree pointer
+
+# --- graf_mouse (78): every mode that does not need an MFORM
+# USER_DEF (255) is the one mode that reads addr_in and is therefore
+# absent.  Everything else overwrites maddr before gsx_mfset.
+78	1	1	1	0	0	graf_mouse 0 ARROW
+78	1	1	1	0	1	graf_mouse 1 TEXT_CRSR
+78	1	1	1	0	2	graf_mouse 2 HOURGLASS
+78	1	1	1	0	3	graf_mouse 3 POINT_HAND
+78	1	1	1	0	4	graf_mouse 4 FLAT_HAND
+78	1	1	1	0	5	graf_mouse 5 THIN_CROSS
+78	1	1	1	0	6	graf_mouse 6 THICK_CROSS
+78	1	1	1	0	7	graf_mouse 7 OUTLN_CROSS
+78	1	1	1	0	8	graf_mouse 8: one past OUTLN_CROSS, the default arm clamps to ARROW
+78	1	1	1	0	254	graf_mouse 254: one below USER_DEF, still the default arm
+78	1	1	1	0	261	graf_mouse 261: one past M_PREVIOUS, still the default arm
+78	1	1	1	0	-1	graf_mouse -1: below ARROW, the default arm clamps up
+78	1	1	1	0	258	graf_mouse M_SAVE: the current form into the process slot
+78	1	1	1	0	259	graf_mouse M_RESTORE: back out of it
+78	1	1	1	0	260	graf_mouse M_PREVIOUS: the global previous form
+# The counting pair, and the reason they are the last two lines: gsx_moff
+# and gsx_mon keep a count no reset restores, so the ledger has to close
+# inside the file and nothing may follow it.
+78	1	1	1	0	256	graf_mouse M_OFF: gl_moff 0 -> 1, the cursor goes away
+78	1	1	1	0	257	graf_mouse M_ON: gl_moff 1 -> 0, and the ledger is closed

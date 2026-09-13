@@ -22,15 +22,86 @@ static struct td_aes_arrays run_arrays;
  * by format (spec section 3), while the parameter block's are the target's
  * pointer width -- four bytes on the m68k, eight on AArch64.  So the call
  * gets real pointer-width arrays and the record gets the low 32 bits of
- * each, through the same expression on both targets.  Round 1 is
- * pointer-free (cases/COVERAGE-AES.md): nothing ever writes a pointer here,
- * so the only thing that reaches the record is the poison -- whose low 32
- * bits are the same NUMBER on both targets, which is what keeps the two
- * builds comparable.  See poison_ptrs for why that is a number and not a
- * byte pattern.
+ * each, through the same expression on both targets.  A table that names no
+ * buffer never writes a pointer here at all, so the only thing that reaches
+ * the record is the poison -- whose low 32 bits are the same NUMBER on both
+ * targets, which is what keeps the two builds comparable.  See poison_ptrs
+ * for why that is a number and not a byte pattern, and run_planted_buf below
+ * for what a slot records once a case HAS pointed it at a buffer.
  */
 static void *run_addr_in[TD_AES_ADDRIN_N];
 static void *run_addr_out[TD_AES_ADDROUT_N];
+
+/*
+ * The buffers a case may point a call at (tosdump.h, TD_AES_BUF_N).
+ *
+ * Statics, like everything else here, and aligned for the widest thing a
+ * target may read out of one: the union's `align` member is the machine's
+ * own widest scalar, which is what a compiler aligns the whole array to.  A
+ * char array would be byte-aligned, and a later case handing one of these to
+ * a call that reads WORDs out of it would fault on a 68000.
+ *
+ * Laid fresh before EVERY call the runner issues, not once per case: a
+ * buffer the previous call wrote into would carry that call's result into
+ * the next one, and the point of the poison rule is that nothing does.
+ */
+static union {
+	unsigned long align;
+	char          bytes[TD_AES_BUF_BYTES];
+} run_bufs[TD_AES_BUF_N];
+
+/*
+ * Which buffer, if any, each addr_in slot was pointed at for the call that
+ * just ran -- and what was planted there, so the record can tell "the slot
+ * still holds the buffer" from "the call wrote something else into it".
+ * -1 is "not planted", which is every slot of every seven column table.
+ */
+static int16_t run_planted_buf[TD_AES_ADDRIN_N];
+static void   *run_planted_ptr[TD_AES_ADDRIN_N];
+
+static void lay_buffers(void)
+{
+	int i;
+
+	for (i = 0; i < TD_AES_BUF_N; i++)
+		td_aes_buf_fill(run_bufs[i].bytes, sizeof run_bufs[i].bytes, i);
+}
+
+/*
+ * Put the buffers a line named where the line said (cases.h).
+ *
+ * An addr_in plant is a plain pointer store.  An int_in plant is written
+ * with memcpy at the TARGET's own pointer width -- four bytes on the m68k,
+ * eight on AArch64 -- because that is what the classic GEM binding does
+ * (gemlib a_wind_set_str.c:25) and what both AESs read back: EmuTOS as
+ * *(char **)&int_in[2] (gemwmlib.c:1661), NewTOS as an unaligned load of the
+ * caller's pointer width (tos-api/src/aes/mod.rs, intin_ptr).  One
+ * expression, correct on both, exactly as the raster runner packs an MFDB
+ * pointer into CONTRL.  memcpy and not a cast: &int_in[w] is only WORD
+ * aligned.
+ */
+static void plant_buffers(const struct td_aes_plant *plant, uint16_t count)
+{
+	uint16_t i;
+	int j;
+
+	for (j = 0; j < TD_AES_ADDRIN_N; j++) {
+		run_planted_buf[j] = -1;
+		run_planted_ptr[j] = 0;
+	}
+
+	for (i = 0; i < count; i++) {
+		void *p = (void *)run_bufs[plant[i].buffer].bytes;
+
+		if (plant[i].kind == TD_AES_PLANT_ADDRIN) {
+			run_addr_in[plant[i].where]     = p;
+			run_planted_buf[plant[i].where] = plant[i].buffer;
+			run_planted_ptr[plant[i].where] = p;
+		} else {
+			memcpy(&run_arrays.int_in[plant[i].where], &p, sizeof p);
+		}
+	}
+}
 
 /*
  * Poison a pointer array with the 0xDEAD pattern (spec section 4).
@@ -126,10 +197,14 @@ static void td_reset_aes(int16_t reset, int16_t *global)
 		return;
 
 	/* poisoned like every other call the runner issues, so the reset
-	 * cannot carry the previous case's values into the AES */
+	 * cannot carry the previous case's values into the AES.  The buffers
+	 * are laid too: the reset names none, but a buffer the previous case
+	 * wrote into is state the reset exists to sweep. */
 	td_poison_aes(&run_arrays);
 	poison_ptrs(run_addr_in, TD_AES_ADDRIN_N);
 	poison_ptrs(run_addr_out, TD_AES_ADDROUT_N);
+	lay_buffers();
+	plant_buffers(NULL, 0);
 	aes_call(109, 0, 0, 0, 0, global);
 }
 
@@ -142,6 +217,13 @@ int td_run_aes(const struct td_aes_case_table *ct, int16_t *global,
 
 	if (out_bytes < (size_t)ct->count * TD_AES_RECORD_SIZE)
 		return TD_RUN_AES_ERR_BUFFER;
+
+	/* Does THIS AES have the opcodes the table names?  global[0] is
+	 * ap_version as the machine's own appl_init wrote it (gemsuper.c:92),
+	 * which is the only thing that can answer; see runner_aes.h for why
+	 * the answer is taken here as well as in the dumper's main. */
+	if (td_aes_cases_version_refusal(ct, global[0], NULL) != 0)
+		return TD_RUN_AES_ERR_VERSION;
 
 	for (i = 0; i < ct->count; i++) {
 		const struct td_aes_case *c = &ct->cases[i];
@@ -166,8 +248,13 @@ int td_run_aes(const struct td_aes_case_table *ct, int16_t *global,
 			td_poison_aes(&run_arrays);
 			poison_ptrs(run_addr_in, TD_AES_ADDRIN_N);
 			poison_ptrs(run_addr_out, TD_AES_ADDROUT_N);
+			lay_buffers();
 			for (k = 0; k < (int)p->n_values; k++)
 				run_arrays.int_in[k] = p->intin[k];
+			/* after the values: a plant and a value never share a WORD
+			 * (the loader refuses that), but the order has to be one
+			 * fixed one or the two builds could differ */
+			plant_buffers(p->plant, p->n_plants);
 			aes_call(p->opcode, p->n_intin, p->n_intout, p->n_addrin,
 			         p->n_addrout, global);
 		}
@@ -178,6 +265,7 @@ int td_run_aes(const struct td_aes_case_table *ct, int16_t *global,
 		td_poison_aes(&run_arrays);
 		poison_ptrs(run_addr_in, TD_AES_ADDRIN_N);
 		poison_ptrs(run_addr_out, TD_AES_ADDROUT_N);
+		lay_buffers();
 
 		/* 3. lay the case's int_in values over the poison; whatever the
 		 *    case does not fill stays 0xDEAD, which is what makes an
@@ -185,6 +273,12 @@ int td_run_aes(const struct td_aes_case_table *ct, int16_t *global,
 		 *    the call when IN_LEN reaches past the listed values */
 		for (j = 0; j < (int)c->n_values; j++)
 			run_arrays.int_in[j] = c->intin[j];
+
+		/* 3a. the buffers the case's addr_in column names (cases.h).
+		 *     After the values, and after the poison, so what a slot
+		 *     holds going in is either a buffer this case asked for or
+		 *     the poison. */
+		plant_buffers(c->plant, c->n_plants);
 
 		/* 4. the call under measurement */
 		ret = aes_call(c->opcode, c->n_intin, c->n_intout, c->n_addrin,
@@ -199,10 +293,22 @@ int td_run_aes(const struct td_aes_case_table *ct, int16_t *global,
 		/* 6. the address arrays, as the low 32 bits of whatever the
 		 *    parameter block holds.  Same expression on both targets;
 		 *    see the declaration above for why the record cannot hold
-		 *    the whole pointer. */
+		 *    the whole pointer.
+		 *
+		 *    A slot this case pointed at a buffer is the one exception:
+		 *    its address is different on the two machines by
+		 *    construction, so recording it would fabricate a difference
+		 *    in every such case.  It records the buffer TOKEN instead --
+		 *    as long as the slot still holds what was planted.  If the
+		 *    call wrote something else there, that is recorded, and a
+		 *    difference is exactly what it should produce.  See
+		 *    tosdump.h, TD_AES_ADDR_TOKEN. */
 		for (j = 0; j < TD_AES_ADDRIN_N; j++)
 			run_arrays.addr_in[j] =
-				(uint32_t)(unsigned long)run_addr_in[j];
+				(run_planted_buf[j] >= 0 &&
+				 run_addr_in[j] == run_planted_ptr[j])
+					? TD_AES_ADDR_TOKEN(run_planted_buf[j])
+					: (uint32_t)(unsigned long)run_addr_in[j];
 		for (j = 0; j < TD_AES_ADDROUT_N; j++)
 			run_arrays.addr_out[j] =
 				(uint32_t)(unsigned long)run_addr_out[j];

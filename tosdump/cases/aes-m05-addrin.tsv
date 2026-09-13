@@ -1,0 +1,109 @@
+# aes-m05-addrin.tsv -- the proof that a case can hand an AES call a POINTER.
+#
+# Read by DUMPAES (core/dumpaes.c), area 5, record 120 bytes.  Loader, column
+# format and the guard: core/cases.h.  Eight columns, not seven: this is the
+# first table that declares "!columns 8" and therefore the first that carries
+# an addr_in column.  Everything written before it stays seven columns and
+# means exactly what it always meant -- that is the point of the directive.
+#
+# WHAT THE COLUMN IS FOR
+#
+# Roughly a dozen AES opcodes do all of their work behind a pointer, and a
+# case table could not state one: it is ONE FILE carried to two machines, and
+# an address is different on each.  So the table names a BUFFER BY NUMBER and
+# the dumper fills in its own address, the way cases/vdi-raster.tsv names its
+# two pixel buffers.  Each buffer is TD_AES_BUF_BYTES long and is laid before
+# every call with eight printable characters, a NUL and a canary
+# (core/tosdump.h, core/record.c td_aes_buf_fill), identically on both
+# targets -- a buffer that differed would make the case measure the buffer
+# instead of the function.  Buffer 0 reads "ABCDEFGH", buffer 1 "HIJKLMNO".
+#
+# This table is deliberately SMALL.  It exists to show that the mechanism
+# carries on both machines, not to cover the opcodes it unlocks; the table
+# that does that is a separate piece of work.
+#
+# WHAT IT ASKS, case by case
+#
+#   A  An ordinary case in the new form, planting nothing ("-").  It is here
+#      so that the eight column form is shown to express the seven column
+#      form's meaning unchanged.
+#   B  appl_find (13), the smallest call that is nothing but a pointer read:
+#      AP_PNAME is addr_in[0] (aesdefs.h:165, gemsuper.c:107) and ap_find
+#      does one strncmp per process against it (gemaplib.c:95-108,
+#      gempd.c:38-57).  Neither buffer's first eight characters are the name
+#      of any AES process, so BOTH machines must answer -1 -- which is what
+#      makes this the case that proves the pointer arrived: with a poisoned
+#      one the TT would not have got this far.
+#   C  wind_get WF_NAME (104/2) on a window that really HAS a title.  This is
+#      the case the whole exercise was for.  EmuTOS' wm_get has no arm for
+#      WF_NAME at all and falls into "default: return FALSE"
+#      (gemwmlib.c:1591-1592); NewTOS answers it and copies the title out
+#      (tos-api/src/aes/window.rs, the WF_NAME | WF_INFO arm).  So RET_CODE
+#      is expected to be 0 on the TT and 1 on NewTOS -- TASK/A42.md, measured
+#      here for the first time.
+#   D  The same call on a window with NO title.  NewTOS returns FALSE for an
+#      empty title too, so C and D together separate "answers the field" from
+#      "answers because the window happens to have a name".
+#
+# THE TITLE IS SET THROUGH THE int_in WORDS, NOT THROUGH addr_in, and that is
+# not a choice: EmuTOS' wm_set reads the string pointer as *(char **)pinwds
+# with pinwds = &int_in[2] (gemwmlib.c:1661 via gemsuper.c:346) and looks
+# nowhere else.  The dumper packs it there at the TARGET's own pointer width
+# -- four bytes on the m68k, eight on AArch64 -- which is what the classic
+# GEM binding does (gemlib a_wind_set_str.c:25) and what both AESs read back
+# (NewTOS: tos-api/src/aes/mod.rs, intin_ptr).  IN_LEN 6 covers the wider of
+# the two, so one line is correct on both.  Such a plant is allowed only on a
+# PRELUDE, because a packed pointer occupies two WORDs on one machine and
+# four on the other and int_in is recorded -- see core/cases.h.
+#
+# WHAT THE RECORD SHOWS AND WHAT IT DOES NOT.  A planted addr_in slot records
+# the buffer's TOKEN (0xB0FF0000 + n), not its address: the address differs
+# between the two machines by construction and would fabricate a difference
+# in every case.  The 120 byte AES record has no room for the BUFFER'S
+# CONTENTS, so what NewTOS copied into buffer 0 in case C is not in the dump;
+# RET_CODE is.  A record that carried the buffer would be a different record
+# size and would invalidate every dump already taken.
+#
+# OUT_LEN IS 1 WHEREVER ONLY THE RETURN CODE IS ASKED FOR.  xif copies
+# exactly OUT_LEN words back out of an UNINITIALISED stack buffer
+# (gemsuper.c:429-432, :444-445), so a wind_get that returns FALSE with
+# OUT_LEN 5 would deliver four words of the TT's stack -- a difference that
+# measures the stack and not the AES.  With OUT_LEN 1 the surplus slots stay
+# poisoned on both.
+#
+# A case id is the PHYSICAL LINE NUMBER and this file's CRC binds every dump
+# to it, so ANY edit -- an appended case, a fixed typo in a comment --
+# invalidates every dump already taken with it.  This file is written ONCE.
+#
+# The reset is the AES' own: wind_new closes and deletes every window with a
+# handle >= 1 and drains the wind_update locks (gemwmlib.c:1875-1893), which
+# is what lets section C create and open handle 1 twice without the second
+# half inheriting the first.
+!reset	wind_new
+!columns	8
+
+# ======================================================================
+# A -- the eight column form, planting nothing
+# ======================================================================
+77	0	5	0	0	-	-	graf_handle, an ordinary case in the new form
+
+# ======================================================================
+# B -- appl_find, a pure pointer read
+# ======================================================================
+13	0	1	1	0	-	a0=0	appl_find "ABCDEFGH": no process has that name
+13	0	1	1	0	-	a0=1	appl_find "HIJKLMNO": likewise
+
+# ======================================================================
+# C -- wind_get(WF_NAME) on a window that has a title (A42)
+# ======================================================================
++100	5	1	0	0	0x0FEF,10,20,300,200	-	create window 1
++101	5	1	0	0	1,30,40,320,240	-	open it, so the title is live
++105	6	1	0	0	1,2	i2=1	wind_set WF_NAME = buffer 1, packed at int_in[2]
+104	2	1	1	0	1,2	a0=0	wind_get WF_NAME into buffer 0
+
+# ======================================================================
+# D -- the same call, no title set
+# ======================================================================
++100	5	1	0	0	0x0FEF,10,20,300,200	-	create window 1
++101	5	1	0	0	1,30,40,320,240	-	open it
+104	2	1	1	0	1,2	a0=0	wind_get WF_NAME with no title set

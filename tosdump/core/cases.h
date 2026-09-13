@@ -89,6 +89,8 @@ struct td_case_table {
 #define TD_CASE_ERR_DIRECTIVE      (-13)  /* a '!' line cannot be honoured*/
 #define TD_CASE_ERR_UNSAFE_FIELD   (-14)  /* a field may not be issued    */
 #define TD_CASE_ERR_UNSAFE_STATE   (-15)  /* the run could not finish     */
+#define TD_CASE_ERR_PLANT          (-16)  /* the addr_in column is wrong  */
+#define TD_CASE_ERR_AES_VERSION    (-17)  /* this AES does not have it    */
 
 struct td_case_error {
 	uint16_t    line;                  /* physical line, 0 if not a line  */
@@ -164,23 +166,96 @@ int td_case_line_is_directive(const char *line, size_t len);
  * blank lines, the "+" prelude convention, malformed line is an error -- is
  * identical to the VDI form above, and goes through the same line iterator
  * and the same value parser so the two cannot drift apart.
+ *
+ * ------------------------------------------------------------------
+ * THE EIGHTH COLUMN: addr_in, and why it is optional
+ * ------------------------------------------------------------------
+ *
+ * A table may declare an EIGHTH column with the "!columns" directive below:
+ *
+ *   opcode <TAB> n_intin <TAB> n_intout <TAB> n_addrin <TAB> n_addrout
+ *          <TAB> intin values <TAB> addr_in <TAB> comment
+ *
+ * It is optional and it is declared per table rather than sniffed per line,
+ * for the same reason the comment column is an argument to
+ * td_case_line_comment_n: a comment may itself hold tabs, so counting the
+ * tabs on a line does not tell you which form the line is in.  A table that
+ * does not declare it is read exactly as before, its lines mean exactly what
+ * they meant, and the records it produces are the same bytes -- which
+ * matters, because every dump already taken is bound to its table by CRC and
+ * a re-run of an old table has to reproduce its dump.
+ *
+ * The column is a comma separated list of PLANTS, or "-" for none.  Each
+ * plant is <where>=<buffer>, where the buffer is a number 0..TD_AES_BUF_N-1
+ * naming one of the dumper's own buffers (tosdump.h) and <where> is one of:
+ *
+ *   aN   addr_in[N], N < TD_AES_ADDRIN_N.  The address array proper.  The
+ *        dispatcher copies min(AIN_LEN, AI_SIZE) of them onto its local
+ *        buffer (gemsuper.c:439), so the plant is only reachable when the
+ *        case declares n_addrin > N -- which the loader requires rather than
+ *        letting the call read a slot that was never handed over.
+ *
+ *   iN   a pointer packed into the int_in WORDS at word N, at the TARGET's
+ *        own pointer width -- four bytes on the m68k, eight on AArch64 --
+ *        which is the classic GEM binding (gemlib a_wind_set_str.c:25,
+ *        a_wind_get.c:344).  It is how EmuTOS' wm_set reads WF_NAME:
+ *        *(char **)pinwds with pinwds = &int_in[2] (gemwmlib.c:1661), which
+ *        no addr_in plant can reach.
+ *
+ *        ONLY ON A PRELUDE.  int_in is RECORDED, and a planted pointer
+ *        occupies two WORDs of it on one machine and four on the other, so
+ *        on a measured case the record would differ by the target's pointer
+ *        width and not by anything the AES did.  A prelude is not recorded,
+ *        so it can carry one; that is what lets a case be measured against a
+ *        window that really has a title.
+ *
+ * A plant may not land on a WORD the case already lists a value for -- the
+ * two would contradict each other -- and an "iN" plant needs the case to
+ * declare enough IN_LEN for the widest of the two targets to copy it whole.
  */
-#define TD_AES_CASE_COLUMNS 7
+#define TD_AES_CASE_COLUMNS     7
+#define TD_AES_CASE_COLUMNS_MAX 8
+
+/* Where one plant puts a buffer's address. */
+#define TD_AES_PLANT_ADDRIN  0     /* addr_in[where]                      */
+#define TD_AES_PLANT_INTIN   1     /* a target-width pointer at int_in[w] */
+
+/* Plants one line may carry: the three addr_in slots plus one packed
+ * pointer is every shape the AES has. */
+#define TD_AES_PLANTS_MAX    4
+
+/* The WORDs a planted int_in pointer occupies on the widest target (8-byte
+ * pointer / 2-byte WORD).  The loader requires IN_LEN to cover it so that
+ * one table line is correct on both. */
+#define TD_AES_PLANT_PTR_WORDS 4
+
+struct td_aes_plant {
+	int16_t kind;                      /* TD_AES_PLANT_*                  */
+	int16_t where;                     /* slot index / int_in word index  */
+	int16_t buffer;                    /* 0..TD_AES_BUF_N-1               */
+};
 
 /* ------------------------------------------------------------------ */
-/* The reset directive (spec section 5, for the AES)                   */
+/* The directives (spec section 5, for the AES)                        */
 /* ------------------------------------------------------------------ */
 /*
  * A line whose first non-blank character is '!' is a DIRECTIVE: it carries
  * no case and no call, but it does consume a line number like every other
- * line, so case ids stay the physical line numbers.  One directive exists:
+ * line, so case ids stay the physical line numbers.  Two directives exist:
  *
- *   !reset <TAB> none | wind_new
+ *   !reset   <TAB> none | wind_new
+ *   !columns <TAB> 7 | 8
  *
- * It must appear before the first case or prelude, at most once, and its
+ * Each must appear before the first case or prelude, at most once, and its
  * value must be one of the names below -- an unknown name is refused rather
  * than defaulting, because defaulting would silently run a round-2 table
  * with round 1's absent reset.
+ *
+ * `!columns 8` adds the addr_in column described above; absent means 7, the
+ * form every table written before it uses.  It is stated before the first
+ * case for the same reason `!reset` is: the parser has to know how to slice
+ * a line before it slices one, and a file that is read differently than it
+ * was written produces a dump that looks fine and measures something else.
  *
  * WHY THE TABLE DECLARES IT AND NOT THE PROGRAM.  Spec section 5 puts the
  * reset sequence in core/ so both targets run the identical one, and it is
@@ -207,6 +282,128 @@ int td_case_line_is_directive(const char *line, size_t len);
  */
 #define TD_AES_RESET_NONE      0
 #define TD_AES_RESET_WIND_NEW  1
+
+/* ------------------------------------------------------------------ */
+/* The parameter guard: what the VALUES decide, not the opcode         */
+/* ------------------------------------------------------------------ */
+/*
+ * The opcode guard (cases.c, the refusal guard) answers "may this call be
+ * issued at all".  For a dozen opcodes there is no such answer, because the
+ * same opcode is a poll or a hang, a read of the dumper's own buffer or a
+ * write through 0xDEADDEAD, depending on ONE WORD of int_in or on whether
+ * the addr_in column named a buffer.  An opcode-level verdict on those is
+ * wrong in both directions at once -- it refuses the harmless arm and it
+ * waves the dangerous one through.
+ *
+ * So a second question, "with THESE values?", is answered per line in
+ * cases.c (aes_line_parameter_refusal), for cases and preludes alike.  It
+ * covers, with the EmuTOS reading that makes each arm what it is:
+ *
+ *   wind_get/wind_set (104, 105) -- the field, the handle and the geometry
+ *      (round 2, and WF_NAME/WF_INFO re-opened by a plant in M05)
+ *   wind_open/wind_delete/wind_update (101, 103, 107) -- the handle, the
+ *      message-queue bound and the mouse-control balance
+ *   evnt_multi (25) -- MU_TIMER with a zero count is the only arm that
+ *      returns before mwait; MU_MESAG needs a planted buffer
+ *   form_error (53) -- n > 63 is the only arm that returns before fm_show
+ *   form_keybd (55) -- the tree must be planted AND the character must not
+ *      send find_obj walking it
+ *   objc_delete (41) -- ROOT is the only arm that returns before the tree
+ *      is read
+ *   scrp_read/scrp_write (80, 81) -- a strcpy each way through addr_in[0],
+ *      so the slot must be planted
+ *
+ * ALL OF IT IS DECIDED FROM ONE LINE, which is why it is in the LOADER and
+ * not in td_aes_cases_version_refusal below: the flags, the field, the error
+ * number, the character, the object index and the plants are all columns of
+ * the line.  Nothing here needs a measured quantity, so nothing here needs a
+ * machine, and a table can still be checked on the host before it is carried
+ * anywhere.  That is the same seam M06 drew, taken from the other side.
+ *
+ * THE SHAPE RULE, and why it is not tidiness.  Where the guard reads an
+ * int_in WORD, the case must both STATE it and declare IN_LEN past it.
+ * xif's int_in is a LOCAL array copied into only as far as
+ * min(IN_LEN, I_SIZE) (gemsuper.c:428-438), so a WORD outside IN_LEN is not
+ * the previous call's value -- it is uninitialised stack, and a guard
+ * reasoning about it would be reasoning about a number that does not exist.
+ *
+ * THE ASYMMETRY IT EXISTS FOR.  A table is written on a host, tried on
+ * NewTOS, and then carried to a TT that has no memory protection.  Where the
+ * two AESs disagree about whether a parameter is fatal, trying it on one
+ * proves nothing about the other: objc_delete(-1) answers 0 on NewTOS
+ * (tos-api/src/aes/object.rs) and reads tree[-1].ob_next through the poison
+ * on the TT (gemoblib.c:1154-1157).  The guard therefore refuses the UNION
+ * of what either machine would find fatal, never the intersection.
+ * TASK/M07.md.
+ */
+
+/* ------------------------------------------------------------------ */
+/* The version guard: decided on the machine, not on the host          */
+/* ------------------------------------------------------------------ */
+/*
+ * Two of the AES opcodes with an arm in crysbind are compiled out of a
+ * smaller build, and issuing one on a machine that lacks it reaches the
+ * dispatcher's default arm -- fm_show(ALNOFUNC), a modal alert waiting for a
+ * click (gemsuper.c:406-417).  On an unattended run that is a hang, which is
+ * exactly what the loader's refusal guard exists to prevent.
+ *
+ * WHERE THE DECISION CAN BE MADE.  Whether a machine HAS such an opcode is a
+ * property of the machine, and the only non-destructive way to ask is
+ * `ap_version` in the AESGLOBAL -- which appl_init writes (gemsuper.c:92) and
+ * which therefore does not exist until the dumper has an application context.
+ * So the question splits in two, and each half is answered where its answer
+ * exists:
+ *
+ *   the LOADER (host and machine alike) answers "is this opcode issuable at
+ *      all" -- blocking, fatal, unestablished or not an opcode.  Those are
+ *      properties of the table, so a table can be checked without a machine.
+ *      It also records WHICH capabilities the table needs, in `features`.
+ *
+ *   the MACHINE answers "does this AES have them", once, after appl_init and
+ *      before the first case or prelude runs, through
+ *      td_aes_cases_version_refusal().  A machine that does not have them
+ *      refuses the WHOLE table -- named reason, the offending line -- so the
+ *      dump's shape stays a property of the table alone: every dump has
+ *      exactly `count` records, or there is no dump.
+ *
+ * Until 2026-09-13 the loader refused these opcodes outright, on the stated
+ * assumption "TOS 3.06 = AES 3.20".  The assumption is not wrong about TOS
+ * 3.06; it was wrong to be the decider, because the reference EmuTOS the
+ * dumps are taken against reports 0x0340 and HAS them.  Measured beats
+ * assumed: TASK/M06.md.
+ *
+ * WHAT ap_version ESTABLISHES.  EmuTOS derives AES_VERSION from the
+ * CONF_WITH_* flags that gate the arms (include/config.h:1345-1354):
+ *
+ *      0x0340  <=  3D_OBJECTS && MENU_EXTENSION && WINDOW_COLOURS
+ *                  && GRAF_MOUSE_EXTENSION
+ *      0x0330  <=  MENU_EXTENSION && WINDOW_COLOURS && GRAF_MOUSE_EXTENSION
+ *      0x0320  <=  GRAF_MOUSE_EXTENSION
+ *      0x0140  otherwise
+ *
+ * The implication runs ONE WAY: a rung of that ladder tells you which flags
+ * were on, not the other way round (a build with 3D objects but no menu
+ * extension reports 0x0320).  So a version establishes a feature only where
+ * the ladder REQUIRES it, and the guard tests exactly that -- membership in
+ * the set of rungs that require the flag, not ">= some minimum".  A machine
+ * reporting a number the ladder does not produce establishes nothing, and
+ * the table is refused rather than issued on a guess.
+ *
+ * Only these two flags remove an OPCODE.  WINDOW_COLOURS and
+ * GRAF_MOUSE_EXTENSION gate fields and modes inside opcodes that exist
+ * either way (gemwmlib.c:1566, :1718; gemgrlib.c:439), which is a
+ * per-parameter question -- but not one the PARAMETER guard below can take
+ * either, because "does this build have window colours" is still a measured
+ * property of the machine.  Whoever wants those measured needs a third
+ * shape: a per-case, per-feature refusal on the machine side.  Not built.
+ *
+ * CONF_WITH_PCGEM (appl_yield 17, scrp_clear 82, shel_rdef 126, shel_wdef
+ * 127) is NOT in the ladder, so ap_version cannot settle it either way and
+ * those four stay refused by the loader.  Measuring them needs a primary
+ * source saying whether TOS 3.06 has them, not a different guard.
+ */
+#define TD_AES_FEAT_3D_OBJECTS  0x0001   /* CONF_WITH_3D_OBJECTS           */
+#define TD_AES_FEAT_MENU_EXT    0x0002   /* CONF_WITH_MENU_EXTENSION       */
 
 /*
  * How many DISTINCT window handles one table may open.  This is a hang
@@ -238,7 +435,9 @@ struct td_aes_prelude {
 	int16_t  n_addrin;                 /* control[3], AIN_LEN             */
 	int16_t  n_addrout;                /* control[4]                      */
 	uint16_t n_values;                 /* int_in values actually listed   */
+	uint16_t n_plants;                 /* buffers the addr_in column names*/
 	int16_t  intin[TD_AES_INTIN_N];
+	struct td_aes_plant plant[TD_AES_PLANTS_MAX];
 };
 
 struct td_aes_case {
@@ -251,13 +450,17 @@ struct td_aes_case {
 	int16_t  n_addrin;                 /* control[3], AIN_LEN             */
 	int16_t  n_addrout;                /* control[4]                      */
 	uint16_t n_values;                 /* int_in values actually listed   */
+	uint16_t n_plants;                 /* buffers the addr_in column names*/
 	int16_t  intin[TD_AES_INTIN_N];
+	struct td_aes_plant plant[TD_AES_PLANTS_MAX];
 	char     comment[TD_COMMENT_LEN];
 };
 
 struct td_aes_case_table {
 	uint32_t              crc;         /* CRC32 over the raw file bytes   */
 	int16_t               reset;       /* TD_AES_RESET_*, from "!reset"   */
+	int16_t               columns;     /* 7 or 8, from "!columns"         */
+	uint16_t              features;    /* TD_AES_FEAT_* this table needs  */
 	uint16_t              count;
 	uint16_t              prelude_count;
 	struct td_aes_case    cases[TD_MAX_CASES];
@@ -268,6 +471,39 @@ int td_aes_cases_parse(struct td_aes_case_table *t, const char *buf,
                        size_t len, struct td_case_error *err);
 int td_aes_cases_load(struct td_aes_case_table *t, const char *path,
                       struct td_case_error *err);
+
+/*
+ * May this table be issued on an AES that reports `ap_version`?
+ *
+ * Returns 0, or TD_CASE_ERR_AES_VERSION with `err` naming the capability and
+ * the physical line of the case that needs it (for a prelude, the line of
+ * the case it belongs to -- a prelude carries no line of its own, and the
+ * balance it is part of is the case's).
+ *
+ * `ap_version` is the MEASURED global[0] the machine's own appl_init wrote,
+ * never a constant: see the version guard above.  A table that needs nothing
+ * (`features == 0`, which is every table written before 2026-09-13) is
+ * accepted for any value, including a nonsense one -- there is nothing for
+ * the version to decide.
+ */
+int td_aes_cases_version_refusal(const struct td_aes_case_table *t,
+                                 int16_t ap_version,
+                                 struct td_case_error *err);
+
+/* What a table's `features` mask needs, in words, for a log or a report.
+ * A fixed string per combination rather than a formatted one: the dumper
+ * runs on a 4 MB TT with no allocator and this has to be printable there. */
+const char *td_aes_features_text(uint16_t features);
+
+/*
+ * How many columns an AES table's lines have: what its "!columns" directive
+ * says, or TD_AES_CASE_COLUMNS when it has none.  Exported because the
+ * host-side reader has to take the comment from the same column the parser
+ * does, and a reader that guessed would name every case after its addr_in
+ * column.  A malformed directive answers with the default here and is
+ * refused by td_aes_cases_parse, which is the one place that reports it.
+ */
+int td_aes_table_columns(const char *buf, size_t len);
 
 /* ------------------------------------------------------------------ */
 /* VDI raster case tables (cases/vdi-raster.tsv)                       */

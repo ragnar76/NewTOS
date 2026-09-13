@@ -50,6 +50,26 @@ static void *stub_contrl_ptr(const int16_t *contrl, int n)
 	return p;
 }
 
+/*
+ * Copy the first TD_STUB_NAME_LEN bytes of a string a case pointed a call at
+ * into the call log -- see stub_abi.h.  NULL and the 0xDEAD poison are both
+ * left unread: a double that faulted on a poisoned pointer would take the
+ * test suite down instead of letting a test assert that the pointer was
+ * never planted.
+ */
+static void stub_read_name(struct td_stub_call *c, const void *p)
+{
+	unsigned long v = (unsigned long)p;
+	int i;
+
+	if (!p || (uint16_t)(v & 0xFFFFuL) == (uint16_t)TD_POISON16)
+		return;
+	for (i = 0; i < TD_STUB_NAME_LEN; i++)
+		c->aes_name[i] = ((const char *)p)[i];
+	c->aes_name[TD_STUB_NAME_LEN] = '\0';
+	c->aes_name_seen = 1;
+}
+
 static void stub_raster(const int16_t *contrl)
 {
 	struct td_stub_mfdb *dst = (struct td_stub_mfdb *)stub_contrl_ptr(contrl, 1);
@@ -137,7 +157,6 @@ int32_t td_abi_aes(int16_t *control, int16_t *global, int16_t *int_in,
 	int16_t in_len, out_len;
 	int i, n;
 
-	(void)addr_in;
 	(void)addr_out;
 
 	c->kind      = TD_STUB_KIND_AES;
@@ -150,6 +169,8 @@ int32_t td_abi_aes(int16_t *control, int16_t *global, int16_t *int_in,
 		c->aes_control[i] = control[i];
 	for (i = 0; i < TD_AES_INTIN_N; i++)
 		c->aes_int_in[i] = int_in[i];
+	for (i = 0; i < TD_AES_ADDRIN_N; i++)
+		c->aes_addr_in[i] = addr_in[i];
 
 	/* --- marshal in (gemsuper.c:435-439) ---------------------------- */
 	for (i = 0; i < TD_AES_INTIN_N; i++)
@@ -175,6 +196,10 @@ int32_t td_abi_aes(int16_t *control, int16_t *global, int16_t *int_in,
 		global[2] = TD_STUB_AP_ID;
 		global[10] = TD_STUB_AP_PLANES;
 		break;
+	case 13:                        /* appl_find -- AP_PNAME, addr_in[0] */
+		stub_read_name(c, addr_in[0]);
+		local_out[0] = TD_STUB_APPL_FIND_RET;
+		break;
 	case 19:                        /* appl_exit */
 		local_out[0] = 1;
 		break;
@@ -188,6 +213,13 @@ int32_t td_abi_aes(int16_t *control, int16_t *global, int16_t *int_in,
 		local_out[4] = TD_STUB_HBOX;
 		break;
 	case 79:                        /* graf_mkstate -- void handler */
+		break;
+	case 105:                       /* wind_set -- WF_NAME, *(char **)&int_in[2] */
+		if (local_in[1] == 2) {
+			void *p;
+			memcpy(&p, &int_in[2], sizeof p);
+			stub_read_name(c, p);
+		}
 		break;
 	case 104:                       /* wind_get */
 		local_out[1] = local_in[0];         /* handle */

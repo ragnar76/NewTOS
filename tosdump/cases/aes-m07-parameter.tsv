@@ -1,0 +1,87 @@
+# aes-m07-parameter.tsv -- the two arms the OPCODE guard used to lock out.
+#
+# TASK/M07.md.  Until 2026-09-13 the dumper refused evnt_multi (25) and
+# form_error (53) by opcode.  Both refusals are true of almost every call to
+# those functions and false of exactly one arm each, and the arm is chosen by
+# the PARAMETERS:
+#
+#   ev_multi's quick check timer -- MU_TIMER among the flags with a zero
+#      MT_LOCOUNT/MT_HICOUNT -- sets `what` at gemevlib.c:216-220, which is
+#      before the `if (what == 0)` block that arms the events and calls mwait
+#      (:232-262).  It is the one call to evnt_multi that is guaranteed to
+#      return, and it was the one the opcode guard made unmeasurable.
+#   fm_error returns FALSE for n > 63 before it reaches fm_show at all
+#      (gemfmlib.c:440-441).  Every other n ends in the modal alert
+#      (:469, :400, gemfmalt.c:383).
+#
+# The opposite half of M07 -- the calls that are safe only WITH a planted
+# buffer (scrp_read 80, scrp_write 81, form_keybd 55) and objc_delete's one
+# safe object -- is not in this table.  Those are a pointer question, they
+# were shown on a throwaway table, and this file exists to prove that the two
+# arms above really run on both machines.
+#
+# WHY OUT_LEN IS 5 ON EVERY evnt_multi AND 1 ON EVERY form_error, and why
+# that is not timidity.  xif's int_out is a LOCAL, uninitialised array
+# (gemsuper.c:429-432) and the copy-back delivers OUT_LEN words of it
+# whatever the handler wrote (:444-445).
+#   evnt_multi with `what != 0` skips the `if (what == 0)` block, so the only
+#     words written are RET_CODE and ev_rets' four -- int_out[0..4]
+#     (gemevlib.c:42-57, :268).  int_out[5] (EV_KRET) is written only if a
+#     character was actually ready, int_out[6] (EV_BRET) only if the button
+#     quick check fired.  OUT_LEN 6 or 7 would therefore deliver the TT's
+#     stack on most of these lines and call it a measurement.  NewTOS writes
+#     both unconditionally (tos-api/src/aes/event.rs), which is a real
+#     difference -- and one that needs an instrument that can tell "wrote 0"
+#     from "wrote nothing", which the record cannot.  Same reasoning as
+#     aes-m06-sysvar.tsv's OUT_LEN 2.
+#   form_error writes RET_CODE and nothing else.
+#
+# WHAT THESE CASES WILL DIFFER IN, by construction and not by defect:
+# int_out[1..4] are the machine's own mouse position, button byte and shift
+# state at the instant of the call.  They are stable within a machine (both
+# runs are headless and nothing moves the mouse) and have no reason to agree
+# between a TT and a Pi.  The measurement here is int_out[0]: WHICH events
+# the multiplexer reports as fired.
+#
+# Case id = physical line number.  Written once; the CRC binds every dump.
+
+!reset	none
+!columns	8
+
+# ------------------------------------------------------------------
+# evnt_multi (25): the quick check timer.  Sixteen int_in words, because
+# MT_LOCOUNT/MT_HICOUNT are int_in[14..15] and a WORD outside IN_LEN is
+# xif's uninitialised stack, not the zero the table wrote
+# (gemsuper.c:428-438).
+#
+#   int_in[0]     MU_FLAGS
+#   int_in[1..3]  MB_CLICKS, MB_MASK, MB_STATE
+#   int_in[4..8]  MOBLK 1     int_in[9..13]  MOBLK 2
+#   int_in[14,15] MT_LOCOUNT, MT_HICOUNT
+#   addr_in[0]    MME_PBUFF
+# ------------------------------------------------------------------
+25	16	5	0	0	32,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0	-	MU_TIMER alone, tmcount 0: the quick check timer, nothing else armed
+25	16	5	0	0	33,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0	-	MU_KEYBD|MU_TIMER: the keyboard quick check runs first and finds nothing
+25	16	5	0	0	34,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0	-	MU_BUTTON|MU_TIMER, clicks/mask/state all 0
+25	16	5	0	0	36,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0	-	MU_M1|MU_TIMER, MOBLK 1 all zero: in_mrect on a degenerate rectangle
+25	16	5	0	0	40,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0	-	MU_M2|MU_TIMER, MOBLK 2 all zero
+25	16	5	0	0	36,0,0,0,0,0,0,640,480,0,0,0,0,0,0,0	-	MU_M1 with m_out 0 over the whole screen: the mouse is already inside, so in_mrect is true at once
+25	16	5	1	0	48,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0	a0=0	MU_MESAG|MU_TIMER with a planted MME_PBUFF: ev_mesag would write sixteen bytes there
+25	16	5	1	0	63,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0	a0=1	every MU_TOSVALID bit at once, buffer planted for the MU_MESAG half
+25	16	5	0	0	-32736,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0	-	flags 0x8020: MU_TIMER plus a bit outside MU_TOSVALID, which gemsuper masks off (gemsuper.c:153)
+25	16	1	0	0	32,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0	-	OUT_LEN 1: only RET_CODE is delivered, ev_rets' four stay behind
+25	16	0	0	0	32,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0	-	OUT_LEN 0: xif skips the copy-back entirely, so not even the fired mask arrives
+25	16	5	3	0	32,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0	-	AIN_LEN 3 with nothing planted: three poisoned slots handed over, and MU_TIMER never reads one
+
+# ------------------------------------------------------------------
+# form_error (53): FM_ERRNUM = int_in[0], the only value it reads.
+# n > 63 is the arm; the return is FALSE on both machines.
+# ------------------------------------------------------------------
+53	1	1	0	0	64	-	n = 64, the first value past the arm
+53	1	1	0	0	65	-	n = 65
+53	1	1	0	0	100	-	n = 100, well past it
+53	1	1	0	0	1000	-	n = 1000
+53	1	1	0	0	32767	-	n = 32767, the largest WORD
+53	2	1	0	0	64	-	IN_LEN 2 with one value stated: the second WORD stays poisoned and fm_error never reads it
+53	1	0	0	0	64	-	OUT_LEN 0: the FALSE is computed and never delivered
+53	1	1	1	0	64	-	AIN_LEN 1, nothing planted: form_error takes no address, so the poisoned slot is untouched

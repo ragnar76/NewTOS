@@ -276,6 +276,34 @@ void td_rast_fill(int16_t *buf, uint16_t words, uint16_t seed)
 		buf[i] = (int16_t)td_rast_fill_word(seed, i);
 }
 
+/*
+ * One AES pointer buffer -- see record.h and tosdump.h.
+ *
+ * Deliberately trivial arithmetic on uint32_t: the two toolchains cannot
+ * disagree about it, every character it produces is a printable ASCII letter
+ * on both (the m68k build's char is signed, the AArch64 build's is unsigned,
+ * and 'A'..'Z' is the same number either way), and the NUL lands at a fixed
+ * offset so that strlen of a buffer is TD_AES_BUF_TEXT_LEN on both machines.
+ *
+ * The seven-letter stride between buffers makes the four of them start with
+ * four visibly different strings (ABCDEFGH, HIJKLMNO, OPQRSTUV, VWXYZABC),
+ * none of which is the name of any AES process -- so appl_find against one
+ * answers -1 on both machines rather than a machine-dependent ap_id.
+ */
+void td_aes_buf_fill(char *buf, size_t bytes, int index)
+{
+	size_t i;
+
+	for (i = 0; i < bytes; i++) {
+		uint32_t n = (uint32_t)index * 7uL + (uint32_t)i;
+		buf[i] = (char)('A' + (int)(n % 26uL));
+	}
+	if (bytes > (size_t)TD_AES_BUF_TEXT_LEN)
+		buf[TD_AES_BUF_TEXT_LEN] = '\0';
+	else if (bytes > 0)
+		buf[bytes - 1] = '\0';
+}
+
 /* ------------------------------------------------------------------ */
 /* Record writers                                                      */
 /* ------------------------------------------------------------------ */

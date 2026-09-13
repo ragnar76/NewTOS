@@ -310,10 +310,16 @@ static void test_guard_refuses_run_fatal_opcodes(void)
 	refused("21\t3\t5\t0\t0\t1,1,0\tevnt_button",   "evnt_button (21)");
 	refused("22\t5\t5\t0\t0\t0,0,0,1,1\tevnt_mouse","evnt_mouse (22)");
 	refused("23\t0\t1\t1\t0\t-\tevnt_mesag",        "evnt_mesag (23)");
-	refused("25\t16\t7\t3\t0\t1\tevnt_multi",       "evnt_multi (25)");
+	/* evnt_multi (25) and form_error (53) used to stand here.  Each has
+	 * exactly one arm that returns before the blocking one, chosen by its
+	 * PARAMETERS -- so an opcode-level verdict on them refuses the only
+	 * measurable thing about them.  They moved to the parameter guard, and
+	 * they are still refused there for every value BUT that arm: see
+	 * test_parameter_guard_reads_the_values below.  A deliberate policy
+	 * change with a citation (gemevlib.c:216-220, gemfmlib.c:440-441), not
+	 * a test bent to fit the code.  TASK/M07.md. */
 	refused("50\t1\t1\t1\t0\t0\tform_do",           "form_do (50)");
 	refused("52\t1\t1\t1\t0\t1\tform_alert",        "form_alert (52)");
-	refused("53\t1\t1\t0\t0\t2\tform_error",        "form_error (53)");
 	refused("56\t3\t2\t1\t0\t1,1,1\tform_button",   "form_button (56)");
 	refused("70\t4\t3\t0\t0\t0,0,1,1\tgraf_rubbox", "graf_rubbox (70)");
 	refused("71\t8\t3\t0\t0\t1,1,0,0,0,0,1,1\tgraf_dragbox",
@@ -328,16 +334,133 @@ static void test_guard_refuses_run_fatal_opcodes(void)
 	refused("121\t3\t1\t2\t0\t0,0,0\tshel_write",   "shel_write (121)");
 }
 
-static void test_guard_refuses_opcodes_tos306_does_not_have(void)
+/*
+ * The five version-gated opcodes used to stand here as load-time refusals,
+ * on the stated assumption "TOS 3.06 = AES 3.20".  They moved to the machine:
+ * the loader records what the table NEEDS and the measured ap_version decides
+ * whether it may be issued (core/cases.h, the version guard).  A deliberate
+ * policy change with a citation -- the reference EmuTOS reports 0x0340 and
+ * HAS all five -- not a test bent to fit the code.  TASK/M06.md.
+ */
+static void loads_needing(const char *line, uint16_t feature, const char *what)
 {
-	printf("aes cases: opcodes above AES 3.20 are refused -- the modal alert "
-	       "would hang the TT\n");
+	struct td_case_error err;
+	char text[256];
+	int rc;
 
-	refused("36\t2\t1\t2\t0\t0,0\tmenu_popup",     "menu_popup (36)");
-	refused("37\t2\t1\t2\t0\t0,0\tmenu_attach",    "menu_attach (37)");
-	refused("38\t3\t1\t1\t0\t0,0,0\tmenu_istart",  "menu_istart (38)");
-	refused("39\t1\t1\t1\t0\t0\tmenu_settings",    "menu_settings (39)");
-	refused("48\t4\t3\t0\t0\t0,6,0,0\tobjc_sysvar","objc_sysvar (48)");
+	snprintf(text, sizeof text, "%s\n", line);
+	rc = parse(&t, text, &err);
+	if (rc != 0) {
+		printf("  FAIL %s: expected the loader to accept it, got %d (%s)\n",
+		       what, rc, td_case_error_text(rc));
+		td_test_failures++;
+		return;
+	}
+	TD_CHECK_EQ(t.features, feature);
+}
+
+/* The machine's half: does an AES reporting `version` get handed the table
+ * the loader just accepted? */
+static void issuable_on(int16_t version, int expect_ok, const char *what)
+{
+	struct td_case_error err;
+	int rc;
+
+	memset(&err, 0, sizeof err);
+	rc = td_aes_cases_version_refusal(&t, version, &err);
+	if (expect_ok && rc != 0) {
+		printf("  FAIL %s: expected ap_version %04X to be enough, got %d\n",
+		       what, (unsigned)(uint16_t)version, rc);
+		td_test_failures++;
+		return;
+	}
+	if (!expect_ok) {
+		if (rc != TD_CASE_ERR_AES_VERSION) {
+			printf("  FAIL %s: expected a refusal at ap_version %04X, "
+			       "got %d\n", what, (unsigned)(uint16_t)version, rc);
+			td_test_failures++;
+			return;
+		}
+		TD_CHECK_EQ(err.line, 1);
+		if (err.what == NULL || err.what[0] == '\0') {
+			printf("  FAIL %s: refusal carries no reason\n", what);
+			td_test_failures++;
+		}
+	}
+}
+
+static void test_version_gated_opcodes_reach_the_machine(void)
+{
+	printf("aes cases: the version gated opcodes load, and the MEASURED "
+	       "ap_version decides them\n");
+
+	/* objc_sysvar: CONF_WITH_3D_OBJECTS, which only 0x0340 requires
+	 * (config.h:1346-1347) */
+	loads_needing("48\t4\t3\t0\t0\t0,6,0,0\tobjc_sysvar",
+	              TD_AES_FEAT_3D_OBJECTS, "objc_sysvar (48)");
+	issuable_on(0x0340, 1, "objc_sysvar on 0x0340");
+	issuable_on(0x0330, 0, "objc_sysvar on 0x0330");
+	issuable_on(0x0320, 0, "objc_sysvar on 0x0320");
+	issuable_on(0x0140, 0, "objc_sysvar on 0x0140");
+	/* a number the ladder never produces establishes nothing, in either
+	 * direction: 0x0331 is between the two rungs, 0x0400 above them */
+	issuable_on(0x0331, 0, "objc_sysvar on 0x0331");
+	issuable_on(0x0400, 0, "objc_sysvar on 0x0400");
+
+	/* the menu extension: 0x0330 and 0x0340 both require it
+	 * (config.h:1346-1349) */
+	loads_needing("36\t2\t1\t2\t0\t0,0\tmenu_popup",
+	              TD_AES_FEAT_MENU_EXT, "menu_popup (36)");
+	issuable_on(0x0340, 1, "menu_popup on 0x0340");
+	issuable_on(0x0330, 1, "menu_popup on 0x0330");
+	issuable_on(0x0320, 0, "menu_popup on 0x0320");
+
+	loads_needing("37\t2\t1\t2\t0\t0,0\tmenu_attach",
+	              TD_AES_FEAT_MENU_EXT, "menu_attach (37)");
+	loads_needing("38\t3\t1\t1\t0\t0,0,0\tmenu_istart",
+	              TD_AES_FEAT_MENU_EXT, "menu_istart (38)");
+	loads_needing("39\t1\t1\t1\t0\t0\tmenu_settings",
+	              TD_AES_FEAT_MENU_EXT, "menu_settings (39)");
+	issuable_on(0x0330, 1, "menu_settings on 0x0330");
+	issuable_on(0x0320, 0, "menu_settings on 0x0320");
+}
+
+static void test_a_table_that_needs_nothing_is_never_version_refused(void)
+{
+	struct td_case_error err;
+
+	printf("aes cases: a table with no gated opcode is issuable on any "
+	       "AES\n");
+
+	TD_CHECK_EQ(parse(&t,
+		"108\t6\t5\t0\t0\t1,0x0FEF,100,100,200,150\twind_calc\n"
+		"77\t0\t5\t0\t0\t-\tgraf_handle\n", &err), 0);
+	TD_CHECK_EQ(t.features, 0);
+	/* including a version the ladder never produces and 0, which is what a
+	 * machine that never ran appl_init would leave there */
+	TD_CHECK_EQ(td_aes_cases_version_refusal(&t, 0x0140, &err), 0);
+	TD_CHECK_EQ(td_aes_cases_version_refusal(&t, 0x0000, &err), 0);
+	TD_CHECK_EQ(td_aes_cases_version_refusal(&t, 0x7FFF, &err), 0);
+}
+
+static void test_version_guard_covers_preludes(void)
+{
+	struct td_case_error err;
+
+	printf("aes cases: a prelude is version guarded like a case, and is "
+	       "named by its case's line\n");
+
+	TD_CHECK_EQ(parse(&t,
+		"+48\t4\t3\t0\t0\t1,1,1,1\tobjc_sysvar as a prelude\n"
+		"108\t6\t5\t0\t0\t1,0,0,0,0,0\tthe case\n", &err), 0);
+	TD_CHECK_EQ(t.features, TD_AES_FEAT_3D_OBJECTS);
+	TD_CHECK_EQ(td_aes_cases_version_refusal(&t, 0x0340, &err), 0);
+
+	memset(&err, 0, sizeof err);
+	TD_CHECK_EQ(td_aes_cases_version_refusal(&t, 0x0320, &err),
+	            TD_CASE_ERR_AES_VERSION);
+	/* the prelude has no line of its own: the case it belongs to names it */
+	TD_CHECK_EQ(err.line, 2);
 }
 
 static void test_guard_refuses_pcgem_opcodes(void)
@@ -390,7 +513,12 @@ static void test_guard_lets_the_safe_ones_through(void)
 	accepted("73\t8\t1\t0\t0\t0,0,1,1,0,0,2,2\tgraf_growbox",
 	         "graf_growbox (73)");
 	accepted("51\t5\t1\t0\t0\t0,0,0,0,0\tform_dial", "form_dial (51)");
-	accepted("55\t4\t3\t1\t0\t0,0,0,0\tform_keybd", "form_keybd (55)");
+	/* form_keybd (55) used to stand here, with no addr_in column and the
+	 * tree pointer therefore poison.  It moved to the parameter guard: the
+	 * tree has to be a planted buffer AND the character must not be one
+	 * that sends find_obj walking it (gemfmlib.c:167-190, :135-148).  The
+	 * arm that IS safe is exercised in
+	 * test_parameter_guard_reads_the_values below. */
 	accepted("10\t0\t1\t0\t0\t-\tappl_init",      "appl_init (10)");
 	accepted("30\t1\t1\t1\t0\t1\tmenu_bar",       "menu_bar (30)");
 	accepted("107\t1\t1\t0\t0\t1\twind_update",   "wind_update (107)");
@@ -415,7 +543,7 @@ static void test_guard_covers_preludes_too(void)
 	TD_CHECK_EQ(err.line, 1);
 
 	TD_CHECK_EQ(parse(&t,
-		"+48\t4\t3\t0\t0\t0,6,0,0\tobjc_sysvar as a prelude\n"
+		"+126\t0\t1\t2\t0\t-\tshel_rdef as a prelude\n"
 		"108\t6\t5\t0\t0\t1,0,0,0,0,0\tthe case\n", &err),
 		TD_CASE_ERR_UNSAFE_OPCODE);
 	TD_CHECK_EQ(err.line, 1);
@@ -776,6 +904,455 @@ static void test_the_shipped_round2_table_loads(void)
 	TD_CHECK(t.count > 0);
 }
 
+/* ------------------------------------------------------------------ */
+/* The addr_in column (cases.h)                                        */
+/* ------------------------------------------------------------------ */
+
+/*
+ * The column exists only where the table declares it.  This is the whole
+ * back-compatibility argument in one test: every table written before the
+ * column has seven columns and no directive, and a seventh column is still
+ * its comment -- tabs and all.
+ */
+static void test_columns_directive(void)
+{
+	struct td_case_error err;
+
+	printf("aes cases: a table declares its column count, and seven is the "
+	       "default\n");
+
+	TD_CHECK_EQ(parse(&t, "77\t0\t5\t0\t0\t-\tgraf_handle\n", &err), 0);
+	TD_CHECK_EQ(t.columns, TD_AES_CASE_COLUMNS);
+	TD_CHECK_EQ(t.cases[0].n_plants, 0);
+
+	/* a seventh column that itself holds tabs is a comment, not a plant */
+	TD_CHECK_EQ(parse(&t, "77\t0\t5\t0\t0\t-\ta0=0\tstill a comment\n",
+	                  &err), 0);
+	TD_CHECK_EQ(t.cases[0].n_plants, 0);
+	TD_CHECK(strcmp(t.cases[0].comment, "a0=0\tstill a comment") == 0);
+
+	TD_CHECK_EQ(parse(&t,
+		"!columns\t8\n"
+		"13\t0\t1\t1\t0\t-\ta0=0\tappl_find\n", &err), 0);
+	TD_CHECK_EQ(t.columns, TD_AES_CASE_COLUMNS_MAX);
+	TD_CHECK_EQ(t.cases[0].n_plants, 1);
+	TD_CHECK_EQ(t.cases[0].plant[0].kind, TD_AES_PLANT_ADDRIN);
+	TD_CHECK_EQ(t.cases[0].plant[0].where, 0);
+	TD_CHECK_EQ(t.cases[0].plant[0].buffer, 0);
+	TD_CHECK(strcmp(t.cases[0].comment, "appl_find") == 0);
+
+	/* "-" is a line that plants nothing, in an eight column table */
+	TD_CHECK_EQ(parse(&t,
+		"!columns\t8\n"
+		"77\t0\t5\t0\t0\t-\t-\tgraf_handle\n", &err), 0);
+	TD_CHECK_EQ(t.cases[0].n_plants, 0);
+	TD_CHECK(strcmp(t.cases[0].comment, "graf_handle") == 0);
+
+	/* and an eight column table whose line has seven is an error, not a
+	 * line quietly read as the older form */
+	TD_CHECK_EQ(parse(&t,
+		"!columns\t8\n"
+		"77\t0\t5\t0\t0\t-\tgraf_handle\n", &err),
+	            TD_CASE_ERR_COLUMNS);
+	TD_CHECK_EQ(err.line, 2);
+}
+
+static void test_columns_directive_is_refused_when_wrong(void)
+{
+	struct td_case_error err;
+
+	printf("aes cases: a column count that cannot be honoured is refused\n");
+
+	TD_CHECK_EQ(parse(&t, "!columns\t9\n", &err), TD_CASE_ERR_DIRECTIVE);
+	TD_CHECK_EQ(parse(&t, "!columns\tmany\n", &err), TD_CASE_ERR_DIRECTIVE);
+	TD_CHECK_EQ(parse(&t, "!columns\t8\n!columns\t8\n", &err),
+	            TD_CASE_ERR_DIRECTIVE);
+	TD_CHECK_EQ(parse(&t, "!colums\t8\n", &err), TD_CASE_ERR_DIRECTIVE);
+	/* after the first call the form is already fixed */
+	TD_CHECK_EQ(parse(&t, "77\t0\t5\t0\t0\t-\tgraf_handle\n"
+	                      "!columns\t8\n", &err), TD_CASE_ERR_DIRECTIVE);
+	TD_CHECK_EQ(err.line, 2);
+	/* declaring seven explicitly is allowed and means what it says */
+	TD_CHECK_EQ(parse(&t, "!columns\t7\n"
+	                      "77\t0\t5\t0\t0\t-\tgraf_handle\n", &err), 0);
+	TD_CHECK_EQ(t.columns, TD_AES_CASE_COLUMNS);
+}
+
+/*
+ * What a plant has to satisfy.  Each of these is a refusal because the
+ * alternative is a call that looks like it was handed a buffer and was not
+ * -- see check_plants in core/cases.c for the citation behind each one.
+ */
+static void test_plant_column_is_checked(void)
+{
+	struct td_case_error err;
+
+	printf("aes cases: the addr_in column is checked against the counts\n");
+
+	/* an addr_in slot past AIN_LEN never reaches the handler */
+	TD_CHECK_EQ(parse(&t, "!columns\t8\n"
+	                      "13\t0\t1\t0\t0\t-\ta0=0\tAIN_LEN 0\n", &err),
+	            TD_CASE_ERR_PLANT);
+	TD_CHECK_EQ(err.line, 2);
+	TD_CHECK_EQ(parse(&t, "!columns\t8\n"
+	                      "13\t0\t1\t1\t0\t-\ta1=0\tslot 1, AIN_LEN 1\n",
+	                  &err), TD_CASE_ERR_PLANT);
+	/* past the AES' own address array */
+	TD_CHECK_EQ(parse(&t, "!columns\t8\n"
+	                      "13\t0\t1\t9\t0\t-\ta3=0\tslot 3\n", &err),
+	            TD_CASE_ERR_PLANT);
+	/* a buffer the dumper does not own */
+	TD_CHECK_EQ(parse(&t, "!columns\t8\n"
+	                      "13\t0\t1\t1\t0\t-\ta0=9\tbuffer 9\n", &err),
+	            TD_CASE_ERR_PLANT);
+	/* malformed */
+	TD_CHECK_EQ(parse(&t, "!columns\t8\n"
+	                      "13\t0\t1\t1\t0\t-\tx0=0\tneither a nor i\n",
+	                  &err), TD_CASE_ERR_PLANT);
+	TD_CHECK_EQ(parse(&t, "!columns\t8\n"
+	                      "13\t0\t1\t1\t0\t-\ta0\tno buffer\n", &err),
+	            TD_CASE_ERR_PLANT);
+	TD_CHECK_EQ(parse(&t, "!columns\t8\n"
+	                      "13\t0\t1\t1\t0\t-\t\tempty\n", &err),
+	            TD_CASE_ERR_PLANT);
+	/* the same slot twice */
+	TD_CHECK_EQ(parse(&t, "!columns\t8\n"
+	                      "13\t0\t1\t2\t0\t-\ta0=0,a0=1\ttwice\n", &err),
+	            TD_CASE_ERR_PLANT);
+	/* two slots at once is fine */
+	TD_CHECK_EQ(parse(&t, "!columns\t8\n"
+	                      "34\t2\t1\t2\t0\t0,1\ta0=0,a1=1\tmenu_text\n",
+	                  &err), 0);
+	TD_CHECK_EQ(t.cases[0].n_plants, 2);
+	TD_CHECK_EQ(t.cases[0].plant[1].where, 1);
+	TD_CHECK_EQ(t.cases[0].plant[1].buffer, 1);
+}
+
+/*
+ * The int_in plant is prelude-only, and the reason is the record: a packed
+ * pointer is two WORDs on the m68k and four on AArch64, and int_in is
+ * recorded after every measured call.  A prelude is not recorded.
+ */
+static void test_intin_plant_is_prelude_only(void)
+{
+	struct td_case_error err;
+
+	printf("aes cases: a packed int_in pointer is a prelude-only form\n");
+
+	TD_CHECK_EQ(parse(&t, "!columns\t8\n"
+	                      "+105\t6\t1\t0\t0\t1,2\ti2=1\twind_set WF_NAME\n"
+	                      "77\t0\t5\t0\t0\t-\t-\tgraf_handle\n", &err), 0);
+	TD_CHECK_EQ(t.prelude_count, 1);
+	TD_CHECK_EQ(t.preludes[0].n_plants, 1);
+	TD_CHECK_EQ(t.preludes[0].plant[0].kind, TD_AES_PLANT_INTIN);
+	TD_CHECK_EQ(t.preludes[0].plant[0].where, 2);
+	TD_CHECK_EQ(t.preludes[0].plant[0].buffer, 1);
+
+	/* the same line as a measured case is refused */
+	TD_CHECK_EQ(parse(&t, "!columns\t8\n"
+	                      "105\t6\t1\t0\t0\t1,2\ti2=1\tmeasured\n", &err),
+	            TD_CASE_ERR_PLANT);
+	TD_CHECK_EQ(err.line, 2);
+
+	/* IN_LEN must cover the WIDER target's four WORDs */
+	TD_CHECK_EQ(parse(&t, "!columns\t8\n"
+	                      "+105\t4\t1\t0\t0\t1,2\ti2=1\tIN_LEN 4\n"
+	                      "77\t0\t5\t0\t0\t-\t-\tcase\n", &err),
+	            TD_CASE_ERR_PLANT);
+	/* and it may not land on a WORD the line states a value for */
+	TD_CHECK_EQ(parse(&t, "!columns\t8\n"
+	                      "+105\t6\t1\t0\t0\t1,2,3\ti2=1\tvalue at 2\n"
+	                      "77\t0\t5\t0\t0\t-\t-\tcase\n", &err),
+	            TD_CASE_ERR_PLANT);
+	/* nor run past int_in[I_SIZE] */
+	TD_CHECK_EQ(parse(&t, "!columns\t8\n"
+	                      "+105\t16\t1\t0\t0\t-\ti14=1\tpast I_SIZE\n"
+	                      "77\t0\t5\t0\t0\t-\t-\tcase\n", &err),
+	            TD_CASE_ERR_PLANT);
+}
+
+/*
+ * The one guard the plant re-opens.  WF_NAME and WF_INFO were refused
+ * because the pointer would be poison; with a buffer behind it the premise
+ * is gone -- but each AES reads the pointer in its own place, so the guard
+ * demands the plant that the AES in question actually follows.
+ */
+static void test_wf_name_needs_a_buffer(void)
+{
+	struct td_case_error err;
+
+	printf("aes cases: WF_NAME/WF_INFO open up exactly as far as a planted "
+	       "buffer reaches\n");
+
+	/* wind_get: addr_in[0] with AIN_LEN >= 1 is enough (window.rs,
+	 * wf_str_ptr); EmuTOS never follows it at all (gemwmlib.c:1591) */
+	TD_CHECK_EQ(parse(&t, "!columns\t8\n"
+	                      "104\t2\t5\t1\t0\t1,2\ta0=0\twind_get WF_NAME\n",
+	                  &err), 0);
+	TD_CHECK_EQ(parse(&t, "!columns\t8\n"
+	                      "104\t2\t5\t1\t0\t1,3\ta0=0\twind_get WF_INFO\n",
+	                  &err), 0);
+	/* without a plant it stays refused, eight columns or not */
+	TD_CHECK_EQ(parse(&t, "!columns\t8\n"
+	                      "104\t2\t5\t1\t0\t1,2\t-\tno buffer\n", &err),
+	            TD_CASE_ERR_UNSAFE_FIELD);
+	/* and a plant the call is not told about is not a plant */
+	TD_CHECK_EQ(parse(&t, "!columns\t8\n"
+	                      "104\t2\t5\t0\t0\t1,2\ta0=0\tAIN_LEN 0\n", &err),
+	            TD_CASE_ERR_PLANT);
+
+	/* wind_set reads *(char **)&int_in[2] and nowhere else
+	 * (gemwmlib.c:1661), so an addr_in plant does not buy it anything */
+	TD_CHECK_EQ(parse(&t, "!columns\t8\n"
+	                      "105\t6\t1\t1\t0\t1,2\ta0=0\twind_set WF_NAME\n",
+	                  &err), TD_CASE_ERR_UNSAFE_FIELD);
+	TD_CHECK_EQ(parse(&t, "!columns\t8\n"
+	                      "+105\t6\t1\t0\t0\t1,2\ti2=0\twind_set WF_NAME\n"
+	                      "77\t0\t5\t0\t0\t-\t-\tcase\n", &err), 0);
+
+	/* the two fields the plant does NOT re-open: an unchecked gadget index
+	 * is not a pointer problem (gemwmlib.c:1567-1576), and WF_NEWDESK wants
+	 * an OBJECT tree, which a filled buffer is not (:1683, :340-350) */
+	TD_CHECK_EQ(parse(&t, "!columns\t8\n"
+	                      "104\t3\t3\t1\t0\t0,18,0\ta0=0\tWF_COLOR\n",
+	                  &err), TD_CASE_ERR_UNSAFE_FIELD);
+	TD_CHECK_EQ(parse(&t, "!columns\t8\n"
+	                      "+105\t6\t1\t0\t0\t1,14\ti2=0\tWF_NEWDESK\n"
+	                      "77\t0\t5\t0\t0\t-\t-\tcase\n", &err),
+	            TD_CASE_ERR_UNSAFE_FIELD);
+}
+
+/*
+ * ------------------------------------------------------------------
+ * The parameter guard (M07)
+ * ------------------------------------------------------------------
+ *
+ * The opcode guard is a verdict on a NUMBER; for these six the hazard is in
+ * the values.  Both directions are checked here, because the defect was both
+ * at once: harmless arms refused (25, 53) and dangerous ones waved through
+ * (41, 55, 80, 81).
+ *
+ * Every acceptance below names the EmuTOS line that makes it safe, and every
+ * refusal the line that makes it not.  A test that only checked "refused"
+ * would pass against a guard that refused everything.
+ */
+
+/* an evnt_multi line: sixteen int_in words, flags first, timer last */
+#define EVNT_MULTI_INTIN(flags, lo, hi) \
+	#flags ",0,0,0,0,0,0,0,0,0,0,0,0,0," #lo "," #hi
+
+static void refused_field(const char *line, const char *what)
+{
+	struct td_case_error err;
+	char text[512];
+	int rc;
+
+	snprintf(text, sizeof text, "%s\n", line);
+	rc = parse(&t, text, &err);
+	if (rc != TD_CASE_ERR_UNSAFE_FIELD) {
+		printf("  FAIL %s: expected a parameter refusal, got %d (%s)\n",
+		       what, rc, td_case_error_text(rc));
+		td_test_failures++;
+		return;
+	}
+	TD_CHECK_EQ(err.line, 1);
+	if (err.what == NULL || err.what[0] == '\0') {
+		printf("  FAIL %s: refusal carries no reason\n", what);
+		td_test_failures++;
+	}
+}
+
+static void accepted8(const char *line, const char *what)
+{
+	struct td_case_error err;
+	char text[512];
+	int rc;
+
+	snprintf(text, sizeof text, "!columns\t8\n%s\n", line);
+	rc = parse(&t, text, &err);
+	if (rc != 0) {
+		printf("  FAIL %s: expected acceptance, got %d (%s)\n", what, rc,
+		       td_case_error_text(rc));
+		td_test_failures++;
+	}
+}
+
+static void refused_field8(const char *line, const char *what)
+{
+	struct td_case_error err;
+	char text[512];
+	int rc;
+
+	snprintf(text, sizeof text, "!columns\t8\n%s\n", line);
+	rc = parse(&t, text, &err);
+	if (rc != TD_CASE_ERR_UNSAFE_FIELD) {
+		printf("  FAIL %s: expected a parameter refusal, got %d (%s)\n",
+		       what, rc, td_case_error_text(rc));
+		td_test_failures++;
+		return;
+	}
+	TD_CHECK_EQ(err.line, 2);            /* line 1 is the directive */
+}
+
+static void test_parameter_guard_reads_the_values(void)
+{
+	printf("aes cases: the guard decides per parameter, in both "
+	       "directions\n");
+
+	/* ---------------------------------------------------------------
+	 * evnt_multi (25): MU_TIMER with a zero count is the quick check
+	 * timer and returns before mwait (gemevlib.c:216-220)
+	 * --------------------------------------------------------------- */
+	accepted("25\t16\t7\t0\t0\t" EVNT_MULTI_INTIN(32, 0, 0)
+	         "\tMU_TIMER, tmcount 0", "evnt_multi MU_TIMER 0");
+	/* with other flags alongside it, as long as the timer still fires */
+	accepted("25\t16\t7\t0\t0\t" EVNT_MULTI_INTIN(35, 0, 0)
+	         "\tMU_KEYBD|MU_BUTTON|MU_TIMER, tmcount 0",
+	         "evnt_multi with a zero timer among other flags");
+
+	/* mask 0 is the SHARPEST refusal, not an exemption: mwait(0) sets
+	 * WAITIN and dsptch()es with nothing that can wake it
+	 * (gemasync.c:117-125) */
+	refused_field("25\t16\t7\t0\t0\t" EVNT_MULTI_INTIN(0, 0, 0)
+	              "\tmask 0", "evnt_multi mask 0");
+	/* MU_TIMER with a non-zero count is a real wait */
+	refused_field("25\t16\t7\t0\t0\t" EVNT_MULTI_INTIN(32, 1, 0)
+	              "\ttmcount 1 ms", "evnt_multi tmcount lo 1");
+	refused_field("25\t16\t7\t0\t0\t" EVNT_MULTI_INTIN(32, 0, 1)
+	              "\ttmcount 65536 ms", "evnt_multi tmcount hi 1");
+	/* no MU_TIMER at all */
+	refused_field("25\t16\t7\t0\t0\t" EVNT_MULTI_INTIN(1, 0, 0)
+	              "\tMU_KEYBD only", "evnt_multi without MU_TIMER");
+	/* the count must be INSIDE IN_LEN: outside it, xif's local int_in is
+	 * uninitialised stack (gemsuper.c:428-438) */
+	refused_field("25\t14\t7\t0\t0\t" EVNT_MULTI_INTIN(32, 0, 0)
+	              "\tIN_LEN 14", "evnt_multi with IN_LEN below 16");
+	refused_field("25\t-\t7\t0\t0\t32\tflags only",
+	              "evnt_multi with one value");
+	/* MU_MESAG writes sixteen bytes through addr_in[0]
+	 * (gemevlib.c:221-229) -- planted, or not at all */
+	refused_field("25\t16\t7\t1\t0\t" EVNT_MULTI_INTIN(48, 0, 0)
+	              "\tMU_MESAG, no buffer", "evnt_multi MU_MESAG unplanted");
+	accepted8("25\t16\t7\t1\t0\t" EVNT_MULTI_INTIN(48, 0, 0)
+	          "\ta0=0\tMU_MESAG with a buffer",
+	          "evnt_multi MU_MESAG planted");
+
+	/* ---------------------------------------------------------------
+	 * form_error (53): n > 63 returns FALSE before fm_show
+	 * (gemfmlib.c:440-441)
+	 * --------------------------------------------------------------- */
+	accepted("53\t1\t1\t0\t0\t64\tn = 64, one past the arm",
+	         "form_error(64)");
+	accepted("53\t1\t1\t0\t0\t32767\tn = 32767", "form_error(32767)");
+	refused_field("53\t1\t1\t0\t0\t63\tn = 63", "form_error(63)");
+	refused_field("53\t1\t1\t0\t0\t2\tn = 2, EFILNF",
+	              "form_error(2)");
+	refused_field("53\t1\t1\t0\t0\t-1\tn = -1", "form_error(-1)");
+	refused_field("53\t0\t1\t0\t0\t64\tIN_LEN 0",
+	              "form_error with IN_LEN 0");
+	refused_field("53\t1\t1\t0\t0\t-\tno value", "form_error unstated");
+
+	/* ---------------------------------------------------------------
+	 * form_keybd (55): the tree must be real AND the character must not
+	 * send find_obj walking it (gemfmlib.c:167-190, :135-148)
+	 * --------------------------------------------------------------- */
+	accepted8("55\t3\t3\t1\t0\t0,16706,0\ta0=0\t'B' with a buffer",
+	          "form_keybd, ordinary character");
+	/* no plant: the tree pointer would be the poison */
+	refused_field("55\t3\t3\t1\t0\t0,16706,0\tno buffer",
+	              "form_keybd unplanted");
+	/* a plant the call is not told about (AIN_LEN 0) is caught by
+	 * check_plants before the guard sees it, so it is not tested here --
+	 * test_plant_column_is_checked owns that. */
+	/* EmuTOS' five key words, whole-WORD compare (scancode.h:22-32) */
+	refused_field8("55\t3\t3\t1\t0\t0,3849,0\ta0=0\tTAB 0x0f09",
+	               "form_keybd TAB");
+	refused_field8("55\t3\t3\t1\t0\t0,7181,0\ta0=0\tRETURN 0x1c0d",
+	               "form_keybd RETURN");
+	refused_field8("55\t3\t3\t1\t0\t0,29197,0\ta0=0\tENTER 0x720d",
+	               "form_keybd ENTER");
+	refused_field8("55\t3\t3\t1\t0\t0,18432,0\ta0=0\tARROW_UP 0x4800",
+	               "form_keybd ARROW_UP");
+	refused_field8("55\t3\t3\t1\t0\t0,20480,0\ta0=0\tARROW_DOWN",
+	               "form_keybd ARROW_DOWN");
+	/* NewTOS' reading is by BYTE, so these navigate there and not on the
+	 * TT -- the union refuses them (tos-api/src/aes/form.rs) */
+	refused_field8("55\t3\t3\t1\t0\t0,13,0\ta0=0\tbare ASCII CR",
+	               "form_keybd bare CR");
+	refused_field8("55\t3\t3\t1\t0\t0,20493,0\ta0=0\tscan 0x50 | CR",
+	               "form_keybd scancode-only ARROW_DOWN");
+	refused_field("55\t1\t3\t1\t0\t0\tcharacter unstated",
+	              "form_keybd with one value");
+
+	/* ---------------------------------------------------------------
+	 * objc_delete (41): ROOT returns before any tree access
+	 * (gemoblib.c:1154-1155)
+	 * --------------------------------------------------------------- */
+	accepted("41\t1\t1\t1\t0\t0\tobjc_delete(ROOT)",
+	         "objc_delete(ROOT)");
+	/* THE LIVED CASE.  NewTOS answers 0 for obj < 0 and would come through
+	 * clean; the TT reads tree[-1].ob_next through the poison. */
+	refused_field("41\t1\t1\t1\t0\t-1\tobjc_delete(-1)",
+	              "objc_delete(-1)");
+	refused_field("41\t1\t1\t1\t0\t1\tobjc_delete(1)",
+	              "objc_delete(1)");
+	refused_field("41\t0\t1\t1\t0\t0\tIN_LEN 0",
+	              "objc_delete with IN_LEN 0");
+
+	/* ---------------------------------------------------------------
+	 * scrp_read (80) / scrp_write (81): a strcpy each way through
+	 * addr_in[0] (gemsclib.c:40-45, :57-62)
+	 * --------------------------------------------------------------- */
+	accepted8("80\t0\t1\t1\t0\t-\ta0=0\tscrp_read into a buffer",
+	          "scrp_read planted");
+	accepted8("81\t0\t1\t1\t0\t-\ta0=0\tscrp_write from a buffer",
+	          "scrp_write planted");
+	refused_field("80\t0\t1\t1\t0\t-\tscrp_read, poison",
+	              "scrp_read unplanted");
+	refused_field("81\t0\t1\t1\t0\t-\tscrp_write, poison",
+	              "scrp_write unplanted");
+	/* and a seven column table can never reach them at all */
+	refused_field("80\t0\t1\t3\t0\t-\tAIN_LEN 3 is not a buffer",
+	              "scrp_read with AIN_LEN but no column");
+}
+
+static void test_parameter_guard_covers_preludes(void)
+{
+	struct td_case_error err;
+
+	printf("aes cases: a prelude meets the parameter guard too\n");
+
+	/* a prelude that hangs takes the machine down before the case it was
+	 * meant to set up ever runs */
+	TD_CHECK_EQ(parse(&t,
+		"+25\t16\t7\t0\t0\t" EVNT_MULTI_INTIN(0, 0, 0)
+		"\tmask 0 as a prelude\n"
+		"77\t0\t5\t0\t0\t-\tthe case\n", &err),
+		TD_CASE_ERR_UNSAFE_FIELD);
+	TD_CHECK_EQ(err.line, 1);
+
+	TD_CHECK_EQ(parse(&t,
+		"+41\t1\t1\t1\t0\t-1\tobjc_delete(-1) as a prelude\n"
+		"77\t0\t5\t0\t0\t-\tthe case\n", &err),
+		TD_CASE_ERR_UNSAFE_FIELD);
+	TD_CHECK_EQ(err.line, 1);
+
+	TD_CHECK_EQ(parse(&t,
+		"+81\t0\t1\t1\t0\t-\tscrp_write with poison\n"
+		"77\t0\t5\t0\t0\t-\tthe case\n", &err),
+		TD_CASE_ERR_UNSAFE_FIELD);
+	TD_CHECK_EQ(err.line, 1);
+
+	/* and the safe arms are as good on a prelude as on a case */
+	TD_CHECK_EQ(parse(&t,
+		"!columns\t8\n"
+		"+81\t0\t1\t1\t0\t-\ta0=0\tscrp_write from a buffer\n"
+		"+80\t0\t1\t1\t0\t-\ta0=1\tand read it back\n"
+		"53\t1\t1\t0\t0\t64\t-\tthe case\n", &err), 0);
+	TD_CHECK_EQ(t.count, 1);
+	TD_CHECK_EQ(t.prelude_count, 2);
+}
+
 int main(void)
 {
 	test_basic();
@@ -788,7 +1365,9 @@ int main(void)
 	test_preludes();
 	test_crc_is_over_the_raw_bytes();
 	test_guard_refuses_run_fatal_opcodes();
-	test_guard_refuses_opcodes_tos306_does_not_have();
+	test_version_gated_opcodes_reach_the_machine();
+	test_a_table_that_needs_nothing_is_never_version_refused();
+	test_version_guard_covers_preludes();
 	test_guard_refuses_pcgem_opcodes();
 	test_guard_refuses_things_that_are_not_opcodes();
 	test_guard_lets_the_safe_ones_through();
@@ -802,5 +1381,12 @@ int main(void)
 	test_guard_refuses_unbalanced_mouse_control();
 	test_guard_bounds_rectangles_that_get_drawn();
 	test_the_shipped_round2_table_loads();
+	test_columns_directive();
+	test_columns_directive_is_refused_when_wrong();
+	test_plant_column_is_checked();
+	test_intin_plant_is_prelude_only();
+	test_wf_name_needs_a_buffer();
+	test_parameter_guard_reads_the_values();
+	test_parameter_guard_covers_preludes();
 	return TD_TEST_RESULT();
 }
