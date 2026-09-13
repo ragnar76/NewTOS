@@ -4,7 +4,7 @@
 Tester offen** · 2026-09-13 · `wind_get(WF_NAME)` und `wind_get(WF_INFO)`
 verweigern jetzt wie EmuTOS' `wm_get`, der Kommentar mit der gemlib-Begruendung
 ist mitkorrigiert, und Fall 102 der m05-Tabelle stimmt nach dem Fix mit der
-EmuTOS-Aufnahme ueberein. **Committet** — der Baum war sauber.
+EmuTOS-Aufnahme ueberein. **Committet als `087ea43`** — der Baum war sauber.
 
 ## Quelle, selbst nachgeprueft
 
