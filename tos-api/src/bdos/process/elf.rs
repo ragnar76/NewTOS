@@ -15,7 +15,16 @@
 //! - `ELFCLASS64` (8-byte words) **and** `ELFCLASS32` (4-byte words).
 //!   The class byte (`EI_CLASS`) is dispatched at parse time: LP64-native
 //!   NewTOS programs and the embedded selftests are ELF64, while ILP32
-//!   apps built with the GNU `-mabi=ilp32` toolchain are ELF32. The two
+//!   apps built with the GNU `-mabi=ilp32` toolchain are ELF32.
+//!
+//!   **Parsing ELF32 is not the same as running it.** Since 2026-09-04
+//!   (ADR-020 addendum) NewTOS is 64-bit-only and no ILP32 program can be
+//!   built; [`super::loader::load_to_slot`] refuses an `ELFCLASS32` image
+//!   with `LoadError::Ilp32Unsupported` → `EPLFMT`. The class handling
+//!   here is kept deliberately — it is the substrate the future m68k
+//!   thunk needs — but nothing reaches EL0 through it today.
+//!
+//!   The two
 //!   classes differ in header size, in the width of the address/offset/
 //!   size fields, and — critically — in the *order* of the program-header
 //!   fields (`p_flags` sits right after `p_type` in ELF64 but at the end

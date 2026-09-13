@@ -10,10 +10,11 @@
  * Faithful transliteration to the NewTOS register GEM trap (`svc #2`, selector
  * in x0): issue the real probe and derive the result from the returned x0.
  *
- * NOTE: as with vq_gdos(), NewTOS's GEM dispatcher does not implement a GDOS
- * return protocol -- selector -2 is a no-op that leaves x0 = 0, so this returns
- * 0. See _gc_vq_gdos.c for the full rationale. No stub: the trap is really
- * issued and the documented arithmetic applied to its result.
+ * NOTE: as with vq_gdos(), NewTOS's GEM dispatcher returns x0 unchanged for
+ * selector -2 (EmuTOS' bare `rte`, references/emutos/vdi/vdi_asm.S:40-49), so
+ * this returns -2 = "no GDOS". See _gc_vq_gdos.c for the full rationale. No
+ * stub: the trap is really issued and the documented arithmetic applied to its
+ * result.
  */
 #include "gem_vdiP.h"
 

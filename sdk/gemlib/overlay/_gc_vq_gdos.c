@@ -12,16 +12,16 @@
  * probe selector and derives the result from the returned x0 -- no hardcoded
  * value, no ignored input (the function takes none).
  *
- * NOTE (deferred semantic surface): NewTOS's GEM dispatcher
- * (kernel/src/arch/aarch64/exceptions.rs) handles only selectors 115 (VDI) and
- * 200 (AES); any other selector (including the -2 GDOS probe) is a no-op that
- * leaves x0 = 0. NewTOS therefore does NOT implement a GDOS-presence return
- * protocol on the GEM trap. With x0 = 0 the classic `(short)x0 != -2` test
- * evaluates true, so this reports "GDOS present". A NewTOS-defined -2 return in
- * the kernel dispatcher would be required to make GDOS detection meaningful;
- * that is a kernel/tos-api decision, not a library one. gemlib's native VDI
- * font path does not depend on vq_gdos, and neither appl_* nor v_opnvwk/
- * v_clsvwk call it.
+ * NOTE: NewTOS's GEM dispatcher (kernel/src/arch/aarch64/exceptions.rs)
+ * dispatches selectors 115 (VDI) and 200 (AES); for every other selector --
+ * including this -2 GDOS probe -- it returns x0 unchanged, exactly like
+ * EmuTOS' `_vditrap`, whose non-VDI path is a bare `rte`
+ * (references/emutos/vdi/vdi_asm.S:40-49: "Just like Atari TOS, we leave d0
+ * unchanged, indicating the absence of GDOS if this is called with -2 in the
+ * low-order word of d0."). The classic `(short)x0 != -2` test therefore
+ * evaluates false and this reports "no GDOS", the correct answer on a system
+ * without GDOS. (Before the V16 repair, 2026-09-12, the dispatcher returned a
+ * hardwired 0 here and this function wrongly reported "GDOS present".)
  */
 #include "gem_vdiP.h"
 

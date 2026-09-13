@@ -305,7 +305,7 @@ impl RasterBackend for MemBackend {
                 let sx = src.x + col;
                 let sy = src.y + row;
                 let wi = (sy as usize) * src.stride_words as usize + (sx as usize) / 16;
-                let w = src.bits.get(wi).copied().unwrap_or(0);
+                let w = src.bits.word(wi).unwrap_or(0);
                 let bit = w & (0x8000u16 >> (sx.rem_euclid(16)) as u16);
                 self.put(dst.x + col, dst.y + row, if bit != 0 { f } else { b }, clip);
             }

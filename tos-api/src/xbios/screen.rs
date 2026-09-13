@@ -244,7 +244,8 @@ fn caller_base_to_kva(addr: u64) -> Option<u64> {
 /// so the seam stands still and is unmistakable. With the ball travelling
 /// the seam moves with the dirty rectangle every frame, which is why it went
 /// unremarked. The demo's platform half documents the same finding from the
-/// caller's side (`sdk/apps/ball/plat-newtos.c`, `plat_present`), and its log
+/// caller's side (the demo left this tree on 2026-09-09; see its
+/// `plat-newtos.c`, `plat_present`), and its log
 /// no longer claims a whole flip.
 ///
 /// # What a repair needs, and what must be settled first

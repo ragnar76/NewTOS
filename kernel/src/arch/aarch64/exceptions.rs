@@ -372,6 +372,11 @@ pub extern "C" fn rust_sync_handler(frame: &mut ExceptionFrame) {
         // resolves to LP64, keeping the native 64-bit selftest blocks.
         TrapClass::Gem => {
             let abi = tos_api::bdos::process::current_abi();
+            /// The `d0 = -1` dispatcher-address query of the m68k GEM trap
+            /// (`cmp.w #0xffff,d0`, EmuTOS `vdi_asm.S:40`), as a NewTOS
+            /// selector: the sign-extended 64-bit `x0` a caller writing
+            /// `long x0 = -1` produces.
+            const GEM_SEL_ADDR_QUERY: u64 = -1i64 as u64;
             match args.regs[0] {
                 // SAFETY: `x1` is the caller-supplied parameter block.
                 115 => i64::from(unsafe { tos_api::vdi::dispatch(args.regs[1], abi) }),
@@ -396,7 +401,33 @@ pub extern "C" fn rust_sync_handler(frame: &mut ExceptionFrame) {
                     }
                     0
                 }
-                _ => 0, // unknown selector → no-op (GEM trap is trusted)
+                // Selector −1 — "give me the jsr-able address of the VDI
+                // dispatcher" (EmuTOS `move.l #_GSX_ENTRY,d0`,
+                // `vdi_asm.S:51-52`). **Documented NewTOS deviation**
+                // (docs/COMPATIBILITY.md, "GEM trap selector −1"): there is
+                // no such entry here — the VDI is reachable only through
+                // `svc #2`, and the dispatcher is EL1 code an EL0 caller can
+                // neither branch to nor read. 0 is the honest answer, and the
+                // value a conforming caller tests for before using it. It is
+                // spelled out as its own arm so it does not silently inherit
+                // the "leave `x0` alone" rule below, which would hand back
+                // −1 — a value that *looks* like an address.
+                GEM_SEL_ADDR_QUERY => 0,
+                // Every other selector — including the `−2` GDOS-absence
+                // probe behind `vq_gdos()`/`vq_vgdos()` — must come back with
+                // `x0` **exactly as the caller set it**: EmuTOS falls through
+                // to a bare `rte` that never writes `d0`
+                // (`vdi_asm.S:40-49`, *"Just like Atari TOS, we leave d0
+                // unchanged, indicating the absence of GDOS if this is called
+                // with -2 in the low-order word of d0."*); spec
+                // docs/api/vdi/_dispatcher.md, "`d0` special values".
+                //
+                // We cannot skip the write-back — `complete_call_tail` stores
+                // this `result` into `x0` for every trap class — so we return
+                // `x0`'s own bits instead. `frame.gpr[0]` is untouched between
+                // entry and here, so the store is `x0 = x0`: bit-exact, and it
+                // leaves the other arms' return path alone.
+                _ => frame.gpr[0] as i64,
             }
         }
         // BIOS (Trap 13): block-device + console functions.

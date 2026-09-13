@@ -118,7 +118,9 @@ impl PexecError {
     /// (`bdos/kpgmld.c:47-63`). `ProgramTooLarge` is the image+BSS overrunning
     /// the TPA image region — a size shortfall, so `ENSMEM`. A failed TPA pool
     /// allocation (`NoTpaMemory`) and the env allocation shortfall
-    /// (`alloc_env`, `proc.c:284-288`) are likewise `ENSMEM`.
+    /// (`alloc_env`, `proc.c:284-288`) are likewise `ENSMEM`. A well-formed
+    /// but ILP32 image (`Ilp32Unsupported`) is a format NewTOS refuses to
+    /// run, so it takes the `EPLFMT` arm too.
     pub const fn errno(self) -> i32 {
         use tos_types::error;
         match self {

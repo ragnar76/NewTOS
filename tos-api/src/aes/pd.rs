@@ -218,7 +218,7 @@ impl MsgQueue {
         self.count -= 1;
     }
 
-    /// Discard every queued message (used on `appl_init` and by the test hook).
+    /// Discard every queued message (explicit queue reset and test hook).
     pub fn clear(&mut self) {
         self.count = 0;
     }
@@ -286,8 +286,9 @@ pub fn table_addr() -> u64 {
 }
 
 /// Register an application by `pid`, returning a mutable reference to its
-/// (possibly reused) descriptor, or `None` if the table is full. Sets
-/// `in_use`, `pid` and `AP_OPEN`; clears the rest.
+/// (possibly reused) descriptor, or `None` if the table is full. Initialises
+/// a new slot; on an existing one only sets `AP_OPEN`, preserving its queue,
+/// name and other flags (EmuTOS `ap_init`, `aes/gemaplib.c:54-63`).
 ///
 /// # Safety
 /// Single trap path.
@@ -305,9 +306,44 @@ pub unsafe fn open(pid: i16) -> Option<&'static mut Aespd> {
         slot.in_use = true;
         slot.pid = pid;
     }
-    slot.flags = AP_OPEN;
-    slot.queue.clear();
+    slot.flags |= AP_OPEN;
     Some(slot)
+}
+
+#[cfg(test)]
+mod init_tests {
+    use super::*;
+
+    #[test]
+    fn reopening_preserves_flags_and_queue_even_when_the_table_is_full() {
+        // This unit-test binary has no other descriptor-table users. Negative
+        // test ids also keep the fixtures distinct from real process slots.
+        unsafe {
+            for n in 0..MAX_APPS {
+                let app = open(-100 - n as i16).expect("fresh slot");
+                assert_eq!(app.flags, AP_OPEN);
+            }
+            let message = [0x4711, 1, 0, 2, 3, 4, 5, 6];
+            {
+                let app = by_pid(-100).unwrap();
+                app.flags |= AP_MESAG;
+                app.name = *b"INITTEST";
+                assert!(app.queue.push(message));
+            }
+            assert!(open(-200).is_none(), "a full table rejects a new id");
+            {
+                let app = open(-100).expect("an existing id needs no free slot");
+                assert_eq!(app.flags, AP_OPEN | AP_MESAG);
+                assert_eq!(app.name, *b"INITTEST");
+                let mut received = [0; MSG_WORDS];
+                assert_eq!(app.queue.pop_into(&mut received), Some(MSG_WORDS));
+                assert_eq!(received, message);
+            }
+            for n in 0..MAX_APPS {
+                close(-100 - n as i16);
+            }
+        }
+    }
 }
 
 /// Post a 16-byte GEM message into `pid`'s queue — the routing point every

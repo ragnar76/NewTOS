@@ -725,7 +725,7 @@ impl RasterBackend for VdiScreen {
                 let widx = sy as usize * stride + (sx as usize) / 16;
                 let set = src
                     .bits
-                    .get(widx)
+                    .word(widx)
                     .is_some_and(|w| w & (0x8000u16 >> (sx & 15)) != 0);
                 Self::combine(fb, dxc as u32, dyc as u32, set, mode, c_fg, c_bg);
             }

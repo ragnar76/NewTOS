@@ -8,10 +8,12 @@
 //! `tosdump/reference/EMUTOS14-AES-r2wind.BIN` from
 //! `tosdump/cases/aes-r2-wind.tsv` (78 cases, CRC `AFB11C9F`) — and
 //! `docs/api/aes/` was extracted from that same EmuTOS source, so a difference
-//! here normally has exactly one reading: NewTOS is wrong. The two exceptions (EmuTOS *version* deltas,
-//! [`DELTAS`], and the fields that are a property of the machine rather than
-//! of the AES, [`GLOBAL_EXCLUDED`]) are named there with a reason and a
-//! `file:line`; nothing is skipped silently and no case is `#[ignore]`d.
+//! here normally has exactly one reading: NewTOS is wrong. The three exceptions
+//! (EmuTOS *version* deltas, [`DELTAS`]; the fields that are a property of the
+//! machine rather than of the AES, [`GLOBAL_EXCLUDED`]; and the deviations a
+//! human decided and registered in `docs/COMPATIBILITY.md`, [`SANCTIONED`])
+//! are named there with a reason and a `file:line`; nothing is skipped
+//! silently and no case is `#[ignore]`d.
 //!
 //! **What these tests cover.** The record holds the six AES parameter-block
 //! arrays as they stood *after* the call — `control`, `global`, `int_in`,
@@ -269,7 +271,7 @@ impl RasterBackend for MemBackend {
                 let sx = src.x + col;
                 let sy = src.y + row;
                 let wi = (sy as usize) * src.stride_words as usize + (sx as usize) / 16;
-                let w = src.bits.get(wi).copied().unwrap_or(0);
+                let w = src.bits.word(wi).unwrap_or(0);
                 let bit = w & (0x8000u16 >> (sx.rem_euclid(16)) as u16);
                 self.put(dst.x + col, dst.y + row, if bit != 0 { f } else { b }, clip);
             }
@@ -696,11 +698,19 @@ struct Oracle {
     /// entry naming a field or an index no comparison visits would otherwise
     /// be a silent skip; [`Oracle::finish`] refuses that.
     used: [bool; DELTAS.len()],
+    /// The same, for [`SANCTIONED`].
+    used_sanctioned: [bool; SANCTIONED.len()],
 }
 
 impl Oracle {
     fn new(table: &'static str, case: u16, ap_id: i16) -> Oracle {
-        Oracle { table, case, ap_id, used: [false; DELTAS.len()] }
+        Oracle {
+            table,
+            case,
+            ap_id,
+            used: [false; DELTAS.len()],
+            used_sanctioned: [false; SANCTIONED.len()],
+        }
     }
 
     /// What one recorded word is compared against: normally the record's own
@@ -732,10 +742,37 @@ impl Oracle {
             self.used[k] = true;
             return (d.expected.value(self.ap_id), true);
         }
+        for (k, s) in SANCTIONED.iter().enumerate() {
+            if s.table != self.table || s.case != self.case || s.field != field || s.index != index
+            {
+                continue;
+            }
+            // As above: the entry states what the TT wrote. A dump that no
+            // longer says that is a different measurement, and the deviation
+            // has to be re-stated against it rather than override it blind.
+            assert_eq!(
+                recorded, s.recorded,
+                "{} case {}: the SANCTIONED entry for {}[{}] claims the reference recorded \
+                 {}, but the dump holds {} -- re-state or remove the entry",
+                self.table, self.case, field, index, s.recorded, recorded
+            );
+            // A sanctioned deviation that has quietly become a match is no
+            // longer a deviation: the register in docs/COMPATIBILITY.md would
+            // be describing something that is not happening.
+            assert_ne!(
+                s.answer, s.recorded,
+                "{} case {}: the SANCTIONED entry for {}[{}] answers exactly what the \
+                 reference recorded -- that is not a deviation, delete the entry",
+                self.table, self.case, field, index
+            );
+            self.used_sanctioned[k] = true;
+            return (s.answer, true);
+        }
         (recorded, false)
     }
 
-    /// Every [`Delta`] that names this table and case must have been used.
+    /// Every [`Delta`] and every [`Sanctioned`] entry that names this table and
+    /// case must have been used.
     fn finish(&self) {
         for (k, d) in DELTAS.iter().enumerate() {
             if d.table == self.table && d.case == self.case && !self.used[k] {
@@ -744,6 +781,16 @@ impl Oracle {
                      names a field or an index this comparison does not visit, so it \
                      is an exception that excepts nothing",
                     self.table, self.case, d.field, d.index
+                );
+            }
+        }
+        for (k, s) in SANCTIONED.iter().enumerate() {
+            if s.table == self.table && s.case == self.case && !self.used_sanctioned[k] {
+                panic!(
+                    "{} case {}: the SANCTIONED entry for {}[{}] was never consulted -- it \
+                     names a field or an index this comparison does not visit, so it \
+                     is an exception that excepts nothing",
+                    self.table, self.case, s.field, s.index
                 );
             }
         }
@@ -1112,6 +1159,84 @@ pub const DELTAS: &[Delta] = &[
     },
 ];
 
+/// One field of one case where **NewTOS deliberately answers something else
+/// than EmuTOS**, because a human decided so and wrote it down in
+/// `docs/COMPATIBILITY.md`'s "Sanctioned deviations, one by one".
+///
+/// This is *not* a second [`DELTAS`]. A [`Delta`] says "the dump is older than
+/// the source; NewTOS must produce what the source mandates" — the reference is
+/// still the arbiter, only a newer edition of it. An entry **here** says the
+/// opposite: the pinned source and NewTOS disagree, knowingly, and the register
+/// in `docs/COMPATIBILITY.md` carries the reason, the date and who decided.
+/// The standing rule remains *match EmuTOS*; a case landing here is a gap that
+/// is answered honestly rather than papered over, not a licence.
+///
+/// It is held to the same three rules as [`DELTAS`], so it cannot become a
+/// quiet way to make red go green:
+///
+/// * the recorded value is asserted, so an entry cannot describe a measurement
+///   the dump does not hold ([`Oracle::want`]);
+/// * the answer is *substituted*, so NewTOS drifting to a third value — the
+///   EmuTOS one included — fails ([`Oracle::want`]);
+/// * an entry the comparison never reaches is refused ([`Oracle::finish`]).
+///
+/// The failure message marks a substituted word as `expected`, never as
+/// `reference`, so no report can claim the dump decided it ([`Diff`]).
+pub struct Sanctioned {
+    /// The case table this entry belongs to, by the name its [`Table`] carries.
+    pub table: &'static str,
+    /// Case id = the physical line number in that table.
+    pub case: u16,
+    pub field: &'static str,
+    pub index: usize,
+    /// What the TT running EmuTOS 1.4 actually wrote.
+    pub recorded: i64,
+    /// What NewTOS answers instead, per the `docs/COMPATIBILITY.md` entry.
+    pub answer: i64,
+    pub why: &'static str,
+}
+
+/// The whole list, and it has exactly one subject: `wind_get(WF_SCREEN)`.
+///
+/// EmuTOS' field 17 hands out the menu/alert screen-save buffer — a region
+/// `gsx_malloc` takes once at AES start (`aes/gemgsxif.c:108-114`, from
+/// `sh_main`, `aes/gemshlib.c:236`) and `gsx_mret` reports the address and
+/// length of (`:125-129`) — and answers TRUE. NewTOS has no such region: the
+/// modal alert takes a fresh buffer per alert and drops it
+/// (`tos-api/src/aes/form.rs`, `BbSave`), the menu keeps two backings it clears
+/// and regrows per drop-down (`tos-api/src/aes/menu.rs`, `MBACK`/`SMBACK`), and
+/// both live in the kernel heap, which is mapped `AP_RW_EL1` — an EL0
+/// application cannot touch it at all
+/// (`kernel/src/arch/aarch64/mmu.rs:82,178-179,283-284`), which is precisely
+/// what a WF_SCREEN pointer is *for*.
+///
+/// So NewTOS answers FALSE, `wm_get`'s own idiom for a field it does not
+/// implement (`default: return FALSE`, `aes/gemwmlib.c:1590-1591`). The
+/// previous answer — four zero words and TRUE — was the one thing that could
+/// not be told apart from "here is a buffer, at address 0"; the r4 sub-function
+/// run measured it (cases 331, 332 and 439 of
+/// `tosdump/cases/aes-r4-subfunctions.tsv`) and `TASK/A54.md` repaired it.
+///
+/// **Round 1, case 166** — `wind_get(0, WF_SCREEN)`, `OUT_LEN 1`, so only
+/// `int_out[0]` is in reach; the TT recorded 1. The entry is here rather than
+/// left red because the difference is not an unknown: it is registered,
+/// dated and attributed in `docs/COMPATIBILITY.md`, and it disappears the day
+/// the AES gets a real persistent scratch buffer in EL0-reachable memory.
+pub const SANCTIONED: &[Sanctioned] = &[Sanctioned {
+    table: "tosdump/cases/aes-r1.tsv",
+    case: 166,
+    field: "int_out",
+    index: 0,
+    recorded: 1,
+    answer: 0,
+    why: "RET_CODE: EmuTOS always answers WF_SCREEN TRUE because gsx_malloc \
+          gave it a buffer (aes/gemgsxif.c:108-129). NewTOS has no persistent \
+          menu/alert buffer, and none it could hand an EL0 caller, so it \
+          refuses the field the way wm_get's default arm does \
+          (aes/gemwmlib.c:1590-1591) -- sanctioned deviation, \
+          docs/COMPATIBILITY.md, TASK/A54.md",
+}];
+
 /// Replay one case of `table` and compare every array against the reference.
 pub fn check(table: &Table, case: &Case) {
     let _guard = AES_LOCK.lock().unwrap_or_else(|e| e.into_inner());
@@ -1194,6 +1319,13 @@ pub fn check(table: &Table, case: &Case) {
                 "  note: `{}[{}]` is compared against what the pinned EmuTOS source \
                  mandates, not against the dump (which holds {}):\n        {}\n",
                 d.field, d.index, d.recorded, d.why
+            );
+        }
+        for s in SANCTIONED.iter().filter(|s| s.table == table.name && s.case == case.id) {
+            msg += &format!(
+                "  note: `{}[{}]` is compared against a SANCTIONED deviation, not against \
+                 the dump (which holds {}):\n        {}\n",
+                s.field, s.index, s.recorded, s.why
             );
         }
         for d in diffs.iter().take(24) {

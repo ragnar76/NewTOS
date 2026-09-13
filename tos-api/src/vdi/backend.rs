@@ -385,14 +385,80 @@ pub struct Rect {
     pub h: i16,
 }
 
+/// The raster words of a [`MonoSrc`], held as what they are on the wire: a
+/// run of **bytes** carrying host-order 16-bit words, read through
+/// [`word`](Self::word), which imposes no alignment.
+///
+/// A raster reaches the blit as a bare pointer out of a resource or an
+/// application `MFDB` — `ICONBLK.ib_pmask`/`ib_pdata`, `BITBLK.bi_pdata`,
+/// `MFDB.fd_addr` — and nothing on that path can promise the pointer is even:
+///
+/// * A classic Atari `.rsc` keeps its rasters in the separate, word-aligned
+///   `rsh_imdata` section, each an even number of bytes, so EmuTOS never meets
+///   an odd one and checks nothing for it: `gr_gblt(WORD *pimage, …)`
+///   (`aes/gemgraf.c:631`) just dereferences. The guarantee is the *file
+///   format's*, not the renderer's.
+/// * An application under no such constraint hands us one anyway: it may build
+///   an `ICONBLK` in its own memory, relocate its own resource (TeraDesk's
+///   `xrsrc_load`, which never passes through our `rsrc_load`), or point
+///   `fd_addr` at an odd address.
+///
+/// Typing the source as `&[u16]` would impose an alignment we cannot enforce:
+/// `slice::from_raw_parts` aborts a debug build on an odd pointer ("unsafe
+/// precondition(s) violated") while a release build performs the access anyway
+/// with the check compiled out — the same input ending two different ways, the
+/// release one committing UB. Reading it as bytes removes the precondition
+/// instead of gambling on it.
+///
+/// It is free on AArch64: an unaligned 16-bit load of Normal memory is the same
+/// single `LDRH` as an aligned one, because `SCTLR_EL1.A` is 0
+/// (`kernel/src/arch/aarch64/boot.rs` `SCTLR_EL1_INIT = 0x30D0_0800`; ARM ARM
+/// D19.2 "SCTLR_EL1", bit `A`) — which matters, because this is the blit the
+/// graphics benchmark measures.
+#[derive(Clone, Copy)]
+pub struct MonoBits<'a> {
+    bytes: &'a [u8],
+}
+
+impl<'a> MonoBits<'a> {
+    /// View the `words` 16-bit words at `addr` as a raster source, whatever
+    /// the alignment of `addr`.
+    ///
+    /// # Safety
+    /// `addr` must be non-null and point at `words * 2` readable bytes that
+    /// stay valid and unaliased-for-writing for `'a`. Alignment is **not**
+    /// required — that is the point of this type.
+    #[inline]
+    pub unsafe fn from_raw(addr: *const u8, words: usize) -> MonoBits<'a> {
+        // `saturating_mul`: a caller-supplied word count is derived from
+        // resource fields, so cap rather than wrap the byte length. Every
+        // read is bounds-checked against it either way.
+        // SAFETY: the caller guarantees `words * 2` readable bytes at `addr`;
+        // `u8` has no alignment requirement, so nothing else is imposed.
+        MonoBits { bytes: unsafe { core::slice::from_raw_parts(addr, words.saturating_mul(2)) } }
+    }
+
+    /// Raster word `idx`, or `None` past the end of the source (the blit
+    /// treats a short raster as clear bits, as it did when this was a slice
+    /// index).
+    #[inline]
+    pub fn word(&self, idx: usize) -> Option<u16> {
+        let off = idx.checked_mul(2)?;
+        let pair = self.bytes.get(off..)?.get(..2)?;
+        // SAFETY: `pair` is exactly two readable bytes of the source, and
+        // `read_unaligned` requires no alignment of its pointer.
+        Some(unsafe { pair.as_ptr().cast::<u16>().read_unaligned() })
+    }
+}
+
 /// A monochrome blit source (one plane). `bits` is the raster as 16-bit
-/// big-endian-packed words, `stride_words` words per row; `(x, y)` is
+/// host-order words, `stride_words` words per row; `(x, y)` is
 /// the top-left of the sub-rectangle to read. Bit `0x8000 >> (col & 15)`
 /// of word `col/16` is the leftmost pixel.
 #[derive(Clone, Copy)]
 pub struct MonoSrc<'a> {
     /// The source raster words.
-    pub bits: &'a [u16],
+    pub bits: MonoBits<'a>,
     /// Words per raster row.
     pub stride_words: u16,
     /// Source sub-rectangle left.

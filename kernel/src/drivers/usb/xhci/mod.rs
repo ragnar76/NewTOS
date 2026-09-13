@@ -237,6 +237,25 @@ pub struct HidInfo {
     pub interval: u8,
 }
 
+/// The fields of a USB hub class descriptor (`0x29`, USB 2.0 §11.23.2.1) the
+/// hub driver acts on.
+#[derive(Clone, Copy)]
+struct HubDescriptor {
+    /// `bNbrPorts`: number of downstream facing ports.
+    nbr_ports: u8,
+    /// `bPwrOn2PwrGood`: power-on to power-good time, in **2 ms units**.
+    pwr_on_2_pwr_good: u8,
+}
+
+impl HubDescriptor {
+    /// Power-on to power-good in milliseconds. The descriptor field counts 2 ms
+    /// units (USB 2.0 §11.23.2.1); FreeMiNT applies the same `* 2`
+    /// (`sys/usb/src.km/hub.c:428` and `hub.c:463`).
+    fn power_on_to_power_good_ms(&self) -> u32 {
+        self.pwr_on_2_pwr_good as u32 * 2
+    }
+}
+
 /// Default EP0 max packet size for a port speed (PORTSC speed id).
 fn ep0_max_packet(speed: u8) -> u16 {
     match speed {
@@ -307,6 +326,17 @@ fn dcache_inval(_va: u64, _len: usize) {
 // changed its 32-byte context stride and every `input`/`device` offset is off.
 const _: () = assert!(core::mem::size_of::<context::Input32Byte>() == 33 * 8 * 4);
 
+/// How many Transfer Events can be parked while the endpoint that owns them
+/// has not collected them yet (see [`Xhci::defer_transfer_event`]).
+///
+/// The bound is structural, not a guess: every device slot has at most **one**
+/// transfer outstanding at a time — a control transfer is issued and waited
+/// for synchronously, and an interrupt endpoint carries a single armed TRB that
+/// only the delivery of its own completion re-arms. So at most `MAX_HID + 1`
+/// acknowledgements can be in flight. Sized to the event ring, comfortably
+/// above that.
+const PENDING_EVENTS: usize = EVT_RING_LEN;
+
 pub struct Xhci {
     regs: Registers<HighHalf>,
     ports: u8,
@@ -323,6 +353,11 @@ pub struct Xhci {
     hid: [HidDev; MAX_HID],
     /// Number of configured HID devices.
     n_hid: usize,
+    /// Transfer Events consumed while waiting for a *different* transfer's
+    /// acknowledgement, held for the endpoint that owns them. FIFO in
+    /// `pending[..n_pending]`.
+    pending: [event::TransferEvent; PENDING_EVENTS],
+    n_pending: usize,
 }
 
 impl Xhci {
@@ -469,6 +504,72 @@ impl Xhci {
 
         kprintln!("[usb] xHCI up: {} slots enabled, {} root ports", slots, max_ports);
 
+        // Diagnostic build only: walk the xHCI Extended Capabilities and print
+        // every Supported Protocol capability (id 2). This is the ONLY thing
+        // that says which root-port numbers are USB 2.0 and which are USB 3.0
+        // — a SuperSpeed-capable connector presents *two* port numbers, one per
+        // protocol, and a low/full-speed HID always lands on the USB 2.0 one.
+        // It also carries the Protocol Speed ID table: `port_speed()` returns a
+        // PSI, and the default meaning (1 full, 2 low, 3 high, 4 super) that
+        // `ep0_max_packet` assumes only holds while PSIC is 0.
+        #[cfg(feature = "usb-diag")]
+        // SAFETY: the capability list lies inside the controller's MMIO, which
+        // is mapped high-half; reads are volatile and side-effect free.
+        unsafe {
+            // HCCPARAMS1 is at capability offset 0x10; its bits 31:16 are the
+            // xECP pointer in 32-bit words from the MMIO base. Read raw rather
+            // than through the crate so the walk does not depend on an
+            // accessor name.
+            let cap_va = mmio_va(mmio_base as usize) as *const u32;
+            let xecp = (core::ptr::read_volatile(cap_va.add(4)) >> 16) as usize;
+            kprintln!("[usb] xECP at dword {:#x} from base", xecp);
+            let mut off = xecp;
+            let mut guard = 0;
+            while off != 0 && guard < 64 {
+                guard += 1;
+                let p = mmio_va(mmio_base as usize + off * 4) as *const u32;
+                let dw0 = core::ptr::read_volatile(p);
+                let id = dw0 & 0xff;
+                let next = ((dw0 >> 8) & 0xff) as usize;
+                if id == 2 {
+                    let name = core::ptr::read_volatile(p.add(1));
+                    let dw2 = core::ptr::read_volatile(p.add(2));
+                    let port_off = (dw2 & 0xff) as u8;
+                    let port_cnt = ((dw2 >> 8) & 0xff) as u8;
+                    let psic = ((dw2 >> 28) & 0xf) as u8;
+                    kprintln!(
+                        "[usb] proto '{}{}{}{}' {}.{} ports {}..{} psic={}",
+                        (name & 0xff) as u8 as char,
+                        ((name >> 8) & 0xff) as u8 as char,
+                        ((name >> 16) & 0xff) as u8 as char,
+                        ((name >> 24) & 0xff) as u8 as char,
+                        (dw0 >> 24) & 0xff,
+                        (dw0 >> 16) & 0xff,
+                        port_off,
+                        port_off as u16 + port_cnt as u16 - 1,
+                        psic
+                    );
+                    for k in 0..psic as usize {
+                        let psi = core::ptr::read_volatile(p.add(4 + k));
+                        kprintln!(
+                            "[usb]   PSI {}: value={} exp={} mantissa={} full={:#010x}",
+                            k,
+                            psi & 0xf,
+                            (psi >> 4) & 0x3,
+                            psi >> 16,
+                            psi
+                        );
+                    }
+                } else {
+                    kprintln!("[usb] xECP id {} (skipped)", id);
+                }
+                if next == 0 {
+                    break;
+                }
+                off += next;
+            }
+        }
+
         // Power on every root port (PORTSC.PP, bit 9). The real Pi-4 VL805 does
         // not power its ports by default — a device gets no power (LEDs dark,
         // never reports a connect) until software sets PP; QEMU powers them
@@ -494,6 +595,8 @@ impl Xhci {
             erdp_hi,
             hid: [HidDev::new(); MAX_HID],
             n_hid: 0,
+            pending: [event::TransferEvent::new(); PENDING_EVENTS],
+            n_pending: 0,
         }
     }
 
@@ -503,6 +606,19 @@ impl Xhci {
     pub fn queue_interrupt(&mut self, di: usize) {
         let slot = self.hid[di].slot;
         let dci = self.hid[di].dci;
+        if dci == 0 {
+            // No interrupt endpoint was ever configured for this device — a
+            // hub, or a HID whose Configure Endpoint failed. Doorbell target 0
+            // is the Command doorbell of slot 0 and is reserved on a device
+            // slot (xHCI §5.6), so ringing it would be a malformed doorbell
+            // write, not a queued transfer.
+            kprintln!(
+                "[usb] queue_interrupt: device {} (slot {}) has no interrupt endpoint",
+                di,
+                slot
+            );
+            return;
+        }
         // SAFETY: single-CPU; DEV is ours.
         let buf_pa = unsafe { dma_addr((&raw const (*(&raw const DEV))[di].intbuf) as u64) };
         let mut n = transfer::Normal::new();
@@ -539,21 +655,126 @@ impl Xhci {
         );
     }
 
-    /// Drain one event; if it is a Transfer Event (a HID report landed),
-    /// return the device index + a copy of its 8-byte report buffer.
+    /// Deliver one completed HID interrupt transfer: the device index plus a
+    /// copy of its 8-byte report buffer. `None` when nothing is waiting.
+    ///
+    /// An event is handed to a device only when it names that device's slot
+    /// **and** the interrupt-endpoint DCI the device was configured with.
+    /// `dci == 0` means no interrupt endpoint was ever configured (a hub, or a
+    /// device whose `configure_hid` failed) — such a device can never own a
+    /// Transfer Event. Matching on the slot id alone attributed a control
+    /// transfer's completion on a hub's EP0 to the hub, whose report buffer was
+    /// then fed to the IKBD stream and whose (non-existent) endpoint was then
+    /// "re-armed" with doorbell target 0.
     pub fn poll_interrupt(&mut self) -> Option<(usize, [u8; 8])> {
-        if let Some(event::Allowed::TransferEvent(te)) = self.poll_event() {
-            let slot = te.slot_id();
-            for di in 0..self.n_hid {
-                if self.hid[di].slot == slot {
+        // Bounded: `poll` runs from the cooperative input pump, so drain at
+        // most the parked events plus one pass over the ring per call.
+        for _ in 0..(PENDING_EVENTS + EVT_RING_LEN) {
+            let te = match self.pop_pending() {
+                Some(te) => te,
+                None => match self.poll_event() {
+                    Some(event::Allowed::TransferEvent(te)) => te,
+                    // Port Status Change / late command completions have no
+                    // waiter here; keep draining.
+                    Some(_) => continue,
+                    None => return None,
+                },
+            };
+            let (slot, ep) = (te.slot_id(), te.endpoint_id());
+            let owner = (0..self.n_hid).find(|&i| {
+                self.hid[i].dci != 0 && self.hid[i].slot == slot && self.hid[i].dci == ep
+            });
+            let Some(di) = owner else {
+                kprintln!(
+                    "[usb] stray transfer event: slot {} ep {} code {:?}",
+                    slot,
+                    ep,
+                    te.completion_code()
+                );
+                continue;
+            };
+            match te.completion_code() {
+                // A boot report shorter than the 8 bytes we ask for completes
+                // as ShortPacket — the normal case for a 3-byte mouse report,
+                // not an error.
+                Ok(event::CompletionCode::Success) | Ok(event::CompletionCode::ShortPacket) => {
                     // SAFETY: single-CPU; DEV is ours.
                     let p = unsafe { (&raw const (*(&raw const DEV))[di].intbuf) as u64 };
                     dcache_inval(p, 8); // the controller DMA'd the HID report
                     return Some((di, unsafe { (*(&raw const DEV))[di].intbuf }));
                 }
+                code => {
+                    // The transfer is finished either way, so the endpoint has
+                    // nothing armed any more — and only a *delivered* report
+                    // takes `poll` back to `queue_interrupt`. Re-arm here, or
+                    // the device falls silent after its first failed transfer.
+                    kprintln!(
+                        "[usb] interrupt transfer slot {} ep {} → {:?}; re-arming",
+                        slot,
+                        ep,
+                        code
+                    );
+                    self.queue_interrupt(di);
+                }
             }
         }
         None
+    }
+
+    /// Park a Transfer Event that acknowledges a transfer other than the one
+    /// being waited for, so that its owner can still collect it.
+    ///
+    /// Why software, and not "leave it on the ring": the xHCI event ring is
+    /// consumer-driven — reading a TRB means advancing the dequeue pointer
+    /// (ERDP) past it, after which the controller may reuse the slot, so an
+    /// event cannot be put back. Not consuming it is no better: the event we
+    /// are waiting for sits *behind* it on the same ring, so leaving it in
+    /// place would deadlock the wait. Dropping it is the worst of the three —
+    /// a device has exactly one interrupt transfer armed at a time and only the
+    /// delivery of its completion re-arms the next one (`poll` →
+    /// `queue_interrupt`), so a discarded Transfer Event silences that device
+    /// permanently. Hence: consume it, hold it here, hand it to its owner.
+    fn defer_transfer_event(&mut self, te: event::TransferEvent) {
+        if self.n_pending < PENDING_EVENTS {
+            self.pending[self.n_pending] = te;
+            self.n_pending += 1;
+            return;
+        }
+        // Unreachable while the "at most one transfer outstanding per slot"
+        // invariant holds (see `PENDING_EVENTS`). Say so loudly rather than
+        // lose an acknowledgement in silence.
+        kprintln!(
+            "[usb] deferred-event queue full: lost slot {} ep {} — more transfers \
+             outstanding than the driver tracks",
+            te.slot_id(),
+            te.endpoint_id()
+        );
+    }
+
+    /// Take the parked Transfer Event that acknowledges `slot`/`ep`, if one is
+    /// waiting.
+    fn take_pending(&mut self, slot: u8, ep: u8) -> Option<event::TransferEvent> {
+        let idx = (0..self.n_pending)
+            .find(|&i| self.pending[i].slot_id() == slot && self.pending[i].endpoint_id() == ep)?;
+        let te = self.pending[idx];
+        for k in idx..self.n_pending - 1 {
+            self.pending[k] = self.pending[k + 1];
+        }
+        self.n_pending -= 1;
+        Some(te)
+    }
+
+    /// Take the oldest parked Transfer Event, whoever owns it.
+    fn pop_pending(&mut self) -> Option<event::TransferEvent> {
+        if self.n_pending == 0 {
+            return None;
+        }
+        let te = self.pending[0];
+        for k in 0..self.n_pending - 1 {
+            self.pending[k] = self.pending[k + 1];
+        }
+        self.n_pending -= 1;
+        Some(te)
     }
 
     /// Enqueue a command TRB, ring the command doorbell, and wait for its
@@ -581,11 +802,15 @@ impl Xhci {
             d.set_doorbell_target(0);
         });
         for _ in 0..200_000_000u64 {
-            // poll_event also consumes interleaved Port Status Change events
-            // (the controller queues them on the same ring); we only act on the
-            // command's completion.
-            if let Some(event::Allowed::CommandCompletion(cc)) = self.poll_event() {
-                return Some(cc);
+            // The event ring is shared by every slot, endpoint and the command
+            // ring. Only a Command Completion answers us; a Transfer Event that
+            // lands here acknowledges someone else's transfer and is parked for
+            // its owner (never dropped — see `defer_transfer_event`). Port
+            // Status Change events have no waiter and are consumed.
+            match self.poll_event() {
+                Some(event::Allowed::CommandCompletion(cc)) => return Some(cc),
+                Some(event::Allowed::TransferEvent(te)) => self.defer_transfer_event(te),
+                _ => {}
             }
             core::hint::spin_loop();
         }
@@ -761,14 +986,66 @@ impl Xhci {
         ring_push(ring, &mut self.hid[di].ep0_enq, &mut self.hid[di].ep0_cycle, data);
     }
 
-    /// Wait for a Transfer Event; true on Success.
-    fn wait_transfer(&mut self) -> bool {
+    /// Wait for the Transfer Event that acknowledges the transfer just queued
+    /// on `slot`/`ep` (`ep` is the endpoint's DCI — 1 for the default control
+    /// endpoint). True when the controller completed it with Success.
+    ///
+    /// The event ring is shared by every slot and endpoint, so an event counts
+    /// as *our* acknowledgement only when it names this slot **and** this
+    /// endpoint. An event for anyone else is parked
+    /// ([`Self::defer_transfer_event`]) and stays available to its owner.
+    ///
+    /// It must not be taken as our completion: a HID report that landed
+    /// mid-enumeration then decided a control transfer's result (a 3-byte boot
+    /// report completes as `ShortPacket`, so the control transfer "failed"),
+    /// and every following acknowledgement was one transfer behind until the
+    /// next `command()` wait loop silently swallowed the surplus event. And it
+    /// must not be dropped: that leaves the device that owns it with no
+    /// outstanding transfer and nothing left to re-arm it — the mouse in
+    /// `docs/analysis/usb-port-investigation/run2-broken-both-in-usb3.log`.
+    fn wait_transfer(&mut self, slot: u8, ep: u8) -> bool {
+        // An event for this endpoint may already have been parked by an earlier
+        // wait; by definition it is ours.
+        if let Some(te) = self.take_pending(slot, ep) {
+            #[cfg(feature = "usb-diag")]
+            kprintln!(
+                "[usb]   event: slot {} ep {} code {:?} len {} (was deferred)",
+                te.slot_id(),
+                te.endpoint_id(),
+                te.completion_code(),
+                te.trb_transfer_length()
+            );
+            return matches!(te.completion_code(), Ok(event::CompletionCode::Success));
+        }
         for _ in 0..50_000_000u64 {
             if let Some(event::Allowed::TransferEvent(te)) = self.poll_event() {
-                return matches!(te.completion_code(), Ok(event::CompletionCode::Success));
+                if te.slot_id() == slot && te.endpoint_id() == ep {
+                    #[cfg(feature = "usb-diag")]
+                    kprintln!(
+                        "[usb]   event: slot {} ep {} code {:?} len {}",
+                        te.slot_id(),
+                        te.endpoint_id(),
+                        te.completion_code(),
+                        te.trb_transfer_length()
+                    );
+                    return matches!(te.completion_code(), Ok(event::CompletionCode::Success));
+                }
+                #[cfg(feature = "usb-diag")]
+                kprintln!(
+                    "[usb]   event: slot {} ep {} code {:?} len {} (deferred, waiting for \
+                     slot {} ep {})",
+                    te.slot_id(),
+                    te.endpoint_id(),
+                    te.completion_code(),
+                    te.trb_transfer_length(),
+                    slot,
+                    ep
+                );
+                self.defer_transfer_event(te);
             }
             core::hint::spin_loop();
         }
+        kprintln!("[usb] transfer timeout: slot {} ep {}", slot, ep);
         false
     }
 
@@ -816,7 +1093,8 @@ impl Xhci {
         self.regs.doorbell.update_volatile_at(slot as usize, |db| {
             db.set_doorbell_target(1);
         });
-        let ok = self.wait_transfer();
+        // EP0's DCI is 1 — the Endpoint ID a Transfer Event reports for it.
+        let ok = self.wait_transfer(slot, 1);
         // The controller DMA'd the IN data into our buffer — drop the stale
         // cached copy so the caller reads it (real Pi-4; no-op on QEMU).
         if dir_in && len > 0 {
@@ -960,6 +1238,42 @@ impl Xhci {
         let config_value = b[5];
         let mut iface = 0u8;
         let mut protocol = 0u8;
+        // Diagnostic build only: the whole configuration, before we pick from
+        // it. `read_config` takes the FIRST interrupt-IN endpoint and pairs it
+        // with the most recent interface descriptor, and checks neither
+        // `bInterfaceClass` (3 = HID) nor `bInterfaceSubClass` (1 = boot). On a
+        // composite device — a keyboard with a second consumer-control
+        // interface, or a receiver carrying keyboard *and* mouse under one
+        // address — that choice is not obviously the right one, and the only
+        // way to judge it is to see what was on offer.
+        #[cfg(feature = "usb-diag")]
+        {
+            kprintln!("[usb] config descriptor, {} bytes, all descriptors:", total);
+            let mut j = 0usize;
+            while j + 2 <= b.len() {
+                let dl = b[j] as usize;
+                let dt = b[j + 1];
+                if dl == 0 || j + dl > b.len() {
+                    break;
+                }
+                match dt {
+                    4 if dl >= 9 => kprintln!(
+                        "[usb]   iface {} alt {} eps {} class {} subclass {} protocol {}",
+                        b[j + 2], b[j + 3], b[j + 4], b[j + 5], b[j + 6], b[j + 7]
+                    ),
+                    5 if dl >= 7 => kprintln!(
+                        "[usb]   endpoint {:#04x} attr {:#04x} max {} interval {}",
+                        b[j + 2],
+                        b[j + 3],
+                        u16::from_le_bytes([b[j + 4], b[j + 5]]),
+                        b[j + 6]
+                    ),
+                    33 => kprintln!("[usb]   HID descriptor, {} bytes", dl),
+                    _ => kprintln!("[usb]   descriptor type {}, {} bytes", dt, dl),
+                }
+                j += dl;
+            }
+        }
         let mut i = 0usize;
         while i + 2 <= b.len() {
             let dlen = b[i] as usize;
@@ -1155,7 +1469,30 @@ impl Xhci {
             // A device on a root port: route string 0, no parent TT.
             self.enumerate_device(port, 0, speed, 0, 0, 0);
         }
+        // Only now that the whole tree has been walked.
+        self.arm_hid_endpoints();
         self.n_hid
+    }
+
+    /// Arm the interrupt endpoint of every configured HID device, once.
+    ///
+    /// Deliberately *after* the device tree has been walked. While enumeration
+    /// runs, every transfer on the ring must belong to the device being
+    /// enumerated: a HID armed earlier can report at any moment, and its
+    /// completion then arrives in the middle of another device's control
+    /// transfers. FreeMiNT has that property by construction — its class driver
+    /// never leaves an interrupt transfer outstanding. `kbd_probe`
+    /// (`sys/usb/src.km/udd/hid/keyboard/usb_keyboard.c:527`) only records the
+    /// pipe and creates a poll thread; the transfer itself is issued
+    /// synchronously from `kbd_int` (`usb_keyboard.c:357`, `usb_bulk_msg`) once
+    /// that thread is scheduled, i.e. after `usb_new_device` has returned and
+    /// the tree is built.
+    fn arm_hid_endpoints(&mut self) {
+        for di in 0..self.n_hid {
+            if self.hid[di].dci != 0 {
+                self.queue_interrupt(di);
+            }
+        }
     }
 
     /// Bring one device online: Enable Slot → Address Device → read its device
@@ -1195,6 +1532,18 @@ impl Xhci {
             "[usb] device slot {} (root port {} route {:#x} speed {})",
             slot, root_port, route, speed
         );
+        // Diagnostic build: the rest of the addressing identity. `tt` names the
+        // hub whose Transaction Translator a low/full-speed device reaches the
+        // bus through — 0 means "none was set", which is correct only for a
+        // device that is not behind a high-speed hub. `depth` is the hub tier,
+        // and `di` is the index this device occupies in `hid[]`, i.e. the
+        // enumeration order — and the order `arm_hid_endpoints` walks once the
+        // tree is complete.
+        #[cfg(feature = "usb-diag")]
+        kprintln!(
+            "[usb]   di {} tt_slot {} tt_port {} depth {} (enumeration order)",
+            di, tt_slot, tt_port, depth
+        );
         if !self.address_device(di, root_port, speed) {
             return;
         }
@@ -1208,7 +1557,10 @@ impl Xhci {
         } else if let Some((dci, protocol)) = self.configure_hid(di, root_port, speed) {
             self.hid[di].dci = dci;
             self.hid[di].protocol = protocol;
-            self.queue_interrupt(di);
+            // The endpoint is configured but NOT armed here: `enumerate_all`
+            // arms every HID once the whole tree is walked
+            // (`arm_hid_endpoints`), so that no device can report while another
+            // device's control transfers are still on the ring.
         }
     }
 
@@ -1219,10 +1571,11 @@ impl Xhci {
             kprintln!("[usb] hub: read config failed");
             return;
         };
-        let Some(nbr) = self.hub_get_descriptor(di) else {
+        let Some(desc) = self.hub_get_descriptor(di) else {
             kprintln!("[usb] hub: get descriptor failed");
             return;
         };
+        let nbr = desc.nbr_ports;
         // Configure Endpoint (mark slot as a hub) before SET_CONFIGURATION.
         if !self.configure_hub(di, speed, nbr) {
             return;
@@ -1232,11 +1585,7 @@ impl Xhci {
             return;
         }
         kprintln!("[usb] hub slot {}: {} downstream ports", self.hid[di].slot, nbr);
-        // Power every port, then wait the worst-case power-good time.
-        for p in 1..=nbr {
-            self.hub_set_port_feature(di, p, 8); // PORT_POWER
-        }
-        crate::arch::aarch64::delay_ms(100);
+        self.hub_power_on(di, nbr, desc.power_on_to_power_good_ms());
         let hub_slot = self.hid[di].slot;
         let parent_route = self.hid[di].route;
         let (parent_tt_slot, parent_tt_port) =
@@ -1245,21 +1594,31 @@ impl Xhci {
             if self.n_hid >= MAX_HID {
                 break;
             }
-            let st = self.hub_get_port_status(di, p);
+            // A failed status read is not "nothing connected": FreeMiNT
+            // skips the port on `usb_get_port_status(...) < 0` (`hub.c:486`).
+            let Some(st) = self.hub_get_port_status(di, p) else {
+                kprintln!("[usb] hub port {}: get_port_status failed", p);
+                continue;
+            };
             let connected = st & 0x1 != 0;
             kprintln!("[usb] hub port {}: status={:#06x} connected={}", p, st & 0xffff, connected);
             if !connected {
                 continue;
             }
-            self.hub_clear_port_feature(di, p, 16); // C_PORT_CONNECTION
-            self.hub_set_port_feature(di, p, 4); // PORT_RESET
-            crate::arch::aarch64::delay_ms(60); // reset + recovery
-            let st2 = self.hub_get_port_status(di, p);
-            self.hub_clear_port_feature(di, p, 20); // C_PORT_RESET
-            if st2 & 0x2 == 0 {
-                kprintln!("[usb] hub port {}: not enabled after reset (status={:#06x})", p, st2 & 0xffff);
-                continue;
+            // Acknowledge the connection change before resetting, as the
+            // reference does (`hub.c:280`). FreeMiNT ignores the return value;
+            // we report a failure instead of discarding it, because a hub that
+            // will not clear C_PORT_CONNECTION makes the reset loop below abort
+            // on its own change check.
+            if !self.hub_clear_port_feature(di, p, 16) {
+                kprintln!("[usb] hub port {}: CLEAR_FEATURE(C_PORT_CONNECTION) failed", p);
             }
+            // `hub_port_reset` owns the "did it enable" decision and clears
+            // C_PORT_RESET itself on success; `None` = "cannot reset port"
+            // (`hub.c:294`), so leave the port alone.
+            let Some(st2) = self.hub_port_reset(di, p) else {
+                continue;
+            };
             // PORT_LOW_SPEED (bit 9) / PORT_HIGH_SPEED (bit 10); else full.
             let dev_speed = if st2 & (1 << 9) != 0 {
                 2
@@ -1343,16 +1702,74 @@ impl Xhci {
         }
     }
 
-    /// Hub class GET_DESCRIPTOR (type 0x29). Returns `bNbrPorts`.
-    fn hub_get_descriptor(&mut self, di: usize) -> Option<u8> {
+    /// Power the hub's downstream ports and wait for the power to be good.
+    ///
+    /// 1:1 with FreeMiNT's `usb_hub_power_on` (`sys/usb/src.km/hub.c:139`):
+    /// `SET_FEATURE(PORT_POWER)` on every port with `pgood_ms` after each, then
+    /// `MAX(pgood_ms, 100)` ms for the power to stabilise. The delay is the
+    /// hub's own `bPwrOn2PwrGood` (× 2 ms — `hub.c:463`), not a fixed number:
+    /// with the previous hardcoded 100 ms a hub that states a longer power-good
+    /// time had its ports read while they were still coming up.
+    ///
+    /// FreeMiNT's `usb_hub_configure` reaches this through
+    /// `usb_hub_power_cycle` (`hub.c:463`), which first switches every port
+    /// **off** and waits `2 × MAX(pgood, 100)` ms. We use the `power_on` half
+    /// (the same function the reference calls at `hub.c:552`/`:582`): our hub
+    /// bring-up runs once at boot on ports the hub already powers by default,
+    /// and cutting their power would re-enumerate devices underneath us.
+    fn hub_power_on(&mut self, di: usize, nbr_ports: u8, pgood_ms: u32) {
+        #[cfg(feature = "usb-diag")]
+        kprintln!(
+            "[usb] hub slot {}: bPwrOn2PwrGood → {} ms power-good delay per port",
+            self.hid[di].slot,
+            pgood_ms
+        );
+        for p in 1..=nbr_ports {
+            if !self.hub_set_port_feature(di, p, 8) {
+                // FreeMiNT ignores the return value here and only logs the
+                // resulting device status (`hub.c:147`). A port that refuses
+                // PORT_POWER simply never reports a connection, so name it
+                // instead of discarding the acknowledgement.
+                kprintln!("[usb] hub port {}: SET_FEATURE(PORT_POWER) failed", p);
+            }
+            crate::arch::aarch64::delay_ms(pgood_ms as u64);
+        }
+        // "Wait at least 100 msec for power to become stable" (`hub.c:152`).
+        crate::arch::aarch64::delay_ms(pgood_ms.max(100) as u64);
+    }
+
+    /// Hub class GET_DESCRIPTOR (type 0x29). Returns the fields the hub driver
+    /// acts on: `bNbrPorts` and `bPwrOn2PwrGood`.
+    fn hub_get_descriptor(&mut self, di: usize) -> Option<HubDescriptor> {
         // SAFETY: single-CPU; DEV is ours.
-        let buf_pa = unsafe { dma_addr((&raw const (*(&raw const DEV))[di].buf) as u64) };
+        let dev = unsafe { &mut (*(&raw mut DEV))[di] };
+        // Zero the header first: the controller writes only as many bytes as
+        // the device returns, so bytes left by the previous transfer must not
+        // be able to stand in for a descriptor field.
+        dev.buf[..8].iter_mut().for_each(|b| *b = 0);
+        let buf_pa = dma_addr((&raw const dev.buf) as u64);
         // bmRequestType=0xA0 (in, class, device), bRequest=6, wValue=0x2900.
+        // 8 bytes cover the fixed part through bHubContrCurrent; the variable
+        // DeviceRemovable / PortPwrCtrlMask tail is not used here.
         if !self.control(di, [0xA0, 6, 0x00, 0x29, 0, 0, 0, 0], buf_pa, 8, true) {
             return None;
         }
-        // SAFETY: single-CPU; DEV is ours. [2] = bNbrPorts.
-        Some(unsafe { (*(&raw const DEV))[di].buf[2] })
+        // SAFETY: single-CPU; DEV is ours. [0] bDescLength, [1] bDescriptorType,
+        // [2] bNbrPorts, [5] bPwrOn2PwrGood (USB 2.0 §11.23.2.1; the SuperSpeed
+        // hub descriptor 0x2A carries both fields at the same offsets).
+        let b = unsafe { &(*(&raw const DEV))[di].buf };
+        if (b[1] != 0x29 && b[1] != 0x2A) || b[0] < 8 {
+            kprintln!(
+                "[usb] hub descriptor malformed: bLength={} bDescriptorType={:#04x}",
+                b[0],
+                b[1]
+            );
+            return None;
+        }
+        Some(HubDescriptor {
+            nbr_ports: b[2],
+            pwr_on_2_pwr_good: b[5],
+        })
     }
 
     /// Hub class SET_FEATURE on a downstream port (PORT_POWER=8, PORT_RESET=4).
@@ -1367,24 +1784,150 @@ impl Xhci {
         self.control(di, [0x23, 1, feature, 0, port, 0, 0, 0], 0, 0, false)
     }
 
+    /// Reset one downstream hub port; returns its status word once the port is
+    /// enabled, or `None` when the port must be given up on.
+    ///
+    /// 1:1 with FreeMiNT's `hub_port_reset` (`sys/usb/src.km/hub.c:225`):
+    /// up to `MAX_TRIES` = 5 attempts (`hub.c:201`), each
+    /// `SET_FEATURE(PORT_RESET)` + `mdelay(150)` (`hub.c:233`) followed by a
+    /// fresh `GET_STATUS`; a failed status read aborts (`hub.c:238`); a
+    /// connection that changed or went away aborts (`hub.c:255`); the loop
+    /// stops as soon as `USB_PORT_STAT_ENABLE` is set (`hub.c:259`); and
+    /// `C_PORT_RESET` is cleared only after that success (`hub.c:269`).
+    /// `docs/api/usb/hub.md` records the same shape ("poll GET_STATUS until
+    /// reset completes + the port is enabled").
+    ///
+    /// This replaces both the old one-shot 60 ms wait — which dropped any port
+    /// that needed longer — and the `usb-diag`-only 800 ms polling variant that
+    /// existed to measure how long ports really need. That measurement has been
+    /// taken (both hardware runs enabled at the first 10 ms sample), and the
+    /// reference budget now applies to **both** builds: a deliberate change for
+    /// the normal build, whose worst case per *connected* port rises from 60 ms
+    /// to 5 × 150 ms. Empty ports are never reset, so an idle socket costs
+    /// nothing. The `usb-diag` build adds only prints, no different timing.
+    ///
+    /// One deliberate deviation: the reference returns 0/-1 and its caller
+    /// derives the device speed from the port status read *before* the reset
+    /// (`hub.c:306`). We hand back the **post-reset** status word instead,
+    /// because that is where the low/high-speed bits are valid — a hub only
+    /// knows the attached device's speed after the reset handshake (USB 2.0
+    /// §11.24.2.7.1) — and `enumerate_hub` needs the speed for Address Device.
+    fn hub_port_reset(&mut self, di: usize, p: u8) -> Option<u32> {
+        /// `MAX_TRIES` (`hub.c:201`).
+        const MAX_TRIES: u32 = 5;
+        /// `mdelay(150)` per attempt (`hub.c:234`).
+        const TRY_MS: u32 = 150;
+        for try_no in 1..=MAX_TRIES {
+            if !self.hub_set_port_feature(di, p, 4) {
+                // PORT_RESET. FreeMiNT ignores this return and lets the status
+                // read below decide (`hub.c:233`); report it rather than
+                // discard the acknowledgement.
+                kprintln!("[usb] hub port {}: SET_FEATURE(PORT_RESET) failed", p);
+            }
+            crate::arch::aarch64::delay_ms(TRY_MS as u64);
+            let Some(st) = self.hub_get_port_status(di, p) else {
+                kprintln!("[usb] hub port {}: get_port_status failed during reset", p);
+                return None;
+            };
+            #[cfg(feature = "usb-diag")]
+            kprintln!(
+                "[usb]   hub port {}: t={} ms status={:#06x} change={:#06x}",
+                p,
+                try_no * TRY_MS,
+                st & 0xffff,
+                st >> 16
+            );
+            // C_PORT_CONNECTION set again, or the device gone: the port changed
+            // under us, so this reset is void (`hub.c:255`).
+            if st & (1 << 16) != 0 || st & 0x1 == 0 {
+                kprintln!(
+                    "[usb] hub port {}: connection changed during reset (status={:#06x} \
+                     change={:#06x})",
+                    p,
+                    st & 0xffff,
+                    st >> 16
+                );
+                return None;
+            }
+            if st & 0x2 != 0 {
+                // USB_PORT_STAT_ENABLE: the reset took. Acknowledge the reset
+                // change only now, as the reference does (`hub.c:269`).
+                if !self.hub_clear_port_feature(di, p, 20) {
+                    kprintln!("[usb] hub port {}: CLEAR_FEATURE(C_PORT_RESET) failed", p);
+                }
+                if try_no > 1 {
+                    kprintln!(
+                        "[usb] hub port {}: enabled only on reset {} of {} ({} ms)",
+                        p,
+                        try_no,
+                        MAX_TRIES,
+                        try_no * TRY_MS
+                    );
+                }
+                #[cfg(feature = "usb-diag")]
+                kprintln!(
+                    "[usb] hub port {}: ENABLED after {} ms (reset {} of {}, FreeMiNT \
+                     hub.c:225 allows {}x{} ms)",
+                    p,
+                    try_no * TRY_MS,
+                    try_no,
+                    MAX_TRIES,
+                    MAX_TRIES,
+                    TRY_MS
+                );
+                return Some(st);
+            }
+        }
+        kprintln!(
+            "[usb] hub port {}: not enabled after {} resets of {} ms — giving up",
+            p,
+            MAX_TRIES,
+            TRY_MS
+        );
+        None
+    }
+
     /// Hub class GET_STATUS on a downstream port. Returns
-    /// `wPortStatus | wPortChange << 16`.
-    fn hub_get_port_status(&mut self, di: usize, port: u8) -> u32 {
+    /// `wPortStatus | wPortChange << 16`, or `None` if the control transfer
+    /// itself failed.
+    ///
+    /// The reference distinguishes those two cases — `usb_get_port_status(…) <
+    /// 0` aborts a reset (`hub.c:238`) and skips a port (`hub.c:486`) — and an
+    /// all-zero status word is otherwise indistinguishable from "nothing
+    /// connected".
+    fn hub_get_port_status(&mut self, di: usize, port: u8) -> Option<u32> {
         // SAFETY: single-CPU; DEV is ours.
-        let buf_pa = unsafe { dma_addr((&raw const (*(&raw const DEV))[di].buf) as u64) };
+        let dev = unsafe { &mut (*(&raw mut DEV))[di] };
+        // Zero first: only the bytes the device actually returns are written.
+        dev.buf[..4].iter_mut().for_each(|b| *b = 0);
+        let buf_pa = dma_addr((&raw const dev.buf) as u64);
         // bmRequestType=0xA3 (in, class, other), bRequest=0 (GET_STATUS).
         if !self.control(di, [0xA3, 0, 0, 0, port, 0, 0, 0], buf_pa, 4, true) {
-            return 0;
+            return None;
         }
         // SAFETY: single-CPU; DEV is ours.
         let b = unsafe { &(*(&raw const DEV))[di].buf };
-        u32::from_le_bytes([b[0], b[1], b[2], b[3]])
+        Some(u32::from_le_bytes([b[0], b[1], b[2], b[3]]))
     }
 
     /// Log each root-hub port's connect status (D1 verification target).
     pub fn scan_ports(&mut self) {
         for i in 0..self.ports as usize {
             let p = self.regs.port_register_set.read_volatile_at(i).portsc;
+            // Diagnostic build: the fields the one-line summary leaves out.
+            // `pls` (port link state) separates "nothing plugged in" from
+            // "device present but the link never came up", and the change bits
+            // say whether the controller saw an event we then ignored.
+            #[cfg(feature = "usb-diag")]
+            kprintln!(
+                "[usb] port {} detail: pls={} pr={} csc={} pec={} prc={}",
+                i + 1,
+                p.port_link_state(),
+                p.port_reset() as u8,
+                p.connect_status_change() as u8,
+                p.port_enabled_disabled_change() as u8,
+                p.port_reset_change() as u8
+            );
             kprintln!(
                 "[usb] port {}: ccs={} ped={} pp={} speed={}",
                 i + 1,

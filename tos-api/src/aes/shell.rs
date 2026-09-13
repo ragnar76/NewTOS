@@ -25,7 +25,10 @@ use core::sync::atomic::{AtomicBool, Ordering};
 /// Built-in environment used when the shell buffer is empty.
 const DEFAULT_ENV: &[u8] = b"PATH=C:\\;\0\0";
 
-const PATHBUF: usize = 128;
+/// `MAXPATHLEN` (`include/sysconf.h:51-55`: `LEN_ZPATH + LEN_ZFNAME + 1`) —
+/// the size EmuTOS gives every fully-qualified path scratch buffer, from
+/// `D.s_cmd` (`gemlib.h:122`) to `rs_load`'s `tmprsfname` (`gemrslib.c:46`).
+pub const PATHBUF: usize = 128;
 /// The shell settings buffer capacity — `SIZE_SHELBUF` (`sysconf.h:74`,
 /// "same as TOS 1.04→"). `shel_get`/`shel_put` clamp `len` to this: a
 /// safety bound over EmuTOS's unbounded `memcpy` (`gemshlib.c:205,215`,
@@ -787,11 +790,14 @@ pub fn sh_find(spec: &mut [u8]) -> bool {
 
     // (1) The application directory (rlr->p_appdir), searched first with the
     //     filename portion only (sh_name, gemshlib.c:412-423).
-    let mut appdir = [0u8; 64];
+    let mut appdir = [0u8; crate::aes::resource::APP_DIR_CAP];
     let alen = crate::aes::resource::app_dir(&mut appdir);
     if alen > 0 {
         let fname = sh_name(&name[..n]);
-        let mut full = [0u8; PATHBUF];
+        // `D.g_work` (`WORKAREASIZE >= MAXPATHLEN`, `gemlib.h:98-99`) takes
+        // `p_appdir` (<= 116) plus a name (<= 13); size for the sum so a long
+        // application directory cannot silently drop the composition.
+        let mut full = [0u8; PATHBUF + 16];
         if alen + fname.len() < full.len() {
             full[..alen].copy_from_slice(&appdir[..alen]);
             full[alen..alen + fname.len()].copy_from_slice(fname);

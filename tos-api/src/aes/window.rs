@@ -191,6 +191,20 @@ const BLACK: Pel = 1;
 const GRAY_LT: Pel = 8; // 3D face (EmuTOS LWHITE)
 const GRAY_DK: Pel = 9; // 3D shadow (EmuTOS LBLACK)
 
+/// Colour of the window drop shadow.
+///
+/// EmuTOS paints it in `W_BOX`'s border colour — `gr_crack` takes bits 15..12
+/// of `ob_spec`'s low word `0x1101` (`aes/gemgraf.c:612-627`), i.e. BLACK.
+///
+/// NewTOS deviates **deliberately** here (user decision 2026-09-10): a hard
+/// black band reads far heavier on a 1920x1080 truecolor screen than it did on
+/// the TT's four planes, so the shadow is drawn in light grey. This is a look
+/// decision, not a conformance one — the dump records rectangles, not pixels,
+/// so it changes nothing in the comparison against the reference. Like
+/// [`DROP_SHADOW_SIZE`] it is the **one** place the value lives, and tests take
+/// it from here instead of naming a colour of their own.
+pub const DROP_SHADOW_COLOR: Pel = GRAY_LT;
+
 /// The classic GEM "move-bar" dither on an **active** window's name area
 /// (EmuTOS `TOPPED_COLOR` = `IP_2PATT`, a light 25 % black stipple). The
 /// inactive window's name bar is left plain — the presence of the stipple is
@@ -235,6 +249,102 @@ struct Grect {
     h: i16,
 }
 
+// ── the drop shadow ─────────────────────────────────────────────────────
+
+/// `DROP_SHADOW_SIZE` (EmuTOS `aes/gemwmlib.c:49`) — how far, in pixels, every
+/// window's solid drop shadow reaches past its border rectangle to the right
+/// and downwards.
+///
+/// **The single source of truth for the shadow.** Everything that has to agree
+/// on the size takes it from here, because a mismatch between any two of them
+/// is a visible defect rather than a cosmetic one:
+///
+/// | Reader | via | EmuTOS |
+/// |---|---|---|
+/// | owner rectangle list — own start rect **and** the rect every higher window breaks it with | [`ws_true`] in [`border_pieces`] | `w_getsize(WS_TRUE, …)`, `gemwmlib.c:254-261`, used twice in `newrect`, `aes/gemwrect.c:190,203` |
+/// | the draw walk (frames, sliders, desktop background) | [`walk_rects`] over [`border_pieces`] | `do_walk`, `gemwmlib.c:286-312` |
+/// | `WF_FIRSTXYWH`/`WF_NEXTXYWH` | [`compute_rlist`] over [`border_pieces`], clipped per piece by [`rlist_owns`] | `w_owns`, `gemwmlib.c:1230-1240,1556-1561` |
+/// | the `WM_REDRAW` union | [`w_union`] over [`border_pieces`] | `w_union`, `gemwmlib.c:869-884` |
+/// | "is this window overlapped" | [`ws_true`] in [`is_broken`] | `mkrect` sets `VF_BROKEN` after breaking with the `WS_TRUE` rect, `aes/gemwrect.c:136-162,190` |
+/// | the pixels themselves | [`draw_frame`] | `W_ACTIVE[ROOT].ob_state = SHADOWED` (`gemwmlib.c:1284`) drawn by `ob_draw` (`aes/gemoblib.c:889-901`) |
+/// | the frame-draw clip of a damage-scoped repaint | [`draw_frame_pieces`] | `w_cpwalk`'s `usetrue == FALSE` branch, `gemwmlib.c:369-374` |
+/// | the damage rectangle of open / close / delete / move / size | [`plus_shadow`] | `draw_change`, `gemwmlib.c:1152-1154,1213-1215` |
+///
+/// Reporting the area as covered without painting it leaves a `DROP_SHADOW_SIZE`
+/// wide strip of stale pixels at every window edge; painting it without
+/// reporting it lets the desktop and the windows underneath draw back into it.
+///
+/// EmuTOS uses `2` on a 640×480 ST screen. The value here is deliberately kept
+/// at `2` for now so the drop-shadow-dependent cases of the frozen TT reference
+/// table (`tosdump/cases/aes-r2b-rlist.tsv`, cases 166/174/183/213) stay a valid
+/// oracle for a real-hardware run; the user's decision to raise it to `4` for
+/// the Pi profile is applied only after that run (`TASK/A23.md`,
+/// "Anwenderentscheidung — Schattengröße" and its addendum).
+pub const DROP_SHADOW_SIZE: i16 = 2;
+
+/// The shadow bands are `2 * th` wide, `th` being the border thickness of the
+/// `W_BOX` window element (`aes/gemoblib.c:889-901`); in EmuTOS `th = 1` from
+/// `W_BOX`'s `ob_spec 0x00011101` (`gemwmlib.c:63,84`, byte 1 taken out by
+/// `ob_sst`, `aes/gemobjop.c:54-57`), which is what makes
+/// `DROP_SHADOW_SIZE == 2 * th` hold. We keep the identity by deriving `th`
+/// from the constant instead of storing it twice — which is only exact for an
+/// even size, so the build enforces that rather than trusting a comment.
+const SHADOW_TH: i16 = DROP_SHADOW_SIZE / 2;
+const _: () = assert!(
+    2 * SHADOW_TH == DROP_SHADOW_SIZE,
+    "DROP_SHADOW_SIZE must stay even: the drawn bands are 2*th wide, so an odd \
+     size would report more area as covered than the frame paints"
+);
+
+/// `w_getsize(WS_TRUE, …)` — the window's border rectangle grown by the drop
+/// shadow (`aes/gemwmlib.c:253-261`):
+///
+/// ```c
+/// rc_copy(w_getxptr(which, w_handle), pt);
+/// if ((which == WS_TRUE) && pt->g_w && pt->g_h)
+/// {
+///     pt->g_w += DROP_SHADOW_SIZE;
+///     pt->g_h += DROP_SHADOW_SIZE;
+/// }
+/// ```
+///
+/// `x`/`y` are untouched — the shadow only ever grows right and down — and an
+/// empty rectangle stays empty, which is what lets `newrect` bail out on a
+/// zero-size window (`aes/gemwrect.c:189-192`).
+///
+/// This is **not** `WS_CURR`: `w_getxptr` returns the same storage for both and
+/// only `WS_TRUE` gets the addition (`:235-249`), so `WF_CXYWH`, `WF_WXYWH`,
+/// `WF_PXYWH`, `WF_FXYWH`, `wind_calc` and every hit test keep the bare
+/// rectangle. Only the owner rectangle list, the draw clip and `VF_BROKEN` use
+/// this one.
+fn ws_true(curr: Grect) -> Grect {
+    if curr.w != 0 && curr.h != 0 {
+        Grect { w: curr.w + DROP_SHADOW_SIZE, h: curr.h + DROP_SHADOW_SIZE, ..curr }
+    } else {
+        curr
+    }
+}
+
+/// A *damage* rectangle grown by the drop shadow — EmuTOS's unconditional
+///
+/// ```c
+/// /* account for drop shadow (BUGFIX in 2.1) */
+/// c.g_w += DROP_SHADOW_SIZE;
+/// c.g_h += DROP_SHADOW_SIZE;
+/// ```
+///
+/// at the tail of `draw_change` (`aes/gemwmlib.c:1213-1215`), just before
+/// `w_drawdesk(&c)` and `w_update(start, &c, stop, moved)`. Unlike [`ws_true`]
+/// this does **not** test for an empty rectangle: `draw_change` adds the shadow
+/// to whatever damage it ended up with, including the zero rectangle a close
+/// passes in.
+///
+/// Without it the area a vanishing or shrinking window's shadow used to cover
+/// is never repainted and its black band stays on the screen.
+fn plus_shadow(r: Grect) -> Grect {
+    Grect { w: r.w + DROP_SHADOW_SIZE, h: r.h + DROP_SHADOW_SIZE, ..r }
+}
+
 /// One window slot.
 #[derive(Clone, Copy)]
 struct Window {
@@ -273,6 +383,39 @@ struct Window {
     /// consume these, so they never affect rendering.
     tcolor: [i16; NUM_ELEM],
     bcolor: [i16; NUM_ELEM],
+    /// The owner rectangle list and the `WF_FIRSTXYWH`/`WF_NEXTXYWH` cursor
+    /// into it — both belong to the **window**, not to the window manager.
+    /// EmuTOS holds them as fields of the `WINDOW` struct: `ORECT *w_rlist`
+    /// (the list) and `ORECT *w_rnext` (the search-first/search-next cursor),
+    /// `aes/gemlib.h:84-85`. `wm_get` picks the *requested* window with
+    /// `get_pwin` and takes `pwin->w_rlist` for `WF_FIRSTXYWH` or
+    /// `pwin->w_rnext` for `WF_NEXTXYWH` (`gemwmlib.c:1513`, `:1556-1561`);
+    /// `w_owns` advances that same window's link (`:1230-1240`). A `FIRST` on
+    /// one window therefore cannot disturb an iteration another window is in
+    /// the middle of.
+    ///
+    /// Where EmuTOS links `ORECT` cells out of one shared pool
+    /// (`or_start`/`get_orect`, `aes/gemwrect.c:36-61`) we keep a fixed array
+    /// per window and an index cursor; the observable FIRST/NEXT contract is
+    /// the same, the per-call capacity limit `RCAP` is unchanged (A21), and an
+    /// index into our own array cannot dangle the way a freed `ORECT *` can.
+    /// Written by [`compute_rlist`], read and advanced by [`rlist_owns`].
+    ///
+    /// The stored pieces are the **raw** `WS_TRUE` remainders `newrect` links up
+    /// (`aes/gemwrect.c:165-205`), not the work-area intersections: `w_owns`
+    /// clips each piece on the way out and keeps walking when the clip comes up
+    /// empty (`gemwmlib.c:1230-1240`), so the border-only pieces have to be in
+    /// here for the walk to step over them and for the end of the list to report
+    /// the coordinates of the last one it looked at.
+    ///
+    /// Bound to the slot, so every path that resets a slot — `wind_create`'s
+    /// `Window::EMPTY`, [`wm_delete`] (behind [`wind_delete`] and [`wm_new`]),
+    /// [`init_desk_window`] — resets list and cursor **together**, and
+    /// [`save_windows`] / [`restore_windows`] carry them with the rest of the
+    /// slot.
+    rlist: [Grect; RCAP],
+    rcount: u16,
+    rnext: u16,
 }
 
 impl Window {
@@ -294,6 +437,9 @@ impl Window {
         hslsize: -1,
         tcolor: GL_WTCOLOR_DEFAULT,
         bcolor: GL_WBCOLOR_DEFAULT,
+        rlist: [Grect { x: 0, y: 0, w: 0, h: 0 }; RCAP],
+        rcount: 0,
+        rnext: 0,
     };
 }
 
@@ -512,8 +658,10 @@ fn get_bottom() -> i16 {
 /// and `draw_change` returns after the two border draws (`:1128-1135`).
 /// Otherwise it falls through to `w_update(start = w_handle, …, stop = DESKWH)`,
 /// whose single loop turn re-draws that one window's border and calls
-/// `w_redraw`, posting one `WM_REDRAW` for `pt ∩ WS_WORK ∩ union(rlist)`
-/// (`:1004-1048,887-907`) — with the window now on top, its whole work area.
+/// `w_redraw`, posting one `WM_REDRAW` for `pt ∩ union(w_rlist)`
+/// ([`send_redraw_in`], `:1004-1048,887-907`) — with the window now on top and
+/// `pt` its own shadowed rectangle, that is its whole `WS_TRUE` rectangle
+/// clipped to the screen: work area, frame and drop shadow.
 fn top_window(handle: i16) {
     let old_top = get_top(); // current top before the bump (may equal handle)
     // Not a top request at all: `draw_change` returns immediately when the
@@ -554,7 +702,15 @@ fn top_window(handle: i16) {
     crate::vdi::cursor_show(backend);
     if !(clrold && wasclr) {
         if let Some(r) = win(handle).map(|w| w.curr) {
-            send_redraw_in(handle, r);
+            // The damage rectangle `draw_change` reaches its tail with, on the
+            // top path: `c` is the window's `WS_CURR` (`:1069-1070`), the
+            // `:1198-1201` union with `gl_wtop`'s current rectangle is a no-op
+            // because `gl_wtop` *is* this window, and `:1213-1215` then adds
+            // the drop shadow unconditionally before handing `c` to
+            // `w_update`. Passing the bare `curr` instead left the frame and
+            // the shadow — the part of the window that is genuinely new on
+            // screen — out of the `WM_REDRAW` the window is about to get.
+            send_redraw_in(handle, plus_shadow(r));
         }
     }
 }
@@ -568,13 +724,20 @@ fn top_window(handle: i16) {
 /// and geometry, it is computed on demand here instead of being cached: a
 /// window is broken exactly when some open window above it overlaps its border
 /// rectangle.
+///
+/// Both rectangles are `WS_TRUE` ([`ws_true`]), not `WS_CURR`: the list `mkrect`
+/// breaks consists of `WS_TRUE` pieces (`newrect`, `aes/gemwrect.c:203`) and the
+/// rectangle it breaks them with is `WS_TRUE` too (`:190`). A window that
+/// overlaps another one **with its drop shadow alone** therefore already breaks
+/// it, and `draw_change` reads that flag to decide whether the topped window
+/// needs a `WM_REDRAW` at all (`gemwmlib.c:1066,1121-1135`).
 fn is_broken(handle: i16) -> bool {
-    let Some((rect, myz)) = win(handle).filter(|w| w.open).map(|w| (w.curr, w.z)) else {
+    let Some((rect, myz)) = win(handle).filter(|w| w.open).map(|w| (ws_true(w.curr), w.z)) else {
         return false;
     };
-    slots()
-        .iter()
-        .any(|ow| ow.in_use && ow.open && ow.z > myz && intersect_grect(ow.curr, rect).is_some())
+    slots().iter().any(|ow| {
+        ow.in_use && ow.open && ow.z > myz && intersect_grect(ws_true(ow.curr), rect).is_some()
+    })
 }
 
 /// `handle`'s **owner rectangle list** — EmuTOS `D.w_win[wh].w_rlist`: the
@@ -589,6 +752,31 @@ fn is_broken(handle: i16) -> bool {
 /// `WF_FIRSTXYWH` reports it intersected with the work rectangle
 /// ([`compute_rlist`]).
 ///
+/// **The subtraction order is contract: ascending z, one covering window at a
+/// time.** `draw_change` rebuilds every list with a single
+/// `everyobj(gl_wtree, ROOT, NIL, newrect, …)` sweep (`gemwmlib.c:1089`), and
+/// `everyobj` walks the `W_TREE` sibling chain `ob_head` → `ob_tail`
+/// (`aes/gemobjop.c:76-131`). That chain **is** the z-order by construction:
+/// `w_obadd` appends a newly opened window at `ob_tail` (`:186-201`, from
+/// `wm_open` `:1425`) and `wm_mktop` moves a topped one there with
+/// `ob_order(gl_wtree, w_handle, NIL)` (`:1605-1610`, `aes/gemoblib.c:1213-1240`,
+/// the `new_pos == NIL` branch). Inside the sweep, `newrect(tree, wh)` resets
+/// `wh`'s own list to its unbroken `WS_TRUE` rect and then lets
+/// `everyobj(tree, ROOT, wh, mkrect, …)` break the list of every window *below*
+/// `wh` with `wh`'s rect (`gemwrect.c:165-205`) — so read across the sweep, a
+/// window's list is cut once per window above it, in ascending z-order of those
+/// covering windows.
+///
+/// Not a detail: [`subtract`] replaces a surviving piece with its sub-pieces on
+/// the spot and never revisits a piece an earlier cut removed, so cutting with
+/// `A` then `B` does not in general give the same fragments as `B` then `A`,
+/// even though both remove the same union. Measured: the same three windows
+/// opened 1,2,3 leave window 1 with **four** pieces and opened 1,3,2 with
+/// **five** (`tosdump/cases/aes-r3-wind-state.tsv` §D against
+/// `tosdump/reference/EMUTOS14-AES-r3.BIN`, cases 439–574; regression test
+/// `tos-api/tests/aes_window_rectlist_zorder.rs`). Iterating the slot array in
+/// slot order answered the four-piece list for both.
+///
 /// [`DESKWH`] (the desktop window) is the **bottom** of the stack: its own
 /// rectangle is the whole screen (`w_setsize(WS_CURR, DESKWH, &gl_rscreen)`,
 /// `aes/gemwmlib.c:1290`) and every open window is above it (`i16::MIN` z), so
@@ -597,19 +785,56 @@ fn is_broken(handle: i16) -> bool {
 ///
 /// A closed or invalid handle owns nothing (`newrect` returns early for a
 /// zero-size window, `aes/gemwrect.c:189-192`).
+///
+/// **Both** rectangles are `WS_TRUE` ([`ws_true`]) — the window's own start
+/// rectangle *and* the rectangle each higher window breaks it with. `newrect`
+/// uses `w_getsize(WS_TRUE, …)` for exactly these two roles and no other:
+///
+/// ```c
+/// w_getsize(WS_TRUE, wh, &gl_mkrect.o_gr);            /* :190 — the breaker */
+/// ...
+/// everyobj(tree, ROOT, wh, mkrect, 0, 0, MAX_DEPTH);
+/// new = get_orect();
+/// w_getsize(WS_TRUE, wh, &new->o_gr);                 /* :203 — our own    */
+/// ```
+///
+/// Growing only one of the two would be worse than growing neither: taking the
+/// shadow off the breaker leaves the strip under a neighbour's shadow claimed
+/// by two windows at once, and taking it off our own start rectangle drops the
+/// strip our own frame paints out of the list that clips that very paint.
 fn border_pieces(handle: i16, out: &mut [Grect; RCAP]) -> usize {
     let (rect, myz) = match win(handle) {
-        Some(w) if handle == DESKWH => (w.curr, i16::MIN),
-        Some(w) if w.open => (w.curr, w.z),
+        Some(w) if handle == DESKWH => (ws_true(w.curr), i16::MIN),
+        Some(w) if w.open => (ws_true(w.curr), w.z),
         _ => return 0,
     };
     *out = [Grect::default(); RCAP];
     out[0] = rect;
     let mut n = 1;
+    // Collect the covering windows first, then cut with them in **ascending
+    // z-order** — never in slot/handle order. Which order it is decides how
+    // many pieces come out and where the cuts fall, because [`subtract`]
+    // re-splits every piece that survived an earlier cut and never revisits one
+    // an earlier cut removed.
+    let mut cover = [(0i16, Grect::default()); NUM_WIN];
+    let mut c = 0usize;
     for ow in slots().iter() {
         if ow.in_use && ow.open && ow.z > myz {
-            n = subtract(out, n, ow.curr);
+            cover[c] = (ow.z, ws_true(ow.curr));
+            c += 1;
         }
+    }
+    // Insertion sort — `c` is at most fifteen, and it is stable, so windows
+    // that somehow share a `z` keep slot order rather than an arbitrary one.
+    for i in 1..c {
+        let mut j = i;
+        while j > 0 && cover[j - 1].0 > cover[j].0 {
+            cover.swap(j - 1, j);
+            j -= 1;
+        }
+    }
+    for (_, r) in cover.iter().take(c) {
+        n = subtract(out, n, *r);
     }
     n
 }
@@ -630,6 +855,12 @@ fn border_pieces(handle: i16, out: &mut [Grect; RCAP]) -> usize {
 /// its tree in once. An empty result means the caller draws nothing at all —
 /// which is the whole point: a window that owns no visible piece, or a desktop
 /// wholly covered by windows, paints nothing.
+///
+/// `do_walk` itself adds **no** drop shadow to `pc`: `w_drawdesk` hands its
+/// caller's rectangle straight down (`gemwmlib.c:340-359`), and only `w_cpwalk`
+/// grows the clip — which is why the growth lives in [`draw_frame_pieces`] and
+/// not here. The shadow still reaches the walk, through the `WS_TRUE` pieces
+/// [`border_pieces`] produces.
 fn walk_rects(wh: i16, pc: Option<Grect>, out: &mut [Grect; RCAP]) -> usize {
     // `rc_intersect(&gl_rfull, pc)` — `gl_rfull` is the screen minus the menu
     // row (`aes/gemgraf.c:423-424`, set at `gsx_start` whether or not a menu bar
@@ -662,14 +893,34 @@ fn walk_rects(wh: i16, pc: Option<Grect>, out: &mut [Grect; RCAP]) -> usize {
 /// over it. `istop` selects the activated / deactivated decorations
 /// (`w_bldactive`'s `istop`, `:495-560`).
 ///
-/// `pc` is `w_cpwalk`'s clip: `Some(damage)` for the `usetrue == FALSE` call
-/// inside `w_update`, which runs under `gsx_sclip(pt)` and picks the current
-/// clip up again with `gsx_gclip` (`:1029-1031,368-374`); `None` for the
-/// `usetrue == TRUE` calls, whose `WS_TRUE` clip is already implied by the
-/// rectangle list (every piece is inside the window).
+/// `pc` is `w_cpwalk`'s clip, and the two branches differ by the drop shadow
+/// (`gemwmlib.c:365-375`):
+///
+/// ```c
+/// if (usetrue)
+///     w_getsize(WS_TRUE, wh, &c);     /* the window plus its shadow */
+/// else
+/// {
+///     gsx_gclip(&c);                  /* the damage rect w_update set */
+///     c.g_w += DROP_SHADOW_SIZE;      /* add in drop shadow   */
+///     c.g_h += DROP_SHADOW_SIZE;
+/// }
+/// ```
+///
+/// - `Some(damage)` is the `usetrue == FALSE` call inside `w_update`, which runs
+///   under `gsx_sclip(pt)` and picks that clip back up with `gsx_gclip`
+///   (`:1029-1031`) — so the damage rectangle is grown by the shadow here
+///   ([`plus_shadow`]). `draw_change` already added one shadow to the damage on
+///   the way in (`:1213-1215`); this second one is `w_cpwalk`'s own and is not
+///   a substitute for it. Without it a window whose damage rectangle ends at
+///   its border keeps its shadow unpainted.
+/// - `None` is the `usetrue == TRUE` call. Its clip is `WS_TRUE(wh)`, which is
+///   already implied: every piece [`border_pieces`] produces starts from
+///   `ws_true(curr)` and is only ever cut down, so intersecting with it again
+///   cannot change anything.
 fn draw_frame_pieces(handle: i16, istop: bool, backend: &dyn RasterBackend, pc: Option<Grect>) {
     let mut pieces = [Grect::default(); RCAP];
-    let n = walk_rects(handle, pc, &mut pieces);
+    let n = walk_rects(handle, pc.map(plus_shadow), &mut pieces);
     if n == 0 {
         return;
     }
@@ -1044,24 +1295,46 @@ fn intersect_grect(a: Grect, b: Grect) -> Option<Grect> {
     (x1 > x0 && y1 > y0).then_some(Grect { x: x0, y: y0, w: x1 - x0, h: y1 - y0 })
 }
 
+/// EmuTOS `rc_intersect` (`util/rectfunc.c:61-78`) with **both** halves of its
+/// result: `p2` is overwritten with the clipped rectangle *unconditionally*,
+/// and the return value says whether that rectangle still has size.
+///
+/// ```c
+/// WORD rc_intersect(const GRECT *p1, GRECT *p2)
+/// {
+///     tw = min(p2->g_x + p2->g_w, p1->g_x + p1->g_w);
+///     th = min(p2->g_y + p2->g_h, p1->g_y + p1->g_h);
+///     tx = max(p2->g_x, p1->g_x);
+///     ty = max(p2->g_y, p1->g_y);
+///     p2->g_x = tx;  p2->g_y = ty;
+///     p2->g_w = tw - tx;  p2->g_h = th - ty;
+///     return ((tw > tx) && (th > ty));
+/// }
+/// ```
+///
+/// The four stores happen **before** the test, so a failed intersection still
+/// leaves `g_x = max(p2.x, p1.x)` and `g_y = max(p2.y, p1.y)` behind — and a
+/// `g_w`/`g_h` that may be zero or negative. That leftover is not debris: it is
+/// what `w_owns` hands back at the end of a rectangle list it did walk
+/// ([`Owns::Exhausted`]), which is the only reason this form exists next to
+/// [`intersect_grect`]. Callers that never look at a failed rectangle keep
+/// using the `Option` form.
+fn rc_intersect(p1: Grect, p2: &mut Grect) -> bool {
+    let tw = (p2.x + p2.w).min(p1.x + p1.w);
+    let th = (p2.y + p2.h).min(p1.y + p1.h);
+    let tx = p2.x.max(p1.x);
+    let ty = p2.y.max(p1.y);
+    p2.x = tx;
+    p2.y = ty;
+    p2.w = tw - tx;
+    p2.h = th - ty;
+    tw > tx && th > ty
+}
+
 // ── rectangle list (visible pieces) ──────────────────────────────────────
 
 const RCAP: usize = 16;
 const WM_REDRAW: i16 = 20;
-
-/// Iterator state for `WF_FIRSTXYWH`/`WF_NEXTXYWH` — the visible pieces of
-/// the window most recently queried. Single-CPU, like the window table.
-struct RList {
-    rects: UnsafeCell<[Grect; RCAP]>,
-    count: UnsafeCell<usize>,
-    cursor: UnsafeCell<usize>,
-}
-unsafe impl Sync for RList {}
-static RLIST: RList = RList {
-    rects: UnsafeCell::new([Grect { x: 0, y: 0, w: 0, h: 0 }; RCAP]),
-    count: UnsafeCell::new(0),
-    cursor: UnsafeCell::new(0),
-};
 
 fn put(out: &mut [Grect; RCAP], m: &mut usize, r: Grect) {
     if r.w > 0 && r.h > 0 && *m < RCAP {
@@ -1071,7 +1344,12 @@ fn put(out: &mut [Grect; RCAP], m: &mut usize, r: Grect) {
 }
 
 /// Subtract covering rect `c` from each rect in `list[0..n]`, producing the
-/// non-overlapping remainder. Returns the new count.
+/// non-overlapping remainder — EmuTOS `brkrct` (`aes/gemwrect.c:100-135`)
+/// applied to one covering rectangle. Returns the new count.
+///
+/// The pieces of a broken rectangle replace it **in place**, so the relative
+/// order of the untouched rectangles is kept (`brkrct` re-links `p->o_link`,
+/// `mkrect` `:136-162`).
 fn subtract(list: &mut [Grect; RCAP], n: usize, c: Grect) -> usize {
     let mut out = [Grect::default(); RCAP];
     let mut m = 0usize;
@@ -1081,11 +1359,23 @@ fn subtract(list: &mut [Grect; RCAP], n: usize, c: Grect) -> usize {
             put(&mut out, &mut m, r);
             continue;
         }
+        // TOP, LEFT, RIGHT, BOTTOM — the one order `brkrct` emits the pieces
+        // in: it indexes `have_piece[]` with the constants `TOP 0`, `LEFT 1`,
+        // `RIGHT 2`, `BOTTOM 3` (`aes/gemwrect.c:30-33`) and appends the ones it
+        // has in an ascending `for (i = 0; i < 4; i++)` loop (`:113-125`).
+        //
+        // This is algorithm semantics, not a device parameter, and it is
+        // observable: it is the order in which every reader of the owner
+        // rectangle list sees the pieces — the draw walk ([`walk_rects`], which
+        // thereby also fixes the call order of a `G_USERDEF` object), the
+        // public `WF_FIRSTXYWH`/`WF_NEXTXYWH` iteration ([`compute_rlist`]) and
+        // the redraw union ([`w_union`]).
+        //
+        // The edge formulas are `mkpiece` (`aes/gemwrect.c:64-98`): TOP and
+        // BOTTOM keep the broken rectangle's full width, LEFT and RIGHT get the
+        // "common calcs" overlap band `oy`/`oh`.
         if r.y < c.y {
             put(&mut out, &mut m, Grect { x: r.x, y: r.y, w: r.w, h: c.y - r.y });
-        }
-        if r.y + r.h > c.y + c.h {
-            put(&mut out, &mut m, Grect { x: r.x, y: c.y + c.h, w: r.w, h: (r.y + r.h) - (c.y + c.h) });
         }
         let oy = r.y.max(c.y);
         let oh = (r.y + r.h).min(c.y + c.h) - oy;
@@ -1095,62 +1385,107 @@ fn subtract(list: &mut [Grect; RCAP], n: usize, c: Grect) -> usize {
         if r.x + r.w > c.x + c.w {
             put(&mut out, &mut m, Grect { x: c.x + c.w, y: oy, w: (r.x + r.w) - (c.x + c.w), h: oh });
         }
+        if r.y + r.h > c.y + c.h {
+            put(&mut out, &mut m, Grect { x: r.x, y: c.y + c.h, w: r.w, h: (r.y + r.h) - (c.y + c.h) });
+        }
     }
     *list = out;
     m
 }
 
-/// `handle`'s owner rectangle list ([`border_pieces`]) intersected with its work
-/// area — what `wm_get(WF_FIRSTXYWH/WF_NEXTXYWH)` reports. EmuTOS walks the same
-/// list and clips each piece to `WS_WORK` on the way out (`w_owns` against the
-/// window's work rectangle, `gemwmlib.c:1556-1561`, `:1226-1239`).
+/// Load `handle`'s **raw** owner rectangle list ([`border_pieces`]) into *that
+/// window's* slot and rewind its cursor — what `WF_FIRSTXYWH` starts from.
 ///
-/// Returns the piece count; `out[..n]` holds them. Pieces that are pure border
-/// (no work-area overlap) drop out.
-fn work_rects(handle: i16, out: &mut [Grect; RCAP]) -> usize {
-    let Some(work) = win(handle).map(|w| w.work) else {
-        return 0;
-    };
+/// EmuTOS stores the list in `pwin->w_rlist` and reads it from there
+/// (`gemwmlib.c:1556-1561`); it is (re)built for every window by `newrect`
+/// whenever the window arrangement changes (`gemwrect.c:165-205`, driven from
+/// `draw_change`, `gemwmlib.c:1089`). We build it on demand when the
+/// application asks for the first piece, which for a stable arrangement — the
+/// only state in which FIRST/NEXT has a defined geometric answer at all — is
+/// the same list. Storing it in the window slot is what makes it *that
+/// window's* list: an interleaved `FIRST(B)` no longer overwrites A's.
+///
+/// **Raw, not work-clipped.** What `newrect` links into `w_rlist` are the
+/// `WS_TRUE` remainder pieces themselves; the work-area clip happens on the way
+/// *out*, once per piece, inside `w_owns` (`w_getsize(WS_WORK, …)` then
+/// `rc_intersect`, `gemwmlib.c:1556-1561,1230-1240`). Storing only the pieces
+/// that survive that clip would throw away two things the caller can observe:
+/// the pure-border pieces the walk still has to step over, and the coordinates
+/// the last failed `rc_intersect` leaves behind ([`Owns::Exhausted`]).
+/// [`w_union`], the other reader of the same list, does not clip either — the
+/// clip belongs to `w_owns` and to nothing else.
+fn compute_rlist(handle: i16) {
     let mut list = [Grect::default(); RCAP];
     let n = border_pieces(handle, &mut list);
-    let mut m = 0usize;
-    for r in list.iter().take(n) {
-        if let Some(t) = intersect_grect(*r, work) {
-            out[m] = t;
-            m += 1;
-        }
-    }
-    m
-}
-
-/// Load `handle`'s [`work_rects`] into `RLIST`, cursor reset — the
-/// `WF_FIRSTXYWH`/`WF_NEXTXYWH` iterator's backing store (EmuTOS keeps the list
-/// itself and a `w_rnext` cursor per window, `gemwmlib.c:1556-1561`).
-fn compute_rlist(handle: i16) {
-    // SAFETY: single-CPU AES.
-    let (rects, count, cursor) = unsafe {
-        (&mut *RLIST.rects.get(), &mut *RLIST.count.get(), &mut *RLIST.cursor.get())
+    let Some(w) = win(handle) else {
+        return; // no window, no list to own it (callers check the handle first)
     };
-    *cursor = 0;
-    let mut list = [Grect::default(); RCAP];
-    let n = work_rects(handle, &mut list);
-    rects[..n].copy_from_slice(&list[..n]);
-    *count = n;
+    w.rlist[..n].copy_from_slice(&list[..n]);
+    w.rcount = n as u16;
+    w.rnext = 0;
 }
 
-/// Next piece from `RLIST` (empty `Grect` when exhausted).
-fn rlist_next() -> Grect {
-    // SAFETY: single-CPU AES.
-    unsafe {
-        let count = *RLIST.count.get();
-        let cursor = &mut *RLIST.cursor.get();
-        if *cursor < count {
-            let r = (*RLIST.rects.get())[*cursor];
-            *cursor += 1;
-            r
-        } else {
-            Grect::default()
+/// What one `w_owns` walk ended with (`aes/gemwmlib.c:1230-1241`). The three
+/// cases differ in **how many of the four words are defined**, which is the
+/// whole content of the end-of-list contract:
+///
+/// ```c
+/// while (po) {
+///     rc_copy(&po->o_gr, poutwds);
+///     pwin->w_rnext = po = po->o_link;
+///     if (rc_intersect(pt, poutwds))
+///         return;
+/// }
+/// poutwds->g_w = poutwds->g_h = 0;
+/// ```
+enum Owns {
+    /// A piece still had size after the work-area clip: all four words are the
+    /// clipped rectangle (the `return` inside the loop).
+    Visible(Grect),
+    /// Pieces were walked, none survived. All four words are written, because
+    /// [`rc_intersect`] stores its result even when it fails
+    /// (`util/rectfunc.c:63-78`) — x/y are those of the **last piece examined**,
+    /// clamped to the work area — and `:1240` then zeroes w/h.
+    Exhausted { x: i16, y: i16 },
+    /// The loop was never entered (`po == NULL` on the way in). `:1240` writes
+    /// `g_w`/`g_h` and **nothing else**: x/y keep whatever the dispatcher's
+    /// `WORD int_out[O_SIZE]` held (`aes/gemsuper.c:432`, copied out at
+    /// `:444-445`). EmuTOS leaves that array uninitialised, so its x/y have no
+    /// value to reproduce — A15 traced the values a TT delivers here to the
+    /// *caller's* call history rather than to any window state, over all fifteen
+    /// measured records. We leave the two words alone as well; ours then read as
+    /// the dispatcher's defined zero (`super::dispatch`) instead of stack debris.
+    Empty,
+}
+
+/// Walk `handle`'s owner rectangle list from its own cursor to the first piece
+/// that still has size inside the window's work area — EmuTOS `w_owns`
+/// (`aes/gemwmlib.c:1230-1241`), reached from `wm_get` with
+/// `pt = w_getsize(WS_WORK, …)` and `po = w_rlist` (FIRST) or `w_rnext` (NEXT)
+/// (`:1556-1561`).
+///
+/// The cursor advances **before** the clip is tested and therefore also on a
+/// failed piece (`pwin->w_rnext = po = po->o_link;` sits above the `if`), so a
+/// pure-border piece is stepped over rather than re-offered on the next call.
+fn rlist_owns(handle: i16) -> Owns {
+    let Some(w) = win(handle) else {
+        return Owns::Empty;
+    };
+    let work = w.work;
+    let mut last: Option<(i16, i16)> = None;
+    while (w.rnext as usize) < (w.rcount as usize) {
+        let mut t = w.rlist[w.rnext as usize];
+        w.rnext += 1;
+        if rc_intersect(work, &mut t) {
+            return Owns::Visible(t);
         }
+        // Failed — but `rc_intersect` has written all four words anyway, and
+        // these are the ones that stand at the end of the walk.
+        last = Some((t.x, t.y));
+    }
+    match last {
+        Some((x, y)) => Owns::Exhausted { x, y },
+        None => Owns::Empty,
     }
 }
 
@@ -1179,41 +1514,110 @@ fn send_redraw(handle: i16, rect: Grect) {
     }
 }
 
-/// Bounding rectangle of `handle`'s currently-visible work-area pieces — its
-/// work rect minus every higher-z open window — i.e. EmuTOS `w_union` over the
-/// owner rectangle list (`w_union`/`w_owns`/`w_rlist`, `gemwmlib.c:869-884`).
-/// Empty when the window is closed or fully covered. Computed the same way as
-/// [`compute_rlist`], but returning only the enclosing rectangle and **without**
-/// disturbing the shared `WF_FIRSTXYWH`/`WF_NEXTXYWH` iterator state ([`RLIST`]).
-fn visible_bound(handle: i16) -> Grect {
+/// EmuTOS `w_union` (`aes/gemwmlib.c:869-884`) — the bounding rectangle over
+/// `handle`'s owner rectangle list, or `None` for an empty list (the C
+/// function's `FALSE`, which is what keeps [`send_redraw_in`] from sending
+/// anything at all):
+///
+/// ```c
+/// static WORD w_union(ORECT *po, GRECT *pt)
+/// {
+///     if (!po)
+///         return FALSE;
+///     rc_copy(&po->o_gr, pt);
+///     po = po->o_link;
+///     while (po) { rc_union(&po->o_gr, pt); po = po->o_link; }
+///     return TRUE;
+/// }
+/// ```
+///
+/// **The list is the raw one.** `w_union` walks `D.w_win[wh].w_rlist`, the
+/// `WS_TRUE` remainder pieces `newrect` links in (`aes/gemwrect.c:190,203`);
+/// nothing on this path clips them to the window's work area. The hull
+/// therefore covers the window's frame and drop shadow as well, and it is *not*
+/// interchangeable with the hull of the work-clipped pieces: intersecting each
+/// piece first and taking the hull afterwards is in general a strictly smaller
+/// rectangle than taking the hull first and intersecting once.
+///
+/// EmuTOS (re)builds `w_rlist` with `newrect` at the top of every `draw_change`
+/// (`gemwmlib.c:1089`), i.e. before anything is drawn or sent; we derive it on
+/// demand from the current arrangement with [`border_pieces`] — the same
+/// producer [`compute_rlist`] stores for `WF_FIRSTXYWH`. Reading *that* stored
+/// copy instead would be wrong: it only exists once an application has asked
+/// for a piece, and stepping it would disturb the caller's iterator.
+fn w_union(handle: i16) -> Option<Grect> {
     let mut list = [Grect::default(); RCAP];
-    let n = work_rects(handle, &mut list);
-    let mut acc: Option<Grect> = None;
-    for r in list.iter().take(n) {
-        acc = Some(match acc {
-            Some(a) => union_grect(a, *r),
-            None => *r,
-        });
-    }
-    acc.unwrap_or_default()
+    let n = border_pieces(handle, &mut list);
+    list.iter().take(n).copied().reduce(union_grect)
 }
 
-/// Post a `WM_REDRAW` to `handle`'s owner for the intersection of `damage` with
-/// the window's now-visible area — EmuTOS `w_redraw`: `pt` ∩ work ∩
-/// `w_union(w_rlist)` (`gemwmlib.c:887-907`). No message when the intersection
-/// is empty (the window is not exposed inside `damage`).
+/// EmuTOS `w_redraw` (`aes/gemwmlib.c:887-907`) — post `handle`'s owner one
+/// `WM_REDRAW` for the part of the damage rectangle `damage` that the window
+/// owns:
+///
+/// ```c
+/// static void w_redraw(WORD w_handle, GRECT *pt)
+/// {
+///     GRECT t, d;
+///     /* make sure work rect and word rect intersect */
+///     rc_copy(pt, &t);
+///     w_getsize(WS_WORK, w_handle, &d);
+///     if (rc_intersect(&t, &d))                          /* :896 */
+///         /* make sure window owns a rectangle */
+///         if (w_union(D.w_win[w_handle].w_rlist, &d))    /* :899 */
+///             /* intersect redraw rect with union of owner rects */
+///             if (rc_intersect(&d, &t))                  /* :902 */
+///                 ap_sendmsg(wind_msg, WM_REDRAW, ppd, w_handle,
+///                            t.g_x, t.g_y, t.g_w, t.g_h);
+/// }
+/// ```
+///
+/// **The work rectangle is a gate, not a clip.** `rc_intersect(&t, &d)` writes
+/// its result into `d` and leaves `t` at the full damage rectangle
+/// (`util/rectfunc.c:61-78`, [`rc_intersect`]); its return value is only asked
+/// whether the window's work area is touched at all. `d` is then *overwritten*
+/// by [`w_union`], and what goes out is `damage ∩ hull(raw owner list)` — which
+/// reaches over the work area's edge, across the window's frame and drop
+/// shadow. That is not an oversight in EmuTOS: the owner clips its own painting
+/// with `WF_FIRSTXYWH`/`WF_NEXTXYWH`, and *those* are work-clipped, per piece,
+/// by `w_owns` ([`rlist_owns`]) — e.g. `do_wredraw`, `desk/desksupp.c:223-229`.
+///
+/// Sending `damage ∩ hull(pieces ∩ work)` instead — which is what this function
+/// did before — is a different, strictly smaller rectangle for two independent
+/// reasons: the work clip, and the fact that a hull of clipped pieces is not
+/// the clipped hull.
+///
+/// The leading clip against [`desktop_work`] is `w_update`'s "limit to screen",
+/// `rc_intersect(&gl_rfull, pt)` (`gemwmlib.c:1010`), which every path into
+/// `w_redraw` passes through. It sits here rather than in [`broadcast_redraw`]
+/// because both of our entries into that fan-out ([`broadcast_redraw`] and
+/// [`top_window`]'s single-window turn) funnel through this function, and
+/// clipping the damage once before the loop or once per turn is the same
+/// rectangle.
 fn send_redraw_in(handle: i16, damage: Grect) {
-    if let Some(rect) = intersect_grect(damage, visible_bound(handle)) {
-        send_redraw(handle, rect);
+    let Some(work) = win(handle).map(|w| w.work) else {
+        return; // no window, no owner to send to
+    };
+    let mut t = damage;
+    rc_intersect(desktop_work(), &mut t); // w_update `:1010`, result unused there too
+    let mut d = work;
+    if !rc_intersect(t, &mut d) {
+        return; // the damage does not reach the work area
+    }
+    let Some(d) = w_union(handle) else {
+        return; // the window owns no rectangle
+    };
+    if rc_intersect(d, &mut t) {
+        send_redraw(handle, t);
     }
 }
 
 /// EmuTOS `w_update`→`w_redraw` fan-out (`gemwmlib.c:1004-1048,887-907`): walk
-/// every still-open window and post a `WM_REDRAW` for the part of its
-/// now-visible area inside the exposed `damage` region. A window whose visible
-/// region grew because a removed/lowered window no longer covers it thus
-/// repaints its newly-exposed content; a window `damage` does not reach gets
-/// nothing (empty intersection → no message).
+/// every still-open window and post a `WM_REDRAW` for the part of the exposed
+/// `damage` region the window owns ([`send_redraw_in`]). A window whose owner
+/// rectangle list grew because a removed/lowered window no longer covers it
+/// thus repaints its newly-exposed content; a window `damage` does not reach
+/// gets nothing (empty intersection → no message).
 ///
 /// Every posted `WM_REDRAW` is appended to the owner's per-app FIFO queue
 /// (`Aespd::queue`), so when several **same-owner** windows are uncovered at
@@ -1361,6 +1765,57 @@ fn gadget(r: Grect, ch: u16, backend: &dyn RasterBackend, clip: ClipRect) {
     gadget_sel(r, ch, false, backend, clip);
 }
 
+/// The window's solid drop shadow: two black bands to the lower right of the
+/// border rectangle `b`.
+///
+/// EmuTOS never draws this as frame code — it sets `SHADOWED` on the root of
+/// the window element tree once, in `wm_init`
+/// (`W_ACTIVE[ROOT].ob_state = SHADOWED`, `aes/gemwmlib.c:1284`), and every
+/// `w_cpwalk`→`do_walk`→`ob_draw` of that tree then paints it as an ordinary
+/// object decoration (`aes/gemoblib.c:889-901`):
+///
+/// ```c
+/// if (th > 0) gr_inside(&t, th); else th = -th;
+/// if ((state & SHADOWED) && th)
+/// {
+///     vsf_color(bcol);
+///     bb_fill(MD_REPLACE, FIS_SOLID, 0, t.g_x, t.g_y+t.g_h+th, t.g_w + th, 2*th);
+///     bb_fill(MD_REPLACE, FIS_SOLID, 0, t.g_x+t.g_w+th, t.g_y, 2*th, t.g_h+(3*th));
+/// }
+/// ```
+///
+/// Our frame is a raster routine rather than an object tree, so the same two
+/// fills are issued here. Substituting the inset rectangle
+/// `t = (x+th, y+th, w-2th, h-2th)` that `gr_inside` leaves, and
+/// `2*th = DROP_SHADOW_SIZE`, gives them in terms of the border rect:
+///
+/// - bottom band `(x + th, y + h, w - th, DROP_SHADOW_SIZE)`
+/// - right band  `(x + w, y + th, DROP_SHADOW_SIZE, h + th)`
+///
+/// which together fill exactly `ws_true(b) \ b` minus two `th`-wide notches —
+/// bottom-left `(x, y+h)…(x+th-1, …)` and top-right `(x+w, y)…(…, y+th-1)`.
+/// Those notches are unpainted in EmuTOS too; they are not a defect and no test
+/// may demand a colour there.
+///
+/// `bcol` is the border colour cracked out of `W_BOX`'s `ob_spec 0x00011101`
+/// (`gemwmlib.c:63,84`): `gr_crack` takes bits 15..12 of the low word `0x1101`
+/// (`aes/gemgraf.c:612-627`), i.e. `1` = [`BLACK`].
+fn draw_shadow(b: Grect, backend: &dyn RasterBackend, clip: ClipRect) {
+    // `if ((state & SHADOWED) && th)` — a zero thickness casts no shadow, and
+    // `ws_true` then adds nothing either, so both halves stay in step.
+    if SHADOW_TH == 0 || b.w <= 0 || b.h <= 0 {
+        return;
+    }
+    backend.fill_rect(
+        b.x + SHADOW_TH, b.y + b.h, b.w - SHADOW_TH, DROP_SHADOW_SIZE,
+        DROP_SHADOW_COLOR, clip,
+    );
+    backend.fill_rect(
+        b.x + b.w, b.y + SHADOW_TH, DROP_SHADOW_SIZE, b.h + SHADOW_TH,
+        DROP_SHADOW_COLOR, clip,
+    );
+}
+
 /// Draw text left-aligned within a band, one 8×16 glyph per byte.
 fn draw_label(x: i16, y: i16, max_w: i16, s: &[u8], backend: &dyn RasterBackend, clip: ClipRect) {
     let cy = y + 1;
@@ -1385,6 +1840,15 @@ fn draw_frame(w: &Window, istop: bool, backend: &dyn RasterBackend, clip: ClipRe
 
     // Outer frame.
     rect_outline(b, backend, clip);
+
+    // …and the drop shadow that goes with it. `ob_draw` draws the `W_BOX`
+    // border and its `SHADOWED` decoration in the same visit, before it
+    // descends into the title bar and the gadgets (`aes/gemoblib.c:640-901`),
+    // so it is drawn here and in that order. It falls outside `b`, into the
+    // strip [`ws_true`] claimed for this window in the owner rectangle list —
+    // which is what keeps the desktop and the windows below from painting into
+    // it, and what the caller's clip lets through ([`draw_frame_pieces`]).
+    draw_shadow(b, backend, clip);
 
     let ah = adj_hbox();
     let aw = adj_wbox();
@@ -1830,7 +2294,16 @@ pub fn wind_create(pb: &Aespb) {
     // is 1. The handle *is* the slot index.
     for (i, w) in slots().iter_mut().enumerate() {
         if !w.in_use {
+            // **`WS_WORK` survives the slot reset.** `wm_create` runs `w_setup`
+            // plus three `w_setsize` calls (`gemwmlib.c:1376-1379`) and neither
+            // touches `w_work` (`:205-228`), so what a created-but-unopened
+            // window reports is the rectangle the slot's *previous* life left —
+            // `gl_rfull`, written by `wm_delete` (`:1480`, [`wm_delete`]). The
+            // wholesale reset below would wipe exactly that, so the field is
+            // carried across it. A33; measured cases 340 and 344.
+            let work = w.work;
             *w = Window::EMPTY;
+            w.work = work;
             w.in_use = true;
             w.kind = kind;
             // `w_setup(rlr, i, kind)` (`gemwmlib.c:1376`, `:205-215`) records
@@ -1846,7 +2319,26 @@ pub fn wind_create(pb: &Aespb) {
             w.full = full;
             w.curr = Grect::default();
             w.prev = Grect::default();
-            w.work = calc(WC_WORK, kind, full);
+            // **`WS_WORK` is deliberately not written here.** `wm_create` writes
+            // three slots and stops (`:1377-1379`), and `w_setup` does not
+            // assign `w_work` either (`:205-228`); in the whole AES the work
+            // rectangle is written only by `wm_init` for the desktop window
+            // (`:1294`), by `wm_delete` (`:1480`) and by `draw_change`/`w_move`
+            // (`:1073-1077`) — [`set_curr`]. `wm_get(WF_WXYWH)` is a plain
+            // `w_getsize(WS_WORK, …)` (`:1529`, `:236-262`), so a created but
+            // unopened window reports the rectangle its *slot* was left with,
+            // which no argument of `wind_create` can influence. Computing
+            // `wm_calc(WC_WORK, kind, full)` here answered `11,43,276,154` where
+            // EmuTOS answered `gl_rfull` — measured, `aes-r3-wind-state.tsv`
+            // cases 340 and 344 against `EMUTOS14-AES-r3.BIN` (A34).
+            //
+            // The positive half of the same two cases is the `gl_rfull` the
+            // slot arrives with: [`wm_delete`] writes `WS_CURR`/`WS_PREV` =
+            // `gl_rscreen` and `WS_FULL`/`WS_WORK` = `gl_rfull` into every slot
+            // it frees (`:1477-1480`), and the `let work` above carries the
+            // last of those four past this reset. `WS_CURR`, `WS_PREV` and
+            // `WS_FULL` are all overwritten below, so `WS_WORK` is the only one
+            // of the four a create leaves visible (A33).
             // Per-window gadget colours inherit the current global defaults
             // (EmuTOS `w_setup`, gemwmlib.c:222-226) so a prior WF_DCOLOR change
             // is reflected in windows created afterwards.
@@ -1884,12 +2376,19 @@ pub fn wind_open(pb: &Aespb) {
         w.open = true;
         w.prev = r;
         w.z = bump_z();
-        // The new window is topmost and covers exactly its own rect `r`; nothing
-        // outside `r` changes. Repaint only `r` (background + frames, this window
-        // on top) rather than the whole screen — the open/close full-screen
-        // flicker fix, mirroring the move/size damage-scope. This window's content
-        // follows via `send_redraw` (WM_REDRAW).
-        redraw_clip(r.x, r.y, r.w, r.h);
+        // The new window is topmost and covers exactly its own rect `r` **plus
+        // its drop shadow**; nothing outside that changes. Repaint only that
+        // (background + frames, this window on top) rather than the whole
+        // screen — the open/close full-screen flicker fix, mirroring the
+        // move/size damage-scope. This window's content follows via
+        // `send_redraw` (WM_REDRAW).
+        //
+        // `draw_change`'s open branch takes `c = pt` (`gemwmlib.c:1163-1167`,
+        // the "grow that is a superset or an open" case, reached because the
+        // created-but-unopened window's current rect is still zero) and its
+        // tail then adds the shadow (`:1213-1215`) — [`plus_shadow`].
+        let d = plus_shadow(r);
+        redraw_clip(d.x, d.y, d.w, d.h);
         send_redraw(handle, w.work);
         pb.set_ret(1);
     } else {
@@ -1919,24 +2418,59 @@ pub fn wind_close(pb: &Aespb) {
     pb.set_ret(i16::from(ok));
 }
 
-/// Close window `handle` (clear its open flag) and repaint the area it vacated —
-/// the shared body of [`wind_close`] and the implicit close [`wind_delete`]
-/// performs on a still-open window (EmuTOS `wm_close`, gemwmlib.c:1438-1459,
-/// invoked from `wm_delete` :1473-1474). Returns `false` for an invalid handle
-/// or a window that was not open (no damage, no message); `true` after the
-/// uncover.
+/// Close window `handle` — move its rectangles into the closed state, clear its
+/// open flag and repaint the area it vacated. The shared body of [`wind_close`]
+/// and the implicit close [`wind_delete`] performs on a still-open window
+/// (EmuTOS `wm_close`, gemwmlib.c:1438-1459, invoked from `wm_delete`
+/// :1473-1474). Returns `false` for an invalid handle or a window that was not
+/// open (no rectangle written, no damage, no message); `true` after the uncover.
+///
+/// **A closed window's rectangles are not the ones it had.** `wm_close` closes
+/// *through* `draw_change(w_handle, &gl_rzero)` (`:1449,1453`), and
+/// `draw_change` rewrites all three of them before it so much as looks at
+/// `VF_ISOPEN` (`:1069-1077` against the shortcut at `:1085-1086`):
+///
+/// ```c
+/// w_getsize(WS_CURR, w_handle, &c);       /* c = the rect it had        */
+/// w_setsize(WS_PREV, w_handle, &c);       /* WS_PREV = the old WS_CURR  */
+/// w_setsize(WS_CURR, w_handle, pt);       /* WS_CURR = gl_rzero         */
+/// pw = w_getxptr(WS_WORK, w_handle);
+/// wm_calc(WC_WORK, D.w_win[w_handle].w_kind,
+///             pt->g_x, pt->g_y, pt->g_w, pt->g_h,
+///             &pw->g_x, &pw->g_y, &pw->g_w, &pw->g_h);   /* WS_WORK from it */
+/// ```
+///
+/// Only after `draw_change` has returned does `wm_close` clear the flag
+/// (`:1454`). So a closed window answers `WF_CXYWH` with `gl_rzero` — 0,0,0,0,
+/// `aes/gemgraf.c:425` — `WF_PXYWH` with the rectangle it was closed from, and
+/// `WF_WXYWH` with `wm_calc(WC_WORK, kind, 0,0,0,0)`, which is a negative-size
+/// rectangle for every window that has a border. `WS_FULL` is not touched;
+/// resetting the slot is `wm_delete`'s job (`:1476-1481`).
 fn close_window(handle: i16) -> bool {
     let old_top = get_top();
-    let Some((r, was_open)) = win(handle).map(|w| {
-        let was = w.open;
+    // `wm_close` refuses **before** it changes anything: an unknown handle
+    // (`get_pwin`, `:1443-1445`) and a window that is merely not open
+    // (`:1446-1447`) both return FALSE without ever reaching `draw_change`, so
+    // neither may have its rectangles rewritten. The second case is not
+    // hypothetical — the desktop window is `VF_INUSE` but never `VF_ISOPEN`
+    // (measured: `aes-r2-wind.tsv` case 194), and zeroing *its* `WS_CURR` would
+    // take the whole screen out of [`find_handle`] and every other hit test.
+    let Some(r) = win(handle).filter(|w| w.open).map(|w| {
+        let c = w.curr;
+        w.prev = c; // WS_PREV = old WS_CURR      (`:1069-1070`)
+        set_curr(w, Grect::default()); // WS_CURR = gl_rzero, WS_WORK recalculated (`:1073-1077`)
+        // EmuTOS takes the window out of `gl_wtree` with `ob_delete` *before*
+        // `draw_change` (`:1452`) and clears `VF_ISOPEN` after it (`:1454`).
+        // Our single `open` flag carries both roles — every tree walk
+        // ([`get_top`], [`border_pieces`], [`broadcast_redraw`],
+        // [`find_handle`]) keys off it — so it goes down here: after the three
+        // rectangle writes, as in `wm_close`, and before the damage below is
+        // worked out, as after `ob_delete`.
         w.open = false;
-        (w.curr, was)
+        c
     }) else {
-        return false; // invalid handle
+        return false; // no such window, or it was not open
     };
-    if !was_open {
-        return false; // valid but not open — no action (gemwmlib.c:1446-1447)
-    }
     // Damage region `c`: the vacated rect, plus the new top window's rect
     // when the closed window was the top one (activates the new top frame).
     let new_top = get_top();
@@ -1951,6 +2485,14 @@ fn close_window(handle: i16) -> bool {
     } else {
         r
     };
+    // `draw_change`'s tail adds the drop shadow to whatever damage it arrived
+    // with, unconditionally (`gemwmlib.c:1213-1215`), before both `w_drawdesk`
+    // and `w_update`. For a close that is the whole point: the vanishing
+    // window's shadow lies outside its border rect, so without this its black
+    // band would stay on the screen. Note EmuTOS unions the *current* rect of
+    // the new top here (`:1198-1201`), not its `WS_TRUE` one — the single
+    // addition below covers both.
+    let damage = plus_shadow(damage);
     // AES repaints background + remaining frames directly over the damage,
     redraw_clip(damage.x, damage.y, damage.w, damage.h);
     // then fans WM_REDRAW out to every window whose visible region grew.
@@ -1958,29 +2500,88 @@ fn close_window(handle: i16) -> bool {
     true
 }
 
-/// `wind_delete` (103) — free the handle `int_in[0]`.
+/// EmuTOS `wm_delete` (`aes/gemwmlib.c:1466-1485`) — free `handle`'s slot for
+/// the next `wm_create`, in full:
 ///
-/// EmuTOS `wm_delete` (gemwmlib.c:1466-1485) closes a still-open window first
-/// (`if (pwin->w_flags & VF_ISOPEN) wm_close(w_handle)`, :1473-1474) so its
-/// frame + content are uncovered — background and lower windows repaint and the
-/// newly-exposed windows get `WM_REDRAW` — *before* the slot is freed; otherwise
-/// the deleted window would linger on screen as a dead pixel block. An invalid
-/// handle keeps the existing FALSE return.
-pub fn wind_delete(pb: &Aespb) {
-    let handle = pb.intin(0);
+/// ```c
+/// pwin = get_pwin(w_handle);
+/// if (!pwin) return FALSE;
+/// if (pwin->w_flags & VF_ISOPEN) wm_close(w_handle);
+/// newrect(gl_wtree, w_handle);                    /* give back recs. */
+/// w_setsize(WS_CURR, w_handle, &gl_rscreen);
+/// w_setsize(WS_PREV, w_handle, &gl_rscreen);
+/// w_setsize(WS_FULL, w_handle, &gl_rfull);
+/// w_setsize(WS_WORK, w_handle, &gl_rfull);
+/// pwin->w_flags = 0;
+/// pwin->w_owner = NULL;
+/// ```
+///
+/// A still-open window is closed first so its frame + content are uncovered —
+/// background and lower windows repaint and the newly-exposed windows get
+/// `WM_REDRAW` — *before* the slot is freed; otherwise the deleted window would
+/// linger on screen as a dead pixel block.
+///
+/// **The four rectangles are not housekeeping.** `wm_create` writes `WS_CURR`,
+/// `WS_PREV` and `WS_FULL` (`:1377-1379`) but never `WS_WORK`, and `w_setup`
+/// does not assign `w_work` either (`:205-228`), so the `gl_rfull` written here
+/// is what the *next* occupant of the handle reports from
+/// `wind_get(WF_WXYWH)` until it is opened — measured, `aes-r3-wind-state.tsv`
+/// cases 340 and 344 against `EMUTOS14-AES-r3.BIN`, both `0,19,640,461` (A33).
+/// The other three are invisible from outside by construction: a freed slot
+/// fails `get_pwin` ([`win`]), so nothing can read it while it is free, and a
+/// create overwrites all three before returning the handle. They are written
+/// anyway because that is what the function does; only `WS_WORK` is load-bearing.
+///
+/// EmuTOS leaves `w_kind`, `w_pname`/`w_pinfo`, the slider fields and the gadget
+/// colours standing — `w_setup` reassigns every one of them on the next create
+/// (`:210-226`) — and so do we.
+///
+/// Returns `get_pwin`'s verdict: FALSE for an out-of-range or already-free
+/// handle, TRUE otherwise.
+fn wm_delete(handle: i16) -> bool {
+    // `get_pwin(w_handle)` (`:1470-1472`) — refuse before anything is written.
     let Some(was_open) = win(handle).map(|w| w.open) else {
-        pb.set_ret(0);
-        return;
+        return false;
     };
     if was_open {
-        // Reuse the established close-uncover path (redraw_clip + broadcast_redraw).
+        // `wm_close(w_handle)` (`:1474`) — the established close-uncover path
+        // (redraw_clip + broadcast_redraw), which is `draw_change`'s tail.
         close_window(handle);
     }
-    if let Some(w) = win(handle) {
-        w.in_use = false;
-        w.open = false;
-    }
-    pb.set_ret(1);
+    let Some(w) = win(handle) else {
+        return false; // unreachable: `close_window` does not free the slot
+    };
+    // `newrect(gl_wtree, w_handle)` — "give back recs." (`:1476`): the window's
+    // owner rectangle list is dumped before the slot is freed, so a later
+    // occupant of the handle can never be handed a piece from the previous
+    // window's life. Its cursor goes with it; EmuTOS leaves `w_rnext` pointing
+    // at the freed list, which is not a contract we reproduce (an index into an
+    // emptied array simply reports the end).
+    w.rlist = [Grect::default(); RCAP];
+    w.rcount = 0;
+    w.rnext = 0;
+    // `:1477-1480`. `gl_rscreen` is the whole screen, `gl_rfull` the screen
+    // below the menu row (`aes/gemgraf.c:423-424`) — [`screen_rect`] and
+    // [`desktop_work`], the same pair [`init_desk_window`] writes.
+    w.curr = screen_rect();
+    w.prev = screen_rect();
+    w.full = desktop_work();
+    w.work = desktop_work();
+    // `pwin->w_flags = 0;` (`:1481`) — `VF_INUSE` and `VF_ISOPEN` both go down.
+    w.in_use = false;
+    w.open = false;
+    // `pwin->w_owner = NULL;` (`:1482`) — no process owns a free slot, so no
+    // stale pid can be handed a `WM_REDRAW` for a window that no longer exists.
+    w.owner = 0;
+    true
+}
+
+/// `wind_delete` (103) — free the handle `int_in[0]`: the [`wm_delete`] opcode,
+/// whose TRUE/FALSE is `int_out[0]` (`aes/gemsuper.c`, `WM_DELETE`). An invalid
+/// handle keeps the existing FALSE return.
+pub fn wind_delete(pb: &Aespb) {
+    let ok = wm_delete(pb.intin(0));
+    pb.set_ret(i16::from(ok));
 }
 
 /// Write a single scalar to `int_out[1]` with `ret = 1` — the common
@@ -1997,14 +2598,49 @@ pub fn wind_get(pb: &Aespb) {
 
     // Rectangle-list iteration is computed separately from the slot fields.
     if field == WF_FIRSTXYWH || field == WF_NEXTXYWH {
+        // The iterator belongs to a *window*, so the handle is checked first —
+        // EmuTOS `wm_get` looks the `WINDOW` up with `get_pwin` and returns
+        // FALSE for every field but `WF_TOP`/`WF_SCREEN`/`WF_DCOLOR` before the
+        // switch runs (`gemwmlib.c:1513-1524`, `get_pwin` `:1391-1404`); only
+        // then does it reach `w_owns`, the one place that reads `w_rlist` and
+        // writes `w_rnext` (`:1230-1240,1556-1561`). Touching the list on an
+        // invalid handle would not just answer wrongly: it would rebuild or
+        // advance the iteration *another* window is in the middle of. Handle 0
+        // is legal (the desktop window), and so is a created-but-closed one —
+        // both pass `win`.
+        if win(handle).is_none() {
+            pb.set_ret(0);
+            return;
+        }
         if field == WF_FIRSTXYWH {
             compute_rlist(handle);
         }
-        let r = rlist_next();
-        pb.set_intout(1, r.x);
-        pb.set_intout(2, r.y);
-        pb.set_intout(3, r.w);
-        pb.set_intout(4, r.h);
+        // How many of the four words `w_owns` writes depends on how the walk
+        // ended (`gemwmlib.c:1230-1241`, see [`Owns`]). `poutwds` is
+        // `&int_out[1]` (`aes/gemsuper.c:343`, `WM_OX`, `include/aesdefs.h:509`),
+        // so word *i* of the rectangle is `int_out[1 + i]`.
+        match rlist_owns(handle) {
+            Owns::Visible(r) => {
+                pb.set_intout(1, r.x);
+                pb.set_intout(2, r.y);
+                pb.set_intout(3, r.w);
+                pb.set_intout(4, r.h);
+            }
+            Owns::Exhausted { x, y } => {
+                pb.set_intout(1, x);
+                pb.set_intout(2, y);
+                pb.set_intout(3, 0);
+                pb.set_intout(4, 0);
+            }
+            // Loop never entered: `:1240` writes w/h only. Leaving x/y untouched
+            // is the point — writing zeroes here would claim a contract EmuTOS
+            // does not have (A15). They read back as the dispatcher's zeroed
+            // `int_out`, which is our defined stand-in for its `auto` array.
+            Owns::Empty => {
+                pb.set_intout(3, 0);
+                pb.set_intout(4, 0);
+            }
+        }
         pb.set_ret(1);
         return;
     }
@@ -2018,26 +2654,39 @@ pub fn wind_get(pb: &Aespb) {
         return;
     }
 
-    // WF_SCREEN (17): EmuTOS returns the *persistent* menu/alert screen-save
-    // buffer address + length (`gsx_mret` → `gl_tmp.fd_addr`/`gl_mlen`, allocated
-    // once at AES init, gemgsxif.c:125-129). Needs no valid handle (like WF_TOP,
-    // gemwmlib.c:1517-1520).
+    // WF_SCREEN (17): EmuTOS hands out the *persistent* menu/alert screen-save
+    // buffer — address in `poutwds[0..1]`, length in `poutwds[2..3]`
+    // (`gsx_mret` → `gl_tmp.fd_addr` / `gl_mlen`, `aes/gemgsxif.c:125-129`),
+    // allocated once at AES start by `gsx_malloc` (`:108-114`, called from
+    // `sh_main`, `aes/gemshlib.c:236`) and TRUE. Like WF_TOP it needs no valid
+    // handle (`gemwmlib.c:1517-1520`).
     //
-    // Assessed deliberate deviation (AUD-P5-012): NewTOS's AES has *no* such
-    // persistent buffer. Our menu/alert save-under (`bb_save`, #51) allocates a
-    // *transient* per-alert MFDB from the heap and frees it on close
-    // (`tos_api::vdi::bb_save`), so there is no stable address/length that is
-    // "the menu/alert buffer". Fabricating a screen-sized static region purely to
-    // return an address would waste memory and — worse — misrepresent an unused
-    // scratch region as the menu/alert buffer it is not. Report a null/zero-length
-    // buffer truthfully (ret=1); this is a documented deviation, not a stub (it
-    // reports the real state — no persistent buffer — rather than faking a value).
-    // Revisit only if a program is found that relies on a persistent buffer here.
+    // **NewTOS has no such buffer**, and says so instead of claiming one
+    // (sanctioned deviation, `docs/COMPATIBILITY.md`; supersedes the earlier
+    // "report a 0/0 buffer with ret=1" assessment of AUD-P5-012, which the r4
+    // sub-function measurement refuted — cases 331/332/439, `TASK/A54.md`).
+    // Nothing here is allocated once and kept: `form.rs`' `BbSave::capture`
+    // takes a fresh `Vec` per modal alert and drops it on close, and `menu.rs`
+    // keeps *two* independent drop-down backings (`MBACK`/`SMBACK`) that are
+    // cleared and regrown to whatever box is opening — no stable address, no
+    // fixed length, and zero capacity until the first menu drops. There is also
+    // no address we *could* hand out: those buffers live in the kernel heap,
+    // which is mapped `AP_RW_EL1` — no EL0 access at all
+    // (`kernel/src/arch/aarch64/mmu.rs:82,178-179,283-284`) — so an application
+    // scribbling on a WF_SCREEN pointer, which is the entire purpose of the
+    // field, would fault on the first store.
+    //
+    // So the answer is FALSE with nothing written — `wm_get`'s own idiom for a
+    // field this AES does not answer (`default: return FALSE`,
+    // `gemwmlib.c:1590-1591`), and the same repair AUD-P5-014 got for WF_KIND.
+    // A caller tests the return code before using the address, so FALSE is the
+    // one answer that cannot be mistaken for "here is a buffer, at 0".
+    //
+    // Closing this properly means a real persistent AES scratch buffer in
+    // EL0-reachable memory, used by the alert *and* the menu save-under; that
+    // is a memory-pool and mapping decision, not a `wind_get` one.
     if field == WF_SCREEN {
-        for i in 1..=4 {
-            pb.set_intout(i, 0); // address (hi/lo) + length (hi/lo)
-        }
-        pb.set_ret(1);
+        pb.set_ret(0);
         return;
     }
 
@@ -2218,7 +2867,29 @@ pub fn wind_set(pb: &Aespb) {
             // app `wind_set`) — not the whole screen. This is EmuTOS
             // `draw_change`'s tail (`gemwmlib.c:1216-1222`): `w_drawdesk(&c)`
             // over the damage rectangle, then `w_update(start, &c, stop, moved)`.
-            let d = union_grect(prev, r);
+            //
+            // The drop shadow is charged the way `draw_change` charges it, and
+            // that is **not** once for every path. A pure size change — same
+            // upper-left corner, different extent — gets its own addition in
+            // the size branch (`:1152-1154`)
+            //
+            //     c.g_w = max(pt->g_w, c.g_w) + DROP_SHADOW_SIZE;
+            //     c.g_h = max(pt->g_h, c.g_h) + DROP_SHADOW_SIZE;
+            //
+            // *before* the common tail adds a second one (`:1213-1215`), so a
+            // resize repaints two shadow widths past the larger of the two
+            // rectangles. Every other path (move, grow, open, close) reaches
+            // the tail with the plain union and is charged once. Collapsing the
+            // two into a single addition would leave a shadow-wide strip of the
+            // old geometry unpainted on a shrink.
+            let same_corner = (r.w != 0 || r.h != 0) && r.x == prev.x && r.y == prev.y;
+            let resized = same_corner && (r.w != prev.w || r.h != prev.h);
+            let d = if resized {
+                plus_shadow(Grect { x: prev.x, y: prev.y, w: r.w.max(prev.w), h: r.h.max(prev.h) })
+            } else {
+                union_grect(prev, r)
+            };
+            let d = plus_shadow(d);
             redraw_clip(d.x, d.y, d.w, d.h);
             // This window's content: `w_redraw` for the whole work area, since —
             // unlike EmuTOS, which blits the top window across in `w_move`
@@ -2462,21 +3133,60 @@ pub fn wind_new(pb: &Aespb) {
 /// [`wind_new`]: drain the outstanding `wind_update` mouse-control and
 /// screen-sync locks, then close and delete every window still in use.
 ///
+/// ```c
+/// while(ml_ocnt > 0) wm_update(END_MCTRL);
+/// while(wind_spb.sy_tas > 0) wm_update(END_UPDATE);
+/// for (wh = 1; wh < NUM_WIN; wh++) {
+///     if (D.w_win[wh].w_flags & VF_ISOPEN) wm_close(wh);
+///     if (D.w_win[wh].w_flags & VF_INUSE) wm_delete(wh);
+/// }
+/// ```
+///
 /// The shell loop calls it after a launched program terminates
 /// (`gemshlib.c:677`) and after an abnormal desktop exit (`:609`), so the
 /// windows the previous occupant left open are swept before the next program
-/// starts. It **draws nothing** — EmuTOS's `wm_new` only closes/deletes; the
-/// repaint belongs to the `wind_new` *opcode* (which an application calls
-/// expecting its screen back).
+/// starts.
+///
+/// **Every slot goes through [`wm_delete`], and only the ones that are in
+/// use.** That is what distinguishes the sweep from blanking the table: a slot
+/// `wm_delete` has freed holds `gl_rscreen`/`gl_rfull` in its four rectangles
+/// (`:1477-1480`), not zeros, and the next `wm_create` inherits the `WS_WORK`
+/// of them (A33 — `aes-r3-wind-state.tsv` cases 340/344). A slot that was never
+/// in use is skipped by the `VF_INUSE` test and keeps its BSS zeros, which is
+/// why a virgin handle and a recycled one legitimately answer differently.
+///
+/// The locks are drained **first**, as in EmuTOS: the `wm_close` below brackets
+/// its repaint in `wm_update(BEG_UPDATE)`/`(END_UPDATE)` (`:1451-1457`), so a
+/// counter left standing from the previous occupant has to be gone before the
+/// first window is closed, not after the last one.
+///
+/// It draws whatever closing those windows draws — `wm_close` runs
+/// `draw_change` (`:1453`), whose tail is `w_drawdesk` + `w_update`
+/// (`:1216-1222`), i.e. the background over each vacated rectangle and a
+/// `WM_REDRAW` to every window still open under it. The whole-screen repaint is
+/// a separate thing and belongs to the `wind_new` *opcode*, which an
+/// application calls expecting its screen back.
 pub fn wm_new() {
-    // `for (wh = 1; wh < NUM_WIN; wh++)` (gemwmlib.c:1886) — handle 0, the
-    // desktop window, is not one of the windows `wm_new` deletes.
-    slots()[1..].fill(Window::EMPTY);
-    // SAFETY: single-CPU AES.
-    unsafe { *TABLE.next_z.get() = 1 };
-    // Release all update / mouse-control locks (gemwmlib.c:1879-1883).
+    // Release all update / mouse-control locks (`:1879-1883`).
     MCTRL_CNT.store(0, Ordering::Relaxed);
     UPDATE_LOCK.store(0, Ordering::Relaxed);
+    // `for (wh = 1; wh < NUM_WIN; wh++)` (`:1886`) — handle 0, the desktop
+    // window, is not one of the windows `wm_new` deletes.
+    for wh in 1..NUM_WIN as i16 {
+        // `if (D.w_win[wh].w_flags & VF_ISOPEN) wm_close(wh);` (`:1887-1888`).
+        if win(wh).map(|w| w.open).unwrap_or(false) {
+            close_window(wh);
+        }
+        // `if (D.w_win[wh].w_flags & VF_INUSE) wm_delete(wh);` (`:1889-1890`) —
+        // [`wm_delete`]'s own `get_pwin` is that test, so a free slot is
+        // refused without being touched.
+        wm_delete(wh);
+    }
+    // Our own stacking counter: every window that carried a `z` is gone, so the
+    // next `wind_open` starts the order again (EmuTOS reorders `gl_wtree`
+    // instead and has no counter to reset).
+    // SAFETY: single-CPU AES.
+    unsafe { *TABLE.next_z.get() = 1 };
 }
 
 /// `wm_init` (`gemwmlib.c:1247-1310`) — re-initialise the Window Manager

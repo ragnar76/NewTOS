@@ -96,6 +96,15 @@ pub enum LoadError {
     /// "not enough memory to load the program" (EmuTOS `bdos/proc.c`
     /// `xexec` → `ENSMEM`).
     NoTpaMemory,
+    /// The image is `ELFCLASS32` (ILP32). NewTOS runs native 64-bit
+    /// applications only; the ILP32 **build** path was retired on
+    /// 2026-09-04 (ADR-020 addendum) and no ILP32 program has been
+    /// producible since. Executing one is refused here rather than
+    /// left to a runtime path that nothing builds and nothing tests.
+    /// Maps to `EPLFMT` (-66) — "invalid program load format", the same
+    /// answer EmuTOS gives a header it will not load
+    /// (`bdos/kpgmld.c:47-63`).
+    Ilp32Unsupported,
 }
 
 /// How `Pexec` supplies the child's environment block. Mirrors the
@@ -385,6 +394,25 @@ unsafe fn load_from_source(
         }
     };
 
+    // 1b. Refuse ILP32 (ELFCLASS32) images. NewTOS is a native 64-bit
+    //     system: LP64 is the only application ABI that can be built
+    //     (ADR-020 addendum, 2026-09-04 — the `*-ilp32.sh` build scripts
+    //     and `crt0-ilp32.S` are gone). The *runtime* width switch
+    //     (`Abi::Ilp32`, read in the AES/VDI parameter-block readers)
+    //     deliberately stays as the substrate for the future m68k thunk,
+    //     which will set it for an emulated process that never comes
+    //     through this ELF loader at all. Until then this is the single
+    //     place that could mark a process ILP32, so gating it here makes
+    //     every downstream 4-byte branch unreachable rather than
+    //     silently untested. Lifting the thunk in is a one-line change
+    //     to this gate.
+    //
+    //     Placed before step 2 on purpose: a refused image costs no pool
+    //     allocation, exactly like a malformed one.
+    if img.is_ilp32() {
+        return Err(LoadError::Ilp32Unsupported);
+    }
+
     // 2. Allocate the per-process TPA from the BDOS pool and re-tag it
     //    to the child basepage cookie (= the TPA base kernel VA), so
     //    the child's `Pterm` `free_all_owned` sweep reclaims it — the
@@ -551,15 +579,14 @@ unsafe fn populate_and_map(
     proc_slot.basepage_pa.store(tpa.base_pa, Ordering::Release);
     proc_slot.l0_pa.store(l0_pa, Ordering::Release);
     proc_slot.entry_va.store(img.entry_va, Ordering::Release);
-    // Record the program ABI (ELF class) so the GEM trap dispatch reads
-    // this process's AES/VDI parameter blocks at the caller's pointer
-    // width (ADR-020): 4-byte pointers for an ILP32 (ELFCLASS32) app,
-    // 8-byte for an LP64 (ELFCLASS64) one.
-    proc_slot.set_abi(if img.is_ilp32() {
-        super::Abi::Ilp32
-    } else {
-        super::Abi::Lp64
-    });
+    // Record the program ABI so the GEM trap dispatch reads this
+    // process's AES/VDI parameter blocks at the caller's pointer width
+    // (ADR-020). Always LP64: step 1b above rejected every ELFCLASS32
+    // image, so an ELF-loaded process is 8-byte-word by construction.
+    // This is not a hardcoded assumption — it is that gate's postcondition,
+    // asserted here so the two cannot drift apart.
+    debug_assert!(!img.is_ilp32(), "step 1b must reject ELFCLASS32");
+    proc_slot.set_abi(super::Abi::Lp64);
 
     Ok(LoadedImage {
         slot,

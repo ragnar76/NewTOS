@@ -557,9 +557,38 @@ pub fn fdelete(args: &TrapArgs) -> Long {
     E_OK
 }
 
+/// Drop the separators at the end of a path, for the [`fattrib`] GET probe
+/// below. `None` when there is nothing to drop, **or** when dropping them
+/// would leave no final component at all (`"C:\"`, `"\"`, `""`): the drive
+/// root has no directory entry whose attribute byte could be read, and
+/// synthesizing one — FreeMiNT does, EmuTOS and TOS 3.06 answer `EFILNF` —
+/// is a separate decision this function deliberately does not take.
+fn without_trailing_seps(path: &str) -> Option<&str> {
+    let stripped = path.trim_end_matches(['/', '\\']);
+    if stripped.len() == path.len() {
+        return None; // no trailing separator
+    }
+    let (_, rest) = path::split_drive(stripped);
+    let last = match rest.rfind(['/', '\\']) {
+        Some(i) => &rest[i + 1..],
+        None => rest,
+    };
+    (!last.is_empty()).then_some(stripped)
+}
+
+/// The attribute byte of the entry `path` names — but only if that entry is a
+/// **sub-directory**. `None` for a file, a missing name, or a path that does
+/// not resolve at all, so the caller can fall through to its unchanged code.
+fn subdir_attrib(path: &str) -> Option<u8> {
+    let (vol, parent, name11) = path::findit(path).ok()?;
+    let entry = dir::find_in_dir(&vol, parent, &name11)?;
+    (entry.attrib & dir::FA_SUBDIR != 0).then_some(entry.attrib)
+}
+
 /// `Fattrib` (0x43) — get or set a file's (or, on GET, a directory's)
 /// attribute byte. `wrt = 0` returns the current attributes — for files
-/// *and*, per the TOS4/FreeMiNT extension, folders (with FA_SUBDIR set);
+/// *and*, per the TOS4/FreeMiNT extension, folders (with FA_SUBDIR set),
+/// written with or without a trailing separator;
 /// `wrt = 1` sets `mod` on a **file** only (FA_VOL / FA_SUBDIR bits and any
 /// set on a folder/label are rejected with EACCDN) and returns it.
 pub fn fattrib(args: &TrapArgs) -> Long {
@@ -588,6 +617,28 @@ pub fn fattrib(args: &TrapArgs) -> Long {
         // the TOS4 lift of the folder restriction is documented in EmuTOS
         // `bdos/fsdir.c:391-400`. The subdir-aware `find_in_dir` sees folders
         // (volume-label/LFN records are already skipped by `DirIter`).
+        //
+        // cflib appends a separator to *every* path before it probes
+        // (`make_normalpath`, `sdk/cflib/cflib-21/fsnorm.c:85-92`), so the one
+        // caller this extension exists for asks with `"C:\CLIPBRD\"` — and
+        // `findit` hands that spelling on as the **empty** final component,
+        // which `fcb_name` turns into eleven blanks no entry can carry. That is
+        // EmuTOS' own behaviour (`scan(builds(""))`, `bdos/fsdir.c:737-795`),
+        // but it leaves the sanctioned extension half-done. FreeMiNT, the
+        // reference for it, answers the trailing-separator spelling with the
+        // folder's attributes: `relpath2cookie` peels an empty last component
+        // (`sys/filesys.c:986-1010`) and `fatfs_lookup` resolves the empty name
+        // **as `"."`** (`sys/fatfs.c:5753-5764`).
+        //
+        // So probe the separator-stripped spelling first and accept it **only
+        // when it names a directory**. That keeps the extension purely
+        // additive — a trailing separator on a *file* (EmuTOS `EPTHNF`;
+        // FreeMiNT's ENOTDIR is the same -34, `sys/mint/errno.h:277`), on a
+        // missing name, and the bare drive root all fall through to the
+        // unchanged code below and keep their current answer.
+        if let Some(attr) = without_trailing_seps(pathstr).and_then(subdir_attrib) {
+            return attr as i8 as Long; // sign-extended UBYTE
+        }
         let entry = match dir::find_in_dir(&vol, parent, &name11) {
             Some(e) => e,
             None => return EFILNF,

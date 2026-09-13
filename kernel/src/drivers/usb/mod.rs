@@ -134,11 +134,19 @@ pub fn poll() {
             return;
         };
         if let Some((di, report)) = c.poll_interrupt() {
-            if c.protocol(di) == 1 {
-                hid::keyboard_report(&report);
-            } else {
-                hid::mouse_report(&report);
+            // `bInterfaceProtocol` of the HID boot interface: 1 = keyboard,
+            // 2 = mouse (USB HID 1.11 §4.3). Anything else has no boot report
+            // layout we could decode — a hub is 9, a device whose HID
+            // configuration never completed is 0 — and used to be handed to
+            // `mouse_report`, which turned whatever bytes were in the buffer
+            // into cursor movement and button presses in the IKBD stream.
+            match c.protocol(di) {
+                1 => hid::keyboard_report(&report),
+                2 => hid::mouse_report(&report),
+                _ => {}
             }
+            // Re-arm regardless: the completed transfer left the endpoint with
+            // nothing outstanding, and only this call queues the next one.
             c.queue_interrupt(di);
         }
     }

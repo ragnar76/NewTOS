@@ -137,10 +137,17 @@ const ED_END: i16 = 3;
 /// Relocate the NRSC blob already sitting in `SYS.buf`, tag its 3D flags, cache
 /// and return the FSELECTR tree — or null if the header does not validate
 /// (without caching). Shared by the disk-override and embedded-fallback paths.
-fn relocate_and_cache(buf: &mut [u8; GEM_CAP]) -> *mut Object {
-    // SAFETY: buf holds a pre-relocation NRSC blob; relocate validates the
-    // header and rewrites the byte offsets to absolute pointers in place.
-    if unsafe { resource::relocate_blob(buf.as_mut_ptr()) } {
+///
+/// `len` is how many bytes of `buf` the blob really occupies: the bytes read
+/// from the override file, or the size of the embedded blob. `read_file` stops
+/// at [`GEM_CAP`] without saying so, so an override larger than the buffer
+/// arrives truncated — and must be refused rather than relocated past what was
+/// read (EmuTOS `rs_readit`, `aes/gemrslib.c:782-783`).
+fn relocate_and_cache(buf: &mut [u8; GEM_CAP], len: usize) -> *mut Object {
+    // SAFETY: buf holds `len` bytes of a candidate NRSC blob; relocate
+    // validates the header against `len` and rewrites the byte offsets to
+    // absolute pointers in place.
+    if unsafe { resource::relocate_blob(buf.as_mut_ptr(), len) } {
         let root = unsafe { resource::tree_root(buf.as_mut_ptr(), 0) };
         set_3d_flags(root);
         // SAFETY: single-CPU AES.
@@ -172,7 +179,7 @@ fn load_fselectr() -> *mut Object {
     // 1. Disk override.
     if let Some(len) = crate::bdos::fs::read_file("C:\\GEMSYS\\RSC\\GEM.RSC", buf) {
         if len > 0 {
-            let root = relocate_and_cache(buf);
+            let root = relocate_and_cache(buf, len);
             if !root.is_null() {
                 return root;
             }
@@ -182,7 +189,7 @@ fn load_fselectr() -> *mut Object {
 
     // 2. Embedded fallback. The `const _` assert guarantees the fit.
     buf[..GEM_FSEL_RSC.len()].copy_from_slice(GEM_FSEL_RSC);
-    relocate_and_cache(buf)
+    relocate_and_cache(buf, GEM_FSEL_RSC.len())
 }
 
 /// Tag the file-selector objects with their 3D flags (EmuTOS `fs_start`):

@@ -61,6 +61,7 @@ pub mod aes_demo;
 pub mod desk;
 pub mod launch;
 pub mod shell_loop;
+pub mod selftest_gemtrap;
 pub mod selftest_ikbd;
 pub mod selftest_vdi;
 pub mod selftest_raster;
@@ -68,6 +69,9 @@ pub mod selftest_fbcon;
 pub mod selftest_xbios;
 pub mod sync;
 pub mod initinfo;
+/// Boot-log capture to `C:\USBDIAG.LOG` (feature `usb-diag` only).
+#[cfg(feature = "usb-diag")]
+pub mod bootlog;
 #[cfg(feature = "board-rpi4")]
 pub mod selftest_emmc;
 pub mod vdi_backend;
@@ -326,6 +330,14 @@ extern "C" fn kernel_main_rust(dtb_phys: usize) -> ! {
     // Pi-4 it is a no-op until the VL805 firmware path (D7).
     drivers::usb::init(dtb_phys);
 
+    // Diagnostic build only: the enumeration is over, so put the whole boot
+    // log on the card while the machine is still healthy. This is the flush
+    // that matters — everything the hub chain did is above this line, and a
+    // later hang cannot take it away (`flush` rewrites the file whole, so the
+    // second call below simply extends what this one wrote).
+    #[cfg(feature = "usb-diag")]
+    bootlog::flush("after usb::init");
+
     // `initinfo(&shiftbits)` (EmuTOS `biosmain`, `bios/bios.c:809`; the
     // `bootdev` half of its return value has no NewTOS counterpart, see
     // `initinfo::wait_for_user`): show the welcome screen, hold it, and come
@@ -336,6 +348,11 @@ extern "C" fn kernel_main_rust(dtb_phys: usize) -> ! {
     // was too short for an HDMI monitor still locking its mode and could not
     // be skipped or extended by the user.
     let shiftbits = initinfo::run();
+
+    // Diagnostic build only: a second, complete copy — this one also carries
+    // whatever the boot screen and the wait loop printed.
+    #[cfg(feature = "usb-diag")]
+    bootlog::flush("after initinfo");
 
     // Diagnostic build only: report what the wait loop actually saw and stop
     // the boot there, so nothing can overwrite the report (this machine has no

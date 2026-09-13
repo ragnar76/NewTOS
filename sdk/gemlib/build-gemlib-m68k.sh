@@ -17,7 +17,11 @@
 # So this script extracts the vendored pristine tarball into a SEPARATE tree
 # (gemlib-0.44.0-m68k/, gitignored) and never touches the overlaid one. Both
 # libraries are built from the same vendored source, which is exactly what
-# makes sdk/apps/ball/plat-tt.c and plat-newtos.c comparable.
+# makes an m68k build and a NewTOS build of the same program comparable. The
+# consumer that motivated this library -- the bouncing-ball demo -- left this
+# tree on 2026-09-09 for /Volumes/Daten/Development/ball-demo/; the recipe
+# stays here because the SDK is where a cross library belongs, and because
+# the m68k userland emulator will want it.
 #
 # No prebuilt m68k gemlib package is used and nothing is installed into the
 # shared toolchain at /opt/cross-mint -- everything this script writes stays
@@ -26,7 +30,7 @@
 # Toolchain: the CLASSIC m68k-atari-mint GCC (a.out-ish `mint` flavour), NOT
 # `mintelf`. -m68020-60 is the multilib whose libc.a the sys-root ships and it
 # predefines __M68881__ / __HAVE_68881__, i.e. hardware floating point -- which
-# is what a TT030 has and what the ball demo wants.
+# is what a TT030 has, and what any m68k GEM program of that era expects.
 #
 #   output : sdk/gemlib/gemlib-m68k.a
 #

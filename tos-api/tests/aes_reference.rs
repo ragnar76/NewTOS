@@ -161,6 +161,122 @@ fn window_rectangles_after_create_and_open_match_the_tt() {
     pb.call(109, 0, 0, 0, 0);
 }
 
+/// What `wind_close` leaves in the three rectangles it rewrites (A16).
+///
+/// `wm_close` does not simply drop `VF_ISOPEN`: it closes **through**
+/// `draw_change(w_handle, &gl_rzero)` (`aes/gemwmlib.c:1449,1453`), and
+/// `draw_change` rewrites `WS_PREV`, `WS_CURR` and `WS_WORK` before it even
+/// tests `VF_ISOPEN` (`:1069-1077` against the shortcut at `:1085-1086`) —
+/// `WS_PREV` takes the old `WS_CURR`, `WS_CURR` takes `pt` (here `gl_rzero`,
+/// 0,0,0,0, `aes/gemgraf.c:425`) and `WS_WORK` is recomputed from `pt` with
+/// `wm_calc(WC_WORK, kind, …)`. Only afterwards is the flag cleared (`:1454`).
+///
+/// The round-2 table has **no** case for this transition (its four close cases,
+/// 188/190/193/194, read the return value only), so the oracle is the pinned
+/// source — like [`wf_owner_answers_what_the_pinned_emutos_source_mandates`].
+/// Nothing is written as a literal: the previous rectangle is read back with
+/// `wind_get` before the close, and the closed work area is asked of the AES's
+/// own `wm_calc` through `wind_calc(WC_WORK, kind, 0,0,0,0)` (opcode 108), so
+/// the expectation follows the device's border metrics instead of freezing
+/// them.
+///
+/// The window is **moved** after the open on purpose. `wm_open` overwrites
+/// `WS_PREV` with the open rectangle (`:1426`, measured as case 253), so
+/// without a move `WF_PXYWH` would read the same before and after the close and
+/// could not tell a correct implementation from one that writes nothing. Each
+/// of the three assertions is preceded by the check that its expectation really
+/// differs from the pre-close state.
+#[test]
+fn window_rectangles_after_a_close_are_the_ones_draw_change_leaves() {
+    let _guard = harness::AES_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+    harness::context();
+    let mut pb = harness::Pb::new();
+
+    const KIND: i16 = 0x0FEF;
+    const WF_WXYWH: i16 = 4;
+    const WF_CXYWH: i16 = 5;
+    const WF_PXYWH: i16 = 6;
+    const WC_WORK: i16 = 1; // `include/aesdefs.h:556`
+
+    const CREATE: R2Call =
+        R2Call { opcode: 100, in_len: 5, out_len: 1, intin: &[KIND, 10, 20, 300, 200] };
+    const OPEN: R2Call =
+        R2Call { opcode: 101, in_len: 5, out_len: 1, intin: &[1, 30, 40, 320, 240] };
+    // `wind_set(1, WF_CURRXYWH, 70, 90, 260, 180)` — `wm_set`'s `WF_CXYWH` arm
+    // is `draw_change(w_handle, pinwds)` (`gemwmlib.c:1676-1678`), which is what
+    // puts a *different* rectangle into `WS_CURR` than the one `wm_open` left
+    // in `WS_PREV`.
+    const MOVE: R2Call =
+        R2Call { opcode: 105, in_len: 6, out_len: 1, intin: &[1, WF_CXYWH, 70, 90, 260, 180] };
+    const CLOSE: R2Call = R2Call { opcode: 102, in_len: 1, out_len: 1, intin: &[1] };
+
+    let get = |field: i16| -> R2Call {
+        R2Call {
+            opcode: 104,
+            in_len: 2,
+            out_len: 5,
+            intin: match field {
+                WF_WXYWH => &[1, WF_WXYWH],
+                WF_CXYWH => &[1, WF_CXYWH],
+                _ => &[1, WF_PXYWH],
+            },
+        }
+    };
+
+    let open_then_move: &[R2Call] = &[CREATE, OPEN, MOVE];
+    let and_close: &[R2Call] = &[CREATE, OPEN, MOVE, CLOSE];
+
+    // The state the close finds, read back rather than assumed.
+    let before_curr = r2w_replay(&mut pb, open_then_move, &get(WF_CXYWH));
+    let before_work = r2w_replay(&mut pb, open_then_move, &get(WF_WXYWH));
+    assert_eq!(before_curr[0], 1, "the window must be there before the close");
+
+    // `wm_calc(WC_WORK, kind, gl_rzero)` — the AES's own answer, not a literal.
+    pb.poison();
+    pb.intin[..6].copy_from_slice(&[WC_WORK, KIND, 0, 0, 0, 0]);
+    pb.call(108, 6, 5, 0, 0);
+    let zero_work = *pb.intout;
+
+    // …and it has to differ from what the window had, or the assertion below
+    // would hold for an implementation that leaves `WS_WORK` alone.
+    assert_ne!(
+        &zero_work[1..5],
+        &before_work[1..5],
+        "the closed work area must differ from the open one for this to discriminate"
+    );
+    assert_ne!(
+        &before_curr[1..5],
+        &[0i16, 0, 0, 0],
+        "the window must have a non-zero rect before the close"
+    );
+
+    // WF_CXYWH — `gl_rzero`, the `pt` `wm_close` passes in (`:1449,1073`).
+    assert_eq!(
+        &r2w_replay(&mut pb, and_close, &get(WF_CXYWH))[..5],
+        &[1, 0, 0, 0, 0],
+        "WF_CXYWH after wind_close is gl_rzero (gemwmlib.c:1449,1073; gemgraf.c:425)"
+    );
+
+    // WF_PXYWH — the rectangle the window had when it was closed (`:1069-1070`).
+    assert_eq!(
+        &r2w_replay(&mut pb, and_close, &get(WF_PXYWH))[..5],
+        &before_curr[..5],
+        "WF_PXYWH after wind_close is the old WS_CURR (gemwmlib.c:1069-1070)"
+    );
+
+    // WF_WXYWH — recomputed from `gl_rzero` (`:1074-1077`), negative for a
+    // bordered window; `wind_calc` above says what the metrics make of it.
+    assert_eq!(
+        &r2w_replay(&mut pb, and_close, &get(WF_WXYWH))[..5],
+        &zero_work[..5],
+        "WF_WXYWH after wind_close is wm_calc(WC_WORK, kind, 0,0,0,0) \
+         (gemwmlib.c:1074-1077)"
+    );
+
+    pb.poison();
+    pb.call(109, 0, 0, 0, 0);
+}
+
 /// `wind_get(WF_OWNER)` — the one round-2 field the reference cannot arbitrate.
 ///
 /// `WF_OWNER` (20) **did not exist** in EmuTOS 1.4, the build the reference TT

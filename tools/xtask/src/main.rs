@@ -12,6 +12,10 @@ use std::env;
 use std::path::{Path, PathBuf};
 use std::process::{Command, ExitCode};
 
+/// Resource-file invariants the build tools must keep (`tools/mkrsc.py`).
+#[cfg(test)]
+mod rsc_align_tests;
+
 const KERNEL_TARGET: &str = "aarch64-unknown-none-softfloat";
 
 fn main() -> ExitCode {

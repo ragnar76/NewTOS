@@ -49,7 +49,7 @@
 
 use alloc::alloc::{alloc_zeroed, dealloc, Layout};
 
-use super::backend::{ClipRect, MonoSrc, RasterBackend, Rect, WriteMode};
+use super::backend::{ClipRect, MonoBits, MonoSrc, RasterBackend, Rect, WriteMode};
 use super::vwk::{validate_color_index, Vwk};
 use super::Vdipb;
 use crate::bdos::process::Abi;
@@ -303,9 +303,11 @@ pub fn vrt_cpyfm(pb: &Vdipb, vwk: &Vwk, backend: &dyn RasterBackend, ncol: u16) 
     let s = rect_from_ptsin(pb, 0); // source rect
     let d = rect_from_ptsin(pb, 4); // dest rect (same extent)
 
-    // SAFETY: the source MFDB describes `h * wdwidth` words at `addr`.
+    // SAFETY: the source MFDB describes `h * wdwidth` words at `addr`. The
+    // MFDB is the caller's, so `fd_addr` may sit at an odd address; `MonoBits`
+    // reads the words without requiring alignment.
     let words = (src.h as usize) * (src.wdwidth as usize);
-    let bits = unsafe { core::slice::from_raw_parts(src.addr as *const u16, words) };
+    let bits = unsafe { MonoBits::from_raw(src.addr as *const u8, words) };
     let mono = MonoSrc { bits, stride_words: src.wdwidth as u16, x: s.x, y: s.y };
 
     if dst.is_screen() {
@@ -351,7 +353,7 @@ fn mono_to_mem(dst: &Mfdb, mono: MonoSrc, dx: i16, dy: i16, w: i16, h: i16, mode
         for c in 0..w as i32 {
             let sx = mono.x as i32 + c;
             let widx = sy as usize * stride + (sx as usize) / 16;
-            let set = mono.bits.get(widx).is_some_and(|word| word & (0x8000u16 >> (sx & 15)) != 0);
+            let set = mono.bits.word(widx).is_some_and(|word| word & (0x8000u16 >> (sx & 15)) != 0);
             let (col, row) = (dx as i32 + c, dy as i32 + r);
             match mode {
                 // MD_REPLACE: fg on 1-bits, bg on 0-bits (opaque).

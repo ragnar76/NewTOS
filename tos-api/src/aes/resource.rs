@@ -24,9 +24,13 @@
 //!   **TEDINFO / ICONBLK / BITBLK** array bases + counts, so the remaining
 //!   `rsrc_gaddr`/`rsrc_saddr` selectors (`R_TEDINFO`/`R_ICONBLK`/`R_BITBLK`
 //!   and the `R_OBSPEC`/`R_TEP*`/`R_IBP*`/`R_BIPDATA` sub-pointer aliases)
-//!   resolve to real struct/field addresses (AUD-P6-002). The sub-struct data
-//!   themselves already existed in v3/v4 blobs; v5/v6 only records where they
-//!   are. v1–v4 keep loading (those selectors report "not found").
+//!   resolve to real struct/field addresses (AUD-P6-002). Those three counts
+//!   are also what the **relocation** walks: EmuTOS `rs_readit` fixes the
+//!   sub-structure pointers array-wise, by `rsh_nted`/`rsh_nib`/`rsh_nbb`
+//!   (`gemrslib.c:798-805`), so a record no object references is a pointer
+//!   afterwards too. A pre-v5 blob declares no such arrays; it still loads if
+//!   it holds no text/icon/image object, and is refused if it does, because
+//!   its records could not be relocated (A36).
 //!
 //! ```text
 //!   NrscHeader: magic "NRSC", version, n_trees, n_objects,
@@ -48,8 +52,20 @@
 //! (`relocate_and_register`), `rsrc_gaddr`, `rsrc_obfix`, `rsrc_free`.
 //! Loading from SD (`bdos::fs::read_file`), TEDINFO/ICONBLK/BITBLK
 //! sub-pointer relocation, and `rsrc_saddr` are Batch 2.
+//!
+//! **What `rsrc_load` does not do yet.** EmuTOS's `rs_readit` also reports the
+//! load back through the caller's `AESGLOBAL` — `ap_rscmem`, `ap_rsclen`
+//! (`gemrslib.c:787-788`) and `ap_ptree` (`:597`) — and `rs_sglobe`
+//! (`:675-679`) reads them back on every `rs_free`/`rs_gaddr`/`rs_saddr`.
+//! NewTOS holds the descriptor in [`RSC`] and writes none of the three: for an
+//! LP64 caller gemlib's index macros (`gem.h:41,49,57,64`) place three 8-byte
+//! pointer fields inside the 14 bytes between `ap_private` and `ap_planes`, so
+//! any placement destroys a field `appl_init` fills. Which LP64 `AESGLOBAL`
+//! layout NewTOS commits to is an open project decision (A35); the red tests
+//! stand in `tests/aes_rsrc_global_fields.rs`.
 
 use super::object::{BitBlk, IconBlk, ObjTree, Object, TedInfo};
+use super::shell::PATHBUF;
 use super::Aespb;
 use crate::bdos::process::{usermem, Abi};
 use crate::vdi::font::{CELL_H, CELL_W};
@@ -295,19 +311,114 @@ const OBJECT_SIZE_ILP32: usize = 24;
 const OB_TYPE_OFF: usize = 6;
 /// Byte offset of `ob_spec` within an ILP32 OBJECT (4-byte field).
 const OB_SPEC_OFF_ILP32: usize = 12;
+/// Byte offset of `te_txtlen` within an **LP64** TEDINFO: three 8-byte
+/// pointers then six WORDs (`te_font`…`te_thickness`).
+const TE_TXTLEN_OFF: usize = 36;
+/// Byte offset of `te_tmplen` within an LP64 TEDINFO (the word after
+/// [`TE_TXTLEN_OFF`]).
+const TE_TMPLEN_OFF: usize = 38;
+/// Byte offset of `te_txtlen` within an ILP32 TEDINFO: three 4-byte pointers
+/// then six WORDs (`te_font`…`te_thickness`).
+const TE_TXTLEN_OFF_ILP32: usize = 24;
+/// Byte offset of `te_tmplen` within an ILP32 TEDINFO (the word after
+/// [`TE_TXTLEN_OFF_ILP32`]).
+const TE_TMPLEN_OFF_ILP32: usize = 26;
 
-/// Relocate a native `.RSC` blob in place (offsets → absolute pointers)
-/// and register its trees. `base` points at the start of the blob (which
-/// must remain live until `rsrc_free`). Returns false on a bad header.
+/// Check a candidate blob's header against the bytes that really exist at
+/// `access_base`, *before* anything writes through the offsets it declares.
+///
+/// This is EmuTOS's short-read guard, which NewTOS has to state explicitly.
+/// `rs_readit` (`aes/gemrslib.c:775-783`) allocates exactly the declared
+/// `rslsize` and refuses the file unless `dos_read` delivers all of it, so
+/// `fix_objects` & co. can never step outside the allocation. NewTOS reads
+/// into a fixed buffer through `bdos::fs::read_file`, which stops at the
+/// buffer's end and reports only how much it copied — so here the same
+/// guarantee has to be *checked*: `len` is what was read, `total_size` is what
+/// the blob claims, and the fix-up walk writes at every offset the header
+/// declares.
+///
+/// Refused (false → `rsrc_load` = 0, EmuTOS's FALSE):
+/// * fewer bytes than the header itself, or no `NRSC` magic,
+/// * `total_size > len` — a short read, and equally a file too large for
+///   [`RSC_CAP`], which `read_file` would otherwise truncate in silence,
+/// * a declared array that does not lie wholly inside `total_size`.
+///
+/// The record strides depend on the caller's OBJECT width, hence `abi`.
 ///
 /// # Safety
-/// `base` must point at a valid, writable native `.RSC` blob of at least
-/// its declared `total_size` bytes.
-pub unsafe fn relocate_and_register(base: *mut u8) -> bool {
+/// `access_base` must point at `len` readable bytes.
+unsafe fn header_is_sound(access_base: *const u8, len: usize, abi: Abi) -> bool {
+    // The header is read as a whole `NrscHeader`, so that many bytes must be
+    // there even for a file generation that only defines the first 28 or 44 of
+    // them — the `version` gates below decide what may be *interpreted*.
+    if len < size_of::<NrscHeader>() {
+        return false;
+    }
+    // SAFETY: `len` covers the header just checked for.
+    let h = unsafe { &*(access_base as *const NrscHeader) };
+    if &h.magic != b"NRSC" {
+        return false;
+    }
+    // The short-read guard itself: the blob must not claim more bytes than
+    // were read, nor fewer than its own header.
+    let size = h.total_size as u64;
+    if size > len as u64 || size < size_of::<NrscHeader>() as u64 {
+        return false;
+    }
+    let (obj, ted, ib, bb, ptr) = match abi {
+        Abi::Ilp32 => (
+            OBJECT_SIZE_ILP32,
+            TEDINFO_SIZE_ILP32,
+            ICONBLK_SIZE_ILP32,
+            BITBLK_SIZE_ILP32,
+            4usize,
+        ),
+        Abi::Lp64 => (OBJECT_SIZE, TEDINFO_SIZE, ICONBLK_SIZE, BITBLK_SIZE, 8usize),
+    };
+    // Every array the fix-up walk indexes must end inside the blob.
+    let fits = |off: u32, count: u32, stride: usize| -> bool {
+        (count as u64)
+            .checked_mul(stride as u64)
+            .and_then(|bytes| bytes.checked_add(off as u64))
+            .is_some_and(|end| end <= size)
+    };
+    if !fits(h.off_trindex, h.n_trees, 4) || !fits(h.off_objects, h.n_objects, obj) {
+        return false;
+    }
+    // v1/v2 leave the table fields undefined (they overlap the tree index),
+    // so they are only checked — and later only read — from v3 on.
+    if h.version >= NRSC_VER_TABLES
+        && (!fits(h.off_frstr, h.n_frstr, ptr) || !fits(h.off_frimg, h.n_frimg, ptr))
+    {
+        return false;
+    }
+    // Likewise the sub-struct array bases, which exist from v5 on.
+    if h.version >= NRSC_VER_SUBSTRUCTS
+        && (!fits(h.off_ted, h.n_ted, ted)
+            || !fits(h.off_ib, h.n_ib, ib)
+            || !fits(h.off_bb, h.n_bb, bb))
+    {
+        return false;
+    }
+    true
+}
+
+/// Relocate a native `.RSC` blob in place (offsets → absolute pointers)
+/// and register its trees. `base` points at the start of the blob, `len` is
+/// the number of bytes that really exist there — the bytes read from the file,
+/// not the capacity of the buffer holding them. The blob must remain live
+/// until `rsrc_free`.
+///
+/// Returns false, having written nothing, when the header does not hold up
+/// against `len` (see [`header_is_sound`]).
+///
+/// # Safety
+/// `base` must point at `len` readable and writable bytes.
+pub unsafe fn relocate_and_register(base: *mut u8, len: usize) -> bool {
     // In-place kernel path: access base == target base, LP64 (desktop / the
     // selftests always build 32-byte native resources).
-    // SAFETY: caller guarantees a valid blob.
-    unsafe { relocate_and_register_core(base, base as u64, Abi::Lp64) }
+    // SAFETY: caller guarantees `len` accessible bytes.
+    unsafe { relocate_and_register_core(base, len, base as u64, Abi::Lp64) }
 }
 
 /// [`relocate_and_register`] with the access/target-base split of
@@ -319,16 +430,30 @@ pub unsafe fn relocate_and_register(base: *mut u8) -> bool {
 /// # Safety
 /// As [`relocate_and_register`], with `access_base` reachable from the
 /// kernel and the blob eventually visible at `target_base`.
-unsafe fn relocate_and_register_core(access_base: *mut u8, target_base: u64, abi: Abi) -> bool {
-    // SAFETY: caller guarantees a valid blob.
+unsafe fn relocate_and_register_core(
+    access_base: *mut u8,
+    len: usize,
+    target_base: u64,
+    abi: Abi,
+) -> bool {
+    // SAFETY: caller guarantees `len` accessible bytes.
     unsafe {
-        // Relocate offsets → target VAs at the caller's OBJECT width.
+        // Relocate offsets → target VAs at the caller's OBJECT width. Both
+        // cores validate the header against `len` first, so everything below
+        // — the tree index included — stays inside the bytes that were read.
         let ok = match abi {
-            Abi::Ilp32 => relocate_blob_core_ilp32(access_base, target_base),
-            Abi::Lp64 => relocate_blob_core(access_base, target_base),
+            Abi::Ilp32 => relocate_blob_core_ilp32(access_base, len, target_base),
+            Abi::Lp64 => relocate_blob_core(access_base, len, target_base),
         };
         if !ok {
             return false;
+        }
+        // `rs_readit`'s `fix_tedinfo_std()` (gemrslib.c:798): recompute every
+        // relocated TEDINFO's `te_txtlen`/`te_tmplen` from the strings, so no
+        // length word can exceed the bytes the blob really holds.
+        match abi {
+            Abi::Ilp32 => fix_tedinfo_std_ilp32(access_base, target_base),
+            Abi::Lp64 => fix_tedinfo_std(access_base, target_base),
         }
         let obj_size = match abi {
             Abi::Ilp32 => OBJECT_SIZE_ILP32,
@@ -426,6 +551,142 @@ unsafe fn relocate_and_register_core(access_base: *mut u8, target_base: u64, abi
     true
 }
 
+// ─── fix_tedinfo_std: the TEDINFO length words ──────────────────────────
+//
+// EmuTOS `fix_tedinfo_std` (`aes/gemrslib.c:655-669`), called by `rs_readit`
+// right after the offsets have become pointers (`gemrslib.c:798`):
+//
+//     if (fix_ptr(R_TEPTEXT,  ii)) ted->te_txtlen = strlen(ted->te_ptext)  + 1;
+//     if (fix_ptr(R_TEPTMPLT, ii)) ted->te_tmplen = strlen(ted->te_ptmplt) + 1;
+//
+// The two *length* words are recomputed from the strings instead of trusted
+// from the file. That is what keeps `te_txtlen` inside the bytes that actually
+// sit behind `te_ptext`, because every writer bounds itself by `te_txtlen` and
+// not by the buffer: `ins_char` (`object.rs`, EmuTOS `gemobed.c:117`) writes up
+// to index `te_txtlen - 1`, and `inf_sset` (EmuTOS `util/optimize.c:103`) does
+// `strlcpy(te_ptext, pstr, te_txtlen)`. A `te_txtlen` larger than the buffer is
+// therefore a write past its end.
+//
+// Only the `rs_readit` path runs this. EmuTOS's *built-in* AES resource is
+// initialised by `gem_rsc_init` (`aes/gem_rsc.c`), which deliberately does not:
+// `erd` reserves the full `te_txtlen` bytes per TEDINFO in `rs_te_text[]`
+// (`tools/erd.c:3007`, `te_ptext_len += get_short(&ted->te_txtlen)`), so the
+// file's lengths are already correct there. [`relocate_blob`] — NewTOS's
+// counterpart for the embedded GEM.RSC — is left alone to match.
+//
+// This is the one place NewTOS splits an EmuTOS function: EmuTOS's
+// `fix_tedinfo_std` both relocates the three TEDINFO string pointers and
+// recomputes the two length words, because only a loaded resource ever runs
+// it. NewTOS's *embedded* GEM.RSC is a converted file too, so it still needs
+// the pointer half — that half therefore lives in `relocate_blob_core`'s array
+// walk, which both entry points run, while the length half stays here, which
+// only `relocate_and_register` (the `rs_readit` path) runs. The observable
+// split is EmuTOS's own.
+//
+// The walk goes over the TEDINFO array by the header's `n_ted`, exactly like
+// `fix_tedinfo_std`'s `for (ii = 0; ii < rs_hdr->rsh_nted; ii++)`, so a record
+// no object references is recomputed as well.
+
+/// `strlen(blob + off) + 1` for a TEDINFO length word.
+///
+/// EmuTOS calls plain `strlen`. NewTOS bounds the scan by the blob's declared
+/// `total_size`, so a malformed resource cannot walk out of the buffer; for a
+/// well-formed one — every string NUL-terminated inside the blob — the two
+/// agree exactly. With no NUL in range the string is taken to end at the
+/// blob's last byte, which still leaves `te_txtlen` inside the bytes that
+/// exist. Clamped to `i16`, the width of the length word.
+///
+/// # Safety
+/// `base` must address at least `size` readable bytes.
+unsafe fn ted_len(base: *const u8, size: usize, off: usize) -> i16 {
+    if off >= size {
+        return 1;
+    }
+    let mut n = 0usize;
+    // SAFETY: the scan stops at `size`, inside the caller's span.
+    while off + n < size && unsafe { *base.add(off + n) } != 0 {
+        n += 1;
+    }
+    if off + n >= size {
+        // Unterminated: treat the blob's last byte as the terminator.
+        n = size - off - 1;
+    }
+    (n + 1).min(i16::MAX as usize) as i16
+}
+
+/// LP64 `fix_tedinfo_std`, length half: recompute `te_txtlen`/`te_tmplen` of
+/// every TEDINFO the header declares. See the section comment above.
+///
+/// A blob older than [`NRSC_VER_SUBSTRUCTS`] declares no TEDINFO array and has
+/// none to walk (`relocate_blob_core` refuses such a file if an object needs
+/// one at all).
+///
+/// # Safety
+/// `access_base` must point at the blob already relocated onto `target_base`
+/// by [`relocate_blob_core`].
+unsafe fn fix_tedinfo_std(access_base: *mut u8, target_base: u64) {
+    // SAFETY: caller guarantees a relocated blob.
+    unsafe {
+        let h = &*(access_base as *const NrscHeader);
+        if h.version < NRSC_VER_SUBSTRUCTS {
+            return;
+        }
+        let size = h.total_size as usize;
+        let teds = access_base.add(h.off_ted as usize);
+        for i in 0..h.n_ted as usize {
+            let ted = teds.add(i * TEDINFO_SIZE);
+            // `fix_ptr` returned FALSE for an absent pointer — leave the
+            // length word alone, exactly as EmuTOS does.
+            let ptext = (ted as *const u64).read_unaligned();
+            if ptext != 0 {
+                let off = ptext.wrapping_sub(target_base) as usize;
+                (ted.add(TE_TXTLEN_OFF) as *mut i16)
+                    .write_unaligned(ted_len(access_base, size, off));
+            }
+            let ptmplt = (ted.add(8) as *const u64).read_unaligned();
+            if ptmplt != 0 {
+                let off = ptmplt.wrapping_sub(target_base) as usize;
+                (ted.add(TE_TMPLEN_OFF) as *mut i16)
+                    .write_unaligned(ted_len(access_base, size, off));
+            }
+        }
+    }
+}
+
+/// ILP32 twin of [`fix_tedinfo_std`]: 4-byte TEDINFO pointers, `te_txtlen` at
+/// +24 and `te_tmplen` at +26 of the 28-byte record.
+///
+/// # Safety
+/// As [`fix_tedinfo_std`], for a blob relocated by
+/// [`relocate_blob_core_ilp32`].
+unsafe fn fix_tedinfo_std_ilp32(access_base: *mut u8, target_base: u64) {
+    // SAFETY: caller guarantees a relocated blob.
+    unsafe {
+        let h = &*(access_base as *const NrscHeader);
+        if h.version < NRSC_VER_SUBSTRUCTS {
+            return;
+        }
+        let size = h.total_size as usize;
+        let tb = target_base as u32;
+        let teds = access_base.add(h.off_ted as usize);
+        for i in 0..h.n_ted as usize {
+            let ted = teds.add(i * TEDINFO_SIZE_ILP32);
+            let ptext = rd32(ted);
+            if ptext != 0 {
+                let off = ptext.wrapping_sub(tb) as usize;
+                (ted.add(TE_TXTLEN_OFF_ILP32) as *mut i16)
+                    .write_unaligned(ted_len(access_base, size, off));
+            }
+            let ptmplt = rd32(ted.add(4));
+            if ptmplt != 0 {
+                let off = ptmplt.wrapping_sub(tb) as usize;
+                (ted.add(TE_TMPLEN_OFF_ILP32) as *mut i16)
+                    .write_unaligned(ted_len(access_base, size, off));
+            }
+        }
+    }
+}
+
 // ─── ILP32 relocation (24-byte OBJECT / 4-byte ob_spec) ─────────────────
 //
 // Byte-addressed twin of `relocate_blob_core` for an ILP32 caller (ADR-020):
@@ -455,17 +716,24 @@ unsafe fn rd32(p: *const u8) -> u32 {
     unsafe { (p as *const u32).read_unaligned() }
 }
 
-/// Relocate a 4-byte offset field at `p` in place (add `tb`, skip 0).
+/// ILP32 twin of [`fix_nptrs64`] — EmuTOS `fix_nptrs` over 4-byte pointer
+/// slots: relocate the field at byte `field` of each `stride`-byte record,
+/// across `count` records of the array at `base`, leaving 0 as "absent".
+/// Slots are read/written unaligned.
 ///
 /// # Safety
-/// `p` must point at ≥ 4 readable/writable bytes.
-#[inline]
-unsafe fn reloc32(p: *mut u8, tb: u32) {
-    // SAFETY: caller guarantees 4 accessible bytes.
-    unsafe {
-        let v = (p as *const u32).read_unaligned();
-        if v != 0 {
-            (p as *mut u32).write_unaligned(v.wrapping_add(tb));
+/// `base` must point at ≥ `count * stride` readable/writable bytes, with
+/// `field + 4 <= stride`.
+unsafe fn fix_nptrs32(base: *mut u8, count: usize, stride: usize, field: usize, tb: u32) {
+    for i in 0..count {
+        // SAFETY: i < count; the caller guarantees the record span.
+        let p = unsafe { base.add(i * stride + field) } as *mut u32;
+        // SAFETY: 4 readable/writable bytes at `p`.
+        unsafe {
+            let v = p.read_unaligned();
+            if v != 0 {
+                p.write_unaligned(v.wrapping_add(tb));
+            }
         }
     }
 }
@@ -474,18 +742,31 @@ unsafe fn reloc32(p: *mut u8, tb: u32) {
 /// its 4-byte-pointer sub-structs from blob offsets to `target_base` VAs.
 ///
 /// # Safety
-/// `access_base` must point at a valid, writable native `.RSC` blob of at
-/// least its declared `total_size` bytes.
-unsafe fn relocate_blob_core_ilp32(access_base: *mut u8, target_base: u64) -> bool {
-    // SAFETY: caller guarantees a valid blob.
+/// `access_base` must point at `len` readable and writable bytes.
+unsafe fn relocate_blob_core_ilp32(access_base: *mut u8, len: usize, target_base: u64) -> bool {
+    // SAFETY: caller guarantees `len` accessible bytes.
     unsafe {
-        let h = &*(access_base as *const NrscHeader);
-        if &h.magic != b"NRSC" {
+        // Nothing below may be touched until the header holds up against the
+        // bytes that were actually read (EmuTOS's short-read guard).
+        if !header_is_sound(access_base, len, Abi::Ilp32) {
             return false;
         }
+        let h = &*(access_base as *const NrscHeader);
+        let size = h.total_size as u64;
         let objs = access_base.add(h.off_objects as usize);
         let tb = target_base as u32;
         let n = h.n_objects as usize;
+        // See the LP64 twin: a pre-v5 blob declares no sub-structure arrays,
+        // so a record an object points at could not be relocated by count and
+        // the file is refused rather than handed out with raw offsets in it.
+        if h.version < NRSC_VER_SUBSTRUCTS {
+            for i in 0..n {
+                let ty = rd16(objs.add(i * OBJECT_SIZE_ILP32 + OB_TYPE_OFF)) & 0x00ff;
+                if has_substruct(ty) {
+                    return false;
+                }
+            }
+        }
         for i in 0..n {
             let obj = objs.add(i * OBJECT_SIZE_ILP32);
             let spec = rd32(obj.add(OB_SPEC_OFF_ILP32));
@@ -506,76 +787,53 @@ unsafe fn relocate_blob_core_ilp32(access_base: *mut u8, target_base: u64) -> bo
                 // (P6-012). `mkrsc.py` has no CICON data path (it zeroes
                 // G_CICON `ob_spec`, skipped above), so nothing to fix up.
                 G_CICON => {}
-                G_TEXT | G_BOXTEXT | G_FTEXT | G_FBOXTEXT => {
-                    let nspec = spec.wrapping_add(tb);
-                    (obj.add(OB_SPEC_OFF_ILP32) as *mut u32).write_unaligned(nspec);
-                    if !substruct_seen_ilp32(objs, i, nspec) {
-                        // TEDINFO: te_ptext@0, te_ptmplt@4, te_pvalid@8.
-                        let ted = access_base.add(spec as usize);
-                        reloc32(ted, tb);
-                        reloc32(ted.add(4), tb);
-                        reloc32(ted.add(8), tb);
+                // Every other type's `ob_spec` is a blob offset; the records
+                // it may name have their own pointers fixed up by the array
+                // walk below, not from here (EmuTOS separates `fix_objects`
+                // from `rs_readit`'s array walks). The record still has to lie
+                // inside the blob — see the LP64 twin.
+                ty => {
+                    if let Some(bytes) = substruct_bytes(
+                        ty,
+                        TEDINFO_SIZE_ILP32,
+                        ICONBLK_SIZE_ILP32,
+                        BITBLK_SIZE_ILP32,
+                    ) {
+                        if !record_fits(spec as u64, bytes, size) {
+                            return false;
+                        }
                     }
-                }
-                G_IMAGE => {
-                    let nspec = spec.wrapping_add(tb);
-                    (obj.add(OB_SPEC_OFF_ILP32) as *mut u32).write_unaligned(nspec);
-                    if !substruct_seen_ilp32(objs, i, nspec) {
-                        // BITBLK: bi_pdata@0.
-                        reloc32(access_base.add(spec as usize), tb);
-                    }
-                }
-                G_ICON => {
-                    let nspec = spec.wrapping_add(tb);
-                    (obj.add(OB_SPEC_OFF_ILP32) as *mut u32).write_unaligned(nspec);
-                    if !substruct_seen_ilp32(objs, i, nspec) {
-                        // ICONBLK: ib_pmask@0, ib_pdata@4, ib_ptext@8.
-                        let ib = access_base.add(spec as usize);
-                        reloc32(ib, tb);
-                        reloc32(ib.add(4), tb);
-                        reloc32(ib.add(8), tb);
-                    }
-                }
-                // Plain blob-offset `ob_spec` (G_STRING/G_BUTTON/G_TITLE,
-                // G_USERDEF, G_PROGDEF, …) → relocate (EmuTOS `fix_long`).
-                _ => {
                     (obj.add(OB_SPEC_OFF_ILP32) as *mut u32)
                         .write_unaligned(spec.wrapping_add(tb));
                 }
             }
         }
+        // The sub-structure arrays by header count (EmuTOS `gemrslib.c:798-805`,
+        // see the LP64 twin). ILP32 records: TEDINFO te_ptext@0/te_ptmplt@4/
+        // te_pvalid@8, ICONBLK ib_pmask@0/ib_pdata@4/ib_ptext@8, BITBLK
+        // bi_pdata@0.
+        if h.version >= NRSC_VER_SUBSTRUCTS {
+            let ted = access_base.add(h.off_ted as usize);
+            let ib = access_base.add(h.off_ib as usize);
+            for f in 0..SUBPTR_FIELDS {
+                fix_nptrs32(ted, h.n_ted as usize, TEDINFO_SIZE_ILP32, f * 4, tb);
+                fix_nptrs32(ib, h.n_ib as usize, ICONBLK_SIZE_ILP32, f * 4, tb);
+            }
+            fix_nptrs32(
+                access_base.add(h.off_bb as usize),
+                h.n_bb as usize,
+                BITBLK_SIZE_ILP32,
+                0,
+                tb,
+            );
+        }
         // Free-string / free-image pointer tables (NRSC >= v3, 4-byte slots).
         if h.version >= NRSC_VER_TABLES {
-            let fs = access_base.add(h.off_frstr as usize);
-            for i in 0..h.n_frstr as usize {
-                reloc32(fs.add(i * 4), tb);
-            }
-            let fi = access_base.add(h.off_frimg as usize);
-            for i in 0..h.n_frimg as usize {
-                reloc32(fi.add(i * 4), tb);
-            }
+            fix_nptrs32(access_base.add(h.off_frstr as usize), h.n_frstr as usize, 4, 0, tb);
+            fix_nptrs32(access_base.add(h.off_frimg as usize), h.n_frimg as usize, 4, 0, tb);
         }
     }
     true
-}
-
-/// ILP32 twin of [`substruct_seen`]: whether an already-processed object
-/// (`objs[0..upto]`, 24-byte stride) shares the sub-struct now at `spec`.
-///
-/// # Safety
-/// `objs` must point at the ILP32 OBJECT array with at least `upto` entries.
-unsafe fn substruct_seen_ilp32(objs: *const u8, upto: usize, spec: u32) -> bool {
-    for j in 0..upto {
-        // SAFETY: j < upto ≤ processed count.
-        let o = unsafe { objs.add(j * OBJECT_SIZE_ILP32) };
-        // SAFETY: o is a valid 24-byte record.
-        let ty = unsafe { rd16(o.add(OB_TYPE_OFF)) } & 0x00ff;
-        let sp = unsafe { rd32(o.add(OB_SPEC_OFF_ILP32)) };
-        if has_substruct(ty) && sp == spec {
-            return true;
-        }
-    }
-    false
 }
 
 /// Relocate a native `.RSC` blob in place (offsets → pointers) **without**
@@ -584,11 +842,11 @@ unsafe fn substruct_seen_ilp32(objs: *const u8, upto: usize, spec: u32) -> bool 
 ///
 /// # Safety
 /// As [`relocate_and_register`].
-pub unsafe fn relocate_blob(base: *mut u8) -> bool {
+pub unsafe fn relocate_blob(base: *mut u8, len: usize) -> bool {
     // In-place relocation: the blob is accessed and dereferenced through
     // the same pointer, so the access base and the target base coincide.
-    // SAFETY: caller guarantees a valid blob.
-    unsafe { relocate_blob_core(base, base as u64) }
+    // SAFETY: caller guarantees `len` accessible bytes.
+    unsafe { relocate_blob_core(base, len, base as u64) }
 }
 
 /// Core relocation, splitting the pointer used to **access** the blob from
@@ -608,18 +866,37 @@ pub unsafe fn relocate_blob(base: *mut u8) -> bool {
 /// kernel alias of the same offset — never via the just-written user VA.
 ///
 /// # Safety
-/// `access_base` must point at a valid, writable native `.RSC` blob of at
-/// least its declared `total_size` bytes.
-unsafe fn relocate_blob_core(access_base: *mut u8, target_base: u64) -> bool {
-    // SAFETY: caller guarantees a valid blob.
+/// `access_base` must point at `len` readable and writable bytes.
+unsafe fn relocate_blob_core(access_base: *mut u8, len: usize, target_base: u64) -> bool {
+    // SAFETY: caller guarantees `len` accessible bytes.
     unsafe {
-        let h = &*(access_base as *const NrscHeader);
-        if &h.magic != b"NRSC" {
+        // Nothing below may be touched until the header holds up against the
+        // bytes that were actually read (EmuTOS's short-read guard).
+        if !header_is_sound(access_base, len, Abi::Lp64) {
             return false;
         }
+        let h = &*(access_base as *const NrscHeader);
+        let size = h.total_size as u64;
         let objs = access_base.add(h.off_objects as usize) as *mut Object;
-        let ab = access_base as u64;
         let tb = target_base;
+        // A pre-v5 blob carries no sub-structure array table (see
+        // [`NRSC_VER_SUBSTRUCTS`]), so its TEDINFO/ICONBLK/BITBLK records
+        // cannot be walked by count the way `rs_readit` walks them
+        // (`gemrslib.c:798-805`). Following `ob_spec` to them instead was this
+        // loader's old route and is exactly the defect that is being removed —
+        // it reaches only the *referenced* records. Handing an object a record
+        // whose internal pointers are still file offsets would be a wild
+        // pointer, so the file is refused instead, which is `rs_readit`'s own
+        // answer to a resource it cannot read whole (`gemrslib.c:782-783`,
+        // FALSE). `mkrsc.py` emits v5/v6 exclusively, so no resource NewTOS
+        // produces takes this path.
+        if h.version < NRSC_VER_SUBSTRUCTS {
+            for i in 0..h.n_objects as usize {
+                if has_substruct((*objs.add(i)).ob_type & 0x00ff) {
+                    return false;
+                }
+            }
+        }
         for i in 0..h.n_objects as usize {
             let o = &mut *objs.add(i);
             if o.ob_spec == 0 {
@@ -650,57 +927,100 @@ unsafe fn relocate_blob_core(access_base: *mut u8, target_base: u64) -> bool {
                 // (drawn empty, skipped above by the `ob_spec == 0` guard), so
                 // there is no CICON data path to fix up (AUD-P6-012).
                 G_CICON => {}
-                G_TEXT | G_BOXTEXT | G_FTEXT | G_FBOXTEXT => {
-                    o.ob_spec += tb;
-                    // Relocate the shared TEDINFO's internal pointers once.
-                    if !substruct_seen(objs, i, o.ob_spec) {
-                        let t = &mut *((ab + (o.ob_spec - tb)) as *mut TedInfo);
-                        reloc(&mut t.te_ptext, tb);
-                        reloc(&mut t.te_ptmplt, tb);
-                        reloc(&mut t.te_pvalid, tb);
+                // Every other type's `ob_spec` is a blob offset — a TEDINFO /
+                // ICONBLK / BITBLK record for the text/icon/image types, a
+                // string or user data otherwise. All of them are relocated the
+                // same way, `fix_long(&obj->ob_spec)`; the records' *internal*
+                // pointers are not reached from here but from their arrays
+                // below, exactly as EmuTOS separates `fix_objects` from
+                // `rs_readit`'s `fix_tedinfo_std`/`fix_nptrs` walks.
+                ty => {
+                    // A record `objc_draw` will dereference must lie inside
+                    // the blob (see [`substruct_bytes`]).
+                    if let Some(bytes) =
+                        substruct_bytes(ty, TEDINFO_SIZE, ICONBLK_SIZE, BITBLK_SIZE)
+                    {
+                        if !record_fits(o.ob_spec, bytes, size) {
+                            return false;
+                        }
                     }
-                }
-                G_IMAGE => {
                     o.ob_spec += tb;
-                    if !substruct_seen(objs, i, o.ob_spec) {
-                        let bi = &mut *((ab + (o.ob_spec - tb)) as *mut BitBlk);
-                        reloc(&mut bi.bi_pdata, tb);
-                    }
                 }
-                G_ICON => {
-                    o.ob_spec += tb;
-                    if !substruct_seen(objs, i, o.ob_spec) {
-                        let ib = &mut *((ab + (o.ob_spec - tb)) as *mut IconBlk);
-                        reloc(&mut ib.ib_pmask, tb);
-                        reloc(&mut ib.ib_pdata, tb);
-                        reloc(&mut ib.ib_ptext, tb);
-                    }
-                }
-                // Plain blob-offset `ob_spec` (G_STRING/G_BUTTON/G_TITLE,
-                // G_USERDEF, G_PROGDEF, …) → relocate (EmuTOS `fix_long`).
-                _ => o.ob_spec += tb,
             }
+        }
+        // The sub-structure arrays, by the counts the header declares —
+        // EmuTOS `rs_readit` (`gemrslib.c:798-805`):
+        //
+        //     fix_tedinfo_std();                       /* rsh_nted   */
+        //     ibcnt = rs_hdr->rsh_nib;
+        //     fix_nptrs(ibcnt, R_IBPMASK);
+        //     fix_nptrs(ibcnt, R_IBPDATA);
+        //     fix_nptrs(ibcnt, R_IBPTEXT);
+        //     fix_nptrs(rs_hdr->rsh_nbb, R_BIPDATA);
+        //     fix_nptrs(rs_hdr->rsh_nstring, R_FRSTR);
+        //     fix_nptrs(rs_hdr->rsh_nimages, R_FRIMG);
+        //
+        // Every declared record is relocated whether or not an object points
+        // at it: a free image, a spare TEDINFO or an icon reached only through
+        // `rsrc_gaddr` is a pointer afterwards, not a file offset. `get_addr`
+        // places the relocatable pointers at the start of each record — the
+        // three TEDINFO strings and the three ICONBLK pointers at
+        // `0`/`ps`/`2*ps`, the single BITBLK raster at `0`
+        // (`gemrslib.c:127-157`) — which is what the field loops below index.
+        // The length words `fix_tedinfo_std` recomputes belong to the
+        // `rs_readit` path only and are applied by [`fix_tedinfo_std`] from
+        // [`relocate_and_register_core`]; see that function for why the
+        // embedded resource must not get them.
+        if h.version >= NRSC_VER_SUBSTRUCTS {
+            let ted = access_base.add(h.off_ted as usize);
+            let ib = access_base.add(h.off_ib as usize);
+            for f in 0..SUBPTR_FIELDS {
+                fix_nptrs64(ted, h.n_ted as usize, TEDINFO_SIZE, f * 8, tb);
+                fix_nptrs64(ib, h.n_ib as usize, ICONBLK_SIZE, f * 8, tb);
+            }
+            fix_nptrs64(access_base.add(h.off_bb as usize), h.n_bb as usize, BITBLK_SIZE, 0, tb);
         }
         // Free-string / free-image pointer tables (NRSC >= v3, 8-byte slots):
         // each slot is a blob offset (string data for frstr, a BITBLK for
         // frimg) rebased onto `target_base`, leaving 0 as "empty".
         if h.version >= NRSC_VER_TABLES {
-            reloc_table_u64(access_base.add(h.off_frstr as usize), h.n_frstr as usize, tb);
-            reloc_table_u64(access_base.add(h.off_frimg as usize), h.n_frimg as usize, tb);
+            fix_nptrs64(access_base.add(h.off_frstr as usize), h.n_frstr as usize, 8, 0, tb);
+            fix_nptrs64(access_base.add(h.off_frimg as usize), h.n_frimg as usize, 8, 0, tb);
         }
     }
     true
 }
 
-/// Relocate a table of `count` 8-byte pointer slots at `base` in place: add
-/// `tb` to each non-zero slot (LP64 frstr/frimg). Slots may be unaligned.
+/// Number of relocatable pointer fields at the head of a TEDINFO
+/// (`te_ptext`/`te_ptmplt`/`te_pvalid`) and of an ICONBLK
+/// (`ib_pmask`/`ib_pdata`/`ib_ptext`). They are the records' first three
+/// members in both ABIs, which is why `get_addr` addresses them as
+/// `0`/`ps`/`2*ps` (`gemrslib.c:145-157`, `aesdefs.h:578-594`).
+const SUBPTR_FIELDS: usize = 3;
+
+/// EmuTOS `fix_nptrs(cnt, type)` (`gemrslib.c:640-646`):
+///
+/// ```c
+/// for (i = 0; i < cnt; i++)
+///     fix_long(get_addr(type, i));
+/// ```
+///
+/// Relocate one 8-byte pointer field — the one at byte `field` of each
+/// `stride`-byte record — across `count` records of the array at `base`,
+/// leaving 0 as "absent" (EmuTOS's `-1L`; the native format uses 0). `count`
+/// is the header's own record count, never anything derived from an object.
+///
+/// The slots are read and written unaligned, so a blob whose array base is not
+/// 8-aligned is relocated correctly instead of faulting — the loader must cope
+/// with any byte offset a file declares.
 ///
 /// # Safety
-/// `base` must point at ≥ `count * 8` readable/writable bytes.
-unsafe fn reloc_table_u64(base: *mut u8, count: usize, tb: u64) {
+/// `base` must point at ≥ `count * stride` readable/writable bytes, with
+/// `field + 8 <= stride`.
+unsafe fn fix_nptrs64(base: *mut u8, count: usize, stride: usize, field: usize, tb: u64) {
     for i in 0..count {
-        // SAFETY: i < count; the caller guarantees the slot span.
-        let p = unsafe { base.add(i * 8) } as *mut u64;
+        // SAFETY: i < count; the caller guarantees the record span.
+        let p = unsafe { base.add(i * stride + field) } as *mut u64;
         // SAFETY: 8 readable/writable bytes at `p`.
         unsafe {
             let v = p.read_unaligned();
@@ -752,54 +1072,55 @@ pub unsafe fn blob_frstr(base: *const u8, index: usize) -> *const u8 {
     }
 }
 
-/// Add `base` to a non-zero offset field (in-place relocation).
+/// Size of the sub-structure record an `ob_spec` of base type `base_type`
+/// points at — `ted`/`ib`/`bb` are the caller ABI's TEDINFO / ICONBLK / BITBLK
+/// record strides — or `None` for a type whose `ob_spec` is not a record
+/// pointer at all (a string, user data, a literal colour word).
+///
+/// The relocation does not *reach* those records this way any more: it walks
+/// the header's TEDINFO/ICONBLK/BITBLK arrays by count, as `rs_readit` does
+/// (`gemrslib.c:798-805`). What is left is the bound — `objc_draw`
+/// dereferences `ob_spec` as one of these records, and a resource may not
+/// steer that read outside the bytes it declares. Before the array walk this
+/// bound came for free, because the record's own pointers were written through
+/// `ob_spec`; it is stated explicitly now so the refusal does not quietly
+/// disappear. EmuTOS has no equivalent (`fix_objects` just relocates) because
+/// it has no memory protection to honour.
 #[inline]
-fn reloc(field: &mut u64, base: u64) {
-    if *field != 0 {
-        *field += base;
+fn substruct_bytes(base_type: u16, ted: usize, ib: usize, bb: usize) -> Option<usize> {
+    match base_type {
+        G_TEXT | G_BOXTEXT | G_FTEXT | G_FBOXTEXT => Some(ted),
+        G_ICON => Some(ib),
+        G_IMAGE => Some(bb),
+        _ => None,
     }
 }
 
-/// Object base types whose `ob_spec` points at a sub-struct (TEDINFO,
-/// BITBLK or ICONBLK) with its own internal pointers to relocate.
+/// Whether an object of `base_type` points at a sub-structure record at all.
+/// Used to refuse a pre-v5 blob, whose header declares no sub-structure arrays
+/// and whose records therefore cannot be relocated by count.
 #[inline]
 fn has_substruct(base_type: u16) -> bool {
-    matches!(
-        base_type,
-        G_TEXT | G_BOXTEXT | G_FTEXT | G_FBOXTEXT | G_IMAGE | G_ICON
-    )
+    substruct_bytes(base_type, 0, 0, 0).is_some()
 }
 
-/// Whether the sub-struct now at absolute address `spec` was already
-/// relocated by an earlier object (`objs[0..upto]` are already processed).
-///
-/// EmuTOS walks the TEDINFO/BITBLK/ICONBLK arrays once each, so a sub-struct
-/// shared by several objects is relocated exactly once
-/// (gemrslib.c:655-669,799-805). `NrscHeader` omits those array offsets, so
-/// we dedup on the *target address* instead: two objects share a sub-struct
-/// iff their (already relocated) `ob_spec` values are equal. A byte offset in
-/// the blob maps to exactly one sub-struct type, so equal addresses imply the
-/// same struct — no cross-type false match. The per-object `ob_spec` itself is
-/// still relocated for every object (both sharers must point at the struct);
-/// only the struct's *internal* pointers are deduped.
-///
-/// # Safety
-/// `objs` must point at the relocated OBJECT array with at least `upto`
-/// valid entries.
-unsafe fn substruct_seen(objs: *mut Object, upto: usize, spec: u64) -> bool {
-    for j in 0..upto {
-        // SAFETY: j < upto ≤ processed count; distinct from the current
-        // object, so no aliasing with the caller's live &mut.
-        let o = unsafe { &*objs.add(j) };
-        if has_substruct(o.ob_type & 0x00ff) && o.ob_spec == spec {
-            return true;
-        }
-    }
-    false
+/// Whether a sub-structure record of `bytes` bytes at blob offset `off` lies
+/// wholly inside a blob of `size` bytes.
+#[inline]
+fn record_fits(off: u64, bytes: usize, size: u64) -> bool {
+    off.checked_add(bytes as u64).is_some_and(|end| end <= size)
 }
 
-/// Capacity of the single resource buffer (one loaded `.RSC` at a time).
-const RSC_CAP: usize = 64 * 1024;
+/// Capacity of the single resource buffer (one loaded `.RSC` at a time), and
+/// therefore the largest resource `rsrc_load` can hold.
+///
+/// EmuTOS has no such limit — `rs_readit` asks `dos_alloc_anyram(rslsize)` for
+/// exactly the declared size (`aes/gemrslib.c:775`) — but it *does* have the
+/// same failure mode: no memory means `return FALSE`, i.e. `rsrc_load` = 0.
+/// NewTOS's fixed buffer moves that boundary earlier; what must not differ is
+/// that the refusal is honest. A file larger than this is rejected by the
+/// declared-size check in [`header_is_sound`], never truncated and relocated.
+pub const RSC_CAP: usize = 64 * 1024;
 
 struct RscBuf(UnsafeCell<[u8; RSC_CAP]>);
 // SAFETY: single boot CPU only touches the AES.
@@ -831,13 +1152,16 @@ const PAGE_SIZE: u64 = usermem::PAGE_SIZE;
 /// `mfree` directly and identifies the `usermem` window entry to drop.
 static USER_RSC_RAW: AtomicI32 = AtomicI32::new(0);
 
-/// Directory of the currently-launched program (e.g. `C:\APPS\QED\`), so
-/// `rsrc_load` finds the resource **beside the application** (lead directive
-/// 2026-07-20). A GEM app typically passes just `qed.rsc` (its `gl_appdir` is
-/// empty), so without this the kernel could only look in the fixed
-/// `C:\GEMSYS\RSC\` / `C:\` locations. Set by the kernel launcher
-/// ([`set_app_dir`]) from the launch path before the program enters EL0.
-const APP_DIR_CAP: usize = 64;
+/// Directory of the currently-launched program (e.g. `C:\APPS\QED\`) —
+/// NewTOS's `rlr->p_appdir`, the first place `sh_find` looks
+/// (`findfile` stage 1, `aes/gemshlib.c:415-423`). Set by the kernel launcher
+/// ([`set_app_dir`], EmuTOS `p_setappdir`, `aes/gempd.c:90-107`) from the
+/// launch path before the program enters EL0.
+///
+/// Capacity is EmuTOS's `p_appdir[LEN_ZPATH+2]` (`aes/struct.h:153`), so the
+/// directory portion of any `MAXPATHLEN` path fits whole; the previous 64
+/// bytes truncated a deep application directory in silence.
+pub const APP_DIR_CAP: usize = 116;
 struct AppDir {
     buf: UnsafeCell<[u8; APP_DIR_CAP]>,
     len: AtomicUsize,
@@ -886,31 +1210,58 @@ pub fn app_dir(out: &mut [u8]) -> usize {
 }
 
 /// `rsrc_load` (110) — load `addr_in[0]` (a `.RSC` filename) from disk.
-/// NewTOS searches the launched app's own directory first (lead directive),
-/// then `C:\GEMSYS\RSC\<name>`, then `C:\<name>`. Returns 1 on success, 0 on
-/// failure.
+///
+/// EmuTOS `rs_load` (`aes/gemrslib.c:826-850`) copies the caller's spec into
+/// its own `tmprsfname[MAXPATHLEN]` scratch and resolves it with `sh_find`:
+///
+/// ```c
+/// strcpy(tmprsfname, rsfname);
+/// if (!sh_find(tmprsfname)) return FALSE;
+/// dosrc = dos_open(tmprsfname, 0);
+/// ```
+///
+/// `sh_find` → `findfile` (`aes/gemshlib.c:406-472`) searches in four stages:
+/// (1) `rlr->p_appdir` + the **name portion** of the spec (`sh_name`),
+/// (2) the spec **unchanged** — the current directory, and the stage that
+/// makes any qualified path, absolute or relative, resolvable,
+/// (3) `\<name>` on the **current** drive, (4) the AES `PATH=`.
+/// The application's own buffer is never rewritten, only the scratch.
+///
+/// NewTOS runs exactly that search through [`crate::aes::shell::sh_find`]
+/// (whose stage 4 is documented-absent for want of a loader-populated AES
+/// environment) and then reads the resolved path. Returns 1 on success,
+/// 0 when the file is not found, is short, or does not relocate.
 pub fn rsrc_load(pb: &Aespb) {
     let fname = pb.addrin(0) as *const u8;
     if fname.is_null() {
         pb.set_ret(0);
         return;
     }
-    // Copy the bare filename (cap at 14 chars: 8.3 + NUL slack).
-    let mut name = [0u8; 16];
-    let nlen = {
-        let mut i = 0;
-        // SAFETY: trusted GEM pointer to a NUL-terminated string.
-        unsafe {
-            while i < name.len() - 1 {
-                let c = *fname.add(i);
-                if c == 0 {
-                    break;
-                }
-                name[i] = c;
-                i += 1;
+    // `strcpy(tmprsfname, rsfname)` (`gemrslib.c:835`) — a MAXPATHLEN scratch,
+    // so `sh_find` rewrites ours and not the application's buffer.
+    let mut spec = [0u8; PATHBUF];
+    let mut nlen = 0;
+    // SAFETY: trusted GEM pointer to a NUL-terminated string.
+    unsafe {
+        while nlen < spec.len() - 1 {
+            let c = *fname.add(nlen);
+            if c == 0 {
+                break;
             }
+            spec[nlen] = c;
+            nlen += 1;
         }
-        i
+    }
+
+    // `if (!sh_find(tmprsfname)) return FALSE;` (`gemrslib.c:836-837`).
+    if !crate::aes::shell::sh_find(&mut spec) {
+        pb.set_ret(0);
+        return;
+    }
+    let n = spec.iter().position(|&c| c == 0).unwrap_or(spec.len());
+    let Ok(path_str) = core::str::from_utf8(&spec[..n]) else {
+        pb.set_ret(0);
+        return;
     };
 
     // A `svc`-dispatched (EL0) caller cannot read the kernel high-half
@@ -925,52 +1276,33 @@ pub fn rsrc_load(pb: &Aespb) {
     // 24-byte OBJECTs, so relocate at that width and hand it 24-byte records.
     let abi = crate::bdos::process::current_abi();
 
-    // App-directory prefix (lead directive): search the launched program's own
-    // folder first. Empty (a kernel-side caller / no launcher) → skipped.
-    let app_len = APP_DIR.len.load(Ordering::Acquire);
-    // SAFETY: single-CPU; `app_len` bytes were written by `set_app_dir`.
-    let app_buf = unsafe { &*APP_DIR.buf.get() };
-    let app_dir = &app_buf[..app_len];
-
     // SAFETY: single-CPU AES; exclusive logical owner of the buffer.
     let buf = unsafe { &mut *RSC_BUF.0.get() };
-    for prefix in [app_dir, b"C:\\GEMSYS\\RSC\\".as_slice(), b"C:\\".as_slice()] {
-        if prefix.is_empty() {
-            continue; // no app directory recorded
-        }
-        let mut path = [0u8; 64];
-        let mut n = 0;
-        for &c in prefix.iter().chain(name[..nlen].iter()) {
-            if n < path.len() {
-                path[n] = c;
-                n += 1;
-            }
-        }
-        let Ok(path_str) = core::str::from_utf8(&path[..n]) else {
-            continue;
-        };
-        let Some(len) = crate::bdos::fs::read_file(path_str, buf) else {
-            continue;
-        };
-        if len < size_of::<NrscHeader>() {
-            continue;
-        }
-        // SAFETY: `buf` now holds `len` file bytes; both relocation paths
-        // re-validate the `NRSC` header before touching anything.
-        let ok = if run.is_null() {
-            // Kernel-side caller: relocate in place, kernel-VA pointers (LP64).
-            unsafe { relocate_and_register(buf.as_mut_ptr()) }
-        } else {
-            // EL0 app caller: copy into per-process EL0-mapped memory and
-            // relocate to user VAs at the caller's OBJECT width.
-            unsafe { load_into_user(run, buf, len, abi) }
-        };
-        if ok {
-            pb.set_ret(1);
-            return;
-        }
+    let Some(len) = crate::bdos::fs::read_file(path_str, buf) else {
+        pb.set_ret(0);
+        return;
+    };
+    if len < size_of::<NrscHeader>() {
+        pb.set_ret(0);
+        return;
     }
-    pb.set_ret(0);
+    // `len` is what `read_file` copied — bounded by the file's own size *and*
+    // by `RSC_CAP`, silently (`bdos/fs/mod.rs`, `min(entry.size, out.len())`).
+    // It is therefore the only honest statement about how many bytes exist,
+    // and every path below is bounded by it: a file that was cut short, or one
+    // too large for the buffer, fails `header_is_sound` and is refused, the
+    // way EmuTOS refuses a short `dos_read` (`gemrslib.c:782-783`).
+    // SAFETY: `buf` now holds `len` file bytes; both relocation paths
+    // validate the `NRSC` header against `len` before touching anything.
+    let ok = if run.is_null() {
+        // Kernel-side caller: relocate in place, kernel-VA pointers (LP64).
+        unsafe { relocate_and_register(buf.as_mut_ptr(), len) }
+    } else {
+        // EL0 app caller: copy into per-process EL0-mapped memory and
+        // relocate to user VAs at the caller's OBJECT width.
+        unsafe { load_into_user(run, buf, len, abi) }
+    };
+    pb.set_ret(i16::from(ok));
 }
 
 /// Place a candidate native `.RSC` blob (`src[..len]`) into the calling
@@ -988,9 +1320,12 @@ pub fn rsrc_load(pb: &Aespb) {
 /// Single-CPU trap context (the implicit BDOS giant lock); `run` is the
 /// current process basepage; `src[..len]` is a candidate blob.
 unsafe fn load_into_user(run: *mut BasePage, src: &[u8; RSC_CAP], len: usize, abi: Abi) -> bool {
-    // Cheap non-NRSC reject before any allocation.
-    // SAFETY: `len >= size_of::<NrscHeader>()` guaranteed by the caller.
-    if unsafe { &(*(src.as_ptr() as *const NrscHeader)).magic } != b"NRSC" {
+    // Reject an unusable blob before any allocation: not `NRSC`, cut short, or
+    // claiming arrays outside the bytes that were read. The relocation core
+    // checks the same thing again on the copy, but there is no reason to take
+    // a pool block for a file we already know we will refuse.
+    // SAFETY: `src` holds `len` readable bytes.
+    if !unsafe { header_is_sound(src.as_ptr(), len, abi) } {
         return false;
     }
     let Some(slot) = crate::bdos::process::slot_for(run) else {
@@ -1031,8 +1366,11 @@ unsafe fn load_into_user(run: *mut BasePage, src: &[u8; RSC_CAP], len: usize, ab
     unsafe {
         core::ptr::copy_nonoverlapping(src.as_ptr(), base_kva, len);
     }
-    // SAFETY: `base_kva` holds the copied blob; header re-checked inside.
-    if !unsafe { relocate_and_register_core(base_kva, app_va, abi) } {
+    // The copy is `len` bytes long, so `len` also bounds the relocation here:
+    // the block is larger (page-rounded), but only those bytes came from the
+    // file and only they may be fixed up.
+    // SAFETY: `base_kva` holds the `len`-byte copy; header re-checked inside.
+    if !unsafe { relocate_and_register_core(base_kva, len, app_va, abi) } {
         // Drop the window entry and free the pool block.
         usermem::free_by_mstart(slot, raw);
         // SAFETY: `raw` is on the allocated list.

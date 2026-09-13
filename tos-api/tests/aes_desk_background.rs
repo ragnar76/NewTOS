@@ -286,7 +286,7 @@ impl RasterBackend for BufBackend {
             for col in 0..dst.w {
                 let (sx, sy) = (src.x + col, src.y + row);
                 let wi = (sy as usize) * src.stride_words as usize + (sx as usize) / 16;
-                let w = src.bits.get(wi).copied().unwrap_or(0);
+                let w = src.bits.word(wi).unwrap_or(0);
                 let bit = w & (0x8000u16 >> (sx.rem_euclid(16)) as u16);
                 self.put(dst.x + col, dst.y + row, if bit != 0 { f } else { b }, clip);
             }
@@ -438,6 +438,7 @@ const SIZER: i16 = 0x0020;
 const MU_KEYBD: i16 = 0x0001;
 const MU_BUTTON: i16 = 0x0002;
 const MU_MESAG: i16 = 0x0010;
+const MU_TIMER: i16 = 0x0020;
 
 // AES opcodes used here.
 const OP_APPL_INIT: i16 = 10;
@@ -456,6 +457,9 @@ const WF_CXYWH: i16 = 5;
 const WF_NEWDESK: i16 = 14;
 
 const FMD_FINISH: i16 = 3;
+
+/// `WM_REDRAW` (`include/aesdefs.h:229`).
+const WM_REDRAW: i16 = 20;
 
 /// EmuTOS `gl_hbox` for the 8x16 system font: `gl_hchar + 3`
 /// (`aes/gemgraf.c:412`), and therefore the height of `gl_rmenu` and the top
@@ -638,6 +642,24 @@ fn wind_get_rect(pb: &mut Aespb, handle: i16, field: i16) -> (i16, i16, i16, i16
     pb.intin[1] = field;
     pb.call(OP_WIND_GET, 2, 5, 0);
     (pb.intout[1], pb.intout[2], pb.intout[3], pb.intout[4])
+}
+
+/// Pull the next message out of the calling application's FIFO, or `None` when
+/// the queue is empty.
+///
+/// `evnt_multi` blocks on an empty queue, so `MU_TIMER` is armed alongside
+/// `MU_MESAG`: the call returns either a message or a timer event and can never
+/// hang. The [`ScriptHost`] clock advances one millisecond per input pump, so a
+/// small deadline is a small, bounded number of idle passes.
+fn next_mesag(pb: &mut Aespb) -> Option<[i16; 8]> {
+    let mut buf = Box::new([0i16; 8]);
+    pb.intin.fill(0);
+    pb.intin[0] = MU_MESAG | MU_TIMER;
+    pb.intin[14] = 20; // ms
+    pb.addrin[0] = buf.as_mut_ptr() as u64;
+    pb.call(OP_EVNT_MULTI, 16, 7, 1);
+    pb.addrin[0] = 0;
+    ((pb.intout[0] & MU_MESAG) != 0).then_some(*buf)
 }
 
 fn form_dial(pb: &mut Aespb, fmd: i16, little: (i16, i16, i16, i16), big: (i16, i16, i16, i16)) {
@@ -1020,5 +1042,945 @@ fn the_mover_drag_repaints_only_desktop_it_uncovered() {
          unpainted; that half is exactly what w_drawdesk is for \
          (aes/gemwmlib.c:340-359)",
         desk_strip.2 as i32 * desk_strip.3 as i32,
+    );
+}
+
+// ── 6. the rectangle-list iterator and the window handle ──────────────────
+
+const WF_FIRSTXYWH: i16 = 11;
+const WF_NEXTXYWH: i16 = 12;
+/// Out of the table's range (`NUM_WIN` is 16, handles 0..=15).
+const OUT_OF_RANGE: i16 = -1;
+/// Inside the table but not occupied by any window — the second half of
+/// `get_pwin`'s test (`VF_INUSE`). The rig opens two windows, so the last slot
+/// is free; the test asserts that before it relies on it.
+const FREE_SLOT: i16 = 15;
+
+/// `wind_get(handle, field)` → `(ret, (x, y, w, h))`.
+fn wind_get_ret_rect(pb: &mut Aespb, handle: i16, field: i16) -> (i16, (i16, i16, i16, i16)) {
+    pb.intin.fill(0);
+    pb.intin[0] = handle;
+    pb.intin[1] = field;
+    pb.call(OP_WIND_GET, 2, 5, 0);
+    (pb.intout[0], (pb.intout[1], pb.intout[2], pb.intout[3], pb.intout[4]))
+}
+
+/// The `WF_FIRSTXYWH`/`WF_NEXTXYWH` iterator belongs to a *window*, so a query
+/// on a handle no window occupies must be refused **before** the list is
+/// touched — otherwise it damages the iteration another window is in the
+/// middle of.
+///
+/// EmuTOS `wm_get` looks the `WINDOW` up with `get_pwin` and returns FALSE for
+/// every field except `WF_TOP`, `WF_SCREEN` and `WF_DCOLOR` when the handle is
+/// out of range or the slot has no `VF_INUSE` (`aes/gemwmlib.c:1513-1524`,
+/// `get_pwin` `:1391-1404`). Only past that does it reach `w_owns`, the one
+/// place that reads `w_rlist` and writes `w_rnext` (`:1230-1240,1556-1561`).
+/// Handle 0 is a legal handle (the desktop window, `:1290` with
+/// `w_setup:205-228`), and so is a created-but-closed one.
+///
+/// Two levels that this test deliberately keeps apart: `ret = FALSE` is the
+/// *handler's* answer. It does not mean the caller keeps its four previous
+/// words — the dispatcher copies `min(OUT_LEN, O_SIZE)` words back from its own
+/// local buffer either way (`aes/gemsuper.c:432-445`;
+/// `tos-api/src/aes/mod.rs:132-140,263`). The assertions below are therefore
+/// about the return value and about the *iterator state*, and say nothing about
+/// `int_out[1..4]` of a refused call.
+#[test]
+fn an_invalid_handle_does_not_disturb_the_rectangle_list() {
+    let _guard = SERIAL.lock().unwrap_or_else(|e| e.into_inner());
+    let host = rig();
+    let mut pb = fresh(host);
+
+    let ha = open_window(&mut pb, KIND, RA);
+    let _hb = open_window(&mut pb, KIND, RB); // covers A's bottom-right corner
+
+    // Both stand-ins really are invalid handles, by the same `get_pwin` rule
+    // the measured TT cases 175-178 exercise on a rectangle field.
+    for bad in [OUT_OF_RANGE, FREE_SLOT] {
+        let (ret, _) = wind_get_ret_rect(&mut pb, bad, WF_WXYWH);
+        assert_eq!(
+            ret, 0,
+            "wind_get({bad}, WF_WXYWH) must be FALSE — the handle is out of range or \
+             its slot is not in use (aes/gemwmlib.c:1391-1404,1521-1523)"
+        );
+    }
+
+    // The undisturbed sequence. B breaks A, so A owns at least two pieces.
+    let (r0, p0) = wind_get_ret_rect(&mut pb, ha, WF_FIRSTXYWH);
+    let (r1, p1) = wind_get_ret_rect(&mut pb, ha, WF_NEXTXYWH);
+    assert_eq!((r0, r1), (1, 1), "FIRST/NEXT on a valid handle are TRUE");
+    assert!(
+        p0.2 > 0 && p0.3 > 0 && p1.2 > 0 && p1.3 > 0,
+        "the rig must leave A with at least two visible pieces, got {p0:?} then {p1:?}"
+    );
+
+    // 1. FIRST on an invalid handle must not rebuild the list. If it does, the
+    //    iteration window A is in the middle of is emptied.
+    let (ret, again) = wind_get_ret_rect(&mut pb, ha, WF_FIRSTXYWH);
+    assert_eq!((ret, again), (1, p0), "FIRST must restart A's own list");
+    let (bad_first, _) = wind_get_ret_rect(&mut pb, OUT_OF_RANGE, WF_FIRSTXYWH);
+    assert_eq!(
+        bad_first, 0,
+        "wind_get({OUT_OF_RANGE}, WF_FIRSTXYWH) must be FALSE (aes/gemwmlib.c:1521-1523)"
+    );
+    let (ret, after_bad_first) = wind_get_ret_rect(&mut pb, ha, WF_NEXTXYWH);
+    assert_eq!(
+        (ret, after_bad_first),
+        (1, p1),
+        "FIRST on an invalid handle threw away A's rectangle list: A's next piece is \
+         {after_bad_first:?} instead of {p1:?}. `wm_get` refuses the handle before \
+         `w_owns` sees a list at all (aes/gemwmlib.c:1513-1524,1556-1561)"
+    );
+
+    // 2. NEXT on an invalid handle must not advance the cursor — it would eat
+    //    a piece belonging to another window.
+    let (ret, again) = wind_get_ret_rect(&mut pb, ha, WF_FIRSTXYWH);
+    assert_eq!((ret, again), (1, p0), "FIRST must restart A's own list");
+    let (bad_next, _) = wind_get_ret_rect(&mut pb, FREE_SLOT, WF_NEXTXYWH);
+    assert_eq!(
+        bad_next, 0,
+        "wind_get({FREE_SLOT}, WF_NEXTXYWH) must be FALSE — the slot is not in use \
+         (aes/gemwmlib.c:1391-1404,1521-1523)"
+    );
+    let (ret, after_bad_next) = wind_get_ret_rect(&mut pb, ha, WF_NEXTXYWH);
+    assert_eq!(
+        (ret, after_bad_next),
+        (1, p1),
+        "NEXT on an invalid handle consumed one of A's pieces: A's next piece is \
+         {after_bad_next:?} instead of {p1:?}. `w_owns` is only reached with a window \
+         (aes/gemwmlib.c:1230-1240,1513-1524)"
+    );
+}
+
+// ── 7. the order the rectangle list breaks a window into ──────────────────
+
+/// The window that gets broken here. Opened first, so it ends up *below*.
+const ORD_UNDER: (i16, i16, i16, i16) = (40, 100, 400, 300);
+/// The window that breaks it — opened second, so it is above. Placed so that
+/// exactly **three** of the four possible remainder pieces exist: its top edge
+/// lies *above* the other window's, so there is **no TOP piece**, while LEFT,
+/// RIGHT and BOTTOM all survive.
+///
+/// That missing TOP piece is the whole point. `brkrct` emits the pieces in the
+/// order of its constants, and TOP is the first of them — so as long as a TOP
+/// piece exists, every candidate order starts with it and the order is
+/// unobservable. Take TOP away and the first reported piece is LEFT in EmuTOS
+/// and BOTTOM in a TOP/BOTTOM/LEFT/RIGHT implementation.
+///
+/// One breaking window means at most four pieces, well under the list's
+/// capacity, so nothing here depends on the truncation behaviour (A21) or on
+/// the order of several breaking windows (A22).
+const ORD_OVER: (i16, i16, i16, i16) = (140, 60, 200, 200);
+
+/// EmuTOS's four piece kinds, under their own constant values — `TOP 0`,
+/// `LEFT 1`, `RIGHT 2`, `BOTTOM 3` (`aes/gemwrect.c:30-33`). `brkrct` fills
+/// `have_piece[]` indexed by them and appends with `for (i = 0; i < 4; i++)`
+/// (`:113-125`), so *ascending index order* **is** the emission order.
+const P_TOP: usize = 0;
+const P_LEFT: usize = 1;
+const P_RIGHT: usize = 2;
+const P_BOTTOM: usize = 3;
+const P_NAME: [&str; 4] = ["TOP", "LEFT", "RIGHT", "BOTTOM"];
+
+/// Which of `mkpiece`'s four kinds the reported piece `p` is, decided only by
+/// which side of the covering window `over` it lies on — never by comparing
+/// coordinates against a frozen expectation.
+///
+/// `mkpiece` (`aes/gemwrect.c:64-98`) puts TOP strictly above the covering
+/// rectangle (`h = new.y - old.y`), LEFT strictly left of it
+/// (`w = new.x - old.x`), RIGHT at `x = new.x + new.w` and BOTTOM at
+/// `y = new.y + new.h`. Clipping a piece to the work area on the way out
+/// (`w_owns`, `aes/gemwmlib.c:1230-1240`) can only shrink it, so it cannot move
+/// a piece to the other side of `over`; and a later drop-shadow enlargement of
+/// the covering rectangle only pushes RIGHT further right and BOTTOM further
+/// down. The classification therefore survives the remaining fix stages, which
+/// a coordinate expectation would not.
+fn piece_kind(p: (i16, i16, i16, i16), over: (i16, i16, i16, i16)) -> usize {
+    let mut hit = Vec::new();
+    if p.1 + p.3 <= over.1 {
+        hit.push(P_TOP);
+    }
+    if p.0 + p.2 <= over.0 {
+        hit.push(P_LEFT);
+    }
+    if p.0 >= over.0 + over.2 {
+        hit.push(P_RIGHT);
+    }
+    if p.1 >= over.1 + over.3 {
+        hit.push(P_BOTTOM);
+    }
+    assert_eq!(
+        hit.len(),
+        1,
+        "piece {p:?} is not on exactly one side of the covering window {over:?} \
+         (matched {:?}) — the rig's geometry no longer isolates the four \
+         `mkpiece` kinds (aes/gemwrect.c:64-98)",
+        hit.iter().map(|&i| P_NAME[i]).collect::<Vec<_>>()
+    );
+    hit[0]
+}
+
+/// The pieces a broken window owns come out in one fixed order: **TOP, LEFT,
+/// RIGHT, BOTTOM**.
+///
+/// EmuTOS decides this in `brkrct` (`aes/gemwrect.c:100-135`): it fills
+/// `have_piece[TOP|LEFT|RIGHT|BOTTOM]` and then appends the pieces it has in
+/// an ascending `for (i = 0; i < 4; i++)` loop, with the constants fixed at
+/// `TOP 0`, `LEFT 1`, `RIGHT 2`, `BOTTOM 3` (`:30-33`). The pieces replace the
+/// broken rectangle *in place* in the list (`brkrct` re-links `p->o_link`,
+/// `mkrect` `:136-162`), so the relative order of everything else is kept and
+/// this is the order the list is read in.
+///
+/// Every reader sees it: the draw walk `do_walk` (`aes/gemwmlib.c:286-312`) —
+/// which also fixes the call order of a `G_USERDEF` object — the public
+/// `WF_FIRSTXYWH`/`WF_NEXTXYWH` iteration through `w_owns` (`:1230-1240`,
+/// `:1556-1561`), and the redraw union `w_union` (`:869-884`). It is algorithm
+/// semantics, not a device parameter: the constants do not depend on the
+/// resolution, the font or the shadow size.
+///
+/// The test names the pieces by the side of the covering window they lie on,
+/// so it freezes no coordinate — only the order, which is what is under test.
+#[test]
+fn the_owner_rectangle_list_is_broken_in_top_left_right_bottom_order() {
+    let _guard = SERIAL.lock().unwrap_or_else(|e| e.into_inner());
+    let host = rig();
+    let mut pb = fresh(host);
+
+    let under = open_window(&mut pb, KIND, ORD_UNDER);
+    let over = open_window(&mut pb, KIND, ORD_OVER);
+
+    // Take the geometry the AES actually gave the two windows, not the request.
+    let u = wind_get_rect(&mut pb, under, WF_CXYWH);
+    let o = wind_get_rect(&mut pb, over, WF_CXYWH);
+
+    // The rig's precondition, in `brkrct`'s own terms (`aes/gemwrect.c:113-118`):
+    // `have_piece[TOP] = (new.y > old.y)` must be false, the other three true.
+    // Adding a drop shadow later grows both rectangles' w/h by the same amount,
+    // so none of these four comparisons changes sign.
+    assert!(
+        o.1 <= u.1,
+        "rig broken: the covering window must start at or above the other one \
+         ({o:?} vs {u:?}), otherwise a TOP piece exists and hides the order"
+    );
+    assert!(o.0 > u.0, "rig broken: no LEFT piece for {o:?} in {u:?}");
+    assert!(o.0 + o.2 < u.0 + u.2, "rig broken: no RIGHT piece for {o:?} in {u:?}");
+    assert!(o.1 + o.3 < u.1 + u.3, "rig broken: no BOTTOM piece for {o:?} in {u:?}");
+
+    // Walk the whole list through the public iterator.
+    let mut order: Vec<usize> = Vec::new();
+    let mut seen: Vec<(i16, i16, i16, i16)> = Vec::new();
+    let (mut ret, mut p) = wind_get_ret_rect(&mut pb, under, WF_FIRSTXYWH);
+    for _ in 0..20 {
+        if ret == 0 || p.2 <= 0 || p.3 <= 0 {
+            break;
+        }
+        seen.push(p);
+        order.push(piece_kind(p, o));
+        let step = wind_get_ret_rect(&mut pb, under, WF_NEXTXYWH);
+        ret = step.0;
+        p = step.1;
+    }
+
+    let named: Vec<&str> = order.iter().map(|&i| P_NAME[i]).collect();
+    assert!(
+        !order.contains(&P_TOP),
+        "rig broken: a TOP piece turned up ({named:?}, {seen:?}) — with one the \
+         order cannot be told apart"
+    );
+    assert_eq!(
+        order,
+        vec![P_LEFT, P_RIGHT, P_BOTTOM],
+        "the owner rectangle list came out as {named:?} ({seen:?}). `brkrct` \
+         appends the pieces it has in ascending constant order TOP(0), LEFT(1), \
+         RIGHT(2), BOTTOM(3) (aes/gemwrect.c:30-33,113-125); with no TOP piece \
+         that is LEFT, RIGHT, BOTTOM"
+    );
+    assert!(
+        order.windows(2).all(|w| w[0] < w[1]),
+        "the pieces must come out in ascending `brkrct` constant order, got {named:?}"
+    );
+}
+
+// ── 8. the rectangle list and its cursor belong to one window ─────────────
+
+/// Walk `handle`'s owner rectangle list from the start through the public
+/// iterator and collect every piece, stopping at the end sentinel.
+///
+/// EmuTOS `w_owns` reports the end by zeroing only `g_w`/`g_h`
+/// (`aes/gemwmlib.c:1240`), so an empty piece — not `ret` — is the terminator.
+fn walk_owner_list(pb: &mut Aespb, handle: i16) -> Vec<(i16, i16, i16, i16)> {
+    let mut out = Vec::new();
+    let (mut ret, mut p) = wind_get_ret_rect(pb, handle, WF_FIRSTXYWH);
+    for _ in 0..20 {
+        if ret == 0 || p.2 <= 0 || p.3 <= 0 {
+            break;
+        }
+        out.push(p);
+        let step = wind_get_ret_rect(pb, handle, WF_NEXTXYWH);
+        ret = step.0;
+        p = step.1;
+    }
+    out
+}
+
+/// Is `p` completely inside `outer`?
+fn contains_rect(outer: (i16, i16, i16, i16), p: (i16, i16, i16, i16)) -> bool {
+    p.0 >= outer.0 && p.1 >= outer.1 && p.0 + p.2 <= outer.0 + outer.2 && p.1 + p.3 <= outer.1 + outer.3
+}
+
+/// Do `a` and `b` share at least one pixel?
+fn rects_overlap(a: (i16, i16, i16, i16), b: (i16, i16, i16, i16)) -> bool {
+    a.0 < b.0 + b.2 && b.0 < a.0 + a.2 && a.1 < b.1 + b.3 && b.1 < a.1 + a.3
+}
+
+/// The intersection of `a` and `b`, or `None` when they do not touch — EmuTOS
+/// `rc_intersect` reduced to the half a test needs (`util/rectfunc.c:61-78`).
+fn overlap(a: (i16, i16, i16, i16), b: (i16, i16, i16, i16)) -> Option<(i16, i16, i16, i16)> {
+    let x0 = a.0.max(b.0);
+    let y0 = a.1.max(b.1);
+    let x1 = (a.0 + a.2).min(b.0 + b.2);
+    let y1 = (a.1 + a.3).min(b.1 + b.3);
+    (x1 > x0 && y1 > y0).then_some((x0, y0, x1 - x0, y1 - y0))
+}
+
+/// The rectangle list and the cursor into it are **per window**: starting the
+/// iteration on one window must not disturb an iteration another window is in
+/// the middle of.
+///
+/// EmuTOS keeps both inside the window: `ORECT *w_rlist` (the owner rectangle
+/// list) and `ORECT *w_rnext` (the search-next cursor) are fields of the
+/// `WINDOW` struct (`aes/gemlib.h:84-85`). `wm_get` picks the *requested*
+/// window with `get_pwin` (`aes/gemwmlib.c:1513`) and takes `pwin->w_rlist`
+/// for `WF_FIRSTXYWH` or `pwin->w_rnext` for `WF_NEXTXYWH` (`:1556-1561`);
+/// `w_owns` advances that same window's link (`:1230-1240`). A `FIRST` on B
+/// therefore cannot touch A's cursor.
+///
+/// This is ownership, not geometry: it depends on neither the resolution, nor
+/// a drop shadow, nor the order the pieces are emitted in. The test accordingly
+/// freezes no coordinate — it compares the interleaved sequence against each
+/// window's own undisturbed sequence **from the same run**, exactly as the
+/// invalid-handle test in section 6 does.
+#[test]
+fn the_rectangle_list_and_its_cursor_belong_to_one_window() {
+    let _guard = SERIAL.lock().unwrap_or_else(|e| e.into_inner());
+    let host = rig();
+    let mut pb = fresh(host);
+
+    // Two valid, overlapping windows: B covers A's bottom-right corner, so A is
+    // broken into more than one piece while B, being on top, keeps one whole
+    // piece. Both handles are valid, so the handle check of section 6 cannot be
+    // what answers here.
+    let ha = open_window(&mut pb, KIND, RA);
+    let hb = open_window(&mut pb, KIND, RB);
+
+    let work_a = wind_get_rect(&mut pb, ha, WF_WXYWH);
+    let work_b = wind_get_rect(&mut pb, hb, WF_WXYWH);
+    let curr_b = wind_get_rect(&mut pb, hb, WF_CXYWH);
+
+    // Each window's own sequence, taken without interference. This is the
+    // yardstick — no expected number appears anywhere in this test.
+    let solo_a = walk_owner_list(&mut pb, ha);
+    let solo_b = walk_owner_list(&mut pb, hb);
+
+    assert!(
+        solo_a.len() >= 2,
+        "rig broken: B must break A into at least two pieces, otherwise there is no \
+         second piece for NEXT(A) to return; A's list is {solo_a:?}"
+    );
+    assert!(!solo_b.is_empty(), "rig broken: B must own at least one visible piece");
+
+    // Whose piece is whose, told from the geometry rather than from a literal:
+    // a piece of A lies in A's work area and clear of B (B is above it), a piece
+    // of B lies in B's work area. `w_owns` clips every piece it hands out to the
+    // window's own work rectangle (`aes/gemwmlib.c:1556-1561`), and A's pieces
+    // are what is left of it after the window above was subtracted.
+    for p in &solo_a {
+        assert!(
+            contains_rect(work_a, *p) && !rects_overlap(*p, curr_b),
+            "piece {p:?} reported for A is not inside A's work area {work_a:?} clear \
+             of the window above it {curr_b:?}"
+        );
+    }
+    for p in &solo_b {
+        assert!(
+            contains_rect(work_b, *p),
+            "piece {p:?} reported for B is not inside B's work area {work_b:?}"
+        );
+    }
+
+    // The interleaved sequence: start A, start B, then continue A.
+    let (ret_a0, a0) = wind_get_ret_rect(&mut pb, ha, WF_FIRSTXYWH);
+    let (ret_b0, b0) = wind_get_ret_rect(&mut pb, hb, WF_FIRSTXYWH);
+    let (ret_a1, a1) = wind_get_ret_rect(&mut pb, ha, WF_NEXTXYWH);
+
+    assert_eq!(
+        (ret_a0, ret_b0, ret_a1),
+        (1, 1, 1),
+        "FIRST/NEXT on two valid handles are all TRUE (aes/gemwmlib.c:1513-1524)"
+    );
+    assert_eq!(
+        a0, solo_a[0],
+        "FIRST(A) must start A's own list, got {a0:?} instead of {:?}",
+        solo_a[0]
+    );
+    assert_eq!(
+        b0, solo_b[0],
+        "FIRST(B) must answer with B's own first piece, got {b0:?} instead of {:?}",
+        solo_b[0]
+    );
+    assert_eq!(
+        a1, solo_a[1],
+        "NEXT(A) after a FIRST(B) in between returned {a1:?} instead of A's second \
+         piece {:?}. A rectangle list of {solo_a:?} for A and {solo_b:?} for B: \
+         {} — the list and the cursor are fields of the window, so starting B's \
+         iteration cannot reach A's (`w_rlist`/`w_rnext`, aes/gemlib.h:84-85; \
+         `wm_get` picks the requested window, aes/gemwmlib.c:1513,1556-1561; \
+         `w_owns` advances that window's link, :1230-1240)",
+        solo_a[1],
+        if a1.2 == 0 && a1.3 == 0 {
+            "that is the end-of-list sentinel, so B's FIRST overwrote A's list or cursor"
+        } else if solo_b.contains(&a1) {
+            "that is one of B's pieces, so A's query is reading B's list"
+        } else {
+            "that is neither A's second piece nor B's"
+        }
+    );
+}
+
+// ── 9. the breaking rectangle includes the drop shadow ────────────────────
+
+/// The window that gets broken. Opened first, so it ends up *below*.
+const SHD_UNDER: (i16, i16, i16, i16) = (40, 60, 440, 360);
+
+/// The window drop-shadow size, taken from the **one** place the AES keeps it
+/// (`tos_api::aes::window::DROP_SHADOW_SIZE`, EmuTOS `DROP_SHADOW_SIZE`,
+/// `aes/gemwmlib.c:49`). The expectations below are written in terms of `S`,
+/// never as a literal, so changing the size for another screen profile does not
+/// turn into a test round.
+const S: i16 = tos_api::aes::window::DROP_SHADOW_SIZE;
+
+/// A window's drop shadow is part of what it takes away from the windows below
+/// it: the rectangle that breaks their owner rectangle lists is `WS_TRUE`, not
+/// `WS_CURR`.
+///
+/// `newrect` uses `w_getsize(WS_TRUE, wh, …)` twice — once for the rectangle
+/// this window breaks everybody else's list with (`aes/gemwrect.c:190`) and
+/// once for its own starting rectangle (`:203`) — and `w_getsize` grows `WS_TRUE`
+/// by `DROP_SHADOW_SIZE` in `g_w`/`g_h` only, leaving `g_x`/`g_y` alone
+/// (`aes/gemwmlib.c:253-261`). So the shadow is charged on exactly two of the
+/// four sides, and the remainder pieces `mkpiece` cuts say which
+/// (`aes/gemwrect.c:64-98`):
+///
+/// | piece | `mkpiece` edge | with the shadow |
+/// |---|---|---|
+/// | TOP    | `h = new.y - old.y`                     | ends at `over.y`, unchanged |
+/// | LEFT   | `w = new.x - old.x`                     | ends at `over.x`, unchanged |
+/// | RIGHT  | `x = new.x + new.w`                     | starts `S` further right |
+/// | BOTTOM | `y = new.y + new.h`                     | starts `S` further down |
+///
+/// Testing all four is what makes this a statement about the *relation* rather
+/// than about two numbers: a fix that simply enlarged every rectangle would
+/// move the TOP and LEFT edges too and fail here.
+///
+/// The reported pieces are the work-area intersection (`w_owns`,
+/// `aes/gemwmlib.c:1230-1240`), which can only shrink a piece, never move it
+/// across the covering window — the covering window is placed strictly inside
+/// the other one's work area so no edge under test is the one that gets
+/// clipped. Nothing here freezes a coordinate that the remaining fix stages
+/// change: the pieces are named by the side of the covering window they lie on
+/// (`piece_kind`, section 7), the geometry is read back from the AES rather
+/// than assumed, and only pieces *before* the end of the list are read, so the
+/// end-of-list words (A15) stay out of it.
+#[test]
+fn the_breaking_rectangle_of_a_covering_window_includes_its_drop_shadow() {
+    let _guard = SERIAL.lock().unwrap_or_else(|e| e.into_inner());
+    let host = rig();
+    let mut pb = fresh(host);
+
+    let under = open_window(&mut pb, KIND, SHD_UNDER);
+    // Place the covering window strictly inside the other one's *work* area, so
+    // that all four remainder pieces exist and none of the four edges under
+    // test is cut away by `w_owns`' work-rectangle clip. Read the work area
+    // back from the AES instead of computing it from the font metrics.
+    let wu = wind_get_rect(&mut pb, under, WF_WXYWH);
+    let inset = 60 + S;
+    let over_at = (wu.0 + inset, wu.1 + inset, wu.2 - 2 * inset, wu.3 - 2 * inset);
+    assert!(
+        over_at.2 > 0 && over_at.3 > 0,
+        "rig broken: {SHD_UNDER:?} gives the work area {wu:?}, too small to hold a \
+         covering window inset by {inset} on every side"
+    );
+    let over = open_window(&mut pb, KIND, over_at);
+
+    // The geometry the AES actually handed out, not the request.
+    let u = wind_get_rect(&mut pb, under, WF_CXYWH);
+    let o = wind_get_rect(&mut pb, over, WF_CXYWH);
+
+    // `brkrct`'s own precondition for all four pieces (`aes/gemwrect.c:113-118`),
+    // with the shadow already charged on the two sides that get it.
+    assert!(o.1 > u.1, "rig broken: no TOP piece for {o:?} in {u:?}");
+    assert!(o.0 > u.0, "rig broken: no LEFT piece for {o:?} in {u:?}");
+    assert!(o.0 + o.2 + S < wu.0 + wu.2, "rig broken: no RIGHT piece for {o:?} in {wu:?}");
+    assert!(o.1 + o.3 + S < wu.1 + wu.3, "rig broken: no BOTTOM piece for {o:?} in {wu:?}");
+
+    let pieces = walk_owner_list(&mut pb, under);
+    let mut by_kind: Vec<Option<(i16, i16, i16, i16)>> = vec![None; 4];
+    for p in &pieces {
+        let k = piece_kind(*p, o);
+        assert!(
+            by_kind[k].is_none(),
+            "two {} pieces in {pieces:?} — one covering window can produce at most \
+             one of each (`have_piece[]`, aes/gemwrect.c:107-125)",
+            P_NAME[k]
+        );
+        by_kind[k] = Some(*p);
+    }
+    let named: Vec<&str> = (0..4).filter(|&i| by_kind[i].is_some()).map(|i| P_NAME[i]).collect();
+    assert_eq!(
+        named,
+        vec![P_NAME[P_TOP], P_NAME[P_LEFT], P_NAME[P_RIGHT], P_NAME[P_BOTTOM]],
+        "rig broken: all four remainder pieces must exist, got {named:?} from {pieces:?}"
+    );
+
+    let top = by_kind[P_TOP].unwrap();
+    let left = by_kind[P_LEFT].unwrap();
+    let right = by_kind[P_RIGHT].unwrap();
+    let bottom = by_kind[P_BOTTOM].unwrap();
+
+    // The two sides the shadow does not grow: `w_getsize` touches `g_w`/`g_h`
+    // only, so `new.x` and `new.y` — the edges TOP and LEFT are cut at — are
+    // the plain `WS_CURR` ones (`aes/gemwmlib.c:253-261`).
+    assert_eq!(
+        top.1 + top.3,
+        o.1,
+        "the TOP piece {top:?} must end where the covering window starts ({}), \
+         `mkpiece` TOP: `h = new.y - old.y` (aes/gemwrect.c:79-81). The drop \
+         shadow grows `g_h` only and must not move this edge \
+         (`w_getsize`, aes/gemwmlib.c:253-261)",
+        o.1
+    );
+    assert_eq!(
+        left.0 + left.2,
+        o.0,
+        "the LEFT piece {left:?} must end where the covering window starts ({}), \
+         `mkpiece` LEFT: `w = new.x - old.x` (aes/gemwrect.c:82-84). The drop \
+         shadow grows `g_w` only and must not move this edge",
+        o.0
+    );
+
+    // The two sides it does grow — the point of the test.
+    assert_eq!(
+        right.0,
+        o.0 + o.2 + S,
+        "the RIGHT piece {right:?} starts at {}, so the rectangle that broke the \
+         list was {} wide instead of {} — the covering window's bare `WS_CURR` \
+         rect {o:?} rather than its `WS_TRUE` one. `newrect` breaks with \
+         `w_getsize(WS_TRUE, …)` (aes/gemwrect.c:190) and `WS_TRUE` is `WS_CURR` \
+         plus DROP_SHADOW_SIZE = {S} (aes/gemwmlib.c:49,253-261); `mkpiece` RIGHT \
+         puts the piece at `new.x + new.w` (aes/gemwrect.c:85-88). Reporting the \
+         strip as free while the window paints its shadow into it makes the \
+         window below draw over that shadow.",
+        right.0,
+        right.0 - o.0,
+        o.2 + S
+    );
+    assert_eq!(
+        bottom.1,
+        o.1 + o.3 + S,
+        "the BOTTOM piece {bottom:?} starts at {}, so the breaking rectangle was \
+         {} tall instead of {} — same relation as for RIGHT, `mkpiece` BOTTOM \
+         puts the piece at `new.y + new.h` (aes/gemwrect.c:89-92)",
+        bottom.1,
+        bottom.1 - o.1,
+        o.3 + S
+    );
+}
+
+// ── 10. the words written at the end of the rectangle list ────────────────
+
+/// The window whose rectangle list runs out. Opened first, so it ends up
+/// *below* and is the one that gets broken.
+const END_UNDER: (i16, i16, i16, i16) = (40, 60, 400, 300);
+
+/// `w_owns` has **two** different ends and they do not write the same number of
+/// words (`aes/gemwmlib.c:1230-1241`):
+///
+/// ```c
+/// static void w_owns(WINDOW *pwin, ORECT *po, GRECT *pt, GRECT *poutwds)
+/// {
+///     while (po)
+///     {
+///         rc_copy(&po->o_gr, poutwds);
+///         pwin->w_rnext = po = po->o_link;
+///         if (rc_intersect(pt, poutwds))
+///             return;
+///     }
+///     poutwds->g_w = poutwds->g_h = 0;
+/// }
+/// ```
+///
+/// * **P1 — the loop is never entered** (`po == NULL` on the way in, i.e. the
+///   cursor already stands past the last piece). Only `g_w`/`g_h` are written;
+///   `g_x`/`g_y` keep whatever the dispatcher's `WORD int_out[O_SIZE]` held,
+///   and that array is a plain C `auto` (`aes/gemsuper.c:432`, copied out at
+///   `:444-445`). **There is no expected x/y here** — A15 traced the values the
+///   TT delivers (31/63 and 0/19) to the call history of the *caller*, not to
+///   the window state, over all fifteen records. This test therefore asserts
+///   nothing about x/y in that case, on purpose.
+/// * **P2 — the loop runs, but no piece survives the work-area clip.**
+///   `rc_intersect` writes all four components *even when it returns FALSE*
+///   (`util/rectfunc.c:63-78`: the four stores happen before the return
+///   expression), so after the last failed attempt `g_x = max(piece.x, work.x)`
+///   and `g_y = max(piece.y, work.y)` are still standing when `:1240` zeroes
+///   `g_w`/`g_h`. All four words are defined, and x/y are those of the **last
+///   piece actually examined**.
+///
+/// The rig builds P2 and then walks straight into P1 with the next call, so a
+/// single run shows both ends and the difference between them.
+///
+/// **Why no piece can survive here.** `brkrct` cuts the *complement* of the
+/// covering rectangle out of the one below (`aes/gemwrect.c:100-135`), so every
+/// remainder piece is disjoint from the covering rectangle. A covering `WS_TRUE`
+/// rectangle that contains the whole work area of the window below therefore
+/// proves — without enumerating the pieces — that none of them can meet that
+/// work area.
+///
+/// **Which piece is the last one.** `brkrct` appends the pieces it has in the
+/// ascending constant order TOP(0), LEFT(1), RIGHT(2), BOTTOM(3)
+/// (`aes/gemwrect.c:30-33,113-125`). The covering window shares its top-left
+/// corner with the one below, so `have_piece[TOP]` and `have_piece[LEFT]` are
+/// both false and BOTTOM is the last piece `w_owns` examines. Its origin comes
+/// from `mkpiece` (`:64-98`): the common calc keeps the broken rectangle's
+/// `g_x` (`:73`), the BOTTOM override puts `g_y` at `new.y + new.h` (`:89-92`)
+/// — and `new` is the covering window's `WS_TRUE` rect (`:190`), so the drop
+/// shadow is part of that origin.
+///
+/// **No frozen coordinate.** Both geometries are read back from the AES, the
+/// shadow enters as `S` ([`DROP_SHADOW_SIZE`](tos_api::aes::window)), and the
+/// expectation is written as the two `mkpiece`/`rc_intersect` formulas over
+/// those values.
+#[test]
+fn the_end_of_the_rectangle_list_writes_the_last_piece_it_examined() {
+    let _guard = SERIAL.lock().unwrap_or_else(|e| e.into_inner());
+    let host = rig();
+    let mut pb = fresh(host);
+
+    let under = open_window(&mut pb, KIND, END_UNDER);
+    let cu = wind_get_rect(&mut pb, under, WF_CXYWH);
+    let wu = wind_get_rect(&mut pb, under, WF_WXYWH);
+
+    // `WS_TRUE` of the window below — `WS_CURR` grown by DROP_SHADOW_SIZE in
+    // `g_w`/`g_h` only (`w_getsize`, aes/gemwmlib.c:253-261). That is the
+    // rectangle `newrect` starts its owner list from (`aes/gemwrect.c:203`).
+    let true_right_u = cu.0 + cu.2 + S;
+    let true_bottom_u = cu.1 + cu.3 + S;
+    let work_right_u = wu.0 + wu.2;
+    let work_bottom_u = wu.1 + wu.3;
+
+    assert!(
+        work_right_u < true_right_u && work_bottom_u < true_bottom_u,
+        "rig broken: the window below needs room between its work area \
+         {wu:?} and its own WS_TRUE rect {:?} for a RIGHT and a BOTTOM piece",
+        (cu.0, cu.1, cu.2 + S, cu.3 + S)
+    );
+    assert!(
+        wu.0 > cu.0,
+        "rig broken: the work area {wu:?} must start right of the border rect \
+         {cu:?}, otherwise `rc_intersect`'s `x = max(piece.x, work.x)` cannot be \
+         told from `x = piece.x`"
+    );
+
+    // The covering window: the same top-left corner as the one below — so
+    // `have_piece[TOP]` and `have_piece[LEFT]` are false (`aes/gemwrect.c:107-108`)
+    // — and a `WS_TRUE` rectangle whose right and bottom edges land halfway
+    // between the work area of the window below and its own `WS_TRUE` edge: far
+    // enough to cover the whole work area, short enough to leave a RIGHT and a
+    // BOTTOM piece.
+    let over_at = (
+        cu.0,
+        cu.1,
+        (work_right_u + true_right_u) / 2 - S - cu.0,
+        (work_bottom_u + true_bottom_u) / 2 - S - cu.1,
+    );
+    assert!(
+        over_at.2 > 0 && over_at.3 > 0,
+        "rig broken: {END_UNDER:?} leaves no room for a covering window, got {over_at:?}"
+    );
+    let over = open_window(&mut pb, KIND, over_at);
+
+    // The geometry the AES actually handed out, not the request.
+    let co = wind_get_rect(&mut pb, over, WF_CXYWH);
+    let true_right_o = co.0 + co.2 + S;
+    let true_bottom_o = co.1 + co.3 + S;
+
+    // `brkrct`'s own four `have_piece[]` tests (`aes/gemwrect.c:107-110`), on the
+    // two `WS_TRUE` rectangles it works with (`:190` the breaker, `:203` ours).
+    assert!(co.1 <= cu.1, "rig broken: {co:?} in {cu:?} leaves a TOP piece");
+    assert!(co.0 <= cu.0, "rig broken: {co:?} in {cu:?} leaves a LEFT piece");
+    assert!(
+        true_right_o < true_right_u,
+        "rig broken: no RIGHT piece — the covering window reaches {true_right_o} \
+         and the window below ends at {true_right_u}"
+    );
+    assert!(
+        true_bottom_o < true_bottom_u,
+        "rig broken: no BOTTOM piece — the covering window reaches {true_bottom_o} \
+         and the window below ends at {true_bottom_u}"
+    );
+
+    // The covering `WS_TRUE` rect contains the whole work area below it, so no
+    // remainder piece can meet that work area: this is the P2 case.
+    assert!(
+        co.0 <= wu.0
+            && co.1 <= wu.1
+            && true_right_o >= work_right_u
+            && true_bottom_o >= work_bottom_u,
+        "rig broken: the covering WS_TRUE rect {:?} does not contain the work area \
+         {wu:?} below it, so some piece would still be visible and the call would \
+         not reach the end of the list at all",
+        (co.0, co.1, co.2 + S, co.3 + S)
+    );
+
+    // P2. BOTTOM is the last piece examined; `mkpiece` gives it the broken
+    // rectangle's `g_x` and an origin `new.y + new.h` below the covering
+    // `WS_TRUE` rect, and the failing `rc_intersect` clamps both against the
+    // work area.
+    let last_piece_x = cu.0;
+    let last_piece_y = true_bottom_o;
+    let want = (last_piece_x.max(wu.0), last_piece_y.max(wu.1), 0, 0);
+
+    let (ret, got) = wind_get_ret_rect(&mut pb, under, WF_FIRSTXYWH);
+    assert_eq!(
+        ret, 1,
+        "wind_get(WF_FIRSTXYWH) on a valid handle is TRUE whatever the list \
+         contains — `wm_get` only returns FALSE for an unknown handle or an \
+         unknown field (aes/gemwmlib.c:1513-1524,1589-1592)"
+    );
+    assert_eq!(
+        got,
+        want,
+        "the list of the window below is not empty — it holds the RIGHT piece at \
+         x = {true_right_o} and the BOTTOM piece at y = {true_bottom_o} — but none \
+         of them meets its work area {wu:?}. `w_owns` walks them all and every \
+         `rc_intersect` writes its four components even on FALSE \
+         (util/rectfunc.c:63-78), so the words left standing are those of the \
+         last piece examined, x = max({last_piece_x}, {}) and y = \
+         max({last_piece_y}, {}), with w/h zeroed by aes/gemwmlib.c:1240. \
+         Got {got:?}. All four zeroes mean the pieces that fail the clip were \
+         dropped when the list was built instead of being walked.",
+        wu.0,
+        wu.1
+    );
+
+    // P1. The cursor now stands past the last piece, so the next call does not
+    // enter the loop at all: `g_w`/`g_h` are written, `g_x`/`g_y` are not.
+    // **Nothing is asserted about x/y here** — on EmuTOS they are whatever the
+    // dispatcher's uninitialised `int_out` held (`aes/gemsuper.c:432,444-445`),
+    // which A15 showed to be the caller's own call history rather than any
+    // window state. Freezing a value here would invent a contract.
+    let (ret_p1, got_p1) = wind_get_ret_rect(&mut pb, under, WF_NEXTXYWH);
+    assert_eq!(ret_p1, 1, "wind_get(WF_NEXTXYWH) on a valid handle is TRUE");
+    assert_eq!(
+        (got_p1.2, got_p1.3),
+        (0, 0),
+        "past the end of the list `w_owns` never enters its loop and sets \
+         `g_w = g_h = 0` (aes/gemwmlib.c:1240); got {got_p1:?}"
+    );
+}
+
+// ── 11. the rectangle `w_redraw` puts into the WM_REDRAW message ──────────
+
+/// The window that stays partly visible. Opened first, so it is the one the
+/// second window breaks.
+const MSG_UNDER: (i16, i16, i16, i16) = (40, 100, 400, 300);
+
+/// `w_redraw` sends `damage ∩ hull(**raw** owner rectangle list)` — the work
+/// rectangle is a gate, not a clip (`aes/gemwmlib.c:887-907`):
+///
+/// ```c
+/// static void w_redraw(WORD w_handle, GRECT *pt)
+/// {
+///     GRECT t, d;
+///     rc_copy(pt, &t);
+///     w_getsize(WS_WORK, w_handle, &d);
+///     if (rc_intersect(&t, &d))                       /* :896 */
+///         if (w_union(D.w_win[w_handle].w_rlist, &d)) /* :899 */
+///             if (rc_intersect(&d, &t))               /* :902 */
+///                 ap_sendmsg(..., t.g_x, t.g_y, t.g_w, t.g_h);
+/// }
+/// ```
+///
+/// Three separate statements, and the order of the two `rc_intersect` calls is
+/// what makes the difference:
+///
+/// * `rc_intersect(&t, &d)` writes its result into **`d`**, not into `t`
+///   (`util/rectfunc.c:61-78` — the second argument is the one that is
+///   overwritten). `t` therefore still holds the whole damage rectangle
+///   afterwards, and the return value is only asked whether the window's work
+///   area is touched at all.
+/// * `w_union(w_rlist, &d)` (`:869-884`) then **overwrites `d`** with the hull
+///   of the window's owner rectangle list. That list holds the **raw**
+///   `WS_TRUE` remainder pieces `newrect` links in (`aes/gemwrect.c:190,203`);
+///   nothing clips them to the work area on this path — that clip belongs to
+///   `w_owns` and thus to `WF_FIRSTXYWH`/`WF_NEXTXYWH` alone
+///   (`gemwmlib.c:1230-1240,1556-1561`), which is how the owner keeps its own
+///   painting inside its work area (`desk/desksupp.c:223-229`).
+/// * what goes out is `d ∩ t`, i.e. `damage ∩ hull(raw list)`.
+///
+/// So the rectangle the application is told to repaint reaches over its work
+/// area's edge, across its frame and its drop shadow — and it is the hull taken
+/// **before** any work clip, which is in general strictly larger than the hull
+/// of the clipped pieces.
+///
+/// The rig separates the two rules on both counts at once. The covering window
+/// swallows the whole TOP, LEFT and RIGHT of the window below, so `brkrct`
+/// leaves exactly **one** piece, the BOTTOM one (`aes/gemwrect.c:107-125`):
+///
+/// * the hull is that piece and therefore *not* the whole `WS_TRUE` rectangle
+///   of the window below — a run that answered `WS_TRUE ∩ damage` would fail
+///   here too;
+/// * the piece reaches past the work area on its left, right and bottom edge —
+///   a run that answered the work-clipped hull would fail as well.
+///
+/// The damage rectangle is supplied directly, as the "big" rectangle of
+/// `form_dial(FMD_FINISH)` — EmuTOS `fm_dial` (`aes/gemfmlib.c:375-379`) is
+/// `w_drawdesk(pt)` + `w_update(DESKWH, pt, DESKWH, FALSE)`, i.e. the very
+/// `w_update`→`w_redraw` fan-out under test, over a rectangle of the caller's
+/// choosing.
+///
+/// **No frozen coordinate.** Both window geometries are read back from the AES,
+/// the covering window is placed relative to those, the shadow enters as `S`
+/// ([`DROP_SHADOW_SIZE`](tos_api::aes::window)) and `gl_rfull` is read as the
+/// desktop window's work rectangle. The expectation is the `mkpiece` BOTTOM
+/// formula over those values.
+#[test]
+fn the_redraw_message_spans_the_raw_owner_rectangle_not_the_work_clipped_one() {
+    let _guard = SERIAL.lock().unwrap_or_else(|e| e.into_inner());
+    let host = rig();
+    let mut pb = fresh(host);
+
+    let under = open_window(&mut pb, KIND, MSG_UNDER);
+    let cu = wind_get_rect(&mut pb, under, WF_CXYWH);
+    let wu = wind_get_rect(&mut pb, under, WF_WXYWH);
+    assert!(wu.2 > 0 && wu.3 > 0, "the window below must have a work area");
+
+    // `WS_TRUE` of the window below: `WS_CURR` with the drop shadow added to
+    // `g_w`/`g_h` only (`w_getsize`, aes/gemwmlib.c:253-261). This is the
+    // rectangle `newrect` starts its owner list from (`aes/gemwrect.c:203`).
+    let true_u = (cu.0, cu.1, cu.2 + S, cu.3 + S);
+
+    // The covering window: `margin` past the top, the left and the right edge
+    // of `true_u`, and with its own `WS_TRUE` bottom edge halfway down the work
+    // area below — far enough that only a BOTTOM piece is left, short enough
+    // that this piece still meets the work area (`w_redraw`'s gate, `:896`).
+    let margin = 8;
+    let over_bottom = wu.1 + wu.3 / 2;
+    let over_at = (
+        cu.0 - margin,
+        cu.1 - margin,
+        (cu.0 + cu.2 + margin) - (cu.0 - margin),
+        over_bottom - S - (cu.1 - margin),
+    );
+    assert!(
+        over_at.0 >= 0 && over_at.1 >= 0 && over_at.2 > 0 && over_at.3 > 0,
+        "rig broken: {MSG_UNDER:?} leaves no room for a covering window, got {over_at:?}"
+    );
+    let over = open_window(&mut pb, KIND, over_at);
+    let co = wind_get_rect(&mut pb, over, WF_CXYWH);
+    let true_o = (co.0, co.1, co.2 + S, co.3 + S);
+
+    // `brkrct`'s own four `have_piece[]` tests (`aes/gemwrect.c:107-110`) on the
+    // two `WS_TRUE` rectangles it works with — `:190` the breaker, `:203` ours.
+    assert!(true_u.1 >= true_o.1, "rig broken: {true_o:?} in {true_u:?} leaves a TOP piece");
+    assert!(true_u.0 >= true_o.0, "rig broken: {true_o:?} in {true_u:?} leaves a LEFT piece");
+    assert!(
+        true_u.0 + true_u.2 <= true_o.0 + true_o.2,
+        "rig broken: {true_o:?} in {true_u:?} leaves a RIGHT piece"
+    );
+    assert!(
+        true_u.1 + true_u.3 > true_o.1 + true_o.3,
+        "rig broken: {true_o:?} covers {true_u:?} completely — no BOTTOM piece, \
+         so the window below owns nothing and gets no message at all"
+    );
+
+    // The one surviving piece, from `mkpiece` (`aes/gemwrect.c:64-98`): the
+    // common calc keeps the broken rectangle's `g_x`/`g_w` (`:71-74`), the
+    // BOTTOM override puts `g_y` at `new.y + new.h` and takes the rest of the
+    // height (`:89-92`) — `new` being the covering window's `WS_TRUE` rect.
+    let piece = (
+        true_u.0,
+        true_o.1 + true_o.3,
+        true_u.2,
+        (true_u.1 + true_u.3) - (true_o.1 + true_o.3),
+    );
+
+    // Both halves of what this test separates, checked before it runs.
+    assert_ne!(
+        piece, true_u,
+        "rig check: the hull {piece:?} must differ from the whole WS_TRUE rect \
+         {true_u:?}, or the test cannot tell `hull(w_rlist)` from `WS_TRUE`"
+    );
+    let clipped = overlap(piece, wu).unwrap_or_else(|| {
+        panic!(
+            "rig check: the surviving piece {piece:?} must meet the work area {wu:?}, \
+             otherwise `w_redraw`'s gate (aes/gemwmlib.c:896) closes and no message \
+             is sent at all"
+        )
+    });
+    assert_ne!(
+        clipped, piece,
+        "rig check: the piece {piece:?} must reach past the work area {wu:?}, or the \
+         test cannot tell the raw hull from the work-clipped one"
+    );
+
+    // Whatever the two `wind_open`s queued: taken out first, because same-window
+    // redraws coalesce by rectangle union in the FIFO (EmuTOS `doq`,
+    // `aes/gemqueue.c:45-56`) and a leftover would be unioned into the one under
+    // test.
+    for _ in 0..16 {
+        if next_mesag(&mut pb).is_none() {
+            break;
+        }
+    }
+
+    // `gl_rfull` — the screen minus the menu row, where every reader takes it
+    // from: the desktop window's work rectangle (`wm_init`, `gemwmlib.c:1284-1300`).
+    let full = wind_get_rect(&mut pb, 0, WF_WXYWH);
+    let want = overlap(piece, full).expect("the surviving piece must be on screen");
+
+    // `w_update(DESKWH, pt, DESKWH, FALSE)` over the whole screen: the damage
+    // rectangle is deliberately larger than anything below, so what comes back
+    // is the hull itself and not an artefact of the damage.
+    let big = (0, 0, SCREEN_W as i16, SCREEN_H as i16);
+    form_dial(&mut pb, FMD_FINISH, big, big);
+
+    let mut got = None;
+    for _ in 0..8 {
+        match next_mesag(&mut pb) {
+            Some(m) if m[0] == WM_REDRAW && m[3] == under => {
+                got = Some(m);
+                break;
+            }
+            Some(_) => continue,
+            None => break,
+        }
+    }
+    let m = got.unwrap_or_else(|| {
+        panic!(
+            "the window below owns the piece {piece:?} inside the damage rectangle \
+             {big:?}, so `w_update`/`w_redraw` must post it a WM_REDRAW \
+             (aes/gemwmlib.c:1004-1048,887-907)"
+        )
+    });
+    assert_eq!(
+        (m[4], m[5], m[6], m[7]),
+        want,
+        "the WM_REDRAW rectangle is `damage ∩ w_union(w_rlist)` = {want:?} — the hull \
+         of the RAW owner list, taken before any work clip (aes/gemwmlib.c:899-905, \
+         869-884; aes/gemwrect.c:190,203). The work-clipped hull would be {:?} and \
+         the window's whole WS_TRUE rect {true_u:?}; neither is what EmuTOS sends. \
+         `rc_intersect(&t, &d)` at `:896` writes into `d` and only gates the call \
+         (util/rectfunc.c:61-78)",
+        overlap(clipped, full)
     );
 }

@@ -21,7 +21,7 @@ use core::sync::atomic::{AtomicI16, Ordering};
 use super::Aespb;
 use crate::bdos::process::{current_abi, Abi};
 use crate::host::host;
-use crate::vdi::backend::{ClipRect, MonoSrc, PatternFill, Pel, RasterBackend, Rect, WriteMode};
+use crate::vdi::backend::{ClipRect, MonoBits, MonoSrc, PatternFill, Pel, RasterBackend, Rect, WriteMode};
 
 // ── OBJECT model ────────────────────────────────────────────────────
 
@@ -1595,9 +1595,21 @@ fn delete_at(text: *mut u8, pos: i16, len: i16) {
 /// drops the overflow when the field is full, so the caller need not guard
 /// the length.
 fn ins_char(text: *mut u8, pos: i16, chr: u8, tot_len: i16) {
+    // `ob_edit`'s "field full" branch backs the cursor up one before inserting
+    // (gemobed.c:407-413), which reaches `pos == -1` for `te_txtlen == 1` — a
+    // field with no room at all, exactly what `fix_tedinfo_std` yields for a
+    // resource whose editable text is empty. EmuTOS edits a *scratch* copy
+    // (`D.g_rawstr`, gemobed.c:349) and writes the field only afterwards with
+    // `strcpy(edblk.te_ptext, D.g_rawstr)` (gemobed.c:438), so its `str[-1]`
+    // store lands in the scratch and the field keeps its content. NewTOS edits
+    // `te_ptext` in place, where the same index would write *before* the
+    // resource buffer; clamping reproduces EmuTOS's observable result — the
+    // character is dropped, the terminator rewritten — without leaving it.
+    let pos = pos.max(0);
     let len = cstr_len_p(text) as i16;
-    // SAFETY: `pos <= len <= tot_len-1`; every write index is `<= tot_len-1`,
-    // so all accesses stay inside the caller's `te_txtlen`-byte buffer.
+    // SAFETY: `0 <= pos <= len <= tot_len-1`; every write index is
+    // `<= tot_len-1`, so all accesses stay inside the caller's
+    // `te_txtlen`-byte buffer.
     unsafe {
         let mut ii = len;
         while ii > pos {
@@ -3002,8 +3014,11 @@ fn blit_plane(
     }
     let rows = src_y.max(0) as usize + dst.h as usize;
     let total = stride as usize * rows;
-    // SAFETY: GEM contract — `addr` points at >= `total` raster words.
-    let bits = unsafe { core::slice::from_raw_parts(addr as *const u16, total) };
+    // SAFETY: GEM contract — `addr` points at >= `total` raster words. Its
+    // ALIGNMENT is not part of that contract: `addr` is `ib_pmask`/`ib_pdata`/
+    // `bi_pdata` straight out of a resource, which an app may have built or
+    // relocated itself (see `MonoBits`). `from_raw` requires none.
+    let bits = unsafe { MonoBits::from_raw(addr as *const u8, total) };
     backend.blit_mono(
         dst,
         MonoSrc {

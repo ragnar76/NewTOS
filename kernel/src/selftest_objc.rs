@@ -960,7 +960,9 @@ pub fn run_rsrc() {
             ob_spec: s_ok as u64, ob_x: 100, ob_y: 90, ob_width: 100, ob_height: 28,
         });
 
-        if !tos_api::aes::resource::relocate_and_register(base) {
+        // The blob occupies the whole of `buf` (`total_size` = 512 above), so
+        // the buffer's length is exactly how many bytes exist at `base`.
+        if !tos_api::aes::resource::relocate_and_register(base, buf.len()) {
             kprintln!("[objc] rsrc relocate FAILED");
             return;
         }
@@ -997,8 +999,10 @@ pub fn run_rsrc() {
     kprintln!("[objc] .RSC dialog drawn + freed");
 }
 
-/// D7 Batch-2 demo: load TEST.RSC from the SD card via rsrc_load (searches
-/// C:\GEMSYS\RSC\ then C:\), fetch its tree, and draw it.
+/// D7 Batch-2 demo: load TEST.RSC from the SD card via rsrc_load (which
+/// resolves the name through `sh_find`, so a bare name is looked for in the
+/// application directory, the current directory and the current drive's
+/// root), fetch its tree, and draw it.
 pub fn run_rsrc_file() {
     static NAME: &[u8] = b"TEST.RSC\0";
     let mut control = [0i16; 8];

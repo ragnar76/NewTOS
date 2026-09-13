@@ -241,67 +241,21 @@ else
   echo "  ! tosdump not built (run 'make -C tosdump all'); skipping DUMPVDI"
 fi
 
-# ── BALL.NAP: the bouncing-ball demo ────────────────────────────────────────
-# The October demo (Applications/Demo-bouncing-Ball/), milestone 1: one ball,
-# gravity, bounce, shadow, drawn as a shaded sphere. It is a `.NAP` because it
-# reads the screen geometry from a VDI workstation (appl_init / graf_handle /
-# v_opnvwk), so it is launched by DOUBLE-CLICKING it on the desktop -- never
-# from \AUTO\, which runs console programs only. It quits on any key and puts
-# both screen bases back, so the desktop comes straight back afterwards.
+# ── The bouncing-ball demo is no longer built from this tree ───────────────
+# BALL.NAP and its texture BALL.NTX used to be installed here. The demo is an
+# APPLICATION, not part of the operating system -- it also has an Atari TT and
+# a PiStorm half that have nothing to do with NewTOS at all -- so on 2026-09-09
+# it moved out to /Volumes/Daten/Development/ball-demo/ together with its
+# artwork and its texture converter (formerly tools/png2ntx.py).
 #
-# It goes in the ROOT of C: so it is one double-click away, and so the `#Z`
-# autorun line below can name it.
+# To put it back on a card, build it there and copy the products in by hand:
 #
-# QEMU raspi4b emulates the SD controller but no keyboard or mouse, so nothing
-# can be double-clicked there. For a headless run set SD_BALL_AUTORUN=1: that
-# writes the EmuTOS `#Z` autorun line into C:\NEWDESK.INF, which the AES reads
-# in process_inf2 and which makes the shell loop start the demo INSTEAD of the
-# built-in desktop -- the real mechanism, not a test hook. A key typed on the
-# serial console quits it and the desktop appears.
-BALL_NAP="$SCRIPT_DIR/../sdk/apps/ball/BALL.NAP"
-if [ ! -f "$BALL_NAP" ]; then
-  "$SCRIPT_DIR/../sdk/apps/ball/build-ball.sh" >/dev/null 2>&1 || true
-fi
-if [ -f "$BALL_NAP" ]; then
-  cp "$BALL_NAP" "$V/BALL.NAP"
-  echo "installed C:\\BALL.NAP (bouncing-ball demo, LP64 GEM app)"
-  if [ "${SD_BALL_AUTORUN:-0}" = "1" ]; then
-    printf '#Z 01 C:\\BALL.NAP@\r\n' > "$V/NEWDESK.INF"
-    echo "  + C:\\NEWDESK.INF '#Z 01 C:\\BALL.NAP' (runs instead of the desktop)"
-  fi
-else
-  echo "note: sdk/apps/ball/BALL.NAP not built; C:\\BALL.NAP skipped (run sdk/apps/ball/build-ball.sh)"
-fi
-
-# ── BALL.NTX: the demo's texture ────────────────────────────────────────────
-# The ball's skin, reduced from the artwork once on the host by
-# tools/png2ntx.py (see sdk/apps/ball/build-ball-tex.sh, which records which
-# PNG and at which size). It carries hue indices AND the palette they belong
-# to, so neither the Pi nor an Atari TT quantises anything at run time.
+#   NEWTOS_SDK=<this checkout>/sdk /Volumes/Daten/Development/ball-demo/build-ball.sh
+#   cp /Volumes/Daten/Development/ball-demo/{BALL.NAP,BALL.NTX} "$V/"
 #
-# It is OPTIONAL by design, and that is a property worth keeping: the demo
-# looks for C:\BALL.NTX, and when it is not there it draws its own texture
-# from geometry instead and says so in C:\BALL.LOG. So a card without it is
-# not a broken card -- leaving this file out is how the generated texture gets
-# exercised.
-#
-# Built on demand, exactly the way BALL.NAP above is: the .NTX is a build
-# product of the artwork, and the artwork itself lives OUTSIDE this repo
-# (/Applications/ is ignored -- see .gitignore). On a machine without the
-# PNG the reduction simply does not happen and the demo falls back, which
-# is the documented behaviour and not a failure.
-BALL_NTX="$SCRIPT_DIR/../sdk/apps/ball/BALL.NTX"
-if [ ! -f "$BALL_NTX" ]; then
-  "$SCRIPT_DIR/../sdk/apps/ball/build-ball-tex.sh" >/dev/null 2>&1 || true
-fi
-if [ -f "$BALL_NTX" ]; then
-  cp "$BALL_NTX" "$V/BALL.NTX"
-  echo "installed C:\\BALL.NTX (ball texture, $(wc -c < "$BALL_NTX" | tr -d ' ') bytes)"
-else
-  echo "note: no C:\\BALL.NTX (artwork not present); the demo draws its own"
-  echo "      generated texture instead -- see sdk/apps/ball/build-ball-tex.sh"
-fi
-
+# It is a `.NAP` (it opens a VDI workstation), so it is DOUBLE-CLICKED on the
+# desktop, never run from \AUTO\. For a headless QEMU run the demo's own
+# notes describe the EmuTOS `#Z` autorun line in C:\NEWDESK.INF.
 QED_DIR="$SCRIPT_DIR/../sdk/apps/qed/build"
 if [ -f "$QED_DIR/QED.NAP" ] && [ -f "$QED_DIR/qed.rsc" ]; then
   mkdir -p "$V/Apps/QED"

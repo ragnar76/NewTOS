@@ -84,6 +84,75 @@ def build_demo():
 # AES system-font cell size used by obfix (gl_wchar/gl_hchar).
 WCHAR, HCHAR, SCREEN_W = 8, 16, 640
 
+# Raster data (BITBLK `bi_pdata`, ICONBLK `ib_pmask`/`ib_pdata`) is read as
+# 16-bit WORDS by every consumer — EmuTOS `gr_gblt(WORD *pimage, ...)`
+# (aes/gemgraf.c:631), our kernel blit (`blit_plane`, tos-api/src/aes/object.rs)
+# and an app's own loader (TeraDesk `xrsrc_load`) alike — so every raster must
+# start on an even offset from the blob base.
+#
+# A classic Atari `.rsc` gets that for free: its rasters live in a separate,
+# even-aligned `rsh_imdata` section and each is an even number of bytes
+# (`bi_wb*bi_hl`, `((ib_wicon+15)//16)*2*ib_hicon`). We intern strings AND
+# rasters into ONE `data` section, so an odd-length label would otherwise push
+# the next raster onto an odd offset; `intern_bytes` pads to this boundary and
+# the converters assert the result. Both `off_data` bases are even by
+# construction, so the padding alone establishes the invariant.
+RASTER_ALIGN = 2
+
+# TEDINFO string reservations — the three pointers are NOT alike, and the
+# classic `.rsc` format treats them differently (verified against
+# `references/emutos` @ 1a7484ab):
+#
+#   te_ptext / te_txtlen
+#       te_txtlen is a BUFFER CAPACITY, not a string length: it is the number
+#       of bytes (NUL included) the field may hold, and the resource text is
+#       often shorter — empty, even.  Everything that edits a field bounds
+#       itself by te_txtlen and NOT by the string: EmuTOS `ob_edit`
+#       (`aes/gemobed.c:394,407,420,432`), `inf_sset` → `strlcpy(text, pstr,
+#       ted->te_txtlen)` (`util/optimize.c:111`), our `ins_char`
+#       (`tos-api/src/aes/object.rs`).  A classic file therefore reserves the
+#       full te_txtlen bytes behind te_ptext, which is measurable as the
+#       distance to the next string: `gem.rsc` ted[0] te_ptext=0x0c8b,
+#       te_ptmplt=0x0cb2 → 39 = te_txtlen 39, with 38 NULs in between.
+#       Checked over every TEDINFO of `aes/gem.rsc` (13), TeraDesk's
+#       `desktop.rsc` (104) and QED's `qed.rsc` (118): gap == te_txtlen in
+#       ALL of them, 0 exceptions.  EmuTOS' own resource compiler holds the
+#       same contract when it turns a `.rsc` into C: `tools/erd.c:3006-3007`
+#       reserves `te_ptext_len += te_txtlen` bytes of `rs_te_text[]` per field.
+#       => reserve the declared te_txtlen.
+#
+#   te_ptmplt / te_tmplen
+#       te_tmplen is a STRING LENGTH ("length of template string",
+#       `include/obdefs.h:182`), and the template is read-only: `ob_edit`
+#       copies it out (`strcpy(D.g_tmpstr, edblk.te_ptmplt)`,
+#       `gemobed.c:348`) and never writes it, EmuTOS recomputes the word as
+#       `strlen+1` on load (`gemrslib.c:666`), and an app that wants a
+#       different template supplies its own storage (TeraDesk
+#       `rsc_fixtmplt`, `sdk/apps/teradesk/resource.c:351-352`).  Measured:
+#       te_tmplen == strlen+1 in all 235 TEDINFOs above, so honouring the
+#       declared value costs nothing and cannot under-reserve.
+#       => reserve max(declared, strlen+1) — in practice strlen+1.
+#
+#   te_pvalid
+#       has NO length word at all.  It is read-only too, and shorter than the
+#       field on purpose: `ob_edit` expands it into a scratch buffer up to
+#       te_tmplen (`gemobed.c:351-355`), `erd` even compresses it
+#       (`shrink_valid`).  There is no declared length to reserve.
+#       => strlen+1, as before.
+
+
+def ted_reserve(d, coff, declared):
+    """Bytes to reserve behind a TEDINFO string pointer in the data section.
+
+    `declared` is the length word the classic file carries for that pointer
+    (te_txtlen / te_tmplen), or 0 where the format declares none (te_pvalid).
+    Never under-reserves the string itself, so a file whose length word is
+    too small still yields a NUL-terminated buffer.
+    """
+    if coff == 0:
+        return 0
+    return max(d.index(b"\x00", coff) + 1 - coff, declared)
+
 # Object types that don't carry a relocatable ob_spec pointer.
 BOX_TYPES = {20, 25, 27}      # G_BOX, G_IBOX, G_BOXCHAR (literal word)
 STR_TYPES = {26, 28, 32}      # G_BUTTON, G_STRING, G_TITLE
@@ -195,31 +264,61 @@ def convert(path, out, ilp32=False):
     off_data = off_frimg + nimg * PTR
 
     data = bytearray()
+    # Namespaced so a reservation can never be satisfied from a shorter cached
+    # copy: ("s", coff, size) = read-only string, ("t", coff, size) = a
+    # TEDINFO te_ptext buffer, ("b", coff, length) = raster bytes.
     interned = {}
+    rasters = []          # native offsets of every raster placed by intern_bytes
+    placed = []           # (native offset, reserved bytes) of every datum
 
-    def intern_str(coff):
+    def intern_str(coff, reserve=0, kind="s"):
+        """Intern a classic NUL-terminated string, padded out to `reserve`.
+
+        `reserve` is the size the *format* declares behind the pointer (see
+        `ted_reserve`); the trailing bytes are NUL, so a consumer bounded by
+        the declared length writes inside the blob instead of past the string.
+
+        `kind` separates the writable te_ptext buffers ("t") from read-only
+        strings ("s"): a text buffer is only ever shared with another te_ptext
+        that the source file already aliased, never with a label or template
+        that happens to sit at the same classic offset. Two TEDINFOs aliasing
+        one te_ptext with *different* te_txtlen get one buffer each — the
+        source file could not have satisfied both from one gap anyway.
+        """
         if coff == 0:
             return 0
-        if coff in interned:
-            return interned[coff]
         end = d.index(b"\x00", coff)
+        size = max(end + 1 - coff, reserve)
+        key = (kind, coff, size)
+        if key in interned:
+            return interned[key]
         nat = off_data + len(data)
         data.extend(d[coff:end + 1])
-        interned[coff] = nat
+        data.extend(b"\x00" * (size - (end + 1 - coff)))
+        interned[key] = nat
+        placed.append((nat, size))
         return nat
 
     def intern_bytes(coff, length):
         if coff == 0 or length <= 0:
             return 0
-        key = (coff, length)
+        key = ("b", coff, length)
         if key in interned:
             return interned[key]
+        # WORD-align the raster before it is placed (see RASTER_ALIGN): the
+        # strings interned into this same section have arbitrary lengths, so
+        # without this pad an odd-length label pushes the next raster onto an
+        # odd offset. The TEDINFO reservations above only change how many
+        # bytes a string contributes, so the pad still establishes it.
+        data.extend(b"\x00" * (-(off_data + len(data)) % RASTER_ALIGN))
         nat = off_data + len(data)
         # Raster bytes only (intern_bytes is called for BITBLK bi_pdata and
         # ICONBLK ib_pmask/ib_pdata exclusively; strings go through intern_str).
         # Byte-swap each 16-bit word big-endian classic -> little-endian native.
         data.extend(swap16_raster(d[coff:coff + length]))
         interned[key] = nat
+        rasters.append(nat)
+        placed.append((nat, length))
         return nat
 
     # Native struct offset of classic struct #k in a fixed array.
@@ -228,12 +327,18 @@ def convert(path, out, ilp32=False):
 
     # TEDINFOs (remap text/template/valid string pointers).
     teds = bytearray()
+    ted_texts = []        # (native offset, reserved bytes, te_txtlen) per TEDINFO
     for i in range(nted):
         o = p_ted + i * CLS_TED
         (ptext, ptmpl, pvalid, font, j1, just, color, j2, thick, txtlen,
          tmplen) = struct.unpack(">IIIhhhhhhhh", d[o:o + CLS_TED])
+        # See `ted_reserve`: te_txtlen is a buffer capacity (reserved in full,
+        # private), te_tmplen a read-only string length, te_pvalid has none.
+        r_text = ted_reserve(d, ptext, txtlen)
+        nat_text = intern_str(ptext, r_text, kind="t")
+        ted_texts.append((nat_text, r_text, txtlen))
         teds.extend(struct.pack(
-            TED_FMT, intern_str(ptext), intern_str(ptmpl),
+            TED_FMT, nat_text, intern_str(ptmpl, ted_reserve(d, ptmpl, tmplen)),
             intern_str(pvalid), font, j1, just, color, j2, thick, txtlen, tmplen))
 
     # BITBLKs (remap raster data).
@@ -321,6 +426,24 @@ def convert(path, out, ilp32=False):
         off_ted, nted, off_ib, nib, off_bb, nbb)
     blob = header + tri + objs + teds + bbs + ibs + bytes(frstr) + bytes(frimg) + data
     assert len(blob) == total, (len(blob), total)
+    odd = [r for r in rasters if r % RASTER_ALIGN]
+    assert not odd, f"raster(s) at odd offsets {odd} (see RASTER_ALIGN)"
+    # Postcondition for the reservations (see `ted_reserve`): every TEDINFO
+    # text buffer holds at least its declared te_txtlen bytes, lies inside the
+    # blob, and nothing else was interned into it.
+    placed.sort()
+    for (a, sa), (b, _sb) in zip(placed, placed[1:]):
+        assert a + sa <= b, (
+            f"data placements overlap: {sa} bytes at {a} run into {b}")
+    for i, (nat, res, txtlen) in enumerate(ted_texts):
+        if nat == 0:
+            continue
+        assert res >= txtlen, (
+            f"tedinfo[{i}]: reserved {res} B behind te_ptext, te_txtlen is "
+            f"{txtlen} (see ted_reserve)")
+        assert nat + res <= total, (
+            f"tedinfo[{i}]: te_ptext buffer [{nat},{nat + res}) runs past the "
+            f"{total}-byte blob")
     open(out, "wb").write(blob)
     print(f"converted {path} -> {out}: {ntree} trees, {nobs} objects, "
           f"{nted} tedinfo, {nbb} bitblk, {nib} iconblk, {nstr} frstr, "
@@ -380,43 +503,79 @@ def convert_rshdr(path, out):
     off_data = off_frimg + nimg * 8   # BITBLK*[] → u64 slots
 
     data = bytearray()
+    # Namespaced so a reservation can never be satisfied from a shorter cached
+    # copy: ("s", coff, size) = read-only string, ("t", coff, size) = a
+    # TEDINFO te_ptext buffer, ("b", coff, length) = raster bytes.
     interned = {}
+    rasters = []          # native offsets of every raster placed by intern_bytes
+    placed = []           # (native offset, reserved bytes) of every datum
 
-    def intern_str(coff):
+    def intern_str(coff, reserve=0, kind="s"):
+        """Intern a classic NUL-terminated string, padded out to `reserve`.
+
+        `reserve` is the size the *format* declares behind the pointer (see
+        `ted_reserve`); the trailing bytes are NUL, so a consumer bounded by
+        the declared length writes inside the blob instead of past the string.
+
+        `kind` separates the writable te_ptext buffers ("t") from read-only
+        strings ("s"): a text buffer is only ever shared with another te_ptext
+        that the source file already aliased, never with a label or template
+        that happens to sit at the same classic offset. Two TEDINFOs aliasing
+        one te_ptext with *different* te_txtlen get one buffer each — the
+        source file could not have satisfied both from one gap anyway.
+        """
         if coff == 0:
             return 0
-        if coff in interned:
-            return interned[coff]
         end = d.index(b"\x00", coff)
+        size = max(end + 1 - coff, reserve)
+        key = (kind, coff, size)
+        if key in interned:
+            return interned[key]
         nat = off_data + len(data)
         data.extend(d[coff:end + 1])
-        interned[coff] = nat
+        data.extend(b"\x00" * (size - (end + 1 - coff)))
+        interned[key] = nat
+        placed.append((nat, size))
         return nat
 
     def intern_bytes(coff, length):
         if coff == 0 or length <= 0:
             return 0
-        key = (coff, length)
+        key = ("b", coff, length)
         if key in interned:
             return interned[key]
+        # WORD-align the raster before it is placed (see RASTER_ALIGN): the
+        # strings interned into this same section have arbitrary lengths, so
+        # without this pad an odd-length label pushes the next raster onto an
+        # odd offset. The TEDINFO reservations above only change how many
+        # bytes a string contributes, so the pad still establishes it.
+        data.extend(b"\x00" * (-(off_data + len(data)) % RASTER_ALIGN))
         nat = off_data + len(data)
         # Raster bytes only (intern_bytes is called for BITBLK bi_pdata and
         # ICONBLK ib_pmask/ib_pdata exclusively; strings go through intern_str).
         # Byte-swap each 16-bit word big-endian classic -> little-endian native.
         data.extend(swap16_raster(d[coff:coff + length]))
         interned[key] = nat
+        rasters.append(nat)
+        placed.append((nat, length))
         return nat
 
     def nat_of(coff, base, csize, nbase, nsize):
         return nbase + ((coff - base) // csize) * nsize
 
     teds = bytearray()
+    ted_texts = []        # (native offset, reserved bytes, te_txtlen) per TEDINFO
     for i in range(nted):
         o = p_ted + i * CLS_TED
         (ptext, ptmpl, pvalid, font, j1, just, color, j2, thick, txtlen,
          tmplen) = struct.unpack(">IIIhhhhhhhh", d[o:o + CLS_TED])
+        # See `ted_reserve`: te_txtlen is a buffer capacity (reserved in full,
+        # private), te_tmplen a read-only string length, te_pvalid has none.
+        r_text = ted_reserve(d, ptext, txtlen)
+        nat_text = intern_str(ptext, r_text, kind="t")
+        ted_texts.append((nat_text, r_text, txtlen))
         teds.extend(struct.pack(
-            TED_FMT, intern_str(ptext), intern_str(ptmpl),
+            TED_FMT, nat_text, intern_str(ptmpl, ted_reserve(d, ptmpl, tmplen)),
             intern_str(pvalid), font, j1, just, color, j2, thick, txtlen, tmplen))
 
     bbs = bytearray()
@@ -497,6 +656,24 @@ def convert_rshdr(path, out):
     header = struct.pack("<18H", *hdr_fields) + b"\x00" * (HDR - 36)
     blob = header + tri + objs + teds + bbs + ibs + bytes(frstr) + bytes(frimg) + data
     assert len(blob) == total, (len(blob), total)
+    odd = [r for r in rasters if r % RASTER_ALIGN]
+    assert not odd, f"raster(s) at odd offsets {odd} (see RASTER_ALIGN)"
+    # Postcondition for the reservations (see `ted_reserve`): every TEDINFO
+    # text buffer holds at least its declared te_txtlen bytes, lies inside the
+    # blob, and nothing else was interned into it.
+    placed.sort()
+    for (a, sa), (b, _sb) in zip(placed, placed[1:]):
+        assert a + sa <= b, (
+            f"data placements overlap: {sa} bytes at {a} run into {b}")
+    for i, (nat, res, txtlen) in enumerate(ted_texts):
+        if nat == 0:
+            continue
+        assert res >= txtlen, (
+            f"tedinfo[{i}]: reserved {res} B behind te_ptext, te_txtlen is "
+            f"{txtlen} (see ted_reserve)")
+        assert nat + res <= total, (
+            f"tedinfo[{i}]: te_ptext buffer [{nat},{nat + res}) runs past the "
+            f"{total}-byte blob")
     open(out, "wb").write(blob)
     print(f"converted {path} -> {out}: {ntree} trees, {nobs} objects, "
           f"{nted} tedinfo, {nbb} bitblk, {nib} iconblk, {nstr} frstr, "

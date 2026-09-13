@@ -36,7 +36,7 @@
 
 use core::cell::UnsafeCell;
 use core::fmt::Write;
-use core::sync::atomic::{AtomicBool, Ordering};
+use core::sync::atomic::{AtomicBool, AtomicU32, Ordering};
 
 use tos_api::bdos::process::{current_abi, Abi};
 use tos_api::trap::{TrapArgs, TrapClass};
@@ -70,27 +70,97 @@ static BUF: TraceBuf = TraceBuf {
     truncated: UnsafeCell::new(false),
 };
 
+/// A second, **never cleared** buffer holding only the window-geometry calls
+/// (`wind_create`, `wind_open`, `wind_calc`, `wind_get(WF_WORKXYWH)`).
+///
+/// Why it has to exist: the question under investigation is whether the work
+/// rectangle QED computed for itself with `wind_calc(WC_WORK, …)` is the same,
+/// to the pixel, as the first rectangle our `WF_FIRSTXYWH` hands back — QED's
+/// `free_for_draw` (`qed/src/window.c:267`) draws directly only when width and
+/// height match exactly, and silently defers to a redraw that never comes when
+/// they do not. Those calls happen when the window opens, long before anyone
+/// types, so the per-cycle buffer has thrown them away by then. This one is
+/// written once, kept, and emitted at the top of every flush.
+const PRO_LEN: usize = 8 * 1024;
+/// Same shape as [`TraceBuf`], its own (much smaller) array size.
+struct ProBuf {
+    data: UnsafeCell<[u8; PRO_LEN]>,
+    len: UnsafeCell<usize>,
+    truncated: UnsafeCell<bool>,
+}
+// SAFETY: identical discipline to `TraceBuf` — single boot CPU, trap path.
+unsafe impl Sync for ProBuf {}
+static PRO: ProBuf = ProBuf {
+    data: UnsafeCell::new([0u8; PRO_LEN]),
+    len: UnsafeCell::new(0),
+    truncated: UnsafeCell::new(false),
+};
+/// While set, [`append`] writes into [`PRO`] instead of [`BUF`].
+static PRO_MODE: AtomicBool = AtomicBool::new(false);
+
 /// Re-entrancy guard. The flush calls the FS layer, which are plain kernel
 /// functions (not `svc`), so they cannot re-enter this path — the guard is
 /// defensive, and also makes a nested trace call a harmless no-op.
 static IN_TRACE: AtomicBool = AtomicBool::new(false);
 
+/// Set when an `evnt_multi` returned with MU_KEYBD, i.e. the cycle now being
+/// recorded is the application's response to a keystroke.
+///
+/// Why a latch and not just "keep the last cycle": QED runs a timer (its caret
+/// blinks), so it produces an event cycle every few hundred milliseconds
+/// whether or not anyone touches the machine. Keeping "the last cycle"
+/// therefore always keeps a caret blink and never the keystroke. With this
+/// latch the file is written once — for the cycle that followed the key — and
+/// then frozen, so the card can be pulled at leisure.
+static KEY_SEEN: AtomicBool = AtomicBool::new(false);
+/// Set once enough cycles after the keystroke have been written; from then on
+/// the file is left exactly as it is.
+static FROZEN: AtomicBool = AtomicBool::new(false);
+/// How many event cycles to keep after the keystroke, the keystroke's own
+/// cycle included.
+///
+/// One is not enough, and the first run proved it: in the keystroke cycle QED
+/// only moved its caret and issued no text-drawing call at all, which leaves
+/// open whether it paints the glyph on a LATER cycle (a deferred repaint of
+/// the dirty line) or never. These cycles accumulate into one file instead of
+/// overwriting each other, so the answer is visible either way.
+const CYCLES_AFTER_KEY: u32 = 4;
+static CYCLES_LEFT: AtomicU32 = AtomicU32::new(MAX_CYCLES);
+/// Set the first time a `v_gtext` is recorded after the keystroke.
+///
+/// The keystroke cycle on its own turned out not to be enough: QED registers
+/// the change (`tasten.c:388`) and calls `restore_edit`, yet the cycle contains
+/// no text output and not even the `set_clip(TRUE, work)` that every one of its
+/// redraw loops starts with. What is missing is the CONTRAST — a cycle in which
+/// the text *does* reach the screen. So recording now runs from the keystroke
+/// until the first `v_gtext`, and the file holds both: the cycle that should
+/// have drawn and the one that finally did.
+static TEXT_DRAWN: AtomicBool = AtomicBool::new(false);
+/// Hard cap so a run in which no text is ever drawn still yields a file.
+const MAX_CYCLES: u32 = 60;
+
 /// Append raw bytes to the buffer, stopping (with a one-shot marker) before it
 /// can overflow. Reserves room for [`TRUNC_MARK`] so the marker always fits.
 fn append(bytes: &[u8]) {
+    let to_pro = PRO_MODE.load(Ordering::Acquire);
+    let (base, len_cell, trunc_cell, cap) = if to_pro {
+        (PRO.data.get() as *mut u8, PRO.len.get(), PRO.truncated.get(), PRO_LEN)
+    } else {
+        (BUF.data.get() as *mut u8, BUF.len.get(), BUF.truncated.get(), BUF_LEN)
+    };
     // SAFETY: single-CPU trap path, serialised by `IN_TRACE`; exclusive logical
-    // access to the buffer cells.
+    // access to the buffer cells, and `cap` is that buffer's own length.
     let (data, len, trunc) = unsafe {
         (
-            &mut *BUF.data.get(),
-            &mut *BUF.len.get(),
-            &mut *BUF.truncated.get(),
+            core::slice::from_raw_parts_mut(base, cap),
+            &mut *len_cell,
+            &mut *trunc_cell,
         )
     };
     if *trunc {
         return;
     }
-    if *len + bytes.len() + TRUNC_MARK.len() > BUF_LEN {
+    if *len + bytes.len() + TRUNC_MARK.len() > cap {
         // No room for this chunk while keeping space for the marker: mark and
         // stop appending for the rest of the run.
         let end = *len + TRUNC_MARK.len();
@@ -129,8 +199,38 @@ pub fn pre_dispatch(class: TrapClass, args: &TrapArgs) {
     if IN_TRACE.swap(true, Ordering::AcqRel) {
         return;
     }
-    if is_evnt_multi(class, args) {
+    if is_evnt_multi(class, args) && !FROZEN.load(Ordering::Acquire) {
         flush();
+        if KEY_SEEN.load(Ordering::Acquire) {
+            // Inside the window of interest: keep accumulating rather than
+            // clearing, so the file holds the keystroke cycle AND the cycles
+            // that follow it, in order.
+            let left = CYCLES_LEFT.load(Ordering::Acquire);
+            if TEXT_DRAWN.load(Ordering::Acquire) || left <= 1 {
+                FROZEN.store(true, Ordering::Release);
+                trace!("--- frozen (text drawn: {}) ---\n",
+                       TEXT_DRAWN.load(Ordering::Acquire));
+            } else {
+                CYCLES_LEFT.store(left - 1, Ordering::Release);
+                trace!("--- cycle boundary ---\n");
+            }
+            IN_TRACE.store(false, Ordering::Release);
+            return;
+        }
+        // ...and start the next cycle empty. Without this the 96 KiB buffer
+        // fills during QED's start-up, writes its TRUNCATED marker and stops,
+        // so the file preserves the launch and never the interaction — the
+        // opposite of what an "I typed a key and nothing was drawn" hunt
+        // needs. `evnt_multi` entry is the app's idle point, so each written
+        // file now holds exactly the calls QED made in response to the LAST
+        // thing that happened. Type one character, then touch nothing, and the
+        // file on the card is that keystroke's drawing and nothing else.
+        // SAFETY: same single-CPU trap-path discipline as `append`/`flush`,
+        // and the re-entrancy guard is held by the caller.
+        unsafe {
+            *BUF.len.get() = 0;
+            *BUF.truncated.get() = false;
+        }
     }
     IN_TRACE.store(false, Ordering::Release);
 }
@@ -192,7 +292,19 @@ fn record(class: TrapClass, args: &TrapArgs, result: i64) {
             let sel = args.regs[0];
             let block = args.regs[1];
             match sel {
-                200 => record_aes(block),
+                200 => {
+                    // Window geometry goes to the kept prologue, everything
+                    // else to the per-cycle buffer.
+                    let op = aes_opcode(block);
+                    let geometry = matches!(op, 100 | 101 | 108) || is_work_query(block, op);
+                    if geometry {
+                        PRO_MODE.store(true, Ordering::Release);
+                    }
+                    record_aes(block);
+                    if geometry {
+                        PRO_MODE.store(false, Ordering::Release);
+                    }
+                }
                 115 => record_vdi(block),
                 _ => trace!("GEM    #2  sel={} (unknown selector)\n", sel),
             }
@@ -267,6 +379,30 @@ fn wrd(base: *const i16, i: usize) -> i16 {
 }
 
 /// Decode + append an AES call (selector 200) with its important values.
+/// The AES opcode inside a parameter block, without recording anything.
+fn aes_opcode(block: u64) -> i16 {
+    if block == 0 {
+        return -1;
+    }
+    let abi = current_abi();
+    // SAFETY: same `control` pointer the AES dispatcher reads.
+    let control = unsafe { abi.read_ptr(block, 0) } as *const i16;
+    wrd(control, 0)
+}
+
+/// True for `wind_get(handle, WF_WORKXYWH)` — the other half of the pixel
+/// comparison QED's `free_for_draw` makes.
+fn is_work_query(block: u64, op: i16) -> bool {
+    const WF_WORKXYWH: i16 = 4;
+    if op != 104 || block == 0 {
+        return false;
+    }
+    let abi = current_abi();
+    // SAFETY: same `int_in` pointer the AES dispatcher reads.
+    let intin = unsafe { abi.read_ptr(block, 2) } as *const i16;
+    wrd(intin, 1) == WF_WORKXYWH
+}
+
 fn record_aes(block: u64) {
     if block == 0 {
         trace!("AES    op=?   (null param block)\n");
@@ -337,6 +473,11 @@ fn record_aes(block: u64) {
                 "    evnt_multi: fired=0x{:04x} mx={} my={} btn=0x{:x} ks=0x{:x} key=0x{:04x} clicks={}\n",
                 fired, io(1), io(2), io(3) as u16, io(4) as u16, io(5) as u16, io(6)
             );
+            const MU_KEYBD: u16 = 0x0001;
+            if fired & MU_KEYBD != 0 {
+                KEY_SEEN.store(true, Ordering::Release);
+                trace!("    *** keystroke -- this cycle is the one being hunted ***\n");
+            }
             const MU_MESAG: u16 = 0x0010;
             if fired & MU_MESAG != 0 {
                 // Message buffer pointer is addr_in[0] (caller-width).
@@ -483,10 +624,57 @@ fn record_vdi(block: u64) {
     let abi = current_abi();
     // SAFETY: same five-pointer VDIPB read the VDI dispatcher performs.
     let contrl = unsafe { abi.read_ptr(block, 0) } as *const i16;
+    let intin = unsafe { abi.read_ptr(block, 1) } as *const i16;
+    let ptsin = unsafe { abi.read_ptr(block, 2) } as *const i16;
     let intout = unsafe { abi.read_ptr(block, 3) } as *const i16;
 
     let op = wrd(contrl, 0);
     trace!("VDI    op={:<3} {:<12}\n", op, vdi_name(op));
+
+    // The calls that lie between a keystroke and a glyph on screen. QED
+    // advances its own caret but the cell stays blank, so the character is
+    // produced and lost on the way out; these five say where.
+    let ii = |i: usize| wrd(intin, i);
+    let pi = |i: usize| wrd(ptsin, i);
+    match op {
+        // v_gtext — where, and what. contrl[1] = number of ptsin points,
+        // contrl[3] = number of intin entries = the string's length; the
+        // characters are one per intin word (VDI passes text expanded).
+        8 => {
+            TEXT_DRAWN.store(true, Ordering::Release);
+            let n = wrd(contrl, 3).clamp(0, 8) as usize;
+            trace!("    v_gtext at ({},{}) len={} chars=", pi(0), pi(1), wrd(contrl, 3));
+            for i in 0..n {
+                let c = ii(i);
+                if (0x20..0x7f).contains(&c) {
+                    trace!("{}", c as u8 as char);
+                } else {
+                    trace!("<{:02x}>", c as u16);
+                }
+            }
+            trace!("\n");
+        }
+        // vs_clip — the rectangle a draw is confined to. A clip that is empty,
+        // or one whose corners are read in the wrong order, swallows a
+        // single-character draw while leaving a full-window redraw mostly
+        // intact — which is exactly the shape of the reported symptom.
+        129 => trace!(
+            "    vs_clip flag={} rect=({},{})-({},{})\n",
+            ii(0), pi(0), pi(1), pi(2), pi(3)
+        ),
+        // vr_recfl — the filled rectangle itself (the caret is one of these).
+        114 => trace!("    vr_recfl rect=({},{})-({},{})\n", pi(0), pi(1), pi(2), pi(3)),
+        // vswr_mode — 1 replace, 2 transparent, 3 XOR, 4 reverse-transparent.
+        // A glyph drawn twice in XOR is invisible.
+        32 => trace!("    vswr_mode -> {} (out {})\n", ii(0), wrd(intout, 0)),
+        // vst_color — the text colour actually set (out = what we granted).
+        22 => trace!("    vst_color -> {} (out {})\n", ii(0), wrd(intout, 0)),
+        // The cursor semaphore around a draw: a stale save-under repaints over
+        // freshly drawn pixels.
+        122 => trace!("    v_show_c reset={}\n", ii(0)),
+        123 => trace!("    v_hide_c\n"),
+        _ => {}
+    }
 
     // v_opnvwk — the screen workstation attributes QED reads (work_out[0..10]).
     if op == 100 {
@@ -503,10 +691,12 @@ fn record_vdi(block: u64) {
 fn flush() {
     // SAFETY: single-CPU trap path; read-only snapshot of the buffer cells.
     let len = unsafe { *BUF.len.get() };
-    if len == 0 {
+    let pro_len = unsafe { *PRO.len.get() };
+    if len == 0 && pro_len == 0 {
         return;
     }
     let data_ptr = BUF.data.get() as *const u8 as u64;
+    let pro_ptr = PRO.data.get() as *const u8 as u64;
 
     // Fcreate("C:\QEDTRACE.LOG", 0) — create/truncate for writing.
     const PATH: &[u8] = b"C:\\QEDTRACE.LOG\0";
@@ -521,6 +711,15 @@ fn flush() {
     }
     let handle = h as u64;
 
+    // The kept window-geometry prologue first, then this cycle's calls.
+    if pro_len > 0 {
+        let pargs = TrapArgs {
+            regs: [handle, pro_len as u64, pro_ptr, 0, 0, 0, 0, 0],
+            func: 0x40,
+            svc_imm: 1,
+        };
+        let _ = tos_api::bdos::fs::file::fwrite(&pargs);
+    }
     // Fwrite(handle, len, data).
     let wargs = TrapArgs {
         regs: [handle, len as u64, data_ptr, 0, 0, 0, 0, 0],

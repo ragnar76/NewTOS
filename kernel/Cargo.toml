@@ -36,6 +36,30 @@ initinfo-diag = []
 # by default; build with `--features gemdos-trace` to instrument the GEMDOS
 # trap path (what an application actually asks the file system for).
 gemdos-trace = ["tos-api/gemdos-trace"]
+# USB enumeration diagnostic build: tees every `kprint!` line into a RAM
+# buffer and writes it to `C:\\USBDIAG.LOG` once the card is mounted, so a
+# machine with no serial line still yields the whole boot log as a file. It
+# also turns on the extra xHCI instrumentation that the normal build does not
+# carry: the Supported-Protocol capability walk (which root port is USB 2.0 and
+# which is USB 3.0), raw PORTSC words, every interface/endpoint of every device
+# (not just the one we take), the slot/endpoint/completion code of every event
+# consumed during enumeration, and the hub port reset trace (how many tries it
+# took and after how long the port enabled).
+#
+# The measurement this feature was originally built for -- does any port need
+# longer than the old fixed 60 ms? -- has been answered on hardware: every
+# connected port of both hubs enabled at the first 10 ms sample, in the working
+# and in the broken socket arrangement alike. The reset itself now follows
+# FreeMiNT `hub.c:225` in BOTH builds; this feature only narrates it.
+#
+# Off by default. When it landed, the rpi4 build with the feature off was
+# measured, not asserted, to be unchanged instruction for instruction (the only
+# disassembly differences were LLVM's internal symbol-name hashes; the image
+# hash moves only because inserted source lines shift the line numbers panic
+# locations carry in `.rodata`). That no longer holds after the transfer
+# handshake repair, which changes the normal build on purpose. Built with
+# `cargo xtask build --board rpi4 --release --features usb-diag`.
+usb-diag = []
 
 [dependencies]
 tos-types = { path = "../tos-types" }
