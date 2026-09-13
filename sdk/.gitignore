@@ -51,34 +51,6 @@
 !/apps/chaintest/*.c
 !/apps/chaintest/*.sh
 
-# ...and ball, likewise OURS: the bouncing-ball demo (Applications/
-# Demo-bouncing-Ball/). It is written as ONE source for two machines -- NewTOS
-# on the Pi 4 and, later, TOS on an Atari TT with a NOVA card -- with the
-# machine-dependent half isolated in plat-*.c, so the sources and the build
-# script are the deliverable. Built binaries stay excluded by the *.NAP rule.
-!/apps/ball/
-/apps/ball/*
-!/apps/ball/*.c
-!/apps/ball/*.h
-!/apps/ball/*.sh
-# ...including the note that says what the TT half still has to have confirmed
-# on the real machine before anyone trusts it.
-!/apps/ball/*.md
-# The settings file is source as well, and it is the DOCUMENTATION of the
-# format as much as an example of it. Every line of it is commented out, so
-# copying it into the root of C: changes nothing until something is edited.
-!/apps/ball/*.CFG
-# The host simulation is source too, and is source of the same demo: it
-# #includes ball.c rather than copying it, so what it measures is what ships.
-# Its two binaries are built, and stay out.
-!/apps/ball/hostsim/
-/apps/ball/hostsim/*
-!/apps/ball/hostsim/*.c
-!/apps/ball/hostsim/*.sh
-!/apps/ball/hostsim/mint/
-/apps/ball/hostsim/mint/*
-!/apps/ball/hostsim/mint/*.h
-
 # macOS junk that FAT round-trips create.
 .DS_Store
 ._*
