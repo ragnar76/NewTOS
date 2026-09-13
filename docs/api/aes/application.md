@@ -78,6 +78,38 @@ Byte offsets are the m68k layout (`WORD` = 2 bytes; `LONG`/pointer = 4 bytes,
 > (`desk/deskapp.c:953-960`); two readers of one line is the 1:1 design, not a
 > duplication to collapse.
 
+> **NewTOS layout decision (2026-09-13).** `AESGLOBAL` keeps the m68k widths
+> above on **every** ABI, including native 64-bit AArch64: 30 bytes, every
+> `LONG`/pointer field 4 bytes. It is the one GEM boundary structure that is
+> addressed two ways at once — by byte offset (the table above) *and* by WORD
+> index (`AP_VERSION`..`AP_4RESV`, `include/aesdefs.h:147-157`; every client
+> declares it `short aes_global[]`). Widening the pointer fields to 8 bytes
+> would move `ap_rsclen` off `global[9]` and `ap_planes` off `global[10]`,
+> i.e. satisfy one half of the contract by breaking the other; the two halves
+> hold together only at the m68k widths. This is therefore the named exception
+> to [`docs/COMPATIBILITY.md`](../../COMPATIBILITY.md) §"Native vs m68k struct
+> variants" (`OBJECT` has no index contract and does follow the caller's
+> width).
+>
+> The consequence is carried by the **toolchain**, not by the structure:
+> pristine gemlib's accessors have no `__LP64__` arm (`gem.h:41,49,57`), so for
+> a 64-bit caller `_AESappglobal`, `_AESrscfile` and `_AESrscmem` read eight
+> bytes each — bytes 6..13, 10..17 and 14..21, three pointers inside fourteen
+> bytes. `_AESrscmem` in particular reaches `ap_planes`, so on a zeroed array
+> it returns `planes << 48`: a non-NULL wild pointer manufactured by the
+> reader. NewTOS narrows those three readers to the TOS field widths in
+> `sdk/gemlib/overlay/{gem.h,mt_gem.h.in}`; `_AESrsclen` (`global[9]`) and
+> `_AESmaxchar`/`_AESminchar` (`[13]`/`[14]`) are WORD readers at the right
+> offsets already and are left as gemlib has them. `_AESrscfile`/`_AESrscmem`
+> stop being assignable lvalues there (C has no 32-bit pointer type on LP64);
+> the overlay adds `_AESrscfile_set(p)` / `_AESrscmem_set(p)` for the write
+> side, so an unconverted assignment is a compile error rather than a silent
+> 8-byte store across three fields. The m68k build compiles the pristine tree,
+> where `long` is already 4 bytes.
+>
+> Byte-for-byte coverage of what `appl_init` writes and leaves alone:
+> `tos-api/tests/aes_global_layout.rs`.
+
 The application's identity is its **AES process id** (`AESPD.p_pid`,
 `aes/struct.h:129`). The AES keeps a per-application process descriptor
 (`AESPD`, `aes/struct.h:119-155`) holding the 8-char name (`p_name`,

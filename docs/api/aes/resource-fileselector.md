@@ -218,10 +218,25 @@ time — a second `rsrc_load` overwrites `ap_rscmem` without freeing the first
 >
 > **Not yet done (A35):** NewTOS writes **none** of `ap_rscmem`/`ap_rsclen`/
 > `ap_ptree` into the caller's `AESGLOBAL`; it holds the descriptor in a kernel
-> static instead. For an LP64 caller gemlib's `aes_global[]` index macros place
-> three 8-byte pointer fields inside the 14 bytes between `ap_private` and
-> `ap_planes`, so no placement can hold all of them — the LP64 `AESGLOBAL`
-> layout is an open project decision. Red tests:
+> static instead. The `AESGLOBAL` layout that used to block this is settled
+> (2026-09-13, [`application.md`](./application.md) §`AESGLOBAL`: the TOS
+> widths on every ABI, so each field has its own bytes). Two open questions
+> remain, and they are about *addresses*, not about the layout:
+>
+> 1. `ap_ptree` names the **relocated** `OBJECT *[]` tree index inside the
+>    blob (`fix_trindex`, `gemrslib.c:595-597`). NewTOS's NRSC tree index is
+>    `[u32]` of root OBJECT **indices** (`tools/mkrsc.py:417`), four bytes
+>    wide in both ABI variants, while a caller's `_AESrscfile[i]` is a native
+>    8-byte `OBJECT *`. A faithful `ap_ptree` needs a materialised
+>    caller-width pointer array the application can reach — a format and
+>    ownership decision.
+> 2. `ap_ptree`/`ap_rscmem` are **4-byte** TOS fields. An EL0 caller's blob
+>    lives in the per-process window below `USER_TPA_MAX_VA` (32 MiB), so a
+>    user VA fits exactly; the in-kernel (EL1) path loads into a kernel
+>    high-half static whose low 32 bits are not a usable address.
+>
+> Writing `ap_rsclen` alone is not a partial fix: EmuTOS reads
+> `ap_rscmem == NULL` as "nothing loaded" (`gemrslib.c:685`). Red tests:
 > `tos-api/tests/aes_rsrc_global_fields.rs`.
 
 ### `rsrc_free` (111) — `rs_free`

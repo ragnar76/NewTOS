@@ -26,26 +26,37 @@
 //! Spec: `docs/api/aes/application.md` §`AESGLOBAL`,
 //! `docs/api/aes/resource-fileselector.md` §1 `rsrc_load (110)`.
 //!
-//! **Why these tests are `#[ignore]`d — the LP64 `AESGLOBAL` is
-//! over-subscribed.** gemlib's accessors carry no `__LP64__` conditional
-//! (`sdk/gemlib/gemlib-0.44.0/gem.h:41,49,57,64`), so for an LP64 caller
+//! **Why these tests are still `#[ignore]`d.** The first blocker — which
+//! `AESGLOBAL` layout NewTOS commits to — was decided on 2026-09-13 and is
+//! gone: the struct keeps the TOS widths on every ABI (30 bytes, 4-byte
+//! pointer fields; `tos-api/src/aes/appl.rs`, `docs/api/aes/application.md`
+//! §`AESGLOBAL`), and gemlib reads them at those widths through
+//! `sdk/gemlib/overlay/{gem.h,mt_gem.h.in}`. So every field now has its own
+//! bytes, and `ap_rsclen` is writable today.
 //!
-//! | field | gemlib reader | bytes read |
-//! |---|---|---|
-//! | `ap_private` | `*(long*)&aes_global[3]` | 6..13 |
-//! | `ap_ptree`   | `*(OBJECT***)&aes_global[5]` | 10..17 |
-//! | `ap_rscmem`  | `*(void**)&aes_global[7]` | 14..21 |
-//! | `ap_rsclen`  | `aes_global[9]` | 18..19 |
-//! | `ap_planes`  | `aes_global[10]` | 20..21 |
+//! Two questions the layout does **not** answer keep the three together:
 //!
-//! Three 8-byte pointer fields are asked to live in the 14 bytes between
-//! `ap_private`'s start and `ap_planes`. Any byte placement for `ap_ptree` /
-//! `ap_rscmem` destroys at least one field `appl_init` already fills
-//! (`tos-api/src/aes/appl.rs`, `write_lp64`). Which LP64 `AESGLOBAL` layout
-//! NewTOS commits to is an ABI decision for the project, not for the loader;
-//! until it is made, writing these fields would trade a documented 0 for a
-//! wild pointer. `ap_rsclen` alone is unambiguous (a WORD at `global[9]` in
-//! both ABIs) and is kept here with the other two so the three land together.
+//! 1. **`ap_ptree` has no array to point at.** EmuTOS publishes the
+//!    *relocated* `OBJECT *[]` tree index inside the blob (`fix_trindex`,
+//!    `gemrslib.c:595-597`). NewTOS's NRSC tree index is `[u32]` of root
+//!    OBJECT **indices** (`tools/mkrsc.py:417`), not addresses — and four
+//!    bytes wide in both ABI variants, while `_AESrscfile[i]` is a native
+//!    8-byte `OBJECT *` on LP64. Pointing `ap_ptree` at it would hand the
+//!    application an index array typed as a pointer array, which is worse
+//!    than the 0 it reads today. A faithful `ap_ptree` needs a materialised
+//!    caller-width pointer array somewhere the application can reach.
+//! 2. **The kernel path has no 32-bit address to report.** `ap_ptree` and
+//!    `ap_rscmem` are 4-byte TOS fields. An EL0 caller's blob is mapped in
+//!    the process window below `USER_TPA_MAX_VA` (32 MiB), so a user VA fits
+//!    exactly. These tests drive the in-kernel path, where the blob is
+//!    `RSC_BUF` — a kernel high-half static (measured on the host harness:
+//!    `0x1_0444_ff48`; on the target `0xFFFF_0000_0008_xxxx`). Its low 32
+//!    bits are not an address anything can use.
+//!
+//! Writing two of the three and leaving `ap_rscmem` at 0 is not an option
+//! either: EmuTOS reads `ap_rscmem == NULL` as "nothing loaded"
+//! (`rs_free`, `gemrslib.c:685`), so a non-zero `ap_rsclen` beside a zero
+//! `ap_rscmem` states something untrue. They land together or not at all.
 
 use std::sync::{Mutex, MutexGuard, OnceLock};
 
@@ -279,14 +290,15 @@ fn rsrc_free() {
     unsafe { tos_api::aes::dispatch(raw.as_ptr() as u64, Abi::Lp64) };
 }
 
-/// The 8-byte field at byte `off` of the caller's `AESGLOBAL`, the way
-/// gemlib's LP64 accessors read it (`*(void**)&aes_global[off/2]`).
+/// The 4-byte pointer field at byte `off` of the caller's `AESGLOBAL` — the
+/// TOS width, and the width the NewTOS gemlib overlay reads `_AESrscfile`
+/// (byte 10) and `_AESrscmem` (byte 14) at.
 fn g_ptr(global: &[i16; 16], off: usize) -> u64 {
-    let mut v = [0u8; 8];
-    // SAFETY: `global` is 32 bytes; `off + 8 <= 32` for every caller below.
+    let mut v = [0u8; 4];
+    // SAFETY: `global` is 32 bytes; `off + 4 <= 32` for every caller below.
     let bytes = unsafe { std::slice::from_raw_parts(global.as_ptr() as *const u8, 32) };
-    v.copy_from_slice(&bytes[off..off + 8]);
-    u64::from_le_bytes(v)
+    v.copy_from_slice(&bytes[off..off + 4]);
+    u64::from(u32::from_le_bytes(v))
 }
 
 /// `ap_rsclen` — `aes_global[9]`, a WORD in both ABIs.
@@ -300,9 +312,8 @@ fn g_rsclen(global: &[i16; 16]) -> u16 {
 /// resource was loaded at. `rsrc_gaddr(R_TEDINFO, 0)` names a record inside
 /// that same blob, so the blob base must be at or below it.
 #[test]
-#[ignore = "blocked: the LP64 AESGLOBAL cannot hold ap_ptree and ap_rscmem \
-            as 8-byte fields at gemlib's indices 5 and 7 — see the module \
-            comment; the layout is a project ABI decision"]
+#[ignore = "blocked: the in-kernel path has no 32-bit address for the \
+            4-byte ap_rscmem field — see the module comment (A35)"]
 fn rsrc_load_reports_ap_rscmem() {
     let _g = fs();
     let (ret, global) = rsrc_load_with_global("C:\\TEST.RSC");
@@ -322,7 +333,7 @@ fn rsrc_load_reports_ap_rscmem() {
 /// EmuTOS `gemrslib.c:788` — `rs_global->ap_rsclen = rslsize`, the byte length
 /// the header declares.
 #[test]
-#[ignore = "blocked: lands together with ap_ptree/ap_rscmem — see the module comment"]
+#[ignore = "blocked: lands together with ap_ptree/ap_rscmem — see the module comment (A35)"]
 fn rsrc_load_reports_ap_rsclen() {
     let _g = fs();
     let (ret, global) = rsrc_load_with_global("C:\\TEST.RSC");
@@ -340,7 +351,8 @@ fn rsrc_load_reports_ap_rsclen() {
 /// through `ap_ptree`, so `ap_ptree[i]` is tree `i`'s root, the same address
 /// `rsrc_gaddr(R_TREE, i)` returns.
 #[test]
-#[ignore = "blocked: lands together with ap_rscmem/ap_rsclen — see the module comment"]
+#[ignore = "blocked: NewTOS's NRSC tree index is an index array, not the \
+            relocated pointer array ap_ptree names — see the module comment (A35)"]
 fn rsrc_load_reports_ap_ptree() {
     let _g = fs();
     let (ret, global) = rsrc_load_with_global("C:\\TEST.RSC");

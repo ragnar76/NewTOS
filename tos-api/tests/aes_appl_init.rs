@@ -178,16 +178,20 @@ fn appl_init_preserves_caller_memory_and_pending_messages_on_both_profiles() {
         );
         let g = &call.global[1..16];
         assert_eq!(&g[..3], &[0x0340, 1, pid]);
-        // Native long accessor at WORD 3 is eight bytes, only WORD-aligned.
-        let private = unsafe { g.as_ptr().add(3).cast::<u64>().read_unaligned() };
-        assert_eq!(private, expected_private);
+        // ap_private is the m68k LONG: four bytes at WORD 3, WORD-aligned.
+        // The AESGLOBAL keeps the TOS widths on every ABI (see the ABI note
+        // in tos-api/src/aes/appl.rs); byte-for-byte coverage of the whole
+        // struct lives in tests/aes_global_layout.rs.
+        let private = unsafe { g.as_ptr().add(3).cast::<u32>().read_unaligned() };
+        assert_eq!(u64::from(private), expected_private);
         assert_eq!(g[10], planes as i16, "planes is not log2(num_colors)");
         let address = unsafe { g.as_ptr().add(11).cast::<u32>().read_unaligned() };
         assert_ne!(address, 0);
         assert_eq!(*private_address.get_or_insert(address), address);
-        // LP64 private spans WORDs 3..6. Resource fields at 7..9 and
-        // reserved WORDs 13..14 are NOT outputs of this call.
-        for index in [7, 8, 9, 13, 14] {
+        // ap_private is WORDs 3..4. The resource fields ap_ptree (5..6),
+        // ap_rscmem (7..8) and ap_rsclen (9), and the reserved WORDs 13..14,
+        // are NOT outputs of this call (gemsuper.c:92-98).
+        for index in [5, 6, 7, 8, 9, 13, 14] {
             assert_eq!(g[index], POISON, "global[{index}]");
         }
         assert_eq!(call.global[0], POISON);

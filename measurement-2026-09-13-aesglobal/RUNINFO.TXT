@@ -1,0 +1,74 @@
+AESGLOBAL layout change -- regression evidence, 2026-09-13.
+MEASUREMENT ONLY: this directory states what ran and what came back.
+
+WHAT CHANGED (the thing under test)
+  tos-api/src/aes/appl.rs      appl_init lays the AESGLOBAL at the m68k field
+                               widths on every ABI: ap_private is 4 bytes at
+                               byte 6, not 8.  It therefore no longer writes
+                               ap_ptree's bytes 10..13, which EmuTOS's
+                               APPL_INIT arm (gemsuper.c:92-98) never names.
+  sdk/gemlib/overlay/gem.h     new: _AESappglobal / _AESrscfile / _AESrscmem
+  sdk/gemlib/overlay/mt_gem.h.in  read the 4-byte TOS fields at bytes 6/10/14
+                               instead of 8 bytes each.
+
+BUILDS
+  kernel   cargo xtask build --board {qemu-virt,rpi4} --release
+           qemu-virt ELF sha256 5fc2a5820d598d5747381f9932cc572bcee02be3a502b3aeff60adb283a2c0bd
+           rpi4      ELF sha256 1e82e49a932c2a1b14f60fcdd2400cc1dcf35215a5535adffac6df25414a4ce0
+           kernel8.img from the rpi4 release build, 787568 bytes, 19:34
+  gemlib   sdk/gemlib/build-gemlib.sh          578/578 objects, 0 skipped
+  gemlib   sdk/gemlib/build-gemlib-m68k.sh     578/578 objects, 0 skipped
+           (pristine tree, NO overlay -- verified: grep _AES_NARROW_PTR_FIELDS
+            in sdk/gemlib/gemlib-0.44.0-m68k/{gem.h,mt_gem.h} = 0 hits)
+  QED      sdk/apps/build-qed.sh        37/37 sources, 0 undefined symbols
+  TeraDesk sdk/apps/build-teradesk.sh   48/48 sources, 0 undefined symbols
+  dumper   tosdump/build-dumpaes-newtos.sh (DUMPAES.NAP, 139576 bytes)
+
+RUN -- QEMU raspi4b, headless, #Z autorun, 640x480
+  emulator  qemu-system-aarch64 -M raspi4b -display none -serial file:...
+  image     tools/make-sd-image.sh (fresh, with the newly built QED/TeraDesk)
+  screendump via tools/qmpshot.c over the QMP unix socket; QEMU writes PPM,
+            converted to PNG with sips.
+
+RESULT 1 -- QED, C:\Apps\QED\QED.NAP
+  screendumps/qed.png -- menu bar "qed Datei Bearbeiten Fenster Suchen Spezial
+  Optionen Shell", empty work area, mouse pointer.
+  The PPM is BYTE-IDENTICAL to measurement-2026-09-13-regression/qemu-tmp/qed.ppm
+  (taken 14:53 today, before this change).
+
+RESULT 2 -- TeraDesk, C:\Apps\TERADESK\DESKTOP.NAP
+  screendumps/teradesk.png -- menu bar "Desk File View Window Options", the
+  FLOPPY A / FLOPPY B / HARD DISC / PRINTER / TRASH icons with their labels.
+  The PPM is BYTE-IDENTICAL to
+  measurement-2026-09-13-regression/qemu-tmp/teradesk.ppm.
+
+RESULT 3 -- aes-m05-addrin, 5 cases, against EmuTOS 1.4 on a TT (Hatari)
+  table     tosdump/cases/aes-m05-addrin.tsv, CRC 215A9E48 (unchanged)
+  reference measurement-2026-09-12-m05-addrin/emutos14-tt-hatari/EMUTOS14-AES-m05.BIN
+  new dump  aes-m05-addrin/AES.BIN (5 records, 632 bytes)
+  aes-m05-addrin/DIFF-vs-emutos.txt: 5 of 5 cases differ, in the six words
+  that were already classified as noise -- global[2] (ap_id 0 vs 1),
+  global[3]/[4] (ap_private: the SAME 4-byte LONG, big-endian on the TT and
+  little-endian here, so the two half-words are swapped), global[10]
+  (ap_planes 4 vs 16, a profile difference), global[11]/[12] (ap_3resv, a
+  32-bit address value).  NONE of them moved.  That is the expected outcome
+  and it is explainable: the words the change touches are 5..6, and the
+  dumper's own `static int16_t aes_global[15]` is .bss, so those words read 0
+  both before (written 0 by the 8-byte store) and after (not written).
+  The AES dumper does not link gemlib -- it issues the GEM trap itself
+  (tosdump/build-dumpaes-newtos.sh:10) -- so the overlay half of the change
+  cannot show in this table at all.
+
+  Serial line, identical in both runs:
+    global after appl_init 832,1,1,4419,0,0,0,0,0,0,16,17504,18,0,0
+
+  aes-m05-addrin/DIFF-vs-baseline.txt (this dump vs the 14:53 dump): ONE
+  field moved, case 102 wind_get WF_NAME int_out[0] 1 -> 0.  That is NOT this
+  change: it is commit 087ea43 "fix(aes): wind_get refuses WF_NAME and
+  WF_INFO, as wm_get does" (16:55, after the baseline was taken), and the new
+  value 0 is EmuTOS's.  The DIFF-vs-emutos file is the 14:53 one minus
+  exactly that line.
+
+WHAT THIS RUN DOES NOT COVER
+  Interactive use (clicking, typing, menus) -- QEMU raspi4b gives input or
+  C: storage, not both; that is real-Pi-4 work.

@@ -53,16 +53,32 @@
 //! Loading from SD (`bdos::fs::read_file`), TEDINFO/ICONBLK/BITBLK
 //! sub-pointer relocation, and `rsrc_saddr` are Batch 2.
 //!
-//! **What `rsrc_load` does not do yet.** EmuTOS's `rs_readit` also reports the
-//! load back through the caller's `AESGLOBAL` — `ap_rscmem`, `ap_rsclen`
-//! (`gemrslib.c:787-788`) and `ap_ptree` (`:597`) — and `rs_sglobe`
-//! (`:675-679`) reads them back on every `rs_free`/`rs_gaddr`/`rs_saddr`.
-//! NewTOS holds the descriptor in [`RSC`] and writes none of the three: for an
-//! LP64 caller gemlib's index macros (`gem.h:41,49,57,64`) place three 8-byte
-//! pointer fields inside the 14 bytes between `ap_private` and `ap_planes`, so
-//! any placement destroys a field `appl_init` fills. Which LP64 `AESGLOBAL`
-//! layout NewTOS commits to is an open project decision (A35); the red tests
-//! stand in `tests/aes_rsrc_global_fields.rs`.
+//! **What `rsrc_load` does not do yet (A35).** EmuTOS's `rs_readit` also
+//! reports the load back through the caller's `AESGLOBAL` — `ap_rscmem`,
+//! `ap_rsclen` (`gemrslib.c:787-788`) and `ap_ptree` (`:597`) — and
+//! `rs_sglobe` (`:675-679`) reads them back on every
+//! `rs_free`/`rs_gaddr`/`rs_saddr`. NewTOS holds the descriptor in [`RSC`]
+//! and writes none of the three. The `AESGLOBAL` layout that used to block
+//! this is settled (2026-09-13: the TOS widths, `tos-api/src/aes/appl.rs`),
+//! but two questions the layout does not answer are still open:
+//!
+//! 1. **`ap_ptree` has no array to point at.** EmuTOS publishes the
+//!    *relocated* `OBJECT *[]` tree index inside the blob (`fix_trindex`,
+//!    `:595-597`). NewTOS's NRSC tree index is `[u32]` of root OBJECT
+//!    **indices** (`tools/mkrsc.py:417`), not addresses, and four bytes wide
+//!    in both ABI variants — while a caller's `_AESrscfile[i]` is a native
+//!    8-byte `OBJECT *` on LP64. Publishing `base + off_trindex` would hand
+//!    an application an index array typed as a pointer array. A faithful
+//!    `ap_ptree` needs a materialised caller-width pointer array, which is a
+//!    format/ownership decision, not a field write.
+//! 2. **The kernel path has no 32-bit address to report.** `ap_ptree` and
+//!    `ap_rscmem` are 4-byte TOS fields. For an EL0 caller that is exact —
+//!    the blob is mapped in the process window below `USER_TPA_MAX_VA`
+//!    (32 MiB). For the in-kernel (EL1) path the blob is [`RSC_BUF`], a
+//!    kernel high-half static; its low 32 bits are not an address anything
+//!    can use.
+//!
+//! The red tests stand in `tests/aes_rsrc_global_fields.rs`.
 
 use super::object::{BitBlk, IconBlk, ObjTree, Object, TedInfo};
 use super::shell::PATHBUF;

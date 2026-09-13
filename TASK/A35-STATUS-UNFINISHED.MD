@@ -1,205 +1,114 @@
-# A35 — Quittung
+# A35 — Quittung (2. Fassung)
 
-**Status: NICHT IMPLEMENTIERT · Befund bestaetigt · blockiert an einer
-ABI-Entscheidung, die mir nicht zusteht** · 2026-09-13 · Der Defekt ist
-nachgeprueft und mit roten Tests festgehalten. Das vom Auftrag als
-„unstrittig" bezeichnete **Schreiben** der drei Felder ist es fuer einen
-LP64-Aufrufer nicht: die Ablage, die gemlib dafuer vorgibt, hat physisch keinen
-Platz. Ich habe nicht geraten.
+**Status: WEITERHIN NICHT IMPLEMENTIERT · der erste Blocker ist weg, zwei neue
+sind belegt** · 2026-09-13 · Die `AESGLOBAL`-Ablage ist entschieden und
+umgesetzt (eigener Arbeitsgang, siehe unten). Das Schreiben der drei Felder
+scheitert danach **nicht mehr an der Ablage**, sondern an zwei Adressfragen, die
+ich nicht raten darf.
 
-## Quelle
+## Was seit der ersten Fassung geschehen ist
 
-`references/emutos` @ `1a7484aba1bfba23e2c0899e243b6d8177fe41df`, Zielprofil
-Falcon030/TOS4. Befund **B3** des Audits vom 2026-09-11.
+Der Anwender hat am 2026-09-13 entschieden: `AESGLOBAL` behaelt die TOS-Ablage
+(30 Byte, alle Zeigerfelder 4 Byte), und gemlib lernt sie lesen. Das ist
+umgesetzt und belegt:
 
-## Der Befund — bestaetigt
+* `tos-api/src/aes/appl.rs` — `appl_init` legt `ap_private` als **vier** Byte ab
+  Byte 6 und fasst `ap_ptree` (Byte 10..13) nicht mehr an. `write_lp64` und
+  `write_ilp32` sind dadurch identisch geworden und zu **einem** `write`
+  zusammengefallen.
+* `sdk/gemlib/overlay/gem.h` (neu) und `sdk/gemlib/overlay/mt_gem.h.in` —
+  `_AESappglobal`/`_AESrscfile`/`_AESrscmem` lesen die 4-Byte-Felder an 6/10/14.
+* Dauertest `tos-api/tests/aes_global_layout.rs`, Spezifikation
+  `docs/api/aes/application.md` §`AESGLOBAL`.
 
-`rs_readit` belegt zwei der Felder, sobald die Datei im Speicher steht
-(`aes/gemrslib.c:785-788`):
+Damit hat jedes Feld seine eigenen Byte. `ap_rsclen` waere ab sofort
+schreibbar.
 
-```c
-rs_global = pglobal;
-rs_global->ap_rscmem = rs_hdr;
-rs_global->ap_rsclen = rslsize;
-```
+## Warum die drei Felder trotzdem nicht geschrieben werden
 
-und `fix_trindex` das dritte (`:595-597`):
+### 1. `ap_ptree` hat kein Feld, auf das es zeigen koennte
+
+EmuTOS veroeffentlicht in `ap_ptree` den **relokierten** Baumindex *im Blob*
+(`fix_trindex`, `aes/gemrslib.c:595-597`):
 
 ```c
 ptreebase = (LONG *)get_sub(0, rs_hdr->rsh_trindex, sizeof(LONG));
 rs_global->ap_ptree = (OBJECT **)ptreebase;
 ```
 
-NewTOS' `rsrc_load` fasst `pb.global_ptr()` nicht an; der einzige Aufrufer im
-ganzen Baum ist `appl_init` (`tos-api/src/aes/appl.rs`). Selbst gemessen, mit
-dem echten Dispatcher gegen ein FAT16-Abbild im Hostspeicher:
+Dort steht danach in Slot `i` die **Adresse** der Wurzel von Baum `i`.
 
-```
----- rsrc_load_reports_ap_rsclen stdout ----
-assertion `left == right` failed: ap_rsclen (global[9]) must be the
-resource's declared size
-  left: 0
- right: 4975
+NewTOS' NRSC-Baumindex ist etwas anderes: `[u32]` von **Objektindizes**
+(`tools/mkrsc.py:417` packt `(toff - p_obj) // CLS_OBJ`), vier Byte breit in
+*beiden* ABI-Varianten, und er wird nicht relokiert — `relocate_and_register_core`
+(`tos-api/src/aes/resource.rs`) rechnet die Wurzeladressen beim Laden in die
+Kernel-Tabelle `RSC.trees` und laesst das Feld im Blob unberuehrt.
 
----- rsrc_load_reports_ap_rscmem stdout ----
-assertion `left != right` failed: ap_rscmem (global[7]) is still 0 after rsrc_load
+Zwei Dinge stimmen also nicht gleichzeitig: der **Inhalt** (Indizes statt
+Adressen) und die **Slotbreite** (4 Byte, waehrend `_AESrscfile[i]` beim
+LP64-Aufrufer ein natives 8-Byte-`OBJECT *` ist). Auf `base + off_trindex` zu
+zeigen hiesse, der Anwendung ein Indexfeld als Zeigerfeld auszuhaendigen; das
+ist schlechter als die 0, die heute dort steht.
 
----- rsrc_load_reports_ap_ptree stdout ----
-assertion `left != right` failed: ap_ptree (global[5]) is still 0 after rsrc_load
-```
+Ein treues `ap_ptree` braucht ein **erzeugtes** Zeigerfeld in Aufruferbreite,
+das die Anwendung erreichen kann. Wo es liegt (im Blockrest hinter dem Blob? im
+Format als v7? in einer eigenen Zuteilung?), wem es gehoert und wann es
+freigegeben wird — das ist eine Format- und Eigentumsentscheidung, kein
+Feldschreibvorgang. Sie steht mir nicht zu.
 
-Der Befund ist also echt und reproduzierbar.
+### 2. Der Kernelpfad hat keine 32-Bit-Adresse zu melden
 
-## Warum ich trotzdem nicht geschrieben habe
+`ap_ptree` und `ap_rscmem` sind 4-Byte-TOS-Felder. Der Auftrag fuehrte als
+Beleg an, beide zeigten in Anwendungsspeicher (`USER_TPA_TOP` = 4 MiB). Fuer den
+**EL0**-Pfad stimmt das: `load_into_user` bildet den Blob im Prozessfenster
+unterhalb `USER_TPA_MAX_VA` (32 MiB, `process/mmu.rs`) ab, jede solche Adresse
+passt in 32 Bit.
 
-Der Auftrag nennt das Schreiben unstrittig. Fuer die m68k-/ILP32-Ablage stimmt
-das. Fuer **LP64** — die einzige ABI, in der heute ueberhaupt ein Programm
-laeuft (`loader.rs:413` weist jedes ELFCLASS32-Abbild ab) — nicht.
+Fuer den **EL1**-Pfad stimmt es nicht. `rsrc_load` relokiert dort an Ort und
+Stelle in `RSC_BUF`, eine Kernel-High-Half-Statik. Selbst gemessen:
 
-gemlibs Zugriffsmakros haben **keine** `__LP64__`-Fallunterscheidung
-(`sdk/gemlib/gemlib-0.44.0/gem.h:41,49,57,64`; `aes_global[]` ist
-`short aes_global[AES_GLOBMAX]` mit `AES_GLOBMAX 16`, `mt_gem.h:2502`,
-`globals.c:40` — 32 Byte). Ein LP64-Aufrufer liest damit:
+* Hoststand (`cargo test`, derselbe Pfad, den die drei A35-Tests fahren):
+  `rsrc_gaddr(R_TREE,0)` = `0x10444ff48`, `fits_u32` = **false**.
+* Ziel: der Kernel liegt laut `kernel/src/arch/aarch64/link-rpi4.ld:24-25` bei
+  `VA_OFFSET 0xFFFF000000000000 + 0x80000`; die unteren 32 Bit einer
+  `RSC_BUF`-Adresse sind dort `0x0008xxxx` — eine Zahl, die wie eine
+  physikalische Adresse aussieht und weder in EL0 noch in EL1 etwas erreicht.
 
-| Feld | gemlib-Leser | gelesene Bytes |
-|---|---|---|
-| `ap_private` | `*(long*)&aes_global[3]` | **6..13** |
-| `ap_ptree` | `*(OBJECT***)&aes_global[5]` | **10..17** |
-| `ap_rscmem` | `*(void**)&aes_global[7]` | **14..21** |
-| `ap_rsclen` | `aes_global[9]` | 18..19 |
-| `ap_planes` | `aes_global[10]` | 20..21 |
+Es gibt also Aufrufer, fuer die das Feld exakt ist, und Aufrufer, fuer die es
+keinen darstellbaren Wert gibt. Welche der drei Antworten gilt — abschneiden
+(und dokumentieren, dass nur der EL0-Wert etwas bedeutet), 0 lassen (und damit
+„nichts geladen" behaupten, obwohl geladen ist), oder den EL1-Pfad selbst so
+umbauen, dass der Blob eine 32-Bit-Adresse hat — ist eine Entscheidung mit
+beobachtbaren Folgen. Nach `CLAUDE.md` Regel 3 habe ich angehalten.
 
-Drei Zeigerfelder zu je 8 Byte sollen in die **14 Byte** zwischen dem Beginn von
-`ap_private` und `ap_planes` passen. Sie ueberlappen einander paarweise:
+### Warum nicht wenigstens `ap_rsclen`
 
-* `ap_ptree` (10..17) ueberschreibt die obere Haelfte von `ap_private` (6..13) —
-  dem Feld, das `appl_init` mit `rs_trees[DESKTOP][ROOT].ob_spec` belegt und das
-  A06/A25 gemessen haben.
-* `ap_rscmem` (14..21) ueberschreibt die obere Haelfte von `ap_ptree` **und**
-  `ap_rsclen` **und** `ap_planes` (`gemsuper.c:97`, von A08 gemessen).
+`ap_rsclen` ist ein Wort und in beiden Pfaden eindeutig. Es allein zu schreiben
+macht den Zustand aber schlechter, nicht besser: EmuTOS liest
+`ap_rscmem == NULL` als „nichts geladen" (`rs_free`, `gemrslib.c:685`). Ein
+`ap_rsclen = 4975` neben einem `ap_rscmem = 0` behauptet zwei Dinge, die sich
+widersprechen. Die drei gehoeren zusammen.
 
-Es gibt **keine** Bytebelegung, bei der alle drei plus `ap_private` und
-`ap_planes` gleichzeitig stimmen. Auch die m68k-Belegung (4/4/2 Byte an 10/14/18)
-hilft nicht: sie laesst zwar alle Felder nebeneinander liegen, aber der
-LP64-Leser holt 8 Byte und bekommt `ptree_low32 | rscmem_low32 << 32` — und
-`ap_private` wuerde dabei mitzerstoert.
+## Was der Anwender entscheiden muss
 
-Der Vollstaendigkeit halber, weil es die Dringlichkeit relativiert: **heute
-liest ein LP64-`_AESrscmem` bereits Muell** — Byte 20..21 tragen `ap_planes`,
-also liefert der 8-Byte-Zugriff `planes << 48`. Die Ablage ist schon jetzt
-nicht tragfaehig; mein Nichtstun verschlechtert nichts, mein Raten haette
-verschlechtert.
+1. **`ap_ptree`:** wo entsteht das Zeigerfeld in Aufruferbreite, und wer gibt es
+   frei? (Vorschlag zur Pruefung, nicht als Entscheidung: im selben Poolblock
+   hinter dem Blob, seitengerundet mitzugeteilt, mit dem Block bei `rsrc_free`
+   freigegeben. Das braucht keine Formataenderung.)
+2. **EL1-Pfad:** abschneiden, 0 lassen, oder den Blob auch dort in ein
+   32-Bit-erreichbares Fenster legen?
+3. Danach erst sind die drei `#[ignore]` in
+   `tos-api/tests/aes_rsrc_global_fields.rs` aufloesbar. Ihre Begruendungstexte
+   nennen jetzt diese beiden Gruende statt der Ablage.
 
-Nach Regel 3 (`CLAUDE.md`: „Der m68k-ABI-Bezug eines Parameters" ist
-ausdruecklich ein STOP-Grund) habe ich deshalb angehalten.
-
-## Was EmuTOS mit den zurueckgelesenen Werten tut — Beleg je Aufrufer
-
-`rs_sglobe` (`gemrslib.c:675-679`) setzt bei **jedem** Aufruf
-`rs_hdr = pglobal->ap_rscmem`. Was danach damit geschieht:
-
-| Aufrufer | Datei:Zeile | was mit dem Wert aus dem `AESGLOBAL` geschieht |
-|---|---|---|
-| `rs_free` | `:683-708` | `if (rs_hdr)` → `free_cicon_buffers(rs_hdr)` und `dos_free(rs_global->ap_rscmem)` — **der Kernel gibt einen Zeiger frei, den die Anwendung im Wort stehen hat** |
-| `rs_gaddr` | `:711-721` | `*rsaddr = get_addr(rtype, rindex)`; `get_addr` rechnet aus `rs_hdr` und liefert fuer `R_TREE` `rs_global->ap_ptree[rsindex]` (`:123`) — **Dereferenzierung eines app-gelieferten Feldes** |
-| `rs_saddr` | `:727-742` | `psubstruct = get_addr(...)`, dann `*psubstruct = rsaddr` — **Schreibzugriff durch eine aus dem App-Wort abgeleitete Adresse** |
-| (dazu `rs_fixit`) | `:816-819` | `fix_objects()` laeuft ueber `rs_hdr` und schreibt jedes `ob_spec` |
-
-## Die zwei benannten Moeglichkeiten, mit Kosten
-
-Beide setzen voraus, dass die LP64-Ablage vorher entschieden ist (siehe unten).
-
-### (A) Schreiben **und** ruecklesen — EmuTOS 1:1
-
-`rsrc_load` belegt die drei Felder; `rsrc_free`/`rsrc_gaddr`/`rsrc_saddr` holen
-den Deskriptor wie `rs_sglobe` aus dem uebergebenen `pglobal` zurueck.
-
-* **Gewinn:** exakte Angleichung. Und — zwei offene Befunde faellt es als
-  Nebenprodukt: **B9** (ein einziger `static RSC` fuer alle Klienten; mit
-  Rueckleseweg haelt jede Anwendung ihren eigenen Deskriptor, ein zweiter
-  `rsrc_load` verdraengt den ersten nicht mehr) und die `MAX_TREES = 64`-Kappe
-  aus B12 (der Baumindex des Blobs waere dann massgeblich, nicht die
-  Kernel-Tabelle).
-* **Kosten:** der Kernel folgt bei jedem `rsrc_gaddr`/`rsrc_saddr`/`rsrc_free`
-  einem Zeiger aus einem Anwendungswort — einschliesslich `Mfree` darauf und
-  eines **Schreibzugriffs** hindurch (`rs_saddr`). EmuTOS hatte keinen
-  Speicherschutz; wir haben einen, und der EL0/EL1-Schnitt ist das eine, was
-  NewTOS ausdruecklich besser macht. Eine Pruefung („liegt der Zeiger im
-  RSC-Fenster des aufrufenden Prozesses?") waere selbst eine Abweichung — EmuTOS
-  prueft nichts — aber ohne sie ist es ein Loch, das eine fehlerhafte Anwendung
-  in einen Kernel-Schreibzugriff verwandelt.
-* **Aufwand:** mittel. `get_addr` muesste seinen Deskriptor je Aufruf aus dem
-  `pglobal` rekonstruieren statt aus `RSC`; die Zugriffs-/Ziel-Adresstrennung
-  (Kernelalias gegen User-VA) muesste daran mitwandern.
-
-### (B) Schreiben, aber die Kernel-Statics bleiben die Wahrheit
-
-`rsrc_load` belegt die drei Felder als **Bericht an die Anwendung**;
-`rsrc_free`/`rsrc_gaddr`/`rsrc_saddr` arbeiten weiter mit `RSC`.
-
-* **Gewinn:** der belegte Fehlerfall aus A35 ist weg (TeraDesk liest die Felder,
-  `icon.c:2692,2707-2708`). Kein Kernel-Zugriff auf ein Anwendungswort.
-* **Kosten:** beobachtbare Abweichung, sobald eine Anwendung das Feld
-  **setzt** und danach den AES fragt. Genau das tut TeraDesks eigener Lader
-  (`rsc_load.c:417-423`: `*rscfile = _rs_trindex; *rscmem = buf;`) — er ruft
-  danach allerdings seinen eigenen `xrsrc_gaddr` (`:504-508`), also faellt es
-  bei TeraDesk nicht auf. Eine Anwendung, die `_AESrscmem` setzt und den
-  **AES**-`rsrc_gaddr` ruft, bekommt bei EmuTOS ihre Ressource und bei uns die
-  zuletzt geladene.
-* **Kosten:** B9 und die `MAX_TREES`-Kappe bleiben unveraendert offen.
-* **Aufwand:** klein — drei Schreibvorgaenge in `rsrc_load`, ein Nullen in
-  `rsrc_free`.
-
-### (C) Die Vorbedingung fuer beide: die LP64-`AESGLOBAL`-Ablage
-
-Ohne Entscheidung ist weder (A) noch (B) ausfuehrbar. Der Weg, der zur
-Projektlinie passt („Port: den Werkzeugkasten reparieren, nicht die
-Anwendung"), ist `sdk/gemlib/gemlib-0.44.0/gem.h` + `AES_GLOBMAX` fuer LP64 zu
-retargeten, sodass jedes Feld seinen eigenen 8-Byte-Platz bekommt, und die
-Kernelseite (`AesGlobalVals::write_lp64`) auf dieselbe Ablage zu legen.
-
-* **Kosten:** alle portierten Programme neu bauen (QED, TeraDesk); die
-  Referenztabelle des AES-Dumpers fuer `global[]` verschiebt sich; die m68k-/
-  ILP32-Ablage bleibt die alte, der Schreiber braucht also beide — die Form
-  dafuer steht schon (`write_lp64` / `write_ilp32`).
-* **Beruehrt** ausserdem `ap_3resv`, das heute als 4-Byte-Feld an Byte 22
-  abgeschnitten wird, und `ap_private`, dessen 8-Byte-Lage an Byte 6 der Grund
-  fuer die erste Ueberlappung ist.
-
-Meine Empfehlung, ohne sie zu treffen: **(C), dann (B)**. (A) erst, wenn der
-Speicherschutz die Rueckleseadresse pruefen darf — das ist eine eigene
-Entscheidung und beruehrt ADR-021 (`usermem`) und das FreeMiNT-Schutzmodell.
-
-## Artefakte
-
-`tos-api/tests/aes_rsrc_global_fields.rs` (neu): baut ein FAT16-Abbild im
-Hostspeicher mit `C:\TEST.RSC` und faehrt `rsrc_load` durch den echten
-AES-Dispatcher.
-
-* drei Tests fuer das Soll (`ap_rscmem`, `ap_rsclen`, `ap_ptree`) — **rot**,
-  mit `#[ignore]` und der Blockadebegruendung im Attributtext abgelegt, damit
-  die Suite nicht rot ist und der Grund nicht verlorengeht (`CLAUDE.md`:
-  „Never commit failing tests without `#[ignore]` + reason");
-* ein **laufender** Test `rsrc_load_leaves_the_three_fields_zero_today`, der den
-  heutigen Zustand festhaelt, damit niemand ihn versehentlich halb aendert;
-* die Ueberlappungstabelle steht im Modulkopf der Testdatei und im Modulkopf
-  von `tos-api/src/aes/resource.rs`.
-
-`docs/api/aes/resource-fileselector.md`: der `rsrc_load (110)`-Abschnitt nennt
-die Luecke jetzt ausdruecklich als **Not yet done (A35)** mit dem Grund, statt
-das Soll unkommentiert stehen zu lassen.
+Die Frage aus der ersten Fassung — ob `rs_free`/`rs_gaddr`/`rs_saddr` die Werte
+wie EmuTOS' `rs_sglobe` (`gemrslib.c:675-679`) **zurueck**lesen sollen — bleibt
+davon unberuehrt offen. Sie war ausdruecklich nicht Teil dieses Auftrags.
 
 ## Belege
 
-* Suite `cargo run -p xtask -- test`: **499 gruen / 0 rot / 4 ignoriert**
-  (3 der Ignorierten sind die A35-Blocker, der vierte ist der bestehende
-  Doctest).
-* Beide Boards bauen (Zahlen in `TASK/A36-STATUS-DONE.MD`).
-* Nichts an `tos-api/src/aes/resource.rs`s `rsrc_load` und nichts an
-  `tos-api/src/aes/appl.rs` wurde fuer A35 veraendert.
-
-## Offen — die Entscheidung des Anwenders
-
-1. **(C):** wird die LP64-`AESGLOBAL`-Ablage festgelegt (gemlib retargeten)?
-2. Danach **(A) gegen (B)**.
-3. Erst danach sind die drei `#[ignore]` aufloesbar.
+* `cargo run -p xtask -- test`: **504 gruen / 0 rot / 4 ignoriert** (drei davon
+  die A35-Tests, der vierte der bestehende Doctest).
+* Beide Boards `--release` frisch gebaut, Warnungs- und Clippy-Delta 0.
+* `measurement-2026-09-13-aesglobal/` — QED und TeraDesk bytegleich, Gegenmessung
+  `aes-m05-addrin` unveraendert.
