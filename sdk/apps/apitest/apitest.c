@@ -349,17 +349,21 @@ static short aes_call(short opcode, short nin, short nout, short naddrin)
 }
 
 /*
- * ap_private out of the AESGLOBAL. gemlib's index macro is
- * `*(long *)&aes_global[3]` with no __LP64__ conditional, so for an LP64
- * caller the field is the EIGHT bytes at byte offset 6 -- read byte-wise
- * because that offset is not 8-aligned.
+ * ap_private out of the AESGLOBAL: the m68k LONG, FOUR bytes at byte offset
+ * 6 (aes/gemrslib.h:15-27). The AESGLOBAL keeps the TOS field widths on
+ * every ABI -- it is addressed by WORD index as well as by byte offset, and
+ * only the m68k widths satisfy both (docs/api/aes/application.md
+ * #AESGLOBAL, decision of 2026-09-13). NewTOS's gemlib overlay reads
+ * `_AESappglobal` the same way; the pristine header's 8-byte read would
+ * drag in ap_ptree's four bytes. Read byte-wise because byte 6 is only
+ * WORD-aligned.
  */
 static unsigned long ap_private_of_global(void)
 {
 	const unsigned char *g = (const unsigned char *)aes_global;
 	unsigned long v = 0;
 	int i;
-	for (i = 7; i >= 0; i--)
+	for (i = 3; i >= 0; i--)
 		v = (v << 8) | (unsigned long)g[6 + i];
 	return v;
 }
