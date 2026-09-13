@@ -885,21 +885,20 @@ pub const GLOBAL_EXCLUDED: [usize; 3] = [2, 11, 12];
 /// (`gemrslib.h:19`) is a `LONG`, and a `LONG` occupies its two WORD slots in
 /// the machine's byte order. The m68k reference holds it high-word-first at
 /// `global[3..4]`; a little-endian AArch64 caller holds the same *value*
-/// low-word-first, and under LP64 it is eight bytes at byte 6 rather than
-/// four, because gemlib's `*(long*)&aes_global[3]` (`gem.h:30`) carries no
-/// pointer-size conditional. Comparing those two slots word-for-word would
-/// therefore report a difference for a value that is identical. So the WORD
-/// fields are compared as WORDs and `ap_private` is compared as the LONG it
-/// is — the reference's big-endian 32 bits against the caller-width field
-/// this ABI actually reads.
+/// low-word-first. Comparing those two slots word-for-word would therefore
+/// report a difference for a value that is identical. So the WORD fields are
+/// compared as WORDs and `ap_private` is compared as the LONG it is — the
+/// reference's big-endian 32 bits against **four** bytes at byte 6 here.
+/// Four on every ABI: `AESGLOBAL` keeps the m68k field widths, because it is
+/// addressed by byte offset and by WORD index at once (decision of
+/// 2026-09-13, `tos-api/src/aes/appl.rs` module ABI note), and NewTOS's
+/// gemlib overlay narrows `_AESappglobal` (`gem.h:30`) to match.
 ///
 /// The words that carry no `appl_init` output — `ap_ptree` (5–6),
-/// `ap_rscmem` (7–8), `ap_rsclen` (9), `ap_4resv` (13–14) — **are** compared:
-/// EmuTOS's `APPL_INIT` arm does not name them (`gemsuper.c:92-98`), both
-/// arrays start zeroed, so a difference there means somebody wrote where
-/// EmuTOS does not. Under LP64 words 5 and 6 are the high half of the
-/// eight-byte `ap_private`, which is zero for the ≤32-bit `gr_crack` box word
-/// `ap_private` holds, so the same comparison still stands.
+/// `ap_rscmem` (7–8), `ap_rsclen` (9), `ap_4resv` (13–14) — **are** compared,
+/// word for word and independently of `ap_private`: EmuTOS's `APPL_INIT` arm
+/// does not name them (`gemsuper.c:92-98`), both arrays start zeroed, so a
+/// difference there means somebody wrote where EmuTOS does not.
 fn cmp_global(out: &mut Vec<Diff>, got: &[i16; GLOBAL_N], rec: &[u8], ap_id: i16) {
     // The excluded fields, checked by the property that does not depend on
     // the machine (see [`GLOBAL_EXCLUDED`]).
@@ -917,12 +916,12 @@ fn cmp_global(out: &mut Vec<Diff>, got: &[i16; GLOBAL_N], rec: &[u8], ap_id: i16
     );
 
     // ap_private as a value: the reference's big-endian m68k LONG at words
-    // 3–4 against the caller-width LONG at byte 6.
+    // 3–4 against the four-byte LONG at byte 6.
     let want = ((be16(rec, OFF_GLOBAL + 3 * 2) as u16 as u32) << 16)
         | be16(rec, OFF_GLOBAL + 4 * 2) as u16 as u32;
-    // SAFETY: `got` is 15 WORDs = 30 bytes; byte 6 + 8 = 14 is inside it. The
+    // SAFETY: `got` is 15 WORDs = 30 bytes; byte 6 + 4 = 10 is inside it. The
     // slot is only 2-byte aligned, hence the unaligned read.
-    let mine = unsafe { (got.as_ptr() as *const u8).add(6).cast::<u64>().read_unaligned() };
+    let mine = unsafe { (got.as_ptr() as *const u8).add(6).cast::<u32>().read_unaligned() };
     push_diff(out, "ap_private", 0, mine as i64, want as i64, 8);
 
     for (i, &g) in got.iter().enumerate() {

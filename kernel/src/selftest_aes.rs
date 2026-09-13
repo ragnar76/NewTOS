@@ -108,18 +108,22 @@ pub fn run_phase13_aes_test() {
     aes(pb);
     let ap_id = intout[0];
     check(ap_id >= 1, "appl_init returns an application id");
-    // AESGLOBAL, LP64 widths (this is an in-kernel / EL1 caller → Abi::Lp64).
-    // The six fields EmuTOS's APPL_INIT arm writes (`gemsuper.c:92-98`):
-    // ap_version @ index 0, ap_count @ 1, ap_id @ 2, ap_private (LONG @ byte
-    // 6 → indices 3..6 at LP64), ap_planes @ index 10 (byte 20), ap_3resv
-    // (4 bytes @ byte 22 → indices 11..12). See the tos-api aes::appl ABI note.
+    // AESGLOBAL. It keeps the m68k field widths on **every** ABI — it is
+    // addressed by byte offset *and* by WORD index at once (`aesdefs.h:147-157`
+    // vs `gemrslib.h:15-27`), and only the TOS widths satisfy both (decision of
+    // 2026-09-13, see the tos-api `aes::appl` module ABI note). The six fields
+    // EmuTOS's APPL_INIT arm writes (`gemsuper.c:92-98`): ap_version @ index 0,
+    // ap_count @ 1, ap_id @ 2, ap_private (LONG, **4 bytes** @ byte 6 → words
+    // 3..4), ap_planes @ index 10 (byte 20), ap_3resv (4 bytes @ byte 22 →
+    // words 11..12).
     check(global[0] == 0x0340, "AESGLOBAL ap_version = 0x0340");
     check(global[1] == 1, "AESGLOBAL ap_count = 1");
     check(global[2] == ap_id, "AESGLOBAL ap_id = returned id");
     // ap_private = the registered desktop-background ROOT ob_spec.
-    // SAFETY: the LP64 `ap_private` LONG is the 8 bytes at &global[3]
-    // (byte 6), read here unaligned; well inside the 32-word buffer.
-    let ap_private = unsafe { (global.as_ptr().add(3) as *const u64).read_unaligned() };
+    // SAFETY: `ap_private` is the m68k LONG — four bytes at byte 6, i.e. only
+    // WORD-aligned, hence the unaligned read; well inside the 32-word buffer.
+    let ap_private =
+        unsafe { (global.as_ptr() as *const u8).add(6).cast::<u32>().read_unaligned() } as u64;
     check(
         ap_private == TEST_BG_OBSPEC,
         "AESGLOBAL ap_private = registered WF_NEWDESK ROOT ob_spec (0x1143)",
@@ -131,13 +135,16 @@ pub fn run_phase13_aes_test() {
     let ap_3resv = unsafe { (global.as_ptr().add(11) as *const u32).read_unaligned() };
     check(ap_3resv != 0, "AESGLOBAL ap_3resv (byte 22) = AES table addr, non-zero");
     // The fields EmuTOS's APPL_INIT arm does NOT name must survive untouched
-    // (D-R1-4): ap_rscmem/ap_rsclen (bytes 14..19 → indices 7..9) and
-    // ap_4resv (bytes 26..29 → indices 13..14). `ap_ptree`'s ILP32 slot
-    // (indices 5..6) is not listed: at LP64 those two words are the high half
-    // of the 8-byte `ap_private` gemlib's `*(long*)&aes_global[3]` reads.
+    // (D-R1-4): ap_ptree (bytes 10..13 → words 5..6), ap_rscmem/ap_rsclen
+    // (bytes 14..19 → words 7..9) and ap_4resv (bytes 26..29 → words 13..14).
+    // `ap_ptree` belongs in this check because `ap_private` stops after four
+    // bytes on every ABI: words 5..6 are the resource field `rs_load`/`rs_free`
+    // own (`gemrslib.c:597,787-788`), not the high half of a widened
+    // `ap_private`. The host test asserts the same slots
+    // (`tos-api/tests/aes_appl_init.rs`, indices 5..9 / 13..14).
     check(
-        (7..10).all(|i| global[i] == GLOBAL_POISON),
-        "AESGLOBAL ap_rscmem/ap_rsclen untouched (indices 7..9)",
+        (5..10).all(|i| global[i] == GLOBAL_POISON),
+        "AESGLOBAL ap_ptree/ap_rscmem/ap_rsclen untouched (indices 5..9)",
     );
     check(
         global[13] == GLOBAL_POISON && global[14] == GLOBAL_POISON,
