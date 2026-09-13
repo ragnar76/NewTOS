@@ -59,3 +59,8 @@ sd-card-backup-*/
 measurement-*/qemu-tmp/
 measurement-*/*.img
 measurement-*/*.elf
+
+# Mega-ST-style Pi 4 enclosure (STLs, build.py, version zips). Hardware for
+# running NewTOS, not NewTOS — same reasoning as the ball demo: this repo is
+# the operating system.
+/hardware/
