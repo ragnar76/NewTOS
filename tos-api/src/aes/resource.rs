@@ -60,23 +60,42 @@
 //! `rs_free`/`rs_gaddr`/`rs_saddr`. NewTOS holds the descriptor in [`RSC`]
 //! and writes none of the three. The `AESGLOBAL` layout that used to block
 //! this is settled (2026-09-13: the TOS widths, `tos-api/src/aes/appl.rs`),
-//! but two questions the layout does not answer are still open:
+//! so **one** question the layout does not answer is still open:
 //!
-//! 1. **`ap_ptree` has no array to point at.** EmuTOS publishes the
-//!    *relocated* `OBJECT *[]` tree index inside the blob (`fix_trindex`,
-//!    `:595-597`). NewTOS's NRSC tree index is `[u32]` of root OBJECT
-//!    **indices** (`tools/mkrsc.py:417`), not addresses, and four bytes wide
-//!    in both ABI variants — while a caller's `_AESrscfile[i]` is a native
-//!    8-byte `OBJECT *` on LP64. Publishing `base + off_trindex` would hand
-//!    an application an index array typed as a pointer array. A faithful
-//!    `ap_ptree` needs a materialised caller-width pointer array, which is a
-//!    format/ownership decision, not a field write.
-//! 2. **The kernel path has no 32-bit address to report.** `ap_ptree` and
-//!    `ap_rscmem` are 4-byte TOS fields. For an EL0 caller that is exact —
-//!    the blob is mapped in the process window below `USER_TPA_MAX_VA`
-//!    (32 MiB). For the in-kernel (EL1) path the blob is [`RSC_BUF`], a
-//!    kernel high-half static; its low 32 bits are not an address anything
-//!    can use.
+//! * **`ap_ptree` has no array to point at.** EmuTOS publishes the
+//!   *relocated* `OBJECT *[]` tree index inside the blob (`fix_trindex`,
+//!   `:595-597`). NewTOS's NRSC tree index is `[u32]` of root OBJECT
+//!   **indices** (`tools/mkrsc.py:417`), not addresses, and four bytes wide
+//!   in both ABI variants — while a caller's `_AESrscfile[i]` is a native
+//!   8-byte `OBJECT *` on LP64. Publishing `base + off_trindex` would hand
+//!   an application an index array typed as a pointer array. A faithful
+//!   `ap_ptree` needs a materialised caller-width pointer array, which is a
+//!   format/ownership decision, not a field write.
+//!
+//! A second reason stood here as an equal blocker until 2026-09-13: that the
+//! 4-byte `ap_ptree`/`ap_rscmem` cannot carry the in-kernel (EL1) blob
+//! address, because that path loads into [`RSC_BUF`], a kernel high-half
+//! static. It was **never measured**, and the measurement says it binds no
+//! case on a running system: there is no EL1 caller of `rsrc_load`. Opcode 110
+//! is reachable only through the `svc #2` dispatcher, and of the four EL1
+//! emitters only `kernel/src/selftest_objc.rs` issues rsrc opcodes at all —
+//! its two functions that issue 110 have no caller, and `run_rsrc`, reachable
+//! only from the callerless `aes_demo::showcase`, registers its blob through
+//! `relocate_and_register` and never issues 110. Traced in QEMU `raspi4b`
+//! (`--features aes-trace`): the built-in desktop makes 28 AES calls, all with
+//! `slot = 0xFF`, none of them rsrc; TeraDesk makes 188, all EL0, 68 of them
+//! rsrc, every blob address inside the process window below `USER_TPA_MAX_VA`
+//! (32 MiB) and so exact in four bytes. **The one caller that does drive the
+//! EL1 load path is the host test harness** `tests/aes_rsrc_global_fields.rs`,
+//! which is not a running system.
+//!
+//! EmuTOS's own desktop is the counter-case — `load_icon_file`
+//! (`desk/deskapp.c:554`) calls `rsrc_load` and reads `AP_1RESV` back (`:571`)
+//! — but NewTOS's `desk/` is not getting that path: ADR-022 is rescinded,
+//! TeraDesk is the desktop. So the EL1 address question is recorded as a
+//! **conditional** constraint (`docs/api/aes/resource-fileselector.md`
+//! §`rsrc_load`, `docs/STATUS.md` §Blocked), not as a blocker: it binds only
+//! if an EL1 caller is ever made to load a resource itself.
 //!
 //! The red tests stand in `tests/aes_rsrc_global_fields.rs`.
 

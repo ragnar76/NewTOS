@@ -95,12 +95,12 @@ use super::Aespb;
 const AES_VERSION: i16 = 0x0340;
 
 /// The six fields `appl_init` reports back through the caller's `AESGLOBAL`
-/// (`aes/gemsuper.c:92-98`), held ABI-independently. [`Self::write`] lays
-/// them into the caller's array at the caller's pointer width: LP64 widens
-/// `ap_private` to 8 bytes ([`Self::write_lp64`]), ILP32 keeps it 4
-/// ([`Self::write_ilp32`]). The four fields EmuTOS's `APPL_INIT` arm does
-/// not name (`ap_ptree`, `ap_rscmem`, `ap_rsclen`, `ap_4resv`) have no
-/// representation here — they are not written, so there is nothing to hold.
+/// (`aes/gemsuper.c:92-98`), held ABI-independently. [`Self::write`] lays them
+/// into the caller's array at the **m68k** field widths, the same on every ABI
+/// (see the module ABI note) — which is why there is one `write` and not a
+/// per-ABI pair. The four fields EmuTOS's `APPL_INIT` arm does not name
+/// (`ap_ptree`, `ap_rscmem`, `ap_rsclen`, `ap_4resv`) have no representation
+/// here — they are not written, so there is nothing to hold.
 struct AesGlobalVals {
     ap_version: i16,
     ap_count: i16,

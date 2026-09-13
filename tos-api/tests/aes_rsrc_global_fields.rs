@@ -34,24 +34,41 @@
 //! `sdk/gemlib/overlay/{gem.h,mt_gem.h.in}`. So every field now has its own
 //! bytes, and `ap_rsclen` is writable today.
 //!
-//! Two questions the layout does **not** answer keep the three together:
+//! **One** question the layout does not answer keeps the three together:
 //!
-//! 1. **`ap_ptree` has no array to point at.** EmuTOS publishes the
-//!    *relocated* `OBJECT *[]` tree index inside the blob (`fix_trindex`,
-//!    `gemrslib.c:595-597`). NewTOS's NRSC tree index is `[u32]` of root
-//!    OBJECT **indices** (`tools/mkrsc.py:417`), not addresses — and four
-//!    bytes wide in both ABI variants, while `_AESrscfile[i]` is a native
-//!    8-byte `OBJECT *` on LP64. Pointing `ap_ptree` at it would hand the
-//!    application an index array typed as a pointer array, which is worse
-//!    than the 0 it reads today. A faithful `ap_ptree` needs a materialised
-//!    caller-width pointer array somewhere the application can reach.
-//! 2. **The kernel path has no 32-bit address to report.** `ap_ptree` and
-//!    `ap_rscmem` are 4-byte TOS fields. An EL0 caller's blob is mapped in
-//!    the process window below `USER_TPA_MAX_VA` (32 MiB), so a user VA fits
-//!    exactly. These tests drive the in-kernel path, where the blob is
-//!    `RSC_BUF` — a kernel high-half static (measured on the host harness:
-//!    `0x1_0444_ff48`; on the target `0xFFFF_0000_0008_xxxx`). Its low 32
-//!    bits are not an address anything can use.
+//! * **`ap_ptree` has no array to point at.** EmuTOS publishes the
+//!   *relocated* `OBJECT *[]` tree index inside the blob (`fix_trindex`,
+//!   `gemrslib.c:595-597`). NewTOS's NRSC tree index is `[u32]` of root
+//!   OBJECT **indices** (`tools/mkrsc.py:417`), not addresses — and four
+//!   bytes wide in both ABI variants, while `_AESrscfile[i]` is a native
+//!   8-byte `OBJECT *` on LP64. Pointing `ap_ptree` at it would hand the
+//!   application an index array typed as a pointer array, which is worse
+//!   than the 0 it reads today. A faithful `ap_ptree` needs a materialised
+//!   caller-width pointer array somewhere the application can reach.
+//!
+//! A second, **unmeasured** reason stood beside it until 2026-09-13: that the
+//! 4-byte `ap_ptree`/`ap_rscmem` have no in-kernel address to carry, because
+//! the EL1 path loads into `RSC_BUF`, a kernel high-half static. The
+//! measurement retired it as a blocker: **no EL1 caller of `rsrc_load` exists**
+//! on a running system (opcode 110 is reachable only through the `svc #2`
+//! dispatcher; the EL1 emitters that could issue it have no callers), and a
+//! `--features aes-trace` run on QEMU `raspi4b` shows the built-in desktop
+//! making 28 AES calls with no rsrc opcode among them, while TeraDesk's 68
+//! rsrc calls are all EL0, inside the process window below `USER_TPA_MAX_VA`
+//! (32 MiB) and therefore exact in four bytes. **These tests are the one
+//! caller that does drive the EL1 path** — which is why they, not the system,
+//! are where that constraint would first be felt.
+//!
+//! No address is quoted here on purpose. `RSC_BUF` moves with every link — the
+//! earlier text named `0xFFFF_0000_0008_xxxx` for the target, and a `nm` on the
+//! `board-rpi4` release of 2026-09-13 put it at `0xffff_0000_0015_b300` — so a
+//! number in this comment is stale by the next build and was never the point:
+//! what matters is the half of the address space, and that no caller is there.
+//! The full record, with the counter-case (EmuTOS's own desktop *does* call
+//! `rsrc_load`, `desk/deskapp.c:554,571`) and why NewTOS's `desk/` is not
+//! getting that path (ADR-022 rescinded), is in
+//! `docs/api/aes/resource-fileselector.md` §`rsrc_load` and `docs/STATUS.md`
+//! §Blocked.
 //!
 //! Writing two of the three and leaving `ap_rscmem` at 0 is not an option
 //! either: EmuTOS reads `ap_rscmem == NULL` as "nothing loaded"
@@ -312,8 +329,8 @@ fn g_rsclen(global: &[i16; 16]) -> u16 {
 /// resource was loaded at. `rsrc_gaddr(R_TEDINFO, 0)` names a record inside
 /// that same blob, so the blob base must be at or below it.
 #[test]
-#[ignore = "blocked: the in-kernel path has no 32-bit address for the \
-            4-byte ap_rscmem field — see the module comment (A35)"]
+#[ignore = "blocked: lands together with ap_ptree, the one open question — \
+            see the module comment (A35)"]
 fn rsrc_load_reports_ap_rscmem() {
     let _g = fs();
     let (ret, global) = rsrc_load_with_global("C:\\TEST.RSC");
@@ -333,7 +350,8 @@ fn rsrc_load_reports_ap_rscmem() {
 /// EmuTOS `gemrslib.c:788` — `rs_global->ap_rsclen = rslsize`, the byte length
 /// the header declares.
 #[test]
-#[ignore = "blocked: lands together with ap_ptree/ap_rscmem — see the module comment (A35)"]
+#[ignore = "blocked: lands together with ap_ptree/ap_rscmem, and ap_rsclen \
+            alone would state something untrue — see the module comment (A35)"]
 fn rsrc_load_reports_ap_rsclen() {
     let _g = fs();
     let (ret, global) = rsrc_load_with_global("C:\\TEST.RSC");
