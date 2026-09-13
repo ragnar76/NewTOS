@@ -45,3 +45,17 @@ sd-card-backup-*/
 
 # Python bytecode from tools/
 **/__pycache__/
+
+# Agent worktrees (git worktrees created per subagent job; hundreds of MB and
+# regenerable — the work itself lands on the branch, not here).
+/.claude/worktrees/
+
+# Measurement scratch. The EVIDENCE of a dumper run — the .BIN/.LOG dumps, the
+# tosdiff output and the screendumps — IS tracked, deliberately: a measurement
+# that nobody can re-read later is not evidence. What is excluded is the
+# regenerable bulk around it: the per-run SD images (64 MB each; rebuild with
+# tools/make-sd-image.sh plus the per-case staging) and the kernel binaries
+# (rebuild with `cargo xtask build --release`; their sha256 is in the report).
+measurement-*/qemu-tmp/
+measurement-*/*.img
+measurement-*/*.elf
