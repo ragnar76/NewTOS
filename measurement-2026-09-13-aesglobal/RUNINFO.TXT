@@ -72,3 +72,20 @@ RESULT 3 -- aes-m05-addrin, 5 cases, against EmuTOS 1.4 on a TT (Hatari)
 WHAT THIS RUN DOES NOT COVER
   Interactive use (clicking, typing, menus) -- QEMU raspi4b gives input or
   C: storage, not both; that is real-Pi-4 work.
+
+RESULT 4 -- APITEST.NCP from C:\AUTO\, QEMU raspi4b
+  The diagnostic keeps its own AESPB and its own aes_global[16] (it does not
+  link gemlib), so it reads the AESGLOBAL from EL0 through neither the kernel
+  nor the overlay -- an independent third reader.
+    T28   ap_id = 1  ap_private = 0x1143  [OK]
+    GROUP      PASS  FAIL  SKIP
+    GEMDOS     3     0     0
+    BIOS-CHR   25    0     5
+    BIOS-BLK   29    0     0
+    BIOS-SYS   21    0     0
+    AES        4     0     0
+    TOTAL      82    0     5
+  82/0/5 is the same figure as the 2026-09-05 reference run.  The five skips
+  are the interactive Bconin(2) checks, which raspi4b cannot drive.
+  (apitest.c's own reader was narrowed to four bytes in the same work unit,
+  commit 3000350 -- it was a hand-rolled copy of the pristine 8-byte macro.)
