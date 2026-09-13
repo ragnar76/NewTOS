@@ -1,0 +1,6 @@
+AES.BIN vs AES.BIN -- area AES, 5 cases from aes-m05-addrin.tsv
+
+case 102  opcode 104  wind_get WF_NAME into buffer 0
+    int_out[0]             AES.BIN = 0x0001 (1)   AES.BIN = 0x0000 (0)
+
+1 of 5 cases differ

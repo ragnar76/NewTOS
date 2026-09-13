@@ -1,0 +1,66 @@
+A42 -- Gegenmessung zur Reparatur von wind_get(WF_NAME)/wind_get(WF_INFO)
+=========================================================================
+
+Datum      : 2026-09-13
+Ticket     : TASK/A42.md, Quittung TASK/A42-STATUS-DONE.MD
+Aenderung  : tos-api/src/aes/window.rs -- der WF_NAME|WF_INFO-Zweig in
+             wind_get ist entfallen; beide Felder fallen jetzt in den
+             Default-Arm (ret 0, nichts geschrieben), wie EmuTOS' wm_get
+             (aes/gemwmlib.c:1591-1592).
+
+FALLTABELLE
+-----------
+tosdump/cases/aes-m05-addrin.tsv, CRC 215A9E48, 5 Faelle.
+Fall 102 (physische Zeilennummer) = "wind_get WF_NAME into buffer 0",
+mit den Preluden 99/100/101 (wind_create, wind_open, wind_set WF_NAME
+= Puffer 1 "HIJKLMNO"). Fall 109 ist derselbe Aufruf ohne gesetzten Titel.
+
+REFERENZ (EmuTOS-Seite, schon vorhanden, nicht neu erhoben)
+-----------------------------------------------------------
+measurement-2026-09-12-m05-addrin/emutos14-tt-hatari/EMUTOS14-AES-m05.BIN
+(EmuTOS 1.4 als TT unter Hatari, bitgleich gegen zwei echte TT-Dumps
+validiert -- siehe TASK/M05-STATUS-DONE.MD).
+
+VORHER-LAUF (NewTOS, ohne den Fix)
+----------------------------------
+measurement-2026-09-13-regression/aes-m05-addrin/AES.BIN (2026-09-13 14:42)
+
+NACHHER-LAUF (NewTOS, mit dem Fix) -- dieser hier
+--------------------------------------------------
+Maschine   : QEMU raspi4b, headless (-display none), 640x480 (TT-Profil),
+             ohne physische Karte; SD-Abbild aus
+             measurement-2026-09-13-regression/qemu-tmp/sd-base.img,
+             DUMPAES.NAP + AES.TSV nachkopiert, NEWDESK.INF mit
+             "#Z 01 C:\DUMPAES.NAP@" (method/prep-image.sh der
+             Regressionsmessung, unveraendert benutzt).
+Kernel     : cargo xtask build --board rpi4 --release
+             target/aarch64-unknown-none-softfloat/release/kernel
+             sha256 43dbbb2b04751d06735f07e8709807c289261adb84561b0430f942d68e7b60b3
+             kernel8.img
+             sha256 b0d31ad862e22d5d87796854e9f237e37019550d3c47c02482a521956f017ce6
+Dumper     : tosdump/build/DUMPAES.NAP
+             sha256 1b84a0cbd97469b2a8b7ae5d45055fe3785c3d93397898ebc404b5aa65e200cf
+             (unveraendert gegenueber dem Vorher-Lauf -- die Anwendung ist
+             von der Reparatur nicht betroffen)
+Lauf       : method/boot.sh, 75 s, danach method/extract-image.sh aes
+
+ERGEBNIS
+--------
+aes-m05-addrin/DIFF-vs-emutos.txt        : 5 von 5 Faellen weichen ab,
+                                           ausschliesslich in den sechs
+                                           bekannten AESGLOBAL-Rauschfeldern
+                                           (global[2],[3],[4],[10],[11],[12]).
+aes-m05-addrin/CLASSIFY-vs-emutos.txt    : "case-blocks with a NON-noise
+                                           field: 0" (vorher: 1, Fall 102,
+                                           int_out[0] 0 gegen 1).
+aes-m05-addrin/DIFF-vs-prefix-newtos.txt : genau ein Wort hat sich gegenueber
+                                           dem Vorher-Lauf geaendert --
+                                           Fall 102, int_out[0] 1 -> 0.
+                                           Kein anderer Fall bewegt sich.
+
+WAS DIESE MESSUNG NICHT ZEIGT
+-----------------------------
+Der 120-Byte-AES-Datensatz hat keinen Platz fuer den INHALT des Puffers
+(so steht es im Kopf der Falltabelle). Dass der Puffer unberuehrt bleibt --
+die eigentlich wichtige Haelfte -- belegt der Hosttest
+tos-api/tests/aes_window_name_get.rs byteweise, nicht dieser Lauf.

@@ -123,8 +123,8 @@ Gadget **groups** used by the frame builder and `wind_calc` (`gemwmlib.h:16-18`)
 | # | Name | Meaning | # | Name | Meaning |
 |--:|------|---------|--:|------|---------|
 | 1 | `WF_KIND` | kind bitmask † | 11 | `WF_FIRSTXYWH` | first visible rect (list head) |
-| 2 | `WF_NAME` | title string ptr | 12 | `WF_NEXTXYWH` | next visible rect |
-| 3 | `WF_INFO` | info string ptr | 14 | `WF_NEWDESK` | desktop background tree ‡ |
+| 2 | `WF_NAME` | title string ptr ‖ | 12 | `WF_NEXTXYWH` | next visible rect |
+| 3 | `WF_INFO` | info string ptr ‖ | 14 | `WF_NEWDESK` | desktop background tree ‡ |
 | 4 | `WF_WXYWH` (WORKXYWH) | work-area rect | 15 | `WF_HSLSIZ` | h-slider size 1..1000 / −1 |
 | 5 | `WF_CXYWH` (CURRXYWH) | current (border) rect | 16 | `WF_VSLSIZ` | v-slider size 1..1000 / −1 |
 | 6 | `WF_PXYWH` (PREVXYWH) | previous rect | 17 | `WF_SCREEN` | menu/alert buffer addr+len |
@@ -137,6 +137,14 @@ Gadget **groups** used by the frame builder and `wind_calc` (`gemwmlib.h:16-18`)
   falls into `default: return FALSE`. See "Fields with no handler" below.
 - ‡ `WF_NEWDESK` (14) is **`wind_set`-only** (sets the desktop-background object
   tree `gl_newdesk`/`gl_newroot`); `wm_get` has no case for it → `FALSE`.
+- ‖ `WF_NAME` (2) and `WF_INFO` (3) are **`wind_set`-only** as well
+  (`gemwmlib.c:1660`, `:1668`). `wm_get` has no case for either, so both fall
+  into `default: return FALSE` (`:1591-1592`) and the caller's string buffer is
+  **never written** — the AES stores a title, it does not hand one back. Note
+  that gemlib *declares* the read (`a_wind_get.c:344` packs a `char*` into
+  `int_in[2..]`): the binding is not the authority, the AES is. Measured on
+  EmuTOS 1.4: `tosdump/cases/aes-m05-addrin.tsv` case 102 → `int_out[0] = 0` on
+  a window with a title (TASK/A42).
 - § `WF_COLOR` (18) / `WF_DCOLOR` (19) exist only with
   `CONF_WITH_WINDOW_COLOURS` (default **1**). `wind_set` uses a **3-word
   `int_in`** (gadget#, topped-colour, untopped-colour) — the one `wind_set`
@@ -966,6 +974,13 @@ they return their value (or 1) unconditionally.
 kind is set only at `wind_create` and cannot be queried/changed here (both fall
 to `default: return FALSE`). Compendium documents `WF_KIND` for both; **this
 build does not support it** (discrepancy D-053).
+
+`wind_get` refuses three more fields the same way, and for the same reason —
+`wm_get` has no case for them: `WF_NAME` (2), `WF_INFO` (3) and `WF_NEWDESK`
+(14), all three of which exist on the `wind_set` side only
+(`gemwmlib.c:1660,1668,1685`). A refused field returns from `default:` before
+`poutwds` is touched, so nothing is written: not an `int_out` word, and not a
+byte of any buffer the caller passed (TASK/A42).
 
 ---
 

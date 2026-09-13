@@ -2246,34 +2246,22 @@ fn copy_cstr(dst: &mut [u8], src: *const u8) {
     }
 }
 
-/// Copy the NUL-terminated string in `src` (up to its terminator) out to the
-/// caller's `dst` buffer, including the terminating NUL. `src` is one of the
-/// window's own bounded name/info buffers (≤ `NAME_CAP - 1` chars + NUL), so
-/// the caller's buffer — which the WF_NAME/WF_INFO contract requires to be
-/// large enough — is never overrun by our stored length.
-fn copy_out_cstr(dst: *mut u8, src: &[u8]) {
-    let len = name_len(src);
-    // SAFETY: trusted GEM caller buffer, large enough per the WF_NAME/
-    // WF_INFO contract; we write `len + 1` bytes bounded by `NAME_CAP`.
-    unsafe {
-        for (i, &b) in src.iter().take(len).enumerate() {
-            *dst.add(i) = b;
-        }
-        *dst.add(len) = 0;
-    }
-}
-
-/// Resolve the `WF_NAME`/`WF_INFO` string/buffer pointer for both calling
-/// conventions used at our altitude (F7 ABI-width audit):
+/// Resolve a `wind_set` pointer argument — the `WF_NAME`/`WF_INFO` string and
+/// the `WF_NEWDESK` tree — for both calling conventions used at our altitude
+/// (F7 ABI-width audit):
 ///
 ///  * **Native** (the desktop's `desk::wind_set_ptr`, `selftest_objc`): the
 ///    pointer travels in `addr_in[0]` with `AIN_LEN == 1`.
-///  * **Classic AES** (gemlib `wind_set_str` / `wind_get`, both ILP32 and
-///    LP64): the pointer is packed at `&int_in[2]` with `AIN_LEN == 0`, at
-///    the caller's pointer width — 4 bytes ILP32, 8 bytes LP64.
+///  * **Classic AES** (gemlib `wind_set_str`, both ILP32 and LP64): the
+///    pointer is packed at `&int_in[2]` with `AIN_LEN == 0`, at the caller's
+///    pointer width — 4 bytes ILP32, 8 bytes LP64.
 ///
 /// `AIN_LEN` is the declared discriminator, so an LP64 desktop and an ILP32
 /// gemlib app (QED) both resolve to the right slot.
+///
+/// `wind_get` has no use for this: `wm_get` implements neither title field and
+/// refuses them from its `default:` arm without touching a caller buffer
+/// (`gemwmlib.c:1591-1592`, TASK/A42).
 fn wf_str_ptr(pb: &Aespb) -> u64 {
     if pb.ain_len() >= 1 {
         pb.addrin(0)
@@ -2744,33 +2732,26 @@ pub fn wind_get(pb: &Aespb) {
                 pb.set_ret(1);
                 return;
             }
-            // WF_NAME/WF_INFO get: copy the stored title/info out to the
-            // caller's buffer (pointer at `&int_in[2]`, caller width —
-            // gemlib `wind_get`, `a_wind_get.c:344`; the native `addr_in[0]`
-            // convention is honoured too via `wf_str_ptr`). Per the gemlib
-            // contract, an empty title returns FALSE and leaves the caller's
-            // buffer untouched.
-            WF_NAME | WF_INFO => {
-                let src = if field == WF_NAME { w.name } else { w.info };
-                if name_len(&src) == 0 {
-                    pb.set_ret(0);
-                    return;
-                }
-                let dst = wf_str_ptr(pb) as *mut u8;
-                if dst.is_null() {
-                    pb.set_ret(0);
-                    return;
-                }
-                copy_out_cstr(dst, &src);
-                pb.set_ret(1);
-                return;
-            }
-            // Any other field — including `WF_KIND` (1), which `wm_get` does
-            // **not** handle: it falls to `default: return FALSE` and writes
-            // nothing (`gemwmlib.c:1591`). We used to answer it (kind + TRUE);
-            // that was deliberate deviation D-053 / AUD-P5-014 and is now
-            // dropped, because outside the hardware layer NewTOS does not
-            // deviate from EmuTOS on purpose.
+            // Any other field — `WF_KIND` (1), `WF_NAME` (2) and `WF_INFO` (3)
+            // among them, none of which `wm_get` handles: they fall to
+            // `default: return FALSE` and write nothing, neither a `poutwds`
+            // word nor a byte of any buffer the caller passed
+            // (`gemwmlib.c:1591-1592`). The two title fields exist in `wm_set`
+            // only (`:1660`, `:1668`) — the AES stores a title, it does not
+            // hand one back.
+            //
+            // We used to answer all three. `WF_KIND` was deliberate deviation
+            // D-053 / AUD-P5-014; `WF_NAME`/`WF_INFO` copied the stored string
+            // out and returned TRUE because **gemlib declares the read**
+            // (`a_wind_get.c:344` packs a `char*` into `int_in[2..]`). That was
+            // the wrong authority: gemlib is the client-side binding, and a
+            // binding can declare a call the AES on the other side of the trap
+            // never implements. What a `wind_get` *does* is decided here, and
+            // on real TOS it is refused — measured on EmuTOS 1.4, case 102 of
+            // `tosdump/cases/aes-m05-addrin.tsv`: `int_out[0] = 0` on a window
+            // whose title the prelude had just set (TASK/A42). Both deviations
+            // are dropped; outside the hardware layer NewTOS does not deviate
+            // from EmuTOS on purpose.
             _ => {
                 pb.set_ret(0);
                 return;

@@ -1,0 +1,2 @@
+total case-blocks with any diff: 5
+case-blocks with a NON-noise field: 0

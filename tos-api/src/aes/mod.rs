@@ -178,7 +178,7 @@ impl Aespb {
         unsafe { self.abi.read_ptr(self.addrin, i) }
     }
     /// The declared `addrin` length, `control[AIN_LEN]`. Used by
-    /// `wind_set`/`wind_get` `WF_NAME`/`WF_INFO` to tell the native
+    /// `wind_set` `WF_NAME`/`WF_INFO`/`WF_NEWDESK` to tell the native
     /// convention (string pointer in `addr_in[0]`, `AIN_LEN >= 1`) from
     /// the classic-AES gemlib convention (pointer packed in the `int_in`
     /// WORDs, `AIN_LEN == 0`).
@@ -188,9 +188,9 @@ impl Aespb {
     }
     /// Read a caller-width pointer packed into the `int_in` WORD array
     /// starting at WORD index `word`. This is the classic AES convention
-    /// for the `wind_set`/`wind_get` `WF_NAME`/`WF_INFO` string/buffer
-    /// pointer: gemlib writes `*(char**)(aes_intin + word) = ptr`
-    /// (`a_wind_set_str.c:25`, `a_wind_get.c:344`), i.e. 4 pointer bytes at
+    /// for the `wind_set` `WF_NAME`/`WF_INFO` string pointer: gemlib writes
+    /// `*(char**)(aes_intin + word) = ptr`
+    /// (`a_wind_set_str.c:25`), i.e. 4 pointer bytes at
     /// ILP32 (`int_in[word..word+2]`) or 8 at LP64 (`int_in[word..word+4]`),
     /// stored at `&int_in[word]`. That address is only WORD-aligned, so the
     /// load must be unaligned.
