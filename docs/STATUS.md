@@ -296,6 +296,28 @@ Phasenbeginn entschieden sein (siehe `docs/api/_phase00-completion.md`):
   mit `#[ignore]` und Begruendung in `tos-api/tests/aes_rsrc_global_fields.rs`;
   Ticket `TASK/A35.md`, Quittung `TASK/A35-STATUS-UNFINISHED.MD`.
 
+- **A45: `appl_tplay` und `appl_trecord` sind ohne die AES-Forkqueue nicht
+  implementierbar (2026-09-13).** Beide sind heute Stubs im Sinne von
+  CLAUDE.md Regel 2 — hartkodierter Rueckgabewert, Argumente ignoriert. Regel 2
+  laesst dafuer genau zwei Wege, implementieren oder ehrlich abweisen und hier
+  eintragen; dies ist der zweite. **Die fehlende Abhaengigkeit ist die
+  Forkqueue**, nicht die Funktion selbst: EmuTOS zeichnet in `ap_trecd` gar
+  nicht auf, sondern setzt `gl_recd`/`gl_rlen`/`gl_rbuf`
+  (`aes/gemaplib.c:209-213`), und das Mitschreiben passiert in `forker()`
+  (`aes/gemdisp.c:123-146`); `ap_tplay` speist die Ereignisse ueber
+  `forkq`/`dsptch` zurueck und tauscht fuer `MCHNG` zusaetzlich die
+  VDI-Cursor- und Bewegungsvektoren (`aes/gemaplib.c:126-166`). NewTOS' AES hat
+  keine Forkqueue — dieselbe Luecke, die `tos-api/src/aes/mod.rs` an `chkkbd`
+  fuer den Tastenpfad dokumentiert. Sie gehoert zur kooperativen Kernelarbeit
+  (Meilenstein 2b); landet sie, sind diese beiden Funktionen ihre ersten
+  Abnehmer. **Kein Fehlercode erfunden:** die AES kennt hier keine Konvention
+  dafuer, und ein Wert, den kein TOS zurueckgibt, waere eine neue Abweichung
+  anstelle der alten — `appl_tplay`s `1` ist EmuTOS' Dispatcher-Vorgabe
+  (`aes/gemsuper.c:85,109-110`), `appl_trecord`s `0` ist woertlich wahr (null
+  aufgezeichnete Ereignisse). **Keine Zielanwendung braucht den Ereignisband:**
+  ein einziger Treffer im ganzen `sdk/`, die Deklaration in
+  `sdk/gemlib/overlay/mt_gem.h.in`, kein Aufruf. Ticket `TASK/A45.md`.
+
 - **Desktop-Rebuild: interaktive Verifikation nur auf echter Pi4-HW + offene
   tos-api-AES-Lücken (PHASE-14, ADR-016).** Der neue `kernel/src/desk/`
   (#5–#8: Scaffold, View-Builder, Redraw, Interaktionsschicht) ist gebaut und

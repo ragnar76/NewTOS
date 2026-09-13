@@ -369,10 +369,25 @@ pub fn appl_read(pb: &Aespb) {
 }
 
 /// Opcode 15 — `appl_trecord`: record AES events into the buffer at
-/// `addr_in[0]` (`int_in[0]` = capacity). NewTOS has no event-tape recorder,
-/// so nothing is captured and it returns 0 (the number of events recorded) —
-/// an honest report of the capability, not a faked success. A documented
-/// follow-up (event recording needs the input pipeline to tee events).
+/// `addr_in[0]` (`int_in[0]` = capacity). Returns 0, the number of events
+/// recorded, which is literally true: NewTOS records none.
+///
+/// **Blocked on the AES fork queue, not on this function.** EmuTOS does not
+/// record in `ap_trecd` at all — it sets `gl_recd`/`gl_rlen`/`gl_rbuf`
+/// (`aes/gemaplib.c:209-213`) and the recording happens inside `forker()`
+/// (`aes/gemdisp.c:123-146`), which copies each queued `FPD` into the
+/// caller's buffer as events are dispatched; `ap_trecd` then polls
+/// `ev_timer(100)` until the queue fills or the tape stops, and converts
+/// `FPD` to `EVNTREC` afterwards (`:216-230`). NewTOS' AES has no fork queue
+/// — the same gap [`super::chkkbd`] documents for the key path — so there is
+/// nothing to tee events out of. The queue is part of the cooperative-kernel
+/// work; when it lands, this function and [`appl_tplay`] are its first two
+/// consumers. Recorded in `docs/STATUS.md` under *Blocked*, ticket
+/// `TASK/A45.md`.
+///
+/// No error code is invented for the refusal, deliberately: the AES has no
+/// convention for one here, and returning a value no TOS ever returns would
+/// replace one deviation with another.
 pub fn appl_trecord(pb: &Aespb) {
     pb.set_ret(0);
 }
@@ -382,7 +397,15 @@ pub fn appl_trecord(pb: &Aespb) {
 /// `APPL_TPLAY` arm leaves the enclosing `ret = TRUE` (`gemsuper.c:109-110,85`),
 /// so it returns **1** (`application.md:273,316`). NewTOS has no path to inject
 /// events back into the AES input from here, so it returns at once with that
-/// `1` — a documented follow-up (pairs with `appl_trecord`).
+/// `1`.
+///
+/// **Blocked on the AES fork queue**, exactly as [`appl_trecord`] is, and the
+/// `1` is therefore right for the wrong reason: it is the dispatcher default,
+/// not a report that anything played. Playback needs `forkq`/`dsptch` to
+/// inject the taped events (`aes/gemaplib.c:126-166`) and, for `MCHNG`, the
+/// VDI cursor and motion vectors swapped out so the AES draws the pointer
+/// itself (`:139-152`, `gsx_0code(CUR_VECX)`/`MOT_VECX`). Ticket
+/// `TASK/A45.md`.
 pub fn appl_tplay(pb: &Aespb) {
     pb.set_ret(1);
 }
