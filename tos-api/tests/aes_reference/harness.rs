@@ -384,6 +384,122 @@ pub const POISON: i16 = 0xDEADu16 as i16;
 /// 64-bit AArch64 alike.
 pub const POISON_PTR: u64 = 0xDEAD_DEAD_DEAD_DEAD;
 
+// ── the AES pointer buffers (the `addr_in` column) ───────────────────────
+
+/// Buffers a case table may name by number, `tosdump/core/tosdump.h`
+/// (`TD_AES_BUF_N` / `TD_AES_BUF_BYTES` / `TD_AES_BUF_TEXT_LEN`).
+///
+/// A dozen AES opcodes do all of their work behind a pointer, and a case table
+/// cannot state an address: it is one file carried to two machines. So the
+/// table names a **buffer by number** and each runner supplies its own
+/// address. The dumper's are file-scope statics laid fresh before every call
+/// it issues (`tosdump/core/runner_aes.c`, `lay_buffers`); these are the
+/// harness's counterpart, and they have to be the same size and the same bytes
+/// or the case would measure the buffer instead of the function.
+pub const BUF_N: usize = 4;
+pub const BUF_BYTES: usize = 256;
+/// Printable characters before the NUL. Eight, because that is the AES' own
+/// name length (`aes/struct.h`, `AP_NAMELEN`), which `fpdnm`'s `strncmp`
+/// compares (`aes/gempd.c:48`).
+pub const BUF_TEXT_LEN: usize = 8;
+
+/// What the **record** carries for an `addr_in` slot a case pointed at a
+/// buffer: `TD_AES_ADDR_TOKEN(n)` (`tosdump/core/tosdump.h`).
+///
+/// A buffer's address is different on a TT and on a Pi by construction, so
+/// recording it would fabricate a difference in every case that uses one —
+/// the trap the poison pattern exists to avoid. A slot that still holds what
+/// was planted therefore records this token, which says what the *table* said;
+/// a slot the call modified records the modified value, which is exactly the
+/// difference it is.
+pub const ADDR_TOKEN_BASE: u32 = 0xB0FF_0000;
+
+/// One buffer, aligned like the dumper's (a union with the machine's widest
+/// scalar) so a call that reads WORDs or LONGs out of one is aligned on both.
+#[repr(C, align(8))]
+pub struct Buf(pub [u8; BUF_BYTES]);
+
+/// Lay one buffer exactly as `td_aes_buf_fill` does
+/// (`tosdump/core/record.c`): every byte `'A' + (index * 7 + i) % 26`, with a
+/// NUL at [`BUF_TEXT_LEN`] and the same printable pattern behind it as a
+/// canary.
+///
+/// **A string and not the raster's word pattern**, and that is not a taste:
+/// half of the calls this unlocks read a C string through the pointer
+/// (`appl_find`'s `AP_PNAME`, `rsrc_load`'s filename, `menu_text`,
+/// `shel_find`, the scrap manager's `strcpy`) and neither AES bounds-checks
+/// one, so a pseudo-random fill would send `strlen` off the end.
+///
+/// The seven-letter stride makes the four start with four visibly different
+/// strings — `ABCDEFGH`, `HIJKLMNO`, `OPQRSTUV`, `VWXYZABC` — none of which is
+/// the name of any AES process, so `appl_find` against one answers -1 on both
+/// machines rather than a machine-dependent `ap_id`.
+fn buf_fill(buf: &mut Buf, index: usize) {
+    for (i, b) in buf.0.iter_mut().enumerate() {
+        let n = index as u32 * 7 + i as u32;
+        *b = b'A' + (n % 26) as u8;
+    }
+    buf.0[BUF_TEXT_LEN] = 0;
+}
+
+/// The four buffers, leaked once and shared by every parameter block —
+/// statics, like the dumper's, and for a reason beyond symmetry: an AES call
+/// may **keep** the pointer (`wind_set(WF_NAME)` stores it in the window table
+/// and a later `wind_get(WF_NAME)` reads it back), so a buffer owned by one
+/// [`Pb`] would dangle the moment that `Pb` was dropped.
+///
+/// Handing out `&'static mut` is sound only because [`AES_LOCK`] serialises
+/// the cases — the same discipline [`global_array`] runs under.
+fn buffers() -> &'static mut [Buf; BUF_N] {
+    static B: OnceLock<usize> = OnceLock::new();
+    let p = *B.get_or_init(|| {
+        let b: Box<[Buf; BUF_N]> =
+            Box::new([Buf([0; BUF_BYTES]), Buf([0; BUF_BYTES]), Buf([0; BUF_BYTES]), Buf([0; BUF_BYTES])]);
+        Box::leak(b) as *mut _ as usize
+    });
+    // SAFETY: leaked above, so it lives for the whole program; access is
+    // serialised by `AES_LOCK`.
+    unsafe { &mut *(p as *mut [Buf; BUF_N]) }
+}
+
+/// The bytes of one buffer as they stand — what a call reads through a planted
+/// pointer. The caller must hold [`AES_LOCK`]; a copy, so the snapshot cannot
+/// alias the live array.
+pub fn buffer_snapshot(n: usize) -> [u8; BUF_BYTES] {
+    buffers()[n].0
+}
+
+/// Where one plant puts a buffer's address (`tosdump/core/cases.h`,
+/// `TD_AES_PLANT_*`).
+#[derive(Copy, Clone, PartialEq, Eq, Debug)]
+pub enum Kind {
+    /// `aN=B` — `addr_in[N]`, the address array proper. Only reachable when
+    /// the case declares `AIN_LEN > N`: the dispatcher copies
+    /// `min(AIN_LEN, AI_SIZE)` slots onto its local buffer
+    /// (`aes/gemsuper.c:439`).
+    AddrIn,
+    /// `iN=B` — a pointer packed into the `int_in` WORDs at word N, at the
+    /// **target's own pointer width**, which is the classic GEM binding
+    /// (gemlib `a_wind_set_str.c:25`) and how EmuTOS' `wm_set` reads
+    /// `WF_NAME`: `*(char **)pinwds` with `pinwds = &int_in[2]`
+    /// (`aes/gemwmlib.c:1661`). Prelude-only — `int_in` is recorded, and a
+    /// packed pointer occupies two WORDs on the m68k and four here.
+    IntIn,
+}
+
+/// One entry of a case table's `addr_in` column, as `mkrusttests` emits it.
+pub struct Plant {
+    pub kind: Kind,
+    /// `addr_in` slot index, or `int_in` word index.
+    pub slot: usize,
+    /// Which of the [`BUF_N`] buffers, `0..BUF_N`.
+    pub buffer: usize,
+}
+
+/// The WORDs a planted `int_in` pointer occupies at this harness's [`ABI`]
+/// (LP64: eight bytes / two bytes per WORD). `TD_AES_PLANT_PTR_WORDS`.
+const PLANT_PTR_WORDS: usize = 4;
+
 pub struct Pb {
     pub contrl: Box<[i16; CONTRL_N]>,
     pub intin: Box<[i16; INTIN_N]>,
@@ -397,6 +513,13 @@ pub struct Pb {
     /// against what it left there.
     global: &'static mut [i16; GLOBAL_N],
     block: Box<[u64; 6]>,
+    /// Which buffer, if any, each `addr_in` slot was pointed at for the call
+    /// that just ran, and what was planted there — so the comparison can tell
+    /// "the slot still holds the buffer" from "the call wrote something else
+    /// into it" (`tosdump/core/runner_aes.c`, `run_planted_buf` /
+    /// `run_planted_ptr`). `None` is "not planted", which is every slot of
+    /// every seven-column table.
+    planted: [Option<(usize, u64)>; ADDRIN_N],
 }
 
 impl Pb {
@@ -409,6 +532,7 @@ impl Pb {
             addrout: Box::new([0; ADDROUT_N]),
             global: global_array(),
             block: Box::new([0; 6]),
+            planted: [None; ADDRIN_N],
         };
         pb.block[0] = pb.contrl.as_ptr() as u64;
         pb.block[1] = pb.global.as_ptr() as u64;
@@ -426,13 +550,70 @@ impl Pb {
 
     /// Poison everything **except** `global`, which is live AES state and
     /// belongs to the application rather than to the case
-    /// (`tosdump/core/runner_aes.c` step 2).
+    /// (`tosdump/core/runner_aes.c` step 2), and lay the four pointer buffers
+    /// over again.
+    ///
+    /// The buffers are laid fresh before **every** call the harness issues,
+    /// not once per case — exactly where `runner_aes.c` calls `lay_buffers`,
+    /// which is next to every one of its three poison sites. A buffer the
+    /// previous call wrote into would carry that call's result into the next
+    /// one, and the whole point of the poison rule is that nothing does. The
+    /// plant record is cleared with it, as `plant_buffers` clears it.
     pub fn poison(&mut self) {
         self.contrl.fill(POISON);
         self.intin.fill(POISON);
         self.intout.fill(POISON);
         self.addrin.fill(POISON_PTR);
         self.addrout.fill(POISON_PTR);
+        for (i, b) in buffers().iter_mut().enumerate() {
+            buf_fill(b, i);
+        }
+        self.planted = [None; ADDRIN_N];
+    }
+
+    /// Put the buffers a case table line named where the line said
+    /// (`tosdump/core/runner_aes.c`, `plant_buffers`). Issued after
+    /// [`Pb::poison`] and after the line's `int_in` values, so what a slot
+    /// holds going in is either a buffer this line asked for or the poison.
+    pub fn plant(&mut self, plants: &[Plant]) {
+        for p in plants {
+            assert!(p.buffer < BUF_N, "plant names buffer {} of {BUF_N}", p.buffer);
+            let addr = buffers()[p.buffer].0.as_ptr() as u64;
+            match p.kind {
+                Kind::AddrIn => {
+                    assert!(p.slot < ADDRIN_N, "plant names addr_in[{}]", p.slot);
+                    self.addrin[p.slot] = addr;
+                    self.planted[p.slot] = Some((p.buffer, addr));
+                }
+                Kind::IntIn => {
+                    // A target-width pointer written over the WORDs, as the
+                    // dumper's `memcpy(&int_in[w], &p, sizeof p)` does — and
+                    // not a cast, because `&int_in[w]` is only WORD aligned.
+                    assert!(
+                        p.slot + PLANT_PTR_WORDS <= INTIN_N,
+                        "a packed pointer at int_in[{}] runs past I_SIZE",
+                        p.slot
+                    );
+                    let bytes = addr.to_ne_bytes();
+                    // SAFETY: `intin` is `[i16; INTIN_N]`; the assert above
+                    // keeps the eight bytes inside it.
+                    unsafe {
+                        let dst = (self.intin.as_mut_ptr() as *mut u8).add(p.slot * 2);
+                        dst.copy_from_nonoverlapping(bytes.as_ptr(), bytes.len());
+                    }
+                }
+            }
+        }
+    }
+
+    /// What `tosdump/core/runner_aes.c` step 6 records for one `addr_in` slot:
+    /// the buffer **token** while the slot still holds what was planted, the
+    /// low 32 bits of whatever is there otherwise.
+    pub fn recorded_addrin(&self, i: usize) -> u32 {
+        match self.planted[i] {
+            Some((buf, ptr)) if self.addrin[i] == ptr => ADDR_TOKEN_BASE + buf as u32,
+            _ => self.addrin[i] as u32,
+        }
     }
 
     /// Lay `control[0..4]` and issue the call — `tosdump/core/runner_aes.c`'s
@@ -613,6 +794,86 @@ impl Reset {
     }
 }
 
+// ── the 3-D look variables: state no declared reset sweeps ───────────────
+
+/// `objc_sysvar`'s `which` selectors (`aes/obdefs.h`), and EmuTOS' `LWHITE`.
+const LK3DIND: i16 = 1;
+const LK3DACT: i16 = 2;
+const INDBUTCOL: i16 = 3;
+const ACTBUTCOL: i16 = 4;
+const BACKGRCOL: i16 = 5;
+const LWHITE: i16 = 8;
+
+/// The button colour `init_3d` picks for **this harness's** workstation.
+///
+/// EmuTOS chooses by the palette it has: `actbutcol = indbutcol = backgrcol =`
+/// `WHITE` when `gl_ws.ws_ncolors <= LWHITE`, `LWHITE` otherwise
+/// (`aes/gemoblib.c`, `init_3d`). This harness opens a TT-shaped workstation
+/// with [`SCREEN_COLORS`] pens, so the branch is decided here rather than
+/// written down as a number that happens to be right today.
+const BUTCOL_DEFAULT: i16 = if SCREEN_COLORS as i16 <= LWHITE { 0 } else { LWHITE };
+
+/// Put the seven 3-D look variables back where `init_3d` left them.
+///
+/// **Why this exists at all, and why it is not a [`Reset`].** A reset is the
+/// *table's* to declare and the dumper runs the identical one
+/// (`tosdump/core/runner_aes.c`, `td_reset_aes`). This is not that: it is a
+/// harness-only device of exactly the same nature as the *trailing* reset
+/// (module header) — the dumper needs neither, because it runs a table **once,
+/// in order, on a freshly started AES**, while cargo runs one `#[test]` per
+/// case in an arbitrary order inside one process.
+///
+/// `tosdump/cases/aes-m06-sysvar.tsv` says so itself: "the 3D variables are
+/// file-local statics set once by `init_3d` … NOTHING resets them inside a
+/// run: `wm_new` sweeps windows and locks, not these. So section A — which
+/// measures the DEFAULTS — must come before any set". Section B's setters are
+/// cases too, and with them free to run first, section A measured whatever
+/// they left: without this sweep,
+/// `cargo test -- -Zunstable-options --shuffle` failed on one to three of the
+/// nineteen m06 cases on **every** one of eight consecutive runs — case 90
+/// reading `int_out[1..2] = 1, 0` (what case 107 set) instead of the recorded
+/// defaults `0, 1`.
+///
+/// **What it restores to is the dumper's own starting point.** Every read-back
+/// case in that table carries its own prelude, so with the variables at the
+/// `init_3d` defaults before each case, each case sees exactly the state the
+/// dumper's run had reached at that line — including case 116, whose point is
+/// that the refused `BACKGRCOL 32767` changed nothing.
+///
+/// **It is done through the AES' own set arm**, not by reaching into
+/// `tos_api::aes::object`'s statics: `ob_sysvar(mode=1, …)` is the only writer
+/// EmuTOS has (`aes/gemoblib.c`) and the only one NewTOS has, so the sweep
+/// cannot restore something the API could not.
+///
+/// **The price, stated.** A case table can no longer measure a 3-D look value
+/// that *persists from one case to the next*; it has to establish what it
+/// measures in its own preludes, as m06 does. Nothing else is given up — the
+/// cases still run in parallel, serialised by [`AES_LOCK`] as before.
+fn sweep_3d_look(pb: &mut Pb) {
+    // `in1`/`in2` per selector; -1 is ob_sysvar's "leave this one alone", so
+    // the three colour selectors state their one value and nothing else.
+    const RESTORE: [[i16; 4]; 5] = [
+        [1, LK3DIND, 0, 1],                  // indtxtmove 0, indcolchange 1
+        [1, LK3DACT, 1, 0],                  // acttxtmove 1, actcolchange 0
+        [1, INDBUTCOL, BUTCOL_DEFAULT, -1],
+        [1, ACTBUTCOL, BUTCOL_DEFAULT, -1],
+        [1, BACKGRCOL, BUTCOL_DEFAULT, -1],
+    ];
+    for v in RESTORE {
+        pb.poison();
+        pb.intin[..v.len()].copy_from_slice(&v);
+        // OUT_LEN 1: a set writes RET_CODE and nothing else, and a larger
+        // OUT_LEN would copy back words the handler never wrote.
+        pb.call(48, 4, 1, 0, 0);
+        assert_eq!(
+            pb.intout[0], 1,
+            "the 3-D look sweep was refused for which {} -- objc_sysvar's set arm \
+             must accept the init_3d defaults on this workstation",
+            v[1]
+        );
+    }
+}
+
 /// One case table and the dump taken from it — what a generated case module
 /// declares once and every one of its cases is checked against.
 ///
@@ -642,6 +903,10 @@ pub struct Call {
     pub ain_len: i16,
     pub aout_len: i16,
     pub intin: &'static [i16],
+    /// The table's `addr_in` column ([`Plant`]), empty for a seven-column
+    /// table. A prelude is the only line that may carry a [`Kind::IntIn`]
+    /// plant, because it is not recorded.
+    pub plant: &'static [Plant],
 }
 
 /// One case, as `tosdump/host/mkrusttests` emits it. The four counts are
@@ -658,6 +923,12 @@ pub struct Case {
     pub ain_len: i16,
     pub aout_len: i16,
     pub intin: &'static [i16],
+    /// The table's `addr_in` column ([`Plant`]), empty for a seven-column
+    /// table. [`Kind::AddrIn`] only: a packed `int_in` pointer occupies two
+    /// WORDs on the m68k and four here, and `int_in` is recorded, so the case
+    /// loader refuses one on a measured line (`tosdump/core/cases.c`,
+    /// `check_plants`).
+    pub plant: &'static [Plant],
     pub comment: &'static str,
 }
 
@@ -1242,7 +1513,12 @@ pub fn check(table: &Table, case: &Case) {
     let ctx = context();
     let mut pb = Pb::new();
 
-    // 0. the reset the table declares (`tosdump/core/runner_aes.c:150-154`),
+    // 0a. the state no declared reset sweeps, put back where `init_3d` left
+    //     it. Not the dumper's doing — see `sweep_3d_look` for why cargo's
+    //     arbitrary case order needs it and what it costs.
+    sweep_3d_look(&mut pb);
+
+    // 0b. the reset the table declares (`tosdump/core/runner_aes.c:150-154`),
     //    ahead of the preludes, so a prelude establishes state on top of a
     //    known one rather than on top of whatever ran before it.
     table.reset.run(&mut pb);
@@ -1252,6 +1528,7 @@ pub fn check(table: &Table, case: &Case) {
     for p in case.prelude {
         pb.poison();
         pb.intin[..p.intin.len()].copy_from_slice(p.intin);
+        pb.plant(p.plant);
         pb.call(p.opcode, p.in_len, p.out_len, p.ain_len, p.aout_len);
     }
 
@@ -1275,9 +1552,21 @@ pub fn check(table: &Table, case: &Case) {
         case.opcode
     );
 
-    // 2. poison; 3. lay the case's int_in values over it; 4. the call.
+    // 2. poison; 3. lay the case's int_in values over it; 3a. the buffers its
+    //    addr_in column names; 4. the call.
     pb.poison();
     pb.intin[..case.intin.len()].copy_from_slice(case.intin);
+    for p in case.plant {
+        assert_eq!(
+            p.kind,
+            Kind::AddrIn,
+            "{} case {}: a measured case may not pack a pointer into int_in -- it is \
+             recorded, and the two targets disagree about how many WORDs it takes",
+            table.name,
+            case.id
+        );
+    }
+    pb.plant(case.plant);
     pb.call(case.opcode, case.in_len, case.out_len, case.ain_len, case.aout_len);
 
     let mut or = Oracle::new(table.name, case.id, ctx.ap_id);
@@ -1288,19 +1577,23 @@ pub fn check(table: &Table, case: &Case) {
     cmp_words(&mut diffs, &mut or, "int_out", &pb.intout[..], rec, OFF_INTOUT);
     // The record carries the low 32 bits of each address slot, because the
     // format's slots are 32 bit while the block's are the target's pointer
-    // width (`tosdump/core/runner_aes.c`).
-    for (i, &a) in pb.addrin.iter().enumerate() {
-        push_diff(&mut diffs, "addr_in", i, a as u32 as i64, be32(rec, OFF_ADDRIN + i * 4) as i64, 8);
+    // width (`tosdump/core/runner_aes.c`) — except a slot a case pointed at
+    // one of the four buffers, which records the buffer TOKEN instead
+    // ([`Pb::recorded_addrin`], [`ADDR_TOKEN_BASE`]).
+    for i in 0..ADDRIN_N {
+        let got = pb.recorded_addrin(i) as i64;
+        push_diff(&mut diffs, "addr_in", i, got, be32(rec, OFF_ADDRIN + i * 4) as i64, 8);
     }
     for (i, &a) in pb.addrout.iter().enumerate() {
         push_diff(&mut diffs, "addr_out", i, a as u32 as i64, be32(rec, OFF_ADDROUT + i * 4) as i64, 8);
     }
 
-    // 5. the declared reset again, BEFORE anything below can panic: a red case
-    //    that left a window open would turn every round-1 case cargo happens
-    //    to run after it red as well, and the first failure is the only one
-    //    worth reading.
+    // 5. the declared reset again, and the 3-D look sweep with it, BEFORE
+    //    anything below can panic: a red case that left a window open — or a
+    //    3-D variable set — would turn every case cargo happens to run after
+    //    it red as well, and the first failure is the only one worth reading.
     table.reset.run(&mut pb);
+    sweep_3d_look(&mut pb);
     or.finish();
 
     if !diffs.is_empty() {

@@ -46,6 +46,7 @@ fn case_0131_op100_wind_create_the_first_free_handle_after_the_reset() {
         ain_len: 0,
         aout_len: 0,
         intin: &[4079, 0, 20, 320, 200],
+        plant: &[],
         comment: "wind_create: the first free handle after the reset",
     });
 }
@@ -54,7 +55,7 @@ fn case_0131_op100_wind_create_the_first_free_handle_after_the_reset() {
 fn case_0133_op100_wind_create_twice_the_second_handle() {
     check(&TABLE, &Case {
         prelude: &[
-            Call { opcode: 100, in_len: 5, out_len: 1, ain_len: 0, aout_len: 0, intin: &[4079, 0, 20, 320, 200] },
+            Call { opcode: 100, in_len: 5, out_len: 1, ain_len: 0, aout_len: 0, intin: &[4079, 0, 20, 320, 200], plant: &[] },
         ],
         id: 133,
         rec: 1,
@@ -64,6 +65,7 @@ fn case_0133_op100_wind_create_twice_the_second_handle() {
         ain_len: 0,
         aout_len: 0,
         intin: &[4079, 0, 20, 320, 200],
+        plant: &[],
         comment: "wind_create twice: the second handle",
     });
 }
@@ -72,8 +74,8 @@ fn case_0133_op100_wind_create_twice_the_second_handle() {
 fn case_0136_op100_wind_create_three_times_the_third_handle() {
     check(&TABLE, &Case {
         prelude: &[
-            Call { opcode: 100, in_len: 5, out_len: 1, ain_len: 0, aout_len: 0, intin: &[4079, 0, 20, 320, 200] },
-            Call { opcode: 100, in_len: 5, out_len: 1, ain_len: 0, aout_len: 0, intin: &[4079, 0, 20, 320, 200] },
+            Call { opcode: 100, in_len: 5, out_len: 1, ain_len: 0, aout_len: 0, intin: &[4079, 0, 20, 320, 200], plant: &[] },
+            Call { opcode: 100, in_len: 5, out_len: 1, ain_len: 0, aout_len: 0, intin: &[4079, 0, 20, 320, 200], plant: &[] },
         ],
         id: 136,
         rec: 2,
@@ -83,6 +85,7 @@ fn case_0136_op100_wind_create_three_times_the_third_handle() {
         ain_len: 0,
         aout_len: 0,
         intin: &[4079, 0, 20, 320, 200],
+        plant: &[],
         comment: "wind_create three times: the third handle",
     });
 }
@@ -99,6 +102,7 @@ fn case_0137_op100_wind_create_out_len_0_the_handle_is_computed_never_delivered(
         ain_len: 0,
         aout_len: 0,
         intin: &[4079, 0, 20, 320, 200],
+        plant: &[],
         comment: "wind_create OUT_LEN 0: the handle is computed, never delivered",
     });
 }
@@ -115,6 +119,7 @@ fn case_0138_op100_wind_create_kind_none_no_gadget_at_all() {
         ain_len: 0,
         aout_len: 0,
         intin: &[0, 0, 20, 320, 200],
+        plant: &[],
         comment: "wind_create kind NONE: no gadget at all",
     });
 }
@@ -131,6 +136,7 @@ fn case_0139_op100_wind_create_kind_0xffff_every_bit_defined_or_not() {
         ain_len: 0,
         aout_len: 0,
         intin: &[-1, 0, 20, 320, 200],
+        plant: &[],
         comment: "wind_create kind 0xFFFF: every bit, defined or not",
     });
 }
@@ -147,6 +153,7 @@ fn case_0140_op100_wind_create_in_len_1_wm_create_only_stores_the_rect_it_draws(
         ain_len: 0,
         aout_len: 0,
         intin: &[4079],
+        plant: &[],
         comment: "wind_create IN_LEN 1: wm_create only stores the rect, it draws ",
     });
 }
@@ -155,14 +162,14 @@ fn case_0140_op100_wind_create_in_len_1_wm_create_only_stores_the_rect_it_draws(
 fn case_0154_op100_wind_create_the_ninth_num_win_edge() {
     check(&TABLE, &Case {
         prelude: &[
-            Call { opcode: 100, in_len: 5, out_len: 1, ain_len: 0, aout_len: 0, intin: &[4079, 0, 20, 320, 200] },
-            Call { opcode: 100, in_len: 5, out_len: 1, ain_len: 0, aout_len: 0, intin: &[4079, 0, 20, 320, 200] },
-            Call { opcode: 100, in_len: 5, out_len: 1, ain_len: 0, aout_len: 0, intin: &[4079, 0, 20, 320, 200] },
-            Call { opcode: 100, in_len: 5, out_len: 1, ain_len: 0, aout_len: 0, intin: &[4079, 0, 20, 320, 200] },
-            Call { opcode: 100, in_len: 5, out_len: 1, ain_len: 0, aout_len: 0, intin: &[4079, 0, 20, 320, 200] },
-            Call { opcode: 100, in_len: 5, out_len: 1, ain_len: 0, aout_len: 0, intin: &[4079, 0, 20, 320, 200] },
-            Call { opcode: 100, in_len: 5, out_len: 1, ain_len: 0, aout_len: 0, intin: &[4079, 0, 20, 320, 200] },
-            Call { opcode: 100, in_len: 5, out_len: 1, ain_len: 0, aout_len: 0, intin: &[4079, 0, 20, 320, 200] },
+            Call { opcode: 100, in_len: 5, out_len: 1, ain_len: 0, aout_len: 0, intin: &[4079, 0, 20, 320, 200], plant: &[] },
+            Call { opcode: 100, in_len: 5, out_len: 1, ain_len: 0, aout_len: 0, intin: &[4079, 0, 20, 320, 200], plant: &[] },
+            Call { opcode: 100, in_len: 5, out_len: 1, ain_len: 0, aout_len: 0, intin: &[4079, 0, 20, 320, 200], plant: &[] },
+            Call { opcode: 100, in_len: 5, out_len: 1, ain_len: 0, aout_len: 0, intin: &[4079, 0, 20, 320, 200], plant: &[] },
+            Call { opcode: 100, in_len: 5, out_len: 1, ain_len: 0, aout_len: 0, intin: &[4079, 0, 20, 320, 200], plant: &[] },
+            Call { opcode: 100, in_len: 5, out_len: 1, ain_len: 0, aout_len: 0, intin: &[4079, 0, 20, 320, 200], plant: &[] },
+            Call { opcode: 100, in_len: 5, out_len: 1, ain_len: 0, aout_len: 0, intin: &[4079, 0, 20, 320, 200], plant: &[] },
+            Call { opcode: 100, in_len: 5, out_len: 1, ain_len: 0, aout_len: 0, intin: &[4079, 0, 20, 320, 200], plant: &[] },
         ],
         id: 154,
         rec: 7,
@@ -172,6 +179,7 @@ fn case_0154_op100_wind_create_the_ninth_num_win_edge() {
         ain_len: 0,
         aout_len: 0,
         intin: &[4079, 0, 20, 320, 200],
+        plant: &[],
         comment: "wind_create, the ninth: NUM_WIN edge",
     });
 }
@@ -180,21 +188,21 @@ fn case_0154_op100_wind_create_the_ninth_num_win_edge() {
 fn case_0170_op100_wind_create_the_sixteenth_num_win_edge() {
     check(&TABLE, &Case {
         prelude: &[
-            Call { opcode: 100, in_len: 5, out_len: 1, ain_len: 0, aout_len: 0, intin: &[4079, 0, 20, 320, 200] },
-            Call { opcode: 100, in_len: 5, out_len: 1, ain_len: 0, aout_len: 0, intin: &[4079, 0, 20, 320, 200] },
-            Call { opcode: 100, in_len: 5, out_len: 1, ain_len: 0, aout_len: 0, intin: &[4079, 0, 20, 320, 200] },
-            Call { opcode: 100, in_len: 5, out_len: 1, ain_len: 0, aout_len: 0, intin: &[4079, 0, 20, 320, 200] },
-            Call { opcode: 100, in_len: 5, out_len: 1, ain_len: 0, aout_len: 0, intin: &[4079, 0, 20, 320, 200] },
-            Call { opcode: 100, in_len: 5, out_len: 1, ain_len: 0, aout_len: 0, intin: &[4079, 0, 20, 320, 200] },
-            Call { opcode: 100, in_len: 5, out_len: 1, ain_len: 0, aout_len: 0, intin: &[4079, 0, 20, 320, 200] },
-            Call { opcode: 100, in_len: 5, out_len: 1, ain_len: 0, aout_len: 0, intin: &[4079, 0, 20, 320, 200] },
-            Call { opcode: 100, in_len: 5, out_len: 1, ain_len: 0, aout_len: 0, intin: &[4079, 0, 20, 320, 200] },
-            Call { opcode: 100, in_len: 5, out_len: 1, ain_len: 0, aout_len: 0, intin: &[4079, 0, 20, 320, 200] },
-            Call { opcode: 100, in_len: 5, out_len: 1, ain_len: 0, aout_len: 0, intin: &[4079, 0, 20, 320, 200] },
-            Call { opcode: 100, in_len: 5, out_len: 1, ain_len: 0, aout_len: 0, intin: &[4079, 0, 20, 320, 200] },
-            Call { opcode: 100, in_len: 5, out_len: 1, ain_len: 0, aout_len: 0, intin: &[4079, 0, 20, 320, 200] },
-            Call { opcode: 100, in_len: 5, out_len: 1, ain_len: 0, aout_len: 0, intin: &[4079, 0, 20, 320, 200] },
-            Call { opcode: 100, in_len: 5, out_len: 1, ain_len: 0, aout_len: 0, intin: &[4079, 0, 20, 320, 200] },
+            Call { opcode: 100, in_len: 5, out_len: 1, ain_len: 0, aout_len: 0, intin: &[4079, 0, 20, 320, 200], plant: &[] },
+            Call { opcode: 100, in_len: 5, out_len: 1, ain_len: 0, aout_len: 0, intin: &[4079, 0, 20, 320, 200], plant: &[] },
+            Call { opcode: 100, in_len: 5, out_len: 1, ain_len: 0, aout_len: 0, intin: &[4079, 0, 20, 320, 200], plant: &[] },
+            Call { opcode: 100, in_len: 5, out_len: 1, ain_len: 0, aout_len: 0, intin: &[4079, 0, 20, 320, 200], plant: &[] },
+            Call { opcode: 100, in_len: 5, out_len: 1, ain_len: 0, aout_len: 0, intin: &[4079, 0, 20, 320, 200], plant: &[] },
+            Call { opcode: 100, in_len: 5, out_len: 1, ain_len: 0, aout_len: 0, intin: &[4079, 0, 20, 320, 200], plant: &[] },
+            Call { opcode: 100, in_len: 5, out_len: 1, ain_len: 0, aout_len: 0, intin: &[4079, 0, 20, 320, 200], plant: &[] },
+            Call { opcode: 100, in_len: 5, out_len: 1, ain_len: 0, aout_len: 0, intin: &[4079, 0, 20, 320, 200], plant: &[] },
+            Call { opcode: 100, in_len: 5, out_len: 1, ain_len: 0, aout_len: 0, intin: &[4079, 0, 20, 320, 200], plant: &[] },
+            Call { opcode: 100, in_len: 5, out_len: 1, ain_len: 0, aout_len: 0, intin: &[4079, 0, 20, 320, 200], plant: &[] },
+            Call { opcode: 100, in_len: 5, out_len: 1, ain_len: 0, aout_len: 0, intin: &[4079, 0, 20, 320, 200], plant: &[] },
+            Call { opcode: 100, in_len: 5, out_len: 1, ain_len: 0, aout_len: 0, intin: &[4079, 0, 20, 320, 200], plant: &[] },
+            Call { opcode: 100, in_len: 5, out_len: 1, ain_len: 0, aout_len: 0, intin: &[4079, 0, 20, 320, 200], plant: &[] },
+            Call { opcode: 100, in_len: 5, out_len: 1, ain_len: 0, aout_len: 0, intin: &[4079, 0, 20, 320, 200], plant: &[] },
+            Call { opcode: 100, in_len: 5, out_len: 1, ain_len: 0, aout_len: 0, intin: &[4079, 0, 20, 320, 200], plant: &[] },
         ],
         id: 170,
         rec: 8,
@@ -204,6 +212,7 @@ fn case_0170_op100_wind_create_the_sixteenth_num_win_edge() {
         ain_len: 0,
         aout_len: 0,
         intin: &[4079, 0, 20, 320, 200],
+        plant: &[],
         comment: "wind_create, the sixteenth: NUM_WIN edge",
     });
 }
@@ -220,6 +229,7 @@ fn case_0182_op101_wind_open_a_handle_that_was_never_created() {
         ain_len: 0,
         aout_len: 0,
         intin: &[1, 0, 20, 320, 200],
+        plant: &[],
         comment: "wind_open a handle that was never created",
     });
 }
@@ -228,7 +238,7 @@ fn case_0182_op101_wind_open_a_handle_that_was_never_created() {
 fn case_0184_op101_wind_open_a_created_window() {
     check(&TABLE, &Case {
         prelude: &[
-            Call { opcode: 100, in_len: 5, out_len: 1, ain_len: 0, aout_len: 0, intin: &[4079, 0, 20, 320, 200] },
+            Call { opcode: 100, in_len: 5, out_len: 1, ain_len: 0, aout_len: 0, intin: &[4079, 0, 20, 320, 200], plant: &[] },
         ],
         id: 184,
         rec: 10,
@@ -238,6 +248,7 @@ fn case_0184_op101_wind_open_a_created_window() {
         ain_len: 0,
         aout_len: 0,
         intin: &[1, 0, 20, 320, 200],
+        plant: &[],
         comment: "wind_open a created window",
     });
 }
@@ -246,8 +257,8 @@ fn case_0184_op101_wind_open_a_created_window() {
 fn case_0187_op101_wind_open_a_window_that_is_already_open() {
     check(&TABLE, &Case {
         prelude: &[
-            Call { opcode: 100, in_len: 5, out_len: 1, ain_len: 0, aout_len: 0, intin: &[4079, 0, 20, 320, 200] },
-            Call { opcode: 101, in_len: 5, out_len: 1, ain_len: 0, aout_len: 0, intin: &[1, 0, 20, 320, 200] },
+            Call { opcode: 100, in_len: 5, out_len: 1, ain_len: 0, aout_len: 0, intin: &[4079, 0, 20, 320, 200], plant: &[] },
+            Call { opcode: 101, in_len: 5, out_len: 1, ain_len: 0, aout_len: 0, intin: &[1, 0, 20, 320, 200], plant: &[] },
         ],
         id: 187,
         rec: 11,
@@ -257,6 +268,7 @@ fn case_0187_op101_wind_open_a_window_that_is_already_open() {
         ain_len: 0,
         aout_len: 0,
         intin: &[1, 0, 20, 320, 200],
+        plant: &[],
         comment: "wind_open a window that is already open",
     });
 }
@@ -273,6 +285,7 @@ fn case_0188_op102_wind_close_a_handle_that_was_never_created() {
         ain_len: 0,
         aout_len: 0,
         intin: &[1],
+        plant: &[],
         comment: "wind_close a handle that was never created",
     });
 }
@@ -281,7 +294,7 @@ fn case_0188_op102_wind_close_a_handle_that_was_never_created() {
 fn case_0190_op102_wind_close_a_created_window_that_was_never_opened() {
     check(&TABLE, &Case {
         prelude: &[
-            Call { opcode: 100, in_len: 5, out_len: 1, ain_len: 0, aout_len: 0, intin: &[4079, 0, 20, 320, 200] },
+            Call { opcode: 100, in_len: 5, out_len: 1, ain_len: 0, aout_len: 0, intin: &[4079, 0, 20, 320, 200], plant: &[] },
         ],
         id: 190,
         rec: 13,
@@ -291,6 +304,7 @@ fn case_0190_op102_wind_close_a_created_window_that_was_never_opened() {
         ain_len: 0,
         aout_len: 0,
         intin: &[1],
+        plant: &[],
         comment: "wind_close a created window that was never opened",
     });
 }
@@ -299,8 +313,8 @@ fn case_0190_op102_wind_close_a_created_window_that_was_never_opened() {
 fn case_0193_op102_wind_close_an_open_window() {
     check(&TABLE, &Case {
         prelude: &[
-            Call { opcode: 100, in_len: 5, out_len: 1, ain_len: 0, aout_len: 0, intin: &[4079, 0, 20, 320, 200] },
-            Call { opcode: 101, in_len: 5, out_len: 1, ain_len: 0, aout_len: 0, intin: &[1, 0, 20, 320, 200] },
+            Call { opcode: 100, in_len: 5, out_len: 1, ain_len: 0, aout_len: 0, intin: &[4079, 0, 20, 320, 200], plant: &[] },
+            Call { opcode: 101, in_len: 5, out_len: 1, ain_len: 0, aout_len: 0, intin: &[1, 0, 20, 320, 200], plant: &[] },
         ],
         id: 193,
         rec: 14,
@@ -310,6 +324,7 @@ fn case_0193_op102_wind_close_an_open_window() {
         ain_len: 0,
         aout_len: 0,
         intin: &[1],
+        plant: &[],
         comment: "wind_close an open window",
     });
 }
@@ -326,6 +341,7 @@ fn case_0194_op102_wind_close_0_the_desktop_window_is_inuse_but_never_isopen() {
         ain_len: 0,
         aout_len: 0,
         intin: &[0],
+        plant: &[],
         comment: "wind_close 0: the desktop window is INUSE but never ISOPEN",
     });
 }
@@ -342,6 +358,7 @@ fn case_0195_op103_wind_delete_a_handle_that_was_never_created() {
         ain_len: 0,
         aout_len: 0,
         intin: &[1],
+        plant: &[],
         comment: "wind_delete a handle that was never created",
     });
 }
@@ -350,7 +367,7 @@ fn case_0195_op103_wind_delete_a_handle_that_was_never_created() {
 fn case_0197_op103_wind_delete_a_created_window() {
     check(&TABLE, &Case {
         prelude: &[
-            Call { opcode: 100, in_len: 5, out_len: 1, ain_len: 0, aout_len: 0, intin: &[4079, 0, 20, 320, 200] },
+            Call { opcode: 100, in_len: 5, out_len: 1, ain_len: 0, aout_len: 0, intin: &[4079, 0, 20, 320, 200], plant: &[] },
         ],
         id: 197,
         rec: 17,
@@ -360,6 +377,7 @@ fn case_0197_op103_wind_delete_a_created_window() {
         ain_len: 0,
         aout_len: 0,
         intin: &[1],
+        plant: &[],
         comment: "wind_delete a created window",
     });
 }
@@ -368,8 +386,8 @@ fn case_0197_op103_wind_delete_a_created_window() {
 fn case_0200_op103_wind_delete_an_open_window_wm_close_runs_first() {
     check(&TABLE, &Case {
         prelude: &[
-            Call { opcode: 100, in_len: 5, out_len: 1, ain_len: 0, aout_len: 0, intin: &[4079, 0, 20, 320, 200] },
-            Call { opcode: 101, in_len: 5, out_len: 1, ain_len: 0, aout_len: 0, intin: &[1, 0, 20, 320, 200] },
+            Call { opcode: 100, in_len: 5, out_len: 1, ain_len: 0, aout_len: 0, intin: &[4079, 0, 20, 320, 200], plant: &[] },
+            Call { opcode: 101, in_len: 5, out_len: 1, ain_len: 0, aout_len: 0, intin: &[1, 0, 20, 320, 200], plant: &[] },
         ],
         id: 200,
         rec: 18,
@@ -379,6 +397,7 @@ fn case_0200_op103_wind_delete_an_open_window_wm_close_runs_first() {
         ain_len: 0,
         aout_len: 0,
         intin: &[1],
+        plant: &[],
         comment: "wind_delete an open window: wm_close runs first",
     });
 }
@@ -395,6 +414,7 @@ fn case_0201_op103_wind_delete_99_past_num_win_on_either_machine() {
         ain_len: 0,
         aout_len: 0,
         intin: &[99],
+        plant: &[],
         comment: "wind_delete 99: past NUM_WIN on either machine",
     });
 }
@@ -411,6 +431,7 @@ fn case_0202_op103_wind_delete_1_a_negative_handle() {
         ain_len: 0,
         aout_len: 0,
         intin: &[-1],
+        plant: &[],
         comment: "wind_delete -1: a negative handle",
     });
 }
@@ -419,9 +440,9 @@ fn case_0202_op103_wind_delete_1_a_negative_handle() {
 fn case_0206_op101_wind_open_again_after_a_close_the_handle_is_still_inuse() {
     check(&TABLE, &Case {
         prelude: &[
-            Call { opcode: 100, in_len: 5, out_len: 1, ain_len: 0, aout_len: 0, intin: &[4079, 0, 20, 320, 200] },
-            Call { opcode: 101, in_len: 5, out_len: 1, ain_len: 0, aout_len: 0, intin: &[1, 0, 20, 320, 200] },
-            Call { opcode: 102, in_len: 1, out_len: 1, ain_len: 0, aout_len: 0, intin: &[1] },
+            Call { opcode: 100, in_len: 5, out_len: 1, ain_len: 0, aout_len: 0, intin: &[4079, 0, 20, 320, 200], plant: &[] },
+            Call { opcode: 101, in_len: 5, out_len: 1, ain_len: 0, aout_len: 0, intin: &[1, 0, 20, 320, 200], plant: &[] },
+            Call { opcode: 102, in_len: 1, out_len: 1, ain_len: 0, aout_len: 0, intin: &[1], plant: &[] },
         ],
         id: 206,
         rec: 21,
@@ -431,6 +452,7 @@ fn case_0206_op101_wind_open_again_after_a_close_the_handle_is_still_inuse() {
         ain_len: 0,
         aout_len: 0,
         intin: &[1, 0, 20, 320, 200],
+        plant: &[],
         comment: "wind_open again after a close: the handle is still INUSE",
     });
 }
@@ -439,8 +461,8 @@ fn case_0206_op101_wind_open_again_after_a_close_the_handle_is_still_inuse() {
 fn case_0209_op101_wind_open_after_a_delete_the_handle_is_gone() {
     check(&TABLE, &Case {
         prelude: &[
-            Call { opcode: 100, in_len: 5, out_len: 1, ain_len: 0, aout_len: 0, intin: &[4079, 0, 20, 320, 200] },
-            Call { opcode: 103, in_len: 1, out_len: 1, ain_len: 0, aout_len: 0, intin: &[1] },
+            Call { opcode: 100, in_len: 5, out_len: 1, ain_len: 0, aout_len: 0, intin: &[4079, 0, 20, 320, 200], plant: &[] },
+            Call { opcode: 103, in_len: 1, out_len: 1, ain_len: 0, aout_len: 0, intin: &[1], plant: &[] },
         ],
         id: 209,
         rec: 22,
@@ -450,6 +472,7 @@ fn case_0209_op101_wind_open_after_a_delete_the_handle_is_gone() {
         ain_len: 0,
         aout_len: 0,
         intin: &[1, 0, 20, 320, 200],
+        plant: &[],
         comment: "wind_open after a delete: the handle is gone",
     });
 }
@@ -458,8 +481,8 @@ fn case_0209_op101_wind_open_after_a_delete_the_handle_is_gone() {
 fn case_0212_op100_wind_create_after_a_delete_the_freed_handle_comes_back() {
     check(&TABLE, &Case {
         prelude: &[
-            Call { opcode: 100, in_len: 5, out_len: 1, ain_len: 0, aout_len: 0, intin: &[4079, 0, 20, 320, 200] },
-            Call { opcode: 103, in_len: 1, out_len: 1, ain_len: 0, aout_len: 0, intin: &[1] },
+            Call { opcode: 100, in_len: 5, out_len: 1, ain_len: 0, aout_len: 0, intin: &[4079, 0, 20, 320, 200], plant: &[] },
+            Call { opcode: 103, in_len: 1, out_len: 1, ain_len: 0, aout_len: 0, intin: &[1], plant: &[] },
         ],
         id: 212,
         rec: 23,
@@ -469,6 +492,7 @@ fn case_0212_op100_wind_create_after_a_delete_the_freed_handle_comes_back() {
         ain_len: 0,
         aout_len: 0,
         intin: &[4079, 0, 20, 320, 200],
+        plant: &[],
         comment: "wind_create after a delete: the freed handle comes back",
     });
 }
@@ -477,7 +501,7 @@ fn case_0212_op100_wind_create_after_a_delete_the_freed_handle_comes_back() {
 fn case_0228_op104_wf_fxywh_of_a_created_window_the_rect_wind_create_was_given() {
     check(&TABLE, &Case {
         prelude: &[
-            Call { opcode: 100, in_len: 5, out_len: 1, ain_len: 0, aout_len: 0, intin: &[4079, 10, 20, 300, 200] },
+            Call { opcode: 100, in_len: 5, out_len: 1, ain_len: 0, aout_len: 0, intin: &[4079, 10, 20, 300, 200], plant: &[] },
         ],
         id: 228,
         rec: 24,
@@ -487,6 +511,7 @@ fn case_0228_op104_wf_fxywh_of_a_created_window_the_rect_wind_create_was_given()
         ain_len: 0,
         aout_len: 0,
         intin: &[1, 7],
+        plant: &[],
         comment: "WF_FXYWH of a created window: the rect wind_create was given",
     });
 }
@@ -495,7 +520,7 @@ fn case_0228_op104_wf_fxywh_of_a_created_window_the_rect_wind_create_was_given()
 fn case_0230_op104_wf_cxywh_of_a_created_unopened_window_wm_create_set_it_to_gl() {
     check(&TABLE, &Case {
         prelude: &[
-            Call { opcode: 100, in_len: 5, out_len: 1, ain_len: 0, aout_len: 0, intin: &[4079, 10, 20, 300, 200] },
+            Call { opcode: 100, in_len: 5, out_len: 1, ain_len: 0, aout_len: 0, intin: &[4079, 10, 20, 300, 200], plant: &[] },
         ],
         id: 230,
         rec: 25,
@@ -505,6 +530,7 @@ fn case_0230_op104_wf_cxywh_of_a_created_unopened_window_wm_create_set_it_to_gl(
         ain_len: 0,
         aout_len: 0,
         intin: &[1, 5],
+        plant: &[],
         comment: "WF_CXYWH of a created, unopened window: wm_create set it to gl_",
     });
 }
@@ -513,7 +539,7 @@ fn case_0230_op104_wf_cxywh_of_a_created_unopened_window_wm_create_set_it_to_gl(
 fn case_0232_op104_wf_pxywh_of_a_created_unopened_window() {
     check(&TABLE, &Case {
         prelude: &[
-            Call { opcode: 100, in_len: 5, out_len: 1, ain_len: 0, aout_len: 0, intin: &[4079, 10, 20, 300, 200] },
+            Call { opcode: 100, in_len: 5, out_len: 1, ain_len: 0, aout_len: 0, intin: &[4079, 10, 20, 300, 200], plant: &[] },
         ],
         id: 232,
         rec: 26,
@@ -523,6 +549,7 @@ fn case_0232_op104_wf_pxywh_of_a_created_unopened_window() {
         ain_len: 0,
         aout_len: 0,
         intin: &[1, 6],
+        plant: &[],
         comment: "WF_PXYWH of a created, unopened window",
     });
 }
@@ -531,7 +558,7 @@ fn case_0232_op104_wf_pxywh_of_a_created_unopened_window() {
 fn case_0234_op104_wf_hslide_of_a_fresh_window_w_setup_leaves_the_slider_at_the_l() {
     check(&TABLE, &Case {
         prelude: &[
-            Call { opcode: 100, in_len: 5, out_len: 1, ain_len: 0, aout_len: 0, intin: &[4079, 10, 20, 300, 200] },
+            Call { opcode: 100, in_len: 5, out_len: 1, ain_len: 0, aout_len: 0, intin: &[4079, 10, 20, 300, 200], plant: &[] },
         ],
         id: 234,
         rec: 27,
@@ -541,6 +568,7 @@ fn case_0234_op104_wf_hslide_of_a_fresh_window_w_setup_leaves_the_slider_at_the_
         ain_len: 0,
         aout_len: 0,
         intin: &[1, 8],
+        plant: &[],
         comment: "WF_HSLIDE of a fresh window: w_setup leaves the slider at the l",
     });
 }
@@ -549,7 +577,7 @@ fn case_0234_op104_wf_hslide_of_a_fresh_window_w_setup_leaves_the_slider_at_the_
 fn case_0236_op104_wf_vslide_of_a_fresh_window() {
     check(&TABLE, &Case {
         prelude: &[
-            Call { opcode: 100, in_len: 5, out_len: 1, ain_len: 0, aout_len: 0, intin: &[4079, 10, 20, 300, 200] },
+            Call { opcode: 100, in_len: 5, out_len: 1, ain_len: 0, aout_len: 0, intin: &[4079, 10, 20, 300, 200], plant: &[] },
         ],
         id: 236,
         rec: 28,
@@ -559,6 +587,7 @@ fn case_0236_op104_wf_vslide_of_a_fresh_window() {
         ain_len: 0,
         aout_len: 0,
         intin: &[1, 9],
+        plant: &[],
         comment: "WF_VSLIDE of a fresh window",
     });
 }
@@ -567,7 +596,7 @@ fn case_0236_op104_wf_vslide_of_a_fresh_window() {
 fn case_0238_op104_wf_hslsiz_of_a_fresh_window_the_1_use_default_marker() {
     check(&TABLE, &Case {
         prelude: &[
-            Call { opcode: 100, in_len: 5, out_len: 1, ain_len: 0, aout_len: 0, intin: &[4079, 10, 20, 300, 200] },
+            Call { opcode: 100, in_len: 5, out_len: 1, ain_len: 0, aout_len: 0, intin: &[4079, 10, 20, 300, 200], plant: &[] },
         ],
         id: 238,
         rec: 29,
@@ -577,6 +606,7 @@ fn case_0238_op104_wf_hslsiz_of_a_fresh_window_the_1_use_default_marker() {
         ain_len: 0,
         aout_len: 0,
         intin: &[1, 15],
+        plant: &[],
         comment: "WF_HSLSIZ of a fresh window: the -1 use-default marker",
     });
 }
@@ -585,7 +615,7 @@ fn case_0238_op104_wf_hslsiz_of_a_fresh_window_the_1_use_default_marker() {
 fn case_0240_op104_wf_vslsiz_of_a_fresh_window() {
     check(&TABLE, &Case {
         prelude: &[
-            Call { opcode: 100, in_len: 5, out_len: 1, ain_len: 0, aout_len: 0, intin: &[4079, 10, 20, 300, 200] },
+            Call { opcode: 100, in_len: 5, out_len: 1, ain_len: 0, aout_len: 0, intin: &[4079, 10, 20, 300, 200], plant: &[] },
         ],
         id: 240,
         rec: 30,
@@ -595,6 +625,7 @@ fn case_0240_op104_wf_vslsiz_of_a_fresh_window() {
         ain_len: 0,
         aout_len: 0,
         intin: &[1, 16],
+        plant: &[],
         comment: "WF_VSLSIZ of a fresh window",
     });
 }
@@ -603,7 +634,7 @@ fn case_0240_op104_wf_vslsiz_of_a_fresh_window() {
 fn case_0242_op104_wf_kind_on_a_real_window_wm_get_has_no_arm_for_it() {
     check(&TABLE, &Case {
         prelude: &[
-            Call { opcode: 100, in_len: 5, out_len: 1, ain_len: 0, aout_len: 0, intin: &[4079, 10, 20, 300, 200] },
+            Call { opcode: 100, in_len: 5, out_len: 1, ain_len: 0, aout_len: 0, intin: &[4079, 10, 20, 300, 200], plant: &[] },
         ],
         id: 242,
         rec: 31,
@@ -613,6 +644,7 @@ fn case_0242_op104_wf_kind_on_a_real_window_wm_get_has_no_arm_for_it() {
         ain_len: 0,
         aout_len: 0,
         intin: &[1, 1],
+        plant: &[],
         comment: "WF_KIND on a real window: wm_get has no arm for it",
     });
 }
@@ -621,7 +653,7 @@ fn case_0242_op104_wf_kind_on_a_real_window_wm_get_has_no_arm_for_it() {
 fn case_0244_op104_wf_owner_of_a_created_window_pid_is_open_gl_wtop_bottom_mos() {
     check(&TABLE, &Case {
         prelude: &[
-            Call { opcode: 100, in_len: 5, out_len: 1, ain_len: 0, aout_len: 0, intin: &[4079, 10, 20, 300, 200] },
+            Call { opcode: 100, in_len: 5, out_len: 1, ain_len: 0, aout_len: 0, intin: &[4079, 10, 20, 300, 200], plant: &[] },
         ],
         id: 244,
         rec: 32,
@@ -631,6 +663,7 @@ fn case_0244_op104_wf_owner_of_a_created_window_pid_is_open_gl_wtop_bottom_mos()
         ain_len: 0,
         aout_len: 0,
         intin: &[1, 20],
+        plant: &[],
         comment: "WF_OWNER of a created window: pid, is-open, gl_wtop, bottom-mos",
     });
 }
@@ -639,8 +672,8 @@ fn case_0244_op104_wf_owner_of_a_created_window_pid_is_open_gl_wtop_bottom_mos()
 fn case_0247_op104_wf_owner_of_an_open_window_the_is_open_word_changes() {
     check(&TABLE, &Case {
         prelude: &[
-            Call { opcode: 100, in_len: 5, out_len: 1, ain_len: 0, aout_len: 0, intin: &[4079, 10, 20, 300, 200] },
-            Call { opcode: 101, in_len: 5, out_len: 1, ain_len: 0, aout_len: 0, intin: &[1, 30, 40, 320, 240] },
+            Call { opcode: 100, in_len: 5, out_len: 1, ain_len: 0, aout_len: 0, intin: &[4079, 10, 20, 300, 200], plant: &[] },
+            Call { opcode: 101, in_len: 5, out_len: 1, ain_len: 0, aout_len: 0, intin: &[1, 30, 40, 320, 240], plant: &[] },
         ],
         id: 247,
         rec: 33,
@@ -650,6 +683,7 @@ fn case_0247_op104_wf_owner_of_an_open_window_the_is_open_word_changes() {
         ain_len: 0,
         aout_len: 0,
         intin: &[1, 20],
+        plant: &[],
         comment: "WF_OWNER of an open window: the is-open word changes",
     });
 }
@@ -658,8 +692,8 @@ fn case_0247_op104_wf_owner_of_an_open_window_the_is_open_word_changes() {
 fn case_0250_op104_wf_cxywh_after_wind_open_the_rect_the_open_was_given_verbatim() {
     check(&TABLE, &Case {
         prelude: &[
-            Call { opcode: 100, in_len: 5, out_len: 1, ain_len: 0, aout_len: 0, intin: &[4079, 10, 20, 300, 200] },
-            Call { opcode: 101, in_len: 5, out_len: 1, ain_len: 0, aout_len: 0, intin: &[1, 30, 40, 320, 240] },
+            Call { opcode: 100, in_len: 5, out_len: 1, ain_len: 0, aout_len: 0, intin: &[4079, 10, 20, 300, 200], plant: &[] },
+            Call { opcode: 101, in_len: 5, out_len: 1, ain_len: 0, aout_len: 0, intin: &[1, 30, 40, 320, 240], plant: &[] },
         ],
         id: 250,
         rec: 34,
@@ -669,6 +703,7 @@ fn case_0250_op104_wf_cxywh_after_wind_open_the_rect_the_open_was_given_verbatim
         ain_len: 0,
         aout_len: 0,
         intin: &[1, 5],
+        plant: &[],
         comment: "WF_CXYWH after wind_open: the rect the open was given, verbatim",
     });
 }
@@ -677,8 +712,8 @@ fn case_0250_op104_wf_cxywh_after_wind_open_the_rect_the_open_was_given_verbatim
 fn case_0253_op104_wf_pxywh_after_wind_open_wm_open_sets_prev_to_the_same_rect() {
     check(&TABLE, &Case {
         prelude: &[
-            Call { opcode: 100, in_len: 5, out_len: 1, ain_len: 0, aout_len: 0, intin: &[4079, 10, 20, 300, 200] },
-            Call { opcode: 101, in_len: 5, out_len: 1, ain_len: 0, aout_len: 0, intin: &[1, 30, 40, 320, 240] },
+            Call { opcode: 100, in_len: 5, out_len: 1, ain_len: 0, aout_len: 0, intin: &[4079, 10, 20, 300, 200], plant: &[] },
+            Call { opcode: 101, in_len: 5, out_len: 1, ain_len: 0, aout_len: 0, intin: &[1, 30, 40, 320, 240], plant: &[] },
         ],
         id: 253,
         rec: 35,
@@ -688,6 +723,7 @@ fn case_0253_op104_wf_pxywh_after_wind_open_wm_open_sets_prev_to_the_same_rect()
         ain_len: 0,
         aout_len: 0,
         intin: &[1, 6],
+        plant: &[],
         comment: "WF_PXYWH after wind_open: wm_open sets PREV to the same rect",
     });
 }
@@ -696,8 +732,8 @@ fn case_0253_op104_wf_pxywh_after_wind_open_wm_open_sets_prev_to_the_same_rect()
 fn case_0256_op104_wf_wxywh_after_wind_open_wm_calc_wc_work_on_the_box_metrics() {
     check(&TABLE, &Case {
         prelude: &[
-            Call { opcode: 100, in_len: 5, out_len: 1, ain_len: 0, aout_len: 0, intin: &[4079, 10, 20, 300, 200] },
-            Call { opcode: 101, in_len: 5, out_len: 1, ain_len: 0, aout_len: 0, intin: &[1, 30, 40, 320, 240] },
+            Call { opcode: 100, in_len: 5, out_len: 1, ain_len: 0, aout_len: 0, intin: &[4079, 10, 20, 300, 200], plant: &[] },
+            Call { opcode: 101, in_len: 5, out_len: 1, ain_len: 0, aout_len: 0, intin: &[1, 30, 40, 320, 240], plant: &[] },
         ],
         id: 256,
         rec: 36,
@@ -707,6 +743,7 @@ fn case_0256_op104_wf_wxywh_after_wind_open_wm_calc_wc_work_on_the_box_metrics()
         ain_len: 0,
         aout_len: 0,
         intin: &[1, 4],
+        plant: &[],
         comment: "WF_WXYWH after wind_open: wm_calc(WC_WORK) on the box metrics",
     });
 }
@@ -715,8 +752,8 @@ fn case_0256_op104_wf_wxywh_after_wind_open_wm_calc_wc_work_on_the_box_metrics()
 fn case_0259_op104_wf_fxywh_after_wind_open_unchanged_by_the_open() {
     check(&TABLE, &Case {
         prelude: &[
-            Call { opcode: 100, in_len: 5, out_len: 1, ain_len: 0, aout_len: 0, intin: &[4079, 10, 20, 300, 200] },
-            Call { opcode: 101, in_len: 5, out_len: 1, ain_len: 0, aout_len: 0, intin: &[1, 30, 40, 320, 240] },
+            Call { opcode: 100, in_len: 5, out_len: 1, ain_len: 0, aout_len: 0, intin: &[4079, 10, 20, 300, 200], plant: &[] },
+            Call { opcode: 101, in_len: 5, out_len: 1, ain_len: 0, aout_len: 0, intin: &[1, 30, 40, 320, 240], plant: &[] },
         ],
         id: 259,
         rec: 37,
@@ -726,6 +763,7 @@ fn case_0259_op104_wf_fxywh_after_wind_open_unchanged_by_the_open() {
         ain_len: 0,
         aout_len: 0,
         intin: &[1, 7],
+        plant: &[],
         comment: "WF_FXYWH after wind_open: unchanged by the open",
     });
 }
@@ -734,8 +772,8 @@ fn case_0259_op104_wf_fxywh_after_wind_open_unchanged_by_the_open() {
 fn case_0262_op104_wf_wxywh_of_a_none_window_work_area_is_the_border_area_less_on() {
     check(&TABLE, &Case {
         prelude: &[
-            Call { opcode: 100, in_len: 5, out_len: 1, ain_len: 0, aout_len: 0, intin: &[0, 30, 40, 320, 240] },
-            Call { opcode: 101, in_len: 5, out_len: 1, ain_len: 0, aout_len: 0, intin: &[1, 30, 40, 320, 240] },
+            Call { opcode: 100, in_len: 5, out_len: 1, ain_len: 0, aout_len: 0, intin: &[0, 30, 40, 320, 240], plant: &[] },
+            Call { opcode: 101, in_len: 5, out_len: 1, ain_len: 0, aout_len: 0, intin: &[1, 30, 40, 320, 240], plant: &[] },
         ],
         id: 262,
         rec: 38,
@@ -745,6 +783,7 @@ fn case_0262_op104_wf_wxywh_of_a_none_window_work_area_is_the_border_area_less_o
         ain_len: 0,
         aout_len: 0,
         intin: &[1, 4],
+        plant: &[],
         comment: "WF_WXYWH of a NONE window: work area is the border area less on",
     });
 }
@@ -761,6 +800,7 @@ fn case_0263_op104_wf_top_with_nothing_open_the_reset_proves_itself() {
         ain_len: 0,
         aout_len: 0,
         intin: &[0, 10],
+        plant: &[],
         comment: "WF_TOP with nothing open: the reset proves itself",
     });
 }
@@ -769,8 +809,8 @@ fn case_0263_op104_wf_top_with_nothing_open_the_reset_proves_itself() {
 fn case_0266_op104_wf_top_with_one_window_open() {
     check(&TABLE, &Case {
         prelude: &[
-            Call { opcode: 100, in_len: 5, out_len: 1, ain_len: 0, aout_len: 0, intin: &[4079, 10, 20, 300, 200] },
-            Call { opcode: 101, in_len: 5, out_len: 1, ain_len: 0, aout_len: 0, intin: &[1, 30, 40, 320, 240] },
+            Call { opcode: 100, in_len: 5, out_len: 1, ain_len: 0, aout_len: 0, intin: &[4079, 10, 20, 300, 200], plant: &[] },
+            Call { opcode: 101, in_len: 5, out_len: 1, ain_len: 0, aout_len: 0, intin: &[1, 30, 40, 320, 240], plant: &[] },
         ],
         id: 266,
         rec: 40,
@@ -780,6 +820,7 @@ fn case_0266_op104_wf_top_with_one_window_open() {
         ain_len: 0,
         aout_len: 0,
         intin: &[0, 10],
+        plant: &[],
         comment: "WF_TOP with one window open",
     });
 }
@@ -788,8 +829,8 @@ fn case_0266_op104_wf_top_with_one_window_open() {
 fn case_0281_op104_wf_hslide_read_back_after_a_set_of_500() {
     check(&TABLE, &Case {
         prelude: &[
-            Call { opcode: 100, in_len: 5, out_len: 1, ain_len: 0, aout_len: 0, intin: &[4079, 10, 20, 300, 200] },
-            Call { opcode: 105, in_len: 6, out_len: 1, ain_len: 0, aout_len: 0, intin: &[1, 8, 500, 0, 0, 0] },
+            Call { opcode: 100, in_len: 5, out_len: 1, ain_len: 0, aout_len: 0, intin: &[4079, 10, 20, 300, 200], plant: &[] },
+            Call { opcode: 105, in_len: 6, out_len: 1, ain_len: 0, aout_len: 0, intin: &[1, 8, 500, 0, 0, 0], plant: &[] },
         ],
         id: 281,
         rec: 41,
@@ -799,6 +840,7 @@ fn case_0281_op104_wf_hslide_read_back_after_a_set_of_500() {
         ain_len: 0,
         aout_len: 0,
         intin: &[1, 8],
+        plant: &[],
         comment: "WF_HSLIDE read back after a set of 500",
     });
 }
@@ -807,8 +849,8 @@ fn case_0281_op104_wf_hslide_read_back_after_a_set_of_500() {
 fn case_0284_op104_wf_hslide_after_a_set_of_0_clamped_up_to_1() {
     check(&TABLE, &Case {
         prelude: &[
-            Call { opcode: 100, in_len: 5, out_len: 1, ain_len: 0, aout_len: 0, intin: &[4079, 10, 20, 300, 200] },
-            Call { opcode: 105, in_len: 6, out_len: 1, ain_len: 0, aout_len: 0, intin: &[1, 8, 0, 0, 0, 0] },
+            Call { opcode: 100, in_len: 5, out_len: 1, ain_len: 0, aout_len: 0, intin: &[4079, 10, 20, 300, 200], plant: &[] },
+            Call { opcode: 105, in_len: 6, out_len: 1, ain_len: 0, aout_len: 0, intin: &[1, 8, 0, 0, 0, 0], plant: &[] },
         ],
         id: 284,
         rec: 42,
@@ -818,6 +860,7 @@ fn case_0284_op104_wf_hslide_after_a_set_of_0_clamped_up_to_1() {
         ain_len: 0,
         aout_len: 0,
         intin: &[1, 8],
+        plant: &[],
         comment: "WF_HSLIDE after a set of 0: clamped up to 1",
     });
 }
@@ -826,8 +869,8 @@ fn case_0284_op104_wf_hslide_after_a_set_of_0_clamped_up_to_1() {
 fn case_0287_op104_wf_hslide_after_a_set_of_2000_clamped_down_to_1000() {
     check(&TABLE, &Case {
         prelude: &[
-            Call { opcode: 100, in_len: 5, out_len: 1, ain_len: 0, aout_len: 0, intin: &[4079, 10, 20, 300, 200] },
-            Call { opcode: 105, in_len: 6, out_len: 1, ain_len: 0, aout_len: 0, intin: &[1, 8, 2000, 0, 0, 0] },
+            Call { opcode: 100, in_len: 5, out_len: 1, ain_len: 0, aout_len: 0, intin: &[4079, 10, 20, 300, 200], plant: &[] },
+            Call { opcode: 105, in_len: 6, out_len: 1, ain_len: 0, aout_len: 0, intin: &[1, 8, 2000, 0, 0, 0], plant: &[] },
         ],
         id: 287,
         rec: 43,
@@ -837,6 +880,7 @@ fn case_0287_op104_wf_hslide_after_a_set_of_2000_clamped_down_to_1000() {
         ain_len: 0,
         aout_len: 0,
         intin: &[1, 8],
+        plant: &[],
         comment: "WF_HSLIDE after a set of 2000: clamped down to 1000",
     });
 }
@@ -845,8 +889,8 @@ fn case_0287_op104_wf_hslide_after_a_set_of_2000_clamped_down_to_1000() {
 fn case_0290_op104_wf_vslide_after_a_set_of_1000_exactly_on_the_ceiling() {
     check(&TABLE, &Case {
         prelude: &[
-            Call { opcode: 100, in_len: 5, out_len: 1, ain_len: 0, aout_len: 0, intin: &[4079, 10, 20, 300, 200] },
-            Call { opcode: 105, in_len: 6, out_len: 1, ain_len: 0, aout_len: 0, intin: &[1, 9, 1000, 0, 0, 0] },
+            Call { opcode: 100, in_len: 5, out_len: 1, ain_len: 0, aout_len: 0, intin: &[4079, 10, 20, 300, 200], plant: &[] },
+            Call { opcode: 105, in_len: 6, out_len: 1, ain_len: 0, aout_len: 0, intin: &[1, 9, 1000, 0, 0, 0], plant: &[] },
         ],
         id: 290,
         rec: 44,
@@ -856,6 +900,7 @@ fn case_0290_op104_wf_vslide_after_a_set_of_1000_exactly_on_the_ceiling() {
         ain_len: 0,
         aout_len: 0,
         intin: &[1, 9],
+        plant: &[],
         comment: "WF_VSLIDE after a set of 1000: exactly on the ceiling",
     });
 }
@@ -864,8 +909,8 @@ fn case_0290_op104_wf_vslide_after_a_set_of_1000_exactly_on_the_ceiling() {
 fn case_0293_op104_wf_hslsiz_after_a_set_of_1_the_use_default_escape_is_let_thro() {
     check(&TABLE, &Case {
         prelude: &[
-            Call { opcode: 100, in_len: 5, out_len: 1, ain_len: 0, aout_len: 0, intin: &[4079, 10, 20, 300, 200] },
-            Call { opcode: 105, in_len: 6, out_len: 1, ain_len: 0, aout_len: 0, intin: &[1, 15, -1, 0, 0, 0] },
+            Call { opcode: 100, in_len: 5, out_len: 1, ain_len: 0, aout_len: 0, intin: &[4079, 10, 20, 300, 200], plant: &[] },
+            Call { opcode: 105, in_len: 6, out_len: 1, ain_len: 0, aout_len: 0, intin: &[1, 15, -1, 0, 0, 0], plant: &[] },
         ],
         id: 293,
         rec: 45,
@@ -875,6 +920,7 @@ fn case_0293_op104_wf_hslsiz_after_a_set_of_1_the_use_default_escape_is_let_thro
         ain_len: 0,
         aout_len: 0,
         intin: &[1, 15],
+        plant: &[],
         comment: "WF_HSLSIZ after a set of -1: the use-default escape is let thro",
     });
 }
@@ -883,8 +929,8 @@ fn case_0293_op104_wf_hslsiz_after_a_set_of_1_the_use_default_escape_is_let_thro
 fn case_0296_op104_wf_hslsiz_after_a_set_of_0_clamped_up_to_1() {
     check(&TABLE, &Case {
         prelude: &[
-            Call { opcode: 100, in_len: 5, out_len: 1, ain_len: 0, aout_len: 0, intin: &[4079, 10, 20, 300, 200] },
-            Call { opcode: 105, in_len: 6, out_len: 1, ain_len: 0, aout_len: 0, intin: &[1, 15, 0, 0, 0, 0] },
+            Call { opcode: 100, in_len: 5, out_len: 1, ain_len: 0, aout_len: 0, intin: &[4079, 10, 20, 300, 200], plant: &[] },
+            Call { opcode: 105, in_len: 6, out_len: 1, ain_len: 0, aout_len: 0, intin: &[1, 15, 0, 0, 0, 0], plant: &[] },
         ],
         id: 296,
         rec: 46,
@@ -894,6 +940,7 @@ fn case_0296_op104_wf_hslsiz_after_a_set_of_0_clamped_up_to_1() {
         ain_len: 0,
         aout_len: 0,
         intin: &[1, 15],
+        plant: &[],
         comment: "WF_HSLSIZ after a set of 0: clamped up to 1",
     });
 }
@@ -902,8 +949,8 @@ fn case_0296_op104_wf_hslsiz_after_a_set_of_0_clamped_up_to_1() {
 fn case_0299_op104_wf_vslsiz_after_a_set_of_1001_clamped_down_to_1000() {
     check(&TABLE, &Case {
         prelude: &[
-            Call { opcode: 100, in_len: 5, out_len: 1, ain_len: 0, aout_len: 0, intin: &[4079, 10, 20, 300, 200] },
-            Call { opcode: 105, in_len: 6, out_len: 1, ain_len: 0, aout_len: 0, intin: &[1, 16, 1001, 0, 0, 0] },
+            Call { opcode: 100, in_len: 5, out_len: 1, ain_len: 0, aout_len: 0, intin: &[4079, 10, 20, 300, 200], plant: &[] },
+            Call { opcode: 105, in_len: 6, out_len: 1, ain_len: 0, aout_len: 0, intin: &[1, 16, 1001, 0, 0, 0], plant: &[] },
         ],
         id: 299,
         rec: 47,
@@ -913,6 +960,7 @@ fn case_0299_op104_wf_vslsiz_after_a_set_of_1001_clamped_down_to_1000() {
         ain_len: 0,
         aout_len: 0,
         intin: &[1, 16],
+        plant: &[],
         comment: "WF_VSLSIZ after a set of 1001: clamped down to 1000",
     });
 }
@@ -921,7 +969,7 @@ fn case_0299_op104_wf_vslsiz_after_a_set_of_1001_clamped_down_to_1000() {
 fn case_0301_op105_wind_set_wf_hslide_the_setter_s_own_return_code() {
     check(&TABLE, &Case {
         prelude: &[
-            Call { opcode: 100, in_len: 5, out_len: 1, ain_len: 0, aout_len: 0, intin: &[4079, 10, 20, 300, 200] },
+            Call { opcode: 100, in_len: 5, out_len: 1, ain_len: 0, aout_len: 0, intin: &[4079, 10, 20, 300, 200], plant: &[] },
         ],
         id: 301,
         rec: 48,
@@ -931,6 +979,7 @@ fn case_0301_op105_wind_set_wf_hslide_the_setter_s_own_return_code() {
         ain_len: 0,
         aout_len: 0,
         intin: &[1, 8, 500, 0, 0, 0],
+        plant: &[],
         comment: "wind_set WF_HSLIDE: the setter's own return code",
     });
 }
@@ -947,6 +996,7 @@ fn case_0302_op105_wind_set_on_a_handle_that_was_never_created() {
         ain_len: 0,
         aout_len: 0,
         intin: &[1, 8, 500, 0, 0, 0],
+        plant: &[],
         comment: "wind_set on a handle that was never created",
     });
 }
@@ -955,7 +1005,7 @@ fn case_0302_op105_wind_set_on_a_handle_that_was_never_created() {
 fn case_0304_op105_wind_set_field_21_past_the_last_defined_field() {
     check(&TABLE, &Case {
         prelude: &[
-            Call { opcode: 100, in_len: 5, out_len: 1, ain_len: 0, aout_len: 0, intin: &[4079, 10, 20, 300, 200] },
+            Call { opcode: 100, in_len: 5, out_len: 1, ain_len: 0, aout_len: 0, intin: &[4079, 10, 20, 300, 200], plant: &[] },
         ],
         id: 304,
         rec: 50,
@@ -965,6 +1015,7 @@ fn case_0304_op105_wind_set_field_21_past_the_last_defined_field() {
         ain_len: 0,
         aout_len: 0,
         intin: &[1, 21, 0, 0, 0, 0],
+        plant: &[],
         comment: "wind_set field 21: past the last defined field",
     });
 }
@@ -973,7 +1024,7 @@ fn case_0304_op105_wind_set_field_21_past_the_last_defined_field() {
 fn case_0306_op105_wind_set_wf_kind_readable_in_some_aeses_settable_in_none() {
     check(&TABLE, &Case {
         prelude: &[
-            Call { opcode: 100, in_len: 5, out_len: 1, ain_len: 0, aout_len: 0, intin: &[4079, 10, 20, 300, 200] },
+            Call { opcode: 100, in_len: 5, out_len: 1, ain_len: 0, aout_len: 0, intin: &[4079, 10, 20, 300, 200], plant: &[] },
         ],
         id: 306,
         rec: 51,
@@ -983,6 +1034,7 @@ fn case_0306_op105_wind_set_wf_kind_readable_in_some_aeses_settable_in_none() {
         ain_len: 0,
         aout_len: 0,
         intin: &[1, 1, 0, 0, 0, 0],
+        plant: &[],
         comment: "wind_set WF_KIND: readable in some AESes, settable in none",
     });
 }
@@ -991,7 +1043,7 @@ fn case_0306_op105_wind_set_wf_kind_readable_in_some_aeses_settable_in_none() {
 fn case_0308_op105_wind_set_on_a_negative_handle() {
     check(&TABLE, &Case {
         prelude: &[
-            Call { opcode: 100, in_len: 5, out_len: 1, ain_len: 0, aout_len: 0, intin: &[4079, 10, 20, 300, 200] },
+            Call { opcode: 100, in_len: 5, out_len: 1, ain_len: 0, aout_len: 0, intin: &[4079, 10, 20, 300, 200], plant: &[] },
         ],
         id: 308,
         rec: 52,
@@ -1001,6 +1053,7 @@ fn case_0308_op105_wind_set_on_a_negative_handle() {
         ain_len: 0,
         aout_len: 0,
         intin: &[-1, 8, 500, 0, 0, 0],
+        plant: &[],
         comment: "wind_set on a negative handle",
     });
 }
@@ -1009,7 +1062,7 @@ fn case_0308_op105_wind_set_on_a_negative_handle() {
 fn case_0310_op105_wind_set_past_num_win_on_either_machine() {
     check(&TABLE, &Case {
         prelude: &[
-            Call { opcode: 100, in_len: 5, out_len: 1, ain_len: 0, aout_len: 0, intin: &[4079, 10, 20, 300, 200] },
+            Call { opcode: 100, in_len: 5, out_len: 1, ain_len: 0, aout_len: 0, intin: &[4079, 10, 20, 300, 200], plant: &[] },
         ],
         id: 310,
         rec: 53,
@@ -1019,6 +1072,7 @@ fn case_0310_op105_wind_set_past_num_win_on_either_machine() {
         ain_len: 0,
         aout_len: 0,
         intin: &[99, 8, 500, 0, 0, 0],
+        plant: &[],
         comment: "wind_set past NUM_WIN on either machine",
     });
 }
@@ -1027,8 +1081,8 @@ fn case_0310_op105_wind_set_past_num_win_on_either_machine() {
 fn case_0313_op105_wind_set_wf_cxywh_the_setter_s_return_code() {
     check(&TABLE, &Case {
         prelude: &[
-            Call { opcode: 100, in_len: 5, out_len: 1, ain_len: 0, aout_len: 0, intin: &[4079, 10, 20, 300, 200] },
-            Call { opcode: 101, in_len: 5, out_len: 1, ain_len: 0, aout_len: 0, intin: &[1, 30, 40, 320, 240] },
+            Call { opcode: 100, in_len: 5, out_len: 1, ain_len: 0, aout_len: 0, intin: &[4079, 10, 20, 300, 200], plant: &[] },
+            Call { opcode: 101, in_len: 5, out_len: 1, ain_len: 0, aout_len: 0, intin: &[1, 30, 40, 320, 240], plant: &[] },
         ],
         id: 313,
         rec: 54,
@@ -1038,6 +1092,7 @@ fn case_0313_op105_wind_set_wf_cxywh_the_setter_s_return_code() {
         ain_len: 0,
         aout_len: 0,
         intin: &[1, 5, 60, 80, 200, 160],
+        plant: &[],
         comment: "wind_set WF_CXYWH: the setter's return code",
     });
 }
@@ -1046,9 +1101,9 @@ fn case_0313_op105_wind_set_wf_cxywh_the_setter_s_return_code() {
 fn case_0317_op104_wf_cxywh_after_a_wf_cxywh_set_the_new_rect() {
     check(&TABLE, &Case {
         prelude: &[
-            Call { opcode: 100, in_len: 5, out_len: 1, ain_len: 0, aout_len: 0, intin: &[4079, 10, 20, 300, 200] },
-            Call { opcode: 101, in_len: 5, out_len: 1, ain_len: 0, aout_len: 0, intin: &[1, 30, 40, 320, 240] },
-            Call { opcode: 105, in_len: 6, out_len: 1, ain_len: 0, aout_len: 0, intin: &[1, 5, 60, 80, 200, 160] },
+            Call { opcode: 100, in_len: 5, out_len: 1, ain_len: 0, aout_len: 0, intin: &[4079, 10, 20, 300, 200], plant: &[] },
+            Call { opcode: 101, in_len: 5, out_len: 1, ain_len: 0, aout_len: 0, intin: &[1, 30, 40, 320, 240], plant: &[] },
+            Call { opcode: 105, in_len: 6, out_len: 1, ain_len: 0, aout_len: 0, intin: &[1, 5, 60, 80, 200, 160], plant: &[] },
         ],
         id: 317,
         rec: 55,
@@ -1058,6 +1113,7 @@ fn case_0317_op104_wf_cxywh_after_a_wf_cxywh_set_the_new_rect() {
         ain_len: 0,
         aout_len: 0,
         intin: &[1, 5],
+        plant: &[],
         comment: "WF_CXYWH after a WF_CXYWH set: the new rect",
     });
 }
@@ -1066,9 +1122,9 @@ fn case_0317_op104_wf_cxywh_after_a_wf_cxywh_set_the_new_rect() {
 fn case_0321_op104_wf_pxywh_after_a_wf_cxywh_set_draw_change_kept_the_rect_before() {
     check(&TABLE, &Case {
         prelude: &[
-            Call { opcode: 100, in_len: 5, out_len: 1, ain_len: 0, aout_len: 0, intin: &[4079, 10, 20, 300, 200] },
-            Call { opcode: 101, in_len: 5, out_len: 1, ain_len: 0, aout_len: 0, intin: &[1, 30, 40, 320, 240] },
-            Call { opcode: 105, in_len: 6, out_len: 1, ain_len: 0, aout_len: 0, intin: &[1, 5, 60, 80, 200, 160] },
+            Call { opcode: 100, in_len: 5, out_len: 1, ain_len: 0, aout_len: 0, intin: &[4079, 10, 20, 300, 200], plant: &[] },
+            Call { opcode: 101, in_len: 5, out_len: 1, ain_len: 0, aout_len: 0, intin: &[1, 30, 40, 320, 240], plant: &[] },
+            Call { opcode: 105, in_len: 6, out_len: 1, ain_len: 0, aout_len: 0, intin: &[1, 5, 60, 80, 200, 160], plant: &[] },
         ],
         id: 321,
         rec: 56,
@@ -1078,6 +1134,7 @@ fn case_0321_op104_wf_pxywh_after_a_wf_cxywh_set_draw_change_kept_the_rect_befor
         ain_len: 0,
         aout_len: 0,
         intin: &[1, 6],
+        plant: &[],
         comment: "WF_PXYWH after a WF_CXYWH set: draw_change kept the rect before",
     });
 }
@@ -1086,8 +1143,8 @@ fn case_0321_op104_wf_pxywh_after_a_wf_cxywh_set_draw_change_kept_the_rect_befor
 fn case_0324_op105_wind_set_wf_top_on_the_only_open_window_already_topped() {
     check(&TABLE, &Case {
         prelude: &[
-            Call { opcode: 100, in_len: 5, out_len: 1, ain_len: 0, aout_len: 0, intin: &[4079, 10, 20, 300, 200] },
-            Call { opcode: 101, in_len: 5, out_len: 1, ain_len: 0, aout_len: 0, intin: &[1, 30, 40, 320, 240] },
+            Call { opcode: 100, in_len: 5, out_len: 1, ain_len: 0, aout_len: 0, intin: &[4079, 10, 20, 300, 200], plant: &[] },
+            Call { opcode: 101, in_len: 5, out_len: 1, ain_len: 0, aout_len: 0, intin: &[1, 30, 40, 320, 240], plant: &[] },
         ],
         id: 324,
         rec: 57,
@@ -1097,6 +1154,7 @@ fn case_0324_op105_wind_set_wf_top_on_the_only_open_window_already_topped() {
         ain_len: 0,
         aout_len: 0,
         intin: &[1, 10, 0, 0, 0, 0],
+        plant: &[],
         comment: "wind_set WF_TOP on the only open window: already topped",
     });
 }
@@ -1105,10 +1163,10 @@ fn case_0324_op105_wind_set_wf_top_on_the_only_open_window_already_topped() {
 fn case_0329_op104_wf_top_with_two_windows_open_the_later_open_is_on_top() {
     check(&TABLE, &Case {
         prelude: &[
-            Call { opcode: 100, in_len: 5, out_len: 1, ain_len: 0, aout_len: 0, intin: &[4079, 10, 20, 300, 200] },
-            Call { opcode: 100, in_len: 5, out_len: 1, ain_len: 0, aout_len: 0, intin: &[4079, 10, 20, 300, 200] },
-            Call { opcode: 101, in_len: 5, out_len: 1, ain_len: 0, aout_len: 0, intin: &[1, 30, 40, 320, 240] },
-            Call { opcode: 101, in_len: 5, out_len: 1, ain_len: 0, aout_len: 0, intin: &[2, 60, 80, 200, 160] },
+            Call { opcode: 100, in_len: 5, out_len: 1, ain_len: 0, aout_len: 0, intin: &[4079, 10, 20, 300, 200], plant: &[] },
+            Call { opcode: 100, in_len: 5, out_len: 1, ain_len: 0, aout_len: 0, intin: &[4079, 10, 20, 300, 200], plant: &[] },
+            Call { opcode: 101, in_len: 5, out_len: 1, ain_len: 0, aout_len: 0, intin: &[1, 30, 40, 320, 240], plant: &[] },
+            Call { opcode: 101, in_len: 5, out_len: 1, ain_len: 0, aout_len: 0, intin: &[2, 60, 80, 200, 160], plant: &[] },
         ],
         id: 329,
         rec: 58,
@@ -1118,6 +1176,7 @@ fn case_0329_op104_wf_top_with_two_windows_open_the_later_open_is_on_top() {
         ain_len: 0,
         aout_len: 0,
         intin: &[0, 10],
+        plant: &[],
         comment: "WF_TOP with two windows open: the later open is on top",
     });
 }
@@ -1126,11 +1185,11 @@ fn case_0329_op104_wf_top_with_two_windows_open_the_later_open_is_on_top() {
 fn case_0335_op104_wf_top_after_a_wf_cxywh_free_re_top_of_the_lower_window() {
     check(&TABLE, &Case {
         prelude: &[
-            Call { opcode: 100, in_len: 5, out_len: 1, ain_len: 0, aout_len: 0, intin: &[4079, 10, 20, 300, 200] },
-            Call { opcode: 100, in_len: 5, out_len: 1, ain_len: 0, aout_len: 0, intin: &[4079, 10, 20, 300, 200] },
-            Call { opcode: 101, in_len: 5, out_len: 1, ain_len: 0, aout_len: 0, intin: &[1, 30, 40, 320, 240] },
-            Call { opcode: 101, in_len: 5, out_len: 1, ain_len: 0, aout_len: 0, intin: &[2, 60, 80, 200, 160] },
-            Call { opcode: 105, in_len: 6, out_len: 1, ain_len: 0, aout_len: 0, intin: &[1, 10, 0, 0, 0, 0] },
+            Call { opcode: 100, in_len: 5, out_len: 1, ain_len: 0, aout_len: 0, intin: &[4079, 10, 20, 300, 200], plant: &[] },
+            Call { opcode: 100, in_len: 5, out_len: 1, ain_len: 0, aout_len: 0, intin: &[4079, 10, 20, 300, 200], plant: &[] },
+            Call { opcode: 101, in_len: 5, out_len: 1, ain_len: 0, aout_len: 0, intin: &[1, 30, 40, 320, 240], plant: &[] },
+            Call { opcode: 101, in_len: 5, out_len: 1, ain_len: 0, aout_len: 0, intin: &[2, 60, 80, 200, 160], plant: &[] },
+            Call { opcode: 105, in_len: 6, out_len: 1, ain_len: 0, aout_len: 0, intin: &[1, 10, 0, 0, 0, 0], plant: &[] },
         ],
         id: 335,
         rec: 59,
@@ -1140,6 +1199,7 @@ fn case_0335_op104_wf_top_after_a_wf_cxywh_free_re_top_of_the_lower_window() {
         ain_len: 0,
         aout_len: 0,
         intin: &[0, 10],
+        plant: &[],
         comment: "WF_TOP after a WF_CXYWH-free re-top of the lower window",
     });
 }
@@ -1156,6 +1216,7 @@ fn case_0348_op107_wind_update_beg_update_the_reset_drains_the_lock_afterwards()
         ain_len: 0,
         aout_len: 0,
         intin: &[1],
+        plant: &[],
         comment: "wind_update BEG_UPDATE: the reset drains the lock afterwards",
     });
 }
@@ -1172,6 +1233,7 @@ fn case_0349_op107_wind_update_end_update_with_no_lock_held_unsync_returns_early
         ain_len: 0,
         aout_len: 0,
         intin: &[0],
+        plant: &[],
         comment: "wind_update END_UPDATE with no lock held: unsync returns early",
     });
 }
@@ -1180,7 +1242,7 @@ fn case_0349_op107_wind_update_end_update_with_no_lock_held_unsync_returns_early
 fn case_0351_op107_wind_update_end_update_after_a_beg_the_balanced_pair() {
     check(&TABLE, &Case {
         prelude: &[
-            Call { opcode: 107, in_len: 1, out_len: 1, ain_len: 0, aout_len: 0, intin: &[1] },
+            Call { opcode: 107, in_len: 1, out_len: 1, ain_len: 0, aout_len: 0, intin: &[1], plant: &[] },
         ],
         id: 351,
         rec: 62,
@@ -1190,6 +1252,7 @@ fn case_0351_op107_wind_update_end_update_after_a_beg_the_balanced_pair() {
         ain_len: 0,
         aout_len: 0,
         intin: &[0],
+        plant: &[],
         comment: "wind_update END_UPDATE after a BEG: the balanced pair",
     });
 }
@@ -1198,8 +1261,8 @@ fn case_0351_op107_wind_update_end_update_after_a_beg_the_balanced_pair() {
 fn case_0354_op107_wind_update_end_update_after_two_begs_the_count_not_the_flag() {
     check(&TABLE, &Case {
         prelude: &[
-            Call { opcode: 107, in_len: 1, out_len: 1, ain_len: 0, aout_len: 0, intin: &[1] },
-            Call { opcode: 107, in_len: 1, out_len: 1, ain_len: 0, aout_len: 0, intin: &[1] },
+            Call { opcode: 107, in_len: 1, out_len: 1, ain_len: 0, aout_len: 0, intin: &[1], plant: &[] },
+            Call { opcode: 107, in_len: 1, out_len: 1, ain_len: 0, aout_len: 0, intin: &[1], plant: &[] },
         ],
         id: 354,
         rec: 63,
@@ -1209,6 +1272,7 @@ fn case_0354_op107_wind_update_end_update_after_two_begs_the_count_not_the_flag(
         ain_len: 0,
         aout_len: 0,
         intin: &[0],
+        plant: &[],
         comment: "wind_update END_UPDATE after two BEGs: the count, not the flag",
     });
 }
@@ -1225,6 +1289,7 @@ fn case_0355_op107_wind_update_beg_mctrl_the_reset_drains_ml_ocnt_afterwards() {
         ain_len: 0,
         aout_len: 0,
         intin: &[3],
+        plant: &[],
         comment: "wind_update BEG_MCTRL: the reset drains ml_ocnt afterwards",
     });
 }
@@ -1233,7 +1298,7 @@ fn case_0355_op107_wind_update_beg_mctrl_the_reset_drains_ml_ocnt_afterwards() {
 fn case_0357_op107_wind_update_end_mctrl_after_a_beg_mctrl_the_balanced_pair() {
     check(&TABLE, &Case {
         prelude: &[
-            Call { opcode: 107, in_len: 1, out_len: 1, ain_len: 0, aout_len: 0, intin: &[3] },
+            Call { opcode: 107, in_len: 1, out_len: 1, ain_len: 0, aout_len: 0, intin: &[3], plant: &[] },
         ],
         id: 357,
         rec: 65,
@@ -1243,6 +1308,7 @@ fn case_0357_op107_wind_update_end_mctrl_after_a_beg_mctrl_the_balanced_pair() {
         ain_len: 0,
         aout_len: 0,
         intin: &[2],
+        plant: &[],
         comment: "wind_update END_MCTRL after a BEG_MCTRL: the balanced pair",
     });
 }
@@ -1259,6 +1325,7 @@ fn case_0358_op107_wind_update_beg_update_out_len_0_the_ret_is_computed_never_d(
         ain_len: 0,
         aout_len: 0,
         intin: &[1],
+        plant: &[],
         comment: "wind_update BEG_UPDATE, OUT_LEN 0: the ret is computed, never d",
     });
 }
@@ -1275,6 +1342,7 @@ fn case_0369_op106_wind_find_with_nothing_open_the_desktop() {
         ain_len: 0,
         aout_len: 0,
         intin: &[150, 150],
+        plant: &[],
         comment: "wind_find with nothing open: the desktop",
     });
 }
@@ -1283,8 +1351,8 @@ fn case_0369_op106_wind_find_with_nothing_open_the_desktop() {
 fn case_0372_op106_wind_find_on_a_point_inside_the_open_window() {
     check(&TABLE, &Case {
         prelude: &[
-            Call { opcode: 100, in_len: 5, out_len: 1, ain_len: 0, aout_len: 0, intin: &[4079, 10, 20, 300, 200] },
-            Call { opcode: 101, in_len: 5, out_len: 1, ain_len: 0, aout_len: 0, intin: &[1, 100, 100, 200, 200] },
+            Call { opcode: 100, in_len: 5, out_len: 1, ain_len: 0, aout_len: 0, intin: &[4079, 10, 20, 300, 200], plant: &[] },
+            Call { opcode: 101, in_len: 5, out_len: 1, ain_len: 0, aout_len: 0, intin: &[1, 100, 100, 200, 200], plant: &[] },
         ],
         id: 372,
         rec: 68,
@@ -1294,6 +1362,7 @@ fn case_0372_op106_wind_find_on_a_point_inside_the_open_window() {
         ain_len: 0,
         aout_len: 0,
         intin: &[150, 150],
+        plant: &[],
         comment: "wind_find on a point inside the open window",
     });
 }
@@ -1302,8 +1371,8 @@ fn case_0372_op106_wind_find_on_a_point_inside_the_open_window() {
 fn case_0375_op106_wind_find_on_a_point_outside_it_but_on_the_desktop() {
     check(&TABLE, &Case {
         prelude: &[
-            Call { opcode: 100, in_len: 5, out_len: 1, ain_len: 0, aout_len: 0, intin: &[4079, 10, 20, 300, 200] },
-            Call { opcode: 101, in_len: 5, out_len: 1, ain_len: 0, aout_len: 0, intin: &[1, 100, 100, 200, 200] },
+            Call { opcode: 100, in_len: 5, out_len: 1, ain_len: 0, aout_len: 0, intin: &[4079, 10, 20, 300, 200], plant: &[] },
+            Call { opcode: 101, in_len: 5, out_len: 1, ain_len: 0, aout_len: 0, intin: &[1, 100, 100, 200, 200], plant: &[] },
         ],
         id: 375,
         rec: 69,
@@ -1313,6 +1382,7 @@ fn case_0375_op106_wind_find_on_a_point_outside_it_but_on_the_desktop() {
         ain_len: 0,
         aout_len: 0,
         intin: &[400, 300],
+        plant: &[],
         comment: "wind_find on a point outside it but on the desktop",
     });
 }
@@ -1321,8 +1391,8 @@ fn case_0375_op106_wind_find_on_a_point_outside_it_but_on_the_desktop() {
 fn case_0378_op106_wind_find_exactly_on_the_window_s_top_left_corner() {
     check(&TABLE, &Case {
         prelude: &[
-            Call { opcode: 100, in_len: 5, out_len: 1, ain_len: 0, aout_len: 0, intin: &[4079, 10, 20, 300, 200] },
-            Call { opcode: 101, in_len: 5, out_len: 1, ain_len: 0, aout_len: 0, intin: &[1, 100, 100, 200, 200] },
+            Call { opcode: 100, in_len: 5, out_len: 1, ain_len: 0, aout_len: 0, intin: &[4079, 10, 20, 300, 200], plant: &[] },
+            Call { opcode: 101, in_len: 5, out_len: 1, ain_len: 0, aout_len: 0, intin: &[1, 100, 100, 200, 200], plant: &[] },
         ],
         id: 378,
         rec: 70,
@@ -1332,6 +1402,7 @@ fn case_0378_op106_wind_find_exactly_on_the_window_s_top_left_corner() {
         ain_len: 0,
         aout_len: 0,
         intin: &[100, 100],
+        plant: &[],
         comment: "wind_find exactly on the window's top left corner",
     });
 }
@@ -1340,8 +1411,8 @@ fn case_0378_op106_wind_find_exactly_on_the_window_s_top_left_corner() {
 fn case_0381_op106_wind_find_one_past_the_bottom_right_corner() {
     check(&TABLE, &Case {
         prelude: &[
-            Call { opcode: 100, in_len: 5, out_len: 1, ain_len: 0, aout_len: 0, intin: &[4079, 10, 20, 300, 200] },
-            Call { opcode: 101, in_len: 5, out_len: 1, ain_len: 0, aout_len: 0, intin: &[1, 100, 100, 200, 200] },
+            Call { opcode: 100, in_len: 5, out_len: 1, ain_len: 0, aout_len: 0, intin: &[4079, 10, 20, 300, 200], plant: &[] },
+            Call { opcode: 101, in_len: 5, out_len: 1, ain_len: 0, aout_len: 0, intin: &[1, 100, 100, 200, 200], plant: &[] },
         ],
         id: 381,
         rec: 71,
@@ -1351,6 +1422,7 @@ fn case_0381_op106_wind_find_one_past_the_bottom_right_corner() {
         ain_len: 0,
         aout_len: 0,
         intin: &[300, 300],
+        plant: &[],
         comment: "wind_find one past the bottom right corner",
     });
 }
@@ -1367,6 +1439,7 @@ fn case_0390_op109_wind_new_a_void_handler_leaves_ret_true() {
         ain_len: 0,
         aout_len: 0,
         intin: &[],
+        plant: &[],
         comment: "wind_new: a void handler leaves ret = TRUE",
     });
 }
@@ -1383,6 +1456,7 @@ fn case_0391_op109_wind_new_out_len_0_as_gemlib_issues_it_nothing_delivered() {
         ain_len: 0,
         aout_len: 0,
         intin: &[],
+        plant: &[],
         comment: "wind_new OUT_LEN 0, as gemlib issues it: nothing delivered",
     });
 }
@@ -1391,9 +1465,9 @@ fn case_0391_op109_wind_new_out_len_0_as_gemlib_issues_it_nothing_delivered() {
 fn case_0395_op104_after_wind_new_the_handle_is_no_longer_in_use() {
     check(&TABLE, &Case {
         prelude: &[
-            Call { opcode: 100, in_len: 5, out_len: 1, ain_len: 0, aout_len: 0, intin: &[4079, 10, 20, 300, 200] },
-            Call { opcode: 101, in_len: 5, out_len: 1, ain_len: 0, aout_len: 0, intin: &[1, 30, 40, 320, 240] },
-            Call { opcode: 109, in_len: 0, out_len: 0, ain_len: 0, aout_len: 0, intin: &[] },
+            Call { opcode: 100, in_len: 5, out_len: 1, ain_len: 0, aout_len: 0, intin: &[4079, 10, 20, 300, 200], plant: &[] },
+            Call { opcode: 101, in_len: 5, out_len: 1, ain_len: 0, aout_len: 0, intin: &[1, 30, 40, 320, 240], plant: &[] },
+            Call { opcode: 109, in_len: 0, out_len: 0, ain_len: 0, aout_len: 0, intin: &[], plant: &[] },
         ],
         id: 395,
         rec: 74,
@@ -1403,6 +1477,7 @@ fn case_0395_op104_after_wind_new_the_handle_is_no_longer_in_use() {
         ain_len: 0,
         aout_len: 0,
         intin: &[1, 7],
+        plant: &[],
         comment: "after wind_new the handle is no longer in use",
     });
 }
@@ -1411,9 +1486,9 @@ fn case_0395_op104_after_wind_new_the_handle_is_no_longer_in_use() {
 fn case_0399_op104_after_wind_new_nothing_is_topped() {
     check(&TABLE, &Case {
         prelude: &[
-            Call { opcode: 100, in_len: 5, out_len: 1, ain_len: 0, aout_len: 0, intin: &[4079, 10, 20, 300, 200] },
-            Call { opcode: 101, in_len: 5, out_len: 1, ain_len: 0, aout_len: 0, intin: &[1, 30, 40, 320, 240] },
-            Call { opcode: 109, in_len: 0, out_len: 0, ain_len: 0, aout_len: 0, intin: &[] },
+            Call { opcode: 100, in_len: 5, out_len: 1, ain_len: 0, aout_len: 0, intin: &[4079, 10, 20, 300, 200], plant: &[] },
+            Call { opcode: 101, in_len: 5, out_len: 1, ain_len: 0, aout_len: 0, intin: &[1, 30, 40, 320, 240], plant: &[] },
+            Call { opcode: 109, in_len: 0, out_len: 0, ain_len: 0, aout_len: 0, intin: &[], plant: &[] },
         ],
         id: 399,
         rec: 75,
@@ -1423,6 +1498,7 @@ fn case_0399_op104_after_wind_new_nothing_is_topped() {
         ain_len: 0,
         aout_len: 0,
         intin: &[0, 10],
+        plant: &[],
         comment: "after wind_new nothing is topped",
     });
 }
@@ -1431,9 +1507,9 @@ fn case_0399_op104_after_wind_new_nothing_is_topped() {
 fn case_0403_op100_wind_create_after_wind_new_handle_allocation_starts_at_1_again() {
     check(&TABLE, &Case {
         prelude: &[
-            Call { opcode: 100, in_len: 5, out_len: 1, ain_len: 0, aout_len: 0, intin: &[4079, 10, 20, 300, 200] },
-            Call { opcode: 101, in_len: 5, out_len: 1, ain_len: 0, aout_len: 0, intin: &[1, 30, 40, 320, 240] },
-            Call { opcode: 109, in_len: 0, out_len: 0, ain_len: 0, aout_len: 0, intin: &[] },
+            Call { opcode: 100, in_len: 5, out_len: 1, ain_len: 0, aout_len: 0, intin: &[4079, 10, 20, 300, 200], plant: &[] },
+            Call { opcode: 101, in_len: 5, out_len: 1, ain_len: 0, aout_len: 0, intin: &[1, 30, 40, 320, 240], plant: &[] },
+            Call { opcode: 109, in_len: 0, out_len: 0, ain_len: 0, aout_len: 0, intin: &[], plant: &[] },
         ],
         id: 403,
         rec: 76,
@@ -1443,6 +1519,7 @@ fn case_0403_op100_wind_create_after_wind_new_handle_allocation_starts_at_1_agai
         ain_len: 0,
         aout_len: 0,
         intin: &[4079, 10, 20, 300, 200],
+        plant: &[],
         comment: "wind_create after wind_new: handle allocation starts at 1 again",
     });
 }
@@ -1451,8 +1528,8 @@ fn case_0403_op100_wind_create_after_wind_new_handle_allocation_starts_at_1_agai
 fn case_0406_op104_wind_new_after_a_beg_mctrl_the_run_carries_on() {
     check(&TABLE, &Case {
         prelude: &[
-            Call { opcode: 107, in_len: 1, out_len: 1, ain_len: 0, aout_len: 0, intin: &[3] },
-            Call { opcode: 109, in_len: 0, out_len: 0, ain_len: 0, aout_len: 0, intin: &[] },
+            Call { opcode: 107, in_len: 1, out_len: 1, ain_len: 0, aout_len: 0, intin: &[3], plant: &[] },
+            Call { opcode: 109, in_len: 0, out_len: 0, ain_len: 0, aout_len: 0, intin: &[], plant: &[] },
         ],
         id: 406,
         rec: 77,
@@ -1462,6 +1539,7 @@ fn case_0406_op104_wind_new_after_a_beg_mctrl_the_run_carries_on() {
         ain_len: 0,
         aout_len: 0,
         intin: &[0, 10],
+        plant: &[],
         comment: "wind_new after a BEG_MCTRL: the run carries on",
     });
 }

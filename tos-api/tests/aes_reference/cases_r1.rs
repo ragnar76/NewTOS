@@ -46,6 +46,7 @@ fn case_0067_op108_wind_calc_wc_work_kind_0_no_gadgets_1px_all_round() {
         ain_len: 0,
         aout_len: 0,
         intin: &[1, 0, 100, 100, 200, 150],
+        plant: &[],
         comment: "wind_calc WC_WORK kind 0, no gadgets: 1px all round",
     });
 }
@@ -62,6 +63,7 @@ fn case_0068_op108_wind_calc_wc_work_name_title_band() {
         ain_len: 0,
         aout_len: 0,
         intin: &[1, 1, 100, 100, 200, 150],
+        plant: &[],
         comment: "wind_calc WC_WORK NAME: title band",
     });
 }
@@ -78,6 +80,7 @@ fn case_0069_op108_wind_calc_wc_work_closer() {
         ain_len: 0,
         aout_len: 0,
         intin: &[1, 2, 100, 100, 200, 150],
+        plant: &[],
         comment: "wind_calc WC_WORK CLOSER",
     });
 }
@@ -94,6 +97,7 @@ fn case_0070_op108_wind_calc_wc_work_fuller() {
         ain_len: 0,
         aout_len: 0,
         intin: &[1, 4, 100, 100, 200, 150],
+        plant: &[],
         comment: "wind_calc WC_WORK FULLER",
     });
 }
@@ -110,6 +114,7 @@ fn case_0071_op108_wind_calc_wc_work_mover_alone_d_097_tgadgets_vs_non_3d() {
         ain_len: 0,
         aout_len: 0,
         intin: &[1, 8, 100, 100, 200, 150],
+        plant: &[],
         comment: "wind_calc WC_WORK MOVER alone: D-097, TGADGETS vs non-3D",
     });
 }
@@ -126,6 +131,7 @@ fn case_0072_op108_wind_calc_wc_work_info_the_second_title_band() {
         ain_len: 0,
         aout_len: 0,
         intin: &[1, 16, 100, 100, 200, 150],
+        plant: &[],
         comment: "wind_calc WC_WORK INFO: the second title band",
     });
 }
@@ -142,6 +148,7 @@ fn case_0073_op108_wind_calc_wc_work_sizer_alone_stripped_vertical_forced_back()
         ain_len: 0,
         aout_len: 0,
         intin: &[1, 32, 100, 100, 200, 150],
+        plant: &[],
         comment: "wind_calc WC_WORK SIZER alone: stripped, vertical forced back",
     });
 }
@@ -158,6 +165,7 @@ fn case_0074_op108_wind_calc_wc_work_uparrow() {
         ain_len: 0,
         aout_len: 0,
         intin: &[1, 64, 100, 100, 200, 150],
+        plant: &[],
         comment: "wind_calc WC_WORK UPARROW",
     });
 }
@@ -174,6 +182,7 @@ fn case_0075_op108_wind_calc_wc_work_dnarrow() {
         ain_len: 0,
         aout_len: 0,
         intin: &[1, 128, 100, 100, 200, 150],
+        plant: &[],
         comment: "wind_calc WC_WORK DNARROW",
     });
 }
@@ -190,6 +199,7 @@ fn case_0076_op108_wind_calc_wc_work_vslide() {
         ain_len: 0,
         aout_len: 0,
         intin: &[1, 256, 100, 100, 200, 150],
+        plant: &[],
         comment: "wind_calc WC_WORK VSLIDE",
     });
 }
@@ -206,6 +216,7 @@ fn case_0077_op108_wind_calc_wc_work_lfarrow() {
         ain_len: 0,
         aout_len: 0,
         intin: &[1, 512, 100, 100, 200, 150],
+        plant: &[],
         comment: "wind_calc WC_WORK LFARROW",
     });
 }
@@ -222,6 +233,7 @@ fn case_0078_op108_wind_calc_wc_work_rtarrow() {
         ain_len: 0,
         aout_len: 0,
         intin: &[1, 1024, 100, 100, 200, 150],
+        plant: &[],
         comment: "wind_calc WC_WORK RTARROW",
     });
 }
@@ -238,6 +250,7 @@ fn case_0079_op108_wind_calc_wc_work_hslide() {
         ain_len: 0,
         aout_len: 0,
         intin: &[1, 2048, 100, 100, 200, 150],
+        plant: &[],
         comment: "wind_calc WC_WORK HSLIDE",
     });
 }
@@ -254,6 +267,7 @@ fn case_0080_op108_wind_calc_wc_work_hotclose_pc_gem_bit_no_border_test_reads_it
         ain_len: 0,
         aout_len: 0,
         intin: &[1, 4096, 100, 100, 200, 150],
+        plant: &[],
         comment: "wind_calc WC_WORK HOTCLOSE: PC-GEM bit, no border test reads it",
     });
 }
@@ -270,6 +284,7 @@ fn case_0082_op108_wind_calc_wc_border_kind_0() {
         ain_len: 0,
         aout_len: 0,
         intin: &[0, 0, 100, 100, 200, 150],
+        plant: &[],
         comment: "wind_calc WC_BORDER kind 0",
     });
 }
@@ -286,6 +301,7 @@ fn case_0083_op108_wind_calc_wc_border_name() {
         ain_len: 0,
         aout_len: 0,
         intin: &[0, 1, 100, 100, 200, 150],
+        plant: &[],
         comment: "wind_calc WC_BORDER NAME",
     });
 }
@@ -302,6 +318,7 @@ fn case_0084_op108_wind_calc_wc_border_closer() {
         ain_len: 0,
         aout_len: 0,
         intin: &[0, 2, 100, 100, 200, 150],
+        plant: &[],
         comment: "wind_calc WC_BORDER CLOSER",
     });
 }
@@ -318,6 +335,7 @@ fn case_0085_op108_wind_calc_wc_border_fuller() {
         ain_len: 0,
         aout_len: 0,
         intin: &[0, 4, 100, 100, 200, 150],
+        plant: &[],
         comment: "wind_calc WC_BORDER FULLER",
     });
 }
@@ -334,6 +352,7 @@ fn case_0086_op108_wind_calc_wc_border_mover_alone_d_097_the_other_way() {
         ain_len: 0,
         aout_len: 0,
         intin: &[0, 8, 100, 100, 200, 150],
+        plant: &[],
         comment: "wind_calc WC_BORDER MOVER alone: D-097, the other way",
     });
 }
@@ -350,6 +369,7 @@ fn case_0087_op108_wind_calc_wc_border_info() {
         ain_len: 0,
         aout_len: 0,
         intin: &[0, 16, 100, 100, 200, 150],
+        plant: &[],
         comment: "wind_calc WC_BORDER INFO",
     });
 }
@@ -366,6 +386,7 @@ fn case_0088_op108_wind_calc_wc_border_sizer_alone() {
         ain_len: 0,
         aout_len: 0,
         intin: &[0, 32, 100, 100, 200, 150],
+        plant: &[],
         comment: "wind_calc WC_BORDER SIZER alone",
     });
 }
@@ -382,6 +403,7 @@ fn case_0089_op108_wind_calc_wc_border_uparrow() {
         ain_len: 0,
         aout_len: 0,
         intin: &[0, 64, 100, 100, 200, 150],
+        plant: &[],
         comment: "wind_calc WC_BORDER UPARROW",
     });
 }
@@ -398,6 +420,7 @@ fn case_0090_op108_wind_calc_wc_border_dnarrow() {
         ain_len: 0,
         aout_len: 0,
         intin: &[0, 128, 100, 100, 200, 150],
+        plant: &[],
         comment: "wind_calc WC_BORDER DNARROW",
     });
 }
@@ -414,6 +437,7 @@ fn case_0091_op108_wind_calc_wc_border_vslide() {
         ain_len: 0,
         aout_len: 0,
         intin: &[0, 256, 100, 100, 200, 150],
+        plant: &[],
         comment: "wind_calc WC_BORDER VSLIDE",
     });
 }
@@ -430,6 +454,7 @@ fn case_0092_op108_wind_calc_wc_border_lfarrow() {
         ain_len: 0,
         aout_len: 0,
         intin: &[0, 512, 100, 100, 200, 150],
+        plant: &[],
         comment: "wind_calc WC_BORDER LFARROW",
     });
 }
@@ -446,6 +471,7 @@ fn case_0093_op108_wind_calc_wc_border_rtarrow() {
         ain_len: 0,
         aout_len: 0,
         intin: &[0, 1024, 100, 100, 200, 150],
+        plant: &[],
         comment: "wind_calc WC_BORDER RTARROW",
     });
 }
@@ -462,6 +488,7 @@ fn case_0094_op108_wind_calc_wc_border_hslide() {
         ain_len: 0,
         aout_len: 0,
         intin: &[0, 2048, 100, 100, 200, 150],
+        plant: &[],
         comment: "wind_calc WC_BORDER HSLIDE",
     });
 }
@@ -478,6 +505,7 @@ fn case_0095_op108_wind_calc_wc_border_hotclose() {
         ain_len: 0,
         aout_len: 0,
         intin: &[0, 4096, 100, 100, 200, 150],
+        plant: &[],
         comment: "wind_calc WC_BORDER HOTCLOSE",
     });
 }
@@ -494,6 +522,7 @@ fn case_0097_op108_wind_calc_name_closer_fuller_one_title_band_not_three() {
         ain_len: 0,
         aout_len: 0,
         intin: &[1, 7, 100, 100, 200, 150],
+        plant: &[],
         comment: "wind_calc NAME|CLOSER|FULLER: one title band, not three",
     });
 }
@@ -510,6 +539,7 @@ fn case_0098_op108_wind_calc_tgadgets_name_closer_fuller_mover() {
         ain_len: 0,
         aout_len: 0,
         intin: &[1, 15, 100, 100, 200, 150],
+        plant: &[],
         comment: "wind_calc TGADGETS = NAME|CLOSER|FULLER|MOVER",
     });
 }
@@ -526,6 +556,7 @@ fn case_0099_op108_wind_calc_name_info_both_title_bands_stack() {
         ain_len: 0,
         aout_len: 0,
         intin: &[1, 17, 100, 100, 200, 150],
+        plant: &[],
         comment: "wind_calc NAME|INFO: both title bands stack",
     });
 }
@@ -542,6 +573,7 @@ fn case_0100_op108_wind_calc_vgadgets_uparrow_dnarrow_vslide() {
         ain_len: 0,
         aout_len: 0,
         intin: &[1, 448, 100, 100, 200, 150],
+        plant: &[],
         comment: "wind_calc VGADGETS = UPARROW|DNARROW|VSLIDE",
     });
 }
@@ -558,6 +590,7 @@ fn case_0101_op108_wind_calc_hgadgets_lfarrow_rtarrow_hslide() {
         ain_len: 0,
         aout_len: 0,
         intin: &[1, 3584, 100, 100, 200, 150],
+        plant: &[],
         comment: "wind_calc HGADGETS = LFARROW|RTARROW|HSLIDE",
     });
 }
@@ -574,6 +607,7 @@ fn case_0102_op108_wind_calc_vgadgets_sizer_sizer_stripped_from_both_bars() {
         ain_len: 0,
         aout_len: 0,
         intin: &[1, 480, 100, 100, 200, 150],
+        plant: &[],
         comment: "wind_calc VGADGETS|SIZER: SIZER stripped from both bars",
     });
 }
@@ -590,6 +624,7 @@ fn case_0103_op108_wind_calc_hgadgets_sizer_mirror_of_the_above() {
         ain_len: 0,
         aout_len: 0,
         intin: &[1, 3616, 100, 100, 200, 150],
+        plant: &[],
         comment: "wind_calc HGADGETS|SIZER: mirror of the above",
     });
 }
@@ -606,6 +641,7 @@ fn case_0104_op108_wind_calc_vgadgets_hgadgets_sizer_both_bars_on_merit() {
         ain_len: 0,
         aout_len: 0,
         intin: &[1, 4064, 100, 100, 200, 150],
+        plant: &[],
         comment: "wind_calc VGADGETS|HGADGETS|SIZER: both bars on merit",
     });
 }
@@ -622,6 +658,7 @@ fn case_0105_op108_wind_calc_0x0fef_the_classic_full_window_without_info() {
         ain_len: 0,
         aout_len: 0,
         intin: &[1, 4079, 100, 100, 200, 150],
+        plant: &[],
         comment: "wind_calc 0x0FEF, the classic full window without INFO",
     });
 }
@@ -638,6 +675,7 @@ fn case_0106_op108_wind_calc_every_defined_gadget_bit_including_info() {
         ain_len: 0,
         aout_len: 0,
         intin: &[1, 4095, 100, 100, 200, 150],
+        plant: &[],
         comment: "wind_calc every defined gadget bit including INFO",
     });
 }
@@ -654,6 +692,7 @@ fn case_0107_op108_wind_calc_all_sixteen_bits_do_the_undefined_ones_do_anything(
         ain_len: 0,
         aout_len: 0,
         intin: &[1, -1, 100, 100, 200, 150],
+        plant: &[],
         comment: "wind_calc all sixteen bits: do the undefined ones do anything",
     });
 }
@@ -670,6 +709,7 @@ fn case_0108_op108_wind_calc_wc_border_0x0fef_the_round_trip_partner() {
         ain_len: 0,
         aout_len: 0,
         intin: &[0, 4079, 100, 100, 200, 150],
+        plant: &[],
         comment: "wind_calc WC_BORDER 0x0FEF, the round trip partner",
     });
 }
@@ -686,6 +726,7 @@ fn case_0109_op108_wind_calc_wc_border_name_info() {
         ain_len: 0,
         aout_len: 0,
         intin: &[0, 17, 100, 100, 200, 150],
+        plant: &[],
         comment: "wind_calc WC_BORDER NAME|INFO",
     });
 }
@@ -702,6 +743,7 @@ fn case_0110_op108_wind_calc_wc_border_vgadgets_hgadgets_sizer() {
         ain_len: 0,
         aout_len: 0,
         intin: &[0, 4064, 100, 100, 200, 150],
+        plant: &[],
         comment: "wind_calc WC_BORDER VGADGETS|HGADGETS|SIZER",
     });
 }
@@ -718,6 +760,7 @@ fn case_0112_op108_wind_calc_wc_work_degenerate_rect_work_area_of_nothing() {
         ain_len: 0,
         aout_len: 0,
         intin: &[1, 4079, 0, 0, 0, 0],
+        plant: &[],
         comment: "wind_calc WC_WORK degenerate rect: work area of nothing",
     });
 }
@@ -734,6 +777,7 @@ fn case_0113_op108_wind_calc_wc_border_degenerate_rect() {
         ain_len: 0,
         aout_len: 0,
         intin: &[0, 4079, 0, 0, 0, 0],
+        plant: &[],
         comment: "wind_calc WC_BORDER degenerate rect",
     });
 }
@@ -750,6 +794,7 @@ fn case_0114_op108_wind_calc_wc_work_a_full_st_high_screen() {
         ain_len: 0,
         aout_len: 0,
         intin: &[1, 4079, 0, 0, 640, 400],
+        plant: &[],
         comment: "wind_calc WC_WORK a full ST-high screen",
     });
 }
@@ -766,6 +811,7 @@ fn case_0115_op108_wind_calc_wc_border_a_full_st_high_screen() {
         ain_len: 0,
         aout_len: 0,
         intin: &[0, 4079, 0, 0, 640, 400],
+        plant: &[],
         comment: "wind_calc WC_BORDER a full ST-high screen",
     });
 }
@@ -782,6 +828,7 @@ fn case_0116_op108_wind_calc_wc_work_1x1_the_work_area_goes_negative() {
         ain_len: 0,
         aout_len: 0,
         intin: &[1, 4079, 5, 5, 1, 1],
+        plant: &[],
         comment: "wind_calc WC_WORK 1x1: the work area goes negative",
     });
 }
@@ -798,6 +845,7 @@ fn case_0117_op108_wind_calc_wc_work_negative_origin() {
         ain_len: 0,
         aout_len: 0,
         intin: &[1, 4079, -100, -100, 50, 50],
+        plant: &[],
         comment: "wind_calc WC_WORK negative origin",
     });
 }
@@ -814,6 +862,7 @@ fn case_0118_op108_wind_calc_wc_border_a_rect_that_grows_but_stays_inside_a_word
         ain_len: 0,
         aout_len: 0,
         intin: &[0, 4079, 0, 0, 32000, 32000],
+        plant: &[],
         comment: "wind_calc WC_BORDER a rect that grows but stays inside a WORD",
     });
 }
@@ -830,6 +879,7 @@ fn case_0120_op108_wind_calc_type_2_only_wc_border_negates_so_this_is_wc_work() 
         ain_len: 0,
         aout_len: 0,
         intin: &[2, 4079, 100, 100, 200, 150],
+        plant: &[],
         comment: "wind_calc type 2: only WC_BORDER negates, so this is WC_WORK",
     });
 }
@@ -846,6 +896,7 @@ fn case_0121_op108_wind_calc_type_1_same_question_from_the_other_side() {
         ain_len: 0,
         aout_len: 0,
         intin: &[-1, 4079, 100, 100, 200, 150],
+        plant: &[],
         comment: "wind_calc type -1: same question, from the other side",
     });
 }
@@ -862,6 +913,7 @@ fn case_0129_op108_out_len_0_nothing_copied_back_not_even_the_return_code() {
         ain_len: 0,
         aout_len: 0,
         intin: &[1, 4079, 100, 100, 200, 150],
+        plant: &[],
         comment: "OUT_LEN 0: nothing copied back, not even the return code",
     });
 }
@@ -878,6 +930,7 @@ fn case_0130_op108_out_len_1_the_return_code_only_a_void_handler_s_ret_true() {
         ain_len: 0,
         aout_len: 0,
         intin: &[1, 4079, 100, 100, 200, 150],
+        plant: &[],
         comment: "OUT_LEN 1: the return code only, a void handler's ret = TRUE",
     });
 }
@@ -894,6 +947,7 @@ fn case_0131_op108_out_len_3_x_and_y_arrive_w_and_h_stay_poisoned() {
         ain_len: 0,
         aout_len: 0,
         intin: &[1, 4079, 100, 100, 200, 150],
+        plant: &[],
         comment: "OUT_LEN 3: x and y arrive, w and h stay poisoned",
     });
 }
@@ -910,6 +964,7 @@ fn case_0132_op108_in_len_8_with_six_values_two_surplus_poison_words_copied_in()
         ain_len: 0,
         aout_len: 0,
         intin: &[1, 4079, 100, 100, 200, 150],
+        plant: &[],
         comment: "IN_LEN 8 with six values: two surplus poison words copied in",
     });
 }
@@ -926,6 +981,7 @@ fn case_0133_op108_in_len_at_i_size_with_six_values() {
         ain_len: 0,
         aout_len: 0,
         intin: &[1, 4079, 100, 100, 200, 150],
+        plant: &[],
         comment: "IN_LEN at I_SIZE with six values",
     });
 }
@@ -942,6 +998,7 @@ fn case_0134_op108_in_len_past_i_size_min_in_len_i_size_has_to_clamp_it() {
         ain_len: 0,
         aout_len: 0,
         intin: &[1, 4079, 100, 100, 200, 150],
+        plant: &[],
         comment: "IN_LEN past I_SIZE: min(IN_LEN,I_SIZE) has to clamp it",
     });
 }
@@ -958,6 +1015,7 @@ fn case_0135_op108_ain_len_3_no_pointer_wm_calc_never_reads_addr_in() {
         ain_len: 3,
         aout_len: 0,
         intin: &[1, 4079, 100, 100, 200, 150],
+        plant: &[],
         comment: "AIN_LEN 3, no pointer: wm_calc never reads addr_in",
     });
 }
@@ -974,6 +1032,7 @@ fn case_0136_op108_control_4_set_there_is_no_aout_len_macro_in_this_build() {
         ain_len: 0,
         aout_len: 1,
         intin: &[1, 4079, 100, 100, 200, 150],
+        plant: &[],
         comment: "control[4] set: there is no AOUT_LEN macro in this build",
     });
 }
@@ -990,6 +1049,7 @@ fn case_0137_op108_in_len_6_four_values_w_and_h_reach_wm_calc_as_0xdead() {
         ain_len: 0,
         aout_len: 0,
         intin: &[1, 4079, 100, 100],
+        plant: &[],
         comment: "IN_LEN 6, four values: w and h reach wm_calc as 0xDEAD",
     });
 }
@@ -1006,6 +1066,7 @@ fn case_0155_op104_wind_get_0_wf_wxywh_the_desktop_work_area_apps_start_from() {
         ain_len: 0,
         aout_len: 0,
         intin: &[0, 4],
+        plant: &[],
         comment: "wind_get 0 WF_WXYWH: the desktop work area apps start from",
     });
 }
@@ -1022,6 +1083,7 @@ fn case_0156_op104_wind_get_0_wf_cxywh_whole_screen_menu_bar_included() {
         ain_len: 0,
         aout_len: 0,
         intin: &[0, 5],
+        plant: &[],
         comment: "wind_get 0 WF_CXYWH: whole screen, menu bar included",
     });
 }
@@ -1038,6 +1100,7 @@ fn case_0157_op104_wind_get_0_wf_pxywh_previous_rect() {
         ain_len: 0,
         aout_len: 0,
         intin: &[0, 6],
+        plant: &[],
         comment: "wind_get 0 WF_PXYWH: previous rect",
     });
 }
@@ -1054,6 +1117,7 @@ fn case_0158_op104_wind_get_0_wf_fxywh_full_rect() {
         ain_len: 0,
         aout_len: 0,
         intin: &[0, 7],
+        plant: &[],
         comment: "wind_get 0 WF_FXYWH: full rect",
     });
 }
@@ -1070,6 +1134,7 @@ fn case_0159_op104_wind_get_0_wf_hslide_one_word_w_setup_left_it_at_0() {
         ain_len: 0,
         aout_len: 0,
         intin: &[0, 8],
+        plant: &[],
         comment: "wind_get 0 WF_HSLIDE: one word, w_setup left it at 0",
     });
 }
@@ -1086,6 +1151,7 @@ fn case_0160_op104_wind_get_0_wf_vslide_one_word() {
         ain_len: 0,
         aout_len: 0,
         intin: &[0, 9],
+        plant: &[],
         comment: "wind_get 0 WF_VSLIDE: one word",
     });
 }
@@ -1102,6 +1168,7 @@ fn case_0161_op104_wind_get_0_wf_hslsiz_the_1_use_default_size_marker() {
         ain_len: 0,
         aout_len: 0,
         intin: &[0, 15],
+        plant: &[],
         comment: "wind_get 0 WF_HSLSIZ: the -1 \"use default size\" marker",
     });
 }
@@ -1118,6 +1185,7 @@ fn case_0162_op104_wind_get_0_wf_vslsiz_one_word() {
         ain_len: 0,
         aout_len: 0,
         intin: &[0, 16],
+        plant: &[],
         comment: "wind_get 0 WF_VSLSIZ: one word",
     });
 }
@@ -1134,6 +1202,7 @@ fn case_0163_op104_wind_get_0_wf_top_no_valid_handle_needed() {
         ain_len: 0,
         aout_len: 0,
         intin: &[0, 10],
+        plant: &[],
         comment: "wind_get 0 WF_TOP: no valid handle needed",
     });
 }
@@ -1150,6 +1219,7 @@ fn case_0164_op104_wind_get_0_wf_kind_return_code_only_is_it_answered_at_all() {
         ain_len: 0,
         aout_len: 0,
         intin: &[0, 1],
+        plant: &[],
         comment: "wind_get 0 WF_KIND: return code only, is it answered at all",
     });
 }
@@ -1166,6 +1236,7 @@ fn case_0165_op104_wind_get_0_wf_newdesk_return_code_only() {
         ain_len: 0,
         aout_len: 0,
         intin: &[0, 14],
+        plant: &[],
         comment: "wind_get 0 WF_NEWDESK: return code only",
     });
 }
@@ -1182,6 +1253,7 @@ fn case_0166_op104_wind_get_0_wf_screen_return_code_only_the_address_cannot_be_c
         ain_len: 0,
         aout_len: 0,
         intin: &[0, 17],
+        plant: &[],
         comment: "wind_get 0 WF_SCREEN: return code only, the address cannot be c",
     });
 }
@@ -1198,6 +1270,7 @@ fn case_0167_op104_wind_get_0_wf_owner_aes_3_30_and_later_only() {
         ain_len: 0,
         aout_len: 0,
         intin: &[0, 20],
+        plant: &[],
         comment: "wind_get 0 WF_OWNER: AES 3.30 and later only",
     });
 }
@@ -1214,6 +1287,7 @@ fn case_0168_op104_wind_get_0_field_0_no_handler_false() {
         ain_len: 0,
         aout_len: 0,
         intin: &[0, 0],
+        plant: &[],
         comment: "wind_get 0 field 0: no handler, FALSE",
     });
 }
@@ -1230,6 +1304,7 @@ fn case_0169_op104_wind_get_0_field_13_a_gap_in_the_wf_numbering() {
         ain_len: 0,
         aout_len: 0,
         intin: &[0, 13],
+        plant: &[],
         comment: "wind_get 0 field 13: a gap in the WF_ numbering",
     });
 }
@@ -1246,6 +1321,7 @@ fn case_0170_op104_wind_get_0_field_21_past_the_last_defined_field() {
         ain_len: 0,
         aout_len: 0,
         intin: &[0, 21],
+        plant: &[],
         comment: "wind_get 0 field 21: past the last defined field",
     });
 }
@@ -1262,6 +1338,7 @@ fn case_0172_op104_wind_get_0_wf_wxywh_out_len_1_the_rect_is_thrown_away() {
         ain_len: 0,
         aout_len: 0,
         intin: &[0, 4],
+        plant: &[],
         comment: "wind_get 0 WF_WXYWH, OUT_LEN 1: the rect is thrown away",
     });
 }
@@ -1278,6 +1355,7 @@ fn case_0173_op104_wind_get_0_wf_wxywh_out_len_3_w_and_h_stay_poisoned() {
         ain_len: 0,
         aout_len: 0,
         intin: &[0, 4],
+        plant: &[],
         comment: "wind_get 0 WF_WXYWH, OUT_LEN 3: w and h stay poisoned",
     });
 }
@@ -1294,6 +1372,7 @@ fn case_0175_op104_wind_get_handle_1_wf_wxywh_a_window_that_was_never_created() 
         ain_len: 0,
         aout_len: 0,
         intin: &[1, 4],
+        plant: &[],
         comment: "wind_get handle 1 WF_WXYWH: a window that was never created",
     });
 }
@@ -1310,6 +1389,7 @@ fn case_0176_op104_wind_get_handle_1_wf_wxywh_negative_handle() {
         ain_len: 0,
         aout_len: 0,
         intin: &[-1, 4],
+        plant: &[],
         comment: "wind_get handle -1 WF_WXYWH: negative handle",
     });
 }
@@ -1326,6 +1406,7 @@ fn case_0177_op104_wind_get_handle_99_wf_wxywh_past_num_win() {
         ain_len: 0,
         aout_len: 0,
         intin: &[99, 4],
+        plant: &[],
         comment: "wind_get handle 99 WF_WXYWH: past NUM_WIN",
     });
 }
@@ -1342,6 +1423,7 @@ fn case_0178_op104_wind_get_handle_32767_wf_wxywh_the_largest_word() {
         ain_len: 0,
         aout_len: 0,
         intin: &[32767, 4],
+        plant: &[],
         comment: "wind_get handle 32767 WF_WXYWH: the largest WORD",
     });
 }
@@ -1358,6 +1440,7 @@ fn case_0193_op106_wind_find_at_the_top_left_corner_the_desktop_whatever_is_open
         ain_len: 0,
         aout_len: 0,
         intin: &[0, 0],
+        plant: &[],
         comment: "wind_find at the top left corner: the desktop, whatever is open",
     });
 }
@@ -1374,6 +1457,7 @@ fn case_0194_op106_wind_find_off_the_top_left_nobody() {
         ain_len: 0,
         aout_len: 0,
         intin: &[-1, -1],
+        plant: &[],
         comment: "wind_find off the top left: nobody",
     });
 }
@@ -1390,6 +1474,7 @@ fn case_0195_op106_wind_find_one_row_above_the_screen() {
         ain_len: 0,
         aout_len: 0,
         intin: &[0, -1],
+        plant: &[],
         comment: "wind_find one row above the screen",
     });
 }
@@ -1406,6 +1491,7 @@ fn case_0196_op106_wind_find_one_column_left_of_the_screen() {
         ain_len: 0,
         aout_len: 0,
         intin: &[-1, 0],
+        plant: &[],
         comment: "wind_find one column left of the screen",
     });
 }
@@ -1422,6 +1508,7 @@ fn case_0197_op106_wind_find_far_off_the_bottom_right_nobody() {
         ain_len: 0,
         aout_len: 0,
         intin: &[32000, 32000],
+        plant: &[],
         comment: "wind_find far off the bottom right: nobody",
     });
 }
@@ -1438,6 +1525,7 @@ fn case_0216_op077_graf_handle_the_handle_and_the_four_box_metrics_wm_calc_uses(
         ain_len: 0,
         aout_len: 0,
         intin: &[],
+        plant: &[],
         comment: "graf_handle: the handle and the four box metrics wm_calc uses",
     });
 }
@@ -1454,6 +1542,7 @@ fn case_0217_op077_graf_handle_out_len_1_the_metrics_stay_poisoned() {
         ain_len: 0,
         aout_len: 0,
         intin: &[],
+        plant: &[],
         comment: "graf_handle OUT_LEN 1: the metrics stay poisoned",
     });
 }
@@ -1470,6 +1559,7 @@ fn case_0218_op079_graf_mkstate_return_code_only_a_void_handler_has_to_leave_tru
         ain_len: 0,
         aout_len: 0,
         intin: &[],
+        plant: &[],
         comment: "graf_mkstate return code only: a void handler has to leave TRUE",
     });
 }
@@ -1486,6 +1576,7 @@ fn case_0228_op024_evnt_timer_0_ms_adelay_makes_that_one_tick() {
         ain_len: 0,
         aout_len: 0,
         intin: &[0, 0],
+        plant: &[],
         comment: "evnt_timer 0 ms: adelay makes that one tick",
     });
 }
@@ -1502,6 +1593,7 @@ fn case_0229_op024_evnt_timer_1_ms_still_under_one_tick() {
         ain_len: 0,
         aout_len: 0,
         intin: &[1, 0],
+        plant: &[],
         comment: "evnt_timer 1 ms: still under one tick",
     });
 }
@@ -1518,6 +1610,7 @@ fn case_0240_op000_opcode_0_the_unsupported_sentinel_1_and_no_alert_box() {
         ain_len: 0,
         aout_len: 0,
         intin: &[],
+        plant: &[],
         comment: "opcode 0: the unsupported sentinel -1, and no alert box",
     });
 }
@@ -1534,6 +1627,7 @@ fn case_0241_op000_opcode_0_with_out_len_0_the_1_is_computed_and_never_delivered
         ain_len: 0,
         aout_len: 0,
         intin: &[],
+        plant: &[],
         comment: "opcode 0 with OUT_LEN 0: the -1 is computed and never delivered",
     });
 }
@@ -1550,6 +1644,7 @@ fn case_0242_op000_opcode_0_with_inputs_they_are_marshalled_in_and_ignored() {
         ain_len: 0,
         aout_len: 0,
         intin: &[1, 2],
+        plant: &[],
         comment: "opcode 0 with inputs: they are marshalled in and ignored",
     });
 }
