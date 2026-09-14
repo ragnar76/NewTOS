@@ -1,0 +1,215 @@
+A29 -- the AES process descriptor survives the end of a program.
+Measurement, 2026-09-14.
+MEASUREMENT ONLY: this directory states what ran and what came back.
+
+
+THE EFFECT, MEASURED FIRST (acceptance point 1)
+  The desktop runs in the kernel boot context and gets AES id 1
+  (tos-api/src/aes/appl.rs, current_pid with a null basepage).  The first
+  program it launches lands in GEMDOS slot 0, whose AES id is slot+1 = 1
+  (aes::pid_of_slot).  Desktop and first child therefore share ONE AES process
+  descriptor -- which is EmuTOS-faithful: sh_ldapp renames the one rlr for each
+  successive program (references/emutos/aes/gemshlib.c:633-636).
+
+  Both of NewTOS' end-of-program paths destroyed that shared descriptor:
+      appl_exit()          -> pd::close          -> *slot = Aespd::EMPTY
+      close_client_if_open -> pd::close_if_open  -> *slot = Aespd::EMPTY
+  After that pd::by_pid(1) is None.  Measured consequences, through the LP64
+  dispatcher (tos-api/tests/aes_app_return_descriptor.rs):
+
+      appl_write(1, msg)                       0 instead of 1
+      the desktop's own wind_open -> appl_read 0, buffer [0,0,0,0,0,0,0,0]
+                                               instead of 1 + the WM_REDRAW
+
+  What that costs the user, read off the posting sites rather than guessed
+  (every one of these goes through pd::post_msg / post_words -> by_pid):
+      menu selection      aes/event.rs menu_intercept posts MN_SELECTED and
+                          returns true; the caller then dequeues it through the
+                          regular MU_MESAG arm.  No descriptor = the drop-down
+                          opens, the item click is consumed, nothing happens.
+      window frame        aes/window.rs intercept() posts WM_CLOSED / WM_FULLED
+                          / WM_MOVED / WM_SIZED / WM_ARROWED / WM_?SLID /
+                          WM_TOPPED.  The AES draws the rubber box for a drag
+                          and then drops the message, so the window snaps back;
+                          the closer does nothing; a click on a lower window
+                          does not top it.
+      window content      aes/window.rs send_redraw posts WM_REDRAW on open /
+                          close / move / size / top.  Dropped.
+  Silent at the moment of return -- desk::main::desktop_resume repaints the
+  whole screen directly (redraw::redraw_desktop -> win_shwall_nocursor), so the
+  picture comes back intact.  Visibly wrong at the next interaction.
+
+  REACHABILITY.  Only through the desktop's own launch path
+  (desk/main.rs run_gem_app: desktop_relinquish -> launch -> desktop_resume),
+  because that path does NOT call appl_init again.  The #Z-autorun path does
+  not have the defect: there the program runs BEFORE the desktop, and
+  shell_loop sh_ldapp's DESKTOP arm then calls desk::run(), whose first act is
+  appl_init() (desk/mod.rs) -- a fresh descriptor.  EmuTOS does the same thing
+  for the same reason: sh_main re-enters deskstart after every normal
+  application (gemshlib.c:710-727), so its desktop re-registers too.
+
+
+EMUTOS AT THE SAME BOUNDARY (acceptance point 2)
+  Pin references/emutos @ 1a7484aba1bfba23e2c0899e243b6d8177fe41df, read here.
+
+  aes/gemaplib.c:251-261   ap_exit -- wm_update(BEG), mn_cleanup,
+                           wait_for_accs(AP_ACCLOSE),
+                           "if (rlr->p_qindex) ap_rdwr(MU_MESAG, rlr,
+                           rlr->p_qindex, (WORD *)D.g_valstr);",
+                           wm_update(END), all_run,
+                           "rlr->p_flags &= ~AP_OPEN;"
+  aes/gemshlib.c:650-657   sh_ldapp, immediately after dos_exec returns --
+                           "if (rlr->p_flags&AP_OPEN) { mn_cleanup();
+                             if (rlr->p_qindex) ap_rdwr(MU_MESAG, ...);
+                             rlr->p_flags &= ~AP_OPEN; }"
+  Neither frees the AESPD.  Neither CAN: the descriptors are fixed entries of
+  D.g_int[] / D.g_acc[] addressed by index (aes/gempd.c:32-35, pd_index), and
+  fpdnm(NULL,pid) -- what APPL_WRITE resolves its target with
+  (aes/gemsuper.c:102-105) -- walks that array with no liveness test at all
+  (aes/gempd.c:38-57).  A message addressed to a pid always finds its
+  descriptor, before and after appl_exit.
+  aes/gemshlib.c:633-636   the shared-descriptor premise: p_nameit(rlr,fname),
+                           p_setappdir, rlr->p_flags = 0 -- the SAME rlr is
+                           renamed for the next program.  (The p_flags = 0 half
+                           is A28 and is NOT touched here.)
+  The two NewTOS specs already said all of this and the code deviated from
+  them: docs/api/aes/application.md "appl_exit (19)" steps 1-7 and
+  docs/api/aes/shell-loop.md "Arm 3" both list the drain and the AP_OPEN clear
+  and neither mentions freeing anything.  No spec correction was needed; a
+  NewTOS note was added under appl_exit recording what the code used to do.
+
+
+THE CHANGE
+  tos-api/src/aes/pd.rs
+      close()          queue.clear() + flags &= !AP_OPEN   (was *slot = EMPTY)
+      close_if_open()  the same two, under the unchanged AP_OPEN guard
+                                                           (was *slot = EMPTY)
+      Both doc comments rewritten with the EmuTOS citations above.
+  tos-api/src/aes/appl.rs   doc only: what "deregister" means for opcode 19.
+  tos-api/src/aes/mod.rs    doc only: close_client_if_open does not free.
+  docs/api/aes/application.md  "The descriptor is not freed" + a NewTOS note.
+  tos-api/tests/aes_app_return_descriptor.rs   new, 1 test, two rounds.
+  Nothing else.  In particular NOT touched, because they are A28:
+  desk::main::desktop_relinquish (no appl_exit() added), pd::register (no
+  p_flags = 0 added), shell_loop.rs:341-357 (the comment that records the
+  omission of gemshlib.c:636).
+
+
+HOST TESTS
+  cargo run -p xtask -- test    546 passed / 0 failed / 1 ignored
+  (545 before, plus the one new test.)  log host-test.log
+
+  Red before / green after: host-test-red-before.log.  Three runs against
+  tos-api/src/aes/pd.rs exactly as committed at HEAD a006386
+  (sha256 d03b2f47d357a48cde1fa45a7648b75a7a73c7c53598449fd26399f5fd462c0f),
+  the file swapped in and out by hand (cp from a copy, no git):
+
+    round 1 first -- the child calls appl_exit() itself, which is what TeraDesk
+      (sdk/apps/teradesk/main.c:2124) and QED (cflib appexitg) do:
+        round 1: appl_write to the desktop was refused -- its descriptor did
+        not survive the program        left: 0   right: 1
+    rounds reordered, round 2 first -- the child just terminates and the
+      launcher's sh_ldapp fallback cleans up, the route A29's text names:
+        round 2: appl_write to the desktop was refused ...
+                                       left: 0   right: 1
+    the effect half alone, with the appl_write probe removed so it cannot mask
+      the stronger assertion (scratch test, deleted after the run):
+        wind_open posted no WM_REDRAW to the desktop (body [0,0,0,0,0,0,0,0])
+        -- its descriptor is gone, so every window message is dropped
+                                       left: 0   right: 1
+  Each of the three is green against the fixed source.  BOTH end-of-program
+  routes fail on their own: fixing only the one A29's prose names would have
+  left the defect standing for every real application.
+
+  A28 probe (scratch test, deleted after the run): with the fix in place the
+  child still starts with the desktop's unread message in its queue --
+        A28-PROBE child appl_read -> 1, body [18193, 1, 0, 1, 2, 3, 4, 5]
+  i.e. A28 is untouched, neither fixed nor masked by this change.
+
+
+BUILDS
+  cargo run -p xtask -- build --board {rpi4,qemu-virt} --release
+    rpi4       ELF sha256 29c307546ec33754203f6b512d78a10607b36b69b79e9e36c0c03526164749de
+               kernel8.img sha256 868c34e77eb0aa6bb11c5a9ffe669c91cdbc78bb025f69e2d6b1998ed8b97146
+               787584 bytes
+    qemu-virt  ELF sha256 1b19111e7806ff596797b6593d6ebeee9a18509eec7a1b7454c79e60bd282fc3
+    The two ELF hashes differ, which is the proof the second build was a real
+    build and not a no-op; each also reproduced bit-for-bit on a second build
+    after the pre-fix excursion below, which is the proof the artefacts here
+    are the ones the runs used.
+    logs build-rpi4.log, build-qemuvirt.log
+    The pre-fix rpi4 kernel8.img built for RUN 1 came out at sha256
+    eeb6e505cb79ea4a596b36fb2d49ed3cc80b83e91887e2f175ee76a70d2eab12 --
+    byte-identical to the one measurement-2026-09-14-a19 recorded for HEAD, so
+    the "before" side of the machine runs really is HEAD.
+
+  warnings  tos-api 64 / kernel 94 (rustc, both boards)
+            tos-api 81 / kernel 125 (clippy, kernel checked on both boards)
+            -- the stated baseline, delta 0.  The new test file draws no
+            clippy finding of its own.
+            logs clippy-tos-api.log, clippy-kernel-{rpi4,qemuvirt}.log
+
+
+RUN 1 / RUN 2 -- QEMU raspi4b, headless, 640x480, #Z autorun, pre-fix vs post-fix
+  What this run can and cannot show, stated before the numbers: it exercises
+  "start a program and let it end" three times over on the real svc path, but
+  it does NOT exercise the defect, because the autorun path re-registers the
+  desktop (see REACHABILITY above).  It is a no-regression control, not a
+  demonstration.
+
+  card     method/prep-chain.sh over measurement-2026-09-13-regression's
+           sd-base.img: C:\CHAINTST.NAP added, NEWDESK.INF = "#Z 01
+           C:\CHAINTST.NAP@".  CHAINTST.NAP (sdk/apps/chaintest) is a real EL0
+           GEM app that calls appl_init(), shel_read, shel_write, appl_exit()
+           and Pterm(0) with no input at all -- the only in-tree GEM app that
+           ends by itself.  It chains to itself once and then to HELLO.NCP.
+  command  method/boot-qmp.sh, i.e.
+           qemu-system-aarch64 -M raspi4b -no-reboot -display none
+             -serial file:<log> -kernel <img>
+             -drive file=qemu-tmp/run-chain.img,if=sd,format=raw
+             -qmp unix:<sock>,server,nowait
+           shot taken with qemu-tmp/qmpshot (built from tools/qmpshot.c) 40 s
+           after start; QEMU writes PPM, converted with sips.
+
+  Both runs walked the same four programs and then the desktop:
+      \AUTO\HELLO.NCP -> CHAINTST.NAP (phase 1, tail empty)
+      -> CHAINTST.NAP (phase 2, tail "-x test") -> HELLO.NCP
+      -> "[shell] sh_ldapp: starting CHAINTST.NAP, sh_nextapp=3, sh_isgem=1"
+      -> "[desk] desktop up (1 drives)"
+  chain-prefix-BOOT-SERIAL.txt and chain-postfix-BOOT-SERIAL.txt: IDENTICAL,
+  byte for byte (diff, no output).
+
+  qemu-tmp/prefix.ppm vs qemu-tmp/postfix.ppm, compared point by point over
+  all 640x480 = 307200 pixels, three bytes each:
+
+      0 pixels differ
+
+  Screendumps: screendumps/chain-desktop-{prefix,postfix}.png.  Both show the
+  desktop with the menu bar (Desk File View Options), the C: drive icon, the
+  trash, and the open C:\ window reading "25 items   381616 bytes used" with
+  the directory listing.
+
+RUN 3 -- QEMU virt, smoke boot of the other board
+  qemu-system-aarch64 -M virt,gic-version=2 -cpu cortex-a72 -m 272M
+    -device ramfb -device qemu-xhci -device usb-kbd -device usb-mouse
+    -display none -serial file:<log> -no-reboot -kernel <img>
+  qemuvirt-BOOT-SERIAL.txt ends:
+      [usb] HID configured: slot 1 ep 0x81 dci 3 (keyboard)
+      [usb] HID configured: slot 2 ep 0x81 dci 3 (mouse)
+      [shell] sh_ldapp: starting NEWDESK, sh_nextapp=3, sh_isgem=1
+      [desk] desktop up (0 drives)
+  Boots, no fault.
+
+
+WHY THE DEFECT ITSELF IS NOT IN ANY OF THESE RUNS -- measured, not assumed
+  The only in-tree way to launch a program FROM a running desktop is a
+  double-click (desk::main::hndl_button -> launch_native -> run_gem_app) or a
+  keyboard equivalent (hndl_kbd).  Both need HID input.  The two emulators
+  give one of input and C: storage, never both, and the two logs here say so:
+      raspi4b  "[pcie] RC not present (no response at RC_BASE); USB disabled"
+               and C: works (25 items listed)          -> storage, no input
+      virt     usb-kbd and usb-mouse enumerate, and
+               "[desk] desktop up (0 drives)"          -> input, no storage
+  So the end-to-end gesture -- open a directory window, double-click an app,
+  quit it, then use the menu / close box / drag the window -- is REAL PI 4
+  ONLY.  It is listed as such in TASK/A29-STATUS-UNFINISHED.MD.

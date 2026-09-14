@@ -1,0 +1,83 @@
+=== RED BEFORE THE FIX — tos-api/src/aes/pd.rs at HEAD a006386 (sha256 d03b2f47...) ===
+
+--- round 1 first: the child calls appl_exit() itself (TeraDesk, QED) ---
+running 1 test
+test the_desktop_still_receives_messages_after_a_program_returns ... FAILED
+
+failures:
+
+---- the_desktop_still_receives_messages_after_a_program_returns stdout ----
+
+thread 'the_desktop_still_receives_messages_after_a_program_returns' (27927030) panicked at tos-api/tests/aes_app_return_descriptor.rs:383:9:
+assertion `left == right` failed: round 1: appl_write to the desktop was refused — its descriptor did not survive the program
+  left: 0
+ right: 1
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+
+
+failures:
+    the_desktop_still_receives_messages_after_a_program_returns
+
+test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+error: test failed, to rerun pass `-p tos-api --test aes_app_return_descriptor`
+
+--- rounds reordered, round 2 first: the child just terminates, the launcher's
+    sh_ldapp fallback cleans up (close_client_if_open) — the route A29 names ---
+running 1 test
+test the_desktop_still_receives_messages_after_a_program_returns ... FAILED
+
+failures:
+
+---- the_desktop_still_receives_messages_after_a_program_returns stdout ----
+
+thread 'the_desktop_still_receives_messages_after_a_program_returns' (27927103) panicked at tos-api/tests/aes_app_return_descriptor.rs:383:9:
+assertion `left == right` failed: round 2: appl_write to the desktop was refused — its descriptor did not survive the program
+  left: 0
+ right: 1
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+
+
+failures:
+    the_desktop_still_receives_messages_after_a_program_returns
+
+test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+error: test failed, to rerun pass `-p tos-api --test aes_app_return_descriptor`
+
+=== GREEN AFTER THE FIX — both rounds, same test binary ===
+running 1 test
+test the_desktop_still_receives_messages_after_a_program_returns ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+
+--- the effect half on its own, pre-fix source: the desktop's own wind_open
+    posts a WM_REDRAW that never arrives (scratch test, deleted after) ---
+running 1 test
+test the_window_message_half_alone ... FAILED
+
+failures:
+
+---- the_window_message_half_alone stdout ----
+
+thread 'the_window_message_half_alone' (27927685) panicked at tos-api/tests/zz_a29_effect_tmp.rs:371:5:
+assertion `left == right` failed: wind_open posted no WM_REDRAW to the desktop (body [0, 0, 0, 0, 0, 0, 0, 0]) — its descriptor is gone, so every window message is dropped
+  left: 0
+ right: 1
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+
+
+failures:
+    the_window_message_half_alone
+
+test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+error: test failed, to rerun pass `-p tos-api --test zz_a29_effect_tmp`
+
+--- the same scratch test against the fixed source ---
+running 1 test
+test the_window_message_half_alone ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+

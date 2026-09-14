@@ -302,6 +302,27 @@ falls to the `default` arm and returns `-1` (see [`_dispatcher.md`](./_dispatche
 > concurrent AES processes; in NewTOS's single-app bring-up there are no DAs, so
 > `wait_for_accs` returns immediately.
 
+**The descriptor is not freed.** The list above is exhaustive: `ap_exit` drains
+the queue and clears one flag bit. `p_pid`, `p_name` and the remaining flags
+survive, and the `AESPD` itself cannot be released — EmuTOS's descriptors are
+fixed entries of `D.g_int[]`/`D.g_acc[]` addressed by index (`pd_index`,
+`aes/gempd.c:32-35`), and `fpdnm` walks that array with no liveness test
+(`:38-57`). So after `appl_exit`, `appl_find(name)` still resolves the name and
+`appl_write(id, …)` still queues into the descriptor. The same two steps — and
+only those two — are what `sh_ldapp` performs on the program's behalf when it
+skipped `appl_exit` (`gemshlib.c:650-657`, see
+[`shell-loop.md`](./shell-loop.md) §8).
+
+> **NewTOS (A29, 2026-09-14).** Both end-of-program paths used to destroy the
+> descriptor instead. That was observable, not academic: NewTOS's desktop runs
+> in the kernel boot context and has pid 1, the first program it launches gets
+> GEMDOS slot 0 and therefore pid 1 too, so the two share one descriptor exactly
+> as EmuTOS's `sh_ldapp` shares one renamed `rlr`. Destroying it at program end
+> left `pd::by_pid(1)` empty for the rest of the session, and every message the
+> AES posted to the desktop afterwards — `WM_REDRAW`, `WM_CLOSED`, `WM_MOVED`,
+> `WM_SIZED`, `WM_ARROWED`, `MN_SELECTED` — was dropped without a trace.
+> Regression test: `tos-api/tests/aes_app_return_descriptor.rs`.
+
 ## `appl_tplay` (14) / `appl_trecord` (15)
 
 **Source:** `aes/gemsuper.c:109-114` → `aes/gemaplib.c:119-184` (`ap_tplay`) /

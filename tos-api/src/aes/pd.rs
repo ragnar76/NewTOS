@@ -427,7 +427,44 @@ pub unsafe fn find_by_name(name: &[u8; 8]) -> i16 {
         .unwrap_or(-1)
 }
 
-/// Deregister an application by pid (clears its descriptor).
+/// Deregister an application by pid — EmuTOS `ap_exit`
+/// (`aes/gemaplib.c:251-261`):
+///
+/// ```c
+/// wm_update(BEG_UPDATE);
+/// mn_cleanup();
+/// wait_for_accs(AP_ACCLOSE);      /* block until all DAs have seen AC_CLOSE */
+/// if (rlr->p_qindex)
+///     ap_rdwr(MU_MESAG, rlr, rlr->p_qindex, (WORD *)D.g_valstr);
+/// wm_update(END_UPDATE);
+/// all_run();
+/// rlr->p_flags &= ~AP_OPEN;       /* say appl_exit() is done */
+/// ```
+///
+/// Two things happen to the descriptor and no more: **the queue is drained**
+/// (the `ap_rdwr(MU_MESAG, …)` reads every pending message into the scratch
+/// buffer `D.g_valstr`, i.e. throws it away) and **`AP_OPEN` is cleared**.
+/// `p_pid`, `p_name` and the remaining flags survive, and the `AESPD` itself
+/// is never freed — EmuTOS's descriptors are fixed entries of
+/// `D.g_int[]`/`D.g_acc[]` addressed by index (`pd_index`, `aes/gempd.c:32-35`)
+/// and `fpdnm` walks that array with no liveness test (`:38-57`), so a message
+/// addressed to a pid always finds its descriptor, before and after
+/// `appl_exit`.
+///
+/// This matters here and not only in theory: NewTOS's desktop runs in the
+/// kernel boot context and gets pid 1 (`appl::current_pid`), the first program
+/// it launches gets GEMDOS slot 0 and therefore pid 1 as well
+/// ([`super::pid_of_slot`]) — the *same* descriptor, exactly as EmuTOS's
+/// `sh_ldapp` renames the one `rlr` for each successive program
+/// (`aes/gemshlib.c:633-636`). Destroying the descriptor here used to take the
+/// desktop's message pipe with it when a program quit (A29): `pd::by_pid(1)`
+/// went `None`, and from then on every `WM_REDRAW`/`WM_CLOSED`/`WM_MOVED`/
+/// `MN_SELECTED` the AES posted to the desktop was silently dropped.
+///
+/// `mn_cleanup` (`gemmnlib.c:740-758`) and `wait_for_accs` concern desk
+/// accessories, which NewTOS has none of; `wm_update`/`all_run` bracket the
+/// drain against the AES's own multitasking, which a synchronous drain on the
+/// single trap path cannot race.
 ///
 /// # Safety
 /// Single trap path.
@@ -435,7 +472,8 @@ pub unsafe fn close(pid: i16) {
     // SAFETY: single trap path.
     let t = unsafe { table() };
     if let Some(slot) = t.iter_mut().find(|s| s.in_use && s.pid == pid) {
-        *slot = Aespd::EMPTY;
+        slot.queue.clear(); // ap_rdwr(MU_MESAG, rlr, rlr->p_qindex, …)
+        slot.flags &= !AP_OPEN; // rlr->p_flags &= ~AP_OPEN
     }
 }
 
@@ -453,10 +491,17 @@ pub unsafe fn close(pid: i16) {
 /// EmuTOS does "the important parts of `appl_exit`" on the program's behalf,
 /// because `rlr` (its single AESPD 0) is about to be reused by the next
 /// program and a stale `AP_OPEN` plus an undrained queue would corrupt that
-/// program's state. `mn_cleanup` (`gemmnlib.c:740-758`) sends `AC_CLOSE` to
-/// every registered desk accessory and frees the submenu buffer — NewTOS has
-/// neither, so what remains observable is exactly what `appl_exit` does to the
-/// descriptor, which is what [`close`] performs.
+/// program's state. Those important parts are the same two the full `ap_exit`
+/// performs — drain the queue, clear `AP_OPEN` — so this is [`close`]'s body
+/// under EmuTOS's `AP_OPEN` guard. `mn_cleanup` (`gemmnlib.c:740-758`) sends
+/// `AC_CLOSE` to every registered desk accessory and frees the submenu buffer;
+/// NewTOS has neither.
+///
+/// Like `ap_exit`, this **keeps the descriptor**: `p_pid` and `p_name` stay, so
+/// the next program to occupy the slot finds the pd to rename
+/// (`aes/gemshlib.c:633`) and — the case that made this a P1 — the desktop,
+/// which shares pid 1 with the first program it launches, still has a message
+/// pipe after that program quits. See [`close`] for the full reasoning.
 ///
 /// A descriptor without `AP_OPEN` (the program did call `appl_exit`, or never
 /// called `appl_init`) is left alone, as EmuTOS's `if` leaves it alone.
@@ -470,7 +515,8 @@ pub unsafe fn close_if_open(pid: i16) {
         .iter_mut()
         .find(|s| s.in_use && s.pid == pid && (s.flags & AP_OPEN) != 0)
     {
-        *slot = Aespd::EMPTY;
+        slot.queue.clear(); // ap_rdwr(MU_MESAG, rlr, rlr->p_qindex, …)
+        slot.flags &= !AP_OPEN; // rlr->p_flags &= ~AP_OPEN
     }
 }
 

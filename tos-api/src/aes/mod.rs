@@ -626,6 +626,12 @@ fn crysbind(pb: &Aespb) -> Option<crate::bdos::process::sched::Switch> {
 /// that has just terminated — see `pd::close_if_open`. Called from the
 /// program launcher at the point EmuTOS calls it: immediately after
 /// `dos_exec(PE_LOADGO, …)` returns.
+///
+/// It drains the descriptor's message queue and clears `AP_OPEN`; it does
+/// **not** free the descriptor. EmuTOS cannot free one (its `AESPD`s are fixed
+/// array entries, `aes/gempd.c:32-35`), and here it must not: the desktop
+/// shares pid 1 with the first program it launches, so freeing it left the
+/// desktop unaddressable for the rest of the session (A29).
 pub fn close_client_if_open(pid: i16) {
     // SAFETY: single-CPU launcher context; the AES pd table follows the
     // single-trap-path discipline and the launcher runs on that CPU with no

@@ -245,6 +245,11 @@ pub fn appl_init(pb: &Aespb) {
 }
 
 /// Opcode 19 — `appl_exit`: deregister the application. Returns 1.
+///
+/// "Deregister" is EmuTOS's `ap_exit` (`aes/gemaplib.c:251-261`) and is
+/// narrower than it sounds: the pending message queue is drained and `AP_OPEN`
+/// is cleared, but the process descriptor itself stays — see [`pd::close`].
+/// The `APPL_EXIT` arm's `ret` is the enclosing `TRUE` (`gemsuper.c:85,120-123`).
 pub fn appl_exit(pb: &Aespb) {
     let pid = current_pid();
     // SAFETY: single trap path.
