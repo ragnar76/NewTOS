@@ -85,6 +85,12 @@ So the access contract an application relies on is:
 
 ## NewTOS implementation notes
 
+> **Superseded in part, 2026-09-14** — point 1 below is no longer true: the
+> B1 boot-init pass materialises the classic `$400` area, `$5A0` included, in
+> every process's own address space. See the 2026-09-14 status section at the
+> end of this file. The section is kept as written because the ADR-012
+> decision it records was taken on this premise.
+
 The classic access path is **blocked twice** on NewTOS:
 
 1. **`$5A0` is not mapped.** NewTOS does not map Atari low-memory system
@@ -145,6 +151,9 @@ missing and falls back.
 
 ### Access mechanism (the critical part) — kernel-owned, no `$5A0`, no `Supexec`
 
+> **Superseded in part, 2026-09-14** — "no `$5A0` mapping" no longer holds;
+> see the status section at the end of this file.
+
 The classic `Supexec` + read `$5A0` + linear-scan path is **blocked** on NewTOS
 (no `$5A0` mapping; `Supexec` deferred — see the "How applications access it"
 section and `docs/api/xbios/26-supexec.md`). Per **ADR-012**, the jar is
@@ -168,10 +177,13 @@ value — a pointer would be useless to EL0 since the jar is EL1-only memory.
 - **`_CPU` / `_SND` undecided** (above) — the jar advertises 4 cookies; whether
   to add these two is unresolved.
 - **`Setcookie` reseat** — `cookie::set` supports add/update within `JAR_CAP`,
-  but no terminator-`{0, capacity}` slot is materialised (the EmuTOS array-form
-  terminator); enumeration uses `count()`/`slot_tag()` instead, so an m68k
-  binary scanning for a `tag == 0` terminator would not find one. Native access
-  via `Ssystem` is unaffected.
+  but no terminator-`{0, capacity}` slot is materialised in the **kernel** jar
+  (the EmuTOS array-form terminator); enumeration uses `count()`/`slot_tag()`
+  instead. *Corrected 2026-09-14:* the array-form terminator **is** materialised
+  in the per-process `$5A0` mirror the loader writes (`{0, COOKIE_JAR_SLOTS}`,
+  see the 2026-09-14 status section), so a binary scanning for `tag == 0` does
+  find one — the earlier "would not find one" applied to the kernel jar, which
+  no application ever sees.
 
 ## OFFEN (re-flagged 2026-07-23, BB1 boot-init pass)
 
@@ -189,10 +201,112 @@ does **not** re-decide ADR-012 — that is BB1's job, not a spec-extraction
 task — but the decision must be revisited with this evidence before BB1
 implements the boot-init layer. See `docs/api/bios/_boot-init.md` §6.
 
+## Status 2026-09-14 — what of ADR-012 still holds, and what does not
+
+The BB1 re-flag above was answered in two steps, both driven by ported
+applications rather than by argument.
+
+### What still holds
+
+* **The jar stays kernel-owned.** `tos-api/src/cookie.rs` is the single
+  source of truth; nothing an application writes reaches it.
+* **`Ssystem` stays the access ABI for native programs**
+  (`docs/api/gemdos/154-ssystem.md`). A value-returning call is still the
+  right answer for anything compiled *for* NewTOS.
+* **There is no `Supexec` in the kernel.** XBIOS 0x26 still returns `38`;
+  what changed is the *toolchain* binding (`TASK/X01.md`), because on
+  AArch64 the low-memory area an app wants is already in its own address
+  space — there is nothing to elevate for.
+
+### What ADR-012 got wrong
+
+* **`$5A0` is mapped after all.** ADR-012's premise "`$5A0` is not mapped,
+  so `*(COOKIE**)0x5A0` cannot work" was overtaken by the B1 boot-init pass
+  (`docs/analysis/bios-audit/b1-lowmem-feasibility.md` §Option 1): every
+  process's TPA now carries the classic `$400` low-memory area, including
+  `_p_cookies`@`$5A0` pointing at a per-process **mirror** of the kernel jar
+  at VA `0x5F0` (`tos-api/src/bdos/process/loader.rs`, `write_cookie_jar`).
+  TeraDesk's `library/utility/cookie.c:56` idiom therefore resolves.
+* **The classic path is read-only, and that is now a decision, not an
+  accident.** See the two subsections below.
+
+### The mirror is live (fixed 2026-09-14)
+
+Until 2026-09-14 the mirror was written **once**, at load time, so a cookie
+added afterwards never reached a running program. `cookie::set` / `cookie::del`
+now call `loader::refresh_cookie_mirrors()`, which re-writes the mirror of
+**every** process that owns a TPA — not only the caller's: classic TOS has
+exactly one jar that all programs see under the same address, so letting two
+live programs observe different `$5A0` arrays would be a NewTOS-only artefact
+of the per-process low-memory area. The hook sits *inside* `set`/`del` so a
+future third mutator cannot forget it.
+
+**Capacity / truncation.** The kernel jar holds 32 cookies
+(`cookie::capacity()`); the mirror window `[0x5F0, 0x670)` holds
+`COOKIE_JAR_SLOTS` = 16 slots = **15 cookies plus the terminator**. A longer
+kernel jar is **truncated**, but the last written slot is always the classic
+`{0, COOKIE_JAR_SLOTS}` pair, so an application's linear scan still ends
+inside the window. The terminator's value is the *mirror's* capacity, because
+EmuTOS' terminator word describes the array the reader is scanning
+(`util/cookie.c:33`).
+
+Evidence: host test `loader::cookie_mirror_tests`, kernel self-test
+`selftest_sysvars` check (f), `apitest` SX11–SX15
+(`measurement-2026-09-14-cookie/`).
+
+### Still open: the counter-direction (application → kernel)
+
+An application that writes into the mirror (TeraDesk's `install_cookie`,
+`library/utility/cookie.c:107-179`, today inside the `#if 0` block at :74)
+does **not** reach the kernel jar — and, since 2026-09-14, its mirror write is
+now also **overwritten** by the next kernel-side `set`/`del`. Whether to close
+this, and how without exposing the kernel jar to an application write, is an
+open decision; the options and their costs are recorded with the task report.
+Until it is decided: **`$5A0` is a read-only view.**
+
+## OFFEN — the LP64 ABI properties of the classic idioms (measured 2026-09-14)
+
+Neither of these is a malfunction. Both are consequences of a 32-bit-by-
+construction data structure being read by an LP64 program, and both will hit
+**every** 1:1 port. They are recorded here so nobody re-diagnoses them as bugs.
+
+**1. An 8-byte read of `$5A0` is wrong.** `ramtop` sits directly above at
+`$5A4`, so `*(long**)0x5A0` yields `(ramtop << 32) | jar` — measured
+`0x3BE00000000005F0` (`apitest` T05). Only the **four**-byte read is correct;
+that is what `Setexc(0x5A0/4, -1)` returns, which is why TeraDesk's live path
+is unaffected. (Also noted at the write site,
+`tos-api/src/bdos/process/loader.rs`, `$5A4` block.)
+
+**2. A `struct { long name; long value; }` element has the wrong stride.** A
+TOS cookie slot is a pair of **32-bit** LONGs — 8 bytes — and that is what the
+mirror carries. The same declaration is 8 bytes on m68k but **16** on LP64
+(TeraDesk `library/xdialog/library.h:201-205`), so a verbatim `cookie++` walk
+
+  * reads every **second** slot, with a tag and the previous slot's value
+    fused into one 8-byte word (`jar[0]` reads as `0x000001004E544F53` —
+    `NTOS` with its value 0x100 on top), and
+  * **does not recognise the terminator**: the `{0, capacity}` pair reads as
+    `capacity << 32`, which is not zero. The scan only stops on the zero fill
+    *beyond* the jar.
+
+Measured by `apitest` SX16/SX17: `sizeof` = 16, the ported-stride scan takes
+3 steps from `0x5F0` and stops at `0x620` — past the terminator at `0x610` —
+without finding `NTOS`.
+
+Consequence today: TeraDesk's `find_cookie` (compiled with `-D_TOS_ONLY`, so
+`_MINT_ == 0` and the `Ssystem` branch is not compiled in —
+`sdk/apps/build-teradesk.sh:99`) **never finds a cookie**. It is driven on
+every start (`main.c:1792-1795`, `:1837`) plus `xfilesys.c:1865` and
+`video.c:158`. That is invisible today only because every tag it asks for
+(`MiNT`/`Gnva`/`nAES`/`MagX`/`CT60`/`_FLK`/`_VDO`) is genuinely absent, so
+"not found" is the right answer by accident. **Not fixed here** — the fix is
+an ABI decision (declare the ported element as a pair of 32-bit LONGs in the
+toolchain overlay, or give the mirror an LP64 form), not a kernel defect.
+
 ## Cross-references
 
-- ADR-012 (cookie-jar access mechanism) — `docs/MEMORY.md` — **contested,
-  see "OFFEN" above**
+- ADR-012 (cookie-jar access mechanism) — `docs/MEMORY.md` — **partly
+  superseded; see "Status 2026-09-14" above for what still holds**
 - Open-ADR *ADR-Supexec*, `$420`-vars decision — STATUS Recent-Decisions 2026-05-03
 - `docs/api/bios/_boot-init.md` — boot-time `cookie_init()`/
   `fill_cookie_jar()` sequencing

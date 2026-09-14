@@ -709,7 +709,17 @@ const COOKIE_JAR_VA: u32 = 0x5F0;
 
 /// Cookie-jar capacity in `{tag, value}` slots (8 bytes each). The region
 /// `[0x5F0, 0x670)` holds 16 slots and stays below [`RESERVED_LOW_END`].
+///
+/// This is the **mirror's** capacity and is smaller than the kernel jar's
+/// (`cookie::capacity()` == 32): 16 slots carry 15 cookies plus the classic
+/// `{0, capacity}` terminator. [`write_cookie_jar`] truncates a longer kernel
+/// jar rather than overrunning the window, and always emits the terminator —
+/// see its doc comment for why that is the defined answer.
 const COOKIE_JAR_SLOTS: u32 = 16;
+
+// The jar must hold at least the boot-seeded cookie set plus the terminator,
+// so the mirror a freshly-loaded process reads is never truncated.
+const _: () = assert!(COOKIE_JAR_SLOTS >= 5);
 
 /// Exclusive end of the classic low-memory system area (= jar end, 0x670).
 const SYSVAR_AREA_END: u64 = COOKIE_JAR_VA as u64 + (COOKIE_JAR_SLOTS as u64) * 8;
@@ -989,9 +999,38 @@ fn populate_sysvars(tpa: &mut [u8]) {
 
     // ── Cookie jar (classic array form, _cookie-jar.md; EmuTOS
     //    util/cookie.c:26-35) ───────────────────────────────────────────
-    // Mirror the kernel jar (crate::cookie) as `{tag, value}` LONG pairs,
-    // terminated with `{0, capacity}`. Native apps normally use the Ssystem
-    // cookie subset (ADR-012); this is the direct-$5A0 compatibility path.
+    write_cookie_jar(tpa);
+}
+
+/// Write the `$5A0` cookie-jar mirror into the reserved low region of one
+/// process's TPA: the kernel jar ([`crate::cookie`]) rendered in the classic
+/// `{tag, value}` LONG-pair array form, terminated with `{0, capacity}`
+/// (`docs/api/bios/_cookie-jar.md`; EmuTOS `util/cookie.c:26-35`). Native
+/// programs normally read cookies by value through the `Ssystem` subset
+/// (ADR-012); this array is the direct-`$5A0` compatibility path a 1:1-ported
+/// TOS program uses (TeraDesk `library/utility/cookie.c:28,56`).
+///
+/// Called from [`populate_sysvars`] at load time **and** from
+/// [`refresh_cookie_mirrors`] whenever the kernel jar changes, so both paths
+/// produce a bit-identical mirror and cannot drift apart.
+///
+/// **Capacity.** The kernel jar holds up to `cookie::capacity()` (32) cookies;
+/// the mirror window `[COOKIE_JAR_VA, SYSVAR_AREA_END)` holds
+/// [`COOKIE_JAR_SLOTS`] (16) slots, i.e. **15 cookies plus the terminator**. A
+/// kernel jar with more than 15 entries is therefore **truncated** — but the
+/// last written slot is always the classic `{0, COOKIE_JAR_SLOTS}` terminator,
+/// so an application's linear scan still stops inside the window instead of
+/// running off its end. Truncation cannot happen with the boot-seeded set
+/// (4 cookies); it needs 12 further `Ssystem(S_SETCOOKIE)` calls.
+///
+/// The terminator's `value` is the **mirror's** slot capacity, not the kernel
+/// jar's: EmuTOS' terminator word describes the array the reader is scanning
+/// (`cookie_init`, `util/cookie.c:33`), and that array is this one.
+///
+/// Slots past the terminator keep whatever an earlier, longer jar left there
+/// — exactly as EmuTOS' in-place `cookie_add` does; a reader stops at
+/// `tag == 0` and never sees them.
+fn write_cookie_jar(tpa: &mut [u8]) {
     let jar = COOKIE_JAR_VA as usize;
     let mut slot = 0u32;
     let n = crate::cookie::count();
@@ -1007,10 +1046,63 @@ fn populate_sysvars(tpa: &mut [u8]) {
             slot += 1;
         }
     }
-    // Terminator {tag = 0, value = capacity} (EmuTOS cookie_init).
+    // Terminator {tag = 0, value = capacity} (EmuTOS cookie_init). `slot` is
+    // capped at COOKIE_JAR_SLOTS - 1 above, so this pair always lands inside
+    // the window (see the SYSVAR_AREA_END const assert).
     let off = jar + (slot as usize) * 8;
     wr_long(tpa, off, 0);
     wr_long(tpa, off + 4, COOKIE_JAR_SLOTS);
+}
+
+/// Re-write the `$5A0` cookie-jar mirror of **every process that owns a TPA**,
+/// so a cookie added/updated/removed after load reaches a program that is
+/// already running.
+///
+/// Called from [`crate::cookie::set`] / [`crate::cookie::del`] — i.e. from the
+/// jar itself rather than from each caller — so "whoever changes the kernel jar
+/// pulls the mirrors along" holds by construction and a future third mutator
+/// cannot forget it.
+///
+/// **Why every process, not just the caller.** Classic TOS has exactly *one*
+/// jar: every program dereferences the same `$5A0` cell and sees the same
+/// array (`docs/api/bios/_cookie-jar.md` §"How applications access it"). The
+/// per-process copy is a NewTOS artefact of materialising the `$400` low-memory
+/// area inside each TPA (B1 / Option 1,
+/// `docs/analysis/bios-audit/b1-lowmem-feasibility.md`), not a TOS-visible
+/// property. Refreshing only the calling process would make the *observable*
+/// jar differ between two live programs, which classic TOS cannot do — and the
+/// case is reachable today: a `Pexec`'d child's `Ssystem(S_SETCOOKIE)` must
+/// still be there for its parent (the desktop) after the child exits.
+///
+/// **Which slots.** Every slot with a published `basepage_kva`, which is
+/// exactly [`arena::page_bytes_mut`]'s own "has a loaded TPA" criterion. The
+/// slot *state* is deliberately not part of the test: [`load_to_slot`]
+/// publishes `basepage_kva` without touching `state`, so a loaded-but-not-yet-
+/// launched process (and the kernel self-tests that load without
+/// `allocate_slot`) would be skipped by a `state != Free` filter although its
+/// TPA is live and its mirror stale.
+///
+/// Cost: [`super::MAX_PROCESSES`] (16) pointer loads and, per live process,
+/// at most `COOKIE_JAR_SLOTS * 8` = 128 bytes written — on an operation that
+/// happens a handful of times per boot.
+///
+/// No cache maintenance is needed: the kernel writes **data** through the TPA's
+/// high-half alias and EL0 reads the same physical bytes through its low-half
+/// mapping. Both mappings are Normal cacheable and AArch64 data caches behave
+/// as PIPT, so the two VAs hit the same cache line; single-CPU program order
+/// then makes the write visible to the `eret` that follows. (The loader's
+/// `sync_code_cache` exists for the *instructions* it writes, not for this.)
+pub fn refresh_cookie_mirrors() {
+    for slot in 0..super::MAX_PROCESSES {
+        // SAFETY: the jar is mutated only from the synchronous SVC trap path
+        // (and from boot seeding, when no process exists), which is exactly
+        // the BDOS-giant-lock / single-CPU context `page_bytes_mut` requires;
+        // a published `basepage_kva` is the kernel-writable base of that
+        // slot's mapped TPA.
+        if let Some(page) = unsafe { arena::page_bytes_mut(slot) } {
+            write_cookie_jar(page);
+        }
+    }
 }
 
 /// The five AArch64 instructions of the EL0 upcall trampoline (design §4.2),
@@ -1244,4 +1336,133 @@ fn validate_segment(seg: &LoadSegment) -> Result<(), LoadError> {
     // per-segment RX/RW split is a later hardening step.
     let _ = seg.flags & (PF_W | PF_X);
     Ok(())
+}
+
+#[cfg(test)]
+mod cookie_mirror_tests {
+    //! The `$5A0` cookie-jar mirror (`docs/api/bios/_cookie-jar.md`):
+    //! a cookie set/removed **after** a process was loaded must reach that
+    //! process's mirror, and the mirror must stay a well-formed
+    //! `{tag, value}`-array terminated with `{0, capacity}` even when the
+    //! kernel jar holds more cookies than the mirror window has slots.
+    //!
+    //! A single `#[test]` on purpose: both the kernel jar and the process
+    //! table are process-wide statics, so two cookie tests running in
+    //! parallel in the same test binary would interfere.
+
+    use super::*;
+    use crate::bdos::process::{allocate_slot, free_slot};
+
+    /// Scan a mirror the way an application does (TeraDesk
+    /// `library/utility/cookie.c:28-36`): walk `{tag, value}` LONG pairs from
+    /// the jar base, stop at `tag == 0`. Returns the value, plus the number of
+    /// pairs walked. Refuses to read past the mirror window, so a missing
+    /// terminator shows up as `None` rather than as a runaway scan.
+    fn scan(page: &[u8], want: u32) -> (Option<u32>, usize) {
+        let base = COOKIE_JAR_VA as usize;
+        for i in 0..COOKIE_JAR_SLOTS as usize {
+            let off = base + i * 8;
+            let tag = u32::from_le_bytes(page[off..off + 4].try_into().unwrap());
+            let val = u32::from_le_bytes(page[off + 4..off + 8].try_into().unwrap());
+            if tag == 0 {
+                return (None, i);
+            }
+            if tag == want {
+                return (Some(val), i);
+            }
+        }
+        (None, COOKIE_JAR_SLOTS as usize)
+    }
+
+    /// Value of the terminator slot reached by a scan, or `None` if the scan
+    /// ran out of window without meeting one.
+    fn terminator(page: &[u8]) -> Option<u32> {
+        let base = COOKIE_JAR_VA as usize;
+        for i in 0..COOKIE_JAR_SLOTS as usize {
+            let off = base + i * 8;
+            let tag = u32::from_le_bytes(page[off..off + 4].try_into().unwrap());
+            if tag == 0 {
+                return Some(u32::from_le_bytes(
+                    page[off + 4..off + 8].try_into().unwrap(),
+                ));
+            }
+        }
+        None
+    }
+
+    #[test]
+    fn a_cookie_set_after_load_reaches_a_running_process_mirror() {
+        const TAG: u32 = u32::from_be_bytes(*b"TST1");
+        const OTHER: u32 = u32::from_be_bytes(*b"TST2");
+
+        // A loaded process: a zeroed TPA page published as the slot's
+        // `basepage_kva`, exactly what `load_to_slot` publishes.
+        let slot = allocate_slot().expect("a free process slot");
+        let page_box: Box<[u8; 4096]> = Box::new([0u8; 4096]);
+        let page_ptr = Box::into_raw(page_box);
+        PROCESS_TABLE[slot]
+            .basepage_kva
+            .store(page_ptr.cast(), Ordering::Release);
+
+        // Load time: the mirror is written once, from the jar as it is now.
+        // SAFETY: the buffer is ours for the whole test and 4096 bytes long.
+        let page: &mut [u8; 4096] = unsafe { &mut *page_ptr };
+        write_cookie_jar(page);
+        let before = scan(page, TAG).0;
+
+        // …and now a cookie appears after the process is already loaded.
+        assert!(crate::cookie::set(TAG, 0xC0FF_EE01));
+        let (after, _) = scan(page, TAG);
+
+        assert_eq!(before, None, "TST1 must not be in the load-time snapshot");
+        assert_eq!(
+            after,
+            Some(0xC0FF_EE01),
+            "a cookie set after load must reach the $5A0 mirror",
+        );
+
+        // An update of an existing tag must land too, not just an append.
+        assert!(crate::cookie::set(TAG, 0xC0FF_EE02));
+        assert_eq!(scan(page, TAG).0, Some(0xC0FF_EE02));
+
+        // …and a removal must take it out of the mirror again.
+        assert!(crate::cookie::set(OTHER, 0x1234_5678));
+        assert!(crate::cookie::del(TAG));
+        assert_eq!(scan(page, TAG).0, None, "a deleted cookie must vanish");
+        assert_eq!(
+            scan(page, OTHER).0,
+            Some(0x1234_5678),
+            "deleting one cookie must not disturb its neighbours",
+        );
+        assert!(crate::cookie::del(OTHER));
+
+        // Capacity: the kernel jar holds more (32) than the mirror window
+        // (16 slots = 15 cookies + terminator). Overfilling must truncate and
+        // still leave the classic {0, capacity} pair as the last written slot,
+        // so an application's scan stops inside the window.
+        let mut filled = Vec::new();
+        for i in 0..20u32 {
+            let tag = u32::from_be_bytes([b'X', b'X', b'0' + (i / 10) as u8, b'0' + (i % 10) as u8]);
+            assert!(crate::cookie::set(tag, 0xA000 + i));
+            filled.push(tag);
+        }
+        assert_eq!(
+            terminator(page),
+            Some(COOKIE_JAR_SLOTS),
+            "the mirror must still end in {{0, COOKIE_JAR_SLOTS}}",
+        );
+        // The terminator sits at slot 15: 15 cookies mirrored, the rest cut.
+        assert_eq!(scan(page, 0xDEAD_BEEF).1, (COOKIE_JAR_SLOTS - 1) as usize);
+        assert_eq!(scan(page, filled[0]).0, Some(0xA000));
+        assert_eq!(scan(page, filled[14]).0, Some(0xA000 + 14));
+        assert_eq!(scan(page, filled[15]).0, None, "slot 16 is truncated away");
+
+        // Restore the process-wide statics for any other test in this binary.
+        for tag in filled {
+            assert!(crate::cookie::del(tag));
+        }
+        free_slot(slot);
+        // SAFETY: the slot no longer references the buffer; reclaim it.
+        drop(unsafe { Box::from_raw(page_ptr) });
+    }
 }

@@ -1,0 +1,9 @@
+SHA-256 der Artefakte dieses Laufs (2026-09-14, Cookie-Spiegel)
+===============================================================
+88d9928579e3a141e361e5a2d7cd9a09375965305f8f4149dd47e7abd1c96781  (scratch) kernel8-rpi4.img
+c6d3a21947bf004c12a246f2f1cd8a97c74996e149c8f9b5304498006cbe0e9a  (scratch) kernel8-selftest.img
+df9fcdc3f870b956095240f67ebc669e2eeeb94110d06ca5a03b186ee9042e34  (scratch) kernel8-red.img
+994f9bae149f67bde7f76bb8195276bbe167d55b71d4bf1eea3251d5e3e32c4d  target/aarch64-unknown-none-softfloat/release/kernel
+900b9ab0809b6079e257c93bef340a2a18f031f5696a6caf8bdd0d2f9cbdc86d  sdk/apps/teradesk/build/DESKTOP.NAP
+c2173506be1dbec13d251ecba0ecbee4c9eccec9a9f4ca13c79c1a03ecc7b083  sdk/apps/qed/build/QED.NAP
+4dab0288864dfa16254b2dbf1b3025be8b03f1325c691fcf47371f6c5b1782fa  measurement-2026-09-14-cookie/build/APITEST.NCP

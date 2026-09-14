@@ -653,6 +653,28 @@ static int wait_input(unsigned int ticks)
 #define SSYSTEM(mode, a1, a2) \
 	((long)trap_1_wwll((short)(0x154), (short)(mode), (long)(a1), (long)(a2)))
 #define S_GETCOOKIE 8
+#define S_SETCOOKIE 9
+#define S_DELCOOKIE 26
+
+/* Scratch cookie SX11..SX15 add and remove again, so the run leaves the
+ * kernel jar exactly as it found it. 'APIT' has no zero byte, so it passes
+ * the FreeMiNT tag rule (tos-api/src/cookie.rs `valid_tag`). */
+#define TAG_APIT 0x41504954UL
+#define APIT_VALUE 0x13572468UL
+
+/* Cookie tag '_MCH' -- the second cookie the kernel seeds
+ * (tos-api/src/cookie.rs `seed_defaults`), used to measure the jar's slot
+ * pitch on the wire. */
+#define TAG_MCH 0x5F4D4348UL
+
+/* TeraDesk's own jar element (library/xdialog/library.h:201-205), verbatim.
+ * On m68k this is 8 bytes and matches the wire format; on LP64 `long` is 8
+ * bytes, so sizeof(COOKIE) is 16 and a `cookie++` walk steps TWO slots at a
+ * time. SX16/SX17 measure that instead of arguing about it. */
+typedef struct {
+	long name;
+	long value;
+} COOKIE_AS_PORTED;
 
 /* Did the Supexec callee actually run? A no-op Supexec leaves this at 0. */
 static long sx_calls;
@@ -693,6 +715,19 @@ static int sx_jar_find(unsigned long jar, unsigned long tag, unsigned long *out)
 				*out = RD_U32(jar + (unsigned long)i * 8 + 4);
 			return 1;
 		}
+	}
+	return 0;
+}
+
+/* The `value` word of the {0, capacity} terminator a jar scan stops at, or 0
+ * if there is none inside the 16-slot window -- which would send the loop
+ * above off the end of the jar. */
+static unsigned long sx_jar_term(unsigned long jar)
+{
+	int i;
+	for (i = 0; i < 16; i++) {
+		if (RD_U32(jar + (unsigned long)i * 8) == 0)
+			return RD_U32(jar + (unsigned long)i * 8 + 4);
 	}
 	return 0;
 }
@@ -1637,6 +1672,93 @@ int main(void)
 		ck_eq(G_SUPER, "SX09 Ssystem(S_GETCOOKIE,NTOS) succeeds", ss_rc, 0L);
 		ck_hex(G_SUPER, "SX10 $5A0 mirror agrees with the kernel jar",
 		       mirror_val, ss_val);
+	}
+
+	/* SX11..SX15: is the mirror a LIVE view or a load-time snapshot?
+	 * SX09/SX10 above only compare cookies that existed before this program
+	 * was loaded, so they pass either way. These five set a cookie now,
+	 * while the program is already running, and look for it at $5A0 -- the
+	 * question docs/api/bios/_cookie-jar.md leaves open under "OFFEN". */
+	{
+		unsigned long jar, v = 0;
+		long set_rc, del_rc;
+		int found_after_set, found_after_del;
+
+		jar = RD_U32(SV_PCOOKIES);
+
+		set_rc = SSYSTEM(S_SETCOOKIE, (long)TAG_APIT, (long)APIT_VALUE);
+		found_after_set = sx_jar_find(jar, TAG_APIT, &v);
+		b_reset();
+		b_str("SX    Setcookie('APIT') rc=");
+		b_dec(set_rc);
+		b_str("  mirror ");
+		b_str(found_after_set ? "carries " : "MISSES it, val=");
+		b_hex(v, 8);
+		b_nl();
+		b_emit();
+		ck_eq(G_SUPER, "SX11 Ssystem(S_SETCOOKIE,'APIT') succeeds", set_rc, 0L);
+		ck_bool(G_SUPER, "SX12 $5A0 mirror sees a cookie set after load",
+			found_after_set);
+		ck_hex(G_SUPER, "SX13 that mirrored cookie carries the right value",
+		       v, APIT_VALUE);
+
+		del_rc = SSYSTEM(S_DELCOOKIE, (long)TAG_APIT, 0L);
+		found_after_del = sx_jar_find(jar, TAG_APIT, (unsigned long *)0);
+		ck_bool(G_SUPER, "SX14 Ssystem(S_DELCOOKIE) removes it from the mirror",
+			del_rc == 0L && !found_after_del);
+
+		/* Whatever the refresh does, the array must still end in the classic
+		 * {0, capacity} pair -- otherwise the scan above walks off the jar. */
+		ck_hex(G_SUPER, "SX15 mirror still ends in the {0,capacity} terminator",
+		       sx_jar_term(jar), 16UL);
+	}
+
+	/* SX16/SX17: the jar's WIRE format against a 1:1-ported reader's idea of
+	 * it. A TOS cookie slot is a pair of 32-bit LONGs -- 8 bytes -- and that
+	 * is what the kernel writes. A ported program that declares
+	 * `struct { long name; long value; }` gets 16 bytes per element on LP64
+	 * and therefore reads every SECOND slot, with the tag and the previous
+	 * value fused into one 8-byte word. This is the same ABI property as the
+	 * 8-byte read of $5A0 itself (T05); it is measured here, not fixed --
+	 * see docs/api/bios/_cookie-jar.md. */
+	{
+		unsigned long jar = RD_U32(SV_PCOOKIES);
+		COOKIE_AS_PORTED *c = (COOKIE_AS_PORTED *)jar;
+		int steps = 0, found = 0;
+
+		b_reset();
+		b_str("SX    slot pitch: wire=8  sizeof(ported COOKIE)=");
+		b_dec((long)sizeof(COOKIE_AS_PORTED));
+		b_str("  jar[0] as 8 bytes=");
+		b_hex((unsigned long)c->name, 16);
+		b_nl();
+		b_emit();
+
+		/* TeraDesk's find_cookie loop (library/utility/cookie.c:58-62),
+		 * verbatim but bounded so a runaway scan cannot fault the probe. */
+		while (c->name != 0 && c->name != (long)TAG_NTOS && steps < 16) {
+			c++;
+			steps++;
+		}
+		found = (c->name == (long)TAG_NTOS);
+
+		b_reset();
+		b_str("SX    ported-stride scan: steps=");
+		b_dec(steps);
+		b_str("  stopped at 0x");
+		b_hex((unsigned long)(void *)c, 8);
+		b_str("  found=");
+		b_dec(found);
+		b_nl();
+		b_emit();
+
+		/* The wire format itself: slot 1 begins 8 bytes after slot 0. */
+		ck_hex(G_SUPER, "SX16 jar slot pitch is 8 bytes (slot 1 tag == _MCH)",
+		       RD_U32(jar + 8), TAG_MCH);
+		/* And the documented consequence for a 1:1-ported LP64 reader. */
+		ck_bool(G_SUPER,
+			"SX17 LP64 struct-stride scan misses the jar (ABI note, not a defect)",
+			!found);
 	}
 
 	/* ================================================================ *

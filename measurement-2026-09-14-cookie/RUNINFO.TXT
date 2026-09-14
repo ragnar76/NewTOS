@@ -1,0 +1,171 @@
+Cookie-Spiegel bei $5A0 -- nachziehen statt Momentaufnahme
+===========================================================
+
+Datum          2026-09-14
+Basis          desk-rebuild, HEAD 70caee2, Baum traegt fremde
+               unversionierte X01-Arbeit (nicht angefasst)
+EmuTOS-Pin     references/emutos @ 1a7484aba1bfba23e2c0899e243b6d8177fe41df
+Spec           docs/api/bios/_cookie-jar.md (Abschnitt OFFEN fortgeschrieben)
+Vorlauf        TASK/X01.md, measurement-2026-09-14-x01/
+
+
+1  WAS GEAENDERT WURDE
+-------------------------------------------------------------------------
+tos-api/src/bdos/process/loader.rs
+    write_cookie_jar(&mut [u8])        aus populate_sysvars herausgezogen:
+                                       EINE Fassung schreibt den Spiegel,
+                                       Ladezeit wie Nachziehen
+    refresh_cookie_mirrors()           neu: schreibt den Spiegel JEDES
+                                       Prozesses mit veroeffentlichtem
+                                       basepage_kva neu
+    COOKIE_JAR_SLOTS                   Kommentar: Verhaeltnis zu JAR_CAP,
+                                       Abschneideregel
+tos-api/src/cookie.rs
+    set()/del()                        rufen publish() -> refresh_cookie_mirrors()
+                                       (der Haken sitzt IM Glas, nicht bei
+                                       seinen Aufrufern); die &mut-Ausleihe
+                                       endet vor publish(), sonst aliast es
+kernel/src/selftest_sysvars.rs
+    Pruefung (f)                       sechs neue Punkte + ssystem()-Helfer
+                                       und zwei Jar-Scanner
+sdk/apps/apitest/apitest.c
+    SX11..SX15                         Setcookie/Delcookie nach dem Laden,
+                                       aus EL0 am $5A0-Spiegel nachgesehen
+    SX16/SX17                          Schrittweite des Drahtformats gegen
+                                       die eines 1:1 portierten LP64-Lesers
+
+NICHT geaendert: der Zugriffsweg fuer native Programme (Ssystem), die
+Kapazitaet des Kernglases (32), die Lage und Groesse des Spiegelfensters
+([0x5F0,0x670), 16 Plaetze).
+
+
+2  DIE DREI ENTSCHEIDUNGEN
+-------------------------------------------------------------------------
+a) WELCHER PROZESS?  Jeder mit einer TPA (basepage_kva != null), nicht nur
+   der aufrufende. Klassisches TOS hat EIN Glas, das alle Programme unter
+   derselben Adresse sehen; der Pro-Prozess-Spiegel ist ein NewTOS-Artefakt
+   der B1-Option-1-Flaeche. Wuerde nur der Aufrufer nachgezogen, saehen zwei
+   lebende Programme verschiedene $5A0-Felder -- das kann TOS nicht.
+   Der Zustand (Free/Loaded/Running) ist bewusst KEIN Filter:
+   load_to_slot() veroeffentlicht basepage_kva, ohne state anzufassen, ein
+   state!=Free-Filter uebersaehe also geladene Prozesse mit lebender TPA
+   (unter anderem die Selbsttests).
+   Kosten: 16 Zeigerladungen, je lebendem Prozess hoechstens 128 Byte.
+
+b) GEGENRICHTUNG (App schreibt in den Spiegel): NICHT umgesetzt, wie
+   beauftragt. Moeglichkeiten mit Kosten stehen im Bericht an den Lead.
+   Neu und dokumentiert: seit dieser Aenderung wird ein von der Anwendung
+   in den Spiegel geschriebener Cookie beim naechsten kernseitigen set/del
+   UEBERSCHRIEBEN -- vorher blieb er stehen.
+
+c) GROESSENGRENZE: Kernglas 32, Spiegelfenster 16 Plaetze = 15 Cookies +
+   Abschluss. Darueber wird ABGESCHNITTEN; der letzte geschriebene Platz
+   ist immer {0, 16}, damit der lineare Scan im Fenster endet. Der
+   Abschlusswert ist die Kapazitaet des SPIEGELS, nicht die des Kernglases
+   -- EmuTOS' Abschlusswort beschreibt das Feld, das der Leser laeuft
+   (util/cookie.c:33). Heute unerreichbar: gesaet werden 4 Cookies, es
+   braeuchte 12 weitere Ssystem(S_SETCOOKIE)-Aufrufe.
+
+
+3  BELEGE -- ROT VORHER, GRUEN NACHHER
+-------------------------------------------------------------------------
+HOSTTEST  tos-api/src/bdos/process/loader.rs, cookie_mirror_tests
+  rot   (before/host-test-red.txt), publish() von Hand stillgelegt:
+        assertion `left == right` failed:
+          a cookie set after load must reach the $5A0 mirror
+          left: None   right: Some(3237998081)
+  gruen (after/host-test-green.txt): 1 passed
+
+MASCHINE  QEMU raspi4b, headless, 640x480, kernel8 rpi4 --release
+  B1-Selbsttest (f), einmalig verdrahtet nur fuer diesen Beleg:
+  rot   (before/b1selftest-red-BOOT-SERIAL.txt):
+        (f) $5A0 mirror carries a cookie set after load: FAIL
+        === B1 FAILED (1) ===
+  gruen (after/b1selftest-BOOT-SERIAL.txt):
+        (f) Ssystem(S_SETCOOKIE, 'B1TS') == E_OK: OK
+        (f) $5A0 mirror carries a cookie set after load: OK
+        (f) Ssystem(S_DELCOOKIE, 'B1TS') == E_OK: OK
+        (f) $5A0 mirror drops a cookie deleted after load: OK
+        (f) the refresh leaves the seeded NTOS cookie intact: OK
+        (f) mirror still ends in the {0, capacity} terminator: OK
+        === B1 PASS ===
+  Der Selbsttest ist im Auslieferungskern WIEDER STILLGELEGT -- er war es
+  vorher auch (kernel/src/lib.rs:369 ist ein Kommentar, kein Aufruf).
+
+  apitest aus EL0 (after/APITEST.LOG, Gruppe SUPER):
+        SX    Setcookie('APIT') rc=0  mirror carries 0x13572468
+        SX11..SX15 alle [OK]
+        SUPER 15 bestanden / 0 gefallen / 0 uebersprungen
+        GESAMT 97 / 0 / 5   (X01-Stand: 92 / 0 / 5)
+
+
+4  NEBENBEFUND, GEMESSEN STATT HERGELEITET (SX16/SX17)
+-------------------------------------------------------------------------
+        SX    slot pitch: wire=8  sizeof(ported COOKIE)=16
+              jar[0] as 8 bytes=0x000001004E544F53
+        SX    ported-stride scan: steps=3  stopped at 0x00000620  found=0
+        SX16 jar slot pitch is 8 bytes (slot 1 tag == _MCH)  [OK]
+        SX17 LP64 struct-stride scan misses the jar (ABI note)  [OK]
+
+Ein Cookie-Platz ist ein Paar 32-Bit-LONGs = 8 Byte. Dieselbe Erklaerung
+`struct { long name; long value; }` ist auf m68k 8, auf LP64 aber 16 Byte
+(TeraDesk library/xdialog/library.h:201-205). Der woertlich portierte
+`cookie++`-Lauf liest also jeden ZWEITEN Platz und erkennt den Abschluss
+NICHT (die Kapazitaet steht in der oberen Haelfte des Acht-Byte-Worts) --
+er laeuft bis in die genullte Flaeche dahinter, hier bis 0x620, waehrend
+der Abschluss bei 0x610 liegt.
+
+Folge heute: TeraDesks find_cookie (mit -D_TOS_ONLY uebersetzt, also
+_MINT_=0 und ohne den Ssystem-Zweig, sdk/apps/build-teradesk.sh:99) findet
+NIE einen Cookie. Es faellt nicht auf, weil alle gesuchten Tags
+(MiNT/Gnva/nAES/MagX/CT60/_FLK/_VDO) tatsaechlich fehlen -- "nicht
+gefunden" ist zufaellig die richtige Antwort. Gefahren wird der Pfad bei
+jedem Start (main.c:1792-1795, :1837, xfilesys.c:1865, video.c:158).
+NICHT repariert: das ist eine ABI-Entscheidung, kein Kernfehler.
+Festgehalten in docs/api/bios/_cookie-jar.md, Abschnitt OFFEN.
+
+
+5  KEINE RUECKSCHRITTE
+-------------------------------------------------------------------------
+Bildpunktvergleich gegen measurement-2026-09-14-x01/screendumps/*-after.png
+(method/compare-png.py, Punkt fuer Punkt):
+    teradesk   0 von 307200 verschieden
+    qed        0 von 307200 verschieden
+    apitest  148 von 307200 verschieden, alle im Kasten
+             x=[164..193] y=[69..80] -- die Ziffern der Zeile
+             "NNNNNN bytes used" im Verzeichnisfenster; APITEST.NCP ist
+             77128 -> 78936 Byte gewachsen und APITEST.LOG laenger.
+
+APITEST.LOG gegen den X01-Stand: ausser den neuen SX-Zeilen nur
+    T12   free_cl 31838 -> 31837     (groesseres APITEST.NCP)
+    T29.1/T29.3 DTA 0x11CC0 -> 0x12430   (groesseres APITEST.NCP)
+
+qemu-virt --release bootet: "[desk] desktop up (0 drives)", kein Fault
+    (build/qemuvirt-BOOT-SERIAL.txt)
+
+
+6  BAUTEN UND WARNUNGEN
+-------------------------------------------------------------------------
+Beide Boards frisch, --release, beide Protokolle zeigen "Compiling tos-api"
+UND "Compiling kernel":
+    build/build-rpi4.log, build/build-qemuvirt.log
+Warnungen -- Grundlinie exakt gehalten, Delta 0:
+    rustc    tos-api 64    kernel 94    (beide Boards)
+    clippy   tos-api 81    kernel 125   (beide Boards)
+Keine der beruehrten Dateien taucht in einer Clippy-Ausgabe auf.
+
+Hosttests: cargo run -p xtask -- test
+    vorher   547 bestanden / 0 gefallen / 1 uebersprungen (build/host-test-baseline-547.log)
+    nachher  548 bestanden / 0 gefallen / 1 uebersprungen (build/host-test-548.log)
+    Die +1 ist der neue Test dieses Auftrags. Neue Sollzahl: 548.
+
+
+7  WAS QEMU HIER NICHT ZEIGEN KANN
+-------------------------------------------------------------------------
+raspi4b meldet "[pcie] RC not present ... USB disabled": keine Eingabe.
+Nicht fahrbar sind damit alle Faelle, die einen Menuebefehl brauchen.
+Fuer diese Aenderung ist das unerheblich -- der Schreibweg laeuft ueber
+Ssystem, nicht ueber die Oberflaeche. Eine echte Pi 4 wuerde zusaetzlich
+die Cache-Annahme pruefen (Kernel schreibt ueber den High-Half-Alias, EL0
+liest ueber die Low-Half-Abbildung; PIPT, gleiche Zeile). QEMU hat keine
+Caches und kann diesen Punkt nicht belegen.

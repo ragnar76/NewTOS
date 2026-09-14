@@ -13,6 +13,10 @@
 //!   (c) `Setexc(0x5A0/4 == 0x168, -1)` returns that jar base — the
 //!       TeraDesk `library/utility/cookie.c:56` idiom, now EmuTOS-faithful
 //!       in [`tos_api::bios::vectors::setexc`].
+//!   (f) the mirror stays **live**: a cookie added to the kernel jar through
+//!       `Ssystem(S_SETCOOKIE)` after the process was loaded reaches its
+//!       `$5A0` array, `S_DELCOOKIE` removes it again, and the classic
+//!       `{0, capacity}` terminator survives both.
 //!   (e) the memory sysvars an app reads to size the machine agree with the
 //!       BDOS pools and with EmuTOS' meaning of each field (BB2,
 //!       `docs/analysis/memory-layout-and-reported-free-memory.md` §8.1):
@@ -64,6 +68,17 @@ const OS_END_OFF: usize = 0x0C; //     OSHEADER + 0x0C — end of OS ST-RAM
 const RAMVALID_MAGIC: u32 = 0x1357_BD13;
 /// `NTOS` cookie tag — the kernel jar's identity cookie, first mirrored slot.
 const NTOS_TAG: u32 = u32::from_be_bytes(*b"NTOS");
+/// Scratch tag for (f): set + deleted again inside this test, so the kernel
+/// jar is left exactly as it was found.
+const B1TS_TAG: u32 = u32::from_be_bytes(*b"B1TS");
+/// Value (f) parks under [`B1TS_TAG`].
+const B1TS_VAL: u32 = 0x1357_2468;
+/// Mirror capacity in `{tag, value}` slots — `loader::COOKIE_JAR_SLOTS`.
+const COOKIE_JAR_SLOTS: usize = 16;
+
+// GEMDOS `Ssystem` cookie subfunction modes (FreeMiNT `sys/mint/ssystem.h`).
+const S_SETCOOKIE: u64 = 9;
+const S_DELCOOKIE: u64 = 26;
 
 // BIOS `Setexc` (0x05) and the `p_cookies` vector number ($5A0 / 4).
 const BIOS_SETEXC: u64 = 0x05;
@@ -157,6 +172,61 @@ fn bios(func: u64, a0: u64, a1: u64) -> i64 {
             in("x8") func,
             inout("x0") a0 => ret,
             in("x1") a1,
+            options(nostack),
+        );
+    }
+    ret
+}
+
+/// Scan a loaded slot's `$5A0` mirror the way a 1:1-ported application does
+/// (TeraDesk `library/utility/cookie.c:28-36`): walk `{tag, value}` LONG pairs
+/// from the jar base and stop at `tag == 0`. Returns the value of `want`, or
+/// `None` if the scan met the terminator (or ran out of window) first.
+fn jar_find(slot: usize, want: u32) -> Option<u32> {
+    // SAFETY: boot CPU, single-threaded; the slot holds its loaded TPA for
+    // the whole self-test.
+    let page = unsafe { arena::page_bytes_mut(slot)? };
+    for i in 0..COOKIE_JAR_SLOTS {
+        let off = COOKIE_JAR_VA as usize + i * 8;
+        let tag = rd_long(page, off);
+        if tag == 0 {
+            return None;
+        }
+        if tag == want {
+            return Some(rd_long(page, off + 4));
+        }
+    }
+    None
+}
+
+/// The `value` word of the `{0, capacity}` terminator the scan above stops at,
+/// or `None` when the mirror carries no terminator inside its window — which
+/// would send an application's scan off the end of the jar.
+fn jar_terminator(slot: usize) -> Option<u32> {
+    // SAFETY: as in `jar_find`.
+    let page = unsafe { arena::page_bytes_mut(slot)? };
+    for i in 0..COOKIE_JAR_SLOTS {
+        let off = COOKIE_JAR_VA as usize + i * 8;
+        if rd_long(page, off) == 0 {
+            return Some(rd_long(page, off + 4));
+        }
+    }
+    None
+}
+
+/// Issue an `Ssystem` call: `svc #1`, GEMDOS function id `0x154` in `x8`,
+/// `mode` in `x0`, `arg1` in `x1`, `arg2` in `x2`.
+#[inline(never)]
+fn ssystem(mode: u64, arg1: u64, arg2: u64) -> i64 {
+    let ret: i64;
+    // SAFETY: GEMDOS trap ABI; the handler reads x0/x1/x2/x8 and returns x0.
+    unsafe {
+        core::arch::asm!(
+            "svc #1",
+            in("x8") 0x154u64,
+            inout("x0") mode => ret,
+            in("x1") arg1,
+            in("x2") arg2,
             options(nostack),
         );
     }
@@ -288,6 +358,40 @@ pub fn run() {
     check(
         rd_long(page, RAMVALID_ADDR) == RAMVALID_MAGIC,
         "(e) ramvalid@0x5A8 == RAMVALID_MAGIC (memory2.c:124)",
+    );
+
+    // (f) The mirror is NOT a load-time snapshot. A cookie added to the
+    //     kernel jar through `Ssystem(S_SETCOOKIE)` *after* this process was
+    //     loaded must reach its `$5A0` array, and `S_DELCOOKIE` must take it
+    //     out again — the gap `docs/api/bios/_cookie-jar.md` §OFFEN records,
+    //     and the reason ADR-012's "kernel-owned jar, `$5A0` unused" is not
+    //     the whole story once a ported app reads `$5A0` (TeraDesk
+    //     `library/utility/cookie.c:28,56`). The trap runs in kernel context
+    //     and the mirror is written through the slot's high-half TPA alias,
+    //     so this also proves the refresh reaches a process that is *not* the
+    //     current one.
+    let set_rc = ssystem(S_SETCOOKIE, B1TS_TAG as u64, B1TS_VAL as u64);
+    let after_set = jar_find(loaded.slot, B1TS_TAG);
+    let del_rc = ssystem(S_DELCOOKIE, B1TS_TAG as u64, 0);
+    let after_del = jar_find(loaded.slot, B1TS_TAG);
+    let term = jar_terminator(loaded.slot);
+    check(set_rc == 0, "(f) Ssystem(S_SETCOOKIE, 'B1TS') == E_OK");
+    check(
+        after_set == Some(B1TS_VAL),
+        "(f) $5A0 mirror carries a cookie set after load",
+    );
+    check(del_rc == 0, "(f) Ssystem(S_DELCOOKIE, 'B1TS') == E_OK");
+    check(
+        after_del.is_none(),
+        "(f) $5A0 mirror drops a cookie deleted after load",
+    );
+    check(
+        jar_find(loaded.slot, NTOS_TAG) == Some(0x0000_0100),
+        "(f) the refresh leaves the seeded NTOS cookie intact",
+    );
+    check(
+        term == Some(COOKIE_JAR_SLOTS as u32),
+        "(f) mirror still ends in the {0, capacity} terminator",
     );
 
     // 3. (c) Setexc(0x5A0/4, -1) returns the jar base. Must run with the

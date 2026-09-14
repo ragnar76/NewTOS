@@ -71,24 +71,57 @@ pub fn valid_tag(tag: u32) -> bool {
 
 /// Add a cookie, or update its value if the tag already exists. Returns
 /// `false` if the tag is invalid or the jar is full (new tag, no room).
+///
+/// On success this also pulls every loaded process's `$5A0` mirror back in
+/// step (see [`publish`]).
 pub fn set(tag: u32, value: u32) -> bool {
     if !valid_tag(tag) {
         return false;
     }
-    // SAFETY: single-CPU access.
-    let j = unsafe { jar() };
-    for i in 0..j.count {
-        if j.slots[i].tag == tag {
-            j.slots[i].value = value;
-            return true;
+    // The exclusive borrow of the jar ends with this block: `publish` reads
+    // the jar again (through `count`/`slot_tag`/`get`), so it must not run
+    // while a `&mut Jar` is still live.
+    let changed = {
+        // SAFETY: single-CPU access.
+        let j = unsafe { jar() };
+        match (0..j.count).find(|&i| j.slots[i].tag == tag) {
+            Some(i) => {
+                j.slots[i].value = value;
+                true
+            }
+            None if j.count < JAR_CAP => {
+                j.slots[j.count] = Slot { tag, value };
+                j.count += 1;
+                true
+            }
+            None => false, // jar full
         }
+    };
+    if changed {
+        publish();
     }
-    if j.count >= JAR_CAP {
-        return false;
-    }
-    j.slots[j.count] = Slot { tag, value };
-    j.count += 1;
-    true
+    changed
+}
+
+/// Push the jar's current content into the `$5A0` mirror of every process
+/// that owns a TPA.
+///
+/// The jar is kernel-owned (ADR-012), but a 1:1-ported TOS program does not
+/// reach it that way: it dereferences `_p_cookies`@`$5A0` and scans the array
+/// (TeraDesk `library/utility/cookie.c:28,56`). NewTOS materialises that array
+/// per process, inside the process's own low-memory area
+/// (`bdos::process::loader::write_cookie_jar`). Without this call the mirror
+/// would be a snapshot of load time and a cookie set afterwards would never
+/// reach a running program — which is exactly the gap
+/// `docs/api/bios/_cookie-jar.md` §OFFEN records.
+///
+/// Called from **inside** [`set`] / [`del`] rather than from their callers, so
+/// the invariant "whoever changes the kernel jar pulls the mirrors along" is
+/// structural: a future third mutator gets it for free. At boot
+/// ([`seed_defaults`]) no process owns a TPA yet, so it is a no-op there.
+#[inline]
+fn publish() {
+    crate::bdos::process::loader::refresh_cookie_mirrors();
 }
 
 /// Look up a cookie value by tag.
@@ -128,19 +161,29 @@ pub fn slot_tag(n: u32) -> Option<u32> {
 
 /// Remove a cookie by tag, compacting the jar. Returns `true` if it was
 /// present.
+///
+/// On success this also pulls every loaded process's `$5A0` mirror back in
+/// step (see [`publish`]), so the removed tag stops being visible there too.
 pub fn del(tag: u32) -> bool {
-    // SAFETY: single-CPU access.
-    let j = unsafe { jar() };
-    match (0..j.count).find(|&i| j.slots[i].tag == tag) {
-        Some(i) => {
-            for k in i..j.count - 1 {
-                j.slots[k] = j.slots[k + 1];
+    // Borrow scoped exactly as in `set`, and for the same reason.
+    let removed = {
+        // SAFETY: single-CPU access.
+        let j = unsafe { jar() };
+        match (0..j.count).find(|&i| j.slots[i].tag == tag) {
+            Some(i) => {
+                for k in i..j.count - 1 {
+                    j.slots[k] = j.slots[k + 1];
+                }
+                j.count -= 1;
+                true
             }
-            j.count -= 1;
-            true
+            None => false,
         }
-        None => false,
+    };
+    if removed {
+        publish();
     }
+    removed
 }
 
 /// Seed the NewTOS default cookie set at boot (replaces EmuTOS'
