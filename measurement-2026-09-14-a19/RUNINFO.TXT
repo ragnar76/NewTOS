@@ -1,0 +1,157 @@
+A19 -- the AES dispatcher copies the input arrays once and clamps them.
+Measurement, 2026-09-14.
+MEASUREMENT ONLY: this directory states what ran and what came back.
+
+WHAT CHANGED (the thing under test)
+  tos-api/src/aes/mod.rs
+      Aespb no longer hands the managers the caller's int_in / addr_in
+      arrays.  `Aespb::from_raw` copies them ONCE into dispatch-local
+      buffers and clamps while copying, which is EmuTOS' xif
+      (aes/gemsuper.c:435-439):
+          if (IN_LEN)  memcpy(int_in,  ..., min(IN_LEN,I_SIZE) *sizeof(WORD));
+          if (AIN_LEN) memcpy(addr_in, ..., min(AIN_LEN,AI_SIZE)*sizeof(LONG));
+      New constants I_SIZE = 16 (aesdefs.h:122) and AI_SIZE = 3
+      (aesdefs.h:124) next to the existing O_SIZE = 7.  `dispatch` allocates
+      `local_intin[I_SIZE]` and `local_addrin[AI_SIZE]` alongside the
+      `local_intout[O_SIZE]` it already had, all zeroed for the same stated
+      reason: EmuTOS' auto storage is indeterminate, so there is no value to
+      reproduce, and a defined 0 is what a manager reading past the
+      declaration now sees instead of application memory.
+      `intin()`, `intin_ptr()` and `addrin()` read the local buffers; a new
+      `caller_intin` field keeps the caller's pointer for the trap tracer
+      alone (trace::flags::NO_INTIN), dead-code-gated off the aes-trace
+      feature so the warning count does not move.
+  tos-api/src/aes/trace.rs
+      captures int_in / addr_in[0] from the dispatch-local buffers -- what
+      the manager actually saw -- and reports NO_INTIN off `caller_intin`.
+  tos-api/tests/aes_dispatch_inlen_clamp.rs   new, 5 tests.
+  The OUTPUT side was ALREADY clamped before this ticket
+  (`Aespb::copy_intout_back`, min(OUT_LEN, O_SIZE), and the managers already
+  wrote a dispatch-local int_out).  Nothing was changed there.
+
+THE SURVEY THAT CAME FIRST
+  MANAGER-SURVEY.txt -- all 79 opcodes crysbind handles, highest int_in index
+  and highest addr_in slot our handler reads, against the length a conforming
+  binding declares (references/emutos/desk/gembind.c, sdk/gemlib a_*.c,
+  cross-checked against include/aesdefs.h and the crysbind arm).
+  Result: NO manager reads past its declaration.  The defect was LATENT.
+
+BUILDS
+  kernel   cargo run -p xtask -- build --board {qemu-virt,rpi4} --release,
+           each preceded by `touch tos-api/src/aes/mod.rs` so the shared
+           target directory cannot report a stale "up to date".
+           qemu-virt release ELF sha256
+             23bbbe7a88c8ecbe70aac00f2ccc11d05cf8a7ab748de7885926d6f09a5186eb
+           rpi4 release ELF sha256
+             b8fc1da3833dc1cc023e5ad2c386c6e62e17367d534acb43216bba99d09f205e
+           kernel8.img (rpi4) sha256
+             eeb6e505cb79ea4a596b36fb2d49ed3cc80b83e91887e2f175ee76a70d2eab12
+             787584 bytes.  The two ELF hashes differ, which is the proof that
+             the second build was a real build and not a no-op.  The rpi4 ELF
+             and kernel8.img reproduced bit-for-bit across two builds, which is
+             the proof that the artefact the QEMU runs used is this one.
+           logs build-qemuvirt.log, build-rpi4.log
+  warnings tos-api 64 / kernel 94 (rustc, both boards),
+           tos-api 81 / kernel 125 (clippy, kernel checked on both boards)
+           -- unchanged from the stated baseline, delta 0.
+           No clippy finding has its primary span in aes/mod.rs or
+           aes/trace.rs.
+           logs clippy-tos-api.log, clippy-kernel-{qemuvirt,rpi4}.log
+
+HOST TESTS
+  cargo run -p xtask -- test    545 passed / 0 failed / 1 ignored
+  (540 before, plus the five new tests in
+  tos-api/tests/aes_dispatch_inlen_clamp.rs.)  log host-test.log
+
+  The red run before the fix, for the record -- four of the five, with the
+  planted pattern 0x1234/0x5678/0x4321/0x0765 arriving at the manager through
+  a declaration that never covered it:
+
+    wind_create_with_in_len_1_must_not_see_the_four_words_behind_it
+      left: [4660, 22136, 17185, 1893]   right: [0, 0, 0, 0]
+    the_cut_is_exactly_at_in_len_not_one_word_early_or_late
+      left: [4660, 22136, 17185, 1893]   right: [4660, 22136, 0, 0]
+    in_len_0_copies_nothing_at_all
+      left: [4660, 22136, 17185, 1893]   right: [0, 0, 0, 0]
+    scrp_write_with_ain_len_0_must_not_see_the_pointer_behind_it
+      left: 67 ('C' of "C:\A19PAST.SCP")   right: 0
+
+  The fifth, a_fully_declared_call_still_receives_every_word, was green before
+  and after -- it is the guard that the other four fail for the boundary and
+  not because wind_create stopped storing its rectangle.
+
+RUN A -- the AES case tables, NewTOS on QEMU raspi4b, headless, 640x480
+  Why on the machine at all when the same tables are a host suite: the host
+  harness calls tos_api::aes::dispatch directly, the dumper is a real EL0
+  program with a real AESPB going through the real svc #2.  The clamp sits in
+  dispatch, so both reach it, but only the second proves the app path.
+  dumper    tosdump/build/DUMPAES.NAP
+  card      prep-image.sh aes (measurement-2026-09-13-regression/method/),
+            NEWDESK.INF "#Z 01 C:\DUMPAES.NAP@"
+  command   qemu-system-aarch64 -M raspi4b -no-reboot -display none
+              -serial file:<log> -kernel kernel8.img
+              -drive file=<img>,if=sd,format=raw
+
+  A1  tosdump/cases/aes-m07-parameter.tsv, 20 cases, CRC 0F46665B.
+      This is the parameter-marshalling table -- it is the one that states
+      OUT_LEN 0/1, IN_LEN 2 with one value stated, and AIN_LEN 3 with nothing
+      planted.  log: "all 20 cases ran", "AES.BIN: 20 records, 2432 bytes".
+      aes-m07-parameter/NEWTOS-AES-m07.BIN sha256
+        ca542485947fe92489784b87701110e74d3d36212f9b638e1443e6a4719c6f73
+      -- BYTE FOR BYTE the same file as
+      measurement-2026-09-14-v17/newtos-qemu-raspi4b/NEWTOS-AES-m07.BIN.
+      Not one record moved.
+
+  A2  tosdump/cases/aes-r1.tsv, 95 cases.
+      log: "all 95 cases ran", "AES.BIN: 95 records, 11432 bytes".
+      aes-r1/NEWTOS-AES-r1.BIN sha256
+        babd963fa38ac0674a3cf2529045ce95d71392be43e0e702b90111d23e58d1d6
+      vs measurement-2026-09-13-regression/aes-r1/AES.BIN: 95 of 95 cases
+      differ in exactly ONE field, global[11], 0x4460 -> 0x4470
+      (aes-r1/DIFF-vs-2026-09-13.txt).  global[11..12] is ap_3resv =
+      pd::table_addr(), the address of a kernel static (tos-api/src/aes/
+      appl.rs:233, EmuTOS gemsuper.c:98 `ap_3resv = (LONG)&D`).  0x4470 is
+      what the V17 build already reported (see the m07 diff of
+      measurement-2026-09-14-v17), so the 16-byte shift is V17-era, NOT this
+      change.  The 2026-09-13 baseline simply predates it.
+      Against the TT reference the diff PROFILE is identical to 2026-09-13's,
+      field for field and count for count (aes-r1/DIFF-emutos-vs-newtos.txt):
+          global[2] 95, global[3] 95, global[4] 95, global[10] 95,
+          global[11] 95, global[12] 95, int_out[0] 2      -- both runs.
+      The six AESGLOBAL words are the machine's identity; the two int_out[0]
+      are the pre-existing r1 deltas.  No new difference, none removed.
+
+RUN B -- the screen, NewTOS on QEMU raspi4b, headless, 640x480, #Z autorun
+  Same emulator line plus -qmp unix:<sock>,server,nowait; shot taken with
+  qemu-tmp/qmpshot (built from tools/qmpshot.c) 30 s after start, PPM out of
+  QEMU, converted with sips.
+  card      prep-app.sh (measurement-2026-09-13-regression/method/), which
+            rewrites NEWDESK.INF on the shared base image.
+  apps      C:\Apps\QED\QED.NAP and C:\Apps\TERADESK\DESKTOP.NAP -- the same
+            two measurement-2026-09-14-v17/ shot, so the frames compare.
+
+  qemu-tmp/{qed,teradesk}.ppm against measurement-2026-09-14-v17/qemu-tmp/,
+  pixel by pixel over all 640x480:
+
+      qed        0 pixels differ
+      teradesk   0 pixels differ
+
+  Bit-identical frames.  That is the expected result: the clamp only removes
+  reads of words no in-tree caller declares, and neither app under-declares.
+  boot logs no panic, no fault, no exception; the desktop came up behind both
+  dumper runs ("[desk] desktop up (1 drives)").  No QEMU process left running.
+  artefacts screendumps/{qed,teradesk}.png, qemu-tmp/*.ppm, qemu-tmp/*-serial.log
+
+WHAT THIS RUN DOES NOT COVER
+  * Real Pi 4.  Nothing in this change is board-dependent -- it is pure
+    parameter marshalling in tos-api, identical code on both boards -- but no
+    hardware action was taken and no hardware run happened.
+  * Interactive use.  QEMU raspi4b gives input or C: storage, not both.
+  * An ILP32 caller.  Both the dumper and the host harness are LP64, so the
+    `Abi::Ilp32` arm of the addr_in widening and of `intin_ptr` is exercised
+    by neither.  It is the same arm as before the change -- `abi.read_ptr`
+    moved from read time to copy time and nothing else -- but it is not
+    measured here.
+  * The aes-trace feature.  It compiles (checked, 64 warnings either way) and
+    its two capture sites were moved to the local buffers, but no traced run
+    was taken.

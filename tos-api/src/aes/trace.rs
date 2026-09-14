@@ -737,9 +737,12 @@ mod imp {
         }
 
         // `int_in[0 .. min(in_len, 16)]` — exactly what the caller declared,
-        // capped at the AES maximum (`evnt_multi`'s 16 WORDs).
+        // capped at the AES maximum (`evnt_multi`'s 16 WORDs). Read out of the
+        // **dispatch-local** buffer, i.e. the words the manager actually saw
+        // after `Aespb::from_raw`'s `min(IN_LEN, I_SIZE)` copy
+        // (`aes/gemsuper.c:436-437`), not out of the caller's array.
         let nin = if in_len <= 0 { 0 } else { (in_len as usize).min(MAX_IN) };
-        if pb.intin.is_null() {
+        if pb.caller_intin.is_null() {
             r.flags |= flags::NO_INTIN;
         } else {
             for i in 0..nin {
@@ -766,10 +769,12 @@ mod imp {
 
         // `addr_in[0]` (OBJECT tree / message buffer / string) and
         // `addr_out[0]` (rsrc_gaddr & co.), at the caller's pointer width.
-        if pb.addrin != 0 && ain_len > 0 {
-            // SAFETY: the caller's `addr_in` array, read at the caller's ABI
-            // width exactly as `Aespb::addrin` does for the handlers.
-            r.addr_in0 = unsafe { pb.abi.read_ptr(pb.addrin, 0) };
+        // Like `int_in`, the address slot comes from the dispatch-local
+        // `addr_in[AI_SIZE]` — the pointer the manager was handed after the
+        // `min(AIN_LEN, AI_SIZE)` copy (`aes/gemsuper.c:438-439`), already
+        // widened from the caller's ABI.
+        if ain_len > 0 {
+            r.addr_in0 = pb.addrin(0);
         }
         // `addr_out[0]` is read only for the one opcode our AES actually
         // writes it for — `rsrc_gaddr` (112), the sole `set_addrout` caller

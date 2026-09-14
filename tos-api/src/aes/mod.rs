@@ -41,7 +41,18 @@ use crate::bdos::process::Abi;
 pub(crate) struct Aespb {
     control: *mut i16,
     global: *mut i16,
+    /// The **dispatch-local** `int_in[I_SIZE]` every manager reads —
+    /// EmuTOS `xif`'s own stack array (`gemsuper.c:431`). The caller's array
+    /// is read exactly once, by [`Aespb::from_raw`], and only the
+    /// `min(control[IN_LEN], I_SIZE)` words the call declared.
     intin: *mut i16,
+    /// The **caller's** `intin` array, kept for the same reason
+    /// [`Self::caller_intout`] is: so the trap tracer can still report a block
+    /// whose `intin` pointer is null (`trace::flags::NO_INTIN`). No manager
+    /// ever sees it, and without the `aes-trace` feature nothing reads it —
+    /// the tracer is the field's only consumer.
+    #[cfg_attr(not(feature = "aes-trace"), allow(dead_code))]
+    caller_intin: *const i16,
     /// The **dispatch-local** `int_out[O_SIZE]` every manager writes —
     /// EmuTOS `xif`'s own stack array (`gemsuper.c:432`). Nothing a manager
     /// stores here reaches the caller until [`Aespb::copy_intout_back`] runs.
@@ -49,12 +60,15 @@ pub(crate) struct Aespb {
     /// The **caller's** `intout` array. Written by exactly one place,
     /// [`Aespb::copy_intout_back`], and only `control[OUT_LEN]` words of it.
     caller_intout: *mut i16,
-    /// Base address of the caller's `addrin` LONG array. Element width
-    /// tracks [`Self::abi`] (8 bytes LP64, 4 bytes ILP32), so this is
-    /// kept as a raw base and indexed at read time, not a typed pointer.
-    addrin: u64,
+    /// The **dispatch-local** `addr_in[AI_SIZE]` every manager reads —
+    /// EmuTOS `xif`'s own stack array (`gemsuper.c:433`). Filled by
+    /// [`Aespb::from_raw`] with the `min(control[AIN_LEN], AI_SIZE)` slots
+    /// the call declared, already widened from the caller's pointer width to
+    /// a native address, so the accessor needs no ABI knowledge.
+    addrin: *mut u64,
     /// Base address of the caller's `addrout` LONG array — written by the
-    /// managers that return addresses (`rsrc_gaddr`, …).
+    /// managers that return addresses (`rsrc_gaddr`, …). Element width tracks
+    /// [`Self::abi`], so this stays a raw base indexed at write time.
     addrout: u64,
     /// Caller pointer width, threaded from the running process.
     abi: Abi,
@@ -62,42 +76,109 @@ pub(crate) struct Aespb {
 
 // CONTRL indices with fixed meaning (`include/aesdefs.h`).
 const C_OPCODE: usize = 0;
-#[allow(dead_code)]
 const C_IN_LEN: usize = 1;
 const C_OUT_LEN: usize = 2;
-#[allow(dead_code)]
 const C_AIN_LEN: usize = 3;
+
+/// `I_SIZE` — the size of the AES's `int_in` array, 16 WORDs
+/// (`include/aesdefs.h:122`). `xif` copies the inputs into a local
+/// `WORD int_in[I_SIZE]` (`gemsuper.c:431`); so do we. 16 is not a round
+/// number picked for comfort: `evnt_multi` is the one function with sixteen
+/// input words (`aesdefs.h:193-221`), which is why EmuTOS' own binding has to
+/// lay `control[1] = 16` by hand instead of through its packed control code
+/// (`desk/gembind.c:268-269`).
+const I_SIZE: usize = 16;
 
 /// `O_SIZE` — the size of the AES's `int_out` array, 7 WORDs
 /// (`include/aesdefs.h:123`). `xif` builds its results in a local
 /// `WORD int_out[O_SIZE]` (`gemsuper.c:432`); so do we.
 const O_SIZE: usize = 7;
 
+/// `AI_SIZE` — the size of the AES's `addr_in` array, 3 LONGs
+/// (`include/aesdefs.h:124`). `xif` copies the address inputs into a local
+/// `LONG addr_in[AI_SIZE]` (`gemsuper.c:433`); so do we. Three is
+/// `fsel_exinput`'s slot count, the AES maximum (`desk/gembind.c:707`).
+const AI_SIZE: usize = 3;
+
 impl Aespb {
     /// Build from the raw `x1` pointer to the six-pointer block, reading
     /// the block pointers at the caller's pointer width (`abi`): 8-byte
     /// LP64 pointers, or 4-byte (zero-extended) ILP32 pointers.
     ///
+    /// This is `xif`'s marshalling step (`aes/gemsuper.c:435-439`):
+    ///
+    /// ```c
+    /// if (IN_LEN)
+    ///     memcpy(int_in, pcrys_blk->intin, min(IN_LEN,I_SIZE)*sizeof(WORD));
+    /// if (AIN_LEN)
+    ///     memcpy(addr_in, pcrys_blk->addrin, min(AIN_LEN,AI_SIZE)*sizeof(LONG));
+    /// ```
+    ///
+    /// The caller's `intin` / `addrin` arrays are touched **here and nowhere
+    /// else**, and only for the `min(declared, size)` elements the call
+    /// declared; every manager afterwards reads `local_intin` /
+    /// `local_addrin`. On EmuTOS that clamp is a stack-buffer bound; with two
+    /// address spaces it is the boundary between the words an application
+    /// handed over and the rest of its memory.
+    ///
     /// `local_intout` is the dispatch-local `int_out[O_SIZE]` the managers
     /// write into (EmuTOS `gemsuper.c:432`); the caller's own `intout`
     /// pointer is kept aside for [`Self::copy_intout_back`].
     ///
+    /// A **negative** length copies nothing. EmuTOS' `if (IN_LEN)` is true for
+    /// it and `min(IN_LEN,I_SIZE)*sizeof(WORD)` then widens to a huge
+    /// `size_t` — a `memcpy` of about four gigabytes, not a behaviour with a
+    /// value to reproduce. [`Self::copy_intout_back`] reads a negative
+    /// `OUT_LEN` the same way.
+    ///
     /// # Safety
     /// `ptr` must point at six consecutive valid array pointers of the
-    /// caller's width, each to an array large enough for the opcode's
-    /// declared lengths. `local_intout` must be a writable `[i16; O_SIZE]`
-    /// that outlives this `Aespb`.
-    pub(crate) unsafe fn from_raw(ptr: u64, abi: Abi, local_intout: *mut i16) -> Self {
+    /// caller's width; the caller's `intin` must hold at least
+    /// `min(control[IN_LEN], I_SIZE)` WORDs and its `addrin` at least
+    /// `min(control[AIN_LEN], AI_SIZE)` LONGs — its own declaration.
+    /// `local_intin` / `local_intout` / `local_addrin` must be writable
+    /// `[i16; I_SIZE]` / `[i16; O_SIZE]` / `[u64; AI_SIZE]` that outlive this
+    /// `Aespb`.
+    pub(crate) unsafe fn from_raw(
+        ptr: u64,
+        abi: Abi,
+        local_intin: *mut i16,
+        local_intout: *mut i16,
+        local_addrin: *mut u64,
+    ) -> Self {
         // SAFETY: caller guarantees the six-pointer block is valid and of
         // `abi`'s width; `read_ptr` reads one such pointer per index.
         unsafe {
+            let control = abi.read_ptr(ptr, 0) as *mut i16;
+            let caller_intin = abi.read_ptr(ptr, 2) as *const i16;
+            let caller_addrin = abi.read_ptr(ptr, 4);
+
+            // `if (IN_LEN) memcpy(int_in, …, min(IN_LEN,I_SIZE)*sizeof(WORD))`
+            let declared_in = control.add(C_IN_LEN).read();
+            let n = if declared_in <= 0 { 0 } else { (declared_in as usize).min(I_SIZE) };
+            for i in 0..n {
+                // SAFETY: `i < I_SIZE` bounds the local write; the read is
+                // inside the `IN_LEN` words the caller declared.
+                local_intin.add(i).write(caller_intin.add(i).read());
+            }
+
+            // `if (AIN_LEN) memcpy(addr_in, …, min(AIN_LEN,AI_SIZE)*sizeof(LONG))`
+            let declared_ain = control.add(C_AIN_LEN).read();
+            let m = if declared_ain <= 0 { 0 } else { (declared_ain as usize).min(AI_SIZE) };
+            for i in 0..m {
+                // SAFETY: `i < AI_SIZE` bounds the local write; `read_ptr`
+                // reads one caller-width LONG inside the declared `AIN_LEN`.
+                local_addrin.add(i).write(abi.read_ptr(caller_addrin, i));
+            }
+
             Aespb {
-                control: abi.read_ptr(ptr, 0) as *mut i16,
+                control,
                 global: abi.read_ptr(ptr, 1) as *mut i16,
-                intin: abi.read_ptr(ptr, 2) as *mut i16,
+                intin: local_intin,
+                caller_intin,
                 intout: local_intout,
                 caller_intout: abi.read_ptr(ptr, 3) as *mut i16,
-                addrin: abi.read_ptr(ptr, 4),
+                addrin: local_addrin,
                 addrout: abi.read_ptr(ptr, 5),
                 abi,
             }
@@ -144,9 +225,21 @@ impl Aespb {
         // SAFETY: callers index within the control array (≥ 5 WORDs).
         unsafe { self.control.add(i).read() }
     }
+    /// Read from the dispatch-local `int_in[I_SIZE]` (EmuTOS
+    /// `gemsuper.c:431`). What a manager finds past `control[IN_LEN]` is a
+    /// cleared word, not the caller's memory — the clamp is in
+    /// [`Self::from_raw`], the one place that ever touches the caller's array.
+    /// Indices past `I_SIZE` would run off the local buffer and can never hold
+    /// a declared word (the copy is capped at `I_SIZE`), so they read 0 —
+    /// `evnt_multi`'s sixteen words are the AES maximum.
     #[inline]
     fn intin(&self, i: usize) -> i16 {
-        // SAFETY: callers index within `control[IN_LEN]` input integers.
+        debug_assert!(i < I_SIZE, "AES int_in index past I_SIZE");
+        if i >= I_SIZE {
+            return 0;
+        }
+        // SAFETY: `intin` is the dispatch-local `[i16; I_SIZE]` and
+        // `i < I_SIZE` was just checked.
         unsafe { self.intin.add(i).read() }
     }
     /// Store into the dispatch-local `int_out[O_SIZE]` (EmuTOS
@@ -169,13 +262,23 @@ impl Aespb {
     fn set_ret(&self, v: i16) {
         self.set_intout(0, v);
     }
+    /// Read from the dispatch-local `addr_in[AI_SIZE]` (EmuTOS
+    /// `gemsuper.c:433`). The caller's slots were widened to native addresses
+    /// in [`Self::from_raw`], which is also where the `min(AIN_LEN, AI_SIZE)`
+    /// clamp lives; an ILP32 pointer (e.g. an OBJECT tree in the low-VA TPA)
+    /// zero-extended to a valid VA there. Past the declaration a manager gets
+    /// a null pointer, not an address the call never handed over; past
+    /// `AI_SIZE` it gets one too, for the same reason [`Self::intin`] does —
+    /// three slots (`fsel_exinput`) are the AES maximum.
     #[inline]
     fn addrin(&self, i: usize) -> u64 {
-        // SAFETY: callers index within `control[AIN_LEN]` input addresses;
-        // element width tracks the caller's ABI (a `long` is one pointer
-        // wide in each). An ILP32 pointer stored here (e.g. an OBJECT tree
-        // in the low-VA TPA) zero-extends to a valid VA.
-        unsafe { self.abi.read_ptr(self.addrin, i) }
+        debug_assert!(i < AI_SIZE, "AES addr_in index past AI_SIZE");
+        if i >= AI_SIZE {
+            return 0;
+        }
+        // SAFETY: `addrin` is the dispatch-local `[u64; AI_SIZE]` and
+        // `i < AI_SIZE` was just checked.
+        unsafe { self.addrin.add(i).read() }
     }
     /// The declared `addrin` length, `control[AIN_LEN]`. Used by
     /// `wind_set` `WF_NAME`/`WF_INFO`/`WF_NEWDESK` to tell the native
@@ -194,14 +297,32 @@ impl Aespb {
     /// ILP32 (`int_in[word..word+2]`) or 8 at LP64 (`int_in[word..word+4]`),
     /// stored at `&int_in[word]`. That address is only WORD-aligned, so the
     /// load must be unaligned.
+    ///
+    /// The bytes come out of the dispatch-local `int_in[I_SIZE]`, so a caller
+    /// whose `IN_LEN` does not cover the whole packed pointer hands over a
+    /// **truncated** one — the same words the manager would have got on
+    /// EmuTOS, where `wm_set` reads `*(char **)pinwds` out of `xif`'s local
+    /// buffer (`aes/gemwmlib.c:1661`). A pointer that would run off the end of
+    /// that buffer reads as null rather than off the array; gemlib declares
+    /// `num_intin = 6` for the one opcode that uses this convention
+    /// (`a_wind_set_str.c:21`), which holds the four LP64 words at index 2.
     #[inline]
     fn intin_ptr(&self, word: usize) -> u64 {
+        let words = match self.abi {
+            Abi::Lp64 => 4,
+            Abi::Ilp32 => 2,
+        };
+        debug_assert!(word + words <= I_SIZE, "packed AES int_in pointer past I_SIZE");
+        if word + words > I_SIZE {
+            return 0;
+        }
         // &int_in[word] — the pointer bytes start `word` WORDs (2 bytes
         // each) into the `int_in` array.
         let base = (self.intin as u64).wrapping_add((word as u64) * 2);
-        // SAFETY: the opcode declares enough `int_in` WORDs to hold the
-        // packed pointer (gemlib's num_intin = 6); the load width tracks
-        // the caller ABI and tolerates the 2-byte alignment of the slot.
+        // SAFETY: `intin` is the dispatch-local `[i16; I_SIZE]` and the bound
+        // above keeps all `words` WORDs of the pointer inside it; the load
+        // width tracks the caller ABI and tolerates the slot's 2-byte
+        // alignment.
         unsafe {
             match self.abi {
                 Abi::Lp64 => (base as *const u64).read_unaligned(),
@@ -256,14 +377,26 @@ pub unsafe fn dispatch(
     aespb_ptr: u64,
     abi: Abi,
 ) -> Option<crate::bdos::process::sched::Switch> {
-    // `xif`'s `WORD int_out[O_SIZE]` (`gemsuper.c:432`). EmuTOS leaves it
-    // uninitialised — indeterminate C auto storage, i.e. no value to
-    // reproduce; zeroed here so an under-writing handler cannot leak stack
-    // bytes into a caller that declared more words than the handler filled.
+    // `xif`'s four stack arrays (`gemsuper.c:430-433`). EmuTOS leaves all of
+    // them uninitialised — indeterminate C auto storage, i.e. no value to
+    // reproduce; zeroed here so that neither an under-writing handler can leak
+    // stack bytes into a caller that declared more `int_out` words than it
+    // filled, nor an over-reading one see anything but a defined 0 past the
+    // `IN_LEN` / `AIN_LEN` the caller declared.
+    let mut local_intin = [0i16; I_SIZE];
     let mut local_intout = [0i16; O_SIZE];
-    // SAFETY: caller guarantees a valid parameter block of `abi`'s width;
-    // `local_intout` lives until this function returns, outliving `pb`.
-    let pb = unsafe { Aespb::from_raw(aespb_ptr, abi, local_intout.as_mut_ptr()) };
+    let mut local_addrin = [0u64; AI_SIZE];
+    // SAFETY: caller guarantees a valid parameter block of `abi`'s width; the
+    // three locals live until this function returns, outliving `pb`.
+    let pb = unsafe {
+        Aespb::from_raw(
+            aespb_ptr,
+            abi,
+            local_intin.as_mut_ptr(),
+            local_intout.as_mut_ptr(),
+            local_addrin.as_mut_ptr(),
+        )
+    };
 
     // AES trap tracer (`trace`): compiled out entirely without the `aes-trace`
     // feature, and even with it the capture is a timestamp plus a fixed-size

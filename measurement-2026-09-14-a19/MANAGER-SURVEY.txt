@@ -1,0 +1,214 @@
+A19 -- which AES manager reads past the IN_LEN / AIN_LEN the caller declared?
+============================================================================
+2026-09-14.  The question the ticket puts BEFORE the fix, because it decides
+whether the defect is latent or active.  Answer up front: **latent**.  Not one
+handler in tos-api/src/aes/ reads an int_in word or an addr_in slot past what a
+conforming binding declares for its opcode.  The one function that comes close
+-- wind_get(WF_COLOR/WF_DCOLOR) -- reads exactly the slot EmuTOS' own wm_get
+reads, and the standard binding declares it.
+
+METHOD
+  ours       every `pb.intin(N)` / `pb.intin_ptr(N)` / `pb.addrin(N)` in
+             tos-api/src/aes/{appl,event,form,fsel,graf,menu,object,resource,
+             shell,window}.rs, mechanically extracted.  Every index in the
+             tree is a literal -- there is no computed index to miss.
+             Helpers are folded into their caller:
+               window.rs set_newdesk / wf_str_ptr -> wind_set
+               menu.rs   do_chg                   -> menu_text
+               fsel.rs   run                      -> fsel_input/fsel_exinput
+               graf.rs   set_user_form            -> graf_watchbox
+  soll       the count a conforming caller declares, taken from
+             (G) references/emutos/desk/gembind.c, EmuTOS' own AES binding --
+                 AES_CTRL_CODE(op, nintin, nintout, naddrin), line cited
+             (L) sdk/gemlib/gemlib-0.44.0-m68k/a_*.c AES_PARAMS(op,ni,no,na,nao)
+                 for the nine opcodes the EmuTOS desktop never calls
+             cross-checked against the int_in[] slot macros in
+             references/emutos/include/aesdefs.h:161-609 and the crysbind arm
+             in references/emutos/aes/gemsuper.c:77-421.
+  verdict    OK    = highest index read < declared length
+             =MAX  = reads exactly the last declared word (no margin, correct)
+             OVER  = reads past the declaration
+
+INT_IN
+op   function        ours (max idx)   needs  decl  src                      verdict
+---- --------------- ---------------- -----  ----  -----------------------  -------
+ 10  appl_init       --                   0     0  G:119                    OK
+ 11  appl_read       0,1                  2     2  G:145                    =MAX
+ 12  appl_write      0,1                  2     2  G:135                    =MAX
+ 13  appl_find       --                   0     0  G:153                    OK
+ 14  appl_tplay      --                   0     2  G:163                    OK (under-reads, see note 1)
+ 15  appl_trecord    --                   0     1  G:172                    OK (under-reads, see note 1)
+ 17  appl_yield      --                   0     0  L:a_appl_yield.c:19      OK
+ 19  appl_exit       --                   0     0  G:125                    OK
+ 20  evnt_keybd      --                   0     0  G:183                    OK
+ 21  evnt_button     0..2                 3     3  G:194                    =MAX
+ 22  evnt_mouse      0..4                 5     5  G:212                    =MAX
+ 23  evnt_mesag      --                   0     0  G:226                    OK
+ 24  evnt_timer      0,1                  2     2  G:235                    =MAX
+ 25  evnt_multi      0..15               16    16  G:268-269 (control[1]=16) =MAX
+ 26  evnt_dclick     0,1                  2     2  G:286                    =MAX
+ 30  menu_bar        0                    1     1  G:297                    =MAX
+ 31  menu_icheck     0,1                  2     2  G:306                    =MAX
+ 32  menu_ienable    0,1                  2     2  G:315                    =MAX
+ 33  menu_tnormal    0,1                  2     2  G:324                    =MAX
+ 34  menu_text       0                    1     1  G:334                    =MAX
+ 35  menu_register   0                    1     1  G:344                    =MAX
+ 36  menu_popup      0,1                  2     2  L:a_menu_popup.c:35      =MAX
+ 37  menu_attach     0,1                  2     2  L:a_menu_attach.c:79     =MAX
+ 38  menu_istart     0..2                 3     3  L:a_menu_istart.c:35     =MAX
+ 39  menu_settings   0                    1     1  L:a_menu_settings.c:29   =MAX
+ 40  objc_add        0,1                  2     2  G:357                    =MAX
+ 41  objc_delete     0                    1     1  G:366                    =MAX
+ 42  objc_draw       0..5                 6     6  G:381                    =MAX
+ 43  objc_find       0..3                 4     4  G:392                    =MAX
+ 44  objc_offset     0                    1     1  G:400                    =MAX
+ 45  objc_order      0,1                  2     2  G:412                    =MAX
+ 46  objc_edit       0..3                 4     4  G:424                    =MAX
+ 47  objc_change     0,2..7               8     8  G:444                    =MAX
+ 48  objc_sysvar     0..3                 4     4  L:a_objc_sysvar.c:71     =MAX
+ 50  form_do         0                    1     1  G:456                    =MAX
+ 51  form_dial       0..8                 9     9  G:472                    =MAX
+ 52  form_alert      0                    1     1  G:480                    =MAX
+ 53  form_error      0                    1     1  G:492                    =MAX
+ 54  form_center     --                   0     0  G:500                    OK
+ 55  form_keybd      0..2                 3     3  G:517                    =MAX
+ 56  form_button     0,1                  2     2  G:531                    =MAX
+ 70  graf_rubberbox  0..3                 4     4  G:548                    =MAX
+ 71  graf_dragbox    0..7                 8     8  G:567                    =MAX
+ 72  graf_movebox    0..5                 6     6  G:584 (GRAF_MBOX)        =MAX
+ 73  graf_growbox    0..7                 8     8  G:599                    =MAX
+ 74  graf_shrinkbox  0..7                 8     8  G:613                    =MAX
+ 75  graf_watchbox   1..3                 4     4  G:624                    =MAX
+ 76  graf_slidebox   0..2                 3     3  G:634                    =MAX
+ 77  graf_handle     --                   0     0  G:641                    OK
+ 78  graf_mouse      0                    1     1  G:654                    =MAX
+ 79  graf_mkstate    --                   0     0  G:660                    OK
+ 80  scrp_read       --                   0     0  G:675                    OK
+ 81  scrp_write      --                   0     0  G:681                    OK
+ 82  scrp_clear      --                   0     0  L:a_scrp_clear.c:21      OK
+ 90  fsel_input      --                   0     0  G:694                    OK
+ 91  fsel_exinput    --                   0     0  G:707                    OK
+100  wind_create     0..4                 5     5  G:724                    =MAX
+101  wind_open       0..4                 5     5  G:735                    =MAX
+102  wind_close      0                    1     1  G:742                    =MAX
+103  wind_delete     0                    1     1  G:749                    =MAX
+104  wind_get        0,1                  2     2  G:757                    =MAX
+104  wind_get        + 2 for WF_COLOR/    3     3  L:a_wind_get.c:339-340   =MAX  (note 2)
+                       WF_DCOLOR only
+105  wind_set        0..5                 6     6  G:785, L:a_wind_set_int  =MAX
+                       (incl. set_newdesk int_in[2]/[4] and the
+                        wf_str_ptr packed pointer at word 2,
+                        four LP64 words -> word 5)
+106  wind_find       0,1                  2     2  G:799                    =MAX
+107  wind_update     0                    1     1  G:806                    =MAX
+108  wind_calc       0..5                 6     6  G:818                    =MAX
+109  wind_new        --                   0     0  G:830                    OK
+110  rsrc_load       --                   0     0  G:841                    OK
+111  rsrc_free       --                   0     0  G:847                    OK
+112  rsrc_gaddr      0,1                  2     2  G:859                    =MAX
+113  rsrc_saddr      0,1                  2     2  G:872                    =MAX
+114  rsrc_obfix      0                    1     1  G:881                    =MAX
+120  shel_read       --                   0     0  G:902                    OK
+121  shel_write      0,1                  2     3  G:914                    OK (under-reads, see note 3)
+122  shel_get        0                    1     1  G:922                    =MAX
+123  shel_put        0                    1     1  G:930                    =MAX
+124  shel_find       --                   0     0  G:938                    OK
+125  shel_envrn      --                   0     0  G:948                    OK
+126  shel_rdef       --                   0     0  G:958                    OK
+127  shel_wdef       --                   0     0  G:967                    OK
+ --  default (-1)    --                   0     -  gemsuper.c:406-417       OK
+
+     79 opcodes.  OVER: none.
+
+ADDR_IN
+op   function        ours (max slot)  needs  decl  src                      verdict
+---- --------------- ---------------- -----  ----  -----------------------  -------
+ 11  appl_read       0                    1     1  G:145                    =MAX
+ 12  appl_write      0                    1     1  G:135                    =MAX
+ 13  appl_find       0                    1     1  G:153                    =MAX
+ 23  evnt_mesag      0                    1     1  G:226                    =MAX
+ 25  evnt_multi      0                    1     1  G:268                    =MAX
+ 30  menu_bar        0                    1     1  G:297                    =MAX
+ 33  menu_tnormal    0                    1     1  G:324                    =MAX
+ 34  menu_text       0,1                  2     2  G:334                    =MAX
+ 35  menu_register   0                    1     1  G:344                    =MAX
+ 36  menu_popup      0,1                  2     2  L:a_menu_popup.c:35      =MAX
+ 37  menu_attach     0,1                  2     2  L:a_menu_attach.c:79     =MAX
+ 38  menu_istart     0                    1     1  L:a_menu_istart.c:35     =MAX
+ 39  menu_settings   0                    1     1  L:a_menu_settings.c:29   =MAX
+ 40- objc_*          0                    1     1  G:357..444               =MAX
+ 47
+ 50  form_do         0                    1     1  G:456                    =MAX
+ 52  form_alert      0                    1     1  G:480                    =MAX
+ 54  form_center     0                    1     1  G:500                    =MAX
+ 55  form_keybd      0                    1     1  G:517                    =MAX
+ 56  form_button     0                    1     1  G:531                    =MAX
+ 75  graf_watchbox   0                    1     1  G:624                    =MAX
+ 76  graf_slidebox   0                    1     1  G:634                    =MAX
+ 80  scrp_read       0                    1     1  G:675                    =MAX
+ 81  scrp_write      0                    1     1  G:681                    =MAX
+ 90  fsel_input      0,1                  2     2  G:694                    =MAX
+ 91  fsel_exinput    0,1,2                3     3  G:707                    =MAX
+105  wind_set        0, and only when     1     1  kernel/src/desk/mod.rs:  =MAX
+                     `pb.ain_len() >= 1`               304 (AIN_LEN 1); the
+                     (wf_str_ptr)                      gemlib binding uses the
+                                                       packed-int_in form
+                                                       instead (AIN_LEN 0,
+                                                       a_wind_set_str.c:21)
+110  rsrc_load       0                    1     1  G:841                    =MAX
+113  rsrc_saddr      0                    1     1  G:872                    =MAX
+114  rsrc_obfix      0                    1     1  G:881                    =MAX
+120  shel_read       0,1                  2     2  G:902                    =MAX
+121  shel_write      0,1                  2     2  G:914                    =MAX
+122  shel_get        0                    1     1  G:922                    =MAX
+123  shel_put        0                    1     1  G:930                    =MAX
+124  shel_find       0                    1     1  G:938                    =MAX
+125  shel_envrn      0,1                  2     2  G:948                    =MAX
+126  shel_rdef       0,1                  2     2  G:958                    =MAX
+127  shel_wdef       0,1                  2     2  G:967                    =MAX
+
+     OVER: none.  AI_SIZE is 3 and the highest slot any handler touches is
+     fsel_exinput's addr_in[2].
+
+NOTES
+  1  appl_tplay (14) and appl_trecord (15) read NO int_in word although the
+     binding declares 2 and 1.  That is an under-read, the opposite defect,
+     and it is NOT A19's: it belongs to whatever those two handlers do or do
+     not implement.  Out of scope, untouched, reported.
+  2  wind_get(WF_COLOR) / wind_get(WF_DCOLOR) read int_in[2] -- the gadget
+     number.  EmuTOS does exactly the same: crysbind hands wm_get
+     `&WM_IX` = `&int_in[2]` (gemsuper.c:342) and wm_get reads `pinwds[0]`
+     for both fields (gemwmlib.c:1568, :1573).  gemlib's binding declares
+     IN_LEN 3 for precisely those two fields and 2 for every other
+     (a_wind_get.c:336-348), so a conforming caller covers the slot.
+     EmuTOS' OWN desktop binding declares 2 unconditionally
+     (desk/gembind.c:757) and would therefore read its uninitialised stack --
+     an EmuTOS inconsistency, not a NewTOS one, and the desktop never asks
+     for either field.  Our kernel/src/desk/mod.rs never asks for them
+     either (wind_get_grect/wind_get_top, both IN_LEN 2, fields 4..12 only).
+  3  shel_write (121) reads int_in[0..1] and not SH_ISCR = int_in[2] which
+     the binding declares.  Again an under-read, out of scope, untouched.
+
+WHAT THE CLAMP CHANGES IN PRACTICE
+  Every in-tree caller was checked the same mechanical way and none
+  under-declares against what its handler reads:
+    kernel/src/desk/mod.rs        24 call sites, all n_int >= the highest
+                                  intin[] index they set
+    tos-api/tests/*.rs            every `pb.call(op, in_len, ...)`
+    tos-api/tests/aes_reference/  331 case/prelude calls across the four
+                                  frozen tables
+  Three shapes in the frozen tables sit exactly on the boundary and were
+  checked case by case:
+    * 55 x wind_get with IN_LEN 2 -- none of them asks for field 18 or 19,
+      so none reaches int_in[2].
+    * case 140 of aes-r2-wind.tsv, "wind_create IN_LEN 1" -- the one measured
+      case that deliberately under-declares.  wm_create parks the rectangle in
+      WS_FULL and returns only the handle, and the case declares OUT_LEN 1, so
+      what the rectangle became is not in the record.  Passes either way; it
+      is the reason this ticket's own regression test uses that call shape with
+      a recognisable pattern instead.
+    * the one Kind::IntIn plant, cases_m05_addrin.rs:102 -- wind_set with
+      IN_LEN 6 and a packed pointer at word 2.  At LP64 the pointer occupies
+      words 2..5, i.e. exactly the six declared words.  min(6,16) = 6 leaves
+      it whole.  Had the table declared 4 (the m68k count) the clamp would
+      have cut the pointer in half; it does not.
