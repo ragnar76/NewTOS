@@ -129,14 +129,17 @@ HOST TESTS
 
 BUILDS
   cargo run -p xtask -- build --board {rpi4,qemu-virt} --release
-    rpi4       ELF sha256 29c307546ec33754203f6b512d78a10607b36b69b79e9e36c0c03526164749de
+    rpi4       ELF sha256 5e673d0273690a9cb5f93b5ecdf74c30478b187e2f0dbfa184852e1501be2c82
                kernel8.img sha256 868c34e77eb0aa6bb11c5a9ffe669c91cdbc78bb025f69e2d6b1998ed8b97146
                787584 bytes
-    qemu-virt  ELF sha256 1b19111e7806ff596797b6593d6ebeee9a18509eec7a1b7454c79e60bd282fc3
-    The two ELF hashes differ, which is the proof the second build was a real
-    build and not a no-op; each also reproduced bit-for-bit on a second build
-    after the pre-fix excursion below, which is the proof the artefacts here
-    are the ones the runs used.
+    qemu-virt  ELF sha256 dea160653fe9afb4d5a9e853781b2ceb4394f6a6c007be7c93f61dfb5b85c1d4
+    Both builds preceded by `touch tos-api/src/aes/pd.rs`, so neither can
+    report a stale "up to date" out of the shared target directory; both logs
+    show "Compiling tos-api" AND "Compiling kernel".  The two ELF hashes differ,
+    which is the proof the second build was a real build and not a no-op.
+    kernel8.img reproduced bit-for-bit across every rebuild in this session
+    (the ELFs move with the doc comments, the objcopy'd binary does not), which
+    is the proof the image RUN 2 used is the one the committed source produces.
     logs build-rpi4.log, build-qemuvirt.log
     The pre-fix rpi4 kernel8.img built for RUN 1 came out at sha256
     eeb6e505cb79ea4a596b36fb2d49ed3cc80b83e91887e2f175ee76a70d2eab12 --

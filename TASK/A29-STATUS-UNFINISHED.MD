@@ -210,10 +210,12 @@ Defekt.
 
 **Builds und Warnungen** — Sollstand gehalten, Delta 0:
 
-    rpi4       ELF sha256 29c30754…   kernel8.img 868c34e7…  (787584 B)
-    qemu-virt  ELF sha256 1b19111e…
-    Die beiden ELF-Hashes sind verschieden = der zweite Bau war ein echter Bau;
-    jeder reproduzierte sich bitgleich in einem zweiten Lauf.
+    rpi4       ELF sha256 5e673d02…   kernel8.img 868c34e7…  (787584 B)
+    qemu-virt  ELF sha256 dea16065…
+    Jedem Bau ging ein `touch tos-api/src/aes/pd.rs` voraus, beide Protokolle
+    zeigen „Compiling tos-api" UND „Compiling kernel"; die beiden ELF-Hashes
+    sind verschieden = der zweite Bau war ein echter Bau. `kernel8.img` kam in
+    jedem Neubau dieser Sitzung bitgleich heraus.
     rustc   tos-api 64 / kernel 94   (beide Boards)
     clippy  tos-api 81 / kernel 125  (kernel auf beiden Boards)
     Die neue Testdatei zieht keine eigene clippy-Meldung.

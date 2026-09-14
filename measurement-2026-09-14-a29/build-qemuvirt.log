@@ -1,6 +1,7 @@
     Finished `dev` profile [optimized + debuginfo] target(s) in 0.00s
      Running `target/debug/xtask build --board qemu-virt --release`
 xtask: building kernel for board-qemu-virt (release)
+   Compiling tos-api v0.1.0 (/Volumes/Daten/Development/PiRusTOS/tos-api)
 warning: value assigned to `tree` is never read
    --> tos-api/src/aes/form.rs:324:9
     |
@@ -763,7 +764,6 @@ note: but type `Vdipb` is only usable at visibility `pub(crate)`
  78 | pub(crate) struct Vdipb {
     | ^^^^^^^^^^^^^^^^^^^^^^^
 
-warning: `tos-api` (lib) generated 64 warnings
    Compiling kernel v0.1.0 (/Volumes/Daten/Development/PiRusTOS/kernel)
 warning: value assigned to `control` is never read
   --> kernel/src/selftest_objc.rs:90:5
@@ -1482,5 +1482,6 @@ warning: missing documentation for a method
 642 |     pub fn protocol(&self, di: usize) -> u8 {
     |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
+warning: `tos-api` (lib) generated 64 warnings
 warning: `kernel` (lib) generated 94 warnings
-    Finished `release` profile [optimized + debuginfo] target(s) in 4.73s
+    Finished `release` profile [optimized + debuginfo] target(s) in 5.48s
