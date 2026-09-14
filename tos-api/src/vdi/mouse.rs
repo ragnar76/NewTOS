@@ -308,6 +308,28 @@ fn shown() -> bool {
     HIDE_COUNT.load(Ordering::Relaxed) <= 0
 }
 
+/// The cursor's park position for a `w` x `h` screen — EmuTOS `vdimouse_init`
+/// (`vdi/vdi_mouse.c:582-583`):
+///
+/// ```c
+/// GCURX = xres / 2;           /* initialize the mouse to center */
+/// GCURY = yres / 2;
+/// ```
+///
+/// `xres`/`yres` are *not* the screen dimensions. `vdi/vdi_defs.h:94-95`
+/// aliases them onto `DEV_TAB[0]`/`DEV_TAB[1]`, and `update_rez_dependent`
+/// fills those with `V_REZ_HZ - 1` / `V_REZ_VT - 1`
+/// (`vdi/vdi_control.c:203-204`) — the last addressable pixel coordinate, one
+/// less than the pixel count. So the centre is the midpoint of the coordinate
+/// *range*, and at every even resolution that is one pixel up and left of the
+/// midpoint of the pixel *count*: at 640x480, 319/239 and not 320/240 (V17).
+pub fn park_position(w: u16, h: u16) -> (i16, i16) {
+    // `xres` / `yres` in EmuTOS' sense: the last coordinate, DEV_TAB[0]/[1].
+    let xres = w as i16 - 1;
+    let yres = h as i16 - 1;
+    (xres / 2, yres / 2)
+}
+
 fn ensure_init(backend: &dyn RasterBackend) {
     if INIT_DONE.swap(1, Ordering::Relaxed) != 0 {
         return;
@@ -318,8 +340,9 @@ fn ensure_init(backend: &dyn RasterBackend) {
         DATA[i].store(data[i], Ordering::Relaxed);
     }
     // Park the cursor at the screen centre.
-    GCURX.store(backend.width() as i16 / 2, Ordering::Relaxed);
-    GCURY.store(backend.height() as i16 / 2, Ordering::Relaxed);
+    let (cx, cy) = park_position(backend.width(), backend.height());
+    GCURX.store(cx, Ordering::Relaxed);
+    GCURY.store(cy, Ordering::Relaxed);
     // Install the default exchange-vector slots (EmuTOS `vdimouse_init`,
     // `vdi_mouse.c:585-589`; the `vex_timv` slot `tim_addr`, `vdi_misc.c:128`):
     // the button / motion / wheel / timer vectors default to the `just_rts`

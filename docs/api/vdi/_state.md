@@ -194,7 +194,7 @@ alone. Measured on the reference TT: `EMUTOS14-VDI-all.BIN` records 40
 
 | Global | Type | Meaning | Written by | Read by |
 |--------|------|---------|-----------|---------|
-| `GCURX` / `GCURY` | WORD | cursor x / y, clamped to `[0,xres-1]`/`[0,yres-1]` | packet handler (`scrn_clip`); `v_locator` seeds from `PTSIN` | `vq_mouse`, locator, cursor draw |
+| `GCURX` / `GCURY` | WORD | cursor x / y, clamped to `[0,xres]`/`[0,yres]` — and `xres`/`yres` are `DEV_TAB[0]`/`[1]`, the last coordinate, so this is `[0,width-1]`/`[0,height-1]` | packet handler (`scrn_clip`); `v_locator` seeds from `PTSIN` | `vq_mouse`, locator, cursor draw |
 | `MOUSE_BT` | WORD | button bitmask: bit0 = left, bit1 = right (2-4 = ext buttons under `CONF_WITH_EXTENDED_MOUSE`) | packet handler (`mouse_int`) | `vq_mouse` |
 | `cur_ms_stat` | UBYTE | status: bit5 = moved, bit6/7 = right/left changed, bit0/1 = live state | `mouse_int` | `gloc_key` (locator terminators) |
 | `TERM_CH` | WORD | last input terminator/char (scancode<<8 \| ASCII) | `gloc_key`/`gchr_key`/`gchc_key` | locator/string/choice outputs |
@@ -202,8 +202,10 @@ alone. Measured on the reference TT: `EMUTOS14-VDI-all.BIN` records 40
 | `draw_flag` / `mouse_flag` | UBYTE | "redraw pending" / "form being redefined" (VBL interlock) | `mov_cur`, `set_mouse_form`, `dis_cur`/`hide_cur` | `vb_draw` |
 | `newx` / `newy` | WORD | pending cursor coords for the VBL redraw | `mov_cur` | `vb_draw` |
 
-`GCURX`/`GCURY` init to `xres/2`, `yres/2`; `HIDE_CNT = 1` (hidden) at
-`vdimouse_init`. Full model: [`input/_mouse.md`](input/_mouse.md),
+`GCURX`/`GCURY` init to `xres/2`, `yres/2` (`vdi_mouse.c:582-583`) — with
+the aliases above that is `(width-1)/2`, `(height-1)/2`, i.e. **319/239** at
+640x480, one pixel up and left of the midpoint of the pixel counts (V17);
+`HIDE_CNT = 1` (hidden) at `vdimouse_init`. Full model: [`input/_mouse.md`](input/_mouse.md),
 [`input/_mouse-packet.md`](input/_mouse-packet.md).
 
 ### The exchange-vector slots (`vex_*` 118, 125-127, 134)

@@ -1,0 +1,121 @@
+V17 -- the cursor parks on the midpoint of the COORDINATE RANGE, not of the
+pixel count.  Counter-measurement, 2026-09-14.
+MEASUREMENT ONLY: this directory states what ran and what came back.
+
+WHAT CHANGED (the thing under test)
+  tos-api/src/vdi/mouse.rs   new pub fn park_position(w, h) -> (i16, i16),
+                             called by ensure_init.  It halves w-1 / h-1 where
+                             the old inline expression halved w / h.
+                             EmuTOS: GCURX = xres/2, GCURY = yres/2
+                             (vdi/vdi_mouse.c:582-583) with
+                             #define xres DEV_TAB[0] (vdi/vdi_defs.h:94) and
+                             DEV_TAB[0] = V_REZ_HZ - 1 (vdi/vdi_control.c:203).
+                             xres is the LAST COORDINATE, not the width.
+  tos-api/tests/vdi_mouse_park.rs   new, 2 tests.
+  docs/api/vdi/input/_mouse-packet.md, docs/api/vdi/_state.md
+                             the spec used `xres` in two incompatible senses on
+                             one page; that ambiguity is what the code
+                             implemented.  Disambiguated.
+
+BUILDS
+  kernel   cargo run -p xtask -- build --board {qemu-virt,rpi4} --release,
+           each preceded by `touch kernel/src/lib.rs tos-api/src/lib.rs` so the
+           shared target directory cannot report a stale "up to date".
+           qemu-virt release ELF sha256
+             a866fabdb11efaa5f30f4cfb7f5aae90a05cc83eec7e6259dc1d67ded6afd658
+           rpi4 release ELF sha256
+             be46c44d42b8800e1c3a415f8dd39ad7c48de39e242c2eb5e5208f48fbb7547e
+           kernel8.img sha256
+             5fd8c0286fba2c55667cda7bd40ac93cb2e3be53d26c2dcb2d1009d43519a247
+           787584 bytes, 14:48.  The two ELF hashes differ, which is the proof
+           that the second build was a real build and not a no-op.
+  warnings tos-api 64 / kernel 94 (rustc), tos-api 81 / kernel 125 (clippy)
+           -- unchanged from the stated baseline, delta 0.
+
+HOST TESTS
+  cargo run -p xtask -- test    540 passed / 0 failed / 1 ignored
+  (538 before, plus the two new tests in tos-api/tests/vdi_mouse_park.rs.)
+
+  The red run before the fix, for the record:
+    park_position_halves_the_last_coordinate_not_the_pixel_count
+      assertion `left == right` failed: park position at 640x480
+        left: (320, 240)   right: (319, 239)
+    vq_mouse_reports_the_parked_centre_after_open
+      assertion `left == right` failed: vq_mouse position after v_opnwk
+        left: (320, 240)   right: (319, 239)
+
+RUN A -- the case table, NewTOS on QEMU raspi4b, headless, 640x480
+  table     tosdump/cases/aes-m07-parameter.tsv, 20 cases, CRC 0F46665B
+            -- UNCHANGED, byte for byte.  The CRC runs over the whole file
+            (tosdump/core/cases.c:234), so the 2026-09-13 dumps stay valid.
+  dumper    tosdump/build/DUMPAES.NAP, build id 850d
+            sha256 e1e804653aac2643396bce4c7101443aca612f2daf84d87ca3146c0df1acf35a
+            (the 2026-09-13 run used build 70ca; core/ is unchanged between
+            them and the case CRC is what binds the comparison)
+  card      64 MiB FAT16 from measurement-2026-09-13-regression/method/
+            prep-image.sh aes, i.e. C:\DUMPAES.NAP + C:\AES.TSV +
+            NEWDESK.INF "#Z 01 C:\DUMPAES.NAP@"
+  command   qemu-system-aarch64 -M raspi4b -no-reboot -display none
+              -serial file:<log> -kernel kernel8.img
+              -drive file=<img>,if=sd,format=raw
+  log       "AES.TSV: 20 cases, CRC 0F46665B", "all 20 cases ran",
+            "AES.BIN: 20 records, 2432 bytes"
+  appl_init id 1, graf_handle 1, v_opnvwk 2, ap_version 0340, ap_planes 16
+  boot log  no panic, no fault, no exception; rc=0, desktop came up behind it.
+            No QEMU process left running.
+  artefacts newtos-qemu-raspi4b/NEWTOS-AES-m07.{BIN,LOG}, BOOT-SERIAL.txt
+            NEWTOS-AES-m07.BIN sha256
+              ca542485947fe92489784b87701110e74d3d36212f9b638e1443e6a4719c6f73
+
+WHAT CAME BACK -- numbers only
+  tosdiff tosdump/cases/aes-m07-parameter.tsv
+          tosdump/reference/EMUTOS14-AES-m07.BIN
+          newtos-qemu-raspi4b/NEWTOS-AES-m07.BIN
+       -> DIFF-emutos-vs-newtos-640x480.txt, "20 of 20 cases differ".
+
+  The differing FIELDS, counted, against the same count for 2026-09-13:
+
+                       2026-09-13   2026-09-14 (this run)
+      global[2]            20            20
+      global[3]            20            20
+      global[4]            20            20
+      global[10]           20            20
+      global[11]           20            20
+      global[12]           20            20
+      int_out[1]           10             0
+      int_out[2]           10             0
+
+  Zero int_out words differ now.  What is left is the six AESGLOBAL words --
+  ap_id, ap_private, ap_planes and the words around them -- which differ in
+  every case of every round on every table and are the machine's identity.
+
+RUN B -- the screen, NewTOS on QEMU raspi4b, headless, 640x480, #Z autorun
+  Same emulator line plus -qmp unix:<sock>,server,nowait; shot taken with
+  qemu-tmp/qmpshot (built from tools/qmpshot.c) 30 s after start.
+  card      tools/make-sd-image.sh, 64 MiB, fresh; NEWDESK.INF rewritten per
+            run by measurement-2026-09-13-regression/method/prep-app.sh.
+  apps      C:\Apps\QED\QED.NAP and C:\Apps\TERADESK\DESKTOP.NAP -- the same
+            two measurement-2026-09-14-a35/ shot, so the frames compare.
+
+  qemu-tmp/{qed,teradesk}.ppm against measurement-2026-09-14-a35/qemu-tmp/,
+  pixel by pixel over all 640x480:
+
+      qed        40 pixels differ, bounding box x 319..329, y 239..255
+      teradesk   54 pixels differ, bounding box x 319..330, y 239..255
+
+  Every differing pixel lies inside the 16x16 box the arrow occupies.  The
+  arrow moved exactly one pixel left and one pixel up; its shape is unchanged
+  (the ASCII dump of both frames' 22x21 neighbourhood is identical apart from
+  the shift).  Nothing else on either screen changed -- not one pixel of the
+  menu bar, the icons, the labels or the background dither.
+  artefacts screendumps/{qed,teradesk}.png, qemu-tmp/*.ppm, qemu-tmp/*-serial.log
+
+WHAT THIS RUN DOES NOT COVER
+  * Interactive use.  QEMU raspi4b gives input or C: storage, not both; a
+    click at the parked position is real-Pi-4 work.
+  * Real Pi 4 at 1920x1080, where the same formula gives 959/539 instead of
+    960/540.  Not run -- no hardware actions were taken.
+  * tosdump/cases/aes-m07-parameter.tsv is STILL NOT WIRED as a Rust suite.
+    On its own it is 20 of 20 green after this fix; in the shared test binary
+    case 69 goes red from a leftover message that cases_m05_addrin leaves --
+    M08's finding B-2, not this one.  See TASK/V17-STATUS-DONE.MD.

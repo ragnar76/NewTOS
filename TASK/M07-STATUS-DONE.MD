@@ -161,3 +161,33 @@ verschärften erscheint nur `objc_delete`, zweimal, beide als `ROOT`.
   Problem, die M06 für die 3D-Statics notiert hat).
 * **`appl_yield` und die drei anderen PCGEM-Opcodes** bleiben unmessbar, bis
   eine Primärquelle entscheidet (unverändert aus M06).
+
+---
+
+## Nachtrag 2026-09-14 (V17) — eine Einordnung oben ist widerlegt
+
+Der Abschnitt „Die beiden Nachweisläufe" nennt als Unterschied neben den sechs
+`AESGLOBAL`-Wörtern „die Mausposition in den zwölf `evnt_multi`-Fällen (TT
+319,239 gegen NewTOS 320,240 — die Mitte eines 640×480-Schirms, um eins
+versetzt)". Der Nebensatz liest sich wie ein Geräteunterschied. **Er war
+keiner.** Beide Zahlen sind dieselbe Parkposition, aus derselben Bildschirm-
+grösse gerechnet — nur mit zwei verschiedenen Formeln:
+
+* EmuTOS `GCURX = xres / 2` (`vdi/vdi_mouse.c:582-583`) mit
+  `xres = DEV_TAB[0] = V_REZ_HZ − 1` (`vdi/vdi_defs.h:94`,
+  `vdi/vdi_control.c:203`) → `639 / 2 = 319`;
+* NewTOS `backend.width() / 2` (`tos-api/src/vdi/mouse.rs`, `ensure_init`)
+  → `640 / 2 = 320`.
+
+Also ein Produktdefekt, kein Maschinenwert. Repariert unter **V17**
+(`park_position`, halbiert jetzt die letzte Koordinate). Die Gegenmessung
+derselben Tabelle vom 2026-09-14 (`measurement-2026-09-14-v17/`) hat **keinen
+einzigen `int_out`-Unterschied** mehr; es bleiben genau die sechs
+`AESGLOBAL`-Wörter.
+
+Nicht korrigierbar ist der Kopfkommentar von `tosdump/cases/aes-m07-parameter.tsv`
+(Zeilen 39-44, „WHAT THESE CASES WILL DIFFER IN, by construction and not by
+defect"): die Tabellen-CRC läuft über die **ganze Datei** einschliesslich der
+Kommentare (`tosdump/core/cases.c:234`), und `tosdiff`/`mkrusttests` weisen jeden
+Dump mit abweichender CRC ab. Eine Textänderung dort würde beide Messungen vom
+2026-09-13 entwerten. Der Satz bleibt also stehen und ist hiermit widersprochen.

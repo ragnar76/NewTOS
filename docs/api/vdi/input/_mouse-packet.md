@@ -121,8 +121,16 @@ yparam 1}, mouse_int)`, `vdi_mouse.c:567-572,605`).
 
 `scrn_clip` (`vdi_asm.S:187-223`) clamps against `_DEV_TAB`:
 
-- `GCURX` to `[0, DEV_TAB[0]]` = `[0, xres-1]`
-- `GCURY` to `[0, DEV_TAB[1]]` = `[0, yres-1]`
+- `GCURX` to `[0, DEV_TAB[0]]` = `[0, xres]`
+- `GCURY` to `[0, DEV_TAB[1]]` = `[0, yres]`
+
+> **`xres`/`yres` are the LAST COORDINATE, not the width and height.**
+> `vdi_defs.h:94-95` aliases `xres = DEV_TAB[0]`, `yres = DEV_TAB[1]`, and
+> `update_rez_dependent` fills those with `V_REZ_HZ - 1` / `V_REZ_VT - 1`
+> (`vdi_control.c:203-204`). Every `xres`/`yres` quoted from EmuTOS on this
+> page carries that meaning: at 640x480, `xres` is **639** and `yres` is
+> **479**. Reading them as the pixel count is what produced V17 — the cursor
+> parked one pixel down and right of centre on every even resolution.
 
 `scrn_clip` is called **twice** — once before and once after `user_mot`, so
 a motion vector that repositions the cursor is re-clamped
@@ -139,7 +147,9 @@ VBL redraw.
 ## Initial state (`vdimouse_init`, `vdi_mouse.c:575-600`)
 
 `loc_mode = val_mode = chc_mode = str_mode = 0` (request); `HIDE_CNT = 1`
-(cursor initially hidden); `GCURX = xres/2`, `GCURY = yres/2`;
+(cursor initially hidden); `GCURX = xres/2`, `GCURY = yres/2` — i.e.
+`(V_REZ_HZ - 1) / 2` and `(V_REZ_VT - 1) / 2`, **319/239** at 640x480 and
+not 320/240 (see the box above);
 `MOUSE_BT = 0`; `cur_ms_stat = 0`; `user_but = user_mot = just_rts`,
 `user_cur = mov_cur`. The default arrow form is installed via
 `set_mouse_form(default_mform(), &mouse_cdb)`. Relative mode is armed with
@@ -164,7 +174,7 @@ nothing feeds `set_state` yet. Full `vq_mouse` contract:
 - Packet `{0xFF, 0, 0}` — not a relative-mouse header? `0xFF & 0xF8 = 0xF8`
   → **is** valid (both buttons down, no motion).
 - Non-mouse packet (header `& 0xF8 != 0xF8`) → ignored, no state change.
-- `dx` driving `GCURX` past `xres-1` → clamps to `xres-1` (no wrap).
+- `dx` driving `GCURX` past `xres` (= width − 1) → clamps to `xres` (no wrap).
 
 ## NewTOS implementation notes
 
@@ -173,8 +183,11 @@ nothing feeds `set_state` yet. Full `vq_mouse` contract:
   driver decodes header+dx+dy here instead, applies the button swap + signed
   accumulate + screen clamp above, and calls `vdi::mouse::set_state(GCURX,
   GCURY, MOUSE_BT, backend)` — the existing VDI integration point.
-- Screen bounds (`xres`/`yres`) come from the active `ScreenInfo` / raster
-  backend, not a hard-coded resolution.
+- Screen bounds come from the active `ScreenInfo` / raster backend, not a
+  hard-coded resolution — and the backend reports `width()`/`height()`, the
+  pixel **counts**, so every EmuTOS `xres`/`yres` above becomes
+  `width() - 1` / `height() - 1` in NewTOS
+  (`tos-api/src/vdi/mouse.rs`, `park_position`).
 - `user_but`/`user_mot`/`user_cur` are the VDI `vex_*` slots
   ([`_mouse.md`](_mouse.md)); the AES installs `user_but`/`user_mot` to
   drive `evnt_button`/`evnt_mouse` — that wiring lands with Phase-13 D3.
