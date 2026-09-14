@@ -1,0 +1,19 @@
+running 1 test
+A28-PROBE queue at the boundary -> 1
+A28-PROBE child appl_read -> 1, body [20, 1, 0, 1, 40, 40, 402, 302]
+
+thread 'the_launch_boundary_hands_the_child_a_reset_descriptor' (27972631) panicked at tos-api/tests/aes_launch_boundary_reset.rs:386:5:
+assertion `left == right` failed: phase 1: the child must start with an empty message queue; it read a message of type 20 — the desktop's, for a window handle that is not its own and that save_windows() has already taken out of the live window list
+  left: (1, 20)
+ right: (0, 0)
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+test the_launch_boundary_hands_the_child_a_reset_descriptor ... FAILED
+
+failures:
+
+failures:
+    the_launch_boundary_hands_the_child_a_reset_descriptor
+
+test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+error: test failed, to rerun pass `-p tos-api --test aes_launch_boundary_reset`

@@ -1,0 +1,137 @@
+A28 -- Zustandsrücksetzung an der Grenze Desktop -> Kindprogramm
+================================================================
+
+Datum          2026-09-14
+Basis          desk-rebuild, HEAD vor der Arbeit 9bb9157, sauberer Baum
+EmuTOS-Pin     references/emutos @ 1a7484aba1bfba23e2c0899e243b6d8177fe41df
+Ticket         TASK/A28.md, Quittung TASK/A28-STATUS-UNFINISHED.MD
+
+
+1  WAS GEÄNDERT WURDE
+-------------------------------------------------------------------------
+tos-api/src/aes/pd.rs           register(): + `t[idx].flags = 0;`
+                                = EmuTOS `rlr->p_flags = 0`, aes/gemshlib.c:636
+kernel/src/desk/main.rs         desktop_relinquish(): + `super::appl_exit();`
+                                = EmuTOS `appl_exit()`, desk/deskmain.c:2166
+                                desktop_resume():     + `super::appl_init();`
+                                = EmuTOS `gl_apid = appl_init()`, deskmain.c:1953
+kernel/src/shell_loop.rs        Kommentar an p_nameit_and_appdir neu gefasst
+                                (hielt die Auslassung von :636 schriftlich fest)
+tos-api/tests/aes_launch_boundary_reset.rs        NEU, der Regressionstest
+tos-api/tests/aes_app_return_descriptor.rs        Modell der Grenze nachgezogen
+                                (A29s Test bildete die alte Reihenfolge ab)
+
+
+2  ROT VORHER  (host-test-red-*.log)
+-------------------------------------------------------------------------
+Mechanismus A -- die Schlange wird an der Grenze nicht geleert.
+Der Test modelliert desktop_relinquish in der Fassung des HEAD-Kerns
+(save_windows, kein appl_exit):
+
+  host-test-red-mechanism-A.log
+    phase 1: the desktop's queue must already be empty when it gives up
+    the machine ...
+      left: 1   right: 0
+
+  host-test-red-child-inherits.log   (dieselbe Lage, Sondenausgabe)
+    A28-PROBE queue at the boundary -> 1
+    A28-PROBE child appl_read -> 1, body [20, 1, 0, 1, 40, 40, 402, 302]
+    phase 1: the child must start with an empty message queue; it read a
+    message of type 20 ...
+      left: (1, 20)   right: (0, 0)
+
+  = WM_REDRAW (20), Absender-pid 1, Fensterhandle 1. Das Handle gehört dem
+    Desktop und ist von save_windows() bereits aus der lebenden Fenstertabelle
+    genommen. Deckt sich mit der Messung des A25-Audits ([20,1,0,1,11,53,276,154]).
+
+Mechanismus B -- die Flags werden beim Übergang nicht gelöscht.
+Gegen den unveränderten Produktivcode (pd::register ohne flags = 0), also
+ohne jedes Modell:
+
+    phase 3: the launcher's 'appl_init without appl_exit' cleanup fired for
+    a program that never called appl_init, and drained the desktop's own
+    queue ...
+      left: 0   right: 1
+
+
+3  GRÜN NACHHER
+-------------------------------------------------------------------------
+  cargo test -p tos-api --test aes_launch_boundary_reset   1 passed
+  cargo run -p xtask -- test                               547 passed
+                                                             0 failed
+                                                             1 ignored
+  (Sollstand vor der Arbeit 546/0/1, nachgemessen; +1 = der neue Test)
+  Protokoll host-test.log
+
+
+4  BAUTEN  (beide Boards, --release, je mit `touch` der Crate-Wurzeln)
+-------------------------------------------------------------------------
+  rpi4       ELF   sha256 18eb2ad7b703833c603971f1e695b38c191e283711f94181ab294f6fc45bfa6e
+             kernel8.img  e23991f0010c9f4117441a2b6ee28299c1301d1a8a5c4755b3f3f3f8f928e536
+  qemu-virt  ELF   sha256 292d0505af4ea8c7272f62ca531e0cd8d01fc85da09c82ea58c76e02ee03da53
+
+  Beide Protokolle (build-rpi4.log, build-qemuvirt.log) zeigen
+  "Compiling tos-api" UND "Compiling kernel"; die beiden ELF-Hashes sind
+  verschieden, der zweite Bau war also ein echter Bau und kein
+  "up to date" auf dem gemeinsamen target/-Verzeichnis.
+
+  Warnungen -- Sollstand gehalten, Delta 0:
+    rustc    tos-api 64 / kernel 94    (auf beiden Boards)
+    clippy   tos-api 81 / kernel 125   (kernel auf beiden Boards)
+    Keine Meldung zeigt auf aes/pd.rs, desk/main.rs oder shell_loop.rs.
+    Protokolle clippy-tos-api.log, clippy-kernel-{rpi4,qemu-virt}.log
+
+
+5  MASCHINENLAUF -- KONTROLLLAUF, NICHT BELEG
+-------------------------------------------------------------------------
+QEMU raspi4b, headless, 640x480, `#Z`-Autorun mit CHAINTST.NAP
+(method/prep-chain.sh, method/boot-qmp.sh; Karte aus A29 übernommen,
+qemu-tmp/run-chain.img sha256 39a4e199...). Zwei Läufe über denselben
+Datenträger:
+
+  PREFIX   kernel8.img 868c34e7...  = der HEAD-Stand (9bb9157/A29)
+  POSTFIX  kernel8.img e23991f0...  = mit dieser Arbeit
+
+  Seriell   chain-prefix-BOOT-SERIAL.txt == chain-postfix-BOOT-SERIAL.txt
+            (diff ohne Ausgabe), beide enden auf "[desk] desktop up (1 drives)"
+  Bild      640x480 = 307200 Bildpunkte, je drei Bytes, Punkt für Punkt
+            verglichen -> 0 verschieden
+  Screendump screendumps/chain-desktop-{prefix,postfix}.png
+
+WARUM DAS KEIN BELEG IST, sondern ein Kontrolllauf:
+  Der `#Z`-Autorun-Pfad betritt `desktop_relinquish` nie -- dort läuft das
+  Programm VOR dem Desktop, gestartet von sh_ldapp, und der Desktop kommt
+  danach über desk::run() samt eigenem appl_init. Mechanismus A wird also
+  nicht gefahren. Mechanismus B wird gefahren -- die Kette startet vier
+  Programme nacheinander in GEMDOS-Slot 0, also viermal `register` auf
+  demselben Deskriptor (Seriell Zeile 36-57) --, seine Wirkung ist dort
+  aber null, weil jedes der vier Programme sein `appl_exit` selbst ruft und
+  AP_OPEN damit schon gelöscht ist. Erwartet war Bitgleichheit, und
+  Bitgleichheit ist eingetreten: der Lauf belegt Nichtregression.
+
+  qemu-virt-Rauchprobe: bootet, usb-kbd/usb-mouse melden sich an,
+  "[desk] desktop up (0 drives)", kein Fault (qemuvirt-BOOT-SERIAL.txt).
+
+
+6  WAS NUR EINE ECHTE PI 4 KANN
+-------------------------------------------------------------------------
+Der Defektpfad selbst braucht HID-Eingabe UND ein C:-Medium gleichzeitig.
+Die zwei Emulatoren geben je eines davon, und beide Protokolle dieses Laufs
+sagen es:
+  raspi4b  "[pcie] RC not present (no response at RC_BASE); USB disabled",
+           C: listet 25 Einträge            -> Speicher, keine Eingabe
+  virt     usb-kbd + usb-mouse melden sich,
+           "[desk] desktop up (0 drives)"   -> Eingabe, kein Speicher
+
+Für den Anwender, eine Sitzung, in dieser Reihenfolge:
+  1. Desktop hochfahren, ein Verzeichnisfenster offen lassen.
+  2. Auf ein teilweise verdecktes Fenster klicken, damit der Desktop eine
+     ungelesene WM_REDRAW-Nachricht hat, und aus demselben Fenster heraus
+     C:\Apps\QED\QED.NAP (oder TERADESK) per Doppelklick starten.
+  3. SOLL: QED zeichnet nur seine eigene Oberfläche.
+     VOR DEM FIX: QED bekommt als allererste Nachricht ein WM_REDRAW für
+     ein Fensterhandle des Desktops und zeichnet in ein Rechteck, das ihm
+     nicht gehört.
+  4. QED beenden. Der Desktop muss danach weiter auf Menü, Fensterrahmen
+     und Klicks reagieren (das ist A29s Abnahme, hier nicht verschlechtert:
+     desktop_resume ruft appl_init nach).

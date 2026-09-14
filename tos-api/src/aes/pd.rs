@@ -555,19 +555,42 @@ fn p_nameit(dst: &mut [u8; AP_NAMELEN], src: &[u8]) {
     }
 }
 
-/// Name (and, if needed, create) the AES process descriptor for `pid` from the
-/// launch `path` — the reimplementation of EmuTOS's process-start naming
-/// (`pstart` → `getpd`/`p_nameit`, `aes/gempd.c:110-131`, run before the
-/// program executes). Sets `p_name` to the 8-char, space-padded, extensionless
-/// program name so a later `appl_find(name)` can locate the process
-/// ([`find_by_name`] / EmuTOS `fpdnm`, `aes/gempd.c:38-57`).
+/// Hand the AES process descriptor for `pid` over to the program about to run
+/// from `path` — EmuTOS `sh_ldapp`'s three lines between finding the program
+/// and `dos_exec` (`aes/gemshlib.c:633-636`):
 ///
-/// If a descriptor already exists for `pid` (e.g. the desktop's kernel-context
-/// descriptor, or a prior program that ran in the same GEMDOS slot) only its
-/// name is (re)set — its live `flags`/`queue` are left untouched. Otherwise a
-/// free slot is claimed and initialised (`in_use`, `pid`, name; `flags = 0`,
-/// empty queue), mirroring `getpd` linking a fresh pd for the new process. A
-/// full table simply leaves the name unregistered.
+/// ```c
+/// p_nameit(rlr, fname);
+/// p_setappdir(rlr, D.s_cmd);
+/// rlr->p_flags = 0;
+/// ```
+///
+/// Two of the three land here. `p_name` becomes the 8-char, space-padded,
+/// extensionless program name so a later `appl_find(name)` finds the process
+/// ([`find_by_name`] / EmuTOS `fpdnm`, `aes/gempd.c:38-57`), and **`p_flags` is
+/// cleared**: the new occupant has not called `appl_init` yet, so none of
+/// `AP_OPEN`/`AP_MESAG`/`AP_ACCLOSE` may still be set from the previous one.
+/// (`p_setappdir` is the launcher's own step,
+/// [`super::resource::set_app_dir`].)
+///
+/// The flag reset is load-bearing because NewTOS crosses this boundary on the
+/// **same** descriptor EmuTOS does: the desktop runs in the kernel boot context
+/// with pid 1 (`appl::current_pid`) and the first program it launches gets
+/// GEMDOS slot 0, hence pid 1 too ([`super::pid_of_slot`]) — exactly as EmuTOS
+/// renames the one `rlr`. Its one consumer is `sh_ldapp`'s post-`dos_exec`
+/// cleanup ([`close_if_open`], `aes/gemshlib.c:650-657`), whose whole question
+/// is "did **this** program call `appl_init` without `appl_exit`?". Without the
+/// reset it read the *previous* occupant's `AP_OPEN` and drained a queue that
+/// had nothing to do with the program that just ended (A28).
+///
+/// `p_flags = 0` does **not** touch the queue — draining it is the other half
+/// of EmuTOS's boundary, the desktop's own `appl_exit()` in its epilog
+/// (`desk/deskmain.c:2166` → `ap_exit`, [`close`]).
+///
+/// If no descriptor exists for `pid` yet, a free slot is claimed and
+/// initialised (`in_use`, `pid`, name; `flags = 0`, empty queue), mirroring
+/// `getpd` linking a fresh pd for a new process (`aes/gempd.c:59-68`). A full
+/// table simply leaves the name unregistered.
 ///
 /// # Safety
 /// Single trap / launcher path (no re-entrancy), same discipline as [`open`].
@@ -586,5 +609,6 @@ pub unsafe fn register(pid: i16, path: &[u8]) {
             None => return, // table full: the name is simply not registered
         },
     };
-    p_nameit(&mut t[idx].name, base_name(path));
+    p_nameit(&mut t[idx].name, base_name(path)); // p_nameit(rlr, fname)
+    t[idx].flags = 0; // rlr->p_flags = 0
 }

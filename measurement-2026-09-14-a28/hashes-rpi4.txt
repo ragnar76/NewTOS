@@ -1,0 +1,2 @@
+18eb2ad7b703833c603971f1e695b38c191e283711f94181ab294f6fc45bfa6e  target/aarch64-unknown-none-softfloat/release/kernel
+e23991f0010c9f4117441a2b6ee28299c1301d1a8a5c4755b3f3f3f8f928e536  kernel8.img

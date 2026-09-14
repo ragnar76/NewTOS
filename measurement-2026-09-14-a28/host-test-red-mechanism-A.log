@@ -1,0 +1,20 @@
+running 1 test
+test the_launch_boundary_hands_the_child_a_reset_descriptor ... FAILED
+
+failures:
+
+---- the_launch_boundary_hands_the_child_a_reset_descriptor stdout ----
+
+thread 'the_launch_boundary_hands_the_child_a_reset_descriptor' (27972321) panicked at tos-api/tests/aes_launch_boundary_reset.rs:376:5:
+assertion `left == right` failed: phase 1: the desktop's queue must already be empty when it gives up the machine — EmuTOS drains it in appl_exit (deskmain.c:2166 -> ap_exit, gemaplib.c:256-257), before the child exists
+  left: 1
+ right: 0
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+
+
+failures:
+    the_launch_boundary_hands_the_child_a_reset_descriptor
+
+test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+error: test failed, to rerun pass `-p tos-api --test aes_launch_boundary_reset`

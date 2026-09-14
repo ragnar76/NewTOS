@@ -509,9 +509,9 @@ fn launch_native(path: &str, name: &str, flavor: ftype::Flavor, tail: &[u8]) {
 /// * **relinquish** ([`desktop_relinquish`], before the child): remove the
 ///   desktop menu bar (`menu_bar(NULL,0)`), hide the desktop's own windows out
 ///   of the shared AES window list (saved, not destroyed), un-register the
-///   desktop-background tree, and clear the screen with the AES's own
-///   `sh_draw(cmd, TRUE)` — the child then composites on a clean screen with
-///   only its own windows + menu;
+///   desktop-background tree, leave the AES (`appl_exit()`), and clear the
+///   screen with the AES's own `sh_draw(cmd, TRUE)` — the child then composites
+///   on a clean screen with only its own windows + menu;
 /// * **resume** ([`desktop_resume`], after the child's `Pterm`): restore the
 ///   painter + the saved window set, rebuild the menu bar, and repaint — the
 ///   desktop is exactly as before the launch.
@@ -537,6 +537,19 @@ fn desktop_relinquish() {
     // (`gemwmlib.c:340-359,1268-1271`).
     tos_api::aes::window::save_windows();
     super::wind_set_newdesk(0, 0);
+    // Leave the AES — EmuTOS `appl_exit()` (`deskmain.c:2166`), the last step of
+    // the desktop epilog and the first of the two state resets at this boundary.
+    // `ap_exit` (`gemaplib.c:251-261`) **drains the message queue** and clears
+    // `AP_OPEN`; it does not destroy the descriptor (A29). That drain is what
+    // stops the child inheriting the desktop's unread `WM_*` — desktop and first
+    // child share pid 1 here exactly as EmuTOS's successive programs share `rlr`
+    // (`gemshlib.c:633-636`), so without it the child's first `evnt_mesag` hands
+    // it a `WM_REDRAW` for a window it does not own and that `save_windows()`
+    // has just taken out of the live list (A28). Last, as in EmuTOS: the two
+    // steps above must be able to queue, this one must not be followed by
+    // anything that can. The second reset is `rlr->p_flags = 0`, done where
+    // EmuTOS does it — at the handover in `tos_api::aes::register_process`.
+    super::appl_exit();
     // Clear the screen — EmuTOS `sh_draw(D.s_cmd, TRUE)`, the shell loop's step
     // between the desktop terminating and the child being loaded
     // (`gemshlib.c:719`): a one-shot white-out drawn from the built-in DESKTOP
@@ -550,6 +563,16 @@ fn desktop_relinquish() {
 /// The **resume** half of [`run_gem_app`]: rebuild the desktop exactly as it was
 /// before the launch (EmuTOS `deskmain.c:2124-2171` + `gemshlib.c:606,710-727`).
 fn desktop_resume() {
+    // Re-enter the AES — EmuTOS `deskmain.c:1953`, `gl_apid = appl_init();`,
+    // the first statement of the desktop it re-enters after every program
+    // (`sh_main` → `sh_ldapp`'s DESKTOP arm → `deskstart`,
+    // `gemshlib.c:600-612,710-727`). The counterpart of the `appl_exit()` in
+    // [`desktop_relinquish`]: without it the resumed desktop would run with
+    // `AP_OPEN` clear, which is not a state EmuTOS's running desktop is ever
+    // in. `ap_init` only ORs the flag back on — descriptor, name and queue are
+    // untouched (`gemaplib.c:54-63`, A25) — so this restores a flag, it does
+    // not undo the relinquish's drain.
+    super::appl_init();
     // Re-register the desktop's background object tree (EmuTOS
     // `wind_set(DESKWH, WF_NEWDESK, G.g_screen, 1, 0)`, `deskmain.c:2049`) and
     // restore the saved window set (discarding whatever the child left in the

@@ -343,15 +343,24 @@ fn p_setappdir(cmd: &[u8]) {
 /// `p_nameit(rlr, fname); p_setappdir(rlr, D.s_cmd); rlr->p_flags = 0;`
 /// (`gemshlib.c:633-636`).
 ///
-/// `p_nameit` is applied by [`crate::launch::run_program_with_tail_rc`] at the
-/// moment the child gets its process slot
-/// ([`tos_api::aes::register_process`]), because NewTOS's AES process
-/// descriptors are keyed on that slot rather than on EmuTOS's single
-/// permanently-`rlr` AESPD 0. Reworking the descriptor identity to EmuTOS's
-/// "one AESPD, renamed sequentially" model is item 10 of the plan's gap list
-/// and belongs to the stage that moves the desktop out of the kernel, not
-/// here; the app-directory half is set now because `sh_find` needs it before
-/// the launch.
+/// All three run, split over two places by *when* each is needed. The
+/// app-directory half is set here because `sh_find` searches it before the
+/// launch; `p_nameit` **and** `rlr->p_flags = 0` are applied together by
+/// [`crate::launch::run_program_with_tail_rc`] at the moment the child gets its
+/// process slot ([`tos_api::aes::register_process`] →
+/// `tos_api::aes::pd::register`), because NewTOS's AES process descriptors are
+/// keyed on that slot rather than on EmuTOS's single permanently-`rlr` AESPD 0,
+/// so the descriptor to rename and clear is only identified there. Both launch
+/// paths go through it: this shell loop's NORMAL/AUTORUN arm and the desktop's
+/// double-click ([`crate::desk`]).
+///
+/// What remains a deviation is only the descriptor *identity*: reworking it to
+/// EmuTOS's "one AESPD, renamed sequentially" model is item 10 of the plan's
+/// gap list and belongs to the stage that moves the desktop out of the kernel.
+/// The behaviour EmuTOS gets from that model at this boundary — a program never
+/// starting on the previous occupant's flags or messages — is in place (A28):
+/// the flag reset in `pd::register`, the queue drain in the desktop's own
+/// `appl_exit()` (`deskmain.c:2166`, `crate::desk::main::desktop_relinquish`).
 fn p_nameit_and_appdir(cmd: &[u8]) {
     p_setappdir(cmd);
 }

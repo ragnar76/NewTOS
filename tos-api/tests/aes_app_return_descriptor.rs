@@ -306,18 +306,24 @@ fn drain(pb: &mut Aespb, pid: i16) -> usize {
 }
 
 /// The desktop's half of `run_gem_app` before the child runs
-/// (`kernel/src/desk/main.rs`, `desktop_relinquish`): the message-relevant
-/// step is `save_windows()` — the menu-bar removal and the `WF_NEWDESK`
-/// un-registration draw, they do not touch the descriptor.
-fn desktop_relinquish() {
+/// (`kernel/src/desk/main.rs`, `desktop_relinquish`), in its order. The
+/// menu-bar removal and the `WF_NEWDESK` un-registration are draws that do not
+/// touch the descriptor; the two that do are `save_windows()` and, last,
+/// `appl_exit()` — EmuTOS's desktop epilog `desk/deskmain.c:2159-2166` (A28).
+/// This file is about what `appl_exit` must *not* do: it drains the queue and
+/// clears `AP_OPEN`, and the desktop is still addressable afterwards.
+fn desktop_relinquish(pb: &mut Aespb) {
     tos_api::aes::window::save_windows();
+    appl_exit(pb);
 }
 
 /// The desktop's half of `run_gem_app` after the child `Pterm`s
-/// (`kernel/src/desk/main.rs`, `desktop_resume`). Note what is *not* here:
-/// no second `appl_init`. The desktop is resumed, not restarted.
-fn desktop_resume() {
+/// (`kernel/src/desk/main.rs`, `desktop_resume`): the saved window set comes
+/// back and the desktop re-enters the AES, as EmuTOS's re-entered `deskmain`
+/// does in its first statement (`desk/deskmain.c:1953`).
+fn desktop_resume(pb: &mut Aespb) {
     tos_api::aes::window::restore_windows();
+    appl_init(pb);
 }
 
 /// The launcher's pre-run step (`kernel/src/launch.rs`,
@@ -339,7 +345,7 @@ fn launcher_cleanup(slot: usize) {
 /// itself (TeraDesk, QED), `false` = it just terminates and the launcher's
 /// `sh_ldapp` fallback has to clean up.
 fn run_child(pb: &mut Aespb, desk_pid: i16, slot: usize, path: &[u8], polite: bool) {
-    desktop_relinquish();
+    desktop_relinquish(pb);
     launcher_register(slot, path);
     let child_pid = appl_init(pb);
     assert_eq!(
@@ -350,7 +356,7 @@ fn run_child(pb: &mut Aespb, desk_pid: i16, slot: usize, path: &[u8], polite: bo
         appl_exit(pb);
     }
     launcher_cleanup(slot);
-    desktop_resume();
+    desktop_resume(pb);
 }
 
 /// The whole point: after a program has come and gone, the desktop must still
