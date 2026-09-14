@@ -1,0 +1,14 @@
+stdio/gets.c
+mintlib/crtinit.c
+mintlib/getwd.c
+mintlib/linea.c
+mintlib/nf_ops.c
+mintlib/setsysvar.c
+mintlib/spawnve.c
+mintlib/spawnvp.c
+mintlib/syscall.c
+unix/ioctl.c
+unix/sysinfo.c
+signal/siggetmask.c
+gmp/support.c
+tz/dumpstate.c

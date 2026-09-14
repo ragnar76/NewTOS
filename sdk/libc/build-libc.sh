@@ -114,8 +114,13 @@ DIRS="stdio stdlib string mintlib unix syscall time misc multibyte signal termio
 #   mintlib/do_stat.c  -> newtos-arch/do_stat.c   (lean __sys_stat: real Fstat64
 #     trap only, no timestamp/owner tail; __quickstat's Fsfirst emulation does
 #     the real path stat on -ENOSYS)
-# (unix/ioctl.c is m68k Super() asm and never assembles for AArch64 anyway;
-#  newtos-arch/ioctl.c forwards to the GEMDOS Fcntl trap instead.)
+#   unix/ioctl.c -> newtos-arch/ioctl.c  (forwards to the GEMDOS Fcntl trap).
+#     Until TASK/X01 this file was left in the list because it did not compile
+#     anyway: it uses Super()/SuperToUser(), and SuperToUser() still carried
+#     m68k inline asm. With both retargeted (sdk/libc/overlay/include/mint/
+#     osbind.h) it DOES compile now -- and it must still not be used: its body
+#     is the m68k tty path, poking low memory for the line discipline. It is
+#     excluded explicitly so the archive carries exactly one `ioctl`, ours.
 # unix/access.c -> newtos-arch/access.c  (lean access; drops the Unix passwd/
 #   group DB tail getgroups->getpwuid/getgrent/setgrent/endgrent, which has no
 #   TOS analog -- pulled by tz/localtime.c's access() call)
@@ -124,7 +129,7 @@ DIRS="stdio stdlib string mintlib unix syscall time misc multibyte signal termio
 # basepage (a 4-byte p_env is not a char*) AND with the single-tasking model; it
 # was already semantically broken on LP64 (376-byte basepage the kernel can't read)
 # and is unreferenced by any built app (QED/TeraDesk link with 0 undef). Excluded.
-EXCLUDE="mintlib/do_fstat.c mintlib/isatty.c mintlib/do_stat.c unix/access.c mintlib/thread.c"
+EXCLUDE="mintlib/do_fstat.c mintlib/isatty.c mintlib/do_stat.c unix/access.c mintlib/thread.c unix/ioctl.c"
 is_excluded() { case " $EXCLUDE " in *" $1 "*) return 0;; esac; return 1; }
 
 echo "clang : $($CLANG --version | head -1)"

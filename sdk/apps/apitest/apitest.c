@@ -65,9 +65,34 @@
 #define RD_U16(a) (*(volatile unsigned short *)(unsigned long)(a)) /* 2-byte */
 
 static const char LOGPATH[] = "C:\\APITEST.LOG";
+static const char CFGPATH[] = "C:\\APITEST.CFG";
 
 /* 1 once C:\APITEST.LOG has been created; enables the commit-per-line tee. */
 static int g_log_ok = 0;
+
+/*
+ * Batch (non-interactive) mode -- 1 = never block on Cconin().
+ *
+ * APITEST normally pauses on Cconin() at every summary page break and once
+ * more at the very end, so the verdict stays readable on a real Pi-4: there
+ * is no serial line there, and the desktop clears the screen the moment
+ * C:\AUTO returns. A HEADLESS run (QEMU raspi4b, -display none, and on that
+ * machine no keyboard at all -- "[pcie] RC not present ... USB disabled") has
+ * nobody to press that key and would hang forever at the first page break. A
+ * headless run could then never produce a log, which is exactly what such a
+ * run exists for.
+ *
+ * The switch cannot be a command-line argument: TOS gives a program started
+ * from C:\AUTO no command line (its BASEPAGE p_cmdlin is empty), and the
+ * NEWDESK.INF `#Z` autorun path does not fill one either. So it has to come
+ * from the medium. Batch mode is selected by an optional file
+ *
+ *     C:\APITEST.CFG   containing the token  BATCH
+ *
+ * Absent file -- the real-hardware case, and every card built so far --
+ * leaves today's interactive behaviour bit for bit unchanged.
+ */
+static int g_batch = 0;
 
 /* ------------------------------------------------------------------ *
  *  tiny freestanding string/format helpers (no libc)                  *
@@ -111,6 +136,31 @@ static void emit(const char *s)
 {
 	Cconws(s);                              /* -> host.console_write_byte */
 	log_commit(s);
+}
+
+/*
+ * Read C:\APITEST.CFG and report whether it selects batch mode (see g_batch).
+ * The file is optional; any read failure means "interactive", the safe
+ * default. The token is searched for anywhere in the first 64 bytes, so the
+ * file may carry a comment line or CR/LF in any combination.
+ */
+static int batch_requested(void)
+{
+	static char cfg[64];
+	long fd, n;
+	unsigned i;
+
+	fd = Fopen(CFGPATH, 0);                 /* S_READ */
+	if (fd < 0)
+		return 0;
+	n = Fread((short)fd, (long)sizeof(cfg), (long)cfg);
+	(void)Fclose((short)fd);
+	if (n < 5)
+		return 0;
+	for (i = 0; i + 5 <= (unsigned)n; i++)
+		if (mcmp(cfg + i, "BATCH", 5) == 0)
+			return 1;
+	return 0;
 }
 
 /* Line builder: build a line with formatted values, then flush via emit(). */
@@ -192,7 +242,7 @@ static void b_verdict(long rc)
  * mounted, no key pressed within the window, a pointer that cannot be
  * dereferenced from EL0) -- never to hide a wrong result.
  */
-#define MAX_CHECKS 160
+#define MAX_CHECKS 200
 #define V_PASS 0
 #define V_FAIL 1
 #define V_SKIP 2
@@ -202,10 +252,11 @@ static void b_verdict(long rc)
 #define G_BBLK   2
 #define G_BSYS   3
 #define G_AES    4
-#define N_GROUPS 5
+#define G_SUPER  5
+#define N_GROUPS 6
 
 static const char *const GROUP_NAME[N_GROUPS] = {
-	"GEMDOS  ", "BIOS-CHR", "BIOS-BLK", "BIOS-SYS", "AES     "
+	"GEMDOS  ", "BIOS-CHR", "BIOS-BLK", "BIOS-SYS", "AES     ", "SUPER   "
 };
 
 static const char   *chk_name[MAX_CHECKS];
@@ -566,6 +617,87 @@ static int wait_input(unsigned int ticks)
 }
 
 /* ------------------------------------------------------------------ *
+ *  Super / Supexec probe support  (TASK/X01)                          *
+ * ------------------------------------------------------------------ */
+
+/*
+ * The two GEMDOS/XBIOS calls every ported TOS program reaches for when it
+ * wants a low-memory system variable: Super (GEMDOS 0x20) and Supexec
+ * (XBIOS 0x26). On m68k they are the only legal way to touch $400..$5FF;
+ * on NewTOS those cells live in the process's OWN address space
+ * (tos-api/src/bdos/process/loader.rs `populate_sysvars`), so there is no
+ * privilege to gain -- but the CALL still has to behave, because the callers
+ * bracket their accesses with it (TeraDesk library/utility/gettos.c:40-42,
+ * main.c:2090, file.c:945/969, video.c:289/318).
+ *
+ * The probes below drive exactly those shapes. They are written so they are
+ * SAFE in both states of the world: before the binding was retargeted,
+ * Super returned EINVFN (-32) and Supexec returned its own function number
+ * (38), and neither value is ever dereferenced without el0_readable().
+ */
+
+/* An arbitrary, unmistakable LONG the Supexec callee hands back. Positive
+ * and > 0xFFFF, so it can never be confused with a TOS error code or with
+ * XBIOS 0x26's own "unimplemented" answer (38). */
+#define SX_MAGIC 0x5EC0FFEEL
+
+/* Cookie tag 'NTOS' (tos-api/src/cookie.rs:25) and the version the kernel
+ * seeds it with (kernel/src/lib.rs:285). */
+#define TAG_NTOS 0x4E544F53UL
+#define NTOS_VERSION 0x00000100UL
+
+/* Ssystem (GEMDOS 0x154) as a plain LONG-returning call, so the cookie the
+ * kernel really owns can be cross-checked against the per-process $5A0
+ * mirror. Same trap helper mint/mintbind.h uses for Ssystem(); apitest does
+ * not include mintbind.h (it deliberately depends on osbind.h only). */
+#define SSYSTEM(mode, a1, a2) \
+	((long)trap_1_wwll((short)(0x154), (short)(mode), (long)(a1), (long)(a2)))
+#define S_GETCOOKIE 8
+
+/* Did the Supexec callee actually run? A no-op Supexec leaves this at 0. */
+static long sx_calls;
+
+/* The Supexec callee: has a side effect AND a return value, so both halves
+ * of the contract ("the function runs", "its LONG result comes back") are
+ * separately observable. */
+static long sx_probe(void)
+{
+	sx_calls++;
+	return SX_MAGIC;
+}
+
+/*
+ * cflib's get_cookie_adr (sdk/cflib/cflib-21/cookie.c:60-63) in NewTOS form:
+ * fetch the cookie-jar pointer out of _p_cookies. The width is deliberately
+ * FOUR bytes, not the eight a C `long` has here: a TOS system variable is a
+ * 32-bit LONG on the wire, and `ramtop` sits immediately above at $5A4, so
+ * an 8-byte read returns (ramtop << 32) | jar.
+ */
+static long sx_cookie_adr(void)
+{
+	return (long)RD_U32(SV_PCOOKIES);
+}
+
+/* Scan a classic {tag, value} jar for `tag`; 1 + *out on a hit, 0 on a miss.
+ * Terminator is tag == 0 (docs/api/bios/_cookie-jar.md). Bounded by the
+ * jar's 16 slots so a garbage pointer cannot run away. */
+static int sx_jar_find(unsigned long jar, unsigned long tag, unsigned long *out)
+{
+	int i;
+	for (i = 0; i < 16; i++) {
+		unsigned long t = RD_U32(jar + (unsigned long)i * 8);
+		if (t == 0)
+			return 0;
+		if (t == tag) {
+			if (out)
+				*out = RD_U32(jar + (unsigned long)i * 8 + 4);
+			return 1;
+		}
+	}
+	return 0;
+}
+
+/* ------------------------------------------------------------------ *
  *  paged summary output                                               *
  * ------------------------------------------------------------------ */
 
@@ -581,8 +713,10 @@ static void page_emit(void)
 	b_emit();
 	if (++page_used >= PAGE_LINES) {
 		page_used = 0;
-		emit("-- more -- press any key --\r\n");
-		(void)Cconin();
+		if (!g_batch) {
+			emit("-- more -- press any key --\r\n");
+			(void)Cconin();
+		}
 	}
 }
 
@@ -687,6 +821,10 @@ int main(void)
 		}
 	}
 
+	/* Batch-mode probe, before anything can page: a headless run must never
+	 * reach a Cconin(). Deliberately AFTER T01 so the answer is logged. */
+	g_batch = batch_requested();
+
 	/* First COMMITTED line, before any probe: if T02+ faults, this proves on
 	 * the Mac that the log path itself works on real HW. */
 	emit("=== APITEST v1 START ===\r\n");
@@ -697,6 +835,12 @@ int main(void)
 		b_str("T01   C:\\APITEST.LOG created; commit-per-line ACTIVE");
 	else
 		b_str("T01   Fcreate C:\\APITEST.LOG FAILED -> SCREEN-ONLY");
+	b_nl();
+	b_emit();
+	b_reset();
+	b_str("T01b  C:\\APITEST.CFG -> mode = ");
+	b_str(g_batch ? "BATCH (never waits for a key)"
+	              : "INTERACTIVE (pauses on Cconin)");
 	b_nl();
 	b_emit();
 
@@ -1354,6 +1498,148 @@ int main(void)
 	}
 
 	/* ================================================================ *
+	 *  SUPER group -- Super (GEMDOS 0x20) / Supexec (XBIOS 0x26)       *
+	 *                                                                  *
+	 *  Contract source: EmuTOS bdos/rwa.S -- the TRAP #1 front end     *
+	 *  `_enter` (:159-182) intercepts function 0x20 BEFORE the BDOS     *
+	 *  table, and x20_usr (:277-296) / x20_sup (:300-330) / x20_inq     *
+	 *  (:334-339) do the work; bios/vectors.S `_supexec` (:1376) is     *
+	 *  `movea.l 4(a7),a0 / jmp (a0)`.                                   *
+	 *                                                                  *
+	 *  On NewTOS an application runs at EL0 and can never be raised to  *
+	 *  EL1, but it does not need to be: the $400 system-variable area   *
+	 *  is materialised in its OWN address space. So the observable      *
+	 *  contract is "the inquiry tells the truth (user mode), the        *
+	 *  bracket is a no-op that round-trips, and Supexec really calls    *
+	 *  the function and returns its LONG".                              *
+	 * ================================================================ */
+	before("SX Super/Supexec (GEMDOS 0x20 / XBIOS 0x26)");
+	{
+		long inq, tok, inq_in, sxr, jaradr;
+		unsigned long sysbase, ver, ss_val;
+		unsigned long mirror_val = 0, jar_val = 0;
+		long ss_rc;
+
+		/* SX01: Super(1L) is the inquiry. EmuTOS x20_inq returns 0L for a
+		 * user-mode caller. An EL0 NewTOS process IS the user-mode caller
+		 * and can never be anything else, so 0 is both the TOS answer and
+		 * the truthful one. */
+		inq = Super(1L);
+		ck_eq(G_SUPER, "SX01 Super(1L) inquiry reports user mode (0)", inq, 0L);
+
+		/* SX02: Super(0L) must hand back a usable token. Every caller feeds
+		 * it straight back into Super(token) to close the bracket, so the
+		 * only hard requirement is "neither 0 nor 1" -- 0 would re-open the
+		 * bracket, 1 would be read as the inquiry. An error code (-32) is
+		 * not a token. */
+		tok = Super(0L);
+		b_reset();
+		b_str("SX    Super(0L) token = ");
+		b_hex((unsigned long)tok, 8);
+		b_nl();
+		b_emit();
+		ck_bool(G_SUPER, "SX02 Super(0L) returns a token, not an error",
+			tok > 1L);
+
+		/* SX03: inside the bracket the inquiry must STILL say user mode --
+		 * NewTOS has no supervisor mode to have entered. */
+		inq_in = Super(1L);
+		ck_eq(G_SUPER, "SX03 Super(1L) inside the bracket still says 0",
+		      inq_in, 0L);
+
+		/* SX04: the TeraDesk get_tosversion() shape, verbatim
+		 * (library/utility/gettos.c:38-44): Super(NULL), read
+		 * _sysbase->os_version, Super(stack). Must yield 0x0404. */
+		sysbase = RD_U32(0x4F2UL);
+		ver = el0_readable(sysbase) ? RD_U16(sysbase + 2) : 0;
+		Super((void *)tok);              /* close the bracket */
+		b_reset();
+		b_str("SX    _sysbase=");
+		b_hex(sysbase, 8);
+		b_str(" os_version=");
+		b_hex(ver, 4);
+		b_nl();
+		b_emit();
+		ck_hex(G_SUPER, "SX04 gettos.c shape: os_version via Super bracket",
+		       ver, 0x0404UL);
+
+		/* SuperToUser() -- mintlib's stack-safe way to close the bracket --
+		 * is retargeted in the same header, but it is deliberately NOT
+		 * probed here: its m68k form does not COMPILE for AArch64, so a
+		 * probe would make this program unbuildable in the before-state and
+		 * destroy the controlled before/after comparison. Its proof is the
+		 * libc build instead: sdk/libc/build/failed.txt loses
+		 * mintlib/setsysvar.c and unix/sysinfo.c, which failed on nothing
+		 * but that macro ("unknown register name 'a0' in asm").
+		 *
+		 * SX05/SX06: Supexec must CALL the function and return its LONG
+		 * (EmuTOS `jmp (a0)`). Before the binding was retargeted XBIOS 0x26
+		 * answered with its own function number, 38, and the callee never
+		 * ran -- both halves are checked separately so the log says which. */
+		sx_calls = 0;
+		sxr = Supexec(sx_probe);
+		b_reset();
+		b_str("SX    Supexec(sx_probe) = ");
+		b_hex((unsigned long)sxr, 8);
+		b_str("  calls=");
+		b_dec(sx_calls);
+		b_nl();
+		b_emit();
+		ck_hex(G_SUPER, "SX05 Supexec returns the callee's LONG",
+		       (unsigned long)sxr, (unsigned long)SX_MAGIC);
+		ck_eq(G_SUPER, "SX06 Supexec really ran the callee", sx_calls, 1L);
+
+		/* SX07: the cflib getcookie() shape (cflib-21/cookie.c:76):
+		 * Supexec(get_cookie_adr) must deliver the _p_cookies value. */
+		jaradr = Supexec(sx_cookie_adr);
+		b_reset();
+		b_str("SX    Supexec(get_cookie_adr) = ");
+		b_hex((unsigned long)jaradr, 8);
+		b_str("  [$5A0 holds ");
+		b_hex((unsigned long)RD_U32(SV_PCOOKIES), 8);
+		b_str("]");
+		b_nl();
+		b_emit();
+		ck_hex(G_SUPER, "SX07 Supexec(get_cookie_adr) == _p_cookies",
+		       (unsigned long)jaradr, (unsigned long)RD_U32(SV_PCOOKIES));
+
+		/* SX08: and the jar it points at must carry the NewTOS identity
+		 * cookie. Guarded: before the retarget `jaradr` was 38, which
+		 * el0_readable() rejects, so this reports SKIP instead of faulting. */
+		if (!el0_readable((unsigned long)jaradr)) {
+			ck_skip(G_SUPER, "SX08 jar via Supexec carries NTOS=0x100",
+				"Supexec did not return a readable pointer");
+		} else if (!sx_jar_find((unsigned long)jaradr, TAG_NTOS, &jar_val)) {
+			ck_bool(G_SUPER, "SX08 jar via Supexec carries NTOS=0x100", 0);
+		} else {
+			ck_hex(G_SUPER, "SX08 jar via Supexec carries NTOS=0x100",
+			       jar_val, NTOS_VERSION);
+		}
+
+		/* SX09/SX10: does the per-process $5A0 MIRROR agree with the jar the
+		 * kernel itself owns? The mirror is written once, when the program is
+		 * loaded (loader.rs `populate_sysvars`); Ssystem(S_GETCOOKIE) reads
+		 * the live kernel jar. Equal values mean the snapshot is still
+		 * current for this process -- the question TASK/X01 asks. */
+		(void)sx_jar_find((unsigned long)RD_U32(SV_PCOOKIES), TAG_NTOS,
+				  &mirror_val);
+		ss_val = 0;
+		ss_rc = SSYSTEM(S_GETCOOKIE, (long)TAG_NTOS, (long)&ss_val);
+		b_reset();
+		b_str("SX    NTOS: $5A0 mirror=");
+		b_hex(mirror_val, 8);
+		b_str("  Ssystem rc=");
+		b_dec(ss_rc);
+		b_str(" val=");
+		b_hex(ss_val, 8);
+		b_nl();
+		b_emit();
+		ck_eq(G_SUPER, "SX09 Ssystem(S_GETCOOKIE,NTOS) succeeds", ss_rc, 0L);
+		ck_hex(G_SUPER, "SX10 $5A0 mirror agrees with the kernel jar",
+		       mirror_val, ss_val);
+	}
+
+	/* ================================================================ *
 	 *  BIOS group -- trap 13, function ids 0x00..0x0B.                 *
 	 *                                                                  *
 	 *  Contract source: docs/api/bios/ (one .md per function),         *
@@ -1808,9 +2094,13 @@ int main(void)
 	 * moment C:\AUTO returns. It is still teed to C:\APITEST.LOG. */
 	summary();
 
-	g_log_ok = 0;                /* stop teeing to file: prompt is screen-only */
-	emit("\r\nPress any key to continue (then the desktop starts)...\r\n");
-	(void)Cconin();              /* blocks; USB-HID/IKBD from AUTO */
+	if (!g_batch) {
+		g_log_ok = 0;        /* stop teeing to file: prompt is screen-only */
+		emit("\r\nPress any key to continue (then the desktop starts)...\r\n");
+		(void)Cconin();      /* blocks; USB-HID/IKBD from AUTO */
+	} else {
+		emit("\r\n=== APITEST BATCH: no key wait, continuing ===\r\n");
+	}
 
 	Pterm(0);                    /* GEMDOS 0x4C -- does not return */
 	return 0;                    /* unreachable; crt0 would Pterm(0) anyway */

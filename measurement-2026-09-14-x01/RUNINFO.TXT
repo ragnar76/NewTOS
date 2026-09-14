@@ -1,0 +1,117 @@
+X01 -- Super (GEMDOS 0x20) und Supexec (XBIOS 0x26) im Werkzeug-Overlay
+=======================================================================
+
+Datum          2026-09-14
+Basis          desk-rebuild, HEAD a9a5f8a, Baum vorher sauber
+EmuTOS-Pin     references/emutos @ 1a7484aba1bfba23e2c0899e243b6d8177fe41df
+Ticket         TASK/X01.md, Quittung TASK/X01-STATUS-DONE.MD
+
+
+1  WAS GEAENDERT WURDE  (kein Rust, nur die C-Werkzeugkette)
+-------------------------------------------------------------------------
+sdk/libc/overlay/include/mint/osbind.h
+    Super(ptr)        m68k-Trap 0x20        -> EL0-Fassung mit Herleitung
+    SuperToUser(ptr)  m68k-Inline-Assembler -> ((void)Super(ptr))
+    Supexec(funcptr)  XBIOS-Trap 0x26       -> direkter Aufruf, Ergebnis LONG
+sdk/libc/build-libc.sh
+    unix/ioctl.c in EXCLUDE (uebersetzt jetzt; newtos-arch/ioctl.c bleibt
+    die einzige ioctl-Definition im Archiv)
+sdk/apps/apitest/apitest.c
+    Stapelloser Modus (C:\APITEST.CFG mit "BATCH"), neue Gruppe SUPER mit
+    zehn Proben SX01..SX10
+
+
+2  DIE MASCHINENLAEUFE  (QEMU raspi4b, headless, 640x480)
+-------------------------------------------------------------------------
+Gleicher Kern in allen sechs Laeufen -- diese Arbeit fasst keinen Rust an:
+    kernel8.img  sha256 e23991f0010c9f4117441a2b6ee28299c1301d1a8a5c4755b3f3f3f8f928e536
+    ELF rpi4     sha256 18eb2ad7b703833c603971f1e695b38c191e283711f94181ab294f6fc45bfa6e
+    ELF virt     sha256 292d0505af4ea8c7272f62ca531e0cd8d01fc85da09c82ea58c76e02ee03da53
+
+Karte: measurement-2026-09-13-regression/qemu-tmp/sd-base.img, dazu
+\AUTO\APITEST.NCP + C:\APITEST.CFG ("BATCH"), method/prep-card.sh.
+Drei Faelle je Zustand: Standarddesktop (apitest), `#Z`-Autorun TeraDesk,
+`#Z`-Autorun QED.  method/run-case.sh + method/qmp.py.
+
+VORHER (Overlay des HEAD, before/APITEST.LOG Zeile 113-127):
+    SX01 Super(1L) inquiry reports user mode (0)      got=-32   [FAIL]
+    SX    Super(0L) token = 0xFFFFFFFFFFFFFFE0
+    SX02 Super(0L) returns a token, not an error                [FAIL]
+    SX03 Super(1L) inside the bracket still says 0   got=-32    [FAIL]
+    SX04 gettos.c shape: os_version via Super bracket got=0x404 [OK]
+    SX    Supexec(sx_probe) = 0x00000026  calls=0
+    SX05 Supexec returns the callee's LONG           got=0x26   [FAIL]
+    SX06 Supexec really ran the callee               got=0      [FAIL]
+    SX    Supexec(get_cookie_adr) = 0x00000026  [$5A0 holds 0x000005F0]
+    SX07 Supexec(get_cookie_adr) == _p_cookies       got=0x26   [FAIL]
+    SX08 jar via Supexec carries NTOS=0x100  [SKIP: kein lesbarer Zeiger]
+    SX09 Ssystem(S_GETCOOKIE,NTOS) succeeds          got=0      [OK]
+    SX10 $5A0 mirror agrees with the kernel jar      got=0x100  [OK]
+    SUPER 3 bestanden / 6 gefallen / 1 uebersprungen
+
+NACHHER (after/APITEST.LOG, dieselben Zeilen):
+    SX01 got=0      [OK]      SX02 [OK]   Super(0L) token = 0x003FFEE0
+    SX03 got=0      [OK]      SX04 got=0x404 [OK]  -- UNVERAENDERT
+    SX    Supexec(sx_probe) = 0x5EC0FFEE  calls=1
+    SX05 [OK]  SX06 [OK]  SX07 got=0x5F0 [OK]  SX08 got=0x100 [OK]
+    SX09 [OK]  SX10 [OK]
+    SUPER 10 bestanden / 0 gefallen / 0 uebersprungen
+    GESAMT 92 / 0 / 5  (vorher 85 / 6 / 6)
+
+Der Token 0x003FFEE0 liegt im eigenen TPA, knapp unter p_hitpa =
+0x00400000 -- das ist SP_EL0, wie hergeleitet.
+
+Rest des Protokolls: nur T29.1/T29.3 melden eine andere DTA-Adresse
+(0x11CF0 -> 0x11CC0), weil APITEST.NCP selbst 152 Bytes kleiner wurde.
+Kein Verhaltensunterschied.
+
+BILDPUNKTVERGLEICH (method/compare-png.py, Punkt fuer Punkt):
+    teradesk-before.png vs teradesk-after.png   0 von 307200 verschieden
+    qed-before.png      vs qed-after.png        0 von 307200 verschieden
+    apitest-before.png  vs apitest-after.png  134 von 307200 verschieden
+      -- ausschliesslich die Ziffern in "385373 bytes used" ->
+         "384984 bytes used" im Verzeichnisfenster; die Karte traegt ein
+         kleineres APITEST.NCP und ein kuerzeres APITEST.LOG.
+
+TeraDesks tos_version: SX04 faehrt die Form von get_tosversion()
+(gettos.c:38-44) woertlich und liefert vor wie nach der Aenderung 0x0404.
+
+
+3  BAUTEN
+-------------------------------------------------------------------------
+libc.a       vorher 611 uebersetzt / 14 uebersprungen
+             nachher 613 / 11  (before/libc-failed.txt gegen
+             after/libc-failed.txt): mintlib/setsysvar.c und
+             unix/sysinfo.c uebersetzen jetzt, unix/ioctl.c ist von
+             "gescheitert" nach "ausgeschlossen" umgezogen.
+DESKTOP.NAP  282192 -> 282096 Bytes, 48/48 Dateien, 0 undefinierte Symbole
+QED.NAP      571424 -> 571424 Bytes, sha256 UNVERAENDERT
+             c2173506be1dbec13d251ecba0ecbee4c9eccec9a9f4ca13c79c1a03ecc7b083
+             -- QED erreicht Super/Supexec ueberhaupt nicht.
+
+Kern, beide Boards, --release, je nach `touch` der Crate-Wurzeln; beide
+Protokolle zeigen "Compiling tos-api" UND "Compiling kernel":
+    build-rpi4.log, build-qemuvirt.log
+Warnungen -- Sollstand gehalten, Delta 0 (kein Rust angefasst):
+    rustc    tos-api 64 / kernel 94    (auf beiden Boards)
+    clippy   tos-api 81 / kernel 125   (kernel auf beiden Boards)
+Hosttests: cargo run -p xtask -- test  ->  547 bestanden / 0 gefallen /
+    1 uebersprungen  (host-test.log)
+qemu-virt-Rauchprobe: bootet, "[desk] desktop up (0 drives)", kein Fault
+    (qemuvirt-BOOT-SERIAL.txt)
+
+
+4  WAS QEMU HIER NICHT ZEIGEN KANN
+-------------------------------------------------------------------------
+a) Der interaktive Teil. raspi4b meldet "[pcie] RC not present ... USB
+   disabled" -- es gibt dort keine Eingabe. Damit sind die drei
+   Aufrufstellen, die erst ein Menuebefehl erreicht, nicht fahrbar:
+     TeraDesk main.c:2090/2118  "Quit -> Shutdown"
+     TeraDesk file.c:945/969    force_mediach, nach einem Medienwechsel
+     TeraDesk video.c:289/318   Videoeinstellungen mit Overscan-Umschalter
+   Gefahren wurde nur gettos.c:40-42, und das laeuft bei jedem Start.
+b) main.c:2118 ist ausserdem absichtlich NICHT gefahren worden: mit einem
+   echten Supexec ruft TeraDesk dort lobo() (main.c:1723), eine
+   Endlosschleife, die die Maschine absichtlich festsetzt. Siehe TASK/X01.
+c) Eine echte Pi 4 ist fuer den stapellosen Modus nicht noetig: ohne
+   C:\APITEST.CFG bleibt apitest wie bisher interaktiv.
