@@ -190,14 +190,22 @@ fn snapshot_window_handles(out: &mut [i16; global::NUM_WNODES]) -> usize {
 /// `send_redraw` path, exactly like EmuTOS — this function is never called from a
 /// window-manager message handler.
 ///
-/// Composites the AES background + every window frame (`window::redraw`, the AES
-/// compositor — restoring frames a self-drawn dialog / launched app clobbered),
+/// Runs `form_dial(FMD_FINISH, 0,0,0,0, 0,0,scr_w,scr_h)` — the AES call
+/// EmuTOS's desktop makes for exactly this ("switch back to normal desktop",
+/// `desksupp.c:826`, after the file viewer has owned the screen). The AES
+/// repaints the background + every window frame over that rectangle and fans a
+/// `WM_REDRAW` out to each window it covers (`gemfmlib.c:375-379`). It then
 /// re-lays every window's content occlusion-clipped via [`do_wredraw`]
-/// ([`win_shwall_nocursor`]), and repaints the menu-bar strip a full-screen
-/// program may have overwritten. The cursor is hidden once for the whole
-/// composite (`window::redraw` does not manage it) and the window-content fan-out
-/// runs cursor-unbracketed so no inner `graf_mouse(M_ON)` flashes the cursor over
-/// a half-drawn desktop.
+/// ([`win_shwall_nocursor`]) and repaints the menu-bar strip a full-screen
+/// program may have overwritten.
+///
+/// The content fan-out is redundant with the `WM_REDRAW`s `form_dial` now posts
+/// (the event loop will answer those on its next turn) and should go when the
+/// callers below move onto `form_dial(FMD_START/FMD_FINISH)` themselves; it is
+/// kept for now so a boot paint does not depend on the loop having started.
+/// The cursor is hidden once for the whole composite and the window-content
+/// fan-out runs cursor-unbracketed so no inner `graf_mouse(M_ON)` flashes the
+/// cursor over a half-drawn desktop.
 ///
 /// The Module-2 self-drawn dialogs and Module-4 file ops that still call this
 /// should, when those modules are rebuilt, move their restore onto the AES
@@ -205,8 +213,9 @@ fn snapshot_window_handles(out: &mut [i16; global::NUM_WNODES]) -> usize {
 /// longer need a whole-desktop composite either — tracked as a follow-up.
 pub fn redraw_desktop() {
     graf_mouse(M_OFF);
-    // AES background + every window frame, occluded by draw order.
-    tos_api::aes::window::redraw();
+    // AES background + every window frame over the whole screen, occluded by
+    // draw order, plus a WM_REDRAW to every window it covers.
+    super::form_dial_finish(super::screen_rect());
     // Each open window's content, occlusion-clipped — no inner cursor toggle.
     win_shwall_nocursor();
     // The menu bar (top strip), which a full-screen program may have clobbered.

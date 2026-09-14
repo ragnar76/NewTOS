@@ -1111,10 +1111,8 @@ fn mk(ty: u16, fl: u16, spec: u64, x: i16, y: i16, w: i16, h: i16, next: i16, he
 
 /// The current screen dimensions.
 fn screen_dims() -> (i16, i16) {
-    match tos_api::host::host().and_then(|h| h.raster()) {
-        Some(b) => (b.width() as i16, b.height() as i16),
-        None => (640, 480),
-    }
+    let r = super::screen_rect();
+    (r.w, r.h)
 }
 
 /// Append a decimal rendering of `v` to `buf` at `*p` (bounded by `buf.len()`).

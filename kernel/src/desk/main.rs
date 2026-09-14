@@ -499,22 +499,26 @@ fn launch_native(path: &str, name: &str, flavor: ftype::Flavor, tail: &[u8]) {
     }
 }
 
-/// Launch a GEM application with the single-tasking **screen handoff** — the
-/// EmuTOS child-launch *relinquish → run → resume* sequence (findings-log F5,
-/// `gemshlib.c:276-282,606,710-727`, `deskmain.c:2085-2171`). NewTOS runs the
-/// child as a **nested** call from the desktop's event loop (no separate desktop
-/// process that Pterms), so the desktop must explicitly give up — and later
-/// rebuild — the shared AES screen state around the child:
+/// Launch a GEM application: the EmuTOS desktop *epilog* → child → *prolog*
+/// sequence, run **nested** inside the desktop's event loop.
 ///
-/// * **relinquish** ([`desktop_relinquish`], before the child): remove the
-///   desktop menu bar (`menu_bar(NULL,0)`), hide the desktop's own windows out
-///   of the shared AES window list (saved, not destroyed), un-register the
-///   desktop-background tree, leave the AES (`appl_exit()`), and clear the
-///   screen with the AES's own `sh_draw(cmd, TRUE)` — the child then composites
-///   on a clean screen with only its own windows + menu;
-/// * **resume** ([`desktop_resume`], after the child's `Pterm`): restore the
-///   painter + the saved window set, rebuild the menu bar, and repaint — the
-///   desktop is exactly as before the launch.
+/// **This is not how EmuTOS launches a program, and the difference is AES gap
+/// G1.** In EmuTOS the desktop calls `shel_write(SHW_EXEC, …)` (`deskpro.c:41`,
+/// AES opcode 121), `hndl_button` gets TRUE back and sets `done`
+/// (`deskmain.c:988`), `deskmain` runs its epilog and **returns**, the desktop
+/// process terminates, and the AES shell loop `sh_main` (`gemshlib.c:708-731`)
+/// does the rest: `wm_init()`, `ratinit()`, `sh_draw(D.s_cmd, TRUE)`, then
+/// `sh_ldapp` loads the child. When the child `Pterm`s, `sh_main` loops and
+/// re-enters the desktop from the top. NewTOS has that shell loop
+/// ([`crate::shell_loop::sh_main`], which already performs every one of those
+/// steps) — but [`crate::desk::run`] never returns, so the desktop can never
+/// hand control back to it and instead calls the loader itself.
+///
+/// * **relinquish** ([`desktop_relinquish`], before the child): the EmuTOS
+///   desktop epilog — `menu_bar(NULL,0)`, `wind_set(DESKWH, WF_NEWDESK, NULL)`,
+///   `appl_exit()` (`deskmain.c:2159-2166`);
+/// * **resume** ([`desktop_resume`], after the child's `Pterm`): `appl_init()`,
+///   re-register the background tree, repaint.
 ///
 /// Returns whether the child launched (`run_program` → `true`).
 fn run_gem_app(path: &[u8], tail: &[u8]) -> bool {
@@ -524,18 +528,29 @@ fn run_gem_app(path: &[u8], tail: &[u8]) -> bool {
     ran
 }
 
-/// The **relinquish** half of [`run_gem_app`]: give up the shared AES screen
-/// state to a launching GEM app (EmuTOS desktop epilog + `sh_draw` CLEAR_SCREEN).
+/// The **relinquish** half of [`run_gem_app`]: the EmuTOS desktop *epilog*
+/// (`deskmain.c:2159-2166`) — the three steps the desktop takes before it gives
+/// the screen up, every one of them a plain AES call the desktop is entitled to
+/// make.
+///
+/// **What used to be here and is now gone (AES gap G1/G2).** Two further steps
+/// stood here, neither of which is an AES function: a `save_windows()` snapshot
+/// of the shared AES window table and a `sh_draw_clear()` screen white-out. Both
+/// existed only because NewTOS runs the child *nested* inside the desktop's own
+/// event loop. EmuTOS never needs either: `hndl_button`'s `do_filemenu(OPENITEM)`
+/// returns TRUE (`deskmain.c:988`), `deskmain`'s loop ends, the desktop process
+/// **terminates**, and the AES shell loop — not the desktop — does the window
+/// teardown (`wm_init()`, `gemshlib.c:717`) and the clear (`sh_draw(D.s_cmd,
+/// TRUE)`, `gemshlib.c:719`) before it loads the child. Both of those live in
+/// `crate::shell_loop::sh_main` already; the desktop has no business doing them.
 fn desktop_relinquish() {
     // Remove the desktop menu bar (EmuTOS `menu_bar(NULL,0)`). Our AES
     // `menu_bar(tree, 0)` needs the real (non-null) tree to erase the strip.
     super::menu_bar(menu::tree_ptr(), 0);
-    // Hide the desktop's own windows out of the shared AES window list (saved for
-    // the resume) and un-register the desktop background tree (EmuTOS
+    // Un-register the desktop background tree (EmuTOS
     // `wind_set(DESKWH, WF_NEWDESK, NULL, 0, 0)`, `deskmain.c:2163`) so the AES
     // `w_drawdesk` falls back to its own built-in DESKTOP root
     // (`gemwmlib.c:340-359,1268-1271`).
-    tos_api::aes::window::save_windows();
     super::wind_set_newdesk(0, 0);
     // Leave the AES — EmuTOS `appl_exit()` (`deskmain.c:2166`), the last step of
     // the desktop epilog and the first of the two state resets at this boundary.
@@ -544,20 +559,11 @@ fn desktop_relinquish() {
     // stops the child inheriting the desktop's unread `WM_*` — desktop and first
     // child share pid 1 here exactly as EmuTOS's successive programs share `rlr`
     // (`gemshlib.c:633-636`), so without it the child's first `evnt_mesag` hands
-    // it a `WM_REDRAW` for a window it does not own and that `save_windows()`
-    // has just taken out of the live list (A28). Last, as in EmuTOS: the two
-    // steps above must be able to queue, this one must not be followed by
+    // it a `WM_REDRAW` for a window it does not own (A28). Last, as in EmuTOS:
+    // the step above must be able to queue, this one must not be followed by
     // anything that can. The second reset is `rlr->p_flags = 0`, done where
     // EmuTOS does it — at the handover in `tos_api::aes::register_process`.
     super::appl_exit();
-    // Clear the screen — EmuTOS `sh_draw(D.s_cmd, TRUE)`, the shell loop's step
-    // between the desktop terminating and the child being loaded
-    // (`gemshlib.c:719`): a one-shot white-out drawn from the built-in DESKTOP
-    // tree with its `ob_spec` swapped for `CLEAR_SCREEN` and put straight back.
-    // It does **not** make the background permanently white: a later
-    // `w_drawdesk` — the child's own `form_dial(FMD_FINISH)`, say — repaints it
-    // with the DESKTOP root's real spec, the green dither (`gemwmlib.c:340-359`).
-    tos_api::aes::shell::sh_draw_clear();
 }
 
 /// The **resume** half of [`run_gem_app`]: rebuild the desktop exactly as it was
@@ -574,13 +580,17 @@ fn desktop_resume() {
     // not undo the relinquish's drain.
     super::appl_init();
     // Re-register the desktop's background object tree (EmuTOS
-    // `wind_set(DESKWH, WF_NEWDESK, G.g_screen, 1, 0)`, `deskmain.c:2049`) and
-    // restore the saved window set (discarding whatever the child left in the
-    // shared list). The AES `w_drawdesk` draws `DROOT` + icons again from here.
+    // `wind_set(DESKWH, WF_NEWDESK, G.g_screen, 1, 0)`, `deskmain.c:2049`).
+    // The AES `w_drawdesk` draws `DROOT` + icons again from here.
+    //
+    // **AES gap G2.** The window set is *not* restored: `restore_windows()` was
+    // removed with its `save_windows()` counterpart. EmuTOS does not restore
+    // either — it re-enters `deskmain` from scratch (`gemshlib.c:600-612`) and
+    // rebuilds its windows from the desktop's **own** context save area
+    // (`cnx_get`, `deskmain.c:2055`), which this desktop does not have.
     if let Some(tree) = super::global::screen_addr() {
         super::wind_set_newdesk(tree, super::global::DROOT);
     }
-    tos_api::aes::window::restore_windows();
     // App-return recovery: the child cleared/overdrew the whole screen, so rebuild
     // the desktop background + windows + menu bar (`redraw_desktop` re-installs the
     // menu bar itself). Not a per-event shortcut — a genuine whole-screen restore.

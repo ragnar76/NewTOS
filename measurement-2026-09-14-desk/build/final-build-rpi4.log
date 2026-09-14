@@ -1,0 +1,4 @@
+=== build rpi4 --release ===
+warning: `tos-api` (lib) generated 64 warnings
+warning: `kernel` (lib) generated 94 warnings
+    Finished `release` profile [optimized + debuginfo] target(s) in 4.98s

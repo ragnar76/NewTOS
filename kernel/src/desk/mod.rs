@@ -53,10 +53,14 @@ const OP_APPL_EXIT: i16 = 19;
 const OP_EVNT_BUTTON: i16 = 21;
 const OP_EVNT_MULTI: i16 = 25;
 const OP_MENU_BAR: i16 = 30;
+const OP_MENU_ICHECK: i16 = 31;
+const OP_MENU_IENABLE: i16 = 32;
 const OP_MENU_TNORMAL: i16 = 33;
+const OP_OBJC_ADD: i16 = 40;
 const OP_OBJC_DRAW: i16 = 42;
 const OP_OBJC_FIND: i16 = 43;
 const OP_FORM_DO: i16 = 50;
+const OP_FORM_DIAL: i16 = 51;
 const OP_FORM_ALERT: i16 = 52;
 const OP_GRAF_RUBBERBOX: i16 = 70;
 const OP_GRAF_DRAGBOX: i16 = 71;
@@ -87,6 +91,10 @@ const WF_NEWDESK: i16 = 14;
 pub(super) const WF_HSLSIZ: i16 = 15;
 pub(super) const WF_VSLSIZ: i16 = 16;
 const WC_WORK: i16 = 1;
+
+/// `form_dial` type `FMD_FINISH` (`aesdefs.h:342`) — release the dialog screen
+/// area and restore what was under it.
+const FMD_FINISH: i16 = 3;
 
 // graf_mouse cursor-control numbers (`aesdefs.h`): hide / show around a paint.
 pub(super) const M_OFF: i16 = 256;
@@ -195,6 +203,20 @@ pub(super) fn appl_exit() {
 }
 
 // ── aesbind wrappers (window manager) ──────────────────────────────────────
+
+/// `objc_add(tree, parent, child)` (40) — link `child` as the last child of
+/// `parent` in the desktop's own object arena. EmuTOS `deskobj.c:145` (the
+/// structural window boxes under ROOT) and `:232` (`obj_ialloc`, every item
+/// object a window view allocates) both go through this binding
+/// (`desk/gembind.c:352-358`, `AES_CTRL_CODE(OBJC_ADD, 2, 1, 1)`) rather than
+/// writing `ob_head`/`ob_tail`/`ob_next` by hand.
+pub(super) fn objc_add(tree: u64, parent: i16, child: i16) {
+    let mut a = Aes::new();
+    a.addrin[0] = tree as i64;
+    a.intin[0] = parent;
+    a.intin[1] = child;
+    a.call(OP_OBJC_ADD, 2, 1, 1);
+}
 
 /// `objc_draw` (42) the subtree rooted at `root` of the desktop object arena
 /// `tree`, clipped to `clip`. Used by `do_wredraw` to paint a window's item
@@ -459,6 +481,32 @@ pub(super) fn menu_bar(tree: u64, show: i16) {
     a.call(OP_MENU_BAR, 1, 1, 1);
 }
 
+/// `menu_icheck(tree, item, checked)` (31) — set/clear the `CHECKED` `ob_state`
+/// bit on menu item `item` (`desk/gembind.c:302-308`,
+/// `AES_CTRL_CODE(MENU_ICHECK, 2, 1, 1)`). The AES `do_chg` runs with
+/// `dodraw = FALSE` (`aes/gemsuper.c:172`), so a closed drop-down is *not*
+/// repainted — the state is simply recorded for when the box next opens.
+pub(super) fn menu_icheck(tree: u64, item: i16, checked: bool) {
+    let mut a = Aes::new();
+    a.addrin[0] = tree as i64;
+    a.intin[0] = item;
+    a.intin[1] = checked as i16;
+    a.call(OP_MENU_ICHECK, 2, 1, 1);
+}
+
+/// `menu_ienable(tree, item, enable)` (32) — set/clear the `DISABLED`
+/// `ob_state` bit on menu item `item` (`desk/gembind.c:311-317`). Bit 15 of the
+/// item word is the AES's redraw-now flag (`aes/gemsuper.c:175-176`); EmuTOS's
+/// `men_update`/`men_list` never set it, so neither does this wrapper and the
+/// call never paints.
+pub(super) fn menu_ienable(tree: u64, item: i16, enable: bool) {
+    let mut a = Aes::new();
+    a.addrin[0] = tree as i64;
+    a.intin[0] = item;
+    a.intin[1] = enable as i16;
+    a.call(OP_MENU_IENABLE, 2, 1, 1);
+}
+
 /// `menu_tnormal(tree, title, normal)` (33) — draw `title` normal (`normal =
 /// 1`) or highlighted (`0`).
 pub(super) fn menu_tnormal(tree: u64, title: i16, normal: bool) {
@@ -493,6 +541,27 @@ pub(super) fn form_do(tree: u64) -> i16 {
     a.intin[0] = 0; // editable-field focus start
     a.call(OP_FORM_DO, 1, 1, 1);
     a.intout[0]
+}
+
+/// `form_dial(FMD_FINISH, 0,0,0,0, x,y,w,h)` (51) — release the screen area
+/// `(x, y, w, h)` and restore what was under it: the AES repaints the desktop
+/// background plus every window frame over that rectangle and fans a
+/// `WM_REDRAW` out to each window it touches (`aes/gemfmlib.c:375-379`).
+///
+/// This is EmuTOS's whole-screen restore idiom after something has taken the
+/// screen over — `desksupp.c:826` uses exactly
+/// `form_dial(FMD_FINISH, 0,0,0,0, 0,0,scr_width,scr_height)` when the
+/// file viewer hands the screen back. The small (`int_in[1..4]`) rectangle is
+/// unused by `FMD_FINISH`; EmuTOS passes zeros, so we do too.
+pub(super) fn form_dial_finish(r: Grect) {
+    let mut a = Aes::new();
+    a.intin[0] = FMD_FINISH;
+    // int_in[1..4]: the "little" rect — ignored by FMD_FINISH (EmuTOS passes 0).
+    a.intin[5] = r.x;
+    a.intin[6] = r.y;
+    a.intin[7] = r.w;
+    a.intin[8] = r.h;
+    a.call(OP_FORM_DIAL, 9, 1, 0);
 }
 
 /// `objc_draw` (42) the whole tree `tree` from `ROOT` (0) — used to paint a
@@ -539,16 +608,36 @@ pub(super) fn evnt_multi(flags: u16, msg: &mut [i16; 8]) -> EvntOut {
     }
 }
 
+// ── Screen geometry, from the AES only ─────────────────────────────────────
+
+/// `G.g_desk` — the desktop work area (the screen minus the menu-bar row).
+/// Cached in [`global`] from `wind_get(DESKWH, WF_WXYWH)` at boot, exactly as
+/// EmuTOS caches it (`deskmain.c:1959`); before the desktop state exists the
+/// AES is asked directly. Nothing here consults the framebuffer.
+pub(super) fn g_desk() -> Grect {
+    match global::with(|g| g.g_desk) {
+        Some(d) => d,
+        None => wind_get_grect(win::DESKWH, WF_WXYWH),
+    }
+}
+
+/// The full screen as a `GRECT`, derived from [`g_desk`] the way EmuTOS derives
+/// it when it needs the whole screen: `scr_width = G.g_desk.g_w;
+/// scr_height = G.g_desk.g_y + G.g_desk.g_h;` (`desksupp.c:786-787`).
+pub(super) fn screen_rect() -> Grect {
+    let d = g_desk();
+    Grect { x: 0, y: 0, w: d.w, h: d.y + d.h }
+}
+
 // ── Boot entry ─────────────────────────────────────────────────────────────
 
 /// The desktop entry point (EmuTOS `deskmain`): one-time setup (metrics, the
 /// desktop icon tree, menu bar), open the first directory window, paint the
 /// full desktop, then hand off to the interaction event loop ([`main::run`]).
 pub fn run() {
-    let Some(backend) = tos_api::host::host().and_then(|h| h.raster()) else {
-        kprintln!("[desk] no framebuffer — desktop not started");
-        return;
-    };
+    // No raster check here: `sh_ldapp`'s DESKTOP arm only reaches this function
+    // when `gl_shgem` is set (`gemshlib.c:600-601`, `crate::shell_loop`), which
+    // is where EmuTOS makes that decision too.
 
     // The desktop is a normal AES application. Register it FIRST (EmuTOS
     // `deskmain.c:1953`: `gl_apid = appl_init();` — the first library-init step,
@@ -563,13 +652,18 @@ pub fn run() {
         kprintln!("[desk] appl_init failed — AES window redraws will be dropped");
     }
 
+    // `wind_get_grect(DESKWH, WF_WXYWH, &G.g_desk)` — the desktop work area,
+    // straight after `appl_init` exactly as EmuTOS orders it
+    // (`deskmain.c:1953-1959`). This is where the desktop learns the screen
+    // geometry; it does not ask the framebuffer.
+    let desk = wind_get_grect(win::DESKWH, WF_WXYWH);
+
     // One-time setup: DeskState (view/sort defaults, window list, object arena).
-    global::init(backend.width() as i16, backend.height() as i16);
+    global::init(desk);
 
     // Grid metrics: app_start (icon cell + desktop pitch) → win_view (window
     // pitch; needs the full-window work width from the AES) → app_blddesk
     // (desktop drive/trash/printer icon tree).
-    let desk = global::with(|g| g.g_desk).unwrap_or_default();
     let full_work_w = wind_calc_work_width(desk);
     global::with(|g| {
         g.full_work_w = full_work_w;
@@ -608,14 +702,14 @@ pub fn run() {
     menu::men_update();
     redraw::redraw_desktop();
 
-    // Park the mouse pointer at the screen centre so the desktop boots into a
-    // clean idle state (GEM positions the pointer at startup). Without this the
-    // cursor sits at (0,0) — `tos-api`'s `graf_mouse(M_ON)` re-stores the
-    // pre-`ensure_init` position — over the menu bar, whose AES hover-menu would
-    // then open the Desk drop-down at boot. Reported to the lead as a `tos-api`
-    // cursor-init note; positioning the pointer here is a faithful GEM startup
-    // action, not a workaround for a menu-semantics gap.
-    tos_api::vdi::mouse::display_at(backend.width() as i16 / 2, backend.height() as i16 / 2, backend);
+    // **AES gap G3.** A `tos_api::vdi::mouse::display_at(w/2, h/2, backend)`
+    // stood here — a direct VDI call on the raster backend, parking the pointer
+    // at the screen centre so the AES hover-menu would not open the Desk
+    // drop-down at boot with the cursor resting at (0,0) over the menu bar.
+    // EmuTOS's desktop never positions the pointer: `ratinit`
+    // (`gemshlib.c:716`, via `sh_main`) centres it when the AES enters graphics
+    // mode, and there is no AES binding that would let an application do it.
+    // Removed — the pointer now starts wherever the AES left it.
 
     // `desk_busy_off()` (`deskmain.c:2071`, `desksupp.c:1849-1852` =
     // `graf_mouse(ARROW, NULL)`) — "menu is initialised - display menu bar &

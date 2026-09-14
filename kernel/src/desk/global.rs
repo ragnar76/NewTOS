@@ -290,7 +290,7 @@ impl DeskState {
     /// the field defaults. The window list and object arena are set up
     /// afterwards by [`DeskState::win_start`] then [`DeskState::obj_init`]
     /// (see [`init`]).
-    pub fn new(screen_w: i16, screen_h: i16) -> Self {
+    pub fn new(g_desk: Grect) -> Self {
         Self {
             view: View::Icon,
             sort: Sort::Name,
@@ -307,7 +307,7 @@ impl DeskState {
             g_hicon: 0,
             g_icw: 0,
             g_ich: 0,
-            g_desk: Grect { x: 0, y: MENU_H, w: screen_w, h: screen_h - MENU_H },
+            g_desk,
             g_croot: DROOT,
             g_cwin: super::win::DESKWH,
             g_wlastsel: super::win::DESKWH,
@@ -349,11 +349,12 @@ impl DeskState {
         let screen_h = self.g_desk.y + self.g_desk.h;
         let last_box = DROOT + NUM_WNODES as i16; // = 8
 
-        // ROOT (index 0): full-screen container, parent of DROOT..last_box.
+        // ROOT (index 0): full-screen container. Its child links are laid by
+        // the `objc_add` loop below, exactly as in EmuTOS `deskobj.c:145`.
         screen[0] = Object {
             ob_next: NIL,
-            ob_head: DROOT,
-            ob_tail: last_box,
+            ob_head: NIL,
+            ob_tail: NIL,
             ob_type: G_IBOX,
             ob_flags: 0,
             ob_state: 0,
@@ -373,7 +374,7 @@ impl DeskState {
         // low-byte fill is refreshed from the persisted byte by
         // [`DeskState::sync_desk_background`].
         screen[DROOT as usize] = Object {
-            ob_next: DROOT + 1,
+            ob_next: NIL,
             ob_head: NIL,
             ob_tail: NIL,
             ob_type: G_BOX,
@@ -386,15 +387,14 @@ impl DeskState {
             ob_height: self.g_desk.h,
         };
 
-        // One empty box per possible window (indices 2..=last_box). Each is a
-        // sibling of DROOT; the last one points its `ob_next` back at ROOT and
-        // carries LASTOB. Their rects are set by `win_alloc` when a window
+        // One empty box per possible window (indices 2..=last_box), the last
+        // carrying LASTOB. Their rects are set by `win_alloc` when a window
         // opens (Task #6).
         for i in 0..NUM_WNODES {
             let idx = 2 + i;
             let is_last = i == NUM_WNODES - 1;
             screen[idx] = Object {
-                ob_next: if is_last { 0 } else { (idx + 1) as i16 },
+                ob_next: NIL,
                 ob_head: NIL,
                 ob_tail: NIL,
                 ob_type: G_IBOX,
@@ -406,6 +406,16 @@ impl DeskState {
                 ob_width: 0,
                 ob_height: 0,
             };
+        }
+
+        // Link DROOT and the per-window boxes under ROOT through the Object
+        // Manager, not by hand: EmuTOS `deskobj.c:141-146` is
+        // `for (ii = 0; ii < NUM_WNODES+1; ii++) objc_add(G.g_screen, ROOT,
+        // DROOT+ii);`. `objc_add` lays `ob_head`/`ob_tail` on ROOT and the
+        // sibling chain whose last link points back at the parent.
+        let tree = screen.as_ptr() as u64;
+        for obj in DROOT..=last_box {
+            super::objc_add(tree, 0, obj);
         }
 
         // Thread the item slots onto the free chain.
@@ -455,19 +465,14 @@ impl DeskState {
         Some(idx)
     }
 
-    /// Link `child` as the last child of `parent` (EmuTOS `ob_add`). The
-    /// child's `ob_next` points back at the parent, the classic AES
-    /// sibling-chain terminator that `objc_draw`/`objc_find` stop on when they
-    /// reach the parent's `ob_tail`.
+    /// Link `child` as the last child of `parent` — the AES `objc_add` (40),
+    /// which is what EmuTOS's desktop calls here (`deskobj.c:232`, inside
+    /// `obj_ialloc`, and `:145` for the structural boxes). The sibling-chain
+    /// bookkeeping (`ob_next` of the last child pointing back at the parent)
+    /// belongs to the Object Manager, not to the desktop; it used to be
+    /// open-coded on `g_screen` right here.
     fn ob_add(&mut self, parent: i16, child: i16) {
-        self.g_screen[child as usize].ob_next = parent;
-        if self.g_screen[parent as usize].ob_head == NIL {
-            self.g_screen[parent as usize].ob_head = child;
-        } else {
-            let tail = self.g_screen[parent as usize].ob_tail;
-            self.g_screen[tail as usize].ob_next = child;
-        }
-        self.g_screen[parent as usize].ob_tail = child;
+        super::objc_add(self.g_screen.as_ptr() as u64, parent, child);
     }
 
     /// `obj_wfree` — free **all** of `root`'s child item objects back onto the
@@ -513,14 +518,15 @@ impl DeskState {
 /// by the kernel spinlock (single boot CPU, no `OnceCell`/`spin` dependency).
 static DESK: SpinMutex<Option<DeskState>> = SpinMutex::new(None);
 
-/// One-time desktop-state setup for a `screen_w`x`screen_h` display. Builds
-/// [`DeskState`], runs `win_start()` (view/sort defaults + window list) then
-/// `obj_init()` (the object arena), in that order. Idempotent — a second call
-/// is a no-op.
-pub fn init(screen_w: i16, screen_h: i16) {
+/// One-time desktop-state setup for the desktop work area `g_desk` — the
+/// `wind_get(DESKWH, WF_WXYWH)` rectangle EmuTOS stores in `G.g_desk`
+/// (`deskmain.c:1959`). Builds [`DeskState`], runs `win_start()` (view/sort
+/// defaults + window list) then `obj_init()` (the object arena), in that order.
+/// Idempotent — a second call is a no-op.
+pub fn init(g_desk: Grect) {
     let mut guard = DESK.lock();
     if guard.is_none() {
-        let mut state = DeskState::new(screen_w, screen_h);
+        let mut state = DeskState::new(g_desk);
         state.win_start();
         state.obj_init();
         *guard = Some(state);

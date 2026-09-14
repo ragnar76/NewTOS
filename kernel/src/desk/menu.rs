@@ -9,18 +9,24 @@
 //! dispatch a `MN_SELECTED` (object index → [`Item`]) and `men_update` can gate
 //! it — the object indices themselves are an internal layout detail.
 //!
-//! ## `men_update` and the closed drop-down
+//! ## `men_update` goes through `menu_ienable` / `menu_icheck`
 //!
-//! EmuTOS `men_update` calls `menu_ienable`/`menu_icheck`; in `tos-api` those
-//! aesbind calls **redraw the item unconditionally** (`object::change` with
-//! `redraw = true`), which would paint a drop-down item onto the desktop while
-//! its box is closed. Since the menu tree is the **desktop's own** `OBJECT`
-//! array (like `g_screen`), `men_update` instead sets the `DISABLED`/`CHECKED`
-//! `ob_state` bits **directly** on it — the AES draws them correctly when the
-//! drop-down opens (its `track`/`draw_obj` honour `ob_state`), so the states
-//! are always right on display and never smear the desktop when closed. This is
-//! the desktop managing its own tree, not a workaround around the AES — see the
-//! Task-#8 report for the `tos-api` note.
+//! EmuTOS `men_update` gates its items with the AES bindings
+//! (`deskmain.c:456,534-585`), and so does [`men_update`] here — opcodes 32
+//! and 31 via the GEM trap.
+//!
+//! This module used to write the `DISABLED`/`CHECKED` `ob_state` bits straight
+//! into its own tree, on the stated grounds that the two AES calls "redraw the
+//! item unconditionally" and would smear a closed drop-down across the desktop.
+//! That was not true of our AES: `menu_icheck` passes `dodraw = false`
+//! (`aes/menu.rs:717`, matching `gemsuper.c:172`'s
+//! `do_chg(…, CHECK_IT, FALSE, FALSE)`), and `menu_ienable` takes `dodraw` from
+//! bit 15 of the item word (`gemsuper.c:175-176`), which `men_update` never
+//! sets. Neither call paints.
+//!
+//! The one direct `ob_state` write that remains is the separator disabling in
+//! [`build_menu`], which is exactly where EmuTOS writes the bit by hand too
+//! (`deskmain.c:475-486`).
 
 use tos_api::vdi::font::CELL_W;
 
@@ -31,8 +37,6 @@ use core::cell::UnsafeCell;
 
 use tos_api::aes::object::Object;
 
-/// `ob_state` `CHECKED` bit (`obdefs.h`) — a menu item's check mark.
-const OB_CHECKED: u16 = 0x0004;
 /// Fixed system-font character width in pixels (NewTOS 8×16 font, EmuTOS
 /// `deskmain.h` `CHAR_WIDTH` assumption).
 const CHAR_W: i16 = CELL_W;
@@ -501,10 +505,8 @@ fn entry_label(e: &Entry) -> &'static [u8] {
 /// The screen dimensions (for the ROOT/THEMENUS extents). `menu_bar` fixes up
 /// `THEBAR`'s width, so only a `>= screen` bound is needed here.
 fn screen_dims() -> (i16, i16) {
-    match tos_api::host::host().and_then(|h| h.raster()) {
-        Some(b) => (b.width() as i16, b.height() as i16),
-        None => (640, 480),
-    }
+    let r = super::screen_rect();
+    (r.w, r.h)
 }
 
 /// Install the desktop menu bar (`menu_bar`, show = 1). Builds the tree on the
@@ -587,29 +589,17 @@ fn item_disabled(item: Item) -> bool {
     o.ob_state & DISABLED != 0
 }
 
-/// Set or clear the `DISABLED` `ob_state` bit on `item` directly on the menu
-/// tree (no AES redraw — see the module note).
+/// `menu_ienable(tree, item, enable)` — EmuTOS `men_update`/`men_list`
+/// (`deskmain.c:453-457,534-585`) go through the AES binding for every item
+/// they gate, and so does this.
 fn set_disabled(item: Item, disabled: bool) {
-    let obj = item_obj(item);
-    // SAFETY: single-CPU; valid index.
-    let o = unsafe { &mut (*MENU.obj.get())[obj as usize] };
-    if disabled {
-        o.ob_state |= DISABLED;
-    } else {
-        o.ob_state &= !DISABLED;
-    }
+    super::menu_ienable(tree_ptr(), item_obj(item), !disabled);
 }
 
-/// Set or clear the `CHECKED` `ob_state` bit on `item`.
+/// `menu_icheck(tree, item, checked)` — the AES binding EmuTOS's `men_update`
+/// uses for the View/Sort radio marks (`deskmain.c:798-820`).
 fn set_checked(item: Item, checked: bool) {
-    let obj = item_obj(item);
-    // SAFETY: single-CPU; valid index.
-    let o = unsafe { &mut (*MENU.obj.get())[obj as usize] };
-    if checked {
-        o.ob_state |= OB_CHECKED;
-    } else {
-        o.ob_state &= !OB_CHECKED;
-    }
+    super::menu_icheck(tree_ptr(), item_obj(item), checked);
 }
 
 /// The control-character keyboard shortcut for `item` (EmuTOS

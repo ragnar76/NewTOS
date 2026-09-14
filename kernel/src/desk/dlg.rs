@@ -120,8 +120,6 @@ pub fn edit_name(prompt: &[u8], initial: &str) -> Option<String> {
 
 /// The current screen dimensions.
 fn screen_dims() -> (i16, i16) {
-    match tos_api::host::host().and_then(|h| h.raster()) {
-        Some(b) => (b.width() as i16, b.height() as i16),
-        None => (640, 480),
-    }
+    let r = super::screen_rect();
+    (r.w, r.h)
 }

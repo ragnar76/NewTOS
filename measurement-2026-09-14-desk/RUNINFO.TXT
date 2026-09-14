@@ -1,0 +1,78 @@
+DESK-Rueckbau Schritt 1 -- jede Umgehung der AES-Trapgrenze aus
+kernel/src/desk/ entfernt bzw. auf den Trap umgestellt.
+Messung, 2026-09-14.  MESSUNG NUR: hier steht, was lief und was zurueckkam.
+
+
+WAS GEAENDERT WURDE (nur kernel/src/desk/, 8 Dateien)
+
+  (b) ersatzlos entfernt -- es gibt dafuer keine AES-Funktion
+      main.rs   tos_api::aes::window::save_windows()
+      main.rs   tos_api::aes::window::restore_windows()
+      main.rs   tos_api::aes::shell::sh_draw_clear()
+      mod.rs    tos_api::vdi::mouse::display_at(w/2, h/2, backend)
+      mod.rs    der tos_api::host::host().raster()-Griff im Boot-Vorspann
+
+  (a) auf den GEM-Trap umgestellt -- die AES kann es, Opcode existiert
+      redraw.rs window::redraw()        -> form_dial(FMD_FINISH,...)   51
+      global.rs ob_add / obj_init-Links -> objc_add                    40
+      menu.rs   set_disabled/set_checked-> menu_ienable / menu_icheck  32/31
+      mod.rs    global::init(w,h)       -> wind_get(DESKWH, WF_WXYWH) 104
+      dlg/insapp/inf/menu.rs screen_dims() -> aus demselben GRECT
+
+  Nichts ausserhalb kernel/src/desk/ angefasst; tos-api unveraendert.
+  Lueckenliste G1-G7: docs/analysis/desk-aes-gaps-2026-09-14.md
+
+
+WAS LIEF
+
+  Build    cargo build -p kernel --features board-rpi4      --release  OK
+           cargo build -p kernel --features board-qemu-virt --release  OK
+           build/final-build-*.log
+  Clippy   beide Boards: tos-api 81 / kernel 125 Warnungen
+           = unveraenderte Grundlinie, keine in kernel/src/desk/
+           build/clippy-*.log
+  Hostsuite cargo run -p xtask -- test
+           548 passed / 0 failed / 1 ignored  (Sollstand erreicht)
+           build/host-test.log
+  Boot     QEMU -M raspi4b, headless, method/boot-qmp.sh
+           Karte = measurement-2026-09-13-regression/qemu-tmp/sd-base.img
+           (unveraendert kopiert nach qemu-tmp/sd.img, kein #Z-Autorun)
+           Screendump nach 25 s ueber QMP, method/qmpshot.py
+
+
+WAS ZURUECKKAM
+
+  BOOT-SERIAL-raspi4b.txt   endet mit
+      [auto] running C:\AUTO\HELLO.NCP
+      [launch] EL0: slot 0 entry 0x1000
+      Hello from a NewTOS .NCP program!
+      [launch] returned (program Pterm'd)
+      [auto] 1 AUTO program(s) run
+      [shell] sh_ldapp: starting NEWDESK, sh_nextapp=3, sh_isgem=1
+      [desk] desktop up (1 drives)
+    Kein Haenger, keine Endlosschleife, kein Abbruch.
+
+  screendumps/desk-after.png  640x480
+    Menueleiste (Desk/File/View/Options), gruener Desktop-Hintergrund,
+    C:-Laufwerkssymbol oben links, Papierkorb oben rechts, offenes
+    C:\-Fenster mit 24 Eintraegen und beiden Schiebern, Mauszeiger in
+    der Bildschirmmitte.
+    Gegen measurement-2026-09-12-a37-abnahme/desk.png verglichen: gleich
+    bis auf den Verzeichnisinhalt der Karte.  Insbesondere steht der
+    Mauszeiger weiterhin mittig -- der entfernte display_at-Aufruf war
+    ueberfluessig, tos-api/src/vdi/mouse.rs::ensure_init zentriert selbst.
+
+
+WAS DIESER LAUF NICHT MISST
+
+  Den GEM-App-Start aus dem Desktop (Doppelklick / File->Open auf .NAP
+  oder .NTP).  Genau dort sitzt der Bruch (G1/G2: kein Fensterretten,
+  keine Bildschirmloeschung vor dem Kind), und genau dort kommt QEMU
+  nicht hin -- der Pfad braucht Mausklick und Karte gleichzeitig.
+  Der #Z-Autorun-Pfad ist NICHT betroffen: er laeuft ueber
+  kernel/src/shell_loop.rs, nicht ueber desk::main::run_gem_app.
+  -> echte Pi 4, Tester.
+
+  Ebenso ungemessen: die aufgeklappte Menueleiste (ob menu_ienable /
+  menu_icheck ueber den Trap dieselben Items sperren wie vorher der
+  direkte ob_state-Schreiber).  Braucht einen Klick.
