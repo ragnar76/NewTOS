@@ -67,7 +67,7 @@ Die neu abgelegten Statusdateien haben Vorrang vor der alten Startempfehlung: M0
 | [A24](A24.md) | Messlücke: verschachtelte FIRST/NEXT über zwei Fenster | Messlücke / Messdesign | P1 | OFFEN | A14 |
 | [A26](A26.md) | Erratum: Kopfkommentar der Rechtecklisten-Tabelle | Erratum / Dokumentation | P2 | OFFEN | A15 |
 | [A27](A27.md) | Unterschreibender Handler: bewusste Abweichung belegen, Spec richtigstellen | Bewertung / Spec | P2 | OFFEN | — |
-| [A28](A28.md) | Fehlende Zustandsrücksetzung Desktop → Kindprogramm | Belegter Defekt / Startpfad | P1 | OFFEN | A25 |
+| [A28](A28.md) | Fehlende Zustandsrücksetzung Desktop → Kindprogramm | Belegter Defekt / Startpfad | P1 | IMPLEMENTIERT — HW OFFEN | A25, A29 |
 | [A29](A29.md) | Programmende löscht den Deskriptor des Desktops | Belegter Defekt / Startpfad | P1 | IMPLEMENTIERT — HW OFFEN | — |
 | [A30](A30.md) | Messdesign: appl_init-Wiederaufruf ohne Hängerrisiko | Messlücke / Messdesign | P1 | OFFEN | A25, A28 |
 | [A31](A31.md) | Testlücke: Rechteckliste über save/restore_windows | Testlücke | P2 | OFFEN | A14 |
