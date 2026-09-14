@@ -264,6 +264,17 @@ fn le16(d: &[u8], o: usize) -> u16 {
     u16::from_le_bytes([d[o], d[o + 1]])
 }
 
+/// Pointer-slot width of an NRSC `version`: the odd versions (1, 3, 5, 7) are
+/// the LP64 generations, the even ones (2, 4, 6, 8) the ILP32 twins
+/// (`tools/mkrsc.py::convert`, `tos-api/src/aes/resource.rs::NrscHeader`).
+fn nrsc_ptr_width(version: usize) -> usize {
+    if version % 2 == 1 {
+        8
+    } else {
+        4
+    }
+}
+
 fn le32(d: &[u8], o: usize) -> u32 {
     u32::from_le_bytes([d[o], d[o + 1], d[o + 2], d[o + 3]])
 }
@@ -279,11 +290,13 @@ fn le64(d: &[u8], o: usize) -> u64 {
 fn raster_slots(d: &[u8]) -> Vec<(String, u64)> {
     let mut out = Vec::new();
     if &d[..4] == b"NRSC" {
-        // NRSC v5 (LP64) / v6 (ILP32): magic + 16 × u32.
+        // NRSC v5/v7 (LP64) / v6/v8 (ILP32): magic + 16 × u32. The pointer
+        // width is the parity of `version`, not one particular number — v7/v8
+        // kept the 68-byte header and only widened the tree index
+        // (`tos-api/src/aes/resource.rs`, NRSC_VER_TRINDEX_PTR).
         let f = |i: usize| le32(d, 4 + i * 4) as usize;
-        let version = f(0);
         let (off_ib, n_ib, off_bb, n_bb) = (f(12), f(13), f(14), f(15));
-        let (nat_ib, nat_bb, ptr) = if version == 5 {
+        let (nat_ib, nat_bb, ptr) = if nrsc_ptr_width(f(0)) == 8 {
             (48usize, 24usize, 8usize)
         } else {
             (36, 16, 4)
@@ -373,7 +386,7 @@ fn layout(d: &[u8]) -> Layout {
     let (off_ted, n_ted, off_frstr, n_frstr, off_obj, n_obj, off_ib, n_ib, ptr, total) =
         if &d[..4] == b"NRSC" {
             let f = |i: usize| le32(d, 4 + i * 4) as usize;
-            let ptr = if f(0) == 5 { 8usize } else { 4 };
+            let ptr = nrsc_ptr_width(f(0));
             (f(10), f(11), f(6), f(7), f(4), f(2), f(12), f(13), ptr, f(5) as u64)
         } else {
             let h = |i: usize| le16(d, i * 2) as usize;

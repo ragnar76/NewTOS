@@ -9,7 +9,7 @@ Messungen und getriebenen Testfaellen ist
 |---|---|---|---|
 | **B1** | `rsrc_load` loest keinen qualifizierten Pfad auf | — | **ERLEDIGT** 2026-09-11, HW-abgenommen 2026-09-12 |
 | **B2** | ungerade Rasterzeiger → Panik in `blit_plane` | — | **ERLEDIGT** 2026-09-11 (Werkzeug + Kernel), HW-abgenommen |
-| **B3** | `rsrc_load` fuellt `ap_ptree`/`ap_rscmem`/`ap_rsclen` nie | [A35](A35.md) | OFFEN |
+| **B3** | `rsrc_load` fuellt `ap_ptree`/`ap_rscmem`/`ap_rsclen` nie | [A35](A35.md) | ERLEDIGT (2026-09-14) |
 | **B4** | nur *referenzierte* TEDINFO/ICONBLK/BITBLK relokiert | [A36](A36.md) | OFFEN |
 | **B5** | `fix_tedinfo_std` fehlt → Pufferueberlauf beim Editieren | [A37](A37.md) | OFFEN, **Speicherfehler** |
 | **B6** | zu kurz gelesenes Blob wird ueber den Puffer hinaus relokiert | [A38](A38.md) | OFFEN, **Speicherfehler** |

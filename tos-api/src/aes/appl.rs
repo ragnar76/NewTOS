@@ -56,14 +56,15 @@
 //!    read bytes 14..21 and so returned `ap_planes << 48` — a wild pointer
 //!    manufactured by the *reader*, not by a second write.
 //!
-//!    `ap_ptree`/`ap_rscmem`/`ap_rsclen` belong to `rs_load`/`rs_free`
-//!    (`gemrslib.c:597,787-788`), `ap_4resv` to nobody — EmuTOS's `APPL_INIT`
-//!    arm never names them, so neither do we. They keep whatever the caller
-//!    had; a freshly `.bss`-allocated array therefore still reads 0, which is
-//!    what the EmuTOS reference dump shows for those slots. (NewTOS's
-//!    `rsrc_load` does not fill the first three either — that is open ticket
-//!    A35, blocked on an address question, not on this layout: see
-//!    `tos-api/src/aes/resource.rs`.)
+//!    `ap_ptree`/`ap_rscmem`/`ap_rsclen` belong to `rs_load`
+//!    (`gemrslib.c:595-597,787-788`), `ap_4resv` to nobody — EmuTOS's
+//!    `APPL_INIT` arm never names them, so neither do we. They keep whatever
+//!    the caller had; a freshly `.bss`-allocated array therefore still reads
+//!    0, which is what the EmuTOS reference dump shows for those slots.
+//!    NewTOS's `rsrc_load` fills the first three since 2026-09-14 (A35,
+//!    `tos-api/src/aes/resource.rs::report_load`) — at these same TOS widths,
+//!    and only when the loaded blob's base fits the four bytes `ap_ptree`
+//!    and `ap_rscmem` have.
 //!    (The last 4 bytes are EmuTOS's `LONG ap_4resv` "reserved for use in AES
 //!    4.00"; gemlib splits the same bytes into two WORD readers
 //!    `ap_maxchar`/`ap_minchar` at indices 13/14. Either way `appl_init` at

@@ -10,7 +10,7 @@
 //! and `rsrc_load` does not re-`ob_fix`), so `rsrc_obfix` only ever converts
 //! an **inline** resource an app built itself (see [`rsrc_obfix`]).
 //!
-//! Native `.RSC` layout (all little-endian). Two header generations coexist;
+//! Native `.RSC` layout (all little-endian). Four header generations coexist;
 //! the loader picks by `version` and is backward-compatible:
 //!
 //! * **v1 (LP64) / v2 (ILP32)** — 28-byte header, no free-string/free-image
@@ -31,73 +31,81 @@
 //!   afterwards too. A pre-v5 blob declares no such arrays; it still loads if
 //!   it holds no text/icon/image object, and is refused if it does, because
 //!   its records could not be relocated (A36).
+//! * **v7 (LP64) / v8 (ILP32)** — the same 68-byte header, but the **tree
+//!   index** is a relocatable pointer table instead of a `[u32]` of root
+//!   OBJECT indices: caller-pointer-wide slots holding a root's byte offset,
+//!   rebased on load like the frstr/frimg tables. That is EmuTOS's
+//!   `rsh_trindex` array, the one `fix_trindex` publishes through
+//!   `AESGLOBAL.ap_ptree` (`gemrslib.c:591-603`) and `get_addr(R_TREE, i)`
+//!   reads back (`:124`) — so `rsrc_load` finally has an array to name (A35).
+//!   A v1–v6 blob keeps loading and keeps answering `rsrc_gaddr(R_TREE, i)`
+//!   from the index form; it simply publishes no `ap_ptree`.
 //!
 //! ```text
 //!   NrscHeader: magic "NRSC", version, n_trees, n_objects,
 //!               off_trindex, off_objects, total_size            (v1/v2: 28 B)
 //!               [, off_frstr, n_frstr, off_frimg, n_frimg]      (v3/v4: 44 B)
-//!   [u32; n_trees]   tree index  @ off_trindex  (root OBJECT index/tree)
+//!               [, off_ted, n_ted, off_ib, n_ib, off_bb, n_bb]  (v5–v8: 68 B)
+//!   tree index       @ off_trindex  (v1–v6: [u32] root OBJECT index/tree;
+//!                                    v7/v8: [ptr] offset → the root OBJECT)
 //!   [Object; n_objects]          @ off_objects  (ob_spec = offset for the
 //!                                                 string object types, else
 //!                                                 a literal colour/char word)
-//!   [ptr; n_frstr]   frstr table @ off_frstr    (v3/v4: offset → string data)
-//!   [ptr; n_frimg]   frimg table @ off_frimg    (v3/v4: offset → a BITBLK)
+//!   [TedInfo; n_ted] [BitBlk; n_bb] [IconBlk; n_ib]             (v5–v8)
+//!   [ptr; n_frstr]   frstr table @ off_frstr    (v3+: offset → string data)
+//!   [ptr; n_frimg]   frimg table @ off_frimg    (v3+: offset → a BITBLK)
 //!   string / data bytes          (referenced by the ob_spec / table offsets)
 //! ```
 //!
-//! The frstr/frimg **slot** width matches `ob_spec`: 8 bytes (LP64) or 4 bytes
-//! (ILP32), relocated at the calling app's ABI width like the OBJECT array.
+//! The tree-index / frstr / frimg **slot** width matches `ob_spec`: 8 bytes
+//! (LP64) or 4 bytes (ILP32), relocated at the calling app's ABI width like
+//! the OBJECT array — the *file's* `version` only says which width its
+//! producer wrote, the *caller's* ABI is what the loader relocates by.
 //!
 //! **Batch-1 scope:** the format, the relocation core
 //! (`relocate_and_register`), `rsrc_gaddr`, `rsrc_obfix`, `rsrc_free`.
 //! Loading from SD (`bdos::fs::read_file`), TEDINFO/ICONBLK/BITBLK
 //! sub-pointer relocation, and `rsrc_saddr` are Batch 2.
 //!
-//! **What `rsrc_load` does not do yet (A35).** EmuTOS's `rs_readit` also
-//! reports the load back through the caller's `AESGLOBAL` — `ap_rscmem`,
-//! `ap_rsclen` (`gemrslib.c:787-788`) and `ap_ptree` (`:597`) — and
-//! `rs_sglobe` (`:675-679`) reads them back on every
-//! `rs_free`/`rs_gaddr`/`rs_saddr`. NewTOS holds the descriptor in [`RSC`]
-//! and writes none of the three. The `AESGLOBAL` layout that used to block
-//! this is settled (2026-09-13: the TOS widths, `tos-api/src/aes/appl.rs`),
-//! so **one** question the layout does not answer is still open:
+//! **What `rsrc_load` reports back (A35).** EmuTOS's `rs_readit` also reports
+//! the load through the caller's `AESGLOBAL` — `ap_rscmem`, `ap_rsclen`
+//! (`gemrslib.c:787-788`) and `ap_ptree` (`:595-597`) — and `rs_sglobe`
+//! (`:675-679`) reads them back on every `rs_free`/`rs_gaddr`/`rs_saddr`.
+//! NewTOS now **writes** the three ([`report_load`]) and keeps reading its own
+//! descriptor in [`RSC`]; the read-back half is deliberately not adopted, so
+//! an application cannot repoint the AES at a foreign blob by editing its
+//! `AESGLOBAL`.
 //!
-//! * **`ap_ptree` has no array to point at.** EmuTOS publishes the
-//!   *relocated* `OBJECT *[]` tree index inside the blob (`fix_trindex`,
-//!   `:595-597`). NewTOS's NRSC tree index is `[u32]` of root OBJECT
-//!   **indices** (`tools/mkrsc.py:417`), not addresses, and four bytes wide
-//!   in both ABI variants — while a caller's `_AESrscfile[i]` is a native
-//!   8-byte `OBJECT *` on LP64. Publishing `base + off_trindex` would hand
-//!   an application an index array typed as a pointer array. A faithful
-//!   `ap_ptree` needs a materialised caller-width pointer array, which is a
-//!   format/ownership decision, not a field write.
-//!
-//! A second reason stood here as an equal blocker until 2026-09-13: that the
-//! 4-byte `ap_ptree`/`ap_rscmem` cannot carry the in-kernel (EL1) blob
-//! address, because that path loads into [`RSC_BUF`], a kernel high-half
-//! static. It was **never measured**, and the measurement says it binds no
-//! case on a running system: there is no EL1 caller of `rsrc_load`. Opcode 110
-//! is reachable only through the `svc #2` dispatcher, and of the four EL1
-//! emitters only `kernel/src/selftest_objc.rs` issues rsrc opcodes at all —
-//! its two functions that issue 110 have no caller, and `run_rsrc`, reachable
-//! only from the callerless `aes_demo::showcase`, registers its blob through
-//! `relocate_and_register` and never issues 110. Traced in QEMU `raspi4b`
-//! (`--features aes-trace`): the built-in desktop makes 28 AES calls, all with
-//! `slot = 0xFF`, none of them rsrc; TeraDesk makes 188, all EL0, 68 of them
-//! rsrc, every blob address inside the process window below `USER_TPA_MAX_VA`
-//! (32 MiB) and so exact in four bytes. **The one caller that does drive the
-//! EL1 load path is the host test harness** `tests/aes_rsrc_global_fields.rs`,
-//! which is not a running system.
+//! Two things bound what can be written, and both are recorded at
+//! [`report_load`]: the blob must carry a relocated tree table
+//! ([`NRSC_VER_TRINDEX_PTR`]), and its base must fit the four bytes
+//! `ap_ptree`/`ap_rscmem` have. The second excludes the in-kernel path, which
+//! relocates in place in [`RSC_BUF`], a kernel high-half static — there the
+//! three stay 0 rather than carry a truncated VA. That binds no caller on a
+//! running system: **there is no EL1 caller of `rsrc_load`** (measured
+//! 2026-09-13). Opcode 110 is reachable only through the `svc #2` dispatcher,
+//! and of the four EL1 emitters only `kernel/src/selftest_objc.rs` issues rsrc
+//! opcodes at all — its two functions that issue 110 have no caller, and
+//! `run_rsrc`, reachable only from the callerless `aes_demo::showcase`,
+//! registers its blob through `relocate_and_register` and never issues 110.
+//! Traced in QEMU `raspi4b` (`--features aes-trace`): the built-in desktop
+//! makes 28 AES calls, all with `slot = 0xFF`, none of them rsrc; TeraDesk
+//! makes 188, all EL0, 68 of them rsrc, every blob address inside the process
+//! window below `USER_TPA_MAX_VA` (32 MiB) and so exact in four bytes.
+//! **The one caller that does drive the EL1 load path is the host test
+//! harness** `tests/aes_rsrc_global_fields.rs`, which is not a running system
+//! — and on a 64-bit host no address is ever 32-bit representable, so that
+//! harness can only ever observe the refusal, never the write.
 //!
 //! EmuTOS's own desktop is the counter-case — `load_icon_file`
 //! (`desk/deskapp.c:554`) calls `rsrc_load` and reads `AP_1RESV` back (`:571`)
 //! — but NewTOS's `desk/` is not getting that path: ADR-022 is rescinded,
-//! TeraDesk is the desktop. So the EL1 address question is recorded as a
+//! TeraDesk is the desktop. So the EL1 address question stays a
 //! **conditional** constraint (`docs/api/aes/resource-fileselector.md`
-//! §`rsrc_load`, `docs/STATUS.md` §Blocked), not as a blocker: it binds only
-//! if an EL1 caller is ever made to load a resource itself.
+//! §`rsrc_load`), not a blocker: it binds only if an EL1 caller is ever made
+//! to load a resource itself.
 //!
-//! The red tests stand in `tests/aes_rsrc_global_fields.rs`.
+//! The tests stand in `tests/aes_rsrc_global_fields.rs`.
 
 use super::object::{BitBlk, IconBlk, ObjTree, Object, TedInfo};
 use super::shell::PATHBUF;
@@ -195,6 +203,46 @@ const NRSC_VER_TABLES: u32 = 3;
 /// (backward compatible: v1–v4 keep loading unchanged).
 const NRSC_VER_SUBSTRUCTS: u32 = 5;
 
+/// First NRSC `version` whose **tree index** is a relocatable pointer table
+/// (v7 LP64, v8 ILP32) instead of a `[u32]` of root OBJECT indices. The header
+/// is unchanged (68 bytes); only `off_trindex`'s content and slot width move:
+/// each slot holds the byte **offset** of a tree's root OBJECT and is relocated
+/// in place, at the caller's pointer width, exactly like the frstr/frimg tables
+/// (`fix_nptrs64`/`fix_nptrs32`).
+///
+/// That is the array EmuTOS's `fix_trindex` (`aes/gemrslib.c:591-603`)
+/// publishes to the application:
+///
+/// ```c
+/// ptreebase = (LONG *)get_sub(0, rs_hdr->rsh_trindex, sizeof(LONG));
+/// rs_global->ap_ptree = (OBJECT **)ptreebase;
+/// for (ii = 0; ii < rs_hdr->rsh_ntree; ii++)
+///     fix_long(ptreebase+ii);
+/// ```
+///
+/// and the array `get_addr(R_TREE, i)` reads back (`return
+/// rs_global->ap_ptree[rsindex];`, `gemrslib.c:124`) — so `ap_ptree[i]` and
+/// `rsrc_gaddr(R_TREE, i)` are the same value by construction. Without it
+/// [`rsrc_load`] has nothing to put in `ap_ptree` (A35).
+///
+/// A v1–v6 blob keeps the index form and keeps loading unchanged; its trees are
+/// still registered and `rsrc_gaddr(R_TREE, i)` still works. What such a blob
+/// cannot do is *publish* `ap_ptree`, because the array the field would name
+/// does not exist in it — see [`rsrc_load`].
+const NRSC_VER_TRINDEX_PTR: u32 = 7;
+
+/// Slot width of the tree index for a blob of `version`, given the caller's
+/// pointer width `ptr`: a relocated pointer from [`NRSC_VER_TRINDEX_PTR`] on,
+/// a fixed 4-byte root OBJECT index before that.
+#[inline]
+fn trindex_stride(version: u32, ptr: usize) -> usize {
+    if version >= NRSC_VER_TRINDEX_PTR {
+        ptr
+    } else {
+        4
+    }
+}
+
 /// Maximum number of object trees registered from one `.RSC`. A real GEM
 /// app has one tree per dialog/menu: QED's `qed.rsc` declares 32
 /// (`n_trees=32`), so a 16-cap left `rsrc_gaddr(R_TREE, idx>=16)` returning
@@ -221,7 +269,10 @@ pub struct NrscHeader {
     pub n_trees: u32,
     /// Number of objects total.
     pub n_objects: u32,
-    /// Offset to the tree index (`[u32; n_trees]` of root object indices).
+    /// Offset to the tree index. From [`NRSC_VER_TRINDEX_PTR`] on this is a
+    /// caller-pointer-wide table of root-OBJECT byte offsets, relocated in
+    /// place (EmuTOS's `rsh_trindex` array); before that a `[u32; n_trees]` of
+    /// root object *indices*.
     pub off_trindex: u32,
     /// Offset to the `Object` array.
     pub off_objects: u32,
@@ -307,6 +358,16 @@ struct Loaded {
     n_bb: UnsafeCell<usize>,
     /// Stride of one BITBLK record: 24 (LP64) or 16 (ILP32).
     bb_size: UnsafeCell<usize>,
+    /// Target VA of the blob's **first byte** — EmuTOS's `rs_hdr`, reported as
+    /// `ap_rscmem` (`gemrslib.c:787`). 0 = nothing loaded.
+    blob_target: UnsafeCell<u64>,
+    /// Declared blob length in bytes (`total_size`) — EmuTOS's `rslsize`,
+    /// reported as `ap_rsclen` (`gemrslib.c:788`).
+    blob_len: UnsafeCell<u32>,
+    /// Target VA of the relocated tree-index array — EmuTOS's `ptreebase`,
+    /// reported as `ap_ptree` (`gemrslib.c:595-597`). 0 when the blob predates
+    /// [`NRSC_VER_TRINDEX_PTR`] and therefore carries no pointer table.
+    trindex_target: UnsafeCell<u64>,
 }
 // SAFETY: single boot CPU only touches the AES.
 unsafe impl Sync for Loaded {}
@@ -337,6 +398,9 @@ static RSC: Loaded = Loaded {
     bb_access: UnsafeCell::new(0),
     n_bb: UnsafeCell::new(0),
     bb_size: UnsafeCell::new(0),
+    blob_target: UnsafeCell::new(0),
+    blob_len: UnsafeCell::new(0),
+    trindex_target: UnsafeCell::new(0),
 };
 
 /// ILP32 OBJECT record stride (4-byte `ob_spec` @ +12; see `mt_gem.h`
@@ -417,7 +481,11 @@ unsafe fn header_is_sound(access_base: *const u8, len: usize, abi: Abi) -> bool 
             .and_then(|bytes| bytes.checked_add(off as u64))
             .is_some_and(|end| end <= size)
     };
-    if !fits(h.off_trindex, h.n_trees, 4) || !fits(h.off_objects, h.n_objects, obj) {
+    // The tree index widened with [`NRSC_VER_TRINDEX_PTR`]: pointer slots from
+    // v7 on, 4-byte root indices before that.
+    if !fits(h.off_trindex, h.n_trees, trindex_stride(h.version, ptr))
+        || !fits(h.off_objects, h.n_objects, obj)
+    {
         return false;
     }
     // v1/v2 leave the table fields undefined (they overlap the tree index),
@@ -490,22 +558,34 @@ unsafe fn relocate_and_register_core(
             Abi::Ilp32 => fix_tedinfo_std_ilp32(access_base, target_base),
             Abi::Lp64 => fix_tedinfo_std(access_base, target_base),
         }
-        let obj_size = match abi {
-            Abi::Ilp32 => OBJECT_SIZE_ILP32,
-            Abi::Lp64 => OBJECT_SIZE,
+        let (obj_size, ptr_size) = match abi {
+            Abi::Ilp32 => (OBJECT_SIZE_ILP32, 4usize),
+            Abi::Lp64 => (OBJECT_SIZE, 8usize),
         };
         let h = &*(access_base as *const NrscHeader);
         // Target VA of the object array (what callers dereference).
         let objs_target = target_base + h.off_objects as u64;
-        // The tree index is read through the kernel alias. It is `[u32]`
-        // (root OBJECT *index*) in both ABIs; the byte VA of a root is
-        // `objs_target + index * obj_size`.
-        let tri = access_base.add(h.off_trindex as usize) as *const u32;
+        // The tree index is read through the kernel alias. From
+        // [`NRSC_VER_TRINDEX_PTR`] on it already holds the relocated root
+        // addresses (the relocation core above rebased every slot), so the
+        // registered tree VA *is* the slot — which is exactly EmuTOS's
+        // `get_addr(R_TREE, i) == ap_ptree[i]` (`gemrslib.c:124`). An older
+        // blob holds a `[u32]` of root OBJECT *indices*; the byte VA of a root
+        // is then `objs_target + index * obj_size`.
+        let tri = access_base.add(h.off_trindex as usize);
         let n = (h.n_trees as usize).min(MAX_TREES);
+        let ptr_slot = h.version >= NRSC_VER_TRINDEX_PTR;
         let trees = &mut *RSC.trees.get();
         for (t, slot) in trees.iter_mut().enumerate().take(n) {
-            let root = *tri.add(t) as u64;
-            *slot = objs_target + root * obj_size as u64;
+            *slot = if ptr_slot {
+                let p = tri.add(t * ptr_size);
+                match ptr_size {
+                    4 => rd32(p) as u64,
+                    _ => (p as *const u64).read_unaligned(),
+                }
+            } else {
+                objs_target + rd32(tri.add(t * 4)) as u64 * obj_size as u64
+            };
         }
         *RSC.n_trees.get() = n;
         *RSC.obj_base.get() = objs_target;
@@ -522,10 +602,6 @@ unsafe fn relocate_and_register_core(
         // and the kernel-reachable base (`*_access`, used to dereference a slot
         // for R_STRING/R_IMAGEDATA). An older file leaves the counts at 0, so
         // those selectors report the documented "not found".
-        let ptr_size = match abi {
-            Abi::Ilp32 => 4usize,
-            Abi::Lp64 => 8usize,
-        };
         *RSC.ptr_size.get() = ptr_size;
         if h.version >= NRSC_VER_TABLES {
             *RSC.frstr_target.get() = target_base + h.off_frstr as u64;
@@ -582,6 +658,20 @@ unsafe fn relocate_and_register_core(
             *RSC.n_bb.get() = 0;
             *RSC.bb_size.get() = 0;
         }
+
+        // The blob's own identity — EmuTOS's `rs_hdr` / `rslsize` / `ptreebase`
+        // (`gemrslib.c:787-788`, `:595-597`). [`rsrc_load`] reports these three
+        // through the caller's `AESGLOBAL`; every other entry point leaves the
+        // caller's copy alone, exactly as EmuTOS only writes them in
+        // `rs_readit`. `trindex_target` stays 0 for a blob older than
+        // [`NRSC_VER_TRINDEX_PTR`], which has no pointer table to publish.
+        *RSC.blob_target.get() = target_base;
+        *RSC.blob_len.get() = h.total_size;
+        *RSC.trindex_target.get() = if h.version >= NRSC_VER_TRINDEX_PTR {
+            target_base + h.off_trindex as u64
+        } else {
+            0
+        };
     }
     true
 }
@@ -867,6 +957,11 @@ unsafe fn relocate_blob_core_ilp32(access_base: *mut u8, len: usize, target_base
             fix_nptrs32(access_base.add(h.off_frstr as usize), h.n_frstr as usize, 4, 0, tb);
             fix_nptrs32(access_base.add(h.off_frimg as usize), h.n_frimg as usize, 4, 0, tb);
         }
+        // The tree index (NRSC >= v7), same treatment: EmuTOS's `fix_trindex`
+        // relocates each slot of `rsh_trindex` in place (`gemrslib.c:599-602`).
+        if h.version >= NRSC_VER_TRINDEX_PTR {
+            fix_nptrs32(access_base.add(h.off_trindex as usize), h.n_trees as usize, 4, 0, tb);
+        }
     }
     true
 }
@@ -1022,6 +1117,14 @@ unsafe fn relocate_blob_core(access_base: *mut u8, len: usize, target_base: u64)
             fix_nptrs64(access_base.add(h.off_frstr as usize), h.n_frstr as usize, 8, 0, tb);
             fix_nptrs64(access_base.add(h.off_frimg as usize), h.n_frimg as usize, 8, 0, tb);
         }
+        // The tree index (NRSC >= v7): a pointer table like the two above, each
+        // slot a root-OBJECT byte offset rebased onto `target_base`. EmuTOS's
+        // `fix_trindex` does exactly this over `rsh_ntree`
+        // (`gemrslib.c:599-602`, `fix_long(ptreebase+ii)`); it is what makes
+        // `ap_ptree[i] == rsrc_gaddr(R_TREE, i)` true (`get_addr`, `:124`).
+        if h.version >= NRSC_VER_TRINDEX_PTR {
+            fix_nptrs64(access_base.add(h.off_trindex as usize), h.n_trees as usize, 8, 0, tb);
+        }
     }
     true
 }
@@ -1066,7 +1169,14 @@ unsafe fn fix_nptrs64(base: *mut u8, count: usize, stride: usize, field: usize, 
     }
 }
 
-/// Pointer to the root object of tree `idx` in a relocated blob at `base`.
+/// Pointer to the root object of tree `idx` in a blob relocated **in place**
+/// (LP64, `access_base == target_base` — [`relocate_blob`] /
+/// [`relocate_and_register`]).
+///
+/// From [`NRSC_VER_TRINDEX_PTR`] on the tree index already holds the relocated
+/// root address, so the slot is the answer (EmuTOS `ap_ptree[idx]`,
+/// `gemrslib.c:124`); an older blob holds a root OBJECT *index* into the
+/// object array.
 ///
 /// # Safety
 /// `base` must point at a relocated native `.RSC` blob with `idx` < n_trees.
@@ -1074,9 +1184,13 @@ pub unsafe fn tree_root(base: *mut u8, idx: usize) -> *mut Object {
     // SAFETY: caller guarantees a relocated blob.
     unsafe {
         let h = &*(base as *const NrscHeader);
-        let objs = base.add(h.off_objects as usize) as *mut Object;
-        let tri = base.add(h.off_trindex as usize) as *const u32;
-        objs.add(*tri.add(idx) as usize)
+        let tri = base.add(h.off_trindex as usize);
+        if h.version >= NRSC_VER_TRINDEX_PTR {
+            (tri.add(idx * 8) as *const u64).read_unaligned() as *mut Object
+        } else {
+            let objs = base.add(h.off_objects as usize) as *mut Object;
+            objs.add(rd32(tri.add(idx * 4)) as usize)
+        }
     }
 }
 
@@ -1337,6 +1451,15 @@ pub fn rsrc_load(pb: &Aespb) {
         // relocate to user VAs at the caller's OBJECT width.
         unsafe { load_into_user(run, buf, len, abi) }
     };
+    // `rs_readit`'s "init global" (`gemrslib.c:786-788`) + `fix_trindex`'s
+    // `ap_ptree` (`:595-597`): report the load back through the caller's
+    // `AESGLOBAL`. Only on success — EmuTOS reaches those lines only after the
+    // whole file is in memory.
+    if ok {
+        // SAFETY: `global` is the caller's AESGLOBAL, the same array
+        // `appl_init` fills (`aes/appl.rs`).
+        unsafe { report_load(pb.global_ptr()) };
+    }
     pb.set_ret(i16::from(ok));
 }
 
@@ -1423,6 +1546,96 @@ unsafe fn load_into_user(run: *mut BasePage, src: &[u8; RSC_CAP], len: usize, ab
     true
 }
 
+/// Byte offset of `ap_ptree` in the caller's `AESGLOBAL` (`global[5]`), a
+/// 4-byte field on every ABI — see `docs/api/aes/application.md` §`AESGLOBAL`
+/// and [`crate::aes::appl`]'s module note for why the pointer fields keep the
+/// m68k widths.
+const AP_PTREE_OFF: usize = 10;
+/// Byte offset of `ap_rscmem` (`global[7]`), 4 bytes.
+const AP_RSCMEM_OFF: usize = 14;
+/// Byte offset of `ap_rsclen` (`global[9]`), a `UWORD` — 2 bytes, as
+/// `gemrslib.h:22` declares it (gemlib: "only valid for resource files <64K").
+const AP_RSCLEN_OFF: usize = 18;
+
+/// Report a completed load back through the caller's `AESGLOBAL`, the way
+/// EmuTOS's `rs_readit` does (`aes/gemrslib.c:786-788`):
+///
+/// ```c
+/// rs_global = pglobal;
+/// rs_global->ap_rscmem = rs_hdr;      /* the blob base   */
+/// rs_global->ap_rsclen = rslsize;     /* its byte length */
+/// ```
+///
+/// plus the tree table `fix_trindex` publishes a few lines later
+/// (`:595-597`, `rs_global->ap_ptree = (OBJECT **)ptreebase`). Only
+/// `rs_readit` writes these; `rs_free`/`rs_gaddr`/`rs_saddr` merely read them
+/// back, which is why [`rsrc_free`] leaves the caller's copy untouched.
+///
+/// The values are the **target** VAs — the same addresses [`rsrc_gaddr`]
+/// hands out — so `ap_ptree[i] == rsrc_gaddr(R_TREE, i)`, EmuTOS's binding in
+/// `get_addr` (`gemrslib.c:124`). The *slots* of that array are the caller's
+/// pointer width (8 bytes LP64, 4 ILP32), because `_AESrscfile[i]` is a native
+/// `OBJECT *` (`sdk/gemlib/overlay/gem.h`); the *field* that names the array
+/// is 4 bytes on both ABIs, because `AESGLOBAL` is addressed by WORD index as
+/// well as by byte offset.
+///
+/// **When nothing is written, and why.** Both address fields are four bytes,
+/// so they can only name a blob that lives below 4 GiB in the caller's address
+/// space. That holds by construction for every real caller: an EL0 app's blob
+/// sits in its per-process window under `USER_TPA_MAX_VA` (32 MiB,
+/// `bdos::process::mmu`). It does **not** hold for the in-kernel path, which
+/// relocates in place in [`RSC_BUF`], a kernel high-half static: the low 32
+/// bits of such a VA are a physical address that resolves to nothing at EL1
+/// (after the high-half switch `TTBR0_EL1` maps nothing until a process is
+/// installed — `kernel/src/arch/aarch64/mmu.rs`). Writing that truncation
+/// would hand back a pointer that is wrong rather than absent, so this path
+/// writes **none** of the three and the caller keeps its zeros — EmuTOS's
+/// "nothing loaded" reading (`rs_free`, `gemrslib.c:685`). The load itself
+/// still succeeds; the descriptor in [`RSC`] is the truth NewTOS works from,
+/// and `rsrc_gaddr` keeps answering at full width. There is no EL1 caller of
+/// `rsrc_load` on a running system (measured 2026-09-13; see the module
+/// comment), so this branch binds only the host test harness.
+///
+/// Likewise `ap_ptree` needs the blob to *have* a relocated tree table, i.e.
+/// [`NRSC_VER_TRINDEX_PTR`] or newer. A v1–v6 blob carries root OBJECT
+/// indices instead of addresses; there is no array whose slots are pointers,
+/// so nothing is published. The three land together either way: a non-zero
+/// `ap_rsclen` beside a zero `ap_rscmem` would state two contradictory things.
+///
+/// # Safety
+/// `global` is the caller's `AESGLOBAL`: null, or writable for at least the
+/// 30 bytes / 15 WORDs of `gemrslib.h:15-27`.
+unsafe fn report_load(global: *mut i16) {
+    if global.is_null() {
+        return;
+    }
+    // SAFETY: single-CPU AES; the three cells were set by
+    // `relocate_and_register_core` for the load just completed.
+    let (base, ptree, len) = unsafe {
+        (*RSC.blob_target.get(), *RSC.trindex_target.get(), *RSC.blob_len.get())
+    };
+    // `fits` is the whole rule: an address this narrow field cannot carry is
+    // not carried at all.
+    let fits = |v: u64| v != 0 && v <= u32::MAX as u64;
+    if !fits(base) || !fits(ptree) {
+        return;
+    }
+    let g = global as *mut u8;
+    // SAFETY: `global` addresses a caller-allocated `AESGLOBAL` of at least
+    // 30 bytes / 15 WORDs (`gemrslib.h:15-27`, `desk/gembind.h:27`); the last
+    // byte touched is 19. The 4-byte fields at 10 and 14 are only 2-byte
+    // aligned, hence `write_unaligned`.
+    unsafe {
+        (g.add(AP_PTREE_OFF) as *mut u32).write_unaligned(ptree as u32);
+        (g.add(AP_RSCMEM_OFF) as *mut u32).write_unaligned(base as u32);
+        // `ap_rsclen` is a UWORD and `rslsize` a LONG in EmuTOS too, so a
+        // resource of 64 KiB or more reports its low word — the same value
+        // EmuTOS reports, and the reason gemlib documents the field as "only
+        // valid for resource files <64K". [`RSC_CAP`] bounds ours at 64 KiB.
+        (g.add(AP_RSCLEN_OFF) as *mut u16).write_unaligned(len as u16);
+    }
+}
+
 /// `rsrc_free` (111) — drop the loaded resource's tree table.
 ///
 /// Returns 1 only if a resource was actually loaded; 0 when nothing was
@@ -1478,7 +1691,15 @@ pub fn rsrc_free(pb: &Aespb) {
         *RSC.bb_access.get() = 0;
         *RSC.n_bb.get() = 0;
         *RSC.bb_size.get() = 0;
+        *RSC.blob_target.get() = 0;
+        *RSC.blob_len.get() = 0;
+        *RSC.trindex_target.get() = 0;
     }
+    // The caller's `AESGLOBAL` is deliberately **not** cleared: EmuTOS's
+    // `rs_free` frees the blob and leaves `ap_rscmem`/`ap_rsclen`/`ap_ptree`
+    // holding their stale values (`gemrslib.c:685-708` writes none of them),
+    // which is why the spec notes a program must not `rsrc_gaddr` after
+    // `rsrc_free`.
     pb.set_ret(if was_loaded { 1 } else { 0 });
 }
 
@@ -1764,3 +1985,232 @@ pub(super) fn fix_chpos(raw: i16, cell: i16, is_width: bool, gl_width: i16) -> i
 
 /// Size of one native `Object` record (for `R_OBJECT` indexing / tools).
 pub const OBJECT_SIZE: usize = size_of::<Object>();
+
+#[cfg(test)]
+mod tests {
+    //! A35 — what `rsrc_load` reports back through the caller's `AESGLOBAL`.
+    //!
+    //! These live **in-crate** and not in `tests/aes_rsrc_global_fields.rs`
+    //! for one reason: the interesting branch is the one where the blob's
+    //! address fits the four bytes `ap_ptree`/`ap_rscmem` have, and that is
+    //! the EL0 branch — `load_into_user` relocates the blob onto a **user VA**
+    //! (`app_va`, under `USER_TPA_MAX_VA` = 32 MiB) while touching it through
+    //! the pool block's kernel alias. A host integration test cannot reach it:
+    //! it has no page tables to map a user window with, and on a 64-bit host
+    //! every real address is above 4 GiB, so the in-place path it *can* drive
+    //! always takes the refusal branch.
+    //!
+    //! [`relocate_and_register_core`] is exactly the access/target split that
+    //! makes the EL0 path work, so these tests use it the way
+    //! `load_into_user` does: `access_base` = a buffer they own, `target_base`
+    //! = the user VA the blob will be visible at. Nothing is faked — the same
+    //! function, the same arguments' shape, only the memory is the test's.
+
+    use super::*;
+    use std::sync::{Mutex, MutexGuard};
+
+    /// The AES's own file-selector resource: a genuine NRSC v7 blob (LP64,
+    /// relocated tree index), the file `xtask gen-fsel-rsc` produces.
+    const FSEL: &[u8] = include_bytes!("gem_fsel.nrsc");
+
+    /// [`RSC`] is a lock-free single-CPU descriptor; every test here loads
+    /// into it, so they must not overlap.
+    static RSC_LOCK: Mutex<()> = Mutex::new(());
+
+    fn lock<'a>() -> MutexGuard<'a, ()> {
+        RSC_LOCK.lock().unwrap_or_else(|e| e.into_inner())
+    }
+
+    /// The user VA shape `load_into_user` hands `relocate_and_register_core`:
+    /// the per-process EL0 window base (`usermem::WINDOW_BASE` = the 4 MiB
+    /// `USER_TPA_TOP`). Measured on QEMU `raspi4b` for TeraDesk's 68 rsrc
+    /// calls: `0x4000ac … 0x409381`.
+    const APP_VA: u64 = 0x0040_0000;
+
+    /// A `u32` field of the caller's `AESGLOBAL`, read at its byte offset.
+    fn g32(global: &[i16; 16], off: usize) -> u32 {
+        // SAFETY: `global` is 32 bytes and `off + 4 <= 32` at every call site.
+        let b = unsafe { std::slice::from_raw_parts(global.as_ptr() as *const u8, 32) };
+        u32::from_le_bytes(b[off..off + 4].try_into().unwrap())
+    }
+
+    /// An 8-byte-aligned copy of `blob`. The blob's OBJECT / TEDINFO /
+    /// ICONBLK / BITBLK records are `repr(C)` structs the loader dereferences
+    /// in place, so the buffer that holds them must be at least as aligned as
+    /// a pool page or [`RSC_BUF`] is — a plain `Vec<u8>` is not.
+    struct Blob {
+        words: Vec<u64>,
+        len: usize,
+    }
+
+    impl Blob {
+        fn new(blob: &[u8]) -> Self {
+            let mut words = vec![0u64; blob.len().div_ceil(8)];
+            // SAFETY: `words` holds at least `blob.len()` bytes.
+            unsafe {
+                core::ptr::copy_nonoverlapping(
+                    blob.as_ptr(),
+                    words.as_mut_ptr() as *mut u8,
+                    blob.len(),
+                );
+            }
+            Self { words, len: blob.len() }
+        }
+        fn as_mut_ptr(&mut self) -> *mut u8 {
+            self.words.as_mut_ptr() as *mut u8
+        }
+        fn bytes(&self) -> &[u8] {
+            // SAFETY: `words` holds `len` initialised bytes.
+            unsafe { std::slice::from_raw_parts(self.words.as_ptr() as *const u8, self.len) }
+        }
+    }
+
+    /// Load `blob` as if it were mapped at `target`, exactly as
+    /// `load_into_user` does, and return the owned access buffer (which must
+    /// outlive every later `rsrc_gaddr`) together with the caller's
+    /// `AESGLOBAL` after [`report_load`].
+    fn load_at(blob: &[u8], target: u64) -> (Blob, [i16; 16]) {
+        let mut buf = Blob::new(blob);
+        let len = buf.len;
+        let p = buf.as_mut_ptr();
+        // SAFETY: `buf` holds `len` readable/writable bytes; the core
+        // validates the header against `len` before touching anything.
+        let ok = unsafe { relocate_and_register_core(p, len, target, Abi::Lp64) };
+        assert!(ok, "the blob must relocate");
+        let mut global = [0i16; 16];
+        // SAFETY: a 32-byte caller array, more than the 30-byte AESGLOBAL.
+        unsafe { report_load(global.as_mut_ptr()) };
+        (buf, global)
+    }
+
+    /// A hand-built blob of an **older** generation: `version` with the
+    /// pre-v7 tree index (`[u32]` of root OBJECT indices) and a single G_BOX
+    /// object, whose `ob_spec` is a literal colour word. v1 is what
+    /// `kernel/src/selftest_objc.rs::run_rsrc` builds; v5 is the generation
+    /// every committed resource had before A35.
+    fn old_blob(version: u32) -> Vec<u8> {
+        const HDR: usize = size_of::<NrscHeader>(); // 68
+        let off_tri = HDR;
+        let off_obj = off_tri + 4;
+        let total = off_obj + OBJECT_SIZE;
+        let mut b = vec![0u8; total];
+        b[0..4].copy_from_slice(b"NRSC");
+        let put = |b: &mut Vec<u8>, i: usize, v: u32| {
+            b[4 + i * 4..8 + i * 4].copy_from_slice(&v.to_le_bytes());
+        };
+        put(&mut b, 0, version);
+        put(&mut b, 1, 1); // n_trees
+        put(&mut b, 2, 1); // n_objects
+        put(&mut b, 3, off_tri as u32);
+        put(&mut b, 4, off_obj as u32);
+        put(&mut b, 5, total as u32);
+        // The v3+/v5+ table fields stay 0/0, i.e. empty tables inside the blob.
+        b[off_tri..off_tri + 4].copy_from_slice(&0u32.to_le_bytes()); // root = obj 0
+        let o = off_obj;
+        b[o..o + 2].copy_from_slice(&(-1i16).to_le_bytes()); // ob_next
+        b[o + 2..o + 4].copy_from_slice(&(-1i16).to_le_bytes()); // ob_head
+        b[o + 4..o + 6].copy_from_slice(&(-1i16).to_le_bytes()); // ob_tail
+        b[o + 6..o + 8].copy_from_slice(&G_BOX.to_le_bytes());
+        b[o + 16..o + 24].copy_from_slice(&0x0001_0000u64.to_le_bytes()); // ob_spec
+        b
+    }
+
+    /// EmuTOS `rs_readit` (`gemrslib.c:787-788`) + `fix_trindex` (`:595-597`):
+    /// a load whose blob is reachable in four bytes reports all three fields.
+    #[test]
+    fn an_el0_load_reports_all_three_fields() {
+        let _g = lock();
+        let (_buf, global) = load_at(FSEL, APP_VA);
+        let off_trindex = u32::from_le_bytes(FSEL[16..20].try_into().unwrap());
+        let total = u32::from_le_bytes(FSEL[24..28].try_into().unwrap());
+        assert_eq!(
+            g32(&global, AP_PTREE_OFF),
+            APP_VA as u32 + off_trindex,
+            "ap_ptree must name the relocated tree index inside the blob"
+        );
+        assert_eq!(g32(&global, AP_RSCMEM_OFF), APP_VA as u32, "ap_rscmem");
+        assert_eq!(global[9] as u16 as u32, total, "ap_rsclen");
+    }
+
+    /// `appl_init`'s six fields and the caller's own bytes must survive: a
+    /// load writes bytes 10..=19 and nothing else, so `ap_planes`
+    /// (`global[10]`, byte 20) and `ap_3resv` (byte 22) stay put. This is the
+    /// index half of the `AESGLOBAL` contract (`application.md`
+    /// §`AESGLOBAL`).
+    #[test]
+    fn a_load_writes_only_its_own_ten_bytes() {
+        let _g = lock();
+        let mut buf = Blob::new(FSEL);
+        let len = buf.len;
+        let p = buf.as_mut_ptr();
+        // SAFETY: `buf` holds `len` readable/writable bytes.
+        assert!(unsafe { relocate_and_register_core(p, len, APP_VA, Abi::Lp64) });
+        let mut global = [0x5A5Ai16; 16];
+        // SAFETY: a 32-byte caller array.
+        unsafe { report_load(global.as_mut_ptr()) };
+        for (i, w) in global.iter().enumerate() {
+            if (5..=9).contains(&i) {
+                continue; // ap_ptree / ap_rscmem / ap_rsclen
+            }
+            assert_eq!(*w, 0x5A5Ai16, "global[{i}] must not be touched");
+        }
+    }
+
+    /// EmuTOS `get_addr(R_TREE, i)` **is** `ap_ptree[i]` (`gemrslib.c:124`).
+    /// The relocated tree index must therefore hold, in caller-pointer-wide
+    /// slot `i`, exactly the address `rsrc_gaddr(R_TREE, i)` returns.
+    #[test]
+    fn ap_ptree_slots_are_what_rsrc_gaddr_returns() {
+        let _g = lock();
+        let (buf, global) = load_at(FSEL, APP_VA);
+        let off_trindex = u32::from_le_bytes(FSEL[16..20].try_into().unwrap()) as usize;
+        let n_trees = u32::from_le_bytes(FSEL[8..12].try_into().unwrap()) as usize;
+        assert!(n_trees >= 3, "gem.rsc declares three trees");
+        assert_eq!(g32(&global, AP_PTREE_OFF) as u64, APP_VA + off_trindex as u64);
+        for i in 0..n_trees {
+            // The slot, read through the blob's access alias (the kernel's
+            // view); its *value* is a target VA, which is what an application
+            // reading `ap_ptree[i]` would get.
+            let d = buf.bytes();
+            let slot = u64::from_le_bytes(
+                d[off_trindex + i * 8..off_trindex + i * 8 + 8].try_into().unwrap(),
+            );
+            // SAFETY: single-threaded under `RSC_LOCK`; the descriptor was set
+            // by the load above.
+            let via_gaddr = unsafe { get_addr(R_TREE, i) }.expect("tree in range").target;
+            assert_eq!(slot, via_gaddr, "ap_ptree[{i}] != rsrc_gaddr(R_TREE, {i})");
+            assert!(slot >= APP_VA && slot < APP_VA + buf.len as u64);
+        }
+    }
+
+    /// A blob the four-byte fields cannot name reports **nothing** — not a
+    /// truncated address. That is the in-kernel (EL1) path, where the blob
+    /// sits in [`RSC_BUF`], a kernel high-half static.
+    #[test]
+    fn a_blob_beyond_four_gigabytes_reports_nothing() {
+        let _g = lock();
+        let (_buf, global) = load_at(FSEL, 0xFFFF_0000_0015_B300);
+        assert_eq!(g32(&global, AP_PTREE_OFF), 0, "ap_ptree");
+        assert_eq!(g32(&global, AP_RSCMEM_OFF), 0, "ap_rscmem");
+        assert_eq!(global[9], 0, "ap_rsclen");
+    }
+
+    /// Backward compatibility: a v1 and a v5 blob still load and still
+    /// register their trees — only they publish no `ap_ptree`, because their
+    /// tree index holds root *indices*, not addresses. v1 is the generation
+    /// `kernel/src/selftest_objc.rs::run_rsrc` builds by hand.
+    #[test]
+    fn a_pre_v7_blob_still_loads_and_publishes_nothing() {
+        let _g = lock();
+        for version in [1u32, 5] {
+            let (buf, global) = load_at(&old_blob(version), APP_VA);
+            let off_obj = u32::from_le_bytes(buf.bytes()[20..24].try_into().unwrap()) as u64;
+            // SAFETY: single-threaded under `RSC_LOCK`.
+            let tree = unsafe { get_addr(R_TREE, 0) }.expect("tree 0").target;
+            assert_eq!(tree, APP_VA + off_obj, "v{version}: tree 0 must register");
+            assert_eq!(g32(&global, AP_PTREE_OFF), 0, "v{version}: ap_ptree");
+            assert_eq!(g32(&global, AP_RSCMEM_OFF), 0, "v{version}: ap_rscmem");
+            assert_eq!(global[9], 0, "v{version}: ap_rsclen");
+        }
+    }
+}

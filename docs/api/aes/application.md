@@ -56,7 +56,10 @@ Byte offsets are the m68k layout (`WORD` = 2 bytes; `LONG`/pointer = 4 bytes,
 > It does **not** initialise `ap_ptree` (`global[5]`) — that field is populated
 > by `rsrc_load` when the application loads its resource file. (The previous
 > spec wrongly attributed the DESKTOP `ob_spec` to `ap_ptree`; the source
-> writes it to `ap_private`.)
+> writes it to `ap_private`.) NewTOS's `rsrc_load` fills `ap_ptree`,
+> `ap_rscmem` and `ap_rsclen` since 2026-09-14 (A35) — at the TOS widths
+> below, and only when the loaded blob is addressable in four bytes; see
+> [`resource-fileselector.md`](./resource-fileselector.md) §`rsrc_load (110)`.
 >
 > **NewTOS `ap_private` (D-099, closed 2026-09-01, stage S1b).** NewTOS fills
 > `ap_private` from the **same object** EmuTOS does: the ROOT of the AES's own
@@ -568,9 +571,13 @@ returns are pid / 0 / 1 / -1 only.
   together (see [`event.md`](./event.md)).
 - **`global[]` is an application-supplied array** (in the app's memory) — a
   **user pointer**; apply the same boundary handling as other AES `addr*`
-  pointers (see [`_dispatcher.md`](./_dispatcher.md) §NewTOS notes). The
-  m68k-vs-native pointer-width variance of `ap_ptree`/`ap_private` follows the
-  ABI of the caller (see [`docs/COMPATIBILITY.md`](../../COMPATIBILITY.md)
-  "Native vs m68k struct variants").
+  pointers (see [`_dispatcher.md`](./_dispatcher.md) §NewTOS notes). Its
+  pointer fields do **not** follow the caller's ABI: `AESGLOBAL` keeps the
+  m68k widths on every ABI (the §`AESGLOBAL` decision of 2026-09-13 above),
+  the **named exception** to
+  [`docs/COMPATIBILITY.md`](../../COMPATIBILITY.md) "Native vs m68k struct
+  variants". What does follow the caller is the *array* `ap_ptree` points at:
+  its slots are native `OBJECT *` (8 bytes LP64, 4 ILP32), because that is how
+  `_AESrscfile[i]` is dereferenced.
 - **`appl_tplay`/`appl_trecord`** are honest-unsupported until the input
   recorder exists (Rule 2), not stubbed.

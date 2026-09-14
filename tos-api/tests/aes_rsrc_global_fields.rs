@@ -2,7 +2,7 @@
 //! `AESGLOBAL`: `ap_ptree`, `ap_rscmem` and `ap_rsclen`.
 //!
 //! EmuTOS `rs_readit` (`aes/gemrslib.c:785-788`) writes two of them as soon as
-//! the file is in memory, and `fix_trindex` (`:597`) the third:
+//! the file is in memory, and `fix_trindex` (`:595-597`) the third:
 //!
 //! ```c
 //! rs_global = pglobal;
@@ -11,69 +11,49 @@
 //! ...
 //! ptreebase = (LONG *)get_sub(0, rs_hdr->rsh_trindex, sizeof(LONG));
 //! rs_global->ap_ptree = (OBJECT **)ptreebase;   /* gemrslib.c:597 */
+//! for (ii = 0; ii < rs_hdr->rsh_ntree; ii++)
+//!     fix_long(ptreebase+ii);
 //! ```
 //!
-//! `rs_sglobe` (`gemrslib.c:675-679`) reads them back out of the caller's
-//! `AESGLOBAL` on every `rs_free`/`rs_gaddr`/`rs_saddr`, so in EmuTOS these
-//! three words *are* the resource descriptor. Applications read them too:
-//! TeraDesk uses `_AESrscfile` (`global[5]`) and `_AESrscmem` (`global[7]`) in
-//! `icon.c:2692,2707-2708` and sets them itself in `rsc_load.c:417-423`.
+//! `get_addr` reads that array straight back — `case R_TREE: return
+//! rs_global->ap_ptree[rsindex];` (`gemrslib.c:124`) — so `ap_ptree[i]` and
+//! `rsrc_gaddr(R_TREE, i)` are the *same value*, and that binding is the point
+//! of the whole field. Applications use it: TeraDesk reads `_AESrscfile`
+//! (`global[5]`) and `_AESrscmem` (`global[7]`) in `icon.c:2692,2707-2708`.
 //!
-//! Audit finding B3, `docs/analysis/audit-applinit-rsrc-load-2026-09-11.md:168-190`:
-//! NewTOS's `rsrc_load` never touches `pb.global_ptr()`, so all three read 0
-//! after a successful load.
+//! Audit finding B3, `docs/analysis/audit-applinit-rsrc-load-2026-09-11.md:168-190`.
 //!
 //! Spec: `docs/api/aes/application.md` §`AESGLOBAL`,
 //! `docs/api/aes/resource-fileselector.md` §1 `rsrc_load (110)`.
 //!
-//! **Why these tests are still `#[ignore]`d.** The first blocker — which
-//! `AESGLOBAL` layout NewTOS commits to — was decided on 2026-09-13 and is
-//! gone: the struct keeps the TOS widths on every ABI (30 bytes, 4-byte
-//! pointer fields; `tos-api/src/aes/appl.rs`, `docs/api/aes/application.md`
-//! §`AESGLOBAL`), and gemlib reads them at those widths through
-//! `sdk/gemlib/overlay/{gem.h,mt_gem.h.in}`. So every field now has its own
-//! bytes, and `ap_rsclen` is writable today.
+//! ## What this binary can and cannot see (read before adding a test here)
 //!
-//! **One** question the layout does not answer keeps the three together:
+//! It drives the **in-place** load path: `rsrc_load` finds no running process,
+//! so it relocates inside `RSC_BUF`, a `tos-api` static. That is the path the
+//! kernel would take for an EL1 caller — and the two address fields are four
+//! bytes wide on every ABI (`gemrslib.h:15-27`; the decision of 2026-09-13,
+//! `docs/api/aes/application.md` §`AESGLOBAL`), so they can only carry a blob
+//! that lives below 4 GiB in the caller's address space.
 //!
-//! * **`ap_ptree` has no array to point at.** EmuTOS publishes the
-//!   *relocated* `OBJECT *[]` tree index inside the blob (`fix_trindex`,
-//!   `gemrslib.c:595-597`). NewTOS's NRSC tree index is `[u32]` of root
-//!   OBJECT **indices** (`tools/mkrsc.py:417`), not addresses — and four
-//!   bytes wide in both ABI variants, while `_AESrscfile[i]` is a native
-//!   8-byte `OBJECT *` on LP64. Pointing `ap_ptree` at it would hand the
-//!   application an index array typed as a pointer array, which is worse
-//!   than the 0 it reads today. A faithful `ap_ptree` needs a materialised
-//!   caller-width pointer array somewhere the application can reach.
+//! On a 64-bit host **no** address is ever below 4 GiB — macOS reserves the
+//! first 4 GiB as `__PAGEZERO`, and `nm` on this binary puts `RSC_BUF` at
+//! `0x1_0010_7ef8` — so this harness can only ever observe the **refusal**:
+//! `rsrc_load` succeeds, `rsrc_gaddr` answers at full width, and the three
+//! fields stay 0 rather than carry a truncated address that would name
+//! nothing. The tests below pin exactly that, and pin that the value written
+//! is not the truncation.
 //!
-//! A second, **unmeasured** reason stood beside it until 2026-09-13: that the
-//! 4-byte `ap_ptree`/`ap_rscmem` have no in-kernel address to carry, because
-//! the EL1 path loads into `RSC_BUF`, a kernel high-half static. The
-//! measurement retired it as a blocker: **no EL1 caller of `rsrc_load` exists**
-//! on a running system (opcode 110 is reachable only through the `svc #2`
-//! dispatcher; the EL1 emitters that could issue it have no callers), and a
-//! `--features aes-trace` run on QEMU `raspi4b` shows the built-in desktop
-//! making 28 AES calls with no rsrc opcode among them, while TeraDesk's 68
-//! rsrc calls are all EL0, inside the process window below `USER_TPA_MAX_VA`
-//! (32 MiB) and therefore exact in four bytes. **These tests are the one
-//! caller that does drive the EL1 path** — which is why they, not the system,
-//! are where that constraint would first be felt.
+//! The **positive** branch — an EL0 blob in the per-process window below
+//! `USER_TPA_MAX_VA` (32 MiB), where all three fields are written — is driven
+//! by the in-crate unit tests in `tos-api/src/aes/resource.rs` (`mod tests`),
+//! which can hand `relocate_and_register_core` the access/target split
+//! `load_into_user` uses. On the machine it is TeraDesk and QED that exercise
+//! it: measured on QEMU `raspi4b`, TeraDesk's 68 rsrc calls all carry blob
+//! addresses `0x4000ac … 0x409381`.
 //!
-//! No address is quoted here on purpose. `RSC_BUF` moves with every link — the
-//! earlier text named `0xFFFF_0000_0008_xxxx` for the target, and a `nm` on the
-//! `board-rpi4` release of 2026-09-13 put it at `0xffff_0000_0015_b300` — so a
-//! number in this comment is stale by the next build and was never the point:
-//! what matters is the half of the address space, and that no caller is there.
-//! The full record, with the counter-case (EmuTOS's own desktop *does* call
-//! `rsrc_load`, `desk/deskapp.c:554,571`) and why NewTOS's `desk/` is not
-//! getting that path (ADR-022 rescinded), is in
-//! `docs/api/aes/resource-fileselector.md` §`rsrc_load` and `docs/STATUS.md`
-//! §Blocked.
-//!
-//! Writing two of the three and leaving `ap_rscmem` at 0 is not an option
-//! either: EmuTOS reads `ap_rscmem == NULL` as "nothing loaded"
-//! (`rs_free`, `gemrslib.c:685`), so a non-zero `ap_rsclen` beside a zero
-//! `ap_rscmem` states something untrue. They land together or not at all.
+//! There is no EL1 caller of `rsrc_load` on a running system (measured
+//! 2026-09-13; `tos-api/src/aes/resource.rs` module comment), so the refusal
+//! branch binds this harness and nothing else.
 
 use std::sync::{Mutex, MutexGuard, OnceLock};
 
@@ -323,80 +303,113 @@ fn g_rsclen(global: &[i16; 16]) -> u16 {
     global[9] as u16
 }
 
+/// The address the blob was relocated onto — EmuTOS's `rs_hdr`, i.e. the value
+/// `ap_rscmem` names. Derived from the AES itself rather than from a static:
+/// `rsrc_gaddr(R_OBJECT, 0)` is the OBJECT array's base, which the header
+/// places `off_objects` bytes into the blob.
+fn blob_base() -> u64 {
+    let (ok, obj0) = gaddr(1 /* R_OBJECT */, 0);
+    assert_eq!(ok, 1, "the resource must be loaded");
+    obj0 - u64::from(u32::from_le_bytes(RSC[20..24].try_into().unwrap()))
+}
+
 // ── the three fields ──────────────────────────────────────────────────────
 
-/// EmuTOS `gemrslib.c:787` — `rs_global->ap_rscmem = rs_hdr`, the address the
-/// resource was loaded at. `rsrc_gaddr(R_TEDINFO, 0)` names a record inside
-/// that same blob, so the blob base must be at or below it.
+/// `fix_trindex` (`gemrslib.c:591-603`) + `get_addr` (`:124`): after a load the
+/// blob carries a **relocated** tree index, and slot `i` of it holds exactly the
+/// address `rsrc_gaddr(R_TREE, i)` returns. That array is what `ap_ptree`
+/// names; NRSC v7/v8 is the generation that has it (`NRSC_VER_TRINDEX_PTR`).
+///
+/// This is the end-to-end half of A35 the host can see: the blob is relocated
+/// in place, so the test dereferences the very array an application would get
+/// through `ap_ptree`.
 #[test]
-#[ignore = "blocked: lands together with ap_ptree, the one open question — \
-            see the module comment (A35)"]
-fn rsrc_load_reports_ap_rscmem() {
+fn rsrc_load_publishes_the_relocated_tree_index() {
+    let _g = fs();
+    let (ret, _global) = rsrc_load_with_global("C:\\TEST.RSC");
+    assert_eq!(ret, 1, "rsrc_load must succeed");
+
+    let n_trees = u32::from_le_bytes(RSC[8..12].try_into().unwrap()) as usize;
+    assert!(n_trees >= 3, "the AES file-selector resource declares three trees");
+    let ptree = blob_base() + u32::from_le_bytes(RSC[16..20].try_into().unwrap()) as u64;
+    for i in 0..n_trees {
+        // The slot, at the caller's pointer width (LP64 here, 8 bytes).
+        // SAFETY: `ptree` addresses the relocated tree index of the blob that
+        // is live until `rsrc_free` below.
+        let slot = unsafe { (ptree as *const u64).add(i).read_unaligned() };
+        let (ok, tree) = gaddr(0 /* R_TREE */, i as i16);
+        assert_eq!(ok, 1, "tree {i} must resolve");
+        assert_eq!(slot, tree, "ap_ptree[{i}] must be tree {i}'s root object");
+    }
+    rsrc_free();
+}
+
+/// `ap_ptree` / `ap_rscmem` are four-byte fields. When the blob does not fit
+/// them — this harness's in-place load into a host static above 4 GiB, the
+/// shape of the in-kernel path — they are left at 0, which is EmuTOS's
+/// "nothing loaded" (`rs_free`, `gemrslib.c:685`). What they must **never**
+/// hold is the low half of the address: that names a page nothing can reach.
+#[test]
+fn the_two_address_fields_are_never_a_truncated_address() {
     let _g = fs();
     let (ret, global) = rsrc_load_with_global("C:\\TEST.RSC");
     assert_eq!(ret, 1, "rsrc_load must succeed");
 
-    let (ok, ted) = gaddr(2 /* R_TEDINFO */, 0);
-    assert_eq!(ok, 1);
-    let rscmem = g_ptr(&global, 14);
-    assert_ne!(rscmem, 0, "ap_rscmem (global[7]) is still 0 after rsrc_load");
+    let base = blob_base();
     assert!(
-        rscmem <= ted && ted < rscmem + RSC.len() as u64,
-        "ap_rscmem {rscmem} does not address the blob that holds tedinfo[0] ({ted})"
+        base > u64::from(u32::MAX),
+        "this harness is only meaningful while the blob sits above 4 GiB \
+         (measured {base:#x}); see the module comment"
     );
+    let truncated = u64::from(base as u32);
+    assert_ne!(truncated, 0, "the truncation must be a distinguishable value");
+
+    let ptree_field = g_ptr(&global, 10);
+    let rscmem_field = g_ptr(&global, 14);
+    assert_eq!(rscmem_field, 0, "ap_rscmem must stay 0, not carry half an address");
+    assert_ne!(rscmem_field, truncated, "ap_rscmem must not be the truncation");
+    assert_eq!(ptree_field, 0, "ap_ptree must stay 0");
+    let tri = u64::from(u32::from_le_bytes(RSC[16..20].try_into().unwrap()));
+    assert_ne!(ptree_field, truncated + tri, "ap_ptree must not be the truncation");
     rsrc_free();
 }
 
-/// EmuTOS `gemrslib.c:788` — `rs_global->ap_rsclen = rslsize`, the byte length
-/// the header declares.
+/// The three land together. `ap_rsclen` is a plain WORD and always
+/// representable, but EmuTOS reads `ap_rscmem == NULL` as "nothing loaded"
+/// (`gemrslib.c:685`), so a length beside a null base would state two
+/// contradictory things — EmuTOS never produces that state (`rs_readit` writes
+/// both in adjacent statements, `:787-788`) and neither does NewTOS.
 #[test]
-#[ignore = "blocked: lands together with ap_ptree/ap_rscmem, and ap_rsclen \
-            alone would state something untrue — see the module comment (A35)"]
-fn rsrc_load_reports_ap_rsclen() {
+fn ap_rsclen_lands_together_with_the_two_address_fields() {
     let _g = fs();
     let (ret, global) = rsrc_load_with_global("C:\\TEST.RSC");
     assert_eq!(ret, 1, "rsrc_load must succeed");
     let total = u32::from_le_bytes(RSC[24..28].try_into().unwrap());
+    assert_ne!(total, 0, "the resource declares a size");
+    assert_eq!(g_ptr(&global, 14), 0, "precondition: ap_rscmem was not written");
     assert_eq!(
-        g_rsclen(&global) as u32,
-        total,
-        "ap_rsclen (global[9]) must be the resource's declared size"
+        g_rsclen(&global),
+        0,
+        "ap_rsclen must not be written while ap_rscmem says nothing is loaded"
     );
     rsrc_free();
 }
 
-/// EmuTOS `gemrslib.c:595-597` — `fix_trindex` publishes the tree-index array
-/// through `ap_ptree`, so `ap_ptree[i]` is tree `i`'s root, the same address
-/// `rsrc_gaddr(R_TREE, i)` returns.
+/// Refusing to publish must not weaken the load: `rsrc_load` still returns 1,
+/// `rsrc_gaddr` still answers at full width from the kernel descriptor, and
+/// `rsrc_free` still reports that something was loaded. NewTOS deliberately
+/// does not adopt EmuTOS's `rs_sglobe` read-back (`gemrslib.c:675-679`), so
+/// the `AESGLOBAL` is a report, never the AES's own state.
 #[test]
-#[ignore = "blocked: NewTOS's NRSC tree index is an index array, not the \
-            relocated pointer array ap_ptree names — see the module comment (A35)"]
-fn rsrc_load_reports_ap_ptree() {
+fn a_load_that_publishes_nothing_still_works() {
     let _g = fs();
-    let (ret, global) = rsrc_load_with_global("C:\\TEST.RSC");
+    let (ret, _global) = rsrc_load_with_global("C:\\TEST.RSC");
     assert_eq!(ret, 1, "rsrc_load must succeed");
-
-    let ptree = g_ptr(&global, 10);
-    assert_ne!(ptree, 0, "ap_ptree (global[5]) is still 0 after rsrc_load");
-    let (ok, tree0) = gaddr(0 /* R_TREE */, 0);
+    let (ok, tree) = gaddr(0 /* R_TREE */, 0);
     assert_eq!(ok, 1);
-    // SAFETY: `ap_ptree` addresses the relocated tree-index array.
-    let slot0 = unsafe { (ptree as *const u64).read_unaligned() };
-    assert_eq!(slot0, tree0, "ap_ptree[0] must be tree 0's root object");
-    rsrc_free();
-}
-
-/// The state the audit measured, kept as a live statement of what an
-/// application sees today: a successful `rsrc_load` leaves all three fields 0.
-/// This is the counterpart of the three ignored tests above — when they are
-/// enabled, this one goes.
-#[test]
-fn rsrc_load_leaves_the_three_fields_zero_today() {
-    let _g = fs();
-    let (ret, global) = rsrc_load_with_global("C:\\TEST.RSC");
-    assert_eq!(ret, 1, "rsrc_load must succeed");
-    assert_eq!(g_ptr(&global, 10), 0, "ap_ptree");
-    assert_eq!(g_ptr(&global, 14), 0, "ap_rscmem");
-    assert_eq!(g_rsclen(&global), 0, "ap_rsclen");
+    assert!(tree > u64::from(u32::MAX), "the full-width address is intact");
+    let (ok, ted) = gaddr(2 /* R_TEDINFO */, 0);
+    assert_eq!(ok, 1);
+    assert!(ted >= blob_base() && ted < blob_base() + RSC.len() as u64);
     rsrc_free();
 }

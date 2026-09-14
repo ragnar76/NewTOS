@@ -1,0 +1,91 @@
+A35 -- rsrc_load reports ap_ptree / ap_rscmem / ap_rsclen, and the NRSC tree
+index became a relocated pointer table.  Regression evidence, 2026-09-14.
+MEASUREMENT ONLY: this directory states what ran and what came back.
+
+WHAT CHANGED (the thing under test)
+  tools/mkrsc.py                   convert() emits NRSC v7 (LP64) / v8 (ILP32):
+                                   the tree index holds PTR-wide root-OBJECT
+                                   byte OFFSETS (relocated by the loader) in
+                                   place of fixed 4-byte root indices, and is
+                                   padded so the OBJECT array stays naturally
+                                   aligned.
+  tos-api/src/aes/resource.rs      NRSC_VER_TRINDEX_PTR gate; both relocation
+                                   cores relocate the tree index; the tree
+                                   registration + tree_root() read the relocated
+                                   slot; report_load() writes the three
+                                   AESGLOBAL fields when the blob base fits the
+                                   four bytes ap_ptree/ap_rscmem have.
+  tools/xtask/src/rsc_align_tests.rs  nrsc_ptr_width(): pointer width by version
+                                   parity instead of `version == 5`.
+  tos-api/src/aes/appl.rs          comment only.
+
+REGENERATED RESOURCES (all NRSC v5 -> v7)
+  tos-api/src/aes/gem_fsel.nrsc            4987 -> 4991 bytes  (tracked)
+  sdk/apps/qed/build/qed.rsc              41190 -> 41322 bytes (untracked build)
+  sdk/apps/teradesk/build/dist/desktop.rsc 39114 -> 39222 bytes (untracked build)
+  sdk/apps/teradesk/build/dist/icons.rsc   unchanged -- native-RSHDR, a
+                                           different format, not NRSC.
+  A byte-level sweep of the whole tree found no other NRSC blob.
+  The application binaries (QED.NAP, DESKTOP.NAP) were NOT rebuilt -- only the
+  kernel and the resources, so the run isolates those two.
+
+BUILDS
+  kernel   cargo run -p xtask -- build --board {qemu-virt,rpi4} --release
+           (fresh: "Compiling tos-api"+"Compiling kernel" in both logs)
+           rpi4 release ELF sha256
+             d60a10ee5c5b20ccc058090c29aae7dcb23082da0ebb625e6a8d32e06975128d
+           kernel8.img sha256
+             40aadd812c20432015243c0e8837599838cf73cf6ffaa6d563c4e5d2e039147a
+           787584 bytes, 14:23
+  warnings tos-api 64 / kernel 94 (rustc), tos-api 81 / kernel 125 (clippy)
+           -- unchanged from the stated baseline, delta 0.
+
+HOST TESTS
+  cargo run -p xtask -- test    538 passed / 0 failed / 1 ignored
+  (this tree before the change: 530 / 0 / 4 -- the three A35 #[ignore]s are
+   resolved, five new module tests added.  The figure 504 in the ticket is
+   stale: the tree gained the M08 reference cases in between.)
+
+RUN -- QEMU raspi4b, headless, #Z autorun, 640x480
+  image     tools/make-sd-image.sh (fresh, 64 MiB, with the new resources)
+  autorun   NEWDESK.INF "#Z 01 <app>@" written per run
+  emulator  qemu-system-aarch64 -M raspi4b -no-reboot -display none
+              -serial file:<log> -kernel kernel8.img
+              -drive file=<img>,if=sd,format=raw -qmp unix:<sock>,server,nowait
+  shot      qemu-tmp/qmpshot <sock> <out.ppm>  (built from tools/qmpshot.c);
+            PNG via `sips -s format png`.
+            NOTE: the QMP unix socket path must stay under 104 bytes, so it
+            lives here in the repo, not in the agent scratch directory.
+
+RESULT 1 -- QED, C:\Apps\QED\QED.NAP
+  screendumps/qed.png -- menu bar "qed Datei Bearbeiten Fenster Suchen Spezial
+  Optionen Shell", empty work area, mouse pointer.
+  qemu-tmp/qed.ppm is BYTE-IDENTICAL to
+  measurement-2026-09-13-regression/qemu-tmp/qed.ppm (and the PNG is byte-
+  identical to measurement-2026-09-13-aesglobal/screendumps/qed.png).
+  This is also the machine proof of the format change: QED's menu bar comes
+  out of qed.rsc through the kernel's rsrc_load and is fetched with
+  rsrc_gaddr(R_TREE, ...), i.e. through the new relocated tree index.
+
+RESULT 2 -- TeraDesk, C:\Apps\TERADESK\DESKTOP.NAP
+  screendumps/teradesk.png -- menu bar "Desk File View Window Options",
+  FLOPPY A / FLOPPY B / HARD DISC / PRINTER / TRASH with their labels.
+  qemu-tmp/teradesk.ppm is BYTE-IDENTICAL to
+  measurement-2026-09-13-regression/qemu-tmp/teradesk.ppm (PNG likewise
+  identical to measurement-2026-09-13-aesglobal/screendumps/teradesk.png).
+  TeraDesk is the interesting case for the AESGLOBAL half: it is the reader
+  (icon.c:2692,2707-2708 _AESrscfile/_AESrscmem) and the kernel now writes
+  those bytes where it previously wrote nothing.  The start-up screen is
+  unchanged.
+
+WHAT THIS RUN DOES NOT COVER
+  * The AESGLOBAL write itself is not directly observable in a screendump.
+    The representable branch (an EL0 blob under USER_TPA_MAX_VA, all three
+    fields written) is proven by the in-crate module tests in
+    tos-api/src/aes/resource.rs; on the machine it is inferred from TeraDesk
+    and QED continuing to run, not measured.  A direct machine measurement
+    would need a diagnostic that rsrc_loads and prints global[5]/[7]/[9]
+    (sdk/apps/apitest/apitest.c is the natural place) -- NOT added here.
+  * Interactive use (clicking icons, opening windows, menus, TeraDesk's own
+    xrsrc_load path for icons.rsc) -- QEMU raspi4b gives input or C: storage,
+    not both; that is real-Pi-4 work.

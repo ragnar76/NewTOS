@@ -216,71 +216,80 @@ time — a second `rsrc_load` overwrites `ap_rscmem` without freeing the first
 > text/icon/image object, and is refused otherwise (`rs_readit`'s FALSE), since
 > its records could not be relocated by count.
 >
-> **Not yet done (A35):** NewTOS writes **none** of `ap_rscmem`/`ap_rsclen`/
-> `ap_ptree` into the caller's `AESGLOBAL`; it holds the descriptor in a kernel
-> static instead. The `AESGLOBAL` layout that used to block this is settled
-> (2026-09-13, [`application.md`](./application.md) §`AESGLOBAL`: the TOS
-> widths on every ABI, so each field has its own bytes). **One** open question
-> remains, and it is about a *format*, not about the layout:
+> **Reported back through the caller's `AESGLOBAL` since 2026-09-14 (A35).**
+> `rsrc_load` now writes `ap_rscmem` (the blob base), `ap_rsclen` (its declared
+> size) and `ap_ptree` (the relocated tree index), the way `rs_readit`
+> (`gemrslib.c:787-788`) and `fix_trindex` (`:595-597`) do. Three things about
+> that are NewTOS's, and are contract:
 >
-> 1. `ap_ptree` names the **relocated** `OBJECT *[]` tree index inside the
->    blob (`fix_trindex`, `gemrslib.c:595-597`). NewTOS's NRSC tree index is
->    `[u32]` of root OBJECT **indices** (`tools/mkrsc.py:417`), four bytes
->    wide in both ABI variants, while a caller's `_AESrscfile[i]` is a native
->    8-byte `OBJECT *`. A faithful `ap_ptree` needs a materialised
->    caller-width pointer array the application can reach — a format and
->    ownership decision.
+> 1. **The tree index is a relocated pointer table from NRSC v7/v8 on.** Until
+>    then NewTOS's native format held root OBJECT *indices* in fixed 4-byte
+>    slots, so `ap_ptree` had no array to name. v7 (LP64) / v8 (ILP32) keep the
+>    68-byte header and make `off_trindex` a table of root-OBJECT **byte
+>    offsets**, relocated in place like the free-string/free-image tables —
+>    which is exactly EmuTOS's `rsh_trindex`. `ap_ptree[i]` and
+>    `rsrc_gaddr(R_TREE, i)` are therefore the same address, EmuTOS's own
+>    binding in `get_addr` (`gemrslib.c:124`). A v1–v6 blob still loads and
+>    still answers `rsrc_gaddr(R_TREE, i)`; it simply publishes no `ap_ptree`.
+> 2. **The slot width is the caller's, the field width is TOS's.** A slot of
+>    that table is a native `OBJECT *` — 8 bytes for an LP64 caller, 4 for
+>    ILP32 — because that is how `_AESrscfile[i]` is dereferenced
+>    (`sdk/gemlib/overlay/gem.h`). The *field* `ap_ptree` (byte 10) and
+>    `ap_rscmem` (byte 14) stay **4 bytes on every ABI**, because `AESGLOBAL`
+>    is addressed by WORD index as well as by byte offset
+>    ([`application.md`](./application.md) §`AESGLOBAL`). The loader relocates
+>    the table at the **caller's** ABI width, not at the file's declared one,
+>    exactly as it already does for frstr/frimg.
+> 3. **An address those four bytes cannot carry is not carried at all.** The
+>    fields are written only when the blob's base fits 32 bits. That holds by
+>    construction for every real caller — an EL0 app's blob lives in its
+>    per-process window below `USER_TPA_MAX_VA` (32 MiB); TeraDesk's 68 rsrc
+>    calls were measured at `0x4000ac … 0x409381`. It does **not** hold for the
+>    in-kernel path, which relocates in place in a kernel high-half static: the
+>    low 32 bits of such a VA name a physical address that resolves to nothing
+>    at EL1 (`TTBR0_EL1` maps nothing without a process). There the three stay
+>    **0** — EmuTOS's "nothing loaded" reading (`rs_free`, `gemrslib.c:685`) —
+>    rather than carry a truncated pointer. The load itself still succeeds and
+>    `rsrc_gaddr` still answers at full width; NewTOS's own descriptor is a
+>    kernel static, not the `AESGLOBAL`. The three land together for the same
+>    reason a length beside a null base would state two contradictory things.
 >
-> A second reason used to stand here as an equal blocker: that the 4-byte
-> `ap_ptree`/`ap_rscmem` cannot carry the in-kernel (EL1) blob address, because
-> that path loads into a kernel high-half static. It was never measured, and
-> the measurement (2026-09-13) says it binds no real case today:
+> **`rs_sglobe` is deliberately not adopted.** EmuTOS re-reads `ap_rscmem` out
+> of the caller's `AESGLOBAL` on every `rs_free`/`rs_gaddr`/`rs_saddr`
+> (`gemrslib.c:675-679`), so in EmuTOS those words *are* the resource
+> descriptor. NewTOS writes them as a **report** and keeps working from its own
+> descriptor; an application cannot repoint the AES at a foreign blob by
+> editing its globals. The observable difference is confined to a program that
+> overwrites `ap_rscmem` and then expects `rsrc_gaddr` to follow it — no known
+> caller does, and TeraDesk's own `xrsrc_*` loader (`rsc_load.c`) keeps its
+> resource entirely outside the kernel's `rsrc_*`.
 >
-> * **There is no EL1 caller of `rsrc_load`.** The only way in is crysbind
->   opcode 110 (`tos-api/src/aes/mod.rs:464`) through `dispatch` →
->   `thread::call` → the `svc #2` handler. The EL1 `svc #2` emitters are
->   `kernel/src/{desk/mod.rs:109, selftest_objc.rs:29, selftest_aes.rs:18,
->   selftest_gemtrap.rs:42}`; only `selftest_objc` issues rsrc opcodes at all,
->   and of its three rsrc demos the two that issue opcode 110 (`run_rsrc_file`,
->   `run_rsrc_gem`) have no caller, while `run_rsrc` — reachable only from
->   `aes_demo::showcase`, which itself has no caller — registers its blob via
->   `relocate_and_register` and never issues 110. The only code that exercises
->   the EL1 load path at all is the host test harness itself
->   (`tos-api/tests/aes_rsrc_global_fields.rs`), which is not a running
->   system.
-> * Measured with the built-in tracer (`--features aes-trace`) on QEMU
->   `raspi4b`: the built-in desktop makes 28 AES calls, all with the tracer's
->   `slot = 0xFF` (`SLOT_KERNEL`, `tos-api/src/aes/trace.rs:110`),
->   **no** rsrc opcode among them; TeraDesk makes 188, all EL0, 68 of them
->   rsrc, with blob addresses `0x4000ac … 0x409381` — every one of them
->   representable in 32 bits, as the per-process window below
->   `USER_TPA_MAX_VA` guarantees.
-> * The static is where the old reasoning said, but not at the address it
->   claimed: `nm` on the `board-rpi4` release kernel puts
->   `tos_api::aes::resource::RSC_BUF` at `0xffff_0000_0015_b300` (`.bss`,
->   kernel high half; the exact value moves with the link), not in a
->   `0x0008xxxx` range.
+> **There is no EL1 caller of `rsrc_load`** (measured 2026-09-13, unchanged).
+> The only way in is crysbind opcode 110 (`tos-api/src/aes/mod.rs`) through
+> `dispatch` → `thread::call` → the `svc #2` handler. The EL1 `svc #2` emitters
+> are `kernel/src/{desk/mod.rs, selftest_objc.rs, selftest_aes.rs,
+> selftest_gemtrap.rs}`; only `selftest_objc` issues rsrc opcodes at all, and
+> of its three rsrc demos the two that issue opcode 110 (`run_rsrc_file`,
+> `run_rsrc_gem`) have no caller, while `run_rsrc` — reachable only from the
+> callerless `aes_demo::showcase` — registers a hand-built **v1** blob via
+> `relocate_and_register` and never issues 110. That v1 blob is the live
+> backward-compatibility case for the old tree-index form.
 >
 > **The counter-case is EmuTOS's own desktop**, which does call `rsrc_load`
-> (`desk/deskapp.c:554`, `load_icon_file`) and reads the field back
-> (`:571`, `hdr = (RSHDR *)(AP_1RESV)`, `AP_1RESV = ULONG_AT(&global[7])`,
-> `include/aesdefs.h:153`). NewTOS's `desk/` has no such path — and is not
-> going to get one: ADR-022 ("rebuild `desk/` 1:1 against EmuTOS") is
-> **rescinded** (user decision 2026-09-02, confirmed 2026-09-03); TeraDesk is
-> the desktop and `kernel/src/desk/` is the fallback it returns to. The EL1
-> address question is therefore a **conditional** constraint, recorded so it
-> is not re-derived: it binds only if `desk/` — or any other EL1 caller — is
-> ever made to load a resource itself. A second, independent condition would
-> bind first in that case: **`desk/` keeps no persistent `AESGLOBAL`** —
-> `Aes::new()` (`kernel/src/desk/mod.rs:119-136`) is a stack local in 26
-> wrappers, so EmuTOS's sequence `rsrc_load(); hdr = AP_1RESV;` — which
+> (`desk/deskapp.c:554`, `load_icon_file`) and reads the field back (`:571`,
+> `hdr = (RSHDR *)(AP_1RESV)`, `include/aesdefs.h:153`). NewTOS's `desk/` has
+> no such path and is not going to get one: ADR-022 is **rescinded** (user
+> decision 2026-09-02); TeraDesk is the desktop. A second, independent
+> condition would bind first in that case: **`desk/` keeps no persistent
+> `AESGLOBAL`** — `Aes::new()` (`kernel/src/desk/mod.rs`) is a stack local in
+> 26 wrappers, so EmuTOS's sequence `rsrc_load(); hdr = AP_1RESV;` — which
 > relies on the module static `GLOBAL UWORD global[G_SIZE]`
-> (`desk/gembind.c:66`, `desk/gembind.h:27`) — could not be executed there at
-> all, whatever `rsrc_load` wrote.
+> (`desk/gembind.c:66`) — could not be executed there at all.
 >
-> Writing `ap_rsclen` alone is not a partial fix: EmuTOS reads
-> `ap_rscmem == NULL` as "nothing loaded" (`gemrslib.c:685`). Red tests:
-> `tos-api/tests/aes_rsrc_global_fields.rs`.
+> Tests: `tos-api/src/aes/resource.rs` `mod tests` (the representable branch,
+> driven at the EL0 access/target split) and
+> `tos-api/tests/aes_rsrc_global_fields.rs` (the refusal branch + the
+> `ap_ptree[i] == rsrc_gaddr(R_TREE, i)` binding through the real dispatcher).
 
 ### `rsrc_free` (111) — `rs_free`
 
@@ -485,10 +494,11 @@ Inputs arrive in the AESPB arrays. `rsrc_gaddr` is the sole AES call that return
 through **`addr_out[0]`**; everything else returns via `int_out[0]` (`1`/`0`) or
 writes through a caller pointer (`rsrc_saddr` into the resource, `fsel_*` into
 `pipath`/`pisel`, coordinates into the tree for `rsrc_obfix`). `fsel_*`'s
-OK/Cancel is a *second* `int_out` slot, `int_out[1]`. `rsrc_load`/`rsrc_free`
-mutate the caller's `AESGLOBAL` (`ap_rscmem`/`ap_rsclen`/`ap_ptree`); the loaded
-tree array itself is written into the AES-allocated blob, not the caller's
-memory.
+OK/Cancel is a *second* `int_out` slot, `int_out[1]`. **`rsrc_load`** writes the
+caller's `AESGLOBAL` (`ap_rscmem`/`ap_rsclen`/`ap_ptree`, `gemrslib.c:787-788`,
+`:595-597`); `rsrc_free`/`rsrc_gaddr`/`rsrc_saddr` only *read* those words back
+(`rs_sglobe`, `:675-679`) and none of them clears them. The tree array
+`ap_ptree` names lives inside the loaded blob, not in the caller's memory.
 
 ---
 
@@ -639,6 +649,9 @@ as success — an empty list, not an error (`gemfslib.c:330-336,733-754`).
 - **`AESGLOBAL` resource fields** (`gemrslib.h:15-27`): `ap_ptree`
   (`OBJECT **`, the tree table), `ap_rscmem` (`RSHDR *`, the loaded blob),
   `ap_rsclen` (`UWORD`, its length). Filled by `rsrc_load`, read by the AES.
+  NewTOS fills them too (see the `rsrc_load (110)` callout) but does **not**
+  read them back — its descriptor is a kernel static, so the three words are a
+  report to the application and never the AES's own state.
 - **`OBJECT` / `TEDINFO` / `ICONBLK` / `BITBLK`** — the arrays the resource
   contains and `rsrc_gaddr` returns (see
   [`../structures/object.md`](../structures/object.md),

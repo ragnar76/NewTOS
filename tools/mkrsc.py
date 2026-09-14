@@ -216,30 +216,43 @@ def convert(path, out, ilp32=False):
     # (verified by compile-time sizeof against gemlib mt_gem.h: OBJECT=24,
     # TEDINFO=28, ICONBLK=36, BITBLK=16). The relocated pointer values still fit
     # a 4-byte field because the per-process RSC window sits in low VA. The
-    # NrscHeader/tree-index (u32 byte offsets) are ABI-independent; `version`
-    # marks the OBJECT width (1 = LP64/64-bit ob_spec, 2 = ILP32/32-bit ob_spec)
-    # for tooling, but the kernel relocates by the *caller's* ABI.
-    # PTR = free-string/free-image pointer-slot width (matches ob_spec).
+    # NrscHeader's own fields are u32 and ABI-independent; `version` marks the
+    # OBJECT width (odd = LP64/64-bit ob_spec, even = ILP32/32-bit ob_spec) for
+    # tooling, but the kernel relocates by the *caller's* ABI -- the tree index
+    # included, from v7/v8 on, where it became a PTR-wide pointer table.
+    # PTR = free-string/free-image/tree-index pointer-slot width (matches
+    # ob_spec).
     # version 5 = LP64/68-byte header, 6 = ILP32/68-byte header: both carry the
     # frstr/frimg pointer tables (as v3/v4 did) AND the TEDINFO/ICONBLK/BITBLK
     # array bases + counts, so rsrc_gaddr/rsrc_saddr resolve the R_TEDINFO/
-    # R_ICONBLK/R_BITBLK family + their sub-pointer aliases (AUD-P6-002). The
-    # kernel loader stays backward-compatible with the earlier headers: v1/v2
-    # (28-byte, no tables), v3/v4 (44-byte, +frstr/frimg tables only).
+    # R_ICONBLK/R_BITBLK family + their sub-pointer aliases (AUD-P6-002).
+    # version 7 = LP64, 8 = ILP32: same 68-byte header, but the **tree index**
+    # is a relocatable pointer table like frstr/frimg -- PTR-wide slots holding
+    # the byte OFFSET of each tree's root OBJECT, which the loader relocates to
+    # addresses. That is what EmuTOS's `fix_trindex` publishes through
+    # AESGLOBAL.ap_ptree (aes/gemrslib.c:591-603: `ptreebase = get_sub(0,
+    # rsh_trindex, sizeof(LONG)); rs_global->ap_ptree = ptreebase;` then
+    # `fix_long(ptreebase+ii)` per tree), and it is what `get_addr(R_TREE, i)`
+    # reads back (`return rs_global->ap_ptree[rsindex];`, gemrslib.c:124).
+    # v1..v6 held root OBJECT *indices* in fixed 4-byte slots instead, which no
+    # application could be handed as a pointer array (A35). The kernel loader
+    # stays backward-compatible with every earlier header: v1/v2 (28-byte, no
+    # tables), v3/v4 (44-byte, +frstr/frimg tables), v5/v6 (68-byte, +substruct
+    # bases, index tree table).
     if ilp32:
         NAT_OBJ, NAT_TED, NAT_IB, NAT_BB = 24, 28, 36, 16
         OBJ_FMT = "<hhhHHHIhhhh"          # 4-byte ob_spec @ 12
         TED_FMT = "<IIIhhhhhhhh"          # 4-byte te_ptext/te_ptmplt/te_pvalid
         BB_FMT = "<Ihhhhh2x"              # 4-byte bi_pdata, pad to 16
         IB_FMT = "<IIIhhhhhhhhhhh2x"      # 4-byte ib_pmask/ib_pdata/ib_ptext, 36
-        PTR, PTR_FMT, version = 4, "<I", 6
+        PTR, PTR_FMT, version = 4, "<I", 8
     else:
         NAT_OBJ, NAT_TED, NAT_IB, NAT_BB = 32, 40, 48, 24
         OBJ_FMT = "<hhhHHH4xQhhhh"        # 8-byte ob_spec @ 16
         TED_FMT = "<QQQhhhhhhhh"
         BB_FMT = "<Qhhhhh6x"
         IB_FMT = "<QQQhhhhhhhhhhh2x"
-        PTR, PTR_FMT, version = 8, "<Q", 5
+        PTR, PTR_FMT, version = 8, "<Q", 7
 
     d = open(path, "rb").read()
     H = struct.unpack(">18H", d[:36])
@@ -255,7 +268,16 @@ def convert(path, out, ilp32=False):
     # the string/image data (each table = count * PTR bytes).
     HDR = 68
     off_tri = HDR
-    off_obj = off_tri + ntree * 4
+    # The OBJECT array (and every 8-byte-pointer section behind it) must start
+    # naturally aligned: the kernel dereferences it as `repr(C)` `Object`
+    # records (`relocate_blob_core`, `ObjTree`), and so does every app. The
+    # 68-byte header leaves `off_tri` at 4 mod 8, so an LP64 tree index of
+    # 8-byte slots would land the objects at 4 mod 8 too; pad the index up to
+    # the record alignment. `nat_ted`/`nat_bb`/`nat_ib`/`PTR` are all multiples
+    # of PTR, so aligning the OBJECT array aligns every later section with it.
+    n_tri = ntree * PTR
+    tri_pad = -(off_tri + n_tri) % PTR
+    off_obj = off_tri + n_tri + tri_pad
     off_ted = off_obj + nobs * NAT_OBJ
     off_bb = off_ted + nted * NAT_TED
     off_ib = off_bb + nbb * NAT_BB
@@ -410,16 +432,24 @@ def convert(path, out, ilp32=False):
                      f"bb array [{p_bb:#x},{p_bb + nbb * CLS_BB:#x}); unsupported")
         frimg.extend(struct.pack(PTR_FMT, nat))
 
-    # Tree index → native root OBJECT indices.
+    # Tree index → PTR-wide byte offsets of each tree's root OBJECT, exactly
+    # like the frstr/frimg tables above: the loader relocates them in place, so
+    # after `rsrc_load` slot i holds the address of tree i's root. This is the
+    # array EmuTOS hands the application through AESGLOBAL.ap_ptree
+    # (`fix_trindex`, aes/gemrslib.c:591-603) and reads back in
+    # `get_addr(R_TREE, i)` (gemrslib.c:124).
     tri = bytearray()
     for t in range(ntree):
         toff = struct.unpack(">I", d[p_tri + t * 4:p_tri + t * 4 + 4])[0]
-        tri.extend(struct.pack("<I", (toff - p_obj) // CLS_OBJ))
+        tri.extend(struct.pack(PTR_FMT,
+                               off_obj + ((toff - p_obj) // CLS_OBJ) * NAT_OBJ))
+    tri.extend(b"\x00" * tri_pad)
 
     total = off_data + len(data)
-    # v5/v6 header: magic + 16 u32 (68 bytes). Field order MUST match the kernel
-    # `NrscHeader` struct (tos-api/src/aes/resource.rs): the v3/v4 fields, then
-    # off_ted/nted, off_ib/nib, off_bb/nbb (the TEDINFO/ICONBLK/BITBLK bases).
+    # v7/v8 header: magic + 16 u32 (68 bytes), identical in shape to v5/v6.
+    # Field order MUST match the kernel `NrscHeader` struct
+    # (tos-api/src/aes/resource.rs): the v3/v4 fields, then off_ted/nted,
+    # off_ib/nib, off_bb/nbb (the TEDINFO/ICONBLK/BITBLK bases).
     header = struct.pack(
         "<4s16I", b"NRSC", version, ntree, nobs, off_tri, off_obj, total,
         off_frstr, nstr, off_frimg, nimg,
