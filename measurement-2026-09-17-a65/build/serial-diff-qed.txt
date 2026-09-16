@@ -1,0 +1,48 @@
+66c66
+< T12   rc=0 free_cl=31838 tot_cl=32672 bps=512 spc=4
+---
+> T12   rc=0 free_cl=31837 tot_cl=32672 bps=512 spc=4
+79,99c79,99
+< T14   [10] name="KEYBOARD.KBD" attr=0x20 size=28
+< T14   [11] name="KERNEL8.IMG" attr=0x20 size=4096
+< T14   [12] name="LYNXBOOT.IMG" attr=0x20 size=512
+< T14   [13] name="DATA.BIN" attr=0x20 size=4096
+< T14   [14] name="ACC" attr=0x10 size=0
+< T14   [15] name="GEMSYS" attr=0x10 size=0
+< T14   [16] name="SUB" attr=0x10 size=0
+< T14   [17] name="AUTO" attr=0x10 size=0
+< T14   [18] name="HELLO.NCP" attr=0x20 size=4388
+< T14   [19] name="PHYSBASE.NCP" attr=0x20 size=5568
+< T14   [20] name="BIG.NCP" attr=0x20 size=15184
+< T14   [21] name="HELLO2.NCP" attr=0x20 size=4920
+< T14   [22] name="DTACHILD.NCP" attr=0x20 size=5056
+< T14   [23] name="SCRFLIP.NCP" attr=0x20 size=6184
+< T14   [24] name="LIBTEST.NCP" attr=0x20 size=86664
+< T14   [25] name="CLOCKTST.NCP" attr=0x20 size=89960
+< T14   [26] name="COREMARK" attr=0x10 size=0
+< T14   [27] name="DUMPVDI.NAP" attr=0x20 size=140216
+< T14   [28] name="VDI.TSV" attr=0x20 size=6636
+< T14   [29] name="APPS" attr=0x10 size=0
+< T14   enumerated 30 entries, last Fsnext rc=-49
+---
+> T14   [10] name="CLIPBRD" attr=0x10 size=0
+> T14   [11] name="KEYBOARD.KBD" attr=0x20 size=28
+> T14   [12] name="KERNEL8.IMG" attr=0x20 size=4096
+> T14   [13] name="LYNXBOOT.IMG" attr=0x20 size=512
+> T14   [14] name="DATA.BIN" attr=0x20 size=4096
+> T14   [15] name="ACC" attr=0x10 size=0
+> T14   [16] name="GEMSYS" attr=0x10 size=0
+> T14   [17] name="SUB" attr=0x10 size=0
+> T14   [18] name="AUTO" attr=0x10 size=0
+> T14   [19] name="HELLO.NCP" attr=0x20 size=4388
+> T14   [20] name="PHYSBASE.NCP" attr=0x20 size=5568
+> T14   [21] name="BIG.NCP" attr=0x20 size=15184
+> T14   [22] name="HELLO2.NCP" attr=0x20 size=4920
+> T14   [23] name="DTACHILD.NCP" attr=0x20 size=5056
+> T14   [24] name="SCRFLIP.NCP" attr=0x20 size=6184
+> T14   [25] name="LIBTEST.NCP" attr=0x20 size=86664
+> T14   [26] name="CLOCKTST.NCP" attr=0x20 size=89960
+> T14   [27] name="COREMARK" attr=0x10 size=0
+> T14   [28] name="DUMPVDI.NAP" attr=0x20 size=140216
+> T14   [29] name="VDI.TSV" attr=0x20 size=6636
+> T14   enumerated 30 entries, last Fsnext rc=0

@@ -1,0 +1,58 @@
+running 3 tests
+test the_save_under_box_is_sixteen_wide_and_sixteen_minus_k_tall ... ok
+test objc_change_does_not_leave_the_cursor_save_under_stale ... FAILED
+test objc_draw_does_not_leave_the_cursor_save_under_stale ... FAILED
+
+failures:
+
+---- objc_change_does_not_leave_the_cursor_save_under_stale stdout ----
+
+thread 'objc_change_does_not_leave_the_cursor_save_under_stale' (30613794) panicked at tos-api/tests/aes_object_cursor_bracket.rs:676:5:
+Change: the AES drew through the cursor's save-under box.
+176 pixels differ; damage (120,105)..(135,115) = 16x11; predicted (120,105)..(135,115) = 16x11 = 176 px (16 columns by 16-k = 16-5 rows)
+A = bracketed, B = as the AES left it; '#' black, ' ' white, '.' untouched
+y=104  A |####################|  B |####################|
+y=105  A |####################|  B |##                ##|
+y=106  A |####################|  B |##                ##|
+y=107  A |####################|  B |##                ##|
+y=108  A |####################|  B |##                ##|
+y=109  A |####################|  B |##                ##|
+y=110  A |####################|  B |##                ##|
+y=111  A |####################|  B |##                ##|
+y=112  A |####################|  B |##                ##|
+y=113  A |####################|  B |##                ##|
+y=114  A |####################|  B |##                ##|
+y=115  A |####################|  B |##                ##|
+y=116  A |....................|  B |....................|
+
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+
+---- objc_draw_does_not_leave_the_cursor_save_under_stale stdout ----
+
+thread 'objc_draw_does_not_leave_the_cursor_save_under_stale' (30613795) panicked at tos-api/tests/aes_object_cursor_bracket.rs:676:5:
+Draw: the AES drew through the cursor's save-under box.
+176 pixels differ; damage (120,105)..(135,115) = 16x11; predicted (120,105)..(135,115) = 16x11 = 176 px (16 columns by 16-k = 16-5 rows)
+A = bracketed, B = as the AES left it; '#' black, ' ' white, '.' untouched
+y=104  A |####################|  B |####################|
+y=105  A |####################|  B |##                ##|
+y=106  A |####################|  B |##                ##|
+y=107  A |####################|  B |##                ##|
+y=108  A |####################|  B |##                ##|
+y=109  A |####################|  B |##                ##|
+y=110  A |####################|  B |##                ##|
+y=111  A |####################|  B |##                ##|
+y=112  A |####################|  B |##                ##|
+y=113  A |####################|  B |##                ##|
+y=114  A |####################|  B |##                ##|
+y=115  A |####################|  B |##                ##|
+y=116  A |....................|  B |....................|
+
+
+
+failures:
+    objc_change_does_not_leave_the_cursor_save_under_stale
+    objc_draw_does_not_leave_the_cursor_save_under_stale
+
+test result: FAILED. 1 passed; 2 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.01s
+
+error: test failed, to rerun pass `-p tos-api --test aes_object_cursor_bracket`

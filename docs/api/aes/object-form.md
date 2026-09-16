@@ -347,7 +347,13 @@ Behaviour: no-op if the state is unchanged or `ob_spec == -1`
 `redraw` is 0, done. Else: `G_USERDEF` calls the user draw routine; `G_ICON`
 always redraws (never XOR); other types toggle SELECTED via a fast XOR fill
 when possible (avoiding a full redraw), and fall back to `just_draw`
-otherwise.
+otherwise. **The mouse is hidden (`gsx_moff`) for the whole redraw** —
+`gemoblib.c:1275` opens the bracket right after `ob_offset` and `:1319`
+closes it after the `just_draw`, so the `G_USERDEF` arm is inside it too.
+This is the same requirement `objc_draw` above carries, and it is not
+cosmetic: the cursor is a save-under sprite, so drawing into the sprite's
+16×16 box while it is visible makes the *next* cursor step restore the
+pre-draw pixels. See A65.
 
 > **Addition (D-093a): deselecting a `G_IMAGE` XORs *and* redraws — the
 > two are not mutually exclusive.** In the default (non-radio) branch, when

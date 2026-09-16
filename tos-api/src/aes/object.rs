@@ -1048,7 +1048,58 @@ fn render_tree_t(
         .unwrap_or_else(|| ClipRect::full(backend.width(), backend.height()));
     // Absolute origin of `start` = sum of its ancestors' x/y (like objc_offset).
     let (ox, oy) = abs_offset(t, start);
+    hide_cursor_for_draw(backend);
     draw_tree(t, start, depth, ox - t.x(start), oy - t.y(start), clip, backend);
+    show_cursor_after_draw(backend);
+}
+
+// ── the mouse bracket around an object draw (A65) ────────────────────────
+
+/// Take the mouse cursor off the screen for the duration of an object draw —
+/// EmuTOS `gsx_moff()` (`aes/gemgsxif.c:440-448`), which every object-drawing
+/// entry point calls: `ob_draw` (`aes/gemoblib.c:974`) and `ob_change`
+/// (`:1275`).
+///
+/// **Why it is not optional.** The cursor is a save-under sprite: `mouse::draw`
+/// copies the 16×16 device pixels it covers into a backing store before painting
+/// the arrow, and `mouse::erase` writes that copy straight back (EmuTOS
+/// `cur_display`/`cur_replace`, `vdi/vdi_mouse.c:975-985,1099`). Drawing into
+/// that box while the sprite is up does not invalidate the copy, so the **next**
+/// cursor step restores the *pre-draw* pixels — a stale rectangle exactly 16
+/// columns wide and up to 16 rows tall that stays on screen until something
+/// repaints it. That is A65, photographed in the file selector on a real Pi 4.
+///
+/// **Why the bracket sits here and not deeper.** EmuTOS brackets in `ob_draw`
+/// and `ob_change`, i.e. once per *entry point*, not inside the tree walk
+/// (`everyobj`) or the per-object painter (`just_draw`), which are called with
+/// the cursor already down. The functions carrying that role here are
+/// [`render_tree_t`] (the body behind `objc_draw`/`render_tree*`),
+/// [`draw_obj_t`], [`draw_obj_clip`], [`draw_root`] and [`change_clip_t`] (the
+/// body behind `objc_change`) — and nowhere else. In particular
+/// [`set_state_bit_t`] is **not** bracketed: it is a caller of [`change_t`], the
+/// same relation EmuTOS' `menu_icheck` has to `ob_change` (`aes/gemmnlib.c:170`),
+/// and would only add a redundant nesting level.
+///
+/// **Nesting is expected and carried.** EmuTOS nests these brackets itself —
+/// `w_update` hides the cursor (`aes/gemwmlib.c:1011`) and then reaches `ob_draw`
+/// through `w_cpwalk`/`do_walk` (`:1029,378,309`), which hides it again — because
+/// `gl_moff` is a counting semaphore: only the 0→1 transition erases and only the
+/// 1→0 transition redraws. [`crate::vdi::cursor_hide`]/[`crate::vdi::cursor_show`]
+/// are that same counter (`HIDE_COUNT`, `vdi/mouse.rs`), so the brackets the Menu
+/// Manager, the Form Manager, the Window Manager and the desktop already place
+/// around these calls stay correct and cost nothing.
+#[inline]
+fn hide_cursor_for_draw(backend: &dyn RasterBackend) {
+    crate::vdi::cursor_hide(backend);
+}
+
+/// Put the cursor back after an object draw — EmuTOS `gsx_mon()`
+/// (`aes/gemgsxif.c:450-455`); see [`hide_cursor_for_draw`]. The redraw takes a
+/// **fresh** save-under from the pixels just drawn, which is what makes the
+/// following cursor step restore the new content instead of the old.
+#[inline]
+fn show_cursor_after_draw(backend: &dyn RasterBackend) {
+    crate::vdi::cursor_show(backend);
 }
 
 /// `objc_offset` (44) — the object's absolute screen x/y (sum of parent
@@ -1372,6 +1423,14 @@ fn change_clip_t(t: ObjTree, obj: i16, newstate: u16, redraw: bool, clip_overrid
         // Zero-clip (`None`) = the full screen; otherwise the caller's rectangle.
         let clip = clip_override.unwrap_or_else(|| ClipRect::full(backend.width(), backend.height()));
         let (ox, oy) = abs_offset(t, obj);
+        // A65: the cursor comes down here and goes back up after the redraw —
+        // exactly where EmuTOS `ob_change` places `gsx_moff()` / `gsx_mon()`
+        // (gemoblib.c:1275 / :1319): after `ob_offset`, around the whole type
+        // switch, so the `G_USERDEF` arm is inside the bracket too. See
+        // `hide_cursor_for_draw` for what the bracket buys and why it is at this
+        // level. The `ob_user` arm therefore cannot `return` early any more —
+        // the show has to run on both paths.
+        hide_cursor_for_draw(backend);
         // AUD-P3-002: EmuTOS `ob_change` redraws a G_USERDEF by calling its user
         // routine with (prev=curr_state, curr=new_state) and suppresses the
         // generic object redraw (`redraw = FALSE`, gemoblib.c:1282-1284). The
@@ -1382,10 +1441,11 @@ fn change_clip_t(t: ObjTree, obj: i16, newstate: u16, redraw: bool, clip_overrid
         // dereferences null.
         if t.ob_type(obj) & 0x00ff == G_USERDEF && spec != 0 {
             ob_user(t, obj, ox, oy, t.width(obj), t.height(obj), spec, clip, curr_state, newstate);
-            return;
+        } else {
+            // depth 0 redraws only this object.
+            draw_tree(t, obj, 0, ox - t.x(obj), oy - t.y(obj), clip, backend);
         }
-        // depth 0 redraws only this object.
-        draw_tree(t, obj, 0, ox - t.x(obj), oy - t.y(obj), clip, backend);
+        show_cursor_after_draw(backend);
     }
 }
 
@@ -1468,6 +1528,15 @@ pub(crate) fn edit_field_t(t: ObjTree, obj: i16, in_char: i16, mut idx: i16, kin
     if let Some(backend) = host().and_then(|h| h.raster()) {
         let clip = ClipRect::full(backend.width(), backend.height());
         let (ox, oy) = abs_offset(t, obj);
+        // A65: both draws below go under one cursor bracket. EmuTOS reaches them
+        // from `curfld` (`aes/gemobed.c:204-218`) through two primitives that each
+        // bracket for themselves — the field via `ob_draw` (`:214`, hence
+        // `gemoblib.c:974/:976`) and the caret via `gsx_cline` (`:216`), which is
+        // "draw a clipped polyline, hiding the mouse as you do it"
+        // (`aes/gemgraf.c:186-192`). The two are exclusive branches there and
+        // sequential here, so one bracket over both is the same guarantee without
+        // flickering the sprite between field and caret. See `hide_cursor_for_draw`.
+        hide_cursor_for_draw(backend);
         // depth 0 redraws only this field.
         draw_tree(t, obj, 0, ox - t.x(obj), oy - t.y(obj), clip, backend);
         if kind != ED_END {
@@ -1477,6 +1546,7 @@ pub(crate) fn edit_field_t(t: ObjTree, obj: i16, in_char: i16, mut idx: i16, kin
             let cy = oy + (t.height(obj) - crate::vdi::font::CELL_H) / 2;
             backend.fill_rect(ox + col * crate::vdi::font::CELL_W, cy, 1, crate::vdi::font::CELL_H, BLACK, clip);
         }
+        show_cursor_after_draw(backend);
     }
     idx
 }
@@ -1859,6 +1929,12 @@ pub(crate) fn set_state_bit(tree: *mut Object, obj: i16, bit: u16, set: bool) {
 /// Set or clear one `ob_state` bit on `obj` and redraw it, through the
 /// caller-supplied [`ObjTree`] accessor (`lp64` for a kernel-built tree such as
 /// the fileselector). Body of [`set_state_bit`].
+///
+/// A65: deliberately **not** cursor-bracketed here. This is a caller of
+/// [`change_t`], not an `ob_*` primitive — the same relation EmuTOS'
+/// `menu_icheck` has to `ob_change` (`aes/gemmnlib.c:170`), which likewise adds
+/// no `gsx_moff` of its own. The bracket lives one level down in
+/// [`change_clip_t`]; see [`hide_cursor_for_draw`].
 pub(crate) fn set_state_bit_t(t: ObjTree, obj: i16, bit: u16, set: bool) {
     let st = t.state(obj);
     let new = if set { st | bit } else { st & !bit };
@@ -1877,7 +1953,12 @@ pub(crate) fn draw_obj(tree: *const Object, obj: i16, depth: i16, backend: &dyn 
 pub(crate) fn draw_obj_t(t: ObjTree, obj: i16, depth: i16, backend: &dyn RasterBackend) {
     let clip = ClipRect::full(backend.width(), backend.height());
     let (ox, oy) = abs_offset(t, obj);
+    // A65: an `ob_draw(tree, obj, depth)` by another name, so it carries
+    // `ob_draw`'s `gsx_moff`/`gsx_mon` bracket (EmuTOS gemoblib.c:974/:976).
+    // See `hide_cursor_for_draw`.
+    hide_cursor_for_draw(backend);
     draw_tree(t, obj, depth, ox - t.x(obj), oy - t.y(obj), clip, backend);
+    show_cursor_after_draw(backend);
 }
 
 /// Draw the subtree rooted at `obj`, `depth` levels deep, confined to `clip`.
@@ -1897,7 +1978,13 @@ pub(crate) fn draw_obj_clip(
 ) {
     let t = ObjTree::new(tree);
     let (ox, oy) = abs_offset(t, obj);
+    // A65: same `ob_draw` role as `draw_obj_t`, same bracket. The Menu Manager
+    // already hides the cursor around its save-blit + draw pair, so this nests —
+    // which EmuTOS does too (`w_update` → `w_cpwalk` → `do_walk` → `ob_draw`,
+    // gemwmlib.c:1011,1029,378,309); the counter carries it.
+    hide_cursor_for_draw(backend);
     draw_tree(t, obj, depth, ox - t.x(obj), oy - t.y(obj), clip, backend);
+    show_cursor_after_draw(backend);
 }
 
 /// Draw a whole tree (used by the Form Manager after building an alert and by
@@ -1908,7 +1995,13 @@ pub(crate) fn draw_root(t: ObjTree, depth: i16, backend: &dyn RasterBackend) {
     let clip = ClipRect::full(backend.width(), backend.height());
     // Root is index 0; its ob_x/ob_y are absolute (no parent), so the parent
     // offset is 0.
+    // A65: `ob_draw(tree, ROOT, depth)` — EmuTOS reaches exactly this from
+    // `fm_alert` (gemfmalt.c:367), `sh_draw` (gemshlib.c:280,287) and the
+    // fileselector (gemfslib.c:709), each relying on `ob_draw`'s own bracket.
+    // See `hide_cursor_for_draw`.
+    hide_cursor_for_draw(backend);
     draw_tree(t, 0, depth, 0, 0, clip, backend);
+    show_cursor_after_draw(backend);
 }
 
 // ── tree helpers ────────────────────────────────────────────────────

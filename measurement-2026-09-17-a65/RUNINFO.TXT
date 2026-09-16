@@ -1,0 +1,148 @@
+A65 -- objc_draw/objc_change klammern den Mauszeiger ab
+=======================================================
+
+Datum          2026-09-17
+Basis          desk-rebuild, HEAD 52a969b, Baum vorher sauber
+EmuTOS-Pin     references/emutos @ 1a7484aba1bfba23e2c0899e243b6d8177fe41df
+Ticket         TASK/A65.md, Quittung TASK/A65-STATUS-DONE.MD
+
+
+1  WAS GEAENDERT WURDE
+-------------------------------------------------------------------------
+tos-api/src/aes/object.rs   (einzige Quelldatei; 96 Zeilen dazu, 3 geaendert)
+    hide_cursor_for_draw() / show_cursor_after_draw()
+        die beiden Klammerhaelften, EmuTOS gsx_moff/gsx_mon
+        (aes/gemgsxif.c:440-455), mit der Begruendung am Ort
+    render_tree_t()   Klammer um den draw_tree-Lauf   = ob_draw   (:974/:976)
+    draw_obj_t()      dito                            = ob_draw
+    draw_obj_clip()   dito                            = ob_draw
+    draw_root()       dito                            = ob_draw
+    change_clip_t()   Klammer nach abs_offset, um den ganzen Typschalter
+                      einschliesslich des G_USERDEF-Zweigs = ob_change
+                      (:1275/:1319); der fruehe `return` im G_USERDEF-Zweig
+                      ist zu `else` geworden, sonst liefe das show nicht
+    edit_field_t()    Klammer um Feld- UND Cursorbalkenzeichnung; EmuTOS
+                      erreicht beide aus curfld (aes/gemobed.c:204-218)
+                      ueber je selbst klammernde Grundroutinen -- ob_draw
+                      (:214) und gsx_cline (:216, aes/gemgraf.c:186-192)
+    set_state_bit_t() ausdruecklich NICHT geklammert; Begruendung im
+                      Kommentar (Aufrufer von change_t, wie EmuTOS
+                      menu_icheck zu ob_change, aes/gemmnlib.c:170)
+
+tos-api/tests/aes_object_cursor_bracket.rs   (neu, 3 Faelle)
+docs/api/aes/object-form.md                  (objc_change: die fehlende
+                                              gsx_moff-Zeile nachgetragen)
+
+
+2  DER TEST, ROT VOR DEM FIX
+-------------------------------------------------------------------------
+build/newtest-RED.txt   (object.rs auf dem Stand von 52a969b, sonst alles
+                         wie jetzt)
+
+  objc_change / objc_draw je:
+    176 pixels differ; damage (120,105)..(135,115) = 16x11;
+    predicted (120,105)..(135,115) = 16x11 = 176 px
+    (16 columns by 16-k = 16-5 rows)
+    y=105  A |####################|  B |##                ##|
+    ...
+    y=115  A |####################|  B |##                ##|
+
+  A = mit Klammer (vom Test gesetzt), B = so wie die AES es liegen laesst.
+  Der helle Block ist genau der Sicherungskasten: 16 Spalten ab dem
+  Sprite-Ursprung, 16-k Zeilen bis zur Zeilenunterkante.
+
+build/newtest-GREEN.txt  (nach dem Fix)
+    3 passed; 0 failed
+
+Der dritte Fall (the_save_under_box_is_sixteen_wide_and_sixteen_minus_k_tall)
+misst das Sprite, nicht die AES: die Zeile wird hinter dem Ruecken des
+Zeigers mit einem rohen Backend-Schreibzugriff invertiert, also kann keine
+Klammer ihn gruen machen. Er ist vor und nach dem Fix gruen und haelt die
+Geometrie fest, gegen die die anderen beiden gelesen werden.
+
+
+3  DIE MASCHINENLAEUFE  (QEMU raspi4b, headless, 640x480)
+-------------------------------------------------------------------------
+Verfahren: method/ (aus measurement-2026-09-14-x01 uebernommen, unveraendert)
+Karte:     measurement-2026-09-13-regression/qemu-tmp/sd-base.img
+           + \AUTO\APITEST.NCP, C:\APITEST.CFG "BATCH", TeraDesk, QED
+           (method/prep-card.sh)
+Faelle:    Standarddesktop (Marker "[desk] desktop up"),
+           #Z-Autorun TeraDesk, #Z-Autorun QED (Marker "sh_ldapp: starting ...")
+           je 240 s Zeitgrenze, 20 s Beruhigung vor dem Schirmabzug
+
+Zwei Kerne, gleicher Baum, gleiche Karten -- nur object.rs unterschiedlich:
+    kernel8-BEFORE.img  0486e9dad73cc2a7f925c7a132bd7ad3a5943757473872d759e0a4506d33e739
+    kernel8-AFTER.img   3da73b4b413995c287b1bdccef31a4090d197084f90bc8ea3d64a139b9237697
+Beide Abbilder und die drei Kartendateien liegen NICHT im Verzeichnisbaum
+(.gitignore: *.img); sie sind aus build/build-rpi4-BEFORE.log bzw.
+build/build-rpi4-AFTER.log und method/prep-card.sh reproduzierbar, die Hashes
+stehen hier und in HASHES.TXT.
+
+BILDPUNKTVERGLEICH (method/compare-png.py, Punkt fuer Punkt):
+    before/desktop.png  vs after/desktop.png    0 von 307200 verschieden
+    before/teradesk.png vs after/teradesk.png   0 von 307200 verschieden
+    before/qed.png      vs after/qed.png        0 von 307200 verschieden
+Die PNG-Dateien sind sogar byteweise gleich (HASHES.TXT).
+
+SERIELLE PROTOKOLLE (before/ gegen after/):
+    desktop   gleich
+    teradesk  gleich
+    qed       48 Zeilen unterschiedlich -- NICHT vom Kern. QED legt beim
+              ersten Start C:\CLIPBRD an; der Nachher-Lauf fuhr dieselbe,
+              vom Vorher-Lauf bereits beschriebene Kartendatei. Gegenprobe
+              mit frisch praeparierter Karte:
+                  after/qed-freshcard-BOOT-SERIAL.txt  gegen
+                  before/qed-BOOT-SERIAL.txt           -> identisch
+                  after/qed-freshcard.png              -> 0 Punkte Unterschied
+
+Das ist die Erwartung des Auftrags und sie haelt: die Klammer aendert nichts
+am Bild, solange der Zeiger sich nicht bewegt. In QEMU raspi4b bewegt er sich
+nie -- "[pcie] RC not present ... USB disabled", es gibt dort keinen
+Eingabeweg.
+
+GEGEN DIE ALTE REFERENZ (measurement-2026-09-14-x01/screendumps/*-after.png):
+    teradesk-after.png  0 von 307200 verschieden
+    qed-after.png       0 von 307200 verschieden
+    apitest-after.png   177 von 307200 verschieden -- in BEIDEN Laeufen
+                        (vorher wie nachher) gleich viele, also nicht A65.
+                        Zwei Ballungen:
+                          y=69..80, ab x=164  die Ziffern der Zeile
+                            "26 items  385713 bytes used" -- die Karte traegt
+                            heute andere Dateilaengen als am 14.09.
+                          y=240..254, x=314..330  der geparkte Mauspfeil
+                            steht einen Bildpunkt weiter links/oben als am
+                            14.09.; der Rest der Textzeile darunter ist
+                            deckungsgleich. Das ist eine Aenderung aus den
+                            drei Tagen dazwischen, nicht aus diesem Ticket
+                            -- siehe Quittung, "Beobachtungen ausserhalb des
+                            Auftrags".
+
+
+4  BAUTEN UND PRUEFUNGEN
+-------------------------------------------------------------------------
+Beide Boards, --release, je nach `touch` der Crate-Wurzeln; beide Protokolle
+zeigen "Compiling tos-api" UND "Compiling kernel":
+    build/build-rpi4-AFTER.log, build/build-qemuvirt-AFTER.log
+    (und build/build-rpi4-BEFORE.log fuer den Vergleichskern)
+
+Warnungen -- Sollstand gehalten, Delta 0:
+    rustc    tos-api 64 / kernel 94    (beide Boards)
+    clippy   tos-api 81 / kernel 125   (beide Boards; clippy-rpi4.log,
+                                        clippy-qemu-virt.log)
+Die neue Testdatei erzeugt keine eigene clippy-Warnung.
+
+Hosttests: cargo run -p xtask -- test
+    551 bestanden / 0 gefallen / 1 uebersprungen   (host-test.log)
+    Sollstand war 548/0/1; die drei neuen sind die dieses Tickets.
+
+qemu-virt-Rauchprobe: bootet, faellt mangels Bildschirm auf EmuCON zurueck
+    (build/qemuvirt-BOOT-SERIAL.txt) -- wie in X01.
+
+
+5  WAS QEMU HIER NICHT ZEIGEN KANN
+-------------------------------------------------------------------------
+Den Fehler selbst. raspi4b hat keinen Eingabeweg, der Zeiger bewegt sich
+nicht, also entsteht der stehengebliebene Kasten dort nie. Die drei
+Vorhersagen des Tickets bleiben Vorhersagen fuer die echte Pi 4 und stehen
+als solche in der Quittung, Abschnitt "Was die echte Pi 4 zeigen muss".
