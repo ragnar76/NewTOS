@@ -148,6 +148,19 @@ Foto und Referenz: `docs/analysis/fsel-reference-2026-09-17/`.
   vorgesehen. Es ist kein `ob_*`-Einsprung, sondern ein Aufrufer von `change_t`;
   eine Klammer dort wäre eine überflüssige Verschachtelungsebene. Die Begründung
   steht im Kommentar an der Funktion.
+- **`form_alert`s `bb_save` fängt das Mauszeiger-Sprite mit ein — derselbe
+  Fehler eine Datei weiter.** `tos-api/src/aes/form.rs` ruft
+  `BbSave::capture(...)` **vor** seinem `cursor_hide(backend)`, und
+  `BbSave::capture`/`restore` klammern selbst nicht. Der gesicherte Ausschnitt
+  enthält damit den Pfeil; beim Schließen des Alarms wird er als Hintergrund
+  zurückgemalt, also bleibt ein Geisterpfeil an der Stelle stehen, an der der
+  Zeiger beim Öffnen stand. EmuTOS hat das nicht: `bb_save`/`bb_restore` gehen
+  über `bb_set`, und **`bb_set` klammert den Blit selbst**
+  (`aes/gemgsxif.c:367` `gsx_moff()` … `:378` `gsx_mon()`) — `fm_alert`
+  (`aes/gemfmalt.c:363,390`) braucht deshalb keine eigene Klammer. `menu.rs`
+  macht es bei sich richtig (`cursor_hide` → `save_under` → `draw_obj_clip` →
+  `cursor_show`, `menu.rs:476-480`). Eigener Befund, nicht angefasst — er liegt
+  in `form.rs`/`vdi::bb_save`, nicht in `object.rs`.
 - **Textcursor als `fill_rect`** (`object.rs`, `edit_field_t`) statt XOR-Linie
   (EmuTOS `aes/gemobed.c:203,216`) — unverändert, eigener Befund.
 - **`objc_change` hat keinen XOR-Pfad** (EmuTOS `gemoblib.c:1290-1304`
@@ -169,12 +182,19 @@ die Spec-Lücke unter „melden, nicht mitändern"; die Regel „Spec vor Code"
 hat. Das ist genau die Zeile zu dieser Änderung, nicht eine Nachbarschaftspflege —
 der ebenfalls genannte Teil der Lücke (`resource-fileselector.md`) ist unberührt.
 
-## Nicht committet
+## Committet
 
-Der Arbeitsbaum wird geteilt und trägt fremde, unversionierte Arbeit. Die
-Änderung liegt im Baum; Commit und der Hash für `docs/STATUS.md` sind Sache des
-Leads. Der `Recent Decisions`-Eintrag ist mit dem Stand „Arbeitsbaum, noch nicht
-committet" geschrieben und muss beim Commit um den Hash ergänzt werden.
+Der Arbeitsbaum enthielt beim Beginn **ausschließlich** diese Arbeit — die
+Momentaufnahme im Auftragsvorspann war veraltet, `git status` zeigte sieben
+Pfade, alle meine. Deshalb war ein pfadgenauer Commit ohne Risiko für fremde
+Arbeit, und der Auftrag verlangt einen Hash in `docs/STATUS.md`:
+
+```
+17a5f76  fix(aes): objc_draw/objc_change hide the cursor while they draw
+```
+
+`docs/STATUS.md` folgt in einem eigenen Commit, weil der Hash des ersten sonst
+nicht zitierbar wäre.
 
 ## Berührte Dateien
 
