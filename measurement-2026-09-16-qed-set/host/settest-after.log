@@ -1,0 +1,43 @@
+host data model: sizeof(unsigned long)=8 sizeof(SET)=256 SETSIZE=32 SETMAX=1023
+byte order: little-endian
+addressable bytes of a SET: 128, object bytes: 256
+
+== device: src/set.c (pristine)
+   FAIL setall       empty                                                           first differing byte 4: 00 vs ff
+   FAIL setall       empty                        setcard after setall               got=512 want(m68k)=1024
+   FAIL setnot       empty                                                           first differing byte 4: 00 vs ff
+   FAIL setfree      full 0..1023                                                    got=64 want(m68k)=1024
+   FAIL setmax       full 0..1023                                                    got=511 want(m68k)=1023
+   FAIL setcard      full 0..1023                                                    got=512 want(m68k)=1024
+   FAIL setall       full 0..1023                                                    first differing byte 4: 00 vs ff
+   FAIL setnot       full 0..1023                                                    first differing byte 4: ff vs 00
+   FAIL setfree      full/full                                                       got=64 want(m68k)=1024
+   FAIL setmax       full/full                                                       got=511 want(m68k)=1023
+   FAIL setcard      full/full                                                       got=512 want(m68k)=1024
+   FAIL setnot       full/full                                                       first differing byte 4: ff vs 00
+   FAIL setfree      singleton 0                                                     got=0 want(m68k)=1
+   FAIL setmax       singleton 0                                                     got=24 want(m68k)=0
+   FAIL setmin       singleton 0                                                     got=24 want(m68k)=0
+   FAIL setcard      singleton 0                                                     got=0 want(m68k)=1
+   FAIL setmin       singleton 1                                                     got=25 want(m68k)=1
+   FAIL setmin       singleton 2                                                     got=26 want(m68k)=2
+   FAIL restore_edit  window handle 0                          loop body ran 0 times, want 1
+   FAIL restore_edit  window handle 1                          loop body ran 0 times, want 1
+   FAIL restore_edit  window handle 2                          loop body ran 0 times, want 1
+   restore_edit loop body: reached for 0 of 41 window handles
+   test sets driven: 2856 (each one checks all 17 functions)
+   model-vs-oracle mismatches: 0
+   DEVICE vs m68k MODEL: *** RED *** (17563 mismatches)
+       setfree      1436
+       setmax       2854
+       setmin       1853
+       setcard      2852
+       setall       5712
+       setnot       2856
+
+== device: sdk/overlays/qed/set.c
+   restore_edit loop body: reached for 41 of 41 window handles
+   test sets driven: 2856 (each one checks all 17 functions)
+   model-vs-oracle mismatches: 0
+   DEVICE vs m68k MODEL: green (0 mismatches)
+

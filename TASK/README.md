@@ -98,7 +98,7 @@ Die neu abgelegten Statusdateien haben Vorrang vor der alten Startempfehlung: M0
 | [Q03](Q03.md) | vr_recfl: XOR-Cursor zweimal zeichnen | Pixel-Messlücke | P1 | OFFEN | Q01 |
 | [Q04](Q04.md) | evnt_multi: ein Tastaturereignis vermessen | Interaktive Messlücke | P1 | OFFEN | — |
 | [Q05](Q05.md) | graf_mouse: Hide/Show um Textausgabe | Interaktive Pixel-Messlücke | P1 | OFFEN | Q01 |
-| [Q06](Q06.md) | QED restore_edit: abgebrochene Verzweigung bestimmen | Anwendungsdiagnose | P1 | OFFEN | — |
+| [Q06](Q06.md) | QED restore_edit: abgebrochene Verzweigung bestimmen | Anwendungsdiagnose → belegter Defekt | P1 | IMPLEMENTIERT — HW OFFEN | — |
 | [A25](A25.md) | appl_init: Nachrichten/Flags bei Wiederaufruf | Bestätigter Zustandsfehler | P1 | IMPLEMENTIERT — HW OFFEN | — |
 
 ## Späterer Backlog: genau eine Funktion pro Messdesign-Task

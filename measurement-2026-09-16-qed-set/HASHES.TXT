@@ -1,0 +1,15 @@
+SHA-256
+=======
+264acfcda2e62101a13d3813c86023afafb57f320211bcae0fd0e3002ae92df5    sdk/apps/qed/src/set.c
+d5e7fd650853969c0dce6eb3f1ce7e208747687d2e164dc55af4e5d97d78b006    sdk/overlays/qed/set.c
+c2173506be1dbec13d251ecba0ecbee4c9eccec9a9f4ca13c79c1a03ecc7b083  build/QED-before.NAP
+d6405fde94175a2573af630ba80055e65ce9105956938eb8281ee24aa52e9853  build/QED-after.NAP
+95afbf5e3d612abea3ae8488804014b4ef322d4ccb63deac19a91c8fbb099207  screendumps/qed-after.png
+95afbf5e3d612abea3ae8488804014b4ef322d4ccb63deac19a91c8fbb099207  screendumps/qed-before.png
+0486e9dad73cc2a7f925c7a132bd7ad3a5943757473872d759e0a4506d33e739    kernel8.img
+
+Referenz aus der Vormessung
+95afbf5e3d612abea3ae8488804014b4ef322d4ccb63deac19a91c8fbb099207    measurement-2026-09-14-x01/screendumps/qed-after.png
+
+Kartenbasis (aus der Regressionsmessung, unveraendert uebernommen)
+2a8b97d38fd13ef82538d818c555abf68f03707586273179bc281d9423e478c1    measurement-2026-09-13-regression/qemu-tmp/sd-base.img

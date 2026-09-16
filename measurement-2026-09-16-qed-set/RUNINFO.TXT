@@ -1,0 +1,165 @@
+Q06 -- QEDs Mengenmodul wort- und bytereihenfolgeneutral (sdk/overlays/qed/set.c)
+================================================================================
+
+Datum          2026-09-16
+Basis          desk-rebuild, HEAD 343b3c5, Baum vorher sauber (nur die bekannte
+               unversionierte Fremdarbeit)
+Ticket         TASK/Q06.md, Quittung TASK/Q06-STATUS-UNFINISHED.MD
+Herleitung     docs/analysis/qed-typing-redraw/findings.md
+
+
+1  WAS GEAENDERT WURDE  (kein Rust, eine einzige C-Datei)
+--------------------------------------------------------------------------------
+sdk/overlays/qed/set.c          NEU. Ersetzt beim Uebersetzen sdk/apps/qed/src/
+                                set.c (Overlay-Mechanismus, sdk/apps/build-qed.sh
+                                :118-121). src/ bleibt unangetastet.
+
+Nichts sonst. Kein Rust, keine Bibliothek, kein Kernel.
+
+
+2  DER BEFUND, AUF DIESEM RECHNER NACHGEMESSEN
+--------------------------------------------------------------------------------
+src/set.c adressiert dieselben Bits auf zwei Arten:
+
+  byteadressiert  setincl(:161) setexcl(:169) setchg(:177) setin(:185)
+                  -> Byte (elt>>3), Maske (0x80 >> (elt&7)).  Breiten- und
+                     bytereihenfolgeneutral, deshalb unauffaellig.
+
+  wortadressiert  setfree(:8) setmax(:30) setmin(:47) mit fest verdrahteten
+                  32 Bit je *set++ und den Konstanten 0x80000000L/0xFFFFFFFFL;
+                  setall(:77) und setnot(:105) schreiben 0xFFFFFFFFL je Wort.
+
+Auf m68k (4-Byte-long, Big-Endian) bezeichnen beide Adressierungen fuer dieselbe
+Elementnummer dasselbe Bit. Auf LP64/Little-Endian nicht mehr.
+
+Gemessen mit host/settest (siehe Abschnitt 3):
+
+    sizeof(unsigned long)=8   sizeof(SET)=256   SETSIZE=32   SETMAX=1023
+    byte order: little-endian
+    adressierbar 128 Byte, Objekt 256 Byte
+
+    setincl(s,0)  -> setmin=24  setmax=24   (m68k: 0 und 0)
+    setincl(s,1)  -> setmin=25  setmax=25   (m68k: 1 und 1)
+    volle Menge   -> setmax=511 setfree=64  setcard=512 (m68k: 1023/1024/1024)
+
+    Die Schleifenform aus QEDs restore_edit (edit.c:2106-2109)
+        max = setmax(chg_links);
+        for (link = setmin(chg_links); link <= max; link++)
+            if (setin(chg_links, link)) ...
+    erreicht ihren Rumpf fuer 0 von 41 Fensterhandles.
+
+
+3  DER HOSTLAUF  (host/settest, vollstaendige Quelle liegt bei)
+--------------------------------------------------------------------------------
+Drei Fassungen werden je Testfall verglichen:
+
+  ORAKEL  die reine Definition "Menge von Elementnummern 0..1023" mit der
+          Byteabbildung, die setincl/setin ohnehin benutzen
+  MODELL  eine woertliche Transliteration von src/set.c mit ausdruecklichen
+          32-Bit-Big-Endian-Wortzugriffen (m68kmodel.c) -- das, was die
+          unveraenderte Quelle auf m68k TUT
+  GERAET  der Pruefling, uebersetzt fuer diesen Wirt (LP64, Little-Endian):
+          entweder die unveraenderte src/set.c oder die Overlay-Fassung
+
+ORAKEL gegen MODELL validiert das Modell (0 Abweichungen in allen Laeufen).
+MODELL gegen GERAET ist das Urteil.
+
+2856 Testmengen, jede prueft alle 17 Funktionen aus set.h: leere Menge, volle
+Menge, jedes einzelne Element 0..1023 als Einermenge, jede volle Menge minus ein
+Element, 441 Paare auf einem Raster (Wort- und Byte-Grenzen), 300 Pseudozufalls-
+mengen, 64 zusammenhaengende Bereiche, str2set ueber 13 Zeichenketten, dazu eine
+Menge mit absichtlich verschmutzter Polsterung.
+
+VORHER (host/settest-before.log; zwei identische Prueflinge, beide die
+unveraenderte src/set.c, damit belegt ist, dass der Test vor dem Fix rot ist):
+
+    DEVICE vs m68k MODEL: *** RED *** (17563 mismatches)
+        setfree      1436
+        setmax       2854
+        setmin       1853
+        setcard      2852
+        setall       5712
+        setnot       2856
+    restore_edit loop body: reached for 0 of 41 window handles
+
+    image / setin / setincl / setexcl / setchg / setcmp / setcpy / setclr /
+    setand / setor / setxor / str2set: 0 Abweichungen -- das Bild im Speicher
+    war nie falsch, nur die wortadressierten Leser.
+
+NACHHER (host/settest-after.log, Pruefling 2 = sdk/overlays/qed/set.c):
+
+    DEVICE vs m68k MODEL: green (0 mismatches)
+    restore_edit loop body: reached for 41 of 41 window handles
+
+Nachbauen:  cd host/settest && sh build.sh && ./settest-before && ./settest-after
+
+
+4  DER QED-BAU
+--------------------------------------------------------------------------------
+sdk/apps/build-qed.sh (build/build-qed.log):
+
+    QED COBJS manifest: 37 files
+      overlay: memory.c (from sdk/overlays/qed/, src/ untouched)
+      overlay: set.c (from sdk/overlays/qed/, src/ untouched)
+    compiled OK=37  FAILED=0  (of 37)
+    LINK OK -> QED.NAP (568992 bytes)
+    undefined symbols in the final image (goal 0): 0
+
+Keine einzige Uebersetzungswarnung (alle 37 *.err leer).
+QED.NAP  571424 -> 568992 Byte.
+Die drei Bibliotheken wurden nicht neu gebaut (unveraenderte Zeitstempel).
+
+
+5  DIE MASCHINENLAEUFE  (QEMU raspi4b, headless, 640x480)
+--------------------------------------------------------------------------------
+Gleicher Kern in beiden Laeufen (kein Rust angefasst):
+    kernel8.img  sha256 0486e9dad73cc2a7f925c7a132bd7ad3a5943757473872d759e0a4506d33e739
+
+Karte: measurement-2026-09-13-regression/qemu-tmp/sd-base.img, darauf nur
+QED.NAP getauscht und NEWDESK.INF auf "#Z 01 C:\Apps\QED\QED.NAP@" gesetzt
+(method/prep-card.sh). Zwei Faelle, die sich NUR in QED.NAP unterscheiden.
+method/run-case.sh + method/qmp.py, Marke "QED.NAP", 10 s Nachlauf.
+
+    qed-before  Marke nach 15.2 s gefunden, Screendump erstellt
+    qed-after   Marke nach 15.2 s gefunden, Screendump erstellt
+
+    serial/qed-before-BOOT-SERIAL.txt und serial/qed-after-BOOT-SERIAL.txt:
+        Byte fuer Byte gleich, Ende beide
+        [shell] sh_ldapp: starting C:\Apps\QED\QED.NAP, sh_nextapp=2, sh_isgem=1
+        [launch] EL0: slot 0 entry 0x1000
+        kein Fault, keine Ausnahme
+
+    screendumps/qed-before.png gegen qed-after.png
+        0 von 307200 Bildpunkten verschieden
+    screendumps/qed-after.png gegen
+    measurement-2026-09-14-x01/screendumps/qed-after.png
+        0 von 307200 Bildpunkten verschieden, sha256 identisch
+
+Auf dem Bild: QEDs Menueleiste (qed, Datei, Bearbeiten, Fenster, Suchen,
+Spezial, Optionen, Shell) ueber gruenem Grund, Mauszeiger. Kein Editorfenster --
+QED oeffnet erst auf Benutzerhandlung eines.
+
+
+6  WAS QEMU HIER NICHT ZEIGEN KANN
+--------------------------------------------------------------------------------
+Der eigentliche Fehler ist in QEMU NICHT ausloesbar. raspi4b meldet
+"[pcie] RC not present (no response at RC_BASE); USB disabled" -- es gibt dort
+keine Tastatur und keine Maus. Ohne Eingabe wird weder ein Editorfenster
+geoeffnet noch eine Taste gedrueckt, also laeuft make_chg/restore_edit nie.
+
+Belegt ist damit nur: QED startet mit der neuen set.c unveraendert und zeichnet
+unveraendert. Dass ein getipptes Zeichen erscheint, ist eine VORHERSAGE fuer die
+echte Pi 4 (siehe Quittung, Abschnitt "Die drei Vorhersagen").
+
+
+7  BAUTEN UND DAUERTESTS
+--------------------------------------------------------------------------------
+cargo run -p xtask -- test        548 bestanden / 0 gefallen / 1 uebersprungen
+                                  (build/host-test.log) -- Sollstand gehalten
+cargo xtask build --board rpi4 --release        Exit 0 (build/build-rpi4.log)
+cargo xtask build --board qemu-virt --release   Exit 0 (build/build-qemuvirt.log)
+    je vorher kernel/src/lib.rs und tos-api/src/lib.rs angefasst, damit das
+    geteilte Zielverzeichnis nicht "up to date" melden kann.
+    Warnungen beide Boards: tos-api 64, kernel 94 -- Delta 0 gegen den in
+    measurement-2026-09-14-x01 protokollierten Sollstand.
+    Kein Rust geaendert, also auch kein Clippy-Delta moeglich.
