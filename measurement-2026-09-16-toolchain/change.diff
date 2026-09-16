@@ -1,0 +1,520 @@
+diff --git a/sdk/apps/build-coremark.sh b/sdk/apps/build-coremark.sh
+index 1d87abf..d35d97a 100755
+--- a/sdk/apps/build-coremark.sh
++++ b/sdk/apps/build-coremark.sh
+@@ -104,11 +104,10 @@ fi
+ echo
+ 
+ # --- libc ---------------------------------------------------------------------
++# What libc.a depends on is declared once in sdk/lib-stale.sh (TASK/T03), and
++# lib_ensure reports what the library build did instead of hiding it (T02).
+ . "$SDK/lib-stale.sh"
+-if lib_stale "$LIBC/libc.a" "$LIBC/overlay" "$LIBC/build-libc.sh"; then
+-  echo "libc.a missing or out of date -- running build-libc.sh first…"
+-  "$LIBC/build-libc.sh" >/dev/null 2>&1 || { echo "error: build-libc.sh failed" >&2; exit 1; }
+-fi
++lib_ensure libc || exit 1
+ MINT="$LIBC/mintlib/include"
+ [ -d "$MINT" ] || { echo "error: mintlib headers missing ($MINT); run build-libc.sh" >&2; exit 1; }
+ 
+diff --git a/sdk/apps/build-qed.sh b/sdk/apps/build-qed.sh
+index 8aaeb4e..46e174a 100755
+--- a/sdk/apps/build-qed.sh
++++ b/sdk/apps/build-qed.sh
+@@ -50,20 +50,15 @@ OUT="$BUILD/QED.NAP"
+ mkdir -p "$OBJ"
+ 
+ # --- ensure the three ported libraries are present --------------------------
+-# Rebuild a library when its archive is missing OR out of date (sdk/lib-stale.sh).
++# QED links cflib -> gemlib -> libc, so all three must be current AND mutually
++# consistent: before TASK/T03 the three tests above were independent, so a
++# gemlib header change rebuilt gemlib.a and QED's objects on the new layout
++# while cflib.a stayed on the old one -- one program, two struct layouts. The
++# chain and each library's real input set now live once in sdk/lib-stale.sh;
++# `lib_ensure cflib` walks libc -> gemlib -> cflib in that order, and does NOT
++# swallow what the library builds report (TASK/T02).
+ . "$SDK/lib-stale.sh"
+-if lib_stale "$LIBC/libc.a" "$LIBC/overlay" "$LIBC/build-libc.sh"; then
+-  echo "libc.a missing or out of date -- running build-libc.sh first…"
+-  "$LIBC/build-libc.sh" >/dev/null 2>&1 || { echo "error: build-libc.sh failed" >&2; exit 1; }
+-fi
+-if lib_stale "$GEM/gemlib.a" "$GEM/overlay" "$GEM/build-gemlib.sh"; then
+-  echo "gemlib.a missing or out of date -- running build-gemlib.sh first…"
+-  "$GEM/build-gemlib.sh" >/dev/null 2>&1 || { echo "error: build-gemlib.sh failed" >&2; exit 1; }
+-fi
+-if lib_stale "$CF/cflib.a" "$CF/overlay" "$CF/build-cflib.sh"; then
+-  echo "cflib.a missing or out of date -- running build-cflib.sh first…"
+-  "$CF/build-cflib.sh" >/dev/null 2>&1 || { echo "error: build-cflib.sh failed" >&2; exit 1; }
+-fi
++lib_ensure cflib || exit 1
+ MINT="$LIBC/mintlib/include"
+ [ -d "$MINT" ]   || { echo "error: mintlib headers missing ($MINT); run build-libc.sh" >&2; exit 1; }
+ [ -d "$GEMTOP" ] || { echo "error: gemlib headers missing ($GEMTOP); run build-gemlib.sh" >&2; exit 1; }
+diff --git a/sdk/apps/build-teradesk.sh b/sdk/apps/build-teradesk.sh
+index c9c198c..2b3dfb3 100755
+--- a/sdk/apps/build-teradesk.sh
++++ b/sdk/apps/build-teradesk.sh
+@@ -56,16 +56,11 @@ OUT="$BUILD/DESKTOP.NAP"
+ mkdir -p "$OBJ"
+ 
+ # --- ensure the two ported libraries are present ------------------------------
+-# Rebuild a library when its archive is missing OR out of date (sdk/lib-stale.sh).
++# TeraDesk links gemlib -> libc. The chain and each library's real input set
++# live once in sdk/lib-stale.sh (TASK/T03); `lib_ensure gemlib` walks
++# libc -> gemlib in that order and does not swallow what they report (TASK/T02).
+ . "$SDK/lib-stale.sh"
+-if lib_stale "$LIBC/libc.a" "$LIBC/overlay" "$LIBC/build-libc.sh"; then
+-  echo "libc.a missing or out of date -- running build-libc.sh first…"
+-  "$LIBC/build-libc.sh" >/dev/null 2>&1 || { echo "error: build-libc.sh failed" >&2; exit 1; }
+-fi
+-if lib_stale "$GEM/gemlib.a" "$GEM/overlay" "$GEM/build-gemlib.sh"; then
+-  echo "gemlib.a missing or out of date -- running build-gemlib.sh first…"
+-  "$GEM/build-gemlib.sh" >/dev/null 2>&1 || { echo "error: build-gemlib.sh failed" >&2; exit 1; }
+-fi
++lib_ensure gemlib || exit 1
+ MINT="$LIBC/mintlib/include"
+ [ -d "$MINT" ]   || { echo "error: mintlib headers missing ($MINT); run build-libc.sh" >&2; exit 1; }
+ [ -d "$GEMTOP" ] || { echo "error: gemlib headers missing ($GEMTOP); run build-gemlib.sh" >&2; exit 1; }
+diff --git a/sdk/cflib/build-cflib.sh b/sdk/cflib/build-cflib.sh
+index 984a0b4..5d5e8b4 100755
+--- a/sdk/cflib/build-cflib.sh
++++ b/sdk/cflib/build-cflib.sh
+@@ -48,21 +48,15 @@ OUT="${2:-$BUILD/$(basename "${CLIENT%.c}").NCP}"
+ OBJ="$BUILD/obj"
+ mkdir -p "$OBJ"
+ 
+-# --- ensure the ported mintlib libc is present ------------------------------
+-# Rebuild a library when its archive is missing OR out of date (sdk/lib-stale.sh).
++# --- ensure the two libraries cflib is built against are present ------------
++# cflib.a is compiled against gemlib's AND mintlib's headers, so both must be
++# current before a single cflib object is produced -- that dependency, and what
++# "out of date" means for each library, is declared once in sdk/lib-stale.sh.
++# `lib_ensure gemlib` walks libc -> gemlib in that order.
+ . "$SDK/lib-stale.sh"
+-if lib_stale "$LIBC/libc.a" "$LIBC/overlay" "$LIBC/build-libc.sh"; then
+-  echo "libc.a missing or out of date -- running build-libc.sh first…"
+-  "$LIBC/build-libc.sh" >/dev/null 2>&1 || { echo "error: build-libc.sh failed" >&2; exit 1; }
+-fi
++lib_ensure gemlib || exit 1
+ MINT="$LIBC/mintlib/include"
+ [ -d "$MINT" ] || { echo "error: mintlib headers missing ($MINT); run build-libc.sh" >&2; exit 1; }
+-
+-# --- ensure the ported gemlib is present ------------------------------------
+-if lib_stale "$GEM/gemlib.a" "$GEM/overlay" "$GEM/build-gemlib.sh"; then
+-  echo "gemlib.a missing or out of date -- running build-gemlib.sh first…"
+-  "$GEM/build-gemlib.sh" >/dev/null 2>&1 || { echo "error: build-gemlib.sh failed" >&2; exit 1; }
+-fi
+ [ -d "$GEMTOP" ] || { echo "error: gemlib headers missing ($GEMTOP); run build-gemlib.sh" >&2; exit 1; }
+ 
+ # --- ensure the cflib source tree is present (extract tarball + overlay) ------
+@@ -133,6 +127,8 @@ echo "COBJS manifest: $n_cobjs files"
+ # --- compile cflib into objects (best-effort) --------------------------------
+ rm -f "$OBJ"/*.o "$OBJ"/*.err
+ : > "$BUILD/compiled.txt"; : > "$BUILD/failed.txt"
++: > "$BUILD/failed-err.txt"   # "<source><TAB><its .err>" -- lib_check_failures
++                              # quotes the diagnostic of an UNRECORDED failure
+ ok=0; fail=0
+ while IFS= read -r c; do
+     [ -n "$c" ] || continue
+@@ -144,17 +140,23 @@ while IFS= read -r c; do
+         echo "$c" >> "$BUILD/compiled.txt"; ok=$((ok+1))
+     else
+         echo "$c" >> "$BUILD/failed.txt"; fail=$((fail+1)); rm -f "$o"
++        printf '%s\t%s\n' "$c" "$OBJ/${b}.err" >> "$BUILD/failed-err.txt"
+     fi
+ done < "$COBJS_LIST"
+ 
++# --- the failure list is REPORTED, and measured against the record -----------
++# This script already printed its list; what it could not do was tell a KNOWN
++# gap from a NEW one (TASK/T02). cflib's record is empty, so any failure at all
++# stops the build -- before the archive is written, so a silently incomplete
++# cflib.a is never left behind for the next run to reuse.
++echo "compiled OK=$ok  skipped=$fail  (of $n_cobjs)"
++lib_check_failures "cflib" "$BUILD/failed.txt" "$CF/expected-failures.txt" \
++                   "$BUILD/failed-err.txt" || exit 1
++
+ # --- archive -----------------------------------------------------------------
+ rm -f "$CF/cflib.a"
+ "$AR" cr "$CF/cflib.a" "$OBJ"/*.o
+-echo "compiled OK=$ok  skipped=$fail  -> $CF/cflib.a ($(wc -c < "$CF/cflib.a" | tr -d ' ') bytes)"
+-if [ "$fail" -ne 0 ]; then
+-    echo "skipped (did not compile for AArch64/LP64):"
+-    sed 's/^/    /' "$BUILD/failed.txt"
+-fi
++echo "archived -> $CF/cflib.a ($(wc -c < "$CF/cflib.a" | tr -d ' ') bytes)"
+ echo
+ 
+ # --- CRT + client ------------------------------------------------------------
+diff --git a/sdk/gemlib/build-gemlib.sh b/sdk/gemlib/build-gemlib.sh
+index cc8bee8..5e9e96e 100755
+--- a/sdk/gemlib/build-gemlib.sh
++++ b/sdk/gemlib/build-gemlib.sh
+@@ -55,12 +55,11 @@ mkdir -p "$OBJ"
+ 
+ # --- ensure the ported mintlib libc is present ------------------------------
+ # gemlib is compiled/linked against the already-ported mintlib (headers + libc.a).
+-# Rebuild a library when its archive is missing OR out of date (sdk/lib-stale.sh).
++# Rebuild a library when its archive is missing OR out of date. What "out of
++# date" means for each library, and the fact that gemlib is built against
++# mintlib's headers and must follow libc.a, is declared once in sdk/lib-stale.sh.
+ . "$SDK/lib-stale.sh"
+-if lib_stale "$LIBC/libc.a" "$LIBC/overlay" "$LIBC/build-libc.sh"; then
+-  echo "libc.a missing or out of date -- running build-libc.sh first…"
+-  "$LIBC/build-libc.sh" >/dev/null 2>&1 || { echo "error: build-libc.sh failed" >&2; exit 1; }
+-fi
++lib_ensure libc || exit 1
+ MINT="$LIBC/mintlib/include"
+ [ -d "$MINT" ] || { echo "error: mintlib headers missing ($MINT); run build-libc.sh" >&2; exit 1; }
+ 
+@@ -138,6 +137,8 @@ echo "COBJS manifest: $n_cobjs files"
+ # --- compile gemlib into objects (best-effort) -------------------------------
+ rm -f "$OBJ"/*.o "$OBJ"/*.err
+ : > "$BUILD/compiled.txt"; : > "$BUILD/failed.txt"
++: > "$BUILD/failed-err.txt"   # "<source><TAB><its .err>" -- lib_check_failures
++                              # quotes the diagnostic of an UNRECORDED failure
+ ok=0; fail=0
+ while IFS= read -r c; do
+     [ -n "$c" ] || continue
+@@ -149,13 +150,23 @@ while IFS= read -r c; do
+         echo "$c" >> "$BUILD/compiled.txt"; ok=$((ok+1))
+     else
+         echo "$c" >> "$BUILD/failed.txt"; fail=$((fail+1)); rm -f "$o"
++        printf '%s\t%s\n' "$c" "$OBJ/${b}.err" >> "$BUILD/failed-err.txt"
+     fi
+ done < "$COBJS_LIST"
+ 
++# --- the failure list is REPORTED, and measured against the record -----------
++# This script printed a count and no list (TASK/T02 named build-libc.sh; this
++# one had the same hole, latent because gemlib's failure set is empty). The
++# record IS empty, so any failure at all stops the build -- before the archive
++# is written, so a silently incomplete gemlib.a is never left for the next run.
++echo "compiled OK=$ok  skipped=$fail  (of $n_cobjs)"
++lib_check_failures "gemlib" "$BUILD/failed.txt" "$GEM/expected-failures.txt" \
++                   "$BUILD/failed-err.txt" || exit 1
++
+ # --- archive -----------------------------------------------------------------
+ rm -f "$GEM/gemlib.a"
+ "$AR" cr "$GEM/gemlib.a" "$OBJ"/*.o
+-echo "compiled OK=$ok  skipped=$fail  -> $GEM/gemlib.a ($(wc -c < "$GEM/gemlib.a" | tr -d ' ') bytes)"
++echo "archived -> $GEM/gemlib.a ($(wc -c < "$GEM/gemlib.a" | tr -d ' ') bytes)"
+ echo
+ 
+ # --- CRT + client ------------------------------------------------------------
+diff --git a/sdk/lib-stale.sh b/sdk/lib-stale.sh
+old mode 100644
+new mode 100755
+index 451ec9a..015d727
+--- a/sdk/lib-stale.sh
++++ b/sdk/lib-stale.sh
+@@ -1,4 +1,8 @@
+-# lib-stale.sh -- shared staleness test for the ported libraries.
++# lib-stale.sh -- dependency declaration, staleness test and failure
++# bookkeeping shared by the ported libraries (libc = mintlib, gemlib, cflib)
++# and by every script that links against them.
++#
++# WHY THIS FILE EXISTS
+ #
+ # The build scripts used to rebuild a library only when its archive was
+ # ABSENT. A stale archive was reused in silence, so an application could
+@@ -8,20 +12,237 @@
+ # rebuilt that day -- did not. An application whose behaviour does not
+ # follow its sources is the worst thing to debug against.
+ #
+-# `lib_stale <archive> <path...>` is true when the archive is missing, or
+-# older than anything under the given paths.
++# THE 2026-09-02 FIX WAS INCOMPLETE  (TASK/T03, both holes reproduced)
++#
++# The first version of this file watched "the overlay directory and the build
++# script itself", and every caller repeated that list by hand. Both halves of
++# that sentence were wrong:
++#
++#   (a) The list was too short. sdk/libc/newtos-arch/ -- eleven files WE write
++#       -- and sdk/include/newtos.h are compiled into libc.a and were watched
++#       by nobody: appending a function to newtos-arch/do_stat.c left libc.a
++#       byte-identical and build-qed.sh reported nothing out of date.
++#   (b) The libraries were never chained to each other. gemlib.a is compiled
++#       against mintlib's headers, cflib.a against gemlib's AND mintlib's.
++#       Widening OBJECT in sdk/gemlib/overlay/mt_gem.h.in rebuilt gemlib.a and
++#       QED's 37 objects on the NEW layout while cflib.a stayed byte-identical
++#       on the OLD one -- one program, two struct layouts. That is the
++#       2026-09-02 incident again, moved up one level.
++#
++# Both holes have the same root: the dependency knowledge was duplicated across
++# six call sites, so extending it meant editing six scripts and everybody
++# forgot one. It now lives here exactly once, in lib_chain()/lib_watch(), and a
++# caller says `lib_ensure cflib`.
++#
++# WHAT IS WATCHED
++#
++#   libc.a    sdk/libc/overlay/       our edits to the vendored mintlib
++#             sdk/libc/newtos-arch/   the AArch64 shims we write ourselves
++#             sdk/include/            newtos.h, included by those shims
++#             sdk/libc/build-libc.sh
++#   gemlib.a  sdk/gemlib/overlay/, sdk/gemlib/build-gemlib.sh   + libc.a
++#   cflib.a   sdk/cflib/overlay/,  sdk/cflib/build-cflib.sh     + gemlib.a, libc.a
+ #
+-# The vendored trees are extracted from pinned tarballs by the build
+-# scripts and do not change, so what is watched is what we actually edit:
+-# the overlay directory and the build script itself.
++# NOT watched, deliberately:
++#   - The extracted vendor trees (sdk/libc/mintlib/, sdk/gemlib/gemlib-0.44.0/,
++#     sdk/cflib/cflib-21/). They are re-created from tarball+overlay on every
++#     run, so watching them would make every library permanently stale.
++#   - The pristine tarballs. Replacing one has NO effect without
++#     MINTLIB_REFRESH=1 / GEMLIB_REFRESH=1 / CFLIB_REFRESH=1, because the build
++#     scripts only extract when the tree is absent; a rebuild triggered by the
++#     tarball's timestamp would therefore be a rebuild that changes nothing.
++#
++# WHY A TIMESTAMP CHAIN IS ENOUGH, AND DOES NOT LOOP
++#
++# libc -> gemlib -> cflib is a chain, not a cycle, and lib_ensure walks it in
++# that order within one process, so after any rebuild the archives are left in
++# ascending mtime order and the next run finds nothing stale. Nothing
++# downstream feeds back upstream. The applications never take part in the test
++# at all: build-qed.sh / build-teradesk.sh delete their objects and relink from
++# scratch on every run, so a .NAP older than a library is not a state this test
++# can observe -- and an explicit per-library dependency stamp would buy nothing
++# a mtime comparison over this DAG does not already give.
++
++LIB_SDK="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"      # .../sdk
++
++# --- the primitive -----------------------------------------------------------
++# lib_stale <archive> <path...>  -- true when the archive is missing, or older
++# than anything under the given paths. Sets LIB_STALE_REASON to what made it
++# stale ("missing", or the offending path).
+ lib_stale() {
+-  archive=$1; shift
+-  [ -f "$archive" ] || return 0
++  local archive=$1; shift
++  local p newer
++  LIB_STALE_REASON=""
++  if [ ! -f "$archive" ]; then LIB_STALE_REASON="missing"; return 0; fi
+   for p in "$@"; do
+     [ -e "$p" ] || continue
+-    if [ -n "$(find "$p" -newer "$archive" -print -quit 2>/dev/null)" ]; then
++    newer="$(find "$p" -newer "$archive" -print -quit 2>/dev/null)"
++    if [ -n "$newer" ]; then
++      LIB_STALE_REASON="${newer#$LIB_SDK/}"
+       return 0
+     fi
+   done
+   return 1
+ }
++
++# --- the declaration: one place, no more per-caller copies --------------------
++lib_archive() {
++  case "$1" in
++    libc)   printf '%s\n' "$LIB_SDK/libc/libc.a" ;;
++    gemlib) printf '%s\n' "$LIB_SDK/gemlib/gemlib.a" ;;
++    cflib)  printf '%s\n' "$LIB_SDK/cflib/cflib.a" ;;
++    *) echo "lib-stale.sh: unknown library '$1'" >&2; return 1 ;;
++  esac
++}
++
++lib_builder() {
++  case "$1" in
++    libc)   printf '%s\n' "$LIB_SDK/libc/build-libc.sh" ;;
++    gemlib) printf '%s\n' "$LIB_SDK/gemlib/build-gemlib.sh" ;;
++    cflib)  printf '%s\n' "$LIB_SDK/cflib/build-cflib.sh" ;;
++    *) echo "lib-stale.sh: unknown library '$1'" >&2; return 1 ;;
++  esac
++}
++
++# lib_chain <name> -- every library that must be current for <name> to be
++# built correctly, in build order, <name> itself last.
++lib_chain() {
++  case "$1" in
++    libc)   printf 'libc\n' ;;
++    gemlib) printf 'libc\ngemlib\n' ;;
++    cflib)  printf 'libc\ngemlib\ncflib\n' ;;
++    *) echo "lib-stale.sh: unknown library '$1'" >&2; return 1 ;;
++  esac
++}
++
++# lib_watch <name> -- fill the LIB_WATCH array with everything whose change
++# must invalidate <name>'s archive: the archives it is built against, then the
++# sources we edit ourselves.
++lib_watch() {
++  local up
++  LIB_WATCH=()
++  for up in $(lib_chain "$1"); do
++    [ "$up" = "$1" ] && continue
++    LIB_WATCH[${#LIB_WATCH[@]}]="$(lib_archive "$up")"
++  done
++  case "$1" in
++    libc)
++      LIB_WATCH[${#LIB_WATCH[@]}]="$LIB_SDK/libc/overlay"
++      LIB_WATCH[${#LIB_WATCH[@]}]="$LIB_SDK/libc/newtos-arch"
++      LIB_WATCH[${#LIB_WATCH[@]}]="$LIB_SDK/include"
++      LIB_WATCH[${#LIB_WATCH[@]}]="$LIB_SDK/libc/build-libc.sh"
++      ;;
++    gemlib)
++      LIB_WATCH[${#LIB_WATCH[@]}]="$LIB_SDK/gemlib/overlay"
++      LIB_WATCH[${#LIB_WATCH[@]}]="$LIB_SDK/gemlib/build-gemlib.sh"
++      ;;
++    cflib)
++      LIB_WATCH[${#LIB_WATCH[@]}]="$LIB_SDK/cflib/overlay"
++      LIB_WATCH[${#LIB_WATCH[@]}]="$LIB_SDK/cflib/build-cflib.sh"
++      ;;
++    *) echo "lib-stale.sh: unknown library '$1'" >&2; return 1 ;;
++  esac
++  return 0
++}
++
++# --- the entry point every caller uses ---------------------------------------
++# lib_ensure <name> -- bring <name> and everything it is built against up to
++# date, in dependency order.
++#
++# It does NOT swallow the builder's report (TASK/T02): the builder's
++# "compiled OK=" block -- count, skipped files, verdict against the recorded
++# failure set -- is echoed, and if the builder fails its whole log is printed.
++# Before this, build-qed.sh/build-teradesk.sh/build-cflib.sh ran the library
++# builds with >/dev/null 2>&1, which is how two mintlib files stayed broken for
++# months without a single line of output anywhere.
++lib_ensure() {
++  local want=$1 lib archive builder log
++  for lib in $(lib_chain "$want"); do
++    archive="$(lib_archive "$lib")" || return 1
++    builder="$(lib_builder "$lib")" || return 1
++    lib_watch "$lib" || return 1
++    lib_stale "$archive" ${LIB_WATCH[@]+"${LIB_WATCH[@]}"} || continue
++    echo "$(basename "$archive") out of date [$LIB_STALE_REASON] -- running $(basename "$builder")…"
++    log="$(dirname "$builder")/build/$(basename "$builder" .sh).log"
++    mkdir -p "$(dirname "$log")"
++    if "$builder" > "$log" 2>&1; then
++      sed -n '/^compiled OK=/,/^$/p' "$log" | sed '/^$/d;s/^/  /'
++      echo "  (full log: ${log#$LIB_SDK/})"
++    else
++      echo "error: $(basename "$builder") FAILED -- its full output follows:" >&2
++      sed 's/^/  /' "$log" >&2
++      return 1
++    fi
++  done
++  return 0
++}
++
++# --- failure bookkeeping for the library builds (TASK/T02) -------------------
++# lib_check_failures <label> <failed.txt> <expected.txt> [<err-map.txt>]
++#
++# Print the list of files that did not compile -- which build-cflib.sh and
++# build-gemlib-m68k.sh always did and build-libc.sh, the one script that
++# actually HAS failures, never did -- and compare the set against the recorded
++# one.
++#
++#   a file that failed and is NOT recorded  -> named with its first compiler
++#                                              diagnostic, return 1 (the caller
++#                                              stops BEFORE writing the archive,
++#                                              so a silently degraded archive is
++#                                              never left on disk)
++#   a recorded file that now compiles       -> announced, so the record can be
++#                                              shortened (that is what nobody
++#                                              noticed when e503efd fixed
++#                                              setsysvar.c and sysinfo.c)
++#
++# err-map.txt is optional and has "<source path><TAB><path to its .err file>"
++# per line; the build scripts write it in their compile loop.
++lib_check_failures() {
++  local label=$1 failed=$2 expected=$3 errmap=${4:-}
++  local tmpd n_failed n_expected n_new f e rc
++  tmpd="$(mktemp -d)" || return 1
++  rc=0
++
++  if [ -f "$failed" ]; then sort -u "$failed" > "$tmpd/failed"; else : > "$tmpd/failed"; fi
++  if [ -f "$expected" ]; then
++    sed -e 's/#.*//' -e 's/[[:space:]].*$//' "$expected" | grep -v '^$' | sort -u > "$tmpd/expected"
++  else
++    : > "$tmpd/expected"
++  fi
++  n_failed=$(wc -l < "$tmpd/failed" | tr -d ' ')
++  n_expected=$(wc -l < "$tmpd/expected" | tr -d ' ')
++
++  if [ "$n_failed" -gt 0 ]; then
++    echo "skipped (did not compile for AArch64/LP64):"
++    sed 's/^/    /' "$tmpd/failed"
++  fi
++
++  comm -23 "$tmpd/failed" "$tmpd/expected" > "$tmpd/new"
++  comm -13 "$tmpd/failed" "$tmpd/expected" > "$tmpd/gone"
++  n_new=$(wc -l < "$tmpd/new" | tr -d ' ')
++
++  if [ -s "$tmpd/gone" ]; then
++    echo "recorded failures that now COMPILE -- drop them from ${expected#$LIB_SDK/}:"
++    sed 's/^/    /' "$tmpd/gone"
++  fi
++
++  if [ -s "$tmpd/new" ]; then
++    echo "STOP: $label failure(s) NOT recorded in ${expected#$LIB_SDK/}:"
++    while IFS= read -r f; do
++      echo "  === $f ==="
++      e=""
++      if [ -n "$errmap" ] && [ -f "$errmap" ]; then
++        e=$(awk -F'\t' -v k="$f" '$1==k{print $2; exit}' "$errmap")
++      fi
++      if [ -n "$e" ] && [ -f "$e" ]; then sed 's/^/      /' "$e" | head -20; fi
++    done < "$tmpd/new"
++    echo "  Fix the toolchain. Only if the file is genuinely out of reach on"
++    echo "  AArch64, record it with its reason in ${expected#$LIB_SDK/}."
++    rc=1
++  else
++    echo "failures match ${expected#$LIB_SDK/}: $n_failed today, $n_expected recorded, $n_new new"
++  fi
++
++  rm -rf "$tmpd"
++  return $rc
++}
+diff --git a/sdk/libc/build-libc.sh b/sdk/libc/build-libc.sh
+index 44446e1..8d588f7 100755
+--- a/sdk/libc/build-libc.sh
++++ b/sdk/libc/build-libc.sh
+@@ -57,6 +57,9 @@ OUT="${2:-$BUILD/$(basename "${CLIENT%.c}").NCP}"
+ OBJ="$BUILD/obj"
+ mkdir -p "$OBJ"
+ 
++# Shared failure bookkeeping (lib_check_failures) -- see sdk/lib-stale.sh.
++. "$SDK/lib-stale.sh"
++
+ # --- ensure the mintlib source tree is present (extract tarball + overlay) ----
+ # The pristine mintlib-0.60.1 source is vendored as a TARBALL; our NewTOS edits
+ # live in sdk/libc/overlay/ (mirroring the mintlib layout). The extracted
+@@ -140,6 +143,8 @@ echo
+ # --- compile mintlib core into objects --------------------------------------
+ rm -f "$OBJ"/*.o "$OBJ"/*.err
+ : > "$BUILD/compiled.txt"; : > "$BUILD/failed.txt"; : > "$BUILD/excluded.txt"
++: > "$BUILD/failed-err.txt"   # "<source><TAB><its .err>" -- lib_check_failures
++                              # quotes the diagnostic of an UNRECORDED failure
+ ok=0; fail=0
+ for d in $DIRS; do
+     for c in "$TOP/$d"/*.c; do
+@@ -158,10 +163,23 @@ for d in $DIRS; do
+             echo "$d/$b.c" >> "$BUILD/compiled.txt"; ok=$((ok+1))
+         else
+             echo "$d/$b.c" >> "$BUILD/failed.txt"; fail=$((fail+1)); rm -f "$o"
++            printf '%s\t%s\n' "$d/$b.c" "$OBJ/${d}__${b}.err" >> "$BUILD/failed-err.txt"
+         fi
+     done
+ done
+ 
++# --- the failure list is REPORTED, and measured against the record -----------
++# Until TASK/T02 this script only ever printed "compiled OK=613 skipped=11":
++# WHICH files failed went to build/failed.txt and nowhere else, and its three
++# callers ran it with >/dev/null 2>&1 on top. A new breakage was invisible all
++# the way up to "build-qed EXIT=0". Now the list is printed, an unrecorded
++# failure stops the build BEFORE the archive is written (so a silently degraded
++# libc.a is never left behind for the next run to reuse), and a recorded file
++# that started compiling is announced.
++echo "compiled OK=$ok  skipped=$fail  (of $((ok+fail)))"
++lib_check_failures "libc" "$BUILD/failed.txt" "$LIBC/expected-failures.txt" \
++                   "$BUILD/failed-err.txt" || exit 1
++
+ # --- NewTOS arch shims -------------------------------------------------------
+ # memcpy/memmove/memset/... (were bcopy.S/memset.S), _exit (was libc_exit.S),
+ # the malloc-arena/heap init, and the lean stat/tty/ioctl glue replacing the
+@@ -201,7 +219,7 @@ done
+ # --- archive -----------------------------------------------------------------
+ rm -f "$LIBC/libc.a"
+ "$AR" cr "$LIBC/libc.a" "$OBJ"/*.o
+-echo "compiled OK=$ok  skipped=$fail  -> $LIBC/libc.a ($(wc -c < "$LIBC/libc.a" | tr -d ' ') bytes)"
++echo "archived -> $LIBC/libc.a ($(wc -c < "$LIBC/libc.a" | tr -d ' ') bytes)"
+ echo
+ 
+ # --- CRT + client ------------------------------------------------------------

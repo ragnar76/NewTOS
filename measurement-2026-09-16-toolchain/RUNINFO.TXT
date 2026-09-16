@@ -1,0 +1,102 @@
+T02 + T03 -- der Bau sagt, was er tut: Fehlschlagliste und Bibliotheks-Kette
+===========================================================================
+
+Datum          2026-09-16
+Basis          desk-rebuild, HEAD 282f255, Baum vorher sauber
+Tickets        TASK/T02.md (Befund B3), TASK/T03.md (Befund B2)
+Quittungen     TASK/T02-STATUS-DONE.MD, TASK/T03-STATUS-DONE.MD
+Rust           NICHT angefasst -- diese Arbeit liegt vollstaendig in sdk/
+
+
+1  WAS GEAENDERT WURDE
+---------------------------------------------------------------------------
+sdk/lib-stale.sh              27 -> 248 Zeilen. lib_stale bleibt das
+                              Primitiv; neu: lib_archive/lib_builder/
+                              lib_chain/lib_watch (die Abhaengigkeitsangabe,
+                              einmal statt sechsmal), lib_ensure (Einstieg
+                              fuer alle Aufrufer) und lib_check_failures
+                              (Fehlschlagliste + Soll-Ist gegen den Satz).
+                              Der irrefuehrende Kopfkommentar ist ersetzt.
+sdk/libc/build-libc.sh        druckt die Liste; prueft sie gegen
+sdk/gemlib/build-gemlib.sh    expected-failures.txt; bricht VOR dem
+sdk/cflib/build-cflib.sh      Archivieren ab, wenn ein Fehlschlag nicht
+                              verzeichnet ist.
+sdk/apps/build-qed.sh         drei unabhaengige lib_stale-Tests ->
+sdk/apps/build-teradesk.sh    ein lib_ensure; kein >/dev/null 2>&1 mehr.
+sdk/apps/build-coremark.sh
+sdk/{libc,gemlib,cflib}/expected-failures.txt   NEU: der verzeichnete
+                              Fehlschlagsatz. libc 11 Eintraege mit Grund,
+                              gemlib und cflib leer.
+
+
+2  DIE NACHSTELLUNGEN  (repro/, je isolierte Kopie, nie im Arbeitsbaum)
+---------------------------------------------------------------------------
+t02-before.log / t02-after.log
+    Einspielung: "#error" an mintlib/misc/error.c, libc/overlay/stdlib/
+    labs.c angefasst. VORHER: build-qed EXIT=0, kein Wort, failed.txt
+    11 -> 12 Zeilen, error()/error_at_line() aus libc.a verschwunden.
+    NACHHER: EXIT=1, Datei benannt, Diagnose zitiert, das gute libc.a
+    unangetastet.
+
+t03a-before.log / t03a-after.log
+    Einspielung: OBJECT in gemlib/overlay/mt_gem.h.in um zwei Byte
+    verbreitert. VORHER: gemlib.a und QEDs 37 Objekte auf dem NEUEN
+    Layout, cflib.a bytegleich auf dem ALTEN (erzwungener Bau danach:
+    261720 -> 262184 Bytes). NACHHER: cflib.a wird mitgezogen, und zwei
+    weitere Laeufe bauen nichts mehr (keine Dauerschleife).
+
+t03b-before.log / t03b-after.log
+    Einspielung: eine Funktion an libc/newtos-arch/do_stat.c. VORHER:
+    "keine Bibliothek veraltet", libc.a bytegleich, Symbol fehlt.
+    NACHHER: newtos-arch/do_stat.c wird als Ausloeser benannt, libc,
+    gemlib und cflib folgen, Symbol im Archiv.
+
+00-before-warm.log / 00-after-warm.log   die jeweiligen Ausgangslaeufe.
+
+
+3  KEIN ERZEUGNIS AENDERT SICH
+---------------------------------------------------------------------------
+Im Arbeitsbaum zweimal vollstaendig gebaut, einmal mit den Skripten des
+HEAD (roundA-*), einmal mit den geaenderten (roundB-*):
+
+    roundA-sha256.txt == roundB-sha256.txt == final-sha256.txt
+
+    libc.a     a25d6f27cc979cf282218d9ef59f67ee409b148cea476f49794281715bdcde22
+    gemlib.a   a6d2194b9cb6c519256e1e6e379c948c3832323aea8534dc45d335000e582c0a
+    cflib.a    079bf3066ea3feb7a98a66129e0da29e29b30f7facbc4051e8579c3a6d4a79b8
+    QED.NAP    d6405fde94175a2573af630ba80055e65ce9105956938eb8281ee24aa52e9853
+    DESKTOP.NAP b717825abb2b900e72b6ee1bee45a7aedac46290e8436ed94b90f984bf3bc275
+
+    final-sha256.txt ist nach zwei zusaetzlichen Laeufen (coremark.log,
+    apitest.log) aufgenommen und immer noch derselbe Satz.
+
+ABWEICHUNG, VORGEFUNDEN UND NICHT VON DIESER ARBEIT: die DESKTOP.NAP, die
+am 2026-09-16 im Baum lag, war 900b9ab0809b6079e257c93bef340a2a18f031f5696
+a6caf8bdd0d2f9cbdc86d vom 2026-09-14 20:13 -- also VOR e503efd (21:46,
+sdk/libc/overlay). Ein Neubau mit den unveraenderten HEAD-Skripten liefert
+b717825a..., zweimal hintereinander identisch (roundA-teradesk-2.log). Die
+Datei im Baum war seit zwei Tagen nicht mehr das, was ihre Quellen sagen.
+
+
+4  SOLLSTAENDE
+---------------------------------------------------------------------------
+xtask-test.log                548 bestanden / 0 gefallen / 1 uebersprungen
+build-qemu-virt.log           EXIT 0, tos-api 64 / kernel 94 Warnungen
+build-rpi4.log                EXIT 0, tos-api 64 / kernel 94 Warnungen
+clippy-board-qemu-virt.log    tos-api 81 / kernel 125
+clippy-board-rpi4.log         tos-api 81 / kernel 125
+Delta gegen die Grundlinie: 0 in allen sechs Zahlen. Kein Rust angefasst.
+
+change.diff / change-stat.txt  der vollstaendige Unterschied in sdk/.
+
+
+5  WAS HIER NICHT GEPRUEFT IST
+---------------------------------------------------------------------------
+a) Kein Bootlauf, kein Selbsttest, kein Bildschirmabzug. Die Erzeugnisse
+   sind bytegleich, also gibt es nichts, das sich auf der Maschine anders
+   verhalten koennte -- die Abnahme entscheidet der Tester.
+b) sdk/apps/{chaintest,gemtest}/build-*.sh pruefen weiterhin nur auf
+   ABWESENHEIT der Archive (die Form von vor dem 2026-09-02). Nicht
+   angefasst: in keinem der beiden Tickets genannt.
+c) Die elf verzeichneten libc-Fehlschlaege sind NICHT repariert -- das war
+   ausdruecklich nicht der Auftrag. Sie sind jetzt nur sichtbar.

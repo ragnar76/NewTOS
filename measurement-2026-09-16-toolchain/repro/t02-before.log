@@ -1,0 +1,36 @@
+### T02 BEFORE THE FIX -- sdk/lib-stale.sh + build-*.sh at HEAD 282f255
+### injection: append "#error" to mintlib/misc/error.c, touch libc/overlay/stdlib/labs.c
+
+libc.a               before: fbb4296dd3f1ce81
+failed.txt lines     before: 11
+error() in libc.a    before: 1
+
+--- build-qed.sh output, verbatim ---
+libc.a missing or out of date -- running build-libc.sh first…
+clang : Apple clang version 21.0.0 (clang-2100.1.1.101)
+ar    : /Users/ingouhlemann/.rustup/toolchains/stable-aarch64-apple-darwin/lib/rustlib/aarch64-apple-darwin/bin/llvm-ar
+lld   : /Users/ingouhlemann/.rustup/toolchains/stable-aarch64-apple-darwin/lib/rustlib/aarch64-apple-darwin/bin/rust-lld
+
+QED COBJS manifest: 37 files
+  overlay: memory.c (from sdk/overlays/qed/, src/ untouched)
+  overlay: set.c (from sdk/overlays/qed/, src/ untouched)
+compiled OK=37  FAILED=0  (of 37)
+
+LINK OK -> /private/tmp/claude-501/-Volumes-Daten-Development-PiRusTOS/5c7969aa-fae6-42ed-bbaf-0933b4fb9ca4/scratchpad/t02t03/b-t02/apps/qed/build/QED.NAP (569328 bytes)
+    Class: 64-bit (0x2)
+    DataEncoding: LittleEndian (0x1)
+    FileVersion: 1
+    ABIVersion: 0
+  Type: Executable (0x2)
+  Machine: EM_AARCH64 (0xB7)
+  Version: 1
+  Entry: 0x1000
+
+undefined symbols in the final image (goal 0): 0
+build-qed EXIT=0
+
+libc.a               after : bc5de007a1b9c042
+failed.txt lines     after : 12   (misc/error.c: 1)
+error() in libc.a    after : 0
+
+VERDICT: exit 0, no word about it anywhere. The archive lost error()/error_at_line().

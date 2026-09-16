@@ -1,0 +1,30 @@
+gemlib.a out of date [libc/libc.a] -- running build-gemlib.sh…
+  compiled OK=578  skipped=0  (of 578)
+  failures match gemlib/expected-failures.txt: 0 today, 0 recorded, 0 new
+  archived -> /private/tmp/claude-501/-Volumes-Daten-Development-PiRusTOS/5c7969aa-fae6-42ed-bbaf-0933b4fb9ca4/scratchpad/t02t03/after-base/gemlib/gemlib.a (745634 bytes)
+  (full log: gemlib/build/build-gemlib.log)
+cflib.a out of date [libc/libc.a] -- running build-cflib.sh…
+  compiled OK=129  skipped=0  (of 129)
+  failures match cflib/expected-failures.txt: 0 today, 0 recorded, 0 new
+  archived -> /private/tmp/claude-501/-Volumes-Daten-Development-PiRusTOS/5c7969aa-fae6-42ed-bbaf-0933b4fb9ca4/scratchpad/t02t03/after-base/cflib/cflib.a (261720 bytes)
+  (full log: cflib/build/build-cflib.log)
+clang : Apple clang version 21.0.0 (clang-2100.1.1.101)
+ar    : /Users/ingouhlemann/.rustup/toolchains/stable-aarch64-apple-darwin/lib/rustlib/aarch64-apple-darwin/bin/llvm-ar
+lld   : /Users/ingouhlemann/.rustup/toolchains/stable-aarch64-apple-darwin/lib/rustlib/aarch64-apple-darwin/bin/rust-lld
+
+QED COBJS manifest: 37 files
+  overlay: memory.c (from sdk/overlays/qed/, src/ untouched)
+  overlay: set.c (from sdk/overlays/qed/, src/ untouched)
+compiled OK=37  FAILED=0  (of 37)
+
+LINK OK -> /private/tmp/claude-501/-Volumes-Daten-Development-PiRusTOS/5c7969aa-fae6-42ed-bbaf-0933b4fb9ca4/scratchpad/t02t03/after-base/apps/qed/build/QED.NAP (569168 bytes)
+    Class: 64-bit (0x2)
+    DataEncoding: LittleEndian (0x1)
+    FileVersion: 1
+    ABIVersion: 0
+  Type: Executable (0x2)
+  Machine: EM_AARCH64 (0xB7)
+  Version: 1
+  Entry: 0x1000
+
+undefined symbols in the final image (goal 0): 0
