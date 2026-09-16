@@ -55,12 +55,11 @@ mkdir -p "$OBJ"
 
 # --- ensure the ported mintlib libc is present ------------------------------
 # gemlib is compiled/linked against the already-ported mintlib (headers + libc.a).
-# Rebuild a library when its archive is missing OR out of date (sdk/lib-stale.sh).
+# Rebuild a library when its archive is missing OR out of date. What "out of
+# date" means for each library, and the fact that gemlib is built against
+# mintlib's headers and must follow libc.a, is declared once in sdk/lib-stale.sh.
 . "$SDK/lib-stale.sh"
-if lib_stale "$LIBC/libc.a" "$LIBC/overlay" "$LIBC/build-libc.sh"; then
-  echo "libc.a missing or out of date -- running build-libc.sh first…"
-  "$LIBC/build-libc.sh" >/dev/null 2>&1 || { echo "error: build-libc.sh failed" >&2; exit 1; }
-fi
+lib_ensure libc || exit 1
 MINT="$LIBC/mintlib/include"
 [ -d "$MINT" ] || { echo "error: mintlib headers missing ($MINT); run build-libc.sh" >&2; exit 1; }
 
@@ -138,6 +137,8 @@ echo "COBJS manifest: $n_cobjs files"
 # --- compile gemlib into objects (best-effort) -------------------------------
 rm -f "$OBJ"/*.o "$OBJ"/*.err
 : > "$BUILD/compiled.txt"; : > "$BUILD/failed.txt"
+: > "$BUILD/failed-err.txt"   # "<source><TAB><its .err>" -- lib_check_failures
+                              # quotes the diagnostic of an UNRECORDED failure
 ok=0; fail=0
 while IFS= read -r c; do
     [ -n "$c" ] || continue
@@ -149,13 +150,23 @@ while IFS= read -r c; do
         echo "$c" >> "$BUILD/compiled.txt"; ok=$((ok+1))
     else
         echo "$c" >> "$BUILD/failed.txt"; fail=$((fail+1)); rm -f "$o"
+        printf '%s\t%s\n' "$c" "$OBJ/${b}.err" >> "$BUILD/failed-err.txt"
     fi
 done < "$COBJS_LIST"
+
+# --- the failure list is REPORTED, and measured against the record -----------
+# This script printed a count and no list (TASK/T02 named build-libc.sh; this
+# one had the same hole, latent because gemlib's failure set is empty). The
+# record IS empty, so any failure at all stops the build -- before the archive
+# is written, so a silently incomplete gemlib.a is never left for the next run.
+echo "compiled OK=$ok  skipped=$fail  (of $n_cobjs)"
+lib_check_failures "gemlib" "$BUILD/failed.txt" "$GEM/expected-failures.txt" \
+                   "$BUILD/failed-err.txt" || exit 1
 
 # --- archive -----------------------------------------------------------------
 rm -f "$GEM/gemlib.a"
 "$AR" cr "$GEM/gemlib.a" "$OBJ"/*.o
-echo "compiled OK=$ok  skipped=$fail  -> $GEM/gemlib.a ($(wc -c < "$GEM/gemlib.a" | tr -d ' ') bytes)"
+echo "archived -> $GEM/gemlib.a ($(wc -c < "$GEM/gemlib.a" | tr -d ' ') bytes)"
 echo
 
 # --- CRT + client ------------------------------------------------------------

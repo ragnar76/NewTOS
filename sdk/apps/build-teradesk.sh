@@ -56,16 +56,11 @@ OUT="$BUILD/DESKTOP.NAP"
 mkdir -p "$OBJ"
 
 # --- ensure the two ported libraries are present ------------------------------
-# Rebuild a library when its archive is missing OR out of date (sdk/lib-stale.sh).
+# TeraDesk links gemlib -> libc. The chain and each library's real input set
+# live once in sdk/lib-stale.sh (TASK/T03); `lib_ensure gemlib` walks
+# libc -> gemlib in that order and does not swallow what they report (TASK/T02).
 . "$SDK/lib-stale.sh"
-if lib_stale "$LIBC/libc.a" "$LIBC/overlay" "$LIBC/build-libc.sh"; then
-  echo "libc.a missing or out of date -- running build-libc.sh first…"
-  "$LIBC/build-libc.sh" >/dev/null 2>&1 || { echo "error: build-libc.sh failed" >&2; exit 1; }
-fi
-if lib_stale "$GEM/gemlib.a" "$GEM/overlay" "$GEM/build-gemlib.sh"; then
-  echo "gemlib.a missing or out of date -- running build-gemlib.sh first…"
-  "$GEM/build-gemlib.sh" >/dev/null 2>&1 || { echo "error: build-gemlib.sh failed" >&2; exit 1; }
-fi
+lib_ensure gemlib || exit 1
 MINT="$LIBC/mintlib/include"
 [ -d "$MINT" ]   || { echo "error: mintlib headers missing ($MINT); run build-libc.sh" >&2; exit 1; }
 [ -d "$GEMTOP" ] || { echo "error: gemlib headers missing ($GEMTOP); run build-gemlib.sh" >&2; exit 1; }

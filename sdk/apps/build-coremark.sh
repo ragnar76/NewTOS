@@ -104,11 +104,10 @@ fi
 echo
 
 # --- libc ---------------------------------------------------------------------
+# What libc.a depends on is declared once in sdk/lib-stale.sh (TASK/T03), and
+# lib_ensure reports what the library build did instead of hiding it (T02).
 . "$SDK/lib-stale.sh"
-if lib_stale "$LIBC/libc.a" "$LIBC/overlay" "$LIBC/build-libc.sh"; then
-  echo "libc.a missing or out of date -- running build-libc.sh first…"
-  "$LIBC/build-libc.sh" >/dev/null 2>&1 || { echo "error: build-libc.sh failed" >&2; exit 1; }
-fi
+lib_ensure libc || exit 1
 MINT="$LIBC/mintlib/include"
 [ -d "$MINT" ] || { echo "error: mintlib headers missing ($MINT); run build-libc.sh" >&2; exit 1; }
 

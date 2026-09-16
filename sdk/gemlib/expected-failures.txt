@@ -1,0 +1,10 @@
+# expected-failures.txt -- gemlib files KNOWN not to compile for NewTOS/AArch64.
+#
+# The list is EMPTY: all of gemlib's COBJS manifest compiles. build-gemlib.sh
+# therefore stops on any failure at all (sdk/lib-stale.sh, lib_check_failures),
+# which is the strict form TASK/T02 asks for wherever it is reachable.
+#
+# Format: "<path>  <reason>" per line, paths relative to the extracted
+# gemlib-0.44.0 tree, "#" starts a comment. Adding an entry here is a decision
+# that a GEM binding is unavailable on NewTOS -- it needs a ticket, not a
+# quick line.

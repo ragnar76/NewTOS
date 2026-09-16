@@ -57,6 +57,9 @@ OUT="${2:-$BUILD/$(basename "${CLIENT%.c}").NCP}"
 OBJ="$BUILD/obj"
 mkdir -p "$OBJ"
 
+# Shared failure bookkeeping (lib_check_failures) -- see sdk/lib-stale.sh.
+. "$SDK/lib-stale.sh"
+
 # --- ensure the mintlib source tree is present (extract tarball + overlay) ----
 # The pristine mintlib-0.60.1 source is vendored as a TARBALL; our NewTOS edits
 # live in sdk/libc/overlay/ (mirroring the mintlib layout). The extracted
@@ -140,6 +143,8 @@ echo
 # --- compile mintlib core into objects --------------------------------------
 rm -f "$OBJ"/*.o "$OBJ"/*.err
 : > "$BUILD/compiled.txt"; : > "$BUILD/failed.txt"; : > "$BUILD/excluded.txt"
+: > "$BUILD/failed-err.txt"   # "<source><TAB><its .err>" -- lib_check_failures
+                              # quotes the diagnostic of an UNRECORDED failure
 ok=0; fail=0
 for d in $DIRS; do
     for c in "$TOP/$d"/*.c; do
@@ -158,9 +163,22 @@ for d in $DIRS; do
             echo "$d/$b.c" >> "$BUILD/compiled.txt"; ok=$((ok+1))
         else
             echo "$d/$b.c" >> "$BUILD/failed.txt"; fail=$((fail+1)); rm -f "$o"
+            printf '%s\t%s\n' "$d/$b.c" "$OBJ/${d}__${b}.err" >> "$BUILD/failed-err.txt"
         fi
     done
 done
+
+# --- the failure list is REPORTED, and measured against the record -----------
+# Until TASK/T02 this script only ever printed "compiled OK=613 skipped=11":
+# WHICH files failed went to build/failed.txt and nowhere else, and its three
+# callers ran it with >/dev/null 2>&1 on top. A new breakage was invisible all
+# the way up to "build-qed EXIT=0". Now the list is printed, an unrecorded
+# failure stops the build BEFORE the archive is written (so a silently degraded
+# libc.a is never left behind for the next run to reuse), and a recorded file
+# that started compiling is announced.
+echo "compiled OK=$ok  skipped=$fail  (of $((ok+fail)))"
+lib_check_failures "libc" "$BUILD/failed.txt" "$LIBC/expected-failures.txt" \
+                   "$BUILD/failed-err.txt" || exit 1
 
 # --- NewTOS arch shims -------------------------------------------------------
 # memcpy/memmove/memset/... (were bcopy.S/memset.S), _exit (was libc_exit.S),
@@ -201,7 +219,7 @@ done
 # --- archive -----------------------------------------------------------------
 rm -f "$LIBC/libc.a"
 "$AR" cr "$LIBC/libc.a" "$OBJ"/*.o
-echo "compiled OK=$ok  skipped=$fail  -> $LIBC/libc.a ($(wc -c < "$LIBC/libc.a" | tr -d ' ') bytes)"
+echo "archived -> $LIBC/libc.a ($(wc -c < "$LIBC/libc.a" | tr -d ' ') bytes)"
 echo
 
 # --- CRT + client ------------------------------------------------------------

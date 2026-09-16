@@ -48,21 +48,15 @@ OUT="${2:-$BUILD/$(basename "${CLIENT%.c}").NCP}"
 OBJ="$BUILD/obj"
 mkdir -p "$OBJ"
 
-# --- ensure the ported mintlib libc is present ------------------------------
-# Rebuild a library when its archive is missing OR out of date (sdk/lib-stale.sh).
+# --- ensure the two libraries cflib is built against are present ------------
+# cflib.a is compiled against gemlib's AND mintlib's headers, so both must be
+# current before a single cflib object is produced -- that dependency, and what
+# "out of date" means for each library, is declared once in sdk/lib-stale.sh.
+# `lib_ensure gemlib` walks libc -> gemlib in that order.
 . "$SDK/lib-stale.sh"
-if lib_stale "$LIBC/libc.a" "$LIBC/overlay" "$LIBC/build-libc.sh"; then
-  echo "libc.a missing or out of date -- running build-libc.sh first…"
-  "$LIBC/build-libc.sh" >/dev/null 2>&1 || { echo "error: build-libc.sh failed" >&2; exit 1; }
-fi
+lib_ensure gemlib || exit 1
 MINT="$LIBC/mintlib/include"
 [ -d "$MINT" ] || { echo "error: mintlib headers missing ($MINT); run build-libc.sh" >&2; exit 1; }
-
-# --- ensure the ported gemlib is present ------------------------------------
-if lib_stale "$GEM/gemlib.a" "$GEM/overlay" "$GEM/build-gemlib.sh"; then
-  echo "gemlib.a missing or out of date -- running build-gemlib.sh first…"
-  "$GEM/build-gemlib.sh" >/dev/null 2>&1 || { echo "error: build-gemlib.sh failed" >&2; exit 1; }
-fi
 [ -d "$GEMTOP" ] || { echo "error: gemlib headers missing ($GEMTOP); run build-gemlib.sh" >&2; exit 1; }
 
 # --- ensure the cflib source tree is present (extract tarball + overlay) ------
@@ -133,6 +127,8 @@ echo "COBJS manifest: $n_cobjs files"
 # --- compile cflib into objects (best-effort) --------------------------------
 rm -f "$OBJ"/*.o "$OBJ"/*.err
 : > "$BUILD/compiled.txt"; : > "$BUILD/failed.txt"
+: > "$BUILD/failed-err.txt"   # "<source><TAB><its .err>" -- lib_check_failures
+                              # quotes the diagnostic of an UNRECORDED failure
 ok=0; fail=0
 while IFS= read -r c; do
     [ -n "$c" ] || continue
@@ -144,17 +140,23 @@ while IFS= read -r c; do
         echo "$c" >> "$BUILD/compiled.txt"; ok=$((ok+1))
     else
         echo "$c" >> "$BUILD/failed.txt"; fail=$((fail+1)); rm -f "$o"
+        printf '%s\t%s\n' "$c" "$OBJ/${b}.err" >> "$BUILD/failed-err.txt"
     fi
 done < "$COBJS_LIST"
+
+# --- the failure list is REPORTED, and measured against the record -----------
+# This script already printed its list; what it could not do was tell a KNOWN
+# gap from a NEW one (TASK/T02). cflib's record is empty, so any failure at all
+# stops the build -- before the archive is written, so a silently incomplete
+# cflib.a is never left behind for the next run to reuse.
+echo "compiled OK=$ok  skipped=$fail  (of $n_cobjs)"
+lib_check_failures "cflib" "$BUILD/failed.txt" "$CF/expected-failures.txt" \
+                   "$BUILD/failed-err.txt" || exit 1
 
 # --- archive -----------------------------------------------------------------
 rm -f "$CF/cflib.a"
 "$AR" cr "$CF/cflib.a" "$OBJ"/*.o
-echo "compiled OK=$ok  skipped=$fail  -> $CF/cflib.a ($(wc -c < "$CF/cflib.a" | tr -d ' ') bytes)"
-if [ "$fail" -ne 0 ]; then
-    echo "skipped (did not compile for AArch64/LP64):"
-    sed 's/^/    /' "$BUILD/failed.txt"
-fi
+echo "archived -> $CF/cflib.a ($(wc -c < "$CF/cflib.a" | tr -d ' ') bytes)"
 echo
 
 # --- CRT + client ------------------------------------------------------------

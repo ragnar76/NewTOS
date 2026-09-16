@@ -50,20 +50,15 @@ OUT="$BUILD/QED.NAP"
 mkdir -p "$OBJ"
 
 # --- ensure the three ported libraries are present --------------------------
-# Rebuild a library when its archive is missing OR out of date (sdk/lib-stale.sh).
+# QED links cflib -> gemlib -> libc, so all three must be current AND mutually
+# consistent: before TASK/T03 the three tests above were independent, so a
+# gemlib header change rebuilt gemlib.a and QED's objects on the new layout
+# while cflib.a stayed on the old one -- one program, two struct layouts. The
+# chain and each library's real input set now live once in sdk/lib-stale.sh;
+# `lib_ensure cflib` walks libc -> gemlib -> cflib in that order, and does NOT
+# swallow what the library builds report (TASK/T02).
 . "$SDK/lib-stale.sh"
-if lib_stale "$LIBC/libc.a" "$LIBC/overlay" "$LIBC/build-libc.sh"; then
-  echo "libc.a missing or out of date -- running build-libc.sh first…"
-  "$LIBC/build-libc.sh" >/dev/null 2>&1 || { echo "error: build-libc.sh failed" >&2; exit 1; }
-fi
-if lib_stale "$GEM/gemlib.a" "$GEM/overlay" "$GEM/build-gemlib.sh"; then
-  echo "gemlib.a missing or out of date -- running build-gemlib.sh first…"
-  "$GEM/build-gemlib.sh" >/dev/null 2>&1 || { echo "error: build-gemlib.sh failed" >&2; exit 1; }
-fi
-if lib_stale "$CF/cflib.a" "$CF/overlay" "$CF/build-cflib.sh"; then
-  echo "cflib.a missing or out of date -- running build-cflib.sh first…"
-  "$CF/build-cflib.sh" >/dev/null 2>&1 || { echo "error: build-cflib.sh failed" >&2; exit 1; }
-fi
+lib_ensure cflib || exit 1
 MINT="$LIBC/mintlib/include"
 [ -d "$MINT" ]   || { echo "error: mintlib headers missing ($MINT); run build-libc.sh" >&2; exit 1; }
 [ -d "$GEMTOP" ] || { echo "error: gemlib headers missing ($GEMTOP); run build-gemlib.sh" >&2; exit 1; }
