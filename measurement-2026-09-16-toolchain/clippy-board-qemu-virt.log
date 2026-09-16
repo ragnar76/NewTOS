@@ -2012,4 +2012,4 @@ warning: missing documentation for a method
     |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
 warning: `kernel` (lib) generated 125 warnings (run `cargo clippy --fix --lib -p kernel -- ` to apply 30 suggestions)
-    Finished `release` profile [optimized + debuginfo] target(s) in 1.64s
+    Finished `release` profile [optimized + debuginfo] target(s) in 1.61s

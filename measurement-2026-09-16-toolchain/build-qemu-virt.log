@@ -1484,4 +1484,4 @@ warning: missing documentation for a method
 
 warning: `tos-api` (lib) generated 64 warnings
 warning: `kernel` (lib) generated 94 warnings
-    Finished `release` profile [optimized + debuginfo] target(s) in 5.58s
+    Finished `release` profile [optimized + debuginfo] target(s) in 5.88s

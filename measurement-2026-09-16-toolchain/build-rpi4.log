@@ -1484,5 +1484,5 @@ warning: missing documentation for a method
 
 warning: `tos-api` (lib) generated 64 warnings
 warning: `kernel` (lib) generated 94 warnings
-    Finished `release` profile [optimized + debuginfo] target(s) in 5.90s
+    Finished `release` profile [optimized + debuginfo] target(s) in 5.80s
 xtask: objcopy → /Volumes/Daten/Development/PiRusTOS/kernel8.img

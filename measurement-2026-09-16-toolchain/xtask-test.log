@@ -1,4 +1,4 @@
-    Finished `dev` profile [optimized + debuginfo] target(s) in 0.06s
+    Finished `dev` profile [optimized + debuginfo] target(s) in 0.24s
      Running `target/debug/xtask test`
    Compiling tos-api v0.1.0 (/Volumes/Daten/Development/PiRusTOS/tos-api)
 warning: value assigned to `tree` is never read
@@ -774,16 +774,16 @@ warning: unused import: `Call`
    = note: `#[warn(unused_imports)]` (part of `#[warn(unused)]`) on by default
 
 warning: `tos-api` (test "vdi_reference") generated 1 warning (run `cargo fix --test "vdi_reference" -p tos-api` to apply 1 suggestion)
-    Finished `test` profile [optimized + debuginfo] target(s) in 2.49s
+    Finished `test` profile [optimized + debuginfo] target(s) in 3.16s
      Running unittests src/lib.rs (target/debug/deps/tos_api-6503eecebe9f8f1a)
 
 running 16 tests
 test aes::init::tests::ap_private_is_the_desktop_root_obspec_with_the_inf_background_byte ... ok
+test aes::pd::init_tests::reopening_preserves_flags_and_queue_even_when_the_table_is_full ... ok
+test aes::resource::tests::an_el0_load_reports_all_three_fields ... ok
 test aes::resource::tests::a_blob_beyond_four_gigabytes_reports_nothing ... ok
 test aes::resource::tests::a_load_writes_only_its_own_ten_bytes ... ok
 test aes::resource::tests::a_pre_v7_blob_still_loads_and_publishes_nothing ... ok
-test aes::resource::tests::an_el0_load_reports_all_three_fields ... ok
-test aes::pd::init_tests::reopening_preserves_flags_and_queue_even_when_the_table_is_full ... ok
 test aes::resource::tests::ap_ptree_slots_are_what_rsrc_gaddr_returns ... ok
 test gemdos::memory::tests::a_pool_smaller_than_two_pages_reports_nothing ... ok
 test gemdos::memory::tests::an_exhausted_window_reports_nothing ... ok
@@ -821,12 +821,12 @@ test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; fini
      Running tests/aes_desk_background.rs (target/debug/deps/aes_desk_background-32672ae9b02c75f1)
 
 running 12 tests
-test form_dial_finish_does_not_paint_the_windows_under_the_dialog ... ok
-test opening_a_window_does_not_paint_its_work_area ... ok
 test a_programmatic_move_does_not_paint_the_window_below ... ok
-test the_background_repaint_stops_at_the_menu_row ... ok
 test closing_a_window_does_not_paint_the_window_below ... ok
+test form_dial_finish_does_not_paint_the_windows_under_the_dialog ... ok
 test an_invalid_handle_does_not_disturb_the_rectangle_list ... ok
+test opening_a_window_does_not_paint_its_work_area ... ok
+test the_background_repaint_stops_at_the_menu_row ... ok
 test the_breaking_rectangle_of_a_covering_window_includes_its_drop_shadow ... ok
 test the_end_of_the_rectangle_list_writes_the_last_piece_it_examined ... ok
 test the_mover_drag_repaints_only_desktop_it_uncovered ... ok
@@ -842,18 +842,18 @@ running 2 tests
 test the_desktop_background_is_the_aes_desktop_tree_not_white ... ok
 test the_file_selector_undraws_itself ... ok
 
-test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.04s
+test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.03s
 
      Running tests/aes_dispatch_inlen_clamp.rs (target/debug/deps/aes_dispatch_inlen_clamp-eb87f7b47c6247bc)
 
 running 5 tests
 test a_fully_declared_call_still_receives_every_word ... ok
-test in_len_0_copies_nothing_at_all ... ok
 test scrp_write_with_ain_len_0_must_not_see_the_pointer_behind_it ... ok
 test the_cut_is_exactly_at_in_len_not_one_word_early_or_late ... ok
+test in_len_0_copies_nothing_at_all ... ok
 test wind_create_with_in_len_1_must_not_see_the_four_words_behind_it ... ok
 
-test result: ok. 5 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.05s
+test result: ok. 5 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.04s
 
      Running tests/aes_global_layout.rs (target/debug/deps/aes_global_layout-1aa67cd068f7d745)
 
@@ -866,8 +866,8 @@ test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; fini
      Running tests/aes_icon_unaligned_raster.rs (target/debug/deps/aes_icon_unaligned_raster-0a4a9c8b765d112e)
 
 running 2 tests
-test a_g_image_with_an_odd_bi_pdata_draws_like_an_even_one ... ok
 test a_g_icon_with_odd_raster_pointers_draws_like_an_even_one ... ok
+test a_g_image_with_an_odd_bi_pdata_draws_like_an_even_one ... ok
 
 test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
 
@@ -881,12 +881,12 @@ test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; fini
      Running tests/aes_object_font.rs (target/debug/deps/aes_object_font-d0132bbb39cb4e41)
 
 running 6 tests
-test icon_overlay_char_is_small_and_offset_by_ib_xicon ... ok
 test icon_label_drops_whole_characters_that_do_not_fit ... ok
 test icon_label_is_drawn_in_the_small_font_and_fits_its_box ... ok
-test tedinfo_te_font_picks_the_cell_size ... ok
-test icon_label_box_shorter_than_the_cell_draws_nothing ... ok
 test g_string_stays_in_the_normal_font_at_the_box_origin ... ok
+test icon_overlay_char_is_small_and_offset_by_ib_xicon ... ok
+test icon_label_box_shorter_than_the_cell_draws_nothing ... ok
+test tedinfo_te_font_picks_the_cell_size ... ok
 
 test result: ok. 6 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
 
@@ -894,10 +894,10 @@ test result: ok. 6 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; fini
 
 running 204 tests
 test a_planted_addr_in_slot_records_the_buffer_token ... ok
-test cases_m05_addrin::case_0088_op077_graf_handle_an_ordinary_case_in_the_new_form ... ok
 test aes_dispatch_leaves_the_string_device_in_sample_mode ... ok
-test cases_m05_addrin::case_0093_op013_appl_find_abcdefgh_no_process_has_that_name ... ok
+test cases_m05_addrin::case_0088_op077_graf_handle_an_ordinary_case_in_the_new_form ... ok
 test cases_m05_addrin::case_0094_op013_appl_find_hijklmno_likewise ... ok
+test cases_m05_addrin::case_0093_op013_appl_find_abcdefgh_no_process_has_that_name ... ok
 test cases_m05_addrin::case_0102_op104_wind_get_wf_name_into_buffer_0 ... ok
 test cases_m05_addrin::case_0109_op104_wind_get_wf_name_with_no_title_set ... ok
 test cases_m06_sysvar::case_0090_op048_get_lk3dind_indtxtmove_indcolchange_defaults_0_1 ... ok
@@ -909,119 +909,119 @@ test cases_m06_sysvar::case_0095_op048_get_ad3dvalue_adj3dstd_twice_a_constant_g
 test cases_m06_sysvar::case_0096_op048_get_which_0_one_below_lk3dind_the_get_default_arm_0 ... ok
 test cases_m06_sysvar::case_0097_op048_get_which_7_one_above_ad3dvalue_the_same_arm ... ok
 test cases_m06_sysvar::case_0098_op048_get_which_99_far_outside_the_same_arm_again ... ok
-test cases_m06_sysvar::case_0117_op048_set_ad3dvalue_get_only_so_the_set_default_arm_0 ... ok
+test cases_m06_sysvar::case_0107_op048_set_lk3dind_to_1_0_both_away_from_the_default ... ok
 test cases_m06_sysvar::case_0109_op048_get_lk3dind_after_the_set_1_0_and_not_0_1 ... ok
 test cases_m06_sysvar::case_0119_op048_set_actbutcol_to_colour_20_inside_256_outside_16_the_decla ... ok
 test cases_r1::case_0067_op108_wind_calc_wc_work_kind_0_no_gadgets_1px_all_round ... ok
-test cases_m06_sysvar::case_0114_op048_get_indbutcol_after_the_set_1 ... ok
+test cases_r1::case_0068_op108_wind_calc_wc_work_name_title_band ... ok
 test cases_m06_sysvar::case_0115_op048_set_backgrcol_to_32767_past_ws_ncolors_on_any_machine_0 ... ok
 test cases_r1::case_0070_op108_wind_calc_wc_work_fuller ... ok
 test cases_r1::case_0071_op108_wind_calc_wc_work_mover_alone_d_097_tgadgets_vs_non_3d ... ok
-test cases_m06_sysvar::case_0118_op048_set_which_99_the_set_default_arm_0 ... ok
+test cases_r1::case_0072_op108_wind_calc_wc_work_info_the_second_title_band ... ok
 test cases_r1::case_0073_op108_wind_calc_wc_work_sizer_alone_stripped_vertical_forced_back ... ok
-test cases_r1::case_0074_op108_wind_calc_wc_work_uparrow ... ok
-test cases_r1::case_0075_op108_wind_calc_wc_work_dnarrow ... ok
+test cases_m06_sysvar::case_0112_op048_set_indbutcol_to_colour_1_inside_every_palette ... ok
+test cases_m06_sysvar::case_0114_op048_get_indbutcol_after_the_set_1 ... ok
 test cases_r1::case_0076_op108_wind_calc_wc_work_vslide ... ok
 test cases_r1::case_0077_op108_wind_calc_wc_work_lfarrow ... ok
 test cases_r1::case_0078_op108_wind_calc_wc_work_rtarrow ... ok
-test cases_r1::case_0072_op108_wind_calc_wc_work_info_the_second_title_band ... ok
+test cases_m06_sysvar::case_0118_op048_set_which_99_the_set_default_arm_0 ... ok
 test cases_m06_sysvar::case_0111_op048_get_lk3dact_acttxtmove_still_1_actcolchange_now_1 ... ok
-test cases_m06_sysvar::case_0112_op048_set_indbutcol_to_colour_1_inside_every_palette ... ok
-test cases_r1::case_0068_op108_wind_calc_wc_work_name_title_band ... ok
-test cases_r1::case_0084_op108_wind_calc_wc_border_closer ... ok
+test cases_r1::case_0074_op108_wind_calc_wc_work_uparrow ... ok
+test cases_r1::case_0075_op108_wind_calc_wc_work_dnarrow ... ok
+test cases_r1::case_0069_op108_wind_calc_wc_work_closer ... ok
 test cases_r1::case_0085_op108_wind_calc_wc_border_fuller ... ok
-test cases_m06_sysvar::case_0107_op048_set_lk3dind_to_1_0_both_away_from_the_default ... ok
-test cases_r1::case_0087_op108_wind_calc_wc_border_info ... ok
+test cases_m06_sysvar::case_0117_op048_set_ad3dvalue_get_only_so_the_set_default_arm_0 ... ok
+test cases_r1::case_0079_op108_wind_calc_wc_work_hslide ... ok
 test cases_r1::case_0088_op108_wind_calc_wc_border_sizer_alone ... ok
 test cases_r1::case_0089_op108_wind_calc_wc_border_uparrow ... ok
 test cases_r1::case_0090_op108_wind_calc_wc_border_dnarrow ... ok
-test cases_r1::case_0069_op108_wind_calc_wc_work_closer ... ok
-test cases_m06_sysvar::case_0116_op048_get_backgrcol_the_refused_set_changed_nothing ... ok
-test cases_r1::case_0086_op108_wind_calc_wc_border_mover_alone_d_097_the_other_way ... ok
-test cases_r1::case_0079_op108_wind_calc_wc_work_hslide ... ok
+test cases_r1::case_0091_op108_wind_calc_wc_border_vslide ... ok
+test cases_r1::case_0092_op108_wind_calc_wc_border_lfarrow ... ok
+test cases_r1::case_0093_op108_wind_calc_wc_border_rtarrow ... ok
+test cases_r1::case_0087_op108_wind_calc_wc_border_info ... ok
 test cases_r1::case_0080_op108_wind_calc_wc_work_hotclose_pc_gem_bit_no_border_test_reads_it ... ok
 test cases_r1::case_0082_op108_wind_calc_wc_border_kind_0 ... ok
 test cases_r1::case_0098_op108_wind_calc_tgadgets_name_closer_fuller_mover ... ok
-test cases_r1::case_0091_op108_wind_calc_wc_border_vslide ... ok
-test cases_r1::case_0092_op108_wind_calc_wc_border_lfarrow ... ok
+test cases_r1::case_0099_op108_wind_calc_name_info_both_title_bands_stack ... ok
+test cases_r1::case_0100_op108_wind_calc_vgadgets_uparrow_dnarrow_vslide ... ok
+test cases_r1::case_0086_op108_wind_calc_wc_border_mover_alone_d_097_the_other_way ... ok
+test cases_r1::case_0094_op108_wind_calc_wc_border_hslide ... ok
+test cases_r1::case_0103_op108_wind_calc_hgadgets_sizer_mirror_of_the_above ... ok
+test cases_r1::case_0104_op108_wind_calc_vgadgets_hgadgets_sizer_both_bars_on_merit ... ok
+test cases_r1::case_0083_op108_wind_calc_wc_border_name ... ok
+test cases_r1::case_0084_op108_wind_calc_wc_border_closer ... ok
+test cases_m06_sysvar::case_0116_op048_get_backgrcol_the_refused_set_changed_nothing ... ok
 test cases_r1::case_0101_op108_wind_calc_hgadgets_lfarrow_rtarrow_hslide ... ok
 test cases_r1::case_0102_op108_wind_calc_vgadgets_sizer_sizer_stripped_from_both_bars ... ok
 test cases_r1::case_0095_op108_wind_calc_wc_border_hotclose ... ok
-test cases_r1::case_0104_op108_wind_calc_vgadgets_hgadgets_sizer_both_bars_on_merit ... ok
-test cases_r1::case_0083_op108_wind_calc_wc_border_name ... ok
-test cases_r1::case_0099_op108_wind_calc_name_info_both_title_bands_stack ... ok
-test cases_r1::case_0100_op108_wind_calc_vgadgets_uparrow_dnarrow_vslide ... ok
-test cases_r1::case_0108_op108_wind_calc_wc_border_0x0fef_the_round_trip_partner ... ok
-test cases_r1::case_0109_op108_wind_calc_wc_border_name_info ... ok
-test cases_r1::case_0103_op108_wind_calc_hgadgets_sizer_mirror_of_the_above ... ok
 test cases_r1::case_0097_op108_wind_calc_name_closer_fuller_one_title_band_not_three ... ok
-test cases_r1::case_0113_op108_wind_calc_wc_border_degenerate_rect ... ok
-test cases_r1::case_0114_op108_wind_calc_wc_work_a_full_st_high_screen ... ok
-test cases_r1::case_0107_op108_wind_calc_all_sixteen_bits_do_the_undefined_ones_do_anything ... ok
-test cases_r1::case_0116_op108_wind_calc_wc_work_1x1_the_work_area_goes_negative ... ok
-test cases_r1::case_0094_op108_wind_calc_wc_border_hslide ... ok
-test cases_r1::case_0110_op108_wind_calc_wc_border_vgadgets_hgadgets_sizer ... ok
-test cases_r1::case_0112_op108_wind_calc_wc_work_degenerate_rect_work_area_of_nothing ... ok
 test cases_r1::case_0105_op108_wind_calc_0x0fef_the_classic_full_window_without_info ... ok
 test cases_r1::case_0106_op108_wind_calc_every_defined_gadget_bit_including_info ... ok
-test cases_r1::case_0115_op108_wind_calc_wc_border_a_full_st_high_screen ... ok
-test cases_r1::case_0093_op108_wind_calc_wc_border_rtarrow ... ok
+test cases_r1::case_0107_op108_wind_calc_all_sixteen_bits_do_the_undefined_ones_do_anything ... ok
+test cases_r1::case_0116_op108_wind_calc_wc_work_1x1_the_work_area_goes_negative ... ok
 test cases_r1::case_0117_op108_wind_calc_wc_work_negative_origin ... ok
-test cases_r1::case_0118_op108_wind_calc_wc_border_a_rect_that_grows_but_stays_inside_a_word ... ok
+test cases_r1::case_0110_op108_wind_calc_wc_border_vgadgets_hgadgets_sizer ... ok
 test cases_r1::case_0120_op108_wind_calc_type_2_only_wc_border_negates_so_this_is_wc_work ... ok
-test cases_r1::case_0121_op108_wind_calc_type_1_same_question_from_the_other_side ... ok
-test cases_r1::case_0136_op108_control_4_set_there_is_no_aout_len_macro_in_this_build ... ok
-test cases_r1::case_0137_op108_in_len_6_four_values_w_and_h_reach_wm_calc_as_0xdead ... ok
-test cases_r1::case_0155_op104_wind_get_0_wf_wxywh_the_desktop_work_area_apps_start_from ... ok
+test cases_r1::case_0113_op108_wind_calc_wc_border_degenerate_rect ... ok
+test cases_r1::case_0129_op108_out_len_0_nothing_copied_back_not_even_the_return_code ... ok
+test cases_r1::case_0130_op108_out_len_1_the_return_code_only_a_void_handler_s_ret_true ... ok
+test cases_r1::case_0131_op108_out_len_3_x_and_y_arrive_w_and_h_stay_poisoned ... ok
 test cases_r1::case_0132_op108_in_len_8_with_six_values_two_surplus_poison_words_copied_in ... ok
 test cases_r1::case_0133_op108_in_len_at_i_size_with_six_values ... ok
 test cases_r1::case_0134_op108_in_len_past_i_size_min_in_len_i_size_has_to_clamp_it ... ok
 test cases_r1::case_0135_op108_ain_len_3_no_pointer_wm_calc_never_reads_addr_in ... ok
-test cases_r1::case_0129_op108_out_len_0_nothing_copied_back_not_even_the_return_code ... ok
-test cases_r1::case_0130_op108_out_len_1_the_return_code_only_a_void_handler_s_ret_true ... ok
-test cases_r1::case_0131_op108_out_len_3_x_and_y_arrive_w_and_h_stay_poisoned ... ok
-test cases_r1::case_0163_op104_wind_get_0_wf_top_no_valid_handle_needed ... ok
+test cases_r1::case_0136_op108_control_4_set_there_is_no_aout_len_macro_in_this_build ... ok
+test cases_r1::case_0137_op108_in_len_6_four_values_w_and_h_reach_wm_calc_as_0xdead ... ok
+test cases_r1::case_0108_op108_wind_calc_wc_border_0x0fef_the_round_trip_partner ... ok
+test cases_r1::case_0109_op108_wind_calc_wc_border_name_info ... ok
+test cases_r1::case_0118_op108_wind_calc_wc_border_a_rect_that_grows_but_stays_inside_a_word ... ok
+test cases_r1::case_0112_op108_wind_calc_wc_work_degenerate_rect_work_area_of_nothing ... ok
+test cases_r1::case_0121_op108_wind_calc_type_1_same_question_from_the_other_side ... ok
+test cases_r1::case_0114_op108_wind_calc_wc_work_a_full_st_high_screen ... ok
+test cases_r1::case_0115_op108_wind_calc_wc_border_a_full_st_high_screen ... ok
+test cases_r1::case_0155_op104_wind_get_0_wf_wxywh_the_desktop_work_area_apps_start_from ... ok
+test cases_r1::case_0156_op104_wind_get_0_wf_cxywh_whole_screen_menu_bar_included ... ok
 test cases_r1::case_0157_op104_wind_get_0_wf_pxywh_previous_rect ... ok
-test cases_r1::case_0165_op104_wind_get_0_wf_newdesk_return_code_only ... ok
-test cases_r1::case_0166_op104_wind_get_0_wf_screen_return_code_only_the_address_cannot_be_c ... ok
+test cases_r1::case_0158_op104_wind_get_0_wf_fxywh_full_rect ... ok
+test cases_r1::case_0159_op104_wind_get_0_wf_hslide_one_word_w_setup_left_it_at_0 ... ok
 test cases_r1::case_0167_op104_wind_get_0_wf_owner_aes_3_30_and_later_only ... ok
 test cases_r1::case_0168_op104_wind_get_0_field_0_no_handler_false ... ok
 test cases_r1::case_0162_op104_wind_get_0_wf_vslsiz_one_word ... ok
-test cases_r1::case_0156_op104_wind_get_0_wf_cxywh_whole_screen_menu_bar_included ... ok
+test cases_r1::case_0170_op104_wind_get_0_field_21_past_the_last_defined_field ... ok
 test cases_r1::case_0164_op104_wind_get_0_wf_kind_return_code_only_is_it_answered_at_all ... ok
 test cases_r1::case_0173_op104_wind_get_0_wf_wxywh_out_len_3_w_and_h_stay_poisoned ... ok
-test cases_r1::case_0175_op104_wind_get_handle_1_wf_wxywh_a_window_that_was_never_created ... ok
+test cases_r1::case_0166_op104_wind_get_0_wf_screen_return_code_only_the_address_cannot_be_c ... ok
 test cases_r1::case_0176_op104_wind_get_handle_1_wf_wxywh_negative_handle ... ok
 test cases_r1::case_0177_op104_wind_get_handle_99_wf_wxywh_past_num_win ... ok
-test cases_r1::case_0178_op104_wind_get_handle_32767_wf_wxywh_the_largest_word ... ok
-test cases_r1::case_0170_op104_wind_get_0_field_21_past_the_last_defined_field ... ok
-test cases_r1::case_0172_op104_wind_get_0_wf_wxywh_out_len_1_the_rect_is_thrown_away ... ok
+test cases_r1::case_0169_op104_wind_get_0_field_13_a_gap_in_the_wf_numbering ... ok
+test cases_r1::case_0193_op106_wind_find_at_the_top_left_corner_the_desktop_whatever_is_open ... ok
+test cases_r1::case_0194_op106_wind_find_off_the_top_left_nobody ... ok
 test cases_r1::case_0195_op106_wind_find_one_row_above_the_screen ... ok
 test cases_r1::case_0196_op106_wind_find_one_column_left_of_the_screen ... ok
 test cases_r1::case_0160_op104_wind_get_0_wf_vslide_one_word ... ok
-test cases_r1::case_0161_op104_wind_get_0_wf_hslsiz_the_1_use_default_size_marker ... ok
-test cases_r1::case_0169_op104_wind_get_0_field_13_a_gap_in_the_wf_numbering ... ok
-test cases_r1::case_0193_op106_wind_find_at_the_top_left_corner_the_desktop_whatever_is_open ... ok
+test cases_r1::case_0216_op077_graf_handle_the_handle_and_the_four_box_metrics_wm_calc_uses ... ok
+test cases_r1::case_0217_op077_graf_handle_out_len_1_the_metrics_stay_poisoned ... ok
+test cases_r1::case_0163_op104_wind_get_0_wf_top_no_valid_handle_needed ... ok
 test cases_r1::case_0228_op024_evnt_timer_0_ms_adelay_makes_that_one_tick ... ok
 test cases_r1::case_0229_op024_evnt_timer_1_ms_still_under_one_tick ... ok
 test cases_r1::case_0240_op000_opcode_0_the_unsupported_sentinel_1_and_no_alert_box ... ok
 test cases_r1::case_0241_op000_opcode_0_with_out_len_0_the_1_is_computed_and_never_delivered ... ok
 test cases_r1::case_0242_op000_opcode_0_with_inputs_they_are_marshalled_in_and_ignored ... ok
-test cases_r1::case_0217_op077_graf_handle_out_len_1_the_metrics_stay_poisoned ... ok
+test cases_r1::case_0178_op104_wind_get_handle_32767_wf_wxywh_the_largest_word ... ok
 test cases_r2_wind::case_0133_op100_wind_create_twice_the_second_handle ... ok
-test cases_r1::case_0194_op106_wind_find_off_the_top_left_nobody ... ok
-test cases_r1::case_0158_op104_wind_get_0_wf_fxywh_full_rect ... ok
-test cases_r1::case_0159_op104_wind_get_0_wf_hslide_one_word_w_setup_left_it_at_0 ... ok
+test cases_r1::case_0172_op104_wind_get_0_wf_wxywh_out_len_1_the_rect_is_thrown_away ... ok
+test cases_r1::case_0165_op104_wind_get_0_wf_newdesk_return_code_only ... ok
+test cases_r1::case_0175_op104_wind_get_handle_1_wf_wxywh_a_window_that_was_never_created ... ok
 test cases_r1::case_0197_op106_wind_find_far_off_the_bottom_right_nobody ... ok
-test cases_r1::case_0216_op077_graf_handle_the_handle_and_the_four_box_metrics_wm_calc_uses ... ok
-test cases_r2_wind::case_0154_op100_wind_create_the_ninth_num_win_edge ... ok
+test cases_r2_wind::case_0140_op100_wind_create_in_len_1_wm_create_only_stores_the_rect_it_draws ... ok
+test cases_r2_wind::case_0131_op100_wind_create_the_first_free_handle_after_the_reset ... ok
 test cases_r1::case_0218_op079_graf_mkstate_return_code_only_a_void_handler_has_to_leave_true ... ok
 test cases_r2_wind::case_0136_op100_wind_create_three_times_the_third_handle ... ok
 test cases_r2_wind::case_0137_op100_wind_create_out_len_0_the_handle_is_computed_never_delivered ... ok
 test cases_r2_wind::case_0138_op100_wind_create_kind_none_no_gadget_at_all ... ok
 test cases_r2_wind::case_0139_op100_wind_create_kind_0xffff_every_bit_defined_or_not ... ok
-test cases_r2_wind::case_0140_op100_wind_create_in_len_1_wm_create_only_stores_the_rect_it_draws ... ok
-test cases_r2_wind::case_0131_op100_wind_create_the_first_free_handle_after_the_reset ... ok
+test cases_r1::case_0161_op104_wind_get_0_wf_hslsiz_the_1_use_default_size_marker ... ok
+test cases_r2_wind::case_0154_op100_wind_create_the_ninth_num_win_edge ... ok
 test cases_r2_wind::case_0170_op100_wind_create_the_sixteenth_num_win_edge ... ok
 test cases_r2_wind::case_0182_op101_wind_open_a_handle_that_was_never_created ... ok
 test cases_r2_wind::case_0184_op101_wind_open_a_created_window ... ok
@@ -1098,7 +1098,7 @@ test wind_create_hands_out_fifteen_application_handles ... ok
 test window_rectangles_after_a_close_are_the_ones_draw_change_leaves ... ok
 test window_rectangles_after_create_and_open_match_the_tt ... ok
 
-test result: ok. 204 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.46s
+test result: ok. 204 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.47s
 
      Running tests/aes_rsrc_global_fields.rs (target/debug/deps/aes_rsrc_global_fields-a285dbe0673807e3)
 
@@ -1114,10 +1114,10 @@ test result: ok. 4 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; fini
 
 running 7 tests
 test a_bare_name_is_found_at_the_root_of_the_current_drive ... ok
-test a_qualified_path_in_the_application_directory_loads ... ok
-test a_path_longer_than_sixty_four_bytes_loads ... ok
-test a_qualified_path_outside_the_application_directory_loads ... ok
 test a_name_that_exists_nowhere_returns_zero ... ok
+test a_path_longer_than_sixty_four_bytes_loads ... ok
+test a_qualified_path_in_the_application_directory_loads ... ok
+test a_qualified_path_outside_the_application_directory_loads ... ok
 test a_spec_relative_to_the_current_directory_loads ... ok
 test an_application_directory_longer_than_sixty_four_bytes_is_kept_whole ... ok
 
@@ -1127,8 +1127,8 @@ test result: ok. 7 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; fini
 
 running 6 tests
 test a_file_shorter_than_its_declared_size_is_refused ... ok
-test a_header_whose_arrays_run_past_the_blob_is_refused ... ok
 test a_resource_larger_than_the_loader_buffer_is_refused ... ok
+test a_header_whose_arrays_run_past_the_blob_is_refused ... ok
 test a_truncated_blob_is_refused_without_writing_anywhere ... ok
 test the_complete_resource_still_loads ... ok
 test the_whole_blob_relocates_inside_itself ... ok
@@ -1138,10 +1138,10 @@ test result: ok. 6 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; fini
      Running tests/aes_rsrc_substruct_arrays.rs (target/debug/deps/aes_rsrc_substruct_arrays-eb1c4c5cdde0465d)
 
 running 6 tests
-test a_free_image_yields_a_dereferenceable_raster ... ok
-test an_unreferenced_tedinfo_gets_its_lengths_recomputed ... ok
 test a_shared_tedinfo_is_relocated_exactly_once ... ok
 test every_bitblk_pdata_is_relocated ... ok
+test an_unreferenced_tedinfo_gets_its_lengths_recomputed ... ok
+test a_free_image_yields_a_dereferenceable_raster ... ok
 test every_tedinfo_pointer_is_relocated ... ok
 test unreferenced_substructures_are_relocated_too ... ok
 
@@ -1175,21 +1175,21 @@ test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; fini
 
 running 6 tests
 test a_created_but_unopened_window_owns_no_rectangle_whatever_its_work_rect_holds ... ok
+test a_created_window_does_not_answer_wind_calc_of_its_maximum_extent ... ok
 test an_opened_window_still_answers_wind_calc_of_the_rectangle_it_was_opened_at ... ok
 test closing_a_never_opened_window_leaves_its_work_rect_where_the_create_found_it ... ok
 test created_after_a_sweep_answers_gl_rfull_like_the_dump ... ok
-test a_created_window_does_not_answer_wind_calc_of_its_maximum_extent ... ok
 test the_work_rect_of_a_created_window_does_not_depend_on_kind_or_maximum_extent ... ok
 
-test result: ok. 6 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.06s
+test result: ok. 6 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.07s
 
      Running tests/aes_window_delete_slot.rs (target/debug/deps/aes_window_delete_slot-e77cc55cf5e03575)
 
 running 5 tests
 test a_freed_handle_answers_no_rectangle_at_all ... ok
+test a_sweep_does_not_disturb_a_slot_that_is_already_free ... ok
 test a_window_created_in_a_deleted_handle_inherits_gl_rfull_as_its_work_rect ... ok
 test deleting_a_never_opened_window_arms_the_slot_just_the_same ... ok
-test a_sweep_does_not_disturb_a_slot_that_is_already_free ... ok
 test the_freed_slots_screen_rectangles_do_not_survive_the_next_create ... ok
 
 test result: ok. 5 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.06s
@@ -1208,17 +1208,17 @@ test result: ok. 4 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; fini
 
 running 3 tests
 test the_refusal_writes_no_words_and_stays_inside_the_title_fields ... ok
-test wf_info_is_refused_and_leaves_the_callers_buffer_untouched ... ok
 test wf_name_is_refused_and_leaves_the_callers_buffer_untouched ... ok
+test wf_info_is_refused_and_leaves_the_callers_buffer_untouched ... ok
 
-test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.04s
+test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.05s
 
      Running tests/aes_window_rectlist_zorder.rs (target/debug/deps/aes_window_rectlist_zorder-62a1dd9a9116f7e5)
 
 running 5 tests
 test both_orders_cover_the_same_area_with_disjoint_pieces ... ok
-test group_i_opened_1_2_3_gives_the_four_measured_pieces ... ok
 test group_i_middle_window_is_broken_while_breaking_another ... ok
+test group_i_opened_1_2_3_gives_the_four_measured_pieces ... ok
 test group_ii_opened_1_3_2_gives_the_five_measured_pieces ... ok
 test topping_a_window_moves_it_in_the_subtraction_order_like_a_later_open ... ok
 
@@ -1285,10 +1285,10 @@ test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; fini
      Running tests/vdi_raster_reference.rs (target/debug/deps/vdi_raster_reference-e6b6f498ee7679c7)
 
 running 59 tests
-test cases_r1::case_0073_op110_vr_trnfm_standard_to_device_4_planes ... ok
 test cases_r1::case_0074_op110_vr_trnfm_device_to_standard_4_planes ... ok
-test cases_r1::case_0075_op110_vr_trnfm_standard_to_device_2_planes ... ok
+test cases_r1::case_0073_op110_vr_trnfm_standard_to_device_4_planes ... ok
 test cases_r1::case_0076_op110_vr_trnfm_device_to_standard_2_planes ... ok
+test cases_r1::case_0075_op110_vr_trnfm_standard_to_device_2_planes ... ok
 test cases_r1::case_0077_op110_vr_trnfm_standard_to_device_8_planes ... ok
 test cases_r1::case_0078_op110_vr_trnfm_device_to_standard_8_planes ... ok
 test cases_r1::case_0081_op110_vr_trnfm_standard_to_device_1_plane ... ok
@@ -1351,12 +1351,12 @@ test result: ok. 59 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; fin
 
 running 158 tests
 test cases_r2::case_0033_op003_v_clrwk_clear_the_workstation ... ok
+test cases_r2::case_0034_op004_v_updwk_nop_in_emutos ... ok
 test cases_r2::case_0036_op027_vq_cellarray_nop ... ok
 test cases_r2::case_0037_op029_v_valuator_nop_no_analogue_device_on_the_st ... ok
 test cases_r2::case_0038_op034_opcode_34_does_not_exist ... ok
-test cases_r2::case_0034_op004_v_updwk_nop_in_emutos ... ok
-test cases_r2::case_0035_op010_v_cellarray_nop ... ok
 test cases_r2::case_0039_op132_vqt_justified_nop_conf_with_extended_mouse_gated ... ok
+test cases_r2::case_0035_op010_v_cellarray_nop ... ok
 test cases_r2::case_0040_op133_vs_grayoverride_nop_gated ... ok
 test cases_r2::case_0043_op026_vq_color_pen_1_requested ... ok
 test cases_r2::case_0044_op026_vq_color_pen_1_realised ... ok
@@ -1523,23 +1523,23 @@ running 10 tests
 test rsc_align_tests::the_committed_gem_fsel_blob_has_word_aligned_rasters ... ok
 test rsc_align_tests::the_committed_gem_fsel_blob_reserves_the_declared_tedinfo_lengths ... ok
 converted /Volumes/Daten/Development/PiRusTOS/target/xtask-rsc-align/rshdr-private/fixture.rsc -> /Volumes/Daten/Development/PiRusTOS/target/xtask-rsc-align/rshdr-private/out.rsc: 1 trees, 3 objects, 2 tedinfo, 1 bitblk, 2 iconblk, 1 frstr, 1 frimg (528 bytes) [native-RSHDR/LP64 for xrsrc_load]
-converted /Volumes/Daten/Development/PiRusTOS/target/xtask-rsc-align/rshdr-reserve/fixture.rsc -> /Volumes/Daten/Development/PiRusTOS/target/xtask-rsc-align/rshdr-reserve/out.rsc: 1 trees, 3 objects, 2 tedinfo, 1 bitblk, 2 iconblk, 1 frstr, 1 frimg (528 bytes) [native-RSHDR/LP64 for xrsrc_load]
-converted /Volumes/Daten/Development/PiRusTOS/target/xtask-rsc-align/lp64/fixture.rsc -> /Volumes/Daten/Development/PiRusTOS/target/xtask-rsc-align/lp64/out.rsc: 1 trees, 3 objects, 2 tedinfo, 1 bitblk, 2 iconblk, 1 frstr, 1 frimg (560 bytes) [LP64/32B-OBJECT]
-converted /Volumes/Daten/Development/PiRusTOS/target/xtask-rsc-align/lp64-private/fixture.rsc -> /Volumes/Daten/Development/PiRusTOS/target/xtask-rsc-align/lp64-private/out.rsc: 1 trees, 3 objects, 2 tedinfo, 1 bitblk, 2 iconblk, 1 frstr, 1 frimg (560 bytes) [LP64/32B-OBJECT]
-converted /Volumes/Daten/Development/PiRusTOS/target/xtask-rsc-align/ilp32/fixture.rsc -> /Volumes/Daten/Development/PiRusTOS/target/xtask-rsc-align/ilp32/out.rsc: 1 trees, 3 objects, 2 tedinfo, 1 bitblk, 2 iconblk, 1 frstr, 1 frimg (464 bytes) [ILP32/24B-OBJECT]
-converted /Volumes/Daten/Development/PiRusTOS/target/xtask-rsc-align/ilp32-reserve/fixture.rsc -> /Volumes/Daten/Development/PiRusTOS/target/xtask-rsc-align/ilp32-reserve/out.rsc: 1 trees, 3 objects, 2 tedinfo, 1 bitblk, 2 iconblk, 1 frstr, 1 frimg (464 bytes) [ILP32/24B-OBJECT]
-converted /Volumes/Daten/Development/PiRusTOS/target/xtask-rsc-align/lp64-reserve/fixture.rsc -> /Volumes/Daten/Development/PiRusTOS/target/xtask-rsc-align/lp64-reserve/out.rsc: 1 trees, 3 objects, 2 tedinfo, 1 bitblk, 2 iconblk, 1 frstr, 1 frimg (560 bytes) [LP64/32B-OBJECT]
 converted /Volumes/Daten/Development/PiRusTOS/target/xtask-rsc-align/rshdr/fixture.rsc -> /Volumes/Daten/Development/PiRusTOS/target/xtask-rsc-align/rshdr/out.rsc: 1 trees, 3 objects, 2 tedinfo, 1 bitblk, 2 iconblk, 1 frstr, 1 frimg (528 bytes) [native-RSHDR/LP64 for xrsrc_load]
-test rsc_align_tests::mkrsc_convert_lp64_keeps_every_raster_word_aligned ... ok
-test rsc_align_tests::mkrsc_convert_rshdr_reserves_the_declared_tedinfo_lengths ... ok
-test rsc_align_tests::mkrsc_convert_rshdr_gives_every_text_buffer_its_own_storage ... ok
-test rsc_align_tests::mkrsc_convert_lp64_gives_every_text_buffer_its_own_storage ... ok
-test rsc_align_tests::mkrsc_convert_ilp32_reserves_the_declared_tedinfo_lengths ... ok
-test rsc_align_tests::mkrsc_convert_ilp32_keeps_every_raster_word_aligned ... ok
-test rsc_align_tests::mkrsc_convert_lp64_reserves_the_declared_tedinfo_lengths ... ok
+converted /Volumes/Daten/Development/PiRusTOS/target/xtask-rsc-align/rshdr-reserve/fixture.rsc -> /Volumes/Daten/Development/PiRusTOS/target/xtask-rsc-align/rshdr-reserve/out.rsc: 1 trees, 3 objects, 2 tedinfo, 1 bitblk, 2 iconblk, 1 frstr, 1 frimg (528 bytes) [native-RSHDR/LP64 for xrsrc_load]
+converted /Volumes/Daten/Development/PiRusTOS/target/xtask-rsc-align/ilp32/fixture.rsc -> /Volumes/Daten/Development/PiRusTOS/target/xtask-rsc-align/ilp32/out.rsc: 1 trees, 3 objects, 2 tedinfo, 1 bitblk, 2 iconblk, 1 frstr, 1 frimg (464 bytes) [ILP32/24B-OBJECT]
+converted /Volumes/Daten/Development/PiRusTOS/target/xtask-rsc-align/lp64-reserve/fixture.rsc -> /Volumes/Daten/Development/PiRusTOS/target/xtask-rsc-align/lp64-reserve/out.rsc: 1 trees, 3 objects, 2 tedinfo, 1 bitblk, 2 iconblk, 1 frstr, 1 frimg (560 bytes) [LP64/32B-OBJECT]
+converted /Volumes/Daten/Development/PiRusTOS/target/xtask-rsc-align/ilp32-reserve/fixture.rsc -> /Volumes/Daten/Development/PiRusTOS/target/xtask-rsc-align/ilp32-reserve/out.rsc: 1 trees, 3 objects, 2 tedinfo, 1 bitblk, 2 iconblk, 1 frstr, 1 frimg (464 bytes) [ILP32/24B-OBJECT]
+converted /Volumes/Daten/Development/PiRusTOS/target/xtask-rsc-align/lp64-private/fixture.rsc -> /Volumes/Daten/Development/PiRusTOS/target/xtask-rsc-align/lp64-private/out.rsc: 1 trees, 3 objects, 2 tedinfo, 1 bitblk, 2 iconblk, 1 frstr, 1 frimg (560 bytes) [LP64/32B-OBJECT]
+converted /Volumes/Daten/Development/PiRusTOS/target/xtask-rsc-align/lp64/fixture.rsc -> /Volumes/Daten/Development/PiRusTOS/target/xtask-rsc-align/lp64/out.rsc: 1 trees, 3 objects, 2 tedinfo, 1 bitblk, 2 iconblk, 1 frstr, 1 frimg (560 bytes) [LP64/32B-OBJECT]
 test rsc_align_tests::mkrsc_convert_rshdr_keeps_every_raster_word_aligned ... ok
+test rsc_align_tests::mkrsc_convert_ilp32_keeps_every_raster_word_aligned ... ok
+test rsc_align_tests::mkrsc_convert_rshdr_gives_every_text_buffer_its_own_storage ... ok
+test rsc_align_tests::mkrsc_convert_lp64_reserves_the_declared_tedinfo_lengths ... ok
+test rsc_align_tests::mkrsc_convert_rshdr_reserves_the_declared_tedinfo_lengths ... ok
+test rsc_align_tests::mkrsc_convert_ilp32_reserves_the_declared_tedinfo_lengths ... ok
+test rsc_align_tests::mkrsc_convert_lp64_gives_every_text_buffer_its_own_storage ... ok
+test rsc_align_tests::mkrsc_convert_lp64_keeps_every_raster_word_aligned ... ok
 
-test result: ok. 10 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.07s
+test result: ok. 10 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.05s
 
    Doc-tests tos_api
 
