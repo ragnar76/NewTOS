@@ -1,0 +1,23 @@
+### Konvergenz- und Kostenprobe der endgueltigen Fassung (TASK/T03)
+### beobachtet wird die transitive QUELLEN-Vereinigung, nicht die Archive
+
+--- Lauf 1: die drei Bauskripte sind gerade geaendert -> alle drei bauen einmal
+libc.a out of date [libc/build-libc.sh] -- running build-libc.sh…
+  archived -> /Volumes/Daten/Development/PiRusTOS/sdk/libc/libc.a (1298840 bytes)
+gemlib.a out of date [libc/build-libc.sh] -- running build-gemlib.sh…
+  archived -> /Volumes/Daten/Development/PiRusTOS/sdk/gemlib/gemlib.a (745634 bytes)
+cflib.a out of date [libc/build-libc.sh] -- running build-cflib.sh…
+  archived -> /Volumes/Daten/Development/PiRusTOS/sdk/cflib/cflib.a (261632 bytes)
+LINK OK -> /Volumes/Daten/Development/PiRusTOS/sdk/apps/qed/build/QED.NAP (568992 bytes)
+
+--- Lauf 2 (sofort danach) Neubauzeilen: 0
+--- Lauf 3 (sofort danach) Neubauzeilen: 0
+
+--- build-libc.sh von Hand, ohne Quellaenderung (= was build-apitest.sh tut)
+archived -> /Volumes/Daten/Development/PiRusTOS/sdk/libc/libc.a (1298840 bytes)
+--- zieht das gemlib/cflib mit? Neubauzeilen: 0
+
+--- Zeitstempel danach
+libc/libc.a  Sep 16 21:01:37 2026
+gemlib/gemlib.a  Sep 16 21:01:13 2026
+cflib/cflib.a  Sep 16 21:01:16 2026

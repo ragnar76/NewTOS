@@ -165,7 +165,7 @@ lib_check_failures "gemlib" "$BUILD/failed.txt" "$GEM/expected-failures.txt" \
 
 # --- archive -----------------------------------------------------------------
 rm -f "$GEM/gemlib.a"
-"$AR" cr "$GEM/gemlib.a" "$OBJ"/*.o
+"$AR" cr "$GEM/gemlib.a" "$OBJ"/*.o || exit 1
 echo "archived -> $GEM/gemlib.a ($(wc -c < "$GEM/gemlib.a" | tr -d ' ') bytes)"
 echo
 

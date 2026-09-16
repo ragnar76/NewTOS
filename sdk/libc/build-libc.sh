@@ -218,7 +218,7 @@ lib_check_failures "libc" "$BUILD/failed.txt" "$LIBC/expected-failures.txt" \
 
 # --- archive -----------------------------------------------------------------
 rm -f "$LIBC/libc.a"
-"$AR" cr "$LIBC/libc.a" "$OBJ"/*.o
+"$AR" cr "$LIBC/libc.a" "$OBJ"/*.o || exit 1
 echo "archived -> $LIBC/libc.a ($(wc -c < "$LIBC/libc.a" | tr -d ' ') bytes)"
 echo
 

@@ -1,18 +1,15 @@
- sdk/apps/build-coremark.sh |   7 +-
- sdk/apps/build-qed.sh      |  21 ++--
- sdk/apps/build-teradesk.sh |  13 +--
- sdk/cflib/build-cflib.sh   |  36 +++----
- sdk/gemlib/build-gemlib.sh |  23 +++--
- sdk/lib-stale.sh           | 239 +++++++++++++++++++++++++++++++++++++++++++--
- sdk/libc/build-libc.sh     |  20 +++-
- 7 files changed, 300 insertions(+), 59 deletions(-)
- M sdk/apps/build-coremark.sh
- M sdk/apps/build-qed.sh
- M sdk/apps/build-teradesk.sh
+ sdk/apps/build-coremark.sh       |   7 +-
+ sdk/apps/build-qed.sh            |  21 ++-
+ sdk/apps/build-teradesk.sh       |  13 +-
+ sdk/cflib/build-cflib.sh         |  38 +++---
+ sdk/cflib/expected-failures.txt  |   9 ++
+ sdk/gemlib/build-gemlib.sh       |  25 +++-
+ sdk/gemlib/expected-failures.txt |  10 ++
+ sdk/lib-stale.sh                 | 268 +++++++++++++++++++++++++++++++++++++--
+ sdk/libc/build-libc.sh           |  22 +++-
+ sdk/libc/expected-failures.txt   |  38 ++++++
+ 10 files changed, 389 insertions(+), 62 deletions(-)
  M sdk/cflib/build-cflib.sh
  M sdk/gemlib/build-gemlib.sh
  M sdk/lib-stale.sh
  M sdk/libc/build-libc.sh
-?? sdk/cflib/expected-failures.txt
-?? sdk/gemlib/expected-failures.txt
-?? sdk/libc/expected-failures.txt

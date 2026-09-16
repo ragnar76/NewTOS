@@ -1,14 +1,14 @@
-### T03 hole (a) AFTER THE FIX -- same injection, same command
+### T03 Loch (a) NACH DER AENDERUNG -- gleiche Einspielung, gleicher Befehl
 
-cflib.a before: cf508d2a3e008e60  261720 bytes
+cflib.a vorher: 079bf3066ea3feb7  261632 Bytes
 
---- build-qed.sh output, verbatim ---
+--- Ausgabe von build-qed.sh, woertlich ---
 gemlib.a out of date [gemlib/overlay] -- running build-gemlib.sh…
   compiled OK=578  skipped=0  (of 578)
   failures match gemlib/expected-failures.txt: 0 today, 0 recorded, 0 new
   archived -> /private/tmp/claude-501/-Volumes-Daten-Development-PiRusTOS/5c7969aa-fae6-42ed-bbaf-0933b4fb9ca4/scratchpad/t02t03/a-t03a/gemlib/gemlib.a (745634 bytes)
   (full log: gemlib/build/build-gemlib.log)
-cflib.a out of date [gemlib/gemlib.a] -- running build-cflib.sh…
+cflib.a out of date [gemlib/overlay] -- running build-cflib.sh…
   compiled OK=129  skipped=0  (of 129)
   failures match cflib/expected-failures.txt: 0 today, 0 recorded, 0 new
   archived -> /private/tmp/claude-501/-Volumes-Daten-Development-PiRusTOS/5c7969aa-fae6-42ed-bbaf-0933b4fb9ca4/scratchpad/t02t03/a-t03a/cflib/cflib.a (262184 bytes)
@@ -35,11 +35,15 @@ LINK OK -> /private/tmp/claude-501/-Volumes-Daten-Development-PiRusTOS/5c7969aa-
 undefined symbols in the final image (goal 0): 0
 build-qed EXIT=0
 
-cflib.a after : e81214014090c613  262184 bytes  <-- rebuilt on the new layout
+cflib.a nachher: e81214014090c613  262184 Bytes
 
---- and it settles: two more runs, unchanged ---
-run 2 rebuild lines: 0
-run 3 rebuild lines: 0
-cflib.a still  : e81214014090c613
+BEACHTE: gemlib.a bleibt bei 745634 Bytes BYTEGLEICH -- deshalb waere eine
+Kette ueber die ARCHIVE hier NICHT gefeuert. Beobachtet werden die Quellen.
 
-VERDICT: gemlib.a -> cflib.a cascade fires once, then the chain is quiet. One layout.
+Lauf 2 Neubauzeilen: 0
+Lauf 3 Neubauzeilen: 0
+archived -> /private/tmp/claude-501/-Volumes-Daten-Development-PiRusTOS/5c7969aa-fae6-42ed-bbaf-0933b4fb9ca4/scratchpad/t02t03/a-t03a/libc/libc.a (1299496 bytes)
+Lauf 4 nach libc-Bau von Hand, Neubauzeilen: 0
+
+URTEIL: cflib.a folgt dem gemlib-Overlay; danach ist die Kette still, auch
+nach einem libc-Bau von Hand.

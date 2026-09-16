@@ -31,17 +31,20 @@
 #
 # Both holes have the same root: the dependency knowledge was duplicated across
 # six call sites, so extending it meant editing six scripts and everybody
-# forgot one. It now lives here exactly once, in lib_chain()/lib_watch(), and a
-# caller says `lib_ensure cflib`.
+# forgot one. It now lives here exactly once, in lib_chain()/lib_inputs(), and
+# a caller says `lib_ensure cflib`.
 #
 # WHAT IS WATCHED
+#
+# Per library, its OWN sources -- and, because each is compiled against the one
+# below it, everything the ones below it watch as well:
 #
 #   libc.a    sdk/libc/overlay/       our edits to the vendored mintlib
 #             sdk/libc/newtos-arch/   the AArch64 shims we write ourselves
 #             sdk/include/            newtos.h, included by those shims
 #             sdk/libc/build-libc.sh
-#   gemlib.a  sdk/gemlib/overlay/, sdk/gemlib/build-gemlib.sh   + libc.a
-#   cflib.a   sdk/cflib/overlay/,  sdk/cflib/build-cflib.sh     + gemlib.a, libc.a
+#   gemlib.a  sdk/gemlib/overlay/, sdk/gemlib/build-gemlib.sh   + all of libc's
+#   cflib.a   sdk/cflib/overlay/,  sdk/cflib/build-cflib.sh     + all of gemlib's
 #
 # NOT watched, deliberately:
 #   - The extracted vendor trees (sdk/libc/mintlib/, sdk/gemlib/gemlib-0.44.0/,
@@ -52,28 +55,44 @@
 #     scripts only extract when the tree is absent; a rebuild triggered by the
 #     tarball's timestamp would therefore be a rebuild that changes nothing.
 #
-# WHY A TIMESTAMP CHAIN IS ENOUGH, AND DOES NOT LOOP
+# A TIMESTAMP CHAIN IS ENOUGH -- OVER THE SOURCES, NOT OVER THE ARCHIVES
 #
-# libc -> gemlib -> cflib is a chain, not a cycle, and lib_ensure walks it in
-# that order within one process, so after any rebuild the archives are left in
-# ascending mtime order and the next run finds nothing stale. Nothing
-# downstream feeds back upstream. The applications never take part in the test
-# at all: build-qed.sh / build-teradesk.sh delete their objects and relink from
+# What each library is tested against is the transitive union of the SOURCE
+# inputs: cflib is tested against cflib's overlay AND gemlib's overlay AND
+# mintlib's overlay/newtos-arch/include, all of them against cflib.a's own
+# mtime. The tempting shorter form -- test cflib.a against gemlib.a and libc.a
+# -- was built first and then measured, and it is WRONG: widening OBJECT in
+# sdk/gemlib/overlay/mt_gem.h.in rebuilds gemlib.a to the byte-identical
+# 745634-byte archive (gemlib's bindings marshal parameter blocks; they do not
+# index OBJECT arrays), so an archive-to-archive chain never fires and cflib
+# stays on the old layout -- the very defect it was supposed to close. An
+# upstream archive is not a proxy for "an upstream header changed".
+#
+# Watching the sources also removes the only real cost of a timestamp chain.
+# build-libc.sh (and build-apitest.sh, which runs it) rewrites libc.a
+# unconditionally; if libc.a were the trigger, every such run would drag gemlib
+# and cflib through a rebuild that produces the same bytes. Since the trigger is
+# the sources and they did not move, nothing follows.
+#
+# It converges, and cannot loop: libc -> gemlib -> cflib is a chain, lib_ensure
+# walks it in that order within one process, and after the pass each archive is
+# newer than every source it watches. Measured: after the cascade fires, a
+# second and a third run build nothing. The applications never take part at all
+# -- build-qed.sh / build-teradesk.sh delete their objects and relink from
 # scratch on every run, so a .NAP older than a library is not a state this test
-# can observe -- and an explicit per-library dependency stamp would buy nothing
-# a mtime comparison over this DAG does not already give.
+# can observe.
 
 LIB_SDK="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"      # .../sdk
 
 # --- the primitive -----------------------------------------------------------
 # lib_stale <archive> <path...>  -- true when the archive is missing, or older
 # than anything under the given paths. Sets LIB_STALE_REASON to what made it
-# stale ("missing", or the offending path).
+# stale (the missing archive, or the offending path).
 lib_stale() {
   local archive=$1; shift
   local p newer
   LIB_STALE_REASON=""
-  if [ ! -f "$archive" ]; then LIB_STALE_REASON="missing"; return 0; fi
+  if [ ! -f "$archive" ]; then LIB_STALE_REASON="$(basename "$archive") missing"; return 0; fi
   for p in "$@"; do
     [ -e "$p" ] || continue
     newer="$(find "$p" -newer "$archive" -print -quit 2>/dev/null)"
@@ -115,16 +134,13 @@ lib_chain() {
   esac
 }
 
-# lib_watch <name> -- fill the LIB_WATCH array with everything whose change
-# must invalidate <name>'s archive: the archives it is built against, then the
-# sources we edit ourselves.
-lib_watch() {
-  local up
-  LIB_WATCH=()
-  for up in $(lib_chain "$1"); do
-    [ "$up" = "$1" ] && continue
-    LIB_WATCH[${#LIB_WATCH[@]}]="$(lib_archive "$up")"
-  done
+# lib_inputs <name> -- append to LIB_WATCH everything WE edit that ends up in
+# <name>'s archive. Not appended, deliberately: the extracted vendor trees (they
+# are re-created from tarball+overlay on every run, so watching them would make
+# every library permanently stale) and the pristine tarballs (replacing one has
+# no effect without MINTLIB_REFRESH=1 / GEMLIB_REFRESH=1 / CFLIB_REFRESH=1, so a
+# rebuild triggered by one would be a rebuild that changes nothing).
+lib_inputs() {
   case "$1" in
     libc)
       LIB_WATCH[${#LIB_WATCH[@]}]="$LIB_SDK/libc/overlay"
@@ -142,6 +158,19 @@ lib_watch() {
       ;;
     *) echo "lib-stale.sh: unknown library '$1'" >&2; return 1 ;;
   esac
+  return 0
+}
+
+# lib_watch <name> -- the whole set <name>'s archive must be newer than: its own
+# sources AND the sources of every library it is built against. cflib.a is
+# compiled against gemlib's and mintlib's HEADERS, so gemlib's and mintlib's
+# overlays belong here -- their archives do not (see the header).
+lib_watch() {
+  local up
+  LIB_WATCH=()
+  for up in $(lib_chain "$1"); do
+    lib_inputs "$up" || return 1
+  done
   return 0
 }
 

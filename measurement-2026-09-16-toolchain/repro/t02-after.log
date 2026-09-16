@@ -1,9 +1,9 @@
-### T02 AFTER THE FIX -- same injection, same command
+### T02 NACH DER AENDERUNG -- gleiche Einspielung, gleicher Befehl
 
-libc.a            before: a25d6f27cc979cf2
-error() in libc.a before: 1
+libc.a            vorher: a25d6f27cc979cf2
+error() in libc.a vorher: 1
 
---- build-qed.sh output, verbatim ---
+--- Ausgabe von build-qed.sh, woertlich ---
 libc.a out of date [libc/overlay/stdlib/labs.c] -- running build-libc.sh…
 error: build-libc.sh FAILED -- its full output follows:
   clang : Apple clang version 21.0.0 (clang-2100.1.1.101)
@@ -34,7 +34,7 @@ error: build-libc.sh FAILED -- its full output follows:
     AArch64, record it with its reason in libc/expected-failures.txt.
 build-qed EXIT=1
 
-libc.a            after : a25d6f27cc979cf2   <-- untouched, the good archive survives
-error() in libc.a after : 1
+libc.a            nachher: a25d6f27cc979cf2   <-- unangetastet
+error() in libc.a nachher: 1
 
-VERDICT: exit 1, the file is named, its diagnostic quoted, no degraded libc.a written.
+URTEIL: Abbruch mit 1, Datei benannt, Diagnose zitiert, das gute Archiv ueberlebt.

@@ -155,7 +155,7 @@ lib_check_failures "cflib" "$BUILD/failed.txt" "$CF/expected-failures.txt" \
 
 # --- archive -----------------------------------------------------------------
 rm -f "$CF/cflib.a"
-"$AR" cr "$CF/cflib.a" "$OBJ"/*.o
+"$AR" cr "$CF/cflib.a" "$OBJ"/*.o || exit 1
 echo "archived -> $CF/cflib.a ($(wc -c < "$CF/cflib.a" | tr -d ' ') bytes)"
 echo
 

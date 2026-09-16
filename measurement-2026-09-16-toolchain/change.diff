@@ -76,7 +76,7 @@ index c9c198c..2b3dfb3 100755
  [ -d "$MINT" ]   || { echo "error: mintlib headers missing ($MINT); run build-libc.sh" >&2; exit 1; }
  [ -d "$GEMTOP" ] || { echo "error: gemlib headers missing ($GEMTOP); run build-gemlib.sh" >&2; exit 1; }
 diff --git a/sdk/cflib/build-cflib.sh b/sdk/cflib/build-cflib.sh
-index 984a0b4..5d5e8b4 100755
+index 984a0b4..d45cfbb 100755
 --- a/sdk/cflib/build-cflib.sh
 +++ b/sdk/cflib/build-cflib.sh
 @@ -48,21 +48,15 @@ OUT="${2:-$BUILD/$(basename "${CLIENT%.c}").NCP}"
@@ -135,18 +135,34 @@ index 984a0b4..5d5e8b4 100755
 +
  # --- archive -----------------------------------------------------------------
  rm -f "$CF/cflib.a"
- "$AR" cr "$CF/cflib.a" "$OBJ"/*.o
+-"$AR" cr "$CF/cflib.a" "$OBJ"/*.o
 -echo "compiled OK=$ok  skipped=$fail  -> $CF/cflib.a ($(wc -c < "$CF/cflib.a" | tr -d ' ') bytes)"
 -if [ "$fail" -ne 0 ]; then
 -    echo "skipped (did not compile for AArch64/LP64):"
 -    sed 's/^/    /' "$BUILD/failed.txt"
 -fi
++"$AR" cr "$CF/cflib.a" "$OBJ"/*.o || exit 1
 +echo "archived -> $CF/cflib.a ($(wc -c < "$CF/cflib.a" | tr -d ' ') bytes)"
  echo
  
  # --- CRT + client ------------------------------------------------------------
+diff --git a/sdk/cflib/expected-failures.txt b/sdk/cflib/expected-failures.txt
+new file mode 100644
+index 0000000..b203c30
+--- /dev/null
++++ b/sdk/cflib/expected-failures.txt
+@@ -0,0 +1,9 @@
++# expected-failures.txt -- cflib files KNOWN not to compile for NewTOS/AArch64.
++#
++# The list is EMPTY: all of cflib's COBJS manifest compiles. build-cflib.sh
++# therefore stops on any failure at all (sdk/lib-stale.sh, lib_check_failures),
++# which is the strict form TASK/T02 asks for wherever it is reachable.
++#
++# Format: "<path>  <reason>" per line, paths relative to the extracted cflib-21
++# tree, "#" starts a comment. Adding an entry here is a decision that a cflib
++# service is unavailable on NewTOS -- it needs a ticket, not a quick line.
 diff --git a/sdk/gemlib/build-gemlib.sh b/sdk/gemlib/build-gemlib.sh
-index cc8bee8..5e9e96e 100755
+index cc8bee8..de922f7 100755
 --- a/sdk/gemlib/build-gemlib.sh
 +++ b/sdk/gemlib/build-gemlib.sh
 @@ -55,12 +55,11 @@ mkdir -p "$OBJ"
@@ -194,16 +210,33 @@ index cc8bee8..5e9e96e 100755
 +
  # --- archive -----------------------------------------------------------------
  rm -f "$GEM/gemlib.a"
- "$AR" cr "$GEM/gemlib.a" "$OBJ"/*.o
+-"$AR" cr "$GEM/gemlib.a" "$OBJ"/*.o
 -echo "compiled OK=$ok  skipped=$fail  -> $GEM/gemlib.a ($(wc -c < "$GEM/gemlib.a" | tr -d ' ') bytes)"
++"$AR" cr "$GEM/gemlib.a" "$OBJ"/*.o || exit 1
 +echo "archived -> $GEM/gemlib.a ($(wc -c < "$GEM/gemlib.a" | tr -d ' ') bytes)"
  echo
  
  # --- CRT + client ------------------------------------------------------------
+diff --git a/sdk/gemlib/expected-failures.txt b/sdk/gemlib/expected-failures.txt
+new file mode 100644
+index 0000000..4cbf590
+--- /dev/null
++++ b/sdk/gemlib/expected-failures.txt
+@@ -0,0 +1,10 @@
++# expected-failures.txt -- gemlib files KNOWN not to compile for NewTOS/AArch64.
++#
++# The list is EMPTY: all of gemlib's COBJS manifest compiles. build-gemlib.sh
++# therefore stops on any failure at all (sdk/lib-stale.sh, lib_check_failures),
++# which is the strict form TASK/T02 asks for wherever it is reachable.
++#
++# Format: "<path>  <reason>" per line, paths relative to the extracted
++# gemlib-0.44.0 tree, "#" starts a comment. Adding an entry here is a decision
++# that a GEM binding is unavailable on NewTOS -- it needs a ticket, not a
++# quick line.
 diff --git a/sdk/lib-stale.sh b/sdk/lib-stale.sh
 old mode 100644
 new mode 100755
-index 451ec9a..015d727
+index 451ec9a..88509f5
 --- a/sdk/lib-stale.sh
 +++ b/sdk/lib-stale.sh
 @@ -1,4 +1,8 @@
@@ -216,7 +249,7 @@ index 451ec9a..015d727
  #
  # The build scripts used to rebuild a library only when its archive was
  # ABSENT. A stale archive was reused in silence, so an application could
-@@ -8,20 +12,237 @@
+@@ -8,20 +12,266 @@
  # rebuilt that day -- did not. An application whose behaviour does not
  # follow its sources is the worst thing to debug against.
  #
@@ -241,17 +274,20 @@ index 451ec9a..015d727
 +#
 +# Both holes have the same root: the dependency knowledge was duplicated across
 +# six call sites, so extending it meant editing six scripts and everybody
-+# forgot one. It now lives here exactly once, in lib_chain()/lib_watch(), and a
-+# caller says `lib_ensure cflib`.
++# forgot one. It now lives here exactly once, in lib_chain()/lib_inputs(), and
++# a caller says `lib_ensure cflib`.
 +#
 +# WHAT IS WATCHED
++#
++# Per library, its OWN sources -- and, because each is compiled against the one
++# below it, everything the ones below it watch as well:
 +#
 +#   libc.a    sdk/libc/overlay/       our edits to the vendored mintlib
 +#             sdk/libc/newtos-arch/   the AArch64 shims we write ourselves
 +#             sdk/include/            newtos.h, included by those shims
 +#             sdk/libc/build-libc.sh
-+#   gemlib.a  sdk/gemlib/overlay/, sdk/gemlib/build-gemlib.sh   + libc.a
-+#   cflib.a   sdk/cflib/overlay/,  sdk/cflib/build-cflib.sh     + gemlib.a, libc.a
++#   gemlib.a  sdk/gemlib/overlay/, sdk/gemlib/build-gemlib.sh   + all of libc's
++#   cflib.a   sdk/cflib/overlay/,  sdk/cflib/build-cflib.sh     + all of gemlib's
  #
 -# The vendored trees are extracted from pinned tarballs by the build
 -# scripts and do not change, so what is watched is what we actually edit:
@@ -265,30 +301,46 @@ index 451ec9a..015d727
 +#     scripts only extract when the tree is absent; a rebuild triggered by the
 +#     tarball's timestamp would therefore be a rebuild that changes nothing.
 +#
-+# WHY A TIMESTAMP CHAIN IS ENOUGH, AND DOES NOT LOOP
++# A TIMESTAMP CHAIN IS ENOUGH -- OVER THE SOURCES, NOT OVER THE ARCHIVES
 +#
-+# libc -> gemlib -> cflib is a chain, not a cycle, and lib_ensure walks it in
-+# that order within one process, so after any rebuild the archives are left in
-+# ascending mtime order and the next run finds nothing stale. Nothing
-+# downstream feeds back upstream. The applications never take part in the test
-+# at all: build-qed.sh / build-teradesk.sh delete their objects and relink from
++# What each library is tested against is the transitive union of the SOURCE
++# inputs: cflib is tested against cflib's overlay AND gemlib's overlay AND
++# mintlib's overlay/newtos-arch/include, all of them against cflib.a's own
++# mtime. The tempting shorter form -- test cflib.a against gemlib.a and libc.a
++# -- was built first and then measured, and it is WRONG: widening OBJECT in
++# sdk/gemlib/overlay/mt_gem.h.in rebuilds gemlib.a to the byte-identical
++# 745634-byte archive (gemlib's bindings marshal parameter blocks; they do not
++# index OBJECT arrays), so an archive-to-archive chain never fires and cflib
++# stays on the old layout -- the very defect it was supposed to close. An
++# upstream archive is not a proxy for "an upstream header changed".
++#
++# Watching the sources also removes the only real cost of a timestamp chain.
++# build-libc.sh (and build-apitest.sh, which runs it) rewrites libc.a
++# unconditionally; if libc.a were the trigger, every such run would drag gemlib
++# and cflib through a rebuild that produces the same bytes. Since the trigger is
++# the sources and they did not move, nothing follows.
++#
++# It converges, and cannot loop: libc -> gemlib -> cflib is a chain, lib_ensure
++# walks it in that order within one process, and after the pass each archive is
++# newer than every source it watches. Measured: after the cascade fires, a
++# second and a third run build nothing. The applications never take part at all
++# -- build-qed.sh / build-teradesk.sh delete their objects and relink from
 +# scratch on every run, so a .NAP older than a library is not a state this test
-+# can observe -- and an explicit per-library dependency stamp would buy nothing
-+# a mtime comparison over this DAG does not already give.
++# can observe.
 +
 +LIB_SDK="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"      # .../sdk
 +
 +# --- the primitive -----------------------------------------------------------
 +# lib_stale <archive> <path...>  -- true when the archive is missing, or older
 +# than anything under the given paths. Sets LIB_STALE_REASON to what made it
-+# stale ("missing", or the offending path).
++# stale (the missing archive, or the offending path).
  lib_stale() {
 -  archive=$1; shift
 -  [ -f "$archive" ] || return 0
 +  local archive=$1; shift
 +  local p newer
 +  LIB_STALE_REASON=""
-+  if [ ! -f "$archive" ]; then LIB_STALE_REASON="missing"; return 0; fi
++  if [ ! -f "$archive" ]; then LIB_STALE_REASON="$(basename "$archive") missing"; return 0; fi
    for p in "$@"; do
      [ -e "$p" ] || continue
 -    if [ -n "$(find "$p" -newer "$archive" -print -quit 2>/dev/null)" ]; then
@@ -331,16 +383,13 @@ index 451ec9a..015d727
 +  esac
 +}
 +
-+# lib_watch <name> -- fill the LIB_WATCH array with everything whose change
-+# must invalidate <name>'s archive: the archives it is built against, then the
-+# sources we edit ourselves.
-+lib_watch() {
-+  local up
-+  LIB_WATCH=()
-+  for up in $(lib_chain "$1"); do
-+    [ "$up" = "$1" ] && continue
-+    LIB_WATCH[${#LIB_WATCH[@]}]="$(lib_archive "$up")"
-+  done
++# lib_inputs <name> -- append to LIB_WATCH everything WE edit that ends up in
++# <name>'s archive. Not appended, deliberately: the extracted vendor trees (they
++# are re-created from tarball+overlay on every run, so watching them would make
++# every library permanently stale) and the pristine tarballs (replacing one has
++# no effect without MINTLIB_REFRESH=1 / GEMLIB_REFRESH=1 / CFLIB_REFRESH=1, so a
++# rebuild triggered by one would be a rebuild that changes nothing).
++lib_inputs() {
 +  case "$1" in
 +    libc)
 +      LIB_WATCH[${#LIB_WATCH[@]}]="$LIB_SDK/libc/overlay"
@@ -358,6 +407,19 @@ index 451ec9a..015d727
 +      ;;
 +    *) echo "lib-stale.sh: unknown library '$1'" >&2; return 1 ;;
 +  esac
++  return 0
++}
++
++# lib_watch <name> -- the whole set <name>'s archive must be newer than: its own
++# sources AND the sources of every library it is built against. cflib.a is
++# compiled against gemlib's and mintlib's HEADERS, so gemlib's and mintlib's
++# overlays belong here -- their archives do not (see the header).
++lib_watch() {
++  local up
++  LIB_WATCH=()
++  for up in $(lib_chain "$1"); do
++    lib_inputs "$up" || return 1
++  done
 +  return 0
 +}
 +
@@ -463,7 +525,7 @@ index 451ec9a..015d727
 +  return $rc
 +}
 diff --git a/sdk/libc/build-libc.sh b/sdk/libc/build-libc.sh
-index 44446e1..8d588f7 100755
+index 44446e1..277d5c0 100755
 --- a/sdk/libc/build-libc.sh
 +++ b/sdk/libc/build-libc.sh
 @@ -57,6 +57,9 @@ OUT="${2:-$BUILD/$(basename "${CLIENT%.c}").NCP}"
@@ -509,12 +571,58 @@ index 44446e1..8d588f7 100755
  # --- NewTOS arch shims -------------------------------------------------------
  # memcpy/memmove/memset/... (were bcopy.S/memset.S), _exit (was libc_exit.S),
  # the malloc-arena/heap init, and the lean stat/tty/ioctl glue replacing the
-@@ -201,7 +219,7 @@ done
+@@ -200,8 +218,8 @@ done
+ 
  # --- archive -----------------------------------------------------------------
  rm -f "$LIBC/libc.a"
- "$AR" cr "$LIBC/libc.a" "$OBJ"/*.o
+-"$AR" cr "$LIBC/libc.a" "$OBJ"/*.o
 -echo "compiled OK=$ok  skipped=$fail  -> $LIBC/libc.a ($(wc -c < "$LIBC/libc.a" | tr -d ' ') bytes)"
++"$AR" cr "$LIBC/libc.a" "$OBJ"/*.o || exit 1
 +echo "archived -> $LIBC/libc.a ($(wc -c < "$LIBC/libc.a" | tr -d ' ') bytes)"
  echo
  
  # --- CRT + client ------------------------------------------------------------
+diff --git a/sdk/libc/expected-failures.txt b/sdk/libc/expected-failures.txt
+new file mode 100644
+index 0000000..4790293
+--- /dev/null
++++ b/sdk/libc/expected-failures.txt
+@@ -0,0 +1,38 @@
++# expected-failures.txt -- the mintlib files that are KNOWN not to compile for
++# NewTOS/AArch64, with the reason. One "<path>  <reason>" per line, paths
++# relative to the extracted mintlib tree, "#" starts a comment.
++#
++# build-libc.sh compares the actual failure set against this list on every run
++# (sdk/lib-stale.sh, lib_check_failures). A file that fails and is NOT listed
++# here stops the build; a listed file that starts to compile is announced so
++# this list can be shortened. Before TASK/T02 neither happened -- the failure
++# list went to build/failed.txt and nowhere else, and the callers ran
++# build-libc.sh with >/dev/null 2>&1 on top of that. That is how setsysvar.c
++# and unix/sysinfo.c stayed broken for months (both compile since e503efd).
++#
++# This list is a RECORD, not an approval. The judgement column below is from
++# TASK/T02; each entry that is not "hardware absent" is a real gap with a
++# ticket of its own. Do not repair these files as a side effect of a
++# toolchain change.
++#
++# Diagnostics below verified against sdk/libc/build/obj/*.err, 2026-09-16.
++
++# --- m68k inline asm for hardware NewTOS does not have -----------------------
++mintlib/linea.c      unknown register name 'a0'/'a1'/'a2' in asm -- ST Line-A
++mintlib/nf_ops.c     unknown register name 'a0'/'a1' in asm -- ARAnyM NatFeats
++
++# --- m68k inline asm / LP64 in code we DO need -------------------------------
++mintlib/crtinit.c    unknown register 'a0' + 2x LP64 basepage (int -> char*): no argv, no environ
++mintlib/spawnve.c    va_list arithmetic (m68k char* vs AArch64 struct) -- LP64 gap
++mintlib/spawnvp.c    va_list arithmetic (m68k char* vs AArch64 struct) -- LP64 gap
++
++# --- a .stabs debug directive clang's integrated assembler rejects ------------
++# Three real libc functions are missing over a cosmetic warning directive.
++stdio/gets.c         <inline asm> unsupported directive '.stabs'
++mintlib/getwd.c      <inline asm> unsupported directive '.stabs'
++signal/siggetmask.c  <inline asm> unsupported directive '.stabs'
++
++# --- missing generated / vendor headers --------------------------------------
++mintlib/syscall.c    fatal: 'syscall-list.h' file not found (generated by mintlib's own build)
++gmp/support.c        fatal: 'mathimpl.h' file not found (not on the include path)
++tz/dumpstate.c       no member 'tt_gmtoff'/'tt_abbrind'/'tt_ttisgmt' in 'struct ttinfo'
