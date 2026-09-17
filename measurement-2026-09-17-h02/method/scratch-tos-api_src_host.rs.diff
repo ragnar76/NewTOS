@@ -1,0 +1,14 @@
+--- tos-api/src/host.rs	2026-09-05 19:08:54
++++ tos-api/src/host.rs	2026-09-17 22:09:59
+@@ -25,6 +25,11 @@
+         }
+     }
+ 
++    /// H02-TEMP: serial-only debug write (audit scaffolding, scratch copy only).
++    fn debug_write(&self, s: &[u8]) {
++        self.console_write_bytes(s)
++    }
++
+     /// Non-blocking read from the console input device. Returns
+     /// `Some(byte)` if a character is available, `None` otherwise.
+     fn console_try_read(&self) -> Option<u8> {

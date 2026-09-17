@@ -1,0 +1,10 @@
+--- tos-api/src/aes/pd.rs	2026-09-14 17:30:24
++++ tos-api/src/aes/pd.rs	2026-09-17 22:10:31
+@@ -362,6 +362,7 @@
+     // AES trap tracer: record the enqueue (type, sender, target, and whether
+     // the FIFO took it). No-op without the `aes-trace` feature.
+     super::trace::msg_post(pid, &msg, MSG_WORDS, posted);
++    crate::h02!("[h02] post_msg pid={} {:?} posted={}", pid, &msg[..8], posted);
+     if posted {
+         wake_mesg_waiter(pid);
+     }

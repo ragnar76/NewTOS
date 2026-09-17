@@ -1,0 +1,35 @@
+--- tos-api/src/aes/event.rs	2026-09-03 00:05:24
++++ tos-api/src/aes/event.rs	2026-09-17 22:10:15
+@@ -94,7 +94,12 @@
+     let Some(backend) = host().and_then(|h| h.raster()) else {
+         return false;
+     };
+-    match super::menu::track(tree, backend) {
++    let __r = super::menu::track(tree, backend);
++    {
++        let (mx, my) = crate::vdi::mouse_position();
++        crate::h02!("[h02] menu::track -> {:?} mouse=({},{}) mb={} own={}", __r, mx, my, crate::vdi::mouse_buttons(), super::input::own_mouse());
++    }
++    match __r {
+         Some((title, item)) => {
+             let mut msg = [0i16; pd::MSG_WORDS];
+             msg[0] = MN_SELECTED;
+@@ -518,6 +523,10 @@
+                         1 // abutton: azombie(e, 1)
+                     };
+                     fired |= MU_BUTTON;
++                    {
++                        let (mx, my) = crate::vdi::mouse_position();
++                        crate::h02!("[h02] evnt_multi MU_BUTTON fired own={} pass={} clicks={} mouse=({},{}) mb_now={}", own, pass, clicks, mx, my, crate::vdi::mouse_buttons());
++                    }
+                 }
+             }
+             // The rectangle quick checks sit inside the same
+@@ -540,6 +549,7 @@
+                     // →`doq` dequeue, `gemqueue.c:76-81`); a single pending
+                     // message is just the 1-element case.
+                     if let Some(msg) = src.queue.pop() {
++                        crate::h02!("[h02] evnt_multi MU_MESAG deliver {:?} pass={}", &msg[..8], pass);
+                         if pbuff != 0 {
+                             // SAFETY: `MME_PBUFF` points at >= 16 bytes.
+                             unsafe {

@@ -1,0 +1,48 @@
+--- tos-api/src/aes/mod.rs	2026-09-14 16:48:35
++++ tos-api/src/aes/mod.rs	2026-09-17 22:09:59
+@@ -405,6 +405,15 @@
+ 
+     let sw = crysbind(&pb);
+ 
++    // H02-TEMP: opcode trace to the serial line once the injector arms it.
++    if H02_TRACE.load(core::sync::atomic::Ordering::Relaxed) {
++        let op = pb.control(C_OPCODE);
++        let o = unsafe { core::slice::from_raw_parts(pb.intout, O_SIZE) };
++        h02_log(format_args!("[aes] op {} in=({},{},{},{}) out=({},{},{},{},{},{},{}) yield={}",
++            op, pb.intin(0), pb.intin(1), pb.intin(2), pb.intin(3),
++            o[0], o[1], o[2], o[3], o[4], o[5], o[6], sw.is_some()));
++    }
++
+     if sw.is_none() {
+         // The call completed — `xif`'s copy-back (`gemsuper.c:443-444`).
+         // SAFETY: the caller's `intout` holds the `OUT_LEN` words it declared.
+@@ -676,4 +685,29 @@
+ /// (`aes/gemdosif.S:327-347`).
+ pub fn user_mot(x: i16, y: i16) {
+     input::mchange(x, y);
++}
++
++// H02-TEMP BEGIN
++pub static H02_TRACE: core::sync::atomic::AtomicBool = core::sync::atomic::AtomicBool::new(false);
++pub fn h02_log(args: core::fmt::Arguments) {
++    struct W;
++    impl core::fmt::Write for W {
++        fn write_str(&mut self, s: &str) -> core::fmt::Result {
++            if let Some(h) = crate::host::host() { h.debug_write(s.as_bytes()); }
++            Ok(())
++        }
++    }
++    use core::fmt::Write as _;
++    let mut w = W;
++    let _ = w.write_fmt(args);
++    let _ = w.write_str("\r\n");
+ }
++#[macro_export]
++macro_rules! h02 {
++    ($($t:tt)*) => {
++        if $crate::aes::H02_TRACE.load(core::sync::atomic::Ordering::Relaxed) {
++            $crate::aes::h02_log(format_args!($($t)*));
++        }
++    };
++}
++// H02-TEMP END

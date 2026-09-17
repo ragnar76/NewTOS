@@ -1,0 +1,14 @@
+# run1: open C: window, select HELLO.TXT (220,340), hover File (88,8), look at the menu.
+1200 park
+1400 move 195 35
+1600 down
+1603 up
+1608 down
+1611 up
+2000 move 220 340
+2200 arm
+2210 down
+2216 up
+2400 mark A_SELECTED
+2600 move 88 8
+2800 mark B_MENU_OPEN

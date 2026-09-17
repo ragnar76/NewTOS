@@ -1,0 +1,33 @@
+--- tos-api/src/aes/input.rs	2026-09-01 18:27:36
++++ tos-api/src/aes/input.rs	2026-09-17 22:10:31
+@@ -97,7 +97,11 @@
+         let (x, y) = crate::vdi::mouse_position();
+         // chkown: +1 → gl_cowner, 0 → D.w_win[0].w_owner (both the app at
+         // single-app), −1 → ctl_pd.
+-        GL_MOWNER_APP.store(super::window::chk_ctrl(x, y) >= 0, Ordering::Relaxed);
++        let __c = super::window::chk_ctrl(x, y);
++        GL_MOWNER_APP.store(__c >= 0, Ordering::Relaxed);
++        crate::h02!("[h02] b_click DOWN at ({},{}) chk_ctrl={} -> owner_app={}", x, y, __c, __c >= 0);
++    } else {
++        crate::h02!("[h02] b_click new={} prev={} owner_app={}", new, prev, GL_MOWNER_APP.load(Ordering::Relaxed));
+     }
+ }
+ 
+@@ -139,6 +143,7 @@
+         && ry < super::menu::desk_top()
+     {
+         GL_MOWNER_APP.store(false, Ordering::Relaxed);
++        crate::h02!("[h02] mchange ({},{}) -> owner ctl_pd", rx, ry);
+     }
+ }
+ 
+@@ -158,6 +163,9 @@
+ /// single-app the top window's owner is always this application.
+ pub(super) fn w_setactive() {
+     if BUTTON.load(Ordering::Relaxed) == 0 {
++        if !GL_MOWNER_APP.load(Ordering::Relaxed) {
++            crate::h02!("[h02] w_setactive -> owner app (button up)");
++        }
+         GL_MOWNER_APP.store(true, Ordering::Relaxed);
+     }
+ }

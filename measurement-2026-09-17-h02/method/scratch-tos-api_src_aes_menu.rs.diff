@@ -1,0 +1,26 @@
+--- tos-api/src/aes/menu.rs	2026-09-01 01:06:05
++++ tos-api/src/aes/menu.rs	2026-09-17 22:10:43
+@@ -266,6 +266,7 @@
+             }
+             cur_title = t;
+             cur_box = open_box(tree, t, backend);
++            crate::h02!("[h02] track open title={} box={} at ({},{})", t, cur_box, mx, my);
+         }
+ 
+         if cur_box != NIL {
+@@ -312,6 +313,7 @@
+ 
+         // Press edge → select the highlighted item.
+         if !was_down && down {
++            crate::h02!("[h02] track press edge at ({},{}) title={} box={} item={} sub={}", mx, my, cur_title, cur_box, cur_item, sub_tree);
+             if sub_tree != 0 && sub_item != NIL && sub_tree == tree as u64 {
+                 // Submenu selection in the same tree: the item index is valid
+                 // in the caller's tree (round-trips as MN_SELECTED msg[4]).
+@@ -342,6 +344,7 @@
+                 object::set_state_bit(tree, cur_item, SELECTED, false);
+                 erase_box_inner(tree, cur_box, backend);
+                 crate::vdi::cursor_show(backend);
++                crate::h02!("[h02] track box restored, returning ({},{})", cur_title, cur_item);
+                 return Some((cur_title, cur_item));
+             }
+         }
