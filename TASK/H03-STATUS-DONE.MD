@@ -193,8 +193,11 @@ desk/-, kein AES-Defekt. Kein Fix in diesem Auftrag.
 ## Offen / Nebenbefunde (nicht verfolgt)
 
 * **Hardwareabnahme** nach dem Fix: TeraDesk auf der Pi per Menü beenden → Dialog →
-  *Quit* → eingebauter Desktop. Erwartung aus QEMU: ≈150 ms nach dem Klick zwei
-  Piepser, dann der Dialog.
+  *Quit* → eingebauter Desktop. Erwartung aus QEMU: ≈150 ms nach dem Klick der
+  Dialog. *Berichtigung (Lead, 2026-09-17):* die hier zuerst erwarteten „zwei
+  Piepser" gibt es nicht — `bell()` ist `Bconout(2,7)`, BEL wird in
+  `tos-api/src/vdi/escape.rs` verworfen, es gibt keinen PSG und keinen
+  Pi-Audioweg.
 * Weitere Zeiger-Punnings in gemlib betreffen nur NVDI-Erweiterungen
   (`n_v_color2value.c:28`, `n_vq_ctab.c:23`, `n_v_ftext16n.c:20`) — gleiche
   Defektklasse, hier nicht geprüft, von TeraDesk/QED nicht benutzt (nicht verifiziert).
