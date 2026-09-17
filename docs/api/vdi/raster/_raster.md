@@ -608,6 +608,16 @@ form.rs`). NewTOS uses a *transient* per-alert buffer, not EmuTOS's single
 persistent menu/alert buffer, so `wind_get(WF_SCREEN)` still honestly
 reports a null/zero-length buffer (see `tos-api/src/aes/window.rs`).
 
+**The copy runs with the mouse cursor hidden.** `bb_save`/`bb_restore` go
+through `bb_set` (`gemgsxif.c:320-380`), which brackets the blit itself —
+`gsx_moff()` at `:367`, `gsx_mon()` at `:378`, on the counted `gl_moff`
+(`:440-455`) — so the save-under sprite never enters the saved image and is
+re-shown with a fresh save-under after the restore. `fm_alert`
+(`gemfmalt.c:363,390`) relies on this and carries no bracket of its own.
+NewTOS places the bracket at the same level, inside
+`tos_api::vdi::bb_save`/`bb_restore` (A66, 2026-09-18); a caller's own
+bracket nests on the same counter.
+
 ### 1080p later
 
 `fd_w`/`fd_h`/`fd_wdwidth` for the screen MFDB derive from the live

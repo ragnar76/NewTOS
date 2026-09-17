@@ -526,7 +526,10 @@ this order: sets the `DEFAULT` flag on button `defbut` (`gemfmalt.c:343-347`,
 *after* `fm_build` returns), fixes up the icon object to `G_IMAGE`/32×32
 (`:349-352`), centres the tree (`ob_center`, `:355`), saves the screen
 underneath (`bb_save`, `:363`), draws it (`ob_draw`, `:367`), runs `fm_do`
-(`:383`), then restores the saved screen (`bb_restore`, `:390`). The return
+(`:383`), then restores the saved screen (`bb_restore`, `:390`) — with no
+cursor bracket of its own: `bb_set` hides the mouse for both copies
+(`gemgsxif.c:367,378`; see `docs/api/vdi/raster/_raster.md` "AES consumer"),
+so the sprite is never saved as background. The return
 is `i - BUTOFF + 1` — the pressed button's **1-based** number
 (`gemfmalt.c:395`).
 

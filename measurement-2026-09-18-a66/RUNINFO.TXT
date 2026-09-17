@@ -1,0 +1,174 @@
+A66 -- unabhaengige Verifikation des Fixes (bb_save/bb_restore klammern den
+Mauszeiger, form.rs' eigene Klammer entfernt).
+Tester-Messung, 2026-09-18. Branch desk-rebuild, Basis HEAD a7896cf.
+Dem Developer-Selbstreport NICHT getraut -- alle Messungen unabhaengig neu
+gefahren, Rot-Gegenprobe ueber eine git-worktree-Kopie auf HEAD (kein
+git stash, kein Antasten des geteilten Baums).
+
+GEAENDERTE DATEIEN (git status --short, VOR jeder Messung geprueft)
+  M tos-api/src/aes/form.rs
+  M tos-api/src/vdi/raster.rs
+  ?? tos-api/tests/aes_form_alert_cursor_bracket.rs
+  M docs/api/aes/object-form.md         <- NICHT im Auftragsvorspann genannt
+  M docs/api/vdi/raster/_raster.md      <- NICHT im Auftragsvorspann genannt
+  Die beiden docs/api/-Dateien tragen Spec-Zeilen zur bb_save/bb_restore-
+  Klammer nach (CLAUDE.md Regel 5, Muster wie A65). Literal gemeldet, nicht
+  stillschweigend uebernommen: der Auftrag sprach von "nur die drei Dateien".
+
+HASHES
+  kernel8.img (Projektbaum, rpi4, Fix im Baum, zuletzt vor dem QEMU-Lauf
+    gebaut -- Board-Footgun beachtet)
+    sha256 6c37b959af4ffee35aa2916b6bc7255684335b22932c43f49cd1cb7479a0a54f
+  sdk/apps/teradesk/build/dist/DESKTOP.NAP
+    sha256 db31aae1a1a94855053021ac45bdab3cb40bc13f21a53d9f6c63f3e8803fe54d
+  <scratch>/sd-base.img (tools/make-sd-image.sh 64 MiB, frisch gebaut)
+    sha256 abb1f8ddf8de3506c3bf4422de4ba70ea74478726b42cc3004d80975547e8668
+  <scratch>/sd-desktop.img (= sd-base.img, Standard-NEWDESK.INF, kein Autorun)
+    sha256 abb1f8ddf8de3506c3bf4422de4ba70ea74478726b42cc3004d80975547e8668
+  <scratch>/sd-teradesk.img (sd-base.img + NEWDESK.INF aus
+    measurement-2026-09-17-h03/method/newdesk-teradesk.inf per sd-put.sh)
+    sha256 b9a3bd7722951a9166e8070aeef9fbadf7d03434bc8d4d9e27b1e41b06560ec7
+  screendumps/a66-teradesk.png
+    sha256 0e9c769556f9e70cdaed9853985a33a4244e87bb3641e7edfd896c9632cb2335
+  screendumps/a66-desktop.png
+    sha256 dee57cca7b719faba491759f5d1331f27027b36124986f5f4d8ad7a48c8978d8
+  Referenzen (unveraendert gelesen):
+    measurement-2026-09-17-h03/verify/screendumps/verify-run1-teradesk-startup.png
+      sha256 f7b30700b17a3d805e3d5740f5ecf61c16dcf8423d77d72bbd3518aca1c93ad8
+    measurement-2026-09-17-h02/verify/screendumps/runB-desktopup-final.png
+      sha256 0b25ddd38393d0afbbcdf8722a7cb093595bf591496b17ff1f9db14a6ed3d121
+
+1. HOSTTESTS (cargo test -p tos-api)
+
+  cargo test -p tos-api --test aes_form_alert_cursor_bracket -- --test-threads=1
+    -> 3 passed; 0 failed (bb_save_does_not_capture_the_cursor,
+       bb_save_bb_restore_round_trip_leaves_no_ghost,
+       form_alert_leaves_no_ghost_arrow_at_the_opening_position).
+    Erwartet 3/3 -- MATCH. build/newtest-GREEN.txt.
+
+  cargo test -p tos-api --test aes_object_cursor_bracket -- --test-threads=1
+    -> 3 passed; 0 failed (A65-Regression, unveraendert). Erwartet 3/3 -- MATCH.
+
+  ROT-GEGENPROBE: git worktree add --detach <scratch> a7896cf (HEAD, der
+  Stand VOR dem A66-Fix -- form.rs/raster.rs dort unveraendert, verifiziert
+  per grep: kein "super::mouse::hide/show" in raster.rs, form.rs traegt noch
+  das alte hide->restore->show-Aussenklammer-Muster). Den neuen Test
+  hineinkopiert, dort gebaut und gelaufen (kein git stash, kein Antasten
+  des geteilten Baums):
+    3 von 3 FAILED, alle mit der Geisterpfeil-Signatur, woertlich:
+    "bb_save stored the pointer: 97 of 256 pixels ... the box IS the ghost
+     arrow, pixel for pixel" (bb_save_does_not_capture_the_cursor)
+    "the restored screen differs..." (bb_save_bb_restore_round_trip_leaves_no_ghost)
+    "form_alert left a ghost arrow: 97 of 256 pixels ... the box IS the
+     ghost arrow, pixel for pixel" (form_alert_leaves_no_ghost_arrow_at_the_opening_position)
+    Zweimal unabhaengig reproduziert (zwei separate Worktrees), identisches
+    Ergebnis. build/newtest-RED.txt. Worktrees danach mit
+    `git worktree remove --force` entfernt (keine Altlast, `git worktree list`
+    zeigt nur die beiden Standard-Eintraege).
+
+2. cargo run -p xtask -- test
+
+  Summe ueber alle Testbinaries (40 "test result:"-Bloecke aufaddiert):
+    563 passed; 0 failed; 1 ignored.
+  Erwartet 563 gruen / 0 rot / 1 ignoriert -- EXAKTES MATCH.
+  aes_form_alert_cursor_bracket und aes_object_cursor_bracket sind Teil
+  dieses Laufs (6 der 563). build/xtask-test.log.
+
+3. BEIDE BOARDS, WARNUNGEN, CLIPPY
+
+  cargo xtask build --board rpi4
+    -> "Compiling tos-api", dann "Compiling kernel", clean, exit 0.
+       tos-api 64 rustc-Warnungen, kernel 94 rustc-Warnungen.
+       Baseline 64/94 -- Delta 0. build/build-rpi4.log.
+  cargo xtask build --board qemu-virt
+    -> clean, exit 0. tos-api 64, kernel 94 -- Delta 0.
+       build/build-qemu-virt.log.
+  cargo clippy --package kernel --no-default-features --features board-rpi4
+    --lib --bins
+    -> "kernel (lib) generated 125 warnings", keine Fehler.
+       Baseline 125 -- Delta 0. build/clippy-kernel.log.
+  cargo clippy -p tos-api
+    -> "tos-api (lib) generated 81 warnings", keine Fehler.
+       Baseline 81 -- Delta 0. build/clippy-tos-api.log.
+  Board-Footgun beachtet: rpi4 wurde ERNEUT gebaut (sha256 oben), unmittelbar
+  vor dem QEMU-raspi4b-Lauf unter Abschnitt 4 -- die zwischenzeitliche
+  qemu-virt-Kompilierung haette sonst das falsche Board-ELF im geteilten
+  target/ hinterlassen koennen.
+
+4. QEMU raspi4b, headless, Regression Desktop / TeraDesk
+
+  Werkzeuge (keine Produktdateien) wiederverwendet aus
+  measurement-2026-09-17-a65/method/: boot-qmp.sh, qmp.py, compare-png.py.
+  qemu-system-aarch64 -M raspi4b -no-reboot -display none -serial file:LOG
+    -kernel kernel8.img -drive file=<img>,if=sd,format=raw
+    -qmp unix:<sock>,server,nowait
+  QMP-Sockets unter /private/tmp/claude-501/a66td.sock bzw. a66dt.sock
+  (kuerzerer Pfad noetig -- der Pfad unter dem Scratchpad ueberschritt
+  AF_UNIX' 104-Byte-Limit), nach jedem Lauf geloescht.
+
+  a. TeraDesk per NEWDESK.INF #Z-Autorun
+     (measurement-2026-09-17-h03/method/newdesk-teradesk.inf, unveraendert
+     kopiert per sd-put.sh)
+     Marker "[launch] EL0: slot 0 entry 0x1000" nach 15.2 s, 15 s Beruhigung,
+     Screendump.
+     Serial (serial/a66-teradesk-BOOT-SERIAL.txt, letzte Zeilen):
+       "[shell] sh_ldapp: starting C:\APPS\TERADESK\DESKTOP.NAP,
+        sh_nextapp=2, sh_isgem=1" -> "[launch] EL0: slot 0 entry 0x1000"
+       (danach keine weiteren Zeilen -- laeuft, wie in H03 dokumentiert).
+     compare-png.py screendumps/a66-teradesk.png
+       measurement-2026-09-17-h03/verify/screendumps/verify-run1-teradesk-startup.png
+       -> "640x480, 0 of 307200 pixels differ"
+     PASS -- byteweise identisch mit der Referenz (auch ohne
+     Uhrzeit/Datum-Ausnahme noetig, da keine Uhrzeit/Datum-Felder im Bild).
+
+  b. Unser Desktop, KEIN Autorun (Standard-NEWDESK.INF aus
+     tools/make-sd-image.sh, Platzhalterinhalt "newdesk placeholder")
+     Marker "[desk] desktop up" nach 15.2 s, 15 s Beruhigung, Screendump.
+     Serial (serial/a66-desktop-BOOT-SERIAL.txt, letzte Zeilen):
+       "[shell] sh_ldapp: starting NEWDESK, sh_nextapp=3, sh_isgem=1"
+       -> "[desk] desktop up (1 drives)"
+     compare-png.py screendumps/a66-desktop.png
+       measurement-2026-09-17-h02/verify/screendumps/runB-desktopup-final.png
+       -> "640x480, 24511 of 307200 pixels differ"
+       -> "first at x=181 y=69  bdbdbd -> 000000"
+     ABWEICHUNG VOM ERWARTETEN 0-DIFF, WOERTLICH GEMELDET (Auftragsregel
+     "jede andere Differenz woertlich"): der eigene Lauf zeigt das C:\-Fenster
+     im ICON-View (Ordner/Dateien als Piktogramme, Kopfzeile "24 items 373645
+     bytes used"); die Referenz runB-desktopup-final.png zeigt dasselbe
+     Fenster im TEXT-View (Dateiname/Erweiterung/Groesse/Datum-Spalten,
+     Kopfzeile "24 items 373687 bytes used"). Das ist KEINE Uhrzeit/Datum-
+     Randdifferenz, sondern ein anderer Anzeigemodus -- die 24511 Pixel
+     erklaeren sich vollstaendig aus Icon- vs. Text-Layout, nicht aus
+     versetzten oder fehlenden Elementen an sonst gleicher Stelle.
+     EINORDNUNG (nicht Messung, sondern Kontext, damit die Zahl nicht isoliert
+     dasteht): runB-desktopup-final.png ist laut
+     measurement-2026-09-17-h02/RUNINFO.TXT Abschnitt 3b das Bild NACH einer
+     mehrstufigen IKBD-Skript-Sequenz (TeraDesk oeffnen, Datei anklicken,
+     Menue "File -> Quit/Shutdown" auf dem PORTIERTEN TeraDesk, Klick auf
+     "Quit", Rueckfall auf unseren Desktop) -- keine einfache Boot-Aufnahme.
+     Ob dabei der View-Modus explizit auf Text umgeschaltet wurde oder von
+     TeraDesk so hinterlassen wird, wurde in dieser Messung NICHT geprueft
+     (ausserhalb des A66-Skopus, keine Reproduktion der H02-Sequenz gefahren).
+     Die abweichende "bytes used"-Zahl (373645 vs. 373687) stammt aus
+     unterschiedlichen Bautagen der Beispieldateien (COREMARK/NCP-Groessen
+     variieren je Build) und ist ebenfalls kein A66-Effekt.
+     Die Bytefolge unterscheidet sich also nicht in etwas, das die
+     A66-Aenderung (bb_save/bb_restore-Klammer, entfernte form.rs-Aussen-
+     klammer) beruehrt: keine Geisterpfeil-Signatur, kein verschobenes
+     Element an sonst gleicher Position -- durchgehend Icon- statt
+     Text-Zeilen. Mit dem gegebenen Referenzbild ist ein bitgenauer
+     Abgleich NICHT moeglich, ohne die H02-Interaktionssequenz nachzustellen
+     (IKBD-Injektor, Scratch-Kernel, mehrere Klicks) -- das war nicht
+     Gegenstand dieses Auftrags. OFFENER PUNKT, kein PASS/FAIL fuer diesen
+     Teilvergleich, siehe Bericht.
+
+AUFRAEUMEN
+  Beide QEMU-Prozesse beendet (Timeout-Schleife + kill -9, verifiziert:
+  `ps aux | grep qemu` leer nach beiden Laeufen). QMP-Sockets geloescht
+  (/private/tmp/claude-501/a66td.sock, a66dt.sock -- beide weg). sd-put.sh
+  haengt sein Image selbst aus (verifiziert: `mount | grep NEWTOS` zeigt nur
+  die physische Karte disk9s2/s3/s5, NICHT die Scratch-Images). git worktree
+  list zeigt nur die beiden Standardeintraege (kein a66-red-worktree*
+  uebrig). git status --short zeigt nach der Messung dieselben fuenf Pfade
+  wie davor (siehe oben) -- nichts Fremdes beruehrt, keine Produktdatei
+  editiert.

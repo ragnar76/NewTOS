@@ -555,17 +555,30 @@ pub fn bb_save_words(w: i16, h: i16) -> usize {
 /// re-entrant trap. `mem` is a `u32` pointer for the caller's convenience;
 /// its bytes hold two 16-bit pixels per word (see [`bb_save_words`]).
 ///
+/// **The mouse cursor is hidden for the copy** (`bb_set`'s `gsx_moff()` …
+/// `gsx_mon()` bracket, `gemgsxif.c:367,378`), so the save-under sprite is
+/// never read into the image — otherwise the restore would paint it back as
+/// background, a ghost arrow at the position the pointer had when the
+/// alert opened. The bracket sits here, under `bb_save`/`bb_restore`, not in
+/// the caller: `fm_alert` (`gemfmalt.c:363,390`) has none of its own. The
+/// hide depth counts (EmuTOS `gl_moff`), so a caller's own bracket nests.
+///
 /// # Safety
 /// `mem` must point at a buffer of at least [`bb_save_words`]`(w, h)`
 /// `u32` words that stays alive until the matching [`bb_restore`].
 pub unsafe fn bb_save(backend: &dyn RasterBackend, mem: *mut u32, x: i16, y: i16, w: i16, h: i16) {
     let dst = Mfdb::device_mem(mem as u64, w, h);
+    super::mouse::hide(backend);
     screen_to_mem(backend, &dst, Rect { x, y, w, h }, 0, 0, OP_REPLACE);
+    super::mouse::show(backend);
 }
 
 /// AES `bb_restore`: copy the 16-bit RGB565 device-format buffer `mem`
 /// (filled by [`bb_save`]) back to the screen rectangle `(x, y, w, h)` — a
-/// Memory→Screen `vro_cpyfm` replace, clipped to `clip`.
+/// Memory→Screen `vro_cpyfm` replace, clipped to `clip`. The cursor is
+/// hidden for the copy, as in [`bb_save`] (`bb_set`, `gemgsxif.c:367,378`):
+/// the sprite's save-under is released before the screen changes under it
+/// and re-taken from the restored pixels afterwards.
 ///
 /// # Safety
 /// As [`bb_save`]; `mem` must hold [`bb_save_words`]`(w, h)` `u32` words.
@@ -579,7 +592,9 @@ pub unsafe fn bb_restore(
     clip: ClipRect,
 ) {
     let src = Mfdb::device_mem(mem as u64, w, h);
+    super::mouse::hide(backend);
     mem_to_screen(backend, &src, Rect { x: 0, y: 0, w, h }, x, y, OP_REPLACE, clip);
+    super::mouse::show(backend);
 }
 
 /// Truecolor `vr_trnfm` branch — a faithful port of EmuTOS `vr_trnfm16`

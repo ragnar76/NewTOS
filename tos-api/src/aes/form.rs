@@ -286,8 +286,10 @@ fn do_alert(defbut: i16, s: &[u8], modal: bool) -> i16 {
     // double frame (the extent EmuTOS `ob_center` reports for OUTLINED) —
     // so the modal `form_alert` can reinstate the desktop on close without a
     // full repaint (EmuTOS `fm_alert`: `bb_save` before draw, `bb_restore`
-    // after). The draw-only showcase (`!modal`) skips this and leaves the
-    // alert on screen deliberately.
+    // after). The cursor is off the screen for the copy inside `bb_save`
+    // itself (`bb_set`, `gemgsxif.c:367,378`), so the sprite never enters the
+    // saved image. The draw-only showcase (`!modal`) skips this and leaves
+    // the alert on screen deliberately.
     let saver = if modal {
         BbSave::capture(backend, box_x - 3, box_y - 3, box_w + 6, box_h + 6)
     } else {
@@ -330,11 +332,11 @@ fn do_alert(defbut: i16, s: &[u8], modal: bool) -> i16 {
 
     // Restore the screen the alert covered (EmuTOS `bb_restore`): the
     // desktop under the alert reappears from the saved bitmap, no full
-    // redraw required. The buffer is freed when `saver` drops.
+    // redraw required. The buffer is freed when `saver` drops. No cursor
+    // bracket here: `bb_restore` hides the sprite for the copy itself, as
+    // `bb_set` does (`gemgsxif.c:367,378`) — `fm_alert` has none of its own.
     if let Some(s) = saver {
-        crate::vdi::cursor_hide(backend);
         s.restore(backend);
-        crate::vdi::cursor_show(backend);
     }
     chosen
 }
