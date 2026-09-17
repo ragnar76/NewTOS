@@ -138,7 +138,9 @@ what a program observes is the values the `evnt_*` calls report, not the globals
 | `mclick` | `geminput.h:16` | last button click count (`EV_BRET`) | `evnt_multi`/`evnt_button` |
 | `mtrans` | `geminput.h:16` | pending button-transition flag (>1 ⇒ use the `pr_*` snapshot) | `ev_rets` |
 | `pr_xrat`/`pr_yrat`/`pr_button`/`pr_mclick` | `geminput.h:17` | transition-time snapshot of the above | `ev_rets`, `evnt_multi` |
-| `gl_mowner` | `geminput.h:19` | the AES process that currently owns the mouse | `evnt_multi` (button/rect quick-checks gated on `rlr == gl_mowner`) |
+| `gl_mowner` | `geminput.h:19` | the AES process that currently owns the mouse | `evnt_multi` (button/rect quick-checks gated on `rlr == gl_mowner`); target of `post_button`/`post_mouse` (`geminput.c:446-483`) |
+| `ctl_pd` | `geminput.c:53` | fixed internal `AESPD` for the "SCRENMGR" control-manager process (runs `ctlmgr()`, created at `geminit.c:888`; also `gl_mowner`'s initial value) | `chkown`, `mchange` (bar-entry handoff), `bchange` (reassignment target check) |
+| `gl_ctmown` | `gemctrl.c:50` | TRUE while the control manager holds an *extra* mouse lock over `gl_mowner` for the duration of a menu-bar tracking loop (`ct_mouse(TRUE)`/`ct_mouse(FALSE)` in `mn_do`, `gemmnlib.c:277,513`; the same primitive is also used by `form_alert`'s own tracking, `gemfmalt.c:379,386`, out of scope here) | `bchange` (suppresses its `gl_mowner` reassignment, `geminput.c:334`); `ct_chgown` (suppresses `set_mown`, `gemctrl.c:395-396`); set/cleared by `ct_mouse` (`gemctrl.c:400-417`) |
 | `gl_ticktime` | `gemevlib.c:36` | ms per system tick (`gsx_tick`, `geminit.c:704`) | `ev_timer`, `ev_dclick` (ms→ticks) |
 | `gl_dcindex` | `gemevlib.c:34` | current double-click **speed index** 0..4 (returned by `evnt_dclick`) | `ev_dclick` |
 | `gl_dclick` | `gemevlib.c:35` | click-window in **ticks** (`gl_dcrates[idx]/gl_ticktime`) | `b_click` (multi-click timing) |
@@ -155,7 +157,14 @@ what a program observes is the values the `evnt_*` calls report, not the globals
   button/shift state, click count, and the double-click speed index and its ms
   semantics — are contract; the `xrat`/`mtrans`/`pr_*`/`gl_mowner` mirrors and
   the `b_click` timing machinery are EmuTOS internals NewTOS reimplements over
-  its own USB-HID/IKBD input path and system tick.
+  its own USB-HID/IKBD input path and system tick. One *effect* of the
+  `gl_mowner`/`gl_ctmown`/`ctl_pd` bookkeeping is contract, though: while the
+  control manager holds `gl_ctmown` for a menu-bar track (see
+  [`menu.md`](./menu.md) "The drop-down tracking loop"), the mouse-down that
+  produces the eventual `MN_SELECTED`/`AC_OPEN` message, and its matching
+  mouse-up, are never separately delivered to any application as `MU_BUTTON` —
+  only the single resulting message is. The registers that produce this
+  (`gl_ctmown`/`ctl_pd`) are reference; the non-delivery of that click is not.
 
 ---
 

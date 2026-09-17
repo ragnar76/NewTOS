@@ -29,7 +29,13 @@
 > sibling chain rooted at `THESCREEN`'s `ob_tail` child, *N* = the title's
 > ordinal position (D-085) — because this defines how every real menu-bar
 > resource is laid out and must be interpreted, even though `menu_sub`'s own
-> C loop is reimplementable. **Reference (NewTOS reimplements freely):**
+> C loop is reimplementable; **the mouse-ownership guarantee over a bar
+> track** — the mouse-down that selects an item, and its later mouse-up, are
+> never delivered to the application as `MU_BUTTON` (see "The drop-down
+> tracking loop" below) — because an application's `evnt_multi` loop is
+> written against that guarantee, even though the `gl_mowner`/`gl_ctmown`
+> ownership bookkeeping that produces it is reimplementable.
+> **Reference (NewTOS reimplements freely):**
 > `do_chg`'s exact signature, `menu_down`/`menu_sr`, the `mn_do`
 > mouse-tracking state machine, `bb_save`/`bb_restore`/`popup_blit` raster
 > save-restore, the `gl_mntree`/`gl_mnppd`/`desk_ppd[]`/`D.g_acctitle[]`/
@@ -587,6 +593,96 @@ object manager (hit-testing, `objc_draw`/`objc_change`) and the VDI raster
 save/restore. What is **contract** is the *result*: the correct `(title, item)`
 object indices delivered in the `MN_SELECTED` message, the title left highlighted
 until `menu_tnormal`, and the screen restored under a closed drop-down.
+
+### Mouse ownership over the track (contract: no `MU_BUTTON` leaks to the app)
+
+The tracking loop above does not just hit-test the mouse — for its whole
+duration it also **holds exclusive ownership of the mouse/button event
+stream**, away from the application whose menu bar it is servicing. This is
+not incidental: it is why the click that selects an item is never separately
+delivered to the application as `MU_BUTTON`, only as the one `MN_SELECTED`
+message.
+
+1. **Entering the bar hands the mouse to the control manager.** While no
+   button is down, `mchange` gives the mouse to `ctl_pd` — the fixed internal
+   `AESPD` that runs `ctlmgr()` (`geminit.c:888`, `iprocess("SCRENMGR",
+   ctlmgr)`) — the instant the cursor enters the bar's wait rectangle and a
+   menu is installed: `if ((gl_mowner != ctl_pd) && (button == 0) &&
+   gl_mntree && in_mrect(&gl_ctwait)) gl_mowner = ctl_pd;`
+   (`aes/geminput.c:388-389`, inside `mchange`, `:360-391`). This happens
+   *before* `ctlmgr`'s own `MU_M1` wait (over `gl_ctwait`) even wakes it into
+   `hctl_rect`.
+2. **`mn_do` adds a second, stronger lock for the whole track.** On entry it
+   calls `ct_mouse(TRUE)` (`aes/gemmnlib.c:277`), which sets `gl_ctmown =
+   TRUE` (`aes/gemctrl.c:400-409`, `ct_mouse`). This is a *different* flag
+   from `gl_mowner` — it exists purely to freeze `gl_mowner` at `ctl_pd` for
+   the duration: `bchange`'s ownership reassignment is wrapped in
+   `if (!gl_ctmown && (new == MB_DOWN) && (button == 0)) gl_mowner =
+   chkown();` (`aes/geminput.c:334-335`, inside `bchange`, `:328-345`) — while
+   `gl_ctmown` is set, a fresh button-down does **not** hand the mouse
+   anywhere else, no matter where on screen it lands. `mn_do` releases the
+   lock only at the very end, via `ct_mouse(FALSE)` (`gemmnlib.c:513`), which
+   clears `gl_ctmown` (`gemctrl.c:410-417`).
+3. **Selection fires on a press or a release, depending on how the button
+   already stands when the cursor arrives on the item.** Entering
+   `INITEM_STATE`, `mn_do` computes its wait predicate from the *live* button
+   state: `buparm = (button & 0x0001) ? 0x00010100L : 0x00010101L;`
+   (`aes/gemmnlib.c:314`, `CONF_WITH_MENU_EXTENSION` build; the non-extension
+   variant mirrors this at `gemmnlib.c:568`). If the button is **up** when the
+   item is entered, `mn_do` waits for a **press** to select it; if the button
+   is **already down** (the user dragged onto the item with the button held),
+   it waits for the **release** instead. Either way, the matching
+   `MU_BUTTON` breaks the state loop (`gemmnlib.c:369-376`: `if (menu_state
+   != INTITLE_STATE) break;`) and the cleanup path (`:482-513`) restores the
+   drop-down (`menu_sr`), returns `(title, item)`, and calls `ct_mouse(FALSE)`.
+4. **`hctl_rect` turns the pair into the message and waits out the button.**
+   `ct_msgup(MN_SELECTED, gl_mnppd, title, item, treehi, treelo, parent)`
+   (`aes/gemctrl.c:352-368`) posts the 16-byte message straight into the
+   owning application's pipe via `ap_sendmsg` (`aes/gemctrl.c:81-84`), then
+   busy-waits `while (button & 0x0001) dsptch();` (`gemctrl.c:100-101`) so
+   `ctlmgr` does not loop again — and in particular does not run
+   `w_setactive`/`set_mown` — until the button has physically come back up.
+   `set_mown` itself is a no-op while a button is held (`if (!button) { … }`,
+   `aes/geminput.c:222-235`), so ownership cannot move to the application
+   mid-click even if something else tried.
+
+**Net effect and the contract it produces.** For the whole bracket from step 1
+to the end of step 4, the only process `gl_mowner` ever names is `ctl_pd`, and
+`post_button` delivers to **exactly one** recipient — whichever process
+`gl_mowner` currently names (`aes/geminput.c:463-483`). An application parked
+in `evnt_multi` has its own pending button-wait sitting on **its own**
+`p_cda->c_bsleep` list (armed by `abutton` via `iasync(MU_BUTTON, …)`,
+`aes/geminput.c:545-565`, `aes/gemasync.c:154-156`) — a list `post_button(ctl_pd,
+…)` never visits. The application is woken only by the `MN_SELECTED` message
+itself (`MU_MESAG`); `ev_multi`'s `acancel` then discards the still-unsatisfied
+button wait (`aes/gemevlib.c:264`; `acancel` itself: `aes/gemasync.c:217-243`).
+So:
+
+> **The press that selects the item, and its later release, never reach the
+> application as `MU_BUTTON`; it receives exactly one `MN_SELECTED`.** This
+> holds for the ordinary click regardless of whether the item was entered
+> with the button up (select-on-press) or already down (select-on-release,
+> point 3 above).
+
+**The one documented exception — a level test, not an event, and not gated by
+ownership.** `abutton`'s arming check is unconditional: `if (downorup(button,
+p)) azombie(e, 1);` (`aes/geminput.c:549-551`) tests the *live* `button`
+global with no `gl_mowner`/`gl_ctmown` check at all. If the application only
+(re-)calls `evnt_multi` — and so only (re-)arms this wait — *after* the
+selecting transition but *while the button is still physically in the state
+it is waiting for* (the long-press case: the user has not yet released by the
+time the app processes `MN_SELECTED` and loops back into `evnt_multi`), it
+gets an immediate, ownership-independent `MU_BUTTON` right there. This is
+distinct from — and does not weaken — the guarantee above: it can only ever
+fire for a button level the app *itself* observes after the fact, never as a
+delivery of the track's own press/release events.
+
+> **Quick-check vs. blocking arm.** [`event.md`](./event.md)'s `evnt_multi`
+> step 3 quick-check is gated on `rlr == gl_mowner`
+> (`aes/gemevlib.c:184-213`); that gate applies **only** to the quick,
+> non-blocking check. The blocking arm described here (`abutton`) has no such
+> gate — it is a separate, ownership-blind code path, which is exactly why
+> the exception above exists independently of who owns the mouse.
 
 ---
 

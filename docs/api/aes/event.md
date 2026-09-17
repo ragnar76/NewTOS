@@ -171,6 +171,26 @@ and the delivered `msg[0] == AC_CLOSE` it also sets `AP_ACCLOSE`.
    current (or, if a transition is pending, the transition-time `pr_button`)
    state, and reports the click count in `EV_BRET` (`prets[5]`); `MU_M1`/`MU_M2`
    use `in_mrect` (`:184-213`).
+
+   > **This gate is quick-check-only, and `gl_mowner` itself is frozen during
+   > a control-manager track.** `rlr == gl_mowner` above decides only whether
+   > this *non-blocking* check runs at all — it says nothing about the later
+   > blocking arm (see the note after point 6). Separately, ownership does not
+   > move by mouse-down while the control manager is tracking the menu bar:
+   > `bchange`'s reassignment of `gl_mowner` is wrapped in `if (!gl_ctmown &&
+   > (new == MB_DOWN) && (button == 0)) gl_mowner = chkown();`
+   > (`aes/geminput.c:334-335`), and `gl_ctmown` is set for the whole of
+   > `mn_do`'s tracking loop (`ct_mouse(TRUE)`/`ct_mouse(FALSE)`,
+   > `aes/gemmnlib.c:277,513`; `aes/gemctrl.c:400-417`). A fresh button-down
+   > landing anywhere on screen during that bracket does **not** hand the
+   > mouse to the process under the cursor — it stays with `ctl_pd`. Likewise
+   > `set_mown` (called from `w_setactive`'s `ct_chgown`, `aes/gemctrl.c:392-397`
+   > at the head of the control-manager loop, `aes/gemctrl.c:441-442`) is a
+   > no-op while a button is physically held (`if (!button) { … }`,
+   > `aes/geminput.c:222-235`), so ownership cannot pass to an application
+   > mid-click either. See [`menu.md`](./menu.md) "The drop-down tracking
+   > loop" for the resulting **contract**: the click that selects a bar item
+   > is never delivered to the application as `MU_BUTTON`.
 4. **Quick-check timer:** if `tmcount == 0` the timer is already "expired" →
    `MU_TIMER` fires immediately (**a 0-ms timer is a poll**, `:216-220`).
 5. **Quick-check message:** if the caller's pipe is non-empty (`p_qindex > 0`)
@@ -179,6 +199,24 @@ and the delivered `msg[0] == AC_CLOSE` it also sets `AP_ACCLOSE`.
 6. **If nothing fired yet**, arm an async wait (`iasync`) for each requested
    event and block on `mwait(flags)` until one signals, then `acancel`s the
    others (`:231-265`).
+
+   > **The blocking `MU_BUTTON` arm is not gated on ownership at all.**
+   > `iasync(MU_BUTTON, buparm)` (`:238-239`) calls `abutton`
+   > (`aes/gemasync.c:154-156` → `aes/geminput.c:545-565`), whose entry check
+   > is an unconditional level test of the live `button` global: `if
+   > (downorup(button, p)) azombie(e, 1);` (`geminput.c:549-551`) — no
+   > `rlr == gl_mowner` test, unlike the quick-check in point 3. So a caller
+   > that (re-)arms this wait while `button` already matches its `buparm`
+   > gets an immediate `MU_BUTTON`, **regardless of who owns the mouse** —
+   > including during a control-manager track where `gl_mowner == ctl_pd`
+   > (see the note after point 3, and [`menu.md`](./menu.md) "The drop-down
+   > tracking loop" for the one documented case this produces: a long press
+   > held across the app's next `evnt_multi` call). If instead the level does
+   > *not* match, the wait truly sleeps on the caller's own
+   > `p_cda->c_bsleep` list, and is satisfied only by `post_button(gl_mowner,
+   > …)` (`geminput.c:463-483`) — i.e. only while the caller *is*
+   > `gl_mowner` — or discarded unsatisfied by `acancel` when some other
+   > requested event fires first.
 7. **Fill the return block** with `ev_rets` (mouse x/y/button + shift state,
    `:42-58,268`), then, if the wait actually blocked, collect each fired
    event's result via `apret` — `EV_KRET` for `MU_KEYBD`, `EV_BRET` for
