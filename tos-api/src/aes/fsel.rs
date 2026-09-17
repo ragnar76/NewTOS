@@ -7,10 +7,17 @@
 //! ROM (`erd.c`) — so the selector always works on a bare card; a
 //! `C:\GEMSYS\RSC\GEM.RSC` on the drive overrides it when present, so the
 //! resource can be replaced without a kernel rebuild. We point its directory /
-//! selection / file-name
-//! `TEDINFO`s at our own buffers, fill the visible slots from a directory
-//! read ([`bdos::fs::list_dir`], `Fsfirst`/`Fsnext`-style), draw it, and
-//! run a modal loop: a click selects a file, `OK`/`Cancel` exit.
+//! selection / file-name `TEDINFO`s' `te_ptext` at our own buffers — and
+//! nothing else about them: they stay `G_FTEXT`/`G_FBOXTEXT` and keep the
+//! resource's template, validation string and length, so our buffers hold the
+//! **raw** form those templates merge (`fmt_str`, EmuTOS
+//! `util/optimize.c:43`). We fill the visible slots from a directory read
+//! ([`bdos::fs::list_dir`], `Fsfirst`/`Fsnext`-style), draw it, and run a
+//! modal loop: a click selects a file, `OK`/`Cancel` exit.
+//!
+//! The dialog's 3D look is [`fs_start`], EmuTOS's own one-shot start-up pass
+//! (`aes/gemfslib.c:59-152`): it tags the 3D flags **and** makes room for the
+//! bevels by moving/resizing every object it touches.
 //!
 //! **Implemented:** directory list + scroll bar/arrows + drive grid +
 //! click-to-select + double-click confirm + OK/Cancel + write-back, plus
@@ -26,6 +33,7 @@
 
 use super::form::{fm_dial, gl_rcenter, FMD_FINISH, FMD_START};
 use super::object::{self, Object, ObjTree, TedInfo};
+use super::window::GL_HBOX;
 use super::{resource, Aespb};
 use crate::host::host;
 use crate::vdi::backend::RasterBackend;
@@ -33,12 +41,18 @@ use core::cell::UnsafeCell;
 
 // FSELECTR object indices (EmuTOS gem.rsc, verified against the converted
 // resource).
+const ROOT: i16 = 0; // the dialog's root G_BOX (EmuTOS `ROOT`, obdefs.h)
 const FSTITLE: i16 = 1; // dialog title caption (G_STRING); default "ITEM SELECTOR"
 const FSDIRECT: i16 = 3;
+const FSDRVTXT: i16 = 4; // "Drive:" caption (G_STRING) above the drive grid
 const FSSELECT: i16 = 5;
+const FSDRIVES: i16 = 6; // IBOX holding the 26 drive-letter gadgets
 const FS1STDRV: i16 = 7; // first drive-letter gadget (A); A..Z = 7..32
 const FSLSTDRV: i16 = 32; // last drive-letter gadget (Z)
+const FILEAREA: i16 = 33; // IBOX holding closer + title + scroll bar + list
 const FCLSBOX: i16 = 34; // close-box gadget = up-one-level (EmuTOS fs_back)
+const FTITLE: i16 = 35; // file-box caption (shows the current mask)
+const SCRLBAR: i16 = 36; // G_BOX holding the arrows + slider
 const FUPAROW: i16 = 37;
 const FDNAROW: i16 = 38;
 const FSVSLID: i16 = 39; // slider track
@@ -48,6 +62,9 @@ const F1NAME: i16 = 42;
 const NM_NAMES: usize = 9; // F1NAME..F9NAME
 const FSOK: i16 = 51;
 const FSCANCEL: i16 = 52;
+/// Number of drive-letter rows per column in the FSELECTR grid — EmuTOS
+/// `DRIVE_ROWS` (`gemfslib.c:40`): 3 columns of 9 cover the 26 drives.
+const DRIVE_ROWS: i16 = 9;
 /// Free-string index of the default file-selector title in GEM.RSC (EmuTOS
 /// `rs_str(ITEMSLCT)`, `gemfslib.c:692`). Verified against `aes/gem.rsc`:
 /// free-string 14 = "ITEM SELECTOR".
@@ -59,7 +76,16 @@ const FL3DIND: u16 = 0x0200; // indicator (drive letters)
 const FL3DBAK: u16 = 0x0400; // background panel (text fields)
 const FL3DACT: u16 = 0x0600; // activator (buttons / arrows)
 const MAX_DEPTH: i16 = 16;
-const BLACK_TEXT: i16 = 1 << 8; // te_color giving black ink (bits 8..11)
+/// Standard pixel adjustment for a 3D object — EmuTOS `ADJ3DSTD`
+/// (`include/obdefs.h:136`). A 3D object is *drawn* two pixels larger on
+/// every side than it measures (`just_draw`, `gemoblib.c:504-509`), so the
+/// resource geometry has to make room for the bevel: that is the whole job
+/// of [`fs_start`]'s adjustment pass. Same constant, same value, as
+/// `aes/menu.rs` and `aes/window.rs` already carry for their own layouts.
+const ADJ3DSTD: i16 = 2;
+/// The 50 % dither — EmuTOS `IP_4PATT` (`include/obdefs.h:36`), the inside
+/// pattern TOS4 gives the file box's title bar and slider track.
+const IP_4PATT: u64 = 4;
 
 const GEM_CAP: usize = 8 * 1024;
 
@@ -149,7 +175,7 @@ fn relocate_and_cache(buf: &mut [u8; GEM_CAP], len: usize) -> *mut Object {
     // absolute pointers in place.
     if unsafe { resource::relocate_blob(buf.as_mut_ptr(), len) } {
         let root = unsafe { resource::tree_root(buf.as_mut_ptr(), 0) };
-        set_3d_flags(root);
+        fs_start(root);
         // SAFETY: single-CPU AES.
         unsafe { *SYS.root.get() = root };
         return root;
@@ -192,20 +218,139 @@ fn load_fselectr() -> *mut Object {
     relocate_and_cache(buf, GEM_FSEL_RSC.len())
 }
 
-/// Tag the file-selector objects with their 3D flags (EmuTOS `fs_start`):
-/// buttons + arrows raised, text fields + drive letters recessed.
-fn set_3d_flags(tree: *mut Object) {
-    // SAFETY: valid FSELECTR tree.
+/// Initialise the file selector — EmuTOS `fs_start` (`aes/gemfslib.c:59-172`),
+/// the `CONF_WITH_3D_OBJECTS` branch.
+///
+/// The FSELECTR resource ships **flat**: it carries no 3D flags and its
+/// coordinates leave no room for a bevel. `fs_start` is the one-shot pass that
+/// turns it into the 3D dialog — it tags each object with its 3D kind *and*
+/// moves/resizes it, because `just_draw` renders a 3D object two pixels larger
+/// on every side than it measures (`gemoblib.c:504-509`). Flags without the
+/// geometry give exactly the half-3D look A64 reports: bevels sitting on the
+/// flat coordinates, overlapping their neighbours instead of the surrounding
+/// boxes growing with them.
+///
+/// **The `#if` is decided, not forgotten.** EmuTOS gates this whole function
+/// on `CONF_WITH_3D_OBJECTS` and has an `#else` branch that instead equalises
+/// the slider widths to `gl_wbox` for the flat look. NewTOS builds the
+/// Falcon030/TOS4 profile, where `CONF_WITH_3D_OBJECTS` is 1 (spec
+/// `docs/api/aes/resource-fileselector.md`, "Build-time switches"), so only
+/// the 3D branch exists here; the flat branch is deliberately not carried.
+///
+/// EmuTOS's closing `ob_center(tree, &gl_rfs)` (`:152`) is **not** here: NewTOS
+/// loads the tree lazily on the first `fsel_input` rather than once at AES
+/// start-up, so the centring runs per call in [`center`], which returns the
+/// `gl_rfs` rectangle `fm_dial` needs.
+///
+/// Runs exactly once per tree: `relocate_and_cache` calls it on the successful
+/// relocation, right before the root is cached, and every later
+/// `load_fselectr` returns that cached root. The adjustments are cumulative,
+/// so a second call would double them.
+fn fs_start(tree: *mut Object) {
+    // SAFETY: `tree` is a relocated FSELECTR root; every index below is one of
+    // its 53 objects (checked against the converted resource).
     unsafe {
-        for b in [FSOK, FSCANCEL, FUPAROW, FDNAROW, FSVELEV] {
-            (*tree.add(b as usize)).ob_flags |= FL3DACT;
+        let ob = |i: i16| &mut *tree.add(i as usize);
+
+        // Objects inside FILEAREA (the IBOX holding the closer, the title, the
+        // scroll bar and the filenames), plus FILEAREA itself (`:66-110`).
+        let o = ob(FCLSBOX);
+        o.ob_flags |= FL3DACT;
+        o.ob_x += ADJ3DSTD;
+        o.ob_y += ADJ3DSTD;
+
+        let o = ob(FTITLE);
+        o.ob_flags |= FL3DBAK;
+        o.ob_x += 2 * ADJ3DSTD - 1;
+        o.ob_height += 2 * ADJ3DSTD;
+        // "use pattern 4, just like TOS4" (`:81-82`): rewrite only the inside
+        // pattern nibble of the TEDINFO colour word.
+        let spec = o.ob_spec;
+        if spec != 0 {
+            let ted = &mut *(spec as *mut TedInfo);
+            ted.te_color = ((ted.te_color as u16 & 0xff8f) | (IP_4PATT as u16) << 4) as i16;
         }
-        for b in [FSDIRECT, FSSELECT] {
-            (*tree.add(b as usize)).ob_flags |= FL3DBAK;
-        }
+
+        let o = ob(FILEBOX);
+        o.ob_y += 3 * ADJ3DSTD - 1;
+        o.ob_width += ADJ3DSTD;
+
+        let o = ob(SCRLBAR);
+        o.ob_x += 2 * ADJ3DSTD - 1;
+        o.ob_y += 3 * ADJ3DSTD - 1;
+
+        let o = ob(FUPAROW);
+        o.ob_flags |= FL3DACT;
+        o.ob_x += ADJ3DSTD;
+        o.ob_y += ADJ3DSTD;
+        o.ob_width -= 2 * ADJ3DSTD;
+
+        let o = ob(FSVSLID);
+        o.ob_y += 3 * ADJ3DSTD;
+        o.ob_height -= 6 * ADJ3DSTD;
+        // The slider track takes pattern 4 as well (`:98`) — here the colour
+        // word is the low half of the box `ob_spec`, so the mask keeps the
+        // thickness byte above it.
+        o.ob_spec = (o.ob_spec & 0xffff_ff8f) | (IP_4PATT << 4);
+
+        // Only x/w for the elevator: y/h are set per list in `fs_format`
+        // (`:99-101`).
+        let o = ob(FSVELEV);
+        o.ob_flags |= FL3DACT;
+        o.ob_x += ADJ3DSTD;
+        o.ob_width -= 2 * ADJ3DSTD;
+
+        let o = ob(FDNAROW);
+        o.ob_flags |= FL3DACT;
+        o.ob_x += ADJ3DSTD;
+        o.ob_y -= ADJ3DSTD;
+        o.ob_width -= 2 * ADJ3DSTD;
+
+        let o = ob(FILEAREA);
+        o.ob_y -= 6; // "squeeze things together vertically" (`:108`)
+        o.ob_width += 2 * ADJ3DSTD - 1;
+        o.ob_height += 3 * ADJ3DSTD - 1;
+
+        // The drive-letter boxes and their IBOX (`:117-131`): each box moves
+        // right by 2*ADJ3DSTD and down by 2*ADJ3DSTD plus a growing per-row
+        // offset, the row counter restarting at the top of every column.
+        let mut row = 0i16;
         for d in FS1STDRV..=FSLSTDRV {
-            (*tree.add(d as usize)).ob_flags |= FL3DIND;
+            if row >= DRIVE_ROWS {
+                row = 0;
+            }
+            let o = ob(d);
+            o.ob_flags |= FL3DIND;
+            o.ob_x += 2 * ADJ3DSTD;
+            o.ob_y += 2 * ADJ3DSTD + row * (3 * ADJ3DSTD - 1);
+            row += 1;
         }
+        let o = ob(FSDRIVES);
+        o.ob_height += 2 * ADJ3DSTD + DRIVE_ROWS * (3 * ADJ3DSTD - 1);
+        o.ob_width += 4 * ADJ3DSTD;
+
+        // The remaining ROOT children, plus ROOT (`:133-150`). FSOK/FSCANCEL
+        // are re-aligned on FILEAREA — left edge and right edge — so they keep
+        // clear of FSDRIVES in low resolutions.
+        ob(FSDIRECT).ob_flags |= FL3DBAK;
+        ob(FSSELECT).ob_flags |= FL3DBAK;
+        ob(FSDRVTXT).ob_flags |= FL3DBAK;
+
+        let (area_x, area_w) = (ob(FILEAREA).ob_x, ob(FILEAREA).ob_width);
+        let o = ob(FSOK);
+        o.ob_flags |= FL3DACT;
+        o.ob_x = area_x;
+        o.ob_y += ADJ3DSTD;
+        let ok_y = o.ob_y;
+
+        let o = ob(FSCANCEL);
+        o.ob_flags |= FL3DACT;
+        o.ob_x = area_x + area_w - o.ob_width;
+        o.ob_y = ok_y;
+
+        let o = ob(ROOT);
+        o.ob_flags |= FL3DBAK;
+        o.ob_height += 2 * ADJ3DSTD;
     }
 }
 
@@ -229,51 +374,127 @@ fn set_drive_states(tree: *mut Object, cur: u8) {
     }
 }
 
-/// Object types (`obdefs.h`).
-const G_TEXT: u16 = 21;
-const G_BOXTEXT: u16 = 22;
-const G_FTEXT: u16 = 29;
+/// Object type (`obdefs.h`): a formatted, boxed text field — what
+/// `fs_format` (re)asserts on every filename slot (EmuTOS `gemfslib.c:380`).
 const G_FBOXTEXT: u16 = 30;
 
-/// An empty (identity) template, so `edit_field`'s `find_pos` is the
-/// identity on the plain fields below.
-static EMPTY_TMPL: [u8; 1] = [0];
-
-/// Point object `idx`'s TEDINFO text at `ptr` (capacity `cap`), black ink,
-/// left-justified, and make the field a **plain** box.
+/// Convert a plain filename into the **raw** form an `FFFFFFFF.FFF` TEDINFO
+/// template expects — EmuTOS `fmt_str` (`util/optimize.c:43-69`): at most 8
+/// characters before the first dot (excess eaten), then, if an extension is
+/// present, blank-fill to 8 and copy at most 3 more. The dot itself is *not*
+/// stored: it is a literal in the template, which `ob_format` supplies.
 ///
-/// The GEM.RSC file-selector fields are `G_FBOXTEXT` with formatted
-/// templates that embed literals and the 8.3 filename slots (e.g.
-/// `Selection: ________.___`). NewTOS stores **plain** names/paths in its
-/// own buffers, not the template-raw form those templates expect, so we
-/// down-convert the repointed fields to `G_BOXTEXT`/`G_TEXT` and clear the
-/// template — `just_draw` then draws the stored string directly (and
-/// `edit_field` keeps an identity caret). Real RSC dialogs, which we do not
-/// repoint, keep full `ob_format` template merging.
+/// `SAMPLE.PRG` → `SAMPLE  PRG`, `TESTPROG.C` → `TESTPROGC`, `TEST` → `TEST`.
+/// `out` must hold 12 bytes (11 + NUL); the result is always NUL-terminated.
+fn fmt_str(instr: &[u8], out: &mut [u8]) {
+    for b in out.iter_mut() {
+        *b = 0;
+    }
+    let n = instr.iter().position(|&b| b == 0).unwrap_or(instr.len());
+    let mut q = 0usize;
+    let mut p = 0usize;
+    // Copy up to 8 bytes before the (first) dot; eat the excess.
+    while p < n {
+        let c = instr[p];
+        p += 1;
+        if c == b'.' {
+            break;
+        }
+        if q < 8 {
+            out[q] = c;
+            q += 1;
+        }
+    }
+    // Any extension present: pad to column 8, then copy up to 3 more bytes.
+    if p < n {
+        while q < 8 {
+            out[q] = b' ';
+            q += 1;
+        }
+        while q < 11 && p < n {
+            out[q] = instr[p];
+            q += 1;
+            p += 1;
+        }
+    }
+    out[q] = 0;
+}
+
+/// The reverse of [`fmt_str`] — EmuTOS `unfmt_str` (`util/optimize.c:77-96`):
+/// the first 8 columns with their blanks squeezed out, then a `.` and the
+/// remainder if any. `SAMPLE  PRG` → `SAMPLE.PRG`.
+fn unfmt_str(instr: &[u8], out: &mut [u8]) {
+    for b in out.iter_mut() {
+        *b = 0;
+    }
+    let n = instr.iter().position(|&b| b == 0).unwrap_or(instr.len());
+    let mut w = 0usize;
+    let mut p = 0usize;
+    while p < n && p < 8 {
+        let c = instr[p];
+        p += 1;
+        if c != b' ' && w + 1 < out.len() {
+            out[w] = c;
+            w += 1;
+        }
+    }
+    if p < n {
+        if w + 1 < out.len() {
+            out[w] = b'.';
+            w += 1;
+        }
+        while p < n && w + 1 < out.len() {
+            out[w] = instr[p];
+            w += 1;
+            p += 1;
+        }
+    }
+    out[w] = 0;
+}
+
+/// Point object `idx`'s TEDINFO text at `ptr` — and change **nothing else**.
+///
+/// The GEM.RSC file-selector fields are `G_FTEXT`/`G_FBOXTEXT`: their visible
+/// content is `ob_format(te_ptext, te_ptmplt)` (`gemoblib.c:718-720`), the raw
+/// string merged into a template that carries the literals — the `Selection:`
+/// caption, the `.` between name and extension, and the underscores that *are*
+/// the field's visible extent. EmuTOS keeps that template and stores the raw
+/// form in `te_ptext` (`fs_input`/`fs_format` via `inf_sset` and `fmt_str`,
+/// `gemfslib.c:685-689,365-376`).
+///
+/// NewTOS keeps its own buffers (it needs a path longer than the field for the
+/// list + mask split), so this repoints `te_ptext` at them — and leaves
+/// `ob_type`, `te_ptmplt`, `te_pvalid`, `te_txtlen`, `te_color` and `te_just`
+/// exactly as the resource has them. The buffers hold the **raw** form
+/// (`fmt_str` for the 8.3 fields), which is what the template expects, so
+/// `just_draw` draws what EmuTOS draws and `edit_field` gets the template and
+/// validation codes it is written against (`find_pos`/`check`).
+///
+/// A63: the earlier version down-converted the fields to `G_BOXTEXT`/`G_TEXT`
+/// and cleared `te_ptmplt`/`te_pvalid`, which is what dropped the underscores,
+/// the `Selection:` caption and the 8.3 column alignment all at once.
+///
+/// `cap` is the caller's buffer size; a field is only repointed when the buffer
+/// can hold the `te_txtlen` the resource declares, because every writer bounds
+/// itself by `te_txtlen` (`ins_char`, EmuTOS `gemobed.c:117`). All three
+/// call sites satisfy this (96/16/16 against 39/12/13), so the guard never
+/// fires — it is here so a future resource change cannot silently turn into an
+/// out-of-bounds write. The `te_txtlen` override that used to stand here was
+/// the A37 work-around: it is no longer needed now that the converted blob
+/// reserves the declared length behind `te_ptext`
+/// (`tests/aes_rsrc_tedinfo_reserve.rs`) — but our buffers, not the blob's, are
+/// what has to be big enough.
 fn set_ted(tree: *mut Object, idx: i16, ptr: *mut u8, cap: usize) {
     // SAFETY: idx is a valid TEDINFO-bearing object in the tree.
     unsafe {
-        let ob = &mut *tree.add(idx as usize);
-        match ob.ob_type {
-            G_FBOXTEXT => ob.ob_type = G_BOXTEXT,
-            G_FTEXT => ob.ob_type = G_TEXT,
-            _ => {}
-        }
-        let spec = ob.ob_spec;
+        let spec = (*tree.add(idx as usize)).ob_spec;
         if spec == 0 {
             return;
         }
         let t = &mut *(spec as *mut TedInfo);
-        t.te_ptext = ptr as u64;
-        t.te_ptmplt = EMPTY_TMPL.as_ptr() as u64;
-        // Clear validation too: NewTOS stores the *plain* name/path, so the
-        // RSC's raw-form `te_pvalid` codes are wrong here (e.g. the filename
-        // set 'F' excludes '.', which a plain "NAME.EXT" needs). An empty
-        // pvalid makes `edit_field` accept any character.
-        t.te_pvalid = EMPTY_TMPL.as_ptr() as u64;
-        t.te_txtlen = cap as i16;
-        t.te_color = BLACK_TEXT;
-        t.te_just = 0;
+        if (t.te_txtlen.max(1) as usize) <= cap {
+            t.te_ptext = ptr as u64;
+        }
     }
 }
 
@@ -296,12 +517,6 @@ fn copy_in(dst: &mut [u8], src: *const u8) {
             i += 1;
         }
     }
-}
-
-fn copy_name(dst: &mut [u8; 16], src: &[u8]) {
-    *dst = [0; 16];
-    let n = src.iter().position(|&b| b == 0).unwrap_or(src.len()).min(15);
-    dst[..n].copy_from_slice(&src[..n]);
 }
 
 fn write_out(dst: *mut u8, src: &[u8]) {
@@ -372,7 +587,16 @@ fn run(pb: &Aespb, label: *const u8) {
                 dir[..6].copy_from_slice(&[drv, b':', b'\\', b'*', b'.', b'*']);
             }
         }
-        copy_in(&mut *SYS.sel.get(), sel_p);
+        // The FSSELECT field is `FFFFFFFF.FFF`-templated, so its buffer holds
+        // the **raw** (dot-less, blank-padded) form — EmuTOS `fs_input`:
+        // `fmt_str(pisel, selname); inf_sset(tree, FSSELECT, selname)`
+        // (gemfslib.c:688-689). The caller's plain name is converted here and
+        // converted back on the way out.
+        {
+            let mut plain = [0u8; 32];
+            copy_in(&mut plain, sel_p);
+            fmt_str(&plain, &mut *SYS.sel.get());
+        }
         set_ted(tree, FSDIRECT, (*SYS.dir.get()).as_mut_ptr(), 96);
         set_ted(tree, FSSELECT, (*SYS.sel.get()).as_mut_ptr(), 16);
         let names = &mut *SYS.names.get();
@@ -381,7 +605,7 @@ fn run(pb: &Aespb, label: *const u8) {
         }
     }
 
-    // Centre *before* listing so refill draws the box at its final spot.
+    // Centre *before* listing so fs_format draws the box at its final spot.
     let cur = unsafe { (*SYS.dir.get())[0] };
     set_drive_states(tree, cur);
     // `gl_rfs` — the rectangle the dialog occupies, from `ob_center`
@@ -407,7 +631,12 @@ fn run(pb: &Aespb, label: *const u8) {
     // SAFETY: single-CPU AES.
     unsafe {
         write_out(path_p, &*SYS.dir.get());
-        write_out(sel_p, &*SYS.sel.get());
+        // "unfmt_str(ad_fname, selname); strcpy(pisel, selname)"
+        // (gemfslib.c:915-916): the caller gets the plain name back, dot
+        // restored, not the template-raw form the field carries.
+        let mut plain = [0u8; 16];
+        unfmt_str(&*SYS.sel.get(), &mut plain);
+        write_out(sel_p, &plain);
     }
     // "start the redraw" — EmuTOS `fm_dial(FMD_FINISH, &gl_rcenter, &gl_rfs)`
     // (gemfslib.c:918-919), after the caller's buffers are filled and before the
@@ -442,7 +671,7 @@ fn relist(tree: *mut Object) {
         *SYS.count.get() = n;
         *SYS.top.get() = 0;
     }
-    refill(tree);
+    fs_format(tree);
 }
 
 /// Sort the first `n` directory entries in place — folders before files,
@@ -491,25 +720,47 @@ fn entry_cmp(na: &[u8; 16], aa: u8, nb: &[u8; 16], ab: u8) -> core::cmp::Orderin
     pa.cmp(&pb).then_with(|| na.cmp(nb))
 }
 
-/// Copy the visible window into the slot buffers, update the slider, and
-/// redraw the file box.
-fn refill(tree: *mut Object) {
+/// Put the currently scrolled window of filenames into the nine slot
+/// TEDINFOs, size and place the elevator, and redraw the file box — EmuTOS
+/// `fs_format` (`aes/gemfslib.c:359-396`).
+///
+/// A63: each slot's string is the **raw** form its `_ ________.___ ` template
+/// expects, not the plain name — the folder/file indicator byte from `fs_add`
+/// (`\007` for a directory, blank for a file, `:254`) followed by `fmt_str` of
+/// the name (`:371-372`). `ob_format` then merges it into the template, which
+/// supplies the `.` and pads the unused slots with underscores; that is what
+/// gives the list its fixed 8.3 columns and turns a slot past the end of the
+/// listing into a row of underscores. A slot past the end gets a single blank
+/// (`:376-377`), i.e. the indicator only.
+///
+/// EmuTOS also (re)asserts `ob_type = G_FBOXTEXT` and `ob_state = NORMAL` on
+/// every slot here (`:380-381`); the state half is what clears a previous
+/// selection.
+fn fs_format(tree: *mut Object) {
     // SAFETY: single-CPU AES.
     unsafe {
         let all = &*SYS.all.get();
+        let attr = &*SYS.all_attr.get();
         let top = *SYS.top.get();
         let count = *SYS.count.get();
         let names = &mut *SYS.names.get();
         for (i, n) in names.iter_mut().enumerate() {
-            *n = if top + i < count { all[top + i] } else { [0; 16] };
+            *n = [0; 16];
+            if top + i < count {
+                let e = top + i;
+                n[0] = if attr[e] & FA_SUBDIR != 0 { 0x07 } else { b' ' };
+                fmt_str(&all[e], &mut n[1..13]);
+            } else {
+                n[0] = b' ';
+            }
         }
-        // Clear slot selection state (no per-slot redraw; the box redraw
-        // below repaints them).
         for i in 0..NM_NAMES as i16 {
-            (*tree.add((F1NAME + i) as usize)).ob_state &= !SELECTED;
+            let o = &mut *tree.add((F1NAME + i) as usize);
+            o.ob_type = G_FBOXTEXT;
+            o.ob_state &= !SELECTED;
         }
     }
-    update_slider(tree);
+    size_elevator(tree);
     if let Some(backend) = host().and_then(|h| h.raster()) {
         // LP64 accessor for the kernel-built FSELECTR tree (see `run`).
         let t = ObjTree::lp64(tree as *const Object);
@@ -518,27 +769,34 @@ fn refill(tree: *mut Object) {
     }
 }
 
-/// Position/size the slider thumb (FSVELEV) for the current scroll state.
-fn update_slider(tree: *mut Object) {
+/// Size and position the slider thumb (FSVELEV) for the current scroll state
+/// — the second half of EmuTOS `fs_format` (`gemfslib.c:383-396`).
+///
+/// The `CONF_WITH_3D_OBJECTS` block at the end (`:388-391`) is the counterpart
+/// of [`fs_start`]'s FSVELEV adjustment: `fs_start` narrows the thumb by the
+/// bevel horizontally, this insets it vertically (`y += ADJ3DSTD`,
+/// `h -= 2*ADJ3DSTD`). Without it a full-track thumb would be drawn two pixels
+/// above and below its track, since a 3D object renders `ADJ3DSTD` larger on
+/// every side. EmuTOS notes the assumption the subtraction rests on: twice the
+/// adjustment is smaller than the `gl_hbox` floor the height is clamped to.
+fn size_elevator(tree: *mut Object) {
     // SAFETY: single-CPU AES; valid tree.
     unsafe {
         let count = *SYS.count.get();
         let track_h = (*tree.add(FSVSLID as usize)).ob_height;
-        let thumb = &mut *tree.add(FSVELEV as usize);
-        if count <= NM_NAMES {
-            thumb.ob_y = 0;
-            thumb.ob_height = track_h;
-        } else {
-            let th = (track_h * NM_NAMES as i16 / count as i16).max(8);
-            let maxtop = (count - NM_NAMES) as i16;
-            let cur = *SYS.top.get() as i16;
-            thumb.ob_y = ((track_h - th) * cur / maxtop).max(0);
-            thumb.ob_height = th;
+        let mut y = 0i16;
+        let mut h = track_h;
+        if count > NM_NAMES {
+            h = (track_h * NM_NAMES as i16 / count as i16).max(GL_HBOX);
+            y = (track_h - h) * *SYS.top.get() as i16 / (count - NM_NAMES) as i16;
         }
+        let thumb = &mut *tree.add(FSVELEV as usize);
+        thumb.ob_y = y + ADJ3DSTD;
+        thumb.ob_height = h - 2 * ADJ3DSTD;
     }
 }
 
-/// Scroll the list by `delta` rows (clamped); refill if it moved.
+/// Scroll the list by `delta` rows (clamped); reformat if it moved.
 fn scroll(tree: *mut Object, delta: i32) {
     // SAFETY: single-CPU AES.
     let moved = unsafe {
@@ -554,7 +812,7 @@ fn scroll(tree: *mut Object, delta: i32) {
         }
     };
     if moved {
-        refill(tree);
+        fs_format(tree);
     }
 }
 
@@ -874,8 +1132,11 @@ fn modal(tree: *mut Object, backend: &dyn RasterBackend) -> i16 {
                         }
                         object::set_state_bit_t(t, hit, SELECTED, true);
                         cur_sel = hit;
+                        // "strcpy(ad_fname, selname + 1)" (gemfslib.c:827):
+                        // the clicked slot's raw string minus its indicator
+                        // byte — i.e. `fmt_str` of the listed name.
                         // SAFETY: single-CPU AES.
-                        unsafe { copy_name(&mut *SYS.sel.get(), &name) };
+                        unsafe { fmt_str(&name, &mut *SYS.sel.get()) };
                         // Re-arm editing on the selection field (caret at end).
                         focus = FSSELECT;
                         idx = object::edit_field_t(t, focus, 0, 0, ED_INIT);
@@ -905,5 +1166,257 @@ fn modal(tree: *mut Object, backend: &dyn RasterBackend) -> i16 {
         }
         prev = cur;
         h.pump_input();
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    //! A63 / A64 — the file selector's start-up pass and its formatted fields.
+    //!
+    //! These live **in-crate** because both subjects are module-private: the
+    //! 3D/geometry pass [`fs_start`] runs once when the resource is relocated
+    //! (`relocate_and_cache`), and [`set_ted`] repoints the TEDINFOs on every
+    //! call. Neither is reachable from `tests/`, and neither needs a raster
+    //! backend — they only rewrite the object tree.
+    //!
+    //! The fixture is the shipped `gem_fsel.nrsc` blob itself, relocated the
+    //! same way `relocate_and_cache` relocates it, so the numbers below are
+    //! measured against the real EmuTOS `FSELECTR` resource.
+
+    use super::*;
+
+    /// The two 3D-kind bits (EmuTOS `FL3DMASK`, `obdefs.h:93`). Production
+    /// code only ever ORs a kind in, so the mask is needed by the assertions
+    /// alone.
+    const FL3DMASK: u16 = 0x0600;
+
+    /// A relocated, writable copy of the embedded `FSELECTR` resource.
+    /// The `Vec<u64>` backing store gives the 8-byte alignment the native
+    /// `Object`/`TedInfo` records are dereferenced at; it must outlive the
+    /// returned pointer, hence the tuple.
+    fn fresh_tree() -> (Vec<u64>, *mut Object) {
+        let mut buf = vec![0u64; GEM_CAP / 8];
+        // SAFETY: `buf` is 8-byte aligned and `GEM_CAP` bytes long.
+        let base = buf.as_mut_ptr() as *mut u8;
+        // SAFETY: the blob fits (`const _` assert in the module).
+        unsafe {
+            core::ptr::copy_nonoverlapping(GEM_FSEL_RSC.as_ptr(), base, GEM_FSEL_RSC.len());
+            assert!(resource::relocate_blob(base, GEM_FSEL_RSC.len()));
+            let root = resource::tree_root(base, 0);
+            (buf, root)
+        }
+    }
+
+    /// `(ob_x, ob_y, ob_width, ob_height)` of `idx`.
+    fn xywh(tree: *mut Object, idx: i16) -> (i16, i16, i16, i16) {
+        // SAFETY: `idx` is a valid FSELECTR object.
+        unsafe {
+            let o = &*tree.add(idx as usize);
+            (o.ob_x, o.ob_y, o.ob_width, o.ob_height)
+        }
+    }
+
+    fn flags(tree: *mut Object, idx: i16) -> u16 {
+        // SAFETY: `idx` is a valid FSELECTR object.
+        unsafe { (*tree.add(idx as usize)).ob_flags }
+    }
+
+    fn ted(tree: *mut Object, idx: i16) -> &'static mut TedInfo {
+        // SAFETY: `idx` is a TEDINFO-bearing FSELECTR object of a live tree.
+        unsafe { &mut *((*tree.add(idx as usize)).ob_spec as *mut TedInfo) }
+    }
+
+    fn cstr(p: u64) -> Vec<u8> {
+        let mut v = Vec::new();
+        if p == 0 {
+            return v;
+        }
+        // SAFETY: the resource strings are NUL-terminated inside the blob.
+        unsafe {
+            let mut i = 0;
+            while *(p as *const u8).add(i) != 0 {
+                v.push(*(p as *const u8).add(i));
+                i += 1;
+            }
+        }
+        v
+    }
+
+    // ─── A64: the 3D start-up pass ──────────────────────────────────────
+
+    /// EmuTOS `fs_start` (`aes/gemfslib.c:60-152`) does not only tag flags —
+    /// it moves and resizes every object the bevel touches. These are the
+    /// thirteen adjustments, each against the value the resource ships.
+    #[test]
+    fn fs_start_applies_every_geometry_adjustment_of_the_3d_pass() {
+        let (_buf, tree) = fresh_tree();
+        fs_start(tree);
+
+        // `:72-73` FCLSBOX x/y += ADJ3DSTD (resource 0,0,16,16)
+        assert_eq!(xywh(tree, FCLSBOX), (2, 2, 16, 16), "FCLSBOX");
+        // `:79-80` FTITLE x += 2*ADJ3DSTD-1, height += 2*ADJ3DSTD (16,0,160,16)
+        assert_eq!(xywh(tree, FTITLE), (19, 0, 160, 20), "FTITLE");
+        // `:83-84` FILEBOX y += 3*ADJ3DSTD-1, width += ADJ3DSTD (0,16,152,176)
+        assert_eq!(xywh(tree, FILEBOX), (0, 21, 154, 176), "FILEBOX");
+        // `:86-87` SCRLBAR x += 2*ADJ3DSTD-1, y += 3*ADJ3DSTD-1 (152,16,24,176)
+        assert_eq!(xywh(tree, SCRLBAR), (155, 21, 24, 176), "SCRLBAR");
+        // `:90-92` FUPAROW x/y += ADJ3DSTD, width -= 2*ADJ3DSTD (0,0,24,16)
+        assert_eq!(xywh(tree, FUPAROW), (2, 2, 20, 16), "FUPAROW");
+        // `:94-95` FSVSLID y += 3*ADJ3DSTD, height -= 6*ADJ3DSTD (0,16,24,144)
+        assert_eq!(xywh(tree, FSVSLID), (0, 22, 24, 132), "FSVSLID");
+        // `:99-101` FSVELEV x += ADJ3DSTD, width -= 2*ADJ3DSTD; y/h stay
+        // dynamic (`fs_format`) — resource (0,0,24,16)
+        assert_eq!(xywh(tree, FSVELEV), (2, 0, 20, 16), "FSVELEV");
+        // `:103-106` FDNAROW x += ADJ3DSTD, y -= ADJ3DSTD, w -= 2*ADJ3DSTD
+        assert_eq!(xywh(tree, FDNAROW), (2, 158, 20, 16), "FDNAROW");
+        // `:108-110` FILEAREA y -= 6, width += 2*ADJ3DSTD-1, h += 3*ADJ3DSTD-1
+        assert_eq!(xywh(tree, FILEAREA), (24, 106, 179, 197), "FILEAREA");
+        // `:122-128` every drive box: x += 2*ADJ3DSTD, y += 2*ADJ3DSTD +
+        // row*(3*ADJ3DSTD-1), row cycling 0..DRIVE_ROWS (9) down each column.
+        assert_eq!(xywh(tree, FS1STDRV), (4, 4, 24, 16), "drive A");
+        assert_eq!(xywh(tree, FS1STDRV + 1), (4, 25, 24, 16), "drive B");
+        assert_eq!(xywh(tree, FS1STDRV + 8), (4, 172, 24, 16), "drive I");
+        assert_eq!(xywh(tree, FS1STDRV + 9), (36, 4, 24, 16), "drive J (row wraps)");
+        // Z is the 26th gadget: column 2, row 7 (resource y 112) — 112 + 4 + 7*5.
+        assert_eq!(xywh(tree, FSLSTDRV), (68, 151, 24, 16), "drive Z");
+        // `:130-131` FSDRIVES height += 2*ADJ3DSTD + DRIVE_ROWS*(3*ADJ3DSTD-1),
+        // width += 4*ADJ3DSTD (resource 216,96,88,144)
+        assert_eq!(xywh(tree, FSDRIVES), (216, 96, 96, 193), "FSDRIVES");
+        // `:139-147` FSOK.x = FILEAREA.x, y += ADJ3DSTD; FSCANCEL right-aligned
+        // on FILEAREA, same y (resource 56,320,72,16 / 184,320,72,16)
+        assert_eq!(xywh(tree, FSOK), (24, 322, 72, 16), "FSOK");
+        assert_eq!(xywh(tree, FSCANCEL), (131, 322, 72, 16), "FSCANCEL");
+        // `:150` ROOT height += 2*ADJ3DSTD (resource 0,0,320,352)
+        assert_eq!(xywh(tree, ROOT), (0, 0, 320, 356), "ROOT");
+    }
+
+    /// The four 3D flags the old `set_3d_flags` never set (`:72`, `:78`,
+    /// `:138`, `:149`), plus the ten it did.
+    #[test]
+    fn fs_start_sets_every_3d_flag_emutos_sets() {
+        let (_buf, tree) = fresh_tree();
+        fs_start(tree);
+
+        for b in [FSOK, FSCANCEL, FUPAROW, FDNAROW, FSVELEV, FCLSBOX] {
+            assert_eq!(flags(tree, b) & FL3DACT, FL3DACT, "FL3DACT on {b}");
+        }
+        for b in [FSDIRECT, FSSELECT, FSDRVTXT, FTITLE, ROOT] {
+            assert_eq!(flags(tree, b) & FL3DMASK, FL3DBAK, "FL3DBAK on {b}");
+        }
+        for d in FS1STDRV..=FSLSTDRV {
+            assert_eq!(flags(tree, d) & FL3DMASK, FL3DIND, "FL3DIND on {d}");
+        }
+    }
+
+    /// `:81` and `:98` — "use pattern 4, just like TOS4": the FTITLE TEDINFO
+    /// colour word and the FSVSLID box `ob_spec` both get `IP_4PATT` in their
+    /// pattern nibble, leaving every other field alone.
+    #[test]
+    fn fs_start_switches_ftitle_and_fsvslid_to_the_50_percent_pattern() {
+        let (_buf, tree) = fresh_tree();
+        let before_color = ted(tree, FTITLE).te_color as u16;
+        // SAFETY: FSVSLID is a valid G_BOX of the live tree.
+        let before_spec = unsafe { (*tree.add(FSVSLID as usize)).ob_spec };
+        assert_eq!(before_color, 0x11A1, "resource FTITLE te_color");
+        assert_eq!(before_spec, 0x00FF_1111, "resource FSVSLID ob_spec");
+
+        fs_start(tree);
+
+        assert_eq!(ted(tree, FTITLE).te_color as u16, 0x11C1, "FTITLE te_color");
+        // SAFETY: as above.
+        assert_eq!(unsafe { (*tree.add(FSVSLID as usize)).ob_spec }, 0x00FF_1141, "FSVSLID ob_spec");
+    }
+
+    // ─── A63: the formatted fields ──────────────────────────────────────
+
+    /// The repointed fields must stay `G_FTEXT`/`G_FBOXTEXT` and keep the
+    /// resource's template, validation string and text length — only
+    /// `te_ptext` moves to our buffer. Down-converting them to
+    /// `G_BOXTEXT`/`G_TEXT` and clearing `te_ptmplt` is what lost the
+    /// underscores, the `Selection:` caption and the 8.3 columns.
+    #[test]
+    fn set_ted_keeps_the_formatted_type_template_and_length() {
+        let (_buf, tree) = fresh_tree();
+        fs_start(tree);
+        let mut dir = [0u8; 96];
+        let mut sel = [0u8; 16];
+        let mut name = [0u8; 16];
+        set_ted(tree, FSDIRECT, dir.as_mut_ptr(), dir.len());
+        set_ted(tree, FSSELECT, sel.as_mut_ptr(), sel.len());
+        set_ted(tree, F1NAME, name.as_mut_ptr(), name.len());
+
+        // SAFETY: valid tree.
+        unsafe {
+            assert_eq!((*tree.add(FSDIRECT as usize)).ob_type, G_FBOXTEXT, "FSDIRECT type");
+            assert_eq!((*tree.add(FSSELECT as usize)).ob_type, G_FBOXTEXT, "FSSELECT type");
+            assert_eq!((*tree.add(F1NAME as usize)).ob_type, G_FBOXTEXT, "F1NAME type");
+        }
+        assert_eq!(cstr(ted(tree, FSDIRECT).te_ptmplt), b"_".repeat(38), "FSDIRECT template");
+        assert_eq!(cstr(ted(tree, FSSELECT).te_ptmplt), b"Selection: ________.___", "FSSELECT template");
+        assert_eq!(cstr(ted(tree, F1NAME).te_ptmplt), b"_ ________.___ ", "F1NAME template");
+        assert_eq!(cstr(ted(tree, FSDIRECT).te_pvalid), b"P".repeat(38), "FSDIRECT pvalid");
+        assert_eq!(cstr(ted(tree, FSSELECT).te_pvalid), b"F".repeat(11), "FSSELECT pvalid");
+        assert_eq!(ted(tree, FSDIRECT).te_txtlen, 39, "FSDIRECT te_txtlen");
+        assert_eq!(ted(tree, FSSELECT).te_txtlen, 12, "FSSELECT te_txtlen");
+        assert_eq!(ted(tree, F1NAME).te_txtlen, 13, "F1NAME te_txtlen");
+        assert_eq!(ted(tree, FSDIRECT).te_ptext, dir.as_ptr() as u64, "FSDIRECT te_ptext");
+    }
+
+    /// EmuTOS `fmt_str`/`unfmt_str` (`util/optimize.c:43,77`): the raw form
+    /// of a filename for an `FFFFFFFF.FFF` template is dot-less and
+    /// space-padded to 8 characters.
+    #[test]
+    fn fmt_str_and_unfmt_str_convert_between_plain_and_raw_8_3() {
+        let cases: &[(&[u8], &[u8])] = &[
+            (b"SAMPLE.PRG", b"SAMPLE  PRG"),
+            (b"TESTPROG.C", b"TESTPROGC"),
+            (b"TEST", b"TEST"),
+            (b"TESTWINDOW.C", b"TESTWINDC"),
+            (b"TEST.A.B.C", b"TEST    A.B"),
+            (b"TESTTESTTEST", b"TESTTEST"),
+        ];
+        for (plain, raw) in cases {
+            let mut out = [0u8; 16];
+            fmt_str(plain, &mut out);
+            assert_eq!(&out[..raw.len()], *raw, "fmt_str({:?})", core::str::from_utf8(plain));
+            assert_eq!(out[raw.len()], 0, "fmt_str NUL");
+        }
+        // unfmt_str is the reverse of the 8.3 cases (EmuTOS's own example).
+        let mut back = [0u8; 16];
+        unfmt_str(b"SAMPLE  PRG", &mut back);
+        assert_eq!(&back[..10], b"SAMPLE.PRG");
+        unfmt_str(b"TEST", &mut back);
+        assert_eq!(&back[..4], b"TEST");
+    }
+
+    /// EmuTOS `fs_format` (`aes/gemfslib.c:365-376`): each visible slot's raw
+    /// string is the folder/file indicator byte followed by the `fmt_str`
+    /// name; a slot past the end of the list is a single blank, so
+    /// `ob_format` fills the whole template with underscores.
+    #[test]
+    fn fs_format_fills_the_slots_with_the_indicator_and_the_raw_name() {
+        let (_buf, tree) = fresh_tree();
+        fs_start(tree);
+        // SAFETY: single-CPU AES; the test owns the statics for its duration.
+        unsafe {
+            let all = &mut *SYS.all.get();
+            let attr = &mut *SYS.all_attr.get();
+            all[0] = [0; 16];
+            all[0][..10].copy_from_slice(b"CONFIG.TXT");
+            attr[0] = 0;
+            all[1] = [0; 16];
+            all[1][..5].copy_from_slice(b"APPS\0");
+            attr[1] = FA_SUBDIR;
+            *SYS.count.get() = 2;
+            *SYS.top.get() = 0;
+        }
+        fs_format(tree);
+        // SAFETY: as above.
+        let names = unsafe { &*SYS.names.get() };
+        assert_eq!(&names[0][..12], b" CONFIG  TXT", "file slot");
+        assert_eq!(names[0][12], 0, "file slot NUL");
+        assert_eq!(&names[1][..5], b"\x07APPS", "folder slot");
+        assert_eq!(names[1][5], 0, "folder slot NUL");
+        assert_eq!(&names[2][..2], b" \0", "empty slot is one blank");
     }
 }

@@ -1,0 +1,10 @@
+running 6 tests
+test aes::fsel::tests::fmt_str_and_unfmt_str_convert_between_plain_and_raw_8_3 ... ok
+test aes::fsel::tests::fs_format_fills_the_slots_with_the_indicator_and_the_raw_name ... ok
+test aes::fsel::tests::fs_start_applies_every_geometry_adjustment_of_the_3d_pass ... ok
+test aes::fsel::tests::fs_start_switches_ftitle_and_fsvslid_to_the_50_percent_pattern ... ok
+test aes::fsel::tests::fs_start_sets_every_3d_flag_emutos_sets ... ok
+test aes::fsel::tests::set_ted_keeps_the_formatted_type_template_and_length ... ok
+
+test result: ok. 6 passed; 0 failed; 0 ignored; 0 measured; 16 filtered out; finished in 0.00s
+

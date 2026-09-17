@@ -1,0 +1,57 @@
+running 6 tests
+test aes::fsel::tests::fmt_str_and_unfmt_str_convert_between_plain_and_raw_8_3 ... ok
+test aes::fsel::tests::fs_format_fills_the_slots_with_the_indicator_and_the_raw_name ... FAILED
+test aes::fsel::tests::fs_start_applies_every_geometry_adjustment_of_the_3d_pass ... FAILED
+test aes::fsel::tests::fs_start_sets_every_3d_flag_emutos_sets ... FAILED
+test aes::fsel::tests::fs_start_switches_ftitle_and_fsvslid_to_the_50_percent_pattern ... FAILED
+test aes::fsel::tests::set_ted_keeps_the_formatted_type_template_and_length ... FAILED
+
+failures:
+
+---- aes::fsel::tests::fs_format_fills_the_slots_with_the_indicator_and_the_raw_name stdout ----
+
+thread 'aes::fsel::tests::fs_format_fills_the_slots_with_the_indicator_and_the_raw_name' (30909055) panicked at tos-api/src/aes/fsel.rs:1243:9:
+assertion `left == right` failed: file slot
+  left: [67, 79, 78, 70, 73, 71, 46, 84, 88, 84, 0, 0]
+ right: [32, 67, 79, 78, 70, 73, 71, 32, 32, 84, 88, 84]
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+
+---- aes::fsel::tests::fs_start_applies_every_geometry_adjustment_of_the_3d_pass stdout ----
+
+thread 'aes::fsel::tests::fs_start_applies_every_geometry_adjustment_of_the_3d_pass' (30909056) panicked at tos-api/src/aes/fsel.rs:1084:9:
+assertion `left == right` failed: FCLSBOX
+  left: (0, 0, 16, 16)
+ right: (2, 2, 16, 16)
+
+---- aes::fsel::tests::fs_start_sets_every_3d_flag_emutos_sets stdout ----
+
+thread 'aes::fsel::tests::fs_start_sets_every_3d_flag_emutos_sets' (30909057) panicked at tos-api/src/aes/fsel.rs:1128:13:
+assertion `left == right` failed: FL3DACT on 34
+  left: 0
+ right: 1536
+
+---- aes::fsel::tests::fs_start_switches_ftitle_and_fsvslid_to_the_50_percent_pattern stdout ----
+
+thread 'aes::fsel::tests::fs_start_switches_ftitle_and_fsvslid_to_the_50_percent_pattern' (30909058) panicked at tos-api/src/aes/fsel.rs:1152:9:
+assertion `left == right` failed: FTITLE te_color
+  left: 4513
+ right: 4545
+
+---- aes::fsel::tests::set_ted_keeps_the_formatted_type_template_and_length stdout ----
+
+thread 'aes::fsel::tests::set_ted_keeps_the_formatted_type_template_and_length' (30909059) panicked at tos-api/src/aes/fsel.rs:1177:13:
+assertion `left == right` failed: FSDIRECT type
+  left: 22
+ right: 30
+
+
+failures:
+    aes::fsel::tests::fs_format_fills_the_slots_with_the_indicator_and_the_raw_name
+    aes::fsel::tests::fs_start_applies_every_geometry_adjustment_of_the_3d_pass
+    aes::fsel::tests::fs_start_sets_every_3d_flag_emutos_sets
+    aes::fsel::tests::fs_start_switches_ftitle_and_fsvslid_to_the_50_percent_pattern
+    aes::fsel::tests::set_ted_keeps_the_formatted_type_template_and_length
+
+test result: FAILED. 1 passed; 5 failed; 0 ignored; 0 measured; 16 filtered out; finished in 0.00s
+
+error: test failed, to rerun pass `-p tos-api --lib`

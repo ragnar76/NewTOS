@@ -1,0 +1,132 @@
+A63 / A64 -- Dateiauswaehler: Schablonen und der 3D-Durchgang
+=============================================================
+
+Datum          2026-09-17
+Basis          desk-rebuild, HEAD c4b25e9, Baum vorher sauber
+EmuTOS-Pin     references/emutos @ 1a7484aba1bfba23e2c0899e243b6d8177fe41df
+Tickets        TASK/A63.md + TASK/A64.md
+Quittungen     TASK/A63-STATUS-DONE.MD, TASK/A64-STATUS-DONE.MD
+Referenzbild   docs/analysis/fsel-reference-2026-09-17/fselectr.png (rscview, 3D, de)
+
+
+1  WAS GEAENDERT WURDE
+-------------------------------------------------------------------------
+tos-api/src/aes/fsel.rs
+    fs_start()          (war set_3d_flags) -- EmuTOS aes/gemfslib.c:60-152,
+                        CONF_WITH_3D_OBJECTS: 13 Geometrieanpassungen,
+                        14 Flags (4 davon neu), 2 IP_4PATT-Musterwechsel
+    fs_format()         (war refill) -- gemfslib.c:359-381: Kennbyte +
+                        fmt_str(name) je Schlitz, ein Leerzeichen hinter dem
+                        Listenende, ob_type = G_FBOXTEXT
+    size_elevator()     (war update_slider) -- gemfslib.c:383-396 inkl. des
+                        CONF_WITH_3D_OBJECTS-Blocks (:388-391) und gl_hbox
+    set_ted()           biegt nur noch te_ptext um; Typ/Schablone/pvalid/
+                        txtlen/color/just bleiben die der Ressource
+    fmt_str/unfmt_str   neu -- EmuTOS util/optimize.c:43,77
+    run()/modal()       Auswahl herein mit fmt_str, heraus mit unfmt_str
+    copy_name()         entfallen (durch fmt_str ersetzt)
+    mod tests           neu, 6 Faelle (5 davon vorher rot)
+
+tos-api/src/aes/object.rs
+    just_draw *TEXT-Zweig: die Randstaerke wird nur noch fuer FL3DOBJ
+    genullt, nicht fuer FL3DBAK -- sonst haette FTITLE durch sein neues
+    FL3DBAK-Flag seinen schwarzen Rahmen verloren (EmuTOS nullt sie nie,
+    gemoblib.c:661-667). Reichweite im ganzen Baum: FSDIRECT/FSSELECT
+    (Staerke 0, unveraendert) und FTITLE.
+
+docs/STATUS.md                 Phase-13-Zeile + Recent-Decisions-Eintrag
+TASK/A63.md, TASK/A64.md       Ticketkoepfe
+TASK/A63-STATUS-DONE.MD, TASK/A64-STATUS-DONE.MD   Quittungen
+
+
+2  DER TEST, ROT VOR DEM FIX
+-------------------------------------------------------------------------
+build/newtest-RED.txt    (in-crate, tos-api/src/aes/fsel.rs::tests)
+
+  fs_start_applies_every_geometry_adjustment_of_the_3d_pass
+      FCLSBOX   left: (0, 0, 16, 16)   right: (2, 2, 16, 16)
+  fs_start_sets_every_3d_flag_emutos_sets
+      FL3DACT on 34   left: 0   right: 1536
+  fs_start_switches_ftitle_and_fsvslid_to_the_50_percent_pattern
+      FTITLE te_color   left: 4513   right: 4545
+  set_ted_keeps_the_formatted_type_template_and_length
+      FSDIRECT type   left: 22 (G_BOXTEXT)   right: 30 (G_FBOXTEXT)
+  fs_format_fills_the_slots_with_the_indicator_and_the_raw_name
+      file slot   left: "CONFIG.TXT"   right: " CONFIG  TXT"
+
+  Der sechste Fall (fmt_str/unfmt_str gegen EmuTOS' eigene Beispiele,
+  util/optimize.c:30-41) war von Anfang an gruen -- die Wandler sind das
+  Werkzeug, nicht der Fix.
+
+build/newtest-GREEN.txt  6 passed; 0 failed
+build/host-xtask-test.log  557 passed / 0 failed / 1 ignored (vorher 551)
+
+
+3  BAU UND WARNUNGEN
+-------------------------------------------------------------------------
+build/build-rpi4.log      rc=0, frischer Neubau (tos-api + kernel compiled)
+build/build-qemuvirt.log  rc=0, frischer Neubau
+    tos-api 64 rustc   kernel 94 rustc     = Grundlinie, kein Delta
+build/clippy-tos-api.log        81   = Grundlinie
+build/clippy-kernel-rpi4.log   125   = Grundlinie
+build/clippy-kernel-qemuvirt.log 125 = Grundlinie
+
+
+4  MASCHINENBELEG
+-------------------------------------------------------------------------
+QEMU raspi4b, headless, 640x480, SD-Abbild aus
+measurement-2026-09-13-regression/qemu-tmp/sd-base.img kopiert (die echte
+Karte des Anwenders wurde nicht angefasst).
+
+method/boot-qmp.sh, method/qmp.py, method/run-case.sh  -- von A65 uebernommen
+method/compare-geometry.py                             -- neu
+
+screendumps/fsel-after.png              640x480, voller Schirm
+screendumps/fsel-after-crop326x362.png  auf die Referenzgroesse beschnitten
+screendumps/fsel-after-BOOT-SERIAL.txt  serielles Protokoll
+screendumps/compare-geometry.txt        Vergleichsausgabe
+
+Vergleichsergebnis:
+    root box: ours at (160,71) w=320   reference at (3,3) w=320
+    root height: ours 356  reference 356  (EQUAL)
+    338 root-relative rows identical, 18 different (runs of >= 10 black px)
+
+Der Vergleich ist zulaessig, weil das Referenzbild mit derselben 8x16-Metrik
+gerendert ist wie unser Bau: 326x362 = 320 x (352 + 2*ADJ3DSTD), umrahmt vom
+3-Punkt-OUTLINED-Ring. Verglichen werden nur Schwarzlaeufe >= 10 Punkte je
+Zeile, also Kastenraender -- Text, Dither und die unterschiedlichen
+Graustufen (unsere Palette hat LWHITE 189, rscview 204) bleiben aussen vor.
+
+Die 18 abweichenden Zeilen, zugeordnet:
+    97,118,139,140,160,181,202,223,244,265,286  1-Punkt-Rahmen der 26
+        Laufwerkskaesten -- unser Zeichner gibt FL3DIND/FL3DACT-Kastentypen
+        th = 0 (D7, vorbestehend). Innenrechteck identisch (218..247).
+    105   dasselbe fuer FCLSBOX (Referenz 23..203, unserer 42..203)
+    282   dasselbe fuer FDNAROW (Fuellung beginnt in beiden bei 283)
+    146,148,167  der 2-Punkt-Schiebereinzug aus fs_format -- rscview rendert
+        die Ressource, nicht einen laufenden Dialog
+    161,174  der Mauszeiger im kopflosen Abzug
+
+
+5  RUECKBAU DER MESSVERDRAHTUNG
+-------------------------------------------------------------------------
+fsel::preview() war fuer den Abzug voruebergehend in kernel/src/lib.rs
+verdrahtet (vor shell_loop::sh_main, mit Marker + halt) und ist von Hand
+wieder entfernt -- kein git checkout, kein git restore.
+
+    MD5-libs-BEFORE.txt   5434f7b25c5641c7fab1fce0b1c98b85
+    MD5-libs-AFTER.txt    5434f7b25c5641c7fab1fce0b1c98b85
+
+git status fuehrt kernel/src/lib.rs nicht mehr als geaendert.
+build/kernel8-rpi4-preview.img ist das Abbild MIT der Verdrahtung, nur zur
+Nachvollziehbarkeit des Abzugs aufgehoben; es entspricht nicht dem Baum.
+
+
+6  WAS OFFEN BLEIBT
+-------------------------------------------------------------------------
+- Abnahme durch den Tester (beide Boards, Selbsttests, fsck_msdos).
+- Tippen in FSDIRECT/FSSELECT auf echter Pi 4: te_pvalid ist zurueck, also
+  greift wieder EmuTOS' Zeichenpruefung (P bzw. F). Ein getippter Punkt
+  springt in FSSELECT jetzt auf die Endung statt eingefuegt zu werden.
+- Nicht committet. Der Recent-Decisions-Eintrag traegt deshalb noch keinen
+  Commit-Hash.

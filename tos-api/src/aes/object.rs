@@ -2550,7 +2550,20 @@ fn just_draw(t: ObjTree, obj: i16, x: i16, y: i16, clip: ClipRect, backend: &dyn
                 // text, inside pattern, inside colour.
                 let (bcol, tcol, mut ipat, mut icol, _mode) = gr_crack(ted.te_color as u16);
                 let mut is_box = ob_type == G_BOXTEXT || ob_type == G_FBOXTEXT;
-                let mut th = if d3 != 0 { 0 } else { ted.te_thickness };
+                // D7, text half: an FL3DBAK *background panel* keeps its
+                // TEDINFO thickness, exactly as the box arm above states for
+                // G_BOX — EmuTOS `just_draw` never zeroes a thickness for 3D
+                // (`gemoblib.c:661-667` draws the border whenever `th != 0`,
+                // and only the G_TEXT→G_BOXTEXT promotion below sets
+                // `tmpth = th = 0`, `:597-606`). Keying this on FL3DOBJ rather
+                // than on any 3D kind therefore *narrows* a divergence: only
+                // FL3DIND/FL3DACT text keeps the bevel-instead-of-border path
+                // the box arm documents. Measured against the rscview
+                // reference (`docs/analysis/fsel-reference-2026-09-17/`): the
+                // file box's FTITLE caption is a G_BOXTEXT with te_thickness
+                // -1 that EmuTOS frames in black, and A64 gives it FL3DBAK
+                // (`gemfslib.c:78`) — with the old test that frame vanished.
+                let mut th = if d3obj { 0 } else { ted.te_thickness };
                 // 3D background (EmuTOS): a hollow-white text background takes
                 // the solid 3D background colour; a plain TEXT/FTEXT becomes a
                 // BOXTEXT/FBOXTEXT with zero border so the fill is drawn.
