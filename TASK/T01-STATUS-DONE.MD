@@ -34,6 +34,20 @@ Sollstand: `docs/api/gemdos/directory/36-dfree.md` — „einen caller-seitigen
 Zeiger, laesst sich also — anders als `MFDB` — auf die Drahtfassung pinnen,
 genau wie `_DTA` am 2026-07-25. Kein Rust geaendert.
 
+## Eine Berichtigung zum Auftrag
+
+Der Auftrag nimmt an, ein `sizeof`-Assert an `_DTA` haette `_DISKINFO` 2026-07
+mitgezogen. Das stimmt nicht: `_DTA` **hat** diesen Assert seit 2026-07-25
+(`_Static_assert(sizeof(_DTA) == 44, ...)`, in `0fe9bad` nachlesbar), und ein
+Assert kann nur fuer die Struktur ausloesen, die er nennt. Kein Assert an
+`_DTA` haette `_DISKINFO` je gefunden.
+
+Der heute gebaute Schutz schuetzt ebenso nur `_DISKINFO`. Was 2026-07 fehlte,
+war nicht der Assert, sondern der **Blick auf die Geschwister** -- genau das
+leistet die beiliegende Erhebung aller 30 `mint/`-typedefs. Ein Assert ist
+oertlich; erst die Erhebung macht ihn wiederholbar. Die Nachricht des Commits
+`5a5820b` gibt die Auftragsannahme noch unberichtigt wieder.
+
 ## Test vor Fix
 
 Der Assert zuerst ROT, in `showinfo.c`, mit dem Flaggensatz von
