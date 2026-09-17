@@ -1,0 +1,22 @@
+=== BEFORE the fix (mintlib _DISKINFO = 4 x unsigned long, 32 bytes) ===
+    struct is at sp+0xc0; kernel writes only sp+0xc0 .. sp+0xcf
+     6c4:      	ldp	x8, x9, [sp, #0xd0]
+     6c8:      	mov	x25, x20
+     6cc:      	ldp	x20, x24, [sp, #0xc0]
+     6d0:      	add	x2, sp, #0xae
+     6d4:      	ldr	x0, [x22]
+		00000000000006d4:  R_AARCH64_LDST64_ABS_LO12_NC	fileinfo
+     6d8:      	mov	w1, #0x1d               // =29
+     6dc:      	mul	x23, x9, x8
+     6e0:      	bl	0x6e0 <object_info+0x394>
+
+=== AFTER the fix (_DISKINFO = 4 x __UINT32_TYPE__, packed, 16 bytes) ===
+     6c4:      	ldp	w8, w9, [sp, #0xc8]
+     6c8:      	mov	x25, x20
+     6cc:      	ldr	x0, [x22]
+		00000000000006cc:  R_AARCH64_LDST64_ABS_LO12_NC	fileinfo
+     6d0:      	add	x2, sp, #0xae
+     6d4:      	ldp	w20, w24, [sp, #0xc0]
+     6d8:      	mov	w1, #0x1d               // =29
+     6dc:      	mul	w23, w9, w8
+     6e0:      	bl	0x6e0 <object_info+0x394>

@@ -1,0 +1,30 @@
+In file included from /Volumes/Daten/Development/PiRusTOS/sdk/apps/teradesk/build/tree/showinfo.c:24:
+In file included from /Volumes/Daten/Development/PiRusTOS/sdk/apps/teradesk/build/tree/library/xdialog/library.h:85:
+In file included from /Volumes/Daten/Development/PiRusTOS/sdk/libc/mintlib/include/mint/mintbind.h:10:
+In file included from /Volumes/Daten/Development/PiRusTOS/sdk/libc/mintlib/include/mint/osbind.h:116:
+/Volumes/Daten/Development/PiRusTOS/sdk/libc/mintlib/include/mint/ostruct.h:31:16: error: static assertion failed due to requirement '__builtin_offsetof(_DISKINFO, b_total) == 4': b_total@4
+   31 | _Static_assert(__builtin_offsetof(_DISKINFO, b_total)  ==  4, "b_total@4");
+      |                ^~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+/Volumes/Daten/Development/PiRusTOS/sdk/libc/mintlib/include/mint/ostruct.h:31:56: note: expression evaluates to '8 == 4'
+   31 | _Static_assert(__builtin_offsetof(_DISKINFO, b_total)  ==  4, "b_total@4");
+      |                ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~^~~~~
+/Volumes/Daten/Development/PiRusTOS/sdk/libc/mintlib/include/mint/ostruct.h:32:16: error: static assertion failed due to requirement '__builtin_offsetof(_DISKINFO, b_secsiz) == 8': b_secsiz@8
+   32 | _Static_assert(__builtin_offsetof(_DISKINFO, b_secsiz) ==  8, "b_secsiz@8");
+      |                ^~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+/Volumes/Daten/Development/PiRusTOS/sdk/libc/mintlib/include/mint/ostruct.h:32:56: note: expression evaluates to '16 == 8'
+   32 | _Static_assert(__builtin_offsetof(_DISKINFO, b_secsiz) ==  8, "b_secsiz@8");
+      |                ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~^~~~~
+/Volumes/Daten/Development/PiRusTOS/sdk/libc/mintlib/include/mint/ostruct.h:33:16: error: static assertion failed due to requirement '__builtin_offsetof(_DISKINFO, b_clsiz) == 12': b_clsiz@12
+   33 | _Static_assert(__builtin_offsetof(_DISKINFO, b_clsiz)  == 12, "b_clsiz@12");
+      |                ^~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+/Volumes/Daten/Development/PiRusTOS/sdk/libc/mintlib/include/mint/ostruct.h:33:56: note: expression evaluates to '24 == 12'
+   33 | _Static_assert(__builtin_offsetof(_DISKINFO, b_clsiz)  == 12, "b_clsiz@12");
+      |                ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~^~~~~
+/Volumes/Daten/Development/PiRusTOS/sdk/libc/mintlib/include/mint/ostruct.h:34:16: error: static assertion failed due to requirement 'sizeof(_DISKINFO) == 16': sizeof(_DISKINFO) == 16
+   34 | _Static_assert(sizeof(_DISKINFO) == 16, "sizeof(_DISKINFO) == 16");
+      |                ^~~~~~~~~~~~~~~~~~~~~~~
+/Volumes/Daten/Development/PiRusTOS/sdk/libc/mintlib/include/mint/ostruct.h:34:34: note: expression evaluates to '32 == 16'
+   34 | _Static_assert(sizeof(_DISKINFO) == 16, "sizeof(_DISKINFO) == 16");
+      |                ~~~~~~~~~~~~~~~~~~^~~~~
+4 errors generated.
+exit=1

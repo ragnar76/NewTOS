@@ -1,0 +1,37 @@
+m68k-atari-mint-gcc -m68000  vs  clang -target aarch64-unknown-none-elf (LP64)
+identical header text: sdk/libc/mintlib/include/mint/*.h (= the overlay, AFTER the _DISKINFO fix)
+measured as sizeof-sized symbols (char probe_T[sizeof(T)]) read back with nm/objdump
+
+typedef            m68k   aarch64  verdict
+__FONT             88     112      DIVERGES
+__LINEA            122    176      DIVERGES
+_BCONMAP           6      16       DIVERGES
+_BIOSTIME          4      4        same
+_BPB               18     18       same
+_CCONLINE          258    257      DIVERGES
+_DATETIME          4      4        same
+_DISKINFO          16     16       same
+_DOSTIME           4      4        same
+_DSPBLOCK          10     24       DIVERGES
+_IOREC             14     24       DIVERGES
+_KBDVECS           38     80       DIVERGES
+_KEYTAB            28     56       DIVERGES
+_MAPTAB            24     48       DIVERGES
+_MD                16     32       DIVERGES
+_MPB               12     24       DIVERGES
+_PARAM             12     12       same
+_PBDEF             30     48       DIVERGES
+_RGB               4      4        same
+BASEPAGE           256    256      same
+BBPB               76     104      DIVERGES
+HDINFO             84     160      DIVERGES
+MCF_COOKIE         30     40       DIVERGES
+META_INFO_1        16     32       DIVERGES
+META_INFO_2        10     24       DIVERGES
+MFDB               20     24       DIVERGES
+OP_TAB             4      4        same
+OSHEADER           48     96       DIVERGES
+SDDB               14     24       DIVERGES
+SFORM              74     74       same
+
+diverging: 20 of 30

@@ -1,0 +1,109 @@
+T01 -- _DISKINFO auf LP64: Messunterlagen
+=========================================
+Datum      2026-09-17
+Basis      HEAD 0fe9bad (Baum sonst sauber)
+Aenderung  sdk/libc/overlay/include/mint/ostruct.h -- _DISKINFO auf feste
+           32-Bit-Felder, packed, _Static_assert je Offset + sizeof.
+           Kein Rust angefasst.
+
+Dateien
+-------
+01-red-static-assert-showinfo.log   der Assert ROT, gefuehrt in TeraDesks
+                                    eigener Uebersetzungseinheit showinfo.c
+                                    (Kette library.h -> mintbind.h ->
+                                    osbind.h -> mint/ostruct.h); `clang -H`
+                                    weist aus, dass genau
+                                    sdk/libc/mintlib/include/mint/ostruct.h
+                                    gewinnt -- die Overlay-Kopie.
+02-build-teradesk.log               libc (613 Dateien, 11 erwartete Ausfaelle,
+                                    0 neue) -> gemlib 578/578 -> TeraDesk
+                                    48/48, LINK OK, 0 undefinierte Symbole.
+03-cargo-xtask-test.log             557 passed / 0 failed / 1 ignored.
+04-struct-sizes-both-toolchains.txt alle 30 mint-typedefs mit beiden
+                                    Uebersetzern selbst nachgemessen
+                                    (m68k-atari-mint-gcc -m68000 gegen clang
+                                    aarch64), identischer Kopfstuecktext.
+                                    _DISKINFO jetzt 16/16; 20 der 30 weichen
+                                    weiter ab, mit den Zahlen des Tickets.
+05-board-builds.log                 beide Boards nach `cargo clean` FRISCH,
+                                    release: tos-api 64, kernel 94 Warnungen.
+06-clippy.log                       beide Boards: tos-api 81, kernel 125.
+07-showinfo-disasm-before-after.txt Maschinenbeleg: vorher `ldp x8, x9,
+                                    [sp,#0xd0]` (64-Bit-Felder, nie
+                                    beschrieben), nachher `ldp w8, w9,
+                                    [sp,#0xc8]` + `mul w23, w9, w8`.
+08-struct-reach-survey.md           welche der uebrigen 20 Strukturen heute
+                                    von einer gebauten Anwendung gelesen
+                                    werden.
+screendumps/teradesk-after.png      QEMU raspi4b, headless, 640x480.
+screendumps/apitest-dfree-*.txt     derselbe Karteninhalt + APITEST im AUTO;
+                                    darin die gemessenen Dfree-Werte.
+
+Maschinenlauf
+-------------
+Emulator   qemu-system-aarch64 -M raspi4b -display none, Karte als SD,
+           Kernel measurement-.../qemu-tmp/kernel8-rpi4-release.img
+           (= kernel8.img aus dem frischen rpi4-Release-Bau).
+Karte      Kopie von measurement-2026-09-13-regression/qemu-tmp/sd-base.img,
+           darin C:\Apps\TERADESK\DESKTOP.NAP durch den neuen ersetzt und
+           NEWDESK.INF auf `#Z 01 C:\Apps\TERADESK\DESKTOP.NAP@`.
+           Das Abbild selbst ist nicht abgelegt (measurement-*/qemu-tmp/ ist
+           in .gitignore); method/prep-card.sh baut es neu.
+           Die Karte des Anwenders unter /Volumes wurde nicht eingebunden:
+           prep-card.sh nimmt den Einhaengepunkt aus `diskutil info` fuer die
+           von ihm selbst angehaengte Scheibe und bricht ab, wenn er nicht
+           dazu passt.
+Marker     "sh_ldapp: starting", gefunden nach 15.2 s, danach 5 s Ruhe,
+           dann QMP-screendump.
+Ergebnis   TeraDesk steht (Menueleiste, A/B/C-Symbole, Drucker, Papierkorb),
+           keine Ausnahme im Serienprotokoll. Gegen die zuletzt abgelegte
+           TeraDesk-Aufnahme (measurement-2026-09-17-a65/after/teradesk.png):
+           0 von 307200 Bildpunkten verschieden.
+
+WAS QEMU NICHT ZEIGEN KANN
+--------------------------
+Der Fehler wird erst im *Informationsdialog* eines Laufwerks sichtbar
+(TeraDesk: Laufwerkssymbol waehlen -> File -> Show info). Dieser Dialog
+braucht einen Mausklick bzw. eine Taste, und der headless-QEMU-Lauf hat
+keinen Eingabeweg. Der Screendump belegt also **nicht** die Reparatur,
+sondern nur, dass sie nichts kaputt gemacht hat. Die Sichtpruefung der
+Laufwerksinfo ist eine VORHERSAGE fuer die echte Pi.
+
+DIE VORHERSAGE, an der Quelle geprueft
+--------------------------------------
+sdk/apps/teradesk/showinfo.c:984-1032, Bau mit -D_TOS_ONLY => _MINT_ = 0,
+der KB/MB-Zweig ist herausuebersetzt. Es bleibt genau:
+
+    clsize = b_secsiz * b_clsiz
+    tbytes = b_total * clsize          -> FLSPACE (Objekt 33), Gesamtgroesse
+    fbytes = b_free  * clsize          -> FLFREE  (Objekt 34), frei
+    used   = tbytes - fbytes           -> FLBYTES (Objekt 4),  belegt
+    clsize                             -> FLCLSIZ (Objekt 15), Clustergroesse
+
+(Objektnummern aus sdk/apps/teradesk/desktop.h, Baum FILEINFO. Das Handbuch
+beschreibt die vier Felder als "the numbers of used and available bytes, the
+total free space on it, and the cluster size", doc/en/tera407_en.stg:1159.)
+
+Gemessen auf der QEMU-Karte (APITEST T12, eigener 4x32-Bit-Puffer, also vom
+Fehler unberuehrt):  rc=0 free_cl=31842 tot_cl=32672 bps=512 spc=4.
+Daraus folgt fuer denselben Datentraeger:
+
+    Cluster size:       2048
+    Bytes:          66912256
+    Bytes free:     65212416
+    Bytes used:      1699840
+
+Auf der echten Pi (4 x 500 MB FAT16, C..F) sind die Zahlen groesser, die
+Form ist dieselbe; pruefbar sind die Invarianten:
+  * die Clustergroesse ist eine Zweierpotenz (bps*spc, typisch 8192/16384),
+  * die Gesamtgroesse liegt bei der Partitionsgroesse (~500 MB),
+  * frei <= gesamt,
+  * gesamt - frei = belegt, auf das Byte genau,
+  * gesamt / Clustergroesse = ganzzahlig (= Gesamtzahl der Cluster).
+
+Vor der Reparatur konnte das nicht stimmen: b_free las (b_total << 32) |
+b_free -- auf dieser Karte 140325171526754 --, b_total las (b_clsiz << 32) |
+b_secsiz = 17179869696, und b_secsiz/b_clsiz lagen jenseits der 16 vom Kern
+beschriebenen Bytes, waren also Stapelinhalt. Nebenbefund: fmt_size()
+(resource.c:722) formatiert in ein `static char buf[12]`; eine 15-stellige
+Zahl laeuft dort ueber. Der Defekt war also nicht nur ein Anzeigefehler.

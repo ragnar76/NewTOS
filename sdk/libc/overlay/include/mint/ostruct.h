@@ -19,13 +19,38 @@ __BEGIN_DECLS
  * GEMDOS defines and structures
  */
 
-/* Structure used by Dfree() */
+/* Structure used by Dfree().
+ *
+ * NewTOS overlay (TASK/T01): the buffer Dfree() fills is the TOS-canonical
+ * FOUR 32-bit LONGs = 16 bytes on EVERY ABI
+ * (docs/api/gemdos/directory/36-dfree.md; the kernel writer is
+ * tos-api/src/bdos/fs/drive.rs `dfree`, four 4-byte stores at `p.add(i * 4)`).
+ *
+ * The fields are therefore FIXED 32-bit types, NOT `unsigned long`: a mintlib
+ * `unsigned long` is 8 bytes on LP64 (AArch64), which made this struct 32
+ * bytes. An LP64 app then read b_free as (b_total << 32) | b_free, b_total as
+ * (b_clsiz << 32) | b_secsiz, and b_secsiz / b_clsiz as uninitialised stack --
+ * the kernel never wrote past byte 16. `__UINT32_TYPE__` is exactly 32 bits on
+ * BOTH ILP32 (unchanged: `long` was already 4 bytes there) and LP64.
+ *
+ * `__attribute__((packed))` removes nothing today (four 4-byte fields have no
+ * padding) but pins that: a later widening of one field cannot silently insert
+ * an alignment hole and shift the ones behind it. The _Static_assert block
+ * below pins every offset and the total size against the kernel's writer, on
+ * every ABI -- the same treatment _DTA got, and the check that would have
+ * caught this struct in 2026-07. */
 typedef struct {
-    unsigned long b_free;	/* number of free clusters */
-    unsigned long b_total;	/* total number of clusters */
-    unsigned long b_secsiz;	/* number of bytes per sector */
-    unsigned long b_clsiz;	/* number of sectors per cluster */
-} _DISKINFO;
+    __UINT32_TYPE__ b_free;	/* number of free clusters */
+    __UINT32_TYPE__ b_total;	/* total number of clusters */
+    __UINT32_TYPE__ b_secsiz;	/* number of bytes per sector */
+    __UINT32_TYPE__ b_clsiz;	/* number of sectors per cluster */
+} __attribute__((packed)) _DISKINFO;
+
+_Static_assert(__builtin_offsetof(_DISKINFO, b_free)   ==  0, "b_free@0");
+_Static_assert(__builtin_offsetof(_DISKINFO, b_total)  ==  4, "b_total@4");
+_Static_assert(__builtin_offsetof(_DISKINFO, b_secsiz) ==  8, "b_secsiz@8");
+_Static_assert(__builtin_offsetof(_DISKINFO, b_clsiz)  == 12, "b_clsiz@12");
+_Static_assert(sizeof(_DISKINFO) == 16, "sizeof(_DISKINFO) == 16");
 
 /* Structure returned by Fdatime() */
 typedef struct {
