@@ -80,15 +80,29 @@ const MN_SELECTED: i16 = 10;
 /// `pid` is the current AES process — the menu owner (`gl_mnppd`) at
 /// single-app — used both as the FIFO target and as the `ap_sendmsg` sender
 /// pid `msg[1] = rlr->p_pid` (`gemwmlib.c:855`), replacing the former `0`.
+///
+/// **Entry = the hand-over.** EmuTOS reaches `hctl_rect` only after `mchange`
+/// gave the mouse to the Control Manager, which it does for a pointer in the
+/// bar row **with the buttons up**: `if ((gl_mowner != ctl_pd) && (button ==
+/// 0) && gl_mntree && in_mrect(&gl_ctwait)) gl_mowner = ctl_pd;`
+/// (`aes/geminput.c:388-389`). A pointer dragged into the bar with the button
+/// held belongs to whoever took the press and opens nothing; the tracker is
+/// entered once the button is up. Inside the track the button may of course go
+/// down (press on a title, drag to an item) — that is `mn_do`'s business.
+///
+/// **After a selection** the Control Manager is in `ct_msgup`'s wait for the
+/// button to come up (`aes/gemctrl.c:100-101`): the message is posted at once,
+/// and [`input::ct_msgup_hold`](super::input::ct_msgup_hold) keeps the
+/// interception and `w_setactive` out of the way until the release.
 fn menu_intercept(pid: i16) -> bool {
     let tree = super::menu::active();
     if tree.is_null() {
         return false;
     }
-    // Hover model: the drop-down opens whenever the cursor is over the bar, no
-    // click required (the tracker selects on a button press over an item).
+    // Hover model: the drop-down opens whenever the cursor is over the bar
+    // with the buttons up — `mchange`'s hand-over condition, no click required.
     let (_mx, my) = crate::vdi::mouse_position();
-    if my >= MENU_BAR_H {
+    if my >= MENU_BAR_H || crate::vdi::mouse_buttons() & 0x01 != 0 {
         return false;
     }
     let Some(backend) = host().and_then(|h| h.raster()) else {
@@ -106,6 +120,9 @@ fn menu_intercept(pid: i16) -> bool {
             unsafe {
                 pd::post_msg(pid, msg);
             }
+            // `ct_msgup`: "send message and wait for the mouse button to come
+            // up" (`gemctrl.c:81-104`).
+            super::input::ct_msgup_hold();
             true
         }
         None => false, // cancelled — the click is consumed, no message
@@ -158,8 +175,8 @@ fn downorup(new: u8, bflgclks: i16, mask: u8, val: u8) -> bool {
 }
 
 /// The number of clicks a `bflgclks` WORD asks for — its **low** byte, EmuTOS
-/// `bclicks = LOBYTE(HIWORD(p))` (`abutton`, `aes/geminput.c:537`; the same
-/// extraction bounds the reported count in `post_button`, `:470`). The high
+/// `bclicks = LOBYTE(HIWORD(p))` (`abutton`, `aes/geminput.c:559`; the same
+/// extraction bounds the reported count in `post_button`, `:477`). The high
 /// byte belongs to [`downorup`], not to the count: TeraDesk's `0x0102` asks for
 /// **2** clicks, not 258.
 fn bclicks(bflgclks: i16) -> i16 {
@@ -183,7 +200,7 @@ fn bclicks(bflgclks: i16) -> i16 {
 ///
 /// Deliberately **not** gated on mouse ownership: `ev_button` blocks in
 /// `ev_block(MU_BUTTON)` → `iasync` → `abutton`, and `abutton` tests the level
-/// unconditionally (`aes/geminput.c:525-528`). Only `ev_multi`'s *quick check*
+/// unconditionally (`aes/geminput.c:549-551`). Only `ev_multi`'s *quick check*
 /// carries the `rlr == gl_mowner` condition (`aes/gemevlib.c:185`).
 pub fn evnt_button(pb: &Aespb) -> Option<sched::Switch> {
     let bflgclks = pb.intin(0);
@@ -292,7 +309,7 @@ fn count_clicks(
     // one click **and** the change that opened it is a press:
     // `if (gl_bpend && state) { … gl_bdely = gl_dclick; }` (`b_click`,
     // `aes/geminput.c:129-141`). `gl_bpend` is the count of waiters asking for
-    // `bclicks > 1` (`abutton`, `:536-539`) — here, this call asking for more
+    // `bclicks > 1` (`abutton`, `:559-561`) — here, this call asking for more
     // than one click; `state` is the live button byte. A window opened while the
     // buttons are up (an app waiting for a *release*) is therefore not armed,
     // and movement does not cut it short — `gl_bdely == 0`, so `mchange` has
@@ -443,6 +460,17 @@ pub fn evnt_multi(pb: &Aespb) -> Option<sched::Switch> {
         // `amouse` level test taken when `ev_multi` arms the event), every later
         // pass is the "asleep in `mwait`" state. See the MU_BUTTON block below.
         let mut pass = 0u32;
+        // The button state and mouse ownership **at arm time** — what `ev_multi`
+        // sees when it runs its quick check (`rlr == gl_mowner`,
+        // `aes/gemevlib.c:185`) and arms `abutton`'s level test
+        // (`aes/geminput.c:549-551`): both happen before the application
+        // blocks, i.e. before the Control Manager can act. Our Control Manager
+        // runs inline in this very pass, *ahead* of the checks, and may consume
+        // a button transition on the way (the drop-down track selects on a
+        // press or a release); the pass-0 test must therefore use the level the
+        // arm saw, not the level the track left behind. Sampled once, here.
+        let arm_own = super::input::own_mouse();
+        let arm_mb = crate::vdi::mouse_buttons();
         loop {
             // AES trap tracer: one sample of the button byte per evaluation of
             // the multiplexer predicate, folded into the call record as
@@ -451,29 +479,40 @@ pub fn evnt_multi(pb: &Aespb) -> Option<sched::Switch> {
             if super::trace::ENABLED {
                 super::trace::note_eval();
             }
-            // The Control Manager's loop opens with `w_setactive()`, which hands
-            // the mouse (back) to the owner of the top window whenever the
-            // buttons are up — `ct_chgown(ppd, &d)` → `set_mown`, and `set_mown`
-            // is a no-op while a button is held (`aes/gemctrl.c:441`,
-            // `aes/gemwmlib.c:326-333`, `aes/gemctrl.c:392-396`,
-            // `aes/geminput.c:220-234`). Our Control Manager is the
-            // `menu_intercept`/`window::intercept` pair below, so its loop top is
-            // here.
-            super::input::w_setactive();
-            // AES intercepts a click in the menu bar or a window frame before
-            // the app sees the raw button, mirroring the EmuTOS Control Manager
-            // process (`gemctrl.c:427`): it owns the mouse over the menu/frame
-            // and posts the resulting MN_SELECTED / WM_* message into the
-            // target's per-app FIFO via `ap_sendmsg` (`gemctrl.c:81`,
-            // `gemwmlib.c:851`). The message reaches the app through the regular
-            // MU_MESAG dequeue below — no direct `pbuff` write, no bypass. Done
-            // only when the app actually requested MU_MESAG: EmuTOS sets
-            // AP_MESAG (and processes the frame click) solely for MU_MESAG
-            // (`gemsuper.c:147`); an app waiting on MU_BUTTON alone is not woken
-            // by a frame click and must not receive a spurious MU_MESAG
-            // (AUD-P2-003).
-            if flags & MU_MESAG != 0 && !menu_intercept(pid) {
-                super::window::intercept();
+            // The Control Manager — the `menu_intercept`/`window::intercept`
+            // pair, mirroring the EmuTOS `ctlmgr` process (`gemctrl.c:427-486`)
+            // — runs here, inline, ahead of the application's own checks. It
+            // stays out of the way while it is parked in `ct_msgup`'s wait for
+            // the press that selected a menu item to come up
+            // (`gemctrl.c:100-101`): no interception, no `w_setactive`, until the
+            // button is released.
+            if !super::input::ct_msgup_busy() {
+                // AES intercepts a click in the menu bar or a window frame before
+                // the app sees the raw button: it owns the mouse over the
+                // menu/frame and posts the resulting MN_SELECTED / WM_* message
+                // into the target's per-app FIFO via `ap_sendmsg`
+                // (`gemctrl.c:81`, `gemwmlib.c:851`). The message reaches the app
+                // through the regular MU_MESAG dequeue below — no direct `pbuff`
+                // write, no bypass. Done only when the app actually requested
+                // MU_MESAG: EmuTOS sets AP_MESAG (and processes the frame click)
+                // solely for MU_MESAG (`gemsuper.c:147`); an app waiting on
+                // MU_BUTTON alone is not woken by a frame click and must not
+                // receive a spurious MU_MESAG (AUD-P2-003).
+                if flags & MU_MESAG != 0 && !menu_intercept(pid) {
+                    super::window::intercept();
+                }
+                // The Control Manager's loop head, `w_setactive()`
+                // (`aes/gemctrl.c:442`): after it has dealt with its event it
+                // hands the mouse (back) to the owner of the top window —
+                // `ct_chgown(ppd, &d)` → `set_mown` (`aes/gemwmlib.c:326-333`,
+                // `aes/gemctrl.c:392-397`) — a no-op while a button is held
+                // (`aes/geminput.c:222`) or while a menu track holds the mouse
+                // (`gemctrl.c:395`). It sits **after** the interception, not
+                // before: run first, it undid `mchange`'s hand-over to `ctl_pd`
+                // (`aes/geminput.c:388-389`) before the track could inherit it,
+                // and the track then returned with the application owning the
+                // press it had just consumed.
+                super::input::w_setactive();
             }
             if flags & MU_KEYBD != 0 {
                 if let Some(w) = h.console_try_read_key() {
@@ -487,21 +526,37 @@ pub fn evnt_multi(pb: &Aespb) -> Option<sched::Switch> {
                 // (`aes/gemevlib.c:185`). Without ownership `ev_multi` falls
                 // through to `iasync(MU_BUTTON, buparm)` → `abutton`, which
                 // still tests the level once, unconditionally, and answers
-                // `azombie(e, 1)` — one click (`aes/geminput.c:525-528`). If
+                // `azombie(e, 1)` — one click (`aes/geminput.c:549-551`). If
                 // that entry test fails the EVB sleeps on `c_bsleep`, and
                 // `post_button` walks **only `gl_mowner`'s** list
-                // (`aes/geminput.c:344,465`), so a non-owning app is not woken
+                // (`aes/geminput.c:344,468`), so a non-owning app is not woken
                 // by any later button change until ownership returns.
                 //
-                // Our loop pass 0 is that entry test; every later pass is the
-                // "asleep" state and therefore fires only while we own the
-                // mouse. The click count follows the same split: the quick
-                // check reports the real count (`prets[5] = mclick`,
-                // `gemevlib.c:190-198`), the `abutton` path reports 1.
-                let own = super::input::own_mouse();
-                if (own || pass == 0)
-                    && downorup(crate::vdi::mouse_buttons(), b_flgclks, b_mask, b_state)
-                {
+                // Our loop pass 0 is that entry test, taken on the ownership
+                // and button level sampled at arm time (`arm_own`/`arm_mb`,
+                // above); every later pass is the "asleep" state and therefore
+                // fires only while we own the mouse. The click count follows
+                // the same split: the quick check reports the real count
+                // (`prets[5] = mclick`, `gemevlib.c:190-198`), the `abutton`
+                // path reports 1.
+                //
+                // This is where a menu selection stays a message: the press
+                // that picked the item happened under `gl_ctmown` with the
+                // Control Manager owning the mouse, so `own` is false, and on
+                // pass 0 `arm_mb` is the level from before the track. The
+                // application's wait for a press is satisfied by neither —
+                // exactly `post_button(ctl_pd, …)` never visiting the app's
+                // `c_bsleep` list. The one exception EmuTOS keeps stays too: an
+                // application that re-arms while the selecting press is *still
+                // held* sees that level at arm time and gets its one
+                // ownership-blind `MU_BUTTON` (`docs/api/aes/menu.md`, "The one
+                // documented exception").
+                let (own, mb) = if pass == 0 {
+                    (arm_own, arm_mb)
+                } else {
+                    (super::input::own_mouse(), crate::vdi::mouse_buttons())
+                };
+                if (own || pass == 0) && downorup(mb, b_flgclks, b_mask, b_state) {
                     clicks = if own {
                         // Resolve the *real* click count (single vs. double)
                         // inside the double-click window — the same counter

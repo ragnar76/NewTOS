@@ -195,11 +195,27 @@ pub fn menu_bar(pb: &Aespb) {
 }
 
 /// Interactive drop-down tracking — the only genuinely new Menu-Manager
-/// logic. Entered (from `evnt_multi`) as soon as the cursor is over the bar.
-/// Follows the mouse: the title under the cursor opens its drop-down
-/// (`menu_sub`), items highlight on hover, a button **press** over an item is
-/// the selection, and leaving the bar + open box closes it. Returns
-/// `Some((title, item))` or `None` (cancelled).
+/// logic. Entered (from `evnt_multi`) as soon as the cursor is over the bar
+/// with the buttons up. Follows the mouse: the title under the cursor opens
+/// its drop-down (`menu_sub`), items highlight on hover, a left-button
+/// **edge** over an item is the selection, and leaving the bar + open box
+/// closes it. Returns `Some((title, item))` or `None` (cancelled).
+///
+/// **Which edge selects.** EmuTOS `mn_do` derives its button wait in
+/// `INITEM_STATE` from the live button each time round: `buparm = (button &
+/// 0x0001) ? 0x00010100L : 0x00010101L;` (`aes/gemmnlib.c:314`) — button up
+/// on the item → wait for the **press**; already down (the user pressed on
+/// the title, or in the bar, and dragged onto the item) → wait for the
+/// **release**. Either transition breaks the loop (`:369-376`) and the item
+/// is returned. In the title itself a press only flips the wait
+/// (`buparm ^= 1`, `:375`), so edges over a title select nothing.
+///
+/// **Mouse ownership.** The whole loop runs under `ct_mouse(TRUE)` …
+/// `ct_mouse(FALSE)` (`gemmnlib.c:277,513`): while it tracks, the press that
+/// selects does not hand the mouse to the application
+/// ([`input::b_click`](super::input::b_click)), so the Event Manager delivers
+/// the selection as the one `MN_SELECTED` and not additionally as
+/// `MU_BUTTON` (`docs/api/aes/menu.md` "Mouse ownership over the track").
 ///
 /// Behaviour matches GEM's hover menus (open-on-enter, click-to-pick). The
 /// screen under each box is saved on open and restored on close (`save_under`
@@ -219,6 +235,16 @@ pub fn menu_bar(pb: &Aespb) {
 /// and is left as a scoped follow-on (the tracking/rendering still work, only
 /// the cross-tree *selection delivery* is deferred).
 pub fn track(tree: *mut Object, backend: &dyn RasterBackend) -> Option<(i16, i16)> {
+    // `ct_mouse(TRUE)` on entry, `ct_mouse(FALSE)` on every way out
+    // (`aes/gemmnlib.c:277,513`).
+    super::input::ct_mouse(true);
+    let r = track_owned(tree, backend);
+    super::input::ct_mouse(false);
+    r
+}
+
+/// The body of [`track`], run with the Control Manager holding the mouse.
+fn track_owned(tree: *mut Object, backend: &dyn RasterBackend) -> Option<(i16, i16)> {
     let h = host()?;
     let tp = tree as *const Object;
     let mut cur_title = NIL;
@@ -230,8 +256,9 @@ pub fn track(tree: *mut Object, backend: &dyn RasterBackend) -> Option<(i16, i16
     let mut sub_box = NIL;
     let mut sub_item = NIL;
     // Hover model (GEM): the menu opens as the cursor enters a title; an item
-    // is chosen on a button *press* over it; leaving the bar and the open box
-    // closes the menu with no selection.
+    // is chosen on a left-button *edge* over it (press if the button was up
+    // on entering the item, release if it was already held — `gemmnlib.c:314`);
+    // leaving the bar and the open box closes the menu with no selection.
     let mut was_down = crate::vdi::mouse_buttons() & 0x01 != 0;
 
     loop {
@@ -310,8 +337,12 @@ pub fn track(tree: *mut Object, backend: &dyn RasterBackend) -> Option<(i16, i16
             }
         }
 
-        // Press edge → select the highlighted item.
-        if !was_down && down {
+        // Left-button edge over an item → the selection. `INITEM_STATE` waits
+        // for whichever transition the live button allows (`gemmnlib.c:314`),
+        // so a press with the button up and a release with it held both end
+        // the track here; over a title (`cur_item == NIL`) an edge does
+        // nothing, as `INTITLE_STATE`'s `buparm ^= 1` does nothing visible.
+        if down != was_down {
             if sub_tree != 0 && sub_item != NIL && sub_tree == tree as u64 {
                 // Submenu selection in the same tree: the item index is valid
                 // in the caller's tree (round-trips as MN_SELECTED msg[4]).

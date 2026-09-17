@@ -1,0 +1,22 @@
+# scenario b: H03-style regression check on the FIXED tree -- TeraDesk's own
+# File menu, Quit/Shutdown near the bottom, dialog, Quit -> desktop up.
+# Coordinates reused from measurement-2026-09-17-h03/method (independently
+# verified there). Real park to (0,0), then immediately away to the File
+# title so nothing dwells in the bar row.
+1200 park
+1206 move 72 8
+1207 arm
+1400 move 150 108
+1401 move 150 208
+1402 move 150 235
+1600 mark B_FILE_QUIT_HOVER
+1800 down
+1810 up
+2000 mark B_QUIT_DIALOG
+2200 move 250 313
+2201 move 320 313
+2400 mark B_ON_QUIT_BUTTON
+2600 down
+2610 up
+2800 mark B_AFTER_QUIT
+3600 mark B_DESKTOP_UP

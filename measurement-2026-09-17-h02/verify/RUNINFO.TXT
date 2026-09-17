@@ -1,0 +1,272 @@
+H02 -- unabhaengige Verifikation des Fixes (uncommitted:
+tos-api/src/aes/{event,input,menu}.rs, +tos-api/tests/aes_menu_click_ownership.rs).
+Tester-Messung, 2026-09-17. Branch desk-rebuild, Basis HEAD 2d41261.
+Dem Developer-Selbstreport (TASK/H02-STATUS-DONE.MD, "kein Fix in diesem
+Auftrag") NICHT getraut -- Fix lag uncommitted im Baum, alle Messungen
+unabhaengig neu gefahren.
+
+HASHES
+  sdk/apps/teradesk/build/dist/DESKTOP.NAP
+    sha256 db31aae1a1a94855053021ac45bdab3cb40bc13f21a53d9f6c63f3e8803fe54d
+    (erwartet db31aae1... -- MATCH, entspricht dem H03-Fixstand)
+  kernel/src/host_env.rs (Projektbaum, VOR und NACH der Messung)
+    sha256 287ff7415805b9cf0b7efe74487a5f24dd06f121ddd61cdb5f9e2d8a15618e3e
+    (identisch, Projektbaum nicht angefasst)
+  git status --short (Projektbaum, vor und nach der Messung, identisch):
+    M tos-api/src/aes/event.rs
+    M tos-api/src/aes/input.rs
+    M tos-api/src/aes/menu.rs
+    ?? tos-api/tests/aes_menu_click_ownership.rs
+    ?? measurement-2026-09-17-h02/verify/   (dieses Verzeichnis, neu)
+
+1. HOSTTESTS
+
+  cargo test -p tos-api --test aes_menu_click_ownership
+    -> 3 passed; 0 failed (menu_item_press_delivers_only_mn_selected,
+       menu_item_release_after_drag_delivers_only_mn_selected,
+       desktop_click_still_delivers_mu_button). Erwartet 3/3 -- MATCH.
+
+  cargo test -p tos-api --test aes_button_dispatch --test aes_window_drag
+    -> 5 passed; 0 failed (1 + 4). Erwartet gruen -- MATCH.
+
+  cargo run -p xtask -- test
+    -> Summe ueber alle Testbinaries: 560 passed; 0 failed; 1 ignored.
+       aes_menu_click_ownership ist Teil dieses Laufs (3 der 560).
+       Erwartet 560 gruen / 0 rot / 1 ignoriert -- EXAKTES MATCH.
+
+2. BEIDE BOARDS, WARNUNGEN, CLIPPY
+
+  cargo xtask build --board rpi4     -> clean, kernel 94 rustc-Warnungen
+                                         (Baseline 94 -- Delta 0)
+  cargo xtask build --board qemu-virt -> clean, kernel 94 rustc-Warnungen
+                                          (tos-api 64 rustc-Warnungen,
+                                          Baseline 64 -- Delta 0)
+  cargo clippy --package kernel --no-default-features --features board-rpi4
+    --lib --bins
+    -> "kernel (lib) generated 125 warnings" (Baseline 125 -- Delta 0)
+  cargo clippy --package tos-api --lib
+    -> "tos-api (lib) generated 81 warnings" (Baseline 81 -- Delta 0)
+
+3. QEMU raspi4b MIT INJEKTOR (Scratch-Kopie, Methode wie H03/H02)
+
+  Scratch: rsync -a --exclude target/ --exclude 'sd-card-backup-*'
+    --exclude pictures/ <Projekt>/ <scratch>/h02/ws/
+  Diffs method/scratch-tos-api_src_aes_{mod,pd}.rs.diff,
+    scratch-tos-api_src_host.rs.diff, scratch-kernel_src_host_env.rs.diff
+    (patch -p0, sauber angewendet -- diese 4 Dateien sind vom Fix
+    UNVERAENDERT, also identisch zum urspruenglichen H02-Messlauf).
+  method/scratch-tos-api_src_aes_{event,input,menu}.rs.diff liessen sich
+    NICHT anwenden (Kontext passt nicht mehr -- der Fix hat genau diese
+    Dateien geaendert). Aequivalente Trace-Zeilen von Hand an den NEUEN
+    Stellen (b_click-Gate, ct_mouse, ct_msgup_hold/busy, menu::track-Edge,
+    evnt_multi MU_BUTTON/MU_MESAG) eingefuegt -- reine Diagnose-Ausgabe
+    ueber Host::debug_write (PL011), keine Verhaltensaenderung; nur in der
+    Scratch-Kopie.
+  Karte: tools/make-sd-image.sh <scratch>/h02/sd.img 64 (installiert
+    DESKTOP.NAP sha256 db31aae1... aus build/dist/), NEWDESK.INF =
+    method/newdesk-teradesk.inf (#Z 01 C:\APPS\TERADESK\DESKTOP.NAP@).
+  Board-Footgun beachtet: jeder Lauf mit frischem
+    `cargo xtask build --board rpi4` in der jeweiligen Scratch-Kopie.
+
+  WICHTIGER METHODEN-BEFUND (siehe "Abweichungen" unten): der woertliche
+  method/run3.actions-Ablauf (Park nach (0,0), 195 Ticks Verweildauer DORT,
+  dann Doppelklick auf HARD DISC bei (195,35)) oeffnet auf dem GEFIXTEN Baum
+  das C:\-Fenster NICHT -- der erste Klick des Doppelklicks wird vom
+  Menue-Tracker verschluckt, der beim Verweilen auf (0,0) (das liegt IN der
+  Menueleiste) bereits eine Box offen haelt. Auf dem UNGEFIXTEN Baum (selbes
+  Skript, selbe Karte, Kontrollbau <scratch>/h02/ws-control) oeffnet dasselbe
+  Skript das Fenster zuverlaessig -- REGRESSION, siehe Abschnitt "Verdict"
+  Punkt 2. Fuer eine unverfaelschte Pruefung der eigentlichen H02-Sequenz
+  wurde eine korrigierte Variante gefahren (Park weiterhin nach (0,0), aber
+  nur 1 Tick Verweildauer statt 195, danach sofort zu (300,300) und weiter
+  wie run3.actions) -- Method-Datei:
+  measurement-2026-09-17-h02/verify/method/run3-safepark2.actions.
+
+  a. H02 selbst (run3-safepark2, Aequivalent zu run3.actions minus dem
+     Park-Artefakt):
+     Pixel (method/rowstat.py, HELLO-Zeile):
+       A=0.841  B=0.843  B2=0.843  (Tafel offen, Markierung steht)
+     Trace (serial/runA-safepark2-serial.log:111-120):
+       b_click new=1 prev=0 owner_app=false ctmown=true   <- Druck haelt
+                                                              Besitz bei ctl_pd
+       track edge at (150,43) ... item=20 sub=0
+       track box restored, returning (4,20)
+       menu::track -> Some((4, 20)) mouse=(150,43) mb=1 own=false
+       post_msg pid=1 [10, 1, 0, 4, 20, 0, 0, 0] posted=true   <- MN_SELECTED
+       ct_msgup_hold
+       evnt_multi MU_MESAG deliver [10, 1, 0, 4, 20, 0, 0, 0]
+       (KEIN "evnt_multi MU_BUTTON fired" zwischen Druck und Loslassen)
+       ct_msgup released
+       w_setactive -> owner app (button up)
+     Screendump C0 (screendumps/runASafe2-C0.png): Dialog "File Information"
+       fuer HELLO.TXT (Path C:\, Name HELLO.TXT, 32 bytes) -- NICHT
+       "Disk Volume Information" fuers Laufwerk. Erscheint bereits bei C0
+       (Druck waehlt sofort, EmuTOS-Verhalten bei oben stehender Taste).
+     PASS -- Markierung bleibt, MN_SELECTED allein, kein MU_BUTTON-Leck,
+     korrekter Datei-Dialog.
+
+  b. H03-Regression (runB-h03.actions, TeraDesk File -> Quit/Shutdown ->
+     Dialog -> Quit):
+     Trace (serial/runB-h03regression-serial.log:55-79): identisches Muster
+       wie (a) -- b_click haelt ctmown=true waehrend des Drucks, KEIN
+       MU_BUTTON zwischen Druck und Release, nur MU_MESAG mit
+       [10,1,0,4,32,...] (MN_SELECTED, Quit/Shutdown-Item).
+     Screendump (screendumps/runB-dialog.png): Dialog "Quit / Shutdown
+       Options" (Shutdown/Reboot/Quit/Cancel).
+     Klick auf "Quit" (screendumps/runB-onbtn.png, echter Dialog-Button,
+       KEIN Menue-Track) liefert korrekt MU_BUTTON (Zeile 87/93 -- das ist
+       richtig, ein Dialogknopf ist keine Menue-Tafel).
+     Log: "[shell] sh_ldapp: 'C:\APPS\TERADESK\DESKTOP.NAP' exited with
+       rc=0" -> "starting NEWDESK" -> "[desk] desktop up (1 drives)".
+     Finaler Screendump (screendumps/runB-desktopup-final.png, separater
+       Lauf mit periodischen QMP-Screendumps, da die spaeten Marker
+       B_AFTER_QUIT/B_DESKTOP_UP nach dem Prozesswechsel nicht mehr feuerten
+       -- offener Punkt, siehe unten): eigener Desktop (Menue "Desk File
+       View Options", KEIN "Window"-Eintrag), Fenster C:\ mit 24 Items.
+     PASS -- wie in measurement-2026-09-17-h03/verify/ erwartet, keine
+     Regression durch den H02-Fix auf den H03-Pfad.
+
+  c. Ziehen -- Druck auf dem Titel "File" (Tafel schon per Hover offen),
+     gehalten auf "Open..." gezogen (Ziel bewusst NICHT "Info...", das ist
+     ohne vorherige Auswahl deaktiviert -- screendumps/runC2-before.png
+     zeigt "Info..." grau), dort losgelassen:
+     Trace (serial/runC-drag-release-serial.log:53-68):
+       Druck auf dem Titel (88,8): item=-1, "tut nichts" (kein Some/None).
+       Ziehen (gehalten) auf (150,24): kein Edge (down==was_down), nur
+         Hover-Highlight wandert zu item=19 ("Open...").
+       Loslassen bei (150,24): track edge down=false was_down=true item=19
+         -> track box restored, returning (4,19)
+         -> menu::track -> Some((4, 19))
+         -> post_msg [10, 1, 0, 4, 19, 0, 0, 0]  (MN_SELECTED)
+         -> evnt_multi MU_MESAG deliver [...]
+       KEIN "evnt_multi MU_BUTTON fired" im gesamten Trace.
+     Screendump (screendumps/runC2-settled.png): Dialog "Open Item" (Name:
+       ______) -- File->Open... wurde korrekt ausgefuehrt.
+     PASS -- Auswahl faellt auf das Loslassen (EmuTOS gemmnlib.c:314,
+     "already down -> wait for release"), kein MU_BUTTON an die App.
+
+  d. Druck ausserhalb, in die Leiste ziehen -- Druck auf leerem Desktop
+     (300,300), gehalten in die Leiste ueber "File" (88,8) gezogen, dort
+     losgelassen, danach erneut gehovert:
+     Trace (serial/runD-press-outside-drag-serial.log:54-72):
+       Druck (300,300): b_click DOWN chk_ctrl=1 -> owner_app=true (normaler
+         App-Klick, nicht die Tafel).
+       evnt_multi MU_BUTTON fired (Druck, korrekt -- das ist ein
+         Desktop-Rubberband-Start, keine Menuesache).
+       Ziehen GEHALTEN durch die Leiste bis (88,8): KEIN "mchange ... ->
+         owner ctl_pd", KEIN "ct_mouse(true)", KEIN "track open" -- die
+         Tafel oeffnet NICHT, solange die Taste unten ist (mchange
+         verlangt button==0, aes/geminput.c:388-389).
+       Loslassen bei (88,8): b_click new=0 owner_app bleibt true, "evnt_multi
+         MU_BUTTON fired" (Release des Desktop-Klicks, korrekt an die App).
+       Naechster Hover-Durchlauf (button jetzt oben): "ct_mouse(true)",
+         "track open title=4 box=18 at (88,8)" -- die Tafel oeffnet JETZT.
+     Screendumps: runD-heldoverfile.png zeigt ein Rubberband-Auswahlrechteck
+       vom Desktop-Druck, "File" NICHT invertiert, KEINE Tafel offen;
+       runD-reopens.png zeigt die File-Tafel offen (invertierter Titel,
+       Box sichtbar) nach dem Loslassen.
+     PASS -- kein Menue oeffnet sich waehrend die Taste unten ist; Hover
+     nach dem Loslassen oeffnet es zuverlaessig wieder.
+
+  e. Eigener Desktop (Desk-Menue, eigener Info-Dialog, dann File):
+     NICHT gefahren -- Zeitbudget. Der getestete Mechanismus
+     (b_click/ct_mouse/evnt_multi in tos-api/src/aes/{input,event,menu}.rs)
+     ist pid-/App-unabhaengiger AES-Kernkode, bereits unter (a)-(d) an
+     TeraDesk UND (b) am eigenen Desktop-Prozess (NEWDESK, Quit-Rueckkehr)
+     durchlaufen. Offener Punkt, siehe "Drove vs. couldn't verify".
+
+  f. Normaler Fensterklick (Markierung, Doppelklick oeffnet Ordner):
+     Nicht als eigener Lauf gefahren, aber in (a)/safepark2 MIT-bewiesen:
+     Doppelklick auf HARD DISC (195,35) oeffnet C:\ zuverlaessig
+     (screendumps/runASafe2-A.png, "373687 bytes used in 24 items" ->
+     "32 bytes used in 1 selected item" nach dem Einzelklick auf HELLO.TXT,
+     HELLO-Zeile schwarz=0.841). PASS, kein eigener Lauf noetig.
+
+4. KONTROLLBAU (pre-fix, selbes Skript, selbe Karte) -- Regressionsbeleg
+
+  Scratch-Kopie <scratch>/h02/ws-control: `git checkout HEAD --
+  tos-api/src/aes/{event,input,menu}.rs` NUR in dieser Scratch-Kopie (nicht
+  im Projektbaum, nicht im geteilten Baum -- git-Historie der Scratch-Kopie
+  ist eine private rsync-Kopie). cargo xtask build --board rpi4 dort.
+  strings kernel8.img: "ctmown=" 0x in ws-control, 2x in ws (fix) --
+  bestaetigt, welcher Kernel welcher ist.
+  Woertliches run3.actions-Skript (Park -> 195 Ticks bei (0,0) -> Doppelklick
+  (195,35)): OEFFNET auf ws-control zuverlaessig das Fenster
+  (screendumps/runCtl-A1.png, runCtl-A.png -- "373687 bytes used in 24
+  items" sofort nach dem Doppelklick, dann "32 bytes used in 1 selected
+  item" nach dem Einzelklick auf HELLO.TXT) -- auf ws (Fix) NICHT
+  (screendumps/runA-literal-run3actions-A-nowindow.png: leerer Desktop,
+  HARD DISC nur selektiert, kein Fenster).
+
+VERDICT
+
+  PASS (Kernziel von H02): Der Fix erreicht exakt das Spezifizierte
+  ("Mouse ownership over the track", docs/api/aes/menu.md ab :597) -- in
+  allen vier unabhaengig gefahrenen QEMU-Sequenzen (a, b, c, d) plus 3/3
+  Hosttests erhaelt die App fuer den auswaehlenden Klick GENAU EIN
+  MN_SELECTED und NIE ein MU_BUTTON, sowohl bei Auswahl auf Druck als auch
+  auf Loslassen (Zweig aus gemmnlib.c:314), sowohl bei TeraDesk als auch
+  nach dem Quit-Ruecksprung auf den eigenen Desktop. Kein TeraDesk-Klick
+  ausserhalb der Tafel wurde beeintraechtigt (Regressionstest c
+  "Desktop-Klick" im Hosttest, Szenario (d) Druck+Release auf dem Desktop).
+
+  FAIL (Nebenbefund, ausserhalb des expliziten Auftragstexts, aber real und
+  reproduzierbar): Verweilt der Zeiger LAENGERE ZEIT (hier: ~1s, 195 Ticks)
+  auf einer Position INNERHALB der Menueleiste, OHNE dass ein Klick
+  beabsichtigt ist, und wird DANACH (waehrend die Tafel wegen dieses
+  Verweilens bereits offen/im Tracking ist) an einer davon ENTFERNTEN Stelle
+  auf dem Desktop ein Doppelklick ausgefuehrt, verschluckt der Menue-Tracker
+  den ERSTEN Klick als Pseudo-Edge (item wird ueber die Tafel-Geometrie
+  aufgeloest, auch wenn die Position visuell nichts mit der Tafel zu tun
+  hat) und gibt "None" zurueck (deaktiviertes/unpassendes Item) -- der
+  Doppelklick wird zum Einzelklick degradiert (Icon nur selektiert, Fenster
+  oeffnet nicht). Reproduktion: `measurement-2026-09-17-h02/method/run3.actions`
+  woertlich (unveraendert) auf dem gefixten Baum fahren, mit dem Injektor-
+  Diff aus method/scratch-kernel_src_host_env.rs.diff (dort unveraendert,
+  Park-Sequenz endet bei (0,0), 195 Tick Wartezeit vor dem naechsten
+  move-Schritt). Erwartet (siehe TASK/H02-STATUS-DONE.MD, Original-Trace):
+  Fenster oeffnet, "373687 bytes used in 24 items". Beobachtet (fix):
+  Fenster oeffnet NICHT, nur Icon-Selektion (screendumps/
+  runA-literal-run3actions-A-nowindow.png). Kontrollbau (git checkout HEAD
+  auf dieselben 3 Dateien, sonst identisch) zeigt am selben Skript das
+  erwartete Fensteroeffnen (screendumps/runCtl-A1.png) -- die Ursache liegt
+  eindeutig im Fix (b_click's neue !gl_ctmown-Klammer verzoegert die
+  Besitzuebergabe an die App vom Druck auf das Loslassen; die urspruengliche,
+  fehlerhafte sofortige Uebergabe hatte diesen speziellen Fall zufaellig
+  richtig behandelt). Trace-Beleg fuer den Mechanismus:
+  serial/control-prefix-trace-serial.log (Kontrollbau MIT Diagnose-Trace in
+  der alten track()-Funktion) zeigt, dass BEIDE Baeume beim Verweilen auf
+  (0,0) eine Tafel (title=4 box=18) oeffnen und der spaetere Klick bei
+  (195,35) GEOMETRISCH als item=20 der offenen Box aufgeloest wird -- das
+  ist selbst schon fragwuerdig (Box scheinbar > 190px breit an dieser
+  Stelle) und nicht Teil dieses Fixes, aber vom Fix ERSTMALS SICHTBAR
+  gemacht, weil die alte, falsche Sofort-Uebergabe diesen Fall verdeckt hat.
+  Dies ist ein schmaler, an eine spezifische Vorbedingung gebundener Fall
+  (laengeres Verweilen in der Leiste OHNE Klickabsicht, gefolgt von einem
+  Klick, der geometrisch unter einer zu diesem Zeitpunkt bereits offenen,
+  aber fuer den Nutzer unsichtbaren/unbeabsichtigten Box liegt) -- auf
+  echter Hardware mit menschlicher Maus deutlich seltener als im Skript,
+  aber nicht auszuschliessen (z.B. Zeiger kurz ueber die Leiste gefuehrt,
+  dann zuruecke aufs Symbol doppelgeklickt, bevor man bemerkt, dass sich
+  etwas aufgeklappt hat). Dem Developer zur Bewertung uebergeben -- kein
+  Fix durch den Tester.
+
+DROVE VS. COULD NOT VERIFY
+  Gefahren: Hosttests (3/3 + 5/5 + 560/0/1), beide Boards + Clippy (Delta 0
+  gegen Baseline), QEMU raspi4b Szenarien a (korrigiert + woertlich), b, c,
+  d, Kontrollbau-Vergleich (pre-fix vs. fix, identisches Skript).
+  Nicht gefahren (Zeitbudget, siehe oben): Szenario e (eigener Desktop,
+  Desk-Menue) als eigener Lauf -- Mechanismus bereits durch a-d und den
+  Quit-Ruecksprung in b abgedeckt, aber nicht Klick-fuer-Klick am Desk-Menue
+  selbst; Szenario f als eigener Lauf -- durch (a) mitbewiesen. Echte
+  USB-Maus-Zeitabstaende (QEMU raspi4b hat keinen Eingabeweg) und ein
+  Nachtest auf echter Pi 4 (Datei markieren, File->Info, Markierung bleibt)
+  gehoeren auf die HW-Checkliste.
+
+AUFRAEUMEN
+  QEMU-Prozesse: keine laufenden mehr (ps aux geprueft). QMP-Sockets: keine
+  uebrig (/private/tmp/claude-501/*.sock leer). Scratch-Images: nur in
+  <scratch>/h02/{sd.img,ws,ws-control}, nicht im Projekt, nichts gemountet.
+  Projektbaum: git status --short zeigt vor und nach der Messung nur die
+  vier Fix-Dateien + dieses neue verify/-Verzeichnis. kernel/src/host_env.rs
+  sha256 vor/nach identisch (287ff741...). Nichts geflasht, nichts committet.

@@ -1,0 +1,212 @@
+RB2
+NewTOS booting on rpi4
+Phase 02 reached.
+[mm] DTB at 0x0000000000000100
+[mm] firmware: ARM memory bank 0: 0x0000000000000000 + 1006632960 bytes (960 MiB)
+[mm] firmware: VC memory: 0x000000003c000000 + 67108864 bytes (64 MiB)
+[mm] device tree: no usable /memory node (blob invalid or absent)
+[mm] memory map:
+[mm]   DRAM  : 0x0000000000000000..0x000000003c000000 (1006632960 bytes) — source: firmware
+[mm]   kernel: 0x0000000000080000..0x0000000000300000 (2621440 bytes)
+[mm]   ST-RAM: 0x0000000000400000..0x0000000000e00000 (10485760 bytes)
+[mm]   TT-RAM: 0x0000000001000000..0x000000003be00000 (987758592 bytes)
+[mm]   OSrsvd: 0x000000003be00000..0x000000003c000000 (2097152 bytes)
+[mm]     heap: 0x000000003be00000..0x000000003c000000 (2097152 bytes)
+[mm]   MMIO 00: 0x00000000fd500000..0x00000000fd510000
+[mm]   MMIO 01: 0x00000000fe000000..0x00000000ff000000
+[mm]   MMIO 02: 0x00000000ff800000..0x0000000100000000
+[mm] MMU reinstalled (high-half via TTBR1, TTBR0 deferred to Phase 06).
+[mm] frames ST-RAM: total=2560 used=0 free=2560 (10485760 B free)
+[mm] frames TT-RAM: total=241152 used=0 free=241152 (987758592 B free)
+[mm] alloc ST-RAM frame -> 0x0000000000400000
+[mm] alloc TT-RAM frame -> 0x0000000001000000
+[mm] heap after init: total=2097152 used=0 free=2097152 largest=2097152 blocks=1
+[mm] heap smoke OK
+[mm] heap after smoke: total=2097152 used=0 free=2097152 largest=2097152 blocks=1
+[fb] VideoCore display geometry detected: 640x480
+[fb] 640x480 pitch 2560 virtual height 960 -> 2 screen page(s), 2400 KiB
+[fb] VideoCore fb up: 640x480 stride 640px
+[mm] BDOS pools: ST-RAM 0x00400000+10485760 TT-RAM 0x01000000+987758592
+[mm] BDOS ST-RAM after init: total=10485760 free=10485760 used=0 largest_free=10485760 (free_mds=1 alloc_mds=0)
+[mm] BDOS TT-RAM after init: total=987758592 free=987758592 used=0 largest_free=987758592 (free_mds=1 alloc_mds=0)
+[emmc] SD card on controller @ 0xffff0000fe300000
+[clock] seeded from kernel8.img: 2026-09-17 23:15:08
+[pcie] RC not present (no response at RC_BASE); USB disabled
+[auto] running C:\AUTO\HELLO.NCP
+[launch] EL0: slot 0 entry 0x1000
+Hello from a NewTOS .NCP program!
+[launch] returned (program Pterm'd)
+[auto] 1 AUTO program(s) run
+[shell] sh_ldapp: starting C:\APPS\TERADESK\DESKTOP.NAP, sh_nextapp=2, sh_isgem=1
+[launch] EL0: slot 0 entry 0x1000
+[h02] injector armed
+[h02] step 0 at +1200 -> mouse (192,112) mb=0
+[h02] step 1 at +1201 -> mouse (65,0) mb=0
+[h02] step 2 at +1219 -> mouse (0,0) mb=0
+[h02] step 3 at +1219 -> mouse (0,0) mb=0
+[h02] step 4 at +1219 -> mouse (0,0) mb=0
+[h02] step 5 at +1219 -> mouse (0,0) mb=0
+[h02] step 6 at +1219 -> mouse (72,8) mb=0
+[h02] step 7 at +1219 -> mouse (72,8) mb=0
+[h02] step 8 at +1400 -> mouse (150,108) mb=0
+[h02] step 9 at +1401 -> mouse (150,208) mb=0
+[h02] step 10 at +1402 -> mouse (150,235) mb=0
+[h02] MARK B_FILE_QUIT_HOVER step 11 at +1600 mouse (150,235) mb=0
+[h02] b_click new=1 prev=0 owner_app=false ctmown=true
+[h02] step 12 at +1800 -> mouse (150,235) mb=1
+[h02] track edge at (150,235) down=true was_down=false title=4 box=18 item=32 sub=0
+[h02] track box restored, returning (4,32)
+[h02] ct_mouse(false)
+[h02] menu::track -> Some((4, 32)) mouse=(150,235) mb=1 own=false
+[h02] post_msg pid=1 [10, 1, 0, 4, 32, 0, 0, 0] posted=true
+[h02] ct_msgup_hold
+[h02] evnt_multi MU_MESAG deliver [10, 1, 0, 4, 32, 0, 0, 0] pass=5803600
+[aes] op 25 in=(19,258,3,0) out=(16,150,235,1,0,0,0) yield=false
+[h02] b_click new=0 prev=1 owner_app=false ctmown=false
+[h02] step 13 at +1810 -> mouse (150,235) mb=0
+[aes] op 24 in=(150,0,0,0) out=(1,0,0,0,0,0,0) yield=false
+[aes] op 107 in=(1,0,0,0) out=(1,0,0,0,0,0,0) yield=false
+[aes] op 54 in=(0,0,0,0) out=(1,205,126,230,246,0,0) yield=false
+[aes] op 54 in=(0,0,0,0) out=(1,205,126,230,246,0,0) yield=false
+[aes] op 78 in=(256,0,0,0) out=(1,0,0,0,0,0,0) yield=false
+[aes] op 78 in=(257,0,0,0) out=(1,0,0,0,0,0,0) yield=false
+[aes] op 78 in=(256,0,0,0) out=(1,0,0,0,0,0,0) yield=false
+[aes] op 42 in=(0,8,205,126) out=(1,0,0,0,0,0,0) yield=false
+[aes] op 78 in=(257,0,0,0) out=(1,0,0,0,0,0,0) yield=false
+[aes] op 107 in=(3,0,0,0) out=(1,0,0,0,0,0,0) yield=false
+[h02] ct_msgup released
+[h02] w_setactive -> owner app (button up)
+[h02] MARK B_QUIT_DIALOG step 14 at +2000 mouse (150,235) mb=0
+[h02] step 15 at +2200 -> mouse (250,313) mb=0
+[h02] step 16 at +2201 -> mouse (320,313) mb=0
+[h02] MARK B_ON_QUIT_BUTTON step 17 at +2400 mouse (320,313) mb=0
+[h02] b_click DOWN at (320,313) chk_ctrl=1 -> owner_app=true ctmown=false
+[h02] step 18 at +2600 -> mouse (320,313) mb=1
+[h02] b_click new=0 prev=1 owner_app=true ctmown=false
+[h02] step 19 at +2610 -> mouse (320,313) mb=0
+[h02] evnt_multi MU_BUTTON fired own=true pass=3882525 clicks=1 mouse=(320,313) mb_now=0
+[aes] op 25 in=(3,2,1,1) out=(2,320,313,0,0,0,1) yield=false
+[aes] op 43 in=(0,8,320,313) out=(7,0,0,0,0,0,0) yield=false
+[aes] op 56 in=(7,0,0,0) out=(0,7,0,0,0,0,0) yield=false
+[aes] op 44 in=(7,0,0,0) out=(1,224,304,0,0,0,0) yield=false
+[aes] op 47 in=(7,0,205,126) out=(1,0,0,0,0,0,0) yield=false
+[h02] evnt_multi MU_BUTTON fired own=true pass=0 clicks=1 mouse=(320,313) mb_now=0
+[aes] op 25 in=(34,1,1,0) out=(2,320,313,0,0,0,1) yield=false
+[aes] op 107 in=(2,0,0,0) out=(1,0,0,0,0,0,0) yield=false
+[aes] op 47 in=(7,0,205,126) out=(1,0,0,0,0,0,0) yield=false
+[aes] op 78 in=(256,0,0,0) out=(1,0,0,0,0,0,0) yield=false
+[aes] op 78 in=(257,0,0,0) out=(1,0,0,0,0,0,0) yield=false
+[aes] op 107 in=(0,0,0,0) out=(1,0,0,0,0,0,0) yield=false
+[aes] op 33 in=(4,1,0,0) out=(1,0,0,0,0,0,0) yield=false
+[aes] op 30 in=(0,0,0,0) out=(1,0,0,0,0,0,0) yield=false
+[aes] op 105 in=(0,14,0,0) out=(1,0,0,0,0,0,0) yield=false
+[aes] op 51 in=(0,0,19,640) out=(1,0,0,0,0,0,0) yield=false
+[aes] op 51 in=(3,0,19,640) out=(1,0,0,0,0,0,0) yield=false
+[aes] op 111 in=(0,0,0,0) out=(1,0,0,0,0,0,0) yield=false
+[aes] op 19 in=(0,0,0,0) out=(1,0,0,0,0,0,0) yield=false
+[launch] returned (program Pterm'd)
+[shell] sh_ldapp: 'C:\APPS\TERADESK\DESKTOP.NAP' exited with rc=0
+[shell] sh_ldapp: starting NEWDESK, sh_nextapp=3, sh_isgem=1
+[aes] op 10 in=(0,0,0,0) out=(1,0,0,0,0,0,0) yield=false
+[aes] op 104 in=(0,4,0,0) out=(1,0,19,640,461,0,0) yield=false
+[aes] op 40 in=(0,1,0,0) out=(1,0,0,0,0,0,0) yield=false
+[aes] op 40 in=(0,2,0,0) out=(1,0,0,0,0,0,0) yield=false
+[aes] op 40 in=(0,3,0,0) out=(1,0,0,0,0,0,0) yield=false
+[aes] op 40 in=(0,4,0,0) out=(1,0,0,0,0,0,0) yield=false
+[aes] op 40 in=(0,5,0,0) out=(1,0,0,0,0,0,0) yield=false
+[aes] op 40 in=(0,6,0,0) out=(1,0,0,0,0,0,0) yield=false
+[aes] op 40 in=(0,7,0,0) out=(1,0,0,0,0,0,0) yield=false
+[aes] op 40 in=(0,8,0,0) out=(1,0,0,0,0,0,0) yield=false
+[aes] op 108 in=(1,4095,0,19) out=(1,1,61,616,396,0,0) yield=false
+[aes] op 40 in=(1,9,0,0) out=(1,0,0,0,0,0,0) yield=false
+[aes] op 40 in=(1,10,0,0) out=(1,0,0,0,0,0,0) yield=false
+[aes] op 40 in=(1,11,0,0) out=(1,0,0,0,0,0,0) yield=false
+[aes] op 105 in=(0,14,1,0) out=(1,0,0,0,0,0,0) yield=false
+[aes] op 30 in=(1,0,0,0) out=(1,0,0,0,0,0,0) yield=false
+[aes] op 100 in=(4095,0,19,640) out=(1,0,0,0,0,0,0) yield=false
+[aes] op 105 in=(1,2,0,0) out=(1,0,0,0,0,0,0) yield=false
+[aes] op 105 in=(1,3,0,0) out=(1,0,0,0,0,0,0) yield=false
+[h02] post_msg pid=1 [20, 1, 0, 1, 49, 85, 520, 335] posted=true
+[aes] op 101 in=(1,48,43,544) out=(1,0,0,0,0,0,0) yield=false
+[aes] op 104 in=(1,4,0,0) out=(1,49,85,520,335,0,0) yield=false
+[aes] op 40 in=(2,12,0,0) out=(1,0,0,0,0,0,0) yield=false
+[aes] op 40 in=(2,13,0,0) out=(1,0,0,0,0,0,0) yield=false
+[aes] op 40 in=(2,14,0,0) out=(1,0,0,0,0,0,0) yield=false
+[aes] op 40 in=(2,15,0,0) out=(1,0,0,0,0,0,0) yield=false
+[aes] op 40 in=(2,16,0,0) out=(1,0,0,0,0,0,0) yield=false
+[aes] op 40 in=(2,17,0,0) out=(1,0,0,0,0,0,0) yield=false
+[aes] op 40 in=(2,18,0,0) out=(1,0,0,0,0,0,0) yield=false
+[aes] op 40 in=(2,19,0,0) out=(1,0,0,0,0,0,0) yield=false
+[aes] op 40 in=(2,20,0,0) out=(1,0,0,0,0,0,0) yield=false
+[aes] op 40 in=(2,21,0,0) out=(1,0,0,0,0,0,0) yield=false
+[aes] op 40 in=(2,22,0,0) out=(1,0,0,0,0,0,0) yield=false
+[aes] op 40 in=(2,23,0,0) out=(1,0,0,0,0,0,0) yield=false
+[aes] op 40 in=(2,24,0,0) out=(1,0,0,0,0,0,0) yield=false
+[aes] op 40 in=(2,25,0,0) out=(1,0,0,0,0,0,0) yield=false
+[aes] op 40 in=(2,26,0,0) out=(1,0,0,0,0,0,0) yield=false
+[aes] op 40 in=(2,27,0,0) out=(1,0,0,0,0,0,0) yield=false
+[aes] op 40 in=(2,28,0,0) out=(1,0,0,0,0,0,0) yield=false
+[aes] op 40 in=(2,29,0,0) out=(1,0,0,0,0,0,0) yield=false
+[aes] op 40 in=(2,30,0,0) out=(1,0,0,0,0,0,0) yield=false
+[aes] op 105 in=(1,16,750,0) out=(1,0,0,0,0,0,0) yield=false
+[aes] op 105 in=(1,9,0,0) out=(1,0,0,0,0,0,0) yield=false
+[aes] op 105 in=(1,15,1000,0) out=(1,0,0,0,0,0,0) yield=false
+[aes] op 105 in=(1,8,0,0) out=(1,0,0,0,0,0,0) yield=false
+[aes] op 32 in=(9,1,0,0) out=(1,0,0,0,0,0,0) yield=false
+[aes] op 32 in=(12,0,0,0) out=(1,0,0,0,0,0,0) yield=false
+[aes] op 32 in=(13,0,0,0) out=(1,0,0,0,0,0,0) yield=false
+[aes] op 32 in=(14,1,0,0) out=(1,0,0,0,0,0,0) yield=false
+[aes] op 32 in=(16,1,0,0) out=(1,0,0,0,0,0,0) yield=false
+[aes] op 32 in=(17,1,0,0) out=(1,0,0,0,0,0,0) yield=false
+[aes] op 32 in=(18,1,0,0) out=(1,0,0,0,0,0,0) yield=false
+[aes] op 32 in=(19,0,0,0) out=(1,0,0,0,0,0,0) yield=false
+[aes] op 32 in=(20,1,0,0) out=(1,0,0,0,0,0,0) yield=false
+[aes] op 32 in=(21,1,0,0) out=(1,0,0,0,0,0,0) yield=false
+[aes] op 32 in=(23,0,0,0) out=(1,0,0,0,0,0,0) yield=false
+[aes] op 32 in=(25,0,0,0) out=(1,0,0,0,0,0,0) yield=false
+[aes] op 32 in=(26,0,0,0) out=(1,0,0,0,0,0,0) yield=false
+[aes] op 32 in=(28,1,0,0) out=(1,0,0,0,0,0,0) yield=false
+[aes] op 32 in=(29,1,0,0) out=(1,0,0,0,0,0,0) yield=false
+[aes] op 32 in=(31,1,0,0) out=(1,0,0,0,0,0,0) yield=false
+[aes] op 32 in=(32,1,0,0) out=(1,0,0,0,0,0,0) yield=false
+[aes] op 32 in=(33,1,0,0) out=(1,0,0,0,0,0,0) yield=false
+[aes] op 32 in=(34,1,0,0) out=(1,0,0,0,0,0,0) yield=false
+[aes] op 32 in=(35,1,0,0) out=(1,0,0,0,0,0,0) yield=false
+[aes] op 32 in=(37,1,0,0) out=(1,0,0,0,0,0,0) yield=false
+[aes] op 32 in=(39,1,0,0) out=(1,0,0,0,0,0,0) yield=false
+[aes] op 32 in=(40,0,0,0) out=(1,0,0,0,0,0,0) yield=false
+[aes] op 32 in=(41,0,0,0) out=(1,0,0,0,0,0,0) yield=false
+[aes] op 32 in=(42,0,0,0) out=(1,0,0,0,0,0,0) yield=false
+[aes] op 32 in=(43,0,0,0) out=(1,0,0,0,0,0,0) yield=false
+[aes] op 32 in=(45,0,0,0) out=(1,0,0,0,0,0,0) yield=false
+[aes] op 32 in=(46,0,0,0) out=(1,0,0,0,0,0,0) yield=false
+[aes] op 32 in=(47,0,0,0) out=(1,0,0,0,0,0,0) yield=false
+[aes] op 32 in=(49,1,0,0) out=(1,0,0,0,0,0,0) yield=false
+[aes] op 32 in=(50,1,0,0) out=(1,0,0,0,0,0,0) yield=false
+[aes] op 31 in=(28,0,0,0) out=(1,0,0,0,0,0,0) yield=false
+[aes] op 31 in=(29,1,0,0) out=(1,0,0,0,0,0,0) yield=false
+[aes] op 31 in=(31,1,0,0) out=(1,0,0,0,0,0,0) yield=false
+[aes] op 31 in=(32,0,0,0) out=(1,0,0,0,0,0,0) yield=false
+[aes] op 31 in=(33,0,0,0) out=(1,0,0,0,0,0,0) yield=false
+[aes] op 31 in=(34,0,0,0) out=(1,0,0,0,0,0,0) yield=false
+[aes] op 31 in=(35,0,0,0) out=(1,0,0,0,0,0,0) yield=false
+[aes] op 31 in=(37,1,0,0) out=(1,0,0,0,0,0,0) yield=false
+[aes] op 78 in=(256,0,0,0) out=(1,0,0,0,0,0,0) yield=false
+[h02] post_msg pid=1 [20, 1, 0, 1, 48, 43, 546, 402] posted=true
+[aes] op 51 in=(3,0,0,0) out=(1,0,0,0,0,0,0) yield=false
+[aes] op 104 in=(1,4,0,0) out=(1,49,85,520,335,0,0) yield=false
+[aes] op 104 in=(1,11,0,0) out=(1,49,85,520,335,0,0) yield=false
+[aes] op 42 in=(2,8,49,85) out=(1,0,0,0,0,0,0) yield=false
+[aes] op 104 in=(1,12,0,0) out=(1,0,0,0,0,0,0) yield=false
+[aes] op 30 in=(1,0,0,0) out=(1,0,0,0,0,0,0) yield=false
+[aes] op 78 in=(257,0,0,0) out=(1,0,0,0,0,0,0) yield=false
+[aes] op 78 in=(0,0,0,0) out=(1,0,0,0,0,0,0) yield=false
+[desk] desktop up (1 drives)
+[h02] evnt_multi MU_MESAG deliver [20, 1, 0, 1, 48, 43, 546, 402] pass=0
+[aes] op 25 in=(19,2,1,1) out=(16,320,313,0,0,0,0) yield=false
+[aes] op 78 in=(256,0,0,0) out=(1,0,0,0,0,0,0) yield=false
+[aes] op 104 in=(1,11,0,0) out=(1,49,85,520,335,0,0) yield=false
+[aes] op 42 in=(2,8,49,85) out=(1,0,0,0,0,0,0) yield=false
+[aes] op 104 in=(1,12,0,0) out=(1,0,0,0,0,0,0) yield=false
+[aes] op 78 in=(257,0,0,0) out=(1,0,0,0,0,0,0) yield=false
+[aes] op 25 in=(48,2,1,1) out=(32,320,313,0,0,0,0) yield=false

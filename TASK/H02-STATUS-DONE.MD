@@ -199,3 +199,77 @@ Messung. Injektor und Trace existieren nur in der Scratch-Kopie
 (`…/scratchpad/h02/ws`, `…/ws-old`); `method/scratch-*.diff` dokumentieren sie.
 Keine QEMU-Prozesse, keine QMP-Sockets, kein gemountetes Scratch-Image, Karte nicht
 angefasst, nichts geflasht, nichts committet.
+
+## Verifikation (Tester, 2026-09-17)
+
+Unabhaengig nachgemessen, Fix lag uncommitted in `tos-api/src/aes/{event,input,menu}.rs`
+(+`tos-api/tests/aes_menu_click_ownership.rs`), Basis HEAD `2d41261`. Dem
+Developer-Selbstreport oben ("kein Fix in diesem Auftrag") NICHT getraut --
+der Fix war da, wurde real gebaut und in QEMU gefahren. Volle Belege, Hashes,
+Trace-Auszuege und Screendumps: [`measurement-2026-09-17-h02/verify/RUNINFO.TXT`](../measurement-2026-09-17-h02/verify/RUNINFO.TXT).
+
+**PASS (Kernziel):** 3/3 neue Hosttests, 5/5 Regressionstests (`aes_button_dispatch`,
+`aes_window_drag`), `cargo run -p xtask -- test` = 560 gruen/0 rot/1 ignoriert
+(exakt wie erwartet). Beide Boards bauen sauber, Clippy-Delta 0 gegen die
+genannte Baseline (tos-api 81, kernel 125). Vier unabhaengig gefahrene QEMU-
+raspi4b-Sequenzen (H02 selbst, H03-Regression, Ziehen mit Auswahl auf
+Loslassen, Druck-ausserhalb-in-die-Leiste-gezogen) bestaetigen per Trace UND
+Screendump: die App bekommt fuer den auswaehlenden Klick genau EIN
+`MN_SELECTED`, nie ein `MU_BUTTON` -- sowohl fuer Auswahl auf Druck als auch
+auf Loslassen (EmuTOS `gemmnlib.c:314`), sowohl bei TeraDesk als auch am
+eigenen Desktop nach dem Quit-Ruecksprung. Der Datei-Dialog fuer HELLO.TXT
+erscheint korrekt (nicht mehr die Laufwerksinfo).
+
+**FAIL (Nebenbefund, ausserhalb des Auftragstexts, aber real und mit
+Kontrollbau belegt):** Der woertliche `method/run3.actions`-Ablauf (Park
+verweilt ~1s auf (0,0), das liegt INNERHALB der Menueleiste) oeffnet auf dem
+GEFIXTEN Baum das `C:\`-Fenster nicht mehr per Doppelklick auf HARD DISC --
+der erste Klick wird vom beim Verweilen bereits offenen Menue-Tracker als
+Pseudo-Edge verschluckt und als `None` verworfen (Item ueber die
+Tafel-Geometrie an einer davon weit entfernten Bildschirmposition
+aufgeloest), der Doppelklick degradiert zum Einzelklick. Mit `git checkout
+HEAD` auf exakt dieselben drei Dateien (Kontrollbau, sonst identisches
+Skript/Karte/Timing) oeffnet sich das Fenster zuverlaessig -- die Regression
+liegt eindeutig an der neuen `!gl_ctmown`-Klammer in `b_click`, die die
+Besitzuebergabe an die App vom Druck auf das Loslassen verschiebt; die alte,
+eigentlich fehlerhafte sofortige Uebergabe hat diesen Fall zufaellig richtig
+behandelt und damit verdeckt. Schmaler, vorbedingungsgebundener Fall
+(laengeres unbeabsichtigtes Verweilen in der Leiste vor einem entfernten
+Klick); auf echter Hardware seltener, aber nicht ausgeschlossen. Reproduktion,
+Trace und beide Kernel-Belege (fix vs. Kontrollbau) in RUNINFO.TXT Abschnitt 4.
+Dem Developer zur Bewertung uebergeben, kein Fix durch den Tester.
+
+**Nicht gefahren (Zeitbudget):** Szenario "eigener Desktop" (Desk-Menue) als
+eigener Lauf -- der Mechanismus ist bereits durch die vier gefahrenen
+Sequenzen plus den Quit-Ruecksprung auf den eigenen Desktop in Szenario b
+abgedeckt (derselbe pid-unabhaengige AES-Kernkode), aber nicht am Desk-Menue
+selbst Klick-fuer-Klick durchlaufen. Echte USB-Maus-Zeitabstaende und ein
+Nachtest auf echter Pi 4 (Datei markieren, File->Info, Markierung bleibt
+stehen) gehoeren auf die HW-Checkliste.
+
+Baum: `git status --short` zeigt vor/nach der Messung nur die vier
+Fix-Dateien plus das neue `measurement-2026-09-17-h02/verify/`-Verzeichnis.
+`kernel/src/host_env.rs` sha256 identisch vor/nach (`287ff741...`). Injektor
+und Kontrollbau nur in Scratch-Kopien, keine laufenden QEMU-Prozesse, keine
+QMP-Sockets uebrig, nichts geflasht, nichts committet.
+
+### Einordnung des Nebenbefunds durch den Lead (2026-09-17)
+
+**Kein Defekt des Fixes — das Skript klickt in ein offenes Menue.** Der
+Kontrollbau-Trace des Testers zeigt es selbst
+(`verify/serial/control-prefix-trace-serial.log:44-72`): der Zeiger faehrt
+auf dem Weg zum Parkplatz ueber `(65,0)` — den Titel *File* — und die Tafel
+`title=4 box=18` oeffnet sich; beim Parken auf `(0,0)` bleibt sie offen
+(`track iter … title=4 box=18 item=-1`, Zeiger in der Leiste, aber ueber
+keinem Titel). Der Doppelklick auf `(195,35)` landet damit **innerhalb der
+offenen File-Tafel** — ein Menueklick, kein Desktopklick. Dass der alte Bau
+das Fenster trotzdem oeffnete, ist genau H02: der erste Klick leckte als
+`MU_BUTTON` mit Klickzaehler 2 an die App. EmuTOS verhaelt sich wie der
+gefixte Bau: `OUTSIDE_STATE` haelt die Tafel offen, bis ein Klick faellt
+(`gemmnlib.c`, siehe Spec `menu.md` „The drop-down tracking loop"), und ein
+Klick in die Tafel ist eine Auswahl, keine Anwendungseingabe.
+
+Folge fuer die Methode, nicht fuer den Code: der Parkplatz `(0,0)` liegt in
+der Leiste; `verify/method/run3-safepark2.actions` (Park ausserhalb) ist die
+Fassung fuer kuenftige Laeufe. Szenario e (eigenes Desk-Menue) bleibt als
+HW-Punkt auf der Liste.

@@ -17,10 +17,23 @@
 //!
 //! **What is *not* reproduced, and why.** EmuTOS's `bchange`/`b_delay` deliver
 //! the button change through the fork queue into a per-process event-block list
-//! (`post_button`, `:462-483`); our Event Manager polls the live VDI button byte
+//! (`post_button`, `:463-483`); our Event Manager polls the live VDI button byte
 //! instead, so the delivery half has no counterpart. What *is* observable
 //! through that difference — which process may act on the sampled level, and how
 //! long a click window stays open — is exactly what this module keeps.
+//!
+//! **The Control Manager's two locks over the mouse.** Beside `gl_mowner` this
+//! module also carries the Control Manager's `gl_ctmown` (`aes/gemctrl.c:50`),
+//! the flag `mn_do` raises for the whole of a menu-bar track (`ct_mouse(TRUE)`
+//! / `ct_mouse(FALSE)`, `aes/gemmnlib.c:277,513`; `aes/gemctrl.c:400-417`) so
+//! that a press during the track does not move the mouse away from `ctl_pd`
+//! (`bchange`, `aes/geminput.c:334-335`; `ct_chgown`, `aes/gemctrl.c:395`) —
+//! and the state of `ct_msgup`'s `while (button & 0x0001) dsptch();`
+//! (`aes/gemctrl.c:100-101`), the wait that keeps the Control Manager from
+//! looping again until the press that selected a menu item has been released.
+//! Together they are the contract of `docs/api/aes/menu.md` "Mouse ownership
+//! over the track": the selecting press and its release reach the application
+//! only as the one `MN_SELECTED`, never as `MU_BUTTON`.
 //!
 //! Single boot CPU (the AES is entered only from the GEM trap, these two hooks
 //! only from the IKBD decode path), so plain `Relaxed` atomics suffice, matching
@@ -57,6 +70,26 @@ static YRAT: AtomicI16 = AtomicI16::new(0);
 /// application.
 static GL_MOWNER_APP: AtomicBool = AtomicBool::new(true);
 
+/// EmuTOS `gl_ctmown` (`aes/gemctrl.c:50`) — the Control Manager holds the
+/// mouse across a menu-bar track. Raised and lowered by [`ct_mouse`] from
+/// [`menu::track`](super::menu::track), EmuTOS `mn_do`'s `ct_mouse(TRUE)` on
+/// entry and `ct_mouse(FALSE)` on every exit (`aes/gemmnlib.c:277,513`). While
+/// set, a fresh button-down does **not** re-assign the owner ([`b_click`],
+/// `bchange`'s `if (!gl_ctmown && …)`, `aes/geminput.c:334-335`) and the
+/// Control Manager's loop head does not hand the mouse back ([`w_setactive`],
+/// `ct_chgown`'s `if (!gl_ctmown) set_mown(mpd);`, `aes/gemctrl.c:395-396`).
+static GL_CTMOWN: AtomicBool = AtomicBool::new(false);
+
+/// The Control Manager is parked in `ct_msgup`'s `while (button & 0x0001)
+/// dsptch();` (`aes/gemctrl.c:100-101`): a menu selection has been posted and
+/// the press that made it is still held. Until that press is released the
+/// Control Manager neither loops (`w_setactive`) nor looks at the button again
+/// — so the held button cannot be taken for a fresh press on a window frame,
+/// nor re-open the bar. Raised by [`ct_msgup_hold`] (from the menu
+/// interception, right after `MN_SELECTED` is posted), lowered by
+/// [`ct_msgup_busy`] the first time it sees the button up.
+static CT_MSGUP: AtomicBool = AtomicBool::new(false);
+
 /// EmuTOS `gl_bdely != 0` — a button-delay window is open: the interval in
 /// which a further click still joins the current gesture
 /// (`aes/geminput.c:59-60`). EmuTOS counts it down in ticks; our Event Manager
@@ -84,16 +117,22 @@ static GL_BDELY: AtomicBool = AtomicBool::new(false);
 /// latched here, at the press, and does not follow the pointer while the button
 /// is held — that is what lets a drag start in a window and leave it.
 ///
-/// `gl_ctmown` (the Control Manager holding the mouse *form* across a menu
-/// track, `aes/gemctrl.c:400-417`) has no counterpart: our menu tracker runs
-/// synchronously inside the trap, so no event loop can observe the interval.
+/// The `!gl_ctmown` bracket is load-bearing: this handler runs from
+/// [`menu::track`](super::menu::track)'s own `pump_input` while the drop-down
+/// is being tracked, so the press that selects an item lands *here*, in the
+/// middle of the track. With [`GL_CTMOWN`] raised the owner stays `ctl_pd`, and
+/// the Event Manager's quick check for the application (`rlr == gl_mowner`,
+/// `aes/gemevlib.c:185`) does not see that press — the H02 leak of the menu
+/// click as `MU_BUTTON` (`TASK/H02-STATUS-DONE.MD` §4).
 pub(crate) fn b_click(new: u8) {
     // "ignore it unless it represents a change" (aes/geminput.c:113)
     let prev = BUTTON.swap(new, Ordering::Relaxed);
     if new == prev {
         return;
     }
-    if new == MB_DOWN && prev == 0 {
+    // `if (!gl_ctmown && (new == MB_DOWN) && (button == 0)) gl_mowner = chkown();`
+    // (aes/geminput.c:334-335)
+    if !GL_CTMOWN.load(Ordering::Relaxed) && new == MB_DOWN && prev == 0 {
         let (x, y) = crate::vdi::mouse_position();
         // chkown: +1 → gl_cowner, 0 → D.w_win[0].w_owner (both the app at
         // single-app), −1 → ctl_pd.
@@ -150,16 +189,54 @@ pub(super) fn own_mouse() -> bool {
     GL_MOWNER_APP.load(Ordering::Relaxed)
 }
 
-/// The Control Manager's `w_setactive()` (`aes/gemctrl.c:441`): give the mouse
+/// The Control Manager's `w_setactive()` (`aes/gemctrl.c:442`): give the mouse
 /// to the owner of the top window — `ct_chgown(ppd, &d)` → `set_mown`
-/// (`aes/gemwmlib.c:326-333`, `aes/gemctrl.c:392-396`). `set_mown` changes
-/// nothing while a button is held (`if (!button)`, `aes/geminput.c:222`), so a
-/// press latched to the Control Manager stays with it until the release. At
-/// single-app the top window's owner is always this application.
+/// (`aes/gemwmlib.c:326-333`, `aes/gemctrl.c:392-397`). `ct_chgown` skips the
+/// hand-over while the Control Manager holds the mouse for a menu track
+/// (`if (!gl_ctmown)`, `:395`), and `set_mown` changes nothing while a button
+/// is held (`if (!button)`, `aes/geminput.c:222`), so a press latched to the
+/// Control Manager stays with it until the release. At single-app the top
+/// window's owner is always this application.
 pub(super) fn w_setactive() {
-    if BUTTON.load(Ordering::Relaxed) == 0 {
+    if !GL_CTMOWN.load(Ordering::Relaxed) && BUTTON.load(Ordering::Relaxed) == 0 {
         GL_MOWNER_APP.store(true, Ordering::Relaxed);
     }
+}
+
+/// EmuTOS `ct_mouse(grabit)` (`aes/gemctrl.c:400-417`), the part that matters
+/// to ownership: raise (`grab = true`) or lower [`GL_CTMOWN`]. `mn_do` brackets
+/// its whole tracking loop with it (`aes/gemmnlib.c:277,513`); so does
+/// [`menu::track`](super::menu::track). The mouse-form bookkeeping EmuTOS does
+/// alongside (`set_mouse_to_arrow`, `gl_tmpmoff`) is the VDI cursor's business
+/// here and not reproduced.
+pub(super) fn ct_mouse(grab: bool) {
+    GL_CTMOWN.store(grab, Ordering::Relaxed);
+}
+
+/// Enter `ct_msgup`'s wait for the selecting press to be released
+/// (`while (button & 0x0001) dsptch();`, `aes/gemctrl.c:100-101`): the Control
+/// Manager has posted `MN_SELECTED` and stays out of the way until the button is
+/// up. Our Control Manager runs inline in the Event Manager's poll loop, so the
+/// wait is a flag the loop consults ([`ct_msgup_busy`]) rather than a spin —
+/// the application gets its message at once, exactly as EmuTOS's `dsptch()`
+/// inside the spin lets it run.
+pub(super) fn ct_msgup_hold() {
+    CT_MSGUP.store(true, Ordering::Relaxed);
+}
+
+/// Is the Control Manager still inside `ct_msgup`'s wait? `true` while the
+/// press that selected a menu item is held; the first call that finds the
+/// button up ends the wait (`ct_msgup` returns, `ctlmgr` loops) and answers
+/// `false`.
+pub(super) fn ct_msgup_busy() -> bool {
+    if !CT_MSGUP.load(Ordering::Relaxed) {
+        return false;
+    }
+    if BUTTON.load(Ordering::Relaxed) & MB_DOWN != 0 {
+        return true;
+    }
+    CT_MSGUP.store(false, Ordering::Relaxed);
+    false
 }
 
 /// Open the button-delay window — EmuTOS `gl_bdely = gl_dclick` in `b_click`
