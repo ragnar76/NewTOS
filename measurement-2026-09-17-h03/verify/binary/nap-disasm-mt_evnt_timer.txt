@@ -1,0 +1,29 @@
+
+sdk/apps/teradesk/build/dist/DESKTOP.NAP:	file format elf64-littleaarch64
+
+Disassembly of section .text:
+
+0000000000028eb0 <mt_evnt_timer>:
+   28eb0: d10643ff     	sub	sp, sp, #0x190
+   28eb4: a9177bfd     	stp	x29, x30, [sp, #0x170]
+   28eb8: 9105c3fd     	add	x29, sp, #0x170
+   28ebc: d503201f     	nop
+   28ec0: 100392a9     	adr	x9, 0x30114 <mt_evnt_timer.aes_control>
+   28ec4: d10083a8     	sub	x8, x29, #0x20
+   28ec8: 781e03a0     	sturh	w0, [x29, #-0x20]
+   28ecc: a90007e9     	stp	x9, x1, [sp]
+   28ed0: d10103a9     	sub	x9, x29, #0x40
+   28ed4: a90127e8     	stp	x8, x9, [sp, #0x10]
+   28ed8: 9102c3e8     	add	x8, sp, #0xb0
+   28edc: 9100c3e9     	add	x9, sp, #0x30
+   28ee0: a90227e8     	stp	x8, x9, [sp, #0x20]
+   28ee4: d350fc08     	lsr	x8, x0, #16
+   28ee8: 910003e0     	mov	x0, sp
+   28eec: f900c3fc     	str	x28, [sp, #0x180]
+   28ef0: 781e23a8     	sturh	w8, [x29, #-0x1e]
+   28ef4: 97fffedc     	bl	0x28a64 <aes>
+   28ef8: 785c03a0     	ldurh	w0, [x29, #-0x40]
+   28efc: a9577bfd     	ldp	x29, x30, [sp, #0x170]
+   28f00: f940c3fc     	ldr	x28, [sp, #0x180]
+   28f04: 910643ff     	add	sp, sp, #0x190
+   28f08: d65f03c0     	ret

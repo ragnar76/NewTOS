@@ -1,0 +1,121 @@
+--- /Volumes/Daten/Development/PiRusTOS/kernel/src/host_env.rs	2026-09-05 19:09:03
++++ kernel/src/host_env.rs	2026-09-17 18:37:06
+@@ -107,6 +107,7 @@
+         // On real Pi-4 this is the sole console input source; no-op until a
+         // HID device is enumerated (qemu-virt uses the PL011 RX IRQ instead).
+         crate::drivers::usb::poll();
++        h03_inject::step(); // H03-TEMP: scripted IKBD injector (audit scaffolding)
+         core::hint::spin_loop();
+ 
+         // SAFETY: restore the caller's original DAIF mask state.
+@@ -392,3 +393,67 @@
+ pub fn install() {
+     tos_api::host::install_host(&KERNEL_HOST_REF);
+ }
++
++// H03-TEMP BEGIN — scripted IKBD byte injector for the H03 audit (QEMU raspi4b
++// has no input path). Feeds mouse packets into `crate::ikbd::feed` on a
++// schedule relative to the first AES pump of the first EL0 program.
++pub mod h03_inject {
++    use core::sync::atomic::{AtomicU32, AtomicUsize, Ordering};
++    static T0: AtomicU32 = AtomicU32::new(0);
++    static NEXT: AtomicUsize = AtomicUsize::new(0);
++
++    // Mouse packet: header 0xF8|buttons (wire bit1 = left), dx, dy. 640x480.
++    const fn mv(dx: i8, dy: i8) -> [u8; 3] { [0xF8, dx as u8, dy as u8] }
++    const fn dn(dx: i8, dy: i8) -> [u8; 3] { [0xFA, dx as u8, dy as u8] }
++    const fn up(dx: i8, dy: i8) -> [u8; 3] { [0xF8, dx as u8, dy as u8] }
++
++    const P: [u8; 3] = mv(-127, -127);
++    const S_FILE: [u8; 3] = mv(72, 8);
++    const S_Q1: [u8; 3] = mv(78, 100);
++    const S_Q2: [u8; 3] = mv(0, 100);
++    const S_Q3: [u8; 3] = mv(0, 27);
++    const S_DN: [u8; 3] = dn(0, 0);
++    const S_UP: [u8; 3] = up(0, 0);
++    const S_B1: [u8; 3] = mv(100, 78);
++    const S_B2: [u8; 3] = mv(70, 0);
++    const S_W1: [u8; 3] = mv(-20, -20);
++    const S_W2: [u8; 3] = mv(20, 20);
++
++    const SCRIPT: &[(u32, &[u8])] = &[
++        (1200, &P), (1201, &P), (1202, &P), (1203, &P), (1204, &P), (1205, &P),
++        (1400, &S_FILE),
++        (1800, &S_Q1), (1801, &S_Q2), (1802, &S_Q3),
++        (2200, &S_DN), (2210, &S_UP),
++        (3000, &S_B1), (3001, &S_B2),
++        (3400, &S_DN), (3410, &S_UP),
++        (5000, &S_W1), (5100, &S_W2),
++    ];
++
++    pub fn step() {
++        if tos_api::bdos::process::RUN.load(Ordering::Acquire).is_null() {
++            return; // only while an EL0 program is the running process
++        }
++        let now = tos_api::bios::tick::hz_200();
++        if T0.load(Ordering::Relaxed) == 0 {
++            T0.store(now.max(1), Ordering::Relaxed);
++            crate::kprintln!("[h03] injector armed at tick {}", now);
++            return;
++        }
++        let t0 = T0.load(Ordering::Relaxed);
++        let i = NEXT.load(Ordering::Relaxed);
++        if i >= SCRIPT.len() {
++            return;
++        }
++        let (at, bytes) = SCRIPT[i];
++        if now.wrapping_sub(t0) >= at {
++            if i == 6 && false { tos_api::aes::H03_TRACE.store(true, Ordering::Relaxed); }
++            for &b in bytes {
++                crate::ikbd::feed(b);
++            }
++            let (mx, my) = tos_api::vdi::mouse_position();
++            crate::kprintln!("[h03] step {} at +{} ticks -> mouse ({}, {})", i, now.wrapping_sub(t0), mx, my);
++            NEXT.store(i + 1, Ordering::Relaxed);
++        }
++    }
++}
++// H03-TEMP END
+--- /Volumes/Daten/Development/PiRusTOS/tos-api/src/aes/mod.rs	2026-09-14 16:48:35
++++ tos-api/src/aes/mod.rs	2026-09-17 18:31:03
+@@ -402,9 +402,19 @@
+     // feature, and even with it the capture is a timestamp plus a fixed-size
+     // struct store into a RAM ring — no I/O and no formatting on this path.
+     let t0 = trace::call_begin();
++
++    // H03-TEMP: opcode trace to the serial console once the injector arms it.
++    let h03_on = H03_TRACE.load(core::sync::atomic::Ordering::Relaxed);
++    if h03_on {
++        h03_say(b"[aes] >> op ", pb.control(C_OPCODE) as i64, pb.intin(0) as i64, pb.intin(1) as i64);
++    }
+ 
+     let sw = crysbind(&pb);
+ 
++    if h03_on {
++        h03_say(b"[aes] << op ", pb.control(C_OPCODE) as i64, unsafe { pb.intout.read() } as i64, sw.is_some() as i64);
++    }
++
+     if sw.is_none() {
+         // The call completed — `xif`'s copy-back (`gemsuper.c:443-444`).
+         // SAFETY: the caller's `intout` holds the `OUT_LEN` words it declared.
+@@ -677,3 +687,20 @@
+ pub fn user_mot(x: i16, y: i16) {
+     input::mchange(x, y);
+ }
++
++// H03-TEMP BEGIN
++pub static H03_TRACE: core::sync::atomic::AtomicBool = core::sync::atomic::AtomicBool::new(false);
++fn h03_say(pre: &[u8], a: i64, b: i64, c: i64) {
++    struct W;
++    impl core::fmt::Write for W {
++        fn write_str(&mut self, s: &str) -> core::fmt::Result {
++            if let Some(h) = crate::host::host() { h.console_write_bytes(s.as_bytes()); }
++            Ok(())
++        }
++    }
++    use core::fmt::Write as _;
++    let mut w = W;
++    let _ = w.write_str(core::str::from_utf8(pre).unwrap_or("?"));
++    let _ = write!(w, "{} {} {}\r\n", a, b, c);
++}
++// H03-TEMP END

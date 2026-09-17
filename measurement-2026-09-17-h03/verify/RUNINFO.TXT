@@ -1,0 +1,121 @@
+H03 -- unabhaengige Verifikation des Fixes (sdk/gemlib/overlay/a_evnt_timer.c).
+Tester-Messung, 2026-09-17. Branch desk-rebuild, Basis HEAD 49b2c2c.
+Dem Developer-/Auditor-Selbstreport (TASK/H03-STATUS-DONE.MD) NICHT getraut --
+alle Messungen unabhaengig neu gefahren; nur Skripte/Diff/Koordinaten aus
+measurement-2026-09-17-h03/method/ wiederverwendet (Werkzeuge, kein Produktcode).
+
+HASHES (alle selbst erzeugt/geprueft)
+  sdk/apps/teradesk/build/dist/DESKTOP.NAP
+    sha256 db31aae1a1a94855053021ac45bdab3cb40bc13f21a53d9f6c63f3e8803fe54d
+    (erwartet db31aae1..., vorher d957d765... -- MATCH, entspricht dem Fix)
+  sdk/apps/qed/build/QED.NAP
+    sha256 d4b147df5dc65f688df6842344754c6a2f59c4b0584e75a28016ebf6194ea0d4
+    (erwartet unveraendert d4b147df... -- MATCH; mt_evnt_timer NICHT im Symtab)
+  kernel8.img (Projektbaum, unveraendert, `cargo xtask build --board rpi4`)
+    sha256 a107a34012dbfe24216608a2f77c31eb4bc4fd30c62b73ac1fb7375ad18f3e9f
+  kernel8.img (Scratch-Kopie <scratch>/ws, MIT scratch-kernel-injector.diff)
+    sha256 b556f0aa89bee2b8367e98e690ffa622226abdf48161d202c0044499b81651e7
+  <scratch>/sd.img (frisch aus tools/make-sd-image.sh + NEWDESK.INF #Z-Zeile)
+    sha256 74306eb5abeadbcaad78faf2405803a2a4d71e907e66f012e642733242fe0f11
+  kernel/src/host_env.rs (Projektbaum, VOR und NACH der Messung, identisch)
+    sha256 287ff7415805b9cf0b7efe74487a5f24dd06f121ddd61cdb5f9e2d8a15618e3e
+
+MESSUNGEN
+
+1. Hosttest (binary/host-evnt_timer_words-compile.log)
+   cc -D__NEWTOS__ -I sdk/gemlib/gemlib-0.44.0 -I sdk/libc/mintlib/include \
+      -o evnt_timer_words sdk/gemlib/tests/evnt_timer_words.c \
+      sdk/gemlib/gemlib-0.44.0/a_evnt_timer.c
+   rc=0, zwei __nonnull-Redefinition-Warnungen (host-only, vorbestehend).
+   Ausgabe: "evnt_timer_words: OK -- mt_evnt_timer hands int_in[0]=low,
+   int_in[1]=high", RUN_RC=0.
+
+2. Binaerbeleg (binary/nap-symtab-evnt_timer.txt, nap-disasm-mt_evnt_timer.txt)
+   llvm-objdump -t: mt_evnt_timer @ 0x28eb0 (58 Byte).
+   llvm-objdump -d --start-address=0x28eb0 --stop-address=0x28f0c:
+     28ec8: sturh w0,  [x29, #-0x20]   <- Low-Wort, KEIN vorheriges lsr
+     28ee4: lsr    x8, x0, #16
+     28ef0: sturh w8,  [x29, #-0x1e]   <- High-Wort, an intin[0]+2
+   AES-Parameterblock-Reihenfolge (gem_aesP.h AES_PARAMS: control, global,
+   intin, intout, addrin, addrout) bestaetigt x29-0x20 = intin[0]: Low-Wort
+   liegt am NIEDRIGEREN Offset (intin[0]), High-Wort an intin[0]+2 (intin[1]).
+   PASS.
+
+3. QEMU raspi4b, Startpfad (unveraenderter Projektbaum-Kernel + neue Karte)
+   Kernel: `cargo xtask build --board rpi4` im Projektbaum (kein Diff).
+   Karte:  tools/make-sd-image.sh <scratch>/sd.img 64 (installiert DESKTOP.NAP
+           sha256 db31aae1... aus build/dist/), dann NEWDESK.INF =
+           method/newdesk-teradesk.inf (#Z 01 C:\APPS\TERADESK\DESKTOP.NAP@).
+   qemu-system-aarch64 -M raspi4b -no-reboot -display none -serial file:... \
+     -kernel kernel8.img -drive file=sd.img,if=sd,format=raw -qmp unix:...
+   Serial: "[shell] sh_ldapp: starting C:\APPS\TERADESK\DESKTOP.NAP,
+   sh_nextapp=2, sh_isgem=1" -> "[launch] EL0: slot 0 entry 0x1000", danach
+   keine weiteren Zeilen (laeuft), kein Fehler, kein Fault.
+   Screendump screendumps/verify-run1-teradesk-startup.png: TeraDesk-Oberflaeche
+   (Menue "Desk File View Window Options", eigene Icons Floppy A/B, Hard Disc,
+   Printer, Trash, gruener Hintergrund). PASS -- Startpfad unveraendert
+   funktionsfaehig mit der neuen NAP.
+   -> serial/verify-run1-startup-regression.log
+
+4. QEMU raspi4b, Quit ueber das Menue (Scratch-Kopie, IKBD-Injektor)
+   Workspace nach <scratch>/ws kopiert (rsync -a, ohne target/,
+   sd-card-backup-*, pictures/), Diff method/scratch-kernel-injector.diff dort
+   per `patch -p0 <datei> < <aufgeteilter-diff>` angewendet (der kombinierte
+   Diff hat einen absoluten Pfad in der ---Zeile, `patch -p1/p4` scheiterte
+   daran -- pro Datei aufgeteilt und explizit als Ziel uebergeben, inhaltlich
+   IDENTISCH zum Original-Diff, keine Aenderung an dessen Nutzlast).
+   Projektbaum NICHT beruehrt: host_env.rs sha256 vorher/nachher identisch
+   (287ff741...), git status zeigt nur die vorbestehenden/fremden Eintraege.
+   `cargo xtask build --board rpi4` in <scratch>/ws: 96 Warnings (2 davon neu:
+   h03_inject Modul/step ohne Doku -- Beleg, dass der Injektor mitkompiliert
+   wurde), sonst clean.
+   Zwei unabhaengige Laeufe (identischer Ablauf, gleiches Skript):
+
+   RUN A (serial/verify-run2-quit-via-menu.log):
+     [h03] injector armed at tick 3019 .. step 15 at +3410 ticks
+     [launch] returned (program Pterm'd)
+     [shell] sh_ldapp: 'C:\APPS\TERADESK\DESKTOP.NAP' exited with rc=0
+     [shell] sh_ldapp: starting NEWDESK, sh_nextapp=3, sh_isgem=1
+     [desk] desktop up (1 drives)
+   Screendump danach (screendumps/verify-run2-desktop-up-after-quit.png):
+     unser eingebauter Desktop (Menue "Desk File View Options", KEIN
+     "Window"-Eintrag -- das ist NICHT mehr TeraDesk), Fenster C:\ offen,
+     24 items.
+
+   RUN B (serial/verify-run3-quit-via-menu-repeat.log), Wiederholung mit
+   Screendump GENAU nach dem Menueklick (step 11, Injektor-Log als Trigger):
+     identische Schrittfolge bis "[desk] desktop up (1 drives)".
+   Screendump waehrend des offenen Dialogs (screendumps/verify-run3-quit-dialog.png):
+     Dialog "Quit / Shutdown Options" mit Shutdown/Reboot/Quit/Cancel,
+     Titel "File" noch invertiert (Menue war offen), Cursor auf "Quit".
+   PASS -- beide Laeufe: Dialog erscheint, Klick auf Quit fuehrt zu Pterm,
+   Rueckfall auf den eingebauten Desktop.
+
+   ABWEICHUNG vom Auftrag (woertlich): der erwartete AES-Trace ">> op 24 150 0"
+   wurde NICHT beobachtet -- 0 Treffer auf "[aes]" in beiden Serial-Logs. Grund:
+   im wiederverwendeten method/scratch-kernel-injector.diff ist die Stelle, die
+   H03_TRACE scharf schaltet, tot codiert (`if i == 6 && false { ... }` in
+   kernel/src/host_env.rs, H03-TEMP-Block) -- die Bedingung ist wegen `&& false`
+   nie wahr, der Trace bleibt fuer die gesamte Messung aus. Das Diff wurde exakt
+   wie im Auftrag vorgegeben uebernommen und NICHT veraendert (keine Fixes durch
+   den Tester). Der funktionale Beleg (Dialog-Screendump + vollstaendige
+   Rueckkehr-Sequenz in zwei unabhaengigen Laeufen) ist staerker als die fehlende
+   Trace-Zeile und traegt den PASS; die fehlende Trace-Zeile selbst ist ein
+   offener Punkt (siehe Bericht).
+
+5. QED-Kontrolle: siehe HASHES oben (Symtab-Grep auf "evnt_timer": 0 Treffer,
+   rc=1) -- QED linkt mt_evnt_timer nicht.
+
+6. Rust-/Change-Set-Kontrolle: `git diff --stat` zeigt ausschliesslich
+   sdk/README.md (39 insertions(+), 96 deletions(-), vorbestehend/fremd, siehe
+   git status). Neu (untracked), passend zum Fix: sdk/gemlib/overlay/a_evnt_timer.c,
+   sdk/gemlib/tests/evnt_timer_words.c. Kein Crate (kernel/, tos-api/, tos-types/)
+   im Diff.
+
+AUFRAEUMEN
+  Beide QEMU-Prozesse beendet (kill, verifiziert mit `ps -p`), QMP-Sockets
+  geloescht, keine gemounteten Scratch-Images (sd-put.sh/make-sd-image.sh
+  haengen selbst aus). Projektbaum: git status zeigt nur vorbestehende/fremde
+  Eintraege (sdk/README.md, TASK/*.md anderer Agents, docs/sdk/,
+  measurement-2026-09-17-h03/ inkl. dieses neuen verify/-Unterverzeichnisses);
+  kernel/src/host_env.rs sha256 vorher = nachher (287ff741...).

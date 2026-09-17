@@ -1,0 +1,22 @@
+In file included from sdk/gemlib/tests/evnt_timer_words.c:36:
+In file included from sdk/libc/mintlib/include/stdio.h:29:
+In file included from sdk/libc/mintlib/include/features.h:573:
+sdk/libc/mintlib/include/sys/cdefs.h:268:10: warning: '__nonnull' macro redefined [-Wmacro-redefined]
+  268 | # define __nonnull(params) __attribute__ ((__nonnull__ params))
+      |          ^
+<built-in>:368:9: note: previous definition is here
+  368 | #define __nonnull _Nonnull
+      |         ^
+1 warning generated.
+In file included from sdk/gemlib/gemlib-0.44.0/a_evnt_timer.c:33:
+In file included from sdk/gemlib/gemlib-0.44.0/gem_aesP.h:5:
+In file included from sdk/gemlib/gemlib-0.44.0/mt_gem.h:8:
+In file included from sdk/libc/mintlib/include/compiler.h:187:
+In file included from sdk/libc/mintlib/include/features.h:573:
+sdk/libc/mintlib/include/sys/cdefs.h:268:10: warning: '__nonnull' macro redefined [-Wmacro-redefined]
+  268 | # define __nonnull(params) __attribute__ ((__nonnull__ params))
+      |          ^
+<built-in>:368:9: note: previous definition is here
+  368 | #define __nonnull _Nonnull
+      |         ^
+1 warning generated.
