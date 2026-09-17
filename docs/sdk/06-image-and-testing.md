@@ -1,0 +1,226 @@
+# 06 — Getting a program onto the image, and testing it
+
+## The SD image: `tools/make-sd-image.sh`
+
+```
+tools/make-sd-image.sh [image-path] [size-MiB]
+    image-path   defaults to /tmp/sd.img (what `cargo xtask run --sd` expects)
+    size-MiB     defaults to 64
+```
+(`tools/make-sd-image.sh:17-26`). It creates an MBR with one FAT16 (type
+`0x06`) partition, attaches it as `/Volumes/NEWTOS`, populates it, unmounts,
+and verifies the MBR (`:36-44`, `:294-310`). macOS only (`hdiutil`,
+`diskutil`, `dot_clean`).
+
+What it installs, and from where (nothing is built here except the
+freestanding examples):
+
+| On the image | Source | Built by | Lines |
+|--------------|--------|----------|-------|
+| `C:\HELLO.NCP`, `C:\AUTO\HELLO.NCP` | `tools/mk-hello-ncp.py` (hand-crafted ELF) | the script | `:70-71` |
+| `C:\HELLO2.NCP`, `BIG.NCP`, `PHYSBASE.NCP`, `SCRFLIP.NCP`, `DTACHILD.NCP` | `sdk/examples/*.c` | `sdk/build.sh`, run **by the script** | `:78-136` |
+| `C:\LIBTEST.NCP`, `C:\CLOCKTST.NCP` | `sdk/libc/build/{libtest,clocktest}.NCP` | you: `sdk/libc/build-libc.sh [sdk/libc/tests/clocktest.c]` | `:143-166` |
+| `C:\COREMARK\{CORE,COREVAL}.NCP` | `sdk/apps/coremark/build/` | you: `sdk/apps/build-coremark.sh` | `:189-201` |
+| `C:\DUMPVDI.NAP`, `C:\VDI.TSV`, `C:\VDIDRAW.NAP` | `tosdump/build/` | you: `make -C tosdump all` | `:224-242` |
+| `C:\Apps\QED\{QED.NAP,qed.rsc}` | `sdk/apps/qed/build/` | you: `sdk/apps/build-qed.sh` **and** the manual `mkrsc.py convert` ([04](04-porting-anatomy.md)) | `:259-267` |
+| `C:\Apps\TERADESK\{DESKTOP.NAP,desktop.rsc,icons.rsc}` | `sdk/apps/teradesk/build/dist/` | you: `sdk/apps/build-teradesk.sh` | `:277-286` |
+| `C:\NEWDESK.INF` | the literal text `newdesk placeholder` | — | `:54` |
+
+Missing inputs are skipped with a `note:` line, not an error. Three
+environment switches also copy a program into `\AUTO\`:
+`SD_SCRFLIP_AUTO=1`, `SD_CLOCKTEST_AUTO=1`, `SD_COREMARK_AUTO=1`
+(`:117-120`, `:161-164`, `:195-199`).
+
+**Adding your own program.** The project rule is that the script is the
+single source of truth for the base image — add an install block to it
+rather than hand-editing `/tmp/sd.img` (memory note *auto-folder-console-only*,
+"Image discipline"). For a one-off test on a **scratch** image the manual
+route is what the tester recipe and this document used:
+
+```sh
+DEV=$(hdiutil attach -imagekey diskimage-class=CRawDiskImage -nomount "$IMG" | head -1 | awk '{print $1}')
+diskutil mount "${DEV}s1"                       # → /Volumes/NEWTOS
+cp MYAPP.NAP /Volumes/NEWTOS/
+printf '#R 02\r\n#Z 01 C:\\MYAPP.NAP@\r\n' > /Volumes/NEWTOS/NEWDESK.INF
+dot_clean -m /Volumes/NEWTOS                    # see the warning below
+diskutil unmount "${DEV}s1" && hdiutil detach "$DEV"
+```
+
+**Warning — AppleDouble files.** Copying with Finder or `cp` onto the FAT
+volume creates `._NAME.NCP` side files. Their names *end in `.NCP`*, so
+`run_auto_folder` would try to load them (it classifies by the last four
+bytes, `kernel/src/desk/ftype.rs:50-70`) and the desktop would list them as
+programs. `make-sd-image.sh` strips them with `dot_clean -m` (`:291`); do the
+same after any manual copy (observed while writing this page: a
+`._HELLOLIB.NCP` appeared in `\AUTO\` and was removed before the run).
+
+## Three ways a program starts
+
+### `C:\AUTO\` — console programs, before the desktop
+
+`kernel/src/launch.rs:199-248` (`run_auto_folder`): every file in
+`C:\AUTO\*.*` whose extension classifies as **`.NCP`** is run in directory
+order, each to its `Pterm`, before the AES and the desktop exist. `.NAP` and
+`.NTP` are skipped (`:216-226`); a `.NAP` needs `appl_init`, which is not
+available yet. Holding **Control** on the boot screen skips the folder
+(`:204-207`). Output goes to the framebuffer console and the serial line and
+is painted over when the desktop comes up.
+
+Serial log of the run made for this document (two `.NCP` in `\AUTO\`):
+
+```
+[auto] running C:\AUTO\HELLOLIB.NCP
+[launch] EL0: slot 0 entry 0x1000
+Hello from mintlib on NewTOS (argc=1, argv[0]="")
+…
+[launch] returned (program Pterm'd)
+[auto] running C:\AUTO\HELLO.NCP
+…
+[auto] 2 AUTO program(s) run
+```
+
+### `NEWDESK.INF` `#Z` — a GEM application instead of the desktop
+
+The AES reads `C:\NEWDESK.INF` at start (`tos-api/src/aes/init.rs:355-410`,
+EmuTOS `process_inf2`). A line
+
+```
+#Z 01 C:\MYAPP.NAP@
+```
+
+is parsed as: tag `Z`, skip the blank, two hex digits = `isgem`, skip three
+bytes, the path up to `@` (`init.rs:386-399`). The path is split into
+directory and program name and handed to `sh_wdef`; `isauto` becomes true
+(`:400-409`). The shell loop then starts **that program instead of the
+desktop**, and enters the desktop only when it ends
+(`kernel/src/lib.rs:401-408`, `shell_loop::sh_main`). `isgem = 01` means a
+GEM application; `00` would start it in character mode (`init.rs:414-415`,
+EmuTOS `(*isauto && !isgem) ? FALSE : TRUE`).
+
+This is how every headless QEMU measurement launches a `.NAP` — QEMU
+`raspi4b` has no input device, so double-clicking is impossible there
+(memory note *qemu-dump-runs-via-newdesk-inf-autorun*). The desktop's own
+`NEWDESK.INF` parser (`kernel/src/desk/inf.rs:373-379`) reads the same line
+and writes it back on save (`:497-506`), so the autorun survives a desktop
+"Save Desktop".
+
+Serial log of the run made for this document:
+
+```
+[shell] sh_ldapp: starting C:\MINIGEM.NAP, sh_nextapp=2, sh_isgem=1
+[launch] EL0: slot 0 entry 0x1000
+```
+
+`make-sd-image.sh` writes **no** `#Z` line (`:54`); add it by hand as above.
+
+### Double-click on the desktop (real hardware only)
+
+`kernel/src/desk/main.rs:467-500` (`launch_native`): `.NAP`/`.NTP` go
+through `run_gem_app` (desktop relinquish → run → resume); `.NCP` clears the
+screen, runs, waits for a key (`console_pause_for_key`, `:610`), and redraws
+the desktop. Needs a USB keyboard/mouse, which QEMU `raspi4b` cannot provide.
+
+## Running in QEMU (`raspi4b`)
+
+```
+cargo xtask run --board rpi4 --sd /tmp/sd.img            # headless, serial on stdout
+cargo xtask run --board rpi4 --sd /tmp/sd.img --window   # with the emulated HDMI window
+cargo xtask run --board rpi4 --sd /tmp/sd.img --release  # release-profile kernel
+cargo xtask run --board rpi4 --sd /tmp/sd.img --debug    # halted, gdbstub on :1234
+```
+
+`cmd_run_rpi4` (`tools/xtask/src/main.rs:525-563`) builds the kernel for
+`rpi4`, produces `kernel8.img` in the workspace root by `objcopy -O binary`
+(`:355-366`), and runs
+
+```
+qemu-system-aarch64 -M raspi4b -no-reboot -display none|cocoa -serial stdio \
+    -kernel kernel8.img -drive file=<sd>,if=sd,format=raw [-S -s]
+```
+
+Facts about that machine that matter for a test:
+
+* The display is **640×480** (`[fb] VideoCore display geometry detected:
+  640x480` in the serial log), the same profile as an Atari TT — which is why
+  QEMU is the preferred oracle for conformance dumps.
+* **No input**: `[pcie] RC not present (no response at RC_BASE); USB disabled`
+  — the Pi's USB sits behind PCIe/xHCI, which `raspi4b` does not emulate. A
+  `.NAP` parked in `evnt_multi` stays there; only autorun-able runs are
+  possible.
+* The SD controller **is** emulated, so `C:` works.
+* Boot to `[desk] desktop up` (or to the `#Z` program) takes roughly 25 s,
+  15 s of which are the boot info screen (tester recipe, memory note
+  *qemu-dump-runs-via-newdesk-inf-autorun*; not timed separately here — the
+  run for this document had the `#Z` program on screen at the first
+  screendump, 45 s after launch).
+
+### Screendumps via QMP
+
+`xtask run` opens no QMP socket. For a screendump, start QEMU yourself with
+the same arguments plus `-qmp unix:<sock>,server,nowait` and `-serial
+file:<log>`, then use `tools/qmpshot.c` (compile with `cc -o qmpshot
+tools/qmpshot.c`; it exists because `nc -U` is blocked by the agent sandbox,
+`qmpshot.c:8-24`):
+
+```sh
+cc -o qmpshot tools/qmpshot.c
+qemu-system-aarch64 -M raspi4b -no-reboot -display none -serial file:serial.log \
+    -qmp unix:/tmp/claude-501/<job>-qmp.sock,server,nowait \
+    -kernel kernel8.img -drive file=sd.img,if=sd,format=raw &
+sleep 45 && ./qmpshot /tmp/claude-501/<job>-qmp.sock shot.ppm
+sips -s format png shot.ppm --out shot.png        # QEMU writes PPM
+```
+
+The UNIX socket path must be **under 104 bytes** (QEMU refuses longer ones —
+observed: the scratchpad path of this job was 107). The screendump in
+`docs/sdk/examples/minigem-qemu-raspi4b-2026-09-17.png` was taken this way.
+
+### The board footgun
+
+`cargo xtask build --board rpi4` and `--board qemu-virt` write the **same**
+`target/aarch64-unknown-none-softfloat/{debug,release}/kernel`. After a build
+for the other board, cargo may report "up to date" and hand you the wrong
+ELF (symptom: empty serial log / hang). `cargo clean -p kernel` does not
+reliably help. Build fresh for the board you are about to boot and check the
+ELF's mtime (memory note *cargo-xtask-board-target-footgun*; `cargo xtask run`
+always rebuilds).
+
+## Real Raspberry Pi 4
+
+`docs/HW-TEST-LOG.md:55-80`: the boot partition is FAT, holds `start4.elf`,
+`fixup4.dat`, `boot/rpi4/config.txt` (with `init_uart_clock=48000000`,
+`gpu_mem=256`, `arm_64bit=1`, `kernel=kernel8.img`) and the `kernel8.img`
+from
+
+```sh
+cargo xtask build --board rpi4 --release
+```
+
+Build **release** for hardware and performance runs — the default profile is
+the slow dev build (memory note *flash-release-builds-to-real-hw*). The test
+card's layout is four 500 MB FAT16 partitions: `BOOT` = `C:` (firmware,
+`kernel8.img`, and the programs), `NEWTOS1..3` = `D:`–`F:` (memory note
+*sd-card-real-hw-layout*). Flashing the card is a user/lead action, not
+something an agent does on its own (memory note *workers-no-hardware-or-outward-actions*).
+
+What only the hardware can test: anything interactive (double-click, menus,
+typing, closing a window), 1920×1080 geometry, and the cache/DMA behaviour of
+the framebuffer (`docs/HW-TEST-LOG.md:122`). Serial output is available on
+the Pi's UART at 115200 8N1 (`HW-TEST-LOG.md:29-36`).
+
+## Reading the serial log
+
+Lines a port will look for:
+
+| Line | Meaning | Source |
+|------|---------|--------|
+| `[auto] running C:\AUTO\X.NCP` / `[auto] N AUTO program(s) run` | AUTO folder pass | `kernel/src/launch.rs:233-243` |
+| `[launch] EL0: slot N entry 0x1000` | the loader dropped to EL0 at `e_entry` | `kernel/src/launch.rs:117` |
+| `[launch] returned (program Pterm'd)` | clean exit | `kernel/src/launch.rs:134` |
+| `[shell] sh_ldapp: starting …, sh_isgem=1` / `… exited with rc=N` | `#Z` autorun or `shel_write` launch, and its exit | `kernel/src/shell_loop.rs:222`, `:316` |
+| `[EXC] Data Abort (lower EL): ESR=… ELR=… FAR=…` | the program faulted at EL0; `ELR` is the faulting PC in the program's own image (`llvm-objdump -d` it), `FAR` the address | `kernel/src/arch/aarch64/exceptions.rs:133`, `:1571` |
+| `[PANIC] …` | kernel panic (debug builds check slice alignment etc. — see [05](05-abi-pitfalls.md#b8)) | — |
+| `[desk] desktop up` | the built-in desktop is running | `kernel/src/desk/` |
+
+A GEMDOS trap trace is available with `--features gemdos-trace`
+(`docs/analysis/q07-…md:29`); it is a debug feature, not part of a normal run.
