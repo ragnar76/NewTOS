@@ -1,0 +1,2 @@
+sizes: (640, 480) (640, 480)
+total differing pixels: 0

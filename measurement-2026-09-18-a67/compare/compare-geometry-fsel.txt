@@ -1,0 +1,18 @@
+root box: ours at (160,71) w=320   reference at (3,3) w=320
+root height: ours 356  reference 356  (EQUAL)
+  y=146  ours=[]
+         ref =[(178, 203)]
+  y=147  ours=[(178, 203)]
+         ref =[]
+  y=148  ours=[(178, 203)]
+         ref =[]
+  y=161  ours=[(152, 165)]
+         ref =[]
+  y=167  ours=[]
+         ref =[(178, 203)]
+  y=174  ours=[(152, 165)]
+         ref =[]
+  y=198  ours=[(178, 203)]
+         ref =[]
+
+349 root-relative rows identical, 7 different (runs of >= 10 black px)

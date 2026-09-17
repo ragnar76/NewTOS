@@ -34,9 +34,13 @@
 > freely — NewTOS draws with its own `RasterBackend`):** the exact VDI call
 > sequence in `just_draw`, the `everyobj` non-recursive traversal, the
 > `D.g_rawstr`/`g_tmpstr`/`g_fmtstr` scratch buffers, `gr_watchbox`/
-> `ev_button` interaction internals, and the pixel-for-pixel 3D bevel /
-> shadow geometry (the *look* is contract-ish for compatibility but is drawn
-> by NewTOS's own rasteriser, not ported line-by-line).
+> `ev_button` interaction internals, and the shadow geometry (drawn by
+> NewTOS's own rasteriser). The 3D bevel is **not** free any more: since A67
+> (2026-09-18) `add_3d_effect` follows `gemoblib.c:220-283` pixel for pixel
+> — one-pixel lines on the grown rectangle, shrunk by `th` for an inside
+> border, raised until SELECTED, the far corners left in the face colour —
+> and the border is drawn whenever `th != 0` regardless of 3D
+> (`gemoblib.c:663-667`), with the bevel laid over it (`:950-951`).
 
 ---
 

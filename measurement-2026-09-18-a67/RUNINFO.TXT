@@ -1,0 +1,194 @@
+A67 -- unabhaengige Tester-Verifikation des Developer-Fixes
+=============================================================
+
+Datum          2026-09-18
+Rolle          Tester (misst nur, aendert keinen Produktcode)
+Basis          desk-rebuild, HEAD 4c475e0, Baum sonst sauber
+Geaenderte Dateien (uncommitted, vom Developer):
+  tos-api/src/aes/object.rs           sha256 f31ac29ba464a1859b6aed1790d6c61cfa1a6d9b434c174e7aed56e6985fe05d
+  tos-api/tests/aes_object_3d_box_border.rs (neu) sha256 18dc434226f6f73f652825b25f9d38aca59f2a9df360d9555c35fa9d5d8440ad
+Ticket         TASK/A67.md
+Referenzbild   docs/analysis/fsel-reference-2026-09-17/fselectr.png
+               sha256 dd02d24bacb13bf8a83e447eb7e1143a32da1a2106ec5df1a0e6424f1bd5de49
+Messwerkzeug   measurement-2026-09-17-fsel/method/compare-geometry.py (unveraendert)
+Vorlage        TASK/A64-STATUS-DONE.MD (Vorgehen), TASK/A66-STATUS-DONE.MD (Quittungsform)
+
+Dem Developer-Selbstreport (scratchpad a67/) wurde nicht vertraut; jede Zahl
+unten ist selbst nachgefahren. Der Developer-Abzug in
+$CLAUDE_JOB_DIR/tmp/a67/ wurde nicht angefasst (nur gelesen, zum Abgleich
+der Erwartungswerte).
+
+
+1 TEST DER FIX-DATEI (in-tree)
+-------------------------------------------------------------------------
+Befehl:  cargo test -p tos-api --test aes_object_3d_box_border -- --nocapture
+Baum:    Arbeitsbaum wie er liegt (Fix + neuer Test)
+Ausgabe: build/newtest-current-tree-GREEN.log
+
+running 4 tests
+test fl3dind_boxchar_with_inside_border_draws_the_bevel_inside_the_border ... ok
+test fl3dind_boxchar_with_outside_border_matches_the_reference_drive_box ... ok
+test fl3dind_boxtext_with_outside_border_keeps_it_under_the_bevel ... ok
+test selected_fl3dind_boxchar_keeps_the_border_and_inverts_the_bevel ... ok
+test result: ok. 4 passed; 0 failed; 0 ignored
+
+ERWARTUNG 4/4 gruen -- ERFUELLT.
+
+
+2 ROT-GEGENPROBE (git worktree auf HEAD 4c475e0, Test hineinkopiert)
+-------------------------------------------------------------------------
+git worktree add --detach <scratch>/worktree-head 4c475e0
+cp tos-api/tests/aes_object_3d_box_border.rs <worktree>/tos-api/tests/
+cargo test -p tos-api --test aes_object_3d_box_border -- --nocapture
+Ausgabe: build/newtest-worktree-HEAD-RED.log
+
+test result: FAILED. 0 passed; 4 failed; 0 ignored
+  fl3dind_boxchar_with_inside_border_draws_the_bevel_inside_the_border   FAILED
+  fl3dind_boxchar_with_outside_border_matches_the_reference_drive_box    FAILED
+  fl3dind_boxtext_with_outside_border_keeps_it_under_the_bevel           FAILED
+  selected_fl3dind_boxchar_keeps_the_border_and_inverts_the_bevel        FAILED
+
+ERWARTUNG 4 FAILED -- ERFUELLT. Worktree danach mit
+`git worktree remove --force` entfernt (kein --checkout/--reset im
+Hauptbaum).
+
+
+3 cargo run -p xtask -- test
+-------------------------------------------------------------------------
+Ausgabe: build/xtask-test-full.log
+Summe ueber alle `test result:`-Zeilen (41 Testbinaries):
+  567 passed, 0 failed, 1 ignored
+
+ERWARTUNG 567/0/1 -- ERFUELLT.
+
+
+4 BEIDE BOARDS FRISCH BAUEN + CLIPPY
+-------------------------------------------------------------------------
+Jeder Bau mit eigenem CARGO_TARGET_DIR (frischer Compile, kein Cache-Risiko
+durch den Board-Footgun aus docs/MEMORY.md):
+
+  rpi4:      cargo xtask build --board rpi4       -> build/build-rpi4.log
+             rc=0, tos-api 64 rustc-Warnungen, kernel 94 rustc-Warnungen
+  qemu-virt: cargo xtask build --board qemu-virt   -> build/build-qemuvirt.log
+             rc=0, tos-api 64 rustc-Warnungen, kernel 94 rustc-Warnungen
+
+  Clippy (--release, wie im Developer-Log):
+  rpi4:      cargo clippy -p kernel --no-default-features --features board-rpi4 --release
+             -> build/clippy-rpi4.log : tos-api 81, kernel 125
+  qemu-virt: cargo clippy -p kernel --no-default-features --features board-qemu-virt --release
+             -> build/clippy-qemuvirt.log : tos-api 81, kernel 125
+
+ERWARTUNG rustc 64/94, Clippy 81/125, beide Boards -- ERFUELLT, Delta = 0
+zur A64/A67-Developer-Grundlinie ($CLAUDE_JOB_DIR/tmp/a67/clippy-*-final.log).
+
+
+5 DATEIAUSWAEHLER-BILDVERGLEICH (headless QEMU raspi4b)
+-------------------------------------------------------------------------
+Scratch-Kopie des Workspace (NICHT im Projektbaum):
+  git worktree add --detach <scratch>/scratch-ws 4c475e0
+  git apply <diff von tos-api/src/aes/object.rs>   -- byteidentisch zum
+                                                        Arbeitsbaum verifiziert (diff -> IDENTICAL)
+  fsel::preview() vor shell_loop::sh_main in <scratch-ws>/kernel/src/lib.rs
+  eingehaengt (Marker "[tester-temp] fsel preview drawn, halting for
+  screendump"), cargo xtask build --board rpi4 --release (97 rustc-Warnungen,
+  +3 durch den Hook, kernel sonst 94)
+
+SD-Karte:  Kopie von measurement-2026-09-13-regression/qemu-tmp/sd-base.img
+           -> screendumps/sd-preview.img (NICHT archiviert, nur Kopie einer
+           bereits vorhandenen Testkarte, keine echte Hardware beruehrt)
+QEMU:      qemu-system-aarch64 -M raspi4b -no-reboot -display none
+           -serial file:LOG -kernel kernel8.img -drive file=IMG,if=sd,format=raw
+           -qmp unix:/private/tmp/claude-501/a67t.sock,server,nowait
+           (kurzer Socketpfad wegen der 104-Byte-UNIX-Socket-Grenze; danach geloescht)
+
+Ergebnis:  screendumps/fsel-a67-tester.png (640x480)
+           serial/fsel-a67-tester-BOOT-SERIAL.txt -- keine PANIC/exception/FAULT-Zeile
+
+Vergleich: python3 measurement-2026-09-17-fsel/method/compare-geometry.py \
+             screendumps/fsel-a67-tester.png docs/analysis/fsel-reference-2026-09-17/fselectr.png
+           -> compare/compare-geometry-fsel.txt
+
+  root box: ours at (160,71) w=320   reference at (3,3) w=320
+  root height: ours 356  reference 356  (EQUAL)
+  349 root-relative rows identical, 7 different (runs of >= 10 black px)
+  abweichende Zeilen: 146, 147, 148, 161, 167, 174, 198
+
+ERWARTUNG 349/7 an genau diesen sieben Zeilen -- ERFUELLT, wortgleich mit
+Ticket und mit dem (nicht vertrauten) Developer-Abzug.
+
+
+6 REICHWEITE UEBER DEN DATEIAUSWAEHLER HINAUS
+-------------------------------------------------------------------------
+
+6a  form_alert (tos_api::aes::form::draw_alert, G_BUTTON mit FL3DACT)
+    Vorher/Nachher-Kernel (HEAD 4c475e0 ohne Fix / scratch-ws mit Fix),
+    identischer Hook, identische SD-Kopie, Marker "[tester-temp] form_alert
+    drawn, halting for screendump".
+    screendumps/formalert-before.png, formalert-after.png
+    Pixel-Diff (voller 640x480-Schirm): 420 Pixel, alle im Rechteck
+    x=230..409, y=256..281 -- exakt die OK/Cancel-Knopfflaeche.
+    Ursache identifiziert: add_3d_effect() ist im Fix komplett neu (1-Punkt-
+    Polylinie statt 2-Punkt-Fuellrechtecke, WHITE/BLACK+LBLACK/LWHITE-Logik
+    mit icol-Fallback) -- das trifft JEDEN FL3DOBJ, auch G_BUTTON, dessen
+    Randstaerke (th) selbst unveraendert blieb. Sichtpruefung (Zoom x4,
+    screendumps/formalert-{before,after}-btn-zoom.png): nachher exakt
+    1-Pixel-Fase weiss oben/links, dunkel unten/rechts, sauber gezogen, kein
+    Bildfehler; vorher 2 Pixel breite Fase. KEIN neuer Rand (den hatte der
+    Knopf vorher schon, unveraendert von A67).
+    BEFUND: A67 wirkt ausserhalb des Dateiauswaehlers, aber korrekt und wie
+    im Diff dokumentiert -- kein Fehlverhalten, sondern die erwartete
+    Konsequenz der add_3d_effect-Neufassung. Im Ticket A67.md nicht explizit
+    genannt (das Ticket beschreibt nur den Rand der Kastentypen); gehoert in
+    die Quittung.
+
+6b  Desktop nach Boot ohne Autorun (unser eingebauter Desktop)
+    Gleiche Vorher/Nachher-Kernel, gleiche SD-Kopie, Marker "[desk] desktop up".
+    screendumps/desktop-noautorun-before.png, desktop-noautorun-after.png
+    Pixel-Diff (voller Schirm): 0 Pixel unterschiedlich.
+    BEFUND: Unser Desktop hat an dieser Stelle keine FL3DIND/FL3DACT-Objekte
+    vom Typ G_BOX/G_IBOX/G_BOXCHAR (Fenster-Pfeile/Scrollbalken sind hier
+    flach) -- erwartungsgemaess unveraendert.
+
+6c  TeraDesk-Boot per #Z (fremde, ungeprueft-mitgelieferte .RSC-Ressource)
+    Frisches SD-Abbild: tools/make-sd-image.sh <scratch>/sd-teradesk.img 64
+    (einzige Quelle der Wahrheit fuer Testkarten, docs/MEMORY.md),
+    NEWDESK.INF ueberschrieben mit
+    measurement-2026-09-17-h03/method/newdesk-teradesk.inf
+    (#Z 01 C:\APPS\TERADESK\DESKTOP.NAP@). Kernel: scratch-ws mit Fix, KEIN
+    Hook (regulaerer shell_loop::sh_main-Weg). Marker "[launch] EL0: slot 0
+    entry 0x1000" (zweites Vorkommen = TeraDesk-Start), 12 s Settle.
+    screendumps/teradesk-a67.png
+    Vergleich gegen die vom Auftrag genannte Referenz
+    measurement-2026-09-17-h03/verify/screendumps/verify-run1-teradesk-startup.png
+    (sha256 f7b30700b17a3d805e3d5740f5ecf61c16dcf8423d77d72bbd3518aca1c93ad8,
+    aufgenommen VOR dem A67-Fix, HEAD 49b2c2c):
+    -> compare/teradesk-vs-reference.txt: 0 Pixel unterschiedlich.
+    BEFUND: TeraDesks eigene Icons/Menueleiste im Startbild sind keine
+    FL3DIND/FL3DACT-Boxobjekte -- A67 hat dort keine Wirkung. Kein
+    Bildfehler, keine Verschiebung.
+
+
+7 GIT-STATUS / UNVERAENDERTHEIT DES BAUMS
+-------------------------------------------------------------------------
+git status --short:
+   M tos-api/src/aes/object.rs
+  ?? tos-api/tests/aes_object_3d_box_border.rs
+(nur die zwei Fix-Dateien -- ERFUELLT)
+
+md5 kernel/src/lib.rs = 5434f7b25c5641c7fab1fce0b1c98b85
+(identisch vorher/nachher -- ERFUELLT)
+
+Keine git-Worktrees uebrig (git worktree list zeigt nur den Hauptbaum und
+den unabhaengigen agent/phantom-key-Worktree, der nicht von dieser Messung
+stammt). Keine QEMU-Prozesse, keine Sockets, keine hdiutil-Attachments
+uebrig. Die reale SD-Karte des Anwenders (disk9, NEWTOS1-3) wurde nicht
+beruehrt.
+
+
+8 NICHT NACHGEFAHREN / OFFEN
+-------------------------------------------------------------------------
+- Sichtabnahme der Dialogknoepfe auf ECHTER Pi4-Hardware (Cache-Verhalten,
+  HDMI-Ausgabe) -- QEMU-TCG kann das laut docs/MEMORY.md nicht ersetzen.
+  Gehoert auf docs/api/desktop/_hw-test-checklist.md.
+- form_alert-Reichweitenbefund (6a) ist NICHT im Ticket A67.md erwaehnt und
+  sollte in die Quittung/STATUS.md als Ergaenzung aufgenommen werden.

@@ -809,9 +809,9 @@ const STIPPLE_50: [u16; 2] = [0xAAAA, 0x5555];
 
 // 3D-object flags (`ob_flags`, EmuTOS `CONF_WITH_3D_OBJECTS`, obdefs.h:92-97).
 const FL3DOBJ: u16 = 0x0200; // "indicator OR activator" bit: set on IND/ACT, CLEAR on BAK
-const FL3DIND: u16 = 0x0200; // indicator (recessed): grown + beveled
+const FL3DIND: u16 = 0x0200; // indicator: grown + beveled (colour change on press)
 const FL3DBAK: u16 = 0x0400; // background panel: flat, NOT grown, NOT beveled
-const FL3DACT: u16 = 0x0600; // activator / button (raised): grown + beveled
+const FL3DACT: u16 = 0x0600; // activator / button: grown + beveled (text move on press)
 const FL3DMASK: u16 = 0x0600;
 
 const NIL: i16 = -1;
@@ -1316,7 +1316,7 @@ const INDBUTCOL: i16 = 3;
 const ACTBUTCOL: i16 = 4;
 const BACKGRCOL: i16 = 5;
 const AD3DVALUE: i16 = 6;
-const ADJ3DSTD: i16 = 2; // NewTOS's bevel is 2px (EmuTOS ADJ3DSTD)
+const ADJ3DSTD: i16 = 2; // 3D growth per side (EmuTOS ADJ3DSTD, obdefs.h:136)
 const ADJ3DOUT: i16 = 3; // extra extent of an OUTLINED 3D object (EmuTOS ADJ3DOUT)
 
 /// `objc_sysvar` (48) — get (`int_in[0]` = 0) or set (1) a 3-D look variable
@@ -2378,6 +2378,15 @@ fn just_draw(t: ObjTree, obj: i16, x: i16, y: i16, clip: ClipRect, backend: &dyn
     // box/text body in the trailing `if (state)` block, gemoblib.c:894-901).
     let mut deco_bcol: Pel = BLACK;
     let mut deco_th: i16 = 0;
+    // The bevel's inputs (EmuTOS `just_draw`): `effect_th` is `ob_sst`'s `th`
+    // saved *before* the type body may zero it (`effect_th = th`,
+    // gemoblib.c:498 — a promoted G_TEXT still shrinks its bevel by the
+    // TEDINFO thickness), `effect_icol` the interior colour as the body left
+    // it, after any SELECTED xor (`add_3d_effect(…, effect_th, icol)`, :951).
+    // For a type without an interior (string, image, icon, userdef) EmuTOS
+    // passes whatever `icol` holds; WHITE here means "no fill to collide with".
+    let mut effect_th: i16 = 0;
+    let mut effect_icol: Pel = WHITE;
 
     match ob_type {
         G_BOX | G_IBOX | G_BUTTON | G_BOXCHAR => {
@@ -2395,15 +2404,20 @@ fn just_draw(t: ObjTree, obj: i16, x: i16, y: i16, clip: ClipRect, backend: &dyn
             // OUTSIDE its rect (negative th), EmuTOS `ob_sst`
             // (gemobjop.c:59-65): base -1, one thinner for EXIT, one thinner
             // for DEFAULT — so a default exit button is -3 and reads as the
-            // heavy "this is Enter" outline. The border is drawn whenever
-            // th != 0 *regardless of 3D* (gemoblib.c:663-667); the 3D bevel
-            // (add_3d_effect, gemoblib.c:950-951) is layered on top afterwards,
-            // so a 3D button keeps its black outline AND gains a bevel. Box
-            // types keep their spec-byte thickness. D7: an FL3DBAK panel is NOT
-            // an FL3DOBJ, so it takes its spec-byte th too (EmuTOS `ob_sst`
-            // gives every G_BOX `th = spec byte 1`, gemobjop.c:54-58, and
-            // `just_draw` never zeroes a box th for 3D) — only FL3DIND/FL3DACT
-            // *boxes* keep the bevel-instead-of-border path (th=0).
+            // heavy "this is Enter" outline. A box type takes its spec-byte
+            // thickness (`th = *(((char *)pspec)+1)`, gemobjop.c:54-58).
+            //
+            // A67: the thickness is the same for every 3D kind. EmuTOS draws
+            // the border whenever `th != 0` *regardless of 3D*
+            // (gemoblib.c:663-667) and lays the bevel over it afterwards
+            // (`add_3d_effect`, gemoblib.c:950-951), so an FL3DIND/FL3DACT box
+            // — the file selector's drive letters, arrows and elevator, all
+            // `th = -1` (gem_rsc.c:214,376,394,400,412) — keeps its black
+            // ring AND gets the bevel, exactly like a 3D G_BUTTON. The former
+            // `th = 0` for FL3DOBJ boxes was an invention of the first 3D look
+            // (fb82794, "the flat black border is suppressed for 3D objects"),
+            // measured against the rscview reference as the loss of the
+            // drive boxes' 1-pixel frame (`TASK/A67.md`).
             let th = if ob_type == G_BUTTON {
                 let mut bt: i16 = -1;
                 if ob_flags & EXIT != 0 {
@@ -2413,11 +2427,10 @@ fn just_draw(t: ObjTree, obj: i16, x: i16, y: i16, clip: ClipRect, backend: &dyn
                     bt -= 1;
                 }
                 bt
-            } else if d3obj {
-                0 // FL3DIND/FL3DACT box types use a bevel (drawn after), not a border
             } else {
                 ((ob_spec >> 16) as u8 as i8) as i16
             };
+            effect_th = th;
             // 3D colour override (EmuTOS): a hollow-white box/button takes a
             // solid 3D face colour so the bevel reads against it.
             if ob_type != G_IBOX && ipat == IP_HOLLOW && icol == WHITE && d3 != 0 {
@@ -2453,6 +2466,7 @@ fn just_draw(t: ObjTree, obj: i16, x: i16, y: i16, clip: ClipRect, backend: &dyn
             }
             deco_bcol = bcol;
             deco_th = th;
+            effect_icol = icol;
             // Text colour, xor'd when selected *and* the object changes colour.
             let ink = if selected && changecol { xor_color(tcol) } else { tcol };
             if ob_type == G_BOXCHAR {
@@ -2550,28 +2564,31 @@ fn just_draw(t: ObjTree, obj: i16, x: i16, y: i16, clip: ClipRect, backend: &dyn
                 // text, inside pattern, inside colour.
                 let (bcol, tcol, mut ipat, mut icol, _mode) = gr_crack(ted.te_color as u16);
                 let mut is_box = ob_type == G_BOXTEXT || ob_type == G_FBOXTEXT;
-                // D7, text half: an FL3DBAK *background panel* keeps its
-                // TEDINFO thickness, exactly as the box arm above states for
-                // G_BOX — EmuTOS `just_draw` never zeroes a thickness for 3D
-                // (`gemoblib.c:661-667` draws the border whenever `th != 0`,
-                // and only the G_TEXT→G_BOXTEXT promotion below sets
-                // `tmpth = th = 0`, `:597-606`). Keying this on FL3DOBJ rather
-                // than on any 3D kind therefore *narrows* a divergence: only
-                // FL3DIND/FL3DACT text keeps the bevel-instead-of-border path
-                // the box arm documents. Measured against the rscview
-                // reference (`docs/analysis/fsel-reference-2026-09-17/`): the
-                // file box's FTITLE caption is a G_BOXTEXT with te_thickness
-                // -1 that EmuTOS frames in black, and A64 gives it FL3DBAK
-                // (`gemfslib.c:78`) — with the old test that frame vanished.
-                let mut th = if d3obj { 0 } else { ted.te_thickness };
-                // 3D background (EmuTOS): a hollow-white text background takes
-                // the solid 3D background colour; a plain TEXT/FTEXT becomes a
-                // BOXTEXT/FBOXTEXT with zero border so the fill is drawn.
+                // The TEDINFO thickness, for every 3D kind alike (A67, text
+                // half): EmuTOS `just_draw` never zeroes a thickness for 3D —
+                // `gemoblib.c:663-667` draws the border whenever `th != 0`,
+                // and the bevel goes over it (`:950-951`). The only place a
+                // text thickness is zeroed is the G_TEXT→G_BOXTEXT promotion
+                // below (`tmpth = th = 0`, `:589-598`). Measured against the
+                // rscview reference (`docs/analysis/fsel-reference-2026-09-17/`):
+                // the file box's FTITLE caption is a G_BOXTEXT with
+                // te_thickness -1 that EmuTOS frames in black under FL3DBAK
+                // (`gemfslib.c:78`).
+                let mut th = ted.te_thickness;
+                effect_th = th;
+                // 3D background (EmuTOS `:582-599`): a hollow-white text
+                // background takes the solid 3D background colour, and a
+                // plain TEXT/FTEXT is promoted to BOXTEXT/FBOXTEXT with a zero
+                // border so the fill is drawn. A G_BOXTEXT/G_FBOXTEXT is not
+                // promoted and keeps its thickness (`:589-598` zero `th` only
+                // inside the `obtype == G_TEXT` / `G_FTEXT` arms).
                 if d3 != 0 && ipat == IP_HOLLOW && icol == WHITE {
                     ipat = IP_SOLID;
                     icol = BACKGR_COL.load(Ordering::Relaxed) as Pel;
-                    is_box = true;
-                    th = 0;
+                    if !is_box {
+                        is_box = true;
+                        th = 0;
+                    }
                 }
                 // SELECTED (EmuTOS `changecol`): xor the interior + text.
                 if selected {
@@ -2594,6 +2611,7 @@ fn just_draw(t: ObjTree, obj: i16, x: i16, y: i16, clip: ClipRect, backend: &dyn
                 }
                 deco_bcol = bcol;
                 deco_th = th;
+                effect_icol = icol;
                 // Format the string: the F-variants merge `te_ptext` into the
                 // `te_ptmplt` template (EmuTOS `ob_format`); the plain variants
                 // draw `te_ptext` directly.
@@ -2746,31 +2764,63 @@ fn just_draw(t: ObjTree, obj: i16, x: i16, y: i16, clip: ClipRect, backend: &dyn
     }
 
     // 3D bevel LAST (EmuTOS gemoblib.c:950-951 calls add_3d_effect after the
-    // whole state block, gated on `flags & FL3DOBJ`): a raised activator (unless
-    // pressed), a recessed indicator. D7: FL3DBAK is NOT an FL3DOBJ, so it gets
+    // whole state block, gated on `flags & FL3DOBJ`) over the grown rect
+    // (`effect_grect`, :545) with the saved `ob_sst` thickness and the
+    // interior colour. Indicator and activator get the *same* bevel — raised
+    // until SELECTED, then sunk (`:252`, `:270`); they differ only in the
+    // movetext/changecol dynamics above. FL3DBAK is NOT an FL3DOBJ, so it gets
     // NO button bevel — its 3D optic is the draw_3d_outline recess above.
-    match d3 {
-        FL3DACT => add_3d_effect(backend, x, y, w, h, !selected, clip),
-        FL3DIND => add_3d_effect(backend, x, y, w, h, false, clip),
-        _ => {} // FL3DBAK (flat panel) and non-3D: no bevel
+    if d3obj {
+        add_3d_effect(backend, x, y, w, h, selected, effect_th, effect_icol, clip);
     }
 }
 
-/// Draw a 2-pixel bevel around a rectangle for the 3D look: `raised` gives
-/// a white top/left highlight and a dark-grey bottom/right shadow;
-/// `!raised` (recessed) swaps them. EmuTOS `add_3d_effect`.
-fn add_3d_effect(backend: &dyn RasterBackend, x: i16, y: i16, w: i16, h: i16, raised: bool, clip: ClipRect) {
-    if w < 2 || h < 2 {
-        return;
+/// The 3D bevel of an indicator/activator — EmuTOS `add_3d_effect`
+/// (`gemoblib.c:220-283`), raised while not `selected`, sunk when it is.
+///
+/// `(x, y, w, h)` is the **grown** rectangle `just_draw` saved before the type
+/// body (`effect_grect`, `:545`); an *inside* border (`th > 0`) first shrinks
+/// it by `th` on every side (`:231-238`) so the bevel lands inside that border
+/// instead of over it — an outside border (`th < 0`) sits beyond the rect and
+/// needs no room. Two one-pixel polylines follow, each stopping one pixel
+/// short of both ends so the two far corners keep the face colour:
+///
+/// ```text
+/// bottom-left → top-left → top-right      (x, y+h-2) → (x, y) → (x+w-2, y)
+///     WHITE, or BLACK when selected                                  (:252)
+/// bottom-left → bottom-right → top-right  (x+1, y+h-1) → (x+w-1, y+h-1) → (x+w-1, y+1)
+///     LBLACK, or LWHITE when selected                                (:270)
+/// ```
+///
+/// The second colour falls back to BLACK/WHITE when it would vanish into the
+/// object's own interior colour `icol`, or lies beyond the workstation's colour
+/// count (`:271-272`). Opaque (`MD_REPLACE`), solid line style (`:226-228`).
+#[allow(clippy::too_many_arguments)]
+fn add_3d_effect(
+    backend: &dyn RasterBackend,
+    x: i16,
+    y: i16,
+    w: i16,
+    h: i16,
+    selected: bool,
+    th: i16,
+    icol: Pel,
+    clip: ClipRect,
+) {
+    let (x, y, w, h) = if th > 0 { (x + th, y + th, w - 2 * th, h - 2 * th) } else { (x, y, w, h) };
+    let mode = WriteMode::Replace;
+    let solid = 0xFFFF;
+
+    let hi = if selected { BLACK } else { WHITE };
+    backend.draw_line(x, y + h - 2, x, y, hi, mode, clip, solid); // left
+    backend.draw_line(x, y, x + w - 2, y, hi, mode, clip, solid); // top
+
+    let mut lo = if selected { GRAY_LT } else { GRAY_DK };
+    if lo == icol || backend.num_colors() < lo as u16 {
+        lo = if selected { WHITE } else { BLACK };
     }
-    let (tl, br) = if raised { (WHITE, GRAY_DK) } else { (GRAY_DK, WHITE) };
-    for i in 0..2 {
-        // top + left = highlight; bottom + right = shadow
-        backend.fill_rect(x + i, y + i, w - 2 * i, 1, tl, clip);
-        backend.fill_rect(x + i, y + i, 1, h - 2 * i, tl, clip);
-        backend.fill_rect(x + i, y + h - 1 - i, w - 2 * i, 1, br, clip);
-        backend.fill_rect(x + w - 1 - i, y + i, 1, h - 2 * i, br, clip);
-    }
+    backend.draw_line(x + 1, y + h - 1, x + w - 1, y + h - 1, lo, mode, clip, solid); // bottom
+    backend.draw_line(x + w - 1, y + h - 1, x + w - 1, y + 1, lo, mode, clip, solid); // right
 }
 
 /// Draw the EmuTOS 3D outline for an OUTLINED FL3DBAK background panel
