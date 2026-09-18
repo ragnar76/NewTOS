@@ -156,6 +156,19 @@ launch loop `sh_main`/`sh_ldapp` (`gemshlib.c:592-731`) `Pexec`s each program.
 name and the 128-byte command tail the shell set when it launched this
 application. The tail is the basepage-style tail (`p_cmdlin` equivalent).
 
+**One buffer, not two (H05, 2026-09-18).** `D.s_cmd`/`ad_stail` are the very
+cells `shel_write(SHW_EXEC)` writes (`strcpy(D.s_cmd, pcmd)`,
+`memcpy(ad_stail, ptail, CMDTAILSIZE)`, `gemshlib.c:169-170`) and that
+`sh_ldapp` fills before it runs a program (`:645`). So after an application
+has itself called `shel_write(SHW_EXEC, cmd, tail)`, a `shel_read` returns
+**that** `cmd`/`tail` — not the command that launched the application —
+until the shell overwrites it again. TeraDesk's Single-TOS chain protocol
+depends on exactly this: `shel_write(SHW_EXEC, child)` → `Pexec(child)` →
+`shel_read` → `strcmp(cmd, own name)` decides whether a chain was requested
+(`startprg.c:344-355`). An implementation that answers `shel_read` from a
+separate "launch command" buffer breaks the round trip
+(`TASK/H05-STATUS-DONE.MD`).
+
 ### `shel_write` (121) — `sh_write`
 
 **Source:** `gemsuper.c:383-384` → `aes/gemshlib.c:157-196` (`sh_write`).
@@ -411,8 +424,11 @@ returned to the `shel_write` caller — `shel_write` returned `1` when it merely
   value `+2`** (ST/TT family); the consumer subtracts `2` back off
   (`geminit.c:782`). For `isover=1` (Falcon family), `mode` is the raw
   Setscreen value, no offset (`geminit.c:788`). See D-101.
-- **`shel_read`** fills `addr_in[0]` with the launching command and `addr_in[1]`
-  with exactly 128 tail bytes (`gemshlib.c:104-105`).
+- **`shel_read`** fills `addr_in[0]` with `D.s_cmd` — the launching command, or
+  whatever the last `shel_write(SHW_EXEC)` stored there — and `addr_in[1]`
+  with exactly 128 tail bytes (`gemshlib.c:104-105`, `:169-170`).
+- **`shel_write(SHW_EXEC, c, t)` then `shel_read(b1, b2)`** yields `c` in `b1`
+  and `t` in `b2` — the same buffer both ways (`gemshlib.c:104,169`).
 - **`shel_get`/`shel_put` round-trip:** `shel_put(data, n)` then
   `shel_get(buf, n)` yields the same `n` bytes for any `n ≤ 4192`
   (`gemshlib.c:205,215`).
@@ -521,8 +537,9 @@ includes what `sh_ldapp` does to process identity on every launch —
 (AESPD numbering, `p_nameit`/`p_setappdir` applied to the one persistent
 "dos appl" descriptor, the `ap_private`/`gem.rsc` chain, the `#Q`/`#E`/`#Z`
 `EMUDESK.INF` processing, the `app_save`/`app_start` state-handover buffer).
-`shel_write` records the next program + tail + mode; `shel_read` returns this
-app's launch command + tail; the desktop is re-run on app exit; **and** the
+`shel_write` records the next program + tail + mode into `D.s_cmd`/`ad_stail`;
+`shel_read` returns those same cells (this app's launch command + tail until
+the app overwrites them with its own `shel_write`); the desktop is re-run on app exit; **and** the
 launched app's `appl_init()` observably returns `ap_id == 0` and
 `ap_private == 0x1143` (default) — see `shell-loop.md` for the citations.
 
