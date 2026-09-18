@@ -181,9 +181,13 @@ Open read-only, read the 36-byte header, allocate `rsh_rssize` (or the true
 length for a new-format file) bytes of any RAM, read the whole file in, store
 `ap_rscmem`/`ap_rsclen`, then relocate every offset to a pointer and fix the
 coordinates (§0). Returns `0` (and frees nothing) on a short read or alloc
-failure; `1` on success. Only **one** resource is loaded per application at a
-time — a second `rsrc_load` overwrites `ap_rscmem` without freeing the first
-(the app must `rsrc_free` between loads).
+failure; `1` on success. One `AESGLOBAL` **names** one resource at a time — a
+second `rsrc_load` overwrites `ap_rscmem`/`ap_rsclen`/`ap_ptree` without
+freeing the first (`rs_readit`, `:786-788`; nothing in `rs_load` frees). The
+first blob stays the application's GEMDOS memory: it can be reached again by
+restoring the three words (TeraDesk's `load_icons` does so, see the A39 callout
+below), it is freed by `rsrc_free` while named, and otherwise dies with the
+process (`bdos/proc.c:136`, `free_all_owned`).
 
 > **NewTOS status (deviation, ADR-013/D-100).** The **lookup** matches EmuTOS
 > since 2026-09-11: `rsrc_load` (`tos-api/src/aes/resource.rs::rsrc_load`)
@@ -254,17 +258,95 @@ time — a second `rsrc_load` overwrites `ap_rscmem` without freeing the first
 >    kernel static, not the `AESGLOBAL`. The three land together for the same
 >    reason a length beside a null base would state two contradictory things.
 >
-> **`rs_sglobe` is deliberately not adopted.** EmuTOS re-reads `ap_rscmem` out
-> of the caller's `AESGLOBAL` on every `rs_free`/`rs_gaddr`/`rs_saddr`
-> (`gemrslib.c:675-679`), so in EmuTOS those words *are* the resource
-> descriptor. NewTOS writes them as a **report** and keeps working from its own
-> descriptor; an application cannot repoint the AES at a foreign blob by
-> editing its globals. The observable difference is confined to a program that
-> overwrites `ap_rscmem` and then expects `rsrc_gaddr` to follow it — no known
-> caller does, and TeraDesk's own `xrsrc_*` loader (`rsc_load.c`) keeps its
-> resource entirely outside the kernel's `rsrc_*`.
+> **The resource state is per AES process and bound to the caller's
+> `AESGLOBAL`, as `rs_sglobe` binds it (contract, decided 2026-09-19 — A39).**
+> In EmuTOS the three words *are* the resource descriptor: `rs_sglobe`
+> re-reads `ap_rscmem` out of the caller's `AESGLOBAL` on every `rs_free`,
+> `rs_gaddr`, `rs_saddr` and `rs_fixit` (`gemrslib.c:675-679`; calls `:690`,
+> `:717`, `:732`, `:818`), `get_addr(R_TREE)` reads `ap_ptree[i]` out of it
+> (`:124`), and the `AESPD` holds no resource field at all
+> (`aes/struct.h:119-155`). Two AES processes with separate `global[]` arrays
+> therefore never interfere — EmuTOS has that case itself in its desk
+> accessories, each an `AESPD` of its own with its own `global[]`
+> (`aes/geminit.c:812-814`, `gempd.c:110-131`), and `crysbind` receives
+> `pglobal` per call from the AESPB (`gemsuper.c:441`). The contract NewTOS
+> implements:
 >
-> **There is no EL1 caller of `rsrc_load`** (measured 2026-09-13, unchanged).
+> 1. **Keyed by the calling AES process** (its pid, as `appl_init` reports it —
+>    `current_pid`, GEMDOS slot + 1). A child that `rsrc_load`s and
+>    `rsrc_free`s touches only its own state; the parent's `rsrc_gaddr`
+>    answers exactly as before (the H05 defect: `TASK/A39.md`).
+> 2. **`rsrc_load` writes** `ap_ptree`/`ap_rscmem`/`ap_rsclen` (4-byte user
+>    VAs, `gemrslib.c:786-788`, `:597`) and does **not** free an earlier load
+>    of the same process (`rs_load` never does); several blobs may be loaded
+>    per process at once, the `AESGLOBAL` names one of them.
+> 3. **`rsrc_free`/`rsrc_gaddr`/`rsrc_saddr` act on the blob the caller's
+>    `ap_rscmem` names** (`:677-678`, `:699`, `:718`, `:733`). An application
+>    that rewrites `ap_rscmem` is followed — TeraDesk does exactly that:
+>    `load_icons` saves the `desktop.rsc` words, may `rsrc_load("cicons.rsc")`
+>    through the AES, loads `icons.rsc` with its own `xrsrc_load` (which
+>    stores its own base into `aes_global[5]`/`[7]`, `rsc_load.c:414-431`),
+>    and then **restores** the `desktop.rsc` words so later
+>    `rsrc_gaddr(R_STRING, …)` resolve there again (`sdk/apps/teradesk/icon.c:
+>    2707-2708, 2742-2743, 2762-2763`; its comment: *"alert_abort will call
+>    rsrc_gaddr(), need to reset globals here to point to desktop.rsc"*). The
+>    earlier claim that no known caller does this was wrong.
+> 4. **The selector is only honoured for blobs the AES loaded for this
+>    process.** NewTOS matches the 4-byte `ap_rscmem` against the bases of the
+>    caller's own loaded blobs (all inside its process window below
+>    `USER_TPA_MAX_VA`, so exact in 32 bits); a value naming none of them — 0,
+>    another process's blob, a foreign or application-built address, a null
+>    `global` in the AESPB — reads as **"nothing loaded"**: `rsrc_free` → 0
+>    (`:702-704`), `rsrc_gaddr` → `addr_out[0] = 0`/`int_out[0] = 0`,
+>    `rsrc_saddr` → 0. EmuTOS would parse whatever header stands at that
+>    address (`:100-104`); XaAES follows the pointer too and then range-checks
+>    the *result* against the length in that very header
+>    (`xaaes/src.km/xa_rsrc.c:1701-1705`, `:1839-1855`). NewTOS moves that
+>    check to the selector, because the kernel must not parse a header it did
+>    not load. The residual difference — an application pointing the AES at a
+>    blob it built itself — has no caller in the tree (TeraDesk queries its
+>    private blob only through its own `xrsrc_gaddr`, `icon.c:2750`).
+> 5. **`R_TREE`** is answered from the tree table of the selected blob, which
+>    from NRSC v7/v8 on is literally the `ap_ptree[i]` array (§ item 1 above);
+>    an application repointing `ap_ptree` alone to a private table is served
+>    by EmuTOS (`:124`) and not by NewTOS — no known caller.
+> 6. **`rsrc_free` frees only the selected blob** and leaves the caller's three
+>    words as they are (`rs_free` writes none of them). **`appl_exit` does not
+>    touch the resource** (`ap_exit`, `aes/gemaplib.c:251-261`). At **process
+>    end** the blob dies with the process's memory (`Mxalloc` stamps the
+>    owner, `bdos/iumem.c:134`; `xterm` → `ixterm` → `free_all_owned`,
+>    `bdos/proc.c:601-619`, `:136`, `:92-100`) and its descriptor entries go
+>    with it — the dying process's only; every other process keeps its state.
+>    XaAES frees a client's whole resource list already at `appl_exit`
+>    (`xa_appl.c:895` → `exit_client` `:745-750`) and rewrites the `global`
+>    words on `rsrc_free` (`xa_rsrc.c:1347-1362`); neither is adopted (EmuTOS
+>    is the target profile; both are observable only to a program that calls
+>    `rsrc_gaddr` after `appl_exit`/`rsrc_free`).
+> 7. `rsrc_load` needs no prior `appl_init` (`crysbind` checks nothing,
+>    `gemsuper.c:363-365`).
+>
+> Where XaAES is the model — the **per-client list** of loaded resources
+> (`struct xa_client::resources`, `xa_types.h:2222`; `list_resource`,
+> `xa_rsrc.c:895-900`) — it stands in for what EmuTOS gets for free from the
+> application's own memory; the reference comparison is
+> `docs/analysis/rsrc-per-app-state-2026-09-19.md`.
+>
+> **NewTOS status: not yet implemented** (A39 open). Today the descriptor is one
+> kernel static (`RSC`, `USER_RSC_RAW` in `resource.rs`) shared by every
+> process, and the three words are written but never read back. Two things bound
+> the implementation order: item 4 (the read-back) would break TeraDesk on
+> LP64 until **A60** is fixed (source-derived, not yet measured — analysis
+> § 3): its `xrsrc_fix` stores 8-byte pointers at bytes 10 and 14 while its
+> save/restore in `load_icons` reads and writes a naturally aligned struct at
+> bytes 16 and 24 (`library/xdialog/library.h:65-83`), so after `load_icons`
+> the kernel's 4-byte fields would name no loaded blob. Items 1,
+> 2, 6 and 7 (the per-process keying) do not depend on A60 and are what H05
+> F2 needs; the analysis document proposes them as stage 1 with the selector
+> as stage 2 after A60. Which order applies is the user's decision (analysis
+> § 7).
+>
+> **There is no EL1 caller of `rsrc_load`** (measured 2026-09-13, re-checked
+> 2026-09-19, unchanged).
 > The only way in is crysbind opcode 110 (`tos-api/src/aes/mod.rs`) through
 > `dispatch` → `thread::call` → the `svc #2` handler. The EL1 `svc #2` emitters
 > are `kernel/src/{desk/mod.rs, selftest_objc.rs, selftest_aes.rs,
@@ -303,7 +385,9 @@ time — a second `rsrc_load` overwrites `ap_rscmem` without freeing the first
 Frees the CICON buffers (if any) and the resource blob `ap_rscmem`
 (`dos_free`). Returns `0` if `ap_rscmem` was NULL (nothing loaded) or if any
 `dos_free` failed (`gemrslib.c:691-705`). It does **not** clear `ap_ptree` — a
-program must not `rsrc_gaddr` after `rsrc_free`.
+program must not `rsrc_gaddr` after `rsrc_free`. It acts on the **caller's**
+`AESGLOBAL` only (`rs_sglobe(pglobal)`, `:690`): the blob that array names, and
+no other process's load (A39 callout under `rsrc_load`).
 
 ---
 
