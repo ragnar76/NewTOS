@@ -1,0 +1,123 @@
+H05-F1-Fix unabhaengig verifiziert (Tester, 2026-09-18). Nur gemessen, kein Produktcode
+geaendert. Branch desk-rebuild, HEAD f9d7608 (uncommitted: kernel/src/launch.rs,
+tos-api/src/aes/shell.rs, neu tos-api/tests/aes_shel_roundtrip.rs).
+
+METHODE
+  Dieselbe Vorgehensweise wie measurement-2026-09-18-h05/method/ (Injektor +
+  Trace-Instrumente in einer SCRATCH-Kopie, method/run.sh + method/qmp_multi.py),
+  eigene Scratch-Kopie unter <scratchpad>/verify/h05-ws (h05/ und h05fix/ nicht
+  angefasst). Die vier Instrument-Diffs fuer host_env.rs (Injektor), aes/mod.rs
+  (pid-Trace), aes/pd.rs (post_msg-Trace) und host.rs (debug_write) trafen
+  unveraendert (`patch -p0` sauber, kein Fuzz); h05_patch.py's exceptions.rs-Teil
+  (Pexec/Pterm-Trace) ebenso. Fuer shell.rs passte der alte Diff nicht mehr (er
+  zielt auf den geloeschten `launch_cmd`-Puffer) -- von Hand an die neuen Stellen
+  nachgezogen: shel_read druckt jetzt S.s_cmd, shel_write(SHW_EXEC) druckt isgem +
+  das neu geschriebene S.s_cmd, beide ueber das bestehende `crate::h02!`-Makro
+  (nur bei scharf geschaltetem Trace). Alle Instrument-Dateien nur in der
+  Scratch-Kopie; Projektbaum kernel/src/host_env.rs sha256 vor/nach der Messung
+  identisch (siehe unten).
+
+LAEUFE
+  kernel8-run1.img sha256 705651999dbf5237bb2f6331923371a9d5c26c8c54af7fd9f4664d6a499b6dfe
+    Skript run1 (method/run1.actions, .NCP-Fall HELLO.NCP), release, --board rpi4.
+  kernel8-run3.img sha256 34180639f6c9073bc355370b69dc0027169e178bdf68d12c5ac060fb8187cd96
+    Skript run3 (method/run3.actions, .NAP-Fall MINIGEM.NAP), release, --board rpi4.
+  kernel8-smoke.img sha256 e8ced413433b373c27036463882aff98c9ae8231cc6a3662f4abb5af93163f13
+    Rauchtests, KEIN Injektor/Trace -- frischer `cargo xtask build --board rpi4
+    --release` direkt im Hauptbaum (Fix, keine Instrumentierung).
+  sd-base.img sha256 344e2aacdfd5b49b7b959c1fb4c3ae598eff395264182675cf83573cc391637a
+    `tools/make-sd-image.sh <img> 64` aus der Scratch-Kopie.
+  sd-run1.img / sd-run3.img: sd-base.img + method/sd-put.sh (NEWDESK.INF =
+    method/newdesk-user.inf, TERADESK.INF = method/teradesk-user.inf nach
+    Apps/TERADESK/TERADESK.INF; run3 zusaetzlich method/MINIGEM.NAP nach
+    AUTO/MINIGEM.NAP). sha256 1afbb8bb...9fc709 / 82fc4d61...834b73.
+  sd-smoke-tera.img (= sd-run1.img-Bestueckung, aber mit kernel8-smoke.img gebootet,
+    ohne Injektor) sha256 afac9ea6...483cab.
+  sd-smoke-qed.img: sd-base.img + NEWDESK.INF mit `#Z 01 C:\APPS\QED\QED.NAP@`
+    (identisch zu newdesk-user.inf bis auf die eine #Z-Zeile; Datei uebernommen
+    als Eingabe-Fixture, nicht als Befund) sha256 60384858...9b8dc249.
+  sd-smoke-desk.img = sd-base.img selbst (Platzhalter-NEWDESK.INF, kein Autorun)
+    sha256 344e2aac...391637a (identisch zu sd-base.img).
+
+ERGEBNIS run1 (.NCP, serial/run1-serial.log)
+  [h05] shel_write(SHW_EXEC, isgem=0) D.s_cmd='C:\AUTO\HELLO.NCP'
+  [h05] Pexec mode=0 from_el0=true caller_slot=Some(0) caller_bp=0xffff000001000000 path='C:\AUTO\HELLO.NCP'
+  [h05] Pexec -> child slot=1 child_bp_kva=0xffff00000142f000 entry=0x1000 ...
+  [h05] Pterm dying_slot=1 rc=0 resume_to_el0=true parent_slot=0 RUN_after=0xffff000001000000 run_slot=Some(0)
+  [h05] shel_read -> returns s_cmd='C:\AUTO\HELLO.NCP' (one buffer, H05 fix)
+  -- shel_read liefert jetzt TeraDesks EIGENEN shel_write-Wert zurueck (vorher:
+  launch_cmd = 'C:\APPS\TERADESK\DESKTOP.NAP', der F1-Befund). Genau EIN
+  "[h05] Pexec" im ganzen Lauf, kein zweites "DESKTOP.NAP", kein "pid=2", kein
+  "op 10" (appl_init) nach der Rueckkehr -- kein zweites TeraDesk.
+  Screendumps E (vorher) / F,G,H (1s/3s/8s nachher): pixelgleich -- beide Fenster
+  mit Pfad und Position zurueck (W1 C:\AUTO\*.*, "4531 bytes used in 2 items",
+  W2-Ecke "374035 bytes used" oben rechts), HELLO.NCP-Icon ohne Auswahlrahmen
+  (nur der Mauszeiger steht davor).
+
+ERGEBNIS run3 (.NAP, serial/run3-serial.log)
+  [h05] shel_write(SHW_EXEC, isgem=1) D.s_cmd='C:\AUTO\MINIGEM.NAP'
+  [h05] Pexec ... path='C:\AUTO\MINIGEM.NAP'  ->  child slot=1
+  [aes] pid=2 op 10 ... out=(2,...)   -- MINIGEM.NAPs EIGENER appl_init (pid 2),
+    das ist MINIGEMs eigene, legitime AES-Session, KEIN zweites TeraDesk.
+  [h05] Pterm dying_slot=1 ... resume_to_el0=true run_slot=Some(0)
+  [h05] shel_read -> returns s_cmd='C:\AUTO\MINIGEM.NAP' (one buffer, H05 fix)
+  Danach nur noch pid=1 (TeraDesk); kein zweiter "DESKTOP.NAP"-Pexec, kein
+  zweites "op 10" fuer TeraDesk selbst.
+  ABWEICHUNG VOM AUFTRAG (Befund, nicht Fehlmessung): der Auftrag erwartete hier
+  "leere Infozeile / andere Icons (A39)" als bekannten, nicht neuen Nebenbefund.
+  Gemessen: Infozeile UND Icons sind nach der Rueckkehr unveraendert korrekt
+  ("18755 bytes used in 3 items", HELLO.NCP/MINIGEM.NAP/READ.ME-Icons identisch
+  vorher/nachher, screendumps/run3-E-before-start.png vs. run3-H-after-7s.png
+  pixelgleich bis auf die Mausposition). Grund, am Trace ueberprueft: MINIGEM.NAP
+  ruft nie rsrc_load/rsrc_free (kein "op 110"/"op 111" im gesamten Log) -- A39
+  (globaler statt je-Anwendung-Ressourcenzustand, tos-api/src/aes/resource.rs)
+  greift nur, wenn das gestartete Kind selbst eine .rsc laedt (wie das innere
+  TeraDesk in H05-STATUS-DONE.MDs run2, das rsrc_load/rsrc_free JA aufruft).
+  Alle 80 "op 112" (rsrc_gaddr) des aeusseren TeraDesk nach der Rueckkehr liefern
+  weiterhin int_out[0]=1 (gueltig). Das ist eine Praezisierung von A39s Reichweite,
+  kein neuer Befund und keine Entkraeftung von H05.
+
+RAUCHTESTS OHNE INJEKTOR (serial/smoke-*-serial*.log, kernel8-smoke.img)
+  #Z TeraDesk: "[shell] sh_ldapp: starting C:\APPS\TERADESK\DESKTOP.NAP,
+    sh_nextapp=2, sh_isgem=1", kein panic/EXCEPTION; screendumps/smoke-tera-up.png
+    zeigt den TeraDesk-Desktop (4 HARD-DISC-Icons, TRASH, Menueleiste).
+  #Z QED: "[shell] sh_ldapp: starting C:\APPS\QED\QED.NAP, sh_nextapp=2,
+    sh_isgem=1", kein panic/EXCEPTION; screendumps/smoke-qed-up.png zeigt QEDs
+    eigene Menueleiste vollflaechig (cflib appinit -> shel_read -> gl_appdir ->
+    rsrc_load funktioniert weiterhin mit dem Fix).
+  Unser Desktop ohne Autorun: "[shell] sh_ldapp: starting NEWDESK, sh_nextapp=3,
+    sh_isgem=1" / "[desk] desktop up (1 drives)"; screendumps/smoke-desk-up.png
+    zeigt C:\ mit 24 Items.
+
+HOSTTESTS (host-tests/)
+  m1-fixed-test.log: `cargo test -p tos-api --test aes_shel_roundtrip` im
+    Hauptbaum (Fix) -- 3 passed; 0 failed.
+  m1-red-test.log: derselbe Test in einem `git worktree` auf HEAD f9d7608
+    (detached, ohne den uncommitted Fix) mit hineinkopierter Testdatei --
+    1 passed; 2 FAILED (shel_write_exec_then_shel_read_returns_the_written_pair,
+    shel_write_after_launch_wins_shel_read) -- genau Fall a und c, wie erwartet;
+    Assertion zeigt links=erwarteter Kindbefehl, rechts=tatsaechlich gelesener
+    TeraDesk-eigener Startbefehl (der F1-Defekt).
+  m2-xtask-test.log: `cargo run -p xtask -- test` im Hauptbaum -- 570 passed;
+    0 failed; 1 ignored (Summe aller "test result:"-Zeilen).
+
+BUILD/CLIPPY (build/, beide Boards frisch, `cargo clean -p kernel/tos-api
+  --target aarch64-unknown-none-softfloat` vor jedem Bau)
+  rustc: tos-api 64 Warnungen, kernel 94 Warnungen -- auf BEIDEN Boards
+    (board-qemu-virt und board-rpi4) identisch. Referenz (A67-Tester-Zeile,
+    docs/STATUS.md 2026-09-18): "rustc 64/94" -- Delta 0.
+  clippy: tos-api 81 Warnungen, kernel 125 Warnungen -- auf BEIDEN Boards
+    identisch. Referenz "Clippy 81/125" -- Delta 0.
+  shell.rs/launch.rs selbst: 0 clippy-/rustc-Warnungen (nur vorbestehende
+    "missing documentation"-Zeilen an unveraenderten shell.rs-Stellen).
+
+AUFRAEUMEN
+  QEMU-Prozesse beendet, QMP-Sockets geloescht (/private/tmp/claude-501/h05*.sock),
+  alle hdiutil-Attaches ueber method/sd-put.sh wieder detached, git worktree
+  worktree-red entfernt, kernel8.img (gitignored Artefakt im Hauptbaum-Root)
+  geloescht. /Volumes/BOOT nur ueber vorhandene method/-Kopien verwendet, nicht
+  selbst gemountet/beschrieben. `git status --short` zeigt nur
+  kernel/src/launch.rs, tos-api/src/aes/shell.rs, tos-api/tests/aes_shel_roundtrip.rs
+  und measurement-2026-09-18-h05/ (inkl. dieses verify/-Unterverzeichnisses).
+  kernel/src/host_env.rs sha256 287ff7415805b9cf0b7efe74487a5f24dd06f121ddd61cdb5f9e2d8a15618e3e
+  vor und nach der Messung identisch (nur die Scratch-Kopie wurde instrumentiert).

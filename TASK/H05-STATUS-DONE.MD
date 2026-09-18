@@ -151,3 +151,58 @@ Injektor und Traces nur in der Scratch-Kopie (`<scratchpad>/h05/ws`); Diffs unte
 `287ff7415805b9cf0b7efe74487a5f24dd06f121ddd61cdb5f9e2d8a15618e3e` vorher wie nachher.
 QEMU beendet, QMP-Sockets gelöscht, Images ausgehängt, `/Volumes/BOOT` nur gelesen.
 Keine Hardware-/Outward-Aktion.
+
+## Verifikation (Tester, 2026-09-18)
+
+Unabhängig nachgemessen, nicht nur den Developer-Selbstreport gelesen. Alle Belege
+unter [`measurement-2026-09-18-h05/verify/`](../measurement-2026-09-18-h05/verify/RUNINFO.TXT).
+
+**Hosttests.** `cargo test -p tos-api --test aes_shel_roundtrip` im Hauptbaum (Fix):
+**3/3 grün**. Rot-Gegenprobe in einem `git worktree` auf HEAD `f9d7608` (ohne den
+uncommitted Fix, Testdatei hineinkopiert): **1 passed, 2 FAILED** — genau Fall a und c
+(`shel_write_exec_then_shel_read_returns_the_written_pair`,
+`shel_write_after_launch_wins_shel_read`), Assertion zeigt den TeraDesk-eigenen
+Startbefehl statt des `shel_write`-Werts — der F1-Defekt, reproduziert. `cargo run -p
+xtask -- test`: **570 passed, 0 failed, 1 ignored** (567 + die 3 neuen H05-Tests, exakt
+konsistent mit A67s Zeile in `docs/STATUS.md`).
+
+**Build/Clippy, beide Boards frisch** (`cargo clean -p kernel/tos-api --target
+aarch64-unknown-none-softfloat` vor jedem Bau): rustc `tos-api` 64 / `kernel` 94
+Warnungen auf **beiden** Boards identisch; clippy `tos-api` 81 / `kernel` 125 identisch.
+Referenz A67 (`docs/STATUS.md`, 2026-09-18): "rustc 64/94, Clippy 81/125" — **Delta 0**.
+`shell.rs`/`launch.rs` selbst tragen 0 neue Warnungen.
+
+**H05-Abnahme in QEMU raspi4b**, eigene Scratch-Kopie + eigene Injektor/Trace-
+Instrumentierung (dieselbe Methode wie oben; für `shell.rs` von Hand an die neuen
+`S.s_cmd`-Stellen nachgezogen, der alte Diff zielte auf den gelöschten
+`launch_cmd`-Puffer). **run1 (`HELLO.NCP`)**: `shel_read` liefert nach der Rückkehr
+`s_cmd='C:\AUTO\HELLO.NCP'` — TeraDesks eigenen `shel_write`-Wert, nicht mehr
+`launch_cmd='C:\APPS\TERADESK\DESKTOP.NAP'`. Genau ein `[h05] Pexec` im ganzen Lauf,
+kein zweites `DESKTOP.NAP`, kein `pid=2`, kein zweites `appl_init` — **kein zweites
+TeraDesk**. Screendumps vor/1s/3s/8s nach der Rückkehr pixelgleich: beide Fenster mit
+Pfad und Position zurück, Auswahl weg. **run3 (`MINIGEM.NAP`)**: gleiches Bild für den
+Rückweg (ein legitimes `pid=2 op 10` gehört MINIGEMs eigenem `appl_init`, nicht einem
+zweiten TeraDesk; danach nur noch `pid=1`). **Abweichung vom Auftrag, gemessen, keine
+Fehlmessung:** der Auftrag erwartete hier A39 (leere Infozeile/andere Icons) als
+bekannten Nebenbefund — gemessen ist die Infozeile ("18755 bytes used in 3 items") und
+alle drei Icons nach der Rückkehr unverändert korrekt, weil `MINIGEM.NAP` nie
+`rsrc_load`/`rsrc_free` ruft (kein `op 110`/`op 111` im gesamten Log). A39 greift laut
+dieser Messung nur, wenn das gestartete Kind selbst eine `.rsc` lädt (wie TeraDesk
+selbst in run2 oben) — eine Präzisierung von A39s Reichweite, kein neuer Befund.
+
+**Rauchtests ohne Injektor** (frischer `--release`-Bau ohne jede Instrumentierung):
+`#Z` TeraDesk hoch (`sh_ldapp: starting …DESKTOP.NAP`, Desktop-Screendump sauber), `#Z`
+QED hoch (`sh_ldapp: starting …QED.NAP`, QEDs eigene Menüleiste vollflächig — cflibs
+`appinit`-Weg über `shel_read`/`gl_appdir`/`rsrc_load` bleibt intakt), unser Desktop ohne
+Autorun hoch (`sh_ldapp: starting NEWDESK`, `[desk] desktop up (1 drives)`). Keine
+Exception, kein Panic in allen fünf QEMU-Läufen (run1, run3, drei Rauchtests).
+
+`git status --short` zeigt nur die drei Fix-/Test-Dateien plus
+`measurement-2026-09-18-h05/`; `kernel/src/host_env.rs` sha256
+`287ff7415805b9cf0b7efe74487a5f24dd06f121ddd61cdb5f9e2d8a15618e3e` vor und nach der
+Messung identisch (nur die Scratch-Kopie wurde instrumentiert). QEMU beendet, QMP-
+Sockets gelöscht, alle Image-Attaches ausgehängt, `git worktree` für die Rot-Gegenprobe
+entfernt, `/Volumes/BOOT` nicht angefasst. **Verdikt: PASS** — F1 (H05s Ursache) ist
+behoben, keine Regression in den 570 Hosttests, beiden Boards oder den drei
+Rauchtest-Szenarien. A39 (Ressourcenmanager, zweiter Defekt) bleibt offen wie
+dokumentiert, jetzt mit einer schärferen Reichweitenangabe.

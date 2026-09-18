@@ -100,19 +100,15 @@ pub fn run_program_with_tail_rc(path: &[u8], tail: &[u8]) -> i32 {
     // (EmuTOS `pstart` → `p_nameit`, `aes/gempd.c:110-131`), so a later
     // `appl_find(name)` resolves it. The program's AES id is `slot + 1`.
     tos_api::aes::register_process(child.slot, path);
-    // Publish the start command + command tail for `shel_read` (P6-006): EmuTOS
-    // fills `D.s_cmd` (program path) and `ad_stail` (command tail) before
-    // `dos_exec` (`aes/gemshlib.c:604-605,645`). `tail` here is the
-    // length-prefixed p_cmdlin image (`tail[0]` = length, `tail[1..]` = chars);
-    // hand the shell the tail characters (the NUL-terminated round-trip
-    // `shel_read`/`shel_write` use — accepted deviation F8).
-    let tail_chars: &[u8] = if tail.is_empty() {
-        &[]
-    } else {
-        let len = tail[0] as usize;
-        &tail[1..(1 + len).min(tail.len())]
-    };
-    tos_api::aes::shell::set_launch_info(path, tail_chars);
+    // Publish the start command + command-tail image as `D.s_cmd`/`ad_stail`
+    // — the one pair `shel_read` answers from and `shel_write(SHW_EXEC)`
+    // overwrites (`aes/gemshlib.c:104-105,169-170`; H05). In EmuTOS the
+    // desktop's `shel_write` has filled them by the time `sh_ldapp` reaches
+    // `dos_exec(PE_LOADGO, D.s_cmd, ad_stail, …)` (`:645`); the built-in
+    // desktop's double-click reaches this launcher without one (gap G1), so
+    // the launcher publishes them here on every path. `tail` is handed over
+    // verbatim: it is the length-prefixed `p_cmdlin` image the loader copied.
+    tos_api::aes::shell::set_launch_info(path, tail);
     set_current(s.basepage_kva.load(Ordering::Acquire));
     kprintln!("[launch] EL0: slot {} entry 0x{:x}", child.slot, child.entry_va);
 

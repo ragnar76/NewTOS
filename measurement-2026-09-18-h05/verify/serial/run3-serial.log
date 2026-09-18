@@ -1,0 +1,1047 @@
+RB2
+NewTOS booting on rpi4
+Phase 02 reached.
+[mm] DTB at 0x0000000000000100
+[mm] firmware: ARM memory bank 0: 0x0000000000000000 + 1006632960 bytes (960 MiB)
+[mm] firmware: VC memory: 0x000000003c000000 + 67108864 bytes (64 MiB)
+[mm] device tree: no usable /memory node (blob invalid or absent)
+[mm] memory map:
+[mm]   DRAM  : 0x0000000000000000..0x000000003c000000 (1006632960 bytes) — source: firmware
+[mm]   kernel: 0x0000000000080000..0x00000000002e0000 (2490368 bytes)
+[mm]   ST-RAM: 0x0000000000400000..0x0000000000e00000 (10485760 bytes)
+[mm]   TT-RAM: 0x0000000001000000..0x000000003be00000 (987758592 bytes)
+[mm]   OSrsvd: 0x000000003be00000..0x000000003c000000 (2097152 bytes)
+[mm]     heap: 0x000000003be00000..0x000000003c000000 (2097152 bytes)
+[mm]   MMIO 00: 0x00000000fd500000..0x00000000fd510000
+[mm]   MMIO 01: 0x00000000fe000000..0x00000000ff000000
+[mm]   MMIO 02: 0x00000000ff800000..0x0000000100000000
+[mm] MMU reinstalled (high-half via TTBR1, TTBR0 deferred to Phase 06).
+[mm] frames ST-RAM: total=2560 used=0 free=2560 (10485760 B free)
+[mm] frames TT-RAM: total=241152 used=0 free=241152 (987758592 B free)
+[mm] alloc ST-RAM frame -> 0x0000000000400000
+[mm] alloc TT-RAM frame -> 0x0000000001000000
+[mm] heap after init: total=2097152 used=0 free=2097152 largest=2097152 blocks=1
+[mm] heap smoke OK
+[mm] heap after smoke: total=2097152 used=0 free=2097152 largest=2097152 blocks=1
+[fb] VideoCore display geometry detected: 640x480
+[fb] 640x480 pitch 2560 virtual height 960 -> 2 screen page(s), 2400 KiB
+[fb] VideoCore fb up: 640x480 stride 640px
+[mm] BDOS pools: ST-RAM 0x00400000+10485760 TT-RAM 0x01000000+987758592
+[mm] BDOS ST-RAM after init: total=10485760 free=10485760 used=0 largest_free=10485760 (free_mds=1 alloc_mds=0)
+[mm] BDOS TT-RAM after init: total=987758592 free=987758592 used=0 largest_free=987758592 (free_mds=1 alloc_mds=0)
+[emmc] SD card on controller @ 0xffff0000fe300000
+[clock] seeded from kernel8.img: 2026-09-18 22:44:56
+[pcie] RC not present (no response at RC_BASE); USB disabled
+[auto] running C:\AUTO\HELLO.NCP
+[launch] EL0: slot 0 entry 0x1000
+Hello from a NewTOS .NCP program!
+[h05] Pterm dying_slot=0 rc=0 resume_to_el0=false parent_slot=-1 parent_elr=0xffff0000000b9bf0 RUN_after=0x0 run_slot=None parent_l0=0x0
+[launch] returned (program Pterm'd)
+[auto] 1 AUTO program(s) run
+[shell] sh_ldapp: starting C:\APPS\TERADESK\DESKTOP.NAP, sh_nextapp=2, sh_isgem=1
+[launch] EL0: slot 0 entry 0x1000
+[h02] injector armed
+[h02] step 0 at +1200 -> mouse (192,112) mb=0
+[h02] step 1 at +1201 -> mouse (65,0) mb=0
+[h02] step 2 at +1209 -> mouse (0,0) mb=0
+[h02] step 3 at +1209 -> mouse (0,0) mb=0
+[h02] step 4 at +1209 -> mouse (0,0) mb=0
+[h02] step 5 at +1209 -> mouse (0,0) mb=0
+[h02] step 6 at +1209 -> mouse (127,127) mb=0
+[h02] step 7 at +1209 -> mouse (254,254) mb=0
+[h02] step 8 at +1210 -> mouse (300,300) mb=0
+[h02] step 9 at +1400 -> mouse (195,173) mb=0
+[h02] step 10 at +1401 -> mouse (195,46) mb=0
+[h02] step 11 at +1402 -> mouse (195,35) mb=0
+[h02] step 12 at +1600 -> mouse (195,35) mb=1
+[h02] step 13 at +1603 -> mouse (195,35) mb=0
+[h02] step 14 at +1608 -> mouse (195,35) mb=1
+[h02] step 15 at +1611 -> mouse (195,35) mb=0
+[h02] step 16 at +2000 -> mouse (195,35) mb=0
+[h02] step 17 at +2200 -> mouse (322,152) mb=0
+[h02] step 18 at +2201 -> mouse (449,152) mb=0
+[h02] step 19 at +2202 -> mouse (450,152) mb=0
+[h02] step 20 at +2400 -> mouse (450,152) mb=1
+[h02] step 21 at +2450 -> mouse (350,152) mb=1
+[h02] step 22 at +2500 -> mouse (250,152) mb=1
+[h02] step 23 at +2550 -> mouse (150,152) mb=1
+[h02] step 24 at +2650 -> mouse (150,152) mb=0
+[h02] post_msg pid=1 [28, 1, 0, 1, 3, 142, 640, 449] posted=true
+[aes] pid=1 op 25 in=(19,258,3,0) out=(16,150,152,0,0,0,0) yield=false
+[aes] pid=1 op 108 in=(1,20479,3,142) out=(1,4,184,616,384,0,0) yield=false
+[aes] pid=1 op 108 in=(1,20479,0,19) out=(1,1,61,616,396,0,0) yield=false
+[aes] pid=1 op 108 in=(0,20479,8,184) out=(1,7,142,640,449,0,0) yield=false
+[h02] post_msg pid=1 [20, 1, 0, 1, 8, 184, 616, 384] posted=true
+[h02] post_msg pid=1 [20, 1, 0, 1, 7, 142, 633, 338] posted=true
+[aes] pid=1 op 105 in=(1,5,7,142) out=(1,0,0,0,0,0,0) yield=false
+[aes] pid=1 op 104 in=(1,5,0,0) out=(1,7,142,640,449,0,0) yield=false
+[aes] pid=1 op 104 in=(1,4,0,0) out=(1,8,184,616,384,0,0) yield=false
+[aes] pid=1 op 104 in=(0,10,0,0) out=(1,1,0,0,0,0,0) yield=false
+[aes] pid=1 op 32 in=(20,1,0,0) out=(1,0,0,0,0,0,0) yield=false
+[aes] pid=1 op 32 in=(23,1,0,0) out=(1,0,0,0,0,0,0) yield=false
+[aes] pid=1 op 32 in=(21,1,0,0) out=(1,0,0,0,0,0,0) yield=false
+[aes] pid=1 op 32 in=(25,0,0,0) out=(1,0,0,0,0,0,0) yield=false
+[aes] pid=1 op 32 in=(24,1,0,0) out=(1,0,0,0,0,0,0) yield=false
+[aes] pid=1 op 32 in=(22,1,0,0) out=(1,0,0,0,0,0,0) yield=false
+[aes] pid=1 op 32 in=(27,1,0,0) out=(1,0,0,0,0,0,0) yield=false
+[aes] pid=1 op 32 in=(58,1,0,0) out=(1,0,0,0,0,0,0) yield=false
+[aes] pid=1 op 32 in=(59,0,0,0) out=(1,0,0,0,0,0,0) yield=false
+[aes] pid=1 op 32 in=(62,1,0,0) out=(1,0,0,0,0,0,0) yield=false
+[aes] pid=1 op 32 in=(61,1,0,0) out=(1,0,0,0,0,0,0) yield=false
+[aes] pid=1 op 32 in=(65,1,0,0) out=(1,0,0,0,0,0,0) yield=false
+[aes] pid=1 op 32 in=(29,0,0,0) out=(1,0,0,0,0,0,0) yield=false
+[aes] pid=1 op 32 in=(30,0,0,0) out=(1,0,0,0,0,0,0) yield=false
+[aes] pid=1 op 32 in=(54,1,0,0) out=(1,0,0,0,0,0,0) yield=false
+[aes] pid=1 op 32 in=(53,1,0,0) out=(1,0,0,0,0,0,0) yield=false
+[aes] pid=1 op 32 in=(55,1,0,0) out=(1,0,0,0,0,0,0) yield=false
+[aes] pid=1 op 32 in=(56,1,0,0) out=(1,0,0,0,0,0,0) yield=false
+[aes] pid=1 op 32 in=(57,1,0,0) out=(1,0,0,0,0,0,0) yield=false
+[aes] pid=1 op 31 in=(53,0,0,0) out=(1,0,0,0,0,0,0) yield=false
+[aes] pid=1 op 25 in=(19,258,3,0) out=(16,150,152,0,0,0,0) yield=false
+[aes] pid=1 op 40 in=(0,1,0,0) out=(1,0,0,0,0,0,0) yield=false
+[aes] pid=1 op 40 in=(0,2,0,0) out=(1,0,0,0,0,0,0) yield=false
+[aes] pid=1 op 40 in=(0,3,0,0) out=(1,0,0,0,0,0,0) yield=false
+[aes] pid=1 op 40 in=(0,4,0,0) out=(1,0,0,0,0,0,0) yield=false
+[aes] pid=1 op 40 in=(0,5,0,0) out=(1,0,0,0,0,0,0) yield=false
+[aes] pid=1 op 40 in=(0,6,0,0) out=(1,0,0,0,0,0,0) yield=false
+[aes] pid=1 op 40 in=(0,7,0,0) out=(1,0,0,0,0,0,0) yield=false
+[aes] pid=1 op 40 in=(0,8,0,0) out=(1,0,0,0,0,0,0) yield=false
+[aes] pid=1 op 40 in=(0,9,0,0) out=(1,0,0,0,0,0,0) yield=false
+[aes] pid=1 op 40 in=(0,10,0,0) out=(1,0,0,0,0,0,0) yield=false
+[aes] pid=1 op 40 in=(0,11,0,0) out=(1,0,0,0,0,0,0) yield=false
+[aes] pid=1 op 40 in=(0,12,0,0) out=(1,0,0,0,0,0,0) yield=false
+[aes] pid=1 op 40 in=(0,13,0,0) out=(1,0,0,0,0,0,0) yield=false
+[aes] pid=1 op 40 in=(0,14,0,0) out=(1,0,0,0,0,0,0) yield=false
+[aes] pid=1 op 40 in=(0,15,0,0) out=(1,0,0,0,0,0,0) yield=false
+[aes] pid=1 op 40 in=(0,16,0,0) out=(1,0,0,0,0,0,0) yield=false
+[aes] pid=1 op 40 in=(0,17,0,0) out=(1,0,0,0,0,0,0) yield=false
+[aes] pid=1 op 40 in=(0,18,0,0) out=(1,0,0,0,0,0,0) yield=false
+[aes] pid=1 op 40 in=(0,19,0,0) out=(1,0,0,0,0,0,0) yield=false
+[aes] pid=1 op 40 in=(0,20,0,0) out=(1,0,0,0,0,0,0) yield=false
+[aes] pid=1 op 40 in=(0,21,0,0) out=(1,0,0,0,0,0,0) yield=false
+[aes] pid=1 op 40 in=(0,22,0,0) out=(1,0,0,0,0,0,0) yield=false
+[aes] pid=1 op 40 in=(0,23,0,0) out=(1,0,0,0,0,0,0) yield=false
+[aes] pid=1 op 40 in=(0,24,0,0) out=(1,0,0,0,0,0,0) yield=false
+[aes] pid=1 op 107 in=(1,0,0,0) out=(1,0,0,0,0,0,0) yield=false
+[aes] pid=1 op 78 in=(256,0,0,0) out=(1,0,0,0,0,0,0) yield=false
+[aes] pid=1 op 104 in=(1,11,0,0) out=(1,8,184,616,384,0,0) yield=false
+[aes] pid=1 op 42 in=(0,8,8,184) out=(1,0,0,0,0,0,0) yield=false
+[aes] pid=1 op 104 in=(1,12,0,0) out=(1,0,0,0,0,0,0) yield=false
+[aes] pid=1 op 78 in=(257,0,0,0) out=(1,0,0,0,0,0,0) yield=false
+[aes] pid=1 op 107 in=(0,0,0,0) out=(1,0,0,0,0,0,0) yield=false
+[aes] pid=1 op 104 in=(0,10,0,0) out=(1,1,0,0,0,0,0) yield=false
+[aes] pid=1 op 32 in=(20,1,0,0) out=(1,0,0,0,0,0,0) yield=false
+[aes] pid=1 op 32 in=(23,1,0,0) out=(1,0,0,0,0,0,0) yield=false
+[aes] pid=1 op 32 in=(21,1,0,0) out=(1,0,0,0,0,0,0) yield=false
+[aes] pid=1 op 32 in=(25,0,0,0) out=(1,0,0,0,0,0,0) yield=false
+[aes] pid=1 op 32 in=(24,1,0,0) out=(1,0,0,0,0,0,0) yield=false
+[aes] pid=1 op 32 in=(22,1,0,0) out=(1,0,0,0,0,0,0) yield=false
+[aes] pid=1 op 32 in=(27,1,0,0) out=(1,0,0,0,0,0,0) yield=false
+[aes] pid=1 op 32 in=(58,1,0,0) out=(1,0,0,0,0,0,0) yield=false
+[aes] pid=1 op 32 in=(59,0,0,0) out=(1,0,0,0,0,0,0) yield=false
+[aes] pid=1 op 32 in=(62,1,0,0) out=(1,0,0,0,0,0,0) yield=false
+[aes] pid=1 op 32 in=(61,1,0,0) out=(1,0,0,0,0,0,0) yield=false
+[aes] pid=1 op 32 in=(65,1,0,0) out=(1,0,0,0,0,0,0) yield=false
+[aes] pid=1 op 32 in=(29,0,0,0) out=(1,0,0,0,0,0,0) yield=false
+[aes] pid=1 op 32 in=(30,0,0,0) out=(1,0,0,0,0,0,0) yield=false
+[aes] pid=1 op 32 in=(54,1,0,0) out=(1,0,0,0,0,0,0) yield=false
+[aes] pid=1 op 32 in=(53,1,0,0) out=(1,0,0,0,0,0,0) yield=false
+[aes] pid=1 op 32 in=(55,1,0,0) out=(1,0,0,0,0,0,0) yield=false
+[aes] pid=1 op 32 in=(56,1,0,0) out=(1,0,0,0,0,0,0) yield=false
+[aes] pid=1 op 32 in=(57,1,0,0) out=(1,0,0,0,0,0,0) yield=false
+[aes] pid=1 op 31 in=(53,0,0,0) out=(1,0,0,0,0,0,0) yield=false
+[h02] MARK B_MOVED step 25 at +2900 mouse (150,152) mb=0
+[h02] step 26 at +3000 -> mouse (207,207) mb=0
+[h02] step 27 at +3200 -> mouse (207,207) mb=1
+[h02] step 28 at +3203 -> mouse (207,207) mb=0
+[h02] step 29 at +3208 -> mouse (207,207) mb=1
+[aes] pid=1 op 25 in=(19,258,3,0) out=(2,207,207,1,0,0,2) yield=false
+[aes] pid=1 op 106 in=(207,207,0,0) out=(1,0,0,0,0,0,0) yield=false
+[aes] pid=1 op 79 in=(0,0,0,0) out=(1,207,207,1,0,0,0) yield=false
+[aes] pid=1 op 107 in=(1,0,0,0) out=(1,0,0,0,0,0,0) yield=false
+[aes] pid=1 op 78 in=(256,0,0,0) out=(1,0,0,0,0,0,0) yield=false
+[aes] pid=1 op 40 in=(0,1,0,0) out=(1,0,0,0,0,0,0) yield=false
+[aes] pid=1 op 104 in=(1,11,0,0) out=(1,8,184,616,384,0,0) yield=false
+[aes] pid=1 op 42 in=(0,8,8,184) out=(1,0,0,0,0,0,0) yield=false
+[aes] pid=1 op 104 in=(1,12,0,0) out=(1,0,0,0,0,0,0) yield=false
+[aes] pid=1 op 78 in=(257,0,0,0) out=(1,0,0,0,0,0,0) yield=false
+[aes] pid=1 op 107 in=(0,0,0,0) out=(1,0,0,0,0,0,0) yield=false
+[aes] pid=1 op 112 in=(5,27,0,0) out=(1,0,0,0,0,0,0) yield=false
+[aes] pid=1 op 112 in=(5,29,0,0) out=(1,0,0,0,0,0,0) yield=false
+[aes] pid=1 op 105 in=(1,3,-23600,3) out=(1,0,0,0,0,0,0) yield=false
+[aes] pid=1 op 79 in=(0,0,0,0) out=(1,207,207,1,0,0,0) yield=false
+[aes] pid=1 op 79 in=(0,0,0,0) out=(1,207,207,1,0,0,0) yield=false
+[aes] pid=1 op 79 in=(0,0,0,0) out=(1,207,207,1,0,0,0) yield=false
+[aes] pid=1 op 79 in=(0,0,0,0) out=(1,207,207,1,0,0,0) yield=false
+[aes] pid=1 op 79 in=(0,0,0,0) out=(1,207,207,1,0,0,0) yield=false
+[aes] pid=1 op 79 in=(0,0,0,0) out=(1,207,207,1,0,0,0) yield=false
+[aes] pid=1 op 79 in=(0,0,0,0) out=(1,207,207,1,0,0,0) yield=false
+[aes] pid=1 op 79 in=(0,0,0,0) out=(1,207,207,1,0,0,0) yield=false
+[aes] pid=1 op 79 in=(0,0,0,0) out=(1,207,207,1,0,0,0) yield=false
+[aes] pid=1 op 79 in=(0,0,0,0) out=(1,207,207,1,0,0,0) yield=false
+[aes] pid=1 op 79 in=(0,0,0,0) out=(1,207,207,1,0,0,0) yield=false
+[aes] pid=1 op 79 in=(0,0,0,0) out=(1,207,207,1,0,0,0) yield=false
+[aes] pid=1 op 79 in=(0,0,0,0) out=(1,207,207,1,0,0,0) yield=false
+[aes] pid=1 op 79 in=(0,0,0,0) out=(1,207,207,1,0,0,0) yield=false
+[aes] pid=1 op 79 in=(0,0,0,0) out=(1,207,207,1,0,0,0) yield=false
+[aes] pid=1 op 79 in=(0,0,0,0) out=(1,207,207,1,0,0,0) yield=false
+[aes] pid=1 op 79 in=(0,0,0,0) out=(1,207,207,1,0,0,0) yield=false
+[aes] pid=1 op 79 in=(0,0,0,0) out=(1,207,207,1,0,0,0) yield=false
+[aes] pid=1 op 79 in=(0,0,0,0) out=(1,207,207,1,0,0,0) yield=false
+[aes] pid=1 op 79 in=(0,0,0,0) out=(1,207,207,1,0,0,0) yield=false
+[aes] pid=1 op 79 in=(0,0,0,0) out=(1,207,207,1,0,0,0) yield=false
+[aes] pid=1 op 79 in=(0,0,0,0) out=(1,207,207,1,0,0,0) yield=false
+[aes] pid=1 op 79 in=(0,0,0,0) out=(1,207,207,1,0,0,0) yield=false
+[aes] pid=1 op 79 in=(0,0,0,0) out=(1,207,207,1,0,0,0) yield=false
+[aes] pid=1 op 79 in=(0,0,0,0) out=(1,207,207,1,0,0,0) yield=false
+[aes] pid=1 op 79 in=(0,0,0,0) out=(1,207,207,1,0,0,0) yield=false
+[aes] pid=1 op 79 in=(0,0,0,0) out=(1,207,207,1,0,0,0) yield=false
+[aes] pid=1 op 79 in=(0,0,0,0) out=(1,207,207,1,0,0,0) yield=false
+[aes] pid=1 op 79 in=(0,0,0,0) out=(1,207,207,1,0,0,0) yield=false
+[aes] pid=1 op 79 in=(0,0,0,0) out=(1,207,207,1,0,0,0) yield=false
+[aes] pid=1 op 79 in=(0,0,0,0) out=(1,207,207,1,0,0,0) yield=false
+[aes] pid=1 op 79 in=(0,0,0,0) out=(1,207,207,1,0,0,0) yield=false
+[aes] pid=1 op 79 in=(0,0,0,0) out=(1,207,207,1,0,0,0) yield=false
+[aes] pid=1 op 79 in=(0,0,0,0) out=(1,207,207,1,0,0,0) yield=false
+[aes] pid=1 op 79 in=(0,0,0,0) out=(1,207,207,1,0,0,0) yield=false
+[aes] pid=1 op 79 in=(0,0,0,0) out=(1,207,207,1,0,0,0) yield=false
+[aes] pid=1 op 79 in=(0,0,0,0) out=(1,207,207,1,0,0,0) yield=false
+[aes] pid=1 op 79 in=(0,0,0,0) out=(1,207,207,1,0,0,0) yield=false
+[aes] pid=1 op 79 in=(0,0,0,0) out=(1,207,207,1,0,0,0) yield=false
+[aes] pid=1 op 79 in=(0,0,0,0) out=(1,207,207,1,0,0,0) yield=false
+[aes] pid=1 op 79 in=(0,0,0,0) out=(1,207,207,1,0,0,0) yield=false
+[aes] pid=1 op 79 in=(0,0,0,0) out=(1,207,207,1,0,0,0) yield=false
+[aes] pid=1 op 79 in=(0,0,0,0) out=(1,207,207,1,0,0,0) yield=false
+[aes] pid=1 op 79 in=(0,0,0,0) out=(1,207,207,1,0,0,0) yield=false
+[aes] pid=1 op 79 in=(0,0,0,0) out=(1,207,207,1,0,0,0) yield=false
+[aes] pid=1 op 79 in=(0,0,0,0) out=(1,207,207,1,0,0,0) yield=false
+[aes] pid=1 op 79 in=(0,0,0,0) out=(1,207,207,1,0,0,0) yield=false
+[aes] pid=1 op 79 in=(0,0,0,0) out=(1,207,207,1,0,0,0) yield=false
+[aes] pid=1 op 79 in=(0,0,0,0) out=(1,207,207,1,0,0,0) yield=false
+[aes] pid=1 op 79 in=(0,0,0,0) out=(1,207,207,1,0,0,0) yield=false
+[aes] pid=1 op 79 in=(0,0,0,0) out=(1,207,207,1,0,0,0) yield=false
+[aes] pid=1 op 79 in=(0,0,0,0) out=(1,207,207,1,0,0,0) yield=false
+[aes] pid=1 op 79 in=(0,0,0,0) out=(1,207,207,1,0,0,0) yield=false
+[aes] pid=1 op 79 in=(0,0,0,0) out=(1,207,207,1,0,0,0) yield=false
+[aes] pid=1 op 79 in=(0,0,0,0) out=(1,207,207,1,0,0,0) yield=false
+[aes] pid=1 op 79 in=(0,0,0,0) out=(1,207,207,1,0,0,0) yield=false
+[aes] pid=1 op 79 in=(0,0,0,0) out=(1,207,207,1,0,0,0) yield=false
+[aes] pid=1 op 79 in=(0,0,0,0) out=(1,207,207,1,0,0,0) yield=false
+[aes] pid=1 op 79 in=(0,0,0,0) out=(1,207,207,1,0,0,0) yield=false
+[aes] pid=1 op 79 in=(0,0,0,0) out=(1,207,207,1,0,0,0) yield=false
+[aes] pid=1 op 79 in=(0,0,0,0) out=(1,207,207,1,0,0,0) yield=false
+[aes] pid=1 op 79 in=(0,0,0,0) out=(1,207,207,1,0,0,0) yield=false
+[aes] pid=1 op 79 in=(0,0,0,0) out=(1,207,207,1,0,0,0) yield=false
+[aes] pid=1 op 79 in=(0,0,0,0) out=(1,207,207,1,0,0,0) yield=false
+[aes] pid=1 op 79 in=(0,0,0,0) out=(1,207,207,1,0,0,0) yield=false
+[aes] pid=1 op 79 in=(0,0,0,0) out=(1,207,207,1,0,0,0) yield=false
+[aes] pid=1 op 79 in=(0,0,0,0) out=(1,207,207,1,0,0,0) yield=false
+[aes] pid=1 op 79 in=(0,0,0,0) out=(1,207,207,1,0,0,0) yield=false
+[aes] pid=1 op 79 in=(0,0,0,0) out=(1,207,207,1,0,0,0) yield=false
+[aes] pid=1 op 79 in=(0,0,0,0) out=(1,207,207,1,0,0,0) yield=false
+[aes] pid=1 op 79 in=(0,0,0,0) out=(1,207,207,1,0,0,0) yield=false
+[aes] pid=1 op 79 in=(0,0,0,0) out=(1,207,207,1,0,0,0) yield=false
+[aes] pid=1 op 79 in=(0,0,0,0) out=(1,207,207,1,0,0,0) yield=false
+[aes] pid=1 op 79 in=(0,0,0,0) out=(1,207,207,1,0,0,0) yield=false
+[aes] pid=1 op 79 in=(0,0,0,0) out=(1,207,207,1,0,0,0) yield=false
+[aes] pid=1 op 79 in=(0,0,0,0) out=(1,207,207,1,0,0,0) yield=false
+[aes] pid=1 op 79 in=(0,0,0,0) out=(1,207,207,1,0,0,0) yield=false
+[aes] pid=1 op 79 in=(0,0,0,0) out=(1,207,207,1,0,0,0) yield=false
+[aes] pid=1 op 79 in=(0,0,0,0) out=(1,207,207,1,0,0,0) yield=false
+[aes] pid=1 op 79 in=(0,0,0,0) out=(1,207,207,1,0,0,0) yield=false
+[aes] pid=1 op 79 in=(0,0,0,0) out=(1,207,207,1,0,0,0) yield=false
+[h02] step 30 at +3211 -> mouse (207,207) mb=0
+[aes] pid=1 op 79 in=(0,0,0,0) out=(1,207,207,0,0,0,0) yield=false
+[aes] pid=1 op 104 in=(0,10,0,0) out=(1,1,0,0,0,0,0) yield=false
+[aes] pid=1 op 78 in=(2,0,0,0) out=(1,0,0,0,0,0,0) yield=false
+[aes] pid=1 op 112 in=(5,52,0,0) out=(1,0,0,0,0,0,0) yield=false
+[aes] pid=1 op 112 in=(5,50,0,0) out=(1,0,0,0,0,0,0) yield=false
+[aes] pid=1 op 112 in=(5,51,0,0) out=(1,0,0,0,0,0,0) yield=false
+[aes] pid=1 op 112 in=(5,51,0,0) out=(1,0,0,0,0,0,0) yield=false
+[aes] pid=1 op 112 in=(5,51,0,0) out=(1,0,0,0,0,0,0) yield=false
+[aes] pid=1 op 112 in=(5,26,0,0) out=(1,0,0,0,0,0,0) yield=false
+[aes] pid=1 op 112 in=(5,28,0,0) out=(1,0,0,0,0,0,0) yield=false
+[aes] pid=1 op 105 in=(1,3,-23600,3) out=(1,0,0,0,0,0,0) yield=false
+[aes] pid=1 op 105 in=(1,2,-23696,3) out=(1,0,0,0,0,0,0) yield=false
+[aes] pid=1 op 105 in=(1,15,1000,0) out=(1,0,0,0,0,0,0) yield=false
+[aes] pid=1 op 105 in=(1,8,0,0) out=(1,0,0,0,0,0,0) yield=false
+[aes] pid=1 op 105 in=(1,16,1000,0) out=(1,0,0,0,0,0,0) yield=false
+[aes] pid=1 op 105 in=(1,9,0,0) out=(1,0,0,0,0,0,0) yield=false
+[aes] pid=1 op 78 in=(0,0,0,0) out=(1,0,0,0,0,0,0) yield=false
+[aes] pid=1 op 12 in=(1,16,0,0) out=(1,0,0,0,0,0,0) yield=false
+[aes] pid=1 op 104 in=(0,10,0,0) out=(1,1,0,0,0,0,0) yield=false
+[aes] pid=1 op 104 in=(0,10,0,0) out=(1,1,0,0,0,0,0) yield=false
+[aes] pid=1 op 32 in=(20,1,0,0) out=(1,0,0,0,0,0,0) yield=false
+[aes] pid=1 op 32 in=(23,1,0,0) out=(1,0,0,0,0,0,0) yield=false
+[aes] pid=1 op 32 in=(21,1,0,0) out=(1,0,0,0,0,0,0) yield=false
+[aes] pid=1 op 32 in=(25,0,0,0) out=(1,0,0,0,0,0,0) yield=false
+[aes] pid=1 op 32 in=(24,1,0,0) out=(1,0,0,0,0,0,0) yield=false
+[aes] pid=1 op 32 in=(22,1,0,0) out=(1,0,0,0,0,0,0) yield=false
+[aes] pid=1 op 32 in=(27,1,0,0) out=(1,0,0,0,0,0,0) yield=false
+[aes] pid=1 op 32 in=(58,1,0,0) out=(1,0,0,0,0,0,0) yield=false
+[aes] pid=1 op 32 in=(59,0,0,0) out=(1,0,0,0,0,0,0) yield=false
+[aes] pid=1 op 32 in=(62,1,0,0) out=(1,0,0,0,0,0,0) yield=false
+[aes] pid=1 op 32 in=(61,1,0,0) out=(1,0,0,0,0,0,0) yield=false
+[aes] pid=1 op 32 in=(65,1,0,0) out=(1,0,0,0,0,0,0) yield=false
+[aes] pid=1 op 32 in=(29,0,0,0) out=(1,0,0,0,0,0,0) yield=false
+[aes] pid=1 op 32 in=(30,0,0,0) out=(1,0,0,0,0,0,0) yield=false
+[aes] pid=1 op 32 in=(54,1,0,0) out=(1,0,0,0,0,0,0) yield=false
+[aes] pid=1 op 32 in=(53,1,0,0) out=(1,0,0,0,0,0,0) yield=false
+[aes] pid=1 op 32 in=(55,1,0,0) out=(1,0,0,0,0,0,0) yield=false
+[aes] pid=1 op 32 in=(56,1,0,0) out=(1,0,0,0,0,0,0) yield=false
+[aes] pid=1 op 32 in=(57,1,0,0) out=(1,0,0,0,0,0,0) yield=false
+[aes] pid=1 op 31 in=(53,0,0,0) out=(1,0,0,0,0,0,0) yield=false
+[aes] pid=1 op 25 in=(19,258,3,0) out=(16,207,207,0,0,0,0) yield=false
+[aes] pid=1 op 40 in=(0,1,0,0) out=(1,0,0,0,0,0,0) yield=false
+[aes] pid=1 op 40 in=(0,2,0,0) out=(1,0,0,0,0,0,0) yield=false
+[aes] pid=1 op 40 in=(0,3,0,0) out=(1,0,0,0,0,0,0) yield=false
+[aes] pid=1 op 107 in=(1,0,0,0) out=(1,0,0,0,0,0,0) yield=false
+[aes] pid=1 op 78 in=(256,0,0,0) out=(1,0,0,0,0,0,0) yield=false
+[aes] pid=1 op 104 in=(1,11,0,0) out=(1,8,184,616,384,0,0) yield=false
+[aes] pid=1 op 42 in=(0,8,8,184) out=(1,0,0,0,0,0,0) yield=false
+[aes] pid=1 op 104 in=(1,12,0,0) out=(1,0,0,0,0,0,0) yield=false
+[aes] pid=1 op 78 in=(257,0,0,0) out=(1,0,0,0,0,0,0) yield=false
+[aes] pid=1 op 107 in=(0,0,0,0) out=(1,0,0,0,0,0,0) yield=false
+[aes] pid=1 op 104 in=(0,10,0,0) out=(1,1,0,0,0,0,0) yield=false
+[aes] pid=1 op 32 in=(20,1,0,0) out=(1,0,0,0,0,0,0) yield=false
+[aes] pid=1 op 32 in=(23,1,0,0) out=(1,0,0,0,0,0,0) yield=false
+[aes] pid=1 op 32 in=(21,1,0,0) out=(1,0,0,0,0,0,0) yield=false
+[aes] pid=1 op 32 in=(25,0,0,0) out=(1,0,0,0,0,0,0) yield=false
+[aes] pid=1 op 32 in=(24,1,0,0) out=(1,0,0,0,0,0,0) yield=false
+[aes] pid=1 op 32 in=(22,1,0,0) out=(1,0,0,0,0,0,0) yield=false
+[aes] pid=1 op 32 in=(27,1,0,0) out=(1,0,0,0,0,0,0) yield=false
+[aes] pid=1 op 32 in=(58,1,0,0) out=(1,0,0,0,0,0,0) yield=false
+[aes] pid=1 op 32 in=(59,0,0,0) out=(1,0,0,0,0,0,0) yield=false
+[aes] pid=1 op 32 in=(62,1,0,0) out=(1,0,0,0,0,0,0) yield=false
+[aes] pid=1 op 32 in=(61,1,0,0) out=(1,0,0,0,0,0,0) yield=false
+[aes] pid=1 op 32 in=(65,1,0,0) out=(1,0,0,0,0,0,0) yield=false
+[aes] pid=1 op 32 in=(29,0,0,0) out=(1,0,0,0,0,0,0) yield=false
+[aes] pid=1 op 32 in=(30,0,0,0) out=(1,0,0,0,0,0,0) yield=false
+[aes] pid=1 op 32 in=(54,1,0,0) out=(1,0,0,0,0,0,0) yield=false
+[aes] pid=1 op 32 in=(53,1,0,0) out=(1,0,0,0,0,0,0) yield=false
+[aes] pid=1 op 32 in=(55,1,0,0) out=(1,0,0,0,0,0,0) yield=false
+[aes] pid=1 op 32 in=(56,1,0,0) out=(1,0,0,0,0,0,0) yield=false
+[aes] pid=1 op 32 in=(57,1,0,0) out=(1,0,0,0,0,0,0) yield=false
+[aes] pid=1 op 31 in=(53,0,0,0) out=(1,0,0,0,0,0,0) yield=false
+[h02] MARK C_AUTO_DIR step 31 at +3600 mouse (207,207) mb=0
+[h02] step 32 at +3700 -> mouse (195,80) mb=0
+[h02] step 33 at +3701 -> mouse (195,35) mb=0
+[h02] step 34 at +3800 -> mouse (195,35) mb=1
+[h02] step 35 at +3803 -> mouse (195,35) mb=0
+[h02] step 36 at +3808 -> mouse (195,35) mb=1
+[aes] pid=1 op 25 in=(19,258,3,0) out=(2,195,35,1,0,0,2) yield=false
+[aes] pid=1 op 106 in=(195,35,0,0) out=(0,0,0,0,0,0,0) yield=false
+[aes] pid=1 op 79 in=(0,0,0,0) out=(1,195,35,1,0,0,0) yield=false
+[aes] pid=1 op 104 in=(0,4,0,0) out=(1,0,19,640,461,0,0) yield=false
+[aes] pid=1 op 44 in=(0,0,0,0) out=(1,0,19,0,0,0,0) yield=false
+[aes] pid=1 op 44 in=(1,0,0,0) out=(1,160,19,0,0,0,0) yield=false
+[aes] pid=1 op 107 in=(1,0,0,0) out=(1,0,0,0,0,0,0) yield=false
+[aes] pid=1 op 104 in=(0,11,0,0) out=(1,0,19,640,123,0,0) yield=false
+[aes] pid=1 op 42 in=(0,8,160,19) out=(1,0,0,0,0,0,0) yield=false
+[aes] pid=1 op 104 in=(0,12,0,0) out=(1,0,142,7,338,0,0) yield=false
+[aes] pid=1 op 104 in=(0,12,0,0) out=(1,0,0,0,0,0,0) yield=false
+[aes] pid=1 op 107 in=(0,0,0,0) out=(1,0,0,0,0,0,0) yield=false
+[aes] pid=1 op 79 in=(0,0,0,0) out=(1,195,35,1,0,0,0) yield=false
+[aes] pid=1 op 79 in=(0,0,0,0) out=(1,195,35,1,0,0,0) yield=false
+[aes] pid=1 op 79 in=(0,0,0,0) out=(1,195,35,1,0,0,0) yield=false
+[aes] pid=1 op 79 in=(0,0,0,0) out=(1,195,35,1,0,0,0) yield=false
+[aes] pid=1 op 79 in=(0,0,0,0) out=(1,195,35,1,0,0,0) yield=false
+[aes] pid=1 op 79 in=(0,0,0,0) out=(1,195,35,1,0,0,0) yield=false
+[aes] pid=1 op 79 in=(0,0,0,0) out=(1,195,35,1,0,0,0) yield=false
+[aes] pid=1 op 79 in=(0,0,0,0) out=(1,195,35,1,0,0,0) yield=false
+[aes] pid=1 op 79 in=(0,0,0,0) out=(1,195,35,1,0,0,0) yield=false
+[aes] pid=1 op 79 in=(0,0,0,0) out=(1,195,35,1,0,0,0) yield=false
+[aes] pid=1 op 79 in=(0,0,0,0) out=(1,195,35,1,0,0,0) yield=false
+[aes] pid=1 op 79 in=(0,0,0,0) out=(1,195,35,1,0,0,0) yield=false
+[aes] pid=1 op 79 in=(0,0,0,0) out=(1,195,35,1,0,0,0) yield=false
+[aes] pid=1 op 79 in=(0,0,0,0) out=(1,195,35,1,0,0,0) yield=false
+[aes] pid=1 op 79 in=(0,0,0,0) out=(1,195,35,1,0,0,0) yield=false
+[aes] pid=1 op 79 in=(0,0,0,0) out=(1,195,35,1,0,0,0) yield=false
+[aes] pid=1 op 79 in=(0,0,0,0) out=(1,195,35,1,0,0,0) yield=false
+[aes] pid=1 op 79 in=(0,0,0,0) out=(1,195,35,1,0,0,0) yield=false
+[aes] pid=1 op 79 in=(0,0,0,0) out=(1,195,35,1,0,0,0) yield=false
+[aes] pid=1 op 79 in=(0,0,0,0) out=(1,195,35,1,0,0,0) yield=false
+[aes] pid=1 op 79 in=(0,0,0,0) out=(1,195,35,1,0,0,0) yield=false
+[aes] pid=1 op 79 in=(0,0,0,0) out=(1,195,35,1,0,0,0) yield=false
+[aes] pid=1 op 79 in=(0,0,0,0) out=(1,195,35,1,0,0,0) yield=false
+[aes] pid=1 op 79 in=(0,0,0,0) out=(1,195,35,1,0,0,0) yield=false
+[aes] pid=1 op 79 in=(0,0,0,0) out=(1,195,35,1,0,0,0) yield=false
+[aes] pid=1 op 79 in=(0,0,0,0) out=(1,195,35,1,0,0,0) yield=false
+[aes] pid=1 op 79 in=(0,0,0,0) out=(1,195,35,1,0,0,0) yield=false
+[aes] pid=1 op 79 in=(0,0,0,0) out=(1,195,35,1,0,0,0) yield=false
+[aes] pid=1 op 79 in=(0,0,0,0) out=(1,195,35,1,0,0,0) yield=false
+[aes] pid=1 op 79 in=(0,0,0,0) out=(1,195,35,1,0,0,0) yield=false
+[aes] pid=1 op 79 in=(0,0,0,0) out=(1,195,35,1,0,0,0) yield=false
+[aes] pid=1 op 79 in=(0,0,0,0) out=(1,195,35,1,0,0,0) yield=false
+[aes] pid=1 op 79 in=(0,0,0,0) out=(1,195,35,1,0,0,0) yield=false
+[aes] pid=1 op 79 in=(0,0,0,0) out=(1,195,35,1,0,0,0) yield=false
+[aes] pid=1 op 79 in=(0,0,0,0) out=(1,195,35,1,0,0,0) yield=false
+[aes] pid=1 op 79 in=(0,0,0,0) out=(1,195,35,1,0,0,0) yield=false
+[aes] pid=1 op 79 in=(0,0,0,0) out=(1,195,35,1,0,0,0) yield=false
+[aes] pid=1 op 79 in=(0,0,0,0) out=(1,195,35,1,0,0,0) yield=false
+[aes] pid=1 op 79 in=(0,0,0,0) out=(1,195,35,1,0,0,0) yield=false
+[aes] pid=1 op 79 in=(0,0,0,0) out=(1,195,35,1,0,0,0) yield=false
+[aes] pid=1 op 79 in=(0,0,0,0) out=(1,195,35,1,0,0,0) yield=false
+[aes] pid=1 op 79 in=(0,0,0,0) out=(1,195,35,1,0,0,0) yield=false
+[aes] pid=1 op 79 in=(0,0,0,0) out=(1,195,35,1,0,0,0) yield=false
+[aes] pid=1 op 79 in=(0,0,0,0) out=(1,195,35,1,0,0,0) yield=false
+[aes] pid=1 op 79 in=(0,0,0,0) out=(1,195,35,1,0,0,0) yield=false
+[aes] pid=1 op 79 in=(0,0,0,0) out=(1,195,35,1,0,0,0) yield=false
+[aes] pid=1 op 79 in=(0,0,0,0) out=(1,195,35,1,0,0,0) yield=false
+[aes] pid=1 op 79 in=(0,0,0,0) out=(1,195,35,1,0,0,0) yield=false
+[aes] pid=1 op 79 in=(0,0,0,0) out=(1,195,35,1,0,0,0) yield=false
+[aes] pid=1 op 79 in=(0,0,0,0) out=(1,195,35,1,0,0,0) yield=false
+[aes] pid=1 op 79 in=(0,0,0,0) out=(1,195,35,1,0,0,0) yield=false
+[aes] pid=1 op 79 in=(0,0,0,0) out=(1,195,35,1,0,0,0) yield=false
+[aes] pid=1 op 79 in=(0,0,0,0) out=(1,195,35,1,0,0,0) yield=false
+[aes] pid=1 op 79 in=(0,0,0,0) out=(1,195,35,1,0,0,0) yield=false
+[aes] pid=1 op 79 in=(0,0,0,0) out=(1,195,35,1,0,0,0) yield=false
+[aes] pid=1 op 79 in=(0,0,0,0) out=(1,195,35,1,0,0,0) yield=false
+[aes] pid=1 op 79 in=(0,0,0,0) out=(1,195,35,1,0,0,0) yield=false
+[aes] pid=1 op 79 in=(0,0,0,0) out=(1,195,35,1,0,0,0) yield=false
+[aes] pid=1 op 79 in=(0,0,0,0) out=(1,195,35,1,0,0,0) yield=false
+[aes] pid=1 op 79 in=(0,0,0,0) out=(1,195,35,1,0,0,0) yield=false
+[aes] pid=1 op 79 in=(0,0,0,0) out=(1,195,35,1,0,0,0) yield=false
+[aes] pid=1 op 79 in=(0,0,0,0) out=(1,195,35,1,0,0,0) yield=false
+[aes] pid=1 op 79 in=(0,0,0,0) out=(1,195,35,1,0,0,0) yield=false
+[aes] pid=1 op 79 in=(0,0,0,0) out=(1,195,35,1,0,0,0) yield=false
+[aes] pid=1 op 79 in=(0,0,0,0) out=(1,195,35,1,0,0,0) yield=false
+[aes] pid=1 op 79 in=(0,0,0,0) out=(1,195,35,1,0,0,0) yield=false
+[aes] pid=1 op 79 in=(0,0,0,0) out=(1,195,35,1,0,0,0) yield=false
+[aes] pid=1 op 79 in=(0,0,0,0) out=(1,195,35,1,0,0,0) yield=false
+[aes] pid=1 op 79 in=(0,0,0,0) out=(1,195,35,1,0,0,0) yield=false
+[aes] pid=1 op 79 in=(0,0,0,0) out=(1,195,35,1,0,0,0) yield=false
+[aes] pid=1 op 79 in=(0,0,0,0) out=(1,195,35,1,0,0,0) yield=false
+[aes] pid=1 op 79 in=(0,0,0,0) out=(1,195,35,1,0,0,0) yield=false
+[aes] pid=1 op 79 in=(0,0,0,0) out=(1,195,35,1,0,0,0) yield=false
+[aes] pid=1 op 79 in=(0,0,0,0) out=(1,195,35,1,0,0,0) yield=false
+[aes] pid=1 op 79 in=(0,0,0,0) out=(1,195,35,1,0,0,0) yield=false
+[aes] pid=1 op 79 in=(0,0,0,0) out=(1,195,35,1,0,0,0) yield=false
+[aes] pid=1 op 79 in=(0,0,0,0) out=(1,195,35,1,0,0,0) yield=false
+[aes] pid=1 op 79 in=(0,0,0,0) out=(1,195,35,1,0,0,0) yield=false
+[aes] pid=1 op 79 in=(0,0,0,0) out=(1,195,35,1,0,0,0) yield=false
+[aes] pid=1 op 79 in=(0,0,0,0) out=(1,195,35,1,0,0,0) yield=false
+[aes] pid=1 op 79 in=(0,0,0,0) out=(1,195,35,1,0,0,0) yield=false
+[aes] pid=1 op 79 in=(0,0,0,0) out=(1,195,35,1,0,0,0) yield=false
+[aes] pid=1 op 79 in=(0,0,0,0) out=(1,195,35,1,0,0,0) yield=false
+[aes] pid=1 op 79 in=(0,0,0,0) out=(1,195,35,1,0,0,0) yield=false
+[aes] pid=1 op 79 in=(0,0,0,0) out=(1,195,35,1,0,0,0) yield=false
+[aes] pid=1 op 79 in=(0,0,0,0) out=(1,195,35,1,0,0,0) yield=false
+[aes] pid=1 op 79 in=(0,0,0,0) out=(1,195,35,1,0,0,0) yield=false
+[aes] pid=1 op 79 in=(0,0,0,0) out=(1,195,35,1,0,0,0) yield=false
+[aes] pid=1 op 79 in=(0,0,0,0) out=(1,195,35,1,0,0,0) yield=false
+[aes] pid=1 op 79 in=(0,0,0,0) out=(1,195,35,1,0,0,0) yield=false
+[aes] pid=1 op 79 in=(0,0,0,0) out=(1,195,35,1,0,0,0) yield=false
+[aes] pid=1 op 79 in=(0,0,0,0) out=(1,195,35,1,0,0,0) yield=false
+[aes] pid=1 op 79 in=(0,0,0,0) out=(1,195,35,1,0,0,0) yield=false
+[aes] pid=1 op 79 in=(0,0,0,0) out=(1,195,35,1,0,0,0) yield=false
+[aes] pid=1 op 79 in=(0,0,0,0) out=(1,195,35,1,0,0,0) yield=false
+[h02] step 37 at +3811 -> mouse (195,35) mb=0
+[aes] pid=1 op 79 in=(0,0,0,0) out=(1,195,35,0,0,0,0) yield=false
+[aes] pid=1 op 104 in=(0,10,0,0) out=(1,1,0,0,0,0,0) yield=false
+[aes] pid=1 op 100 in=(20479,0,19,616) out=(2,0,0,0,0,0,0) yield=false
+[aes] pid=1 op 104 in=(0,10,0,0) out=(1,1,0,0,0,0,0) yield=false
+[aes] pid=1 op 78 in=(2,0,0,0) out=(1,0,0,0,0,0,0) yield=false
+[aes] pid=1 op 112 in=(5,52,0,0) out=(1,0,0,0,0,0,0) yield=false
+[aes] pid=1 op 112 in=(5,52,0,0) out=(1,0,0,0,0,0,0) yield=false
+[aes] pid=1 op 112 in=(5,50,0,0) out=(1,0,0,0,0,0,0) yield=false
+[aes] pid=1 op 112 in=(5,50,0,0) out=(1,0,0,0,0,0,0) yield=false
+[aes] pid=1 op 112 in=(5,50,0,0) out=(1,0,0,0,0,0,0) yield=false
+[aes] pid=1 op 112 in=(5,50,0,0) out=(1,0,0,0,0,0,0) yield=false
+[aes] pid=1 op 112 in=(5,50,0,0) out=(1,0,0,0,0,0,0) yield=false
+[aes] pid=1 op 112 in=(5,50,0,0) out=(1,0,0,0,0,0,0) yield=false
+[aes] pid=1 op 112 in=(5,50,0,0) out=(1,0,0,0,0,0,0) yield=false
+[aes] pid=1 op 112 in=(5,50,0,0) out=(1,0,0,0,0,0,0) yield=false
+[aes] pid=1 op 112 in=(5,50,0,0) out=(1,0,0,0,0,0,0) yield=false
+[aes] pid=1 op 112 in=(5,52,0,0) out=(1,0,0,0,0,0,0) yield=false
+[aes] pid=1 op 112 in=(5,52,0,0) out=(1,0,0,0,0,0,0) yield=false
+[aes] pid=1 op 112 in=(5,52,0,0) out=(1,0,0,0,0,0,0) yield=false
+[aes] pid=1 op 112 in=(5,52,0,0) out=(1,0,0,0,0,0,0) yield=false
+[aes] pid=1 op 112 in=(5,51,0,0) out=(1,0,0,0,0,0,0) yield=false
+[aes] pid=1 op 112 in=(5,51,0,0) out=(1,0,0,0,0,0,0) yield=false
+[aes] pid=1 op 112 in=(5,51,0,0) out=(1,0,0,0,0,0,0) yield=false
+[aes] pid=1 op 112 in=(5,51,0,0) out=(1,0,0,0,0,0,0) yield=false
+[aes] pid=1 op 112 in=(5,51,0,0) out=(1,0,0,0,0,0,0) yield=false
+[aes] pid=1 op 112 in=(5,51,0,0) out=(1,0,0,0,0,0,0) yield=false
+[aes] pid=1 op 112 in=(5,51,0,0) out=(1,0,0,0,0,0,0) yield=false
+[aes] pid=1 op 112 in=(5,51,0,0) out=(1,0,0,0,0,0,0) yield=false
+[aes] pid=1 op 112 in=(5,52,0,0) out=(1,0,0,0,0,0,0) yield=false
+[aes] pid=1 op 112 in=(5,51,0,0) out=(1,0,0,0,0,0,0) yield=false
+[aes] pid=1 op 112 in=(5,50,0,0) out=(1,0,0,0,0,0,0) yield=false
+[aes] pid=1 op 112 in=(5,52,0,0) out=(1,0,0,0,0,0,0) yield=false
+[aes] pid=1 op 112 in=(5,26,0,0) out=(1,0,0,0,0,0,0) yield=false
+[aes] pid=1 op 112 in=(5,28,0,0) out=(1,0,0,0,0,0,0) yield=false
+[aes] pid=1 op 105 in=(2,3,-24640,3) out=(1,0,0,0,0,0,0) yield=false
+[aes] pid=1 op 105 in=(2,15,0,0) out=(1,0,0,0,0,0,0) yield=false
+[aes] pid=1 op 105 in=(2,8,0,0) out=(1,0,0,0,0,0,0) yield=false
+[aes] pid=1 op 105 in=(2,16,0,0) out=(1,0,0,0,0,0,0) yield=false
+[aes] pid=1 op 105 in=(2,9,0,0) out=(1,0,0,0,0,0,0) yield=false
+[aes] pid=1 op 78 in=(0,0,0,0) out=(1,0,0,0,0,0,0) yield=false
+[aes] pid=1 op 108 in=(0,20479,496,70) out=(1,495,28,664,513,0,0) yield=false
+[aes] pid=1 op 108 in=(1,20479,496,70) out=(1,497,112,640,448,0,0) yield=false
+[aes] pid=1 op 108 in=(1,20479,0,19) out=(1,1,61,616,396,0,0) yield=false
+[aes] pid=1 op 108 in=(0,20479,496,112) out=(1,495,70,640,449,0,0) yield=false
+[aes] pid=1 op 105 in=(2,2,-24736,3) out=(1,0,0,0,0,0,0) yield=false
+[aes] pid=1 op 105 in=(2,15,875,0) out=(1,0,0,0,0,0,0) yield=false
+[aes] pid=1 op 105 in=(2,8,0,0) out=(1,0,0,0,0,0,0) yield=false
+[aes] pid=1 op 105 in=(2,16,1000,0) out=(1,0,0,0,0,0,0) yield=false
+[aes] pid=1 op 105 in=(2,9,0,0) out=(1,0,0,0,0,0,0) yield=false
+[h02] post_msg pid=1 [20, 1, 0, 2, 496, 112, 616, 384] posted=true
+[aes] pid=1 op 101 in=(2,495,70,640) out=(1,0,0,0,0,0,0) yield=false
+[aes] pid=1 op 104 in=(2,4,0,0) out=(1,496,112,616,384,0,0) yield=false
+[aes] pid=1 op 105 in=(2,15,875,0) out=(1,0,0,0,0,0,0) yield=false
+[aes] pid=1 op 105 in=(2,8,0,0) out=(1,0,0,0,0,0,0) yield=false
+[aes] pid=1 op 105 in=(2,16,1000,0) out=(1,0,0,0,0,0,0) yield=false
+[aes] pid=1 op 105 in=(2,9,0,0) out=(1,0,0,0,0,0,0) yield=false
+[aes] pid=1 op 44 in=(1,0,0,0) out=(1,160,19,0,0,0,0) yield=false
+[aes] pid=1 op 107 in=(1,0,0,0) out=(1,0,0,0,0,0,0) yield=false
+[aes] pid=1 op 104 in=(0,11,0,0) out=(1,0,19,640,51,0,0) yield=false
+[aes] pid=1 op 42 in=(0,8,160,19) out=(1,0,0,0,0,0,0) yield=false
+[aes] pid=1 op 104 in=(0,12,0,0) out=(1,0,70,495,72,0,0) yield=false
+[aes] pid=1 op 104 in=(0,12,0,0) out=(1,0,142,7,338,0,0) yield=false
+[aes] pid=1 op 104 in=(0,12,0,0) out=(1,0,0,0,0,0,0) yield=false
+[aes] pid=1 op 107 in=(0,0,0,0) out=(1,0,0,0,0,0,0) yield=false
+[aes] pid=1 op 104 in=(0,10,0,0) out=(1,2,0,0,0,0,0) yield=false
+[aes] pid=1 op 32 in=(20,1,0,0) out=(1,0,0,0,0,0,0) yield=false
+[aes] pid=1 op 32 in=(23,1,0,0) out=(1,0,0,0,0,0,0) yield=false
+[aes] pid=1 op 32 in=(21,1,0,0) out=(1,0,0,0,0,0,0) yield=false
+[aes] pid=1 op 32 in=(25,0,0,0) out=(1,0,0,0,0,0,0) yield=false
+[aes] pid=1 op 32 in=(24,1,0,0) out=(1,0,0,0,0,0,0) yield=false
+[aes] pid=1 op 32 in=(22,1,0,0) out=(1,0,0,0,0,0,0) yield=false
+[aes] pid=1 op 32 in=(27,1,0,0) out=(1,0,0,0,0,0,0) yield=false
+[aes] pid=1 op 32 in=(58,1,0,0) out=(1,0,0,0,0,0,0) yield=false
+[aes] pid=1 op 32 in=(59,1,0,0) out=(1,0,0,0,0,0,0) yield=false
+[aes] pid=1 op 32 in=(62,1,0,0) out=(1,0,0,0,0,0,0) yield=false
+[aes] pid=1 op 32 in=(61,1,0,0) out=(1,0,0,0,0,0,0) yield=false
+[aes] pid=1 op 32 in=(65,1,0,0) out=(1,0,0,0,0,0,0) yield=false
+[aes] pid=1 op 32 in=(29,0,0,0) out=(1,0,0,0,0,0,0) yield=false
+[aes] pid=1 op 32 in=(30,0,0,0) out=(1,0,0,0,0,0,0) yield=false
+[aes] pid=1 op 32 in=(54,1,0,0) out=(1,0,0,0,0,0,0) yield=false
+[aes] pid=1 op 32 in=(53,2,0,0) out=(1,0,0,0,0,0,0) yield=false
+[aes] pid=1 op 32 in=(55,1,0,0) out=(1,0,0,0,0,0,0) yield=false
+[aes] pid=1 op 32 in=(56,2,0,0) out=(1,0,0,0,0,0,0) yield=false
+[aes] pid=1 op 32 in=(57,2,0,0) out=(1,0,0,0,0,0,0) yield=false
+[aes] pid=1 op 31 in=(53,0,0,0) out=(1,0,0,0,0,0,0) yield=false
+[aes] pid=1 op 25 in=(19,258,3,0) out=(16,195,35,0,0,0,0) yield=false
+[aes] pid=1 op 40 in=(0,1,0,0) out=(1,0,0,0,0,0,0) yield=false
+[aes] pid=1 op 40 in=(0,2,0,0) out=(1,0,0,0,0,0,0) yield=false
+[aes] pid=1 op 40 in=(0,3,0,0) out=(1,0,0,0,0,0,0) yield=false
+[aes] pid=1 op 40 in=(0,4,0,0) out=(1,0,0,0,0,0,0) yield=false
+[aes] pid=1 op 40 in=(0,5,0,0) out=(1,0,0,0,0,0,0) yield=false
+[aes] pid=1 op 40 in=(0,6,0,0) out=(1,0,0,0,0,0,0) yield=false
+[aes] pid=1 op 40 in=(0,7,0,0) out=(1,0,0,0,0,0,0) yield=false
+[aes] pid=1 op 40 in=(0,8,0,0) out=(1,0,0,0,0,0,0) yield=false
+[aes] pid=1 op 40 in=(0,9,0,0) out=(1,0,0,0,0,0,0) yield=false
+[aes] pid=1 op 40 in=(0,10,0,0) out=(1,0,0,0,0,0,0) yield=false
+[aes] pid=1 op 40 in=(0,11,0,0) out=(1,0,0,0,0,0,0) yield=false
+[aes] pid=1 op 40 in=(0,12,0,0) out=(1,0,0,0,0,0,0) yield=false
+[aes] pid=1 op 40 in=(0,13,0,0) out=(1,0,0,0,0,0,0) yield=false
+[aes] pid=1 op 40 in=(0,14,0,0) out=(1,0,0,0,0,0,0) yield=false
+[aes] pid=1 op 40 in=(0,15,0,0) out=(1,0,0,0,0,0,0) yield=false
+[aes] pid=1 op 40 in=(0,16,0,0) out=(1,0,0,0,0,0,0) yield=false
+[aes] pid=1 op 40 in=(0,17,0,0) out=(1,0,0,0,0,0,0) yield=false
+[aes] pid=1 op 40 in=(0,18,0,0) out=(1,0,0,0,0,0,0) yield=false
+[aes] pid=1 op 40 in=(0,19,0,0) out=(1,0,0,0,0,0,0) yield=false
+[aes] pid=1 op 40 in=(0,20,0,0) out=(1,0,0,0,0,0,0) yield=false
+[aes] pid=1 op 40 in=(0,21,0,0) out=(1,0,0,0,0,0,0) yield=false
+[aes] pid=1 op 40 in=(0,22,0,0) out=(1,0,0,0,0,0,0) yield=false
+[aes] pid=1 op 40 in=(0,23,0,0) out=(1,0,0,0,0,0,0) yield=false
+[aes] pid=1 op 40 in=(0,24,0,0) out=(1,0,0,0,0,0,0) yield=false
+[aes] pid=1 op 107 in=(1,0,0,0) out=(1,0,0,0,0,0,0) yield=false
+[aes] pid=1 op 78 in=(256,0,0,0) out=(1,0,0,0,0,0,0) yield=false
+[aes] pid=1 op 104 in=(2,11,0,0) out=(1,496,112,616,384,0,0) yield=false
+[aes] pid=1 op 42 in=(0,8,496,112) out=(1,0,0,0,0,0,0) yield=false
+[aes] pid=1 op 104 in=(2,12,0,0) out=(1,0,0,0,0,0,0) yield=false
+[aes] pid=1 op 78 in=(257,0,0,0) out=(1,0,0,0,0,0,0) yield=false
+[aes] pid=1 op 107 in=(0,0,0,0) out=(1,0,0,0,0,0,0) yield=false
+[aes] pid=1 op 104 in=(0,10,0,0) out=(1,2,0,0,0,0,0) yield=false
+[aes] pid=1 op 32 in=(20,1,0,0) out=(1,0,0,0,0,0,0) yield=false
+[aes] pid=1 op 32 in=(23,1,0,0) out=(1,0,0,0,0,0,0) yield=false
+[aes] pid=1 op 32 in=(21,1,0,0) out=(1,0,0,0,0,0,0) yield=false
+[aes] pid=1 op 32 in=(25,0,0,0) out=(1,0,0,0,0,0,0) yield=false
+[aes] pid=1 op 32 in=(24,1,0,0) out=(1,0,0,0,0,0,0) yield=false
+[aes] pid=1 op 32 in=(22,1,0,0) out=(1,0,0,0,0,0,0) yield=false
+[aes] pid=1 op 32 in=(27,1,0,0) out=(1,0,0,0,0,0,0) yield=false
+[aes] pid=1 op 32 in=(58,1,0,0) out=(1,0,0,0,0,0,0) yield=false
+[aes] pid=1 op 32 in=(59,1,0,0) out=(1,0,0,0,0,0,0) yield=false
+[aes] pid=1 op 32 in=(62,1,0,0) out=(1,0,0,0,0,0,0) yield=false
+[aes] pid=1 op 32 in=(61,1,0,0) out=(1,0,0,0,0,0,0) yield=false
+[aes] pid=1 op 32 in=(65,1,0,0) out=(1,0,0,0,0,0,0) yield=false
+[aes] pid=1 op 32 in=(29,0,0,0) out=(1,0,0,0,0,0,0) yield=false
+[aes] pid=1 op 32 in=(30,0,0,0) out=(1,0,0,0,0,0,0) yield=false
+[aes] pid=1 op 32 in=(54,1,0,0) out=(1,0,0,0,0,0,0) yield=false
+[aes] pid=1 op 32 in=(53,2,0,0) out=(1,0,0,0,0,0,0) yield=false
+[aes] pid=1 op 32 in=(55,1,0,0) out=(1,0,0,0,0,0,0) yield=false
+[aes] pid=1 op 32 in=(56,2,0,0) out=(1,0,0,0,0,0,0) yield=false
+[aes] pid=1 op 32 in=(57,2,0,0) out=(1,0,0,0,0,0,0) yield=false
+[aes] pid=1 op 31 in=(53,0,0,0) out=(1,0,0,0,0,0,0) yield=false
+[h02] MARK D_TWO_WINDOWS step 38 at +4100 mouse (195,35) mb=0
+[h02] step 39 at +4200 -> mouse (100,152) mb=0
+[h02] step 40 at +4300 -> mouse (100,152) mb=1
+[h02] step 41 at +4303 -> mouse (100,152) mb=0
+[h02] post_msg pid=1 [30, 1, 0, 2, 0, 0, 0, 0] posted=true
+[h02] post_msg pid=1 [21, 1, 0, 1, 0, 0, 0, 0] posted=true
+[aes] pid=1 op 25 in=(19,258,3,0) out=(16,100,152,0,0,0,0) yield=false
+[aes] pid=1 op 104 in=(0,10,0,0) out=(1,2,0,0,0,0,0) yield=false
+[aes] pid=1 op 104 in=(0,10,0,0) out=(1,2,0,0,0,0,0) yield=false
+[aes] pid=1 op 32 in=(20,1,0,0) out=(1,0,0,0,0,0,0) yield=false
+[aes] pid=1 op 32 in=(23,1,0,0) out=(1,0,0,0,0,0,0) yield=false
+[aes] pid=1 op 32 in=(21,1,0,0) out=(1,0,0,0,0,0,0) yield=false
+[aes] pid=1 op 32 in=(25,0,0,0) out=(1,0,0,0,0,0,0) yield=false
+[aes] pid=1 op 32 in=(24,1,0,0) out=(1,0,0,0,0,0,0) yield=false
+[aes] pid=1 op 32 in=(22,1,0,0) out=(1,0,0,0,0,0,0) yield=false
+[aes] pid=1 op 32 in=(27,1,0,0) out=(1,0,0,0,0,0,0) yield=false
+[aes] pid=1 op 32 in=(58,1,0,0) out=(1,0,0,0,0,0,0) yield=false
+[aes] pid=1 op 32 in=(59,1,0,0) out=(1,0,0,0,0,0,0) yield=false
+[aes] pid=1 op 32 in=(62,1,0,0) out=(1,0,0,0,0,0,0) yield=false
+[aes] pid=1 op 32 in=(61,1,0,0) out=(1,0,0,0,0,0,0) yield=false
+[aes] pid=1 op 32 in=(65,1,0,0) out=(1,0,0,0,0,0,0) yield=false
+[aes] pid=1 op 32 in=(29,0,0,0) out=(1,0,0,0,0,0,0) yield=false
+[aes] pid=1 op 32 in=(30,0,0,0) out=(1,0,0,0,0,0,0) yield=false
+[aes] pid=1 op 32 in=(54,1,0,0) out=(1,0,0,0,0,0,0) yield=false
+[aes] pid=1 op 32 in=(53,2,0,0) out=(1,0,0,0,0,0,0) yield=false
+[aes] pid=1 op 32 in=(55,1,0,0) out=(1,0,0,0,0,0,0) yield=false
+[aes] pid=1 op 32 in=(56,2,0,0) out=(1,0,0,0,0,0,0) yield=false
+[aes] pid=1 op 32 in=(57,2,0,0) out=(1,0,0,0,0,0,0) yield=false
+[aes] pid=1 op 31 in=(53,0,0,0) out=(1,0,0,0,0,0,0) yield=false
+[aes] pid=1 op 25 in=(19,258,3,0) out=(16,100,152,0,0,0,0) yield=false
+[aes] pid=1 op 104 in=(0,10,0,0) out=(1,2,0,0,0,0,0) yield=false
+[h02] post_msg pid=1 [20, 1, 0, 1, 7, 142, 633, 338] posted=true
+[aes] pid=1 op 105 in=(1,10,1,0) out=(1,0,0,0,0,0,0) yield=false
+[aes] pid=1 op 104 in=(0,10,0,0) out=(1,1,0,0,0,0,0) yield=false
+[aes] pid=1 op 32 in=(20,1,0,0) out=(1,0,0,0,0,0,0) yield=false
+[aes] pid=1 op 32 in=(23,1,0,0) out=(1,0,0,0,0,0,0) yield=false
+[aes] pid=1 op 32 in=(21,1,0,0) out=(1,0,0,0,0,0,0) yield=false
+[aes] pid=1 op 32 in=(25,0,0,0) out=(1,0,0,0,0,0,0) yield=false
+[aes] pid=1 op 32 in=(24,1,0,0) out=(1,0,0,0,0,0,0) yield=false
+[aes] pid=1 op 32 in=(22,1,0,0) out=(1,0,0,0,0,0,0) yield=false
+[aes] pid=1 op 32 in=(27,1,0,0) out=(1,0,0,0,0,0,0) yield=false
+[aes] pid=1 op 32 in=(58,1,0,0) out=(1,0,0,0,0,0,0) yield=false
+[aes] pid=1 op 32 in=(59,1,0,0) out=(1,0,0,0,0,0,0) yield=false
+[aes] pid=1 op 32 in=(62,1,0,0) out=(1,0,0,0,0,0,0) yield=false
+[aes] pid=1 op 32 in=(61,1,0,0) out=(1,0,0,0,0,0,0) yield=false
+[aes] pid=1 op 32 in=(65,1,0,0) out=(1,0,0,0,0,0,0) yield=false
+[aes] pid=1 op 32 in=(29,0,0,0) out=(1,0,0,0,0,0,0) yield=false
+[aes] pid=1 op 32 in=(30,0,0,0) out=(1,0,0,0,0,0,0) yield=false
+[aes] pid=1 op 32 in=(54,1,0,0) out=(1,0,0,0,0,0,0) yield=false
+[aes] pid=1 op 32 in=(53,2,0,0) out=(1,0,0,0,0,0,0) yield=false
+[aes] pid=1 op 32 in=(55,1,0,0) out=(1,0,0,0,0,0,0) yield=false
+[aes] pid=1 op 32 in=(56,2,0,0) out=(1,0,0,0,0,0,0) yield=false
+[aes] pid=1 op 32 in=(57,2,0,0) out=(1,0,0,0,0,0,0) yield=false
+[aes] pid=1 op 31 in=(53,0,0,0) out=(1,0,0,0,0,0,0) yield=false
+[aes] pid=1 op 25 in=(19,258,3,0) out=(16,100,152,0,0,0,0) yield=false
+[aes] pid=1 op 40 in=(0,1,0,0) out=(1,0,0,0,0,0,0) yield=false
+[aes] pid=1 op 40 in=(0,2,0,0) out=(1,0,0,0,0,0,0) yield=false
+[aes] pid=1 op 40 in=(0,3,0,0) out=(1,0,0,0,0,0,0) yield=false
+[aes] pid=1 op 107 in=(1,0,0,0) out=(1,0,0,0,0,0,0) yield=false
+[aes] pid=1 op 78 in=(256,0,0,0) out=(1,0,0,0,0,0,0) yield=false
+[aes] pid=1 op 104 in=(1,11,0,0) out=(1,8,184,616,384,0,0) yield=false
+[aes] pid=1 op 42 in=(0,8,8,184) out=(1,0,0,0,0,0,0) yield=false
+[aes] pid=1 op 104 in=(1,12,0,0) out=(1,0,0,0,0,0,0) yield=false
+[aes] pid=1 op 78 in=(257,0,0,0) out=(1,0,0,0,0,0,0) yield=false
+[aes] pid=1 op 107 in=(0,0,0,0) out=(1,0,0,0,0,0,0) yield=false
+[aes] pid=1 op 104 in=(0,10,0,0) out=(1,1,0,0,0,0,0) yield=false
+[aes] pid=1 op 32 in=(20,1,0,0) out=(1,0,0,0,0,0,0) yield=false
+[aes] pid=1 op 32 in=(23,1,0,0) out=(1,0,0,0,0,0,0) yield=false
+[aes] pid=1 op 32 in=(21,1,0,0) out=(1,0,0,0,0,0,0) yield=false
+[aes] pid=1 op 32 in=(25,0,0,0) out=(1,0,0,0,0,0,0) yield=false
+[aes] pid=1 op 32 in=(24,1,0,0) out=(1,0,0,0,0,0,0) yield=false
+[aes] pid=1 op 32 in=(22,1,0,0) out=(1,0,0,0,0,0,0) yield=false
+[aes] pid=1 op 32 in=(27,1,0,0) out=(1,0,0,0,0,0,0) yield=false
+[aes] pid=1 op 32 in=(58,1,0,0) out=(1,0,0,0,0,0,0) yield=false
+[aes] pid=1 op 32 in=(59,1,0,0) out=(1,0,0,0,0,0,0) yield=false
+[aes] pid=1 op 32 in=(62,1,0,0) out=(1,0,0,0,0,0,0) yield=false
+[aes] pid=1 op 32 in=(61,1,0,0) out=(1,0,0,0,0,0,0) yield=false
+[aes] pid=1 op 32 in=(65,1,0,0) out=(1,0,0,0,0,0,0) yield=false
+[aes] pid=1 op 32 in=(29,0,0,0) out=(1,0,0,0,0,0,0) yield=false
+[aes] pid=1 op 32 in=(30,0,0,0) out=(1,0,0,0,0,0,0) yield=false
+[aes] pid=1 op 32 in=(54,1,0,0) out=(1,0,0,0,0,0,0) yield=false
+[aes] pid=1 op 32 in=(53,2,0,0) out=(1,0,0,0,0,0,0) yield=false
+[aes] pid=1 op 32 in=(55,1,0,0) out=(1,0,0,0,0,0,0) yield=false
+[aes] pid=1 op 32 in=(56,2,0,0) out=(1,0,0,0,0,0,0) yield=false
+[aes] pid=1 op 32 in=(57,2,0,0) out=(1,0,0,0,0,0,0) yield=false
+[aes] pid=1 op 31 in=(53,0,0,0) out=(1,0,0,0,0,0,0) yield=false
+[h02] MARK E_STATE_BEFORE_START step 42 at +4600 mouse (100,152) mb=0
+[h02] step 43 at +4700 -> mouse (127,207) mb=0
+[h02] step 44 at +4800 -> mouse (127,207) mb=1
+[h02] step 45 at +4803 -> mouse (127,207) mb=0
+[h02] step 46 at +4808 -> mouse (127,207) mb=1
+[aes] pid=1 op 25 in=(19,258,3,0) out=(2,127,207,1,0,0,2) yield=false
+[aes] pid=1 op 106 in=(127,207,0,0) out=(1,0,0,0,0,0,0) yield=false
+[aes] pid=1 op 79 in=(0,0,0,0) out=(1,127,207,1,0,0,0) yield=false
+[aes] pid=1 op 107 in=(1,0,0,0) out=(1,0,0,0,0,0,0) yield=false
+[aes] pid=1 op 78 in=(256,0,0,0) out=(1,0,0,0,0,0,0) yield=false
+[aes] pid=1 op 40 in=(0,1,0,0) out=(1,0,0,0,0,0,0) yield=false
+[aes] pid=1 op 104 in=(1,11,0,0) out=(1,8,184,616,384,0,0) yield=false
+[aes] pid=1 op 42 in=(0,8,8,184) out=(1,0,0,0,0,0,0) yield=false
+[aes] pid=1 op 104 in=(1,12,0,0) out=(1,0,0,0,0,0,0) yield=false
+[aes] pid=1 op 78 in=(257,0,0,0) out=(1,0,0,0,0,0,0) yield=false
+[aes] pid=1 op 107 in=(0,0,0,0) out=(1,0,0,0,0,0,0) yield=false
+[aes] pid=1 op 112 in=(5,27,0,0) out=(1,0,0,0,0,0,0) yield=false
+[aes] pid=1 op 112 in=(5,29,0,0) out=(1,0,0,0,0,0,0) yield=false
+[aes] pid=1 op 105 in=(1,3,-23600,3) out=(1,0,0,0,0,0,0) yield=false
+[aes] pid=1 op 79 in=(0,0,0,0) out=(1,127,207,1,0,0,0) yield=false
+[aes] pid=1 op 79 in=(0,0,0,0) out=(1,127,207,1,0,0,0) yield=false
+[aes] pid=1 op 79 in=(0,0,0,0) out=(1,127,207,1,0,0,0) yield=false
+[aes] pid=1 op 79 in=(0,0,0,0) out=(1,127,207,1,0,0,0) yield=false
+[aes] pid=1 op 79 in=(0,0,0,0) out=(1,127,207,1,0,0,0) yield=false
+[aes] pid=1 op 79 in=(0,0,0,0) out=(1,127,207,1,0,0,0) yield=false
+[aes] pid=1 op 79 in=(0,0,0,0) out=(1,127,207,1,0,0,0) yield=false
+[aes] pid=1 op 79 in=(0,0,0,0) out=(1,127,207,1,0,0,0) yield=false
+[aes] pid=1 op 79 in=(0,0,0,0) out=(1,127,207,1,0,0,0) yield=false
+[aes] pid=1 op 79 in=(0,0,0,0) out=(1,127,207,1,0,0,0) yield=false
+[aes] pid=1 op 79 in=(0,0,0,0) out=(1,127,207,1,0,0,0) yield=false
+[aes] pid=1 op 79 in=(0,0,0,0) out=(1,127,207,1,0,0,0) yield=false
+[aes] pid=1 op 79 in=(0,0,0,0) out=(1,127,207,1,0,0,0) yield=false
+[aes] pid=1 op 79 in=(0,0,0,0) out=(1,127,207,1,0,0,0) yield=false
+[aes] pid=1 op 79 in=(0,0,0,0) out=(1,127,207,1,0,0,0) yield=false
+[aes] pid=1 op 79 in=(0,0,0,0) out=(1,127,207,1,0,0,0) yield=false
+[aes] pid=1 op 79 in=(0,0,0,0) out=(1,127,207,1,0,0,0) yield=false
+[aes] pid=1 op 79 in=(0,0,0,0) out=(1,127,207,1,0,0,0) yield=false
+[aes] pid=1 op 79 in=(0,0,0,0) out=(1,127,207,1,0,0,0) yield=false
+[aes] pid=1 op 79 in=(0,0,0,0) out=(1,127,207,1,0,0,0) yield=false
+[aes] pid=1 op 79 in=(0,0,0,0) out=(1,127,207,1,0,0,0) yield=false
+[aes] pid=1 op 79 in=(0,0,0,0) out=(1,127,207,1,0,0,0) yield=false
+[aes] pid=1 op 79 in=(0,0,0,0) out=(1,127,207,1,0,0,0) yield=false
+[aes] pid=1 op 79 in=(0,0,0,0) out=(1,127,207,1,0,0,0) yield=false
+[aes] pid=1 op 79 in=(0,0,0,0) out=(1,127,207,1,0,0,0) yield=false
+[aes] pid=1 op 79 in=(0,0,0,0) out=(1,127,207,1,0,0,0) yield=false
+[aes] pid=1 op 79 in=(0,0,0,0) out=(1,127,207,1,0,0,0) yield=false
+[aes] pid=1 op 79 in=(0,0,0,0) out=(1,127,207,1,0,0,0) yield=false
+[aes] pid=1 op 79 in=(0,0,0,0) out=(1,127,207,1,0,0,0) yield=false
+[aes] pid=1 op 79 in=(0,0,0,0) out=(1,127,207,1,0,0,0) yield=false
+[aes] pid=1 op 79 in=(0,0,0,0) out=(1,127,207,1,0,0,0) yield=false
+[aes] pid=1 op 79 in=(0,0,0,0) out=(1,127,207,1,0,0,0) yield=false
+[aes] pid=1 op 79 in=(0,0,0,0) out=(1,127,207,1,0,0,0) yield=false
+[aes] pid=1 op 79 in=(0,0,0,0) out=(1,127,207,1,0,0,0) yield=false
+[aes] pid=1 op 79 in=(0,0,0,0) out=(1,127,207,1,0,0,0) yield=false
+[aes] pid=1 op 79 in=(0,0,0,0) out=(1,127,207,1,0,0,0) yield=false
+[aes] pid=1 op 79 in=(0,0,0,0) out=(1,127,207,1,0,0,0) yield=false
+[aes] pid=1 op 79 in=(0,0,0,0) out=(1,127,207,1,0,0,0) yield=false
+[aes] pid=1 op 79 in=(0,0,0,0) out=(1,127,207,1,0,0,0) yield=false
+[aes] pid=1 op 79 in=(0,0,0,0) out=(1,127,207,1,0,0,0) yield=false
+[aes] pid=1 op 79 in=(0,0,0,0) out=(1,127,207,1,0,0,0) yield=false
+[aes] pid=1 op 79 in=(0,0,0,0) out=(1,127,207,1,0,0,0) yield=false
+[aes] pid=1 op 79 in=(0,0,0,0) out=(1,127,207,1,0,0,0) yield=false
+[aes] pid=1 op 79 in=(0,0,0,0) out=(1,127,207,1,0,0,0) yield=false
+[aes] pid=1 op 79 in=(0,0,0,0) out=(1,127,207,1,0,0,0) yield=false
+[aes] pid=1 op 79 in=(0,0,0,0) out=(1,127,207,1,0,0,0) yield=false
+[aes] pid=1 op 79 in=(0,0,0,0) out=(1,127,207,1,0,0,0) yield=false
+[aes] pid=1 op 79 in=(0,0,0,0) out=(1,127,207,1,0,0,0) yield=false
+[aes] pid=1 op 79 in=(0,0,0,0) out=(1,127,207,1,0,0,0) yield=false
+[aes] pid=1 op 79 in=(0,0,0,0) out=(1,127,207,1,0,0,0) yield=false
+[aes] pid=1 op 79 in=(0,0,0,0) out=(1,127,207,1,0,0,0) yield=false
+[aes] pid=1 op 79 in=(0,0,0,0) out=(1,127,207,1,0,0,0) yield=false
+[aes] pid=1 op 79 in=(0,0,0,0) out=(1,127,207,1,0,0,0) yield=false
+[aes] pid=1 op 79 in=(0,0,0,0) out=(1,127,207,1,0,0,0) yield=false
+[aes] pid=1 op 79 in=(0,0,0,0) out=(1,127,207,1,0,0,0) yield=false
+[aes] pid=1 op 79 in=(0,0,0,0) out=(1,127,207,1,0,0,0) yield=false
+[aes] pid=1 op 79 in=(0,0,0,0) out=(1,127,207,1,0,0,0) yield=false
+[aes] pid=1 op 79 in=(0,0,0,0) out=(1,127,207,1,0,0,0) yield=false
+[aes] pid=1 op 79 in=(0,0,0,0) out=(1,127,207,1,0,0,0) yield=false
+[aes] pid=1 op 79 in=(0,0,0,0) out=(1,127,207,1,0,0,0) yield=false
+[aes] pid=1 op 79 in=(0,0,0,0) out=(1,127,207,1,0,0,0) yield=false
+[aes] pid=1 op 79 in=(0,0,0,0) out=(1,127,207,1,0,0,0) yield=false
+[aes] pid=1 op 79 in=(0,0,0,0) out=(1,127,207,1,0,0,0) yield=false
+[aes] pid=1 op 79 in=(0,0,0,0) out=(1,127,207,1,0,0,0) yield=false
+[aes] pid=1 op 79 in=(0,0,0,0) out=(1,127,207,1,0,0,0) yield=false
+[aes] pid=1 op 79 in=(0,0,0,0) out=(1,127,207,1,0,0,0) yield=false
+[aes] pid=1 op 79 in=(0,0,0,0) out=(1,127,207,1,0,0,0) yield=false
+[aes] pid=1 op 79 in=(0,0,0,0) out=(1,127,207,1,0,0,0) yield=false
+[aes] pid=1 op 79 in=(0,0,0,0) out=(1,127,207,1,0,0,0) yield=false
+[aes] pid=1 op 79 in=(0,0,0,0) out=(1,127,207,1,0,0,0) yield=false
+[aes] pid=1 op 79 in=(0,0,0,0) out=(1,127,207,1,0,0,0) yield=false
+[aes] pid=1 op 79 in=(0,0,0,0) out=(1,127,207,1,0,0,0) yield=false
+[aes] pid=1 op 79 in=(0,0,0,0) out=(1,127,207,1,0,0,0) yield=false
+[aes] pid=1 op 79 in=(0,0,0,0) out=(1,127,207,1,0,0,0) yield=false
+[aes] pid=1 op 79 in=(0,0,0,0) out=(1,127,207,1,0,0,0) yield=false
+[aes] pid=1 op 79 in=(0,0,0,0) out=(1,127,207,1,0,0,0) yield=false
+[aes] pid=1 op 79 in=(0,0,0,0) out=(1,127,207,1,0,0,0) yield=false
+[aes] pid=1 op 79 in=(0,0,0,0) out=(1,127,207,1,0,0,0) yield=false
+[aes] pid=1 op 79 in=(0,0,0,0) out=(1,127,207,1,0,0,0) yield=false
+[aes] pid=1 op 79 in=(0,0,0,0) out=(1,127,207,1,0,0,0) yield=false
+[h02] step 47 at +4811 -> mouse (127,207) mb=0
+[aes] pid=1 op 79 in=(0,0,0,0) out=(1,127,207,0,0,0,0) yield=false
+[aes] pid=1 op 104 in=(0,10,0,0) out=(1,1,0,0,0,0,0) yield=false
+[aes] pid=1 op 13 in=(0,0,0,0) out=(-1,0,0,0,0,0,0) yield=false
+[aes] pid=1 op 78 in=(2,0,0,0) out=(1,0,0,0,0,0,0) yield=false
+[aes] pid=1 op 78 in=(2,0,0,0) out=(1,0,0,0,0,0,0) yield=false
+[aes] pid=1 op 107 in=(1,0,0,0) out=(1,0,0,0,0,0,0) yield=false
+[aes] pid=1 op 78 in=(256,0,0,0) out=(1,0,0,0,0,0,0) yield=false
+[aes] pid=1 op 40 in=(0,1,0,0) out=(1,0,0,0,0,0,0) yield=false
+[aes] pid=1 op 104 in=(1,11,0,0) out=(1,8,184,616,384,0,0) yield=false
+[aes] pid=1 op 42 in=(0,8,8,184) out=(1,0,0,0,0,0,0) yield=false
+[aes] pid=1 op 104 in=(1,12,0,0) out=(1,0,0,0,0,0,0) yield=false
+[aes] pid=1 op 78 in=(257,0,0,0) out=(1,0,0,0,0,0,0) yield=false
+[aes] pid=1 op 107 in=(0,0,0,0) out=(1,0,0,0,0,0,0) yield=false
+[aes] pid=1 op 112 in=(5,26,0,0) out=(1,0,0,0,0,0,0) yield=false
+[aes] pid=1 op 112 in=(5,28,0,0) out=(1,0,0,0,0,0,0) yield=false
+[aes] pid=1 op 105 in=(1,3,-23600,3) out=(1,0,0,0,0,0,0) yield=false
+[aes] pid=1 op 107 in=(1,0,0,0) out=(1,0,0,0,0,0,0) yield=false
+[aes] pid=1 op 78 in=(256,0,0,0) out=(1,0,0,0,0,0,0) yield=false
+[aes] pid=1 op 104 in=(2,11,0,0) out=(1,496,112,616,30,0,0) yield=false
+[aes] pid=1 op 42 in=(0,8,496,112) out=(1,0,0,0,0,0,0) yield=false
+[aes] pid=1 op 104 in=(2,12,0,0) out=(1,649,142,463,354,0,0) yield=false
+[aes] pid=1 op 42 in=(0,8,649,142) out=(1,0,0,0,0,0,0) yield=false
+[aes] pid=1 op 104 in=(2,12,0,0) out=(1,0,0,0,0,0,0) yield=false
+[aes] pid=1 op 78 in=(257,0,0,0) out=(1,0,0,0,0,0,0) yield=false
+[aes] pid=1 op 107 in=(0,0,0,0) out=(1,0,0,0,0,0,0) yield=false
+[aes] pid=1 op 112 in=(5,26,0,0) out=(1,0,0,0,0,0,0) yield=false
+[aes] pid=1 op 112 in=(5,28,0,0) out=(1,0,0,0,0,0,0) yield=false
+[aes] pid=1 op 105 in=(2,3,-24640,3) out=(1,0,0,0,0,0,0) yield=false
+[aes] pid=1 op 104 in=(0,10,0,0) out=(1,1,0,0,0,0,0) yield=false
+[aes] pid=1 op 104 in=(0,10,0,0) out=(1,1,0,0,0,0,0) yield=false
+[h02] post_msg pid=1 [20, 1, 0, 1, 495, 142, 145, 338] posted=true
+[aes] pid=1 op 102 in=(2,0,0,0) out=(1,0,0,0,0,0,0) yield=false
+[aes] pid=1 op 104 in=(0,10,0,0) out=(1,1,0,0,0,0,0) yield=false
+[aes] pid=1 op 104 in=(0,10,0,0) out=(1,1,0,0,0,0,0) yield=false
+[aes] pid=1 op 103 in=(2,0,0,0) out=(1,0,0,0,0,0,0) yield=false
+[aes] pid=1 op 104 in=(0,10,0,0) out=(1,1,0,0,0,0,0) yield=false
+[aes] pid=1 op 102 in=(1,0,0,0) out=(1,0,0,0,0,0,0) yield=false
+[aes] pid=1 op 104 in=(0,10,0,0) out=(1,0,0,0,0,0,0) yield=false
+[aes] pid=1 op 104 in=(0,10,0,0) out=(1,0,0,0,0,0,0) yield=false
+[aes] pid=1 op 103 in=(1,0,0,0) out=(1,0,0,0,0,0,0) yield=false
+[aes] pid=1 op 30 in=(0,0,0,0) out=(1,0,0,0,0,0,0) yield=false
+[h05] shel_write(SHW_EXEC, isgem=1) D.s_cmd='C:\AUTO\MINIGEM.NAP'
+[aes] pid=1 op 121 in=(1,1,0,0) out=(1,0,0,0,0,0,0) yield=false
+[aes] pid=1 op 78 in=(2,0,0,0) out=(1,0,0,0,0,0,0) yield=false
+[aes] pid=1 op 105 in=(0,14,0,0) out=(1,0,0,0,0,0,0) yield=false
+[aes] pid=1 op 42 in=(0,8,0,0) out=(1,0,0,0,0,0,0) yield=false
+[aes] pid=1 op 109 in=(0,0,0,0) out=(1,0,0,0,0,0,0) yield=false
+[aes] pid=1 op 51 in=(0,0,19,640) out=(1,0,0,0,0,0,0) yield=false
+[aes] pid=1 op 51 in=(3,0,19,640) out=(1,0,0,0,0,0,0) yield=false
+[h05] Pexec mode=0 from_el0=true caller_slot=Some(0) caller_bp=0xffff000001000000 path='C:\AUTO\MINIGEM.NAP'
+[h05] Pexec -> child slot=1 child_bp_kva=0xffff00000142f000 entry=0x1000 parent_elr=0x282f8 parent_spsr=0x20000000
+[exec] preparing program (slot 1)
+[exec] launching
+[aes] pid=2 op 10 in=(0,0,0,0) out=(2,0,0,0,0,0,0) yield=false
+[aes] pid=2 op 77 in=(0,0,0,0) out=(1,8,16,19,19,0,0) yield=false
+[aes] pid=2 op 104 in=(0,4,0,0) out=(1,0,19,640,461,0,0) yield=false
+[aes] pid=2 op 100 in=(11,0,19,640) out=(1,0,0,0,0,0,0) yield=false
+[aes] pid=2 op 105 in=(1,2,8119,0) out=(1,0,0,0,0,0,0) yield=false
+[h02] post_msg pid=2 [20, 2, 0, 1, 33, 74, 318, 136] posted=true
+[aes] pid=2 op 101 in=(1,32,51,320) out=(1,0,0,0,0,0,0) yield=false
+[aes] pid=2 op 104 in=(1,4,0,0) out=(1,33,74,318,136,0,0) yield=false
+[aes] pid=2 op 78 in=(0,0,0,0) out=(1,0,0,0,0,0,0) yield=false
+[aes] pid=2 op 25 in=(17,0,0,0) out=(16,127,207,0,0,0,0) yield=false
+[aes] pid=2 op 107 in=(1,0,0,0) out=(1,0,0,0,0,0,0) yield=false
+[aes] pid=2 op 104 in=(1,4,0,0) out=(1,33,74,318,136,0,0) yield=false
+[aes] pid=2 op 107 in=(0,0,0,0) out=(1,0,0,0,0,0,0) yield=false
+[h02] MARK F_MINIGEM_UP step 48 at +5200 mouse (127,207) mb=0
+[h02] step 49 at +5300 -> mouse (40,80) mb=0
+[h02] step 50 at +5301 -> mouse (40,60) mb=0
+[h02] step 51 at +5400 -> mouse (40,60) mb=1
+[h02] step 52 at +5410 -> mouse (40,60) mb=0
+[h02] post_msg pid=2 [22, 2, 0, 1, 0, 0, 0, 0] posted=true
+[aes] pid=2 op 25 in=(17,0,0,0) out=(16,40,60,0,0,0,0) yield=false
+[aes] pid=2 op 102 in=(1,0,0,0) out=(1,0,0,0,0,0,0) yield=false
+[aes] pid=2 op 103 in=(1,0,0,0) out=(1,0,0,0,0,0,0) yield=false
+[aes] pid=2 op 19 in=(0,0,0,0) out=(1,0,0,0,0,0,0) yield=false
+[h05] Pterm dying_slot=1 rc=0 resume_to_el0=true parent_slot=0 parent_elr=0x282f8 RUN_after=0xffff000001000000 run_slot=Some(0) parent_l0=0x19a000
+[aes] pid=1 op 109 in=(0,0,0,0) out=(1,0,0,0,0,0,0) yield=false
+[h05] shel_read -> returns s_cmd='C:\AUTO\MINIGEM.NAP' (one buffer, H05 fix)
+[aes] pid=1 op 120 in=(0,0,0,0) out=(1,0,0,0,0,0,0) yield=false
+[aes] pid=1 op 121 in=(0,1,0,0) out=(1,0,0,0,0,0,0) yield=false
+[aes] pid=1 op 105 in=(0,14,28568,3) out=(1,0,0,0,0,0,0) yield=false
+[aes] pid=1 op 51 in=(0,0,19,640) out=(1,0,0,0,0,0,0) yield=false
+[aes] pid=1 op 51 in=(3,0,19,640) out=(1,0,0,0,0,0,0) yield=false
+[aes] pid=1 op 30 in=(1,0,0,0) out=(1,0,0,0,0,0,0) yield=false
+[aes] pid=1 op 100 in=(20479,0,19,616) out=(1,0,0,0,0,0,0) yield=false
+[aes] pid=1 op 104 in=(0,10,0,0) out=(1,0,0,0,0,0,0) yield=false
+[aes] pid=1 op 78 in=(2,0,0,0) out=(1,0,0,0,0,0,0) yield=false
+[aes] pid=1 op 112 in=(5,52,0,0) out=(1,0,0,0,0,0,0) yield=false
+[aes] pid=1 op 112 in=(5,52,0,0) out=(1,0,0,0,0,0,0) yield=false
+[aes] pid=1 op 112 in=(5,50,0,0) out=(1,0,0,0,0,0,0) yield=false
+[aes] pid=1 op 112 in=(5,50,0,0) out=(1,0,0,0,0,0,0) yield=false
+[aes] pid=1 op 112 in=(5,50,0,0) out=(1,0,0,0,0,0,0) yield=false
+[aes] pid=1 op 112 in=(5,50,0,0) out=(1,0,0,0,0,0,0) yield=false
+[aes] pid=1 op 112 in=(5,50,0,0) out=(1,0,0,0,0,0,0) yield=false
+[aes] pid=1 op 112 in=(5,50,0,0) out=(1,0,0,0,0,0,0) yield=false
+[aes] pid=1 op 112 in=(5,50,0,0) out=(1,0,0,0,0,0,0) yield=false
+[aes] pid=1 op 112 in=(5,50,0,0) out=(1,0,0,0,0,0,0) yield=false
+[aes] pid=1 op 112 in=(5,50,0,0) out=(1,0,0,0,0,0,0) yield=false
+[aes] pid=1 op 112 in=(5,52,0,0) out=(1,0,0,0,0,0,0) yield=false
+[aes] pid=1 op 112 in=(5,52,0,0) out=(1,0,0,0,0,0,0) yield=false
+[aes] pid=1 op 112 in=(5,52,0,0) out=(1,0,0,0,0,0,0) yield=false
+[aes] pid=1 op 112 in=(5,52,0,0) out=(1,0,0,0,0,0,0) yield=false
+[aes] pid=1 op 112 in=(5,51,0,0) out=(1,0,0,0,0,0,0) yield=false
+[aes] pid=1 op 112 in=(5,51,0,0) out=(1,0,0,0,0,0,0) yield=false
+[aes] pid=1 op 112 in=(5,51,0,0) out=(1,0,0,0,0,0,0) yield=false
+[aes] pid=1 op 112 in=(5,51,0,0) out=(1,0,0,0,0,0,0) yield=false
+[aes] pid=1 op 112 in=(5,51,0,0) out=(1,0,0,0,0,0,0) yield=false
+[aes] pid=1 op 112 in=(5,51,0,0) out=(1,0,0,0,0,0,0) yield=false
+[aes] pid=1 op 112 in=(5,51,0,0) out=(1,0,0,0,0,0,0) yield=false
+[aes] pid=1 op 112 in=(5,51,0,0) out=(1,0,0,0,0,0,0) yield=false
+[aes] pid=1 op 112 in=(5,52,0,0) out=(1,0,0,0,0,0,0) yield=false
+[aes] pid=1 op 112 in=(5,51,0,0) out=(1,0,0,0,0,0,0) yield=false
+[aes] pid=1 op 112 in=(5,50,0,0) out=(1,0,0,0,0,0,0) yield=false
+[aes] pid=1 op 112 in=(5,52,0,0) out=(1,0,0,0,0,0,0) yield=false
+[aes] pid=1 op 112 in=(5,26,0,0) out=(1,0,0,0,0,0,0) yield=false
+[aes] pid=1 op 112 in=(5,28,0,0) out=(1,0,0,0,0,0,0) yield=false
+[aes] pid=1 op 105 in=(1,3,-23472,3) out=(1,0,0,0,0,0,0) yield=false
+[aes] pid=1 op 105 in=(1,15,0,0) out=(1,0,0,0,0,0,0) yield=false
+[aes] pid=1 op 105 in=(1,8,0,0) out=(1,0,0,0,0,0,0) yield=false
+[aes] pid=1 op 105 in=(1,16,0,0) out=(1,0,0,0,0,0,0) yield=false
+[aes] pid=1 op 105 in=(1,9,0,0) out=(1,0,0,0,0,0,0) yield=false
+[aes] pid=1 op 78 in=(0,0,0,0) out=(1,0,0,0,0,0,0) yield=false
+[aes] pid=1 op 108 in=(0,20479,496,70) out=(1,495,28,664,513,0,0) yield=false
+[aes] pid=1 op 108 in=(1,20479,496,70) out=(1,497,112,640,448,0,0) yield=false
+[aes] pid=1 op 108 in=(1,20479,0,19) out=(1,1,61,616,396,0,0) yield=false
+[aes] pid=1 op 108 in=(0,20479,496,112) out=(1,495,70,640,449,0,0) yield=false
+[aes] pid=1 op 105 in=(1,2,-23568,3) out=(1,0,0,0,0,0,0) yield=false
+[aes] pid=1 op 105 in=(1,15,875,0) out=(1,0,0,0,0,0,0) yield=false
+[aes] pid=1 op 105 in=(1,8,0,0) out=(1,0,0,0,0,0,0) yield=false
+[aes] pid=1 op 105 in=(1,16,1000,0) out=(1,0,0,0,0,0,0) yield=false
+[aes] pid=1 op 105 in=(1,9,0,0) out=(1,0,0,0,0,0,0) yield=false
+[h02] post_msg pid=1 [20, 1, 0, 1, 496, 112, 616, 384] posted=true
+[aes] pid=1 op 101 in=(1,495,70,640) out=(1,0,0,0,0,0,0) yield=false
+[aes] pid=1 op 104 in=(1,4,0,0) out=(1,496,112,616,384,0,0) yield=false
+[aes] pid=1 op 105 in=(1,15,875,0) out=(1,0,0,0,0,0,0) yield=false
+[aes] pid=1 op 105 in=(1,8,0,0) out=(1,0,0,0,0,0,0) yield=false
+[aes] pid=1 op 105 in=(1,16,1000,0) out=(1,0,0,0,0,0,0) yield=false
+[aes] pid=1 op 105 in=(1,9,0,0) out=(1,0,0,0,0,0,0) yield=false
+[aes] pid=1 op 100 in=(20479,0,19,616) out=(2,0,0,0,0,0,0) yield=false
+[aes] pid=1 op 104 in=(0,10,0,0) out=(1,1,0,0,0,0,0) yield=false
+[aes] pid=1 op 78 in=(2,0,0,0) out=(1,0,0,0,0,0,0) yield=false
+[aes] pid=1 op 112 in=(5,52,0,0) out=(1,0,0,0,0,0,0) yield=false
+[aes] pid=1 op 112 in=(5,50,0,0) out=(1,0,0,0,0,0,0) yield=false
+[aes] pid=1 op 112 in=(5,51,0,0) out=(1,0,0,0,0,0,0) yield=false
+[aes] pid=1 op 112 in=(5,51,0,0) out=(1,0,0,0,0,0,0) yield=false
+[aes] pid=1 op 112 in=(5,51,0,0) out=(1,0,0,0,0,0,0) yield=false
+[aes] pid=1 op 112 in=(5,26,0,0) out=(1,0,0,0,0,0,0) yield=false
+[aes] pid=1 op 112 in=(5,28,0,0) out=(1,0,0,0,0,0,0) yield=false
+[aes] pid=1 op 105 in=(2,3,-19280,3) out=(1,0,0,0,0,0,0) yield=false
+[aes] pid=1 op 105 in=(2,15,0,0) out=(1,0,0,0,0,0,0) yield=false
+[aes] pid=1 op 105 in=(2,8,0,0) out=(1,0,0,0,0,0,0) yield=false
+[aes] pid=1 op 105 in=(2,16,0,0) out=(1,0,0,0,0,0,0) yield=false
+[aes] pid=1 op 105 in=(2,9,0,0) out=(1,0,0,0,0,0,0) yield=false
+[aes] pid=1 op 78 in=(0,0,0,0) out=(1,0,0,0,0,0,0) yield=false
+[aes] pid=1 op 108 in=(0,20479,7,142) out=(1,6,100,640,449,0,0) yield=false
+[aes] pid=1 op 108 in=(1,20479,7,142) out=(1,8,184,616,384,0,0) yield=false
+[aes] pid=1 op 108 in=(1,20479,0,19) out=(1,1,61,616,396,0,0) yield=false
+[aes] pid=1 op 108 in=(0,20479,8,184) out=(1,7,142,640,449,0,0) yield=false
+[aes] pid=1 op 105 in=(2,2,-19376,3) out=(1,0,0,0,0,0,0) yield=false
+[aes] pid=1 op 105 in=(2,15,1000,0) out=(1,0,0,0,0,0,0) yield=false
+[aes] pid=1 op 105 in=(2,8,0,0) out=(1,0,0,0,0,0,0) yield=false
+[aes] pid=1 op 105 in=(2,16,1000,0) out=(1,0,0,0,0,0,0) yield=false
+[aes] pid=1 op 105 in=(2,9,0,0) out=(1,0,0,0,0,0,0) yield=false
+[h02] post_msg pid=1 [20, 1, 0, 2, 8, 184, 616, 384] posted=true
+[aes] pid=1 op 101 in=(2,7,142,640) out=(1,0,0,0,0,0,0) yield=false
+[aes] pid=1 op 104 in=(2,4,0,0) out=(1,8,184,616,384,0,0) yield=false
+[aes] pid=1 op 105 in=(2,15,1000,0) out=(1,0,0,0,0,0,0) yield=false
+[aes] pid=1 op 105 in=(2,8,0,0) out=(1,0,0,0,0,0,0) yield=false
+[aes] pid=1 op 105 in=(2,16,1000,0) out=(1,0,0,0,0,0,0) yield=false
+[aes] pid=1 op 105 in=(2,9,0,0) out=(1,0,0,0,0,0,0) yield=false
+[aes] pid=1 op 25 in=(33,2,1,0) out=(32,40,60,0,0,0,0) yield=false
+[aes] pid=1 op 78 in=(0,0,0,0) out=(1,0,0,0,0,0,0) yield=false
+[aes] pid=1 op 78 in=(2,0,0,0) out=(1,0,0,0,0,0,0) yield=false
+[aes] pid=1 op 78 in=(0,0,0,0) out=(1,0,0,0,0,0,0) yield=false
+[aes] pid=1 op 104 in=(0,10,0,0) out=(1,2,0,0,0,0,0) yield=false
+[aes] pid=1 op 32 in=(20,1,0,0) out=(1,0,0,0,0,0,0) yield=false
+[aes] pid=1 op 32 in=(23,1,0,0) out=(1,0,0,0,0,0,0) yield=false
+[aes] pid=1 op 32 in=(21,1,0,0) out=(1,0,0,0,0,0,0) yield=false
+[aes] pid=1 op 32 in=(25,0,0,0) out=(1,0,0,0,0,0,0) yield=false
+[aes] pid=1 op 32 in=(24,1,0,0) out=(1,0,0,0,0,0,0) yield=false
+[aes] pid=1 op 32 in=(22,1,0,0) out=(1,0,0,0,0,0,0) yield=false
+[aes] pid=1 op 32 in=(27,1,0,0) out=(1,0,0,0,0,0,0) yield=false
+[aes] pid=1 op 32 in=(58,1,0,0) out=(1,0,0,0,0,0,0) yield=false
+[aes] pid=1 op 32 in=(59,1,0,0) out=(1,0,0,0,0,0,0) yield=false
+[aes] pid=1 op 32 in=(62,1,0,0) out=(1,0,0,0,0,0,0) yield=false
+[aes] pid=1 op 32 in=(61,1,0,0) out=(1,0,0,0,0,0,0) yield=false
+[aes] pid=1 op 32 in=(65,1,0,0) out=(1,0,0,0,0,0,0) yield=false
+[aes] pid=1 op 32 in=(29,0,0,0) out=(1,0,0,0,0,0,0) yield=false
+[aes] pid=1 op 32 in=(30,0,0,0) out=(1,0,0,0,0,0,0) yield=false
+[aes] pid=1 op 32 in=(54,1,0,0) out=(1,0,0,0,0,0,0) yield=false
+[aes] pid=1 op 32 in=(53,2,0,0) out=(1,0,0,0,0,0,0) yield=false
+[aes] pid=1 op 32 in=(55,1,0,0) out=(1,0,0,0,0,0,0) yield=false
+[aes] pid=1 op 32 in=(56,2,0,0) out=(1,0,0,0,0,0,0) yield=false
+[aes] pid=1 op 32 in=(57,2,0,0) out=(1,0,0,0,0,0,0) yield=false
+[aes] pid=1 op 31 in=(53,0,0,0) out=(1,0,0,0,0,0,0) yield=false
+[aes] pid=1 op 25 in=(19,258,3,0) out=(16,40,60,0,0,0,0) yield=false
+[aes] pid=1 op 40 in=(0,1,0,0) out=(1,0,0,0,0,0,0) yield=false
+[aes] pid=1 op 40 in=(0,2,0,0) out=(1,0,0,0,0,0,0) yield=false
+[aes] pid=1 op 40 in=(0,3,0,0) out=(1,0,0,0,0,0,0) yield=false
+[aes] pid=1 op 40 in=(0,4,0,0) out=(1,0,0,0,0,0,0) yield=false
+[aes] pid=1 op 40 in=(0,5,0,0) out=(1,0,0,0,0,0,0) yield=false
+[aes] pid=1 op 40 in=(0,6,0,0) out=(1,0,0,0,0,0,0) yield=false
+[aes] pid=1 op 40 in=(0,7,0,0) out=(1,0,0,0,0,0,0) yield=false
+[aes] pid=1 op 40 in=(0,8,0,0) out=(1,0,0,0,0,0,0) yield=false
+[aes] pid=1 op 40 in=(0,9,0,0) out=(1,0,0,0,0,0,0) yield=false
+[aes] pid=1 op 40 in=(0,10,0,0) out=(1,0,0,0,0,0,0) yield=false
+[aes] pid=1 op 40 in=(0,11,0,0) out=(1,0,0,0,0,0,0) yield=false
+[aes] pid=1 op 40 in=(0,12,0,0) out=(1,0,0,0,0,0,0) yield=false
+[aes] pid=1 op 40 in=(0,13,0,0) out=(1,0,0,0,0,0,0) yield=false
+[aes] pid=1 op 40 in=(0,14,0,0) out=(1,0,0,0,0,0,0) yield=false
+[aes] pid=1 op 40 in=(0,15,0,0) out=(1,0,0,0,0,0,0) yield=false
+[aes] pid=1 op 40 in=(0,16,0,0) out=(1,0,0,0,0,0,0) yield=false
+[aes] pid=1 op 40 in=(0,17,0,0) out=(1,0,0,0,0,0,0) yield=false
+[aes] pid=1 op 40 in=(0,18,0,0) out=(1,0,0,0,0,0,0) yield=false
+[aes] pid=1 op 40 in=(0,19,0,0) out=(1,0,0,0,0,0,0) yield=false
+[aes] pid=1 op 40 in=(0,20,0,0) out=(1,0,0,0,0,0,0) yield=false
+[aes] pid=1 op 40 in=(0,21,0,0) out=(1,0,0,0,0,0,0) yield=false
+[aes] pid=1 op 40 in=(0,22,0,0) out=(1,0,0,0,0,0,0) yield=false
+[aes] pid=1 op 40 in=(0,23,0,0) out=(1,0,0,0,0,0,0) yield=false
+[aes] pid=1 op 40 in=(0,24,0,0) out=(1,0,0,0,0,0,0) yield=false
+[aes] pid=1 op 107 in=(1,0,0,0) out=(1,0,0,0,0,0,0) yield=false
+[aes] pid=1 op 78 in=(256,0,0,0) out=(1,0,0,0,0,0,0) yield=false
+[aes] pid=1 op 104 in=(1,11,0,0) out=(1,496,112,616,30,0,0) yield=false
+[aes] pid=1 op 42 in=(0,8,496,112) out=(1,0,0,0,0,0,0) yield=false
+[aes] pid=1 op 104 in=(1,12,0,0) out=(1,649,142,463,354,0,0) yield=false
+[aes] pid=1 op 104 in=(1,12,0,0) out=(1,0,0,0,0,0,0) yield=false
+[aes] pid=1 op 78 in=(257,0,0,0) out=(1,0,0,0,0,0,0) yield=false
+[aes] pid=1 op 107 in=(0,0,0,0) out=(1,0,0,0,0,0,0) yield=false
+[aes] pid=1 op 104 in=(0,10,0,0) out=(1,2,0,0,0,0,0) yield=false
+[aes] pid=1 op 32 in=(20,1,0,0) out=(1,0,0,0,0,0,0) yield=false
+[aes] pid=1 op 32 in=(23,1,0,0) out=(1,0,0,0,0,0,0) yield=false
+[aes] pid=1 op 32 in=(21,1,0,0) out=(1,0,0,0,0,0,0) yield=false
+[aes] pid=1 op 32 in=(25,0,0,0) out=(1,0,0,0,0,0,0) yield=false
+[aes] pid=1 op 32 in=(24,1,0,0) out=(1,0,0,0,0,0,0) yield=false
+[aes] pid=1 op 32 in=(22,1,0,0) out=(1,0,0,0,0,0,0) yield=false
+[aes] pid=1 op 32 in=(27,1,0,0) out=(1,0,0,0,0,0,0) yield=false
+[aes] pid=1 op 32 in=(58,1,0,0) out=(1,0,0,0,0,0,0) yield=false
+[aes] pid=1 op 32 in=(59,1,0,0) out=(1,0,0,0,0,0,0) yield=false
+[aes] pid=1 op 32 in=(62,1,0,0) out=(1,0,0,0,0,0,0) yield=false
+[aes] pid=1 op 32 in=(61,1,0,0) out=(1,0,0,0,0,0,0) yield=false
+[aes] pid=1 op 32 in=(65,1,0,0) out=(1,0,0,0,0,0,0) yield=false
+[aes] pid=1 op 32 in=(29,0,0,0) out=(1,0,0,0,0,0,0) yield=false
+[aes] pid=1 op 32 in=(30,0,0,0) out=(1,0,0,0,0,0,0) yield=false
+[aes] pid=1 op 32 in=(54,1,0,0) out=(1,0,0,0,0,0,0) yield=false
+[aes] pid=1 op 32 in=(53,2,0,0) out=(1,0,0,0,0,0,0) yield=false
+[aes] pid=1 op 32 in=(55,1,0,0) out=(1,0,0,0,0,0,0) yield=false
+[aes] pid=1 op 32 in=(56,2,0,0) out=(1,0,0,0,0,0,0) yield=false
+[aes] pid=1 op 32 in=(57,2,0,0) out=(1,0,0,0,0,0,0) yield=false
+[aes] pid=1 op 31 in=(53,0,0,0) out=(1,0,0,0,0,0,0) yield=false
+[aes] pid=1 op 25 in=(19,258,3,0) out=(16,40,60,0,0,0,0) yield=false
+[aes] pid=1 op 40 in=(0,1,0,0) out=(1,0,0,0,0,0,0) yield=false
+[aes] pid=1 op 40 in=(0,2,0,0) out=(1,0,0,0,0,0,0) yield=false
+[aes] pid=1 op 40 in=(0,3,0,0) out=(1,0,0,0,0,0,0) yield=false
+[aes] pid=1 op 107 in=(1,0,0,0) out=(1,0,0,0,0,0,0) yield=false
+[aes] pid=1 op 78 in=(256,0,0,0) out=(1,0,0,0,0,0,0) yield=false
+[aes] pid=1 op 104 in=(2,11,0,0) out=(1,8,184,616,384,0,0) yield=false
+[aes] pid=1 op 42 in=(0,8,8,184) out=(1,0,0,0,0,0,0) yield=false
+[aes] pid=1 op 104 in=(2,12,0,0) out=(1,0,0,0,0,0,0) yield=false
+[aes] pid=1 op 78 in=(257,0,0,0) out=(1,0,0,0,0,0,0) yield=false
+[aes] pid=1 op 107 in=(0,0,0,0) out=(1,0,0,0,0,0,0) yield=false
+[aes] pid=1 op 104 in=(0,10,0,0) out=(1,2,0,0,0,0,0) yield=false
+[aes] pid=1 op 32 in=(20,1,0,0) out=(1,0,0,0,0,0,0) yield=false
+[aes] pid=1 op 32 in=(23,1,0,0) out=(1,0,0,0,0,0,0) yield=false
+[aes] pid=1 op 32 in=(21,1,0,0) out=(1,0,0,0,0,0,0) yield=false
+[aes] pid=1 op 32 in=(25,0,0,0) out=(1,0,0,0,0,0,0) yield=false
+[aes] pid=1 op 32 in=(24,1,0,0) out=(1,0,0,0,0,0,0) yield=false
+[aes] pid=1 op 32 in=(22,1,0,0) out=(1,0,0,0,0,0,0) yield=false
+[aes] pid=1 op 32 in=(27,1,0,0) out=(1,0,0,0,0,0,0) yield=false
+[aes] pid=1 op 32 in=(58,1,0,0) out=(1,0,0,0,0,0,0) yield=false
+[aes] pid=1 op 32 in=(59,1,0,0) out=(1,0,0,0,0,0,0) yield=false
+[aes] pid=1 op 32 in=(62,1,0,0) out=(1,0,0,0,0,0,0) yield=false
+[aes] pid=1 op 32 in=(61,1,0,0) out=(1,0,0,0,0,0,0) yield=false
+[aes] pid=1 op 32 in=(65,1,0,0) out=(1,0,0,0,0,0,0) yield=false
+[aes] pid=1 op 32 in=(29,0,0,0) out=(1,0,0,0,0,0,0) yield=false
+[aes] pid=1 op 32 in=(30,0,0,0) out=(1,0,0,0,0,0,0) yield=false
+[aes] pid=1 op 32 in=(54,1,0,0) out=(1,0,0,0,0,0,0) yield=false
+[aes] pid=1 op 32 in=(53,2,0,0) out=(1,0,0,0,0,0,0) yield=false
+[aes] pid=1 op 32 in=(55,1,0,0) out=(1,0,0,0,0,0,0) yield=false
+[aes] pid=1 op 32 in=(56,2,0,0) out=(1,0,0,0,0,0,0) yield=false
+[aes] pid=1 op 32 in=(57,2,0,0) out=(1,0,0,0,0,0,0) yield=false
+[aes] pid=1 op 31 in=(53,0,0,0) out=(1,0,0,0,0,0,0) yield=false
+[h02] MARK G_AFTER_RETURN_2S step 53 at +5800 mouse (40,60) mb=0
+[h02] MARK H_AFTER_RETURN_7S step 54 at +6800 mouse (40,60) mb=0

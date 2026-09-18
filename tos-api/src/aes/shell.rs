@@ -4,7 +4,8 @@
 //! clipboard *directory path* (the data itself is exchanged as `SCRAP.*`
 //! files through GEMDOS). The **shell** manager is the bridge between the
 //! desktop/shell and launched programs: which program runs next
-//! (`shel_write`), the command that started this app (`shel_read`), a
+//! (`shel_write`), the same command/tail pair read back (`shel_read` — the
+//! app's own start command until it `shel_write`s another), a
 //! shared settings buffer (`shel_get`/`shel_put`), path resolution
 //! (`shel_find`) and the environment (`shel_envrn`).
 //!
@@ -130,11 +131,13 @@ struct State {
     sh_desk: UnsafeCell<[u8; PATHBUF]>, // name of the default startup app
     sh_cdir: UnsafeCell<[u8; PATHBUF]>, // its directory
     // ── AES globals the shell owns ───────────────────────────────────────
+    // `D.s_cmd`/`ad_stail` are the **one** command/tail pair of the AES:
+    // `shel_write(SHW_EXEC)` writes them, the launcher runs them, and
+    // `shel_read` reads them (`gemshlib.c:104-105,169-170,645`; H05). There
+    // is no separate "what started this app" copy — see `shel_read`.
     s_cmd: UnsafeCell<[u8; PATHBUF]>,    // D.s_cmd — command to run next
     s_tail: UnsafeCell<[u8; PATHBUF]>,   // ad_stail — its command tail
     sh_apdir: UnsafeCell<[u8; PATHBUF]>, // gemshlib.c:86-87
-    launch_cmd: UnsafeCell<[u8; PATHBUF]>, // command that started this app
-    launch_tail: UnsafeCell<[u8; PATHBUF]>, // its tail
     buf: UnsafeCell<[u8; SHELLBUF]>,     // shel_get/shel_put settings blob
     env: UnsafeCell<[u8; PATHBUF]>,      // environment (empty = default)
 }
@@ -151,8 +154,6 @@ static S: State = State {
     s_cmd: UnsafeCell::new([0; PATHBUF]),
     s_tail: UnsafeCell::new([0; PATHBUF]),
     sh_apdir: UnsafeCell::new([0; PATHBUF]),
-    launch_cmd: UnsafeCell::new([0; PATHBUF]),
-    launch_tail: UnsafeCell::new([0; PATHBUF]),
     buf: UnsafeCell::new([0; SHELLBUF]),
     env: UnsafeCell::new([0; PATHBUF]),
 };
@@ -313,47 +314,77 @@ pub fn scrp_clear(pb: &Aespb) {
 
 // ── Shell Manager ─────────────────────────────────────────────────────────
 
-/// `shel_read` (120) — the command + tail that started this app →
-/// `addr_in[0]`/`addr_in[1]` (`sh_read`, `gemshlib.c:102-106`).
+/// `shel_read` (120) — `strcpy(pcmd, D.s_cmd); memcpy(ptail, ad_stail,
+/// CMDTAILSIZE)` → `addr_in[0]`/`addr_in[1]` (`sh_read`, `gemshlib.c:102-106`).
 ///
-/// `launch_cmd`/`launch_tail` are populated by [`set_launch_info`], which the
-/// kernel launcher calls just before the program enters EL0 — the NewTOS
-/// analogue of EmuTOS filling `D.s_cmd`/`ad_stail` in `sh_ldapp` before
-/// `dos_exec` (`gemshlib.c:604-605,645`). A program launched through the
-/// desktop therefore reads back its own start command and command tail.
+/// **One buffer, not two** (`docs/api/aes/scrap-shell.md` § `shel_read`, H05).
+/// `D.s_cmd`/`ad_stail` are the cells [`shel_write`]`(SHW_EXEC)` writes
+/// (`:169-170`) and the launcher runs (`:645`, [`set_launch_info`]). So a
+/// program launched by the shell loop or the desktop reads back its own start
+/// command and tail — until it calls `shel_write(SHW_EXEC, cmd, tail)` itself,
+/// after which `shel_read` returns **that** pair. TeraDesk's Single-TOS chain
+/// protocol (`shel_write(SHW_EXEC, child)` → `Pexec(child)` → `shel_read` →
+/// `strcmp(cmd, own name)`, `startprg.c:344-355`) depends on exactly this;
+/// answering from a separate launch-only buffer made it start a second copy
+/// of itself (`TASK/H05-STATUS-DONE.MD`).
 ///
 /// **Accepted LOW deviation (F8).** EmuTOS copies a fixed `CMDTAILSIZE = 128`
-/// bytes (`memcpy`, `gemshlib.c:105`); we round-trip the tail as a
-/// NUL-terminated C string. This is byte-exact for conforming text tails and
-/// only truncates a tail carrying an embedded NUL (a rare binary tail). Kept
-/// deliberately to avoid an unconditional 128-byte over-read of an EL0 user
-/// pointer for a low-value case (spec edge-case 6).
+/// bytes (`memcpy`, `gemshlib.c:105`); we round-trip the tail image
+/// (`tail[0]` = length, characters follow) as a NUL-terminated C string,
+/// the mirror of [`tail_in`]. This is byte-exact for conforming text tails
+/// and only truncates a tail carrying an embedded NUL (a rare binary tail).
+/// Kept deliberately to avoid an unconditional 128-byte over-read of an EL0
+/// user pointer for a low-value case (spec edge-case 6).
 pub fn shel_read(pb: &Aespb) {
     // SAFETY: single-CPU AES.
     unsafe {
-        cstr_out(pb.addrin(0) as *mut u8, &*S.launch_cmd.get());
-        cstr_out(pb.addrin(1) as *mut u8, &*S.launch_tail.get());
+        cstr_out(pb.addrin(0) as *mut u8, &*S.s_cmd.get());
+        cstr_out(pb.addrin(1) as *mut u8, &*S.s_tail.get());
     }
     pb.set_ret(1);
 }
 
-/// Record the command + command tail that started the current application so a
-/// later [`shel_read`] returns them (the producer side of `sh_read`,
-/// `gemshlib.c:102-106`). The kernel launcher calls this just before the
-/// program enters EL0, mirroring EmuTOS setting `D.s_cmd` (the program path)
-/// and `ad_stail` (the command tail) before `dos_exec` (`gemshlib.c:604-605`,
-/// via `sh_write`, and `:645`).
+/// Publish the command + command-tail image the launcher is about to run as
+/// `D.s_cmd`/`ad_stail` — the cells [`shel_read`] answers from.
 ///
-/// `cmd` is the full launch path (`C:\APPS\QED\QED.NAP`); `tail` is the command
-/// tail **characters** (without the leading length byte — the caller strips it,
-/// matching the NUL-terminated round-trip `shel_read`/`shel_write` use, F8).
-/// Both are stored as NUL-terminated strings, truncated to the buffer if longer.
+/// In EmuTOS those cells are already filled when `sh_ldapp` reaches
+/// `dos_exec(PE_LOADGO, D.s_cmd, ad_stail, ad_envrn)` (`gemshlib.c:645`): by
+/// the desktop's `shel_write(SHW_EXEC, …)` (`desk/deskpro.c:41` → `:169-170`)
+/// or by `sh_chdef` for an autorun entry (`:557-562`). NewTOS's shell loop
+/// takes the same route (`kernel/src/shell_loop.rs` reads `D.s_cmd`/`ad_stail`
+/// and hands them to the launcher, so this call rewrites the same values),
+/// but the built-in desktop's double-click launches through the kernel
+/// launcher directly, without a `shel_write` (AES gap G1). The launcher
+/// therefore calls this just before the program enters EL0 on **every** path,
+/// so both are covered by one writer.
+///
+/// `cmd` is the full launch path (`C:\APPS\QED\QED.NAP`, NUL-terminated);
+/// `tail` is the Atari command-tail **image** exactly as handed to the loader
+/// for `p_cmdlin` (`tail[0]` = length, `tail[1..]` = characters; empty slice =
+/// empty tail). It is stored by the same rule as [`tail_in`] (`1 + tail[0]`
+/// bytes, capped at [`CMDTAILSIZE`]), so `shel_read` returns the identical
+/// image either way (F8).
 pub fn set_launch_info(cmd: &[u8], tail: &[u8]) {
-    // SAFETY: single-CPU launcher context; exclusive writer of these buffers.
+    // SAFETY: single-CPU launcher context; the AES is not dispatching.
     unsafe {
-        store_str(&mut *S.launch_cmd.get(), cmd);
-        store_str(&mut *S.launch_tail.get(), tail);
+        store_str(&mut *S.s_cmd.get(), cmd);
+        store_tail_image(&mut *S.s_tail.get(), tail);
     }
+}
+
+/// Copy a command-tail image slice into `dst` by the [`tail_in`] rule: the
+/// length byte plus that many characters, capped at [`CMDTAILSIZE`] and at
+/// what the slice actually holds; an empty slice is the empty tail (`[0]`).
+fn store_tail_image(dst: &mut [u8], image: &[u8]) {
+    dst.fill(0);
+    let n = match image.first() {
+        Some(&len) => (len as usize + 1)
+            .min(CMDTAILSIZE)
+            .min(dst.len())
+            .min(image.len()),
+        None => 0,
+    };
+    dst[..n].copy_from_slice(&image[..n]);
 }
 
 /// Copy `src` into `dst` as a zero-padded, NUL-terminated string, stopping at
