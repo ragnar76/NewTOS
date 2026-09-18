@@ -1,0 +1,12 @@
+# run0 (H05): find the layout with the user's TERADESK.INF. Park to (0,0), leave the
+# menu bar at once, double-click HARD DISC (195,35) -> C:\ window, arm the trace,
+# then screendump.
+1200 park
+1206 move 300 300
+1400 move 195 35
+1600 down
+1603 up
+1608 down
+1611 up
+2000 arm
+2400 mark A_WINDOW_OPEN

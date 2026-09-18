@@ -1,0 +1,23 @@
+--- tos-api/src/aes/shell.rs	2026-09-11 21:38:55
++++ /private/tmp/claude-501/-Volumes-Daten-Development-PiRusTOS/d7ff6c34-253d-4fd6-839f-efa08458ba32/scratchpad/h05/ws/tos-api/src/aes/shell.rs	2026-09-18 22:10:50
+@@ -333,6 +333,10 @@
+     unsafe {
+         cstr_out(pb.addrin(0) as *mut u8, &*S.launch_cmd.get());
+         cstr_out(pb.addrin(1) as *mut u8, &*S.launch_tail.get());
++        // H05-TEMP
++        let lc = &*S.launch_cmd.get(); let sc = &*S.s_cmd.get();
++        crate::h02!("[h05] shel_read -> returns launch_cmd='{}' (D.s_cmd would be '{}')",
++            core::str::from_utf8(&lc[..clen(lc)]).unwrap_or("?"), core::str::from_utf8(&sc[..clen(sc)]).unwrap_or("?"));
+     }
+     pb.set_ret(1);
+ }
+@@ -414,6 +418,9 @@
+             SHW_EXEC => {
+                 cstr_in(&mut *S.s_cmd.get(), pb.addrin(0) as *const u8);
+                 tail_in(&mut *S.s_tail.get(), pb.addrin(1) as *const u8);
++                // H05-TEMP
++                { let sc = &*S.s_cmd.get();
++                  crate::h02!("[h05] shel_write(SHW_EXEC, isgem={}) D.s_cmd='{}'", isgem, core::str::from_utf8(&sc[..clen(sc)]).unwrap_or("?")); }
+                 *S.sh_doexec.get() = doex;
+                 // `strcmp(pcmd, DEF_CONSOLE) == 0 ? CONSOLE_APP : NORMAL_APP`
+                 // (gemshlib.c:172) — the one magic name a caller can type.

@@ -1,0 +1,94 @@
+H05 -- TeraDesk verliert seinen Zustand, wenn ein gestartetes Programm zurueckkehrt.
+Ursachenmessung in QEMU raspi4b (640x480), 2026-09-18. MESSUNG NUR: was lief, was zurueckkam.
+Kein Produktcode geaendert. Branch desk-rebuild, Basis HEAD 051e7cc.
+Gepinnte EmuTOS-Quelle: references/emutos @ 1a7484aba1bfba23e2c0899e243b6d8177fe41df.
+
+KERNEL
+  Alle Kerne sind Release-Bauten (`cargo xtask build --board rpi4 --release`) aus einer
+  SCRATCH-KOPIE des Projektbaums (rsync ohne target/, .git/, measurement-*/, pictures/,
+  sd-card-backup-*) unter <scratchpad>/h05/ws, mit DREI Instrumenten
+  (method/scratch-*.diff, je Datei ein Diff gegen den Projektbaum):
+    (1) kernel/src/host_env.rs: der H02-IKBD-Injektor (method/apply_injector.py), um einen
+        Schritt `Dm(dx,dy)` = Mausbewegung MIT gedrueckter linker Taste (IKBD-Kopf 0xFA)
+        erweitert, weil das Fenster-Ziehen sonst die Taste beim ersten Bewegungspaket
+        loslaesst (gen_script.py: Aktion `drag X Y`). "mark"-Schritte schreiben einen
+        seriellen Marker, auf den method/qmp_multi.py den Screendump ausloest; "arm"
+        schaltet den AES-Trace scharf.
+    (2) tos-api (mod.rs/pd.rs/host.rs): der H02-Opcode-Trace auf die serielle Leitung,
+        um die AES-pid des Aufrufers erweitert: [aes] pid=<pid> op <opcode> in=(...) out=(...).
+    (3) kernel/src/arch/aarch64/exceptions.rs (method/h05_patch.py): [h05] Pexec ... /
+        [h05] Pterm ... in handle_pexec/finish_terminate (Modus, Aufrufer-Slot, Basepage,
+        Kind-Slot, Rueckkehrziel EL0/EL1, RUN danach). Ab run4 zusaetzlich
+        tos-api/src/aes/shell.rs: [h05] shel_write(SHW_EXEC) D.s_cmd='...' und
+        [h05] shel_read -> returns launch_cmd='...' (D.s_cmd would be '...').
+  kernel8-run0.img  sha256 b3ff54f1...  Skript run0 (Fenster oeffnen, Layout finden)
+  kernel8-run1.img  sha256 8d746cf7...  Skript run1 (.NCP-Fall)
+  kernel8-run2.img  sha256 1bcb3dfa...  Skript run2 (run1 + inneres TeraDesk beenden)
+  kernel8-run3.img  sha256 b573776a...  Skript run3 (.NAP-Fall, MINIGEM.NAP)
+  kernel8-run4.img  sha256 17d040ce...  Skript run1 + shel_read/shel_write-Stringtrace
+  Projektbaum unberuehrt: kernel/src/host_env.rs sha256 287ff741... vor und nach der Messung;
+  git status zeigt nur measurement-2026-09-18-h05/ und TASK/H05-STATUS-DONE.MD als neu.
+
+IMAGE
+  tools/make-sd-image.sh <scratch>/sd-base.img 64 (sha256 43d6bbc7...), dann per method/sd-put.sh
+  NEWDESK.INF = method/newdesk-user.inf (sha256 457a70e7..., die Datei von der Karte des
+  Users /Volumes/BOOT/NEWDESK.INF, #Z 01 C:\APPS\TERADESK\DESKTOP.NAP@) und
+  TERADESK.INF = method/teradesk-user.inf (sha256 5be1b5c7..., /Volumes/BOOT/TERADESK.INF,
+  nur gelesen) -> sd-run.img (sha256 2920da60...); je Lauf eine frische Kopie.
+  Die TERADESK.INF des Users ist noetig: sie definiert die Programmtypen *.NAP (GEM) und
+  *.NCP (TOS, appt=3); ohne sie kennt TeraDesk nur *.PRG/*.APP/*.GTP/*.TOS/*.TTP
+  (prgtype.c:346-362) und startet kein .NCP/.NAP per Doppelklick.
+  run3: zusaetzlich C:\AUTO\MINIGEM.NAP (sha256 aee28971..., aus docs/sdk/examples/minigem.c,
+  Quelle byteidentisch mit dem Bau vom 17.09. im Scratchpad) -> sd-run3.img (sha256 07189036...).
+  DESKTOP.NAP = sdk/apps/teradesk/build/dist/DESKTOP.NAP sha256 db31aae1... (= die Karte des
+  Users, /Volumes/BOOT/Apps/TERADESK/DESKTOP.NAP, gleicher Hash; Stand nach dem H03-Fix).
+
+KOORDINATEN (640x480, mit der TERADESK.INF des Users)
+  HARD DISC C (195,35) Doppelklick -> W1 = C:\*.* an (307,143) (INF-Slot 0: xpos=303 ypos=123).
+  W1-Titelbalken (450,152) mit gehaltener Taste nach (150,152) gezogen -> W1 an (7,143).
+  Ordner AUTO in W1 (207,207) Doppelklick -> W1 zeigt C:\AUTO\*.* (gleiches Fenster,
+  dir_newpath, dir.c:3603-3640).  HARD DISC C erneut -> W2 = C:\*.* an (500,71) (INF-Slot 1).
+  Klick W1-Titel (100,152) -> W1 oben.  HELLO.NCP (48,207), MINIGEM.NAP (127,207) in W1.
+  Inneres TeraDesk beenden: File (72,8) -> Quit/Shutdown (150,235) -> Dialog Quit (320,313).
+  MINIGEM-Schliesser (40,60).
+
+LAEUFE (Marker relativ zum Scharfschalten des Injektors, 200-Hz-Ticks)
+  run0  Layout: Fenster oeffnen -> screendumps/run0-A-window-open.png
+  run1  .NCP-Fall: Zustand aufbauen (B..E), HELLO.NCP doppelklicken (+4800..4811), F/G/H
+        1 s / 3 s / 8 s danach.  Ergebnis: beide Fenster weg, Desktop wie frisch gestartet
+        (run1-F/G/H).  Trace: Pexec(0) aus Slot 0 -> Kind Slot 1 -> Pterm -> Rueckkehr nach
+        EL0 in Slot 0 (dieselbe Basepage) -> shel_read -> shel_write(SHW_EXEC,1) ->
+        Pexec(0, C:\APPS\TERADESK\DESKTOP.NAP) = ZWEITES TeraDesk als Kind (pid 2, appl_init).
+  run2  run1 + inneres TeraDesk per Menue beenden (P..T).  Ergebnis: nach dem Pterm des
+        inneren TeraDesk laeuft das AEUSSERE weiter und wd_reopen() stellt BEIDE Fenster
+        mit Pfad und Position wieder her (run2-R/S/T) -- aber mit leerer Infozeile und
+        anderen Datei-Icons: alle 36 rsrc_gaddr des aeusseren TeraDesk liefern danach 0
+        (vorher 44/44 = 1), weil der AES-Ressourcenzustand ein globaler Static ist, den
+        das innere rsrc_load/rsrc_free ueberschrieben/geloescht hat.
+  run3  .NAP-Fall: wie run1, MINIGEM.NAP doppelklicken, Schliesser klicken.  Ergebnis:
+        identischer Mechanismus, zweites TeraDesk (run3-G/H).
+  run4  = run1 mit Stringtrace der Shell-Puffer (serial/run4-serial.log:780-805):
+        [h05] shel_write(SHW_EXEC, isgem=0) D.s_cmd='C:\AUTO\HELLO.NCP'
+        [h05] Pexec mode=0 from_el0=true caller_slot=Some(0) caller_bp=0xffff000001000000 path='C:\AUTO\HELLO.NCP'
+        [h05] Pterm dying_slot=1 rc=0 resume_to_el0=true parent_slot=0 RUN_after=0xffff000001000000 run_slot=Some(0)
+        [h05] shel_read -> returns launch_cmd='C:\APPS\TERADESK\DESKTOP.NAP' (D.s_cmd would be 'C:\AUTO\HELLO.NCP')
+        [h05] shel_write(SHW_EXEC, isgem=1) D.s_cmd='C:\APPS\TERADESK\DESKTOP.NAP'
+        [h05] Pexec mode=0 from_el0=true caller_slot=Some(0) ... path='C:\APPS\TERADESK\DESKTOP.NAP'
+
+BEFUND (Kurzform, Details in TASK/H05-STATUS-DONE.MD)
+  Startweg gemessen: Pexec(PE_LOADGO) direkt aus TeraDesk (startprg.c:665 exec_com ->
+  :312 x_exec -> Pexec(0)), kein shel_write-Start. Der Elternprozess bleibt erhalten und
+  wird nach dem Kind-Pterm an seiner Pexec-Stelle fortgesetzt (gleiche Basepage, gleicher
+  Slot, kein neuer appl_init des aeusseren TeraDesk, keine Zeile [shell]/[launch]).
+  Ursache: NewTOS' shel_read (tos-api/src/aes/shell.rs:331-338) liefert einen EIGENEN
+  Puffer launch_cmd/launch_tail (von kernel/src/launch.rs:115 set_launch_info gefuellt),
+  nicht D.s_cmd/ad_stail, das shel_write(SHW_EXEC) beschreibt (:414-415). EmuTOS hat genau
+  EINEN Puffer: sh_read = strcpy(pcmd, D.s_cmd) (aes/gemshlib.c:102-106), sh_write(SHW_EXEC)
+  = strcpy(D.s_cmd, pcmd) (:169-170). TeraDesks Kettenerkennung nach der Rueckkehr
+  (startprg.c:344-355: shel_read; if (strcmp(cmd, pinfo.name) && cmd[0]) -> neues Programm
+  starten) liest daher statt des eigenen shel_write-Werts den Startbefehl von TeraDesk
+  selbst, haelt das fuer einen Kettenwunsch des Kindes und startet DESKTOP.NAP per Pexec als
+  Kind -- das ist das "neu gestartete" TeraDesk. Schicht: AES-Shell-Manager.
+  Zweiter, davon verdeckter Defekt: tos-api/src/aes/resource.rs haelt den geladenen
+  Ressourcenzustand in einem globalen Static (RSC :375, USER_RSC_RAW :1302); EmuTOS haelt
+  ihn je Anwendung in deren AESGLOBAL (rs_sglobe, aes/gemrslib.c:673-677, :685-720).

@@ -1,0 +1,40 @@
+--- kernel/src/arch/aarch64/exceptions.rs	2026-09-12 11:36:14
++++ /private/tmp/claude-501/-Volumes-Daten-Development-PiRusTOS/d7ff6c34-253d-4fd6-839f-efa08458ba32/scratchpad/h05/ws/kernel/src/arch/aarch64/exceptions.rs	2026-09-18 21:57:13
+@@ -914,6 +914,13 @@
+         .parent_frame;
+     let pf_spsr = pf.spsr().load(Ordering::Acquire);
+     let from_el0 = (pf_spsr & 0xF) == 0;
++    // H05-TEMP
++    {
++        let ps = tos_api::bdos::process::PROCESS_TABLE[resume.parent_frame_slot].parent_slot.load(Ordering::Acquire);
++        let run = tos_api::bdos::process::current();
++        crate::kprintln!("[h05] Pterm dying_slot={} rc={} resume_to_el0={} parent_slot={} parent_elr=0x{:x} RUN_after=0x{:x} run_slot={:?} parent_l0=0x{:x}",
++            resume.parent_frame_slot, rc, from_el0, ps as i32, pf.elr().load(Ordering::Acquire), run as u64, tos_api::bdos::process::slot_for(run), resume.parent_l0_pa);
++    }
+ 
+     // Copy the parent's frame snapshot over the current trap frame.
+     // After this, the post-handler asm restore + eret resumes the
+@@ -1321,6 +1328,13 @@
+         read_kernel_cstr(path_user_va, &mut path_buf)
+     };
+     let path_bytes = &path_buf[..path_len];
++    // H05-TEMP
++    {
++        let cur = tos_api::bdos::process::current();
++        let cs = tos_api::bdos::process::slot_for(cur);
++        crate::kprintln!("[h05] Pexec mode={} from_el0={} caller_slot={:?} caller_bp=0x{:x} path='{}'",
++            mode, from_el0, cs, cur as u64, core::str::from_utf8(path_bytes).unwrap_or("?"));
++    }
+ 
+     // Command tail + environment. Only the **load** modes consume them;
+     // for `PE_GO` the `x2` argument is the opaque PD handle (a value,
+@@ -1409,6 +1423,9 @@
+         frame.gpr[0] = child.handle;
+         return;
+     }
++    // H05-TEMP
++    crate::kprintln!("[h05] Pexec -> child slot={} child_bp_kva=0x{:x} entry=0x{:x} parent_elr=0x{:x} parent_spsr=0x{:x}",
++        child.slot, tos_api::bdos::process::pexec::child_basepage_kva(child.slot) as u64, child.entry_va, frame.elr, frame.spsr);
+ 
+     // Launch path (PE_LOADGO / PE_GO): redirect EL0 to the child.
+     // Snapshot the parent's full trap frame into the child slot's

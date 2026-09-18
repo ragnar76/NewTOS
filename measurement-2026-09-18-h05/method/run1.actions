@@ -1,0 +1,45 @@
+# run1 (H05, .NCP case): build a TeraDesk state, then start C:\AUTO\HELLO.NCP by
+# double-click and watch what comes back.
+#  W1 = C:\ via HARD DISC (195,35); drag W1 title bar 300 px left (button held) -> (7,143);
+#  double-click AUTO folder (207,207) -> W1 shows C:\AUTO\*.*;
+#  HARD DISC again -> W2 = C:\ (INF slot 1 position); click W1 title (100,152) -> W1 topped;
+#  double-click HELLO.NCP (48,207) in W1 -> Pexec; marks after the return.
+1200 park
+1206 move 300 300
+1400 move 195 35
+1600 down
+1603 up
+1608 down
+1611 up
+2000 arm
+2200 move 450 152
+2400 down
+2450 drag 350 152
+2500 drag 250 152
+2550 drag 150 152
+2650 up
+2900 mark B_MOVED
+3000 move 207 207
+3200 down
+3203 up
+3208 down
+3211 up
+3600 mark C_AUTO_DIR
+3700 move 195 35
+3800 down
+3803 up
+3808 down
+3811 up
+4100 mark D_TWO_WINDOWS
+4200 move 100 152
+4300 down
+4303 up
+4600 mark E_STATE_BEFORE_START
+4700 move 48 207
+4800 down
+4803 up
+4808 down
+4811 up
+5000 mark F_AFTER_RETURN_1S
+5400 mark G_AFTER_RETURN_3S
+6400 mark H_AFTER_RETURN_8S

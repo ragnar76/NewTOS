@@ -1,0 +1,55 @@
+# run2 (H05): run1 + quit the NESTED TeraDesk (File -> Quit/Shutdown -> Quit) and
+# see whether the OUTER TeraDesk resumes with its windows (prediction from the
+# shel_read finding: yes, wd_reopen() restores both windows).
+1200 park
+1206 move 300 300
+1400 move 195 35
+1600 down
+1603 up
+1608 down
+1611 up
+2000 arm
+2200 move 450 152
+2400 down
+2450 drag 350 152
+2500 drag 250 152
+2550 drag 150 152
+2650 up
+2900 mark B_MOVED
+3000 move 207 207
+3200 down
+3203 up
+3208 down
+3211 up
+3600 mark C_AUTO_DIR
+3700 move 195 35
+3800 down
+3803 up
+3808 down
+3811 up
+4100 mark D_TWO_WINDOWS
+4200 move 100 152
+4300 down
+4303 up
+4600 mark E_STATE_BEFORE_START
+4700 move 48 207
+4800 down
+4803 up
+4808 down
+4811 up
+5000 mark F_AFTER_RETURN_1S
+5400 move 72 8
+5600 move 150 108
+5601 move 150 208
+5602 move 150 235
+5800 mark P_INNER_FILE_QUIT_HOVER
+6000 down
+6010 up
+6200 mark Q_INNER_QUIT_DIALOG
+6400 move 250 313
+6401 move 320 313
+6600 down
+6610 up
+6800 mark R_AFTER_INNER_QUIT_1S
+7400 mark S_AFTER_INNER_QUIT_4S
+8400 mark T_AFTER_INNER_QUIT_9S
