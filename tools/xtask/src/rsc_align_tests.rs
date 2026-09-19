@@ -287,14 +287,22 @@ fn le64(d: &[u8], o: usize) -> u64 {
 
 /// Every raster slot (`bi_pdata`, `ib_pmask`, `ib_pdata`) in a native `.rsc`,
 /// as `(name, byte offset from the blob base)`.
+/// Offset of the NRSC header in `d`: 0 (v1–v12), 40 behind the native
+/// `RSHDR` preamble (v13+, `resource.rs` `RSHDR_PAD`), `None` for a
+/// native-RSHDR (`--rshdr`) file, which has no NRSC header at all.
+fn nrsc_at(d: &[u8]) -> Option<usize> {
+    [0usize, 40].into_iter().find(|&h| d.len() >= h + 4 && &d[h..h + 4] == b"NRSC")
+}
+
 fn raster_slots(d: &[u8]) -> Vec<(String, u64)> {
     let mut out = Vec::new();
-    if &d[..4] == b"NRSC" {
+    if let Some(h) = nrsc_at(d) {
         // NRSC v5/v7 (LP64) / v6/v8 (ILP32): magic + 16 × u32. The pointer
         // width is the parity of `version`, not one particular number — v7/v8
         // kept the 68-byte header and only widened the tree index
-        // (`tos-api/src/aes/resource.rs`, NRSC_VER_TRINDEX_PTR).
-        let f = |i: usize| le32(d, 4 + i * 4) as usize;
+        // (`tos-api/src/aes/resource.rs`, NRSC_VER_TRINDEX_PTR). The offsets
+        // count from the file's first byte, preamble or not.
+        let f = |i: usize| le32(d, h + 4 + i * 4) as usize;
         let (off_ib, n_ib, off_bb, n_bb) = (f(12), f(13), f(14), f(15));
         let (nat_ib, nat_bb, ptr) = if nrsc_ptr_width(f(0)) == 8 {
             (48usize, 24usize, 8usize)
@@ -384,8 +392,8 @@ fn layout(d: &[u8]) -> Layout {
     // Section bases and struct widths differ per output format; the TEDINFO
     // field order does not (three pointers, then eight WORDs).
     let (off_ted, n_ted, off_frstr, n_frstr, off_obj, n_obj, off_ib, n_ib, ptr, total) =
-        if &d[..4] == b"NRSC" {
-            let f = |i: usize| le32(d, 4 + i * 4) as usize;
+        if let Some(h) = nrsc_at(d) {
+            let f = |i: usize| le32(d, h + 4 + i * 4) as usize;
             let ptr = nrsc_ptr_width(f(0));
             (f(10), f(11), f(6), f(7), f(4), f(2), f(12), f(13), ptr, f(5) as u64)
         } else {

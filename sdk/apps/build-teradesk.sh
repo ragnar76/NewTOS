@@ -190,23 +190,24 @@ if [ $lr -eq 0 ]; then
     # desktop.rsc goes through the KERNEL rsrc_load -> NRSC/LP64 (mkrsc convert).
     # icons.rsc goes through TeraDesk's OWN loader (rsc_load.c xrsrc_load), which
     # maps the file onto native LP64 structs -> native-RSHDR (mkrsc --rshdr).
-    # cicons.rsc (the colour icons, a new-format CICONBLK .rsc) converts to
-    # NRSC v11/LP64 for the KERNEL rsrc_load (TASK/A41: `python3 "$MKRSC"
-    # convert "$TERA/cicons.rsc" "$DIST/cicons.rsc"`), but is NOT staged yet:
-    # after rsrc_load("cicons.rsc") TeraDesk's load_icons resolves the icon
-    # tree with its OWN xrsrc_gaddr (rsc_load.c:496-541), which parses the
-    # memory behind ap_rscmem as a classic RSHDR -- the file image EmuTOS's
-    # rs_readit leaves there, not our NRSC header -- and faults. Until the
-    # image at ap_rscmem carries an RSHDR (TASK/A41-STATUS, open decision),
-    # shipping the file would crash the desktop instead of colouring it; its
-    # absence selects TeraDesk's designed mono fallback (xrsrc_load icons.rsc).
+    # cicons.rsc (the colour icons, a new-format CICONBLK .rsc) goes through the
+    # KERNEL rsrc_load too (TASK/A41): NRSC v13/LP64, i.e. the CICONBLK/CICON
+    # records behind a native RSHDR preamble, because TeraDesk's load_icons
+    # (icon.c:2750) resolves the icon tree of the AES-loaded file with its OWN
+    # xrsrc_gaddr (rsc_load.c:496-541), which parses the memory behind
+    # ap_rscmem as a classic RSHDR -- the file image EmuTOS's rs_readit leaves
+    # there. Since A41 part 2 the converted image IS such a file (mkrsc.py
+    # `convert`, resource.rs NRSC_VER_RSHDR), so cicons.rsc is staged; if it is
+    # missing from the card, TeraDesk's designed mono fallback (xrsrc_load
+    # icons.rsc) takes over.
     DIST="$BUILD/dist"
     MKRSC="$SDK/../tools/mkrsc.py"
     rm -rf "$DIST"; mkdir -p "$DIST"
     cp "$OUT" "$DIST/DESKTOP.NAP"
     python3 "$MKRSC" convert "$TERA/desktop.rsc" "$DIST/desktop.rsc" || exit 1
     python3 "$MKRSC" convert --rshdr "$TERA/icons.rsc" "$DIST/icons.rsc" || exit 1
-    echo "dist -> $DIST (DESKTOP.NAP, desktop.rsc NRSC/LP64, icons.rsc native-RSHDR)"
+    python3 "$MKRSC" convert "$TERA/cicons.rsc" "$DIST/cicons.rsc" || exit 1
+    echo "dist -> $DIST (DESKTOP.NAP, desktop.rsc + cicons.rsc NRSC/LP64, icons.rsc native-RSHDR)"
 else
     echo
     echo "LINK FAILED -- residual undefined symbols (blockers):"

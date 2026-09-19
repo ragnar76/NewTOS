@@ -205,10 +205,47 @@ process (`bdos/proc.c:136`, `free_all_owned`).
 >
 > What still deviates is the **byte level**: the file is read into a static
 > 64 KiB buffer (`crate::bdos::fs::read_file`) and — if the header magic is
-> `"NRSC"` — the **native** offset table is relocated in place
-> (`relocate_and_register`). There is no classic `RSHDR`, no big-endian header
-> and no `NEW_FORMAT_RSC`/CICON path. The `int_out[0] = 1`/`0` success
-> contract is preserved.
+> `"NRSC"`, at the front (NRSC v1–v12) or at byte 40 behind the native
+> `RSHDR` preamble (v13+, below) — the **native** offset table is relocated
+> in place (`relocate_and_register`). There is no big-endian header and no
+> on-disk `NEW_FORMAT_RSC`/CICON extension array (the colour icons travel as
+> native records, §5.9). The `int_out[0] = 1`/`0` success contract is
+> preserved.
+>
+> **The loaded image begins with a native `RSHDR` since 2026-09-19 (A41
+> part 2, NRSC v13 LP64 / v14 ILP32).** EmuTOS publishes the loaded *file*
+> as `ap_rscmem` (`rs_readit`, `gemrslib.c:787`, `rs_global->ap_rscmem =
+> rs_hdr`), classic `RSHDR` at its head, and applications parse that header
+> themselves — TeraDesk's `xrsrc_gaddr` (`sdk/apps/teradesk/rsc_load.c:
+> 496-541`) reads `aes_global[7]`, tests `IS_XRSC_HEADER` (`rsh_vrsn & 3 ==
+> 3` → the `RSXHDR` with `unsigned long` fields, else the 18 × `u16`
+> `RSHDR`) and takes `rsh_trindex`/`rsh_object`/`rsh_tedinfo`/`rsh_iconblk`/
+> `rsh_bitblk`/`rsh_frstr`/`rsh_frimg` as byte offsets from `ap_rscmem`,
+> bounded by the seven counts (§5.11 item 5). That is a contract over the
+> **memory image behind `ap_rscmem`**, beyond ADR-013's freedom over the
+> on-disk bytes, and NewTOS honours it the way EmuTOS does — the image *is*
+> the file: `tools/mkrsc.py convert` emits the 36-byte native `RSHDR` (the
+> 18 LE `u16` of §0's table in §0's order, every offset counted from the
+> file's first byte; `rsh_vrsn` the classic file's — 0, or 4 =
+> `NEW_FORMAT_RSC` for one with colour icons, as EmuTOS leaves it in memory;
+> `rsh_rssize` the whole image; `rsh_string`/`rsh_imdata` the shared
+> string+raster section), padded to 40 bytes, **in front of** the NRSC
+> header, whose offsets count from the file's first byte too (one reference
+> point, `resource.rs` `RSHDR_PAD`, `NRSC_VER_RSHDR`). The loader finds the
+> magic at 40, refuses a v13+ header at the front or an older one behind a
+> preamble, and checks the preamble against the NRSC header before it
+> relocates anything (`rshdr_is_consistent`: the seven offsets, the seven
+> counts, `rsh_rssize = total_size`, `rsh_vrsn & 3 != 3`) — `rs_readit`'s
+> FALSE on any disagreement. `ap_rscmem` = the image's first byte = the
+> `RSHDR`, `ap_rsclen` = `rsh_rssize`, `ap_ptree` = `ap_rscmem +
+> rsh_trindex`, and slot *i* there is `rsrc_gaddr(R_TREE, i)`. Every `u16`
+> field bounds the image below 64 KiB, so the converter refuses an image
+> over `RSC_CAP − 40` bytes. A v1–v12 blob keeps loading, but publishes an
+> `ap_rscmem` an application must not parse as an `RSHDR` — hence every
+> shipped resource (`desktop.rsc`, `cicons.rsc`, `qed.rsc`, the embedded
+> `gem_fsel.nrsc`) is reconverted. Tests: `resource.rs` `rshdr_tests` (the
+> `xrsrc_gaddr` reading, every branch, against `rsrc_gaddr`; the refusals),
+> `tools/xtask/src/rsc_cicon_tests.rs` (`check_rshdr`).
 >
 > **The coordinate fix runs at load, with the live metrics, since 2026-09-19
 > (A40).** From NRSC v9 (LP64) / v10 (ILP32) on the blob carries every
@@ -1102,19 +1139,19 @@ call, or with process end (§1's `rsrc_free`/process-death text).
 >   The per-icon alloc-failure fallback (§5.6 point 2) is therefore per
 >   resource. Freed by `rsrc_free` (`free_cicon_buffers`' counterpart) and
 >   at process end.
-> * **Blocked at the acceptance (§5.10 item 3's QEMU run, §5.11 item 5):**
->   `rsrc_load("cicons.rsc")` = 1 and `rsrc_gaddr(R_TREE, 0)` = 1 on QEMU
->   raspi4b, but TeraDesk then resolves the icon tree with its **own**
->   `xrsrc_gaddr` (`rsc_load.c:496-541`, `icon.c:2750`), which reads
->   `aes_global[7]` (`ap_rscmem`) and parses the memory there as a classic
->   `RSHDR` (`rsh_trindex` at byte 18) — what EmuTOS leaves there is the
->   file image with the RSHDR at its head (`rs_readit`, `rs_global->
->   ap_rscmem = rs_hdr`, `gemrslib.c:787`); NewTOS leaves the NRSC header,
->   and TeraDesk faults (Data Abort, FAR = the bytes `"NRSC"` + version read
->   as a pointer). With a 40-byte native-RSHDR shim in front of the blob
->   (scratch experiment only, not in the tree) the colour icons render
->   (`measurement-2026-09-19-a41/screendumps/tera2-A-idle.png`). See §5.11
->   item 5.
+> * **The acceptance's blocker (§5.10 item 3's QEMU run, §5.11 item 5) —
+>   found and resolved 2026-09-19:** `rsrc_load("cicons.rsc")` = 1 and
+>   `rsrc_gaddr(R_TREE, 0)` = 1 on QEMU raspi4b, but TeraDesk then resolved
+>   the icon tree with its **own** `xrsrc_gaddr` (`rsc_load.c:496-541`,
+>   `icon.c:2750`), which reads `aes_global[7]` (`ap_rscmem`) and parses the
+>   memory there as a classic `RSHDR` (`rsh_trindex` at byte 18) — what
+>   EmuTOS leaves there is the file image with the RSHDR at its head
+>   (`rs_readit`, `rs_global->ap_rscmem = rs_hdr`, `gemrslib.c:787`); NewTOS
+>   left the NRSC header, and TeraDesk faulted (Data Abort, FAR = the bytes
+>   `"NRSC"` + version read as a pointer). Resolved by option (a) of §5.11
+>   item 5: NRSC **v13/v14** put a native `RSHDR` in front of the blob (the
+>   `rsrc_load` callout of §1), so the loaded image is the file as in
+>   EmuTOS. `cicons.rsc` is 63 650 B (LP64) with the preamble.
 
 > Everything below this line is a **NewTOS-native design proposal** for the
 > Developer's review, per ADR-013 (the on-disk `.RSC` byte format is
@@ -1256,13 +1293,11 @@ here.
    regression for icons without colour variants.
    - *Host test*: a synthetic single-plane-depth CICON drawn against a mock
      `RasterBackend`, pixel-compared against hand-computed expected output.
-   - *QEMU (not performed by this task — spec only)*: TeraDesk with
-     `cicons.rsc` installed (`tools/make-sd-image.sh`'s TeraDesk stanza
-     currently skips it **deliberately**, comment at `:273-274` ("cicons.rsc
-     is deliberately absent (unsupported new-format CICONBLK; failure =
-     designed mono fallback)"); needs a new `cp`/note once
-     converter+loader+drawer exist), `#Z`-autorun headless,
-     screendump comparing colour icons against today's mono baseline.
+   - *QEMU*: TeraDesk with `cicons.rsc` installed (`sdk/apps/
+     build-teradesk.sh` stages it, `tools/make-sd-image.sh` copies it —
+     since A41 part 2), `#Z`-autorun headless, screendump comparing colour
+     icons against the mono baseline (done 2026-09-19,
+     `TASK/A41-STATUS-DONE.MD`).
 
 ### 5.11 Open decisions for the user (not decided here)
 
@@ -1320,9 +1355,13 @@ here.
    `ap_rscmem` (EL0 path only; the scratch experiment did this). Either
    way `rsh_rssize` and every offset are `u16`, so the image must stay
    below 64 KiB — `RSC_CAP` already says so (65 536; the last 40 bytes of
-   that range would overflow and must be refused). Until decided,
-   `cicons.rsc` is **not** staged into `dist/` (`sdk/apps/build-teradesk.sh`),
-   so the desktop keeps its mono fallback instead of crashing.
+   that range would overflow and must be refused).
+   *Decided 2026-09-19 by the user: **(a)**, implemented as NRSC v13/v14
+   (`tools/mkrsc.py convert`, `resource.rs` `NRSC_VER_RSHDR`/`RSHDR_PAD`/
+   `rshdr_is_consistent`; the `rsrc_load` callout of §1 has the contract).
+   `cicons.rsc` is staged into `dist/` by `sdk/apps/build-teradesk.sh` and
+   copied by `tools/make-sd-image.sh`; TeraDesk shows the colour icons on
+   QEMU raspi4b (`TASK/A41-STATUS-DONE.MD`).*
 
 ---
 

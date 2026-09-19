@@ -1,0 +1,86 @@
+A41 TEIL 2 -- der Blob beginnt mit einem nativen RSHDR (NRSC v13/v14), cicons.rsc wird
+ausgeliefert, Abnahme in QEMU. Developer-Selbstbeleg, 2026-09-19. Branch desk-rebuild,
+Basis HEAD f4e6435 (Teil 1), Aenderungen uncommitted im Baum. QEMU raspi4b (640x480, headless,
+-display none, QMP screendump), Release-Builds --board rpi4. Anwenderentscheid: Option (a) aus
+TASK/A41-STATUS-UNFINISHED.MD (Spec §5.11 Punkt 5).
+
+PRODUKTCODE (uncommitted, siehe git status im Bericht)
+  tools/mkrsc.py                    convert(): NRSC v13 (LP64) / v14 (ILP32) = 36-Byte nativer RSHDR
+                                    (18 LE u16, klassische Feldreihenfolge, Offsets ab Dateianfang,
+                                    rsh_vrsn = Quelldatei (0 / 4 = NEW_FORMAT_RSC), rsh_rssize = Abbild),
+                                    auf 40 gepolstert, davor; NRSC-Header (84 B) bei 40; alle Offsets ab
+                                    Byte 0. pack_rshdr() (u16-Grenze, IS_XRSC_HEADER-Schutz), Grenze
+                                    RSC_CAP - 40, RSXHDR-Quelle (vrsn & 3 == 3) abgewiesen. --rshdr
+                                    unveraendert (icons.rsc bytegleich, cmp).
+  tos-api/src/aes/resource.rs       NRSC_VER_RSHDR=13, RSHDR_PAD=40, RSHDR_SIZE=36; nrsc_header_offset()
+                                    (Magic bei 0 oder 40), hdr() (EIN Bezugspunkt fuer alle Leser),
+                                    rshdr_is_consistent() (7 Offsets, 7 Zaehler, rssize = total_size,
+                                    vrsn & 3 != 3, rsh_string/rsh_imdata im Abbild); header_is_sound
+                                    (Generation muss zum Fundort passen). ap_rscmem = Blob-Basis = RSHDR
+                                    (unveraendert report_load), ap_rsclen = rsh_rssize, ap_ptree = Baumfeld.
+  tos-api/src/aes/gem_fsel.nrsc     neu erzeugt (cargo xtask gen-fsel-rsc): v13, 5047 B.
+  sdk/apps/build-teradesk.sh        staged cicons.rsc (convert) nach dist/.
+  tools/make-sd-image.sh            Kommentar: cicons.rsc wird kopiert, wenn in dist/ (Logik unveraendert).
+  docs/api/aes/resource-fileselector.md (rsrc_load-Callout: RSHDR-Vorspann-Vertrag; §5.9/§5.10/§5.11.5 Status)
+  docs/sdk/04-porting-anatomy.md, docs/sdk/05-abi-pitfalls.md (B8 Symptom 3/5)
+  Tests: resource.rs mod rshdr_tests (4, neu), tests::nrsc_field (Helfer), tools/xtask/src/
+         rsc_cicon_tests.rs (check_rshdr, v13/v14, 63 650 B), rsc_obfix_tests.rs / rsc_align_tests.rs
+         (Header bei 0 oder 40), tos-api/tests/aes_rsrc_{global_fields,short_blob,substruct_arrays,
+         tedinfo_reserve,tedinfo_txtlen}.rs (Header-Offset-Helfer).
+
+KONVERTER (Blob-Hashes: siehe manifest.sha256)
+  cicons.rsc  63 788 B klassisch -> 63 650 B (LP64, v13; = 63 610 + 40) / 61 810 B (ILP32, v14)
+  desktop.rsc 32 266 -> 39 278 B (v13)   qed.rsc 41 378 B (v13)   gem_fsel.nrsc 5 047 B (v13)
+  cicons.rsc RSHDR: vrsn 4, object 136, tedinfo/iconblk/bitblk 1384, frstr/string/imdata/frimg 5336,
+  trindex 124, nobs 39, ntree 1, nted/nib/nbb/nstring/nimages 0, rssize 63650; Slot 0 @124 = 136.
+
+HOSTTESTS (host-tests/)
+  red-before-resource-rshdr_tests.txt   3 FAILED auf dem Stand vor dem Lader-Umbau (v9-gem_fsel.nrsc):
+                                        R_TREE 0: _rs_trindex[0] bei rsh_trindex 0 = 39784239694
+                                        (= "NRSC"+Version 9 als Zeiger gelesen -- die tera1-Signatur)
+  red-before-xtask-rsc_cicon_tests.txt  4 FAILED (HEAD-mkrsc.py in Scratch-Worktree, entfernt): kein
+                                        NRSC-Magic bei 40
+  green-after-*: 4/4 (3 rot-vor + der ILP32-v14-Fall), 4/4.  xtask-test.txt: cargo run -p xtask -- test = 631 / 0 / 1 (Baseline 627 + 4).
+
+BUILD / CLIPPY (build/)
+  cargo xtask build --board rpi4 / --board qemu-virt (je nach cargo clean -p kernel -p tos-api
+  --target aarch64-unknown-none-softfloat): tos-api 64 / kernel 94 rustc-Warnungen, exit 0.
+  clippy tos-api 81, kernel 125 (rpi4 und qemu-virt). Baseline 64/94, 81/125 -- Delta 0.
+  kernel8-a41p2-product-release-rpi4.img: Produktkernel aus dem Projektbaum (--release), KEINE
+  Instrumentierung. kernel8-a41p2-SCRATCH-injector-quit2*.img: Scratch-Kopie mit H02-Injektor
+  (method/apply_injector.py + quit2_script.rs; scratch-injector.diff) bzw. zusaetzlich Serial-Trace
+  (method/a41p2_trace_patch.py; scratch-trace.diff).
+
+IMAGE
+  tools/make-sd-image.sh <scratch>/img/sd-base.img 64 (sha256 73d3ed8a...; dist/ mit cicons.rsc),
+  + NEWDESK.INF (#Z TeraDesk) + Apps\TERADESK\TERADESK.INF -> sd-tera.img (de0209e7...);
+  sd-base + NEWDESK.INF (#Z QED) -> sd-qed.img (ee9c38a8...). Jeder Lauf auf einer frischen Kopie.
+
+LAEUFE (method/run.sh; screendumps/, serial/)
+  product1   Produktkernel + sd-tera: kein EXC/panic. product1-tera-colour-icons-idle.png:
+             4 x HARD DISC farbig (graue Box, farbiger Ordnerstapel), TRASH farbig -- 0 Pixel Differenz
+             zu measurement-2026-09-19-a41/screendumps/tera2-scratch-shim-colour-icons-idle.png;
+             3205 Pixel Differenz (bbox 21,19..452,142 = die Icons) zur Mono-Referenz smoke-tera-up.png.
+  inj1       Injektor open3: A idle, B Fenster (Doppelklick HARD DISC C 195,35), C File-Menue
+             (Zeiger auf 88,8): "Quit/Shutdown ^Q" in Zeile y~235 -> Klickpunkt (130,235).
+  inj2       quit1: Klick auf Quit/Shutdown oeffnet TeraDesks "Quit / Shutdown Options"-Dialog
+             (inj4-D-quit-dialog.png); Quit-Knopf bei (320,313).
+  inj3/inj4  quit2: A idle (0 Pixel zu product1), B Fenster "374035 bytes used in 24 items.",
+             gelbe Ordner-/Dokument-Farbicons (inj4-B-window-open-colour-icons.png), D Dialog,
+             Klick Quit -> TeraDesk "exited with rc=0" -> "[desk] desktop up (1 drives)"
+             (inj4-G-desktop-up-after-quit.png: unser Desktop, Fenster C:\ Textansicht). Kein EXC.
+             (inj3: MARK F nach dem Exit wird nicht gedruckt -- der Injektor laeuft nur, solange ein
+             EL0-Programm laeuft; inj4 = derselbe Kernel, Screendump auf "desktop up".)
+  inj5       quit2 + Serial-Trace: rsrc_load("C:\APPS\TERADESK\desktop.rsc") -> 1 ap_rscmem=0x400000
+             ap_rsclen=39278; rsrc_load("C:\APPS\TERADESK\cicons.rsc") -> 1 ap_rscmem=0x427000
+             ap_rsclen=63650 cicon_buf=153600 B; beim Beenden: Mfree(0x6b5000) -> 0,
+             Mfree(0x427000) -> -40 (TeraDesk free_icons -> xrsrc_free = Mfree(ap_rscmem des
+             cicons.rsc), EIMBA, Rueckgabe von TeraDesk ignoriert -- s. Bericht, ausserhalb des
+             Auftrags), Mfree(0x40a000) -> 0, rsrc_free(selector 0x400000) -> 1 (desktop.rsc);
+             exited rc=0; [desk] desktop up. Screendumps bytegleich zu inj4.
+  smoke-qed  Produktkernel + sd-qed (#Z QED, qed.rsc v13): 0 Pixel Differenz zu
+             measurement-2026-09-19-a39/screendumps/smoke-qed-up.png und a41/screendumps/smoke-qed-up.png.
+  smoke-desk Produktkernel + sd-base (unser Desktop): 0 Pixel Differenz zu a39 + a41 smoke-desk-up.png.
+  Alle Laeufe: grep -c "EXC\|panic" = 0.
+
+NICHT GEFAHREN: echte Pi 4 (Tester/Lead). Kein Commit.

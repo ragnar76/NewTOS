@@ -27,6 +27,16 @@
 //! other raster, and a `G_CICON`'s `ob_spec` becomes the byte offset of its
 //! CICONBLK. The 84-byte v11/v12 header adds the two array bases + counts.
 //!
+//! Part 2 (NRSC v13/v14): the file **begins with a native `RSHDR`** — the
+//! 18 LE `u16` of the classic header (`rsdefs.h:16-36` order), offsets from
+//! the file's first byte, padded to 40 bytes — and the NRSC header follows
+//! at offset 40. EmuTOS publishes the loaded file as `ap_rscmem`
+//! (`gemrslib.c:787`) and TeraDesk's `xrsrc_gaddr` parses that header on
+//! its own (`sdk/apps/teradesk/rsc_load.c:496-541`: `IS_XRSC_HEADER` =
+//! `rsh_vrsn & 3 == 3` must be false, then `rsh_trindex`/`rsh_object`/… as
+//! offsets from `ap_rscmem`). The tests read the preamble back the way that
+//! parser does and hold it to the NRSC header behind it.
+//!
 //! The first tests drive the tool over a **hand-built** two-icon file whose
 //! every byte is known, so the expected native offsets are hand-checkable;
 //! the last one converts TeraDesk's real `cicons.rsc` (38 icons) and holds
@@ -40,13 +50,19 @@ use std::process::Command;
 
 use crate::workspace_root;
 
-/// `tos-api/src/aes/resource.rs::NRSC_VER_CICON` (11 LP64, 12 ILP32).
-const NRSC_VER_CICON: u32 = 11;
+/// `tos-api/src/aes/resource.rs::NRSC_VER_RSHDR` (13 LP64, 14 ILP32): the
+/// generation `convert` emits — v11/v12's header behind a native `RSHDR`.
+const NRSC_VER_RSHDR: u32 = 13;
 /// `tos-api/src/aes/resource.rs::RSC_CAP`.
 const RSC_CAP: usize = 64 * 1024;
+/// `tos-api/src/aes/resource.rs::RSHDR_PAD`: the 36-byte native `RSHDR`
+/// padded to 40; the NRSC magic sits at this offset.
+const RSHDR_PAD: usize = 40;
+/// The converter's own bound on the image (`mkrsc.py`: `RSC_CAP - RSHDR_PAD`).
+const IMAGE_CAP: usize = RSC_CAP - RSHDR_PAD;
 
-/// NRSC v11 header: magic + 20 u32.
-const HDR: usize = 84;
+/// NRSC v13 header: the preamble, then magic + 20 u32.
+const HDR: usize = RSHDR_PAD + 84;
 
 const G_BOX: u16 = 20;
 const G_CICON: u16 = 33;
@@ -227,9 +243,64 @@ fn run_mkrsc(dir: &Path, mode: Option<&str>, src: &Path, out: &Path) -> std::pro
         .unwrap_or_else(|e| panic!("cannot run {python:?} {}: {e}", script.display()))
 }
 
-/// Header fields of an NRSC blob by index (`magic` + `u32[i]`).
+/// Header fields of an NRSC v13+ blob by index (`magic` + `u32[i]`, behind
+/// the `RSHDR` preamble).
 fn field(d: &[u8], i: usize) -> u32 {
-    le32(d, 4 + i * 4)
+    assert_eq!(&d[RSHDR_PAD..RSHDR_PAD + 4], b"NRSC", "NRSC magic at {RSHDR_PAD}");
+    le32(d, RSHDR_PAD + 4 + i * 4)
+}
+
+/// Field `i` of the native `RSHDR` preamble (18 LE `u16`, classic order:
+/// 0 `rsh_vrsn`, 1 `rsh_object`, 2 `rsh_tedinfo`, 3 `rsh_iconblk`,
+/// 4 `rsh_bitblk`, 5 `rsh_frstr`, 6 `rsh_string`, 7 `rsh_imdata`,
+/// 8 `rsh_frimg`, 9 `rsh_trindex`, 10 `rsh_nobs`, 11 `rsh_ntree`,
+/// 12 `rsh_nted`, 13 `rsh_nib`, 14 `rsh_nbb`, 15 `rsh_nstring`,
+/// 16 `rsh_nimages`, 17 `rsh_rssize`).
+fn rsh(d: &[u8], i: usize) -> usize {
+    le16(d, i * 2) as usize
+}
+
+/// TeraDesk's reading of the preamble (`xrsrc_gaddr`) against the NRSC
+/// header: not an `RSXHDR`, every offset and count the NRSC header's, the
+/// size the image's, and `_rs_trindex[0]` — the slot at `rsh_trindex` — the
+/// offset of tree 0's root OBJECT (= the tree index's first slot).
+fn check_rshdr(d: &[u8], vrsn: usize) {
+    let version = field(d, 0);
+    assert_eq!(rsh(d, 0), vrsn, "rsh_vrsn is the classic file's");
+    assert_ne!(rsh(d, 0) & 3, 3, "IS_XRSC_HEADER must be false (u16 fields)");
+    assert_eq!(rsh(d, 1), field(d, 4) as usize, "rsh_object = off_objects");
+    assert_eq!(rsh(d, 2), field(d, 10) as usize, "rsh_tedinfo = off_ted");
+    assert_eq!(rsh(d, 3), field(d, 12) as usize, "rsh_iconblk = off_ib");
+    assert_eq!(rsh(d, 4), field(d, 14) as usize, "rsh_bitblk = off_bb");
+    assert_eq!(rsh(d, 5), field(d, 6) as usize, "rsh_frstr = off_frstr");
+    assert_eq!(rsh(d, 8), field(d, 8) as usize, "rsh_frimg = off_frimg");
+    assert_eq!(rsh(d, 9), field(d, 3) as usize, "rsh_trindex = off_trindex");
+    assert_eq!(rsh(d, 10), field(d, 2) as usize, "rsh_nobs = n_objects");
+    assert_eq!(rsh(d, 11), field(d, 1) as usize, "rsh_ntree = n_trees");
+    assert_eq!(rsh(d, 12), field(d, 11) as usize, "rsh_nted = n_ted");
+    assert_eq!(rsh(d, 13), field(d, 13) as usize, "rsh_nib = n_ib");
+    assert_eq!(rsh(d, 14), field(d, 15) as usize, "rsh_nbb = n_bb");
+    assert_eq!(rsh(d, 15), field(d, 7) as usize, "rsh_nstring = n_frstr");
+    assert_eq!(rsh(d, 16), field(d, 9) as usize, "rsh_nimages = n_frimg");
+    assert_eq!(rsh(d, 17), field(d, 5) as usize, "rsh_rssize = total_size");
+    assert_eq!(rsh(d, 17), d.len(), "rsh_rssize = the file size");
+    // The data section the two informational fields name lies in the image.
+    let ptr = if version % 2 == 1 { 8 } else { 4 };
+    let data = field(d, 8) as usize + field(d, 9) as usize * ptr;
+    assert_eq!(rsh(d, 6), data, "rsh_string = the data section");
+    assert_eq!(rsh(d, 7), data, "rsh_imdata = the data section");
+    assert!(data <= d.len());
+    // `_rs_trindex[0]` at `rsh_trindex`: tree 0's root, i.e. the OBJECT array.
+    let slot0 = ptr_at(d, version, rsh(d, 9));
+    assert_eq!(slot0, field(d, 4) as u64, "_rs_trindex[0] = the root OBJECT's offset");
+    // The preamble's pad and the alignment behind it.
+    assert!(d[36..RSHDR_PAD].iter().all(|&b| b == 0), "pad bytes 36..40 are zero");
+    assert_eq!(field(d, 4) % 8, 0, "the OBJECT array stays 8-aligned behind the preamble");
+}
+
+/// A pointer slot at `o` at the blob's ABI width (odd version = LP64).
+fn ptr_at(d: &[u8], version: u32, o: usize) -> u64 {
+    ptr(d, version, o)
 }
 
 /// The native layout of the hand-built file, per ABI.
@@ -255,9 +326,10 @@ fn check_hand_built(tag: &str, mode: Option<&str>, lay: Layout) {
         String::from_utf8_lossy(&o.stderr)
     );
     let d = std::fs::read(&out).unwrap();
-    assert_eq!(&d[..4], b"NRSC");
+    assert_eq!(&d[RSHDR_PAD..RSHDR_PAD + 4], b"NRSC", "NRSC magic behind the RSHDR");
     let version = field(&d, 0);
     assert_eq!(version, lay.version, "version");
+    check_rshdr(&d, 4); // the hand-built file is new-format: rsh_vrsn 4
     assert_eq!(field(&d, 2), 3, "n_objects");
     let off_obj = field(&d, 4) as usize;
     let total = field(&d, 5) as usize;
@@ -355,7 +427,7 @@ fn mkrsc_convert_lp64_carries_the_colour_icons_as_c_structs() {
     check_hand_built(
         "lp64",
         None,
-        Layout { version: NRSC_VER_CICON, ps: 8, obj: 32, cib: 56, cic: 48, ib: 48 },
+        Layout { version: NRSC_VER_RSHDR, ps: 8, obj: 32, cib: 56, cic: 48, ib: 48 },
     );
 }
 
@@ -364,7 +436,7 @@ fn mkrsc_convert_ilp32_carries_the_colour_icons_as_c_structs() {
     check_hand_built(
         "ilp32",
         Some("--ilp32"),
-        Layout { version: NRSC_VER_CICON + 1, ps: 4, obj: 24, cib: 40, cic: 24, ib: 36 },
+        Layout { version: NRSC_VER_RSHDR + 1, ps: 4, obj: 24, cib: 40, cic: 24, ib: 36 },
     );
 }
 
@@ -377,16 +449,19 @@ fn an_old_format_file_declares_no_colour_icons() {
     let o = run_mkrsc(&dir, None, &src, &out);
     assert!(o.status.success());
     let d = std::fs::read(&out).unwrap();
-    assert_eq!(field(&d, 0), NRSC_VER_CICON);
+    assert_eq!(field(&d, 0), NRSC_VER_RSHDR);
     assert_eq!(field(&d, 17), 0, "n_cib");
     assert_eq!(field(&d, 19), 0, "n_cic");
     assert!(d.len() > HDR);
+    check_rshdr(&d, 0); // gem.rsc: rsh_vrsn 0
 }
 
 /// TeraDesk's real `cicons.rsc` (63 788 B classic, `rsh_vrsn = 4`, 38
 /// CICONBLKs of one 4-plane variant each — 37 of them 32×32, block 3 48×32;
 /// 36 with a SELECTED image, blocks 20 and 31 without): converts, keeps
-/// every block, and the native LP64 file fits the kernel's `RSC_CAP`.
+/// every block, and the native LP64 file fits the converter's bound
+/// (`RSC_CAP` less the 40-byte preamble) — with the `RSHDR` TeraDesk's
+/// `load_icons` → `xrsrc_gaddr` will parse at its head.
 #[test]
 fn teradesk_cicons_rsc_converts_and_fits_rsc_cap() {
     let dir = scratch_dir("teradesk");
@@ -403,9 +478,10 @@ fn teradesk_cicons_rsc_converts_and_fits_rsc_cap() {
     let total = field(&d, 5) as usize;
     assert_eq!(total, d.len());
     assert!(
-        total <= RSC_CAP,
-        "native cicons.rsc is {total} bytes, over RSC_CAP {RSC_CAP} — rsrc_load would refuse it"
+        total <= IMAGE_CAP,
+        "native cicons.rsc is {total} bytes, over the {IMAGE_CAP}-byte image bound — rsrc_load would refuse it"
     );
+    check_rshdr(&d, 4); // new-format source: rsh_vrsn 4 (NEW_FORMAT_RSC)
     assert_eq!(field(&d, 17), 38, "38 CICONBLKs");
     assert_eq!(field(&d, 19), 38, "38 CICONs");
     assert_eq!(field(&d, 2), 39, "39 objects");
@@ -429,7 +505,8 @@ fn teradesk_cicons_rsc_converts_and_fits_rsc_cap() {
         assert_eq!(le64(&d, cic + 32) != 0, has_sel, "SELECTED mask comes with the image");
         assert_eq!(le64(&d, cic + 40), 0, "single variant");
     }
-    // The size the report names (LP64). Kept as a number so a converter
-    // change that grows the file shows up here before it meets `RSC_CAP`.
-    assert_eq!(total, 63_610, "native cicons.rsc size (LP64)");
+    // The size the report names (LP64: 63 610 B of v11 + the 40-byte
+    // preamble). Kept as a number so a converter change that grows the file
+    // shows up here before it meets the bound.
+    assert_eq!(total, 63_650, "native cicons.rsc size (LP64, RSHDR-headed)");
 }

@@ -88,10 +88,14 @@ fn classic_words(d: &[u8]) -> Vec<[u16; 4]> {
 /// (odd = LP64, 32-byte OBJECT with the words at +24; even = ILP32, 24-byte
 /// OBJECT with the words at +16).
 fn nrsc_words(d: &[u8]) -> (u32, Vec<[u16; 4]>) {
-    assert_eq!(&d[..4], b"NRSC", "not an NRSC blob");
-    let version = le32(d, 4);
-    let n_obj = le32(d, 12) as usize;
-    let off_obj = le32(d, 20) as usize;
+    // The NRSC header sits at the front (v1–v12) or behind the 40-byte native
+    // `RSHDR` preamble (v13+, `resource.rs` `RSHDR_PAD`); the offsets it
+    // holds count from the file's first byte either way.
+    let h = if &d[..4] == b"NRSC" { 0 } else { 40 };
+    assert_eq!(&d[h..h + 4], b"NRSC", "not an NRSC blob");
+    let version = le32(d, h + 4);
+    let n_obj = le32(d, h + 12) as usize;
+    let off_obj = le32(d, h + 20) as usize;
     let (stride, at) = if version % 2 == 1 { (32, 24) } else { (24, 16) };
     let words = (0..n_obj)
         .map(|i| {

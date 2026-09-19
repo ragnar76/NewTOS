@@ -1,0 +1,5 @@
+test aes::resource::rshdr_tests::a_preamble_that_disagrees_with_the_nrsc_header_is_refused ... ok
+test aes::resource::rshdr_tests::the_header_generation_must_match_where_the_magic_sits ... ok
+test aes::resource::rshdr_tests::the_image_at_ap_rscmem_is_an_rshdr_headed_file_teradesk_can_parse ... ok
+test aes::resource::rshdr_tests::an_ilp32_v14_image_publishes_the_rshdr_and_a_4_byte_slot_table ... ok
+test result: ok. 4 passed; 0 failed; 0 ignored; 0 measured; 40 filtered out; finished in 0.00s

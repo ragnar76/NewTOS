@@ -137,10 +137,19 @@ fn cstrlen(p: u64) -> usize {
     n
 }
 
+/// The `u32` at byte `off` of the blob's NRSC header, which sits at the front
+/// (v1–v12) or behind the 40-byte native `RSHDR` preamble (v13+, `resource.rs`
+/// `RSHDR_PAD`): 24 `total_size`, 48 `n_ted`.
+fn hdr_u32(src: &[u8], off: usize) -> usize {
+    let base = if &src[..4] == b"NRSC" { 0 } else { 40 };
+    assert_eq!(&src[base..base + 4], b"NRSC", "an NRSC blob");
+    u32::from_le_bytes(src[base + off..base + off + 4].try_into().unwrap()) as usize
+}
+
 /// Number of TEDINFO records the blob declares (`n_ted` at header offset 48 of
 /// the 68-byte v5 header).
 fn n_ted(src: &[u8]) -> usize {
-    u32::from_le_bytes(src[48..52].try_into().unwrap()) as usize
+    hdr_u32(src, 48)
 }
 
 // ── the length words themselves ───────────────────────────────────────────
@@ -188,7 +197,7 @@ fn no_tedinfo_claims_more_bytes_than_the_blob_reserves() {
     // SAFETY: `p` is a writable copy of a valid NRSC blob, `RSC.len()` bytes.
     assert!(unsafe { tos_api::aes::resource::relocate_and_register(p, RSC.len()) });
     let base = p as u64;
-    let total = u32::from_le_bytes(RSC[24..28].try_into().unwrap()) as u64; // total_size
+    let total = hdr_u32(RSC, 24) as u64; // total_size
 
     // Every string address the TEDINFOs point at.
     let mut used: Vec<u64> = Vec::new();
@@ -238,7 +247,7 @@ fn typing_into_a_loaded_field_touches_nothing_outside_its_text_buffer() {
     // SAFETY: `p` is a writable copy of a valid NRSC blob, `RSC.len()` bytes.
     assert!(unsafe { tos_api::aes::resource::relocate_and_register(p, RSC.len()) });
     let base = p as u64;
-    let total = u32::from_le_bytes(RSC[24..28].try_into().unwrap()) as usize;
+    let total = hdr_u32(RSC, 24);
 
     let (ret, ted) = gaddr(R_TEDINFO, 0);
     assert_eq!(ret, 1);

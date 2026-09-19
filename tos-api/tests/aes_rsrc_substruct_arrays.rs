@@ -70,7 +70,9 @@ const BITBLK_SIZE: usize = 24;
 /// LP64 `Object` stride.
 const OBJECT_SIZE: usize = 32;
 
-/// NRSC v5 (LP64) header field byte offsets.
+/// NRSC v5 (LP64) header field byte offsets, relative to the header — which
+/// sits at the front of the blob (v1–v12) or behind the 40-byte native
+/// `RSHDR` preamble (v13+, `resource.rs` `RSHDR_PAD`); see [`hdr_u32`].
 const H_TOTAL_SIZE: usize = 24;
 const H_N_TED: usize = 48;
 const H_N_BB: usize = 64;
@@ -158,8 +160,11 @@ fn cstrlen(p: u64) -> usize {
     n
 }
 
+/// The `u32` at byte `off` of the blob's NRSC header, wherever that sits.
 fn hdr_u32(src: &[u8], off: usize) -> usize {
-    u32::from_le_bytes(src[off..off + 4].try_into().unwrap()) as usize
+    let base = if &src[..4] == b"NRSC" { 0 } else { 40 };
+    assert_eq!(&src[base..base + 4], b"NRSC", "an NRSC blob");
+    u32::from_le_bytes(src[base + off..base + off + 4].try_into().unwrap()) as usize
 }
 
 /// A relocated pointer must address a byte inside the blob, i.e. it is

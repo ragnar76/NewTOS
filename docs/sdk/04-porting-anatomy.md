@@ -138,9 +138,10 @@ before trusting them after an overlay change.
 while writing this page: `python3 tools/mkrsc.py convert
 sdk/apps/qed/src/qed.rsc <out>` yields 41322 bytes, SHA-256 `5a2cefa2…` —
 byte-identical to the `sdk/apps/qed/build/qed.rsc` on this host (dated
-2026-09-14; since A40, 2026-09-19, the tool emits NRSC v9 with char-grid
-coordinates and the same command yields SHA-256 `3383dd39…`, same size). So
-the step is
+2026-09-14; since A40, 2026-09-19, the tool emits char-grid coordinates —
+NRSC v9 then, SHA-256 `3383dd39…`, same size — and since A41 part 2 the
+same day NRSC v13 with the 40-byte `RSHDR` preamble and the 84-byte header:
+41378 bytes, SHA-256 `30ac6bf2…`). So the step is
 
 ```sh
 python3 tools/mkrsc.py convert sdk/apps/qed/src/qed.rsc sdk/apps/qed/build/qed.rsc
@@ -172,16 +173,17 @@ artifact; `en/qed_en.rsc` converts to 40309 bytes.
    asm-vs-toolchain rule quoted above (`:136-161`).
 6. Link `crt0.o` + all objects + `--start-group gemlib.a libc.a --end-group`
    → `build/DESKTOP.NAP` (`:164-187`).
-7. **Dist staging** (`:189-202`): `build/dist/` receives `DESKTOP.NAP`,
-   `desktop.rsc` converted with `tools/mkrsc.py convert` (NRSC/LP64, loaded
-   by the **kernel's** `rsrc_load`), and `icons.rsc` converted with
-   `mkrsc.py convert --rshdr` (native-RSHDR, parsed by TeraDesk's **own**
-   `xrsrc_load`). `cicons.rsc` is deliberately not shipped: new-format
-   `CICONBLK` is unsupported and its absence is TeraDesk's designed
-   mono-icon fallback (`:193-195`).
+7. **Dist staging** (`:189-205`): `build/dist/` receives `DESKTOP.NAP`,
+   `desktop.rsc` and `cicons.rsc` converted with `tools/mkrsc.py convert`
+   (NRSC v13/LP64, loaded by the **kernel's** `rsrc_load`; `cicons.rsc` are
+   the colour icons — a new-format `CICONBLK` file, carried as native
+   records since A41), and `icons.rsc` converted with `mkrsc.py convert
+   --rshdr` (native-RSHDR, parsed by TeraDesk's **own** `xrsrc_load`).
+   TeraDesk's `load_icons` tries `cicons.rsc` through the AES first and
+   falls back to its own `icons.rsc` when it is absent (mono icons).
 
-`tools/make-sd-image.sh:277-286` copies exactly those three files into
-`C:\Apps\TERADESK\`.
+`tools/make-sd-image.sh:282-296` copies those files into
+`C:\Apps\TERADESK\` (`cicons.rsc` only when `dist/` has it).
 
 ## CoreMark, step by step (`sdk/apps/build-coremark.sh`)
 
@@ -202,11 +204,18 @@ NewTOS does not load classic big-endian Atari `.RSC` files. ADR-013
 (`docs/MEMORY.md:376-455`) defines a native little-endian format ("NRSC")
 whose `OBJECT` is the kernel's `repr(C)` 32-byte layout with a 64-bit
 `ob_spec`, pointers stored as byte offsets relocated by `rsrc_load`
-(`tools/mkrsc.py:1-19`, `tos-api/src/aes/resource.rs:1-90`). Two converters
-exist in `tools/mkrsc.py:713-736`:
+(`tools/mkrsc.py:1-22`, `tos-api/src/aes/resource.rs:1-110`). Since A41
+part 2 (NRSC v13/v14) a kernel-loadable file **begins with a native
+`RSHDR`** — the classic header's 18 fields as little-endian `u16`, offsets
+from the file's first byte, padded to 40 bytes — and the NRSC header follows
+at byte 40. So the image the AES hands an application as `ap_rscmem` is the
+file with an `RSHDR` at its head, as on EmuTOS, and an application that
+parses that header itself (TeraDesk's `xrsrc_gaddr` on the AES-loaded
+`cicons.rsc`) reads what it expects; see [05-abi-pitfalls.md](05-abi-pitfalls.md#b8)
+symptom 5. Two converters exist in `tools/mkrsc.py` (`main`):
 
 * `convert SRC OUT` — for resources the **kernel** loads via `rsrc_load`
-  (QED's `qed.rsc`, TeraDesk's `desktop.rsc`);
+  (QED's `qed.rsc`, TeraDesk's `desktop.rsc` and `cicons.rsc`);
 * `convert --rshdr SRC OUT` — for an application that parses the file with
   its **own** loader onto native LP64 structs (TeraDesk's `icons.rsc`).
 

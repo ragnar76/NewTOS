@@ -299,8 +299,29 @@ reads rasters unaligned as well.
 **Symptom** 3: an application with its **own** resource loader (TeraDesk
 `xrsrc_load` for `icons.rsc`) reads garbage from a kernel-format file.
 **Do**: convert those with `mkrsc.py convert --rshdr` (native-RSHDR onto LP64
-structs, `build-teradesk.sh:189-201`); new-format `CICONBLK` is unsupported —
-do not ship `cicons.rsc`.
+structs, `build-teradesk.sh:189-205`). A new-format `CICONBLK` file (colour
+icons) is for the **kernel's** `rsrc_load` (`mkrsc.py convert`, NRSC v13,
+since A41) — `--rshdr` refuses it.
+
+**Symptom** 5 (2026-09-19, A41 part 2): after a successful `rsrc_load` the
+application faults with a wild pointer built from the bytes `"NRSC"`.
+**Cause**: the application parses the image behind `ap_rscmem`
+(`aes_global[7]`) as a classic `RSHDR` — TeraDesk's `xrsrc_gaddr`
+(`rsc_load.c:496-541`) does that on the AES-loaded `cicons.rsc` — because
+that is what EmuTOS leaves there (`rs_readit`, `gemrslib.c:787`: the loaded
+file, `RSHDR` at its head). A blob converted before A41 part 2 (NRSC v1–v12)
+has the NRSC header at its first byte instead. **Do**: reconvert with the
+current `mkrsc.py convert` — it emits NRSC **v13** (LP64) / **v14** (ILP32),
+which begin with a 36-byte native `RSHDR` (18 little-endian `u16`, classic
+field order, offsets from the file's first byte; `rsh_vrsn` the source's,
+never `& 3 == 3`) padded to 40 bytes, the NRSC header at byte 40. The kernel
+reports that first byte as `ap_rscmem`, `rsh_rssize` as `ap_rsclen` and
+`ap_rscmem + rsh_trindex` as `ap_ptree`, and checks the preamble against
+the NRSC header before relocating (`tos-api/src/aes/resource.rs`
+`rshdr_is_consistent`). Every `RSHDR` field is a `u16`, so an image must
+stay under `RSC_CAP − 40` bytes (the converter refuses a larger one). A
+v1–v12 blob still loads, but an application must not parse its `ap_rscmem`
+as an `RSHDR`.
 
 **Symptom** 4 (2026-09-19, A40): a dialog or menu bar converted before A40
 keeps the layout of a 640-wide 8×16 screen on every machine — an

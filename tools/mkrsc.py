@@ -11,10 +11,13 @@ with the live font cell and screen width (EmuTOS `rs_obfix`).
 This tool emits a demo native resource directly, and (`convert`) reads a
 classic big-endian Atari `.rsc` and re-emits it in this format.
 
-Layout produced (`convert`, NRSC v11/v12):
-    NrscHeader(84B) | [ptr tree-index] | [Object;N] | [TedInfo] | [BitBlk]
-    | [IconBlk] | [CiconBlk] | [Cicon] | frstr table | frimg table | data
-(the demo `build_demo` writes the historical 28-byte v1 header).
+Layout produced (`convert`, NRSC v13/v14):
+    RSHDR(36B, LE u16, padded to 40) | NrscHeader(84B) @40 | [ptr tree-index]
+    | [Object;N] | [TedInfo] | [BitBlk] | [IconBlk] | [CiconBlk] | [Cicon]
+    | frstr table | frimg table | data
+(the demo `build_demo` writes the historical 28-byte v1 header). Every offset
+-- the RSHDR's u16 ones and the NrscHeader's u32 ones alike -- counts from the
+file's first byte, the RSHDR.
 
 Object (32B, repr(C)):
     +0  i16 ob_next   +2  i16 ob_head   +4  i16 ob_tail
@@ -212,6 +215,53 @@ NAT_CIB, NAT_CIC = 56, 48            # native LP64 CICONBLK / CICON
 # converter fails loudly instead of emitting a resource that cannot load.
 RSC_CAP = 64 * 1024
 
+# The native RSHDR preamble of a kernel-loadable resource (NRSC v13/v14,
+# TASK/A41 part 2; `resource.rs` NRSC_VER_RSHDR / RSHDR_PAD). EmuTOS publishes
+# the loaded FILE as AESGLOBAL.ap_rscmem (`rs_readit`, aes/gemrslib.c:787:
+# `rs_global->ap_rscmem = rs_hdr`) -- the classic RSHDR at its head -- and
+# applications parse that header themselves: TeraDesk's xrsrc_gaddr
+# (sdk/apps/teradesk/rsc_load.c:496-541, on the AES-loaded cicons.rsc from
+# icon.c:2750) reads aes_global[7], tests IS_XRSC_HEADER (rsh_vrsn & 3 == 3 ->
+# the RSXHDR with `unsigned long` fields, else the 18 x u16 RSHDR) and takes
+# rsh_trindex / rsh_object / ... as byte offsets from that address. So the
+# image the kernel hands out must BEGIN with that header: 18 little-endian
+# u16 in the classic field order (rsdefs.h:16-36), offsets from the file's
+# first byte -- the representation `--rshdr` already writes and TeraDesk's
+# parser already reads -- padded to 40 bytes so the NRSC header and every
+# pointer-bearing section behind it keep 8-byte alignment. The kernel checks
+# the preamble against the NRSC header before it relocates anything.
+#
+# Every RSHDR field is a u16, so the whole image has to stay below 64 KiB;
+# the converter refuses a larger one (RSC_CAP less the preamble, per the
+# A41 part-2 brief -- the hard bounds are 0xFFFF per field and RSC_CAP).
+RSHDR_SIZE = 36                      # 18 x u16 (rsdefs.h:16-36)
+RSHDR_PAD = 40                       # the preamble, padded for alignment
+RSHDR_FIELDS = ("vrsn", "object", "tedinfo", "iconblk", "bitblk", "frstr",
+                "string", "imdata", "frimg", "trindex", "nobs", "ntree",
+                "nted", "nib", "nbb", "nstring", "nimages", "rssize")
+RSC_VERSION_MASK = 0x0003            # rsc_load.h:68; & 3 == 3 -> RSXHDR
+
+
+def pack_rshdr(fields, where):
+    """Pack the 18 RSHDR u16 fields little-endian, padded to RSHDR_PAD.
+
+    `fields` is the (vrsn, object, tedinfo, iconblk, bitblk, frstr, string,
+    imdata, frimg, trindex, nobs, ntree, nted, nib, nbb, nstring, nimages,
+    rssize) tuple; each must fit a u16 (the classic header's width, and the
+    reason the image is bounded at 64 KiB), and `vrsn & 3` must not be 3 --
+    that would make TeraDesk's IS_XRSC_HEADER read the u16 fields as
+    `unsigned long`s. Either violation aborts loudly.
+    """
+    for name, v in zip(RSHDR_FIELDS, fields):
+        if not 0 <= v <= 0xFFFF:
+            sys.exit(f"{where}: native-RSHDR field rsh_{name}={v} exceeds the u16 "
+                     f"classic-header limit (file too large for this format)")
+    if fields[0] & RSC_VERSION_MASK == RSC_VERSION_MASK:
+        sys.exit(f"{where}: rsh_vrsn={fields[0]:#x} would select the RSXHDR "
+                 f"(unsigned long) header layout (IS_XRSC_HEADER); the fields "
+                 f"written here are u16")
+    return struct.pack("<18H", *fields) + b"\x00" * (RSHDR_PAD - RSHDR_SIZE)
+
 
 def swap16_raster(b):
     """Byte-swap each 16-bit word of a raster copied from a classic `.rsc`.
@@ -361,6 +411,18 @@ def convert(path, out, ilp32=False):
     # pointer fields; a G_CICON's ob_spec is the byte offset of its CICONBLK,
     # relocated like every other pointer ob_spec. An old-format file emits the
     # same header with both counts 0.
+    # version 13 = LP64, 14 = ILP32: the same 84-byte NRSC header, but the
+    # file BEGINS with a native RSHDR (see the RSHDR section comment above):
+    # 18 LE u16 in the classic field order, offsets from the file's first
+    # byte, padded to 40 bytes; the NRSC header follows at offset 40 and all
+    # of its offsets count from the file's first byte too (one reference
+    # point). The loaded image is then the file with the RSHDR at its head,
+    # which is what EmuTOS publishes as ap_rscmem and what TeraDesk's own
+    # xrsrc_gaddr parses (TASK/A41 part 2). rsh_vrsn is the classic file's
+    # (0 for a plain file, 4 = NEW_FORMAT_RSC for one with colour icons, as
+    # EmuTOS leaves it in memory); an RSXHDR source (vrsn & 3 == 3, long
+    # fields) is refused up front, because the classic header is read as
+    # 18 u16 here.
     if ilp32:
         NAT_OBJ, NAT_TED, NAT_IB, NAT_BB = 24, 28, 36, 16
         OBJ_FMT = "<hhhHHHIhhhh"          # 4-byte ob_spec @ 12
@@ -370,7 +432,7 @@ def convert(path, out, ilp32=False):
         NAT_CIB, NAT_CIC = 40, 24
         CIB_FMT = "<IIIhhhhhhhhhhh2xI"    # ICONBLK(36) + 4-byte mainlist @ 36
         CIC_FMT = "<h2xIIIII"             # num_planes, pad, 5 x 4-byte ptrs
-        PTR, PTR_FMT, version = 4, "<I", 12
+        PTR, PTR_FMT, version = 4, "<I", 14
     else:
         NAT_OBJ, NAT_TED, NAT_IB, NAT_BB = 32, 40, 48, 24
         OBJ_FMT = "<hhhHHH4xQhhhh"        # 8-byte ob_spec @ 16
@@ -380,12 +442,15 @@ def convert(path, out, ilp32=False):
         NAT_CIB, NAT_CIC = 56, 48
         CIB_FMT = "<QQQhhhhhhhhhhh2xQ"    # ICONBLK(48) + 8-byte mainlist @ 48
         CIC_FMT = "<h6xQQQQQ"             # num_planes, pad, 5 x 8-byte ptrs
-        PTR, PTR_FMT, version = 8, "<Q", 11
+        PTR, PTR_FMT, version = 8, "<Q", 13
 
     d = open(path, "rb").read()
     H = struct.unpack(">18H", d[:36])
     (vrsn, p_obj, p_ted, p_ib, p_bb, p_frstr, p_str, p_imd, p_frimg,
      p_tri, nobs, ntree, nted, nib, nbb, nstr, nimg, rssize) = H
+    if vrsn & RSC_VERSION_MASK == RSC_VERSION_MASK:
+        sys.exit(f"{path}: rsh_vrsn={vrsn:#x} is an extended (RSXHDR, long-field) "
+                 f"header; this converter reads the classic 18 x u16 RSHDR only")
     # Colour icons: the CICONBLK table of a new-format file (empty otherwise).
     cicon_blocks = read_cicon_table(d, vrsn, rssize)
     ncib = len(cicon_blocks)
@@ -394,20 +459,24 @@ def convert(path, out, ilp32=False):
     # Native section base offsets (counts are fixed up front). The v5/v6 header
     # is 68 bytes: the v3/v4 fields (through off_frimg/nimg) plus the TEDINFO/
     # ICONBLK/BITBLK array bases + counts (off_ted/nted, off_ib/nib, off_bb/nbb);
-    # v11/v12 append off_cib/ncib and off_cic/ncic (84 bytes). The CICONBLK and
-    # CICON arrays follow the ICONBLKs (both record sizes are multiples of PTR,
-    # so the alignment of everything behind them is unchanged). A free-string
-    # then a free-image pointer table sits between them and the string/image
-    # data (each table = count * PTR bytes).
-    HDR = 84
+    # v11/v12 append off_cib/ncib and off_cic/ncic (84 bytes); v13/v14 put the
+    # 40-byte RSHDR preamble in front, so the NRSC header sits at NRSC_OFF and
+    # the first section at HDR. The CICONBLK and CICON arrays follow the
+    # ICONBLKs (both record sizes are multiples of PTR, so the alignment of
+    # everything behind them is unchanged). A free-string then a free-image
+    # pointer table sits between them and the string/image data (each table =
+    # count * PTR bytes).
+    NRSC_OFF = RSHDR_PAD
+    HDR = NRSC_OFF + 84
     off_tri = HDR
     # The OBJECT array (and every 8-byte-pointer section behind it) must start
     # naturally aligned: the kernel dereferences it as `repr(C)` `Object`
     # records (`relocate_blob_core`, `ObjTree`), and so does every app. The
-    # 68-byte header leaves `off_tri` at 4 mod 8, so an LP64 tree index of
-    # 8-byte slots would land the objects at 4 mod 8 too; pad the index up to
-    # the record alignment. `nat_ted`/`nat_bb`/`nat_ib`/`PTR` are all multiples
-    # of PTR, so aligning the OBJECT array aligns every later section with it.
+    # 84-byte NRSC header (at 40) leaves `off_tri` at 4 mod 8, so an LP64
+    # tree index of 8-byte slots would land the objects at 4 mod 8 too; pad
+    # the index up to the record alignment. `nat_ted`/`nat_bb`/`nat_ib`/`PTR`
+    # are all multiples of PTR, so aligning the OBJECT array aligns every
+    # later section with it.
     n_tri = ntree * PTR
     tri_pad = -(off_tri + n_tri) % PTR
     off_obj = off_tri + n_tri + tri_pad
@@ -648,25 +717,41 @@ def convert(path, out, ilp32=False):
     tri.extend(b"\x00" * tri_pad)
 
     total = off_data + len(data)
-    # v11/v12 header: magic + 20 u32 (84 bytes) -- the v7..v10 68-byte shape
-    # plus the two CICON arrays. Field order MUST match the kernel
-    # `NrscHeader` struct (tos-api/src/aes/resource.rs): the v3/v4 fields,
-    # then off_ted/nted, off_ib/nib, off_bb/nbb (the TEDINFO/ICONBLK/BITBLK
-    # bases), then off_cib/ncib, off_cic/ncic (the CICONBLK/CICON bases).
+    # The kernel refuses a blob larger than its buffer (`header_is_sound`
+    # against RSC_CAP), and the RSHDR preamble's u16 fields cannot name a
+    # byte at or past 64 KiB; say so here, loudly, instead of writing such a
+    # file (see the RSHDR section comment for the bound).
+    if total > RSC_CAP - RSHDR_PAD:
+        sys.exit(f"{path}: native resource is {total} bytes, over the "
+                 f"{RSC_CAP - RSHDR_PAD}-byte limit of the RSHDR-headed image "
+                 f"(RSC_CAP {RSC_CAP} less the {RSHDR_PAD}-byte preamble, "
+                 f"tos-api/src/aes/resource.rs) -- it would be refused by "
+                 f"rsrc_load")
+    # The RSHDR preamble (classic field order, offsets from the file's first
+    # byte): rsh_string/rsh_imdata name the shared string+raster data section
+    # (the kernel only bounds them; EmuTOS reads neither), rsh_rssize is the
+    # whole image. The kernel checks every other field against the NRSC
+    # header (`rshdr_is_consistent`), so the two are written from the same
+    # numbers here.
+    rshdr = pack_rshdr(
+        (vrsn, off_obj, off_ted, off_ib, off_bb, off_frstr, off_data, off_data,
+         off_frimg, off_tri, nobs, ntree, nted, nib, nbb, nstr, nimg, total),
+        path)
+    # v13/v14 NRSC header at NRSC_OFF: magic + 20 u32 (84 bytes) -- the
+    # v7..v10 68-byte shape plus the two CICON arrays. Field order MUST match
+    # the kernel `NrscHeader` struct (tos-api/src/aes/resource.rs): the v3/v4
+    # fields, then off_ted/nted, off_ib/nib, off_bb/nbb (the TEDINFO/ICONBLK/
+    # BITBLK bases), then off_cib/ncib, off_cic/ncic (the CICONBLK/CICON
+    # bases).
     header = struct.pack(
         "<4s20I", b"NRSC", version, ntree, nobs, off_tri, off_obj, total,
         off_frstr, nstr, off_frimg, nimg,
         off_ted, nted, off_ib, nib, off_bb, nbb,
         off_cib, ncib, off_cic, ncic)
-    blob = (header + tri + objs + teds + bbs + ibs + bytes(cibs) + bytes(cics)
-            + bytes(frstr) + bytes(frimg) + data)
+    assert len(rshdr) == NRSC_OFF and len(rshdr) + len(header) == HDR
+    blob = (rshdr + header + tri + objs + teds + bbs + ibs + bytes(cibs)
+            + bytes(cics) + bytes(frstr) + bytes(frimg) + data)
     assert len(blob) == total, (len(blob), total)
-    # The kernel refuses a blob larger than its buffer (`header_is_sound`
-    # against RSC_CAP); say so here, loudly, instead of writing such a file.
-    if total > RSC_CAP:
-        sys.exit(f"{path}: native resource is {total} bytes, over the kernel's "
-                 f"RSC_CAP of {RSC_CAP} (tos-api/src/aes/resource.rs) -- it "
-                 f"would be refused by rsrc_load")
     odd = [r for r in rasters if r % RASTER_ALIGN]
     assert not odd, f"raster(s) at odd offsets {odd} (see RASTER_ALIGN)"
     # Postcondition for the reservations (see `ted_reserve`): every TEDINFO
@@ -688,8 +773,9 @@ def convert(path, out, ilp32=False):
     open(out, "wb").write(blob)
     print(f"converted {path} -> {out}: {ntree} trees, {nobs} objects, "
           f"{nted} tedinfo, {nbb} bitblk, {nib} iconblk, {ncib} ciconblk, "
-          f"{ncic} cicon, {nstr} frstr, {nimg} frimg ({total} bytes) "
-          f"[{'ILP32/24B-OBJECT' if ilp32 else 'LP64/32B-OBJECT'}]")
+          f"{ncic} cicon, {nstr} frstr, {nimg} frimg ({total} bytes, "
+          f"RSHDR vrsn {vrsn}) "
+          f"[{'ILP32/24B-OBJECT' if ilp32 else 'LP64/32B-OBJECT'}, NRSC v{version}]")
 
 
 def convert_rshdr(path, out):
@@ -885,18 +971,14 @@ def convert_rshdr(path, out):
         tri.extend(struct.pack("<Q", off_obj + ((toff - p_obj) // CLS_OBJ) * NAT_OBJ))
 
     total = off_data + len(data)
-    # Every RSHDR field is u16 — the whole native file must stay below 64K.
-    hdr_fields = (0, off_obj, off_ted, off_ib, off_bb, off_frstr, off_data,
-                  off_data, off_frimg, off_tri, nobs, ntree, nted, nib, nbb,
-                  nstr, nimg, total)
-    for name, v in zip(("vrsn", "object", "tedinfo", "iconblk", "bitblk",
-                        "frstr", "string", "imdata", "frimg", "trindex",
-                        "nobs", "ntree", "nted", "nib", "nbb", "nstring",
-                        "nimages", "rssize"), hdr_fields):
-        if v > 0xFFFF:
-            sys.exit(f"native-RSHDR field rsh_{name}={v} exceeds the u16 "
-                     f"classic-header limit (file too large for this format)")
-    header = struct.pack("<18H", *hdr_fields) + b"\x00" * (HDR - 36)
+    # Every RSHDR field is u16 — the whole native file must stay below 64K
+    # (`pack_rshdr` refuses otherwise). rsh_vrsn = 0: no XRSC, no CICON
+    # extension (refused above).
+    assert HDR == RSHDR_PAD
+    header = pack_rshdr(
+        (0, off_obj, off_ted, off_ib, off_bb, off_frstr, off_data, off_data,
+         off_frimg, off_tri, nobs, ntree, nted, nib, nbb, nstr, nimg, total),
+        path)
     blob = header + tri + objs + teds + bbs + ibs + bytes(frstr) + bytes(frimg) + data
     assert len(blob) == total, (len(blob), total)
     odd = [r for r in rasters if r % RASTER_ALIGN]

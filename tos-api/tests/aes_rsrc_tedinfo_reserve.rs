@@ -140,7 +140,12 @@ fn objc_edit(tree: u64, obj: i16, in_char: i16, idx: i16, kind: i16) -> i16 {
 
 /// The blob's declared size (`total_size`, u32 at header offset 24).
 fn total_size() -> usize {
-    u32::from_le_bytes(RSC[24..28].try_into().unwrap()) as usize
+    // The NRSC header sits at the front (v1–v12) or behind the 40-byte native
+    // `RSHDR` preamble (v13+, `resource.rs` `RSHDR_PAD`); `total_size` is its
+    // sixth `u32`.
+    let off = if &RSC[..4] == b"NRSC" { 0 } else { 40 };
+    assert_eq!(&RSC[off..off + 4], b"NRSC", "an NRSC blob");
+    u32::from_le_bytes(RSC[off + 24..off + 28].try_into().unwrap()) as usize
 }
 
 // ── the reservation, in the file ──────────────────────────────────────────

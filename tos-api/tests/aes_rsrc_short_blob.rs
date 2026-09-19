@@ -205,8 +205,16 @@ fn dirent(name: &[u8; 11], attr: u8, cluster: u16, size: u32) -> [u8; 32] {
     e
 }
 
-/// Byte offset of `total_size` in the `NRSC` header (magic + six `u32`).
-const TOTAL_SIZE_OFF: usize = 24;
+/// Byte offset of `total_size` in the `NRSC` header (magic + six `u32`),
+/// which sits at the front (NRSC v1–v12) or behind the 40-byte native
+/// `RSHDR` preamble (v13+, `resource.rs` `RSHDR_PAD`).
+fn total_size_off() -> usize {
+    let off = if &RSC[..4] == b"NRSC" { 0 } else { 40 };
+    assert_eq!(&RSC[off..off + 4], b"NRSC", "an NRSC blob");
+    off + 24
+}
+/// Byte offset of `rsh_rssize` in the native `RSHDR` preamble (field 17).
+const RSH_RSSIZE_OFF: usize = 34;
 
 /// The same resource padded out past `RSC_CAP`, its `total_size` telling the
 /// truth about the padded length: a well-formed file that simply does not fit
@@ -216,7 +224,13 @@ fn oversized() -> Vec<u8> {
     let mut v = RSC.to_vec();
     v.resize(RSC_CAP + 4096, 0);
     let total = v.len() as u32;
-    v[TOTAL_SIZE_OFF..TOTAL_SIZE_OFF + 4].copy_from_slice(&total.to_le_bytes());
+    let off = total_size_off();
+    v[off..off + 4].copy_from_slice(&total.to_le_bytes());
+    if off != 24 {
+        // A v13+ image: its `RSHDR` preamble states the size too (`rsh_rssize`,
+        // a u16 — the low word, exactly what EmuTOS's `ap_rsclen` would carry).
+        v[RSH_RSSIZE_OFF..RSH_RSSIZE_OFF + 2].copy_from_slice(&(total as u16).to_le_bytes());
+    }
     v
 }
 
@@ -507,7 +521,7 @@ fn a_header_whose_arrays_run_past_the_blob_is_refused() {
     put(&mut src, 12, 4); // n_objects
     put(&mut src, 16, 68); // off_trindex
     put(&mut src, 20, 400); // off_objects — 400 + 4 * 32 = 528 > 512
-    put(&mut src, TOTAL_SIZE_OFF as usize, LEN as u32);
+    put(&mut src, 24, LEN as u32); // total_size of a v1 header at the front
     let (_owner, p, len) = guarded(&src);
     assert!(
         !unsafe { tos_api::aes::resource::relocate_and_register(p, len) },

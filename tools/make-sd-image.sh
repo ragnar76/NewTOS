@@ -207,8 +207,8 @@ fi
 # one 32-bit-assuming file (the private pool allocator memory.c) is replaced by
 # sdk/apps/qed/overlay/memory.c at build time — QED's src/ stays pristine.
 # Installed into its own app dir C:\Apps\QED\ (classic GEM apps expect their .RSC
-# beside the .NAP): QED.NAP is the GEM program, qed.rsc its native NRSC-v3 (LP64)
-# resource. Launched by double-clicking QED.NAP on the desktop — NEVER from \AUTO\
+# beside the .NAP): QED.NAP is the GEM program, qed.rsc its native NRSC (LP64)
+# resource (`tools/mkrsc.py convert`, a manual step — docs/sdk/04-porting-anatomy.md). Launched by double-clicking QED.NAP on the desktop — NEVER from \AUTO\
 # (console-only, ADR-018). Copied in if the LP64 build exists (sdk/apps/build-qed.sh).
 # ── TOSDUMP: the VDI reference dumper (docs/TOS-REFERENCE-DUMPER.md) ─────────
 # DUMPVDI.NAP measures what this machine's VDI does, case by case, so it can be
@@ -271,13 +271,13 @@ fi
 # window.h WDFLAGS 2-byte fix) as native LP64. Its dist/ is staged by
 # sdk/apps/build-teradesk.sh: DESKTOP.NAP (the GEM program), desktop.rsc
 # (NRSC/LP64 for the kernel rsrc_load), icons.rsc (native-RSHDR for TeraDesk's
-# OWN xrsrc_load parser — NOT kernel-loadable), and — once build-teradesk.sh
-# stages it — cicons.rsc (the colour icons, NRSC v11/LP64 for the kernel
-# rsrc_load; TeraDesk's load_icons tries it first and falls back to the mono
-# icons.rsc, TASK/A41). It is copied only when present in dist/; today it is
-# deliberately not staged (see build-teradesk.sh: TeraDesk parses the image at
-# ap_rscmem as an RSHDR, which the NRSC image does not yet carry), so the
-# desktop stays mono.
+# OWN xrsrc_load parser — NOT kernel-loadable), and cicons.rsc (the colour
+# icons, NRSC v13/LP64 for the kernel rsrc_load — an image that begins with a
+# native RSHDR, which TeraDesk's load_icons parses on its own after the AES
+# loaded it, TASK/A41; TeraDesk tries it first and falls back to the mono
+# icons.rsc when it is absent). cicons.rsc is copied only when present in
+# dist/ (a dist/ staged before A41 part 2 has none), so an older staging still
+# yields a mono desktop rather than a broken one.
 # Launched by double-clicking DESKTOP.NAP — NEVER from \AUTO\ (ADR-018).
 TERA_DIR="$SCRIPT_DIR/../sdk/apps/teradesk/build/dist"
 if [ -f "$TERA_DIR/DESKTOP.NAP" ] && [ -f "$TERA_DIR/desktop.rsc" ] && [ -f "$TERA_DIR/icons.rsc" ]; then

@@ -1,0 +1,294 @@
+   Compiling tos-api v0.1.0 (/Volumes/Daten/Development/PiRusTOS/tos-api)
+326 |         tree[idx].ob_state |= SELECTED;
+
+1964 |         top += gl_hbox();
+
+136 | pub fn form_alert(pb: &Aespb) {
+note: but type `Aespb` is only usable at visibility `pub(crate)`
+ 43 | pub(crate) struct Aespb {
+
+565 | pub fn form_do(pb: &Aespb) {
+note: but type `Aespb` is only usable at visibility `pub(crate)`
+ 43 | pub(crate) struct Aespb {
+
+821 | pub fn form_error(pb: &Aespb) {
+note: but type `Aespb` is only usable at visibility `pub(crate)`
+ 43 | pub(crate) struct Aespb {
+
+968 | pub fn form_center(pb: &Aespb) {
+note: but type `Aespb` is only usable at visibility `pub(crate)`
+ 43 | pub(crate) struct Aespb {
+
+1023 | pub fn form_dial(pb: &Aespb) {
+note: but type `Aespb` is only usable at visibility `pub(crate)`
+  43 | pub(crate) struct Aespb {
+
+1090 | pub fn form_button(pb: &Aespb) {
+note: but type `Aespb` is only usable at visibility `pub(crate)`
+  43 | pub(crate) struct Aespb {
+
+1113 | pub fn form_keybd(pb: &Aespb) {
+note: but type `Aespb` is only usable at visibility `pub(crate)`
+  43 | pub(crate) struct Aespb {
+
+538 | pub fn fsel_input(pb: &Aespb) {
+note: but type `Aespb` is only usable at visibility `pub(crate)`
+ 43 | pub(crate) struct Aespb {
+
+545 | pub fn fsel_exinput(pb: &Aespb) {
+note: but type `Aespb` is only usable at visibility `pub(crate)`
+ 43 | pub(crate) struct Aespb {
+
+149 | pub fn menu_bar(pb: &Aespb) {
+note: but type `Aespb` is only usable at visibility `pub(crate)`
+ 43 | pub(crate) struct Aespb {
+
+749 | pub fn menu_icheck(pb: &Aespb) {
+note: but type `Aespb` is only usable at visibility `pub(crate)`
+ 43 | pub(crate) struct Aespb {
+
+758 | pub fn menu_ienable(pb: &Aespb) {
+note: but type `Aespb` is only usable at visibility `pub(crate)`
+ 43 | pub(crate) struct Aespb {
+
+770 | pub fn menu_tnormal(pb: &Aespb) {
+note: but type `Aespb` is only usable at visibility `pub(crate)`
+ 43 | pub(crate) struct Aespb {
+
+796 | pub fn menu_text(pb: &Aespb) {
+note: but type `Aespb` is only usable at visibility `pub(crate)`
+ 43 | pub(crate) struct Aespb {
+
+857 | pub fn menu_register(pb: &Aespb) {
+note: but type `Aespb` is only usable at visibility `pub(crate)`
+ 43 | pub(crate) struct Aespb {
+
+997 | pub fn menu_popup(pb: &Aespb) {
+note: but type `Aespb` is only usable at visibility `pub(crate)`
+ 43 | pub(crate) struct Aespb {
+
+1150 | pub fn menu_settings(pb: &Aespb) {
+note: but type `Aespb` is only usable at visibility `pub(crate)`
+  43 | pub(crate) struct Aespb {
+
+1419 | pub fn menu_attach(pb: &Aespb) {
+note: but type `Aespb` is only usable at visibility `pub(crate)`
+  43 | pub(crate) struct Aespb {
+
+1457 | pub fn menu_istart(pb: &Aespb) {
+note: but type `Aespb` is only usable at visibility `pub(crate)`
+  43 | pub(crate) struct Aespb {
+
+988 | pub fn objc_draw(pb: &Aespb) {
+note: but type `Aespb` is only usable at visibility `pub(crate)`
+ 43 | pub(crate) struct Aespb {
+
+1181 | pub fn objc_offset(pb: &Aespb) {
+note: but type `Aespb` is only usable at visibility `pub(crate)`
+  43 | pub(crate) struct Aespb {
+
+1196 | pub fn objc_add(pb: &Aespb) {
+note: but type `Aespb` is only usable at visibility `pub(crate)`
+  43 | pub(crate) struct Aespb {
+
+1210 | pub fn objc_delete(pb: &Aespb) {
+note: but type `Aespb` is only usable at visibility `pub(crate)`
+  43 | pub(crate) struct Aespb {
+
+1224 | pub fn objc_order(pb: &Aespb) {
+note: but type `Aespb` is only usable at visibility `pub(crate)`
+  43 | pub(crate) struct Aespb {
+
+1352 | pub fn objc_change(pb: &Aespb) {
+note: but type `Aespb` is only usable at visibility `pub(crate)`
+  43 | pub(crate) struct Aespb {
+
+1400 | pub fn objc_sysvar(pb: &Aespb) {
+note: but type `Aespb` is only usable at visibility `pub(crate)`
+  43 | pub(crate) struct Aespb {
+
+1540 | pub fn objc_edit(pb: &Aespb) {
+note: but type `Aespb` is only usable at visibility `pub(crate)`
+  43 | pub(crate) struct Aespb {
+
+1928 | pub fn objc_find(pb: &Aespb) {
+note: but type `Aespb` is only usable at visibility `pub(crate)`
+  43 | pub(crate) struct Aespb {
+
+1959 | pub fn rsrc_load(pb: &Aespb) {
+note: but type `Aespb` is only usable at visibility `pub(crate)`
+  43 | pub(crate) struct Aespb {
+
+2318 | pub fn rsrc_free(pb: &Aespb) {
+note: but type `Aespb` is only usable at visibility `pub(crate)`
+  43 | pub(crate) struct Aespb {
+
+2540 | pub fn rsrc_gaddr(pb: &Aespb) {
+note: but type `Aespb` is only usable at visibility `pub(crate)`
+  43 | pub(crate) struct Aespb {
+
+2565 | pub fn rsrc_saddr(pb: &Aespb) {
+note: but type `Aespb` is only usable at visibility `pub(crate)`
+  43 | pub(crate) struct Aespb {
+
+2610 | pub fn rsrc_obfix(pb: &Aespb) {
+note: but type `Aespb` is only usable at visibility `pub(crate)`
+  43 | pub(crate) struct Aespb {
+
+210 | pub fn scrp_read(pb: &Aespb) {
+note: but type `Aespb` is only usable at visibility `pub(crate)`
+ 43 | pub(crate) struct Aespb {
+
+219 | pub fn scrp_write(pb: &Aespb) {
+note: but type `Aespb` is only usable at visibility `pub(crate)`
+ 43 | pub(crate) struct Aespb {
+
+243 | pub fn scrp_clear(pb: &Aespb) {
+note: but type `Aespb` is only usable at visibility `pub(crate)`
+ 43 | pub(crate) struct Aespb {
+
+338 | pub fn shel_read(pb: &Aespb) {
+note: but type `Aespb` is only usable at visibility `pub(crate)`
+ 43 | pub(crate) struct Aespb {
+
+432 | pub fn shel_write(pb: &Aespb) {
+note: but type `Aespb` is only usable at visibility `pub(crate)`
+ 43 | pub(crate) struct Aespb {
+
+731 | pub fn shel_get(pb: &Aespb) {
+note: but type `Aespb` is only usable at visibility `pub(crate)`
+ 43 | pub(crate) struct Aespb {
+
+748 | pub fn shel_put(pb: &Aespb) {
+note: but type `Aespb` is only usable at visibility `pub(crate)`
+ 43 | pub(crate) struct Aespb {
+
+792 | pub fn shel_find(pb: &Aespb) {
+note: but type `Aespb` is only usable at visibility `pub(crate)`
+ 43 | pub(crate) struct Aespb {
+
+900 | pub fn shel_envrn(pb: &Aespb) {
+note: but type `Aespb` is only usable at visibility `pub(crate)`
+ 43 | pub(crate) struct Aespb {
+
+951 | pub fn shel_rdef(pb: &Aespb) {
+note: but type `Aespb` is only usable at visibility `pub(crate)`
+ 43 | pub(crate) struct Aespb {
+
+966 | pub fn shel_wdef(pb: &Aespb) {
+note: but type `Aespb` is only usable at visibility `pub(crate)`
+ 43 | pub(crate) struct Aespb {
+
+2314 | pub fn wind_create(pb: &Aespb) {
+note: but type `Aespb` is only usable at visibility `pub(crate)`
+  43 | pub(crate) struct Aespb {
+
+2382 | pub fn wind_open(pb: &Aespb) {
+note: but type `Aespb` is only usable at visibility `pub(crate)`
+  43 | pub(crate) struct Aespb {
+
+2437 | pub fn wind_close(pb: &Aespb) {
+note: but type `Aespb` is only usable at visibility `pub(crate)`
+  43 | pub(crate) struct Aespb {
+
+2607 | pub fn wind_delete(pb: &Aespb) {
+note: but type `Aespb` is only usable at visibility `pub(crate)`
+  43 | pub(crate) struct Aespb {
+
+2620 | pub fn wind_get(pb: &Aespb) {
+note: but type `Aespb` is only usable at visibility `pub(crate)`
+  43 | pub(crate) struct Aespb {
+
+2810 | pub fn wind_set(pb: &Aespb) {
+note: but type `Aespb` is only usable at visibility `pub(crate)`
+  43 | pub(crate) struct Aespb {
+
+3033 | pub fn wind_find(pb: &Aespb) {
+note: but type `Aespb` is only usable at visibility `pub(crate)`
+  43 | pub(crate) struct Aespb {
+
+3048 | pub fn wind_update(pb: &Aespb) {
+note: but type `Aespb` is only usable at visibility `pub(crate)`
+  43 | pub(crate) struct Aespb {
+
+3125 | pub fn wind_calc(pb: &Aespb) {
+note: but type `Aespb` is only usable at visibility `pub(crate)`
+  43 | pub(crate) struct Aespb {
+
+3142 | pub fn wind_new(pb: &Aespb) {
+note: but type `Aespb` is only usable at visibility `pub(crate)`
+  43 | pub(crate) struct Aespb {
+
+556 | pub fn vsc_form(pb: &Vdipb, backend: &dyn RasterBackend) {
+note: but type `Vdipb` is only usable at visibility `pub(crate)`
+ 81 | pub(crate) struct Vdipb {
+
+599 | pub fn v_show_c(pb: &Vdipb, backend: &dyn RasterBackend) {
+note: but type `Vdipb` is only usable at visibility `pub(crate)`
+ 81 | pub(crate) struct Vdipb {
+
+682 | pub fn vq_mouse(pb: &Vdipb) {
+note: but type `Vdipb` is only usable at visibility `pub(crate)`
+ 81 | pub(crate) struct Vdipb {
+
+699 | pub fn vex_butv(pb: &Vdipb) {
+note: but type `Vdipb` is only usable at visibility `pub(crate)`
+ 81 | pub(crate) struct Vdipb {
+
+703 | pub fn vex_motv(pb: &Vdipb) {
+note: but type `Vdipb` is only usable at visibility `pub(crate)`
+ 81 | pub(crate) struct Vdipb {
+
+707 | pub fn vex_curv(pb: &Vdipb) {
+note: but type `Vdipb` is only usable at visibility `pub(crate)`
+ 81 | pub(crate) struct Vdipb {
+
+711 | pub fn vex_wheelv(pb: &Vdipb) {
+note: but type `Vdipb` is only usable at visibility `pub(crate)`
+ 81 | pub(crate) struct Vdipb {
+
+717 | pub fn vex_timv(pb: &Vdipb) {
+note: but type `Vdipb` is only usable at visibility `pub(crate)`
+ 81 | pub(crate) struct Vdipb {
+
+366 | const NRSC_VER_RSHDR: u32 = 13;
+
+374 | const RSHDR_SIZE: usize = 36;
+
+    Finished `test` profile [optimized + debuginfo] target(s) in 0.78s
+     Running unittests src/lib.rs (target/debug/deps/tos_api-6503eecebe9f8f1a)
+
+running 3 tests
+test aes::resource::rshdr_tests::a_preamble_that_disagrees_with_the_nrsc_header_is_refused ... FAILED
+test aes::resource::rshdr_tests::the_image_at_ap_rscmem_is_an_rshdr_headed_file_teradesk_can_parse ... FAILED
+test aes::resource::rshdr_tests::the_header_generation_must_match_where_the_magic_sits ... FAILED
+
+failures:
+
+---- aes::resource::rshdr_tests::a_preamble_that_disagrees_with_the_nrsc_header_is_refused stdout ----
+
+thread 'aes::resource::rshdr_tests::a_preamble_that_disagrees_with_the_nrsc_header_is_refused' (2738352) panicked at tos-api/src/aes/resource.rs:3585:9:
+a v13 image
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+
+---- aes::resource::rshdr_tests::the_image_at_ap_rscmem_is_an_rshdr_headed_file_teradesk_can_parse stdout ----
+
+thread 'aes::resource::rshdr_tests::the_image_at_ap_rscmem_is_an_rshdr_headed_file_teradesk_can_parse' (2738354) panicked at tos-api/src/aes/resource.rs:3533:9:
+assertion `left == right` failed: R_TREE 0: _rs_trindex[0] at rsh_trindex 0
+  left: Some(39784239694)
+ right: Some(4194400)
+
+---- aes::resource::rshdr_tests::the_header_generation_must_match_where_the_magic_sits stdout ----
+
+thread 'aes::resource::rshdr_tests::the_header_generation_must_match_where_the_magic_sits' (2738353) panicked at tos-api/src/aes/resource.rs:3630:9:
+a v11 header at offset 40
+
+
+failures:
+    aes::resource::rshdr_tests::a_preamble_that_disagrees_with_the_nrsc_header_is_refused
+    aes::resource::rshdr_tests::the_header_generation_must_match_where_the_magic_sits
+    aes::resource::rshdr_tests::the_image_at_ap_rscmem_is_an_rshdr_headed_file_teradesk_can_parse
+
+test result: FAILED. 0 passed; 3 failed; 0 ignored; 0 measured; 40 filtered out; finished in 0.00s
+
+error: test failed, to rerun pass `-p tos-api --lib`

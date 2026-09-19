@@ -1,0 +1,69 @@
+--- /Volumes/Daten/Development/PiRusTOS/tos-api/src/aes/resource.rs	2026-09-19 20:17:43
++++ tos-api/src/aes/resource.rs	2026-09-19 20:31:19
+@@ -2189,8 +2189,28 @@
+         // `appl_init` fills (`aes/appl.rs`).
+         unsafe { report_load(pb.global_ptr(), &desc) };
+     }
++    // A41P2-TEMP (scratch copy only): serial evidence of the load.
++    a41_log(format_args!("[a41] pid={} rsrc_load(\"{}\") -> {} ap_rscmem=0x{:x} ap_rsclen={} cicon_buf={} B",
++        pid, path_str, i16::from(loaded.is_some()),
++        loaded.map_or(0, |d| published_name(&d)), loaded.map_or(0, |d| d.blob_len), loaded.map_or(0, |d| d.cicon.len)));
+     pb.set_ret(i16::from(loaded.is_some()));
++}
++
++// A41P2-TEMP BEGIN (scratch copy only)
++pub fn a41_log(args: core::fmt::Arguments) {
++    struct W;
++    impl core::fmt::Write for W {
++        fn write_str(&mut self, s: &str) -> core::fmt::Result {
++            if let Some(h) = crate::host::host() { h.debug_write(s.as_bytes()); }
++            Ok(())
++        }
++    }
++    use core::fmt::Write as _;
++    let mut w = W;
++    let _ = w.write_fmt(args);
++    let _ = w.write_str("\r\n");
+ }
++// A41P2-TEMP END
+ 
+ /// Place a candidate native `.RSC` blob (`src[..len]`) into the calling
+ /// process's per-process resource window, register it in the list of the
+@@ -2447,6 +2467,8 @@
+     let pid = caller_pid();
+     // SAFETY: single trap path; `global` is the caller's AESGLOBAL.
+     let Some(idx) = (unsafe { selected(pid, pb.global_ptr()) }) else {
++        a41_log(format_args!("[a41] pid={} rsrc_free(selector 0x{:x}) -> 0 (names nothing)", pid,
++            unsafe { (pb.global_ptr() as *const u8).add(AP_RSCMEM_OFF).cast::<u32>().read_unaligned() }));
+         pb.set_ret(0);
+         return;
+     };
+@@ -2501,6 +2523,8 @@
+     // which is why the spec notes a program must not `rsrc_gaddr` after
+     // `rsrc_free`. XaAES rewrites the words to the next entry of its list
+     // (`xa_rsrc.c:1347-1362`); not adopted.
++    a41_log(format_args!("[a41] pid={} rsrc_free(selector 0x{:x}) -> {}", pid,
++        unsafe { (pb.global_ptr() as *const u8).add(AP_RSCMEM_OFF).cast::<u32>().read_unaligned() }, rc));
+     pb.set_ret(rc);
+ }
+ 
+--- /Volumes/Daten/Development/PiRusTOS/tos-api/src/gemdos/memory.rs	2026-09-02 20:46:19
++++ tos-api/src/gemdos/memory.rs	2026-09-19 20:31:19
+@@ -227,12 +227,15 @@
+     let Some(slot) = process::slot_for(run) else {
+         return EIMBA;
+     };
+-    match usermem::free(slot, addr as u64) {
++    let rc = match usermem::free(slot, addr as u64) {
+         // SAFETY: BDOS lock held; `m` came from `Mxalloc` and is on the
+         // allocated list.
+         Some(m) => unsafe { traps::mfree(m) },
+         None => EIMBA,
+-    }
++    };
++    // A41P2-TEMP (scratch copy only)
++    crate::aes::resource::a41_log(format_args!("[a41] Mfree(0x{:x}) -> {}", addr, rc));
++    rc
+ }
+ 
+ /// `Mshrink(n, blk, len)` — GEMDOS 0x4A.

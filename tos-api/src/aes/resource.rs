@@ -13,8 +13,8 @@
 //! [`fix_objects_coords`] and [`rs_obfix`]. `rsrc_obfix` (114) is the same
 //! `rs_obfix`, applied by an application to an object of its own.
 //!
-//! Native `.RSC` layout (all little-endian). Five header generations coexist;
-//! the loader picks by `version` and is backward-compatible:
+//! Native `.RSC` layout (all little-endian). Seven header generations
+//! coexist; the loader picks by `version` and is backward-compatible:
 //!
 //! * **v1 (LP64) / v2 (ILP32)** — 28-byte header, no free-string/free-image
 //!   tables. GEM.RSC / DESK.RSC and any pre-D-054 resource. R_FRSTR / R_STRING
@@ -64,8 +64,22 @@
 //!   block for the live plane count and the colour data is turned into the
 //!   device form ([`fix_cicons`]). A pre-v11 blob declares no such arrays;
 //!   its `G_CICON` objects (which the tool of the day zeroed) stay empty.
+//! * **v13 (LP64) / v14 (ILP32)** — the same 84-byte header, but the image
+//!   **begins with a native `RSHDR`**: the 18 LE `u16` of the classic
+//!   header (`rsdefs.h:16-36` order), every offset counted from the image's
+//!   first byte, padded to 40 bytes ([`RSHDR_PAD`]); the NRSC header sits
+//!   at 40 and its offsets count from the first byte too. That is what an
+//!   application finds behind `ap_rscmem` on EmuTOS — the loaded file,
+//!   `RSHDR` at its head (`rs_readit`, `gemrslib.c:787`) — and what
+//!   TeraDesk's own `xrsrc_gaddr` parses (`rsc_load.c:496-541`, on the
+//!   AES-loaded `cicons.rsc`); with the NRSC header there instead it read
+//!   `"NRSC"` + version as a pointer and faulted (A41 part 2,
+//!   [`NRSC_VER_RSHDR`]). The preamble is checked against the NRSC header
+//!   before the relocation ([`rshdr_is_consistent`]). A v1–v12 blob still
+//!   has its header at 0 and loads unchanged.
 //!
 //! ```text
+//!   [RSHDR: 18 × u16, classic order, padded to 40 B]               (v13+)
 //!   NrscHeader: magic "NRSC", version, n_trees, n_objects,
 //!               off_trindex, off_objects, total_size            (v1/v2: 28 B)
 //!               [, off_frstr, n_frstr, off_frimg, n_frimg]      (v3/v4: 44 B)
@@ -84,6 +98,11 @@
 //!   [ptr; n_frimg]   frimg table @ off_frimg    (v3+: offset → a BITBLK)
 //!   string / data bytes          (referenced by the ob_spec / table offsets)
 //! ```
+//!
+//! Every offset — the `RSHDR`'s `u16` ones and the `NrscHeader`'s `u32` ones
+//! alike — counts from the image's first byte, which is the `RSHDR` from
+//! v13 on and the `NrscHeader` before; [`hdr`] finds the `NrscHeader` of a
+//! validated image, so the preamble is accounted for in one place.
 //!
 //! The tree-index / frstr / frimg **slot** width matches `ob_spec`: 8 bytes
 //! (LP64) or 4 bytes (ILP32), relocated at the calling app's ABI width like
@@ -340,6 +359,41 @@ const NRSC_VER_CHARGRID: u32 = 9;
 /// `ob_spec` the converter of the day zeroed — are left as they are.
 const NRSC_VER_CICON: u32 = 11;
 
+/// First NRSC `version` whose image **begins with a native `RSHDR`** (v13
+/// LP64, v14 ILP32): the 18 LE `u16` of the classic header (`rsdefs.h:16-36`
+/// order — `rsh_vrsn`, the seven section offsets, `rsh_trindex`, the seven
+/// counts, `rsh_rssize`), padded to [`RSHDR_PAD`] bytes, in front of the
+/// NRSC header, every offset counted from the image's first byte.
+///
+/// EmuTOS publishes the loaded *file* as `ap_rscmem` (`rs_readit`,
+/// `gemrslib.c:787`, `rs_global->ap_rscmem = rs_hdr`), classic `RSHDR` at
+/// its head, and applications parse that header themselves: TeraDesk's
+/// `xrsrc_gaddr` (`sdk/apps/teradesk/rsc_load.c:496-541`) reads
+/// `aes_global[7]`, tests `IS_XRSC_HEADER` (`rsh_vrsn & 3 == 3` → the
+/// `RSXHDR` with `unsigned long` fields, else the 18 × `u16` `RSHDR`) and
+/// takes `rsh_trindex`/`rsh_object`/… as byte offsets from that address —
+/// on the AES-loaded `cicons.rsc` (`load_icons`, `icon.c:2750`). That is a
+/// contract over the **memory image** behind `ap_rscmem`, beyond ADR-013's
+/// freedom over the on-disk bytes; from this generation on the loaded image
+/// *is* the file with the `RSHDR` at its head, as in EmuTOS (spec
+/// `resource-fileselector.md` §5.11 item 5, option a, decided 2026-09-19).
+/// The preamble is checked against the NRSC header before anything is
+/// relocated ([`rshdr_is_consistent`]). A v1–v12 image has the NRSC header
+/// at offset 0 and keeps loading; it publishes an `ap_rscmem` an
+/// application must not parse as an `RSHDR` — which is why every shipped
+/// resource is reconverted.
+const NRSC_VER_RSHDR: u32 = 13;
+
+/// Bytes of the native `RSHDR` preamble of a v13+ image: the 36-byte header
+/// ([`RSHDR_SIZE`]) padded to 40, so the NRSC header and every pointer-bearing
+/// section behind it keep their 8-byte alignment. The NRSC magic of such an
+/// image sits at this offset.
+pub const RSHDR_PAD: usize = 40;
+/// Size of the classic `RSHDR`: 18 `u16` fields (`rsdefs.h:16-36`), read
+/// by [`rshdr_is_consistent`] inside the preamble.
+const RSHDR_SIZE: usize = 18 * 2;
+const _: () = assert!(RSHDR_SIZE <= RSHDR_PAD && RSHDR_PAD.is_multiple_of(8));
+
 /// Slot width of the tree index for a blob of `version`, given the caller's
 /// pointer width `ptr`: a relocated pointer from [`NRSC_VER_TRINDEX_PTR`] on,
 /// a fixed 4-byte root OBJECT index before that.
@@ -361,7 +415,9 @@ fn trindex_stride(version: u32, ptr: usize) -> usize {
 const MAX_TREES: usize = 64;
 
 /// Native resource-file header. 28 bytes for v1/v2, 44 bytes for v3/v4, 68
-/// bytes for v5–v10, 84 bytes from v11. Each generation's extra fields exist
+/// bytes for v5–v10, 84 bytes from v11; at the image's first byte through
+/// v12, at [`RSHDR_PAD`] behind the native `RSHDR` from v13 on
+/// ([`NRSC_VER_RSHDR`]). Each generation's extra fields exist
 /// only for a high enough `version` (`>= NRSC_VER_TABLES` for the
 /// free-string/-image table fields, `>= NRSC_VER_SUBSTRUCTS` for the
 /// TEDINFO/ICONBLK/BITBLK fields, `>= NRSC_VER_CICON` for the CICONBLK/CICON
@@ -484,10 +540,12 @@ struct Loaded {
     /// Stride of one BITBLK record: 24 (LP64) or 16 (ILP32).
     bb_size: usize,
     /// Target VA of the blob's **first byte** — EmuTOS's `rs_hdr`, reported as
-    /// `ap_rscmem` (`gemrslib.c:787`). 0 = nothing loaded.
+    /// `ap_rscmem` (`gemrslib.c:787`); from [`NRSC_VER_RSHDR`] on that byte
+    /// begins the native `RSHDR` an application parses. 0 = nothing loaded.
     blob_target: u64,
-    /// Declared blob length in bytes (`total_size`) — EmuTOS's `rslsize`,
-    /// reported as `ap_rsclen` (`gemrslib.c:788`).
+    /// Declared blob length in bytes (`total_size`, preamble included) —
+    /// EmuTOS's `rslsize`, reported as `ap_rsclen` (`gemrslib.c:788`) and
+    /// stated again by the preamble's `rsh_rssize`.
     blob_len: u32,
     /// Target VA of the relocated tree-index array — EmuTOS's `ptreebase`,
     /// reported as `ap_ptree` (`gemrslib.c:595-597`). 0 when the blob predates
@@ -761,31 +819,51 @@ const TE_TMPLEN_OFF_ILP32: usize = 26;
 /// declares.
 ///
 /// Refused (false → `rsrc_load` = 0, EmuTOS's FALSE):
-/// * fewer bytes than the header itself, or no `NRSC` magic,
+/// * fewer bytes than the header itself, or no `NRSC` magic — at the front
+///   (v1–v12) or at [`RSHDR_PAD`] (v13+); a generation at the wrong place,
 /// * `total_size > len` — a short read, and equally a file too large for
 ///   [`RSC_CAP`], which `read_file` would otherwise truncate in silence,
-/// * a declared array that does not lie wholly inside `total_size`.
+/// * a declared array that does not lie wholly inside `total_size`,
+/// * a v13+ `RSHDR` preamble that disagrees with the NRSC header
+///   ([`rshdr_is_consistent`]).
 ///
 /// The record strides depend on the caller's OBJECT width, hence `abi`.
 ///
 /// # Safety
 /// `access_base` must point at `len` readable bytes.
 unsafe fn header_is_sound(access_base: *const u8, len: usize, abi: Abi) -> bool {
-    // The header is read as a whole `NrscHeader`, so that many bytes must be
-    // there even for a file generation that only defines the first 28 or 44 of
-    // them — the `version` gates below decide what may be *interpreted*.
-    if len < size_of::<NrscHeader>() {
+    // Where the NRSC header sits: at the front (v1–v12) or behind the native
+    // `RSHDR` preamble (v13+). The header is read as a whole `NrscHeader`, so
+    // that many bytes must be there even for a file generation that only
+    // defines the first 28 or 44 of them — the `version` gates below decide
+    // what may be *interpreted*.
+    // SAFETY: `len` readable bytes at `access_base`.
+    let Some(off) = (unsafe { nrsc_header_offset(access_base, len) }) else {
+        return false;
+    };
+    if len < off + size_of::<NrscHeader>() {
         return false;
     }
     // SAFETY: `len` covers the header just checked for.
-    let h = unsafe { &*(access_base as *const NrscHeader) };
-    if &h.magic != b"NRSC" {
+    let h = unsafe { &*(access_base.add(off) as *const NrscHeader) };
+    // The generation must match where the header was found: a v13+ header
+    // only ever sits behind the preamble, an older one only at the front —
+    // the offsets count from the image's first byte either way, so a header
+    // in the wrong place would count 40 bytes that are not there (or are).
+    if (off == RSHDR_PAD) != (h.version >= NRSC_VER_RSHDR) {
         return false;
     }
     // The short-read guard itself: the blob must not claim more bytes than
     // were read, nor fewer than its own header.
     let size = h.total_size as u64;
-    if size > len as u64 || size < size_of::<NrscHeader>() as u64 {
+    if size > len as u64 || size < (off + size_of::<NrscHeader>()) as u64 {
+        return false;
+    }
+    // The `RSHDR` preamble an application will parse (v13+): every offset
+    // and count it states must be the NRSC header's, before anything is
+    // relocated by the latter and published through the former.
+    // SAFETY: the preamble lies inside the `len` bytes (`off == RSHDR_PAD`).
+    if h.version >= NRSC_VER_RSHDR && !unsafe { rshdr_is_consistent(access_base, h) } {
         return false;
     }
     let (obj, ted, ib, bb, ptr) = match abi {
@@ -844,6 +922,89 @@ unsafe fn header_is_sound(access_base: *const u8, len: usize, abi: Abi) -> bool 
         }
     }
     true
+}
+
+/// Byte offset of the `NrscHeader` inside an image of `len` bytes at
+/// `base`: 0 when the magic is at the front (v1–v12), [`RSHDR_PAD`] when it
+/// sits behind the native `RSHDR` preamble (v13+, [`NRSC_VER_RSHDR`]),
+/// `None` when it is at neither place. Only the magic is looked at; the
+/// caller ([`header_is_sound`]) validates the rest.
+///
+/// # Safety
+/// `base` must point at `len` readable bytes.
+unsafe fn nrsc_header_offset(base: *const u8, len: usize) -> Option<usize> {
+    let magic_at = |off: usize| {
+        // SAFETY: `off + 4 <= len`, checked first.
+        len >= off + 4 && unsafe { core::slice::from_raw_parts(base.add(off), 4) } == b"NRSC"
+    };
+    if magic_at(0) {
+        Some(0)
+    } else if magic_at(RSHDR_PAD) {
+        Some(RSHDR_PAD)
+    } else {
+        None
+    }
+}
+
+/// The `NrscHeader` of an image that passed [`header_is_sound`]: at the
+/// front when the magic is there (v1–v12), else behind the `RSHDR` preamble
+/// (v13+) — for a validated image one of the two holds. Every reader of a
+/// validated blob goes through here, so the preamble is accounted for in one
+/// place; the offsets the header holds count from `base` either way.
+///
+/// # Safety
+/// `base` must address a blob whose header held up against
+/// [`header_is_sound`] (so it is readable at the offset found).
+#[inline]
+unsafe fn hdr<'a>(base: *const u8) -> &'a NrscHeader {
+    // SAFETY: the caller's validated image has ≥ 4 bytes at 0 and, if the
+    // magic is not there, a whole header at `RSHDR_PAD`.
+    unsafe {
+        let off = if core::slice::from_raw_parts(base, 4) == b"NRSC" { 0 } else { RSHDR_PAD };
+        &*(base.add(off) as *const NrscHeader)
+    }
+}
+
+/// The native `RSHDR` preamble of a v13+ image against the NRSC header `h`
+/// behind it. An application parses the preamble on its own (TeraDesk's
+/// `xrsrc_gaddr`, `sdk/apps/teradesk/rsc_load.c:496-541`: `IS_XRSC_HEADER`
+/// on `rsh_vrsn`, then `rsh_trindex`/`rsh_object`/`rsh_tedinfo`/
+/// `rsh_iconblk`/`rsh_bitblk`/`rsh_frstr`/`rsh_frimg` as offsets from
+/// `ap_rscmem`, bounded by the seven counts), so what it states must be
+/// what the AES relocates and answers `rsrc_gaddr` from — the NRSC header's
+/// offsets and counts, `rsh_rssize` the image size, and an `rsh_vrsn` that
+/// keeps the 18-`u16` reading (`& 3 != 3`). `rsh_string`/`rsh_imdata` name
+/// the data section, which the NRSC header does not carry; they are only
+/// held inside the image (EmuTOS reads neither, `rs_readit` fixes up by the
+/// direct offsets). A disagreement refuses the file (`rs_readit`'s FALSE).
+///
+/// # Safety
+/// `base` must point at ≥ [`RSHDR_PAD`] readable bytes; `h` is the NRSC
+/// header of the same image.
+unsafe fn rshdr_is_consistent(base: *const u8, h: &NrscHeader) -> bool {
+    // SAFETY: field `i` of the 18-`u16` preamble, inside `RSHDR_SIZE`.
+    let f = |i: usize| unsafe { rd16(base.add(i * 2)) } as u64;
+    let same: [(usize, u64); 15] = [
+        (1, h.off_objects as u64),
+        (2, h.off_ted as u64),
+        (3, h.off_ib as u64),
+        (4, h.off_bb as u64),
+        (5, h.off_frstr as u64),
+        (8, h.off_frimg as u64),
+        (9, h.off_trindex as u64),
+        (10, h.n_objects as u64),
+        (11, h.n_trees as u64),
+        (12, h.n_ted as u64),
+        (13, h.n_ib as u64),
+        (14, h.n_bb as u64),
+        (15, h.n_frstr as u64),
+        (16, h.n_frimg as u64),
+        (17, h.total_size as u64),
+    ];
+    f(0) & 3 != 3
+        && same.iter().all(|&(i, v)| f(i) == v)
+        && f(6) <= h.total_size as u64
+        && f(7) <= h.total_size as u64
 }
 
 /// Read a blob-offset pointer field at `p` at the caller's width (the
@@ -1075,7 +1236,7 @@ unsafe fn relocate_and_register_core(
             Abi::Ilp32 => (OBJECT_SIZE_ILP32, 4usize),
             Abi::Lp64 => (OBJECT_SIZE, 8usize),
         };
-        let h = &*(access_base as *const NrscHeader);
+        let h = hdr(access_base);
         let mut d = Loaded::EMPTY;
         // Target VA of the object array (what callers dereference).
         let objs_target = target_base + h.off_objects as u64;
@@ -1246,7 +1407,7 @@ unsafe fn ted_len(base: *const u8, size: usize, off: usize) -> i16 {
 unsafe fn fix_tedinfo_std(access_base: *mut u8, target_base: u64) {
     // SAFETY: caller guarantees a relocated blob.
     unsafe {
-        let h = &*(access_base as *const NrscHeader);
+        let h = hdr(access_base);
         if h.version < NRSC_VER_SUBSTRUCTS {
             return;
         }
@@ -1281,7 +1442,7 @@ unsafe fn fix_tedinfo_std(access_base: *mut u8, target_base: u64) {
 unsafe fn fix_tedinfo_std_ilp32(access_base: *mut u8, target_base: u64) {
     // SAFETY: caller guarantees a relocated blob.
     unsafe {
-        let h = &*(access_base as *const NrscHeader);
+        let h = hdr(access_base);
         if h.version < NRSC_VER_SUBSTRUCTS {
             return;
         }
@@ -1370,7 +1531,7 @@ unsafe fn relocate_blob_core_ilp32(access_base: *mut u8, len: usize, target_base
         if !header_is_sound(access_base, len, Abi::Ilp32) {
             return false;
         }
-        let h = &*(access_base as *const NrscHeader);
+        let h = hdr(access_base);
         let size = h.total_size as u64;
         let objs = access_base.add(h.off_objects as usize);
         let tb = target_base as u32;
@@ -1525,7 +1686,7 @@ unsafe fn relocate_blob_core(access_base: *mut u8, len: usize, target_base: u64)
         if !header_is_sound(access_base, len, Abi::Lp64) {
             return false;
         }
-        let h = &*(access_base as *const NrscHeader);
+        let h = hdr(access_base);
         let size = h.total_size as u64;
         let objs = access_base.add(h.off_objects as usize) as *mut Object;
         let tb = target_base;
@@ -1728,7 +1889,7 @@ unsafe fn fix_nptrs64(base: *mut u8, count: usize, stride: usize, field: usize, 
 pub unsafe fn tree_root(base: *mut u8, idx: usize) -> *mut Object {
     // SAFETY: caller guarantees a relocated blob.
     unsafe {
-        let h = &*(base as *const NrscHeader);
+        let h = hdr(base);
         let tri = base.add(h.off_trindex as usize);
         if h.version >= NRSC_VER_TRINDEX_PTR {
             (tri.add(idx * 8) as *const u64).read_unaligned() as *mut Object
@@ -1756,7 +1917,7 @@ pub unsafe fn tree_root(base: *mut u8, idx: usize) -> *mut Object {
 pub unsafe fn blob_frstr(base: *const u8, index: usize) -> *const u8 {
     // SAFETY: caller guarantees a relocated blob at `base`.
     unsafe {
-        let h = &*(base as *const NrscHeader);
+        let h = hdr(base);
         if &h.magic != b"NRSC" || h.version < NRSC_VER_TABLES || index >= h.n_frstr as usize {
             return core::ptr::null();
         }
@@ -2634,7 +2795,7 @@ pub(super) fn rs_obfix(t: ObjTree, obj: i16) {
 unsafe fn fix_objects_coords(access_base: *mut u8, abi: Abi) {
     // SAFETY: the header and the object array were validated by the caller.
     unsafe {
-        let h = &*(access_base as *const NrscHeader);
+        let h = hdr(access_base);
         if h.version < NRSC_VER_CHARGRID {
             return;
         }
@@ -2953,7 +3114,7 @@ unsafe fn fix_cicons(
     alloc: &mut dyn FnMut(usize) -> Option<(u64, u64)>,
 ) -> CiconBuf {
     // SAFETY: caller guarantees a validated, relocated blob.
-    let h = unsafe { &*(access_base as *const NrscHeader) };
+    let h = unsafe { hdr(access_base) };
     if h.version < NRSC_VER_CICON || h.n_cib == 0 {
         return CiconBuf::default();
     }
@@ -3137,8 +3298,17 @@ mod tests {
     /// calls: `0x4000ac … 0x409381`.
     const APP_VA: u64 = 0x0040_0000;
 
+    /// Field `i` (`u32`, after the magic) of a blob's NRSC header, wherever
+    /// the header sits — at the front (v1–v12) or behind the `RSHDR`
+    /// preamble (v13+): 1 `n_trees`, 3 `off_trindex`, 5 `total_size`, ….
+    pub(super) fn nrsc_field(blob: &[u8], i: usize) -> u32 {
+        let off = if &blob[..4] == b"NRSC" { 0 } else { RSHDR_PAD };
+        assert_eq!(&blob[off..off + 4], b"NRSC", "an NRSC blob");
+        u32::from_le_bytes(blob[off + 4 + i * 4..off + 8 + i * 4].try_into().unwrap())
+    }
+
     /// A `u32` field of the caller's `AESGLOBAL`, read at its byte offset.
-    fn g32(global: &[i16; 16], off: usize) -> u32 {
+    pub(super) fn g32(global: &[i16; 16], off: usize) -> u32 {
         // SAFETY: `global` is 32 bytes and `off + 4 <= 32` at every call site.
         let b = unsafe { std::slice::from_raw_parts(global.as_ptr() as *const u8, 32) };
         u32::from_le_bytes(b[off..off + 4].try_into().unwrap())
@@ -3179,7 +3349,7 @@ mod tests {
     /// `load_into_user` does, and return the owned access buffer (which must
     /// outlive every later `get_addr`), the descriptor, and the caller's
     /// `AESGLOBAL` after [`report_load`].
-    fn load_at(blob: &[u8], target: u64) -> (Blob, Loaded, [i16; 16]) {
+    pub(super) fn load_at(blob: &[u8], target: u64) -> (Blob, Loaded, [i16; 16]) {
         let mut buf = Blob::new(blob);
         let len = buf.len;
         let p = buf.as_mut_ptr();
@@ -3231,8 +3401,8 @@ mod tests {
     fn an_el0_load_reports_all_three_fields() {
         let _g = lock();
         let (_buf, _desc, global) = load_at(FSEL, APP_VA);
-        let off_trindex = u32::from_le_bytes(FSEL[16..20].try_into().unwrap());
-        let total = u32::from_le_bytes(FSEL[24..28].try_into().unwrap());
+        let off_trindex = nrsc_field(FSEL, 3);
+        let total = nrsc_field(FSEL, 5);
         assert_eq!(
             g32(&global, AP_PTREE_OFF),
             APP_VA as u32 + off_trindex,
@@ -3274,8 +3444,8 @@ mod tests {
     fn ap_ptree_slots_are_what_rsrc_gaddr_returns() {
         let _g = lock();
         let (buf, desc, global) = load_at(FSEL, APP_VA);
-        let off_trindex = u32::from_le_bytes(FSEL[16..20].try_into().unwrap()) as usize;
-        let n_trees = u32::from_le_bytes(FSEL[8..12].try_into().unwrap()) as usize;
+        let off_trindex = nrsc_field(FSEL, 3) as usize;
+        let n_trees = nrsc_field(FSEL, 1) as usize;
         assert!(n_trees >= 3, "gem.rsc declares three trees");
         assert_eq!(g32(&global, AP_PTREE_OFF) as u64, APP_VA + off_trindex as u64);
         for i in 0..n_trees {
@@ -3446,6 +3616,215 @@ mod tests {
 }
 
 #[cfg(test)]
+mod rshdr_tests {
+    //! A41 part 2 — **the image behind `ap_rscmem` begins with a native
+    //! `RSHDR`** (NRSC v13/v14, [`NRSC_VER_RSHDR`]).
+    //!
+    //! EmuTOS publishes the loaded *file* as `ap_rscmem` (`rs_readit`,
+    //! `gemrslib.c:787`), classic `RSHDR` at its head, and applications parse
+    //! that header themselves: TeraDesk's `xrsrc_gaddr`
+    //! (`sdk/apps/teradesk/rsc_load.c:496-541`, used on the AES-loaded
+    //! `cicons.rsc` by `load_icons`, `icon.c:2750`) reads `aes_global[7]`,
+    //! tests `IS_XRSC_HEADER` (`rsh_vrsn & 3 == 3` → the `RSXHDR` with
+    //! `unsigned long` fields, else the 18 × `u16` `RSHDR`), and takes
+    //! `rsh_trindex`/`rsh_object`/… as byte offsets from that address. The
+    //! tests below are that reader, written against the loaded image, so
+    //! they are red on an image whose first bytes are the NRSC header
+    //! (`"NRSC"` + version read as `rsh_vrsn`/`rsh_object`…) and green once
+    //! the converter puts the `RSHDR` in front (spec §5.11 item 5, option a).
+
+    use super::tests::{g32, load_at, lock, Blob};
+    use super::*;
+
+    const APP_VA: u64 = 0x0040_0000;
+    /// The AES's file-selector resource as `xtask gen-fsel-rsc` produces it.
+    const FSEL: &[u8] = include_bytes!("gem_fsel.nrsc");
+
+    /// `RSHDR` field `i` (18 LE `u16`, `rsdefs.h:16-36` order) of the image.
+    fn rsh(img: &[u8], i: usize) -> u64 {
+        u16::from_le_bytes(img[i * 2..i * 2 + 2].try_into().unwrap()) as u64
+    }
+    fn le64(img: &[u8], off: usize) -> u64 {
+        u64::from_le_bytes(img[off..off + 8].try_into().unwrap())
+    }
+
+    /// TeraDesk's `xrsrc_gaddr`, every branch it has, on the image at
+    /// `ap_rscmem`: each answer must be the one the AES's own `rsrc_gaddr`
+    /// gives for the same `(type, index)`.
+    #[test]
+    fn the_image_at_ap_rscmem_is_an_rshdr_headed_file_teradesk_can_parse() {
+        let _g = lock();
+        let (buf, desc, global) = load_at(FSEL, APP_VA);
+        let rscmem = g32(&global, AP_RSCMEM_OFF) as u64;
+        assert_eq!(rscmem, APP_VA, "ap_rscmem names the image's first byte (rs_hdr)");
+        // `useRsc = *(void **)&aes_global[7]`; the kernel-side view of it:
+        let img = buf.bytes();
+        assert_ne!(rsh(img, 0) & 3, 3, "IS_XRSC_HEADER must be false: the fields are u16");
+        // SAFETY: `desc` describes `buf`, which is live.
+        let want = |rtype: i16, idx: usize| unsafe { get_addr(&desc, rtype, idx) }.map(|s| s.target);
+        // `load_icons`'s first use (`icon.c:2750`): `R_TREE` 0 → `_rs_trindex[0]`
+        // at `(char *)useRsc + rsh_trindex`. On an NRSC-headed image this
+        // reads the `u16` at byte 18 (half of `off_objects`) as the offset.
+        let tri = rsh(img, 9) as usize;
+        assert!(tri + 8 <= img.len(), "rsh_trindex {tri} must lie inside the image");
+        assert_eq!(Some(le64(img, tri)), want(R_TREE, 0), "R_TREE 0: _rs_trindex[0] at rsh_trindex {tri}");
+        // `(char *)useRsc + xrsc_header.field` for the array types …
+        let at = |field: usize, idx: usize, stride: u64| rscmem + rsh(img, field) + idx as u64 * stride;
+        let n_obj = rsh(img, 10) as usize;
+        let n_tree = rsh(img, 11) as usize;
+        let (n_ted, n_ib, n_bb, n_str, n_img) =
+            (rsh(img, 12) as usize, rsh(img, 13) as usize, rsh(img, 14) as usize, rsh(img, 15) as usize, rsh(img, 16) as usize);
+        assert!(n_obj > 0 && n_tree >= 3 && n_ted > 0 && n_bb > 0 && n_str > 0, "gem.rsc has all of these");
+        for i in 0..n_obj {
+            assert_eq!(Some(at(1, i, 32)), want(R_OBJECT, i), "R_OBJECT {i}");
+            assert_eq!(Some(at(1, i, 32) + 16), want(R_OBSPEC, i), "R_OBSPEC {i}");
+        }
+        for i in 0..n_ted {
+            assert_eq!(Some(at(2, i, 40)), want(R_TEDINFO, i), "R_TEDINFO {i}");
+        }
+        for i in 0..n_ib {
+            assert_eq!(Some(at(3, i, 48)), want(R_ICONBLK, i), "R_ICONBLK {i}");
+        }
+        for i in 0..n_bb {
+            assert_eq!(Some(at(4, i, 24)), want(R_BITBLK, i), "R_BITBLK {i}");
+        }
+        // … and the dereferenced slots of the pointer tables: `_rs_trindex[idx]`,
+        // `_rs_frstr[idx]`, `_rs_frimg[idx]`, read where the app would read them.
+        let slot = |field: usize, idx: usize| le64(img, (rsh(img, field) + idx as u64 * 8) as usize);
+        for i in 0..n_tree {
+            assert_eq!(Some(slot(9, i)), want(R_TREE, i), "R_TREE {i}: _rs_trindex[{i}]");
+        }
+        for i in 0..n_str {
+            assert_eq!(Some(at(5, i, 8)), want(R_FRSTR, i), "R_FRSTR {i}");
+            assert_eq!(Some(slot(5, i)), want(R_STRING, i), "R_STRING {i}: _rs_frstr[{i}]");
+        }
+        for i in 0..n_img {
+            assert_eq!(Some(at(8, i, 8)), want(R_FRIMG, i), "R_FRIMG {i}");
+            assert_eq!(Some(slot(8, i)), want(R_IMAGEDATA, i), "R_IMAGEDATA {i}: _rs_frimg[{i}]");
+        }
+        // The counts bound TeraDesk's `CHECK_IDX`, and the size is the image's.
+        assert_eq!(want(R_TREE, n_tree), None);
+        assert_eq!(want(R_OBJECT, n_obj), None);
+        assert_eq!(rsh(img, 17), desc.blob_len as u64, "rsh_rssize = the image size");
+        assert_eq!(global[9] as u16 as u64, rsh(img, 17), "ap_rsclen = rsh_rssize");
+        // And `ap_ptree` is that same `rsh_trindex` table (`fix_trindex`, `:595-597`).
+        assert_eq!(g32(&global, AP_PTREE_OFF) as u64, rscmem + rsh(img, 9), "ap_ptree = rsh_trindex");
+    }
+
+    /// The `RSHDR` in front is checked against the NRSC header behind it
+    /// before anything is relocated: a preamble that disagrees — a count, an
+    /// offset, the size, or an `rsh_vrsn` that would send TeraDesk down the
+    /// `RSXHDR` branch — refuses the file (`rs_readit`'s FALSE), rather than
+    /// handing an application a header the AES does not stand behind.
+    #[test]
+    fn a_preamble_that_disagrees_with_the_nrsc_header_is_refused() {
+        let _g = lock();
+        assert!(FSEL.len() > RSHDR_PAD && &FSEL[RSHDR_PAD..RSHDR_PAD + 4] == b"NRSC", "a v13 image");
+        let refused = |field: usize, v: u16, why: &str| {
+            let mut img = FSEL.to_vec();
+            img[field * 2..field * 2 + 2].copy_from_slice(&v.to_le_bytes());
+            let mut buf = Blob::new(&img);
+            let len = buf.len;
+            let p = buf.as_mut_ptr();
+            // SAFETY: `buf` holds `len` readable/writable bytes.
+            let desc = unsafe { relocate_and_register_core(p, len, APP_VA, Abi::Lp64, &mut kernel_cicon_alloc) };
+            assert!(desc.is_none(), "{why}: must be refused");
+        };
+        refused(0, 3, "rsh_vrsn & 3 == 3 (IS_XRSC_HEADER)");
+        refused(9, 0, "rsh_trindex != off_trindex");
+        refused(1, 0, "rsh_object != off_objects");
+        refused(11, 1, "rsh_ntree != n_trees");
+        refused(10, 0, "rsh_nobs != n_objects");
+        refused(17, 100, "rsh_rssize != total_size");
+        // The untouched image, through the same path, loads.
+        let (_buf, desc, _global) = load_at(FSEL, APP_VA);
+        assert_eq!(desc.blob_target, APP_VA);
+    }
+
+    /// A v13 header is only ever behind the preamble, an older one only at
+    /// the front — the offsets count from the image's first byte either way,
+    /// so a header in the wrong place would count 40 bytes that are not
+    /// there (or are). Both misplacements are refused; a v11 image at the
+    /// front keeps loading (regression), and a v13 image wrapped from the
+    /// same bytes loads identically.
+    #[test]
+    fn the_header_generation_must_match_where_the_magic_sits() {
+        let _g = lock();
+        let load = |img: &[u8]| {
+            let mut buf = Blob::new(img);
+            let len = buf.len;
+            let p = buf.as_mut_ptr();
+            // SAFETY: `buf` holds `len` readable/writable bytes.
+            unsafe { relocate_and_register_core(p, len, APP_VA, Abi::Lp64, &mut kernel_cicon_alloc) }
+        };
+        // v13 as committed: loads.
+        assert!(load(FSEL).is_some());
+        // The same v13 header with its preamble cut off: refused.
+        assert!(load(&FSEL[RSHDR_PAD..]).is_none(), "a v13 header at offset 0");
+        // A v11 header behind a preamble: refused.
+        let mut v11_behind = FSEL.to_vec();
+        v11_behind[RSHDR_PAD + 4..RSHDR_PAD + 8].copy_from_slice(&NRSC_VER_CICON.to_le_bytes());
+        assert!(load(&v11_behind).is_none(), "a v11 header at offset 40");
+    }
+
+    /// The ILP32 twin (v14): the preamble is the same 18 × `u16`, the tree
+    /// index behind `rsh_trindex` has 4-byte slots — the caller's pointer
+    /// width — and slot 0 is `rsrc_gaddr(R_TREE, 0)`; `ap_rscmem` names the
+    /// `RSHDR`, `ap_ptree` the table.
+    #[test]
+    fn an_ilp32_v14_image_publishes_the_rshdr_and_a_4_byte_slot_table() {
+        let _g = lock();
+        // RSHDR | NrscHeader @40 | one 4-byte tree slot @124 | one 24-byte
+        // OBJECT @128 (G_BOX, literal ob_spec).
+        let (off_tri, off_obj) = (RSHDR_PAD + size_of::<NrscHeader>(), RSHDR_PAD + size_of::<NrscHeader>() + 4);
+        let total = off_obj + OBJECT_SIZE_ILP32;
+        let mut b = vec![0u8; total];
+        let put16 = |b: &mut Vec<u8>, i: usize, v: u16| b[i * 2..i * 2 + 2].copy_from_slice(&v.to_le_bytes());
+        for (i, v) in [(1usize, off_obj), (2, off_obj), (3, off_obj), (4, off_obj), (5, total), (6, total), (7, total), (8, total), (9, off_tri), (10, 1), (11, 1), (17, total)] {
+            put16(&mut b, i, v as u16);
+        }
+        b[RSHDR_PAD..RSHDR_PAD + 4].copy_from_slice(b"NRSC");
+        let put = |b: &mut Vec<u8>, i: usize, v: u32| b[RSHDR_PAD + 4 + i * 4..RSHDR_PAD + 8 + i * 4].copy_from_slice(&v.to_le_bytes());
+        put(&mut b, 0, NRSC_VER_RSHDR + 1);
+        put(&mut b, 1, 1); // n_trees
+        put(&mut b, 2, 1); // n_objects
+        put(&mut b, 3, off_tri as u32);
+        put(&mut b, 4, off_obj as u32);
+        put(&mut b, 5, total as u32);
+        for i in [6usize, 8] {
+            put(&mut b, i, total as u32); // empty frstr/frimg tables at the end
+        }
+        for i in [10usize, 12, 14, 16, 18] {
+            put(&mut b, i, off_obj as u32); // empty TEDINFO/ICONBLK/BITBLK/CICON arrays
+        }
+        b[off_tri..off_tri + 4].copy_from_slice(&(off_obj as u32).to_le_bytes());
+        let o = off_obj;
+        for k in 0..3 {
+            b[o + 2 * k..o + 2 * k + 2].copy_from_slice(&(-1i16).to_le_bytes());
+        }
+        b[o + 6..o + 8].copy_from_slice(&G_BOX.to_le_bytes());
+        b[o + 12..o + 16].copy_from_slice(&0x0001_0000u32.to_le_bytes());
+        let mut buf = Blob::new(&b);
+        let len = buf.len;
+        let p = buf.as_mut_ptr();
+        // SAFETY: `buf` holds `len` readable/writable bytes.
+        let desc = unsafe { relocate_and_register_core(p, len, APP_VA, Abi::Ilp32, &mut kernel_cicon_alloc) }
+            .expect("the v14 image must relocate");
+        let mut global = [0i16; 16];
+        // SAFETY: a 32-byte caller array.
+        unsafe { report_load(global.as_mut_ptr(), &desc) };
+        let img = buf.bytes();
+        assert_eq!(g32(&global, AP_RSCMEM_OFF) as u64, APP_VA);
+        assert_eq!(g32(&global, AP_PTREE_OFF) as u64, APP_VA + rsh(img, 9));
+        assert_eq!(global[9] as u16 as u64, rsh(img, 17));
+        let slot0 = u32::from_le_bytes(img[off_tri..off_tri + 4].try_into().unwrap()) as u64;
+        // SAFETY: `desc` describes `buf`, which is live.
+        assert_eq!(Some(slot0), unsafe { get_addr(&desc, R_TREE, 0) }.map(|s| s.target));
+        assert_eq!(slot0, APP_VA + rsh(img, 1), "tree 0's root is object 0 at rsh_object");
+    }
+}
+
+#[cfg(test)]
 mod selector_tests {
     //! A39 stage 2 — **the caller's `ap_rscmem` selects the resource.**
     //!
@@ -3473,6 +3852,7 @@ mod selector_tests {
     //! processes are two claimed GEMDOS slots switched through `RUN`, as in
     //! `tests/aes_rsrc_per_process.rs`.
 
+    use super::tests::nrsc_field;
     use super::*;
     use crate::bdos::process::{self, PROCESS_TABLE};
     use std::sync::atomic::Ordering;
@@ -3692,7 +4072,7 @@ mod selector_tests {
         assert_eq!(ok, 1);
         // R4: `R_TREE` is `ap_ptree[0]` of the selected blob (LP64 slot).
         // SAFETY: `x.words` holds the relocated blob; slot 0 of its tree table.
-        let off_tri = u32::from_le_bytes(FSEL[16..20].try_into().unwrap()) as usize;
+        let off_tri = nrsc_field(FSEL, 3) as usize;
         let slot0 = unsafe { (x.words.as_ptr() as *const u8).add(off_tri).cast::<u64>().read_unaligned() };
         assert_eq!(tree0, slot0, "rsrc_gaddr(R_TREE, 0) == ap_ptree[0] of X");
         assert_eq!(sv_tree as u64, x.target + off_tri as u64, "the restored ap_ptree is X's table");

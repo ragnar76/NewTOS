@@ -1,0 +1,28 @@
+test rsc_cicon_tests::mkrsc_convert_ilp32_carries_the_colour_icons_as_c_structs ... FAILED
+test rsc_cicon_tests::mkrsc_convert_lp64_carries_the_colour_icons_as_c_structs ... FAILED
+test rsc_cicon_tests::teradesk_cicons_rsc_converts_and_fits_rsc_cap ... FAILED
+test rsc_cicon_tests::an_old_format_file_declares_no_colour_icons ... FAILED
+thread 'rsc_cicon_tests::mkrsc_convert_ilp32_carries_the_colour_icons_as_c_structs' (2757535) panicked at tools/xtask/src/rsc_cicon_tests.rs:329:5:
+thread 'rsc_cicon_tests::mkrsc_convert_lp64_carries_the_colour_icons_as_c_structs' (2757536) panicked at tools/xtask/src/rsc_cicon_tests.rs:329:5:
+thread 'rsc_cicon_tests::teradesk_cicons_rsc_converts_and_fits_rsc_cap' (2757537) panicked at tools/xtask/src/rsc_cicon_tests.rs:471:5:
+thread 'rsc_cicon_tests::an_old_format_file_declares_no_colour_icons' (2757534) panicked at tools/xtask/src/rsc_cicon_tests.rs:450:5:
+test result: FAILED. 0 passed; 4 failed; 0 ignored; 0 measured; 13 filtered out; finished in 0.05s
+thread 'rsc_cicon_tests::mkrsc_convert_lp64_carries_the_colour_icons_as_c_structs' (2757718) panicked at tools/xtask/src/rsc_cicon_tests.rs:329:5:
+assertion `left == right` failed: NRSC magic behind the RSHDR
+  left: [0, 0, 0, 0]
+ right: [78, 82, 83, 67]
+--
+thread 'rsc_cicon_tests::mkrsc_convert_ilp32_carries_the_colour_icons_as_c_structs' (2757717) panicked at tools/xtask/src/rsc_cicon_tests.rs:329:5:
+assertion `left == right` failed: NRSC magic behind the RSHDR
+  left: [0, 0, 0, 0]
+ right: [78, 82, 83, 67]
+--
+thread 'rsc_cicon_tests::an_old_format_file_declares_no_colour_icons' (2757716) panicked at tools/xtask/src/rsc_cicon_tests.rs:450:5:
+assertion failed: o.status.success()
+
+---- rsc_cicon_tests::teradesk_cicons_rsc_converts_and_fits_rsc_cap stdout ----
+--
+thread 'rsc_cicon_tests::teradesk_cicons_rsc_converts_and_fits_rsc_cap' (2757719) panicked at tools/xtask/src/rsc_cicon_tests.rs:471:5:
+
+Traceback (most recent call last):
+  File "/private/tmp/claude-501/-Volumes-Daten-Development-PiRusTOS/d7ff6c34-253d-4fd6-839f-efa08458ba32/scratchpad/red/tools/mkrsc.py", line 957, in <module>

@@ -64,6 +64,16 @@ use tos_api::host::Host;
 /// test proves the *load* and not just the lookup.
 const RSC: &[u8] = include_bytes!("../src/aes/gem_fsel.nrsc");
 
+/// Field `i` (`u32`, after the magic) of the blob's NRSC header — which sits
+/// at the front (NRSC v1–v12) or behind the 40-byte native `RSHDR` preamble
+/// (v13+, `resource.rs` `RSHDR_PAD`): 1 `n_trees`, 3 `off_trindex`,
+/// 4 `off_objects`, 5 `total_size`.
+fn nrsc_field(i: usize) -> u32 {
+    let off = if &RSC[..4] == b"NRSC" { 0 } else { 40 };
+    assert_eq!(&RSC[off..off + 4], b"NRSC", "an NRSC blob");
+    u32::from_le_bytes(RSC[off + 4 + i * 4..off + 8 + i * 4].try_into().unwrap())
+}
+
 // ── FAT16 volume, built in host memory ────────────────────────────────────
 //
 // Same geometry as `tests/fatvol`, `tests/aes_rsrc_load_path.rs` and
@@ -310,7 +320,7 @@ fn g_rsclen(global: &[i16; 16]) -> u16 {
 fn blob_base() -> u64 {
     let (ok, obj0) = gaddr(1 /* R_OBJECT */, 0);
     assert_eq!(ok, 1, "the resource must be loaded");
-    obj0 - u64::from(u32::from_le_bytes(RSC[20..24].try_into().unwrap()))
+    obj0 - u64::from(nrsc_field(4))
 }
 
 // ── the three fields ──────────────────────────────────────────────────────
@@ -329,9 +339,9 @@ fn rsrc_load_publishes_the_relocated_tree_index() {
     let (ret, _global) = rsrc_load_with_global("C:\\TEST.RSC");
     assert_eq!(ret, 1, "rsrc_load must succeed");
 
-    let n_trees = u32::from_le_bytes(RSC[8..12].try_into().unwrap()) as usize;
+    let n_trees = nrsc_field(1) as usize;
     assert!(n_trees >= 3, "the AES file-selector resource declares three trees");
-    let ptree = blob_base() + u32::from_le_bytes(RSC[16..20].try_into().unwrap()) as u64;
+    let ptree = blob_base() + nrsc_field(3) as u64;
     for i in 0..n_trees {
         // The slot, at the caller's pointer width (LP64 here, 8 bytes).
         // SAFETY: `ptree` addresses the relocated tree index of the blob that
@@ -369,7 +379,7 @@ fn the_two_address_fields_are_never_a_truncated_address() {
     assert_eq!(rscmem_field, 0, "ap_rscmem must stay 0, not carry half an address");
     assert_ne!(rscmem_field, truncated, "ap_rscmem must not be the truncation");
     assert_eq!(ptree_field, 0, "ap_ptree must stay 0");
-    let tri = u64::from(u32::from_le_bytes(RSC[16..20].try_into().unwrap()));
+    let tri = u64::from(nrsc_field(3));
     assert_ne!(ptree_field, truncated + tri, "ap_ptree must not be the truncation");
     rsrc_free();
 }
@@ -384,7 +394,7 @@ fn ap_rsclen_lands_together_with_the_two_address_fields() {
     let _g = fs();
     let (ret, global) = rsrc_load_with_global("C:\\TEST.RSC");
     assert_eq!(ret, 1, "rsrc_load must succeed");
-    let total = u32::from_le_bytes(RSC[24..28].try_into().unwrap());
+    let total = nrsc_field(5);
     assert_ne!(total, 0, "the resource declares a size");
     assert_eq!(g_ptr(&global, 14), 0, "precondition: ap_rscmem was not written");
     assert_eq!(

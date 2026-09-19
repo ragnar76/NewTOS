@@ -1,0 +1,13 @@
+# A41 part 2: idle dump, double-click HARD DISC C (195,35), window dump, then
+# hover the File title (88,8) to drop the menu and dump it (to read Quit's row).
+1100 mark A_IDLE_DESKTOP
+1800 park
+1806 move 300 300
+2000 move 195 35
+2200 down
+2203 up
+2208 down
+2211 up
+3000 mark B_WINDOW_OPEN
+3200 move 88 8
+3800 mark C_FILE_MENU
