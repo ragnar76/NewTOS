@@ -213,6 +213,41 @@ the EmuTOS VDI sequence):
 
 4. **`G_STRING`/`G_TITLE`/`G_BUTTON`**: draw the plain text centred (button)
    or left-aligned, vertically centred (`gemoblib.c:801-862`).
+
+> **"nicelines" — a DISABLED all-dashes `G_STRING` is a drawn line (TASK/A46,
+> 2026-09-19).** Inside the string block, under `CONF_WITH_NICELINES` (default
+> **1**, `config.h:1312-1314`), `just_draw` tests `(obtype == G_STRING) &&
+> (state & DISABLED) && (len > 3) && is_dashes(spec, len)` (`gemoblib.c:838`)
+> and, when true, draws `gsx_cline(t.g_x, t.g_y+t.g_h/2, t.g_x+t.g_w-1,
+> t.g_y+t.g_h/2)` **instead of** `gsx_tblt` (`:838-844`). `is_dashes`
+> (`:455-464`) is true when every one of the `len = strlen` characters
+> (`expand_string`, `util/optimopt.S:41-47`) is `'-'`. Consequences:
+>
+> - The line spans the whole **object** width (`t.g_w`, not the text extent)
+>   on row `t.g_y + t.g_h/2`, both endpoints inclusive (`v_pline` of two
+>   points, `gemgraf.c:188-195`), one pixel wide and solid (`vsl_type 7`,
+>   `vsl_udsty 0xffff`, `gemgraf.c:420-422`), in the writing mode the string
+>   block set just before (`gsx_attr(TRUE, MD_TRANS, tcol)`, `:816`).
+> - `gsx_cline` sets **no colour of its own**: it draws in the AES's sticky
+>   VDI line colour (`gl_lcolor`, `gemgraf.c:75`, last set by a
+>   `gsx_attr(FALSE, …)`), which the string block does not touch (it sets the
+>   *text* colour). In the menu-drawing sequence that is BLACK, left by the
+>   drop-down `G_BOX`'s border (`gsx_attr(FALSE, MD_REPLACE, bcol)`, `:663`).
+>   NewTOS draws the line in the string's ink (BLACK; WHITE on the inverted
+>   SELECTED ground).
+> - The line is drawn **before** the state decorations, so the trailing
+>   `DISABLED` pass (`bb_fill(MD_TRANS, FIS_PATTERN, IP_4PATT, …)` in WHITE,
+>   `:917-929`) lays its 50 % dither over the line exactly as it would over
+>   the dashes — a separator therefore reads as a dotted grey line, not a
+>   solid black one.
+> - Not a `G_STRING`, not `DISABLED`, `len <= 3`, or any non-dash character
+>   → the text path as before.
+>
+> **Version delta.** The `len > 3` gate came with EmuTOS commit `4b0d9518`
+> (2025-08-20), *after* the `VERSION_1_4` tag: **EmuTOS 1.4** (the measured
+> `etos512de.img`) draws a `DISABLED` string of one to three dashes as a line
+> too. NewTOS follows the pinned source (`1a7484ab`): `"---"` stays text.
+> Host test: `tos-api/tests/aes_object_nicelines.rs`.
 5. **`G_IMAGE`**: blit the `BITBLK` transparently in `bi_color`
    ([`bitblk`](../structures/bitblk.md)).
 6. **`G_ICON`/`G_CICON`**: offset the `ICONBLK` rects by the object's screen
@@ -992,9 +1027,12 @@ codes:
   (TASK/A41).
 - **`CONF_WITH_EXTENDED_OBJECTS`** (default **1**): the `G_STRING` underline
   path (`(state & WHITEBAK) && (state&0xFF00)==0xFF00`, `gemoblib.c:851`).
-- **`CONF_WITH_NICELINES`** (default **1**): a `DISABLED` all-dashes
-  `G_STRING` (a menu separator) is drawn as a solid line instead of dashes
-  (`gemoblib.c:838-841`).
+- **`CONF_WITH_NICELINES`** (default **1**, `config.h:1312-1314`): a
+  `DISABLED` `G_STRING` of **more than three** dashes (a menu separator) is
+  drawn as a line instead of dashes (`gemoblib.c:838-841`); the `DISABLED`
+  dither still goes over it. Full extraction and the EmuTOS-1.4 version delta
+  (`len > 3` is post-1.4, `4b0d9518`): the callout after item 4 in the
+  `just_draw` walkthrough above.
 - **`CONF_WITH_MENU_EXTENSION`** changes the `ev_multi` argument shape in
   `fm_do` (`gemfmlib.c:311-317`) — a reference detail, not a slot contract.
 

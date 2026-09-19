@@ -1,0 +1,67 @@
+A46 -- objc_draw "nicelines": ein DISABLED-G_STRING aus mehr als drei Bindestrichen wird
+als Linie gezeichnet (EmuTOS aes/gemoblib.c:838-841, CONF_WITH_NICELINES = 1).
+Developer-Selbstbeleg, 2026-09-19/20. Branch desk-rebuild, Basis HEAD f65893a, Aenderungen
+uncommitted im Baum. Gepinnte EmuTOS-Quelle references/emutos @ 1a7484ab. Soll = gepinnte
+Quelle (len > 3); EmuTOS 1.4 (etos512de.img) zeichnet auch 1-3 Striche als Linie
+(Versionsdelta, Commit 4b0d9518 2025-08-20, NICHT Vorfahr von VERSION_1_4 -- git merge-base).
+
+PRODUKTCODE (uncommitted; method/object-rs-a46.diff)
+  tos-api/src/aes/object.rs   just_draw, G_STRING-Arm: `if ob_state & DISABLED != 0 && s.len() > 3
+                              && is_dashes(s)` -> backend.draw_line(x, y+h/2, x+w-1, y+h/2, ink,
+                              Transparent, clip, 0xFFFF) STATT gsx_tblt; sonst Textpfad unveraendert.
+                              Neu: fn is_dashes(&[u8]) -> bool (gemoblib.c:455-464).
+                              Der DISABLED-Dither (IP_4PATT, WHITE, transparent) liegt wie bei
+                              EmuTOS (:917-929) ueber der Linie -> gepunktete Linie.
+  tos-api/tests/aes_object_nicelines.rs  (neu, 4 Faelle, render_tree_lp64 = objc_draw-Rumpf)
+  docs/api/aes/object-form.md  Callout nach Punkt 4 des just_draw-Durchgangs + Konfig-Hinweis
+                              CONF_WITH_NICELINES (Quellzeilen, Farbe/Modus, Dither, Versionsdelta).
+
+HOSTTESTS (host-tests/)
+  red-before.txt   Stand VOR dem object.rs-Hunk: (a) disabled_all_dashes_string_is_a_line_... FAILED
+                   (Linienzeile 58 leer: "._._._..." statt ".#.#.#..."), (b)(c)(d) ok = 3/1.
+  green-after.txt  4/4.
+  xtask-test.log   cargo run -p xtask -- test = 637 / 0 / 1 (Baseline 633 + 4); aes_reference 204/0,
+                   aes_object_3d_box_border 4/0, aes_object_cursor_bracket 3/0, aes_object_font 6/0.
+
+BUILD / CLIPPY (build/)
+  cargo xtask build --board rpi4 / --board qemu-virt: rustc tos-api 64 / kernel 94, exit 0.
+  cargo clippy -p kernel --features board-rpi4 bzw. board-qemu-virt: tos-api 81 / kernel 125.
+  Baseline 64/94, 81/125 -- Delta 0. Testdatei clippy-sauber.
+  kernel8-a46-product-release-rpi4.img  Produktkernel (--release, keine Instrumentierung),
+                                        sha256 0d959619...; bytegleich vor/nach der reinen
+                                        Doc-Kommentar-Umstellung von is_dashes.
+  kernel8-a46-SCRATCH-injector-after.img   Scratch-Kopie der Crates (method/make_scratch.sh) mit
+                                        H02-Injektor (method/apply_injector.py + menu1_script.rs,
+                                        method/scratch-injector.diff; A46-Zusatz: Scharfschalten
+                                        auch bei "[desk] desktop up", damit unser Desktop bedient
+                                        wird) + object.rs aus dem Arbeitsbaum.
+  kernel8-a46-SCRATCH-injector-before.img  dieselbe Scratch-Kopie, object.rs = HEAD f65893a.
+
+IMAGE
+  tools/make-sd-image.sh <scratch>/img/sd-base.img 64 (sha256 2f1c106c...);
+  + NEWDESK.INF (#Z TeraDesk, method/newdesk-user.inf) + Apps\TERADESK\TERADESK.INF
+  (method/teradesk-user.inf) per method/sd-put.sh -> sd-tera.img (sha256 55c8ed4c...).
+  Jeder Lauf auf einer frischen Kopie. QEMU raspi4b 640x480, -display none, QMP-Screendump,
+  Socket /private/tmp/claude-501/a46-<tag>.sock.
+
+LAEUFE (method/run.sh; screendumps/, serial/; grep -c "EXC\|panic" = 0 in allen sechs Logs)
+  product1    Produktkernel + sd-tera, Marker "slot 0 entry 0x1000" + 10 s:
+              product1-tera-idle.png = 0 Pixel Differenz zu
+              measurement-2026-09-19-a41/part2/screendumps/product1-tera-colour-icons-idle.png.
+  smoke-desk  Produktkernel + sd-base, Marker "[desk] desktop up" + 5 s:
+              smoke-desk-up.png = 0 Pixel Differenz zu a41/part2/screendumps/smoke-desk-up.png.
+  tera-after  Injektor menu1 (A_IDLE +1100; park; (300,300); Zeiger auf File-Titel (88,8) +1400;
+              C_FILE_MENU +2000): tera-after-C-file-menu.png -- die drei Trenner der File-Tafel
+              sind Linien unter dem Dither (Zeile 139: 88 schwarze Pixel x 64..239 im Wechsel,
+              Zeilen 137/138 leer).
+  tera-before dieselbe Sequenz mit dem before-Kernel: tera-before-C-file-menu.png -- Bindestrich-
+              Glyphen (Zeilen 137/138, je 68 Pixel), Zeile 139 leer.
+              before vs after: A-idle 0 Pixel; C-file-menu 660 Pixel, bbox (64,137)-(239,220)
+              = exakt die drei Trennerzeilen der Tafel (Breite = Objektbreite 64..239).
+  desk-after / desk-before  unser Desktop (sd-base), gleiche Sequenz, File-Titel bei (88,8):
+              desk-*-C-file-menu.png -- Trenner als Linien (Zeilen 85/218/256, je 79 Pixel)
+              statt Bindestriche (Zeilen 83+84/216+217/254+255, je 58 Pixel);
+              before vs after: A-idle 0 Pixel; C-file-menu 576 Pixel, bbox (53,83)-(209,257).
+  Vergleichsbild alt (Bindestriche, Fenster offen): a41/part2/screendumps/inj1-C-file-menu.png.
+
+NICHT GEFAHREN: echte Pi 4 (Tester/Lead). Kein Commit. docs/STATUS.md nicht angefasst (Scope).

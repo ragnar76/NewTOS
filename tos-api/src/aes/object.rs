@@ -2595,15 +2595,42 @@ fn just_draw(t: ObjTree, obj: i16, x: i16, y: i16, clip: ClipRect, backend: &dyn
                 gsx_tblt(backend, AesFont::Ibm, x + 2, y, &[0x08], ink, clip);
             }
             let s = read_cstr(ob_spec);
-            // EmuTOS draws a G_STRING through the shared string block at
-            // `tmpx = t.g_x`, `tmpy = t.g_y + ((t.g_h-gl_hchar)/2)` in the IBM
-            // font, with no clamping and no truncation (gemoblib.c:817-845) —
-            // `gr_gtext`'s clamped/rounded path is *not* used for strings. A
-            // menu item's check column comes from the leading blanks built into
-            // its resource string (GEM uses two leading spaces), not a
-            // code-added indent.
-            let tmpy = y + (h - crate::vdi::font::CELL_H) / 2;
-            gsx_tblt(backend, AesFont::Ibm, x, tmpy, s, ink, clip);
+            if ob_state & DISABLED != 0 && s.len() > 3 && is_dashes(s) {
+                // A46 — "nicelines" (EmuTOS `CONF_WITH_NICELINES`, default 1,
+                // config.h:1312-1314): a DISABLED string of more than three
+                // dashes is a menu separator, and EmuTOS draws it as a
+                // one-pixel line across the whole *object* width on the row
+                // `t.g_y + t.g_h/2` **instead of** the text
+                // (`gsx_cline(t.g_x, t.g_y+t.g_h/2, t.g_x+t.g_w-1, t.g_y+t.g_h/2)`,
+                // gemoblib.c:838-841). `gsx_cline` (gemgraf.c:188-195) is a
+                // plain `v_pline` of two points: solid (`vsl_type 7` /
+                // `vsl_udsty 0xffff`, gemgraf.c:420-422), one pixel wide, in
+                // the MD_TRANS mode the string block set just before
+                // (`gsx_attr(TRUE, MD_TRANS, tcol)`, :816). The line colour is
+                // the AES's sticky VDI line colour (`gl_lcolor`, gemgraf.c:75),
+                // which the string block does not set — in the menu-drawing
+                // sequence it is BLACK, left by the drop-down G_BOX's border
+                // (`gsx_attr(FALSE, MD_REPLACE, bcol)`, :663) — so the line
+                // takes the string's ink here. The trailing DISABLED dither
+                // below lays its 50 % white over the line as it would over
+                // the dashes (gemoblib.c:917-929).
+                //
+                // `len > 3` is the pinned source's gate (`4b0d9518`,
+                // 2025-08-20); EmuTOS 1.4 draws one to three dashes as a line
+                // too — a version delta, see `docs/api/aes/object-form.md`.
+                let ly = y + h / 2;
+                backend.draw_line(x, ly, x + w - 1, ly, ink, WriteMode::Transparent, clip, 0xFFFF);
+            } else {
+                // EmuTOS draws a G_STRING through the shared string block at
+                // `tmpx = t.g_x`, `tmpy = t.g_y + ((t.g_h-gl_hchar)/2)` in the IBM
+                // font, with no clamping and no truncation (gemoblib.c:817-845) —
+                // `gr_gtext`'s clamped/rounded path is *not* used for strings. A
+                // menu item's check column comes from the leading blanks built into
+                // its resource string (GEM uses two leading spaces), not a
+                // code-added indent.
+                let tmpy = y + (h - crate::vdi::font::CELL_H) / 2;
+                gsx_tblt(backend, AesFont::Ibm, x, tmpy, s, ink, clip);
+            }
         }
         G_TITLE => {
             // EmuTOS draws a G_TITLE through the shared string block at `t.g_x`
@@ -3116,6 +3143,14 @@ fn gr_gtext(
     }
 
     gsx_tblt(backend, fnt, tx, ty, &text[..numchs as usize], fg, clip);
+}
+
+/// EmuTOS `is_dashes` (`gemoblib.c:455-464`): every character of the string
+/// is `'-'`. The caller applies the `len > 3` gate; an empty string is
+/// "all dashes" here exactly as in the C (`while(len--)` never runs), which
+/// that gate excludes.
+fn is_dashes(s: &[u8]) -> bool {
+    s.iter().all(|&c| c == b'-')
 }
 
 /// Read a NUL-terminated C string from a native pointer in `ob_spec`

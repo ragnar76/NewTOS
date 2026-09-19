@@ -1,0 +1,17 @@
+# cargo test -p tos-api --test aes_object_nicelines -- run on the tree BEFORE the object.rs change
+# (transcript of the run; the only product-code difference to the green run is the A46 hunk in just_draw)
+
+running 4 tests
+test disabled_string_with_a_non_dash_stays_text ... ok
+test disabled_three_dashes_stay_text ... ok
+test enabled_all_dashes_string_stays_text ... ok
+test disabled_all_dashes_string_is_a_line_across_the_object ... FAILED
+
+---- disabled_all_dashes_string_is_a_line_across_the_object stdout ----
+
+thread 'disabled_all_dashes_string_is_a_line_across_the_object' panicked at tos-api/tests/aes_object_nicelines.rs:306:5:
+assertion `left == right` failed: line row 58: expected the full-width line under the 50 % dither
+  left: "._._._._._._._._._._._._._._._._._._._._._._._._._._._._._._._._._._._._._._._._._._._._._._._._._._._._._._._._._._._._"
+ right: ".#.#.#.#.#.#.#.#.#.#.#.#.#.#.#.#.#.#.#.#.#.#.#.#.#.#.#.#.#.#.#.#.#.#.#.#.#.#.#.#.#.#.#.#.#.#.#.#.#.#.#.#.#.#.#.#.#.#.#.#"
+
+test result: FAILED. 3 passed; 1 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
