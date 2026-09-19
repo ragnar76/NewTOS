@@ -302,6 +302,23 @@ reads rasters unaligned as well.
 structs, `build-teradesk.sh:189-201`); new-format `CICONBLK` is unsupported —
 do not ship `cicons.rsc`.
 
+**Symptom** 4 (2026-09-19, A40): a dialog or menu bar converted before A40
+keeps the layout of a 640-wide 8×16 screen on every machine — an
+80-character-wide root object is 640 px on the Pi 4's 1920×1080.
+**Cause**: `mkrsc.py convert` used to do the char→pixel fix itself with
+`WCHAR, HCHAR, SCREEN_W = 8, 16, 640` baked in (NRSC v7/v8 blobs hold pixels),
+while EmuTOS converts at **load** with the live `gl_wchar`/`gl_hchar`/`gl_width`
+(`aes/gemrslib.c:53-99`, `rs_fixit`/`fix_objects`/`rs_obfix`). **Do**: regenerate
+with the current `mkrsc.py` — it now emits NRSC **v9** (LP64) / **v10** (ILP32)
+with the classic file's packed char-grid words untouched, and the kernel's
+`rsrc_load` runs `rs_obfix` over every object at load
+(`tos-api/src/aes/resource.rs::fix_objects_coords`). A v7/v8 file still loads,
+with its baked-in pixels. `rsrc_obfix` (114) is the same function, so an
+inline `rs_object[]` and a loaded `.RSC` agree. Nothing in the app changes;
+only the `.rsc` beside the `.NAP` has to be reconverted. Note that
+`build-qed.sh` does not produce `qed.rsc` — see
+[`04-porting-anatomy.md`](04-porting-anatomy.md) for the manual step.
+
 Also on LP64: `OBJECT` is 32 bytes with a 64-bit `ob_spec` (`docs/COMPATIBILITY.md:232-246`),
 and gemlib's `BFOBSPEC` bit-field is declared in **reverse** order on a
 little-endian target so `framesize`/`framecol`/… land on the documented bits

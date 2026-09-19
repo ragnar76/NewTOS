@@ -138,7 +138,9 @@ before trusting them after an overlay change.
 while writing this page: `python3 tools/mkrsc.py convert
 sdk/apps/qed/src/qed.rsc <out>` yields 41322 bytes, SHA-256 `5a2cefa2…` —
 byte-identical to the `sdk/apps/qed/build/qed.rsc` on this host (dated
-2026-09-14). So the step is
+2026-09-14; since A40, 2026-09-19, the tool emits NRSC v9 with char-grid
+coordinates and the same command yields SHA-256 `3383dd39…`, same size). So
+the step is
 
 ```sh
 python3 tools/mkrsc.py convert sdk/apps/qed/src/qed.rsc sdk/apps/qed/build/qed.rsc

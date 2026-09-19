@@ -29,8 +29,7 @@
 
 use core::cell::UnsafeCell;
 
-use super::object::{Object, TedInfo};
-use crate::vdi::font::{CELL_H, CELL_W};
+use super::object::{ObjTree, Object, TedInfo};
 
 /// `ROOT` — object 0 of any tree (`include/obdefs.h:20`).
 const ROOT: usize = 0;
@@ -273,11 +272,9 @@ pub fn init() {
 
     // ── 2. `gem_rsc_fixit` (`gem_rsc.c:636-641`) + the DTNAME TEDINFO link.
     //    The tree's coordinates are still packed char-grid words; convert all
-    //    four of every object, exactly as `rs_obfix` does (`gemrslib.c:89-99`).
-    let gl_width = crate::host::host()
-        .and_then(|h| h.raster())
-        .map(|r| r.width() as i16)
-        .unwrap_or(80 * CELL_W);
+    //    four of every object with `rs_obfix` (`gemrslib.c:89-99`), the live
+    //    `gl_wchar`/`gl_hchar`/`gl_width` included — `gem_rsc_fixit` is
+    //    `for (i = 0; i < RS_NOBS; i++) rs_obfix(rs_obj, i);`.
     // SAFETY: single-CPU boot path; the statics are initialised and in scope
     // for the whole program (see [`DesktopTree`]).
     unsafe {
@@ -285,12 +282,9 @@ pub fn init() {
         (*ted).te_ptmplt = DTNAME_TEXT.as_ptr() as u64;
         (*ted).te_pvalid = DTNAME_TEXT.as_ptr() as u64;
         let tree = desktop_tree();
+        let t = ObjTree::lp64(tree);
         for i in 0..3 {
-            let o = &mut *tree.add(i);
-            o.ob_x = super::resource::fix_chpos(o.ob_x, CELL_W, false, gl_width);
-            o.ob_y = super::resource::fix_chpos(o.ob_y, CELL_H, false, gl_width);
-            o.ob_width = super::resource::fix_chpos(o.ob_width, CELL_W, true, gl_width);
-            o.ob_height = super::resource::fix_chpos(o.ob_height, CELL_H, false, gl_width);
+            super::resource::rs_obfix(t, i);
         }
         (*tree.add(DTNAME)).ob_spec = ted as u64;
 

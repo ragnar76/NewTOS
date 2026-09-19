@@ -42,15 +42,17 @@
 > need. **NewTOS's actual `rsrc_load` does not read this format at all.**
 > Per ADR-013 (`docs/MEMORY.md`), NewTOS defines its own **native** `.RSC`
 > (`NrscHeader`, magic `"NRSC"`, little-endian, 64-bit `ob_spec`, offsets
-> from blob base, coordinates already in pixels — `tos-api/src/aes/resource.rs`);
-> `rsrc_load` resolves its filename through `sh_find` exactly as EmuTOS does
-> (see the `rsrc_load (110)` callout), and `rsrc_obfix` is an **identity** (no
-> char→pixel fix — native resources are already in pixels). The `rsrc_gaddr`/
-> `rsrc_saddr` ABI slots, the `R_*` type semantics, and the 1/0 return
-> convention remain contract; the on-disk byte layout, `sh_find`, and the
-> char→pixel rule are EmuTOS-reference only for NewTOS's current native-format
-> loader. Full accounting: "NewTOS implementation notes" below and
-> `docs/api/_discrepancies.md` D-100.
+> from blob base — `tos-api/src/aes/resource.rs`); `rsrc_load` resolves its
+> filename through `sh_find` exactly as EmuTOS does (see the `rsrc_load (110)`
+> callout), and — from NRSC v9/v10 on (A40, 2026-09-19) — the OBJECT
+> coordinates are the classic file's **packed char-grid words**, converted at
+> **load** by the `rs_obfix` rule with the live `gl_wchar`/`gl_hchar`/
+> `gl_width`, exactly as `rs_fixit` → `fix_objects` does; `rsrc_obfix` (114)
+> is that same `rs_obfix`. The `rsrc_gaddr`/`rsrc_saddr` ABI slots, the `R_*`
+> type semantics, the 1/0 return convention **and the char→pixel rule** are
+> contract; the on-disk byte layout and `sh_find` are EmuTOS-reference only
+> for NewTOS's current native-format loader. Full accounting: "NewTOS
+> implementation notes" below and `docs/api/_discrepancies.md` D-100.
 
 ---
 
@@ -204,10 +206,30 @@ process (`bdos/proc.c:136`, `free_all_owned`).
 > What still deviates is the **byte level**: the file is read into a static
 > 64 KiB buffer (`crate::bdos::fs::read_file`) and — if the header magic is
 > `"NRSC"` — the **native** offset table is relocated in place
-> (`relocate_and_register`). There is no classic `RSHDR`, no big-endian header,
-> no `NEW_FORMAT_RSC`/CICON path, and no separate coordinate-fix pass
-> (coordinates are already pixels; see `rsrc_obfix` below). The
-> `int_out[0] = 1`/`0` success contract is preserved.
+> (`relocate_and_register`). There is no classic `RSHDR`, no big-endian header
+> and no `NEW_FORMAT_RSC`/CICON path. The `int_out[0] = 1`/`0` success
+> contract is preserved.
+>
+> **The coordinate fix runs at load, with the live metrics, since 2026-09-19
+> (A40).** From NRSC v9 (LP64) / v10 (ILP32) on the blob carries every
+> object's `ob_x`/`ob_y`/`ob_width`/`ob_height` as the classic file's packed
+> char-grid word, and the loader applies `rs_obfix` to each of its
+> `n_objects` objects (`fix_objects_coords`) — step 5 of §0, `rs_fixit` →
+> `fix_objects` → `rs_obfix(obj, 0)` (`gemrslib.c:816-820`, `:606-637`) —
+> with `gl_wchar`/`gl_hchar` from the VDI's default face and `gl_width` from
+> the raster (`aes::graf::gl_wchar/gl_hchar/gl_width`, `gemgraf.c:393-405`).
+> So an 80-character root is `gl_width` wide on the screen the file is
+> loaded on — 640 on a 640×480 workstation, 1920 on the Pi 4's 1920×1080 —
+> and every other word is `chars × cell + offset` at the live cell. The
+> same pass runs for the embedded file-selector resource
+> (`relocate_blob`), EmuTOS's `gem_rsc_fixit` (`aes/gem_rsc.c:636-641`,
+> `geminit.c:711`). A v1–v8 blob holds **pixels** — its converter did this
+> arithmetic itself, with `8 × 16 / 640` baked in (audit B10) — and is
+> loaded without conversion, so nothing is converted twice. At 8×16/640 the
+> loaded state of a v9 blob is byte-identical to the v7 blob of the same
+> source (measured on `desktop.rsc`, `qed.rsc`, `gem_fsel.nrsc`: 0 differing
+> bytes). Test: `tos-api/tests/aes_rsrc_obfix_at_load.rs`; tool side
+> `tools/xtask/src/rsc_obfix_tests.rs`.
 >
 > **The relocation walk matches §0 steps 3-5 since 2026-09-13 (A36).** The
 > TEDINFO / ICONBLK / BITBLK pointers are relocated **array-wise**, over the
@@ -476,16 +498,21 @@ objects during load.
 > char 1 + offset 4, `0x2000` = char 0 + offset 32). The signed-offset and
 > `width == 80 → gl_width` facts (`gemrslib.c:71-74,81`) are unchanged.
 
-> **NewTOS status (implemented 2026-07-21, D-101).** `rsrc_obfix`
-> (`tos-api/src/aes/resource.rs::rsrc_obfix`) performs the real char→pixel
-> conversion above, in place, on the object the app names. It is applied only
-> to **inline** resources an app built itself (an `rs_object[]` compiled into
-> the program, still in char-grid form): a resource loaded through `rsrc_load`
-> is already in pixels (host-side `mkrsc.py` pre-converts and `rsrc_load` does
-> not re-`ob_fix`), and a well-behaved GEM app never re-`rsrc_obfix`es loaded
-> objects (EmuTOS `rsrc_load` `ob_fix`es them once at load,
-> `gemrslib.c:606-637,815-819`), so `rsrc_obfix` never double-converts a loaded
-> `.RSC`. Coordinates/tree are read at the caller's ABI width via `ObjTree`.
+> **NewTOS status (implemented 2026-07-21, D-101; load-time fix 2026-09-19,
+> A40).** `rsrc_obfix` (`tos-api/src/aes/resource.rs::rsrc_obfix`) performs
+> the real char→pixel conversion above, in place, on the object the app
+> names, through `resource::rs_obfix` — the **same function** the loader
+> applies to every object of a char-grid (NRSC v9/v10) resource at
+> `rsrc_load`, with the same live `gl_wchar`/`gl_hchar`/`gl_width`
+> (`aes::graf`). An application's inline `rs_object[]` and a loaded `.RSC`
+> therefore yield the same pixels for the same packed word, as in EmuTOS,
+> where `rs_obfix` is the one function behind both (`gemrslib.c:89-99`,
+> `:618`, `gemsuper.c:376`). A well-behaved GEM app does not re-`rsrc_obfix`
+> a loaded object (EmuTOS converts it once at load, `gemrslib.c:606-637,
+> 815-819`), and, like EmuTOS, NewTOS does not guard against one that does.
+> Coordinates/tree are read at the caller's ABI width via `ObjTree`. Until
+> A40 the converter (`tools/mkrsc.py`) did the arithmetic with `8 × 16 / 640`
+> baked in and the loader converted nothing (audit B10).
 
 ---
 
@@ -647,11 +674,11 @@ as success — an empty list, not an error (`gemfslib.c:330-336,733-754`).
 > object. The `sh_find`-based "not found" mechanism in the `rsrc_load`
 > criterion now holds too (2026-09-11): `rsrc_load` runs the real `sh_find`,
 > so the `int_out[0] = 0` outcome comes from the same four-stage search — bar
-> stage (4), the AES `PATH=`, which NewTOS has no environment for. Note the
-> split from
-> EmuTOS: because `mkrsc.py` pre-converts a **loaded** `.RSC` to pixels,
-> `rsrc_load`/relocation does **not** call `ob_fix`; only a program's own
-> **inline** `rs_object[]` reaches `rsrc_obfix`. See the "NewTOS status"
+> stage (4), the AES `PATH=`, which NewTOS has no environment for. The
+> `rsrc_load` `ob_fix` criterion holds since A40 (2026-09-19): a loaded
+> NRSC v9/v10 resource is converted at load with the live metrics by the
+> same `rs_obfix` that `rsrc_obfix` runs; an earlier `mkrsc.py` pre-converted
+> to pixels and the loader converted nothing. See the "NewTOS status"
 > callouts under `rsrc_load (110)`/`rsrc_obfix (114)`.
 
 ---
@@ -805,21 +832,22 @@ as success — an empty list, not an error (`gemfslib.c:330-336,733-754`).
 - **(D-100, ADR-013 already decided — supersedes the older guidance below.)**
   NewTOS does **not** load EmuTOS's classic big-endian on-disk `.RSC`. It
   defines and loads its own **native** format (`NrscHeader`, magic `"NRSC"`,
-  little-endian, 64-bit `ob_spec`, pixel coordinates —
-  `tos-api/src/aes/resource.rs`), built from a classic `.rsc` by the host
-  tool `tools/mkrsc.py convert`. Consequently: `rsrc_load` does **not** read
-  the classic on-disk layout — it *does* call `sh_find` to locate the file
-  (2026-09-11); `rsrc_obfix` is an **identity** (no char→pixel fix — see the
-  callouts under
+  little-endian, 64-bit `ob_spec`, packed char-grid coordinates from v9/v10
+  on — `tos-api/src/aes/resource.rs`), built from a classic `.rsc` by the
+  host tool `tools/mkrsc.py convert`. Consequently: `rsrc_load` does **not**
+  read the classic on-disk layout — it *does* call `sh_find` to locate the
+  file (2026-09-11), and it *does* run the char→pixel `rs_obfix` over every
+  object at load with the live `gl_wchar`/`gl_hchar`/`gl_width` (A40,
+  2026-09-19; `rsrc_obfix` is the same function — see the callouts under
   `rsrc_load (110)` and `rsrc_obfix (114)` above). What **is** preserved
   exactly: the offset→pointer relocation *shape* (byte offsets from blob
   base → absolute pointers, type-aware for `ob_spec` per object type), the
-  box-`ob_spec`-not-relocated rule, and — as contract — the `rsrc_gaddr`/
-  `rsrc_saddr` ABI slots, the `R_*` type semantics, and the `1`/`0` return
-  convention. A classic-Atari-`.RSC` loader (the `RSHDR` byte layout, `-1L`
-  sentinel, big-endian swap, char→pixel `rs_obfix`, `sh_find` lookup — all
-  accurately extracted in §0–§3 above; the `sh_find` lookup is implemented)
-  remains a candidate for a future
+  box-`ob_spec`-not-relocated rule, the char→pixel rule, and — as contract —
+  the `rsrc_gaddr`/`rsrc_saddr` ABI slots, the `R_*` type semantics, and the
+  `1`/`0` return convention. A classic-Atari-`.RSC` loader (the `RSHDR` byte
+  layout, `-1L` sentinel, big-endian swap, `sh_find` lookup — all accurately
+  extracted in §0–§3 above; the `sh_find` lookup and `rs_obfix` are
+  implemented) remains a candidate for a future
   m68k-emulator compatibility phase, per ADR-013's own "alternatives
   rejected" note; it is not implemented today.
 - **`R_*` type coverage (D-054, task #108).** `rsrc_gaddr`

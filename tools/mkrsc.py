@@ -3,11 +3,13 @@
 
 The native format mirrors the kernel's repr(C) `Object`/`TedInfo`/… layout
 (little-endian), with internal pointers stored as **byte offsets from the
-blob base**; `rsrc_load` relocates them to absolute pointers on load.
+blob base**; `rsrc_load` relocates them to absolute pointers on load. A
+converted resource (`convert`, NRSC v9/v10) keeps the classic file's packed
+char-grid OBJECT coordinates; `rsrc_load` converts them to pixels on load
+with the live font cell and screen width (EmuTOS `rs_obfix`).
 
-This tool emits native resources directly (no classic-Atari conversion).
-A separate mode (`convert`, planned) will read a classic big-endian
-EmuTOS `.rsc` and re-emit it in this format.
+This tool emits a demo native resource directly, and (`convert`) reads a
+classic big-endian Atari `.rsc` and re-emits it in this format.
 
 Layout produced:
     NrscHeader(28B) | [u32 tree-index] | [Object;N] | string data
@@ -77,12 +79,22 @@ def build_demo():
 # ── classic Atari .rsc → native conversion (ADR-013) ──────────────────────
 #
 # Classic structures are big-endian m68k with 16-bit offsets and char-grid
-# coordinates; we byte-swap, expand pointers to 64-bit offsets, and apply
-# obfix (char→pixel). Native struct sizes (repr(C)):
-#   Object 32, TedInfo 40, BitBlk 24, IconBlk 48.
-
-# AES system-font cell size used by obfix (gl_wchar/gl_hchar).
-WCHAR, HCHAR, SCREEN_W = 8, 16, 640
+# coordinates; we byte-swap and expand pointers to 64-bit offsets. Native
+# struct sizes (repr(C)): Object 32, TedInfo 40, BitBlk 24, IconBlk 48.
+#
+# The OBJECT coordinates (ob_x/ob_y/ob_width/ob_height) are copied as the
+# classic file's PACKED CHAR-GRID WORDS -- character count in the low byte,
+# signed pixel offset in the high byte -- and NOT converted here. EmuTOS
+# converts them when the resource is LOADED, with the live font cell and
+# screen width of the machine it is loaded on (aes/gemrslib.c:53-99
+# fix_chpos/rs_obfix, run over every object by fix_objects :606-637 from
+# rs_fixit :816-820; gl_wchar/gl_hchar/gl_width set in gemgraf.c:393-405).
+# The kernel loader does the same from NRSC v9 (LP64) / v10 (ILP32) on
+# (tos-api/src/aes/resource.rs, fix_objects_coords). Doing the arithmetic
+# here with a fixed 8x16 cell and a fixed 640-pixel screen -- as this tool
+# did through v7/v8 -- froze every resource to that one profile: an
+# 80-character root stayed 640 px wide on a 1920-wide workstation (audit
+# B10, docs/analysis/audit-applinit-rsrc-load-2026-09-11.md, TASK/A40).
 
 # Raster data (BITBLK `bi_pdata`, ICONBLK `ib_pmask`/`ib_pdata`) is read as
 # 16-bit WORDS by every consumer — EmuTOS `gr_gblt(WORD *pimage, ...)`
@@ -191,23 +203,6 @@ def swap16_raster(b):
     return bytes(out)
 
 
-def obfix(word, axis):
-    """Classic char-grid coordinate → pixel (EmuTOS fix_chpos)."""
-    word &= 0xFFFF
-    coffset = (word >> 8) & 0xFF
-    cpos = word & 0xFF
-    if axis == 0:
-        cpos *= WCHAR
-    elif axis == 1:
-        cpos *= HCHAR
-    elif axis == 2:
-        cpos = SCREEN_W if cpos == 80 else cpos * WCHAR
-    else:
-        cpos *= HCHAR
-    cpos += (coffset - 256) if coffset > 128 else coffset
-    return cpos
-
-
 def convert(path, out, ilp32=False):
     # Native struct sizes + pack formats by target ABI (ADR-020 stage 4).
     # ob_spec / te_p* / ib_p* / bi_pdata are POINTERS: 8 bytes on LP64, 4 on
@@ -235,24 +230,30 @@ def convert(path, out, ilp32=False):
     # `fix_long(ptreebase+ii)` per tree), and it is what `get_addr(R_TREE, i)`
     # reads back (`return rs_global->ap_ptree[rsindex];`, gemrslib.c:124).
     # v1..v6 held root OBJECT *indices* in fixed 4-byte slots instead, which no
-    # application could be handed as a pointer array (A35). The kernel loader
-    # stays backward-compatible with every earlier header: v1/v2 (28-byte, no
-    # tables), v3/v4 (44-byte, +frstr/frimg tables), v5/v6 (68-byte, +substruct
-    # bases, index tree table).
+    # application could be handed as a pointer array (A35).
+    # version 9 = LP64, 10 = ILP32: same 68-byte header, but the OBJECT
+    # coordinates are the classic file's packed CHAR-GRID words, converted by
+    # the kernel at load with the live gl_wchar/gl_hchar/gl_width (EmuTOS
+    # rs_fixit/fix_objects/rs_obfix, aes/gemrslib.c:816-820, :606-637,
+    # :53-99) -- see the section comment above (A40). v1..v8 hold pixels
+    # computed here with a fixed 8x16/640 profile. The kernel loader stays
+    # backward-compatible with every earlier header: v1/v2 (28-byte, no
+    # tables), v3/v4 (44-byte, +frstr/frimg tables), v5/v6 (68-byte,
+    # +substruct bases, index tree table), v7/v8 (pointer tree index, pixels).
     if ilp32:
         NAT_OBJ, NAT_TED, NAT_IB, NAT_BB = 24, 28, 36, 16
         OBJ_FMT = "<hhhHHHIhhhh"          # 4-byte ob_spec @ 12
         TED_FMT = "<IIIhhhhhhhh"          # 4-byte te_ptext/te_ptmplt/te_pvalid
         BB_FMT = "<Ihhhhh2x"              # 4-byte bi_pdata, pad to 16
         IB_FMT = "<IIIhhhhhhhhhhh2x"      # 4-byte ib_pmask/ib_pdata/ib_ptext, 36
-        PTR, PTR_FMT, version = 4, "<I", 8
+        PTR, PTR_FMT, version = 4, "<I", 10
     else:
         NAT_OBJ, NAT_TED, NAT_IB, NAT_BB = 32, 40, 48, 24
         OBJ_FMT = "<hhhHHH4xQhhhh"        # 8-byte ob_spec @ 16
         TED_FMT = "<QQQhhhhhhhh"
         BB_FMT = "<Qhhhhh6x"
         IB_FMT = "<QQQhhhhhhhhhhh2x"
-        PTR, PTR_FMT, version = 8, "<Q", 7
+        PTR, PTR_FMT, version = 8, "<Q", 9
 
     d = open(path, "rb").read()
     H = struct.unpack(">18H", d[:36])
@@ -383,7 +384,8 @@ def convert(path, out, ilp32=False):
             IB_FMT, intern_bytes(pmask, rb), intern_bytes(pdata, rb),
             intern_str(ptext), *f[3:]))
 
-    # OBJECTs (obfix coords + remap ob_spec by type).
+    # OBJECTs (remap ob_spec by type; coordinates stay packed char-grid
+    # words -- the kernel runs rs_obfix on them at load, see above).
     objs = bytearray()
     for i in range(nobs):
         o = p_obj + i * CLS_OBJ
@@ -403,8 +405,7 @@ def convert(path, out, ilp32=False):
         else:
             nspec = 0  # G_PROGDEF / G_CICON: unsupported, drawn empty
         objs.extend(struct.pack(
-            OBJ_FMT, nxt, head, tail, typ, flags, state, nspec,
-            obfix(x, 0), obfix(y, 1), obfix(w, 2), obfix(h, 3)))
+            OBJ_FMT, nxt, head, tail, typ, flags, state, nspec, x, y, w, h))
 
     # Free-string pointer table: nstr slots, each a native offset to the
     # interned alert/string data (classic p_frstr holds LONG offsets into the

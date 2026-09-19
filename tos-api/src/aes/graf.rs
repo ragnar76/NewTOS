@@ -526,6 +526,21 @@ pub fn graf_slidebox(pb: &Aespb) {
 // Manager's bar interception tests the pointer against it
 // (`event::menu_intercept`, EmuTOS `gl_rmenu`, `gemgraf.c:427`).
 
+/// EmuTOS `gl_width` (`gemgraf.c:37`, set `:393`: `gl_ws.ws_xres + 1`) — the
+/// AES workstation's pixel width, read from the raster backend the AES draws
+/// through. It is the `gl_width` the resource loader's `fix_chpos` puts in
+/// for an 80-character `ob_width` (`gemrslib.c:71-74`).
+///
+/// Without a raster (a host test that installs none) the classic 80-column
+/// width `80 × gl_wchar` stands in — the one value that special case can
+/// then mean.
+pub(super) fn gl_width() -> i16 {
+    crate::host::host()
+        .and_then(|h| h.raster())
+        .map(|r| r.width() as i16)
+        .unwrap_or(80 * gl_wchar())
+}
+
 /// EmuTOS `gl_wchar` (`gemgraf.c:40`, set `:405`) — the system-font cell
 /// width, `vqt_attributes`' `ptsout[2]` for the VDI's default face.
 pub(super) fn gl_wchar() -> i16 {

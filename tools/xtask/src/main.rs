@@ -15,6 +15,10 @@ use std::process::{Command, ExitCode};
 /// Resource-file invariants the build tools must keep (`tools/mkrsc.py`).
 #[cfg(test)]
 mod rsc_align_tests;
+/// A40 — the tool leaves OBJECT coordinates as char-grid words; the loader
+/// converts (`tools/mkrsc.py`, `tos-api/src/aes/resource.rs`).
+#[cfg(test)]
+mod rsc_obfix_tests;
 
 const KERNEL_TARGET: &str = "aarch64-unknown-none-softfloat";
 

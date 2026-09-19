@@ -5,12 +5,15 @@
 //! own 64-bit `OBJECT` layout, little-endian, with internal pointers held
 //! as **byte offsets from the blob base**. Loading is therefore a pure
 //! offset→pointer relocation — no endianness swap and no 16→64-bit
-//! expansion (unlike a classic Atari `.RSC`). A **loaded** `.RSC`'s
-//! coordinates are already in pixels (the host-side `mkrsc.py` pre-converts,
-//! and `rsrc_load` does not re-`ob_fix`), so `rsrc_obfix` only ever converts
-//! an **inline** resource an app built itself (see [`rsrc_obfix`]).
+//! expansion (unlike a classic Atari `.RSC`). The OBJECT coordinates are
+//! the classic file's **packed char-grid words** (from NRSC v9/v10 on) and
+//! are turned into pixels **at load**, per object, with the live
+//! `gl_wchar`/`gl_hchar`/`gl_width` — EmuTOS's `rs_fixit` → `fix_objects`
+//! → `rs_obfix` (`gemrslib.c:816-820`, `:606-637`, `:89-99`), see
+//! [`fix_objects_coords`] and [`rs_obfix`]. `rsrc_obfix` (114) is the same
+//! `rs_obfix`, applied by an application to an object of its own.
 //!
-//! Native `.RSC` layout (all little-endian). Four header generations coexist;
+//! Native `.RSC` layout (all little-endian). Five header generations coexist;
 //! the loader picks by `version` and is backward-compatible:
 //!
 //! * **v1 (LP64) / v2 (ILP32)** — 28-byte header, no free-string/free-image
@@ -40,6 +43,15 @@
 //!   reads back (`:124`) — so `rsrc_load` finally has an array to name (A35).
 //!   A v1–v6 blob keeps loading and keeps answering `rsrc_gaddr(R_TREE, i)`
 //!   from the index form; it simply publishes no `ap_ptree`.
+//! * **v9 (LP64) / v10 (ILP32)** — the same 68-byte header, but the OBJECT
+//!   coordinates are the classic file's **packed char-grid words** (char
+//!   count in the low byte, signed pixel offset in the high byte) instead
+//!   of pixels: the loader runs `rs_obfix` over every object at load with
+//!   the live `gl_wchar`/`gl_hchar`/`gl_width` (EmuTOS `fix_objects`,
+//!   `gemrslib.c:606-637`), so the layout follows the machine the file is
+//!   loaded on, not the one the converter assumed (A40). A v1–v8 blob holds
+//!   pixels and is not converted — the tool of its day did that with
+//!   `8 × 16 / 640` baked in.
 //!
 //! ```text
 //!   NrscHeader: magic "NRSC", version, n_trees, n_objects,
@@ -50,7 +62,9 @@
 //!                                    v7/v8: [ptr] offset → the root OBJECT)
 //!   [Object; n_objects]          @ off_objects  (ob_spec = offset for the
 //!                                                 string object types, else
-//!                                                 a literal colour/char word)
+//!                                                 a literal colour/char word;
+//!                                                 v9/v10: ob_x/y/w/h packed
+//!                                                 char-grid words, else px)
 //!   [TedInfo; n_ted] [BitBlk; n_bb] [IconBlk; n_ib]             (v5–v8)
 //!   [ptr; n_frstr]   frstr table @ off_frstr    (v3+: offset → string data)
 //!   [ptr; n_frimg]   frimg table @ off_frimg    (v3+: offset → a BITBLK)
@@ -136,7 +150,6 @@ use super::object::{BitBlk, IconBlk, ObjTree, Object, TedInfo};
 use super::shell::PATHBUF;
 use super::Aespb;
 use crate::bdos::process::{usermem, Abi};
-use crate::vdi::font::{CELL_H, CELL_W};
 use core::cell::UnsafeCell;
 use core::mem::size_of;
 use core::sync::atomic::{AtomicUsize, Ordering};
@@ -256,6 +269,25 @@ const NRSC_VER_SUBSTRUCTS: u32 = 5;
 /// does not exist in it — see [`rsrc_load`].
 const NRSC_VER_TRINDEX_PTR: u32 = 7;
 
+/// First NRSC `version` whose OBJECT coordinates are the classic file's
+/// **packed char-grid words** (v9 LP64, v10 ILP32) — `ob_x`/`ob_y`/
+/// `ob_width`/`ob_height` each an unsigned character count in the low byte
+/// and a signed pixel offset in the high byte, exactly the bytes of the
+/// classic `.rsc`. The header is unchanged (68 bytes); what moves is *when*
+/// the char→pixel arithmetic happens: at load, in [`fix_objects_coords`],
+/// with the AES's live `gl_wchar`/`gl_hchar`/`gl_width` — which is EmuTOS's
+/// `rs_fixit` → `fix_objects` → `rs_obfix(obj, 0)` for every `rsh_nobs`
+/// object (`aes/gemrslib.c:816-820`, `:606-637`, `:89-99`), run by
+/// `rs_load` right after `rs_readit` (`:846`).
+///
+/// Before this generation the converter (`tools/mkrsc.py`) did that
+/// arithmetic itself with `WCHAR, HCHAR, SCREEN_W = 8, 16, 640` baked in, so
+/// every resource carried the pixels of a 640-wide 8×16 screen onto every
+/// machine — an 80-character root stayed 640 px on a 1920-wide workstation
+/// (audit B10, `docs/analysis/audit-applinit-rsrc-load-2026-09-11.md`).
+/// A v1–v8 blob still holds those pixels and is loaded without conversion.
+const NRSC_VER_CHARGRID: u32 = 9;
+
 /// Slot width of the tree index for a blob of `version`, given the caller's
 /// pointer width `ptr`: a relocated pointer from [`NRSC_VER_TRINDEX_PTR`] on,
 /// a fixed 4-byte root OBJECT index before that.
@@ -288,7 +320,9 @@ pub struct NrscHeader {
     pub magic: [u8; 4],
     /// Format version: 1 = LP64/28 B, 2 = ILP32/28 B, 3 = LP64/44 B (+tables),
     /// 4 = ILP32/44 B (+tables), 5 = LP64/68 B (+substruct bases), 6 = ILP32/
-    /// 68 B (+substruct bases).
+    /// 68 B (+substruct bases), 7/8 = pointer tree index
+    /// ([`NRSC_VER_TRINDEX_PTR`]), 9/10 = char-grid coordinates
+    /// ([`NRSC_VER_CHARGRID`]). Odd = LP64, even = ILP32.
     pub version: u32,
     /// Number of object trees.
     pub n_trees: u32,
@@ -739,6 +773,10 @@ unsafe fn relocate_and_register_core(
             Abi::Ilp32 => fix_tedinfo_std_ilp32(access_base, target_base),
             Abi::Lp64 => fix_tedinfo_std(access_base, target_base),
         }
+        // `rs_fixit` → `fix_objects` (gemrslib.c:816-820, :606-637): the
+        // char→pixel fix of every object, with the live font cell and screen
+        // width — `rs_load` runs it right after `rs_readit` (:846).
+        fix_objects_coords(access_base, abi);
         let (obj_size, ptr_size) = match abi {
             Abi::Ilp32 => (OBJECT_SIZE_ILP32, 4usize),
             Abi::Lp64 => (OBJECT_SIZE, 8usize),
@@ -1137,7 +1175,17 @@ pub unsafe fn relocate_blob(base: *mut u8, len: usize) -> bool {
     // In-place relocation: the blob is accessed and dereferenced through
     // the same pointer, so the access base and the target base coincide.
     // SAFETY: caller guarantees `len` accessible bytes.
-    unsafe { relocate_blob_core(base, len, base as u64) }
+    unsafe {
+        if !relocate_blob_core(base, len, base as u64) {
+            return false;
+        }
+        // EmuTOS runs `rs_obfix` over its embedded resource as well, once
+        // the workstation is open: `gem_rsc_fixit` (`aes/gem_rsc.c:636-641`,
+        // called from `geminit.c:711`). Native LP64: the embedded blob and
+        // every in-kernel caller of this entry are 32-byte OBJECTs.
+        fix_objects_coords(base, Abi::Lp64);
+    }
+    true
 }
 
 /// Core relocation, splitting the pointer used to **access** the blob from
@@ -2087,24 +2135,17 @@ pub fn rsrc_saddr(pb: &Aespb) {
 /// `rsrc_obfix` (114) — convert object `int_in[0]`'s packed char-grid
 /// coordinates (`ob_x`/`ob_y`/`ob_width`/`ob_height`) to pixels, in place.
 ///
-/// Faithful to EmuTOS `rs_obfix` (`gemrslib.c:89-99`) + `fix_chpos`
-/// (`gemrslib.c:53-83`): each of the four coordinate WORDs packs an unsigned
-/// **character count in the low byte** and a **signed pixel offset in the high
-/// byte**; the pixel value is `char_count * cell + signed_offset`, where the
-/// cell is `gl_wchar` (8) for x/width and `gl_hchar` (16) for y/height, and a
-/// `ob_width` whose char count is exactly 80 maps to the full screen width
-/// (`gl_width`, `gemrslib.c:71-74`). The slots are `RS_TREE = addr_in[0]` and
-/// `RS_OBJ = int_in[0]` (`aesdefs.h:574-575`, `gemsuper.c:375-377`), read at
-/// the caller's ABI width via [`ObjTree`] exactly like every other object op.
-///
-/// **Scope — inline resources only, no double conversion.** This is applied
-/// solely to a resource an app built itself (an `rs_object[]` compiled into
-/// the program, still in char-grid form). A resource loaded through
-/// `rsrc_load` is already in pixels — the host-side `mkrsc.py` pre-converts
-/// and [`rsrc_load`] does not re-`ob_fix` — and a well-behaved GEM app never
-/// re-`rsrc_obfix`es loaded objects (EmuTOS `rsrc_load` `ob_fix`es them once
-/// at load, `gemrslib.c:606-637,815-819`), so converting here never touches
-/// the loaded `.RSC` and cannot double-convert it.
+/// EmuTOS `rs_obfix` (`gemrslib.c:89-99`), dispatched at `gemsuper.c:375-377`
+/// with `RS_TREE = addr_in[0]` and `RS_OBJ = int_in[0]` (`aesdefs.h:574-575`);
+/// the object is read at the caller's ABI width via [`ObjTree`] exactly like
+/// every other object op. The arithmetic is [`rs_obfix`], the very function
+/// the loader applies to every object of a char-grid resource
+/// ([`fix_objects_coords`]) — so an application that `rsrc_obfix`es an
+/// object it built itself (an inline `rs_object[]`) gets the same pixels the
+/// same object would have got out of `rsrc_load`. EmuTOS applies it once at
+/// load (`gemrslib.c:606-637,815-819`); an application does not re-`obfix` a
+/// loaded object, and NewTOS, like EmuTOS, does not guard against one that
+/// does.
 ///
 /// `rs_obfix` is `void`; the AES `ret` stays `TRUE`, so this always reports 1
 /// (`gemsuper.c:85,375-377`).
@@ -2115,20 +2156,71 @@ pub fn rsrc_obfix(pb: &Aespb) {
         pb.set_ret(1);
         return;
     }
-    // `gl_width` — the full-screen pixel width used by the `ob_width == 80`
-    // special case (EmuTOS `gl_width`, the VDI workstation width). Fall back to
-    // the classic 80-column full width (80 * gl_wchar = 640) if no raster is up,
-    // which only matters for that one special case with no display.
-    let gl_width = crate::host::host()
-        .and_then(|h| h.raster())
-        .map(|r| r.width() as i16)
-        .unwrap_or(80 * CELL_W);
-    let t = ObjTree::new(tree);
-    t.set_x(obj, fix_chpos(t.x(obj), CELL_W, false, gl_width));
-    t.set_y(obj, fix_chpos(t.y(obj), CELL_H, false, gl_width));
-    t.set_width(obj, fix_chpos(t.width(obj), CELL_W, true, gl_width));
-    t.set_height(obj, fix_chpos(t.height(obj), CELL_H, false, gl_width));
+    rs_obfix(ObjTree::new(tree), obj);
     pb.set_ret(1);
+}
+
+/// EmuTOS `rs_obfix(tree, curob)` (`aes/gemrslib.c:89-99`):
+///
+/// ```c
+/// p = &tree[curob].ob_x;
+/// for (offset=0; offset<4; offset++)
+///     fix_chpos(p+offset, offset);
+/// ```
+///
+/// The four packed words of object `obj` become pixels, in place, with the
+/// AES's live metrics: `gl_wchar` for `ob_x`/`ob_width`, `gl_hchar` for
+/// `ob_y`/`ob_height`, and `gl_width` for an `ob_width` of exactly 80
+/// characters ([`super::graf::gl_wchar`], [`super::graf::gl_hchar`],
+/// [`super::graf::gl_width`] — `gemgraf.c:37-41`, set in `gsx_start`).
+/// The per-word rule is [`fix_chpos`].
+pub(super) fn rs_obfix(t: ObjTree, obj: i16) {
+    let (wchar, hchar) = (super::graf::gl_wchar(), super::graf::gl_hchar());
+    let width = super::graf::gl_width();
+    t.set_x(obj, fix_chpos(t.x(obj), wchar, false, width));
+    t.set_y(obj, fix_chpos(t.y(obj), hchar, false, width));
+    t.set_width(obj, fix_chpos(t.width(obj), wchar, true, width));
+    t.set_height(obj, fix_chpos(t.height(obj), hchar, false, width));
+}
+
+/// EmuTOS `fix_objects`' coordinate half (`aes/gemrslib.c:606-637`):
+///
+/// ```c
+/// for (ii = 0; ii < rs_hdr->rsh_nobs; ii++) {
+///     obj = (OBJECT *)get_addr(R_OBJECT, ii);
+///     rs_obfix(obj, 0);
+///     …
+/// ```
+///
+/// applied to every object of a **char-grid** blob (`version >=`
+/// [`NRSC_VER_CHARGRID`]), through the kernel alias `access_base` at the
+/// caller's record width. A blob of an earlier generation already holds
+/// pixels (its converter did this arithmetic) and is left exactly as it is —
+/// converting it again would turn pixel counts into character counts.
+///
+/// Runs from both entry points, as EmuTOS runs it for both kinds of
+/// resource: `rs_fixit` for a loaded file (`:816-820`, from `rs_load`
+/// `:846`) and `gem_rsc_fixit` for the embedded one (`aes/gem_rsc.c:636-641`).
+/// The `ob_spec` half of `fix_objects` is the relocation cores' object walk.
+///
+/// # Safety
+/// `access_base` must address a blob whose header passed [`header_is_sound`]
+/// for `abi` (the object array lies inside the bytes that exist).
+unsafe fn fix_objects_coords(access_base: *mut u8, abi: Abi) {
+    // SAFETY: the header and the object array were validated by the caller.
+    unsafe {
+        let h = &*(access_base as *const NrscHeader);
+        if h.version < NRSC_VER_CHARGRID {
+            return;
+        }
+        let objs = access_base.add(h.off_objects as usize) as *const Object;
+        // Only the four coordinate words are touched, at `abi`'s record
+        // width; the accessor's origin flag plays no part here.
+        let t = ObjTree::app_at(objs, abi);
+        for i in 0..(h.n_objects as usize).min(i16::MAX as usize) {
+            rs_obfix(t, i as i16);
+        }
+    }
 }
 
 /// Convert one packed char-grid coordinate WORD to pixels (EmuTOS `fix_chpos`,
@@ -2140,6 +2232,8 @@ pub fn rsrc_obfix(pb: &Aespb) {
 /// which EmuTOS applies to `ob_width` only. All arithmetic is done in `i32` and
 /// truncated to `i16`, which is bit-identical to EmuTOS' `WORD` (16-bit) math
 /// for the valid 0..=255 byte inputs (max `255 * 16 + 127`, never overflowing).
+///
+/// The rule alone, with explicit metrics; [`rs_obfix`] feeds it the live ones.
 pub(super) fn fix_chpos(raw: i16, cell: i16, is_width: bool, gl_width: i16) -> i16 {
     let v = raw as u16;
     let coffset = (v >> 8) as i32; // high byte: signed pixel offset (0..=255)
@@ -2384,5 +2478,96 @@ mod tests {
             assert_eq!(g32(&global, AP_RSCMEM_OFF), 0, "v{version}: ap_rscmem");
             assert_eq!(global[9], 0, "v{version}: ap_rsclen");
         }
+    }
+
+    // ── A40: the ILP32 twin of the load-time coordinate fix ────────────────
+    //
+    // The LP64 path is driven end to end (through `relocate_and_register`
+    // and the dispatcher's `rsrc_gaddr`) in `tests/aes_rsrc_obfix_at_load.rs`;
+    // the ILP32 record layout is reachable only through
+    // `relocate_and_register_core(…, Abi::Ilp32)`, the `load_into_user`
+    // shape, hence here. No host is installed in this binary, so `gl_width`
+    // is the 80-column stand-in `80 × gl_wchar`; the arithmetic under test
+    // is the same either way.
+
+    /// A one-object NRSC blob at the ILP32 record width (24-byte OBJECT,
+    /// the coordinate words at +16), with the packed char-grid words `raw`.
+    fn ilp32_blob(version: u32, raw: [u16; 4]) -> Vec<u8> {
+        const HDR: usize = size_of::<NrscHeader>(); // 68
+        let off_tri = HDR;
+        let off_obj = off_tri + 4; // one 4-byte pointer slot, 72 = 8-aligned
+        let total = off_obj + OBJECT_SIZE_ILP32;
+        let mut b = vec![0u8; total];
+        b[0..4].copy_from_slice(b"NRSC");
+        let put = |b: &mut Vec<u8>, i: usize, v: u32| {
+            b[4 + i * 4..8 + i * 4].copy_from_slice(&v.to_le_bytes());
+        };
+        put(&mut b, 0, version);
+        put(&mut b, 1, 1); // n_trees
+        put(&mut b, 2, 1); // n_objects
+        put(&mut b, 3, off_tri as u32);
+        put(&mut b, 4, off_obj as u32);
+        put(&mut b, 5, total as u32);
+        // The v3+/v5+ table fields stay 0/0 (empty tables); the v7+ tree
+        // index slot holds the root's byte offset.
+        b[off_tri..off_tri + 4].copy_from_slice(&(off_obj as u32).to_le_bytes());
+        let o = off_obj;
+        b[o..o + 2].copy_from_slice(&(-1i16).to_le_bytes()); // ob_next
+        b[o + 2..o + 4].copy_from_slice(&(-1i16).to_le_bytes()); // ob_head
+        b[o + 4..o + 6].copy_from_slice(&(-1i16).to_le_bytes()); // ob_tail
+        b[o + 6..o + 8].copy_from_slice(&G_BOX.to_le_bytes());
+        b[o + 12..o + 16].copy_from_slice(&0x0001_0000u32.to_le_bytes()); // ob_spec
+        for (k, w) in raw.iter().enumerate() {
+            b[o + 16 + 2 * k..o + 18 + 2 * k].copy_from_slice(&w.to_le_bytes());
+        }
+        b
+    }
+
+    /// Load an ILP32 blob at `APP_VA` and return its one object's four
+    /// coordinate words as the application would read them.
+    fn ilp32_coords(blob: &[u8]) -> [i16; 4] {
+        let mut buf = Blob::new(blob);
+        let len = blob.len();
+        // SAFETY: `buf` holds `len` writable bytes for the whole call.
+        let desc = unsafe { relocate_and_register_core(buf.as_mut_ptr(), len, APP_VA, Abi::Ilp32) }
+            .expect("the ILP32 blob must relocate");
+        assert_eq!(desc.obj_size, OBJECT_SIZE_ILP32);
+        let off_obj = u32::from_le_bytes(blob[20..24].try_into().unwrap()) as usize;
+        let mut out = [0i16; 4];
+        for (k, o) in out.iter_mut().enumerate() {
+            let at = off_obj + 16 + 2 * k;
+            *o = i16::from_le_bytes(buf.bytes()[at..at + 2].try_into().unwrap());
+        }
+        out
+    }
+
+    /// `fix_objects` (`gemrslib.c:606-637`) on a v10 blob: the packed words
+    /// become `chars × gl_wchar/gl_hchar + offset`, the 80-character width
+    /// `gl_width` — at the ILP32 record offsets, not the LP64 ones.
+    #[test]
+    fn a_char_grid_ilp32_blob_is_fixed_at_load() {
+        let _g = lock();
+        let (wchar, hchar, width) =
+            (super::super::graf::gl_wchar(), super::super::graf::gl_hchar(), super::super::graf::gl_width());
+        let raw = [0x0405u16, 0xFF02, 0x0050, 0x0102];
+        let got = ilp32_coords(&ilp32_blob(NRSC_VER_CHARGRID + 1, raw));
+        let want = [
+            fix_chpos(raw[0] as i16, wchar, false, width),
+            fix_chpos(raw[1] as i16, hchar, false, width),
+            fix_chpos(raw[2] as i16, wchar, true, width),
+            fix_chpos(raw[3] as i16, hchar, false, width),
+        ];
+        assert_eq!(got, want, "rs_obfix of {raw:04x?} at cell {wchar}x{hchar}, gl_width {width}");
+        assert_eq!(got[2], width, "the 80-character width is gl_width");
+        assert_ne!(got, [raw[0] as i16, raw[1] as i16, raw[2] as i16, raw[3] as i16], "converted at all");
+    }
+
+    /// A v8 blob (pixels, the previous generation) is not converted.
+    #[test]
+    fn a_pixel_ilp32_blob_is_left_alone() {
+        let _g = lock();
+        let raw = [0x0405u16, 0xFF02, 0x0050, 0x0102];
+        let got = ilp32_coords(&ilp32_blob(NRSC_VER_TRINDEX_PTR + 1, raw));
+        assert_eq!(got, [raw[0] as i16, raw[1] as i16, raw[2] as i16, raw[3] as i16]);
     }
 }
