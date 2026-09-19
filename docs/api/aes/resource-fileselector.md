@@ -1049,6 +1049,73 @@ call, or with process end (§1's `rsrc_free`/process-death text).
 
 ### 5.9 NRSC format proposal — v11/v12 (design proposal, NOT an EmuTOS extraction)
 
+> **Implementation status (2026-09-19, TASK/A41 Developer run) — read before
+> the proposal below.** Converter, loader and drawer are implemented
+> (`tools/mkrsc.py` `read_cicon_table`/`convert`; `tos-api/src/aes/
+> resource.rs` `NRSC_VER_CICON`, `cicon_tables_are_sound`, `fix_cicons`,
+> `best_match`, `transform_cicon`, `cicon_pixel`, `CiconDevice`;
+> `tos-api/src/aes/object.rs` `Cicon`, `draw_icon`'s colour arm;
+> `tos-api/src/vdi/raster.rs` `blit_device_mem`), host-tested
+> (`tools/xtask/src/rsc_cicon_tests.rs`, `resource.rs` `cicon_tests`,
+> `tos-api/tests/aes_cicon_draw.rs`). Where this section was a proposal, the
+> following was **decided differently, with evidence**:
+>
+> * **The native CICONBLK/CICON records are the application's C structs**
+>   (`CICONBLK { ICONBLK monoblk; CICON *mainlist; }`, `CICON { WORD
+>   num_planes; WORD *col_data, *col_mask, *sel_data, *sel_mask; CICON
+>   *next_res; }`, `obdefs.h:203-217` = gemlib `mt_gem.h`; LP64 56 + 48 B,
+>   ILP32 40 + 24 B), **not** the `NrscCiconBlk`/`NrscCiconVariant` tables
+>   proposed below: TeraDesk copies a CICONBLK **by value** (`sdk/apps/
+>   teradesk/icon.c:1640,1675` `h = malloc(sizeof(CICONBLK)); *h =
+>   *icons[n].ob_spec.ciconblk`, again `:2231`) and reads `monoblk` through
+>   `ob_spec.ciconblk` (`dir.c:2090-2102`, `icon.c:803,1073,1227,1522`), so
+>   the bytes behind a `G_CICON`'s `ob_spec` must *be* that struct, and the
+>   drawer follows `mainlist` through the app's copy. The pointer fields
+>   hold blob offsets (0 = absent / end of chain); `mainlist`/`next_res`
+>   link the variants; the header (84 B, v11 LP64 / v12 ILP32) carries
+>   `off_cib`/`n_cib` (CICONBLK array) and `off_cic`/`n_cic` (CICON array).
+>   A `G_CICON`'s `ob_spec` is the byte offset of its CICONBLK, relocated by
+>   the generic rule as proposed.
+> * **Measured, not estimated:** the native `cicons.rsc` is **63 610 B**
+>   (LP64; ILP32 61 770 B) against `RSC_CAP` 65 536 B — margin 1 926 B. Two
+>   of §5.3/§5.4's "all 38" claims (checked there for the first three
+>   blocks only) do not hold for the whole file: block 3 is **48×32**
+>   (`mono_words = 96`), and blocks **20 and 31 have no SELECTED image**
+>   (`sel_data` flag 0) — the `dither_mask` darkening path is therefore live
+>   for two of TeraDesk's icons.
+> * **§5.7's "today 4 planes" is wrong for the live backend:** `kernel/src/
+>   vdi_backend.rs:41` `PLANES = 16` (Falcon truecolor, `NUM_COLORS = 256`),
+>   and `appl_init` reports it as `ap_planes` (`aes/appl.rs`
+>   `screen_planes`). `best_match(16)` therefore takes every 4-plane
+>   variant as the *best lower* one, `expand_cicondata` (4 → 16 planes)
+>   and `transform_cicon`'s `planes > 8` palette branch are the live path —
+>   implemented per pixel in `cicon_pixel`. `phys_work.ext->palette[n]` is
+>   indexed by **hardware register** (`set_color16` writes
+>   `palette[MAP_COL[pen]]`, `vdi_col.c:607-613`); NewTOS folds `MAP_COL`
+>   to the identity (`vdi/vwk.rs`), so the loader resolves `n` through
+>   EmuTOS's `REV_MAP_COL` (`init_colors`, `:736-747`; `CiconDevice::
+>   rev_map_col`) — same RGB word, e.g. index 15 → register 255 → pen 1.
+> * **One device-form buffer per resource**, not per icon
+>   (`transform_all_cicons` `:436`): the EL0 path maps every allocation as
+>   a window block and the per-process table has `MAX_USER_BLOCKS` = 32
+>   entries (`bdos/process/usermem.rs`) — fewer than TeraDesk's 38 icons.
+>   The per-icon alloc-failure fallback (§5.6 point 2) is therefore per
+>   resource. Freed by `rsrc_free` (`free_cicon_buffers`' counterpart) and
+>   at process end.
+> * **Blocked at the acceptance (§5.10 item 3's QEMU run, §5.11 item 5):**
+>   `rsrc_load("cicons.rsc")` = 1 and `rsrc_gaddr(R_TREE, 0)` = 1 on QEMU
+>   raspi4b, but TeraDesk then resolves the icon tree with its **own**
+>   `xrsrc_gaddr` (`rsc_load.c:496-541`, `icon.c:2750`), which reads
+>   `aes_global[7]` (`ap_rscmem`) and parses the memory there as a classic
+>   `RSHDR` (`rsh_trindex` at byte 18) — what EmuTOS leaves there is the
+>   file image with the RSHDR at its head (`rs_readit`, `rs_global->
+>   ap_rscmem = rs_hdr`, `gemrslib.c:787`); NewTOS leaves the NRSC header,
+>   and TeraDesk faults (Data Abort, FAR = the bytes `"NRSC"` + version read
+>   as a pointer). With a 40-byte native-RSHDR shim in front of the blob
+>   (scratch experiment only, not in the tree) the colour icons render
+>   (`measurement-2026-09-19-a41/screendumps/tera2-A-idle.png`). See §5.11
+>   item 5.
+
 > Everything below this line is a **NewTOS-native design proposal** for the
 > Developer's review, per ADR-013 (the on-disk `.RSC` byte format is
 > NewTOS's own choice, not a byte-compatibility target — same status as the
@@ -1227,7 +1294,35 @@ here.
    `phys_work.ext->palette[]` indirection is probably not what a future
    NewTOS truecolor path should do, but no source read this session says
    what should replace it. Needs its own task once/if the VDI truecolor
-   pivot is scheduled.
+   pivot is scheduled. *(2026-09-19: implemented as EmuTOS does it, through
+   the folded palette — see the §5.9 status callout; the pixel path is the
+   live one today, not a future question.)*
+5. **`ap_rscmem` must address an RSHDR-headed image (found 2026-09-19,
+   blocks the acceptance).** EmuTOS's `rs_readit` publishes the loaded
+   **file image** — classic `RSHDR` at its head — as `ap_rscmem`
+   (`gemrslib.c:787`), and applications parse that header themselves:
+   TeraDesk's `xrsrc_gaddr` (`sdk/apps/teradesk/rsc_load.c:496-541`, tho-
+   otto's generic `rsc_load.c`) reads `aes_global[7]`, tests
+   `IS_XRSC_HEADER` (`rsh_vrsn & 3 == 3` → the `RSXHDR` with `unsigned
+   long` fields, else the 18-`u16` `RSHDR`), and takes
+   `rsh_trindex`/`rsh_object`/… as offsets from that address. `load_icons`
+   uses it on the AES-loaded `cicons.rsc` (`icon.c:2750`), so the NRSC
+   image at `ap_rscmem` — `"NRSC"` magic, `u32` fields — is misread and the
+   desktop faults. Two ways to honour the contract, both needing the user's
+   sign-off (new in-memory-image surface, beyond ADR-013's on-disk
+   freedom): **(a)** the converter emits a 36-byte native `RSHDR` (LE
+   `u16`, classic field order, offsets from the file base — the
+   representation `--rshdr` already writes and TeraDesk's parser already
+   reads) padded to 40 B in front of the NRSC header (NRSC v13/v14; the
+   loader finds the magic at 40); the loaded image then *is* the file, as
+   in EmuTOS; or **(b)** `load_into_user` synthesizes that RSHDR into 40
+   bytes in front of the blob at load time and publishes the shim as
+   `ap_rscmem` (EL0 path only; the scratch experiment did this). Either
+   way `rsh_rssize` and every offset are `u16`, so the image must stay
+   below 64 KiB — `RSC_CAP` already says so (65 536; the last 40 bytes of
+   that range would overflow and must be refused). Until decided,
+   `cicons.rsc` is **not** staged into `dist/` (`sdk/apps/build-teradesk.sh`),
+   so the desktop keeps its mono fallback instead of crashing.
 
 ---
 

@@ -58,11 +58,14 @@ mod raster;
 /// `vro_cpyfm` Screen↔Memory copy over a caller-owned 32-bpp device-format
 /// buffer. Used by `form_alert`/`form_dial` to preserve the screen behind
 /// a dialog. See [`raster`] for the memory-MFDB format.
-pub use raster::{bb_restore, bb_save, bb_save_words};
+pub use raster::{bb_restore, bb_save, bb_save_words, blit_device_mem};
 mod req_col;
 mod text;
 mod trig;
 mod vwk;
+/// The pseudo-palette packing of `set_color16`, for the AES colour-icon
+/// loader's own palette table (`aes/resource.rs`).
+pub use vwk::pack_color16;
 mod workstation;
 
 use crate::bdos::process::Abi;

@@ -19,6 +19,10 @@ mod rsc_align_tests;
 /// converts (`tools/mkrsc.py`, `tos-api/src/aes/resource.rs`).
 #[cfg(test)]
 mod rsc_obfix_tests;
+/// A41 — the tool carries a new-format file's colour icons (CICONBLK/CICON)
+/// as the application's C structs into NRSC v11/v12.
+#[cfg(test)]
+mod rsc_cicon_tests;
 
 const KERNEL_TARGET: &str = "aarch64-unknown-none-softfloat";
 

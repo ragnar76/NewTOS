@@ -11,8 +11,10 @@ with the live font cell and screen width (EmuTOS `rs_obfix`).
 This tool emits a demo native resource directly, and (`convert`) reads a
 classic big-endian Atari `.rsc` and re-emits it in this format.
 
-Layout produced:
-    NrscHeader(28B) | [u32 tree-index] | [Object;N] | string data
+Layout produced (`convert`, NRSC v11/v12):
+    NrscHeader(84B) | [ptr tree-index] | [Object;N] | [TedInfo] | [BitBlk]
+    | [IconBlk] | [CiconBlk] | [Cicon] | frstr table | frimg table | data
+(the demo `build_demo` writes the historical 28-byte v1 header).
 
 Object (32B, repr(C)):
     +0  i16 ob_next   +2  i16 ob_head   +4  i16 ob_tail
@@ -170,9 +172,45 @@ BOX_TYPES = {20, 25, 27}      # G_BOX, G_IBOX, G_BOXCHAR (literal word)
 STR_TYPES = {26, 28, 32}      # G_BUTTON, G_STRING, G_TITLE
 TED_TYPES = {21, 22, 29, 30}  # G_TEXT, G_BOXTEXT, G_FTEXT, G_FBOXTEXT
 IMG_TYPE, ICON_TYPE = 23, 31  # G_IMAGE (BITBLK), G_ICON (ICONBLK)
+CICON_TYPE = 33               # G_CICON (CICONBLK, new-format .rsc only)
 
 CLS_OBJ, CLS_TED, CLS_IB, CLS_BB = 24, 28, 34, 14  # classic struct sizes
 NAT_OBJ, NAT_TED, NAT_IB, NAT_BB = 32, 40, 48, 24  # native struct sizes
+
+# Colour icons (TASK/A41, docs/api/aes/resource-fileselector.md §5). A
+# new-format .rsc (`rsh_vrsn & NEW_FORMAT_RSC`, rsdefs.h:39) carries its
+# CICONBLKs behind the classic sections, reached through the extension array
+# at `rsh_rssize` (`get_ciconblkptr`, aes/gemrslib.c:484-508). On disk each
+# CICONBLK is a variable-length record (§5.3): a 38-byte head -- three
+# placeholder pointers, the eleven ICONBLK WORDs, and `mainlist` holding the
+# NUMBER of CICONs that follow -- then `mono_words = ib_wicon/16 * ib_hicon`
+# WORDs of mono data, the same of mono mask, a fixed 12-byte label buffer,
+# then the CICON chain (§5.4): a 22-byte head -- num_planes, four placeholder
+# pointers of which `sel_data` is a FLAG, and `next_res` = 1 if another
+# variant follows -- then `mono_words * num_planes` WORDs of colour data, one
+# plane of mask, and the same pair again when `sel_data` was flagged.
+#
+# The native record is the C struct the application links (gemlib mt_gem.h
+# `CICONBLK { ICONBLK monoblk; CICON *mainlist; }`, `CICON { short num_planes;
+# short *col_data, *col_mask, *sel_data, *sel_mask; struct cicon_data
+# *next_res; }`), NOT a private table: TeraDesk copies a CICONBLK by value
+# (`sdk/apps/teradesk/icon.c:1640,1675` `*h = *icons[n].ob_spec.ciconblk`)
+# and reads `monoblk` through `ob_spec.ciconblk` (`dir.c:2090-2102`), so the
+# bytes behind a G_CICON's ob_spec must BE that struct, with `mainlist` a real
+# pointer at its C offset. The pointer fields hold blob offsets (0 = absent),
+# relocated by the kernel like every other native pointer; the loader then
+# runs EmuTOS's `fix_cicons` (best_match + device-form transform) over them.
+# Native sizes: LP64 CICONBLK 56 (48 + 8), CICON 48 (2 + 6 pad + 5 * 8);
+# ILP32 CICONBLK 40 (36 + 4), CICON 24 (2 + 2 pad + 5 * 4).
+CLS_CIB_HEAD, CLS_CIC_HEAD = 38, 22  # on-disk record heads (pre-fix-up)
+CLS_CIB_TEXT = 12                    # fixed mono label buffer (gemrslib.c:245)
+NEW_FORMAT_RSC = 0x0004              # rsdefs.h:39
+NAT_CIB, NAT_CIC = 56, 48            # native LP64 CICONBLK / CICON
+
+# Largest blob the kernel loader holds (`tos-api/src/aes/resource.rs`
+# `RSC_CAP`): a larger file is refused by `rsrc_load`, never truncated, so the
+# converter fails loudly instead of emitting a resource that cannot load.
+RSC_CAP = 64 * 1024
 
 
 def swap16_raster(b):
@@ -201,6 +239,81 @@ def swap16_raster(b):
         print(f"warning: odd-length raster ({len(b)} bytes); trailing byte "
               f"left unswapped (not word-aligned)", file=sys.stderr)
     return bytes(out)
+
+
+def read_cicon_table(d, vrsn, rssize):
+    """Parse the CICONBLK extension of a new-format classic `.rsc`.
+
+    Returns a list of blocks, one per CICONBLK in table order (= the index a
+    G_CICON's classic `ob_spec` holds, `fix_objects` gemrslib.c:623-626):
+    `(words, pdata, pmask, ptext, variants)` with `words` the eleven ICONBLK
+    WORDs (`ib_char` .. `ib_htext`), `pdata`/`pmask`/`ptext` the classic file
+    offsets of the mono data (`mono_words` WORDs), mono mask (same) and the
+    12-byte label, and `variants` a list of `(num_planes, col_data, col_mask,
+    sel_data, sel_mask)` file offsets (`sel_*` = 0 when the variant has no
+    SELECTED image). Mirrors `fix_cicons` / `fixup_all_ciconblks` /
+    `fixup_colour_icons` (gemrslib.c:549-573, :226-256, :185-217) -- the same
+    walk EmuTOS does in place, done here on the read-only file. An old-format
+    file (no `NEW_FORMAT_RSC` bit) or one whose extension array has no CICON
+    table (`extarray[1]` 0 or -1) yields an empty list.
+    """
+    if not vrsn & NEW_FORMAT_RSC:
+        return []
+    # extarray[0] = true file length, extarray[1] = CICON table offset
+    # (`get_ciconblkptr`); [2..] are "other extensions" EmuTOS never reads.
+    true_len, cptr = struct.unpack(">ii", d[rssize:rssize + 8])
+    if true_len > len(d):
+        sys.exit(f"new-format .rsc declares {true_len} bytes, file has {len(d)}")
+    if cptr in (0, -1):
+        return []
+    # The pointer table: placeholders up to a -1 sentinel; the count is only
+    # ever derived by walking to the sentinel (gemrslib.c:560-561).
+    n = 0
+    while struct.unpack(">i", d[cptr + n * 4:cptr + n * 4 + 4])[0] != -1:
+        n += 1
+    p = cptr + (n + 1) * 4         # `cicondata = (CICON *)(p+1)` (:563)
+    blocks = []
+    for _ in range(n):
+        head = struct.unpack(">IIIhhhhhhhhhhhI", d[p:p + CLS_CIB_HEAD])
+        words = head[3:14]
+        num_cicons = head[14]
+        wicon, hicon = words[5], words[6]
+        mono_words = (wicon // 16) * hicon    # gemrslib.c:235 (WORDs)
+        q = p + CLS_CIB_HEAD
+        pdata = q
+        q += mono_words * 2
+        pmask = q
+        q += mono_words * 2
+        ptext = q
+        q += CLS_CIB_TEXT
+        variants = []
+        for _ in range(num_cicons):
+            planes, _cd, _cm, sel_flag, _sm, next_res = struct.unpack(
+                ">hIIIII", d[q:q + CLS_CIC_HEAD])
+            q += CLS_CIC_HEAD
+            col_data = q
+            q += mono_words * planes * 2
+            col_mask = q
+            q += mono_words * 2
+            sel_data = sel_mask = 0
+            if sel_flag:
+                sel_data = q
+                q += mono_words * planes * 2
+                sel_mask = q
+                q += mono_words * 2
+            variants.append((planes, col_data, col_mask, sel_data, sel_mask))
+            # `next_res == 1L` chains into the next variant right here; any
+            # other value ends the chain (gemrslib.c:211-214). The count in
+            # `mainlist` already bounds the loop, so the flag is only
+            # cross-checked, not trusted.
+            if (next_res == 1) != (len(variants) < num_cicons):
+                sys.exit(f"CICONBLK {len(blocks)}: next_res/mainlist count "
+                         f"disagree at variant {len(variants)}")
+        if q > len(d):
+            sys.exit(f"CICONBLK {len(blocks)} runs past the end of the file")
+        blocks.append((words, pdata, pmask, ptext, variants))
+        p = q
+    return blocks
 
 
 def convert(path, out, ilp32=False):
@@ -240,34 +353,53 @@ def convert(path, out, ilp32=False):
     # backward-compatible with every earlier header: v1/v2 (28-byte, no
     # tables), v3/v4 (44-byte, +frstr/frimg tables), v5/v6 (68-byte,
     # +substruct bases, index tree table), v7/v8 (pointer tree index, pixels).
+    # version 11 = LP64, 12 = ILP32: an 84-byte header -- the v5..v10 fields
+    # plus the CICONBLK array base + count (off_cib/n_cib) and the CICON
+    # array base + count (off_cic/n_cic) -- for the colour icons of a
+    # new-format .rsc (TASK/A41; see the CICON section comment above). The
+    # records are the application's C structs with blob offsets in the
+    # pointer fields; a G_CICON's ob_spec is the byte offset of its CICONBLK,
+    # relocated like every other pointer ob_spec. An old-format file emits the
+    # same header with both counts 0.
     if ilp32:
         NAT_OBJ, NAT_TED, NAT_IB, NAT_BB = 24, 28, 36, 16
         OBJ_FMT = "<hhhHHHIhhhh"          # 4-byte ob_spec @ 12
         TED_FMT = "<IIIhhhhhhhh"          # 4-byte te_ptext/te_ptmplt/te_pvalid
         BB_FMT = "<Ihhhhh2x"              # 4-byte bi_pdata, pad to 16
         IB_FMT = "<IIIhhhhhhhhhhh2x"      # 4-byte ib_pmask/ib_pdata/ib_ptext, 36
-        PTR, PTR_FMT, version = 4, "<I", 10
+        NAT_CIB, NAT_CIC = 40, 24
+        CIB_FMT = "<IIIhhhhhhhhhhh2xI"    # ICONBLK(36) + 4-byte mainlist @ 36
+        CIC_FMT = "<h2xIIIII"             # num_planes, pad, 5 x 4-byte ptrs
+        PTR, PTR_FMT, version = 4, "<I", 12
     else:
         NAT_OBJ, NAT_TED, NAT_IB, NAT_BB = 32, 40, 48, 24
         OBJ_FMT = "<hhhHHH4xQhhhh"        # 8-byte ob_spec @ 16
         TED_FMT = "<QQQhhhhhhhh"
         BB_FMT = "<Qhhhhh6x"
         IB_FMT = "<QQQhhhhhhhhhhh2x"
-        PTR, PTR_FMT, version = 8, "<Q", 9
+        NAT_CIB, NAT_CIC = 56, 48
+        CIB_FMT = "<QQQhhhhhhhhhhh2xQ"    # ICONBLK(48) + 8-byte mainlist @ 48
+        CIC_FMT = "<h6xQQQQQ"             # num_planes, pad, 5 x 8-byte ptrs
+        PTR, PTR_FMT, version = 8, "<Q", 11
 
     d = open(path, "rb").read()
     H = struct.unpack(">18H", d[:36])
     (vrsn, p_obj, p_ted, p_ib, p_bb, p_frstr, p_str, p_imd, p_frimg,
      p_tri, nobs, ntree, nted, nib, nbb, nstr, nimg, rssize) = H
-    if vrsn & 0x0004:
-        sys.exit("new-format (CICONBLK) .rsc not supported")
+    # Colour icons: the CICONBLK table of a new-format file (empty otherwise).
+    cicon_blocks = read_cicon_table(d, vrsn, rssize)
+    ncib = len(cicon_blocks)
+    ncic = sum(len(b[4]) for b in cicon_blocks)
 
     # Native section base offsets (counts are fixed up front). The v5/v6 header
     # is 68 bytes: the v3/v4 fields (through off_frimg/nimg) plus the TEDINFO/
-    # ICONBLK/BITBLK array bases + counts (off_ted/nted, off_ib/nib, off_bb/nbb).
-    # A free-string then a free-image pointer table sits between the ICONBLKs and
-    # the string/image data (each table = count * PTR bytes).
-    HDR = 68
+    # ICONBLK/BITBLK array bases + counts (off_ted/nted, off_ib/nib, off_bb/nbb);
+    # v11/v12 append off_cib/ncib and off_cic/ncic (84 bytes). The CICONBLK and
+    # CICON arrays follow the ICONBLKs (both record sizes are multiples of PTR,
+    # so the alignment of everything behind them is unchanged). A free-string
+    # then a free-image pointer table sits between them and the string/image
+    # data (each table = count * PTR bytes).
+    HDR = 84
     off_tri = HDR
     # The OBJECT array (and every 8-byte-pointer section behind it) must start
     # naturally aligned: the kernel dereferences it as `repr(C)` `Object`
@@ -282,17 +414,42 @@ def convert(path, out, ilp32=False):
     off_ted = off_obj + nobs * NAT_OBJ
     off_bb = off_ted + nted * NAT_TED
     off_ib = off_bb + nbb * NAT_BB
-    off_frstr = off_ib + nib * NAT_IB
+    off_cib = off_ib + nib * NAT_IB
+    off_cic = off_cib + ncib * NAT_CIB
+    off_frstr = off_cic + ncic * NAT_CIC
     off_frimg = off_frstr + nstr * PTR
     off_data = off_frimg + nimg * PTR
 
     data = bytearray()
     # Namespaced so a reservation can never be satisfied from a shorter cached
     # copy: ("s", coff, size) = read-only string, ("t", coff, size) = a
-    # TEDINFO te_ptext buffer, ("b", coff, length) = raster bytes.
+    # TEDINFO te_ptext buffer, ("b", coff, length) = raster bytes, ("f", coff,
+    # size) = a fixed-size text buffer (a CICONBLK's 12-byte label).
     interned = {}
     rasters = []          # native offsets of every raster placed by intern_bytes
     placed = []           # (native offset, reserved bytes) of every datum
+
+    def intern_fixed(coff, size):
+        """Intern a fixed-size text buffer (the CICONBLK mono label, 12 bytes).
+
+        EmuTOS reads it as a C string (`ib_ptext`, gemrslib.c:244-245) that
+        the file lays out as exactly `size` bytes; the bytes are copied
+        verbatim. Should the buffer lack a NUL, one is appended (13 bytes)
+        rather than handing the renderer an unterminated string.
+        """
+        key = ("f", coff, size)
+        if key in interned:
+            return interned[key]
+        raw = d[coff:coff + size]
+        if b"\x00" not in raw:
+            print(f"warning: label buffer at {coff} has no NUL in {size} bytes; "
+                  f"terminated", file=sys.stderr)
+            raw += b"\x00"
+        nat = off_data + len(data)
+        data.extend(raw)
+        interned[key] = nat
+        placed.append((nat, len(raw)))
+        return nat
 
     def intern_str(coff, reserve=0, kind="s"):
         """Intern a classic NUL-terminated string, padded out to `reserve`.
@@ -384,6 +541,40 @@ def convert(path, out, ilp32=False):
             IB_FMT, intern_bytes(pmask, rb), intern_bytes(pdata, rb),
             intern_str(ptext), *f[3:]))
 
+    # CICONBLKs + their CICON chains (colour icons, new-format file only).
+    # One native CICONBLK per table entry, in table order; the CICON records
+    # of all blocks form one array, each block's chain linked by offset
+    # (`mainlist` -> first variant, `next_res` -> next, 0 = end), exactly the
+    # linked shape `fixup_colour_icons` leaves in memory (gemrslib.c:185-217)
+    # -- with offsets where EmuTOS already has pointers. The mono rasters are
+    # interned like an ICONBLK's; the colour rasters are the STANDARD-form
+    # planes of the file (one plane after another, `transform_cicon`
+    # `fd_stand = TRUE`, gemrslib.c:351), byte-swapped like every raster. The
+    # device-form conversion is the loader's (`best_match` + transform at
+    # rsrc_load), so the file stays device-independent (A40's lesson).
+    cibs = bytearray()
+    cics = bytearray()
+    cic_index = 0
+    for words, pdata, pmask, ptext, variants in cicon_blocks:
+        wicon, hicon = words[5], words[6]
+        mono_words = (wicon // 16) * hicon
+        mainlist = off_cic + cic_index * NAT_CIC if variants else 0
+        cibs.extend(struct.pack(
+            CIB_FMT, intern_bytes(pmask, mono_words * 2),
+            intern_bytes(pdata, mono_words * 2),
+            intern_fixed(ptext, CLS_CIB_TEXT), *words, mainlist))
+        for k, (planes, col_data, col_mask, sel_data, sel_mask) in enumerate(variants):
+            nxt = off_cic + (cic_index + 1) * NAT_CIC if k + 1 < len(variants) else 0
+            cics.extend(struct.pack(
+                CIC_FMT, planes,
+                intern_bytes(col_data, mono_words * planes * 2),
+                intern_bytes(col_mask, mono_words * 2),
+                intern_bytes(sel_data, mono_words * planes * 2),
+                intern_bytes(sel_mask, mono_words * 2),
+                nxt))
+            cic_index += 1
+    assert cic_index == ncic and len(cibs) == ncib * NAT_CIB and len(cics) == ncic * NAT_CIC
+
     # OBJECTs (remap ob_spec by type; coordinates stay packed char-grid
     # words -- the kernel runs rs_obfix on them at load, see above).
     objs = bytearray()
@@ -402,8 +593,18 @@ def convert(path, out, ilp32=False):
             nspec = nat_of(spec, p_bb, CLS_BB, off_bb, NAT_BB)
         elif base_type == ICON_TYPE:
             nspec = nat_of(spec, p_ib, CLS_IB, off_ib, NAT_IB)
+        elif base_type == CICON_TYPE:
+            # Classic ob_spec = 0-based INDEX into the CICONBLK pointer table
+            # (`obj->ob_spec = (LONG)ciconblkptr[obj->ob_spec]`, gemrslib.c:
+            # 623-626), not a byte offset like every other type: turned into
+            # the byte offset of the native record here, so the loader
+            # relocates it with the generic `ob_spec += base` rule.
+            if spec >= ncib:
+                sys.exit(f"object {i}: G_CICON index {spec} but the file has "
+                         f"{ncib} CICONBLK(s)")
+            nspec = off_cib + spec * NAT_CIB
         else:
-            nspec = 0  # G_PROGDEF / G_CICON: unsupported, drawn empty
+            nspec = 0  # G_PROGDEF: unsupported, drawn empty
         objs.extend(struct.pack(
             OBJ_FMT, nxt, head, tail, typ, flags, state, nspec, x, y, w, h))
 
@@ -447,16 +648,25 @@ def convert(path, out, ilp32=False):
     tri.extend(b"\x00" * tri_pad)
 
     total = off_data + len(data)
-    # v7/v8 header: magic + 16 u32 (68 bytes), identical in shape to v5/v6.
-    # Field order MUST match the kernel `NrscHeader` struct
-    # (tos-api/src/aes/resource.rs): the v3/v4 fields, then off_ted/nted,
-    # off_ib/nib, off_bb/nbb (the TEDINFO/ICONBLK/BITBLK bases).
+    # v11/v12 header: magic + 20 u32 (84 bytes) -- the v7..v10 68-byte shape
+    # plus the two CICON arrays. Field order MUST match the kernel
+    # `NrscHeader` struct (tos-api/src/aes/resource.rs): the v3/v4 fields,
+    # then off_ted/nted, off_ib/nib, off_bb/nbb (the TEDINFO/ICONBLK/BITBLK
+    # bases), then off_cib/ncib, off_cic/ncic (the CICONBLK/CICON bases).
     header = struct.pack(
-        "<4s16I", b"NRSC", version, ntree, nobs, off_tri, off_obj, total,
+        "<4s20I", b"NRSC", version, ntree, nobs, off_tri, off_obj, total,
         off_frstr, nstr, off_frimg, nimg,
-        off_ted, nted, off_ib, nib, off_bb, nbb)
-    blob = header + tri + objs + teds + bbs + ibs + bytes(frstr) + bytes(frimg) + data
+        off_ted, nted, off_ib, nib, off_bb, nbb,
+        off_cib, ncib, off_cic, ncic)
+    blob = (header + tri + objs + teds + bbs + ibs + bytes(cibs) + bytes(cics)
+            + bytes(frstr) + bytes(frimg) + data)
     assert len(blob) == total, (len(blob), total)
+    # The kernel refuses a blob larger than its buffer (`header_is_sound`
+    # against RSC_CAP); say so here, loudly, instead of writing such a file.
+    if total > RSC_CAP:
+        sys.exit(f"{path}: native resource is {total} bytes, over the kernel's "
+                 f"RSC_CAP of {RSC_CAP} (tos-api/src/aes/resource.rs) -- it "
+                 f"would be refused by rsrc_load")
     odd = [r for r in rasters if r % RASTER_ALIGN]
     assert not odd, f"raster(s) at odd offsets {odd} (see RASTER_ALIGN)"
     # Postcondition for the reservations (see `ted_reserve`): every TEDINFO
@@ -477,8 +687,8 @@ def convert(path, out, ilp32=False):
             f"{total}-byte blob")
     open(out, "wb").write(blob)
     print(f"converted {path} -> {out}: {ntree} trees, {nobs} objects, "
-          f"{nted} tedinfo, {nbb} bitblk, {nib} iconblk, {nstr} frstr, "
-          f"{nimg} frimg ({total} bytes) "
+          f"{nted} tedinfo, {nbb} bitblk, {nib} iconblk, {ncib} ciconblk, "
+          f"{ncic} cicon, {nstr} frstr, {nimg} frimg ({total} bytes) "
           f"[{'ILP32/24B-OBJECT' if ilp32 else 'LP64/32B-OBJECT'}]")
 
 
@@ -513,8 +723,10 @@ def convert_rshdr(path, out):
     H = struct.unpack(">18H", d[:36])
     (vrsn, p_obj, p_ted, p_ib, p_bb, p_frstr, p_str, p_imd, p_frimg,
      p_tri, nobs, ntree, nted, nib, nbb, nstr, nimg, rssize) = H
-    if vrsn & 0x0004:
-        sys.exit("new-format (CICONBLK) .rsc not supported")
+    if vrsn & NEW_FORMAT_RSC:
+        # An application's own rsc_load.c parser has no CICON path; the
+        # kernel-loadable `convert` (NRSC v11/v12) does.
+        sys.exit("new-format (CICONBLK) .rsc not supported by --rshdr")
 
     OBJ_FMT = "<hhhHHH4xQhhhh"        # 8-byte ob_spec @ 16
     TED_FMT = "<QQQhhhhhhhh"

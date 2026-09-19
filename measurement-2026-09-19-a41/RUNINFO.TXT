@@ -1,0 +1,71 @@
+A41 -- CICON-Resourcen (Farbicons) konvertieren, laden, zeichnen. Developer-Selbstbeleg,
+2026-09-19. Branch desk-rebuild, Basis HEAD 33fef91, Aenderungen uncommitted im Baum.
+QEMU raspi4b (640x480, headless, -display none, QMP screendump), Release-Builds --board rpi4.
+
+PRODUKTCODE (uncommitted, siehe git status im Bericht)
+  tools/mkrsc.py                    read_cicon_table(), convert(): NRSC v11 (LP64) / v12 (ILP32),
+                                    84-Byte-Header (+off_cib/ncib, off_cic/ncic), CICONBLK/CICON
+                                    als C-Structs mit Blob-Offsets, G_CICON ob_spec = Byte-Offset,
+                                    RSC_CAP-Abbruch. --rshdr unveraendert (icons.rsc bytegleich).
+  tos-api/src/aes/resource.rs       NRSC_VER_CICON=11, NrscHeader +4 Felder, header_is_sound +
+                                    cicon_tables_are_sound (Kettenlinks, Planes 1..16, Rasterspannen,
+                                    sel-Paar), Relokation (G_CICON generisch ab v11; CICONBLK-/CICON-
+                                    Zeigerfelder), fix_cicons = best_match + transform_cicon
+                                    (cicon_pixel: expand_cicondata + transform_cicon je Pixel,
+                                    REV_MAP_COL-Faltung), CiconDevice::live (planes/num_colors/
+                                    Palette aus dem Backend), ein Geraeteform-Puffer je Ressource
+                                    (EL0: Pool-Block im Prozessfenster; EL1: Kernel-Heap),
+                                    Freigabe in rsrc_free/on_process_exit. mod cicon_tests (8).
+  tos-api/src/aes/object.rs         Cicon::read_abi, ciconblk_mainlist, draw_icon(state, cicon):
+                                    gr_gicon-Farbzweig (Maske in bg, Textbox, S_AND_D-Blit,
+                                    sel_data/sel_mask, dither_mask-Verdunklung, WHITEBAK).
+  tos-api/src/vdi/raster.rs         blit_device_mem (gr_colourblit = vro_cpyfm Memory->Screen).
+  tos-api/src/vdi/vwk.rs, mod.rs    pack_color16 (set_color16-Packung fuer die Loader-Palette).
+  tools/xtask/src/rsc_cicon_tests.rs (4), tos-api/tests/aes_cicon_draw.rs (5), main.rs (mod).
+  sdk/apps/build-teradesk.sh, tools/make-sd-image.sh: cicons.rsc bewusst NICHT gestaged (s.u.),
+                                    make-sd-image kopiert es nur, wenn es in dist/ liegt.
+  docs/api/aes/resource-fileselector.md (§5.9 Status-Callout, §5.11 Punkt 5),
+  docs/api/aes/object-form.md (G_CICON-Status).
+
+KONVERTER
+  cicons.rsc (63 788 B klassisch) -> 63 610 B (LP64, v11) / 61 770 B (ILP32, v12); RSC_CAP 65 536.
+  38 CICONBLK, 38 CICON (je 4 Planes); Block 3 ist 48x32 (nicht 32x32), Bloecke 20 und 31 ohne
+  sel_data (Spec §5.3/§5.4 hatte nur die ersten drei Bloecke geprueft). build/cicons-nrsc-*.rsc.
+
+HOSTTESTS (host-tests/)
+  red-before-HEAD-33fef91-aes_cicon_draw.txt   1 ok / 4 FAILED auf HEAD (Worktree --detach, entfernt)
+  red-before-HEAD-33fef91-rsc_cicon_tests.txt  0 ok / 4 FAILED ("new-format (CICONBLK) .rsc not supported")
+  (resource.rs cicon_tests: auf HEAD nicht uebersetzbar -- fix_cicons/best_match existieren dort nicht)
+  green-after-*: 8/8, 5/5, 4/4.  xtask-test.txt: 627 bestanden / 0 / 1 ignoriert (Baseline 610 + 17).
+
+BUILD / CLIPPY (build/)
+  cargo xtask build --board rpi4 / --board qemu-virt (je nach cargo clean -p kernel -p tos-api
+  --target aarch64-unknown-none-softfloat): tos-api 64 / kernel 94 rustc-Warnungen, exit 0.
+  clippy tos-api 81, kernel 125. Baseline 64/94, 81/125 -- Delta 0.
+
+QEMU (screendumps/, serial/; Methode method/run.sh + qmp_multi.py + sd-put.sh aus A39-Stufe-2)
+  Image: tools/make-sd-image.sh (Hauptbaum) + NEWDESK.INF (#Z TeraDesk) + TERADESK.INF (A39-Method).
+  tera1  kernel8-a41-SCRATCH-trace-only (Produktcode + Serial-Trace der rsrc_load/rsrc_gaddr-Rueckgaben,
+         Scratch-Kopie, method/scratch-*.diff ohne den Shim-Teil), cicons.rsc auf dem Image:
+         serial: rsrc_load("C:\APPS\TERADESK\desktop.rsc") -> 1 cicon_buf=0 B
+                 rsrc_gaddr(R_TREE, 0) -> 1 addr=0x400128
+                 rsrc_load("C:\APPS\TERADESK\cicons.rsc") -> 1 cicon_buf=153600 B
+                 rsrc_gaddr(R_TREE, 0) -> 1 addr=0x427060
+                 [EXC] Data Abort (lower EL) ELR=0xef3c FAR=0x0000000b43535276
+         FAR = Bytes 76 52 53 43 0b 00 00 00 = "vRSC"+11: TeraDesks xrsrc_gaddr (rsc_load.c:496-541)
+         parst ap_rscmem als klassischen RSHDR, liest rsh_trindex (u16 @18) = 0, nimmt die Blob-
+         Bytes 0..8 ("NRSC" + version 11) als OBJECT* und greift auf icons[0].ob_flags (+0x28) zu.
+         Screendump: gruener Desktop ohne Menueleiste/Icons (TeraDesk tot). -> BLOCKER, s. Spec §5.11.5.
+  tera2  kernel8-a41-SCRATCH-shim-trace: wie tera1 plus EXPERIMENT (nur Scratch): 40-Byte nativer
+         RSHDR vor dem Blob, ap_rscmem = Shim. serial: dieselben vier Zeilen (addr 0x400150/0x427088),
+         KEIN EXC. Screendump tera2-scratch-shim-colour-icons-idle.png: Menueleiste, vier
+         HARD-DISC-Farbicons (graue Box, farbiger Ordnerstapel, Laufwerksbuchstabe), farbiger TRASH.
+         Farbhistogramm Icon C (32x32): 189-grau 280, schwarz 260, gruen(Hintergrund) 200,
+         140-grau 120, gelb 70, weiss 44, blau 20, rot 14. Zooms: *-zoom4x/-zoom8x.png.
+  smoke-tera/-qed/-desk  kernel8-a41-product (Hauptbaum, KEINE Instrumentierung), Images ohne
+         cicons.rsc (dist/ wie gestaged: DESKTOP.NAP, desktop.rsc v11 neu konvertiert, icons.rsc):
+         alle drei Screendumps BYTEGLEICH (0 Pixel Differenz, PIL) zu
+         measurement-2026-09-19-a39/screendumps/smoke-{tera,qed,desk}-up.png; kein EXC/panic.
+
+NICHT GEFAHREN: A39-Sequenz (Fenster oeffnen) mit cicons.rsc (blockiert wie oben), echte Pi 4.
+Kein Commit. Worktree $S/red (git worktree add --detach HEAD, nur fuer die Rot-Gegenprobe) entfernt.

@@ -1,0 +1,5 @@
+test rsc_cicon_tests::mkrsc_convert_lp64_carries_the_colour_icons_as_c_structs ... ok
+test rsc_cicon_tests::mkrsc_convert_ilp32_carries_the_colour_icons_as_c_structs ... ok
+test rsc_cicon_tests::an_old_format_file_declares_no_colour_icons ... ok
+test rsc_cicon_tests::teradesk_cicons_rsc_converts_and_fits_rsc_cap ... ok
+test result: ok. 4 passed; 0 failed; 0 ignored; 0 measured; 13 filtered out; finished in 0.04s

@@ -271,8 +271,13 @@ fi
 # window.h WDFLAGS 2-byte fix) as native LP64. Its dist/ is staged by
 # sdk/apps/build-teradesk.sh: DESKTOP.NAP (the GEM program), desktop.rsc
 # (NRSC/LP64 for the kernel rsrc_load), icons.rsc (native-RSHDR for TeraDesk's
-# OWN xrsrc_load parser — NOT kernel-loadable). cicons.rsc is deliberately
-# absent (unsupported new-format CICONBLK; failure = designed mono fallback).
+# OWN xrsrc_load parser — NOT kernel-loadable), and — once build-teradesk.sh
+# stages it — cicons.rsc (the colour icons, NRSC v11/LP64 for the kernel
+# rsrc_load; TeraDesk's load_icons tries it first and falls back to the mono
+# icons.rsc, TASK/A41). It is copied only when present in dist/; today it is
+# deliberately not staged (see build-teradesk.sh: TeraDesk parses the image at
+# ap_rscmem as an RSHDR, which the NRSC image does not yet carry), so the
+# desktop stays mono.
 # Launched by double-clicking DESKTOP.NAP — NEVER from \AUTO\ (ADR-018).
 TERA_DIR="$SCRIPT_DIR/../sdk/apps/teradesk/build/dist"
 if [ -f "$TERA_DIR/DESKTOP.NAP" ] && [ -f "$TERA_DIR/desktop.rsc" ] && [ -f "$TERA_DIR/icons.rsc" ]; then
@@ -280,7 +285,12 @@ if [ -f "$TERA_DIR/DESKTOP.NAP" ] && [ -f "$TERA_DIR/desktop.rsc" ] && [ -f "$TE
   cp "$TERA_DIR/DESKTOP.NAP" "$V/Apps/TERADESK/DESKTOP.NAP"
   cp "$TERA_DIR/desktop.rsc" "$V/Apps/TERADESK/desktop.rsc"
   cp "$TERA_DIR/icons.rsc"   "$V/Apps/TERADESK/icons.rsc"
-  echo "installed C:\\Apps\\TERADESK\\{DESKTOP.NAP,desktop.rsc,icons.rsc} (ported GEM desktop, LP64)"
+  if [ -f "$TERA_DIR/cicons.rsc" ]; then
+    cp "$TERA_DIR/cicons.rsc" "$V/Apps/TERADESK/cicons.rsc"
+    echo "installed C:\\Apps\\TERADESK\\{DESKTOP.NAP,desktop.rsc,icons.rsc,cicons.rsc} (ported GEM desktop, LP64, colour icons)"
+  else
+    echo "installed C:\\Apps\\TERADESK\\{DESKTOP.NAP,desktop.rsc,icons.rsc} (ported GEM desktop, LP64; no cicons.rsc staged -> mono icons)"
+  fi
 else
   echo "note: sdk/apps/teradesk/build/dist not staged; C:\\Apps\\TERADESK skipped (run sdk/apps/build-teradesk.sh)"
 fi

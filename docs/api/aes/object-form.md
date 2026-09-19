@@ -262,17 +262,24 @@ the EmuTOS VDI sequence):
 >    (`SMALL` font) and the label text (`gr_gtext`, `TE_CNTR`, `SMALL`) —
 >    identical to the mono path, already implemented.
 >
-> **NewTOS status: not implemented.** The `G_ICON | G_CICON` arm
-> (`object.rs:2675-2692`) reads only the `ICONBLK` head and always takes the
-> mono path — step 2's `cicon != NULL` branch, step 4's `gr_colourblit`/
-> dither-darken, and the `sel_data`/`sel_mask` selection do not exist yet.
-> This is a **documented gap** (config-gated reference behaviour under
-> `CONF_WITH_COLOUR_ICONS`), not a stub: the mono fallback is exactly what
-> EmuTOS itself draws with the config off, when `best_match` finds nothing,
-> or before colour icons are loadable at all (today: `mkrsc.py` refuses
-> new-format `.rsc` files, so no `G_CICON` object ever carries a resolved
-> `CICON`). Full load-path extraction + build list:
-> [`resource-fileselector.md`](./resource-fileselector.md) §5 (TASK/A41).
+> **NewTOS status (2026-09-19, TASK/A41): implemented.** The `G_ICON |
+> G_CICON` arm (`object.rs` `just_draw`) reads the `ICONBLK` head for both
+> types and, for a `G_CICON`, `CICONBLK.mainlist` (`ciconblk_mainlist`,
+> @48 LP64 / @36 ILP32) → `Cicon::read_abi`; `draw_icon(backend, ib, x, y,
+> state, cicon, clip)` is `gr_gicon`: steps 1–5 above for `Some(cicon)` —
+> `sel_data`/`sel_mask` selection, the mask in `bgcol` and the label box in
+> `fgcol`/`bgcol` unless `WHITEBAK` + white (`WHITEBAK` is honoured on the
+> colour path only; the mono path never checked it, unchanged), the image
+> through `vdi::blit_device_mem` (a Memory→Screen `vro_cpyfm` with
+> `S_AND_D` — NewTOS's one device form is the truecolor RGB565 one, so the
+> `num_planes > 8` mode choice of `gemgraf.c:664-667` is always the AND
+> arm), the `dither_mask` darkening for a SELECTED variant without
+> `sel_data`, then character and label. `None` keeps the mono path
+> byte-for-byte. Pixel tests: `tos-api/tests/aes_cicon_draw.rs`. The
+> loader side (`best_match` at load, device-form transform) and the open
+> `ap_rscmem` contract question are in
+> [`resource-fileselector.md`](./resource-fileselector.md) §5.9 (status
+> callout) and §5.11 item 5.
 
 7. **`G_USERDEF`**: call the application's `ub_code` draw routine with a
    `PARMBLK` (`ob_user`, `gemoblib.c:433-448`).
@@ -1015,9 +1022,9 @@ codes:
   single DIALERT tree are a scarcity workaround; NewTOS may build the alert
   tree per-call to allow nested/DA alerts, provided the string grammar and
   1-based return are preserved.
-- **`G_CICON` colour drawing is a documented gap, not a stub** (TASK/A41):
-  the arm always takes the mono `ICONBLK` path (`object.rs:2675-2692`,
-  `AUD-P3-006`) because no loader yet resolves a `CICON` for it (`mkrsc.py`
-  refuses new-format `.rsc`). Full spec: the callout after item 6 in the
-  `just_draw` walkthrough above, plus
-  [`resource-fileselector.md`](./resource-fileselector.md) §5.
+- **`G_CICON` colour drawing is implemented** (TASK/A41, 2026-09-19): the
+  arm follows `CICONBLK.mainlist` to the variant the loader's `fix_cicons`
+  chose and draws it per `gr_gicon` (`draw_icon` with `Some(cicon)`);
+  without one it takes the mono `ICONBLK` path as before (`AUD-P3-006`).
+  Full spec: the callout after item 6 in the `just_draw` walkthrough above,
+  plus [`resource-fileselector.md`](./resource-fileselector.md) §5.

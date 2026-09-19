@@ -684,6 +684,71 @@ impl IconBlk {
     }
 }
 
+/// `CICON` (`obdefs.h:203-211`) — one colour variant of a `CICONBLK`, as the
+/// drawer sees it **after** the loader's `fix_cicons` (`aes/resource.rs`):
+/// `col_data` / `sel_data` point at the device-form image(s) (NewTOS's 16-bit
+/// RGB565 memory-MFDB form, `ib_wicon × ib_hicon` pixels), `col_mask` /
+/// `sel_mask` at the file's one-plane masks, `num_planes` is the device's.
+/// `sel_data == 0` means the variant has no SELECTED-state image.
+#[derive(Clone, Copy)]
+pub struct Cicon {
+    /// number of planes of the (transformed) image.
+    pub num_planes: i16,
+    /// pointer to the device-form image.
+    pub col_data: u64,
+    /// pointer to the mono mask (16-bit words).
+    pub col_mask: u64,
+    /// pointer to the device-form SELECTED image, 0 = none.
+    pub sel_data: u64,
+    /// pointer to the SELECTED mask, 0 = none.
+    pub sel_mask: u64,
+    /// next variant (0 after `fix_cicons`).
+    pub next_res: u64,
+}
+
+impl Cicon {
+    /// Materialise the CICON at `base` at the tree's ABI width. Layout: a WORD
+    /// `num_planes` @0, padding to the pointer width, then five pointers at
+    /// `k * abi_ptr_size` for `k` = 1..=5 (`mt_gem.h` `cicon_data`; LP64 48
+    /// bytes, ILP32 24).
+    ///
+    /// # Safety
+    /// `base` is a valid `CICONBLK.mainlist` — a CICON packed at `abi` width.
+    #[inline]
+    unsafe fn read_abi(base: u64, abi: Abi) -> Cicon {
+        let ps = abi_ptr_size(abi);
+        // SAFETY: `base` is a valid CICON packed at `abi` width (caller's contract).
+        unsafe {
+            Cicon {
+                num_planes: read_abi_word(base, 0),
+                col_data: read_abi_ptr(base, ps, abi),
+                col_mask: read_abi_ptr(base, 2 * ps, abi),
+                sel_data: read_abi_ptr(base, 3 * ps, abi),
+                sel_mask: read_abi_ptr(base, 4 * ps, abi),
+                next_res: read_abi_ptr(base, 5 * ps, abi),
+            }
+        }
+    }
+}
+
+/// `CICONBLK.mainlist` (`obdefs.h:213-217`) of the CICONBLK at `base`: the
+/// pointer right after the ICONBLK head (@48 LP64 / @36 ILP32), 0 when the
+/// loader found no variant for the device (the mono fallback).
+///
+/// # Safety
+/// `base` is the valid `ob_spec` of a G_CICON object — a CICONBLK packed at
+/// `abi` width.
+#[inline]
+unsafe fn ciconblk_mainlist(base: u64, abi: Abi) -> u64 {
+    // ICONBLK = three pointers + eleven WORDs, padded to the pointer width.
+    let head = match abi {
+        Abi::Lp64 => 48,
+        Abi::Ilp32 => 36,
+    };
+    // SAFETY: caller's contract — `base + head` is the `mainlist` field.
+    unsafe { read_abi_ptr(base, head, abi) }
+}
+
 /// `USERBLK` (`obdefs.h`) — the descriptor a `G_USERDEF` object's `ob_spec`
 /// points at: a draw/change callback plus one opaque parameter LONG. Both
 /// fields are read at the tree's ABI width (pointer-sized), so a kernel-built
@@ -803,6 +868,15 @@ const CHECKED: u16 = 0x0004;
 const DISABLED: u16 = 0x0008;
 const OUTLINED: u16 = 0x0010;
 const SHADOWED: u16 = 0x0020; // ob_state: solid drop shadow to the lower-right
+const WHITEBAK: u16 = 0x0040; // ob_state: skip a white icon background (`gr_gicon`)
+
+/// `vro_cpyfm` logic op `S_AND_D` (`obdefs.h:53`) — the op `gr_colourblit`
+/// blits a colour icon's device-form image with on the truecolor path
+/// (`gemgraf.c:664-667`): the mask has been painted in the icon's background
+/// pen first, and AND-ing the image over it keeps the image where the mask
+/// is (white = all ones) and the screen where it is not (the image holds
+/// white there, `expand_cicondata`'s masking + `palette[0]`).
+const S_AND_D: u8 = 1;
 
 /// 50 % dither used to grey-out DISABLED objects (EmuTOS `IP_4PATT`).
 const STIPPLE_50: [u16; 2] = [0xAAAA, 0x5555];
@@ -2676,18 +2750,29 @@ fn just_draw(t: ObjTree, obj: i16, x: i16, y: i16, clip: ClipRect, backend: &dyn
             // The ICONBLK interior is read at the tree's ABI width (see the
             // *TEXT arm); an LP64 tree reads it byte-identically to before.
             //
-            // AUD-P3-006: a G_CICON's `ob_spec` is a CICONBLK, which *begins*
-            // with a mono ICONBLK (`obdefs.h` `CICONBLK { ICONBLK monoblk; CICON
-            // *mainlist; }`), so its head is read exactly like a G_ICON and drawn
-            // via the same mono path (EmuTOS `just_draw`, gemoblib.c:780-791,
-            // shares the ICONBLK body). NewTOS draws the MONO version — the
-            // minimum EmuTOS itself renders; the colour `mainlist` chain
-            // (CONF_WITH_COLOUR_ICONS) is a documented later addition, not a stub.
+            // EmuTOS `just_draw` (gemoblib.c:776-791): one arm for both
+            // types. A G_CICON's `ob_spec` is a CICONBLK, which *begins* with
+            // a mono ICONBLK (`obdefs.h` `CICONBLK { ICONBLK monoblk; CICON
+            // *mainlist; }`), so its head is read exactly like a G_ICON's;
+            // `cicon` is NULL for a G_ICON and `((CICONBLK *)spec)->mainlist`
+            // for a G_CICON — the variant the **loader** chose at `rsrc_load`
+            // (`best_match`, `aes/resource.rs` `fix_cicons`), NULL when it
+            // found none — and `gr_gicon` draws colour or mono by it (TASK/A41).
             if ob_spec != 0 {
                 // SAFETY: ob_spec of a G_ICON/G_CICON points at an ICONBLK (the
                 // CICONBLK head for G_CICON) packed at the tree's ABI width.
                 let ib = unsafe { IconBlk::read_abi(ob_spec, t.abi()) };
-                draw_icon(backend, &ib, x, y, selected, clip);
+                let cicon = if ob_type == G_CICON {
+                    // SAFETY: a G_CICON's ob_spec is a whole CICONBLK; its
+                    // `mainlist` is 0 or a CICON, both at the tree's ABI width.
+                    unsafe {
+                        let list = ciconblk_mainlist(ob_spec, t.abi());
+                        (list != 0).then(|| Cicon::read_abi(list, t.abi()))
+                    }
+                } else {
+                    None
+                };
+                draw_icon(backend, &ib, x, y, ob_state, cicon.as_ref(), clip);
             }
         }
         // AUD-P3-002: an application-drawn object. Fill a PARMBLK and call its
@@ -3068,23 +3153,42 @@ fn blit_image(backend: &dyn RasterBackend, bi: &BitBlk, x: i16, y: i16, col: Pel
     );
 }
 
-/// Draw a `G_ICON` ICONBLK at object origin `(ox, oy)`: the mask plane in
-/// the background colour, the data plane in the foreground colour, then
-/// the character and text. SELECTED swaps fg/bg (EmuTOS `gr_gicon`).
+/// Draw a `G_ICON` ICONBLK — or, with `cicon`, a `G_CICON`'s chosen colour
+/// variant — at object origin `(ox, oy)`: EmuTOS `gr_gicon(state, ib, cicon)`
+/// (`aes/gemgraf.c:710-807`).
+///
+/// **Mono** (`cicon == None`): the mask plane in the background colour, the
+/// data plane in the foreground colour, then the character and text;
+/// SELECTED swaps fg/bg (`:743-751`). This path is unchanged by A41.
+///
+/// **Colour** (`cicon == Some`, `CONF_WITH_COLOUR_ICONS`):
+/// 1. data/mask selection (`:729-741`): the SELECTED image and mask when
+///    `state & SELECTED` and the variant has one, else `col_data`/`col_mask`;
+///    fg/bg are **not** swapped for the blits;
+/// 2. unless `WHITEBAK` is set and the icon's background is white
+///    (`:755`): the mask in `bgcol` (`gr_gblt(pmask, pi, bgcol, fgcol)`,
+///    transparent), and — for a non-empty label — the label box in `fgcol`
+///    when SELECTED, else `bgcol` (`:760-766`);
+/// 3. the image: `gr_colourblit` (`:772`), a Memory→Screen `vro_cpyfm`
+///    with `S_AND_D` of the device-form pixels ([`blit_device_mem`]);
+/// 4. when SELECTED: fg/bg swap for the character and label (`:775-777`),
+///    and — for a variant **without** a SELECTED image — the darkening:
+///    a copy of the mask ANDed with `0x5555`/`0xAAAA` on alternate rows
+///    (`dither_mask`, `:680-700`) is blitted in BLACK (`:778-786`);
+/// 5. the character and label as for mono (`:797-806`).
 fn draw_icon(
     backend: &dyn RasterBackend,
     ib: &IconBlk,
     ox: i16,
     oy: i16,
-    selected: bool,
+    state: u16,
+    cicon: Option<&Cicon>,
     clip: ClipRect,
 ) {
+    let selected = state & SELECTED != 0;
     let chword = ib.ib_char;
     let mut fg = ((chword >> 12) & 0x0f) as Pel;
     let mut bg = ((chword >> 8) & 0x0f) as Pel;
-    if selected {
-        core::mem::swap(&mut fg, &mut bg);
-    }
     let stride = (ib.ib_wicon / 16).max(1) as u16; // icon width in words
     let rect = Rect {
         x: ox + ib.ib_xicon,
@@ -3092,8 +3196,74 @@ fn draw_icon(
         w: ib.ib_wicon,
         h: ib.ib_hicon,
     };
-    blit_plane(backend, ib.ib_pmask, stride, 0, 0, rect, bg, clip);
-    blit_plane(backend, ib.ib_pdata, stride, 0, 0, rect, fg, clip);
+    match cicon {
+        None => {
+            if selected {
+                core::mem::swap(&mut fg, &mut bg);
+            }
+            blit_plane(backend, ib.ib_pmask, stride, 0, 0, rect, bg, clip);
+            blit_plane(backend, ib.ib_pdata, stride, 0, 0, rect, fg, clip);
+        }
+        Some(ci) => {
+            let (pdata, pmask) = if selected && ci.sel_data != 0 {
+                (ci.sel_data, ci.sel_mask)
+            } else {
+                (ci.col_data, ci.col_mask)
+            };
+            let label = if ib.ib_ptext != 0 { read_cstr(ib.ib_ptext) } else { &[] };
+            if !(state & WHITEBAK != 0 && bg == WHITE) {
+                blit_plane(backend, pmask, stride, 0, 0, rect, bg, clip);
+                if !label.is_empty() {
+                    gr_rect(
+                        backend,
+                        ox + ib.ib_xtext,
+                        oy + ib.ib_ytext,
+                        ib.ib_wtext,
+                        ib.ib_htext,
+                        if selected { fg } else { bg },
+                        IP_SOLID,
+                        clip,
+                    );
+                }
+            }
+            if pdata != 0 {
+                // SAFETY: GEM contract — the loader's `fix_cicons` left
+                // `ib_wicon × ib_hicon` device-form pixels behind `col_data`
+                // / `sel_data` (rows `ib_wicon / 16` words wide).
+                unsafe {
+                    crate::vdi::blit_device_mem(
+                        backend,
+                        pdata as *const u16,
+                        Rect { x: rect.x, y: rect.y, w: (stride as i16) * 16, h: rect.h },
+                        S_AND_D,
+                        clip,
+                    );
+                }
+            }
+            if selected {
+                core::mem::swap(&mut fg, &mut bg);
+                if ci.sel_data == 0 {
+                    // `dither_mask` (`gemgraf.c:680-700`): every mask word
+                    // ANDed with 0x5555 on even rows, 0xAAAA on odd rows,
+                    // then `gr_gblt(mask, pi, BLACK, WHITE)` — set bits in
+                    // BLACK, transparent.
+                    let rows = rect.h.max(0) as usize;
+                    let words = stride as usize * rows;
+                    if pmask != 0 && words != 0 {
+                        // SAFETY: GEM contract — `words` mask words behind
+                        // `col_mask` (no alignment required).
+                        let src = unsafe { MonoBits::from_raw(pmask as *const u8, words) };
+                        let mut dith = alloc::vec![0u16; words];
+                        for (i, w) in dith.iter_mut().enumerate() {
+                            let dither = if (i / stride as usize) & 1 != 0 { 0xAAAA } else { 0x5555 };
+                            *w = src.word(i).unwrap_or(0) & dither;
+                        }
+                        blit_plane(backend, dith.as_ptr() as u64, stride, 0, 0, rect, BLACK, clip);
+                    }
+                }
+            }
+        }
+    }
 
     // The overlay character (a drive letter, a trash "T", …): EmuTOS draws it
     // in the **SMALL** font at `ib_xicon + ib_xchar` / `ib_yicon + ib_ychar`,
@@ -3119,17 +3289,21 @@ fn draw_icon(
             // Label background (EmuTOS `gr_gicon`): a solid `bg`-colour
             // rectangle behind the label so it reads against a patterned
             // desktop, and a SELECTED icon's label shows the swapped
-            // (inverted) background. Then the label text in `fg`.
-            gr_rect(
-                backend,
-                ox + ib.ib_xtext,
-                oy + ib.ib_ytext,
-                ib.ib_wtext,
-                ib.ib_htext,
-                bg,
-                IP_SOLID,
-                clip,
-            );
+            // (inverted) background. Then the label text in `fg`. The
+            // colour path painted its box above, before the image, in
+            // EmuTOS's order (`:760-766`).
+            if cicon.is_none() {
+                gr_rect(
+                    backend,
+                    ox + ib.ib_xtext,
+                    oy + ib.ib_ytext,
+                    ib.ib_wtext,
+                    ib.ib_htext,
+                    bg,
+                    IP_SOLID,
+                    clip,
+                );
+            }
             // The label: `gr_gtext(TE_CNTR, SMALL, ib->ib_ptext, pt)` with
             // `pt` = the `ib_xtext..ib_htext` rectangle (gemgraf.c:806). The
             // SMALL font is what makes a resource's label box fit — GEM icon

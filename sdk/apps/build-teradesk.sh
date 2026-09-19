@@ -190,9 +190,16 @@ if [ $lr -eq 0 ]; then
     # desktop.rsc goes through the KERNEL rsrc_load -> NRSC/LP64 (mkrsc convert).
     # icons.rsc goes through TeraDesk's OWN loader (rsc_load.c xrsrc_load), which
     # maps the file onto native LP64 structs -> native-RSHDR (mkrsc --rshdr).
-    # cicons.rsc is deliberately NOT shipped: new-format CICONBLK is unsupported,
-    # and its load failure is TeraDesk's DESIGNED fallback to mono icons
-    # (icon.c load_icons); shipping it would only change the failure mode.
+    # cicons.rsc (the colour icons, a new-format CICONBLK .rsc) converts to
+    # NRSC v11/LP64 for the KERNEL rsrc_load (TASK/A41: `python3 "$MKRSC"
+    # convert "$TERA/cicons.rsc" "$DIST/cicons.rsc"`), but is NOT staged yet:
+    # after rsrc_load("cicons.rsc") TeraDesk's load_icons resolves the icon
+    # tree with its OWN xrsrc_gaddr (rsc_load.c:496-541), which parses the
+    # memory behind ap_rscmem as a classic RSHDR -- the file image EmuTOS's
+    # rs_readit leaves there, not our NRSC header -- and faults. Until the
+    # image at ap_rscmem carries an RSHDR (TASK/A41-STATUS, open decision),
+    # shipping the file would crash the desktop instead of colouring it; its
+    # absence selects TeraDesk's designed mono fallback (xrsrc_load icons.rsc).
     DIST="$BUILD/dist"
     MKRSC="$SDK/../tools/mkrsc.py"
     rm -rf "$DIST"; mkdir -p "$DIST"

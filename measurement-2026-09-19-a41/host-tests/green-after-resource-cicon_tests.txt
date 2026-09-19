@@ -1,0 +1,9 @@
+test aes::resource::cicon_tests::a_cicon_whose_raster_runs_past_the_blob_is_refused_untouched ... ok
+test aes::resource::cicon_tests::rev_map_col_matches_emutos_init_colors ... ok
+test aes::resource::cicon_tests::without_a_buffer_every_icon_falls_back_to_mono ... ok
+test aes::resource::cicon_tests::best_match_takes_the_exact_variant_and_refuses_a_deeper_one ... ok
+test aes::resource::cicon_tests::r_object_of_a_g_cicon_leads_to_the_mono_iconblk_head ... ok
+test aes::resource::cicon_tests::with_no_exact_match_the_deepest_shallower_variant_wins_or_none ... ok
+test aes::resource::cicon_tests::an_exact_match_is_transformed_without_expansion_or_masking ... ok
+test aes::resource::cicon_tests::a_shallower_variant_is_expanded_to_the_device_depth ... ok
+test result: ok. 8 passed; 0 failed; 0 ignored; 0 measured; 32 filtered out; finished in 0.00s

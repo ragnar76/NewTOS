@@ -1,0 +1,89 @@
+--- tos-api/src/aes/resource.rs	2026-09-19 14:59:33
++++ /private/tmp/claude-501/-Volumes-Daten-Development-PiRusTOS/d7ff6c34-253d-4fd6-839f-efa08458ba32/scratchpad/a41/ws/tos-api/src/aes/resource.rs	2026-09-19 15:07:42
+@@ -2028,8 +2028,28 @@
+         // `appl_init` fills (`aes/appl.rs`).
+         unsafe { report_load(pb.global_ptr(), &desc) };
+     }
++    // A41-TEMP (scratch copy only): serial evidence of the load.
++    a41_log(format_args!("[a41] pid={} rsrc_load(\"{}\") -> {} cicon_buf={} B",
++        pid, path_str, i16::from(loaded.is_some()),
++        loaded.map_or(0, |d| d.cicon.len)));
+     pb.set_ret(i16::from(loaded.is_some()));
++}
++
++// A41-TEMP BEGIN (scratch copy only)
++pub fn a41_log(args: core::fmt::Arguments) {
++    struct W;
++    impl core::fmt::Write for W {
++        fn write_str(&mut self, s: &str) -> core::fmt::Result {
++            if let Some(h) = crate::host::host() { h.debug_write(s.as_bytes()); }
++            Ok(())
++        }
++    }
++    use core::fmt::Write as _;
++    let mut w = W;
++    let _ = w.write_fmt(args);
++    let _ = w.write_str("\r\n");
+ }
++// A41-TEMP END
+ 
+ /// Place a candidate native `.RSC` blob (`src[..len]`) into the calling
+ /// process's per-process resource window, register it in the list of the
+@@ -2069,7 +2089,11 @@
+     // `arena::alloc_tpa` / the GEMDOS heap path). The block is stamped owned
+     // by the running process (`current_owner`), so its `Pterm` reclaims it
+     // even if the app exits without `rsrc_free`.
+-    let pages = (len as u64 + PAGE_SIZE - 1) & !(PAGE_SIZE - 1);
++    // A41-TEMP EXPERIMENT (scratch copy only): a native RSHDR shim of SHIM
++    // bytes in front of the blob, so `ap_rscmem` points at an RSHDR-headed
++    // image the way EmuTOS's `rs_hdr` does (TeraDesk `xrsrc_gaddr` parses it).
++    const SHIM: usize = 40;
++    let pages = ((len + SHIM) as u64 + PAGE_SIZE - 1) & !(PAGE_SIZE - 1);
+     // SAFETY: single-CPU trap context holds the implicit BDOS lock.
+     let raw = unsafe {
+         crate::bdos::mem::traps::mxalloc((pages + PAGE_SIZE) as Long, MX_PREFTTRAM)
+@@ -2096,8 +2120,23 @@
+     // `app_va`).
+     // SAFETY: `base_kva` aliases `pages` live RW pool bytes; `src` is valid.
+     unsafe {
+-        core::ptr::copy_nonoverlapping(src.as_ptr(), base_kva, len);
++        core::ptr::copy_nonoverlapping(src.as_ptr(), base_kva.add(SHIM), len);
++        // Synthesize the native RSHDR (18 LE u16, classic field order).
++        let h = &*(src.as_ptr() as *const NrscHeader);
++        let f = |v: u32| (v as usize + SHIM) as u16;
++        let fields: [u16; 18] = [
++            0,
++            f(h.off_objects), f(h.off_ted), f(h.off_ib), f(h.off_bb), f(h.off_frstr),
++            f(h.total_size), f(h.total_size), f(h.off_frimg), f(h.off_trindex),
++            h.n_objects as u16, h.n_trees as u16, h.n_ted as u16, h.n_ib as u16,
++            h.n_bb as u16, h.n_frstr as u16, h.n_frimg as u16, f(h.total_size),
++        ];
++        for (i, v) in fields.iter().enumerate() {
++            (base_kva.add(i * 2) as *mut u16).write_unaligned(*v);
++        }
+     }
++    let base_kva = unsafe { base_kva.add(SHIM) };
++    let app_va = app_va + SHIM as u64;
+     // The colour icons' device-form buffer, should the blob have any: a
+     // second pool block of the process, mapped into its window like the
+     // blob (EmuTOS's `dos_alloc_anyram`, `gemrslib.c:436`, in the
+@@ -2126,7 +2165,8 @@
+     // the block is larger (page-rounded), but only those bytes came from the
+     // file and only they may be fixed up.
+     // SAFETY: `base_kva` holds the `len`-byte copy; header re-checked inside.
+-    let desc = unsafe { relocate_and_register_core(base_kva, len, app_va, abi, &mut cicon_alloc) };
++    let desc = unsafe { relocate_and_register_core(base_kva, len, app_va, abi, &mut cicon_alloc) }
++        .map(|mut d| { d.blob_target = app_va - SHIM as u64; d.blob_len += SHIM as u32; d });
+     // Entering the load into the process's list can fail only when the lists
+     // are full — the same "no room" `rsrc_load` = 0 as EmuTOS's failed
+     // `dos_alloc_anyram` (`gemrslib.c:775-776`), undone the same way as a
+@@ -2515,6 +2555,9 @@
+             .map_or(0, |s| s.target)
+     };
+     pb.set_addrout(0, addr);
++    if rtype == R_TREE && index == 0 {
++        a41_log(format_args!("[a41] pid={} rsrc_gaddr(R_TREE, 0) -> {} addr=0x{:x}", caller_pid(), i16::from(addr != 0), addr));
++    }
+     pb.set_ret(if addr != 0 { 1 } else { 0 });
+ }
+ 

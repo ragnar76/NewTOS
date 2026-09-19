@@ -1,0 +1,13 @@
+d48c8ae460d3dd33d1eb380eec977626680843e498630b41894bb63bcf290bb3  measurement-2026-09-19-a41/build/kernel8-a41-product-release-rpi4.img
+58d691a57e29b0a58628acf5227c8d167623e6bc5cd2183b42a751e2a9cf3c74  measurement-2026-09-19-a41/build/kernel8-a41-SCRATCH-shim-trace-release-rpi4.img
+19fd838f9d58fa96271404e8da6c1405e876d814e764c958114fe960d63b31f8  measurement-2026-09-19-a41/build/kernel8-a41-SCRATCH-trace-only-release-rpi4.img
+dee57cca7b719faba491759f5d1331f27027b36124986f5f4d8ad7a48c8978d8  measurement-2026-09-19-a41/screendumps/smoke-desk-up.png
+ec79c00a999e3fed6f4e516ebc4e8eecbb451af15b108616a5ad832f2f6e73a6  measurement-2026-09-19-a41/screendumps/smoke-qed-up.png
+fb1e8b90563324b29a52f5063632c91065cfaaa7dfe542c64cef1d5a6a8d33b4  measurement-2026-09-19-a41/screendumps/smoke-tera-up.png
+9dba4ef748abc9f45493500e208274b42ec60454b0ced69c34e0c283e73e613f  measurement-2026-09-19-a41/screendumps/tera1-trace-cicons-CRASH-idle.png
+5148fde2f61b378d55275c085b3031155b4a4bed7d4084bff8380860fc92a690  measurement-2026-09-19-a41/screendumps/tera2-scratch-shim-colour-icons-idle.png
+850b0c4c8165a94b66f6a878db01ca9fb6c49c6b73b3171976eee70c5e3776cb  measurement-2026-09-19-a41/screendumps/tera2-scratch-shim-icons-zoom4x.png
+ca6215da57ca693ce5e91f34fff0f6a420e3f97076fb8ddb11b30ff94978dc85  measurement-2026-09-19-a41/screendumps/tera2-scratch-shim-trash-zoom8x.png
+b322a3d72d49905f59adcf13ac169519ecd5e98da6b181a11916bb716753ff87  sdk/apps/teradesk/cicons.rsc
+8ab3e7e335d3824ae4120528e41c8250c876c807343e662c6f660bdb76b66366  /private/tmp/claude-501/-Volumes-Daten-Development-PiRusTOS/d7ff6c34-253d-4fd6-839f-efa08458ba32/scratchpad/a41/cicons-lp64.rsc
+33d0821376fb88eebb7a177854fb9afba7d02a43f55843265a2fb0962505714d  /private/tmp/claude-501/-Volumes-Daten-Development-PiRusTOS/d7ff6c34-253d-4fd6-839f-efa08458ba32/scratchpad/a41/cicons-ilp32.rsc

@@ -1,0 +1,15 @@
+--- kernel/src/host_env.rs	2026-09-05 19:09:03
++++ /private/tmp/claude-501/-Volumes-Daten-Development-PiRusTOS/d7ff6c34-253d-4fd6-839f-efa08458ba32/scratchpad/a41/ws/kernel/src/host_env.rs	2026-09-19 15:07:42
+@@ -64,6 +64,12 @@
+         for &b in s {
+             CONSOLE.write_byte(b);
+             crate::fbcon::write_byte(b);
++        }
++    }
++
++    fn debug_write(&self, s: &[u8]) {
++        for &b in s {
++            CONSOLE.write_byte(b);
+         }
+     }
+ 

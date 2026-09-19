@@ -52,12 +52,25 @@
 //!   loaded on, not the one the converter assumed (A40). A v1–v8 blob holds
 //!   pixels and is not converted — the tool of its day did that with
 //!   `8 × 16 / 640` baked in.
+//! * **v11 (LP64) / v12 (ILP32)** — an 84-byte header that additionally
+//!   carries the **CICONBLK / CICON** array bases + counts of a new-format
+//!   (colour-icon) `.rsc` (A41, spec §5). The records are the application's
+//!   C structs (`CICONBLK { ICONBLK monoblk; CICON *mainlist; }`, `CICON {
+//!   num_planes; col_data; col_mask; sel_data; sel_mask; next_res; }`,
+//!   `obdefs.h:203-217`) with blob offsets in every pointer field, and a
+//!   `G_CICON` object's `ob_spec` is the byte offset of its CICONBLK — so the
+//!   relocation is the generic one. After it the loader runs EmuTOS's
+//!   `fix_cicons` (`gemrslib.c:549-573`): `best_match` picks one variant per
+//!   block for the live plane count and the colour data is turned into the
+//!   device form ([`fix_cicons`]). A pre-v11 blob declares no such arrays;
+//!   its `G_CICON` objects (which the tool of the day zeroed) stay empty.
 //!
 //! ```text
 //!   NrscHeader: magic "NRSC", version, n_trees, n_objects,
 //!               off_trindex, off_objects, total_size            (v1/v2: 28 B)
 //!               [, off_frstr, n_frstr, off_frimg, n_frimg]      (v3/v4: 44 B)
-//!               [, off_ted, n_ted, off_ib, n_ib, off_bb, n_bb]  (v5–v8: 68 B)
+//!               [, off_ted, n_ted, off_ib, n_ib, off_bb, n_bb]  (v5–v10: 68 B)
+//!               [, off_cib, n_cib, off_cic, n_cic]              (v11+: 84 B)
 //!   tree index       @ off_trindex  (v1–v6: [u32] root OBJECT index/tree;
 //!                                    v7/v8: [ptr] offset → the root OBJECT)
 //!   [Object; n_objects]          @ off_objects  (ob_spec = offset for the
@@ -65,7 +78,8 @@
 //!                                                 a literal colour/char word;
 //!                                                 v9/v10: ob_x/y/w/h packed
 //!                                                 char-grid words, else px)
-//!   [TedInfo; n_ted] [BitBlk; n_bb] [IconBlk; n_ib]             (v5–v8)
+//!   [TedInfo; n_ted] [BitBlk; n_bb] [IconBlk; n_ib]             (v5+)
+//!   [CiconBlk; n_cib] [Cicon; n_cic]                            (v11+)
 //!   [ptr; n_frstr]   frstr table @ off_frstr    (v3+: offset → string data)
 //!   [ptr; n_frimg]   frimg table @ off_frimg    (v3+: offset → a BITBLK)
 //!   string / data bytes          (referenced by the ob_spec / table offsets)
@@ -241,6 +255,21 @@ const TEDINFO_SIZE_ILP32: usize = 28;
 const ICONBLK_SIZE_ILP32: usize = 36;
 const BITBLK_SIZE_ILP32: usize = 16;
 
+/// Native `CICONBLK` record stride — the application's C struct
+/// (`CICONBLK { ICONBLK monoblk; CICON *mainlist; }`, `obdefs.h:213-217`,
+/// gemlib `mt_gem.h`): the ICONBLK head followed by one pointer. LP64
+/// 48 + 8 = 56, ILP32 36 + 4 = 40. `mainlist` sits at the ICONBLK size.
+const CICONBLK_SIZE: usize = ICONBLK_SIZE + 8;
+const CICONBLK_SIZE_ILP32: usize = ICONBLK_SIZE_ILP32 + 4;
+/// Native `CICON` record stride (`obdefs.h:203-211`): a WORD `num_planes`,
+/// padding to the pointer width, then five pointers `col_data`, `col_mask`,
+/// `sel_data`, `sel_mask`, `next_res` — each at `k * ptr` for `k` in 1..=5.
+/// LP64 8 + 5 × 8 = 48, ILP32 4 + 5 × 4 = 24.
+const CICON_SIZE: usize = 48;
+const CICON_SIZE_ILP32: usize = 24;
+/// Number of pointer fields of a CICON record (the five after `num_planes`).
+const CICON_PTR_FIELDS: usize = 5;
+
 /// First NRSC `version` whose header carries the free-string / free-image
 /// pointer tables (44-byte header). v1/v2 have the 28-byte header and no
 /// tables — the loader treats their frstr/frimg counts as 0 (backward compat).
@@ -301,6 +330,16 @@ const NRSC_VER_TRINDEX_PTR: u32 = 7;
 /// A v1–v8 blob still holds those pixels and is loaded without conversion.
 const NRSC_VER_CHARGRID: u32 = 9;
 
+/// First NRSC `version` whose header carries the **CICONBLK / CICON** array
+/// bases + counts (v11 LP64, v12 ILP32; 84-byte header) — the colour icons
+/// of a new-format `.rsc` (TASK/A41, spec §5). The records are the
+/// application's C structs with blob-offset pointer fields; a `G_CICON`
+/// object's `ob_spec` is the byte offset of its CICONBLK, relocated by the
+/// generic rule. The loader then runs [`fix_cicons`] over the arrays. A
+/// pre-v11 blob declares no such arrays, and its `G_CICON` objects — whose
+/// `ob_spec` the converter of the day zeroed — are left as they are.
+const NRSC_VER_CICON: u32 = 11;
+
 /// Slot width of the tree index for a blob of `version`, given the caller's
 /// pointer width `ptr`: a relocated pointer from [`NRSC_VER_TRINDEX_PTR`] on,
 /// a fixed 4-byte root OBJECT index before that.
@@ -322,11 +361,12 @@ fn trindex_stride(version: u32, ptr: usize) -> usize {
 const MAX_TREES: usize = 64;
 
 /// Native resource-file header. 28 bytes for v1/v2, 44 bytes for v3/v4, 68
-/// bytes for v5/v6. Each generation's extra fields exist only for a high
-/// enough `version` (`>= NRSC_VER_TABLES` for the free-string/-image table
-/// fields, `>= NRSC_VER_SUBSTRUCTS` for the TEDINFO/ICONBLK/BITBLK fields);
-/// for an older file those trailing bytes overlap the tree index / objects and
-/// MUST NOT be interpreted (the loader gates on `version`).
+/// bytes for v5–v10, 84 bytes from v11. Each generation's extra fields exist
+/// only for a high enough `version` (`>= NRSC_VER_TABLES` for the
+/// free-string/-image table fields, `>= NRSC_VER_SUBSTRUCTS` for the
+/// TEDINFO/ICONBLK/BITBLK fields, `>= NRSC_VER_CICON` for the CICONBLK/CICON
+/// fields); for an older file those trailing bytes overlap the tree index /
+/// objects and MUST NOT be interpreted (the loader gates on `version`).
 #[repr(C)]
 pub struct NrscHeader {
     /// `b"NRSC"`.
@@ -335,7 +375,8 @@ pub struct NrscHeader {
     /// 4 = ILP32/44 B (+tables), 5 = LP64/68 B (+substruct bases), 6 = ILP32/
     /// 68 B (+substruct bases), 7/8 = pointer tree index
     /// ([`NRSC_VER_TRINDEX_PTR`]), 9/10 = char-grid coordinates
-    /// ([`NRSC_VER_CHARGRID`]). Odd = LP64, even = ILP32.
+    /// ([`NRSC_VER_CHARGRID`]), 11/12 = 84-byte header with the CICONBLK /
+    /// CICON arrays ([`NRSC_VER_CICON`]). Odd = LP64, even = ILP32.
     pub version: u32,
     /// Number of object trees.
     pub n_trees: u32,
@@ -370,6 +411,14 @@ pub struct NrscHeader {
     pub off_bb: u32,
     /// Number of `BitBlk` records (v5/v6 only, else undefined).
     pub n_bb: u32,
+    /// Offset to the `CICONBLK` array (v11+ only, else undefined).
+    pub off_cib: u32,
+    /// Number of `CICONBLK` records (v11+ only, else undefined).
+    pub n_cib: u32,
+    /// Offset to the `CICON` array (v11+ only, else undefined).
+    pub off_cic: u32,
+    /// Number of `CICON` records (v11+ only, else undefined).
+    pub n_cic: u32,
 }
 
 /// One loaded resource — the descriptor of a single `rsrc_load`.
@@ -444,6 +493,10 @@ struct Loaded {
     /// reported as `ap_ptree` (`gemrslib.c:595-597`). 0 when the blob predates
     /// [`NRSC_VER_TRINDEX_PTR`] and therefore carries no pointer table.
     trindex_target: u64,
+    /// The device-form buffer of the blob's colour icons ([`fix_cicons`]),
+    /// all-zero when there is none — what `rsrc_free` releases in place of
+    /// EmuTOS's `free_cicon_buffers` (`gemrslib.c:515-536`).
+    cicon: CiconBuf,
 }
 
 impl Loaded {
@@ -476,6 +529,7 @@ impl Loaded {
         blob_target: 0,
         blob_len: 0,
         trindex_target: 0,
+        cicon: CiconBuf { access: 0, len: 0 },
     };
 }
 
@@ -514,13 +568,24 @@ struct RscEntry {
     /// to drop; `0` for the in-place kernel path. A [`Long`] (Atari 32-bit
     /// pool address) so it feeds `mfree` directly.
     raw: Long,
+    /// Pool `m_start` of the EL0 process's colour-icon device-form block
+    /// (`desc.cicon`, [`load_into_user`]); `0` when there is none or when the
+    /// buffer is the kernel heap's (the in-place path, freed by
+    /// [`kernel_cicon_free`]).
+    cicon_raw: Long,
     /// The descriptor [`relocate_and_register_core`] produced for the blob.
     desc: Loaded,
 }
 
 impl RscEntry {
-    const FREE: RscEntry =
-        RscEntry { pid: 0, name: 0, latest_unnamed: false, raw: 0, desc: Loaded::EMPTY };
+    const FREE: RscEntry = RscEntry {
+        pid: 0,
+        name: 0,
+        latest_unnamed: false,
+        raw: 0,
+        cicon_raw: 0,
+        desc: Loaded::EMPTY,
+    };
 }
 
 /// Capacity of the resource lists, over all processes together. EmuTOS has no
@@ -612,7 +677,7 @@ unsafe fn selected(pid: i16, global: *const i16) -> Option<usize> {
 ///
 /// # Safety
 /// Single trap path.
-unsafe fn register(pid: i16, raw: Long, desc: Loaded) -> bool {
+unsafe fn register(pid: i16, raw: Long, cicon_raw: Long, desc: Loaded) -> bool {
     // SAFETY: caller upholds the single-trap-path invariant.
     let t = unsafe { table() };
     let Some(idx) = t.iter().position(|e| e.pid == 0) else {
@@ -626,7 +691,7 @@ unsafe fn register(pid: i16, raw: Long, desc: Loaded) -> bool {
             }
         }
     }
-    t[idx] = RscEntry { pid, name, latest_unnamed: name == 0, raw, desc };
+    t[idx] = RscEntry { pid, name, latest_unnamed: name == 0, raw, cicon_raw, desc };
     true
 }
 
@@ -648,6 +713,15 @@ pub fn on_process_exit(pid: i16) {
     let t = unsafe { table() };
     for e in t.iter_mut() {
         if e.pid == pid {
+            // A colour-icon buffer of the in-place path is the kernel
+            // heap's, not the process's pool memory, and goes with the
+            // entry; a pool block (`cicon_raw != 0`) is reclaimed by owner
+            // like the blob itself.
+            if e.cicon_raw == 0 {
+                // SAFETY: the buffer `kernel_cicon_alloc` gave this entry,
+                // freed exactly once (the entry is cleared right after).
+                unsafe { kernel_cicon_free(e.desc.cicon) };
+            }
             *e = RscEntry::FREE;
         }
     }
@@ -753,6 +827,156 @@ unsafe fn header_is_sound(access_base: *const u8, len: usize, abi: Abi) -> bool 
     {
         return false;
     }
+    // The CICONBLK / CICON arrays (v11+) — and, because the *loader* reads
+    // the colour rasters through the kernel alias ([`fix_cicons`]), every
+    // record's chain links and raster spans as well ([`cicon_tables_are_sound`]).
+    if h.version >= NRSC_VER_CICON {
+        let (cib, cic) = match abi {
+            Abi::Ilp32 => (CICONBLK_SIZE_ILP32, CICON_SIZE_ILP32),
+            Abi::Lp64 => (CICONBLK_SIZE, CICON_SIZE),
+        };
+        if !fits(h.off_cib, h.n_cib, cib) || !fits(h.off_cic, h.n_cic, cic) {
+            return false;
+        }
+        // SAFETY: both arrays were just shown to lie inside `size <= len`.
+        if !unsafe { cicon_tables_are_sound(access_base, h, abi) } {
+            return false;
+        }
+    }
+    true
+}
+
+/// Read a blob-offset pointer field at `p` at the caller's width (the
+/// pre-relocation form: a `u32` for ILP32, a `u64` for LP64), unaligned.
+///
+/// # Safety
+/// `p` must point at ≥ 4 (ILP32) / 8 (LP64) readable bytes.
+#[inline]
+unsafe fn rd_ptr(p: *const u8, abi: Abi) -> u64 {
+    // SAFETY: caller guarantees the field's bytes.
+    unsafe {
+        match abi {
+            Abi::Ilp32 => rd32(p) as u64,
+            Abi::Lp64 => (p as *const u64).read_unaligned(),
+        }
+    }
+}
+
+/// Write a pointer field at `p` at the caller's width, unaligned (the
+/// inverse of [`rd_ptr`]; an ILP32 store keeps the low 4 bytes).
+///
+/// # Safety
+/// `p` must point at ≥ 4 (ILP32) / 8 (LP64) writable bytes.
+#[inline]
+unsafe fn wr_ptr(p: *mut u8, abi: Abi, v: u64) {
+    // SAFETY: caller guarantees the field's bytes.
+    unsafe {
+        match abi {
+            Abi::Ilp32 => (p as *mut u32).write_unaligned(v as u32),
+            Abi::Lp64 => (p as *mut u64).write_unaligned(v),
+        }
+    }
+}
+
+/// Pointer width of `abi` in bytes.
+#[inline]
+fn ptr_size(abi: Abi) -> usize {
+    match abi {
+        Abi::Ilp32 => 4,
+        Abi::Lp64 => 8,
+    }
+}
+
+/// Number of raster WORDs in one plane of a CICONBLK's icons — EmuTOS's
+/// `mono_words = muls(ib_wicon/16, ib_hicon)` (`gemrslib.c:235`), the unit
+/// every CICON raster is sized in (`fixup_colour_icons`, `:196-208`).
+#[inline]
+fn mono_words(wicon: i16, hicon: i16) -> u64 {
+    (wicon.max(0) as u64 / 16) * hicon.max(0) as u64
+}
+
+/// The CICONBLK / CICON records of a v11+ blob, checked **before** anything
+/// is relocated: every `mainlist` / `next_res` link names a record of the
+/// CICON array (so the chain walks stay inside it and a cycle is caught by
+/// the step bound), every variant's plane count is one a device could hold
+/// (`1..=16`), its `col_data`/`col_mask` are present and its four raster
+/// spans — `mono_words × num_planes` WORDs of data, `mono_words` of mask,
+/// the same pair again for the SELECTED image, which comes as a pair or not
+/// at all (`fixup_colour_icons`, `gemrslib.c:204-209`) — lie inside
+/// `total_size`. EmuTOS checks none of this (`fix_cicons` walks whatever the
+/// file says, `:549-573`); NewTOS must, because [`fix_cicons`] reads those
+/// rasters through the kernel alias to build the device form. Refusal is
+/// `rs_readit`'s FALSE — the file is not loaded, not partially fixed up.
+///
+/// # Safety
+/// The header's CICONBLK and CICON arrays must lie inside `total_size`
+/// readable bytes at `base` (checked by the caller).
+unsafe fn cicon_tables_are_sound(base: *const u8, h: &NrscHeader, abi: Abi) -> bool {
+    let size = h.total_size as u64;
+    let ps = ptr_size(abi);
+    let (cib, cic, ib) = match abi {
+        Abi::Ilp32 => (CICONBLK_SIZE_ILP32, CICON_SIZE_ILP32, ICONBLK_SIZE_ILP32),
+        Abi::Lp64 => (CICONBLK_SIZE, CICON_SIZE, ICONBLK_SIZE),
+    };
+    let n_cic = h.n_cic as u64;
+    // A CICON link is a blob offset that must be one of the array's records.
+    let cicon_record = |off: u64| -> Option<*const u8> {
+        let rel = off.checked_sub(h.off_cic as u64)?;
+        if rel % cic as u64 != 0 || rel / cic as u64 >= n_cic {
+            return None;
+        }
+        // SAFETY: `off` names a record of the array the caller bounded.
+        Some(unsafe { base.add(off as usize) })
+    };
+    for i in 0..h.n_cib as usize {
+        // SAFETY: record `i` of the bounded CICONBLK array.
+        let rec = unsafe { base.add(h.off_cib as usize + i * cib) };
+        // The eleven ICONBLK WORDs follow the three pointers; `ib_wicon` /
+        // `ib_hicon` are the 6th and 7th (`obdefs.h`).
+        // SAFETY: inside the record.
+        let (wicon, hicon) = unsafe { (rd16(rec.add(3 * ps + 10)) as i16, rd16(rec.add(3 * ps + 12)) as i16) };
+        let words = mono_words(wicon, hicon);
+        // SAFETY: `mainlist` is the pointer right after the ICONBLK head.
+        let mut link = unsafe { rd_ptr(rec.add(ib), abi) };
+        let mut steps = 0u64;
+        while link != 0 {
+            let Some(c) = cicon_record(link) else {
+                return false;
+            };
+            steps += 1;
+            if steps > n_cic {
+                return false; // a cycle: longer than the array itself
+            }
+            // SAFETY: `c` is a whole CICON record inside the array.
+            let planes = unsafe { rd16(c) as i16 };
+            if !(1..=16).contains(&planes) {
+                return false;
+            }
+            // SAFETY: as above — the five pointer fields at `k * ps`.
+            let field = |k: usize| unsafe { rd_ptr(c.add(k * ps), abi) };
+            let (col_data, col_mask, sel_data, sel_mask, next) =
+                (field(1), field(2), field(3), field(4), field(5));
+            let Some(data_bytes) = words.checked_mul(planes as u64).and_then(|w| w.checked_mul(2))
+            else {
+                return false;
+            };
+            let mask_bytes = words * 2;
+            if col_data == 0 || col_mask == 0 {
+                return false;
+            }
+            let span = |off: u64, bytes: u64| off.checked_add(bytes).is_some_and(|end| end <= size);
+            if !span(col_data, data_bytes) || !span(col_mask, mask_bytes) {
+                return false;
+            }
+            if (sel_data == 0) != (sel_mask == 0) {
+                return false;
+            }
+            if sel_data != 0 && (!span(sel_data, data_bytes) || !span(sel_mask, mask_bytes)) {
+                return false;
+            }
+            link = next;
+        }
+    }
     true
 }
 
@@ -773,14 +997,22 @@ unsafe fn header_is_sound(access_base: *const u8, len: usize, abi: Abi) -> bool 
 /// `base` must point at `len` readable and writable bytes.
 pub unsafe fn relocate_and_register(base: *mut u8, len: usize) -> bool {
     // In-place kernel path: access base == target base, LP64 (desktop / the
-    // selftests always build 32-byte native resources).
+    // selftests always build 32-byte native resources); a colour-icon buffer
+    // comes from the kernel heap, reachable at one address.
     // SAFETY: caller guarantees `len` accessible bytes.
-    let Some(desc) = (unsafe { relocate_and_register_core(base, len, base as u64, Abi::Lp64) })
-    else {
+    let Some(desc) = (unsafe {
+        relocate_and_register_core(base, len, base as u64, Abi::Lp64, &mut kernel_cicon_alloc)
+    }) else {
         return false;
     };
     // SAFETY: single trap path.
-    unsafe { register(caller_pid(), 0, desc) }
+    if unsafe { register(caller_pid(), 0, 0, desc) } {
+        return true;
+    }
+    // SAFETY: the buffer this load's `kernel_cicon_alloc` gave it; the
+    // descriptor is dropped here, so it is freed exactly once.
+    unsafe { kernel_cicon_free(desc.cicon) };
+    false
 }
 
 /// The relocation + descriptor half of a load, with the access/target-base
@@ -789,6 +1021,13 @@ pub unsafe fn relocate_and_register(base: *mut u8, len: usize) -> bool {
 /// `access_base`. Used by the EL0 `rsrc_load` path where `target_base` is
 /// the user VA the blob is mapped at and `access_base` is the pool block's
 /// kernel alias, and by [`relocate_and_register`] with the two equal.
+///
+/// `cicon_alloc(bytes)` provides the device-form buffer for the blob's
+/// colour icons ([`fix_cicons`]) as `(kernel-reachable, app-visible)`
+/// addresses of `bytes` bytes, or `None` — EmuTOS's `dos_alloc_anyram`
+/// (`gemrslib.c:436`), which the in-place path takes from the kernel heap and
+/// the EL0 path from a mapped pool block. It is called at most once, only for
+/// a blob that has colour icons a variant was found for.
 ///
 /// Returns the [`Loaded`] descriptor of the relocated blob — which the
 /// caller enters into the loading process's list ([`register`]) — or
@@ -803,6 +1042,7 @@ unsafe fn relocate_and_register_core(
     len: usize,
     target_base: u64,
     abi: Abi,
+    cicon_alloc: &mut dyn FnMut(usize) -> Option<(u64, u64)>,
 ) -> Option<Loaded> {
     // SAFETY: caller guarantees `len` accessible bytes.
     unsafe {
@@ -816,6 +1056,10 @@ unsafe fn relocate_and_register_core(
         if !ok {
             return None;
         }
+        // `rs_readit`'s `fix_cicons()` (gemrslib.c:795-797), right after the
+        // pointers are in place: choose and transform the colour icons for
+        // the live device.
+        let cicon = fix_cicons(access_base, target_base, abi, &mut CiconDevice::live, cicon_alloc);
         // `rs_readit`'s `fix_tedinfo_std()` (gemrslib.c:798): recompute every
         // relocated TEDINFO's `te_txtlen`/`te_tmplen` from the strings, so no
         // length word can exceed the bytes the blob really holds.
@@ -921,6 +1165,7 @@ unsafe fn relocate_and_register_core(
         } else {
             0
         };
+        d.cicon = cicon;
         Some(d)
     }
 }
@@ -1156,11 +1401,12 @@ unsafe fn relocate_blob_core_ilp32(access_base: *mut u8, len: usize, target_base
             match rd16(obj.add(OB_TYPE_OFF)) & 0x00ff {
                 // Literal colour/thickness word — never a pointer.
                 G_BOX | G_IBOX | G_BOXCHAR => {}
-                // Colour icon: `ob_spec` indexes the CICONBLK pointer table,
-                // NOT a blob offset — excluded from the `+= tb` relocation
-                // (P6-012). `mkrsc.py` has no CICON data path (it zeroes
-                // G_CICON `ob_spec`, skipped above), so nothing to fix up.
-                G_CICON => {}
+                // A pre-v11 blob has no CICONBLK array for a colour icon's
+                // `ob_spec` to name (the converter of the day wrote 0), so
+                // the word is left as it is (P6-012). From v11 on it is the
+                // byte offset of the CICONBLK record — the LP64 twin — and
+                // takes the generic arm below.
+                G_CICON if h.version < NRSC_VER_CICON => {}
                 // Every other type's `ob_spec` is a blob offset; the records
                 // it may name have their own pointers fixed up by the array
                 // walk below, not from here (EmuTOS separates `fix_objects`
@@ -1172,6 +1418,7 @@ unsafe fn relocate_blob_core_ilp32(access_base: *mut u8, len: usize, target_base
                         TEDINFO_SIZE_ILP32,
                         ICONBLK_SIZE_ILP32,
                         BITBLK_SIZE_ILP32,
+                        CICONBLK_SIZE_ILP32,
                     ) {
                         if !record_fits(spec as u64, bytes, size) {
                             return false;
@@ -1200,6 +1447,20 @@ unsafe fn relocate_blob_core_ilp32(access_base: *mut u8, len: usize, target_base
                 0,
                 tb,
             );
+        }
+        // The CICONBLK / CICON arrays (NRSC >= v11): the three ICONBLK
+        // pointers and `mainlist` of every CICONBLK, the five pointers of
+        // every CICON — see the LP64 twin.
+        if h.version >= NRSC_VER_CICON {
+            let cib = access_base.add(h.off_cib as usize);
+            for f in 0..SUBPTR_FIELDS {
+                fix_nptrs32(cib, h.n_cib as usize, CICONBLK_SIZE_ILP32, f * 4, tb);
+            }
+            fix_nptrs32(cib, h.n_cib as usize, CICONBLK_SIZE_ILP32, ICONBLK_SIZE_ILP32, tb);
+            let cic = access_base.add(h.off_cic as usize);
+            for f in 1..=CICON_PTR_FIELDS {
+                fix_nptrs32(cic, h.n_cic as usize, CICON_SIZE_ILP32, f * 4, tb);
+            }
         }
         // Free-string / free-image pointer tables (NRSC >= v3, 4-byte slots).
         if h.version >= NRSC_VER_TABLES {
@@ -1307,27 +1568,32 @@ unsafe fn relocate_blob_core(access_base: *mut u8, len: usize, target_base: u64)
             match o.ob_type & 0x00ff {
                 // Literal colour/thickness word — never a pointer.
                 G_BOX | G_IBOX | G_BOXCHAR => {}
-                // Colour icon: `ob_spec` indexes the CICONBLK pointer table
-                // (EmuTOS `ob_spec = ciconblkptr[ob_spec]`), NOT a blob offset,
-                // so it is excluded from the `+= tb` relocation. The full
-                // CICONBLK fix-up (`fixup_all_ciconblks`/`transform_all_cicons`)
-                // activates once `mkrsc.py` emits a CICON table; today the tool
-                // rejects CICON `.rsc` files and zeroes any G_CICON `ob_spec`
-                // (drawn empty, skipped above by the `ob_spec == 0` guard), so
-                // there is no CICON data path to fix up (AUD-P6-012).
-                G_CICON => {}
+                // Colour icon of a **pre-v11** blob: in EmuTOS the classic
+                // `ob_spec` is an index into the CICONBLK pointer table
+                // (`ob_spec = ciconblkptr[ob_spec]`, `gemrslib.c:623-626`),
+                // and the converter of those generations, having no CICON
+                // path, wrote 0 — there is no table to resolve it against,
+                // so the word is left as it is (AUD-P6-012). From
+                // [`NRSC_VER_CICON`] on the converter has already turned the
+                // index into the **byte offset** of the native CICONBLK
+                // record, so the object takes the generic arm below like a
+                // G_ICON — the CICONBLK array's own pointers are fixed up by
+                // the array walk, and [`fix_cicons`] then does what EmuTOS's
+                // `fix_cicons` does to the resolved records.
+                G_CICON if h.version < NRSC_VER_CICON => {}
                 // Every other type's `ob_spec` is a blob offset — a TEDINFO /
-                // ICONBLK / BITBLK record for the text/icon/image types, a
-                // string or user data otherwise. All of them are relocated the
-                // same way, `fix_long(&obj->ob_spec)`; the records' *internal*
-                // pointers are not reached from here but from their arrays
-                // below, exactly as EmuTOS separates `fix_objects` from
-                // `rs_readit`'s `fix_tedinfo_std`/`fix_nptrs` walks.
+                // ICONBLK / BITBLK / CICONBLK record for the text/icon/image
+                // types, a string or user data otherwise. All of them are
+                // relocated the same way, `fix_long(&obj->ob_spec)`; the
+                // records' *internal* pointers are not reached from here but
+                // from their arrays below, exactly as EmuTOS separates
+                // `fix_objects` from `rs_readit`'s `fix_tedinfo_std`/
+                // `fix_nptrs` walks.
                 ty => {
                     // A record `objc_draw` will dereference must lie inside
                     // the blob (see [`substruct_bytes`]).
                     if let Some(bytes) =
-                        substruct_bytes(ty, TEDINFO_SIZE, ICONBLK_SIZE, BITBLK_SIZE)
+                        substruct_bytes(ty, TEDINFO_SIZE, ICONBLK_SIZE, BITBLK_SIZE, CICONBLK_SIZE)
                     {
                         if !record_fits(o.ob_spec, bytes, size) {
                             return false;
@@ -1368,6 +1634,26 @@ unsafe fn relocate_blob_core(access_base: *mut u8, len: usize, target_base: u64)
                 fix_nptrs64(ib, h.n_ib as usize, ICONBLK_SIZE, f * 8, tb);
             }
             fix_nptrs64(access_base.add(h.off_bb as usize), h.n_bb as usize, BITBLK_SIZE, 0, tb);
+        }
+        // The CICONBLK / CICON arrays (NRSC >= v11) — the pointers EmuTOS's
+        // `fixup_all_ciconblks` / `fixup_colour_icons` (`gemrslib.c:226-256`,
+        // `:185-217`) compute in place: every CICONBLK's three ICONBLK
+        // pointers (mono mask / data / label, at `0`/`ps`/`2*ps` like an
+        // ICONBLK's) and its `mainlist` (right after the ICONBLK head), every
+        // CICON's `col_data`/`col_mask`/`sel_data`/`sel_mask`/`next_res`
+        // (at `k * ps`, `k` = 1..=5). The converter stored them as blob
+        // offsets with 0 for "absent" / "end of chain"; here they become the
+        // pointers EmuTOS has — the linked shape `fix_cicons` then walks.
+        if h.version >= NRSC_VER_CICON {
+            let cib = access_base.add(h.off_cib as usize);
+            for f in 0..SUBPTR_FIELDS {
+                fix_nptrs64(cib, h.n_cib as usize, CICONBLK_SIZE, f * 8, tb);
+            }
+            fix_nptrs64(cib, h.n_cib as usize, CICONBLK_SIZE, ICONBLK_SIZE, tb);
+            let cic = access_base.add(h.off_cic as usize);
+            for f in 1..=CICON_PTR_FIELDS {
+                fix_nptrs64(cic, h.n_cic as usize, CICON_SIZE, f * 8, tb);
+            }
         }
         // Free-string / free-image pointer tables (NRSC >= v3, 8-byte slots):
         // each slot is a blob offset (string data for frstr, a BITBLK for
@@ -1495,21 +1781,25 @@ pub unsafe fn blob_frstr(base: *const u8, index: usize) -> *const u8 {
 /// disappear. EmuTOS has no equivalent (`fix_objects` just relocates) because
 /// it has no memory protection to honour.
 #[inline]
-fn substruct_bytes(base_type: u16, ted: usize, ib: usize, bb: usize) -> Option<usize> {
+fn substruct_bytes(base_type: u16, ted: usize, ib: usize, bb: usize, cib: usize) -> Option<usize> {
     match base_type {
         G_TEXT | G_BOXTEXT | G_FTEXT | G_FBOXTEXT => Some(ted),
         G_ICON => Some(ib),
         G_IMAGE => Some(bb),
+        G_CICON => Some(cib),
         _ => None,
     }
 }
 
 /// Whether an object of `base_type` points at a sub-structure record at all.
 /// Used to refuse a pre-v5 blob, whose header declares no sub-structure arrays
-/// and whose records therefore cannot be relocated by count.
+/// and whose records therefore cannot be relocated by count. `G_CICON` is
+/// not in the list: a pre-v11 blob's colour icons carry no record (their
+/// `ob_spec` is 0) and such blobs kept loading before — the v11 gate in the
+/// relocation cores is what makes a CICONBLK a record.
 #[inline]
 fn has_substruct(base_type: u16) -> bool {
-    substruct_bytes(base_type, 0, 0, 0).is_some()
+    matches!(base_type, G_TEXT | G_BOXTEXT | G_FTEXT | G_FBOXTEXT | G_ICON | G_IMAGE)
 }
 
 /// Whether a sub-structure record of `bytes` bytes at blob offset `off` lies
@@ -1709,8 +1999,21 @@ pub fn rsrc_load(pb: &Aespb) {
         // caller does this (there is no EL1 `rsrc_load` caller at all, see
         // the module comment).
         let base = buf.as_mut_ptr();
-        unsafe { relocate_and_register_core(base, len, base as u64, Abi::Lp64) }
-            .filter(|&desc| unsafe { register(pid, 0, desc) })
+        unsafe {
+            relocate_and_register_core(base, len, base as u64, Abi::Lp64, &mut kernel_cicon_alloc)
+        }
+        .filter(|&desc| {
+            // SAFETY: single trap path; a refused registration frees the
+            // buffer this load allocated, exactly once.
+            unsafe {
+                if register(pid, 0, 0, desc) {
+                    true
+                } else {
+                    kernel_cicon_free(desc.cicon);
+                    false
+                }
+            }
+        })
     } else {
         // EL0 app caller: copy into per-process EL0-mapped memory and
         // relocate to user VAs at the caller's OBJECT width.
@@ -1795,19 +2098,48 @@ unsafe fn load_into_user(
     unsafe {
         core::ptr::copy_nonoverlapping(src.as_ptr(), base_kva, len);
     }
+    // The colour icons' device-form buffer, should the blob have any: a
+    // second pool block of the process, mapped into its window like the
+    // blob (EmuTOS's `dos_alloc_anyram`, `gemrslib.c:436`, in the
+    // application's memory) — one block for all of them ([`fix_cicons`]'s
+    // section comment). Its pool key is kept for `rsrc_free`.
+    let mut cicon_raw: Long = 0;
+    let mut cicon_alloc = |bytes: usize| -> Option<(u64, u64)> {
+        let pages = (bytes as u64 + PAGE_SIZE - 1) & !(PAGE_SIZE - 1);
+        // SAFETY: single-CPU trap context holds the implicit BDOS lock.
+        let raw = unsafe { crate::bdos::mem::traps::mxalloc((pages + PAGE_SIZE) as Long, MX_PREFTTRAM) };
+        if raw == 0 {
+            return None;
+        }
+        let pa = (raw as u64 + PAGE_SIZE - 1) & !(PAGE_SIZE - 1);
+        // SAFETY: `raw` addresses `pages + one page` live pool bytes owned
+        // by the calling process.
+        let Some(va) = (unsafe { usermem::map(slot, raw, pages, usermem::Kind::Rsc) }) else {
+            // SAFETY: `raw` is on the allocated list.
+            unsafe { crate::bdos::mem::traps::mfree(raw) };
+            return None;
+        };
+        cicon_raw = raw;
+        Some((pa.wrapping_add(VA_OFFSET), va))
+    };
     // The copy is `len` bytes long, so `len` also bounds the relocation here:
     // the block is larger (page-rounded), but only those bytes came from the
     // file and only they may be fixed up.
     // SAFETY: `base_kva` holds the `len`-byte copy; header re-checked inside.
-    let desc = unsafe { relocate_and_register_core(base_kva, len, app_va, abi) };
+    let desc = unsafe { relocate_and_register_core(base_kva, len, app_va, abi, &mut cicon_alloc) };
     // Entering the load into the process's list can fail only when the lists
     // are full — the same "no room" `rsrc_load` = 0 as EmuTOS's failed
     // `dos_alloc_anyram` (`gemrslib.c:775-776`), undone the same way as a
     // refused blob.
     // SAFETY: single trap path.
-    let desc = desc.filter(|&d| unsafe { register(pid, raw, d) });
+    let desc = desc.filter(|&d| unsafe { register(pid, raw, cicon_raw, d) });
     if desc.is_none() {
-        // Drop the window entry and free the pool block.
+        // Drop the window entries and free the pool blocks.
+        if cicon_raw != 0 {
+            usermem::free_by_mstart(slot, cicon_raw);
+            // SAFETY: `cicon_raw` is on the allocated list.
+            unsafe { crate::bdos::mem::traps::mfree(cicon_raw) };
+        }
         usermem::free_by_mstart(slot, raw);
         // SAFETY: `raw` is on the allocated list.
         unsafe { crate::bdos::mem::traps::mfree(raw) };
@@ -1970,6 +2302,26 @@ pub fn rsrc_free(pb: &Aespb) {
     // now off the allocated list, so `free_all_owned` / a second `Mfree` skip
     // it). `raw == 0` is the in-place kernel path, which owns no pool block.
     let mut rc = 1;
+    // The colour icons' device-form buffer first — `rs_free`'s
+    // `free_cicon_buffers` (`gemrslib.c:694-697`, `:515-536`), which frees
+    // every chosen variant's `col_data` buffer and turns the return code to
+    // 0 when a free fails. NewTOS has one buffer per resource: a pool block
+    // of the process (`cicon_raw`), or the kernel heap's on the in-place
+    // path.
+    if entry.cicon_raw != 0 {
+        if let Some(slot) = crate::bdos::process::slot_for(crate::bdos::process::current()) {
+            usermem::free_by_mstart(slot, entry.cicon_raw);
+        }
+        // SAFETY: single-CPU trap context; `cicon_raw` came from `mxalloc`
+        // in `load_into_user` and has not been freed.
+        if unsafe { crate::bdos::mem::traps::mfree(entry.cicon_raw) } != 0 {
+            rc = 0; // `if (dos_free(cicon->col_data)) rc = -1;` (`:531`)
+        }
+    } else {
+        // SAFETY: the entry's kernel-heap buffer, freed exactly once (the
+        // entry was just cleared).
+        unsafe { kernel_cicon_free(entry.desc.cicon) };
+    }
     if entry.raw != 0 {
         if let Some(slot) =
             crate::bdos::process::slot_for(crate::bdos::process::current())
@@ -2320,6 +2672,425 @@ pub(super) fn fix_chpos(raw: i16, cell: i16, is_width: bool, gl_width: i16) -> i
     (base + offset) as i16
 }
 
+// ─── fix_cicons: colour icons (TASK/A41, spec §5) ─────────────────────────
+//
+// EmuTOS `fix_cicons` (`aes/gemrslib.c:549-573`), run by `rs_readit` right
+// after `fix_trindex` (`:795-797`): with the pointers of every CICONBLK and
+// CICON in place, `transform_all_cicons` (`:403-477`) picks, per CICONBLK,
+// the variant `best_match` (`:267-282`) selects for the live plane count
+// `gl_nplanes`, stores it in `mainlist` (or NULL — the draw-time mono
+// fallback), expands it to the device's plane count when it has fewer
+// (`expand_cicondata`, `:284-343`), transforms the result to the device form
+// (`transform_cicon`, `:348-396`) into a freshly allocated buffer, points
+// `col_data` (and `sel_data`, in the second half of the same buffer) at it,
+// and stamps `num_planes = gl_nplanes`, `next_res = NULL`.
+//
+// NewTOS has one device form: the 16-bit RGB565-chunky memory MFDB
+// (`vdi/raster.rs` module docs, `CHUNKY_PLANES`) — the Falcon truecolor form
+// EmuTOS's own `transform_cicon` produces when `planes > 8` (`:359-395`):
+// `vr_trnfm` to chunky words with plane `p` at bit `15 - p` (our
+// `vr_trnfm16` does the same, `raster.rs`), the top byte reversed into an
+// index `n` 0..=255, and `n` resolved through the physical workstation's
+// palette (`phys_work.ext->palette[n]`). That chain is a pure function of
+// each pixel's plane bits, its mask bit and the palette, which is how
+// [`cicon_pixel`] computes it — expansion and transform folded into one
+// step per pixel, no intermediate standard-form buffer.
+//
+// One deviation is deliberate and stated: EmuTOS allocates one buffer per
+// icon and falls back to mono per icon when an allocation fails (`:436-449`).
+// NewTOS makes **one** allocation per resource for all its icons, because on
+// the EL0 path every allocation is a mapped block of the process's window,
+// and that table holds [`usermem::MAX_USER_BLOCKS`] (32) entries — fewer than
+// TeraDesk's 38 icons. The fallback is therefore per resource: no buffer,
+// no colour icon, the load itself still succeeds (§5.6 point 2's shape, at
+// resource granularity). `rsrc_free` releases the one buffer
+// (`free_cicon_buffers`, `:515-536`, walks EmuTOS's many).
+
+/// What `fix_cicons` needs to know about the device: the plane count
+/// `best_match` compares against (`gl_nplanes` = `INQ_TAB[4]`,
+/// `gemgraf.c:395`), the pen count that shapes EmuTOS's `MAP_COL`
+/// (`vdi_col.c:736-747`), and the physical workstation's pseudo-palette
+/// (`phys_work.ext->palette`, one RGB565 word per pen — NewTOS keeps it
+/// indexed by VDI pen, see [`CiconDevice::rev_map_col`]).
+#[derive(Clone, Copy)]
+pub(crate) struct CiconDevice {
+    /// `gl_nplanes`.
+    pub planes: i16,
+    /// `DEV_TAB[13]`, EmuTOS `numcolors`.
+    pub num_colors: u16,
+    /// The pseudo-palette, indexed by VDI pen.
+    pub palette: [u16; 256],
+}
+
+impl CiconDevice {
+    /// The live device — the raster backend's plane count, pen count and
+    /// requested colours, packed the way a workstation's pseudo-palette is
+    /// seeded (`init_wk`, `vdi_control.c:354-363`: pens 0..=254 through
+    /// `set_color16`; pen 255 stays 0, `vdi/workstation.rs`). That seeded
+    /// table is what the physical workstation holds in EmuTOS. Without a
+    /// backend (a hostless test) the fallback is the one `appl_init`
+    /// reports for `ap_planes`: 4 planes, 16 pens, an all-black palette.
+    pub fn live() -> CiconDevice {
+        let mut dev = CiconDevice { planes: 4, num_colors: 16, palette: [0; 256] };
+        if let Some(r) = crate::host::host().and_then(|h| h.raster()) {
+            dev.planes = r.planes() as i16;
+            dev.num_colors = r.num_colors();
+            for (pen, slot) in dev.palette.iter_mut().enumerate().take(255) {
+                let (red, green, blue) = r.query_color(pen as u16);
+                *slot = crate::vdi::pack_color16([red as i16, green as i16, blue as i16]);
+            }
+        }
+        dev
+    }
+
+    /// EmuTOS's `REV_MAP_COL` — hardware colour register → VDI pen
+    /// (`vdi_col.c:25-29`, built in `init_colors` `:736-747`): `MAP_COL` is
+    /// the ROM table `{0, 15, 1, 2, 4, 6, 3, 5, 7, 8, 9, 10, 12, 14, 11, 13}`
+    /// with `MAP_COL[1] = numcolors - 1`, the identity for 16..=254 and
+    /// `MAP_COL[255] = 15` (`EXTENDED_PALETTE`), inverted over `i <
+    /// numcolors`; a register no pen maps to reads 0.
+    ///
+    /// Why it is needed here: a CICON's planes hold **hardware** colour
+    /// indices (the device form of a palette screen), and EmuTOS's
+    /// `transform_cicon` accordingly indexes `phys_work.ext->palette[n]` by
+    /// hardware register — that table is written at `palette[MAP_COL[pen]]`
+    /// (`set_color16`, `:601-614`). NewTOS folds `MAP_COL` to the identity
+    /// and keeps the pseudo-palette by VDI pen (`vdi/vwk.rs`, `VwkExt`), so
+    /// the colour EmuTOS finds at register `n` is at pen `REV_MAP_COL[n]`
+    /// here. The observable result — which RGB word a plane index becomes —
+    /// is the same; e.g. index 15 of a 16-colour icon, expanded to 255 on a
+    /// 16-plane device, reaches pen 1 (black) both ways.
+    fn rev_map_col(&self) -> [u8; 256] {
+        const MAP_COL_ROM: [u8; 16] = [0, 15, 1, 2, 4, 6, 3, 5, 7, 8, 9, 10, 12, 14, 11, 13];
+        let numcolors = (self.num_colors as usize).clamp(2, 256);
+        let mut map = [0u8; 256];
+        map[..16].copy_from_slice(&MAP_COL_ROM);
+        map[1] = (numcolors - 1) as u8;
+        for (i, m) in map.iter_mut().enumerate().skip(16) {
+            *m = i as u8;
+        }
+        map[255] = 15;
+        let mut rev = [0u8; 256];
+        for (pen, &reg) in map.iter().enumerate().take(numcolors) {
+            rev[reg as usize] = pen as u8;
+        }
+        rev
+    }
+}
+
+/// The device-form buffer of one resource's colour icons — where `fix_cicons`
+/// put them: the kernel-reachable address of the one allocation (the address
+/// the CICONs' `col_data`/`sel_data` name is the app-visible one, written
+/// into the records) and its byte length. All zero when the resource has no
+/// colour icons, or when none could be given a buffer (the mono fallback).
+#[derive(Clone, Copy, Default)]
+struct CiconBuf {
+    access: u64,
+    len: usize,
+}
+
+/// One pixel of the device form — EmuTOS `expand_cicondata` +
+/// `transform_cicon` (`gemrslib.c:284-343`, `:348-396`) for one pixel:
+///
+/// * `index` is the pixel's value across the variant's `src_planes` planes
+///   (plane `p` = bit `p`), `mask` its bit of the variant's mask plane;
+/// * when the variant has **fewer** planes than the device (`src_planes <
+///   dev_planes`), the expansion applies: the source planes are kept, every
+///   further plane up to `dev_planes` is the AND of all source planes
+///   (`:307-329`), and the mask plane is ANDed into every plane (`:331-341`).
+///   An exact match is transformed as it is — no expansion, no masking
+///   (`transform_all_cicons`, `expand` false, `:418`);
+/// * `vr_trnfm` to chunky puts plane `p` at bit `15 - p`
+///   (`vr_trnfm16`), and the reversal in `transform_cicon` (`:359-390`)
+///   reads planes 0..=7 back as the index `n`; planes 8.. are dropped;
+/// * `n` is a hardware register: `phys_work.ext->palette[n]` is
+///   `palette[rev_map_col[n]]` here ([`CiconDevice::rev_map_col`]).
+#[inline]
+fn cicon_pixel(index: u32, mask: bool, src_planes: u32, dev_planes: u32, rev: &[u8; 256], palette: &[u16; 256]) -> u16 {
+    let n = if src_planes < dev_planes {
+        let all_src = (1u32 << src_planes) - 1;
+        let all_dev = if dev_planes >= 32 { u32::MAX } else { (1u32 << dev_planes) - 1 };
+        let mut e = index;
+        if index == all_src {
+            e |= all_dev & !all_src; // the ANDed plane, copied to the rest
+        }
+        if !mask {
+            e = 0;
+        }
+        e & 0xff
+    } else {
+        index & 0xff
+    };
+    palette[rev[n as usize] as usize]
+}
+
+/// The device of one `fix_cicons` run, with its `REV_MAP_COL` computed once.
+struct CiconXform<'a> {
+    dev: &'a CiconDevice,
+    rev: [u8; 256],
+}
+
+/// Transform one standard-form image (`src_planes` plane-sequential planes of
+/// `words` WORDs each, then its one-plane `mask`) of a `wd`-word-wide,
+/// `h`-row icon into `wd * 16 × h` device-form pixels at `dst`
+/// ([`cicon_pixel`] per pixel).
+///
+/// # Safety
+/// `src` must address `words * src_planes` readable WORDs and `mask` `words`
+/// readable WORDs (both checked against the blob by
+/// [`cicon_tables_are_sound`]); `dst` must address `wd * 16 * h` writable
+/// `u16`s. None of the three need alignment.
+unsafe fn transform_cicon(
+    src: *const u8,
+    mask: *const u8,
+    src_planes: u32,
+    wd: usize,
+    h: usize,
+    xf: &CiconXform,
+    dst: *mut u16,
+) {
+    let words = wd * h;
+    let dev_planes = xf.dev.planes.max(0) as u32;
+    for row in 0..h {
+        for col in 0..wd * 16 {
+            let word = row * wd + col / 16;
+            let bit = 0x8000u16 >> (col & 15);
+            let mut index = 0u32;
+            for p in 0..src_planes as usize {
+                // SAFETY: `p * words + word < words * src_planes`.
+                if unsafe { rd16(src.add((p * words + word) * 2)) } & bit != 0 {
+                    index |= 1 << p;
+                }
+            }
+            // SAFETY: `word < words`.
+            let m = unsafe { rd16(mask.add(word * 2)) } & bit != 0;
+            let px = cicon_pixel(index, m, src_planes, dev_planes, &xf.rev, &xf.dev.palette);
+            // SAFETY: `row * wd * 16 + col < wd * 16 * h`.
+            unsafe { dst.add(row * wd * 16 + col).write_unaligned(px) };
+        }
+    }
+}
+
+/// EmuTOS `best_match` (`gemrslib.c:267-282`) over the CICON chain that
+/// starts at the (relocated) `mainlist` value `first` of one CICONBLK:
+///
+/// ```c
+/// for (p = start->mainlist; p; p = p->next_res)
+/// {
+///     if (p->num_planes > gl_nplanes)     /* too many planes */
+///         continue;
+///     if (p->num_planes == gl_nplanes)    /* exact match */
+///         return p;
+///     if (!found || (p->num_planes > found->num_planes))
+///         found = p;                      /* best so far */
+/// }
+/// return found;
+/// ```
+///
+/// An exact match wins at once; else the deepest variant not deeper than the
+/// device; a deeper one is never chosen; none at all → `None` (mono). The
+/// links are target VAs (the relocation has run); each is read through the
+/// kernel alias at `access_base + (va - target_base)`. Returns the chosen
+/// record's `(access pointer, target VA)`.
+///
+/// # Safety
+/// The chain must have been validated by [`cicon_tables_are_sound`] and
+/// relocated onto `target_base`.
+unsafe fn best_match(
+    access_base: *mut u8,
+    target_base: u64,
+    abi: Abi,
+    first: u64,
+    gl_nplanes: i16,
+) -> Option<(*mut u8, u64)> {
+    let ps = ptr_size(abi);
+    let mut found: Option<(*mut u8, u64, i16)> = None;
+    let mut link = first;
+    while link != 0 {
+        // SAFETY: a validated chain link, relocated onto `target_base`.
+        let rec = unsafe { access_base.add(link.wrapping_sub(target_base) as usize) };
+        // SAFETY: a whole CICON record.
+        let planes = unsafe { rd16(rec) as i16 };
+        // SAFETY: `next_res` is the fifth pointer field.
+        let next = unsafe { rd_ptr(rec.add(CICON_PTR_FIELDS * ps), abi) };
+        if planes <= gl_nplanes {
+            if planes == gl_nplanes {
+                return Some((rec, link));
+            }
+            if found.is_none_or(|(_, _, best)| planes > best) {
+                found = Some((rec, link, planes));
+            }
+        }
+        link = next;
+    }
+    found.map(|(rec, va, _)| (rec, va))
+}
+
+/// EmuTOS `fix_cicons` → `transform_all_cicons` (`gemrslib.c:549-573`,
+/// `:403-477`) for a relocated v11+ blob (see the section comment above):
+/// per CICONBLK, `best_match` chooses the variant for `dev.planes`,
+/// `mainlist` records the choice (or 0), and every chosen variant's image —
+/// and its SELECTED image, when it has one — is transformed into one
+/// device-form buffer that `alloc(bytes)` provides as `(access, target)`
+/// addresses; the variant's `col_data`/`sel_data` then point at its images,
+/// `num_planes` becomes `dev.planes` and `next_res` 0, as EmuTOS leaves
+/// them (`:470-471`). `col_mask`/`sel_mask` stay the file's one-plane masks
+/// (EmuTOS transforms only the data, `:452-467`). No buffer (`alloc` →
+/// `None`) means every `mainlist` is 0 — the icons draw mono, the load goes
+/// on (`:441-449`, at resource granularity). Returns the buffer for the
+/// descriptor, all-zero when there is none.
+///
+/// A blob older than [`NRSC_VER_CICON`] has no arrays and nothing happens.
+///
+/// # Safety
+/// `access_base` must point at a blob whose header held up
+/// ([`header_is_sound`]) and that has been relocated onto `target_base`.
+unsafe fn fix_cicons(
+    access_base: *mut u8,
+    target_base: u64,
+    abi: Abi,
+    device: &mut dyn FnMut() -> CiconDevice,
+    alloc: &mut dyn FnMut(usize) -> Option<(u64, u64)>,
+) -> CiconBuf {
+    // SAFETY: caller guarantees a validated, relocated blob.
+    let h = unsafe { &*(access_base as *const NrscHeader) };
+    if h.version < NRSC_VER_CICON || h.n_cib == 0 {
+        return CiconBuf::default();
+    }
+    // The device is asked only now — a blob without colour icons never
+    // touches it (the plane count and palette are the backend's).
+    let dev = &device();
+    let ps = ptr_size(abi);
+    let (cib, ib) = match abi {
+        Abi::Ilp32 => (CICONBLK_SIZE_ILP32, ICONBLK_SIZE_ILP32),
+        Abi::Lp64 => (CICONBLK_SIZE, ICONBLK_SIZE),
+    };
+    // Per block: the record, the chosen variant, and the icon's geometry in
+    // words per row / rows — `w/16` and `h`, EmuTOS's `data_size =
+    // w/8 * gl_nplanes * h` bytes being `wd * 16 * h` 16-bit pixels for the
+    // 16-plane device form (`:417`).
+    let block = |i: usize| -> (*mut u8, Option<(*mut u8, u64)>, usize, usize) {
+        // SAFETY: record `i` of the bounded CICONBLK array.
+        let rec = unsafe { access_base.add(h.off_cib as usize + i * cib) };
+        // SAFETY: `ib_wicon`/`ib_hicon` are the 6th/7th ICONBLK WORDs.
+        let (wicon, hicon) = unsafe { (rd16(rec.add(3 * ps + 10)) as i16, rd16(rec.add(3 * ps + 12)) as i16) };
+        // SAFETY: `mainlist` follows the ICONBLK head.
+        let first = unsafe { rd_ptr(rec.add(ib), abi) };
+        // SAFETY: validated chain.
+        let chosen = unsafe { best_match(access_base, target_base, abi, first, dev.planes) };
+        (rec, chosen, wicon.max(0) as usize / 16, hicon.max(0) as usize)
+    };
+    // Pass 1: how much device form is needed (`:421-426`, `:436`, summed).
+    let mut need = 0usize;
+    for i in 0..h.n_cib as usize {
+        let (_, chosen, wd, rows) = block(i);
+        if let Some((rec, _)) = chosen {
+            let bytes = wd * 16 * rows * 2;
+            // SAFETY: `sel_data` is the third pointer field.
+            let sel = unsafe { rd_ptr(rec.add(3 * ps), abi) } != 0;
+            need += if sel { 2 * bytes } else { bytes };
+        }
+    }
+    let buf = if need == 0 { None } else { alloc(need) };
+    let xf = CiconXform { dev, rev: dev.rev_map_col() };
+    // Pass 2: choose, transform, patch.
+    let mut cursor = 0usize;
+    for i in 0..h.n_cib as usize {
+        let (rec, chosen, wd, rows) = block(i);
+        let Some((cic, cic_va)) = chosen.filter(|_| buf.is_some()) else {
+            // Nothing suitable, or no buffer: no colour for this icon
+            // (`ciconblk->mainlist = NULL`, `:411`, `:441`, `:449`).
+            // SAFETY: `mainlist` follows the ICONBLK head.
+            unsafe { wr_ptr(rec.add(ib), abi, 0) };
+            continue;
+        };
+        let (buf_access, buf_target) = buf.unwrap_or_default();
+        // SAFETY: `mainlist` follows the ICONBLK head.
+        unsafe { wr_ptr(rec.add(ib), abi, cic_va) };
+        // SAFETY: a whole CICON record: `num_planes` @0, pointers @ k*ps.
+        let src_planes = unsafe { rd16(cic) as i16 }.max(0) as u32;
+        let field = |k: usize| unsafe { rd_ptr(cic.add(k * ps), abi) };
+        let to_access = |va: u64| unsafe { access_base.add(va.wrapping_sub(target_base) as usize) as *const u8 };
+        let (col_data, col_mask, sel_data, sel_mask) = (field(1), field(2), field(3), field(4));
+        let bytes = wd * 16 * rows * 2;
+        // SAFETY: the rasters were bounds-checked against the blob; the
+        // destination is inside the `need`-byte buffer.
+        unsafe {
+            transform_cicon(
+                to_access(col_data),
+                to_access(col_mask),
+                src_planes,
+                wd,
+                rows,
+                &xf,
+                (buf_access as usize + cursor) as *mut u16,
+            );
+            wr_ptr(cic.add(ps), abi, buf_target + cursor as u64);
+        }
+        cursor += bytes;
+        if sel_data != 0 {
+            // SAFETY: as above, `selbuf = colbuf + data_size` (`:455`).
+            unsafe {
+                transform_cicon(
+                    to_access(sel_data),
+                    to_access(sel_mask),
+                    src_planes,
+                    wd,
+                    rows,
+                    &xf,
+                    (buf_access as usize + cursor) as *mut u16,
+                );
+                wr_ptr(cic.add(3 * ps), abi, buf_target + cursor as u64);
+            }
+            cursor += bytes;
+        }
+        // SAFETY: `num_planes` @0 (`:470`, "neatness only"), `next_res` @5*ps (`:471`).
+        unsafe {
+            (cic as *mut i16).write_unaligned(dev.planes);
+            wr_ptr(cic.add(CICON_PTR_FIELDS * ps), abi, 0);
+        }
+    }
+    match buf {
+        Some((access, _)) => CiconBuf { access, len: need },
+        None => CiconBuf::default(),
+    }
+}
+
+/// Release a device-form buffer the **kernel heap** provided ([`kernel_cicon_alloc`]).
+///
+/// # Safety
+/// `buf` must be one returned by [`kernel_cicon_alloc`] and not yet freed.
+unsafe fn kernel_cicon_free(buf: CiconBuf) {
+    if buf.access != 0 && buf.len != 0 {
+        // SAFETY: the layout `kernel_cicon_alloc` used.
+        unsafe {
+            alloc::alloc::dealloc(
+                buf.access as *mut u8,
+                alloc::alloc::Layout::from_size_align_unchecked(buf.len, CICON_BUF_ALIGN),
+            )
+        };
+    }
+}
+
+/// Alignment of a kernel-heap device-form buffer (`u16` pixels; 8 keeps the
+/// layout trivially valid for any pixel width).
+const CICON_BUF_ALIGN: usize = 8;
+
+/// The device-form buffer of the in-place kernel path ([`relocate_and_register`]):
+/// the kernel heap, reachable at one address (EmuTOS `dos_alloc_anyram`).
+fn kernel_cicon_alloc(bytes: usize) -> Option<(u64, u64)> {
+    let layout = alloc::alloc::Layout::from_size_align(bytes, CICON_BUF_ALIGN).ok()?;
+    if layout.size() == 0 {
+        return None;
+    }
+    // SAFETY: a non-zero layout.
+    let p = unsafe { alloc::alloc::alloc_zeroed(layout) };
+    if p.is_null() {
+        return None;
+    }
+    Some((p as u64, p as u64))
+}
+
 /// Size of one native `Object` record (for `R_OBJECT` indexing / tools).
 pub const OBJECT_SIZE: usize = size_of::<Object>();
 
@@ -2356,7 +3127,7 @@ mod tests {
     /// the same static input.
     static RSC_LOCK: Mutex<()> = Mutex::new(());
 
-    fn lock<'a>() -> MutexGuard<'a, ()> {
+    pub(super) fn lock<'a>() -> MutexGuard<'a, ()> {
         RSC_LOCK.lock().unwrap_or_else(|e| e.into_inner())
     }
 
@@ -2377,13 +3148,13 @@ mod tests {
     /// ICONBLK / BITBLK records are `repr(C)` structs the loader dereferences
     /// in place, so the buffer that holds them must be at least as aligned as
     /// a pool page or [`RSC_BUF`] is — a plain `Vec<u8>` is not.
-    struct Blob {
+    pub(super) struct Blob {
         words: Vec<u64>,
-        len: usize,
+        pub(super) len: usize,
     }
 
     impl Blob {
-        fn new(blob: &[u8]) -> Self {
+        pub(super) fn new(blob: &[u8]) -> Self {
             let mut words = vec![0u64; blob.len().div_ceil(8)];
             // SAFETY: `words` holds at least `blob.len()` bytes.
             unsafe {
@@ -2395,10 +3166,10 @@ mod tests {
             }
             Self { words, len: blob.len() }
         }
-        fn as_mut_ptr(&mut self) -> *mut u8 {
+        pub(super) fn as_mut_ptr(&mut self) -> *mut u8 {
             self.words.as_mut_ptr() as *mut u8
         }
-        fn bytes(&self) -> &[u8] {
+        pub(super) fn bytes(&self) -> &[u8] {
             // SAFETY: `words` holds `len` initialised bytes.
             unsafe { std::slice::from_raw_parts(self.words.as_ptr() as *const u8, self.len) }
         }
@@ -2414,7 +3185,7 @@ mod tests {
         let p = buf.as_mut_ptr();
         // SAFETY: `buf` holds `len` readable/writable bytes; the core
         // validates the header against `len` before touching anything.
-        let desc = unsafe { relocate_and_register_core(p, len, target, Abi::Lp64) }
+        let desc = unsafe { relocate_and_register_core(p, len, target, Abi::Lp64, &mut kernel_cicon_alloc) }
             .expect("the blob must relocate");
         let mut global = [0i16; 16];
         // SAFETY: a 32-byte caller array, more than the 30-byte AESGLOBAL.
@@ -2483,7 +3254,7 @@ mod tests {
         let len = buf.len;
         let p = buf.as_mut_ptr();
         // SAFETY: `buf` holds `len` readable/writable bytes.
-        let desc = unsafe { relocate_and_register_core(p, len, APP_VA, Abi::Lp64) }
+        let desc = unsafe { relocate_and_register_core(p, len, APP_VA, Abi::Lp64, &mut kernel_cicon_alloc) }
             .expect("the blob must relocate");
         let mut global = [0x5A5Ai16; 16];
         // SAFETY: a 32-byte caller array.
@@ -2534,7 +3305,7 @@ mod tests {
         let mut buf = Blob::new(&blob);
         let len = buf.len;
         // SAFETY: `buf` holds `len` readable/writable bytes.
-        let desc = unsafe { relocate_and_register_core(buf.as_mut_ptr(), len, APP_VA, Abi::Ilp32) }
+        let desc = unsafe { relocate_and_register_core(buf.as_mut_ptr(), len, APP_VA, Abi::Ilp32, &mut kernel_cicon_alloc) }
             .expect("the ILP32 blob must relocate");
         assert_eq!(desc.ptr_size, 4, "ILP32 slots are 4 bytes");
         let mut global = [0i16; 16];
@@ -2631,7 +3402,7 @@ mod tests {
         let mut buf = Blob::new(blob);
         let len = blob.len();
         // SAFETY: `buf` holds `len` writable bytes for the whole call.
-        let desc = unsafe { relocate_and_register_core(buf.as_mut_ptr(), len, APP_VA, Abi::Ilp32) }
+        let desc = unsafe { relocate_and_register_core(buf.as_mut_ptr(), len, APP_VA, Abi::Ilp32, &mut kernel_cicon_alloc) }
             .expect("the ILP32 blob must relocate");
         assert_eq!(desc.obj_size, OBJECT_SIZE_ILP32);
         let off_obj = u32::from_le_bytes(blob[20..24].try_into().unwrap()) as usize;
@@ -2817,9 +3588,9 @@ mod selector_tests {
             unsafe { std::ptr::copy_nonoverlapping(FSEL.as_ptr(), p, FSEL.len()) };
             // SAFETY: `p` addresses `FSEL.len()` writable bytes that live as
             // long as this `Named`; single test thread under `LOCK`.
-            let desc = unsafe { relocate_and_register_core(p, FSEL.len(), target, Abi::Lp64) }
+            let desc = unsafe { relocate_and_register_core(p, FSEL.len(), target, Abi::Lp64, &mut kernel_cicon_alloc) }
                 .expect("the blob must relocate");
-            assert!(unsafe { register(caller_pid(), 0, desc) }, "room in the resource lists");
+            assert!(unsafe { register(caller_pid(), 0, 0, desc) }, "room in the resource lists");
             // SAFETY: a 32-byte caller array.
             unsafe { report_load(global.as_mut_ptr(), &desc) };
             Named { words, target }
@@ -3081,5 +3852,535 @@ mod selector_tests {
         let mut zero = Global::default();
         assert_eq!(rsrc_free(&mut zero), 1, "the unnamed load is freed through its zero");
         assert_eq!(rsrc_free(&mut zero), 0);
+    }
+}
+
+#[cfg(test)]
+mod cicon_tests {
+    //! A41 — the colour-icon load path: a hand-built NRSC v11 blob (two
+    //! CICONBLKs, one with a 1-plane and a 4-plane variant, one with a single
+    //! 8-plane variant) through the real relocation core and
+    //! [`fix_cicons`], with the device's plane count varied so every branch
+    //! of `best_match` (`gemrslib.c:267-282`) is taken, and the transformed
+    //! pixels compared against the per-pixel rule of `expand_cicondata` +
+    //! `transform_cicon` (`:284-343`, `:348-396`). Spec:
+    //! `docs/api/aes/resource-fileselector.md` §5.6–§5.8.
+    //!
+    //! Like [`super::tests`], these use [`relocate_and_register_core`]'s
+    //! access/target split the way `load_into_user` does: the blob is the
+    //! test's buffer, relocated onto a user VA, and the device-form buffer is
+    //! a second test buffer handed in through the allocator closure.
+
+    use super::*;
+
+    /// The user VA shape `load_into_user` hands the core (see `tests`).
+    const APP_VA: u64 = 0x0040_0000;
+    /// Where the device-form buffer is "mapped" for the app.
+    const BUF_VA: u64 = 0x0050_0000;
+
+    const G_BOX_T: u16 = G_BOX;
+    const HDR: usize = size_of::<NrscHeader>(); // 84
+    const W: i16 = 16;
+    const H: i16 = 16;
+    const MONO_WORDS: usize = (W as usize / 16) * H as usize; // 16
+
+    /// Section offsets of the fixture, derived the way `mkrsc.py` derives
+    /// them: header, an 8-byte tree slot padded to 8, three OBJECTs, no
+    /// TEDINFO/BITBLK/ICONBLK, two CICONBLKs, three CICONs, no frstr/frimg,
+    /// then the rasters.
+    const OFF_TRI: usize = HDR; // 84
+    const OFF_OBJ: usize = 96; // 84 + 8, padded to 8
+    const N_OBJ: usize = 3;
+    const OFF_CIB: usize = OFF_OBJ + N_OBJ * OBJECT_SIZE; // 192
+    const N_CIB: usize = 2;
+    const OFF_CIC: usize = OFF_CIB + N_CIB * CICONBLK_SIZE; // 304
+    const N_CIC: usize = 3;
+    const OFF_DATA: usize = OFF_CIC + N_CIC * CICON_SIZE; // 448
+
+    /// Raster offsets inside the data section, in interning order.
+    const R_MONO0_MASK: usize = OFF_DATA;
+    const R_MONO0_DATA: usize = R_MONO0_MASK + MONO_WORDS * 2;
+    const R_TEXT0: usize = R_MONO0_DATA + MONO_WORDS * 2; // 12 bytes
+    const R_A_DATA: usize = R_TEXT0 + 12; // 1 plane
+    const R_A_MASK: usize = R_A_DATA + MONO_WORDS * 2;
+    const R_B_DATA: usize = R_A_MASK + MONO_WORDS * 2; // 4 planes
+    const R_B_MASK: usize = R_B_DATA + MONO_WORDS * 2 * 4;
+    const R_B_SEL: usize = R_B_MASK + MONO_WORDS * 2; // 4 planes
+    const R_B_SELMASK: usize = R_B_SEL + MONO_WORDS * 2 * 4;
+    const R_MONO1_MASK: usize = R_B_SELMASK + MONO_WORDS * 2;
+    const R_MONO1_DATA: usize = R_MONO1_MASK + MONO_WORDS * 2;
+    const R_TEXT1: usize = R_MONO1_DATA + MONO_WORDS * 2;
+    const R_C_DATA: usize = R_TEXT1 + 12; // 8 planes
+    const R_C_MASK: usize = R_C_DATA + MONO_WORDS * 2 * 8;
+    const TOTAL: usize = R_C_MASK + MONO_WORDS * 2;
+
+    fn put16(b: &mut [u8], off: usize, v: u16) {
+        b[off..off + 2].copy_from_slice(&v.to_le_bytes());
+    }
+    fn put32(b: &mut [u8], off: usize, v: u32) {
+        b[off..off + 4].copy_from_slice(&v.to_le_bytes());
+    }
+    fn put64(b: &mut [u8], off: usize, v: u64) {
+        b[off..off + 8].copy_from_slice(&v.to_le_bytes());
+    }
+    fn get64(b: &[u8], off: usize) -> u64 {
+        u64::from_le_bytes(b[off..off + 8].try_into().unwrap())
+    }
+    fn get16(b: &[u8], off: usize) -> u16 {
+        u16::from_le_bytes(b[off..off + 2].try_into().unwrap())
+    }
+
+    /// Plane `p` of variant B / its SELECTED image (4 planes): plane 0 = the
+    /// left 8 columns, plane 1 = the top 8 rows, planes 2/3 = every row for
+    /// the SELECTED image only — so pixel indices 0, 1, 2, 3 (col) and 12+
+    /// (sel) all occur, and the mask (rows 0..12) cuts the bottom off.
+    fn plane_b(p: usize, sel: bool, r: usize) -> u16 {
+        match p {
+            0 => 0xFF00,
+            1 => {
+                if r < 8 {
+                    0xFFFF
+                } else {
+                    0
+                }
+            }
+            _ => {
+                if sel {
+                    0xFFFF
+                } else {
+                    0
+                }
+            }
+        }
+    }
+    fn mask_b(r: usize) -> u16 {
+        if r < 12 {
+            0xFFFF
+        } else {
+            0
+        }
+    }
+    /// Variant A (1 plane): a diagonal.
+    fn plane_a(r: usize) -> u16 {
+        0x8000 >> r
+    }
+    /// Variant C (8 planes, block 1): all planes set on every pixel — index
+    /// 255 everywhere under a full mask.
+    fn plane_c(_p: usize, _r: usize) -> u16 {
+        0xFFFF
+    }
+
+    /// The fixture: an NRSC v11 (LP64) blob.
+    fn blob() -> Vec<u8> {
+        let mut b = vec![0u8; TOTAL];
+        b[0..4].copy_from_slice(b"NRSC");
+        let hdr = [
+            NRSC_VER_CICON, // version
+            1,              // n_trees
+            N_OBJ as u32,
+            OFF_TRI as u32,
+            OFF_OBJ as u32,
+            TOTAL as u32,
+            OFF_DATA as u32, // off_frstr (empty)
+            0,
+            OFF_DATA as u32, // off_frimg (empty)
+            0,
+            OFF_CIB as u32, // off_ted (empty)
+            0,
+            OFF_CIB as u32, // off_ib (empty)
+            0,
+            OFF_CIB as u32, // off_bb (empty)
+            0,
+            OFF_CIB as u32,
+            N_CIB as u32,
+            OFF_CIC as u32,
+            N_CIC as u32,
+        ];
+        for (i, v) in hdr.iter().enumerate() {
+            put32(&mut b, 4 + i * 4, *v);
+        }
+        put64(&mut b, OFF_TRI, OFF_OBJ as u64); // tree 0 → object 0
+        // OBJECTs: root G_BOX, two G_CICONs whose ob_spec is the CICONBLK's
+        // byte offset (what the converter turns EmuTOS's table index into).
+        let obj = |b: &mut [u8], i: usize, next: i16, head: i16, tail: i16, ty: u16, spec: u64| {
+            let o = OFF_OBJ + i * OBJECT_SIZE;
+            put16(b, o, next as u16);
+            put16(b, o + 2, head as u16);
+            put16(b, o + 4, tail as u16);
+            put16(b, o + 6, ty);
+            put64(b, o + 16, spec);
+        };
+        obj(&mut b, 0, -1, 1, 2, G_BOX_T, 0x0001_1100);
+        obj(&mut b, 1, 2, -1, -1, G_CICON, OFF_CIB as u64);
+        obj(&mut b, 2, 0, -1, -1, G_CICON, (OFF_CIB + CICONBLK_SIZE) as u64);
+        // CICONBLK 0: 16×16, label "ICON0", mainlist → CICON A (→ B).
+        let cib = |b: &mut [u8], i: usize, mask: usize, data: usize, text: usize, mainlist: u64| {
+            let o = OFF_CIB + i * CICONBLK_SIZE;
+            put64(b, o, mask as u64);
+            put64(b, o + 8, data as u64);
+            put64(b, o + 16, text as u64);
+            let words: [i16; 11] = [0x1041, 0, 0, 0, 0, W, H, 0, H, 72, 8];
+            for (k, w) in words.iter().enumerate() {
+                put16(b, o + 24 + k * 2, *w as u16);
+            }
+            put64(b, o + ICONBLK_SIZE, mainlist);
+        };
+        cib(&mut b, 0, R_MONO0_MASK, R_MONO0_DATA, R_TEXT0, OFF_CIC as u64);
+        cib(&mut b, 1, R_MONO1_MASK, R_MONO1_DATA, R_TEXT1, (OFF_CIC + 2 * CICON_SIZE) as u64);
+        let cic = |b: &mut [u8], i: usize, planes: i16, cd: usize, cm: usize, sd: usize, sm: usize, next: u64| {
+            let o = OFF_CIC + i * CICON_SIZE;
+            put16(b, o, planes as u16);
+            put64(b, o + 8, cd as u64);
+            put64(b, o + 16, cm as u64);
+            put64(b, o + 24, sd as u64);
+            put64(b, o + 32, sm as u64);
+            put64(b, o + 40, next);
+        };
+        cic(&mut b, 0, 1, R_A_DATA, R_A_MASK, 0, 0, (OFF_CIC + CICON_SIZE) as u64);
+        cic(&mut b, 1, 4, R_B_DATA, R_B_MASK, R_B_SEL, R_B_SELMASK, 0);
+        cic(&mut b, 2, 8, R_C_DATA, R_C_MASK, 0, 0, 0);
+        // Rasters.
+        for r in 0..H as usize {
+            put16(&mut b, R_MONO0_MASK + r * 2, 0xFFFF);
+            put16(&mut b, R_MONO0_DATA + r * 2, 0x0FF0);
+            put16(&mut b, R_MONO1_MASK + r * 2, 0xFFFF);
+            put16(&mut b, R_MONO1_DATA + r * 2, 0xF00F);
+            put16(&mut b, R_A_DATA + r * 2, plane_a(r));
+            put16(&mut b, R_A_MASK + r * 2, 0xFFFF);
+            for p in 0..4 {
+                put16(&mut b, R_B_DATA + (p * MONO_WORDS + r) * 2, plane_b(p, false, r));
+                put16(&mut b, R_B_SEL + (p * MONO_WORDS + r) * 2, plane_b(p, true, r));
+            }
+            put16(&mut b, R_B_MASK + r * 2, mask_b(r));
+            put16(&mut b, R_B_SELMASK + r * 2, mask_b(r));
+            for p in 0..8 {
+                put16(&mut b, R_C_DATA + (p * MONO_WORDS + r) * 2, plane_c(p, r));
+            }
+            put16(&mut b, R_C_MASK + r * 2, 0xFFFF);
+        }
+        b[R_TEXT0..R_TEXT0 + 5].copy_from_slice(b"ICON0");
+        b[R_TEXT1..R_TEXT1 + 5].copy_from_slice(b"ICON1");
+        b
+    }
+
+    /// A device whose palette makes every pen recognisable: pen `n` ↦
+    /// `0x0100 + n` (bit 5 clear, as `set_color16` guarantees).
+    fn device(planes: i16, num_colors: u16) -> CiconDevice {
+        let mut palette = [0u16; 256];
+        for (n, p) in palette.iter_mut().enumerate() {
+            *p = 0x0100 | (n as u16 & 0x00DF) | ((n as u16 & 0x20) << 8);
+        }
+        CiconDevice { planes, num_colors, palette }
+    }
+
+    /// The colour EmuTOS ends up with for hardware index `n` on `dev`.
+    fn colour_of(dev: &CiconDevice, n: usize) -> u16 {
+        dev.palette[dev.rev_map_col()[n] as usize]
+    }
+
+    /// The relocated blob and its device-form buffer (or none).
+    struct Loaded2 {
+        blob: super::tests::Blob,
+        buf: Vec<u16>,
+        result: CiconBuf,
+    }
+
+    /// Relocate the fixture onto `APP_VA` at LP64 width, run `fix_cicons`
+    /// for `dev` with a buffer of `cap` bytes on offer (`None` = the
+    /// allocation fails), and return everything.
+    fn load(dev: CiconDevice, cap: Option<usize>) -> Loaded2 {
+        let mut blob = super::tests::Blob::new(&blob());
+        let len = blob.len;
+        let p = blob.as_mut_ptr();
+        // The core itself asks `CiconDevice::live()` (no host here: 4 planes)
+        // through `relocate_and_register_core`; to vary the device, drive the
+        // two halves the core runs, in its order.
+        assert!(unsafe { relocate_blob_core(p, len, APP_VA) }, "the fixture must relocate");
+        let mut buf: Vec<u16> = Vec::new();
+        let mut alloc = |bytes: usize| -> Option<(u64, u64)> {
+            let cap = cap?;
+            assert!(bytes <= cap, "asked for {bytes} bytes, the test offers {cap}");
+            buf = vec![0u16; bytes / 2];
+            Some((buf.as_mut_ptr() as u64, BUF_VA))
+        };
+        let result = unsafe { fix_cicons(p, APP_VA, Abi::Lp64, &mut || dev, &mut alloc) };
+        Loaded2 { blob, buf, result }
+    }
+
+    fn mainlist(l: &Loaded2, block: usize) -> u64 {
+        get64(l.blob.bytes(), OFF_CIB + block * CICONBLK_SIZE + ICONBLK_SIZE)
+    }
+    fn cicon_va(i: usize) -> u64 {
+        APP_VA + (OFF_CIC + i * CICON_SIZE) as u64
+    }
+    fn cicon_field(l: &Loaded2, i: usize, k: usize) -> u64 {
+        get64(l.blob.bytes(), OFF_CIC + i * CICON_SIZE + k * 8)
+    }
+    /// Device-form pixel `(c, r)` of the image at buffer offset `off`.
+    fn px(l: &Loaded2, off: u64, c: usize, r: usize) -> u16 {
+        let base = (off - BUF_VA) as usize / 2;
+        l.buf[base + r * W as usize + c]
+    }
+
+    /// `best_match`, exact branch: on a 4-plane device block 0's 4-plane
+    /// variant B wins over A although A comes first (`:274-275`), and block
+    /// 1's 8-plane variant is "too many planes" (`:272`) → mono.
+    #[test]
+    fn best_match_takes_the_exact_variant_and_refuses_a_deeper_one() {
+        let l = load(device(4, 16), Some(1 << 16));
+        assert_eq!(mainlist(&l, 0), cicon_va(1), "block 0: the 4-plane variant B");
+        assert_eq!(mainlist(&l, 1), 0, "block 1: an 8-plane variant on a 4-plane device → mono");
+        assert_eq!(cicon_field(&l, 1, 5), 0, "next_res is cleared (`:471`)");
+        assert_eq!(get16(l.blob.bytes(), OFF_CIC + CICON_SIZE), 4, "num_planes = gl_nplanes (`:470`)");
+        // Both images of B (col + sel) in one buffer, sel right behind col
+        // (`selbuf = colbuf + data_size`, `:455`).
+        let bytes = (W as usize) * (H as usize) * 2;
+        assert_eq!(l.result.len, 2 * bytes);
+        assert_eq!(cicon_field(&l, 1, 1), BUF_VA, "col_data → the buffer");
+        assert_eq!(cicon_field(&l, 1, 3), BUF_VA + bytes as u64, "sel_data → its second half");
+        assert_eq!(cicon_field(&l, 1, 2), APP_VA + R_B_MASK as u64, "col_mask stays the file's");
+        assert_eq!(cicon_field(&l, 1, 4), APP_VA + R_B_SELMASK as u64, "sel_mask stays the file's");
+    }
+
+    /// The exact-match transform: no expansion, no masking — each pixel's
+    /// plane bits are its hardware index (`transform_cicon` without
+    /// `expand_cicondata`), resolved through the palette by `REV_MAP_COL`.
+    #[test]
+    fn an_exact_match_is_transformed_without_expansion_or_masking() {
+        let dev = device(4, 16);
+        let l = load(dev, Some(1 << 16));
+        let col = cicon_field(&l, 1, 1);
+        let sel = cicon_field(&l, 1, 3);
+        for r in 0..H as usize {
+            for c in 0..W as usize {
+                let bit = 0x8000u16 >> c;
+                let mut idx = 0usize;
+                for p in 0..4 {
+                    if plane_b(p, false, r) & bit != 0 {
+                        idx |= 1 << p;
+                    }
+                }
+                // Outside the mask the index is still what the planes say
+                // (no masking on an exact match).
+                assert_eq!(px(&l, col, c, r), colour_of(&dev, idx), "col ({c},{r}) index {idx}");
+                let mut sidx = 0usize;
+                for p in 0..4 {
+                    if plane_b(p, true, r) & bit != 0 {
+                        sidx |= 1 << p;
+                    }
+                }
+                assert_eq!(px(&l, sel, c, r), colour_of(&dev, sidx), "sel ({c},{r}) index {sidx}");
+            }
+        }
+        // Index 15 → REV_MAP_COL[15] on a 16-colour device = pen 1 (MAP_COL[1]
+        // = numcolors - 1 = 15): the classic "15 is black" of a 16-colour icon.
+        assert_eq!(px(&l, sel, 0, 0), dev.palette[1]);
+    }
+
+    /// `best_match`, best-lower branch: on a 16-plane device (the live
+    /// backend) block 0 keeps its deepest variant ≤ 16 (B, 4 planes) and
+    /// block 1 its 8-plane one; both are expanded (`expand_cicondata`): the
+    /// AND-of-all-planes fills the added planes, the mask is ANDed into
+    /// every plane, and the index is planes 0..=7 — so a full-index pixel
+    /// (15 of 4 planes, 255 of 8) reaches register 255 → pen 1, a masked-out
+    /// pixel register 0 → pen 0 (white), everything else its own index.
+    #[test]
+    fn a_shallower_variant_is_expanded_to_the_device_depth() {
+        let dev = device(16, 256);
+        let l = load(dev, Some(1 << 16));
+        assert_eq!(mainlist(&l, 0), cicon_va(1), "block 0: the deepest variant ≤ 16 is B");
+        assert_eq!(mainlist(&l, 1), cicon_va(2), "block 1: its 8-plane variant");
+        assert_eq!(get16(l.blob.bytes(), OFF_CIC + CICON_SIZE), 16, "num_planes = gl_nplanes");
+        let rev = dev.rev_map_col();
+        assert_eq!(rev[255], 1, "register 255 is pen 1 on a 256-colour device");
+        assert_eq!(rev[0], 0);
+        let col = cicon_field(&l, 1, 1);
+        let sel = cicon_field(&l, 1, 3);
+        for r in 0..H as usize {
+            for c in 0..W as usize {
+                let bit = 0x8000u16 >> c;
+                let masked = mask_b(r) & bit != 0;
+                let mut idx = 0usize;
+                for p in 0..4 {
+                    if plane_b(p, false, r) & bit != 0 {
+                        idx |= 1 << p;
+                    }
+                }
+                let want = if !masked {
+                    colour_of(&dev, 0)
+                } else if idx == 15 {
+                    colour_of(&dev, 255)
+                } else {
+                    colour_of(&dev, idx)
+                };
+                assert_eq!(px(&l, col, c, r), want, "col ({c},{r}) index {idx} masked {masked}");
+                let mut sidx = 0usize;
+                for p in 0..4 {
+                    if plane_b(p, true, r) & bit != 0 {
+                        sidx |= 1 << p;
+                    }
+                }
+                let want = if !masked {
+                    colour_of(&dev, 0)
+                } else if sidx == 15 {
+                    colour_of(&dev, 255)
+                } else {
+                    colour_of(&dev, sidx)
+                };
+                assert_eq!(px(&l, sel, c, r), want, "sel ({c},{r}) index {sidx} masked {masked}");
+            }
+        }
+        // Block 1: 8 planes all set under a full mask → index 255 everywhere.
+        let c1 = cicon_field(&l, 2, 1);
+        for r in 0..H as usize {
+            for c in 0..W as usize {
+                assert_eq!(px(&l, c1, c, r), colour_of(&dev, 255), "block 1 ({c},{r})");
+            }
+        }
+        // The mask of the SELECTED pixel at (0,0): index 15 → black; the
+        // pixel at (0,12) is outside the mask → white — the two ends of the
+        // expansion.
+        assert_eq!(px(&l, sel, 0, 0), dev.palette[1]);
+        assert_eq!(px(&l, sel, 0, 12), dev.palette[0]);
+    }
+
+    /// `best_match`, the lower-only and none branches on a 2-plane device:
+    /// block 0 keeps A (1 plane, the only one ≤ 2), block 1 has nothing ≤ 2
+    /// → `mainlist` 0. Only A's image is transformed (the buffer is sized
+    /// for it alone).
+    #[test]
+    fn with_no_exact_match_the_deepest_shallower_variant_wins_or_none() {
+        let dev = device(2, 4);
+        let l = load(dev, Some(1 << 16));
+        assert_eq!(mainlist(&l, 0), cicon_va(0), "block 0: A, the only variant ≤ 2 planes");
+        assert_eq!(mainlist(&l, 1), 0, "block 1: nothing ≤ 2 planes → mono");
+        assert_eq!(l.result.len, (W as usize) * (H as usize) * 2, "one image, no SELECTED one");
+        let col = cicon_field(&l, 0, 1);
+        assert_eq!(col, BUF_VA);
+        // 1 plane expanded to 2: the diagonal pixel has index 1 = all source
+        // planes set → plane 1 is set too → index 3; the rest 0.
+        for r in 0..H as usize {
+            for c in 0..W as usize {
+                let on = plane_a(r) & (0x8000u16 >> c) != 0;
+                let want = colour_of(&dev, if on { 3 } else { 0 });
+                assert_eq!(px(&l, col, c, r), want, "({c},{r})");
+            }
+        }
+    }
+
+    /// `transform_all_cicons`'s allocation failure (`:441-449`): no buffer,
+    /// no colour — every `mainlist` is 0 and the CICON records keep their
+    /// file data untouched, the load itself goes on.
+    #[test]
+    fn without_a_buffer_every_icon_falls_back_to_mono() {
+        let l = load(device(16, 256), None);
+        assert_eq!(mainlist(&l, 0), 0);
+        assert_eq!(mainlist(&l, 1), 0);
+        assert_eq!(l.result.len, 0);
+        assert_eq!(l.result.access, 0);
+        assert_eq!(cicon_field(&l, 1, 1), APP_VA + R_B_DATA as u64, "col_data untouched");
+        assert_eq!(get16(l.blob.bytes(), OFF_CIC + CICON_SIZE), 4, "num_planes untouched");
+    }
+
+    /// Through the whole core, as `load_into_user` drives it: the descriptor
+    /// resolves `R_OBJECT` of a G_CICON to an OBJECT whose relocated
+    /// `ob_spec` addresses the CICONBLK — whose first bytes are the mono
+    /// ICONBLK head (`obdefs.h:213-217`), what today's mono drawer and
+    /// TeraDesk's `ob_spec.ciconblk->monoblk` read.
+    #[test]
+    fn r_object_of_a_g_cicon_leads_to_the_mono_iconblk_head() {
+        let _g = super::tests::lock();
+        let mut blob = super::tests::Blob::new(&blob());
+        let len = blob.len;
+        let p = blob.as_mut_ptr();
+        let mut buf: Vec<u16> = Vec::new();
+        let mut alloc = |bytes: usize| -> Option<(u64, u64)> {
+            buf = vec![0u16; bytes / 2];
+            Some((buf.as_mut_ptr() as u64, BUF_VA))
+        };
+        let desc = unsafe { relocate_and_register_core(p, len, APP_VA, Abi::Lp64, &mut alloc) }
+            .expect("the fixture must load");
+        let slot = unsafe { get_addr(&desc, R_OBJECT, 1) }.expect("object 1 exists");
+        assert_eq!(slot.target, APP_VA + (OFF_OBJ + OBJECT_SIZE) as u64);
+        // Read the OBJECT through the kernel alias, follow ob_spec.
+        let spec = unsafe { (slot.access as *const u8).add(OB_SPEC_OFF_LP64).cast::<u64>().read_unaligned() };
+        assert_eq!(spec, APP_VA + OFF_CIB as u64, "ob_spec = the CICONBLK's user VA");
+        // The CICONBLK begins with the ICONBLK: three pointers, then the
+        // eleven WORDs (`ib_char` first, `ib_wicon`/`ib_hicon` sixth/seventh).
+        let head = (spec - APP_VA) as usize;
+        assert_eq!(get64(blob.bytes(), head), APP_VA + R_MONO0_MASK as u64, "ib_pmask, relocated");
+        assert_eq!(get64(blob.bytes(), head + 16), APP_VA + R_TEXT0 as u64, "ib_ptext, relocated");
+        assert_eq!(get16(blob.bytes(), head + 24), 0x1041, "ib_char");
+        assert_eq!(get16(blob.bytes(), head + 24 + 10), W as u16, "ib_wicon");
+        assert_eq!(get16(blob.bytes(), head + 24 + 12), H as u16, "ib_hicon");
+        let text = unsafe { core::slice::from_raw_parts(p.add(R_TEXT0), 5) };
+        assert_eq!(text, b"ICON0");
+        // Hostless: `CiconDevice::live()` is 4 planes → B chosen, one buffer.
+        assert_eq!(get64(blob.bytes(), OFF_CIB + ICONBLK_SIZE), cicon_va(1));
+        assert_eq!(desc.cicon.len, (W as usize) * (H as usize) * 4);
+    }
+
+    /// The short-read guard of A38, extended to the colour rasters: a blob
+    /// whose CICON data would run past its declared size is **refused**
+    /// (`rsrc_load` = 0), not relocated up to the point of failure — the
+    /// OBJECTs still hold their file offsets afterwards.
+    #[test]
+    fn a_cicon_whose_raster_runs_past_the_blob_is_refused_untouched() {
+        let mut b = blob();
+        // Shorten the declared size so variant C's mask ends past it.
+        put32(&mut b, 24, (TOTAL - 8) as u32);
+        let mut short = super::tests::Blob::new(&b);
+        let len = short.len;
+        let p = short.as_mut_ptr();
+        assert!(!unsafe { header_is_sound(p, len, Abi::Lp64) });
+        assert!(!unsafe { relocate_blob_core(p, len, APP_VA) });
+        assert_eq!(get64(short.bytes(), OFF_OBJ + OBJECT_SIZE + 16), OFF_CIB as u64, "ob_spec untouched");
+        // A chain link that is not a CICON record, a cycle, and a SELECTED
+        // image without its mask are refused the same way.
+        let refused = |patch: &dyn Fn(&mut Vec<u8>), what: &str| {
+            let mut b = blob();
+            patch(&mut b);
+            let mut bl = super::tests::Blob::new(&b);
+            assert!(!unsafe { header_is_sound(bl.as_mut_ptr(), bl.len, Abi::Lp64) }, "{what}");
+        };
+        refused(&|b| put64(b, OFF_CIB + ICONBLK_SIZE, (OFF_CIC + 7) as u64), "misaligned link");
+        refused(&|b| put64(b, OFF_CIC + 40, OFF_CIC as u64), "cycle A → A");
+        refused(&|b| put64(b, OFF_CIC + CICON_SIZE + 32, 0), "sel_data without sel_mask");
+        refused(&|b| put16(b, OFF_CIC + CICON_SIZE, 17), "17 planes");
+        // And the unmodified fixture holds up.
+        let mut ok = super::tests::Blob::new(&blob());
+        assert!(unsafe { header_is_sound(ok.as_mut_ptr(), ok.len, Abi::Lp64) });
+    }
+
+    /// `REV_MAP_COL` as `init_colors` builds it (`vdi_col.c:736-747`), for
+    /// the 256-colour device: `MAP_COL_ROM` inverted, pen 1 at register 255,
+    /// pen 255 at register 15, the identity from 16 to 254.
+    #[test]
+    fn rev_map_col_matches_emutos_init_colors() {
+        let rev = device(16, 256).rev_map_col();
+        assert_eq!(rev[0], 0);
+        assert_eq!(rev[255], 1);
+        assert_eq!(rev[1], 2);
+        assert_eq!(rev[2], 3);
+        assert_eq!(rev[4], 4);
+        assert_eq!(rev[6], 5);
+        assert_eq!(rev[3], 6);
+        assert_eq!(rev[5], 7);
+        assert_eq!(rev[7], 8);
+        assert_eq!(rev[8], 9);
+        assert_eq!(rev[9], 10);
+        assert_eq!(rev[10], 11);
+        assert_eq!(rev[12], 12);
+        assert_eq!(rev[14], 13);
+        assert_eq!(rev[11], 14);
+        assert_eq!(rev[13], 15);
+        assert_eq!(rev[15], 255);
+        for i in 16..255 {
+            assert_eq!(rev[i], i as u8);
+        }
+        // 16 colours: pen 1 at register 15, nothing above.
+        let rev16 = device(4, 16).rev_map_col();
+        assert_eq!(rev16[15], 1);
+        assert_eq!(rev16[255], 0);
     }
 }

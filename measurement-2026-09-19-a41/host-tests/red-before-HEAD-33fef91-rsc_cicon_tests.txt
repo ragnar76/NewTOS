@@ -1,0 +1,11 @@
+test rsc_cicon_tests::mkrsc_convert_ilp32_carries_the_colour_icons_as_c_structs ... FAILED
+test rsc_cicon_tests::mkrsc_convert_lp64_carries_the_colour_icons_as_c_structs ... FAILED
+test rsc_cicon_tests::teradesk_cicons_rsc_converts_and_fits_rsc_cap ... FAILED
+test rsc_cicon_tests::an_old_format_file_declares_no_colour_icons ... FAILED
+thread 'rsc_cicon_tests::mkrsc_convert_ilp32_carries_the_colour_icons_as_c_structs' (2563776) panicked at tools/xtask/src/rsc_cicon_tests.rs:251:5:
+new-format (CICONBLK) .rsc not supported
+thread 'rsc_cicon_tests::mkrsc_convert_lp64_carries_the_colour_icons_as_c_structs' (2563777) panicked at tools/xtask/src/rsc_cicon_tests.rs:251:5:
+new-format (CICONBLK) .rsc not supported
+thread 'rsc_cicon_tests::teradesk_cicons_rsc_converts_and_fits_rsc_cap' (2563778) panicked at tools/xtask/src/rsc_cicon_tests.rs:396:5:
+thread 'rsc_cicon_tests::an_old_format_file_declares_no_colour_icons' (2563775) panicked at tools/xtask/src/rsc_cicon_tests.rs:378:5:
+test result: FAILED. 0 passed; 4 failed; 0 ignored; 0 measured; 13 filtered out; finished in 0.05s

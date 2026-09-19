@@ -241,10 +241,16 @@ impl VwkExt {
     /// the least-significant bit of green"). Folded MAP_COL (see the struct
     /// docs): the slot index is the VDI pen itself.
     pub fn set_color16(&mut self, colnum: usize, rgb: [i16; 3]) {
-        let r = Self::vdi2fivebits(rgb[0]);
-        let g = Self::vdi2fivebits(rgb[1]);
-        let b = Self::vdi2fivebits(rgb[2]);
-        self.palette[colnum] = (r << 11) | (g << 6) | b;
+        self.palette[colnum] = Self::pack_color16(rgb);
+    }
+
+    /// The pseudo-palette word `set_color16` stores for an `rgb` (each
+    /// component 0..1000, clamped here) — the same quantisation and packing.
+    pub fn pack_color16(rgb: [i16; 3]) -> u16 {
+        let r = Self::vdi2fivebits(rgb[0].clamp(0, 1000));
+        let g = Self::vdi2fivebits(rgb[1].clamp(0, 1000));
+        let b = Self::vdi2fivebits(rgb[2].clamp(0, 1000));
+        (r << 11) | (g << 6) | b
     }
 
     /// The current (5-bit-quantised) colour of pen `colnum`, read back from
@@ -259,6 +265,14 @@ impl VwkExt {
             Self::fivebits2vdi(rgb),
         ]
     }
+}
+
+/// [`VwkExt::pack_color16`] for a caller outside the VDI that builds a
+/// palette table of its own from the device's requested colours the way
+/// `init_wk` seeds a workstation's (the AES resource loader's colour-icon
+/// transform, `aes/resource.rs` `CiconDevice::live`).
+pub fn pack_color16(rgb: [i16; 3]) -> u16 {
+    VwkExt::pack_color16(rgb)
 }
 
 /// Static handle table. Mirrors the `MdArenaCell` idiom: an

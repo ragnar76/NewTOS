@@ -1,0 +1,1 @@
+warning: `tos-api` (lib) generated 81 warnings (run `cargo clippy --fix --lib -p tos-api -- ` to apply 7 suggestions)

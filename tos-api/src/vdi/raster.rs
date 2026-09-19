@@ -597,6 +597,25 @@ pub unsafe fn bb_restore(
     super::mouse::show(backend);
 }
 
+/// AES `gr_colourblit` (`aes/gemgraf.c:642-671`): the Memory→Screen
+/// `vro_cpyfm` of a colour icon's **device-form** image — a `dst.w × dst.h`
+/// buffer of 16-bit RGB565 pixels at `mem` (the memory-MFDB wireformat,
+/// rows `(dst.w + 15) / 16` words wide) — onto the screen at `(dst.x,
+/// dst.y)` with logic op `op` (`S_AND_D` = 1 on the truecolor path,
+/// `gemgraf.c:664-667`), clipped to `clip`. EmuTOS builds the source MFDB
+/// with `gsx_fix(&gl_src, pdata, w/8, h)` (`fd_wdwidth = w/16`) and the
+/// screen as destination; this is [`vro_cpyfm`]'s memory→screen arm for
+/// exactly that pair. No cursor bracket here: the object renderer's
+/// `ob_draw` already holds one.
+///
+/// # Safety
+/// `mem` must address `((dst.w + 15) / 16) * 16 * dst.h` readable `u16`s
+/// (no alignment required) that stay valid for the call.
+pub unsafe fn blit_device_mem(backend: &dyn RasterBackend, mem: *const u16, dst: Rect, op: u8, clip: ClipRect) {
+    let src = Mfdb::device_mem(mem as u64, dst.w, dst.h);
+    mem_to_screen(backend, &src, Rect { x: 0, y: 0, w: dst.w, h: dst.h }, dst.x, dst.y, op, clip);
+}
+
 /// Truecolor `vr_trnfm` branch — a faithful port of EmuTOS `vr_trnfm16`
 /// (`vdi_raster.c:190-256`). Converts a bitmap between **16-bit standard**
 /// form (`fd_stand = 1`: 16 plane-sequential planes, machine-independent)
