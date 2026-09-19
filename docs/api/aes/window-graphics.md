@@ -352,7 +352,14 @@ This is the heart of the window-redraw protocol and the most bug-prone part.
 - `w_owns` (`gemwmlib.c:1230-1241`) walks the `ORECT` list, **intersecting each
   owner rectangle with the window's work area** and skipping rects that clip to
   nothing; it advances `w_rnext` and returns the **first non-empty** clipped
-  rect. When the list is exhausted it returns a rect with **`w=h=0`**.
+  rect. When the list is exhausted it writes **only two words**: `g_w = g_h =
+  0` (`gemwmlib.c:1240`, the sole statement after the loop). `g_x`/`g_y` are
+  **not** reset there — they keep whatever `*poutwds` already held: either the
+  last rect `rc_intersect` wrote before failing (`util/rectfunc.c:72-75` write
+  all four words even on a `FALSE` return) if the loop ran at least once, or
+  the caller's buffer content unchanged if the owner list was already empty on
+  entry. A conforming redraw handler must test `w==0 && h==0` only — `g_x`/
+  `g_y` on the terminating rect have no defined value to read.
 - The application's redraw idiom: `wind_get(h, WF_FIRSTXYWH)`, then repeatedly
   intersect its own dirty rect with the returned piece, draw, and
   `wind_get(h, WF_NEXTXYWH)` **until `w==0 && h==0`**. Each returned rect is a
@@ -361,9 +368,22 @@ This is the heart of the window-redraw protocol and the most bug-prone part.
 - The owner rectangle list itself is built by `newrect`/`mkrect`/`brkrct`
   (`gemwrect.c:64-205`): when window geometry changes, each window's rect is
   broken against every higher window's true rect into up to four
-  (TOP/LEFT/RIGHT/BOTTOM) non-overlapping pieces (`mkpiece`, `gemwrect.c:64-98`);
-  a window that got broken is flagged `VF_BROKEN` (can't be block-moved). The
-  list therefore always describes the **visible, non-overlapping** portions.
+  (TOP/LEFT/RIGHT/BOTTOM) non-overlapping pieces (`mkpiece`, `gemwrect.c:64-98`).
+  **This piece order is fixed and observable — it is not free for NewTOS to
+  choose.** `TOP=0, LEFT=1, RIGHT=2, BOTTOM=3` (`gemwrect.c:30-33`), and
+  `brkrct`'s loop appends a piece to the list only when its `have_piece[]` flag
+  is true, walking `i = 0..3` in exactly that order and skipping any index
+  whose flag is false (`for (i = 0; i < 4; i++) if (have_piece[i]) p =
+  (p->o_link = mkpiece(i, new, r));`, `gemwrect.c:118-122`); the flags
+  themselves are computed at `gemwrect.c:113-116`. Consequently the list's
+  **head** — the rect `WF_FIRSTXYWH` returns — is whichever of TOP, LEFT,
+  RIGHT, BOTTOM the break actually produced first, **not always the TOP
+  piece**: when a covering window's true rect reaches all the way to the
+  broken window's top edge, `have_piece[TOP]` (`gemwrect.c:113`) is false, the
+  TOP node is never created, and the list opens with LEFT, RIGHT, or BOTTOM
+  instead. A window that got broken is flagged `VF_BROKEN` (can't be
+  block-moved). The list therefore always describes the **visible,
+  non-overlapping** portions, in that fixed piece order.
   `w_getxptr`/`w_getsize` (`gemwmlib.c:231-260`) show that the cutting rect for
   a break is the window's **`WS_TRUE`** size — its `WS_CURR` border rect with
   `DROP_SHADOW_SIZE` (2 px, `gemwmlib.c:49`) added to width and height — while
@@ -1009,9 +1029,22 @@ byte of any buffer the caller passed (TASK/A42).
   1834`).
 - **`wind_get(WF_FIRSTXYWH/NEXTXYWH)` rectangle list:** for a window fully
   covering the screen with no higher windows, `WF_FIRSTXYWH` returns the whole
-  work rect and `WF_NEXTXYWH` returns `w=h=0`; with one higher window
-  overlapping, the walk returns the up-to-four non-overlapping pieces then
-  `w=h=0` (`gemwrect.c:mkpiece`, `gemwmlib.c:1230-1241`).
+  work rect and `WF_NEXTXYWH` returns `w=h=0` (only `g_w`/`g_h` are actually
+  zeroed, `gemwmlib.c:1240`); with one higher window overlapping, the walk
+  returns up to four pieces **in the fixed `mkpiece` order TOP, LEFT, RIGHT,
+  BOTTOM** (`gemwrect.c:30-33` defines the order, the `brkrct` loop
+  `gemwrect.c:118-122` appends them in exactly that order and drops any piece
+  whose `have_piece[]` flag is false) then `w=h=0`. The rect each covering
+  window is subtracted with is that window's **`WS_TRUE`** rect — its border
+  rect **plus `DROP_SHADOW_SIZE`** on width and height, not its plain border
+  rect (`w_getsize(WS_TRUE, wh, &gl_mkrect.o_gr)` at `gemwrect.c:190`, and the
+  window's own list-seed rect fetched the same way at `gemwrect.c:203`; the
+  addition itself is `w_getsize`'s `WS_TRUE` branch, `gemwmlib.c:254-262`;
+  `DROP_SHADOW_SIZE = 2`, `gemwmlib.c:49`). Because empty pieces are dropped,
+  `WF_FIRSTXYWH`'s returned rect need not be the TOP piece — if the covering
+  window's `WS_TRUE` rect reaches the broken window's top edge,
+  `have_piece[TOP]` is false and the list opens with LEFT, RIGHT, or BOTTOM
+  instead.
 - **`wind_get(WF_TOP)` needs no handle:** `wind_get(0, WF_TOP)` returns the top
   window handle (or `DESKWH`=0) even for an invalid non-zero handle
   (`gemwmlib.c:1517,1553`).
@@ -1050,8 +1083,10 @@ byte of any buffer the caller passed (TASK/A42).
    an inactive window shows just its (plain) title and box.
 2. **`WF_FIRSTXYWH`/`WF_NEXTXYWH` clip each owner rect to the *work* area** and
    skip empty pieces; the walk **terminates with a `w=h=0` rect**, not an error
-   (`w_owns`, `gemwmlib.c:1230-1241`). A redraw handler must loop on that
-   sentinel.
+   (`w_owns`, `gemwmlib.c:1230-1241`) — but the terminating write sets **only
+   `g_w = g_h = 0`** (`gemwmlib.c:1240`); `g_x`/`g_y` are left unchanged, not
+   zeroed. A redraw handler must loop on `w==0 && h==0` and must not read
+   `g_x`/`g_y` off that sentinel rect.
 3. **`WF_KIND` (1) is not queryable/settable** in this build — both `wm_get`
    and `wm_set` fall through to `return FALSE` (D-053).
 4. **`WF_NEWDESK` (14) is set-only;** `WF_COLOR`/`WF_DCOLOR` use a **3-word
