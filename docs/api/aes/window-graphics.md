@@ -390,6 +390,25 @@ This is the heart of the window-redraw protocol and the most bug-prone part.
   the final clip in `w_owns` is against `WS_WORK` (the inset work rect); the
   drop shadow therefore participates in *cutting other windows' lists* but is
   clipped away again in what a redraw handler actually receives.
+- **Pool size and exhaustion (A21, 2026-09-19).** The pieces of *all* lists
+  are `ORECT` cells from one pool of `NUM_ORECT = NUM_WIN * 10`
+  (`gemlib.h:88`, with the source's own "is this enough???") — **160** at
+  `NUM_WIN = 16` (`sysconf.h:32`, AES ≥ 0x0330), 80 at 8. `or_start`
+  threads them onto the free list once in `wm_init` (`gemwrect.c:40-50`,
+  `gemwmlib.c:1258`); `newrect`/`brkrct` return cells as they rebuild
+  (`gemwrect.c:174-181,124-127`). **EmuTOS has no exhaustion path:**
+  `get_orect` returns `NULL` from an empty free list (`gemwrect.c:53-61`)
+  and every caller dereferences it unchecked — `mkpiece` `:68-75`, `newrect`
+  `:201-203`, `wm_init` `gemwmlib.c:1287-1289` — writing the link and four
+  rectangle words to address 0 and cutting the list short at that piece
+  (`:121`, `:125`). Undefined behaviour, not contract; and which
+  `draw_change` runs dry depends on the old lists the sweep has not yet freed
+  (`gemwmlib.c:1089`), so the exact point is not a function of the window
+  arrangement. **NewTOS:** the capacity is `NUM_ORECT` *per list*
+  (`tos-api/src/aes/window.rs`, `RCAP`) — every arrangement that fits the
+  EmuTOS pool fits — and a list that outgrows it stops the call with a named
+  panic rather than dropping pieces silently (the earlier per-list cap of 16
+  did exactly that, A21). Test: `tos-api/tests/aes_window_rectlist_capacity.rs`.
 
 > **Correction, 2026-09-12 — the "any way it likes" freedom below did not
 > exist and has been struck.** Until this date this section read:

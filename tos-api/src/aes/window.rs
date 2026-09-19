@@ -389,9 +389,10 @@ struct Window {
     /// Where EmuTOS links `ORECT` cells out of one shared pool
     /// (`or_start`/`get_orect`, `aes/gemwrect.c:36-61`) we keep a fixed array
     /// per window and an index cursor; the observable FIRST/NEXT contract is
-    /// the same, the per-call capacity limit `RCAP` is unchanged (A21), and an
-    /// index into our own array cannot dangle the way a freed `ORECT *` can.
-    /// Written by [`compute_rlist`], read and advanced by [`rlist_owns`].
+    /// the same, the array is as long as EmuTOS's whole pool ([`RCAP`] =
+    /// `NUM_ORECT`, A21), and an index into our own array cannot dangle the
+    /// way a freed `ORECT *` can. Written by [`compute_rlist`], read and
+    /// advanced by [`rlist_owns`].
     ///
     /// The stored pieces are the **raw** `WS_TRUE` remainders `newrect` links up
     /// (`aes/gemwrect.c:165-205`), not the work-area intersections: `w_owns`
@@ -1325,14 +1326,58 @@ fn rc_intersect(p1: Grect, p2: &mut Grect) -> bool {
 
 // ── rectangle list (visible pieces) ──────────────────────────────────────
 
-const RCAP: usize = 16;
+/// Capacity of one owner rectangle list — the size of EmuTOS's **whole**
+/// `ORECT` pool, `NUM_ORECT = NUM_WIN * 10` (`aes/gemlib.h:88`, with the
+/// source's own "is this enough???"): 160 cells at `NUM_WIN = 16`
+/// (`include/sysconf.h:32`, the AES 0x0340 table [`NUM_WIN`] mirrors).
+/// `or_start` threads all of them onto the free list `rul` once, in `wm_init`
+/// (`aes/gemwrect.c:40-50`, `gemwmlib.c:1258`); `newrect` and `brkrct` hand
+/// cells back as they rebuild (`gemwrect.c:174-181`, `:124-127`), so the
+/// pool's occupancy is the sum of every window's list, the desktop's
+/// included, plus the pieces in flight while one rectangle is being broken.
+///
+/// **Exhaustion has no path in EmuTOS.** `get_orect` returns the free-list
+/// head — `NULL` once there is none (`gemwrect.c:53-61`) — and none of its
+/// three callers looks: `mkpiece` writes `rl->o_link = old` and the four
+/// rectangle words straight through it (`:68-75`, i.e. into the first twelve
+/// bytes of the m68k exception-vector table), `newrect` does the same for the
+/// window's own cell (`:201-203`), `wm_init` for the desktop's
+/// (`gemwmlib.c:1287-1289`). The list under construction is cut short at the
+/// piece that got no cell and its remaining tail is orphaned (`:121` links
+/// the `NULL`, `:125` relinks through it). That is undefined behaviour, not a
+/// contract — and not even a function of the window arrangement: which
+/// `draw_change` runs dry depends on the old lists still held by the windows
+/// its sweep has not reached yet (`gemwmlib.c:1089`, `everyobj` in tree
+/// order, each `newrect` freeing only its own window's old list first).
+///
+/// NewTOS keeps one list per window instead of one pool, so the capacity is
+/// per list: every arrangement whose lists fit EmuTOS's pool (their sum at
+/// most 160) fits here piece for piece, and a single list that does not fit
+/// here (more than 160) is beyond EmuTOS's pool with certainty. On that
+/// overflow [`put`] **stops with a panic** that names the pool and the lines
+/// it stands in for — the one honest translation of "write through the
+/// `NULL` that `get_orect` returned": silent corruption cannot be
+/// reimplemented, and dropping the piece would be the silent loss of redraw
+/// area this constant's old value of 16 caused (A21).
+const RCAP: usize = NUM_WIN * 10;
 const WM_REDRAW: i16 = 20;
 
+/// Append `r` to the list under construction — `mkpiece`'s `get_orect()` plus
+/// the link (`aes/gemwrect.c:68-69`). A piece without area is not a piece
+/// (`brkrct` never makes one: `have_piece[]` uses strict inequalities,
+/// `:113-116`). Past [`RCAP`] see there: EmuTOS writes through `NULL`, we stop.
 fn put(out: &mut [Grect; RCAP], m: &mut usize, r: Grect) {
-    if r.w > 0 && r.h > 0 && *m < RCAP {
-        out[*m] = r;
-        *m += 1;
+    if r.w <= 0 || r.h <= 0 {
+        return;
     }
+    assert!(
+        *m < RCAP,
+        "AES owner rectangle list: more than NUM_ORECT ({RCAP}) pieces in one window's list — \
+         EmuTOS's ORECT pool is exhausted here and it writes through the NULL get_orect() \
+         returns (aes/gemwrect.c:53-61, :68-69); NewTOS stops instead"
+    );
+    out[*m] = r;
+    *m += 1;
 }
 
 /// Subtract covering rect `c` from each rect in `list[0..n]`, producing the
