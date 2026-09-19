@@ -582,6 +582,646 @@ also deselects that button. This is written to `int_out[1]`. So a caller reads
 
 ---
 
+## 5. Colour icons (CICON) — load path (TASK/A41)
+
+> **Scope.** This section extracts EmuTOS's `G_CICON` **load** path in full —
+> the new-format `.RSC` on-disk layout, `fix_cicons`'s fix-up chain, and the
+> `best_match` device-depth rule — so NewTOS can implement it. There is no
+> separate opcode: CICON fix-up is part of `rsrc_load` (110)'s existing
+> relocation walk (§0 step 2). The **draw** arm (`just_draw`/`gr_gicon`) is
+> documented in [`object-form.md`](./object-form.md) (the `G_CICON` callout
+> after its `just_draw` walkthrough), which this section cross-references
+> rather than duplicates. Gated by `CONF_WITH_COLOUR_ICONS` (default **1**,
+> `include/config.h:1266-1267`) — on in the Falcon030/TOS4 `make 512` target
+> profile. Source: `aes/gemrslib.c` (`fix_cicons` `:549-573`, `get_ciconblkptr`
+> `:484-508`, `fixup_all_ciconblks`/`fixup_colour_icons` `:185-256`,
+> `best_match` `:267-282`, `expand_cicondata` `:284-343`, `transform_cicon`
+> `:348-396`, `transform_all_cicons` `:403-477`, `free_cicon_buffers`
+> `:515-536`, `fix_objects` G_CICON arm `:623-626`, `rs_readit`/`rs_free`
+> call sites `:764-772,795-797,691-697`); `include/obdefs.h:203-217` (`CICON`/
+> `CICONBLK`); `include/rsdefs.h:38-40` (`NEW_FORMAT_RSC`).
+>
+> **Naming correction vs. the task brief.** The device-depth selection
+> function is named **`best_match`** in EmuTOS (`gemrslib.c:267`); there is
+> no `select_cicon` symbol anywhere in `references/emutos` (checked,
+> `grep -rn select_cicon references/emutos/` → 0 hits). This section uses the
+> source name throughout.
+
+### 5.1 New-format detection + the extension array
+
+Already summarised in §0's `NEW_FORMAT_RSC` callout; `get_ciconblkptr`
+(`gemrslib.c:484-508`) is the function that reads it:
+
+```c
+static CICONBLK **get_ciconblkptr(RSHDR *hdr)
+{
+    LONG *extarray;
+    LONG cptr_offset;
+
+    if ((hdr->rsh_vrsn & NEW_FORMAT_RSC) == 0)
+        return NULL;
+
+    /*
+     * locate extension array, which has the following format (all longs):
+     *  extarray[0]     true length of RSC file
+     *  extarray[1]     offset of CICON table (-1L => none present)
+     *  extarray[2]...  other extensions
+     *  extarray[n]     0L indicates end of array
+     */
+    extarray = (LONG *)((char *)hdr + hdr->rsh_rssize);
+
+    cptr_offset = extarray[1];
+    if ((cptr_offset == 0L) || (cptr_offset == -1L))
+        return NULL;
+
+    return (CICONBLK **)((char *)hdr + cptr_offset);
+}
+```
+
+EmuTOS reads **only** `extarray[0]` (already used by `rs_readit` for the true
+file length, §0) and `extarray[1]` (the CICON table offset). `extarray[2]…`
+("other extensions") is never read anywhere in `references/emutos` (grepped);
+its meaning is **not derivable from this source** — flagged, not guessed.
+
+**Measured this session** (`sdk/apps/teradesk/cicons.rsc`, 63 788 B, a real
+DRI-compiled new-format resource — Python struct-unpack, not assumed):
+`rsh_vrsn = 4` (`NEW_FORMAT_RSC` set), `rsh_rssize = 976` (classic size),
+extension array at offset 976 = `(63788, 992, 61740, 0)`. So `extarray[0] =
+63788` = the file's true length (matches `ls -la`), `extarray[1] = 992` = the
+CICON pointer-table offset, `extarray[2] = 61740` is present but — per the
+grep above — not interpreted by EmuTOS at all, and `extarray[3] = 0` is the
+terminator. `61740`'s meaning is out of this session's scope; it is not
+needed to implement `fix_cicons`, since EmuTOS itself ignores it.
+
+### 5.2 The CICONBLK pointer table (on disk: a counted, sentinel-terminated array)
+
+`fix_cicons` (`gemrslib.c:549-573`):
+
+```c
+static void fix_cicons(void)
+{
+    RSHDR *hdr = rs_hdr;
+    CICONBLK **ciconblkptr, **p;
+    CICON *cicondata;
+    LONG num_ciconblks;
+
+    ciconblkptr = get_ciconblkptr(hdr);
+    if (!ciconblkptr)
+        return;
+
+    for (num_ciconblks = 0, p = ciconblkptr; *p != (CICONBLK *)-1L; p++)
+        num_ciconblks++;
+
+    cicondata = (CICON *)(p+1);        /* right after the sentinel */
+
+    fixup_all_ciconblks(num_ciconblks, ciconblkptr, cicondata);
+    transform_all_cicons(num_ciconblks, ciconblkptr);
+}
+```
+
+**On disk**, at `hdr + cptr_offset`, the table is `num_ciconblks` placeholder
+`LONG`s followed by a `-1L` sentinel — the *count* is not stored as a number
+anywhere, it is derived by counting up to the sentinel. **Measured** (cicons.rsc,
+offset 992): 38 `LONG`s of value `0`, then one `LONG` of `-1` (39 entries,
+156 bytes) → `num_ciconblks = 38`. `fixup_all_ciconblks` (below) then
+**overwrites** every table slot with the real address of the matching
+CICONBLK; the on-disk `0` placeholders carry no information EmuTOS reads.
+
+### 5.3 On-disk CICONBLK record (before fix-up)
+
+`fixup_all_ciconblks`/`fixup_colour_icons` (`gemrslib.c:226-256, 185-217`)
+walk the CICON data area (`cicondata`, right after the pointer-table
+sentinel) as a sequence of variable-length records. **Derived from the code**
+(the struct only gets its final in-memory shape after this pass; what
+follows is the **pre-fix-up disk layout**, byte-for-byte, then independently
+**confirmed against `cicons.rsc`'s real bytes** this session):
+
+| Offset | Field | Size | On-disk content (pre-fix-up) |
+|---:|---|---:|---|
+| 0x00 | `monoblk.ib_pmask` | 4 | placeholder, overwritten — never read |
+| 0x04 | `monoblk.ib_pdata` | 4 | placeholder, overwritten — never read |
+| 0x08 | `monoblk.ib_ptext` | 4 | placeholder, overwritten — never read |
+| 0x0C | `monoblk.ib_char` | 2 | **real** (icon overlay char + fg/bg colour) |
+| 0x0E | `monoblk.ib_xchar` | 2 | real |
+| 0x10 | `monoblk.ib_ychar` | 2 | real |
+| 0x12 | `monoblk.ib_xicon` | 2 | real |
+| 0x14 | `monoblk.ib_yicon` | 2 | real |
+| 0x16 | `monoblk.ib_wicon` | 2 | **real, load-bearing** — mono icon width in px |
+| 0x18 | `monoblk.ib_hicon` | 2 | **real, load-bearing** — mono icon height in px |
+| 0x1A | `monoblk.ib_xtext` | 2 | real |
+| 0x1C | `monoblk.ib_ytext` | 2 | real |
+| 0x1E | `monoblk.ib_wtext` | 2 | real |
+| 0x20 | `monoblk.ib_htext` | 2 | real |
+| 0x22 | `mainlist` | 4 | **`num_cicons`** (count of `CICON`s for this block), later overwritten with the `CICON` chain head pointer (or `NULL`) |
+
+Header = 38 bytes (34-byte `ICONBLK` + 4-byte `mainlist`/count). Immediately
+following: `mono_words = (ib_wicon/16) × ib_hicon` **`WORD`s** of mono icon
+data (`ib_pdata`), then `mono_words` `WORD`s of mono mask (`ib_pmask`), then a
+**fixed** 12 bytes (6 `WORD`s) of icon-text buffer (`ib_ptext`) — then, if
+`num_cicons > 0`, the `CICON` chain (§5.4); else the next `CICONBLK` starts
+immediately (`gemrslib.c:236-254`).
+
+**Measured** (`cicons.rsc` CICONBLK[0] @ file offset 1148, right after the
+39-entry pointer table): `ib_wicon = ib_hicon = 32` → `mono_words = 64`;
+`mainlist` (pre-fix-up) `= 1` (one `CICON` follows). All 38 CICONBLKs in this
+file share `ib_wicon = ib_hicon = 32`, `mainlist = 1`, and are spaced exactly
+1608 bytes apart (`2756 − 1148 = 4364 − 2756 = …`, checked for the first
+three) — a uniform 32×32, single-variant icon set.
+
+### 5.4 On-disk CICON record (per colour variant)
+
+`CICON` (`include/obdefs.h:203-211`) and its fix-up (`fixup_colour_icons`,
+`gemrslib.c:185-217`):
+
+```c
+static CICONBLK *fixup_colour_icons(LONG num_cicons, LONG mono_words, CICON *start)
+{
+    CICON *p = start;
+    WORD *q;
+    LONG i;
+
+    for (i = 0; i < num_cicons; i++)
+    {
+        q = (WORD *)(p+1);                  /* point to start of data area */
+        p->col_data = q;
+        q += mono_words * p->num_planes;
+        p->col_mask = q;
+        q += mono_words;                    /* mask is one plane */
+        if (p->sel_data)
+        {
+            p->sel_data = q;
+            q += mono_words * p->num_planes;
+            p->sel_mask = q;
+            q += mono_words;                /* mask is one plane */
+        }
+        if (p->next_res == (CICON *)1L)     /* more CICONs follow */
+            p->next_res = (CICON *)q;
+        else p->next_res = NULL;
+        p = (CICON *)q;
+    }
+
+    return (CICONBLK *)p;
+}
+```
+
+| Offset | Field | Size | On-disk content (pre-fix-up) |
+|---:|---|---:|---|
+| 0x00 | `num_planes` | 2 | **real** — the plane depth of this colour variant |
+| 0x02 | `col_data` | 4 | placeholder, overwritten |
+| 0x06 | `col_mask` | 4 | placeholder, overwritten |
+| 0x0A | `sel_data` | 4 | **a boolean flag**: nonzero ⇒ a SELECTED-state variant follows; tested with `if (p->sel_data)` (`:204`) *before* it is overwritten with the real pointer |
+| 0x0E | `sel_mask` | 4 | placeholder, overwritten only if `sel_data` was set |
+| 0x12 | `next_res` | 4 | **`(CICON *)1L`** ⇒ another `CICON` (a different plane depth) follows immediately after this one's data; any other value (the real files use `0`) ⇒ this is the **last** `CICON` of the chain |
+
+Header = 22 bytes. Data area immediately following: `col_data` =
+`mono_words × num_planes` `WORD`s (one plane per `WORD`-array, **standard**
+— i.e. device-independent — planar form, `transform_cicon` sets
+`fd_stand = TRUE` on it, `:351`), `col_mask` = `mono_words` `WORD`s (one
+plane); if `sel_data` was flagged, `sel_data`/`sel_mask` follow in the same
+shapes. `next_res == 1L` chains directly into the next `CICON` header at
+this point — used for a resource that ships more than one plane-depth
+variant per icon (e.g. a 1-plane **and** a 4-plane version); `cicons.rsc` has
+none of that (every block's `next_res` is `0`).
+
+**Measured** (CICON[0] of CICONBLK[0], file offset 1454 = `1148 + 38(header)
++ 64×2(mono data) + 64×2(mono mask) + 12(text)`): `num_planes = 4`,
+`sel_data (flag) = 1`, `next_res = 0`. Checked identically for CICONBLK[1]
+and [2]. So: **every icon in `cicons.rsc` is a single 4-plane (16-colour)
+variant with a dedicated SELECTED-state image**, no multi-depth chain.
+
+### 5.5 `fix_objects` — the `G_CICON` `ob_spec` (already noted in §0 edge case 6, detailed here)
+
+```c
+case G_CICON:
+    if (ciconblkptr)
+        obj->ob_spec = (LONG)ciconblkptr[obj->ob_spec];
+    break;
+```
+(`gemrslib.c:623-626`). On disk, `ob_spec` of a `G_CICON` object is a plain
+**0-based index** into the CICONBLK pointer table (§5.2) — not a byte offset
+like every other relocatable `ob_spec` (§0 step 5). `fix_objects` runs
+`rs_obfix(obj, 0)` (the char-grid coordinate fix, §3) **before** the type
+switch, unconditionally for every object (`:617-618`) — a `G_CICON`
+object's `ob_x`/`ob_y`/`ob_width`/`ob_height` go through the **same**
+char→pixel rule as any other object type; there is no CICON-specific
+coordinate handling.
+
+**Measured** (`cicons.rsc`, 39 objects): object 0 is `G_BOX` (the root,
+`ob_spec` a literal colour word, skipped by the box rule); objects 1–38 are
+all `ob_type = G_CICON` with `ob_spec = 0, 1, 2, … 37` — exactly the CICONBLK
+table index, one per icon, in table order. Object 1's packed `ob_width` /
+`ob_height` words are `0x4800`/`0x2800` — **low byte (char count) = 0** in
+both, so by §3's rule (`cpos = 0 × cell; cpos += signed high byte`) they
+decode to exactly **72 × 40** px **regardless of the live font cell**
+(high bytes `0x48 = 72`, `0x28 = 40`, both `< 128` ⇒ positive). This equals
+CICONBLK[0]'s own `ib_wtext = 72` and `ib_hicon(32) + ib_htext(8) = 40`: the
+*object's* bounding box is the icon-plus-label footprint used for desktop
+grid layout, not the bare icon rectangle. (This cross-check is this
+session's own arithmetic from two independently-read fields, not an EmuTOS
+statement — labelled as **inference**, included because it is a useful
+sanity check for whoever implements the coordinate/`ob_spec` split.)
+
+### 5.6 `transform_all_cicons` — device-depth selection + expansion + transform
+
+```c
+static void transform_all_cicons(LONG num_cicons, CICONBLK **ciconblkptr)
+{
+    CICONBLK *ciconblk;
+    CICON *cicon;
+    WORD *colbuf, *selbuf, *expandbuf, *src;
+    LONG data_size, n;
+    BOOL expand;
+    WORD i, w, h;
+
+    for (i = 0; i < num_cicons; i++)
+    {
+        ciconblk = ciconblkptr[i];
+        cicon = best_match(ciconblk);   /* find a suitable CICON */
+        ciconblk->mainlist = cicon;
+        if (!cicon)                     /* nothing suitable ... */
+            continue;
+        w = ciconblk->monoblk.ib_wicon;
+        h = ciconblk->monoblk.ib_hicon;
+        data_size = muls(w/8*gl_nplanes,h);
+        expand = (cicon->num_planes != gl_nplanes); /* boolean */
+
+        expandbuf = NULL;
+        if (expand)
+        {
+            expandbuf = dos_alloc_anyram(data_size);
+            if (!expandbuf)
+            {
+                ciconblk->mainlist = NULL;  /* no colour for this icon */
+                continue;
+            }
+        }
+
+        n = cicon->sel_data ? 2*data_size : data_size;
+        colbuf = dos_alloc_anyram(n);
+        if (!colbuf)
+        {
+            if (expandbuf)
+                dos_free(expandbuf);
+            ciconblk->mainlist = NULL;      /* no colour for this icon */
+            continue;
+        }
+
+        src = cicon->col_data;
+        if (expand)
+        {
+            expand_cicondata(src, expandbuf, cicon->col_mask, w, h, cicon->num_planes, gl_nplanes);
+            src = expandbuf;
+        }
+        transform_cicon(src, colbuf, w, h, gl_nplanes);
+        cicon->col_data = colbuf;
+
+        if (cicon->sel_data)
+        {
+            selbuf = colbuf + data_size/sizeof(WORD);
+            src = cicon->sel_data;
+            if (expand)
+            {
+                expand_cicondata(src, expandbuf, cicon->sel_mask, w, h, cicon->num_planes, gl_nplanes);
+                src = expandbuf;
+            }
+            transform_cicon(src, selbuf, w, h, gl_nplanes);
+            cicon->sel_data = selbuf;
+        }
+
+        cicon->num_planes = gl_nplanes;     /* neatness only */
+        cicon->next_res = NULL;
+
+        if (expandbuf)
+            dos_free(expandbuf);
+    }
+}
+```
+(`gemrslib.c:403-477`.) Per CICONBLK:
+
+1. **`best_match`** (§5.7) picks the `CICON` variant; `ciconblk->mainlist` is
+   set to it (or `NULL` — the same field that held the on-disk `num_cicons`
+   count now holds the chosen pointer or nothing, §5.3). **`NULL` here is
+   exactly the trigger for the draw-time mono fallback** (`object-form.md`
+   §`G_CICON` callout): no colour art is available at the live plane depth.
+2. **Alloc-failure is per-icon, not fatal to the load.** A failed
+   `dos_alloc_anyram` for the expand buffer or the colour buffer sets
+   `ciconblk->mainlist = NULL` and `continue`s to the next icon — the whole
+   `rsrc_load` still succeeds, that one icon just falls back to mono. This
+   is the same shape as `rs_readit`'s own short-read refusal (fail the *part*
+   that cannot be satisfied, not silently corrupt memory) but at
+   icon granularity, not file granularity.
+3. **`expand_cicondata`** (`:284-343`, only when `cicon->num_planes !=
+   gl_nplanes`) turns an S-plane source into a D-plane (D > S) destination:
+   copy the S source planes verbatim into the first S destination planes;
+   AND all S source planes together into one extra plane; copy that ANDed
+   plane into every remaining destination plane; then AND the **mask**
+   plane into every destination plane. (EmuTOS's own comment: "we use the
+   same algorithm as Atari TOS".) **`best_match` never returns a variant
+   with MORE planes than the device — the code path for `num_planes >
+   gl_nplanes` (down-sampling) does not exist**, only expansion.
+4. **`transform_cicon`** (§5.7's Vertragsfrage) converts the (possibly
+   expanded) standard-form data to device form via `vrn_trnfm` →
+   `vr_trnfm` (VDI opcode 110, [`raster/_raster.md`](../vdi/raster/_raster.md)).
+5. `sel_data` is transformed the same way into the **second half** of the
+   same `colbuf` allocation (`selbuf = colbuf + data_size/sizeof(WORD)`) —
+   one allocation serves both images, which is why `rs_free`/
+   `free_cicon_buffers` (§5.8) only ever frees `cicon->col_data`.
+6. `cicon->num_planes = gl_nplanes` afterwards is cosmetic ("neatness
+   only", the comment's own words) — the now-device-form data has already
+   been expanded/transformed; nothing re-reads this field for a decision.
+
+### 5.7 `best_match` — the device-depth selection rule (contract)
+
+```c
+static CICON *best_match(CICONBLK *start)
+{
+    CICON *p, *found = NULL;
+
+    for (p = start->mainlist; p; p = p->next_res)
+    {
+        if (p->num_planes > gl_nplanes)     /* too many planes */
+            continue;
+        if (p->num_planes == gl_nplanes)    /* exact match */
+            return p;
+        if (!found || (p->num_planes > found->num_planes))
+            found = p;                      /* best so far */
+    }
+
+    return found;
+}
+```
+(`gemrslib.c:267-282`, comment `:258-265`: *"1. the CICON with the same
+number of planes as the current resolution; 2. of those CICONS with fewer
+planes than the current resolution, the one with the most number of
+planes"*.) In prose: an **exact** `num_planes == gl_nplanes` match wins
+immediately; otherwise the **highest** `num_planes` that is still `≤
+gl_nplanes` is kept; a variant with **more** planes than the device is never
+selected (never down-sampled); if no variant has `num_planes ≤ gl_nplanes`
+at all, `best_match` returns `NULL` and the icon draws mono (§5.6 point 1).
+This is the loader-time decision the draw arm (`object-form.md`) reads back
+via `((CICONBLK *)spec)->mainlist` — the choice is made **once, at
+`rsrc_load`**, not per draw call.
+
+> **Contract question — which device-plane count does NewTOS report, and
+> what does that mean for a truecolor CICON path?** `best_match` is
+> compared against **`gl_nplanes`**, which is `gsx_nplanes()` = VDI
+> `vq_extnd(1)`'s plane count (`aes/gemgraf.c:395`, `aes/gemgsxif.c:497-501`).
+>
+> **Today**, NewTOS's VDI backend reports a **4-plane, 16-colour CLUT**
+> model — `fd_nplanes`/`v_planes` = **4**, not 16
+> (`docs/api/vdi/raster/_raster.md:530`, `NUM_COLORS=16` in
+> `kernel/src/vdi_backend.rs:21`; explicitly "NewTOS bring-up is palette
+> (≤ 8 planes); the truecolor paths are deferred",
+> `docs/api/vdi/raster/_raster.md:463-464`). Against `cicons.rsc`'s actual
+> content — every CICONBLK offers exactly **one** 4-plane variant (§5.4,
+> §5.6) — `best_match` would return an **exact match** for every icon:
+> `expand_cicondata` is never invoked, and `transform_cicon`'s
+> `CONF_WITH_VDI_16BIT`/`planes > 8` branch (below) never triggers. A first
+> implementation against today's backend needs the **palette-model** path
+> only.
+>
+> **`transform_cicon`'s truecolor branch** (`gemrslib.c:359-395`, gated
+> `#if CONF_WITH_VDI_16BIT`, active when `planes > 8`) reverses the bit
+> order of the top byte of each transformed pixel `WORD` into an 8-bit
+> index `n` (0–255) and looks up `phys_work.ext->palette[n]` — i.e. even in
+> Falcon truecolor mode, EmuTOS's CICON pixels are still an **8-bit
+> logical-pen code**, resolved through the VDI's 256-entry logical palette
+> (`vdi_col.c:613`, `ext->palette[palnum] = (r<<11)|(g<<6)|b`), not a
+> direct RGB value. This only matters for a machine where `gl_nplanes = 16`
+> (the Falcon's one and only truecolor mode,
+> `docs/analysis/vdi-audit/truecolor-conversion-plan.md:15-21`) — NewTOS's
+> VDI does not report that today (previous paragraph), and the truecolor
+> pivot itself is a distinct, **not-yet-implemented** decision (same
+> document; 0 mentions of "cicon" in it, grepped). That plan's own §0
+> recommendation is that NewTOS's **future** truecolor memory-MFDB wire
+> format be genuine packed 16-bit RGB565 pixels, explicitly **not**
+> EmuTOS's 256-entry logical-palette indirection
+> (`truecolor-conversion-plan.md:35-40`) — which suggests EmuTOS's exact
+> reversed-bit/`palette[n]` mechanism is *not* the right target for a
+> future NewTOS truecolor CICON path either, but **no source read this
+> session says what should replace it**. This is an open question for
+> whichever task schedules the truecolor pivot, not resolved here — flagged,
+> not guessed.
+
+### 5.8 Freeing — `rs_free`/`free_cicon_buffers`
+
+```c
+static WORD free_cicon_buffers(RSHDR *hdr)
+{
+    CICONBLK **ciconblkptr, **p;
+    CICON *cicon;
+    WORD rc = 0;
+
+    ciconblkptr = get_ciconblkptr(hdr);
+    if (!ciconblkptr)
+        return 0;
+
+    for (p = ciconblkptr; *p != (CICONBLK *)-1L; p++)
+    {
+        cicon = (*p)->mainlist;
+        if (cicon)
+            if (dos_free(cicon->col_data))
+                rc = -1;
+    }
+
+    return rc;
+}
+```
+(`gemrslib.c:515-536`, called from `rs_free` under `#if
+CONF_WITH_COLOUR_ICONS`, `:694-697`.) Walks the **same** pointer table,
+freeing `cicon->col_data` for every block whose `mainlist` is non-`NULL`
+(mono-fallback blocks have nothing allocated, §5.6 point 1). Because
+`sel_data` lives in the second half of the **same** allocation (§5.6 point
+5), one `dos_free(col_data)` releases both. This frees only the
+`transform_all_cicons`-allocated **device-form** buffers; the original
+file-resident standard-form `col_data`/`col_mask`/`sel_data`/`sel_mask`
+(§5.4) die with the whole resource blob (`rs_hdr`) on the same `rs_free`
+call, or with process end (§1's `rsrc_free`/process-death text).
+
+### 5.9 NRSC format proposal — v11/v12 (design proposal, NOT an EmuTOS extraction)
+
+> Everything below this line is a **NewTOS-native design proposal** for the
+> Developer's review, per ADR-013 (the on-disk `.RSC` byte format is
+> NewTOS's own choice, not a byte-compatibility target — same status as the
+> rest of NRSC, `resource-fileselector.md` intro). What **is** contract is
+> §5.6/§5.7's algorithm (best-match, expand, transform, alloc-failure
+> fallback) and §5.4's SELECTED (`sel_data`/`sel_mask`) semantics — the
+> table layout below is one reasonable way to carry the data those
+> algorithms need; a different layout is equally conformant as long as the
+> loader-visible behaviour holds.
+
+**Today, both converters abort on a new-format file**:
+`tools/mkrsc.py:262-263` (`convert`, the kernel-loadable NRSC path) and
+`tools/mkrsc.py:516-517` (`convert_rshdr`, TeraDesk's own `xrsrc_load`
+path) both `sys.exit("new-format (CICONBLK) .rsc not supported")` on
+`vrsn & 0x0004`. `resource.rs`'s relocation core already has the `G_CICON`
+special-case (`G_CICON => {}`, `relocate_blob_core` `:1268`,
+`relocate_blob_core_ilp32` `:1113`) but nothing populates it, because
+`mkrsc.py` never emits a nonzero `G_CICON` `ob_spec` (`nspec = 0  # …
+G_CICON: unsupported, drawn empty`, `mkrsc.py:406`).
+
+**Size estimate (this session's arithmetic from the real file, not a built
+converter — labelled ESTIMATE).** The raw pixel/mask data for `cicons.rsc`'s
+38 icons is a hard floor, independent of any table-layout choice: per icon,
+mono data+mask = `2 × mono_words(64) × 2 B = 256 B`, plus one 4-plane
+variant **with** a SELECTED image = `col_data(512 B) + col_mask(128 B) +
+sel_data(512 B) + sel_mask(128 B) = 1280 B` (both figures measured from
+§5.3/§5.4's real numbers) → `38 × (256 + 1280) = 58 368 B` of raster data
+alone. Adding a rough table-overhead estimate — 76-byte header (v11, see
+below), 39 × 32 B object array (1248 B), an 8-byte tree index, a 38-entry
+`NrscCiconBlk` table (~1520 B at 40 B/entry) and a 38-entry
+`NrscCiconVariant` table (~760 B at 20 B/entry) ≈ 3612 B — the estimated
+total is **≈ 62 000 B**, against the current [`RSC_CAP`] of **65 536 B**
+(`resource.rs:1481`) — a thin **≈ 3.5 KB (~5 %) margin**. **Contrary to
+A38's framing** ("farbige Icons brauchen mehr Platz",
+`TASK/A38-STATUS-DONE.MD:78-80`), a straight conversion of TeraDesk's actual
+`cicons.rsc` **probably fits** inside the current cap — but this is an
+estimate, not a measurement of a built file, and the margin is thin enough
+that the Developer should re-measure once the converter exists rather than
+treat this as settled (§5.11 item 2).
+
+**Proposed header extension** (v11 = LP64, v12 = ILP32; same pattern as
+v5/v6 adding the TEDINFO/ICONBLK/BITBLK bases, `mkrsc.py:220-223`): two more
+`u32` fields, `off_ciconblk`/`n_ciconblk`, after the existing `off_bb`/`n_bb`
+— a 76-byte header.
+
+**Proposed `NrscCiconBlk` record** (fixed stride — unlike EmuTOS's
+placeholder-and-sentinel on-disk chain, §5.2/§5.3, which exists only because
+m68k in-place pointer-patching needs a compact, self-describing layout; the
+converter is free to emit a flat, directly-indexable table instead):
+`off_mono_data`/`off_mono_mask` (`u32` each, like `BitBlk::bi_pdata`), the 11
+`ICONBLK` `WORD` fields (`ib_char`…`ib_htext`, unchanged meaning), `n_variants`
+(`u32`), `off_variants` (`u32`) — a self-contained count instead of
+EmuTOS's counted-by-chain-walk `mainlist`/`next_res` scheme (§5.2/§5.4),
+because the converter already knows the count when it writes the file.
+
+**Proposed `NrscCiconVariant` record**: `num_planes` (`u16`, 2 bytes pad),
+`off_col_data`/`off_col_mask`/`off_sel_data`/`off_sel_mask` (`u32` each, `0`
+= absent) — a flat array of `n_variants` such records per `NrscCiconBlk`,
+replacing the `next_res` chain with plain indexing.
+
+**`ob_spec` for a `G_CICON` object**: bake in the **direct blob byte offset**
+of the object's `NrscCiconBlk` record (not an index into a runtime-resolved
+pointer table, §5.5) — the loader then relocates it with the **same**
+generic `ob_spec += target_base` rule used for every other non-BOX,
+non-CICON type today (`relocate_blob_core`'s `ty => { … }` arm). The
+existing `G_CICON => {}` special case is **deleted**, not filled in — no
+observable behaviour depends on `ob_spec`'s on-disk representation (an
+application only ever sees the *relocated* value through `rsrc_gaddr`
+`R_OBSPEC`, which returns the address of the slot, not its content's
+format).
+
+**Where the plane-selection/expand/transform work should run.** Recommend
+doing it in the **loader**, at `rsrc_load` time, exactly mirroring
+`fix_cicons`/`transform_all_cicons` (§5.6) — not pre-baked into the
+converter, even though today's plane count (4, §5.7) is a compile-time
+constant for one kernel build and so *could* be pre-selected offline. This
+mirrors the A40 correction of the analogous **B10** mistake (baking a
+device-dependent conversion — the char→pixel coordinate arithmetic — into
+the offline tool froze every resource to one screen profile,
+`docs/analysis/audit-applinit-rsrc-load-2026-09-11.md`): storing the
+**standard-form**, all-variants-present data in the file and resolving the
+device depth at load time costs little and does not repeat that mistake if
+the plane count ever becomes a runtime/per-boot property later (the
+truecolor pivot, §5.7). This is a **reasoned recommendation**, not a strict
+requirement today, since `gl_nplanes` does not currently vary within one
+kernel build (`docs/api/vdi/raster/_raster.md:625-626`, "independent of
+resolution").
+
+**`rsrc_free` needs a place to record the transformed buffers.** Mirroring
+§5.8, the loader must track which `dos_alloc_anyram`-equivalent allocations
+`transform_all_cicons`-equivalent work made, so `rsrc_free` can release them.
+NewTOS's current resource descriptor is a single kernel-wide static
+(`RSC`/`USER_RSC_RAW`, §1's A39 callout) that the per-process work of A39
+(not yet implemented) already needs to extend — this is an **additional**
+dependency of A41 on that same extension, not a new one; flagged, not solved
+here.
+
+### 5.10 Build list for the Developer, with acceptance criteria
+
+1. **Converter (`tools/mkrsc.py`)**: implement the `NEW_FORMAT_RSC` branch
+   (§5.9) instead of `sys.exit`; size-assert the output against `RSC_CAP`
+   (fail loudly — like the existing `assert len(blob) == total` — not
+   silently truncate).
+   - *Host test*: a small, **hand-built** two-icon classic new-format
+     `.rsc` fixture (deterministic bytes, not `cicons.rsc` — a minimal
+     fixture makes the expected native bytes checkable by hand) → converted
+     → assert every field of `NrscCiconBlk`/`NrscCiconVariant` against
+     hand-computed expected values.
+   - *Acceptance*: `tools/mkrsc.py convert sdk/apps/teradesk/cicons.rsc`
+     succeeds and reports the real `total_size` (compare against §5.9's
+     ≈ 62 000 B estimate; if it exceeds `RSC_CAP`, **stop and bring the
+     `RSC_CAP` question back to the user** — §5.11 item 2 — rather than
+     silently raising the cap).
+2. **Loader (`tos-api/src/aes/resource.rs`)**: extend `header_is_sound` to
+   bounds-check `off_ciconblk`/`n_ciconblk` (fixed-stride, like the existing
+   `fits()` closure) **and** every variant's four data offsets against
+   `total_size` (variable per icon — needs its own walk, akin to
+   `record_fits` for TEDINFO/ICONBLK/BITBLK today, not the single `fits()`
+   call); replace the `G_CICON => {}` relocation arm with the generic
+   offset relocation (§5.9); implement the `fix_cicons`-equivalent
+   (`best_match`/`expand_cicondata`/`transform_cicon`, §5.6/§5.7) called
+   from where `fix_objects_coords` is called today; implement the
+   per-icon alloc-failure fallback exactly as §5.6 point 2 (continue, don't
+   abort the load).
+   - *Host test*: a converted small NRSC with 1-2 `NrscCiconBlk`s, 2
+     plane-depth variants each, so `best_match`'s three branches (exact,
+     best-lower, none) are each exercised by varying a mock device plane
+     count; verify the resolved `CICON`/mono-fallback per case.
+   - *Host test*: an artificially truncated CICON variant/table (mirroring
+     the A38 short-blob pattern, `tests/aes_rsrc_short_blob.rs`) is
+     **rejected**, not partially relocated.
+3. **Drawer (`tos-api/src/aes/object.rs`, the `G_ICON | G_CICON` arm +
+   `draw_icon`/a new `draw_cicon`)**: read the resolved `CICON` (post-load
+   `mainlist`) when present, per `object-form.md`'s `G_CICON` callout
+   (data/mask/sel selection, `gr_colourblit`-equivalent multi-plane blit,
+   the `dither_mask` SELECTED-darken fallback when no `sel_data`); mono
+   fallback (`cicon == NULL`) stays exactly today's code path — no
+   regression for icons without colour variants.
+   - *Host test*: a synthetic single-plane-depth CICON drawn against a mock
+     `RasterBackend`, pixel-compared against hand-computed expected output.
+   - *QEMU (not performed by this task — spec only)*: TeraDesk with
+     `cicons.rsc` installed (`tools/make-sd-image.sh`'s TeraDesk stanza
+     currently skips it **deliberately**, comment at `:273-274` ("cicons.rsc
+     is deliberately absent (unsupported new-format CICONBLK; failure =
+     designed mono fallback)"); needs a new `cp`/note once
+     converter+loader+drawer exist), `#Z`-autorun headless,
+     screendump comparing colour icons against today's mono baseline.
+
+### 5.11 Open decisions for the user (not decided here)
+
+1. **A39/A60 ordering.** TeraDesk's `load_icons` (`sdk/apps/teradesk/
+   icon.c:2705-2766`) tries `rsrc_load("cicons.rsc")` through the real AES
+   **before** falling back to its own private `xrsrc_load("icons.rsc")`, and
+   restores `desktop.rsc`'s globals afterward (`:2762-2763`, error path
+   `:2742-2743`) — relying on the AES's per-process `AESGLOBAL` selector
+   following `ap_rscmem` the way EmuTOS's `rs_sglobe` does (§1's A39
+   callout). NewTOS's resource descriptor is today one kernel-wide static
+   (A39 "not yet implemented"); shipping `cicons.rsc` without A39 stage 1
+   (per-process keying) risks one AES process's colour-icon load disturbing
+   another process's `desktop.rsc` state, and A39 stage 2 (the `ap_rscmem`
+   read-back selector) additionally needs **A60** fixed on LP64 before
+   TeraDesk's own save/restore even writes the fields the kernel would read
+   (`docs/analysis/rsrc-per-app-state-2026-09-19.md` §3, §4.3). **A41
+   therefore needs A39 stage 2 (and hence A60) or a deliberate, documented
+   stand-in — which one is the user's decision, not this spec's.**
+2. **`RSC_CAP`.** §5.9's estimate suggests the current 64 KiB cap likely
+   still covers `cicons.rsc` 1:1, with a thin, unverified ≈ 5 % margin.
+   Whether to raise/dynamise it now regardless (A38's open question,
+   `TASK/A38-STATUS-DONE.MD:167-170`) or wait for the real converter's
+   number is the user's call.
+3. **NRSC v11/v12 layout.** §5.9 is one reasonable design, not the only
+   one — flagged for explicit sign-off since it is new format surface,
+   unlike the rest of this spec, which only extracts existing EmuTOS
+   behaviour.
+4. **Truecolor CICON pixel path.** §5.7's contract question — EmuTOS's
+   `phys_work.ext->palette[]` indirection is probably not what a future
+   NewTOS truecolor path should do, but no source read this session says
+   what should replace it. Needs its own task once/if the VDI truecolor
+   pivot is scheduled.
+
+---
+
 ## Trap interface (parameter-block form)
 
 All calls enter via the GEM trap (`svc #2`) with **selector 200 in `x0`** and an
@@ -811,8 +1451,15 @@ as success — an empty list, not an error (`gemfslib.c:330-336,733-754`).
   `G_CICON`/CICONBLK fix-up + expansion + device-transform in `rsrc_load`
   (`fix_cicons`/`transform_all_cicons`) and the new-format (`NEW_FORMAT_RSC`)
   true-length read. With it off, only classic-format resources are handled and
-  `G_CICON` objects are not fixed up. This is a **reference** path (NewTOS draws
-  colour icons with its own rasteriser). **Note (D-100):** unlike the earlier
+  `G_CICON` objects are not fixed up. Full extraction of this path (on-disk
+  format, load algorithm, `best_match` selection rule): §5 above (TASK/A41).
+  The on-disk byte format + the internal fix-up-chain *shape* stay
+  **reference** (NewTOS draws colour icons with its own rasteriser and, per
+  §5.9, is free to choose its own on-disk layout); the `best_match` selection
+  **rule**, the SELECTED `sel_data`/`sel_mask` semantics, and the mono
+  fallback when no suitable variant exists are **contract** — the same
+  contract/reference split §3 already applies to `rs_obfix`. **Note (D-100):**
+  unlike the earlier
   wording here, the classic on-disk `RSHDR` byte format + its offset-table
   relocation are themselves **reference** for NewTOS too (ADR-013's native
   `.RSC`) — only the relocation's *shape* (offsets → pointers, box-`ob_spec`

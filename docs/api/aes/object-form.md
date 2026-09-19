@@ -218,6 +218,62 @@ the EmuTOS VDI sequence):
 6. **`G_ICON`/`G_CICON`**: offset the `ICONBLK` rects by the object's screen
    x/y and draw via `gr_gicon`; the icon owns its SELECTED look, so
    `just_draw` clears SELECTED afterwards ([`iconblk`](../structures/iconblk.md)).
+
+> **`G_CICON` draw-arm detail (TASK/A41, 2026-09-19 — NewTOS: mono-only
+> today).** `just_draw`'s `G_ICON`/`G_CICON` case (`gemoblib.c:776-791`)
+> shares one code path: `cicon` starts `NULL`; only for `G_CICON`
+> (`CONF_WITH_COLOUR_ICONS`, default 1) is it set to `((CICONBLK
+> *)spec)->mainlist` — the `CICON` the **loader** already picked via
+> `best_match` at `rsrc_load` time, not re-chosen per draw (see
+> [`resource-fileselector.md`](./resource-fileselector.md) §5.6/§5.7 for the
+> full load-time algorithm). The `ICONBLK` head (`*(ICONBLK *)spec`, valid
+> for both types because a `CICONBLK` *begins* with one, `obdefs.h:213-217`)
+> is copied and its `ib_xicon`/`ib_yicon`/`ib_xtext`/`ib_ytext` offset by the
+> object's screen x/y — identically for `G_ICON` and `G_CICON` — before
+> `gr_gicon(state, &ib, cicon)` (`gemoblib.c:784-789`).
+>
+> `gr_gicon` (`aes/gemgraf.c:710-807`):
+> 1. Crack `ib_char` into `fgcol`/`bgcol`/`ch`, as for a mono icon.
+> 2. **Data/mask selection** (`:726-753`): if `cicon != NULL`, use
+>    `cicon->sel_data`/`sel_mask` when `state & SELECTED` **and** `sel_data`
+>    is non-`NULL`, else `cicon->col_data`/`col_mask`; if `cicon == NULL`
+>    (colour icons off, `best_match` found nothing suitable at load, or a
+>    `NULL ob_spec`), fall back to the **mono** `ib_pdata`/`ib_pmask` with
+>    fg/bg swapped when `SELECTED` — this is the path NewTOS implements
+>    today (`tos-api/src/aes/object.rs:2675-2692`, comment `AUD-P3-006`,
+>    → `draw_icon`).
+> 3. **Background** (`:755-768`): unless `WHITEBAK` is set and the icon's
+>    `bgcol` is white, blit the mask in `bgcol`/`fgcol` (`gr_gblt`); if the
+>    label string is non-empty, fill the text rect with `fgcol` (a SELECTED
+>    colour icon) or `bgcol` (otherwise).
+> 4. **Image** (`:770-795`): for a colour icon, `gr_colourblit(pdata, pi,
+>    cicon->num_planes)` — a multi-plane `vro_cpyfm`-style blit (mode
+>    `S_OR_D`, or `S_AND_D` on the truecolor path, `gemgraf.c:642-671`,
+>    cross-reference [`../vdi/raster/_raster.md`](../vdi/raster/_raster.md));
+>    for `SELECTED` **without** a `sel_data` variant, darken by ANDing a
+>    **dithered** copy of the mask (`dither_mask`: alternating `0xaaaa`/
+>    `0x5555` per scanline, `gemgraf.c:680-700`) over the image in
+>    black/white — a **second**, currently-unimplemented SELECTED mechanism
+>    distinct from `sel_data`, used only when the resource has no dedicated
+>    selected-state art. For a mono icon (`cicon == NULL`),
+>    `gr_gblt(pdata, pi, fgcol, bgcol)` instead (already implemented,
+>    `draw_icon`/`blit_plane`).
+> 5. **Character + label** (`:797-806`): the overlay character in `fgcol`
+>    (`SMALL` font) and the label text (`gr_gtext`, `TE_CNTR`, `SMALL`) —
+>    identical to the mono path, already implemented.
+>
+> **NewTOS status: not implemented.** The `G_ICON | G_CICON` arm
+> (`object.rs:2675-2692`) reads only the `ICONBLK` head and always takes the
+> mono path — step 2's `cicon != NULL` branch, step 4's `gr_colourblit`/
+> dither-darken, and the `sel_data`/`sel_mask` selection do not exist yet.
+> This is a **documented gap** (config-gated reference behaviour under
+> `CONF_WITH_COLOUR_ICONS`), not a stub: the mono fallback is exactly what
+> EmuTOS itself draws with the config off, when `best_match` finds nothing,
+> or before colour icons are loadable at all (today: `mkrsc.py` refuses
+> new-format `.rsc` files, so no `G_CICON` object ever carries a resolved
+> `CICON`). Full load-path extraction + build list:
+> [`resource-fileselector.md`](./resource-fileselector.md) §5 (TASK/A41).
+
 7. **`G_USERDEF`**: call the application's `ub_code` draw routine with a
    `PARMBLK` (`ob_user`, `gemoblib.c:433-448`).
 8. **State decorations** (after the type body, `gemoblib.c:867-943`):
@@ -924,6 +980,9 @@ codes:
   and objects draw flat.
 - **`CONF_WITH_COLOUR_ICONS`** (default **1**, `config.h:1267`): enables
   `G_CICON` colour-icon drawing; off → only the mono `ICONBLK` head is drawn.
+  Full draw-arm extraction: the callout after item 6 above; full load-path
+  extraction: [`resource-fileselector.md`](./resource-fileselector.md) §5
+  (TASK/A41).
 - **`CONF_WITH_EXTENDED_OBJECTS`** (default **1**): the `G_STRING` underline
   path (`(state & WHITEBAK) && (state&0xFF00)==0xFF00`, `gemoblib.c:851`).
 - **`CONF_WITH_NICELINES`** (default **1**): a `DISABLED` all-dashes
@@ -956,3 +1015,9 @@ codes:
   single DIALERT tree are a scarcity workaround; NewTOS may build the alert
   tree per-call to allow nested/DA alerts, provided the string grammar and
   1-based return are preserved.
+- **`G_CICON` colour drawing is a documented gap, not a stub** (TASK/A41):
+  the arm always takes the mono `ICONBLK` path (`object.rs:2675-2692`,
+  `AUD-P3-006`) because no loader yet resolves a `CICON` for it (`mkrsc.py`
+  refuses new-format `.rsc`). Full spec: the callout after item 6 in the
+  `just_draw` walkthrough above, plus
+  [`resource-fileselector.md`](./resource-fileselector.md) §5.
