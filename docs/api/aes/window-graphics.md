@@ -330,13 +330,27 @@ screen buffer via `gsx_mret`. Result rect → `int_out[1..4]`; scalars →
 > dispatcher calls `wm_get(WM_HANDLE, WM_WFIELD, &WM_OX, &WM_IX)` with
 > `poutwds = &WM_OX = &int_out[1]` (`gemsuper.c:343`), `poutwds[1]` is
 > `int_out[2]` and `poutwds[2]` is `int_out[3]` — **not** `int_out[1]`/
-> `int_out[2]` as a previous spec revision stated. `int_out[1]` is left
-> untouched by `wm_get`; per the source's own doc comment
-> (`gemwmlib.c:1494-1503`), that slot aliases the gadget-number *input* word
-> in the C binding, not an output. A conforming caller's `w1` (mapped to
-> `int_out[1]`) therefore reads back unchanged / the input gadget number, `w2`
-> (`int_out[2]`) is the topped colour, and `w3` (`int_out[3]`) is the untopped
-> colour.
+> `int_out[2]` as a previous spec revision stated. `int_out[1]` — and
+> `int_out[4]` — are written by **nobody**: `wm_get` never touches
+> `poutwds[0]` or `poutwds[3]` in these two arms. What the caller finds there
+> is **not** its own value and **not** the gadget number: `xif` copies all
+> `OUT_LEN` words back out of its local `int_out[O_SIZE]` unconditionally
+> (`aes/gemsuper.c:432,444-445`), so within `OUT_LEN` the caller's array is
+> overwritten in every word. On EmuTOS the two unwritten words are the
+> **uninitialised dispatcher stack** (in practice the previous call's
+> answer); on NewTOS they are **0** — the sanctioned deviation *"An AES
+> handler that writes fewer than `OUT_LEN` words delivers 0"* in
+> [`docs/COMPATIBILITY.md`](../../COMPATIBILITY.md), inventory in
+> `docs/analysis/aes-underwriting-handlers-2026-09-19.md` (A27). The source's
+> own doc comment (`gemwmlib.c:1494-1503`) describes `parm1` as the gadget
+> *input* only; gemlib nevertheless copies `int_out[1]` back into `*W1` after
+> the trap (`sdk/gemlib/gemlib-0.44.0/a_wind_get.c:366,372`), so the
+> application's gadget variable is **clobbered** by the call — with stack on
+> EmuTOS, with 0 on NewTOS. `w2` (`int_out[2]`) is the topped colour, `w3`
+> (`int_out[3]`) the untopped colour; a conforming caller reads those two and
+> the return code, nothing else. (Corrected 2026-09-19, A27: the previous
+> sentence here — "`int_out[1]` reads back unchanged / the input gadget
+> number" — was wrong for both machines.)
 
 `WF_TOP`, `WF_SCREEN`, `WF_DCOLOR` do **not** require a valid handle
 (`gemwmlib.c:1517-1520`); every other field returns `FALSE` if the handle is
@@ -356,10 +370,19 @@ This is the heart of the window-redraw protocol and the most bug-prone part.
   0` (`gemwmlib.c:1240`, the sole statement after the loop). `g_x`/`g_y` are
   **not** reset there — they keep whatever `*poutwds` already held: either the
   last rect `rc_intersect` wrote before failing (`util/rectfunc.c:72-75` write
-  all four words even on a `FALSE` return) if the loop ran at least once, or
-  the caller's buffer content unchanged if the owner list was already empty on
-  entry. A conforming redraw handler must test `w==0 && h==0` only — `g_x`/
-  `g_y` on the terminating rect have no defined value to read.
+  all four words even on a `FALSE` return) if the loop ran at least once, or —
+  if the owner list was already empty on entry — the content of the
+  **dispatcher's local `int_out`**, *not* the caller's buffer: `poutwds` is
+  `&int_out[1]` of `xif`'s uninitialised stack array (`aes/gemsuper.c:343,432`),
+  and `xif` copies all `OUT_LEN` words of it back unconditionally
+  (`:444-445`), so the caller's own `g_x`/`g_y` are overwritten either way. On
+  EmuTOS that is stack (measured on the TT: `31, 63` and `0, 19` in one run,
+  `TASK/A15-STATUS-UNFINISHED.MD`, `tosdump/cases/ERRATA.md`); on NewTOS it is
+  0 (`docs/COMPATIBILITY.md`, the A27 entry). A conforming redraw handler must
+  test `w==0 && h==0` only — `g_x`/`g_y` on the terminating rect have no
+  defined value to read. (Corrected 2026-09-19, A27: the A18 wording "the
+  caller's buffer content unchanged" was the reading the poison measurement
+  had already refuted.)
 - The application's redraw idiom: `wind_get(h, WF_FIRSTXYWH)`, then repeatedly
   intersect its own dirty rect with the returned piece, draw, and
   `wind_get(h, WF_NEXTXYWH)` **until `w==0 && h==0`**. Each returned rect is a
@@ -1103,9 +1126,12 @@ byte of any buffer the caller passed (TASK/A42).
 2. **`WF_FIRSTXYWH`/`WF_NEXTXYWH` clip each owner rect to the *work* area** and
    skip empty pieces; the walk **terminates with a `w=h=0` rect**, not an error
    (`w_owns`, `gemwmlib.c:1230-1241`) — but the terminating write sets **only
-   `g_w = g_h = 0`** (`gemwmlib.c:1240`); `g_x`/`g_y` are left unchanged, not
-   zeroed. A redraw handler must loop on `w==0 && h==0` and must not read
-   `g_x`/`g_y` off that sentinel rect.
+   `g_w = g_h = 0`** (`gemwmlib.c:1240`); `g_x`/`g_y` are left **unwritten**
+   by `w_owns`, not zeroed — and "unwritten" means the caller gets the
+   dispatcher's local `int_out` words, never its own (`xif` copies `OUT_LEN`
+   words back unconditionally, `gemsuper.c:432,444-445`): stack on EmuTOS,
+   0 on NewTOS (`docs/COMPATIBILITY.md`, A27). A redraw handler must loop on
+   `w==0 && h==0` and must not read `g_x`/`g_y` off that sentinel rect.
 3. **`WF_KIND` (1) is not queryable/settable** in this build — both `wm_get`
    and `wm_set` fall through to `return FALSE` (D-053).
 4. **`WF_NEWDESK` (14) is set-only;** `WF_COLOR`/`WF_DCOLOR` use a **3-word
@@ -1147,8 +1173,11 @@ byte of any buffer the caller passed (TASK/A42).
     defined but dead code, referenced nowhere in the EmuTOS tree.
 15. **`wind_get(WF_COLOR/WF_DCOLOR)` writes the two colour words to
     `int_out[2]`/`int_out[3]`, not `int_out[1]`/`int_out[2]`** (D-095) —
-    `int_out[1]` is left untouched (it aliases the gadget-number input slot in
-    the C binding).
+    `int_out[1]` and `int_out[4]` are written by nobody, and the caller does
+    **not** keep its own value there: `xif`'s unconditional copy-back delivers
+    the dispatcher's local word — stack on EmuTOS, 0 on NewTOS
+    (`docs/COMPATIBILITY.md`, A27). gemlib copies that `int_out[1]` back over
+    the application's gadget variable (`a_wind_get.c:366,372`).
 
 ---
 

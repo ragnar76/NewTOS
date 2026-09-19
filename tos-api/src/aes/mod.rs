@@ -385,6 +385,18 @@ pub unsafe fn dispatch(
     // stack bytes into a caller that declared more `int_out` words than it
     // filled, nor an over-reading one see anything but a defined 0 past the
     // `IN_LEN` / `AIN_LEN` the caller declared.
+    //
+    // The `int_out` half of that is an observable difference and a **named
+    // deviation**: a handler that writes fewer than `OUT_LEN` words delivers 0
+    // in the rest, where EmuTOS delivers whatever its supervisor stack held
+    // (`wind_get(WF_COLOR)` never writes `int_out[1]`, the slider fields and
+    // `WF_TOP` write `[1]` only, an exhausted rectangle list writes `[3..4]`
+    // only, …). Decision and the three reasons — no application effect,
+    // measurement noise against the TT dumps, no kernel-stack leak to EL0 —
+    // are in `docs/COMPATIBILITY.md` ("An AES handler that writes fewer than
+    // `OUT_LEN` words delivers 0", A27); the per-opcode inventory is
+    // `docs/analysis/aes-underwriting-handlers-2026-09-19.md`; the regression
+    // test is `tos-api/tests/aes_intout_underwrite.rs`.
     let mut local_intin = [0i16; I_SIZE];
     let mut local_intout = [0i16; O_SIZE];
     let mut local_addrin = [0u64; AI_SIZE];

@@ -181,6 +181,72 @@ against it by name in `tos-api/tests/aes_reference/harness.rs` (`SANCTIONED`),
 so NewTOS drifting back to `ret = 1` turns that case red again.
 
 
+**An AES handler that writes fewer than `OUT_LEN` words delivers 0 in the
+unwritten words; EmuTOS delivers the uninitialised dispatcher stack there** —
+sanctioned 2026-09-19 with A27, after the A15 measurement made the difference
+visible. EmuTOS' `xif` builds every result in a **local, uninitialised**
+`WORD int_out[O_SIZE]` (`references/emutos/aes/gemsuper.c:432`) and copies
+`OUT_LEN` words of it back **unconditionally** (`:444-445`), whatever the
+handler filled in. A handler that writes fewer words — `wind_get(WF_COLOR)`
+writes `int_out[2..3]` and never `[1]` or `[4]` (`aes/gemwmlib.c:1569-1570`),
+the slider fields and `WF_TOP` write `[1]` only (`:1542-1554`), the end of a
+rectangle list writes `[3..4]` only (`:1240`), a refused field writes nothing
+but the return code (`:1521-1523`, `:1591-1592`), `objc_sysvar`'s set mode
+writes nothing but the return code (`aes/gemoblib.c:1355-1390`), an unknown
+opcode writes `-1` and nothing else (`gemsuper.c:406-417`) — therefore hands
+the caller whatever the supervisor stack held under those words: in practice
+the previous AES call's answer. Measured on the reference TT: `1, 31, 63, 0, 0`
+and `1, 0, 19, 0, 0` for two end-of-list `WF_NEXTXYWH` calls in one run
+(`TASK/A15-STATUS-UNFINISHED.MD`, cases 127/133/204 of
+`tosdump/cases/aes-r2b-rlist.tsv`; erratum in `tosdump/cases/ERRATA.md`), and
+`graf_handle` with `OUT_LEN 7` answering `…, 0, 1` in `int_out[5..6]`
+(case 283 of `aes-r4-subfunctions.tsv`). NewTOS zeroes the same local array
+(`tos-api/src/aes/mod.rs`, `dispatch`) and copies back the same
+`min(OUT_LEN, O_SIZE)` words, so the unwritten words read **0**. The full
+per-opcode inventory — which handlers under-write, on which path, against
+which binding — is `docs/analysis/aes-underwriting-handlers-2026-09-19.md`.
+
+Three reasons, and they point the same way:
+
+1. **Applications: no effect.** On real TOS the value is indeterminate; a
+   program that reads an unwritten `int_out` word is already broken there and
+   depends on its own call history. Conforming programs do not read them
+   (QED gates `kreturn` on `event & MU_KEYBD`, `sdk/apps/qed/src/aktion.c:148`).
+   And 0 is what the client binding itself *intends* for such a word: gemlib
+   pre-zeroes `aes_intout[3..4]` before `wind_get` and `aes_intout[5]` before
+   `graf_xhandle` "for AES that doesn't support this extension"
+   (`sdk/gemlib/gemlib-0.44.0/a_wind_get.c:355-358`, `a_graf_xhandle.c:48-49`)
+   — a pre-zeroing that EmuTOS' unconditional copy-back defeats and NewTOS
+   honours.
+2. **Measurement: real effect, and it must be read as noise.** Every
+   under-writing call whose case declares more `OUT_LEN` than the handler
+   writes diffs against the TT reference in exactly those words — the class
+   the r4 assessment files as "S3-a, no soll"
+   (`docs/analysis/aes-r4-subfunktionen-einordnung-2026-09-12.md` §4, 23
+   cases). A comparison harness must state those words itself rather than
+   hold them against the recorded stack, as `tos-api/tests/aes_reference/harness.rs`
+   already does for `WF_OWNER`. Whoever does not know this reports a defect
+   where there is none — which is why the deviation is named here.
+3. **Protection boundary: an argument for 0, not merely a tolerance of it.**
+   Between the handler and the application NewTOS has an EL0/EL1 boundary
+   classic TOS did not have. Copying an uninitialised kernel-stack word to an
+   application was harmless on a machine without protection; here it would be
+   a kernel-stack leak into EL0 on every under-writing call. Zeroing the local
+   array is the boundary being kept, and the same rule the dispatcher applies
+   to the inputs (`int_in`/`addr_in` past `IN_LEN`/`AIN_LEN`, A19).
+
+What is **not** changed by this: the copy-back boundary itself. Exactly
+`OUT_LEN` words are written, none past it, none at all for `OUT_LEN 0` — the
+caller's poison stays outside the declaration on both machines (measured on
+every case of every table). Within `OUT_LEN` the caller **never** keeps its
+own word, on either machine; a spec sentence claiming "unchanged" for such a
+word was wrong for both and has been corrected (`window-graphics.md`, D-095
+and the end-of-list note). Covered by
+`tos-api/tests/aes_intout_underwrite.rs` (`wind_get(0, WF_COLOR)`,
+`graf_handle` at `OUT_LEN 7`, `wind_get(0, WF_HSLIDE)` at `OUT_LEN 5`,
+`objc_sysvar` set mode at `OUT_LEN 3`, with a poisoned caller array).
+
+
 ## EmuTOS is the reference, not the template
 
 CLAUDE.md Rule 1 says EmuTOS source *is* the spec. Through this charter that

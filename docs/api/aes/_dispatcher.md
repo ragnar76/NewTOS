@@ -101,6 +101,14 @@ svc #2, x0=200 (d0), x1=AESPB* (d1)   (gemdosif.S trap glue)
 4. Call `crysbind(OP_CODE, global, …)`; its `UWORD` result becomes
    `RET_CODE` = the caller's `int_out[0]` (`:441`).
 5. If `OUT_LEN > 0`, copy `OUT_LEN` `intout` words back to the caller (`:444-445`).
+   The source is the **local, uninitialised** `int_out[O_SIZE]` (`:432`) and
+   the copy is unconditional — a handler that wrote fewer than `OUT_LEN` words
+   hands the caller the dispatcher's stack in the rest, and the caller never
+   keeps its own value inside `OUT_LEN`. Which handlers under-write, and on
+   which path, is inventoried in
+   `docs/analysis/aes-underwriting-handlers-2026-09-19.md`; NewTOS zeroes the
+   local array (sanctioned deviation, [`docs/COMPATIBILITY.md`](../../COMPATIBILITY.md),
+   A27).
 6. **Only** for `OP_CODE == RSRC_GADDR` (112), copy the one `addrout[0]`
    result back (`:446-447`).
 
@@ -236,6 +244,12 @@ caveat (not previously stated). Logged as D-084.
   (115) — see [`docs/COMPATIBILITY.md`](../../COMPATIBILITY.md) trap table.
 - **Unsupported opcode → `-1`** (including opcode 0, silently) is contract;
   the reference `fm_show(ALNOFUNC)` alert is optional.
+- **`int_out` words a handler did not write read 0**, not stack: `dispatch`
+  zeroes its local `int_out[O_SIZE]` before `crysbind` and copies back
+  `min(OUT_LEN, O_SIZE)` words exactly as `xif` does. Named deviation
+  (kernel-stack leak across the EL0 boundary otherwise), A27 —
+  [`docs/COMPATIBILITY.md`](../../COMPATIBILITY.md); regression test
+  `tos-api/tests/aes_intout_underwrite.rs`.
 - **Selector 201** (bare reschedule, no block) is an undocumented feature; a
   faithful NewTOS may treat it as a cooperative yield or a no-op — flagged as an
   open question, low priority.
