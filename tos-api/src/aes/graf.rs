@@ -498,21 +498,79 @@ pub fn graf_slidebox(pb: &Aespb) {
     pb.set_ret(pos);
 }
 
+// ── the system-font metrics and the gadget box height ────────────────────
+//
+// EmuTOS keeps these as globals (`aes/gemgraf.c:40-52`) filled once by
+// `gsx_start` (`:405-415`), right after the AES workstation is open, from
+// that workstation's current font:
+//
+//     gsx_textsize(&gl_wptschar, &gl_hptschar, &gl_wchar, &gl_hchar);  /* :405 */
+//     gl_hbox = gl_hchar + 3;                                           /* :412 */
+//
+// `gsx_textsize` is `vqt_attributes` (`gemgsxif.c:505-512`): `gl_wchar` =
+// `ptsout[2]` (the cell width), `gl_hchar` = `ptsout[3]` (the cell height,
+// `top + bottom + 1` of the font header, `vdi_text.c:1018`). Which font that
+// is, the VDI decides at `v_opnwk`: `def_font`, the `F_DEFAULT` face whose
+// `form_height` fits the screen — 16 lines from 400 rows up, 8 below
+// (`vdi_text.c:612`).
+//
+// NewTOS's AES opens no workstation of its own; it draws through the raster
+// backend with the VDI's system font, and the face a fresh workstation gets
+// is [`crate::vdi::font::DEFAULT`] (a constant — the `V_REZ_VT` choice is not
+// implemented). The three functions below are that face's `vqt_attributes`
+// answer and the `gl_hbox` rule on top of it: the **one** place the
+// menu-bar row / gadget box height comes from. `graf_handle` reports it
+// (`gemsuper.c:288-291`), the window manager builds `gl_rfull` and the
+// gadget cells from it (`window::desktop_work`, `window::adj_hbox`), the
+// Menu Manager reserves the row with it (`menu::desk_top`) and the Event
+// Manager's bar interception tests the pointer against it
+// (`event::menu_intercept`, EmuTOS `gl_rmenu`, `gemgraf.c:427`).
+
+/// EmuTOS `gl_wchar` (`gemgraf.c:40`, set `:405`) — the system-font cell
+/// width, `vqt_attributes`' `ptsout[2]` for the VDI's default face.
+pub(super) fn gl_wchar() -> i16 {
+    crate::vdi::font::font(crate::vdi::font::DEFAULT).max_cell_width
+}
+
+/// EmuTOS `gl_hchar` (`gemgraf.c:41`, set `:405`) — the system-font cell
+/// height, `vqt_attributes`' `ptsout[3]` (`top + bottom + 1`) for the VDI's
+/// default face: 16 for the 8×16 font.
+pub(super) fn gl_hchar() -> i16 {
+    let f = crate::vdi::font::font(crate::vdi::font::DEFAULT);
+    f.top + f.bottom + 1
+}
+
+/// The `gl_hbox` rule on its own — `gl_hbox = gl_hchar + 3`
+/// (`gemgraf.c:412`) for a system-font cell height `hchar`. [`gl_hbox`]
+/// applies it to the live [`gl_hchar`]; it is exposed so the rule can be
+/// checked for a cell height the VDI's fixed default face cannot supply
+/// (8 → 11, the value EmuTOS computes on a screen under 400 lines).
+pub const fn hbox_of(hchar: i16) -> i16 {
+    hchar + 3
+}
+
+/// EmuTOS `gl_hbox` (`gemgraf.c:47`, set `:412`) — the unadjusted gadget box
+/// height and the menu-bar row (`gl_rmenu = (0, 0, gl_width, gl_hbox)`,
+/// `:427`; `gl_rfull = (0, gl_hbox, gl_width, gl_height - gl_hbox)`, `:424`):
+/// `gl_hchar + 3`, i.e. 19 for the 8×16 font.
+pub(super) fn gl_hbox() -> i16 {
+    hbox_of(gl_hchar())
+}
+
 /// `graf_handle` (77) — the AES's VDI workstation handle (`int_out[0]`)
 /// plus the system-font cell metrics in `int_out[1..4]` (EmuTOS
 /// gemsuper.c:287-293).
 pub fn graf_handle(pb: &Aespb) {
     pb.set_ret(1); // gl_handle: the physical VDI workstation the AES draws through
-    pb.set_intout(1, 8); // gl_wchar: system-font cell width
-    pb.set_intout(2, 16); // gl_hchar: system-font cell height
-    // gl_wbox / gl_hbox: the gadget box unit. For the 8×16 system font both
-    // are 19 — gl_hbox = gl_hchar+3 = 19; gl_wbox = max(gl_wchar+4, gl_hbox·
-    // aspect) = 19 (gemgraf.c:412-415, gemsuper.c:290-291). Shared with the
-    // window manager's *unadjusted* gadget cell so there is only one `19` in
-    // the tree — `graf_handle` reports gl_wbox/gl_hbox, never the 3D-adjusted
-    // adj_wbox/adj_hbox the window frame is built from (gemsuper.c:290-291).
+    pb.set_intout(1, gl_wchar()); // gl_wchar: system-font cell width
+    pb.set_intout(2, gl_hchar()); // gl_hchar: system-font cell height
+    // gl_wbox / gl_hbox: the *unadjusted* gadget box unit (gemsuper.c:290-291)
+    // — never the 3D-adjusted adj_wbox/adj_hbox the window frame is built
+    // from. gl_hbox is derived above (gl_hchar + 3, gemgraf.c:412); gl_wbox
+    // (max(gl_wchar+4, gl_hbox·aspect), gemgraf.c:413-415) is still the
+    // window manager's constant, 19 for the 8×16 font on square pixels.
     pb.set_intout(3, super::window::GL_WBOX); // gl_wbox
-    pb.set_intout(4, super::window::GL_HBOX); // gl_hbox
+    pb.set_intout(4, gl_hbox()); // gl_hbox
 }
 
 /// `graf_mouse` (78) — set the mouse cursor: `int_in[0]` = a preset shape

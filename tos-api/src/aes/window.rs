@@ -17,6 +17,7 @@
 //! `graf_*` are Batch 2+. No save/restore under windows yet (see the
 //! Menu-Manager note); closing erases to the desktop background.
 
+use super::graf::{gl_hbox, gl_hchar, gl_wchar};
 use super::object::{render_tree_app, render_tree_lp64, Object};
 use super::Aespb;
 use crate::bdos::process::Abi;
@@ -129,16 +130,12 @@ const G_CLOSE: u16 = 0x05;
 const G_SIZE: u16 = 0x06;
 const G_FULL: u16 = 0x07;
 
-/// System-font cell width — EmuTOS `gl_wchar` (`gemgraf.c:405-410`): 8 for the
-/// 8×16 desktop font, the value `graf_handle` reports (`aes/graf.rs:456`). Used
-/// as the sizer drag's minimum window width for a gadget-less window
-/// (`hctl_window`, `gemctrl.c:252`).
-const GL_WCHAR: i16 = 8;
-
-/// System-font cell height — EmuTOS `gl_hchar`: 16 for the 8×16 desktop font
-/// (`gl_hbox = gl_hchar + 3 = 19`, `gemgraf.c:412`). The sizer drag's minimum
-/// window height for a window without vertical gadgets (`gemctrl.c:253`).
-const GL_HCHAR: i16 = 16;
+// The system-font cell (`gl_wchar`/`gl_hchar`) and the unadjusted gadget box
+// height (`gl_hbox = gl_hchar + 3`) come from one place, `graf::gl_wchar` /
+// `graf::gl_hchar` / `graf::gl_hbox` (EmuTOS `gsx_start`, `gemgraf.c:405-412`).
+// `gl_wchar`/`gl_hchar` are the sizer drag's minimum width/height for a window
+// without the respective gadgets (`hctl_window`, `gemctrl.c:252-253`);
+// `gl_hbox` is the height of every gadget's glyph cell and the menu-bar row.
 
 /// Unadjusted gadget box width — EmuTOS `gl_wbox`
 /// (`gl_wbox = max(gl_wchar+4, gl_hbox·aspect)`, `gemgraf.c:412-415`): 19 for
@@ -146,11 +143,6 @@ const GL_HCHAR: i16 = 16;
 /// and what the *glyph cell* of every window gadget measures — the 3D window
 /// layout inflates the surrounding box ([`adj_wbox`]), never this.
 pub(super) const GL_WBOX: i16 = 19;
-
-/// Unadjusted gadget box height — EmuTOS `gl_hbox` (`gl_hchar + 3`,
-/// `gemgraf.c:412`): 19 for the 8×16 system font. Also the menu-bar height
-/// (`gl_rmenu`, `gemgraf.c:427` → `menu::BAR_H`).
-pub(super) const GL_HBOX: i16 = 19;
 
 /// Standard pixel adjustment for 3D objects — EmuTOS `ADJ3DSTD`
 /// (`obdefs.h:136`). Our target profile is Falcon030/TOS4 with
@@ -182,8 +174,8 @@ fn adj_wbox() -> i16 {
 
 /// 3D-adjusted gadget box height — EmuTOS `adj_hbox` (`gemwmlib.c:1312`):
 /// `gl_hbox + 2*ADJ3DSTD`, with no resolution-dependent correction.
-const fn adj_hbox() -> i16 {
-    GL_HBOX + 2 * ADJ3DSTD
+fn adj_hbox() -> i16 {
+    gl_hbox() + 2 * ADJ3DSTD
 }
 
 const WHITE: Pel = 0;
@@ -1697,7 +1689,7 @@ fn borders(kind: u16) -> (i16, i16, i16, i16) {
         tb += adj_hbox() - 1;
     }
     if kind & INFO != 0 {
-        tb += GL_HBOX;
+        tb += gl_hbox();
     }
     let (havevbar, havehbar) = bars(kind);
     if havevbar {
@@ -1869,14 +1861,14 @@ fn draw_frame(w: &Window, istop: bool, backend: &dyn RasterBackend, clip: ClipRe
         let mut name_x = b.x;
         let mut name_w = b.w;
         if kind & CLOSER != 0 {
-            let g = Grect { x: b.x + ADJ3DSTD, y: gy, w: GL_WBOX, h: GL_HBOX };
+            let g = Grect { x: b.x + ADJ3DSTD, y: gy, w: GL_WBOX, h: gl_hbox() };
             gadget(g, G_CLOSE, backend, clip);
             name_x += aw;
             name_w -= aw;
         }
         if kind & FULLER != 0 {
             name_w -= aw;
-            let g = Grect { x: name_x + name_w + ADJ3DSTD, y: gy, w: GL_WBOX, h: GL_HBOX };
+            let g = Grect { x: name_x + name_w + ADJ3DSTD, y: gy, w: GL_WBOX, h: gl_hbox() };
             gadget(g, G_FULL, backend, clip);
         }
         // W_NAME sits `ADJ3DSTD` inside what is left (gemwmlib.c:534-537).
@@ -1888,7 +1880,7 @@ fn draw_frame(w: &Window, istop: bool, backend: &dyn RasterBackend, clip: ClipRe
                 name_x,
                 gy,
                 name_w,
-                GL_HBOX,
+                gl_hbox(),
                 PatternFill { fg: BLACK, bg: WHITE, pattern: &TITLE_STIPPLE, mode: WriteMode::Replace },
                 clip,
             );
@@ -1898,7 +1890,7 @@ fn draw_frame(w: &Window, istop: bool, backend: &dyn RasterBackend, clip: ClipRe
         let nlen = name_len(&w.name) as i16 * 8;
         let nx = name_x + ((name_w - nlen) / 2).max(2);
         if istop && nlen > 0 {
-            backend.fill_rect((nx - 3).max(name_x), gy, nlen + 6, GL_HBOX, WHITE, clip);
+            backend.fill_rect((nx - 3).max(name_x), gy, nlen + 6, gl_hbox(), WHITE, clip);
         }
         draw_label(nx, gy, name_w, &w.name, backend, clip);
         // The title box's own bottom border row. `W_TITLE` is a `G_BOX` with
@@ -1915,7 +1907,7 @@ fn draw_frame(w: &Window, istop: bool, backend: &dyn RasterBackend, clip: ClipRe
     // Info line — `gl_hbox` tall, *not* adjusted (gemwmlib.c:562-567), which is
     // why [`borders`] charges a full `gl_hbox` for it.
     if kind & INFO != 0 {
-        let band = Grect { x: b.x + 1, y: top, w: b.w - 2, h: GL_HBOX };
+        let band = Grect { x: b.x + 1, y: top, w: b.w - 2, h: gl_hbox() };
         backend.fill_rect(band.x, band.y, band.w, band.h, GRAY_LT, clip);
         draw_label(band.x + 2, top, band.w - 2, &w.info, backend, clip);
         // Same rule as the title band: `W_INFO` is `gl_hbox` tall starting at
@@ -1923,8 +1915,8 @@ fn draw_frame(w: &Window, istop: bool, backend: &dyn RasterBackend, clip: ClipRe
         // `gl_ainfo` TEDINFO has `te_thickness = 1` (`:153-157`), so its bottom
         // border row is the band's last row — `wm_calc`'s work area starts on
         // the row after it (`tb += gl_hbox`, `:1811-1812`).
-        backend.fill_rect(b.x, top + GL_HBOX - 1, b.w, 1, BLACK, clip);
-        top += GL_HBOX;
+        backend.fill_rect(b.x, top + gl_hbox() - 1, b.w, 1, BLACK, clip);
+        top += gl_hbox();
     }
 
     // The work area is deliberately **not** painted here. In EmuTOS the window
@@ -1975,9 +1967,9 @@ fn draw_frame(w: &Window, istop: bool, backend: &dyn RasterBackend, clip: ClipRe
     if (havevbar && havehbar) || kind & SIZER != 0 {
         let g = Grect {
             x: b.x + b.w - GL_WBOX - ADJ3DSTD,
-            y: b.y + b.h - GL_HBOX - ADJ3DSTD,
+            y: b.y + b.h - gl_hbox() - ADJ3DSTD,
             w: GL_WBOX,
-            h: GL_HBOX,
+            h: gl_hbox(),
         };
         if kind & SIZER != 0 {
             gadget(g, G_SIZE, backend, clip);
@@ -1998,7 +1990,7 @@ fn draw_frame(w: &Window, istop: bool, backend: &dyn RasterBackend, clip: ClipRe
 /// drawn one. Matches EmuTOS `w_bldvbar`/`w_bldhbar` (`gemwmlib.c:634-708`):
 /// `size = gl_hbox` when `w_vslsiz == -1`, else per-mille of the track.
 fn thumb_geom(track_len: i16, slsize: i16, slpos: i16) -> (i16, i16) {
-    let min_thumb = GL_HBOX.min(track_len);
+    let min_thumb = gl_hbox().min(track_len);
     let len = if slsize == -1 {
         min_thumb
     } else {
@@ -2020,7 +2012,7 @@ fn band_top(b: Grect, kind: u16) -> i16 {
         top += adj_hbox() - 1;
     }
     if kind & INFO != 0 {
-        top += GL_HBOX;
+        top += gl_hbox();
     }
     top
 }
@@ -2086,7 +2078,7 @@ fn elev_rect(bar: Grect, track: (i16, i16), off: i16, len: i16, vert: bool) -> G
     if vert {
         Grect { x: bar.x + ADJ3DSTD, y: start + off + ADJ3DSTD, w: GL_WBOX, h: thick }
     } else {
-        Grect { x: start + off + ADJ3DSTD, y: bar.y + ADJ3DSTD, w: thick, h: GL_HBOX }
+        Grect { x: start + off + ADJ3DSTD, y: bar.y + ADJ3DSTD, w: thick, h: gl_hbox() }
     }
 }
 
@@ -2104,11 +2096,11 @@ fn draw_vslider(w: &Window, backend: &dyn RasterBackend, clip: ClipRect) {
     // consuming a full `adj_hbox` of it. The down arrow's extra −1 is EmuTOS'
     // (`y+h+ADJ3DSTD-1`, gemwmlib.c:424).
     if kind & UPARROW != 0 {
-        let g = Grect { x: bar.x + ADJ3DSTD, y: bar.y + ADJ3DSTD, w: GL_WBOX, h: GL_HBOX };
+        let g = Grect { x: bar.x + ADJ3DSTD, y: bar.y + ADJ3DSTD, w: GL_WBOX, h: gl_hbox() };
         gadget(g, G_UP, backend, clip);
     }
     if kind & DNARROW != 0 {
-        let g = Grect { x: bar.x + ADJ3DSTD, y: bar.y + bar.h - ah + 1, w: GL_WBOX, h: GL_HBOX };
+        let g = Grect { x: bar.x + ADJ3DSTD, y: bar.y + bar.h - ah + 1, w: GL_WBOX, h: gl_hbox() };
         gadget(g, G_DN, backend, clip);
     }
     if let Some((track_y, track_h)) = vtrack(w) {
@@ -2182,11 +2174,11 @@ fn draw_hslider(w: &Window, backend: &dyn RasterBackend, clip: ClipRect) {
     // `ADJ3DSTD` into the band, each consuming a full `adj_wbox`
     // (gemwmlib.c:448-462).
     if kind & LFARROW != 0 {
-        let g = Grect { x: bar.x + ADJ3DSTD, y: bar.y + ADJ3DSTD, w: GL_WBOX, h: GL_HBOX };
+        let g = Grect { x: bar.x + ADJ3DSTD, y: bar.y + ADJ3DSTD, w: GL_WBOX, h: gl_hbox() };
         gadget(g, G_LF, backend, clip);
     }
     if kind & RTARROW != 0 {
-        let g = Grect { x: bar.x + bar.w - aw + 1, y: bar.y + ADJ3DSTD, w: GL_WBOX, h: GL_HBOX };
+        let g = Grect { x: bar.x + bar.w - aw + 1, y: bar.y + ADJ3DSTD, w: GL_WBOX, h: gl_hbox() };
         gadget(g, G_RT, backend, clip);
     }
     if let Some((track_x, track_w)) = htrack(w) {
@@ -3380,9 +3372,9 @@ fn gad_rect(w: &Window, g: Gadget) -> Grect {
     let b = w.curr;
     let y = b.y + ADJ3DSTD;
     match g {
-        Gadget::Closer => Grect { x: b.x + ADJ3DSTD, y, w: GL_WBOX, h: GL_HBOX },
+        Gadget::Closer => Grect { x: b.x + ADJ3DSTD, y, w: GL_WBOX, h: gl_hbox() },
         Gadget::Fuller => {
-            Grect { x: b.x + b.w - adj_wbox() + ADJ3DSTD, y, w: GL_WBOX, h: GL_HBOX }
+            Grect { x: b.x + b.w - adj_wbox() + ADJ3DSTD, y, w: GL_WBOX, h: gl_hbox() }
         }
         _ => Grect::default(),
     }
@@ -3528,8 +3520,8 @@ fn drag_size(w: &Window, backend: &dyn RasterBackend) -> Grect {
     // Minimum size (`gemctrl.c:252-257`): one character cell, widened to four
     // gadget boxes when the window has top/horizontal gadgets and heightened to
     // six when it has vertical ones.
-    let wmin = if w.kind & (TGADGETS | HGADGETS) != 0 { GL_WBOX * 4 } else { GL_WCHAR };
-    let hmin = if w.kind & VGADGETS != 0 { GL_HBOX * 6 } else { GL_HCHAR };
+    let wmin = if w.kind & (TGADGETS | HGADGETS) != 0 { GL_WBOX * 4 } else { gl_wchar() };
+    let hmin = if w.kind & VGADGETS != 0 { gl_hbox() * 6 } else { gl_hchar() };
     let (nw, nh) = gr_rubwind(h, border.x, border.y, wmin, hmin, poff, backend);
     Grect { x: border.x, y: border.y, w: nw, h: nh }
 }
@@ -3644,7 +3636,7 @@ fn drag_move(w: &Window, backend: &dyn RasterBackend) -> Grect {
     let screen = screen_rect();
     let f = Grect {
         x: 0,
-        y: GL_HBOX,
+        y: gl_hbox(),
         w: screen.w + border.w - GL_WBOX - 6 - 2 * ADJ3DSTD,
         h: MAX_COORDINATE,
     };

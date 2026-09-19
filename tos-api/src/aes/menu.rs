@@ -25,6 +25,7 @@
 //! attached submenu as a nested box beside the highlighted parent item
 //! (EmuTOS `display_submenu`/`mn_do` `SUBMENU_STATE`).
 
+use super::graf::gl_hbox;
 use super::object::{self, ObjTree, Object};
 use super::Aespb;
 use crate::bdos::process::Abi;
@@ -77,11 +78,9 @@ pub(super) fn hold_menu() {
 pub(super) fn release_menu() {
     MNTREE.store(MNHOLD.load(Ordering::Relaxed), Ordering::Relaxed);
 }
-/// Menu-bar height in pixels (≈ char height + 3, the GEM `gl_hbox`).
-const BAR_H: i16 = 19;
 
 /// The y-coordinate where the desktop work area begins: **always** the bottom
-/// edge of the menu-bar row ([`BAR_H`]), whether or not an application has
+/// edge of the menu-bar row (`gl_hbox`), whether or not an application has
 /// installed a menu via `menu_bar`.
 ///
 /// This mirrors EmuTOS `gl_rfull`, set **once** at `gsx_start` to
@@ -93,14 +92,16 @@ const BAR_H: i16 = 19;
 /// (`gl_rmenu = (0,0,gl_width,gl_hbox)`, gemgraf.c:427); the desktop background
 /// is never painted into that row, and windows are never moved above it.
 ///
-/// `BAR_H` == `gl_hbox` == `gl_hchar + 3` (gemgraf.c:412); for the 8×16 desktop
-/// font `gl_hchar = 16`, so `gl_hbox = 19`.
+/// The row is `gl_hbox` = `gl_hchar + 3` (gemgraf.c:412), derived from the
+/// system-font cell height in [`graf::gl_hbox`](super::graf::gl_hbox) — 19
+/// for the 8×16 font — and read from there by every bar drawing / tracking
+/// site in this module, not held as a number of its own.
 ///
 /// The window manager uses this to seed the desktop pseudo-window's work
 /// rectangle and its rectangle list (the desk area = screen minus the menu
 /// row); see `window::desktop_work`.
 pub(super) fn desk_top() -> i16 {
-    BAR_H
+    gl_hbox()
 }
 
 // ob_state bits.
@@ -115,7 +116,7 @@ const G_STRING: u16 = 28;
 
 /// `G_TITLE` object type (`obdefs.h`) — a menu-bar title. A title spans the
 /// full bar height, so its `just_draw` fill covers the separator row at
-/// `BAR_H-1` (see [`redraw_bar_separator`]).
+/// `gl_hbox-1` (see [`redraw_bar_separator`]).
 const G_TITLE: u16 = 32;
 
 const WHITE: Pel = 0;
@@ -158,7 +159,7 @@ pub fn menu_bar(pb: &Aespb) {
             let sw = backend.width() as i16;
             let clip = ClipRect::full(backend.width(), backend.height());
             // Erase the bar area.
-            backend.fill_rect(0, 0, sw, BAR_H, WHITE, clip);
+            backend.fill_rect(0, 0, sw, gl_hbox(), WHITE, clip);
         }
         // `xif` seeds `ret = TRUE` and the `MENU_BAR` arm never changes it
         // (`gemsuper.c:85,168-170`), so a hide always reports 1.
@@ -182,14 +183,14 @@ pub fn menu_bar(pb: &Aespb) {
     // clean underneath; clear it to white first, mirroring the `show == 0`
     // erase, so drawing the bar always yields a clean strip even when a
     // full-screen program (e.g. a `.NCP` console) left content there.
-    backend.fill_rect(0, 0, sw, BAR_H, WHITE, clip);
+    backend.fill_rect(0, 0, sw, gl_hbox(), WHITE, clip);
     // The bar spans the full screen width. THEBAR is object 1; read/write
     // its geometry at the caller's ABI width (24-byte ILP32 / 32-byte LP64).
     let t = ObjTree::new(tree);
     t.set_width(THEBAR, sw - t.x(THEBAR));
     object::draw_obj(tree as *const Object, THEBAR, MAX_DEPTH, backend);
-    // Separator line under the bar.
-    backend.fill_rect(0, BAR_H - 1, sw, 1, BLACK, clip);
+    // Separator line under the bar (`gsx_cline(0, gl_hbox-1, …)`, gemmnlib.c:722).
+    backend.fill_rect(0, gl_hbox() - 1, sw, 1, BLACK, clip);
     MNTREE.store(tree as usize, Ordering::Relaxed);
     pb.set_ret(1);
 }
@@ -379,7 +380,7 @@ fn track_owned(tree: *mut Object, backend: &dyn RasterBackend) -> Option<(i16, i
 
         // Leaving the bar, the open box, *and* the open submenu closes the
         // menu (no selection).
-        let in_bar = my < BAR_H;
+        let in_bar = my < gl_hbox();
         let in_box = cur_box != NIL && point_in(tp, cur_box, mx, my);
         let in_sub_box = sub_tree != 0 && point_in(sub_tree as *const Object, sub_box, mx, my);
         if !in_bar && !in_box && !in_sub_box {
@@ -497,8 +498,9 @@ fn open_submenu(tree: *mut Object, item: i16, backend: &dyn RasterBackend) -> Op
     } else {
         0
     };
-    let ymax = (sh - bh).max(BAR_H);
-    let y = (iy - start_off).clamp(BAR_H, ymax);
+    let bar_h = gl_hbox();
+    let ymax = (sh - bh).max(bar_h);
+    let y = (iy - start_off).clamp(bar_h, ymax);
     // Re-home the box to the target absolute position: adjust its relative
     // ob_x/ob_y by the delta from its current absolute origin, so this works
     // wherever the box sits in the submenu tree (its parent offset cancels).
@@ -701,8 +703,8 @@ fn close_box(tree: *mut Object, title: i16, imenu: i16, backend: &dyn RasterBack
 }
 
 /// Repaint the menu bar's separator line — the full-width black stroke at
-/// `y = BAR_H-1` drawn by [`menu_bar`] (`menu.rs`). A bar `G_TITLE` has
-/// `ob_height == BAR_H`, so drawing a title (normal *or* highlighted) fills its
+/// `y = gl_hbox-1` drawn by [`menu_bar`] (`menu.rs`). A bar `G_TITLE` has
+/// `ob_height == gl_hbox`, so drawing a title (normal *or* highlighted) fills its
 /// cell across the whole bar height, including the separator row — erasing the
 /// segment of the line under that title. This is the single source of truth
 /// both the interactive cancel path ([`close_box`]) and the app-driven
@@ -711,11 +713,11 @@ fn close_box(tree: *mut Object, title: i16, imenu: i16, backend: &dyn RasterBack
 fn redraw_bar_separator(backend: &dyn RasterBackend) {
     let sw = backend.width() as i16;
     let clip = ClipRect::full(backend.width(), backend.height());
-    backend.fill_rect(0, BAR_H - 1, sw, 1, BLACK, clip);
+    backend.fill_rect(0, gl_hbox() - 1, sw, 1, BLACK, clip);
 }
 
 /// Does normalizing `obj` need the bar separator repainted? True only for a
-/// bar-level `G_TITLE` whose absolute cell spans the separator row `BAR_H-1` —
+/// bar-level `G_TITLE` whose absolute cell spans the separator row `gl_hbox-1` —
 /// the objects whose `just_draw` white-fill erases the line. Drop-down items
 /// (`G_STRING`, below the bar) and non-title objects do not qualify, so an
 /// unrelated `menu_tnormal` never paints a spurious line across the screen.
@@ -724,7 +726,7 @@ fn title_touches_separator(tree: *const Object, obj: i16) -> bool {
     if ob_type != G_TITLE {
         return false;
     }
-    let sep_row = BAR_H - 1;
+    let sep_row = gl_hbox() - 1;
     let (_, y, _, h) = object::abs_rect(tree, obj);
     y <= sep_row && sep_row < y + h
 }
@@ -768,7 +770,7 @@ pub fn menu_ienable(pb: &Aespb) {
 pub fn menu_tnormal(pb: &Aespb) {
     do_chg(pb, pb.intin(0), SELECTED, pb.intin(1) == 0, true, true); // select when normal==0
     // `do_chg` (dodraw=true) repainted the title's cell. A bar `G_TITLE` spans
-    // the full bar height, so that fill covered the separator row at BAR_H-1,
+    // the full bar height, so that fill covered the separator row at gl_hbox-1,
     // erasing the segment of the bar's separator line under the title (the same
     // reason `close_box` restores it on the cancel path). Repaint the line when
     // the normalized object is a bar title touching that row — not for
@@ -1127,12 +1129,19 @@ fn clamp_height(height: i16) -> i16 {
 struct Settings(UnsafeCell<MnSet>);
 // SAFETY: single boot CPU only touches the AES.
 unsafe impl Sync for Settings {}
+/// The `MN_SET.height` default (a scroll height in **items**, `clamp_height`).
+/// Carried over unchanged from the pre-A20 initialiser, which used the menu-bar
+/// pixel height for it; EmuTOS initialises it to `INIT_HEIGHT_VALUE` = 16
+/// (`gemmnext.c:74`, clamped in `mnext_init`, `:109`) — a separate finding,
+/// not changed here.
+const SETTINGS_HEIGHT_DEFAULT: i16 = 19;
+
 static SETTINGS: Settings = Settings(UnsafeCell::new(MnSet {
     display: 0,
     drag: 0,
     delay: 250, // sub-menu delay (ms) — a common TOS default
     speed: 10,
-    height: BAR_H,
+    height: SETTINGS_HEIGHT_DEFAULT,
 }));
 
 /// `menu_settings` (39) — get (`int_in[0]`=0) or set (1) the menu-behaviour
@@ -1545,29 +1554,30 @@ pub fn selftest_menu_sr_residue(backend: &dyn RasterBackend) -> (u32, u32) {
         ob_next: next, ob_head: head, ob_tail: tail, ob_type: ty, ob_flags: 0,
         ob_state: 0, ob_spec: spec, ob_x: x, ob_y: y, ob_width: w, ob_height: h,
     };
-    let title = |p: &[u8], x, next| mk(G_TITLE, p.as_ptr() as u64, x, 0, 64, BAR_H, next, -1, -1);
-    let item = |p: &[u8], y, w, next| mk(G_STRING, p.as_ptr() as u64, 0, y, w, BAR_H, next, -1, -1);
+    let bar_h = gl_hbox();
+    let title = |p: &[u8], x, next| mk(G_TITLE, p.as_ptr() as u64, x, 0, 64, bar_h, next, -1, -1);
+    let item = |p: &[u8], y, w, next| mk(G_STRING, p.as_ptr() as u64, 0, y, w, bar_h, next, -1, -1);
 
     // Box A: 200×340 (under the old cap) — the box we slide *away* from.
     // Box B: 170×130, overlapping A in X, much shorter — the box we slide *to*.
     // Box C: 280 wide (> the old 256 cap), isolated — the cap/white-erase case.
     let tree = [
         /* 0 THESCREEN */ mk(G_IBOX_T, 0, 0, 0, sw, sh, -1, 1, 6),
-        /* 1 THEBAR    */ mk(G_BOX_T, 0, 0, 0, sw, BAR_H, 6, 2, 2),
-        /* 2 THEACTIVE */ mk(G_IBOX_T, 0, 0, 0, sw, BAR_H, 1, 3, 5),
+        /* 1 THEBAR    */ mk(G_BOX_T, 0, 0, 0, sw, bar_h, 6, 2, 2),
+        /* 2 THEACTIVE */ mk(G_IBOX_T, 0, 0, 0, sw, bar_h, 1, 3, 5),
         /* 3 titleA    */ title(NA, 100, 4),
         /* 4 titleB    */ title(NB, 40, 5),
         /* 5 titleC    */ title(NC, 320, 2), // last title → next = THEACTIVE
         /* 6 themenus  */ mk(G_IBOX_T, 0, 0, 0, sw, sh, 0, 7, 13),
         /* 7 boxA      */ mk(G_BOX_T, SPEC_TH_NEG1, 100, 40, 200, 340, 10, 8, 9),
         /* 8  A0       */ item(A0, 0, 200, 9),
-        /* 9  A1       */ item(A1, BAR_H, 200, 7), // last child → next = boxA
+        /* 9  A1       */ item(A1, bar_h, 200, 7), // last child → next = boxA
         /*10 boxB      */ mk(G_BOX_T, SPEC_TH_NEG1, 40, 40, 170, 130, 13, 11, 12),
         /*11  B0       */ item(B0, 0, 170, 12),
-        /*12  B1       */ item(B1, BAR_H, 170, 10), // last child → next = boxB
+        /*12  B1       */ item(B1, bar_h, 170, 10), // last child → next = boxB
         /*13 boxC      */ mk(G_BOX_T, SPEC_TH_NEG1, 320, 250, 280, 180, 6, 14, 15),
         /*14  C0       */ item(C0, 0, 280, 15),
-        /*15  C1       */ item(C1, BAR_H, 280, 13), // last child → next = boxC
+        /*15  C1       */ item(C1, bar_h, 280, 13), // last child → next = boxC
     ];
     let tp = tree.as_ptr() as *mut Object;
 

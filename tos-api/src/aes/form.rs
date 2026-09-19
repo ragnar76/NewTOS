@@ -220,8 +220,8 @@ fn do_alert(defbut: i16, s: &[u8], modal: bool) -> i16 {
     let box_x = (sw - box_w) / 2;
     // Centre BELOW the menu bar (EmuTOS `ob_center`, gemobed.c:78:
     // `yd = gl_hbox + (gl_height - gl_hbox - hd) / 2`), consistent with our own
-    // `form_center`. gl_hbox == window::GL_HBOX == 19 px (the menu BAR_H).
-    let bar = super::window::GL_HBOX;
+    // `form_center`. gl_hbox = gl_hchar + 3 (`graf::gl_hbox`, the menu row).
+    let bar = super::graf::gl_hbox();
     let box_y = bar + (sh - bar - box_h) / 2;
     // Icon position (screen-absolute), vertically centred in the content.
     let icon_x = box_x + padx;
@@ -930,9 +930,9 @@ pub(super) fn ob_center(t: ObjTree) -> Option<(i16, i16, i16, i16)> {
     let mut xd = (sw - wd) / 2;
     // Centre BELOW the menu bar (EmuTOS ob_center, gemobed.c:76-80:
     // `yd = gl_hbox + (gl_height - gl_hbox - hd) / 2`), so a centred dialog
-    // never lands under the menu bar. gl_hbox = gl_hchar + 3 = 19 pixels
-    // (== window::GL_HBOX == the menu BAR_H).
-    let bar = super::window::GL_HBOX;
+    // never lands under the menu bar. gl_hbox = gl_hchar + 3 (`graf::gl_hbox`,
+    // the menu row).
+    let bar = super::graf::gl_hbox();
     let mut yd = bar + (sh - bar - hd) / 2;
     t.set_x(0, xd);
     t.set_y(0, yd);
@@ -1013,7 +1013,7 @@ pub(super) fn gl_rcenter() -> (i16, i16, i16, i16) {
         Some(b) => (b.width() as i16, b.height() as i16),
         None => (0, 0),
     };
-    let (wbox, hbox) = (super::window::GL_WBOX, super::window::GL_HBOX);
+    let (wbox, hbox) = (super::window::GL_WBOX, super::graf::gl_hbox());
     ((w - wbox) / 2, (h - 2 * hbox) / 2, wbox, hbox)
 }
 

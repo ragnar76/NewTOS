@@ -29,6 +29,8 @@ pub mod trace;
 pub mod window;
 mod pd;
 
+pub use graf::hbox_of;
+
 use crate::bdos::process::Abi;
 
 /// The AES parameter block: six pointers (four to WORD arrays, two to

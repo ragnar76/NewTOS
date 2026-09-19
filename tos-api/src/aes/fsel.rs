@@ -33,7 +33,7 @@
 
 use super::form::{fm_dial, gl_rcenter, FMD_FINISH, FMD_START};
 use super::object::{self, Object, ObjTree, TedInfo};
-use super::window::GL_HBOX;
+use super::graf::gl_hbox;
 use super::{resource, Aespb};
 use crate::host::host;
 use crate::vdi::backend::RasterBackend;
@@ -787,7 +787,7 @@ fn size_elevator(tree: *mut Object) {
         let mut y = 0i16;
         let mut h = track_h;
         if count > NM_NAMES {
-            h = (track_h * NM_NAMES as i16 / count as i16).max(GL_HBOX);
+            h = (track_h * NM_NAMES as i16 / count as i16).max(gl_hbox());
             y = (track_h - h) * *SYS.top.get() as i16 / (count - NM_NAMES) as i16;
         }
         let thumb = &mut *tree.add(FSVELEV as usize);

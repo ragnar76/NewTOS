@@ -60,8 +60,6 @@ fn rect_event(m: &MoBlk) -> bool {
     (m.flags != 0) != inside
 }
 
-/// Menu-bar height in pixels (matches `menu::BAR_H`).
-const MENU_BAR_H: i16 = 19;
 /// `MN_SELECTED` message id.
 const MN_SELECTED: i16 = 10;
 
@@ -101,8 +99,11 @@ fn menu_intercept(pid: i16) -> bool {
     }
     // Hover model: the drop-down opens whenever the cursor is over the bar
     // with the buttons up — `mchange`'s hand-over condition, no click required.
+    // The bar is `gl_rmenu = (0, 0, gl_width, gl_hbox)` (`gemgraf.c:427`), the
+    // Control Manager's wait rectangle; its height is the one `gl_hbox`
+    // (`graf::gl_hbox`), not a number of this module's own.
     let (_mx, my) = crate::vdi::mouse_position();
-    if my >= MENU_BAR_H || crate::vdi::mouse_buttons() & 0x01 != 0 {
+    if my >= super::graf::gl_hbox() || crate::vdi::mouse_buttons() & 0x01 != 0 {
         return false;
     }
     let Some(backend) = host().and_then(|h| h.raster()) else {
