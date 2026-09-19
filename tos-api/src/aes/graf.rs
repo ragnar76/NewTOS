@@ -597,6 +597,12 @@ pub fn graf_handle(pb: &Aespb) {
 /// `M_ON`→`gsx_mon` (`gl_moff--`, show only at 0) — a counting semaphore, so
 /// nested `M_OFF;M_OFF;M_ON` stays hidden. `M_SAVE` stores the current form in
 /// `rlr->p_mouse`; `M_RESTORE`/`M_PREVIOUS` reinstall the saved / previous form.
+///
+/// Every other number is the `default:` arm (`gemgrlib.c:426-429`): a mode
+/// outside `ARROW..=OUTLN_CROSS` is clamped to `ARROW` ("fail safe") and the
+/// preset is then **installed** by the `gsx_mfset` the arm falls through to
+/// (`:454`). There is no "unknown number, leave the cursor alone" path — 8,
+/// 254, 261 or -1 all put the arrow up (A44).
 pub fn graf_mouse(pb: &Aespb) {
     let number = pb.intin(0);
     if let Some(backend) = host().and_then(|h| h.raster()) {
@@ -607,17 +613,28 @@ pub fn graf_mouse(pb: &Aespb) {
             M_OFF => crate::vdi::mouse::hide(backend),
             M_ON => crate::vdi::mouse::show(backend),
             USER_DEF => set_user_form(pb, backend),
-            0..=7 => crate::vdi::mouse::set_preset(number, backend),
             // Saved-form slot (EmuTOS rlr->p_mouse) + previous-form slot
             // (gl_prevmouse), both maintained in the VDI cursor subsystem.
             M_SAVE => crate::vdi::mouse::save_form(),
             M_RESTORE => crate::vdi::mouse::restore_form(backend),
             M_PREVIOUS => crate::vdi::mouse::previous_form(backend),
-            _ => {} // undefined shape number: leave the cursor unchanged
+            // `default:` — a preset, or an unknown number clamped to ARROW.
+            _ => {
+                let preset = if (ARROW..=OUTLN_CROSS).contains(&number) {
+                    number
+                } else {
+                    ARROW
+                };
+                crate::vdi::mouse::set_preset(preset, backend);
+            }
         }
     }
     pb.set_ret(1);
 }
+
+/// The first and last preset form number (`aesdefs.h:424-431`).
+const ARROW: i16 = 0;
+const OUTLN_CROSS: i16 = 7;
 
 /// USER_DEF cursor form number (`aesdefs.h`).
 const USER_DEF: i16 = 255;

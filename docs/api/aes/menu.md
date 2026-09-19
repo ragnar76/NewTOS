@@ -500,7 +500,16 @@ nor 1 (`gemmnext.c:566-587`).
 Reads or writes the global submenu/scroll timing settings. `flag=0` copies the
 current `settings` into `*set`; `flag=1` copies each **non-negative** field from
 `*set` into `settings` (negative values are ignored, matching TOS), clamping
-`height` to `[MIN_HEIGHT_VALUE=5, …]` (`gemmnext.c:600-616`).
+`height` to `[MIN_HEIGHT_VALUE=5, gl_rfull.g_h / gl_hchar]` (`clamp_height`,
+`gemmnext.c:83-95`; `mn_settings` `:600-615`). **Any other `flag` is a no-op:**
+`mn_settings` is a `switch(flag)` with the arms `0` and `1` and no `default`
+(`:598-615`), so `flag ∉ {0, 1}` neither reads nor writes either block —
+`*set` and `settings` both stay as they were; `int_out[0]` is still `1`.
+
+**Initial values** (`mnext_init`, `gemmnext.c:103-110`, run once after the
+workstation is up; `INIT_*_VALUE` `:71-75`): `display` 200, `drag` 10000,
+`delay` 250, `speed` 0, `height` `clamp_height(16)` = 16 on every NewTOS
+profile. These are what `menu_settings(0)` returns before any `flag=1` call.
 
 > **Minimal implementation (`gemmnext.c:594`):** "none of these values are
 > relevant" — EmuTOS stores the settings but its submenu code does not act on

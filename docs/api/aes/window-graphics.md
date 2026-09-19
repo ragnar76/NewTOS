@@ -935,8 +935,13 @@ temporarily drops and restores that ownership around the call
 | 260 | `M_PREVIOUS` † | restore the previously-used global form |
 
 Forms **0..7** select `mouse_cursor[mode]` from the eight preset MFORMs loaded
-at start-up (`geminit.c:124`, `NUM_MOUSE_CURSORS = 8`); an out-of-range preset
-falls back to `ARROW` (`gemgrlib.c:427`). `USER_DEF` uses the caller's `MFORM`
+at start-up (`geminit.c:124`, `NUM_MOUSE_CURSORS = 8`). **Every number that is
+not one of the named modes is the `default:` arm** (`gemgrlib.c:426-429`): a
+mode outside `ARROW..OUTLN_CROSS` — 8…254, 261 and up, or negative — is clamped
+to `ARROW` ("fail safe") and that preset is then **installed** by the
+`gsx_mfset` the arm falls through to (`:454`). `gr_mouse` is `void` and has no
+"unknown number, leave the cursor alone" path; `int_out[0]` is `1` in every
+case. `USER_DEF` uses the caller's `MFORM`
 (a 74-byte struct: hotspot x/y, planes, bg/fg mask colours, 16 mask + 16 data
 words, `aesdefs.h:441-450`). † `M_SAVE`/`M_RESTORE`/`M_PREVIOUS` (258–260) exist
 only with `CONF_WITH_GRAF_MOUSE_EXTENSION` (default **1**, AES 3.20+).

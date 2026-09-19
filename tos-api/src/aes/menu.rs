@@ -1129,24 +1129,30 @@ fn clamp_height(height: i16) -> i16 {
 struct Settings(UnsafeCell<MnSet>);
 // SAFETY: single boot CPU only touches the AES.
 unsafe impl Sync for Settings {}
-/// The `MN_SET.height` default (a scroll height in **items**, `clamp_height`).
-/// Carried over unchanged from the pre-A20 initialiser, which used the menu-bar
-/// pixel height for it; EmuTOS initialises it to `INIT_HEIGHT_VALUE` = 16
-/// (`gemmnext.c:74`, clamped in `mnext_init`, `:109`) — a separate finding,
-/// not changed here.
-const SETTINGS_HEIGHT_DEFAULT: i16 = 19;
 
+/// The power-up `settings` block — EmuTOS `mnext_init` (`gemmnext.c:103-110`)
+/// with the `INIT_*_VALUE` constants (`:71-75`): submenu display delay 200 ms,
+/// submenu drag delay 10000 ms, single-click scroll delay 250 ms, continuous
+/// scroll delay 0 ms, scroll height 16 items. `mnext_init` runs `height`
+/// through `clamp_height` because it is called after the workstation is up;
+/// a static initialiser cannot, but the upper bound (`gl_rfull.g_h /
+/// gl_hchar`) only bites when fewer than 16 system-font rows fit under the
+/// menu bar — a screen of under ~275 rows at the 16-pixel font — which no
+/// NewTOS profile has, so 16 is what `clamp_height(16)` returns on every one
+/// of them.
 static SETTINGS: Settings = Settings(UnsafeCell::new(MnSet {
-    display: 0,
-    drag: 0,
-    delay: 250, // sub-menu delay (ms) — a common TOS default
-    speed: 10,
-    height: SETTINGS_HEIGHT_DEFAULT,
+    display: 200,
+    drag: 10000,
+    delay: 250,
+    speed: 0,
+    height: 16,
 }));
 
 /// `menu_settings` (39) — get (`int_in[0]`=0) or set (1) the menu-behaviour
 /// block at `addr_in[0]` (`MN_SET`). Negative fields are left unchanged on
-/// set (like TOS). EmuTOS `mn_settings`.
+/// set (like TOS). EmuTOS `mn_settings` (`gemmnext.c:596-616`) is a
+/// `switch(flag)` with the arms 0 and 1 and **no `default`**: any other
+/// selector is a no-op that neither reads nor writes either block (A43).
 pub fn menu_settings(pb: &Aespb) {
     let set = pb.addrin(0) as *mut MnSet;
     let flag = pb.intin(0);
@@ -1157,25 +1163,27 @@ pub fn menu_settings(pb: &Aespb) {
     // SAFETY: single-CPU AES; valid MN_SET (GEM contract).
     unsafe {
         let cur = &mut *SETTINGS.0.get();
-        if flag == 0 {
-            *set = *cur;
-        } else {
-            let s = *set;
-            if s.display >= 0 {
-                cur.display = s.display;
+        match flag {
+            0 => *set = *cur,
+            1 => {
+                let s = *set;
+                if s.display >= 0 {
+                    cur.display = s.display;
+                }
+                if s.drag >= 0 {
+                    cur.drag = s.drag;
+                }
+                if s.delay >= 0 {
+                    cur.delay = s.delay;
+                }
+                if s.speed >= 0 {
+                    cur.speed = s.speed;
+                }
+                if s.height >= 0 {
+                    cur.height = clamp_height(s.height);
+                }
             }
-            if s.drag >= 0 {
-                cur.drag = s.drag;
-            }
-            if s.delay >= 0 {
-                cur.delay = s.delay;
-            }
-            if s.speed >= 0 {
-                cur.speed = s.speed;
-            }
-            if s.height >= 0 {
-                cur.height = clamp_height(s.height);
-            }
+            _ => {} // no such arm in mn_settings: nothing is read or written
         }
     }
     pb.set_ret(1);
