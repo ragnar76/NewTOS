@@ -1,0 +1,14 @@
+state after kernel rsrc_load(desktop.rsc):  40 03 01 00 01 00 7b 11 00 00 44 00 40 00 00 00 40 00 36 99 10 00 18 5b 12 00 00 00 00 00 00 00
+after 8-byte store of trindex=0x427028 @10: 40 03 01 00 01 00 7b 11 00 00 28 70 42 00 00 00 00 00 36 99 10 00 18 5b 12 00 00 00 00 00 00 00
+after 8-byte store of buf=0x427000 @14:      40 03 01 00 01 00 7b 11 00 00 28 70 42 00 00 70 42 00 00 00 00 00 18 5b 12 00 00 00 00 00 00 00
+
+DERIVED intermediate state (after xrsrc_fix, before load_icons restores 16..31):
+  TOS view      : ap_ptree@10=0x427028 ap_rscmem@14=0x427000 ap_rsclen@18=0 ap_planes@20=0 (rsclen/planes CLOBBERED to 0 by the 8-byte store)
+  library.h view: ap_ptree@16=0x5b18000000000042 ap_rscmem@24=0x12
+MEASURED TeraDesk statics after load_icons: svicntree=0x5b18000000000042 svicnrshdr=0x12 icons=0x427050
+  -> svicntree == derived ap_ptree@16, svicnrshdr == derived ap_rscmem@24  (derivation confirmed by measurement)
+  -> written trindex=0x427028 vs read back svicntree=0x5b18000000000042; written buf=0x427000 vs read back svicnrshdr=0x12
+
+after restore of bytes 16..31 (load_icons:2762-2763): 40 03 01 00 01 00 7b 11 00 00 28 70 42 00 00 70 40 00 36 99 10 00 18 5b 12 00 00 00 00 00 00 00
+  == MEASURED first AES trap after load_icons (pre op=104): derivation confirmed byte for byte
+  TOS view: ap_ptree@10=0x427028 (icons.rsc trindex, NOT restored) ap_rscmem@14=0x407000 (hybrid: low16 of icons buf | high16 of desktop.rsc base)

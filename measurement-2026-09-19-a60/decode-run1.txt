@@ -1,0 +1,20 @@
+== pre  op=10 global=0x3258c 
+   bytes: 00:00 01:00 02:00 03:00 04:ff 05:ff 06:00 07:00 08:00 09:00 10:00 11:00 12:00 13:00 14:00 15:00 16:00 17:00 18:00 19:00 20:00 21:00 22:00 23:00 24:00 25:00 26:00 27:00 28:00 29:00 30:00 31:00
+   TOS layout   : ap_version=0x0000 ap_count=0 ap_id=65535 ap_private=0x0 ap_ptree@10=0x0 ap_rscmem@14=0x0 ap_rsclen@18=0 ap_planes@20=0 ap_3resv@22=0x0 ap_4resv@26=0x0
+   TeraDesk LP64 struct (library.h): ap_private@8=0x0 ap_ptree@16=0x0 ap_rscmem@24=0x0 (ap_rsclen@32/ap_planes@34/ap_3resv@40 lie beyond the 32-byte array)
+   rsc_load.c 8-byte view: *(OBJECT***)&aes_global[5] (@10)=0x0  *(void**)&aes_global[7] (@14)=0x0
+== post op=10 global=0x3258c 
+   bytes: 00:40 01:03 02:01 03:00 04:01 05:00 06:7b 07:11 08:00 09:00 10:00 11:00 12:00 13:00 14:00 15:00 16:00 17:00 18:00 19:00 20:10 21:00 22:18 23:5b 24:12 25:00 26:00 27:00 28:00 29:00 30:00 31:00
+   TOS layout   : ap_version=0x0340 ap_count=1 ap_id=1 ap_private=0x117b ap_ptree@10=0x0 ap_rscmem@14=0x0 ap_rsclen@18=0 ap_planes@20=16 ap_3resv@22=0x125b18 ap_4resv@26=0x0
+   TeraDesk LP64 struct (library.h): ap_private@8=0x0 ap_ptree@16=0x5b18001000000000 ap_rscmem@24=0x12 (ap_rsclen@32/ap_planes@34/ap_3resv@40 lie beyond the 32-byte array)
+   rsc_load.c 8-byte view: *(OBJECT***)&aes_global[5] (@10)=0x0  *(void**)&aes_global[7] (@14)=0x10000000000000
+== post op=110 global=0x3258c 
+   bytes: 00:40 01:03 02:01 03:00 04:01 05:00 06:7b 07:11 08:00 09:00 10:44 11:00 12:40 13:00 14:00 15:00 16:40 17:00 18:36 19:99 20:10 21:00 22:18 23:5b 24:12 25:00 26:00 27:00 28:00 29:00 30:00 31:00
+   TOS layout   : ap_version=0x0340 ap_count=1 ap_id=1 ap_private=0x117b ap_ptree@10=0x400044 ap_rscmem@14=0x400000 ap_rsclen@18=39222 ap_planes@20=16 ap_3resv@22=0x125b18 ap_4resv@26=0x0
+   TeraDesk LP64 struct (library.h): ap_private@8=0x4000440000 ap_ptree@16=0x5b18001099360040 ap_rscmem@24=0x12 (ap_rsclen@32/ap_planes@34/ap_3resv@40 lie beyond the 32-byte array)
+   rsc_load.c 8-byte view: *(OBJECT***)&aes_global[5] (@10)=0x40000000400044  *(void**)&aes_global[7] (@14)=0x10993600400000
+== pre  op=104 global=0x3258c 
+   bytes: 00:40 01:03 02:01 03:00 04:01 05:00 06:7b 07:11 08:00 09:00 10:28 11:70 12:42 13:00 14:00 15:70 16:40 17:00 18:36 19:99 20:10 21:00 22:18 23:5b 24:12 25:00 26:00 27:00 28:00 29:00 30:00 31:00
+   TOS layout   : ap_version=0x0340 ap_count=1 ap_id=1 ap_private=0x117b ap_ptree@10=0x427028 ap_rscmem@14=0x407000 ap_rsclen@18=39222 ap_planes@20=16 ap_3resv@22=0x125b18 ap_4resv@26=0x0
+   TeraDesk LP64 struct (library.h): ap_private@8=0x7000004270280000 ap_ptree@16=0x5b18001099360040 ap_rscmem@24=0x12 (ap_rsclen@32/ap_planes@34/ap_3resv@40 lie beyond the 32-byte array)
+   rsc_load.c 8-byte view: *(OBJECT***)&aes_global[5] (@10)=0x40700000427028  *(void**)&aes_global[7] (@14)=0x10993600407000

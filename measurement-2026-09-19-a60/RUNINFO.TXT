@@ -1,0 +1,67 @@
+A60 -- TeraDesk widerspricht sich auf LP64 ueber die Lage des AESGLOBAL. MESSBELEG.
+QEMU raspi4b (640x480, headless), 2026-09-19. MESSUNG NUR: kein Produktcode geaendert.
+Branch desk-rebuild, Basis HEAD c26734a. EmuTOS-Quelle references/emutos @ 1a7484ab.
+
+KERNEL
+  Release-Bau (`cargo xtask build --board rpi4 --release`) aus einer SCRATCH-KOPIE des
+  Projektbaums (rsync ohne target/, .git/, measurement-*/, pictures/, references/, sdk/apps/)
+  unter <scratchpad>/a60/ws, mit DREI Instrumenten (method/a60_patch.py, je Datei ein Diff
+  method/scratch-*.diff gegen den Projektbaum):
+    (1) tos-api/src/aes/mod.rs: bei jedem AES-Trap eines EL0-Prozesses mit AES-pid 1 die
+        ersten 32 Byte des AESGLOBAL (Adresse aus dem AESPB) vor ("pre") und nach ("post")
+        dem Aufruf, nur wenn sie sich seit dem letzten Dump geaendert haben; dazu Aufruf und
+        Rueckgabe von appl_init(10) / rsrc_load(110) / rsrc_free(111) / rsrc_gaddr(112,
+        mit addrout[0]) / shel_find(124); und TeraDesks eigene Statics svicntree (VA 0x30f60),
+        svicnrshdr (0x30f68), icons (0x30ed0), colour_icons (0x3115c) -- Link-VAs aus llvm-nm
+        von dist/DESKTOP.NAP, ueber das Prozessfenster gelesen, geloggt bei Aenderung.
+    (2) tos-api/src/host.rs: debug_write -> console_write_bytes (serielle Leitung).
+    (3) tos-api/src/gemdos/memory.rs: [a60] Malloc(<n>) -> <adr> fuer EL0-Aufrufer mit pid 1
+        (liefert die Blobbasis, die xrsrc_load fuer icons.rsc bekommt).
+  build/kernel8-a60.img  sha256 dab98f97...  (build/build-rpi4.log)
+  Projektbaum unberuehrt: kernel/src/host_env.rs sha256 287ff741... vor und nach der Messung;
+  git status zeigt nur measurement-2026-09-19-a60/ und TASK/A60-STATUS-DONE.MD als neu.
+
+IMAGE
+  tools/make-sd-image.sh <scratch>/a60/sd-base.img 64 (sha256 4d4d480f...), dann per
+  measurement-2026-09-18-h05/method/sd-put.sh
+    NEWDESK.INF = method/newdesk-user.inf (sha256 457a70e7..., #Z 01 C:\APPS\TERADESK\DESKTOP.NAP@)
+    Apps\TERADESK\TERADESK.INF = method/teradesk-user.inf (sha256 5be1b5c7...)
+  -> sd-run1.img (sha256 4cc2e01a...).
+  run2: zusaetzlich Apps\TERADESK\cicons.rsc = sdk/apps/teradesk/cicons.rsc (unkonvertiert,
+  sha256 b322a3d7...; tools/mkrsc.py convert lehnt es ab: "new-format (CICONBLK) .rsc not
+  supported") -> sd-run2.img (sha256 466395cf...).
+  DESKTOP.NAP = sdk/apps/teradesk/build/dist/DESKTOP.NAP sha256 db31aae1... (= H05-Stand),
+  desktop.rsc f03744cc... (NRSC v7, 39222 B), icons.rsc 8d4bc8a2... (native RSHDR, 13284 B).
+
+LAEUFE (kein Injektor, keine Geste: der #Z-Start von TeraDesk genuegt; 75 s, dann Screendump)
+  run1  serial/run1-serial.log, screendumps/run1-after-boot.png
+  run2  wie run1 mit cicons.rsc auf der Karte: serial/run2-serial.log,
+        screendumps/run2-cicons-installed.png. [a60]-Trace und Screendump BYTEGLEICH zu run1:
+        der Kern lehnt cicons.rsc ab (rsrc_load -> 0), TeraDesk nimmt denselben Mono-Zweig.
+
+DIE DREI DUMPS (run1, decode-run1.txt; TOS-Ablage nach docs/api/aes/application.md)
+  nach appl_init      : 4003 0100 0100 7b11 0000 0000 0000 0000 0000 0000 1000 185b 1200 0000 0000 0000
+                        ap_version 0x0340, ap_count 1, ap_id 1, ap_private 0x117b, ap_planes 16,
+                        ap_3resv 0x00125b18; ap_ptree/ap_rscmem/ap_rsclen 0.
+  nach rsrc_load(desktop.rsc), Kern (report_load):
+                        4003 0100 0100 7b11 0000 4400 4000 0000 4000 3699 1000 185b 1200 0000 0000 0000
+                        ap_ptree@10 = 0x00400044, ap_rscmem@14 = 0x00400000, ap_rsclen@18 = 39222.
+  nach load_icons (erster AES-Trap danach, op 104):
+                        4003 0100 0100 7b11 0000 2870 4200 0070 4000 3699 1000 185b 1200 0000 0000 0000
+                        ap_ptree@10 = 0x00427028 (= icons.rsc-Baumfeld, NICHT zurueckgestellt),
+                        ap_rscmem@14 = 0x00407000 (HYBRID: low16 von 0x427000 | high16 von 0x400000),
+                        Byte 16..31 auf den Stand nach rsrc_load zurueckgestellt.
+  TeraDesk-Statics nach load_icons: svicntree = 0x5b18000000000042, svicnrshdr = 0x12,
+                        icons = 0x427050 (= Baum 0x427030 + 32).
+  Malloc(13284) -> 0x427000 = buf von xrsrc_load; rsh_trindex von icons.rsc = 0x28 -> 0x427028.
+
+DER WIDERSPRUCH ALS ZAHL
+  geschrieben (rsc_load.c:417-422, 8 Byte @10 und @14): ap_ptree := 0x427028, ap_rscmem := 0x427000
+  zurueckgelesen (icon.c:2751-2752 ueber library.h:81/83, 8 Byte @16 und @24):
+                        svicntree = 0x5b18000000000042, svicnrshdr = 0x12
+  Herleitung des Zwischenstands (decode-intermediate.txt) trifft beide Messwerte und den
+  Dump nach load_icons Byte fuer Byte.
+
+Sichtbar heute: nichts (Screendump: Menue, vier Laufwerke, Papierkorb -- Mono-Icons da).
+Wirkung auf A39 Stufe 2: Selektor u32@14 = 0x407000 nennt keinen Kern-Blob (desktop.rsc-Basis
+0x400000; 0x427000 ist ein privater Malloc-Block) -> "nothing loaded".
