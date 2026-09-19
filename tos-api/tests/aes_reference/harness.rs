@@ -1262,7 +1262,8 @@ pub struct Delta {
 /// The whole list, and it has exactly one subject: `WF_OWNER`.
 ///
 /// `WF_OWNER` (20) **did not exist** in EmuTOS 1.4. It is absent from
-/// `include/aesdefs.h` (which ends at `WF_COLOR` 18) and `wm_get` has no arm
+/// `include/aesdefs.h` (which ends at `WF_DCOLOR` 19 — checked against the
+/// `VERSION_1_4` tag, A05) and `wm_get` has no arm
 /// for it, so field 20 reaches `default: return FALSE` and the AES answers
 /// `RET_CODE = 0` — which is what the TT recorded. It was added on 2025-08-23
 /// (`acb7f3b4`, "Add partial implementation of WF_OWNER to wind_get"), after
