@@ -163,6 +163,20 @@ unsafe fn terminate_inner(reserve: bool) -> Result<PtermResume, PtermError> {
     }
     let parent_l0_pa = slot.parent_l0_pa.load(Ordering::Acquire);
 
+    // AES resource lists: drop the dying process's entries (A39, R6). EmuTOS
+    // needs no such step — its resource state is the three words in the
+    // application's own `AESGLOBAL`, which die with the TPA, and the blob is
+    // one of the owned blocks `free_all_owned` below reclaims (`ixterm`,
+    // `bdos/proc.c:136`). NewTOS keeps a per-process descriptor in the AES,
+    // and the next program in this slot gets the same AES pid (`slot + 1`)
+    // and, at `appl_init`, the same reused AES descriptor — so the entries
+    // must go here, on both the `Pterm` and the `Ptermres` path, or the next
+    // tenant would inherit kernel aliases of memory that is no longer its
+    // resource. Only this pid's entries; the parent's stay. The pool blocks
+    // are handled by the sweep below (or kept resident by `Ptermres`), and the
+    // slot's EL0 window table is re-seeded by the next load (`usermem::seed_tpa`).
+    crate::aes::resource::on_process_exit(crate::aes::pid_of_slot(slot_idx));
+
     // Sweep both BDOS pools for blocks owned by this process: free
     // them (`Pterm`) or reserve them as resident (`Ptermres`).
     // SAFETY: caller holds the BDOS giant lock; `bp` is a valid

@@ -290,6 +290,12 @@ pub fn table_addr() -> u64 {
 /// a new slot; on an existing one only sets `AP_OPEN`, preserving its queue,
 /// name and other flags (EmuTOS `ap_init`, `aes/gemaplib.c:54-63`).
 ///
+/// The application's loaded resources are not part of this descriptor
+/// (EmuTOS's `AESPD` has no resource field either, `aes/struct.h:119-155`);
+/// they are keyed by the same pid in `super::resource` and dropped at the
+/// process's end (`resource::on_process_exit`), so a reused descriptor never
+/// carries a previous tenant's resource (A39 R6).
+///
 /// # Safety
 /// Single trap path.
 pub unsafe fn open(pid: i16) -> Option<&'static mut Aespd> {

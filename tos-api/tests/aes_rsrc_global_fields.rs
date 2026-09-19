@@ -397,9 +397,11 @@ fn ap_rsclen_lands_together_with_the_two_address_fields() {
 
 /// Refusing to publish must not weaken the load: `rsrc_load` still returns 1,
 /// `rsrc_gaddr` still answers at full width from the kernel descriptor, and
-/// `rsrc_free` still reports that something was loaded. NewTOS deliberately
-/// does not adopt EmuTOS's `rs_sglobe` read-back (`gemrslib.c:675-679`), so
-/// the `AESGLOBAL` is a report, never the AES's own state.
+/// `rsrc_free` still reports that something was loaded. In stage 1 of A39
+/// the calls act on the caller's *selected* per-process entry, not on the
+/// `AESGLOBAL` words; EmuTOS's `rs_sglobe` read-back (`gemrslib.c:675-679`)
+/// is stage 2, after A60 (`tos-api/src/aes/resource.rs`, module comment) —
+/// once it lands, this load with its zero words reads as "nothing loaded".
 #[test]
 fn a_load_that_publishes_nothing_still_works() {
     let _g = fs();

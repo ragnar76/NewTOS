@@ -1,0 +1,240 @@
+A39-Stufe-1-Fix unabhaengig verifiziert (Tester, 2026-09-19). Nur gemessen, kein
+Produktcode geaendert. Branch desk-rebuild, HEAD fbd6856 (uncommitted:
+tos-api/src/aes/resource.rs, tos-api/src/bdos/process/pterm.rs,
+tos-api/src/aes/appl.rs, tos-api/src/aes/pd.rs,
+tos-api/tests/aes_rsrc_global_fields.rs, neu
+tos-api/tests/aes_rsrc_per_process.rs). Auftrag: unabhaengig verifizieren, dem
+Developer-Selbstreport nicht trauen.
+
+===============================================================================
+1. HOSTTEST aes_rsrc_per_process (5/5 erwartet) + ROT-GEGENPROBE
+===============================================================================
+
+cargo test -p tos-api --test aes_rsrc_per_process -- --test-threads=1
+  Hauptbaum (Fix): 5 passed; 0 failed; 0 ignored.
+  host-tests/aes_rsrc_per_process-GREEN.txt
+
+Rot-Gegenprobe: git worktree add --detach <scratchpad>/a39/red-worktree fbd6856
+(HEAD, VOR dem Fix -- der commit fbd6856 traegt die A39-Doku-Vorarbeit, aber
+NICHT resource.rs/pterm.rs), Testdatei hineinkopiert (cp, kein git-Befehl),
+dort gebaut und gelaufen:
+
+  running 5 tests
+  test a_childs_load_and_free_leaves_the_parents_resource_untouched ... FAILED
+  test a_process_without_appl_init_loads_resolves_and_frees ... ok
+  test a_second_load_is_selected_and_freed_the_first_stays_loaded_unselected ... ok
+  test appl_exit_does_not_touch_the_resource ... ok
+  test process_end_drops_only_the_dying_processs_entries ... FAILED
+
+  a_childs_load_and_free_leaves_the_parents_resource_untouched:
+    assertion `left == right` failed: the parent's rsrc_gaddr must still find its resource
+      left: 0
+     right: 1
+  process_end_drops_only_the_dying_processs_entries:
+    assertion `left == right` failed: a new program in the dead process's slot must inherit no resource
+      left: (1, 535369367648)
+     right: (0, 0)
+
+  test result: FAILED. 3 passed; 2 failed; 0 ignored.
+
+Genau die im Auftrag vorhergesagten zwei Fehlschlaege (a: Eltern-rsrc_gaddr 0;
+b: neuer Mieter des Slots erbt die Ressource des Vorgaengers). host-tests/
+aes_rsrc_per_process-RED-on-fbd6856.txt. Worktree danach mit
+`git worktree remove --force` entfernt; `git worktree list` zeigt im
+Hauptbaum nur die zwei Standard-Eintraege (Hauptbaum + ein fremder,
+unberuehrter Agent-Worktree).
+
+Alle aes_rsrc_*-Tests + Nachbartests auf dem Fix-Stand (40 Tests, 11 Dateien,
+alle gruen, host-tests/all-related-GREEN.txt):
+  aes_app_return_descriptor    1/1
+  aes_global_layout            2/2
+  aes_launch_boundary_reset    1/1
+  aes_rsrc_global_fields       4/4
+  aes_rsrc_load_path           7/7
+  aes_rsrc_per_process         5/5
+  aes_rsrc_short_blob          6/6
+  aes_rsrc_substruct_arrays    6/6
+  aes_rsrc_tedinfo_reserve     2/2
+  aes_rsrc_tedinfo_txtlen      3/3
+  aes_shel_roundtrip           3/3
+
+===============================================================================
+2. cargo run -p xtask -- test (575/0/1 erwartet)
+===============================================================================
+
+Summe ueber alle "test result:"-Bloecke (Skript aufaddiert, siehe
+host-tests/xtask-test.txt): 575 passed; 0 failed; 1 ignored.
+EXAKTES MATCH mit der Erwartung.
+
+===============================================================================
+3. BEIDE BOARDS, WARNUNGEN, CLIPPY
+===============================================================================
+
+Board-Footgun beachtet: vor jedem Board-Wechsel `cargo clean -p kernel -p
+tos-api --target aarch64-unknown-none-softfloat` (kernel ist per
+per-package-target auf diesen Cross-Target gezwungen; ein `cargo clean -p`
+ohne --target raeumt nur den Host-Target und liess beim ersten Versuch
+"Compiling tos-api" fehlen -- korrigiert, siehe unten).
+
+cargo xtask build --board rpi4
+  -> "Compiling kernel", "Compiling tos-api" (beide bestaetigt neu compiliert),
+     exit 0. tos-api 64 rustc-Warnungen, kernel 94 rustc-Warnungen. Kein
+     "error". build/build-rpi4.log.
+cargo xtask build --board qemu-virt
+  -> "Compiling kernel", "Compiling tos-api", exit 0. tos-api 64, kernel 94.
+     Kein "error". Kein objcopy-Schritt (erwartet: kernel8.img entsteht nur
+     fuer --board rpi4, produce_kernel8_img() ist board-bedingt,
+     tools/xtask/src/main.rs cmd_build). build/build-qemu-virt.log.
+  Baseline 64/94 (A66) -- Delta 0.
+cargo clippy --package kernel --no-default-features --features board-rpi4
+  --lib --bins
+  -> "kernel (lib) generated 125 warnings", keine Fehler. build/clippy-kernel.log.
+cargo clippy -p tos-api
+  -> "tos-api (lib) generated 81 warnings", keine Fehler. build/clippy-tos-api.log.
+  Baseline 81/125 (A66) -- Delta 0.
+
+===============================================================================
+4. H05-SEQUENZ MIT QED ALS KIND (QEMU raspi4b, 640x480)
+===============================================================================
+
+METHODE
+  SCRATCH-Kopie <scratchpad>/a39/ws (rsync ohne target/, .git/, measurement-*/,
+  pictures/, sd-card-backup-*, .claude/worktrees/, graphify-out/). Drei
+  Instrument-Diffs aus measurement-2026-09-18-h05/method/ trafen unveraendert
+  (`patch -p0`, kein Fuzz): scratch-tos-api_src_aes_mod.rs.diff (H02_TRACE +
+  h02_log + der [aes] pid=<pid> op <opcode> in=(...) out=(...)-Trace an der
+  bestehenden Dispatch-Stelle in aes::dispatch), scratch-tos-api_src_aes_pd.rs.diff
+  (post_msg-Trace, nicht ausgewertet), scratch-tos-api_src_host.rs.diff
+  (debug_write-Trait-Methode). Der exceptions.rs-Teil von h05_patch.py
+  (Pexec/Pterm-Trace) von Hand nachgezogen (method/exceptions_patch.py, gleiche
+  Ersetzungen wie h05_patch.py, minus dessen mod.rs-Teil, der schon durch den
+  obigen Diff abgedeckt ist -- der `patch -p0`-Dry-Run bestaetigte vorher, dass
+  alle drei Diffs sauber greifen). method/gen_script.py +
+  method/apply_injector.py (unveraendert aus H05) fuer den IKBD-Injektor in
+  kernel/src/host_env.rs.
+
+  KEINE eigene Instrumentierung in resource.rs noetig: der bestehende
+  Dispatch-Trace (`[aes] pid=<pid> op <opcode> ... out=(...)`) liegt bereits
+  VOR/NACH jedem AES-Aufruf inkl. rsrc_load (110)/rsrc_free (111)/rsrc_gaddr
+  (112) und traegt die aufrufende pid -- exakt das im Auftrag verlangte Signal
+  (op 110/111 von pid 2, op 112 von pid 1 mit int_out[0]). Die im Auftrag
+  vorgesehene Rueckfalloption (Trace-Zeilen von Hand an register/rsrc_free/
+  selected in resource.rs) war deshalb nicht noetig.
+
+  Koordinaten wurden NICHT aus einer alten Messung uebernommen, sondern in
+  fuenf kurzen Recon-Laeufen (recon1..recon5, method/recon*.actions) selbst
+  am laufenden Bild ermittelt (Screendumps gelesen, naechster Klick daraus
+  abgeleitet): HARD DISC C (195,35); APPS-Ordner im geoeffneten C:\-Fenster
+  (427,207); QED-Unterordner in C:\APPS (347,207); Fenstertitel-Drag
+  (450,152)->(150,152) (Fenster ans Analogon zu H05 gezogen); QED.NAP nach dem
+  Zug (47,207); QEDs eigene Menuleiste "qed Datei Bearbeiten Fenster Suchen
+  Spezial Optionen Shell" (deutsch lokalisiert); Datei-Menuetitel (83,8);
+  Menuepunkt "Beenden" (unterster Eintrag, unter "Sichern & Beenden") bei
+  (100,267). Alle Recon-Screendumps unter screendumps/recon*-*.png, Serial
+  unter serial/recon*-serial.log -- keine Exception/kein Panic in keinem der
+  fuenf Recon-Laeufe (grep EXCEPTION/panic: 0 Treffer je Log).
+
+  Ablauf (method/full1.actions, generiert nach method/full1_script.rs via
+  gen_script.py -> apply_injector.py): #Z startet TeraDesk; HARD DISC C
+  doppelklicken (W1 = C:\*.*, "374035 bytes used in 24 items"); APPS-Ordner
+  doppelklicken (dir_newpath, "0 bytes used in 2 items", QED/TERADESK);
+  QED-Ordner doppelklicken ("610314 bytes used in 2 items", QED.NAP/QED.RSC);
+  Fenstertitel gezogen; QED.NAP doppelklicken; ~10s warten (durch Recon
+  bestaetigt: QED bereits nach ca. 10 virtuellen Sekunden interaktiv, siehe
+  recon5, wo das Datei-Menu zuverlaessig oeffnete); Datei-Menue oeffnen;
+  "Beenden" anklicken; Rueckkehr, Screendumps bei 0s/2s/5s/10s danach.
+
+  KERNEL: kernel8-full1.img, release, --board rpi4, aus der SCRATCH-Kopie
+  (Instrumentierung nur dort). sha256 siehe build/kernel-hashes.txt.
+  IMAGE: tools/make-sd-image.sh sd-base.img 64 aus der Scratch-Kopie (installiert
+  C:\Apps\QED\{QED.NAP,qed.rsc} und C:\Apps\TERADESK\{DESKTOP.NAP,desktop.rsc,
+  icons.rsc} automatisch -- Skript-Meldung geprueft). sd-recon1.img = sd-base.img
+  + NEWDESK.INF (method/newdesk-user.inf, sha256 457a70e7... = die Datei von der
+  Karte des Users, nur gelesen, #Z 01 C:\APPS\TERADESK\DESKTOP.NAP@) +
+  Apps/TERADESK/TERADESK.INF (method/teradesk-user.inf, sha256 5be1b5c7...,
+  nur gelesen). Hashes in build/kernel-hashes.txt.
+
+ERGEBNIS (serial/full1-serial.log)
+  Zeile 608 [h05] Pexec ... path='C:\APPS\QED\QED.NAP' -> child slot=1
+  Zeile 647 [aes] pid=2 op 110 in=(0,0,0,0) out=(1,0,0,0,0,0,0) yield=false
+            (rsrc_load von QED = pid 2, liefert 1 -- QED laedt seine eigene
+            .rsc; cflib appinit ruft rsrc_load, siehe H05-Verify-Smoketest)
+  Zeile 747 [aes] pid=2 op 111 in=(0,0,0,0) out=(1,0,0,0,0,0,0) yield=false
+            (rsrc_free von QED beim Beenden, liefert 1)
+  Zeile 749 [h05] Pterm dying_slot=1 rc=0 resume_to_el0=true parent_slot=0
+            RUN_after=0xffff000001000000 run_slot=Some(0)
+            (QED terminiert, Rueckkehr zu TeraDesk = pid 1, Slot 0)
+  Nach Zeile 749: alle 7 "[aes] pid=1 op 112" (rsrc_gaddr, TeraDesks eigene
+  Icon-/Infozeilen-Aufloesung fuer das C:\APPS\QED-Fenster) liefern
+  out=(1,0,0,0,0,0,0) -- KEIN einziges int_out[0]=0
+  (grep bestaetigt: `grep "pid=1 op 112" | grep "out=(0,"` -> 0 Treffer).
+
+  Screendumps full1-D-before-start.png ("610314 bytes used in 2 items", vor
+  dem Doppelklick auf QED.NAP), full1-F-qed-up.png (QEDs volle Menueleiste),
+  full1-H/I/J/K-after-*.png (0s/2s/5s/10s nach "Beenden"): Infozeile in JEDEM
+  nachher-Screendump identisch "610314 bytes used in 2 items", QED.NAP/QED.RSC-
+  Icons identisch gerendert. Pixel-Diff D gegen K (Python/PIL, RGB, 640x480 =
+  307200 Pixel): 107 unterschiedliche Pixel, alle im Bereich (151-156,154-160)
+  -- das ist AUSSCHLIESSLICH der Mauszeiger (D: Zeiger auf dem Fenstertitel;
+  K: Zeiger bei (100,275) nach dem letzten Klick) -- 0 Pixel Unterschied in
+  Infozeile/Icons/Fensterinhalt. Kein EXCEPTION/panic in serial/full1-serial.log
+  (grep: 0 Treffer).
+
+  Das ist der A39-Beleg mit QED als Kind: QEDs eigener rsrc_load/rsrc_free
+  (pid 2, op 110/111) laesst TeraDesks eigene Ressource (pid 1) unangetastet --
+  vorher (H05, globaler Static) waeren TeraDesks 36 rsrc_gaddr nach der
+  Rueckkehr auf 0 gefallen (leere Infozeile, falsche Icons, H05-STATUS-DONE.MD
+  Section 4). MINIGEM.NAP (H05/H05-Verify) ruft nie rsrc_load, deshalb war QED
+  fuer diesen Beleg noetig -- exakt wie im Auftrag begruendet.
+
+===============================================================================
+5. RAUCHTESTS OHNE INJEKTOR (kernel8-smoke.img, release, KEINE Instrumentierung,
+   frischer Bau direkt im Hauptbaum)
+===============================================================================
+
+#Z TeraDesk (sd-smoke-tera.img = sd-base.img + NEWDESK.INF/TERADESK.INF wie
+  oben): "[shell] sh_ldapp: starting C:\APPS\TERADESK\DESKTOP.NAP,
+  sh_nextapp=2, sh_isgem=1", kein panic/EXCEPTION. screendumps/smoke-tera-up.png
+  zeigt den TeraDesk-Desktop (4 HARD-DISC-Icons, TRASH, Menueleiste).
+#Z QED direkt (sd-smoke-qed.img = sd-base.img + NEWDESK.INF mit
+  "#Z 01 C:\APPS\QED\QED.NAP@", method/newdesk-qed.inf, identisch zu
+  newdesk-user.inf bis auf diese eine Zeile): "[shell] sh_ldapp: starting
+  C:\APPS\QED\QED.NAP, sh_nextapp=2, sh_isgem=1", kein panic/EXCEPTION.
+  screendumps/smoke-qed-up.png zeigt QEDs eigene Menueleiste vollflaechig.
+Unser Desktop ohne Autorun (sd-smoke-desk.img = sd-base.img selbst,
+  Platzhalter-NEWDESK.INF ohne #Z): "[shell] sh_ldapp: starting NEWDESK,
+  sh_nextapp=3, sh_isgem=1" / "[desk] desktop up (1 drives)", kein
+  panic/EXCEPTION. screendumps/smoke-desk-up.png zeigt C:\ mit 24 Items.
+
+===============================================================================
+6. git status --short / host_env.rs-Hash
+===============================================================================
+
+Hauptbaum, nach der gesamten Messung:
+  M tos-api/src/aes/appl.rs
+  M tos-api/src/aes/pd.rs
+  M tos-api/src/aes/resource.rs
+  M tos-api/src/bdos/process/pterm.rs
+  M tos-api/tests/aes_rsrc_global_fields.rs
+  ?? measurement-2026-09-19-a39/          (dieser Messlauf, neu)
+  ?? tos-api/tests/aes_rsrc_per_process.rs
+Das sind genau die sechs im Auftrag genannten Pfade plus mein eigener
+Messordner -- kein Produktcode veraendert.
+
+kernel/src/host_env.rs sha256 vorher = nachher:
+  287ff7415805b9cf0b7efe74487a5f24dd06f121ddd61cdb5f9e2d8a15618e3e
+
+`git worktree list` im Hauptbaum zeigt nur die zwei Standard-Eintraege
+(Hauptbaum `desk-rebuild` + einen fremden, von dieser Messung unberuehrten
+Agent-Worktree); der Rot-Gegenprobe-Worktree wurde mit
+`git worktree remove --force` entfernt.
+
+Alle QEMU-Prozesse beendet (Skripte killen den QEMU-Prozess nach `quit` bzw.
+nach 20 * 0.5s Poll-Timeout + SIGKILL-Fallback), alle per hdiutil angehaengten
+Disk-Images wieder ausgehaengt (sd-put.sh: diskutil unmount + hdiutil detach,
+je Aufruf geprueft, `hdiutil info` am Ende zeigt keine verbliebenen
+image-path-Eintraege aus dieser Messung). QMP-Sockets in
+/private/tmp/claude-501/ nach jedem Lauf entfernt (rm -f im run.sh bzw.
+smoke_run.py). Die vom System unter /Volumes/NEWTOS1..3 gemountete physische
+Karte (disk9) ist die des Users (nicht von dieser Messung erzeugt, nicht
+angefasst, keine hdiutil-image-path-Zuordnung).

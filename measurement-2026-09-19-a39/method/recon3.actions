@@ -1,0 +1,21 @@
+1200 park
+1206 move 300 300
+1400 move 195 35
+1600 down
+1603 up
+1608 down
+1611 up
+2000 arm
+2200 mark A_WINDOW_OPEN
+2400 move 427 207
+2600 down
+2603 up
+2608 down
+2611 up
+3000 mark B_APPS_OPEN
+3200 move 347 207
+3400 down
+3403 up
+3408 down
+3411 up
+3800 mark C_QED_FOLDER_OPEN

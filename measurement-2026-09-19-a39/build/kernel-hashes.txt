@@ -1,0 +1,4 @@
+kernel8-recon1.img (instrumented, debug, recon1.actions)                              b674a2c51efc1157757260f5f0a46b2f10dee91b7f7909211237207a102c335a
+kernel8-recon2.img (instrumented, debug, recon2.actions)                              1b2a4d6176f2dec8b5a6e47d33d0db08fbde65582baa883f265c91665767ccfd
+kernel8-full1.img  (instrumented, release, full1.actions -- the A39 measurement run)  63516a32255ec684e89dae2fff544d667eaa4b71a16285dbc08fa6370b689cc9
+kernel8-smoke.img  (release, NO instrumentation, main tree, board rpi4)               1c08386062bfeeaa72c611f7882653ad6de27ce59dd0cce8ba4e86577d338aab

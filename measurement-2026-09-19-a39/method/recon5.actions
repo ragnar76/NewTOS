@@ -1,0 +1,40 @@
+1200 park
+1206 move 300 300
+1400 move 195 35
+1600 down
+1603 up
+1608 down
+1611 up
+2000 arm
+2200 mark A_WINDOW_OPEN
+2400 move 427 207
+2600 down
+2603 up
+2608 down
+2611 up
+3000 mark B_APPS_OPEN
+3200 move 347 207
+3400 down
+3403 up
+3408 down
+3411 up
+3800 mark C_QED_FOLDER_OPEN
+4000 move 450 152
+4200 down
+4250 drag 350 152
+4300 drag 250 152
+4350 drag 150 152
+4450 up
+4700 mark D_WINDOW_MOVED
+4900 move 47 207
+5100 down
+5103 up
+5108 down
+5111 up
+5300 mark E_QED_CLICKED
+7300 mark F_QED_2S
+9300 move 83 8
+9500 mark G_HOVER_DATEI
+9700 down
+9710 up
+9900 mark H_DATEI_MENU_OPEN
