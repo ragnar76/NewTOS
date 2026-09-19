@@ -101,7 +101,28 @@ The two TEDINFO colour words (in the non-`CONF_WITH_WINDOW_COLOURS` build) are:
 | `MOVER`  | 0x0008 | drag / move bar | `LFARROW` | 0x0200 | scroll-left arrow |
 | `INFO`   | 0x0010 | info line | `RTARROW` | 0x0400 | scroll-right arrow |
 | `SIZER`  | 0x0020 | size box | `HSLIDE`  | 0x0800 | horizontal slider |
-| `HOTCLOSE` | 0x1000 | close-on-single-click *(PC-GEM, `CONF_WITH_PCGEM`)* | | | |
+| `HOTCLOSE` | 0x1000 | close-on-single-click *(PC-GEM, `CONF_WITH_PCGEM`)* — see below | | | |
+
+> **`HOTCLOSE` (0x1000)** (`aesdefs.h:531`, "PC-GEM feature"; `CONF_WITH_PCGEM`
+> is **1** in the 512 profile, `config.h:1319-1321` — only `TARGET_192` turns
+> it off, `:352-354`). The bit draws nothing and needs `CLOSER` for a closer
+> to exist (`w_bldactive` adds `W_CLOSER` only for `CLOSER`); it changes what
+> the Control Manager does with a press on that closer (`hctl_window`,
+> `gemctrl.c:208-214`): `if (kind & HOTCLOSE) { message = WM_CLOSED; break; }`
+> — **`WM_CLOSED` is sent on the press**, without `gr_watchbox`'s
+> press-and-release-inside cycle. Having posted it, `ct_msgup` does not wait
+> for the release either but **fakes the button up** (`:86-96`: `button = 0;
+> return;` — "otherwise a slow click will cause us to stay in ctlmgr(), eating
+> keys"), so the press still held neither re-triggers the Control Manager nor
+> satisfies the application's `MU_BUTTON` wait (`ev_multi`'s quick check and
+> `abutton` test `button`, `gemevlib.c:185-200`, `geminput.c:549`); the
+> physical release is a non-change, the next press starts afresh. **NewTOS**
+> (A49): `window::intercept`'s closer arm posts `WM_CLOSED` at once for a
+> `HOTCLOSE` window and calls `input::ct_msgup_hotclose` (`button = 0`); the
+> Control Manager's entry test and `evnt_multi`'s button level read the AES's
+> `button`, so they see the fake. Host test
+> `tos-api/tests/aes_window_hotclose.rs`; on hardware a visible check only
+> (QEMU has no pointer).
 
 Gadget **groups** used by the frame builder and `wind_calc` (`gemwmlib.h:16-18`):
 
@@ -968,7 +989,7 @@ sets `msg[1] = rlr->p_pid` (sender), `msg[2] = 0` (extra bytes):
 |-------------|------:|----------|----------|----------|----------|----------|----------|
 | `WM_REDRAW`  | 20 | wh | rect x | rect y | rect w | rect h | `w_redraw` (`gemwmlib.c:904`) — dirty piece to repaint |
 | `WM_TOPPED`  | 21 | wh | 0 | 0 | 0 | 0 | click on an inactive window (`gemctrl.c:178`) |
-| `WM_CLOSED`  | 22 | wh | 0 | 0 | 0 | 0 | CLOSER released inside (`gemctrl.c:220`) |
+| `WM_CLOSED`  | 22 | wh | 0 | 0 | 0 | 0 | CLOSER released inside (`gemctrl.c:220`); with `HOTCLOSE` **on the press** (`:210-213`) |
 | `WM_FULLED`  | 23 | wh | 0 | 0 | 0 | 0 | FULLER released inside (`gemctrl.c:220`) |
 | `WM_ARROWED` | 24 | wh | **`WA_*` action** | 0 | 0 | 0 | scroll arrow/page click (`gemctrl.c:125`) |
 | `WM_HSLID`   | 25 | wh | **0..1000 pos** | 0 | 0 | 0 | h-elevator drag (`gemctrl.c:300-305`) |
@@ -1155,7 +1176,9 @@ byte of any buffer the caller passed (TASK/A42).
 8. **`graf_watchbox` returns `TRUE` when released inside, `FALSE` when
    released outside** (D-096; a previous spec revision had this backwards).
    CLOSER/FULLER fire their message exactly when `gr_watchbox` returns `TRUE`
-   (button up inside the gadget) (`gemgrlib.c:337-355`, `gemctrl.c:218-220`).
+   (button up inside the gadget) (`gemgrlib.c:337-355`, `gemctrl.c:218-220`)
+   — except a `HOTCLOSE` closer, which fires `WM_CLOSED` on the press and
+   fakes the button up (`gemctrl.c:208-214`, `:86-96`; kind-bit table).
 9. **`graf_growbox`/`graf_shrinkbox` take the big rect at `int_in[4..7]`
    (`GR_I5`), one word after the small rect at `int_in[0..3]`**
    (`gemsuper.c:275-279`) — a slot layout easy to get wrong.

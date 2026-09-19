@@ -128,6 +128,14 @@ struct State {
     sh_doexec: UnsafeCell<i16>,  // last `shel_write` mode
     sh_nextapp: UnsafeCell<i16>, // NORMAL_APP / CONSOLE_APP / AUTORUN_APP / DESKTOP_APP
     sh_isgem: UnsafeCell<i16>,   // 1 = GEM/graphic, 0 = character mode
+    // `isover` (`SH_ISCR`, `int_in[2]`) as last handed to
+    // `shel_write(SHW_EXEC)`. Not a member of EmuTOS's `SHELL`: `sh_write`
+    // takes it as a parameter and the `SHW_EXEC` arm ignores it
+    // ("isover ignored, should currently always be 1", `gemshlib.c:149`;
+    // TOS 4 would take `1` as an ARGV request, which EmuTOS does not build).
+    // Retained so the binding's third declared word is provably read (A61);
+    // no consumer, read back only by [`sh_isover`].
+    sh_isover: UnsafeCell<i16>,
     sh_desk: UnsafeCell<[u8; PATHBUF]>, // name of the default startup app
     sh_cdir: UnsafeCell<[u8; PATHBUF]>, // its directory
     // ── AES globals the shell owns ───────────────────────────────────────
@@ -149,6 +157,7 @@ static S: State = State {
     sh_doexec: UnsafeCell::new(SHW_EXEC),
     sh_nextapp: UnsafeCell::new(DESKTOP_APP),
     sh_isgem: UnsafeCell::new(1),
+    sh_isover: UnsafeCell::new(0),
     sh_desk: UnsafeCell::new([0; PATHBUF]),
     sh_cdir: UnsafeCell::new([0; PATHBUF]),
     s_cmd: UnsafeCell::new([0; PATHBUF]),
@@ -403,7 +412,9 @@ fn store_str(dst: &mut [u8], src: &[u8]) {
 /// `shel_write` (121) — the multi-purpose shell selector (`sh_write`,
 /// `gemshlib.c:157-196`). `int_in[0]` = `doex` (mode, `SHW_*`), `int_in[1]` =
 /// `isgem` (GEM/graphic vs char/TTP), `int_in[2]` = `isover` (shutdown
-/// level / rez family); `addr_in[0]`/`[1]` = command + tail. **Always
+/// level / rez family); `addr_in[0]`/`[1]` = command + tail. The binding
+/// declares all three words (`desk/gembind.c:914`, `aesdefs.h:600-602`) and
+/// the dispatcher hands all three to `sh_write` (`gemsuper.c:384`). **Always
 /// returns `1`** (`gemshlib.c:195`); the actual launch is done by the shell
 /// loop ([`crate::aes::shell`] module docs), which reads the state this call
 /// leaves behind. Dispatches on the mode:
@@ -413,7 +424,10 @@ fn store_str(dst: &mut [u8], src: &[u8]) {
 ///   ([`DEF_CONSOLE`] → [`CONSOLE_APP`], else [`NORMAL_APP`],
 ///   `gemshlib.c:172`), record `isgem`, and for a `NORMAL_APP` save the
 ///   caller's current drive+directory in `sh_apdir` (`:174-175`) so
-///   `sh_chdef` can restore it before the child runs.
+///   `sh_chdef` can restore it before the child runs. `isover` is read and
+///   retained ([`sh_isover`]) but has no effect — EmuTOS's arm ignores it
+///   ("should currently always be 1", `:149`; TOS 4's ARGV request, which
+///   EmuTOS does not implement).
 /// * `SHW_NOEXEC` (0) — exit to the desktop: `D.s_cmd = DEF_DESKTOP`,
 ///   [`DESKTOP_APP`], forced GEM mode (`gemshlib.c:161-167`).
 /// * `SHW_SHUTDOWN` (4) — EmuTOS records it only `if (can_shutdown())`
@@ -432,6 +446,8 @@ fn store_str(dst: &mut [u8], src: &[u8]) {
 pub fn shel_write(pb: &Aespb) {
     let doex = pb.intin(0);
     let isgem = pb.intin(1);
+    // `SH_ISCR` — `sh_write`'s `isover` (gemsuper.c:384, gemshlib.c:157).
+    let isover = pb.intin(2);
     // SAFETY: single-CPU AES.
     unsafe {
         match doex {
@@ -456,6 +472,8 @@ pub fn shel_write(pb: &Aespb) {
                 };
                 *S.sh_nextapp.get() = next;
                 *S.sh_isgem.get() = i16::from(isgem != 0);
+                // Retained, not acted on (gemshlib.c:149; A61).
+                *S.sh_isover.get() = isover;
                 if next == NORMAL_APP {
                     // `sh_curdrvdir(sh_apdir)` — save the app's current
                     // directory (gemshlib.c:174-175).
@@ -520,6 +538,16 @@ pub fn sh_isgem() -> bool {
 pub fn set_sh_isgem(v: bool) {
     // SAFETY: single-CPU AES.
     unsafe { *S.sh_isgem.get() = i16::from(v) };
+}
+
+/// The `isover` word (`SH_ISCR`, `int_in[2]`) the last `shel_write(SHW_EXEC)`
+/// handed over — `sh_write`'s third parameter (`gemshlib.c:157`), which its
+/// `SHW_EXEC` arm does not use (`:149`, `:168-176`). Test hook (A61): lets a
+/// host test show that the binding's third declared word (`gembind.c:914`,
+/// `aesdefs.h:602`) reaches the manager. Nothing in the AES reads it.
+pub fn sh_isover() -> i16 {
+    // SAFETY: single-CPU AES.
+    unsafe { *S.sh_isover.get() }
 }
 
 /// The current value of `sh_doexec` — the shell loop's termination test

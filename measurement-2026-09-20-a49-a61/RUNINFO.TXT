@@ -1,0 +1,22 @@
+A49 + A61 -- Belege, 2026-09-20, Basis 68c84ae (uncommitted), EmuTOS 1a7484ab
+
+HOST-TESTS (host-tests/)
+  a61-red-before.txt:  aes_shel_write_iscr mit Feld+Getter, ohne Lesen von int_in[2]: 0/2 (left 0, right 1).
+  a61-green-after.txt: nach `let isover = pb.intin(2)` + Ablage im SHW_EXEC-Arm: 2/2.
+  a49-red-before.txt:  aes_window_hotclose (erster Testtext) vor dem Fix: 1/3 (Probe 3 gruen).
+  a49-red-before-final-text.txt: finaler Testtext, HOTCLOSE-Arm per Hand abgeschaltet
+     (`if false && …`), danach window.rs aus Kopie zurueckgebaut (cmp identisch):
+     Probe 1 (pumps, left) = (5, 0) statt (1, 3); Probe 2 IDLE_CAP-Haenger; Probe 3 gruen.
+  a49-green-after.txt: 3/3.
+  xtask-test.log: cargo run -p xtask -- test = 653 / 0 / 1 (Baseline 648 + 3 A49 + 2 A61), rc=0.
+
+BUILD / CLIPPY (build/)
+  cargo run -p xtask -- build --board rpi4 / --board qemu-virt (je nach cargo clean -p kernel -p tos-api):
+    rustc tos-api 64 / kernel 94, exit 0 -- Baseline 64/94, Delta 0.
+  cargo clippy -p kernel -p tos-api --no-default-features --features board-rpi4 bzw.
+    board-qemu-virt --lib --bins: tos-api 81 / kernel 125 -- Baseline 81/125, Delta 0;
+    Warnungsarten je beruehrter Datei (shell/window/input/event.rs) identisch zur
+    Vorquittung measurement-2026-09-20-a47-a52-a55-a58 (diff leer).
+  cargo clippy -p tos-api --tests: 0 Meldungen in aes_window_hotclose.rs / aes_shel_write_iscr.rs.
+
+KEIN QEMU: A49 headless nicht ausloesbar (kein Eingabeweg), A61 ohne Wirkung.

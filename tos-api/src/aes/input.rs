@@ -239,6 +239,31 @@ pub(super) fn ct_msgup_busy() -> bool {
     false
 }
 
+/// `ct_msgup`'s HOTCLOSE exit (`aes/gemctrl.c:86-96`): `WM_CLOSED` has been
+/// posted for a window whose kind carries `HOTCLOSE`, and instead of parking
+/// in the `while (button & 0x0001)` wait the Control Manager **fakes the
+/// button up** — `button = 0; return;` — "otherwise a slow click will cause
+/// us to stay in ctlmgr(), eating keys". From here on the AES's `button` says
+/// *up* while the raw byte still says *down*: `ctlmgr` is not re-triggered
+/// by the level it has already acted on, `set_mown` hands the mouse back to
+/// the top window's owner at once ([`w_setactive`]), and the application's
+/// `ev_multi` quick check / `abutton` (`aes/gemevlib.c:185-200`,
+/// `aes/geminput.c:549`) see no press. The physical release is then a
+/// non-change for [`b_click`] (as it is for `bchange`, which finds `button`
+/// already 0); the next press re-synchronises everything.
+pub(super) fn ct_msgup_hotclose() {
+    BUTTON.store(0, Ordering::Relaxed);
+}
+
+/// EmuTOS `button` — the button state the AES has acted on
+/// (`aes/geminput.c:49`); the level `ev_multi`'s quick check, `abutton` and
+/// the Control Manager's wait test read (`aes/gemevlib.c:185-200`,
+/// `aes/geminput.c:549`, `aes/gemctrl.c:100`). Equal to the raw VDI byte
+/// (`crate::vdi::mouse_buttons`) except after [`ct_msgup_hotclose`].
+pub(super) fn button() -> u8 {
+    BUTTON.load(Ordering::Relaxed)
+}
+
 /// Open the button-delay window — EmuTOS `gl_bdely = gl_dclick` in `b_click`
 /// (`aes/geminput.c:140`). EmuTOS opens it only when someone is waiting for
 /// more than one click *and* the change is a press (`if (gl_bpend && state)`,

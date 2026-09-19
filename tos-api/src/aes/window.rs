@@ -39,6 +39,12 @@ const VSLIDE: u16 = 0x0100;
 const LFARROW: u16 = 0x0200;
 const RTARROW: u16 = 0x0400;
 const HSLIDE: u16 = 0x0800;
+/// `HOTCLOSE` (`aesdefs.h:531`, "PC-GEM feature", `CONF_WITH_PCGEM` — 1 in
+/// the 512 profile, `config.h:1320`): the closer fires `WM_CLOSED` on the
+/// **press**, without `gr_watchbox`'s wait for the release
+/// (`gemctrl.c:208-214`). Draws nothing of its own; it needs `CLOSER` for a
+/// closer to exist at all (`w_bldactive` adds `W_CLOSER` only for `CLOSER`).
+const HOTCLOSE: u16 = 0x1000;
 
 const VGADGETS: u16 = UPARROW | DNARROW | VSLIDE;
 const HGADGETS: u16 = LFARROW | RTARROW | HSLIDE;
@@ -3898,7 +3904,13 @@ pub fn intercept() {
     if MCTRL_CNT.load(Ordering::Relaxed) > 0 {
         return;
     }
-    if crate::vdi::mouse_buttons() & 0x01 == 0 {
+    // The level `ctlmgr`'s `ev_multi(MU_BUTTON, …, 0x0001ff01)` tests is the
+    // AES's `button` (`ev_multi`'s quick check and `abutton`,
+    // `aes/gemevlib.c:185-200`, `aes/geminput.c:549`) — not the raw byte. The
+    // two differ only after `ct_msgup`'s HOTCLOSE exit faked the button up
+    // (`aes/gemctrl.c:92`): that press has been acted on and must not be
+    // taken for a new one while it is still held.
+    if super::input::button() & 0x01 == 0 {
         return;
     }
     let (mx, my) = crate::vdi::mouse_position();
@@ -3954,6 +3966,20 @@ pub fn intercept() {
     };
     match gadget_at(w, mx, my) {
         Gadget::Closer => {
+            // `HOTCLOSE`: `message = WM_CLOSED; break;` — no `gr_watchbox`, the
+            // press itself is the click (`aes/gemctrl.c:208-214`). The 3D
+            // build's `ob_change(gadget, normal)` after the switch repaints a
+            // gadget that was never selected — nothing to reproduce. Then
+            // `ct_msgup`'s HOTCLOSE exit (`:86-96`): post the message and, in
+            // place of the wait for the release, fake the button up, so the
+            // press still held neither re-triggers the Control Manager nor
+            // reaches the application as a press.
+            if w.kind & HOTCLOSE != 0 {
+                msg[0] = WM_CLOSED;
+                post_to_owner(owner, &msg);
+                super::input::ct_msgup_hotclose();
+                return;
+            }
             if !watchbox(gad_rect(w, Gadget::Closer), G_CLOSE, backend) {
                 return;
             }

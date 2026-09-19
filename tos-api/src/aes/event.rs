@@ -470,8 +470,13 @@ pub fn evnt_multi(pb: &Aespb) -> Option<sched::Switch> {
         // a button transition on the way (the drop-down track selects on a
         // press or a release); the pass-0 test must therefore use the level the
         // arm saw, not the level the track left behind. Sampled once, here.
+        // The level is EmuTOS's `button` (`downorup(button, buparm)`,
+        // `aes/gemevlib.c:196`; `abutton`, `aes/geminput.c:549`) — the state
+        // the AES has acted on, which `ct_msgup`'s HOTCLOSE exit fakes to 0
+        // for a press the Control Manager has already consumed
+        // (`aes/gemctrl.c:92`). It equals the raw VDI byte otherwise.
         let arm_own = super::input::own_mouse();
-        let arm_mb = crate::vdi::mouse_buttons();
+        let arm_mb = super::input::button();
         loop {
             // AES trap tracer: one sample of the button byte per evaluation of
             // the multiplexer predicate, folded into the call record as
@@ -555,7 +560,7 @@ pub fn evnt_multi(pb: &Aespb) -> Option<sched::Switch> {
                 let (own, mb) = if pass == 0 {
                     (arm_own, arm_mb)
                 } else {
-                    (super::input::own_mouse(), crate::vdi::mouse_buttons())
+                    (super::input::own_mouse(), super::input::button())
                 };
                 if (own || pass == 0) && downorup(mb, b_flgclks, b_mask, b_state) {
                     clicks = if own {

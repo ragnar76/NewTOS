@@ -180,7 +180,7 @@ docs.
 |------|---------|
 | `int_in[0]` (`SH_DOEX`) | **mode** (`SHW_*`, table below) |
 | `int_in[1]` (`SH_ISGR` → `isgem`) | see per-mode meaning |
-| `int_in[2]` (`SH_ISCR` → `isover`) | see per-mode meaning |
+| `int_in[2]` (`SH_ISCR` → `isover`) | see per-mode meaning — **read for every mode** (`gemsuper.c:384` hands all three words to `sh_write`), **consumed only by `SHW_RESCHNG`** (`gl_changerez = 1 + isover`, `gemshlib.c:188`); `SHW_EXEC` ignores it (`:149`), `SHW_SHUTDOWN` documents but never reads it (`:140-145`, `:177-186`) |
 | `addr_in[0]` (`SH_PCMD`) | next program name (`SHW_EXEC`) |
 | `addr_in[1]` (`SH_PTAIL`) | next command tail (`SHW_EXEC`; **128 bytes** copied) |
 | `int_out[0]` | **always `1` (`TRUE`)** |
@@ -246,7 +246,17 @@ exists.
 desktop, GEM-mode. `SHW_EXEC`: copy `pcmd` into `D.s_cmd`, `memcpy` the 128-byte
 tail into `ad_stail`, record GEM-vs-char from `isgem`, classify the next app
 (the console name `"EMUCON"` → console, else a normal app), and for a normal app
-snapshot the current drive+dir (`sh_apdir`) to restore after it exits.
+snapshot the current drive+dir (`sh_apdir`) to restore after it exits. `isover`
+is handed in but unused by this arm ("should currently always be 1",
+`gemshlib.c:149`). *Cross-reference, not source:* the TOS 4.0 release notes
+(`references/freemint/doc/programmer/atari/tos4rn.stg`, "Sh_wiscr") give
+`sh_wiscr = 1` under `sh_wdoex = 1` the meaning "set up ARGV-style parameter
+passing in the environment", advertised through `appl_getinfo(10)`'s
+`ap_gout4`; EmuTOS implements neither `appl_getinfo` nor the ARGV build, so
+the word has no effect here. **NewTOS** (A61): `shel_write` reads the word
+through the `min(IN_LEN, I_SIZE)` clamp like the other two and retains it
+(`shell::sh_isover`, a test hook) without acting on it; a caller declaring
+only two words (`IN_LEN = 2`) hands over none and the manager reads 0.
 `SHW_RESCHNG`: stash the target resolution, clear the command/tail. Returns
 `TRUE` in every case. The actual launch happens later in the shell loop
 (`sh_ldapp`) when the current app terminates.
