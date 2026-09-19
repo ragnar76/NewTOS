@@ -161,8 +161,11 @@ artifact; `en/qed_en.rsc` converts to 40309 bytes.
    `:87-94`). Include order: shadow tree root, its `xdialog` and `utility`
    dirs, gemlib top, mintlib, clang (`:97-98`).
 3. Shadow tree: `build/tree/` = symlinks to every vendored `.c`/`.h`, then the
-   three overlays layered on top (`environm.c`, `library/utility/nf_ops.c`,
-   `window.h`) (`:104-125`).
+   overlays layered on top — `environm.c`, `library/utility/nf_ops.c`,
+   `window.h`, and since A60 (2026-09-19) `icon.c`, `rsc_load.c` and
+   `library/xdialog/library.h`, which make TeraDesk write and read the
+   `AESGLOBAL` resource words as the 4-byte TOS fields at bytes 10/14 through
+   gemlib's `_AESrscfile_set`/`_AESrscmem_set` (`:104-125`).
 4. File list: every `.c` under the tree except `library/utility/malloc.c`
    (libc provides `malloc`) (`:127-134`).
 5. Compile all from the shadow tree; any failure stops the build with the

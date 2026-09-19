@@ -1,0 +1,95 @@
+000000000001d9e8 <xrsrc_gaddr>:
+   1d9e8:      	nop
+   1d9ec:      	adr	x8, 0x3258c <aes_global>
+   1d9f0:      	mov	w10, #0x3               // =3
+   1d9f4:      	ldur	x8, [x8, #0xe]
+   1d9f8:      	str	xzr, [x2]
+   1d9fc:      	ldrh	w9, [x8]
+   1da00:      	bics	wzr, w10, w9
+   1da04:      	b.ne	0x1da1c <xrsrc_gaddr+0x34>
+   1da08:      	ldp	x11, x9, [x8, #0x8]
+   1da0c:      	ldr	x13, [x8, #0x28]
+   1da10:      	ldp	x10, x12, [x8, #0x18]
+   1da14:      	ldp	x14, x15, [x8, #0x40]
+   1da18:      	b	0x1da38 <xrsrc_gaddr+0x50>
+   1da1c:      	ldrh	w11, [x8, #0x2]
+   1da20:      	ldrh	w9, [x8, #0x4]
+   1da24:      	ldrh	w10, [x8, #0x6]
+   1da28:      	ldrh	w12, [x8, #0x8]
+   1da2c:      	ldrh	w13, [x8, #0xa]
+   1da30:      	ldrh	w14, [x8, #0x10]
+   1da34:      	ldrh	w15, [x8, #0x12]
+   1da38:      	and	w16, w0, #0xffff
+   1da3c:      	cmp	w16, #0x10
+   1da40:      	b.hi	0x1db14 <xrsrc_gaddr+0x12c>
+   1da44:      	and	x16, x0, #0xffff
+   1da48:      	nop
+   1da4c:      	adr	x17, 0x2f18c <rsc_fixmenus.mnit+0x15>
+   1da50:      	adr	x18, 0x1da60 <xrsrc_gaddr+0x78>
+   1da54:      	ldrb	w0, [x17, x16]
+   1da58:      	add	x18, x18, x0, lsl #2
+   1da5c:      	br	x18
+   1da60:      	sxth	x10, w1
+   1da64:      	mov	w11, #0x28              // =40
+   1da68:      	add	x8, x8, x9
+   1da6c:      	smaddl	x8, w10, w11, x8
+   1da70:      	b	0x1db54 <xrsrc_gaddr+0x16c>
+   1da74:      	sxth	x9, w1
+   1da78:      	mov	w11, #0x30              // =48
+   1da7c:      	add	x8, x8, x10
+   1da80:      	smaddl	x8, w9, w11, x8
+   1da84:      	b	0x1db54 <xrsrc_gaddr+0x16c>
+   1da88:      	sxth	x9, w1
+   1da8c:      	mov	w10, #0x18              // =24
+   1da90:      	add	x8, x8, x12
+   1da94:      	smaddl	x8, w9, w10, x8
+   1da98:      	b	0x1db54 <xrsrc_gaddr+0x16c>
+   1da9c:      	add	x8, x8, x14
+   1daa0:      	b	0x1daf0 <xrsrc_gaddr+0x108>
+   1daa4:      	sxth	x9, w1
+   1daa8:      	mov	w11, #0x30              // =48
+   1daac:      	add	x8, x8, x10
+   1dab0:      	smaddl	x8, w9, w11, x8
+   1dab4:      	b	0x1db40 <xrsrc_gaddr+0x158>
+   1dab8:      	sxth	x10, w1
+   1dabc:      	mov	w11, #0x28              // =40
+   1dac0:      	add	x8, x8, x9
+   1dac4:      	smaddl	x8, w10, w11, x8
+   1dac8:      	b	0x1db2c <xrsrc_gaddr+0x144>
+   1dacc:      	sxth	x10, w1
+   1dad0:      	mov	w11, #0x28              // =40
+   1dad4:      	add	x8, x8, x9
+   1dad8:      	smaddl	x8, w10, w11, x8
+   1dadc:      	b	0x1db40 <xrsrc_gaddr+0x158>
+   1dae0:      	sxth	x9, w1
+   1dae4:      	add	x8, x8, x14
+   1dae8:      	b	0x1db50 <xrsrc_gaddr+0x168>
+   1daec:      	add	x8, x8, x13
+   1daf0:      	add	x8, x8, w1, sxth #3
+   1daf4:      	b	0x1db54 <xrsrc_gaddr+0x16c>
+   1daf8:      	sxth	x9, w1
+   1dafc:      	add	x8, x8, x15
+   1db00:      	b	0x1db50 <xrsrc_gaddr+0x168>
+   1db04:      	sxth	x9, w1
+   1db08:      	add	x8, x8, x11
+   1db0c:      	add	x8, x8, x9, lsl #5
+   1db10:      	b	0x1db54 <xrsrc_gaddr+0x16c>
+   1db14:      	mov	w0, wzr
+   1db18:      	ret
+   1db1c:      	sxth	x9, w1
+   1db20:      	mov	w11, #0x30              // =48
+   1db24:      	add	x8, x8, x10
+   1db28:      	smaddl	x8, w9, w11, x8
+   1db2c:      	add	x8, x8, #0x8
+   1db30:      	b	0x1db54 <xrsrc_gaddr+0x16c>
+   1db34:      	sxth	x9, w1
+   1db38:      	add	x8, x8, x11
+   1db3c:      	add	x8, x8, x9, lsl #5
+   1db40:      	add	x8, x8, #0x10
+   1db44:      	b	0x1db54 <xrsrc_gaddr+0x16c>
+   1db48:      	sxth	x9, w1
+   1db4c:      	add	x8, x8, x13
+   1db50:      	ldr	x8, [x8, x9, lsl #3]
+   1db54:      	mov	w0, #0x1                // =1
+   1db58:      	str	x8, [x2]
+   1db5c:      	ret

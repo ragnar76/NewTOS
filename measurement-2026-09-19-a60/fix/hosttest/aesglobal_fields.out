@@ -1,0 +1,3 @@
+aesglobal_fields: sizeof(aes_global) = 32
+aesglobal_fields: OK -- ap_ptree/ap_rscmem are 4-byte fields at byte 10/14 through TeraDesk's library.h
+rc=0

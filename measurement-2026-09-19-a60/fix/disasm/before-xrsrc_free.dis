@@ -1,0 +1,8 @@
+000000000001d9cc <xrsrc_free>:
+   1d9cc:      	nop
+   1d9d0:      	adr	x8, 0x3258c <aes_global>
+   1d9d4:      	ldur	x0, [x8, #0xe]
+   1d9d8:      	mov	w8, #0x49               // =73
+   1d9dc:      	svc	#0x1
+   1d9e0:      	mov	w0, #0x1                // =1
+   1d9e4:      	ret

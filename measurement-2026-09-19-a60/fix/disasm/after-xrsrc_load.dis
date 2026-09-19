@@ -1,0 +1,321 @@
+000000000001d4d8 <xrsrc_load>:
+   1d4d8:      	sub	sp, sp, #0x140
+   1d4dc:      	mov	x1, x0
+   1d4e0:      	add	x0, sp, #0x56
+   1d4e4:      	stp	x29, x30, [sp, #0xe0]
+   1d4e8:      	stp	x28, x27, [sp, #0xf0]
+   1d4ec:      	stp	x26, x25, [sp, #0x100]
+   1d4f0:      	stp	x24, x23, [sp, #0x110]
+   1d4f4:      	stp	x22, x21, [sp, #0x120]
+   1d4f8:      	stp	x20, x19, [sp, #0x130]
+   1d4fc:      	bl	0x2cf90 <strcpy>
+   1d500:      	nop
+   1d504:      	adr	x1, 0x3259c <aes_global>
+   1d508:      	add	x0, sp, #0x56
+   1d50c:      	bl	0x29af8 <mt_shel_find>
+   1d510:      	tst	w0, #0xffff
+   1d514:      	b.eq	0x1d610 <xrsrc_load+0x138>
+   1d518:      	add	x0, sp, #0x56
+   1d51c:      	mov	w8, #0x3d               // =61
+   1d520:      	mov	x1, xzr
+   1d524:      	svc	#0x1
+   1d528:      	tbnz	w0, #0x1f, 0x1d610 <xrsrc_load+0x138>
+   1d52c:      	sxth	x20, w0
+   1d530:      	mov	x0, xzr
+   1d534:      	mov	w8, #0x42               // =66
+   1d538:      	mov	w2, #0x2                // =2
+   1d53c:      	mov	x1, x20
+   1d540:      	svc	#0x1
+   1d544:      	mov	x9, x0
+   1d548:      	mov	x0, xzr
+   1d54c:      	mov	w8, #0x42               // =66
+   1d550:      	mov	x2, xzr
+   1d554:      	svc	#0x1
+   1d558:      	mov	w8, #0x48               // =72
+   1d55c:      	mov	x0, x9
+   1d560:      	svc	#0x1
+   1d564:      	cbz	x0, 0x1d5d8 <xrsrc_load+0x100>
+   1d568:      	mov	x19, x0
+   1d56c:      	mov	x0, x20
+   1d570:      	mov	w8, #0x3f               // =63
+   1d574:      	mov	x1, x9
+   1d578:      	mov	x2, x19
+   1d57c:      	svc	#0x1
+   1d580:      	cmp	x0, x9
+   1d584:      	b.ne	0x1d5f8 <xrsrc_load+0x120>
+   1d588:      	mov	x0, x20
+   1d58c:      	mov	w8, #0x3e               // =62
+   1d590:      	mov	w9, #0x3                // =3
+   1d594:      	svc	#0x1
+   1d598:      	ldrh	w8, [x19]
+   1d59c:      	bics	wzr, w9, w8
+   1d5a0:      	b.ne	0x1d634 <xrsrc_load+0x15c>
+   1d5a4:      	ldp	x10, x11, [x19, #0x8]
+   1d5a8:      	ldr	x9, [x19, #0x18]
+   1d5ac:      	ldp	x22, x21, [x19, #0x50]
+   1d5b0:      	ldr	x29, [x19, #0x30]
+   1d5b4:      	ldp	x27, x23, [x19, #0x60]
+   1d5b8:      	stp	x11, x9, [sp, #0x10]
+   1d5bc:      	ldp	x11, x9, [x19, #0x20]
+   1d5c0:      	ldp	x28, x26, [x19, #0x70]
+   1d5c4:      	ldp	x24, x12, [x19, #0x80]
+   1d5c8:      	stp	x11, x9, [sp, #0x20]
+   1d5cc:      	ldp	x11, x9, [x19, #0x40]
+   1d5d0:      	stp	x11, x10, [sp, #0x30]
+   1d5d4:      	b	0x1d68c <xrsrc_load+0x1b4>
+   1d5d8:      	nop
+   1d5dc:      	adr	x1, 0x3259c <aes_global>
+   1d5e0:      	mov	w0, #0x8                // =8
+   1d5e4:      	bl	0x290fc <mt_form_error>
+   1d5e8:      	mov	x0, x20
+   1d5ec:      	mov	w8, #0x3e               // =62
+   1d5f0:      	svc	#0x1
+   1d5f4:      	b	0x1d610 <xrsrc_load+0x138>
+   1d5f8:      	mov	x0, x19
+   1d5fc:      	mov	w8, #0x49               // =73
+   1d600:      	svc	#0x1
+   1d604:      	mov	w8, #0x3e               // =62
+   1d608:      	mov	x0, x20
+   1d60c:      	svc	#0x1
+   1d610:      	mov	w0, wzr
+   1d614:      	ldp	x20, x19, [sp, #0x130]
+   1d618:      	ldp	x22, x21, [sp, #0x120]
+   1d61c:      	ldp	x24, x23, [sp, #0x110]
+   1d620:      	ldp	x26, x25, [sp, #0x100]
+   1d624:      	ldp	x28, x27, [sp, #0xf0]
+   1d628:      	ldp	x29, x30, [sp, #0xe0]
+   1d62c:      	add	sp, sp, #0x140
+   1d630:      	ret
+   1d634:      	ldrh	w9, [x19, #0x2]
+   1d638:      	ldrh	w29, [x19, #0xc]
+   1d63c:      	ldrsh	x22, [x19, #0x14]
+   1d640:      	ldrsh	x21, [x19, #0x16]
+   1d644:      	ldrsh	x27, [x19, #0x18]
+   1d648:      	ldrsh	x23, [x19, #0x1a]
+   1d64c:      	str	x9, [sp, #0x38]
+   1d650:      	ldrh	w9, [x19, #0x4]
+   1d654:      	ldrsh	x28, [x19, #0x1c]
+   1d658:      	ldrsh	x26, [x19, #0x1e]
+   1d65c:      	ldrsh	x24, [x19, #0x20]
+   1d660:      	ldrh	w12, [x19, #0x22]
+   1d664:      	str	x9, [sp, #0x10]
+   1d668:      	ldrh	w9, [x19, #0x6]
+   1d66c:      	str	x9, [sp, #0x18]
+   1d670:      	ldrh	w9, [x19, #0x8]
+   1d674:      	str	x9, [sp, #0x20]
+   1d678:      	ldrh	w9, [x19, #0xa]
+   1d67c:      	str	x9, [sp, #0x28]
+   1d680:      	ldrh	w9, [x19, #0x10]
+   1d684:      	str	x9, [sp, #0x30]
+   1d688:      	ldrh	w9, [x19, #0x12]
+   1d68c:      	str	x9, [sp, #0x48]
+   1d690:      	str	x12, [sp, #0x40]
+   1d694:      	tbnz	w8, #0x2, 0x1d6a0 <xrsrc_load+0x1c8>
+   1d698:      	mov	x20, xzr
+   1d69c:      	b	0x1d6c8 <xrsrc_load+0x1f0>
+   1d6a0:      	add	x8, x19, x12
+   1d6a4:      	add	x9, x8, #0x10
+   1d6a8:      	ldr	x10, [x9], #0x8
+   1d6ac:      	cmn	x10, #0x1
+   1d6b0:      	b.eq	0x1d6a8 <xrsrc_load+0x1d0>
+   1d6b4:      	ldr	x8, [x8, #0x8]
+   1d6b8:      	add	x20, x19, x8
+   1d6bc:      	ldr	x8, [x20], #0x8
+   1d6c0:      	cmn	x8, #0x1
+   1d6c4:      	b.ne	0x1d6bc <xrsrc_load+0x1e4>
+   1d6c8:      	nop
+   1d6cc:      	adr	x4, 0x3259c <aes_global>
+   1d6d0:      	add	x0, sp, #0xdc
+   1d6d4:      	add	x1, sp, #0xd8
+   1d6d8:      	add	x2, sp, #0xd6
+   1d6dc:      	add	x3, sp, #0xd6
+   1d6e0:      	add	x25, sp, #0xd8
+   1d6e4:      	bl	0x292d8 <mt_graf_handle>
+   1d6e8:      	cbz	x22, 0x1d8c8 <xrsrc_load+0x3f0>
+   1d6ec:      	ldr	h0, [sp, #0xdc]
+   1d6f0:      	ldr	x8, [sp, #0x38]
+   1d6f4:      	mov	x10, x22
+   1d6f8:      	ld1	{ v0.h }[1], [x25]
+   1d6fc:      	add	x9, x8, x19
+   1d700:      	add	x8, x19, x8
+   1d704:      	add	x9, x9, #0x18
+   1d708:      	dup	v0.2s, v0.s[0]
+   1d70c:      	ldr	d1, [x9]
+   1d710:      	subs	x10, x10, #0x1
+   1d714:      	fmov	d2, d1
+   1d718:      	bic	v2.4h, #0xff, lsl #8
+   1d71c:      	mul	v2.4h, v2.4h, v0.4h
+   1d720:      	ssra	v2.4h, v1.4h, #0x8
+   1d724:      	str	d2, [x9], #0x20
+   1d728:      	b.ne	0x1d70c <xrsrc_load+0x234>
+   1d72c:      	ldr	x0, [sp, #0x40]
+   1d730:      	mov	x9, xzr
+   1d734:      	ldrb	w10, [x8, #0x6]
+   1d738:      	cmp	w10, #0x1b
+   1d73c:      	b.le	0x1d760 <xrsrc_load+0x288>
+   1d740:      	sub	w11, w10, #0x1c
+   1d744:      	cmp	w11, #0x5
+   1d748:      	b.lo	0x1d77c <xrsrc_load+0x2a4>
+   1d74c:      	cmp	w10, #0x21
+   1d750:      	b.eq	0x1d79c <xrsrc_load+0x2c4>
+   1d754:      	cmp	w10, #0x26
+   1d758:      	b.eq	0x1d77c <xrsrc_load+0x2a4>
+   1d75c:      	b	0x1d788 <xrsrc_load+0x2b0>
+   1d760:      	sub	w11, w10, #0x15
+   1d764:      	cmp	w11, #0x3
+   1d768:      	b.lo	0x1d77c <xrsrc_load+0x2a4>
+   1d76c:      	cmp	w10, #0x18
+   1d770:      	b.eq	0x1d8a0 <xrsrc_load+0x3c8>
+   1d774:      	cmp	w10, #0x1a
+   1d778:      	b.ne	0x1d788 <xrsrc_load+0x2b0>
+   1d77c:      	ldr	x10, [x8, #0x10]
+   1d780:      	add	x10, x19, x10
+   1d784:      	str	x10, [x8, #0x10]
+   1d788:      	add	x9, x9, #0x1
+   1d78c:      	add	x8, x8, #0x20
+   1d790:      	cmp	x9, x22
+   1d794:      	b.ne	0x1d734 <xrsrc_load+0x25c>
+   1d798:      	b	0x1d8c8 <xrsrc_load+0x3f0>
+   1d79c:      	cbz	x20, 0x1d9c8 <xrsrc_load+0x4f0>
+   1d7a0:      	str	x20, [x8, #0x10]
+   1d7a4:      	ldrsh	w10, [x20, #0x22]
+   1d7a8:      	ldr	x12, [x20, #0x10]
+   1d7ac:      	adds	w11, w10, #0xf
+   1d7b0:      	add	w10, w10, #0x1e
+   1d7b4:      	add	x15, x19, x12
+   1d7b8:      	csel	w10, w10, w11, lt
+   1d7bc:      	ldrsh	x11, [x20, #0x24]
+   1d7c0:      	cmp	x0, x12
+   1d7c4:      	asr	w10, w10, #4
+   1d7c8:      	ccmp	x29, x12, #0x0, gt
+   1d7cc:      	smull	x10, w11, w10
+   1d7d0:      	add	x11, x20, #0x38
+   1d7d4:      	add	x14, x11, x10, lsl #1
+   1d7d8:      	add	x13, x14, x10, lsl #1
+   1d7dc:      	stp	x14, x11, [x20]
+   1d7e0:      	ccmp	x15, x13, #0x4, le
+   1d7e4:      	csel	x15, x15, x13, ne
+   1d7e8:      	cmp	x12, #0x1
+   1d7ec:      	ldr	x12, [x20, #0x30]
+   1d7f0:      	csel	x11, x13, x15, lt
+   1d7f4:      	str	x11, [x20, #0x10]
+   1d7f8:      	add	x11, x13, #0xc
+   1d7fc:      	cbz	x12, 0x1d8b4 <xrsrc_load+0x3dc>
+   1d800:      	lsl	x10, x10, #1
+   1d804:      	ldrsh	x14, [x13, #0xc]
+   1d808:      	add	x15, x13, #0x3c
+   1d80c:      	ldur	x17, [x13, #0x24]
+   1d810:      	stur	x15, [x13, #0x14]
+   1d814:      	mul	x14, x10, x14
+   1d818:      	str	x11, [x20, #0x30]
+   1d81c:      	cmp	x17, #0x0
+   1d820:      	add	x16, x15, x14
+   1d824:      	add	x15, x16, x10
+   1d828:      	stur	x16, [x13, #0x1c]
+   1d82c:      	add	x14, x15, x14
+   1d830:      	csel	x17, xzr, x15, eq
+   1d834:      	add	x16, x14, x10
+   1d838:      	csel	x14, xzr, x14, eq
+   1d83c:      	stur	x17, [x13, #0x24]
+   1d840:      	csel	x20, x15, x16, eq
+   1d844:      	subs	x12, x12, #0x1
+   1d848:      	stur	x14, [x13, #0x2c]
+   1d84c:      	b.eq	0x1d8bc <xrsrc_load+0x3e4>
+   1d850:      	ldrsh	x14, [x20]
+   1d854:      	add	x15, x20, #0x30
+   1d858:      	str	x20, [x11, #0x28]
+   1d85c:      	ldr	x16, [x20, #0x18]
+   1d860:      	mov	x13, x20
+   1d864:      	mul	x14, x10, x14
+   1d868:      	cmp	x16, #0x0
+   1d86c:      	add	x11, x15, x14
+   1d870:      	add	x17, x11, x10
+   1d874:      	stp	x15, x11, [x20, #0x8]
+   1d878:      	add	x11, x17, x14
+   1d87c:      	csel	x15, xzr, x17, eq
+   1d880:      	add	x14, x11, x10
+   1d884:      	csel	x11, xzr, x11, eq
+   1d888:      	csel	x20, x17, x14, eq
+   1d88c:      	subs	x12, x12, #0x1
+   1d890:      	stp	x15, x11, [x13, #0x18]
+   1d894:      	mov	x11, x13
+   1d898:      	b.ne	0x1d850 <xrsrc_load+0x378>
+   1d89c:      	b	0x1d8c0 <xrsrc_load+0x3e8>
+   1d8a0:      	ldr	x10, [x8, #0x10]
+   1d8a4:      	add	x11, x19, x10
+   1d8a8:      	str	x11, [x8, #0x10]
+   1d8ac:      	str	xzr, [x19, x10]
+   1d8b0:      	b	0x1d788 <xrsrc_load+0x2b0>
+   1d8b4:      	mov	x20, x11
+   1d8b8:      	b	0x1d788 <xrsrc_load+0x2b0>
+   1d8bc:      	mov	x13, x11
+   1d8c0:      	str	xzr, [x13, #0x28]
+   1d8c4:      	b	0x1d788 <xrsrc_load+0x2b0>
+   1d8c8:      	cbz	x27, 0x1d8fc <xrsrc_load+0x424>
+   1d8cc:      	ldr	x8, [sp, #0x10]
+   1d8d0:      	add	x8, x19, x8
+   1d8d4:      	ldp	x9, x10, [x8]
+   1d8d8:      	subs	x27, x27, #0x1
+   1d8dc:      	ldr	x11, [x8, #0x10]
+   1d8e0:      	add	x9, x9, x19
+   1d8e4:      	add	x10, x10, x19
+   1d8e8:      	stp	x9, x10, [x8]
+   1d8ec:      	add	x9, x11, x19
+   1d8f0:      	str	x9, [x8, #0x10]
+   1d8f4:      	add	x8, x8, #0x28
+   1d8f8:      	b.ne	0x1d8d4 <xrsrc_load+0x3fc>
+   1d8fc:      	cbz	x23, 0x1d930 <xrsrc_load+0x458>
+   1d900:      	ldr	x8, [sp, #0x18]
+   1d904:      	add	x8, x19, x8
+   1d908:      	ldp	x9, x10, [x8]
+   1d90c:      	subs	x23, x23, #0x1
+   1d910:      	ldr	x11, [x8, #0x10]
+   1d914:      	add	x9, x19, x9
+   1d918:      	add	x10, x19, x10
+   1d91c:      	stp	x9, x10, [x8]
+   1d920:      	add	x9, x19, x11
+   1d924:      	str	x9, [x8, #0x10]
+   1d928:      	add	x8, x8, #0x30
+   1d92c:      	b.ne	0x1d908 <xrsrc_load+0x430>
+   1d930:      	cbz	x28, 0x1d950 <xrsrc_load+0x478>
+   1d934:      	ldr	x8, [sp, #0x20]
+   1d938:      	add	x8, x19, x8
+   1d93c:      	ldr	x9, [x8]
+   1d940:      	subs	x28, x28, #0x1
+   1d944:      	add	x9, x19, x9
+   1d948:      	str	x9, [x8], #0x18
+   1d94c:      	b.ne	0x1d93c <xrsrc_load+0x464>
+   1d950:      	cbz	x26, 0x1d970 <xrsrc_load+0x498>
+   1d954:      	ldr	x8, [sp, #0x28]
+   1d958:      	add	x8, x19, x8
+   1d95c:      	ldr	x9, [x8]
+   1d960:      	subs	x26, x26, #0x1
+   1d964:      	add	x9, x9, x19
+   1d968:      	str	x9, [x8], #0x8
+   1d96c:      	b.ne	0x1d95c <xrsrc_load+0x484>
+   1d970:      	cbz	x24, 0x1d990 <xrsrc_load+0x4b8>
+   1d974:      	ldr	x8, [sp, #0x30]
+   1d978:      	add	x8, x19, x8
+   1d97c:      	ldr	x9, [x8]
+   1d980:      	subs	x24, x24, #0x1
+   1d984:      	add	x9, x19, x9
+   1d988:      	str	x9, [x8], #0x8
+   1d98c:      	b.ne	0x1d97c <xrsrc_load+0x4a4>
+   1d990:      	ldr	x8, [sp, #0x48]
+   1d994:      	nop
+   1d998:      	adr	x9, 0x3259c <aes_global>
+   1d99c:      	stur	w19, [x9, #0xe]
+   1d9a0:      	add	x8, x19, x8
+   1d9a4:      	stur	w8, [x9, #0xa]
+   1d9a8:      	cbz	x21, 0x1d9c0 <xrsrc_load+0x4e8>
+   1d9ac:      	ldr	x9, [x8]
+   1d9b0:      	subs	x21, x21, #0x1
+   1d9b4:      	add	x9, x19, x9
+   1d9b8:      	str	x9, [x8], #0x8
+   1d9bc:      	b.ne	0x1d9ac <xrsrc_load+0x4d4>
+   1d9c0:      	mov	w0, #0x1                // =1
+   1d9c4:      	b	0x1d614 <xrsrc_load+0x13c>
+   1d9c8:      	mov	x0, x19
+   1d9cc:      	mov	w8, #0x49               // =73
+   1d9d0:      	svc	#0x1
+   1d9d4:      	b	0x1d610 <xrsrc_load+0x138>

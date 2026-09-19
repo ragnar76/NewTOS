@@ -173,3 +173,114 @@ trifft die Felder, die der Kern schreibt).
 
 Artefakte: `measurement-2026-09-19-a60/` (RUNINFO.TXT, serial/, screendumps/,
 method/, build/, decode-*.txt, manifest.sha256).
+
+## Fix (Developer, 2026-09-19)
+
+Umgesetzt wie in § 4 vorgeschlagen: drei Overlay-Dateien unter
+`sdk/overlays/teradesk/` (Schattenbaum `build-teradesk.sh:104-125`), die
+vendierte Quelle `sdk/apps/teradesk/` unangetastet, kein Kernel-, tos-api-
+oder gemlib-Code beruehrt. Nachweis mit derselben Messmethode in
+`measurement-2026-09-19-a60/fix/` (RUNINFO-FIX.TXT, manifest.sha256).
+
+### Die drei Dateien (Diff gegen das Original = nur die genannten Hunks)
+
+1. **`sdk/overlays/teradesk/library/xdialog/library.h`** — upstream `:55-83`
+   gestrichen (`aes_private`/`AES_GLOBAL`-Typedefs, die vier
+   `#undef/#define`-Zeilen). `AES_GLOBAL`/`aes_private` hat keinen weiteren
+   Nutzer (`/usr/bin/grep -rn 'AES_GLOBAL\|aes_private' sdk/apps/teradesk`:
+   nur `library.h:55-83`) — bestaetigt. Damit gelten gemlibs Overlay-Leser
+   (`sdk/gemlib/overlay/gem.h:101-125`: 4 Byte @10/@14 plus Setter) in jeder
+   TeraDesk-Uebersetzungseinheit.
+2. **`sdk/overlays/teradesk/icon.c`** — die acht Zuweisungen `:2742-2743`,
+   `:2762-2763`, `:2776-2777`, `:2781-2782` → `_AESrscfile_set(…)` /
+   `_AESrscmem_set(…)`. Die Leser `:2692`, `:2707-2708`, `:2751-2752`,
+   `:2773-2774` unveraendert.
+3. **`sdk/overlays/teradesk/rsc_load.c`** — die drei `#ifdef __GNUC__`-Arme
+   `:414-427`, `:482-490`, `:501-509` → `_AESrscfile_set(_rs_trindex);
+   _AESrscmem_set(buf);`, `Mfree(_AESrscmem);`, `useRsc = _AESrscmem;`
+   (wortgleich der `#else`-Arm, mit Setter; Vertrag `rsc_load.h:82-89`).
+
+Kopfkommentar je Datei nach dem Muster von `window.h`/`environm.c` (warum,
+Quellzeilen, `TASK/A60.md`); CRLF wie das Original beibehalten (Praezedenz
+`window.h`), so dass `diff -u` nur die geaenderten Hunks zeigt.
+
+### Bau
+
+`sdk/apps/build-teradesk.sh` (`fix/build/build-teradesk.log`):
+`overlays applied: 6` (rsc_load.c, window.h, library/xdialog/library.h,
+library/utility/nf_ops.c, environm.c, icon.c), `compiled OK=48  FAILED=0
+(of 48)`, `undefined symbols in the final image (goal 0): 0`; `icon.err`
+und `rsc_load.err` leer. `DESKTOP.NAP` sha256 `db31aae1…` → **`fb37bb3b…`**
+(282112 Byte); `desktop.rsc`/`icons.rsc` unveraendert. Die Link-VAs der
+Statics verschieben sich um +0x10 (`aes_global 0x3259c`, `svicntree
+0x30f70`, `svicnrshdr 0x30f78`, `icons 0x30ee0`, `colour_icons 0x3116c`).
+
+### Disassemblat (`fix/disasm/before-*.dis` vs `after-*.dis`)
+
+| Funktion | vorher | nachher |
+|---|---|---|
+| `xrsrc_load` (Stores) | `stur x8,[x9,#0xa]` / `stur x19,[x9,#0xe]` | `stur w8,[x9,#0xa]` / `stur w19,[x9,#0xe]` |
+| `xrsrc_gaddr` | `ldur x8,[x8,#0xe]` | `ldur w8,[x8,#0xe]` |
+| `xrsrc_free` | `ldur x0,[x8,#0xe]` | `ldur w0,[x8,#0xe]` |
+| `load_icons` Sicherung/Rueckstellung | `ldp x22,x21,[x20,#0x10]` / `stp x22,x21,[x20,#0x10]` | `ldur w22,[x20,#0xa]`+`ldur w21,[x20,#0xe]` / `stur w22,[x20,#0xa]`+`stur w21,[x20,#0xe]` |
+| `load_icons` `svicntree`/`svicnrshdr` | `ldp x9,x11,[x20,#0x10]` | `ldur w9,[x20,#0xa]` / `ldur w11,[x20,#0xe]` |
+| `aes_supports_coloricons` (inline) | `ldr x9,[x19,#0x18]` | `ldur w9,[x19,#0xe]` |
+| `free_icons` | `ldr q0,[x20,#0x10]` / `stp x9,x8,[x20,#0x10]` / `str q0,[x20,#0x10]` | `ldur d8,[x20,#0xa]` / `stur w8,[x20,#0xe]`+`stur w9,[x20,#0xa]` / `stur d8,[x20,#0xa]` |
+
+Zu `free_icons`: der Compiler verschmilzt die Sicherung und Rueckstellung
+der beiden benachbarten 4-Byte-Felder zu einem 8-Byte-Zugriff auf Byte
+10..17 — genau die zwei Felder, kein Byte daneben; die beiden Stores der
+Icon-Werte sind 4 Byte. Kein Zugriff auf Byte 16..31 mehr, nirgends.
+
+### Trace (`fix/serial/`, Methode `../method/run.sh`, Kern aus der Scratch-Kopie)
+
+`fix1` = das unveraenderte Instrument `../method/a60_patch.py` mit den fuenf
+neuen Link-VAs (`fix/method/a60_patch_fix1.py`). Der erste AES-Trap nach
+`load_icons` (op 104, `:180`) erzeugt **keine** Dump-Zeile mehr — das
+Instrument dumpt nur bei Aenderung, d. h. das `AESGLOBAL` steht unveraendert
+auf dem Stand nach `rsrc_load(desktop.rsc)`; Statics **`svicntree =
+0x427028`, `svicnrshdr = 0x427000`** (= `Malloc(13284) -> 0x427000` + 0x28
+bzw. + 0), `icons = 0x427050`.
+
+`fix2` = fix1 plus ein unbedingter Dump beim ersten Trap, bei dem
+`svicntree != 0` ist (`fix/method/a60_patch_fix2.py`), damit die Bytes
+selbst im Log stehen (`:47` vs `:180`):
+
+| Punkt | Bytes 0..31 |
+|---|---|
+| nach `rsrc_load("desktop.rsc")` | `4003 0100 0100 7b11 0000 4400 4000 0000 4000 3699 1000 305b 1200 0000 0000 0000` |
+| erster Trap nach `load_icons` (op 104) | `4003 0100 0100 7b11 0000 4400 4000 0000 4000 3699 1000 305b 1200 0000 0000 0000` |
+
+**Bytegleich**: `ap_ptree`@10 = `0x00400044`, `ap_rscmem`@14 =
+`0x00400000`, `ap_rsclen`@18 = 39222 — die EmuTOS-`rs_sglobe`-Semantik
+(`gemrslib.c:673-679`), vorher `2870 4200 0070 4000` (Baumfeld nicht
+zurueckgestellt, Hybrid-`ap_rscmem`). (`ap_3resv` = `0x00125b30` statt
+`…5b18`: die Kernel-Static liegt im fix2-Kern wegen der zusaetzlichen
+Instrumentierung 0x18 Byte weiter; innerhalb des Laufs identisch.)
+
+`diff` der `[a60]`-Zeilen run1 (vorher) vs fix1: nur `global=0x3258c` →
+`0x3259c` (relinkt), die Dump-Zeile nach `load_icons` entfaellt, die
+Statics wie oben. Alle 61 `rsrc_gaddr`-Rueckgaben, `shel_find`, die
+`Malloc`-Basis: identisch.
+
+Screendumps `fix1`/`fix2`: sha256 `fb1e8b90…` = `run1-after-boot.png`,
+**bytegleich** (Menueleiste, vier Laufwerke, Papierkorb, Mono-Icons).
+
+### Hosttest
+
+`sdk/gemlib/tests/aesglobal_fields.c` (Muster `obspec_bits.c`/
+`evnt_timer_words.c`, Bauzeile im Kopf): bindet TeraDesks `library.h` in
+der Include-Reihenfolge des Schattenbaums ein und prueft `#error` bei
+`_AES_GLOBAL_defined`, `_AESrscfile_p()`/`_AESrscmem_p()` auf Byte 10/14
+mit `sizeof 4` (`_Static_assert`), dass die Setter genau 4 Byte schreiben
+und `ap_rsclen`/`ap_planes` unberuehrt lassen, und dass die Leser den
+Zeiger zuruckgeben. Ergebnis: 0 Warnungen, `OK`, rc 0
+(`fix/hosttest/aesglobal_fields.out`). Gegenprobe gegen die pristine
+`library.h`: `#error … (A60)`, wie vorgesehen. Der Test liegt bewusst
+**nicht** unter `sdk/overlays/teradesk/` — der Schattenbaum-Loop nimmt jede
+`.c`/`.h` dort als Overlay und kompiliert sie in TeraDesk hinein.
+
+### Nicht gefahren
+
+`free_icons` beim Beenden (Geste; nur Disassemblat), A39 Stufe 2 (nicht
+gebaut), echte Pi 4. Abnahme durch den Tester steht aus.

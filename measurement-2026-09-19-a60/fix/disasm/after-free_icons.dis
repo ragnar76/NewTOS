@@ -1,0 +1,21 @@
+000000000000ef88 <free_icons>:
+    ef88:      	str	d8, [sp, #-0x20]!
+    ef8c:      	stp	x20, x19, [sp, #0x10]
+    ef90:      	adrp	x19, 0x30000 <txtw_table+0x30>
+    ef94:      	ldr	x8, [x19, #0xf78]
+    ef98:      	str	x30, [sp, #0x8]
+    ef9c:      	cbz	x8, 0xefc8 <free_icons+0x40>
+    efa0:      	adrp	x9, 0x30000 <txtw_table+0x30>
+    efa4:      	nop
+    efa8:      	adr	x20, 0x3259c <aes_global>
+    efac:      	ldr	x9, [x9, #0xf70]
+    efb0:      	ldur	d8, [x20, #0xa]
+    efb4:      	stur	w8, [x20, #0xe]
+    efb8:      	stur	w9, [x20, #0xa]
+    efbc:      	bl	0x1d9d8 <xrsrc_free>
+    efc0:      	stur	d8, [x20, #0xa]
+    efc4:      	str	xzr, [x19, #0xf78]
+    efc8:      	ldp	x20, x19, [sp, #0x10]
+    efcc:      	ldr	x30, [sp, #0x8]
+    efd0:      	ldr	d8, [sp], #0x20
+    efd4:      	ret

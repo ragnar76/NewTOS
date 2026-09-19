@@ -1,0 +1,91 @@
+000000000000ee20 <load_icons>:
+    ee20:      	sub	sp, sp, #0x40
+    ee24:      	stp	x30, x23, [sp, #0x10]
+    ee28:      	adrp	x23, 0x31000 <this+0x58>
+    ee2c:      	stp	x20, x19, [sp, #0x30]
+    ee30:      	nop
+    ee34:      	adr	x20, 0x3259c <aes_global>
+    ee38:      	stp	x22, x21, [sp, #0x20]
+    ee3c:      	ldrh	w8, [x23, #0x16c]
+    ee40:      	ldur	w22, [x20, #0xa]
+    ee44:      	ldur	w21, [x20, #0xe]
+    ee48:      	cbz	w8, 0xeed4 <load_icons+0xb4>
+    ee4c:      	nop
+    ee50:      	adr	x0, 0x2d89f <dt_table+0xdf>
+    ee54:      	nop
+    ee58:      	adr	x1, 0x3259c <aes_global>
+    ee5c:      	bl	0x29a4c <mt_rsrc_load>
+    ee60:      	tst	w0, #0xffff
+    ee64:      	b.eq	0xeed0 <load_icons+0xb0>
+    ee68:      	nop
+    ee6c:      	adr	x19, 0x3259c <aes_global>
+    ee70:      	add	x2, sp, #0x8
+    ee74:      	mov	w0, wzr
+    ee78:      	mov	w1, wzr
+    ee7c:      	mov	x3, x19
+    ee80:      	str	xzr, [sp, #0x8]
+    ee84:      	bl	0x299e4 <mt_rsrc_gaddr>
+    ee88:      	tst	w0, #0xffff
+    ee8c:      	b.eq	0xeec4 <load_icons+0xa4>
+    ee90:      	ldr	x8, [sp, #0x8]
+    ee94:      	cbz	x8, 0xeec4 <load_icons+0xa4>
+    ee98:      	ldrh	w9, [x8, #0x6]
+    ee9c:      	cmp	w9, #0x14
+    eea0:      	b.ne	0xeec4 <load_icons+0xa4>
+    eea4:      	ldrh	w9, [x8, #0x26]
+    eea8:      	cmp	w9, #0x21
+    eeac:      	b.ne	0xeec4 <load_icons+0xa4>
+    eeb0:      	ldr	x8, [x8, #0x30]
+    eeb4:      	cbz	x8, 0xeec4 <load_icons+0xa4>
+    eeb8:      	ldur	w9, [x19, #0xe]
+    eebc:      	cmp	x8, x9
+    eec0:      	b.ne	0xef7c <load_icons+0x15c>
+    eec4:      	nop
+    eec8:      	adr	x0, 0x3259c <aes_global>
+    eecc:      	bl	0x29994 <mt_rsrc_free>
+    eed0:      	strh	wzr, [x23, #0x16c]
+    eed4:      	adrp	x0, 0x2d000 <strlwr+0x2c>
+    eed8:      	add	x0, x0, #0xa89
+    eedc:      	bl	0x1d4d8 <xrsrc_load>
+    eee0:      	tst	w0, #0xffff
+    eee4:      	b.eq	0xef4c <load_icons+0x12c>
+    eee8:      	nop
+    eeec:      	adr	x19, 0x30ee0 <icons>
+    eef0:      	mov	w0, wzr
+    eef4:      	mov	w1, wzr
+    eef8:      	mov	x2, x19
+    eefc:      	bl	0x1d9f4 <xrsrc_gaddr>
+    ef00:      	ldur	w9, [x20, #0xa]
+    ef04:      	ldr	x12, [x19]
+    ef08:      	adrp	x10, 0x30000 <txtw_table+0x30>
+    ef0c:      	ldur	w11, [x20, #0xe]
+    ef10:      	mov	w8, wzr
+    ef14:      	adrp	x13, 0x30000 <txtw_table+0x30>
+    ef18:      	str	x9, [x10, #0xf70]
+    ef1c:      	add	x9, x12, #0x20
+    ef20:      	adrp	x10, 0x30000 <txtw_table+0x30>
+    ef24:      	str	x9, [x19]
+    ef28:      	add	x9, x12, #0x28
+    ef2c:      	str	x11, [x13, #0xf78]
+    ef30:      	sbfiz	x11, x8, #5, #16
+    ef34:      	add	w8, w8, #0x1
+    ef38:      	strh	w8, [x10, #0xee8]
+    ef3c:      	ldrh	w11, [x9, x11]
+    ef40:      	tbz	w11, #0x5, 0xef30 <load_icons+0x110>
+    ef44:      	mov	w0, #0x1                // =1
+    ef48:      	b	0xef60 <load_icons+0x140>
+    ef4c:      	mov	w0, #0x82               // =130
+    ef50:      	stur	w22, [x20, #0xa]
+    ef54:      	stur	w21, [x20, #0xe]
+    ef58:      	bl	0xa344 <alert_abort>
+    ef5c:      	mov	w0, wzr
+    ef60:      	stur	w22, [x20, #0xa]
+    ef64:      	ldp	x30, x23, [sp, #0x10]
+    ef68:      	stur	w21, [x20, #0xe]
+    ef6c:      	ldp	x20, x19, [sp, #0x30]
+    ef70:      	ldp	x22, x21, [sp, #0x20]
+    ef74:      	add	sp, sp, #0x40
+    ef78:      	ret
+    ef7c:      	ldrh	w8, [x23, #0x16c]
+    ef80:      	cbz	w8, 0xeed4 <load_icons+0xb4>
+    ef84:      	b	0xeee8 <load_icons+0xc8>

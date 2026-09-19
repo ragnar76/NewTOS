@@ -1,0 +1,79 @@
+A60 -- FIX-NACHWEIS (Developer, 2026-09-19). Dieselbe Messmethode wie ../RUNINFO.TXT,
+QEMU raspi4b (640x480, headless), Branch desk-rebuild, Basis HEAD a27ea4d.
+
+GEAENDERT (nur Overlays + ein Hosttest; Kernel/tos-api/gemlib/sdk/apps unberuehrt):
+  sdk/overlays/teradesk/library/xdialog/library.h   (Kopie, upstream :55-83 gestrichen)
+  sdk/overlays/teradesk/icon.c                      (Kopie, 8 Zuweisungen -> _AESrscfile_set/_AESrscmem_set)
+  sdk/overlays/teradesk/rsc_load.c                  (Kopie, 3 __GNUC__-Arme -> gemlib-Accessoren + Setter)
+  sdk/gemlib/tests/aesglobal_fields.c               (Hosttest, Muster sdk/gemlib/tests/)
+
+TERADESK-BAU (build/build-teradesk.log)
+  sdk/apps/build-teradesk.sh: "overlays applied: 6", "compiled OK=48  FAILED=0  (of 48)",
+  "undefined symbols in the final image (goal 0): 0"; icon.err / rsc_load.err leer (0 Byte).
+  DESKTOP.NAP  vorher db31aae1... (H05-Stand)  ->  nachher fb37bb3b... (282112 Byte)
+  desktop.rsc f03744cc..., icons.rsc 8d4bc8a2... unveraendert.
+  Link-VAs (llvm-nm) verschoben um +0x10: aes_global 0x3259c, svicntree 0x30f70,
+  svicnrshdr 0x30f78, icons 0x30ee0, colour_icons 0x3116c.
+
+DISASSEMBLAT (disasm/before-*.dis vs after-*.dis, llvm-objdump -d)
+  xrsrc_load   vorher stur x8,[x9,#0xa] / stur x19,[x9,#0xe]  (8 B)
+               nachher stur w19,[x9,#0xe] / stur w8,[x9,#0xa]  (4 B)
+  xrsrc_gaddr  vorher ldur x8,[x8,#0xe]   nachher ldur w8,[x8,#0xe]
+  xrsrc_free   vorher ldur x0,[x8,#0xe]   nachher ldur w0,[x8,#0xe]
+  load_icons   vorher ldp x22,x21,[x20,#0x10] (Sicherung @16/@24), stp ... [x20,#0x10] (Rueckstellung),
+                      ldp x9,x11,[x20,#0x10] (svicntree/svicnrshdr), ldr x9,[x19,#0x18] (aes_supports_coloricons)
+               nachher ldur w22,[x20,#0xa] / ldur w21,[x20,#0xe] (Sicherung), stur w22,[x20,#0xa] /
+                      stur w21,[x20,#0xe] (Rueckstellung, beide Pfade), ldur w9,[x20,#0xa] / ldur w11,[x20,#0xe]
+                      (svicntree/svicnrshdr), ldur w9,[x19,#0xe] (aes_supports_coloricons).
+  free_icons   vorher ldr q0,[x20,#0x10] / stp x9,x8,[x20,#0x10] / str q0,[x20,#0x10] (16 B @16..31)
+               nachher ldur d8,[x20,#0xa] (Sicherung der 8 Byte 10..17 = genau die beiden 4-Byte-Felder,
+                      vom Compiler zu EINEM Zugriff verschmolzen), stur w8,[x20,#0xe] / stur w9,[x20,#0xa]
+                      (svicntree/svicnrshdr als 4 B), stur d8,[x20,#0xa] (Rueckstellung derselben 8 Byte).
+                      Kein Zugriff mehr auf Byte 16..31; kein 8-Byte-Zeigerstore.
+
+KERNEL (Messinstrument, nur Scratch-Kopie; Projektbaum unberuehrt)
+  fix1: method/a60_patch_fix1.py = ../method/a60_patch.py mit den fuenf neuen Link-VAs (sonst identisch);
+        build/kernel8-a60-fix1.img sha256 7c5141f6..., build/build-rpi4-fix1.log.
+  fix2: method/a60_patch_fix2.py = fix1 + EIN zusaetzlicher unbedingter Dump ("pre* first-after-load_icons")
+        beim ersten AES-Trap, bei dem TeraDesks svicntree != 0 ist -- weil der Aenderungs-Filter des
+        Instruments den Stand nach load_icons sonst nur als ABWESENHEIT einer Dump-Zeile zeigt;
+        build/kernel8-a60-fix2.img sha256 f5ffe517..., build/build-rpi4-fix2.log.
+
+IMAGE
+  tools/make-sd-image.sh <scratch>/sd-base.img 64 (sha256 bddaa5fa..., staged die neue DESKTOP.NAP),
+  dann sd-put.sh NEWDESK.INF = ../method/newdesk-user.inf, Apps\TERADESK\TERADESK.INF =
+  ../method/teradesk-user.inf -> sd-run1.img (sha256 b9556444...). Beide Laeufe mit demselben Image.
+
+LAEUFE (../method/run.sh, 75 s, dann Screendump)
+  fix1  serial/fix1-serial.log, screendumps/fix1-after-boot.png
+  fix2  serial/fix2-serial.log, screendumps/fix2-after-boot.png
+
+ERGEBNIS
+  fix1 (:44/:47/:179-180):
+    nach appl_init        4003 0100 0100 7b11 0000 0000 0000 0000 0000 0000 1000 185b 1200 0000 0000 0000
+    nach rsrc_load        4003 0100 0100 7b11 0000 4400 4000 0000 4000 3699 1000 185b 1200 0000 0000 0000
+    Malloc(13284) -> 0x427000
+    erster Trap nach load_icons (op 104): KEINE Dump-Zeile (= unveraendert seit rsrc_load);
+    statics svicntree=0x427028 svicnrshdr=0x427000 icons=0x427050  (vorher: 0x5b18000000000042 / 0x12)
+  fix2 (:47/:180-181), expliziter Dump:
+    nach rsrc_load        4003 0100 0100 7b11 0000 4400 4000 0000 4000 3699 1000 305b 1200 0000 0000 0000
+    erster Trap nach load_icons (op 104):
+                          4003 0100 0100 7b11 0000 4400 4000 0000 4000 3699 1000 305b 1200 0000 0000 0000
+    -> BYTEGLEICH. (ap_3resv 0x00125b30 statt ...5b18: die Kernel-Static liegt im fix2-Kern durch die
+       zusaetzliche Instrumentierung 0x18 Byte weiter; innerhalb des Laufs identisch.)
+    statics svicntree=0x427028 svicnrshdr=0x427000 icons=0x427050
+  diff der [a60]-Zeilen ../serial/run1-serial.log vs serial/fix1-serial.log: nur global=0x3258c->0x3259c
+  (relinkte Binary), die Dump-Zeile nach load_icons entfaellt, statics wie oben. Sonst identisch
+  (alle rsrc_gaddr-Rueckgaben, shel_find, Malloc-Basis).
+  Screendumps: fix1 und fix2 sha256 fb1e8b90... = ../screendumps/run1-after-boot.png (bytegleich).
+
+HOSTTEST (hosttest/aesglobal_fields.out)
+  cc -D__NEWTOS__ -D_TOS_ONLY -funsigned-char -Wno-macro-redefined -I sdk/overlays/teradesk
+     -I sdk/overlays/teradesk/library/xdialog -I sdk/apps/teradesk -I sdk/apps/teradesk/library/xdialog
+     -I sdk/apps/teradesk/library/utility -I sdk/gemlib/gemlib-0.44.0 -I sdk/libc/mintlib/include
+     -o aesglobal_fields sdk/gemlib/tests/aesglobal_fields.c  -> 0 Warnungen; ./aesglobal_fields -> OK, rc=0.
+  Gegenprobe mit -I sdk/apps/teradesk/library/xdialog VOR dem Overlay (pristine library.h):
+  #error "_AES_GLOBAL_defined ... (A60)" -- 1 error generated.
+
+NICHT GEFAHREN: free_icons-Pfad beim Beenden (Geste noetig; aus dem Disassemblat hergeleitet),
+A39 Stufe 2 (nicht gebaut), echte Pi 4.

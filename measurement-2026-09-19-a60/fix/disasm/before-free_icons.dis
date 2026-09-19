@@ -1,0 +1,22 @@
+000000000000ef78 <free_icons>:
+    ef78:      	sub	sp, sp, #0x30
+    ef7c:      	stp	x20, x19, [sp, #0x20]
+    ef80:      	adrp	x19, 0x30000 <txtw_table+0x40>
+    ef84:      	ldr	x8, [x19, #0xf68]
+    ef88:      	str	x30, [sp, #0x10]
+    ef8c:      	cbz	x8, 0xefbc <free_icons+0x44>
+    ef90:      	adrp	x9, 0x30000 <txtw_table+0x40>
+    ef94:      	nop
+    ef98:      	adr	x20, 0x3258c <aes_global>
+    ef9c:      	ldr	x9, [x9, #0xf60]
+    efa0:      	ldr	q0, [x20, #0x10]
+    efa4:      	str	q0, [sp]
+    efa8:      	stp	x9, x8, [x20, #0x10]
+    efac:      	bl	0x1d9cc <xrsrc_free>
+    efb0:      	ldr	q0, [sp]
+    efb4:      	str	xzr, [x19, #0xf68]
+    efb8:      	str	q0, [x20, #0x10]
+    efbc:      	ldp	x20, x19, [sp, #0x20]
+    efc0:      	ldr	x30, [sp, #0x10]
+    efc4:      	add	sp, sp, #0x30
+    efc8:      	ret

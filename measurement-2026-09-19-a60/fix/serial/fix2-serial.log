@@ -1,0 +1,185 @@
+RB2
+NewTOS booting on rpi4
+Phase 02 reached.
+[mm] DTB at 0x0000000000000100
+[mm] firmware: ARM memory bank 0: 0x0000000000000000 + 1006632960 bytes (960 MiB)
+[mm] firmware: VC memory: 0x000000003c000000 + 67108864 bytes (64 MiB)
+[mm] device tree: no usable /memory node (blob invalid or absent)
+[mm] memory map:
+[mm]   DRAM  : 0x0000000000000000..0x000000003c000000 (1006632960 bytes) — source: firmware
+[mm]   kernel: 0x0000000000080000..0x00000000002ea000 (2531328 bytes)
+[mm]   ST-RAM: 0x0000000000400000..0x0000000000e00000 (10485760 bytes)
+[mm]   TT-RAM: 0x0000000001000000..0x000000003be00000 (987758592 bytes)
+[mm]   OSrsvd: 0x000000003be00000..0x000000003c000000 (2097152 bytes)
+[mm]     heap: 0x000000003be00000..0x000000003c000000 (2097152 bytes)
+[mm]   MMIO 00: 0x00000000fd500000..0x00000000fd510000
+[mm]   MMIO 01: 0x00000000fe000000..0x00000000ff000000
+[mm]   MMIO 02: 0x00000000ff800000..0x0000000100000000
+[mm] MMU reinstalled (high-half via TTBR1, TTBR0 deferred to Phase 06).
+[mm] frames ST-RAM: total=2560 used=0 free=2560 (10485760 B free)
+[mm] frames TT-RAM: total=241152 used=0 free=241152 (987758592 B free)
+[mm] alloc ST-RAM frame -> 0x0000000000400000
+[mm] alloc TT-RAM frame -> 0x0000000001000000
+[mm] heap after init: total=2097152 used=0 free=2097152 largest=2097152 blocks=1
+[mm] heap smoke OK
+[mm] heap after smoke: total=2097152 used=0 free=2097152 largest=2097152 blocks=1
+[fb] VideoCore display geometry detected: 640x480
+[fb] 640x480 pitch 2560 virtual height 960 -> 2 screen page(s), 2400 KiB
+[fb] VideoCore fb up: 640x480 stride 640px
+[mm] BDOS pools: ST-RAM 0x00400000+10485760 TT-RAM 0x01000000+987758592
+[mm] BDOS ST-RAM after init: total=10485760 free=10485760 used=0 largest_free=10485760 (free_mds=1 alloc_mds=0)
+[mm] BDOS TT-RAM after init: total=987758592 free=987758592 used=0 largest_free=987758592 (free_mds=1 alloc_mds=0)
+[emmc] SD card on controller @ 0xffff0000fe300000
+[clock] seeded from kernel8.img: 2026-09-19 13:26:58
+[pcie] RC not present (no response at RC_BASE); USB disabled
+[auto] running C:\AUTO\HELLO.NCP
+[launch] EL0: slot 0 entry 0x1000
+Hello from a NewTOS .NCP program!
+[launch] returned (program Pterm'd)
+[auto] 1 AUTO program(s) run
+[shell] sh_ldapp: starting C:\APPS\TERADESK\DESKTOP.NAP, sh_nextapp=2, sh_isgem=1
+[launch] EL0: slot 0 entry 0x1000
+[a60] pre  op=10 global=0x3259c bytes=0000 0000 ffff 0000 0000 0000 0000 0000 0000 0000 0000 0000 0000 0000 0000 0000
+[a60] call appl_init()
+[a60] post op=10 global=0x3259c bytes=4003 0100 0100 7b11 0000 0000 0000 0000 0000 0000 1000 305b 1200 0000 0000 0000
+[a60] ret  op=10 int_out[0]=1 yield=false
+[a60] call rsrc_load("desktop.rsc")
+[a60] post op=110 global=0x3259c bytes=4003 0100 0100 7b11 0000 4400 4000 0000 4000 3699 1000 305b 1200 0000 0000 0000
+[a60] ret  op=110 int_out[0]=1 yield=false
+[a60] call rsrc_gaddr(type=5, idx=120)
+[a60] ret  op=112 rsrc_gaddr(type=5, idx=120) int_out[0]=1 addrout[0]=0x408fe8
+[a60] pre  op=112 statics svicntree=0x0 svicnrshdr=0x0 icons=0x0 colour_icons=1
+[a60] call rsrc_gaddr(type=0, idx=0)
+[a60] ret  op=112 rsrc_gaddr(type=0, idx=0) int_out[0]=1 addrout[0]=0x400118
+[a60] call rsrc_gaddr(type=0, idx=10)
+[a60] ret  op=112 rsrc_gaddr(type=0, idx=10) int_out[0]=1 addrout[0]=0x402698
+[a60] call rsrc_gaddr(type=0, idx=11)
+[a60] ret  op=112 rsrc_gaddr(type=0, idx=11) int_out[0]=1 addrout[0]=0x402918
+[a60] call rsrc_gaddr(type=0, idx=3)
+[a60] ret  op=112 rsrc_gaddr(type=0, idx=3) int_out[0]=1 addrout[0]=0x400cf8
+[a60] call rsrc_gaddr(type=0, idx=2)
+[a60] ret  op=112 rsrc_gaddr(type=0, idx=2) int_out[0]=1 addrout[0]=0x400c38
+[a60] call rsrc_gaddr(type=0, idx=6)
+[a60] ret  op=112 rsrc_gaddr(type=0, idx=6) int_out[0]=1 addrout[0]=0x401498
+[a60] call rsrc_gaddr(type=0, idx=1)
+[a60] ret  op=112 rsrc_gaddr(type=0, idx=1) int_out[0]=1 addrout[0]=0x400a78
+[a60] call rsrc_gaddr(type=0, idx=4)
+[a60] ret  op=112 rsrc_gaddr(type=0, idx=4) int_out[0]=1 addrout[0]=0x400e18
+[a60] call rsrc_gaddr(type=0, idx=8)
+[a60] ret  op=112 rsrc_gaddr(type=0, idx=8) int_out[0]=1 addrout[0]=0x402078
+[a60] call rsrc_gaddr(type=0, idx=7)
+[a60] ret  op=112 rsrc_gaddr(type=0, idx=7) int_out[0]=1 addrout[0]=0x401cb8
+[a60] call rsrc_gaddr(type=0, idx=9)
+[a60] ret  op=112 rsrc_gaddr(type=0, idx=9) int_out[0]=1 addrout[0]=0x402218
+[a60] call rsrc_gaddr(type=0, idx=5)
+[a60] ret  op=112 rsrc_gaddr(type=0, idx=5) int_out[0]=1 addrout[0]=0x401278
+[a60] call rsrc_gaddr(type=0, idx=12)
+[a60] ret  op=112 rsrc_gaddr(type=0, idx=12) int_out[0]=1 addrout[0]=0x402bb8
+[a60] call rsrc_gaddr(type=0, idx=13)
+[a60] ret  op=112 rsrc_gaddr(type=0, idx=13) int_out[0]=1 addrout[0]=0x402cb8
+[a60] call rsrc_gaddr(type=0, idx=14)
+[a60] ret  op=112 rsrc_gaddr(type=0, idx=14) int_out[0]=1 addrout[0]=0x402d78
+[a60] call rsrc_gaddr(type=0, idx=15)
+[a60] ret  op=112 rsrc_gaddr(type=0, idx=15) int_out[0]=1 addrout[0]=0x4030d8
+[a60] call rsrc_gaddr(type=0, idx=23)
+[a60] ret  op=112 rsrc_gaddr(type=0, idx=23) int_out[0]=1 addrout[0]=0x4042f8
+[a60] call rsrc_gaddr(type=0, idx=16)
+[a60] ret  op=112 rsrc_gaddr(type=0, idx=16) int_out[0]=1 addrout[0]=0x4034f8
+[a60] call rsrc_gaddr(type=0, idx=17)
+[a60] ret  op=112 rsrc_gaddr(type=0, idx=17) int_out[0]=1 addrout[0]=0x403818
+[a60] call rsrc_gaddr(type=0, idx=19)
+[a60] ret  op=112 rsrc_gaddr(type=0, idx=19) int_out[0]=1 addrout[0]=0x403b98
+[a60] call rsrc_gaddr(type=0, idx=18)
+[a60] ret  op=112 rsrc_gaddr(type=0, idx=18) int_out[0]=1 addrout[0]=0x403ab8
+[a60] call rsrc_gaddr(type=0, idx=20)
+[a60] ret  op=112 rsrc_gaddr(type=0, idx=20) int_out[0]=1 addrout[0]=0x403d98
+[a60] call rsrc_gaddr(type=0, idx=21)
+[a60] ret  op=112 rsrc_gaddr(type=0, idx=21) int_out[0]=1 addrout[0]=0x403f98
+[a60] call rsrc_gaddr(type=0, idx=22)
+[a60] ret  op=112 rsrc_gaddr(type=0, idx=22) int_out[0]=1 addrout[0]=0x404178
+[a60] call rsrc_gaddr(type=0, idx=24)
+[a60] ret  op=112 rsrc_gaddr(type=0, idx=24) int_out[0]=1 addrout[0]=0x4048f8
+[a60] call rsrc_gaddr(type=0, idx=25)
+[a60] ret  op=112 rsrc_gaddr(type=0, idx=25) int_out[0]=1 addrout[0]=0x404af8
+[a60] call rsrc_gaddr(type=5, idx=165)
+[a60] ret  op=112 rsrc_gaddr(type=5, idx=165) int_out[0]=1 addrout[0]=0x4093ed
+[a60] call rsrc_gaddr(type=5, idx=151)
+[a60] ret  op=112 rsrc_gaddr(type=5, idx=151) int_out[0]=1 addrout[0]=0x40930c
+[a60] call rsrc_gaddr(type=5, idx=165)
+[a60] ret  op=112 rsrc_gaddr(type=5, idx=165) int_out[0]=1 addrout[0]=0x4093ed
+[a60] call rsrc_gaddr(type=5, idx=151)
+[a60] ret  op=112 rsrc_gaddr(type=5, idx=151) int_out[0]=1 addrout[0]=0x40930c
+[a60] call rsrc_gaddr(type=5, idx=165)
+[a60] ret  op=112 rsrc_gaddr(type=5, idx=165) int_out[0]=1 addrout[0]=0x4093ed
+[a60] call rsrc_gaddr(type=5, idx=151)
+[a60] ret  op=112 rsrc_gaddr(type=5, idx=151) int_out[0]=1 addrout[0]=0x40930c
+[a60] call rsrc_gaddr(type=5, idx=165)
+[a60] ret  op=112 rsrc_gaddr(type=5, idx=165) int_out[0]=1 addrout[0]=0x4093ed
+[a60] call rsrc_gaddr(type=5, idx=151)
+[a60] ret  op=112 rsrc_gaddr(type=5, idx=151) int_out[0]=1 addrout[0]=0x40930c
+[a60] call rsrc_gaddr(type=5, idx=165)
+[a60] ret  op=112 rsrc_gaddr(type=5, idx=165) int_out[0]=1 addrout[0]=0x4093ed
+[a60] call rsrc_gaddr(type=5, idx=151)
+[a60] ret  op=112 rsrc_gaddr(type=5, idx=151) int_out[0]=1 addrout[0]=0x40930c
+[a60] call rsrc_gaddr(type=5, idx=165)
+[a60] ret  op=112 rsrc_gaddr(type=5, idx=165) int_out[0]=1 addrout[0]=0x4093ed
+[a60] call rsrc_gaddr(type=5, idx=151)
+[a60] ret  op=112 rsrc_gaddr(type=5, idx=151) int_out[0]=1 addrout[0]=0x40930c
+[a60] call rsrc_gaddr(type=5, idx=165)
+[a60] ret  op=112 rsrc_gaddr(type=5, idx=165) int_out[0]=1 addrout[0]=0x4093ed
+[a60] call rsrc_gaddr(type=5, idx=151)
+[a60] ret  op=112 rsrc_gaddr(type=5, idx=151) int_out[0]=1 addrout[0]=0x40930c
+[a60] call rsrc_gaddr(type=5, idx=165)
+[a60] ret  op=112 rsrc_gaddr(type=5, idx=165) int_out[0]=1 addrout[0]=0x4093ed
+[a60] call rsrc_gaddr(type=5, idx=151)
+[a60] ret  op=112 rsrc_gaddr(type=5, idx=151) int_out[0]=1 addrout[0]=0x40930c
+[a60] call rsrc_gaddr(type=5, idx=150)
+[a60] ret  op=112 rsrc_gaddr(type=5, idx=150) int_out[0]=1 addrout[0]=0x409300
+[a60] call rsrc_gaddr(type=5, idx=151)
+[a60] ret  op=112 rsrc_gaddr(type=5, idx=151) int_out[0]=1 addrout[0]=0x40930c
+[a60] call rsrc_gaddr(type=5, idx=150)
+[a60] ret  op=112 rsrc_gaddr(type=5, idx=150) int_out[0]=1 addrout[0]=0x409300
+[a60] call rsrc_gaddr(type=5, idx=151)
+[a60] ret  op=112 rsrc_gaddr(type=5, idx=151) int_out[0]=1 addrout[0]=0x40930c
+[a60] call rsrc_gaddr(type=5, idx=150)
+[a60] ret  op=112 rsrc_gaddr(type=5, idx=150) int_out[0]=1 addrout[0]=0x409300
+[a60] call rsrc_gaddr(type=5, idx=151)
+[a60] ret  op=112 rsrc_gaddr(type=5, idx=151) int_out[0]=1 addrout[0]=0x40930c
+[a60] call rsrc_gaddr(type=5, idx=150)
+[a60] ret  op=112 rsrc_gaddr(type=5, idx=150) int_out[0]=1 addrout[0]=0x409300
+[a60] call rsrc_gaddr(type=5, idx=151)
+[a60] ret  op=112 rsrc_gaddr(type=5, idx=151) int_out[0]=1 addrout[0]=0x40930c
+[a60] call rsrc_gaddr(type=5, idx=150)
+[a60] ret  op=112 rsrc_gaddr(type=5, idx=150) int_out[0]=1 addrout[0]=0x409300
+[a60] call rsrc_gaddr(type=5, idx=151)
+[a60] ret  op=112 rsrc_gaddr(type=5, idx=151) int_out[0]=1 addrout[0]=0x40930c
+[a60] call rsrc_gaddr(type=5, idx=150)
+[a60] ret  op=112 rsrc_gaddr(type=5, idx=150) int_out[0]=1 addrout[0]=0x409300
+[a60] call rsrc_gaddr(type=5, idx=151)
+[a60] ret  op=112 rsrc_gaddr(type=5, idx=151) int_out[0]=1 addrout[0]=0x40930c
+[a60] call rsrc_gaddr(type=5, idx=165)
+[a60] ret  op=112 rsrc_gaddr(type=5, idx=165) int_out[0]=1 addrout[0]=0x4093ed
+[a60] call rsrc_gaddr(type=5, idx=151)
+[a60] ret  op=112 rsrc_gaddr(type=5, idx=151) int_out[0]=1 addrout[0]=0x40930c
+[a60] call rsrc_gaddr(type=5, idx=118)
+[a60] ret  op=112 rsrc_gaddr(type=5, idx=118) int_out[0]=1 addrout[0]=0x408fcc
+[a60] call rsrc_gaddr(type=5, idx=117)
+[a60] ret  op=112 rsrc_gaddr(type=5, idx=117) int_out[0]=1 addrout[0]=0x408fae
+[a60] call rsrc_gaddr(type=5, idx=150)
+[a60] ret  op=112 rsrc_gaddr(type=5, idx=150) int_out[0]=1 addrout[0]=0x409300
+[a60] call rsrc_gaddr(type=5, idx=151)
+[a60] ret  op=112 rsrc_gaddr(type=5, idx=151) int_out[0]=1 addrout[0]=0x40930c
+[a60] call rsrc_gaddr(type=5, idx=123)
+[a60] ret  op=112 rsrc_gaddr(type=5, idx=123) int_out[0]=1 addrout[0]=0x409017
+[a60] call rsrc_load("cicons.rsc")
+[a60] ret  op=110 int_out[0]=0 yield=false
+[a60] pre  op=124 statics svicntree=0x0 svicnrshdr=0x0 icons=0x0 colour_icons=0
+[a60] call shel_find("icons.rsc")
+[a60] ret  op=124 shel_find int_out[0]=1
+[a60] Malloc(13284) -> 0x427000
+[a60] pre* first-after-load_icons op=104 global=0x3259c bytes=4003 0100 0100 7b11 0000 4400 4000 0000 4000 3699 1000 305b 1200 0000 0000 0000
+[a60] pre  op=104 statics svicntree=0x427028 svicnrshdr=0x427000 icons=0x427050 colour_icons=0
+[a60] call shel_find("teradesk.inf")
+[a60] ret  op=124 shel_find int_out[0]=1
+[a60] call shel_find("teradesk.pal")
+[a60] ret  op=124 shel_find int_out[0]=0
