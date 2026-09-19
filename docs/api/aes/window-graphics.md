@@ -253,7 +253,13 @@ by `wm_init` (`gemwmlib.c:1290`); `wm_create` only ever returns 1..NUM_WIN−1.
 Helpers: `wm_update(BEG_UPDATE/END_UPDATE)` (screen lock), `w_obadd(W_TREE,
 ROOT, handle)` (add to the on-screen window tree at the top), `draw_change`
 (the redraw driver). **Globals written:** `w_flags |= VF_ISOPEN`, the W_TREE
-sibling list, `gl_wtop`, PREV rect.
+sibling list, `gl_wtop`, and the **PREV rect = the caller's rectangle**:
+after `draw_change(w_handle, &t)` (`gemwmlib.c:1426`), `wm_open` overwrites
+`WS_PREV` once more with the rectangle it was given — `w_setsize(WS_PREV,
+w_handle, pt)` (`gemwmlib.c:1427`, pinned commit `1a7484ab`; `w_setsize` is a
+plain `rc_copy`, `:265-268`). Observable: immediately after `wind_open`,
+`wind_get(WF_PXYWH)` returns the same rectangle as `WF_CXYWH` (measured
+against the TT, round 1 case 253, A12).
 
 Displays the created window at rect `pt`. Returns `FALSE` if the handle is
 invalid or the window is already open (`gemwmlib.c:1416-1419`). Otherwise it

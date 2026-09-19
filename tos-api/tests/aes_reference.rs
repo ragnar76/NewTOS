@@ -149,7 +149,7 @@ fn wind_create_hands_out_fifteen_application_handles() {
 /// (`aes/gemwmlib.c:1377-1380`). `wm_open` then lets `draw_change` shift the
 /// old current rect into PREV and install the open rect as current
 /// (`:1069-1077`), and *afterwards* overwrites PREV with the open rect as well
-/// (`:1426`) — so an opened window reports the same rectangle for `WF_CXYWH`
+/// (`:1427`) — so an opened window reports the same rectangle for `WF_CXYWH`
 /// and `WF_PXYWH`, and neither of them is the one `wind_create` was given.
 ///
 /// Measured: cases 228/230/232 (created only) and 250/253/259 (after the open).
@@ -217,7 +217,7 @@ fn window_rectangles_after_create_and_open_match_the_tt() {
 /// them.
 ///
 /// The window is **moved** after the open on purpose. `wm_open` overwrites
-/// `WS_PREV` with the open rectangle (`:1426`, measured as case 253), so
+/// `WS_PREV` with the open rectangle (`:1427`, measured as case 253), so
 /// without a move `WF_PXYWH` would read the same before and after the close and
 /// could not tell a correct implementation from one that writes nothing. Each
 /// of the three assertions is preceded by the check that its expectation really

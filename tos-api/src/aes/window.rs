@@ -2356,7 +2356,7 @@ pub fn wind_open(pb: &Aespb) {
         }
         // `draw_change` first shifts the old current rect down into PREV and
         // installs `pt` as the new current one (`gemwmlib.c:1069-1077`) — then
-        // `wm_open` overwrites PREV with `pt` as well (`:1426`), so an opened
+        // `wm_open` overwrites PREV with `pt` as well (`:1427`), so an opened
         // window answers `WF_PXYWH` with the rect the *open* was given, not the
         // one `wind_create` stored (measured: `aes-r2-wind.tsv` case 253).
         w.prev = w.curr;
