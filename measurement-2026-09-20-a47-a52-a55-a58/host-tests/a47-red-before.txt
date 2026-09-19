@@ -1,0 +1,26 @@
+     Running tests/aes_object_order_links.rs (target/debug/deps/aes_object_order_links-74890200ff651d94)
+
+running 5 tests
+test first_of_two_to_tail_closes_the_chain_the_other_way_round ... ok
+test last_of_two_to_head_closes_the_chain_the_other_way_round ... ok
+test only_child_to_head_leaves_tail_and_next_at_nil_as_emutos_does ... FAILED
+test only_child_to_tail_relinks_it_as_sole_child_without_writing_outside_the_tree ... ok
+test root_is_refused_and_the_tree_is_untouched ... ok
+
+failures:
+
+---- only_child_to_head_leaves_tail_and_next_at_nil_as_emutos_does stdout ----
+
+thread 'only_child_to_head_leaves_tail_and_next_at_nil_as_emutos_does' (2994408) panicked at tos-api/tests/aes_object_order_links.rs:197:5:
+assertion `left == right` failed: ROOT (next, head, tail): the delete cleared the tail and the head branch does not restore it (`:1171,1220,1242`)
+  left: (-1, 1, 1)
+ right: (-1, 1, -1)
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+
+
+failures:
+    only_child_to_head_leaves_tail_and_next_at_nil_as_emutos_does
+
+test result: FAILED. 4 passed; 1 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+error: test failed, to rerun pass `-p tos-api --test aes_object_order_links`

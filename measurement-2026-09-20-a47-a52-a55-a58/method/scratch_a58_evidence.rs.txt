@@ -1,0 +1,31 @@
+// SCRATCH test for the A58 evidence (was tos-api/tests/zz_scratch_a58.rs for
+// the two runs in host-tests/a58-evidence-*.txt; deleted from the tree after).
+#![allow(dead_code)]
+#[path = "aes_reference/harness.rs"]
+mod harness;
+use harness::{context, Pb, AES_LOCK, POISON};
+
+fn get(pb: &mut Pb, which: i16, out_len: i16) -> [i16; 4] {
+    pb.poison();
+    pb.intin[0] = 0; // GET
+    pb.intin[1] = which;
+    pb.intin[2] = -1;
+    pb.intin[3] = -1;
+    pb.call(48, 4, out_len, 0, 0);
+    [pb.intout[0], pb.intout[1], pb.intout[2], pb.intout[3]]
+}
+
+#[test]
+fn a58_evidence() {
+    let _g = AES_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+    context();
+    let mut pb = Pb::new();
+    for (name, which) in [("LK3DIND", 1), ("LK3DACT", 2), ("INDBUTCOL", 3), ("ACTBUTCOL", 4), ("BACKGRCOL", 5), ("AD3DVALUE", 6), ("unknown 99", 99)] {
+        let o3 = get(&mut pb, which, 3);
+        let o2 = get(&mut pb, which, 2);
+        println!("{name:>11} OUT_LEN 3: {:?}   OUT_LEN 2: {:?}  (POISON = {POISON})", o3, o2);
+        assert_eq!(o3[3], POISON);
+        assert_eq!(o2[2], POISON);
+        assert_eq!(o2[3], POISON);
+    }
+}

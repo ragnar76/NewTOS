@@ -1,0 +1,25 @@
+# SCRATCH replacement of the GET arm of `objc_sysvar` (tos-api/src/aes/object.rs)
+# for the run host-tests/a58-evidence-emutos-literal.txt: only the words
+# EmuTOS' ob_sysvar writes (gemoblib.c:1395-1422). Applied by hand, reverted
+# from a file copy (MD5 584d2acdf541878afae86d292372c977 before and after).
+-        let (o1, o2, valid) = match which {
+-            LK3DIND => (IND_TXTMOVE.load(Ordering::Relaxed), IND_COLCHANGE.load(Ordering::Relaxed), true),
+-            LK3DACT => (ACT_TXTMOVE.load(Ordering::Relaxed), ACT_COLCHANGE.load(Ordering::Relaxed), true),
+-            INDBUTCOL => (IND_BUTCOL.load(Ordering::Relaxed), 0, true),
+-            ACTBUTCOL => (ACT_BUTCOL.load(Ordering::Relaxed), 0, true),
+-            BACKGRCOL => (BACKGR_COL.load(Ordering::Relaxed), 0, true),
+-            AD3DVALUE => (ADJ3DSTD, ADJ3DSTD, true),
+-            _ => (0, 0, false),
+-        };
+-        pb.set_intout(1, o1);
+-        pb.set_intout(2, o2);
+-        valid
++        match which {
++            LK3DIND => { pb.set_intout(1, IND_TXTMOVE.load(Ordering::Relaxed)); pb.set_intout(2, IND_COLCHANGE.load(Ordering::Relaxed)); true }
++            LK3DACT => { pb.set_intout(1, ACT_TXTMOVE.load(Ordering::Relaxed)); pb.set_intout(2, ACT_COLCHANGE.load(Ordering::Relaxed)); true }
++            INDBUTCOL => { pb.set_intout(1, IND_BUTCOL.load(Ordering::Relaxed)); true }
++            ACTBUTCOL => { pb.set_intout(1, ACT_BUTCOL.load(Ordering::Relaxed)); true }
++            BACKGRCOL => { pb.set_intout(1, BACKGR_COL.load(Ordering::Relaxed)); true }
++            AD3DVALUE => { pb.set_intout(1, ADJ3DSTD); pb.set_intout(2, ADJ3DSTD); true }
++            _ => false,
++        }

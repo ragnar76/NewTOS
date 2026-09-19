@@ -1193,15 +1193,22 @@ pub fn objc_offset(pb: &Aespb) {
 
 /// `objc_add` (40) — link object `child` (`int_in[1]`) as the last child of
 /// `parent` (`int_in[0]`). `addr_in[0]` = tree. EmuTOS `ob_add`.
+///
+/// **Answers `1` always** (A55): `crysbind` starts with `ret = TRUE`
+/// (`aes/gemsuper.c:85`) and the `OBJC_ADD` arm never touches it
+/// (`:204-206`; `ob_add` is `void`). `ob_add`'s own guard, `parent != NIL
+/// && child != NIL` (`gemoblib.c:1127`), only decides whether the tree is
+/// written — measured on the TT as `1` for `(NIL, NIL)`, `(NIL, ROOT)` and
+/// `(ROOT, NIL)` (`aes-r4-subfunctions.tsv` cases 550–552). The guards
+/// below are that guard widened to every negative index plus a null tree:
+/// they refuse the write and change nothing else.
 pub fn objc_add(pb: &Aespb) {
     let tree = pb.addrin(0) as *mut Object;
     let parent = pb.intin(0);
     let child = pb.intin(1);
-    if tree.is_null() || parent < 0 || child < 0 {
-        pb.set_ret(0);
-        return;
+    if !tree.is_null() && parent >= 0 && child >= 0 {
+        ob_add(ObjTree::new(tree), parent, child);
     }
-    ob_add(ObjTree::new(tree), parent, child);
     pb.set_ret(1);
 }
 
@@ -1279,35 +1286,44 @@ fn ob_delete(t: ObjTree, obj: i16) -> i16 {
 }
 
 /// Move `mov_obj` to sibling position `new_pos` (0 = head, NIL = tail) among
-/// its siblings (EmuTOS `ob_order`). Defensive over the reference: a parent
-/// left empty after the delete, or a `new_pos` past the end, is handled
-/// without dereferencing NIL (which the reference would).
+/// its siblings (EmuTOS `ob_order`, `aes/gemoblib.c:1201-1246`): unlink it
+/// with [`ob_delete`], then splice it back in after the sibling `new_pos`
+/// selects, and close the chain (`ob_tail`) only if its `ob_next` now points
+/// at the parent (`:1242-1243`).
 ///
+/// **The only child at `new_pos == 0` is left as EmuTOS leaves it** (A47):
+/// `ob_delete` has set the parent's `ob_head` *and* `ob_tail` to `NIL`
+/// (`:1164-1175`), the head branch copies that `NIL` `ob_head` into the
+/// object's `ob_next` and re-hangs the object as head (`:1216-1220`), and
+/// the tail test compares `NIL` with the parent and misses — so the result
+/// is `parent.ob_head = mov_obj`, `parent.ob_tail = NIL`, `mov_obj.ob_next =
+/// NIL`, `TRUE`. A chain that no longer closes on the parent, but it is the
+/// reference's, measured over the dispatcher and derived line by line
+/// (`docs/api/aes/object-form.md` § `objc_order`).
+///
+/// Two places where the reference has **no** result, because it indexes
+/// `tree[-1]`, get a defined one instead: an only child at `new_pos != 0`
+/// (`chg_obj == NIL` at `:1226`/`:1237`) is re-linked as the parent's sole
+/// child, and a `new_pos` past the end of the sibling list (`:1229-1233`
+/// walks through the parent and on) is clamped to the last sibling.
 fn ob_order(t: ObjTree, mov_obj: i16, new_pos: i16) -> bool {
     if mov_obj == 0 {
-        return false; // the ROOT has no siblings
+        return false; // the ROOT has no siblings (`:1208-1209`)
     }
     let parent = parent_of(t, mov_obj);
     if parent == NIL {
         return false;
     }
     ob_delete(t, mov_obj);
-    let head = t.head(parent);
-    if head == NIL {
-        // parent is now empty → mov_obj becomes its sole child
-        t.set_next(mov_obj, parent);
-        t.set_head(parent, mov_obj);
-        t.set_tail(parent, mov_obj);
-        return true;
-    }
-    let mut chg_obj = head;
+    let mut chg_obj = t.head(parent); // NIL if `mov_obj` was the only child
     if new_pos == 0 {
+        // `:1217-1221` verbatim, NIL included — see the doc comment.
         t.set_next(mov_obj, chg_obj);
         t.set_head(parent, mov_obj);
     } else {
         if new_pos == NIL {
             chg_obj = t.tail(parent);
-        } else {
+        } else if chg_obj != NIL {
             let mut ii = 1;
             while ii < new_pos {
                 let n = t.next(chg_obj);
@@ -1317,6 +1333,14 @@ fn ob_order(t: ObjTree, mov_obj: i16, new_pos: i16) -> bool {
                 chg_obj = n;
                 ii += 1;
             }
+        }
+        if chg_obj == NIL {
+            // The reference would splice after `tree[-1]` here; the parent is
+            // empty, so the object becomes its sole child again.
+            t.set_next(mov_obj, parent);
+            t.set_head(parent, mov_obj);
+            t.set_tail(parent, mov_obj);
+            return true;
         }
         let cn = t.next(chg_obj);
         t.set_next(mov_obj, cn);

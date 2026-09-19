@@ -139,6 +139,16 @@ and `ob_tail`. No-op if `parent == NIL` or `child == NIL`. Does **not**
 initialise the child's type/flags/state/spec/geometry — the caller must have
 done that.
 
+**The answer is `1` in the no-op cases too** (A55): `ob_add`'s guard
+(`gemoblib.c:1127`) decides only whether the tree is written; `ret` stays at
+`crysbind`'s `TRUE`. Measured on the TT: `objc_add(NIL, NIL)`,
+`objc_add(NIL, ROOT)`, `objc_add(ROOT, NIL)` all answer `1`
+(`tosdump/cases/aes-r4-subfunctions.tsv` cases 550–552, CRC `227422B2`).
+NewTOS refuses the write for any negative index and for a null tree — a
+wider guard than EmuTOS', which would index the array with the negative value
+— and answers `1` for those as well (until 2026-09-20 it answered `0`).
+Host test: `tos-api/tests/aes_object_add_return.rs`.
+
 ### `objc_delete` (41)
 
 **Source:** `gemsuper.c:207-208` → `ob_delete` (`gemoblib.c:1147-1193`).
@@ -391,6 +401,38 @@ Unlinks the object (via `ob_delete`) then re-inserts it among its siblings at
 `new_pos`. `new_pos == 0` puts it at the head, `NIL` at the tail, otherwise
 after position `new_pos`. Cannot reorder `ROOT` → `FALSE`.
 
+> **An only child moved to the head (`new_pos == 0`) is left in a chain that
+> no longer closes on its parent — and that is the reference (A47).**
+> `ob_delete` on the only child sets the parent's `ob_head` *and* `ob_tail`
+> to `NIL` (`gemoblib.c:1164-1175`) without touching the child's `ob_next`.
+> `ob_order` then reads `chg_obj = parentptr->ob_head` — `NIL` — and the head
+> branch copies it into the object's `ob_next` and re-hangs the object as
+> head (`:1216-1220`); the closing test `if (movptr->ob_next == parent)
+> parentptr->ob_tail = mov_obj` (`:1242-1243`) compares `NIL` with the parent
+> and misses. Field by field, for `ROOT` with the single child `1` and
+> `objc_order(1, 0)`:
+>
+> | field | before | after (EmuTOS = NewTOS) |
+> |---|---|---|
+> | `ROOT.ob_head` | `1` | `1` |
+> | `ROOT.ob_tail` | `1` | **`NIL`** |
+> | `1.ob_next` | `ROOT` | **`NIL`** |
+> | `int_out[0]` | | `1` |
+>
+> EmuTOS leaves the tree like this; NewTOS leaves it like this. (Until
+> 2026-09-20 NewTOS re-linked the object as the sole child — `ob_tail = 1`,
+> `ob_next = ROOT` — a repaired tree the reference does not produce; measured
+> over the dispatcher, `_full-function-inventory.md` A-8.)
+>
+> **Where EmuTOS has no result**, because `chg_obj` is `NIL` and
+> `treeptr + chg_obj` is the record *before the array*: an only child at any
+> `new_pos != 0` (`:1226` / `:1237-1239` read and write `tree[-1]`), and a
+> `new_pos` past the end of the sibling list (`:1229-1233` walks through the
+> parent and on). NewTOS answers the first by re-linking the object as the
+> parent's sole child (`ob_next = parent`, `ob_head = ob_tail = obj`) and the
+> second by clamping to the last sibling; neither writes outside the tree.
+> Host test: `tos-api/tests/aes_object_order_links.rs`.
+
 ### `objc_edit` (46)
 
 **Source:** `gemsuper.c:223-227`. The arm sets `gsx_sclip(&gl_rfull)`, copies
@@ -504,7 +546,18 @@ The 3D system variables (`gemoblib.c:43-49`, defaults from `init_3d`
 
 † `LWHITE` (8) when the palette has more than 8 colours, else `WHITE` (0)
 (`gemoblib.c:1336-1343`). Setting a button/background colour `>= ws_ncolors`
-returns 0 without changing anything. `AD3DVALUE` is get-only; setting it
+returns 0 without changing anything.
+
+**Words a GET writes** (`gemoblib.c:1395-1422`): `OB_O2` (`int_out[2]`)
+only for `LK3DIND`, `LK3DACT` and `AD3DVALUE` (`:1398,1402,1415`); the three
+colour selectors write `OB_O1` alone (`:1405,1408,1411`), and an unknown
+`which` writes neither (`:1417-1418`). Whatever the caller declared beyond
+that in `OUT_LEN` is the dispatcher's local word — EmuTOS' stack, NewTOS' 0
+(`docs/COMPATIBILITY.md`, A27). NewTOS writes that 0 into `int_out[2]`
+explicitly for the one-word selectors and into `int_out[1..2]` for an unknown
+`which`; through the dispatcher this is indistinguishable from not writing
+(checked 2026-09-20, A58: both variants answer word for word the same at
+`OUT_LEN 2` and `OUT_LEN 3` for all seven selectors). `AD3DVALUE` is get-only; setting it
 returns 0 (`default` case). In EmuTOS these are file-local statics in
 `gemoblib.c:43-49` (`backgrcol` is also read by `fm_alert`); they are the AES
 3D/colour system state a NewTOS build must hold somewhere equivalent (a
@@ -816,6 +869,7 @@ codes:
 
 | Condition | Source | Return |
 |-----------|--------|--------|
+| `objc_add(NIL, …)` / `objc_add(…, NIL)` | `gemoblib.c:1127`, `gemsuper.c:85,204-206` | `1` (no-op, `ret` untouched) |
 | `objc_delete(ROOT)` or object not found | `gemoblib.c:1154,1180` | `0` |
 | `objc_order(ROOT)` | `gemoblib.c:1208-1209` | `FALSE(0)` |
 | `objc_find` over nothing | `gemoblib.c:1112` | `-1` |
@@ -843,7 +897,8 @@ codes:
   (both under ROOT at 0) returns `xoff = 15` in `int_out[1]`
   (`gemoblib.c:285-296`).
 - **`objc_order(obj, 0)`** makes `obj` the first child (head) of its parent
-  (`gemoblib.c:1217-1221`).
+  (`gemoblib.c:1217-1221`) — and, if `obj` was the *only* child, leaves
+  `parent.ob_tail = NIL` and `obj.ob_next = NIL` (A47, § `objc_order`).
 - **`objc_change` slot:** setting `int_in[6] = SELECTED`, `int_in[7] = 1`
   selects and redraws the object; `int_in[7] = 0` selects without redraw
   (`gemoblib.c:1267-1271`).

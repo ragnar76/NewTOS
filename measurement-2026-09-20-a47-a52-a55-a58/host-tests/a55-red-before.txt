@@ -1,0 +1,50 @@
+     Running tests/aes_object_add_return.rs (target/debug/deps/aes_object_add_return-08c9c99d08a576d4)
+
+running 5 tests
+test a_valid_add_links_the_child_last_and_answers_1 ... ok
+test a_null_tree_is_refused_and_the_answer_is_still_1 ... FAILED
+test a_nil_child_is_refused_the_tree_is_untouched_and_the_answer_is_still_1 ... FAILED
+test a_nil_parent_is_refused_the_tree_is_untouched_and_the_answer_is_still_1 ... FAILED
+test the_three_r4_guard_cases_answer_1_without_a_tree ... FAILED
+
+failures:
+
+---- a_null_tree_is_refused_and_the_answer_is_still_1 stdout ----
+
+thread 'a_null_tree_is_refused_and_the_answer_is_still_1' (2996536) panicked at tos-api/tests/aes_object_add_return.rs:178:5:
+assertion `left == right` failed
+  left: 0
+ right: 1
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+
+---- a_nil_child_is_refused_the_tree_is_untouched_and_the_answer_is_still_1 stdout ----
+
+thread 'a_nil_child_is_refused_the_tree_is_untouched_and_the_answer_is_still_1' (2996534) panicked at tos-api/tests/aes_object_add_return.rs:137:5:
+assertion `left == right` failed
+  left: 0
+ right: 1
+
+---- a_nil_parent_is_refused_the_tree_is_untouched_and_the_answer_is_still_1 stdout ----
+
+thread 'a_nil_parent_is_refused_the_tree_is_untouched_and_the_answer_is_still_1' (2996535) panicked at tos-api/tests/aes_object_add_return.rs:121:5:
+assertion `left == right` failed: the OBJC_ADD arm never writes `ret` (`gemsuper.c:85,204-206`)
+  left: 0
+ right: 1
+
+---- the_three_r4_guard_cases_answer_1_without_a_tree stdout ----
+
+thread 'the_three_r4_guard_cases_answer_1_without_a_tree' (2996538) panicked at tos-api/tests/aes_object_add_return.rs:158:9:
+assertion `left == right` failed: case 550: objc_add(-1, -1) must answer 1 as the TT did
+  left: 0
+ right: 1
+
+
+failures:
+    a_nil_child_is_refused_the_tree_is_untouched_and_the_answer_is_still_1
+    a_nil_parent_is_refused_the_tree_is_untouched_and_the_answer_is_still_1
+    a_null_tree_is_refused_and_the_answer_is_still_1
+    the_three_r4_guard_cases_answer_1_without_a_tree
+
+test result: FAILED. 1 passed; 4 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+error: test failed, to rerun pass `-p tos-api --test aes_object_add_return`

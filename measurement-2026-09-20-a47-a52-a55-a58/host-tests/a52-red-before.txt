@@ -1,0 +1,20 @@
+     Running tests/aes_window_zorder_counter.rs (target/debug/deps/aes_window_zorder_counter-b0db81c073aa1646)
+
+running 1 test
+test the_counter_steps_past_i16_max_without_a_panic_and_keeps_the_order ... FAILED
+
+failures:
+
+---- the_counter_steps_past_i16_max_without_a_panic_and_keeps_the_order stdout ----
+
+thread 'the_counter_steps_past_i16_max_without_a_panic_and_keeps_the_order' (2998406) panicked at tos-api/src/aes/window.rs:531:14:
+attempt to add with overflow
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+
+
+failures:
+    the_counter_steps_past_i16_max_without_a_panic_and_keeps_the_order
+
+test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.01s
+
+error: test failed, to rerun pass `-p tos-api --test aes_window_zorder_counter`

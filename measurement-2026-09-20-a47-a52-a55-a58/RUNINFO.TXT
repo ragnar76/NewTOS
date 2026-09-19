@@ -1,0 +1,51 @@
+A47 / A52 / A55 / A58 -- vier kleine AES-Konformitaetsfixe, Developer-Selbstbeleg, 2026-09-20.
+Branch desk-rebuild, Basis HEAD ecc7ca5, Aenderungen uncommitted im Baum. Gepinnte
+EmuTOS-Quelle references/emutos @ 1a7484ab.
+
+PRODUKTCODE (uncommitted; method/product-diff.patch)
+  tos-api/src/aes/object.rs
+    ob_order   (A47) Alleinkind, new_pos == 0: der Kopfzweig laeuft wie gemoblib.c:1216-1220
+               mit chg_obj == NIL durch -> parent.ob_tail = NIL, mov_obj.ob_next = NIL, TRUE
+               (bisher: als Alleinkind neu eingehaengt). Alleinkind mit new_pos != 0 (EmuTOS
+               indiziert tree[-1], kein Soll): weiterhin als Alleinkind eingehaengt, jetzt
+               ueber den gemeinsamen `chg_obj == NIL`-Zweig.
+    objc_add   (A55) Rueckgabe 1 immer (gemsuper.c:85, :204-206); die Waechter (Baum null,
+               parent < 0, child < 0) entscheiden nur noch, ob ob_add laeuft.
+  tos-api/src/aes/window.rs
+    bump_z     (A52) bei *next_z == i16::MAX: renumber_z() nummeriert die offenen Fenster
+               nach aufsteigendem z in 1..=n um und setzt den Zaehler auf n+1; kein Ueberlauf,
+               Ordnung erhalten. Neu: fn renumber_z(). Testhaken test_set_next_z / test_window_z.
+  A58: keine Codeaenderung (durch A27 gegenstandslos, siehe host-tests/a58-evidence-*.txt).
+
+HOSTTESTS (host-tests/; neu, je ueber den Dispatcher, Harness aes_reference/harness.rs)
+  tos-api/tests/aes_object_order_links.rs   (A47, 5 Faelle, Baum mit Zaunrecords beidseitig)
+     a47-red-before.txt: only_child_to_head_... FAILED (ROOT (next,head,tail) = (-1,1,1) statt
+     (-1,1,-1)); 4 andere gruen. a47-green-after.txt: 5/5.
+  tos-api/tests/aes_object_add_return.rs     (A55, 5 Faelle, darunter r4-Faelle 550-552)
+     a55-red-before.txt: 4 Waechterfaelle FAILED (0 statt 1), gueltiger Fall gruen.
+     a55-green-after.txt: 5/5.
+  tos-api/tests/aes_window_zorder_counter.rs (A52, 1 Fall, Zaehler per Haken auf i16::MAX-1)
+     a52-red-before.txt: panicked at window.rs:531 "attempt to add with overflow".
+     a52-green-after.txt: 1/1.
+  a58-evidence-current.txt / a58-evidence-emutos-literal.txt: Scratch-Test
+     (method/scratch_a58_evidence.rs.txt) mit dem Arbeitsbaum bzw. mit EmuTOS-woertlichen
+     Schreibzugriffen im GET-Arm (method/scratch_a58_emutos_literal.diff.txt): Ausgaben
+     wortgleich (diff leer) fuer alle 7 Selektoren bei OUT_LEN 2 und 3.
+  xtask-test.log: cargo run -p xtask -- test = 648 / 0 / 1 (Baseline 637 + 5 + 5 + 1), rc=0.
+
+BUILD / CLIPPY (build/)
+  cargo xtask build --board rpi4 / --board qemu-virt (je nach cargo clean -p kernel -p tos-api):
+    rustc tos-api 64 / kernel 94, exit 0 -- Baseline 64/94, Delta 0.
+  cargo clippy -p kernel -p tos-api --no-default-features --features board-rpi4 bzw.
+    board-qemu-virt --lib --bins: tos-api 81 / kernel 125 -- Baseline 81/125, Delta 0.
+    (Zwischenstand mit 82: needless_range_loop in renumber_z, behoben.)
+  cargo clippy -p tos-api --tests: 0 Meldungen in den drei neuen Testdateien (clippy-tests.txt).
+  kernel8-a47-a52-a55-product-release-rpi4.img: Produktkernel (--release), sha256 31e3335e...
+
+QEMU-SMOKE (method/run.sh; screendumps/, serial/)
+  raspi4b, -display none, Produktkernel + sd-base.img (tools/make-sd-image.sh <scratch> 64,
+  sha256 3922558e...), Marker "[desk] desktop up" + 5 s (gefunden bei 15.3 s):
+  smoke-desk-up.png = 0 Pixel Differenz zu measurement-2026-09-19-a46/screendumps/smoke-desk-up.png,
+  sogar bytegleich (sha256 dee57cca...). serial/smoke-desk-serial.log: grep -c "EXC\|panic" = 0.
+
+NICHT GEFAHREN: echte Pi 4 (Tester/Lead). Kein Commit. docs/STATUS.md nicht angefasst (Scope).

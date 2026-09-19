@@ -523,13 +523,64 @@ fn slots() -> &'static mut [Window; NUM_WIN] {
 }
 
 /// Next stacking value (raises a window to the top of the z-order).
+///
+/// EmuTOS has no counter: its z-order **is** the sibling chain of the window
+/// tree — `wm_open` appends at `W_TREE[ROOT].ob_tail` (`w_obadd`,
+/// `gemwmlib.c:186-201`, from `:1425`), `wm_mktop` moves the topped window
+/// there with `ob_order(gl_wtree, w_handle, NIL)` (`:1609`), and the top
+/// window is `W_TREE[ROOT].ob_tail` (`:1022,1093`). Our monotonically
+/// increasing `i16` is an implementation detail with one obligation: always
+/// answer a value above every open window's, without ever overflowing (A52:
+/// in the dev profile `z + 1` at `i16::MAX` was a panic). When the counter
+/// reaches `i16::MAX` the open windows are renumbered into `1..=n` in their
+/// current order ([`renumber_z`]) and the counter carries on from `n + 1`.
+/// Saturating would tie every later window at `i16::MAX` (and the tie-break
+/// is the slot index — a wrong order); wrapping to `i16::MIN` would put the
+/// next window under every existing one. Renumbering keeps the order exactly.
 fn bump_z() -> i16 {
     // SAFETY: single-CPU AES.
     unsafe {
         let p = TABLE.next_z.get();
+        if *p == i16::MAX {
+            *p = renumber_z();
+        }
         let z = *p;
         *p = z + 1;
         z
+    }
+}
+
+/// Compress the open windows' `z` values into `1..=n`, lowest first, keeping
+/// their order (ties, which a monotonic counter never produces, break by slot
+/// index exactly as the draw order and [`get_top`] break them). Returns
+/// `n + 1`, the next free value. Closed and free slots are not compared by
+/// any z-order walk and are left alone; a re-open takes a fresh value.
+fn renumber_z() -> i16 {
+    // SAFETY: single-CPU AES. Accessed through the raw table pointer, not a
+    // second `&mut` over the array — a caller of [`bump_z`] may be holding
+    // one slot's `&mut Window` (`w.z = bump_z()`), and its own write to `z`
+    // lands after this renumbering, which is the value that must win.
+    let slots = TABLE.slots.get();
+    let mut done = [false; NUM_WIN];
+    let mut next = 1i16;
+    loop {
+        let mut pick = usize::MAX;
+        let mut pick_z = i16::MAX;
+        for (i, &was_done) in done.iter().enumerate() {
+            // SAFETY: `i < NUM_WIN`; single-CPU AES, see above.
+            let w = unsafe { &(*slots)[i] };
+            if w.in_use && w.open && !was_done && (pick == usize::MAX || w.z < pick_z) {
+                pick = i;
+                pick_z = w.z;
+            }
+        }
+        if pick == usize::MAX {
+            return next;
+        }
+        // SAFETY: `pick < NUM_WIN`; single-CPU AES, see above.
+        unsafe { (*slots)[pick].z = next };
+        done[pick] = true;
+        next += 1;
     }
 }
 
@@ -4031,6 +4082,25 @@ pub fn test_clear_msg(pid: i16) {
             p.queue.clear();
         }
     }
+}
+
+/// Test hook (not wired to boot): set the stacking counter [`bump_z`] hands
+/// out next, so a host test can drive it to the edge of `i16` (A52) without
+/// opening 32767 windows. Returns the previous value.
+pub fn test_set_next_z(z: i16) -> i16 {
+    // SAFETY: single-CPU AES; test scaffolding.
+    unsafe {
+        let p = TABLE.next_z.get();
+        let old = *p;
+        *p = z;
+        old
+    }
+}
+
+/// Test hook (not wired to boot): the stacking value the open window
+/// `handle` carries, or `None` for a free / closed slot.
+pub fn test_window_z(handle: i16) -> Option<i16> {
+    win(handle).filter(|w| w.open).map(|w| w.z)
 }
 
 /// Test hook: name of the gadget under a point (for the headless logic
