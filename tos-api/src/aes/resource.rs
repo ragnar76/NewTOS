@@ -96,24 +96,37 @@
 //! reached through the kernel alias of the process window and needs the
 //! ABI's record strides, [`Loaded`]), so it keeps its own descriptor —
 //! **per AES process**, keyed by the caller's pid, in [`RSC`]: a list of the
-//! process's loaded resources of which one is *selected*. `rsrc_load`
-//! appends and selects the new entry; `rsrc_free`/`rsrc_gaddr`/`rsrc_saddr`
-//! act on the selected one only; `appl_exit` touches nothing (`ap_exit`,
+//! process's loaded resources, **and the caller's `AESGLOBAL` says which one
+//! a call acts on** — `rs_sglobe`'s binding (`:675-679`). `rsrc_load`
+//! appends the new entry and names it through the caller's words
+//! ([`report_load`]); `rsrc_free`/`rsrc_gaddr`/`rsrc_saddr` read the 4-byte
+//! `ap_rscmem` back out of the caller's array and act on the entry of the
+//! caller's own list it names ([`selected`]) — a value naming none of them
+//! (0, another process's blob, a foreign or application-built address, a
+//! null `global`) reads as "nothing loaded", because the kernel must not
+//! parse a header it did not load; `appl_exit` touches nothing (`ap_exit`,
 //! `aes/gemaplib.c:251-261`); at process end the process's entries go with
 //! its memory ([`on_process_exit`], the counterpart of `ixterm` →
 //! `free_all_owned`, `bdos/proc.c:136`). The model of the list is XaAES's
 //! `client->resources` (`xaaes/src.km/xa_rsrc.c:895-900`), which stands in
-//! for what EmuTOS gets from the application's own memory.
+//! for what EmuTOS gets from the application's own memory. That is the
+//! whole of A39 (stage 1: the per-process list, `d7ab92d`; stage 2: the
+//! selector read back, after A60 put TeraDesk's words at the TOS bytes,
+//! `fc1bf02`). The contract is `docs/api/aes/resource-fileselector.md`
+//! § `rsrc_load` (A39 callout, items 1–7); the reference comparison
+//! `docs/analysis/rsrc-per-app-state-2026-09-19.md`.
 //!
-//! **Stage 1 / stage 2 (A39).** This is stage 1: *selected* means "the
-//! process's most recently loaded entry" — which is what `ap_rscmem` names
-//! for every application that does not rewrite its `AESGLOBAL`. Stage 2
-//! ([`selected`], after A60) reads the 4-byte `ap_rscmem` back out of the
-//! caller's `AESGLOBAL` and matches it against the `blob_target` of the
-//! caller's own entries, `rs_sglobe`'s binding; a value naming none of them
-//! reads as "nothing loaded". The contract with both stages is
-//! `docs/api/aes/resource-fileselector.md` § `rsrc_load` (A39 callout); the
-//! reference comparison `docs/analysis/rsrc-per-app-state-2026-09-19.md`.
+//! **A blob the four bytes cannot name.** `report_load` publishes only a
+//! base that fits the field (below); a load it could not name — the
+//! in-place kernel path, a pre-v7 blob without a tree table — leaves the
+//! caller's `ap_rscmem` at 0, and 0 is then the name the entry answers to:
+//! the zero selector reaches the process's latest such load and nothing
+//! else. A named blob is never reached by 0, an unnamed one never by a
+//! non-zero value. That keeps the A35 rule "the load itself still succeeds
+//! and `rsrc_gaddr` still answers at full width" true for the one path that
+//! has such loads (the host test harness; there is no EL1 caller on a
+//! running system), without ever resolving a value the kernel did not
+//! publish.
 //!
 //! Two things bound what can be written, and both are recorded at
 //! [`report_load`]: the blob must carry a relocated tree table
@@ -473,8 +486,9 @@ impl Loaded {
 // `aes/gemrslib.c:673-679`), so each AES process has its own state and may
 // hold several loaded blobs, of which its array names one. NewTOS keeps the
 // equivalent here: every entry is one `rsrc_load` of one process, keyed by the
-// loading process's AES pid (`appl::current_pid`, GEMDOS slot + 1), and one
-// entry per pid is *selected*. XaAES's per-client `resources` list
+// loading process's AES pid (`appl::current_pid`, GEMDOS slot + 1), and the
+// caller's `ap_rscmem` — matched against the entries' names — says which one
+// a call acts on. XaAES's per-client `resources` list
 // (`xaaes/src.km/xa_rsrc.c:895-900`) is the model for the list itself.
 
 /// One entry of the per-process resource lists.
@@ -482,10 +496,19 @@ impl Loaded {
 struct RscEntry {
     /// AES pid of the process that loaded it; 0 = free entry.
     pid: i16,
-    /// The entry the pid's `rsrc_free`/`rsrc_gaddr`/`rsrc_saddr` act on. At
-    /// most one entry per pid. Set by the load that created the entry, cleared
-    /// by `rsrc_free` — stage 1's stand-in for the `ap_rscmem` selector.
-    selected: bool,
+    /// What the loading process received as `ap_rscmem` for this blob
+    /// ([`published_name`]): the 4-byte blob base, or 0 when
+    /// [`report_load`] could publish nothing (the base or the tree table
+    /// does not fit the field). The caller's selector is matched against
+    /// this — EmuTOS's `rs_hdr = pglobal->ap_rscmem` (`gemrslib.c:677`).
+    name: u32,
+    /// Among the pid's entries **without** a name, the latest loaded — the
+    /// one a zero selector reaches (module comment, "a blob the four bytes
+    /// cannot name"). Set by the load, gone with the entry, never re-set:
+    /// after its `rsrc_free` the zero selector reaches nothing, the way the
+    /// stale words of a freed blob reach nothing. Meaningless for a named
+    /// entry.
+    latest_unnamed: bool,
     /// Pool `m_start` of the EL0 process's `.RSC` block ([`load_into_user`]),
     /// for `Mfree` at `rsrc_free` and to identify the `usermem` window entry
     /// to drop; `0` for the in-place kernel path. A [`Long`] (Atari 32-bit
@@ -496,7 +519,8 @@ struct RscEntry {
 }
 
 impl RscEntry {
-    const FREE: RscEntry = RscEntry { pid: 0, selected: false, raw: 0, desc: Loaded::EMPTY };
+    const FREE: RscEntry =
+        RscEntry { pid: 0, name: 0, latest_unnamed: false, raw: 0, desc: Loaded::EMPTY };
 }
 
 /// Capacity of the resource lists, over all processes together. EmuTOS has no
@@ -532,36 +556,59 @@ fn caller_pid() -> i16 {
     super::appl::current_pid()
 }
 
-/// Index of the entry `pid`'s resource calls act on — EmuTOS's `rs_sglobe`:
-/// the blob the caller's `AESGLOBAL` names (`gemrslib.c:677-678`). `None` is
-/// "nothing loaded" (`rs_free` → 0, `:685`).
+/// Index of the entry `pid`'s resource call acts on — EmuTOS's `rs_sglobe`
+/// (`gemrslib.c:675-679`):
 ///
-/// **Stage 1 (this):** the entry the pid's latest `rsrc_load` marked
-/// `selected`, until its `rsrc_free` — for an application that leaves its
-/// `AESGLOBAL` alone that is the blob `ap_rscmem` names (`:786-788`).
+/// ```c
+/// rs_global = pglobal;
+/// rs_hdr = (RSHDR *)(rs_global->ap_rscmem);
+/// ```
 ///
-/// **Stage 2 (A39, after A60 — not built):** read the 4-byte `ap_rscmem`
-/// (byte 14) out of the caller's `AESGLOBAL` and return the entry of *this*
-/// pid whose `desc.blob_target` equals it; 0, a null `global`, another
-/// process's blob or any foreign address → `None`. That is the selector an
-/// application rewrites (TeraDesk `load_icons`, `icon.c:2707-2763`), and it
-/// needs A60 first because TeraDesk-LP64 restores it at the wrong bytes
-/// (spec § `rsrc_load`, A39 callout, item 4; analysis § 3).
+/// The 4-byte `ap_rscmem` (byte 14) is read out of the caller's `AESGLOBAL`
+/// `global` and matched against the names of *this* pid's entries
+/// ([`RscEntry::name`]): the blob the caller's words name, if the AES
+/// loaded it for this process. `None` is "nothing loaded" (`rs_free` → 0,
+/// `:685`) — for 0 while every entry is named, a null `global`, another
+/// process's blob, and any foreign or application-built address: EmuTOS
+/// would parse whatever header stands there (`get_addr`, `:100-104`), XaAES
+/// follows the pointer and range-checks the result against that header
+/// (`xa_rsrc.c:1839-1855`); NewTOS moves the check to the selector because
+/// it must not parse a header it did not load (spec § `rsrc_load`, A39
+/// callout, item 4). Base comparison, not range: TeraDesk's pre-A60 hybrid
+/// `0x407000` lay inside `desktop.rsc` and named no blob
+/// (`TASK/A60-STATUS-DONE.MD` § 3). Among the pid's *unnamed* entries — the
+/// zero the caller was left with — the latest loaded answers (module
+/// comment).
+///
+/// This is the selector an application rewrites and expects to be followed:
+/// TeraDesk `load_icons` (`sdk/apps/teradesk/icon.c:2707-2708`,
+/// `:2762-2763`) — since A60 at the TOS bytes on LP64 too.
 ///
 /// # Safety
-/// Single trap path.
-unsafe fn selected(pid: i16) -> Option<usize> {
+/// Single trap path; `global` is null or the caller's `AESGLOBAL`, readable
+/// for the 30 bytes / 15 WORDs of `gemrslib.h:15-27`.
+unsafe fn selected(pid: i16, global: *const i16) -> Option<usize> {
+    if global.is_null() {
+        return None;
+    }
+    // SAFETY: `global` addresses a caller-allocated `AESGLOBAL` of at least
+    // 30 bytes; the 4-byte field at 14 is only 2-byte aligned, hence
+    // `read_unaligned`.
+    let sel = unsafe { ((global as *const u8).add(AP_RSCMEM_OFF) as *const u32).read_unaligned() };
     // SAFETY: caller upholds the single-trap-path invariant.
     let t = unsafe { table() };
-    t.iter().position(|e| e.pid == pid && e.selected)
+    t.iter()
+        .position(|e| e.pid == pid && e.name == sel && (sel != 0 || e.latest_unnamed))
 }
 
-/// Enter a completed load into `pid`'s list and select it — the list half
-/// of `rs_readit`'s "init global" (`gemrslib.c:786-788`): the new blob is
-/// the one the process's later calls act on, and no earlier load of the
-/// process is freed. `false` when the table is full (the load must then be
-/// undone by the caller; `rsrc_load` reports 0 as for EmuTOS's failed
-/// `dos_alloc_anyram`, `:775-776`).
+/// Enter a completed load into `pid`'s list under the name the caller
+/// receives for it ([`published_name`]) — the list half of `rs_readit`'s
+/// "init global" (`gemrslib.c:786-788`), whose `AESGLOBAL` half is
+/// [`report_load`]: the new blob is the one the caller's words now name,
+/// and no earlier load of the process is freed. A load the words cannot
+/// name becomes the pid's latest unnamed entry. `false` when the table is
+/// full (the load must then be undone by the caller; `rsrc_load` reports 0
+/// as for EmuTOS's failed `dos_alloc_anyram`, `:775-776`).
 ///
 /// # Safety
 /// Single trap path.
@@ -571,12 +618,15 @@ unsafe fn register(pid: i16, raw: Long, desc: Loaded) -> bool {
     let Some(idx) = t.iter().position(|e| e.pid == 0) else {
         return false;
     };
-    for e in t.iter_mut() {
-        if e.pid == pid {
-            e.selected = false;
+    let name = published_name(&desc);
+    if name == 0 {
+        for e in t.iter_mut() {
+            if e.pid == pid {
+                e.latest_unnamed = false;
+            }
         }
     }
-    t[idx] = RscEntry { pid, selected: true, raw, desc };
+    t[idx] = RscEntry { pid, name, latest_unnamed: name == 0, raw, desc };
     true
 }
 
@@ -1644,10 +1694,11 @@ pub fn rsrc_load(pb: &Aespb) {
     // and every path below is bounded by it: a file that was cut short, or one
     // too large for the buffer, fails `header_is_sound` and is refused, the
     // way EmuTOS refuses a short `dos_read` (`gemrslib.c:782-783`).
-    // The load is entered into the **calling process's** resource list and
-    // becomes its selected resource (A39, [`register`]); nothing already
-    // loaded — by this process or any other — is freed, as nothing in
-    // `rs_load` frees (`gemrslib.c:786-788`).
+    // The load is entered into the **calling process's** resource list
+    // (A39, [`register`]) and named through the caller's `AESGLOBAL`
+    // ([`report_load`], below); nothing already loaded — by this process or
+    // any other — is freed, as nothing in `rs_load` frees
+    // (`gemrslib.c:786-788`).
     let pid = caller_pid();
     // SAFETY: `buf` now holds `len` file bytes; both relocation paths
     // validate the `NRSC` header against `len` before touching anything.
@@ -1783,6 +1834,24 @@ const AP_RSCMEM_OFF: usize = 14;
 /// `gemrslib.h:22` declares it (gemlib: "only valid for resource files <64K").
 const AP_RSCLEN_OFF: usize = 18;
 
+/// The `ap_rscmem` a load publishes for `desc` — the blob's 4-byte base —
+/// or 0 when [`report_load`] publishes nothing: the base or the tree table
+/// (`ap_ptree`, absent before [`NRSC_VER_TRINDEX_PTR`]) does not fit the
+/// four bytes the field has; the three land together (see `report_load`).
+/// One rule, read by both sides of the binding: `report_load` writes it,
+/// [`register`] stores it as the entry's [`RscEntry::name`], and
+/// [`selected`] matches the caller's word against it.
+fn published_name(desc: &Loaded) -> u32 {
+    // `fits` is the whole rule: an address this narrow field cannot carry is
+    // not carried at all.
+    let fits = |v: u64| v != 0 && v <= u32::MAX as u64;
+    if fits(desc.blob_target) && fits(desc.trindex_target) {
+        desc.blob_target as u32
+    } else {
+        0
+    }
+}
+
 /// Report a completed load back through the caller's `AESGLOBAL`, the way
 /// EmuTOS's `rs_readit` does (`aes/gemrslib.c:786-788`):
 ///
@@ -1795,11 +1864,10 @@ const AP_RSCLEN_OFF: usize = 18;
 /// plus the tree table `fix_trindex` publishes a few lines later
 /// (`:595-597`, `rs_global->ap_ptree = (OBJECT **)ptreebase`). Only
 /// `rs_readit` writes these; `rs_free`/`rs_gaddr`/`rs_saddr` merely read them
-/// back (`rs_sglobe`, `:675-679`), which is why [`rsrc_free`] leaves the
-/// caller's copy untouched. NewTOS binds those three calls to the caller's
-/// *selected* entry in its per-process list ([`selected`]) — stage 1 of
-/// A39; reading the words back as the selector is stage 2, after A60 (see
-/// the module comment).
+/// back (`rs_sglobe`, `:675-679`) — and so does NewTOS: `ap_rscmem` is the
+/// selector [`selected`] matches against the entry's name, which is the
+/// very value written here ([`published_name`], one rule for both), and
+/// [`rsrc_free`] leaves the caller's copy untouched.
 ///
 /// The values are the **target** VAs — the same addresses [`rsrc_gaddr`]
 /// hands out — so `ap_ptree[i] == rsrc_gaddr(R_TREE, i)`, EmuTOS's binding in
@@ -1821,10 +1889,12 @@ const AP_RSCLEN_OFF: usize = 18;
 /// would hand back a pointer that is wrong rather than absent, so this path
 /// writes **none** of the three and the caller keeps its zeros — EmuTOS's
 /// "nothing loaded" reading (`rs_free`, `gemrslib.c:685`). The load itself
-/// still succeeds; the entry in the process's list ([`RSC`]) is what stage 1
-/// works from, and `rsrc_gaddr` keeps answering at full width. There is no
-/// EL1 caller of `rsrc_load` on a running system (measured 2026-09-13; see
-/// the module comment), so this branch binds only the host test harness.
+/// still succeeds: its entry in the process's list ([`RSC`]) carries the
+/// name 0 the caller was left with, the zero selector reaches it, and
+/// `rsrc_gaddr` keeps answering at full width (module comment, "a blob the
+/// four bytes cannot name"). There is no EL1 caller of `rsrc_load` on a
+/// running system (measured 2026-09-13; see the module comment), so this
+/// branch binds only the host test harness.
 ///
 /// Likewise `ap_ptree` needs the blob to *have* a relocated tree table, i.e.
 /// [`NRSC_VER_TRINDEX_PTR`] or newer. A v1–v6 blob carries root OBJECT
@@ -1841,13 +1911,11 @@ unsafe fn report_load(global: *mut i16, desc: &Loaded) {
     if global.is_null() {
         return;
     }
-    let (base, ptree, len) = (desc.blob_target, desc.trindex_target, desc.blob_len);
-    // `fits` is the whole rule: an address this narrow field cannot carry is
-    // not carried at all.
-    let fits = |v: u64| v != 0 && v <= u32::MAX as u64;
-    if !fits(base) || !fits(ptree) {
+    let name = published_name(desc);
+    if name == 0 {
         return;
     }
+    let (ptree, len) = (desc.trindex_target, desc.blob_len);
     let g = global as *mut u8;
     // SAFETY: `global` addresses a caller-allocated `AESGLOBAL` of at least
     // 30 bytes / 15 WORDs (`gemrslib.h:15-27`, `desk/gembind.h:27`); the last
@@ -1855,7 +1923,7 @@ unsafe fn report_load(global: *mut i16, desc: &Loaded) {
     // aligned, hence `write_unaligned`.
     unsafe {
         (g.add(AP_PTREE_OFF) as *mut u32).write_unaligned(ptree as u32);
-        (g.add(AP_RSCMEM_OFF) as *mut u32).write_unaligned(base as u32);
+        (g.add(AP_RSCMEM_OFF) as *mut u32).write_unaligned(name);
         // `ap_rsclen` is a UWORD and `rslsize` a LONG in EmuTOS too, so a
         // resource of 64 KiB or more reports its low word — the same value
         // EmuTOS reports, and the reason gemlib documents the field as "only
@@ -1864,27 +1932,28 @@ unsafe fn report_load(global: *mut i16, desc: &Loaded) {
     }
 }
 
-/// `rsrc_free` (111) — free the calling process's selected resource.
+/// `rsrc_free` (111) — free the resource the caller's `AESGLOBAL` names.
 ///
 /// EmuTOS `rs_free` (`aes/gemrslib.c:685-708`): `rs_sglobe(pglobal)` binds
 /// to the blob the **caller's** `AESGLOBAL` names; nothing named → 0;
 /// otherwise the blob is `dos_free`d and the result is 1, or 0 if that free
-/// failed. NewTOS acts on the caller's selected entry ([`selected`]): the
-/// EL0 pool block goes back to the pool and its `usermem` window entry is
-/// dropped, the entry leaves the process's list, and the process has no
-/// selected resource until its next `rsrc_load`. An earlier load of the same
-/// process stays loaded and unselected — as on EmuTOS, where the words keep
-/// naming the freed blob, a second `rsrc_free` fails (`:699-704`), and the
-/// earlier blob is the process's GEMDOS memory until it restores the words
-/// (stage 2) or ends (R6). No other process's state is touched.
+/// failed. NewTOS acts on the entry of the caller's list its `ap_rscmem`
+/// names ([`selected`]): the EL0 pool block goes back to the pool and its
+/// `usermem` window entry is dropped, and the entry leaves the process's
+/// list. An earlier load of the same process stays loaded — as on EmuTOS,
+/// where the words keep naming the freed blob, a second `rsrc_free` fails
+/// (`:699-704`), and the earlier blob is the process's GEMDOS memory until
+/// it restores the words (TeraDesk `load_icons`) or ends (R6). A selector
+/// naming none of the caller's blobs frees nothing and reports 0. No other
+/// process's state is touched.
 ///
-/// Returns 1 only if a resource was selected; 0 when nothing was, on a
-/// double free, and when the pool refused the block (spec verification
-/// criterion resource-fileselector.md § `rsrc_free`).
+/// Returns 1 only if the words named a loaded resource; 0 when they named
+/// nothing, on a double free, and when the pool refused the block (spec
+/// verification criterion resource-fileselector.md § `rsrc_free`).
 pub fn rsrc_free(pb: &Aespb) {
     let pid = caller_pid();
-    // SAFETY: single trap path.
-    let Some(idx) = (unsafe { selected(pid) }) else {
+    // SAFETY: single trap path; `global` is the caller's AESGLOBAL.
+    let Some(idx) = (unsafe { selected(pid, pb.global_ptr()) }) else {
         pb.set_ret(0);
         return;
     };
@@ -2068,25 +2137,28 @@ unsafe fn get_addr(d: &Loaded, rtype: i16, index: usize) -> Option<Slot> {
 }
 
 /// `rsrc_gaddr` (112) — address of resource object `int_in[1]` of `R_*` type
-/// `int_in[0]` → `addr_out[0]`, resolved in the **calling process's selected
-/// resource** (EmuTOS `rs_gaddr`, `gemrslib.c:715-721`: `rs_sglobe(pglobal)`
-/// then `get_addr`; here [`selected`] then [`get_addr`]). Resolves all 17
+/// `int_in[0]` → `addr_out[0]`, resolved in the **resource the caller's
+/// `AESGLOBAL` names** (EmuTOS `rs_gaddr`, `gemrslib.c:715-721`:
+/// `rs_sglobe(pglobal)` then `get_addr`; here [`selected`] then
+/// [`get_addr`]). `R_TREE` is answered from the tree table of that blob,
+/// which from NRSC v7/v8 on is literally the `ap_ptree[i]` array the load
+/// published (`get_addr`, `:124`). Resolves all 17
 /// EmuTOS `get_addr` selectors (aesdefs.h:578-594): `R_TREE`/`R_OBJECT`, the
 /// TEDINFO/ICONBLK/BITBLK array bases (`R_TEDINFO`/`R_ICONBLK`/`R_BITBLK`),
 /// their sub-pointer aliases (`R_OBSPEC`/`R_TEP*`/`R_IBP*`/`R_BIPDATA`), the
 /// free-string / free-image slot addresses (`R_FRSTR`/`R_FRIMG`), and the
-/// dereferenced free data pointers (`R_STRING`/`R_IMAGEDATA`). No selected
-/// resource (nothing loaded, or freed), an unknown type, or a selector whose
-/// table is absent (a v1–v4 resource for the substruct/free families) /
-/// index out of range, yields the documented "not found" (`addr_out[0] = 0`,
-/// `int_out[0] = 0`).
+/// dereferenced free data pointers (`R_STRING`/`R_IMAGEDATA`). Words naming
+/// no loaded blob of the caller (nothing loaded, freed, a foreign value), an
+/// unknown type, or a selector whose table is absent (a v1–v4 resource for
+/// the substruct/free families) / index out of range, yields the documented
+/// "not found" (`addr_out[0] = 0`, `int_out[0] = 0`).
 pub fn rsrc_gaddr(pb: &Aespb) {
     let rtype = pb.intin(0);
     let index = pb.intin(1) as usize;
-    // SAFETY: single trap path; a selected entry's descriptor is live until
-    // its `rsrc_free` / the process's end.
+    // SAFETY: single trap path; `global` is the caller's AESGLOBAL; a named
+    // entry's descriptor is live until its `rsrc_free` / the process's end.
     let addr = unsafe {
-        selected(caller_pid())
+        selected(caller_pid(), pb.global_ptr())
             .and_then(|idx| get_addr(&table()[idx].desc, rtype, index))
             .map_or(0, |s| s.target)
     };
@@ -2095,26 +2167,27 @@ pub fn rsrc_gaddr(pb: &Aespb) {
 }
 
 /// `rsrc_saddr` (113) — store the pointer `addr_in[0]` into the resource slot
-/// designated by `R_*` type `int_in[0]` / index `int_in[1]` of the **calling
-/// process's selected resource**. Faithful to EmuTOS `rs_saddr`
+/// designated by `R_*` type `int_in[0]` / index `int_in[1]` of the **resource
+/// the caller's `AESGLOBAL` names**. Faithful to EmuTOS `rs_saddr`
 /// (gemrslib.c:728-742): `rs_sglobe(pglobal); psub = get_addr(rtype, rindex);
 /// if (psub != -1) { *psub = rsaddr; return TRUE; } return FALSE;`. The store
 /// goes through the slot's kernel-reachable alias at the caller's pointer
 /// width (the slot is pointer-sized in every selector), so an EL0 app's
 /// `.RSC` — mapped at a user VA — is updated without an EL1 access to that
-/// user VA. Returns TRUE for a resolvable slot, FALSE for no selected
-/// resource / an unknown type / absent table / out-of-range index (NewTOS's
-/// safer not-found, matching [`get_addr`]).
+/// user VA. Returns TRUE for a resolvable slot, FALSE for words naming no
+/// loaded blob of the caller / an unknown type / absent table / out-of-range
+/// index (NewTOS's safer not-found, matching [`get_addr`]).
 pub fn rsrc_saddr(pb: &Aespb) {
     let rtype = pb.intin(0);
     let index = pb.intin(1) as usize;
     // The pointer to store, read at the caller's ABI width (4 bytes ILP32 /
     // 8 bytes LP64) — exactly the width of the destination pointer slot.
     let rsaddr = pb.addrin(0);
-    // SAFETY: single trap path; `slot.access` is a kernel-reachable pointer
-    // slot of `ptr_size` bytes, live until rsrc_free.
+    // SAFETY: single trap path; `global` is the caller's AESGLOBAL;
+    // `slot.access` is a kernel-reachable pointer slot of `ptr_size` bytes,
+    // live until rsrc_free.
     let ok = unsafe {
-        match selected(caller_pid()).map(|idx| &table()[idx].desc) {
+        match selected(caller_pid(), pb.global_ptr()).map(|idx| &table()[idx].desc) {
             Some(d) => match get_addr(d, rtype, index) {
                 Some(slot) => {
                     let p = slot.access as *mut u8;
@@ -2449,6 +2522,35 @@ mod tests {
         }
     }
 
+    /// The ILP32 twin (R4): the slots of the published table are the
+    /// caller's pointer width — 4 bytes — and slot `i` still holds exactly
+    /// what `rsrc_gaddr(R_TREE, i)` returns; the *field* `ap_ptree` stays 4
+    /// bytes at byte 10 (`application.md` § `AESGLOBAL`).
+    #[test]
+    fn ap_ptree_slots_are_what_rsrc_gaddr_returns_for_an_ilp32_caller() {
+        let _g = lock();
+        // A v8 blob: pointer tree index, pixel coordinates (no conversion).
+        let blob = ilp32_blob(NRSC_VER_TRINDEX_PTR + 1, [1, 2, 3, 4]);
+        let mut buf = Blob::new(&blob);
+        let len = buf.len;
+        // SAFETY: `buf` holds `len` readable/writable bytes.
+        let desc = unsafe { relocate_and_register_core(buf.as_mut_ptr(), len, APP_VA, Abi::Ilp32) }
+            .expect("the ILP32 blob must relocate");
+        assert_eq!(desc.ptr_size, 4, "ILP32 slots are 4 bytes");
+        let mut global = [0i16; 16];
+        // SAFETY: a 32-byte caller array.
+        unsafe { report_load(global.as_mut_ptr(), &desc) };
+        let off_trindex = u32::from_le_bytes(blob[16..20].try_into().unwrap()) as usize;
+        let off_obj = u32::from_le_bytes(blob[20..24].try_into().unwrap()) as u64;
+        assert_eq!(g32(&global, AP_PTREE_OFF) as u64, APP_VA + off_trindex as u64, "ap_ptree");
+        assert_eq!(g32(&global, AP_RSCMEM_OFF) as u64, APP_VA, "ap_rscmem");
+        let slot = u32::from_le_bytes(buf.bytes()[off_trindex..off_trindex + 4].try_into().unwrap()) as u64;
+        // SAFETY: `desc` describes `buf`, which is still live.
+        let via_gaddr = unsafe { get_addr(&desc, R_TREE, 0) }.expect("tree 0").target;
+        assert_eq!(slot, via_gaddr, "ap_ptree[0] (4-byte slot) != rsrc_gaddr(R_TREE, 0)");
+        assert_eq!(slot, APP_VA + off_obj, "the root object at the caller's VA");
+    }
+
     /// A blob the four-byte fields cannot name reports **nothing** — not a
     /// truncated address. That is the in-kernel (EL1) path, where the blob
     /// sits in [`RSC_BUF`], a kernel high-half static.
@@ -2569,5 +2671,415 @@ mod tests {
         let raw = [0x0405u16, 0xFF02, 0x0050, 0x0102];
         let got = ilp32_coords(&ilp32_blob(NRSC_VER_TRINDEX_PTR + 1, raw));
         assert_eq!(got, [raw[0] as i16, raw[1] as i16, raw[2] as i16, raw[3] as i16]);
+    }
+}
+
+#[cfg(test)]
+mod selector_tests {
+    //! A39 stage 2 — **the caller's `ap_rscmem` selects the resource.**
+    //!
+    //! EmuTOS `rs_sglobe` (`aes/gemrslib.c:673-679`) re-reads `ap_rscmem` out
+    //! of the caller's `AESGLOBAL` on every `rs_free`/`rs_gaddr`/`rs_saddr`,
+    //! so an application that rewrites the word — TeraDesk's `load_icons`
+    //! saves the `desktop.rsc` words, loads another blob, and restores them
+    //! (`sdk/apps/teradesk/icon.c:2707-2708`, `:2762-2763`) — steers every
+    //! later call back to the blob it names. The contract NewTOS implements
+    //! is `docs/api/aes/resource-fileselector.md` § `rsrc_load`, A39 callout,
+    //! items 3–5: the 4-byte selector is matched against the bases of the
+    //! caller's **own** loaded blobs, and a value naming none of them (0,
+    //! another process's blob, a foreign address, a null `global`) reads as
+    //! "nothing loaded".
+    //!
+    //! These tests live in-crate for the same reason the A35 tests above do:
+    //! a selector can only ever name a blob whose base fits four bytes, and
+    //! on a 64-bit host only the access/target split of
+    //! [`relocate_and_register_core`] — `load_into_user`'s shape — produces
+    //! one. Each load here is exactly the dispatcher's `rsrc_load` tail after
+    //! `read_file`: relocate at a user VA, [`register`] for the calling pid,
+    //! [`report_load`] into the caller's `AESGLOBAL`. The calls under test
+    //! (`rsrc_gaddr`, `rsrc_free`) go through the real dispatcher with the
+    //! test's own persistent `AESGLOBAL`, as an application's would. Two
+    //! processes are two claimed GEMDOS slots switched through `RUN`, as in
+    //! `tests/aes_rsrc_per_process.rs`.
+
+    use super::*;
+    use crate::bdos::process::{self, PROCESS_TABLE};
+    use std::sync::atomic::Ordering;
+    use std::sync::{Mutex, MutexGuard};
+
+    /// A genuine NRSC v7 blob (three trees).
+    const FSEL: &[u8] = include_bytes!("gem_fsel.nrsc");
+
+    /// User VAs two loads of one process get: the EL0 window base and a
+    /// later pool block, both below `USER_TPA_MAX_VA` (measured for
+    /// TeraDesk: `0x400000` for `desktop.rsc`, `0x427000` for the next
+    /// `Malloc`; `TASK/A60-STATUS-DONE.MD` § 1).
+    const VA_X: u64 = 0x0040_0000;
+    const VA_Y: u64 = 0x0042_7000;
+    /// The value TeraDesk left at byte 14 before A60: inside `desktop.rsc`'s
+    /// range, but not its base (`TASK/A60-STATUS-DONE.MD` § 3).
+    const VA_HYBRID: u64 = 0x0040_7000;
+
+    /// `RUN`, the process table and the resource lists are process-wide
+    /// statics; the tests of this module must not overlap.
+    static LOCK: Mutex<()> = Mutex::new(());
+
+    fn lock() -> MutexGuard<'static, ()> {
+        LOCK.lock().unwrap_or_else(|e| e.into_inner())
+    }
+
+    /// A claimed GEMDOS slot with a basepage page of its own; its AES pid is
+    /// `slot + 1`. Released on drop.
+    struct Proc {
+        slot: usize,
+        page: *mut [u8; 4096],
+    }
+
+    impl Proc {
+        fn new() -> Self {
+            let slot = process::allocate_slot().expect("a free process slot");
+            let page = Box::into_raw(Box::new([0u8; 4096]));
+            PROCESS_TABLE[slot]
+                .basepage_kva
+                .store(page.cast::<BasePage>(), Ordering::Release);
+            Proc { slot, page }
+        }
+
+        fn pid(&self) -> i16 {
+            crate::aes::pid_of_slot(self.slot)
+        }
+
+        fn bp(&self) -> *mut BasePage {
+            self.page.cast::<BasePage>()
+        }
+
+        /// Make this the running process: every AES call now carries its pid.
+        fn run(&self) {
+            process::set_current(self.bp());
+        }
+    }
+
+    impl Drop for Proc {
+        fn drop(&mut self) {
+            // Leave no entry of this pid behind for the next test's tenant of
+            // the slot — what `Pterm` does on the machine.
+            on_process_exit(self.pid());
+            if process::current() == self.bp() {
+                process::set_current(std::ptr::null_mut());
+            }
+            process::free_slot(self.slot);
+            // SAFETY: `page` came from `Box::into_raw` above and is not
+            // aliased once the slot no longer names it.
+            unsafe { drop(Box::from_raw(self.page)) };
+        }
+    }
+
+    /// The caller's `AESGLOBAL`: gemlib's 16 WORDs, persistent across calls
+    /// like an application's `aes_global[]`.
+    type Global = [i16; 16];
+
+    fn rscmem(g: &Global) -> u32 {
+        // SAFETY: 32 bytes; byte 14..18 is `ap_rscmem`.
+        let b = unsafe { std::slice::from_raw_parts(g.as_ptr() as *const u8, 32) };
+        u32::from_le_bytes(b[AP_RSCMEM_OFF..AP_RSCMEM_OFF + 4].try_into().unwrap())
+    }
+
+    fn ptree(g: &Global) -> u32 {
+        // SAFETY: as `rscmem`.
+        let b = unsafe { std::slice::from_raw_parts(g.as_ptr() as *const u8, 32) };
+        u32::from_le_bytes(b[AP_PTREE_OFF..AP_PTREE_OFF + 4].try_into().unwrap())
+    }
+
+    /// `_AESrscmem_set(v)` / `_AESrscfile_set(v)` — the application writing
+    /// the two words (`sdk/gemlib/overlay/gem.h`, 4 bytes at 14 and 10).
+    fn set_words(g: &mut Global, tree: u32, mem: u32) {
+        let b = g.as_mut_ptr() as *mut u8;
+        // SAFETY: 32 bytes; the two fields are only 2-byte aligned.
+        unsafe {
+            (b.add(AP_PTREE_OFF) as *mut u32).write_unaligned(tree);
+            (b.add(AP_RSCMEM_OFF) as *mut u32).write_unaligned(mem);
+        }
+    }
+
+    /// A blob loaded for the **current** pid at user VA `target`, reported
+    /// through `global` — `rsrc_load`'s tail after `read_file`, without the
+    /// pool. The access buffer must outlive every later call into it.
+    struct Named {
+        words: Vec<u64>,
+        target: u64,
+    }
+
+    impl Named {
+        fn load(target: u64, global: &mut Global) -> Self {
+            let mut words = vec![0u64; FSEL.len().div_ceil(8)];
+            let p = words.as_mut_ptr() as *mut u8;
+            // SAFETY: `words` holds at least `FSEL.len()` bytes.
+            unsafe { std::ptr::copy_nonoverlapping(FSEL.as_ptr(), p, FSEL.len()) };
+            // SAFETY: `p` addresses `FSEL.len()` writable bytes that live as
+            // long as this `Named`; single test thread under `LOCK`.
+            let desc = unsafe { relocate_and_register_core(p, FSEL.len(), target, Abi::Lp64) }
+                .expect("the blob must relocate");
+            assert!(unsafe { register(caller_pid(), 0, desc) }, "room in the resource lists");
+            // SAFETY: a 32-byte caller array.
+            unsafe { report_load(global.as_mut_ptr(), &desc) };
+            Named { words, target }
+        }
+
+        fn contains(&self, addr: u64) -> bool {
+            addr >= self.target && addr < self.target + FSEL.len() as u64
+        }
+    }
+
+    /// One AES call through the real dispatcher, carrying `global` (null
+    /// allowed) → (`int_out[0]`, `addr_out[0]`).
+    fn call(global: *mut i16, op: i16, n_intin: i16, intin: [i16; 4]) -> (i16, u64) {
+        let mut control = [op, n_intin, 1, 0, 0];
+        let mut intin = intin;
+        let mut intout = [0i16; 8];
+        let mut addrin = [0u64; 2];
+        let mut addrout = [0u64; 2];
+        let raw = [
+            control.as_mut_ptr() as u64,
+            global as u64,
+            intin.as_mut_ptr() as u64,
+            intout.as_mut_ptr() as u64,
+            addrin.as_mut_ptr() as u64,
+            addrout.as_mut_ptr() as u64,
+        ];
+        // SAFETY: a well-formed LP64 parameter block, alive for the call.
+        unsafe { crate::aes::dispatch(raw.as_ptr() as u64, Abi::Lp64) };
+        (intout[0], addrout[0])
+    }
+
+    fn gaddr(g: &mut Global, rtype: i16, index: i16) -> (i16, u64) {
+        call(g.as_mut_ptr(), 112, 2, [rtype, index, 0, 0])
+    }
+
+    fn rsrc_free(g: &mut Global) -> i16 {
+        call(g.as_mut_ptr(), 111, 0, [0; 4]).0
+    }
+
+    /// Where `rsrc_gaddr` resolves right now, for every selector family the
+    /// blob has: `R_TREE`, `R_OBJECT` and `R_STRING` (the dereferenced free
+    /// string, TeraDesk's info-line path).
+    fn resolves_in(g: &mut Global, blob: &Named) -> bool {
+        [(R_TREE, 0), (R_OBJECT, 0), (R_STRING, 0)].iter().all(|&(t, i)| {
+            let (ok, a) = gaddr(g, t, i);
+            ok == 1 && blob.contains(a)
+        })
+    }
+
+    fn nothing_loaded(g: &mut Global) -> bool {
+        [(R_TREE, 0), (R_OBJECT, 0), (R_STRING, 0)]
+            .iter()
+            .all(|&(t, i)| gaddr(g, t, i) == (0, 0))
+    }
+
+    // ── rsrc_load twice: the second is named, the first stays ──────────────
+
+    /// `rs_readit` "init global" (`gemrslib.c:786-788`): the second load
+    /// overwrites the words with its own base and tree table and frees
+    /// nothing; `rsrc_gaddr` now resolves in the second blob.
+    #[test]
+    fn a_second_load_names_itself_and_is_selected() {
+        let _g = lock();
+        let app = Proc::new();
+        app.run();
+        let mut g = Global::default();
+        let x = Named::load(VA_X, &mut g);
+        assert_eq!(rscmem(&g), VA_X as u32);
+        assert!(resolves_in(&mut g, &x));
+        let y = Named::load(VA_Y, &mut g);
+        assert_eq!(rscmem(&g), VA_Y as u32, "ap_rscmem names the second blob");
+        assert_ne!(ptree(&g), 0);
+        assert!(resolves_in(&mut g, &y), "rsrc_gaddr resolves in the second blob");
+        assert!(!x.contains(gaddr(&mut g, R_TREE, 0).1), "…and not in the first");
+    }
+
+    // ── (a) restoring the words re-selects the earlier load ────────────────
+
+    /// TeraDesk `load_icons` (`icon.c:2707-2708`, `:2762-2763`): save the
+    /// `desktop.rsc` words, load another blob through the AES, restore the
+    /// words — every later `rsrc_gaddr(R_STRING, …)` must resolve in
+    /// `desktop.rsc` again (`rs_sglobe`, `gemrslib.c:677-678`; `get_addr`
+    /// `R_TREE` from `ap_ptree[i]`, `:124`). Red in stage 1, which kept
+    /// answering from the latest load.
+    #[test]
+    fn restoring_the_words_reselects_the_earlier_load() {
+        let _g = lock();
+        let app = Proc::new();
+        app.run();
+        let mut g = Global::default();
+        let x = Named::load(VA_X, &mut g);
+        let (sv_tree, sv_mem) = (ptree(&g), rscmem(&g)); // svtree / svrshdr
+        let y = Named::load(VA_Y, &mut g);
+        assert!(resolves_in(&mut g, &y));
+
+        set_words(&mut g, sv_tree, sv_mem); // `_AESrscfile = svtree; _AESrscmem = svrshdr;`
+        assert!(resolves_in(&mut g, &x), "after restoring the words rsrc_gaddr resolves in X");
+        let (ok, tree0) = gaddr(&mut g, R_TREE, 0);
+        assert_eq!(ok, 1);
+        // R4: `R_TREE` is `ap_ptree[0]` of the selected blob (LP64 slot).
+        // SAFETY: `x.words` holds the relocated blob; slot 0 of its tree table.
+        let off_tri = u32::from_le_bytes(FSEL[16..20].try_into().unwrap()) as usize;
+        let slot0 = unsafe { (x.words.as_ptr() as *const u8).add(off_tri).cast::<u64>().read_unaligned() };
+        assert_eq!(tree0, slot0, "rsrc_gaddr(R_TREE, 0) == ap_ptree[0] of X");
+        assert_eq!(sv_tree as u64, x.target + off_tri as u64, "the restored ap_ptree is X's table");
+        assert!(!y.contains(tree0));
+    }
+
+    // ── (b) a foreign selector is "nothing loaded" and frees nothing ───────
+
+    /// Item 4: a value naming no blob the AES loaded for this process — the
+    /// pre-A60 hybrid `0x407000` (inside X's range, not its base), a plain
+    /// foreign address, or 0 while X is named — reads as nothing loaded:
+    /// `rsrc_gaddr` → 0/0, `rsrc_free` → 0 and **frees nothing**, so X is
+    /// still there once the words name it again. Base comparison, not range
+    /// (`TASK/A60-STATUS-DONE.MD` § 3).
+    #[test]
+    fn a_foreign_selector_reads_as_nothing_loaded_and_frees_nothing() {
+        let _g = lock();
+        let app = Proc::new();
+        app.run();
+        let mut g = Global::default();
+        let x = Named::load(VA_X, &mut g);
+        let (sv_tree, sv_mem) = (ptree(&g), rscmem(&g));
+        for foreign in [VA_HYBRID as u32, 0x1234_5678, 0] {
+            set_words(&mut g, sv_tree, foreign);
+            assert!(nothing_loaded(&mut g), "selector {foreign:#x} must name nothing");
+            assert_eq!(rsrc_free(&mut g), 0, "selector {foreign:#x}: nothing to free");
+        }
+        set_words(&mut g, sv_tree, sv_mem);
+        assert!(resolves_in(&mut g, &x), "X was not freed by any of the foreign frees");
+        assert_eq!(rsrc_free(&mut g), 1, "…and is freed once named");
+        assert_eq!(rsrc_free(&mut g), 0, "gemrslib.c:702-704: a second free fails");
+    }
+
+    // ── (c) another process's blob is not this one's ───────────────────────
+
+    /// Item 4, keyed by pid first: pid 1 naming the base of pid 2's blob
+    /// reads as nothing loaded (the kernel never resolves in a blob it did
+    /// not load for the caller), and pid 2's state is untouched.
+    #[test]
+    fn another_processs_blob_is_not_selectable() {
+        let _g = lock();
+        let p1 = Proc::new();
+        let p2 = Proc::new();
+        assert_ne!(p1.pid(), p2.pid());
+
+        p1.run();
+        let mut g1 = Global::default();
+        let x = Named::load(VA_X, &mut g1);
+        let (x_tree, x_mem) = (ptree(&g1), rscmem(&g1));
+
+        p2.run();
+        let mut g2 = Global::default();
+        let z = Named::load(VA_Y, &mut g2);
+        assert!(resolves_in(&mut g2, &z));
+
+        p1.run();
+        set_words(&mut g1, ptree(&g2), rscmem(&g2)); // pid 2's words in pid 1's array
+        assert!(nothing_loaded(&mut g1), "pid 2's blob is not pid 1's");
+        assert_eq!(rsrc_free(&mut g1), 0);
+
+        p2.run();
+        assert!(resolves_in(&mut g2, &z), "pid 2 keeps its blob");
+        assert_eq!(rsrc_free(&mut g2), 1);
+
+        p1.run();
+        set_words(&mut g1, x_tree, x_mem);
+        assert!(resolves_in(&mut g1, &x), "pid 1's own blob was never touched");
+        assert_eq!(rsrc_free(&mut g1), 1);
+    }
+
+    // ── (d) rsrc_free frees the named blob only ────────────────────────────
+
+    /// Item 6: `rs_free` frees the blob the words name (`dos_free
+    /// (pglobal->ap_rscmem)`, `gemrslib.c:699`) and writes none of the
+    /// words. With X named, X goes and Y stays loaded — reachable as soon as
+    /// the application names Y again; the stale words naming freed X read as
+    /// nothing loaded (NewTOS's safe reading of EmuTOS's freed-memory case).
+    #[test]
+    fn rsrc_free_frees_the_named_blob_and_leaves_the_other_loaded() {
+        let _g = lock();
+        let app = Proc::new();
+        app.run();
+        let mut g = Global::default();
+        let x = Named::load(VA_X, &mut g);
+        let (x_tree, x_mem) = (ptree(&g), rscmem(&g));
+        let y = Named::load(VA_Y, &mut g);
+        let (y_tree, y_mem) = (ptree(&g), rscmem(&g));
+
+        set_words(&mut g, x_tree, x_mem);
+        assert_eq!(rsrc_free(&mut g), 1, "frees X, the named blob");
+        assert_eq!((ptree(&g), rscmem(&g)), (x_tree, x_mem), "rs_free writes none of the words");
+        assert!(nothing_loaded(&mut g), "the words name a freed blob");
+        assert_eq!(rsrc_free(&mut g), 0);
+
+        set_words(&mut g, y_tree, y_mem);
+        assert!(resolves_in(&mut g, &y), "Y stayed loaded and is reachable once named");
+        assert!(!x.contains(gaddr(&mut g, R_TREE, 0).1));
+        assert_eq!(rsrc_free(&mut g), 1, "frees Y");
+        assert!(nothing_loaded(&mut g));
+    }
+
+    // ── a null `global` is an empty selector ───────────────────────────────
+
+    /// Item 4: a null `global` in the AESPB reads as nothing loaded (EmuTOS
+    /// would dereference `NULL->ap_rscmem`; XaAES falls back to the client's
+    /// latest load — not adopted, see the analysis § 4.2 R3).
+    #[test]
+    fn a_null_global_reads_as_nothing_loaded() {
+        let _g = lock();
+        let app = Proc::new();
+        app.run();
+        let mut g = Global::default();
+        let x = Named::load(VA_X, &mut g);
+        assert_eq!(call(std::ptr::null_mut(), 112, 2, [R_TREE, 0, 0, 0]), (0, 0));
+        assert_eq!(call(std::ptr::null_mut(), 111, 0, [0; 4]).0, 0, "nothing freed");
+        assert!(resolves_in(&mut g, &x), "X is still loaded");
+        assert_eq!(rsrc_free(&mut g), 1);
+    }
+
+    // ── a blob the four bytes cannot name ──────────────────────────────────
+
+    /// A35 item 3 of the same callout: a load whose base does not fit the
+    /// field — the in-place kernel path, where `report_load` writes nothing —
+    /// "still succeeds and `rsrc_gaddr` still answers at full width". Its
+    /// name is the 0 the caller was left with, so the zero selector reaches
+    /// the process's latest such load and nothing else: a *named* blob is
+    /// never reached by 0, and an unnamed one never by a non-zero value.
+    #[test]
+    fn a_blob_the_field_cannot_name_answers_to_the_zero_it_left() {
+        let _g = lock();
+        let app = Proc::new();
+        app.run();
+        let mut g = Global::default();
+        let x = Named::load(VA_X, &mut g);
+        let (x_tree, x_mem) = (ptree(&g), rscmem(&g));
+        set_words(&mut g, 0, 0);
+        assert!(nothing_loaded(&mut g), "0 does not reach a named blob");
+
+        // The in-place load: a host buffer, above 4 GiB.
+        let mut words = vec![0u64; FSEL.len().div_ceil(8)];
+        let p = words.as_mut_ptr() as *mut u8;
+        // SAFETY: `words` holds `FSEL.len()` bytes for the whole test.
+        unsafe { std::ptr::copy_nonoverlapping(FSEL.as_ptr(), p, FSEL.len()) };
+        assert!(unsafe { relocate_and_register(p, FSEL.len()) });
+        let base = p as u64;
+        assert!(base > u64::from(u32::MAX), "the harness's in-place blob sits above 4 GiB");
+        let mut zero = Global::default();
+        let (ok, tree) = gaddr(&mut zero, R_TREE, 0);
+        assert_eq!(ok, 1, "the unnamed load answers to the zero it left");
+        assert!(tree >= base && tree < base + FSEL.len() as u64, "at full width");
+        set_words(&mut zero, 0, 0x1234_5678);
+        assert!(nothing_loaded(&mut zero), "a non-zero foreign value reaches nothing");
+
+        set_words(&mut g, x_tree, x_mem);
+        assert!(resolves_in(&mut g, &x), "the named blob is unaffected");
+        assert_eq!(rsrc_free(&mut g), 1);
+        let mut zero = Global::default();
+        assert_eq!(rsrc_free(&mut zero), 1, "the unnamed load is freed through its zero");
+        assert_eq!(rsrc_free(&mut zero), 0);
     }
 }

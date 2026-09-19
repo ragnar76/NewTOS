@@ -1,0 +1,13 @@
+# A39 stage 2, run new2: as open1 but the pointer is not touched until 3 s after
+# the idle dump, so the idle screendump is comparable byte for byte with
+# measurement-2026-09-19-a60/fix/screendumps/fix1-after-boot.png.
+1100 mark A_IDLE_DESKTOP
+1800 park
+1806 move 300 300
+2000 move 195 35
+2200 down
+2203 up
+2208 down
+2211 up
+3000 mark B_WINDOW_OPEN
+4000 mark C_WINDOW_5S

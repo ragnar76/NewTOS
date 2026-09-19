@@ -1,0 +1,14 @@
+# A39 stage 2: boot TeraDesk via #Z, dump the idle desktop, then double-click
+# HARD DISC C (195,35 -- coordinates from measurement-2026-09-19-a39 recon) and
+# dump the opened window (info line "... bytes used in ... items").
+# Ticks are 200 Hz after the first AES pump of the first EL0 program.
+1100 mark A_IDLE_DESKTOP
+1200 park
+1206 move 300 300
+1400 move 195 35
+1600 down
+1603 up
+1608 down
+1611 up
+2400 mark B_WINDOW_OPEN
+3400 mark C_WINDOW_5S

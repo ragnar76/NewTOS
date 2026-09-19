@@ -353,19 +353,28 @@ process (`bdos/proc.c:136`, `free_all_owned`).
 > application's own memory; the reference comparison is
 > `docs/analysis/rsrc-per-app-state-2026-09-19.md`.
 >
-> **NewTOS status: not yet implemented** (A39 open). Today the descriptor is one
-> kernel static (`RSC`, `USER_RSC_RAW` in `resource.rs`) shared by every
-> process, and the three words are written but never read back. Two things bound
-> the implementation order: item 4 (the read-back) would break TeraDesk on
-> LP64 until **A60** is fixed (source-derived, not yet measured — analysis
-> § 3): its `xrsrc_fix` stores 8-byte pointers at bytes 10 and 14 while its
-> save/restore in `load_icons` reads and writes a naturally aligned struct at
-> bytes 16 and 24 (`library/xdialog/library.h:65-83`), so after `load_icons`
-> the kernel's 4-byte fields would name no loaded blob. Items 1,
-> 2, 6 and 7 (the per-process keying) do not depend on A60 and are what H05
-> F2 needs; the analysis document proposes them as stage 1 with the selector
-> as stage 2 after A60. Which order applies is the user's decision (analysis
-> § 7).
+> **NewTOS status: built, both stages** (2026-09-19). Stage 1 — the
+> per-process list, items 1, 2, 6, 7 — landed in `d7ab92d`; stage 2 — the
+> selector read back out of the caller's `AESGLOBAL`, items 3–5 — after
+> **A60** (`fc1bf02`) put TeraDesk's save/restore of the words at the TOS
+> bytes on LP64 (before it, `load_icons` left `0x407000` at byte 14, a value
+> naming no blob: `TASK/A60-STATUS-DONE.MD` § 1–3). `resource.rs`:
+> `selected` reads the 4-byte `ap_rscmem` and matches it against the names
+> of the caller's own entries; `report_load` and the entry's name come from
+> one rule (`published_name`), so the word the caller received is the word
+> that selects. One realisation detail is NewTOS's, for the path EmuTOS does
+> not have: a load the four bytes cannot name (the in-place kernel path, a
+> pre-v7 blob — A35 item 3 above, where nothing is written) carries the name
+> 0 it left the caller with, and the zero selector reaches the process's
+> latest such load and nothing else; a named blob is never reached by 0, an
+> unnamed one never by a non-zero value. That keeps A35's "the load itself
+> still succeeds and `rsrc_gaddr` still answers at full width" true without
+> ever resolving a value the kernel did not publish; on a running system no
+> load is unnamed. Tests: `resource.rs` `mod selector_tests` (restore →
+> earlier blob; foreign/hybrid/zero selector → nothing, nothing freed;
+> another pid's blob → nothing; `rsrc_free` frees the named blob only; null
+> `global`; the unnamed case) and `tests/aes_rsrc_per_process.rs` (the
+> per-process half).
 >
 > **There is no EL1 caller of `rsrc_load`** (measured 2026-09-13, re-checked
 > 2026-09-19, unchanged).

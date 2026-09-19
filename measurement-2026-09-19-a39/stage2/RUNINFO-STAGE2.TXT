@@ -1,0 +1,107 @@
+A39 STUFE 2 -- der Ressourcen-Selektor wird aus dem AESGLOBAL des Aufrufers gelesen.
+Developer-Selbstbeleg, 2026-09-19. QEMU raspi4b (640x480, headless), Branch desk-rebuild,
+Basis HEAD fc1bf02 (A60-Overlay), Aenderungen uncommitted im Baum. Methode = A60-Instrument
+(measurement-2026-09-19-a60/{method/a60_patch.py, fix/method/a60_patch_fix1.py}) plus der
+H05-IKBD-Injektor (measurement-2026-09-18-h05/method/{apply_injector,gen_script,qmp_multi}.py,
+run.sh, sd-put.sh). Kein Produktcode instrumentiert: alles in einer SCRATCH-Kopie
+(<scratchpad>/a39s2/ws, rsync ohne target/, .git/, measurement-*/, references/, sdk/apps/).
+
+GEAENDERT IM PROJEKTBAUM (Produkt + Tests + ein Spec-Absatz, siehe TASK/A39-STATUS-DONE.MD
+"Stufe 2"):
+  tos-api/src/aes/resource.rs            selected(pid, global), RscEntry{name, latest_unnamed},
+                                         published_name(), register(), report_load(),
+                                         rsrc_free/rsrc_gaddr/rsrc_saddr; mod selector_tests (7),
+                                         mod tests +1 (ILP32 R4)
+  tos-api/tests/aes_rsrc_per_process.rs  nur Doku-Kommentare (Stufe-1-Hinweise)
+  tos-api/tests/aes_rsrc_global_fields.rs nur ein Doku-Kommentar
+  docs/api/aes/resource-fileselector.md  der Statusabsatz des A39-Callouts
+
+INSTRUMENT (method/)
+  a39s2_patch_new.py = a60_patch_fix1.py (Link-VAs der DESKTOP.NAP fb37bb3b...) + eine Zeile
+    `pub static H02_TRACE` (der Injektor nennt sie in Step::Arm; ungenutzt).
+  a39s2_patch_old.py = a60_patch.py (Link-VAs der DESKTOP.NAP db31aae1...) + dieselbe Zeile.
+  Das Instrument dumpt die 32 Byte des AESGLOBAL von pid 1 bei Aenderung, loggt jeden
+  rsrc_load/rsrc_free/rsrc_gaddr (op 110/111/112) mit int_out[0] und addrout[0], die
+  TeraDesk-Statics svicntree/svicnrshdr/icons und Malloc-Rueckgaben.
+  open1.actions / open2.actions -> open{1,2}_script.rs (gen_script.py) -> apply_injector.py:
+    MARK A_IDLE_DESKTOP (Leerlauf nach #Z-Start), park, Doppelklick HARD DISC C (195,35 --
+    Koordinate aus measurement-2026-09-19-a39 recon), MARK B_WINDOW_OPEN, MARK C_WINDOW_5S.
+    open2 = open1 mit Park erst 3 s NACH dem Idle-Dump (damit der Zeiger dort noch steht).
+
+KERNEL (build/, Release --board rpi4 aus der Scratch-Kopie)
+  kernel8-a39s2-new.img   sha256 b58ca6a88d1ee2e6...  (patch_new + open1)
+  kernel8-a39s2-new2.img  sha256 c578dc69645235fb...  (patch_new + open2)
+  kernel8-a39s2-old.img   sha256 c36df1cefce7c380...  (patch_old + open2)
+
+IMAGE
+  tools/make-sd-image.sh <scratch>/img/sd-base.img 64 (sha256 e71456900f8b4385..., staged
+  sdk/apps/teradesk/build/dist/DESKTOP.NAP = fb37bb3b... = A60-Overlay-Bau), dann sd-put.sh
+  NEWDESK.INF = method/newdesk-user.inf (#Z 01 C:\APPS\TERADESK\DESKTOP.NAP@),
+  Apps\TERADESK\TERADESK.INF = method/teradesk-user.inf -> sd-new.img (3d1a8cbe2a064c04...).
+  sd-old.img (30311755ed19d80f...) = sd-new.img + Apps\TERADESK\DESKTOP.NAP = die alte
+  DESKTOP.NAP db31aae1... (H05-Stand, ohne A60; Kopie aus <scratchpad>/a60/before/).
+
+LAEUFE (method/run.sh, Screendump je Marke; serial/, screendumps/)
+  new1  kernel new  + sd-new.img   serial/new1-serial.log
+  new2  kernel new2 + sd-new.img   serial/new2-serial.log
+  old1  kernel old  + sd-old.img   serial/old1-serial.log
+
+ERGEBNIS -- NEUE DESKTOP.NAP (fb37bb3b, A60-Overlay), Laeufe new1/new2 (identisch bis auf die
+Injektorzeiten):
+  :48  post op=110  4003 0100 0100 7b11 0000 4400 4000 0000 4000 3699 1000 186b 1200 0000 0000 0000
+       (ap_ptree@10 0x00400044, ap_rscmem@14 0x00400000, ap_rsclen 39222 -- desktop.rsc)
+  :175 rsrc_load("cicons.rsc") -> 0 (Datei fehlt), :180 Malloc(13284) -> 0x427000 (xrsrc_load),
+  :181 erster Trap nach load_icons (op 104): KEINE Dump-Zeile = AESGLOBAL unveraendert auf dem
+       Stand nach rsrc_load(desktop.rsc); Statics svicntree=0x427028 svicnrshdr=0x427000
+       icons=0x427050 (= die A60-Fix-Werte).
+  op 112 (rsrc_gaddr, pid 1): 91 Aufrufe, 91 x int_out[0]=1, 0 x int_out[0]=0.
+    davon 62 vor load_icons, 29 danach (das Fenster: R_STRING idx 50/52/..., addrout
+    0x408739..0x4088ff -- alle in [0x400000, 0x400000+39222) = desktop.rsc).
+  Kein EXCEPTION, kein panic.
+  Screendumps:
+    new2-A-idle.png  sha256 fb1e8b90...  = measurement-2026-09-19-a60/fix/screendumps/
+                     fix1-after-boot.png  BYTEGLEICH.
+    new1-A-idle.png  d5ea1bde...: 194 Pixel Differenz zu fix1-after-boot.png, bbox
+                     x300..329/y239..315 = ausschliesslich der Mauszeiger (der Park lief in
+                     der 1-s-Settle-Zeit vor dem Dump; deshalb new2).
+    new1-B / new2-B / new2-C  c20370d8... (identisch): Fenster C:\*.* offen, Infozeile
+                     "374035 bytes used in 24 items.", Ordner-/Dokument-Icons.
+
+ERGEBNIS -- ALTE DESKTOP.NAP (db31aae1, ohne A60), Lauf old1 -- DER ERWARTETE AUSFALL, KEINE
+REGRESSION (TASK/A60-STATUS-DONE.MD par. 3 hat ihn vorhergesagt):
+  :48  post op=110  ... 4400 4000 0000 4000 3699 ...            (desktop.rsc, wie oben)
+  :181 pre  op=104  4003 0100 0100 7b11 0000 2870 4200 0070 4000 3699 1000 186b 1200 0000 0000 0000
+       ap_ptree@10 = 0x00427028 (icons.rsc-Baumfeld), ap_rscmem@14 = 0x00407000 (Hybrid),
+       Statics svicntree=0x6b18000000000042 svicnrshdr=0x12 (die wilden A60-Werte).
+  op 112 (pid 1): 90 Aufrufe: 62 vor load_icons = 1; 28 nach load_icons = 0
+       (int_out[0]=0, addrout[0]=0x0) -- der Selektor 0x407000 nennt keinen Blob.
+  Kein EXCEPTION, kein panic (TeraDesk laeuft weiter, nur ohne Strings).
+  Screendumps:
+    old1-A-idle.png  fb1e8b90... = fix1-after-boot.png (der Leerlauf ist bei beiden NAPs gleich).
+    old1-B / old1-C  8a841ed3...: Fenster offen, Infozeile LEER, alle Eintraege mit dem
+                     generischen Disketten-Icon (die H05-Symptomatik) -- Stufe 2 liest den
+                     Selektor wirklich.
+
+HOSTTESTS (host-tests/)
+  red-before-HEAD-fc1bf02.txt: die 7 neuen selector_tests auf HEADs resource.rs (nur die
+    Testmodule aufgepfropft, <scratchpad>/a39s2/ws-red): 6 FAILED, exakt die Vorhersage
+    (Rueckstellen der Worte loest weiter in Y; 0x407000 loest; Blob des anderen pid loest;
+    rsrc_free trifft die zuletzt geladene statt der benannten; Null-global loest; 0 erreicht
+    einen benannten Blob), 1 ok (die zweite Ladung wird benannt -- galt schon in Stufe 1).
+  green-after-in-crate.txt: 15/15 (7 selector_tests + 8 tests, darunter der neue ILP32-R4-Fall).
+  green-after-integration.txt: 13 Testdateien, alle gruen (aes_rsrc_* 37/37 u. a.).
+  xtask-test-summary.txt: cargo run -p xtask -- test = 610 bestanden / 0 gefallen / 1
+    uebersprungen (Baseline 602 + 8 neue).
+
+BUILD / CLIPPY (build/*-tree.log, aus dem Projektbaum, mit cargo clean -p kernel -p tos-api
+--target aarch64-unknown-none-softfloat vor jedem Boardwechsel)
+  cargo xtask build --board rpi4       tos-api 64 / kernel 94 rustc-Warnungen, exit 0
+  cargo xtask build --board qemu-virt  tos-api 64 / kernel 94, exit 0
+  cargo clippy --package kernel --no-default-features --features board-rpi4 --lib --bins
+                                       kernel 125 (tos-api 81)
+  cargo clippy -p tos-api              tos-api 81
+  Baseline 64/94 und 81/125 (A66/A39-Stufe-1) -- Delta 0; resource.rs' fuenf Clippy-Meldungen
+  sind die vorbestehenden "Aespb is more private than rsrc_*".
+
+NICHT GEFAHREN: QED aus TeraDesk starten/beenden (die A39-Stufe-1-Sequenz; Tester),
+free_icons/rsrc_free beim Beenden (Geste), echte Pi 4.

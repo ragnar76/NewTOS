@@ -1,4 +1,4 @@
-//! A39, stage 1 — **the resource state is kept per AES process.**
+//! A39 — **the resource state is kept per AES process.**
 //!
 //! EmuTOS keeps no resource descriptor in the AES at all: the three words
 //! `ap_ptree`/`ap_rscmem`/`ap_rsclen` in the application's own `AESGLOBAL`
@@ -16,12 +16,17 @@
 //! child's `rsrc_load`/`rsrc_free` replaced and then erased the parent's —
 //! measured in H05 (`TASK/H05-STATUS-DONE.MD` § 4): after the inner
 //! TeraDesk's `rsrc_load`/`rsrc_free`, all 36 `rsrc_gaddr` of the outer one
-//! answered 0. Stage 1 of the fix keys the descriptor by the calling AES
-//! pid, one list per process, and selects a process's **most recently
-//! loaded** entry; stage 2 (after A60) will select through the caller's
-//! `ap_rscmem` instead (spec `docs/api/aes/resource-fileselector.md`
-//! § `rsrc_load`, A39 callout, items 1–4; analysis
-//! `docs/analysis/rsrc-per-app-state-2026-09-19.md` § 4.3).
+//! answered 0. The fix keys the descriptor by the calling AES pid, one list
+//! per process (stage 1), and selects the entry the caller's `ap_rscmem`
+//! names (stage 2, after A60; spec `docs/api/aes/resource-fileselector.md`
+//! § `rsrc_load`, A39 callout, items 1–7; analysis
+//! `docs/analysis/rsrc-per-app-state-2026-09-19.md` § 4). This binary
+//! covers the per-process half; the selector is covered in-crate
+//! (`tos-api/src/aes/resource.rs`, `mod selector_tests`), because only the
+//! access/target split there yields a blob the four-byte field can name —
+//! the in-place loads below sit above 4 GiB, publish nothing, and are
+//! reached by the zero the caller was left with (`resource.rs` module
+//! comment, "a blob the four bytes cannot name").
 //!
 //! ## How this binary stands in for two processes
 //!
@@ -320,15 +325,16 @@ fn appl_exit_does_not_touch_the_resource() {
 
 // ── (c) two loads by one process: the second is selected ──────────────────
 
-/// Analysis § 6 item 2 (R1/R5 in stage 1). A second `rsrc_load` frees nothing
+/// Analysis § 6 item 2 (R1/R5). A second `rsrc_load` frees nothing
 /// (`rs_load` never does, `gemrslib.c:786-788`) and becomes the process's
-/// selected resource — the one `rsrc_gaddr` resolves in and `rsrc_free`
-/// frees. After that `rsrc_free` the process has **no** selected resource:
-/// the first load stays loaded but unselected, exactly as on EmuTOS, where
-/// `ap_rscmem` keeps naming the freed second blob (`rs_free` writes none of
-/// the three words), a second `rsrc_free` fails (`dos_free` of a freed block,
-/// `:699-704`), and the first blob is reachable only by restoring the words —
-/// the selector stage 1 does not have. It dies with the process (R6).
+/// latest unnamed load — the one the caller's zero words reach, so the one
+/// `rsrc_gaddr` resolves in and `rsrc_free` frees. After that `rsrc_free`
+/// the zero words reach nothing: the first load stays loaded but is not
+/// reachable, exactly as on EmuTOS, where `ap_rscmem` keeps naming the freed
+/// second blob (`rs_free` writes none of the three words), a second
+/// `rsrc_free` fails (`dos_free` of a freed block, `:699-704`), and the first
+/// blob is reachable only by restoring the words that named it — which an
+/// unnamed load has none of. It dies with the process (R6).
 #[test]
 fn a_second_load_is_selected_and_freed_the_first_stays_loaded_unselected() {
     let _g = lock();
@@ -351,8 +357,8 @@ fn a_second_load_is_selected_and_freed_the_first_stays_loaded_unselected() {
     assert_eq!(
         (ok, addr),
         (0, 0),
-        "after freeing the selected load nothing is selected — the first \
-         blob stays loaded but is not reachable through the AES in stage 1"
+        "after freeing the load the zero words reached, they reach nothing — \
+         the first blob stays loaded but is not reachable through the AES"
     );
     assert_eq!(rsrc_free(), 0, "nothing selected, nothing to free");
 

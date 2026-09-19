@@ -1,0 +1,27 @@
+test aes::resource::tests::a_blob_beyond_four_gigabytes_reports_nothing ... ok
+test aes::resource::tests::a_load_writes_only_its_own_ten_bytes ... ok
+test aes::resource::tests::a_char_grid_ilp32_blob_is_fixed_at_load ... ok
+test aes::resource::tests::a_pixel_ilp32_blob_is_left_alone ... ok
+test aes::resource::tests::a_pre_v7_blob_still_loads_and_publishes_nothing ... ok
+test aes::resource::tests::an_el0_load_reports_all_three_fields ... ok
+test aes::resource::tests::ap_ptree_slots_are_what_rsrc_gaddr_returns ... ok
+test aes::resource::tests::ap_ptree_slots_are_what_rsrc_gaddr_returns_for_an_ilp32_caller ... ok
+test aes::resource::selector_tests::a_blob_the_field_cannot_name_answers_to_the_zero_it_left ... FAILED
+test aes::resource::selector_tests::a_null_global_reads_as_nothing_loaded ... FAILED
+test aes::resource::selector_tests::a_foreign_selector_reads_as_nothing_loaded_and_frees_nothing ... FAILED
+test aes::resource::selector_tests::another_processs_blob_is_not_selectable ... FAILED
+test aes::resource::selector_tests::a_second_load_names_itself_and_is_selected ... ok
+test aes::resource::selector_tests::rsrc_free_frees_the_named_blob_and_leaves_the_other_loaded ... FAILED
+test aes::resource::selector_tests::restoring_the_words_reselects_the_earlier_load ... FAILED
+thread 'aes::resource::selector_tests::a_blob_the_field_cannot_name_answers_to_the_zero_it_left' (2500374) panicked at tos-api/src/aes/resource.rs:2988:9:
+thread 'aes::resource::selector_tests::a_null_global_reads_as_nothing_loaded' (2500376) panicked at tos-api/src/aes/resource.rs:2965:9:
+  left: (1, 4194400)
+ right: (0, 0)
+thread 'aes::resource::selector_tests::a_foreign_selector_reads_as_nothing_loaded_and_frees_nothing' (2500375) panicked at tos-api/src/aes/resource.rs:2876:13:
+selector 0x407000 must name nothing
+thread 'aes::resource::selector_tests::another_processs_blob_is_not_selectable' (2500378) panicked at tos-api/src/aes/resource.rs:2909:9:
+thread 'aes::resource::selector_tests::rsrc_free_frees_the_named_blob_and_leaves_the_other_loaded' (2500380) panicked at tos-api/src/aes/resource.rs:2947:9:
+Y stayed loaded and is reachable once named
+thread 'aes::resource::selector_tests::restoring_the_words_reselects_the_earlier_load' (2500379) panicked at tos-api/src/aes/resource.rs:2846:9:
+after restoring the words rsrc_gaddr resolves in X
+test result: FAILED. 9 passed; 6 failed; 0 ignored; 0 measured; 17 filtered out; finished in 0.00s
