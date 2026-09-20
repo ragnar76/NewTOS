@@ -1080,8 +1080,8 @@ sets `msg[1] = rlr->p_pid` (sender), `msg[2] = 0` (extra bytes):
 |-------------|------:|----------|----------|----------|----------|----------|----------|
 | `WM_REDRAW`  | 20 | wh | rect x | rect y | rect w | rect h | `w_redraw` (`gemwmlib.c:904`) — dirty piece to repaint |
 | `WM_TOPPED`  | 21 | wh | 0 | 0 | 0 | 0 | click on an inactive window (`gemctrl.c:178`) |
-| `WM_CLOSED`  | 22 | wh | 0 | 0 | 0 | 0 | CLOSER released inside (`gemctrl.c:220`); with `HOTCLOSE` **on the press** (`:210-213`) |
-| `WM_FULLED`  | 23 | wh | 0 | 0 | 0 | 0 | FULLER released inside (`gemctrl.c:220`) |
+| `WM_CLOSED`  | 22 | wh | **`WS_CURR` x** | **`WS_CURR` y** | **`WS_CURR` w** | **`WS_CURR` h** | CLOSER released inside (`gemctrl.c:220`); with `HOTCLOSE` **on the press** (`:210-213`). Rect = the window's current border rect, fetched once before the gadget switch (`w_getsize(WS_CURR, w_handle, &t); r_get(&t, &x, &y, &w, &h)`, `:196-197`) and passed unchanged to `ct_msgup(message, owner, wh, x, y, w, h)` (`:314`) — corrected from 0 (A77, 2026-09-20) |
+| `WM_FULLED`  | 23 | wh | **`WS_CURR` x** | **`WS_CURR` y** | **`WS_CURR` w** | **`WS_CURR` h** | FULLER released inside (`gemctrl.c:220`); rect as for `WM_CLOSED` (`:196-197`, `:314`) — corrected from 0 (A77, 2026-09-20) |
 | `WM_ARROWED` | 24 | wh | **`WA_*` action** | 0 | 0 | 0 | scroll arrow/page click (`gemctrl.c:125`) |
 | `WM_HSLID`   | 25 | wh | **0..1000 pos** | 0 | 0 | 0 | h-elevator drag (`gemctrl.c:300-305`) |
 | `WM_VSLID`   | 26 | wh | **0..1000 pos** | 0 | 0 | 0 | v-elevator drag (`gemctrl.c:300-305`) |

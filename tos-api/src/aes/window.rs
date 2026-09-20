@@ -4335,6 +4335,13 @@ pub fn intercept() {
         Some(w) => w,
         None => return,
     };
+    // `hctl_window` reads the window's current border rect once, before the
+    // gadget switch — `w_getsize(WS_CURR, w_handle, &t); r_get(&t, &x, &y,
+    // &w, &h)` (`aes/gemctrl.c:196-197`) — and `ct_msgup(message, owner, wh,
+    // x, y, w, h)` (`:314`) sends whatever the arm left in those four. The
+    // closer and fuller arms do not touch them (`:208-221`), so `WM_CLOSED`
+    // (both forms) and `WM_FULLED` carry `WS_CURR` in `msg[4..7]` (A77).
+    let ws_curr = w.curr;
     match gadget_at(w, mx, my) {
         Gadget::Closer => {
             // `HOTCLOSE`: `message = WM_CLOSED; break;` — no `gr_watchbox`, the
@@ -4347,6 +4354,7 @@ pub fn intercept() {
             // reaches the application as a press.
             if w.kind & HOTCLOSE != 0 {
                 msg[0] = WM_CLOSED;
+                put_rect(&mut msg, ws_curr);
                 post_to_owner(owner, &msg);
                 super::input::ct_msgup_hotclose();
                 return;
@@ -4355,12 +4363,14 @@ pub fn intercept() {
                 return;
             }
             msg[0] = WM_CLOSED;
+            put_rect(&mut msg, ws_curr);
         }
         Gadget::Fuller => {
             if !watchbox(gad_rect(w, Gadget::Fuller), G_FULL, backend) {
                 return;
             }
             msg[0] = WM_FULLED;
+            put_rect(&mut msg, ws_curr);
         }
         Gadget::Mover => {
             let r = drag_move(w, backend);
@@ -4430,6 +4440,17 @@ fn post_to_owner(owner: usize, msg: &[i16; 8]) {
     unsafe {
         super::pd::post_msg(owner, *msg);
     }
+}
+
+/// Write `r` into the four rect words of a Control-Manager message — the
+/// `x, y, w, h` tail of `ct_msgup(message, owner, wh, x, y, w, h)`
+/// (`aes/gemctrl.c:314`), landing in `msg[4..7]` via `ap_sendmsg`
+/// (`gemwmlib.c:851-863`).
+fn put_rect(msg: &mut [i16; 8], r: Grect) {
+    msg[4] = r.x;
+    msg[5] = r.y;
+    msg[6] = r.w;
+    msg[7] = r.h;
 }
 
 /// Post `WM_UNTOPPED` (30) to the previously-topped window's owner when the top
