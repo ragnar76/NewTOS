@@ -1266,6 +1266,19 @@ fn redraw_all(backend: &dyn RasterBackend) {
 /// the affected area instead of the whole screen. The window **content** (item
 /// objects) is re-laid by the owner afterwards, exactly as in the full path.
 fn compose(backend: &dyn RasterBackend, clip: ClipRect) {
+    compose_except(backend, clip, None);
+}
+
+/// [`compose`] with one window's frame left **out** of the walk — the
+/// `moved` case of `draw_change`'s tail: after `w_move` has blitted the top
+/// window to its new place, `w_update(…, moved = TRUE)` steps over `gl_wtop`
+/// (`gemwmlib.c:1025`) and nothing repaints its frame, so the blitted pixels —
+/// title dither included, at the phase the blit carried them to — stay as
+/// they are. Painting that frame again inside the damage rectangle would
+/// re-align the dither there and leave a seam against the rest of the bar.
+/// Every other window's frame and the desktop background are painted as in
+/// [`compose`].
+fn compose_except(backend: &dyn RasterBackend, clip: ClipRect, skip: Option<i16>) {
     // Bracket the whole window redraw with the **counting** cursor semaphore,
     // exactly as EmuTOS `w_update` wraps the frame walk in `gsx_moff()` /
     // `gsx_mon()` (gemwmlib.c:1011/1047). The cursor is a save-under sprite:
@@ -1296,6 +1309,9 @@ fn compose(backend: &dyn RasterBackend, clip: ClipRect) {
             break;
         }
         drawn[pick] = true;
+        if skip == Some(pick as i16) {
+            continue;
+        }
         let istop = pick as i16 == top;
         // `w_update`'s per-window step: `gsx_sclip(pt); w_cpwalk(top, 0,
         // MAX_DEPTH, FALSE)` (`gemwmlib.c:1029-1030`) — the frame is drawn once
@@ -1683,8 +1699,8 @@ fn w_union(handle: i16) -> Option<Grect> {
 ///
 /// The leading clip against [`desktop_work`] is `w_update`'s "limit to screen",
 /// `rc_intersect(&gl_rfull, pt)` (`gemwmlib.c:1010`), which every path into
-/// `w_redraw` passes through. It sits here rather than in [`broadcast_redraw`]
-/// because both of our entries into that fan-out ([`broadcast_redraw`] and
+/// `w_redraw` passes through. It sits here rather than in [`w_update`]
+/// because both of our entries into that fan-out ([`w_update`] and
 /// [`top_window`]'s single-window turn) funnel through this function, and
 /// clipping the damage once before the loop or once per turn is the same
 /// rectangle.
@@ -1706,24 +1722,333 @@ fn send_redraw_in(handle: i16, damage: Grect) {
     }
 }
 
-/// EmuTOS `w_update`→`w_redraw` fan-out (`gemwmlib.c:1004-1048,887-907`): walk
-/// every still-open window and post a `WM_REDRAW` for the part of the exposed
-/// `damage` region the window owns ([`send_redraw_in`]). A window whose owner
-/// rectangle list grew because a removed/lowered window no longer covers it
-/// thus repaints its newly-exposed content; a window `damage` does not reach
-/// gets nothing (empty intersection → no message).
+/// The handles of every open window, **top of the z-order first** — EmuTOS's
+/// `W_TREE[ROOT]` sibling chain read from `ob_tail` back to `ob_head`, which
+/// is the order `w_update` visits them in (`gemwmlib.c:1021-1043`). Returns
+/// the count; `out[..n]` holds the handles. Ties (which the monotonic counter
+/// never produces) break towards the higher slot, the mirror image of
+/// [`compose`]'s ascending walk.
+fn open_by_z_desc(out: &mut [i16; NUM_WIN]) -> usize {
+    let mut n = 0usize;
+    let mut done = [false; NUM_WIN];
+    loop {
+        let mut pick = usize::MAX;
+        let mut pick_z = i16::MIN;
+        for (i, w) in slots().iter().enumerate() {
+            if w.in_use && w.open && !done[i] && (pick == usize::MAX || w.z >= pick_z) {
+                pick = i;
+                pick_z = w.z;
+            }
+        }
+        if pick == usize::MAX {
+            return n;
+        }
+        done[pick] = true;
+        out[n] = pick as i16;
+        n += 1;
+    }
+}
+
+/// EmuTOS `w_update(bottom, pt, top, moved)` (`gemwmlib.c:1004-1048`), the
+/// message half — the `WM_REDRAW` fan-out over the exposed `damage`
+/// rectangle:
+///
+/// ```c
+/// if (bottom == DESKWH) bottom = W_TREE[ROOT].ob_head;     /* :1014-1015 */
+/// if (bottom != NIL) {
+///     if (top == DESKWH) top = W_TREE[ROOT].ob_tail;       /* :1021-1022 */
+///     do {
+///         if (!(moved && (top == gl_wtop))) {              /* :1025      */
+///             gsx_sclip(pt);
+///             w_cpwalk(top, 0, MAX_DEPTH, FALSE);          /* the frame  */
+///             w_redraw(top, pt);                           /* the message*/
+///         }
+///         /* scan to find prev */                          /* :1032-1041 */
+///         ...
+///     } while (!done);
+/// }
+/// ```
+///
+/// The windows are visited **from `top` down to `bottom`, inclusive, in
+/// z-order** — `DESKWH` standing for the top-most (`ob_tail`) and the
+/// bottom-most (`ob_head`) window respectively — and each visited one is
+/// posted its part of `damage` by [`send_redraw_in`] (`w_redraw`,
+/// `:887-907`). Two things are contract in that walk and were not kept
+/// before (A78): the **order** — with `h1` under `h2` and `h1` moved, `h2`'s
+/// message is queued before `h1`'s, not the other way round — and the
+/// **`moved` skip**: after `w_move` blitted the top window to its new place,
+/// or after a pure-subset shrink, `draw_change` passes `moved = TRUE` and the
+/// top window is stepped over without a message, because nothing of its
+/// content is missing. Windows above `top` and below `bottom` are not visited
+/// at all — a superset grow (`start = w_handle`) stops at the grown window
+/// and the ones underneath it get nothing, even where the hull of their
+/// rectangle list still reaches into the damage.
+///
+/// The **frame half** of the loop — `w_cpwalk` per visited window, clipped to
+/// its owner rectangle list inside `damage` — is done by [`compose`] /
+/// [`redraw_clip`], which paints every open window's frame in ascending
+/// z-order through the same per-window clip; since the clips are the disjoint
+/// pieces of the rectangle lists, the pixels do not depend on the order, and a
+/// frame outside the `[top, bottom]` range repaints its own unchanged pixels.
 ///
 /// Every posted `WM_REDRAW` is appended to the owner's per-app FIFO queue
 /// (`Aespd::queue`), so when several **same-owner** windows are uncovered at
 /// once each one's redraw is delivered (in FIFO order) — none is overwritten.
 /// Redraws for the *same* window coalesce via the queue's rectangle-union
 /// (EmuTOS `doq`, `gemqueue.c:45-56`).
-fn broadcast_redraw(damage: Grect) {
-    for handle in 1..NUM_WIN as i16 {
-        if win(handle).map(|w| w.open).unwrap_or(false) {
-            send_redraw_in(handle, damage);
+fn w_update(bottom: i16, damage: Grect, top: i16, moved: bool) {
+    let mut order = [0i16; NUM_WIN];
+    let n = open_by_z_desc(&mut order);
+    let gl_wtop = get_top();
+    let mut started = top == DESKWH;
+    for &h in order.iter().take(n) {
+        if !started {
+            if h != top {
+                continue;
+            }
+            started = true;
+        }
+        if !(moved && h == gl_wtop) {
+            send_redraw_in(h, damage);
+        }
+        if h == bottom {
+            break;
         }
     }
+}
+
+/// AES `bb_screen` (`aes/gemgraf.c:357-363` → `gsx_blt`, `:328-351`): move
+/// the screen rectangle `(sx, sy, w, h)` to `(dx, dy)` — a screen-to-screen
+/// `vro_cpyfm(S_ONLY)` with the clip `w_move` set just before (`gsx_sclip(&gl_
+/// rfull)`, `gemwmlib.c:969`), i.e. the backend's overlap-safe block copy
+/// with the replace op (`3`) clipped to [`desktop_work`]. `gsx_blt` brackets
+/// the copy in `gsx_moff()`/`gsx_mon()` (`:337,350`); the cursor is a
+/// save-under sprite here too, so it is hidden for the copy exactly as it is
+/// for `bb_save`/`bb_restore` — otherwise the sprite would be copied along and
+/// its backing store would restore stale pixels at the old place.
+fn bb_screen(backend: &dyn RasterBackend, sx: i16, sy: i16, dx: i16, dy: i16, w: i16, h: i16) {
+    const S_ONLY: u8 = 3;
+    let full = desktop_work();
+    let clip = rect_clip(full.x, full.y, full.w, full.h);
+    crate::vdi::cursor_hide(backend);
+    backend.copy_rect(crate::vdi::backend::Rect { x: sx, y: sy, w, h }, dx, dy, S_ONLY, clip);
+    crate::vdi::cursor_show(backend);
+}
+
+/// EmuTOS `w_mvfix` (`aes/gemwmlib.c:915-930`) — clip one of the blit's
+/// rectangles to `gl_rfull` and, when it stood at `x = -1` (the classic
+/// "hide the left border" placement), take one column off the *other*
+/// rectangle's left edge so the two stay aligned:
+///
+/// ```c
+/// tmpsx = ps->g_x;
+/// rc_intersect(&gl_rfull, ps);
+/// if (tmpsx == -1) { pd->g_x++; pd->g_w--; return TRUE; }
+/// return FALSE;
+/// ```
+///
+/// Only `-1` is realigned; a rectangle further off the left edge is clipped
+/// without its partner being shifted — that is the reference's behaviour and
+/// is kept.
+fn w_mvfix(ps: &mut Grect, pd: &mut Grect) -> bool {
+    let tmpsx = ps.x;
+    rc_intersect(desktop_work(), ps);
+    if tmpsx == -1 {
+        pd.x += 1;
+        pd.w -= 1;
+        return true;
+    }
+    false
+}
+
+/// EmuTOS `w_move` (`aes/gemwmlib.c:938-996`) — carry the **top** window's
+/// pixels to its new place with a screen blit, if that is possible, and hand
+/// back what `draw_change` needs: `(moved, stop, c)`.
+///
+/// ```c
+/// w_getsize(WS_PREV, w_handle, &s);  s.g_w += DROP_SHADOW_SIZE;  s.g_h += …;
+/// w_getsize(WS_TRUE, w_handle, &d);                              /* :945-948 */
+/// if ( ((s.g_x+s.g_w > gl_width)  && (d.g_x < s.g_x)) ||
+///      ((s.g_y+s.g_h > gl_height) && (d.g_y < s.g_y)) )          /* :951-952 */
+///     { rc_union(&s, &d); *pstop = DESKWH; }                     /* :954-955 */
+/// else
+///     *pstop = w_handle;                                         /* :959     */
+/// sminus1 = w_mvfix(&s, &d);  dminus1 = w_mvfix(&d, &s);         /* :963-964 */
+/// if (*pstop == w_handle) {
+///     gsx_sclip(&gl_rfull);
+///     bb_screen(s.g_x, s.g_y, d.g_x, d.g_y, s.g_w, s.g_h);       /* :969-970 */
+///     if (sminus1 != dminus1) {                                  /* :972-982 */
+///         if (dminus1) s.g_x--;
+///         if (sminus1) { d.g_x--; d.g_w = 1; gsx_sclip(&d); w_cpwalk(gl_wtop, 0, 0, FALSE); }
+///     }
+///     pc = &s;
+/// } else
+///     pc = &d;
+/// rc_copy(pc, prc);                                              /* :992     */
+/// return (*pstop == w_handle);                                   /* :994     */
+/// ```
+///
+/// **When the blit is refused.** A window that reaches past the right or the
+/// bottom edge of the screen has columns/rows that were never drawn; if the
+/// move brings them *into* view (leftwards / upwards) the blit cannot supply
+/// them, so the whole union of old and new rectangle is redrawn instead —
+/// `stop = DESKWH`, `moved = FALSE`, and the window will be sent a
+/// `WM_REDRAW` like any other. Moving such a window further towards that
+/// edge blits the on-screen part (the source clipped to `gl_rfull`), which is
+/// everything that stays visible.
+///
+/// **What comes back as `c`.** In the blit case it is the *vacated* source
+/// rectangle (`pc = &s`): the destination already has its pixels, only the
+/// place the window left needs the desktop and the windows underneath
+/// repainted. In the refused case it is the clipped union.
+///
+/// The `-1` fringe repair — `w_cpwalk(gl_wtop, 0, 0, FALSE)` under a
+/// one-column clip — is [`draw_frame_pieces`] with that column as the damage
+/// rectangle: the left border column the blit could not bring along (its
+/// source was off-screen) is drawn afresh at the destination.
+fn w_move(handle: i16, backend: Option<&dyn RasterBackend>) -> (bool, i16, Grect) {
+    let Some((prev, curr)) = win(handle).map(|w| (w.prev, w.curr)) else {
+        return (false, DESKWH, Grect::default());
+    };
+    let screen = screen_rect();
+    let mut s = Grect { w: prev.w + DROP_SHADOW_SIZE, h: prev.h + DROP_SHADOW_SIZE, ..prev };
+    let mut d = ws_true(curr);
+    let stop = if (s.x + s.w > screen.w && d.x < s.x) || (s.y + s.h > screen.h && d.y < s.y) {
+        d = union_grect(s, d); // rc_union(&s, &d)
+        DESKWH
+    } else {
+        handle
+    };
+    let sminus1 = w_mvfix(&mut s, &mut d);
+    let dminus1 = w_mvfix(&mut d, &mut s);
+    if stop == handle {
+        if let Some(backend) = backend {
+            bb_screen(backend, s.x, s.y, d.x, d.y, s.w, s.h);
+        }
+        if sminus1 != dminus1 {
+            if dminus1 {
+                s.x -= 1;
+            }
+            if sminus1 {
+                d.x -= 1;
+                d.w = 1;
+                if let Some(backend) = backend {
+                    crate::vdi::cursor_hide(backend);
+                    draw_frame_pieces(handle, true, backend, Some(d));
+                    crate::vdi::cursor_show(backend);
+                }
+            }
+        }
+        (true, stop, s)
+    } else {
+        (false, stop, d)
+    }
+}
+
+/// EmuTOS `draw_change` (`aes/gemwmlib.c:1058-1223`) for a geometry change of
+/// an **open** window that keeps its place in the z-order — `wm_set`'s
+/// `WF_CXYWH` (`:1676-1678`). The geometry itself (`WS_PREV := WS_CURR`,
+/// `WS_CURR := pt`, `WS_WORK := wm_calc`, `:1069-1077`) is stored by the
+/// caller before this runs, exactly as `draw_change` stores it before the
+/// `VF_ISOPEN` test (`:1085-1086`); `old` is the rectangle the window had.
+/// The rectangle lists EmuTOS rebuilds here (`:1089`) are derived on demand
+/// ([`border_pieces`]), and `oldtop == W_TREE[ROOT].ob_tail` throughout, so
+/// the open/close block (`:1194-1211`) has nothing to do.
+///
+/// What is decided is `start` (the bottom of the redraw walk), `stop` (its
+/// top), `moved` (skip `gl_wtop`) and the damage rectangle `c`, branch by
+/// branch as in the reference — see the spec table in
+/// `docs/api/aes/window-graphics.md` § `wind_set`, "`WF_CXYWH` on an open
+/// window". Then:
+///
+/// ```c
+/// c.g_w += DROP_SHADOW_SIZE;  c.g_h += DROP_SHADOW_SIZE;   /* :1213-1215 */
+/// if (start == DESKWH) w_drawdesk(&c);                     /* :1217-1219 */
+/// w_update(start, &c, stop, moved);                        /* :1221-1222 */
+/// ```
+///
+/// `w_drawdesk` plus the frame half of `w_update` is one [`compose_except`]
+/// over `c` (the desktop's own pieces inside `c` are empty whenever `start !=
+/// DESKWH` — a superset grow's damage is the grown window's `WS_TRUE`, which
+/// no desktop piece reaches into — so the conditional is implied), with
+/// `gl_wtop` left out when `moved`; the message half is [`w_update`].
+fn draw_change_open(handle: i16, pt: Grect, old: Grect) {
+    let backend = host().and_then(|h| h.raster());
+    let gl_wtop = get_top();
+    let mut c = old;
+    let mut start = handle; // init. starting window            (:1097)
+    let mut stop = DESKWH; // stop at the top                   (:1098)
+    let mut moved = false; // we haven't moved the top window   (:1101)
+    if pt != Grect::default() && pt.x == c.x && pt.y == c.y {
+        // "size or top request" (:1108-1155)
+        if pt.w == c.w && pt.h == c.h {
+            // A top request — which a `wm_set` never is, the window is
+            // either already `ob_tail` (== oldtop) or not the tail at all:
+            // "return if this isn't a top request" (:1113-1116). Nothing is
+            // drawn and nothing is sent for an unchanged rectangle.
+            return;
+        }
+        // "handle size request" (:1138-1155)
+        if pt.w <= c.w && pt.h <= c.h {
+            // "stop before current window if shrink was a pure subset"
+            stop = handle;
+            if let Some(backend) = backend {
+                // w_cpwalk(gl_wtop, 0, MAX_DEPTH, TRUE) (:1144) — the top
+                // window's frame, clipped to its own rectangle list.
+                crate::vdi::cursor_hide(backend);
+                draw_frame_pieces(gl_wtop, true, backend, None);
+                crate::vdi::cursor_show(backend);
+            }
+            moved = true;
+        }
+        // "start at bottom if a shrink occurred" (:1148-1150)
+        if pt.w < c.w || pt.h < c.h {
+            start = DESKWH;
+        }
+        // "update rect. is the union of two sizes + the drop shadow"
+        // (:1152-1154) — this shadow is in addition to the tail's, so a size
+        // change repaints two shadow widths past the larger rectangle.
+        c.w = pt.w.max(c.w) + DROP_SHADOW_SIZE;
+        c.h = pt.h.max(c.h) + DROP_SHADOW_SIZE;
+    } else if (c.w == 0 || c.h == 0)
+        || (pt.x <= c.x && pt.y <= c.y && pt.x + pt.w >= c.x + c.w && pt.y + pt.h >= c.y + c.h)
+    {
+        // "a grow that is a superset or an open" (:1160-1167): the new
+        // rectangle covers the old one, so it alone is the damage, and the
+        // walk starts at this window (`start` stays `w_handle`).
+        c = pt;
+    } else {
+        // "move, close or shrink" (:1169-1191)
+        if pt.w == c.w && pt.h == c.h && gl_wtop == handle {
+            // "do a move of top guy" (:1173-1178)
+            let (m, st, rc) = w_move(handle, backend);
+            moved = m;
+            stop = st;
+            c = rc;
+            start = DESKWH;
+        }
+        // "check for a close" (:1180-1182)
+        if pt.w == 0 || pt.h == 0 {
+            start = DESKWH;
+        }
+        // "handle other moves and shrinks" (:1184-1190)
+        if start != DESKWH {
+            c = union_grect(pt, c);
+            if pt != c {
+                start = DESKWH;
+            }
+        }
+    }
+    // "account for drop shadow (BUGFIX in 2.1)" (:1213-1215)
+    c = plus_shadow(c);
+    // w_drawdesk(&c) (:1217-1219) + w_update's frame walk (:1028-1029)
+    if c.w > 0 && c.h > 0 {
+        if let Some(backend) = backend {
+            compose_except(backend, rect_clip(c.x, c.y, c.w, c.h), moved.then_some(gl_wtop));
+        }
+    }
+    // w_update(start, &c, stop, moved) (:1221-1222) — the messages
+    w_update(start, c, stop, moved);
 }
 
 /// Map a window handle to its table slot, if valid and in use — EmuTOS
@@ -2544,7 +2869,7 @@ fn close_window(handle: i16) -> bool {
         // EmuTOS takes the window out of `gl_wtree` with `ob_delete` *before*
         // `draw_change` (`:1452`) and clears `VF_ISOPEN` after it (`:1454`).
         // Our single `open` flag carries both roles — every tree walk
-        // ([`get_top`], [`border_pieces`], [`broadcast_redraw`],
+        // ([`get_top`], [`border_pieces`], [`w_update`],
         // [`find_handle`]) keys off it — so it goes down here: after the three
         // rectangle writes, as in `wm_close`, and before the damage below is
         // worked out, as after `ob_delete`.
@@ -2577,8 +2902,9 @@ fn close_window(handle: i16) -> bool {
     let damage = plus_shadow(damage);
     // AES repaints background + remaining frames directly over the damage,
     redraw_clip(damage.x, damage.y, damage.w, damage.h);
-    // then fans WM_REDRAW out to every window whose visible region grew.
-    broadcast_redraw(damage);
+    // then fans WM_REDRAW out to every window whose visible region grew —
+    // `w_update(DESKWH, &c, DESKWH, FALSE)`: all of them, top to bottom.
+    w_update(DESKWH, damage, DESKWH, false);
     true
 }
 
@@ -2627,7 +2953,7 @@ fn wm_delete(handle: i16) -> bool {
     };
     if was_open {
         // `wm_close(w_handle)` (`:1474`) — the established close-uncover path
-        // (redraw_clip + broadcast_redraw), which is `draw_change`'s tail.
+        // (redraw_clip + w_update), which is `draw_change`'s tail.
         close_window(handle);
     }
     let Some(w) = win(handle) else {
@@ -2920,66 +3246,29 @@ pub fn wind_set(pb: &Aespb) {
         }
         WF_CXYWH => {
             let r = Grect { x: pb.intin(2), y: pb.intin(3), w: pb.intin(4), h: pb.intin(5) };
-            let (work, prev, open) = if let Some(w) = win(handle) {
+            // `draw_change` stores the geometry first — `WS_PREV := WS_CURR`,
+            // `WS_CURR := pt`, `WS_WORK := wm_calc(WC_WORK, …)`
+            // (`gemwmlib.c:1069-1077`) — and then bails out before touching
+            // the window tree when the window is created but not open
+            // (`:1085-1086`): no repaint, no `WM_REDRAW`. Since `wm_create`
+            // leaves the current rect at `gl_rzero`, repainting here would
+            // smear the union with an all-zero rectangle across the top-left
+            // of the screen.
+            let (prev, open) = if let Some(w) = win(handle) {
                 w.prev = w.curr;
                 set_curr(w, r);
-                (w.work, w.prev, w.open)
+                (w.prev, w.open)
             } else {
-                (r, r, false)
+                (r, false)
             };
-            // `draw_change` stores the new geometry and then bails out before
-            // touching the window tree when the window is created but not open
-            // (`gemwmlib.c:1079-1085`) — no repaint, no `WM_REDRAW`. Since
-            // `wm_create` leaves the current rect at `gl_rzero`, repainting
-            // here would smear the union with an all-zero rectangle across the
-            // top-left of the screen.
-            if !open {
-                pb.set_ret(1);
-                return;
+            if open {
+                // The rest of `draw_change` (`:1089-1222`): the top window's
+                // pure move is **blitted** (`w_move`) and the window is then
+                // left out of the `WM_REDRAW` fan-out (`moved`); everything
+                // else is repainted over the damage rectangle and the windows
+                // it reaches are asked for their content, top to bottom.
+                draw_change_open(handle, r, prev);
             }
-            // Repaint only the union of the old and new border rects — the
-            // programmatic move/size path (desktop WM_MOVED/WM_SIZED/WM_FULLED,
-            // app `wind_set`) — not the whole screen. This is EmuTOS
-            // `draw_change`'s tail (`gemwmlib.c:1216-1222`): `w_drawdesk(&c)`
-            // over the damage rectangle, then `w_update(start, &c, stop, moved)`.
-            //
-            // The drop shadow is charged the way `draw_change` charges it, and
-            // that is **not** once for every path. A pure size change — same
-            // upper-left corner, different extent — gets its own addition in
-            // the size branch (`:1152-1154`)
-            //
-            //     c.g_w = max(pt->g_w, c.g_w) + DROP_SHADOW_SIZE;
-            //     c.g_h = max(pt->g_h, c.g_h) + DROP_SHADOW_SIZE;
-            //
-            // *before* the common tail adds a second one (`:1213-1215`), so a
-            // resize repaints two shadow widths past the larger of the two
-            // rectangles. Every other path (move, grow, open, close) reaches
-            // the tail with the plain union and is charged once. Collapsing the
-            // two into a single addition would leave a shadow-wide strip of the
-            // old geometry unpainted on a shrink.
-            let same_corner = (r.w != 0 || r.h != 0) && r.x == prev.x && r.y == prev.y;
-            let resized = same_corner && (r.w != prev.w || r.h != prev.h);
-            let d = if resized {
-                plus_shadow(Grect { x: prev.x, y: prev.y, w: r.w.max(prev.w), h: r.h.max(prev.h) })
-            } else {
-                union_grect(prev, r)
-            };
-            let d = plus_shadow(d);
-            redraw_clip(d.x, d.y, d.w, d.h);
-            // This window's content: `w_redraw` for the whole work area, since —
-            // unlike EmuTOS, which blits the top window across in `w_move`
-            // (`:944-987`) and then passes `moved = TRUE` to skip it — nothing
-            // carried its pixels to the new place.
-            send_redraw(handle, work);
-            // Every *other* window the damage reaches: `w_update` walks the whole
-            // window list and calls `w_redraw(top, pt)` on each (`:1004-1048`,
-            // `:887-907`), so a window the moved one uncovers is asked for its
-            // content back. Without this the vacated rectangle kept showing the
-            // moved window's old pixels wherever it fell inside another window —
-            // the AES may not paint there itself (`do_walk`, `:286-312`), so the
-            // owner has to. Same-window redraws coalesce in the FIFO, so the
-            // `send_redraw` above is not duplicated.
-            broadcast_redraw(d);
         }
         WF_TOP => {
             // `if (w_handle != gl_wtop) wm_mktop(w_handle)` — EmuTOS `wm_set`
@@ -3323,7 +3612,7 @@ pub fn redraw_dialog_area(x: i16, y: i16, w: i16, h: i16) {
     // w_drawdesk(pt) + remaining window frames over pt.
     redraw_clip(x, y, w, h);
     // w_update(DESKWH, pt, DESKWH, FALSE): WM_REDRAW for each overlapping window.
-    broadcast_redraw(Grect { x, y, w, h });
+    w_update(DESKWH, Grect { x, y, w, h }, DESKWH, false);
 }
 
 fn screen_rect() -> Grect {

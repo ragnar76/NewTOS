@@ -667,7 +667,7 @@ Helpers: `wm_update(BEG_UPDATE/END_UPDATE)`, `draw_change` (WF_CXYWH),
 |-------|--------|--------------------|
 | `WF_NAME` (2) | `w_pname = *(char**)pinwds` — pointer packed in `int_in[2..3]`, **not** `addr_in[0]` (D-094) | `W_NAME` gadget, **all open windows** (`do_cpwalk`, `:1665`) |
 | `WF_INFO` (3) | `w_pinfo = *(char**)pinwds` — pointer packed in `int_in[2..3]`, **not** `addr_in[0]` (D-094) | `W_INFO` gadget, **all open windows** (`:1673`) |
-| `WF_CXYWH` (5) | move/resize → `draw_change(handle, rect)` | **whole frame + uncovered areas** (`:1677`) |
+| `WF_CXYWH` (5) | move/resize → `draw_change(handle, rect)` | **whole frame + uncovered areas** (`:1677`); a pure move of the top window is **blitted** and the mover gets no `WM_REDRAW` — see the `draw_change` note below |
 | `WF_TOP` (10) | if not already top → `wm_mktop` | full topping redraw (`:1682`) |
 | `WF_NEWDESK` (14) | set desktop-background tree `gl_newdesk`, root `gl_newroot` | (next desktop redraw) `:1685` |
 | `WF_HSLSIZ` (15) | `w_hslsiz` (clamped 1..1000, or −1) — only if changed | `W_HSLIDE` gadget `:1690` |
@@ -691,6 +691,37 @@ Any unlisted field → `ret = FALSE` (`gemwmlib.c:1736`).
 > slider-position/size setters **early-out with no redraw if the value is
 > unchanged** (`if (pwin->w_hslide != pinwds[0])`).
 
+> **`WF_CXYWH` on an open window — `draw_change` branch by branch
+> (`gemwmlib.c:1058-1223`; added 2026-09-20, A78).** `draw_change` first
+> stores the geometry — `WS_PREV := WS_CURR`, `WS_CURR := rect`, `WS_WORK :=
+> wm_calc(WC_WORK, kind, rect)` (`:1069-1077`) — and returns there for a window
+> that is not open (`:1085-1086`). For an open one it rebuilds every rectangle
+> list (`:1089`) and then, with `c` = the **old** rectangle, `pt` = the new one,
+> `S` = `DROP_SHADOW_SIZE` and `gl_wtop` unchanged (`wm_set` never reorders),
+> chooses `start`/`stop`/`moved` and the damage rectangle:
+>
+> | Case | Pixels the AES paints | `WM_REDRAW` fan-out (`w_update(start, c, stop, moved)`, `:1222`) |
+> |---|---|---|
+> | `pt == c` (`:1108-1116`) | nothing | none — `draw_change` returns before drawing (`:1115-1116`) |
+> | same corner, `pt.w <= c.w && pt.h <= c.h` — **pure shrink** (`:1141-1146`) | `gl_wtop`'s frame (`w_cpwalk`, `:1144`), then `w_drawdesk` over the damage (`start = DESKWH`, `:1149-1150`) | `stop = handle`, `moved = TRUE` (`:1143,1145`): windows from `handle` **downwards**, `gl_wtop` skipped (`:1025`) — the shrunk window itself gets **no** message when it is on top. Damage `(c.x, c.y, max(pt.w, c.w) + 2S, max(pt.h, c.h) + 2S)`: the shadow is added in the size branch (`:1153-1154`) *and* in the common tail (`:1214-1215`) |
+> | same corner, any other size change (`:1138-1155`) | as above, `moved = FALSE` | every window top→bottom, same double-shadow damage |
+> | different corner, `pt ⊇ c` — **superset grow** (`:1160-1167`) | frames only: `start = handle`, so no `w_drawdesk` (`:1218`) | windows from the top **down to `handle`** (inclusive; lower ones are not visited), damage `pt + S` |
+> | **pure move of `gl_wtop`** (`:1174-1177` → `w_move`, `:938-996`) | **blit** `WS_PREV + S` → `WS_TRUE` on screen (`bb_screen`, `:970`) unless the source reaches past the right or bottom screen edge **and** the move goes toward that edge (`:951-957`); both rectangles are clipped to `gl_rfull` and a source or destination at `x = -1` has its left fringe realigned (`w_mvfix`, `:915-930,963-964,972-982`) | blit case: `stop = handle`, `moved = TRUE` (`:959,994`) — the moved window gets **no** message; every other window (top→bottom) gets its part of `s + S`, `s` = the **vacated** rectangle (`:984,992`). No-blit case: `stop = DESKWH`, `moved = FALSE`, damage `(s ∪ d) ∩ gl_rfull + S` (`:954,988`), every window including the moved one |
+> | any other move / move-and-size / zero rect (`:1180-1190`) | `w_drawdesk` + frames (`start = DESKWH`) | damage `(pt ∪ c) + S` (zero rect: `c + S`), every window top→bottom |
+>
+> **Order and rectangle.** `w_update` (`:1004-1048`) clips the damage to
+> `gl_rfull` (`:1010`) and visits the windows from `stop` (`DESKWH` = the top of
+> the z-order, `W_TREE[ROOT].ob_tail`) **down** to `start` (`DESKWH` = the
+> bottom, `ob_head`), `:1014-1043`; each visited window first has its frame
+> drawn (`w_cpwalk`, `:1029`) and is then sent, by `w_redraw` (`:887-907`),
+> `WM_REDRAW(handle, damage ∩ hull(w_rlist))` iff `damage ∩ WS_WORK ≠ ∅` and
+> its list is non-empty. So with `h1` under `h2` and `h1` moved, `h2`'s message
+> is queued **before** `h1`'s. The blit is a screen-to-screen `vro_cpyfm(S_ONLY)`
+> with clip `gl_rfull` under `gsx_moff`/`gsx_mon` (`gemgraf.c:328-363`); its
+> mechanism is reference (header above), its **effect is contract**: after a
+> pure move of the top window its pixels stand at the new place and the owner
+> has **not** been asked to redraw.
+>
 Slider **value validation** (`gemwmlib.c:1643-1656`): `WF_HSLIDE`/`WF_VSLIDE`
 positions and `WF_HSLSIZ`/`WF_VSLSIZ` sizes are clamped to **1..1000**; a size
 of **−1** ("use default") is passed through unclamped.

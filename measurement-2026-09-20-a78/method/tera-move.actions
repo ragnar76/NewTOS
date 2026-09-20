@@ -1,0 +1,33 @@
+# A78 (TeraDesk via #Z, sd-tera): idle dump, open C:\ (double-click HARD DISC C at
+# 195,35 -> window at (307,143), reaching past the right and bottom screen edges),
+# arm the serial trace, then two mover drags on the title bar (450,152):
+#   1. straight DOWN by 80 px  -> pure move of gl_wtop, source off-screen only at
+#      the right/bottom and the move goes AWAY from the left/top: w_move BLITS,
+#      moved=TRUE, no WM_REDRAW to the window (gemwmlib.c:951-970,994,1025)
+#   2. LEFT by 300 px          -> source past the right edge AND moving left:
+#      w_move refuses (stop=DESKWH), the window gets its WM_REDRAW (:951-957)
+# Ticks are 200 Hz after the first AES pump of the first EL0 program.
+1100 mark A_IDLE
+1200 park
+1206 move 300 300
+1400 move 195 35
+1600 down
+1603 up
+1608 down
+1611 up
+2400 mark B_WINDOW_OPEN
+2500 arm
+2600 move 450 152
+2800 down
+2850 drag 450 192
+2900 drag 450 232
+3000 up
+3100 mark C_MOVED_DOWN
+3500 mark D_MOVED_DOWN_2S
+3600 down
+3650 drag 350 232
+3700 drag 250 232
+3750 drag 150 232
+3850 up
+3950 mark E_MOVED_LEFT
+4350 mark F_MOVED_LEFT_2S

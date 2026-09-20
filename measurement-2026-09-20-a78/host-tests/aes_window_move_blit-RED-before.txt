@@ -1,0 +1,54 @@
+running 7 tests
+test t1_pure_move_of_the_top_window_blits_and_sends_no_redraw ... FAILED
+test t2_pure_shrink_of_the_top_window_sends_no_redraw ... FAILED
+test t3_grow_of_the_top_window_sends_one_redraw_for_the_full_rect ... ok
+test t4_move_of_a_lower_window_fans_out_top_down ... FAILED
+test t5_move_leftwards_from_past_the_right_edge_is_not_blitted ... ok
+test t5b_move_rightwards_from_past_the_right_edge_is_blitted ... FAILED
+test t6_setting_the_same_rectangle_paints_and_sends_nothing ... FAILED
+
+failures:
+
+---- t1_pure_move_of_the_top_window_blits_and_sends_no_redraw stdout ----
+
+thread 't1_pure_move_of_the_top_window_blits_and_sends_no_redraw' (3316097) panicked at tos-api/tests/aes_window_move_blit.rs:707:5:
+assertion `left == right` failed: w_move blits the vacated WS_PREV+shadow rectangle to the new WS_TRUE position, once (aes/gemwmlib.c:945-948,970); got []
+  left: []
+ right: ["copy_rect src=(30,40,322,242) -> (60,80)"]
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+
+---- t2_pure_shrink_of_the_top_window_sends_no_redraw stdout ----
+
+thread 't2_pure_shrink_of_the_top_window_sends_no_redraw' (3316098) panicked at tos-api/tests/aes_window_move_blit.rs:771:5:
+a pure-subset shrink sets stop = w_handle, moved = TRUE (aes/gemwmlib.c:1141-1146), so w_update skips the window (:1025): no WM_REDRAW. Got [[20, 1, 0, 1, 30, 40, 202, 162]]
+
+---- t4_move_of_a_lower_window_fans_out_top_down stdout ----
+
+thread 't4_move_of_a_lower_window_fans_out_top_down' (3316100) panicked at tos-api/tests/aes_window_move_blit.rs:833:5:
+assertion `left == right` failed: w_update visits the windows from W_TREE[ROOT].ob_tail (top) downwards (aes/gemwmlib.c:1021-1043): h2 first, then h1. Got [[20, 1, 0, 1, 50, 60, 322, 242], [20, 1, 0, 2, 200, 150, 172, 152]]
+  left: [(1, (50, 60, 322, 242)), (2, (200, 150, 172, 152))]
+ right: [(2, (200, 150, 172, 152)), (1, (50, 60, 322, 242))]
+
+---- t5b_move_rightwards_from_past_the_right_edge_is_blitted stdout ----
+
+thread 't5b_move_rightwards_from_past_the_right_edge_is_blitted' (3316102) panicked at tos-api/tests/aes_window_move_blit.rs:896:5:
+assertion `left == right` failed: source past the right edge but moving right: blit the on-screen part (aes/gemwmlib.c:951-970); got []
+  left: []
+ right: ["copy_rect src=(400,100,240,242) -> (420,100)"]
+
+---- t6_setting_the_same_rectangle_paints_and_sends_nothing stdout ----
+
+thread 't6_setting_the_same_rectangle_paints_and_sends_nothing' (3316103) panicked at tos-api/tests/aes_window_move_blit.rs:930:5:
+no message for an unchanged rectangle; got [[20, 1, 0, 1, 30, 40, 322, 242]]
+
+
+failures:
+    t1_pure_move_of_the_top_window_blits_and_sends_no_redraw
+    t2_pure_shrink_of_the_top_window_sends_no_redraw
+    t4_move_of_a_lower_window_fans_out_top_down
+    t5b_move_rightwards_from_past_the_right_edge_is_blitted
+    t6_setting_the_same_rectangle_paints_and_sends_nothing
+
+test result: FAILED. 2 passed; 5 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.03s
+
+error: test failed, to rerun pass `-p tos-api --test aes_window_move_blit`

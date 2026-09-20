@@ -1,0 +1,92 @@
+A78 -- wind_set(WF_CXYWH): the top window's pure move is blitted (w_move), the mover gets no
+WM_REDRAW (moved), the fan-out runs top-down in z-order (w_update).
+Developer self-evidence, 2026-09-20. Branch desk-rebuild, base HEAD b1c90fa, changes uncommitted
+in the tree. Pinned EmuTOS source references/emutos @ 1a7484ab (gemwmlib.c draw_change :1058-1223,
+w_move :938-996, w_mvfix :915-930, w_update :1004-1048, w_redraw :887-907; gemgraf.c gsx_blt
+:328-351, bb_screen :357-363).
+
+PRODUCT CODE (uncommitted; method/window-rs-a78.diff, method/spec-a78.diff)
+  tos-api/src/aes/window.rs
+    WF_CXYWH arm      -> stores PREV/CURR/WORK, then draw_change_open() for an open window
+    draw_change_open  (new) draw_change :1089-1222 branch by branch: pt==c -> return (:1115-1116);
+                      pure-subset shrink -> stop=handle, top frame, moved=TRUE (:1141-1146);
+                      superset grow -> c=pt, start=handle (:1160-1167); pure move of gl_wtop ->
+                      w_move (:1173-1178); other -> union (:1184-1190); shadow (:1213-1215);
+                      compose_except(c, skip gl_wtop if moved) = w_drawdesk + frame walk;
+                      w_update(start, c, stop, moved)
+    w_move            (new) :938-996 incl. the :951-957 refusal, w_mvfix (-1 fringe), bb_screen,
+                      left-edge cleanup (:972-982); returns (moved, stop, c)
+    w_mvfix           (new) :915-930
+    bb_screen         (new) gsx_blt/bb_screen: backend.copy_rect(S_ONLY=3, clip gl_rfull) under
+                      the counting cursor bracket (gsx_moff/gsx_mon, gemgraf.c:337,350)
+    w_update          (was broadcast_redraw) message half of :1004-1048: descending z-order
+                      (open_by_z_desc, new), range [top .. bottom], skip gl_wtop when moved.
+                      Callers: draw_change_open, close_window, redraw_dialog_area (both
+                      DESKWH..DESKWH, moved=false)
+    compose_except    (new; compose = compose_except(None)) frame walk with one handle skipped
+  docs/api/aes/window-graphics.md  section wind_set: WF_CXYWH table row + the "WF_CXYWH on an
+                      open window -- draw_change branch by branch" note (cases, blit conditions,
+                      moved-skip, top-down order, rectangles, line refs)
+  tos-api/tests/aes_window_move_blit.rs (new, 7 cases T1/T2/T3/T4/T5/T5b/T6)
+
+HOST TESTS (host-tests/)
+  aes_window_move_blit-RED-before.txt   HEAD window.rs: 5 FAILED / 2 passed
+      T1 no copy_rect (expected 1) ; T2 1 WM_REDRAW (expected 0) ; T4 order [h1,h2] (expected
+      [h2,h1]) ; T5b no copy_rect ; T6 1 WM_REDRAW for an unchanged rect. T3 and T5 already ok.
+  aes_window_move_blit-GREEN-after.txt  7/7.
+  xtask-test.log   cargo run -p xtask -- test = 660 / 0 / 1 (baseline 653 + 7).
+
+BUILD / CLIPPY (build/)
+  cargo run -p xtask -- build --board qemu-virt / rpi4: rustc tos-api 64 / kernel 94, exit 0 (both).
+  cargo clippy -p kernel --no-default-features --features board-qemu-virt / board-rpi4:
+      tos-api 81 / kernel 125 (both). Baseline 64/94, 81/125 -- delta 0.
+  kernel8-a78-SCRATCH-injector-after.img   sha256 d504f4c085684eaa... scratch copy of the crates
+      (method/a78_make_scratch.sh: rsync, never the shared tree) + H02 injector + H02 serial AES
+      trace ([aes] op lines, [h02] post_msg lines) + A46 dual arming; window.rs = working tree.
+      dev profile (as A46).
+  kernel8-a78-SCRATCH-injector-before.img  sha256 b5a4d96f6594c586... same scratch, window.rs = HEAD
+      b1c90fa.
+  scratch-build-{after,before}.log
+
+IMAGES
+  tools/make-sd-image.sh <scratch>/img/sd-base.img 64 (sha256 217781196006d2fb...);
+  + NEWDESK.INF (#Z TeraDesk, method/newdesk-user.inf) + Apps\TERADESK\TERADESK.INF
+  (method/teradesk-user.inf) via method/sd-put.sh -> sd-tera.img (sha256 1907985426f0faf2...).
+  Every run on a fresh copy. QEMU raspi4b 640x480, -display none, QMP screendump,
+  socket /private/tmp/claude-501/a78-<tag>.sock. grep -c "EXC\|panic" = 0 in all four logs.
+
+RUNS (method/run.sh; screendumps/, serial/)
+  tera-after / tera-before  (sd-tera, method/tera-move.actions): A_IDLE +1100; park; (300,300);
+      double-click HARD DISC C (195,35) -> C:\ window (303,142,640,449) reaching past the right and
+      bottom edges; arm; title bar (450,152); drag DOWN 80 px, release -> C_MOVED_DOWN (+0.5 s),
+      D (+2 s); drag LEFT 300 px, release -> E_MOVED_LEFT, F (+2 s).
+      Serial trace, drag 1 (down; pure move of gl_wtop, source off-screen only right/bottom, move
+      away from those edges -> blit):
+        after : post_msg [28,1,0,1,303,222,640,449]  ...  op 105 in=(1,5,303,222,640,449)
+                -> NO post_msg [20,...] (no WM_REDRAW to the mover); TeraDesk does wind_get +
+                menu_ienable only (serial/tera-after-serial.log:69-97)
+        before: post_msg [28,...] ; post_msg [20,1,0,1,304,264,616,384] (work rect) ;
+                post_msg [20,1,0,1,303,222,337,258] (damage ∩ hull) ; op 105 ... -> TeraDesk
+                redraws the window (serial/tera-before-serial.log:69-152)
+      Serial trace, drag 2 (left; source past the right edge AND moving left -> w_move refuses,
+      :951-957):
+        after : post_msg [20,1,0,1,7,222,633,258] = ((s ∪ d) ∩ gl_rfull + S) ∩ hull(rlist) -- the
+                EmuTOS value ; op 105 in=(1,5,7,222,640,449)
+        before: post_msg [20,1,0,1,8,264,616,384] ; post_msg [20,1,0,1,7,222,633,258]
+      Screendumps: before vs after 0 pixels at all six marks (the blitted window is pixel-identical
+      to the one TeraDesk redrew). C vs D (after): 0 pixels (settled at +0.5 s already).
+      A-idle vs measurement-2026-09-19-a46/screendumps/tera-{after,before}-A-idle.png: 194 pixels,
+      bbox (300,239)-(330,316) = the mouse sprite only (ours at the boot position (319,239), A46's
+      already on its way to (300,300) -- a dump-vs-park timing race in the method); identical for
+      the before kernel, i.e. not an A78 effect. Everything else byte-equal.
+  desk-after / desk-before  (sd-base, our desktop, method/desk-move.actions): A_IDLE +1100 after
+      "[desk] desktop up"; park; (300,300); arm; C:\ window title (200,53); drag (+30,+40),
+      release -> C_MOVED (+0.5 s), D (+2 s). desk/'s WM_MOVED handler answers with
+      wind_set(WF_CXYWH) (op 105 in=(1,5,80,83,544,400)):
+        after : NO post_msg [20,...] after the WM_MOVED (serial/desk-after-serial.log:59-61)
+        before: post_msg [20,1,0,1,81,125,520,335] ; post_msg [20,1,0,1,80,83,546,397]
+      Screendumps: before vs after 0 pixels at all three marks; C vs D 0.
+      A-idle vs a46 desk-{after,before}-A-idle.png: 104 pixels, bbox (301,240)-(330,315) = the
+      mouse sprite only, same race, identical for both kernels.
+
+NOT RUN: real Pi 4 (Tester/Lead). No commit. docs/STATUS.md not touched (scope).

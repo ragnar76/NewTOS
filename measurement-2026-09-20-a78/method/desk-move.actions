@@ -1,0 +1,15 @@
+# A78 (our desktop, sd-base, no #Z): idle dump (the C:\ window is open at boot,
+# fully on screen), arm the serial trace, drag it by its title bar (200,53) by
+# (+30,+40): pure move of gl_wtop fully on screen -> desk/ answers WM_MOVED with
+# wind_set(WF_CXYWH) -> w_move blits, no WM_REDRAW to the window.
+# Ticks are 200 Hz after "[desk] desktop up" (A46 dual arming).
+1100 mark A_IDLE
+1200 park
+1206 move 300 300
+1400 arm
+1500 move 200 53
+1700 down
+1750 drag 230 93
+1850 up
+1950 mark C_MOVED
+2350 mark D_MOVED_2S
