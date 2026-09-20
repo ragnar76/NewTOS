@@ -1,0 +1,842 @@
+diff --git a/tos-api/src/aes/event.rs b/tos-api/src/aes/event.rs
+index 142bb72..59717f7 100644
+--- a/tos-api/src/aes/event.rs
++++ b/tos-api/src/aes/event.rs
+@@ -108,13 +108,15 @@ fn menu_intercept(idx: usize) -> bool {
+     if tree.is_null() {
+         return false;
+     }
+-    // Hover model: the drop-down opens whenever the cursor is over the bar
+-    // with the buttons up — `mchange`'s hand-over condition, no click required.
+-    // The bar is `gl_rmenu = (0, 0, gl_width, gl_hbox)` (`gemgraf.c:427`), the
+-    // Control Manager's wait rectangle; its height is the one `gl_hbox`
+-    // (`graf::gl_hbox`), not a number of this module's own.
+-    let (_mx, my) = crate::vdi::mouse_position();
+-    if my >= super::graf::gl_hbox() || crate::vdi::mouse_buttons() & 0x01 != 0 {
++    // Hover model: the drop-down opens whenever the cursor is over the
++    // Control Manager's wait rectangle with the buttons up — `mchange`'s
++    // hand-over condition, no click required. That rectangle is `gl_ctwait`,
++    // the registered bar's `THEACTIVE` extent (`mn_bar`, `gemmnlib.c:717`;
++    // `ctlmgr`'s `MU_M1` wait, `gemctrl.c:456-460`) — the titles, not the
++    // whole `gl_rmenu` row: a pointer right of the last title is the
++    // application's (A87).
++    let (mx, my) = crate::vdi::mouse_position();
++    if !super::menu::in_ctwait(mx, my) || crate::vdi::mouse_buttons() & 0x01 != 0 {
+         return false;
+     }
+     let Some(backend) = host().and_then(|h| h.raster()) else {
+diff --git a/tos-api/src/aes/graf.rs b/tos-api/src/aes/graf.rs
+index 76f1431..5270901 100644
+--- a/tos-api/src/aes/graf.rs
++++ b/tos-api/src/aes/graf.rs
+@@ -522,9 +522,10 @@ pub fn graf_slidebox(pb: &Aespb) {
+ // menu-bar row / gadget box height comes from. `graf_handle` reports it
+ // (`gemsuper.c:288-291`), the window manager builds `gl_rfull` and the
+ // gadget cells from it (`window::desktop_work`, `window::adj_hbox`), the
+-// Menu Manager reserves the row with it (`menu::desk_top`) and the Event
+-// Manager's bar interception tests the pointer against it
+-// (`event::menu_intercept`, EmuTOS `gl_rmenu`, `gemgraf.c:427`).
++// Menu Manager reserves the row with it (`menu::desk_top`) and the mouse
++// ownership test for a press reads the row from it (`window::chk_ctrl`,
++// EmuTOS `gl_rmenu`, `gemgraf.c:427`; the bar *track* itself waits on
++// `THEACTIVE`'s extent, `menu::in_ctwait`).
+ 
+ /// EmuTOS `gl_width` (`gemgraf.c:37`, set `:393`: `gl_ws.ws_xres + 1`) — the
+ /// AES workstation's pixel width, read from the raster backend the AES draws
+diff --git a/tos-api/src/aes/input.rs b/tos-api/src/aes/input.rs
+index 05f8e35..36e388e 100644
+--- a/tos-api/src/aes/input.rs
++++ b/tos-api/src/aes/input.rs
+@@ -152,11 +152,14 @@ pub(crate) fn b_click(new: u8) {
+ ///    the pending button delay to expire immediately, `b_delay(gl_bdely)`
+ ///    (`:365-368`). The clicks counted so far are delivered at once; a click
+ ///    after the move starts a new gesture instead of completing a double click.
+-/// 2. The pointer entering the menu bar with the buttons up hands the mouse to
+-///    the Control Manager (`:387-389`), which is how a hover menu takes over
+-///    without a click. `gl_ctwait` is the menu tree's `THEACTIVE` rectangle
+-///    (`aes/gemmnlib.c:717`), the menu-bar row — [`menu::desk_top`] here, the
+-///    same row [`event::menu_intercept`] tracks.
++/// 2. The pointer entering the Control Manager's wait rectangle with the
++///    buttons up hands the mouse to the Control Manager (`:387-389`), which is
++///    how a hover menu takes over without a click. That rectangle is
++///    `gl_ctwait` = the registered bar's `THEACTIVE` extent
++///    (`aes/gemmnlib.c:717`; [`menu::in_ctwait`](super::menu::in_ctwait)) —
++///    the titles' width, **not** the whole bar row: a pointer in the row right
++///    of the last title stays with the application (A87). The same rectangle
++///    is what [`event::menu_intercept`](super::event) tracks.
+ // The threshold test is EmuTOS's line for line (`aes/geminput.c:366-367`);
+ // folding it into two range checks would read further from the source than it
+ // is worth.
+@@ -172,10 +175,12 @@ pub(crate) fn mchange(rx: i16, ry: i16) {
+     XRAT.store(rx, Ordering::Relaxed);
+     YRAT.store(ry, Ordering::Relaxed);
+ 
++    // `if ((gl_mowner != ctl_pd) && (button == 0) && gl_mntree &&
++    // in_mrect(&gl_ctwait)) gl_mowner = ctl_pd;` (aes/geminput.c:388-389)
+     if GL_MOWNER_APP.load(Ordering::Relaxed)
+         && BUTTON.load(Ordering::Relaxed) == 0
+         && !super::menu::active().is_null()
+-        && ry < super::menu::desk_top()
++        && super::menu::in_ctwait(rx, ry)
+     {
+         GL_MOWNER_APP.store(false, Ordering::Relaxed);
+     }
+diff --git a/tos-api/src/aes/menu.rs b/tos-api/src/aes/menu.rs
+index 6ef4ec5..171e0ce 100644
+--- a/tos-api/src/aes/menu.rs
++++ b/tos-api/src/aes/menu.rs
+@@ -33,7 +33,7 @@ use crate::bdos::process::Abi;
+ use crate::host::host;
+ use crate::vdi::backend::{ClipRect, Pel, RasterBackend};
+ use core::cell::UnsafeCell;
+-use core::sync::atomic::{AtomicUsize, Ordering};
++use core::sync::atomic::{AtomicBool, AtomicU64, AtomicUsize, Ordering};
+ 
+ /// `THESCREEN` — the menu tree root; its `ob_tail` is the box that holds
+ /// all drop-down menus.
+@@ -55,6 +55,82 @@ pub fn active() -> *mut Object {
+     MNTREE.load(Ordering::Relaxed) as *mut Object
+ }
+ 
++/// EmuTOS `gl_ctwait.m_gr` (`aes/gemctrl.c:48`, `MOBLK gl_ctwait`) — the
++/// Control Manager's mouse-wait rectangle, packed `(x, y, w, h)` as four `i16`
++/// in one word so a reader always sees one consistent rectangle. It has
++/// exactly two values: `THEACTIVE`'s absolute extent while a bar is installed
++/// (`ob_actxywh(tree, THEACTIVE, &gl_ctwait.m_gr)`, `aes/gemmnlib.c:717`),
++/// and `gl_rmenu` — the whole menu-bar row, `(0, 0, gl_width, gl_hbox)`
++/// (`aes/gemgraf.c:427`) — before any bar (`ctlmgr`'s init,
++/// `aes/gemctrl.c:438`) and after `mn_bar(…, FALSE)` (`aes/gemmnlib.c:727`).
++/// [`CTWAIT_BAR`] says which; the `gl_rmenu` state is not stored as numbers
++/// because its width is the device's (see [`in_ctwait`]).
++///
++/// `m_out` is never set (`gemctrl.c:437`), so `in_mrect(&gl_ctwait)` is a
++/// plain inside test (`aes/geminput.c:76-79`).
++static CTWAIT_RECT: AtomicU64 = AtomicU64::new(0);
++static CTWAIT_BAR: AtomicBool = AtomicBool::new(false);
++
++/// Pack a `(x, y, w, h)` rectangle for [`CTWAIT_RECT`].
++fn pack_rect((x, y, w, h): (i16, i16, i16, i16)) -> u64 {
++    (x as u16 as u64) | ((y as u16 as u64) << 16) | ((w as u16 as u64) << 32) | ((h as u16 as u64) << 48)
++}
++
++/// Unpack a [`CTWAIT_RECT`] word into `(x, y, w, h)`.
++fn unpack_rect(v: u64) -> (i16, i16, i16, i16) {
++    (v as u16 as i16, (v >> 16) as u16 as i16, (v >> 32) as u16 as i16, (v >> 48) as u16 as i16)
++}
++
++/// `in_mrect(&gl_ctwait)` (`aes/geminput.c:76-79`): is `(mx, my)` inside the
++/// Control Manager's wait rectangle? This is the rectangle — and the only one
++/// — that hands the mouse to `ctl_pd` on a move with the buttons up
++/// (`mchange`, `aes/geminput.c:388-389`, [`input::mchange`](super::input::mchange))
++/// and that the Control Manager's `MU_M1` wait covers (`ctlmgr`,
++/// `aes/gemctrl.c:456-460`, [`event::menu_intercept`](super::event)). A pointer
++/// in the bar row **right of the last title** is outside it, and stays with
++/// the application (A87).
++///
++/// With no bar the rectangle is `gl_rmenu = (0, 0, gl_width, gl_hbox)`
++/// (`aes/gemgraf.c:427`); the pointer is clipped to the screen, so
++/// `inside(mx, my, &gl_rmenu)` reduces to `my < gl_hbox`. Both consumers gate
++/// on `gl_mntree` first (`geminput.c:388`, `gemctrl.c:451-452`), so this arm
++/// is never what decides a hand-over — it is kept for what `gl_ctwait` *is*.
++pub(super) fn in_ctwait(mx: i16, my: i16) -> bool {
++    if !CTWAIT_BAR.load(Ordering::Relaxed) {
++        return my < gl_hbox();
++    }
++    let (x, y, w, h) = unpack_rect(CTWAIT_RECT.load(Ordering::Relaxed));
++    mx >= x && mx < x + w && my >= y && my < y + h
++}
++
++/// The Control Manager's wait rectangle `(x, y, w, h)` while a bar is
++/// installed, `None` in the `gl_rmenu` state. For tests and diagnostics.
++#[cfg(test)]
++fn ctwait_bar_rect() -> Option<(i16, i16, i16, i16)> {
++    CTWAIT_BAR.load(Ordering::Relaxed).then(|| unpack_rect(CTWAIT_RECT.load(Ordering::Relaxed)))
++}
++
++/// `mn_bar(tree, TRUE)`'s state half (`aes/gemmnlib.c:712-717`): `gl_mntree =
++/// tree` and `ob_actxywh(tree, THEACTIVE, &gl_ctwait.m_gr)` — the wait
++/// rectangle becomes `THEACTIVE`'s absolute extent in the tree as registered
++/// (after `THEBAR` was stretched to the screen; `THEACTIVE` itself is not
++/// resized, its width is the titles'). `THEACTIVE` is a plain `G_IBOX`, so
++/// `ob_actxywh`'s `FL3DOBJ` growth (`gemoblib.c:322-335`) does not apply and
++/// [`object::abs_rect`] is the whole of it. No drawing here: [`menu_bar`] draws.
++fn install_bar(tree: *mut Object) {
++    MNTREE.store(tree as usize, Ordering::Relaxed);
++    CTWAIT_RECT.store(pack_rect(object::abs_rect(tree as *const Object, THEACTIVE)), Ordering::Relaxed);
++    CTWAIT_BAR.store(true, Ordering::Relaxed);
++}
++
++/// `mn_bar(…, FALSE)`'s state half (`aes/gemmnlib.c:726-727`): `gl_mntree =
++/// NULL` and `rc_copy(&gl_rmenu, &gl_ctwait.m_gr)`. Independent of the screen,
++/// as EmuTOS's is: dropping the bar must forget the tree with no raster up.
++fn remove_bar() {
++    MNTREE.store(0, Ordering::Relaxed);
++    CTWAIT_BAR.store(false, Ordering::Relaxed);
++}
++
+ /// Parked menu tree during a modal dialog (`ml_mnhold`, EmuTOS gemfmlib.c:56).
+ /// A single slot suffices because `fm_own` only saves on the outermost
+ /// `ml_ocnt == 0` → 1 transition and restores on 1 → 0 (nested dialogs do not
+@@ -150,10 +226,11 @@ pub fn menu_bar(pb: &Aespb) {
+     let show = pb.intin(0);
+ 
+     if show == 0 {
+-        // `gl_mntree = NULL` (`gemmnlib.c:726`) — unconditional, and
+-        // independent of the screen: dropping the bar must forget the tree
+-        // even with no raster backend up.
+-        MNTREE.store(0, Ordering::Relaxed);
++        // `gl_mntree = NULL; rc_copy(&gl_rmenu, &gl_ctwait.m_gr)`
++        // (`gemmnlib.c:726-727`) — unconditional, and independent of the
++        // screen: dropping the bar must forget the tree even with no raster
++        // backend up.
++        remove_bar();
+         if let Some(backend) = host().and_then(|h| h.raster()) {
+             let sw = backend.width() as i16;
+             let clip = ClipRect::full(backend.width(), backend.height());
+@@ -190,7 +267,10 @@ pub fn menu_bar(pb: &Aespb) {
+     object::draw_obj(tree as *const Object, THEBAR, MAX_DEPTH, backend);
+     // Separator line under the bar (`gsx_cline(0, gl_hbox-1, …)`, gemmnlib.c:722).
+     backend.fill_rect(0, gl_hbox() - 1, sw, 1, BLACK, clip);
+-    MNTREE.store(tree as usize, Ordering::Relaxed);
++    // `gl_mntree = tree; … ob_actxywh(tree, THEACTIVE, &gl_ctwait.m_gr)`
++    // (`gemmnlib.c:713,717`): the Control Manager waits on `THEACTIVE`'s
++    // extent from now on, not on the whole bar row (A87).
++    install_bar(tree);
+     pb.set_ret(1);
+ }
+ 
+@@ -982,7 +1062,22 @@ impl Menu {
+ /// `menu_popup` (36) — display the pop-up menu described by `addr_in[0]`
+ /// (`MENU`) so its start item sits at (`int_in[0]`, `int_in[1]`), track it,
+ /// and write the chosen item into the `MENU` at `addr_in[1]`. Returns 1 on a
+-/// selection, 0 on cancel. EmuTOS `mn_popup` (single level, no sub-menus).
++/// selection, 0 on cancel. EmuTOS `mn_popup` (`gemmnext.c:304-356`, single
++/// level, no sub-menus).
++///
++/// The whole call runs inside `wm_update(BEG_MCTRL)` … `wm_update(END_MCTRL)`
++/// (`:312,353`) = `fm_own(TRUE/FALSE)` (`gemwmlib.c:1778-1797`,
++/// `gemfmlib.c:82-107`): the update semaphore is held, `gl_mntree` is parked
++/// (no bar track can start while the pop-up is up — `mchange`'s hand-over
++/// and `ctlmgr`'s `MU_M1` both gate on it), the control rectangle is the
++/// whole screen (`ct_chgown(rlr, &gl_rscreen)`, so a press anywhere is the
++/// caller's, not the bar row's `ctl_pd`), and `END_MCTRL` restores all of
++/// it. That bracket is [`window::fm_own`](super::window::fm_own), the same
++/// one `wind_update(BEG_MCTRL)` and `form_do` drive (A88).
++///
++/// The output `MENU` gets `mn_keystate` = the shift state at the selecting
++/// press on a pick (`handle_popup`'s `keystate = rets[3]`, `:272`, copied at
++/// `:342`), and `0` on no pick (`:347`).
+ pub fn menu_popup(pb: &Aespb) {
+     // `MENU` bases, read at the caller's pointer width (0 = null); the struct
+     // fields are decoded at the caller ABI's offsets, not the native layout.
+@@ -993,7 +1088,11 @@ pub fn menu_popup(pb: &Aespb) {
+         pb.set_ret(0);
+         return;
+     }
+-    let Some(backend) = host().and_then(|h| h.raster()) else {
++    let Some(h) = host() else {
++        pb.set_ret(0);
++        return;
++    };
++    let Some(backend) = h.raster() else {
+         pb.set_ret(0);
+         return;
+     };
+@@ -1004,19 +1103,21 @@ pub fn menu_popup(pb: &Aespb) {
+         pb.set_ret(0);
+         return;
+     }
+-    // Position the box so `start_item` sits at (xpos, ypos); clamp to screen.
+-    let t = ObjTree::new(tree);
+-    let iy = if start_item >= 0 { t.y(start_item) } else { 0 };
+-    t.set_x(box_obj, xpos.clamp(0, (backend.width() as i16 - t.width(box_obj)).max(0)));
+-    t.set_y(box_obj, (ypos - iy).clamp(0, (backend.height() as i16 - t.height(box_obj)).max(0)));
+-    let sel = popup_track(tree, box_obj, backend);
++    let (sel, keystate) = mn_popup(tree, box_obj, start_item, xpos, ypos, backend, h);
+     if mdata != 0 {
++        // A pick (`:338-343`): `mn_tree`/`mn_menu` as input (no submenus
++        // from a pop-up), `mn_item` the choice, `mn_scroll` copied from the
++        // input, `mn_keystate` the shift state at the press. No pick:
++        // `mn_keystate = 0` (`:347`) — EmuTOS writes nothing else on that
++        // branch; NewTOS (pre-existing) also writes the other four fields
++        // (tree/menu/scroll as input, item NIL) — observable only to a caller
++        // that reads them after an `rc` of 0.
+         let out = Menu {
+             mn_tree: tree as u64,
+             mn_menu: box_obj,
+             mn_item: sel,
+-            mn_scroll: 0,
+-            mn_keystate: 0,
++            mn_scroll: m.mn_scroll,
++            mn_keystate: if sel >= 0 { keystate } else { 0 },
+         };
+         // SAFETY: valid MENU out (GEM contract), packed at the caller ABI width.
+         unsafe { out.write_abi(mdata, pb.abi) };
+@@ -1024,26 +1125,95 @@ pub fn menu_popup(pb: &Aespb) {
+     pb.set_ret(if sel >= 0 { 1 } else { 0 });
+ }
+ 
+-/// Track a single pop-up box: hover highlights the item under the cursor, a
+-/// button press picks it (or cancels outside any item). Returns the item or
+-/// `NIL`. The screen under the box goes to a fresh pool block for this one
+-/// opening (`popup_blit`, `gemmnext.c:329-333`), not the drop-down's screen
+-/// buffer; no block, no pop-up — `NIL` without a track (D-086,
++/// `clamp_ypos` (`gemmnext.c:114-127`): move the pop-up box, in `gl_hchar`
++/// steps, until it neither runs off the bottom of the screen
++/// (`y_limit = gl_rscreen.g_h - ob_height`) nor reaches into the menu-bar
++/// row (`y_limit = gl_rfull.g_y` = `gl_hbox`, `gemgraf.c:424`) — the second
++/// rule wins when both cannot hold. `x` is not touched (`ob_x = xpos`,
++/// `:322`); the save rectangle clamps itself to the screen ([`sr_rect`]).
++fn clamp_ypos(t: ObjTree, obj: i16, backend: &dyn RasterBackend) {
++    let hchar = super::graf::gl_hchar();
++    let mut y = t.y(obj);
++    // "make sure that object doesn't extend past the bottom of the screen"
++    let y_limit = backend.height() as i16 - t.height(obj);
++    while y > y_limit {
++        y -= hchar;
++    }
++    // "even more importantly, it mustn't extend into the menu area"
++    let y_limit = gl_hbox();
++    while y < y_limit {
++        y += hchar;
++    }
++    t.set_y(obj, y);
++}
++
++/// EmuTOS `mn_popup` (`gemmnext.c:304-356`) with the parameter block already
++/// decoded: take the mouse (`wm_update(BEG_MCTRL)`, `:312`), wait for the
++/// button that opened the pop-up to come up (`ev_button(1, 0x00ff, 0x0000,
++/// rets)`, `:314`), position the parent box so `start_item` sits at `(xpos,
++/// ypos)` and clamp it ([`clamp_ypos`], `:320-324`), save + show + track +
++/// restore ([`popup_shown`], `:326-334`), wait for the button that picked or
++/// cancelled to come up as well (`:351`), give the mouse back
++/// (`wm_update(END_MCTRL)`, `:353`). The call returns with the button
++/// **up**, so the selecting press never reaches the caller's next `evnt_*`
++/// wait (`docs/api/aes/menu.md` "Contract addition — … it consumes the
++/// selecting press", A73 point 3). Returns `(item, shift state at the
++/// pick)`, `(NIL, 0)` on no pick.
++///
++/// The screen under the box goes to a fresh pool block for this one opening
++/// (`popup_blit`, `gemmnext.c:329-333`), not the drop-down's screen buffer;
++/// no block, no pop-up — `NIL` without a track (D-086,
+ /// `docs/api/aes/menu.md`).
+ ///
+-/// The shape is `mn_popup`'s (`gemmnext.c:304-356`): wait for the button
+-/// that opened the pop-up to come up (`ev_button(1, 0x00ff, 0x0000, rets)`,
+-/// `:314`), save + show + track + restore ([`popup_shown`]), then wait for
+-/// the button that picked or cancelled to come up as well (`:351`) — the
+-/// call returns with the button **up**, so the selecting press never reaches
+-/// the caller's next `evnt_*` wait (`docs/api/aes/menu.md` "Contract
+-/// addition — … it consumes the selecting press", A73 point 3).
+-fn popup_track(tree: *mut Object, box_obj: i16, backend: &dyn RasterBackend) -> i16 {
+-    let Some(h) = host() else { return NIL };
++/// `h`/`backend` are passed in rather than looked up so the unit tests can
++/// drive this body with a scripted host and no process-wide installation.
++fn mn_popup(
++    tree: *mut Object,
++    box_obj: i16,
++    start_item: i16,
++    xpos: i16,
++    ypos: i16,
++    backend: &dyn RasterBackend,
++    h: &dyn crate::host::Host,
++) -> (i16, i16) {
++    // `wm_update(BEG_MCTRL); /* take over the mouse */` (`gemmnext.c:312`)
++    // = `fm_own(TRUE)` (`gemwmlib.c:1778-1797`, `gemfmlib.c:82-96`):
++    // update semaphore, `gl_mntree` parked, control rectangle = the whole
++    // screen — [`window::fm_own`](super::window::fm_own), the bracket
++    // `wind_update(BEG_MCTRL)` and `form_do` use. `END_MCTRL` below undoes
++    // it on every way out.
++    super::window::fm_own(true);
++    let r = mn_popup_owned(tree, box_obj, start_item, xpos, ypos, backend, h);
++    // `wm_update(END_MCTRL); /* give back the mouse */` (`gemmnext.c:353`).
++    super::window::fm_own(false);
++    r
++}
++
++/// The body of [`mn_popup`] between its two `wm_update` calls
++/// (`gemmnext.c:314-351`).
++fn mn_popup_owned(
++    tree: *mut Object,
++    box_obj: i16,
++    start_item: i16,
++    xpos: i16,
++    ypos: i16,
++    backend: &dyn RasterBackend,
++    h: &dyn crate::host::Host,
++) -> (i16, i16) {
+     let tp = tree as *const Object;
+     // `ev_button(1, 0x00ff, 0x0000, rets); /* wait for button up */`
+     // (`gemmnext.c:314`): the button that opened the pop-up.
+     wait_button_up(h);
++    // "xpos/ypos are the location of the *start* item, not the parent box,
++    // so to get the y position of the parent, we first need to subtract the
++    // y offset of the start item" (`:316-324`). EmuTOS indexes
++    // `tree[menu->mn_item]` unguarded; a negative start item is a caller
++    // bug NewTOS reads as offset 0 instead of faulting.
++    let t = ObjTree::new(tree);
++    let iy = if start_item >= 0 { t.y(start_item) } else { 0 };
++    t.set_x(box_obj, xpos);
++    t.set_y(box_obj, ypos - iy);
++    clamp_ypos(t, box_obj, backend);
+     crate::vdi::cursor_hide(backend);
+     let (bx, by, bw, bh) = sr_rect(tp, box_obj, backend);
+     let Some(saved) = gsxif::popup_blit_save(backend, bx, by, bw, bh) else {
+@@ -1051,14 +1221,14 @@ fn popup_track(tree: *mut Object, box_obj: i16, backend: &dyn RasterBackend) ->
+         // (`:351`) has nothing left to wait for here: the first one just
+         // saw the button up and nothing was pumped since.
+         crate::vdi::cursor_show(backend);
+-        return NIL;
++        return (NIL, 0);
+     };
+     popup_shown(tree, box_obj, backend, h, saved)
+ }
+ 
+ /// `ev_button(1, 0x00ff, 0x0000, rets)` — block until the left button is
+ /// up, pumping input meanwhile. `mn_popup` runs it twice (`gemmnext.c:314,
+-/// 351`); [`popup_track`] and [`popup_shown`] do the same.
++/// 351`); [`mn_popup_owned`] and [`popup_shown`] do the same.
+ fn wait_button_up(h: &dyn crate::host::Host) {
+     while crate::vdi::mouse_buttons() & 0x01 != 0 {
+         h.pump_input();
+@@ -1069,15 +1239,18 @@ fn wait_button_up(h: &dyn crate::host::Host) {
+ /// already taken with the cursor hidden), track until a button press
+ /// (`handle_popup`, `gemmnext.c:229-298`), put the pixels back
+ /// (`popup_blit(obj, buf)`, `:333`), then wait for that press to be released
+-/// (`ev_button(1, 0x00ff, 0x0000, rets)`, `:351`). Returns the picked item or
+-/// `NIL`.
++/// (`ev_button(1, 0x00ff, 0x0000, rets)`, `:351`). Returns `(item, keystate)`:
++/// the picked item or `NIL`, and the keyboard shift state at the press —
++/// `handle_popup`'s `keystate = rets[3]` after the `ev_multi` that returned
++/// the button (`:268-272`, `ev_rets`'s `rets[3] = kstate`, `gemevlib.c:56`),
++/// read here from the host as `graf_mkstate`/`ev_rets` do.
+ fn popup_shown(
+     tree: *mut Object,
+     box_obj: i16,
+     backend: &dyn RasterBackend,
+     h: &dyn crate::host::Host,
+     saved: gsxif::Saved,
+-) -> i16 {
++) -> (i16, i16) {
+     let tp = tree as *const Object;
+     let (bx, by, bw, bh) = saved.rect();
+     object::draw_obj_clip(tp, box_obj, MAX_DEPTH, sr_clip(bx, by, bw, bh), backend);
+@@ -1085,6 +1258,7 @@ fn popup_shown(
+ 
+     let mut cur_item = NIL;
+     let result;
++    let keystate;
+     loop {
+         let (mx, my) = crate::vdi::mouse_position();
+         let it = object::child_at(tp, box_obj, mx, my);
+@@ -1109,6 +1283,10 @@ fn popup_shown(
+         }
+         if crate::vdi::mouse_buttons() & 0x01 != 0 {
+             result = cur_item; // NIL when pressed outside any item → cancel
++            // `keystate = rets[3]` of the `ev_multi` that returned `MU_BUTTON`
++            // (`gemmnext.c:272`): the shift state at the press, not at the
++            // release the wait below consumes.
++            keystate = h.keyboard_shift_state() as i16;
+             break;
+         }
+         h.pump_input();
+@@ -1126,7 +1304,7 @@ fn popup_shown(
+     // `handle_popup` returns on the press itself (`:290-291`) — and its
+     // release are both consumed inside the call.
+     wait_button_up(h);
+-    result
++    (result, keystate)
+ }
+ 
+ /// Native `MN_SET` behaviour block (later-AES).
+@@ -1672,19 +1850,31 @@ pub fn selftest_menu_sr_residue(backend: &dyn RasterBackend) -> (u32, u32) {
+ 
+ #[cfg(test)]
+ mod popup_wait_tests {
+-    //! `popup_shown` returns only once the button that picked the item is up
+-    //! again — `mn_popup`'s second `ev_button(1, 0x00ff, 0x0000, rets)`
+-    //! (`aes/gemmnext.c:351`; A73 point 3, `docs/api/aes/menu.md` "Contract
+-    //! addition — … it consumes the selecting press"). The pop-up is driven on
+-    //! a raster stand-in that keeps no pixels and a host whose `pump_input`
+-    //! plays a scripted button sequence; the pixels under the box come from
++    //! `mn_popup` on the host, three neighbours of one call:
++    //!
++    //! * `popup_shown` returns only once the button that picked the item is
++    //!   up again — `mn_popup`'s second `ev_button(1, 0x00ff, 0x0000, rets)`
++    //!   (`aes/gemmnext.c:351`; A73 point 3, `docs/api/aes/menu.md` "Contract
++    //!   addition — … it consumes the selecting press");
++    //! * the `wm_update(BEG_MCTRL)` … `END_MCTRL` bracket (`:312,353` →
++    //!   `fm_own`, `aes/gemfmlib.c:82-107`): `gl_mntree` parked and the mouse
++    //!   kept by the caller for the whole call (A88 point 1);
++    //! * `mn_keystate` = the shift state at the selecting press (`:272,342`,
++    //!   A88 point 2) and `clamp_ypos` (`:114-127`, A88 point 3).
++    //!
++    //! The pop-up is driven on a raster stand-in that keeps no pixels and a
++    //! host whose `pump_input` plays a scripted packet sequence (motion,
++    //! button, shift state); the pixels under the box come from
+     //! `gsxif::bb_save`'s heap fallback (a host process has neither the
+     //! screen buffer nor the BDOS pool `popup_blit_save` needs — the full
+     //! `menu_popup` call is the `#[ignore]`d case in
+     //! `tests/aes_a73_event_neighbours.rs`), which is enough to hand
+-    //! `popup_shown` a `Saved` to put back. Both the host and the raster are
+-    //! passed in — nothing is installed process-wide, so the hostless
+-    //! assumptions of the other unit tests in this binary stay intact.
++    //! `popup_shown` a `Saved` to put back; the paths that need the pool
++    //! (`mn_popup`'s tracked half) run their pool-less D-086 branch here. Both
++    //! the host and the raster are passed in — nothing is installed
++    //! process-wide, so the hostless assumptions of the other unit tests in
++    //! this binary stay intact. The mouse, menu and mouse-control statics are
++    //! process-wide, so the cases run one at a time ([`SERIAL`]).
+     use super::*;
+     use crate::host::Host;
+     use crate::vdi::backend::{MonoSrc, PatternFill, Rect, WriteMode};
+@@ -1692,6 +1882,9 @@ mod popup_wait_tests {
+     use std::sync::atomic::AtomicUsize;
+     use std::sync::Mutex;
+ 
++    /// The AES statics these cases drive are process-wide.
++    static SERIAL: Mutex<()> = Mutex::new(());
++
+     /// A 640×480 raster that keeps nothing: every draw is a no-op, every
+     /// read answers 0. The test observes the button, not the pixels.
+     struct NullRaster;
+@@ -1767,11 +1960,36 @@ mod popup_wait_tests {
+ 
+     static RASTER: NullRaster = NullRaster;
+ 
+-    /// Packets (VDI button byte, no motion) that `pump_input` feeds one per
+-    /// call.
++    /// One scripted packet: motion, the VDI button byte, and the keyboard
++    /// shift state the host reports from this packet on.
++    #[derive(Copy, Clone)]
++    struct Pkt {
++        dx: i16,
++        dy: i16,
++        buttons: u8,
++        shift: u8,
++    }
++
++    /// A button-only packet (no motion, no modifier).
++    fn btn(b: u8) -> Pkt {
++        Pkt { dx: 0, dy: 0, buttons: b, shift: 0 }
++    }
++
++    /// What the host saw at each pump: `gl_mntree == NULL`?
++    /// (`super::active().is_null()`), and the pointer position after the packet.
++    #[derive(Copy, Clone, Debug)]
++    struct Seen {
++        mntree_null: bool,
++        at: (i16, i16),
++    }
++
++    /// Packets that `pump_input` feeds one per call, recording the AES state
++    /// it finds on the way.
+     struct ScriptHost {
+-        script: Mutex<VecDeque<u8>>,
++        script: Mutex<VecDeque<Pkt>>,
+         idle: AtomicUsize,
++        shift: std::sync::atomic::AtomicU8,
++        seen: Mutex<Vec<Seen>>,
+     }
+ 
+     /// Pumps on an exhausted script before the test fails instead of
+@@ -1780,17 +1998,29 @@ mod popup_wait_tests {
+ 
+     impl ScriptHost {
+         fn new() -> ScriptHost {
+-            ScriptHost { script: Mutex::new(VecDeque::new()), idle: AtomicUsize::new(0) }
++            ScriptHost {
++                script: Mutex::new(VecDeque::new()),
++                idle: AtomicUsize::new(0),
++                shift: std::sync::atomic::AtomicU8::new(0),
++                seen: Mutex::new(Vec::new()),
++            }
+         }
+         fn arm(&self, packets: &[u8]) {
++            self.arm_pkts(&packets.iter().map(|&b| btn(b)).collect::<Vec<_>>());
++        }
++        fn arm_pkts(&self, packets: &[Pkt]) {
+             let mut s = self.script.lock().unwrap();
+             s.clear();
+             s.extend(packets.iter().copied());
+             self.idle.store(0, Ordering::Relaxed);
++            self.seen.lock().unwrap().clear();
+         }
+         fn left(&self) -> usize {
+             self.script.lock().unwrap().len()
+         }
++        fn seen(&self) -> Vec<Seen> {
++            self.seen.lock().unwrap().clone()
++        }
+     }
+ 
+     impl Host for ScriptHost {
+@@ -1798,10 +2028,20 @@ mod popup_wait_tests {
+         fn raster(&self) -> Option<&dyn RasterBackend> {
+             Some(&RASTER)
+         }
++        fn keyboard_shift_state(&self) -> u8 {
++            self.shift.load(Ordering::Relaxed)
++        }
+         fn pump_input(&self) {
+             let next = self.script.lock().unwrap().pop_front();
+             match next {
+-                Some(b) => crate::vdi::feed_relative(0, 0, b, &RASTER),
++                Some(p) => {
++                    self.shift.store(p.shift, Ordering::Relaxed);
++                    crate::vdi::feed_relative(p.dx, p.dy, p.buttons, &RASTER);
++                    self.seen.lock().unwrap().push(Seen {
++                        mntree_null: super::active().is_null(),
++                        at: crate::vdi::mouse_position(),
++                    });
++                }
+                 None => {
+                     let n = self.idle.fetch_add(1, Ordering::Relaxed) + 1;
+                     assert!(
+@@ -1814,6 +2054,22 @@ mod popup_wait_tests {
+         }
+     }
+ 
++    /// Walk the pointer to `(tx, ty)` with the buttons up, outside any wait
++    /// (each packet pumped directly).
++    fn park_at(host: &ScriptHost, tx: i16, ty: i16) {
++        host.arm(&[0]);
++        host.pump_input(); // materialise the pointer
++        for _ in 0..200 {
++            let (cx, cy) = crate::vdi::mouse_position();
++            if (cx, cy) == (tx, ty) {
++                return;
++            }
++            host.arm_pkts(&[Pkt { dx: (tx - cx).clamp(-32, 32), dy: (ty - cy).clamp(-32, 32), buttons: 0, shift: 0 }]);
++            host.pump_input();
++        }
++        assert_eq!(crate::vdi::mouse_position(), (tx, ty), "park_at did not reach its target");
++    }
++
+     const G_BOX: u16 = 20;
+     const G_STRING: u16 = 28;
+     const LASTOB: u16 = 0x0020;
+@@ -1865,10 +2121,9 @@ mod popup_wait_tests {
+     /// button still down and the hold packets unconsumed.
+     #[test]
+     fn popup_shown_returns_with_the_picking_button_up() {
++        let _g = SERIAL.lock().unwrap_or_else(|e| e.into_inner());
+         let host = ScriptHost::new();
+-        // Materialise the pointer (parked at the screen centre on first use).
+-        host.arm(&[0]);
+-        host.pump_input();
++        park_at(&host, 320, 240);
+         let (px, py) = crate::vdi::mouse_position();
+         assert_eq!(crate::vdi::mouse_buttons() & 1, 0, "the button starts up");
+ 
+@@ -1880,7 +2135,7 @@ mod popup_wait_tests {
+         crate::vdi::cursor_hide(&RASTER);
+         let (bx, by, bw, bh) = sr_rect(tp, 0, &RASTER);
+         let saved = gsxif::bb_save(&RASTER, bx, by, bw, bh).expect("the heap fallback saves the rectangle");
+-        let picked = popup_shown(tree, 0, &RASTER, &host, saved);
++        let (picked, _keystate) = popup_shown(tree, 0, &RASTER, &host, saved);
+ 
+         assert_eq!(picked, 2, "the item under the pointer at the press");
+         assert_eq!(
+@@ -1895,4 +2150,201 @@ mod popup_wait_tests {
+             host.left()
+         );
+     }
++
++    // ── A88 point 2: mn_keystate = the shift state at the selecting press ──
++
++    /// The pointer rests on the second item; the script presses with the
++    /// left shift held (`0x02`), keeps the button down while the shift is
++    /// released, then releases the button. `handle_popup`'s `keystate =
++    /// rets[3]` is taken from the `ev_multi` that returned the press
++    /// (`aes/gemmnext.c:268-272`), so `mn_keystate` is `0x02` — not the `0`
++    /// the state shows by the time the release has been waited out (`:351`),
++    /// nor the `0` at entry.
++    #[test]
++    fn popup_shown_reports_the_shift_state_at_the_press() {
++        let _g = SERIAL.lock().unwrap_or_else(|e| e.into_inner());
++        let host = ScriptHost::new();
++        park_at(&host, 320, 240);
++        let (px, py) = crate::vdi::mouse_position();
++        let tree = popup_tree(px, py);
++        let tp = tree as *const Object;
++        assert_eq!(object::child_at(tp, 0, px, py), 2, "the pointer must rest on the second item");
++
++        host.arm_pkts(&[
++            btn(0),
++            Pkt { dx: 0, dy: 0, buttons: 1, shift: 0x02 }, // the press, left shift held
++            Pkt { dx: 0, dy: 0, buttons: 1, shift: 0x02 },
++            Pkt { dx: 0, dy: 0, buttons: 1, shift: 0 }, // shift let go, button still down
++            btn(0), // the release
++            btn(0),
++            btn(0),
++        ]);
++        crate::vdi::cursor_hide(&RASTER);
++        let (bx, by, bw, bh) = sr_rect(tp, 0, &RASTER);
++        let saved = gsxif::bb_save(&RASTER, bx, by, bw, bh).expect("the heap fallback saves the rectangle");
++        let (picked, keystate) = popup_shown(tree, 0, &RASTER, &host, saved);
++
++        assert_eq!(picked, 2, "the item under the pointer at the press");
++        assert_eq!(
++            keystate, 0x02,
++            "mn_keystate is the shift state at the selecting press (handle_popup, \
++             aes/gemmnext.c:272 — keystate = rets[3] of the ev_multi that returned MU_BUTTON; \
++             copied to mdata at :342); the host reported 0 by the time the release was waited out"
++        );
++        assert_eq!(host.keyboard_shift_state(), 0, "the state at return is 0: the value was sampled at the press");
++        assert_eq!(crate::vdi::mouse_buttons() & 1, 0, "returned with the button up");
++    }
++
++    // ── A88 point 3: clamp_ypos ────────────────────────────────────────────
++
++    /// `clamp_ypos` (`aes/gemmnext.c:114-127`) on a 640×480 screen with the
++    /// 8×16 system font (`gl_hchar` 16, `gl_hbox` = `gl_rfull.g_y` 19): a
++    /// 57 px box requested at y = −19 (start item 1 at y = 0) is pushed down
++    /// in 16 px steps until it clears the bar row — −19 → −3 → 13 → 29; one
++    /// requested at y = 460 (start item at the screen bottom) is pulled up
++    /// until it fits above `gl_rscreen.g_h - ob_height` = 423 — 460 → 444 →
++    /// 428 → 412; a box that fits stays where it is; a box taller than the
++    /// screen ends up below the bar row (the second rule wins).
++    #[test]
++    fn clamp_ypos_moves_the_box_in_hchar_steps_off_the_bar_and_onto_the_screen() {
++        let _g = SERIAL.lock().unwrap_or_else(|e| e.into_inner());
++        let hchar = super::super::graf::gl_hchar();
++        assert_eq!((hchar, gl_hbox()), (16, 19), "the 8×16 system font");
++        let tree = popup_tree(100, 100);
++        let t = ObjTree::new(tree);
++        assert_eq!(t.height(0), 57);
++
++        t.set_y(0, -19); // ypos 0 for start item 1 (ob_y 0): 0 − 0 … a box at −19 models start item 2
++        clamp_ypos(t, 0, &RASTER);
++        assert_eq!(t.y(0), 29, "−19 → −3 → 13 → 29: the first y ≥ gl_rfull.g_y reached in gl_hchar steps (gemmnext.c:124-126)");
++
++        t.set_y(0, 460);
++        clamp_ypos(t, 0, &RASTER);
++        assert_eq!(t.y(0), 412, "460 → 444 → 428 → 412: the first y ≤ gl_rscreen.g_h − ob_height (423) (gemmnext.c:119-121)");
++
++        t.set_y(0, 200);
++        clamp_ypos(t, 0, &RASTER);
++        assert_eq!(t.y(0), 200, "a box that fits is not moved");
++
++        t.set_y(0, 19);
++        clamp_ypos(t, 0, &RASTER);
++        assert_eq!(t.y(0), 19, "y = gl_rfull.g_y is not \"into the menu area\"");
++
++        t.set_y(0, 18);
++        clamp_ypos(t, 0, &RASTER);
++        assert_eq!(t.y(0), 34, "y = 18 reaches into the bar row: one step down");
++
++        t.set_height(0, 500); // taller than the screen
++        t.set_y(0, 0);
++        clamp_ypos(t, 0, &RASTER);
++        assert_eq!(t.y(0), 32, "0 → −16 → … until ≤ 480 − 500 = −20 (−32), then up to ≥ 19: 32 — the bar-row rule wins");
++    }
++
++    // ── A88 point 1: the BEG_MCTRL / END_MCTRL bracket ─────────────────────
++
++    /// A bar tree whose `THEACTIVE` is one 56 px title wide: `ROOT` (`G_IBOX`
++    /// 640×480) → `THEBAR` (`G_BOX` 640×19) → `THEACTIVE` (`G_IBOX` 56×19) →
++    /// one `G_TITLE`.
++    fn bar_tree() -> *mut Object {
++        static T: &[u8] = b"File\0";
++        let o = |ty: u16, fl: u16, spec: u64, x, y, w, h, next, head, tail| Object {
++            ob_next: next,
++            ob_head: head,
++            ob_tail: tail,
++            ob_type: ty,
++            ob_flags: fl,
++            ob_state: 0,
++            ob_spec: spec,
++            ob_x: x,
++            ob_y: y,
++            ob_width: w,
++            ob_height: h,
++        };
++        let tree: Box<[Object; 4]> = Box::new([
++            o(25, 0, 0, 0, 0, 640, 480, NIL, 1, 1),
++            o(G_BOX, 0, 0, 0, 0, 640, 19, 0, 2, 2),
++            o(25, 0, 0, 0, 0, 56, 19, 1, 3, 3),
++            o(G_TITLE, LASTOB, T.as_ptr() as u64, 0, 0, 56, 19, 2, NIL, NIL),
++        ]);
++        Box::leak(tree).as_mut_ptr()
++    }
++
++    /// **The bracket.** A bar is installed (`gl_mntree` set, `gl_ctwait` =
++    /// `THEACTIVE` = (0,0,56,19)); the pointer rests on the desktop with the
++    /// opening press held when `mn_popup` is entered. While `mn_popup` waits
++    /// for that button to come up (`ev_button`, `:314`), the script drags the
++    /// pointer into `THEACTIVE`, then releases it there with a one-pixel
++    /// move — the exact `mchange` condition for handing the mouse to
++    /// `ctl_pd` (`button == 0 && gl_mntree && in_mrect(&gl_ctwait)`,
++    /// `aes/geminput.c:388-389`). Under `wm_update(BEG_MCTRL)` = `fm_own(TRUE)`
++    /// (`:312`; `aes/gemfmlib.c:89-90`) `gl_mntree` is NULL for the whole
++    /// call, so no hand-over happens and no bar track can start: the pop-up
++    /// keeps the mouse. `END_MCTRL` (`:353`) puts the tree back. Without the
++    /// bracket the release in the title hands the mouse to the Control
++    /// Manager (`own_mouse()` false after the call).
++    ///
++    /// The box is requested at x = 700, off the right edge of the 640 px
++    /// screen: its save rectangle is empty, so `popup_blit_save` answers
++    /// `None` before it asks the BDOS pool (`gsxif.rs`, the `w <= 0` guard)
++    /// and the no-pick branch (D-086) follows. That keeps the case
++    /// independent of whether another test in this binary has installed the
++    /// bookkeeping pool (`resource::mfree_tests`): with one present, a
++    /// non-empty save would take a block whose kernel high-half alias no host
++    /// process maps. The bracket under test wraps the first wait, which comes
++    /// before the placement — the box position is not part of the claim.
++    #[test]
++    fn mn_popup_parks_the_menu_tree_and_keeps_the_mouse_for_its_whole_call() {
++        let _g = SERIAL.lock().unwrap_or_else(|e| e.into_inner());
++        let host = ScriptHost::new();
++        let bar = bar_tree();
++        install_bar(bar);
++        assert_eq!(ctwait_bar_rect(), Some((0, 0, 56, 19)), "gl_ctwait = THEACTIVE's rectangle (gemmnlib.c:717)");
++
++        park_at(&host, 30, 200);
++        // The opening press, on the desktop: the application owns the mouse.
++        host.arm(&[1]);
++        host.pump_input();
++        assert_eq!(crate::vdi::mouse_buttons() & 1, 1, "the opening press is held at the call");
++        assert!(super::super::input::own_mouse(), "the application owns the mouse at the call");
++
++        let popup = popup_tree(700, 200);
++        // Consumed inside mn_popup's first wait: drag up into THEACTIVE with
++        // the button held (no hand-over while a button is down), then release
++        // with a 1 px move inside the title — mchange with button == 0 inside
++        // gl_ctwait.
++        let mut script = Vec::new();
++        for _ in 0..9 {
++            script.push(Pkt { dx: 0, dy: -20, buttons: 1, shift: 0 }); // (30,200) → (30,20)
++        }
++        script.push(Pkt { dx: 0, dy: -12, buttons: 1, shift: 0 }); // (30,8): in THEACTIVE, held
++        script.push(Pkt { dx: 1, dy: 0, buttons: 0, shift: 0 }); // release + move: (31,8)
++        script.push(btn(0));
++        script.push(btn(0));
++        host.arm_pkts(&script);
++
++        let (item, keystate) = mn_popup(popup, 0, 1, 700, 200, &RASTER, &host);
++
++        let seen = host.seen();
++        eprintln!("a88 bracket: item={item} keystate={keystate} seen={seen:?}");
++        assert_eq!((item, keystate), (NIL, 0), "empty save rectangle: the D-086 no-pick branch, mn_keystate 0 (gemmnext.c:347)");
++        assert_eq!(ObjTree::new(popup).x(0), 700, "ob_x = xpos, unclamped (gemmnext.c:322)");
++        assert!(seen.len() >= 11, "the first wait consumed the drag and the release; seen {}", seen.len());
++        assert_eq!(seen[10].at, (31, 8), "the release landed inside THEACTIVE; seen = {seen:?}");
++        assert!(
++            super::super::input::own_mouse(),
++            "the pop-up kept the mouse: with gl_mntree parked, mchange's hand-over to ctl_pd \
++             (aes/geminput.c:388-389) cannot fire while the pointer crosses the bar during \
++             menu_popup — no bar track can start (A88 point 1); seen = {seen:?}"
++        );
++        assert!(
++            seen.iter().all(|s| s.mntree_null),
++            "gl_mntree must be NULL for the whole of mn_popup (fm_own(TRUE), aes/gemfmlib.c:89-90, \
++             via wm_update(BEG_MCTRL), aes/gemmnext.c:312); seen = {seen:?}"
++        );
++        assert_eq!(super::active(), bar, "END_MCTRL restores gl_mntree (fm_own(FALSE), aes/gemfmlib.c:103)");
++        assert_eq!(crate::vdi::mouse_buttons() & 1, 0, "returned with the button up");
++
++        remove_bar();
++        assert!(super::active().is_null());
++    }
+ }

@@ -1,0 +1,37 @@
+# A87 TeraDesk (sd-tera, #Z autorun; 640x480). TeraDesk's THEACTIVE is
+# (16,0,280,19) (desktop.rsc tree 0 object 2: x 16, w 280 -> x 16..295;
+# titles Desk 16..63, File 64..111, View 112..159, Window 160..223,
+# Options 224..295). The pointer rests in the bar row RIGHT of Options
+# at (400,8) — outside gl_ctwait — clicks there, then the HELP key
+# (IKBD 0x62 make / 0xE2 break) is pressed while it still rests there.
+# EmuTOS: no hand-over, no track, the click is ctl_pd's and dropped
+# (chk_ctrl gl_rmenu), the key reaches TeraDesk at once -> HELP dialog
+# (main.c hndlkey -> showhelp). Before the fix TeraDesk was parked in the
+# control manager's track until the pointer left the row, so the key was
+# processed only after the park (E), not at D. Then Cancel (427,385)
+# closes the help dialog, File is hovered (the title track must still
+# open File), and a click on the parked pointer cancels it (A73 2b).
+200 parkbr
+1000 arm
+1100 mark A_IDLE
+1400 move 400 8
+1900 mark B_REST_RIGHT_OF_OPTIONS
+2200 down
+2203 up
+2700 mark C_CLICKED_THERE
+3000 key 62
+3003 key E2
+3600 mark D_HELP_KEY_WHILE_RESTING
+4000 parkbr
+4700 mark E_PARKED
+5000 move 427 385
+5300 down
+5303 up
+5600 parkbr
+6200 mark F_HELP_CLOSED
+6500 move 88 8
+7000 mark G_FILE_TITLE_HOVER
+7300 parkbr
+7800 down
+7803 up
+8400 mark H_CLOSED

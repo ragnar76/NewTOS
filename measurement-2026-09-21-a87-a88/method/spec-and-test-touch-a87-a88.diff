@@ -1,0 +1,99 @@
+diff --git a/docs/api/aes/_state.md b/docs/api/aes/_state.md
+index 3c4f12e..0e48a1e 100644
+--- a/docs/api/aes/_state.md
++++ b/docs/api/aes/_state.md
+@@ -211,7 +211,7 @@ and the `menu_register` slot-id/-1 return.
+ |--------|-------|---------|-----------------|
+ | `gl_mntree` | `gemmnlib.c:62` | ptr to the **active menu OBJECT tree** (`NULL` = no bar) | set/reset by `mn_bar` (`menu_bar`); read by the control manager's tracking loop `mn_do` |
+ | `gl_mnppd` | `gemmnlib.c:63` | the AES process descriptor that **owns** the current bar | set by `mn_bar`; used as the `MN_SELECTED` recipient (`gemctrl.c:353`) |
+-| `gl_ctwait` | `gemctrl.h:13` | the control-manager mouse-wait rectangle (bar extent when a bar is up, else full desktop `gl_rmenu`, `gsxdefs.h:108`) | `mn_bar` (`gemmnlib.c:715-726`) |
++| `gl_ctwait` | `gemctrl.h:13` | the control-manager mouse-wait rectangle: `THEACTIVE`'s extent when a bar is up (`gemmnlib.c:717`), else `gl_rmenu` = the menu-bar row `(0, 0, gl_width, gl_hbox)` (`gemgraf.c:427`; `gemctrl.c:438`, `gemmnlib.c:727`) — *not* the full desktop (corrected A87, 2026-09-21; see `menu.md` § `menu_bar`) | `mn_bar` (`gemmnlib.c:715-726`); read by `mchange` (`geminput.c:388`) and `ctlmgr` (`gemctrl.c:456`) |
+ | `gl_dafirst` | `gemmnlib.c:68` | object # of the first desk-accessory entry in the tree | `menu_fixup`; the pick router (`gemctrl.c:337`) |
+ | `D.g_accreg` | `gemlib.h` (`THEGLO`) | count of registered DAs (bounded by `NUM_ACCS`) | `mn_register`/`mn_init` |
+ | `D.g_acctitle[NUM_ACCS]` | `gemlib.h` (`THEGLO`) | the DA menu-item **title string pointers** (stored, not copied) | `mn_register`/`mn_cleanup`/`mn_init` |
+diff --git a/docs/api/aes/menu.md b/docs/api/aes/menu.md
+index 9fe78c6..fe5d800 100644
+--- a/docs/api/aes/menu.md
++++ b/docs/api/aes/menu.md
+@@ -218,10 +218,35 @@ wait rectangle). **Globals written:** `gl_mntree` (the active menu tree ptr;
+ the tree; stretch `THEBAR`'s width to the screen; set the control-wait rect to
+ `THEACTIVE`'s extent; draw `THEBAR` (`ob_draw(tree, THEBAR, MAX_DEPTH)`); draw
+ the separator line under the bar in black replace-mode. `show=0`: clear
+-`gl_mntree = NULL` and restore the control-wait rect to the full desktop
+-(`gl_rmenu`) so clicks no longer hit the bar. Either way, post a null key to
+-the control manager's console queue so it re-reads the wait rectangle
+-(`gemmnlib.c:730`).
++`gl_mntree = NULL` and put `gl_rmenu` back into the control-wait rect
++(`gemmnlib.c:726-727`). Either way, post a null key to the control manager's
++console queue so it re-reads the wait rectangle (`gemmnlib.c:730`).
++
++> **`gl_ctwait` with and without a bar (A87, 2026-09-21).** The control
++> manager's wait rectangle has exactly two values. With a bar it is
++> **`THEACTIVE`'s absolute extent** — `ob_actxywh(tree, THEACTIVE,
++> &gl_ctwait.m_gr)` (`gemmnlib.c:717`), i.e. the titles' width, not the whole
++> bar row; an RSC menu's `THEACTIVE` is sized to its titles (EmuTOS desktop
++> `adjust_menu`, `desk/deskmain.c:1528-1534`: `mbar->ob_width = x`). Without
++> a bar it is **`gl_rmenu`** = `(0, 0, gl_width, gl_hbox)`, the whole bar row
++> (`gemgraf.c:427`) — `ctlmgr`'s initial value (`gemctrl.c:437-438`) and what
++> `mn_bar(…, FALSE)` restores (`gemmnlib.c:727`); *"full desktop"* in earlier
++> wording was wrong. The two consumers of `gl_ctwait` both gate on
++> `gl_mntree` first — `mchange`'s hand-over `if ((gl_mowner != ctl_pd) &&
++> (button == 0) && gl_mntree && in_mrect(&gl_ctwait))` (`geminput.c:388-389`)
++> and `ctlmgr`'s `MU_M1` arm `if (gl_mntree) ev_which |= MU_M1`
++> (`gemctrl.c:451-452`) — so the `gl_rmenu` value never decides a hand-over.
++> Consequences: a pointer **moving** in the bar row right of the last title
++> stays with the application (its `MU_M1`/`MU_M2` complete there, no track
++> starts, its timer/keys keep flowing); a **press** anywhere in the bar row
++> is a different rule and is *not* the application's — `bchange` → `chkown`
++> → `chk_ctrl` answers `-1` for `inside(mx, my, &gl_rmenu)`
++> (`geminput.c:96-97, 316-322, 334-335`), `post_button(ctl_pd, …)` never
++> visits the application's parked wait, the control manager's own
++> `MU_BUTTON` finds no window there (`wm_find` = 0, `gemctrl.c:467-470`) and
++> drops it, and after the release `w_setactive` → `set_mown(app)` posts
++> `button == 0` (`geminput.c:225-231`), which satisfies no press-wait. Such a
++> click is swallowed, with or without a bar.
+ 
+ > `mn_bar` ignores `tree` when `show=0` (`gemmnlib.c:723-726`) — the tree used
+ > for erase is the one recorded in `gl_mntree` from the matching `show=1`.
+@@ -374,7 +399,12 @@ tracking loop, `gemmnext.c:314,351`), `popup_blit` (save/restore background),
+ shown while a button is still down. It then positions the parent box at
+ (x,y), where (x,y) is the position of the *start* item; the parent box y is
+ derived by subtracting the start item's y offset, then the box is clamped to
+-the screen (`clamp_ypos`). It saves the background (`popup_blit`), runs the
++the screen (`clamp_ypos`, `gemmnext.c:114-127`: while `ob_y >
++gl_rscreen.g_h - ob_height` step `ob_y -= gl_hchar`, then while `ob_y <
++gl_rfull.g_y` step `ob_y += gl_hchar` — the bar-row rule wins; `ob_x = xpos`
++is **not** clamped, `:322`; the clamp precedes `popup_blit`, so the caller's
++tree shows it even on the `buf == NULL` branch — A88, 2026-09-21). It saves
++the background (`popup_blit`), runs the
+ tracking loop (`handle_popup`), and restores the background. On a pick,
+ fills `*mdata`: `mn_tree`/`mn_menu` copied from the input (**no submenus
+ from popups — restriction #1 below**), `mn_item` = the chosen object
+diff --git a/tos-api/tests/aes_a73_event_neighbours.rs b/tos-api/tests/aes_a73_event_neighbours.rs
+index 84e1a86..68c7380 100644
+--- a/tos-api/tests/aes_a73_event_neighbours.rs
++++ b/tos-api/tests/aes_a73_event_neighbours.rs
+@@ -901,11 +901,11 @@ struct MenuRec {
+ /// selecting press is consumed inside `menu_popup`. Not `gl_ctmown`: the
+ /// whole call is the app's own context under `wm_update(BEG_MCTRL)`.
+ ///
+-/// **Host limitation.** `popup_track` saves the screen under the box through
+-/// `gsxif::popup_blit_save` → `bdos::mem::traps::mxalloc` (`menu.rs:1036`,
++/// **Host limitation.** `mn_popup_owned` saves the screen under the box through
++/// `gsxif::popup_blit_save` → `bdos::mem::traps::mxalloc` (`menu.rs`,
+ /// `gsxif.rs:316-335`); the pool is not initialised in a host test
+ /// (`mem::init::is_initialised()` is false), so the save returns `None` and
+-/// `popup_track` answers `NIL` *without tracking* (the D-086 out-of-ST-RAM
++/// `mn_popup_owned` answers `NIL` *without tracking* (the D-086 out-of-ST-RAM
+ /// path) — `rc = 0`, nothing pumped. The pool cannot be installed on the host
+ /// either: `mxalloc` hands out 32-bit `Long` pool addresses that the AES
+ /// re-derives as `raw + 0xFFFF_0000_0000_0000` (the kernel high-half alias),
+@@ -916,7 +916,7 @@ struct MenuRec {
+ /// sequence is in the A73 audit report. The assertions below are what that
+ /// run must show; they are kept for a future pool fixture.
+ #[test]
+-#[ignore = "popup_track needs the BDOS pool (mxalloc + kernel high-half alias): not host-mappable; drive on the board, see A73 report"]
++#[ignore = "mn_popup_owned needs the BDOS pool (mxalloc + kernel high-half alias): not host-mappable; drive on the board, see A73 report"]
+ fn menu_popup_waits_for_the_selecting_press_to_be_released() {
+     let _guard = SERIAL.lock().unwrap_or_else(|e| e.into_inner());
+     let (host, mut pb) = fresh();

@@ -1,0 +1,19 @@
+# A87 kernel desktop (sd-base, no #Z). Its ADMENU THEACTIVE is built
+# screen-wide (kernel/src/desk/menu.rs build_menu: o[2] width = sw), so
+# gl_ctwait covers the whole row and the rest right of the last title
+# still belongs to the control manager — no visible change expected
+# (out of scope: desk/ deviates from EmuTOS adjust_menu, deskmain.c:1534).
+200 parkbr
+1000 arm
+1100 mark A_IDLE
+1400 move 400 8
+1900 mark B_REST_RIGHT_OF_TITLES
+2200 down
+2203 up
+2700 mark C_CLICKED_THERE
+3000 parkbr
+3600 mark D_PARKED
+3900 move 76 8
+4400 mark E_FILE_OPEN
+4700 parkbr
+5300 mark F_PARKED_AGAIN

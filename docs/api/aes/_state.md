@@ -211,7 +211,7 @@ and the `menu_register` slot-id/-1 return.
 |--------|-------|---------|-----------------|
 | `gl_mntree` | `gemmnlib.c:62` | ptr to the **active menu OBJECT tree** (`NULL` = no bar) | set/reset by `mn_bar` (`menu_bar`); read by the control manager's tracking loop `mn_do` |
 | `gl_mnppd` | `gemmnlib.c:63` | the AES process descriptor that **owns** the current bar | set by `mn_bar`; used as the `MN_SELECTED` recipient (`gemctrl.c:353`) |
-| `gl_ctwait` | `gemctrl.h:13` | the control-manager mouse-wait rectangle (bar extent when a bar is up, else full desktop `gl_rmenu`, `gsxdefs.h:108`) | `mn_bar` (`gemmnlib.c:715-726`) |
+| `gl_ctwait` | `gemctrl.h:13` | the control-manager mouse-wait rectangle: `THEACTIVE`'s extent when a bar is up (`gemmnlib.c:717`), else `gl_rmenu` = the menu-bar row `(0, 0, gl_width, gl_hbox)` (`gemgraf.c:427`; `gemctrl.c:438`, `gemmnlib.c:727`) — *not* the full desktop (corrected A87, 2026-09-21; see `menu.md` § `menu_bar`) | `mn_bar` (`gemmnlib.c:715-726`); read by `mchange` (`geminput.c:388`) and `ctlmgr` (`gemctrl.c:456`) |
 | `gl_dafirst` | `gemmnlib.c:68` | object # of the first desk-accessory entry in the tree | `menu_fixup`; the pick router (`gemctrl.c:337`) |
 | `D.g_accreg` | `gemlib.h` (`THEGLO`) | count of registered DAs (bounded by `NUM_ACCS`) | `mn_register`/`mn_init` |
 | `D.g_acctitle[NUM_ACCS]` | `gemlib.h` (`THEGLO`) | the DA menu-item **title string pointers** (stored, not copied) | `mn_register`/`mn_cleanup`/`mn_init` |

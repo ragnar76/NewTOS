@@ -901,11 +901,11 @@ struct MenuRec {
 /// selecting press is consumed inside `menu_popup`. Not `gl_ctmown`: the
 /// whole call is the app's own context under `wm_update(BEG_MCTRL)`.
 ///
-/// **Host limitation.** `popup_track` saves the screen under the box through
-/// `gsxif::popup_blit_save` → `bdos::mem::traps::mxalloc` (`menu.rs:1036`,
+/// **Host limitation.** `mn_popup_owned` saves the screen under the box through
+/// `gsxif::popup_blit_save` → `bdos::mem::traps::mxalloc` (`menu.rs`,
 /// `gsxif.rs:316-335`); the pool is not initialised in a host test
 /// (`mem::init::is_initialised()` is false), so the save returns `None` and
-/// `popup_track` answers `NIL` *without tracking* (the D-086 out-of-ST-RAM
+/// `mn_popup_owned` answers `NIL` *without tracking* (the D-086 out-of-ST-RAM
 /// path) — `rc = 0`, nothing pumped. The pool cannot be installed on the host
 /// either: `mxalloc` hands out 32-bit `Long` pool addresses that the AES
 /// re-derives as `raw + 0xFFFF_0000_0000_0000` (the kernel high-half alias),
@@ -916,7 +916,7 @@ struct MenuRec {
 /// sequence is in the A73 audit report. The assertions below are what that
 /// run must show; they are kept for a future pool fixture.
 #[test]
-#[ignore = "popup_track needs the BDOS pool (mxalloc + kernel high-half alias): not host-mappable; drive on the board, see A73 report"]
+#[ignore = "mn_popup_owned needs the BDOS pool (mxalloc + kernel high-half alias): not host-mappable; drive on the board, see A73 report"]
 fn menu_popup_waits_for_the_selecting_press_to_be_released() {
     let _guard = SERIAL.lock().unwrap_or_else(|e| e.into_inner());
     let (host, mut pb) = fresh();

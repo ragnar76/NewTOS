@@ -1,0 +1,16 @@
+macOS crash report summary (source: ~/Library/Logs/DiagnosticReports/tos_api-6503eecebe9f8f1a-2026-09-21-011025.ips)
+exception: {'codes': '0x0000000000000001, 0xffff000001006000', 'rawCodes': [1, -281474959908864], 'type': 'EXC_BAD_ACCESS', 'signal': 'SIGSEGV', 'subtype': 'KERN_INVALID_ADDRESS at 0xffff000001006000'}
+faulting thread: aes::menu::popup_wait_tests::mn_popup_parks_the_menu_tree_and_k
+
+_RINvNtCs4PqEUJav98s_4core3ptr19copy_nonoverlappinghECsckrtXdkhR38_7tos_api + 0
+_RINvNtCs4PqEUJav98s_4core3ptr15write_unalignedtECsckrtXdkhR38_7tos_api + 0
+_RNvMNtNtCs4PqEUJav98s_4core3ptr7mut_ptrOt15write_unalignedCsckrtXdkhR38_7tos_api + 0
+_RNvMNtNtCsckrtXdkhR38_7tos_api3vdi6rasterNtB2_4Mfdb7put_mem + 0
+_RNvNtNtCsckrtXdkhR38_7tos_api3vdi6raster13screen_to_mem + 48
+_RNvNtNtCsckrtXdkhR38_7tos_api3vdi6raster7bb_save + 248
+_RNvNtNtCsckrtXdkhR38_7tos_api3aes5gsxif15popup_blit_save + 80
+_RNvNtNtCsckrtXdkhR38_7tos_api3aes4menu14mn_popup_owned + 712
+_RNvNtNtCsckrtXdkhR38_7tos_api3aes4menu8mn_popup + 848
+_RNvNtNtNtCsckrtXdkhR38_7tos_api3aes4menu16popup_wait_testss_67mn_popup_parks_the_menu_tree_and_keeps_the_mouse_for_its_whole_call + 1144
+_RNCNvNtNtNtCsckrtXdkhR38_7tos_api3aes4menu16popup_wait_tests67mn_popup_parks_the_menu_tree_and_keeps_the_mouse_for_its_whole_call0B9_ + 4
+_RNvYNCNvNtNtNtCsckrtXdkhR38_7tos_api3aes4menu16popup_wait_tests67mn_popup_parks_the_menu_tree_and_keeps_the_mouse_for_its_whole_call0INtNtNtCs4PqEUJav98s_4core3ops8function6FnOnceuE9call_onceBc_ + 20

@@ -1,0 +1,108 @@
+A87 + A88 -- Mausuebergabe an den Kontrollmanager nur in gl_ctwait = THEACTIVE (A87);
+menu_popup unter BEG_MCTRL/END_MCTRL, mn_keystate, clamp_ypos (A88).
+Developer self-evidence, 2026-09-21. Branch desk-rebuild, base HEAD 40be5fe, changes
+uncommitted in the tree. Pinned EmuTOS references/emutos @ 1a7484ab:
+  aes/gemmnlib.c:703-732 (mn_bar; :713 gl_mntree, :717 ob_actxywh(THEACTIVE, &gl_ctwait.m_gr),
+  :726-727 NULL + gl_rmenu), aes/gemctrl.c:437-438 (init gl_rmenu), :451-460 (MU_M1 arm iff
+  gl_mntree, ev_multi on &gl_ctwait), :467-470 (MU_BUTTON -> wm_find), aes/geminput.c:76-79
+  (in_mrect), :86-104 (chk_ctrl: ctrl, gl_rmenu -> -1, wm_find), :220-231 (set_mown),
+  :316-322 (chkown), :328-345 (bchange), :388-389 (mchange hand-over), aes/gemgraf.c:424,427
+  (gl_rfull, gl_rmenu), desk/deskmain.c:1528-1534 (adjust_menu: THEACTIVE width = titles);
+  aes/gemmnext.c:114-127 (clamp_ypos), :268-272 (keystate = rets[3]), :304-356 (mn_popup:
+  :312 BEG_MCTRL, :314/:351 ev_button, :320-324 placement, :336-349 mdata, :353 END_MCTRL),
+  aes/gemwmlib.c:1778-1797 (wm_update), aes/gemfmlib.c:82-107 (fm_own), aes/gemevlib.c:42-58
+  (ev_rets). Spec: docs/api/aes/menu.md (menu_bar: new dated gl_ctwait paragraph; menu_popup:
+  clamp_ypos detail), docs/api/aes/_state.md (gl_ctwait row corrected).
+
+PRODUCT CODE (uncommitted; method/product-a87-a88.diff; HEAD copies in method/head-40be5fe/)
+  tos-api/src/aes/menu.rs  CTWAIT_RECT/CTWAIT_BAR + in_ctwait (in_mrect(&gl_ctwait)), install_bar
+    (gl_mntree = tree; gl_ctwait = abs_rect(THEACTIVE)), remove_bar (NULL; gl_rmenu); menu_bar uses
+    them. menu_popup -> mn_popup (window::fm_own(true) .. fm_own(false) = wm_update(BEG/END_MCTRL))
+    -> mn_popup_owned (wait, ob_x = xpos unclamped, ob_y = ypos - item y, clamp_ypos, save, track);
+    clamp_ypos 1:1; popup_shown returns (item, keystate) with keystate = host shift state at the
+    press; mdata: mn_keystate = keystate on pick / 0 on no pick, mn_scroll copied from the input.
+  tos-api/src/aes/input.rs  mchange: in_ctwait(rx, ry) instead of ry < desk_top().
+  tos-api/src/aes/event.rs  menu_intercept: !in_ctwait(mx, my) instead of my >= gl_hbox().
+  tos-api/src/aes/graf.rs   comment only (the gl_hbox usage note named menu_intercept/gl_rmenu).
+  tos-api/tests/aes_a87_a88_menu_ctwait_popup.rs  NEW (7 cases; A73 harness, THEACTIVE 168 px)
+  tos-api/src/aes/menu.rs popup_wait_tests  +3 unit tests, ScriptHost with motion/shift packets,
+    SERIAL mutex; tests/aes_a73_event_neighbours.rs: comment/ignore-reason rename popup_track ->
+    mn_popup_owned only.
+  docs/STATUS.md Phase-13 fragment + one Recent Decisions row (2026-09-21); TASK/A87.md, A88.md
+    ERLEDIGT + Abschluss; TASK/A87-STATUS-DONE.MD, A88-STATUS-DONE.MD.
+
+TICKET PREMISE CORRECTED (A87): "click right of THEACTIVE -> app gets MU_BUTTON" does not hold in
+  EmuTOS: a press anywhere in gl_rmenu goes to ctl_pd (chk_ctrl geminput.c:96-97 via bchange
+  :334-335), ctlmgr's MU_BUTTON finds no window (wm_find = 0) and drops it, the release posts
+  button == 0 (set_mown :225-231). The click is swallowed. What the app keeps: motion (MU_M1/M2),
+  timer, keys, and no track starts. Tests and QEMU evidence assert exactly that.
+
+HOST TESTS (host-tests/)
+  aes_a87_a88_menu_ctwait_popup-RED-before-HEAD-40be5fe.txt  the new file vs HEAD's three files:
+      2 passed / 5 FAILED (a87 rest: timer at 303 ms, pointer left the row; a87 click: 316 ms;
+      a87 enter: MU_M1 swallowed (fired 0x0020); a87 edge x=168: 303 ms; a88 clamp: box (528,0)).
+  aes_a87_a88_menu_ctwait_popup-GREEN-after.txt  7/7.
+  menu-popup_wait_tests-RED-fixes-reverted.txt  the three A88 fixes reverted in menu.rs (no
+      bracket, keystate = 0, old clamp): 1 passed / 3 FAILED.
+  menu-mn_popup_bracket-RED-bracket-removed.txt  bracket alone removed: "the pop-up kept the mouse"
+      fails (own_mouse() false; gl_mntree non-NULL at all 11 pumps).
+  menu-popup_wait_tests-GREEN-after.txt  4/4.
+  xtask-test-AFTER-run1-SIGSEGV-pool-alias.log  first full run: SIGSEGV in the tos-api lib test
+      binary (bracket unit test -> mn_popup_owned -> popup_blit_save -> bb_save writing to
+      0xffff000001006000: resource::mfree_tests had installed the bookkeeping pool at 0x0100_0000;
+      lib-test-SIGSEGV-run1-crash-report-summary.txt). Fixed in the test (box requested at x = 700 ->
+      empty save rect -> no pool access); 32-thread stress 0/300 afterwards (94/400 before).
+  xtask-test-AFTER.log  cargo run -p xtask -- test: 770 passed / 0 failed / 2 ignored, rc 0
+      (baseline 760/0/2 + 6 A87 + 1 A88 integration + 3 unit).
+
+BUILD / CLIPPY (build/)
+  xtask-build-rpi4.log  cargo xtask build --board rpi4 (fresh): tos-api 64 / kernel 94, rc 0
+      (baseline A99 64/94, delta 0); tree kernel8.img sha256 in kernel8-tree-rpi4-dev.sha256.
+      No qemu-virt build (lead).
+  clippy-tos-api-host.txt  cargo clippy -p tos-api: 80 (baseline 80, delta 0); menu.rs 10 -> 10
+      (all pre-existing Aespb-visibility notes), input.rs/event.rs/graf.rs 0, new test file 0.
+  scratch-{after,before}-build.log / -rebuild.log  the injector scratch kernels (tos-api 67 /
+      kernel 106 = H02/A46/A78 scaffolding + the A87 Key step).
+  make-sd-image.log, sd-put-tera.log  tools/make-sd-image.sh <scratch>/img/sd-base.img 64;
+      sd-tera.img = + NEWDESK.INF (#Z TeraDesk) + TERADESK.INF (a79/method).
+
+QEMU raspi4b (a79/method/run.sh; 640x480, -display none, QMP screendump after each serial mark;
+fresh image copy per run; grep -c "EXC\|PANIC\|panic" = 0 in all 4 serial logs).
+BEFORE = scratch with tos-api/src/aes/{input,event,menu}.rs = HEAD 40be5fe (git show, no checkout);
+AFTER = the tree. Injector: method/make_scratch_a87.sh = A99 method + key_step_patch.py
+(Step::Key(u8) feeds one raw IKBD key byte); scripts method/a87_scripts.rs from
+tera-a87.actions / desk-a87.actions via gen_script_a87.py.
+  kernel8 after e2d7927f20b50728...  before 3815e785a19a66a1...
+  sd-base 9cd0e175448f1df4...  sd-tera 42775dd5508a3fb3...
+  tera (sd-tera): parkbr; arm; A_IDLE; move (400,8) = bar row right of "Options" (TeraDesk's
+      THEACTIVE = (16,0,280,19), desktop.rsc tree 0 object 2 -> x 16..295); B; click; C;
+      HELP key 0x62/0xE2; D; parkbr; E; click Cancel (427,385); parkbr; F; hover File (88,8); G;
+      parkbr + click; H.
+      AFTER:  step 16 (+3000, HELP) -> "[aes] op 25 out=(1,400,8,0,0,25088,0)" at once
+              (MU_KEYBD, key 0x6200, pointer at (400,8)); D shows the "Help on Keyboard
+              Commands" dialog with the pointer still in the row.
+      BEFORE: nothing until step 19 (+4000, first park step) -> "op 25 out=(1,527,135,..,25088)":
+              TeraDesk sat in the control manager's track while the pointer rested at (400,8);
+              D shows no dialog, E does.
+      Pixel diffs before/after: A 0, B 0, C 0, D 103668 (bbox (161,86)-(479,412) = the dialog),
+      E 0, F 0, G 0, H 0. after C vs A: 70 px = the pointer only (the click at (400,8) changed
+      nothing on screen in either kernel: no MU_BUTTON to TeraDesk = EmuTOS's swallowed press).
+      G: File drop-down open (both); H == A (0 px).
+  desk (sd-base): A; move (400,8); B; click; C; parkbr; D; hover File (76,8); E; parkbr; F.
+      6/6 byte-identical before/after -- the kernel desktop's THEACTIVE is built screen-wide
+      (kernel/src/desk/menu.rs build_menu: o[2].ob_width = sw; EmuTOS adjust_menu sets the
+      titles' sum, deskmain.c:1534), so gl_ctwait covers the whole row there. desk/, separate task.
+  A88 has host evidence only: no shipped app calls menu_popup (A73 audit).
+
+OUT OF SCOPE (observed, untouched)
+  (1) kernel/src/desk/menu.rs build_menu: THEACTIVE ob_width = sw (EmuTOS: sum of the titles).
+  (2) mctrl_own has no set_mown(rlr)/set_mown(ml_pmown) (gemfmlib.c:93,102): GL_MOWNER_APP is not
+      touched by the bracket; observable only with gl_mowner == ctl_pd and the button up at entry.
+  (3) menu_popup on no pick writes all five mdata fields (EmuTOS only mn_keystate = 0, :347).
+  (4) clamp_height (menu_settings) uses backend.height() for gl_rfull.g_h (EmuTOS gl_height - gl_hbox).
+  (5) tos-api lib unit tests share process-wide statics (mouse, menu, process table, the
+      resource tests' bookkeeping pool); any unit test that reaches popup_blit_save with a
+      non-empty rectangle will SIGSEGV once that pool exists.
+
+OPEN
+  Pi acceptance for A87 (Tester/Lead; nothing flashed).

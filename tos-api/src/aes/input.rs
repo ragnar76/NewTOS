@@ -152,11 +152,14 @@ pub(crate) fn b_click(new: u8) {
 ///    the pending button delay to expire immediately, `b_delay(gl_bdely)`
 ///    (`:365-368`). The clicks counted so far are delivered at once; a click
 ///    after the move starts a new gesture instead of completing a double click.
-/// 2. The pointer entering the menu bar with the buttons up hands the mouse to
-///    the Control Manager (`:387-389`), which is how a hover menu takes over
-///    without a click. `gl_ctwait` is the menu tree's `THEACTIVE` rectangle
-///    (`aes/gemmnlib.c:717`), the menu-bar row — [`menu::desk_top`] here, the
-///    same row [`event::menu_intercept`] tracks.
+/// 2. The pointer entering the Control Manager's wait rectangle with the
+///    buttons up hands the mouse to the Control Manager (`:387-389`), which is
+///    how a hover menu takes over without a click. That rectangle is
+///    `gl_ctwait` = the registered bar's `THEACTIVE` extent
+///    (`aes/gemmnlib.c:717`; [`menu::in_ctwait`](super::menu::in_ctwait)) —
+///    the titles' width, **not** the whole bar row: a pointer in the row right
+///    of the last title stays with the application (A87). The same rectangle
+///    is what [`event::menu_intercept`](super::event) tracks.
 // The threshold test is EmuTOS's line for line (`aes/geminput.c:366-367`);
 // folding it into two range checks would read further from the source than it
 // is worth.
@@ -172,10 +175,12 @@ pub(crate) fn mchange(rx: i16, ry: i16) {
     XRAT.store(rx, Ordering::Relaxed);
     YRAT.store(ry, Ordering::Relaxed);
 
+    // `if ((gl_mowner != ctl_pd) && (button == 0) && gl_mntree &&
+    // in_mrect(&gl_ctwait)) gl_mowner = ctl_pd;` (aes/geminput.c:388-389)
     if GL_MOWNER_APP.load(Ordering::Relaxed)
         && BUTTON.load(Ordering::Relaxed) == 0
         && !super::menu::active().is_null()
-        && ry < super::menu::desk_top()
+        && super::menu::in_ctwait(rx, ry)
     {
         GL_MOWNER_APP.store(false, Ordering::Relaxed);
     }

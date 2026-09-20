@@ -108,13 +108,15 @@ fn menu_intercept(idx: usize) -> bool {
     if tree.is_null() {
         return false;
     }
-    // Hover model: the drop-down opens whenever the cursor is over the bar
-    // with the buttons up — `mchange`'s hand-over condition, no click required.
-    // The bar is `gl_rmenu = (0, 0, gl_width, gl_hbox)` (`gemgraf.c:427`), the
-    // Control Manager's wait rectangle; its height is the one `gl_hbox`
-    // (`graf::gl_hbox`), not a number of this module's own.
-    let (_mx, my) = crate::vdi::mouse_position();
-    if my >= super::graf::gl_hbox() || crate::vdi::mouse_buttons() & 0x01 != 0 {
+    // Hover model: the drop-down opens whenever the cursor is over the
+    // Control Manager's wait rectangle with the buttons up — `mchange`'s
+    // hand-over condition, no click required. That rectangle is `gl_ctwait`,
+    // the registered bar's `THEACTIVE` extent (`mn_bar`, `gemmnlib.c:717`;
+    // `ctlmgr`'s `MU_M1` wait, `gemctrl.c:456-460`) — the titles, not the
+    // whole `gl_rmenu` row: a pointer right of the last title is the
+    // application's (A87).
+    let (mx, my) = crate::vdi::mouse_position();
+    if !super::menu::in_ctwait(mx, my) || crate::vdi::mouse_buttons() & 0x01 != 0 {
         return false;
     }
     let Some(backend) = host().and_then(|h| h.raster()) else {

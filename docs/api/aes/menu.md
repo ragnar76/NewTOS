@@ -218,10 +218,35 @@ wait rectangle). **Globals written:** `gl_mntree` (the active menu tree ptr;
 the tree; stretch `THEBAR`'s width to the screen; set the control-wait rect to
 `THEACTIVE`'s extent; draw `THEBAR` (`ob_draw(tree, THEBAR, MAX_DEPTH)`); draw
 the separator line under the bar in black replace-mode. `show=0`: clear
-`gl_mntree = NULL` and restore the control-wait rect to the full desktop
-(`gl_rmenu`) so clicks no longer hit the bar. Either way, post a null key to
-the control manager's console queue so it re-reads the wait rectangle
-(`gemmnlib.c:730`).
+`gl_mntree = NULL` and put `gl_rmenu` back into the control-wait rect
+(`gemmnlib.c:726-727`). Either way, post a null key to the control manager's
+console queue so it re-reads the wait rectangle (`gemmnlib.c:730`).
+
+> **`gl_ctwait` with and without a bar (A87, 2026-09-21).** The control
+> manager's wait rectangle has exactly two values. With a bar it is
+> **`THEACTIVE`'s absolute extent** — `ob_actxywh(tree, THEACTIVE,
+> &gl_ctwait.m_gr)` (`gemmnlib.c:717`), i.e. the titles' width, not the whole
+> bar row; an RSC menu's `THEACTIVE` is sized to its titles (EmuTOS desktop
+> `adjust_menu`, `desk/deskmain.c:1528-1534`: `mbar->ob_width = x`). Without
+> a bar it is **`gl_rmenu`** = `(0, 0, gl_width, gl_hbox)`, the whole bar row
+> (`gemgraf.c:427`) — `ctlmgr`'s initial value (`gemctrl.c:437-438`) and what
+> `mn_bar(…, FALSE)` restores (`gemmnlib.c:727`); *"full desktop"* in earlier
+> wording was wrong. The two consumers of `gl_ctwait` both gate on
+> `gl_mntree` first — `mchange`'s hand-over `if ((gl_mowner != ctl_pd) &&
+> (button == 0) && gl_mntree && in_mrect(&gl_ctwait))` (`geminput.c:388-389`)
+> and `ctlmgr`'s `MU_M1` arm `if (gl_mntree) ev_which |= MU_M1`
+> (`gemctrl.c:451-452`) — so the `gl_rmenu` value never decides a hand-over.
+> Consequences: a pointer **moving** in the bar row right of the last title
+> stays with the application (its `MU_M1`/`MU_M2` complete there, no track
+> starts, its timer/keys keep flowing); a **press** anywhere in the bar row
+> is a different rule and is *not* the application's — `bchange` → `chkown`
+> → `chk_ctrl` answers `-1` for `inside(mx, my, &gl_rmenu)`
+> (`geminput.c:96-97, 316-322, 334-335`), `post_button(ctl_pd, …)` never
+> visits the application's parked wait, the control manager's own
+> `MU_BUTTON` finds no window there (`wm_find` = 0, `gemctrl.c:467-470`) and
+> drops it, and after the release `w_setactive` → `set_mown(app)` posts
+> `button == 0` (`geminput.c:225-231`), which satisfies no press-wait. Such a
+> click is swallowed, with or without a bar.
 
 > `mn_bar` ignores `tree` when `show=0` (`gemmnlib.c:723-726`) — the tree used
 > for erase is the one recorded in `gl_mntree` from the matching `show=1`.
@@ -374,7 +399,12 @@ tracking loop, `gemmnext.c:314,351`), `popup_blit` (save/restore background),
 shown while a button is still down. It then positions the parent box at
 (x,y), where (x,y) is the position of the *start* item; the parent box y is
 derived by subtracting the start item's y offset, then the box is clamped to
-the screen (`clamp_ypos`). It saves the background (`popup_blit`), runs the
+the screen (`clamp_ypos`, `gemmnext.c:114-127`: while `ob_y >
+gl_rscreen.g_h - ob_height` step `ob_y -= gl_hchar`, then while `ob_y <
+gl_rfull.g_y` step `ob_y += gl_hchar` — the bar-row rule wins; `ob_x = xpos`
+is **not** clamped, `:322`; the clamp precedes `popup_blit`, so the caller's
+tree shows it even on the `buf == NULL` branch — A88, 2026-09-21). It saves
+the background (`popup_blit`), runs the
 tracking loop (`handle_popup`), and restores the background. On a pick,
 fills `*mdata`: `mn_tree`/`mn_menu` copied from the input (**no submenus
 from popups — restriction #1 below**), `mn_item` = the chosen object

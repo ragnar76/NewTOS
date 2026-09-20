@@ -522,9 +522,10 @@ pub fn graf_slidebox(pb: &Aespb) {
 // menu-bar row / gadget box height comes from. `graf_handle` reports it
 // (`gemsuper.c:288-291`), the window manager builds `gl_rfull` and the
 // gadget cells from it (`window::desktop_work`, `window::adj_hbox`), the
-// Menu Manager reserves the row with it (`menu::desk_top`) and the Event
-// Manager's bar interception tests the pointer against it
-// (`event::menu_intercept`, EmuTOS `gl_rmenu`, `gemgraf.c:427`).
+// Menu Manager reserves the row with it (`menu::desk_top`) and the mouse
+// ownership test for a press reads the row from it (`window::chk_ctrl`,
+// EmuTOS `gl_rmenu`, `gemgraf.c:427`; the bar *track* itself waits on
+// `THEACTIVE`'s extent, `menu::in_ctwait`).
 
 /// EmuTOS `gl_width` (`gemgraf.c:37`, set `:393`: `gl_ws.ws_xres + 1`) — the
 /// AES workstation's pixel width, read from the raster backend the AES draws

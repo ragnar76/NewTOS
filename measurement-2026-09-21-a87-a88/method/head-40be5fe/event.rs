@@ -1,0 +1,817 @@
+//! AES Event Manager (`evnt_*`, opcodes 20–26).
+//!
+//! Spec: [`docs/api/aes/event.md`]; the `int_in`/`int_out` slot layout is
+//! the EmuTOS `include/aesdefs.h` mapping (e.g. `T_LOCOUNT = int_in[0]`,
+//! `RET_CODE = int_out[0]`).
+//!
+//! **Wait model (sleep/wake substrate, cooperative-kernel steps 3a + 3b):**
+//! EmuTOS' `ev_block` parks the calling AES process and yields to others until
+//! an event fires. Each of the six `evnt_*` waits below re-checks its predicate
+//! and, when it has not fired, blocks on [`sched::sleep`] with the matching
+//! wake-class key ([`sched::wait_input`]/[`sched::wait_mesg`]/
+//! [`sched::wait_timer`]) — the single cooperative block primitive replacing the
+//! former per-function `pump_input` spin (`docs/analysis/coop-kernel/`
+//! `20-sleepwake-substrate-design.md` §5).
+//!
+//! `sleep` returns a [`sched::SleepOutcome`]: [`Recheck`](sched::SleepOutcome::
+//! Recheck) (no peer — the step-3 single-context idle-fallback, identical to the
+//! old spin) or [`Yield`](sched::SleepOutcome::Yield)`(Switch)` (a runnable peer
+//! exists — step 3b). On `Yield` the wait **aborts and returns the `Switch`**
+//! ([`Option<sched::Switch>`]) up through [`super::dispatch`] to
+//! `rust_sync_handler`, which saves this process's frame with the ELR rewound to
+//! the `svc` (the S2 restartable block) and switches to the peer; on resume the
+//! re-executed `svc` re-enters the wait, which re-checks and fires. Because the
+//! block path is read-only until the firing pass (design §4.3), an abort commits
+//! nothing. The observable `evnt_*` contract (return values, `MU_*` bits,
+//! message dequeue-on-firing) is unchanged.
+
+use core::sync::atomic::{AtomicI16, Ordering};
+
+use super::pd;
+use super::Aespb;
+use crate::bdos::process::sched;
+use crate::host::host;
+
+// Event-type flags (`include/aesdefs.h`), selecting which events a wait
+// blocks on. Used by `evnt_multi`.
+const MU_KEYBD: u16 = 0x0001;
+const MU_BUTTON: u16 = 0x0002;
+const MU_M1: u16 = 0x0004;
+const MU_M2: u16 = 0x0008;
+const MU_MESAG: u16 = 0x0010;
+const MU_TIMER: u16 = 0x0020;
+const MU_TOSVALID: u16 = 0x003F;
+
+/// A mouse rectangle block (`MOBLK`): `flags` selects enter (0) vs leave
+/// (1) of the `{x, y, w, h}` rectangle.
+struct MoBlk {
+    flags: i16,
+    x: i16,
+    y: i16,
+    w: i16,
+    h: i16,
+}
+
+/// `true` when a `MOBLK`'s condition is satisfied (EmuTOS `in_mrect`:
+/// the event fires when `flags != inside`) at the live pointer position.
+fn rect_event(m: &MoBlk) -> bool {
+    rect_event_at(m, crate::vdi::mouse_position())
+}
+
+/// [`rect_event`] against an explicit pointer position `(mx, my)` — the
+/// arm-time position `amouse` tests (`aes/geminput.c:575-576`), or the
+/// `xrat`/`yrat` a `post_mouse` carries (`:446-456`).
+fn rect_event_at(m: &MoBlk, (mx, my): (i16, i16)) -> bool {
+    let inside = mx >= m.x && mx < m.x + m.w && my >= m.y && my < m.y + m.h;
+    (m.flags != 0) != inside
+}
+
+/// `MN_SELECTED` message id.
+const MN_SELECTED: i16 = 10;
+
+/// AES menu-bar interception (mirroring the EmuTOS Control Manager's
+/// `hctl_rect`, `gemctrl.c:318`): if a menu bar is installed and the cursor is
+/// over it, run the drop-down tracker (`menu::track`) — GEM hover menus, no
+/// click needed to open. On a selection, post an `MN_SELECTED` message into
+/// the menu owner's per-app FIFO — the EmuTOS `ct_msgup(MN_SELECTED, gl_mnppd,
+/// …)`→`ap_sendmsg`→`aqueue`/`doq` path (`gemctrl.c:353-367`,
+/// `gemwmlib.c:851-863`, `gemqueue.c:85-125`) — and return `true`; the caller
+/// then delivers it through the regular `MU_MESAG` dequeue, so a menu
+/// selection can no longer clobber (or be clobbered by) an already-queued
+/// message (AUD-P2-002). Returns `false` when there is no menu, the cursor is
+/// not over the bar, or the drop-down was cancelled (no message).
+///
+/// `idx` is the current AES identity — the menu owner (`gl_mnppd`) at
+/// single-app — used as the FIFO target. The `ap_sendmsg` sender pid
+/// `msg[1] = rlr->p_pid` (`gemwmlib.c:855`) is the **Screen Manager's**,
+/// `appl::SCRENMGR_PID` = 1: `ct_msgup` runs inside `ctlmgr()`, `rlr ==
+/// ctl_pd` (`gemctrl.c:353-367`; spec § "AES process identity and pid",
+/// contract (b)). A stamp, not a process — NewTOS's control manager runs
+/// inline in the caller's trap, so the caller's own pid (0) would be wrong
+/// here.
+///
+/// **Entry = the hand-over.** EmuTOS reaches `hctl_rect` only after `mchange`
+/// gave the mouse to the Control Manager, which it does for a pointer in the
+/// bar row **with the buttons up**: `if ((gl_mowner != ctl_pd) && (button ==
+/// 0) && gl_mntree && in_mrect(&gl_ctwait)) gl_mowner = ctl_pd;`
+/// (`aes/geminput.c:388-389`). A pointer dragged into the bar with the button
+/// held belongs to whoever took the press and opens nothing; the tracker is
+/// entered once the button is up. Inside the track the button may of course go
+/// down (press on a title, drag to an item) — that is `mn_do`'s business.
+///
+/// **After a selection** the Control Manager is in `ct_msgup`'s wait for the
+/// button to come up (`aes/gemctrl.c:100-101`): the message is posted at once,
+/// and [`input::ct_msgup_hold`](super::input::ct_msgup_hold) keeps the
+/// interception and `w_setactive` out of the way until the release.
+fn menu_intercept(idx: usize) -> bool {
+    let tree = super::menu::active();
+    if tree.is_null() {
+        return false;
+    }
+    // Hover model: the drop-down opens whenever the cursor is over the bar
+    // with the buttons up — `mchange`'s hand-over condition, no click required.
+    // The bar is `gl_rmenu = (0, 0, gl_width, gl_hbox)` (`gemgraf.c:427`), the
+    // Control Manager's wait rectangle; its height is the one `gl_hbox`
+    // (`graf::gl_hbox`), not a number of this module's own.
+    let (_mx, my) = crate::vdi::mouse_position();
+    if my >= super::graf::gl_hbox() || crate::vdi::mouse_buttons() & 0x01 != 0 {
+        return false;
+    }
+    let Some(backend) = host().and_then(|h| h.raster()) else {
+        return false;
+    };
+    match super::menu::track(tree, backend) {
+        Some((title, item)) => {
+            let mut msg = [0i16; pd::MSG_WORDS];
+            msg[0] = MN_SELECTED;
+            // ap_sendmsg: msg[1] = rlr->p_pid — the Screen Manager's, 1
+            // (gemctrl.c:367 runs as ctl_pd; gemwmlib.c:855).
+            msg[1] = super::appl::SCRENMGR_PID;
+            msg[3] = title; // menu title object
+            msg[4] = item; // menu item object
+            // SAFETY: single trap path; `post_msg` hands the message to the
+            // live slot (EmuTOS `aqueue`/`doq`, `gemqueue.c:85-125`).
+            unsafe {
+                pd::post_msg(idx, msg);
+            }
+            // `ct_msgup`: "send message and wait for the mouse button to come
+            // up" (`gemctrl.c:81-104`).
+            super::input::ct_msgup_hold();
+            true
+        }
+        None => false, // cancelled — the click is consumed, no message
+    }
+}
+
+/// Fill the shared event return slots from the current input state:
+/// `EV_MX`/`EV_MY` (mouse x/y), `EV_MB` (button bitmask), `EV_KS`
+/// (keyboard shift state) — the `ev_rets` block at `int_out[1..4]`.
+fn fill_rets(pb: &Aespb) {
+    let (mx, my) = crate::vdi::mouse_position();
+    pb.set_intout(1, mx); // EV_MX
+    pb.set_intout(2, my); // EV_MY
+    pb.set_intout(3, crate::vdi::mouse_buttons() as i16); // EV_MB
+    pb.set_intout(4, shift_state()); // EV_KS
+}
+
+/// Current keyboard shift-state bitmask (`Kbshift` encoding), or 0 with
+/// no host.
+fn shift_state() -> i16 {
+    host().map(|h| h.keyboard_shift_state()).unwrap_or(0) as i16
+}
+
+/// The button-wait predicate — EmuTOS `downorup` (`aes/geminput.c:348-357`).
+///
+/// `bflgclks` is the **clicks WORD** the caller passed (`B_CLICKS` /
+/// `MB_CLICKS`), which `combine_cms` packs as the high WORD of the `buparm`
+/// LONG (`aes/gemevlib.h:34-48`). It carries two fields: the low byte is the
+/// number of clicks to wait for, the **high byte is `bflag`**, the sense bit.
+/// `downorup` reads it as `flag = (buparm >> 24) & 0xff`, i.e. exactly that
+/// high byte, and returns
+///
+/// ```text
+/// (((mask & (val ^ new)) == 0) != flag)
+/// ```
+///
+/// With `flag = 0` the caller waits to **enter** the masked state, with
+/// `flag = 1` to **leave** it (`ev_button`, `aes/gemevlib.c:74-81`). TeraDesk's
+/// main loop asks with `clicks = 0x0102` (`sdk/apps/teradesk/main.c:1589`), so
+/// `flag = 1`, `mask = 3`, `state = 0`: "tell me when a button **is
+/// pressed**" — the inverse of the plain level match.
+///
+/// The comparison is EmuTOS's literal one: a 0/1 condition compared against the
+/// whole flag byte, so a `flag` above 1 makes the predicate constantly true,
+/// exactly as it does in C.
+fn downorup(new: u8, bflgclks: i16, mask: u8, val: u8) -> bool {
+    let flag = (bflgclks >> 8) & 0x00ff;
+    let cond = i16::from((mask & (val ^ new)) == 0);
+    cond != flag
+}
+
+/// The number of clicks a `bflgclks` WORD asks for — its **low** byte, EmuTOS
+/// `bclicks = LOBYTE(HIWORD(p))` (`abutton`, `aes/geminput.c:559`; the same
+/// extraction bounds the reported count in `post_button`, `:477`). The high
+/// byte belongs to [`downorup`], not to the count: TeraDesk's `0x0102` asks for
+/// **2** clicks, not 258.
+fn bclicks(bflgclks: i16) -> i16 {
+    bflgclks & 0x00ff
+}
+
+/// `evnt_button` (21) — block until the mouse buttons match the
+/// requested state, then return the **actual** click count and fill the
+/// mouse / keyboard return slots.
+///
+/// `int_in[0]` = flag + clicks to wait for (`B_CLICKS`), `int_in[1]` = button
+/// mask (`B_MASK`), `int_in[2]` = desired masked state (`B_STATE`).
+/// `RET_CODE` = clicks reached; `int_out[1..4]` = x, y, buttons, shift.
+///
+/// Waits for the masked button bits to satisfy [`downorup`] (the first click),
+/// then counts any further presses that fall inside the double-click window
+/// (`dclick_ms()`) up to the requested maximum ([`bclicks`]), and returns the
+/// *actual* click count (1 for a single click, 2 for a double click within the
+/// window). The window counting is factored into the shared [`count_clicks`]
+/// helper, which `evnt_multi` reuses.
+///
+/// Deliberately **not** gated on mouse ownership: `ev_button` blocks in
+/// `ev_block(MU_BUTTON)` → `iasync` → `abutton`, and `abutton` tests the level
+/// unconditionally (`aes/geminput.c:549-551`). Only `ev_multi`'s *quick check*
+/// carries the `rlr == gl_mowner` condition (`aes/gemevlib.c:185`).
+pub fn evnt_button(pb: &Aespb) -> Option<sched::Switch> {
+    let bflgclks = pb.intin(0);
+    let mask = pb.intin(1) as u8;
+    let state = pb.intin(2) as u8;
+    let clicks = bclicks(bflgclks);
+    let mut got = 0i16;
+    if let Some(h) = host() {
+        let matches = || downorup(crate::vdi::mouse_buttons(), bflgclks, mask, state);
+        // Wait for the button to reach the requested state (the first click).
+        while !matches() {
+            // AES trap tracer: record the button byte this evaluation read.
+            // Guarded by the compile-time `ENABLED`, so both the call and the
+            // `mouse_buttons()` argument fold away without the feature.
+            if super::trace::ENABLED {
+                super::trace::note_eval();
+            }
+            if let sched::SleepOutcome::Yield(sw) = sched::sleep(sched::wait_input()) {
+                return Some(sw); // yield to a peer (S2); re-checks on resume
+            }
+        }
+        // Count further clicks inside the double-click window. `evnt_button`
+        // has no timer source, so counting runs to the full window (no outer
+        // deadline: `cap = None`).
+        got = count_clicks(h, clicks, None, matches);
+    }
+    fill_rets(pb);
+    pb.set_ret(got.max(1));
+    None
+}
+
+/// Double-click intervals per speed index 0..4 (EmuTOS `gl_dcrates`, ms).
+const DCRATES: [u64; 5] = [450, 330, 275, 220, 165];
+
+/// The current double-click window in milliseconds.
+fn dclick_ms() -> u64 {
+    DCRATES[DCLICK_INDEX.load(Ordering::Relaxed).clamp(0, 4) as usize]
+}
+
+/// Poll `cond` until it holds, the deadline passes, or — when the caller armed
+/// the button-delay window (`armed`) — the pointer moved far enough to force
+/// that window to expire (EmuTOS `mchange` → `b_delay(gl_bdely)`,
+/// `aes/geminput.c:365-368`). Returns whether `cond` became true in time; a
+/// window cut short by movement returns `false`, which ends the counting with
+/// the clicks accumulated so far, exactly as the forced expiry delivers them.
+fn wait_until(
+    h: &dyn crate::host::Host,
+    deadline: u64,
+    armed: bool,
+    cond: impl Fn() -> bool,
+) -> bool {
+    while h.monotonic_millis() < deadline {
+        if cond() {
+            return true;
+        }
+        // AES trap tracer: this loop *is* the double-click window, so sample
+        // the pointer here separately from the outer wait. That makes it
+        // visible whether the pointer moved while the window stood open, and
+        // by how much per step — the measurement for EmuTOS `mchange`
+        // (`aes/geminput.c:360-370`), which cancels a pending button wait on a
+        // move of more than ±2. Compiled out without the `aes-trace` feature;
+        // negligible beside the `monotonic_millis` + `pump_input` this loop
+        // already does per pass.
+        if super::trace::ENABLED {
+            super::trace::note_click_window();
+        }
+        h.pump_input();
+        // `pump_input` is where a mouse packet reaches `mchange`, so this is the
+        // first instant the forced expiry can be seen.
+        if armed && !super::input::bdely_pending() {
+            return false;
+        }
+    }
+    cond()
+}
+
+/// Count mouse-button clicks in the double-click window, given the button has
+/// *already* reached the requested state for the first click — so the count
+/// starts at 1. Each further click must leave and then re-reach the state (as
+/// reported by `matches`) within one `dclick_ms()` window. Counting stops when
+/// `max_clicks` is reached, when a window closes without another press, or when
+/// `cap` (an optional outer deadline) is reached. Returns the click count
+/// (always >= 1).
+///
+/// This is the shared counter behind both `evnt_button` and `evnt_multi`'s
+/// `MU_BUTTON` branch, so a single click and a double click are told apart the
+/// same way in either call (`EV_BRET` / `RET_CODE`).
+///
+/// * `evnt_button` passes `cap = None`: it has no timer source, so counting
+///   runs to the full double-click window.
+/// * `evnt_multi` passes `cap = Some(deadline)` iff `MU_TIMER` is armed, so the
+///   click count never overruns the multi-wait's timer deadline nor stalls the
+///   other event sources (keyboard/message) past it. Without a timer it too
+///   uses `cap = None`; either way the stall is bounded by one window, and any
+///   keystroke/message that arrives meanwhile is buffered and seen on the next
+///   loop pass (it is delayed, never lost).
+fn count_clicks(
+    h: &dyn crate::host::Host,
+    max_clicks: i16,
+    cap: Option<u64>,
+    matches: impl Fn() -> bool,
+) -> i16 {
+    let win = dclick_ms();
+    let mut got = 1i16;
+    // EmuTOS opens the delay window only when someone is waiting for more than
+    // one click **and** the change that opened it is a press:
+    // `if (gl_bpend && state) { … gl_bdely = gl_dclick; }` (`b_click`,
+    // `aes/geminput.c:129-141`). `gl_bpend` is the count of waiters asking for
+    // `bclicks > 1` (`abutton`, `:559-561`) — here, this call asking for more
+    // than one click; `state` is the live button byte. A window opened while the
+    // buttons are up (an app waiting for a *release*) is therefore not armed,
+    // and movement does not cut it short — `gl_bdely == 0`, so `mchange` has
+    // nothing to expire.
+    let armed = max_clicks > 1 && crate::vdi::mouse_buttons() != 0;
+    if armed {
+        super::input::b_arm();
+    }
+    while got < max_clicks {
+        let mut deadline = h.monotonic_millis().saturating_add(win);
+        if let Some(cap) = cap {
+            deadline = deadline.min(cap);
+        }
+        // The button must leave, then re-reach, the state within the window.
+        if !wait_until(h, deadline, armed, || !matches())
+            || !wait_until(h, deadline, armed, &matches)
+        {
+            break;
+        }
+        got += 1;
+    }
+    if armed {
+        super::input::b_disarm();
+    }
+    got
+}
+
+/// Resolve a single vs. double left-button click for the Form Manager's modal
+/// loop (EmuTOS `fm_do` waits on `ev_multi` with `0x0002ff01L` = up to 2 left
+/// clicks). The caller has already detected the press edge, so the left button
+/// is down (the first click); count a second click that falls inside the
+/// double-click window. Returns 1 or 2. Used by `form::run_form` only for a
+/// TOUCHEXIT object, where the count sets the 0x8000 return bit.
+pub(super) fn count_form_clicks(h: &dyn crate::host::Host) -> i16 {
+    count_clicks(h, 2, None, || crate::vdi::mouse_buttons() & 0x01 == 0x01)
+}
+
+/// `evnt_mouse` (22) — block until the mouse enters (`flags` = 0) or
+/// leaves (`flags` = 1) the rectangle in `int_in[1..4]`, then fill the
+/// return slots and return 1.
+///
+/// MOBLK: `int_in[0]` = flags, `int_in[1..4]` = x, y, w, h. The event
+/// fires when `flags != inside` (EmuTOS `in_mrect`).
+pub fn evnt_mouse(pb: &Aespb) -> Option<sched::Switch> {
+    let m = MoBlk {
+        flags: pb.intin(0),
+        x: pb.intin(1),
+        y: pb.intin(2),
+        w: pb.intin(3),
+        h: pb.intin(4),
+    };
+    if host().is_some() {
+        while !rect_event(&m) {
+            if let sched::SleepOutcome::Yield(sw) = sched::sleep(sched::wait_input()) {
+                return Some(sw); // yield to a peer (S2); re-checks on resume
+            }
+        }
+    }
+    fill_rets(pb);
+    pb.set_ret(1);
+    None
+}
+
+/// AES double-click speed index (0..4); EmuTOS startup default is 3
+/// (`geminit.c:708`, `ev_dclick(3, TRUE)`).
+static DCLICK_INDEX: AtomicI16 = AtomicI16::new(3);
+
+/// `ev_dclick` (`aes/gemevlib.c`) — the internal getter/setter behind
+/// [`evnt_dclick`]. Also called at AES boot with `ev_dclick(3, TRUE)`
+/// (`geminit.c:708`) and by `process_inf2` from the `.INF` `#E` line's low
+/// three bits (`geminit.c:426`).
+pub(crate) fn ev_dclick(rate: i16, setit: bool) -> i16 {
+    if setit {
+        DCLICK_INDEX.store(rate, Ordering::Relaxed);
+    }
+    DCLICK_INDEX.load(Ordering::Relaxed)
+}
+
+/// `evnt_dclick` (26) — get (`int_in[1]` = 0) or set (`int_in[1]` != 0)
+/// the double-click speed index `int_in[0]`. Returns the current index.
+pub fn evnt_dclick(pb: &Aespb) {
+    let rate = pb.intin(0); // EV_DCRATE
+    let setit = pb.intin(1); // EV_DCSETIT
+    pb.set_ret(ev_dclick(rate, setit != 0));
+}
+
+/// `evnt_multi` (25) — the central event multiplexer. Block until **any**
+/// of the requested events (`MU_*` in `int_in[0]`) fires, then return the
+/// bitmask of those that did and report the mouse / keyboard / button
+/// state for all of them at once.
+///
+/// `int_in[0]` = flags, `int_in[1..3]` = button clicks/mask/state,
+/// `int_in[4..8]` = MOBLK 1, `int_in[9..13]` = MOBLK 2,
+/// `int_in[14..15]` = timer lo/hi ms, `addr_in[0]` = message buffer.
+/// `RET_CODE` = fired bitmask; `int_out[1..4]` = x, y, buttons, shift;
+/// `int_out[5]` = key (`EV_KRET`); `int_out[6]` = click count (`EV_BRET`).
+///
+/// Each single `evnt_*` wait is a special case of this loop. `EV_KRET`
+/// carries the full `scancode << 8 | ascii` key word (cursor / function
+/// keys included). The `MU_BUTTON` click count (`EV_BRET`) is the real
+/// count from [`count_clicks`] (1 = single, 2 = double click within the
+/// double-click window), so callers can tell a Select from an Open.
+/// Bring-up limit: single AES application.
+pub fn evnt_multi(pb: &Aespb) -> Option<sched::Switch> {
+    let flags = (pb.intin(0) as u16) & MU_TOSVALID;
+
+    let b_flgclks = pb.intin(1);
+    let b_clicks = bclicks(b_flgclks);
+    let b_mask = pb.intin(2) as u8;
+    let b_state = pb.intin(3) as u8;
+    let m1 = MoBlk {
+        flags: pb.intin(4),
+        x: pb.intin(5),
+        y: pb.intin(6),
+        w: pb.intin(7),
+        h: pb.intin(8),
+    };
+    let m2 = MoBlk {
+        flags: pb.intin(9),
+        x: pb.intin(10),
+        y: pb.intin(11),
+        w: pb.intin(12),
+        h: pb.intin(13),
+    };
+    let lo = pb.intin(14) as u16 as u32;
+    let hi = pb.intin(15) as u16 as u32;
+    let ms = ((hi << 16) | lo) as u64;
+    let pbuff = pb.addrin(0);
+    let idx = super::appl::current_identity();
+
+    let mut fired = 0u16;
+    let mut key = 0i16;
+    let mut clicks = 0i16;
+
+    if let Some(h) = host() {
+        // Persist the timer deadline per-slot for S2-restart idempotency
+        // (design §4.3 OPEN): the first entry stores `now + ms`, an S2 restart
+        // (this whole loop re-executes from the top on resume) reuses it, and
+        // any completion below clears it. Only meaningful when `MU_TIMER` is
+        // armed; without a timer the value is unused (`cap = None`, no MU_TIMER
+        // check), so it is computed but not persisted.
+        let deadline = if flags & MU_TIMER != 0 {
+            sched::arm_or_get_deadline(h.monotonic_millis(), ms)
+        } else {
+            h.monotonic_millis().saturating_add(ms)
+        };
+        // Pass counter: pass 0 is the *entry* evaluation (EmuTOS's `abutton` /
+        // `amouse` level test taken when `ev_multi` arms the event), every later
+        // pass is the "asleep in `mwait`" state. See the MU_BUTTON block below.
+        let mut pass = 0u32;
+        // The button state and mouse ownership **at arm time** — what `ev_multi`
+        // sees when it runs its quick check (`rlr == gl_mowner`,
+        // `aes/gemevlib.c:185`) and arms `abutton`'s level test
+        // (`aes/geminput.c:549-551`): both happen before the application
+        // blocks, i.e. before the Control Manager can act. Our Control Manager
+        // runs inline in this very pass, *ahead* of the checks, and may consume
+        // a button transition on the way (the drop-down track selects on a
+        // press or a release); the pass-0 test must therefore use the level the
+        // arm saw, not the level the track left behind. Sampled once, here.
+        // The level is EmuTOS's `button` (`downorup(button, buparm)`,
+        // `aes/gemevlib.c:196`; `abutton`, `aes/geminput.c:549`) — the state
+        // the AES has acted on, which `ct_msgup`'s HOTCLOSE exit fakes to 0
+        // for a press the Control Manager has already consumed
+        // (`aes/gemctrl.c:92`). It equals the raw VDI byte otherwise.
+        let arm_own = super::input::own_mouse();
+        let arm_mb = super::input::button();
+        // The pointer position **at arm time**, for the same reason: `amouse`
+        // tests a rectangle wait exactly once, against the position at the
+        // instant `ev_multi` arms it (`aes/geminput.c:575-576`), before the
+        // application blocks and before the Control Manager can move the
+        // pointer through the rectangle on its own account. Sampled here,
+        // ahead of the inline interception (A73, point 1).
+        let arm_pos = crate::vdi::mouse_position();
+        loop {
+            // AES trap tracer: one sample of the button byte per evaluation of
+            // the multiplexer predicate, folded into the call record as
+            // `passes`/`mb_or`/`mb_and`. Guarded by the compile-time `ENABLED`
+            // so the whole statement folds away without the feature.
+            if super::trace::ENABLED {
+                super::trace::note_eval();
+            }
+            // The Control Manager — the `menu_intercept`/`window::intercept`
+            // pair, mirroring the EmuTOS `ctlmgr` process (`gemctrl.c:427-486`)
+            // — runs here, inline, ahead of the application's own checks. It
+            // stays out of the way while it is parked in `ct_msgup`'s wait for
+            // the press that selected a menu item to come up
+            // (`gemctrl.c:100-101`): no interception, no `w_setactive`, until the
+            // button is released.
+            if !super::input::ct_msgup_busy() {
+                // AES intercepts a click in the menu bar or a window frame before
+                // the app sees the raw button: it owns the mouse over the
+                // menu/frame and posts the resulting MN_SELECTED / WM_* message
+                // into the target's per-app FIFO via `ap_sendmsg`
+                // (`gemctrl.c:81`, `gemwmlib.c:851`). The message reaches the app
+                // through the regular MU_MESAG dequeue below — no direct `pbuff`
+                // write, no bypass. Done only when the app actually requested
+                // MU_MESAG: EmuTOS sets AP_MESAG (and processes the frame click)
+                // solely for MU_MESAG (`gemsuper.c:147`); an app waiting on
+                // MU_BUTTON alone is not woken by a frame click and must not
+                // receive a spurious MU_MESAG (AUD-P2-003).
+                if flags & MU_MESAG != 0 && !menu_intercept(idx) {
+                    super::window::intercept();
+                }
+                // The Control Manager's loop head, `w_setactive()`
+                // (`aes/gemctrl.c:442`): after it has dealt with its event it
+                // hands the mouse (back) to the owner of the top window —
+                // `ct_chgown(ppd, &d)` → `set_mown` (`aes/gemwmlib.c:326-333`,
+                // `aes/gemctrl.c:392-397`) — a no-op while a button is held
+                // (`aes/geminput.c:222`) or while a menu track holds the mouse
+                // (`gemctrl.c:395`). It sits **after** the interception, not
+                // before: run first, it undid `mchange`'s hand-over to `ctl_pd`
+                // (`aes/geminput.c:388-389`) before the track could inherit it,
+                // and the track then returned with the application owning the
+                // press it had just consumed.
+                super::input::w_setactive();
+            }
+            if flags & MU_KEYBD != 0 {
+                if let Some(w) = h.console_try_read_key() {
+                    key = w as i16; // scancode << 8 | ascii (EV_KRET)
+                    fired |= MU_KEYBD;
+                }
+            }
+            if flags & MU_BUTTON != 0 {
+                // EmuTOS runs the button/rectangle **quick check** only while
+                // the calling process owns the mouse — `if (rlr == gl_mowner)`
+                // (`aes/gemevlib.c:185`). Without ownership `ev_multi` falls
+                // through to `iasync(MU_BUTTON, buparm)` → `abutton`, which
+                // still tests the level once, unconditionally, and answers
+                // `azombie(e, 1)` — one click (`aes/geminput.c:549-551`). If
+                // that entry test fails the EVB sleeps on `c_bsleep`, and
+                // `post_button` walks **only `gl_mowner`'s** list
+                // (`aes/geminput.c:344,468`), so a non-owning app is not woken
+                // by any later button change until ownership returns.
+                //
+                // Our loop pass 0 is that entry test, taken on the ownership
+                // and button level sampled at arm time (`arm_own`/`arm_mb`,
+                // above); every later pass is the "asleep" state and therefore
+                // fires only while we own the mouse. The click count follows
+                // the same split: the quick check reports the real count
+                // (`prets[5] = mclick`, `gemevlib.c:190-198`), the `abutton`
+                // path reports 1.
+                //
+                // This is where a menu selection stays a message: the press
+                // that picked the item happened under `gl_ctmown` with the
+                // Control Manager owning the mouse, so `own` is false, and on
+                // pass 0 `arm_mb` is the level from before the track. The
+                // application's wait for a press is satisfied by neither —
+                // exactly `post_button(ctl_pd, …)` never visiting the app's
+                // `c_bsleep` list. The one exception EmuTOS keeps stays too: an
+                // application that re-arms while the selecting press is *still
+                // held* sees that level at arm time and gets its one
+                // ownership-blind `MU_BUTTON` (`docs/api/aes/menu.md`, "The one
+                // documented exception").
+                let (own, mb) = if pass == 0 {
+                    (arm_own, arm_mb)
+                } else {
+                    (super::input::own_mouse(), super::input::button())
+                };
+                if (own || pass == 0) && downorup(mb, b_flgclks, b_mask, b_state) {
+                    clicks = if own {
+                        // Resolve the *real* click count (single vs. double)
+                        // inside the double-click window — the same counter
+                        // `evnt_button` uses, so the desktop can tell Select (1)
+                        // from Open (2). Cap counting at the multi-wait deadline
+                        // when a timer is armed so it never overruns MU_TIMER (a
+                        // 0-ms poll timer collapses to a count of 1, matching the
+                        // "poll now" contract).
+                        let cap = (flags & MU_TIMER != 0).then_some(deadline);
+                        count_clicks(h, b_clicks, cap, || {
+                            downorup(crate::vdi::mouse_buttons(), b_flgclks, b_mask, b_state)
+                        })
+                    } else {
+                        1 // abutton: azombie(e, 1)
+                    };
+                    fired |= MU_BUTTON;
+                }
+            }
+            // The rectangle quick checks sit inside the same
+            // `if (rlr == gl_mowner)` block as the button one
+            // (`aes/gemevlib.c:200-203`), and the blocking path behaves the same
+            // way: `amouse` tests `in_mrect` once, ownership-blind, against the
+            // position **at arm time** (`aes/geminput.c:568-587`), then parks
+            // the wait on `c_msleep`, which only `post_mouse(gl_mowner, …)`
+            // walks (`aes/geminput.c:390,446-456`) — from `mchange` on every
+            // move while the caller owns the mouse, and once from `set_mown`
+            // the moment ownership comes (back) to it (`:220-231`).
+            //
+            // Pass 0 is the arm: the one ownership-blind test uses `arm_pos`,
+            // the position from before the inline Control Manager ran — a
+            // rectangle the drop-down track crossed on its own account never
+            // reaches the application's parked wait (`post_mouse(ctl_pd, …)`
+            // walks `ctl_pd`'s list). If that track handed the mouse back
+            // before the application runs (`w_setactive` → `set_mown(app)` →
+            // `post_mouse(app, xrat, yrat)`, `aes/gemctrl.c:441-442`; a
+            // selection on *release*), the parked wait is completed against
+            // the live position — `own_mouse()` is true again, and the live
+            // test is that `post_mouse`. Every later pass is the parked state:
+            // live position, owner only. An unsatisfied arm that another event
+            // (the track's `MN_SELECTED`) wakes the caller from is simply
+            // dropped, `acancel` (`aes/gemevlib.c:264`) — nothing re-tests it
+            // (A73, point 1; `docs/api/aes/event.md` "tested once, at arm time").
+            let own_m = super::input::own_mouse();
+            let rect_fires = |m: &MoBlk| {
+                (pass == 0 && rect_event_at(m, arm_pos)) || (own_m && rect_event(m))
+            };
+            if flags & MU_M1 != 0 && rect_fires(&m1) {
+                fired |= MU_M1;
+            }
+            if flags & MU_M2 != 0 && rect_fires(&m2) {
+                fired |= MU_M2;
+            }
+            if flags & MU_MESAG != 0 {
+                // SAFETY: single trap path; `by_index` hands out the live slot.
+                if let Some(src) = unsafe { pd::by_index(idx) } {
+                    // Pop the FRONT of the FIFO (EmuTOS `ap_rdwr(MU_RDMSG)`
+                    // →`doq` dequeue, `gemqueue.c:76-81`); a single pending
+                    // message is just the 1-element case.
+                    if let Some(msg) = src.queue.pop() {
+                        if pbuff != 0 {
+                            // SAFETY: `MME_PBUFF` points at >= 16 bytes.
+                            unsafe {
+                                let p = pbuff as *mut i16;
+                                for (i, &w) in msg.iter().enumerate() {
+                                    p.add(i).write(w);
+                                }
+                            }
+                        }
+                        src.flags |= pd::AP_MESAG;
+                        fired |= MU_MESAG;
+                    }
+                }
+            }
+            if flags & MU_TIMER != 0 && h.monotonic_millis() >= deadline {
+                fired |= MU_TIMER;
+            }
+
+            if fired != 0 {
+                break;
+            }
+            // Not fired: block until the cooperative idle re-check (design §5).
+            // `WAIT_INPUT` is the multiplexer's general re-check trigger — every
+            // armed source (keyboard/button/mouse, and the menu/window frame
+            // interception that produces `MU_MESAG`) is input-driven, and the
+            // `MU_TIMER` deadline is checked by this same loop above. The union
+            // of message/timer classes becomes load-bearing at step 4 (§4.1);
+            // in step 3a the caller re-checks the full predicate each pass.
+            //
+            // The loop above the block is read-only (a message is popped only on
+            // the `fired |= MU_MESAG` firing pass), so on a peer yield (S2) it is
+            // safe to abort and re-execute from the top on resume (§4.3).
+            if let sched::SleepOutcome::Yield(sw) = sched::sleep(sched::wait_input()) {
+                return Some(sw);
+            }
+            pass = pass.saturating_add(1);
+        }
+    }
+
+    // Completed (an event fired, or no host): clear the persisted timer deadline
+    // so a later timer wait recomputes fresh — any firing path reaches here,
+    // whereas a peer yield above returned early and left the deadline armed for
+    // the restart (S2-restart idempotency, §4.3).
+    sched::clear_deadline();
+    fill_rets(pb);
+    pb.set_intout(5, key); // EV_KRET
+    pb.set_intout(6, clicks); // EV_BRET
+    pb.set_ret(fired as i16);
+    None
+}
+
+/// `evnt_keybd` (20) — block until a key is pressed; return it in
+/// `RET_CODE` as `scancode << 8 | ascii`.
+///
+/// The key word comes from the IKBD key ring (`console_try_read_key`): the
+/// low byte is the ASCII character (0 for keys with none), the high byte
+/// the Atari scancode, so cursor / function keys reach the application.
+/// The GEMDOS console path still reads the ASCII byte only.
+pub fn evnt_keybd(pb: &Aespb) -> Option<sched::Switch> {
+    let key = match host() {
+        Some(h) => loop {
+            if let Some(w) = h.console_try_read_key() {
+                break w as i16; // scancode << 8 | ascii
+            }
+            if let sched::SleepOutcome::Yield(sw) = sched::sleep(sched::wait_input()) {
+                return Some(sw); // yield to a peer (S2); re-checks on resume
+            }
+        },
+        None => 0,
+    };
+    pb.set_ret(key);
+    None
+}
+
+/// `evnt_mesag` (23) — block until a 16-byte message is in the calling
+/// application's pipe, copy it to `addr_in[0]` (`ME_PBUFF`), set the
+/// `AP_MESAG` flag, and return 1.
+///
+/// Bring-up note: with a single AES application and no window/menu
+/// managers posting messages yet, the only writer is `appl_write`; the
+/// wait returns as soon as a message is pending. A lone application
+/// waiting on a message that no one will post blocks by design — it
+/// asked to wait. Multi-application posting lands with the window/menu
+/// managers (later D-deliverables).
+pub fn evnt_mesag(pb: &Aespb) -> Option<sched::Switch> {
+    let dest = pb.addrin(0);
+    let idx = super::appl::current_identity();
+    if host().is_none() {
+        pb.set_ret(1);
+        return None;
+    }
+    loop {
+        // SAFETY: single trap path; `by_index` hands out the live slot.
+        let Some(src) = (unsafe { pd::by_index(idx) }) else {
+            // No descriptor — only an identity outside the table, which
+            // `current_identity` never produces: nothing to wait on; report
+            // the message event and bail.
+            pb.set_ret(1);
+            return None;
+        };
+        // Pop the FRONT of the FIFO (EmuTOS `ap_rdwr(MU_RDMSG)`→`doq` dequeue,
+        // `gemqueue.c:76-81`).
+        if let Some(msg) = src.queue.pop() {
+            if dest != 0 {
+                // SAFETY: `ME_PBUFF` points at >= 16 bytes of storage.
+                unsafe {
+                    let p = dest as *mut i16;
+                    for (i, &w) in msg.iter().enumerate() {
+                        p.add(i).write(w);
+                    }
+                }
+            }
+            src.flags |= pd::AP_MESAG;
+            pb.set_ret(1);
+            return None;
+        }
+        // No message yet: block until one is posted to this identity's FIFO
+        // (`pd::post_msg` wakes `WAIT_MESG(idx)`, design §5.2). The pop above
+        // runs only when a message is present, so aborting to a peer (S2) and
+        // re-executing on resume never double-pops (§4.3).
+        if let sched::SleepOutcome::Yield(sw) = sched::sleep(sched::wait_mesg(idx)) {
+            return Some(sw);
+        }
+    }
+}
+
+/// `evnt_timer` (24) — block for `ms` milliseconds, then return.
+///
+/// `int_in[0]` = low WORD of the millisecond count, `int_in[1]` = high
+/// WORD (`T_LOCOUNT`/`T_HICOUNT`). `RET_CODE` is 1 (the timer event).
+pub fn evnt_timer(pb: &Aespb) -> Option<sched::Switch> {
+    let lo = pb.intin(0) as u16 as u32;
+    let hi = pb.intin(1) as u16 as u32;
+    let ms = ((hi << 16) | lo) as u64;
+
+    if let Some(sw) = wait_ms(ms) {
+        return Some(sw); // yield to a peer (S2); reuses the deadline on resume
+    }
+    // Completed (deadline reached, or `ms == 0`): clear the persisted deadline
+    // so a later timer wait recomputes fresh (S2-restart idempotency, §4.3).
+    sched::clear_deadline();
+    pb.set_ret(1);
+    None
+}
+
+/// Block for `ms` milliseconds against the host's monotonic clock. A
+/// zero count returns immediately (EmuTOS `ev_timer(0)` semantics). With
+/// no host installed the clock stands still, so this returns at once.
+fn wait_ms(ms: u64) -> Option<sched::Switch> {
+    if ms == 0 {
+        return None;
+    }
+    if let Some(h) = host() {
+        let now = h.monotonic_millis();
+        // Persist the absolute deadline per-slot so an S2 restart REUSES it
+        // instead of recomputing `now + ms` — which, re-entered from the top on
+        // every restart with a live peer, would creep forward by `ms` and never
+        // converge (design §4.3 OPEN). First entry stores; a restart reuses;
+        // `evnt_timer` clears it on completion. `monotonic_millis` is monotonic
+        // so a plain comparison is safe (no wraparound within any realistic
+        // uptime).
+        let deadline = sched::arm_or_get_deadline(now, ms);
+        // Block until the deadline. The idle wake-pass wakes `WAIT_TIMER` once
+        // `monotonic_millis >= deadline` (design §5.2); the caller's own
+        // deadline check drives the loop in the single-context step-3a case.
+        while h.monotonic_millis() < deadline {
+            if let sched::SleepOutcome::Yield(sw) = sched::sleep(sched::wait_timer(deadline)) {
+                return Some(sw); // yield to a peer (S2); reuses the deadline on resume
+            }
+        }
+    }
+    None
+}
