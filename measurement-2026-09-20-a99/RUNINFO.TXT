@@ -1,0 +1,157 @@
+A99 -- objc_change toggles SELECTED by XOR the way EmuTOS ob_change does (gemoblib.c:1253-1320):
+one bb_fill(MD_XOR, FIS_SOLID, IP_SOLID, t inset by th>=0) when only SELECTED changes and xor_is_ok,
+no just_draw then; G_IMAGE deselect = XOR + redraw (D-093a); G_USERDEF = ob_user(prev, new), no
+redraw; G_ICON = redraw, never XOR; FL3DOBJ = redraw (xor_is_ok FALSE). The A85 compensations that
+existed only because change() redrew (the G_TITLE unselected face fill in just_draw, the WHITE
+pre-fill before the un-hilite in menu.rs rehilite/popup_shown, and redraw_bar_separator /
+title_touches_separator) are removed. Developer self-evidence, 2026-09-20/21. Branch desk-rebuild,
+base HEAD 30a7156, changes uncommitted in the tree. Pinned EmuTOS references/emutos @ 1a7484ab:
+aes/gemoblib.c:107-148 (xor_is_ok; :114 FALSE for G_IMAGE or FL3DOBJ), :433-448 (ob_user),
+:1253-1320 (ob_change: :1263-1264 early-out, :1270-1271 !redraw, :1275/:1319 gsx_moff/gsx_mon,
+:1277-1278 th<0 -> 0, :1282-1284 G_USERDEF, :1286-1287 G_ICON, :1295-1304 XOR toggle / G_IMAGE,
+:1315-1316 just_draw); aes/gemobjop.c:25-70 (ob_sst: :40 type mask, :44-46 G_TITLE th=1);
+aes/gemmnlib.c:170 (do_chg -> ob_change = the menu hilite path); aes/gemfmlib.c:243 (fm_button radio
+sweep -> ob_change); desk/desk_rsc.c:294 (EmuTOS desktop drop-down box 0xFF1100 = outside border).
+Spec: docs/api/aes/object-form.md § objc_change (47) incl. D-093a (unchanged).
+
+PRODUCT CODE (uncommitted; method/product-a99-object-menu.diff)
+  tos-api/src/aes/object.rs  change_clip_t (the body of objc_change / change / change_t):
+    after the state write and the redraw gate: ob_type (0x00ff-masked), flags, th = sst_th(obj).max(0);
+    cursor bracket unchanged (A65); then the ob_change type switch with a `redraw` variable (the C one):
+      G_USERDEF (spec != 0) -> ob_user(t, obj, x, y, w, h, spec, clip, curr_state, newstate); redraw = false
+        (EL0 upcall rules unchanged: the existing ob_user is called exactly as before)
+      G_ICON -> {} (plain redraw; a G_CICON takes the default arm as in EmuTOS)
+      default -> if (new ^ curr) & SELECTED: ok = xor_is_ok(t, type, flags, spec, backend);
+        if ok || (type == G_IMAGE && !(new & SELECTED)): fill_pattern(x+th, y+th, w-2th, h-2th,
+        {BLACK, WHITE, IP_SOLID, WriteMode::Xor}) (guarded w,h > 0 as A85's trailing block); redraw = !ok
+    if redraw: draw_tree(t, obj, 0, ...) = just_draw of this object.
+  tos-api/src/aes/object.rs  just_draw G_TITLE arm: the unselected face fill (WHITE / GRAY_LT) is
+    removed -- it was the documented non-EmuTOS compensation for the redraw-deselect (A85 receipt).
+  tos-api/src/aes/menu.rs    rehilite + popup_shown: the WHITE fill_rect of the old item before
+    set_state_bit(old, SELECTED, false) is removed (an XOR over a white pre-fill would leave the item
+    black); the frame repaint stays (the kernel desktop's drop-down box has an INSIDE th=+1 border that
+    the full-width item XOR crosses -- desk/, not this ticket). close_box: no redraw_bar_separator;
+    menu_tnormal: no title_touches_separator/redraw_bar_separator; both fns deleted (the title's XOR is
+    inset by 1 and never reaches the separator row; the only erasure of that row was the removed fill).
+  tos-api/tests/aes_objc_change_toggle.rs  NEW (12 tests, see HOST TESTS)
+  tos-api/tests/aes_screen_buffer_save_under.rs  harness only: BufBackend::fill_pattern is now
+    mode-aware (XOR complements the destination, like its own abline) -- it painted every pattern
+    opaque, which with the XOR toggle left the un-highlighted File title black (a harness artefact A85
+    had listed under "not touched"). The expectation (byte-identical screen after the drop-down) is
+    unchanged. method/test-harness-save-under-fill-pattern-mode.diff.
+  docs/STATUS.md  Phase-13 fragment + one Recent Decisions row (2026-09-20)
+  TASK/A99.md ERLEDIGT + Abschluss; TASK/A99-STATUS-DONE.MD
+
+HOST TESTS (host-tests/)
+  xtask-test-BASELINE-HEAD-30a7156.log   cargo run -p xtask -- test on the tree as received:
+      748 passed / 0 failed / 2 ignored.
+  aes_objc_change_toggle-RED-before-HEAD-30a7156.txt   the new file against HEAD's object.rs/menu.rs:
+      5 passed / 7 FAILED --
+      RED: a99_unboxed_g_ftext_deselect_restores_the_parent_ground_and_glyphs (bar stays: (220,100)
+             was 0xBDBDBD LWHITE, is 0x424242 = ~LWHITE), a99_g_ibox_deselect_restores_the_ground
+             (same at (221,101)), a99_g_string_select_deselect_round_trip_is_pixel_identical
+             ((220,100) was WHITE, is BLACK), a99_selected_toggle_on_an_xor_able_object_is_exactly_one_xor_fill
+             (ops [Glyph, Glyph, FillPattern XOR] instead of [FillPattern XOR]),
+             a99_g_string_toggle_is_exactly_one_xor_fill (same), a99_inside_border_insets_the_xor_by_th
+             (4 border FillRects + face FillRect + XOR instead of the one XOR),
+             a99_g_image_deselect_xors_and_redraws (ops [BlitMono] -- no XOR before the redraw).
+      GREEN already (guards): a99_fl3dact_button_toggle_redraws_without_a_bare_xor,
+             a99_g_icon_toggle_redraws_without_xor, a99_g_userdef_toggle_issues_no_generic_draw,
+             a99_redraw_zero_stores_the_state_and_draws_nothing, a99_unchanged_state_is_a_no_op.
+  aes_objc_change_toggle-GREEN-after.txt   12/12 ok.
+  cargo-test-no-fail-fast-AFTER.log   cargo test -p tos-api -p tos-types -p xtask --no-fail-fast:
+      760 passed / 0 failed / 2 ignored (= 748 + 12).
+  xtask-test-AFTER.log   cargo run -p xtask -- test: 760 / 0 / 2, rc 0.
+  The harness of the new file is aes_object_selected_xor.rs's (mode-aware XOR, the kernel's 555 palette
+  decode) plus a draw-op log (FillRect/Line/FillPattern{x,y,w,h,mode,solid}/Glyph/BlitMono/CopyRect/
+  PutDevicePixel). The tree is a 2-object array (parent G_BOX at (200,90,70,40): FL3DBAK 0x00ff1100 =
+  LWHITE face, or plain hollow white; child at (220,100,24,16)); the AES writes ob_state through
+  as_mut_ptr() (an as_ptr() of a non-mut array is UB and let the optimiser read the stale state --
+  fixed in the harness before the red run was archived).
+
+BUILD / CLIPPY (build/)
+  xtask-build-rpi4.log    cargo xtask build --board rpi4: tos-api and kernel recompiled, rustc
+                          tos-api 64 / kernel 94, rc 0 (baseline A85: 64/94, delta 0). Tree kernel8.img
+                          sha256 0d3b63b4e41eefcb... (dev, rpi4; not used for the dumps). No qemu-virt build (lead).
+  clippy-tos-api-host.txt cargo clippy -p tos-api: 80 (A85 baseline 80, delta 0); object.rs 16 -> 16,
+                          menu.rs 10 -> 10 hits. --test aes_objc_change_toggle / aes_screen_buffer_save_under:
+                          0 warnings (one unused const removed from the new file before hand-off).
+  scratch-r{1,2}-{before,after}-build.log  the injector scratch kernels (dev, rpi4): tos-api 67 / kernel 105
+                          = the H02/A46/A78 injector + trace scaffolding of the scratch copy (as A79/A85).
+  make-sd-image.log       tools/make-sd-image.sh <scratch>/img/sd-base.img 64;  sd-put-tera.log: + NEWDESK.INF
+                          (a79/method/newdesk-tera.inf, #Z TeraDesk) + Apps/TERADESK/TERADESK.INF
+                          (a79/method/teradesk-window.inf) -> sd-tera.img
+
+QEMU raspi4b (a79/method/run.sh; 640x480, -display none, QMP screendump 0.3 s after each serial mark;
+every run boots a fresh copy of the image; grep -c "EXC\|PANIC\|panic" = 0 in all 6 serial logs).
+BEFORE = scratch with tos-api/src/aes/object.rs + menu.rs = HEAD 30a7156 (git show, no checkout);
+AFTER = the tree. Same scripts (method/a99_scripts.rs = tera-mask2 + desk-menu; a99_scripts2.rs =
+tera-mask2 + desk-about2; method/make_scratch_a99.sh), same images, so a pixel diff isolates this change.
+Pointer parked bottom-right before every dump except D_OK_HELD (it must stay on the button).
+  kernel8 r1-before e09d51877a779c6f...  r1-after 50deb446a4747e7d...  r2-before ce4e15628534fee9...  r2-after 180353b26d178414...
+  sd-base f44af7c6aaa541c4...  sd-tera 65532de2581146aa...
+
+  r1 tera  (sd-tera, method/tera-mask2.actions: hover "View" (133,8); onto "Set mask..." (200,266);
+            click -> SETMASK dialog; arm the AES trace; click row 1 (350,216) = FTYPE1, already
+            selected; click row 2 (350,232) = FTYPE2; click row 3 (350,248) = FTYPE3; parkbr + dump
+            after each)
+     tera-before-*.png / tera-after-*.png: A-idle 0 px, B-view-open 0, C-setmask 0, D-row1 0,
+     E-row2 0, F-row3 0 -- BYTE-IDENTICAL before/after.
+     Pixel classes of the four list rows (320..415 x 209..224 / 225..240 / 241..256 / 257..272),
+     identical in both kernels:
+       C/D (row 1 selected): row 1 = 1340 px (66,66,66) = ~LWHITE + 196 WHITE glyph px;
+                            rows 2-4 = LWHITE (189,189,189) + BLACK glyphs (132 / 207 / 200 px)
+       E (row 2 clicked):   row 1 = LWHITE + 196 BLACK; row 2 = 1404 px ~LWHITE + 132 WHITE; rows 3-4 LWHITE
+       F (row 3 clicked):   rows 1-2 LWHITE + BLACK glyphs; row 3 = 1329 px ~LWHITE + 207 WHITE; row 4 LWHITE
+     => after every click exactly ONE row is inverted -- on the BEFORE kernel too. The ticket's premise
+     ("click another row -> the old bar stays") was A85's UNMEASURED prediction, and it does not hold
+     for TeraDesk: the serial trace (armed at +4300) shows the click path
+       op 25 evnt_button -> op 43 objc_find (out 6/7/8) -> op 56 form_button (the AES radio sweep:
+       NewTOS form.rs fm_button -> object::change on FTYPE1 (deselect) and FTYPEn (select)) ->
+       op 107 wind_update -> op 42 objc_draw(21 FILETYPE, 0) -> op 42 objc_draw(5 FTPARENT, 8) ->
+       op 42 objc_draw(12 slider, 8) x2 -> op 107
+     i.e. TeraDesk redraws the whole FTPARENT box after every TOUCHEXIT row click
+     (lists.c:849-869 case FTYPE1..4 -> redraw = TRUE -> :902-908 set_lselector(TRUE) ->
+     xd_drawdeep(FTPARENT)), which repaints the LWHITE face and the rows in their new state. The
+     "both bars" state exists only between form_button's two change() calls and that redraw (a few
+     ms, not dumpable at 0.3 s settle). So the SETMASK dumps are a NO-REGRESSION proof, not the
+     discriminator; the discriminator for the raw objc_change path is the host test (a)/(b)/(c)/(d)
+     (red before, green after). A scan of desktop.rsc for SELECTABLE unfilled objects finds only
+     these four rows (RBUTTON|TOUCHEXIT, always followed by that redraw) and one FL3DBAK G_IBOX in
+     tree 4 -- TeraDesk cannot show the defect through a gesture. An app using the plain AES form_do
+     radio sweep (gemfmlib.c:243 -> ob_change) on unfilled rows would.
+  r1 desk  (sd-base, method/desk-menu.actions = A85's: parkbr; A_IDLE; hover "File" (76,8); parkbr;
+            B_FILE_OPEN; hover row 1 (200,28); C_ITEM_HOVER; parkbr; click outside -> D_CLOSED)
+     desk-before-*.png / desk-after-*.png: A 0 px, B 0, C 0, D 0 -- byte-identical; and
+     D-closed == A-idle (0 px) in both kernels: the File title is normal again after the close and the
+     bar's separator row is intact WITHOUT redraw_bar_separator (the XOR is inset by 1); the title
+     highlight (B) and the hovered G_STRING (C) are the same pixels by XOR toggle as by the old
+     white-fill + redraw.
+  r2 about (sd-base, method/desk-about2.actions: A68-A70's gesture: hover Desk (22,8); click
+            "Desktop info..." (60,28) -> the form_alert; move onto the OK button's lower-right
+            (340,285); DOWN and HOLD; D_OK_HELD; UP -> alert closes; parkbr; E_AFTER_RELEASE)
+     about-before-*.png / about-after-*.png: A 0, B 0, C 0, D 0, E 0 -- byte-identical.
+     D_OK_HELD vs C (after): 388 px in (60,28)-(351,301) = the pressed FL3DACT OK button + the pointer:
+     row y=277 x 286..352  C |lllll###.lllll...d###llll|  D |lllll####llll...l.###llll|
+     col x=300 y 258..296  C |lll###.lll...d###llll|      D |lll####lll...l.###llll|
+     = the sunk bevel (left/top line WHITE -> BLACK, bottom/right LBLACK -> WHITE, add_3d_effect
+     :252/:270-272) drawn by the full redraw (xor_is_ok FALSE for FL3DOBJ -> no bare XOR), plus the
+     label nudge. E vs A: 51 px = the two pointer positions only (alert gone, Desk title normal).
+     The injector CAN hold a button (Dn ... Mark ... Up); the release is form_do's normal exit.
+
+OUT OF SCOPE (observed, untouched)
+  (1) The kernel desktop's drop-down box has an inside border (th = +1, kernel/src/desk/menu.rs
+      build_menu: (1<<16)|0x1070) while EmuTOS's has an outside one (0xFF1100, desk/desk_rsc.c:294);
+      that is why rehilite/popup_shown still repaint the frame after the item XOR. desk/, not A99.
+  (2) EmuTOS's bb_fill with w-2th <= 0 (an object narrower than twice its inside border) still fills
+      a normalised rect (arb_corner); change_clip_t guards it like A85's trailing block. Degenerate.
+  (3) A99's XOR runs before just_draw's HIDETREE / spec == -1 reject, as EmuTOS's ob_change does
+      (:1301 before :491): objc_change(SELECTED, redraw) on a HIDETREE object XORs its rect. 1:1.
+  (4) The sibling harnesses aes_object_3d_box_border.rs, aes_window_color_words.rs, ... keep the
+      6-bit-green decode / opaque fill_pattern (A85 (5)/(6)); only aes_screen_buffer_save_under.rs
+      needed the mode-aware fill here. aes_object_cursor_bracket.rs's mode-blind fill still reads
+      the SELECTED hollow G_BOX BLACK by fg = BLACK of the XOR fill -- passes, left.
+  (5) ob_user's EL0 upcall / kernel-built split unchanged.
+
+OPEN
+  Pi acceptance (Tester/Lead; nothing flashed).

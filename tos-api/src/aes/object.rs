@@ -1515,9 +1515,21 @@ pub(crate) fn change_t(t: ObjTree, obj: i16, newstate: u16, redraw: bool) {
     change_clip_t(t, obj, newstate, redraw, None);
 }
 
-/// Body of [`change_t`]: set `obj`'s state and, if `redraw`, redraw just that
-/// object within `clip_override` (`None` = the full screen, the internal
+/// Body of [`change_t`]: set `obj`'s state and, if `redraw`, show the change
+/// on screen within `clip_override` (`None` = the full screen, the internal
 /// callers' behaviour; `objc_change` passes the AES `int_in[2..5]` clip).
+///
+/// EmuTOS `ob_change` (`gemoblib.c:1253-1320`, A99). After the state write the
+/// draw is **not** always a redraw: when only the `SELECTED` bit toggles and
+/// `xor_is_ok(obtype, flags, spec)` holds, the object rectangle — inset by a
+/// positive `ob_sst` thickness — is complemented with one
+/// `bb_fill(MD_XOR, FIS_SOLID, IP_SOLID, …)` and `just_draw` is skipped
+/// (`redraw = !ok`, `:1295-1304`). That is what makes selecting *and*
+/// deselecting an object without an opaque fill (an unboxed `G_TEXT`/`G_FTEXT`,
+/// a `G_IBOX`, a `G_STRING` menu item, a `G_TITLE`) symmetric: the second XOR
+/// takes the first one back. Redrawing instead would paint the ink over the
+/// still-inverted ground and leave the bar standing (TeraDesk's SETMASK list,
+/// the visible consequence of A85's trailing XOR in `just_draw`).
 fn change_clip_t(t: ObjTree, obj: i16, newstate: u16, redraw: bool, clip_override: Option<ClipRect>) {
     let spec = t.spec(obj);
     // EmuTOS `ob_change` early-out (gemoblib.c:1263): `if ((curr_state ==
@@ -1538,7 +1550,16 @@ fn change_clip_t(t: ObjTree, obj: i16, newstate: u16, redraw: bool, clip_overrid
         // Zero-clip (`None`) = the full screen; otherwise the caller's rectangle.
         let clip = clip_override.unwrap_or_else(|| ClipRect::full(backend.width(), backend.height()));
         let (ox, oy) = abs_offset(t, obj);
-        // A65: the cursor comes down here and goes back up after the redraw —
+        let (w, h) = (t.width(obj), t.height(obj));
+        // `ob_sst` (gemobjop.c:25-70) gives the type (0x00ff-masked, `:40` —
+        // AUD-P3-007), the flags and the signed border thickness; `ob_change`
+        // clamps a negative (outside) thickness to 0 (`if (th < 0) th = 0;`,
+        // `:1277-1278`) so the XOR covers the full rect for an outside border
+        // and is inset by `th` for an inside one.
+        let ob_type = t.ob_type(obj) & 0x00ff;
+        let ob_flags = t.flags(obj);
+        let th = t.sst_th(obj).max(0);
+        // A65: the cursor comes down here and goes back up after the draw —
         // exactly where EmuTOS `ob_change` places `gsx_moff()` / `gsx_mon()`
         // (gemoblib.c:1275 / :1319): after `ob_offset`, around the whole type
         // switch, so the `G_USERDEF` arm is inside the bracket too. See
@@ -1546,18 +1567,61 @@ fn change_clip_t(t: ObjTree, obj: i16, newstate: u16, redraw: bool, clip_overrid
         // level. The `ob_user` arm therefore cannot `return` early any more —
         // the show has to run on both paths.
         hide_cursor_for_draw(backend);
-        // AUD-P3-002: EmuTOS `ob_change` redraws a G_USERDEF by calling its user
-        // routine with (prev=curr_state, curr=new_state) and suppresses the
-        // generic object redraw (`redraw = FALSE`, gemoblib.c:1282-1284). The
-        // dispatch is on the 0x00ff-masked type (EmuTOS `ob_sst`, gemobjop.c:40 —
-        // AUD-P3-007). The callback is only invoked for a kernel-built tree (see
-        // `ob_user`); an app tree's EL0 callback is deferred. A null `ob_spec`
-        // (no USERBLK) is left to the generic redraw below so `ob_user` never
-        // dereferences null.
-        if t.ob_type(obj) & 0x00ff == G_USERDEF && spec != 0 {
-            ob_user(t, obj, ox, oy, t.width(obj), t.height(obj), spec, clip, curr_state, newstate);
-        } else {
-            // depth 0 redraws only this object.
+        // The type switch (gemoblib.c:1280-1316); `redraw` is the C variable it
+        // reassigns.
+        let mut redraw = true;
+        match ob_type {
+            // AUD-P3-002: EmuTOS `ob_change` redraws a G_USERDEF by calling its
+            // user routine with (prev=curr_state, curr=new_state) and suppresses
+            // the generic object redraw (`redraw = FALSE`, gemoblib.c:1282-1284).
+            // The callback is only invoked for a kernel-built tree (see
+            // `ob_user`); an app tree's EL0 callback is deferred. A null
+            // `ob_spec` (no USERBLK) is left to the generic redraw below so
+            // `ob_user` never dereferences null.
+            G_USERDEF if spec != 0 => {
+                ob_user(t, obj, ox, oy, w, h, spec, clip, curr_state, newstate);
+                redraw = false;
+            }
+            // `case G_ICON: /* never use XOR for icons */ break;` (`:1286-1287`)
+            // — a plain redraw; `gr_gicon` renders the selection itself. Only
+            // G_ICON: a G_CICON takes the `default:` arm as in EmuTOS.
+            G_ICON => {}
+            // `default:` (`:1288-1304`): a change of the SELECTED bit is shown
+            // by one XOR fill when `xor_is_ok` allows it (then no redraw), and
+            // additionally for a G_IMAGE being *deselected* (D-093a: XOR back
+            // the ground inversion `just_draw` applied, then redraw the image
+            // normal — `redraw = !ok` stays TRUE there). An FL3DOBJ object is
+            // never XOR'd (`xor_is_ok` `:114`): its press is the bevel, drawn
+            // by the redraw. A toggle of any other state bit is a redraw.
+            _ => {
+                if (newstate ^ curr_state) & SELECTED != 0 {
+                    let ok = xor_is_ok(t, ob_type, ob_flags, spec, backend);
+                    if ok || (ob_type == G_IMAGE && newstate & SELECTED == 0) {
+                        // `bb_fill(MD_XOR, FIS_SOLID, IP_SOLID, t.g_x+th,
+                        // t.g_y+th, t.g_w-(2*th), t.g_h-(2*th))` (`:1301-1302`):
+                        // the solid pattern in XOR mode complements every
+                        // device pixel of the rect (`vdi/vdi_line.c:484-495`),
+                        // the same primitive `just_draw`'s trailing SELECTED
+                        // block uses (A85), so the two cancel exactly.
+                        let (tw, tht) = (w - 2 * th, h - 2 * th);
+                        if tw > 0 && tht > 0 {
+                            let pat = PatternFill {
+                                fg: BLACK,
+                                bg: WHITE,
+                                pattern: &IP_PATTERNS[IP_SOLID as usize],
+                                mode: WriteMode::Xor,
+                            };
+                            backend.fill_pattern(ox + th, oy + th, tw, tht, pat, clip);
+                        }
+                        redraw = !ok;
+                    }
+                }
+            }
+        }
+        if redraw {
+            // `just_draw(tree, obj, t.g_x, t.g_y)` (`:1315-1316`): depth 0
+            // redraws only this object (`draw_tree` carries `just_draw`'s own
+            // HIDETREE / `spec == -1` reject, gemoblib.c:491).
             draw_tree(t, obj, 0, ox - t.x(obj), oy - t.y(obj), clip, backend);
         }
         show_cursor_after_draw(backend);
@@ -2778,20 +2842,12 @@ fn just_draw(t: ObjTree, obj: i16, x: i16, y: i16, clip: ClipRect, backend: &dyn
             // (`:1301-1302`). `deco_th` carries that `th` to the trailing
             // block (and to SHADOWED, which EmuTOS sizes by the same `th`).
             deco_th = 1;
-            // NewTOS toggles a title's SELECTED state by *redrawing* it
-            // (`object::change` redraws instead of EmuTOS's `ob_change` XOR
-            // toggle, `:1295-1304` — TASK/A99), so the un-highlight redraw
-            // has to clear the previous inverted block itself: an unselected
-            // title first paints its rect in the bar's face colour. This fill
-            // is NOT in EmuTOS's `just_draw`; it is load-bearing for
-            // `close_box` / `menu_tnormal` in `aes/menu.rs` until A99 lands
-            // (removing it leaves black-on-black), and `redraw_bar_separator`
-            // there repairs the separator row it covers. The SELECTED draw is
-            // EmuTOS's: text, then the XOR over whatever lies under the title.
-            if !selected {
-                let face = if d3 != 0 { GRAY_LT } else { WHITE };
-                backend.fill_rect(x, y, w, h, face, clip);
-            }
+            // No face fill in either state — the bar's G_BOX parent is the
+            // ground. A title's highlight comes and goes by `ob_change`'s XOR
+            // toggle (`:1295-1304`, `change_clip_t`, A99), so the unselected
+            // redraw never has to clear an inverted block itself (the pre-A99
+            // face fill that did so is gone with it, together with the
+            // separator repaint it forced on `aes/menu.rs`).
             let s = read_cstr(ob_spec);
             // Same string block as G_STRING: IBM font, `t.g_x`, vertically
             // centred on `gl_hchar` (gemoblib.c:817-845).

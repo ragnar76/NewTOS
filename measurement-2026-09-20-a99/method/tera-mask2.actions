@@ -1,0 +1,34 @@
+# A99 TeraDesk (sd-tera, #Z autorun): hover the "View" title (133,8) -> drop-down;
+# onto "Set mask..." (200,266); click -> the SETMASK dialog (tree 9: FTYPE1..4
+# non-3D G_FTEXT rows, te_color 0x1100, SELECTABLE|RBUTTON|TOUCHEXIT, on the
+# FL3DBAK box FTPARENT; FTYPE1 pre-selected by xd_set_rbutton). Rows are 16 px:
+# FTYPE1 y 209..224, FTYPE2 225..240, FTYPE3 241..256 (A85 measured row 1 at
+# 320..415 x 209..224). Click row 1 (already selected), row 2, row 3; park the
+# pointer bottom-right before every dump. `arm` switches the H02 serial AES
+# trace on before the row clicks, so the serial log shows the opcode path
+# (47 objc_change per row, then TeraDesk's 42 objc_draw of FTPARENT).
+200 parkbr
+1100 mark A_IDLE
+1400 move 133 8
+1800 move 200 266
+2300 mark B_VIEW_OPEN
+2500 down
+2503 up
+3500 parkbr
+4200 mark C_SETMASK_DIALOG
+4300 arm
+4500 move 350 216
+4900 down
+4903 up
+5300 parkbr
+5900 mark D_ROW1_CLICKED
+6200 move 350 232
+6600 down
+6603 up
+7000 parkbr
+7600 mark E_ROW2_CLICKED
+7900 move 350 248
+8300 down
+8303 up
+8700 parkbr
+9300 mark F_ROW3_CLICKED

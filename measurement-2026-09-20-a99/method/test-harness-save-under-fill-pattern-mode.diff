@@ -1,0 +1,43 @@
+diff --git a/tos-api/tests/aes_screen_buffer_save_under.rs b/tos-api/tests/aes_screen_buffer_save_under.rs
+index 52f469e..be35013 100644
+--- a/tos-api/tests/aes_screen_buffer_save_under.rs
++++ b/tos-api/tests/aes_screen_buffer_save_under.rs
+@@ -232,14 +232,36 @@ impl RasterBackend for BufBackend {
+         }
+         m
+     }
++    /// Mode-aware like `abline` above (A99): the menu title's highlight is
++    /// `ob_change`'s XOR fill each way (`gemoblib.c:1295-1304`), so an XOR
++    /// pattern must complement the destination — a mode-blind opaque paint
++    /// would leave the un-highlighted title black.
+     fn fill_pattern(&self, x: i16, y: i16, w: i16, h: i16, fill: PatternFill, clip: ClipRect) {
+         let fg = self.rgb565_to_device(self.pel_to_device16(fill.fg));
+         let bg = self.rgb565_to_device(self.pel_to_device16(fill.bg));
+         for yy in y..y.saturating_add(h) {
+             let row = fill.pattern[(yy.rem_euclid(16)) as usize % fill.pattern.len()];
+             for xx in x..x.saturating_add(w) {
+-                let bit = row & (0x8000u16 >> (xx.rem_euclid(16) as u16));
+-                self.put(xx, yy, if bit != 0 { fg } else { bg }, clip);
++                let set = row & (0x8000u16 >> (xx.rem_euclid(16) as u16)) != 0;
++                match fill.mode {
++                    WriteMode::Replace => self.put(xx, yy, if set { fg } else { bg }, clip),
++                    WriteMode::Transparent => {
++                        if set {
++                            self.put(xx, yy, fg, clip)
++                        }
++                    }
++                    WriteMode::Xor => {
++                        if set {
++                            let v = self.get_device_pixel(xx, yy);
++                            self.put(xx, yy, v ^ 0x00FF_FFFF, clip);
++                        }
++                    }
++                    WriteMode::RevTransparent => {
++                        if !set {
++                            self.put(xx, yy, fg, clip)
++                        }
++                    }
++                }
+             }
+         }
+     }

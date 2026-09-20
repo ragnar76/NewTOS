@@ -1,0 +1,22 @@
+# A99 (kernel desktop, sd-base, no #Z): A68-A70's gesture -- idle dump, hover the
+# Desk title (22,8), click "Desktop info..." (60,28) -> the form_alert (FL3DACT
+# OK button at ~(291..347, 264..290)); then press the OK button and HOLD it
+# (form_do -> graf_watchbox -> ob_change(SELECTED): FL3DACT = full redraw, sunk
+# bevel), dump while held with the pointer on the button's lower-right corner
+# (it must stay inside the button or graf_watchbox releases it), release ->
+# the alert closes, park, dump.
+1100 mark A_IDLE
+1200 park
+1206 move 300 300
+1400 move 22 8
+1800 mark B_DESK_MENU
+2000 move 60 28
+2200 down
+2206 up
+2800 mark C_ABOUT_ALERT
+3000 move 340 285
+3400 down
+3900 mark D_OK_HELD
+4200 up
+4600 parkbr
+5200 mark E_AFTER_RELEASE

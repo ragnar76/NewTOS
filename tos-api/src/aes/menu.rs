@@ -115,9 +115,7 @@ const DISABLED: u16 = 0x0008;
 /// `gemmnext.c:539-541`).
 const G_STRING: u16 = 28;
 
-/// `G_TITLE` object type (`obdefs.h`) — a menu-bar title. A title spans the
-/// full bar height, so its `just_draw` fill covers the separator row at
-/// `gl_hbox-1` (see [`redraw_bar_separator`]).
+/// `G_TITLE` object type (`obdefs.h`) — a menu-bar title.
 const G_TITLE: u16 = 32;
 
 const WHITE: Pel = 0;
@@ -453,9 +451,14 @@ fn track_owned(tree: *mut Object, backend: &dyn RasterBackend) -> Option<(i16, i
 
 /// Move the SELECTED highlight within a drop-down / submenu box from `old` to
 /// `new` (either may be `NIL`), then repaint the box's 1-px frame that the
-/// full-width item fills overwrite. The mouse cursor is bracketed hidden/shown
+/// full-width item toggles overwrite. The mouse cursor is bracketed hidden/shown
 /// so it does not smear across the redraw. Shared by the parent-box and the
 /// nested-submenu hover tracking.
+///
+/// Each highlight change is EmuTOS's `menu_select` → `do_chg` → `ob_change`
+/// (`gemmnlib.c:170`): one XOR of the item rect to select, one to deselect
+/// (`gemoblib.c:1295-1304`, A99). No white pre-fill — an XOR over a white
+/// pre-fill would turn the deselected item black.
 fn rehilite(tree: *mut Object, box_obj: i16, old: i16, new: i16, backend: &dyn RasterBackend) {
     let tp = tree as *const Object;
     let t = ObjTree::new(tp);
@@ -466,22 +469,19 @@ fn rehilite(tree: *mut Object, box_obj: i16, old: i16, new: i16, backend: &dyn R
     // the guard at `:159-160`; invoked for the un-hilite at `:459` and the
     // hilite at `:471`): a `DISABLED` item is never given the `SELECTED`
     // (inverted) state. So a disabled item under the cursor stays in its normal,
-    // un-inverted state — it needs no white un-draw (its normal pixels are still
-    // there) and, never having been filled `BLACK` (`object.rs:1767`), it cannot
-    // leave a black-block residue when the drop-down closes.
+    // un-inverted state, and cannot leave an inverted residue when the
+    // drop-down closes.
     if old != NIL && (t.state(old) & DISABLED) == 0 {
-        // `draw_obj` only paints a G_STRING's background when it is SELECTED,
-        // so clear the old item's black highlight to white before redrawing it
-        // normal — otherwise the hovered-over item stays black.
-        let (ix, iy, iw, ih) = object::abs_rect(tp, old);
-        backend.fill_rect(ix, iy, iw, ih, WHITE, clip);
         object::set_state_bit(tree, old, SELECTED, false);
     }
     if new != NIL && (t.state(new) & DISABLED) == 0 {
         object::set_state_bit(tree, new, SELECTED, true);
     }
-    // Item fills span the full box width, so a highlight/clear paints over the
-    // box's frame; redraw it so the hovered rows keep their border.
+    // Items span the full box width, so a highlight/clear XOR over an *inside*
+    // box border (the kernel desktop's `th = +1` drop-down) inverts the frame
+    // pixels in the item's rows; redraw the frame so the hovered rows keep
+    // their border. (EmuTOS's desktop boxes have an outside border, `0xFF1100`,
+    // `desk/desk_rsc.c:294`, which the item XOR never reaches.)
     let (bx, by, bw, bh) = object::abs_rect(tp, box_obj);
     backend.fill_rect(bx, by, bw, 1, BLACK, clip); // top
     backend.fill_rect(bx, by + bh - 1, bw, 1, BLACK, clip); // bottom
@@ -722,45 +722,15 @@ fn open_box(tree: *mut Object, title: i16, backend: &dyn RasterBackend) -> i16 {
     imenu
 }
 
-/// Un-highlight `title`, restore the screen under its box and redraw the
-/// title normal.
+/// Un-highlight `title` and restore the screen under its box. The title's
+/// un-highlight is `ob_change`'s XOR toggle of its rect inset by one
+/// (`gemoblib.c:1295-1304`, `gemobjop.c:44-46`), which never touches the
+/// bar's separator row — nothing to repaint there (A99).
 fn close_box(tree: *mut Object, title: i16, imenu: i16, backend: &dyn RasterBackend) {
     crate::vdi::cursor_hide(backend);
     erase_box_inner(tree, imenu, backend);
-    object::set_state_bit(tree, title, SELECTED, false); // redraws the title normal
-    // A G_TITLE spans the whole bar height, so the white un-highlight fill
-    // erased the bar's separator line under it — redraw it.
-    redraw_bar_separator(backend);
+    object::set_state_bit(tree, title, SELECTED, false);
     crate::vdi::cursor_show(backend);
-}
-
-/// Repaint the menu bar's separator line — the full-width black stroke at
-/// `y = gl_hbox-1` drawn by [`menu_bar`] (`menu.rs`). A bar `G_TITLE` has
-/// `ob_height == gl_hbox`, so drawing a title (normal *or* highlighted) fills its
-/// cell across the whole bar height, including the separator row — erasing the
-/// segment of the line under that title. This is the single source of truth
-/// both the interactive cancel path ([`close_box`]) and the app-driven
-/// un-highlight ([`menu_tnormal`]) call to restore the line after the title
-/// redraw. A full-width repaint over an intact line is idempotent.
-fn redraw_bar_separator(backend: &dyn RasterBackend) {
-    let sw = backend.width() as i16;
-    let clip = ClipRect::full(backend.width(), backend.height());
-    backend.fill_rect(0, gl_hbox() - 1, sw, 1, BLACK, clip);
-}
-
-/// Does normalizing `obj` need the bar separator repainted? True only for a
-/// bar-level `G_TITLE` whose absolute cell spans the separator row `gl_hbox-1` —
-/// the objects whose `just_draw` white-fill erases the line. Drop-down items
-/// (`G_STRING`, below the bar) and non-title objects do not qualify, so an
-/// unrelated `menu_tnormal` never paints a spurious line across the screen.
-fn title_touches_separator(tree: *const Object, obj: i16) -> bool {
-    let ob_type = ObjTree::new(tree).ob_type(obj) & 0x00ff;
-    if ob_type != G_TITLE {
-        return false;
-    }
-    let sep_row = gl_hbox() - 1;
-    let (_, y, _, h) = object::abs_rect(tree, obj);
-    y <= sep_row && sep_row < y + h
 }
 
 /// Put the pixels saved under the box back exactly (EmuTOS `menu_sr(FALSE, …)`
@@ -804,22 +774,6 @@ pub fn menu_ienable(pb: &Aespb) {
 /// unchanged).
 pub fn menu_tnormal(pb: &Aespb) {
     do_chg(pb, pb.intin(0), SELECTED, pb.intin(1) == 0, true, true); // select when normal==0
-    // `do_chg` (dodraw=true) repainted the title's cell. A bar `G_TITLE` spans
-    // the full bar height, so that fill covered the separator row at gl_hbox-1,
-    // erasing the segment of the bar's separator line under the title (the same
-    // reason `close_box` restores it on the cancel path). Repaint the line when
-    // the normalized object is a bar title touching that row — not for
-    // drop-down items or unrelated objects.
-    let tree = pb.addrin(0) as *const Object;
-    let obj = pb.intin(0);
-    if tree.is_null() || obj < 0 {
-        return;
-    }
-    if title_touches_separator(tree, obj) {
-        if let Some(backend) = host().and_then(|h| h.raster()) {
-            redraw_bar_separator(backend);
-        }
-    }
 }
 
 /// `menu_text` (34) — replace item `int_in[0]`'s text with the string at
@@ -1137,9 +1091,9 @@ fn popup_shown(
         if it != cur_item {
             crate::vdi::cursor_hide(backend);
             let clip = ClipRect::full(backend.width(), backend.height());
+            // `ob_change`'s XOR toggle each way (`gemoblib.c:1295-1304`, A99):
+            // no white pre-fill before the un-hilite.
             if cur_item != NIL {
-                let (ix, iy, iw, ih) = object::abs_rect(tp, cur_item);
-                backend.fill_rect(ix, iy, iw, ih, WHITE, clip);
                 object::set_state_bit(tree, cur_item, SELECTED, false);
             }
             if it != NIL {
