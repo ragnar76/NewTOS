@@ -3085,39 +3085,66 @@ pub fn wind_get(pb: &Aespb) {
         return;
     }
 
-    // WF_SCREEN (17): EmuTOS hands out the *persistent* menu/alert screen-save
-    // buffer — address in `poutwds[0..1]`, length in `poutwds[2..3]`
-    // (`gsx_mret` → `gl_tmp.fd_addr` / `gl_mlen`, `aes/gemgsxif.c:125-129`),
-    // allocated once at AES start by `gsx_malloc` (`:108-114`, called from
-    // `sh_main`, `aes/gemshlib.c:236`) and TRUE. Like WF_TOP it needs no valid
-    // handle (`gemwmlib.c:1517-1520`).
+    // WF_SCREEN (17): the *persistent* menu/alert screen-save buffer —
+    // address as a LONG over `int_out[1..2]`, length as a LONG over
+    // `int_out[3..4]` (`gsx_mret((LONG *)poutwds, (LONG *)(poutwds + 2))`,
+    // `gemwmlib.c:1563-1565`, `gemgsxif.c:125-129`, `poutwds = &int_out[1]`,
+    // `gemsuper.c:343`), TRUE. Like WF_TOP it needs no valid handle
+    // (`gemwmlib.c:1517-1520`). The buffer itself is `aes::gsxif` (one block
+    // of the BDOS pool, taken once by `gsx_malloc` from `sh_tographic`,
+    // `gemshlib.c:236`).
     //
-    // **NewTOS has no such buffer**, and says so instead of claiming one
-    // (sanctioned deviation, `docs/COMPATIBILITY.md`; supersedes the earlier
-    // "report a 0/0 buffer with ret=1" assessment of AUD-P5-012, which the r4
-    // sub-function measurement refuted — cases 331/332/439, `TASK/A54.md`).
-    // Nothing here is allocated once and kept: `form.rs`' `BbSave::capture`
-    // takes a fresh `Vec` per modal alert and drops it on close, and `menu.rs`
-    // keeps *two* independent drop-down backings (`MBACK`/`SMBACK`) that are
-    // cleared and regrown to whatever box is opening — no stable address, no
-    // fixed length, and zero capacity until the first menu drops. There is also
-    // no address we *could* hand out: those buffers live in the kernel heap,
-    // which is mapped `AP_RW_EL1` — no EL0 access at all
-    // (`kernel/src/arch/aarch64/mmu.rs:82,178-179,283-284`) — so an application
-    // scribbling on a WF_SCREEN pointer, which is the entire purpose of the
-    // field, would fault on the first store.
+    // Which address the caller gets depends on who asks (ADR-021/023):
+    //   * an EL0 process gets the block published into its own window,
+    //     read-write (`PROT_G`, cacheable — ordinary DRAM only the CPU
+    //     touches; `usermem::expose`), lazily on its first WF_SCREEN and the
+    //     same user VA on every later one (the mapping is idempotent per
+    //     physical page). Only a process that asks pays the window. A window
+    //     that cannot take the mapping gets FALSE: a pointer the caller would
+    //     fault on is not an answer;
+    //   * an EL1 caller (the in-kernel desktop, a selftest) gets the block's
+    //     physical address — the pool address, ADR-021's "raw PA for kernel
+    //     callers" — which fits the two WORDs where the high-half alias does
+    //     not.
+    // The two LONGs are stored as EmuTOS stores them: one native 32-bit store
+    // at `&int_out[1]` and one at `&int_out[3]` (`Aespb::set_intout_long`).
     //
-    // So the answer is FALSE with nothing written — `wm_get`'s own idiom for a
-    // field this AES does not answer (`default: return FALSE`,
-    // `gemwmlib.c:1590-1591`), and the same repair AUD-P5-014 got for WF_KIND.
-    // A caller tests the return code before using the address, so FALSE is the
-    // one answer that cannot be mistaken for "here is a buffer, at 0".
-    //
-    // Closing this properly means a real persistent AES scratch buffer in
-    // EL0-reachable memory, used by the alert *and* the menu save-under; that
-    // is a memory-pool and mapping decision, not a `wind_get` one.
+    // Without a buffer (the pool could not supply it at boot; a host test
+    // without the fixture) the answer stays FALSE with nothing written — the
+    // A54 fallback, `wm_get`'s idiom for a field it cannot serve
+    // (`default: return FALSE`, `gemwmlib.c:1590-1591`; sanctioned deviation,
+    // `docs/COMPATIBILITY.md`). The buffer's size is NewTOS' own — one
+    // screen, not `MENU_BUFFER_SIZE` cells — see `gsxif` and the
+    // COMPATIBILITY entry (A57).
     if field == WF_SCREEN {
-        pb.set_ret(0);
+        let Some(buf) = super::gsxif::gsx_mret() else {
+            pb.set_ret(0);
+            return;
+        };
+        let addr = match crate::bdos::process::slot_for(crate::bdos::process::current()) {
+            None => buf.pa,
+            // SAFETY: BDOS lock held (single-CPU trap context). The buffer is
+            // a kernel-owned pool block reached through its high-half alias,
+            // page-aligned and page-rounded, never freed — it outlives every
+            // process that holds the pointer and owns its pages.
+            Some(slot) => match unsafe {
+                crate::bdos::process::usermem::expose(
+                    slot,
+                    buf.kva as *const u8,
+                    buf.len,
+                    tos_types::ProtMode::G,
+                )
+            } {
+                Some(user_va) => user_va,
+                None => {
+                    pb.set_ret(0);
+                    return;
+                }
+            },
+        };
+        pb.set_intout_long(1, addr as u32);
+        pb.set_intout_long(3, buf.len as u32);
+        pb.set_ret(1);
         return;
     }
 

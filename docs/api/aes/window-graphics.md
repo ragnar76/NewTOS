@@ -395,6 +395,40 @@ screen buffer via `gsx_mret`. Result rect → `int_out[1..4]`; scalars →
 (`gemwmlib.c:1517-1520`); every other field returns `FALSE` if the handle is
 invalid. Any unlisted field → `default: return FALSE`.
 
+> **`WF_SCREEN` (17) — the menu/alert screen buffer, address and length as
+> two LONGs (A57, 2026-09-20).** `wm_get` calls `gsx_mret((LONG *)poutwds,
+> (LONG *)(poutwds + 2))` (`gemwmlib.c:1564`) with `poutwds = &int_out[1]`
+> (`gemsuper.c:343`); `gsx_mret` stores `gl_tmp.fd_addr` and `gl_mlen`
+> (`aes/gemgsxif.c:125-129`). So the **address is a LONG over
+> `int_out[1..2]`, the length a LONG over `int_out[3..4]`** — two native
+> 32-bit stores at WORD-aligned addresses, not four independent WORDs —
+> and `int_out[0]` is TRUE (`:1595-1598`). The buffer is the one
+> `gsx_malloc` takes when the AES goes graphic (`sh_tographic`,
+> `aes/gemshlib.c:236`; `gemgsxif.c:108-114`, `dos_alloc_anyram` =
+> `Mxalloc(n, MX_PREFTTRAM)`) and that `fm_alert` and `menu_sr` save the
+> screen into (`gemfmalt.c:363,390`, `gemmnlib.c:208-223`); its length on
+> EmuTOS is `MENU_BUFFER_SIZE * gl_wchar * gl_hchar * gl_nplanes / 8`
+> (`:98-104`; 40 960 on the reference TT, four planes).
+>
+> **NewTOS** (`tos-api/src/aes/gsxif.rs`, `window.rs` `WF_SCREEN` arm):
+> the same buffer, one kernel-owned block of the BDOS pool taken by the
+> same `Mxalloc(…, MX_PREFTTRAM)` from `sh_tographic`, reported with the
+> same two native LONG stores (`Aespb::set_intout_long`). Two things are
+> NewTOS' own, both registered in `docs/COMPATIBILITY.md`:
+> *the length* is one screen in device pixels (`bb_save_words(W, H) * 4`:
+> 614 400 at 640×480, 4 147 200 at 1920×1080), larger than EmuTOS'
+> formula gives, never smaller — a program that takes it as an upper bound
+> for its own saves (TeraDesk `resource.c:307-320`) gets more room; and
+> *the address* depends on who asks: an **EL0 process** receives the block
+> published into its own address space, read-write (FreeMiNT `PROT_G`,
+> ADR-023), lazily on its first `WF_SCREEN` and the same user VA on every
+> later call; an **EL1 caller** (the in-kernel desktop) receives the
+> physical/pool address (ADR-021). **Without a buffer** — the pool could
+> not supply it at boot — the field answers FALSE and writes nothing (the
+> A54 answer, kept as the fallback; EmuTOS would answer TRUE with address
+> 0). Pop-ups and nested submenus do **not** use this buffer: `popup_blit`
+> takes a fresh block per opening (`gemmnext.c:136-215`, [`menu.md`](./menu.md)).
+
 ### The rectangle-list iteration (`WF_FIRSTXYWH`/`WF_NEXTXYWH`) — the redraw contract
 
 This is the heart of the window-redraw protocol and the most bug-prone part.

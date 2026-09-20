@@ -284,14 +284,15 @@ fn do_alert(defbut: i16, s: &[u8], modal: bool) -> i16 {
     let t = ObjTree::lp64(tp);
     // Save the pixels the alert will cover — the box plus its 3-px OUTLINED
     // double frame (the extent EmuTOS `ob_center` reports for OUTLINED) —
-    // so the modal `form_alert` can reinstate the desktop on close without a
-    // full repaint (EmuTOS `fm_alert`: `bb_save` before draw, `bb_restore`
-    // after). The cursor is off the screen for the copy inside `bb_save`
-    // itself (`bb_set`, `gemgsxif.c:367,378`), so the sprite never enters the
-    // saved image. The draw-only showcase (`!modal`) skips this and leaves
-    // the alert on screen deliberately.
+    // into **the** AES screen buffer (`gsxif`, EmuTOS `gl_tmp`), so the
+    // modal `form_alert` can reinstate the desktop on close without a full
+    // repaint (EmuTOS `fm_alert`: `bb_save` before draw, `gemfmalt.c:363`,
+    // `bb_restore` after, `:390`). The cursor is off the screen for the copy
+    // inside `bb_save` itself (`bb_set`, `gemgsxif.c:367,378`), so the
+    // sprite never enters the saved image. The draw-only showcase (`!modal`)
+    // skips this and leaves the alert on screen deliberately.
     let saver = if modal {
-        BbSave::capture(backend, box_x - 3, box_y - 3, box_w + 6, box_h + 6)
+        save_under_alert(backend, box_x - 3, box_y - 3, box_w + 6, box_h + 6)
     } else {
         None
     };
@@ -330,64 +331,40 @@ fn do_alert(defbut: i16, s: &[u8], modal: bool) -> i16 {
         crate::vdi::cursor_show(backend);
     }
 
-    // Restore the screen the alert covered (EmuTOS `bb_restore`): the
-    // desktop under the alert reappears from the saved bitmap, no full
-    // redraw required. The buffer is freed when `saver` drops. No cursor
-    // bracket here: `bb_restore` hides the sprite for the copy itself, as
-    // `bb_set` does (`gemgsxif.c:367,378`) — `fm_alert` has none of its own.
+    // Restore the screen the alert covered (EmuTOS `bb_restore`,
+    // `gemfmalt.c:390`): the desktop under the alert reappears from the
+    // screen buffer, no full redraw required. No cursor bracket here:
+    // `bb_restore` hides the sprite for the copy itself, as `bb_set` does
+    // (`gemgsxif.c:367,378`) — `fm_alert` has none of its own.
     if let Some(s) = saver {
         s.restore(backend);
     }
     chosen
 }
 
-/// A saved copy of the screen rectangle behind a modal alert (AES
-/// `bb_save`): a heap-allocated 32-bpp device-format bitmap plus its
-/// (clamped) screen rectangle. [`restore`](Self::restore) blits it back;
-/// the buffer is released when the value drops.
-struct BbSave {
-    buf: alloc::vec::Vec<u32>,
+/// `fm_alert`'s save of the screen under the alert (`gemfmalt.c:355-363`):
+/// the rectangle `(x, y, w, h)` clamped to the screen —
+/// `rc_intersect(&gl_rscreen, &d)` (`:358`) — then `bb_save(&d)` into the
+/// one AES screen buffer ([`super::gsxif::bb_save`]). `None` when the
+/// clamped rectangle is empty; the returned handle puts the pixels back
+/// with [`super::gsxif::Saved::restore`].
+fn save_under_alert(
+    backend: &dyn RasterBackend,
     x: i16,
     y: i16,
     w: i16,
     h: i16,
-}
-
-impl BbSave {
-    /// Save the screen rectangle `(x, y, w, h)` — clamped to the visible
-    /// screen — into a fresh device-format buffer (`vro_cpyfm`
-    /// Screen→Memory). `None` when the clamped rectangle is empty.
-    fn capture(backend: &dyn RasterBackend, x: i16, y: i16, w: i16, h: i16) -> Option<BbSave> {
-        let sw = backend.width() as i32;
-        let sh = backend.height() as i32;
-        let x0 = (x as i32).max(0);
-        let y0 = (y as i32).max(0);
-        let x1 = (x as i32 + w as i32 - 1).min(sw - 1);
-        let y1 = (y as i32 + h as i32 - 1).min(sh - 1);
-        if x1 < x0 || y1 < y0 {
-            return None;
-        }
-        let (cx, cy) = (x0 as i16, y0 as i16);
-        let cw = (x1 - x0 + 1) as i16;
-        let ch = (y1 - y0 + 1) as i16;
-        let words = crate::vdi::bb_save_words(cw, ch);
-        if words == 0 {
-            return None;
-        }
-        let mut buf = alloc::vec![0u32; words];
-        // SAFETY: `buf` holds `bb_save_words(cw, ch)` u32 words.
-        unsafe { crate::vdi::bb_save(backend, buf.as_mut_ptr(), cx, cy, cw, ch) };
-        Some(BbSave { buf, x: cx, y: cy, w: cw, h: ch })
+) -> Option<super::gsxif::Saved> {
+    let sw = backend.width() as i32;
+    let sh = backend.height() as i32;
+    let x0 = (x as i32).max(0);
+    let y0 = (y as i32).max(0);
+    let x1 = (x as i32 + w as i32 - 1).min(sw - 1);
+    let y1 = (y as i32 + h as i32 - 1).min(sh - 1);
+    if x1 < x0 || y1 < y0 {
+        return None;
     }
-
-    /// Blit the saved bitmap back to the screen (`vro_cpyfm` Memory→Screen).
-    fn restore(&self, backend: &dyn RasterBackend) {
-        let clip = ClipRect::full(backend.width(), backend.height());
-        // SAFETY: `buf` holds `bb_save_words(w, h)` u32 words (from capture).
-        unsafe {
-            crate::vdi::bb_restore(backend, self.buf.as_ptr(), self.x, self.y, self.w, self.h, clip);
-        }
-    }
+    super::gsxif::bb_save(backend, x0 as i16, y0 as i16, (x1 - x0 + 1) as i16, (y1 - y0 + 1) as i16)
 }
 
 /// Modal wait: Enter fires the DEFAULT button (only when one is set — EmuTOS

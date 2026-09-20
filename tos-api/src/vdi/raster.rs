@@ -536,12 +536,13 @@ fn mem_to_mem(src: &Mfdb, dst: &Mfdb, s: Rect, dx: i16, dy: i16, op: u8) {
 /// needs. The save bitmap is **16-bit RGB565 chunky** (one `u16` per pixel,
 /// rows padded to 16 px), unified with the app-visible memory-MFDB
 /// wireformat and EmuTOS' own truecolor `bb_save` buffer (`gemgsxif.c:334`,
-/// `gl_nplanes = v_planes = 16`). The AES form/menu code allocates it as a
-/// `Vec<u32>` — the container element type is an allocation detail while the
-/// *pixels* are 16-bit (`docs/COMPATIBILITY.md`): two 16-bit pixels per
+/// `gl_nplanes = v_planes = 16`): `memsize(sw/16, sh, 16)` bytes, i.e.
+/// `wdwidth * h * 16 * 2`. The `u32` element is a counting convenience while
+/// the *pixels* are 16-bit (`docs/COMPATIBILITY.md`): two 16-bit pixels per
 /// `u32`, so the count is `stride_px * h / 2 = fd_wdwidth * 8 * h`.
-/// `stride_px` is a multiple of 16, so the division is exact. AES allocates
-/// exactly this from the kernel heap.
+/// `stride_px` is a multiple of 16, so the division is exact. The AES sizes
+/// its one screen buffer (`aes::gsxif`, `gsx_mcalc`) and `popup_blit`'s
+/// transient block from exactly this.
 pub fn bb_save_words(w: i16, h: i16) -> usize {
     (mem_wdwidth(w) as usize) * 8 * (h.max(0) as usize)
 }
@@ -551,9 +552,13 @@ pub fn bb_save_words(w: i16, h: i16) -> usize {
 /// 16-bit RGB565 device-format bitmap (a Screen→Memory `vro_cpyfm`, `S_ONLY`
 /// / replace). Since the screen is 5-bit-quantised, the RGB565 store is
 /// lossless and the matching [`bb_restore`] reproduces the pixels bit-for-
-/// bit. Called directly by the AES form manager rather than through a
-/// re-entrant trap. `mem` is a `u32` pointer for the caller's convenience;
-/// its bytes hold two 16-bit pixels per word (see [`bb_save_words`]).
+/// bit. This is the blit; the buffer it goes into is the AES's business —
+/// `aes::gsxif` hands the one persistent screen buffer (`gl_tmp`) to the
+/// alert and the drop-down and a transient pool block to a pop-up / submenu,
+/// and holds the length guard. Called directly by the AES rather than
+/// through a re-entrant trap. `mem` is a `u32` pointer for the caller's
+/// convenience; its bytes hold two 16-bit pixels per word (see
+/// [`bb_save_words`]).
 ///
 /// **The mouse cursor is hidden for the copy** (`bb_set`'s `gsx_moff()` …
 /// `gsx_mon()` bracket, `gemgsxif.c:367,378`), so the save-under sprite is

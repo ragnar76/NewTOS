@@ -593,9 +593,15 @@ lives in the **control manager**, not in the `menu_*` dispatch: `hctl_rect`
 plain variant), a state machine (`START/INTITLE/INITEM/OUTSIDE/SUBMENU_STATE`)
 that, while the button is held, uses `ob_find` to locate the title/item under
 the cursor, `menu_down`/`menu_sr` to drop the box and save the screen area
-beneath it (`bb_save`/`bb_restore`), and `do_chg(..., SELECTED, ...)` to hilite
-the tracked item/title. On button release over an enabled item it returns the
-`(title, item)` pair, which `hctl_rect` turns into the message above.
+beneath it (`bb_save`/`bb_restore` — into **the one** AES screen buffer
+`gsx_malloc` took, `gl_tmp`, the same the alert uses and `wind_get(WF_SCREEN)`
+hands out; NewTOS `tos-api/src/aes/gsxif.rs`, A57), and `do_chg(...,
+SELECTED, ...)` to hilite the tracked item/title. On button release over an
+enabled item it returns the `(title, item)` pair, which `hctl_rect` turns into
+the message above. A nested submenu opened from the drop-down does **not**
+share that buffer — the drop-down is still down and holds it — but takes a
+fresh ST-RAM block per opening (`popup_blit`, `gemmnext.c:136-215`,
+`dos_alloc_stram`), freed on the restore; so does `menu_popup`.
 
 **This whole loop is reference** — NewTOS reimplements the tracking over the
 object manager (hit-testing, `objc_draw`/`objc_change`) and the VDI raster

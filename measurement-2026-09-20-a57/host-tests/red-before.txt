@@ -1,0 +1,1072 @@
+warning: value assigned to `tree` is never read
+   --> tos-api/src/aes/form.rs:326:9
+    |
+326 |         tree[idx].ob_state |= SELECTED;
+    |         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    |
+    = help: maybe it is overwritten before being read?
+    = note: `#[warn(unused_assignments)]` (part of `#[warn(unused)]`) on by default
+
+warning: value assigned to `top` is never read
+    --> tos-api/src/aes/window.rs:2368:9
+     |
+2368 |         top += gl_hbox();
+     |         ^^^^^^^^^^^^^^^^
+     |
+     = help: maybe it is overwritten before being read?
+
+warning: type `Aespb` is more private than the item `form_alert`
+   --> tos-api/src/aes/form.rs:136:1
+    |
+136 | pub fn form_alert(pb: &Aespb) {
+    | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ function `form_alert` is reachable at visibility `pub`
+    |
+note: but type `Aespb` is only usable at visibility `pub(crate)`
+   --> tos-api/src/aes/mod.rs:44:1
+    |
+ 44 | pub(crate) struct Aespb {
+    | ^^^^^^^^^^^^^^^^^^^^^^^
+    = note: `#[warn(private_interfaces)]` on by default
+
+warning: type `Aespb` is more private than the item `form_do`
+   --> tos-api/src/aes/form.rs:565:1
+    |
+565 | pub fn form_do(pb: &Aespb) {
+    | ^^^^^^^^^^^^^^^^^^^^^^^^^^ function `form_do` is reachable at visibility `pub`
+    |
+note: but type `Aespb` is only usable at visibility `pub(crate)`
+   --> tos-api/src/aes/mod.rs:44:1
+    |
+ 44 | pub(crate) struct Aespb {
+    | ^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: type `Aespb` is more private than the item `form_error`
+   --> tos-api/src/aes/form.rs:821:1
+    |
+821 | pub fn form_error(pb: &Aespb) {
+    | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ function `form_error` is reachable at visibility `pub`
+    |
+note: but type `Aespb` is only usable at visibility `pub(crate)`
+   --> tos-api/src/aes/mod.rs:44:1
+    |
+ 44 | pub(crate) struct Aespb {
+    | ^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: type `Aespb` is more private than the item `form_center`
+   --> tos-api/src/aes/form.rs:968:1
+    |
+968 | pub fn form_center(pb: &Aespb) {
+    | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ function `form_center` is reachable at visibility `pub`
+    |
+note: but type `Aespb` is only usable at visibility `pub(crate)`
+   --> tos-api/src/aes/mod.rs:44:1
+    |
+ 44 | pub(crate) struct Aespb {
+    | ^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: type `Aespb` is more private than the item `form_dial`
+    --> tos-api/src/aes/form.rs:1023:1
+     |
+1023 | pub fn form_dial(pb: &Aespb) {
+     | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^ function `form_dial` is reachable at visibility `pub`
+     |
+note: but type `Aespb` is only usable at visibility `pub(crate)`
+    --> tos-api/src/aes/mod.rs:44:1
+     |
+  44 | pub(crate) struct Aespb {
+     | ^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: type `Aespb` is more private than the item `form_button`
+    --> tos-api/src/aes/form.rs:1090:1
+     |
+1090 | pub fn form_button(pb: &Aespb) {
+     | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ function `form_button` is reachable at visibility `pub`
+     |
+note: but type `Aespb` is only usable at visibility `pub(crate)`
+    --> tos-api/src/aes/mod.rs:44:1
+     |
+  44 | pub(crate) struct Aespb {
+     | ^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: type `Aespb` is more private than the item `form_keybd`
+    --> tos-api/src/aes/form.rs:1113:1
+     |
+1113 | pub fn form_keybd(pb: &Aespb) {
+     | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ function `form_keybd` is reachable at visibility `pub`
+     |
+note: but type `Aespb` is only usable at visibility `pub(crate)`
+    --> tos-api/src/aes/mod.rs:44:1
+     |
+  44 | pub(crate) struct Aespb {
+     | ^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: type `Aespb` is more private than the item `fsel_input`
+   --> tos-api/src/aes/fsel.rs:538:1
+    |
+538 | pub fn fsel_input(pb: &Aespb) {
+    | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ function `fsel_input` is reachable at visibility `pub`
+    |
+note: but type `Aespb` is only usable at visibility `pub(crate)`
+   --> tos-api/src/aes/mod.rs:44:1
+    |
+ 44 | pub(crate) struct Aespb {
+    | ^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: type `Aespb` is more private than the item `fsel_exinput`
+   --> tos-api/src/aes/fsel.rs:545:1
+    |
+545 | pub fn fsel_exinput(pb: &Aespb) {
+    | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ function `fsel_exinput` is reachable at visibility `pub`
+    |
+note: but type `Aespb` is only usable at visibility `pub(crate)`
+   --> tos-api/src/aes/mod.rs:44:1
+    |
+ 44 | pub(crate) struct Aespb {
+    | ^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: type `Aespb` is more private than the item `menu_bar`
+   --> tos-api/src/aes/menu.rs:149:1
+    |
+149 | pub fn menu_bar(pb: &Aespb) {
+    | ^^^^^^^^^^^^^^^^^^^^^^^^^^^ function `menu_bar` is reachable at visibility `pub`
+    |
+note: but type `Aespb` is only usable at visibility `pub(crate)`
+   --> tos-api/src/aes/mod.rs:44:1
+    |
+ 44 | pub(crate) struct Aespb {
+    | ^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: type `Aespb` is more private than the item `menu_icheck`
+   --> tos-api/src/aes/menu.rs:754:1
+    |
+754 | pub fn menu_icheck(pb: &Aespb) {
+    | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ function `menu_icheck` is reachable at visibility `pub`
+    |
+note: but type `Aespb` is only usable at visibility `pub(crate)`
+   --> tos-api/src/aes/mod.rs:44:1
+    |
+ 44 | pub(crate) struct Aespb {
+    | ^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: type `Aespb` is more private than the item `menu_ienable`
+   --> tos-api/src/aes/menu.rs:763:1
+    |
+763 | pub fn menu_ienable(pb: &Aespb) {
+    | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ function `menu_ienable` is reachable at visibility `pub`
+    |
+note: but type `Aespb` is only usable at visibility `pub(crate)`
+   --> tos-api/src/aes/mod.rs:44:1
+    |
+ 44 | pub(crate) struct Aespb {
+    | ^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: type `Aespb` is more private than the item `menu_tnormal`
+   --> tos-api/src/aes/menu.rs:775:1
+    |
+775 | pub fn menu_tnormal(pb: &Aespb) {
+    | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ function `menu_tnormal` is reachable at visibility `pub`
+    |
+note: but type `Aespb` is only usable at visibility `pub(crate)`
+   --> tos-api/src/aes/mod.rs:44:1
+    |
+ 44 | pub(crate) struct Aespb {
+    | ^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: type `Aespb` is more private than the item `menu_text`
+   --> tos-api/src/aes/menu.rs:801:1
+    |
+801 | pub fn menu_text(pb: &Aespb) {
+    | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^ function `menu_text` is reachable at visibility `pub`
+    |
+note: but type `Aespb` is only usable at visibility `pub(crate)`
+   --> tos-api/src/aes/mod.rs:44:1
+    |
+ 44 | pub(crate) struct Aespb {
+    | ^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: type `Aespb` is more private than the item `menu_register`
+   --> tos-api/src/aes/menu.rs:862:1
+    |
+862 | pub fn menu_register(pb: &Aespb) {
+    | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ function `menu_register` is reachable at visibility `pub`
+    |
+note: but type `Aespb` is only usable at visibility `pub(crate)`
+   --> tos-api/src/aes/mod.rs:44:1
+    |
+ 44 | pub(crate) struct Aespb {
+    | ^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: type `Aespb` is more private than the item `menu_popup`
+    --> tos-api/src/aes/menu.rs:1002:1
+     |
+1002 | pub fn menu_popup(pb: &Aespb) {
+     | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ function `menu_popup` is reachable at visibility `pub`
+     |
+note: but type `Aespb` is only usable at visibility `pub(crate)`
+    --> tos-api/src/aes/mod.rs:44:1
+     |
+  44 | pub(crate) struct Aespb {
+     | ^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: type `Aespb` is more private than the item `menu_settings`
+    --> tos-api/src/aes/menu.rs:1161:1
+     |
+1161 | pub fn menu_settings(pb: &Aespb) {
+     | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ function `menu_settings` is reachable at visibility `pub`
+     |
+note: but type `Aespb` is only usable at visibility `pub(crate)`
+    --> tos-api/src/aes/mod.rs:44:1
+     |
+  44 | pub(crate) struct Aespb {
+     | ^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: type `Aespb` is more private than the item `menu_attach`
+    --> tos-api/src/aes/menu.rs:1432:1
+     |
+1432 | pub fn menu_attach(pb: &Aespb) {
+     | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ function `menu_attach` is reachable at visibility `pub`
+     |
+note: but type `Aespb` is only usable at visibility `pub(crate)`
+    --> tos-api/src/aes/mod.rs:44:1
+     |
+  44 | pub(crate) struct Aespb {
+     | ^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: type `Aespb` is more private than the item `menu_istart`
+    --> tos-api/src/aes/menu.rs:1470:1
+     |
+1470 | pub fn menu_istart(pb: &Aespb) {
+     | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ function `menu_istart` is reachable at visibility `pub`
+     |
+note: but type `Aespb` is only usable at visibility `pub(crate)`
+    --> tos-api/src/aes/mod.rs:44:1
+     |
+  44 | pub(crate) struct Aespb {
+     | ^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: type `Aespb` is more private than the item `objc_draw`
+   --> tos-api/src/aes/object.rs:988:1
+    |
+988 | pub fn objc_draw(pb: &Aespb) {
+    | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^ function `objc_draw` is reachable at visibility `pub`
+    |
+note: but type `Aespb` is only usable at visibility `pub(crate)`
+   --> tos-api/src/aes/mod.rs:44:1
+    |
+ 44 | pub(crate) struct Aespb {
+    | ^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: type `Aespb` is more private than the item `objc_offset`
+    --> tos-api/src/aes/object.rs:1181:1
+     |
+1181 | pub fn objc_offset(pb: &Aespb) {
+     | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ function `objc_offset` is reachable at visibility `pub`
+     |
+note: but type `Aespb` is only usable at visibility `pub(crate)`
+    --> tos-api/src/aes/mod.rs:44:1
+     |
+  44 | pub(crate) struct Aespb {
+     | ^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: type `Aespb` is more private than the item `objc_add`
+    --> tos-api/src/aes/object.rs:1205:1
+     |
+1205 | pub fn objc_add(pb: &Aespb) {
+     | ^^^^^^^^^^^^^^^^^^^^^^^^^^^ function `objc_add` is reachable at visibility `pub`
+     |
+note: but type `Aespb` is only usable at visibility `pub(crate)`
+    --> tos-api/src/aes/mod.rs:44:1
+     |
+  44 | pub(crate) struct Aespb {
+     | ^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: type `Aespb` is more private than the item `objc_delete`
+    --> tos-api/src/aes/object.rs:1217:1
+     |
+1217 | pub fn objc_delete(pb: &Aespb) {
+     | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ function `objc_delete` is reachable at visibility `pub`
+     |
+note: but type `Aespb` is only usable at visibility `pub(crate)`
+    --> tos-api/src/aes/mod.rs:44:1
+     |
+  44 | pub(crate) struct Aespb {
+     | ^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: type `Aespb` is more private than the item `objc_order`
+    --> tos-api/src/aes/object.rs:1231:1
+     |
+1231 | pub fn objc_order(pb: &Aespb) {
+     | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ function `objc_order` is reachable at visibility `pub`
+     |
+note: but type `Aespb` is only usable at visibility `pub(crate)`
+    --> tos-api/src/aes/mod.rs:44:1
+     |
+  44 | pub(crate) struct Aespb {
+     | ^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: type `Aespb` is more private than the item `objc_change`
+    --> tos-api/src/aes/object.rs:1376:1
+     |
+1376 | pub fn objc_change(pb: &Aespb) {
+     | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ function `objc_change` is reachable at visibility `pub`
+     |
+note: but type `Aespb` is only usable at visibility `pub(crate)`
+    --> tos-api/src/aes/mod.rs:44:1
+     |
+  44 | pub(crate) struct Aespb {
+     | ^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: type `Aespb` is more private than the item `objc_sysvar`
+    --> tos-api/src/aes/object.rs:1424:1
+     |
+1424 | pub fn objc_sysvar(pb: &Aespb) {
+     | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ function `objc_sysvar` is reachable at visibility `pub`
+     |
+note: but type `Aespb` is only usable at visibility `pub(crate)`
+    --> tos-api/src/aes/mod.rs:44:1
+     |
+  44 | pub(crate) struct Aespb {
+     | ^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: type `Aespb` is more private than the item `objc_edit`
+    --> tos-api/src/aes/object.rs:1564:1
+     |
+1564 | pub fn objc_edit(pb: &Aespb) {
+     | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^ function `objc_edit` is reachable at visibility `pub`
+     |
+note: but type `Aespb` is only usable at visibility `pub(crate)`
+    --> tos-api/src/aes/mod.rs:44:1
+     |
+  44 | pub(crate) struct Aespb {
+     | ^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: type `Aespb` is more private than the item `objc_find`
+    --> tos-api/src/aes/object.rs:1952:1
+     |
+1952 | pub fn objc_find(pb: &Aespb) {
+     | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^ function `objc_find` is reachable at visibility `pub`
+     |
+note: but type `Aespb` is only usable at visibility `pub(crate)`
+    --> tos-api/src/aes/mod.rs:44:1
+     |
+  44 | pub(crate) struct Aespb {
+     | ^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: type `Aespb` is more private than the item `rsrc_load`
+    --> tos-api/src/aes/resource.rs:2097:1
+     |
+2097 | pub fn rsrc_load(pb: &Aespb) {
+     | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^ function `rsrc_load` is reachable at visibility `pub`
+     |
+note: but type `Aespb` is only usable at visibility `pub(crate)`
+    --> tos-api/src/aes/mod.rs:44:1
+     |
+  44 | pub(crate) struct Aespb {
+     | ^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: type `Aespb` is more private than the item `rsrc_free`
+    --> tos-api/src/aes/resource.rs:2456:1
+     |
+2456 | pub fn rsrc_free(pb: &Aespb) {
+     | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^ function `rsrc_free` is reachable at visibility `pub`
+     |
+note: but type `Aespb` is only usable at visibility `pub(crate)`
+    --> tos-api/src/aes/mod.rs:44:1
+     |
+  44 | pub(crate) struct Aespb {
+     | ^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: type `Aespb` is more private than the item `rsrc_gaddr`
+    --> tos-api/src/aes/resource.rs:2763:1
+     |
+2763 | pub fn rsrc_gaddr(pb: &Aespb) {
+     | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ function `rsrc_gaddr` is reachable at visibility `pub`
+     |
+note: but type `Aespb` is only usable at visibility `pub(crate)`
+    --> tos-api/src/aes/mod.rs:44:1
+     |
+  44 | pub(crate) struct Aespb {
+     | ^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: type `Aespb` is more private than the item `rsrc_saddr`
+    --> tos-api/src/aes/resource.rs:2794:1
+     |
+2794 | pub fn rsrc_saddr(pb: &Aespb) {
+     | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ function `rsrc_saddr` is reachable at visibility `pub`
+     |
+note: but type `Aespb` is only usable at visibility `pub(crate)`
+    --> tos-api/src/aes/mod.rs:44:1
+     |
+  44 | pub(crate) struct Aespb {
+     | ^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: type `Aespb` is more private than the item `rsrc_obfix`
+    --> tos-api/src/aes/resource.rs:2837:1
+     |
+2837 | pub fn rsrc_obfix(pb: &Aespb) {
+     | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ function `rsrc_obfix` is reachable at visibility `pub`
+     |
+note: but type `Aespb` is only usable at visibility `pub(crate)`
+    --> tos-api/src/aes/mod.rs:44:1
+     |
+  44 | pub(crate) struct Aespb {
+     | ^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: type `Aespb` is more private than the item `scrp_read`
+   --> tos-api/src/aes/shell.rs:219:1
+    |
+219 | pub fn scrp_read(pb: &Aespb) {
+    | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^ function `scrp_read` is reachable at visibility `pub`
+    |
+note: but type `Aespb` is only usable at visibility `pub(crate)`
+   --> tos-api/src/aes/mod.rs:44:1
+    |
+ 44 | pub(crate) struct Aespb {
+    | ^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: type `Aespb` is more private than the item `scrp_write`
+   --> tos-api/src/aes/shell.rs:228:1
+    |
+228 | pub fn scrp_write(pb: &Aespb) {
+    | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ function `scrp_write` is reachable at visibility `pub`
+    |
+note: but type `Aespb` is only usable at visibility `pub(crate)`
+   --> tos-api/src/aes/mod.rs:44:1
+    |
+ 44 | pub(crate) struct Aespb {
+    | ^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: type `Aespb` is more private than the item `scrp_clear`
+   --> tos-api/src/aes/shell.rs:252:1
+    |
+252 | pub fn scrp_clear(pb: &Aespb) {
+    | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ function `scrp_clear` is reachable at visibility `pub`
+    |
+note: but type `Aespb` is only usable at visibility `pub(crate)`
+   --> tos-api/src/aes/mod.rs:44:1
+    |
+ 44 | pub(crate) struct Aespb {
+    | ^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: type `Aespb` is more private than the item `shel_read`
+   --> tos-api/src/aes/shell.rs:347:1
+    |
+347 | pub fn shel_read(pb: &Aespb) {
+    | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^ function `shel_read` is reachable at visibility `pub`
+    |
+note: but type `Aespb` is only usable at visibility `pub(crate)`
+   --> tos-api/src/aes/mod.rs:44:1
+    |
+ 44 | pub(crate) struct Aespb {
+    | ^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: type `Aespb` is more private than the item `shel_write`
+   --> tos-api/src/aes/shell.rs:446:1
+    |
+446 | pub fn shel_write(pb: &Aespb) {
+    | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ function `shel_write` is reachable at visibility `pub`
+    |
+note: but type `Aespb` is only usable at visibility `pub(crate)`
+   --> tos-api/src/aes/mod.rs:44:1
+    |
+ 44 | pub(crate) struct Aespb {
+    | ^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: type `Aespb` is more private than the item `shel_get`
+   --> tos-api/src/aes/shell.rs:759:1
+    |
+759 | pub fn shel_get(pb: &Aespb) {
+    | ^^^^^^^^^^^^^^^^^^^^^^^^^^^ function `shel_get` is reachable at visibility `pub`
+    |
+note: but type `Aespb` is only usable at visibility `pub(crate)`
+   --> tos-api/src/aes/mod.rs:44:1
+    |
+ 44 | pub(crate) struct Aespb {
+    | ^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: type `Aespb` is more private than the item `shel_put`
+   --> tos-api/src/aes/shell.rs:776:1
+    |
+776 | pub fn shel_put(pb: &Aespb) {
+    | ^^^^^^^^^^^^^^^^^^^^^^^^^^^ function `shel_put` is reachable at visibility `pub`
+    |
+note: but type `Aespb` is only usable at visibility `pub(crate)`
+   --> tos-api/src/aes/mod.rs:44:1
+    |
+ 44 | pub(crate) struct Aespb {
+    | ^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: type `Aespb` is more private than the item `shel_find`
+   --> tos-api/src/aes/shell.rs:820:1
+    |
+820 | pub fn shel_find(pb: &Aespb) {
+    | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^ function `shel_find` is reachable at visibility `pub`
+    |
+note: but type `Aespb` is only usable at visibility `pub(crate)`
+   --> tos-api/src/aes/mod.rs:44:1
+    |
+ 44 | pub(crate) struct Aespb {
+    | ^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: type `Aespb` is more private than the item `shel_envrn`
+   --> tos-api/src/aes/shell.rs:928:1
+    |
+928 | pub fn shel_envrn(pb: &Aespb) {
+    | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ function `shel_envrn` is reachable at visibility `pub`
+    |
+note: but type `Aespb` is only usable at visibility `pub(crate)`
+   --> tos-api/src/aes/mod.rs:44:1
+    |
+ 44 | pub(crate) struct Aespb {
+    | ^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: type `Aespb` is more private than the item `shel_rdef`
+   --> tos-api/src/aes/shell.rs:979:1
+    |
+979 | pub fn shel_rdef(pb: &Aespb) {
+    | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^ function `shel_rdef` is reachable at visibility `pub`
+    |
+note: but type `Aespb` is only usable at visibility `pub(crate)`
+   --> tos-api/src/aes/mod.rs:44:1
+    |
+ 44 | pub(crate) struct Aespb {
+    | ^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: type `Aespb` is more private than the item `shel_wdef`
+   --> tos-api/src/aes/shell.rs:994:1
+    |
+994 | pub fn shel_wdef(pb: &Aespb) {
+    | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^ function `shel_wdef` is reachable at visibility `pub`
+    |
+note: but type `Aespb` is only usable at visibility `pub(crate)`
+   --> tos-api/src/aes/mod.rs:44:1
+    |
+ 44 | pub(crate) struct Aespb {
+    | ^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: type `Aespb` is more private than the item `wind_create`
+    --> tos-api/src/aes/window.rs:2718:1
+     |
+2718 | pub fn wind_create(pb: &Aespb) {
+     | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ function `wind_create` is reachable at visibility `pub`
+     |
+note: but type `Aespb` is only usable at visibility `pub(crate)`
+    --> tos-api/src/aes/mod.rs:44:1
+     |
+  44 | pub(crate) struct Aespb {
+     | ^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: type `Aespb` is more private than the item `wind_open`
+    --> tos-api/src/aes/window.rs:2786:1
+     |
+2786 | pub fn wind_open(pb: &Aespb) {
+     | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^ function `wind_open` is reachable at visibility `pub`
+     |
+note: but type `Aespb` is only usable at visibility `pub(crate)`
+    --> tos-api/src/aes/mod.rs:44:1
+     |
+  44 | pub(crate) struct Aespb {
+     | ^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: type `Aespb` is more private than the item `wind_close`
+    --> tos-api/src/aes/window.rs:2841:1
+     |
+2841 | pub fn wind_close(pb: &Aespb) {
+     | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ function `wind_close` is reachable at visibility `pub`
+     |
+note: but type `Aespb` is only usable at visibility `pub(crate)`
+    --> tos-api/src/aes/mod.rs:44:1
+     |
+  44 | pub(crate) struct Aespb {
+     | ^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: type `Aespb` is more private than the item `wind_delete`
+    --> tos-api/src/aes/window.rs:3013:1
+     |
+3013 | pub fn wind_delete(pb: &Aespb) {
+     | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ function `wind_delete` is reachable at visibility `pub`
+     |
+note: but type `Aespb` is only usable at visibility `pub(crate)`
+    --> tos-api/src/aes/mod.rs:44:1
+     |
+  44 | pub(crate) struct Aespb {
+     | ^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: type `Aespb` is more private than the item `wind_get`
+    --> tos-api/src/aes/window.rs:3026:1
+     |
+3026 | pub fn wind_get(pb: &Aespb) {
+     | ^^^^^^^^^^^^^^^^^^^^^^^^^^^ function `wind_get` is reachable at visibility `pub`
+     |
+note: but type `Aespb` is only usable at visibility `pub(crate)`
+    --> tos-api/src/aes/mod.rs:44:1
+     |
+  44 | pub(crate) struct Aespb {
+     | ^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: type `Aespb` is more private than the item `wind_set`
+    --> tos-api/src/aes/window.rs:3225:1
+     |
+3225 | pub fn wind_set(pb: &Aespb) {
+     | ^^^^^^^^^^^^^^^^^^^^^^^^^^^ function `wind_set` is reachable at visibility `pub`
+     |
+note: but type `Aespb` is only usable at visibility `pub(crate)`
+    --> tos-api/src/aes/mod.rs:44:1
+     |
+  44 | pub(crate) struct Aespb {
+     | ^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: type `Aespb` is more private than the item `wind_find`
+    --> tos-api/src/aes/window.rs:3411:1
+     |
+3411 | pub fn wind_find(pb: &Aespb) {
+     | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^ function `wind_find` is reachable at visibility `pub`
+     |
+note: but type `Aespb` is only usable at visibility `pub(crate)`
+    --> tos-api/src/aes/mod.rs:44:1
+     |
+  44 | pub(crate) struct Aespb {
+     | ^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: type `Aespb` is more private than the item `wind_update`
+    --> tos-api/src/aes/window.rs:3426:1
+     |
+3426 | pub fn wind_update(pb: &Aespb) {
+     | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ function `wind_update` is reachable at visibility `pub`
+     |
+note: but type `Aespb` is only usable at visibility `pub(crate)`
+    --> tos-api/src/aes/mod.rs:44:1
+     |
+  44 | pub(crate) struct Aespb {
+     | ^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: type `Aespb` is more private than the item `wind_calc`
+    --> tos-api/src/aes/window.rs:3503:1
+     |
+3503 | pub fn wind_calc(pb: &Aespb) {
+     | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^ function `wind_calc` is reachable at visibility `pub`
+     |
+note: but type `Aespb` is only usable at visibility `pub(crate)`
+    --> tos-api/src/aes/mod.rs:44:1
+     |
+  44 | pub(crate) struct Aespb {
+     | ^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: type `Aespb` is more private than the item `wind_new`
+    --> tos-api/src/aes/window.rs:3520:1
+     |
+3520 | pub fn wind_new(pb: &Aespb) {
+     | ^^^^^^^^^^^^^^^^^^^^^^^^^^^ function `wind_new` is reachable at visibility `pub`
+     |
+note: but type `Aespb` is only usable at visibility `pub(crate)`
+    --> tos-api/src/aes/mod.rs:44:1
+     |
+  44 | pub(crate) struct Aespb {
+     | ^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: type `Vdipb` is more private than the item `vsc_form`
+   --> tos-api/src/vdi/mouse.rs:556:1
+    |
+556 | pub fn vsc_form(pb: &Vdipb, backend: &dyn RasterBackend) {
+    | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ function `vsc_form` is reachable at visibility `pub`
+    |
+note: but type `Vdipb` is only usable at visibility `pub(crate)`
+   --> tos-api/src/vdi/mod.rs:81:1
+    |
+ 81 | pub(crate) struct Vdipb {
+    | ^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: type `Vdipb` is more private than the item `v_show_c`
+   --> tos-api/src/vdi/mouse.rs:599:1
+    |
+599 | pub fn v_show_c(pb: &Vdipb, backend: &dyn RasterBackend) {
+    | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ function `v_show_c` is reachable at visibility `pub`
+    |
+note: but type `Vdipb` is only usable at visibility `pub(crate)`
+   --> tos-api/src/vdi/mod.rs:81:1
+    |
+ 81 | pub(crate) struct Vdipb {
+    | ^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: type `Vdipb` is more private than the item `vq_mouse`
+   --> tos-api/src/vdi/mouse.rs:682:1
+    |
+682 | pub fn vq_mouse(pb: &Vdipb) {
+    | ^^^^^^^^^^^^^^^^^^^^^^^^^^^ function `vq_mouse` is reachable at visibility `pub`
+    |
+note: but type `Vdipb` is only usable at visibility `pub(crate)`
+   --> tos-api/src/vdi/mod.rs:81:1
+    |
+ 81 | pub(crate) struct Vdipb {
+    | ^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: type `Vdipb` is more private than the item `vex_butv`
+   --> tos-api/src/vdi/mouse.rs:699:1
+    |
+699 | pub fn vex_butv(pb: &Vdipb) {
+    | ^^^^^^^^^^^^^^^^^^^^^^^^^^^ function `vex_butv` is reachable at visibility `pub`
+    |
+note: but type `Vdipb` is only usable at visibility `pub(crate)`
+   --> tos-api/src/vdi/mod.rs:81:1
+    |
+ 81 | pub(crate) struct Vdipb {
+    | ^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: type `Vdipb` is more private than the item `vex_motv`
+   --> tos-api/src/vdi/mouse.rs:703:1
+    |
+703 | pub fn vex_motv(pb: &Vdipb) {
+    | ^^^^^^^^^^^^^^^^^^^^^^^^^^^ function `vex_motv` is reachable at visibility `pub`
+    |
+note: but type `Vdipb` is only usable at visibility `pub(crate)`
+   --> tos-api/src/vdi/mod.rs:81:1
+    |
+ 81 | pub(crate) struct Vdipb {
+    | ^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: type `Vdipb` is more private than the item `vex_curv`
+   --> tos-api/src/vdi/mouse.rs:707:1
+    |
+707 | pub fn vex_curv(pb: &Vdipb) {
+    | ^^^^^^^^^^^^^^^^^^^^^^^^^^^ function `vex_curv` is reachable at visibility `pub`
+    |
+note: but type `Vdipb` is only usable at visibility `pub(crate)`
+   --> tos-api/src/vdi/mod.rs:81:1
+    |
+ 81 | pub(crate) struct Vdipb {
+    | ^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: type `Vdipb` is more private than the item `vex_wheelv`
+   --> tos-api/src/vdi/mouse.rs:711:1
+    |
+711 | pub fn vex_wheelv(pb: &Vdipb) {
+    | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ function `vex_wheelv` is reachable at visibility `pub`
+    |
+note: but type `Vdipb` is only usable at visibility `pub(crate)`
+   --> tos-api/src/vdi/mod.rs:81:1
+    |
+ 81 | pub(crate) struct Vdipb {
+    | ^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: type `Vdipb` is more private than the item `vex_timv`
+   --> tos-api/src/vdi/mouse.rs:717:1
+    |
+717 | pub fn vex_timv(pb: &Vdipb) {
+    | ^^^^^^^^^^^^^^^^^^^^^^^^^^^ function `vex_timv` is reachable at visibility `pub`
+    |
+note: but type `Vdipb` is only usable at visibility `pub(crate)`
+   --> tos-api/src/vdi/mod.rs:81:1
+    |
+ 81 | pub(crate) struct Vdipb {
+    | ^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: method `set_intout_long` is never used
+   --> tos-api/src/aes/mod.rs:356:8
+    |
+106 | impl Aespb {
+    | ---------- method in this implementation
+...
+356 |     fn set_intout_long(&self, word: usize, v: u32) {
+    |        ^^^^^^^^^^^^^^^
+    |
+    = note: `#[warn(dead_code)]` (part of `#[warn(unused)]`) on by default
+
+warning: `tos-api` (lib) generated 65 warnings
+    Finished `test` profile [optimized + debuginfo] target(s) in 0.01s
+     Running tests/aes_reference.rs (../red-target/debug/deps/aes_reference-e0d3ab826e32c4cd)
+
+running 204 tests
+test a_planted_addr_in_slot_records_the_buffer_token ... ok
+test aes_dispatch_leaves_the_string_device_in_sample_mode ... ok
+test cases_m06_sysvar::case_0090_op048_get_lk3dind_indtxtmove_indcolchange_defaults_0_1 ... ok
+test cases_m05_addrin::case_0094_op013_appl_find_hijklmno_likewise ... ok
+test cases_m05_addrin::case_0102_op104_wind_get_wf_name_into_buffer_0 ... ok
+test cases_m05_addrin::case_0109_op104_wind_get_wf_name_with_no_title_set ... ok
+test cases_m05_addrin::case_0088_op077_graf_handle_an_ordinary_case_in_the_new_form ... ok
+test cases_m06_sysvar::case_0091_op048_get_lk3dact_acttxtmove_actcolchange_defaults_1_0 ... ok
+test cases_m05_addrin::case_0093_op013_appl_find_abcdefgh_no_process_has_that_name ... ok
+test cases_m06_sysvar::case_0092_op048_get_indbutcol_lwhite_8_where_the_palette_has_more_than_8_colo ... ok
+test cases_m06_sysvar::case_0093_op048_get_actbutcol_same_default_separate_variable ... ok
+test cases_m06_sysvar::case_0111_op048_get_lk3dact_acttxtmove_still_1_actcolchange_now_1 ... ok
+test cases_m06_sysvar::case_0112_op048_set_indbutcol_to_colour_1_inside_every_palette ... ok
+test cases_m06_sysvar::case_0096_op048_get_which_0_one_below_lk3dind_the_get_default_arm_0 ... ok
+test cases_m06_sysvar::case_0115_op048_set_backgrcol_to_32767_past_ws_ncolors_on_any_machine_0 ... ok
+test cases_m06_sysvar::case_0116_op048_get_backgrcol_the_refused_set_changed_nothing ... ok
+test cases_m06_sysvar::case_0117_op048_set_ad3dvalue_get_only_so_the_set_default_arm_0 ... ok
+test cases_m06_sysvar::case_0118_op048_set_which_99_the_set_default_arm_0 ... ok
+test cases_m06_sysvar::case_0094_op048_get_backgrcol_same_default_fm_alert_reads_this_one_too ... ok
+test cases_r1::case_0067_op108_wind_calc_wc_work_kind_0_no_gadgets_1px_all_round ... ok
+test cases_m06_sysvar::case_0114_op048_get_indbutcol_after_the_set_1 ... ok
+test cases_r1::case_0069_op108_wind_calc_wc_work_closer ... ok
+test cases_r1::case_0070_op108_wind_calc_wc_work_fuller ... ok
+test cases_m06_sysvar::case_0107_op048_set_lk3dind_to_1_0_both_away_from_the_default ... ok
+test cases_r1::case_0072_op108_wind_calc_wc_work_info_the_second_title_band ... ok
+test cases_r1::case_0073_op108_wind_calc_wc_work_sizer_alone_stripped_vertical_forced_back ... ok
+test cases_m06_sysvar::case_0095_op048_get_ad3dvalue_adj3dstd_twice_a_constant_get_only ... ok
+test cases_r1::case_0075_op108_wind_calc_wc_work_dnarrow ... ok
+test cases_r1::case_0076_op108_wind_calc_wc_work_vslide ... ok
+test cases_r1::case_0077_op108_wind_calc_wc_work_lfarrow ... ok
+test cases_r1::case_0078_op108_wind_calc_wc_work_rtarrow ... ok
+test cases_m06_sysvar::case_0109_op048_get_lk3dind_after_the_set_1_0_and_not_0_1 ... ok
+test cases_r1::case_0080_op108_wind_calc_wc_work_hotclose_pc_gem_bit_no_border_test_reads_it ... ok
+test cases_r1::case_0074_op108_wind_calc_wc_work_uparrow ... ok
+test cases_r1::case_0083_op108_wind_calc_wc_border_name ... ok
+test cases_m06_sysvar::case_0097_op048_get_which_7_one_above_ad3dvalue_the_same_arm ... ok
+test cases_m06_sysvar::case_0098_op048_get_which_99_far_outside_the_same_arm_again ... ok
+test cases_r1::case_0071_op108_wind_calc_wc_work_mover_alone_d_097_tgadgets_vs_non_3d ... ok
+test cases_r1::case_0079_op108_wind_calc_wc_work_hslide ... ok
+test cases_m06_sysvar::case_0119_op048_set_actbutcol_to_colour_20_inside_256_outside_16_the_decla ... ok
+test cases_r1::case_0082_op108_wind_calc_wc_border_kind_0 ... ok
+test cases_r1::case_0068_op108_wind_calc_wc_work_name_title_band ... ok
+test cases_r1::case_0084_op108_wind_calc_wc_border_closer ... ok
+test cases_r1::case_0085_op108_wind_calc_wc_border_fuller ... ok
+test cases_r1::case_0093_op108_wind_calc_wc_border_rtarrow ... ok
+test cases_r1::case_0087_op108_wind_calc_wc_border_info ... ok
+test cases_r1::case_0088_op108_wind_calc_wc_border_sizer_alone ... ok
+test cases_r1::case_0089_op108_wind_calc_wc_border_uparrow ... ok
+test cases_r1::case_0099_op108_wind_calc_name_info_both_title_bands_stack ... ok
+test cases_r1::case_0091_op108_wind_calc_wc_border_vslide ... ok
+test cases_r1::case_0092_op108_wind_calc_wc_border_lfarrow ... ok
+test cases_r1::case_0086_op108_wind_calc_wc_border_mover_alone_d_097_the_other_way ... ok
+test cases_r1::case_0094_op108_wind_calc_wc_border_hslide ... ok
+test cases_r1::case_0095_op108_wind_calc_wc_border_hotclose ... ok
+test cases_r1::case_0097_op108_wind_calc_name_closer_fuller_one_title_band_not_three ... ok
+test cases_r1::case_0098_op108_wind_calc_tgadgets_name_closer_fuller_mover ... ok
+test cases_r1::case_0090_op108_wind_calc_wc_border_dnarrow ... ok
+test cases_r1::case_0100_op108_wind_calc_vgadgets_uparrow_dnarrow_vslide ... ok
+test cases_r1::case_0108_op108_wind_calc_wc_border_0x0fef_the_round_trip_partner ... ok
+test cases_r1::case_0109_op108_wind_calc_wc_border_name_info ... ok
+test cases_r1::case_0103_op108_wind_calc_hgadgets_sizer_mirror_of_the_above ... ok
+test cases_r1::case_0112_op108_wind_calc_wc_work_degenerate_rect_work_area_of_nothing ... ok
+test cases_r1::case_0113_op108_wind_calc_wc_border_degenerate_rect ... ok
+test cases_r1::case_0106_op108_wind_calc_every_defined_gadget_bit_including_info ... ok
+test cases_r1::case_0115_op108_wind_calc_wc_border_a_full_st_high_screen ... ok
+test cases_r1::case_0116_op108_wind_calc_wc_work_1x1_the_work_area_goes_negative ... ok
+test cases_r1::case_0102_op108_wind_calc_vgadgets_sizer_sizer_stripped_from_both_bars ... ok
+test cases_r1::case_0118_op108_wind_calc_wc_border_a_rect_that_grows_but_stays_inside_a_word ... ok
+test cases_r1::case_0104_op108_wind_calc_vgadgets_hgadgets_sizer_both_bars_on_merit ... ok
+test cases_r1::case_0121_op108_wind_calc_type_1_same_question_from_the_other_side ... ok
+test cases_r1::case_0129_op108_out_len_0_nothing_copied_back_not_even_the_return_code ... ok
+test cases_r1::case_0130_op108_out_len_1_the_return_code_only_a_void_handler_s_ret_true ... ok
+test cases_r1::case_0101_op108_wind_calc_hgadgets_lfarrow_rtarrow_hslide ... ok
+test cases_r1::case_0132_op108_in_len_8_with_six_values_two_surplus_poison_words_copied_in ... ok
+test cases_r1::case_0133_op108_in_len_at_i_size_with_six_values ... ok
+test cases_r1::case_0120_op108_wind_calc_type_2_only_wc_border_negates_so_this_is_wc_work ... ok
+test cases_r1::case_0105_op108_wind_calc_0x0fef_the_classic_full_window_without_info ... ok
+test cases_r1::case_0136_op108_control_4_set_there_is_no_aout_len_macro_in_this_build ... ok
+test cases_r1::case_0137_op108_in_len_6_four_values_w_and_h_reach_wm_calc_as_0xdead ... ok
+test cases_r1::case_0131_op108_out_len_3_x_and_y_arrive_w_and_h_stay_poisoned ... ok
+test cases_r1::case_0117_op108_wind_calc_wc_work_negative_origin ... ok
+test cases_r1::case_0110_op108_wind_calc_wc_border_vgadgets_hgadgets_sizer ... ok
+test cases_r1::case_0134_op108_in_len_past_i_size_min_in_len_i_size_has_to_clamp_it ... ok
+test cases_r1::case_0159_op104_wind_get_0_wf_hslide_one_word_w_setup_left_it_at_0 ... ok
+test cases_r1::case_0160_op104_wind_get_0_wf_vslide_one_word ... ok
+test cases_r1::case_0107_op108_wind_calc_all_sixteen_bits_do_the_undefined_ones_do_anything ... ok
+test cases_r1::case_0162_op104_wind_get_0_wf_vslsiz_one_word ... ok
+test cases_r1::case_0163_op104_wind_get_0_wf_top_no_valid_handle_needed ... ok
+test cases_r1::case_0157_op104_wind_get_0_wf_pxywh_previous_rect ... ok
+test cases_r1::case_0158_op104_wind_get_0_wf_fxywh_full_rect ... ok
+test cases_r1::case_0166_op104_wind_get_0_wf_screen_return_code_only_the_address_cannot_be_c ... FAILED
+test cases_r1::case_0114_op108_wind_calc_wc_work_a_full_st_high_screen ... ok
+test cases_r1::case_0161_op104_wind_get_0_wf_hslsiz_the_1_use_default_size_marker ... ok
+test cases_r1::case_0169_op104_wind_get_0_field_13_a_gap_in_the_wf_numbering ... ok
+test cases_r1::case_0170_op104_wind_get_0_field_21_past_the_last_defined_field ... ok
+test cases_r1::case_0172_op104_wind_get_0_wf_wxywh_out_len_1_the_rect_is_thrown_away ... ok
+test cases_r1::case_0173_op104_wind_get_0_wf_wxywh_out_len_3_w_and_h_stay_poisoned ... ok
+test cases_r1::case_0175_op104_wind_get_handle_1_wf_wxywh_a_window_that_was_never_created ... ok
+test cases_r1::case_0176_op104_wind_get_handle_1_wf_wxywh_negative_handle ... ok
+test cases_r1::case_0177_op104_wind_get_handle_99_wf_wxywh_past_num_win ... ok
+test cases_r1::case_0155_op104_wind_get_0_wf_wxywh_the_desktop_work_area_apps_start_from ... ok
+test cases_r1::case_0193_op106_wind_find_at_the_top_left_corner_the_desktop_whatever_is_open ... ok
+test cases_r1::case_0194_op106_wind_find_off_the_top_left_nobody ... ok
+test cases_r1::case_0165_op104_wind_get_0_wf_newdesk_return_code_only ... ok
+test cases_r1::case_0196_op106_wind_find_one_column_left_of_the_screen ... ok
+test cases_r1::case_0167_op104_wind_get_0_wf_owner_aes_3_30_and_later_only ... ok
+test cases_r1::case_0216_op077_graf_handle_the_handle_and_the_four_box_metrics_wm_calc_uses ... ok
+test cases_r1::case_0178_op104_wind_get_handle_32767_wf_wxywh_the_largest_word ... ok
+test cases_r1::case_0156_op104_wind_get_0_wf_cxywh_whole_screen_menu_bar_included ... ok
+test cases_r1::case_0164_op104_wind_get_0_wf_kind_return_code_only_is_it_answered_at_all ... ok
+test cases_r1::case_0195_op106_wind_find_one_row_above_the_screen ... ok
+test cases_r1::case_0135_op108_ain_len_3_no_pointer_wm_calc_never_reads_addr_in ... ok
+test cases_r1::case_0197_op106_wind_find_far_off_the_bottom_right_nobody ... ok
+test cases_r1::case_0242_op000_opcode_0_with_inputs_they_are_marshalled_in_and_ignored ... ok
+test cases_r1::case_0217_op077_graf_handle_out_len_1_the_metrics_stay_poisoned ... ok
+test cases_r1::case_0218_op079_graf_mkstate_return_code_only_a_void_handler_has_to_leave_true ... ok
+test cases_r2_wind::case_0136_op100_wind_create_three_times_the_third_handle ... ok
+test cases_r1::case_0229_op024_evnt_timer_1_ms_still_under_one_tick ... ok
+test cases_r1::case_0240_op000_opcode_0_the_unsupported_sentinel_1_and_no_alert_box ... ok
+test cases_r1::case_0241_op000_opcode_0_with_out_len_0_the_1_is_computed_and_never_delivered ... ok
+test cases_r1::case_0168_op104_wind_get_0_field_0_no_handler_false ... ok
+test cases_r2_wind::case_0131_op100_wind_create_the_first_free_handle_after_the_reset ... ok
+test cases_r2_wind::case_0133_op100_wind_create_twice_the_second_handle ... ok
+test cases_r1::case_0228_op024_evnt_timer_0_ms_adelay_makes_that_one_tick ... ok
+test cases_r2_wind::case_0138_op100_wind_create_kind_none_no_gadget_at_all ... ok
+test cases_r2_wind::case_0137_op100_wind_create_out_len_0_the_handle_is_computed_never_delivered ... ok
+test cases_r2_wind::case_0139_op100_wind_create_kind_0xffff_every_bit_defined_or_not ... ok
+test cases_r2_wind::case_0140_op100_wind_create_in_len_1_wm_create_only_stores_the_rect_it_draws ... ok
+test cases_r2_wind::case_0154_op100_wind_create_the_ninth_num_win_edge ... ok
+test cases_r2_wind::case_0170_op100_wind_create_the_sixteenth_num_win_edge ... ok
+test cases_r2_wind::case_0182_op101_wind_open_a_handle_that_was_never_created ... ok
+test cases_r2_wind::case_0184_op101_wind_open_a_created_window ... ok
+test cases_r2_wind::case_0187_op101_wind_open_a_window_that_is_already_open ... ok
+test cases_r2_wind::case_0188_op102_wind_close_a_handle_that_was_never_created ... ok
+test cases_r2_wind::case_0190_op102_wind_close_a_created_window_that_was_never_opened ... ok
+test cases_r2_wind::case_0193_op102_wind_close_an_open_window ... ok
+test cases_r2_wind::case_0194_op102_wind_close_0_the_desktop_window_is_inuse_but_never_isopen ... ok
+test cases_r2_wind::case_0195_op103_wind_delete_a_handle_that_was_never_created ... ok
+test cases_r2_wind::case_0197_op103_wind_delete_a_created_window ... ok
+test cases_r2_wind::case_0200_op103_wind_delete_an_open_window_wm_close_runs_first ... ok
+test cases_r2_wind::case_0201_op103_wind_delete_99_past_num_win_on_either_machine ... ok
+test cases_r2_wind::case_0202_op103_wind_delete_1_a_negative_handle ... ok
+test cases_r2_wind::case_0206_op101_wind_open_again_after_a_close_the_handle_is_still_inuse ... ok
+test cases_r2_wind::case_0209_op101_wind_open_after_a_delete_the_handle_is_gone ... ok
+test cases_r2_wind::case_0212_op100_wind_create_after_a_delete_the_freed_handle_comes_back ... ok
+test cases_r2_wind::case_0228_op104_wf_fxywh_of_a_created_window_the_rect_wind_create_was_given ... ok
+test cases_r2_wind::case_0230_op104_wf_cxywh_of_a_created_unopened_window_wm_create_set_it_to_gl ... ok
+test cases_r2_wind::case_0232_op104_wf_pxywh_of_a_created_unopened_window ... ok
+test cases_r2_wind::case_0234_op104_wf_hslide_of_a_fresh_window_w_setup_leaves_the_slider_at_the_l ... ok
+test cases_r2_wind::case_0236_op104_wf_vslide_of_a_fresh_window ... ok
+test cases_r2_wind::case_0238_op104_wf_hslsiz_of_a_fresh_window_the_1_use_default_marker ... ok
+test cases_r2_wind::case_0240_op104_wf_vslsiz_of_a_fresh_window ... ok
+test cases_r2_wind::case_0242_op104_wf_kind_on_a_real_window_wm_get_has_no_arm_for_it ... ok
+test cases_r2_wind::case_0244_op104_wf_owner_of_a_created_window_pid_is_open_gl_wtop_bottom_mos ... ok
+test cases_r2_wind::case_0247_op104_wf_owner_of_an_open_window_the_is_open_word_changes ... ok
+test cases_r2_wind::case_0250_op104_wf_cxywh_after_wind_open_the_rect_the_open_was_given_verbatim ... ok
+test cases_r2_wind::case_0253_op104_wf_pxywh_after_wind_open_wm_open_sets_prev_to_the_same_rect ... ok
+test cases_r2_wind::case_0256_op104_wf_wxywh_after_wind_open_wm_calc_wc_work_on_the_box_metrics ... ok
+test cases_r2_wind::case_0259_op104_wf_fxywh_after_wind_open_unchanged_by_the_open ... ok
+test cases_r2_wind::case_0262_op104_wf_wxywh_of_a_none_window_work_area_is_the_border_area_less_on ... ok
+test cases_r2_wind::case_0263_op104_wf_top_with_nothing_open_the_reset_proves_itself ... ok
+test cases_r2_wind::case_0266_op104_wf_top_with_one_window_open ... ok
+test cases_r2_wind::case_0281_op104_wf_hslide_read_back_after_a_set_of_500 ... ok
+test cases_r2_wind::case_0284_op104_wf_hslide_after_a_set_of_0_clamped_up_to_1 ... ok
+test cases_r2_wind::case_0287_op104_wf_hslide_after_a_set_of_2000_clamped_down_to_1000 ... ok
+test cases_r2_wind::case_0290_op104_wf_vslide_after_a_set_of_1000_exactly_on_the_ceiling ... ok
+test cases_r2_wind::case_0293_op104_wf_hslsiz_after_a_set_of_1_the_use_default_escape_is_let_thro ... ok
+test cases_r2_wind::case_0296_op104_wf_hslsiz_after_a_set_of_0_clamped_up_to_1 ... ok
+test cases_r2_wind::case_0299_op104_wf_vslsiz_after_a_set_of_1001_clamped_down_to_1000 ... ok
+test cases_r2_wind::case_0301_op105_wind_set_wf_hslide_the_setter_s_own_return_code ... ok
+test cases_r2_wind::case_0302_op105_wind_set_on_a_handle_that_was_never_created ... ok
+test cases_r2_wind::case_0304_op105_wind_set_field_21_past_the_last_defined_field ... ok
+test cases_r2_wind::case_0306_op105_wind_set_wf_kind_readable_in_some_aeses_settable_in_none ... ok
+test cases_r2_wind::case_0308_op105_wind_set_on_a_negative_handle ... ok
+test cases_r2_wind::case_0310_op105_wind_set_past_num_win_on_either_machine ... ok
+test cases_r2_wind::case_0313_op105_wind_set_wf_cxywh_the_setter_s_return_code ... ok
+test cases_r2_wind::case_0317_op104_wf_cxywh_after_a_wf_cxywh_set_the_new_rect ... ok
+test cases_r2_wind::case_0321_op104_wf_pxywh_after_a_wf_cxywh_set_draw_change_kept_the_rect_before ... ok
+test cases_r2_wind::case_0324_op105_wind_set_wf_top_on_the_only_open_window_already_topped ... ok
+test cases_r2_wind::case_0329_op104_wf_top_with_two_windows_open_the_later_open_is_on_top ... ok
+test cases_r2_wind::case_0335_op104_wf_top_after_a_wf_cxywh_free_re_top_of_the_lower_window ... ok
+test cases_r2_wind::case_0348_op107_wind_update_beg_update_the_reset_drains_the_lock_afterwards ... ok
+test cases_r2_wind::case_0349_op107_wind_update_end_update_with_no_lock_held_unsync_returns_early ... ok
+test cases_r2_wind::case_0351_op107_wind_update_end_update_after_a_beg_the_balanced_pair ... ok
+test cases_r2_wind::case_0354_op107_wind_update_end_update_after_two_begs_the_count_not_the_flag ... ok
+test cases_r2_wind::case_0355_op107_wind_update_beg_mctrl_the_reset_drains_ml_ocnt_afterwards ... ok
+test cases_r2_wind::case_0357_op107_wind_update_end_mctrl_after_a_beg_mctrl_the_balanced_pair ... ok
+test cases_r2_wind::case_0358_op107_wind_update_beg_update_out_len_0_the_ret_is_computed_never_d ... ok
+test cases_r2_wind::case_0369_op106_wind_find_with_nothing_open_the_desktop ... ok
+test cases_r2_wind::case_0372_op106_wind_find_on_a_point_inside_the_open_window ... ok
+test cases_r2_wind::case_0375_op106_wind_find_on_a_point_outside_it_but_on_the_desktop ... ok
+test cases_r2_wind::case_0378_op106_wind_find_exactly_on_the_window_s_top_left_corner ... ok
+test cases_r2_wind::case_0381_op106_wind_find_one_past_the_bottom_right_corner ... ok
+test cases_r2_wind::case_0390_op109_wind_new_a_void_handler_leaves_ret_true ... ok
+test cases_r2_wind::case_0391_op109_wind_new_out_len_0_as_gemlib_issues_it_nothing_delivered ... ok
+test cases_r2_wind::case_0395_op104_after_wind_new_the_handle_is_no_longer_in_use ... ok
+test cases_r2_wind::case_0399_op104_after_wind_new_nothing_is_topped ... ok
+test cases_r2_wind::case_0403_op100_wind_create_after_wind_new_handle_allocation_starts_at_1_again ... ok
+test cases_r2_wind::case_0406_op104_wind_new_after_a_beg_mctrl_the_run_carries_on ... ok
+test the_four_pointer_buffers_hold_the_dumper_s_own_bytes ... ok
+test wf_owner_answers_what_the_pinned_emutos_source_mandates ... ok
+test wind_create_hands_out_fifteen_application_handles ... ok
+test window_rectangles_after_a_close_are_the_ones_draw_change_leaves ... ok
+test window_rectangles_after_create_and_open_match_the_tt ... ok
+
+failures:
+
+---- cases_r1::case_0166_op104_wind_get_0_wf_screen_return_code_only_the_address_cannot_be_c stdout ----
+
+thread 'cases_r1::case_0166_op104_wind_get_0_wf_screen_return_code_only_the_address_cannot_be_c' (3523743) panicked at tos-api/tests/aes_reference/harness.rs:1654:9:
+tosdump/cases/aes-r1.tsv case 166 (opcode 104) -- wind_get 0 WF_SCREEN: return code only, the address cannot be c
+  1 field(s) differ from the EmuTOS 1.4 reference:
+    int_out[0]  NewTOS = 0x0000 (0)   reference = 0x0001 (1)
+
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+
+
+failures:
+    cases_r1::case_0166_op104_wind_get_0_wf_screen_return_code_only_the_address_cannot_be_c
+
+test result: FAILED. 203 passed; 1 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.41s
+
+error: test failed, to rerun pass `-p tos-api --test aes_reference`
+     Running tests/aes_screen_buffer_save_under.rs (../red-target/debug/deps/aes_screen_buffer_save_under-2893a02208674803)
+
+running 3 tests
+test bb_save_clips_the_height_to_the_buffer_and_writes_nothing_past_it ... ok
+test drop_down_over_a_truecolor_pattern_restores_it_byte_for_byte_through_the_screen_buffer ... FAILED
+test form_alert_over_a_truecolor_pattern_restores_it_byte_for_byte_through_the_screen_buffer ... FAILED
+
+failures:
+
+---- drop_down_over_a_truecolor_pattern_restores_it_byte_for_byte_through_the_screen_buffer stdout ----
+
+thread 'drop_down_over_a_truecolor_pattern_restores_it_byte_for_byte_through_the_screen_buffer' (3523855) panicked at tos-api/tests/aes_screen_buffer_save_under.rs:678:9:
+the screen after the drop-down differs from the screen before it, first at (55,19): was 0x639642, is 0xFFFBFF -- the restore did not reproduce the pattern (A71: a pen-based save-under answers pen 0 for a colour that is no pen)
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+
+---- form_alert_over_a_truecolor_pattern_restores_it_byte_for_byte_through_the_screen_buffer stdout ----
+
+thread 'form_alert_over_a_truecolor_pattern_restores_it_byte_for_byte_through_the_screen_buffer' (3523856) panicked at tos-api/tests/aes_screen_buffer_save_under.rs:551:5:
+the alert's save-under did not go through the AES screen buffer (gl_tmp): the fixture is still all zero -- a private buffer is not what WF_SCREEN hands out
+
+
+failures:
+    drop_down_over_a_truecolor_pattern_restores_it_byte_for_byte_through_the_screen_buffer
+    form_alert_over_a_truecolor_pattern_restores_it_byte_for_byte_through_the_screen_buffer
+
+test result: FAILED. 1 passed; 2 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.03s
+
+error: test failed, to rerun pass `-p tos-api --test aes_screen_buffer_save_under`
+     Running tests/aes_window_screen_buffer.rs (../red-target/debug/deps/aes_window_screen_buffer-d96cd93ac3e85b46)
+
+running 3 tests
+test the_other_two_handle_free_fields_still_answer ... ok
+test wf_screen_reports_the_one_buffer_on_every_handle ... FAILED
+test wf_screen_writes_two_native_longs_over_int_out_1_to_4 ... FAILED
+
+failures:
+
+---- wf_screen_reports_the_one_buffer_on_every_handle stdout ----
+
+thread 'wf_screen_reports_the_one_buffer_on_every_handle' (3523859) panicked at tos-api/tests/aes_window_screen_buffer.rs:111:5:
+assertion `left == right` failed: wind_get(0, WF_SCREEN) must answer TRUE: gsx_mret reports the buffer
+  left: 0
+ right: 1
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+
+---- wf_screen_writes_two_native_longs_over_int_out_1_to_4 stdout ----
+
+thread 'wf_screen_writes_two_native_longs_over_int_out_1_to_4' (3523860) panicked at tos-api/tests/aes_window_screen_buffer.rs:171:5:
+assertion `left == right` failed: TRUE
+  left: 0
+ right: 1
+
+
+failures:
+    wf_screen_reports_the_one_buffer_on_every_handle
+    wf_screen_writes_two_native_longs_over_int_out_1_to_4
+
+test result: FAILED. 1 passed; 2 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.01s
+
+error: test failed, to rerun pass `-p tos-api --test aes_window_screen_buffer`
+     Running tests/aes_window_screen_buffer_absent.rs (../red-target/debug/deps/aes_window_screen_buffer_absent-9253cc9a6552445a)
+
+running 1 test
+test wf_screen_without_a_buffer_answers_false_and_writes_nothing ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+error: 3 targets failed:
+    `-p tos-api --test aes_reference`
+    `-p tos-api --test aes_screen_buffer_save_under`
+    `-p tos-api --test aes_window_screen_buffer`

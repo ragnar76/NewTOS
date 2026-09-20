@@ -18,6 +18,7 @@ mod event;
 pub mod form;
 pub mod fsel;
 mod graf;
+pub mod gsxif;
 pub mod init;
 mod input;
 pub mod menu;
@@ -331,6 +332,38 @@ impl Aespb {
                 Abi::Ilp32 => (base as *const u32).read_unaligned() as u64,
             }
         }
+    }
+    /// Store a 32-bit `LONG` over two consecutive `int_out` WORDs starting
+    /// at `word` — the way `wm_get(WF_SCREEN)` hands out the screen buffer:
+    /// `gsx_mret((LONG *)poutwds, (LONG *)(poutwds + 2))`
+    /// (`aes/gemwmlib.c:1564`, `gemgsxif.c:125-129`) executes `*(LONG *)
+    /// &int_out[1] = addr; *(LONG *)&int_out[3] = len;` — a native 32-bit
+    /// store at a WORD-aligned address. This is that store, native to
+    /// AArch64: little-endian, so `int_out[word]` holds bits 0–15 and
+    /// `int_out[word + 1]` bits 16–31, and unaligned because `&int_out[word]`
+    /// is only 2-byte aligned. Stored natively, read natively — TeraDesk's
+    /// `union { long size; struct { _WORD high, low; } words; }`
+    /// (`sdk/apps/teradesk/resource.c:233-241`) and cflib's
+    /// `*((long *)&aes_intout[3])` (`sdk/cflib/cflib-21/purec.c:169-171`)
+    /// get the value back. The width is fixed at 32 bits regardless of the
+    /// caller's ABI because EmuTOS writes 32 bits and the values (a user VA
+    /// under 32 MiB, a length under 4 GiB) fit; the wider-pointer question
+    /// is `TASK/T04.md`'s.
+    ///
+    /// Like [`Self::set_intout`], a store that would run off the local
+    /// `int_out[O_SIZE]` is dropped rather than made.
+    #[inline]
+    fn set_intout_long(&self, word: usize, v: u32) {
+        debug_assert!(word + 2 <= O_SIZE, "AES int_out LONG past O_SIZE");
+        if word + 2 > O_SIZE {
+            return;
+        }
+        // &int_out[word] — `word` WORDs (2 bytes each) into the local array.
+        let base = (self.intout as u64).wrapping_add((word as u64) * 2);
+        // SAFETY: `intout` is the dispatch-local `[i16; O_SIZE]` and the
+        // bound above keeps both WORDs of the LONG inside it; the store
+        // tolerates the slot's 2-byte alignment.
+        unsafe { (base as *mut u32).write_unaligned(v) }
     }
     #[inline]
     #[allow(dead_code)] // used by the address-returning managers (later sub-phases)

@@ -1,0 +1,91 @@
+RB2
+NewTOS booting on rpi4
+Phase 02 reached.
+[mm] DTB at 0x0000000000000100
+[mm] firmware: ARM memory bank 0: 0x0000000000000000 + 1006632960 bytes (960 MiB)
+[mm] firmware: VC memory: 0x000000003c000000 + 67108864 bytes (64 MiB)
+[mm] device tree: no usable /memory node (blob invalid or absent)
+[mm] memory map:
+[mm]   DRAM  : 0x0000000000000000..0x000000003c000000 (1006632960 bytes) — source: firmware
+[mm]   kernel: 0x0000000000080000..0x0000000000312000 (2695168 bytes)
+[mm]   ST-RAM: 0x0000000000400000..0x0000000000e00000 (10485760 bytes)
+[mm]   TT-RAM: 0x0000000001000000..0x000000003be00000 (987758592 bytes)
+[mm]   OSrsvd: 0x000000003be00000..0x000000003c000000 (2097152 bytes)
+[mm]     heap: 0x000000003be00000..0x000000003c000000 (2097152 bytes)
+[mm]   MMIO 00: 0x00000000fd500000..0x00000000fd510000
+[mm]   MMIO 01: 0x00000000fe000000..0x00000000ff000000
+[mm]   MMIO 02: 0x00000000ff800000..0x0000000100000000
+[mm] MMU reinstalled (high-half via TTBR1, TTBR0 deferred to Phase 06).
+[mm] frames ST-RAM: total=2560 used=0 free=2560 (10485760 B free)
+[mm] frames TT-RAM: total=241152 used=0 free=241152 (987758592 B free)
+[mm] alloc ST-RAM frame -> 0x0000000000400000
+[mm] alloc TT-RAM frame -> 0x0000000001000000
+[mm] heap after init: total=2097152 used=0 free=2097152 largest=2097152 blocks=1
+[mm] heap smoke OK
+[mm] heap after smoke: total=2097152 used=0 free=2097152 largest=2097152 blocks=1
+[fb] VideoCore display geometry detected: 640x480
+[fb] 640x480 pitch 2560 virtual height 960 -> 2 screen page(s), 2400 KiB
+[fb] VideoCore fb up: 640x480 stride 640px
+[mm] BDOS pools: ST-RAM 0x00400000+10485760 TT-RAM 0x01000000+987758592
+[mm] BDOS ST-RAM after init: total=10485760 free=10485760 used=0 largest_free=10485760 (free_mds=1 alloc_mds=0)
+[mm] BDOS TT-RAM after init: total=987758592 free=987758592 used=0 largest_free=987758592 (free_mds=1 alloc_mds=0)
+[emmc] SD card on controller @ 0xffff0000fe300000
+[clock] seeded from kernel8.img: 2026-09-20 12:40:18
+[pcie] RC not present (no response at RC_BASE); USB disabled
+[auto] running C:\AUTO\HELLO.NCP
+[launch] EL0: slot 0 entry 0x1000
+Hello from a NewTOS .NCP program!
+[launch] returned (program Pterm'd)
+[auto] 1 AUTO program(s) run
+[shell] sh_ldapp: starting C:\APPS\TERADESK\DESKTOP.NAP, sh_nextapp=2, sh_isgem=1
+[launch] EL0: slot 0 entry 0x1000
+[h02] injector armed
+[a57] wind_get(WF_SCREEN) handle=0 -> int_out=(0,0,0,0,0) addr=0x00000000 len=0
+[h02] MARK A_IDLE step 0 at +1100 mouse (319,239) mb=0
+[h02] step 1 at +1200 -> mouse (192,112) mb=0
+[h02] step 2 at +1201 -> mouse (65,0) mb=0
+[h02] step 3 at +1217 -> mouse (0,0) mb=0
+[h02] step 4 at +1217 -> mouse (0,0) mb=0
+[h02] step 5 at +1217 -> mouse (0,0) mb=0
+[h02] step 6 at +1217 -> mouse (0,0) mb=0
+[h02] step 7 at +1217 -> mouse (127,127) mb=0
+[h02] step 8 at +1217 -> mouse (254,254) mb=0
+[h02] step 9 at +1219 -> mouse (300,300) mb=0
+[h02] step 10 at +1400 -> mouse (173,173) mb=0
+[h02] step 11 at +1401 -> mouse (136,46) mb=0
+[h02] step 12 at +1402 -> mouse (136,8) mb=0
+[h02] MARK B_VIEW_MENU step 13 at +2000 mouse (136,8) mb=0
+[h02] step 14 at +2200 -> mouse (263,135) mb=0
+[h02] step 15 at +2201 -> mouse (300,262) mb=0
+[h02] step 16 at +2202 -> mouse (300,300) mb=0
+[h02] MARK C_CLOSED step 17 at +2600 mouse (300,300) mb=0
+[h02] step 18 at +2800 -> mouse (173,173) mb=0
+[h02] step 19 at +2801 -> mouse (88,46) mb=0
+[h02] step 20 at +2802 -> mouse (88,8) mb=0
+[h02] MARK D_FILE_MENU step 21 at +3200 mouse (88,8) mb=0
+[h02] step 22 at +3400 -> mouse (215,135) mb=0
+[h02] step 23 at +3401 -> mouse (300,262) mb=0
+[h02] step 24 at +3402 -> mouse (300,300) mb=0
+[h02] MARK E_CLOSED2 step 25 at +3800 mouse (300,300) mb=0
+[h02] step 26 at +4000 -> mouse (427,173) mb=0
+[h02] step 27 at +4001 -> mouse (435,46) mb=0
+[h02] step 28 at +4002 -> mouse (435,35) mb=0
+[h02] step 29 at +4200 -> mouse (435,35) mb=1
+[h02] step 30 at +4206 -> mouse (435,35) mb=0
+[h02] MARK F_F_SELECTED step 31 at +4600 mouse (435,35) mb=0
+[h02] step 32 at +4800 -> mouse (308,8) mb=0
+[h02] step 33 at +4801 -> mouse (181,8) mb=0
+[h02] step 34 at +4808 -> mouse (88,8) mb=0
+[h02] step 35 at +5200 -> mouse (110,43) mb=0
+[h02] step 36 at +5400 -> mouse (110,43) mb=1
+[h02] step 37 at +5406 -> mouse (110,43) mb=0
+[h02] MARK G_ALERT step 38 at +6000 mouse (110,43) mb=0
+[h02] step 39 at +6200 -> mouse (237,170) mb=0
+[h02] step 40 at +6201 -> mouse (319,268) mb=0
+[h02] step 41 at +6400 -> mouse (319,268) mb=1
+[h02] step 42 at +6406 -> mouse (319,268) mb=0
+[h02] MARK H_ALERT_CLOSED step 43 at +7000 mouse (319,268) mb=0
+[h02] step 44 at +7200 -> mouse (319,277) mb=0
+[h02] step 45 at +7400 -> mouse (319,277) mb=1
+[h02] step 46 at +7406 -> mouse (319,277) mb=0
+[h02] MARK I_ALERTS_CLOSED step 47 at +8000 mouse (319,277) mb=0

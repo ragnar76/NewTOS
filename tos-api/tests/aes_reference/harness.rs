@@ -687,15 +687,8 @@ fn open_workstation(phys: i16) -> i16 {
 /// `aes_global[15]` lives for the whole run.
 pub fn context() -> &'static Context {
     CTX.get_or_init(|| {
-        let host: &'static TestHost = HOST_CELL.get_or_init(|| {
-            Box::leak(Box::new(TestHost {
-                raster: MemBackend::new(),
-                clock: AtomicU64::new(0),
-            }))
-        });
-        let href: &'static &'static dyn Host =
-            Box::leak(Box::new(*HOST_REF.get_or_init(|| host as &'static dyn Host)));
-        tos_api::host::install_host(href);
+        let host = host_only();
+        install_screen_buffer(&host.raster);
 
         let mut pb = Pb::new();
         pb.poison();
@@ -714,6 +707,48 @@ pub fn context() -> &'static Context {
         Context { ap_id, phys_handle, handle }
     })
 }
+
+/// The host alone, installed once — no application opened, **no screen
+/// buffer**. [`context`] builds on it; a binary that wants the AES exactly as
+/// it stands before `gsx_malloc` (the buffer-less `wind_get(WF_SCREEN)`
+/// fallback, `tests/aes_window_screen_buffer_absent.rs`) uses it directly.
+pub fn host_only() -> &'static TestHost {
+    HOST_CELL.get_or_init(|| {
+        let host: &'static TestHost = Box::leak(Box::new(TestHost {
+            raster: MemBackend::new(),
+            clock: AtomicU64::new(0),
+        }));
+        let href: &'static &'static dyn Host =
+            Box::leak(Box::new(*HOST_REF.get_or_init(|| host as &'static dyn Host)));
+        tos_api::host::install_host(href);
+        host
+    })
+}
+
+/// The AES menu/alert screen buffer this binary runs with — `gsx_malloc`'s
+/// block (`aes/gemgsxif.c:108-114`), which on the target comes from the BDOS
+/// pool when the AES goes graphic and which a host process cannot take (no
+/// pool, and a host `Vec` does not lie under 2 GiB). Installed as the fixture
+/// `tos_api::aes::gsxif::install_screen_buffer` provides, sized as
+/// `gsx_mcalc` sizes it for this backend (one 640×480 screen in device
+/// pixels, 614 400 bytes), and reported to an EL1 caller of
+/// `wind_get(WF_SCREEN)` at [`SCREEN_BUFFER_PA`]. Leaked deliberately: the
+/// AES keeps the address for the rest of the run, as the TT kept
+/// `0x01000218` for the whole dump.
+fn install_screen_buffer(backend: &MemBackend) {
+    let len = tos_api::aes::gsxif::gsx_mcalc(backend);
+    let buf: &'static mut [u8] = Box::leak(vec![0u8; len].into_boxed_slice());
+    // SAFETY: the leaked slice lives for the rest of the process and holds
+    // exactly `gsx_mcalc` bytes.
+    unsafe { tos_api::aes::gsxif::install_screen_buffer(buf.as_mut_ptr(), SCREEN_BUFFER_PA, len) };
+}
+
+/// The "physical address" the fixture reports for the screen buffer — a
+/// page-aligned TT-RAM-looking value under 2 GiB, the kind the pool hands
+/// out on the target. Machine-dependent on every machine (the TT recorded
+/// `0x01000218`, `measurement-2026-09-12-aes-r4/`), so no reference dump
+/// decides it; `tests/aes_window_screen_buffer.rs` checks it by formula.
+pub const SCREEN_BUFFER_PA: u64 = 0x0100_0000;
 
 /// The live `AESGLOBAL`, allocated once and shared by every parameter block.
 /// Zero-initialised, which is what the dumper's `.bss` array was. Handing out
@@ -1469,46 +1504,18 @@ pub struct Sanctioned {
     pub why: &'static str,
 }
 
-/// The whole list, and it has exactly one subject: `wind_get(WF_SCREEN)`.
+/// The whole list — **empty**. Its one entry, round-1 case 166
+/// (`wind_get(0, WF_SCREEN)`, `OUT_LEN 1`), left with A57: the AES has the
+/// persistent menu/alert screen buffer `gsx_malloc` takes
+/// (`tos_api::aes::gsxif`; on this host, the fixture [`install_screen_buffer`]
+/// in [`context`]), so `wm_get`'s field 17 answers TRUE out of `gsx_mret`
+/// again (`aes/gemwmlib.c:1563-1565`) and the case compares directly against
+/// the dump. The A54 register entry in `docs/COMPATIBILITY.md` narrowed to the
+/// buffer-less fallback, which no case of any table exercises.
 ///
-/// EmuTOS' field 17 hands out the menu/alert screen-save buffer — a region
-/// `gsx_malloc` takes once at AES start (`aes/gemgsxif.c:108-114`, from
-/// `sh_main`, `aes/gemshlib.c:236`) and `gsx_mret` reports the address and
-/// length of (`:125-129`) — and answers TRUE. NewTOS has no such region: the
-/// modal alert takes a fresh buffer per alert and drops it
-/// (`tos-api/src/aes/form.rs`, `BbSave`), the menu keeps two backings it clears
-/// and regrows per drop-down (`tos-api/src/aes/menu.rs`, `MBACK`/`SMBACK`), and
-/// both live in the kernel heap, which is mapped `AP_RW_EL1` — an EL0
-/// application cannot touch it at all
-/// (`kernel/src/arch/aarch64/mmu.rs:82,178-179,283-284`), which is precisely
-/// what a WF_SCREEN pointer is *for*.
-///
-/// So NewTOS answers FALSE, `wm_get`'s own idiom for a field it does not
-/// implement (`default: return FALSE`, `aes/gemwmlib.c:1590-1591`). The
-/// previous answer — four zero words and TRUE — was the one thing that could
-/// not be told apart from "here is a buffer, at address 0"; the r4 sub-function
-/// run measured it (cases 331, 332 and 439 of
-/// `tosdump/cases/aes-r4-subfunctions.tsv`) and `TASK/A54.md` repaired it.
-///
-/// **Round 1, case 166** — `wind_get(0, WF_SCREEN)`, `OUT_LEN 1`, so only
-/// `int_out[0]` is in reach; the TT recorded 1. The entry is here rather than
-/// left red because the difference is not an unknown: it is registered,
-/// dated and attributed in `docs/COMPATIBILITY.md`, and it disappears the day
-/// the AES gets a real persistent scratch buffer in EL0-reachable memory.
-pub const SANCTIONED: &[Sanctioned] = &[Sanctioned {
-    table: "tosdump/cases/aes-r1.tsv",
-    case: 166,
-    field: "int_out",
-    index: 0,
-    recorded: 1,
-    answer: 0,
-    why: "RET_CODE: EmuTOS always answers WF_SCREEN TRUE because gsx_malloc \
-          gave it a buffer (aes/gemgsxif.c:108-129). NewTOS has no persistent \
-          menu/alert buffer, and none it could hand an EL0 caller, so it \
-          refuses the field the way wm_get's default arm does \
-          (aes/gemwmlib.c:1590-1591) -- sanctioned deviation, \
-          docs/COMPATIBILITY.md, TASK/A54.md",
-}];
+/// The type and the three rules stay, so the next honest gap has a named
+/// place to go and cannot become a quiet way to make red go green.
+pub const SANCTIONED: &[Sanctioned] = &[];
 
 /// Replay one case of `table` and compare every array against the reference.
 pub fn check(table: &Table, case: &Case) {

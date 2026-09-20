@@ -26,13 +26,14 @@
 //! (EmuTOS `display_submenu`/`mn_do` `SUBMENU_STATE`).
 
 use super::graf::gl_hbox;
+use super::gsxif;
 use super::object::{self, ObjTree, Object};
 use super::Aespb;
 use crate::bdos::process::Abi;
 use crate::host::host;
 use crate::vdi::backend::{ClipRect, Pel, RasterBackend};
 use core::cell::UnsafeCell;
-use core::sync::atomic::{AtomicI16, AtomicU8, AtomicUsize, Ordering};
+use core::sync::atomic::{AtomicUsize, Ordering};
 
 /// `THESCREEN` — the menu tree root; its `ob_tail` is the box that holds
 /// all drop-down menus.
@@ -219,15 +220,15 @@ pub fn menu_bar(pb: &Aespb) {
 /// `MU_BUTTON` (`docs/api/aes/menu.md` "Mouse ownership over the track").
 ///
 /// Behaviour matches GEM's hover menus (open-on-enter, click-to-pick). The
-/// screen under each box is saved on open and restored on close (`save_under`
-/// / `restore_under` — GEM's `menu_sr`), so it works over windows too; the
-/// mouse cursor is hidden across every box/highlight draw so it neither
-/// smears nor pollutes the backing.
+/// screen under each box is saved on open and restored on close (the AES
+/// screen buffer, `gsxif::bb_save` — GEM's `menu_sr`), so it works over
+/// windows too; the mouse cursor is hidden across every box/highlight draw
+/// so it neither smears nor pollutes the backing.
 ///
 /// **Nested submenus** (EmuTOS `mn_do` `SUBMENU_STATE` + `display_submenu`):
 /// when the highlighted item has an attached submenu ([`SubmenuTable`]), it
 /// opens as a nested box beside the parent item (right, or left if it would
-/// run off-screen), saved under [`SMBACK`]. Hovering into the submenu keeps
+/// run off-screen), saved under [`SUBMENU_SAVE`]. Hovering into the submenu keeps
 /// the parent item highlighted; a press over a submenu item selects it. A
 /// submenu that lives in the **same** OBJECT tree as the bar returns its item
 /// through the existing `(title, item)` result (the item index is valid in the
@@ -449,6 +450,15 @@ pub fn open(tree: *mut Object, title: i16, item: i16, backend: &dyn RasterBacken
     imenu
 }
 
+/// Programmatically close the drop-down [`open`] dropped for `title` (box
+/// `imenu`): put the screen under the box back from the AES screen buffer,
+/// draw the title normal again. The headless counterpart of the tracker's
+/// cancel path, so the save/restore round trip can be verified without a
+/// mouse (A71 host test).
+pub fn close(tree: *mut Object, title: i16, imenu: i16, backend: &dyn RasterBackend) {
+    close_box(tree, title, imenu, backend);
+}
+
 /// Render `title`'s drop-down with `item` highlighted and, if `item` has an
 /// attached submenu, that submenu opened beside it — the static picture the
 /// interactive [`track`] shows mid-hover. Returns the submenu box index, or
@@ -468,7 +478,7 @@ pub fn open_submenu_static(tree: *mut Object, title: i16, item: i16, backend: &d
 /// drop-down: position its box to the **right** of the item overlapping the
 /// submenu arrow, or to the **left** if it would run off the right of the
 /// screen; align the box so its start item sits level with the parent item;
-/// save the pixels underneath (into [`SMBACK`]) and draw it. Mirrors EmuTOS
+/// save the pixels underneath (into [`SUBMENU_SAVE`]) and draw it. Mirrors EmuTOS
 /// `display_submenu` (`gemmnext.c:625-678`). Returns `(sub_tree_ptr, sub_box)`
 /// when a submenu was opened, `None` otherwise.
 fn open_submenu(tree: *mut Object, item: i16, backend: &dyn RasterBackend) -> Option<(u64, i16)> {
@@ -508,15 +518,24 @@ fn open_submenu(tree: *mut Object, item: i16, backend: &dyn RasterBackend) -> Op
     sub_t.set_y(s.sub_menu, sub_t.y(s.sub_menu) + (y - by0));
     crate::vdi::cursor_hide(backend);
     let (fx, fy, fw, fh) = sr_rect(sub_tp, s.sub_menu, backend);
-    save_under(&SMBACK, backend, fx, fy, fw, fh);
+    // `blitsave = popup_blit(smobj, NULL)` (`gemmnext.c:668-671`): a fresh
+    // pool block per opening, never the drop-down's screen buffer — the
+    // drop-down is still down and holds it. No block, no submenu
+    // (`display_submenu` returns NULL).
+    let Some(saved) = gsxif::popup_blit_save(backend, fx, fy, fw, fh) else {
+        crate::vdi::cursor_show(backend);
+        return None;
+    };
+    SUBMENU_SAVE.put(saved);
     object::draw_obj_clip(sub_tp, s.sub_menu, MAX_DEPTH, sr_clip(fx, fy, fw, fh), backend);
     crate::vdi::cursor_show(backend);
     Some((s.sub_tree, s.sub_menu))
 }
 
 /// Close an open nested submenu: clear any highlighted submenu item, restore
-/// the pixels saved under its box ([`SMBACK`], or white-erase if the box was
-/// too big to snapshot). Mirrors EmuTOS `undisplay_submenu`.
+/// the pixels saved under its box ([`SUBMENU_SAVE`], the block
+/// `popup_blit` took) and release that block. Mirrors EmuTOS
+/// `undisplay_submenu` (`gemmnext.c:686-703`, `popup_blit(smobj, blitsave)`).
 fn close_submenu(sub_tree: u64, sub_box: i16, sub_item: i16, backend: &dyn RasterBackend) {
     if sub_tree == 0 || sub_box < 0 {
         return;
@@ -528,7 +547,9 @@ fn close_submenu(sub_tree: u64, sub_box: i16, sub_item: i16, backend: &dyn Raste
     }
     // Restore the pixels saved under the submenu box exactly (no content-
     // destroying white-erase: the saved grown rect is a superset of the draw).
-    restore_under(&SMBACK, backend);
+    if let Some(saved) = SUBMENU_SAVE.take() {
+        saved.restore(backend);
+    }
     crate::vdi::cursor_show(backend);
 }
 
@@ -552,50 +573,51 @@ fn point_in(tree: *const Object, obj: i16, mx: i16, my: i16) -> bool {
     mx >= x && mx < x + w && my >= y && my < y + h
 }
 
-// ── drop-down save/restore backing (GEM's "save under" — EmuTOS `menu_sr`) ──
+// ── drop-down save/restore (GEM's "save under" — EmuTOS `menu_sr`) ────────
 //
 // Opening a menu box covers part of the screen; closing it must put the
-// pixels back. Like the cursor backing, snapshot the box rectangle into a
-// CPU buffer on open and blit it back on close — covers both selection and
-// cancel without a full desktop repaint, and works over windows too. The
-// snapshot is taken with the mouse cursor hidden so it is clean and the
-// cursor stays on top of the open menu.
+// pixels back. The drop-down goes through **the** AES screen buffer
+// (`gsxif::bb_save`/`Saved::restore` — EmuTOS `menu_sr`, `gemmnlib.c:208-223`:
+// `bb_save(&t)` on the way down, `bb_restore(&t)` on the way up, `gl_tmp`),
+// device-exact: 16-bit RGB565 words straight off the screen, so truecolor
+// content under the box (an image, a gradient) comes back bit for bit
+// (A71). A nested submenu and a pop-up do **not** share that buffer — the
+// submenu opens while the drop-down is down and holds it — but take a fresh
+// pool block per opening (`gsxif::popup_blit_save` — EmuTOS `popup_blit`,
+// `gemmnext.c:136-215`, `dos_alloc_stram`), freed with the restore.
 //
-// The saved rectangle is the box **grown to cover its decoration** ([`sr_rect`],
-// EmuTOS `menu_sr`/`popup_blit`), and the draw is clipped to exactly that
-// rectangle, so *saved-area ⊇ drawn-area* always holds. The buffer is a
-// heap `Vec` sized to the grown rectangle (EmuTOS's `bb_save`/`gl_pmpmlo`
-// is screen-sized and unbounded): there is no fixed cap and thus no
-// content-destroying white-erase fallback — a wide/tall drop-down (up to a
-// large fraction of a 1080p screen) is saved and restored in full.
-struct MenuBack {
-    px: UnsafeCell<alloc::vec::Vec<Pel>>,
-    x: AtomicI16,
-    y: AtomicI16,
-    w: AtomicI16,
-    h: AtomicI16,
-    valid: AtomicU8,
-}
+// The saved rectangle is the box **grown to cover its decoration**
+// ([`sr_rect`]), and the draw is clipped to exactly that rectangle, so
+// *saved-area ⊇ drawn-area* always holds. The copies run with the cursor
+// hidden (`bb_set`, `gemgsxif.c:367,378`), nested inside the callers' own
+// bracket.
+
+/// One parked [`gsxif::Saved`]: the drop-down's (EmuTOS keeps its rectangle
+/// implicit in the tree and the pixels in `gl_tmp`) or the submenu's
+/// (`blitsave`, `gemmnext.c`).
+struct SaveSlot(UnsafeCell<Option<gsxif::Saved>>);
 // SAFETY: touched only from the single-CPU AES trap / desktop event path.
-unsafe impl Sync for MenuBack {}
-impl MenuBack {
-    const fn new() -> MenuBack {
-        MenuBack {
-            px: UnsafeCell::new(alloc::vec::Vec::new()),
-            x: AtomicI16::new(0),
-            y: AtomicI16::new(0),
-            w: AtomicI16::new(0),
-            h: AtomicI16::new(0),
-            valid: AtomicU8::new(0),
-        }
+unsafe impl Sync for SaveSlot {}
+impl SaveSlot {
+    const fn new() -> SaveSlot {
+        SaveSlot(UnsafeCell::new(None))
+    }
+    /// Park `saved`; a still-parked earlier save is dropped (its pool block,
+    /// if any, released).
+    fn put(&self, saved: gsxif::Saved) {
+        // SAFETY: single-CPU AES path; exclusive access to this slot.
+        unsafe { *self.0.get() = Some(saved) };
+    }
+    /// Take the parked save, if any.
+    fn take(&self) -> Option<gsxif::Saved> {
+        // SAFETY: as `put`.
+        unsafe { (*self.0.get()).take() }
     }
 }
-static MBACK: MenuBack = MenuBack::new();
-/// A **second** backing for the nested submenu box (EmuTOS keeps the
-/// drop-down's `bb_save` buffer and the submenu's `blitsave` separate, so a
-/// submenu open does not clobber the parent box's saved pixels). Used only by
-/// the submenu open/close path; the parent box + popups use [`MBACK`].
-static SMBACK: MenuBack = MenuBack::new();
+/// The open drop-down's save (`menu_sr`).
+static MENU_SAVE: SaveSlot = SaveSlot::new();
+/// The open nested submenu's save — EmuTOS `blitsave` (`gemmnext.c`).
+static SUBMENU_SAVE: SaveSlot = SaveSlot::new();
 
 /// The EmuTOS `menu_sr` save/restore rectangle for a drop-down `box_obj`: its
 /// absolute rectangle grown to cover the decoration `draw_obj` can paint, then
@@ -624,54 +646,6 @@ fn sr_clip(x: i16, y: i16, w: i16, h: i16) -> ClipRect {
     ClipRect { xmn: x, ymn: y, xmx: x + w - 1, ymx: y + h - 1 }
 }
 
-/// Snapshot the pixels the grown rectangle `(x,y,w,h)` covers into `back`. The
-/// buffer is resized to the rectangle (no fixed cap); an empty rectangle marks
-/// the backing invalid.
-fn save_under(back: &MenuBack, backend: &dyn RasterBackend, x: i16, y: i16, w: i16, h: i16) {
-    if w <= 0 || h <= 0 {
-        back.valid.store(0, Ordering::Relaxed);
-        return;
-    }
-    // SAFETY: single-CPU AES path; exclusive access to this backing.
-    let store = unsafe { &mut *back.px.get() };
-    let need = w as usize * h as usize;
-    store.clear();
-    store.reserve(need);
-    for row in 0..h {
-        for col in 0..w {
-            store.push(backend.read_pixel(x + col, y + row));
-        }
-    }
-    back.x.store(x, Ordering::Relaxed);
-    back.y.store(y, Ordering::Relaxed);
-    back.w.store(w, Ordering::Relaxed);
-    back.h.store(h, Ordering::Relaxed);
-    back.valid.store(1, Ordering::Relaxed);
-}
-
-/// Blit the pixels saved in `back` back to the screen. Returns `false` if
-/// nothing valid was saved — the caller does **not** white-erase (that would
-/// destroy live content); it simply leaves the screen as-is.
-fn restore_under(back: &MenuBack, backend: &dyn RasterBackend) -> bool {
-    if back.valid.swap(0, Ordering::Relaxed) == 0 {
-        return false;
-    }
-    let x = back.x.load(Ordering::Relaxed);
-    let y = back.y.load(Ordering::Relaxed);
-    let w = back.w.load(Ordering::Relaxed);
-    let h = back.h.load(Ordering::Relaxed);
-    let clip = ClipRect::full(backend.width(), backend.height());
-    // SAFETY: single-CPU AES path; the buffer holds w*h pixels (save_under).
-    let store = unsafe { &*back.px.get() };
-    for row in 0..h {
-        for col in 0..w {
-            let p = store[row as usize * w as usize + col as usize];
-            backend.fill_rect(x + col, y + row, 1, 1, p, clip);
-        }
-    }
-    true
-}
-
 /// Highlight `title` and draw its drop-down box; returns the box index. The
 /// cursor is hidden across the draw so it stays on top and the save-under
 /// snapshot is clean.
@@ -684,7 +658,13 @@ fn open_box(tree: *mut Object, title: i16, backend: &dyn RasterBackend) -> i16 {
     // pixel drawn — an outward `th<0` border or an overflowing child cannot
     // paint outside the saved region, so the on-close restore is exact.
     let (x, y, w, h) = sr_rect(tree as *const Object, imenu, backend);
-    save_under(&MBACK, backend, x, y, w, h);
+    // `menu_sr(TRUE, tree, imenu)` → `bb_save(&t)` (`gemmnlib.c:219,239`):
+    // into the one AES screen buffer. An empty rectangle parks nothing — and
+    // drops whatever an earlier box left, so the close restores nothing stale.
+    match gsxif::bb_save(backend, x, y, w, h) {
+        Some(saved) => MENU_SAVE.put(saved),
+        None => drop(MENU_SAVE.take()),
+    }
     object::draw_obj_clip(tree as *const Object, imenu, MAX_DEPTH, sr_clip(x, y, w, h), backend);
     crate::vdi::cursor_show(backend);
     imenu
@@ -731,15 +711,18 @@ fn title_touches_separator(tree: *const Object, obj: i16) -> bool {
     y <= sep_row && sep_row < y + h
 }
 
-/// Put the pixels saved under the box back exactly (EmuTOS `menu_sr` restore).
-/// The saved grown rectangle is a superset of the drawn area, so this fully
-/// undoes the box — including any outward border — with no content-destroying
-/// white-erase fallback. Caller owns the cursor hide/show.
+/// Put the pixels saved under the box back exactly (EmuTOS `menu_sr(FALSE, …)`
+/// → `bb_restore`, `gemmnlib.c:221`). The saved grown rectangle is a superset
+/// of the drawn area, so this fully undoes the box — including any outward
+/// border — with no content-destroying white-erase fallback. Caller owns the
+/// cursor hide/show.
 fn erase_box_inner(_tree: *mut Object, imenu: i16, backend: &dyn RasterBackend) {
     if imenu == NIL {
         return;
     }
-    restore_under(&MBACK, backend);
+    if let Some(saved) = MENU_SAVE.take() {
+        saved.restore(backend);
+    }
 }
 
 /// `menu_icheck` (31) — add (`int_in[1]`=1) / remove the check mark on
@@ -1037,7 +1020,10 @@ pub fn menu_popup(pb: &Aespb) {
 
 /// Track a single pop-up box: hover highlights the item under the cursor, a
 /// button press picks it (or cancels outside any item). Returns the item or
-/// `NIL`. Reuses the menu-bar save-under + cursor-bracketing.
+/// `NIL`. The screen under the box goes to a fresh pool block for this one
+/// opening (`popup_blit`, `gemmnext.c:329-333`), not the drop-down's screen
+/// buffer; no block, no pop-up — `NIL` without a track (D-086,
+/// `docs/api/aes/menu.md`).
 fn popup_track(tree: *mut Object, box_obj: i16, backend: &dyn RasterBackend) -> i16 {
     let Some(h) = host() else { return NIL };
     let tp = tree as *const Object;
@@ -1047,7 +1033,10 @@ fn popup_track(tree: *mut Object, box_obj: i16, backend: &dyn RasterBackend) -> 
     }
     crate::vdi::cursor_hide(backend);
     let (bx, by, bw, bh) = sr_rect(tp, box_obj, backend);
-    save_under(&MBACK, backend, bx, by, bw, bh);
+    let Some(saved) = gsxif::popup_blit_save(backend, bx, by, bw, bh) else {
+        crate::vdi::cursor_show(backend);
+        return NIL;
+    };
     object::draw_obj_clip(tp, box_obj, MAX_DEPTH, sr_clip(bx, by, bw, bh), backend);
     crate::vdi::cursor_show(backend);
 
@@ -1085,7 +1074,8 @@ fn popup_track(tree: *mut Object, box_obj: i16, backend: &dyn RasterBackend) -> 
     if result != NIL {
         object::set_state_bit(tree, result, SELECTED, false);
     }
-    erase_box_inner(tree, box_obj, backend);
+    // `popup_blit(obj, buf)`: restore and release the block (`:333`).
+    saved.restore(backend);
     crate::vdi::cursor_show(backend);
     result
 }

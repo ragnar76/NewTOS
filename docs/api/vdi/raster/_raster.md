@@ -598,15 +598,20 @@ memory-mono-source → screen expand was already in place and is unchanged.
 
 ### AES consumer — `bb_save` / `bb_restore`
 
-`tos_api::vdi::bb_save` / `bb_restore` wrap the Screen↔Memory copies with
-`S_ONLY` (op 3) for the AES form manager (EmuTOS `gemgsxif.c` `bb_set`).
-`form_alert` allocates a per-alert device-format buffer
-(`bb_save_words(w, h)` `u32` words) from the heap, saves the screen under
-the box before drawing, and restores it on close — so the desktop under a
-dismissed alert is reinstated without a full repaint (`tos-api/src/aes/
-form.rs`). NewTOS uses a *transient* per-alert buffer, not EmuTOS's single
-persistent menu/alert buffer, so `wind_get(WF_SCREEN)` still honestly
-reports a null/zero-length buffer (see `tos-api/src/aes/window.rs`).
+`tos_api::vdi::bb_save` / `bb_restore` are the Screen↔Memory copies with
+`S_ONLY` (op 3) the AES uses (EmuTOS `gemgsxif.c` `bb_set`). The buffer
+they copy into is the AES's (`tos-api/src/aes/gsxif.rs`, A57): **one**
+persistent screen buffer, EmuTOS' `gl_tmp`/`gl_mlen`, taken once from the
+BDOS pool when the AES goes graphic (`gsx_malloc`, `gemgsxif.c:108-114`,
+from `sh_tographic`) and shared by the alert (`fm_alert`, `gemfmalt.c:363,
+390`) and the drop-down (`menu_sr`, `gemmnlib.c:208-223`) — the same block
+`wind_get(WF_SCREEN)` hands out. Its length is one screen in device pixels
+(`bb_save_words(W, H) * 4`, `gsx_mcalc`), so `bb_set`'s "buffer too small"
+height clip (`:334-343`) cannot trigger; a pop-up or nested submenu takes a
+transient pool block per opening instead (`popup_blit`,
+`gemmnext.c:136-215`). The desktop under a dismissed alert or a closed
+drop-down is reinstated without a full repaint, device-exact (16-bit
+RGB565 words off the screen, no pen lookup — A71).
 
 **The copy runs with the mouse cursor hidden.** `bb_save`/`bb_restore` go
 through `bb_set` (`gemgsxif.c:320-380`), which brackets the blit itself —

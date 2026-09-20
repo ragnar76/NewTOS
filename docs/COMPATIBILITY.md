@@ -155,45 +155,68 @@ unchanged" arm here. No ticket — nothing to fix before the m68k thunk exists �
 tracked as a comment at this entry per `TASK/A53.md` (V16 Nachtrag).
 
 
-**`wind_get(WF_SCREEN)` answers FALSE — NewTOS has no menu/alert buffer** —
-sanctioned 2026-09-12 with the A54 repair, and listed here because the absence
-is real and has to be *visible* rather than dressed up. EmuTOS' field 17 hands
-out the AES' menu/alert screen-save buffer: `gsx_malloc` takes it once at AES
-start (`references/emutos/aes/gemgsxif.c:108-114`, from `sh_main`,
-`aes/gemshlib.c:236`), `gsx_mret` reports its address in `poutwds[0..1]` and its
-length in `poutwds[2..3]` (`:125-129`), and `wm_get` returns TRUE
-(`aes/gemwmlib.c:1563-1565`). Measured on the reference TT running the 1.4 ROM:
-address `0x01000218`, length `40960` (`measurement-2026-09-12-aes-r4/`, cases
-331, 332 and 439 of `tosdump/cases/aes-r4-subfunctions.tsv`).
+**`wind_get(WF_SCREEN)` answers FALSE when there is no menu/alert buffer;
+EmuTOS answers TRUE with address 0** — sanctioned 2026-09-12 with the A54
+repair, **narrowed 2026-09-20 with A57 to the buffer-less fallback**. EmuTOS'
+field 17 hands out the AES' menu/alert screen-save buffer: `gsx_malloc` takes
+it once when the AES goes graphic (`references/emutos/aes/gemgsxif.c:108-114`,
+from `sh_tographic`, `aes/gemshlib.c:236`), `gsx_mret` reports its address in
+`poutwds[0..1]` and its length in `poutwds[2..3]` (`:125-129`), and `wm_get`
+returns TRUE (`aes/gemwmlib.c:1563-1565`). Measured on the reference TT
+running the 1.4 ROM: address `0x01000218`, length `40960`
+(`measurement-2026-09-12-aes-r4/`, cases 331, 332 and 439 of
+`tosdump/cases/aes-r4-subfunctions.tsv`).
 
-NewTOS has no such region, and this is a statement about the code, not an
-intention: the modal alert allocates a fresh buffer per alert and drops it on
-close (`tos-api/src/aes/form.rs`, `BbSave::capture`), the menu keeps **two**
-independent drop-down backings that are cleared and regrown to whatever box is
-opening and start at capacity zero (`tos-api/src/aes/menu.rs`, `MBACK` /
-`SMBACK` / `save_under`), and nothing anywhere is the `gsx_malloc` counterpart.
-There is also no address NewTOS *could* hand out: those buffers live in the
-kernel heap, which is mapped `AP_RW_EL1` — R/W at EL1, **no EL0 access**
-(`kernel/src/arch/aarch64/mmu.rs:82,178-179,283-284`) — so an application
-writing through a WF_SCREEN pointer, which is the whole point of the field,
-would fault on the first store.
+Since A57 NewTOS has that buffer (`tos-api/src/aes/gsxif.rs`: one
+kernel-owned block of the BDOS pool, taken by the same `Mxalloc(…,
+MX_PREFTTRAM)` from `sh_tographic`, used by the alert and the drop-down, handed
+to an EL0 process read-write through its own address space) and answers
+`WF_SCREEN` TRUE with the two LONGs, as EmuTOS does. What remains of this
+entry is the one state in which `gsx_malloc` has nothing to report — the pool
+could not supply the block at boot (`ENSMEM`). EmuTOS then leaves
+`gl_tmp.fd_addr == NULL` and `gsx_mret` reports it: **TRUE, address 0**, a
+pointer the program will scribble through. NewTOS answers **FALSE and writes
+nothing** — `wm_get`'s own idiom for a field it cannot serve (`default: return
+FALSE`, `aes/gemwmlib.c:1590-1591`), the same repair AUD-P5-014 got for
+`WF_KIND`; a conforming caller tests the return code before using the
+address, so FALSE is the one answer that cannot be misread as "here is a
+buffer, at 0". The alert and the drop-down keep working in that state through
+a per-save kernel-heap copy (the pre-A57 path), which no program can observe.
+Covered by `tos-api/tests/aes_window_screen_buffer_absent.rs`; the round-1
+reference case 166 compares directly again (the `SANCTIONED` list in
+`tos-api/tests/aes_reference/harness.rs` is empty).
 
-What NewTOS did until A54 was worse than the gap: four zero words and `ret = 1`.
-A caller cannot tell that apart from "here is a buffer, it starts at 0" — it
-reads the return code, believes it, and scribbles on the null page. It now
-answers **FALSE and writes nothing**, which is `wm_get`'s own idiom for a field
-this AES does not implement (`default: return FALSE`, `aes/gemwmlib.c:1590-1591`)
-and the same repair AUD-P5-014 got for `WF_KIND`. A conforming caller tests the
-return code before using the address, so FALSE is the one answer that cannot be
-misread.
 
-This entry is a **gap that is answered honestly, not a permanent decision**: it
-goes away the day the AES gets a real persistent scratch buffer in
-EL0-reachable memory, used by the alert save-under *and* the menu save-under —
-a memory-pool and mapping question, not a `wind_get` one. Covered by
-`tos-api/tests/aes_window_screen_buffer.rs`; round-1 reference case 166 is held
-against it by name in `tos-api/tests/aes_reference/harness.rs` (`SANCTIONED`),
-so NewTOS drifting back to `ret = 1` turns that case red again.
+**The AES menu/alert screen buffer is one screen in device pixels, not
+`MENU_BUFFER_SIZE` character cells** — sanctioned 2026-09-20 with A57
+(design: `docs/analysis/a57-aes-screen-buffer-design-2026-09-20.md`). EmuTOS
+sizes the buffer `gl_mlen = MENU_BUFFER_SIZE * gl_wchar * gl_hchar *
+gl_nplanes / 8` with `MENU_BUFFER_SIZE = 640` cells ("somewhat arbitrary",
+`aes/gemgsxif.c:44-73,98-104`) and, when a rectangle does not fit, clips the
+saved **height** — "adjust height to fit buffer: this will leave droppings!"
+(`:334-343`): the bottom of the box is never saved and never put back. At
+NewTOS' profile (8×16 cell, 16 planes) the formula gives 163 840 bytes; the
+largest `form_alert` the builder allows (three 20-character buttons,
+`gemfmalt.c:173,231-239`) needs 172 800 and would overflow it. NewTOS takes
+`stride16(W) * H * 2` bytes — `bb_save_words(W, H) * 4`, the whole screen:
+614 400 at 640×480, 4 147 200 at 1920×1080 — from the same pool with the same
+`Mxalloc`. Both users clamp their rectangle to the screen (`fm_alert`
+`rc_intersect(&gl_rscreen, …)`, `gemfmalt.c:358`; the drop-down box lies on
+it), so the overflow path is structurally unreachable; the guard stays as a
+counted defence (`gsxif::clipped_saves`). **Observable:** the length
+`wind_get(WF_SCREEN)` reports is larger than on a TOS/EmuTOS of the same
+resolution (614 400 against 163 840 at 640×480/16 bit; 40 960 on the
+four-plane TT). A program that takes the length as an upper bound for its own
+saves (TeraDesk `resource.c:307-320`, which deletes thirteen menu entries when
+its largest drop-down does not fit) gets more room, never less. Two more
+things are internal and unobservable: the block is taken once at
+`sh_tographic` and — unlike `gsx_mfree` in `sh_toalpha`
+(`aes/gemshlib.c:258`) — never freed, so its address is stable across an alpha
+interlude where EmuTOS' may move; and the EL0 view of the block is a
+per-process window VA, not one address for all processes (ADR-023, the
+bump-cursor window; a program only ever compares against the pointer it was
+given). Pop-ups and nested submenus are unchanged: a fresh ST-RAM block per
+opening, as `popup_blit` does (`aes/gemmnext.c:136-215`).
 
 
 **An AES handler that writes fewer than `OUT_LEN` words delivers 0 in the

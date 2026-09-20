@@ -144,11 +144,18 @@ fn have_graphics() -> bool {
 /// rectangle, allocate screen space, start the mouse and show the hourglass.
 ///
 /// On NewTOS the "workstation" is the framebuffer the VDI draws into and it is
-/// never closed, so `gsx_graphic(TRUE)`/`gsx_malloc()` have no counterpart to
-/// perform; what is observable — an active mouse and the hourglass shape — is
-/// done here. `retake()` restores the critical-error handler and the AES trap
-/// vector, neither of which a NewTOS program can displace (the trap vector is
-/// the exception table, not a writable low-memory long).
+/// never closed, so `gsx_graphic(TRUE)` has no counterpart to perform.
+/// `gsx_malloc()` (:236) has one: the AES menu/alert screen buffer
+/// ([`tos_api::aes::gsxif`]), taken from the BDOS pool the first time this
+/// runs — before the first GEM program, so the block is kernel-owned and
+/// survives every `Pterm` — and kept: `sh_toalpha` does **not** free it
+/// (EmuTOS `gsx_mfree`, `:258`), so its address stays stable across an alpha
+/// interlude (unobservable superset; `gsxif` module docs,
+/// `docs/COMPATIBILITY.md`). What else is observable — an active mouse and
+/// the hourglass shape — is done here. `retake()` restores the critical-error
+/// handler and the AES trap vector, neither of which a NewTOS program can
+/// displace (the trap vector is the exception table, not a writable
+/// low-memory long).
 ///
 /// Going graphic does **not** silence the character console: EmuTOS'
 /// `bconout2` writes into screen memory whichever mode the AES thinks it is
@@ -156,6 +163,16 @@ fn have_graphics() -> bool {
 /// NewTOS. See [`crate::fbcon`].
 fn sh_tographic() {
     ratinit(); // `ratinit()` (:236)
+    // `gsx_malloc()` (:236) — once; a later pass finds the buffer in place.
+    let had_buffer = tos_api::aes::gsxif::gsx_mret().is_some();
+    match tos_api::aes::gsxif::gsx_malloc() {
+        Some(b) if !had_buffer => kprintln!(
+            "[aes] gsx_malloc: screen buffer pa=0x{:08x} len={} (kernel-owned, WF_SCREEN)",
+            b.pa, b.len,
+        ),
+        Some(_) => {}
+        None => kprintln!("[aes] gsx_malloc: no screen buffer (pool short) -- WF_SCREEN answers FALSE"),
+    }
     if let Some(b) = tos_api::host::host().and_then(|h| h.raster()) {
         // `set_mouse_to_hourglass()` (:237) — AES preset shape 2.
         tos_api::vdi::mouse::set_preset(2, b);

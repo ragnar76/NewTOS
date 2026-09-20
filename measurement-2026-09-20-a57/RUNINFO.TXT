@@ -1,0 +1,98 @@
+A57 + A71 -- der eine persistente AES-Kratzpuffer (Menue- und Alarmhintergrund),
+wind_get(WF_SCREEN) liefert Adresse und Laenge, EL0 schreibt durch den Zeiger.
+Developer-Selbstbeleg 2026-09-20 (kein Tester-Verdikt). Branch desk-rebuild, Basis HEAD 172bca0,
+Aenderungen uncommitted im Baum. Gepinnte EmuTOS-Quelle references/emutos @ 1a7484ab.
+Entwurf: docs/analysis/a57-aes-screen-buffer-design-2026-09-20.md (Empfehlung 1+2, Groesse =
+ein Schirm in Geraetepixeln, Untermenue/Popup = transienter Pool-Block je Oeffnung).
+
+PRODUKTCODE (uncommitted)
+  tos-api/src/aes/gsxif.rs            NEU: gl_tmp/gl_mlen, gsx_mcalc, gsx_malloc, gsx_mret,
+                                      install_screen_buffer (Hostfixture), bb_save/Saved::restore
+                                      (der eine Puffer + Hoehenwaechter + clipped_saves),
+                                      popup_blit_save (transienter MX_STRAM-Block, mfree beim
+                                      Restore/Drop), Heap-Rueckfall ohne Puffer.
+  tos-api/src/aes/mod.rs              pub mod gsxif; Aespb::set_intout_long (nativer unausgerichteter
+                                      32-Bit-Store an &int_out[word]).
+  tos-api/src/aes/window.rs           WF_SCREEN-Arm: gsx_mret -> EL0 usermem::expose(PROT_G) lazy /
+                                      EL1 PA; zwei LONGs; ret 1; ohne Puffer FALSE.
+  tos-api/src/aes/form.rs             BbSave (Vec je Alarm) -> save_under_alert -> gsxif::bb_save.
+  tos-api/src/aes/menu.rs             MBACK/SMBACK/save_under/restore_under (read_pixel) weg; Tafel
+                                      ueber gsxif::bb_save (MENU_SAVE), Untermenue ueber
+                                      popup_blit_save (SUBMENU_SAVE), Popup lokal; pub fn close.
+  tos-api/src/vdi/raster.rs           nur Doc-Kommentare.
+  kernel/src/shell_loop.rs            sh_tographic ruft gsx_malloc (einmalig), Bootlog-Zeile.
+  Spec/Doku: docs/api/aes/window-graphics.md, docs/api/vdi/raster/_raster.md, docs/api/aes/menu.md,
+  docs/api/aes/object-form.md, docs/COMPATIBILITY.md (A54-Eintrag verengt, A57-Eintrag neu),
+  docs/STATUS.md.  sdk/examples/wfscreen.c NEU (EL0-Schreibprobe).
+
+HOSTTESTS (host-tests/)
+  xtask-test-baseline.txt   cargo run -p xtask -- test auf HEAD 172bca0: 670 / 0 / 1.
+  xtask-test-after.txt      nach dem Bau: 674 / 0 / 1 (+3 aes_screen_buffer_save_under,
+                            +1 aes_window_screen_buffer_absent; aes_window_screen_buffer 3 umgedreht).
+  red-before.txt            Gegenprobe in einem Scratch-Worktree auf HEAD mit NUR gsxif.rs, mod.rs,
+                            harness.rs (Fixture, SANCTIONED leer) und den Testdateien (+ menu::close
+                            als reine Seam): aes_reference 203/1 (Fall 166: NewTOS = 0, reference = 1),
+                            aes_window_screen_buffer 1/2 (ret 0), aes_screen_buffer_save_under 1/2
+                            (Tafel: "first at (55,19): was 0x639642, is 0xFFFBFF" -- der Stiftpfad;
+                            Alarm: "fixture is still all zero" -- privater Vec), absent 1/0.
+
+BUILD / CLIPPY (build/)
+  cargo xtask build --board rpi4 / --board qemu-virt: rustc tos-api 64 / kernel 94, exit 0 (beide).
+  cargo clippy -p kernel ... --features board-rpi4 bzw. board-qemu-virt: kernel 125 (beide).
+  cargo clippy -p tos-api --tests: 81 (Baseline in clippy-tosapi-base.txt aus einem HEAD-Worktree: 81).
+  Delta 0/0/0. kernel8-a57.img (Produkt, dev, rpi4, Endstand des Baums) sha256 22921b8d...; Scratch-Injektorkerne
+  (method/make_scratch.sh + reapply_script.sh, Diff method/scratch-host_env.rs.diff; Trace
+  "[a57] wind_get(WF_SCREEN) ..." in tos-api/src/aes/mod.rs der Scratch-Kopie): after 97b95c3a...
+  (Arbeitsbaum vor der letzten Einzeiler-Aenderung in menu.rs::open_box -- leeres Rechteck verwirft
+  eine alte Tafel-Sicherung; in den Laeufen unerreichbar), before f02e8e9d... (HEAD 172bca0). hashes.txt.
+  wfscreen / smoke-desk / product-tera wurden mit dem Endstand-Kern 22921b8d... erneut gefahren.
+
+IMAGE
+  tools/make-sd-image.sh <scratch>/sd-base.img 64 (sha256 afc7be06...); sd-tera.img = + NEWDESK.INF
+  (#Z TeraDesk, method/newdesk-user.inf) + Apps\TERADESK\TERADESK.INF (method/teradesk-user.inf);
+  sd-wfscreen.img = sd-base + WFSCREEN.NAP + NEWDESK.INF "#Z 01 C:\WFSCREEN.NAP@". Je Lauf eine
+  frische Kopie. QEMU raspi4b 640x480, -display none, QMP-Screendump, Socket /private/tmp/claude-501/a57-<tag>.sock.
+
+LAEUFE (method/run.sh; screendumps/, serial/; grep -c "EXC\|panic" = 0 in allen Logs)
+  wfscreen      Produktkernel + sd-wfscreen (serial/wfscreen-serial.log):
+                [aes] gsx_malloc: screen buffer pa=0x01000000 len=614400 (kernel-owned, WF_SCREEN)
+                WFSCREEN.NAP: screen 640x480; wind_get(0, WF_SCREEN) ret=1 addr=0x00400000 len=614400;
+                write ok (614400 bytes written and read back through the WF_SCREEN pointer);
+                second call: same address, same length; PASS. Kein Data Abort; danach Desktop up.
+  smoke-desk    Produktkernel + sd-base, "[desk] desktop up" + 5 s: smoke-desk-up.png = 0 Pixel
+                Differenz zu measurement-2026-09-19-a46/screendumps/smoke-desk-up.png (= A41).
+  product-tera  Produktkernel + sd-tera, "slot 0 entry 0x1000" + 10 s: product-tera-idle.png = 0 Pixel
+                Differenz zu a46/screendumps/product1-tera-idle.png.
+  tera-after /  Injektor (method/a57.actions): A_IDLE +1100; park; (300,300); View-Titel (136,8)
+  tera-before   -> B_VIEW_MENU +2000; weg (300,300) -> C_CLOSED +2600; File-Titel (88,8) -> D_FILE_MENU
+                +3200; weg -> E_CLOSED2 +3800; Klick HARD-DISC-Symbol F (435,35) -> F_F_SELECTED
+                +4600; File (88,8), Info... (110,43), Klick -> G_ALERT +6000 ("Drive does not
+                exist." [OK]); OK (319,268) -> H_ALERT_CLOSED +7000 (zweiter Alarm "Can not read or
+                set info for F:\: Path not found." [Abort]); Abort (319,277) -> I_ALERTS_CLOSED +8000.
+                Trace: after  "[a57] wind_get(WF_SCREEN) handle=0 -> int_out=(1,-24576,64,24576,9)
+                               addr=0x0040a000 len=614400"
+                       before "[a57] wind_get(WF_SCREEN) handle=0 -> int_out=(0,0,0,0,0) addr=0 len=0"
+                before vs after: ALLE neun Zustaende 0 Pixel Differenz (method/pixdiff.py).
+                after: C_CLOSED vs A_IDLE 194 Pixel = nur der Zeiger ((319,239) -> (300,300)); die
+                Tafelflaeche ist exakt zurueckgeschrieben. E_CLOSED2 ebenso 194. I_ALERTS_CLOSED vs
+                F_F_SELECTED 187 Pixel = nur der Zeiger ((435,35) -> (319,277)).
+                after D_FILE_MENU vs a46/screendumps/tera-after-C-file-menu.png: 0 Pixel.
+                after A_IDLE vs measurement-2026-09-20-a78/screendumps/tera-after-A-idle.png: 0 Pixel.
+
+BEFUND ZUR VORHERSAGE DES ENTWURFS (§1.5 "[gefolgert]": TeraDesk loesche vor A57 13 Eintraege)
+  WIDERLEGT durch die Messung: tera-before-B-view-menu.png == tera-after-B-view-menu.png (0 Pixel);
+  die View-Tafel zeigt vorher wie nachher Show as icons / Auto arrange / -- / Sort by name / Sort by
+  extension / Sort by date / Sort by size / View unsorted / Reverse order (MREVS) / -- / Show size
+  (MSHSIZ) / Show date / Show time / Show attributes / -- / Set mask...; die File-Tafel vorher wie
+  nachher mit Delete... (MDELETE), Copy disk... (MFCOPY) und ihren drei Trennern (SEP1-3). Grund
+  (aus dem Quelltext): TeraDesk liest `buffer.size` als 8-Byte-`long` (LP64) aus einer Union, von
+  der `wind_get` nur die unteren 4 Bytes (`words.high/low`) schreibt; die oberen 4 Bytes sind
+  Stapelinhalt (resource.c:233-241,307-315) -- eine App-seitige LP64-Falle (T04), kein Kernthema.
+  Vorher: untere 4 Bytes 0 (Dispatcher-Nullung, A27) + Stapel oben -> Vergleich fiel nicht auf
+  Loeschen. Nachher: untere 4 Bytes 614400 -> ebenfalls kein Loeschen. TeraDesk sieht die Adresse
+  jetzt (Trace), benutzt sie aber nach dem Quelltext nur fuer diesen Vergleich.
+
+NICHT GEFAHREN
+  Untermenue/Popup (popup_blit_save, transienter Pool-Block): kein Programm auf der Karte nutzt
+  menu_popup/menu_attach; nur zielseitig pruefbar (kein Pool im Hostprozess). Getmpb-Walk mit
+  Kernel-Sentinel (Entwurf §5.1) nicht gefahren; die Bootlog-Zeile nennt pa/len. Keine Hardware.

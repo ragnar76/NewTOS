@@ -1,0 +1,30 @@
+# A57: idle -> hover View (136,8) -> away -> hover File (88,8) -> away -> select FLOPPY B (110,35)
+# -> File/Info (110,43) click -> alert; markers for the QMP screendumps.
+1100 mark A_IDLE
+1200 park
+1206 move 300 300
+1400 move 136 8
+2000 mark B_VIEW_MENU
+2200 move 300 300
+2600 mark C_CLOSED
+2800 move 88 8
+3200 mark D_FILE_MENU
+3400 move 300 300
+3800 mark E_CLOSED2
+4000 move 435 35
+4200 down
+4206 up
+4600 mark F_F_SELECTED
+4800 move 88 8
+5200 move 110 43
+5400 down
+5406 up
+6000 mark G_ALERT
+6200 move 319 268
+6400 down
+6406 up
+7000 mark H_ALERT_CLOSED
+7200 move 319 277
+7400 down
+7406 up
+8000 mark I_ALERTS_CLOSED
