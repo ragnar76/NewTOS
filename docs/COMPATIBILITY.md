@@ -262,6 +262,68 @@ and the end-of-list note). Covered by
 `objc_sysvar` set mode at `OUT_LEN 3`, with a poisoned caller array).
 
 
+**`rsrc_gaddr`/`rsrc_saddr` refuse an index past the table; EmuTOS hands out
+a pointer past it** — sanctioned 2026-09-20 with A50 (user decision, option
+(a): match the return rule, keep the bound). EmuTOS' `get_addr`
+(`references/emutos/aes/gemrslib.c:112-176`) checks the **type** only:
+every defined `R_*` arm computes `rs_hdr + offset + size * index` with no
+look at the header's counts (`get_sub`, `:102-106`), and `rs_gaddr` answers
+`ret = (*rsaddr != (void *)-1L)` (`:720`) — TRUE for anything that is not
+the `default:` arm's `-1L` (`:170-172`). `rs_saddr` stores through the same
+address (`:733-738`). NewTOS resolves in a descriptor that knows each
+table's count and its target/kernel-alias pair, and answers **not found**
+where the computed address would leave the table. Written out, the three
+cases where the two machines differ:
+
+1. **Index at or past the table, or a table the resource does not carry**
+   (`R_OBJECT` index 1000 on a 3-object resource, r4 case 626; `R_BITBLK`
+   on a resource without BITBLKs). EmuTOS: `int_out[0] = 1`,
+   `addr_out[0]` = a pointer past the array, and `rsrc_saddr` writes there
+   and answers TRUE. NewTOS: `addr_out[0] = 0`, `int_out[0] = 0`;
+   `rsrc_saddr` answers FALSE and writes nothing.
+2. **Nothing loaded** — no blob the caller's `AESGLOBAL` names (the A39
+   contract, `docs/api/aes/resource-fileselector.md` §1 callout item 4).
+   EmuTOS re-binds to `ap_rscmem` (`rs_sglobe`, `:673-679`) and parses
+   whatever header stands there — with `ap_rscmem == NULL` that is the m68k
+   vector table, and every defined type still answers `1` with an address
+   computed from it (r4 cases 598–614, 616–621, 626, 627: all 25 measured
+   with `rs_hdr == NULL` on both machines, `int_out[0] = 1` on the TT).
+   NewTOS: `0`/`0` for every defined type, FALSE from `rsrc_saddr`, no header
+   parsed. The one answer that does **not** depend on the header — the
+   unknown type's `-1L` — is given on both machines whether or not anything
+   is loaded (cases 623–625 are word-for-word since A50).
+3. **`rsrc_saddr` through a NULL slot** (`R_STRING`/`R_IMAGEDATA` on a NULL
+   free-string / free-image entry). `get_addr` returns the slot's *content*
+   (`:159-162`), i.e. 0; `rsrc_gaddr` reports it as found (`0 != -1`) — that
+   half NewTOS matches since A50 — but `rs_saddr` then stores `rsaddr` **at
+   address 0** and answers TRUE (`:735-738`). NewTOS answers FALSE and
+   stores nothing.
+
+Why the bound stays: between the AES and the application NewTOS has the
+EL0/EL1 boundary classic TOS did not have. The resource lives in the
+process's window at a user VA and the AES reaches it through a kernel alias
+(`tos-api/src/aes/resource.rs`, `Slot`); an address past the table names the
+next section of the blob or, past its end, memory the blob does not own on
+either side, and address 0 is mapped on neither, so `rsrc_saddr`'s store
+would corrupt another table, fault at EL1, or scribble across the boundary —
+and `rsrc_gaddr`'s pointer would be one the application may not be able to
+dereference either. A conforming program never reaches any of the three: the
+resource's own counts bound its indices, it loads before it asks, and it
+re-points a free string through `R_FRSTR`, not `R_STRING`. The r4
+measurement's 25 D-4 cases are all case 2 and stay a recorded difference by
+this entry; they must be read as such, not as a defect.
+
+What is **not** deviated, repaired by A50 in the same change: the return
+rule. `int_out[0]` follows `ret = (addr != -1)`, so a NULL free-string /
+free-image slot answers `1` with `addr_out[0] = 0` (it used to answer `0`),
+and an unknown type answers `addr_out[0] = -1` at the caller's pointer width
+(`0xFFFFFFFF` ILP32 — the TT's value — all ones LP64) with `0` (it used to
+answer `0`/`0`; D-5 of `docs/analysis/aes-r4-subfunktionen-einordnung-2026-09-12.md`).
+Covered by `tos-api/tests/aes_rsrc_gaddr_edges.rs` (unknown type with and
+without a load, NULL slot, index past the table, absent table, nothing
+loaded, `rsrc_saddr` on each).
+
+
 ## EmuTOS is the reference, not the template
 
 CLAUDE.md Rule 1 says EmuTOS source *is* the spec. Through this charter that

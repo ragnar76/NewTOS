@@ -356,8 +356,10 @@ process (`bdos/proc.c:136`, `free_all_owned`).
 >    `USER_TPA_MAX_VA`, so exact in 32 bits); a value naming none of them — 0,
 >    another process's blob, a foreign or application-built address, a null
 >    `global` in the AESPB — reads as **"nothing loaded"**: `rsrc_free` → 0
->    (`:702-704`), `rsrc_gaddr` → `addr_out[0] = 0`/`int_out[0] = 0`,
->    `rsrc_saddr` → 0. EmuTOS would parse whatever header stands at that
+>    (`:702-704`), `rsrc_gaddr` → `addr_out[0] = 0`/`int_out[0] = 0` for
+>    every defined type (an unknown type still answers `-1`/`0`, §2 — that
+>    arm reads no header on either machine), `rsrc_saddr` → 0. EmuTOS would
+>    parse whatever header stands at that
 >    address (`:100-104`); XaAES follows the pointer too and then range-checks
 >    the *result* against the length in that very header
 >    (`xaaes/src.km/xa_rsrc.c:1701-1705`, `:1839-1855`). NewTOS moves that
@@ -481,6 +483,32 @@ type, `0` only for an out-of-range type code (`gemrslib.c:720`). **Note it does
 not range-check `index`** — a too-large index returns `1` with a bogus pointer
 (TOS behaviour; the resource's counts bound valid indices).
 
+Two consequences of the `-1` test, both measured on the reference TT
+(`measurement-2026-09-12-aes-r4/`, `tosdump/cases/aes-r4-subfunctions.tsv`):
+
+* **An unknown type answers `addr_out[0] = -1`, not 0.** `get_addr`'s
+  `default:` arm returns `(void *)-1L` (`:170-172`) without touching
+  `rs_hdr`; `rs_gaddr` stores it (`:719`) and the dispatcher copies it to
+  `addrout[0]` (`gemsuper.c:446-447`). Cases 623 (type 17), 624 (99), 625
+  (−1 ⇒ 65535 as `UWORD`): `addr_out[0] = 0xFFFFFFFF`, `int_out[0] = 0`,
+  with nothing loaded.
+* **A NULL slot is "found".** `R_STRING`/`R_IMAGEDATA` return the *content*
+  of the free-string / free-image slot (`:159-162`); a NULL there is `0`,
+  and `0 != -1`, so `int_out[0] = 1` with `addr_out[0] = 0`.
+
+> **NewTOS status (A50, 2026-09-20 — user decision, option (a)).** The
+> return follows `rs_gaddr`'s `-1` rule: a NULL slot answers `1`/`0`, an
+> unknown type answers `-1` at the caller's pointer width (`0xFFFFFFFF`
+> ILP32, all ones LP64) with `0` — with or without a loaded resource, as in
+> EmuTOS. **Kept, as a named deviation** (`docs/COMPATIBILITY.md`,
+> "`rsrc_gaddr`/`rsrc_saddr` refuse an index past the table"): an index at
+> or past the table's declared count, or a selector whose table the
+> resource does not carry, answers `addr_out[0] = 0`, `int_out[0] = 0`
+> where EmuTOS computes a pointer past the table and answers `1`. Nothing
+> loaded (no blob the caller's `AESGLOBAL` names) is `0`/`0` for every
+> defined type by the A39 contract (§1 callout item 4). Pinned by
+> `tos-api/tests/aes_rsrc_gaddr_edges.rs`.
+
 ### `rsrc_saddr` (113) — `rs_saddr`
 
 **Source:** `gemsuper.c:372-373` → `aes/gemrslib.c:728-742` (`rs_saddr`).
@@ -498,7 +526,16 @@ Only meaningful for the *pointer* types (`R_STRING`/`R_IMAGEDATA` via
 returns the address **of** the slot and `rs_saddr` writes through it
 (`gemrslib.c:734-737`). Lets an application point a resource object at its own
 runtime string/image/spec. Returns `FALSE` for a bad type
-(`get_addr` == `-1L`).
+(`get_addr` == `-1L`). For any other `(type, index)` it stores through
+whatever `get_addr` computed and returns `TRUE` — through a pointer past the
+table for a too-large index, and through address **0** for `R_STRING`/
+`R_IMAGEDATA` on a NULL slot.
+
+> **NewTOS status (A50, 2026-09-20).** Unknown type → `FALSE`, nothing
+> stored, as `rs_saddr`. Named deviation (`docs/COMPATIBILITY.md`): an index
+> at or past the table, an absent table, nothing loaded, and a slot that
+> resolved to NULL all answer `FALSE` with nothing stored — the kernel has no
+> pointer past the table and no writable address 0 to store through.
 
 ---
 
@@ -1406,7 +1443,12 @@ The resource/file-selector managers return small boolean/index values, not TOS
 | `rsrc_load` file not found via `sh_find` | `gemrslib.c:836-837` | `int_out[0] = 0` |
 | `rsrc_load` open / short read / alloc failure | `gemrslib.c:758-783,839-841` | `int_out[0] = 0` |
 | `rsrc_free` with nothing loaded, or `dos_free` failed | `gemrslib.c:699-705` | `int_out[0] = 0` |
-| `rsrc_gaddr`/`rsrc_saddr` with an invalid `R_*` type | `gemrslib.c:171-172,720,735` | `int_out[0] = 0`/`FALSE` |
+| `rsrc_gaddr` with an invalid `R_*` type (17, 99, −1 …), loaded or not | `gemrslib.c:171-172,719-720`; r4 cases 623–625 | `addr_out[0] = -1` (caller's pointer width), `int_out[0] = 0` |
+| `rsrc_saddr` with an invalid `R_*` type | `gemrslib.c:171-172,733-741` | `FALSE`, nothing stored |
+| `rsrc_gaddr(R_STRING/R_IMAGEDATA)` on a NULL free-string / free-image slot | `gemrslib.c:159-162,720` | **not an error**: `addr_out[0] = 0`, `int_out[0] = 1` |
+| `rsrc_saddr(R_STRING/R_IMAGEDATA)` on a NULL slot | `gemrslib.c:733-738` | EmuTOS: stores through address 0, `TRUE`. **NewTOS: `FALSE`, nothing stored** (named deviation, `docs/COMPATIBILITY.md`) |
+| `rsrc_gaddr`/`rsrc_saddr` with an index at or past the table's count, or a table the resource lacks | `gemrslib.c:102-106` (no check) | EmuTOS: `1`/`TRUE` with a pointer past the table. **NewTOS: `addr_out[0] = 0`, `int_out[0] = 0` / `FALSE`, nothing stored** (named deviation, `docs/COMPATIBILITY.md`) |
+| `rsrc_gaddr`/`rsrc_saddr` with nothing loaded (no blob the caller's `AESGLOBAL` names), defined type | `gemrslib.c:100-104` (EmuTOS parses the header behind `ap_rscmem`) | **NewTOS: `addr_out[0] = 0`, `int_out[0] = 0` / `FALSE`** (A39 contract, §1 callout item 4; r4 cases 598–621, 626, 627 measured with `rs_hdr == NULL` on both machines) |
 | `fsel_input` with a NULL path pointer | `gemfslib.c:630-631` | `int_out[0] = 0` |
 | `fsel_input` work-area alloc failure (`< NM_NAMES` slots) | `gemfslib.c:655-662` | `int_out[0] = 0` (after `ALFSMEM` alert) |
 | `fsel_input` Cancel pressed | `gemfslib.c:922`, `optimize.c:168` | `int_out[0] = 1`, `int_out[1] = 0` |

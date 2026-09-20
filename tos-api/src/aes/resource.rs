@@ -2509,19 +2509,53 @@ pub fn rsrc_free(pb: &Aespb) {
 /// [`rsrc_saddr`] and dereferenced for `R_STRING`/`R_IMAGEDATA`). For a direct
 /// EL1 caller the two coincide; for an EL0-loaded resource they differ by the
 /// blob's target↔access delta (the whole blob is one contiguous region mapped
-/// at both a user VA and a kernel high-half alias).
+/// at both a user VA and a kernel high-half alias). A `target` of 0 is a
+/// **NULL** answer — `R_STRING`/`R_IMAGEDATA` hand back the *content* of the
+/// free-string / free-image slot (`gemrslib.c:159-162`), and that content may
+/// be NULL; such a slot has no `access` alias either (0).
 #[derive(Clone, Copy)]
 struct Slot {
     target: u64,
     access: u64,
 }
 
+/// EmuTOS `get_addr`'s answer for a `(type, index)` (`gemrslib.c:112-176`),
+/// with NewTOS's index bound told apart from EmuTOS's `-1L`.
+#[derive(Clone, Copy)]
+enum Resolved {
+    /// The computed address — every arm but `default:` (`:123-169`). Its
+    /// `target` may be 0 ([`Slot`]); `rs_gaddr` tests against `-1`, not `0`
+    /// (`:720`), so this is TRUE for `rsrc_gaddr` whatever the value.
+    Slot(Slot),
+    /// `default: return (void *)-1L;` (`:170-172`) — the type is none of
+    /// `R_TREE`..`R_FRIMG`. The arm never touches `rs_hdr`, so this answer
+    /// does not depend on anything being loaded.
+    UnknownType,
+    /// NewTOS only — the named deviation in `docs/COMPATIBILITY.md`
+    /// ("`rsrc_gaddr`/`rsrc_saddr` refuse an index past the table"): the
+    /// table is absent or `index` is at or past its declared count. EmuTOS
+    /// computes `base + size * index` unchecked (`get_addr`, `:102-106`) and
+    /// hands back a pointer past the table.
+    OutOfRange,
+}
+
+impl Resolved {
+    /// The slot, if the answer is one.
+    #[cfg(test)]
+    fn slot(self) -> Option<Slot> {
+        match self {
+            Resolved::Slot(s) => Some(s),
+            Resolved::UnknownType | Resolved::OutOfRange => None,
+        }
+    }
+}
+
 /// The (target, access) address of member `off` of the `index`-th record of an
 /// array based at `target_base`/`access_base` with `count` records of `size`
-/// bytes. Returns `None` (EmuTOS would hand back an in-bounds pointer; NewTOS
-/// uses the documented safer bounds check — D-054 / AUD-P6-016) for an absent
-/// table (`target_base == 0`, i.e. a resource without that section) or an
-/// out-of-range index.
+/// bytes. Returns `None` (EmuTOS would hand back a pointer past the table;
+/// NewTOS uses the documented bounds check — [`Resolved::OutOfRange`]) for an
+/// absent table (`target_base == 0`, i.e. a resource without that section) or
+/// an out-of-range index.
 fn array_slot(
     target_base: u64,
     access_base: u64,
@@ -2542,7 +2576,10 @@ fn array_slot(
 /// **data** pointer it holds (gemrslib.c:159-162). The value read from the
 /// (already relocated) slot is a target VA into the same blob, so its kernel
 /// alias is `value + (access_base − target_base)` (the blob's target↔access
-/// delta). `None` for an absent table, an out-of-range index, or a NULL slot.
+/// delta). `None` for an absent table or an out-of-range index. A **NULL**
+/// slot is an answer, not a miss — EmuTOS returns the 0 it read, and
+/// `rs_gaddr` calls that found (`:720`) — and comes back as
+/// `Slot { target: 0, access: 0 }`: a null has no alias.
 ///
 /// # Safety
 /// Single-CPU AES; `access_base`, when non-zero, is a kernel-reachable base of
@@ -2566,7 +2603,7 @@ unsafe fn deref_slot(
         }
     };
     if v == 0 {
-        return None;
+        return Some(Slot { target: 0, access: 0 });
     }
     let delta = access_base.wrapping_sub(target_base);
     Some(Slot { target: v, access: v.wrapping_add(delta) })
@@ -2580,22 +2617,25 @@ unsafe fn deref_slot(
 /// *within* the indexed record at the caller's ABI width: `ob_spec` @16
 /// (LP64) / @12 (ILP32); the TEDINFO/ICONBLK sub-pointers at `ptr_size`
 /// strides (`te_ptmplt`/`ib_pdata` @`ptr_size`, `te_pvalid`/`ib_ptext`
-/// @`2*ptr_size`). `None` is EmuTOS's `-1L` (unknown type) or NewTOS's safer
-/// not-found (absent table / out-of-range index).
+/// @`2*ptr_size`). An unknown type is EmuTOS's `-1L`
+/// ([`Resolved::UnknownType`]); an absent table / out-of-range index is
+/// NewTOS's bound ([`Resolved::OutOfRange`]). On [`Loaded::EMPTY`] — nothing
+/// loaded — every defined type is out of range and the unknown type is still
+/// `-1L`, which is what `default:` gives with a NULL `rs_hdr` too.
 ///
 /// # Safety
 /// Single-CPU AES; `d` was produced by [`relocate_and_register_core`] for a
-/// blob that is still live.
-unsafe fn get_addr(d: &Loaded, rtype: i16, index: usize) -> Option<Slot> {
+/// blob that is still live, or is [`Loaded::EMPTY`].
+unsafe fn get_addr(d: &Loaded, rtype: i16, index: usize) -> Resolved {
     let ps = d.ptr_size as u64;
     let obj_t = d.obj_base;
     let obj_a = d.obj_access;
     let n_obj = d.n_objects;
     let obj_sz = d.obj_size;
-    match rtype {
+    let slot = match rtype {
         R_TREE => {
             if index >= d.n_trees {
-                return None;
+                return Resolved::OutOfRange;
             }
             // The tree root lives inside the OBJECT array, so its kernel
             // alias uses the same blob delta as the object array.
@@ -2645,8 +2685,40 @@ unsafe fn get_addr(d: &Loaded, rtype: i16, index: usize) -> Option<Slot> {
         R_IMAGEDATA => unsafe {
             deref_slot(d.frimg_target, d.frimg_access, d.n_frimg, d.ptr_size, index)
         },
-        _ => None,
-    }
+        // `default: return (void *)-1L;` (`gemrslib.c:170-172`).
+        _ => return Resolved::UnknownType,
+    };
+    slot.map_or(Resolved::OutOfRange, Resolved::Slot)
+}
+
+/// EmuTOS `rs_sglobe(pglobal)` followed by `get_addr(rtype, rindex)` — the
+/// shared front of `rs_gaddr` (`gemrslib.c:717-719`) and `rs_saddr`
+/// (`:731-732`): resolve `(rtype, index)` in the resource the caller's
+/// `AESGLOBAL` names ([`selected`]). Words naming no loaded blob of the
+/// caller (nothing loaded, freed, a foreign value, a null `global`) resolve
+/// on [`Loaded::EMPTY`] — the A39 "nothing loaded" contract (spec §1 callout
+/// item 4): no header is parsed, every defined type is
+/// [`Resolved::OutOfRange`], and an unknown type is still
+/// [`Resolved::UnknownType`], as EmuTOS's `default:` arm answers `-1L`
+/// without looking at `rs_hdr`.
+///
+/// Returns the descriptor it resolved in beside the answer (its `ptr_size`
+/// is the width of every slot `rsrc_saddr` stores into).
+///
+/// # Safety
+/// Single trap path; `pb.global_ptr()` is null or the caller's `AESGLOBAL`;
+/// a named entry's descriptor is live until its `rsrc_free` / the process's
+/// end.
+unsafe fn resolve(pb: &Aespb, rtype: i16, index: usize) -> (&'static Loaded, Resolved) {
+    // SAFETY: forwarded from this function's contract.
+    let d: &'static Loaded = unsafe {
+        match selected(caller_pid(), pb.global_ptr()) {
+            Some(idx) => &table()[idx].desc,
+            None => &Loaded::EMPTY,
+        }
+    };
+    // SAFETY: `d` is live per this function's contract, or `EMPTY`.
+    (d, unsafe { get_addr(d, rtype, index) })
 }
 
 /// `rsrc_gaddr` (112) — address of resource object `int_in[1]` of `R_*` type
@@ -2660,23 +2732,37 @@ unsafe fn get_addr(d: &Loaded, rtype: i16, index: usize) -> Option<Slot> {
 /// TEDINFO/ICONBLK/BITBLK array bases (`R_TEDINFO`/`R_ICONBLK`/`R_BITBLK`),
 /// their sub-pointer aliases (`R_OBSPEC`/`R_TEP*`/`R_IBP*`/`R_BIPDATA`), the
 /// free-string / free-image slot addresses (`R_FRSTR`/`R_FRIMG`), and the
-/// dereferenced free data pointers (`R_STRING`/`R_IMAGEDATA`). Words naming
-/// no loaded blob of the caller (nothing loaded, freed, a foreign value), an
-/// unknown type, or a selector whose table is absent (a v1–v4 resource for
-/// the substruct/free families) / index out of range, yields the documented
-/// "not found" (`addr_out[0] = 0`, `int_out[0] = 0`).
+/// dereferenced free data pointers (`R_STRING`/`R_IMAGEDATA`).
+///
+/// The return is `rs_gaddr`'s, `ret = (*rsaddr != (void *)-1L)` (`:720`):
+///
+/// * a computed address → `int_out[0] = 1`, **whatever its value** — a NULL
+///   free-string / free-image slot answers `addr_out[0] = 0` with `1`
+///   ([`Slot`]);
+/// * an unknown type → `addr_out[0] = -1` at the caller's width
+///   (`0xFFFFFFFF` ILP32, all ones LP64 — [`Aespb::set_addrout`]),
+///   `int_out[0] = 0`; the same with nothing loaded, as `default:` never
+///   reads `rs_hdr` (`:170-172`; r4 cases 623–625);
+/// * an index at or past the table's count, or a selector whose table the
+///   resource does not have (a v1–v4 resource for the substruct/free
+///   families) → `addr_out[0] = 0`, `int_out[0] = 0` — NewTOS's bound, the
+///   named deviation in `docs/COMPATIBILITY.md` (EmuTOS answers `1` with a
+///   pointer past the table);
+/// * words naming no loaded blob of the caller (nothing loaded, freed, a
+///   foreign value) → `0`/`0` for every defined type (A39, [`resolve`]).
 pub fn rsrc_gaddr(pb: &Aespb) {
     let rtype = pb.intin(0);
-    let index = pb.intin(1) as usize;
+    // `UWORD rsindex` (`:112`): −1 is 65535.
+    let index = pb.intin(1) as u16 as usize;
     // SAFETY: single trap path; `global` is the caller's AESGLOBAL; a named
     // entry's descriptor is live until its `rsrc_free` / the process's end.
-    let addr = unsafe {
-        selected(caller_pid(), pb.global_ptr())
-            .and_then(|idx| get_addr(&table()[idx].desc, rtype, index))
-            .map_or(0, |s| s.target)
+    let (addr, ret) = match unsafe { resolve(pb, rtype, index) }.1 {
+        Resolved::Slot(s) => (s.target, 1),
+        Resolved::UnknownType => (u64::MAX, 0),
+        Resolved::OutOfRange => (0, 0),
     };
     pb.set_addrout(0, addr);
-    pb.set_ret(if addr != 0 { 1 } else { 0 });
+    pb.set_ret(ret);
 }
 
 /// `rsrc_saddr` (113) — store the pointer `addr_in[0]` into the resource slot
@@ -2687,12 +2773,18 @@ pub fn rsrc_gaddr(pb: &Aespb) {
 /// goes through the slot's kernel-reachable alias at the caller's pointer
 /// width (the slot is pointer-sized in every selector), so an EL0 app's
 /// `.RSC` — mapped at a user VA — is updated without an EL1 access to that
-/// user VA. Returns TRUE for a resolvable slot, FALSE for words naming no
-/// loaded blob of the caller / an unknown type / absent table / out-of-range
-/// index (NewTOS's safer not-found, matching [`get_addr`]).
+/// user VA. Returns TRUE for a slot that was written; FALSE for an unknown
+/// type (`get_addr` == `-1L`, `:733-741`), and — NewTOS's bound, the named
+/// deviation in `docs/COMPATIBILITY.md` — for an index at or past the table
+/// / an absent table / words naming no loaded blob of the caller
+/// ([`resolve`]), and for a slot that resolved to **NULL** (`R_STRING` /
+/// `R_IMAGEDATA` on a NULL free-string / free-image entry, [`Slot`]): EmuTOS
+/// would store through address 0 and answer TRUE; NewTOS has no writable
+/// address 0 on either side of the EL0/EL1 boundary, so nothing is written.
 pub fn rsrc_saddr(pb: &Aespb) {
     let rtype = pb.intin(0);
-    let index = pb.intin(1) as usize;
+    // `UWORD rsindex` (`:725`): −1 is 65535.
+    let index = pb.intin(1) as u16 as usize;
     // The pointer to store, read at the caller's ABI width (4 bytes ILP32 /
     // 8 bytes LP64) — exactly the width of the destination pointer slot.
     let rsaddr = pb.addrin(0);
@@ -2700,19 +2792,16 @@ pub fn rsrc_saddr(pb: &Aespb) {
     // `slot.access` is a kernel-reachable pointer slot of `ptr_size` bytes,
     // live until rsrc_free.
     let ok = unsafe {
-        match selected(caller_pid(), pb.global_ptr()).map(|idx| &table()[idx].desc) {
-            Some(d) => match get_addr(d, rtype, index) {
-                Some(slot) => {
-                    let p = slot.access as *mut u8;
-                    match d.ptr_size {
-                        4 => (p as *mut u32).write_unaligned(rsaddr as u32),
-                        _ => (p as *mut u64).write_unaligned(rsaddr),
-                    }
-                    true
+        match resolve(pb, rtype, index) {
+            (d, Resolved::Slot(slot)) if slot.target != 0 => {
+                let p = slot.access as *mut u8;
+                match d.ptr_size {
+                    4 => (p as *mut u32).write_unaligned(rsaddr as u32),
+                    _ => (p as *mut u64).write_unaligned(rsaddr),
                 }
-                None => false,
-            },
-            None => false,
+                true
+            }
+            (_, Resolved::Slot(_) | Resolved::UnknownType | Resolved::OutOfRange) => false,
         }
     };
     pb.set_ret(if ok { 1 } else { 0 });
@@ -3457,7 +3546,7 @@ mod tests {
                 d[off_trindex + i * 8..off_trindex + i * 8 + 8].try_into().unwrap(),
             );
             // SAFETY: `desc` describes `buf`, which is still live.
-            let via_gaddr = unsafe { get_addr(&desc, R_TREE, i) }.expect("tree in range").target;
+            let via_gaddr = unsafe { get_addr(&desc, R_TREE, i) }.slot().expect("tree in range").target;
             assert_eq!(slot, via_gaddr, "ap_ptree[{i}] != rsrc_gaddr(R_TREE, {i})");
             assert!(slot >= APP_VA && slot < APP_VA + buf.len as u64);
         }
@@ -3487,7 +3576,7 @@ mod tests {
         assert_eq!(g32(&global, AP_RSCMEM_OFF) as u64, APP_VA, "ap_rscmem");
         let slot = u32::from_le_bytes(buf.bytes()[off_trindex..off_trindex + 4].try_into().unwrap()) as u64;
         // SAFETY: `desc` describes `buf`, which is still live.
-        let via_gaddr = unsafe { get_addr(&desc, R_TREE, 0) }.expect("tree 0").target;
+        let via_gaddr = unsafe { get_addr(&desc, R_TREE, 0) }.slot().expect("tree 0").target;
         assert_eq!(slot, via_gaddr, "ap_ptree[0] (4-byte slot) != rsrc_gaddr(R_TREE, 0)");
         assert_eq!(slot, APP_VA + off_obj, "the root object at the caller's VA");
     }
@@ -3515,7 +3604,7 @@ mod tests {
             let (buf, desc, global) = load_at(&old_blob(version), APP_VA);
             let off_obj = u32::from_le_bytes(buf.bytes()[20..24].try_into().unwrap()) as u64;
             // SAFETY: `desc` describes `buf`, which is still live.
-            let tree = unsafe { get_addr(&desc, R_TREE, 0) }.expect("tree 0").target;
+            let tree = unsafe { get_addr(&desc, R_TREE, 0) }.slot().expect("tree 0").target;
             assert_eq!(tree, APP_VA + off_obj, "v{version}: tree 0 must register");
             assert_eq!(g32(&global, AP_PTREE_OFF), 0, "v{version}: ap_ptree");
             assert_eq!(g32(&global, AP_RSCMEM_OFF), 0, "v{version}: ap_rscmem");
@@ -3661,7 +3750,7 @@ mod rshdr_tests {
         let img = buf.bytes();
         assert_ne!(rsh(img, 0) & 3, 3, "IS_XRSC_HEADER must be false: the fields are u16");
         // SAFETY: `desc` describes `buf`, which is live.
-        let want = |rtype: i16, idx: usize| unsafe { get_addr(&desc, rtype, idx) }.map(|s| s.target);
+        let want = |rtype: i16, idx: usize| unsafe { get_addr(&desc, rtype, idx) }.slot().map(|s| s.target);
         // `load_icons`'s first use (`icon.c:2750`): `R_TREE` 0 → `_rs_trindex[0]`
         // at `(char *)useRsc + rsh_trindex`. On an NRSC-headed image this
         // reads the `u16` at byte 18 (half of `off_objects`) as the offset.
@@ -3819,7 +3908,7 @@ mod rshdr_tests {
         assert_eq!(global[9] as u16 as u64, rsh(img, 17));
         let slot0 = u32::from_le_bytes(img[off_tri..off_tri + 4].try_into().unwrap()) as u64;
         // SAFETY: `desc` describes `buf`, which is live.
-        assert_eq!(Some(slot0), unsafe { get_addr(&desc, R_TREE, 0) }.map(|s| s.target));
+        assert_eq!(Some(slot0), unsafe { get_addr(&desc, R_TREE, 0) }.slot().map(|s| s.target));
         assert_eq!(slot0, APP_VA + rsh(img, 1), "tree 0's root is object 0 at rsh_object");
     }
 }
@@ -4680,7 +4769,7 @@ mod cicon_tests {
         };
         let desc = unsafe { relocate_and_register_core(p, len, APP_VA, Abi::Lp64, &mut alloc) }
             .expect("the fixture must load");
-        let slot = unsafe { get_addr(&desc, R_OBJECT, 1) }.expect("object 1 exists");
+        let slot = unsafe { get_addr(&desc, R_OBJECT, 1) }.slot().expect("object 1 exists");
         assert_eq!(slot.target, APP_VA + (OFF_OBJ + OBJECT_SIZE) as u64);
         // Read the OBJECT through the kernel alias, follow ob_spec.
         let spec = unsafe { (slot.access as *const u8).add(OB_SPEC_OFF_LP64).cast::<u64>().read_unaligned() };
