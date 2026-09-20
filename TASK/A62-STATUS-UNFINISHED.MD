@@ -318,3 +318,40 @@ A41/A62-Methoden (Hashes `fix/build/kernel-and-image-hashes.txt`). Alle Läufe:
 - Abnahme auf echter Pi 4 (Doppelklick-Pfad, H05 interaktiv) — Tester/Lead.
 - Stufe 2 (A56): `reported_pid` auf EmuTOS' Werte, `msg[1]`-Stempel an den
   Control-Manager-Postern, `identity_of(0)` → aktueller Klient.
+
+## Umbau Stufe 2 (Developer, 2026-09-20) — berichtete Werte nach EmuTOS (= A56)
+
+**Zustand nach dieser Arbeit: Stufe 2 implementiert, Host- und QEMU-Belege
+vorhanden; die Abnahme auf echter Pi 4 (Tester/Lead) bleibt offen.** Kein
+Commit, keine Hardware-/Outward-Aktion. Basis `desk-rebuild` @ `25ff70c`
+(Stufe 1). Quittung: [A56-STATUS-DONE.MD](A56-STATUS-DONE.MD) (ersetzt
+`A56-STATUS-UNFINISHED.MD`); Artefakte
+[`measurement-2026-09-20-a56/`](../measurement-2026-09-20-a56/RUNINFO.TXT).
+
+Die zwei Übersetzungsstellen aus Stufe 1 tragen jetzt EmuTOS' Zahlen
+(Spec § "AES process identity and pid", Vertrag (b)):
+
+- `appl::reported_pid(idx)` → **0** für jede Identität (Slots 0–15, `DESKTOP`);
+  `appl::identity_of(0)` → der aktuell laufende Klient (`current_identity()`),
+  1/2+ → `None`. `appl_find`: Kettenname → 0, `"SCRENMGR"` → 1, sonst −1.
+  `appl_write(1)` → 1 (angenommen, verworfen — Screen-Manager-Queue);
+  `appl_write(2+)`/`appl_read(1|2+)` → 0.
+- Poster: `menu_intercept` (`MN_SELECTED`), `window::intercept` (alle
+  `WM_*`-Frame-Nachrichten inkl. `HOTCLOSE`-`WM_CLOSED` und gequeutes
+  `WM_ARROWED`), `post_untopped` (`WM_UNTOPPED`) stempeln `msg[1]` =
+  `appl::SCRENMGR_PID` (1); `send_redraw` (`WM_REDRAW`) bleibt beim Aufrufer
+  (`current_pid()` = 0). `WF_OWNER` → 0. `pid_of_slot` → 0.
+- Tests: `aes_pd_by_slot.rs` (d) umgeschrieben (4 rot vor, 4 grün nach), je
+  eine `msg[1] == 1`-Assertion in `aes_window_drag.rs`/`aes_menu_click_ownership.rs`;
+  A28/A29/A39-Tests von `desk_pid > 0`/`assert_ne!(pid, pid)` auf 0 bzw. Slot.
+  Referenz-Harness: `global[2]` wird verglichen (`GLOBAL_EXCLUDED` [11, 12]),
+  `Expected::ApId` entfernt, r2 244/247 `int_out[1]` → `Value(0)`. 204/204.
+  `cargo run -p xtask -- test` 670 / 0 / 1; beide Boards 64/94, Clippy 81/125, Delta 0.
+- QEMU: NESTTST Tiefe 1–16 `appl_init` = 0, `WF_OWNER` = 0, `appl_write(self)` = 1;
+  Smoke, H05 (full1), quit2, A78 bytegleich zu Stufe 1 / A78 (bis auf die
+  Uhrzeitspalte in quit2-G); H02 `MN_SELECTED msg[1]` = 1 auf der seriellen Spur.
+
+Offen aus Stufe 2: `appl_write(1, WM_REDRAW)` → `w_redraw_desktop` (EmuTOS
+`hctl_msg`, `gemctrl.c:380-384`) hat keinen Spec-Eintrag und ist nicht gebaut
+(Researcher). Der Auslegungspunkt aus Stufe 1 („alle 1" vs. „k") ist damit
+gegenstandslos: alle 0.

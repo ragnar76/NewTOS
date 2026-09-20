@@ -1,13 +1,13 @@
 //! A28 — **the state reset at the desktop → child-program boundary.**
 //!
-//! The desktop runs in the kernel boot context, so its AES id is 1
-//! (`tos-api/src/aes/appl.rs`, `current_pid` with a null basepage), and the
-//! first program it launches lands in GEMDOS slot 0, whose AES id is
-//! `slot + 1` = 1 (`aes::pid_of_slot`). Desktop and first child therefore
-//! report the same AES id. Until A62 they also shared one AES process
-//! descriptor; since A62 the descriptor is keyed by the identity (the GEMDOS
-//! slot, or the desktop's own reserved index — `docs/api/aes/application.md`
-//! § "AES process identity and pid", contract (a)). **The sharing was never
+//! The desktop runs in the kernel boot context (`RUN` null) and reports AES
+//! id **0**, as does the first program it launches in GEMDOS slot 0 — the
+//! whole application chain is EmuTOS's one `rlr`, pid 0
+//! (`docs/api/aes/application.md` § "AES process identity and pid",
+//! contract (b), A56). Desktop and first child therefore report the same AES
+//! id. Until A62 they also shared one AES process descriptor; since A62 the
+//! descriptor is keyed by the identity (the GEMDOS slot, or the desktop's
+//! own reserved index — contract (a)). **The sharing was never
 //! the defect** — EmuTOS does the same thing, renaming the one `rlr` for each
 //! successive program (`references/emutos/aes/gemshlib.c:633-636`). This test
 //! runs its "child" in the boot context too (no `RUN`), so phases 1–2 act on
@@ -362,7 +362,7 @@ fn the_launch_boundary_hands_the_child_a_reset_descriptor() {
 
     // ── the desktop comes up and the user clicks ──────────────────────────
     let desk_pid = appl_init(&mut pb);
-    assert!(desk_pid > 0, "the desktop must get an AES id");
+    assert_eq!(desk_pid, 0, "the desktop's AES id is the chain's, 0 (gemsuper.c:94, rlr->p_pid)");
     let w1 = open_window(&mut pb, WR1);
     let w2 = open_window(&mut pb, WR2);
     drain(&mut pb, desk_pid); // its event loop answered the opens

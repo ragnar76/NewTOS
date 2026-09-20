@@ -1615,6 +1615,14 @@ fn owner_of(handle: i16) -> Option<usize> {
 }
 
 /// Post a `WM_REDRAW` for `rect` to `handle`'s owner process.
+///
+/// `msg[1]` is the **caller's** pid (0, the application chain): `w_redraw`'s
+/// `ap_sendmsg` (`gemwmlib.c:904`) runs from `draw_change`, i.e. inside the
+/// application's own `wind_open`/`wind_close`/`wind_set` trap
+/// (`:1426,1453,1612`) or its `form_dial(FMD_FINISH)`, so `rlr` is the
+/// application, not the Screen Manager (spec § "AES process identity and
+/// pid", contract (b)). Every path into this function is such a trap; the
+/// control-manager hook ([`intercept`]) posts no redraws.
 fn send_redraw(handle: i16, rect: Grect) {
     let Some(owner) = owner_of(handle) else {
         return;
@@ -3158,9 +3166,14 @@ pub fn wind_get(pb: &Aespb) {
             // our profile is 0x340). poutwds[0..3] → int_out[1..4].
             WF_OWNER => {
                 let (owner, open) = (w.owner, w.open);
-                // `pwin->w_owner->p_pid` (`:1580`): the owner's reported pid;
-                // 0 for an unowned window (the desktop window before
-                // `WF_NEWDESK`), as it has always reported.
+                // `pwin->w_owner->p_pid` (`:1580`): the owner's **reported**
+                // pid, computed from the stored identity — 0 for every
+                // application window, whichever slot owns it (`wm_create`
+                // → `w_setup(rlr, …)`, `:1377`, storing `w_owner`, `:212`;
+                // spec § "AES process identity and pid", contract (b)); 0 as
+                // well for an unowned window (the
+                // desktop window before `WF_NEWDESK`, EmuTOS `wm_init`'s
+                // `rlr`, `:1255,1290`), as it has always reported.
                 let owner = usize::try_from(owner).map_or(0, super::appl::reported_pid);
                 pb.set_intout(1, owner);
                 pb.set_intout(2, i16::from(open));
@@ -4239,9 +4252,16 @@ pub fn intercept() {
 
     let mut msg = [0i16; 8];
     // `ap_sendmsg` sets `msg[1] = rlr->p_pid`, the sender pid (`gemwmlib.c:855`);
-    // for ctlmgr messages that is the control process, at single-app the app
-    // (its reported value).
-    msg[1] = super::appl::current_pid();
+    // `hctl_window` runs inside `ctlmgr()`, so that is the Screen Manager's,
+    // 1 — for every message this function posts: `WM_TOPPED`, `WM_CLOSED`
+    // (both forms), `WM_FULLED`, `WM_MOVED`, `WM_SIZED`, `WM_HSLID`,
+    // `WM_VSLID`, and the queued `WM_ARROWED` (`ct_msgup`/`handle_arrow_msg`,
+    // `gemctrl.c:125,178,210-220,238,259,300-314`). A stamp, not a process
+    // (spec § "AES process identity and pid", contract (b)). NewTOS has no
+    // non-queued `WM_ARROWED` (the `p_msg` fast path of `gemctrl.c:129-133`/
+    // `gemevlib.c:100-117`, whose stamp would be the reader's 0): every arrow
+    // here is queued, and carries 1.
+    msg[1] = super::appl::SCRENMGR_PID;
     msg[3] = handle;
 
     // Click on a non-top window → tell the old top's owner it lost the top spot
@@ -4382,9 +4402,10 @@ fn post_untopped(old_top: i16, new_top: i16) {
     if let Some(owner) = owner_of(old_top) {
         let mut msg = [0i16; 8];
         msg[0] = WM_UNTOPPED;
-        // `ap_sendmsg` sets msg[1] = sender pid (gemwmlib.c:855); at single-app
-        // this is the running app / control process.
-        msg[1] = super::appl::current_pid();
+        // `ap_sendmsg` sets msg[1] = sender pid (gemwmlib.c:855); `perform_untop`
+        // runs inside `ctlmgr()` (gemctrl.c:146-155,174), so the Screen
+        // Manager's 1.
+        msg[1] = super::appl::SCRENMGR_PID;
         msg[3] = old_top;
         post_to_owner(owner, &msg);
     }

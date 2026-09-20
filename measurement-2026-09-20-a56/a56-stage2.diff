@@ -1,0 +1,1237 @@
+diff --git a/kernel/src/selftest_aes.rs b/kernel/src/selftest_aes.rs
+index a4a1224..4b8d977 100644
+--- a/kernel/src/selftest_aes.rs
++++ b/kernel/src/selftest_aes.rs
+@@ -107,7 +107,11 @@ pub fn run_phase13_aes_test() {
+     control[0] = 10; control[2] = 1;
+     aes(pb);
+     let ap_id = intout[0];
+-    check(ap_id >= 1, "appl_init returns an application id");
++    // EmuTOS reports `rlr->p_pid` = 0 for the whole application chain, the
++    // kernel-context desktop this selftest runs as included
++    // (`aes/gemsuper.c:94`, `geminit.c:850-877`; spec § "AES process
++    // identity and pid", contract (b), A56).
++    check(ap_id == 0, "appl_init returns the application chain's id, 0");
+     // AESGLOBAL. It keeps the m68k field widths on **every** ABI — it is
+     // addressed by byte offset *and* by WORD index at once (`aesdefs.h:147-157`
+     // vs `gemrslib.h:15-27`), and only the TOS widths satisfy both (decision of
+diff --git a/kernel/src/shell_loop.rs b/kernel/src/shell_loop.rs
+index 5e53a68..b983e5a 100644
+--- a/kernel/src/shell_loop.rs
++++ b/kernel/src/shell_loop.rs
+@@ -356,13 +356,13 @@ fn p_setappdir(cmd: &[u8]) {
+ /// ([`crate::desk`]).
+ ///
+ /// Item 10 of the plan's gap list ("AESPD numbering + `p_nameit`/`p_setappdir`
+-/// on `rlr`") is closed as far as the *identity* goes: like EmuTOS's `AESPD`s
+-/// (`aes/gempd.c:32-35`), NewTOS's exist per index from boot, `appl_init`
+-/// cannot fail, and the descriptor a program is renamed into is the one its
+-/// slot has always had. What still differs is the **reported value** — EmuTOS
+-/// reports 0 for the whole application chain, NewTOS still slot + 1
+-/// (`tos_api::aes::appl::reported_pid`); that is A56, spec § "AES process
+-/// identity and pid", contract (b). The behaviour EmuTOS gets from its model at
++/// on `rlr`") is closed: like EmuTOS's `AESPD`s (`aes/gempd.c:32-35`),
++/// NewTOS's exist per index from boot, `appl_init` cannot fail, and the
++/// descriptor a program is renamed into is the one its slot has always had
++/// (the *identity*, A62); and the **reported value** is EmuTOS's — 0 for the
++/// whole application chain, whichever slot (`tos_api::aes::appl::reported_pid`,
++/// A56, spec § "AES process identity and pid", contract (b)). The behaviour
++/// EmuTOS gets from its model at
+ /// this boundary — a program never starting on the previous occupant's flags
+ /// or messages — is in place (A28): the flag reset in `pd::register`, the queue
+ /// drain in the desktop's own `appl_exit()` (`deskmain.c:2166`,
+diff --git a/tos-api/src/aes/appl.rs b/tos-api/src/aes/appl.rs
+index 491532a..fe80f88 100644
+--- a/tos-api/src/aes/appl.rs
++++ b/tos-api/src/aes/appl.rs
+@@ -12,8 +12,12 @@
+ //! The *value* a program reads back (`ap_id`, `appl_find`, `WF_OWNER`,
+ //! `msg[1]`) is computed from the identity by [`reported_pid`] and mapped back
+ //! by [`identity_of`] where a program hands a value in (`appl_write`,
+-//! `appl_read`). Stage 1 (A62) keeps the reported numbers as they were —
+-//! slot + 1, and 1 for the desktop; stage 2 (A56) will make them EmuTOS's.
++//! `appl_read`). The values are EmuTOS's (contract (b), A56): **0** for every
++//! member of the application chain — the desktop, the program it launches,
++//! every `Pexec` child at any depth, all on EmuTOS's one `rlr`
++//! (`aes/geminit.c:850-877`, `gemshlib.c:572`) — and **1** only as the
++//! Screen Manager's sender stamp on `msg[1]` ([`SCRENMGR_PID`]), which no
++//! NewTOS process is behind.
+ //!
+ //! **What `appl_init` may write, and how far (D-R1-4).** `AESGLOBAL` is
+ //! EmuTOS's `struct aesglobal` (`aes/gemrslib.h:15-27`) — ten fields,
+@@ -183,48 +187,58 @@ pub(super) fn current_identity() -> usize {
+     crate::bdos::process::slot_for(bp).unwrap_or(pd::DESKTOP)
+ }
+ 
++/// The pid of the application chain — EmuTOS's `D.g_int[0].p_pid`, the one
++/// `rlr` the desktop, every launched program and every `Pexec` child run on
++/// (`aes/geminit.c:851-877`; never reassigned by `dos_exec`,
++/// `gemshlib.c:572`). What `appl_init` returns, `appl_find` answers for any
++/// chain name, `WF_OWNER` reports for any application window, and
++/// `ap_sendmsg` stamps into `msg[1]` when the application itself is the
++/// sender (`WM_REDRAW`, `gemwmlib.c:904`).
++pub(super) const AP_CHAIN_PID: i16 = 0;
++
++/// The Screen Manager's pid — `gl_mowner = ctl_pd = iprocess("SCRENMGR",
++/// ctlmgr)` takes `curpid` 1 at AES init (`aes/geminit.c:888`, `getpd`,
++/// `gempd.c:60-70`). In NewTOS a **stamp**, not a process: the value the
++/// control-manager posters write into `msg[1]` (`ap_sendmsg` under `rlr ==
++/// ctl_pd`, `gemctrl.c:81-368`), the name `appl_find("SCRENMGR")` answers,
++/// and the one `appl_write` target that is not an application.
++pub(super) const SCRENMGR_PID: i16 = 1;
++
+ /// The pid a program sees for identity `idx` — `ap_id`, `appl_find`'s
+-/// answer, `WF_OWNER`, `msg[1]`. Stage 1 (A62): the numbers NewTOS reported
+-/// before the identity rework, unchanged — GEMDOS slot + 1, and 1 for the
+-/// kernel-context desktop (so the desktop and the program in slot 0 report
+-/// the same number, as they did while they shared one descriptor). Stage 2
+-/// (A56) replaces this with EmuTOS's values (0 for the whole application
+-/// chain, 1 as the Screen Manager's sender stamp).
++/// answer, `WF_OWNER`, `msg[1]` of a message the application itself sends.
++/// Every identity NewTOS has — the sixteen GEMDOS slots and the
++/// kernel-context desktop — is a member of the application chain, so the
++/// value is [`AP_CHAIN_PID`] for all of them (spec § "AES process identity
++/// and pid", contract (b)); the identity is not lost, it is simply not what
++/// EmuTOS reports. Desk accessories (pid 2+, `D.g_acc[]`) do not exist here;
++/// when they do, they are the first identities this map does not send to 0.
+ pub(super) fn reported_pid(idx: usize) -> i16 {
+-    if idx == pd::DESKTOP {
+-        1
+-    } else {
+-        idx as i16 + 1
+-    }
++    debug_assert!(idx < pd::NUM_PDS, "reported_pid of a non-identity {idx}");
++    AP_CHAIN_PID
+ }
+ 
+ /// The identity a program addresses with the reported value `pid` — the
+ /// inverse of [`reported_pid`] for `appl_write`/`appl_read` targets and the
+ /// test hooks. `None` when no client reports that value.
+ ///
+-/// Two identities report **1** in stage 1, the desktop and GEMDOS slot 0;
+-/// they never run at the same time (the desktop is blocked in the launcher
+-/// while a program runs), so the value resolves from the caller's side: the
+-/// desktop's own descriptor when the desktop is the caller, slot 0's for
+-/// every process. This is what the one shared descriptor of the old table
+-/// gave observably — a message to 1 reached the queue the caller itself
+-/// reads, and the launch boundary drains that queue before the other party
+-/// runs (A28/A29) — and it is the stage-1 form of the spec's rule that the
+-/// chain's value resolves to the currently-scheduled client.
++/// Every chain member reports 0, and at most one of them is running — a
++/// `Pexec` parent is blocked while its child runs, the desktop while a
++/// launched program runs — so 0 resolves to the **currently-scheduled
++/// client**, the caller ([`current_identity`]). That is `fpdnm(NULL, 0)`
++/// always finding `D.g_int[0]` (`gemsuper.c:102-105`, `gempd.c:38-57`): the
++/// queue the caller itself reads. 1 is the Screen Manager ([`SCRENMGR_PID`])
++/// and names no NewTOS client; 2+ would be accessories, of which there are
++/// none (`totpds = num_accs + 2 = 2`, `geminit.c:819`).
+ pub(super) fn identity_of(pid: i16) -> Option<usize> {
+-    match pid {
+-        1 => Some(if current_identity() == pd::DESKTOP { pd::DESKTOP } else { 0 }),
+-        p if p >= 2 && ((p - 1) as usize) < crate::bdos::process::MAX_PROCESSES => {
+-            Some((p - 1) as usize)
+-        }
+-        _ => None,
+-    }
++    (pid == AP_CHAIN_PID).then(current_identity)
+ }
+ 
+ /// The reported pid of the current caller ([`reported_pid`] of
+-/// [`current_identity`]) — what `appl_init` returns and what the internal
+-/// posters stamp into `msg[1]` (`ap_sendmsg`'s `rlr->p_pid`,
+-/// `gemwmlib.c:855`).
++/// [`current_identity`]) — what `appl_init` returns and what a poster that
++/// runs *as the application* stamps into `msg[1]` (`ap_sendmsg`'s
++/// `rlr->p_pid`, `gemwmlib.c:855`, for `w_redraw`'s `WM_REDRAW` inside the
++/// application's own `wind_*` trap). The control-manager posters do not use
++/// it: they stamp [`SCRENMGR_PID`].
+ pub(super) fn current_pid() -> i16 {
+     reported_pid(current_identity())
+ }
+@@ -317,7 +331,11 @@ pub fn appl_exit(pb: &Aespb) {
+ 
+ /// Opcode 13 — `appl_find`: find an application by its 8-char name in
+ /// `addrin[0]`. Returns its reported pid ([`reported_pid`] of the identity
+-/// [`pd::find_by_name`] locates), or −1 if not found (or name is NULL).
++/// [`pd::find_by_name`] locates — 0 for any chain name), or −1 if not found
++/// (or name is NULL). `"SCRENMGR"` is the one name outside the chain that
++/// EmuTOS's `fpdnm` walk finds: the Screen Manager's descriptor, named by
++/// `iprocess("SCRENMGR", ctlmgr)` → `pstart` → `p_nameit`
++/// (`aes/geminit.c:888`, `gempd.c:117-121`), pid [`SCRENMGR_PID`].
+ pub fn appl_find(pb: &Aespb) {
+     let name_ptr = pb.addrin(0);
+     if name_ptr == 0 {
+@@ -333,7 +351,11 @@ pub fn appl_find(pb: &Aespb) {
+         }
+     }
+     // SAFETY: single trap path.
+-    let pid = unsafe { pd::find_by_name(&name) }.map_or(-1, reported_pid);
++    let pid = match unsafe { pd::find_by_name(&name) } {
++        Some(idx) => reported_pid(idx),
++        None if &name == b"SCRENMGR" => SCRENMGR_PID,
++        None => -1,
++    };
+     pb.set_ret(pid);
+ }
+ 
+@@ -359,16 +381,27 @@ pub fn appl_yield(pb: &Aespb) {
+ pub fn appl_write(pb: &Aespb) {
+     let len_bytes = pb.intin(1).max(0) as usize;
+     let buf = pb.addrin(0);
+-    // The target arrives as a reported pid; resolve it to an identity (none →
+-    // no descriptor → 0).
+-    let Some(target) = identity_of(pb.intin(0)) else {
+-        pb.set_ret(0);
+-        return;
+-    };
+     if buf == 0 {
+         pb.set_ret(0);
+         return;
+     }
++    // The target arrives as a reported pid. 0 is the caller (`fpdnm(NULL, 0)`
++    // = `D.g_int[0]`, the chain's one queue). 1 is the Screen Manager: in
++    // EmuTOS the write lands in `ctl_pd`'s queue and succeeds, and `ctlmgr`
++    // reads it on its next turn (`ev_multi(… | MU_MESAG)`, `gemctrl.c:448-481`)
++    // — no application ever sees it. NewTOS has no queue there; the write
++    // succeeds and the message goes nowhere. (What `ctlmgr` does with a
++    // `WM_REDRAW` it reads — `hctl_msg` → `w_redraw_desktop`, `:380-384` — has
++    // no spec entry yet and is not reproduced here.) Any other value names
++    // no descriptor within `totpds` (no accessories): 0.
++    if pb.intin(0) == SCRENMGR_PID {
++        pb.set_ret(1);
++        return;
++    }
++    let Some(target) = identity_of(pb.intin(0)) else {
++        pb.set_ret(0);
++        return;
++    };
+     // AP_LENGTH is a byte count (EmuTOS `qpb_cnt`); GEM messages are WORD-based,
+     // so read whole WORDs, capped at the per-message FIFO limit.
+     let words = (len_bytes / 2).min(pd::MAX_MSG_WORDS);
+@@ -401,7 +434,10 @@ pub fn appl_write(pb: &Aespb) {
+ pub fn appl_read(pb: &Aespb) {
+     let len_bytes = pb.intin(1).max(0) as usize;
+     let dest = pb.addrin(0);
+-    // `intin[0]` is the caller's own reported id; resolve it to an identity.
++    // `intin[0]` is the caller's own reported id, 0; resolve it to an
++    // identity — the caller's. 1 (the Screen Manager's queue, which an
++    // application reading it would block on in EmuTOS) and 2+ (no
++    // accessories) name no queue an application can read here: 0.
+     // SAFETY: single trap path.
+     let Some(src) = identity_of(pb.intin(0)).and_then(|idx| unsafe { pd::by_index(idx) }) else {
+         pb.set_ret(0);
+diff --git a/tos-api/src/aes/event.rs b/tos-api/src/aes/event.rs
+index 4093080..e4d9a92 100644
+--- a/tos-api/src/aes/event.rs
++++ b/tos-api/src/aes/event.rs
+@@ -76,9 +76,13 @@ const MN_SELECTED: i16 = 10;
+ /// not over the bar, or the drop-down was cancelled (no message).
+ ///
+ /// `idx` is the current AES identity — the menu owner (`gl_mnppd`) at
+-/// single-app — used as the FIFO target; the `ap_sendmsg` sender pid
+-/// `msg[1] = rlr->p_pid` (`gemwmlib.c:855`) is its reported value
+-/// (`appl::current_pid`), replacing the former `0`.
++/// single-app — used as the FIFO target. The `ap_sendmsg` sender pid
++/// `msg[1] = rlr->p_pid` (`gemwmlib.c:855`) is the **Screen Manager's**,
++/// `appl::SCRENMGR_PID` = 1: `ct_msgup` runs inside `ctlmgr()`, `rlr ==
++/// ctl_pd` (`gemctrl.c:353-367`; spec § "AES process identity and pid",
++/// contract (b)). A stamp, not a process — NewTOS's control manager runs
++/// inline in the caller's trap, so the caller's own pid (0) would be wrong
++/// here.
+ ///
+ /// **Entry = the hand-over.** EmuTOS reaches `hctl_rect` only after `mchange`
+ /// gave the mouse to the Control Manager, which it does for a pointer in the
+@@ -114,8 +118,9 @@ fn menu_intercept(idx: usize) -> bool {
+         Some((title, item)) => {
+             let mut msg = [0i16; pd::MSG_WORDS];
+             msg[0] = MN_SELECTED;
+-            // ap_sendmsg: msg[1] = rlr->p_pid (sender pid, the reported value)
+-            msg[1] = super::appl::current_pid();
++            // ap_sendmsg: msg[1] = rlr->p_pid — the Screen Manager's, 1
++            // (gemctrl.c:367 runs as ctl_pd; gemwmlib.c:855).
++            msg[1] = super::appl::SCRENMGR_PID;
+             msg[3] = title; // menu title object
+             msg[4] = item; // menu item object
+             // SAFETY: single trap path; `post_msg` hands the message to the
+diff --git a/tos-api/src/aes/mod.rs b/tos-api/src/aes/mod.rs
+index 1e779ad..d35918e 100644
+--- a/tos-api/src/aes/mod.rs
++++ b/tos-api/src/aes/mod.rs
+@@ -667,11 +667,12 @@ pub fn release_client(slot: usize) {
+ }
+ 
+ /// The AES pid NewTOS **reports** for the program in GEMDOS process-table slot
+-/// `slot` — `slot + 1`, the value that program gets from `appl_init`
+-/// (`appl::reported_pid`). A value, not an identity: the descriptor is keyed
+-/// by `slot` itself (A62).
++/// `slot` — the value that program gets from `appl_init`
++/// (`appl::reported_pid`): 0, the application chain's pid, for every slot
++/// (spec § "AES process identity and pid", contract (b), A56). A value, not
++/// an identity: the descriptor is keyed by `slot` itself (A62).
+ pub fn pid_of_slot(slot: usize) -> i16 {
+-    slot as i16 + 1
++    appl::reported_pid(slot)
+ }
+ 
+ /// Name a freshly-launched EL0 program's AES process descriptor from its launch
+diff --git a/tos-api/src/aes/resource.rs b/tos-api/src/aes/resource.rs
+index 3a1209b..253e057 100644
+--- a/tos-api/src/aes/resource.rs
++++ b/tos-api/src/aes/resource.rs
+@@ -3979,7 +3979,8 @@ mod selector_tests {
+     }
+ 
+     /// A claimed GEMDOS slot with a basepage page of its own; its AES identity
+-    /// is the slot, the pid it reports `slot + 1`. Released on drop.
++    /// is the slot, the pid it reports 0 (the application chain's). Released
++    /// on drop.
+     struct Proc {
+         slot: usize,
+         page: *mut [u8; 4096],
+@@ -4217,7 +4218,9 @@ mod selector_tests {
+         let _g = lock();
+         let p1 = Proc::new();
+         let p2 = Proc::new();
+-        assert_ne!(p1.pid(), p2.pid());
++        // Two identities (slots); both report ap_id 0 (A56, contract (b)).
++        assert_ne!(p1.slot, p2.slot);
++        assert_eq!((p1.pid(), p2.pid()), (0, 0));
+ 
+         p1.run();
+         let mut g1 = Global::default();
+diff --git a/tos-api/src/aes/window.rs b/tos-api/src/aes/window.rs
+index 17d0462..52e8071 100644
+--- a/tos-api/src/aes/window.rs
++++ b/tos-api/src/aes/window.rs
+@@ -1615,6 +1615,14 @@ fn owner_of(handle: i16) -> Option<usize> {
+ }
+ 
+ /// Post a `WM_REDRAW` for `rect` to `handle`'s owner process.
++///
++/// `msg[1]` is the **caller's** pid (0, the application chain): `w_redraw`'s
++/// `ap_sendmsg` (`gemwmlib.c:904`) runs from `draw_change`, i.e. inside the
++/// application's own `wind_open`/`wind_close`/`wind_set` trap
++/// (`:1426,1453,1612`) or its `form_dial(FMD_FINISH)`, so `rlr` is the
++/// application, not the Screen Manager (spec § "AES process identity and
++/// pid", contract (b)). Every path into this function is such a trap; the
++/// control-manager hook ([`intercept`]) posts no redraws.
+ fn send_redraw(handle: i16, rect: Grect) {
+     let Some(owner) = owner_of(handle) else {
+         return;
+@@ -3158,9 +3166,14 @@ pub fn wind_get(pb: &Aespb) {
+             // our profile is 0x340). poutwds[0..3] → int_out[1..4].
+             WF_OWNER => {
+                 let (owner, open) = (w.owner, w.open);
+-                // `pwin->w_owner->p_pid` (`:1580`): the owner's reported pid;
+-                // 0 for an unowned window (the desktop window before
+-                // `WF_NEWDESK`), as it has always reported.
++                // `pwin->w_owner->p_pid` (`:1580`): the owner's **reported**
++                // pid, computed from the stored identity — 0 for every
++                // application window, whichever slot owns it (`wm_create`
++                // → `w_setup(rlr, …)`, `:1377`, storing `w_owner`, `:212`;
++                // spec § "AES process identity and pid", contract (b)); 0 as
++                // well for an unowned window (the
++                // desktop window before `WF_NEWDESK`, EmuTOS `wm_init`'s
++                // `rlr`, `:1255,1290`), as it has always reported.
+                 let owner = usize::try_from(owner).map_or(0, super::appl::reported_pid);
+                 pb.set_intout(1, owner);
+                 pb.set_intout(2, i16::from(open));
+@@ -4239,9 +4252,16 @@ pub fn intercept() {
+ 
+     let mut msg = [0i16; 8];
+     // `ap_sendmsg` sets `msg[1] = rlr->p_pid`, the sender pid (`gemwmlib.c:855`);
+-    // for ctlmgr messages that is the control process, at single-app the app
+-    // (its reported value).
+-    msg[1] = super::appl::current_pid();
++    // `hctl_window` runs inside `ctlmgr()`, so that is the Screen Manager's,
++    // 1 — for every message this function posts: `WM_TOPPED`, `WM_CLOSED`
++    // (both forms), `WM_FULLED`, `WM_MOVED`, `WM_SIZED`, `WM_HSLID`,
++    // `WM_VSLID`, and the queued `WM_ARROWED` (`ct_msgup`/`handle_arrow_msg`,
++    // `gemctrl.c:125,178,210-220,238,259,300-314`). A stamp, not a process
++    // (spec § "AES process identity and pid", contract (b)). NewTOS has no
++    // non-queued `WM_ARROWED` (the `p_msg` fast path of `gemctrl.c:129-133`/
++    // `gemevlib.c:100-117`, whose stamp would be the reader's 0): every arrow
++    // here is queued, and carries 1.
++    msg[1] = super::appl::SCRENMGR_PID;
+     msg[3] = handle;
+ 
+     // Click on a non-top window → tell the old top's owner it lost the top spot
+@@ -4382,9 +4402,10 @@ fn post_untopped(old_top: i16, new_top: i16) {
+     if let Some(owner) = owner_of(old_top) {
+         let mut msg = [0i16; 8];
+         msg[0] = WM_UNTOPPED;
+-        // `ap_sendmsg` sets msg[1] = sender pid (gemwmlib.c:855); at single-app
+-        // this is the running app / control process.
+-        msg[1] = super::appl::current_pid();
++        // `ap_sendmsg` sets msg[1] = sender pid (gemwmlib.c:855); `perform_untop`
++        // runs inside `ctlmgr()` (gemctrl.c:146-155,174), so the Screen
++        // Manager's 1.
++        msg[1] = super::appl::SCRENMGR_PID;
+         msg[3] = old_top;
+         post_to_owner(owner, &msg);
+     }
+diff --git a/tos-api/tests/aes_app_return_descriptor.rs b/tos-api/tests/aes_app_return_descriptor.rs
+index fbe4f84..770077f 100644
+--- a/tos-api/tests/aes_app_return_descriptor.rs
++++ b/tos-api/tests/aes_app_return_descriptor.rs
+@@ -1,14 +1,14 @@
+ //! A29 — **what the desktop loses when a program returns.**
+ //!
+-//! The desktop runs in the kernel boot context, so its AES id is 1
+-//! (`tos-api/src/aes/appl.rs`, `current_pid` with a null basepage). The first
+-//! program it launches lands in GEMDOS slot 0, whose AES id is `slot + 1` = 1
+-//! (`aes::pid_of_slot`) — desktop and first child therefore **report the same
+-//! AES id**. Until A62 they also shared one AES process descriptor; since A62
+-//! the descriptor is keyed by the *identity* (the GEMDOS slot, or the
+-//! desktop's own reserved index — `docs/api/aes/application.md` § "AES
+-//! process identity and pid", contract (a)), and only the reported number is
+-//! shared. This test runs its "child" in the boot context too (no `RUN`), so
++//! The desktop runs in the kernel boot context (`RUN` null) and reports AES
++//! id **0**; so does the first program it launches, in GEMDOS slot 0, and so
++//! does every `Pexec` child — the whole application chain is EmuTOS's one
++//! `rlr`, pid 0 (`docs/api/aes/application.md` § "AES process identity and
++//! pid", contract (b), A56; `aes/geminit.c:850-877`). Desktop and first child
++//! therefore **report the same AES id**. Until A62 they also shared one AES
++//! process descriptor; since A62 the descriptor is keyed by the *identity*
++//! (the GEMDOS slot, or the desktop's own reserved index — contract (a)),
++//! and only the reported number is shared. This test runs its "child" in the boot context too (no `RUN`), so
+ //! it exercises the desktop's descriptor across the boundary; the slot-keyed
+ //! child is `aes_pd_by_slot.rs`'s business. The sharing of the *number* is
+ //! EmuTOS-faithful: `sh_ldapp` renames the very same `rlr` for the program it
+@@ -377,7 +377,7 @@ fn the_desktop_still_receives_messages_after_a_program_returns() {
+ 
+     // ── the desktop comes up (`kernel/src/desk/mod.rs`, `run`) ────────────
+     let desk_pid = appl_init(&mut pb);
+-    assert!(desk_pid > 0, "the desktop must get an AES id");
++    assert_eq!(desk_pid, 0, "the desktop's AES id is the chain's, 0 (gemsuper.c:94, rlr->p_pid)");
+     let win = open_window(&mut pb, WR);
+     drain(&mut pb, desk_pid); // its event loop answered the open's WM_REDRAW
+ 
+@@ -390,7 +390,7 @@ fn the_desktop_still_receives_messages_after_a_program_returns() {
+         run_child(&mut pb, desk_pid, 0, who, polite);
+ 
+         // 1. The desktop is still an addressable application. This is the
+-        //    literal symptom A29 names: `appl_write` to pid 1 returning 0.
++        //    literal symptom A29 names: `appl_write` to its own pid returning 0.
+         let probe = [0x4711, desk_pid, 0, 1, 2, 3, 4, 5];
+         assert_eq!(
+             appl_write(&mut pb, desk_pid, &probe),
+diff --git a/tos-api/tests/aes_launch_boundary_reset.rs b/tos-api/tests/aes_launch_boundary_reset.rs
+index 5fb3210..57ee914 100644
+--- a/tos-api/tests/aes_launch_boundary_reset.rs
++++ b/tos-api/tests/aes_launch_boundary_reset.rs
+@@ -1,13 +1,13 @@
+ //! A28 — **the state reset at the desktop → child-program boundary.**
+ //!
+-//! The desktop runs in the kernel boot context, so its AES id is 1
+-//! (`tos-api/src/aes/appl.rs`, `current_pid` with a null basepage), and the
+-//! first program it launches lands in GEMDOS slot 0, whose AES id is
+-//! `slot + 1` = 1 (`aes::pid_of_slot`). Desktop and first child therefore
+-//! report the same AES id. Until A62 they also shared one AES process
+-//! descriptor; since A62 the descriptor is keyed by the identity (the GEMDOS
+-//! slot, or the desktop's own reserved index — `docs/api/aes/application.md`
+-//! § "AES process identity and pid", contract (a)). **The sharing was never
++//! The desktop runs in the kernel boot context (`RUN` null) and reports AES
++//! id **0**, as does the first program it launches in GEMDOS slot 0 — the
++//! whole application chain is EmuTOS's one `rlr`, pid 0
++//! (`docs/api/aes/application.md` § "AES process identity and pid",
++//! contract (b), A56). Desktop and first child therefore report the same AES
++//! id. Until A62 they also shared one AES process descriptor; since A62 the
++//! descriptor is keyed by the identity (the GEMDOS slot, or the desktop's
++//! own reserved index — contract (a)). **The sharing was never
+ //! the defect** — EmuTOS does the same thing, renaming the one `rlr` for each
+ //! successive program (`references/emutos/aes/gemshlib.c:633-636`). This test
+ //! runs its "child" in the boot context too (no `RUN`), so phases 1–2 act on
+@@ -362,7 +362,7 @@ fn the_launch_boundary_hands_the_child_a_reset_descriptor() {
+ 
+     // ── the desktop comes up and the user clicks ──────────────────────────
+     let desk_pid = appl_init(&mut pb);
+-    assert!(desk_pid > 0, "the desktop must get an AES id");
++    assert_eq!(desk_pid, 0, "the desktop's AES id is the chain's, 0 (gemsuper.c:94, rlr->p_pid)");
+     let w1 = open_window(&mut pb, WR1);
+     let w2 = open_window(&mut pb, WR2);
+     drain(&mut pb, desk_pid); // its event loop answered the opens
+diff --git a/tos-api/tests/aes_menu_click_ownership.rs b/tos-api/tests/aes_menu_click_ownership.rs
+index efa0e05..f25a93d 100644
+--- a/tos-api/tests/aes_menu_click_ownership.rs
++++ b/tos-api/tests/aes_menu_click_ownership.rs
+@@ -636,6 +636,15 @@ fn assert_only_mn_selected(fired: i16, bret: i16, msg: &[i16; 8], case: &str) {
+         (TITLE_FILE, ITEM_OPEN),
+         "{case}: MN_SELECTED must carry (title, item) = (File, Open); msg = {msg:?}"
+     );
++    // The sender: `ap_sendmsg` stamps `msg[1] = rlr->p_pid` (`gemwmlib.c:855`),
++    // and `ct_msgup(MN_SELECTED, gl_mnppd, …)` runs inside `ctlmgr()` — the
++    // Screen Manager, pid 1 (`aes/geminit.c:888`, `gemctrl.c:353-367`;
++    // `docs/api/aes/application.md` § "AES process identity and pid",
++    // contract (b), A56). Not the application's own 0.
++    assert_eq!(
++        msg[1], 1,
++        "{case}: MN_SELECTED msg[1] is the Screen Manager's pid, 1; msg = {msg:?}"
++    );
+     assert_eq!(
+         fired & MU_BUTTON,
+         0,
+diff --git a/tos-api/tests/aes_pd_by_slot.rs b/tos-api/tests/aes_pd_by_slot.rs
+index b1c7207..611968a 100644
+--- a/tos-api/tests/aes_pd_by_slot.rs
++++ b/tos-api/tests/aes_pd_by_slot.rs
+@@ -9,10 +9,15 @@
+ //! full" (EmuTOS `ap_init`, `aes/gemaplib.c:54-63`, three unconditional
+ //! statements).
+ //!
+-//! Stage 1 changes **no reported value**: `ap_id`, `appl_find`, `WF_OWNER` and
+-//! `msg[1]` must report the same numbers as before the rework (GEMDOS slot + 1;
+-//! 1 for the kernel-context desktop). Stage 2 (A56, EmuTOS's numbers) is a
+-//! separate change. The four tests here are, in order:
++//! Stage 2 (A56) makes the **reported value** EmuTOS's — contract **(b)**
++//! of the same spec section: `ap_id`, `appl_find`, `WF_OWNER` and `msg[1]`
++//! are **0** for every member of the application chain (the kernel-context
++//! desktop, the launched program, every `Pexec` child at any depth — one
++//! `rlr`, `aes/geminit.c:850-877`, `gemshlib.c:572`, `gemaplib.c:54-63`);
++//! `msg[1]` is **1** only as the Screen Manager's sender stamp on the
++//! control-manager messages (`gemctrl.c:81-368`); `appl_write`/`appl_read`
++//! target 0 is the currently-scheduled client. The four tests here are, in
++//! order:
+ //!
+ //! * **(a)** sixteen nested processes, each calling `appl_init` — none gets
+ //!   `-1` (the measured defect: depth 9 → `-1`,
+@@ -23,7 +28,8 @@
+ //! * **(c)** a slot's release resets its descriptor — a program that dies
+ //!   with `AP_OPEN` set and a message unread leaves nothing for the slot's
+ //!   next tenant (the `handle_pexec` side finding of the A62 report, §8);
+-//! * **(d)** the reported values, pinned to their pre-rework numbers.
++//! * **(d)** the reported values, contract (b): 0 for the chain, 1 as the
++//!   Screen Manager's stamp, target 0 = the caller.
+ //!
+ //! The process table, `RUN`, the AES descriptor table and the window table are
+ //! process-wide statics; the tests serialise on one lock and release every
+@@ -35,6 +41,7 @@
+ 
+ #![allow(clippy::too_many_arguments)]
+ 
++use std::collections::VecDeque;
+ use std::sync::atomic::{AtomicU64, Ordering};
+ use std::sync::{Mutex, MutexGuard, Once};
+ 
+@@ -119,9 +126,29 @@ impl RasterBackend for SinkBackend {
+ 
+ // ── the host ──────────────────────────────────────────────────────────────
+ 
++/// One synthetic mouse packet, as the VDI's `mouse_int` receives it
++/// (`aes_window_drag.rs`'s shape).
++#[derive(Copy, Clone, Debug)]
++struct Packet {
++    dx: i16,
++    dy: i16,
++    /// VDI convention: bit 0 = left.
++    buttons: u8,
++}
++
++/// A host with no pixels and a scripted pointer: `pump_input` feeds the next
++/// packet, if any, so a trap that waits for the button to come up
++/// (`intercept`'s `wait_release`) can be given the release it waits for.
+ struct SilentHost {
+     raster: SinkBackend,
+     clock: AtomicU64,
++    script: Mutex<VecDeque<Packet>>,
++}
++
++impl SilentHost {
++    fn push(&self, p: Packet) {
++        self.script.lock().unwrap().push_back(p);
++    }
+ }
+ 
+ impl Host for SilentHost {
+@@ -136,7 +163,13 @@ impl Host for SilentHost {
+         self.clock.load(Ordering::Relaxed)
+     }
+     fn pump_input(&self) {
+-        self.clock.fetch_add(1, Ordering::Relaxed);
++        let n = self.clock.fetch_add(1, Ordering::Relaxed);
++        let next = self.script.lock().unwrap().pop_front();
++        if let Some(p) = next {
++            tos_api::vdi::feed_relative(p.dx, p.dy, p.buttons, &self.raster);
++        } else {
++            assert!(n < 1_000_000, "a trap is spinning on an exhausted pointer script");
++        }
+     }
+ }
+ 
+@@ -144,18 +177,25 @@ unsafe impl Sync for SilentHost {}
+ unsafe impl Send for SilentHost {}
+ 
+ static HOST_ONCE: Once = Once::new();
++static HOST: Mutex<Option<&'static SilentHost>> = Mutex::new(None);
+ 
+ fn install_host() {
+     HOST_ONCE.call_once(|| {
+         let host: &'static SilentHost = Box::leak(Box::new(SilentHost {
+             raster: SinkBackend,
+             clock: AtomicU64::new(0),
++            script: Mutex::new(VecDeque::new()),
+         }));
+         let href: &'static &'static dyn Host = Box::leak(Box::new(host as &'static dyn Host));
+         tos_api::host::install_host(href);
++        *HOST.lock().unwrap() = Some(host);
+     });
+ }
+ 
++fn host() -> &'static SilentHost {
++    HOST.lock().unwrap().expect("host installed by lock()")
++}
++
+ /// One lock over every process-wide static the tests touch.
+ static LOCK: Mutex<()> = Mutex::new(());
+ 
+@@ -228,6 +268,9 @@ const WIND_SET: i16 = 105;
+ const NAME: i16 = 0x0001;
+ const CLOSER: i16 = 0x0002;
+ const MOVER: i16 = 0x0008;
++/// `HOTCLOSE` (`aesdefs.h:531`, PC-GEM): the closer fires `WM_CLOSED` on the
++/// press, without `gr_watchbox`.
++const HOTCLOSE: i16 = 0x1000;
+ 
+ /// `wind_get`/`wind_set` fields (`aesdefs.h`).
+ const WF_NEWDESK: i16 = 14;
+@@ -239,6 +282,20 @@ const WM_REDRAW: i16 = 20;
+ /// The desktop window handle.
+ const DESKWH: i16 = 0;
+ 
++/// The pid every member of the application chain reports (`rlr->p_pid` of
++/// `D.g_int[0]`, `aes/geminit.c:851-877`) — `ap_id`, `appl_find`, `WF_OWNER`,
++/// and `msg[1]` of a message the application itself sends (`WM_REDRAW`).
++const AP_CHAIN: i16 = 0;
++/// The Screen Manager's pid (`iprocess("SCRENMGR", ctlmgr)`,
++/// `aes/geminit.c:888`) — `msg[1]` of every control-manager message, and the
++/// one `appl_write` target that is not a NewTOS process.
++const SCRENMGR: i16 = 1;
++
++/// Control-manager message ids (`aesdefs.h`) the stamp is checked on.
++const WM_TOPPED: i16 = 21;
++const WM_CLOSED: i16 = 22;
++const WM_UNTOPPED: i16 = 30;
++
+ /// Somewhere on the 640×480 screen.
+ const WR: (i16, i16, i16, i16) = (40, 40, 300, 200);
+ 
+@@ -358,9 +415,10 @@ fn drain(pb: &mut Aespb, pid: i16) -> usize {
+ // ── a process slot the host can "run" ─────────────────────────────────────
+ 
+ /// A claimed GEMDOS process slot with a basepage page of its own. Its
+-/// **reported** AES id is `slot + 1` (unchanged in stage 1). Released on drop
+-/// through the kernel's own slot release (`pterm::release_slot`), so a failing
+-/// test leaves neither the slot nor its descriptor behind for the next test.
++/// **reported** AES id is 0 whatever the slot — it is a member of the
++/// application chain (contract (b)). Released on drop through the kernel's
++/// own slot release (`pterm::release_slot`), so a failing test leaves neither
++/// the slot nor its descriptor behind for the next test.
+ struct Proc {
+     slot: usize,
+     page: *mut [u8; 4096],
+@@ -376,9 +434,10 @@ impl Proc {
+         Proc { slot, page }
+     }
+ 
+-    /// The value `appl_init` reports for this slot — today's rule.
++    /// The value `appl_init` reports for this slot: 0, the application
++    /// chain's pid (`rlr->p_pid`, `aes/gemaplib.c:54-63`), at every depth.
+     fn reported(&self) -> i16 {
+-        self.slot as i16 + 1
++        AP_CHAIN
+     }
+ 
+     fn bp(&self) -> *mut BasePage {
+@@ -448,14 +507,14 @@ fn launcher_cleanup(slot: usize) {
+ /// EmuTOS's `ap_init` cannot fail (`aes/gemaplib.c:54-63`); with one
+ /// descriptor per slot by construction, neither can NewTOS's.
+ ///
+-/// Every depth's reported id stays what it was (slot + 1) — stage 1 changes
+-/// no value, only the capacity.
++/// Every depth reports the chain's pid, 0 (contract (b)): the sixteen nested
++/// processes are sixteen identities and one reported value.
+ #[test]
+ fn every_nested_process_gets_a_descriptor_and_appl_init_never_returns_minus_one() {
+     let _g = lock();
+     let mut pb = Aespb::new();
+     desktop_context();
+-    assert_eq!(appl_init(&mut pb), 1, "the desktop's id is unchanged");
++    assert_eq!(appl_init(&mut pb), AP_CHAIN, "the desktop is a chain member: ap_id 0");
+ 
+     let chain: Vec<Proc> = (0..MAX_PROCESSES).map(|_| Proc::new()).collect();
+     for (depth, p) in chain.iter().enumerate() {
+@@ -468,7 +527,7 @@ fn every_nested_process_gets_a_descriptor_and_appl_init_never_returns_minus_one(
+              'table full' to report",
+             depth + 1
+         );
+-        assert_eq!(id, p.reported(), "depth {}: the reported id is slot + 1", depth + 1);
++        assert_eq!(id, p.reported(), "depth {}: the reported id is the chain's, 0", depth + 1);
+         // …and the process is not deaf: it can address itself.
+         let probe = [0x4711, id, 0, depth as i16, 0, 0, 0, 0];
+         assert_eq!(appl_write(&mut pb, id, &probe), 1, "depth {}: appl_write(self)", depth + 1);
+@@ -483,7 +542,7 @@ fn every_nested_process_gets_a_descriptor_and_appl_init_never_returns_minus_one(
+         pterm(p);
+     }
+     desktop_context();
+-    assert_eq!(appl_init(&mut pb), 1, "the desktop is still there after the chain");
++    assert_eq!(appl_init(&mut pb), AP_CHAIN, "the desktop is still there after the chain");
+     assert_eq!(appl_exit(&mut pb), 1);
+ }
+ 
+@@ -507,8 +566,8 @@ fn nine_programs_in_one_slot_rename_one_descriptor() {
+         name[3] = b'0' + n;
+         launcher_register(p.slot, path.as_bytes());
+         p.run();
+-        assert_eq!(appl_init(&mut pb), 1, "SEQ{n}: appl_init reports slot 0 + 1");
+-        assert_eq!(appl_find(&mut pb, &name), 1, "SEQ{n}: appl_find(self)");
++        assert_eq!(appl_init(&mut pb), AP_CHAIN, "SEQ{n}: appl_init reports the chain's 0");
++        assert_eq!(appl_find(&mut pb, &name), AP_CHAIN, "SEQ{n}: appl_find(self) = 0");
+         if let Some(prev) = previous {
+             assert_eq!(
+                 appl_find(&mut pb, &prev),
+@@ -592,33 +651,103 @@ fn releasing_a_slot_resets_its_descriptor_and_queue() {
+     desktop_context();
+ }
+ 
+-// ── (d) the reported values, unchanged ────────────────────────────────────
++// ── (d) the reported values, contract (b) ─────────────────────────────────
++
++/// `wind_set(handle, WF_TOP)` — the owner's answer to `WM_TOPPED`.
++fn wind_set_top(pb: &mut Aespb, h: i16) {
++    pb.intin.fill(0);
++    pb.intin[0] = h;
++    pb.intin[1] = 10; // WF_TOP
++    pb.call(WIND_SET, 6, 1, 1);
++}
++
++/// `wind_create(kind, full)` with an explicit `kind` → handle.
++fn wind_create_kind(pb: &mut Aespb, kind: i16) -> i16 {
++    pb.intin.fill(0);
++    pb.intin[0] = kind;
++    pb.intin[1] = 0;
++    pb.intin[2] = 0;
++    pb.intin[3] = SCREEN_W as i16;
++    pb.intin[4] = SCREEN_H as i16;
++    let h = pb.call(WIND_CREATE, 5, 1, 0);
++    assert!(h > 0, "wind_create must give a handle, got {h}");
++    h
++}
++
++/// One pointer packet, fed the way the mouse interrupt feeds it: the VDI
++/// position moves, `user_but` updates the AES's button state.
++fn feed(dx: i16, dy: i16, buttons: u8) {
++    tos_api::vdi::feed_relative(dx, dy, buttons, &host().raster);
++}
++
++/// Put the pointer at `(x, y)`, buttons up. (The first packet initialises
++/// the VDI pointer; the position is read after it.)
++fn pointer_at(x: i16, y: i16) {
++    feed(0, 0, 0);
++    let (cx, cy) = tos_api::vdi::mouse_position();
++    feed(x - cx, y - cy, 0);
++    assert_eq!(tos_api::vdi::mouse_position(), (x, y), "pointer_at");
++}
++
++/// Press the left button where the pointer is and script its release for
++/// the trap that waits for it, then run the window-frame interception
++/// (`evnt_multi`'s Control-Manager hook, `window::intercept`).
++fn press_and_intercept() {
++    feed(0, 0, 1);
++    for _ in 0..4 {
++        host().push(Packet { dx: 0, dy: 0, buttons: 0 });
++    }
++    tos_api::aes::window::intercept();
++    // Anything the trap did not consume: the button is up either way.
++    host().script.lock().unwrap().clear();
++    feed(0, 0, 0);
++}
+ 
+-/// Stage 1's regression condition: `ap_id`, `appl_find`, `WF_OWNER` and
+-/// `msg[1]` report exactly the numbers they reported before the rework —
+-/// GEMDOS slot + 1 for a process, 1 for the kernel-context desktop, 0 for the
+-/// unowned desktop window. These are **not** EmuTOS's numbers (that is stage
+-/// 2, A56); they are pinned here so the identity rework cannot move them.
++/// Stage 2's contract, spec § "AES process identity and pid" (b): the
++/// numbers a program reads back are EmuTOS's, computed from the identity —
++///
++/// * `ap_id`, `appl_find`, `WF_OWNER`: **0** for the kernel-context desktop,
++///   the program in slot 0 and its `Pexec` child in slot 1 alike (one `rlr`
++///   for the whole chain, `aes/geminit.c:850-877`; `w_owner->p_pid`,
++///   `gemwmlib.c:1580`);
++/// * `msg[1]` of the `WM_REDRAW` a `wind_open` posts: **0** — sent from
++///   inside the application's own trap (`w_redraw`, `gemwmlib.c:904`, via
++///   `draw_change` from `wm_open`, `:1426`);
++/// * `msg[1]` of the control-manager messages — here `WM_TOPPED`,
++///   `WM_UNTOPPED` and the `HOTCLOSE` `WM_CLOSED`, the three posters a
++///   sink backend can be made to fire — **1**, the Screen Manager's stamp
++///   (`ct_msgup`/`perform_untop`, `gemctrl.c:151,178,210-213`; `WM_MOVED`
++///   and `MN_SELECTED` are the same posters and are covered with a scripted
++///   pointer in `aes_window_drag.rs` / `aes_menu_click_ownership.rs`);
++/// * `appl_write(0)`/`appl_read(0)`: the **caller** — the currently-scheduled
++///   client (`fpdnm(NULL, 0)` = `D.g_int[0]`, `gemsuper.c:102-105`);
++///   `appl_write(1)` is accepted (queued for the Screen Manager,
++///   `ctlmgr`'s `ev_multi(MU_MESAG)`, `gemctrl.c:448-481`) and reaches no
++///   application; `appl_write(2)` finds no descriptor (no accessories).
+ #[test]
+-fn reported_values_are_unchanged_by_the_identity_rework() {
++fn reported_values_follow_emutos() {
+     let _g = lock();
+     let mut pb = Aespb::new();
+ 
+-    // The desktop: id 1, and its window's owner reports 1.
++    // The desktop: ap_id 0, and its window's owner reports 0.
+     desktop_context();
+-    assert_eq!(appl_init(&mut pb), 1, "desktop ap_id");
++    assert_eq!(appl_init(&mut pb), AP_CHAIN, "desktop ap_id (gemsuper.c:94, rlr->p_pid)");
+     assert_eq!(wf_owner(&mut pb, DESKWH), 0, "the desktop window has no owner yet");
+     let dw = wind_create(&mut pb);
+-    assert_eq!(wf_owner(&mut pb, dw), 1, "WF_OWNER of a desktop-created window");
++    assert_eq!(wf_owner(&mut pb, dw), AP_CHAIN, "WF_OWNER of a desktop-created window");
+     wind_open(&mut pb, dw, WR);
+-    let (got, body) = appl_read(&mut pb, 1);
+-    assert_eq!((got, body[0], body[1], body[3]), (1, WM_REDRAW, 1, dw), "desktop WM_REDRAW msg[1]");
+-    drain(&mut pb, 1);
++    let (got, body) = appl_read(&mut pb, AP_CHAIN);
++    assert_eq!(
++        (got, body[0], body[1], body[3]),
++        (1, WM_REDRAW, AP_CHAIN, dw),
++        "desktop WM_REDRAW: msg[1] is the application's own pid (w_redraw inside wind_open)"
++    );
++    drain(&mut pb, AP_CHAIN);
+     wind_set_newdesk(&mut pb);
+-    assert_eq!(wf_owner(&mut pb, DESKWH), 1, "WF_NEWDESK re-owns the desktop window to the caller");
++    assert_eq!(wf_owner(&mut pb, DESKWH), AP_CHAIN, "WF_NEWDESK re-owns the desktop window: still 0");
+     wind_close(&mut pb, dw);
+     wind_delete(&mut pb, dw);
+-    drain(&mut pb, 1);
++    drain(&mut pb, AP_CHAIN);
+ 
+     // A launched program in slot 0 and its Pexec child in slot 1.
+     let parent = Proc::new();
+@@ -627,54 +756,125 @@ fn reported_values_are_unchanged_by_the_identity_rework() {
+     launcher_register(parent.slot, b"C:\\TERADESK\\DESKTOP.NAP");
+ 
+     parent.run();
+-    assert_eq!(appl_init(&mut pb), 1, "slot 0 reports 1 — the same number as the desktop");
+-    assert_eq!(appl_find(&mut pb, b"DESKTOP "), 1, "appl_find by the launch name");
++    assert_eq!(appl_init(&mut pb), AP_CHAIN, "slot 0 reports 0 — the chain's pid");
++    assert_eq!(appl_find(&mut pb, b"DESKTOP "), AP_CHAIN, "appl_find by the launch name → 0");
++    assert_eq!(appl_find(&mut pb, b"NOTHERE "), -1, "appl_find of an unknown name → -1");
++    assert_eq!(
++        appl_find(&mut pb, b"SCRENMGR"),
++        SCRENMGR,
++        "appl_find(\"SCRENMGR\") → 1 (iprocess(\"SCRENMGR\", ctlmgr), geminit.c:888)"
++    );
+     let pw = wind_create(&mut pb);
+-    assert_eq!(wf_owner(&mut pb, pw), 1, "WF_OWNER, slot 0");
++    assert_eq!(wf_owner(&mut pb, pw), AP_CHAIN, "WF_OWNER, slot 0");
+     wind_open(&mut pb, pw, WR);
+-    let (got, body) = appl_read(&mut pb, 1);
+-    assert_eq!((got, body[0], body[1], body[3]), (1, WM_REDRAW, 1, pw), "slot 0 WM_REDRAW msg[1]");
+-    // A message the parent sends itself by its own number reaches the parent.
+-    let own = [0x4711, 1, 0, 7, 0, 0, 0, 0];
+-    assert_eq!(appl_write(&mut pb, 1, &own), 1);
+-    assert_eq!(appl_read(&mut pb, 1), (1, own), "appl_write(1) from slot 0 reaches slot 0");
++    let (got, body) = appl_read(&mut pb, AP_CHAIN);
++    assert_eq!((got, body[0], body[1], body[3]), (1, WM_REDRAW, AP_CHAIN, pw), "slot 0 WM_REDRAW msg[1]");
++    // A message the parent sends to 0 reaches the parent — the caller.
++    let own = [0x4711, AP_CHAIN, 0, 7, 0, 0, 0, 0];
++    assert_eq!(appl_write(&mut pb, AP_CHAIN, &own), 1);
++    assert_eq!(appl_read(&mut pb, AP_CHAIN), (1, own), "appl_write(0) from slot 0 reaches slot 0");
+ 
+     child.run();
+-    assert_eq!(appl_init(&mut pb), 2, "slot 1 reports 2");
+-    assert_eq!(appl_find(&mut pb, b"DESKTOP "), 1, "appl_find still names the parent's slot");
++    assert_eq!(appl_init(&mut pb), AP_CHAIN, "slot 1 (the Pexec child) reports 0 too");
++    assert_eq!(appl_find(&mut pb, b"DESKTOP "), AP_CHAIN, "the parent's name still answers 0");
+     let cw = wind_create(&mut pb);
+-    assert_eq!(wf_owner(&mut pb, cw), 2, "WF_OWNER, slot 1");
++    assert_eq!(wf_owner(&mut pb, cw), AP_CHAIN, "WF_OWNER, slot 1");
+     wind_open(&mut pb, cw, WR);
+-    let (got, body) = appl_read(&mut pb, 2);
+-    assert_eq!((got, body[0], body[1], body[3]), (1, WM_REDRAW, 2, cw), "slot 1 WM_REDRAW msg[1]");
+-    // The parent's window still reports the parent, and a message to 1 from
+-    // the child lands in the parent's queue, not the child's.
+-    assert_eq!(wf_owner(&mut pb, pw), 1);
+-    let to_parent = [0x4712, 2, 0, 0, 0, 0, 0, 0];
+-    assert_eq!(appl_write(&mut pb, 1, &to_parent), 1);
+-    assert_eq!(appl_read(&mut pb, 2).0, 0, "nothing for the child");
+-    assert_eq!(appl_write(&mut pb, 17, &to_parent), 0, "no process reports 17");
+-    assert_eq!(appl_write(&mut pb, 0, &to_parent), 0, "no process reports 0 in stage 1");
++    let (got, body) = appl_read(&mut pb, AP_CHAIN);
++    assert_eq!((got, body[0], body[1], body[3]), (1, WM_REDRAW, AP_CHAIN, cw), "slot 1 WM_REDRAW msg[1]");
++    // The parent's window reports 0 as well, and a message to 0 from the
++    // child lands in the child's own queue — the caller — not the parent's.
++    assert_eq!(wf_owner(&mut pb, pw), AP_CHAIN);
++    let to_self = [0x4712, AP_CHAIN, 0, 0, 0, 0, 0, 0];
++    assert_eq!(appl_write(&mut pb, AP_CHAIN, &to_self), 1);
++    assert_eq!(appl_read(&mut pb, AP_CHAIN), (1, to_self), "appl_write(0) from the child reaches the child");
++    // Target 1 is the Screen Manager: the write succeeds (its queue exists in
++    // EmuTOS, gemsuper.c:102-105 + geminit.c:888) but no application reads it.
++    let to_ctl = [0x4713, AP_CHAIN, 0, 0, 0, 0, 0, 0];
++    assert_eq!(appl_write(&mut pb, SCRENMGR, &to_ctl), 1, "appl_write(1): accepted by the Screen Manager");
++    assert_eq!(appl_read(&mut pb, AP_CHAIN).0, 0, "…and not delivered to the caller");
++    assert_eq!(appl_read(&mut pb, SCRENMGR).0, 0, "appl_read(1): nothing an application can read");
++    // Targets beyond the live table: no descriptor (totpds = 2 without
++    // accessories, geminit.c:819).
++    assert_eq!(appl_write(&mut pb, 2, &to_ctl), 0, "no accessory reports 2");
++    assert_eq!(appl_write(&mut pb, 17, &to_ctl), 0, "no process reports 17");
++
++    // The control-manager stamps, on the child's window. A press on the
++    // frame of a non-top window: `WM_UNTOPPED` to the old top's owner,
++    // `WM_TOPPED` to the clicked window's owner (`hctl_window`,
++    // gemctrl.c:170-178) — both stamped 1 by `ap_sendmsg` under `ctl_pd`.
++    let cw2 = wind_create(&mut pb);
++    wind_open(&mut pb, cw2, (360, 240, 200, 150)); // now on top, cw below
++    drain(&mut pb, AP_CHAIN);
++    pointer_at(WR.0 + 60, WR.1 + 6); // cw's title bar, not covered by cw2
++    press_and_intercept();
++    let (got, untopped) = appl_read(&mut pb, AP_CHAIN);
++    assert_eq!(
++        (got, untopped[0], untopped[1], untopped[3]),
++        (1, WM_UNTOPPED, SCRENMGR, cw2),
++        "WM_UNTOPPED to the old top: msg[1] = 1 (perform_untop, gemctrl.c:151)"
++    );
++    let (got, topped) = appl_read(&mut pb, AP_CHAIN);
++    assert_eq!(
++        (got, topped[0], topped[1], topped[3]),
++        (1, WM_TOPPED, SCRENMGR, cw),
++        "WM_TOPPED to the clicked window: msg[1] = 1 (ct_msgup, gemctrl.c:178)"
++    );
++    // The owner answers with WF_TOP; the WM_REDRAW that may follow is its own.
++    wind_set_top(&mut pb, cw);
++    drain(&mut pb, AP_CHAIN);
++    // HOTCLOSE: a press on the closer posts WM_CLOSED at once
++    // (gemctrl.c:208-214), stamped 1.
++    let hot = wind_create_kind(&mut pb, NAME | CLOSER | MOVER | HOTCLOSE);
++    wind_open(&mut pb, hot, (100, 300, 200, 100));
++    drain(&mut pb, AP_CHAIN);
++    pointer_at(100 + 4, 300 + 4); // the closer, top-left of the title row
++    press_and_intercept();
++    let (got, closed) = appl_read(&mut pb, AP_CHAIN);
++    assert_eq!(
++        (got, closed[0], closed[1], closed[3]),
++        (1, WM_CLOSED, SCRENMGR, hot),
++        "HOTCLOSE WM_CLOSED: msg[1] = 1 (ct_msgup's HOTCLOSE exit, gemctrl.c:86-96,210-213)"
++    );
++    wind_close(&mut pb, hot);
++    wind_delete(&mut pb, hot);
++    wind_close(&mut pb, cw2);
++    wind_delete(&mut pb, cw2);
+     wind_close(&mut pb, cw);
+     wind_delete(&mut pb, cw);
++    drain(&mut pb, AP_CHAIN);
+     assert_eq!(appl_exit(&mut pb), 1);
+     pterm(&child);
+ 
+     parent.run();
+-    assert_eq!(appl_read(&mut pb, 1), (1, to_parent), "the parent reads what the child sent it");
++    // What the parent finds queued: the WM_REDRAWs the child's window closes
++    // fanned out to `pw` (posted from inside the child's `wind_close` trap,
++    // hence stamped 0 too) — never the message the child sent to 0.
++    loop {
++        let (got, body) = appl_read(&mut pb, AP_CHAIN);
++        if got == 0 {
++            break;
++        }
++        assert_ne!(body[0], 0x4712, "the child's appl_write(0) reached the parent's queue");
++        assert_eq!(
++            (body[0], body[1], body[3]),
++            (WM_REDRAW, AP_CHAIN, pw),
++            "the parent's queue holds only WM_REDRAWs for its own window, stamped 0"
++        );
++    }
+     wind_close(&mut pb, pw);
+     wind_delete(&mut pb, pw);
+-    drain(&mut pb, 1);
++    drain(&mut pb, AP_CHAIN);
+     assert_eq!(appl_exit(&mut pb), 1);
+     pterm(&parent);
+     drop(child);
+     drop(parent);
+ 
+-    // Back in the desktop: still 1, still addressable (A29's effect).
++    // Back in the desktop: still 0, still addressable as the caller (A29).
+     desktop_context();
+-    assert_eq!(appl_init(&mut pb), 1, "desktop ap_id after the programs");
+-    let probe = [0x4713, 1, 0, 0, 0, 0, 0, 0];
+-    assert_eq!(appl_write(&mut pb, 1, &probe), 1);
+-    assert_eq!(appl_read(&mut pb, 1), (1, probe));
++    assert_eq!(appl_init(&mut pb), AP_CHAIN, "desktop ap_id after the programs");
++    let probe = [0x4714, AP_CHAIN, 0, 0, 0, 0, 0, 0];
++    assert_eq!(appl_write(&mut pb, AP_CHAIN, &probe), 1);
++    assert_eq!(appl_read(&mut pb, AP_CHAIN), (1, probe));
+     assert_eq!(appl_exit(&mut pb), 1);
+ }
+diff --git a/tos-api/tests/aes_reference/harness.rs b/tos-api/tests/aes_reference/harness.rs
+index ca6b3c1..5329015 100644
+--- a/tos-api/tests/aes_reference/harness.rs
++++ b/tos-api/tests/aes_reference/harness.rs
+@@ -958,13 +958,11 @@ fn push_subst(out: &mut Vec<Diff>, field: &'static str, index: usize, got: i64,
+ 
+ /// Everything one comparison needs that is not in the record: which table and
+ /// case it belongs to (a [`Delta`] is keyed on both, because a case id is only
+-/// a line number and two tables reuse them), the application id this machine's
+-/// `appl_init` handed out ([`Expected::ApId`]), and which [`DELTAS`] entries
+-/// the comparison actually consulted.
++/// a line number and two tables reuse them), and which [`DELTAS`] entries the
++/// comparison actually consulted.
+ struct Oracle {
+     table: &'static str,
+     case: u16,
+-    ap_id: i16,
+     /// One flag per [`DELTAS`] entry, set when [`Oracle::want`] used it. An
+     /// entry naming a field or an index no comparison visits would otherwise
+     /// be a silent skip; [`Oracle::finish`] refuses that.
+@@ -974,11 +972,10 @@ struct Oracle {
+ }
+ 
+ impl Oracle {
+-    fn new(table: &'static str, case: u16, ap_id: i16) -> Oracle {
++    fn new(table: &'static str, case: u16) -> Oracle {
+         Oracle {
+             table,
+             case,
+-            ap_id,
+             used: [false; DELTAS.len()],
+             used_sanctioned: [false; SANCTIONED.len()],
+         }
+@@ -1011,7 +1008,7 @@ impl Oracle {
+                 self.table, self.case, field, index, d.recorded, recorded
+             );
+             self.used[k] = true;
+-            return (d.expected.value(self.ap_id), true);
++            return (d.expected.value(), true);
+         }
+         for (k, s) in SANCTIONED.iter().enumerate() {
+             if s.table != self.table || s.case != self.case || s.field != field || s.index != index
+@@ -1092,19 +1089,18 @@ fn cmp_words(
+ /// a property of the machine the dump was taken on and not of the AES. Every
+ /// other word — and the `ap_private` LONG, see [`cmp_global`] — is compared.
+ ///
+-/// * **`global[2]` — `ap_id`.** EmuTOS: `pglobal->ap_id = rlr->p_pid`
+-///   (`aes/gemsuper.c:94`). On the TT that is **0**, because EmuTOS's AES owns
+-///   a fixed pool of `AESPD`s: the initial process takes `curpid = 0`
+-///   (`aes/geminit.c:875-876`), the screen manager takes 1
+-///   (`:882`, `getpd`/`gempd.c:64-66`), and a program the desktop launches
+-///   runs *inside the desktop's own* `AESPD`, so it reports the desktop's
+-///   pid 0. NewTOS gives every launched program a GEMDOS process of its own
+-///   and derives the id from its process-table slot
+-///   (`tos-api/src/aes/appl.rs`, `current_pid`), which is **1** for the first
+-///   one. Both are "the id of this application"; the number is a property of
+-///   the process model, and no conforming program may depend on its value —
+-///   it passes it to `appl_write`/`menu_register` and compares it with a
+-///   message's `msg[1]`, all of which stay consistent.
++/// * **`global[2]` — `ap_id` — is compared, since 2026-09-20 (A56).** It
++///   used to be excluded here with the argument that the number was "a
++///   property of the process model": EmuTOS reports 0 (`pglobal->ap_id =
++///   rlr->p_pid`, `aes/gemsuper.c:94`; the whole application chain runs on
++///   `D.g_int[0]`, `aes/geminit.c:850-877`) and NewTOS reported the GEMDOS
++///   slot + 1. That argument licensed a divergence instead of naming it:
++///   the value **is** contract — `docs/api/aes/application.md` § "AES
++///   process identity and pid", (b) — and NewTOS now reports 0 for every
++///   member of the chain, the kernel-context desktop this harness runs as
++///   included. The record's 0 is therefore compared as it stands, and the
++///   `ap_id == appl_init ret` property [`cmp_global`] also checks is kept
++///   (both are `rlr->p_pid`, `gemaplib.c:54-63`).
+ /// * **`global[11]`, `global[12]` — `ap_3resv`.** EmuTOS:
+ ///   `pglobal->ap_3resv = (LONG)&D` (`aes/gemsuper.c:98`), the address of the
+ ///   AES's own global data area (`aes/gemrslib.h:25`). An address: 0x0000BE04
+@@ -1115,22 +1111,20 @@ fn cmp_words(
+ ///   against the *same* table, `global[11]` alone moved from 0x80B0 to
+ ///   0x80D8.
+ ///
+-/// Neither is left unchecked. [`cmp_global`] compares the machine-independent
+-/// part of both instead of the number: `ap_id` must equal what `appl_init`
+-/// returned (EmuTOS `ret = ap_init()` returns `rlr->p_pid`,
+-/// `aes/gemaplib.c:54-63`, the same `p_pid` that goes into `ap_id` at
+-/// `gemsuper.c:94` — so "the two agree" holds on any machine), and `ap_3resv`
+-/// must be non-zero exactly when the reference's is, i.e. `appl_init` must
+-/// have put *an* address there.
++/// `ap_3resv` is not left unchecked. [`cmp_global`] compares the
++/// machine-independent part instead of the number: it must be non-zero
++/// exactly when the reference's is, i.e. `appl_init` must have put *an*
++/// address there.
+ ///
+-/// **These three are the only ones, and the other three `global` words the two
++/// **These two are the only ones, and the other `global` words the two
+ /// reference runs disagree about are compared as they stand.** `tosdiff`
+ /// reports six differing words in all 78 round-2 records
+ /// (`tosdump/reference/*-AES-r2wind.LOG`): `ap_id` (2), the `ap_private` LONG
+-/// (3–4), `ap_planes` (10) and the `ap_3resv` LONG (11–12). Two of the four
+-/// fields are excluded above; the remaining two are compared, and pass, for
+-/// reasons that are worth stating because they are conditions on the harness
+-/// rather than luck:
++/// (3–4), `ap_planes` (10) and the `ap_3resv` LONG (11–12). One of the four
++/// fields is excluded above; `ap_id` is compared and passes since A56 (see
++/// above); the remaining two are compared, and pass, for reasons that are
++/// worth stating because they are conditions on the harness rather than
++/// luck:
+ ///
+ /// * **`ap_planes`** — TT 4, Pi 16. It is the workstation's plane count, and
+ ///   this harness supplies a workstation shaped like the TT's (see the module
+@@ -1148,7 +1142,7 @@ fn cmp_words(
+ ///   is compared. The chain from `#Q` line to `ap_private` is pinned
+ ///   separately by `tos-api/src/aes/init.rs`'s
+ ///   `ap_private_is_the_desktop_root_obspec_with_the_inf_background_byte`.
+-pub const GLOBAL_EXCLUDED: [usize; 3] = [2, 11, 12];
++pub const GLOBAL_EXCLUDED: [usize; 2] = [11, 12];
+ 
+ /// Compare the caller's `AESGLOBAL` against the record.
+ ///
+@@ -1171,8 +1165,11 @@ pub const GLOBAL_EXCLUDED: [usize; 3] = [2, 11, 12];
+ /// does not name them (`gemsuper.c:92-98`), both arrays start zeroed, so a
+ /// difference there means somebody wrote where EmuTOS does not.
+ fn cmp_global(out: &mut Vec<Diff>, got: &[i16; GLOBAL_N], rec: &[u8], ap_id: i16) {
+-    // The excluded fields, checked by the property that does not depend on
+-    // the machine (see [`GLOBAL_EXCLUDED`]).
++    // `ap_id` is compared against the record in the loop below (A56); the
++    // "agrees with appl_init's return" property is kept as well — both are
++    // `rlr->p_pid` (`gemaplib.c:54-63`, `gemsuper.c:94`). The excluded
++    // field is checked by the property that does not depend on the machine
++    // (see [`GLOBAL_EXCLUDED`]).
+     push_subst(out, "ap_id == appl_init ret", 0, got[2] as i64, ap_id as i64, 4);
+     let ref_3resv = ((be16(rec, OFF_GLOBAL + 11 * 2) as u16 as u32) << 16)
+         | be16(rec, OFF_GLOBAL + 12 * 2) as u16 as u32;
+@@ -1207,27 +1204,26 @@ fn cmp_global(out: &mut Vec<Diff>, got: &[i16; GLOBAL_N], rec: &[u8], ap_id: i16
+ 
+ /// What a [`Delta`] says the pinned EmuTOS source mandates in place of the
+ /// recorded value.
++///
++/// Until 2026-09-20 (A56) there was a second variant, `ApId` — "this
++/// application's own id, whatever `appl_init` answered on this machine" —
++/// used for `WF_OWNER`'s owner pid, on the argument that the number was a
++/// property of the process model. It is not: `w_owner->p_pid` is 0 for every
++/// application window (`aes/gemwmlib.c:1580`; `w_owner = rlr` at
++/// `wind_create`, `:1377`, and the whole chain is pid 0), and NewTOS now
++/// reports exactly that — so the entries pin the literal, as every other
++/// delta does (`docs/api/aes/application.md` § "AES process identity and
++/// pid", contract (b)).
+ #[derive(Copy, Clone, Debug)]
+ pub enum Expected {
+     /// A literal, when the pinned source computes one.
+     Value(i64),
+-    /// This application's own id, whatever `appl_init` answered on the machine
+-    /// the test runs on.
+-    ///
+-    /// The **number** is a property of the process model and not of the AES —
+-    /// the reference TT reported 0, the Pi 4 run 2 and this host binary 1, and
+-    /// [`GLOBAL_EXCLUDED`] gives the reason — so a literal here would pin the
+-    /// wrong thing. What *is* contract is that the AES answers **this**
+-    /// application's id, which is the same machine-independent claim
+-    /// `cmp_global` makes about `ap_id`, applied to a window's owner.
+-    ApId,
+ }
+ 
+ impl Expected {
+-    fn value(self, ap_id: i16) -> i64 {
++    fn value(self) -> i64 {
+         match self {
+             Expected::Value(v) => v,
+-            Expected::ApId => ap_id as i64,
+         }
+     }
+ }
+@@ -1301,10 +1297,12 @@ pub struct Delta {
+ /// The expectations are read off the pinned source above, for the two states
+ /// the cases establish:
+ ///
+-/// * the **owner** is the process that ran `wind_create` (`w_setup` sets
+-///   `w_owner = rlr`, `aes/gemwmlib.c:210`), and `wm_open` does not change it,
+-///   so both cases expect this application's own id — [`Expected::ApId`],
+-///   because the number itself is not contract;
++/// * the **owner** is the process that ran `wind_create` (`wm_create` calls
++///   `w_setup(rlr, …)`, `aes/gemwmlib.c:1377`, which stores `w_owner = ppd`,
++///   `:212`), and `wm_open` does not change it; `wm_get` answers `w_owner->p_pid` (`:1580`), and `rlr` is the one
++///   application-chain descriptor, pid **0** (`aes/geminit.c:850-877`), so
++///   both cases expect the literal 0 (since A56; the number *is* contract,
++///   `docs/api/aes/application.md` § "AES process identity and pid" (b));
+ /// * `VF_ISOPEN` is 0 for 244 and 1 for 247;
+ /// * `gl_wtop` is the **raw** variable, `NIL` (−1) while nothing is open
+ ///   (`wm_init`, `:1297`; `draw_change`, `:1093`) — not `w_top()`'s `DESKWH`
+@@ -1340,10 +1338,13 @@ pub const DELTAS: &[Delta] = &[
+         field: "int_out",
+         index: 1,
+         recorded: -1,
+-        expected: Expected::ApId,
+-        why: "poutwds[0] = pwin->w_owner->p_pid, the process that CREATED the \
+-              window (w_setup, aes/gemwmlib.c:210); EmuTOS 1.4 left xif's \
+-              uninitialised stack here",
++        expected: Expected::Value(0),
++        why: "poutwds[0] = pwin->w_owner->p_pid (aes/gemwmlib.c:1580), the \
++              process that CREATED the window (w_setup(rlr, ..), :1377, :212) \
++              -- the one \
++              application-chain descriptor, pid 0 (aes/geminit.c:850-877; \
++              docs/api/aes/application.md, AES process identity and pid, (b)); \
++              EmuTOS 1.4 left xif's uninitialised stack here",
+     },
+     Delta {
+         table: "tosdump/cases/aes-r2-wind.tsv",
+@@ -1395,9 +1396,10 @@ pub const DELTAS: &[Delta] = &[
+         field: "int_out",
+         index: 1,
+         recorded: -1,
+-        expected: Expected::ApId,
+-        why: "poutwds[0] = pwin->w_owner->p_pid; wm_open does not change the \
+-              owner w_setup established (aes/gemwmlib.c:210)",
++        expected: Expected::Value(0),
++        why: "poutwds[0] = pwin->w_owner->p_pid (aes/gemwmlib.c:1580) = 0, the \
++              application chain's; wm_open does not change the owner w_setup \
++              established (:1377, :212)",
+     },
+     Delta {
+         table: "tosdump/cases/aes-r2-wind.tsv",
+@@ -1570,7 +1572,7 @@ pub fn check(table: &Table, case: &Case) {
+     pb.plant(case.plant);
+     pb.call(case.opcode, case.in_len, case.out_len, case.ain_len, case.aout_len);
+ 
+-    let mut or = Oracle::new(table.name, case.id, ctx.ap_id);
++    let mut or = Oracle::new(table.name, case.id);
+     let mut diffs = Vec::new();
+     cmp_words(&mut diffs, &mut or, "contrl", &pb.contrl[..], rec, OFF_CONTRL);
+     cmp_global(&mut diffs, pb.global(), rec, ctx.ap_id);
+diff --git a/tos-api/tests/aes_rsrc_per_process.rs b/tos-api/tests/aes_rsrc_per_process.rs
+index 93a5e48..deb45e5 100644
+--- a/tos-api/tests/aes_rsrc_per_process.rs
++++ b/tos-api/tests/aes_rsrc_per_process.rs
+@@ -30,8 +30,9 @@
+ //!
+ //! ## How this binary stands in for two processes
+ //!
+-//! The AES pid of a caller is its GEMDOS slot + 1 (`appl::current_pid`,
+-//! `aes::pid_of_slot`), read off the running basepage `RUN`. A test can make
++//! The AES identity of a caller is its GEMDOS slot (`appl::current_identity`),
++//! read off the running basepage `RUN`; the pid it reports is 0 for every
++//! slot (`aes::pid_of_slot`, A56). A test can make
+ //! a slot "run" the way the loader's own unit tests do
+ //! (`src/bdos/process/loader.rs`, `mod tests`): claim it with
+ //! `allocate_slot`, publish a page of its own as `basepage_kva`, and switch
+@@ -223,7 +224,10 @@ fn a_childs_load_and_free_leaves_the_parents_resource_untouched() {
+     let _g = lock();
+     let parent = Proc::new();
+     let child = Proc::new();
+-    assert_ne!(parent.pid(), child.pid());
++    // Two identities (slots); both report ap_id 0 (A56, contract (b)) — the
++    // resource list is keyed by the identity, not the reported value.
++    assert_ne!(parent.slot, child.slot);
++    assert_eq!((parent.pid(), child.pid()), (0, 0));
+ 
+     parent.run();
+     let parent_blob = Blob::load_for_current_pid();
+diff --git a/tos-api/tests/aes_window_drag.rs b/tos-api/tests/aes_window_drag.rs
+index 9ccd7e5..4812f8d 100644
+--- a/tos-api/tests/aes_window_drag.rs
++++ b/tos-api/tests/aes_window_drag.rs
+@@ -1036,6 +1036,12 @@ fn mover_drag_draws_only_the_rubber_band() {
+         (rig.wh, want.0, want.1, curr.2, curr.3),
+         "WM_MOVED must carry the constrained drag origin and the original size"
+     );
++    // The sender: `ap_sendmsg` stamps `msg[1] = rlr->p_pid` (`gemwmlib.c:855`),
++    // and `ct_msgup` runs inside `ctlmgr()` — the Screen Manager, pid 1
++    // (`aes/geminit.c:888`, `gemctrl.c:238`; `docs/api/aes/application.md`
++    // § "AES process identity and pid", contract (b), A56). Not the
++    // application's own 0.
++    assert_eq!(msg[1], 1, "WM_MOVED msg[1] is the Screen Manager's pid, 1; got {msg:?}");
+ }
+ 
+ // Two-window scene: `LOW` is opened first, so it sits below; the window under

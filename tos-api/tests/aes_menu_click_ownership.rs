@@ -636,6 +636,15 @@ fn assert_only_mn_selected(fired: i16, bret: i16, msg: &[i16; 8], case: &str) {
         (TITLE_FILE, ITEM_OPEN),
         "{case}: MN_SELECTED must carry (title, item) = (File, Open); msg = {msg:?}"
     );
+    // The sender: `ap_sendmsg` stamps `msg[1] = rlr->p_pid` (`gemwmlib.c:855`),
+    // and `ct_msgup(MN_SELECTED, gl_mnppd, …)` runs inside `ctlmgr()` — the
+    // Screen Manager, pid 1 (`aes/geminit.c:888`, `gemctrl.c:353-367`;
+    // `docs/api/aes/application.md` § "AES process identity and pid",
+    // contract (b), A56). Not the application's own 0.
+    assert_eq!(
+        msg[1], 1,
+        "{case}: MN_SELECTED msg[1] is the Screen Manager's pid, 1; msg = {msg:?}"
+    );
     assert_eq!(
         fired & MU_BUTTON,
         0,

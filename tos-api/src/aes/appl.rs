@@ -12,8 +12,12 @@
 //! The *value* a program reads back (`ap_id`, `appl_find`, `WF_OWNER`,
 //! `msg[1]`) is computed from the identity by [`reported_pid`] and mapped back
 //! by [`identity_of`] where a program hands a value in (`appl_write`,
-//! `appl_read`). Stage 1 (A62) keeps the reported numbers as they were —
-//! slot + 1, and 1 for the desktop; stage 2 (A56) will make them EmuTOS's.
+//! `appl_read`). The values are EmuTOS's (contract (b), A56): **0** for every
+//! member of the application chain — the desktop, the program it launches,
+//! every `Pexec` child at any depth, all on EmuTOS's one `rlr`
+//! (`aes/geminit.c:850-877`, `gemshlib.c:572`) — and **1** only as the
+//! Screen Manager's sender stamp on `msg[1]` ([`SCRENMGR_PID`]), which no
+//! NewTOS process is behind.
 //!
 //! **What `appl_init` may write, and how far (D-R1-4).** `AESGLOBAL` is
 //! EmuTOS's `struct aesglobal` (`aes/gemrslib.h:15-27`) — ten fields,
@@ -183,48 +187,58 @@ pub(super) fn current_identity() -> usize {
     crate::bdos::process::slot_for(bp).unwrap_or(pd::DESKTOP)
 }
 
+/// The pid of the application chain — EmuTOS's `D.g_int[0].p_pid`, the one
+/// `rlr` the desktop, every launched program and every `Pexec` child run on
+/// (`aes/geminit.c:851-877`; never reassigned by `dos_exec`,
+/// `gemshlib.c:572`). What `appl_init` returns, `appl_find` answers for any
+/// chain name, `WF_OWNER` reports for any application window, and
+/// `ap_sendmsg` stamps into `msg[1]` when the application itself is the
+/// sender (`WM_REDRAW`, `gemwmlib.c:904`).
+pub(super) const AP_CHAIN_PID: i16 = 0;
+
+/// The Screen Manager's pid — `gl_mowner = ctl_pd = iprocess("SCRENMGR",
+/// ctlmgr)` takes `curpid` 1 at AES init (`aes/geminit.c:888`, `getpd`,
+/// `gempd.c:60-70`). In NewTOS a **stamp**, not a process: the value the
+/// control-manager posters write into `msg[1]` (`ap_sendmsg` under `rlr ==
+/// ctl_pd`, `gemctrl.c:81-368`), the name `appl_find("SCRENMGR")` answers,
+/// and the one `appl_write` target that is not an application.
+pub(super) const SCRENMGR_PID: i16 = 1;
+
 /// The pid a program sees for identity `idx` — `ap_id`, `appl_find`'s
-/// answer, `WF_OWNER`, `msg[1]`. Stage 1 (A62): the numbers NewTOS reported
-/// before the identity rework, unchanged — GEMDOS slot + 1, and 1 for the
-/// kernel-context desktop (so the desktop and the program in slot 0 report
-/// the same number, as they did while they shared one descriptor). Stage 2
-/// (A56) replaces this with EmuTOS's values (0 for the whole application
-/// chain, 1 as the Screen Manager's sender stamp).
+/// answer, `WF_OWNER`, `msg[1]` of a message the application itself sends.
+/// Every identity NewTOS has — the sixteen GEMDOS slots and the
+/// kernel-context desktop — is a member of the application chain, so the
+/// value is [`AP_CHAIN_PID`] for all of them (spec § "AES process identity
+/// and pid", contract (b)); the identity is not lost, it is simply not what
+/// EmuTOS reports. Desk accessories (pid 2+, `D.g_acc[]`) do not exist here;
+/// when they do, they are the first identities this map does not send to 0.
 pub(super) fn reported_pid(idx: usize) -> i16 {
-    if idx == pd::DESKTOP {
-        1
-    } else {
-        idx as i16 + 1
-    }
+    debug_assert!(idx < pd::NUM_PDS, "reported_pid of a non-identity {idx}");
+    AP_CHAIN_PID
 }
 
 /// The identity a program addresses with the reported value `pid` — the
 /// inverse of [`reported_pid`] for `appl_write`/`appl_read` targets and the
 /// test hooks. `None` when no client reports that value.
 ///
-/// Two identities report **1** in stage 1, the desktop and GEMDOS slot 0;
-/// they never run at the same time (the desktop is blocked in the launcher
-/// while a program runs), so the value resolves from the caller's side: the
-/// desktop's own descriptor when the desktop is the caller, slot 0's for
-/// every process. This is what the one shared descriptor of the old table
-/// gave observably — a message to 1 reached the queue the caller itself
-/// reads, and the launch boundary drains that queue before the other party
-/// runs (A28/A29) — and it is the stage-1 form of the spec's rule that the
-/// chain's value resolves to the currently-scheduled client.
+/// Every chain member reports 0, and at most one of them is running — a
+/// `Pexec` parent is blocked while its child runs, the desktop while a
+/// launched program runs — so 0 resolves to the **currently-scheduled
+/// client**, the caller ([`current_identity`]). That is `fpdnm(NULL, 0)`
+/// always finding `D.g_int[0]` (`gemsuper.c:102-105`, `gempd.c:38-57`): the
+/// queue the caller itself reads. 1 is the Screen Manager ([`SCRENMGR_PID`])
+/// and names no NewTOS client; 2+ would be accessories, of which there are
+/// none (`totpds = num_accs + 2 = 2`, `geminit.c:819`).
 pub(super) fn identity_of(pid: i16) -> Option<usize> {
-    match pid {
-        1 => Some(if current_identity() == pd::DESKTOP { pd::DESKTOP } else { 0 }),
-        p if p >= 2 && ((p - 1) as usize) < crate::bdos::process::MAX_PROCESSES => {
-            Some((p - 1) as usize)
-        }
-        _ => None,
-    }
+    (pid == AP_CHAIN_PID).then(current_identity)
 }
 
 /// The reported pid of the current caller ([`reported_pid`] of
-/// [`current_identity`]) — what `appl_init` returns and what the internal
-/// posters stamp into `msg[1]` (`ap_sendmsg`'s `rlr->p_pid`,
-/// `gemwmlib.c:855`).
+/// [`current_identity`]) — what `appl_init` returns and what a poster that
+/// runs *as the application* stamps into `msg[1]` (`ap_sendmsg`'s
+/// `rlr->p_pid`, `gemwmlib.c:855`, for `w_redraw`'s `WM_REDRAW` inside the
+/// application's own `wind_*` trap). The control-manager posters do not use
+/// it: they stamp [`SCRENMGR_PID`].
 pub(super) fn current_pid() -> i16 {
     reported_pid(current_identity())
 }
@@ -317,7 +331,11 @@ pub fn appl_exit(pb: &Aespb) {
 
 /// Opcode 13 — `appl_find`: find an application by its 8-char name in
 /// `addrin[0]`. Returns its reported pid ([`reported_pid`] of the identity
-/// [`pd::find_by_name`] locates), or −1 if not found (or name is NULL).
+/// [`pd::find_by_name`] locates — 0 for any chain name), or −1 if not found
+/// (or name is NULL). `"SCRENMGR"` is the one name outside the chain that
+/// EmuTOS's `fpdnm` walk finds: the Screen Manager's descriptor, named by
+/// `iprocess("SCRENMGR", ctlmgr)` → `pstart` → `p_nameit`
+/// (`aes/geminit.c:888`, `gempd.c:117-121`), pid [`SCRENMGR_PID`].
 pub fn appl_find(pb: &Aespb) {
     let name_ptr = pb.addrin(0);
     if name_ptr == 0 {
@@ -333,7 +351,11 @@ pub fn appl_find(pb: &Aespb) {
         }
     }
     // SAFETY: single trap path.
-    let pid = unsafe { pd::find_by_name(&name) }.map_or(-1, reported_pid);
+    let pid = match unsafe { pd::find_by_name(&name) } {
+        Some(idx) => reported_pid(idx),
+        None if &name == b"SCRENMGR" => SCRENMGR_PID,
+        None => -1,
+    };
     pb.set_ret(pid);
 }
 
@@ -359,16 +381,27 @@ pub fn appl_yield(pb: &Aespb) {
 pub fn appl_write(pb: &Aespb) {
     let len_bytes = pb.intin(1).max(0) as usize;
     let buf = pb.addrin(0);
-    // The target arrives as a reported pid; resolve it to an identity (none →
-    // no descriptor → 0).
-    let Some(target) = identity_of(pb.intin(0)) else {
-        pb.set_ret(0);
-        return;
-    };
     if buf == 0 {
         pb.set_ret(0);
         return;
     }
+    // The target arrives as a reported pid. 0 is the caller (`fpdnm(NULL, 0)`
+    // = `D.g_int[0]`, the chain's one queue). 1 is the Screen Manager: in
+    // EmuTOS the write lands in `ctl_pd`'s queue and succeeds, and `ctlmgr`
+    // reads it on its next turn (`ev_multi(… | MU_MESAG)`, `gemctrl.c:448-481`)
+    // — no application ever sees it. NewTOS has no queue there; the write
+    // succeeds and the message goes nowhere. (What `ctlmgr` does with a
+    // `WM_REDRAW` it reads — `hctl_msg` → `w_redraw_desktop`, `:380-384` — has
+    // no spec entry yet and is not reproduced here.) Any other value names
+    // no descriptor within `totpds` (no accessories): 0.
+    if pb.intin(0) == SCRENMGR_PID {
+        pb.set_ret(1);
+        return;
+    }
+    let Some(target) = identity_of(pb.intin(0)) else {
+        pb.set_ret(0);
+        return;
+    };
     // AP_LENGTH is a byte count (EmuTOS `qpb_cnt`); GEM messages are WORD-based,
     // so read whole WORDs, capped at the per-message FIFO limit.
     let words = (len_bytes / 2).min(pd::MAX_MSG_WORDS);
@@ -401,7 +434,10 @@ pub fn appl_write(pb: &Aespb) {
 pub fn appl_read(pb: &Aespb) {
     let len_bytes = pb.intin(1).max(0) as usize;
     let dest = pb.addrin(0);
-    // `intin[0]` is the caller's own reported id; resolve it to an identity.
+    // `intin[0]` is the caller's own reported id, 0; resolve it to an
+    // identity — the caller's. 1 (the Screen Manager's queue, which an
+    // application reading it would block on in EmuTOS) and 2+ (no
+    // accessories) name no queue an application can read here: 0.
     // SAFETY: single trap path.
     let Some(src) = identity_of(pb.intin(0)).and_then(|idx| unsafe { pd::by_index(idx) }) else {
         pb.set_ret(0);

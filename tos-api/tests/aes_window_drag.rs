@@ -1036,6 +1036,12 @@ fn mover_drag_draws_only_the_rubber_band() {
         (rig.wh, want.0, want.1, curr.2, curr.3),
         "WM_MOVED must carry the constrained drag origin and the original size"
     );
+    // The sender: `ap_sendmsg` stamps `msg[1] = rlr->p_pid` (`gemwmlib.c:855`),
+    // and `ct_msgup` runs inside `ctlmgr()` — the Screen Manager, pid 1
+    // (`aes/geminit.c:888`, `gemctrl.c:238`; `docs/api/aes/application.md`
+    // § "AES process identity and pid", contract (b), A56). Not the
+    // application's own 0.
+    assert_eq!(msg[1], 1, "WM_MOVED msg[1] is the Screen Manager's pid, 1; got {msg:?}");
 }
 
 // Two-window scene: `LOW` is opened first, so it sits below; the window under

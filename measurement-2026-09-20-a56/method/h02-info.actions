@@ -1,0 +1,27 @@
+# A56 h02-info (from measurement-2026-09-17-h02/method/run2.actions, plus the
+# '1206 move 300 300' leave-the-bar step of quit2/tera-move: parking at (0,0) puts
+# the pointer on the menu bar, and the hover drop-down would eat the double-click).
+# run2: the H02 sequence. Open C: window, select HELLO.TXT (220,340) -> A,
+# hover File (88,8) -> B, move to "Info..." (110,43), click -> C (immediately), D (3 s later).
+1200 park
+1206 move 300 300
+1400 move 195 35
+1600 down
+1603 up
+1608 down
+1611 up
+2000 move 220 340
+2200 arm
+2210 down
+2216 up
+2400 mark A_SELECTED
+2800 move 88 8
+3000 mark B_MENU_OPEN
+3400 move 110 43
+3600 mark B2_ITEM_HOVER
+3800 down
+3801 mark C0_PRESSED
+3806 up
+3807 mark C1_RELEASED
+3900 mark C2_HALF_SECOND
+4400 mark D_THREE_SECONDS

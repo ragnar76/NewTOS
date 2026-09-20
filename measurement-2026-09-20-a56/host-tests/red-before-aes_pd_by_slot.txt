@@ -1,0 +1,47 @@
+running 4 tests
+test every_nested_process_gets_a_descriptor_and_appl_init_never_returns_minus_one ... FAILED
+test nine_programs_in_one_slot_rename_one_descriptor ... FAILED
+test releasing_a_slot_resets_its_descriptor_and_queue ... FAILED
+test reported_values_follow_emutos ... FAILED
+
+failures:
+
+---- every_nested_process_gets_a_descriptor_and_appl_init_never_returns_minus_one stdout ----
+
+thread 'every_nested_process_gets_a_descriptor_and_appl_init_never_returns_minus_one' (3439681) panicked at tos-api/tests/aes_pd_by_slot.rs:517:5:
+assertion `left == right` failed: the desktop is a chain member: ap_id 0
+  left: 1
+ right: 0
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+
+---- nine_programs_in_one_slot_rename_one_descriptor stdout ----
+
+thread 'nine_programs_in_one_slot_rename_one_descriptor' (3439682) panicked at tos-api/tests/aes_pd_by_slot.rs:569:9:
+assertion `left == right` failed: SEQ1: appl_init reports the chain's 0
+  left: 1
+ right: 0
+
+---- releasing_a_slot_resets_its_descriptor_and_queue stdout ----
+
+thread 'releasing_a_slot_resets_its_descriptor_and_queue' (3439683) panicked at tos-api/tests/aes_pd_by_slot.rs:604:9:
+assertion `left == right` failed
+  left: 1
+ right: 0
+
+---- reported_values_follow_emutos stdout ----
+
+thread 'reported_values_follow_emutos' (3439684) panicked at tos-api/tests/aes_pd_by_slot.rs:734:5:
+assertion `left == right` failed: desktop ap_id (gemsuper.c:94, rlr->p_pid)
+  left: 1
+ right: 0
+
+
+failures:
+    every_nested_process_gets_a_descriptor_and_appl_init_never_returns_minus_one
+    nine_programs_in_one_slot_rename_one_descriptor
+    releasing_a_slot_resets_its_descriptor_and_queue
+    reported_values_follow_emutos
+
+test result: FAILED. 0 passed; 4 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+error: test failed, to rerun pass `-p tos-api --test aes_pd_by_slot`

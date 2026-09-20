@@ -76,9 +76,13 @@ const MN_SELECTED: i16 = 10;
 /// not over the bar, or the drop-down was cancelled (no message).
 ///
 /// `idx` is the current AES identity — the menu owner (`gl_mnppd`) at
-/// single-app — used as the FIFO target; the `ap_sendmsg` sender pid
-/// `msg[1] = rlr->p_pid` (`gemwmlib.c:855`) is its reported value
-/// (`appl::current_pid`), replacing the former `0`.
+/// single-app — used as the FIFO target. The `ap_sendmsg` sender pid
+/// `msg[1] = rlr->p_pid` (`gemwmlib.c:855`) is the **Screen Manager's**,
+/// `appl::SCRENMGR_PID` = 1: `ct_msgup` runs inside `ctlmgr()`, `rlr ==
+/// ctl_pd` (`gemctrl.c:353-367`; spec § "AES process identity and pid",
+/// contract (b)). A stamp, not a process — NewTOS's control manager runs
+/// inline in the caller's trap, so the caller's own pid (0) would be wrong
+/// here.
 ///
 /// **Entry = the hand-over.** EmuTOS reaches `hctl_rect` only after `mchange`
 /// gave the mouse to the Control Manager, which it does for a pointer in the
@@ -114,8 +118,9 @@ fn menu_intercept(idx: usize) -> bool {
         Some((title, item)) => {
             let mut msg = [0i16; pd::MSG_WORDS];
             msg[0] = MN_SELECTED;
-            // ap_sendmsg: msg[1] = rlr->p_pid (sender pid, the reported value)
-            msg[1] = super::appl::current_pid();
+            // ap_sendmsg: msg[1] = rlr->p_pid — the Screen Manager's, 1
+            // (gemctrl.c:367 runs as ctl_pd; gemwmlib.c:855).
+            msg[1] = super::appl::SCRENMGR_PID;
             msg[3] = title; // menu title object
             msg[4] = item; // menu item object
             // SAFETY: single trap path; `post_msg` hands the message to the

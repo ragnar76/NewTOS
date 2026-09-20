@@ -1,0 +1,66 @@
+A56 (= A62 Stufe 2) -- berichtete AES-pid-Werte nach EmuTOS: 0 fuer die ganze
+Anwendungskette, 1 nur als Absenderstempel der Control-Manager-Nachrichten.
+2026-09-20, Developer. Branch desk-rebuild, Basis 25ff70c (Stufe 1 = Identitaet ueber den Slot).
+Spec: docs/api/aes/application.md "AES process identity and pid", Vertrag (b).
+Gepinnte EmuTOS-Quelle: references/emutos @ 1a7484ab.
+
+PRODUKTKERNEL (build/)
+  kernel8-a56-product-release-rpi4.img  sha256 8eee1eb3...  -- `cargo xtask build --board rpi4 --release`
+  aus dem Hauptbaum mit dem Stufe-2-Diff (a56-stage2.diff), KEINE Instrumentierung.
+  build-qemu-virt.log / build-rpi4.log (dev): rustc tos-api 64 / kernel 94, exit 0.
+  clippy-qemu-virt.log / clippy-rpi4.log: tos-api 81 / kernel 125. Baseline 64/94, 81/125 -- Delta 0.
+  build-rpi4-release.log: der Produktkernel.
+  build-scratch-*.log: die Injektor-Kernel aus der Scratch-Kopie (s. u.).
+
+SCRATCH-KERNEL (build/kernel8-a56-SCRATCH-injector-*.img; nur in einer rsync-Kopie des Baums)
+  method/a56_patch.py   = measurement-2026-09-20-a78/method/a78_patch.py, angepasst an pd.rs nach
+                          Stufe 1 (msg_post(reported_pid(idx), ..)); die [aes]-Zeile druckt
+                          zusaetzlich idx= (die Identitaet), post_msg druckt idx= statt pid=.
+  method/apply_injector.py, a78_patch2.py, gen_script.py = A78-Fassung (A46-Doppelarmierung).
+  method/mkscripts.sh   baut SCRIPT_TERA/SCRIPT_DESK aus zwei .actions-Dateien.
+  Skripte: full1.actions (a39), quit2.actions (a41/part2), h02-info.actions (h02/run2 +
+  "1206 move 300 300", weil das Parken auf (0,0) den Zeiger in die Menueleiste legt und das
+  Hover-Menue den Doppelklick frisst -- Harness, kein Produktbefund), tera-move.actions /
+  desk-move.actions (a78).
+
+KARTEN (img/-Hashes in build/kernel-and-image-hashes.txt; Images nicht archiviert, 64 MiB)
+  sd-base = tools/make-sd-image.sh <scratch>/img/sd-base.img 64
+  sd-nest = base + NESTTST.NAP + NEWDESK.INF "#Z 01 C:\NESTTST.NAP@" (measurement-2026-09-20-a62/method/prep-card.sh)
+  sd-tera = base + method/newdesk-user.inf + Apps\TERADESK\TERADESK.INF (method/teradesk-user.inf)
+  sd-qed  = base + method/newdesk-qed.inf
+  Jeder Lauf auf einer frischen Kopie.
+
+LAEUFE (QEMU raspi4b headless, method/run.sh + qmp_multi.py; serial/, screendumps/)
+  Alle Laeufe: grep -c "EXC\|panic" = 0.
+  nest       Produktkernel + sd-nest: Tiefe 1..16 appl_init=0, WF_OWNER=0 (Tiefe 16: wind_create=-1
+             -> Sonden-Sentinel -2, wie in Stufe 1), appl_write(self)=1, appl_find(NESTTST)=0;
+             17. Pexec -> -39; alle 16 kehren zurueck; "[desk] desktop up (1 drives)".
+             Stufe 1 (measurement-2026-09-20-a62/fix/serial/nest-serial.log): 1..16 / 1..15 / 1 / 1.
+  smoke-desk Produktkernel + sd-base: smoke-desk-up.png 0 Pixel zu a62/fix/smoke-desk-up.png (= A41).
+  smoke-tera Produktkernel + sd-tera: smoke-tera-up.png 0 Pixel zu a62/fix/smoke-tera-up.png und zu
+             a41/part2/product1-tera-colour-icons-idle.png.
+  smoke-qed  Produktkernel + sd-qed: smoke-qed-up.png 0 Pixel zu a62/fix/smoke-qed-up.png.
+  full1      H05 (TeraDesk -> HARD DISC C -> APPS -> QED -> QED.NAP -> Datei/Beenden -> Rueckkehr),
+             Injektor-Kernel full1: alle sechs Dumps (A,D,F,H,I,K) 0 Pixel zu a62/fix/full1-*.png;
+             D vs K 134 Pixel in (47,207)-(108,281) = der Mauszeiger (wie Stufe 1); H = I = K.
+             Serial: QED (idx=1) appl_init -> 0, appl_exit -> 1; TeraDesk (idx=0) appl_find -> -1.
+             Nachrichten: WM_REDRAW msg[1]=0 (2x, idx 0), WM_MOVED msg[1]=1 (idx 0),
+             MN_SELECTED msg[1]=1 (idx 1, QEDs Datei/Beenden).
+  quit2      TeraDesk beenden -> Kernel-Desktop: A, B, D 0 Pixel zu a62/fix/quit2-*.png;
+             G 2448 Pixel in (369,89)-(398,419) = nur die Uhrzeitspalte des Fensters (11:21 statt
+             10:44; Karte heute erzeugt), sonst identisch. "exited with rc=0" -> "[desk] desktop up".
+  h02        File -> Info in TeraDesk (Injektor h02info): post_msg idx=0 [10, 1, 0, 4, 20, ..]
+             = MN_SELECTED mit msg[1]=1; evnt_multi liefert MU_MESAG; h02-D-info-dialog-3s.png
+             zeigt TeraDesks "Disk Volume Information"-Dialog.
+  teramove   A78 (zwei Mover-Drags): alle sechs Dumps 0 Pixel zu a78/screendumps/tera-after-*.png;
+             WM_MOVED msg[1]=1 (2x), WM_REDRAW msg[1]=0 (1x, der verweigerte Blit).
+  deskmove   A78 (Kernel-Desktop, Fenster ziehen): drei Dumps 0 Pixel zu a78/desk-after-*.png;
+             WM_MOVED msg[1]=1 an idx 16 (DESKTOP); der Desktop antwortet mit wind_set(WF_CURRXYWH)
+             (pid=0 idx=16).
+
+HOST (host-tests/)
+  red-before-aes_pd_by_slot.txt: die vier Tests der Datei gegen den Baum VOR dem Fix (nur Tests
+  umgeschrieben): 4 FAILED (ap_id 1 statt 0). green-after-*: 4/4, 25/25 verwandte, aes_reference 204/204,
+  resource-Unittests 27/27. xtask-test.txt: cargo run -p xtask -- test = 670 / 0 / 1 (Baseline 670 / 0 / 1).
+
+NICHT GEFAHREN: echte Pi 4 (Tester/Lead). Kein Commit.

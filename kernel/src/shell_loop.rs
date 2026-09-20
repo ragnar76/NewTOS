@@ -356,13 +356,13 @@ fn p_setappdir(cmd: &[u8]) {
 /// ([`crate::desk`]).
 ///
 /// Item 10 of the plan's gap list ("AESPD numbering + `p_nameit`/`p_setappdir`
-/// on `rlr`") is closed as far as the *identity* goes: like EmuTOS's `AESPD`s
-/// (`aes/gempd.c:32-35`), NewTOS's exist per index from boot, `appl_init`
-/// cannot fail, and the descriptor a program is renamed into is the one its
-/// slot has always had. What still differs is the **reported value** — EmuTOS
-/// reports 0 for the whole application chain, NewTOS still slot + 1
-/// (`tos_api::aes::appl::reported_pid`); that is A56, spec § "AES process
-/// identity and pid", contract (b). The behaviour EmuTOS gets from its model at
+/// on `rlr`") is closed: like EmuTOS's `AESPD`s (`aes/gempd.c:32-35`),
+/// NewTOS's exist per index from boot, `appl_init` cannot fail, and the
+/// descriptor a program is renamed into is the one its slot has always had
+/// (the *identity*, A62); and the **reported value** is EmuTOS's — 0 for the
+/// whole application chain, whichever slot (`tos_api::aes::appl::reported_pid`,
+/// A56, spec § "AES process identity and pid", contract (b)). The behaviour
+/// EmuTOS gets from its model at
 /// this boundary — a program never starting on the previous occupant's flags
 /// or messages — is in place (A28): the flag reset in `pd::register`, the queue
 /// drain in the desktop's own `appl_exit()` (`deskmain.c:2166`,

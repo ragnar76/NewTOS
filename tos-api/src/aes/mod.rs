@@ -667,11 +667,12 @@ pub fn release_client(slot: usize) {
 }
 
 /// The AES pid NewTOS **reports** for the program in GEMDOS process-table slot
-/// `slot` — `slot + 1`, the value that program gets from `appl_init`
-/// (`appl::reported_pid`). A value, not an identity: the descriptor is keyed
-/// by `slot` itself (A62).
+/// `slot` — the value that program gets from `appl_init`
+/// (`appl::reported_pid`): 0, the application chain's pid, for every slot
+/// (spec § "AES process identity and pid", contract (b), A56). A value, not
+/// an identity: the descriptor is keyed by `slot` itself (A62).
 pub fn pid_of_slot(slot: usize) -> i16 {
-    slot as i16 + 1
+    appl::reported_pid(slot)
 }
 
 /// Name a freshly-launched EL0 program's AES process descriptor from its launch

@@ -1,0 +1,43 @@
+     Running tests/aes_app_return_descriptor.rs (target/debug/deps/aes_app_return_descriptor-255d90acee6d8760)
+test the_desktop_still_receives_messages_after_a_program_returns ... ok
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+     Running tests/aes_appl_init.rs (target/debug/deps/aes_appl_init-f70ecbb8c4f5a6c3)
+test appl_init_preserves_caller_memory_and_pending_messages_on_both_profiles ... ok
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+     Running tests/aes_global_layout.rs (target/debug/deps/aes_global_layout-1aa67cd068f7d745)
+test appl_init_lays_the_tos_aesglobal_byte_for_byte ... ok
+test gemlib_accessors_see_the_tos_fields ... ok
+test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+     Running tests/aes_launch_boundary_reset.rs (target/debug/deps/aes_launch_boundary_reset-362c6e1ad899618e)
+test the_launch_boundary_hands_the_child_a_reset_descriptor ... ok
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+     Running tests/aes_menu_click_ownership.rs (target/debug/deps/aes_menu_click_ownership-cb7c6c3380020d46)
+test desktop_click_still_delivers_mu_button ... ok
+test menu_item_press_delivers_only_mn_selected ... ok
+test menu_item_release_after_drag_delivers_only_mn_selected ... ok
+test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.02s
+     Running tests/aes_rsrc_per_process.rs (target/debug/deps/aes_rsrc_per_process-3a55a0423592b797)
+test a_process_without_appl_init_loads_resolves_and_frees ... ok
+test a_childs_load_and_free_leaves_the_parents_resource_untouched ... ok
+test a_second_load_is_selected_and_freed_the_first_stays_loaded_unselected ... ok
+test appl_exit_does_not_touch_the_resource ... ok
+test process_end_drops_only_the_dying_processs_entries ... ok
+test result: ok. 5 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+     Running tests/aes_window_content.rs (target/debug/deps/aes_window_content-8bac4e55f5ed4695)
+test clicking_a_window_never_erases_its_content ... ok
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.01s
+     Running tests/aes_window_drag.rs (target/debug/deps/aes_window_drag-bbe54845011d36fd)
+test moving_a_window_off_another_redraws_the_one_underneath ... ok
+test mover_drag_across_another_window_never_writes_it ... ok
+test mover_drag_draws_only_the_rubber_band ... ok
+test sizer_drag_draws_only_the_rubber_band ... ok
+test result: ok. 4 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.06s
+     Running tests/aes_window_move_blit.rs (target/debug/deps/aes_window_move_blit-d4a5fbf44378f22d)
+test t1_pure_move_of_the_top_window_blits_and_sends_no_redraw ... ok
+test t2_pure_shrink_of_the_top_window_sends_no_redraw ... ok
+test t3_grow_of_the_top_window_sends_one_redraw_for_the_full_rect ... ok
+test t4_move_of_a_lower_window_fans_out_top_down ... ok
+test t5_move_leftwards_from_past_the_right_edge_is_not_blitted ... ok
+test t5b_move_rightwards_from_past_the_right_edge_is_blitted ... ok
+test t6_setting_the_same_rectangle_paints_and_sends_nothing ... ok
+test result: ok. 7 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.06s

@@ -3979,7 +3979,8 @@ mod selector_tests {
     }
 
     /// A claimed GEMDOS slot with a basepage page of its own; its AES identity
-    /// is the slot, the pid it reports `slot + 1`. Released on drop.
+    /// is the slot, the pid it reports 0 (the application chain's). Released
+    /// on drop.
     struct Proc {
         slot: usize,
         page: *mut [u8; 4096],
@@ -4217,7 +4218,9 @@ mod selector_tests {
         let _g = lock();
         let p1 = Proc::new();
         let p2 = Proc::new();
-        assert_ne!(p1.pid(), p2.pid());
+        // Two identities (slots); both report ap_id 0 (A56, contract (b)).
+        assert_ne!(p1.slot, p2.slot);
+        assert_eq!((p1.pid(), p2.pid()), (0, 0));
 
         p1.run();
         let mut g1 = Global::default();

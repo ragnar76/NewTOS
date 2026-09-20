@@ -1,14 +1,14 @@
 //! A29 — **what the desktop loses when a program returns.**
 //!
-//! The desktop runs in the kernel boot context, so its AES id is 1
-//! (`tos-api/src/aes/appl.rs`, `current_pid` with a null basepage). The first
-//! program it launches lands in GEMDOS slot 0, whose AES id is `slot + 1` = 1
-//! (`aes::pid_of_slot`) — desktop and first child therefore **report the same
-//! AES id**. Until A62 they also shared one AES process descriptor; since A62
-//! the descriptor is keyed by the *identity* (the GEMDOS slot, or the
-//! desktop's own reserved index — `docs/api/aes/application.md` § "AES
-//! process identity and pid", contract (a)), and only the reported number is
-//! shared. This test runs its "child" in the boot context too (no `RUN`), so
+//! The desktop runs in the kernel boot context (`RUN` null) and reports AES
+//! id **0**; so does the first program it launches, in GEMDOS slot 0, and so
+//! does every `Pexec` child — the whole application chain is EmuTOS's one
+//! `rlr`, pid 0 (`docs/api/aes/application.md` § "AES process identity and
+//! pid", contract (b), A56; `aes/geminit.c:850-877`). Desktop and first child
+//! therefore **report the same AES id**. Until A62 they also shared one AES
+//! process descriptor; since A62 the descriptor is keyed by the *identity*
+//! (the GEMDOS slot, or the desktop's own reserved index — contract (a)),
+//! and only the reported number is shared. This test runs its "child" in the boot context too (no `RUN`), so
 //! it exercises the desktop's descriptor across the boundary; the slot-keyed
 //! child is `aes_pd_by_slot.rs`'s business. The sharing of the *number* is
 //! EmuTOS-faithful: `sh_ldapp` renames the very same `rlr` for the program it
@@ -377,7 +377,7 @@ fn the_desktop_still_receives_messages_after_a_program_returns() {
 
     // ── the desktop comes up (`kernel/src/desk/mod.rs`, `run`) ────────────
     let desk_pid = appl_init(&mut pb);
-    assert!(desk_pid > 0, "the desktop must get an AES id");
+    assert_eq!(desk_pid, 0, "the desktop's AES id is the chain's, 0 (gemsuper.c:94, rlr->p_pid)");
     let win = open_window(&mut pb, WR);
     drain(&mut pb, desk_pid); // its event loop answered the open's WM_REDRAW
 
@@ -390,7 +390,7 @@ fn the_desktop_still_receives_messages_after_a_program_returns() {
         run_child(&mut pb, desk_pid, 0, who, polite);
 
         // 1. The desktop is still an addressable application. This is the
-        //    literal symptom A29 names: `appl_write` to pid 1 returning 0.
+        //    literal symptom A29 names: `appl_write` to its own pid returning 0.
         let probe = [0x4711, desk_pid, 0, 1, 2, 3, 4, 5];
         assert_eq!(
             appl_write(&mut pb, desk_pid, &probe),

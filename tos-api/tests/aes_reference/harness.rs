@@ -958,13 +958,11 @@ fn push_subst(out: &mut Vec<Diff>, field: &'static str, index: usize, got: i64, 
 
 /// Everything one comparison needs that is not in the record: which table and
 /// case it belongs to (a [`Delta`] is keyed on both, because a case id is only
-/// a line number and two tables reuse them), the application id this machine's
-/// `appl_init` handed out ([`Expected::ApId`]), and which [`DELTAS`] entries
-/// the comparison actually consulted.
+/// a line number and two tables reuse them), and which [`DELTAS`] entries the
+/// comparison actually consulted.
 struct Oracle {
     table: &'static str,
     case: u16,
-    ap_id: i16,
     /// One flag per [`DELTAS`] entry, set when [`Oracle::want`] used it. An
     /// entry naming a field or an index no comparison visits would otherwise
     /// be a silent skip; [`Oracle::finish`] refuses that.
@@ -974,11 +972,10 @@ struct Oracle {
 }
 
 impl Oracle {
-    fn new(table: &'static str, case: u16, ap_id: i16) -> Oracle {
+    fn new(table: &'static str, case: u16) -> Oracle {
         Oracle {
             table,
             case,
-            ap_id,
             used: [false; DELTAS.len()],
             used_sanctioned: [false; SANCTIONED.len()],
         }
@@ -1011,7 +1008,7 @@ impl Oracle {
                 self.table, self.case, field, index, d.recorded, recorded
             );
             self.used[k] = true;
-            return (d.expected.value(self.ap_id), true);
+            return (d.expected.value(), true);
         }
         for (k, s) in SANCTIONED.iter().enumerate() {
             if s.table != self.table || s.case != self.case || s.field != field || s.index != index
@@ -1092,19 +1089,18 @@ fn cmp_words(
 /// a property of the machine the dump was taken on and not of the AES. Every
 /// other word — and the `ap_private` LONG, see [`cmp_global`] — is compared.
 ///
-/// * **`global[2]` — `ap_id`.** EmuTOS: `pglobal->ap_id = rlr->p_pid`
-///   (`aes/gemsuper.c:94`). On the TT that is **0**, because EmuTOS's AES owns
-///   a fixed pool of `AESPD`s: the initial process takes `curpid = 0`
-///   (`aes/geminit.c:875-876`), the screen manager takes 1
-///   (`:882`, `getpd`/`gempd.c:64-66`), and a program the desktop launches
-///   runs *inside the desktop's own* `AESPD`, so it reports the desktop's
-///   pid 0. NewTOS gives every launched program a GEMDOS process of its own
-///   and derives the id from its process-table slot
-///   (`tos-api/src/aes/appl.rs`, `current_pid`), which is **1** for the first
-///   one. Both are "the id of this application"; the number is a property of
-///   the process model, and no conforming program may depend on its value —
-///   it passes it to `appl_write`/`menu_register` and compares it with a
-///   message's `msg[1]`, all of which stay consistent.
+/// * **`global[2]` — `ap_id` — is compared, since 2026-09-20 (A56).** It
+///   used to be excluded here with the argument that the number was "a
+///   property of the process model": EmuTOS reports 0 (`pglobal->ap_id =
+///   rlr->p_pid`, `aes/gemsuper.c:94`; the whole application chain runs on
+///   `D.g_int[0]`, `aes/geminit.c:850-877`) and NewTOS reported the GEMDOS
+///   slot + 1. That argument licensed a divergence instead of naming it:
+///   the value **is** contract — `docs/api/aes/application.md` § "AES
+///   process identity and pid", (b) — and NewTOS now reports 0 for every
+///   member of the chain, the kernel-context desktop this harness runs as
+///   included. The record's 0 is therefore compared as it stands, and the
+///   `ap_id == appl_init ret` property [`cmp_global`] also checks is kept
+///   (both are `rlr->p_pid`, `gemaplib.c:54-63`).
 /// * **`global[11]`, `global[12]` — `ap_3resv`.** EmuTOS:
 ///   `pglobal->ap_3resv = (LONG)&D` (`aes/gemsuper.c:98`), the address of the
 ///   AES's own global data area (`aes/gemrslib.h:25`). An address: 0x0000BE04
@@ -1115,22 +1111,20 @@ fn cmp_words(
 ///   against the *same* table, `global[11]` alone moved from 0x80B0 to
 ///   0x80D8.
 ///
-/// Neither is left unchecked. [`cmp_global`] compares the machine-independent
-/// part of both instead of the number: `ap_id` must equal what `appl_init`
-/// returned (EmuTOS `ret = ap_init()` returns `rlr->p_pid`,
-/// `aes/gemaplib.c:54-63`, the same `p_pid` that goes into `ap_id` at
-/// `gemsuper.c:94` — so "the two agree" holds on any machine), and `ap_3resv`
-/// must be non-zero exactly when the reference's is, i.e. `appl_init` must
-/// have put *an* address there.
+/// `ap_3resv` is not left unchecked. [`cmp_global`] compares the
+/// machine-independent part instead of the number: it must be non-zero
+/// exactly when the reference's is, i.e. `appl_init` must have put *an*
+/// address there.
 ///
-/// **These three are the only ones, and the other three `global` words the two
+/// **These two are the only ones, and the other `global` words the two
 /// reference runs disagree about are compared as they stand.** `tosdiff`
 /// reports six differing words in all 78 round-2 records
 /// (`tosdump/reference/*-AES-r2wind.LOG`): `ap_id` (2), the `ap_private` LONG
-/// (3–4), `ap_planes` (10) and the `ap_3resv` LONG (11–12). Two of the four
-/// fields are excluded above; the remaining two are compared, and pass, for
-/// reasons that are worth stating because they are conditions on the harness
-/// rather than luck:
+/// (3–4), `ap_planes` (10) and the `ap_3resv` LONG (11–12). One of the four
+/// fields is excluded above; `ap_id` is compared and passes since A56 (see
+/// above); the remaining two are compared, and pass, for reasons that are
+/// worth stating because they are conditions on the harness rather than
+/// luck:
 ///
 /// * **`ap_planes`** — TT 4, Pi 16. It is the workstation's plane count, and
 ///   this harness supplies a workstation shaped like the TT's (see the module
@@ -1148,7 +1142,7 @@ fn cmp_words(
 ///   is compared. The chain from `#Q` line to `ap_private` is pinned
 ///   separately by `tos-api/src/aes/init.rs`'s
 ///   `ap_private_is_the_desktop_root_obspec_with_the_inf_background_byte`.
-pub const GLOBAL_EXCLUDED: [usize; 3] = [2, 11, 12];
+pub const GLOBAL_EXCLUDED: [usize; 2] = [11, 12];
 
 /// Compare the caller's `AESGLOBAL` against the record.
 ///
@@ -1171,8 +1165,11 @@ pub const GLOBAL_EXCLUDED: [usize; 3] = [2, 11, 12];
 /// does not name them (`gemsuper.c:92-98`), both arrays start zeroed, so a
 /// difference there means somebody wrote where EmuTOS does not.
 fn cmp_global(out: &mut Vec<Diff>, got: &[i16; GLOBAL_N], rec: &[u8], ap_id: i16) {
-    // The excluded fields, checked by the property that does not depend on
-    // the machine (see [`GLOBAL_EXCLUDED`]).
+    // `ap_id` is compared against the record in the loop below (A56); the
+    // "agrees with appl_init's return" property is kept as well — both are
+    // `rlr->p_pid` (`gemaplib.c:54-63`, `gemsuper.c:94`). The excluded
+    // field is checked by the property that does not depend on the machine
+    // (see [`GLOBAL_EXCLUDED`]).
     push_subst(out, "ap_id == appl_init ret", 0, got[2] as i64, ap_id as i64, 4);
     let ref_3resv = ((be16(rec, OFF_GLOBAL + 11 * 2) as u16 as u32) << 16)
         | be16(rec, OFF_GLOBAL + 12 * 2) as u16 as u32;
@@ -1207,27 +1204,26 @@ fn cmp_global(out: &mut Vec<Diff>, got: &[i16; GLOBAL_N], rec: &[u8], ap_id: i16
 
 /// What a [`Delta`] says the pinned EmuTOS source mandates in place of the
 /// recorded value.
+///
+/// Until 2026-09-20 (A56) there was a second variant, `ApId` — "this
+/// application's own id, whatever `appl_init` answered on this machine" —
+/// used for `WF_OWNER`'s owner pid, on the argument that the number was a
+/// property of the process model. It is not: `w_owner->p_pid` is 0 for every
+/// application window (`aes/gemwmlib.c:1580`; `w_owner = rlr` at
+/// `wind_create`, `:1377`, and the whole chain is pid 0), and NewTOS now
+/// reports exactly that — so the entries pin the literal, as every other
+/// delta does (`docs/api/aes/application.md` § "AES process identity and
+/// pid", contract (b)).
 #[derive(Copy, Clone, Debug)]
 pub enum Expected {
     /// A literal, when the pinned source computes one.
     Value(i64),
-    /// This application's own id, whatever `appl_init` answered on the machine
-    /// the test runs on.
-    ///
-    /// The **number** is a property of the process model and not of the AES —
-    /// the reference TT reported 0, the Pi 4 run 2 and this host binary 1, and
-    /// [`GLOBAL_EXCLUDED`] gives the reason — so a literal here would pin the
-    /// wrong thing. What *is* contract is that the AES answers **this**
-    /// application's id, which is the same machine-independent claim
-    /// `cmp_global` makes about `ap_id`, applied to a window's owner.
-    ApId,
 }
 
 impl Expected {
-    fn value(self, ap_id: i16) -> i64 {
+    fn value(self) -> i64 {
         match self {
             Expected::Value(v) => v,
-            Expected::ApId => ap_id as i64,
         }
     }
 }
@@ -1301,10 +1297,12 @@ pub struct Delta {
 /// The expectations are read off the pinned source above, for the two states
 /// the cases establish:
 ///
-/// * the **owner** is the process that ran `wind_create` (`w_setup` sets
-///   `w_owner = rlr`, `aes/gemwmlib.c:210`), and `wm_open` does not change it,
-///   so both cases expect this application's own id — [`Expected::ApId`],
-///   because the number itself is not contract;
+/// * the **owner** is the process that ran `wind_create` (`wm_create` calls
+///   `w_setup(rlr, …)`, `aes/gemwmlib.c:1377`, which stores `w_owner = ppd`,
+///   `:212`), and `wm_open` does not change it; `wm_get` answers `w_owner->p_pid` (`:1580`), and `rlr` is the one
+///   application-chain descriptor, pid **0** (`aes/geminit.c:850-877`), so
+///   both cases expect the literal 0 (since A56; the number *is* contract,
+///   `docs/api/aes/application.md` § "AES process identity and pid" (b));
 /// * `VF_ISOPEN` is 0 for 244 and 1 for 247;
 /// * `gl_wtop` is the **raw** variable, `NIL` (−1) while nothing is open
 ///   (`wm_init`, `:1297`; `draw_change`, `:1093`) — not `w_top()`'s `DESKWH`
@@ -1340,10 +1338,13 @@ pub const DELTAS: &[Delta] = &[
         field: "int_out",
         index: 1,
         recorded: -1,
-        expected: Expected::ApId,
-        why: "poutwds[0] = pwin->w_owner->p_pid, the process that CREATED the \
-              window (w_setup, aes/gemwmlib.c:210); EmuTOS 1.4 left xif's \
-              uninitialised stack here",
+        expected: Expected::Value(0),
+        why: "poutwds[0] = pwin->w_owner->p_pid (aes/gemwmlib.c:1580), the \
+              process that CREATED the window (w_setup(rlr, ..), :1377, :212) \
+              -- the one \
+              application-chain descriptor, pid 0 (aes/geminit.c:850-877; \
+              docs/api/aes/application.md, AES process identity and pid, (b)); \
+              EmuTOS 1.4 left xif's uninitialised stack here",
     },
     Delta {
         table: "tosdump/cases/aes-r2-wind.tsv",
@@ -1395,9 +1396,10 @@ pub const DELTAS: &[Delta] = &[
         field: "int_out",
         index: 1,
         recorded: -1,
-        expected: Expected::ApId,
-        why: "poutwds[0] = pwin->w_owner->p_pid; wm_open does not change the \
-              owner w_setup established (aes/gemwmlib.c:210)",
+        expected: Expected::Value(0),
+        why: "poutwds[0] = pwin->w_owner->p_pid (aes/gemwmlib.c:1580) = 0, the \
+              application chain's; wm_open does not change the owner w_setup \
+              established (:1377, :212)",
     },
     Delta {
         table: "tosdump/cases/aes-r2-wind.tsv",
@@ -1570,7 +1572,7 @@ pub fn check(table: &Table, case: &Case) {
     pb.plant(case.plant);
     pb.call(case.opcode, case.in_len, case.out_len, case.ain_len, case.aout_len);
 
-    let mut or = Oracle::new(table.name, case.id, ctx.ap_id);
+    let mut or = Oracle::new(table.name, case.id);
     let mut diffs = Vec::new();
     cmp_words(&mut diffs, &mut or, "contrl", &pb.contrl[..], rec, OFF_CONTRL);
     cmp_global(&mut diffs, pb.global(), rec, ctx.ap_id);

@@ -30,8 +30,9 @@
 //!
 //! ## How this binary stands in for two processes
 //!
-//! The AES pid of a caller is its GEMDOS slot + 1 (`appl::current_pid`,
-//! `aes::pid_of_slot`), read off the running basepage `RUN`. A test can make
+//! The AES identity of a caller is its GEMDOS slot (`appl::current_identity`),
+//! read off the running basepage `RUN`; the pid it reports is 0 for every
+//! slot (`aes::pid_of_slot`, A56). A test can make
 //! a slot "run" the way the loader's own unit tests do
 //! (`src/bdos/process/loader.rs`, `mod tests`): claim it with
 //! `allocate_slot`, publish a page of its own as `basepage_kva`, and switch
@@ -223,7 +224,10 @@ fn a_childs_load_and_free_leaves_the_parents_resource_untouched() {
     let _g = lock();
     let parent = Proc::new();
     let child = Proc::new();
-    assert_ne!(parent.pid(), child.pid());
+    // Two identities (slots); both report ap_id 0 (A56, contract (b)) — the
+    // resource list is keyed by the identity, not the reported value.
+    assert_ne!(parent.slot, child.slot);
+    assert_eq!((parent.pid(), child.pid()), (0, 0));
 
     parent.run();
     let parent_blob = Blob::load_for_current_pid();
